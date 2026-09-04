@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+dist/
+artifacts/
+.scratch/
+*.tgz
+.env
+.env.*
+!.env.example
+.DS_Store

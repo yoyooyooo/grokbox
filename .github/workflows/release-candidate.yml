@@ -1,0 +1,35 @@
+name: Release candidate artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - name: Build candidate tarball
+        run: |
+          bun run build
+          npm pack --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grokbox-release-candidate
+          path: grokbox-*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+# Intentionally no npm publish step. Registry releases are isolated in
+# publish.yml and require an exact version tag plus the protected npm environment.
