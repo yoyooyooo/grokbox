@@ -59,6 +59,7 @@ describe("release version contract", () => {
   test("publish workflow keeps the OIDC and post-publish evidence ordering", async () => {
     const workflow = await readFile(join(repoRoot, ".github", "workflows", "publish.yml"), "utf8");
     expect(workflow).toContain("id-token: write");
+    expect(workflow).toContain("name: publish.yml");
     expect(workflow).toContain("environment: npm");
     expect(workflow).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
     expect(workflow).toContain("actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0");
