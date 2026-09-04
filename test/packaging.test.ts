@@ -206,7 +206,7 @@ describe("published Node package", () => {
     expect(installedPackage).toMatchObject({
       license: "MIT",
       engines: { node: ">=20.0.0" },
-      repository: { url: "git+https://github.com/yoyooyooo/grokbox.git" },
+      repository: { url: "https://github.com/yoyooyooo/grokbox.git" },
       bin: { grokbox: "bin/grokbox", gbox: "bin/grokbox" },
       dependencies: {},
       publishConfig: { access: "public", provenance: true },
