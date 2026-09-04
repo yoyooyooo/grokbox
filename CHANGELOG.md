@@ -4,11 +4,17 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## 0.1.0-alpha.3 — Unreleased
+## 0.1.0-alpha.4 — Unreleased
 
-- Keep `setup-node` `registry-url` so npm knows the public registry, then strip
-  the empty `_authToken` it writes. Removing `registry-url` entirely caused
-  `ENEEDAUTH` on `v0.1.0-alpha.2` before OIDC could start.
+- Give `npm publish` a token-free npmrc and print OIDC exchange diagnostics.
+  `v0.1.0-alpha.3` still failed with `ENEEDAUTH` after stripping setup-node's
+  empty `_authToken`; npm swallows a failed OIDC exchange and reports login.
+- Use `https://github.com/yoyooyooo/grokbox.git` as `repository.url` so provenance
+  can match the GitHub repo.
+
+## 0.1.0-alpha.3 — 2026-09-04
+
+- Tagged as `v0.1.0-alpha.3`. npm did not accept this version.
 
 ## 0.1.0-alpha.2 — 2026-09-04
 

@@ -65,13 +65,14 @@ describe("release version contract", () => {
     expect(workflow).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
     expect(workflow).toContain("package-manager-cache: false");
     expect(workflow).toContain("registry-url: https://registry.npmjs.org");
-    expect(workflow).toContain('!line.includes("_authToken")');
+    expect(workflow).toContain("oidc.npmrc");
+    expect(workflow).toContain("oidc_url_set=");
     expect(workflow).toContain("group: npm-publish");
     expect(workflow).toContain("cancel-in-progress: false");
     expect(workflow).toContain("Refusing to move npm channel backward");
     expect(workflow).toContain('npm_dist_tag=next');
     expect(workflow).toContain('npm_dist_tag=latest');
-    expect(workflow).toContain('env -u NODE_AUTH_TOKEN npm publish --access public --provenance --tag "${NPM_DIST_TAG}"');
+    expect(workflow).toContain('npm publish --access public --provenance --tag "${NPM_DIST_TAG}"');
     expect(workflow).toContain("Manual dispatch is repair-only");
     expect(workflow).toContain('"$integrity" == "$LOCAL_INTEGRITY"');
     expect(workflow).toContain("Provenance commit does not match the release tag");
