@@ -4,13 +4,19 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable release tag to publish or repair (for example v0.1.0-alpha.2)
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 concurrency:
-  group: npm-publish-${{ github.ref }}
+  group: npm-publish
   cancel-in-progress: false
 
 jobs:
@@ -18,29 +24,184 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - uses: oven-sh/setup-bun@v2
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
       - name: Use a Trusted Publishing capable npm CLI
         run: npm install --global npm@11.16.0
       - run: bun install --frozen-lockfile
-      - name: Verify tag and select npm dist-tag
-        id: release
+      - name: Verify immutable release input
         shell: bash
         run: |
           set -euo pipefail
-          version="$(node -p "require('./package.json').version")"
-          test "v${version}" = "${GITHUB_REF_NAME}"
-          if [[ "${version}" == *-* ]]; then
-            echo "dist_tag=next" >> "$GITHUB_OUTPUT"
-          else
-            echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+          release_tag="${{ inputs.tag }}"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="${GITHUB_REF_NAME}"
           fi
-      - run: bun run release:check
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          expected_tag="v${package_version}"
+
+          [[ "$package_name" == "grokbox" ]] || {
+            echo "Expected package grokbox, got $package_name" >&2
+            exit 1
+          }
+          [[ "$release_tag" == "$expected_tag" ]] || {
+            echo "Release tag must equal package version. tag=$release_tag expected=$expected_tag" >&2
+            exit 1
+          }
+
+          git fetch origin main --no-tags
+          tag_commit="$(git rev-list -n 1 "$release_tag")"
+          main_commit="$(git rev-parse origin/main)"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            [[ "$tag_commit" == "$main_commit" ]] || {
+              echo "A new release tag must point to the exact current origin/main commit." >&2
+              echo "tag=$tag_commit main=$main_commit" >&2
+              exit 1
+            }
+          else
+            git merge-base --is-ancestor "$tag_commit" "$main_commit" || {
+              echo "A repair tag must remain reachable from origin/main." >&2
+              echo "tag=$tag_commit main=$main_commit" >&2
+              exit 1
+            }
+          fi
+
+          if [[ "$package_version" == *-* ]]; then
+            npm_dist_tag=next
+            github_prerelease=true
+          else
+            npm_dist_tag=latest
+            github_prerelease=false
+          fi
+
+          echo "PACKAGE_NAME=$package_name" >> "$GITHUB_ENV"
+          echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "TAG_COMMIT=$tag_commit" >> "$GITHUB_ENV"
+          echo "NPM_DIST_TAG=$npm_dist_tag" >> "$GITHUB_ENV"
+          echo "GITHUB_PRERELEASE=$github_prerelease" >> "$GITHUB_ENV"
+
+          npm_already_published=false
+          if npm view "${package_name}@${package_version}" version --registry https://registry.npmjs.org >/dev/null 2>/tmp/npm-presence.err; then
+            npm_already_published=true
+            echo "${package_name}@${package_version} already exists; npm publish will be skipped."
+          elif ! grep -Eqi 'E404|404 Not Found|is not in this registry' /tmp/npm-presence.err; then
+            echo "Unable to prove whether ${package_name}@${package_version} exists." >&2
+            cat /tmp/npm-presence.err >&2
+            exit 1
+          fi
+          echo "NPM_ALREADY_PUBLISHED=$npm_already_published" >> "$GITHUB_ENV"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            [[ "${{ github.ref_name }}" == "$release_tag" ]] || {
+              echo "Repair must be dispatched on the immutable tag ref." >&2
+              echo "Run: gh workflow run publish.yml --ref $release_tag -f tag=$release_tag" >&2
+              exit 1
+            }
+            [[ "$npm_already_published" == true ]] || {
+              echo "Manual dispatch is repair-only and cannot perform a first npm publication." >&2
+              exit 1
+            }
+          elif [[ "$npm_already_published" == false ]]; then
+            if current_channel_version="$(npm view "$package_name@$npm_dist_tag" version --registry https://registry.npmjs.org 2>/tmp/npm-channel.err)"; then
+              bun -e 'import { compareReleaseVersions } from "./scripts/release.ts"; const [next, current] = process.argv.slice(-2); if (compareReleaseVersions(next, current) <= 0) { console.error(`Refusing to move npm channel backward: ${next} <= ${current}`); process.exit(1); }' "$package_version" "$current_channel_version"
+            elif ! grep -Eqi 'E404|404 Not Found|is not in this registry' /tmp/npm-channel.err; then
+              echo "Unable to read current npm channel $npm_dist_tag." >&2
+              cat /tmp/npm-channel.err >&2
+              exit 1
+            fi
+          fi
+      - run: bun run check
+      - name: Inspect package payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --dry-run --json > "$RUNNER_TEMP/npm-pack.json"
+          local_integrity="$(node -e "const x=require(process.argv[1]); if (!Array.isArray(x) || !x[0]?.integrity) process.exit(1); process.stdout.write(x[0].integrity)" "$RUNNER_TEMP/npm-pack.json")"
+          echo "LOCAL_INTEGRITY=$local_integrity" >> "$GITHUB_ENV"
+          node -e "const x=require(process.argv[1]); console.log(JSON.stringify(x, null, 2))" "$RUNNER_TEMP/npm-pack.json"
       - name: Publish with npm Trusted Publishing and provenance
-        run: npm publish --access public --provenance --tag "${{ steps.release.outputs.dist_tag }}"
+        if: env.NPM_ALREADY_PUBLISHED != 'true'
+        run: npm publish --access public --provenance --tag "${NPM_DIST_TAG}"
+      - name: Verify npm package, channel, and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          attestation_url=""
+          for attempt in 1 2 3 4 5 6; do
+            published_version="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://registry.npmjs.org 2>/tmp/npm-version.err || true)"
+            integrity="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.integrity --registry https://registry.npmjs.org 2>/tmp/npm-integrity.err || true)"
+            attestation_url="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.attestations.url --registry https://registry.npmjs.org 2>/tmp/npm-attestation.err || true)"
+            dist_tag_version="$(npm view "$PACKAGE_NAME" "dist-tags.${NPM_DIST_TAG}" --registry https://registry.npmjs.org 2>/tmp/npm-dist-tag.err || true)"
+
+            if [[ "$published_version" == "$PACKAGE_VERSION" \
+              && "$integrity" == "$LOCAL_INTEGRITY" \
+              && "$dist_tag_version" == "$PACKAGE_VERSION" \
+              && -n "$attestation_url" ]]; then
+              break
+            fi
+
+            if [[ "$attempt" == 6 ]]; then
+              echo "npm release readback failed after retries." >&2
+              echo "version=$published_version integrity=$integrity local_integrity=$LOCAL_INTEGRITY channel=$dist_tag_version provenance=$attestation_url" >&2
+              cat /tmp/npm-version.err /tmp/npm-integrity.err /tmp/npm-dist-tag.err /tmp/npm-attestation.err >&2 || true
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
+
+          curl --fail --silent --show-error --location "$attestation_url" --output "$RUNNER_TEMP/npm-attestations.json"
+          node <<'NODE'
+          const { readFileSync } = require("node:fs");
+          const document = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/npm-attestations.json`, "utf8"));
+          const attestation = document.attestations?.find((item) => item.predicateType === "https://slsa.dev/provenance/v1");
+          if (!attestation?.bundle?.dsseEnvelope?.payload) throw new Error("SLSA provenance statement is missing");
+          const statement = JSON.parse(Buffer.from(attestation.bundle.dsseEnvelope.payload, "base64").toString("utf8"));
+          const expectedSubject = `pkg:npm/${process.env.PACKAGE_NAME}@${process.env.PACKAGE_VERSION}`;
+          const expectedSha512 = Buffer.from(process.env.LOCAL_INTEGRITY.replace(/^sha512-/, ""), "base64").toString("hex");
+          const subjectMatches = statement.subject?.some((subject) =>
+            subject.name === expectedSubject && subject.digest?.sha512 === expectedSha512);
+          const definition = statement.predicate?.buildDefinition;
+          const workflow = definition?.externalParameters?.workflow;
+          const dependencyMatches = definition?.resolvedDependencies?.some((dependency) =>
+            dependency.digest?.gitCommit === process.env.TAG_COMMIT);
+          const expectedRef = `refs/tags/${process.env.RELEASE_TAG}`;
+          if (!subjectMatches) throw new Error("Provenance subject does not match the locally packed release");
+          if (workflow?.repository !== "https://github.com/yoyooyooo/grokbox") throw new Error("Provenance repository mismatch");
+          if (workflow?.path !== ".github/workflows/publish.yml") throw new Error("Provenance workflow mismatch");
+          if (workflow?.ref !== expectedRef) throw new Error(`Provenance ref mismatch: ${workflow?.ref}`);
+          if (!dependencyMatches) throw new Error("Provenance commit does not match the release tag");
+          if (statement.predicate?.runDetails?.builder?.id !== "https://github.com/actions/runner/github-hosted") {
+            throw new Error("Provenance builder is not GitHub-hosted Actions");
+          }
+          NODE
+          echo "Verified ${PACKAGE_NAME}@${PACKAGE_VERSION}; integrity=$LOCAL_INTEGRITY channel=${NPM_DIST_TAG}:${PACKAGE_VERSION} provenance=$attestation_url"
+      - name: Create GitHub Release after npm verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists."
+            exit 0
+          fi
+          prerelease_args=()
+          if [[ "$GITHUB_PRERELEASE" == true ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --generate-notes \
+            "${prerelease_args[@]}"

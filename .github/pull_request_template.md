@@ -12,9 +12,7 @@
 
 ## Evidence
 
-- [ ] `bun run typecheck`
-- [ ] `bun test`
-- [ ] `bun run verify:package`
+- [ ] `bun run check`
 - [ ] Dependency reality is identified: fake, local-real, or external-real.
 
 ## Residual risk

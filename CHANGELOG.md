@@ -9,6 +9,9 @@ when upstream Grok Bot or Cursor internals change.
 - Remove machine-local evidence and private planning history from the public tree.
 - Generalize contributor documentation and synthetic test identities.
 - Validate a fresh macOS source-development checkout.
+- Add an aggregate local check, exact-main release precheck, immutable tag push,
+  registry/provenance readback, and post-publish GitHub Release automation.
+- Add a maintained Simplified Chinese README and dependency update policy.
 
 ## 0.1.0-alpha.0 — 2026-09-04
 

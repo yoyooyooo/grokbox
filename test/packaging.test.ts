@@ -152,6 +152,7 @@ describe("published Node package", () => {
     expect(paths).toEqual([
       "LICENSE",
       "README.md",
+      "README.zh-CN.md",
       "THIRD_PARTY_NOTICES",
       "bin/grokbox",
       "bin/runtime.d.ts",

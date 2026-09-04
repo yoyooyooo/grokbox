@@ -1,5 +1,7 @@
 # grokbox
 
+[English](./README.md) | [中文](./README.zh-CN.md)
+
 Unofficial CLI and control plane for operating Grok Bot cloud computers from
 inside or outside the box. The canonical command is `grokbox`; `gbox` is an
 exact alias.
@@ -191,10 +193,7 @@ their accounts and environments.
 
 ```bash
 bun install --frozen-lockfile
-bun run typecheck
-bun test
-bun run verify:package
-bun run release:check
+bun run check
 ```
 
 The package test builds and packs locally, installs into an isolated system
@@ -202,7 +201,10 @@ Trash fixture, verifies both aliases under Node, checks the exact package
 allowlist, and confirms project and third-party licenses are present. The
 release-candidate workflow builds a downloadable artifact only. Exact version
 tags publish through the separate OIDC Trusted Publishing workflow with npm
-provenance; prereleases use the `next` dist-tag.
+provenance; prereleases use `next`, stable versions use `latest`, and a GitHub
+Release is created only after registry readback succeeds. See the
+[release runbook](docs/maintainers/release.md); local release commands only
+precheck and push an immutable tag, never publish from the maintainer machine.
 
 Real external validation is intentionally separate and requires explicitly
 injected authorized targets. Set `GROKBOX_EXTERNAL_PACKAGE` to an exact registry

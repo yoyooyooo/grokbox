@@ -20,9 +20,7 @@ Requirements: Bun 1.3.14 and Node.js 20 or newer.
 
 ```bash
 bun install --frozen-lockfile
-bun run typecheck
-bun test
-bun run verify:package
+bun run check
 ```
 
 Use fake providers for writes. Real-provider validation requires explicit
@@ -38,7 +36,7 @@ owner authorization and must retain only bounded, redacted evidence.
 - Record platform and dependency reality: fake, local-real, or external-real.
 - Do not broaden Gateway, daemon, filesystem, process, Sandbox, quota, SSH, or
   Tailscale authority as an incidental change.
-- Confirm `bun run release:check` passes and the worktree contains no generated
+- Confirm `bun run check` passes and the worktree contains no generated
   package archive or credential artifact.
 
 By contributing, you agree that your contribution is licensed under the MIT
