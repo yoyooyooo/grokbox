@@ -64,7 +64,8 @@ describe("release version contract", () => {
     expect(workflow).toContain("actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0");
     expect(workflow).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
     expect(workflow).toContain("package-manager-cache: false");
-    expect(workflow).not.toContain("registry-url:");
+    expect(workflow).toContain("registry-url: https://registry.npmjs.org");
+    expect(workflow).toContain('!line.includes("_authToken")');
     expect(workflow).toContain("group: npm-publish");
     expect(workflow).toContain("cancel-in-progress: false");
     expect(workflow).toContain("Refusing to move npm channel backward");

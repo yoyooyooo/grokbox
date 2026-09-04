@@ -4,10 +4,15 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## 0.1.0-alpha.2 — Unreleased
+## 0.1.0-alpha.3 — Unreleased
 
-- Stop `actions/setup-node` from writing an empty registry `_authToken`, which
-  blocked npm Trusted Publishing OIDC and 404'd the first `0.1.0-alpha.1` publish.
+- Keep `setup-node` `registry-url` so npm knows the public registry, then strip
+  the empty `_authToken` it writes. Removing `registry-url` entirely caused
+  `ENEEDAUTH` on `v0.1.0-alpha.2` before OIDC could start.
+
+## 0.1.0-alpha.2 — 2026-09-04
+
+- Tagged as `v0.1.0-alpha.2`. npm did not accept this version.
 
 ## 0.1.0-alpha.1 — 2026-09-04
 
