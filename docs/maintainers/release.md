@@ -35,11 +35,11 @@ host validation are separate claims and must be checked separately.
 5. Enable GitHub private vulnerability reporting and required CI checks.
 
 The npm owner, repository, workflow **filename**, and environment must match
-exactly. Renaming any of them requires updating npm first. Keep `setup-node`
-`registry-url` so npm targets the public registry, then strip the empty
-`_authToken` it writes and leave `NODE_AUTH_TOKEN` unset. An empty token 404s
-the PUT; omitting the registry URL fails with `ENEEDAUTH` before OIDC starts.
-With an authenticated modern npm CLI, read back the external configuration:
+exactly. Renaming any of them requires updating npm first. The publish step
+must use a token-free npmrc: `setup-node` `registry-url` writes an empty
+`_authToken` that 404s the PUT, and a failed OIDC exchange is swallowed as
+`ENEEDAUTH`. With an authenticated modern npm CLI, read back the external
+configuration:
 
 ```bash
 npm trust list grokbox
