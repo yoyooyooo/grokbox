@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a bounded user outcome
+title: "feature: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+      description: Describe the problem and accepted result, not only a mechanism.
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Capability and trust boundary
+      description: Identify Gateway, daemon, filesystem, Job, Sandbox, quota, SSH, Tailscale, or another authority involved.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: upstream
+    attributes:
+      label: Upstream compatibility
+      options:
+        - label: I understand undocumented provider interfaces may remain experimental or be declined.
+          required: true
