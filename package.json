@@ -1,6 +1,6 @@
 {
   "name": "grokbox",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "packageManager": "bun@1.3.14",
   "description": "Unofficial CLI and control plane for Grok Bot cloud computers",
   "license": "MIT",

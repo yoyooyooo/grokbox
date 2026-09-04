@@ -28,10 +28,11 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref }}
+      # Do not set registry-url. setup-node writes an empty _authToken and npm
+      # then skips Trusted Publishing OIDC, which 404s the registry PUT.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -133,7 +134,7 @@ jobs:
           node -e "const x=require(process.argv[1]); console.log(JSON.stringify(x, null, 2))" "$RUNNER_TEMP/npm-pack.json"
       - name: Publish with npm Trusted Publishing and provenance
         if: env.NPM_ALREADY_PUBLISHED != 'true'
-        run: npm publish --access public --provenance --tag "${NPM_DIST_TAG}"
+        run: env -u NODE_AUTH_TOKEN npm publish --access public --provenance --tag "${NPM_DIST_TAG}"
       - name: Verify npm package, channel, and provenance
         shell: bash
         run: |
