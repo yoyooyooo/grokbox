@@ -10,11 +10,10 @@ This project is not affiliated with or endorsed by Anysphere, Cursor, xAI, or
 Grok Bot. Grok Bot, Cursor, and related names identify compatible products and
 remain the property of their respective owners.
 
-> **Alpha:** current source is `0.1.0-alpha.5` and has not been published yet.
-> npm's `next` dist-tag currently points to `0.1.0-alpha.0`; `0.0.1` is an
-> earlier unsupported snapshot. `v0.1.0-alpha.1` through `v0.1.0-alpha.4` exist
-> as Git tags only. Prereleases publish only after release checks and explicitly
-> scoped external acceptance.
+> **Alpha:** current source is `0.1.0-alpha.6`. npm `next` currently points to
+> `0.1.0-alpha.5`; `0.0.1` remains `latest`. `v0.1.0-alpha.1` through
+> `v0.1.0-alpha.4` exist as Git tags only. Prereleases publish only after
+> release checks and explicitly scoped external acceptance.
 
 ## What it does
 

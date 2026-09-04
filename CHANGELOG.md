@@ -4,11 +4,16 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## 0.1.0-alpha.5 — Unreleased
+## 0.1.0-alpha.6 — Unreleased
 
+- Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
+  `repository` field from the `0.1.0-alpha.5` web publish.
+
+## 0.1.0-alpha.5 — 2026-09-04
+
+- Published to npm `next` via web 2FA without GitHub provenance.
 - Set the GitHub Actions workflow `name` to `publish.yml` so the OIDC `workflow`
-  claim matches the Trusted Publisher filename. `v0.1.0-alpha.4` reached npm's
-  OIDC exchange and was rejected with `package not found`.
+  claim matches the Trusted Publisher filename.
 
 ## 0.1.0-alpha.4 — 2026-09-04
 

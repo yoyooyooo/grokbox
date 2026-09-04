@@ -6,7 +6,7 @@
 
 本项目与 Anysphere、Cursor、xAI 或 Grok Bot 没有隶属或背书关系。Grok Bot、Cursor 及相关名称仅用于标识兼容产品，其权利归各自所有者。
 
-> **Alpha：** 当前源码版本是 `0.1.0-alpha.5`，尚未发布。npm 的 `next` dist-tag 目前指向 `0.1.0-alpha.0`；`0.0.1` 是更早且不再支持的快照。`v0.1.0-alpha.1` 到 `v0.1.0-alpha.4` 只存在于 Git tag。只有通过发布检查及明确范围的外部验收后，才会发布新的预发布版本。
+> **Alpha：** 当前源码版本是 `0.1.0-alpha.6`。npm 的 `next` dist-tag 目前指向 `0.1.0-alpha.5`；`0.0.1` 仍是 `latest`。`v0.1.0-alpha.1` 到 `v0.1.0-alpha.4` 只存在于 Git tag。只有通过发布检查及明确范围的外部验收后，才会发布新的预发布版本。
 
 ## 它能做什么
 
