@@ -4,7 +4,12 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## 0.1.0-alpha.1 — Unreleased
+## 0.1.0-alpha.2 — Unreleased
+
+- Stop `actions/setup-node` from writing an empty registry `_authToken`, which
+  blocked npm Trusted Publishing OIDC and 404'd the first `0.1.0-alpha.1` publish.
+
+## 0.1.0-alpha.1 — 2026-09-04
 
 - Remove machine-local evidence and private planning history from the public tree.
 - Generalize contributor documentation and synthetic test identities.
@@ -12,6 +17,7 @@ when upstream Grok Bot or Cursor internals change.
 - Add an aggregate local check, exact-main release precheck, immutable tag push,
   registry/provenance readback, and post-publish GitHub Release automation.
 - Add a maintained Simplified Chinese README and dependency update policy.
+- Tagged as `v0.1.0-alpha.1`. npm did not accept this version.
 
 ## 0.1.0-alpha.0 — 2026-09-04
 
