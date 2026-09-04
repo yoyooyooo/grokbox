@@ -61,7 +61,7 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "commander": "^14.0.0",
+    "commander": "^15.0.0",
     "@types/bun": "^1.2.21",
     "@types/node": "^26.4.0",
     "esbuild": "^0.28.2",
