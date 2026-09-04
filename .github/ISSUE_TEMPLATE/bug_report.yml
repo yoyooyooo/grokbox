@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a sanitized, reproducible grokbox defect
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never include credentials, private addresses, provider bodies, prompts, transcripts, Memory, or file contents. Security issues belong in private vulnerability reporting.
+  - type: input
+    id: version
+    attributes:
+      label: grokbox version or commit
+      placeholder: 0.1.0-alpha.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Runtime platform
+      options: [Linux client, Linux box daemon, macOS client, Other or unsupported]
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+      description: Include sanitized output and the first failing boundary.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use fake values and state whether dependencies were fake, local-real, or external-real.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed all credentials, private infrastructure identifiers, and product/user content.
+          required: true
+        - label: This is not an unpatched security vulnerability.
+          required: true

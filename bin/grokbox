@@ -1,0 +1,13 @@
+#!/usr/bin/env node
+import {
+  RUNTIME_UNSUPPORTED_EXIT_CODE,
+  runtimeUnsupportedEnvelope,
+  supportsNodeRuntime,
+} from "./runtime.js";
+
+if (!supportsNodeRuntime(process.versions.node)) {
+  process.stderr.write(`${JSON.stringify(runtimeUnsupportedEnvelope(process.versions.node))}\n`);
+  process.exitCode = RUNTIME_UNSUPPORTED_EXIT_CODE;
+} else {
+  await import("../dist/index.js");
+}
