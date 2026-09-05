@@ -18,8 +18,10 @@ describe("managed PromptSession contract", () => {
     expect(handle.fullStream).toBeDefined();
     expect(typeof handle.response.then).toBe("function");
     const fromStream: string[] = [];
+    const finishes: StreamPart[] = [];
     for await (const part of handle.fullStream) {
       if (part.type === "text-delta") fromStream.push(part.textDelta);
+      if (part.type === "finish") finishes.push(part);
     }
     const response = await handle.response;
     const usage = await handle.usage;
@@ -27,6 +29,12 @@ describe("managed PromptSession contract", () => {
     expect(response.modelId).toBe("fake/main");
     expect(response.messages[0]?.content).toBe("hello");
     expect(usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+    expect(finishes[0]).toMatchObject({
+      type: "finish",
+      reason: "stop",
+      finishReason: "stop",
+      response: { modelId: "fake/main", messages: [{ role: "assistant", content: "hello" }] },
+    });
     const again: StreamPart[] = [];
     for await (const part of handle.fullStream) again.push(part);
     expect(again.some((part) => part.type === "text-delta")).toBe(true);

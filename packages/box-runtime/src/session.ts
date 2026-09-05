@@ -1,7 +1,15 @@
+export type FinishReason = "stop" | "error" | "abort";
+
 export type StreamPart =
   | { type: "text-delta"; textDelta: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; args: unknown }
-  | { type: "finish"; reason: "stop" | "error" | "abort" };
+  | {
+      type: "finish";
+      reason: FinishReason;
+      finishReason?: FinishReason;
+      usage?: HostUsage;
+      response?: HostResponse;
+    };
 
 export type SessionMessage = {
   role: "assistant";
@@ -246,16 +254,30 @@ function messagesFromParts(parts: StreamPart[]): SessionMessage[] {
   return [message];
 }
 
+function withHostFinish(parts: StreamPart[], modelId: string, usage: HostUsage): StreamPart[] {
+  const messages = messagesFromParts(parts);
+  return parts.map((part) => {
+    if (part.type !== "finish") return part;
+    return {
+      ...part,
+      finishReason: part.finishReason ?? part.reason,
+      usage: part.usage ?? usage,
+      response: part.response ?? { modelId, messages },
+    };
+  });
+}
+
 function settledHandle(
   modelId: string,
   parts: StreamPart[],
   usage = { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
 ): StreamHandle {
-  const copy = [...parts];
+  const normalized = normalizeHostUsage(usage);
+  const copy = withHostFinish([...parts], modelId, normalized);
   return {
     fullStream: iterableFromParts(copy),
     response: Promise.resolve({ modelId, messages: messagesFromParts(copy) }),
-    usage: Promise.resolve(normalizeHostUsage(usage)),
+    usage: Promise.resolve(normalized),
   };
 }
 
@@ -286,10 +308,10 @@ function failedHandle(
   if (error.toolCallIds && error.toolCallIds.length > 0) {
     message.toolCalls = error.toolCallIds.map((id) => ({ id, name: "", args: {} }));
   }
+  const handle = settledHandle(modelId, [terminal], { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
   return {
-    fullStream: iterableFromParts([terminal]),
+    ...handle,
     response: Promise.resolve({ modelId, messages: [message] }),
-    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
   };
 }
 
