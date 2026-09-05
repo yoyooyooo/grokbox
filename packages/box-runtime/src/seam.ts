@@ -129,11 +129,32 @@ function agentIdOf(args: { agentId?: string; sessionOptions?: unknown }): string
   return typeof value === "string" ? value : undefined;
 }
 
+function emptyFullStream(): AsyncIterable<StreamPart> {
+  return {
+    async *[Symbol.asyncIterator]() {},
+  };
+}
+
+function deferredHandle(handle: StreamHandle | Promise<StreamHandle>, responseOnly: boolean): StreamHandle {
+  const resolved = Promise.resolve(handle);
+  return {
+    // Text-only stub answers live in response.messages. An empty Host-facing
+    // stream lets duplicateStream close before either backpressured fork reads.
+    fullStream: responseOnly
+      ? emptyFullStream()
+      : {
+          async *[Symbol.asyncIterator]() {
+            yield* (await resolved).fullStream;
+          },
+        },
+    response: resolved.then((value) => value.response),
+    usage: resolved.then((value) => value.usage),
+  };
+}
+
 function idleStreamHandle(modelId: string): StreamHandle {
   return {
-    fullStream: {
-      async *[Symbol.asyncIterator]() {},
-    },
+    fullStream: emptyFullStream(),
     response: Promise.resolve({ modelId, messages: [{ role: "assistant", content: "" }] }),
     usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
   };
@@ -159,13 +180,14 @@ function isOrdinaryMain(sessionOptions: unknown, agentId: string | undefined): b
 }
 
 function errorSession(modelId: string): HostPromptSession {
+  const inner = createManagedPromptSession({
+    modelId,
+    vision: false,
+    parallel: "allow",
+    parts: [{ type: "finish", reason: "error" }],
+  });
   return asHostPromptSession(
-    createManagedPromptSession({
-      modelId,
-      vision: false,
-      parallel: "allow",
-      parts: [{ type: "finish", reason: "error" }],
-    }),
+    { stream: (request) => deferredHandle(inner.stream(request), true) },
     modelId,
   );
 }
@@ -271,6 +293,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
       return existing.session;
     }
     const driver = config.driver!;
+    const responseOnly = !driver.parts.some((part) => part.type === "tool-call");
 
     const onTerminal = (terminal: SessionTerminal): void => {
       const current = invocations.get(invocationId);
@@ -292,12 +315,11 @@ export function createSessionSeam(config: SessionSeamConfig) {
         if (state.dispatched) return idleStreamHandle(modelId);
         if (request?.abortSignal?.aborted) {
           state.dispatched = true;
-          return abortHandle(modelId, onTerminal);
+          return deferredHandle(abortHandle(modelId, onTerminal), responseOnly);
         }
         state.dispatched = true;
         if (driver.submit) {
-          const processing = (async () => {
-            let handle: StreamHandle;
+          const processing = (async (): Promise<StreamHandle> => {
             try {
               const result = await driver.submit!({
                 invocationId,
@@ -306,29 +328,16 @@ export function createSessionSeam(config: SessionSeamConfig) {
                 abortSignal: request?.abortSignal,
               });
               driver.dispatches += result.dispatched ? 1 : 0;
-              handle = handleFromParts(modelId, result.parts, request, onTerminal);
+              return handleFromParts(modelId, result.parts, request, onTerminal);
             } catch {
               driver.dispatches += 1;
-              handle = handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
+              return handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
             }
-            const [response, usage] = await Promise.all([handle.response, handle.usage]);
-            const parts: StreamPart[] = [];
-            for await (const part of handle.fullStream) parts.push(part);
-            return { parts, response, usage };
           })();
-          return {
-            fullStream: {
-              async *[Symbol.asyncIterator]() {
-                const result = await processing;
-                for (const part of result.parts) yield part;
-              },
-            },
-            response: processing.then((result) => result.response),
-            usage: processing.then((result) => result.usage),
-          };
+          return deferredHandle(processing, responseOnly);
         }
         driver.dispatches += 1;
-        return inner.stream(request);
+        return deferredHandle(inner.stream(request), responseOnly);
       },
     };
 

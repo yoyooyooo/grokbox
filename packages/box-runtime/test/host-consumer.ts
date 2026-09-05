@@ -1,5 +1,6 @@
 import type {
   HostPromptSession,
+  HostResponse,
   HostStreamResult,
   PromptSession,
   StreamHandle,
@@ -22,6 +23,24 @@ export const SEAM_STOP_PARTS: StreamPart[] = [
   { type: "text-delta", textDelta: "fixture-final-response" },
   { type: "finish", reason: "stop" },
 ];
+
+function hasMeaningfulContentPart(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return false;
+  const part = value as { type?: unknown; text?: unknown };
+  if (part.type === "text" || part.type === "reasoning") {
+    return typeof part.text === "string" && part.text.trim().length > 0;
+  }
+  return part.type === "tool-call" || part.type === "file";
+}
+
+/** Mirrors the Host gate immediately before an empty response is synthesized. */
+export function hasMeaningfulResponseMessageContent(messages: HostResponse["messages"]): boolean {
+  return messages.some((message) => {
+    if (message.role !== "assistant") return false;
+    if (typeof message.content === "string") return message.content.trim().length > 0;
+    return message.content.some(hasMeaningfulContentPart);
+  });
+}
 
 async function consumeHandle(handle: StreamHandle | HostStreamResult): Promise<HostSideEffectVector> {
   const seen = new Set<string>();
@@ -52,9 +71,7 @@ async function consumeHandle(handle: StreamHandle | HostStreamResult): Promise<H
   try {
     const response = await handle.response;
     response.modelId.trim();
-    response.messages.some((message) => message.role === "assistant");
-    const content = response.messages[0]?.content;
-    if (typeof content === "string" && content.length > 0) {
+    if (hasMeaningfulResponseMessageContent(response.messages)) {
       finalDeliveryCount = 1;
       transcriptEntryDelta += 1;
       transcriptSequenceDelta += 1;
@@ -114,54 +131,95 @@ export async function collectStreamParts(stream: AsyncIterable<StreamPart>): Pro
   return parts;
 }
 
+type PendingReader<T> = {
+  resolve: (result: IteratorResult<T>) => void;
+  reject: (error: unknown) => void;
+};
+
 type WriterFork<T> = {
   write: (value: T) => Promise<void>;
   close: () => void;
+  fail: (error: unknown) => void;
   iterable: AsyncIterable<T>;
 };
 
+/** Test copy of the Host's backpressured createWritableIterable contract. */
 function createWritableIterable<T>(): WriterFork<T> {
-  let pending: { value: T; taken: () => void } | undefined;
+  const readQueue: PendingReader<T>[] = [];
+  const writeQueue: T[] = [];
   let closed = false;
-  let waitingRead: ((result: IteratorResult<T>) => void) | undefined;
+  let failure: unknown;
+  let nextResolve: () => void = () => {};
+  let nextReject: (error: unknown) => void = () => {};
 
-  return {
+  const createNextPromise = (): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      nextResolve = resolve;
+      nextReject = reject;
+    });
+  let nextPromise = createNextPromise();
+  void nextPromise.catch(() => {});
+
+  const drainReads = (result: IteratorResult<T>, error?: unknown): void => {
+    while (readQueue.length > 0) {
+      const reader = readQueue.shift()!;
+      if (error !== undefined) reader.reject(error);
+      else reader.resolve(result);
+    }
+  };
+
+  const fork: WriterFork<T> = {
     async write(value) {
-      if (waitingRead) {
-        waitingRead({ done: false, value });
-        waitingRead = undefined;
-        return;
+      if (closed) throw failure ?? new Error("WritableIterable is closed");
+      const reader = readQueue.shift();
+      if (reader) {
+        reader.resolve({ done: false, value });
+        if (readQueue.length > 0) return;
+      } else {
+        writeQueue.push(value);
       }
-      await new Promise<void>((resolve) => {
-        pending = { value, taken: resolve };
-      });
+      const waitCount = writeQueue.length + 1;
+      for (let index = 0; index < waitCount; index += 1) await nextPromise;
     },
     close() {
+      if (closed) return;
       closed = true;
-      if (waitingRead) {
-        waitingRead({ done: true, value: undefined });
-        waitingRead = undefined;
-      }
+      writeQueue.length = 0;
+      nextResolve();
+      drainReads({ done: true, value: undefined as T });
+    },
+    fail(error) {
+      if (closed) return;
+      closed = true;
+      failure = error;
+      writeQueue.length = 0;
+      nextReject(error);
+      drainReads({ done: true, value: undefined as T }, error);
     },
     iterable: {
       [Symbol.asyncIterator](): AsyncIterator<T> {
         return {
           next() {
-            if (pending) {
-              const item = pending;
-              pending = undefined;
-              item.taken();
-              return Promise.resolve({ done: false, value: item.value });
+            nextResolve();
+            nextPromise = createNextPromise();
+            void nextPromise.catch(() => {});
+            if (writeQueue.length > 0) {
+              return Promise.resolve({ done: false, value: writeQueue.shift()! });
             }
-            if (closed) return Promise.resolve({ done: true, value: undefined as T });
-            return new Promise((resolve) => {
-              waitingRead = resolve;
+            if (closed) {
+              return failure === undefined
+                ? Promise.resolve({ done: true, value: undefined as T })
+                : Promise.reject(failure);
+            }
+            return new Promise<IteratorResult<T>>((resolve, reject) => {
+              readQueue.push({ resolve, reject });
             });
           },
         };
       },
     },
   };
+  return fork;
 }
 
 /** Host duplicateStream: pump the source immediately and await write() on both forks until a reader pulls. */
@@ -174,6 +232,9 @@ export function duplicateHostStream<T>(source: AsyncIterable<T>): [AsyncIterable
         await left.write(part);
         await right.write(part);
       }
+    } catch (error) {
+      left.fail(error);
+      right.fail(error);
     } finally {
       left.close();
       right.close();

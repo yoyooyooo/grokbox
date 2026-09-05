@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { collectHostDuplicateStream } from "./host-consumer.ts";
+import { collectHostDuplicateStream, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
 import { asHostPromptSession, createManagedPromptSession, type StreamPart } from "../src/session.ts";
 
 const textParts: StreamPart[] = [
@@ -154,7 +154,10 @@ describe("managed PromptSession contract", () => {
     expect("then" in result).toBe(false);
     const response = await result.response;
     expect(response.modelId.trim()).toBe("stub/echo");
-    expect(response.messages.some((message) => message.role === "assistant")).toBe(true);
+    expect(response.messages).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "hello" }] },
+    ]);
+    expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
     expect(await result.usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
     const fromStream: string[] = [];
     for await (const part of result.fullStream) {
@@ -173,7 +176,7 @@ describe("managed PromptSession contract", () => {
     expect(session.getExecutorWithoutResolvedModelTracking()).toBe(session.getExecutor());
   });
 
-  test("Host fullStream first yield waits so a late duplicateStream reader still finishes",
+  test("Host adapter needs no producer delay when duplicateStream's second reader attaches late",
     async () => {
     const inner = createManagedPromptSession({
       modelId: "stub/echo",
@@ -186,21 +189,7 @@ describe("managed PromptSession contract", () => {
     expect(result).not.toBeInstanceOf(Promise);
     expect("then" in result).toBe(false);
 
-    let delivered = false;
-    const probe = result.fullStream[Symbol.asyncIterator]().next().then((entry) => {
-      delivered = !entry.done;
-      return entry;
-    });
-    expect(delivered).toBe(false);
-    await Promise.resolve();
-    expect(delivered).toBe(false);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    expect(delivered).toBe(false);
-
     const [innerParts, fullParts] = await collectHostDuplicateStream(result.fullStream);
-    expect(delivered).toBe(true);
-    await probe;
-
     for (const parts of [innerParts, fullParts]) {
       expect(parts.some((part) => part.type === "text-delta" && part.textDelta === "hello")).toBe(true);
       const finish = parts.find((part) => part.type === "finish");
@@ -212,5 +201,7 @@ describe("managed PromptSession contract", () => {
         response: { modelId: "stub/echo", messages: [{ role: "assistant", content: "hello" }] },
       });
     }
+    const response = await result.response;
+    expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
   });
 });

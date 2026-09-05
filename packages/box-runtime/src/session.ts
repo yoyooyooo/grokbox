@@ -11,9 +11,11 @@ export type StreamPart =
       response?: HostResponse;
     };
 
+export type SessionTextContentPart = { type: "text"; text: string };
+
 export type SessionMessage = {
   role: "assistant";
-  content: string;
+  content: string | SessionTextContentPart[];
   toolCalls?: Array<{ id: string; name: string; args: unknown }>;
 };
 
@@ -130,7 +132,10 @@ export function normalizeHostResponse(value: unknown): HostResponse {
   const record = value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const modelId = typeof record.modelId === "string" ? record.modelId : "";
   const messages = Array.isArray(record.messages)
-    ? (record.messages as SessionMessage[])
+    ? (record.messages as SessionMessage[]).map((message) => {
+        if (typeof message.content !== "string" || message.content.length === 0) return message;
+        return { ...message, content: [{ type: "text" as const, text: message.content }] };
+      })
     : emptyAssistantMessages();
   return { modelId, messages: messages.length > 0 ? messages : emptyAssistantMessages() };
 }
@@ -145,34 +150,10 @@ function toExtendedUsage(usage: HostUsage): ExtendedUsage {
   };
 }
 
-/** Live Host UI fork can attach later than one macrotask; 0ms still deadlocked. */
-const HOST_FULL_STREAM_FIRST_YIELD_MS = 50;
-
-function afterHostReaderAttachTick(): Promise<void> {
-  // Host duplicateStream() starts consuming on this tick and await-writes both
-  // forks. Yielding before both readers attach deadlocks write(). A microtask
-  // and setTimeout(0) were not enough on live Host; hold the first Host-facing
-  // yield so the later UI fork can subscribe. stream() stays sync; response/
-  // usage waiters do not tee onto fullStream.
-  return new Promise((resolve) => {
-    setTimeout(resolve, HOST_FULL_STREAM_FIRST_YIELD_MS);
-  });
-}
-
 function iterableFromParts(parts: readonly StreamPart[]): AsyncIterable<StreamPart> {
   return {
     async *[Symbol.asyncIterator]() {
-      await afterHostReaderAttachTick();
       for (const part of parts) yield part;
-    },
-  };
-}
-
-function deferHostFullStream(source: AsyncIterable<StreamPart>): AsyncIterable<StreamPart> {
-  return {
-    async *[Symbol.asyncIterator]() {
-      await afterHostReaderAttachTick();
-      yield* source;
     },
   };
 }
@@ -180,7 +161,7 @@ function deferHostFullStream(source: AsyncIterable<StreamPart>): AsyncIterable<S
 export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown): HostStreamResult {
   const usage = handle.usage.then(normalizeHostUsage);
   return {
-    fullStream: deferHostFullStream(handle.fullStream),
+    fullStream: handle.fullStream,
     response: handle.response.then(normalizeHostResponse),
     usage,
     extendedUsage: usage.then(toExtendedUsage),

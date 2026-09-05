@@ -18,7 +18,13 @@ import {
 } from "../src/modeld-ipc.ts";
 import { applyPatchProfile, profileFromSource, ROUTE_SESSION_SYMBOL } from "../src/transform.ts";
 import { createManagedPromptSession, type HostPromptSession, type PromptSession } from "../src/session.ts";
-import { collectHostDuplicateStream, consumeHostSession as consumeHost, SEAM_STOP_PARTS } from "./host-consumer.ts";
+import {
+  collectStreamParts,
+  consumeHostSession as consumeHost,
+  duplicateHostStream,
+  hasMeaningfulResponseMessageContent,
+  SEAM_STOP_PARTS,
+} from "./host-consumer.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
@@ -203,7 +209,10 @@ describe("stub route synthetic compile/load", () => {
       expect("then" in result).toBe(false);
       const response = await result.response;
       expect(response.modelId.trim()).toBe(STUB_ECHO_MODEL_ID);
-      expect(response.messages.some((message) => message.role === "assistant")).toBe(true);
+      expect(response.messages).toEqual([
+        { role: "assistant", content: [{ type: "text", text: "echo" }] },
+      ]);
+      expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
       expect(await result.usage).toEqual({
         promptTokens: 1,
         completionTokens: 1,
@@ -213,7 +222,7 @@ describe("stub route synthetic compile/load", () => {
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") fromStream.push(part.textDelta);
       }
-      expect(fromStream).toEqual(["echo"]);
+      expect(fromStream).toEqual([]);
       expect(await result.extendedUsage).toMatchObject({ inputTokens: 1, outputTokens: 1, maxTokens: 0 });
       expect(await result.invocationId).toBe("inv-shape");
 
@@ -233,7 +242,7 @@ describe("stub route synthetic compile/load", () => {
     }
   });
 
-  test("route fullStream still finishes both duplicateStream forks when the second reader attaches after 20ms",
+  test("response-only route reaches a meaningful response before duplicateStream's second reader attaches",
     async () => {
     const { durable, runRoot } = await roots();
     const server = await startStubModeldServer({ runRoot });
@@ -249,32 +258,21 @@ describe("stub route synthetic compile/load", () => {
       expect(result).not.toBeInstanceOf(Promise);
       expect("then" in result).toBe(false);
 
-      let delivered = false;
-      const probe = result.fullStream[Symbol.asyncIterator]().next().then((entry) => {
-        delivered = !entry.done;
-        return entry;
-      });
-      expect(delivered).toBe(false);
-      await Promise.resolve();
-      expect(delivered).toBe(false);
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      expect(delivered).toBe(false);
+      const [inner, late] = duplicateHostStream(result.fullStream);
+      const [innerParts, response] = await Promise.all([
+        collectStreamParts(inner),
+        result.response,
+      ]);
+      expect(innerParts).toEqual([]);
 
-      const [innerParts, fullParts] = await collectHostDuplicateStream(result.fullStream);
-      expect(delivered).toBe(true);
-      await probe;
-
-      for (const parts of [innerParts, fullParts]) {
-        expect(parts.some((part) => part.type === "text-delta" && part.textDelta === "echo")).toBe(true);
-        const finish = parts.find((part) => part.type === "finish");
-        expect(finish).toMatchObject({
-          type: "finish",
-          reason: "stop",
-          finishReason: "stop",
-          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-          response: { modelId: STUB_ECHO_MODEL_ID, messages: [{ role: "assistant", content: "echo" }] },
-        });
-      }
+      // Attach the second fork only after the Host can settle its model response.
+      const fullParts = await collectStreamParts(late);
+      expect(fullParts).toEqual([]);
+      expect(response.messages).toEqual([
+        { role: "assistant", content: [{ type: "text", text: "echo" }] },
+      ]);
+      expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
+      expect(await result.invocationId).toBe("inv-dup");
     } finally {
       await server.stop();
     }
