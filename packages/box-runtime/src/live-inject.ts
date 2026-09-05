@@ -128,8 +128,46 @@ const BLOCKED: LiveIdentityResult = {
   coverage: "none",
 };
 
-export async function runLiveIdentityInject(_input?: { root: string; preloadPath: string }): Promise<LiveIdentityResult> {
-  return { ...BLOCKED };
+export async function runLiveIdentityInject(input?: {
+  root: string;
+  preloadPath: string;
+  reviewedProfilePath?: string;
+  ephemeralRoot?: string;
+}): Promise<LiveIdentityResult> {
+  if (!input?.preloadPath || !input.reviewedProfilePath) {
+    return { ...BLOCKED };
+  }
+  const { runH3LiveIdentitySession } = await import("./h3-live.ts");
+  const session = await runH3LiveIdentitySession({
+    ephemeralRoot: input.ephemeralRoot ?? input.root,
+    reviewedProfilePath: input.reviewedProfilePath,
+    preloadPath: input.preloadPath,
+  });
+  if (!session.injected) {
+    return {
+      ok: false,
+      recoveryRequired: false,
+      code: session.preflight.code ?? "live-preflight",
+      diskShaBefore: session.preflight.diskSha,
+      diskShaAfter: session.preflight.diskSha,
+      census: session.preflight.census,
+      coverage: "none",
+    };
+  }
+  const result = session.deactivate ?? session.inject;
+  if (!result) {
+    return { ...BLOCKED, code: "live-preflight" };
+  }
+  return {
+    ok: result.ok,
+    recoveryRequired: result.recoveryRequired,
+    code: result.code,
+    diskShaBefore: result.diskShaBefore,
+    diskShaAfter: result.diskShaAfter,
+    census: result.census,
+    coverage: result.coverage,
+    hostPid: result.host?.pid,
+  };
 }
 
 export async function runLiveIdentityDeactivate(_input?: { root: string }): Promise<LiveIdentityResult> {

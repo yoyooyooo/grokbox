@@ -21,6 +21,10 @@ when upstream Grok Bot or Cursor internals change.
   activate remains desired-only. No live Host inject.
 - Guardian armed handshake before STOP; marker after successful compile;
   non-public H3 composition uses reviewed SHA, pickLaunchEnv, and real preload.
+- H3 uses fresh diskSha reads, identityLaunchFields for replacement env, and
+  mandatory attestation persist/read-back before coverage attested.
+- Non-public live H3 adapter fills `/proc` ports and preflights unique official
+  chain plus reviewed SHA; public `runtime activate` stays desired-only.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

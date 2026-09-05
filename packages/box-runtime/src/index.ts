@@ -27,6 +27,12 @@ export { projectStatus, projectLiveStatus, readContracts, readEvents, type Runti
 export { runIdentityChainInject, runLiveIdentityInject, runLiveIdentityDeactivate } from "./live-inject.ts";
 export { runIdentityOperation, runIdentityDeactivate, attestationAgrees } from "./identity-op.ts";
 export { runH3OfflineInject, runH3OfflineDeactivate, identityLaunchFields } from "./h3-identity.ts";
+export {
+  decideLivePreflight,
+  preflightLiveH3,
+  runH3LiveIdentitySession,
+  writeReviewedProfileFromCopy,
+} from "./h3-live.ts";
 export { pickLaunchEnv } from "./launch-env.ts";
 export { findUniqueOfficialChain, loadReviewedProfile } from "./official-chain.ts";
 export {

@@ -90,3 +90,45 @@ export function readEnviron(pid: number): Record<string, string> {
   }
   return env;
 }
+
+function forEachProcEnv(pid: number, visit: (key: string, value: string) => boolean | void): void {
+  const raw = readFileSync(`/proc/${pid}/environ`);
+  for (const item of raw.toString("utf8").split("\0")) {
+    if (!item) continue;
+    const eq = item.indexOf("=");
+    if (eq <= 0) continue;
+    const stop = visit(item.slice(0, eq), item.slice(eq + 1));
+    if (stop === false) return;
+  }
+}
+
+/** Presence-only. Does not return or retain the full environ map. */
+export function procEnvHas(pid: number, key: string, valueNeedle?: string): boolean {
+  let found = false;
+  try {
+    forEachProcEnv(pid, (name, value) => {
+      if (name !== key) return;
+      found = valueNeedle == null ? true : value.includes(valueNeedle);
+      return false;
+    });
+  } catch {
+    return false;
+  }
+  return found;
+}
+
+/** Copies only the named keys. Never materializes the rest of `/proc/environ`. */
+export function readNamedProcEnv(pid: number, keys: readonly string[]): Record<string, string> {
+  const wanted = new Set(keys);
+  const env: Record<string, string> = {};
+  try {
+    forEachProcEnv(pid, (name, value) => {
+      if (!wanted.has(name) || value.length === 0) return;
+      env[name] = value;
+      if (Object.keys(env).length >= wanted.size) return false;
+    });
+  } catch {
+    return env;
+  }
+  return env;
+}
