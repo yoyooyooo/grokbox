@@ -8,6 +8,7 @@ import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
 import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
+import { CONTROL_PLANE_EVENT_RETENTION, TURN_SEAM_TERMINAL_RETENTION } from "./events.ts";
 import { contractsDir, eventsPath } from "./paths.ts";
 import { countRoles, type ProcessPort } from "./process.ts";
 
@@ -168,7 +169,10 @@ export function projectStatus(input: {
   };
 }
 
-export async function readEvents(root: string, limit = 256): Promise<unknown[]> {
+export async function readEvents(
+  root: string,
+  limit = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION,
+): Promise<unknown[]> {
   let text: string;
   try {
     text = await readFile(eventsPath(root), "utf8");

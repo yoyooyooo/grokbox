@@ -39,6 +39,11 @@ export type VisibleFailure = {
   toolCallIds?: string[];
 };
 
+export type SessionTerminal = {
+  terminalClass: "stop" | "error" | "abort";
+  toolCallCount: number;
+};
+
 export type ManagedSessionConfig = {
   modelId: string;
   vision: boolean;
@@ -46,6 +51,7 @@ export type ManagedSessionConfig = {
   parts: StreamPart[];
   transcriptWrites?: unknown[];
   providerCalls?: { count: number };
+  onTerminal?: (terminal: SessionTerminal) => void;
 };
 
 function hasImage(request: StreamRequest | undefined): boolean {
@@ -91,7 +97,23 @@ function settledHandle(
   };
 }
 
-function failedHandle(error: VisibleFailure): StreamHandle {
+function toolCallCountFromParts(parts: StreamPart[]): number {
+  return messagesFromParts(parts).reduce((count, message) => count + (message.toolCalls?.length ?? 0), 0);
+}
+
+function notifyTerminal(onTerminal: ManagedSessionConfig["onTerminal"], produced: StreamPart[]): void {
+  if (!onTerminal) return;
+  const finish = [...produced].reverse().find((part) => part.type === "finish");
+  const terminalClass = finish && finish.type === "finish" ? finish.reason : undefined;
+  if (terminalClass !== "stop" && terminalClass !== "error" && terminalClass !== "abort") return;
+  try {
+    onTerminal({ terminalClass, toolCallCount: toolCallCountFromParts(produced) });
+  } catch {
+    /* event emission must not change the Host loop */
+  }
+}
+
+function failedHandle(error: VisibleFailure, onTerminal?: ManagedSessionConfig["onTerminal"]): StreamHandle {
   const terminal: StreamPart = { type: "finish", reason: "error" };
   const failure = Object.assign(new Error(error.message), {
     userVisible: true as const,
@@ -101,6 +123,7 @@ function failedHandle(error: VisibleFailure): StreamHandle {
   const usage = Promise.reject(failure);
   void response.catch(() => undefined);
   void usage.catch(() => undefined);
+  notifyTerminal(onTerminal, [terminal]);
   return {
     fullStream: {
       async *[Symbol.asyncIterator]() {
@@ -118,19 +141,25 @@ export function createManagedPromptSession(config: ManagedSessionConfig): Prompt
   return {
     stream(request = {}) {
       if (hasImage(request) && !config.vision) {
-        return failedHandle({
-          userVisible: true,
-          message: "Configured model does not accept images.",
-        });
+        return failedHandle(
+          {
+            userVisible: true,
+            message: "Configured model does not accept images.",
+          },
+          config.onTerminal,
+        );
       }
 
       const toolIds = collectToolIds(config.parts);
       if (toolIds.length > 1 && config.parallel === "fail-closed") {
-        return failedHandle({
-          userVisible: true,
-          message: "Parallel tool calls are not supported by the configured model.",
-          toolCallIds: toolIds,
-        });
+        return failedHandle(
+          {
+            userVisible: true,
+            message: "Parallel tool calls are not supported by the configured model.",
+            toolCallIds: toolIds,
+          },
+          config.onTerminal,
+        );
       }
 
       config.providerCalls!.count += 1;
@@ -149,6 +178,7 @@ export function createManagedPromptSession(config: ManagedSessionConfig): Prompt
         terminal = { type: "finish", reason: request.abortSignal?.aborted ? "abort" : "stop" };
       }
       if (produced.at(-1)?.type !== "finish") produced.push(terminal);
+      notifyTerminal(config.onTerminal, produced);
       return settledHandle(config.modelId, produced);
     },
   };

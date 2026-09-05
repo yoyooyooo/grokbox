@@ -1,4 +1,4 @@
-import { appendEvent } from "./events.ts";
+import { appendEvent, compactEvents } from "./events.ts";
 import { hashSource, pruneGenerations, readGeneration, readHead, snapshotContracts } from "./contracts.ts";
 import { signalIfMatch, type ProcessIdentity, type ProcessPort } from "./process.ts";
 
@@ -113,6 +113,8 @@ export async function observeAndHeal(input: {
     }
     attestation = null;
   }
+
+  await compactEvents(input.root);
 
   return {
     attestation,
