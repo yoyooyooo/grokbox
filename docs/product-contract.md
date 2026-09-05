@@ -461,11 +461,11 @@ Daemon 默认只监听 Unix socket或 `127.0.0.1`。远程暴露优先由 Tailsc
 
 Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。
 
-配置根为 `~/.grokbox/box-runtime/`（不得占用已用于 CLI 安装的 `~/.grokbox/runtime/`）。`models.json` 的凭据字段只接受现有 SecretRef 的 `env:<NAME>` 与 `file:/absolute/path`；literal secret 与 `$VAR` interpolation 为 schema error。Unix socket：`$XDG_RUNTIME_DIR/grokbox/modeld.sock`，fallback `~/.grokbox/run/modeld.sock`。
+长效根为 `/workspace/.grokbox/box-runtime/`（配置、PatchProfile、合同切片、事件日志；云电脑重置不丢）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。现有 grokbox Profile 仍在 `~/.grokbox`，本次不搬家。`models.json` 的凭据字段只接受 `env:<NAME>` 与 `file:/absolute/path`；`file:` 放长效树 `secrets/`；literal secret 与 `$VAR` 为 schema error。短效 Unix socket：`$XDG_RUNTIME_DIR/grokbox/modeld.sock`，fallback `~/.grokbox/run/modeld.sock`。
 
 `assignments.main` 是全盒默认。`assignments.agents.<id>` 按 Bot 覆盖（稳定 agent id；CLI 用 `--for` 解析名字）。没有覆盖的 Bot 使用默认，不是回官方。`activate --mode route` 必须已有有效 `assignments.main`。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 改默认。route 期间 `models reset`（默认或某一 Bot）拒绝，须先 `activate --mode identity` 或 `deactivate`。
 
-盒内 `~/.grokbox/box-runtime/contracts/` 保存 Host **合同切片**快照（不进 git）：仅在 live source SHA 变化时写入，最多保留 5 个 SHA，默认不存整份 `host-main.cjs`。快照用于报告切片 drift，不自动打补丁、不还原官方 Host。
+长效 `contracts/` 保存 Host **合同切片**快照（不进 git）：仅在 live source SHA 变化时写入，最多保留 5 个 SHA，默认不存整份 `host-main.cjs`。快照用于报告切片 drift，不自动打补丁、不还原官方 Host。
 
 MVP / 可发布声明的 ordinary main envelope：
 

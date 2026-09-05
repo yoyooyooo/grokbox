@@ -71,7 +71,8 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - 单正常 mutation writer = coordinator。guardian 不得 start/kill/改配置/重试注入。
 - 未知 bundle 不猜 anchor。coverage 与 watchdog.state 分开：`coverage=window-open`，`watchdog.state=degraded`，`reason=unsupported_bundle`。
 - 未补丁窗口只保证测得到 duration；无可信 turn 信号时 `affectedInvocations=unknown`。
-- 配置、release 与合同快照在 `~/.grokbox/box-runtime/`，不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
+- **长效根** `/workspace/.grokbox/box-runtime/`：配置、PatchProfile、合同切片、事件日志（云电脑重置后仍在）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
+- **短效**：socket/锁/本次注入 operation 用 `$XDG_RUNTIME_DIR/grokbox/`，fallback `~/.grokbox/run/`。
 - 不新建独立 npm package；一个源码模块、多个 entry。
 - PatchProfile 含两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId`。任一处锚点不唯一即拒绝。
 
@@ -81,7 +82,7 @@ Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制�
 
 ## 5. 模型运行时
 
-- `~/.grokbox/box-runtime/models.json`；`apiKeyRef` 仅为 `env:<NAME>` 或 `file:/absolute/path`。
+- `/workspace/.grokbox/box-runtime/models.json`；`apiKeyRef` 仅为 `env:<NAME>` 或 `file:/absolute/path`（`file:` 也放长效树下的 `secrets/`，不进 git）。
 - `assignments.main` 是全盒默认；`assignments.agents.<id>` 按 Bot 覆盖。键用稳定 agent id；CLI 在盒内解析名字。省略 `--for` 的 `models use` 改默认。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。
 - turn 钉住该 Bot 的 immutable resolved-config **和 credential fingerprint**，直到 terminal 或 idle TTL；不在 turn 内 refresh/换账户。改 Jerry 不影响 Tom 正在跑的回合。
 - modeld 有 generation-scoped 内存 registry（id → fingerprint + state + terminal）。`status` 不对账续传正文。disconnect → abort + unknown。duplicate submit 不重新 dispatch。
@@ -117,7 +118,7 @@ managed 一旦对供应商出门，失败不得静默回官方或换 provider。
 只存合同切片，默认不缓存 28MB 整包：
 
 ```text
-~/.grokbox/box-runtime/contracts/
+/workspace/.grokbox/box-runtime/contracts/
   HEAD                         当前已观察的 sourceSha（一行）
   generations/<sourceSha>/
     meta.json                  sourceSha、bytes、hostVersion、observedAt、切片 SHA、相对上一份的 drift、可选 matchedProfileId
@@ -189,7 +190,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 注入结束普查：恰好 1 wrapper + 1 supervisor + 1 Host
 - 停掉我们记下身份的临时 supervisor / 到期 guardian；对不上身份则停手
 - `stale-patched`：对签过字且身份仍过的那一个 Host PID 发一次 SIGTERM，让官方用当前磁盘拉未补丁进程；失败一次即 degraded
-- 有界 ndjson（`~/.grokbox/box-runtime/log/events.ndjson`，白名单字段）
+- 有界 ndjson（`/workspace/.grokbox/box-runtime/log/events.ndjson`，白名单字段）
 
 认不出的多余进程 **不自动杀**。
 

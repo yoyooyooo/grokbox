@@ -49,7 +49,7 @@ external Sandbox adapter / keeper
 | keeper process state | external keeper state store and observed provider result |
 | desired box-runtime activation | box-local runtime activation use case |
 | Host patch coverage | generation-bound attestation + watchdog observation |
-| `assignments.main` / models catalog | Box-local `~/.grokbox/box-runtime/models.json` |
+| `assignments.main` / models catalog | durable `/workspace/.grokbox/box-runtime/models.json` |
 | provider secret | modeld-only SecretRef resolution (`env:` / `file:`) |
 | Host desired liveness | official wrapper/supervisor |
 
@@ -327,11 +327,15 @@ Accepted ownership, not an implementation completion claim. Product obligations 
 
 ```text
 src/box-runtime/     helpers when the slice lands (not a second published package)
-~/.grokbox/box-runtime/
-  models.json
-  releases/ state/
-  contracts/HEAD + generations/<sourceSha>/   Host contract slices, not full bundle
-$XDG_RUNTIME_DIR/grokbox/modeld.sock
+
+/workspace/.grokbox/box-runtime/          durable (survives box reset; not git)
+  models.json  profiles/  contracts/  log/events.ndjson  secrets/
+
+$XDG_RUNTIME_DIR/grokbox/                 ephemeral sockets/locks
+  modeld.sock
+  fallback ~/.grokbox/run/modeld.sock
+
+~/.grokbox/runtime/                       CLI install only; do not mix
 ```
 
 Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. It does not inject an unknown bundle, cache rolling full `host-main.cjs`, or write git. Keep at most 5 SHAs, never deleting the live SHA or the last SHA that matched a PatchProfile.
