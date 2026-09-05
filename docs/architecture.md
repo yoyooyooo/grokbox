@@ -333,8 +333,8 @@ PatchProfile includes two exact slices: `createSession` hook and `mainSessionOpt
 Composition roots:
 
 - `grokbox` CLI: box-local **Agent-first** runtime commands (`activate`/`deactivate`/`models`/`status`/`log`/`contracts`); `--profile` is invalid. No inject/heal/kill. Future in-box WebUI reuses these use cases. Public `activate` stays desired-only.
-- `runtime re-adopt --confirm`: explicit one-shot into the same coordinator / transient-adopt. Missing `--confirm` refuses before process preflight. Not a loop, daemon, or second writer.
-- `runtime watchdog run`: single process-mutation coordinator + operation file, and the owner of future automatic reconciliation. Guardian is the sole emergency exception: idempotent `SIGCONT` of an exact frozen wrapper.
+- `runtime re-adopt --confirm`: the only public CLI composition root with live Host adopt authority. It loads the durable reviewed profile and wires writable process/adopt ports into the shared coordinator. Missing `--confirm` or a non-local context refuses before live ports. Matching canonical identity + `attestation.diskSha === liveDiskSha()` is a zero-signal no-op. Ownership that still matches while the SHA is stale (`reason=stale_attestation`) admits one manual deactivate→official→transient-adopt. Not a loop, daemon, or second writer.
+- `runtime watchdog run`: single process-mutation coordinator + operation file, and the owner of future automatic reconciliation. This slice does not wire `processes`, `adopt`, or `reviewedProfile` mutation ports; it cannot automatically replace a live Host. Guardian is the sole emergency exception: idempotent `SIGCONT` of an exact frozen wrapper.
 - `runtime modeld run`: config, one driver, credentials, generation-scoped invocation registry. Provider effect waits for committed attestation or bounded timeout.
 - Host preload: exact SHA transform and route hook. Does not read `models.json` or attestation files.
 - existing `daemon serve`: no default runtime mutation capability.
@@ -343,7 +343,8 @@ Composition roots:
 H3 topology:
 
 - `direct-launch` / `direct-overlay`: `findUniqueOfficialChain` — unique wrapper+supervisor+Host and supervisor-born Host (`host.ppid === supervisor.pid`). Do not weaken this finder to pass adoption.
-- `transient-adopt`: `findAdoptedHostState` — logical adoption of a surviving Host. Success is **not** `host.ppid === supervisor.pid`. Evidence is a singleton wrapper/supervisor/Host, wrapper-owned supervisor, gateway pid agreement, stable Host identity, temp supervisor gone, adopting supervisor unpreloaded, disk SHA unchanged, attestation `launchMode: "transient-adopt"`.
+- Canonical ownership is identity + singleton topology against the grokbox attestation; patch freshness is `attestation.diskSha === liveDiskSha()`. Freshness mismatch does not erase exact ownership (`origin=grokbox-attested`, `reason=stale_attestation`). Identity/census/gateway/topology/attestation mismatch stays `grokbox-unattested`/`ambiguous`.
+- `transient-adopt`: `findAdoptedHostState` — logical adoption of a surviving Host. Success is **not** `host.ppid === supervisor.pid`. Evidence is a singleton wrapper/supervisor/Host, wrapper-owned supervisor, gateway pid agreement, stable Host identity, temp supervisor gone, adopting supervisor unpreloaded, disk SHA unchanged, attestation `launchMode: "transient-adopt"`. Mutation preflight still uses this finder; do not weaken `findUniqueOfficialChain`.
 - Current official `sand-supervisor` is not `direct-overlay`. Classify `transient-adopt-candidate` only after exact version/capability review. The live adapter may run transient-adopt after unique-chain preflight; failed preflight stays zero-signal.
 - Guardian remains SIGCONT-only on an exact frozen wrapper. The coordinator may identity-checked TERM the exact old official supervisor and the exact operation-owned temp supervisor during authorized H3. No SIGKILL of official wrapper/supervisor/Host.
 

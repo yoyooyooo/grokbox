@@ -41,3 +41,7 @@ export function eventsPath(root: string): string {
 export function contractsDir(root: string): string {
   return join(root, "contracts");
 }
+
+export function reviewedProfilePath(root: string): string {
+  return join(root, "profiles", "reviewed.json");
+}

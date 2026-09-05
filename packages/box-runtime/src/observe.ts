@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { readAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { sha256Bytes } from "./hash.ts";
-import { attestationAgrees } from "./identity-op.ts";
+import { attestationAgrees, canonicalOwnershipAgrees } from "./identity-op.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
@@ -82,6 +82,11 @@ export async function projectLiveStatus(input: {
     const touched = hosts.some((host) => namedGrokboxTouch(host.pid, envHas));
     const liveHost = hosts.length === 1 ? hosts[0]! : null;
     const att = await readAttestation(input.ephemeralRoot ?? ephemeralRuntimeRoot());
+    const ownership = canonicalOwnershipAgrees({
+      attestation: att,
+      liveHost,
+      census,
+    });
     const agrees = attestationAgrees({
       attestation: att,
       liveHost,
@@ -92,10 +97,15 @@ export async function projectLiveStatus(input: {
     let origin: HostOrigin;
     let reason: HostReason;
     let coverage: RuntimeStatus["coverage"];
-    if (touched && agrees) {
+    if (touched && ownership) {
       origin = "grokbox-attested";
-      reason = null;
-      coverage = "attested";
+      if (agrees) {
+        reason = null;
+        coverage = "attested";
+      } else {
+        reason = "stale_attestation";
+        coverage = officialCoverage(input.desired.mode);
+      }
     } else if (touched) {
       origin = "grokbox-unattested";
       reason = att ? "stale_attestation" : "unmanaged_preload";

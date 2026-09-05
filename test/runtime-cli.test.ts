@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { liveH3AdoptAdapter } from "../packages/cli/src/commands/runtime.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
@@ -28,6 +29,33 @@ async function withRoot() {
 
 function data(stdout: string): Record<string, unknown> {
   return (parseJson(stdout) as { data: Record<string, unknown> }).data;
+}
+
+function stubLiveAdoptPorts() {
+  const processes = {
+    inspect: () => null,
+    list: () => [],
+    signal: () => ({ ok: false as const, reason: "not-found" as const }),
+  };
+  return {
+    processes,
+    classify: () => null,
+    waitHostGone: async () => true,
+    supervisorRelaunch: async () => null,
+    waitReady: async () => null,
+    applyLaunchEnv: async () => undefined,
+    hasGrokboxPreload: () => false,
+    spawnTempSupervisor: async () => null,
+    waitNewHost: async () => null,
+    readGatewayPid: () => null,
+    guardianDeadlineMs: 1,
+    waitBudgetMs: 1,
+    adoptProveMs: 1,
+  };
+}
+
+function spyLiveAdoptFactory() {
+  return spyOn(liveH3AdoptAdapter, "createLiveH3AdoptPorts").mockImplementation(() => stubLiveAdoptPorts());
 }
 
 describe("box-local runtime CLI", () => {
@@ -208,18 +236,75 @@ describe("box-local runtime CLI", () => {
     expect(["converged", "pending", "blocked", "recovery-required"]).toContain(String(body.reconcile));
     expect(JSON.stringify(body)).not.toContain("ctl");
 
-    const readopt = await captureCli(["runtime", "re-adopt", "--confirm"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(readopt.code, readopt.stderr).toBe(0);
-    const readoptBody = data(readopt.stdout);
-    expect(readoptBody.process).toBe("re-adopt");
-    expect(readoptBody.confirmed).toBe(true);
-    expect(readoptBody.attempts).toBe(1);
-    expect(readoptBody.injected).toBe(false);
-    expect(readoptBody.signaled).toBe(false);
-    expect(JSON.stringify(data(activate.stdout))).not.toContain("re-adopt");
+    const spy = spyLiveAdoptFactory();
+    try {
+      const readopt = await captureCli(["runtime", "re-adopt", "--confirm"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(readopt.code, readopt.stderr).toBe(0);
+      const readoptBody = data(readopt.stdout);
+      expect(readoptBody.process).toBe("re-adopt");
+      expect(readoptBody.confirmed).toBe(true);
+      expect(readoptBody.attempts).toBe(1);
+      expect(readoptBody.injected).toBe(false);
+      expect(readoptBody.signaled).toBe(false);
+      expect(JSON.stringify(data(activate.stdout))).not.toContain("re-adopt");
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("live-adapter factory is constructed only by confirmed local re-adopt", async () => {
+    const spy = spyLiveAdoptFactory();
+    try {
+      const boxRuntimeRoot = await withRoot();
+      const missing = await captureCli(["runtime", "re-adopt"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(missing.code).toBe(2);
+      expect(spy).not.toHaveBeenCalled();
+
+      const profiled = await captureCli(["--profile", "default", "runtime", "re-adopt", "--confirm"], {
+        discoveryPath: "/dev/null",
+      });
+      expect(profiled.code).toBe(65);
+      expect(spy).not.toHaveBeenCalled();
+
+      const remote = await captureCli(["runtime", "re-adopt", "--confirm"], {
+        discoveryPath: "/dev/null",
+        sshHost: "box.example",
+      });
+      expect(remote.code).toBe(65);
+      expect(spy).not.toHaveBeenCalled();
+
+      const activate = await captureCli(["runtime", "activate", "--mode", "identity"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(activate.code, activate.stderr).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+
+      const watchdog = await captureCli(["runtime", "watchdog", "run"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(watchdog.code, watchdog.stderr).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+
+      const confirmed = await captureCli(["runtime", "re-adopt", "--confirm"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(confirmed.code, confirmed.stderr).toBe(0);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(data(confirmed.stdout).injected).toBe(false);
+      expect(data(confirmed.stdout).signaled).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("literal secrets are rejected", async () => {

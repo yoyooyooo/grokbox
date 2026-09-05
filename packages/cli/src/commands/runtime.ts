@@ -11,10 +11,14 @@ import {
   projectLiveStatus,
   readContracts,
   readEvents,
+  liveH3AdoptAdapter,
   runManualReadopt,
   runWatchdogTick,
+  wireLiveManualReadopt,
   type DesiredMode,
 } from "@grokbox/box-runtime";
+
+export { liveH3AdoptAdapter };
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { writeSuccess } from "../output.ts";
@@ -155,12 +159,14 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
       throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
     }
     const runtime = store(deps);
+    const wired = wireLiveManualReadopt({ root: runtime.root, now: deps.now });
     const result = await runManualReadopt({
       confirmed: true,
       root: runtime.root,
       desired: await runtime.loadDesired(),
       models: await runtime.loadModels(),
       now: deps.now,
+      ...wired,
     });
     writeSuccess(deps.stdout, {
       process: "re-adopt",

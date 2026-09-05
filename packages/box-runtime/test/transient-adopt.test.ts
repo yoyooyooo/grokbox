@@ -413,6 +413,58 @@ describe("transient-adopt fake tree", () => {
     expect(result.code).toBe("census-invalid");
     expect(findUniqueOfficialChain(tree, classify(tree)).ok).toBe(false);
   });
+
+  test("deactivate may relax only attestation-vs-live SHA when allowed", async () => {
+    const tree = new FakeProcessTree();
+    const wrapper = tree.spawn("wrapper");
+    const supervisor = tree.spawn("supervisor", { parent: wrapper });
+    const host = tree.spawn("host");
+    let gatewayPid: number | null = host.pid;
+    const blocked = await runTransientAdoptDeactivate({
+      processes: tree,
+      classify: classify(tree),
+      diskSha: () => "sha-live-now",
+      ephemeralRoot: await mkdtemp(join(tmpdir(), "grokbox-adopt-stale-block-")),
+      attestation: { identity: host, diskSha: "sha-old-att" },
+      waitGone: async (old) => tree.inspect(old.pid) === null,
+      waitReplacement: async () => {
+        const born = tree.spawn("host", { parent: supervisor });
+        gatewayPid = born.pid;
+        return born;
+      },
+      hasGrokboxPreload: (ident) => ident.pid === host.pid,
+      readGatewayPid: () => gatewayPid,
+      clearAttestation: async () => undefined,
+    });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.signaled).toBe(false);
+    expect(blocked.code).toBe("disk-sha-changed");
+    expect(tree.alive(host.pid)).toBe(true);
+    expect(tree.signals).toEqual([]);
+
+    const allowed = await runTransientAdoptDeactivate({
+      processes: tree,
+      classify: classify(tree),
+      diskSha: () => "sha-live-now",
+      ephemeralRoot: await mkdtemp(join(tmpdir(), "grokbox-adopt-stale-ok-")),
+      attestation: { identity: host, diskSha: "sha-old-att" },
+      waitGone: async (old) => tree.inspect(old.pid) === null,
+      waitReplacement: async () => {
+        const born = tree.spawn("host", { parent: supervisor });
+        gatewayPid = born.pid;
+        return born;
+      },
+      hasGrokboxPreload: (ident) => ident.pid === host.pid,
+      readGatewayPid: () => gatewayPid,
+      clearAttestation: async () => undefined,
+      allowStaleAttestedSha: true,
+    });
+    expect(allowed.ok).toBe(true);
+    expect(allowed.signaled).toBe(true);
+    expect(tree.alive(host.pid)).toBe(false);
+    expect(findUniqueOfficialChain(tree, classify(tree)).ok).toBe(true);
+    expect(tree.signals.some((row) => row.signal === "SIGKILL")).toBe(false);
+  });
 });
 
 describeLinux("disposable Linux orphan-adopt fixture", () => {

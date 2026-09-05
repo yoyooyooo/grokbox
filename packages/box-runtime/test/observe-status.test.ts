@@ -193,6 +193,32 @@ describe("projectLiveStatus origin/coverage matrix", () => {
     expect(status.coverage).toBe("none");
   });
 
+  test("ownership exact, diskSha mismatch → grokbox-attested stale_attestation", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const identity = await statusFor({
+      mode: "identity",
+      list: [wrapper, supervisor, host],
+      env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
+      att: attFor(host, "old-sha"),
+      diskSha: SHA,
+    });
+    expect(identity.host.origin).toBe("grokbox-attested");
+    expect(identity.host.reason).toBe("stale_attestation");
+    expect(identity.coverage).toBe("window-open");
+    expect(identity.host.diskSha).toBe(SHA);
+
+    const disabled = await statusFor({
+      mode: "disabled",
+      list: [wrapper, supervisor, host],
+      env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
+      att: attFor(host, "old-sha"),
+      diskSha: SHA,
+    });
+    expect(disabled.host.origin).toBe("grokbox-attested");
+    expect(disabled.host.reason).toBe("stale_attestation");
+    expect(disabled.coverage).toBe("none");
+  });
+
   test("canonical att agrees on grokbox-touched singleton → grokbox-attested", async () => {
     const { wrapper, supervisor, host } = officialChain();
     const status = await statusFor({

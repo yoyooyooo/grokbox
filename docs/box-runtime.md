@@ -212,7 +212,8 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 写 desired：`activate` / `deactivate` / `models *`
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
-- 显式确认一次：`re-adopt --confirm`（进入同一 coordinator / transient-adopt；不是循环，也不替代 watchdog）
+- 显式确认一次：`re-adopt --confirm`（唯一带 live adopt 权限的公开档；匹配 SHA 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt。不是循环，也不替代 watchdog）
+- 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
 
 **人 / 另一次授权**

@@ -1,13 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { clearAttestation, writeAttestation } from "./attestation.ts";
+import { clearAttestation, readAttestation, writeAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { BoxRuntimeError } from "./errors.ts";
 import { appendEvent } from "./events.ts";
 import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
 import { projectLiveStatus, type HostOrigin } from "./observe.ts";
-import type { RoleClassifier } from "./official-chain.ts";
+import { findAdoptedHostState, findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import { acquireCoordinatorLease, coordinatorLeasePath, type LeaseOwner } from "./op-lock.ts";
 import { coordinatorStatePath } from "./paths.ts";
 import { readOnlyProcessPort, type ProcessIdentity, type ProcessPort } from "./process.ts";
@@ -82,6 +82,7 @@ export type WatchdogTickInput = {
   selfLease?: LeaseOwner;
   now: () => number;
   isoNow?: () => string;
+  confirmed?: boolean;
 };
 
 const EMPTY_STATE: CoordinatorState = {
@@ -139,6 +140,234 @@ function resolveFreshSha(input: WatchdogTickInput): () => string {
   if (typeof input.diskSha === "string") return () => input.diskSha as string;
   if (input.diskSha === null) return () => "none";
   return () => "none";
+}
+
+function mutationBudgetGate(
+  state: CoordinatorState,
+  key: string,
+  manualFresh: boolean,
+): null | {
+  save: boolean;
+  state: CoordinatorState;
+  event?: string;
+  result: Omit<WatchdogTickResult, "circuit" | "origin">;
+} {
+  if (state.attemptedKeys.includes(key)) {
+    const blocked = state.circuit === "open";
+    return {
+      save: false,
+      state,
+      result: {
+        reconcile: blocked ? "blocked" : "converged",
+        reason: blocked ? "circuit_open" : "generation_attempted",
+        attemptKey: key,
+        signaled: false,
+        injected: false,
+        watchdogState: blocked ? "degraded" : "idle",
+      },
+    };
+  }
+  if (state.mutationCount >= WATCHDOG_MUTATION_BUDGET && !manualFresh) {
+    const next = { ...state, circuit: "open" as const, circuitReason: "mutation_budget", lastAttemptKey: key };
+    return {
+      save: true,
+      state: next,
+      event: "mutation_budget",
+      result: {
+        reconcile: "blocked",
+        reason: "mutation_budget",
+        attemptKey: key,
+        signaled: false,
+        injected: false,
+        watchdogState: "degraded",
+      },
+    };
+  }
+  return null;
+}
+
+async function waitDirectOfficialReplacement(
+  input: WatchdogTickInput,
+  processes: ProcessPort,
+  classify: RoleClassifier,
+  oldPid: number,
+): Promise<ProcessIdentity | null> {
+  if (input.waitReplacement) return await input.waitReplacement(oldPid);
+  const adopt = input.adopt;
+  if (!adopt) return null;
+  const started = Date.now();
+  const budget = adopt.adoptProveMs ?? 8000;
+  while (Date.now() - started < budget) {
+    const unique = findUniqueOfficialChain(processes, classify);
+    if (
+      unique.ok &&
+      unique.chain.host.pid !== oldPid &&
+      !adopt.hasGrokboxPreload(unique.chain.host)
+    ) {
+      return unique.chain.host;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const unique = findUniqueOfficialChain(processes, classify);
+  if (
+    unique.ok &&
+    unique.chain.host.pid !== oldPid &&
+    !adopt.hasGrokboxPreload(unique.chain.host)
+  ) {
+    return unique.chain.host;
+  }
+  return null;
+}
+
+async function runStaleAttestedReadopt(
+  input: WatchdogTickInput,
+  ctx: {
+    state: CoordinatorState;
+    ephemeralRoot: string;
+    processes: ProcessPort;
+    classify: RoleClassifier;
+    freshDiskSha: () => string;
+    iso: () => string;
+    operationId: string;
+    liveHost: ProcessIdentity;
+    sha: string | null;
+    origin: HostOrigin;
+  },
+): Promise<WatchdogTickResult> {
+  let { state } = ctx;
+  const { ephemeralRoot, processes, classify, freshDiskSha, iso, liveHost, sha, origin } = ctx;
+  const key = attemptKey(input.desired.mode, liveHost, sha);
+  const liveSha = typeof sha === "string" && sha.length > 0 ? sha : freshDiskSha();
+
+  if (!input.reviewedProfile) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: "missing_reviewed_profile",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+  const reviewed = loadReviewedProfile(input.reviewedProfile, liveSha);
+  if (!reviewed.ok) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: reviewed.code,
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+  if (!input.adopt) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: "mutation_ports_unavailable",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+
+  const budgetGate = mutationBudgetGate(state, key, true);
+  if (budgetGate) {
+    if (budgetGate.save) {
+      state = budgetGate.state;
+      await saveState(input.root, state);
+      if (budgetGate.event) {
+        await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: budgetGate.event });
+      }
+    } else {
+      await saveState(input.root, state);
+    }
+    return resultOf(state, origin, budgetGate.result);
+  }
+
+  const adopted = findAdoptedHostState(processes, classify, {
+    gatewayPid: input.adopt.readGatewayPid(),
+    expectedHost: liveHost,
+  });
+  if (!adopted.ok) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "recovery-required",
+      reason: adopted.code,
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+
+  const att = await readAttestation(ephemeralRoot);
+  if (!att) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "recovery-required",
+      reason: "no-attestation",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+
+  const deact = await runTransientAdoptDeactivate({
+    processes,
+    classify,
+    diskSha: freshDiskSha,
+    ephemeralRoot,
+    attestation: att,
+    waitGone: input.adopt.waitGone,
+    waitReplacement: (oldPid) => waitDirectOfficialReplacement(input, processes, classify, oldPid),
+    hasGrokboxPreload: input.adopt.hasGrokboxPreload,
+    readGatewayPid: input.adopt.readGatewayPid,
+    clearAttestation: async () => {
+      await clearAttestation(ephemeralRoot);
+    },
+    allowStaleAttestedSha: true,
+  });
+
+  if (!deact.ok) {
+    state = {
+      ...state,
+      circuit: "open",
+      circuitReason: deact.code,
+      mutationCount: state.mutationCount + (deact.signaled ? 1 : 0),
+    };
+    await saveState(input.root, state);
+    await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: deact.code ?? "deactivate_failed" });
+    return resultOf(state, origin, {
+      reconcile: "recovery-required",
+      reason: deact.code ?? "deactivate_failed",
+      attemptKey: key,
+      signaled: deact.signaled,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+
+  state = {
+    ...state,
+    mutationCount: state.mutationCount + (deact.signaled ? 1 : 0),
+  };
+  await saveState(input.root, state);
+  if (input.desired.mode !== "identity") {
+    return resultOf(state, "official", {
+      reconcile: "converged",
+      reason: null,
+      attemptKey: key,
+      signaled: deact.signaled,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+  return await runWatchdogTickBody({ ...input, confirmed: true });
 }
 
 async function withCoordinatorLease<T>(
@@ -304,14 +533,29 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
   const liveHost = hosts.length === 1 ? hosts[0]! : null;
 
   if (origin === "grokbox-attested" && liveHost) {
-    await saveState(input.root, state);
-    return resultOf(state, origin, {
-      reconcile: "converged",
-      reason: null,
-      attemptKey: attemptKey(input.desired.mode, liveHost, sha),
-      signaled: false,
-      injected: false,
-      watchdogState: "running",
+    const stale = status.host.reason === "stale_attestation";
+    if (!stale || input.confirmed !== true) {
+      await saveState(input.root, state);
+      return resultOf(state, origin, {
+        reconcile: "converged",
+        reason: stale ? "stale_attestation" : null,
+        attemptKey: attemptKey(input.desired.mode, liveHost, sha),
+        signaled: false,
+        injected: false,
+        watchdogState: "running",
+      });
+    }
+    return await runStaleAttestedReadopt(input, {
+      state,
+      ephemeralRoot,
+      processes,
+      classify,
+      freshDiskSha,
+      iso,
+      operationId,
+      liveHost,
+      sha,
+      origin,
     });
   }
 
@@ -328,30 +572,18 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
   }
 
   const key = attemptKey(input.desired.mode, liveHost, sha);
-  if (state.attemptedKeys.includes(key)) {
-    const blocked = state.circuit === "open";
-    await saveState(input.root, state);
-    return resultOf(state, origin, {
-      reconcile: blocked ? "blocked" : "converged",
-      reason: blocked ? "circuit_open" : "generation_attempted",
-      attemptKey: key,
-      signaled: false,
-      injected: false,
-      watchdogState: blocked ? "degraded" : "idle",
-    });
-  }
-  if (state.mutationCount >= WATCHDOG_MUTATION_BUDGET) {
-    state = { ...state, circuit: "open", circuitReason: "mutation_budget", lastAttemptKey: key };
-    await saveState(input.root, state);
-    await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: "mutation_budget" });
-    return resultOf(state, origin, {
-      reconcile: "blocked",
-      reason: "mutation_budget",
-      attemptKey: key,
-      signaled: false,
-      injected: false,
-      watchdogState: "degraded",
-    });
+  const budgetGate = mutationBudgetGate(state, key, input.confirmed === true);
+  if (budgetGate) {
+    if (budgetGate.save) {
+      state = budgetGate.state;
+      await saveState(input.root, state);
+      if (budgetGate.event) {
+        await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: budgetGate.event });
+      }
+    } else {
+      await saveState(input.root, state);
+    }
+    return resultOf(state, origin, budgetGate.result);
   }
   if (!input.reviewedProfile) {
     await saveState(input.root, state);

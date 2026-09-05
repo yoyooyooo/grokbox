@@ -9,6 +9,7 @@ export {
   contractsDir,
   eventsPath,
   resolveDurableRoot,
+  reviewedProfilePath,
 } from "./paths.ts";
 export {
   applyReset,
@@ -33,7 +34,12 @@ export {
   type RuntimeStatus,
 } from "./observe.ts";
 export { runIdentityChainInject, runLiveIdentityInject, runLiveIdentityDeactivate } from "./live-inject.ts";
-export { runIdentityOperation, runIdentityDeactivate, attestationAgrees } from "./identity-op.ts";
+export {
+  runIdentityOperation,
+  runIdentityDeactivate,
+  attestationAgrees,
+  canonicalOwnershipAgrees,
+} from "./identity-op.ts";
 export {
   runH3OfflineInject,
   runH3OfflineDeactivate,
@@ -42,13 +48,16 @@ export {
   identityLaunchFields,
 } from "./h3-identity.ts";
 export {
+  createLiveH3AdoptPorts,
   decideLivePreflight,
   identityHostReady,
+  liveDiskSha,
   preflightLiveH3,
   reviewOfficialAdoptCapability,
   runH3LiveIdentitySession,
   writeReviewedProfileFromCopy,
 } from "./h3-live.ts";
+export { liveH3AdoptAdapter, wireLiveManualReadopt } from "./live-readopt.ts";
 export { pickLaunchEnv } from "./launch-env.ts";
 export { decideH3LaunchStrategy, type H3LaunchStrategy } from "./launch-strategy.ts";
 export {

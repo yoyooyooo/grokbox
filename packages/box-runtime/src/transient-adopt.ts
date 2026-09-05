@@ -466,6 +466,8 @@ export type TransientAdoptDeactivateContext = {
   hasGrokboxPreload: (host: ProcessIdentity) => boolean;
   readGatewayPid: () => number | null;
   clearAttestation: () => Promise<void>;
+  /** Relax only attestation-vs-live SHA equality. Fresh SHA must still be stable. */
+  allowStaleAttestedSha?: boolean;
 };
 
 export async function runTransientAdoptDeactivate(
@@ -503,7 +505,10 @@ export async function runTransientAdoptDeactivate(
     if (!live || !stableIdentitiesMatch(ctx.attestation.identity, live)) {
       return fail("identity-mismatch", false);
     }
-    if (ctx.diskSha() !== shaBefore || shaBefore !== ctx.attestation.diskSha) {
+    if (ctx.diskSha() !== shaBefore) {
+      return fail("disk-sha-changed", false);
+    }
+    if (shaBefore !== ctx.attestation.diskSha && ctx.allowStaleAttestedSha !== true) {
       return fail("disk-sha-changed", false);
     }
     const census = rolesCensus(ctx.processes, ctx.classify);

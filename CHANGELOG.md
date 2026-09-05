@@ -41,6 +41,10 @@ when upstream Grok Bot or Cursor internals change.
 - Add box-local `runtime re-adopt --confirm` as an explicit one-shot into the
   same coordinator. Public activate stays desired-only; watchdog remains the
   automatic writer. No live Host re-adopt.
+- `runtime re-adopt --confirm` is the only public CLI root that wires live
+  adopt ports and the durable reviewed profile. Matching SHA stays a no-op;
+  exact ownership with a stale `diskSha` admits one manual re-adopt.
+  Watchdog/activate stay non-mutating. No live Host re-adopt was executed.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

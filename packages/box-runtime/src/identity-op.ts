@@ -227,6 +227,25 @@ export async function runIdentityDeactivate(ctx: DeactivateContext): Promise<Ide
   }
 }
 
+export function canonicalOwnershipAgrees(input: {
+  attestation: {
+    identity: ProcessIdentity;
+    diskSha: string;
+    mode: string;
+    coverage: string;
+    modeld: boolean;
+  } | null;
+  liveHost: ProcessIdentity | null;
+  census: Census;
+}): boolean {
+  if (!input.attestation || !input.liveHost) return false;
+  if (input.attestation.mode !== "identity") return false;
+  if (input.attestation.coverage !== "attested") return false;
+  if (input.attestation.modeld !== false) return false;
+  if (!identitiesMatch(input.attestation.identity, input.liveHost)) return false;
+  return singleOfficialChain(input.census);
+}
+
 export function attestationAgrees(input: {
   attestation: {
     identity: ProcessIdentity;
@@ -239,11 +258,7 @@ export function attestationAgrees(input: {
   diskSha: string | null;
   census: Census;
 }): boolean {
-  if (!input.attestation || !input.liveHost || !input.diskSha) return false;
-  if (input.attestation.mode !== "identity") return false;
-  if (input.attestation.coverage !== "attested") return false;
-  if (input.attestation.modeld !== false) return false;
-  if (!identitiesMatch(input.attestation.identity, input.liveHost)) return false;
-  if (input.attestation.diskSha !== input.diskSha) return false;
-  return singleOfficialChain(input.census);
+  if (!input.diskSha) return false;
+  if (!canonicalOwnershipAgrees(input)) return false;
+  return input.attestation!.diskSha === input.diskSha;
 }
