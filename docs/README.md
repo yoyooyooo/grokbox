@@ -10,6 +10,7 @@ This documentation separates current source truth, accepted product behavior, up
 - [Upstream integration](upstream-integration.md): minimum interoperability facts required by the implementation.
 - [Sandbox control plane](cursor-sandbox-control-plane.md): lifecycle terminology, trust separation, and validation requirements.
 - [Quota](quota.md): implemented explicit source, normalized output, and failure boundary.
+- [Box-local model runtime](box-runtime.md): accepted createSession seam, inject/watchdog/guardian, modeld, window semantics, and evidence ladder. Not an implementation-complete claim. Product obligations are in the [product contract](product-contract.md) §12.
 
 ## Roadmap
 
@@ -33,4 +34,5 @@ Review the relevant current homes when any of these change:
 - Gateway methods, schemas, discovery, generation, or token scope;
 - Sandbox, quota, or desktop compatibility behavior;
 - daemon protocol, filesystem/process policy, or network transport;
-- Profile format, package layout, runtime requirements, license, or bundled dependencies.
+- Profile format, package layout, runtime requirements, license, or bundled dependencies;
+- Host PromptSession/`SendToUser` contract, or box-runtime config root / local-only boundary.

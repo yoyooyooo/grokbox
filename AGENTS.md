@@ -12,6 +12,10 @@ Read `CONTEXT.md` and `docs/README.md` before changing product boundaries. Produ
 
 This public repository is self-contained for build, test, review, and contribution. Maintainers may have separate private upstream research, but it is never a public dependency or implementation authority. Keep only the minimum source-backed interoperability facts required by grokbox in `docs/upstream-integration.md` and fake-provider tests. Never copy provider dumps, private application code, credentials, transcripts, or machine-local evidence into this repository.
 
+## Box-local model runtime
+
+Accepted design is `docs/box-runtime.md`. Product obligations are `docs/product-contract.md` §12. Composition roots are `docs/architecture.md` §17. Delivery slices, if any, stay machine-local and are not a public git dependency.
+
 ## Issues
 
 Public bugs and proposals use GitHub Issues. Security reports use the private route in `SECURITY.md`.

@@ -14,6 +14,6 @@ Missing optional surfaces are not blockers. Proceed silently rather than creatin
 
 ## Vocabulary
 
-Use terms owned by the relevant Current Home. For the CLI, Profile, daemon, transport, and capability vocabulary, `docs/product-contract.md` is the product contract and `docs/architecture.md` owns implementation boundaries.
+Use terms owned by the relevant Current Home. For the CLI, Profile, daemon, transport, and capability vocabulary, `docs/product-contract.md` is the product contract and `docs/architecture.md` owns implementation boundaries. Box-local model replacement design is `docs/box-runtime.md`.
 
 If proposed work conflicts with an ADR or Current Home, state the conflict explicitly rather than silently changing vocabulary or authority. `docs/roadmap/` contains deferred candidates and bounded future investigations only; it does not override a Current Home or prove delivery.

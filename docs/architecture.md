@@ -47,6 +47,11 @@ external Sandbox adapter / keeper
 | Sandbox allocation and lease | Cursor/AnyRun control plane observation |
 | account quota | selected credential-owning Cursor/Sand quota source |
 | keeper process state | external keeper state store and observed provider result |
+| desired box-runtime activation | box-local runtime activation use case |
+| Host patch coverage | generation-bound attestation + watchdog observation |
+| `assignments.main` / models catalog | Box-local `~/.grokbox/box-runtime/models.json` |
+| provider secret | modeld-only SecretRef resolution (`env:` / `file:`) |
+| Host desired liveness | official wrapper/supervisor |
 
 正常 agent/group 管理只经 Gateway。离线文件修复不能成为第二个自动 writer；它必须是显式维护 use case，并在恢复前 fence 正常 writer。
 
@@ -84,6 +89,7 @@ src/
     process.ts               structured exec adapter
   commands/                  argv/stdin/output adapters
   output/                    JSON, NDJSON, errors, redaction
+  box-runtime/               runtime helpers when that slice lands (not a second published package)
 skills/                      version-matched bundled skills
 test/                        unit, integration and recovery tests
 docs/                        product and runtime Current Homes
@@ -197,7 +203,7 @@ The current implementation covers both Unix-socket and authenticated loopback-HT
 
 `daemon serve` is the composition root. It creates listeners, auth/policy, discovery watcher, Gateway client, filesystem/process adapters, job manager, command-specific streams and shutdown hooks. The current implementation provides its foreground `0600` Unix listener, optional authenticated `127.0.0.1` HTTP listener, narrow Gateway adapter, versioned handshake, signal/abort shutdown, and socket cleanup. Bootstrap repacks a self-contained Node.js 20+ runtime with local npm, falling back to local Bun only when npm is absent, writes an atomic `0600` daemon config containing only the credential hash, and starts the foreground command through the bounded SSH deployment adapter. Install/upgrade/credential rotation merges and preserves the prior filesystem policy; only explicit `--admit-home-read` adds the peer home read/download root and never write authority. Current slices also provide governed Jobs, policy-aware capability projection, unified events, and experimental desktop classification/prune.
 
-The daemon is the sole ordinary remote authority for host filesystem/process effects. It does not become authority for Grok product facts; it delegates those to Gateway use cases.
+The daemon is the sole ordinary **remote** authority for host filesystem/process effects. It does not become authority for Grok product facts; it delegates those to Gateway use cases. Box-local Host process mutation for model runtime is a separate capability: `grokbox runtime *` does not ride daemon RPC, SSH, or generic exec. Official wrapper/supervisor still own Host desired liveness.
 
 ### Listener
 
@@ -314,3 +320,25 @@ Migration is contract-first:
 9. Remove duplicated writers or fallback paths only after callers and docs no longer depend on them.
 
 Current implementation remains source reality until each slice lands. This document changes only when the accepted target boundary changes; provider/runtime observations belong in tests or reports and may challenge it.
+
+## 17. Box-local model runtime
+
+Accepted ownership, not an implementation completion claim. Product obligations live in [product-contract §12](product-contract.md). Design lives in [box-runtime.md](box-runtime.md).
+
+```text
+src/box-runtime/     helpers when the slice lands (not a second published package)
+~/.grokbox/box-runtime/   models.json, releases, state  (not ~/.grokbox/runtime/)
+$XDG_RUNTIME_DIR/grokbox/modeld.sock
+```
+
+Composition roots:
+
+- `grokbox` CLI: box-local runtime commands only; `--profile` is invalid.
+- `runtime watchdog run`: single process-mutation coordinator + operation file. Guardian is the sole emergency exception: idempotent `SIGCONT` of an exact frozen wrapper.
+- `runtime modeld run`: config, one driver, credentials, generation-scoped invocation registry. Provider effect waits for committed attestation or bounded timeout.
+- Host preload: exact SHA transform and route hook. Does not read `models.json` or attestation files.
+- existing `daemon serve`: no default runtime mutation capability.
+
+Do not create `packages/box-runtime` until an independently published consumer exists. Offline transform and PromptSession contract tests are required before any live Host inject.
+
+Credential rotation mid-turn is forbidden: pin credential fingerprint with the resolved config until turn terminal or idle TTL.

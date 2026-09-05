@@ -2,7 +2,7 @@
 
 本文是 `grokbox` 命令、Profile、输出和能力边界的 Current Home。它描述已经接受的**未来完成态**，不是当前源码能力清单。当前实现已覆盖 agent-first CLI、Profile/init、local/remote daemon、agent/group management、governed filesystem、structured exec/durable Jobs、generation-aware unified events/recovery、显式 OAuth quota adapter、Cursor Sandbox lifecycle adapter、实验性 desktop 管理，以及 layered doctor/explicit recovery；最终外部 evidence matrix 仍由后续本地 Ticket 跟踪。交付进度必须由本地 Issue tracker 与源码/测试证明，不能只从本文的未来完成态推断。
 
-实现边界见 [CLI 架构](architecture.md)。当前 quota source、DTO、错误和真实证据见 [Quota Current Home](quota.md)。Cursor Sandbox、`EnsureSandBox`、freeze 与外部 keeper 背景见 [Sandbox 控制面](cursor-sandbox-control-plane.md)。当前 Gateway 与 box 信任事实见 [上游集成](upstream-integration.md)。非官方身份、商标和上游私有接口的稳定性等级见 [兼容性边界](compatibility.md)。
+实现边界见 [CLI 架构](architecture.md)。当前 quota source、DTO、错误和真实证据见 [Quota Current Home](quota.md)。Cursor Sandbox、`EnsureSandBox`、freeze 与外部 keeper 背景见 [Sandbox 控制面](cursor-sandbox-control-plane.md)。当前 Gateway 与 box 信任事实见 [上游集成](upstream-integration.md)。非官方身份、商标和上游私有接口的稳定性等级见 [兼容性边界](compatibility.md)。Box-local 模型运行时义务见 §12；设计见 [Box-local model runtime](box-runtime.md)。
 
 ## 1. 产品定位
 
@@ -24,13 +24,14 @@ Profile + capability router
         `-- explicit quota source -> Cursor/Sand Dashboard
 ```
 
-CLI 统一四类能力：
+CLI 统一这些能力：
 
 1. Grok Bot 产品能力：agent、group、消息、transcript、Memory 和 events。
 2. 云电脑能力：受控文件读写、命令执行、长任务和 artifact 传输。
 3. Sandbox 生命周期能力：从外部唤醒、维持 lease 和观察 Cursor/AnyRun 状态。
 4. 账号额度能力：由显式 credential-owning source 返回 fresh sanitized quota，不从 transcript 推算。
 5. 连接与运行能力：Profile、doctor、daemon 和版本匹配的 bundled skills。
+6. Box-local 模型运行时：仅在目标 Box 本机替换 ordinary main 的模型执行；不经 Profile/daemon/SSH 转发。
 
 正常远程路径由 box 内 daemon 持有 Gateway discovery 与本机权限。Sandbox wake/lease 由 box 外控制面 adapter 持有，因为 cgroup freeze 后内部 daemon 不能唤醒自己。外部客户端不需要获得 Gateway Bearer。SSH 只负责 bootstrap 与故障恢复，不是日常命令 transport。
 
@@ -172,6 +173,19 @@ grokbox (alias: gbox)
 │   └── keepalive
 │       ├── run [--interval-ms <n>]
 │       └── status
+├── runtime
+│   ├── status
+│   ├── activate --mode observe|identity|route
+│   ├── deactivate
+│   ├── models
+│   │   ├── check
+│   │   ├── list
+│   │   ├── use <provider/model>
+│   │   └── reset
+│   ├── watchdog
+│   │   └── run
+│   └── modeld
+│       └── run
 └── daemon
     ├── serve
     ├── ensure [--bootstrap] [--admit-home-read] [--yes]
@@ -183,7 +197,7 @@ grokbox (alias: gbox)
 ## 4. 全局选项
 
 ```text
---profile <name>       选择执行 Profile
+--profile <name>       选择执行 Profile；`runtime *` 拒绝此选项并返回 `runtime_local_only`
 --json                 JSON 输出；有限命令默认即为 JSON
 --table                声明支持时输出人读表格
 --timeout-ms <n>       有限请求 deadline；默认 10000
@@ -437,7 +451,28 @@ Tailscale ping、daemon RPC、本地 process spawn 和 Gateway SSE 都不能冒�
 
 Daemon 默认只监听 Unix socket或 `127.0.0.1`。远程暴露优先由 Tailscale Serve 将 tailnet HTTPS 转发到 loopback；不得默认监听公网 `0.0.0.0`。
 
-## 12. 输出与错误
+## 12. Box-local model runtime
+
+本节是已接受义务，不是当前源码已实现清单。详细注入与 PromptSession 设计见 [Box-local model runtime](box-runtime.md)。
+
+`grokbox runtime *` **只允许在目标 Grok Box 本机执行**。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外调用返回 `runtime_local_only`。这是 API 级分离：同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。将来盒内 WebUI / VNC 也是本机客户端，不是把 mutation 拉到外部 Profile。
+
+`watchdog run` / `modeld run` 是 operational entrypoint，进入命令 registry 与打包测试，但不是普通用户 UX。`activate` / `deactivate` 拥有确认与恢复语义。
+
+配置根为 `~/.grokbox/box-runtime/`（不得占用已用于 CLI 安装的 `~/.grokbox/runtime/`）。`models.json` 的凭据字段只接受现有 SecretRef 的 `env:<NAME>` 与 `file:/absolute/path`；literal secret 与 `$VAR` interpolation 为 schema error。Unix socket：`$XDG_RUNTIME_DIR/grokbox/modeld.sock`，fallback `~/.grokbox/run/modeld.sock`。
+
+`assignments.main` 是 **Box 全局**配置，影响当前 Host 上所有 ordinary main，不是当前聊天、agent 或 Profile 私有。`models use` 与 `activate --mode route` 必须披露：provider/endpoint、将送出的数据类型、从下一个用户 turn 生效、blast radius。`activate --mode route` 必须已有有效 `assignments.main`。route 期间 `models reset` 拒绝，须先 `activate --mode identity` 或 `deactivate`。
+
+MVP / 可发布声明的 ordinary main envelope：
+
+- 支持 text/system/history、tool schema、serial tool call、true streaming、abort；
+- image/attachment：所选模型声明视觉能力则必须送达；未配置视觉能力则在 provider effect 前失败，并尽量以 Bot 可见消息告警（Host 执行 `SendToUser` 或等价），不得静默；
+- parallel/interleaved：能关闭则关闭；仍出现则不得丢弃或错配；
+- 未补丁窗口：有界等待自定义模型；等待绑定该次注入/恢复预算；超时熔断并恢复健康官方链；**该用户句**在极端情况下可用官方模型接住以免无回复，且必须可见说明这次走了官方；**后续句子**继续抢自定义，官方不升格为默认。
+
+managed 调用一旦出门，失败不得静默回官方模型或换 provider。Host 继续拥有工具循环、Transcript、Memory 与 `SendToUser`。`runtime status` 分层：installation / activation / host / coverage / watchdog / modeld `{required,state}` / models / window `{duration, affectedInvocations?}`。`claimCeiling` 留在文档与 evidence，不进首发 status JSON。
+
+## 13. 输出与错误
 
 除 Markdown 内容和 streaming 命令外，成功 stdout 是一个 JSON object：
 
@@ -479,6 +514,11 @@ sandbox_keepalive_degraded
 recover_unavailable
 recover_failed
 runtime_unsupported
+runtime_local_only
+runtime_config_invalid
+runtime_window_open
+model_capability_mismatch
+model_invocation_unknown
 quota_unavailable
 quota_authorization_failed
 quota_protocol_unsupported
@@ -520,7 +560,7 @@ job_interrupted
 
 Timeout 只说明调用窗口结束，不证明远端副作用没有发生。所有写操作需要 operation identity、幂等策略或明确的 unknown outcome。
 
-## 13. 安全边界
+## 14. 安全边界
 
 - Sandbox 与 quota refs 独立按用途解析；同一个 OAuth 的 quota 成功不授予 `EnsureSandBox`，任一失败也不触发另一引用或 App-private discovery。盒内缺失完整 quota 配置不得刮 host/App 私有存储或新增 credential-sync 命令。
 - Quota adapter 固定 HTTPS endpoint、拒绝 redirect、禁止 cache、限制响应为 64 KiB，只返回 fresh sanitized DTO；subject、token、Machine ID、headers、raw body、account identity 与 usage events 不离开 adapter。
@@ -533,8 +573,9 @@ Timeout 只说明调用窗口结束，不证明远端副作用没有发生。所
 - 不开放 raw Gateway、raw shell、任意绝对路径或凭据读取。
 - 直接 Gateway transport 是兼容/诊断路径；它不获得 host filesystem/process 能力。
 - 文件离线修复是显式维护模式，不与 Gateway writer 自动互换。
+- Box-local runtime mutation、provider credential 与 Gateway bearer 是三种能力；`runtime *` 不经 daemon 转发。provider secret 只在 modeld 内解封，语法仅 `env:` / `file:`。
 
-## 14. Bundled Skills
+## 15. Bundled Skills
 
 CLI 发布物携带与版本匹配的 `core` skill。根 help 首先给出：
 
@@ -545,7 +586,7 @@ Start here (for Agents):
 
 命令 registry、help、capability metadata 和 full skill reference 必须同源，不能维护四套漂移文案。
 
-## 15. 验收与失效条件
+## 16. 验收与失效条件
 
 完成态至少证明：
 
@@ -565,5 +606,6 @@ Start here (for Agents):
 14. macOS App descriptor/Keychain、Cursor access token、shared daemon credential bootstrap、免登 SSH discovery 和 manual no-echo fallback 均有无泄漏成功/失败测试。
 15. 外部真实证明由独立 runner 执行 packed client；freeze/wake observer 在 box 不可调度时仍持续运行并把脱敏 evidence 保存在 box 外。
 16. `quota` 以显式独立 Profile ref 在外部 Node runner 通过真实 provider；repository evidence 只保留方法/schema/DTO 断言，且 malformed/expired/401/5xx/oversize/timeout 均有 fail-closed 测试。
+17. `runtime *` 在非本机返回 `runtime_local_only`；`models.json` 拒绝 literal secret；ordinary main envelope（含图与并行工具的可见失败）有离线合同测试。现役 Host 注入不在无离线 transform/guardian 证据时宣称完成。
 
-下列变化会使本文需要重审：Gateway 方法或 token scope 改变；Cursor `EnsureSandBox`/exec/VNC descriptor 或 AnyRun lease policy 改变；box lifecycle/Tailscale identity 不再持久；filesystem/process trust policy 改变；Profile 配置格式或 daemon RPC 出现不兼容版本。
+下列变化会使本文需要重审：Gateway 方法或 token scope 改变；Cursor `EnsureSandBox`/exec/VNC descriptor 或 AnyRun lease policy 改变；box lifecycle/Tailscale identity 不再持久；filesystem/process trust policy 改变；Profile 配置格式或 daemon RPC 出现不兼容版本；Host PromptSession/`SendToUser` 合同或 box-runtime 配置根/本机边界改变。
