@@ -1,11 +1,16 @@
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { sha256Bytes } from "./hash.ts";
 import {
+  runH3OfflineAdopt,
+  runH3OfflineAdoptDeactivate,
   runH3OfflineDeactivate,
   runH3OfflineInject,
+  type H3AdoptPorts,
   type H3OfflinePorts,
 } from "./h3-identity.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
@@ -36,6 +41,10 @@ const EMPTY_CENSUS: Census = {
   guardian: 0,
   extras: 0,
 };
+
+const TEMP_SUPERVISOR = fileURLToPath(new URL("./grokbox-temp-supervisor.cjs", import.meta.url));
+const LIVE_GATEWAY_JSON = "/home/box/sand-data/gateway.json";
+const LIVE_WAIT_MS = 30_000;
 
 export type LivePreflight = {
   ok: boolean;
@@ -70,13 +79,32 @@ export function decideLivePreflight(input: {
   if (!input.unique.ok) return { ok: false, code: input.unique.code };
   if (!input.reviewed.ok) return { ok: false, code: input.reviewed.code };
   if (input.strategy === "direct-overlay") return { ok: true };
-  if (input.strategy === "transient-adopt-candidate") {
-    return { ok: false, code: "transient-adopt-unwired" };
-  }
+  if (input.strategy === "transient-adopt-candidate") return { ok: true };
   return { ok: false, code: "launch-strategy-unavailable" };
 }
 
-export function liveClassify(identity: ProcessIdentity): "wrapper" | "supervisor" | "host" | null {
+export function reviewOfficialAdoptCapability(supervisor: ProcessIdentity): boolean {
+  const line = supervisor.cmdline.join(" ");
+  if (!line.includes("sand-supervisor.mjs")) return false;
+  const supervisorPath =
+    supervisor.cmdline.find((part) => part.includes("sand-supervisor.mjs") && part.startsWith("/")) ??
+    "/usr/local/bin/sand-supervisor.mjs";
+  try {
+    const src = readFileSync(supervisorPath, "utf8");
+    return (
+      src.includes("maybeAdoptOrphanHost") &&
+      src.includes("adopting live orphan host") &&
+      src.includes("detached: true") &&
+      src.includes("gateway.json")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function liveClassify(
+  identity: ProcessIdentity,
+): "wrapper" | "supervisor" | "host" | "temp-supervisor" | null {
   return roleOf(identity);
 }
 
@@ -91,6 +119,40 @@ export function liveCensus(port: ProcessPort = linuxProcessPort()): Census {
 
 export function liveDiskSha(): string {
   return sha256Bytes(readFileSync(LIVE_HOST_BUNDLE));
+}
+
+export function liveAdoptLaunchSpec(
+  env: Record<string, string>,
+  input: { execPath: string; hostBundle: string; cwd: string },
+): { execPath: string; argv: string[]; cwd: string; env: Record<string, string> } {
+  return {
+    execPath: input.execPath,
+    argv: [input.hostBundle],
+    cwd: input.cwd,
+    env: { ...env, GROKBOX_ALLOW_LIVE_HOST: "1" },
+  };
+}
+
+export function identityHostReady(input: {
+  marker: IdentityMarker | null;
+  gatewayPid: number | null;
+  hostPid: number;
+}): boolean {
+  return Boolean(
+    input.marker &&
+      input.marker.pid === input.hostPid &&
+      input.marker.compiled === true &&
+      input.gatewayPid === input.hostPid,
+  );
+}
+
+export function readGatewayPid(path = LIVE_GATEWAY_JSON): number | null {
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { pid?: unknown };
+    return typeof parsed.pid === "number" && Number.isInteger(parsed.pid) && parsed.pid > 0 ? parsed.pid : null;
+  } catch {
+    return null;
+  }
 }
 
 async function waitUntil(pred: () => boolean | Promise<boolean>, ms: number): Promise<boolean> {
@@ -160,6 +222,73 @@ export function createLiveH3Ports(input: {
   };
 }
 
+export function createLiveH3AdoptPorts(input: {
+  markerPath: string;
+  preloadNeedle: string;
+  overlayPath: string;
+  execPath: string;
+  hostBundle?: string;
+  waitMs?: number;
+}): H3AdoptPorts {
+  const port = linuxProcessPort();
+  const waitMs = input.waitMs ?? LIVE_WAIT_MS;
+  const hostBundle = input.hostBundle ?? LIVE_HOST_BUNDLE;
+  return {
+    processes: port,
+    classify: liveClassify,
+    waitHostGone: async (old) =>
+      await waitUntil(() => {
+        const observed = inspectPid(old.pid);
+        return observed == null || observed.start !== old.start;
+      }, waitMs),
+    supervisorRelaunch: async () => null,
+    waitReady: async (hostPid) => {
+      const ready = await waitUntil(
+        () =>
+          identityHostReady({
+            marker: readMarkerFile(input.markerPath),
+            gatewayPid: readGatewayPid(),
+            hostPid,
+          }),
+        waitMs,
+      );
+      return ready ? readMarkerFile(input.markerPath) : null;
+    },
+    applyLaunchEnv: async (env) => {
+      const spec = liveAdoptLaunchSpec(env, {
+        execPath: input.execPath,
+        hostBundle,
+        cwd: dirname(hostBundle),
+      });
+      await mkdir(dirname(input.overlayPath), { recursive: true, mode: 0o700 });
+      await writeFile(input.overlayPath, `${JSON.stringify(spec)}\n`, { mode: 0o600 });
+    },
+    hasGrokboxPreload: (host) =>
+      procEnvHas(host.pid, "NODE_OPTIONS", input.preloadNeedle) || procEnvHas(host.pid, "GROKBOX_PRELOAD_MODE", "identity"),
+    spawnTempSupervisor: async () => {
+      spawn(input.execPath, [TEMP_SUPERVISOR, input.overlayPath], { stdio: "ignore" });
+      const ok = await waitUntil(
+        () => port.list().some((ident) => liveClassify(ident) === "temp-supervisor"),
+        waitMs,
+      );
+      if (!ok) return null;
+      return port.list().find((ident) => liveClassify(ident) === "temp-supervisor") ?? null;
+    },
+    waitNewHost: async (oldHostPid) => {
+      const ok = await waitUntil(() => {
+        const host = port.list().find((ident) => liveClassify(ident) === "host");
+        return Boolean(host && host.pid !== oldHostPid && inspectPid(host.pid));
+      }, waitMs);
+      if (!ok) return null;
+      return port.list().find((ident) => liveClassify(ident) === "host" && ident.pid !== oldHostPid) ?? null;
+    },
+    readGatewayPid: () => readGatewayPid(),
+    guardianDeadlineMs: waitMs,
+    waitBudgetMs: waitMs,
+    adoptProveMs: waitMs,
+  };
+}
+
 export async function writeReviewedProfileFromCopy(destDir: string): Promise<{
   profilePath: string;
   profile: PatchProfile;
@@ -204,7 +333,10 @@ export function preflightLiveH3(input: {
     }
   }
   const strategy = unique.ok
-    ? decideH3LaunchStrategy({ supervisor: unique.chain.supervisor })
+    ? decideH3LaunchStrategy({
+        supervisor: unique.chain.supervisor,
+        reviewedAdoptCapability: reviewOfficialAdoptCapability(unique.chain.supervisor),
+      })
     : "unavailable";
   const decision = decideLivePreflight({ unique, reviewed, strategy });
   const chain = unique.ok ? unique.chain : undefined;
@@ -250,19 +382,50 @@ export async function runH3LiveIdentitySession(input: {
   if (!preflight.ok) {
     return { preflight, injected: false };
   }
+  const execPath = input.execPath ?? (existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath);
+  const host = preflight.chain!.host;
+  const launchSource = readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST);
+  if (preflight.strategy === "transient-adopt-candidate") {
+    const ports = createLiveH3AdoptPorts({
+      markerPath,
+      preloadNeedle: input.preloadPath,
+      overlayPath,
+      execPath,
+      hostBundle: input.hostBundle ?? LIVE_HOST_BUNDLE,
+    });
+    const inject = await runH3OfflineAdopt({
+      ephemeralRoot,
+      reviewedProfilePath: input.reviewedProfilePath,
+      diskSha: liveDiskSha,
+      operationId: input.operationId ?? `h3-live-adopt-${Date.now()}`,
+      execPath,
+      preloadPath: input.preloadPath,
+      hostBundle: input.hostBundle ?? LIVE_HOST_BUNDLE,
+      markerPath,
+      launchSource,
+      ports,
+    });
+    if (!inject.ok) {
+      return { preflight, injected: true, inject };
+    }
+    const deactivate = await runH3OfflineAdoptDeactivate({
+      ephemeralRoot,
+      diskSha: liveDiskSha,
+      ports,
+    });
+    return { preflight, injected: true, inject, deactivate };
+  }
   const ports = createLiveH3Ports({
     markerPath,
     preloadNeedle: input.preloadPath,
     overlayPath,
   });
-  const host = preflight.chain!.host;
-  const launchSource = readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST);
   const inject = await runH3OfflineInject({
     ephemeralRoot,
     reviewedProfilePath: input.reviewedProfilePath,
     diskSha: liveDiskSha,
     operationId: input.operationId ?? `h3-live-${Date.now()}`,
-    execPath: input.execPath ?? (existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath),
+    execPath,
     preloadPath: input.preloadPath,
     hostBundle: input.hostBundle ?? LIVE_HOST_BUNDLE,
     markerPath,

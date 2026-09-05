@@ -65,6 +65,7 @@ export type TransientAdoptContext = {
   persistAttestation?: (host: ProcessIdentity, sha: string, windowMs: number) => Promise<void>;
   hasGrokboxPreload: (ident: ProcessIdentity) => boolean;
   now: () => number;
+  adoptProveMs?: number;
 };
 
 export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Promise<IdentityOpResult> {
@@ -114,13 +115,13 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         release();
         return fail("identity-mismatch", true, true);
       }
-      if (!(await ctx.waitGone(host))) {
-        release();
-        return fail("host-still-alive", true, true);
-      }
       if (!signalIfMatch(ctx.processes, supervisor, "SIGTERM").ok) {
         release();
         return fail("identity-mismatch", true, true);
+      }
+      if (!(await ctx.waitGone(host))) {
+        release();
+        return fail("host-still-alive", true, true);
       }
       if (!(await ctx.waitGone(supervisor))) {
         release();
@@ -180,7 +181,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         return fail("host-lost", true, true);
       }
       release();
-      const adopted = await waitAdopted(ctx, wrapper, stableHost, 8000);
+      const adopted = await waitAdopted(ctx, wrapper, stableHost, ctx.adoptProveMs ?? 8000);
       if (!adopted) return fail("adopt-unproven", true, true);
       if (adopted.host.ppid === adopted.supervisor.pid) return fail("still-supervisor-child", true, true);
       if (ctx.hasGrokboxPreload(adopted.supervisor)) return fail("supervisor-preloaded", true, true);

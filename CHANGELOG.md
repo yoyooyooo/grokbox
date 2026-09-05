@@ -25,6 +25,8 @@ when upstream Grok Bot or Cursor internals change.
   mandatory attestation persist/read-back before coverage attested.
 - Non-public live H3 adapter fills `/proc` ports and preflights unique official
   chain plus reviewed SHA; public `runtime activate` stays desired-only.
+- Wire v2-safe live transient-adopt: allowlisted `identityLaunchFields`, logical
+  adoption proof, SIGCONT-only guardian, no official SIGKILL.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

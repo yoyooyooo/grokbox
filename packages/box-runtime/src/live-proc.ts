@@ -34,8 +34,13 @@ export function inspectPid(pid: number): ProcessIdentity | null {
   }
 }
 
-export function roleOf(identity: ProcessIdentity): "wrapper" | "supervisor" | "host" | null {
+export const LIVE_TEMP_SUPERVISOR_NEEDLE = "grokbox-temp-supervisor.cjs";
+
+export function roleOf(
+  identity: ProcessIdentity,
+): "wrapper" | "supervisor" | "host" | "temp-supervisor" | null {
   const line = identity.cmdline.join(" ");
+  if (line.includes(LIVE_TEMP_SUPERVISOR_NEEDLE)) return "temp-supervisor";
   if (line.includes("supervise-sand-supervisor")) return "wrapper";
   if (line.includes("sand-supervisor.mjs")) return "supervisor";
   if (line.includes("host-main.cjs") && !line.includes("rg ")) return "host";

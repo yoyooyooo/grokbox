@@ -31,6 +31,9 @@ export type H3AdoptPorts = H3OfflinePorts & {
   spawnTempSupervisor: () => Promise<ProcessIdentity | null>;
   waitNewHost: (oldHostPid: number) => Promise<ProcessIdentity | null>;
   readGatewayPid: () => number | null;
+  guardianDeadlineMs?: number;
+  waitBudgetMs?: number;
+  adoptProveMs?: number;
 };
 
 function loadExistingReviewedProfile(path: string, observedSha: string): PatchProfile {
@@ -42,7 +45,7 @@ function loadExistingReviewedProfile(path: string, observedSha: string): PatchPr
   return profile;
 }
 
-/** Non-public H3 composition. Does not target the live Host. */
+/** Non-public H3 launch-env builder. Allowlist fields only. */
 export function identityLaunchFields(input: {
   source: NodeJS.Dict<string>;
   preloadPath: string;
@@ -196,7 +199,7 @@ export async function runH3OfflineDeactivate(input: {
   return result;
 }
 
-/** Non-public transient-adopt composition. Disposable trees only. */
+/** Non-public transient-adopt composition. */
 export async function runH3OfflineAdopt(input: {
   ephemeralRoot: string;
   reviewedProfilePath: string;
@@ -251,10 +254,11 @@ export async function runH3OfflineAdopt(input: {
     spawnTempSupervisor: input.ports.spawnTempSupervisor,
     waitNewHost: input.ports.waitNewHost,
     readGatewayPid: input.ports.readGatewayPid,
+    adoptProveMs: input.ports.adoptProveMs,
     armGuardian: async (frozen) => {
       const guardian = await spawnIndependentGuardian({
         frozen,
-        deadlineMs: 8000,
+        deadlineMs: input.ports.guardianDeadlineMs ?? 8000,
         stateDir: input.ephemeralRoot,
         execPath: input.execPath,
       });
@@ -316,7 +320,8 @@ export async function runH3OfflineAdoptDeactivate(input: {
     waitGone: input.ports.waitHostGone,
     waitReplacement: async (oldPid) => {
       const start = Date.now();
-      while (Date.now() - start < 8000) {
+      const budget = input.ports.waitBudgetMs ?? 8000;
+      while (Date.now() - start < budget) {
         const host = input.ports.processes.list().find((ident) => input.ports.classify(ident) === "host");
         if (host && host.pid !== oldPid && !input.ports.hasGrokboxPreload(host)) return host;
         await new Promise((resolve) => setTimeout(resolve, 50));

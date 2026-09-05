@@ -343,7 +343,7 @@ H3 topology:
 
 - `direct-launch` / `direct-overlay`: `findUniqueOfficialChain` — unique wrapper+supervisor+Host and supervisor-born Host (`host.ppid === supervisor.pid`). Do not weaken this finder to pass adoption.
 - `transient-adopt`: `findAdoptedHostState` — logical adoption of a surviving Host. Success is **not** `host.ppid === supervisor.pid`. Evidence is a singleton wrapper/supervisor/Host, wrapper-owned supervisor, gateway pid agreement, stable Host identity, temp supervisor gone, adopting supervisor unpreloaded, disk SHA unchanged, attestation `launchMode: "transient-adopt"`.
-- Current official `sand-supervisor` is not `direct-overlay`. Classify `transient-adopt-candidate` only after exact version/capability review. Live wiring is a separately authorized slice; unwired candidates abort with zero signals.
+- Current official `sand-supervisor` is not `direct-overlay`. Classify `transient-adopt-candidate` only after exact version/capability review. The live adapter may run transient-adopt after unique-chain preflight; failed preflight stays zero-signal.
 - Guardian remains SIGCONT-only on an exact frozen wrapper. The coordinator may identity-checked TERM the exact old official supervisor and the exact operation-owned temp supervisor during authorized H3. No SIGKILL of official wrapper/supervisor/Host.
 
 `packages/box-runtime` is an unpublished workspace package. Do not publish it separately until an independently installed consumer exists. Offline transform and PromptSession contract tests are required before any live Host inject. An adopted-topology offline fixture must keep the final Host PPID different from the new supervisor; that fixture is not a live inject.

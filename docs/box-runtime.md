@@ -85,7 +85,7 @@ H3 有两条互斥启动策略（非公开，不是 CLI；身份注入 ≠ route
 
 - **direct-launch / direct-overlay：** 当前 supervisor 已能把 allowlist launch env 交给下一次**它所生的** Host。成功事实是唯一官方链且 `host.ppid === supervisor.pid`。不要为了收养去放宽这条直接链证明。
 - **transient-adopt：** 当前官方 supervisor **不是** direct-overlay。经单独授权的 coordinator 才可以：对精确 wrapper `SIGSTOP`；对精确旧官方 supervisor 与旧 Host 身份核对后 `SIGTERM`；用 allowlist env 让**操作拥有的**临时 supervisor 生出 detached identity Host；对该临时 supervisor `SIGTERM`（Host 必须作为孤儿存活）；`SIGCONT` wrapper；**新的未 preload 官方 supervisor 逻辑收养同一个 Host**。成功事实不是 PPID：唯一 wrapper+supervisor+Host、supervisor 仍是 wrapper 之子、`gateway.json.pid` 与 Host 一致、Host 稳定身份（pid/uid/start/exe/cmdline）跨 handoff 不变、**最终 Host PPID 不是新 supervisor**、临时 supervisor 已消失、新 supervisor 无 preload、磁盘 SHA 不变、committed attestation 含 `launchMode: "transient-adopt"`。有界稳定期内不得出现双 Host/双 supervisor。
-- 现役官方 `sand-supervisor` 不是 `direct-overlay`。只有精确版本/能力审查通过后才是 `transient-adopt-candidate`。未接线的 candidate 不得当作 live 已实现，也不得因此去信号现役 PID。
+- 现役官方 `sand-supervisor` 不是 `direct-overlay`。只有精确版本/能力审查通过后才是 `transient-adopt-candidate`。Live adapter 仅在 unique chain + reviewed SHA + candidate 预检通过后进入 transient-adopt；预检失败零信号。
 
 Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配置/重试注入。禁止对官方 wrapper/supervisor/Host 回退 `SIGKILL`。coordinator 在已授权 H3 中可以对**精确**旧官方 supervisor 与**精确**操作拥有的临时 supervisor 做身份核对后的 `SIGTERM`。
 

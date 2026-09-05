@@ -35,7 +35,9 @@ export {
 } from "./h3-identity.ts";
 export {
   decideLivePreflight,
+  identityHostReady,
   preflightLiveH3,
+  reviewOfficialAdoptCapability,
   runH3LiveIdentitySession,
   writeReviewedProfileFromCopy,
 } from "./h3-live.ts";

@@ -1,8 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { decideLivePreflight } from "../src/h3-live.ts";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import {
+  decideLivePreflight,
+  identityHostReady,
+  liveAdoptLaunchSpec,
+  liveClassify,
+  reviewOfficialAdoptCapability,
+} from "../src/h3-live.ts";
 import { decideH3LaunchStrategy } from "../src/launch-strategy.ts";
 import { runLiveIdentityInject } from "../src/live-inject.ts";
-import { procEnvHas, readNamedProcEnv } from "../src/live-proc.ts";
+import { LIVE_TEMP_SUPERVISOR_NEEDLE, procEnvHas, readNamedProcEnv } from "../src/live-proc.ts";
 
 const ident = {
   pid: 1,
@@ -49,7 +57,7 @@ describe("live H3 preflight (zero-signal abort)", () => {
         reviewed: { ok: true },
         strategy: "transient-adopt-candidate",
       }),
-    ).toEqual({ ok: false, code: "transient-adopt-unwired" });
+    ).toEqual({ ok: true });
     expect(
       decideLivePreflight({
         unique: { ok: true },
@@ -101,6 +109,50 @@ describe("live H3 preflight (zero-signal abort)", () => {
     expect(result.recoveryRequired).toBe(false);
     expect(result.code).toBe("live-host-blocked");
     expect(result.coverage).toBe("none");
+  });
+
+  test("temp supervisor is not classified as host; launch spec is allowlisted", () => {
+    expect(
+      liveClassify({
+        ...ident,
+        cmdline: ["/exec-daemon/node", `/tmp/op/${LIVE_TEMP_SUPERVISOR_NEEDLE}`, "/tmp/op/launch-env.json"],
+      }),
+    ).toBe("temp-supervisor");
+    expect(
+      liveClassify({
+        ...ident,
+        cmdline: ["/exec-daemon/node", "/home/box/sand-host/host-main.cjs"],
+      }),
+    ).toBe("host");
+    const spec = liveAdoptLaunchSpec(
+      { PATH: "/usr/bin", HOME: "/home/box" },
+      { execPath: "/exec-daemon/node", hostBundle: "/home/box/sand-host/host-main.cjs", cwd: "/home/box/sand-host" },
+    );
+    expect(spec.argv).toEqual(["/home/box/sand-host/host-main.cjs"]);
+    expect(spec.env.GROKBOX_ALLOW_LIVE_HOST).toBe("1");
+    expect(spec.env.ACME_KEY).toBeUndefined();
+    const tempSrc = readFileSync(
+      fileURLToPath(new URL("../src/grokbox-temp-supervisor.cjs", import.meta.url)),
+      "utf8",
+    );
+    expect(tempSrc).not.toMatch(/SIGKILL/);
+    const marker = {
+      operationId: "op",
+      pid: 9,
+      mode: "identity" as const,
+      transformed: true as const,
+      compiled: true as const,
+      modeld: false as const,
+    };
+    expect(identityHostReady({ marker, gatewayPid: 9, hostPid: 9 })).toBe(true);
+    expect(identityHostReady({ marker, gatewayPid: 8, hostPid: 9 })).toBe(false);
+    expect(identityHostReady({ marker: null, gatewayPid: 9, hostPid: 9 })).toBe(false);
+    expect(
+      reviewOfficialAdoptCapability({
+        ...ident,
+        cmdline: ["/exec-daemon/node", "/tmp/not-a-supervisor.js"],
+      }),
+    ).toBe(false);
   });
 
   test("procEnvHas is presence-only for this process", () => {
