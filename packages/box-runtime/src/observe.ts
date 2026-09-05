@@ -1,12 +1,29 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { contractsDir, eventsPath } from "./paths.ts";
+import { readAttestation } from "./attestation.ts";
+import { ephemeralRuntimeRoot } from "./ephemeral.ts";
+import { sha256Bytes } from "./hash.ts";
+import { attestationAgrees } from "./identity-op.ts";
+import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
+import { linuxProcessPort, procEnvHas, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
+import { findUniqueOfficialChain } from "./official-chain.ts";
+import { contractsDir, eventsPath } from "./paths.ts";
+import { countRoles, type ProcessPort } from "./process.ts";
+
+export type HostOrigin = "official" | "grokbox-attested" | "grokbox-unattested" | "ambiguous";
+export type HostReason =
+  | null
+  | "unmanaged_preload"
+  | "stale_attestation"
+  | "duplicate_role"
+  | "missing_role"
+  | "bad_parentage";
 
 export type RuntimeStatus = {
   installation: { durableRoot: string; cliInstallRootUnused: true };
   activation: { desired: DesiredFile["mode"] };
-  host: { diskSha: string | null };
+  host: { diskSha: string | null; origin: HostOrigin; reason: HostReason };
   coverage: "none" | "window-open" | "attested";
   census: { wrapper: number | null; supervisor: number | null; host: number | null };
   circuit: "closed" | "open";
@@ -18,40 +35,86 @@ export type RuntimeStatus = {
   window: { durationMs: number | null; affectedInvocations: "unknown" };
 };
 
+export type LiveStatusPorts = {
+  processes?: ProcessPort;
+  ephemeralRoot?: string;
+  diskSha?: string | null;
+  envHas?: (pid: number, key: string) => boolean;
+};
+
+const GROKBOX_TOUCH_ENV = ["GROKBOX_PRELOAD_MODE", "GROKBOX_OPERATION_ID", "GROKBOX_PRELOAD_MARKER"] as const;
+
+function namedGrokboxTouch(pid: number, envHas: (pid: number, key: string) => boolean): boolean {
+  return GROKBOX_TOUCH_ENV.some((key) => envHas(pid, key));
+}
+
+function chainReason(code: "duplicate-role" | "missing-role" | "bad-parentage"): HostReason {
+  if (code === "duplicate-role") return "duplicate_role";
+  if (code === "missing-role") return "missing_role";
+  return "bad_parentage";
+}
+
+function officialCoverage(mode: DesiredFile["mode"]): "none" | "window-open" {
+  return mode === "identity" || mode === "route" ? "window-open" : "none";
+}
+
 export async function projectLiveStatus(input: {
   root: string;
   desired: DesiredFile;
   models: ModelsFile;
-}): Promise<RuntimeStatus> {
+} & LiveStatusPorts): Promise<RuntimeStatus> {
   const base = projectStatus(input);
   try {
-    const { readFile } = await import("node:fs/promises");
-    const { sha256Bytes } = await import("./hash.ts");
-    const { LIVE_HOST_BUNDLE } = await import("./live-slices.ts");
-    const { findRole, linuxProcessPort, roleOf } = await import("./live-proc.ts");
-    const { countRoles } = await import("./process.ts");
-    const { readAttestation } = await import("./attestation.ts");
-    const { attestationAgrees } = await import("./identity-op.ts");
-    const sha = sha256Bytes(await readFile(LIVE_HOST_BUNDLE));
-    const port = linuxProcessPort();
+    const port = input.processes ?? linuxProcessPort();
+    const envHas = input.envHas ?? ((pid: number, key: string) => procEnvHas(pid, key));
+    const sha =
+      input.diskSha !== undefined ? input.diskSha : sha256Bytes(await readFile(LIVE_HOST_BUNDLE));
+    const identities = port.list();
     const census = countRoles(
-      port.list().flatMap((ident) => {
+      identities.flatMap((ident) => {
         const role = roleOf(ident);
         return role ? [{ ...ident, role }] : [];
       }),
     );
-    const host = findRole(port, "host");
-    const att = await readAttestation();
-    const attested = attestationAgrees({
+    const hosts = identities.filter((ident) => roleOf(ident) === "host");
+    const touched = hosts.some((host) => namedGrokboxTouch(host.pid, envHas));
+    const liveHost = hosts.length === 1 ? hosts[0]! : null;
+    const att = await readAttestation(input.ephemeralRoot ?? ephemeralRuntimeRoot());
+    const agrees = attestationAgrees({
       attestation: att,
-      liveHost: host,
+      liveHost,
       diskSha: sha,
       census,
     });
+
+    let origin: HostOrigin;
+    let reason: HostReason;
+    let coverage: RuntimeStatus["coverage"];
+    if (touched && agrees) {
+      origin = "grokbox-attested";
+      reason = null;
+      coverage = "attested";
+    } else if (touched) {
+      origin = "grokbox-unattested";
+      reason = att ? "stale_attestation" : "unmanaged_preload";
+      coverage = "none";
+    } else {
+      const unique = findUniqueOfficialChain(port, roleOf);
+      if (unique.ok) {
+        origin = "official";
+        reason = null;
+        coverage = officialCoverage(input.desired.mode);
+      } else {
+        origin = "ambiguous";
+        reason = chainReason(unique.code);
+        coverage = "none";
+      }
+    }
+
     return {
       ...base,
-      host: { diskSha: sha },
-      coverage: attested ? "attested" : base.coverage,
+      host: { diskSha: sha, origin, reason },
+      coverage,
       census: { wrapper: census.wrapper, supervisor: census.supervisor, host: census.host },
       watchdog: {
         required: input.desired.mode === "identity" || input.desired.mode === "route",
@@ -77,7 +140,7 @@ export function projectStatus(input: {
   return {
     installation: { durableRoot: input.root, cliInstallRootUnused: true },
     activation: { desired: input.desired.mode },
-    host: { diskSha: null },
+    host: { diskSha: null, origin: "ambiguous", reason: "missing_role" },
     coverage: "none",
     census: { wrapper: null, supervisor: null, host: null },
     circuit: "closed",

@@ -36,14 +36,53 @@ export function inspectPid(pid: number): ProcessIdentity | null {
 
 export const LIVE_TEMP_SUPERVISOR_NEEDLE = "grokbox-temp-supervisor.cjs";
 
+const DIAGNOSTIC_BASENAMES = new Set([
+  "bash",
+  "sh",
+  "dash",
+  "zsh",
+  "fish",
+  "rg",
+  "grep",
+  "egrep",
+  "fgrep",
+]);
+
+const VALUE_FLAGS = new Set(["-e", "--eval", "-p", "--print", "-c"]);
+
+function fileBasename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const slash = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
+}
+
+function roleFileBasenames(argv: readonly string[]): string[] {
+  const names: string[] = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const part = argv[i];
+    if (part == null || part.length === 0) continue;
+    if (i > 0 && VALUE_FLAGS.has(part)) {
+      i += 1;
+      continue;
+    }
+    if (i > 0 && part.startsWith("-")) continue;
+    names.push(fileBasename(part));
+  }
+  return names;
+}
+
 export function roleOf(
   identity: ProcessIdentity,
 ): "wrapper" | "supervisor" | "host" | "temp-supervisor" | null {
-  const line = identity.cmdline.join(" ");
-  if (line.includes(LIVE_TEMP_SUPERVISOR_NEEDLE)) return "temp-supervisor";
-  if (line.includes("supervise-sand-supervisor")) return "wrapper";
-  if (line.includes("sand-supervisor.mjs")) return "supervisor";
-  if (line.includes("host-main.cjs") && !line.includes("rg ")) return "host";
+  const argv = identity.cmdline;
+  if (argv.length === 0) return null;
+  if (DIAGNOSTIC_BASENAMES.has(fileBasename(identity.exe))) return null;
+  if (DIAGNOSTIC_BASENAMES.has(fileBasename(argv[0] ?? ""))) return null;
+  const names = new Set(roleFileBasenames(argv));
+  if (names.has(LIVE_TEMP_SUPERVISOR_NEEDLE)) return "temp-supervisor";
+  if (names.has("supervise-sand-supervisor")) return "wrapper";
+  if (names.has("sand-supervisor.mjs")) return "supervisor";
+  if (names.has("host-main.cjs")) return "host";
   return null;
 }
 

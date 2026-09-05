@@ -23,7 +23,15 @@ export {
   type ModelsFile,
   type RuntimeStore,
 } from "./models.ts";
-export { projectStatus, projectLiveStatus, readContracts, readEvents, type RuntimeStatus } from "./observe.ts";
+export {
+  projectStatus,
+  projectLiveStatus,
+  readContracts,
+  readEvents,
+  type HostOrigin,
+  type HostReason,
+  type RuntimeStatus,
+} from "./observe.ts";
 export { runIdentityChainInject, runLiveIdentityInject, runLiveIdentityDeactivate } from "./live-inject.ts";
 export { runIdentityOperation, runIdentityDeactivate, attestationAgrees } from "./identity-op.ts";
 export {

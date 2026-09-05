@@ -73,7 +73,7 @@ export async function runRuntimeDeactivate(deps: CliDeps): Promise<void> {
     await runtime.saveDesired({ version: 1, mode: "disabled" });
     writeSuccess(deps.stdout, {
       desired: "disabled",
-      coverage: "none",
+      requested: true,
       chain: "desired-disabled",
     });
   } catch (error) {

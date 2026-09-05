@@ -29,6 +29,9 @@ when upstream Grok Bot or Cursor internals change.
   adoption proof, SIGCONT-only guardian, no official SIGKILL.
 - Adopt handoff waits for `gateway.json.pid` to match the identity Host before
   TERM temp / CONT wrapper; stale gateway aborts `recovery-required`.
+- `runtime status` classifies `host.origin` / `host.reason` from canonical
+  attestation and named grokbox env only; `deactivate` no longer claims live
+  `coverage: none`.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

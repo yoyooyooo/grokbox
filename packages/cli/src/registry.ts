@@ -1094,7 +1094,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["runtime", "deactivate"],
     usage: "grokbox runtime deactivate",
-    summary: "Clear box-local desired runtime mode.",
+    summary: "Set desired mode to disabled; live coverage is observed by status only.",
     arguments: [],
     options: options(),
     stdin: "none",

@@ -46,7 +46,15 @@ describe("box-local runtime CLI", () => {
     ]) {
       expect(keys).toContain(key);
     }
-    expect(keys.some((key) => key.includes("inject") || key.includes("heal") || key === "runtime kill")).toBe(false);
+    expect(
+      keys.some(
+        (key) =>
+          key.includes("inject") ||
+          key.includes("heal") ||
+          key === "runtime kill" ||
+          key.split(" ").includes("ctl"),
+      ),
+    ).toBe(false);
   });
 
   test("--profile and remote transports return runtime_local_only", async () => {
@@ -63,6 +71,20 @@ describe("box-local runtime CLI", () => {
     });
     expect(remote.code).toBe(65);
     expect((parseJson(remote.stderr) as { error: { code: string } }).error.code).toBe("runtime_local_only");
+  });
+
+  test("deactivate writes desired disabled and does not claim live coverage none", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const deactivated = await captureCli(["runtime", "deactivate"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(deactivated.code, deactivated.stderr).toBe(0);
+    const body = data(deactivated.stdout);
+    expect(body.desired).toBe("disabled");
+    expect(body.requested).toBe(true);
+    expect(body).not.toHaveProperty("coverage");
+    expect(JSON.stringify(body)).not.toContain('"coverage":"none"');
   });
 
   test("status/log/contracts do not repair and status has required fields", async () => {
