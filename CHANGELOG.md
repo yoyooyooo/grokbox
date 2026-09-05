@@ -16,6 +16,9 @@ when upstream Grok Bot or Cursor internals change.
   path is refused unless explicitly allowed; Host body is not in git.
 - Identity inject protocol is tested on a fake process tree (STOP/CONT/census).
   Live Host is not injected.
+- Land-now 06 safety kernel: exclusive lock, reviewed SHA, independent
+  guardian child, supervisor-owned replacement, fail-closed deactivate,
+  activate remains desired-only. No live Host inject.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

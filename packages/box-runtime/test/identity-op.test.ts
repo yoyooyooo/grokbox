@@ -37,7 +37,7 @@ function guard(tree: FakeProcessTree, frozen: Array<{ pid: number }>) {
     now: () => 0,
     wait: hangUntilAbort(),
   });
-  return { release: () => g.close() };
+  return { ok: true as const, release: () => g.close() };
 }
 
 describe("identity operation preflight (zero-signal abort)", () => {
@@ -59,7 +59,7 @@ describe("identity operation preflight (zero-signal abort)", () => {
       waitHostGone: async () => true,
       supervisorRelaunch: async () => tree.spawn("host", { parent: supervisor }),
       waitReady: async () => null,
-      armGuardian: (frozen) => guard(tree, frozen),
+      armGuardian: async (frozen) => guard(tree, frozen),
       now: () => 0,
     });
     expect(unknown).toMatchObject({ ok: false, code: "unknown-sha", signaled: false });
@@ -78,7 +78,7 @@ describe("identity operation preflight (zero-signal abort)", () => {
       waitHostGone: async () => true,
       supervisorRelaunch: async () => null,
       waitReady: async () => null,
-      armGuardian: (frozen) => guard(tree, frozen),
+      armGuardian: async (frozen) => guard(tree, frozen),
       now: () => 0,
     });
     expect(dup).toMatchObject({ ok: false, code: "duplicate-role", signaled: false });
@@ -102,7 +102,7 @@ describe("identity operation preflight (zero-signal abort)", () => {
       waitHostGone: async () => true,
       supervisorRelaunch: async () => null,
       waitReady: async () => null,
-      armGuardian: (frozen) => guard(tree2, frozen),
+      armGuardian: async (frozen) => guard(tree2, frozen),
       now: () => 0,
     });
     expect(locked).toMatchObject({ ok: false, code: "lock-conflict", signaled: false });
@@ -127,7 +127,7 @@ describe("identity operation preflight (zero-signal abort)", () => {
       waitHostGone: async () => true,
       supervisorRelaunch: async () => null,
       waitReady: async () => null,
-      armGuardian: (frozen) => guard(tree2, frozen),
+      armGuardian: async (frozen) => guard(tree2, frozen),
       now: () => 0,
     });
     expect(stale).toMatchObject({ ok: false, code: "stale-marker", signaled: false });
@@ -159,7 +159,7 @@ describe("identity operation happy path and fail-closed deactivate", () => {
         compiled: true,
         modeld: false,
       }),
-      armGuardian: (frozen) => guard(tree, frozen),
+      armGuardian: async (frozen) => guard(tree, frozen),
       now: () => 10,
     });
     expect(result.ok).toBe(true);
@@ -186,7 +186,7 @@ describe("identity operation happy path and fail-closed deactivate", () => {
       waitHostGone: async () => true,
       supervisorRelaunch: async () => null,
       waitReady: async () => null,
-      armGuardian: (frozen) => guard(tree, frozen),
+      armGuardian: async (frozen) => guard(tree, frozen),
       now: () => 0,
     });
     expect(freezeFail.ok).toBe(false);
@@ -199,6 +199,7 @@ describe("identity operation happy path and fail-closed deactivate", () => {
       processes: tree,
       classify: classify(tree),
       diskSha: () => "sha-reviewed",
+      ephemeralRoot: await ephemeral(),
       attestation: { identity: { ...host, start: host.start + 99 }, diskSha: "sha-reviewed" },
       waitHostGone: async () => true,
       waitReplacement: async () => null,

@@ -1,7 +1,17 @@
+import { realpathSync } from "node:fs";
 import Module from "node:module";
 import { shouldTransformArgv } from "./argv.ts";
 import { isLiveHostPath } from "./live-slices.ts";
 import { applyPatchProfile, type PatchProfile } from "./transform.ts";
+
+function sameFile(left: string, right: string): boolean {
+  if (left === right) return true;
+  try {
+    return realpathSync(left) === realpathSync(right);
+  } catch {
+    return false;
+  }
+}
 
 export type CompileTransform = {
   content: string;
@@ -20,7 +30,7 @@ export function transformCompileInput(input: {
   if (isLiveHostPath(input.targetPath) && input.allowLiveHost !== true) {
     return { content: input.content, transformed: false, refused: "live-host-blocked" };
   }
-  if (input.filename !== input.targetPath) {
+  if (!sameFile(input.filename, input.targetPath)) {
     return { content: input.content, transformed: false };
   }
   const result = applyPatchProfile(input.content, input.profile);
@@ -55,10 +65,12 @@ export function installCompileHook(input: {
       profile: input.profile,
       allowLiveHost: input.allowLiveHost,
     });
-    if (filename === input.targetPath) {
+    if (sameFile(filename, input.targetPath)) {
       proto._compile = original;
+      const compiled = original.call(this, next.content, filename);
       applied = next.transformed;
       if (next.transformed) input.onTransformed?.();
+      return compiled;
     }
     return original.call(this, next.content, filename);
   };

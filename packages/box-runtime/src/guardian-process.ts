@@ -5,46 +5,75 @@ import { fileURLToPath } from "node:url";
 import type { ProcessIdentity } from "./process.ts";
 
 const CHILD = fileURLToPath(new URL("./guardian-child.cjs", import.meta.url));
+const HOLDER = fileURLToPath(new URL("./injector-hold.cjs", import.meta.url));
 
 export type IndependentGuardian = {
-  pid: number;
+  armed: boolean;
+  pid: number | null;
+  injectorPid: number | null;
   release: () => void;
-  /** test helper: kill this injector-side pipe owner only */
-  crashInjectorPipe: () => void;
+  killInjector: () => void;
 };
 
-export function spawnIndependentGuardian(input: {
+export async function spawnIndependentGuardian(input: {
   frozen: ProcessIdentity[];
   deadlineMs: number;
   stateDir: string;
   execPath?: string;
-}): IndependentGuardian {
+  readyMs?: number;
+}): Promise<IndependentGuardian> {
   mkdirSync(input.stateDir, { recursive: true, mode: 0o700 });
-  const identityPath = join(input.stateDir, `guardian-${process.pid}.json`);
+  const identityPath = join(input.stateDir, `guardian-${process.pid}-${Date.now()}.json`);
   writeFileSync(
     identityPath,
     `${JSON.stringify({ frozen: input.frozen, deadlineMs: input.deadlineMs })}\n`,
     { mode: 0o600 },
   );
-  const child: ChildProcess = spawn(input.execPath ?? process.execPath, [CHILD, identityPath], {
-    stdio: ["pipe", "ignore", "ignore"],
-    detached: true,
+  const execPath = input.execPath ?? process.execPath;
+  const holder: ChildProcess = spawn(execPath, [HOLDER, CHILD, identityPath], {
+    stdio: ["ignore", "pipe", "ignore"],
   });
-  if (child.pid == null) throw new Error("guardian-spawn-failed");
-  child.unref();
-  const release = () => {
+  const empty = {
+    armed: false,
+    pid: holder.pid ?? null,
+    injectorPid: holder.pid ?? null,
+    release() {},
+    killInjector() {},
+  };
+  if (holder.pid == null) return empty;
+  const armed = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), input.readyMs ?? 2000);
+    holder.stdout?.once("data", (chunk: Buffer) => {
+      clearTimeout(timer);
+      resolve(String(chunk).includes("armed"));
+    });
+    holder.once("exit", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
+  if (!armed) {
     try {
-      child.stdin?.end();
+      holder.kill("SIGTERM");
     } catch {
       /* ignore */
     }
-  };
+    return { ...empty, pid: holder.pid, injectorPid: holder.pid };
+  }
   return {
-    pid: child.pid,
-    release,
-    crashInjectorPipe: () => {
+    armed: true,
+    pid: holder.pid,
+    injectorPid: holder.pid,
+    release: () => {
       try {
-        child.stdin?.destroy();
+        holder.kill("SIGTERM");
+      } catch {
+        /* ignore */
+      }
+    },
+    killInjector: () => {
+      try {
+        holder.kill("SIGKILL");
       } catch {
         /* ignore */
       }

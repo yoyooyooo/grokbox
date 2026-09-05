@@ -44,7 +44,8 @@ export type IdentityOpContext = {
   waitHostGone: (old: ProcessIdentity) => Promise<boolean>;
   supervisorRelaunch: (supervisor: ProcessIdentity) => Promise<ProcessIdentity | null>;
   waitReady: (hostPid: number) => Promise<IdentityMarker | null>;
-  armGuardian: (frozen: ProcessIdentity[]) => { release: () => void };
+  armGuardian: (frozen: ProcessIdentity[]) => Promise<{ ok: true; release: () => void } | { ok: false }>;
+  prepareReplacement?: () => Promise<void>;
   persistAttestation?: (host: ProcessIdentity, sha: string, windowMs: number) => Promise<void>;
   now: () => number;
 };
@@ -85,7 +86,8 @@ export async function runIdentityOperation(ctx: IdentityOpContext): Promise<Iden
     if (!unique.ok) return fail(unique.code, false, false);
     const { wrapper, supervisor, host } = unique.chain;
 
-    const guardian = ctx.armGuardian([wrapper]);
+    const guardian = await ctx.armGuardian([wrapper]);
+    if (!guardian.ok) return fail("guardian-not-armed", false, false);
     const started = ctx.now();
     try {
       if (!signalIfMatch(ctx.processes, wrapper, "SIGSTOP").ok) {
@@ -96,6 +98,7 @@ export async function runIdentityOperation(ctx: IdentityOpContext): Promise<Iden
         guardian.release();
         return fail("disk-sha-changed", true, true);
       }
+      await ctx.prepareReplacement?.();
       if (!signalIfMatch(ctx.processes, host, "SIGTERM").ok) {
         guardian.release();
         return fail("identity-mismatch", true, true);
@@ -161,6 +164,7 @@ export type DeactivateContext = {
   processes: ProcessPort;
   classify: RoleClassifier;
   diskSha: () => string;
+  ephemeralRoot: string;
   attestation: { identity: ProcessIdentity; diskSha: string } | null;
   waitHostGone: (old: ProcessIdentity) => Promise<boolean>;
   waitReplacement: (oldPid: number) => Promise<ProcessIdentity | null>;
@@ -170,7 +174,7 @@ export type DeactivateContext = {
 
 export async function runIdentityDeactivate(ctx: DeactivateContext): Promise<IdentityOpResult> {
   const shaBefore = ctx.diskSha();
-  const fail = (code: string): IdentityOpResult => ({
+  const fail = (code: string, signaled = true): IdentityOpResult => ({
     ok: false,
     recoveryRequired: true,
     code,
@@ -180,6 +184,9 @@ export async function runIdentityDeactivate(ctx: DeactivateContext): Promise<Ide
     census: rolesCensus(ctx.processes, ctx.classify),
     coverage: "window-open",
   });
+  const lock = await acquireExclusiveLock(operationLockPath(ctx.ephemeralRoot));
+  if (!lock.ok) return fail("lock-conflict", false);
+  try {
   if (!ctx.attestation) {
     return {
       ok: false,
@@ -214,15 +221,27 @@ export async function runIdentityDeactivate(ctx: DeactivateContext): Promise<Ide
     coverage: "none",
     host: unique.chain.host,
   };
+  } finally {
+    await lock.lock.release();
+  }
 }
 
 export function attestationAgrees(input: {
-  attestation: { identity: ProcessIdentity; diskSha: string; mode?: string } | null;
+  attestation: {
+    identity: ProcessIdentity;
+    diskSha: string;
+    mode?: string;
+    coverage?: string;
+    modeld?: boolean;
+  } | null;
   liveHost: ProcessIdentity | null;
   diskSha: string | null;
   census: Census;
 }): boolean {
   if (!input.attestation || !input.liveHost || !input.diskSha) return false;
+  if (input.attestation.mode !== undefined && input.attestation.mode !== "identity") return false;
+  if (input.attestation.coverage !== undefined && input.attestation.coverage !== "attested") return false;
+  if (input.attestation.modeld === true) return false;
   if (!identitiesMatch(input.attestation.identity, input.liveHost)) return false;
   if (input.attestation.diskSha !== input.diskSha) return false;
   return singleOfficialChain(input.census);
