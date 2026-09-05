@@ -327,9 +327,16 @@ Accepted ownership, not an implementation completion claim. Product obligations 
 
 ```text
 src/box-runtime/     helpers when the slice lands (not a second published package)
-~/.grokbox/box-runtime/   models.json, releases, state  (not ~/.grokbox/runtime/)
+~/.grokbox/box-runtime/
+  models.json
+  releases/ state/
+  contracts/HEAD + generations/<sourceSha>/   Host contract slices, not full bundle
 $XDG_RUNTIME_DIR/grokbox/modeld.sock
 ```
+
+Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. It does not inject an unknown bundle, cache rolling full `host-main.cjs`, or write git. Keep at most 5 SHAs, never deleting the live SHA or the last SHA that matched a PatchProfile.
+
+PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`). modeld resolves `assignments.agents[agentId] ?? assignments.main`.
 
 Composition roots:
 

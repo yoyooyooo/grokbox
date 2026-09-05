@@ -14,7 +14,7 @@ Host bundle SHA、PromptSession/`SendToUser` 合同、官方 wrapper/supervisor�
 
 ## 1. 结果
 
-用户继续在原 Grok Bot App 中工作。ordinary main 的模型可由盒内 `assignments.main` 替换。Host 继续拥有排队、工具授权与执行、Transcript、Memory、`SendToUser`。
+用户继续在原 Grok Bot App 中工作。ordinary main 的模型由盒内配置替换，且 **每个 Bot 可以覆盖默认模型**。Host 继续拥有排队、工具授权与执行、Transcript、Memory、`SendToUser`。
 
 不允许：第二套 Agent loop、全 backend MITM、永久改官方磁盘 bundle、经 daemon/SSH 转发 runtime mutation、managed 失败后静默回官方。
 
@@ -36,7 +36,9 @@ App / Gateway / Host queue
   -> Host tool loop / SendToUser / Transcript
 ```
 
-Host 内 hook **不读** `models.json`，**不读** attestation 文件。`activate --mode route` 必须已有有效 `assignments.main`。
+Host 内 hook **不读** `models.json`，**不读** attestation 文件。`activate --mode route` 必须已有有效 `assignments.main`（全盒默认）。
+
+现役 `createSession` 的 `sessionOptions` **没有** agent id。按 Bot 分流是核心能力，因此 PatchProfile 除 `return session` 外还有 **第二精确切片**：在 `runTurn` 构造 `mainSessionOptions` 时写入 `agentId: host.getConversationId()`（owning agent id）。仍是 NODE_OPTIONS 内存 transform，不写官方磁盘。modeld 用 `assignments.agents[agentId] ?? assignments.main`。没有覆盖不是回官方。
 
 protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后再决策，不双轨。
 
@@ -67,8 +69,9 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - 单正常 mutation writer = coordinator。guardian 不得 start/kill/改配置/重试注入。
 - 未知 bundle 不猜 anchor。coverage 与 watchdog.state 分开：`coverage=window-open`，`watchdog.state=degraded`，`reason=unsupported_bundle`。
 - 未补丁窗口只保证测得到 duration；无可信 turn 信号时 `affectedInvocations=unknown`。
-- 配置与 release 在 `~/.grokbox/box-runtime/`，不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
+- 配置、release 与合同快照在 `~/.grokbox/box-runtime/`，不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
 - 不新建独立 npm package；一个源码模块、多个 entry。
+- PatchProfile 含两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId`。任一处锚点不唯一即拒绝。
 
 Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制完整 `/proc/environ`。
 
@@ -77,8 +80,8 @@ Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制�
 ## 5. 模型运行时
 
 - `~/.grokbox/box-runtime/models.json`；`apiKeyRef` 仅为 `env:<NAME>` 或 `file:/absolute/path`。
-- 只实现 `assignments.main`。其它 Host 调用面是覆盖地图，不是 SlotRegistry。
-- turn 钉住 immutable resolved-config **和 credential fingerprint**，直到 terminal 或 idle TTL；不在 turn 内 refresh/换账户。
+- `assignments.main` 是全盒默认；`assignments.agents.<id>` 按 Bot 覆盖。键用稳定 agent id；CLI 在盒内解析名字。省略 `--for` 的 `models use` 改默认。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。
+- turn 钉住该 Bot 的 immutable resolved-config **和 credential fingerprint**，直到 terminal 或 idle TTL；不在 turn 内 refresh/换账户。改 Jerry 不影响 Tom 正在跑的回合。
 - modeld 有 generation-scoped 内存 registry（id → fingerprint + state + terminal）。`status` 不对账续传正文。disconnect → abort + unknown。duplicate submit 不重新 dispatch。
 - 体验不降级：优先让 Host 既有 retry/checkpoint 工作。不另建第二套消息队列。
 - MVP envelope 见产品合同 §12：文本、工具、视觉（模型声明才送；否则可见告警）、并行不得丢 id。
@@ -103,7 +106,50 @@ managed 一旦对供应商出门，失败不得静默回官方或换 provider。
 
 ---
 
-## 6. 证据分层
+## 6. 合同切片快照
+
+目的：官方 Host 更新后知道 **刀口和合同漂了没有**，不是备份/还原官方 bundle。快照 **不进 git、不进 npm pack**，也不自动生成新补丁。
+
+### 存什么
+
+只存合同切片，默认不缓存 28MB 整包：
+
+```text
+~/.grokbox/box-runtime/contracts/
+  HEAD                         当前已观察的 sourceSha（一行）
+  generations/<sourceSha>/
+    meta.json                  sourceSha、bytes、hostVersion、observedAt、切片 SHA、相对上一份的 drift、可选 matchedProfileId
+    slices/
+      create-session
+      session-options
+      agent-id
+      prompt-session            锚点能命中才写
+```
+
+目录 `0700`，文件 `0600`。`meta.json` 不含 env、token、prompt、PID 身份权威。
+
+整包只读拷到 `/tmp` 仅用于离线重做 profile，用完丢弃。不滚动保存整文件。
+
+保留最近 **5** 个不同 sourceSha。删除时跳过当前 live SHA，以及「最后一份曾匹配过 PatchProfile 的 SHA」。
+
+### 何时写
+
+只在只读观察到 **整文件 SHA ≠ HEAD** 时写新 generation（含第一次看见 Host）。不在每次 turn、每次 `status`、或 SIGSTOP 临界区写。官方文件读失败则不写，coverage=`unknown`。
+
+```text
+observe live sourceSha
+if sha == HEAD: return
+extract slices → atomic write generations/<sha>/
+HEAD = sha
+if no PatchProfile matches: coverage=window-open, reason=unsupported_bundle, 报告哪些切片 drift
+prune to 5
+```
+
+未知 bundle 仍先拒绝注入。快照只给人/Agent 审下一份 PatchProfile。
+
+---
+
+## 7. 证据分层
 
 | 标签 | 含义 |
 |---|---|
@@ -129,10 +175,12 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 
 ---
 
-## 7. 明确非目标
+## 8. 明确非目标
 
-- 不把 runtime 实现加回 sibling `grok-bot`
-- 不做 RoutePolicy 引擎、per-agent 路由、首期 WebUI（盒内 VNC UI 是后续客户端）
+- 不把 runtime 实现或 Host dump 提交进本仓库
+- 不做 RoutePolicy 引擎、不做「有的 Bot 继续官方」的混合路由（另一次产品决定）
+- 不把整份 `host-main.cjs` 当滚动备份，不从快照还原官方 Host，不按 diff 自动猜补丁
+- 首期 WebUI（盒内 VNC UI 是后续客户端）
 - 不把 watchdog 并进 `daemon serve` 或 jobs
 - 不把完整 Pi/Cursor agent 伪装成一次 PromptSession
 - 不宣称 billing verified、零窗口、fresh recreate 自动恢复
