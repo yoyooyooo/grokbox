@@ -34,3 +34,9 @@ export {
 } from "./transform.ts";
 export { createManagedPromptSession, type PromptSession, type StreamHandle } from "./session.ts";
 export { sha256Bytes, sha256Text } from "./hash.ts";
+export { identitiesMatch, signalIfMatch, singleOfficialChain, type ProcessIdentity, type ProcessPort } from "./process.ts";
+export { armGuardian } from "./guardian.ts";
+export { runObserveOrIdentityInject, type InjectContext } from "./inject.ts";
+export { createModeld, createFileEnvSecretResolver, type AdmitResult } from "./modeld.ts";
+export { observeAndHeal } from "./watchdog.ts";
+export { resolveAssignment } from "./models.ts";

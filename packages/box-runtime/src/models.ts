@@ -247,6 +247,14 @@ export function disclosure(file: ModelsFile, modelId: string, forAgent?: string)
   };
 }
 
+export function resolveAssignment(file: ModelsFile, agentId?: string): ModelRecord {
+  const id = agentId && file.assignments.agents[agentId] ? file.assignments.agents[agentId] : file.assignments.main;
+  if (!id) {
+    throw new BoxRuntimeError("invalid_usage", "No assignments.main; missing override is not official inference.");
+  }
+  return requireModel(file, id);
+}
+
 export function secretsDir(root: string): string {
   return join(root, "secrets");
 }
