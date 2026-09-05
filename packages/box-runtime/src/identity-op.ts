@@ -31,6 +31,7 @@ export type IdentityOpResult = {
   coverage: "none" | "attested" | "window-open";
   host?: ProcessIdentity;
   windowMs?: number;
+  launchMode?: "direct-launch" | "transient-adopt";
 };
 
 export type IdentityOpContext = {

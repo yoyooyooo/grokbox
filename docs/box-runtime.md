@@ -58,6 +58,9 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 | committed attestation | watchdog 已核对这一代 PID/start/SHA/mode |
 | W1 | 钩子还不在；拦不住 `createSession` |
 | W2 | 钩子在、尚未签字；modeld 可出门前等待 |
+| direct-launch | 携带已审 preload env 的 supervisor **直接生出** Host（Unix 父子） |
+| transient-adopt | 临时 supervisor 生出 detached identity Host；新的未 preload 官方 supervisor **逻辑收养**同一孤儿 |
+| logical adoption | supervisor 以 gateway pid / 存活身份承认 Host，**不** re-parent；不是 boot 持久化，也不是 PPID 证据 |
 
 ---
 
@@ -76,7 +79,17 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - 不新建独立 npm package；一个源码模块、多个 entry。
 - PatchProfile 含两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId`。任一处锚点不唯一即拒绝。
 
-Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制完整 `/proc/environ`。
+Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制完整 `/proc/environ`。只许 `identityLaunchFields` / 固定 allowlist，不得整份克隆 supervisor 环境。
+
+H3 有两条互斥启动策略（非公开，不是 CLI；身份注入 ≠ route）：
+
+- **direct-launch / direct-overlay：** 当前 supervisor 已能把 allowlist launch env 交给下一次**它所生的** Host。成功事实是唯一官方链且 `host.ppid === supervisor.pid`。不要为了收养去放宽这条直接链证明。
+- **transient-adopt：** 当前官方 supervisor **不是** direct-overlay。经单独授权的 coordinator 才可以：对精确 wrapper `SIGSTOP`；对精确旧官方 supervisor 与旧 Host 身份核对后 `SIGTERM`；用 allowlist env 让**操作拥有的**临时 supervisor 生出 detached identity Host；对该临时 supervisor `SIGTERM`（Host 必须作为孤儿存活）；`SIGCONT` wrapper；**新的未 preload 官方 supervisor 逻辑收养同一个 Host**。成功事实不是 PPID：唯一 wrapper+supervisor+Host、supervisor 仍是 wrapper 之子、`gateway.json.pid` 与 Host 一致、Host 稳定身份（pid/uid/start/exe/cmdline）跨 handoff 不变、**最终 Host PPID 不是新 supervisor**、临时 supervisor 已消失、新 supervisor 无 preload、磁盘 SHA 不变、committed attestation 含 `launchMode: "transient-adopt"`。有界稳定期内不得出现双 Host/双 supervisor。
+- 现役官方 `sand-supervisor` 不是 `direct-overlay`。只有精确版本/能力审查通过后才是 `transient-adopt-candidate`。未接线的 candidate 不得当作 live 已实现，也不得因此去信号现役 PID。
+
+Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配置/重试注入。禁止对官方 wrapper/supervisor/Host 回退 `SIGKILL`。coordinator 在已授权 H3 中可以对**精确**旧官方 supervisor 与**精确**操作拥有的临时 supervisor 做身份核对后的 `SIGTERM`。
+
+官方 relaunch 仍打开未补丁窗口（hybrid）。transient-adopt **不是** boot env D，也不把 preload 写进官方磁盘或 wrapper。
 
 ---
 
@@ -174,7 +187,7 @@ I1 ordinary-main canary（H3+M3）
 I2 relaunch / window duration
 ```
 
-H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离线证据。
+H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离线证据。H3 成功证据随策略而变：direct-launch 用父子链；transient-adopt 用逻辑收养，不得把 `host.ppid === supervisor.pid` 定义成「已被收养」。H3 仍是 hybrid / live-transient；**不是** product boot env D（控制面把精确 env 写入 `start-sand-box` 并跨 recreate 保持仍未证明）。
 
 ---
 
@@ -187,7 +200,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 读磁盘 SHA；变化则写合同切片快照
 - 作废旧 attestation；未知 SHA 不注入 + circuit-open
 - 注入中 SHA 变了则 abort 并按已有路径恢复
-- 注入结束普查：恰好 1 wrapper + 1 supervisor + 1 Host
+- 注入结束普查：恰好 1 wrapper + 1 supervisor + 1 Host，且满足当前策略拓扑（supervisor-born direct-child **或** logically adopted singleton）
 - 停掉我们记下身份的临时 supervisor / 到期 guardian；对不上身份则停手
 - `stale-patched`：对签过字且身份仍过的那一个 Host PID 发一次 SIGTERM，让官方用当前磁盘拉未补丁进程；失败一次即 degraded
 - 有界 ndjson（`/workspace/.grokbox/box-runtime/log/events.ndjson`，白名单字段）
@@ -221,5 +234,6 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 不把 watchdog 并进 `daemon serve` 或 jobs
 - 不把完整 Pi/Cursor agent 伪装成一次 PromptSession
 - 不宣称 billing verified、零窗口、fresh recreate 自动恢复
+- 不宣称 product boot env D：没有受支持的产品控制面把精确 preload 写入 `start-sand-box`、跨 image recreate 保持、或保证 runtime 在第一代 Host 前就绪。transient-adopt 只是一代进程内的 hybrid 窗口，不是 D
 
 后续变化直接改本 Current Home 与产品/架构义务，不再维持平行提案。

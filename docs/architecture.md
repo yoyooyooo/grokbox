@@ -337,7 +337,15 @@ Composition roots:
 - `runtime modeld run`: config, one driver, credentials, generation-scoped invocation registry. Provider effect waits for committed attestation or bounded timeout.
 - Host preload: exact SHA transform and route hook. Does not read `models.json` or attestation files.
 - existing `daemon serve`: no default runtime mutation capability.
+- non-public H3 launch-strategy port (not a CLI command): `direct-overlay` | `transient-adopt-candidate` | `unavailable`. Topology evidence is strategy-aware and must not treat every official chain as PPID-only.
 
-`packages/box-runtime` is an unpublished workspace package. Do not publish it separately until an independently installed consumer exists. Offline transform and PromptSession contract tests are required before any live Host inject.
+H3 topology:
+
+- `direct-launch` / `direct-overlay`: `findUniqueOfficialChain` — unique wrapper+supervisor+Host and supervisor-born Host (`host.ppid === supervisor.pid`). Do not weaken this finder to pass adoption.
+- `transient-adopt`: `findAdoptedHostState` — logical adoption of a surviving Host. Success is **not** `host.ppid === supervisor.pid`. Evidence is a singleton wrapper/supervisor/Host, wrapper-owned supervisor, gateway pid agreement, stable Host identity, temp supervisor gone, adopting supervisor unpreloaded, disk SHA unchanged, attestation `launchMode: "transient-adopt"`.
+- Current official `sand-supervisor` is not `direct-overlay`. Classify `transient-adopt-candidate` only after exact version/capability review. Live wiring is a separately authorized slice; unwired candidates abort with zero signals.
+- Guardian remains SIGCONT-only on an exact frozen wrapper. The coordinator may identity-checked TERM the exact old official supervisor and the exact operation-owned temp supervisor during authorized H3. No SIGKILL of official wrapper/supervisor/Host.
+
+`packages/box-runtime` is an unpublished workspace package. Do not publish it separately until an independently installed consumer exists. Offline transform and PromptSession contract tests are required before any live Host inject. An adopted-topology offline fixture must keep the final Host PPID different from the new supervisor; that fixture is not a live inject.
 
 Credential rotation mid-turn is forbidden: pin credential fingerprint with the resolved config until turn terminal or idle TTL.

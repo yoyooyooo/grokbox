@@ -18,18 +18,31 @@ export type ProcessPort = {
   signal: (expected: ProcessIdentity, signal: SignalName) => SignalResult;
 };
 
+export type StableProcessIdentity = Pick<ProcessIdentity, "pid" | "uid" | "start" | "exe" | "cmdline">;
+
 export function identitiesMatch(expected: ProcessIdentity, observed: ProcessIdentity | null): boolean {
+  if (!observed) return false;
+  return (
+    stableIdentitiesMatch(expected, observed) &&
+    expected.ppid === observed.ppid &&
+    expected.ancestry.length === observed.ancestry.length &&
+    expected.ancestry.every((value, index) => value === observed.ancestry[index])
+  );
+}
+
+/** Survives Unix re-parenting. Do not use as a substitute for full identity at signal time. */
+export function stableIdentitiesMatch(
+  expected: StableProcessIdentity,
+  observed: ProcessIdentity | null,
+): boolean {
   if (!observed) return false;
   return (
     expected.pid === observed.pid &&
     expected.uid === observed.uid &&
     expected.start === observed.start &&
     expected.exe === observed.exe &&
-    expected.ppid === observed.ppid &&
     expected.cmdline.length === observed.cmdline.length &&
-    expected.cmdline.every((value, index) => value === observed.cmdline[index]) &&
-    expected.ancestry.length === observed.ancestry.length &&
-    expected.ancestry.every((value, index) => value === observed.ancestry[index])
+    expected.cmdline.every((value, index) => value === observed.cmdline[index])
   );
 }
 

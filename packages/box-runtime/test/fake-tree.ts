@@ -54,7 +54,13 @@ export class FakeProcessTree implements ProcessPort {
     this.signals.push({ pid: expected.pid, signal, start: expected.start, exe: expected.exe });
     if (signal === "SIGSTOP") row.stopped = true;
     if (signal === "SIGCONT") row.stopped = false;
-    if (signal === "SIGTERM" || signal === "SIGKILL") row.alive = false;
+    if (signal === "SIGTERM" || signal === "SIGKILL") {
+      row.alive = false;
+      for (const child of this.procs.values()) {
+        if (!child.alive || child.ident.ppid !== expected.pid) continue;
+        child.ident = { ...child.ident, ppid: 1, ancestry: [1] };
+      }
+    }
     return { ok: true };
   }
 

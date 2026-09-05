@@ -13,6 +13,7 @@ export type CoverageAttestation = {
   at: string;
   modeld: false;
   windowMs?: number;
+  launchMode?: "direct-launch" | "transient-adopt";
 };
 
 export function attestationPath(ephemeralRoot = ephemeralRuntimeRoot()): string {

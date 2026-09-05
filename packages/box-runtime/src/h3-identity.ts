@@ -10,6 +10,10 @@ import {
 import { pickLaunchEnv } from "./launch-env.ts";
 import { loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
+import {
+  runTransientAdoptDeactivate,
+  runTransientAdoptOperation,
+} from "./transient-adopt.ts";
 import type { PatchProfile } from "./transform.ts";
 
 export type H3OfflinePorts = {
@@ -21,6 +25,12 @@ export type H3OfflinePorts = {
   applyLaunchEnv: (env: Record<string, string>) => Promise<void>;
   hasGrokboxPreload: (host: ProcessIdentity) => boolean;
   now?: () => number;
+};
+
+export type H3AdoptPorts = H3OfflinePorts & {
+  spawnTempSupervisor: () => Promise<ProcessIdentity | null>;
+  waitNewHost: (oldHostPid: number) => Promise<ProcessIdentity | null>;
+  readGatewayPid: () => number | null;
 };
 
 function loadExistingReviewedProfile(path: string, observedSha: string): PatchProfile {
@@ -129,6 +139,7 @@ export async function runH3OfflineInject(input: {
         at: new Date().toISOString(),
         modeld: false,
         windowMs,
+        launchMode: "direct-launch",
       });
     },
     now: input.ports.now ?? (() => Date.now()),
@@ -183,4 +194,139 @@ export async function runH3OfflineDeactivate(input: {
     },
   });
   return result;
+}
+
+/** Non-public transient-adopt composition. Disposable trees only. */
+export async function runH3OfflineAdopt(input: {
+  ephemeralRoot: string;
+  reviewedProfilePath: string;
+  diskSha: () => string;
+  operationId: string;
+  execPath: string;
+  preloadPath: string;
+  hostBundle: string;
+  markerPath: string;
+  launchSource: NodeJS.Dict<string>;
+  ports: H3AdoptPorts;
+}): Promise<IdentityOpResult> {
+  const observedSha = input.diskSha();
+  let profile: PatchProfile;
+  try {
+    profile = loadExistingReviewedProfile(input.reviewedProfilePath, observedSha);
+  } catch {
+    return {
+      ok: false,
+      recoveryRequired: false,
+      code: "unknown-sha",
+      signaled: false,
+      diskShaBefore: observedSha,
+      diskShaAfter: input.diskSha(),
+      census: { wrapper: 0, supervisor: 0, host: 0, tempSupervisor: 0, guardian: 0, extras: 0 },
+      coverage: "none",
+      launchMode: "transient-adopt",
+    };
+  }
+  const result = await runTransientAdoptOperation({
+    processes: input.ports.processes,
+    classify: input.ports.classify,
+    reviewedProfile: profile,
+    diskSha: input.diskSha,
+    ephemeralRoot: input.ephemeralRoot,
+    operationId: input.operationId,
+    readMarker: () => null,
+    waitGone: input.ports.waitHostGone,
+    waitReady: input.ports.waitReady,
+    prepareTempLaunch: async () => {
+      const launched = identityLaunchFields({
+        source: input.launchSource,
+        preloadPath: input.preloadPath,
+        profilePath: input.reviewedProfilePath,
+        markerPath: input.markerPath,
+        operationId: input.operationId,
+        hostBundle: input.hostBundle,
+      });
+      if (!launched.ok) throw new Error(launched.code);
+      await input.ports.applyLaunchEnv(launched.env);
+    },
+    spawnTempSupervisor: input.ports.spawnTempSupervisor,
+    waitNewHost: input.ports.waitNewHost,
+    readGatewayPid: input.ports.readGatewayPid,
+    armGuardian: async (frozen) => {
+      const guardian = await spawnIndependentGuardian({
+        frozen,
+        deadlineMs: 8000,
+        stateDir: input.ephemeralRoot,
+        execPath: input.execPath,
+      });
+      if (!guardian.armed) return { ok: false };
+      return { ok: true, release: guardian.release };
+    },
+    persistAttestation: async (host, sha, windowMs) => {
+      await writeAttestation(input.ephemeralRoot, {
+        mode: "identity",
+        coverage: "attested",
+        diskSha: sha,
+        pid: host.pid,
+        start: host.start,
+        identity: host,
+        at: new Date().toISOString(),
+        modeld: false,
+        windowMs,
+        launchMode: "transient-adopt",
+      });
+    },
+    hasGrokboxPreload: input.ports.hasGrokboxPreload,
+    now: input.ports.now ?? (() => Date.now()),
+  });
+  if (!result.ok || !result.host) return result;
+  const record = await readAttestation(input.ephemeralRoot);
+  if (
+    !record ||
+    record.launchMode !== "transient-adopt" ||
+    !attestationAgrees({
+      attestation: record,
+      liveHost: result.host,
+      diskSha: result.diskShaAfter,
+      census: result.census,
+    })
+  ) {
+    return {
+      ...result,
+      ok: false,
+      recoveryRequired: true,
+      code: "attestation-uncommitted",
+      coverage: "window-open",
+    };
+  }
+  return result;
+}
+
+export async function runH3OfflineAdoptDeactivate(input: {
+  ephemeralRoot: string;
+  diskSha: () => string;
+  ports: H3AdoptPorts;
+}): Promise<IdentityOpResult> {
+  const record = await readAttestation(input.ephemeralRoot);
+  return await runTransientAdoptDeactivate({
+    processes: input.ports.processes,
+    classify: input.ports.classify,
+    diskSha: input.diskSha,
+    ephemeralRoot: input.ephemeralRoot,
+    attestation: record,
+    waitGone: input.ports.waitHostGone,
+    waitReplacement: async (oldPid) => {
+      const start = Date.now();
+      while (Date.now() - start < 8000) {
+        const host = input.ports.processes.list().find((ident) => input.ports.classify(ident) === "host");
+        if (host && host.pid !== oldPid && !input.ports.hasGrokboxPreload(host)) return host;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return null;
+    },
+    hasGrokboxPreload: input.ports.hasGrokboxPreload,
+    readGatewayPid: input.ports.readGatewayPid,
+    clearAttestation: async () => {
+      await clearAttestation(input.ephemeralRoot);
+    },
+  });
 }

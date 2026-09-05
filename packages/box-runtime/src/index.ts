@@ -26,7 +26,13 @@ export {
 export { projectStatus, projectLiveStatus, readContracts, readEvents, type RuntimeStatus } from "./observe.ts";
 export { runIdentityChainInject, runLiveIdentityInject, runLiveIdentityDeactivate } from "./live-inject.ts";
 export { runIdentityOperation, runIdentityDeactivate, attestationAgrees } from "./identity-op.ts";
-export { runH3OfflineInject, runH3OfflineDeactivate, identityLaunchFields } from "./h3-identity.ts";
+export {
+  runH3OfflineInject,
+  runH3OfflineDeactivate,
+  runH3OfflineAdopt,
+  runH3OfflineAdoptDeactivate,
+  identityLaunchFields,
+} from "./h3-identity.ts";
 export {
   decideLivePreflight,
   preflightLiveH3,
@@ -34,7 +40,14 @@ export {
   writeReviewedProfileFromCopy,
 } from "./h3-live.ts";
 export { pickLaunchEnv } from "./launch-env.ts";
-export { findUniqueOfficialChain, loadReviewedProfile } from "./official-chain.ts";
+export { decideH3LaunchStrategy, type H3LaunchStrategy } from "./launch-strategy.ts";
+export {
+  findUniqueOfficialChain,
+  findAdoptedHostState,
+  proveStableOfficialState,
+  loadReviewedProfile,
+} from "./official-chain.ts";
+export { runTransientAdoptOperation, runTransientAdoptDeactivate } from "./transient-adopt.ts";
 export {
   applyPatchProfile,
   extractContractSlices,
@@ -47,7 +60,14 @@ export {
 } from "./transform.ts";
 export { createManagedPromptSession, type PromptSession, type StreamHandle } from "./session.ts";
 export { sha256Bytes, sha256Text } from "./hash.ts";
-export { identitiesMatch, signalIfMatch, singleOfficialChain, type ProcessIdentity, type ProcessPort } from "./process.ts";
+export {
+  identitiesMatch,
+  stableIdentitiesMatch,
+  signalIfMatch,
+  singleOfficialChain,
+  type ProcessIdentity,
+  type ProcessPort,
+} from "./process.ts";
 export { armGuardian } from "./guardian.ts";
 export { runObserveOrIdentityInject, type InjectContext } from "./inject.ts";
 export { createModeld, createFileEnvSecretResolver, type AdmitResult } from "./modeld.ts";

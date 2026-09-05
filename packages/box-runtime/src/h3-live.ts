@@ -18,6 +18,7 @@ import {
   readNamedProcEnv,
   roleOf,
 } from "./live-proc.ts";
+import { decideH3LaunchStrategy, type H3LaunchStrategy } from "./launch-strategy.ts";
 import { findUniqueOfficialChain, loadReviewedProfile } from "./official-chain.ts";
 import {
   countRoles,
@@ -44,7 +45,7 @@ export type LivePreflight = {
   census: Census;
   unique: boolean;
   reviewedProfile: boolean;
-  canApplyLaunchEnv: boolean;
+  strategy: H3LaunchStrategy;
   nodeOptions: { wrapper: boolean; supervisor: boolean; host: boolean };
   grokboxPreload: { host: boolean };
   chain?: {
@@ -64,12 +65,15 @@ export type H3LiveSessionResult = {
 export function decideLivePreflight(input: {
   unique: { ok: true } | { ok: false; code: string };
   reviewed: { ok: true } | { ok: false; code: string };
-  canApplyLaunchEnv: boolean;
+  strategy: H3LaunchStrategy;
 }): { ok: true } | { ok: false; code: string } {
   if (!input.unique.ok) return { ok: false, code: input.unique.code };
   if (!input.reviewed.ok) return { ok: false, code: input.reviewed.code };
-  if (!input.canApplyLaunchEnv) return { ok: false, code: "launch-env-unapplicable" };
-  return { ok: true };
+  if (input.strategy === "direct-overlay") return { ok: true };
+  if (input.strategy === "transient-adopt-candidate") {
+    return { ok: false, code: "transient-adopt-unwired" };
+  }
+  return { ok: false, code: "launch-strategy-unavailable" };
 }
 
 export function liveClassify(identity: ProcessIdentity): "wrapper" | "supervisor" | "host" | null {
@@ -83,11 +87,6 @@ export function liveCensus(port: ProcessPort = linuxProcessPort()): Census {
       return role ? [{ ...ident, role }] : [];
     }),
   );
-}
-
-export function officialSupervisorAcceptsLaunchOverlay(supervisor: ProcessIdentity): boolean {
-  const line = supervisor.cmdline.join(" ");
-  return line.includes("disposable-supervisor.cjs") && line.includes("launch.json");
 }
 
 export function liveDiskSha(): string {
@@ -204,8 +203,10 @@ export function preflightLiveH3(input: {
       reviewed = { ok: false, code: "unreviewed-profile" };
     }
   }
-  const canApplyLaunchEnv = unique.ok && officialSupervisorAcceptsLaunchOverlay(unique.chain.supervisor);
-  const decision = decideLivePreflight({ unique, reviewed, canApplyLaunchEnv });
+  const strategy = unique.ok
+    ? decideH3LaunchStrategy({ supervisor: unique.chain.supervisor })
+    : "unavailable";
+  const decision = decideLivePreflight({ unique, reviewed, strategy });
   const chain = unique.ok ? unique.chain : undefined;
   const presenceOf = (pid: number | undefined) => ({
     nodeOptions: pid != null && procEnvHas(pid, "NODE_OPTIONS"),
@@ -222,7 +223,7 @@ export function preflightLiveH3(input: {
     census,
     unique: unique.ok,
     reviewedProfile: reviewed.ok,
-    canApplyLaunchEnv,
+    strategy,
     nodeOptions: {
       wrapper: wrapperP.nodeOptions,
       supervisor: supervisorP.nodeOptions,
