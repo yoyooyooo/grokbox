@@ -237,7 +237,8 @@ export async function runProfileCapabilities(
   const profile = await resolveProfile(deps, name);
   const local = profile.transport === "auto" || profile.transport === "local";
   const directGateway = profile.transport === "gateway" || Boolean(profile.gateway_url);
-  const daemon = profile.transport === "daemon" || Boolean(profile.server_url);
+  const daemon = profile.transport === "daemon"
+    || (profile.transport === "auto" && Boolean(profile.server_url));
   const sandboxConfigured = Boolean(profile.sandbox?.access_token_ref);
   const sandboxCapability = sandboxConfigured ? "provider-authorization-dependent" : false;
   const quotaCapability = profile.quota?.access_token_ref
@@ -247,7 +248,9 @@ export async function runProfileCapabilities(
     profile: profile.name,
     transport: profile.transport,
     connection: {
-      endpoint: profile.server_url ?? (daemon ? profile.daemon_socket : profile.gateway_url ?? profile.gateway_discovery),
+      endpoint: daemon
+        ? (profile.server_url ?? profile.daemon_socket)
+        : (profile.gateway_url ?? profile.gateway_discovery ?? null),
       protocolMajor: daemon ? 1 : null,
       credentialReference: daemon
         ? profile.daemon_token_ref ?? null
