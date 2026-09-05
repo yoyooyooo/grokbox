@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DaemonProcessConfig } from "../src/daemon/config.ts";
 import { writeProfileFile } from "../src/config/profile.ts";
-import { createProductionDeps } from "../src/deps.ts";
-import { EventJournal } from "../src/daemon/events.ts";
+import { createProductionDeps, type CliDeps } from "../src/deps.ts";
+import { DaemonEventManager, EventJournal } from "../src/daemon/events.ts";
 import { GovernedFilesystem } from "../src/daemon/filesystem.ts";
 import { JobManager } from "../src/daemon/jobs.ts";
 import { ProcessAuthority } from "../src/daemon/process.ts";
@@ -329,5 +329,81 @@ describe("unified events and recovery", () => {
     });
     for await (const value of parseSse(oversized, { onGap: (reason) => reasons.push(reason) })) values.push(value);
     expect(reasons).toContain("frame_too_large");
+  });
+});
+
+describe("DaemonEventManager shutdown", () => {
+  const discovery = JSON.stringify({
+    scheme: "http", host: "127.0.0.1", port: 31337, pid: 1, startedAt: 10, token: "test-token",
+  });
+
+  function hangingStream(): ReadableStream<Uint8Array> {
+    return new ReadableStream<Uint8Array>({ start() {} });
+  }
+
+  function keepaliveStream(intervalMs = 50): ReadableStream<Uint8Array> {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(": keepalive\n\n"));
+        interval = setInterval(
+          () => controller.enqueue(new TextEncoder().encode(": keepalive\n\n")),
+          intervalMs,
+        );
+      },
+      cancel() {
+        if (interval) clearInterval(interval);
+      },
+    });
+  }
+
+  function makeDeps(stream: ReadableStream<Uint8Array>, sink: { calls: number }): CliDeps {
+    return {
+      ...createProductionDeps(),
+      discoveryPath: "/tmp/grokbox-events-close-discovery.json",
+      transport: "local" as const,
+      readFile: async () => discovery,
+      fetch: (async (_input: string | URL | Request, _init?: RequestInit) => {
+        sink.calls += 1;
+        return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }) as typeof fetch,
+    };
+  }
+
+  async function waitForFetch(sink: { calls: number }, maxAttempts = 100): Promise<void> {
+    for (let i = 0; i < maxAttempts && sink.calls < 1; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(sink.calls).toBeGreaterThanOrEqual(1);
+  }
+
+  test("close() resolves promptly when the gateway stream is idle (reconnect-sleep abort guard)", async () => {
+    const sink = { calls: 0 };
+    const mgr = new DaemonEventManager(generation, makeDeps(hangingStream(), sink), 0);
+    await mgr.read({
+      sources: ["gateway"], channels: [], includeMemoryContent: false, limit: 1, waitMs: 0,
+    });
+    await waitForFetch(sink);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const start = Date.now();
+    await mgr.close();
+    const elapsed = Date.now() - start;
+    expect(sink.calls).toBe(1);
+    expect(elapsed).toBeLessThan(300);
+  });
+
+  test("close() does not stall on a live keepalive-emitting SSE stream", async () => {
+    const sink = { calls: 0 };
+    const mgr = new DaemonEventManager(generation, makeDeps(keepaliveStream(50), sink), 0);
+    await mgr.read({
+      sources: ["gateway"], channels: [], includeMemoryContent: false, limit: 1, waitMs: 0,
+    });
+    await waitForFetch(sink);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const start = Date.now();
+    await mgr.close();
+    const elapsed = Date.now() - start;
+    expect(sink.calls).toBe(1);
+    expect(elapsed).toBeLessThan(300);
   });
 });
