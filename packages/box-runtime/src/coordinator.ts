@@ -1,16 +1,19 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { writeAttestation } from "./attestation.ts";
+import { clearAttestation, writeAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { appendEvent } from "./events.ts";
-import { linuxProcessPort, roleOf } from "./live-proc.ts";
+import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
 import { projectLiveStatus, type HostOrigin } from "./observe.ts";
 import type { RoleClassifier } from "./official-chain.ts";
+import { acquireCoordinatorLease, coordinatorLeasePath, type LeaseOwner } from "./op-lock.ts";
 import { coordinatorStatePath } from "./paths.ts";
 import { readOnlyProcessPort, type ProcessIdentity, type ProcessPort } from "./process.ts";
 import {
+  adoptJournalNeedsRecovery,
   readAdoptOpState,
+  runTransientAdoptDeactivate,
   runTransientAdoptOperation,
   type TransientAdoptContext,
 } from "./transient-adopt.ts";
@@ -55,6 +58,10 @@ export type WatchdogAdoptPorts = Pick<
   | "adoptProveMs"
 >;
 
+export type LegacyWitness = {
+  identity: ProcessIdentity;
+};
+
 export type WatchdogTickInput = {
   root: string;
   desired: DesiredFile;
@@ -64,8 +71,14 @@ export type WatchdogTickInput = {
   classify?: RoleClassifier;
   envHas?: (pid: number, key: string) => boolean;
   diskSha?: string | null;
+  freshDiskSha?: () => string;
   reviewedProfile?: PatchProfile;
   adopt?: WatchdogAdoptPorts;
+  waitReplacement?: (oldPid: number) => Promise<ProcessIdentity | null>;
+  legacyWitness?: LegacyWitness;
+  operationId?: string;
+  inspectLeaseOwner?: (pid: number) => LeaseOwner | null;
+  selfLease?: LeaseOwner;
   now: () => number;
   isoNow?: () => string;
 };
@@ -79,6 +92,11 @@ const EMPTY_STATE: CoordinatorState = {
 
 function attemptKey(mode: DesiredFile["mode"], host: ProcessIdentity, sha: string | null): string {
   return `${mode}:${host.pid}:${host.start}:${sha ?? "none"}`;
+}
+
+function defaultLeaseOwner(pid: number): LeaseOwner | null {
+  const ident = inspectPid(pid);
+  return ident ? { pid: ident.pid, start: ident.start, uid: ident.uid } : null;
 }
 
 async function loadState(root: string): Promise<CoordinatorState> {
@@ -115,15 +133,55 @@ function resultOf(
   return { ...partial, circuit: state.circuit, origin };
 }
 
-export async function runWatchdogTick(input: WatchdogTickInput): Promise<WatchdogTickResult> {
+function resolveFreshSha(input: WatchdogTickInput): () => string {
+  if (input.freshDiskSha) return input.freshDiskSha;
+  if (typeof input.diskSha === "string") return () => input.diskSha as string;
+  if (input.diskSha === null) return () => "none";
+  return () => "none";
+}
+
+async function withCoordinatorLease<T>(
+  input: WatchdogTickInput,
+  ephemeralRoot: string,
+  body: () => Promise<T>,
+): Promise<T | WatchdogTickResult> {
+  const inspect = input.inspectLeaseOwner ?? defaultLeaseOwner;
+  const self = input.selfLease ?? inspect(process.pid) ?? { pid: process.pid, start: 0, uid: 0 };
+  const lease = await acquireCoordinatorLease({
+    path: coordinatorLeasePath(ephemeralRoot),
+    self,
+    inspect,
+  });
+  if (!lease.ok) {
+    return {
+      reconcile: "blocked",
+      reason: "lock-conflict",
+      attemptKey: null,
+      signaled: false,
+      injected: false,
+      circuit: "closed",
+      watchdogState: "idle",
+      origin: "ambiguous",
+    };
+  }
+  try {
+    return await body();
+  } finally {
+    await lease.lock.release();
+  }
+}
+
+async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTickResult> {
   const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   const processes = input.processes ?? readOnlyProcessPort(linuxProcessPort());
   const classify = input.classify ?? roleOf;
   const iso = input.isoNow ?? (() => new Date(input.now()).toISOString());
+  const freshDiskSha = resolveFreshSha(input);
+  const operationId = input.operationId ?? WATCHDOG_OPERATION_ID;
   let state = await loadState(input.root);
 
   const pending = await readAdoptOpState(ephemeralRoot);
-  if (pending?.tempSupervisor) {
+  if (adoptJournalNeedsRecovery(pending)) {
     state = {
       ...state,
       circuit: "open",
@@ -149,10 +207,61 @@ export async function runWatchdogTick(input: WatchdogTickInput): Promise<Watchdo
     ephemeralRoot,
     envHas: input.envHas,
     classify,
-    ...(input.diskSha !== undefined ? { diskSha: input.diskSha } : {}),
+    diskSha: freshDiskSha() === "none" && input.diskSha === undefined ? undefined : freshDiskSha(),
   });
   const origin = status.host.origin;
   const sha = status.host.diskSha;
+
+  if (origin === "grokbox-unattested" && input.legacyWitness && input.adopt && input.waitReplacement) {
+    const deact = await runTransientAdoptDeactivate({
+      processes,
+      classify,
+      diskSha: freshDiskSha,
+      ephemeralRoot,
+      attestation: { identity: input.legacyWitness.identity, diskSha: freshDiskSha() },
+      waitGone: input.adopt.waitGone,
+      waitReplacement: input.waitReplacement,
+      hasGrokboxPreload: input.adopt.hasGrokboxPreload,
+      readGatewayPid: input.adopt.readGatewayPid,
+      clearAttestation: async () => {
+        await clearAttestation(ephemeralRoot);
+      },
+    });
+    if (!deact.ok) {
+      state = {
+        ...state,
+        circuit: "open",
+        circuitReason: deact.code,
+        mutationCount: state.mutationCount + (deact.signaled ? 1 : 0),
+      };
+      await saveState(input.root, state);
+      await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: deact.code ?? "deactivate_failed" });
+      return resultOf(state, origin, {
+        reconcile: "recovery-required",
+        reason: deact.code ?? "deactivate_failed",
+        attemptKey: null,
+        signaled: deact.signaled,
+        injected: false,
+        watchdogState: "degraded",
+      });
+    }
+    state = {
+      ...state,
+      mutationCount: state.mutationCount + (deact.signaled ? 1 : 0),
+    };
+    await saveState(input.root, state);
+    if (input.desired.mode !== "identity") {
+      return resultOf(state, "official", {
+        reconcile: "converged",
+        reason: null,
+        attemptKey: null,
+        signaled: deact.signaled,
+        injected: false,
+        watchdogState: "idle",
+      });
+    }
+    return await runWatchdogTickBody({ ...input, legacyWitness: undefined });
+  }
 
   if (origin === "grokbox-unattested" || origin === "ambiguous") {
     await saveState(input.root, state);
@@ -266,14 +375,13 @@ export async function runWatchdogTick(input: WatchdogTickInput): Promise<Watchdo
     });
   }
 
-  const diskSha = () => sha ?? "none";
   const adopted = await runTransientAdoptOperation({
     processes,
     classify,
     reviewedProfile: input.reviewedProfile,
-    diskSha,
+    diskSha: freshDiskSha,
     ephemeralRoot,
-    operationId: WATCHDOG_OPERATION_ID,
+    operationId,
     readMarker: () => null,
     waitGone: input.adopt.waitGone,
     waitReady: input.adopt.waitReady,
@@ -337,4 +445,21 @@ export async function runWatchdogTick(input: WatchdogTickInput): Promise<Watchdo
     injected: false,
     watchdogState: "degraded",
   });
+}
+
+function needsMutationLease(input: WatchdogTickInput): boolean {
+  return Boolean(input.adopt) || Boolean(input.legacyWitness);
+}
+
+export async function runWatchdogTick(input: WatchdogTickInput): Promise<WatchdogTickResult> {
+  const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
+  if (!needsMutationLease(input)) return await runWatchdogTickBody(input);
+  const leased = await withCoordinatorLease(input, ephemeralRoot, () => runWatchdogTickBody(input));
+  return leased as WatchdogTickResult;
+}
+
+export async function runWatchdogCutover(input: WatchdogTickInput): Promise<WatchdogTickResult> {
+  const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
+  const leased = await withCoordinatorLease(input, ephemeralRoot, () => runWatchdogTickBody(input));
+  return leased as WatchdogTickResult;
 }

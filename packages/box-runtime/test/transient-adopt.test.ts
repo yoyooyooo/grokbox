@@ -18,6 +18,7 @@ import {
 import {
   canHandoffAdopt,
   officialWouldSpawn,
+  readAdoptOpState,
   runTransientAdoptDeactivate,
   runTransientAdoptOperation,
 } from "../src/transient-adopt.ts";
@@ -205,14 +206,18 @@ describe("transient-adopt fake tree", () => {
       waitGone: async (old) => tree.inspect(old.pid) === null,
       waitReplacement: async () => {
         const sup = tree.roles().find((row) => row.role === "supervisor");
-        return tree.spawn("host", { parent: sup });
+        const born = tree.spawn("host", { parent: sup });
+        gatewayPid = born.pid;
+        return born;
       },
-      hasGrokboxPreload: () => false,
-      readGatewayPid: () => null,
+      hasGrokboxPreload: (ident) => ident.pid === patchedPid,
+      readGatewayPid: () => gatewayPid,
       clearAttestation: async () => undefined,
     });
+    expect(deactivated.code ?? "ok").toBe("ok");
     expect(deactivated.ok).toBe(true);
     expect(deactivated.host?.ppid).toBe(tree.roles().find((row) => row.role === "supervisor")?.pid);
+    expect(findUniqueOfficialChain(tree, classify(tree)).ok).toBe(true);
 
     const driftTree = new FakeProcessTree();
     const dw = driftTree.spawn("wrapper");
@@ -331,6 +336,82 @@ describe("transient-adopt fake tree", () => {
     expect(tree.stopped(wrapper.pid)).toBe(false);
     expect(tree.signals.some((row) => row.signal === "SIGKILL")).toBe(false);
     expect(tree.signals.some((row) => row.pid === wrapper.pid && row.signal === "SIGCONT")).toBe(true);
+  });
+
+  test("journals phase before signals and does not TERM a competitor Host", async () => {
+    const tree = new FakeProcessTree();
+    const wrapper = tree.spawn("wrapper");
+    const supervisor = tree.spawn("supervisor", { parent: wrapper });
+    tree.spawn("host", { parent: supervisor });
+    const root = await mkdtemp(join(tmpdir(), "grokbox-adopt-own-"));
+    const competitor = { pid: 0 };
+    const result = await runTransientAdoptOperation({
+      processes: tree,
+      classify: classify(tree),
+      reviewedProfile: reviewed,
+      diskSha: () => "sha-reviewed",
+      ephemeralRoot: root,
+      operationId: "adopt-own",
+      readMarker: () => null,
+      waitGone: async (old) => tree.inspect(old.pid) === null,
+      waitReady: async (pid) => ({
+        operationId: "adopt-own",
+        pid,
+        mode: "identity",
+        transformed: true,
+        compiled: true,
+        modeld: false,
+      }),
+      spawnTempSupervisor: async () => {
+        const extra = tree.spawn("host");
+        competitor.pid = extra.pid;
+        const temp = tree.spawn("temp-supervisor");
+        tree.spawn("host", { parent: temp });
+        return temp;
+      },
+      waitNewHost: async (oldPid) =>
+        tree.list().find((ident) => classify(tree)(ident) === "host" && ident.pid !== oldPid) ?? null,
+      readGatewayPid: () => null,
+      armGuardian: async (frozen) => guard(tree, frozen),
+      hasGrokboxPreload: () => true,
+      now: () => 10,
+      adoptProveMs: 20,
+    });
+    expect(result).toMatchObject({ ok: false, code: "competitor-host", recoveryRequired: true });
+    expect(tree.alive(competitor.pid)).toBe(true);
+    expect(tree.signals.some((row) => row.pid === competitor.pid)).toBe(false);
+    expect(tree.signals.some((row) => row.signal === "SIGKILL")).toBe(false);
+    const journal = await readAdoptOpState(root);
+    expect(journal?.phase).toBeDefined();
+    expect(journal?.phase).not.toBe("attested");
+  });
+
+  test("deactivate refuses a non-direct official midpoint", async () => {
+    const tree = new FakeProcessTree();
+    const wrapper = tree.spawn("wrapper");
+    const supervisor = tree.spawn("supervisor", { parent: wrapper });
+    const host = tree.spawn("host");
+    let gatewayPid: number | null = host.pid;
+    const result = await runTransientAdoptDeactivate({
+      processes: tree,
+      classify: classify(tree),
+      diskSha: () => "sha-reviewed",
+      ephemeralRoot: await mkdtemp(join(tmpdir(), "grokbox-adopt-mid-")),
+      attestation: { identity: host, diskSha: "sha-reviewed" },
+      waitGone: async (old) => tree.inspect(old.pid) === null,
+      waitReplacement: async () => {
+        const orphan = tree.spawn("host");
+        gatewayPid = orphan.pid;
+        return orphan;
+      },
+      hasGrokboxPreload: (ident) => ident.pid === host.pid,
+      readGatewayPid: () => gatewayPid,
+      clearAttestation: async () => undefined,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.signaled).toBe(true);
+    expect(result.code).toBe("census-invalid");
+    expect(findUniqueOfficialChain(tree, classify(tree)).ok).toBe(false);
   });
 });
 

@@ -8,7 +8,7 @@ import {
   type IdentityOpResult,
 } from "./identity-op.ts";
 import { pickLaunchEnv } from "./launch-env.ts";
-import { loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
+import { findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
 import {
   runTransientAdoptDeactivate,
@@ -322,8 +322,14 @@ export async function runH3OfflineAdoptDeactivate(input: {
       const start = Date.now();
       const budget = input.ports.waitBudgetMs ?? 8000;
       while (Date.now() - start < budget) {
-        const host = input.ports.processes.list().find((ident) => input.ports.classify(ident) === "host");
-        if (host && host.pid !== oldPid && !input.ports.hasGrokboxPreload(host)) return host;
+        const unique = findUniqueOfficialChain(input.ports.processes, input.ports.classify);
+        if (
+          unique.ok &&
+          unique.chain.host.pid !== oldPid &&
+          !input.ports.hasGrokboxPreload(unique.chain.host)
+        ) {
+          return unique.chain.host;
+        }
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       return null;

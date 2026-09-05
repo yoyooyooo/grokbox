@@ -333,8 +333,8 @@ describe("offline watchdog desired-state coordinator", () => {
     const afterFirst = tree.signals.length;
 
     const second = await runWatchdogTick(tick);
-    expect(second.reconcile).toBe("blocked");
-    expect(second.reason).toBe("circuit_open");
+    expect(second.reconcile).toBe("recovery-required");
+    expect(second.reason).toBe("pending-uncertain");
     expect(second.injected).toBe(false);
     expect(second.signaled).toBe(false);
     expect(tree.signals.length).toBe(afterFirst);

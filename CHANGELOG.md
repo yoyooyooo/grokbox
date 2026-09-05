@@ -35,6 +35,9 @@ when upstream Grok Bot or Cursor internals change.
 - Offline `runtime watchdog run` reconciles desired identity on fake trees via
   transient-adopt. Public activate stays desired-only; unattested Hosts are
   recovery-required with zero signals. No live Host cutover.
+- Watchdog cutover journals phases before signals, reclaims a stale coordinator
+  lease, proves temp-Host ownership, and requires a different direct official
+  Host after legacy-adopted deactivate. No `/tmp` attestation import.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

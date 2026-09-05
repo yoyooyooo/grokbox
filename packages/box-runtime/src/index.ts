@@ -64,6 +64,7 @@ export {
   officialWouldSpawn,
   readAdoptOpState,
   writeAdoptOpState,
+  adoptJournalNeedsRecovery,
 } from "./transient-adopt.ts";
 export {
   applyPatchProfile,
@@ -92,6 +93,7 @@ export { createModeld, createFileEnvSecretResolver, type AdmitResult } from "./m
 export { observeAndHeal } from "./watchdog.ts";
 export {
   runWatchdogTick,
+  runWatchdogCutover,
   WATCHDOG_MUTATION_BUDGET,
   WATCHDOG_OPERATION_ID,
   type WatchdogTickResult,
