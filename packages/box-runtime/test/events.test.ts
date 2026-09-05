@@ -171,6 +171,21 @@ describe("turn_seam_terminal projector", () => {
     ).toBeNull();
     const { modelId: _mainModel, ...mainWithoutModel } = turnEvent("inv-main-missing");
     expect(projectTurnSeamTerminal(mainWithoutModel)).toBeNull();
+    const { modelId: _rejectedModel, ...rejectedWithoutModel } = {
+      ...turnEvent("inv-rejected"),
+      outcome: "rejected" as const,
+      terminalClass: "error" as const,
+      toolCallCount: 0,
+    };
+    expect(projectTurnSeamTerminal(rejectedWithoutModel)).toBeNull();
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-rejected-ok"),
+        outcome: "rejected",
+        terminalClass: "error",
+        toolCallCount: 0,
+      }),
+    ).toMatchObject({ outcome: "rejected", assignment: "main", modelId: "stub/echo" });
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-agent-missing"), assignment: "agent", modelId: undefined })).toBeNull();
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-main-empty"), modelId: "" })).toBeNull();
     expect(
