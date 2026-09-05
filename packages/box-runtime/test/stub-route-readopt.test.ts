@@ -1,11 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readAttestation, writeAttestation } from "../src/attestation.ts";
+import {
+  attestationPath,
+  readAttestation,
+  writeAttestation,
+  type CoverageAttestation,
+} from "../src/attestation.ts";
 import { runManualReadopt, runWatchdogTick, WATCHDOG_OPERATION_ID } from "../src/coordinator.ts";
 import { armGuardian } from "../src/guardian.ts";
+import { startStubModeldServer } from "../src/modeld-ipc.ts";
 import type { DesiredFile, ModelsFile } from "../src/models.ts";
+import { projectLiveStatus } from "../src/observe.ts";
+import { reviewedProfilePath } from "../src/paths.ts";
 import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
 import type { PatchProfile } from "../src/transform.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
@@ -59,6 +67,11 @@ async function roots() {
   };
 }
 
+async function writeReviewed(root: string, profile: PatchProfile = reviewed): Promise<void> {
+  await mkdir(join(root, "profiles"), { recursive: true, mode: 0o700 });
+  await writeFile(reviewedProfilePath(root), `${JSON.stringify(profile)}\n`);
+}
+
 function spawnOfficial(tree: FakeProcessTree) {
   const wrapper = tree.spawn("wrapper");
   const supervisor = tree.spawn("supervisor", { parent: wrapper });
@@ -73,17 +86,32 @@ function spawnAdopted(tree: FakeProcessTree) {
   return { wrapper, supervisor, host };
 }
 
-function attFor(host: ProcessIdentity, diskSha = SHA, mode: "identity" | "route" = "identity") {
+function attFor(host: ProcessIdentity, diskSha = SHA, mode: "identity" | "route" = "identity"): CoverageAttestation {
+  if (mode === "route") {
+    return {
+      mode: "route",
+      coverage: "attested",
+      diskSha,
+      pid: host.pid,
+      start: host.start,
+      identity: host,
+      at: "2026-01-01T00:00:00.000Z",
+      modeld: true,
+      launchMode: "transient-adopt",
+      profileId: reviewed.profileId,
+      transformedSha: reviewed.transformedSourceSha256,
+    };
+  }
   return {
-    mode,
-    coverage: "attested" as const,
+    mode: "identity",
+    coverage: "attested",
     diskSha,
     pid: host.pid,
     start: host.start,
     identity: host,
     at: "2026-01-01T00:00:00.000Z",
-    modeld: mode === "route",
-    launchMode: "transient-adopt" as const,
+    modeld: false,
+    launchMode: "transient-adopt",
     profileId: reviewed.profileId,
     transformedSha: reviewed.transformedSourceSha256,
   };
@@ -303,5 +331,130 @@ describe("stub route fake-process re-adopt", () => {
     expect(adopted.injected).toBe(true);
     expect(adopted.signaled).toBe(true);
     expect(await readAttestation(ephemeralRoot)).toMatchObject({ mode: "route", modeld: true, diskSha: SHA });
+  });
+
+  test("read-only watchdog/status use reviewed profile identity without mutation ports", async () => {
+    const { root, ephemeralRoot } = await roots();
+    const tree = new FakeProcessTree();
+    const { host } = spawnAdopted(tree);
+    await writeReviewed(root);
+    await writeAttestation(ephemeralRoot, attFor(host, SHA, "route"));
+    const envHas = (pid: number, key: string) =>
+      pid === host.pid &&
+      (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER");
+    const modeld = await startStubModeldServer({ runRoot: ephemeralRoot });
+    try {
+      const healthy = await runWatchdogTick({
+        root,
+        desired: desired("route"),
+        models: MODELS,
+        processes: tree,
+        classify: classify(tree),
+        ephemeralRoot,
+        diskSha: SHA,
+        envHas,
+        modeldReady: async () => true,
+        now: () => 10,
+      });
+      expect(healthy.reconcile).toBe("converged");
+      expect(healthy.reason).toBeNull();
+      expect(healthy.injected).toBe(false);
+      expect(healthy.signaled).toBe(false);
+      expect(tree.signals).toEqual([]);
+
+      const status = await projectLiveStatus({
+        root,
+        desired: desired("route"),
+        models: MODELS,
+        processes: tree,
+        classify: classify(tree),
+        ephemeralRoot,
+        diskSha: SHA,
+        envHas,
+      });
+      expect(status.coverage).toBe("attested");
+      expect(status.host.origin).toBe("grokbox-attested");
+
+      await writeReviewed(root, { ...reviewed, profileId: "reviewed-replaced", transformedSourceSha256: "sha-new" });
+      const mismatched = await runWatchdogTick({
+        root,
+        desired: desired("route"),
+        models: MODELS,
+        processes: tree,
+        classify: classify(tree),
+        ephemeralRoot,
+        diskSha: SHA,
+        envHas,
+        modeldReady: async () => true,
+        now: () => 10,
+      });
+      expect(mismatched.reconcile).toBe("recovery-required");
+      expect(mismatched.reason).toBe("route_mismatch");
+      expect(mismatched.signaled).toBe(false);
+      expect(tree.signals).toEqual([]);
+      const staleStatus = await projectLiveStatus({
+        root,
+        desired: desired("route"),
+        models: MODELS,
+        processes: tree,
+        classify: classify(tree),
+        ephemeralRoot,
+        diskSha: SHA,
+        envHas,
+      });
+      expect(staleStatus.coverage).toBe("window-open");
+      expect(staleStatus.host.origin).toBe("grokbox-attested");
+    } finally {
+      await modeld.stop();
+    }
+  });
+
+  test("route attestation without profile identity is not attested; non-stub assignment is refused", async () => {
+    const { root, ephemeralRoot } = await roots();
+    const tree = new FakeProcessTree();
+    const { host } = spawnAdopted(tree);
+    await writeReviewed(root);
+    const envHas = (pid: number, key: string) =>
+      pid === host.pid &&
+      (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER");
+    const incomplete = attFor(host, SHA, "route");
+    await writeFile(
+      attestationPath(ephemeralRoot),
+      `${JSON.stringify({ ...incomplete, profileId: undefined, transformedSha: undefined })}\n`,
+    );
+    const missing = await runWatchdogTick({
+      root,
+      desired: desired("route"),
+      models: MODELS,
+      processes: tree,
+      classify: classify(tree),
+      ephemeralRoot,
+      diskSha: SHA,
+      envHas,
+      reviewedProfile: reviewed,
+      modeldReady: async () => true,
+      now: () => 10,
+    });
+    expect(missing.reconcile).toBe("recovery-required");
+    expect(missing.signaled).toBe(false);
+
+    await writeAttestation(ephemeralRoot, attFor(host, SHA, "route"));
+    const drifted = await runWatchdogTick({
+      root,
+      desired: desired("route"),
+      models: { ...MODELS, assignments: { main: "acme/fast", agents: {} } },
+      processes: tree,
+      classify: classify(tree),
+      ephemeralRoot,
+      diskSha: SHA,
+      envHas,
+      reviewedProfile: reviewed,
+      modeldReady: async () => true,
+      now: () => 10,
+    });
+    expect(drifted.reconcile).toBe("recovery-required");
+    expect(drifted.reason).toBe("non_stub_assignment");
+    expect(drifted.signaled).toBe(false);
+    expect(tree.signals).toEqual([]);
   });
 });

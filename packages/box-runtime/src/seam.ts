@@ -110,6 +110,7 @@ type InvocationState = {
   recorded: boolean;
   evidence: SeamEvidence;
   agentId: string;
+  modelId: string;
   invocationId: string;
 };
 
@@ -257,7 +258,12 @@ export function createSessionSeam(config: SessionSeamConfig) {
       return errorSession(modelId);
     }
     const existing = invocations.get(invocationId);
-    if (existing) return existing.session;
+    if (existing) {
+      if (existing.agentId !== agentId || existing.modelId !== modelId) {
+        return errorSession(modelId);
+      }
+      return existing.session;
+    }
     const driver = config.driver!;
 
     const onTerminal = (terminal: SessionTerminal): void => {
@@ -317,6 +323,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
       recorded: false,
       evidence: { emitted: false, gap: null },
       agentId,
+      modelId,
       invocationId,
     };
     invocations.set(invocationId, state);

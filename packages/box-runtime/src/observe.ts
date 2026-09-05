@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { readAttestation } from "./attestation.ts";
+import { readAttestation, routeAttestationAgrees } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { sha256Bytes } from "./hash.ts";
 import { attestationAgrees, canonicalOwnershipAgrees } from "./identity-op.ts";
@@ -8,6 +8,8 @@ import { probeStubModeld } from "./modeld-ipc.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
+import { loadDurableReviewedProfile } from "./reviewed-profile.ts";
+import type { PatchProfile } from "./transform.ts";
 import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
 import { CONTROL_PLANE_EVENT_RETENTION, TURN_SEAM_TERMINAL_RETENTION } from "./events.ts";
 import { contractsDir, eventsPath } from "./paths.ts";
@@ -43,6 +45,7 @@ export type LiveStatusPorts = {
   diskSha?: string | null;
   envHas?: (pid: number, key: string) => boolean;
   classify?: RoleClassifier;
+  reviewedProfile?: PatchProfile;
 };
 
 const GROKBOX_TOUCH_ENV = ["GROKBOX_PRELOAD_MODE", "GROKBOX_OPERATION_ID", "GROKBOX_PRELOAD_MARKER"] as const;
@@ -105,9 +108,10 @@ export async function projectLiveStatus(input: {
       origin = "grokbox-attested";
       if (agrees) {
         reason = null;
+        const reviewed = input.reviewedProfile ?? loadDurableReviewedProfile(input.root);
         const routeReady =
           input.desired.mode !== "route" ||
-          (att?.mode === "route" && att.modeld === true && modeldRunning);
+          (routeAttestationAgrees(att, reviewed) && modeldRunning);
         coverage = routeReady ? "attested" : officialCoverage(input.desired.mode);
       } else {
         reason = "stale_attestation";

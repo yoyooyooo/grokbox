@@ -1,6 +1,7 @@
-import { chmod, mkdir, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, rename, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
+import { BoxRuntimeError } from "./errors.ts";
 import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { StreamPart } from "./session.ts";
 
@@ -167,6 +168,30 @@ function attachClient(socket: Socket, registry: Map<string, InvocationRow>, stat
   });
 }
 
+function isAddrInUse(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error.code === "EADDRINUSE" || error.code === "EEXIST"),
+  );
+}
+
+async function listenUnix(server: Server, socketPath: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen({ path: socketPath, exclusive: true }, () => {
+      server.off("error", onError);
+      resolve();
+    });
+  });
+}
+
+async function closeServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
 export type StubModeldServer = {
   socketPath: string;
   dispatches: () => number;
@@ -178,17 +203,33 @@ export async function startStubModeldServer(input: { runRoot: string; signal?: A
   const socketPath = modeldSocketPath(input.runRoot);
   await mkdir(input.runRoot, { recursive: true, mode: 0o700 });
   await chmod(input.runRoot, 0o700).catch(() => undefined);
-  await unlink(socketPath).catch(() => undefined);
+  if (await probeStubModeld(input.runRoot)) {
+    throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
+  }
 
   const registry = new Map<string, InvocationRow>();
   const stats = { dispatches: 0 };
   const server: Server = createServer((socket) => attachClient(socket, registry, stats));
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen({ path: socketPath, exclusive: true }, () => resolve());
-  });
+  try {
+    try {
+      await listenUnix(server, socketPath);
+    } catch (error) {
+      if (!isAddrInUse(error)) throw error;
+      if (await probeStubModeld(input.runRoot)) {
+        throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
+      }
+      await unlink(socketPath).catch(() => undefined);
+      await listenUnix(server, socketPath);
+    }
+  } catch (error) {
+    await closeServer(server);
+    throw error;
+  }
   await chmod(socketPath, 0o600).catch(() => undefined);
+  const owned = await lstat(socketPath)
+    .then((info) => ({ dev: info.dev, ino: info.ino }))
+    .catch(() => null);
 
   let closed = false;
   const stopped = new Promise<void>((resolve) => {
@@ -198,8 +239,32 @@ export async function startStubModeldServer(input: { runRoot: string; signal?: A
   const stop = async (): Promise<void> => {
     if (closed) return;
     closed = true;
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    await unlink(socketPath).catch(() => undefined);
+    let displaced: string | null = null;
+    if (owned) {
+      try {
+        const current = await lstat(socketPath);
+        if (current.dev !== owned.dev || current.ino !== owned.ino) {
+          displaced = `${socketPath}.keep.${process.pid}`;
+          await rename(socketPath, displaced);
+        }
+      } catch {
+        /* path already gone */
+      }
+    }
+    await closeServer(server);
+    if (displaced) {
+      await rename(displaced, socketPath).catch(() => undefined);
+      return;
+    }
+    if (!owned) return;
+    try {
+      const current = await lstat(socketPath);
+      if (current.dev === owned.dev && current.ino === owned.ino) {
+        await unlink(socketPath);
+      }
+    } catch {
+      /* socket already gone or not ours */
+    }
   };
 
   const onAbort = () => {

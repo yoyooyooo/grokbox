@@ -2,21 +2,54 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import type { ProcessIdentity } from "./process.ts";
+import type { PatchProfile } from "./transform.ts";
 
-export type CoverageAttestation = {
-  mode: "identity" | "route";
+type CoverageAttestationBase = {
   coverage: "attested";
   diskSha: string;
   pid: number;
   start: number;
   identity: ProcessIdentity;
   at: string;
-  modeld: boolean;
   windowMs?: number;
   launchMode?: "direct-launch" | "transient-adopt";
+};
+
+export type IdentityAttestation = CoverageAttestationBase & {
+  mode: "identity";
+  modeld: false;
   profileId?: string;
   transformedSha?: string;
 };
+
+export type RouteAttestation = CoverageAttestationBase & {
+  mode: "route";
+  modeld: true;
+  profileId: string;
+  transformedSha: string;
+};
+
+export type CoverageAttestation = IdentityAttestation | RouteAttestation;
+
+export type RouteProfileIdentity = Pick<
+  PatchProfile,
+  "profileId" | "sourceSha256" | "transformedSourceSha256"
+>;
+
+export function routeAttestationAgrees(
+  att: CoverageAttestation | null | undefined,
+  reviewed: RouteProfileIdentity | undefined,
+): boolean {
+  if (!att || att.mode !== "route") return false;
+  if (!reviewed) return false;
+  if (att.modeld !== true) return false;
+  if (typeof att.profileId !== "string" || att.profileId.length === 0) return false;
+  if (typeof att.transformedSha !== "string" || att.transformedSha.length === 0) return false;
+  if (att.diskSha !== reviewed.sourceSha256) return false;
+  if (att.profileId !== reviewed.profileId) return false;
+  if (att.transformedSha !== reviewed.transformedSourceSha256) return false;
+  return true;
+}
 
 export function attestationPath(ephemeralRoot = ephemeralRuntimeRoot()): string {
   return join(ephemeralRoot, "attestation.json");

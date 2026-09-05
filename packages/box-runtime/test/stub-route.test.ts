@@ -1,15 +1,18 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as dns from "node:dns";
+import { lstat, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
+import * as net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, runInContext } from "node:vm";
+import { BoxRuntimeError } from "../src/errors.ts";
 import { eventsPath } from "../src/paths.ts";
 import { bindHostSessionHook, createModeldRouteDriver, createSessionSeam } from "../src/seam.ts";
 import {
   callStubModeld,
   encodeModeldFrame,
   modeldSocketPath,
+  probeStubModeld,
   startStubModeldServer,
   STUB_ECHO_MODEL_ID,
 } from "../src/modeld-ipc.ts";
@@ -19,6 +22,62 @@ import { consumePromptSession as consumeHost, SEAM_STOP_PARTS } from "./host-con
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
+
+function isUnixSocketConnect(args: unknown[]): boolean {
+  const flat = args.flatMap((arg) => (Array.isArray(arg) ? arg : [arg]));
+  for (const arg of flat) {
+    if (typeof arg === "string" && (arg.startsWith("/") || arg.endsWith(".sock"))) return true;
+    if (arg && typeof arg === "object" && "path" in arg) {
+      const path = (arg as { path?: unknown }).path;
+      if (typeof path === "string" && path.length > 0) return true;
+    }
+  }
+  return false;
+}
+
+function installNetworkTraps(counts: { fetch: number; dns: number; tcp: number }): () => void {
+  const originalFetch = globalThis.fetch;
+  const originalLookup = dns.lookup.bind(dns);
+  const originalResolve = dns.resolve.bind(dns);
+  const originalResolve4 = dns.resolve4.bind(dns);
+  const originalResolve6 = dns.resolve6.bind(dns);
+  const originalPromisesLookup = dns.promises.lookup.bind(dns.promises);
+  const originalConnect = net.Socket.prototype.connect;
+  globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
+    counts.fetch += 1;
+    return originalFetch(...args);
+  }) as typeof fetch;
+  const spies = [
+    spyOn(dns, "lookup").mockImplementation(((...args: Parameters<typeof dns.lookup>) => {
+      counts.dns += 1;
+      return originalLookup(...args);
+    }) as typeof dns.lookup),
+    spyOn(dns, "resolve").mockImplementation(((...args: Parameters<typeof dns.resolve>) => {
+      counts.dns += 1;
+      return originalResolve(...args);
+    }) as typeof dns.resolve),
+    spyOn(dns, "resolve4").mockImplementation(((...args: Parameters<typeof dns.resolve4>) => {
+      counts.dns += 1;
+      return originalResolve4(...args);
+    }) as typeof dns.resolve4),
+    spyOn(dns, "resolve6").mockImplementation(((...args: Parameters<typeof dns.resolve6>) => {
+      counts.dns += 1;
+      return originalResolve6(...args);
+    }) as typeof dns.resolve6),
+    spyOn(dns.promises, "lookup").mockImplementation((async (...args: Parameters<typeof dns.promises.lookup>) => {
+      counts.dns += 1;
+      return await originalPromisesLookup(...args);
+    }) as typeof dns.promises.lookup),
+    spyOn(net.Socket.prototype, "connect").mockImplementation(function (this: net.Socket, ...args: never[]) {
+      if (!isUnixSocketConnect(args)) counts.tcp += 1;
+      return originalConnect.apply(this, args as never);
+    }),
+  ];
+  return () => {
+    globalThis.fetch = originalFetch;
+    for (const spy of spies) spy.mockRestore();
+  };
+}
 
 async function roots() {
   return {
@@ -175,6 +234,55 @@ describe("stub modeld IPC", () => {
     }
   });
 
+  test("conflicting duplicate invocation ids fail closed at the seam", async () => {
+    const { durable, runRoot } = await roots();
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      const driver = createModeldRouteDriver(runRoot);
+      const seam = createSessionSeam({
+        mode: "route",
+        root: durable,
+        assignment: "main",
+        modelId: STUB_ECHO_MODEL_ID,
+        driver,
+        now: () => AT,
+      });
+      const original: PromptSession = {
+        stream() {
+          throw new Error("official session must not run");
+        },
+      };
+      const first = seam.hook({
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-conflict-seam", inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as PromptSession;
+      const second = seam.hook({
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-conflict-seam", inferenceReason: "main" },
+        agentId: "agent-jerry",
+      }) as PromptSession;
+      expect(second).not.toBe(first);
+      await consumeHost(first);
+      await consumeHost(second);
+      await seam.flush();
+      expect(second).not.toBe(first);
+      expect(driver.officialCalls).toBe(0);
+      expect(driver.secondProviderCalls).toBe(0);
+      expect(driver.dispatches).toBe(1);
+      const events = await turnLines(durable);
+      expect(events).toEqual([
+        expect.objectContaining({
+          invocationId: "inv-conflict-seam",
+          agentId: "agent-tom",
+          outcome: "managed",
+        }),
+      ]);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("failure matrix stays closed with no official or second driver", async () => {
     const { durable, runRoot } = await roots();
     const original: PromptSession = {
@@ -205,7 +313,7 @@ describe("stub modeld IPC", () => {
     const server = await startStubModeldServer({ runRoot });
     try {
       const malformed = await new Promise<Buffer>((resolve, reject) => {
-        const socket = createConnection({ path: modeldSocketPath(runRoot) });
+        const socket = net.createConnection({ path: modeldSocketPath(runRoot) });
         socket.on("error", reject);
         socket.on("connect", () => socket.write(Buffer.from([0, 0, 0, 3, 123, 1, 2])));
         socket.on("data", (chunk: Buffer) => {
@@ -292,11 +400,7 @@ describe("stub modeld IPC", () => {
     const { durable, runRoot } = await roots();
     const server = await startStubModeldServer({ runRoot });
     const counts = { fetch: 0, dns: 0, tcp: 0 };
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => {
-      counts.fetch += 1;
-      throw new Error("fetch forbidden");
-    }) as unknown as typeof fetch;
+    const restore = installNetworkTraps(counts);
     try {
       const driver = createModeldRouteDriver(runRoot);
       const seam = createSessionSeam({
@@ -317,6 +421,8 @@ describe("stub modeld IPC", () => {
       expect(driver.dispatches).toBe(1);
       expect(() => driver.resolveCredential()).toThrow(/credential/);
       expect(counts.fetch).toBe(0);
+      expect(counts.dns).toBe(0);
+      expect(counts.tcp).toBe(0);
       const payload = JSON.stringify(
         await callStubModeld(runRoot, {
           method: "submit",
@@ -327,12 +433,75 @@ describe("stub modeld IPC", () => {
       );
       expect(payload).not.toMatch(/https?:|apiKey|sk-|ACME_|env:/);
       expect(encodeModeldFrame({ method: "health" }).includes(Buffer.from("https://"))).toBe(false);
-      expect(originalFetch).toBeDefined();
+      expect(counts.fetch).toBe(0);
+      expect(counts.dns).toBe(0);
+      expect(counts.tcp).toBe(0);
+
+      await server.stop();
+      const downDriver = createModeldRouteDriver(runRoot);
+      const downSeam = createSessionSeam({
+        mode: "route",
+        root: durable,
+        assignment: "main",
+        modelId: STUB_ECHO_MODEL_ID,
+        driver: downDriver,
+        now: () => AT,
+      });
+      const downSession = downSeam.hook({
+        originalSession: officialSession(),
+        sessionOptions: { invocationId: "inv-hardoff-down", inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as PromptSession;
+      await consumeHost(downSession);
+      await downSeam.flush();
+      expect(downDriver.officialCalls).toBe(0);
+      expect(downDriver.secondProviderCalls).toBe(0);
+      expect(counts.fetch).toBe(0);
       expect(counts.dns).toBe(0);
       expect(counts.tcp).toBe(0);
     } finally {
-      globalThis.fetch = originalFetch;
+      restore();
+    }
+  });
+});
+
+describe("stub modeld socket ownership", () => {
+  test("refuses a live competitor and stop unlinks only the owned socket", async () => {
+    const { runRoot } = await roots();
+    const socketPath = modeldSocketPath(runRoot);
+    const first = await startStubModeldServer({ runRoot });
+    try {
+      await expect(startStubModeldServer({ runRoot })).rejects.toMatchObject({
+        code: "invalid_usage",
+      });
+      expect(await probeStubModeld(runRoot)).toBe(true);
+      const owned = await lstat(socketPath);
+      await unlink(socketPath);
+      await writeFile(socketPath, "not-ours");
+      const replacement = await lstat(socketPath);
+      expect(replacement.ino).not.toBe(owned.ino);
+      await first.stop();
+      const leftover = await lstat(socketPath);
+      expect(leftover.ino).toBe(replacement.ino);
+      expect(await probeStubModeld(runRoot)).toBe(false);
+    } finally {
+      await first.stop();
+      await unlink(socketPath).catch(() => undefined);
+    }
+  });
+
+  test("stale socket is replaced; live health remains after a refused second start", async () => {
+    const { runRoot } = await roots();
+    const socketPath = modeldSocketPath(runRoot);
+    await writeFile(socketPath, "stale");
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      expect(await probeStubModeld(runRoot)).toBe(true);
+      await expect(startStubModeldServer({ runRoot })).rejects.toBeInstanceOf(BoxRuntimeError);
+      expect(await probeStubModeld(runRoot)).toBe(true);
+    } finally {
       await server.stop();
     }
+    expect(await probeStubModeld(runRoot)).toBe(false);
   });
 });

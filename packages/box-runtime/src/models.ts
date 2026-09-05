@@ -252,21 +252,30 @@ export function assertResetAllowed(desired: DesiredFile): void {
   }
 }
 
-export function assertRouteAssignment(file: ModelsFile): void {
-  if (!file.assignments.main) {
-    throw new BoxRuntimeError("invalid_usage", "activate --mode route requires a valid assignments.main.");
-  }
-  if (file.assignments.main !== STUB_ECHO_MODEL_ID) {
-    throw new BoxRuntimeError("invalid_usage", "activate --mode route admits only stub/echo in this slice.");
+export function routeHasNonStubAssignment(file: ModelsFile): boolean {
+  if (file.assignments.main != null && file.assignments.main !== STUB_ECHO_MODEL_ID) return true;
+  return Object.values(file.assignments.agents).some((modelId) => modelId !== STUB_ECHO_MODEL_ID);
+}
+
+export function assertStubOnlyRouteAssignments(file: ModelsFile): void {
+  if (file.assignments.main != null && file.assignments.main !== STUB_ECHO_MODEL_ID) {
+    throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo in this slice.");
   }
   for (const [agentId, modelId] of Object.entries(file.assignments.agents)) {
     if (modelId !== STUB_ECHO_MODEL_ID) {
       throw new BoxRuntimeError(
         "invalid_usage",
-        `activate --mode route admits only stub/echo; assignments.agents.${agentId} is not admitted.`,
+        `route admits only stub/echo; assignments.agents.${agentId} is not admitted.`,
       );
     }
   }
+}
+
+export function assertRouteAssignment(file: ModelsFile): void {
+  if (!file.assignments.main) {
+    throw new BoxRuntimeError("invalid_usage", "activate --mode route requires a valid assignments.main.");
+  }
+  assertStubOnlyRouteAssignments(file);
   requireModel(file, file.assignments.main);
 }
 

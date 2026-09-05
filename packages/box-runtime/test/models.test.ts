@@ -66,6 +66,8 @@ describe("models.json store", () => {
     const desired = await store.loadDesired();
     expect(() => assertResetAllowed(desired)).toThrow(BoxRuntimeError);
     assertRouteAssignment(await store.loadModels());
+    const drifted = applyUse(await store.loadModels(), "acme/fast");
+    expect(() => assertRouteAssignment(drifted)).toThrow(BoxRuntimeError);
     const status = projectStatus({
       root: store.root,
       desired: await store.loadDesired(),

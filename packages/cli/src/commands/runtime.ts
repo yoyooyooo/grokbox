@@ -4,6 +4,7 @@ import {
   assertBoxLocal,
   assertResetAllowed,
   assertRouteAssignment,
+  assertStubOnlyRouteAssignments,
   BoxRuntimeError,
   disclosure,
   ephemeralRuntimeRoot,
@@ -136,7 +137,9 @@ export async function runRuntimeModelsUse(
   try {
     parseModelId(modelId);
     const runtime = store(deps);
+    const desired = await runtime.loadDesired();
     const next = applyUse(await runtime.loadModels(), modelId, forAgent);
+    if (desired.mode === "route") assertStubOnlyRouteAssignments(next);
     await runtime.saveModels(next);
     writeSuccess(deps.stdout, disclosure(next, modelId, forAgent));
   } catch (error) {

@@ -1,15 +1,16 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { clearAttestation, readAttestation, writeAttestation, type CoverageAttestation } from "./attestation.ts";
+import { clearAttestation, readAttestation, routeAttestationAgrees, writeAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { BoxRuntimeError } from "./errors.ts";
 import { appendEvent, compactEvents } from "./events.ts";
 import { canonicalOwnershipAgrees } from "./identity-op.ts";
 import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
 import { probeStubModeld } from "./modeld-ipc.ts";
-import type { DesiredFile, ModelsFile } from "./models.ts";
+import { routeHasNonStubAssignment, type DesiredFile, type ModelsFile } from "./models.ts";
 import { projectLiveStatus, type HostOrigin } from "./observe.ts";
 import { findAdoptedHostState, findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
+import { loadDurableReviewedProfile } from "./reviewed-profile.ts";
 import { acquireCoordinatorLease, coordinatorLeasePath, type LeaseOwner } from "./op-lock.ts";
 import { coordinatorStatePath } from "./paths.ts";
 import { countRoles, readOnlyProcessPort, type ProcessIdentity, type ProcessPort } from "./process.ts";
@@ -150,12 +151,8 @@ async function resolveModeldReady(input: WatchdogTickInput, ephemeralRoot: strin
   return await probeStubModeld(ephemeralRoot);
 }
 
-function routeProfileAgrees(att: CoverageAttestation, reviewed: PatchProfile | undefined): boolean {
-  if (!reviewed) return false;
-  if (att.diskSha !== reviewed.sourceSha256) return false;
-  if (att.transformedSha && att.transformedSha !== reviewed.transformedSourceSha256) return false;
-  if (att.profileId && att.profileId !== reviewed.profileId) return false;
-  return true;
+function reviewedIdentityForRoute(input: WatchdogTickInput): PatchProfile | undefined {
+  return input.reviewedProfile ?? loadDurableReviewedProfile(input.root);
 }
 
 function mutationBudgetGate(
@@ -632,10 +629,15 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
         watchdogState: "degraded",
       });
 
+    if (routeHasNonStubAssignment(input.models)) {
+      await saveState(input.root, state);
+      return recovery("non_stub_assignment");
+    }
+
     if (origin === "grokbox-attested" && liveHost) {
       const ownership = canonicalOwnershipAgrees({ attestation: att, liveHost, census });
       const shaMatch = Boolean(att && typeof sha === "string" && att.diskSha === sha);
-      if (att?.mode === "route" && att.modeld === true && shaMatch && routeProfileAgrees(att, input.reviewedProfile) && ready) {
+      if (shaMatch && routeAttestationAgrees(att, reviewedIdentityForRoute(input)) && ready) {
         await saveState(input.root, state);
         return resultOf(state, origin, {
           reconcile: "converged",
@@ -800,6 +802,8 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
     persistAttestation:
       markerMode === "route"
         ? async (host, nextSha, windowMs) => {
+            const reviewed = input.reviewedProfile;
+            if (!reviewed) throw new Error("missing_reviewed_profile");
             await writeAttestation(ephemeralRoot, {
               mode: "route",
               coverage: "attested",
@@ -811,8 +815,8 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
               modeld: true,
               windowMs,
               launchMode: "transient-adopt",
-              profileId: input.reviewedProfile?.profileId,
-              transformedSha: input.reviewedProfile?.transformedSourceSha256,
+              profileId: reviewed.profileId,
+              transformedSha: reviewed.transformedSourceSha256,
             });
           }
         : input.adopt.persistAttestation ??

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { writeAttestation } from "./attestation.ts";
 import { type WatchdogAdoptPorts, WATCHDOG_OPERATION_ID } from "./coordinator.ts";
@@ -12,6 +12,7 @@ import { procEnvHas, readNamedProcEnv } from "./live-proc.ts";
 import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
 import { reviewedProfilePath } from "./paths.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
+import { loadDurableReviewedProfile } from "./reviewed-profile.ts";
 import { resolvePreloadPath } from "./runtime-helpers.ts";
 import type { DesiredMode } from "./models.ts";
 import type { PatchProfile } from "./transform.ts";
@@ -32,16 +33,6 @@ export type LiveManualReadoptPorts = {
   adopt: WatchdogAdoptPorts;
   waitReplacement: (oldPid: number) => Promise<ProcessIdentity | null>;
 };
-
-function loadDurableReviewedProfile(root: string): PatchProfile | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(reviewedProfilePath(root), "utf8")) as PatchProfile;
-    if (!parsed || typeof parsed !== "object") return undefined;
-    return parsed;
-  } catch {
-    return undefined;
-  }
-}
 
 function safeLiveDiskSha(): string {
   try {
@@ -108,15 +99,34 @@ export function wireLiveManualReadopt(input: {
       return { ok: true, release: guardian.release };
     },
     persistAttestation: async (host, nextSha, windowMs) => {
+      const at = new Date(input.now()).toISOString();
+      if (preloadMode === "route") {
+        if (!reviewedProfile) throw new Error("missing_reviewed_profile");
+        await writeAttestation(ephemeralRoot, {
+          mode: "route",
+          coverage: "attested",
+          diskSha: nextSha,
+          pid: host.pid,
+          start: host.start,
+          identity: host,
+          at,
+          modeld: true,
+          windowMs,
+          launchMode: "transient-adopt",
+          profileId: reviewedProfile.profileId,
+          transformedSha: reviewedProfile.transformedSourceSha256,
+        });
+        return;
+      }
       await writeAttestation(ephemeralRoot, {
-        mode: preloadMode,
+        mode: "identity",
         coverage: "attested",
         diskSha: nextSha,
         pid: host.pid,
         start: host.start,
         identity: host,
-        at: new Date(input.now()).toISOString(),
-        modeld: preloadMode === "route",
+        at,
+        modeld: false,
         windowMs,
         launchMode: "transient-adopt",
         ...(reviewedProfile

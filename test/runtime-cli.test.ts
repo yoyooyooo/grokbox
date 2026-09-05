@@ -327,6 +327,32 @@ describe("box-local runtime CLI", () => {
     }
   });
 
+  test("models use refuses a non-stub assignment while route is desired", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const useStub = await captureCli(["runtime", "models", "use", "stub/echo"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(useStub.code, useStub.stderr).toBe(0);
+    const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(activate.code, activate.stderr).toBe(0);
+    const drifted = await captureCli(["runtime", "models", "use", "acme/fast"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(drifted.code).toBe(2);
+    expect((parseJson(drifted.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
+    const listed = await captureCli(["runtime", "models", "list"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(listed.code, listed.stderr).toBe(0);
+    expect((data(listed.stdout).assignments as { main: string }).main).toBe("stub/echo");
+  });
+
   test("activate --mode route refuses a non-stub assignment", async () => {
     const boxRuntimeRoot = await withRoot();
     const use = await captureCli(["runtime", "models", "use", "acme/fast"], {
