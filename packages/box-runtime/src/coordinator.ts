@@ -1,0 +1,340 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { writeAttestation } from "./attestation.ts";
+import { ephemeralRuntimeRoot } from "./ephemeral.ts";
+import { appendEvent } from "./events.ts";
+import { linuxProcessPort, roleOf } from "./live-proc.ts";
+import type { DesiredFile, ModelsFile } from "./models.ts";
+import { projectLiveStatus, type HostOrigin } from "./observe.ts";
+import type { RoleClassifier } from "./official-chain.ts";
+import { coordinatorStatePath } from "./paths.ts";
+import { readOnlyProcessPort, type ProcessIdentity, type ProcessPort } from "./process.ts";
+import {
+  readAdoptOpState,
+  runTransientAdoptOperation,
+  type TransientAdoptContext,
+} from "./transient-adopt.ts";
+import type { PatchProfile } from "./transform.ts";
+
+export const WATCHDOG_OPERATION_ID = "watchdog-identity";
+export const WATCHDOG_MUTATION_BUDGET = 2;
+
+export type WatchdogReconcile = "converged" | "pending" | "blocked" | "recovery-required";
+
+export type CoordinatorState = {
+  version: 1;
+  circuit: "closed" | "open";
+  circuitReason?: string;
+  mutationCount: number;
+  attemptedKeys: string[];
+  lastAttemptKey?: string;
+};
+
+export type WatchdogTickResult = {
+  reconcile: WatchdogReconcile;
+  reason: string | null;
+  attemptKey: string | null;
+  signaled: boolean;
+  injected: boolean;
+  circuit: "closed" | "open";
+  watchdogState: "idle" | "running" | "degraded";
+  origin: HostOrigin;
+};
+
+export type WatchdogAdoptPorts = Pick<
+  TransientAdoptContext,
+  | "spawnTempSupervisor"
+  | "waitNewHost"
+  | "waitGone"
+  | "waitReady"
+  | "armGuardian"
+  | "hasGrokboxPreload"
+  | "readGatewayPid"
+  | "persistAttestation"
+  | "prepareTempLaunch"
+  | "adoptProveMs"
+>;
+
+export type WatchdogTickInput = {
+  root: string;
+  desired: DesiredFile;
+  models: ModelsFile;
+  ephemeralRoot?: string;
+  processes?: ProcessPort;
+  classify?: RoleClassifier;
+  envHas?: (pid: number, key: string) => boolean;
+  diskSha?: string | null;
+  reviewedProfile?: PatchProfile;
+  adopt?: WatchdogAdoptPorts;
+  now: () => number;
+  isoNow?: () => string;
+};
+
+const EMPTY_STATE: CoordinatorState = {
+  version: 1,
+  circuit: "closed",
+  mutationCount: 0,
+  attemptedKeys: [],
+};
+
+function attemptKey(mode: DesiredFile["mode"], host: ProcessIdentity, sha: string | null): string {
+  return `${mode}:${host.pid}:${host.start}:${sha ?? "none"}`;
+}
+
+async function loadState(root: string): Promise<CoordinatorState> {
+  try {
+    const parsed = JSON.parse(await readFile(coordinatorStatePath(root), "utf8")) as CoordinatorState;
+    if (parsed.version !== 1) return { ...EMPTY_STATE };
+    return {
+      version: 1,
+      circuit: parsed.circuit === "open" ? "open" : "closed",
+      circuitReason: parsed.circuitReason,
+      mutationCount: Number.isFinite(parsed.mutationCount) ? parsed.mutationCount : 0,
+      attemptedKeys: Array.isArray(parsed.attemptedKeys)
+        ? parsed.attemptedKeys.filter((key): key is string => typeof key === "string").slice(-32)
+        : [],
+      lastAttemptKey: typeof parsed.lastAttemptKey === "string" ? parsed.lastAttemptKey : undefined,
+    };
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return { ...EMPTY_STATE };
+    throw error;
+  }
+}
+
+async function saveState(root: string, state: CoordinatorState): Promise<void> {
+  const path = coordinatorStatePath(root);
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+}
+
+function resultOf(
+  state: CoordinatorState,
+  origin: HostOrigin,
+  partial: Omit<WatchdogTickResult, "circuit" | "origin">,
+): WatchdogTickResult {
+  return { ...partial, circuit: state.circuit, origin };
+}
+
+export async function runWatchdogTick(input: WatchdogTickInput): Promise<WatchdogTickResult> {
+  const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
+  const processes = input.processes ?? readOnlyProcessPort(linuxProcessPort());
+  const classify = input.classify ?? roleOf;
+  const iso = input.isoNow ?? (() => new Date(input.now()).toISOString());
+  let state = await loadState(input.root);
+
+  const pending = await readAdoptOpState(ephemeralRoot);
+  if (pending?.tempSupervisor) {
+    state = {
+      ...state,
+      circuit: "open",
+      circuitReason: "pending-uncertain",
+    };
+    await saveState(input.root, state);
+    await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: "pending-uncertain" });
+    return resultOf(state, "ambiguous", {
+      reconcile: "recovery-required",
+      reason: "pending-uncertain",
+      attemptKey: null,
+      signaled: false,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+
+  const status = await projectLiveStatus({
+    root: input.root,
+    desired: input.desired,
+    models: input.models,
+    processes,
+    ephemeralRoot,
+    envHas: input.envHas,
+    classify,
+    ...(input.diskSha !== undefined ? { diskSha: input.diskSha } : {}),
+  });
+  const origin = status.host.origin;
+  const sha = status.host.diskSha;
+
+  if (origin === "grokbox-unattested" || origin === "ambiguous") {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "recovery-required",
+      reason: status.host.reason ?? origin,
+      attemptKey: null,
+      signaled: false,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+
+  if (input.desired.mode === "route") {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: "route_not_implemented",
+      attemptKey: null,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+
+  if (input.desired.mode === "observe" || input.desired.mode === "disabled") {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "converged",
+      reason: null,
+      attemptKey: null,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+
+  const hosts = processes.list().filter((ident) => classify(ident) === "host");
+  const liveHost = hosts.length === 1 ? hosts[0]! : null;
+
+  if (origin === "grokbox-attested" && liveHost) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "converged",
+      reason: null,
+      attemptKey: attemptKey(input.desired.mode, liveHost, sha),
+      signaled: false,
+      injected: false,
+      watchdogState: "running",
+    });
+  }
+
+  if (origin !== "official" || !liveHost) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "recovery-required",
+      reason: status.host.reason ?? origin,
+      attemptKey: null,
+      signaled: false,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+
+  const key = attemptKey(input.desired.mode, liveHost, sha);
+  if (state.attemptedKeys.includes(key)) {
+    const blocked = state.circuit === "open";
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: blocked ? "blocked" : "converged",
+      reason: blocked ? "circuit_open" : "generation_attempted",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: blocked ? "degraded" : "idle",
+    });
+  }
+  if (state.mutationCount >= WATCHDOG_MUTATION_BUDGET) {
+    state = { ...state, circuit: "open", circuitReason: "mutation_budget", lastAttemptKey: key };
+    await saveState(input.root, state);
+    await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: "mutation_budget" });
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: "mutation_budget",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+  if (!input.reviewedProfile) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: "missing_reviewed_profile",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+  if (!input.adopt) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: "mutation_ports_unavailable",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+
+  const diskSha = () => sha ?? "none";
+  const adopted = await runTransientAdoptOperation({
+    processes,
+    classify,
+    reviewedProfile: input.reviewedProfile,
+    diskSha,
+    ephemeralRoot,
+    operationId: WATCHDOG_OPERATION_ID,
+    readMarker: () => null,
+    waitGone: input.adopt.waitGone,
+    waitReady: input.adopt.waitReady,
+    spawnTempSupervisor: input.adopt.spawnTempSupervisor,
+    waitNewHost: input.adopt.waitNewHost,
+    readGatewayPid: input.adopt.readGatewayPid,
+    armGuardian: input.adopt.armGuardian,
+    persistAttestation:
+      input.adopt.persistAttestation ??
+      (async (host, nextSha, windowMs) => {
+        await writeAttestation(ephemeralRoot, {
+          mode: "identity",
+          coverage: "attested",
+          diskSha: nextSha,
+          pid: host.pid,
+          start: host.start,
+          identity: host,
+          at: iso(),
+          modeld: false,
+          windowMs,
+          launchMode: "transient-adopt",
+        });
+      }),
+    prepareTempLaunch: input.adopt.prepareTempLaunch,
+    hasGrokboxPreload: input.adopt.hasGrokboxPreload,
+    now: input.now,
+    adoptProveMs: input.adopt.adoptProveMs,
+  });
+
+  if (adopted.signaled || adopted.ok) {
+    const attemptedKeys = [...state.attemptedKeys.filter((entry) => entry !== key), key].slice(-32);
+    state = {
+      ...state,
+      mutationCount: state.mutationCount + (adopted.signaled ? 1 : 0),
+      attemptedKeys,
+      lastAttemptKey: key,
+      circuit: adopted.ok ? state.circuit : "open",
+      circuitReason: adopted.ok ? state.circuitReason : adopted.code,
+    };
+  }
+
+  await saveState(input.root, state);
+  if (!adopted.ok && state.circuit === "open") {
+    await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: adopted.code ?? "adopt_failed" });
+  }
+  if (adopted.ok) {
+    return resultOf(state, "grokbox-attested", {
+      reconcile: "converged",
+      reason: null,
+      attemptKey: key,
+      signaled: adopted.signaled,
+      injected: true,
+      watchdogState: "running",
+    });
+  }
+  return resultOf(state, origin, {
+    reconcile: "recovery-required",
+    reason: adopted.code ?? "adopt_failed",
+    attemptKey: key,
+    signaled: adopted.signaled,
+    injected: false,
+    watchdogState: "degraded",
+  });
+}

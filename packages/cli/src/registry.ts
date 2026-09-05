@@ -1199,7 +1199,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["runtime", "watchdog", "run"],
     usage: "grokbox runtime watchdog run",
-    summary: "Box-local Host inject coordinator (does not inject in this slice).",
+    summary: "Box-local desired-state Host coordinator (no public inject).",
     arguments: [],
     options: options(),
     stdin: "none",

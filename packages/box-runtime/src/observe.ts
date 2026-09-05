@@ -7,7 +7,7 @@ import { attestationAgrees } from "./identity-op.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
-import { findUniqueOfficialChain } from "./official-chain.ts";
+import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
 import { contractsDir, eventsPath } from "./paths.ts";
 import { countRoles, type ProcessPort } from "./process.ts";
 
@@ -40,6 +40,7 @@ export type LiveStatusPorts = {
   ephemeralRoot?: string;
   diskSha?: string | null;
   envHas?: (pid: number, key: string) => boolean;
+  classify?: RoleClassifier;
 };
 
 const GROKBOX_TOUCH_ENV = ["GROKBOX_PRELOAD_MODE", "GROKBOX_OPERATION_ID", "GROKBOX_PRELOAD_MARKER"] as const;
@@ -66,17 +67,18 @@ export async function projectLiveStatus(input: {
   const base = projectStatus(input);
   try {
     const port = input.processes ?? linuxProcessPort();
+    const classify = input.classify ?? roleOf;
     const envHas = input.envHas ?? ((pid: number, key: string) => procEnvHas(pid, key));
     const sha =
       input.diskSha !== undefined ? input.diskSha : sha256Bytes(await readFile(LIVE_HOST_BUNDLE));
     const identities = port.list();
     const census = countRoles(
       identities.flatMap((ident) => {
-        const role = roleOf(ident);
+        const role = classify(ident);
         return role ? [{ ...ident, role }] : [];
       }),
     );
-    const hosts = identities.filter((ident) => roleOf(ident) === "host");
+    const hosts = identities.filter((ident) => classify(ident) === "host");
     const touched = hosts.some((host) => namedGrokboxTouch(host.pid, envHas));
     const liveHost = hosts.length === 1 ? hosts[0]! : null;
     const att = await readAttestation(input.ephemeralRoot ?? ephemeralRuntimeRoot());
@@ -99,7 +101,7 @@ export async function projectLiveStatus(input: {
       reason = att ? "stale_attestation" : "unmanaged_preload";
       coverage = "none";
     } else {
-      const unique = findUniqueOfficialChain(port, roleOf);
+      const unique = findUniqueOfficialChain(port, classify);
       if (unique.ok) {
         origin = "official";
         reason = null;

@@ -158,7 +158,7 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   is: "Read state projections",
   runtime: "Box-local model runtime",
   "runtime models": "Box-local model catalog and assignments",
-  "runtime watchdog": "Box-local Host inject coordinator",
+  "runtime watchdog": "Box-local desired-state Host coordinator",
   "runtime modeld": "Box-local model daemon",
 };
 

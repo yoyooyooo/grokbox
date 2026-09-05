@@ -30,6 +30,10 @@ export function desiredPath(root: string): string {
   return join(root, "state", "desired.json");
 }
 
+export function coordinatorStatePath(root: string): string {
+  return join(root, "state", "coordinator.json");
+}
+
 export function eventsPath(root: string): string {
   return join(root, "log", "events.ndjson");
 }

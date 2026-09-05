@@ -43,6 +43,8 @@ describe("box-local runtime CLI", () => {
       "runtime models list",
       "runtime models use",
       "runtime models reset",
+      "runtime watchdog run",
+      "runtime modeld run",
     ]) {
       expect(keys).toContain(key);
     }
@@ -152,6 +154,28 @@ describe("box-local runtime CLI", () => {
     });
     expect(reset.code).toBe(2);
     expect((parseJson(reset.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
+  });
+
+  test("activate stays desired-only and watchdog run does not expose inject/ctl", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const activate = await captureCli(["runtime", "activate", "--mode", "identity"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(activate.code, activate.stderr).toBe(0);
+    expect(data(activate.stdout)).toMatchObject({ desired: "identity", inject: false });
+
+    const watchdog = await captureCli(["runtime", "watchdog", "run"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(watchdog.code, watchdog.stderr).toBe(0);
+    const body = data(watchdog.stdout);
+    expect(body.process).toBe("watchdog");
+    expect(body.inject).toBe(false);
+    expect(body.signaled).toBe(false);
+    expect(["converged", "pending", "blocked", "recovery-required"]).toContain(String(body.reconcile));
+    expect(JSON.stringify(body)).not.toContain("ctl");
   });
 
   test("literal secrets are rejected", async () => {

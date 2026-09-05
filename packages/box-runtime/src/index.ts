@@ -62,6 +62,8 @@ export {
   runTransientAdoptDeactivate,
   canHandoffAdopt,
   officialWouldSpawn,
+  readAdoptOpState,
+  writeAdoptOpState,
 } from "./transient-adopt.ts";
 export {
   applyPatchProfile,
@@ -79,6 +81,7 @@ export {
   identitiesMatch,
   stableIdentitiesMatch,
   signalIfMatch,
+  readOnlyProcessPort,
   singleOfficialChain,
   type ProcessIdentity,
   type ProcessPort,
@@ -87,4 +90,10 @@ export { armGuardian } from "./guardian.ts";
 export { runObserveOrIdentityInject, type InjectContext } from "./inject.ts";
 export { createModeld, createFileEnvSecretResolver, type AdmitResult } from "./modeld.ts";
 export { observeAndHeal } from "./watchdog.ts";
+export {
+  runWatchdogTick,
+  WATCHDOG_MUTATION_BUDGET,
+  WATCHDOG_OPERATION_ID,
+  type WatchdogTickResult,
+} from "./coordinator.ts";
 export { resolveAssignment } from "./models.ts";

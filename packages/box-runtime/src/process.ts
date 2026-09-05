@@ -54,6 +54,15 @@ export function signalIfMatch(port: ProcessPort, expected: ProcessIdentity, sign
   return port.signal(expected, signal);
 }
 
+/** Classification-only view. Never forwards signals. */
+export function readOnlyProcessPort(inner: ProcessPort): ProcessPort {
+  return {
+    inspect: (pid) => inner.inspect(pid),
+    list: () => inner.list(),
+    signal: () => ({ ok: false, reason: "not-found" }),
+  };
+}
+
 export type Census = {
   wrapper: number;
   supervisor: number;

@@ -32,6 +32,9 @@ when upstream Grok Bot or Cursor internals change.
 - `runtime status` classifies `host.origin` / `host.reason` from canonical
   attestation and named grokbox env only; `deactivate` no longer claims live
   `coverage: none`.
+- Offline `runtime watchdog run` reconciles desired identity on fake trees via
+  transient-adopt. Public activate stays desired-only; unattested Hosts are
+  recovery-required with zero signals. No live Host cutover.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

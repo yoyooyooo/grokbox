@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
 import { acquireExclusiveLock, operationLockPath } from "./op-lock.ts";
@@ -36,6 +36,15 @@ export async function writeAdoptOpState(root: string, state: AdoptOpState): Prom
   const path = adoptOpStatePath(root);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+}
+
+export async function readAdoptOpState(root: string): Promise<AdoptOpState | null> {
+  try {
+    return JSON.parse(await readFile(adoptOpStatePath(root), "utf8")) as AdoptOpState;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 /** Official supervisor launches a new Host unless gateway discovery names this live identity Host. */

@@ -11,6 +11,7 @@ import {
   projectLiveStatus,
   readContracts,
   readEvents,
+  runWatchdogTick,
   type DesiredMode,
 } from "@grokbox/box-runtime";
 import type { CliDeps } from "../deps.ts";
@@ -149,8 +150,23 @@ export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | un
 
 export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
   try {
-    store(deps);
-    writeSuccess(deps.stdout, { process: "watchdog", state: "idle", inject: false });
+    const runtime = store(deps);
+    const result = await runWatchdogTick({
+      root: runtime.root,
+      desired: await runtime.loadDesired(),
+      models: await runtime.loadModels(),
+      now: deps.now,
+    });
+    writeSuccess(deps.stdout, {
+      process: "watchdog",
+      state: result.watchdogState,
+      reconcile: result.reconcile,
+      reason: result.reason,
+      attemptKey: result.attemptKey,
+      inject: false,
+      signaled: false,
+      circuit: result.circuit,
+    });
   } catch (error) {
     rethrow(error);
   }
