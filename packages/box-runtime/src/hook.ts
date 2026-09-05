@@ -33,6 +33,7 @@ export function installCompileHook(input: {
   profile: PatchProfile;
   argv?: readonly string[];
   allowLiveHost?: boolean;
+  onTransformed?: () => void;
 }): { restore: () => void; applied: () => boolean; refused?: CompileTransform["refused"] } {
   if (!shouldTransformArgv(input.argv ?? process.argv)) {
     return { restore() {}, applied: () => false, refused: "argv-blocked" };
@@ -57,6 +58,7 @@ export function installCompileHook(input: {
     if (filename === input.targetPath) {
       proto._compile = original;
       applied = next.transformed;
+      if (next.transformed) input.onTransformed?.();
     }
     return original.call(this, next.content, filename);
   };

@@ -18,6 +18,48 @@ export type RuntimeStatus = {
   window: { durationMs: number | null; affectedInvocations: "unknown" };
 };
 
+export async function projectLiveStatus(input: {
+  root: string;
+  desired: DesiredFile;
+  models: ModelsFile;
+}): Promise<RuntimeStatus> {
+  const base = projectStatus(input);
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const { sha256Bytes } = await import("./hash.ts");
+    const { LIVE_HOST_BUNDLE } = await import("./live-slices.ts");
+    const { findRole, linuxProcessPort, roleOf } = await import("./live-proc.ts");
+    const { countRoles } = await import("./process.ts");
+    const { readAttestation } = await import("./attestation.ts");
+    const sha = sha256Bytes(await readFile(LIVE_HOST_BUNDLE));
+    const port = linuxProcessPort();
+    const census = countRoles(
+      port.list().flatMap((ident) => {
+        const role = roleOf(ident);
+        return role ? [{ ...ident, role }] : [];
+      }),
+    );
+    const host = findRole(port, "host");
+    const att = await readAttestation(input.root);
+    const attested = Boolean(
+      att && host && att.pid === host.pid && att.start === host.start && att.coverage === "attested",
+    );
+    return {
+      ...base,
+      host: { diskSha: sha },
+      coverage: attested ? "attested" : base.coverage,
+      census: { wrapper: census.wrapper, supervisor: census.supervisor, host: census.host },
+      watchdog: {
+        required: input.desired.mode === "identity" || input.desired.mode === "route",
+        state: attested ? "running" : base.watchdog.state,
+      },
+      modeld: { required: false, state: "stopped" },
+    };
+  } catch {
+    return base;
+  }
+}
+
 export function projectStatus(input: {
   root: string;
   desired: DesiredFile;

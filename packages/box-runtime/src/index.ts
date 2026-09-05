@@ -23,7 +23,8 @@ export {
   type ModelsFile,
   type RuntimeStore,
 } from "./models.ts";
-export { projectStatus, readContracts, readEvents, type RuntimeStatus } from "./observe.ts";
+export { projectStatus, projectLiveStatus, readContracts, readEvents, type RuntimeStatus } from "./observe.ts";
+export { runIdentityChainInject, runLiveIdentityInject, runLiveIdentityDeactivate } from "./live-inject.ts";
 export {
   applyPatchProfile,
   extractContractSlices,
