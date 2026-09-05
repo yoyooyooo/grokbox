@@ -167,7 +167,7 @@ describe("box-local runtime CLI", () => {
 
   test("models reset is refused while route is desired", async () => {
     const boxRuntimeRoot = await withRoot();
-    const use = await captureCli(["runtime", "models", "use", "acme/fast"], {
+    const use = await captureCli(["runtime", "models", "use", "stub/echo"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -287,6 +287,26 @@ describe("box-local runtime CLI", () => {
       expect(activate.code, activate.stderr).toBe(0);
       expect(spy).not.toHaveBeenCalled();
 
+      const useStub = await captureCli(["runtime", "models", "use", "stub/echo"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(useStub.code, useStub.stderr).toBe(0);
+      const route = await captureCli(["runtime", "activate", "--mode", "route"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(route.code, route.stderr).toBe(0);
+      expect(data(route.stdout)).toMatchObject({ desired: "route", inject: false });
+      expect(spy).not.toHaveBeenCalled();
+
+      const status = await captureCli(["runtime", "status"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(status.code, status.stderr).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+
       const watchdog = await captureCli(["runtime", "watchdog", "run"], {
         discoveryPath: "/dev/null",
         boxRuntimeRoot,
@@ -305,6 +325,21 @@ describe("box-local runtime CLI", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  test("activate --mode route refuses a non-stub assignment", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const use = await captureCli(["runtime", "models", "use", "acme/fast"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(use.code, use.stderr).toBe(0);
+    const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(activate.code).toBe(2);
+    expect((parseJson(activate.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
   });
 
   test("literal secrets are rejected", async () => {

@@ -132,6 +132,7 @@ export type TransientAdoptContext = {
   hasGrokboxPreload: (ident: ProcessIdentity) => boolean;
   now: () => number;
   adoptProveMs?: number;
+  expectedMode?: "identity" | "route";
 };
 
 export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Promise<IdentityOpResult> {
@@ -254,11 +255,12 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         return fail("relaunch-failed", true, true);
       }
       const marker = await ctx.waitReady(replacement.pid);
+      const expectedMode = ctx.expectedMode ?? "identity";
       if (
         !marker ||
         marker.operationId !== ctx.operationId ||
         marker.pid !== replacement.pid ||
-        marker.mode !== "identity" ||
+        marker.mode !== expectedMode ||
         marker.transformed !== true ||
         marker.compiled !== true ||
         marker.modeld !== false

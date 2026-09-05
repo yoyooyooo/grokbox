@@ -20,6 +20,7 @@ export {
   openRuntimeStore,
   parseApiKeyRef,
   parseModelId,
+  STUB_ECHO_MODEL_ID,
   type DesiredMode,
   type ModelsFile,
   type RuntimeStore,
@@ -98,7 +99,20 @@ export {
 } from "./process.ts";
 export { armGuardian } from "./guardian.ts";
 export { runObserveOrIdentityInject, type InjectContext } from "./inject.ts";
+export { ephemeralRuntimeRoot } from "./ephemeral.ts";
 export { createModeld, createFileEnvSecretResolver, type AdmitResult } from "./modeld.ts";
+export {
+  startStubModeldServer,
+  probeStubModeld,
+  modeldSocketPath,
+  STUB_ECHO_PARTS,
+} from "./modeld-ipc.ts";
+export {
+  bindHostSessionHook,
+  createSessionSeam,
+  createStubRouteDriver,
+  createModeldRouteDriver,
+} from "./seam.ts";
 export { observeAndHeal } from "./watchdog.ts";
 export {
   runWatchdogTick,

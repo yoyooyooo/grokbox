@@ -1,0 +1,338 @@
+import { describe, expect, test } from "bun:test";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { createConnection } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createContext, runInContext } from "node:vm";
+import { eventsPath } from "../src/paths.ts";
+import { bindHostSessionHook, createModeldRouteDriver, createSessionSeam } from "../src/seam.ts";
+import {
+  callStubModeld,
+  encodeModeldFrame,
+  modeldSocketPath,
+  startStubModeldServer,
+  STUB_ECHO_MODEL_ID,
+} from "../src/modeld-ipc.ts";
+import { applyPatchProfile, profileFromSource, ROUTE_SESSION_SYMBOL } from "../src/transform.ts";
+import { createManagedPromptSession, type PromptSession } from "../src/session.ts";
+import { consumePromptSession as consumeHost, SEAM_STOP_PARTS } from "./host-consumer.ts";
+import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
+
+const AT = "2026-01-01T00:00:00.000Z";
+
+async function roots() {
+  return {
+    durable: await mkdtemp(join(tmpdir(), "grokbox-stub-durable-")),
+    runRoot: await mkdtemp(join(tmpdir(), "grokbox-stub-run-")),
+  };
+}
+
+async function turnLines(dir: string): Promise<Array<Record<string, unknown>>> {
+  let text = "";
+  try {
+    text = await readFile(eventsPath(dir), "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+  return text
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((row) => row.name === "turn_seam_terminal");
+}
+
+function officialSession(): PromptSession {
+  return createManagedPromptSession({
+    modelId: "official-main",
+    vision: false,
+    parallel: "allow",
+    parts: SEAM_STOP_PARTS,
+  });
+}
+
+function loadSynthetic(hook: (args: { originalSession: object; sessionOptions?: unknown; agentId?: string }) => unknown) {
+  const profile = profileFromSource(SYNTHETIC_HOST, SYNTHETIC_SLICES);
+  const transformed = applyPatchProfile(SYNTHETIC_HOST, profile);
+  if (!transformed.ok) throw new Error(transformed.code);
+  const module = {
+    exports: {} as {
+      createSession: (sessionOptions: unknown) => { kind: string };
+      runTurn: (host: { getConversationId: () => string }) => { kind: string };
+    },
+  };
+  const sandbox = createContext({
+    module,
+    exports: module.exports,
+    Symbol,
+    hook,
+  });
+  runInContext(`globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")] = hook;\n${transformed.source}`, sandbox);
+  return module.exports;
+}
+
+describe("stub route synthetic compile/load", () => {
+  test("identity returns the official object, skips modeld, and writes no seam event", async () => {
+    const { durable, runRoot } = await roots();
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      const original = officialSession();
+      const hook = bindHostSessionHook({ mode: "identity", durableRoot: durable, runRoot });
+      const returned = hook({
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-id", agentId: "agent-tom", inferenceReason: "main" },
+        agentId: "agent-tom",
+      });
+      expect(returned).toBe(original);
+      const loaded = loadSynthetic(hook);
+      const session = loaded.runTurn({ getConversationId: () => "agent-tom" });
+      expect(session.kind).toBe("official-session");
+      expect(session).toBe(session);
+      expect(server.dispatches()).toBe(0);
+      expect(await turnLines(durable)).toEqual([]);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("route ordinary-main is managed; non-main stays official", async () => {
+    const { durable, runRoot } = await roots();
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      const original = officialSession();
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot });
+      const managed = hook({
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-main", inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as PromptSession;
+      expect(managed).not.toBe(original);
+      const loaded = loadSynthetic(hook);
+      const main = loaded.runTurn({ getConversationId: () => "agent-tom" });
+      expect(main).not.toBe(loaded.createSession({ inferenceReason: "computer" }));
+      const computer = loaded.createSession({ inferenceReason: "computer" });
+      expect(computer.kind).toBe("official-session");
+      const vector = await consumeHost(managed);
+      expect(vector.toolExecutionCount).toBe(0);
+      expect(vector.finalDeliveryCount).toBe(1);
+    } finally {
+      await server.stop();
+    }
+  });
+});
+
+describe("stub modeld IPC", () => {
+  test("one text submit dispatches once and writes one terminal; duplicate stream does not", async () => {
+    const { durable, runRoot } = await roots();
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      const driver = createModeldRouteDriver(runRoot);
+      expect(() => driver.resolveCredential()).toThrow(/credential/);
+      expect(() => driver.openNetwork()).toThrow(/network/);
+      const seam = createSessionSeam({
+        mode: "route",
+        root: durable,
+        assignment: "main",
+        modelId: STUB_ECHO_MODEL_ID,
+        driver,
+        now: () => AT,
+      });
+      const original = officialSession();
+      const args = {
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-text", inferenceReason: "main" },
+        agentId: "agent-tom",
+      };
+      const first = seam.hook(args) as PromptSession;
+      expect(first).not.toBe(original);
+      await consumeHost(first);
+      first.stream();
+      const second = seam.hook(args);
+      expect(second).toBe(first);
+      await consumeHost(second as PromptSession);
+      await seam.flush();
+      expect(driver.dispatches).toBe(1);
+      expect(server.dispatches()).toBe(1);
+      expect(driver.officialCalls).toBe(0);
+      expect(driver.secondProviderCalls).toBe(0);
+      const events = await turnLines(durable);
+      expect(events).toEqual([
+        {
+          name: "turn_seam_terminal",
+          at: AT,
+          mode: "route",
+          agentId: "agent-tom",
+          assignment: "main",
+          modelId: STUB_ECHO_MODEL_ID,
+          invocationId: "inv-text",
+          toolCallCount: 0,
+          terminalClass: "stop",
+          outcome: "managed",
+        },
+      ]);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("failure matrix stays closed with no official or second driver", async () => {
+    const { durable, runRoot } = await roots();
+    const original: PromptSession = {
+      stream() {
+        throw new Error("official session must not run");
+      },
+    };
+
+    const downDriver = createModeldRouteDriver(runRoot);
+    const downSeam = createSessionSeam({
+      mode: "route",
+      root: durable,
+      assignment: "main",
+      modelId: STUB_ECHO_MODEL_ID,
+      driver: downDriver,
+      now: () => AT,
+    });
+    const downSession = downSeam.hook({
+      originalSession: original,
+      sessionOptions: { invocationId: "inv-down", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as PromptSession;
+    await consumeHost(downSession);
+    await downSeam.flush();
+    expect(downDriver.officialCalls).toBe(0);
+    expect(downDriver.secondProviderCalls).toBe(0);
+
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      const malformed = await new Promise<Buffer>((resolve, reject) => {
+        const socket = createConnection({ path: modeldSocketPath(runRoot) });
+        socket.on("error", reject);
+        socket.on("connect", () => socket.write(Buffer.from([0, 0, 0, 3, 123, 1, 2])));
+        socket.on("data", (chunk: Buffer) => {
+          socket.end();
+          resolve(chunk);
+        });
+      });
+      expect(malformed.length).toBeGreaterThan(4);
+
+      const wrong = await callStubModeld(runRoot, {
+        method: "submit",
+        invocationId: "inv-wrong",
+        agentId: "agent-tom",
+        modelId: "acme/fast",
+      });
+      expect(wrong).toMatchObject({ ok: false, code: "wrong-model" });
+
+      const missing = createSessionSeam({
+        mode: "route",
+        root: durable,
+        assignment: "main",
+        modelId: STUB_ECHO_MODEL_ID,
+        driver: createModeldRouteDriver(runRoot),
+        now: () => AT,
+      });
+      const missingSession = missing.hook({
+        originalSession: original,
+        sessionOptions: { inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as PromptSession;
+      await consumeHost(missingSession);
+      expect(server.dispatches()).toBe(0);
+
+      const first = await callStubModeld(runRoot, {
+        method: "submit",
+        invocationId: "inv-conflict",
+        agentId: "agent-tom",
+        modelId: STUB_ECHO_MODEL_ID,
+      });
+      expect(first).toMatchObject({ ok: true, dispatched: true });
+      const conflict = await callStubModeld(runRoot, {
+        method: "submit",
+        invocationId: "inv-conflict",
+        agentId: "agent-jerry",
+        modelId: STUB_ECHO_MODEL_ID,
+      });
+      expect(conflict).toMatchObject({ ok: false, code: "conflict" });
+
+      await callStubModeld(runRoot, { method: "disconnect", invocationId: "inv-gone" });
+      const disconnected = await callStubModeld(runRoot, {
+        method: "submit",
+        invocationId: "inv-gone",
+        agentId: "agent-tom",
+        modelId: STUB_ECHO_MODEL_ID,
+      });
+      expect(disconnected).toMatchObject({ ok: false, code: "disconnected" });
+
+      const abortDriver = createModeldRouteDriver(runRoot);
+      const abortSeam = createSessionSeam({
+        mode: "route",
+        root: durable,
+        assignment: "main",
+        modelId: STUB_ECHO_MODEL_ID,
+        driver: abortDriver,
+        now: () => AT,
+      });
+      const abortSession = abortSeam.hook({
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-abort", inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as PromptSession;
+      const controller = new AbortController();
+      controller.abort();
+      abortSession.stream({ abortSignal: controller.signal });
+      await abortSeam.flush();
+      expect(abortDriver.officialCalls).toBe(0);
+      expect(server.dispatches()).toBe(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("hard-off: no credential resolver, fetch, DNS, or TCP while unix IPC works", async () => {
+    const { durable, runRoot } = await roots();
+    const server = await startStubModeldServer({ runRoot });
+    const counts = { fetch: 0, dns: 0, tcp: 0 };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      counts.fetch += 1;
+      throw new Error("fetch forbidden");
+    }) as unknown as typeof fetch;
+    try {
+      const driver = createModeldRouteDriver(runRoot);
+      const seam = createSessionSeam({
+        mode: "route",
+        root: durable,
+        assignment: "main",
+        modelId: STUB_ECHO_MODEL_ID,
+        driver,
+        now: () => AT,
+      });
+      const managed = seam.hook({
+        originalSession: officialSession(),
+        sessionOptions: { invocationId: "inv-hardoff", inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as PromptSession;
+      await consumeHost(managed);
+      await seam.flush();
+      expect(driver.dispatches).toBe(1);
+      expect(() => driver.resolveCredential()).toThrow(/credential/);
+      expect(counts.fetch).toBe(0);
+      const payload = JSON.stringify(
+        await callStubModeld(runRoot, {
+          method: "submit",
+          invocationId: "inv-hardoff-2",
+          agentId: "agent-tom",
+          modelId: STUB_ECHO_MODEL_ID,
+        }),
+      );
+      expect(payload).not.toMatch(/https?:|apiKey|sk-|ACME_|env:/);
+      expect(encodeModeldFrame({ method: "health" }).includes(Buffer.from("https://"))).toBe(false);
+      expect(originalFetch).toBeDefined();
+      expect(counts.dns).toBe(0);
+      expect(counts.tcp).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await server.stop();
+    }
+  });
+});

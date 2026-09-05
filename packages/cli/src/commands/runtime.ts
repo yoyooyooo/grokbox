@@ -6,6 +6,7 @@ import {
   assertRouteAssignment,
   BoxRuntimeError,
   disclosure,
+  ephemeralRuntimeRoot,
   openRuntimeStore,
   parseModelId,
   projectLiveStatus,
@@ -14,6 +15,8 @@ import {
   liveH3AdoptAdapter,
   runManualReadopt,
   runWatchdogTick,
+  startStubModeldServer,
+  STUB_ECHO_MODEL_ID,
   wireLiveManualReadopt,
   type DesiredMode,
 } from "@grokbox/box-runtime";
@@ -159,11 +162,12 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
       throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
     }
     const runtime = store(deps);
-    const wired = wireLiveManualReadopt({ root: runtime.root, now: deps.now });
+    const desired = await runtime.loadDesired();
+    const wired = wireLiveManualReadopt({ root: runtime.root, now: deps.now, mode: desired.mode });
     const result = await runManualReadopt({
       confirmed: true,
       root: runtime.root,
-      desired: await runtime.loadDesired(),
+      desired,
       models: await runtime.loadModels(),
       now: deps.now,
       ...wired,
@@ -212,7 +216,25 @@ export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
 export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
   try {
     store(deps);
-    writeSuccess(deps.stdout, { process: "modeld", state: "idle", provider: false });
+    const runRoot = deps.env.GROKBOX_RUN_ROOT ?? ephemeralRuntimeRoot();
+    const server = await startStubModeldServer({ runRoot, signal: deps.signal });
+    writeSuccess(deps.stdout, {
+      process: "modeld",
+      state: "running",
+      provider: false,
+      model: STUB_ECHO_MODEL_ID,
+    });
+    await new Promise<void>((resolve) => {
+      const stop = () => {
+        void server.stop().finally(() => resolve());
+      };
+      process.once("SIGTERM", stop);
+      process.once("SIGINT", stop);
+      if (deps.signal) {
+        if (deps.signal.aborted) stop();
+        else deps.signal.addEventListener("abort", stop, { once: true });
+      }
+    });
   } catch (error) {
     rethrow(error);
   }

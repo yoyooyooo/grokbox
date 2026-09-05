@@ -7,11 +7,19 @@ import {
   type TurnSeamWriteResult,
 } from "./events.ts";
 import {
+  callStubModeld,
+  isModeldFailure,
+  STUB_ECHO_MODEL_ID,
+  STUB_ECHO_PARTS,
+  submitPartsFromResponse,
+} from "./modeld-ipc.ts";
+import {
   createManagedPromptSession,
   type PromptSession,
   type SessionTerminal,
   type StreamHandle,
   type StreamPart,
+  type StreamRequest,
 } from "./session.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
@@ -21,14 +29,31 @@ export type SeamEvidence = {
   gap: null | "write_failed" | "unprojected";
 };
 
+export type StubRouteSubmit = {
+  invocationId: string;
+  agentId: string;
+  modelId: string;
+  abortSignal?: AbortSignal;
+};
+
 export type StubRouteDriver = {
   dispatches: number;
   officialCalls: number;
   secondProviderCalls: number;
   parts: StreamPart[];
+  submit?: (request: StubRouteSubmit) => Promise<{ parts: StreamPart[]; dispatched: boolean }>;
+  disconnectInvocation?: (invocationId: string) => Promise<void>;
   resolveCredential: () => never;
   openNetwork: () => never;
 };
+
+function disabledCredential(): never {
+  throw new Error("stub route driver has credential resolution disabled");
+}
+
+function disabledNetwork(): never {
+  throw new Error("stub route driver has network disabled");
+}
 
 export function createStubRouteDriver(parts: StreamPart[]): StubRouteDriver {
   return {
@@ -36,13 +61,37 @@ export function createStubRouteDriver(parts: StreamPart[]): StubRouteDriver {
     officialCalls: 0,
     secondProviderCalls: 0,
     parts,
-    resolveCredential() {
-      throw new Error("stub route driver has credential resolution disabled");
-    },
-    openNetwork() {
-      throw new Error("stub route driver has network disabled");
-    },
+    resolveCredential: disabledCredential,
+    openNetwork: disabledNetwork,
   };
+}
+
+export function createModeldRouteDriver(runRoot: string): StubRouteDriver {
+  const driver = createStubRouteDriver(STUB_ECHO_PARTS);
+  driver.submit = async (request) => {
+    if (request.abortSignal?.aborted) {
+      return { parts: [{ type: "finish", reason: "abort" }], dispatched: false };
+    }
+    if (request.modelId !== STUB_ECHO_MODEL_ID) {
+      throw new Error("stub route driver rejects non-stub models");
+    }
+    const response = await callStubModeld(runRoot, {
+      method: "submit",
+      invocationId: request.invocationId,
+      agentId: request.agentId,
+      modelId: request.modelId,
+    });
+    if (isModeldFailure(response)) throw new Error(`modeld ${response.code}`);
+    return submitPartsFromResponse(response);
+  };
+  driver.disconnectInvocation = async (invocationId) => {
+    try {
+      await callStubModeld(runRoot, { method: "disconnect", invocationId });
+    } catch {
+      /* disconnect is best-effort */
+    }
+  };
+  return driver;
 }
 
 export type SessionSeamConfig = {
@@ -92,6 +141,52 @@ function boundedRouteModelId(value: unknown): string | null {
   if (value.length === 0 || value.length > TURN_SEAM_BOUNDED_STRING) return null;
   if (/[\n\r]/.test(value)) return null;
   return value;
+}
+
+function boundedAdmissionId(value: unknown): string | null {
+  return boundedRouteModelId(value);
+}
+
+function isOrdinaryMain(sessionOptions: unknown, agentId: string | undefined): boolean {
+  if (sessionOptions !== null && typeof sessionOptions === "object") {
+    const reason = (sessionOptions as { inferenceReason?: unknown }).inferenceReason;
+    if (typeof reason === "string") return reason === "main";
+  }
+  return typeof agentId === "string" && agentId.length > 0;
+}
+
+function errorSession(modelId: string): PromptSession {
+  return createManagedPromptSession({
+    modelId,
+    vision: false,
+    parallel: "allow",
+    parts: [{ type: "finish", reason: "error" }],
+  });
+}
+
+function abortHandle(modelId: string, onTerminal?: (terminal: SessionTerminal) => void): StreamHandle {
+  return createManagedPromptSession({
+    modelId,
+    vision: false,
+    parallel: "allow",
+    parts: [{ type: "finish", reason: "abort" }],
+    onTerminal,
+  }).stream();
+}
+
+function handleFromParts(
+  modelId: string,
+  parts: StreamPart[],
+  request: StreamRequest | undefined,
+  onTerminal?: (terminal: SessionTerminal) => void,
+): StreamHandle {
+  return createManagedPromptSession({
+    modelId,
+    vision: false,
+    parallel: "allow",
+    parts,
+    onTerminal,
+  }).stream(request);
 }
 
 export function createSessionSeam(config: SessionSeamConfig) {
@@ -154,37 +249,66 @@ export function createSessionSeam(config: SessionSeamConfig) {
   }): unknown => {
     if (config.mode !== "route" || routeModelId == null) return args.originalSession;
     const modelId = routeModelId;
-    const invocationId = invocationIdOf(args.sessionOptions);
-    const agentId = agentIdOf(args);
+    const agentIdRaw = agentIdOf(args);
+    if (!isOrdinaryMain(args.sessionOptions, agentIdRaw)) return args.originalSession;
+    const invocationId = boundedAdmissionId(invocationIdOf(args.sessionOptions));
+    const agentId = boundedAdmissionId(agentIdRaw);
     if (invocationId == null || agentId == null) {
-      return createManagedPromptSession({
-        modelId,
-        vision: false,
-        parallel: "allow",
-        parts: [{ type: "finish", reason: "error" }],
-      });
+      return errorSession(modelId);
     }
     const existing = invocations.get(invocationId);
     if (existing) return existing.session;
     const driver = config.driver!;
+
+    const onTerminal = (terminal: SessionTerminal): void => {
+      const current = invocations.get(invocationId);
+      if (!current) return;
+      record(current, terminal.terminalClass, terminal.toolCallCount, "managed");
+    };
 
     const inner = createManagedPromptSession({
       modelId,
       vision: false,
       parallel: "allow",
       parts: driver.parts,
-      onTerminal: (terminal: SessionTerminal) => {
-        const current = invocations.get(invocationId);
-        if (!current) return;
-        record(current, terminal.terminalClass, terminal.toolCallCount, "managed");
-      },
+      onTerminal,
     });
 
     const state: InvocationState = {
       session: {
         stream(request) {
           if (state.dispatched) return idleStreamHandle(modelId);
+          if (request?.abortSignal?.aborted) {
+            state.dispatched = true;
+            return abortHandle(modelId, onTerminal);
+          }
           state.dispatched = true;
+          if (driver.submit) {
+            const loaded = driver
+              .submit({
+                invocationId,
+                agentId,
+                modelId,
+                abortSignal: request?.abortSignal,
+              })
+              .then((result) => {
+                driver.dispatches += result.dispatched ? 1 : 0;
+                return handleFromParts(modelId, result.parts, request, onTerminal);
+              })
+              .catch(() => {
+                driver.dispatches += 1;
+                return handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
+              });
+            return {
+              fullStream: {
+                async *[Symbol.asyncIterator]() {
+                  yield* (await loaded).fullStream;
+                },
+              },
+              response: loaded.then(async (handle) => await handle.response),
+              usage: loaded.then(async (handle) => await handle.usage),
+            };
+          }
           driver.dispatches += 1;
           return inner.stream(request);
         },
@@ -204,6 +328,13 @@ export function createSessionSeam(config: SessionSeamConfig) {
     async disconnect(invocationId: string): Promise<void> {
       const state = invocations.get(invocationId);
       if (!state) return;
+      if (config.driver?.disconnectInvocation) {
+        try {
+          await config.driver.disconnectInvocation(invocationId);
+        } catch {
+          /* modeld disconnect is best-effort */
+        }
+      }
       record(state, "unknown", 0, "managed");
       await writes;
     },
@@ -214,4 +345,23 @@ export function createSessionSeam(config: SessionSeamConfig) {
       await writes;
     },
   };
+}
+
+export function bindHostSessionHook(input: {
+  mode: SeamMode;
+  durableRoot: string;
+  runRoot: string;
+}): (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string }) => unknown {
+  if (input.mode !== "route") {
+    return (args) => args.originalSession;
+  }
+  const driver = createModeldRouteDriver(input.runRoot);
+  const seam = createSessionSeam({
+    mode: "route",
+    root: input.durableRoot,
+    assignment: "main",
+    modelId: STUB_ECHO_MODEL_ID,
+    driver,
+  });
+  return (args) => seam.hook(args);
 }

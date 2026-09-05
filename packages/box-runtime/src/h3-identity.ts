@@ -53,21 +53,24 @@ export function identityLaunchFields(input: {
   markerPath: string;
   operationId: string;
   hostBundle: string;
+  mode?: "identity" | "route";
+  durableRoot?: string;
+  runRoot?: string;
 }): { ok: true; env: Record<string, string> } | { ok: false; code: "forbidden-env" } {
   const picked = pickLaunchEnv(input.source);
   if (!picked.ok) return picked;
-  return {
-    ok: true,
-    env: {
-      ...picked.env,
-      NODE_OPTIONS: `--require=${input.preloadPath}`,
-      GROKBOX_HOST_BUNDLE: input.hostBundle,
-      GROKBOX_PATCH_PROFILE: input.profilePath,
-      GROKBOX_PRELOAD_MARKER: input.markerPath,
-      GROKBOX_PRELOAD_MODE: "identity",
-      GROKBOX_OPERATION_ID: input.operationId,
-    },
+  const env: Record<string, string> = {
+    ...picked.env,
+    NODE_OPTIONS: `--require=${input.preloadPath}`,
+    GROKBOX_HOST_BUNDLE: input.hostBundle,
+    GROKBOX_PATCH_PROFILE: input.profilePath,
+    GROKBOX_PRELOAD_MARKER: input.markerPath,
+    GROKBOX_PRELOAD_MODE: input.mode ?? "identity",
+    GROKBOX_OPERATION_ID: input.operationId,
   };
+  if (input.durableRoot) env.GROKBOX_BOX_RUNTIME_ROOT = input.durableRoot;
+  if (input.runRoot) env.GROKBOX_RUN_ROOT = input.runRoot;
+  return { ok: true, env };
 }
 
 export async function runH3OfflineInject(input: {

@@ -4,16 +4,18 @@ import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import type { ProcessIdentity } from "./process.ts";
 
 export type CoverageAttestation = {
-  mode: "identity";
+  mode: "identity" | "route";
   coverage: "attested";
   diskSha: string;
   pid: number;
   start: number;
   identity: ProcessIdentity;
   at: string;
-  modeld: false;
+  modeld: boolean;
   windowMs?: number;
   launchMode?: "direct-launch" | "transient-adopt";
+  profileId?: string;
+  transformedSha?: string;
 };
 
 export function attestationPath(ephemeralRoot = ephemeralRuntimeRoot()): string {

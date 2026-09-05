@@ -5,6 +5,8 @@ import { desiredPath, modelsPath, resolveDurableRoot } from "./paths.ts";
 
 export type DesiredMode = "disabled" | "observe" | "identity" | "route";
 
+export const STUB_ECHO_MODEL_ID = "stub/echo";
+
 export type ModelCapabilities = {
   vision: boolean;
   tools: boolean;
@@ -19,6 +21,16 @@ export type ModelRecord = {
   apiKeyRef: string;
   capabilities: ModelCapabilities;
   dataTypes: string[];
+};
+
+export const STUB_ECHO_MODEL: ModelRecord = {
+  id: STUB_ECHO_MODEL_ID,
+  provider: "stub",
+  model: "echo",
+  endpoint: "stub:echo",
+  apiKeyRef: "",
+  capabilities: { vision: false, tools: false, images: false },
+  dataTypes: ["text"],
 };
 
 export type ModelsFile = {
@@ -67,8 +79,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function looksLikeNetworkEndpoint(endpoint: string): boolean {
+  return /^(https?|wss?):/i.test(endpoint);
+}
+
 function parseModel(id: string, value: unknown): ModelRecord {
   if (!isRecord(value)) throw new BoxRuntimeError("invalid_usage", `Model '${id}' is invalid.`);
+  if (id === STUB_ECHO_MODEL_ID) {
+    if (typeof value.apiKeyRef === "string" && value.apiKeyRef.length > 0) {
+      throw new BoxRuntimeError("credential_invalid", "stub/echo forbids credential references.");
+    }
+    if (typeof value.endpoint === "string" && looksLikeNetworkEndpoint(value.endpoint)) {
+      throw new BoxRuntimeError("invalid_usage", "stub/echo forbids network endpoints.");
+    }
+    return STUB_ECHO_MODEL;
+  }
   const provider = value.provider;
   const model = value.model;
   const endpoint = value.endpoint;
@@ -187,6 +212,7 @@ export function parseModelId(value: string): { provider: string; model: string; 
 }
 
 export function requireModel(file: ModelsFile, id: string): ModelRecord {
+  if (id === STUB_ECHO_MODEL_ID) return STUB_ECHO_MODEL;
   const record = file.models[id];
   if (!record) throw new BoxRuntimeError("invalid_usage", `Unknown model '${id}'. Add it to models.json first.`);
   return record;
@@ -229,6 +255,17 @@ export function assertResetAllowed(desired: DesiredFile): void {
 export function assertRouteAssignment(file: ModelsFile): void {
   if (!file.assignments.main) {
     throw new BoxRuntimeError("invalid_usage", "activate --mode route requires a valid assignments.main.");
+  }
+  if (file.assignments.main !== STUB_ECHO_MODEL_ID) {
+    throw new BoxRuntimeError("invalid_usage", "activate --mode route admits only stub/echo in this slice.");
+  }
+  for (const [agentId, modelId] of Object.entries(file.assignments.agents)) {
+    if (modelId !== STUB_ECHO_MODEL_ID) {
+      throw new BoxRuntimeError(
+        "invalid_usage",
+        `activate --mode route admits only stub/echo; assignments.agents.${agentId} is not admitted.`,
+      );
+    }
   }
   requireModel(file, file.assignments.main);
 }

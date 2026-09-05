@@ -369,7 +369,7 @@ describe("offline watchdog desired-state coordinator", () => {
 
     const route = await runWatchdogTick({ ...base, desired: desired("route") });
     expect(route.reconcile).toBe("blocked");
-    expect(route.reason).toBe("route_not_implemented");
+    expect(route.reason).toBe("route_requires_confirm");
     expect(route.injected).toBe(false);
     expect(tree.signals).toEqual([]);
   });

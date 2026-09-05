@@ -14,7 +14,7 @@ import type { PatchProfile } from "./transform.ts";
 export type IdentityMarker = {
   operationId: string;
   pid: number;
-  mode: "identity";
+  mode: "identity" | "route";
   transformed: true;
   compiled: true;
   modeld: false;
@@ -239,9 +239,10 @@ export function canonicalOwnershipAgrees(input: {
   census: Census;
 }): boolean {
   if (!input.attestation || !input.liveHost) return false;
-  if (input.attestation.mode !== "identity") return false;
+  if (input.attestation.mode !== "identity" && input.attestation.mode !== "route") return false;
   if (input.attestation.coverage !== "attested") return false;
-  if (input.attestation.modeld !== false) return false;
+  if (input.attestation.mode === "identity" && input.attestation.modeld !== false) return false;
+  if (input.attestation.mode === "route" && input.attestation.modeld !== true) return false;
   if (!identitiesMatch(input.attestation.identity, input.liveHost)) return false;
   return singleOfficialChain(input.census);
 }

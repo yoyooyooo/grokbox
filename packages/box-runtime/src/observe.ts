@@ -4,6 +4,7 @@ import { readAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { sha256Bytes } from "./hash.ts";
 import { attestationAgrees, canonicalOwnershipAgrees } from "./identity-op.ts";
+import { probeStubModeld } from "./modeld-ipc.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
@@ -82,7 +83,9 @@ export async function projectLiveStatus(input: {
     const hosts = identities.filter((ident) => classify(ident) === "host");
     const touched = hosts.some((host) => namedGrokboxTouch(host.pid, envHas));
     const liveHost = hosts.length === 1 ? hosts[0]! : null;
-    const att = await readAttestation(input.ephemeralRoot ?? ephemeralRuntimeRoot());
+    const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
+    const att = await readAttestation(ephemeralRoot);
+    const modeldRunning = await probeStubModeld(ephemeralRoot);
     const ownership = canonicalOwnershipAgrees({
       attestation: att,
       liveHost,
@@ -102,7 +105,10 @@ export async function projectLiveStatus(input: {
       origin = "grokbox-attested";
       if (agrees) {
         reason = null;
-        coverage = "attested";
+        const routeReady =
+          input.desired.mode !== "route" ||
+          (att?.mode === "route" && att.modeld === true && modeldRunning);
+        coverage = routeReady ? "attested" : officialCoverage(input.desired.mode);
       } else {
         reason = "stale_attestation";
         coverage = officialCoverage(input.desired.mode);
@@ -133,7 +139,10 @@ export async function projectLiveStatus(input: {
         required: input.desired.mode === "identity" || input.desired.mode === "route",
         state: "stopped",
       },
-      modeld: { required: false, state: "stopped" },
+      modeld: {
+        required: input.desired.mode === "route",
+        state: modeldRunning ? "running" : "stopped",
+      },
       window: {
         durationMs: att?.windowMs ?? null,
         affectedInvocations: "unknown",

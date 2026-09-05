@@ -58,6 +58,10 @@ describe("models.json store", () => {
     const forBot = applyUse(used, "acme/fast", "agent-tom");
     expect(disclosure(forBot, "acme/fast", "agent-tom").blastRadius).toBe("single_bot");
     await store.saveModels(forBot);
+    const nonStub = await store.loadModels();
+    expect(() => assertRouteAssignment(nonStub)).toThrow(BoxRuntimeError);
+    const stubbed = applyUse(applyUse(nonStub, "stub/echo"), "stub/echo", "agent-tom");
+    await store.saveModels(stubbed);
     await store.saveDesired({ version: 1, mode: "route" });
     const desired = await store.loadDesired();
     expect(() => assertResetAllowed(desired)).toThrow(BoxRuntimeError);
@@ -74,6 +78,6 @@ describe("models.json store", () => {
     await store.saveDesired({ version: 1, mode: "disabled" });
     const reset = applyReset(await store.loadModels(), "agent-tom");
     expect(reset.assignments.agents["agent-tom"]).toBeUndefined();
-    expect(reset.assignments.main).toBe("acme/fast");
+    expect(reset.assignments.main).toBe("stub/echo");
   });
 });

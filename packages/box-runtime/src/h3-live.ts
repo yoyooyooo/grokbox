@@ -170,7 +170,7 @@ function readMarkerFile(path: string): IdentityMarker | null {
     if (
       typeof marker.operationId !== "string" ||
       typeof marker.pid !== "number" ||
-      marker.mode !== "identity" ||
+      (marker.mode !== "identity" && marker.mode !== "route") ||
       marker.transformed !== true ||
       marker.compiled !== true ||
       marker.modeld !== false
@@ -218,7 +218,7 @@ export function createLiveH3Ports(input: {
       await writeFile(input.overlayPath, `${JSON.stringify({ env: next })}\n`, { mode: 0o600 });
     },
     hasGrokboxPreload: (host) =>
-      procEnvHas(host.pid, "NODE_OPTIONS", input.preloadNeedle) || procEnvHas(host.pid, "GROKBOX_PRELOAD_MODE", "identity"),
+      procEnvHas(host.pid, "NODE_OPTIONS", input.preloadNeedle) || procEnvHas(host.pid, "GROKBOX_PRELOAD_MODE"),
   };
 }
 
@@ -264,7 +264,7 @@ export function createLiveH3AdoptPorts(input: {
       await writeFile(input.overlayPath, `${JSON.stringify(spec)}\n`, { mode: 0o600 });
     },
     hasGrokboxPreload: (host) =>
-      procEnvHas(host.pid, "NODE_OPTIONS", input.preloadNeedle) || procEnvHas(host.pid, "GROKBOX_PRELOAD_MODE", "identity"),
+      procEnvHas(host.pid, "NODE_OPTIONS", input.preloadNeedle) || procEnvHas(host.pid, "GROKBOX_PRELOAD_MODE"),
     spawnTempSupervisor: async () => {
       spawn(input.execPath, [TEMP_SUPERVISOR, input.overlayPath], { stdio: "ignore" });
       const ok = await waitUntil(

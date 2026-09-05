@@ -1,16 +1,18 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { clearAttestation, readAttestation, writeAttestation } from "./attestation.ts";
+import { clearAttestation, readAttestation, writeAttestation, type CoverageAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { BoxRuntimeError } from "./errors.ts";
 import { appendEvent, compactEvents } from "./events.ts";
+import { canonicalOwnershipAgrees } from "./identity-op.ts";
 import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
+import { probeStubModeld } from "./modeld-ipc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
 import { projectLiveStatus, type HostOrigin } from "./observe.ts";
 import { findAdoptedHostState, findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import { acquireCoordinatorLease, coordinatorLeasePath, type LeaseOwner } from "./op-lock.ts";
 import { coordinatorStatePath } from "./paths.ts";
-import { readOnlyProcessPort, type ProcessIdentity, type ProcessPort } from "./process.ts";
+import { countRoles, readOnlyProcessPort, type ProcessIdentity, type ProcessPort } from "./process.ts";
 import {
   adoptJournalNeedsRecovery,
   readAdoptOpState,
@@ -83,6 +85,7 @@ export type WatchdogTickInput = {
   now: () => number;
   isoNow?: () => string;
   confirmed?: boolean;
+  modeldReady?: () => boolean | Promise<boolean>;
 };
 
 const EMPTY_STATE: CoordinatorState = {
@@ -140,6 +143,19 @@ function resolveFreshSha(input: WatchdogTickInput): () => string {
   if (typeof input.diskSha === "string") return () => input.diskSha as string;
   if (input.diskSha === null) return () => "none";
   return () => "none";
+}
+
+async function resolveModeldReady(input: WatchdogTickInput, ephemeralRoot: string): Promise<boolean> {
+  if (input.modeldReady) return await input.modeldReady();
+  return await probeStubModeld(ephemeralRoot);
+}
+
+function routeProfileAgrees(att: CoverageAttestation, reviewed: PatchProfile | undefined): boolean {
+  if (!reviewed) return false;
+  if (att.diskSha !== reviewed.sourceSha256) return false;
+  if (att.transformedSha && att.transformedSha !== reviewed.transformedSourceSha256) return false;
+  if (att.profileId && att.profileId !== reviewed.profileId) return false;
+  return true;
 }
 
 function mutationBudgetGate(
@@ -370,6 +386,86 @@ async function runStaleAttestedReadopt(
   return await runWatchdogTickBody({ ...input, confirmed: true });
 }
 
+async function runIdentityToRouteRefresh(
+  input: WatchdogTickInput,
+  ctx: {
+    state: CoordinatorState;
+    ephemeralRoot: string;
+    processes: ProcessPort;
+    classify: RoleClassifier;
+    freshDiskSha: () => string;
+    iso: () => string;
+    liveHost: ProcessIdentity;
+    sha: string | null;
+    origin: HostOrigin;
+  },
+): Promise<WatchdogTickResult> {
+  let { state } = ctx;
+  const { ephemeralRoot, processes, classify, freshDiskSha, iso, liveHost, sha, origin } = ctx;
+  const key = attemptKey(input.desired.mode, liveHost, sha);
+  if (!input.reviewedProfile || !input.adopt) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "blocked",
+      reason: input.reviewedProfile ? "mutation_ports_unavailable" : "missing_reviewed_profile",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "idle",
+    });
+  }
+  const att = await readAttestation(ephemeralRoot);
+  if (!att) {
+    await saveState(input.root, state);
+    return resultOf(state, origin, {
+      reconcile: "recovery-required",
+      reason: "no-attestation",
+      attemptKey: key,
+      signaled: false,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+  const deact = await runTransientAdoptDeactivate({
+    processes,
+    classify,
+    diskSha: freshDiskSha,
+    ephemeralRoot,
+    attestation: att,
+    waitGone: input.adopt.waitGone,
+    waitReplacement: (oldPid) => waitDirectOfficialReplacement(input, processes, classify, oldPid),
+    hasGrokboxPreload: input.adopt.hasGrokboxPreload,
+    readGatewayPid: input.adopt.readGatewayPid,
+    clearAttestation: async () => {
+      await clearAttestation(ephemeralRoot);
+    },
+  });
+  if (!deact.ok) {
+    state = {
+      ...state,
+      circuit: "open",
+      circuitReason: deact.code,
+      mutationCount: state.mutationCount + (deact.signaled ? 1 : 0),
+    };
+    await saveState(input.root, state);
+    await appendEvent(input.root, { name: "circuit_open", at: iso(), reason: deact.code ?? "deactivate_failed" });
+    return resultOf(state, origin, {
+      reconcile: "recovery-required",
+      reason: deact.code ?? "deactivate_failed",
+      attemptKey: key,
+      signaled: deact.signaled,
+      injected: false,
+      watchdogState: "degraded",
+    });
+  }
+  state = {
+    ...state,
+    mutationCount: state.mutationCount + (deact.signaled ? 1 : 0),
+  };
+  await saveState(input.root, state);
+  return await runWatchdogTickBody({ ...input, confirmed: true });
+}
+
 async function withCoordinatorLease<T>(
   input: WatchdogTickInput,
   ephemeralRoot: string,
@@ -506,15 +602,92 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
   }
 
   if (input.desired.mode === "route") {
-    await saveState(input.root, state);
-    return resultOf(state, origin, {
-      reconcile: "blocked",
-      reason: "route_not_implemented",
-      attemptKey: null,
-      signaled: false,
-      injected: false,
-      watchdogState: "idle",
-    });
+    const hosts = processes.list().filter((ident) => classify(ident) === "host");
+    const liveHost = hosts.length === 1 ? hosts[0]! : null;
+    const key = liveHost ? attemptKey(input.desired.mode, liveHost, sha) : null;
+    const ready = await resolveModeldReady(input, ephemeralRoot);
+    const att = await readAttestation(ephemeralRoot);
+    const census = countRoles(
+      processes.list().flatMap((ident) => {
+        const role = classify(ident);
+        return role ? [{ ...ident, role }] : [];
+      }),
+    );
+    const blocked = (reason: string): WatchdogTickResult =>
+      resultOf(state, origin, {
+        reconcile: "blocked",
+        reason,
+        attemptKey: key,
+        signaled: false,
+        injected: false,
+        watchdogState: "idle",
+      });
+    const recovery = (reason: string): WatchdogTickResult =>
+      resultOf(state, origin, {
+        reconcile: "recovery-required",
+        reason,
+        attemptKey: key,
+        signaled: false,
+        injected: false,
+        watchdogState: "degraded",
+      });
+
+    if (origin === "grokbox-attested" && liveHost) {
+      const ownership = canonicalOwnershipAgrees({ attestation: att, liveHost, census });
+      const shaMatch = Boolean(att && typeof sha === "string" && att.diskSha === sha);
+      if (att?.mode === "route" && att.modeld === true && shaMatch && routeProfileAgrees(att, input.reviewedProfile) && ready) {
+        await saveState(input.root, state);
+        return resultOf(state, origin, {
+          reconcile: "converged",
+          reason: null,
+          attemptKey: key,
+          signaled: false,
+          injected: false,
+          watchdogState: "running",
+        });
+      }
+      if (att?.mode === "identity" && ownership && shaMatch) {
+        if (input.confirmed !== true) {
+          await saveState(input.root, state);
+          return blocked("route_requires_confirm");
+        }
+        if (!ready) {
+          await saveState(input.root, state);
+          return blocked("modeld_not_ready");
+        }
+        return await runIdentityToRouteRefresh(input, {
+          state,
+          ephemeralRoot,
+          processes,
+          classify,
+          freshDiskSha,
+          iso,
+          liveHost,
+          sha,
+          origin,
+        });
+      }
+      if (!ready && att?.mode === "route" && shaMatch && ownership) {
+        await saveState(input.root, state);
+        return blocked("modeld_not_ready");
+      }
+      await saveState(input.root, state);
+      return recovery(status.host.reason ?? "route_mismatch");
+    }
+
+    if (origin === "official" && liveHost) {
+      if (input.confirmed !== true) {
+        await saveState(input.root, state);
+        return blocked("route_requires_confirm");
+      }
+      if (!ready) {
+        await saveState(input.root, state);
+        return blocked("modeld_not_ready");
+      }
+    } else {
+      await saveState(input.root, state);
+      return recovery(status.host.reason ?? origin);
+    }
   }
 
   if (input.desired.mode === "observe" || input.desired.mode === "disabled") {
@@ -608,6 +781,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
     });
   }
 
+  const markerMode = input.desired.mode === "route" ? "route" : "identity";
   const adopted = await runTransientAdoptOperation({
     processes,
     classify,
@@ -622,22 +796,40 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
     waitNewHost: input.adopt.waitNewHost,
     readGatewayPid: input.adopt.readGatewayPid,
     armGuardian: input.adopt.armGuardian,
+    expectedMode: markerMode,
     persistAttestation:
-      input.adopt.persistAttestation ??
-      (async (host, nextSha, windowMs) => {
-        await writeAttestation(ephemeralRoot, {
-          mode: "identity",
-          coverage: "attested",
-          diskSha: nextSha,
-          pid: host.pid,
-          start: host.start,
-          identity: host,
-          at: iso(),
-          modeld: false,
-          windowMs,
-          launchMode: "transient-adopt",
-        });
-      }),
+      markerMode === "route"
+        ? async (host, nextSha, windowMs) => {
+            await writeAttestation(ephemeralRoot, {
+              mode: "route",
+              coverage: "attested",
+              diskSha: nextSha,
+              pid: host.pid,
+              start: host.start,
+              identity: host,
+              at: iso(),
+              modeld: true,
+              windowMs,
+              launchMode: "transient-adopt",
+              profileId: input.reviewedProfile?.profileId,
+              transformedSha: input.reviewedProfile?.transformedSourceSha256,
+            });
+          }
+        : input.adopt.persistAttestation ??
+          (async (host, nextSha, windowMs) => {
+            await writeAttestation(ephemeralRoot, {
+              mode: "identity",
+              coverage: "attested",
+              diskSha: nextSha,
+              pid: host.pid,
+              start: host.start,
+              identity: host,
+              at: iso(),
+              modeld: false,
+              windowMs,
+              launchMode: "transient-adopt",
+            });
+          }),
     prepareTempLaunch: input.adopt.prepareTempLaunch,
     hasGrokboxPreload: input.adopt.hasGrokboxPreload,
     now: input.now,

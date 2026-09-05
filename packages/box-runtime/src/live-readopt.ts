@@ -13,6 +13,7 @@ import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.t
 import { reviewedProfilePath } from "./paths.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
 import { resolvePreloadPath } from "./runtime-helpers.ts";
+import type { DesiredMode } from "./models.ts";
 import type { PatchProfile } from "./transform.ts";
 
 const PRELOAD_PATH = resolvePreloadPath();
@@ -55,12 +56,14 @@ export function wireLiveManualReadopt(input: {
   root: string;
   ephemeralRoot?: string;
   now: () => number;
+  mode?: DesiredMode;
 }): LiveManualReadoptPorts {
   const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
   const overlayPath = join(ephemeralRoot, "state", "launch-env.json");
   const profilePath = reviewedProfilePath(input.root);
   const execPath = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
+  const preloadMode = input.mode === "route" ? "route" : "identity";
   const ports = liveH3AdoptAdapter.createLiveH3AdoptPorts({
     markerPath,
     preloadNeedle: PRELOAD_PATH,
@@ -87,6 +90,9 @@ export function wireLiveManualReadopt(input: {
         markerPath,
         operationId: WATCHDOG_OPERATION_ID,
         hostBundle: LIVE_HOST_BUNDLE,
+        mode: preloadMode,
+        durableRoot: input.root,
+        runRoot: ephemeralRoot,
       });
       if (!launched.ok) throw new Error(launched.code);
       await ports.applyLaunchEnv(launched.env);
@@ -103,16 +109,19 @@ export function wireLiveManualReadopt(input: {
     },
     persistAttestation: async (host, nextSha, windowMs) => {
       await writeAttestation(ephemeralRoot, {
-        mode: "identity",
+        mode: preloadMode,
         coverage: "attested",
         diskSha: nextSha,
         pid: host.pid,
         start: host.start,
         identity: host,
         at: new Date(input.now()).toISOString(),
-        modeld: false,
+        modeld: preloadMode === "route",
         windowMs,
         launchMode: "transient-adopt",
+        ...(reviewedProfile
+          ? { profileId: reviewedProfile.profileId, transformedSha: reviewedProfile.transformedSourceSha256 }
+          : {}),
       });
     },
   };
