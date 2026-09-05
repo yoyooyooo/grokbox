@@ -75,7 +75,7 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - 未知 bundle 不猜 anchor。coverage 与 watchdog.state 分开：`coverage=window-open`，`watchdog.state=degraded`，`reason=unsupported_bundle`。
 - 未补丁窗口只保证测得到 duration；无可信 turn 信号时 `affectedInvocations=unknown`。
 - **长效根** `/workspace/.grokbox/box-runtime/`：配置、PatchProfile、合同切片、事件日志（云电脑重置后仍在）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
-- **短效**：socket/锁/本次注入 operation 用 `$XDG_RUNTIME_DIR/grokbox/`，fallback `~/.grokbox/run/`。
+- **短效**：盒本地 live state 固定 `~/.grokbox/run/`（`attestation.json`、operation journal/lock、preload/launch markers、`modeld.sock`）。不读 `XDG_RUNTIME_DIR`。显式 `ephemeralRoot` 只用于测试/合成隔离。daemon/Profile socket 仍走现有 XDG 合同，不是这棵树。
 - 不新建独立 npm package；一个源码模块、多个 entry。
 - PatchProfile 含两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId`。任一处锚点不唯一即拒绝。
 

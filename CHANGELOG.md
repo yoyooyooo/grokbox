@@ -1,5 +1,7 @@
 # Changelog
 
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
+
 This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
@@ -49,6 +51,9 @@ when upstream Grok Bot or Cursor internals change.
   `guardian-child.cjs`, `injector-hold.cjs`, `grokbox-temp-supervisor.cjs`) so
   packed `runtime re-adopt --confirm` can resolve them. No live Host re-adopt
   was executed.
+- Pin box-runtime live state to `~/.grokbox/run` even when `XDG_RUNTIME_DIR` is
+  set. Explicit `ephemeralRoot` remains the test override. Daemon/Profile
+  sockets stay on the existing XDG contract. No live Host REDACTED_PROCESS_ID.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

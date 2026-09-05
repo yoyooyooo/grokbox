@@ -319,12 +319,13 @@ packages/box-runtime/   unpublished workspace package (not a second npm)
 /workspace/.grokbox/box-runtime/          durable (survives box reset; not git)
   models.json  profiles/  contracts/  log/events.ndjson  secrets/
 
-$XDG_RUNTIME_DIR/grokbox/                 ephemeral sockets/locks
-  modeld.sock
-  fallback ~/.grokbox/run/modeld.sock
+~/.grokbox/run/                           box-runtime live state (not XDG)
+  attestation.json  modeld.sock  ops/  state/
 
 ~/.grokbox/runtime/                       CLI install only; do not mix
 ```
+
+Box-runtime live artifacts default to `~/.grokbox/run` even when `XDG_RUNTIME_DIR` is set. Daemon/Profile socket selection stays the existing XDG contract (`$XDG_RUNTIME_DIR/grokbox/daemon.sock`, fallback `~/.grokbox/run/daemon.sock`) and is not this tree.
 
 Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. It does not inject an unknown bundle, cache rolling full `host-main.cjs`, or write git. Keep at most 5 SHAs, never deleting the live SHA or the last SHA that matched a PatchProfile.
 
