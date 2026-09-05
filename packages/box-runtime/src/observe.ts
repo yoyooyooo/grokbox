@@ -31,6 +31,7 @@ export async function projectLiveStatus(input: {
     const { findRole, linuxProcessPort, roleOf } = await import("./live-proc.ts");
     const { countRoles } = await import("./process.ts");
     const { readAttestation } = await import("./attestation.ts");
+    const { attestationAgrees } = await import("./identity-op.ts");
     const sha = sha256Bytes(await readFile(LIVE_HOST_BUNDLE));
     const port = linuxProcessPort();
     const census = countRoles(
@@ -40,10 +41,13 @@ export async function projectLiveStatus(input: {
       }),
     );
     const host = findRole(port, "host");
-    const att = await readAttestation(input.root);
-    const attested = Boolean(
-      att && host && att.pid === host.pid && att.start === host.start && att.coverage === "attested",
-    );
+    const att = await readAttestation();
+    const attested = attestationAgrees({
+      attestation: att,
+      liveHost: host,
+      diskSha: sha,
+      census,
+    });
     return {
       ...base,
       host: { diskSha: sha },
@@ -51,9 +55,13 @@ export async function projectLiveStatus(input: {
       census: { wrapper: census.wrapper, supervisor: census.supervisor, host: census.host },
       watchdog: {
         required: input.desired.mode === "identity" || input.desired.mode === "route",
-        state: attested ? "running" : base.watchdog.state,
+        state: "stopped",
       },
       modeld: { required: false, state: "stopped" },
+      window: {
+        durationMs: att?.windowMs ?? null,
+        affectedInvocations: "unknown",
+      },
     };
   } catch {
     return base;

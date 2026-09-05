@@ -1,0 +1,59 @@
+import { describe, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { inspectPid } from "../src/live-proc.ts";
+import { spawnIndependentGuardian } from "../src/guardian-process.ts";
+
+const CHILD = fileURLToPath(new URL("../src/guardian-child.cjs", import.meta.url));
+const NODE = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
+const describeLinux = existsSync("/proc/self/stat") ? describe : describe.skip;
+
+function stateOf(pid: number): string | null {
+  try {
+    const status = require("node:fs").readFileSync(`/proc/${pid}/status`, "utf8") as string;
+    return status.split("State:")[1]?.trim()[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitUntil(pred: () => boolean, ms = 4000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (pred()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return pred();
+}
+
+describeLinux("independent guardian subprocess", () => {
+  test("injector pipe death CONTs the exact frozen disposable process; child has no TERM/KILL", async () => {
+    const victim = spawn(NODE, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    if (victim.pid == null) throw new Error("no victim");
+    expect(await waitUntil(() => inspectPid(victim.pid!) !== null)).toBe(true);
+    const ident = inspectPid(victim.pid);
+    expect(ident).toBeTruthy();
+    process.kill(victim.pid, "SIGSTOP");
+    expect(await waitUntil(() => stateOf(victim.pid!) === "T")).toBe(true);
+
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-g-"));
+    const guardian = spawnIndependentGuardian({
+      frozen: [ident!],
+      deadlineMs: 8000,
+      stateDir: dir,
+      execPath: NODE,
+    });
+    guardian.crashInjectorPipe();
+    expect(await waitUntil(() => stateOf(victim.pid!) !== "T", 6000)).toBe(true);
+    expect(inspectPid(victim.pid)?.start).toBe(ident!.start);
+    process.kill(victim.pid, "SIGTERM");
+    const childSrc = await readFile(CHILD, "utf8");
+    expect(childSrc).not.toMatch(/SIGTERM|SIGKILL/);
+    expect(childSrc).toContain("SIGCONT");
+    expect(guardian.pid).not.toBe(victim.pid);
+  }, 15_000);
+});

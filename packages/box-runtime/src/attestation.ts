@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import type { ProcessIdentity } from "./process.ts";
 
 export type CoverageAttestation = {
@@ -11,13 +12,14 @@ export type CoverageAttestation = {
   identity: ProcessIdentity;
   at: string;
   modeld: false;
+  windowMs?: number;
 };
 
-export function attestationPath(root: string): string {
-  return join(root, "state", "attestation.json");
+export function attestationPath(ephemeralRoot = ephemeralRuntimeRoot()): string {
+  return join(ephemeralRoot, "attestation.json");
 }
 
-export async function readAttestation(root: string): Promise<CoverageAttestation | null> {
+export async function readAttestation(root = ephemeralRuntimeRoot()): Promise<CoverageAttestation | null> {
   try {
     return JSON.parse(await readFile(attestationPath(root), "utf8")) as CoverageAttestation;
   } catch (error) {
@@ -32,7 +34,7 @@ export async function writeAttestation(root: string, value: CoverageAttestation)
   await writeFile(path, `${JSON.stringify(value)}\n`, { mode: 0o600 });
 }
 
-export async function clearAttestation(root: string): Promise<void> {
+export async function clearAttestation(root = ephemeralRuntimeRoot()): Promise<void> {
   const path = attestationPath(root);
   await writeFile(path, "", { mode: 0o600 }).catch(() => undefined);
   try {

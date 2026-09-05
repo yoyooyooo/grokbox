@@ -14,6 +14,8 @@ when upstream Grok Bot or Cursor internals change.
   snapshots with stale-patched heal. Still no live Host inject.
 - Add compile-hook transform on tmp copies and live-bundle copy H1. Live Host
   path is refused unless explicitly allowed; Host body is not in git.
+- Identity inject protocol is tested on a fake process tree (STOP/CONT/census).
+  Live Host is not injected.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

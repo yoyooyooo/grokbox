@@ -21,16 +21,17 @@ export class FakeProcessTree implements ProcessPort {
   readonly procs = new Map<number, Row>();
   readonly signals: Array<{ pid: number; signal: SignalName; start: number; exe: string }> = [];
 
-  spawn(role: FakeRole, reuse?: { pid: number }): ProcessIdentity & { role: FakeRole } {
+  spawn(role: FakeRole, reuse?: { pid?: number; parent?: ProcessIdentity }): ProcessIdentity & { role: FakeRole } {
     const pid = reuse?.pid ?? this.nextPid++;
+    const parent = reuse?.parent;
     const ident: ProcessIdentity = {
       pid,
       uid: 1000,
       start: this.nextStart++,
       exe: `/fake/${role}`,
       cmdline: ["node", `/fake/${role}`],
-      ppid: 1,
-      ancestry: [1],
+      ppid: parent?.pid ?? 1,
+      ancestry: parent ? [parent.pid, ...parent.ancestry] : [1],
     };
     this.procs.set(pid, { ident, role, alive: true, stopped: false });
     return { ...ident, role };

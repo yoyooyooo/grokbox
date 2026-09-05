@@ -11,8 +11,6 @@ import {
   projectLiveStatus,
   readContracts,
   readEvents,
-  runLiveIdentityDeactivate,
-  runLiveIdentityInject,
   type DesiredMode,
 } from "@grokbox/box-runtime";
 import type { CliDeps } from "../deps.ts";
@@ -59,20 +57,6 @@ export async function runRuntimeActivate(deps: CliDeps, mode: string | undefined
     if (mode === "route") assertRouteAssignment(models);
     const desiredMode: DesiredMode = mode;
     await runtime.saveDesired({ version: 1, mode: desiredMode });
-    if (mode === "identity" && deps.env.GROKBOX_ALLOW_LIVE_HOST === "1" && deps.env.GROKBOX_PRELOAD_CJS) {
-      const injected = await runLiveIdentityInject({
-        root: runtime.root,
-        preloadPath: deps.env.GROKBOX_PRELOAD_CJS,
-      });
-      if (injected.recoveryRequired) {
-        throw new CliError("recover_failed", `recovery-required: ${injected.code ?? "identity-inject"}`);
-      }
-      if (!injected.ok) {
-        throw new CliError("recover_failed", injected.code ?? "identity-inject-failed");
-      }
-      writeSuccess(deps.stdout, { desired: desiredMode, inject: true, ...injected });
-      return;
-    }
     writeSuccess(deps.stdout, {
       desired: desiredMode,
       inject: false,
@@ -87,18 +71,10 @@ export async function runRuntimeDeactivate(deps: CliDeps): Promise<void> {
   try {
     const runtime = store(deps);
     await runtime.saveDesired({ version: 1, mode: "disabled" });
-    if (deps.env.GROKBOX_ALLOW_LIVE_HOST === "1") {
-      const restored = await runLiveIdentityDeactivate({ root: runtime.root });
-      if (restored.recoveryRequired) {
-        throw new CliError("recover_failed", `recovery-required: ${restored.code ?? "deactivate"}`);
-      }
-      writeSuccess(deps.stdout, { desired: "disabled", ...restored, chain: "single_unpatched_official" });
-      return;
-    }
     writeSuccess(deps.stdout, {
       desired: "disabled",
       coverage: "none",
-      chain: "single_unpatched_official",
+      chain: "desired-disabled",
     });
   } catch (error) {
     rethrow(error);
