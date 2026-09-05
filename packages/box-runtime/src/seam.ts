@@ -1,5 +1,6 @@
 import {
   appendTurnSeamTerminal,
+  TURN_SEAM_BOUNDED_STRING,
   type TurnSeamAssignment,
   type TurnSeamOutcome,
   type TurnSeamTerminalClass,
@@ -86,9 +87,23 @@ function idleStreamHandle(modelId: string): StreamHandle {
   };
 }
 
+function boundedRouteModelId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.length === 0 || value.length > TURN_SEAM_BOUNDED_STRING) return null;
+  if (/[\n\r]/.test(value)) return null;
+  return value;
+}
+
 export function createSessionSeam(config: SessionSeamConfig) {
   if (config.mode === "route" && !config.driver) {
     throw new Error("route seam requires a stub driver");
+  }
+  if (config.mode === "route" && config.assignment === "official") {
+    throw new Error("route seam does not admit assignment=official");
+  }
+  const routeModelId = config.mode === "route" ? boundedRouteModelId(config.modelId) : null;
+  if (config.mode === "route" && routeModelId == null) {
+    throw new Error("route seam requires a bounded modelId");
   }
   const invocations = new Map<string, InvocationState>();
   let writes = Promise.resolve();
@@ -115,7 +130,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
           mode: "route",
           agentId: state.agentId,
           assignment: config.assignment,
-          modelId: config.modelId,
+          modelId: routeModelId,
           invocationId: state.invocationId,
           toolCallCount,
           terminalClass,
@@ -137,12 +152,13 @@ export function createSessionSeam(config: SessionSeamConfig) {
     sessionOptions?: unknown;
     agentId?: string;
   }): unknown => {
-    if (config.mode !== "route") return args.originalSession;
+    if (config.mode !== "route" || routeModelId == null) return args.originalSession;
+    const modelId = routeModelId;
     const invocationId = invocationIdOf(args.sessionOptions);
     const agentId = agentIdOf(args);
     if (invocationId == null || agentId == null) {
       return createManagedPromptSession({
-        modelId: config.modelId ?? "stub/echo",
+        modelId,
         vision: false,
         parallel: "allow",
         parts: [{ type: "finish", reason: "error" }],
@@ -153,7 +169,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     const driver = config.driver!;
 
     const inner = createManagedPromptSession({
-      modelId: config.modelId ?? "stub/echo",
+      modelId,
       vision: false,
       parallel: "allow",
       parts: driver.parts,
@@ -167,7 +183,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     const state: InvocationState = {
       session: {
         stream(request) {
-          if (state.dispatched) return idleStreamHandle(config.modelId ?? "stub/echo");
+          if (state.dispatched) return idleStreamHandle(modelId);
           state.dispatched = true;
           driver.dispatches += 1;
           return inner.stream(request);

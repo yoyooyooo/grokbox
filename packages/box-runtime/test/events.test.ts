@@ -112,14 +112,22 @@ describe("turn_seam_terminal projector", () => {
     expect(
       projectTurnSeamTerminal({
         ...turnEvent("inv-off"),
+        mode: "identity",
         assignment: "official",
         modelId: "stub/echo",
         outcome: "official",
       }),
     ).toMatchObject({ assignment: "official", outcome: "official" });
-    expect(projectTurnSeamTerminal({ ...turnEvent("inv-off"), assignment: "official" })?.modelId).toBeUndefined();
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-off"),
+        mode: "identity",
+        assignment: "official",
+      })?.modelId,
+    ).toBeUndefined();
     const { modelId: _officialModel, ...officialWithoutModel } = {
       ...turnEvent("inv-official-omit"),
+      mode: "identity" as const,
       assignment: "official" as const,
       outcome: "official" as const,
     };
@@ -128,6 +136,39 @@ describe("turn_seam_terminal projector", () => {
       outcome: "official",
     });
     expect(projectTurnSeamTerminal(officialWithoutModel)).not.toHaveProperty("modelId");
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-last-resort"),
+        outcome: "last_resort_official",
+      }),
+    ).toMatchObject({ assignment: "main", outcome: "last_resort_official" });
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-last-resort"),
+        outcome: "last_resort_official",
+      }),
+    ).not.toHaveProperty("modelId");
+    const { modelId: _officialManagedModel, ...officialManaged } = {
+      ...turnEvent("inv-official-managed"),
+      assignment: "official" as const,
+      outcome: "managed" as const,
+    };
+    expect(projectTurnSeamTerminal(officialManaged)).toBeNull();
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-official-managed-with-id"),
+        assignment: "official",
+        outcome: "managed",
+        modelId: "stub/echo",
+      }),
+    ).toBeNull();
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-route-official"),
+        assignment: "official",
+        outcome: "official",
+      }),
+    ).toBeNull();
     const { modelId: _mainModel, ...mainWithoutModel } = turnEvent("inv-main-missing");
     expect(projectTurnSeamTerminal(mainWithoutModel)).toBeNull();
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-agent-missing"), assignment: "agent", modelId: undefined })).toBeNull();

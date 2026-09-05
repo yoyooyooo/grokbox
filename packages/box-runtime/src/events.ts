@@ -167,8 +167,11 @@ export function projectTurnSeamTerminal(input: unknown): TurnSeamTerminalEvent |
   ) {
     return null;
   }
-  const modelId = assignment === "official" ? null : boundedString(input.modelId);
-  if (assignment !== "official" && modelId == null) return null;
+  if (mode === "route" && assignment === "official") return null;
+  if (assignment === "official" && outcome === "managed") return null;
+  const officialExecution = outcome === "official" || outcome === "last_resort_official";
+  const modelId = officialExecution ? null : boundedString(input.modelId);
+  if (outcome === "managed" && modelId == null) return null;
   return {
     name: "turn_seam_terminal",
     at,

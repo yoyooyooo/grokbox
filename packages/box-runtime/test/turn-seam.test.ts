@@ -3,6 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, runInContext } from "node:vm";
+import { TURN_SEAM_BOUNDED_STRING } from "../src/events.ts";
 import { eventsPath } from "../src/paths.ts";
 import { createManagedPromptSession, type PromptSession, type StreamPart } from "../src/session.ts";
 import { createSessionSeam, createStubRouteDriver } from "../src/seam.ts";
@@ -98,6 +99,31 @@ describe("turn seam identity vs route", () => {
     expect(calls[0]).toBe(session);
     await seam.flush();
     expect(await turnLines(dir)).toEqual([]);
+  });
+
+  test("route seam requires a bounded modelId before admission", () => {
+    const driver = createStubRouteDriver(SEAM_STOP_PARTS);
+    const base = {
+      mode: "route" as const,
+      root: "unused-seam-admission",
+      assignment: "main" as const,
+      driver,
+      now: () => AT,
+    };
+    expect(() => createSessionSeam(base)).toThrow(/bounded modelId/);
+    expect(() => createSessionSeam({ ...base, modelId: "" })).toThrow(/bounded modelId/);
+    expect(() => createSessionSeam({ ...base, modelId: "x".repeat(TURN_SEAM_BOUNDED_STRING + 1) })).toThrow(
+      /bounded modelId/,
+    );
+    expect(() => createSessionSeam({ ...base, modelId: "stub/\necho" })).toThrow(/bounded modelId/);
+    expect(() =>
+      createSessionSeam({
+        ...base,
+        assignment: "official",
+        modelId: "stub/echo",
+      }),
+    ).toThrow(/assignment=official/);
+    expect(() => createSessionSeam({ ...base, modelId: "stub/echo" })).not.toThrow();
   });
 
   test("route stop matches the identity Host vector and writes one managed terminal", async () => {
