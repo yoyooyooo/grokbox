@@ -70,6 +70,19 @@ import {
   leafKey,
   type LeafCommand,
 } from "./registry.ts";
+import {
+  runRuntimeActivate,
+  runRuntimeContracts,
+  runRuntimeDeactivate,
+  runRuntimeLog,
+  runRuntimeModeld,
+  runRuntimeModelsCheck,
+  runRuntimeModelsList,
+  runRuntimeModelsReset,
+  runRuntimeModelsUse,
+  runRuntimeStatus,
+  runRuntimeWatchdog,
+} from "./commands/runtime.ts";
 import { runSkillsGet, runSkillsList } from "./skills.ts";
 
 type CliOptions = ProfileOptions & {
@@ -115,6 +128,8 @@ type CliOptions = ProfileOptions & {
   limitBytes?: string;
   follow?: boolean;
   intervalMs?: string;
+  mode?: string;
+  for?: string;
 };
 
 type LeafAction = (
@@ -141,6 +156,10 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "desktop keep": "Persist Chrome keep protection on the box daemon",
   "desktop prune": "Plan, stop, or schedule idle desktop prune",
   is: "Read state projections",
+  runtime: "Box-local model runtime",
+  "runtime models": "Box-local model catalog and assignments",
+  "runtime watchdog": "Box-local Host inject coordinator",
+  "runtime modeld": "Box-local model daemon",
 };
 
 function publicCommanderMessage(error: CommanderError): string {
@@ -228,6 +247,18 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "jobs cancel": async (deps, args, options) => await runJobsCancel(deps, args[0] ?? "", options),
     events: async (deps, _args, options) => await runEvents(deps, options),
     "is running": async (deps, args, options) => await runIsRunning(deps, args[0] ?? "", options),
+    "runtime status": async (deps) => await runRuntimeStatus(deps),
+    "runtime activate": async (deps, _args, options) => await runRuntimeActivate(deps, options.mode),
+    "runtime deactivate": async (deps) => await runRuntimeDeactivate(deps),
+    "runtime log": async (deps) => await runRuntimeLog(deps),
+    "runtime contracts": async (deps) => await runRuntimeContracts(deps),
+    "runtime models check": async (deps) => await runRuntimeModelsCheck(deps),
+    "runtime models list": async (deps) => await runRuntimeModelsList(deps),
+    "runtime models use": async (deps, args, options) =>
+      await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
+    "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),
+    "runtime modeld run": async (deps) => await runRuntimeModeld(deps),
   };
 }
 
@@ -272,6 +303,12 @@ function addLeaf(
     const localOptions = (values[leaf.arguments.length] as CliOptions | undefined) ?? {};
     const globalOptions = program.opts<CliOptions>();
     if (globalOptions.profile !== undefined && leaf.profile === false) {
+      if (leaf.localOnly) {
+        throw new CliError(
+          "runtime_local_only",
+          "Box-local runtime commands cannot use --profile or remote transports.",
+        );
+      }
       throw usage(`grokbox ${leafKey(leaf.path)} does not accept --profile; use its positional name.`);
     }
     if (globalOptions.json && !leaf.options.some((option) => option.flags.includes("--json"))) {

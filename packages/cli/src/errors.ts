@@ -58,6 +58,7 @@ export const EXIT_CODES = {
   quota_protocol_unsupported: 62,
   quota_provider_unavailable: 63,
   desktop_unavailable: 64,
+  runtime_local_only: 65,
 } as const;
 
 export type ErrorCode = Exclude<keyof typeof EXIT_CODES, "ok">;
@@ -132,6 +133,7 @@ const RETRYABLE: Record<ErrorCode, boolean> = {
   quota_protocol_unsupported: false,
   quota_provider_unavailable: true,
   desktop_unavailable: false,
+  runtime_local_only: false,
 };
 
 export class CliError extends Error {

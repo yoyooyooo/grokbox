@@ -315,6 +315,7 @@ export async function captureCli(
     ...base,
     cliVersion: CLI_VERSION,
     configDir: await mkdtemp(join(tmpdir(), "grokbox-config-")),
+    boxRuntimeRoot: await mkdtemp(join(tmpdir(), "grokbox-box-runtime-")),
     env: {},
     runCommand: async () => ({ code: 127, stdout: "", stderr: "not configured in test" }),
     transport: "auto",

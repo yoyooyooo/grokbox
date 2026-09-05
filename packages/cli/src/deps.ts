@@ -35,6 +35,7 @@ export type CliDeps = {
   idleWatchdogMs: number;
   signal?: AbortSignal;
   configDir: string;
+  boxRuntimeRoot: string;
   env: Readonly<Record<string, string | undefined>>;
   runCommand: (argv: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
   wait: (ms: number, signal?: AbortSignal) => Promise<boolean>;
@@ -174,6 +175,9 @@ export function createProductionDeps(signal?: AbortSignal): CliDeps {
     idleWatchdogMs: 45_000,
     ...(signal ? { signal } : {}),
     configDir,
+    boxRuntimeRoot: process.env.GROKBOX_BOX_RUNTIME_ROOT && isAbsolute(process.env.GROKBOX_BOX_RUNTIME_ROOT)
+      ? process.env.GROKBOX_BOX_RUNTIME_ROOT
+      : "/workspace/.grokbox/box-runtime",
     env: process.env,
     runCommand: runProcess,
     wait,

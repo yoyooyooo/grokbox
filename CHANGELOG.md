@@ -8,6 +8,8 @@ when upstream Grok Bot or Cursor internals change.
 
 - Split the repo into unpublished workspaces `packages/cli` and
   `packages/box-runtime` while still publishing a single `grokbox` package.
+- Add box-local `runtime *` / `runtime models *` Agent CLI, offline Host
+  transform fixtures, and a fake PromptSession contract. No live Host inject.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

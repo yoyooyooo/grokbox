@@ -1,0 +1,119 @@
+import { describe, expect, test } from "bun:test";
+import { createManagedPromptSession, type StreamPart } from "../src/session.ts";
+
+const textParts: StreamPart[] = [
+  { type: "text-delta", textDelta: "hello" },
+  { type: "finish", reason: "stop" },
+];
+
+describe("managed PromptSession contract", () => {
+  test("stream() is synchronous and response does not consume fullStream", async () => {
+    const session = createManagedPromptSession({
+      modelId: "fake/main",
+      vision: false,
+      parallel: "allow",
+      parts: textParts,
+    });
+    const handle = session.stream();
+    expect(handle.fullStream).toBeDefined();
+    expect(typeof handle.response.then).toBe("function");
+    const fromStream: string[] = [];
+    for await (const part of handle.fullStream) {
+      if (part.type === "text-delta") fromStream.push(part.textDelta);
+    }
+    const response = await handle.response;
+    const usage = await handle.usage;
+    expect(fromStream).toEqual(["hello"]);
+    expect(response.modelId).toBe("fake/main");
+    expect(response.messages[0]?.content).toBe("hello");
+    expect(usage.completionTokens).toBe(1);
+    const again: StreamPart[] = [];
+    for await (const part of handle.fullStream) again.push(part);
+    expect(again.some((part) => part.type === "text-delta")).toBe(true);
+  });
+
+  test("tool-call ids match streamed parts", async () => {
+    const session = createManagedPromptSession({
+      modelId: "fake/tools",
+      vision: false,
+      parallel: "allow",
+      parts: [
+        { type: "tool-call", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } },
+        { type: "finish", reason: "stop" },
+      ],
+    });
+    const handle = session.stream();
+    const ids: string[] = [];
+    for await (const part of handle.fullStream) {
+      if (part.type === "tool-call") ids.push(part.toolCallId);
+    }
+    const response = await handle.response;
+    expect(ids).toEqual(["call-1"]);
+    expect(response.messages[0]?.toolCalls?.map((call) => call.id)).toEqual(["call-1"]);
+  });
+
+  test("images without vision fail before provider effect", async () => {
+    const providerCalls = { count: 0 };
+    const session = createManagedPromptSession({
+      modelId: "fake/text",
+      vision: false,
+      parallel: "allow",
+      parts: textParts,
+      providerCalls,
+    });
+    const handle = session.stream({
+      messages: [{ role: "user", content: [{ type: "image", url: "https://example.test/a.png" }] }],
+    });
+    expect(providerCalls.count).toBe(0);
+    await expect(handle.response).rejects.toMatchObject({ userVisible: true });
+    const vision = createManagedPromptSession({
+      modelId: "fake/vision",
+      vision: true,
+      parallel: "allow",
+      parts: textParts,
+      providerCalls,
+    });
+    const ok = vision.stream({
+      messages: [{ role: "user", content: [{ type: "image", url: "https://example.test/a.png" }] }],
+    });
+    expect(providerCalls.count).toBe(1);
+    expect((await ok.response).modelId).toBe("fake/vision");
+  });
+
+  test("parallel tool calls fail closed without dropping the second id", async () => {
+    const session = createManagedPromptSession({
+      modelId: "fake/serial",
+      vision: false,
+      parallel: "fail-closed",
+      parts: [
+        { type: "tool-call", toolCallId: "a", toolName: "bash", args: {} },
+        { type: "tool-call", toolCallId: "b", toolName: "bash", args: {} },
+        { type: "finish", reason: "stop" },
+      ],
+    });
+    const handle = session.stream();
+    await expect(handle.response).rejects.toMatchObject({
+      userVisible: true,
+      toolCallIds: ["a", "b"],
+    });
+  });
+
+  test("abort yields one terminal and discards later parts", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const session = createManagedPromptSession({
+      modelId: "fake/abort",
+      vision: false,
+      parallel: "allow",
+      parts: [
+        { type: "text-delta", textDelta: "late" },
+        { type: "finish", reason: "stop" },
+      ],
+    });
+    const handle = session.stream({ abortSignal: controller.signal });
+    const parts: StreamPart[] = [];
+    for await (const part of handle.fullStream) parts.push(part);
+    expect(parts.filter((part) => part.type === "finish")).toHaveLength(1);
+    expect(parts.some((part) => part.type === "text-delta")).toBe(false);
+  });
+});

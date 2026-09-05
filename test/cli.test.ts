@@ -105,6 +105,7 @@ describe("registry, help, and runtime", () => {
       "desktop",
       "events",
       "is",
+      "runtime",
     ]);
     for (const name of TOP_LEVEL_COMMANDS) expect(result.stdout).toContain(name);
     expect(TOP_LEVEL_COMMANDS).not.toContain("credential");
@@ -174,6 +175,9 @@ describe("registry, help, and runtime", () => {
       ["daemon", "doctor"],
       ["doctor", "--repair"],
       ["recover", "--bootstrap"],
+      ["runtime", "inject"],
+      ["runtime", "heal"],
+      ["runtime", "kill"],
     ];
     for (const argv of removed) {
       const result = await withGateway(argv);
