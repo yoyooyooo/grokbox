@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile } from "../src/config/profile.ts";
-import { readDaemonConfig, writeDaemonConfig } from "../src/daemon/config.ts";
+import { readDaemonConfig, validateDaemonConfig, writeDaemonConfig } from "../src/daemon/config.ts";
 import { DesktopManager, type DesktopIo } from "../src/daemon/desktop.ts";
 import { startDaemonHost, type DaemonHost } from "../src/daemon/host.ts";
 import {
@@ -117,6 +117,26 @@ describe("desktop classifier", () => {
     });
     expect(JSON.stringify(rows)).not.toContain("token");
     expect(rows.every((row) => Object.keys(row).sort().join(",") === "agentId,busyReason,display,idle,lit,protected")).toBe(true);
+  });
+
+  test("mixed-case keep id protects the same-valued seated agent", () => {
+    const UPPER_A = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAA1";
+    const rows = classifyDesktop(world({
+      assignments: { [AGENT_A]: 2 },
+      litDisplays: new Set([2]),
+      displayStartedAtMs: { 2: 0 },
+      transcriptWrittenAtMs: { [AGENT_A]: 0 },
+    }), {
+      minIdleMs: DEFAULT_MIN_IDLE_MS,
+      minDisplayAgeMs: DEFAULT_MIN_IDLE_MS,
+      floorAgentIds: [],
+      keepAgentIds: [UPPER_A],
+    });
+    expect(rows.find((row) => row.agentId === AGENT_A)).toMatchObject({
+      protected: true,
+      idle: false,
+      busyReason: "protected",
+    });
   });
 });
 
@@ -327,5 +347,81 @@ describe("desktop manager persist", () => {
     expect(stopped).toContain(3);
     expect(stopped).not.toContain(10);
     await manager.close();
+  });
+});
+
+describe("desktop keep id case canonicalization", () => {
+  const UPPER_A = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAA1";
+
+  test("keep add with an uppercase raw uuid stores lowercase and protects the seated agent", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-desktop-case-add-"));
+    const stopped: number[] = [];
+    const idle = world({ nowMs: 2_000_000, transcriptWrittenAtMs: { [AGENT_A]: 0, [AGENT_B]: 0, [AGENT_KEEP]: 0 } });
+    const io: DesktopIo = {
+      readWorld: async () => idle,
+      stopWindow: async (display) => { stopped.push(display); },
+      reapLogs: async () => {},
+    };
+    const manager = await DesktopManager.create(configDir, () => 2_000_000, { minIdleMs: 600_000 }, io);
+
+    const added = await manager.keepAdd(UPPER_A);
+    expect(added).toEqual({ agentId: AGENT_A, kept: true });
+    const persisted = await readDaemonConfig(configDir);
+    expect(persisted.desktop?.keepAgentIds).toEqual([AGENT_A]);
+
+    const plan = await manager.prune(false);
+    expect(plan.rows.find((row) => row.display === 2)?.outcome).toBe("kept");
+    expect(plan.rows.find((row) => row.display === 3)?.outcome).toBe("planned");
+
+    const live = await manager.prune(true);
+    expect(live.rows.find((row) => row.display === 2)?.outcome).toBe("kept");
+    expect(live.rows.find((row) => row.display === 3)?.outcome).toBe("stopped");
+    expect(stopped).not.toContain(2);
+    expect(stopped).toContain(3);
+    await manager.close();
+  });
+
+  test("keep remove succeeds regardless of supplied hex case", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-desktop-case-remove-"));
+    const idle = world({ nowMs: 2_000_000, transcriptWrittenAtMs: { [AGENT_A]: 0, [AGENT_B]: 0, [AGENT_KEEP]: 0 } });
+    const io: DesktopIo = {
+      readWorld: async () => idle,
+      stopWindow: async () => {},
+      reapLogs: async () => {},
+    };
+    const manager = await DesktopManager.create(configDir, () => 2_000_000, { minIdleMs: 600_000 }, io);
+    await manager.keepAdd(UPPER_A);
+    expect((await manager.status()).keepAgentIds).toEqual([AGENT_A]);
+
+    const removedLower = await manager.keepRemove(AGENT_A, true);
+    expect(removedLower).toEqual({ agentId: AGENT_A, kept: false });
+    expect((await manager.status()).keepAgentIds).toEqual([]);
+
+    await manager.keepAdd(UPPER_A);
+    const removedUpper = await manager.keepRemove(UPPER_A, true);
+    expect(removedUpper).toEqual({ agentId: AGENT_A, kept: false });
+    expect((await manager.status()).keepAgentIds).toEqual([]);
+
+    const plan = await manager.prune(false);
+    expect(plan.rows.find((row) => row.display === 2)?.outcome).toBe("planned");
+    await manager.close();
+  });
+
+  test("config validation lowercases desktop keep/floor ids and rejects case-only duplicates", () => {
+    const validated = validateDaemonConfig({
+      version: 1,
+      desktop: { keepAgentIds: [UPPER_A], floorAgentIds: [UPPER_A], minIdleMs: 600_000 },
+    });
+    expect(validated.desktop?.keepAgentIds).toEqual([AGENT_A]);
+    expect(validated.desktop?.floorAgentIds).toEqual([AGENT_A]);
+
+    expect(() => validateDaemonConfig({
+      version: 1,
+      desktop: { keepAgentIds: [UPPER_A, AGENT_A] },
+    })).toThrow();
+    expect(() => validateDaemonConfig({
+      version: 1,
+      desktop: { floorAgentIds: [UPPER_A, AGENT_A] },
+    })).toThrow();
   });
 });
