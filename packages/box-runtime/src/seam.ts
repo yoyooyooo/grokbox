@@ -252,6 +252,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     originalSession: unknown;
     sessionOptions?: unknown;
     agentId?: string;
+    onRequestId?: (id: string) => void;
   }): unknown => {
     if (config.mode !== "route" || routeModelId == null) return args.originalSession;
     const modelId = routeModelId;
@@ -332,7 +333,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     };
 
     state = {
-      session: asHostPromptSession(prompt, modelId),
+      session: asHostPromptSession(prompt, modelId, args.onRequestId),
       dispatched: false,
       recorded: false,
       evidence: { emitted: false, gap: null },

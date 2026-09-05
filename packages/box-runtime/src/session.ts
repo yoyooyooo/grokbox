@@ -157,7 +157,11 @@ export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown)
   };
 }
 
-export function asHostPromptSession(session: PromptSession, modelId: string): HostPromptSession {
+export function asHostPromptSession(
+  session: PromptSession,
+  modelId: string,
+  onRequestId?: (id: string) => void,
+): HostPromptSession {
   let messages: unknown[] = [];
   const executor: HostPromptExecutor = {
     appendMessages(next) {
@@ -175,6 +179,13 @@ export function asHostPromptSession(session: PromptSession, modelId: string): Ho
       messages = [];
     },
     stream(ctx, invocationId, _tools, options) {
+      if (typeof onRequestId === "function" && typeof invocationId === "string" && invocationId.length > 0) {
+        try {
+          onRequestId(invocationId);
+        } catch {
+          /* Host emit must not break stub stream */
+        }
+      }
       return toHostStreamResult(session.stream({ abortSignal: abortSignalFrom(ctx, options) }), invocationId);
     },
   };

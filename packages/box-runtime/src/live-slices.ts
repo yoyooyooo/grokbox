@@ -16,7 +16,7 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     endAnchor: "    },\n    recordPostTurnLabeling(args) {",
     find: "      return session;\n",
     replacement:
-      `      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      return typeof __grokbox_hook === "function" ? __grokbox_hook({ originalSession: session, sessionOptions, agentId: sessionOptions?.agentId }) : session;\n`,
+      `      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      return typeof __grokbox_hook === "function" ? __grokbox_hook({ originalSession: session, sessionOptions, agentId: sessionOptions?.agentId, onRequestId }) : session;\n`,
   },
   {
     id: "agent-id",
