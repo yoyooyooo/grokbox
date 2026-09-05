@@ -19,6 +19,7 @@ This documentation separates current source truth, accepted product behavior, up
 ## Maintainers
 
 - [Source provenance review](maintainers/provenance.md)
+- [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
 - [Release runbook](maintainers/release.md)
 
 Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokbox/issues). Security reports follow [`SECURITY.md`](../SECURITY.md). Machine-local plans, raw operational evidence, credentials, provider dumps, and private research do not belong in this repository.
