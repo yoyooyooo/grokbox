@@ -145,10 +145,29 @@ function toExtendedUsage(usage: HostUsage): ExtendedUsage {
   };
 }
 
+function afterHostReaderAttachTick(): Promise<void> {
+  // Host duplicateStream() starts consuming on this tick. Yielding in the same
+  // turn deadlocks createWritableIterable.write before both readers attach.
+  // A microtask is not enough; wait one macrotask so both forks can subscribe.
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 function iterableFromParts(parts: readonly StreamPart[]): AsyncIterable<StreamPart> {
   return {
     async *[Symbol.asyncIterator]() {
+      await afterHostReaderAttachTick();
       for (const part of parts) yield part;
+    },
+  };
+}
+
+function deferHostFullStream(source: AsyncIterable<StreamPart>): AsyncIterable<StreamPart> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      await afterHostReaderAttachTick();
+      yield* source;
     },
   };
 }
@@ -156,7 +175,7 @@ function iterableFromParts(parts: readonly StreamPart[]): AsyncIterable<StreamPa
 export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown): HostStreamResult {
   const usage = handle.usage.then(normalizeHostUsage);
   return {
-    fullStream: handle.fullStream,
+    fullStream: deferHostFullStream(handle.fullStream),
     response: handle.response.then(normalizeHostResponse),
     usage,
     extendedUsage: usage.then(toExtendedUsage),

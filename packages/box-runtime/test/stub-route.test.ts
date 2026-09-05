@@ -18,7 +18,7 @@ import {
 } from "../src/modeld-ipc.ts";
 import { applyPatchProfile, profileFromSource, ROUTE_SESSION_SYMBOL } from "../src/transform.ts";
 import { createManagedPromptSession, type HostPromptSession, type PromptSession } from "../src/session.ts";
-import { consumeHostSession as consumeHost, SEAM_STOP_PARTS } from "./host-consumer.ts";
+import { collectHostDuplicateStream, consumeHostSession as consumeHost, SEAM_STOP_PARTS } from "./host-consumer.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
@@ -228,6 +228,52 @@ describe("stub route synthetic compile/load", () => {
       expect(errorResponse.modelId.trim()).toBe(STUB_ECHO_MODEL_ID);
       expect(errorResponse.messages.some((message) => message.role === "assistant")).toBe(true);
       expect(await failed.usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("route fullStream does not emit on the constructing tick so Host duplicateStream can finish",
+    async () => {
+    const { durable, runRoot } = await roots();
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      const original = officialSession();
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot });
+      const managed = hook({
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-dup", inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as HostPromptSession;
+      const result = managed.getExecutor().stream({}, "inv-dup", [], {});
+      expect(result).not.toBeInstanceOf(Promise);
+      expect("then" in result).toBe(false);
+
+      let delivered = false;
+      const probe = result.fullStream[Symbol.asyncIterator]().next().then((entry) => {
+        delivered = !entry.done;
+        return entry;
+      });
+      expect(delivered).toBe(false);
+      await Promise.resolve();
+      expect(delivered).toBe(false);
+
+      const [innerParts, fullParts] = await collectHostDuplicateStream(result.fullStream);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(delivered).toBe(true);
+      await probe;
+
+      for (const parts of [innerParts, fullParts]) {
+        expect(parts.some((part) => part.type === "text-delta" && part.textDelta === "echo")).toBe(true);
+        const finish = parts.find((part) => part.type === "finish");
+        expect(finish).toMatchObject({
+          type: "finish",
+          reason: "stop",
+          finishReason: "stop",
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          response: { modelId: STUB_ECHO_MODEL_ID, messages: [{ role: "assistant", content: "echo" }] },
+        });
+      }
     } finally {
       await server.stop();
     }

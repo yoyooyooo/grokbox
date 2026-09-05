@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { collectHostDuplicateStream } from "./host-consumer.ts";
 import { asHostPromptSession, createManagedPromptSession, type StreamPart } from "../src/session.ts";
 
 const textParts: StreamPart[] = [
@@ -170,5 +171,45 @@ describe("managed PromptSession contract", () => {
     expect(await result.providerMetadata).toEqual({});
     expect(await result.invocationId).toBe("inv-1");
     expect(session.getExecutorWithoutResolvedModelTracking()).toBe(session.getExecutor());
+  });
+
+  test("Host fullStream does not emit on the constructing tick so duplicateStream can attach readers",
+    async () => {
+    const inner = createManagedPromptSession({
+      modelId: "stub/echo",
+      vision: false,
+      parallel: "allow",
+      parts: textParts,
+    });
+    const session = asHostPromptSession(inner, "stub/echo");
+    const result = session.getExecutor().stream({}, "inv-dup", [], {});
+    expect(result).not.toBeInstanceOf(Promise);
+    expect("then" in result).toBe(false);
+
+    let delivered = false;
+    const probe = result.fullStream[Symbol.asyncIterator]().next().then((entry) => {
+      delivered = !entry.done;
+      return entry;
+    });
+    expect(delivered).toBe(false);
+    await Promise.resolve();
+    expect(delivered).toBe(false);
+
+    const [innerParts, fullParts] = await collectHostDuplicateStream(result.fullStream);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(delivered).toBe(true);
+    await probe;
+
+    for (const parts of [innerParts, fullParts]) {
+      expect(parts.some((part) => part.type === "text-delta" && part.textDelta === "hello")).toBe(true);
+      const finish = parts.find((part) => part.type === "finish");
+      expect(finish).toMatchObject({
+        type: "finish",
+        reason: "stop",
+        finishReason: "stop",
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        response: { modelId: "stub/echo", messages: [{ role: "assistant", content: "hello" }] },
+      });
+    }
   });
 });

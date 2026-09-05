@@ -107,3 +107,95 @@ export async function consumeHostSession(
   void session.getExecutorWithoutResolvedModelTracking({});
   return consumeHandle(executor.stream({}, undefined, undefined, request));
 }
+
+export async function collectStreamParts(stream: AsyncIterable<StreamPart>): Promise<StreamPart[]> {
+  const parts: StreamPart[] = [];
+  for await (const part of stream) parts.push(part);
+  return parts;
+}
+
+type WriterFork<T> = {
+  write: (value: T) => Promise<void>;
+  close: () => void;
+  iterable: AsyncIterable<T>;
+};
+
+function createWritableIterable<T>(): WriterFork<T> {
+  let pending: { value: T; taken: () => void } | undefined;
+  let closed = false;
+  let waitingRead: ((result: IteratorResult<T>) => void) | undefined;
+
+  return {
+    async write(value) {
+      if (waitingRead) {
+        waitingRead({ done: false, value });
+        waitingRead = undefined;
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        pending = { value, taken: resolve };
+      });
+    },
+    close() {
+      closed = true;
+      if (waitingRead) {
+        waitingRead({ done: true, value: undefined });
+        waitingRead = undefined;
+      }
+    },
+    iterable: {
+      [Symbol.asyncIterator](): AsyncIterator<T> {
+        return {
+          next() {
+            if (pending) {
+              const item = pending;
+              pending = undefined;
+              item.taken();
+              return Promise.resolve({ done: false, value: item.value });
+            }
+            if (closed) return Promise.resolve({ done: true, value: undefined as T });
+            return new Promise((resolve) => {
+              waitingRead = resolve;
+            });
+          },
+        };
+      },
+    },
+  };
+}
+
+/** Host duplicateStream: pump the source immediately and await write() on both forks until a reader pulls. */
+export function duplicateHostStream<T>(source: AsyncIterable<T>): [AsyncIterable<T>, AsyncIterable<T>] {
+  const left = createWritableIterable<T>();
+  const right = createWritableIterable<T>();
+  void (async () => {
+    try {
+      for await (const part of source) {
+        await left.write(part);
+        await right.write(part);
+      }
+    } finally {
+      left.close();
+      right.close();
+    }
+  })();
+  return [left.iterable, right.iterable];
+}
+
+export async function collectHostDuplicateStream(
+  source: AsyncIterable<StreamPart>,
+  timeoutMs = 2000,
+): Promise<[StreamPart[], StreamPart[]]> {
+  const [inner, full] = duplicateHostStream(source);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.all([collectStreamParts(inner), collectStreamParts(full)]),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Host duplicateStream deadlock")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
