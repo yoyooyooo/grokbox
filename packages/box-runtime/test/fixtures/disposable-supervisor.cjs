@@ -10,7 +10,9 @@ function launch() {
   try {
     const spec = JSON.parse(readFileSync(specFile, "utf8"));
     if (Array.isArray(spec.argv) && spec.argv.length > 0) argv = spec.argv;
-    if (spec.env && typeof spec.env === "object") env = { ...env, ...spec.env };
+    if (spec.env && typeof spec.env === "object") {
+      env = spec.replaceEnv === true ? { ...spec.env } : { ...env, ...spec.env };
+    }
   } catch {
     /* default host */
   }

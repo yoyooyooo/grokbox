@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
+import { readAttestation, writeAttestation, clearAttestation } from "./attestation.ts";
 import { spawnIndependentGuardian } from "./guardian-process.ts";
-import { runIdentityDeactivate, runIdentityOperation, type IdentityOpResult } from "./identity-op.ts";
+import {
+  attestationAgrees,
+  runIdentityDeactivate,
+  runIdentityOperation,
+  type IdentityOpResult,
+} from "./identity-op.ts";
 import { pickLaunchEnv } from "./launch-env.ts";
 import { loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
@@ -12,10 +18,8 @@ export type H3OfflinePorts = {
   waitHostGone: (old: ProcessIdentity) => Promise<boolean>;
   supervisorRelaunch: (supervisor: ProcessIdentity) => Promise<ProcessIdentity | null>;
   waitReady: (hostPid: number) => Promise<import("./identity-op.ts").IdentityMarker | null>;
-  prepareReplacement?: () => Promise<void>;
+  applyLaunchEnv: (env: Record<string, string>) => Promise<void>;
   hasGrokboxPreload: (host: ProcessIdentity) => boolean;
-  persistAttestation?: (host: ProcessIdentity, sha: string, windowMs: number) => Promise<void>;
-  clearAttestation: () => Promise<void>;
   now?: () => number;
 };
 
@@ -56,38 +60,54 @@ export function identityLaunchFields(input: {
 export async function runH3OfflineInject(input: {
   ephemeralRoot: string;
   reviewedProfilePath: string;
-  observedSha: string;
+  diskSha: () => string;
   operationId: string;
   execPath: string;
+  preloadPath: string;
+  hostBundle: string;
+  markerPath: string;
+  launchSource: NodeJS.Dict<string>;
   ports: H3OfflinePorts;
 }): Promise<IdentityOpResult> {
+  const observedSha = input.diskSha();
   let profile: PatchProfile;
   try {
-    profile = loadExistingReviewedProfile(input.reviewedProfilePath, input.observedSha);
+    profile = loadExistingReviewedProfile(input.reviewedProfilePath, observedSha);
   } catch {
     return {
       ok: false,
       recoveryRequired: false,
       code: "unknown-sha",
       signaled: false,
-      diskShaBefore: input.observedSha,
-      diskShaAfter: input.observedSha,
+      diskShaBefore: observedSha,
+      diskShaAfter: input.diskSha(),
       census: { wrapper: 0, supervisor: 0, host: 0, tempSupervisor: 0, guardian: 0, extras: 0 },
       coverage: "none",
     };
   }
-  return await runIdentityOperation({
+  const result = await runIdentityOperation({
     processes: input.ports.processes,
     classify: input.ports.classify,
     reviewedProfile: profile,
-    diskSha: () => input.observedSha,
+    diskSha: input.diskSha,
     ephemeralRoot: input.ephemeralRoot,
     operationId: input.operationId,
     readMarker: () => null,
     waitHostGone: input.ports.waitHostGone,
     supervisorRelaunch: input.ports.supervisorRelaunch,
     waitReady: input.ports.waitReady,
-    prepareReplacement: input.ports.prepareReplacement,
+    prepareReplacement: async () => {
+      const launched = identityLaunchFields({
+        source: input.launchSource,
+        preloadPath: input.preloadPath,
+        profilePath: input.reviewedProfilePath,
+        markerPath: input.markerPath,
+        operationId: input.operationId,
+        hostBundle: input.hostBundle,
+      });
+      if (!launched.ok) throw new Error(launched.code);
+      await input.ports.applyLaunchEnv(launched.env);
+    },
     armGuardian: async (frozen) => {
       const guardian = await spawnIndependentGuardian({
         frozen,
@@ -98,23 +118,55 @@ export async function runH3OfflineInject(input: {
       if (!guardian.armed) return { ok: false };
       return { ok: true, release: guardian.release };
     },
-    persistAttestation: input.ports.persistAttestation,
+    persistAttestation: async (host, sha, windowMs) => {
+      await writeAttestation(input.ephemeralRoot, {
+        mode: "identity",
+        coverage: "attested",
+        diskSha: sha,
+        pid: host.pid,
+        start: host.start,
+        identity: host,
+        at: new Date().toISOString(),
+        modeld: false,
+        windowMs,
+      });
+    },
     now: input.ports.now ?? (() => Date.now()),
   });
+  if (!result.ok || !result.host) return result;
+  const record = await readAttestation(input.ephemeralRoot);
+  if (
+    !record ||
+    !attestationAgrees({
+      attestation: record,
+      liveHost: result.host,
+      diskSha: result.diskShaAfter,
+      census: result.census,
+    })
+  ) {
+    return {
+      ...result,
+      ok: false,
+      recoveryRequired: true,
+      code: "attestation-uncommitted",
+      coverage: "window-open",
+    };
+  }
+  return result;
 }
 
 export async function runH3OfflineDeactivate(input: {
   ephemeralRoot: string;
-  observedSha: string;
+  diskSha: () => string;
   ports: H3OfflinePorts;
-  attestation: { identity: ProcessIdentity; diskSha: string } | null;
 }): Promise<IdentityOpResult> {
-  return await runIdentityDeactivate({
+  const record = await readAttestation(input.ephemeralRoot);
+  const result = await runIdentityDeactivate({
     processes: input.ports.processes,
     classify: input.ports.classify,
-    diskSha: () => input.observedSha,
+    diskSha: input.diskSha,
     ephemeralRoot: input.ephemeralRoot,
-    attestation: input.attestation,
+    attestation: record,
     waitHostGone: input.ports.waitHostGone,
     waitReplacement: async (oldPid) => {
       const start = Date.now();
@@ -126,6 +178,9 @@ export async function runH3OfflineDeactivate(input: {
       return null;
     },
     hasGrokboxPreload: input.ports.hasGrokboxPreload,
-    clearAttestation: input.ports.clearAttestation,
+    clearAttestation: async () => {
+      await clearAttestation(input.ephemeralRoot);
+    },
   });
+  return result;
 }

@@ -19,6 +19,8 @@ when upstream Grok Bot or Cursor internals change.
 - Land-now 06 safety kernel: exclusive lock, reviewed SHA, independent
   guardian child, supervisor-owned replacement, fail-closed deactivate,
   activate remains desired-only. No live Host inject.
+- Guardian armed handshake before STOP; marker after successful compile;
+  non-public H3 composition uses reviewed SHA, pickLaunchEnv, and real preload.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

@@ -178,7 +178,7 @@ export async function runIdentityDeactivate(ctx: DeactivateContext): Promise<Ide
     ok: false,
     recoveryRequired: true,
     code,
-    signaled: true,
+    signaled,
     diskShaBefore: shaBefore,
     diskShaAfter: ctx.diskSha(),
     census: rolesCensus(ctx.processes, ctx.classify),
@@ -230,18 +230,18 @@ export function attestationAgrees(input: {
   attestation: {
     identity: ProcessIdentity;
     diskSha: string;
-    mode?: string;
-    coverage?: string;
-    modeld?: boolean;
+    mode: string;
+    coverage: string;
+    modeld: boolean;
   } | null;
   liveHost: ProcessIdentity | null;
   diskSha: string | null;
   census: Census;
 }): boolean {
   if (!input.attestation || !input.liveHost || !input.diskSha) return false;
-  if (input.attestation.mode !== undefined && input.attestation.mode !== "identity") return false;
-  if (input.attestation.coverage !== undefined && input.attestation.coverage !== "attested") return false;
-  if (input.attestation.modeld === true) return false;
+  if (input.attestation.mode !== "identity") return false;
+  if (input.attestation.coverage !== "attested") return false;
+  if (input.attestation.modeld !== false) return false;
   if (!identitiesMatch(input.attestation.identity, input.liveHost)) return false;
   if (input.attestation.diskSha !== input.diskSha) return false;
   return singleOfficialChain(input.census);
