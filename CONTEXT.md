@@ -6,7 +6,7 @@
 
 ## Current implementation
 
-The TypeScript CLI currently provides:
+The TypeScript CLI lives in `packages/cli`. Box-local model runtime code, when it lands, lives in unpublished `packages/box-runtime`. npm still publishes one `grokbox` package. The CLI currently provides:
 
 - strict local, daemon, remote, and Gateway-compatible Profiles;
 - protected `env:`, `file:`, and macOS `keychain:` secret references;

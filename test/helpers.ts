@@ -1,8 +1,8 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLI_VERSION, createProductionDeps, type CliDeps } from "../src/deps.ts";
-import { runCli } from "../src/program.ts";
+import { CLI_VERSION, createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
+import { runCli } from "../packages/cli/src/program.ts";
 
 export const TEST_TOKEN = "test-gateway-token";
 export const ENV_TOKEN = "env-secret-should-never-be-used";

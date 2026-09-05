@@ -2,18 +2,18 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProfileFile } from "../src/config/profile.ts";
-import { readDaemonConfig, writeDaemonConfig } from "../src/daemon/config.ts";
-import { DesktopManager, type DesktopIo } from "../src/daemon/desktop.ts";
-import { startDaemonHost, type DaemonHost } from "../src/daemon/host.ts";
+import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
+import { readDaemonConfig, writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
+import { DesktopManager, type DesktopIo } from "../packages/cli/src/daemon/desktop.ts";
+import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
 import {
   classifyDesktop,
   DEFAULT_MIN_IDLE_MS,
   displayFromEnviron,
   inspectDesktopProc,
   type DesktopWorld,
-} from "../src/desktop.ts";
-import { createProductionDeps } from "../src/deps.ts";
+} from "../packages/cli/src/desktop.ts";
+import { createProductionDeps } from "../packages/cli/src/deps.ts";
 import { captureCli, parseJson, startMockGateway, writeDiscovery, type MockGateway } from "./helpers.ts";
 
 const AGENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";

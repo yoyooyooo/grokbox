@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import cliPackage from "../package.json";
-import type { CliDeps } from "../src/deps.ts";
-import { GLOBAL_OPTIONS, LEAF_COMMANDS, TOP_LEVEL_COMMANDS } from "../src/registry.ts";
+import type { CliDeps } from "../packages/cli/src/deps.ts";
+import { GLOBAL_OPTIONS, LEAF_COMMANDS, TOP_LEVEL_COMMANDS } from "../packages/cli/src/registry.ts";
 import {
   assertNoSecrets,
   captureCli,

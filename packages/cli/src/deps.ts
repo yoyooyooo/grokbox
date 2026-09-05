@@ -2,10 +2,10 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import cliPackage from "../package.json" with { type: "json" };
+import cliPackage from "../../../package.json" with { type: "json" };
 import { DEFAULT_DISCOVERY_PATH } from "./registry.ts";
 import type { Writable } from "./output.ts";
 
@@ -56,6 +56,15 @@ export type CliDeps = {
 };
 
 export const CLI_VERSION: string = cliPackage.version;
+
+/** Published install root (`dist/`) or repo root when running `packages/cli/src`. */
+export function resolvePackageRoot(moduleDir: string): string {
+  if (basename(moduleDir) === "dist") return dirname(moduleDir);
+  if (basename(moduleDir) === "src" && basename(dirname(moduleDir)) === "cli") {
+    return dirname(dirname(dirname(moduleDir)));
+  }
+  return dirname(moduleDir);
+}
 
 async function readAllStdin(): Promise<string> {
   process.stdin.setEncoding("utf8");
@@ -159,8 +168,8 @@ export function createProductionDeps(signal?: AbortSignal): CliDeps {
     },
     stdinIsTTY: Boolean(process.stdin.isTTY),
     readStdin: readAllStdin,
-    skillsDir: join(moduleDir, "..", "skills"),
-    packageRoot: join(moduleDir, ".."),
+    skillsDir: join(resolvePackageRoot(moduleDir), "skills"),
+    packageRoot: resolvePackageRoot(moduleDir),
     cliVersion: CLI_VERSION,
     idleWatchdogMs: 45_000,
     ...(signal ? { signal } : {}),

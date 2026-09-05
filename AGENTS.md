@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-`grokbox` is this project's canonical npm package and CLI name. `gbox` is an exact binary alias. Grok Bot is the upstream product being controlled; do not rename upstream protocol, product, or provider identifiers.
+`grokbox` is this project's canonical **published** npm package and CLI name. `gbox` is an exact binary alias. Implementation lives in unpublished workspaces `packages/cli` and `packages/box-runtime`. Grok Bot is the upstream product being controlled; do not rename upstream protocol, product, or provider identifiers.
 
 ## Documentation
 

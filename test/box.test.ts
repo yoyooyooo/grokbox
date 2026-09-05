@@ -3,9 +3,9 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtemp } from "node:fs/promises";
-import { writeProfileFile } from "../src/config/profile.ts";
-import type { CliDeps } from "../src/deps.ts";
-import { CURSOR_SANDBOX_BACKEND_URL } from "../src/sandbox/cursor.ts";
+import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
+import type { CliDeps } from "../packages/cli/src/deps.ts";
+import { CURSOR_SANDBOX_BACKEND_URL } from "../packages/cli/src/sandbox/cursor.ts";
 import { assertNoSecrets, captureCli, parseJson } from "./helpers.ts";
 
 const ACCESS_TOKEN = "cursor-account-secret-value";

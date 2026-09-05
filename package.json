@@ -14,6 +14,7 @@
     "url": "https://github.com/yoyooyooo/grokbox/issues"
   },
   "type": "module",
+  "workspaces": ["packages/*"],
   "bin": {
     "grokbox": "bin/grokbox",
     "gbox": "bin/grokbox"
@@ -41,9 +42,9 @@
     "provenance": true
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/index.js",
-    "grokbox": "bun run src/index.ts",
-    "gbox": "bun run src/index.ts",
+    "build": "esbuild packages/cli/src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/index.js",
+    "grokbox": "bun run packages/cli/src/index.ts",
+    "gbox": "bun run packages/cli/src/index.ts",
     "shim:install": "bun run scripts/install-local-shim.mjs",
     "shim:verify": "bun test test/local-shim.test.ts",
     "prepack": "bun run build",

@@ -36,7 +36,7 @@ describe("source-backed local global shim", () => {
     ]);
     expect(grokboxText).toBe(gboxText);
     expect(grokboxText).toContain("managed by grokbox");
-    expect(grokboxText).toContain('exec "$bun" run "$repo/src/index.ts" "$@"');
+    expect(grokboxText).toContain('exec "$bun" run "$repo/packages/cli/src/index.ts" "$@"');
     expect((await stat(grokbox)).mode & 0o777).toBe(0o755);
     expect((await stat(gbox)).mode & 0o777).toBe(0o755);
 

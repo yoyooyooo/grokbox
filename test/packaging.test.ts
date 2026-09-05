@@ -13,6 +13,7 @@ import {
   runtimeUnsupportedEnvelope,
   supportsNodeRuntime,
 } from "../bin/runtime.js";
+import { resolvePackageRoot } from "../packages/cli/src/deps.ts";
 
 const repoRoot = join(import.meta.dir, "..");
 const bun = Bun.which("bun") ?? process.execPath;
@@ -38,6 +39,11 @@ function trashRoot(): string {
 }
 
 describe("published Node package", () => {
+  test("resolvePackageRoot maps cli source and dist layouts to the published root", () => {
+    expect(resolvePackageRoot(join(repoRoot, "dist"))).toBe(repoRoot);
+    expect(resolvePackageRoot(join(repoRoot, "packages", "cli", "src"))).toBe(repoRoot);
+  });
+
   test("runtime gate rejects Node below 20 with one stable redacted envelope", () => {
     expect(MINIMUM_NODE_MAJOR).toBe(20);
     expect(RUNTIME_UNSUPPORTED_EXIT_CODE).toBe(59);

@@ -14,5 +14,13 @@
     "types": ["bun"],
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "package.json"]
+  "include": [
+    "packages/cli/src/**/*.ts",
+    "packages/cli/package.json",
+    "packages/box-runtime/src/**/*.ts",
+    "packages/box-runtime/test/**/*.ts",
+    "packages/box-runtime/package.json",
+    "test/**/*.ts",
+    "package.json"
+  ]
 }

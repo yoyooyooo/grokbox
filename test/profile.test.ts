@@ -7,12 +7,12 @@ import {
   resolveProfile,
   writeGlobalConfig,
   writeProfileFile,
-} from "../src/config/profile.ts";
+} from "../packages/cli/src/config/profile.ts";
 import {
   resolveSecretRef,
   retireOwnedFileSecret,
   validateSecretFileStat,
-} from "../src/config/secret.ts";
+} from "../packages/cli/src/config/secret.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
 const skillsDir = join(import.meta.dir, "..", "skills");

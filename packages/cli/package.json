@@ -1,0 +1,8 @@
+{
+  "name": "@grokbox/cli",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@grokbox/box-runtime": "workspace:*"
+  }
+}

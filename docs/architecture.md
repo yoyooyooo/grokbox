@@ -59,43 +59,31 @@ external Sandbox adapter / keeper
 
 The published CLI and daemon execute on Node.js 20+ and must not call Bun runtime globals. Bun remains the repository package manager and may run development scripts, tests and TypeScript tooling. Both executable names share one `#!/usr/bin/env node` shim; its pre-bundle gate returns stable `runtime_unsupported`/59 before importing `dist` when the Node major is below 20 or unparseable. An npm-installed external client does not require Bun.
 
-先保持一个发布包与一个 executable implementation；npm 同时把它暴露为 `grokbox` 和完全等价的 `gbox`。不要为未来对称性预建 package family。
+一个 **发布包** `grokbox`（bin 名 `grokbox`/`gbox`），仓库内两个 unpublished workspace 包。不要为对称性再拆 quota/sandbox/daemon 成独立发布物。
 
 ```text
-bin/
-  grokbox                    executable shim shared by both bin names
-src/
-  index.ts                   process entry
-  program.ts                 Commander projection
-  registry.ts                command + capability metadata
-  application/               transport-independent use cases
-  config/                    global config and Profile resolution
-  transports/
-    local-daemon.ts
-    remote-daemon.ts
-    direct-gateway.ts
-  quota.ts                    explicit bounded quota adapter and normalized DTO
-  sandbox/
-    port.ts                   inspect, wake and keepalive contract
-    cursor.ts                 EnsureSandBox and descriptor adapter
-    keeper.ts                 external lease loop and state
-  gateway/                   discovery and narrow Gateway client
-  daemon/
-    host.ts                  composition root and shutdown
-    protocol.ts              narrow v1 JSON RPC DTO
-    policy.ts                credential/capability/root policy
-    jobs.ts                  operation and process lifecycle
-    filesystem.ts            governed file operations
-    process.ts               structured exec adapter
-  commands/                  argv/stdin/output adapters
-  output/                    JSON, NDJSON, errors, redaction
-  box-runtime/               runtime helpers when that slice lands (not a second published package)
-skills/                      version-matched bundled skills
-test/                        unit, integration and recovery tests
-docs/                        product and runtime Current Homes
+bin/                         published Node shim (both executable names)
+packages/cli/                unpublished @grokbox/cli
+  src/index.ts               process entry
+  src/program.ts             Commander projection
+  src/registry.ts            command + capability metadata
+  src/application/           transport-independent use cases
+  src/config/                global config and Profile resolution
+  src/transports/
+  src/quota.ts
+  src/sandbox/
+  src/gateway/
+  src/daemon/
+  src/commands/
+packages/box-runtime/        unpublished @grokbox/box-runtime
+  src/                       Host transform, modeld, watchdog (when the slice lands)
+  must not import daemon/SSH/Profile transport
+skills/
+test/                        CLI, daemon, packaging tests (repo root)
+docs/
 ```
 
-A second package is earned only when another independently released consumer needs the daemon protocol or application use cases. Until then, source modules provide boundaries without multiplying publication surfaces.
+Published npm tarball remains one `grokbox` with empty `dependencies`; esbuild bundles cli (+ later box-runtime) into root `dist/`. A second **published** package is earned only when an independently installed consumer exists (future in-box WebUI is the same use cases, not a second npm).
 
 ## 4. Command Registry
 
@@ -326,7 +314,7 @@ Current implementation remains source reality until each slice lands. This docum
 Accepted ownership, not an implementation completion claim. Product obligations live in [product-contract §12](product-contract.md). Design lives in [box-runtime.md](box-runtime.md).
 
 ```text
-src/box-runtime/     helpers when the slice lands (not a second published package)
+packages/box-runtime/   unpublished workspace package (not a second npm)
 
 /workspace/.grokbox/box-runtime/          durable (survives box reset; not git)
   models.json  profiles/  contracts/  log/events.ndjson  secrets/
@@ -350,6 +338,6 @@ Composition roots:
 - Host preload: exact SHA transform and route hook. Does not read `models.json` or attestation files.
 - existing `daemon serve`: no default runtime mutation capability.
 
-Do not create `packages/box-runtime` until an independently published consumer exists. Offline transform and PromptSession contract tests are required before any live Host inject.
+`packages/box-runtime` is an unpublished workspace package. Do not publish it separately until an independently installed consumer exists. Offline transform and PromptSession contract tests are required before any live Host inject.
 
 Credential rotation mid-turn is forbidden: pin credential fingerprint with the resolved config until turn terminal or idle TTL.

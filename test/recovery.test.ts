@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProfileFile, writeProtectedSecret } from "../src/config/profile.ts";
-import { createProductionDeps } from "../src/deps.ts";
+import { writeProfileFile, writeProtectedSecret } from "../packages/cli/src/config/profile.ts";
+import { createProductionDeps } from "../packages/cli/src/deps.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
 const profileName = "remote";

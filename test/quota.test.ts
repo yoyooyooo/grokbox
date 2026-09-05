@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProfileFile } from "../src/config/profile.ts";
-import type { CliDeps } from "../src/deps.ts";
-import { CliError } from "../src/errors.ts";
+import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
+import type { CliDeps } from "../packages/cli/src/deps.ts";
+import { CliError } from "../packages/cli/src/errors.ts";
 import {
   CURSOR_WEB_QUOTA_ENDPOINT,
   queryCursorWebQuota,
   quotaSnapshotFromCursorWeb,
-} from "../src/quota.ts";
+} from "../packages/cli/src/quota.ts";
 import { assertNoSecrets, captureCli, parseJson } from "./helpers.ts";
 
 const nowMs = 1_700_000_000_000;

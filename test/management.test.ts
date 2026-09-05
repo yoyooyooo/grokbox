@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProfileFile } from "../src/config/profile.ts";
-import { startDaemonHost } from "../src/daemon/host.ts";
-import { createProductionDeps, type CliDeps } from "../src/deps.ts";
+import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
+import { startDaemonHost } from "../packages/cli/src/daemon/host.ts";
+import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
 import {
   captureCli,
   parseJson,

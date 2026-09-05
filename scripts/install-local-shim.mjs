@@ -9,7 +9,7 @@ import cliPackage from "../package.json" with { type: "json" };
 
 const marker = "# managed by grokbox scripts/install-local-shim.mjs";
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const entry = join(repoRoot, "src", "index.ts");
+const entry = join(repoRoot, "packages", "cli", "src", "index.ts");
 const locatedBun = spawnSync("sh", ["-c", "command -v bun"], { encoding: "utf8" });
 const configuredBun = process.env.GROKBOX_BUN;
 const bun = configuredBun || locatedBun.stdout.trim();
@@ -22,7 +22,7 @@ function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-const content = `#!/bin/sh\n${marker}\nset -eu\nrepo=${shellQuote(repoRoot)}\nbun=${shellQuote(bun)}\nif [ ! -f "$repo/src/index.ts" ]; then\n  printf '%s\\n' 'grokbox local shim: source checkout is unavailable' >&2\n  exit 127\nfi\nexec "$bun" run "$repo/src/index.ts" "$@"\n`;
+const content = `#!/bin/sh\n${marker}\nset -eu\nrepo=${shellQuote(repoRoot)}\nbun=${shellQuote(bun)}\nif [ ! -f "$repo/packages/cli/src/index.ts" ]; then\n  printf '%s\\n' 'grokbox local shim: source checkout is unavailable' >&2\n  exit 127\nfi\nexec "$bun" run "$repo/packages/cli/src/index.ts" "$@"\n`;
 const legacyContent = `#!/bin/sh\nexec ${bun} ${entry} "$@"\n`;
 
 async function inspect(name) {

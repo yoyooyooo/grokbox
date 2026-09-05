@@ -4,7 +4,7 @@ import { request } from "node:http";
 import { mkdir, mkdtemp, readFile, readdir, stat, truncate, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProfileFile, writeProtectedSecret } from "../src/config/profile.ts";
+import { writeProfileFile, writeProtectedSecret } from "../packages/cli/src/config/profile.ts";
 import {
   bootstrapPeerDaemon,
   ownedMappingProbeCommand,
@@ -14,12 +14,12 @@ import {
   remotePackageIntegrityCommand,
   remotePrepareRollbackCommand,
   remoteRollbackCommand,
-} from "../src/bootstrap.ts";
-import { readDaemonConfig, writeDaemonConfig } from "../src/daemon/config.ts";
-import { LocalDaemonClient, RemoteDaemonClient } from "../src/daemon/client.ts";
-import { startDaemonHost, type DaemonHost } from "../src/daemon/host.ts";
-import { DAEMON_PROTOCOL_MAJOR } from "../src/daemon/protocol.ts";
-import { createProductionDeps } from "../src/deps.ts";
+} from "../packages/cli/src/bootstrap.ts";
+import { readDaemonConfig, writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
+import { LocalDaemonClient, RemoteDaemonClient } from "../packages/cli/src/daemon/client.ts";
+import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
+import { DAEMON_PROTOCOL_MAJOR } from "../packages/cli/src/daemon/protocol.ts";
+import { createProductionDeps } from "../packages/cli/src/deps.ts";
 import {
   captureCli,
   parseJson,

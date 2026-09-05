@@ -6,6 +6,8 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Split the repo into unpublished workspaces `packages/cli` and
+  `packages/box-runtime` while still publishing a single `grokbox` package.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 
