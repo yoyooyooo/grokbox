@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { sha256Bytes } from "./hash.ts";
 import {
@@ -24,6 +23,7 @@ import {
   roleOf,
 } from "./live-proc.ts";
 import { decideH3LaunchStrategy, type H3LaunchStrategy } from "./launch-strategy.ts";
+import { resolveRuntimeHelper, RUNTIME_HELPER_TEMP_SUPERVISOR } from "./runtime-helpers.ts";
 import { findUniqueOfficialChain, loadReviewedProfile } from "./official-chain.ts";
 import {
   countRoles,
@@ -42,7 +42,7 @@ const EMPTY_CENSUS: Census = {
   extras: 0,
 };
 
-const TEMP_SUPERVISOR = fileURLToPath(new URL("./grokbox-temp-supervisor.cjs", import.meta.url));
+const TEMP_SUPERVISOR = resolveRuntimeHelper(RUNTIME_HELPER_TEMP_SUPERVISOR);
 const LIVE_GATEWAY_JSON = "/home/box/sand-data/gateway.json";
 const LIVE_WAIT_MS = 30_000;
 

@@ -83,7 +83,7 @@ test/                        CLI, daemon, packaging tests (repo root)
 docs/
 ```
 
-Published npm tarball remains one `grokbox` with empty `dependencies`; esbuild bundles cli (+ later box-runtime) into root `dist/`. A second **published** package is earned only when an independently installed consumer exists (future in-box WebUI is the same use cases, not a second npm).
+Published npm tarball remains one `grokbox` with empty `dependencies`; esbuild bundles cli (+ box-runtime) into root `dist/` and copies Node-runnable runtime helpers beside `dist/index.js` (`preload.cjs`, `guardian-child.cjs`, `injector-hold.cjs`, `grokbox-temp-supervisor.cjs`). A second **published** package is earned only when an independently installed consumer exists (future in-box WebUI is the same use cases, not a second npm).
 
 ## 4. Command Registry
 
@@ -289,7 +289,7 @@ Required lanes:
 9. Sandbox-real: App closed, an independently scheduled external keeper without `sendPrompt`, 2-hour then 24-72-hour lease observation, stop-to-freeze and frozen-to-wake recovery.
 10. Recover: from the external runner, prove frozen/unreachable Sandbox wake, Tailscale/IPv4 and Serve return, daemon stopped, explicit ensure, idempotent restart, bootstrap refusal/confirmation and post-recovery doctor.
 11. Recovery: Gateway restart/token rotation, daemon restart, Serve drift, duplicate operation, stream gap, box hibernation and interrupted job.
-12. Packaging: npm pack and isolated system-Trash install, bundle-content inspection, both executable names and identical help/version output, pre-bundle Node <20 refusal, missing-fixture preflight refusal, runtime operation without Bun, and cleanup.
+12. Packaging: npm pack and isolated system-Trash install, bundle-content inspection, runtime helper assets beside `dist/index.js`, both executable names and identical help/version output, pre-bundle Node <20 refusal, missing-fixture preflight refusal, runtime operation without Bun, and cleanup.
 
 A passing local fake does not prove tailnet identity, box persistence or external routing. A client process must actually execute on the external runner; proxying a local client through SSH is insufficient. Nested orchestration is acceptable for ordinary E2E only when the test command itself runs externally. Freeze/wake evidence is valid only when its observer remains scheduled outside the target box and stores evidence independently. Each delivery claim names the lane, runner roles and artifacts it exercised.
 

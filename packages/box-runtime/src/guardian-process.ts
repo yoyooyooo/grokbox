@@ -1,11 +1,15 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ProcessIdentity } from "./process.ts";
+import {
+  resolveRuntimeHelper,
+  RUNTIME_HELPER_GUARDIAN_CHILD,
+  RUNTIME_HELPER_INJECTOR_HOLD,
+} from "./runtime-helpers.ts";
 
-const CHILD = fileURLToPath(new URL("./guardian-child.cjs", import.meta.url));
-const HOLDER = fileURLToPath(new URL("./injector-hold.cjs", import.meta.url));
+const CHILD = resolveRuntimeHelper(RUNTIME_HELPER_GUARDIAN_CHILD);
+const HOLDER = resolveRuntimeHelper(RUNTIME_HELPER_INJECTOR_HOLD);
 
 export type IndependentGuardian = {
   armed: boolean;

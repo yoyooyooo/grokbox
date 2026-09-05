@@ -1,8 +1,19 @@
-import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { describe, expect, spyOn, test } from "bun:test";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import cliPackage from "../package.json" with { type: "json" };
+import {
+  liveH3AdoptAdapter,
+  runManualReadopt,
+  wireLiveManualReadopt,
+} from "../packages/box-runtime/src/index.ts";
+import { resolveRuntimeHelpers, RUNTIME_HELPER_FILES } from "../packages/box-runtime/src/runtime-helpers.ts";
+import { profileFromSource } from "../packages/box-runtime/src/transform.ts";
+import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "../packages/box-runtime/test/synthetic-host.ts";
 import {
   jobStateProvesCleanup,
   productErrorCodeFromText,
@@ -17,6 +28,32 @@ import { resolvePackageRoot } from "../packages/cli/src/deps.ts";
 
 const repoRoot = join(import.meta.dir, "..");
 const bun = Bun.which("bun") ?? process.execPath;
+const nodeExecutable = existsSync("/exec-daemon/node")
+  ? "/exec-daemon/node"
+  : (Bun.which("node") ?? process.execPath);
+
+function stubLiveAdoptPorts() {
+  const processes = {
+    inspect: () => null,
+    list: () => [],
+    signal: () => ({ ok: false as const, reason: "not-found" as const }),
+  };
+  return {
+    processes,
+    classify: () => null,
+    waitHostGone: async () => true,
+    supervisorRelaunch: async () => null,
+    waitReady: async () => null,
+    applyLaunchEnv: async () => undefined,
+    hasGrokboxPreload: () => false,
+    spawnTempSupervisor: async () => null,
+    waitNewHost: async () => null,
+    readGatewayPid: () => null,
+    guardianDeadlineMs: 1,
+    waitBudgetMs: 1,
+    adoptProveMs: 1,
+  };
+}
 
 async function text(stream: ReadableStream<Uint8Array>): Promise<string> {
   return await new Response(stream).text();
@@ -163,7 +200,11 @@ describe("published Node package", () => {
       "bin/grokbox",
       "bin/runtime.d.ts",
       "bin/runtime.js",
+      "dist/grokbox-temp-supervisor.cjs",
+      "dist/guardian-child.cjs",
       "dist/index.js",
+      "dist/injector-hold.cjs",
+      "dist/preload.cjs",
       "package.json",
       "skills/core.md",
     ]);
@@ -221,5 +262,111 @@ describe("published Node package", () => {
     const notices = await readFile(join(installedRoot, "THIRD_PARTY_NOTICES"), "utf8");
     expect(notices).toContain("Commander.js");
     expect(notices).toContain("Copyright (c) 2011 TJ Holowaychuk");
-  }, 30_000);
+
+    const distDir = join(installedRoot, "dist");
+    const published = resolveRuntimeHelpers(pathToFileURL(join(distDir, "index.js")).href);
+    expect(Object.values(published).sort()).toEqual(
+      RUNTIME_HELPER_FILES.map((name) => join(distDir, name)).sort(),
+    );
+    for (const helperPath of Object.values(published)) {
+      expect(existsSync(helperPath), helperPath).toBe(true);
+    }
+    expect(existsSync(join(distDir, "preload.ts"))).toBe(false);
+    expect(published.preload.endsWith("preload.cjs")).toBe(true);
+    const bundle = await readFile(join(distDir, "index.js"), "utf8");
+    for (const name of RUNTIME_HELPER_FILES) {
+      expect(bundle).toContain(name);
+    }
+    expect(bundle).not.toContain("./preload.ts");
+
+    const checked = await run([nodeExecutable, "--check", published.preload]);
+    expect(checked.code, checked.stderr).toBe(0);
+    for (const helperPath of [published.guardianChild, published.injectorHold, published.tempSupervisor]) {
+      const syntax = await run([nodeExecutable, "--check", helperPath]);
+      expect(syntax.code, syntax.stderr).toBe(0);
+    }
+
+    const work = await mkdtemp(join(tmpdir(), "grokbox-packed-preload-"));
+    const copyPath = join(work, "host-main.cjs");
+    const profilePath = join(work, "reviewed.json");
+    const markerPath = join(work, "marker.json");
+    const runningHost = `${SYNTHETIC_HOST}
+setInterval(() => {}, 1000);
+`;
+    await writeFile(copyPath, runningHost);
+    await writeFile(profilePath, `${JSON.stringify(profileFromSource(runningHost, SYNTHETIC_SLICES))}\n`);
+    const child = spawn(nodeExecutable, [copyPath], {
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `--require=${published.preload}`,
+        GROKBOX_HOST_BUNDLE: copyPath,
+        GROKBOX_PATCH_PROFILE: profilePath,
+        GROKBOX_PRELOAD_MARKER: markerPath,
+        GROKBOX_PRELOAD_MODE: "identity",
+        GROKBOX_OPERATION_ID: "packed-preload-op",
+      },
+      stdio: "ignore",
+    });
+    const started = Date.now();
+    type PackedMarker = {
+      compiled?: boolean;
+      operationId?: string;
+      transformed?: boolean;
+      modeld?: boolean;
+    };
+    let marker: PackedMarker | null = null;
+    while (Date.now() - started < 5000) {
+      try {
+        marker = JSON.parse(await readFile(markerPath, "utf8")) as PackedMarker;
+        if (marker.compiled) break;
+      } catch {
+        /* not yet */
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    try {
+      if (child.pid) process.kill(child.pid, "SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    expect(marker).toMatchObject({
+      operationId: "packed-preload-op",
+      compiled: true,
+      transformed: true,
+      modeld: false,
+    });
+    expect(copyPath).not.toContain("/home/box/sand-host");
+    expect(copyPath).not.toContain("3136108");
+
+    const spy = spyOn(liveH3AdoptAdapter, "createLiveH3AdoptPorts").mockImplementation(() => stubLiveAdoptPorts());
+    try {
+      const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-packed-readopt-"));
+      await writeFile(
+        join(boxRuntimeRoot, "models.json"),
+        `${JSON.stringify({ version: 1, models: {}, assignments: { main: null, agents: {} } })}\n`,
+      );
+      const wired = wireLiveManualReadopt({
+        root: boxRuntimeRoot,
+        ephemeralRoot: await mkdtemp(join(tmpdir(), "grokbox-packed-readopt-eph-")),
+        now: () => 0,
+      });
+      expect(spy).toHaveBeenCalled();
+      const needle = (spy.mock.calls[0]?.[0] as { preloadNeedle?: string } | undefined)?.preloadNeedle;
+      expect(typeof needle).toBe("string");
+      expect(existsSync(needle!)).toBe(true);
+      const result = await runManualReadopt({
+        confirmed: true,
+        root: boxRuntimeRoot,
+        desired: { version: 1, mode: "identity" },
+        models: { version: 1, models: {}, assignments: { main: null, agents: {} } },
+        now: () => 0,
+        ...wired,
+        freshDiskSha: () => "none",
+      });
+      expect(result.injected).toBe(false);
+      expect(result.signaled).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  }, 60_000);
 });

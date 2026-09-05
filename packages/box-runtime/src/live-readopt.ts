@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { writeAttestation } from "./attestation.ts";
 import { type WatchdogAdoptPorts, WATCHDOG_OPERATION_ID } from "./coordinator.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
@@ -13,9 +12,10 @@ import { procEnvHas, readNamedProcEnv } from "./live-proc.ts";
 import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
 import { reviewedProfilePath } from "./paths.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
+import { resolvePreloadPath } from "./runtime-helpers.ts";
 import type { PatchProfile } from "./transform.ts";
 
-const PRELOAD_PATH = fileURLToPath(new URL("./preload.ts", import.meta.url));
+const PRELOAD_PATH = resolvePreloadPath();
 
 export const liveH3AdoptAdapter = {
   createLiveH3AdoptPorts,

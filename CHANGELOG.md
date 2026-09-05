@@ -45,6 +45,10 @@ when upstream Grok Bot or Cursor internals change.
   adopt ports and the durable reviewed profile. Matching SHA stays a no-op;
   exact ownership with a stale `diskSha` admits one manual re-adopt.
   Watchdog/activate stay non-mutating. No live Host re-adopt was executed.
+- Publish Node-runnable runtime helpers beside the CLI bundle (`preload.cjs`,
+  `guardian-child.cjs`, `injector-hold.cjs`, `grokbox-temp-supervisor.cjs`) so
+  packed `runtime re-adopt --confirm` can resolve them. No live Host re-adopt
+  was executed.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

@@ -42,7 +42,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "esbuild packages/cli/src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/index.js",
+    "build": "esbuild packages/cli/src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/index.js && bun scripts/pack-runtime-helpers.mjs",
     "grokbox": "bun run packages/cli/src/index.ts",
     "gbox": "bun run packages/cli/src/index.ts",
     "shim:install": "bun run scripts/install-local-shim.mjs",
