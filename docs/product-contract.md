@@ -177,11 +177,13 @@ grokbox (alias: gbox)
 │   ├── status
 │   ├── activate --mode observe|identity|route
 │   ├── deactivate
+│   ├── log [--follow]
+│   ├── contracts
 │   ├── models
 │   │   ├── check
 │   │   ├── list
-│   │   ├── use <provider/model>
-│   │   └── reset
+│   │   ├── use <provider/model> [--for <agent>]
+│   │   └── reset [--for <agent>]
 │   ├── watchdog
 │   │   └── run
 │   └── modeld
@@ -455,9 +457,9 @@ Daemon 默认只监听 Unix socket或 `127.0.0.1`。远程暴露优先由 Tailsc
 
 本节是已接受义务，不是当前源码已实现清单。详细注入与 PromptSession 设计见 [Box-local model runtime](box-runtime.md)。
 
-`grokbox runtime *` **只允许在目标 Grok Box 本机执行**。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外调用返回 `runtime_local_only`。这是 API 级分离：同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。将来盒内 WebUI / VNC 也是本机客户端，不是把 mutation 拉到外部 Profile。
+`grokbox runtime *` 是 **Agent-first、盒内机器接口**，不是给人点的日常 UI。人用的表面只有未来的盒内 WebUI/VNC，且必须调用同一套 use case，不能另写一套 mutation。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外返回 `runtime_local_only`。同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。
 
-`watchdog run` / `modeld run` 是 operational entrypoint，进入命令 registry 与打包测试，但不是普通用户 UX。`activate` / `deactivate` 拥有确认与恢复语义。
+Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。
 
 配置根为 `~/.grokbox/box-runtime/`（不得占用已用于 CLI 安装的 `~/.grokbox/runtime/`）。`models.json` 的凭据字段只接受现有 SecretRef 的 `env:<NAME>` 与 `file:/absolute/path`；literal secret 与 `$VAR` interpolation 为 schema error。Unix socket：`$XDG_RUNTIME_DIR/grokbox/modeld.sock`，fallback `~/.grokbox/run/modeld.sock`。
 

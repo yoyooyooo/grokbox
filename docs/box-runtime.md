@@ -18,6 +18,8 @@ Host bundle SHA、PromptSession/`SendToUser` 合同、官方 wrapper/supervisor�
 
 不允许：第二套 Agent loop、全 backend MITM、永久改官方磁盘 bundle、经 daemon/SSH 转发 runtime mutation、managed 失败后静默回官方。
 
+控制面是 **Agent-first**：CLI 给盒内 Agent 设 desired、读 JSON 观察。人用的只有未来盒内 WebUI（同一 use case）。不要为「人手别误点」藏命令；也不要为 Agent 增加第二 writer（inject/heal/kill）。
+
 首期是 **main-only、hybrid、availability-first**：官方 relaunch 会打开未补丁窗口；窗口必须可测量；不得宣称 strict 或零窗口。
 
 ---
@@ -175,7 +177,41 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 
 ---
 
-## 8. 明确非目标
+## 8. 自动 / Agent CLI / 人
+
+机器优先。人的入口只有未来盒内 WebUI，映射同一 use case。
+
+**Watchdog 自动（无对应 mutation 命令）**
+
+- 读磁盘 SHA；变化则写合同切片快照
+- 作废旧 attestation；未知 SHA 不注入 + circuit-open
+- 注入中 SHA 变了则 abort 并按已有路径恢复
+- 注入结束普查：恰好 1 wrapper + 1 supervisor + 1 Host
+- 停掉我们记下身份的临时 supervisor / 到期 guardian；对不上身份则停手
+- `stale-patched`：对签过字且身份仍过的那一个 Host PID 发一次 SIGTERM，让官方用当前磁盘拉未补丁进程；失败一次即 degraded
+- 有界 ndjson（`~/.grokbox/box-runtime/log/events.ndjson`，白名单字段）
+
+认不出的多余进程 **不自动杀**。
+
+**Agent CLI（盒内，JSON）**
+
+- 写 desired：`activate` / `deactivate` / `models *`
+- 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
+- `status` / `log` / `contracts` 不 repair
+- 禁止：`inject` / `heal` / `kill` / 手动 snapshot
+
+**人 / 另一次授权**
+
+- 切片 drift 后写新 PatchProfile
+- 现役 identity/route 注入
+- `recovery-required`（误写磁盘、双链清不掉）：官方渠道换 Host；grokbox 不修官方文件
+- 未来 WebUI：给人配模型、看状态，背后仍是上述 use case
+
+`deactivate` 是 Agent 的唯一大回滚：desired=disabled，回到单一未补丁官方链。实施打错和生产失效同一条路。
+
+---
+
+## 9. 明确非目标
 
 - 不把 runtime 实现或 Host dump 提交进本仓库
 - 不做 RoutePolicy 引擎、不做「有的 Bot 继续官方」的混合路由（另一次产品决定）
