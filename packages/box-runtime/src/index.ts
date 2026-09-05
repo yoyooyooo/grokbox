@@ -49,7 +49,12 @@ export {
   proveStableOfficialState,
   loadReviewedProfile,
 } from "./official-chain.ts";
-export { runTransientAdoptOperation, runTransientAdoptDeactivate } from "./transient-adopt.ts";
+export {
+  runTransientAdoptOperation,
+  runTransientAdoptDeactivate,
+  canHandoffAdopt,
+  officialWouldSpawn,
+} from "./transient-adopt.ts";
 export {
   applyPatchProfile,
   extractContractSlices,

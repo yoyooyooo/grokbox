@@ -15,7 +15,12 @@ import {
   findUniqueOfficialChain,
   proveStableOfficialState,
 } from "../src/official-chain.ts";
-import { runTransientAdoptDeactivate, runTransientAdoptOperation } from "../src/transient-adopt.ts";
+import {
+  canHandoffAdopt,
+  officialWouldSpawn,
+  runTransientAdoptDeactivate,
+  runTransientAdoptOperation,
+} from "../src/transient-adopt.ts";
 import { profileFromSource, type PatchProfile } from "../src/transform.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
@@ -114,6 +119,18 @@ describe("adopted topology proof is not PPID parentage", () => {
     expect(src).not.toMatch(/SIGKILL/);
     expect(src).toContain("SIGTERM");
     expect(src).toContain("SIGSTOP");
+  });
+
+  test("stale gateway means official supervisor would spawn; handoff is forbidden", () => {
+    expect(canHandoffAdopt({ gatewayPid: 9, hostPid: 9, hostAlive: true })).toBe(true);
+    expect(canHandoffAdopt({ gatewayPid: 8, hostPid: 9, hostAlive: true })).toBe(false);
+    expect(canHandoffAdopt({ gatewayPid: 9, hostPid: 9, hostAlive: false })).toBe(false);
+    expect(
+      officialWouldSpawn({ gatewayPid: 1514327, identityHostPid: 2693924, identityHostAlive: true }),
+    ).toBe(true);
+    expect(
+      officialWouldSpawn({ gatewayPid: 2693924, identityHostPid: 2693924, identityHostAlive: true }),
+    ).toBe(false);
   });
 });
 
@@ -259,6 +276,61 @@ describe("transient-adopt fake tree", () => {
     });
     expect(crashed.coverage).not.toBe("attested");
     expect(crashTree.stopped(cw.pid)).toBe(false);
+  });
+
+  test("stale gateway aborts before CONT handoff so official cannot spawn a competitor", async () => {
+    const tree = new FakeProcessTree();
+    const wrapper = tree.spawn("wrapper");
+    const supervisor = tree.spawn("supervisor", { parent: wrapper });
+    const host = tree.spawn("host", { parent: supervisor });
+    const staleGateway = host.pid;
+    let patchedPid = 0;
+    const result = await runTransientAdoptOperation({
+      processes: tree,
+      classify: classify(tree),
+      reviewedProfile: reviewed,
+      diskSha: () => "sha-reviewed",
+      ephemeralRoot: await mkdtemp(join(tmpdir(), "grokbox-adopt-race-")),
+      operationId: "adopt-race",
+      readMarker: () => null,
+      waitGone: async (old) => tree.inspect(old.pid) === null,
+      waitReady: async (pid) => ({
+        operationId: "adopt-race",
+        pid,
+        mode: "identity",
+        transformed: true,
+        compiled: true,
+        modeld: false,
+      }),
+      spawnTempSupervisor: async () => {
+        const temp = tree.spawn("temp-supervisor");
+        const born = tree.spawn("host", { parent: temp });
+        patchedPid = born.pid;
+        return temp;
+      },
+      waitNewHost: async (oldPid) =>
+        tree.list().find((ident) => classify(tree)(ident) === "host" && ident.pid !== oldPid) ?? null,
+      readGatewayPid: () => staleGateway,
+      armGuardian: async (frozen) =>
+        guard(tree, frozen, () => {
+          if (!tree.roles().some((row) => row.role === "supervisor")) {
+            tree.spawn("supervisor", { parent: wrapper });
+          }
+        }),
+      hasGrokboxPreload: (ident) => ident.pid === patchedPid,
+      now: () => 10,
+      adoptProveMs: 20,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: "gateway-unproven",
+      recoveryRequired: true,
+    });
+    expect(result.coverage).not.toBe("attested");
+    expect(tree.alive(patchedPid)).toBe(false);
+    expect(tree.stopped(wrapper.pid)).toBe(false);
+    expect(tree.signals.some((row) => row.signal === "SIGKILL")).toBe(false);
+    expect(tree.signals.some((row) => row.pid === wrapper.pid && row.signal === "SIGCONT")).toBe(true);
   });
 });
 

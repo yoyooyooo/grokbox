@@ -38,6 +38,27 @@ export async function writeAdoptOpState(root: string, state: AdoptOpState): Prom
   await writeFile(path, `${JSON.stringify(state)}\n`, { mode: 0o600 });
 }
 
+/** Official supervisor launches a new Host unless gateway discovery names this live identity Host. */
+export function canHandoffAdopt(input: {
+  gatewayPid: number | null;
+  hostPid: number;
+  hostAlive: boolean;
+}): boolean {
+  return input.hostAlive && input.gatewayPid === input.hostPid;
+}
+
+export function officialWouldSpawn(input: {
+  gatewayPid: number | null;
+  identityHostPid: number;
+  identityHostAlive: boolean;
+}): boolean {
+  return !canHandoffAdopt({
+    gatewayPid: input.gatewayPid,
+    hostPid: input.identityHostPid,
+    hostAlive: input.identityHostAlive,
+  });
+}
+
 function rolesCensus(port: ProcessPort, classify: RoleClassifier) {
   return countRoles(
     port.list().flatMap((ident) => {
@@ -147,6 +168,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         marker.compiled !== true ||
         marker.modeld !== false
       ) {
+        await reapOperationOwned(ctx, temp, replacement);
         release();
         return fail("marker-mismatch", true, true);
       }
@@ -157,6 +179,12 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         exe: replacement.exe,
         cmdline: replacement.cmdline,
       };
+      const handoffMs = ctx.adoptProveMs ?? 8000;
+      if (!(await waitHandoffReady(ctx, replacement.pid, handoffMs))) {
+        await reapOperationOwned(ctx, temp, replacement);
+        release();
+        return fail("gateway-unproven", true, true);
+      }
       await writeAdoptOpState(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         tempSupervisor: temp,
@@ -164,14 +192,17 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         host: stableHost,
       });
       if (ctx.diskSha() !== shaBefore) {
+        await reapOperationOwned(ctx, temp, replacement);
         release();
         return fail("disk-sha-changed", true, true);
       }
       if (!signalIfMatch(ctx.processes, temp, "SIGTERM").ok) {
+        await reapOperationOwned(ctx, temp, replacement);
         release();
         return fail("identity-mismatch", true, true);
       }
       if (!(await ctx.waitGone(temp))) {
+        await reapOperationOwned(ctx, null, replacement);
         release();
         return fail("temp-still-alive", true, true);
       }
@@ -179,6 +210,17 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       if (!afterTemp || !stableIdentitiesMatch(stableHost, afterTemp)) {
         release();
         return fail("host-lost", true, true);
+      }
+      if (
+        officialWouldSpawn({
+          gatewayPid: ctx.readGatewayPid(),
+          identityHostPid: afterTemp.pid,
+          identityHostAlive: true,
+        })
+      ) {
+        await reapOperationOwned(ctx, null, afterTemp);
+        release();
+        return fail("gateway-unproven", true, true);
       }
       release();
       const adopted = await waitAdopted(ctx, wrapper, stableHost, ctx.adoptProveMs ?? 8000);
@@ -219,6 +261,48 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
   }
 }
 
+async function waitHandoffReady(
+  ctx: TransientAdoptContext,
+  hostPid: number,
+  ms: number,
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (
+      canHandoffAdopt({
+        gatewayPid: ctx.readGatewayPid(),
+        hostPid,
+        hostAlive: ctx.processes.inspect(hostPid) != null,
+      })
+    ) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return canHandoffAdopt({
+    gatewayPid: ctx.readGatewayPid(),
+    hostPid,
+    hostAlive: ctx.processes.inspect(hostPid) != null,
+  });
+}
+
+async function reapOperationOwned(
+  ctx: TransientAdoptContext,
+  temp: ProcessIdentity | null,
+  host: ProcessIdentity | null,
+): Promise<void> {
+  if (host) {
+    const liveHost = ctx.processes.inspect(host.pid);
+    if (liveHost) signalIfMatch(ctx.processes, liveHost, "SIGTERM");
+    await ctx.waitGone(host);
+  }
+  if (temp) {
+    const liveTemp = ctx.processes.inspect(temp.pid);
+    if (liveTemp) signalIfMatch(ctx.processes, liveTemp, "SIGTERM");
+    await ctx.waitGone(temp);
+  }
+}
+
 async function waitAdopted(
   ctx: TransientAdoptContext,
   wrapper: ProcessIdentity,
@@ -227,6 +311,8 @@ async function waitAdopted(
 ): Promise<OfficialChain | null> {
   const start = Date.now();
   while (Date.now() - start < ms) {
+    const hosts = ctx.processes.list().filter((ident) => ctx.classify(ident) === "host");
+    if (hosts.some((ident) => ident.pid !== expectedHost.pid)) return null;
     const liveWrapper = ctx.processes.inspect(wrapper.pid);
     if (liveWrapper) {
       const found = findAdoptedHostState(ctx.processes, ctx.classify, {
