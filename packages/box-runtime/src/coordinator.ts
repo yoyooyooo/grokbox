@@ -17,8 +17,10 @@ import { countRoles, readOnlyProcessPort, type ProcessIdentity, type ProcessPort
 import {
   adoptJournalNeedsRecovery,
   readAdoptOpState,
+  settleStaleAdoptJournal,
   runTransientAdoptDeactivate,
   runTransientAdoptOperation,
+  writeAdoptOpState,
   type TransientAdoptContext,
 } from "./transient-adopt.ts";
 import type { PatchProfile } from "./transform.ts";
@@ -504,7 +506,16 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
   let state = await loadState(input.root);
 
   const pending = await readAdoptOpState(ephemeralRoot);
-  if (adoptJournalNeedsRecovery(pending)) {
+  const uniqueNow = findUniqueOfficialChain(processes, classify);
+  const settled = settleStaleAdoptJournal({
+    state: pending,
+    inspect: (pid) => processes.inspect(pid),
+    uniqueHost: uniqueNow.ok ? uniqueNow.chain.host : null,
+    uniqueSupervisor: uniqueNow.ok ? uniqueNow.chain.supervisor : null,
+    gatewayPid: input.adopt?.readGatewayPid() ?? null,
+  });
+  if (settled && settled !== pending) await writeAdoptOpState(ephemeralRoot, settled);
+  if (adoptJournalNeedsRecovery(settled)) {
     state = {
       ...state,
       circuit: "open",

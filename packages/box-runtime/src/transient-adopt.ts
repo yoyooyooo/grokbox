@@ -54,6 +54,35 @@ export function adoptJournalNeedsRecovery(state: AdoptOpState | null): boolean {
   return false;
 }
 
+/** Complete a stuck journal when its host is gone, no temp owner remains, and a unique official chain is gateway-proven. */
+export function settleStaleAdoptJournal(input: {
+  state: AdoptOpState | null;
+  inspect: (pid: number) => ProcessIdentity | null;
+  uniqueHost: ProcessIdentity | null;
+  uniqueSupervisor: ProcessIdentity | null;
+  gatewayPid: number | null;
+}): AdoptOpState | null {
+  const state = input.state;
+  if (!state || !adoptJournalNeedsRecovery(state)) return state;
+  if (state.tempSupervisor) {
+    const temp = input.inspect(state.tempSupervisor.pid);
+    if (temp && temp.start === state.tempSupervisor.start) return state;
+  }
+  if (state.host) {
+    const live = input.inspect(state.host.pid);
+    if (live && live.start === state.host.start) return state;
+  }
+  if (!input.uniqueHost || !input.uniqueSupervisor) return state;
+  if (input.gatewayPid !== input.uniqueHost.pid) return state;
+  return {
+    launchMode: "transient-adopt",
+    phase: "direct-official",
+    tempSupervisor: null,
+    adoptingSupervisor: input.uniqueSupervisor,
+    host: stableOf(input.uniqueHost),
+  };
+}
+
 function stableOf(ident: ProcessIdentity): StableProcessIdentity {
   return {
     pid: ident.pid,

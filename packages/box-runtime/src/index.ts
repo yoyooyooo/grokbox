@@ -76,6 +76,7 @@ export {
   readAdoptOpState,
   writeAdoptOpState,
   adoptJournalNeedsRecovery,
+  settleStaleAdoptJournal,
 } from "./transient-adopt.ts";
 export {
   applyPatchProfile,
