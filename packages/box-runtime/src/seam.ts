@@ -9,6 +9,7 @@ import {
   createManagedPromptSession,
   type PromptSession,
   type SessionTerminal,
+  type StreamHandle,
   type StreamPart,
 } from "./session.ts";
 
@@ -73,6 +74,16 @@ function agentIdOf(args: { agentId?: string; sessionOptions?: unknown }): string
   if (args.sessionOptions === null || typeof args.sessionOptions !== "object") return undefined;
   const value = (args.sessionOptions as { agentId?: unknown }).agentId;
   return typeof value === "string" ? value : undefined;
+}
+
+function idleStreamHandle(modelId: string): StreamHandle {
+  return {
+    fullStream: {
+      async *[Symbol.asyncIterator]() {},
+    },
+    response: Promise.resolve({ modelId, messages: [] }),
+    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
+  };
 }
 
 export function createSessionSeam(config: SessionSeamConfig) {
@@ -156,10 +167,9 @@ export function createSessionSeam(config: SessionSeamConfig) {
     const state: InvocationState = {
       session: {
         stream(request) {
-          if (!state.dispatched) {
-            state.dispatched = true;
-            driver.dispatches += 1;
-          }
+          if (state.dispatched) return idleStreamHandle(config.modelId ?? "stub/echo");
+          state.dispatched = true;
+          driver.dispatches += 1;
           return inner.stream(request);
         },
       },

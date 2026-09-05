@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { runWatchdogTick } from "../src/coordinator.ts";
 import {
   appendEvent,
   appendTurnSeamTerminal,
@@ -13,6 +14,7 @@ import {
   TURN_SEAM_TERMINAL_RETENTION,
 } from "../src/events.ts";
 import { eventsPath } from "../src/paths.ts";
+import { FakeProcessTree } from "./fake-tree.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
 
@@ -116,6 +118,28 @@ describe("turn_seam_terminal projector", () => {
       }),
     ).toMatchObject({ assignment: "official", outcome: "official" });
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-off"), assignment: "official" })?.modelId).toBeUndefined();
+    const { modelId: _officialModel, ...officialWithoutModel } = {
+      ...turnEvent("inv-official-omit"),
+      assignment: "official" as const,
+      outcome: "official" as const,
+    };
+    expect(projectTurnSeamTerminal(officialWithoutModel)).toMatchObject({
+      assignment: "official",
+      outcome: "official",
+    });
+    expect(projectTurnSeamTerminal(officialWithoutModel)).not.toHaveProperty("modelId");
+    const { modelId: _mainModel, ...mainWithoutModel } = turnEvent("inv-main-missing");
+    expect(projectTurnSeamTerminal(mainWithoutModel)).toBeNull();
+    expect(projectTurnSeamTerminal({ ...turnEvent("inv-agent-missing"), assignment: "agent", modelId: undefined })).toBeNull();
+    expect(projectTurnSeamTerminal({ ...turnEvent("inv-main-empty"), modelId: "" })).toBeNull();
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-main-oversize"),
+        modelId: "x".repeat(TURN_SEAM_BOUNDED_STRING + 1),
+      }),
+    ).toBeNull();
+    expect(projectTurnSeamTerminal({ ...turnEvent("inv-main-type"), modelId: 1 })).toBeNull();
+    expect(projectTurnSeamTerminal({ ...turnEvent("inv-main-nested"), modelId: { id: "nested" } })).toBeNull();
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-bad"), mode: "other" })).toBeNull();
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-bad"), terminalClass: "crash" })).toBeNull();
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-bad"), outcome: "success" })).toBeNull();
@@ -200,5 +224,50 @@ describe("append-only host journal and watchdog compaction", () => {
     expect(invocationIds.sort()).toEqual([...ids].sort());
     expect(new Set(invocationIds).size).toBe(ids.length);
     expect(rows.some((row) => row.name === "inject_phase")).toBe(true);
+  });
+
+  test("runWatchdogTick composition root compacts control-plane and terminals independently", async () => {
+    const dir = await root();
+    const ephemeralRoot = await mkdtemp(join(tmpdir(), "grokbox-wd-eph-"));
+    const tree = new FakeProcessTree();
+    const extra = 20;
+    for (let i = 0; i < CONTROL_PLANE_EVENT_RETENTION + extra; i += 1) {
+      await appendEvent(dir, { name: "disk_sha_observed", at: AT, sha: `sha-${i}` });
+    }
+    for (let i = 0; i < TURN_SEAM_TERMINAL_RETENTION + extra; i += 1) {
+      expect(await appendTurnSeamTerminal(dir, turnEvent(`inv-tick-${i}`))).toBe("written");
+    }
+    expect(await linesOf(dir)).toHaveLength(
+      CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION + extra * 2,
+    );
+
+    const result = await runWatchdogTick({
+      root: dir,
+      desired: { version: 1, mode: "observe" },
+      models: { version: 1, models: {}, assignments: { main: null, agents: {} } },
+      processes: tree,
+      classify: () => null,
+      ephemeralRoot,
+      diskSha: "sha-reviewed",
+      now: () => 10,
+      isoNow: () => AT,
+    });
+    expect(result.injected).toBe(false);
+    expect(result.signaled).toBe(false);
+    expect(tree.signals).toEqual([]);
+
+    const rows = parsed(await linesOf(dir));
+    const control = rows.filter((row) => row.name !== "turn_seam_terminal");
+    const turns = rows.filter((row) => row.name === "turn_seam_terminal");
+    expect(rows.length).toBeLessThanOrEqual(CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION);
+    expect(control.length).toBeLessThanOrEqual(CONTROL_PLANE_EVENT_RETENTION);
+    expect(turns.length).toBeLessThanOrEqual(TURN_SEAM_TERMINAL_RETENTION);
+    expect(control.at(-1)).toMatchObject({
+      name: "disk_sha_observed",
+      sha: `sha-${CONTROL_PLANE_EVENT_RETENTION + extra - 1}`,
+    });
+    expect(turns.at(-1)).toMatchObject({
+      invocationId: `inv-tick-${TURN_SEAM_TERMINAL_RETENTION + extra - 1}`,
+    });
   });
 });

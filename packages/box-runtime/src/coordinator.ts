@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { clearAttestation, readAttestation, writeAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { BoxRuntimeError } from "./errors.ts";
-import { appendEvent } from "./events.ts";
+import { appendEvent, compactEvents } from "./events.ts";
 import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
 import { projectLiveStatus, type HostOrigin } from "./observe.ts";
@@ -686,9 +686,11 @@ function needsMutationLease(input: WatchdogTickInput): boolean {
 
 export async function runWatchdogTick(input: WatchdogTickInput): Promise<WatchdogTickResult> {
   const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
-  if (!needsMutationLease(input)) return await runWatchdogTickBody(input);
-  const leased = await withCoordinatorLease(input, ephemeralRoot, () => runWatchdogTickBody(input));
-  return leased as WatchdogTickResult;
+  const result = !needsMutationLease(input)
+    ? await runWatchdogTickBody(input)
+    : (await withCoordinatorLease(input, ephemeralRoot, () => runWatchdogTickBody(input))) as WatchdogTickResult;
+  await compactEvents(input.root);
+  return result;
 }
 
 export async function runWatchdogCutover(input: WatchdogTickInput): Promise<WatchdogTickResult> {

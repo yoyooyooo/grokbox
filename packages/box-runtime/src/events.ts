@@ -168,6 +168,7 @@ export function projectTurnSeamTerminal(input: unknown): TurnSeamTerminalEvent |
     return null;
   }
   const modelId = assignment === "official" ? null : boundedString(input.modelId);
+  if (assignment !== "official" && modelId == null) return null;
   return {
     name: "turn_seam_terminal",
     at,

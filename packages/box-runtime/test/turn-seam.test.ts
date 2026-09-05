@@ -7,7 +7,7 @@ import { eventsPath } from "../src/paths.ts";
 import { createManagedPromptSession, type PromptSession, type StreamPart } from "../src/session.ts";
 import { createSessionSeam, createStubRouteDriver } from "../src/seam.ts";
 import { applyPatchProfile, profileFromSource, ROUTE_SESSION_SYMBOL } from "../src/transform.ts";
-import { consumePromptSession, SEAM_STOP_PARTS } from "./host-consumer.ts";
+import { consumePromptSession, SEAM_STOP_PARTS, type HostSideEffectVector } from "./host-consumer.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
@@ -223,7 +223,7 @@ describe("turn seam identity vs route", () => {
     expect(events).toHaveLength(3);
   });
 
-  test("duplicate submit does not dispatch or emit a second terminal line", async () => {
+  test("duplicate submit does not replay the Host side-effect vector", async () => {
     const dir = await root();
     const driver = createStubRouteDriver(SEAM_STOP_PARTS);
     const seam = createSessionSeam({
@@ -240,13 +240,37 @@ describe("turn seam identity vs route", () => {
       agentId: "agent-tom",
     };
     const first = seam.hook(args) as PromptSession;
-    await consumePromptSession(first);
+    const firstVector = await consumePromptSession(first);
     first.stream();
     const second = seam.hook(args);
     expect(second).toBe(first);
-    await consumePromptSession(second as PromptSession);
+    const secondVector = await consumePromptSession(second as PromptSession);
     await seam.flush();
-    expect(driver.dispatches).toBe(1);
+    const aggregate: HostSideEffectVector = {
+      toolExecutionCount: firstVector.toolExecutionCount + secondVector.toolExecutionCount,
+      finalDeliveryCount: firstVector.finalDeliveryCount + secondVector.finalDeliveryCount,
+      transcriptEntryDelta: firstVector.transcriptEntryDelta + secondVector.transcriptEntryDelta,
+      transcriptSequenceDelta: firstVector.transcriptSequenceDelta + secondVector.transcriptSequenceDelta,
+      memoryIdDelta: firstVector.memoryIdDelta + secondVector.memoryIdDelta,
+      duplicateCount: firstVector.duplicateCount + secondVector.duplicateCount,
+    };
+    expect(firstVector).toEqual({
+      toolExecutionCount: 2,
+      finalDeliveryCount: 1,
+      transcriptEntryDelta: 3,
+      transcriptSequenceDelta: 3,
+      memoryIdDelta: 1,
+      duplicateCount: 0,
+    });
+    expect(secondVector).toEqual({
+      toolExecutionCount: 0,
+      finalDeliveryCount: 0,
+      transcriptEntryDelta: 0,
+      transcriptSequenceDelta: 0,
+      memoryIdDelta: 0,
+      duplicateCount: 0,
+    });
+    expect(aggregate).toEqual(firstVector);
     expect(await turnLines(dir)).toHaveLength(1);
   });
 
