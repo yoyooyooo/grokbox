@@ -145,12 +145,17 @@ function toExtendedUsage(usage: HostUsage): ExtendedUsage {
   };
 }
 
+/** Live Host UI fork can attach later than one macrotask; 0ms still deadlocked. */
+const HOST_FULL_STREAM_FIRST_YIELD_MS = 50;
+
 function afterHostReaderAttachTick(): Promise<void> {
-  // Host duplicateStream() starts consuming on this tick. Yielding in the same
-  // turn deadlocks createWritableIterable.write before both readers attach.
-  // A microtask is not enough; wait one macrotask so both forks can subscribe.
+  // Host duplicateStream() starts consuming on this tick and await-writes both
+  // forks. Yielding before both readers attach deadlocks write(). A microtask
+  // and setTimeout(0) were not enough on live Host; hold the first Host-facing
+  // yield so the later UI fork can subscribe. stream() stays sync; response/
+  // usage waiters do not tee onto fullStream.
   return new Promise((resolve) => {
-    setTimeout(resolve, 0);
+    setTimeout(resolve, HOST_FULL_STREAM_FIRST_YIELD_MS);
   });
 }
 

@@ -182,6 +182,9 @@ export function duplicateHostStream<T>(source: AsyncIterable<T>): [AsyncIterable
   return [left.iterable, right.iterable];
 }
 
+/** Live Host attaches the UI fork later than the tool-loop reader. */
+const HOST_DUPLICATE_SECOND_READER_DELAY_MS = 20;
+
 export async function collectHostDuplicateStream(
   source: AsyncIterable<StreamPart>,
   timeoutMs = 2000,
@@ -189,8 +192,13 @@ export async function collectHostDuplicateStream(
   const [inner, full] = duplicateHostStream(source);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const innerParts = collectStreamParts(inner);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, HOST_DUPLICATE_SECOND_READER_DELAY_MS);
+    });
+    const fullParts = collectStreamParts(full);
     return await Promise.race([
-      Promise.all([collectStreamParts(inner), collectStreamParts(full)]),
+      Promise.all([innerParts, fullParts]),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error("Host duplicateStream deadlock")), timeoutMs);
       }),

@@ -233,7 +233,7 @@ describe("stub route synthetic compile/load", () => {
     }
   });
 
-  test("route fullStream does not emit on the constructing tick so Host duplicateStream can finish",
+  test("route fullStream still finishes both duplicateStream forks when the second reader attaches after 20ms",
     async () => {
     const { durable, runRoot } = await roots();
     const server = await startStubModeldServer({ runRoot });
@@ -257,9 +257,10 @@ describe("stub route synthetic compile/load", () => {
       expect(delivered).toBe(false);
       await Promise.resolve();
       expect(delivered).toBe(false);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(delivered).toBe(false);
 
       const [innerParts, fullParts] = await collectHostDuplicateStream(result.fullStream);
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
       expect(delivered).toBe(true);
       await probe;
 

@@ -173,7 +173,7 @@ describe("managed PromptSession contract", () => {
     expect(session.getExecutorWithoutResolvedModelTracking()).toBe(session.getExecutor());
   });
 
-  test("Host fullStream does not emit on the constructing tick so duplicateStream can attach readers",
+  test("Host fullStream first yield waits so a late duplicateStream reader still finishes",
     async () => {
     const inner = createManagedPromptSession({
       modelId: "stub/echo",
@@ -194,9 +194,10 @@ describe("managed PromptSession contract", () => {
     expect(delivered).toBe(false);
     await Promise.resolve();
     expect(delivered).toBe(false);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(delivered).toBe(false);
 
     const [innerParts, fullParts] = await collectHostDuplicateStream(result.fullStream);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(delivered).toBe(true);
     await probe;
 
