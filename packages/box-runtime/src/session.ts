@@ -5,14 +5,25 @@ export type StreamPart =
 
 export type SessionMessage = {
   role: "assistant";
-  content?: string;
+  content: string;
   toolCalls?: Array<{ id: string; name: string; args: unknown }>;
+};
+
+export type HostUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+export type HostResponse = {
+  modelId: string;
+  messages: SessionMessage[];
 };
 
 export type StreamHandle = {
   fullStream: AsyncIterable<StreamPart>;
-  response: Promise<{ modelId: string; messages: SessionMessage[] }>;
-  usage: Promise<{ promptTokens: number; completionTokens: number }>;
+  response: Promise<HostResponse>;
+  usage: Promise<HostUsage>;
 };
 
 export type PromptContentPart =
@@ -38,13 +49,20 @@ export type ExtendedUsage = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  maxTokens: number;
 };
 
 export type HostStreamResult = StreamHandle & {
   extendedUsage: Promise<ExtendedUsage>;
+  providerMetadata: Promise<Record<string, unknown>>;
+  invocationId: Promise<unknown>;
 };
 
 export type HostPromptExecutor = {
+  appendMessages: (messages?: unknown) => HostPromptExecutor;
+  getMessages: () => unknown[];
+  getState: () => unknown[];
+  clearMessages: () => void;
   stream: (
     ctx?: unknown,
     invocationId?: unknown,
@@ -82,30 +100,92 @@ function abortSignalFrom(ctx: unknown, options: unknown): AbortSignal | undefine
   return undefined;
 }
 
-export function toHostStreamResult(handle: StreamHandle): HostStreamResult {
+function numberOrZero(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function normalizeHostUsage(usage: unknown): HostUsage {
+  const u = usage !== null && typeof usage === "object" ? (usage as Record<string, unknown>) : {};
+  const promptTokens = numberOrZero(u.promptTokens ?? u.prompt_tokens ?? u.inputTokens ?? u.input_tokens) || 0;
+  const completionTokens =
+    numberOrZero(u.completionTokens ?? u.completion_tokens ?? u.outputTokens ?? u.output_tokens) || 0;
+  const totalTokens = numberOrZero(u.totalTokens ?? u.total_tokens) || promptTokens + completionTokens;
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+function emptyAssistantMessages(): SessionMessage[] {
+  return [{ role: "assistant", content: "" }];
+}
+
+export function normalizeHostResponse(value: unknown): HostResponse {
+  const record = value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const modelId = typeof record.modelId === "string" ? record.modelId : "";
+  const messages = Array.isArray(record.messages)
+    ? (record.messages as SessionMessage[])
+    : emptyAssistantMessages();
+  return { modelId, messages: messages.length > 0 ? messages : emptyAssistantMessages() };
+}
+
+function toExtendedUsage(usage: HostUsage): ExtendedUsage {
+  return {
+    inputTokens: usage.promptTokens,
+    outputTokens: usage.completionTokens,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    maxTokens: 0,
+  };
+}
+
+function iterableFromParts(parts: readonly StreamPart[]): AsyncIterable<StreamPart> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const part of parts) yield part;
+    },
+  };
+}
+
+export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown): HostStreamResult {
+  const usage = handle.usage.then(normalizeHostUsage);
   return {
     fullStream: handle.fullStream,
-    response: handle.response,
-    usage: handle.usage,
-    extendedUsage: handle.usage.then((usage) => ({
-      inputTokens: usage.promptTokens,
-      outputTokens: usage.completionTokens,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    })),
+    response: handle.response.then(normalizeHostResponse),
+    usage,
+    extendedUsage: usage.then(toExtendedUsage),
+    providerMetadata: Promise.resolve({}),
+    invocationId: Promise.resolve(invocationId),
   };
 }
 
 export function asHostPromptSession(session: PromptSession, modelId: string): HostPromptSession {
+  let messages: unknown[] = [];
   const executor: HostPromptExecutor = {
-    stream(ctx, _invocationId, _tools, options) {
-      return toHostStreamResult(session.stream({ abortSignal: abortSignalFrom(ctx, options) }));
+    appendMessages(next) {
+      const list = Array.isArray(next) ? next : next == null ? [] : [next];
+      messages.push(...list);
+      return executor;
     },
+    getMessages() {
+      return [...messages];
+    },
+    getState() {
+      return [...messages];
+    },
+    clearMessages() {
+      messages = [];
+    },
+    stream(ctx, invocationId, _tools, options) {
+      return toHostStreamResult(session.stream({ abortSignal: abortSignalFrom(ctx, options) }), invocationId);
+    },
+  };
+  const bind = (state?: unknown): HostPromptExecutor => {
+    if (Array.isArray(state)) messages = [...state];
+    return executor;
   };
   return {
     getModelId: () => modelId,
-    getExecutor: () => executor,
-    getExecutorWithoutResolvedModelTracking: () => executor,
+    getExecutor: bind,
+    getExecutorWithoutResolvedModelTracking: bind,
   };
 }
 
@@ -150,8 +230,7 @@ function messagesFromParts(parts: StreamPart[]): SessionMessage[] {
     if (part.type === "text-delta") text += part.textDelta;
     if (part.type === "tool-call") toolCalls.push({ id: part.toolCallId, name: part.toolName, args: part.args });
   }
-  const message: SessionMessage = { role: "assistant" };
-  if (text.length > 0) message.content = text;
+  const message: SessionMessage = { role: "assistant", content: text };
   if (toolCalls.length > 0) message.toolCalls = toolCalls;
   return [message];
 }
@@ -159,17 +238,13 @@ function messagesFromParts(parts: StreamPart[]): SessionMessage[] {
 function settledHandle(
   modelId: string,
   parts: StreamPart[],
-  usage = { promptTokens: 1, completionTokens: 1 },
+  usage = { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
 ): StreamHandle {
   const copy = [...parts];
   return {
-    fullStream: {
-      async *[Symbol.asyncIterator]() {
-        for (const part of copy) yield part;
-      },
-    },
+    fullStream: iterableFromParts(copy),
     response: Promise.resolve({ modelId, messages: messagesFromParts(copy) }),
-    usage: Promise.resolve(usage),
+    usage: Promise.resolve(normalizeHostUsage(usage)),
   };
 }
 
@@ -189,25 +264,21 @@ function notifyTerminal(onTerminal: ManagedSessionConfig["onTerminal"], produced
   }
 }
 
-function failedHandle(error: VisibleFailure, onTerminal?: ManagedSessionConfig["onTerminal"]): StreamHandle {
+function failedHandle(
+  modelId: string,
+  error: VisibleFailure,
+  onTerminal?: ManagedSessionConfig["onTerminal"],
+): StreamHandle {
   const terminal: StreamPart = { type: "finish", reason: "error" };
-  const failure = Object.assign(new Error(error.message), {
-    userVisible: true as const,
-    toolCallIds: error.toolCallIds,
-  });
-  const response = Promise.reject(failure);
-  const usage = Promise.reject(failure);
-  void response.catch(() => undefined);
-  void usage.catch(() => undefined);
   notifyTerminal(onTerminal, [terminal]);
+  const message: SessionMessage = { role: "assistant", content: "" };
+  if (error.toolCallIds && error.toolCallIds.length > 0) {
+    message.toolCalls = error.toolCallIds.map((id) => ({ id, name: "", args: {} }));
+  }
   return {
-    fullStream: {
-      async *[Symbol.asyncIterator]() {
-        yield terminal;
-      },
-    },
-    response,
-    usage,
+    fullStream: iterableFromParts([terminal]),
+    response: Promise.resolve({ modelId, messages: [message] }),
+    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
   };
 }
 
@@ -218,6 +289,7 @@ export function createManagedPromptSession(config: ManagedSessionConfig): Prompt
     stream(request = {}) {
       if (hasImage(request) && !config.vision) {
         return failedHandle(
+          config.modelId,
           {
             userVisible: true,
             message: "Configured model does not accept images.",
@@ -229,6 +301,7 @@ export function createManagedPromptSession(config: ManagedSessionConfig): Prompt
       const toolIds = collectToolIds(config.parts);
       if (toolIds.length > 1 && config.parallel === "fail-closed") {
         return failedHandle(
+          config.modelId,
           {
             userVisible: true,
             message: "Parallel tool calls are not supported by the configured model.",

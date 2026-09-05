@@ -134,8 +134,8 @@ function idleStreamHandle(modelId: string): StreamHandle {
     fullStream: {
       async *[Symbol.asyncIterator]() {},
     },
-    response: Promise.resolve({ modelId, messages: [] }),
-    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
+    response: Promise.resolve({ modelId, messages: [{ role: "assistant", content: "" }] }),
+    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
   };
 }
 
@@ -295,29 +295,35 @@ export function createSessionSeam(config: SessionSeamConfig) {
         }
         state.dispatched = true;
         if (driver.submit) {
-          const loaded = driver
-            .submit({
-              invocationId,
-              agentId,
-              modelId,
-              abortSignal: request?.abortSignal,
-            })
-            .then((result) => {
+          const processing = (async () => {
+            let handle: StreamHandle;
+            try {
+              const result = await driver.submit!({
+                invocationId,
+                agentId,
+                modelId,
+                abortSignal: request?.abortSignal,
+              });
               driver.dispatches += result.dispatched ? 1 : 0;
-              return handleFromParts(modelId, result.parts, request, onTerminal);
-            })
-            .catch(() => {
+              handle = handleFromParts(modelId, result.parts, request, onTerminal);
+            } catch {
               driver.dispatches += 1;
-              return handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
-            });
+              handle = handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
+            }
+            const [response, usage] = await Promise.all([handle.response, handle.usage]);
+            const parts: StreamPart[] = [];
+            for await (const part of handle.fullStream) parts.push(part);
+            return { parts, response, usage };
+          })();
           return {
             fullStream: {
               async *[Symbol.asyncIterator]() {
-                yield* (await loaded).fullStream;
+                const result = await processing;
+                for (const part of result.parts) yield part;
               },
             },
-            response: loaded.then(async (handle) => await handle.response),
-            usage: loaded.then(async (handle) => await handle.usage),
+            response: processing.then((result) => result.response),
+            usage: processing.then((result) => result.usage),
           };
         }
         driver.dispatches += 1;

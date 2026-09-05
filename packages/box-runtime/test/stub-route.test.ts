@@ -166,6 +166,9 @@ describe("stub route synthetic compile/load", () => {
         agentId: "agent-tom",
       }) as HostPromptSession;
       expect(managed).not.toBe(original);
+      const executor = managed.getExecutor([]);
+      expect(Array.isArray(executor.getMessages())).toBe(true);
+      expect(Array.isArray(executor.getState())).toBe(true);
       const loaded = loadSynthetic(hook);
       const main = loaded.runTurn({ getConversationId: () => "agent-tom" });
       expect(main).not.toBe(loaded.createSession({ inferenceReason: "computer" }));
@@ -174,6 +177,57 @@ describe("stub route synthetic compile/load", () => {
       const vector = await consumeHost(managed);
       expect(vector.toolExecutionCount).toBe(0);
       expect(vector.finalDeliveryCount).toBe(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("route executor stream is synchronous, Host-shaped, and does not tee waiters", async () => {
+    const { durable, runRoot } = await roots();
+    const server = await startStubModeldServer({ runRoot });
+    try {
+      const original = officialSession();
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot });
+      const managed = hook({
+        originalSession: original,
+        sessionOptions: { invocationId: "inv-shape", inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as HostPromptSession;
+      const executor = managed.getExecutor([]);
+      executor.appendMessages({ role: "user", content: "ping" });
+      expect(executor.getMessages()).toEqual([{ role: "user", content: "ping" }]);
+      executor.clearMessages();
+      expect(executor.getState()).toEqual([]);
+      const result = executor.stream({}, "inv-shape", [], {});
+      expect(result).not.toBeInstanceOf(Promise);
+      expect("then" in result).toBe(false);
+      const response = await result.response;
+      expect(response.modelId.trim()).toBe(STUB_ECHO_MODEL_ID);
+      expect(response.messages.some((message) => message.role === "assistant")).toBe(true);
+      expect(await result.usage).toEqual({
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+      });
+      const fromStream: string[] = [];
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") fromStream.push(part.textDelta);
+      }
+      expect(fromStream).toEqual(["echo"]);
+      expect(await result.extendedUsage).toMatchObject({ inputTokens: 1, outputTokens: 1, maxTokens: 0 });
+      expect(await result.invocationId).toBe("inv-shape");
+
+      const missing = hook({
+        originalSession: original,
+        sessionOptions: { inferenceReason: "main" },
+        agentId: "agent-tom",
+      }) as HostPromptSession;
+      const failed = missing.getExecutor().stream({}, "inv-missing", [], {});
+      expect(failed).not.toBeInstanceOf(Promise);
+      const errorResponse = await failed.response;
+      expect(errorResponse.modelId.trim()).toBe(STUB_ECHO_MODEL_ID);
+      expect(errorResponse.messages.some((message) => message.role === "assistant")).toBe(true);
+      expect(await failed.usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
     } finally {
       await server.stop();
     }

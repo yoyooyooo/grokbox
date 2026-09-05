@@ -637,7 +637,8 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
     if (origin === "grokbox-attested" && liveHost) {
       const ownership = canonicalOwnershipAgrees({ attestation: att, liveHost, census });
       const shaMatch = Boolean(att && typeof sha === "string" && att.diskSha === sha);
-      if (shaMatch && routeAttestationAgrees(att, reviewedIdentityForRoute(input)) && ready) {
+      const profileMatch = routeAttestationAgrees(att, reviewedIdentityForRoute(input));
+      if (shaMatch && profileMatch && ready) {
         await saveState(input.root, state);
         return resultOf(state, origin, {
           reconcile: "converged",
@@ -652,6 +653,27 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
         if (input.confirmed !== true) {
           await saveState(input.root, state);
           return blocked("route_requires_confirm");
+        }
+        if (!ready) {
+          await saveState(input.root, state);
+          return blocked("modeld_not_ready");
+        }
+        return await runIdentityToRouteRefresh(input, {
+          state,
+          ephemeralRoot,
+          processes,
+          classify,
+          freshDiskSha,
+          iso,
+          liveHost,
+          sha,
+          origin,
+        });
+      }
+      if (att?.mode === "route" && ownership && shaMatch && !profileMatch) {
+        if (input.confirmed !== true) {
+          await saveState(input.root, state);
+          return recovery("route_mismatch");
         }
         if (!ready) {
           await saveState(input.root, state);

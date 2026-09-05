@@ -333,6 +333,73 @@ describe("stub route fake-process re-adopt", () => {
     expect(await readAttestation(ephemeralRoot)).toMatchObject({ mode: "route", modeld: true, diskSha: SHA });
   });
 
+  test("confirmed re-adopt refreshes already-route Host when reviewed profile SHA changes", async () => {
+    const { root, ephemeralRoot } = await roots();
+    const tree = new FakeProcessTree();
+    const { wrapper, host } = spawnOfficial(tree);
+    const gateway = { pid: null as number | null };
+    const markerMode = { current: "route" as "identity" | "route" };
+    const ports = harness(tree, wrapper, gateway, markerMode);
+    const base = {
+      root,
+      desired: desired("route"),
+      models: MODELS,
+      processes: tree,
+      classify: classify(tree),
+      ephemeralRoot,
+      diskSha: SHA,
+      reviewedProfile: reviewed,
+      adopt: ports.adopt,
+      envHas: ports.envHas,
+      modeldReady: async () => true,
+      now: () => 10,
+      isoNow: () => "2026-01-01T00:00:00.000Z",
+    };
+    const adopted = await runManualReadopt({ ...base, confirmed: true });
+    expect(adopted.reconcile).toBe("converged");
+    expect(adopted.injected).toBe(true);
+    expect(tree.alive(host.pid)).toBe(false);
+    const live = tree.roles().find((row) => row.role === "host");
+    expect(live).toBeDefined();
+    const afterAdoptSignals = tree.signals.length;
+
+    const nextReviewed: PatchProfile = {
+      ...reviewed,
+      profileId: "reviewed-route-v2",
+      transformedSourceSha256: "sha-transformed-route-v2",
+    };
+    const unconfirmed = await runWatchdogTick({ ...base, reviewedProfile: nextReviewed });
+    expect(unconfirmed.reconcile).toBe("recovery-required");
+    expect(unconfirmed.reason).toBe("route_mismatch");
+    expect(unconfirmed.signaled).toBe(false);
+    expect(unconfirmed.injected).toBe(false);
+    expect(tree.signals.length).toBe(afterAdoptSignals);
+
+    const refreshed = await runManualReadopt({
+      ...base,
+      confirmed: true,
+      reviewedProfile: nextReviewed,
+      waitReplacement: async () => {
+        const sup = tree.roles().find((row) => row.role === "supervisor") ?? wrapper;
+        const born = tree.spawn("host", { parent: sup });
+        gateway.pid = born.pid;
+        return born;
+      },
+    });
+    expect(refreshed.reason, JSON.stringify(refreshed)).toBeNull();
+    expect(refreshed.reconcile).toBe("converged");
+    expect(refreshed.injected).toBe(true);
+    expect(refreshed.signaled).toBe(true);
+    expect(tree.signals.length).toBeGreaterThan(afterAdoptSignals);
+    expect(await readAttestation(ephemeralRoot)).toMatchObject({
+      mode: "route",
+      modeld: true,
+      diskSha: SHA,
+      profileId: nextReviewed.profileId,
+      transformedSha: nextReviewed.transformedSourceSha256,
+    });
+  });
+
   test("read-only watchdog/status use reviewed profile identity without mutation ports", async () => {
     const { root, ephemeralRoot } = await roots();
     const tree = new FakeProcessTree();

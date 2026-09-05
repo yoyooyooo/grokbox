@@ -8,6 +8,14 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Stub-route Host executor `stream()` returns synchronously with independent
+  `fullStream` / `response` / `usage` waiters, trim-able `response.modelId`,
+  a `messages` array on success and error, camelCase usage including
+  `totalTokens`, and Array `getMessages()` / `getState()`. Confirmed
+  `runtime re-adopt --confirm` can refresh an already-route Host when the
+  reviewed profile SHA changes while ownership and `diskSha` still match;
+  watchdog without `--confirm` stays zero-signal `route_mismatch`. No live
+  Host cutover.
 - Route `createSession` returns a Host-shaped session (`getModelId` /
   `getExecutor`) and the existing agent-id slice also writes
   `invocationId: inferenceRequestId`. Identity still returns

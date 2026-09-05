@@ -26,7 +26,7 @@ Host bundle SHA、PromptSession/`SendToUser` 合同、官方 wrapper/supervisor�
 
 ## 2. 接缝
 
-生产接缝是 `createCursorSandInference.createSession` 上的 Host session adapter。现役 Host 立刻调用 `session.getModelId()` 再 `session.getExecutor(state).stream(ctx, invocationId, tools, options)`；`response.modelId` 必须是可 `.trim()` 的字符串。identity 仍按对象身份交还 `originalSession`，不得包一层。
+生产接缝是 `createCursorSandInference.createSession` 上的 Host session adapter。现役 Host 立刻调用 `session.getModelId()` 再 `session.getExecutor(state).stream(ctx, invocationId, tools, options)`。`stream` 必须同步返回 `{ fullStream, response, usage, extendedUsage }` 及 Host 所需 promise，不得把整个对象做成 Promise，也不得把 `fullStream` tee 给 response/usage 等待者。成功和失败的 `response` 都要有可 `.trim()` 的 `modelId` 和 `messages` 数组；`usage` 为 Host camelCase `{ promptTokens, completionTokens, totalTokens }`；executor 的 `getMessages()` / `getState()` 必须返回 Array。identity 仍按对象身份交还 `originalSession`，不得包一层。
 
 ```text
 App / Gateway / Host queue
@@ -213,7 +213,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 写 desired：`activate` / `deactivate` / `models *`
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
-- 显式确认一次：`re-adopt --confirm`（唯一带 live adopt 权限的公开档；匹配 SHA 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt。不是循环，也不替代 watchdog）
+- 显式确认一次：`re-adopt --confirm`（唯一带 live adopt 权限的公开档；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）
 - 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
 

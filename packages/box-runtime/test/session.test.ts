@@ -26,7 +26,7 @@ describe("managed PromptSession contract", () => {
     expect(fromStream).toEqual(["hello"]);
     expect(response.modelId).toBe("fake/main");
     expect(response.messages[0]?.content).toBe("hello");
-    expect(usage.completionTokens).toBe(1);
+    expect(usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
     const again: StreamPart[] = [];
     for await (const part of handle.fullStream) again.push(part);
     expect(again.some((part) => part.type === "text-delta")).toBe(true);
@@ -65,7 +65,9 @@ describe("managed PromptSession contract", () => {
       messages: [{ role: "user", content: [{ type: "image", url: "https://example.test/a.png" }] }],
     });
     expect(providerCalls.count).toBe(0);
-    await expect(handle.response).rejects.toMatchObject({ userVisible: true });
+    const failed = await handle.response;
+    expect(failed.modelId.trim()).toBe("fake/text");
+    expect(failed.messages.some((message) => message.role === "assistant")).toBe(true);
     const vision = createManagedPromptSession({
       modelId: "fake/vision",
       vision: true,
@@ -92,10 +94,14 @@ describe("managed PromptSession contract", () => {
       ],
     });
     const handle = session.stream();
-    await expect(handle.response).rejects.toMatchObject({
-      userVisible: true,
-      toolCallIds: ["a", "b"],
-    });
+    const failed = await handle.response;
+    expect(failed.modelId.trim()).toBe("fake/serial");
+    expect(Array.isArray(failed.messages)).toBe(true);
+    expect(failed.messages.some((message) => message.role === "assistant")).toBe(true);
+    expect(failed.messages[0]?.toolCalls?.map((call) => call.id)).toEqual(["a", "b"]);
+    const parts: StreamPart[] = [];
+    for await (const part of handle.fullStream) parts.push(part);
+    expect(parts.some((part) => part.type === "finish" && part.reason === "error")).toBe(true);
   });
 
   test("abort yields one terminal and discards later parts", async () => {
@@ -127,20 +133,34 @@ describe("managed PromptSession contract", () => {
     });
     const session = asHostPromptSession(inner, "stub/echo");
     expect(session.getModelId().trim()).toBe("stub/echo");
-    const result = session.getExecutor({}).stream({}, "inv-1", [], {});
+    const executor = session.getExecutor({});
+    expect(Array.isArray(executor.getMessages())).toBe(true);
+    expect(Array.isArray(executor.getState())).toBe(true);
+    executor.appendMessages([{ role: "user", content: "hi" }]);
+    expect(executor.getMessages()).toEqual([{ role: "user", content: "hi" }]);
+    executor.clearMessages();
+    expect(executor.getState()).toEqual([]);
+    const result = executor.stream({}, "inv-1", [], {});
+    expect(result).not.toBeInstanceOf(Promise);
+    expect("then" in result).toBe(false);
+    const response = await result.response;
+    expect(response.modelId.trim()).toBe("stub/echo");
+    expect(response.messages.some((message) => message.role === "assistant")).toBe(true);
+    expect(await result.usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
     const fromStream: string[] = [];
     for await (const part of result.fullStream) {
       if (part.type === "text-delta") fromStream.push(part.textDelta);
     }
-    const response = await result.response;
-    expect(response.modelId.trim()).toBe("stub/echo");
     expect(fromStream).toEqual(["hello"]);
     expect(await result.extendedUsage).toEqual({
       inputTokens: 1,
       outputTokens: 1,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
+      maxTokens: 0,
     });
+    expect(await result.providerMetadata).toEqual({});
+    expect(await result.invocationId).toBe("inv-1");
     expect(session.getExecutorWithoutResolvedModelTracking()).toBe(session.getExecutor());
   });
 });

@@ -52,6 +52,7 @@ async function consumeHandle(handle: StreamHandle | HostStreamResult): Promise<H
   try {
     const response = await handle.response;
     response.modelId.trim();
+    response.messages.some((message) => message.role === "assistant");
     const content = response.messages[0]?.content;
     if (typeof content === "string" && content.length > 0) {
       finalDeliveryCount = 1;
@@ -60,6 +61,15 @@ async function consumeHandle(handle: StreamHandle | HostStreamResult): Promise<H
     }
   } catch {
     /* managed error: Host loop keeps the failure, bodies stay local */
+  }
+
+  try {
+    const usage = await handle.usage;
+    void usage.promptTokens;
+    void usage.completionTokens;
+    void usage.totalTokens;
+  } catch {
+    /* usage rejection stays with the Host loop */
   }
 
   if ("extendedUsage" in handle) {
