@@ -1,5 +1,7 @@
 export { BoxRuntimeError, type BoxRuntimeErrorCode } from "./errors.ts";
 export { shouldTransformArgv } from "./argv.ts";
+export { installCompileHook, transformCompileInput } from "./hook.ts";
+export { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES, isLiveHostPath } from "./live-slices.ts";
 export { assertBoxLocal, type LocalRuntimeContext } from "./local.ts";
 export {
   CLI_INSTALL_ROOT,

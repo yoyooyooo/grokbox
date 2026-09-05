@@ -12,6 +12,8 @@ when upstream Grok Bot or Cursor internals change.
   transform fixtures, and a fake PromptSession contract. No live Host inject.
 - Add fake-tree inject/guardian, modeld admission, and watchdog contract
   snapshots with stale-patched heal. Still no live Host inject.
+- Add compile-hook transform on tmp copies and live-bundle copy H1. Live Host
+  path is refused unless explicitly allowed; Host body is not in git.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

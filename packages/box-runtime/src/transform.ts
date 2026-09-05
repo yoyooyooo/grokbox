@@ -123,6 +123,12 @@ export function extractContractSlices(source: string): Record<string, string> {
   const createEnd = source.indexOf("function runTurn(host)", createStart);
   if (createStart >= 0 && createEnd > createStart) {
     slices["create-session"] = source.slice(createStart, createEnd);
+  } else {
+    const liveStart = source.indexOf("createSession(onRequestId, sessionOptions)");
+    const liveEnd = source.indexOf("recordPostTurnLabeling", liveStart);
+    if (liveStart >= 0 && liveEnd > liveStart) {
+      slices["create-session"] = source.slice(liveStart, liveEnd);
+    }
   }
   const optionsStart = source.indexOf("const mainSessionOptions = {");
   if (optionsStart >= 0) {
