@@ -21,6 +21,7 @@ describe("compile hook", () => {
     });
     expect(hit.transformed).toBe(true);
     expect(hit.content).toContain("agentId: host.getConversationId()");
+    expect(hit.content).toContain("invocationId: inferenceRequestId");
     expect(hit.content).toContain("originalSession: session");
 
     const other = transformCompileInput({

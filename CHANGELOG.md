@@ -8,6 +8,10 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Route `createSession` returns a Host-shaped session (`getModelId` /
+  `getExecutor`) and the existing agent-id slice also writes
+  `invocationId: inferenceRequestId`. Identity still returns
+  `originalSession` unwrapped. No live Host re-adopt.
 - Split the repo into unpublished workspaces `packages/cli` and
   `packages/box-runtime` while still publishing a single `grokbox` package.
 - Add box-local `runtime *` / `runtime models *` Agent CLI, offline Host

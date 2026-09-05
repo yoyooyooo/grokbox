@@ -6,6 +6,7 @@ function createSession(sessionOptions) {
   return session;
 }
 function runTurn(host) {
+  const inferenceRequestId = "inv-synth";
   const mainSessionOptions = {
     modelId: "official-main",
     inferenceReason: "main",
@@ -29,6 +30,7 @@ export const SYNTHETIC_SLICES: readonly SlicePatch[] = [
     startAnchor: "const mainSessionOptions = {",
     endAnchor: "return createSession(mainSessionOptions);",
     find: "    modelId: \"official-main\",\n",
-    replacement: "    agentId: host.getConversationId(),\n    modelId: \"official-main\",\n",
+    replacement:
+      "    agentId: host.getConversationId(),\n    invocationId: inferenceRequestId,\n    modelId: \"official-main\",\n",
   },
 ];

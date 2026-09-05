@@ -23,6 +23,7 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     startAnchor: "const mainSessionOptions = {",
     endAnchor: "async () => host.inference.createSession(emitRequestId, mainSessionOptions)",
     find: "          modelId: host.subagentModelId,\n",
-    replacement: "          agentId: host.getConversationId(),\n          modelId: host.subagentModelId,\n",
+    replacement:
+      "          agentId: host.getConversationId(),\n          invocationId: inferenceRequestId,\n          modelId: host.subagentModelId,\n",
   },
 ];

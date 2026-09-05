@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createManagedPromptSession, type StreamPart } from "../src/session.ts";
+import { asHostPromptSession, createManagedPromptSession, type StreamPart } from "../src/session.ts";
 
 const textParts: StreamPart[] = [
   { type: "text-delta", textDelta: "hello" },
@@ -115,5 +115,32 @@ describe("managed PromptSession contract", () => {
     for await (const part of handle.fullStream) parts.push(part);
     expect(parts.filter((part) => part.type === "finish")).toHaveLength(1);
     expect(parts.some((part) => part.type === "text-delta")).toBe(false);
+  });
+
+  test("Host session getModelId then getExecutor().stream yields a trim-able modelId",
+    async () => {
+    const inner = createManagedPromptSession({
+      modelId: "stub/echo",
+      vision: false,
+      parallel: "allow",
+      parts: textParts,
+    });
+    const session = asHostPromptSession(inner, "stub/echo");
+    expect(session.getModelId().trim()).toBe("stub/echo");
+    const result = session.getExecutor({}).stream({}, "inv-1", [], {});
+    const fromStream: string[] = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "text-delta") fromStream.push(part.textDelta);
+    }
+    const response = await result.response;
+    expect(response.modelId.trim()).toBe("stub/echo");
+    expect(fromStream).toEqual(["hello"]);
+    expect(await result.extendedUsage).toEqual({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    expect(session.getExecutorWithoutResolvedModelTracking()).toBe(session.getExecutor());
   });
 });

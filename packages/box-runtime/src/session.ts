@@ -33,6 +33,82 @@ export type PromptSession = {
   stream: (request?: StreamRequest) => StreamHandle;
 };
 
+export type ExtendedUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+};
+
+export type HostStreamResult = StreamHandle & {
+  extendedUsage: Promise<ExtendedUsage>;
+};
+
+export type HostPromptExecutor = {
+  stream: (
+    ctx?: unknown,
+    invocationId?: unknown,
+    tools?: unknown,
+    options?: unknown,
+  ) => HostStreamResult;
+};
+
+export type HostPromptSession = {
+  getModelId: () => string;
+  getExecutor: (state?: unknown) => HostPromptExecutor;
+  getExecutorWithoutResolvedModelTracking: (state?: unknown) => HostPromptExecutor;
+};
+
+export function isHostPromptSession(value: unknown): value is HostPromptSession {
+  if (value === null || typeof value !== "object") return false;
+  const session = value as Partial<HostPromptSession>;
+  return (
+    typeof session.getModelId === "function" &&
+    typeof session.getExecutor === "function" &&
+    typeof session.getExecutorWithoutResolvedModelTracking === "function"
+  );
+}
+
+function abortSignalFrom(ctx: unknown, options: unknown): AbortSignal | undefined {
+  if (options !== null && typeof options === "object") {
+    const signal = (options as { abortSignal?: unknown }).abortSignal;
+    if (signal instanceof AbortSignal) return signal;
+  }
+  if (ctx !== null && typeof ctx === "object") {
+    const record = ctx as { abortSignal?: unknown; signal?: unknown };
+    if (record.abortSignal instanceof AbortSignal) return record.abortSignal;
+    if (record.signal instanceof AbortSignal) return record.signal;
+  }
+  return undefined;
+}
+
+export function toHostStreamResult(handle: StreamHandle): HostStreamResult {
+  return {
+    fullStream: handle.fullStream,
+    response: handle.response,
+    usage: handle.usage,
+    extendedUsage: handle.usage.then((usage) => ({
+      inputTokens: usage.promptTokens,
+      outputTokens: usage.completionTokens,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    })),
+  };
+}
+
+export function asHostPromptSession(session: PromptSession, modelId: string): HostPromptSession {
+  const executor: HostPromptExecutor = {
+    stream(ctx, _invocationId, _tools, options) {
+      return toHostStreamResult(session.stream({ abortSignal: abortSignalFrom(ctx, options) }));
+    },
+  };
+  return {
+    getModelId: () => modelId,
+    getExecutor: () => executor,
+    getExecutorWithoutResolvedModelTracking: () => executor,
+  };
+}
+
 export type VisibleFailure = {
   userVisible: true;
   message: string;

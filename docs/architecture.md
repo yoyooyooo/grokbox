@@ -329,7 +329,7 @@ Box-runtime live artifacts default to `~/.grokbox/run` even when `XDG_RUNTIME_DI
 
 Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. It does not inject an unknown bundle, cache rolling full `host-main.cjs`, or write git. Keep at most 5 SHAs, never deleting the live SHA or the last SHA that matched a PatchProfile.
 
-PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`). modeld resolves `assignments.agents[agentId] ?? assignments.main`.
+PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`) plus `invocationId: inferenceRequestId` on that same agent-id slice. modeld resolves `assignments.agents[agentId] ?? assignments.main`.
 
 Composition roots:
 

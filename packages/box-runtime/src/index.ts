@@ -87,7 +87,13 @@ export {
   type PatchProfile,
   type SlicePatch,
 } from "./transform.ts";
-export { createManagedPromptSession, type PromptSession, type StreamHandle } from "./session.ts";
+export {
+  asHostPromptSession,
+  createManagedPromptSession,
+  type HostPromptSession,
+  type PromptSession,
+  type StreamHandle,
+} from "./session.ts";
 export { sha256Bytes, sha256Text } from "./hash.ts";
 export {
   identitiesMatch,

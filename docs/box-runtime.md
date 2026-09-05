@@ -26,21 +26,22 @@ Host bundle SHA、PromptSession/`SendToUser` 合同、官方 wrapper/supervisor�
 
 ## 2. 接缝
 
-生产接缝是 `createCursorSandInference.createSession` 上的 PromptSession adapter。
+生产接缝是 `createCursorSandInference.createSession` 上的 Host session adapter。现役 Host 立刻调用 `session.getModelId()` 再 `session.getExecutor(state).stream(ctx, invocationId, tools, options)`；`response.modelId` 必须是可 `.trim()` 的字符串。identity 仍按对象身份交还 `originalSession`，不得包一层。
 
 ```text
 App / Gateway / Host queue
   -> createSession
   -> hook
        非 route 或非 ordinary main -> originalSession（官方）
-       route 且 ordinary main     -> ManagedPromptSession
+       route 且 ordinary main     -> Host-shaped session
+                                     getModelId / getExecutor / getExecutorWithoutResolvedModelTracking
   -> modeld（provider effect 前检查 committed attestation + envelope）
   -> Host tool loop / SendToUser / Transcript
 ```
 
 Host 内 hook **不读** `models.json`，**不读** attestation 文件。`activate --mode route` 必须已有有效 `assignments.main`（全盒默认）。
 
-现役 `createSession` 的 `sessionOptions` **没有** agent id。按 Bot 分流是核心能力，因此 PatchProfile 除 `return session` 外还有 **第二精确切片**：在 `runTurn` 构造 `mainSessionOptions` 时写入 `agentId: host.getConversationId()`（owning agent id）。仍是 NODE_OPTIONS 内存 transform，不写官方磁盘。modeld 用 `assignments.agents[agentId] ?? assignments.main`。没有覆盖不是回官方。
+现役 `createSession` 的 `sessionOptions` **没有** agent id，也 **没有** invocation id。按 Bot 分流和 turn 相关是核心能力，因此 PatchProfile 除 `return session` 外还有 **第二精确切片**（仍只两刀，不加第三刀）：在 `runTurn` 构造 `mainSessionOptions` 时写入 `agentId: host.getConversationId()` 与 `invocationId: inferenceRequestId`。仍是 NODE_OPTIONS 内存 transform，不写官方磁盘。modeld 用 `assignments.agents[agentId] ?? assignments.main`。缺少 invocationId 不得发明第二相关 id，route 显式失败。没有覆盖不是回官方。
 
 protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后再决策，不双轨。
 
@@ -77,7 +78,7 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - **长效根** `/workspace/.grokbox/box-runtime/`：配置、PatchProfile、合同切片、事件日志（云电脑重置后仍在）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
 - **短效**：盒本地 live state 固定 `~/.grokbox/run/`（`attestation.json`、operation journal/lock、preload/launch markers、`modeld.sock`）。不读 `XDG_RUNTIME_DIR`。显式 `ephemeralRoot` 只用于测试/合成隔离。daemon/Profile socket 仍走现有 XDG 合同，不是这棵树。
 - 不新建独立 npm package；一个源码模块、多个 entry。
-- PatchProfile 含两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId`。任一处锚点不唯一即拒绝。
+- PatchProfile 含两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId` 与同一切片上的 `invocationId`。任一处锚点不唯一即拒绝。
 
 Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制完整 `/proc/environ`。只许 `identityLaunchFields` / 固定 allowlist，不得整份克隆 supervisor 环境。
 

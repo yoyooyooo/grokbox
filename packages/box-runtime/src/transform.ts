@@ -136,9 +136,16 @@ export function extractContractSlices(source: string): Record<string, string> {
     if (optionsEnd > optionsStart) slices["session-options"] = source.slice(optionsStart, optionsEnd + 2);
   }
   const agentNeedle = "agentId: host.getConversationId()";
+  const invNeedle = "invocationId: inferenceRequestId";
   const agentIndex = source.indexOf(agentNeedle);
-  if (agentIndex >= 0) slices["agent-id"] = source.slice(agentIndex, agentIndex + agentNeedle.length);
-  else if (optionsStart >= 0) {
+  const invIndex = source.indexOf(invNeedle);
+  if (agentIndex >= 0 && invIndex >= 0) {
+    const start = Math.min(agentIndex, invIndex);
+    const end = Math.max(agentIndex + agentNeedle.length, invIndex + invNeedle.length);
+    slices["agent-id"] = source.slice(start, end);
+  } else if (agentIndex >= 0) {
+    slices["agent-id"] = source.slice(agentIndex, agentIndex + agentNeedle.length);
+  } else if (optionsStart >= 0) {
     slices["agent-id"] = slices["session-options"] ?? "";
   }
   const prompt = source.indexOf("function createCursorInferencePromptSession");

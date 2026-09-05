@@ -1,4 +1,11 @@
-import type { PromptSession, StreamPart, StreamRequest } from "../src/session.ts";
+import type {
+  HostPromptSession,
+  HostStreamResult,
+  PromptSession,
+  StreamHandle,
+  StreamPart,
+  StreamRequest,
+} from "../src/session.ts";
 
 export type HostSideEffectVector = {
   toolExecutionCount: number;
@@ -16,11 +23,7 @@ export const SEAM_STOP_PARTS: StreamPart[] = [
   { type: "finish", reason: "stop" },
 ];
 
-export async function consumePromptSession(
-  session: PromptSession,
-  request?: StreamRequest,
-): Promise<HostSideEffectVector> {
-  const handle = session.stream(request);
+async function consumeHandle(handle: StreamHandle | HostStreamResult): Promise<HostSideEffectVector> {
   const seen = new Set<string>();
   let toolExecutionCount = 0;
   let duplicateCount = 0;
@@ -48,6 +51,7 @@ export async function consumePromptSession(
   let finalDeliveryCount = 0;
   try {
     const response = await handle.response;
+    response.modelId.trim();
     const content = response.messages[0]?.content;
     if (typeof content === "string" && content.length > 0) {
       finalDeliveryCount = 1;
@@ -56,6 +60,14 @@ export async function consumePromptSession(
     }
   } catch {
     /* managed error: Host loop keeps the failure, bodies stay local */
+  }
+
+  if ("extendedUsage" in handle) {
+    try {
+      await handle.extendedUsage;
+    } catch {
+      /* usage rejection stays with the Host loop */
+    }
   }
 
   void text;
@@ -67,4 +79,21 @@ export async function consumePromptSession(
     memoryIdDelta,
     duplicateCount,
   };
+}
+
+export async function consumePromptSession(
+  session: PromptSession,
+  request?: StreamRequest,
+): Promise<HostSideEffectVector> {
+  return consumeHandle(session.stream(request));
+}
+
+export async function consumeHostSession(
+  session: HostPromptSession,
+  request?: StreamRequest,
+): Promise<HostSideEffectVector> {
+  session.getModelId().trim();
+  const executor = session.getExecutor({});
+  void session.getExecutorWithoutResolvedModelTracking({});
+  return consumeHandle(executor.stream({}, undefined, undefined, request));
 }

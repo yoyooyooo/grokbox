@@ -45,6 +45,7 @@ describeLive("live Host bundle copy H1", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.source).toContain("agentId: host.getConversationId()");
+    expect(result.source).toContain("invocationId: inferenceRequestId");
     expect(result.source).toContain("originalSession: session");
     const compiled = transformCompileInput({
       content: source,
@@ -58,6 +59,7 @@ describeLive("live Host bundle copy H1", () => {
     expect(extracted["create-session"]).toContain("createSession(onRequestId, sessionOptions)");
     expect(extracted["session-options"]).toContain("const mainSessionOptions");
     expect(extracted["agent-id"]).toContain("agentId: host.getConversationId()");
+    expect(extracted["agent-id"]).toContain("invocationId: inferenceRequestId");
     const liveBlocked = transformCompileInput({
       content: source,
       filename: LIVE_HOST_BUNDLE,

@@ -44,10 +44,11 @@ describe("offline Host transform", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.source).toContain("agentId: host.getConversationId()");
+    expect(result.source).toContain("invocationId: inferenceRequestId");
     expect(result.source).toContain("originalSession: session");
 
-    const module = { exports: {} as { runTurn: (host: { getConversationId: () => string }) => { kind: string; sessionOptions: { agentId: string } } } };
-    const calls: Array<{ originalSession: object; agentId?: string }> = [];
+    const module = { exports: {} as { runTurn: (host: { getConversationId: () => string }) => { kind: string; sessionOptions: { agentId: string; invocationId: string } } } };
+    const calls: Array<{ originalSession: object; agentId?: string; sessionOptions?: { invocationId?: string } }> = [];
     const sandbox = createContext({
       module,
       exports: module.exports,
@@ -64,9 +65,11 @@ describe("offline Host transform", () => {
     const session = module.exports.runTurn({ getConversationId: () => "agent-tom" });
     expect(session.kind).toBe("official-session");
     expect(session.sessionOptions.agentId).toBe("agent-tom");
+    expect(session.sessionOptions.invocationId).toBe("inv-synth");
     expect(calls).toHaveLength(1);
     expect(calls[0]?.originalSession).toBe(session);
     expect(calls[0]?.agentId).toBe("agent-tom");
+    expect(calls[0]?.sessionOptions?.invocationId).toBe("inv-synth");
   });
 
   test("unknown digest, missing and duplicate anchors, and transformed mismatch refuse", () => {
@@ -108,10 +111,12 @@ describe("offline Host transform", () => {
     if (!result.ok) return;
     await writeFile(copyPath, result.source);
     expect(await readFile(copyPath, "utf8")).toContain("agentId: host.getConversationId()");
+    expect(await readFile(copyPath, "utf8")).toContain("invocationId: inferenceRequestId");
     const extracted = extractContractSlices(result.source);
     expect(extracted["create-session"]).toContain("createSession");
     expect(extracted["session-options"]).toContain("mainSessionOptions");
     expect(extracted["agent-id"]).toContain("agentId: host.getConversationId()");
+    expect(extracted["agent-id"]).toContain("invocationId: inferenceRequestId");
     expect(extracted["prompt-session"]).toBeUndefined();
     const hashes = sliceHashes(extracted);
     expect(hashes["create-session"]).toBe(sha256Text(extracted["create-session"] ?? ""));

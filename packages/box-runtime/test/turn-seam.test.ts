@@ -5,10 +5,21 @@ import { join } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { TURN_SEAM_BOUNDED_STRING } from "../src/events.ts";
 import { eventsPath } from "../src/paths.ts";
-import { createManagedPromptSession, type PromptSession, type StreamPart } from "../src/session.ts";
+import {
+  createManagedPromptSession,
+  isHostPromptSession,
+  type HostPromptSession,
+  type PromptSession,
+  type StreamPart,
+} from "../src/session.ts";
 import { createSessionSeam, createStubRouteDriver } from "../src/seam.ts";
 import { applyPatchProfile, profileFromSource, ROUTE_SESSION_SYMBOL } from "../src/transform.ts";
-import { consumePromptSession, SEAM_STOP_PARTS, type HostSideEffectVector } from "./host-consumer.ts";
+import {
+  consumeHostSession,
+  consumePromptSession,
+  SEAM_STOP_PARTS,
+  type HostSideEffectVector,
+} from "./host-consumer.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
@@ -152,9 +163,10 @@ describe("turn seam identity vs route", () => {
       originalSession: original,
       sessionOptions: { invocationId: "inv-stop" },
       agentId: "agent-tom",
-    }) as PromptSession;
+    }) as HostPromptSession;
     expect(managed).not.toBe(original);
-    const treatment = await consumePromptSession(managed);
+    expect(isHostPromptSession(managed)).toBe(true);
+    const treatment = await consumeHostSession(managed);
     await seam.flush();
     expect(treatment).toEqual(control);
     expect(driver.dispatches).toBe(1);
@@ -198,8 +210,8 @@ describe("turn seam identity vs route", () => {
       originalSession: original,
       sessionOptions: { invocationId: "inv-error" },
       agentId: "agent-tom",
-    }) as PromptSession;
-    await consumePromptSession(errorSession);
+    }) as HostPromptSession;
+    await consumeHostSession(errorSession);
     await errorSeam.flush();
 
     const abortDriver = createStubRouteDriver(SEAM_STOP_PARTS);
@@ -215,10 +227,10 @@ describe("turn seam identity vs route", () => {
       originalSession: original,
       sessionOptions: { invocationId: "inv-abort" },
       agentId: "agent-tom",
-    }) as PromptSession;
+    }) as HostPromptSession;
     const controller = new AbortController();
     controller.abort();
-    abortSession.stream({ abortSignal: controller.signal });
+    abortSession.getExecutor().stream(undefined, undefined, undefined, { abortSignal: controller.signal });
     await abortSeam.flush();
 
     const unknownDriver = createStubRouteDriver(SEAM_STOP_PARTS);
@@ -265,12 +277,12 @@ describe("turn seam identity vs route", () => {
       sessionOptions: { invocationId: "inv-dup" },
       agentId: "agent-tom",
     };
-    const first = seam.hook(args) as PromptSession;
-    const firstVector = await consumePromptSession(first);
-    first.stream();
+    const first = seam.hook(args) as HostPromptSession;
+    const firstVector = await consumeHostSession(first);
+    first.getExecutor().stream();
     const second = seam.hook(args);
     expect(second).toBe(first);
-    const secondVector = await consumePromptSession(second as PromptSession);
+    const secondVector = await consumeHostSession(second as HostPromptSession);
     await seam.flush();
     const aggregate: HostSideEffectVector = {
       toolExecutionCount: firstVector.toolExecutionCount + secondVector.toolExecutionCount,
@@ -320,12 +332,69 @@ describe("turn seam identity vs route", () => {
       originalSession: officialSession(),
       sessionOptions: { invocationId: "inv-gap" },
       agentId: "agent-tom",
-    }) as PromptSession;
-    const treatment = await consumePromptSession(managed);
+    }) as HostPromptSession;
+    const treatment = await consumeHostSession(managed);
     await seam.flush();
     expect(treatment).toEqual(control);
     expect(await turnLines(dir)).toEqual([]);
     expect(seam.evidence("inv-gap")).toEqual({ emitted: false, gap: "write_failed" });
     expect(driver.dispatches).toBe(1);
+  });
+
+  test("route Host consumer uses getModelId then getExecutor().stream; missing invocationId fail-closed",
+    async () => {
+    const dir = await root();
+    const original: PromptSession = {
+      stream() {
+        throw new Error("official session must not run");
+      },
+    };
+    const driver = createStubRouteDriver(SEAM_STOP_PARTS);
+    const seam = createSessionSeam({
+      mode: "route",
+      root: dir,
+      assignment: "main",
+      modelId: "stub/echo",
+      driver,
+      now: () => AT,
+    });
+    const managed = seam.hook({
+      originalSession: original,
+      sessionOptions: { invocationId: "inv-host-shape", inferenceReason: "main" },
+      agentId: "agent-tom",
+    });
+    expect(managed).not.toBe(original);
+    expect(isHostPromptSession(managed)).toBe(true);
+    if (!isHostPromptSession(managed)) return;
+    expect(managed.getModelId().trim()).toBe("stub/echo");
+    const result = managed.getExecutor({}).stream({}, "inv-host-shape", [], {});
+    const response = await result.response;
+    expect(response.modelId.trim()).toBe("stub/echo");
+    expect(await result.extendedUsage).toMatchObject({ inputTokens: 1, outputTokens: 1 });
+    await seam.flush();
+    expect(driver.dispatches).toBe(1);
+    expect(driver.officialCalls).toBe(0);
+
+    const missing = seam.hook({
+      originalSession: original,
+      sessionOptions: { inferenceReason: "main" },
+      agentId: "agent-tom",
+    });
+    expect(missing).not.toBe(original);
+    expect(isHostPromptSession(missing)).toBe(true);
+    if (!isHostPromptSession(missing)) return;
+    expect(missing.getModelId().trim()).toBe("stub/echo");
+    await consumeHostSession(missing);
+    expect(driver.dispatches).toBe(1);
+    expect(driver.officialCalls).toBe(0);
+
+    const identity = createSessionSeam({ mode: "identity", root: dir, assignment: "official", now: () => AT });
+    const untouched = identity.hook({
+      originalSession: original,
+      sessionOptions: { inferenceReason: "main" },
+      agentId: "agent-tom",
+    });
+    expect(untouched).toBe(original);
+    expect(isHostPromptSession(untouched)).toBe(false);
   });
 });

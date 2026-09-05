@@ -14,7 +14,9 @@ import {
   submitPartsFromResponse,
 } from "./modeld-ipc.ts";
 import {
+  asHostPromptSession,
   createManagedPromptSession,
+  type HostPromptSession,
   type PromptSession,
   type SessionTerminal,
   type StreamHandle,
@@ -105,7 +107,7 @@ export type SessionSeamConfig = {
 };
 
 type InvocationState = {
-  session: PromptSession;
+  session: HostPromptSession;
   dispatched: boolean;
   recorded: boolean;
   evidence: SeamEvidence;
@@ -156,13 +158,16 @@ function isOrdinaryMain(sessionOptions: unknown, agentId: string | undefined): b
   return typeof agentId === "string" && agentId.length > 0;
 }
 
-function errorSession(modelId: string): PromptSession {
-  return createManagedPromptSession({
+function errorSession(modelId: string): HostPromptSession {
+  return asHostPromptSession(
+    createManagedPromptSession({
+      modelId,
+      vision: false,
+      parallel: "allow",
+      parts: [{ type: "finish", reason: "error" }],
+    }),
     modelId,
-    vision: false,
-    parallel: "allow",
-    parts: [{ type: "finish", reason: "error" }],
-  });
+  );
 }
 
 function abortHandle(modelId: string, onTerminal?: (terminal: SessionTerminal) => void): StreamHandle {
@@ -280,45 +285,48 @@ export function createSessionSeam(config: SessionSeamConfig) {
       onTerminal,
     });
 
-    const state: InvocationState = {
-      session: {
-        stream(request) {
-          if (state.dispatched) return idleStreamHandle(modelId);
-          if (request?.abortSignal?.aborted) {
-            state.dispatched = true;
-            return abortHandle(modelId, onTerminal);
-          }
+    let state: InvocationState;
+    const prompt: PromptSession = {
+      stream(request) {
+        if (state.dispatched) return idleStreamHandle(modelId);
+        if (request?.abortSignal?.aborted) {
           state.dispatched = true;
-          if (driver.submit) {
-            const loaded = driver
-              .submit({
-                invocationId,
-                agentId,
-                modelId,
-                abortSignal: request?.abortSignal,
-              })
-              .then((result) => {
-                driver.dispatches += result.dispatched ? 1 : 0;
-                return handleFromParts(modelId, result.parts, request, onTerminal);
-              })
-              .catch(() => {
-                driver.dispatches += 1;
-                return handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
-              });
-            return {
-              fullStream: {
-                async *[Symbol.asyncIterator]() {
-                  yield* (await loaded).fullStream;
-                },
+          return abortHandle(modelId, onTerminal);
+        }
+        state.dispatched = true;
+        if (driver.submit) {
+          const loaded = driver
+            .submit({
+              invocationId,
+              agentId,
+              modelId,
+              abortSignal: request?.abortSignal,
+            })
+            .then((result) => {
+              driver.dispatches += result.dispatched ? 1 : 0;
+              return handleFromParts(modelId, result.parts, request, onTerminal);
+            })
+            .catch(() => {
+              driver.dispatches += 1;
+              return handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
+            });
+          return {
+            fullStream: {
+              async *[Symbol.asyncIterator]() {
+                yield* (await loaded).fullStream;
               },
-              response: loaded.then(async (handle) => await handle.response),
-              usage: loaded.then(async (handle) => await handle.usage),
-            };
-          }
-          driver.dispatches += 1;
-          return inner.stream(request);
-        },
+            },
+            response: loaded.then(async (handle) => await handle.response),
+            usage: loaded.then(async (handle) => await handle.usage),
+          };
+        }
+        driver.dispatches += 1;
+        return inner.stream(request);
       },
+    };
+
+    state = {
+      session: asHostPromptSession(prompt, modelId),
       dispatched: false,
       recorded: false,
       evidence: { emitted: false, gap: null },
