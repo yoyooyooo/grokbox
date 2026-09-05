@@ -212,6 +212,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 写 desired：`activate` / `deactivate` / `models *`
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
+- 显式确认一次：`re-adopt --confirm`（进入同一 coordinator / transient-adopt；不是循环，也不替代 watchdog）
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
 
 **人 / 另一次授权**

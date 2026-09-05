@@ -94,8 +94,10 @@ export { observeAndHeal } from "./watchdog.ts";
 export {
   runWatchdogTick,
   runWatchdogCutover,
+  runManualReadopt,
   WATCHDOG_MUTATION_BUDGET,
   WATCHDOG_OPERATION_ID,
+  type ManualReadoptInput,
   type WatchdogTickResult,
 } from "./coordinator.ts";
 export { resolveAssignment } from "./models.ts";

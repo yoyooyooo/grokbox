@@ -177,6 +177,7 @@ grokbox (alias: gbox)
 │   ├── status
 │   ├── activate --mode observe|identity|route
 │   ├── deactivate
+│   ├── re-adopt --confirm
 │   ├── log [--follow]
 │   ├── contracts
 │   ├── models
@@ -459,7 +460,7 @@ Daemon 默认只监听 Unix socket或 `127.0.0.1`。远程暴露优先由 Tailsc
 
 `grokbox runtime *` 是 **Agent-first、盒内机器接口**，不是给人点的日常 UI。人用的表面只有未来的盒内 WebUI/VNC，且必须调用同一套 use case，不能另写一套 mutation。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外返回 `runtime_local_only`。同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。
 
-Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。
+Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。`runtime re-adopt --confirm` 是显式一次性手动档，进入同一 coordinator / transient-adopt；缺 `--confirm` 则在进程预检与信号前拒绝；一次调用最多一次 attempt。它不是 `activate` 的隐藏路径，也不替代 `watchdog run` 作为未来自动 writer。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。
 
 长效根为 `/workspace/.grokbox/box-runtime/`（配置、PatchProfile、合同切片、事件日志；云电脑重置不丢）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。现有 grokbox Profile 仍在 `~/.grokbox`，本次不搬家。`models.json` 的凭据字段只接受 `env:<NAME>` 与 `file:/absolute/path`；`file:` 放长效树 `secrets/`；literal secret 与 `$VAR` 为 schema error。短效 Unix socket：`$XDG_RUNTIME_DIR/grokbox/modeld.sock`，fallback `~/.grokbox/run/modeld.sock`。
 

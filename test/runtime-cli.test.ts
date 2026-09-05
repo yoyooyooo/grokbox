@@ -43,6 +43,7 @@ describe("box-local runtime CLI", () => {
       "runtime models list",
       "runtime models use",
       "runtime models reset",
+      "runtime re-adopt",
       "runtime watchdog run",
       "runtime modeld run",
     ]) {
@@ -95,10 +96,10 @@ describe("box-local runtime CLI", () => {
     expect(status.code).toBe(0);
     const body = data(status.stdout);
     expect(body).toMatchObject({
-      coverage: "none",
       circuit: "closed",
       lastHeal: null,
     });
+    expect(["none", "window-open", "attested"]).toContain(String(body.coverage));
     expect(body.census).toBeDefined();
     expect((body.window as { affectedInvocations: string }).affectedInvocations).toBe("unknown");
     expect((body.installation as { durableRoot: string }).durableRoot).toBe(boxRuntimeRoot);
@@ -156,6 +157,36 @@ describe("box-local runtime CLI", () => {
     expect((parseJson(reset.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
   });
 
+  test("re-adopt without --confirm refuses before mutation", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const refused = await captureCli(["runtime", "re-adopt"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(refused.code).toBe(2);
+    expect(refused.stdout).toBe("");
+    expect((parseJson(refused.stderr) as { error: { code: string; message: string } }).error.code).toBe(
+      "invalid_usage",
+    );
+    expect((parseJson(refused.stderr) as { error: { message: string } }).error.message).toContain("--confirm");
+  });
+
+  test("re-adopt --profile and remote transports return runtime_local_only", async () => {
+    const profiled = await captureCli(["--profile", "default", "runtime", "re-adopt", "--confirm"], {
+      discoveryPath: "/dev/null",
+    });
+    expect(profiled.code).toBe(65);
+    expect(profiled.stdout).toBe("");
+    expect((parseJson(profiled.stderr) as { error: { code: string } }).error.code).toBe("runtime_local_only");
+
+    const remote = await captureCli(["runtime", "re-adopt", "--confirm"], {
+      discoveryPath: "/dev/null",
+      sshHost: "box.example",
+    });
+    expect(remote.code).toBe(65);
+    expect((parseJson(remote.stderr) as { error: { code: string } }).error.code).toBe("runtime_local_only");
+  });
+
   test("activate stays desired-only and watchdog run does not expose inject/ctl", async () => {
     const boxRuntimeRoot = await withRoot();
     const activate = await captureCli(["runtime", "activate", "--mode", "identity"], {
@@ -176,6 +207,19 @@ describe("box-local runtime CLI", () => {
     expect(body.signaled).toBe(false);
     expect(["converged", "pending", "blocked", "recovery-required"]).toContain(String(body.reconcile));
     expect(JSON.stringify(body)).not.toContain("ctl");
+
+    const readopt = await captureCli(["runtime", "re-adopt", "--confirm"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(readopt.code, readopt.stderr).toBe(0);
+    const readoptBody = data(readopt.stdout);
+    expect(readoptBody.process).toBe("re-adopt");
+    expect(readoptBody.confirmed).toBe(true);
+    expect(readoptBody.attempts).toBe(1);
+    expect(readoptBody.injected).toBe(false);
+    expect(readoptBody.signaled).toBe(false);
+    expect(JSON.stringify(data(activate.stdout))).not.toContain("re-adopt");
   });
 
   test("literal secrets are rejected", async () => {

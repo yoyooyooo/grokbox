@@ -80,6 +80,7 @@ import {
   runRuntimeModelsList,
   runRuntimeModelsReset,
   runRuntimeModelsUse,
+  runRuntimeReAdopt,
   runRuntimeStatus,
   runRuntimeWatchdog,
 } from "./commands/runtime.ts";
@@ -130,6 +131,7 @@ type CliOptions = ProfileOptions & {
   intervalMs?: string;
   mode?: string;
   for?: string;
+  confirm?: boolean;
 };
 
 type LeafAction = (
@@ -257,6 +259,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime models use": async (deps, args, options) =>
       await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
     "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),
     "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),
     "runtime modeld run": async (deps) => await runRuntimeModeld(deps),
   };

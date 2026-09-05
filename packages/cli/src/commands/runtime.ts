@@ -11,6 +11,7 @@ import {
   projectLiveStatus,
   readContracts,
   readEvents,
+  runManualReadopt,
   runWatchdogTick,
   type DesiredMode,
 } from "@grokbox/box-runtime";
@@ -143,6 +144,36 @@ export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | un
     const next = applyReset(await runtime.loadModels(), forAgent);
     await runtime.saveModels(next);
     writeSuccess(deps.stdout, { assignments: next.assignments });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | undefined): Promise<void> {
+  try {
+    if (confirmed !== true) {
+      throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
+    }
+    const runtime = store(deps);
+    const result = await runManualReadopt({
+      confirmed: true,
+      root: runtime.root,
+      desired: await runtime.loadDesired(),
+      models: await runtime.loadModels(),
+      now: deps.now,
+    });
+    writeSuccess(deps.stdout, {
+      process: "re-adopt",
+      confirmed: true,
+      attempts: 1,
+      reconcile: result.reconcile,
+      reason: result.reason,
+      attemptKey: result.attemptKey,
+      injected: result.injected,
+      signaled: result.signaled,
+      circuit: result.circuit,
+      origin: result.origin,
+    });
   } catch (error) {
     rethrow(error);
   }

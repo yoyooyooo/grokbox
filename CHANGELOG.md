@@ -38,6 +38,9 @@ when upstream Grok Bot or Cursor internals change.
 - Watchdog cutover journals phases before signals, reclaims a stale coordinator
   lease, proves temp-Host ownership, and requires a different direct official
   Host after legacy-adopted deactivate. No `/tmp` attestation import.
+- Add box-local `runtime re-adopt --confirm` as an explicit one-shot into the
+  same coordinator. Public activate stays desired-only; watchdog remains the
+  automatic writer. No live Host re-adopt.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
   `repository` field from the `0.1.0-alpha.5` web publish.
 

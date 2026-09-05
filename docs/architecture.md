@@ -332,8 +332,9 @@ PatchProfile includes two exact slices: `createSession` hook and `mainSessionOpt
 
 Composition roots:
 
-- `grokbox` CLI: box-local **Agent-first** runtime commands (`activate`/`deactivate`/`models`/`status`/`log`/`contracts`); `--profile` is invalid. No inject/heal/kill. Future in-box WebUI reuses these use cases.
-- `runtime watchdog run`: single process-mutation coordinator + operation file. Guardian is the sole emergency exception: idempotent `SIGCONT` of an exact frozen wrapper.
+- `grokbox` CLI: box-local **Agent-first** runtime commands (`activate`/`deactivate`/`models`/`status`/`log`/`contracts`); `--profile` is invalid. No inject/heal/kill. Future in-box WebUI reuses these use cases. Public `activate` stays desired-only.
+- `runtime re-adopt --confirm`: explicit one-shot into the same coordinator / transient-adopt. Missing `--confirm` refuses before process preflight. Not a loop, daemon, or second writer.
+- `runtime watchdog run`: single process-mutation coordinator + operation file, and the owner of future automatic reconciliation. Guardian is the sole emergency exception: idempotent `SIGCONT` of an exact frozen wrapper.
 - `runtime modeld run`: config, one driver, credentials, generation-scoped invocation registry. Provider effect waits for committed attestation or bounded timeout.
 - Host preload: exact SHA transform and route hook. Does not read `models.json` or attestation files.
 - existing `daemon serve`: no default runtime mutation capability.

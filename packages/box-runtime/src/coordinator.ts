@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { clearAttestation, writeAttestation } from "./attestation.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
+import { BoxRuntimeError } from "./errors.ts";
 import { appendEvent } from "./events.ts";
 import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
 import type { DesiredFile, ModelsFile } from "./models.ts";
@@ -462,4 +463,16 @@ export async function runWatchdogCutover(input: WatchdogTickInput): Promise<Watc
   const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   const leased = await withCoordinatorLease(input, ephemeralRoot, () => runWatchdogTickBody(input));
   return leased as WatchdogTickResult;
+}
+
+export type ManualReadoptInput = WatchdogTickInput & {
+  confirmed: boolean;
+};
+
+/** Explicit one-shot into the same coordinator. Not a loop or second writer. */
+export async function runManualReadopt(input: ManualReadoptInput): Promise<WatchdogTickResult> {
+  if (input.confirmed !== true) {
+    throw new BoxRuntimeError("invalid_usage", "runtime re-adopt requires --confirm.");
+  }
+  return await runWatchdogTick(input);
 }
