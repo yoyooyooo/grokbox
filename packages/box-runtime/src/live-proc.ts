@@ -48,6 +48,8 @@ const DIAGNOSTIC_BASENAMES = new Set([
   "fgrep",
 ]);
 
+const SHELL_BASENAMES = new Set(["bash", "sh", "dash", "zsh", "fish"]);
+
 const VALUE_FLAGS = new Set(["-e", "--eval", "-p", "--print", "-c"]);
 
 function fileBasename(path: string): string {
@@ -76,8 +78,10 @@ export function roleOf(
 ): "wrapper" | "supervisor" | "host" | "temp-supervisor" | null {
   const argv = identity.cmdline;
   if (argv.length === 0) return null;
-  if (DIAGNOSTIC_BASENAMES.has(fileBasename(identity.exe))) return null;
-  if (DIAGNOSTIC_BASENAMES.has(fileBasename(argv[0] ?? ""))) return null;
+  const exeBase = fileBasename(identity.exe);
+  const argv0 = fileBasename(argv[0] ?? "");
+  const diagnostic = DIAGNOSTIC_BASENAMES.has(exeBase) || DIAGNOSTIC_BASENAMES.has(argv0);
+  if (diagnostic && !SHELL_BASENAMES.has(exeBase) && !SHELL_BASENAMES.has(argv0)) return null;
   const names = new Set(roleFileBasenames(argv));
   if (names.has(LIVE_TEMP_SUPERVISOR_NEEDLE)) return "temp-supervisor";
   if (names.has("supervise-sand-supervisor")) return "wrapper";

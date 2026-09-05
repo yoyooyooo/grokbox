@@ -17,6 +17,21 @@ function proc(cmdline: readonly string[], exe = cmdline[0] ?? "/bin/true"): Proc
 describe("roleOf exact argv shapes", () => {
   test("official node argv entries match wrapper/supervisor/host/temp-supervisor", () => {
     expect(roleOf(proc(["/usr/local/bin/supervise-sand-supervisor"]))).toBe("wrapper");
+    expect(
+      roleOf(
+        proc(
+          [
+            "bash",
+            "/usr/local/bin/supervise-sand-supervisor",
+            "/tmp/sand-supervisor/status.json",
+            "/tmp/sand-supervisor.log",
+            "/exec-daemon/node",
+            "/usr/local/bin/sand-supervisor.mjs",
+          ],
+          "/usr/bin/bash",
+        ),
+      ),
+    ).toBe("wrapper");
     expect(roleOf(proc(["/exec-daemon/node", "/usr/local/bin/sand-supervisor.mjs"]))).toBe("supervisor");
     expect(roleOf(proc(["/exec-daemon/node", "/home/box/sand-host/host-main.cjs"]))).toBe("host");
     expect(
