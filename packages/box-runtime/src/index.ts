@@ -58,6 +58,7 @@ export {
   reviewOfficialAdoptCapability,
   runH3LiveIdentitySession,
   writeReviewedProfileFromCopy,
+  type WriteReviewedProfileFromCopyInput,
 } from "./h3-live.ts";
 export { liveH3AdoptAdapter, wireLiveManualReadopt } from "./live-readopt.ts";
 export { pickLaunchEnv } from "./launch-env.ts";

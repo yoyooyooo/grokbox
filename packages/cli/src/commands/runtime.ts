@@ -1,3 +1,4 @@
+import { dirname, isAbsolute, resolve } from "node:path";
 import {
   applyReset,
   applyUse,
@@ -14,11 +15,13 @@ import {
   readContracts,
   readEvents,
   liveH3AdoptAdapter,
+  reviewedProfilePath,
   runManualReadopt,
   runWatchdogTick,
   startStubModeldServer,
   STUB_ECHO_MODEL_ID,
   wireLiveManualReadopt,
+  writeReviewedProfileFromCopy,
   type DesiredMode,
 } from "@grokbox/box-runtime";
 
@@ -237,6 +240,48 @@ export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
         if (deps.signal.aborted) stop();
         else deps.signal.addEventListener("abort", stop, { once: true });
       }
+    });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfileWrite(deps: CliDeps, fromPath: string | undefined): Promise<void> {
+  try {
+    if (!fromPath || fromPath.trim().length === 0) {
+      throw new CliError("invalid_usage", "runtime profile write requires --from <host-bundle>.");
+    }
+    if (!isAbsolute(fromPath)) {
+      throw new CliError("invalid_usage", "--from must be an absolute Host bundle path.");
+    }
+    const hostBundle = resolve(fromPath);
+    const runtime = store(deps);
+    const destDir = dirname(reviewedProfilePath(runtime.root));
+    let written;
+    try {
+      written = await writeReviewedProfileFromCopy({
+        destDir,
+        hostBundle,
+        profileId: "reviewed-copy",
+      });
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
+      if (code === "ENOENT") {
+        throw new CliError("invalid_usage", `--from Host bundle not found: ${hostBundle}`);
+      }
+      throw error;
+    }
+    writeSuccess(deps.stdout, {
+      process: "profile-write",
+      offline: true,
+      signaled: false,
+      inject: false,
+      profilePath: written.profilePath,
+      profileId: written.profile.profileId,
+      sourceSha256: written.sourceSha256,
+      transformedSourceSha256: written.transformedSourceSha256,
+      diskSha: written.diskSha,
+      hostBundle,
     });
   } catch (error) {
     rethrow(error);

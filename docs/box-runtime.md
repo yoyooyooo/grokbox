@@ -211,6 +211,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 **Agent CLI（盒内，JSON）**
 
 - 写 desired：`activate` / `deactivate` / `models *`
+- 离线审 profile：`profile write --from <host-bundle>`（只读拷贝 → 长效 `profiles/reviewed.json`；不 inject / 不 TERM / 不 re-adopt）
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
 - 显式确认一次：`re-adopt --confirm`（唯一带 live adopt 权限的公开档；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）

@@ -31,7 +31,7 @@ import {
   type ProcessIdentity,
   type ProcessPort,
 } from "./process.ts";
-import { profileFromSource, type PatchProfile } from "./transform.ts";
+import { profileFromSource, type PatchProfile, type SlicePatch } from "./transform.ts";
 
 const EMPTY_CENSUS: Census = {
   wrapper: 0,
@@ -289,24 +289,46 @@ export function createLiveH3AdoptPorts(input: {
   };
 }
 
-export async function writeReviewedProfileFromCopy(destDir: string): Promise<{
+export type WriteReviewedProfileFromCopyInput = {
+  destDir: string;
+  /** Explicit Host bundle path to copy from (synthetic, disposable, or live). Never edited in place. */
+  hostBundle: string;
+  slices?: readonly SlicePatch[];
+  profileId?: string;
+};
+
+export async function writeReviewedProfileFromCopy(
+  input: WriteReviewedProfileFromCopyInput,
+): Promise<{
   profilePath: string;
+  copyPath: string;
   profile: PatchProfile;
   sourceSha256: string;
+  transformedSourceSha256: string;
   diskSha: string;
 }> {
-  await mkdir(destDir, { recursive: true, mode: 0o700 });
-  const copyPath = join(destDir, "host-main.copy.cjs");
-  const profilePath = join(destDir, "reviewed.json");
-  await copyFile(LIVE_HOST_BUNDLE, copyPath);
-  const source = await readFile(copyPath, "utf8");
-  const profile = profileFromSource(source, LIVE_SLICE_PATCHES, "live-h3-copy");
+  const hostBundle = input.hostBundle;
+  if (!hostBundle || typeof hostBundle !== "string") {
+    throw new Error("writeReviewedProfileFromCopy requires hostBundle");
+  }
+  const slices = input.slices ?? LIVE_SLICE_PATCHES;
+  const profileId = input.profileId ?? "live-h3-copy";
+  await mkdir(input.destDir, { recursive: true, mode: 0o700 });
+  const copyPath = join(input.destDir, "host-main.copy.cjs");
+  const profilePath = join(input.destDir, "reviewed.json");
+  await copyFile(hostBundle, copyPath);
+  const sourceBytes = await readFile(copyPath);
+  const source = sourceBytes.toString("utf8");
+  const diskSha = sha256Bytes(sourceBytes);
+  const profile = profileFromSource(source, slices, profileId);
   await writeFile(profilePath, `${JSON.stringify(profile)}\n`, { mode: 0o600 });
   return {
     profilePath,
+    copyPath,
     profile,
     sourceSha256: profile.sourceSha256,
-    diskSha: liveDiskSha(),
+    transformedSourceSha256: profile.transformedSourceSha256,
+    diskSha,
   };
 }
 

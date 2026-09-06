@@ -1219,6 +1219,23 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     localOnly: true,
   },
   {
+    path: ["runtime", "profile", "write"],
+    usage: "grokbox runtime profile write --from <host-bundle>",
+    summary: "Offline-author a durable reviewed PatchProfile from a Host bundle copy (no live inject).",
+    arguments: [],
+    options: options([
+      { flags: "--from <host-bundle>", description: "Absolute Host bundle path to copy from (synthetic or live); never edited in place", required: true },
+    ]),
+    stdin: "none",
+    table: false,
+    timeout: false,
+    destructive: false,
+    gateway: false,
+    streaming: false,
+    profile: false,
+    localOnly: true,
+  },
+  {
     path: ["runtime", "re-adopt"],
     usage: "grokbox runtime re-adopt --confirm",
     summary: "Confirmed one-shot box-local re-adopt via the watchdog coordinator.",

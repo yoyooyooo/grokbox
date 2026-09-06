@@ -81,6 +81,7 @@ import {
   runRuntimeModelsList,
   runRuntimeModelsReset,
   runRuntimeModelsUse,
+  runRuntimeProfileWrite,
   runRuntimeReAdopt,
   runRuntimeStatus,
   runRuntimeWatchdog,
@@ -165,6 +166,7 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   is: "Read state projections",
   runtime: "Box-local model runtime",
   "runtime models": "Box-local model catalog and assignments",
+  "runtime profile": "Offline reviewed PatchProfile authoring",
   "runtime watchdog": "Box-local desired-state Host coordinator",
   "runtime modeld": "Box-local model daemon",
 };
@@ -265,6 +267,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime models use": async (deps, args, options) =>
       await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
     "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "runtime profile write": async (deps, _args, options) => await runRuntimeProfileWrite(deps, options.from),
     "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),
     "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),
     "runtime modeld run": async (deps) => await runRuntimeModeld(deps),

@@ -1,13 +1,16 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as dns from "node:dns";
-import { lstat, mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { lstat, mkdtemp, writeFile, mkdir, readFile } from "node:fs/promises";
 import * as net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { liveH3AdoptAdapter } from "../packages/cli/src/commands/runtime.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import * as modeldModule from "../packages/box-runtime/src/modeld.ts";
+import { sha256Bytes } from "../packages/box-runtime/src/hash.ts";
+import { LIVE_HOST_BUNDLE } from "../packages/box-runtime/src/live-slices.ts";
 import { modeldSocketPath, probeStubModeld, STUB_ECHO_MODEL_ID } from "../packages/box-runtime/src/modeld-ipc.ts";
+import { LIVE_SHAPED_HOST } from "../packages/box-runtime/test/live-shaped-host.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
 const SAMPLE_MODELS = {
@@ -131,6 +134,7 @@ describe("box-local runtime CLI", () => {
       "runtime models list",
       "runtime models use",
       "runtime models reset",
+      "runtime profile write",
       "runtime re-adopt",
       "runtime watchdog run",
       "runtime modeld run",
@@ -146,6 +150,58 @@ describe("box-local runtime CLI", () => {
           key.split(" ").includes("ctl"),
       ),
     ).toBe(false);
+  });
+
+  test("runtime profile write authors reviewed.json from disposable hostBundle offline", async () => {
+    async function liveSnapshot() {
+      let digest: string | null = null;
+      try {
+        digest = sha256Bytes(await readFile(LIVE_HOST_BUNDLE));
+      } catch {
+        digest = null;
+      }
+      const pids: string[] = [];
+      try {
+        const proc = Bun.spawn(["ps", "-eo", "pid,args"], { stdout: "pipe", stderr: "pipe" });
+        const text = await new Response(proc.stdout).text();
+        await proc.exited;
+        for (const line of text.split("\n")) {
+          if (line.includes("host-main.cjs")) pids.push(line.trim().split(/\s+/, 1)[0] ?? "");
+        }
+      } catch {
+        /* ignore */
+      }
+      return { digest, pids: pids.filter(Boolean) };
+    }
+
+    const before = await liveSnapshot();
+    const boxRuntimeRoot = await withRoot();
+    const hostDir = await mkdtemp(join(tmpdir(), "grokbox-profile-from-"));
+    const hostBundle = join(hostDir, "host-main.cjs");
+    await writeFile(hostBundle, LIVE_SHAPED_HOST);
+    const original = await readFile(hostBundle, "utf8");
+
+    const wrote = await captureCli(["runtime", "profile", "write", "--from", hostBundle], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(wrote.code, wrote.stderr).toBe(0);
+    const body = data(wrote.stdout);
+    expect(body.process).toBe("profile-write");
+    expect(body.offline).toBe(true);
+    expect(body.signaled).toBe(false);
+    expect(body.inject).toBe(false);
+    expect(body.profilePath).toBe(join(boxRuntimeRoot, "profiles", "reviewed.json"));
+    expect(String(body.sourceSha256)).toHaveLength(64);
+    expect(String(body.transformedSourceSha256)).toHaveLength(64);
+    expect(body.transformedSourceSha256).not.toBe(body.sourceSha256);
+
+    const profile = JSON.parse(await readFile(String(body.profilePath), "utf8"));
+    expect(profile.profileId).toBe("reviewed-copy");
+    expect(profile.sourceSha256).toBe(body.sourceSha256);
+    expect(await readFile(hostBundle, "utf8")).toBe(original);
+    const after = await liveSnapshot();
+    expect(after).toEqual(before);
   });
 
   test("--profile and remote transports return runtime_local_only", async () => {
