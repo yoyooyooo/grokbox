@@ -3,13 +3,24 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeAttestation, type CoverageAttestation } from "../src/attestation.ts";
+import { startStubModeldServer } from "../src/modeld-ipc.ts";
 import { projectLiveStatus } from "../src/observe.ts";
 import type { DesiredFile, ModelsFile } from "../src/models.ts";
 import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
+import type { PatchProfile } from "../src/transform.ts";
 
 const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: null, agents: {} } };
 const SHA = "disk-sha-fixture";
 const DECOY_DIR = "/tmp/box-runtime-keep-identity-ephemeral";
+const REVIEWED: PatchProfile = {
+  profileId: "reviewed-route",
+  sourceSha256: SHA,
+  transformedSourceSha256: "sha-transformed-route",
+  slices: [
+    { id: "create-session", startAnchor: "a", endAnchor: "b", find: "c", replacement: "d" },
+    { id: "agent-id", startAnchor: "e", endAnchor: "f", find: "g", replacement: "h" },
+  ],
+};
 
 function desired(mode: DesiredFile["mode"]): DesiredFile {
   return { version: 1, mode };
@@ -93,19 +104,27 @@ async function statusFor(input: {
   diskSha?: string | null;
   att?: CoverageAttestation;
   signals?: Array<{ pid: number; signal: SignalName }>;
+  reviewedProfile?: PatchProfile;
+  modeld?: boolean;
 }) {
   const { root, ephemeralRoot } = await roots();
   if (input.att) await writeAttestation(ephemeralRoot, input.att);
   const signals = input.signals ?? [];
-  return await projectLiveStatus({
-    root,
-    desired: desired(input.mode),
-    models: MODELS,
-    processes: portOf(input.list, signals),
-    ephemeralRoot,
-    diskSha: input.diskSha === undefined ? SHA : input.diskSha,
-    envHas: envHasMap(input.env ?? {}),
-  });
+  const modeld = input.modeld ? await startStubModeldServer({ runRoot: ephemeralRoot }) : null;
+  try {
+    return await projectLiveStatus({
+      root,
+      desired: desired(input.mode),
+      models: MODELS,
+      processes: portOf(input.list, signals),
+      ephemeralRoot,
+      diskSha: input.diskSha === undefined ? SHA : input.diskSha,
+      envHas: envHasMap(input.env ?? {}),
+      ...(input.reviewedProfile ? { reviewedProfile: input.reviewedProfile } : {}),
+    });
+  } finally {
+    await modeld?.stop();
+  }
 }
 
 function attFor(host: ProcessIdentity, diskSha = SHA): CoverageAttestation {
@@ -119,6 +138,23 @@ function attFor(host: ProcessIdentity, diskSha = SHA): CoverageAttestation {
     at: "2026-09-05T00:00:00.000Z",
     modeld: false,
     windowMs: 12,
+  };
+}
+
+function routeAttFor(host: ProcessIdentity, diskSha = SHA, overrides: Partial<CoverageAttestation> = {}): CoverageAttestation {
+  return {
+    mode: "route",
+    coverage: "attested",
+    diskSha,
+    pid: host.pid,
+    start: host.start,
+    identity: host,
+    at: "2026-09-05T00:00:00.000Z",
+    modeld: true,
+    profileId: REVIEWED.profileId,
+    transformedSha: REVIEWED.transformedSourceSha256,
+    windowMs: 12,
+    ...overrides,
   };
 }
 
@@ -311,5 +347,93 @@ describe("projectLiveStatus observation bounds", () => {
         await writeFile(decoyFile, previous);
       }
     }
+  });
+});
+
+describe("projectLiveStatus route×modeld readiness", () => {
+  test("desired=route + route att agrees + modeld stopped → window-open, not attested", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const status = await statusFor({
+      mode: "route",
+      list: [wrapper, supervisor, host],
+      env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
+      att: routeAttFor(host),
+      reviewedProfile: REVIEWED,
+    });
+    expect(status.host.origin).toBe("grokbox-attested");
+    expect(status.host.reason).toBeNull();
+    expect(status.coverage).toBe("window-open");
+    expect(status.activation.desired).toBe("route");
+    expect(status.modeld).toEqual({ required: true, state: "stopped" });
+  });
+
+  test("desired=route + route att agrees + modeld up → attested / route-ready", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const status = await statusFor({
+      mode: "route",
+      list: [wrapper, supervisor, host],
+      env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
+      att: routeAttFor(host),
+      reviewedProfile: REVIEWED,
+      modeld: true,
+    });
+    expect(status.host.origin).toBe("grokbox-attested");
+    expect(status.host.reason).toBeNull();
+    expect(status.coverage).toBe("attested");
+    expect(status.modeld).toEqual({ required: true, state: "running" });
+    expect(status.window.durationMs).toBe(12);
+  });
+
+  test("desired=route alone with identity att never reports attested/route-ready", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const status = await statusFor({
+      mode: "route",
+      list: [wrapper, supervisor, host],
+      env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
+      att: attFor(host),
+      reviewedProfile: REVIEWED,
+      modeld: true,
+    });
+    expect(status.host.origin).toBe("grokbox-attested");
+    expect(status.host.reason).toBeNull();
+    expect(status.coverage).toBe("window-open");
+    expect(status.modeld).toEqual({ required: true, state: "running" });
+  });
+
+  test("desired=route + profile mismatch + modeld up → window-open", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const status = await statusFor({
+      mode: "route",
+      list: [wrapper, supervisor, host],
+      env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
+      att: routeAttFor(host, SHA, { profileId: "stale-profile", transformedSha: "stale-transformed" }),
+      reviewedProfile: REVIEWED,
+      modeld: true,
+    });
+    expect(status.host.origin).toBe("grokbox-attested");
+    expect(status.host.reason).toBeNull();
+    expect(status.coverage).toBe("window-open");
+    expect(status.modeld).toEqual({ required: true, state: "running" });
+  });
+
+  test("desired=identity keeps attested without modeld; modeld.required=false", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const status = await statusFor({
+      mode: "identity",
+      list: [wrapper, supervisor, host],
+      env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
+      att: attFor(host),
+    });
+    expect(status.host.origin).toBe("grokbox-attested");
+    expect(status.coverage).toBe("attested");
+    expect(status.modeld).toEqual({ required: false, state: "stopped" });
+  });
+
+  test("official desired=route projects modeld required/stopped and window-open", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const status = await statusFor({ mode: "route", list: [wrapper, supervisor, host] });
+    expect(status.host.origin).toBe("official");
+    expect(status.coverage).toBe("window-open");
+    expect(status.modeld).toEqual({ required: true, state: "stopped" });
   });
 });
