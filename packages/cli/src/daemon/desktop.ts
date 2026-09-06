@@ -308,10 +308,11 @@ export class DesktopManager {
 
   async keepAdd(ref: string): Promise<{ agentId: string; kept: true }> {
     const world = await this.io.readWorld(this.now());
-    const agentId = UUID_V4.test(ref) ? ref : resolveDesktopAgent(ref, world);
-    if (!agentId || (!UUID_V4.test(agentId))) {
+    const resolved = UUID_V4.test(ref) ? ref : resolveDesktopAgent(ref, world);
+    if (!resolved || !UUID_V4.test(resolved)) {
       throw new CliError("target_not_found", "Desktop keep requires a seated agent id or unambiguous name.");
     }
+    const agentId = resolved.toLowerCase();
     if (!this.keepAgentIds.includes(agentId) && !this.floorAgentIds.includes(agentId)) {
       this.keepAgentIds = [...this.keepAgentIds, agentId].sort();
       await this.persist();
@@ -322,8 +323,9 @@ export class DesktopManager {
   async keepRemove(ref: string, yes: boolean): Promise<{ agentId: string; kept: false }> {
     if (!yes) throw new CliError("invalid_usage", "desktop keep remove requires --yes.");
     const world = await this.io.readWorld(this.now());
-    const agentId = UUID_V4.test(ref) ? ref : resolveDesktopAgent(ref, world);
-    if (!agentId) throw new CliError("target_not_found", "Desktop keep requires a seated agent id or unambiguous name.");
+    const resolved = UUID_V4.test(ref) ? ref : resolveDesktopAgent(ref, world);
+    if (!resolved) throw new CliError("target_not_found", "Desktop keep requires a seated agent id or unambiguous name.");
+    const agentId = resolved.toLowerCase();
     if (this.floorAgentIds.includes(agentId)) {
       throw new CliError("invalid_usage", "Daemon-floor desktop keep ids cannot be removed.");
     }

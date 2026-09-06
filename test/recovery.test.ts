@@ -420,4 +420,47 @@ describe("layered doctor and explicit recovery", () => {
     expect(trace).not.toContain("npm");
     expect(trace).not.toContain("scp");
   });
+
+  test("unresolvable sandbox wake credential is recover_unavailable, not recover_failed", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-wake-cred-"));
+    const daemonSecret = join(configDir, "secrets", "daemon");
+    await writeProtectedSecret(daemonSecret, token);
+    await writeProfileFile(configDir, profileName, {
+      version: 1,
+      transport: "daemon",
+      server_url: endpoint,
+      daemon_token_ref: `file:${daemonSecret}`,
+      ssh_host: hostname,
+      sandbox: { access_token_ref: "env:MISSING_SANDBOX_TOKEN" },
+    });
+    const result = await captureCli(["--profile", profileName, "recover", "--timeout-ms", "4000"], {
+      configDir,
+      env: {},
+      fetch: (async () => { throw new Error("daemon down"); }) as unknown as typeof fetch,
+      runCommand: async (argv: readonly string[]) => {
+        if (argv[0] === "tailscale" && argv[1] === "status") {
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              Peer: { peer: { DNSName: `${hostname}.`, HostName: "box", Online: false, TailscaleIPs: [] } },
+            }),
+            stderr: "",
+          };
+        }
+        if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 1, stdout: "", stderr: "unreachable" };
+        return { code: 127, stdout: "", stderr: "unexpected" };
+      },
+      skillsDir,
+      stdinIsTTY: true,
+      readStdin: async () => "",
+      randomUUID: () => nonce,
+      now: () => 1_700_000_001_000,
+      wait: async () => true,
+    });
+    const error = (parseJson(result.stderr) as { error: { code: string; failureCode: string; retryable: boolean } }).error;
+    expect(result.code).toBe(57);
+    expect(error.code).toBe("recover_unavailable");
+    expect(error.retryable).toBe(false);
+    expect(error.failureCode).toBe("credential_unavailable");
+  });
 });

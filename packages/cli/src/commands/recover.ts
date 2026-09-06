@@ -65,6 +65,20 @@ async function wakeSandbox(deps: CliDeps, timeoutMs: number, operationId: string
       now: deps.now,
     }).tick();
   } catch (error) {
+    if (
+      error instanceof CliError &&
+      (error.code === "credential_unavailable" || error.code === "credential_locked" || error.code === "credential_invalid")
+    ) {
+      throw new CliError(
+        "recover_unavailable",
+        "Recovery requires the selected Profile credential references to resolve before mutation.",
+        {
+          failureCode: error.code,
+          retryable: false,
+          context: { operationId, phase: "sandbox-wake" },
+        },
+      );
+    }
     const failureCode = error instanceof CursorSandboxError
       ? error.kind
       : error instanceof CursorSandboxCancelledError

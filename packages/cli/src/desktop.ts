@@ -50,14 +50,16 @@ export type DesktopPruneRow = {
 };
 
 export function classifyDesktop(world: DesktopWorld, policy: DesktopPolicy): DesktopRow[] {
-  const keep = new Set([...policy.floorAgentIds, ...policy.keepAgentIds]);
+  const keep = new Set(
+    [...policy.floorAgentIds, ...policy.keepAgentIds].map((id) => id.toLowerCase()),
+  );
   const rows: DesktopRow[] = [];
   const entries = Object.entries(world.assignments)
     .filter(([, display]) => Number.isInteger(display) && display >= 1)
     .sort((left, right) => left[1] - right[1] || left[0].localeCompare(right[0]));
   for (const [agentId, display] of entries) {
     const lit = world.litDisplays.has(display);
-    const isProtected = display <= MAIN_DISPLAY || keep.has(agentId);
+    const isProtected = display <= MAIN_DISPLAY || keep.has(agentId.toLowerCase());
     let busyReason: DesktopBusyReason | null = null;
     if (isProtected) busyReason = "protected";
     else if (!lit) busyReason = "dark";

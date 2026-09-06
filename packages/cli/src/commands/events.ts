@@ -220,6 +220,7 @@ export async function runEvents(
       for await (const frame of parseSse(opened.response.body, {
         onChunk: () => { lastChunk = deps.now(); },
         onGap: (reason) => {
+          if (once && streamGapEmitted) return;
           const event: UnifiedEvent = {
             source: "gateway",
             kind: "gap",

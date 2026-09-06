@@ -520,6 +520,15 @@ describe("history, memory, events, and running", () => {
     expect(line.event).toMatchObject({ kind: "gap", payload: { reason: "malformed_frame", resumable: false } });
   });
 
+  test("events --once emits one line for two malformed frames", async () => {
+    const result = await withGateway(["events", "--once"], { eventsSse: "data: {bad1\n\ndata: {bad2\n\n" });
+    expect(result.code, result.stderr).toBe(0);
+    const lines = result.stdout.trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+    const line = parseJson(lines[0]!) as { event: { kind: string; payload: { reason: string } } };
+    expect(line.event).toMatchObject({ kind: "gap", payload: { reason: "malformed_frame" } });
+  });
+
   test("is running resolves a cross-kind title through listAgents", async () => {
     const result = await withGateway(["is", "running", "Ops"]);
     expect(result.code).toBe(0);

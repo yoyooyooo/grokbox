@@ -186,10 +186,21 @@ export function createProductionDeps(signal?: AbortSignal): CliDeps {
     transport: "auto",
     daemonSocket: join(configDir, "run", "daemon.sock"),
     confirm: async (prompt) => {
+      if (signal?.aborted) return false;
       const terminal = createInterface({ input: process.stdin, output: process.stderr });
       try {
-        const answer = await terminal.question(prompt);
-        return answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes";
+        return await new Promise<boolean>((resolve, reject) => {
+          const onAbort = () => resolve(false);
+          signal?.addEventListener("abort", onAbort, { once: true });
+          terminal.question(prompt).then((answer) => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve(answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes");
+          }, (error) => {
+            signal?.removeEventListener("abort", onAbort);
+            if (error instanceof Error && error.name === "AbortError") resolve(false);
+            else reject(error);
+          });
+        });
       } finally {
         terminal.close();
       }

@@ -196,11 +196,14 @@ function validateDesktop(input: unknown): DaemonDesktopConfig {
   const ids = (field: "floorAgentIds" | "keepAgentIds"): string[] | undefined => {
     const value = input[field];
     if (value === undefined) return undefined;
-    if (!Array.isArray(value) || value.length > 64 || value.some((id) => typeof id !== "string" || !UUID_V4.test(id)) ||
-      new Set(value).size !== value.length) {
+    if (!Array.isArray(value) || value.length > 64 || value.some((id) => typeof id !== "string" || !UUID_V4.test(id))) {
       throw new CliError("profile_invalid", `desktop.${field} is invalid.`);
     }
-    return [...value];
+    const normalized = value.map((id) => id.toLowerCase());
+    if (new Set(normalized).size !== normalized.length) {
+      throw new CliError("profile_invalid", `desktop.${field} is invalid.`);
+    }
+    return normalized;
   };
   const floorAgentIds = ids("floorAgentIds");
   const keepAgentIds = ids("keepAgentIds");

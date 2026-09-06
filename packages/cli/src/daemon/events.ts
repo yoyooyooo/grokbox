@@ -336,6 +336,7 @@ export class DaemonEventManager {
         };
         timer = setTimeout(done, 1_000);
         this.controller.signal.addEventListener("abort", done, { once: true });
+        if (this.controller.signal.aborted) done();
       });
     }
   }

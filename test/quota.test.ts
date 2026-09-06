@@ -127,6 +127,27 @@ describe("Cursor web quota adapter", () => {
     expect((error as CliError).failureCode).toBe("request_timeout");
   });
 
+  test("caller-signal abort is attributed as cancelled, not request_timeout", async () => {
+    const caller = new AbortController();
+    const pending = queryCursorWebQuota(
+      {
+        fetch: fakeFetch(async (_input, init) => new Response(new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () => controller.error(new Error("aborted")), { once: true });
+          },
+        }))),
+        now: () => nowMs,
+        signal: caller.signal,
+      },
+      token,
+      1_000,
+    );
+    setTimeout(() => caller.abort(), 10);
+    const error = await pending.catch((failure) => failure) as CliError;
+    expect(error.code).toBe("quota_provider_unavailable");
+    expect(error.failureCode).toBe("cancelled");
+  });
+
   test("rejects malformed, expired, unauthorized, oversized, and unavailable responses", async () => {
     let calls = 0;
     const malformedToken = queryCursorWebQuota(

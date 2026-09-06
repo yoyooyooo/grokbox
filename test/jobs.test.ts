@@ -392,6 +392,24 @@ describeLinux("structured execution and durable Jobs", () => {
     expect(alive).toBe(false);
   }, 15_000);
 
+  test("shutdown preserves an acknowledged cancel instead of reporting interrupted", async () => {
+    const f = await fixture();
+    const submitted = await f.run(["exec", "run", "--detach", "--", "node", "-e", "setInterval(()=>{},1000)"]);
+    const created = data<{ jobId: string }>(submitted.stdout);
+    for (let count = 0; count < 100; count += 1) {
+      const current = data<{ state: string }>((await f.run(["jobs", "show", created.jobId])).stdout);
+      if (current.state === "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect((await f.run(["jobs", "cancel", created.jobId])).code).toBe(0);
+    await host!.close(); host = undefined;
+    host = await startDaemonHost(
+      { ...createProductionDeps(), configDir: f.configDir, discoveryPath: f.discoveryPath }, f.socket, undefined,
+      [{ name: "workspace", path: f.root, operations: ["exec"] }], f.processConfig,
+    );
+    expect(data<{ state: string }>((await f.run(["jobs", "show", created.jobId])).stdout).state).toBe("cancelled");
+  }, 15_000);
+
   test("a prior-generation nonterminal record restarts as unknown", async () => {
     const f = await fixture();
     await host!.close(); host = undefined;

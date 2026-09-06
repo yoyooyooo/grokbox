@@ -41,7 +41,7 @@ export async function runDaemonEnsure(
       return;
     } catch (error) {
       if (!(error instanceof CliError) || error.code !== "daemon_unreachable" ||
-        !deps.daemonServerUrl || !deps.sshHost) throw error;
+        !deps.daemonServerUrl || !deps.sshHost || deps.signal?.aborted) throw error;
     }
     const operationId = deps.randomUUID();
     let ensured: Awaited<ReturnType<typeof ensureInstalledDaemonThroughSsh>>;
@@ -49,6 +49,9 @@ export async function runDaemonEnsure(
       ensured = await ensureInstalledDaemonThroughSsh(deps, deps.sshHost, io.timeoutMs);
     } catch (error) {
       if (!(error instanceof CliError)) throw error;
+      if (deps.signal?.aborted) {
+        throw new CliError("daemon_unreachable", error.message, { retryable: true });
+      }
       throw new CliError(error.code, error.message, {
         ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
         ...(error.failureCode === undefined ? {} : { failureCode: error.failureCode }),

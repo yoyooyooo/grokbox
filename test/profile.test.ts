@@ -459,6 +459,78 @@ describe("Profile v1 storage", () => {
     expect(body.data.capabilities["sandbox.keepalive"]).toBe("provider-authorization-dependent");
     expect(body.data.capabilities["quota.read"]).toBe("provider-authorization-dependent");
   });
+
+  test("capabilities report auto+server_url as daemon (runtime fallback remains live)", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "auto-daemon", {
+      version: 1,
+      transport: "auto",
+      server_url: "https://my-daemon.example.test",
+      daemon_token_ref: "env:GROKBOX_DAEMON_TOKEN",
+    });
+    const result = await cli(configDir, ["profile", "capabilities", "auto-daemon"]);
+    const body = parseJson(result.stdout) as {
+      data: {
+        connection: { endpoint: string | null; protocolMajor: number | null };
+        capabilities: Record<string, boolean | string>;
+      };
+    };
+    expect(body.data.connection.protocolMajor).toBe(1);
+    expect(body.data.connection.endpoint).toBe("https://my-daemon.example.test");
+    expect(body.data.capabilities["host.fs.read"]).toBe(true);
+    expect(body.data.capabilities["host.fs.write"]).toBe("runtime-policy-dependent");
+    expect(body.data.capabilities["host.desktop.read"]).toBe(true);
+  });
+
+  test("capabilities report clean gateway (no server_url) as non-daemon", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "clean-gateway", {
+      version: 1,
+      transport: "gateway",
+      gateway_url: "https://gateway.example.test",
+      gateway_token_ref: "env:GROKBOX_GATEWAY_TOKEN",
+    });
+    const result = await cli(configDir, ["profile", "capabilities", "clean-gateway"]);
+    const body = parseJson(result.stdout) as {
+      data: {
+        connection: {
+          endpoint: string | null;
+          protocolMajor: number | null;
+          credentialReference: string | null;
+          credentialConfigured: boolean;
+        };
+        capabilities: Record<string, boolean | string>;
+      };
+    };
+    expect(body.data.connection.protocolMajor).toBe(null);
+    expect(body.data.connection.endpoint).toBe("https://gateway.example.test");
+    expect(body.data.connection.credentialReference).toBe("env:GROKBOX_GATEWAY_TOKEN");
+    expect(body.data.connection.credentialConfigured).toBe(true);
+    expect(body.data.capabilities["host.fs.read"]).toBe(false);
+    expect(body.data.capabilities["host.desktop.read"]).toBe(false);
+    expect(body.data.capabilities["grok.roster.read"]).toBe(true);
+  });
+
+  test("capabilities report clean local (no server_url) as non-daemon", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "clean-local", {
+      version: 1,
+      transport: "local",
+    });
+    const result = await cli(configDir, ["profile", "capabilities", "clean-local"]);
+    const body = parseJson(result.stdout) as {
+      data: {
+        connection: { endpoint: string | null; protocolMajor: number | null };
+        capabilities: Record<string, boolean | string>;
+      };
+    };
+    expect(body.data.connection.protocolMajor).toBe(null);
+    expect(body.data.capabilities["host.fs.read"]).toBe(false);
+    expect(body.data.capabilities["host.fs.write"]).toBe(false);
+    expect(body.data.capabilities["host.process.run"]).toBe(false);
+    expect(body.data.capabilities["host.desktop.read"]).toBe(false);
+    expect(body.data.capabilities["grok.roster.read"]).toBe(true);
+  });
 });
 
 describe("init discovery boundaries", () => {
@@ -662,6 +734,33 @@ describe("init discovery boundaries", () => {
     );
     expect(bootstrap.code).toBe(25);
     expect(code(bootstrap.stderr)).toBe("bootstrap_unavailable");
+  });
+
+  test("init --peer refuses an existing Profile whose endpoint is a different tailnet node", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "remote", {
+      version: 1,
+      transport: "daemon",
+      server_url: "https://remote.example.ts.net:8443",
+      daemon_token_ref: "env:DAEMON_TOKEN",
+      ssh_host: "remote",
+    });
+    const multiple = JSON.parse(tailnetStatus()) as { Peer: Record<string, unknown> };
+    multiple.Peer.other = {
+      HostName: "other",
+      DNSName: "other.example.ts.net.",
+      TailscaleIPs: ["192.0.2.30"],
+    };
+    const result = await captureCli(["init", "remote", "--peer", "other"], {
+      configDir,
+      env: { DAEMON_TOKEN: "unused" },
+      discoveryPath: "/missing/gateway.json",
+      skillsDir,
+      stdinIsTTY: false,
+      runCommand: async () => ({ code: 0, stdout: JSON.stringify(multiple), stderr: "" }),
+    });
+    expect(result.code).toBe(21);
+    expect(code(result.stderr)).toBe("profile_invalid");
   });
 
   test("missing local Gateway and unavailable Tailscale fail without mutation", async () => {

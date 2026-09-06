@@ -202,14 +202,23 @@ export async function queryCursorWebQuota(
 ): Promise<QuotaSnapshot> {
   const userId = cursorWebIdentity(token, deps.now());
   const controller = new AbortController();
-  const abort = () => controller.abort();
+  let callerCancelled = deps.signal?.aborted === true;
+  let timedOut = false;
+  const abort = () => {
+    callerCancelled = true;
+    controller.abort();
+  };
   if (deps.signal?.aborted) controller.abort();
   else deps.signal?.addEventListener("abort", abort, { once: true });
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   const cleanup = () => {
     clearTimeout(timer);
     deps.signal?.removeEventListener("abort", abort);
   };
+  const abortFailureCode = () => callerCancelled ? "cancelled" : timedOut || controller.signal.aborted ? "request_timeout" : "network_failure";
   let response: Response;
   try {
     response = await deps.fetch(CURSOR_WEB_QUOTA_ENDPOINT, {
@@ -227,7 +236,7 @@ export async function queryCursorWebQuota(
     });
   } catch {
     cleanup();
-    throw providerFailure(controller.signal.aborted ? "request_timeout" : "network_failure");
+    throw providerFailure(abortFailureCode());
   }
   try {
     if (response.redirected || (response.status >= 300 && response.status < 400)) {
@@ -260,7 +269,7 @@ export async function queryCursorWebQuota(
     return quotaSnapshotFromCursorWeb(payload, deps.now());
   } catch (error) {
     if (error instanceof CliError) throw error;
-    throw providerFailure(controller.signal.aborted ? "request_timeout" : "network_failure");
+    throw providerFailure(abortFailureCode());
   } finally {
     cleanup();
   }
