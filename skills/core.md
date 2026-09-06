@@ -57,6 +57,15 @@ grokbox desktop status --table
 grokbox desktop keep add <agent>
 grokbox desktop prune run
 grokbox desktop prune enable
+grokbox runtime status
+grokbox runtime models list
+grokbox runtime models use stub/echo
+grokbox runtime activate --mode observe|identity|route
+grokbox runtime profile write --from <host-bundle>
+grokbox runtime re-adopt --confirm
+grokbox runtime modeld run
+grokbox runtime watchdog run
+grokbox runtime deactivate
 ```
 
 Targets accept an exact ID first, then an unambiguous case-insensitive name/title. The built-in
@@ -85,6 +94,7 @@ Targets accept an exact ID first, then an unambiguous case-insensitive name/titl
 10. **Run governed processes**: `exec run -- <argv...>` resolves argv[0] only as a configured executable alias, preserves all remaining arguments literally, and returns a durable Job. `--run-timeout-ms` governs process lifetime while `--timeout-ms` bounds the client wait; `--detach` returns after admission. `jobs list/show/logs/cancel` require `host.process.manage`; logs are bounded base64 NDJSON and resumable by offset. Shell is separately privileged and normally unavailable. An admitted executable runs as the daemon user and is not sandboxed by cwd.
 11. **Control Sandbox lifecycle**: `box status` reads the Cursor run state without waking it. `box wake` performs one broker Ensure plus a bounded exec no-op. `box keepalive run` is an external foreground lease loop; `box keepalive status` reads its redacted protected state. These commands require an explicit `sandbox.access_token_ref` and do not depend on daemon, SSH, Tailscale, Gateway health, or an in-box process.
 12. **Idle desktop forks**: `desktop status` classifies seated forks and prints keep/floor ids. `desktop keep add|remove` persists Chrome keep ids on the box daemon config, not the client Profile. `desktop prune run` dry-runs by default; `--yes` and the daemon tick call official `stop-window`, which deletes `chrome-profile-N`. Keep must-keep agents before `prune enable`. Never edit the seating table or kill host/Xvfb. Display 1 is always kept.
+13. **Box-local model runtime (Agent-first, local-only)**: `runtime *` refuses `--profile` and remote transport (`runtime_local_only`). Write desired with `activate` / `deactivate` / `models *`; read with `status` / `log` / `contracts`. Offline authoring is `runtime profile write --from <host-bundle>` (durable `profiles/reviewed.json`; no inject / TERM / re-adopt). `runtime re-adopt --confirm` is the sole public live Host writer; without `--confirm` or outside the box it refuses before mutation. `runtime modeld run` / `runtime watchdog run` are process entries. This slice admits only `stub/echo` for route (`activate --mode route` and `models use` while desired=route fail closed on any other assignment). Short-lived live state defaults to `~/.grokbox/run/` (attestation, locks, `modeld.sock`); durable config stays under `/workspace/.grokbox/box-runtime/`. **No live unless authorized** — do not inject, heal, kill, or touch a live Host without an explicit Human authorization for that live step.
 
 Sensitive or multiline prompts should go on stdin:
 
@@ -113,6 +123,7 @@ retry the same send, reuse `--nonce <uuid>` and the same target/prompt.
   `content`.
 - Transcript and Memory content are private product data; do not copy them into ordinary logs.
 - Unsupported options are absent from each leaf command and fail before any network request.
+- Box-local `runtime *` is local-only. Desired writes and offline `profile write` never mutate a live Host. The only public live writer is `runtime re-adopt --confirm`. Route admits only `stub/echo` in this slice; non-stub assignments fail closed at the models/CLI layer and again at the stub modeld/seam. Default short-lived run root is `~/.grokbox/run/`. No live unless authorized.
 
 ## Output
 

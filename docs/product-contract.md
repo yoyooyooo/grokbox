@@ -187,6 +187,8 @@ grokbox (alias: gbox)
 │   │   ├── list
 │   │   ├── use <provider/model> [--for <agent>]
 │   │   └── reset [--for <agent>]
+│   ├── profile
+│   │   └── write --from <host-bundle>
 │   ├── watchdog
 │   │   └── run
 │   └── modeld
@@ -465,11 +467,11 @@ Daemon 默认只监听 Unix socket或 `127.0.0.1`。远程暴露优先由 Tailsc
 
 `grokbox runtime *` 是 **Agent-first、盒内机器接口**，不是给人点的日常 UI。人用的表面只有未来的盒内 WebUI/VNC，且必须调用同一套 use case，不能另写一套 mutation。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外返回 `runtime_local_only`。同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。
 
-Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。`runtime re-adopt --confirm` 是唯一带 live Host adopt 权限的公开 CLI composition root：缺 `--confirm` 或非本机在构造 live ports 前拒绝；匹配的 canonical 身份、`attestation.diskSha === liveDiskSha()` 且 reviewed profile 一致时是零信号 no-op；所有权仍精确但 SHA 过期（`reason=stale_attestation`）才允许一次手动 deactivate→official→transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。一次调用最多一次 attempt。它不是 `activate` 的隐藏路径；本 slice 的 `watchdog run` 不接 live mutation ports，不能自动改 Host。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。
+Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。离线审 profile：`runtime profile write --from <host-bundle>`（只写长效 `profiles/reviewed.json`；不 inject / 不 TERM / 不 re-adopt）。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。**No live unless authorized**：`runtime re-adopt --confirm` 是唯一带 live Host adopt 权限的公开 CLI composition root：缺 `--confirm` 或非本机在构造 live ports 前拒绝；匹配的 canonical 身份、`attestation.diskSha === liveDiskSha()` 且 reviewed profile 一致时是零信号 no-op；所有权仍精确但 SHA 过期（`reason=stale_attestation`）才允许一次手动 deactivate→official→transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。一次调用最多一次 attempt。它不是 `activate` 的隐藏路径；本 slice 的 `watchdog run` 不接 live mutation ports，不能自动改 Host。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。本 slice 的 route 只承认 `stub/echo`：`activate --mode route` 与 desired=route 下的 `models use` 对非 stub 赋值 fail-closed；stub modeld/seam 再次拒绝非 stub（无真实 provider admit list）。
 
 长效根为 `/workspace/.grokbox/box-runtime/`（配置、PatchProfile、合同切片、事件日志；云电脑重置不丢）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。现有 grokbox Profile 仍在 `~/.grokbox`，本次不搬家。`models.json` 的凭据字段只接受 `env:<NAME>` 与 `file:/absolute/path`；`file:` 放长效树 `secrets/`；literal secret 与 `$VAR` 为 schema error。短效 live state 固定 `~/.grokbox/run/`（含 `attestation.json` 与 `modeld.sock`），不读 `XDG_RUNTIME_DIR`。daemon socket 仍按 §5.2：默认 XDG runtime 路径，缺失时回退 `~/.grokbox/run/daemon.sock`。
 
-`assignments.main` 是全盒默认。`assignments.agents.<id>` 按 Bot 覆盖（稳定 agent id；CLI 用 `--for` 解析名字）。没有覆盖的 Bot 使用默认，不是回官方。`activate --mode route` 必须已有有效 `assignments.main`。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 改默认。route 期间 `models reset`（默认或某一 Bot）拒绝，须先 `activate --mode identity` 或 `deactivate`。
+`assignments.main` 是全盒默认。`assignments.agents.<id>` 按 Bot 覆盖（稳定 agent id；CLI 用 `--for` 解析名字）。没有覆盖的 Bot 使用默认，不是回官方。`activate --mode route` 必须已有有效 `assignments.main`，且本 slice 只承认 `stub/echo`。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 改默认。route 期间 `models reset`（默认或某一 Bot）拒绝，须先 `activate --mode identity` 或 `deactivate`。
 
 长效 `contracts/` 保存 Host **合同切片**快照（不进 git）：仅在 live source SHA 变化时写入，最多保留 5 个 SHA，默认不存整份 `host-main.cjs`。快照用于报告切片 drift，不自动打补丁、不还原官方 Host。
 

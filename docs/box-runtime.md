@@ -97,7 +97,7 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 ## 5. 模型运行时
 
 - `/workspace/.grokbox/box-runtime/models.json`；`apiKeyRef` 仅为 `env:<NAME>` 或 `file:/absolute/path`（`file:` 也放长效树下的 `secrets/`，不进 git）。
-- `assignments.main` 是全盒默认；`assignments.agents.<id>` 按 Bot 覆盖。键用稳定 agent id；CLI 在盒内解析名字。省略 `--for` 的 `models use` 改默认。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。
+- `assignments.main` 是全盒默认；`assignments.agents.<id>` 按 Bot 覆盖。键用稳定 agent id；CLI 在盒内解析名字。省略 `--for` 的 `models use` 改默认。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。本 slice 的 route 只承认 `stub/echo`；非 stub 赋值在 models/CLI 与 stub modeld/seam 双层 fail-closed。
 - turn 钉住该 Bot 的 immutable resolved-config **和 credential fingerprint**，直到 terminal 或 idle TTL；不在 turn 内 refresh/换账户。改 Jerry 不影响 Tom 正在跑的回合。
 - modeld 有 generation-scoped 内存 registry（id → fingerprint + state + terminal）。`status` 不对账续传正文。disconnect → abort + unknown。duplicate submit 不重新 dispatch。
 - 体验不降级：优先让 Host 既有 retry/checkpoint 工作。不另建第二套消息队列。
@@ -214,7 +214,10 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 离线审 profile：`profile write --from <host-bundle>`（只读拷贝 → 长效 `profiles/reviewed.json`；不 inject / 不 TERM / 不 re-adopt）
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
-- 显式确认一次：`re-adopt --confirm`（唯一带 live adopt 权限的公开档；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）
+- 进程入口：`modeld run` / `watchdog run`
+- 显式确认一次：`re-adopt --confirm`（**唯一**带 live adopt 权限的公开档 / sole live writer；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）。**No live unless authorized。**
+- 本 slice route 只承认 `stub/echo`（models/CLI fail-closed；stub modeld/seam 再拒非 stub；无真实 provider admit list）
+- 短效 live state 默认 `~/.grokbox/run/`（见 §4）
 - 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
 
