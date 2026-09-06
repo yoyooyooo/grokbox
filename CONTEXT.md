@@ -12,7 +12,7 @@ The TypeScript CLI currently provides:
 - protected `env:`, `file:`, and macOS `keychain:` secret references;
 - idempotent local or Tailscale-peer initialization;
 - a finite, capability-gated daemon over a Unix socket or authenticated loopback HTTP;
-- typed Grok Bot roster, send, history, Memory, and event commands;
+- typed Grok Bot roster, send, history, Memory, event, and offline agent-export commands;
 - governed named-root filesystem access and structured Linux Jobs;
 - layered read-only diagnosis and explicit recovery;
 - opt-in experimental Sandbox, quota, and desktop compatibility adapters.

@@ -1,5 +1,6 @@
 export const CLI_NAME = "grokbox";
 export const DEFAULT_DISCOVERY_PATH = "/home/box/sand-data/gateway.json";
+export const DEFAULT_AGENT_DATA_ROOT = "/home/box/agent-data";
 export const DEFAULT_TIMEOUT_MS = 10_000;
 export const PROMPT_MAX_BYTES = 64 * 1024;
 export const MEMORY_UPSTREAM_CAP = 1000;
@@ -761,6 +762,27 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     streaming: false,
   },
   {
+    path: ["export", "agent"],
+    usage:
+      "grokbox export agent <agent> --out <dir> [--include-related-workflows] [--agent-data <dir>]",
+    summary: "Export one local Bot's owned profile, Memory, and automations without Gateway.",
+    arguments: [
+      { syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] },
+    ],
+    options: options([
+      { flags: "--out <dir>", description: "Empty destination directory", required: true },
+      { flags: "--include-related-workflows", description: "Pack referenced global workflow SKILL.md files" },
+      { flags: "--agent-data <dir>", description: "Local agent-data root (default: /home/box/agent-data)" },
+    ]),
+    stdin: "none",
+    table: false,
+    timeout: false,
+    destructive: false,
+    gateway: false,
+    streaming: false,
+    profile: false,
+  },
+  {
     path: ["fs", "stat"],
     usage: "grokbox fs stat <remote-path> [--json|--table] [--timeout-ms <n>]",
     summary: "Inspect one authorized remote filesystem entry.",
@@ -1083,6 +1105,7 @@ export const EXAMPLES = [
   "grokbox history tail <agent-id> --limit 50",
   "grokbox history thread <agent-id> --root <entry-id>",
   "grokbox memory list <agent-id> --limit 100",
+  "grokbox export agent <agent-id> --out ./export",
   "grokbox events",
   "grokbox is running <agent-id>",
 ];
