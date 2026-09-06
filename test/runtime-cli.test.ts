@@ -1,9 +1,13 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import * as dns from "node:dns";
+import { lstat, mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import * as net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { liveH3AdoptAdapter } from "../packages/cli/src/commands/runtime.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
+import * as modeldModule from "../packages/box-runtime/src/modeld.ts";
+import { modeldSocketPath, probeStubModeld, STUB_ECHO_MODEL_ID } from "../packages/box-runtime/src/modeld-ipc.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
 const SAMPLE_MODELS = {
@@ -56,6 +60,62 @@ function stubLiveAdoptPorts() {
 
 function spyLiveAdoptFactory() {
   return spyOn(liveH3AdoptAdapter, "createLiveH3AdoptPorts").mockImplementation(() => stubLiveAdoptPorts());
+}
+
+function isUnixSocketConnect(args: unknown[]): boolean {
+  const flat = args.flatMap((arg) => (Array.isArray(arg) ? arg : [arg]));
+  for (const arg of flat) {
+    if (typeof arg === "string" && (arg.startsWith("/") || arg.endsWith(".sock"))) return true;
+    if (arg && typeof arg === "object" && "path" in arg) {
+      const path = (arg as { path?: unknown }).path;
+      if (typeof path === "string" && path.length > 0) return true;
+    }
+  }
+  return false;
+}
+
+function installNetworkTraps(counts: { fetch: number; dns: number; tcp: number }): () => void {
+  const originalFetch = globalThis.fetch;
+  const originalLookup = dns.lookup.bind(dns);
+  const originalResolve = dns.resolve.bind(dns);
+  const originalResolve4 = dns.resolve4.bind(dns);
+  const originalResolve6 = dns.resolve6.bind(dns);
+  const originalPromisesLookup = dns.promises.lookup.bind(dns.promises);
+  const originalConnect = net.Socket.prototype.connect;
+  globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
+    counts.fetch += 1;
+    return originalFetch(...args);
+  }) as typeof fetch;
+  const spies = [
+    spyOn(dns, "lookup").mockImplementation(((...args: Parameters<typeof dns.lookup>) => {
+      counts.dns += 1;
+      return originalLookup(...args);
+    }) as typeof dns.lookup),
+    spyOn(dns, "resolve").mockImplementation(((...args: Parameters<typeof dns.resolve>) => {
+      counts.dns += 1;
+      return originalResolve(...args);
+    }) as typeof dns.resolve),
+    spyOn(dns, "resolve4").mockImplementation(((...args: Parameters<typeof dns.resolve4>) => {
+      counts.dns += 1;
+      return originalResolve4(...args);
+    }) as typeof dns.resolve4),
+    spyOn(dns, "resolve6").mockImplementation(((...args: Parameters<typeof dns.resolve6>) => {
+      counts.dns += 1;
+      return originalResolve6(...args);
+    }) as typeof dns.resolve6),
+    spyOn(dns.promises, "lookup").mockImplementation((async (...args: Parameters<typeof dns.promises.lookup>) => {
+      counts.dns += 1;
+      return await originalPromisesLookup(...args);
+    }) as typeof dns.promises.lookup),
+    spyOn(net.Socket.prototype, "connect").mockImplementation(function (this: net.Socket, ...args: never[]) {
+      if (!isUnixSocketConnect(args)) counts.tcp += 1;
+      return originalConnect.apply(this, args as never);
+    }),
+  ];
+  return () => {
+    globalThis.fetch = originalFetch;
+    for (const spy of spies) spy.mockRestore();
+  };
 }
 
 describe("box-local runtime CLI", () => {
@@ -366,6 +426,53 @@ describe("box-local runtime CLI", () => {
     });
     expect(activate.code).toBe(2);
     expect((parseJson(activate.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
+  });
+
+  test("modeld run under temp root: start → probe → abort cleans socket with hard-off", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const runRoot = await mkdtemp(join(tmpdir(), "grokbox-modeld-cli-"));
+    const ac = new AbortController();
+    const counts = { fetch: 0, dns: 0, tcp: 0 };
+    const restore = installNetworkTraps(counts);
+    const secretSpy = spyOn(modeldModule, "createFileEnvSecretResolver");
+    try {
+      const running = captureCli(["runtime", "modeld", "run"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+        env: { GROKBOX_RUN_ROOT: runRoot },
+        signal: ac.signal,
+      });
+
+      let ready = false;
+      for (let i = 0; i < 100; i++) {
+        if (await probeStubModeld(runRoot)) {
+          ready = true;
+          break;
+        }
+        await Bun.sleep(20);
+      }
+      expect(ready).toBe(true);
+
+      ac.abort();
+      const result = await running;
+      expect(result.code, result.stderr).toBe(0);
+      expect(data(result.stdout)).toMatchObject({
+        process: "modeld",
+        state: "running",
+        provider: false,
+        model: STUB_ECHO_MODEL_ID,
+      });
+      expect(await probeStubModeld(runRoot)).toBe(false);
+      await expect(lstat(modeldSocketPath(runRoot))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(counts.fetch).toBe(0);
+      expect(counts.dns).toBe(0);
+      expect(counts.tcp).toBe(0);
+      expect(secretSpy).not.toHaveBeenCalled();
+    } finally {
+      if (!ac.signal.aborted) ac.abort();
+      secretSpy.mockRestore();
+      restore();
+    }
   });
 
   test("literal secrets are rejected", async () => {

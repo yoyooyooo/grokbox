@@ -77,7 +77,7 @@ packages/cli/                unpublished @grokbox/cli
   src/daemon/
   src/commands/
 packages/box-runtime/        unpublished @grokbox/box-runtime
-  src/                       Host transform, modeld, watchdog (when the slice lands)
+  src/                       Host transform, modeld, watchdog
   must not import daemon/SSH/Profile transport
 skills/
 test/                        CLI, daemon, packaging tests (repo root)
