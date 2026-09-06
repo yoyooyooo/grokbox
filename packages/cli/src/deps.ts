@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import cliPackage from "../../../package.json" with { type: "json" };
-import { DEFAULT_DISCOVERY_PATH } from "./registry.ts";
+import { DEFAULT_AGENT_DATA_ROOT, DEFAULT_DISCOVERY_PATH } from "./registry.ts";
 import type { Writable } from "./output.ts";
 
 export type FetchFn = typeof fetch;
@@ -54,6 +54,7 @@ export type CliDeps = {
   gatewayTokenRef?: string;
   gatewayHeadersRef?: string;
   confirm: (prompt: string) => Promise<boolean>;
+  agentDataRoot: string;
 };
 
 export const CLI_VERSION: string = cliPackage.version;
@@ -178,6 +179,7 @@ export function createProductionDeps(signal?: AbortSignal): CliDeps {
     boxRuntimeRoot: process.env.GROKBOX_BOX_RUNTIME_ROOT && isAbsolute(process.env.GROKBOX_BOX_RUNTIME_ROOT)
       ? process.env.GROKBOX_BOX_RUNTIME_ROOT
       : "/workspace/.grokbox/box-runtime",
+    agentDataRoot: DEFAULT_AGENT_DATA_ROOT,
     env: process.env,
     runCommand: runProcess,
     wait,

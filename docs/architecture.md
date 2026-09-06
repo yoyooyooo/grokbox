@@ -1,6 +1,6 @@
 # `grokbox` CLI 目标实现架构
 
-本文是 CLI、Profile、transport、box daemon 和 host capability 的实现边界 Current Home。它描述已接受的**未来完成态**；当前源码已经交付 Node.js 20+/Commander 的 agent-first registry、严格 Profile v1、local/remote `init` 和 daemon transport、Grok roster/transcript/Memory/send/management 有限方法、daemon-only 命名 root 文件能力、结构化 process 与 durable Jobs、generation-aware unified events/recovery、explicit OAuth quota adapter、external Sandbox lifecycle adapter、实验性 desktop classification/prune，以及 layered doctor/explicit recovery。剩余差距由外部 evidence、源码测试与本地 Issue tracker 共同拥有。
+本文是 CLI、Profile、transport、box daemon 和 host capability 的实现边界 Current Home。它描述已接受的**未来完成态**；当前源码已经交付 Node.js 20+/Commander 的 agent-first registry、严格 Profile v1、local/remote `init` 和 daemon transport、Grok roster/transcript/Memory/send/management 有限方法、离线只读 `export agent`、daemon-only 命名 root 文件能力、结构化 process 与 durable Jobs、generation-aware unified events/recovery、explicit OAuth quota adapter、external Sandbox lifecycle adapter、实验性 desktop classification/prune，以及 layered doctor/explicit recovery。剩余差距由外部 evidence、源码测试与本地 Issue tracker 共同拥有。
 
 产品命令与输出合同见 [CLI 产品合同](product-contract.md)。显式 OAuth quota adapter 与 evidence 见 [Quota Current Home](quota.md)。Cursor Sandbox、freeze 与 keeper 边界见 [Sandbox 控制面](cursor-sandbox-control-plane.md)。Gateway 当前事实见 [上游集成](upstream-integration.md)。非官方身份和上游私有 adapter 的稳定性见 [兼容性边界](compatibility.md)。
 
@@ -40,6 +40,7 @@ external Sandbox adapter / keeper
 | current Profile selection | CLI global config writer |
 | Profile fields | corresponding Profile config writer |
 | agent/group/transcript/Memory | Grok Bot Gateway and its stores |
+| offline agent export snapshot | local agent-data allowlist reader; never a product writer |
 | ordinary cloud files | box filesystem through governed filesystem use cases |
 | process/job runtime state | daemon job manager plus observed OS process state |
 | Gateway generation | current discovery `{pid,startedAt}` |
@@ -53,7 +54,7 @@ external Sandbox adapter / keeper
 | provider secret | modeld-only SecretRef resolution (`env:` / `file:`) |
 | Host desired liveness | official wrapper/supervisor |
 
-正常 agent/group 管理只经 Gateway。离线文件修复不能成为第二个自动 writer；它必须是显式维护 use case，并在恢复前 fence 正常 writer。
+正常 agent/group 管理只经 Gateway。`export agent` 只读取本地 agent-data allowlist，不是第二个产品 writer，也不经 Gateway 组装导出包。离线文件修复不能成为第二个自动 writer；它必须是显式维护 use case，并在恢复前 fence 正常 writer。
 
 ## 3. Repository Shape
 

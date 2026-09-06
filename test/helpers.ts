@@ -320,6 +320,7 @@ export async function captureCli(
     runCommand: async () => ({ code: 127, stdout: "", stderr: "not configured in test" }),
     transport: "auto",
     daemonSocket: join(tmpdir(), `grokbox-test-${crypto.randomUUID()}.sock`),
+    agentDataRoot: join(tmpdir(), `grokbox-missing-agent-data-${crypto.randomUUID()}`),
     confirm: async () => false,
     stdinIsTTY: true,
     readStdin: async () => "",

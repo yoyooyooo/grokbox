@@ -99,6 +99,7 @@ describe("registry, help, and runtime", () => {
       "send",
       "history",
       "memory",
+      "export",
       "fs",
       "exec",
       "jobs",
