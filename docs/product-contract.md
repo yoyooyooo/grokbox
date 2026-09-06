@@ -138,6 +138,8 @@ grokbox (alias: gbox)
 │   └── thread <target> --root <entry-id>
 ├── memory
 │   └── list <agent> [--content]
+├── export
+│   └── agent <id-or-name> --out <dir> [--include-related-workflows] [--agent-data <dir>]
 ├── events
 ├── is
 │   └── running <target>
@@ -346,12 +348,15 @@ printf '%s' '<text>' | grokbox send <id-or-name>
 
 文本输入规则对 `send` 和 `fs write` 一致：显式 `--text` 存在时永远不读取 stdin，并且在非 TTY/CI/agent runner 中正常工作；只有未提供 `--text` 时才读取非 TTY stdin。两者都缺失时返回 `invalid_usage`；显式参数与可读 stdin 同时存在时，以显式参数为唯一输入。
 
-### 7.4 History, Memory, Events, Running
+### 7.4 History, Memory, Export, Events, Running
 
 - `history search` 搜索 transcript 内容，不属于 agent roster 搜索。
 - `history tail` 支持 `--limit` 与 `--before-seq`。
 - `history thread` 读取指定 root thread，不激活对象。
 - `memory list <agent>` 默认只输出 metadata；`--content` 显式读取正文。
+- `export agent <id-or-name> --out <dir>` 是盒内离线只读导出：不走 Gateway、不解析 Profile、不写产品 SQLite/Memory。默认只打包 **owned**：roster 投影（id/name/kind）、profile/settings（无 secret）、Agent Memory 文件、若存在的 user-memory shard 与 project-memory shards、automations JSON。stdout 是 JSON envelope 中的 manifest 摘要；完整分类写入 `--out/manifest.json`。
+- skill / workflow / plugin **没有** per-bot 结构化归属。`settings.json` 样本只有 `notifyOnAgentUpdates` / `hiddenFromSidebar`；`grokbox skills` 是 CLI 捆绑 skill，不是 Bot 账本；MCP/plugin 属于 Gateway catalog；`agent-data/workflows/` 是全局投影。manifest 必须写 `association: none`，仅把 automation 正文里扫到的 workflow 名标为 `related` 引用（引用不是所有权）。不要默认打包全局 workflows、`~/.agents/skills` 或 MCP 账号。`--include-related-workflows` 只追加被引用且存在的 workflow `SKILL.md`。transcript `store.db` / `conversation-blobs.db` 默认省略。
+- Memory 只使用三层：`agent` / `user` / `project`。目标存在且非空、路径逃逸、secret 路径（含 `gateway.json` 与 token/Cookie/key 文件）fail-closed。默认根是 `/home/box/agent-data`；`--agent-data` 只覆盖本地根。测试必须用夹具，不得把真实 sand-data 当测试源。
 - `events` 输出统一 NDJSON，source 只允许 `gateway,job,daemon`，Gateway channel 使用 registry allowlist。
 - daemon Profile 使用 `<daemon-generation>:<sequence>` cursor 读取 bounded journal；首次读取 retained window，restart/eviction 先输出 explicit gap 再继续。`--limit` 每页 1-128，long poll 不把断线解释为空区间。
 - direct Gateway Profile 只支持 `gateway` source；cursor resume、disconnect、malformed/oversized SSE 均输出 non-resumable gap。
@@ -484,6 +489,10 @@ quota_authorization_failed
 quota_protocol_unsupported
 quota_provider_unavailable
 desktop_unavailable
+export_path_invalid
+export_forbidden
+export_destination_exists
+export_source_unavailable
 gateway_*
 daemon_unreachable
 daemon_unauthorized
@@ -531,6 +540,7 @@ Timeout 只说明调用窗口结束，不证明远端副作用没有发生。所
 - 远程 daemon profile 默认权限小于 Gateway 全权 Bearer。
 - SSH 不是自动 fallback，避免语义、审计和权限静默变化。
 - 不开放 raw Gateway、raw shell、任意绝对路径或凭据读取。
+- `export agent` 不得把 `gateway.json`、token、Cookie、provider key 或 transcript 整库写入导出包；失败路径 fail-closed。
 - 直接 Gateway transport 是兼容/诊断路径；它不获得 host filesystem/process 能力。
 - 文件离线修复是显式维护模式，不与 Gateway writer 自动互换。
 

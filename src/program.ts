@@ -20,6 +20,7 @@ import {
   runDesktopStatus,
 } from "./commands/desktop.ts";
 import { runExec } from "./commands/exec.ts";
+import { runExportAgent } from "./commands/export.ts";
 import { runEvents } from "./commands/events.ts";
 import {
   runFsDownload,
@@ -84,6 +85,9 @@ type CliOptions = ProfileOptions & {
   beforeSeq?: string;
   root?: string;
   content?: boolean;
+  out?: string;
+  agentData?: string;
+  includeRelatedWorkflows?: boolean;
   channels?: string;
   once?: boolean;
   includeMemoryContent?: boolean;
@@ -132,6 +136,7 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "groups members": "Product group membership",
   history: "Search and read display transcript",
   memory: "Read agent Memory metadata",
+  export: "Offline local Bot export",
   fs: "Governed cloud-computer files",
   exec: "Governed structured process execution",
   jobs: "Durable daemon Jobs",
@@ -211,6 +216,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "history thread": async (deps, args, options) =>
       await runHistoryThread(deps, args[0] ?? "", options),
     "memory list": async (deps, args, options) => await runMemoryList(deps, args[0] ?? "", options),
+    "export agent": async (deps, args, options) => await runExportAgent(deps, args[0] ?? "", options),
     "fs stat": async (deps, args, options) => await runFsStat(deps, args[0] ?? "", options),
     "fs list": async (deps, args, options) => await runFsList(deps, args[0] ?? "", options),
     "fs read": async (deps, args, options) => await runFsRead(deps, args[0] ?? "", options),

@@ -141,6 +141,7 @@ grokbox agents list --table
 grokbox groups list --table
 grokbox history tail <target> --limit 20
 grokbox memory list <agent>
+grokbox export agent <agent> --out ./export
 grokbox fs stat workspace:/artifact.txt
 grokbox jobs list --table
 grokbox desktop status --table
