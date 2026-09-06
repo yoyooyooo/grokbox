@@ -24,9 +24,9 @@ async function writeText(path: string, content: string): Promise<void> {
   await writeFile(path, content.endsWith("\n") ? content : `${content}\n`, { mode: 0o600 });
 }
 
-async function makeFixture(): Promise<Fixture> {
+async function makeFixture(rootName = "agent-data"): Promise<Fixture> {
   const parent = await mkdtemp(join(tmpdir(), "grokbox-export-"));
-  const agentData = join(parent, "agent-data");
+  const agentData = join(parent, rootName);
   await mkdir(join(agentData, "agents", "agent-alpha", "automations", "nightly"), { recursive: true });
   await mkdir(join(agentData, "agents", "agent-alpha", "memory", "log"), { recursive: true });
   await mkdir(join(agentData, "agents", "group-ops"), { recursive: true });
@@ -268,6 +268,36 @@ describe("export agent", () => {
     );
     expect(escaped.code).toBe(66);
     expect(errorCode(escaped.stderr)).toBe("export_forbidden");
+  });
+
+  test("exports owned files when the canonical root is named sand-data", async () => {
+    const fixture = await makeFixture("sand-data");
+    const outNamed = join(fixture.parent, "out-sand-data");
+    const named = await runExport(
+      ["export", "agent", "alpha", "--out", outNamed, "--agent-data", fixture.agentData],
+      [GATEWAY_SECRET, PLUGIN_SECRET],
+    );
+    expect(named.code).toBe(0);
+    expect(JSON.parse(await readFile(join(outNamed, "profile.json"), "utf8")).name).toBe("alpha");
+    await expect(readFile(join(outNamed, "gateway.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(outNamed, "store.db"), "utf8")).rejects.toThrow();
+
+    const link = join(fixture.parent, "agent-data");
+    await symlink(fixture.agentData, link);
+    const outLink = join(fixture.parent, "out-symlink");
+    const linked = await runExport(
+      ["export", "agent", "alpha", "--out", outLink, "--agent-data", link],
+      [GATEWAY_SECRET, PLUGIN_SECRET],
+    );
+    expect(linked.code).toBe(0);
+    expect((parseJson(linked.stdout) as { data: { agentId: string } }).data.agentId).toBe("agent-alpha");
+
+    const inside = await runExport(
+      ["export", "agent", "alpha", "--out", join(fixture.agentData, "exported"), "--agent-data", link],
+      [GATEWAY_SECRET, PLUGIN_SECRET],
+    );
+    expect(inside.code).toBe(66);
+    expect(errorCode(inside.stderr)).toBe("export_forbidden");
   });
 
   test("does not use Gateway or the live agent-data root", async () => {

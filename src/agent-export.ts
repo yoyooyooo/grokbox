@@ -147,16 +147,19 @@ function within(root: string, target: string): boolean {
   return value === "" || (!value.startsWith(`..${sep}`) && value !== ".." && !isAbsolute(value));
 }
 
-function blockedPath(path: string): boolean {
-  const normalized = resolve(path);
-  const components = normalized.split(sep).filter(Boolean).map((value) => value.toLowerCase());
-  const last = components.at(-1) ?? "";
+function blockedLeafName(path: string): boolean {
+  const last = basename(resolve(path)).toLowerCase();
   return (
-    components.some((value) => BLOCKED_COMPONENTS.has(value)) ||
     BLOCKED_FILES.has(last) ||
     BLOCKED_PREFIXES.some((prefix) => last.startsWith(prefix)) ||
     BLOCKED_SUFFIXES.some((suffix) => last.endsWith(suffix))
   );
+}
+
+function blockedPath(path: string): boolean {
+  if (blockedLeafName(path)) return true;
+  const components = resolve(path).split(sep).filter(Boolean).map((value) => value.toLowerCase());
+  return components.some((value) => BLOCKED_COMPONENTS.has(value));
 }
 
 function sourceRel(root: string, absolute: string): string {
@@ -285,7 +288,9 @@ async function assertRegularWithinRoot(root: string, path: string): Promise<stri
   if (!within(root, real)) {
     throw new CliError("export_forbidden", "Export source escaped the agent-data root.");
   }
-  if (blockedPath(real)) {
+  // The canonical agent-data root is often named sand-data. Ancestor components of
+  // that resolved root are not secret; only the file's own name can block a copy.
+  if (blockedLeafName(real)) {
     throw new CliError("export_forbidden", "Refusing to export a secret or blocked path.");
   }
   return real;
