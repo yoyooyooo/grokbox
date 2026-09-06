@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeAttestation, type CoverageAttestation } from "../src/attestation.ts";
+import { writeAttestation, type CoverageAttestation, type RouteAttestation } from "../src/attestation.ts";
 import { startStubModeldServer } from "../src/modeld-ipc.ts";
 import { projectLiveStatus } from "../src/observe.ts";
 import type { DesiredFile, ModelsFile } from "../src/models.ts";
@@ -141,7 +141,7 @@ function attFor(host: ProcessIdentity, diskSha = SHA): CoverageAttestation {
   };
 }
 
-function routeAttFor(host: ProcessIdentity, diskSha = SHA, overrides: Partial<CoverageAttestation> = {}): CoverageAttestation {
+function routeAttFor(host: ProcessIdentity, diskSha = SHA, overrides: Partial<RouteAttestation> = {}): RouteAttestation {
   return {
     mode: "route",
     coverage: "attested",

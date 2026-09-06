@@ -7,7 +7,7 @@ import { runDaemonEnsure } from "../packages/cli/src/commands/daemon.ts";
 import { runJobsCancel } from "../packages/cli/src/commands/jobs.ts";
 import type { DaemonProcessConfig } from "../packages/cli/src/daemon/config.ts";
 import { ProcessAuthority } from "../packages/cli/src/daemon/process.ts";
-import { createProductionDeps } from "../packages/cli/src/deps.ts";
+import { createProductionDeps, type FetchFn } from "../packages/cli/src/deps.ts";
 import { httpStatusToError } from "../packages/cli/src/errors.ts";
 import { GatewayClient } from "../packages/cli/src/gateway.ts";
 
@@ -56,7 +56,7 @@ describe("Detail absorb regressions", () => {
         scheme: "http", host: "127.0.0.1", port: 31337, pid: 1, startedAt: 1, token: "test-token",
       }),
       fetch: (async (_input: string | URL | Request, init?: RequestInit) => {
-        fetchSignal = init?.signal;
+        fetchSignal = init?.signal ?? undefined;
         return await new Promise<Response>((resolve, reject) => {
           const signal = init?.signal;
           if (signal?.aborted) {
@@ -67,7 +67,7 @@ describe("Detail absorb regressions", () => {
             reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
           }, { once: true });
         });
-      }) as typeof fetch,
+      }) as FetchFn,
     };
     const pending = new GatewayClient(deps).health(10_000);
     for (let i = 0; i < 50 && fetchSignal === undefined; i += 1) {
@@ -91,9 +91,9 @@ describe("Detail absorb regressions", () => {
       daemonServerUrl: "https://box.example.ts.net:8443",
       sshHost: "box.example.ts.net",
       daemonToken: "test-token",
-      fetch: (async () => {
+      fetch: (async (..._args: Parameters<FetchFn>): Promise<Response> => {
         throw new Error("unreachable");
-      }) as typeof fetch,
+      }) as FetchFn,
       runCommand: async (argv: readonly string[]) => {
         commands.push([...argv]);
         return { code: 130, stdout: "", stderr: "Command cancelled." };
@@ -127,7 +127,7 @@ describe("Detail absorb regressions", () => {
       if (request.method === "jobCancel") throw new TypeError("lost response");
       if (request.method === "jobShow") return Response.json({ ok: true, result: projection });
       return Response.json({ ok: false, error: { code: "gateway_not_found", message: "no", retryable: false } }, { status: 404 });
-    }) as typeof fetch;
+    }) as FetchFn;
     const deps = {
       ...createProductionDeps(),
       transport: "daemon" as const,

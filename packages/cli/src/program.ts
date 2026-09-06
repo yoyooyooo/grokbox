@@ -136,6 +136,7 @@ type CliOptions = ProfileOptions & {
   intervalMs?: string;
   mode?: string;
   for?: string;
+  from?: string;
   confirm?: boolean;
 };
 
