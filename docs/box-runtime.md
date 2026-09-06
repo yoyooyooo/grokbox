@@ -211,7 +211,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 **Agent CLI（盒内，JSON）**
 
 - 写 desired：`activate` / `deactivate` / `models *`
-- 离线审 profile：`profile write --from <host-bundle>`（只读拷贝 → 长效 `profiles/reviewed.json`；不 inject / 不 TERM / 不 re-adopt）
+- 离线审 profile：`profile write --from <host-bundle>`（显式绝对路径、只读输入 → 两处精确切片及 source/transformed SHA 校验 → 原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
 - 进程入口：`modeld run` / `watchdog run`
@@ -220,6 +220,10 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 短效 live state 默认 `~/.grokbox/run/`（见 §4）
 - 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
+
+`profile write` 在 `0700` 的 `profiles/` 内使用每次独有、独占创建的 `0600` `.reviewed-*.tmp`：只写 profile JSON，校验读回并 sync 文件后 rename 为 `reviewed.json`。并发成功 writer 以最后一次 rename 为准；reader 只见完整旧版或新版，不见半份 JSON。输入不得与输出同文件（包括 symlink/hardlink 别名）；读取和发布前核对源文件身份、大小与时间戳，检测到变化即拒绝。失败/中断可遗留未发布的 protected staging，canonical reader 忽略它；不自动删除 staging 或已有 legacy 整包副本，清理由 operator 另行决定。这里不承诺掉电后的目录元数据持久性或防御同 UID 恶意文件系统替换。
+
+生成 profile 只证明这些显式切片可重放且 hashes 一致，不自动批准未知补丁，不替代人工审查或后续 live 授权；实际 preload/marker/attestation 的 generation 绑定仍属后续接线。
 
 **人 / 另一次授权**
 

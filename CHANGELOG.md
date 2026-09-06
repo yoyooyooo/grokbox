@@ -8,9 +8,13 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
-- Add offline `runtime profile write --from <host-bundle>` to author durable
-  `profiles/reviewed.json` (source + transformed SHA) from an explicit Host
-  bundle copy. No live Host inject, TERM, or re-adopt.
+- Close offline `runtime profile write --from <host-bundle>` authoring: validate
+  two exact slices and recomputed source/transformed hashes, then read back and
+  sync private per-writer profile staging before atomic `reviewed.json` publication.
+  No retained full-bundle copy; source/output aliases and changed input fail closed.
+  Failed staging stays unpublished for operator cleanup; concurrent successful
+  writers are last-rename-wins. Authoring is not patch approval. No live Host
+  inject, TERM, or re-adopt.
 - Stub-route Host executor `stream()` returns synchronously with independent
   `fullStream` / `response` / `usage` waiters, trim-able `response.modelId`,
   a `messages` array on success and error, camelCase usage including

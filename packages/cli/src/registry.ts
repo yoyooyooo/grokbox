@@ -1221,10 +1221,10 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["runtime", "profile", "write"],
     usage: "grokbox runtime profile write --from <host-bundle>",
-    summary: "Offline-author a durable reviewed PatchProfile from a Host bundle copy (no live inject).",
+    summary: "Atomically author a durable PatchProfile from read-only input (no live inject or retained bundle).",
     arguments: [],
     options: options([
-      { flags: "--from <host-bundle>", description: "Absolute Host bundle path to copy from (synthetic or live); never edited in place", required: true },
+      { flags: "--from <host-bundle>", description: "Absolute Host bundle input; read only, no retained full-bundle copy", required: true },
     ]),
     stdin: "none",
     table: false,

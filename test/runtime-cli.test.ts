@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as dns from "node:dns";
-import { lstat, mkdtemp, writeFile, mkdir, readFile } from "node:fs/promises";
+import { lstat, mkdtemp, writeFile, mkdir, readFile, readdir } from "node:fs/promises";
 import * as net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import { liveH3AdoptAdapter } from "../packages/cli/src/commands/runtime.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import * as modeldModule from "../packages/box-runtime/src/modeld.ts";
 import { sha256Bytes } from "../packages/box-runtime/src/hash.ts";
-import { LIVE_HOST_BUNDLE } from "../packages/box-runtime/src/live-slices.ts";
+import { applyPatchProfile } from "../packages/box-runtime/src/transform.ts";
 import { modeldSocketPath, probeStubModeld, STUB_ECHO_MODEL_ID } from "../packages/box-runtime/src/modeld-ipc.ts";
 import { LIVE_SHAPED_HOST } from "../packages/box-runtime/test/live-shaped-host.ts";
 import { captureCli, parseJson } from "./helpers.ts";
@@ -152,56 +152,91 @@ describe("box-local runtime CLI", () => {
     ).toBe(false);
   });
 
-  test("runtime profile write authors reviewed.json from disposable hostBundle offline", async () => {
-    async function liveSnapshot() {
-      let digest: string | null = null;
-      try {
-        digest = sha256Bytes(await readFile(LIVE_HOST_BUNDLE));
-      } catch {
-        digest = null;
-      }
-      const pids: string[] = [];
-      try {
-        const proc = Bun.spawn(["ps", "-eo", "pid,args"], { stdout: "pipe", stderr: "pipe" });
-        const text = await new Response(proc.stdout).text();
-        await proc.exited;
-        for (const line of text.split("\n")) {
-          if (line.includes("host-main.cjs")) pids.push(line.trim().split(/\s+/, 1)[0] ?? "");
-        }
-      } catch {
-        /* ignore */
-      }
-      return { digest, pids: pids.filter(Boolean) };
-    }
-
-    const before = await liveSnapshot();
-    const boxRuntimeRoot = await withRoot();
-    const hostDir = await mkdtemp(join(tmpdir(), "grokbox-profile-from-"));
-    const hostBundle = join(hostDir, "host-main.cjs");
+  test("runtime profile write atomically authors protected JSON only from a synthetic Host", async () => {
+    const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-profile-cli-"));
+    const hostBundle = join(boxRuntimeRoot, "synthetic-host.cjs");
     await writeFile(hostBundle, LIVE_SHAPED_HOST);
-    const original = await readFile(hostBundle, "utf8");
+    const liveSpy = spyLiveAdoptFactory();
+    const secretSpy = spyOn(modeldModule, "createFileEnvSecretResolver");
+    try {
+      const wrote = await captureCli(["runtime", "profile", "write", "--from", hostBundle], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+        fetch: (async (..._args: Parameters<typeof fetch>): Promise<Response> => {
+          throw new Error("profile authoring must not use network");
+        }) as typeof fetch,
+      });
+      expect(wrote.code, wrote.stderr).toBe(0);
+      const body = data(wrote.stdout);
+      expect(body).toMatchObject({ process: "profile-write", offline: true, signaled: false, inject: false });
+      expect(body.profilePath).toBe(join(boxRuntimeRoot, "profiles", "reviewed.json"));
+      expect(body.sourceSha256).toBe(sha256Bytes(Buffer.from(LIVE_SHAPED_HOST)));
+      expect(body.diskSha).toBe(body.sourceSha256);
+      expect(body).not.toHaveProperty("copyPath");
+      const profile = JSON.parse(await readFile(String(body.profilePath), "utf8"));
+      expect(profile.profileId).toBe("reviewed-copy");
+      const applied = applyPatchProfile(LIVE_SHAPED_HOST, profile);
+      expect(applied.ok).toBe(true);
+      if (!applied.ok) throw new Error(applied.code);
+      expect(body.transformedSourceSha256).toBe(sha256Bytes(Buffer.from(applied.source)));
+      expect(body.transformedSourceSha256).not.toBe(body.sourceSha256);
+      expect(await readdir(join(boxRuntimeRoot, "profiles"))).toEqual(["reviewed.json"]);
+      expect((await lstat(join(boxRuntimeRoot, "profiles"))).mode & 0o777).toBe(0o700);
+      expect((await lstat(String(body.profilePath))).mode & 0o777).toBe(0o600);
+      expect(await readFile(hostBundle, "utf8")).toBe(LIVE_SHAPED_HOST);
+      expect(liveSpy).not.toHaveBeenCalled();
+      expect(secretSpy).not.toHaveBeenCalled();
+    } finally {
+      secretSpy.mockRestore();
+      liveSpy.mockRestore();
+    }
+  });
 
-    const wrote = await captureCli(["runtime", "profile", "write", "--from", hostBundle], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(wrote.code, wrote.stderr).toBe(0);
-    const body = data(wrote.stdout);
-    expect(body.process).toBe("profile-write");
-    expect(body.offline).toBe(true);
-    expect(body.signaled).toBe(false);
-    expect(body.inject).toBe(false);
-    expect(body.profilePath).toBe(join(boxRuntimeRoot, "profiles", "reviewed.json"));
-    expect(String(body.sourceSha256)).toHaveLength(64);
-    expect(String(body.transformedSourceSha256)).toHaveLength(64);
-    expect(body.transformedSourceSha256).not.toBe(body.sourceSha256);
+  test("runtime profile write rejects invalid input without replacing the prior good artifact", async () => {
+    const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-profile-cli-invalid-"));
+    const hostBundle = join(boxRuntimeRoot, "synthetic-host.cjs");
+    const badBundle = join(boxRuntimeRoot, "bad-host.cjs");
+    await writeFile(hostBundle, LIVE_SHAPED_HOST);
+    await writeFile(badBundle, LIVE_SHAPED_HOST + LIVE_SHAPED_HOST);
+    const deps = { discoveryPath: "/dev/null", boxRuntimeRoot };
+    const good = await captureCli(["runtime", "profile", "write", "--from", hostBundle], deps);
+    expect(good.code, good.stderr).toBe(0);
+    const profilePath = String(data(good.stdout).profilePath);
+    const previous = await readFile(profilePath, "utf8");
+    for (const args of [
+      [], ["--from", "relative.cjs"], ["--from", "  "],
+      ["--from", join(boxRuntimeRoot, "missing.cjs")],
+      ["--from", badBundle], ["--from", profilePath],
+    ]) {
+      const failed = await captureCli(["runtime", "profile", "write", ...args], deps);
+      expect(failed.code, failed.stderr).toBe(2);
+      expect(failed.stdout).toBe("");
+      expect(parseJson(failed.stderr)).toMatchObject({ error: { code: "invalid_usage" } });
+      expect(await readFile(profilePath, "utf8")).toBe(previous);
+      expect(await readdir(join(boxRuntimeRoot, "profiles"))).toEqual(["reviewed.json"]);
+    }
+  });
 
-    const profile = JSON.parse(await readFile(String(body.profilePath), "utf8"));
-    expect(profile.profileId).toBe("reviewed-copy");
-    expect(profile.sourceSha256).toBe(body.sourceSha256);
-    expect(await readFile(hostBundle, "utf8")).toBe(original);
-    const after = await liveSnapshot();
-    expect(after).toEqual(before);
+  test("runtime profile write refuses Profile/remote contexts before authoring or live ports", async () => {
+    const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-profile-cli-local-"));
+    const hostBundle = join(boxRuntimeRoot, "synthetic-host.cjs");
+    await writeFile(hostBundle, LIVE_SHAPED_HOST);
+    const before = await readdir(boxRuntimeRoot);
+    const spy = spyLiveAdoptFactory();
+    try {
+      const args = ["runtime", "profile", "write", "--from", hostBundle];
+      const profiled = await captureCli(["--profile", "default", ...args], { boxRuntimeRoot });
+      const remote = await captureCli(args, { boxRuntimeRoot, sshHost: "box.example" });
+      for (const refused of [profiled, remote]) {
+        expect(refused.code, refused.stderr).toBe(65);
+        expect(refused.stdout).toBe("");
+        expect(parseJson(refused.stderr)).toMatchObject({ error: { code: "runtime_local_only" } });
+      }
+      expect(await readdir(boxRuntimeRoot)).toEqual(before);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("--profile and remote transports return runtime_local_only", async () => {

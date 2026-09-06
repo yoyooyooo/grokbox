@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { sha256Bytes } from "./hash.ts";
@@ -14,7 +14,7 @@ import {
 } from "./h3-identity.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
 import { IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
-import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "./live-slices.ts";
+import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import {
   inspectPid,
   linuxProcessPort,
@@ -31,7 +31,8 @@ import {
   type ProcessIdentity,
   type ProcessPort,
 } from "./process.ts";
-import { profileFromSource, type PatchProfile, type SlicePatch } from "./transform.ts";
+import type { PatchProfile } from "./transform.ts";
+export { writeReviewedProfileFromCopy, type WriteReviewedProfileFromCopyInput } from "./reviewed-profile.ts";
 
 const EMPTY_CENSUS: Census = {
   wrapper: 0,
@@ -286,49 +287,6 @@ export function createLiveH3AdoptPorts(input: {
     guardianDeadlineMs: waitMs,
     waitBudgetMs: waitMs,
     adoptProveMs: waitMs,
-  };
-}
-
-export type WriteReviewedProfileFromCopyInput = {
-  destDir: string;
-  /** Explicit Host bundle path to copy from (synthetic, disposable, or live). Never edited in place. */
-  hostBundle: string;
-  slices?: readonly SlicePatch[];
-  profileId?: string;
-};
-
-export async function writeReviewedProfileFromCopy(
-  input: WriteReviewedProfileFromCopyInput,
-): Promise<{
-  profilePath: string;
-  copyPath: string;
-  profile: PatchProfile;
-  sourceSha256: string;
-  transformedSourceSha256: string;
-  diskSha: string;
-}> {
-  const hostBundle = input.hostBundle;
-  if (!hostBundle || typeof hostBundle !== "string") {
-    throw new Error("writeReviewedProfileFromCopy requires hostBundle");
-  }
-  const slices = input.slices ?? LIVE_SLICE_PATCHES;
-  const profileId = input.profileId ?? "live-h3-copy";
-  await mkdir(input.destDir, { recursive: true, mode: 0o700 });
-  const copyPath = join(input.destDir, "host-main.copy.cjs");
-  const profilePath = join(input.destDir, "reviewed.json");
-  await copyFile(hostBundle, copyPath);
-  const sourceBytes = await readFile(copyPath);
-  const source = sourceBytes.toString("utf8");
-  const diskSha = sha256Bytes(sourceBytes);
-  const profile = profileFromSource(source, slices, profileId);
-  await writeFile(profilePath, `${JSON.stringify(profile)}\n`, { mode: 0o600 });
-  return {
-    profilePath,
-    copyPath,
-    profile,
-    sourceSha256: profile.sourceSha256,
-    transformedSourceSha256: profile.transformedSourceSha256,
-    diskSha,
   };
 }
 

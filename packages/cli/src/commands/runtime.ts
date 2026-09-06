@@ -267,7 +267,7 @@ export async function runRuntimeProfileWrite(deps: CliDeps, fromPath: string | u
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
       if (code === "ENOENT") {
-        throw new CliError("invalid_usage", `--from Host bundle not found: ${hostBundle}`);
+        throw new CliError("invalid_usage", "Profile authoring input or destination is unavailable.");
       }
       throw error;
     }
