@@ -29,6 +29,14 @@ Host 不读 models/attestation，不拥有 provider credential。保留 pinned-p
 
 **J13 决策门：当前保留 Host append-only terminal journal，watchdog 仍唯一 compactor。** Journal-via-modeld 尚未接受：不得迁移 writer、新增 terminal-report IPC method 或在 Host 加 Effect。现有锁等待/fsync 是明确的 **decision-gated gap，不是永久豁免**；完整重副作用收口不能跳过它。未来放置变化必须先获 owner 决定，并更新同日志的并发、去重、ack/gap、拒绝/断线/重启合同；模型完成不能冒充 Host normalized delivery。日志失败只影响证据，不改变 Host 回复或工具循环。
 
+## Owner adjudication（2026-09-07）
+
+详见 [docs/decisions/2026-09-07-offline-live-adjudication.md](decisions/2026-09-07-offline-live-adjudication.md)。摘要：
+
+1. **J13**：当前保持 Host append；不因 Effect 收口强制先搬 journal。
+2. **G1**：身份/SHA 预检通过后即可推进 stub live；**不**把 E1–E2 当 G1 前置墙。
+3. **Bun**：合并/CI 以声明的 `packageManager`（`bun@1.3.14`）+ frozen lock 为准；不在临界路径升 1.4.2。
+
 ## 渐进迁移顺序
 
 这些标签表示局部接缝，不表示交付状态或 live 授权。每步接回相同生产入口；临时 Promise 边界不得变成永久双执行器。
