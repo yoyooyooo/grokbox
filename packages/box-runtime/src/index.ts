@@ -74,6 +74,7 @@ export {
   findAdoptedHostState,
   proveStableOfficialState,
   loadReviewedProfile,
+  waitOfficialReplacement,
 } from "./official-chain.ts";
 export {
   runTransientAdoptOperation,

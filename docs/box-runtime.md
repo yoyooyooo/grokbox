@@ -104,6 +104,8 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 
 官方 relaunch 仍打开未补丁窗口（hybrid）。transient-adopt **不是** boot env D，也不把 preload 写进官方磁盘或 wrapper。
 
+Deactivate / 官方替换等待（`waitOfficialReplacement`）：仅 census 到新 Host **不够**。必须 `gateway.json` pid 等于该 Host；钉住第一个合格候选，不追下一代。有界 poll，测试可注入 `now`/`sleep`。Host 可见但 Gateway 未发布是 `replacement-gateway-unproven`，不是成功。
+
 ---
 
 ## 5. 模型运行时

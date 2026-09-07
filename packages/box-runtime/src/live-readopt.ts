@@ -10,7 +10,7 @@ import { sha256Text } from "./hash.ts";
 import { IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { procEnvHas, readNamedProcEnv } from "./live-proc.ts";
-import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
+import { waitOfficialReplacement, type RoleClassifier } from "./official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
 import { loadDurableReviewedProfile } from "./reviewed-profile.ts";
 import { resolvePreloadPath } from "./runtime-helpers.ts";
@@ -106,21 +106,14 @@ export function wireLiveManualReadopt(input: {
     },
     ...(reviewedProfile ? { reviewedProfile } : {}),
     adopt,
-    waitReplacement: async (oldPid) => {
-      const started = Date.now();
-      const budget = ports.waitBudgetMs ?? 8000;
-      while (Date.now() - started < budget) {
-        const unique = findUniqueOfficialChain(ports.processes, ports.classify);
-        if (
-          unique.ok &&
-          unique.chain.host.pid !== oldPid &&
-          !ports.hasGrokboxPreload(unique.chain.host)
-        ) {
-          return unique.chain.host;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      return null;
-    },
+    waitReplacement: async (oldPid) =>
+      await waitOfficialReplacement({
+        oldPid,
+        processes: ports.processes,
+        classify: ports.classify,
+        hasGrokboxPreload: (host) => ports.hasGrokboxPreload(host),
+        readGatewayPid: () => ports.readGatewayPid(),
+        budgetMs: ports.waitBudgetMs ?? 8000,
+      }),
   };
 }

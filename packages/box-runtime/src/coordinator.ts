@@ -11,7 +11,7 @@ import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
 import { probeStubModeld } from "./modeld-ipc.ts";
 import { routeHasNonStubAssignment, type DesiredFile, type ModelsFile } from "./models.ts";
 import { projectLiveStatus, type HostOrigin } from "./observe.ts";
-import { findAdoptedHostState, findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
+import { findAdoptedHostState, findUniqueOfficialChain, loadReviewedProfile, waitOfficialReplacement, type RoleClassifier } from "./official-chain.ts";
 import { loadDurableReviewedProfile, validateReviewedProfile } from "./reviewed-profile.ts";
 import { acquireCoordinatorLease, coordinatorLeasePath, type LeaseOwner } from "./op-lock.ts";
 import { coordinatorStatePath } from "./paths.ts";
@@ -297,28 +297,14 @@ async function waitDirectOfficialReplacement(
   if (input.waitReplacement) return await input.waitReplacement(oldPid);
   const adopt = input.adopt;
   if (!adopt) return null;
-  const started = Date.now();
-  const budget = adopt.adoptProveMs ?? 8000;
-  while (Date.now() - started < budget) {
-    const unique = findUniqueOfficialChain(processes, classify);
-    if (
-      unique.ok &&
-      unique.chain.host.pid !== oldPid &&
-      !adopt.hasGrokboxPreload(unique.chain.host)
-    ) {
-      return unique.chain.host;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  const unique = findUniqueOfficialChain(processes, classify);
-  if (
-    unique.ok &&
-    unique.chain.host.pid !== oldPid &&
-    !adopt.hasGrokboxPreload(unique.chain.host)
-  ) {
-    return unique.chain.host;
-  }
-  return null;
+  return await waitOfficialReplacement({
+    oldPid,
+    processes,
+    classify,
+    hasGrokboxPreload: (host) => adopt.hasGrokboxPreload(host),
+    readGatewayPid: () => adopt.readGatewayPid(),
+    budgetMs: adopt.adoptProveMs ?? 8000,
+  });
 }
 
 type AttemptProgress = {

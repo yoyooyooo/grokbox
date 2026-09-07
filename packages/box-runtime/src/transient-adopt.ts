@@ -79,7 +79,7 @@ export function settleStaleAdoptJournal(input: {
   gatewayPid: number | null;
 }): AdoptOpState | null {
   const state = input.state;
-  if (!state || !adoptJournalNeedsRecovery(state) || state.phase === "recovery-required" || state.phase === "commit-attestation") return state;
+  if (!state || !adoptJournalNeedsRecovery(state) || state.phase === "commit-attestation") return state;
   if (state.tempSupervisor) {
     const temp = input.inspect(state.tempSupervisor.pid);
     if (temp && temp.start === state.tempSupervisor.start) return state;
@@ -683,13 +683,24 @@ export async function runTransientAdoptDeactivate(
     signaled = true;
     if (!(await ctx.waitGone(live))) return fail("patched-host-still-alive");
     const replacement = await ctx.waitReplacement(live.pid);
-    if (!replacement || replacement.pid === live.pid) return fail("replacement-unproven");
+    if (!replacement || replacement.pid === live.pid) {
+      const uniqueGone = findUniqueOfficialChain(ctx.processes, ctx.classify);
+      if (
+        uniqueGone.ok &&
+        uniqueGone.chain.host.pid !== live.pid &&
+        !ctx.hasGrokboxPreload(uniqueGone.chain.host) &&
+        ctx.readGatewayPid() !== uniqueGone.chain.host.pid
+      ) {
+        return fail("replacement-gateway-unproven");
+      }
+      return fail("replacement-unproven");
+    }
     if (ctx.hasGrokboxPreload(replacement)) return fail("preload-still-present");
     if (ctx.diskSha() !== shaBefore) return fail("disk-sha-changed");
     const unique = findUniqueOfficialChain(ctx.processes, ctx.classify);
     if (!unique.ok || unique.chain.host.pid !== replacement.pid) return fail("census-invalid");
     if (unique.chain.host.ppid !== unique.chain.supervisor.pid) return fail("not-supervisor-owned");
-    if (ctx.readGatewayPid() !== unique.chain.host.pid) return fail("gateway-unproven");
+    if (ctx.readGatewayPid() !== unique.chain.host.pid) return fail("replacement-gateway-unproven");
     await ctx.clearAttestation();
     await writeAdoptOpState(ctx.ephemeralRoot, {
       launchMode: "transient-adopt",

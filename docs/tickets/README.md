@@ -18,5 +18,6 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T5a | done | C1 credentials productization (modeld Effect seam) |
 | T5b | backlog | S2 streaming IPC |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
+| T7 | done | Prove official replacement via Gateway pid |
 
 Driver: herdr grok main line; true blockers → new session gpt-6-astra max.

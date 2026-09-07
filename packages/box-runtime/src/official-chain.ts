@@ -38,6 +38,57 @@ function collectUniqueOfficial(
   };
 }
 
+function copyIdentity(host: ProcessIdentity): ProcessIdentity {
+  return { ...host, cmdline: [...host.cmdline], ancestry: [...host.ancestry] };
+}
+
+const REPLACEMENT_POLL_MS = 50;
+
+/**
+ * Bounded poll for one official replacement Host. Process-visible is not enough:
+ * Gateway pid must equal that Host pid. Does not chase a later generation.
+ */
+export async function waitOfficialReplacement(input: {
+  oldPid: number;
+  processes: ProcessPort;
+  classify: RoleClassifier;
+  hasGrokboxPreload: (host: ProcessIdentity) => boolean;
+  readGatewayPid: () => number | null;
+  budgetMs: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<ProcessIdentity | null> {
+  const now = input.now ?? Date.now;
+  const sleep = input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const deadline = now() + input.budgetMs;
+  let candidate: ProcessIdentity | null = null;
+  for (;;) {
+    const unique = findUniqueOfficialChain(input.processes, input.classify);
+    if (!unique.ok) {
+      if (candidate) return null;
+    } else {
+      const host = unique.chain.host;
+      const eligible = host.pid !== input.oldPid && !input.hasGrokboxPreload(host);
+      if (!eligible) {
+        if (candidate) return null;
+      } else if (!candidate) {
+        candidate = copyIdentity(host);
+      } else if (candidate.pid !== host.pid || candidate.start !== host.start || candidate.uid !== host.uid) {
+        return null;
+      }
+    }
+    if (candidate) {
+      const live = input.processes.inspect(candidate.pid);
+      if (!live || live.start !== candidate.start || live.uid !== candidate.uid) return null;
+      if (unique.ok && live.ppid !== unique.chain.supervisor.pid) return null;
+      if (input.readGatewayPid() === candidate.pid) return live;
+    }
+    const remaining = deadline - now();
+    if (remaining <= 0) return null;
+    await sleep(Math.min(REPLACEMENT_POLL_MS, remaining));
+  }
+}
+
 export function findUniqueOfficialChain(
   port: ProcessPort,
   classify: RoleClassifier,
