@@ -189,7 +189,7 @@ describe("default driver fence", () => {
   const sdkImport = /(?:from|import\(|require\()\s*["'](ai(?:\/[^"']*)?|@ai-sdk(?:\/[^"']*)?|openai(?:\/[^"']*)?)["']/;
   const srcDir = join(import.meta.dir, "../src");
 
-  test("Host/preload/seam/session stay SDK-free; ipc has no direct SDK import; route assert stays stub-only", async () => {
+  test("Host/preload/seam/session stay SDK-free; ipc has no direct SDK import; route admit is stub or openai*", async () => {
     for (const file of ["preload.ts", "seam.ts", "session.ts", "hook.ts", "transform.ts", "modeld-ipc.ts"]) {
       const text = await readFile(join(srcDir, file), "utf8");
       expect(text.match(sdkImport), file).toBeNull();
@@ -204,6 +204,6 @@ describe("default driver fence", () => {
     expect(def).toContain("createCompositeModeldDriver");
 
     const models = await readFile(join(srcDir, "models.ts"), "utf8");
-    expect(models).toContain("route admits only stub/echo");
+    expect(models).toContain("route admits only stub/echo or openai*");
   });
 });

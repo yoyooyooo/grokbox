@@ -77,6 +77,23 @@ describe("models.json store", () => {
     assertRouteAssignment(await store.loadModels());
     const drifted = applyUse(await store.loadModels(), "acme/fast");
     expect(() => assertRouteAssignment(drifted)).toThrow(BoxRuntimeError);
+    const openai = {
+      ...SAMPLE,
+      models: {
+        ...SAMPLE.models,
+        "openai/gpt-4o-mini": {
+          id: "openai/gpt-4o-mini",
+          provider: "openai",
+          model: "gpt-4o-mini",
+          endpoint: "https://sub2api.test/v1",
+          apiKeyRef: "env:OPENAI_API_KEY",
+          capabilities: { vision: false, tools: true, images: false },
+          dataTypes: ["text", "tools"],
+        },
+      },
+      assignments: { main: "openai/gpt-4o-mini", agents: {} },
+    };
+    assertRouteAssignment(openai);
     const status = projectStatus({
       root: store.root,
       desired: await store.loadDesired(),

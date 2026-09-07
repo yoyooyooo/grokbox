@@ -10,7 +10,7 @@ import { canonicalOwnershipAgrees } from "./identity-op.ts";
 import { probeStubModeld } from "./modeld-ipc.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "./live-proc.ts";
-import { parseDesiredFile, parseModelsFile, routeHasNonStubAssignment, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "./models.ts";
+import { parseDesiredFile, parseModelsFile, routeHasNonStubAssignment, routeModelAdmitted, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "./models.ts";
 import { boundedText, count, isRecord, observeJson, type Observation, type ObservationState } from "./observation.ts";
 import { parseReviewedProfile } from "./reviewed-profile.ts";
 import type { PatchProfile } from "./transform.ts";
@@ -229,8 +229,11 @@ export async function projectLiveStatus(input: { root: string; desired?: Desired
     const requestedPatch = mode === "identity" || mode === "route";
     if (requestedPatch && (ownership || status.host.origin === "official")) status.coverage = "window-open";
     const modeAgrees = mode !== "identity" && mode !== "route" || att?.mode === mode;
+    const routeMainId = effectiveModels?.assignments.main ?? null;
+    const routeMain = routeMainId === STUB_ECHO_MODEL_ID ? STUB_ECHO_MODEL
+      : routeMainId && effectiveModels && Object.hasOwn(effectiveModels.models, routeMainId) ? effectiveModels.models[routeMainId]! : null;
     const routeReady = mode !== "route" || (effectiveModels && status.models.assignmentState === "valid" &&
-      effectiveModels.assignments.main === STUB_ECHO_MODEL_ID && !routeHasNonStubAssignment(effectiveModels) &&
+      routeMain != null && routeModelAdmitted(routeMain) && !routeHasNonStubAssignment(effectiveModels) &&
       profile.state === "present" && routeAttestationAgrees(att, profile.value) && status.modeld.state === "running");
     if (fresh && topologyValid && modeAgrees && routeReady && status.operation.pending === false) status.coverage = "attested";
     if (fresh && topologyValid && status.operation.pending === false) status.window.durationMs = att?.windowMs ?? null;

@@ -752,6 +752,34 @@ describe("box-local runtime CLI", () => {
     expect((parseJson(activate.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
   });
 
+  test("activate --mode route admits openai* with https endpoint and apiKeyRef", async () => {
+    const boxRuntimeRoot = await withRoot();
+    await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify({
+      version: 1,
+      models: {
+        "openai/gpt-4o-mini": {
+          id: "openai/gpt-4o-mini",
+          provider: "openai",
+          model: "gpt-4o-mini",
+          endpoint: "https://sub2api.test/v1",
+          apiKeyRef: "env:OPENAI_API_KEY",
+        },
+      },
+      assignments: { main: "openai/gpt-4o-mini", agents: {} },
+    })}\n`);
+    const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(activate.code, activate.stderr).toBe(0);
+    expect(data(activate.stdout)).toMatchObject({ desired: "route", inject: false });
+    const refused = await captureCli(["runtime", "models", "use", "acme/fast"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(refused.code).toBe(2);
+  });
+
   test("modeld run under temp root: start → probe → abort cleans socket with hard-off", async () => {
     const boxRuntimeRoot = await withRoot();
     const runRoot = await mkdtemp(join(tmpdir(), "grokbox-modeld-cli-"));

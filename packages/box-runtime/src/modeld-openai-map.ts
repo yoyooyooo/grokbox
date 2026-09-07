@@ -1,6 +1,5 @@
 import type { ModelEnvelope, PromptContentPart, PromptMessage } from "./envelope.ts";
 import type { As1GenerateChunk, As1GenerateRequest } from "./modeld-as1.ts";
-import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { ModelRecord } from "./models.ts";
 
 export type OpenAiApiMode = "chat" | "responses";
@@ -17,14 +16,17 @@ export type OpenAiPromptMessage = {
 };
 
 export function openAiApiMode(model: Readonly<ModelRecord>): OpenAiApiMode | null {
-  if (model.id === STUB_ECHO_MODEL_ID || model.provider === "stub") return null;
+  if (model.id === "stub/echo" || model.provider === "stub") return null;
   if (model.provider === "openai-responses") return "responses";
   if (model.provider === "openai" || model.provider === "openai-chat") return "chat";
   return null;
 }
 
 export function openAiAccepts(model: Readonly<ModelRecord>): boolean {
-  return openAiApiMode(model) !== null && /^https?:\/\//i.test(model.endpoint);
+  return openAiApiMode(model) !== null
+    && /^https?:\/\//i.test(model.endpoint)
+    && typeof model.apiKeyRef === "string"
+    && model.apiKeyRef.length > 0;
 }
 
 export function envelopeToOpenAiMessages(envelope: ModelEnvelope): OpenAiPromptMessage[] {

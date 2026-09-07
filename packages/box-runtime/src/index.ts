@@ -18,6 +18,7 @@ export {
   assertResetAllowed,
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
+  routeModelAdmitted,
   disclosure,
   openRuntimeStore,
   parseApiKeyRef,

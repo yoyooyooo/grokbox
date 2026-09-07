@@ -47,6 +47,7 @@ describe("OpenAI envelope mapping", () => {
     expect(openAiAccepts(STUB_ECHO_MODEL)).toBe(false);
     expect(openAiAccepts({ ...openaiModel, endpoint: "stub:echo" })).toBe(false);
     expect(openAiAccepts({ ...openaiModel, provider: "as1" })).toBe(false);
+    expect(openAiAccepts({ ...openaiModel, apiKeyRef: "" })).toBe(false);
   });
 
   test("maps messages, tools history, and images without execute metadata", () => {

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { BoxRuntimeError } from "./errors.ts";
+import { openAiAccepts } from "./modeld-openai-map.ts";
 import { desiredPath, modelsPath, resolveDurableRoot } from "./paths.ts";
 
 export type DesiredMode = "disabled" | "observe" | "identity" | "route";
@@ -257,21 +258,34 @@ export function assertResetAllowed(desired: DesiredFile): void {
   }
 }
 
+export function routeModelAdmitted(record: ModelRecord): boolean {
+  if (record.id === STUB_ECHO_MODEL_ID) return true;
+  return openAiAccepts(record);
+}
+
+function assignedModelIds(file: ModelsFile): string[] {
+  const ids: string[] = [];
+  if (file.assignments.main) ids.push(file.assignments.main);
+  ids.push(...Object.values(file.assignments.agents));
+  return ids;
+}
+
+/** True when any assignment is neither stub/echo nor an openai* record `openAiAccepts` would admit. */
 export function routeHasNonStubAssignment(file: ModelsFile): boolean {
-  if (file.assignments.main != null && file.assignments.main !== STUB_ECHO_MODEL_ID) return true;
-  return Object.values(file.assignments.agents).some((modelId) => modelId !== STUB_ECHO_MODEL_ID);
+  for (const id of assignedModelIds(file)) {
+    if (id === STUB_ECHO_MODEL_ID) continue;
+    const record = Object.hasOwn(file.models, id) ? file.models[id] : undefined;
+    if (!record || !openAiAccepts(record)) return true;
+  }
+  return false;
 }
 
 export function assertStubOnlyRouteAssignments(file: ModelsFile): void {
-  if (file.assignments.main != null && file.assignments.main !== STUB_ECHO_MODEL_ID) {
-    throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo in this slice.");
-  }
-  for (const [agentId, modelId] of Object.entries(file.assignments.agents)) {
-    if (modelId !== STUB_ECHO_MODEL_ID) {
-      throw new BoxRuntimeError(
-        "invalid_usage",
-        `route admits only stub/echo; assignments.agents.${agentId} is not admitted.`,
-      );
+  for (const id of assignedModelIds(file)) {
+    if (id === STUB_ECHO_MODEL_ID) continue;
+    const record = Object.hasOwn(file.models, id) ? file.models[id] : undefined;
+    if (!record || !openAiAccepts(record)) {
+      throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo or openai* in this slice.");
     }
   }
 }

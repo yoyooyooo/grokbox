@@ -51,7 +51,7 @@ export function createModeldRouteDriver(runRoot: string, binding?: HostBinding):
   };
   driver.submit = async (request) => {
     if (request.abortSignal?.aborted) return { parts: [{ type: "finish", reason: "abort" }], dispatched: false };
-    if (request.modelId !== STUB_ECHO_MODEL_ID) throw new Error("stub route driver rejects non-stub models");
+    if (!request.modelId) throw new Error("route driver requires a modelId");
     const entry = entryFor(request.invocationId, request.abortSignal);
     if (entry.unknown) throw new Error("modeld invocation unknown");
     try {
