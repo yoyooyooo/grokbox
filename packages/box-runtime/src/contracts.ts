@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { boundedText, count, isRecord, observeJson, observeText, type ObservationState } from "./observation.ts";
 import { join } from "node:path";
 import { extractContractSlices, sliceHashes } from "./transform.ts";
 import { sha256Text } from "./hash.ts";
@@ -14,6 +15,83 @@ export type ContractGeneration = {
 };
 
 const KEEP = 5;
+export const CONTRACT_OBSERVATION_LIMIT = 32;
+export const CONTRACT_SLICE_NAMES = ["create-session", "session-options", "agent-id", "prompt-session"] as const;
+const SHA = /^[a-f0-9]{64}$/;
+
+export function parseContractGeneration(value: unknown): ContractGeneration {
+  if (!isRecord(value) || typeof value.sourceSha !== "string" || !SHA.test(value.sourceSha) ||
+    !count(value.bytes) || !boundedText(value.observedAt) || !Number.isFinite(Date.parse(value.observedAt)) ||
+    !isRecord(value.sliceHashes) || !Array.isArray(value.driftedSlices) ||
+    value.driftedSlices.length > CONTRACT_SLICE_NAMES.length ||
+    !value.driftedSlices.every((key) => (CONTRACT_SLICE_NAMES as readonly unknown[]).includes(key)) ||
+    Object.entries(value.sliceHashes).some(([key, hash]) => !(CONTRACT_SLICE_NAMES as readonly string[]).includes(key) || typeof hash !== "string" || !SHA.test(hash)) ||
+    (value.matchedProfileId !== undefined && !boundedText(value.matchedProfileId, 128))) throw new Error("invalid contract metadata");
+  return {
+    sourceSha: value.sourceSha, bytes: value.bytes, observedAt: value.observedAt,
+    sliceHashes: { ...value.sliceHashes } as Record<string, string>, driftedSlices: [...value.driftedSlices],
+    ...(value.matchedProfileId ? { matchedProfileId: value.matchedProfileId as string } : {}),
+  };
+}
+
+export type ContractsObservation = {
+  state: ObservationState | "partial";
+  headState: ObservationState;
+  head: string | null;
+  generations: Array<{ sourceSha: string; state: ObservationState; metadata: ContractGeneration | null }>;
+  truncated: boolean;
+  invalidEntries: number;
+};
+
+/** Read metadata only from the canonical contracts tree. Never read slices, snapshot or prune. */
+export async function observeContracts(root: string): Promise<ContractsObservation> {
+  const result: ContractsObservation = { state: "missing", headState: "missing", head: null, generations: [], truncated: false, invalidEntries: 0 };
+  const dir = contractsDir(root);
+  try {
+    const info = await lstat(dir);
+    if (!info.isDirectory() || info.isSymbolicLink()) return { ...result, state: "invalid", headState: "invalid" };
+    const head = await observeText(join(dir, "HEAD"), 256);
+    result.headState = head.state;
+    if (head.state === "present") {
+      if (!SHA.test(head.value.trim())) result.headState = "invalid";
+      else result.head = head.value.trim();
+    }
+    const base = join(dir, "generations");
+    const baseInfo = await lstat(base);
+    if (!baseInfo.isDirectory() || baseInfo.isSymbolicLink()) return { ...result, state: "invalid" };
+    const entries = await readdir(base, { withFileTypes: true });
+    const names = entries.filter((entry) => SHA.test(entry.name) && entry.isDirectory()).map((entry) => entry.name).sort();
+    result.invalidEntries = entries.filter((entry) => !entry.name.startsWith(".") && (!SHA.test(entry.name) || !entry.isDirectory())).length;
+    const ordered = [...new Set([...(result.head ? [result.head] : []), ...names])];
+    result.truncated = ordered.length > CONTRACT_OBSERVATION_LIMIT;
+    for (const sourceSha of ordered.slice(0, CONTRACT_OBSERVATION_LIMIT)) {
+      // A HEAD may name a missing directory, but never authorizes a symlink or traversal.
+      let state: ObservationState = "missing";
+      let metadata: ContractGeneration | null = null;
+      if (names.includes(sourceSha)) {
+        const meta = await observeJson(join(base, sourceSha, "meta.json"), parseContractGeneration);
+        state = meta.state;
+        if (meta.state === "present") {
+          if (meta.value.sourceSha === sourceSha) metadata = meta.value;
+          else state = "invalid";
+        }
+      } else if (entries.some((entry) => entry.name === sourceSha)) state = "invalid";
+      result.generations.push({ sourceSha, state, metadata });
+    }
+    result.generations.sort((a, b) => (b.metadata?.observedAt ?? "").localeCompare(a.metadata?.observedAt ?? "") || a.sourceSha.localeCompare(b.sourceSha));
+    const after = await observeText(join(dir, "HEAD"), 256);
+    if (after.state !== head.state || (after.state === "present" && head.state === "present" && after.value !== head.value)) {
+      result.head = null;
+      result.headState = "invalid";
+    }
+    result.state = result.headState === "present" && !result.invalidEntries && !result.truncated && result.generations.every((row) => row.state === "present")
+      ? "present" : "partial";
+    return result;
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    return { ...result, state: code === "ENOENT" ? (result.headState === "invalid" ? "invalid" : result.head ? "partial" : "missing") : "unavailable" };
+  }
+}
 
 async function writeProtected(path: string, body: string): Promise<void> {
   await writeFile(path, body, { mode: 0o600 });

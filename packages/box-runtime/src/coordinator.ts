@@ -1,7 +1,8 @@
-import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { clearAttestation, readAttestation, routeAttestationAgrees, type CoverageAttestation } from "./attestation.ts";
 import { writeRuntimeArtifact } from "./runtime-artifact.ts";
+import { observeCoordinatorState, type CoordinatorState } from "./coordinator-state.ts";
+export type { CoordinatorState } from "./coordinator-state.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { BoxRuntimeError } from "./errors.ts";
 import { appendEvent, compactEvents } from "./events.ts";
@@ -31,15 +32,6 @@ export const WATCHDOG_OPERATION_ID = "watchdog-identity";
 export const WATCHDOG_MUTATION_BUDGET = 2;
 
 export type WatchdogReconcile = "converged" | "pending" | "blocked" | "recovery-required";
-
-export type CoordinatorState = {
-  version: 1;
-  circuit: "closed" | "open";
-  circuitReason?: string;
-  mutationCount: number;
-  attemptedKeys: string[];
-  lastAttemptKey?: string;
-};
 
 export type WatchdogTickResult = {
   reconcile: WatchdogReconcile;
@@ -83,6 +75,7 @@ export type WatchdogTickInput = {
   classify?: RoleClassifier;
   envHas?: (pid: number, key: string) => boolean;
   diskSha?: string | null;
+  gatewayPid?: number | null;
   freshDiskSha?: () => string;
   reviewedProfile?: PatchProfile;
   adopt?: WatchdogAdoptPorts;
@@ -114,23 +107,10 @@ function defaultLeaseOwner(pid: number): LeaseOwner | null {
 }
 
 async function loadState(root: string): Promise<CoordinatorState> {
-  try {
-    const parsed = JSON.parse(await readFile(coordinatorStatePath(root), "utf8")) as CoordinatorState;
-    if (parsed.version !== 1) return { ...EMPTY_STATE };
-    return {
-      version: 1,
-      circuit: parsed.circuit === "open" ? "open" : "closed",
-      circuitReason: parsed.circuitReason,
-      mutationCount: Number.isFinite(parsed.mutationCount) ? parsed.mutationCount : 0,
-      attemptedKeys: Array.isArray(parsed.attemptedKeys)
-        ? parsed.attemptedKeys.filter((key): key is string => typeof key === "string").slice(-32)
-        : [],
-      lastAttemptKey: typeof parsed.lastAttemptKey === "string" ? parsed.lastAttemptKey : undefined,
-    };
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return { ...EMPTY_STATE };
-    throw error;
-  }
+  const observed = await observeCoordinatorState(root);
+  if (observed.state === "present") return observed.value;
+  if (observed.state === "missing") return { ...EMPTY_STATE, attemptedKeys: [] };
+  throw new Error("coordinator-state-unavailable");
 }
 
 async function saveState(root: string, state: CoordinatorState): Promise<void> {
@@ -572,6 +552,9 @@ async function runWatchdogTickBody(input: WatchdogTickInput, progress: AttemptPr
     ephemeralRoot,
     envHas: input.envHas,
     classify,
+    gatewayPid: input.gatewayPid ?? input.adopt?.readGatewayPid() ?? null,
+    modeldReady: () => resolveModeldReady(input, ephemeralRoot),
+    reviewedProfile: input.reviewedProfile,
     diskSha: freshDiskSha() === "none"
       ? (input.freshDiskSha || input.diskSha !== undefined ? null : undefined)
       : freshDiskSha(),
@@ -701,7 +684,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput, progress: AttemptPr
       const ownership = canonicalOwnershipAgrees({ attestation: att, liveHost, census });
       const shaMatch = Boolean(att && typeof sha === "string" && att.diskSha === sha);
       const profileMatch = routeAttestationAgrees(att, reviewedIdentityForRoute(input));
-      if (shaMatch && profileMatch && ready) {
+      if (shaMatch && profileMatch && ready && status.coverage === "attested") {
         await saveState(input.root, state);
         return resultOf(state, origin, {
           reconcile: "converged",
@@ -743,7 +726,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput, progress: AttemptPr
         return blocked("modeld_not_ready");
       }
       await saveState(input.root, state);
-      return recovery(status.host.reason ?? "route_mismatch");
+      return recovery(status.host.reason ?? (status.operation.pending !== false ? "pending-uncertain" : "route_mismatch"));
     }
 
     if (origin === "official" && liveHost) {
@@ -763,9 +746,10 @@ async function runWatchdogTickBody(input: WatchdogTickInput, progress: AttemptPr
 
   if (input.desired.mode === "observe" || input.desired.mode === "disabled") {
     await saveState(input.root, state);
+    const restored = input.desired.mode !== "disabled" || status.activation.actual === "official";
     return resultOf(state, origin, {
-      reconcile: "converged",
-      reason: null,
+      reconcile: restored ? "converged" : "pending",
+      reason: restored ? null : "rollback_pending",
       attemptKey: null,
       signaled: false,
       injected: false,
@@ -777,6 +761,10 @@ async function runWatchdogTickBody(input: WatchdogTickInput, progress: AttemptPr
   const liveHost = hosts.length === 1 ? hosts[0]! : null;
 
   if (origin === "grokbox-attested" && liveHost) {
+    if ((status.host.topology !== "direct" && status.host.topology !== "adopted") || sha === null || status.operation.pending !== false) {
+      return resultOf(state, origin, { reconcile: "recovery-required", reason: status.host.reason === "gateway_mismatch" ? "gateway-mismatch" : status.host.reason ?? "pending-uncertain",
+        attemptKey: attemptKey(input.desired.mode, liveHost, sha), signaled: false, injected: false, watchdogState: "degraded" });
+    }
     const stale = status.host.reason === "stale_attestation";
     if (!stale || input.confirmed !== true) {
       await saveState(input.root, state);

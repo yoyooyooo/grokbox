@@ -1133,7 +1133,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     usage: "grokbox runtime log [--follow]",
     summary: "Read box-local runtime audit events.",
     arguments: [],
-    options: options([{ flags: "--follow", description: "Follow new events when implemented" }]),
+    options: options([{ flags: "--follow", description: "Unsupported: fails closed; omit for a bounded event snapshot" }]),
     stdin: "none",
     table: false,
     timeout: false,

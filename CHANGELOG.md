@@ -8,6 +8,11 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Separate desired/actual runtime status: disabled while patched remains pending,
+  with no new Host writer. Read coordinator/journal/contract/event facts with
+  explicit missing/bad-file evidence, bounded metadata-only contracts and logs,
+  and route/modeld/topology checks. Reject unimplemented `log --follow` explicitly;
+  label `models check` as schema-only. Offline/fake proof only.
 - Bind transient-adopt receipts to pinned profile bytes and actual compile hashes,
   PID/start and operation identity. Read back canonical attestation/journal, check
   route modeld readiness independently, and preserve aggregate signals/committed

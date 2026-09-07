@@ -9,6 +9,11 @@ import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import * as modeldModule from "../packages/box-runtime/src/modeld.ts";
 import * as coordinatorModule from "../packages/box-runtime/src/coordinator.ts";
 import { receiptFixture } from "../packages/box-runtime/test/receipt-fixture.ts";
+import { snapshotTree } from "../packages/box-runtime/test/observation-fixture.ts";
+import { liveStatusAdapter } from "../packages/box-runtime/src/observe.ts";
+import { desiredPath } from "../packages/box-runtime/src/paths.ts";
+import { snapshotContracts } from "../packages/box-runtime/src/contracts.ts";
+import { SHA, SOURCE } from "../packages/box-runtime/test/admission-fixture.ts";
 import { sha256Bytes } from "../packages/box-runtime/src/hash.ts";
 import { applyPatchProfile } from "../packages/box-runtime/src/transform.ts";
 import { modeldSocketPath, probeStubModeld, STUB_ECHO_MODEL_ID } from "../packages/box-runtime/src/modeld-ipc.ts";
@@ -65,6 +70,18 @@ function stubLiveAdoptPorts() {
 
 function spyLiveAdoptFactory() {
   return spyOn(liveH3AdoptAdapter, "createLiveH3AdoptPorts").mockImplementation(() => stubLiveAdoptPorts());
+}
+
+function spyStatusReaders(runRoot: string) {
+  const spies = [
+    spyOn(liveStatusAdapter, "runRoot").mockReturnValue(runRoot),
+    spyOn(liveStatusAdapter, "processes").mockImplementation(() => stubLiveAdoptPorts().processes),
+    spyOn(liveStatusAdapter, "envHas").mockReturnValue(false),
+    spyOn(liveStatusAdapter, "diskSha").mockResolvedValue({ state: "unavailable" }),
+    spyOn(liveStatusAdapter, "gatewayPid").mockResolvedValue({ state: "missing" }),
+    spyOn(liveStatusAdapter, "modeldReady").mockResolvedValue(false),
+  ];
+  return () => { for (const spy of spies) spy.mockRestore(); };
 }
 
 function isUnixSocketConnect(args: unknown[]): boolean {
@@ -273,23 +290,76 @@ describe("box-local runtime CLI", () => {
 
   test("status/log/contracts do not repair and status has required fields", async () => {
     const boxRuntimeRoot = await withRoot();
-    const status = await captureCli(["runtime", "status"], { discoveryPath: "/dev/null", boxRuntimeRoot });
-    expect(status.code).toBe(0);
-    const body = data(status.stdout);
-    expect(body).toMatchObject({
-      circuit: "closed",
-      lastHeal: null,
-    });
-    expect(["none", "window-open", "attested"]).toContain(String(body.coverage));
-    expect(body.census).toBeDefined();
-    expect((body.window as { affectedInvocations: string }).affectedInvocations).toBe("unknown");
-    expect((body.installation as { durableRoot: string }).durableRoot).toBe(boxRuntimeRoot);
-    expect((body.installation as { durableRoot: string }).durableRoot).not.toContain("/.grokbox/runtime/");
+    const restore = spyStatusReaders(join(boxRuntimeRoot, "missing-run"));
+    const before = await snapshotTree(boxRuntimeRoot);
+    try {
+      const status = await captureCli(["runtime", "status"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+      expect(status.code).toBe(0);
+      const body = data(status.stdout);
+      expect(body).toMatchObject({ circuit: "unknown", lastHeal: null, driftedSlices: null });
+      expect(["none", "window-open", "attested"]).toContain(String(body.coverage));
+      expect(body.census).toBeDefined();
+      expect((body.window as { affectedInvocations: string }).affectedInvocations).toBe("unknown");
+      expect((body.installation as { durableRoot: string }).durableRoot).toBe(boxRuntimeRoot);
+      expect((body.installation as { durableRoot: string }).durableRoot).not.toContain("/.grokbox/runtime/");
+      const log = await captureCli(["runtime", "log"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+      expect(log.code).toBe(0);
+      expect(data(log.stdout)).toMatchObject({ state: "missing", events: [] });
+      const contracts = await captureCli(["runtime", "contracts"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+      expect(contracts.code).toBe(0);
+      expect(data(contracts.stdout)).toMatchObject({ state: "missing", head: null });
+      expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
+    } finally { restore(); }
+  });
 
-    const log = await captureCli(["runtime", "log"], { discoveryPath: "/dev/null", boxRuntimeRoot });
-    expect(log.code).toBe(0);
+  test("contracts/log CLI returns existing metadata and projected events without rewriting them", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const generation = await snapshotContracts({ root: boxRuntimeRoot, source: SOURCE, sourceSha: SHA, observedAt: "2026-01-01T00:00:00.000Z" });
+    await mkdir(join(boxRuntimeRoot, "log"));
+    await writeFile(join(boxRuntimeRoot, "log", "events.ndjson"), JSON.stringify({ name: "census", at: "2026-01-01T00:00:00.000Z", counts: { host: 1 }, prompt: "fixture-private-body" }) + "\n");
+    const before = await snapshotTree(boxRuntimeRoot);
     const contracts = await captureCli(["runtime", "contracts"], { discoveryPath: "/dev/null", boxRuntimeRoot });
     expect(contracts.code).toBe(0);
+    expect(data(contracts.stdout)).toMatchObject({ state: "present", head: SHA,
+      generations: [{ state: "present", metadata: { sliceHashes: generation.sliceHashes, driftedSlices: [] } }] });
+    const log = await captureCli(["runtime", "log"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+    expect(log.code).toBe(0);
+    expect(data(log.stdout)).toMatchObject({ state: "present", events: [{ name: "census", counts: { host: 1 } }] });
+    expect(log.stdout).not.toContain("fixture-private-body");
+    expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
+  });
+
+  test("status reports invalid configuration without falling back to a disabled success or writing files", async () => {
+    const boxRuntimeRoot = await withRoot();
+    await mkdir(join(boxRuntimeRoot, "state"));
+    await writeFile(desiredPath(boxRuntimeRoot), "{broken");
+    await writeFile(join(boxRuntimeRoot, "models.json"), "null");
+    const before = await snapshotTree(boxRuntimeRoot);
+    const restore = spyStatusReaders(join(boxRuntimeRoot, "missing-run"));
+    try {
+      const status = await captureCli(["runtime", "status"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+      expect(status.code).toBe(0);
+      expect(data(status.stdout)).toMatchObject({ activation: { desired: null, reconcile: "unknown" }, evidence: { desired: "invalid", models: "invalid" } });
+      expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
+    } finally { restore(); }
+  });
+
+  test("runtime log --follow fails closed rather than returning one successful snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "grokbox-follow-"));
+    const boxRuntimeRoot = join(root, "missing");
+    const before = await snapshotTree(root);
+    const follow = await captureCli(["runtime", "log", "--follow"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+    expect(follow.code).toBe(2);
+    expect(follow.stdout).toBe("");
+    expect((parseJson(follow.stderr) as { error: { message: string } }).error.message).toContain("not supported");
+    expect(await snapshotTree(root)).toEqual(before);
+  });
+
+  test("models check labels schema evidence without claiming provider availability", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const checked = await captureCli(["runtime", "models", "check"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+    expect(checked.code).toBe(0);
+    expect(data(checked.stdout)).toMatchObject({ ok: true, checked: ["schema"], serviceReadiness: "not_checked" });
   });
 
   test("models use discloses endpoint and --for vs default", async () => {

@@ -58,6 +58,16 @@ function authoringSlices(value: unknown): SlicePatch[] {
   });
 }
 
+/** Structural parsing for observation. Does not assert replayability against an unobserved source. */
+export function parseReviewedProfile(value: unknown): PatchProfile {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalid("Invalid reviewed profile.");
+  const row = value as Record<string, unknown>;
+  if (typeof row.profileId !== "string" || !row.profileId.trim() || row.profileId.length > 128 || /[\r\n]/.test(row.profileId) ||
+    typeof row.sourceSha256 !== "string" || !row.sourceSha256 || row.sourceSha256.length > 128 ||
+    typeof row.transformedSourceSha256 !== "string" || !row.transformedSourceSha256 || row.transformedSourceSha256.length > 128) invalid("Invalid reviewed profile.");
+  return { profileId: row.profileId, sourceSha256: row.sourceSha256, transformedSourceSha256: row.transformedSourceSha256, slices: authoringSlices(row.slices) };
+}
+
 /** Pure admission check shared by coordinator and H3 preflight; returns a detached target. */
 export function validateReviewedProfile(value: unknown, source: string):
   | { ok: true; profile: PatchProfile }

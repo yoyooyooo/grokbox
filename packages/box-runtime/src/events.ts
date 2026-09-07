@@ -3,6 +3,8 @@ import { chmod, mkdir, open, readFile, rename, writeFile } from "node:fs/promise
 import { dirname } from "node:path";
 import { acquireExclusiveLock } from "./op-lock.ts";
 import { eventsPath } from "./paths.ts";
+import { observeText, type ObservationState } from "./observation.ts";
+import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 
 export const EVENT_NAMES = [
   "disk_sha_observed",
@@ -222,6 +224,71 @@ export async function appendTurnSeamTerminal(root: string, input: unknown): Prom
   } catch {
     return "write_failed";
   }
+}
+
+function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | null {
+  if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
+  if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
+  const at = boundedString(input.at);
+  if (!at || !Number.isFinite(Date.parse(at))) return null;
+  const out: RuntimeEvent = { name: input.name as EventName, at };
+  for (const key of ["sha", "oldSha", "newDiskSha"]) {
+    const value = input[key];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) return null;
+    out[key] = value;
+  }
+  for (const key of ["reason", "outcome", "phase"]) {
+    const value = input[key];
+    if (value === undefined) continue;
+    const text = boundedString(value);
+    if (!text || !/^[a-zA-Z0-9_-]+$/.test(text) || FORBIDDEN.test(text)) return null;
+    out[key] = text;
+  }
+  for (const key of ["pid", "start"]) {
+    if (input[key] === undefined) continue;
+    if (boundedCount(input[key]) === null) return null;
+    out[key] = input[key];
+  }
+  if (input.driftedSlices !== undefined) {
+    if (!Array.isArray(input.driftedSlices) || input.driftedSlices.length > CONTRACT_SLICE_NAMES.length ||
+      !input.driftedSlices.every((key) => (CONTRACT_SLICE_NAMES as readonly unknown[]).includes(key))) return null;
+    out.driftedSlices = [...input.driftedSlices];
+  }
+  if (input.counts !== undefined) {
+    if (!isRecord(input.counts)) return null;
+    const counts: Record<string, number> = {};
+    for (const key of ["wrapper", "supervisor", "host", "tempSupervisor", "guardian", "extras"]) {
+      if (input.counts[key] === undefined) continue;
+      const value = boundedCount(input.counts[key]);
+      if (value === null) return null;
+      counts[key] = value;
+    }
+    out.counts = counts;
+  }
+  return out;
+}
+
+export type EventsObservation = {
+  state: ObservationState | "partial";
+  events: Array<RuntimeEvent | TurnSeamTerminalEvent | { invalid: true }>;
+  truncated: boolean;
+};
+
+/** Snapshot only: bounded reads and schema projection, without event locks/compaction/repair. */
+export async function observeEvents(root: string, limit = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION): Promise<EventsObservation> {
+  const cap = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION;
+  if (!Number.isSafeInteger(limit) || limit < 0) return { state: "invalid", events: [], truncated: false };
+  const text = await observeText(eventsPath(root), 1024 * 1024);
+  if (text.state !== "present") return { state: text.state, events: [], truncated: false };
+  const lines = text.value.split("\n").filter((line) => line.length > 0);
+  const bounded = Math.min(limit, cap);
+  const tail = bounded === 0 ? [] : lines.slice(-bounded);
+  const events = tail.map((line) => {
+    try { return projectControlEvent(JSON.parse(line)) ?? { invalid: true as const }; }
+    catch { return { invalid: true as const }; }
+  });
+  return { state: events.some((event) => "invalid" in event) ? "partial" : "present", events, truncated: lines.length > bounded };
 }
 
 export async function compactEvents(root: string): Promise<void> {

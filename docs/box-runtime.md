@@ -234,7 +234,19 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - attestation/journal/coordinator JSON 均 protected staging → 文件 sync → rename。journal 先写未决 `commit-attestation`，canonical attestation 精确读回后才可写 `attested`，随后再读回核对。`committedAttestation` 是实际读回的制品；CLI 只公开 mode/PID/start/SHA/operationId/compile/时间，不输出原始进程 argv。它可与 `recovery-required` 同时存在，表示“已提交，但最终健康或收尾未完成”，不是整体成功。
 - deactivate→adopt 是一个逻辑 attempt：原始 key 与已发生的 `signaled` 不因后半段拒绝、落盘异常或 modeld 掉线丢失。`injected:true` 只表示本次 adopt operation 曾完整提交；随后 coordinator 收尾失败仍报 recovery-required。不恢复旧 attestation 来伪造回滚；`commit-attestation` / `recovery-required` journal 不自动结清重试。
 
-以上由 fake processes + 隔离真实文件、disposable Node preload/adopt helper 验证；只证明一次新 generation，不是 live Host/provider 或 modeld generation-admission（后续 S5）证明。read-back/readiness 是时点证据，不承诺返回后的持续存活、掉电目录持久性或防御同 UID 恶意替换。desired disabled 的实际恢复/投影仍是后续 S3，不由这份 receipt 偷偷实现。
+以上由 fake processes + 隔离真实文件、disposable Node preload/adopt helper 验证；只证明一次新 generation，不是 live Host/provider 或 modeld generation-admission（后续 S5）证明。read-back/readiness 是时点证据，不承诺返回后的持续存活、掉电目录持久性或防御同 UID 恶意替换。desired disabled 不是恢复完成的证据；当前观察按下面的 desired/actual 分离，不由这份 receipt 偷偷执行恢复。
+
+**只读 desired/actual 观察**
+
+- `status.activation` 分别给出 `desired`、`actual`、`reconcile`、`reason`。缺 desired 文件使用显式披露的默认 disabled；坏文件则 desired=null / unknown，不替换为成功的默认配置。只要 Host 仍 patched，disabled 就是 pending / `rollback_pending`；即使确认 manual root，本 slice 也不新增自动恢复信号。真正的恢复仍需同一 coordinator 的另行授权执行路径。
+- `host.origin` 是所有权观察，不是 mutation 授权；`host.topology` 独立核对 direct/adopted，后者还需要 gateway PID。`coverage=attested` 描述当前同代 attestation，不能当成 disabled 已完成；未决/坏 journal、错误拓扑、route profile/assignment 不符或 modeld 未 ready 不能得到 route-ready。旧 attestation 的 window 不移植给另一代 Host；duration 仅是匹配当前代的已提交 handoff 记录，不是实时窗口年龄。
+- `coordinator` 读取实际 `state/coordinator.json` 的 circuit、mutationCount、lastAttemptKey/circuitReason；缺失或损坏不伪造 closed/0。`lastHeal` 是有界事件快照中最后一条可验证的 heal 记录，不是恢复动作。持久 metadata 不是 heartbeat：watchdog 无存活探针时为 unknown，已知 circuit-open / 未决状态可报 degraded，不能凭旧 attestation 宣称 running。
+- `evidence`、`coordinator.state`、`operation.state`、`contracts.state` 区分 present / missing / invalid / unavailable；多记录快照还可为 partial。provided 表示调用者提供的测试/读端口事实。未知 drift 是 null；只有实际 generation metadata 的空 drift 才是 []。`contracts.sourceSha` 将 drift 绑定到已观察的磁盘代，而不是盲用旧 HEAD。
+- `contracts` 只读取 canonical HEAD 与最多 32 个 generation 的 `meta.json`，返回每代 state/metadata（sourceSha、sliceHashes、driftedSlices、时间/大小），报告 truncated/invalidEntries；不读取切片正文、不 snapshot/prune，不接受 HEAD traversal 或 symlink 制品。常规 metadata 读取上限 128 KiB。
+- `log` 是最多 512 条、1 MiB 文件上限的 schema-only 快照，返回 state/events/truncated；坏行用 `{invalid:true}`，未知或越界文件不冒充正常空日志。**`log --follow` 当前明确 invalid_usage / exit 2**；不会输出一次成功快照假装持续监听。reader 不加锁、不 compact、不修复。
+- `models.assignmentState` 只验证本地 assignment 引用；`models check` 明确 `checked:["schema"]` / `serviceReadiness:"not_checked"`，不证明 provider 可用，也不增加 agent name→id 解析或 credential/provider 调用。
+
+status/log/contracts 只读，缺树仍缺树；这些未知语义和 before/after 文件证明来自 offline/fake harness，不构成 live readiness 或自动 writer 权限。
 
 **人 / 另一次授权**
 
@@ -243,7 +255,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - `recovery-required`（误写磁盘、双链清不掉）：官方渠道换 Host；grokbox 不修官方文件
 - 未来 WebUI：给人配模型、看状态，背后仍是上述 use case
 
-`deactivate` 是 Agent 的唯一大回滚：desired=disabled，回到单一未补丁官方链。实施打错和生产失效同一条路。
+`deactivate` 是 Agent 的唯一大回滚意图入口：写 desired=disabled；接受的恢复目标是单一未补丁官方链。写入回执不等于目标已达成，须由 actual/topology 与获授权的执行回执证明；实施打错和生产失效仍走同一条路。
 
 ---
 

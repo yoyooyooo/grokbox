@@ -375,7 +375,9 @@ describe("offline watchdog desired-state coordinator", () => {
   test("matching canonical attestation is a no-op even when adopt ports exist", async () => {
     const { root, ephemeralRoot } = await roots();
     const tree = new FakeProcessTree();
-    const { wrapper, host } = spawnOfficial(tree);
+    const wrapper = tree.spawn("wrapper");
+    tree.spawn("supervisor", { parent: wrapper });
+    const host = tree.spawn("host"); // A transient-adopt attestation requires adopted, not direct, topology.
     const ports = harness(tree, wrapper);
     ports.touch(host.pid);
     await writeAttestation(ephemeralRoot, attFor(host));

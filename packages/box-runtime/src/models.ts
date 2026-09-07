@@ -132,6 +132,11 @@ export function parseModelsFile(value: unknown): ModelsFile {
   if (!isRecord(value) || value.version !== 1) {
     throw new BoxRuntimeError("invalid_usage", "models.json must be version 1.");
   }
+  if ((value.models !== undefined && !isRecord(value.models)) ||
+    (value.assignments !== undefined && !isRecord(value.assignments)) ||
+    (isRecord(value.assignments) && value.assignments.agents !== undefined && !isRecord(value.assignments.agents))) {
+    throw new BoxRuntimeError("invalid_usage", "models and assignments must be objects.");
+  }
   const models: Record<string, ModelRecord> = {};
   if (isRecord(value.models)) {
     for (const [id, record] of Object.entries(value.models)) models[id] = parseModel(id, record);

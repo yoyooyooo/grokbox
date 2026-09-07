@@ -482,7 +482,7 @@ MVP / 可发布声明的 ordinary main envelope：
 - parallel/interleaved：能关闭则关闭；仍出现则不得丢弃或错配；
 - 未补丁窗口：有界等待自定义模型；等待绑定该次注入/恢复预算；超时熔断并恢复健康官方链；**该用户句**在极端情况下可用官方模型接住以免无回复，且必须可见说明这次走了官方；**后续句子**继续抢自定义，官方不升格为默认。
 
-managed 调用一旦出门，失败不得静默回官方模型或换 provider。Host 继续拥有工具循环、Transcript、Memory 与 `SendToUser`。`runtime status` 分层：installation / activation / host `{diskSha, origin, reason}` / coverage / watchdog / modeld `{required,state}` / models / window `{duration, affectedInvocations?}`。`claimCeiling` 留在文档与 evidence，不进首发 status JSON。
+managed 调用一旦出门，失败不得静默回官方模型或换 provider。Host 继续拥有工具循环、Transcript、Memory 与 `SendToUser`。`runtime status` 分层：installation / activation `{desired,actual,reconcile,reason}` / host `{diskSha,origin,reason,topology}` / coverage / coordinator / operation / watchdog / modeld `{required,state}` / models / window `{durationMs,affectedInvocations}`。disabled 但仍 patched 时必须 pending，不能把意图写入当 rollback-done。缺失/损坏的 coordinator、journal、attestation 或 contract metadata 明确 unknown/null 及文件 evidence 状态；不能填入假 closed/0/空 drift，不能把持久记录当 heartbeat。`contracts` 返回有界 generation metadata 的真实 hashes/drift，不读取正文或修复；`log` 返回有界投影快照，当前 `--follow` 明确拒绝（invalid_usage），未实现前不得静默返回单次成功快照。`models check` 只承诺 schema 检查，输出 serviceReadiness=not_checked。详细当前字段语义与上限见 [Box-local model runtime](box-runtime.md) §8。`claimCeiling` 留在文档与测试证据，不进首发 status JSON。
 
 ## 13. 输出与错误
 

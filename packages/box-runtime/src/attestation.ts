@@ -5,6 +5,7 @@ import type { CompileReceipt } from "./compile-receipt.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import type { ProcessIdentity } from "./process.ts";
 import type { PatchProfile } from "./transform.ts";
+import { boundedText, count, isRecord, observeJson } from "./observation.ts";
 
 type CoverageAttestationBase = {
   coverage: "attested";
@@ -57,6 +58,36 @@ export function routeAttestationAgrees(
 
 export function attestationPath(ephemeralRoot = ephemeralRuntimeRoot()): string {
   return join(ephemeralRoot, "attestation.json");
+}
+
+export function parseAttestation(value: unknown): CoverageAttestation {
+  if (!isRecord(value) || !isRecord(value.identity)) throw new Error("invalid attestation");
+  const identity = value.identity;
+  if (value.coverage !== "attested" || !boundedText(value.diskSha, 128) || !count(value.pid) || value.pid === 0 ||
+    !count(value.start) || value.pid !== identity.pid || value.start !== identity.start ||
+    !boundedText(value.at) || !Number.isFinite(Date.parse(value.at)) ||
+    !count(identity.uid) || !count(identity.ppid) || !boundedText(identity.exe, 4096) ||
+    !Array.isArray(identity.cmdline) || identity.cmdline.length > 64 || !identity.cmdline.every((arg) => typeof arg === "string" && arg.length <= 4096) ||
+    !Array.isArray(identity.ancestry) || identity.ancestry.length > 128 || !identity.ancestry.every(count) ||
+    (value.windowMs !== undefined && (typeof value.windowMs !== "number" || !Number.isFinite(value.windowMs) || value.windowMs < 0)) ||
+    (value.launchMode !== undefined && value.launchMode !== "direct-launch" && value.launchMode !== "transient-adopt") ||
+    (value.mode !== "identity" && value.mode !== "route") || value.modeld !== (value.mode === "route")) {
+    throw new Error("invalid attestation");
+  }
+  if ((value.profileId !== undefined && !boundedText(value.profileId, 128)) ||
+    (value.transformedSha !== undefined && !boundedText(value.transformedSha, 128))) throw new Error("invalid attestation profile");
+  if (value.compile !== undefined) {
+    const c = value.compile;
+    if (!isRecord(c) || !boundedText(c.profileId, 128) || !boundedText(c.profileSha256, 128) || !boundedText(c.transformedSha256, 128) ||
+      c.sourceSha256 !== value.diskSha || c.profileId !== value.profileId || c.transformedSha256 !== value.transformedSha ||
+      !boundedText(value.operationId)) throw new Error("invalid compile receipt");
+  }
+  return value as CoverageAttestation;
+}
+
+/** Observation preserves missing/bad distinctions without treating them as a new authorization. */
+export function observeAttestation(root = ephemeralRuntimeRoot()) {
+  return observeJson(attestationPath(root), parseAttestation);
 }
 
 export async function readAttestation(root = ephemeralRuntimeRoot()): Promise<CoverageAttestation | null> {

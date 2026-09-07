@@ -29,6 +29,7 @@ export {
 export {
   projectStatus,
   projectLiveStatus,
+  liveStatusAdapter,
   readContracts,
   readEvents,
   type HostOrigin,
@@ -123,6 +124,7 @@ export {
   createModeldRouteDriver,
 } from "./seam.ts";
 export { observeAndHeal } from "./watchdog.ts";
+export { observeEvents } from "./events.ts";
 export {
   runWatchdogTick,
   runWatchdogCutover,

@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { readAttestation, writeAttestation, type CoverageAttestation } from "./attestation.ts";
 import { compileReceiptAgrees, expectedCompileReceipt, type CompileReceipt } from "./compile-receipt.ts";
 import { writeRuntimeArtifact } from "./runtime-artifact.ts";
+import { count, isRecord } from "./observation.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
 import { acquireExclusiveLock, operationLockPath } from "./op-lock.ts";
 import {
@@ -25,21 +26,12 @@ import {
 import type { PatchProfile } from "./transform.ts";
 import type { H3LaunchStrategy } from "./launch-strategy.ts";
 
-export type AdoptOpPhase =
-  | "preflight"
-  | "wrapper-stop"
-  | "term-old-host"
-  | "term-old-supervisor"
-  | "spawn-temp"
-  | "temp-host-ready"
-  | "term-temp"
-  | "await-adopt"
-  | "commit-attestation"
-  | "attested"
-  | "deactivate-preflight"
-  | "deactivate-term"
-  | "direct-official"
-  | "recovery-required";
+const ADOPT_OP_PHASES = [
+  "preflight", "wrapper-stop", "term-old-host", "term-old-supervisor", "spawn-temp", "temp-host-ready",
+  "term-temp", "await-adopt", "commit-attestation", "attested", "deactivate-preflight", "deactivate-term",
+  "direct-official", "recovery-required",
+] as const;
+export type AdoptOpPhase = (typeof ADOPT_OP_PHASES)[number];
 
 export type AdoptOpState = {
   launchMode: "transient-adopt";
@@ -52,6 +44,23 @@ export type AdoptOpState = {
 };
 
 const DONE_PHASES = new Set<AdoptOpPhase>(["attested", "direct-official"]);
+
+/** Observation parser: malformed or legacy phase-less journals are unknown, not settled. */
+export function parseAdoptOpState(value: unknown): AdoptOpState {
+  if (!isRecord(value) || value.launchMode !== "transient-adopt" || !(ADOPT_OP_PHASES as readonly unknown[]).includes(value.phase)) {
+    throw new Error("invalid adopt journal");
+  }
+  for (const key of ["host", "tempSupervisor", "adoptingSupervisor"]) {
+    const identity = value[key];
+    if (identity !== null && (!isRecord(identity) || !count(identity.pid) || identity.pid === 0 || !count(identity.start))) {
+      throw new Error("invalid journal identity");
+    }
+  }
+  if ((value.phase === "attested" || value.phase === "direct-official") && (!value.host || !value.adoptingSupervisor)) {
+    throw new Error("incomplete settled journal");
+  }
+  return value as AdoptOpState;
+}
 
 export function adoptJournalNeedsRecovery(state: AdoptOpState | null): boolean {
   if (!state) return false;

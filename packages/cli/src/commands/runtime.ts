@@ -13,7 +13,7 @@ import {
   parseModelId,
   projectLiveStatus,
   readContracts,
-  readEvents,
+  observeEvents,
   liveH3AdoptAdapter,
   reviewedProfilePath,
   runManualReadopt,
@@ -52,8 +52,6 @@ export async function runRuntimeStatus(deps: CliDeps): Promise<void> {
     const runtime = store(deps);
     writeSuccess(deps.stdout, await projectLiveStatus({
       root: runtime.root,
-      desired: await runtime.loadDesired(),
-      models: await runtime.loadModels(),
     }));
   } catch (error) {
     rethrow(error);
@@ -94,10 +92,11 @@ export async function runRuntimeDeactivate(deps: CliDeps): Promise<void> {
   }
 }
 
-export async function runRuntimeLog(deps: CliDeps): Promise<void> {
+export async function runRuntimeLog(deps: CliDeps, follow = false): Promise<void> {
   try {
     const runtime = store(deps);
-    writeSuccess(deps.stdout, { events: await readEvents(runtime.root) });
+    if (follow) throw new CliError("invalid_usage", "runtime log --follow is not supported; omit --follow for a bounded snapshot.");
+    writeSuccess(deps.stdout, await observeEvents(runtime.root));
   } catch (error) {
     rethrow(error);
   }
@@ -116,7 +115,7 @@ export async function runRuntimeModelsCheck(deps: CliDeps): Promise<void> {
   try {
     const runtime = store(deps);
     const models = await runtime.loadModels();
-    writeSuccess(deps.stdout, { ok: true, models: Object.keys(models.models), assignments: models.assignments });
+    writeSuccess(deps.stdout, { ok: true, checked: ["schema"], serviceReadiness: "not_checked", models: Object.keys(models.models), assignments: models.assignments });
   } catch (error) {
     rethrow(error);
   }

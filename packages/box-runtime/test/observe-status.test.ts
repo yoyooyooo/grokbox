@@ -3,15 +3,14 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeAttestation, type CoverageAttestation, type RouteAttestation } from "../src/attestation.ts";
-import { startStubModeldServer } from "../src/modeld-ipc.ts";
 import { projectLiveStatus } from "../src/observe.ts";
 import type { DesiredFile, ModelsFile } from "../src/models.ts";
 import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
 import type { PatchProfile } from "../src/transform.ts";
 
-const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: null, agents: {} } };
+const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: "stub/echo", agents: {} } };
 const SHA = "disk-sha-fixture";
-const DECOY_DIR = "/tmp/box-runtime-keep-identity-ephemeral";
+const DECOY_DIR = join(tmpdir(), "box-runtime-keep-identity-ephemeral");
 const REVIEWED: PatchProfile = {
   profileId: "reviewed-route",
   sourceSha256: SHA,
@@ -110,9 +109,7 @@ async function statusFor(input: {
   const { root, ephemeralRoot } = await roots();
   if (input.att) await writeAttestation(ephemeralRoot, input.att);
   const signals = input.signals ?? [];
-  const modeld = input.modeld ? await startStubModeldServer({ runRoot: ephemeralRoot }) : null;
-  try {
-    return await projectLiveStatus({
+  return await projectLiveStatus({
       root,
       desired: desired(input.mode),
       models: MODELS,
@@ -120,11 +117,9 @@ async function statusFor(input: {
       ephemeralRoot,
       diskSha: input.diskSha === undefined ? SHA : input.diskSha,
       envHas: envHasMap(input.env ?? {}),
+      modeldReady: () => input.modeld === true,
       ...(input.reviewedProfile ? { reviewedProfile: input.reviewedProfile } : {}),
     });
-  } finally {
-    await modeld?.stop();
-  }
 }
 
 function attFor(host: ProcessIdentity, diskSha = SHA): CoverageAttestation {
@@ -165,8 +160,8 @@ describe("projectLiveStatus origin/coverage matrix", () => {
     expect(status.host.origin).toBe("official");
     expect(status.host.reason).toBeNull();
     expect(status.coverage).toBe("none");
-    expect(status.activation.desired).toBe("disabled");
-    expect(status.watchdog.state).toBe("stopped");
+    expect(status.activation).toMatchObject({ desired: "disabled", actual: "official", reconcile: "converged" });
+    expect(status.watchdog.state).toBe("unknown");
     expect(status.window.affectedInvocations).toBe("unknown");
   });
 
@@ -176,7 +171,7 @@ describe("projectLiveStatus origin/coverage matrix", () => {
     expect(status.host.origin).toBe("official");
     expect(status.host.reason).toBeNull();
     expect(status.coverage).toBe("window-open");
-    expect(status.watchdog.state).toBe("stopped");
+    expect(status.watchdog.state).toBe("unknown");
   });
 
   test("NODE_OPTIONS alone is not grokbox-touched", async () => {
@@ -267,7 +262,8 @@ describe("projectLiveStatus origin/coverage matrix", () => {
     expect(status.host.reason).toBeNull();
     expect(status.coverage).toBe("attested");
     expect(status.window.durationMs).toBe(12);
-    expect(status.watchdog.state).toBe("stopped");
+    expect(status.activation).toMatchObject({ actual: "identity", reconcile: "pending", reason: "rollback_pending" });
+    expect(status.watchdog.state).toBe("unknown");
   });
 
   test("duplicate Host role without grokbox touch → ambiguous", async () => {
@@ -316,7 +312,8 @@ describe("projectLiveStatus observation bounds", () => {
     const src = await readFile(new URL("../src/observe.ts", import.meta.url), "utf8");
     expect(src).not.toContain("/tmp");
     expect(src).not.toContain("process.kill");
-    expect(src).not.toContain("findAdoptedHostState");
+    expect(src).not.toContain("runTransientAdopt");
+    expect(src).not.toContain("settleStaleAdoptJournal");
   });
 
   test("canonical att only: /tmp keep-identity decoy is ignored", async () => {

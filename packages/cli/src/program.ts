@@ -261,7 +261,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime status": async (deps) => await runRuntimeStatus(deps),
     "runtime activate": async (deps, _args, options) => await runRuntimeActivate(deps, options.mode),
     "runtime deactivate": async (deps) => await runRuntimeDeactivate(deps),
-    "runtime log": async (deps) => await runRuntimeLog(deps),
+    "runtime log": async (deps, _args, options) => await runRuntimeLog(deps, options.follow),
     "runtime contracts": async (deps) => await runRuntimeContracts(deps),
     "runtime models check": async (deps) => await runRuntimeModelsCheck(deps),
     "runtime models list": async (deps) => await runRuntimeModelsList(deps),

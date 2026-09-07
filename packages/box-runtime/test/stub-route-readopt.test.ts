@@ -406,6 +406,7 @@ describe("stub route fake-process re-adopt", () => {
     const modeld = await startStubModeldServer({ runRoot: ephemeralRoot });
     try {
       const healthy = await runWatchdogTick({
+        gatewayPid: host.pid,
         root,
         desired: desired("route"),
         models: MODELS,
@@ -424,6 +425,8 @@ describe("stub route fake-process re-adopt", () => {
       expect(tree.signals).toEqual([]);
 
       const status = await projectLiveStatus({
+        gatewayPid: host.pid,
+        modeldReady: () => true,
         root,
         desired: desired("route"),
         models: MODELS,
@@ -438,6 +441,7 @@ describe("stub route fake-process re-adopt", () => {
 
       await writeReviewed(root, { ...reviewed, profileId: "reviewed-replaced", transformedSourceSha256: "sha-new" });
       const mismatched = await runWatchdogTick({
+        gatewayPid: host.pid,
         root,
         desired: desired("route"),
         models: MODELS,
@@ -454,6 +458,8 @@ describe("stub route fake-process re-adopt", () => {
       expect(mismatched.signaled).toBe(false);
       expect(tree.signals).toEqual([]);
       const staleStatus = await projectLiveStatus({
+        gatewayPid: host.pid,
+        modeldReady: () => true,
         root,
         desired: desired("route"),
         models: MODELS,

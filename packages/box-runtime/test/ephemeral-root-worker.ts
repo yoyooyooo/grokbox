@@ -114,7 +114,7 @@ function attFor(host: ProcessIdentity, diskSha = SHA): CoverageAttestation {
     at: "2026-09-05T00:00:00.000Z",
     modeld: false,
     windowMs: 12,
-    launchMode: "transient-adopt",
+    launchMode: "direct-launch",
   };
 }
 
