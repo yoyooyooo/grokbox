@@ -10,6 +10,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T2 | done | Land offline STEP-slot / envelope seam work |
 | T3 | blocked | Live G1 stub path (needs 可以预检/补丁/canary) |
 | T4 | done | Real model A+S1 inside modeld |
+| T4b | done | AI SDK OpenAI chat+responses driver (sub2api baseURL) |
 | T5 | backlog | S2 streaming IPC + C1 credentials |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
 

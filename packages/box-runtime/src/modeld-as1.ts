@@ -7,8 +7,15 @@ import type { StreamPart } from "./session.ts";
 /** Skeleton provider id. Not an admit list; CLI default remains stub/echo. */
 export const AS1_SKELETON_PROVIDER = "as1";
 
-/** Provider-shaped chunks. A future SDK adapter maps SDK events into these, then S1 buffers them. */
-export type As1GenerateChunk = { type: "text"; text: string } | { type: "finish" };
+/** Provider-shaped chunks. An SDK adapter maps stream events into these, then S1 buffers them. */
+export type As1GenerateChunk =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool-call-start"; toolCallId: string; toolName: string }
+  | { type: "tool-call-delta"; toolCallId: string; toolName: string; argsTextDelta: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; args: unknown }
+  | { type: "error"; code: string; message: string }
+  | { type: "finish"; reason?: "stop" | "error" | "abort" };
 
 export type As1GenerateRequest = {
   pin: ModelPin;
@@ -42,8 +49,39 @@ export async function collectAs1Chunks(
       parts.push({ type: "text-delta", textDelta: chunk.text });
       continue;
     }
+    if (chunk.type === "reasoning") {
+      if (chunk.text.length === 0) continue;
+      parts.push({ type: "reasoning", textDelta: chunk.text });
+      continue;
+    }
+    if (chunk.type === "tool-call-start") {
+      parts.push({ type: "tool-call-streaming-start", toolCallId: chunk.toolCallId, toolName: chunk.toolName });
+      continue;
+    }
+    if (chunk.type === "tool-call-delta") {
+      parts.push({
+        type: "tool-call-delta",
+        toolCallId: chunk.toolCallId,
+        toolName: chunk.toolName,
+        argsTextDelta: chunk.argsTextDelta,
+      });
+      continue;
+    }
+    if (chunk.type === "tool-call") {
+      parts.push({ type: "tool-call", toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
+      continue;
+    }
+    if (chunk.type === "error") {
+      parts.push({
+        type: "error",
+        error: { userVisible: true, code: chunk.code, message: chunk.message },
+      });
+      parts.push({ type: "finish", reason: "error" });
+      finished = true;
+      break;
+    }
     if (chunk.type === "finish") {
-      parts.push({ type: "finish", reason: "stop" });
+      parts.push({ type: "finish", reason: chunk.reason ?? "stop" });
       finished = true;
       break;
     }

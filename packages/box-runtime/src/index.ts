@@ -125,6 +125,14 @@ export {
   type As1GenerateChunk,
   type As1GenerateRequest,
 } from "./modeld-as1.ts";
+export {
+  createOpenAiModeldDriver,
+  openAiAccepts,
+  openAiApiMode,
+  envelopeToOpenAiMessages,
+  mapOpenAiStreamEvent,
+  type OpenAiApiMode,
+} from "./modeld-openai.ts";
 export { bindCompiledHost, type HostBinding } from "./modeld-binding.ts";
 export {
   startStubModeldServer,

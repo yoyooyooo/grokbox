@@ -19,6 +19,10 @@
     "catalogs": {
       "effect-v4-beta": {
         "effect": "4.0.0-beta.107"
+      },
+      "ai-sdk": {
+        "ai": "5.0.253",
+        "@ai-sdk/openai": "2.0.125"
       }
     }
   },

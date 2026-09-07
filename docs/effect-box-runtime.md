@@ -19,7 +19,7 @@
 - E0 只增加 `effect`。不安装 AI SDK、`@effect/platform-*`、Vitest 或另换测试框架；发布目标仍是 Node 20+，Bun 是开发工具。
 - Fake/Live **Layers 替换能力，不替换业务程序**。既有 CLI → coordinator、Host IPC → `createModeld` 仍是唯一执行路径；无第二 reconciler、第二 admission kernel 或 `effectMode`。
 - 每个真实进程/命令生命周期一个执行根；callback 需要时复用其 ManagedRuntime 并明确 dispose。Promise facade 只在宿主边界调用同一 Effect 实现，不在每个 helper/Bot/request 自建 Runtime。
-- 后续 AI SDK 只能实现 modeld 内的 **ModeldDriver Service**。Effect 拥有调用及整个流的 lifetime、interrupt、资源；SDK 接收取消信号，不另执行工具/Agent loop、写 Transcript/Memory 或调用 SendToUser。SDK/credential snapshot/streaming 协议须另行核定，不能把 response-only stub 当作真实 streaming 证据。T4 已锁定 **A+S1** 形状：A = `ModeldDriver` adapter（`modeld-as1.ts` + 注入的 generate port）；S1 = 在 `complete()` 内缓冲 chunk。当前骨架不安装 AI SDK、不接线默认 stub、不发起真实 provider 调用。
+- 后续 AI SDK 只能实现 modeld 内的 **ModeldDriver Service**。Effect 拥有调用及整个流的 lifetime、interrupt、资源；SDK 接收取消信号，不另执行工具/Agent loop、写 Transcript/Memory 或调用 SendToUser。SDK/credential snapshot/streaming 协议须另行核定，不能把 response-only stub 当作真实 streaming 证据。T4 已锁定 **A+S1** 形状：A = `ModeldDriver` adapter（`modeld-as1.ts` + 注入的 generate port）；S1 = 在 `complete()` 内缓冲 chunk。T4b 在 `modeld-openai.ts` 安装 `ai` + `@ai-sdk/openai`（仅 box-runtime catalog），Chat Completions / Responses 可选，自定义 baseURL；不接线默认 stub，测试禁止真实 spend。
 
 ## Host import fence 与 J13
 

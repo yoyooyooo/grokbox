@@ -6,6 +6,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "catalog:ai-sdk",
+    "ai": "catalog:ai-sdk",
     "effect": "catalog:effect-v4-beta"
   }
 }

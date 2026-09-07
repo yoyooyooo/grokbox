@@ -162,17 +162,17 @@ describe("A+S1 SDK fence", () => {
     }
   });
 
-  test("skeleton and default Unix server do not install or wire an SDK driver", async () => {
+  test("skeleton and default Unix server stay SDK-free; Host/cli manifests do not depend on AI SDK", async () => {
     const as1 = await readFile(join(srcDir, "modeld-as1.ts"), "utf8");
     const ipc = await readFile(join(srcDir, "modeld-ipc.ts"), "utf8");
     expect(as1.match(sdkImport)).toBeNull();
     expect(as1).not.toMatch(/from "\.\/(preload|seam|hook|transform)\.ts"/);
     expect(ipc).not.toContain("createAs1ModeldDriver");
+    expect(ipc).not.toContain("createOpenAiModeldDriver");
     expect(ipc).toContain("STUB_ECHO_MODEL_ID");
 
     const manifests = [
       join(import.meta.dir, "../../../package.json"),
-      join(import.meta.dir, "../package.json"),
       join(import.meta.dir, "../../cli/package.json"),
     ];
     for (const manifest of manifests) {
