@@ -93,11 +93,14 @@ export {
 export {
   asHostPromptSession,
   createManagedPromptSession,
+  createStreamingPromptSession,
+  type ModelEnvelope,
   type HostPromptSession,
   type PromptSession,
   type StreamHandle,
 } from "./session.ts";
 export { sha256Bytes, sha256Text } from "./hash.ts";
+export { buildModelEnvelope, parseModelEnvelope } from "./envelope.ts";
 export {
   identitiesMatch,
   stableIdentitiesMatch,

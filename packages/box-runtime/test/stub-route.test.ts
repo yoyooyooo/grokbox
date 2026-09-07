@@ -43,46 +43,23 @@ function isUnixSocketConnect(args: unknown[]): boolean {
 
 function installNetworkTraps(counts: { fetch: number; dns: number; tcp: number }): () => void {
   const originalFetch = globalThis.fetch;
-  const originalLookup = dns.lookup.bind(dns);
-  const originalResolve = dns.resolve.bind(dns);
-  const originalResolve4 = dns.resolve4.bind(dns);
-  const originalResolve6 = dns.resolve6.bind(dns);
-  const originalPromisesLookup = dns.promises.lookup.bind(dns.promises);
   const originalConnect = net.Socket.prototype.connect;
-  globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
-    counts.fetch += 1;
-    return originalFetch(...args);
-  }) as typeof fetch;
+  const denyFetch = (..._args: unknown[]): never => { counts.fetch += 1; throw new Error("provider fetch hard-off"); };
+  const denyDns = (..._args: unknown[]): never => { counts.dns += 1; throw new Error("provider DNS hard-off"); };
+  const lookup = Object.assign(denyDns, { __promisify__: denyDns });
+  globalThis.fetch = Object.assign(denyFetch, { preconnect: denyFetch });
   const spies = [
-    spyOn(dns, "lookup").mockImplementation(((...args: Parameters<typeof dns.lookup>) => {
-      counts.dns += 1;
-      return originalLookup(...args);
-    }) as typeof dns.lookup),
-    spyOn(dns, "resolve").mockImplementation(((...args: Parameters<typeof dns.resolve>) => {
-      counts.dns += 1;
-      return originalResolve(...args);
-    }) as typeof dns.resolve),
-    spyOn(dns, "resolve4").mockImplementation(((...args: Parameters<typeof dns.resolve4>) => {
-      counts.dns += 1;
-      return originalResolve4(...args);
-    }) as typeof dns.resolve4),
-    spyOn(dns, "resolve6").mockImplementation(((...args: Parameters<typeof dns.resolve6>) => {
-      counts.dns += 1;
-      return originalResolve6(...args);
-    }) as typeof dns.resolve6),
-    spyOn(dns.promises, "lookup").mockImplementation((async (...args: Parameters<typeof dns.promises.lookup>) => {
-      counts.dns += 1;
-      return await originalPromisesLookup(...args);
-    }) as typeof dns.promises.lookup),
+    spyOn(dns, "lookup").mockImplementation(lookup),
+    spyOn(dns, "resolve").mockImplementation(lookup),
+    spyOn(dns, "resolve4").mockImplementation(lookup),
+    spyOn(dns, "resolve6").mockImplementation(lookup),
+    spyOn(dns.promises, "lookup").mockImplementation(denyDns),
     spyOn(net.Socket.prototype, "connect").mockImplementation(function (this: net.Socket, ...args: never[]) {
-      if (!isUnixSocketConnect(args)) counts.tcp += 1;
+      if (!isUnixSocketConnect(args)) { counts.tcp += 1; throw new Error("provider TCP hard-off"); }
       return originalConnect.apply(this, args as never);
     }),
   ];
-  return () => {
-    globalThis.fetch = originalFetch;
-    for (const spy of spies) spy.mockRestore();
-  };
+  return () => { globalThis.fetch = originalFetch; for (const spy of spies) spy.mockRestore(); };
 }
 
 async function roots() {
@@ -236,7 +213,8 @@ describe("stub route synthetic compile/load", () => {
       const errorResponse = await failed.response;
       expect(errorResponse.modelId.trim()).toBe(STUB_ECHO_MODEL_ID);
       expect(errorResponse.messages.some((message) => message.role === "assistant")).toBe(true);
-      expect(await failed.usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+      expect(await failed.usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+      expect(hasMeaningfulResponseMessageContent(errorResponse.messages)).toBe(true);
     } finally {
       await server.stop();
     }

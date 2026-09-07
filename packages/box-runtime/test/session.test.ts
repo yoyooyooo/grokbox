@@ -107,7 +107,9 @@ describe("managed PromptSession contract", () => {
     expect(failed.modelId.trim()).toBe("fake/serial");
     expect(Array.isArray(failed.messages)).toBe(true);
     expect(failed.messages.some((message) => message.role === "assistant")).toBe(true);
-    expect(failed.messages[0]?.toolCalls?.map((call) => call.id)).toEqual(["a", "b"]);
+    expect(failed.error).toMatchObject({ userVisible: true, code: "parallel_tools", toolCallIds: ["a", "b"] });
+    expect(failed.messages[0]?.toolCalls).toBeUndefined(); // rejected ids must not become executable fake calls
+    expect(hasMeaningfulResponseMessageContent(failed.messages)).toBe(true);
     const parts: StreamPart[] = [];
     for await (const part of handle.fullStream) parts.push(part);
     expect(parts.some((part) => part.type === "finish" && part.reason === "error")).toBe(true);
@@ -198,7 +200,7 @@ describe("managed PromptSession contract", () => {
         reason: "stop",
         finishReason: "stop",
         usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-        response: { modelId: "stub/echo", messages: [{ role: "assistant", content: "hello" }] },
+        response: { modelId: "stub/echo", messages: [{ role: "assistant", content: [{ type: "text", text: "hello" }] }] },
       });
     }
     const response = await result.response;

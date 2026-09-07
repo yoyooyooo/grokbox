@@ -42,7 +42,7 @@ export function hasMeaningfulResponseMessageContent(messages: HostResponse["mess
   });
 }
 
-async function consumeHandle(handle: StreamHandle | HostStreamResult): Promise<HostSideEffectVector> {
+export async function consumeHandle(handle: StreamHandle | HostStreamResult): Promise<HostSideEffectVector> {
   const seen = new Set<string>();
   let toolExecutionCount = 0;
   let duplicateCount = 0;

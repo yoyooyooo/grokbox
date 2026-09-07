@@ -45,6 +45,18 @@ Host 内 hook **不读** `models.json`，**不读** attestation 文件。`activa
 
 protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后再决策，不双轨。
 
+### 当前离线 envelope / stream 合同
+
+- `envelope.ts` 是 provider-neutral、仅内存的转换边界：version=1，messages/tools/options。executor 的数组 state（或 `{messages:[]}`）及 append 输入被快照，getter 返回独立数组；每次 stream 的规范化 envelope 深冻结。模型回复不自动 append 回 state，不执行工具，不另写 Transcript/Memory。
+- 支持 system/user/assistant/tool 历史、text/reasoning、tool-call/tool-result blocks；工具 id/name/JSON args/result 原样关联，不做 provider 特定改名或 assistant-last 改写。历史 tool result 必须有匹配 call。旧内部 `toolCalls` 与 content blocks 合并一次；最终 Host response 只用 content blocks，finish.response 与 response promise 一致。
+- 工具可为数组或普通 name-keyed 对象（非 Map 实例）；只投影 name/description 和 `parameters.jsonSchema` / `inputSchema` / `schema` 的 object-root JSON Schema，不调用 execute。支持 temperature/topP/maxTokens/seed/stopSequences/parallelToolCalls/toolChoice；context 只取取消信号，不作为模型 payload。未知内容、附件形状、opaque/redacted wrapper、错误 schema/options、超限 envelope 显式失败，不静默丢弃或通用解封。
+- image 的 URL/data/mimeType 只在声明 vision 的测试 driver 上保留，不自动下载。生产 stub 无 vision；不支持时在 driver effect 前给出固定可见 assistant 文本和 error terminal，由 Host 决定实际投递，不调用 Gateway/`SendToUser`。envelope 上限 64 KiB；当前 IPC frame 仍为 16 KiB，超过传输上限也可见失败。
+- `createStreamingPromptSession` 同步返回 handle，内部 eager single producer；response/usage 独立于 delivery。每个 fullStream reader 有自己的 replay cursor，晚订阅不抢走其他 reader 的 parts；关闭一个等待中的 reader 只结束它自己，不取消其他 reader 或模型调用。生产 payload 默认限 4096 parts / 1 MiB；取消即结算一个 abort terminal，不等待卡住的 producer return；后到 parts/terminal 丢弃。缺 terminal、坏帧/参数片段、冲突 tool id 与 producer exception 为脱敏可见 error，而非空成功。
+- tool-start/delta/complete 在同一 id 上关联，interleaved ids 不混线；同内容 complete 重复只投影一次，冲突重复拒绝。serial-only 时 executable calls 留到完成门禁后再放行；意外并行用 error.toolCallIds 披露拒绝的 ids，不造空名字的假可执行 tool calls。
+- seam 仍一 invocation 一次 dispatch/terminal：重复相同输入返回无副作用 idle handle，不重放工具；同 id 改 payload 可见 conflict。disconnect 先记 unknown 再取消，并阻止未发出的迟到调用。只有 Host 显式提供下一段历史、tool result 和新 invocation 才进入下一模型步，不新增模型/工具循环。事件只存 bounded ids/count/class，不存 envelope/body。
+
+**证据上限分开**：scripted driver 测试确实在 terminal 尚未提供时收到首 chunk，并证明 response 可先结算、Host UI fork 随后接入，以及取消/工具向量/重复调用不重复 dispatch。生产 `createModeldRouteDriver` 仍是固定 text stub 的 **response-only** IPC（Host-facing fullStream 为空）；它现在校验 envelope 并只缓存冲突用 hash，不是 token transport、provider SDK 或 S5 generation/activation admission。离线首 chunk 与 response-only 两种通过都不证明 live Host 各种订阅顺序、真实 first-token latency、provider vision、计费 usage 或实际工具/Transcript/Memory 写入。
+
 ---
 
 ## 3. 命名

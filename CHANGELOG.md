@@ -8,6 +8,11 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Add a frozen, bounded Host message/state/tool/options envelope and an incremental
+  single-producer session with independent completion, late-reader replay and
+  visible cancellation/errors. Preserve tool ids without a second Host tool loop;
+  carry envelope hashes through stub IPC conflict checks. Scripted offline stream
+  proof only: production stub remains response-only and provider-hard-off.
 - Separate desired/actual runtime status: disabled while patched remains pending,
   with no new Host writer. Read coordinator/journal/contract/event facts with
   explicit missing/bad-file evidence, bounded metadata-only contracts and logs,

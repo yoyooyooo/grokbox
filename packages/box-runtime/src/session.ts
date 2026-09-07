@@ -1,372 +1,331 @@
-export type FinishReason = "stop" | "error" | "abort";
+import { isDeepStrictEqual } from "node:util";
+import { buildModelEnvelope, cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
+  type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "./envelope.ts";
+import { replayStream } from "./replay-stream.ts";
+import { combineAbortSignals } from "./abort-signals.ts";
+export type { ModelEnvelope, PromptContentPart, PromptMessage } from "./envelope.ts";
 
+export type FinishReason = "stop" | "error" | "abort";
+export type HostFinishReason = FinishReason | "tool-calls";
 export type StreamPart =
   | { type: "text-delta"; textDelta: string }
+  | { type: "reasoning"; textDelta: string }
+  | { type: "tool-call-streaming-start"; toolCallId: string; toolName: string }
+  | { type: "tool-call-delta"; toolCallId: string; toolName: string; argsTextDelta: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; args: unknown }
-  | {
-      type: "finish";
-      reason: FinishReason;
-      finishReason?: FinishReason;
-      usage?: HostUsage;
-      response?: HostResponse;
-    };
-
+  | { type: "error"; error: VisibleFailure }
+  | { type: "finish"; reason: FinishReason; finishReason?: HostFinishReason; usage?: HostUsage; response?: HostResponse };
 export type SessionTextContentPart = { type: "text"; text: string };
-
 export type SessionMessage = {
   role: "assistant";
-  content: string | SessionTextContentPart[];
+  content: string | Array<SessionTextContentPart | ToolCall | { type: "reasoning"; text: string }>;
+  /** Internal compatibility only; Host projection uses tool-call content blocks. */
   toolCalls?: Array<{ id: string; name: string; args: unknown }>;
 };
-
-export type HostUsage = {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-};
-
-export type HostResponse = {
-  modelId: string;
-  messages: SessionMessage[];
-};
-
-export type StreamHandle = {
-  fullStream: AsyncIterable<StreamPart>;
-  response: Promise<HostResponse>;
-  usage: Promise<HostUsage>;
-};
-
-export type PromptContentPart =
-  | { type: "text"; text: string }
-  | { type: "image"; url?: string; mimeType?: string };
-
-export type PromptMessage = {
-  role: "user" | "assistant" | "system";
-  content: string | PromptContentPart[];
-};
-
-export type StreamRequest = {
-  messages?: PromptMessage[];
-  abortSignal?: AbortSignal;
-};
-
-export type PromptSession = {
-  stream: (request?: StreamRequest) => StreamHandle;
-};
-
-export type ExtendedUsage = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  maxTokens: number;
-};
-
+export type HostUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
+export type VisibleFailure = { userVisible: true; code: string; message: string; toolCallIds?: string[] };
+export type HostResponse = { modelId: string; messages: SessionMessage[]; finishReason?: HostFinishReason; error?: VisibleFailure };
+export type StreamHandle = { fullStream: AsyncIterable<StreamPart>; response: Promise<HostResponse>; usage: Promise<HostUsage> };
+export type StreamRequest = { messages?: PromptMessage[]; envelope?: ModelEnvelope; invocationId?: string; abortSignal?: AbortSignal };
+export type PromptSession = { stream: (request?: StreamRequest) => StreamHandle };
+export type ExtendedUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; maxTokens: number };
 export type HostStreamResult = StreamHandle & {
-  extendedUsage: Promise<ExtendedUsage>;
-  providerMetadata: Promise<Record<string, unknown>>;
-  invocationId: Promise<unknown>;
+  extendedUsage: Promise<ExtendedUsage>; providerMetadata: Promise<Record<string, unknown>>; invocationId: Promise<unknown>;
 };
-
 export type HostPromptExecutor = {
   appendMessages: (messages?: unknown) => HostPromptExecutor;
-  getMessages: () => unknown[];
-  getState: () => unknown[];
-  clearMessages: () => void;
-  stream: (
-    ctx?: unknown,
-    invocationId?: unknown,
-    tools?: unknown,
-    options?: unknown,
-  ) => HostStreamResult;
+  getMessages: () => unknown[]; getState: () => unknown[]; clearMessages: () => void;
+  stream: (ctx?: unknown, invocationId?: unknown, tools?: unknown, options?: unknown) => HostStreamResult;
 };
-
 export type HostPromptSession = {
   getModelId: () => string;
   getExecutor: (state?: unknown) => HostPromptExecutor;
   getExecutorWithoutResolvedModelTracking: (state?: unknown) => HostPromptExecutor;
 };
-
 export function isHostPromptSession(value: unknown): value is HostPromptSession {
   if (value === null || typeof value !== "object") return false;
   const session = value as Partial<HostPromptSession>;
-  return (
-    typeof session.getModelId === "function" &&
-    typeof session.getExecutor === "function" &&
-    typeof session.getExecutorWithoutResolvedModelTracking === "function"
-  );
+  return typeof session.getModelId === "function" && typeof session.getExecutor === "function" && typeof session.getExecutorWithoutResolvedModelTracking === "function";
 }
 
-function abortSignalFrom(ctx: unknown, options: unknown): AbortSignal | undefined {
-  if (options !== null && typeof options === "object") {
-    const signal = (options as { abortSignal?: unknown }).abortSignal;
-    if (signal instanceof AbortSignal) return signal;
+function abortSignalFrom(ctx: unknown, options: unknown): ReturnType<typeof combineAbortSignals> {
+  const signals: AbortSignal[] = [];
+  for (const value of [ctx, options]) {
+    if (!value || typeof value !== "object") continue;
+    for (const signal of [(value as { signal?: unknown }).signal, (value as { abortSignal?: unknown }).abortSignal]) {
+      if (signal instanceof AbortSignal && !signals.includes(signal)) signals.push(signal);
+    }
   }
-  if (ctx !== null && typeof ctx === "object") {
-    const record = ctx as { abortSignal?: unknown; signal?: unknown };
-    if (record.abortSignal instanceof AbortSignal) return record.abortSignal;
-    if (record.signal instanceof AbortSignal) return record.signal;
-  }
-  return undefined;
+  return combineAbortSignals(signals);
 }
-
-function numberOrZero(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
+function numberOrZero(value: unknown): number { const n = Number(value); return Number.isFinite(n) && n >= 0 ? n : 0; }
 export function normalizeHostUsage(usage: unknown): HostUsage {
-  const u = usage !== null && typeof usage === "object" ? (usage as Record<string, unknown>) : {};
-  const promptTokens = numberOrZero(u.promptTokens ?? u.prompt_tokens ?? u.inputTokens ?? u.input_tokens) || 0;
-  const completionTokens =
-    numberOrZero(u.completionTokens ?? u.completion_tokens ?? u.outputTokens ?? u.output_tokens) || 0;
-  const totalTokens = numberOrZero(u.totalTokens ?? u.total_tokens) || promptTokens + completionTokens;
-  return { promptTokens, completionTokens, totalTokens };
+  const u = usage !== null && typeof usage === "object" ? usage as Record<string, unknown> : {};
+  const promptTokens = numberOrZero(u.promptTokens ?? u.prompt_tokens ?? u.inputTokens ?? u.input_tokens);
+  const completionTokens = numberOrZero(u.completionTokens ?? u.completion_tokens ?? u.outputTokens ?? u.output_tokens);
+  return { promptTokens, completionTokens, totalTokens: numberOrZero(u.totalTokens ?? u.total_tokens) || promptTokens + completionTokens };
 }
-
-function emptyAssistantMessages(): SessionMessage[] {
-  return [{ role: "assistant", content: "" }];
-}
-
 export function normalizeHostResponse(value: unknown): HostResponse {
-  const record = value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  const modelId = typeof record.modelId === "string" ? record.modelId : "";
-  const messages = Array.isArray(record.messages)
-    ? (record.messages as SessionMessage[]).map((message) => {
-        if (typeof message.content !== "string" || message.content.length === 0) return message;
-        return { ...message, content: [{ type: "text" as const, text: message.content }] };
-      })
-    : emptyAssistantMessages();
-  return { modelId, messages: messages.length > 0 ? messages : emptyAssistantMessages() };
+  const record = value !== null && typeof value === "object" ? value as HostResponse : { modelId: "", messages: [] };
+  const messages = (record.messages ?? []).map((message) => {
+    const content: Exclude<SessionMessage["content"], string> = typeof message.content === "string"
+      ? (message.content ? [{ type: "text", text: message.content }] : []) : structuredClone(message.content);
+    for (const call of message.toolCalls ?? []) {
+      if (!content.some((part) => part.type === "tool-call" && part.toolCallId === call.id)) {
+        content.push({ type: "tool-call", toolCallId: call.id, toolName: call.name, args: cloneJson(call.args) });
+      }
+    }
+    return { role: "assistant" as const, content };
+  });
+  return { modelId: typeof record.modelId === "string" ? record.modelId : "", messages: messages.length ? messages : [{ role: "assistant", content: [] }],
+    ...(record.finishReason ? { finishReason: record.finishReason } : {}), ...(record.error ? { error: structuredClone(record.error) } : {}) };
 }
-
-function toExtendedUsage(usage: HostUsage): ExtendedUsage {
-  return {
-    inputTokens: usage.promptTokens,
-    outputTokens: usage.completionTokens,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    maxTokens: 0,
-  };
-}
-
-function iterableFromParts(parts: readonly StreamPart[]): AsyncIterable<StreamPart> {
-  return {
-    async *[Symbol.asyncIterator]() {
-      for (const part of parts) yield part;
-    },
-  };
-}
-
 export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown): HostStreamResult {
   const usage = handle.usage.then(normalizeHostUsage);
   return {
-    fullStream: handle.fullStream,
-    response: handle.response.then(normalizeHostResponse),
-    usage,
-    extendedUsage: usage.then(toExtendedUsage),
-    providerMetadata: Promise.resolve({}),
-    invocationId: Promise.resolve(invocationId),
+    fullStream: { [Symbol.asyncIterator]() {
+      const iterator = handle.fullStream[Symbol.asyncIterator]();
+      return {
+        async next() {
+          const next = await iterator.next();
+          if (next.done) return next;
+          const part = next.value;
+          return { done: false as const, value: part.type === "finish" && part.response
+            ? { ...part, response: normalizeHostResponse(part.response) } : part };
+        },
+        async return() { return await iterator.return?.() ?? { done: true as const, value: undefined }; },
+      };
+    } },
+    response: handle.response.then(normalizeHostResponse), usage,
+    extendedUsage: usage.then((u) => ({ inputTokens: u.promptTokens, outputTokens: u.completionTokens, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 0 })),
+    providerMetadata: Promise.resolve({}), invocationId: Promise.resolve(invocationId),
   };
 }
 
-export function asHostPromptSession(
-  session: PromptSession,
-  modelId: string,
-  onRequestId?: (id: string) => void,
-): HostPromptSession {
+export function asHostPromptSession(session: PromptSession, modelId: string, onRequestId?: (id: string) => void,
+  input: { invocationId?: string; reject?: (code: string) => StreamHandle } = {}): HostPromptSession {
   let messages: unknown[] = [];
+  let invalidState = false;
+  const notified = new Set<string>();
   const executor: HostPromptExecutor = {
     appendMessages(next) {
-      const list = Array.isArray(next) ? next : next == null ? [] : [next];
-      messages.push(...list);
+      try { messages.push(...cloneJson(Array.isArray(next) ? next : next == null ? [] : [next]) as unknown[]); }
+      catch { invalidState = true; }
       return executor;
     },
-    getMessages() {
-      return [...messages];
-    },
-    getState() {
-      return [...messages];
-    },
-    clearMessages() {
-      messages = [];
-    },
-    stream(ctx, invocationId, _tools, options) {
-      if (typeof onRequestId === "function" && typeof invocationId === "string" && invocationId.length > 0) {
-        try {
-          onRequestId(invocationId);
-        } catch {
-          /* Host emit must not break stub stream */
+    getMessages: () => structuredClone(messages), getState: () => structuredClone(messages),
+    clearMessages() { messages = []; invalidState = false; },
+    stream(ctx, invocationId, tools, options) {
+      const requestId = invocationId ?? input.invocationId;
+      let cancellation: ReturnType<typeof combineAbortSignals> | undefined;
+      try {
+        if (requestId !== undefined && (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId))) throw new EnvelopeError("invalid_envelope");
+        if (input.invocationId && requestId !== input.invocationId) throw new EnvelopeError("invalid_envelope");
+        cancellation = abortSignalFrom(ctx, options);
+        const signal = cancellation.signal;
+        if (invalidState && !signal?.aborted) throw new EnvelopeError("invalid_envelope");
+        const envelope = signal?.aborted ? buildModelEnvelope([]) : buildModelEnvelope(messages, tools, options);
+        const handle = session.stream({ envelope, abortSignal: signal, ...(typeof requestId === "string" ? { invocationId: requestId } : {}) });
+        void handle.response.then(cancellation.dispose, cancellation.dispose);
+        if (typeof requestId === "string" && !notified.has(requestId)) {
+          notified.add(requestId);
+          try { onRequestId?.(requestId); } catch { /* Host notification is not a model effect. */ }
         }
+        return toHostStreamResult(handle, requestId);
+      } catch (error) {
+        cancellation?.dispose();
+        const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
+        return toHostStreamResult(input.reject?.(code) ?? visibleFailureHandle(modelId, code), requestId);
       }
-      return toHostStreamResult(session.stream({ abortSignal: abortSignalFrom(ctx, options) }), invocationId);
     },
   };
-  const bind = (state?: unknown): HostPromptExecutor => {
-    if (Array.isArray(state)) messages = [...state];
+  const bind = (state?: unknown) => {
+    if (state !== undefined) {
+      try {
+        const snapshot = cloneJson(state);
+        if (Array.isArray(snapshot)) messages = snapshot;
+        else if (snapshot && typeof snapshot === "object" && Array.isArray(snapshot.messages) && Object.keys(snapshot).length === 1) messages = snapshot.messages;
+        else if (snapshot && typeof snapshot === "object" && Object.keys(snapshot).length === 0) messages = [];
+        else throw new EnvelopeError("invalid_envelope");
+        invalidState = false;
+      } catch { messages = []; invalidState = true; }
+    }
     return executor;
   };
-  return {
-    getModelId: () => modelId,
-    getExecutor: bind,
-    getExecutorWithoutResolvedModelTracking: bind,
-  };
+  return { getModelId: () => modelId, getExecutor: bind, getExecutorWithoutResolvedModelTracking: bind };
 }
 
-export type VisibleFailure = {
-  userVisible: true;
-  message: string;
-  toolCallIds?: string[];
+const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+export const STREAM_MAX_PARTS = 4096;
+export const STREAM_MAX_BYTES = 1024 * 1024;
+const FAILURE_MESSAGES: Record<string, string> = {
+  unsupported_image: "Configured model does not accept images. No model request was sent.",
+  parallel_tools: "Parallel tool calls are not supported. Rejected calls were not executed.",
+  invalid_envelope: "The model request could not be converted safely. No model request was sent.",
+  unsupported_content: "The message contains unsupported content. No model request was sent.",
+  invalid_tools: "Tool definitions could not be converted safely. No model request was sent.",
+  unsupported_options: "The model request contains unsupported options. No model request was sent.",
+  envelope_too_large: "The model request exceeds the supported envelope limit. No model request was sent.",
+  stream_limit: "The model stream exceeded its safety limit and was stopped.",
+  invalid_stream: "The model returned an invalid stream. The request was stopped without retry.",
+  invocation_conflict: "This invocation was already used with different inputs. It was not dispatched again.",
+  model_error: "The configured model request failed. No fallback model was used.",
 };
-
-export type SessionTerminal = {
-  terminalClass: "stop" | "error" | "abort";
-  toolCallCount: number;
-};
-
-export type ManagedSessionConfig = {
-  modelId: string;
-  vision: boolean;
-  parallel: "allow" | "fail-closed";
-  parts: StreamPart[];
-  transcriptWrites?: unknown[];
+function failure(code: string, ids?: string[]): VisibleFailure {
+  return { userVisible: true, code: Object.hasOwn(FAILURE_MESSAGES, code) ? code : "model_error",
+    message: FAILURE_MESSAGES[code] ?? FAILURE_MESSAGES.model_error!, ...(ids?.length ? { toolCallIds: [...ids] } : {}) };
+}
+export type SessionTerminal = { terminalClass: FinishReason; toolCallCount: number; rejected?: boolean };
+function notify(onTerminal: ((terminal: SessionTerminal) => void) | undefined, terminal: SessionTerminal) {
+  try { onTerminal?.(terminal); } catch { /* Evidence is not the Host loop. */ }
+}
+export function visibleFailureHandle(modelId: string, code: string, ids?: string[], onTerminal?: (terminal: SessionTerminal) => void): StreamHandle {
+  const error = failure(code, ids);
+  const response: HostResponse = { modelId, finishReason: "error", error, messages: [{ role: "assistant", content: error.message }] };
+  const stream = replayStream<StreamPart>();
+  stream.push({ type: "text-delta", textDelta: error.message });
+  stream.push({ type: "finish", reason: "error", finishReason: "error", response, usage: ZERO_USAGE });
+  stream.close();
+  notify(onTerminal, { terminalClass: "error", toolCallCount: 0, rejected: true });
+  return { fullStream: stream.iterable, response: Promise.resolve(response), usage: Promise.resolve({ ...ZERO_USAGE }) };
+}
+export type StreamingSessionConfig = {
+  modelId: string; vision: boolean; parallel: "allow" | "fail-closed";
+  produce: (request: StreamRequest & { envelope: ModelEnvelope; abortSignal: AbortSignal }) => AsyncIterable<StreamPart> | Promise<AsyncIterable<StreamPart>>;
+  usage?: HostUsage;
   providerCalls?: { count: number };
   onTerminal?: (terminal: SessionTerminal) => void;
+  onToolCall?: () => void;
+  maxParts?: number; maxBytes?: number;
 };
 
-function hasImage(request: StreamRequest | undefined): boolean {
-  for (const message of request?.messages ?? []) {
-    if (!Array.isArray(message.content)) continue;
-    if (message.content.some((part) => part.type === "image")) return true;
-  }
-  return false;
-}
-
-function collectToolIds(parts: StreamPart[]): string[] {
-  return parts.filter((part): part is Extract<StreamPart, { type: "tool-call" }> => part.type === "tool-call")
-    .map((part) => part.toolCallId);
-}
-
-function messagesFromParts(parts: StreamPart[]): SessionMessage[] {
-  let text = "";
-  const toolCalls: Array<{ id: string; name: string; args: unknown }> = [];
-  for (const part of parts) {
-    if (part.type === "text-delta") text += part.textDelta;
-    if (part.type === "tool-call") toolCalls.push({ id: part.toolCallId, name: part.toolName, args: part.args });
-  }
-  const message: SessionMessage = { role: "assistant", content: text };
-  if (toolCalls.length > 0) message.toolCalls = toolCalls;
-  return [message];
-}
-
-function withHostFinish(parts: StreamPart[], modelId: string, usage: HostUsage): StreamPart[] {
-  const messages = messagesFromParts(parts);
-  return parts.map((part) => {
-    if (part.type !== "finish") return part;
-    return {
-      ...part,
-      finishReason: part.finishReason ?? part.reason,
-      usage: part.usage ?? usage,
-      response: part.response ?? { modelId, messages },
+/** Eager single producer, bounded replay and independent completion. No observer drives or steals production. */
+export function createStreamingPromptSession(config: StreamingSessionConfig): PromptSession {
+  const partLimit = Number.isSafeInteger(config.maxParts) && config.maxParts! > 0 ? Math.min(config.maxParts!, STREAM_MAX_PARTS) : STREAM_MAX_PARTS;
+  const byteLimit = Number.isSafeInteger(config.maxBytes) && config.maxBytes! > 0 ? Math.min(config.maxBytes!, STREAM_MAX_BYTES) : STREAM_MAX_BYTES;
+  return { stream(request = {}) {
+    let envelope: ModelEnvelope;
+    try {
+      if (request.envelope && request.messages) throw new EnvelopeError("invalid_envelope");
+      envelope = request.envelope ? parseModelEnvelope(request.envelope) : buildModelEnvelope(request.messages ?? []);
+    } catch (error) {
+      return visibleFailureHandle(config.modelId, error instanceof EnvelopeError ? error.code : "invalid_envelope", undefined, config.onTerminal);
+    }
+    if (!request.abortSignal?.aborted && envelopeHasImage(envelope) && !config.vision) return visibleFailureHandle(config.modelId, "unsupported_image", undefined, config.onTerminal);
+    const replay = replayStream<StreamPart>();
+    const controller = new AbortController();
+    let complete = false;
+    let resolveResponse!: (value: HostResponse) => void;
+    let resolveUsage!: (value: HostUsage) => void;
+    const response = new Promise<HostResponse>((resolve) => { resolveResponse = resolve; });
+    const usage = new Promise<HostUsage>((resolve) => { resolveUsage = resolve; });
+    const content: Exclude<SessionMessage["content"], string> = [];
+    const calls = new Map<string, ToolCall>();
+    const pending = new Map<string, { name: string; text: string }>();
+    const held: ToolCall[] = [];
+    let bytes = 0;
+    let parts = 0;
+    let iterator: AsyncIterator<StreamPart> | undefined;
+    const serial = config.parallel === "fail-closed" || envelope.options.parallelToolCalls === false;
+    const observeTool = () => { try { config.onToolCall?.(); } catch { /* diagnostics do not execute tools */ } };
+    const pushText = (type: "text" | "reasoning", text: string) => {
+      const previous = content.at(-1);
+      if (previous?.type === type) previous.text += text;
+      else content.push({ type, text });
     };
-  });
+    const finish = (reason: FinishReason, error?: VisibleFailure, rawUsage?: HostUsage) => {
+      if (complete) return;
+      complete = true;
+      request.abortSignal?.removeEventListener("abort", abort);
+      if (reason === "stop") for (const call of held) { replay.push(call); content.push(call); observeTool(); }
+      if (error) { pushText("text", error.message); replay.push({ type: "text-delta", textDelta: error.message }); }
+      const toolCalls = content.filter((part): part is ToolCall => part.type === "tool-call");
+      const finishReason = reason === "stop" && toolCalls.length ? "tool-calls" : reason;
+      const textOnly = content.every((part) => part.type === "text");
+      const message: SessionMessage = { role: "assistant", content: textOnly ? content.map((part) => (part as SessionTextContentPart).text).join("") : structuredClone(content) };
+      if (toolCalls.length) message.toolCalls = toolCalls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: structuredClone(call.args) }));
+      const result: HostResponse = { modelId: config.modelId, finishReason, messages: [message], ...(error ? { error } : {}) };
+      const normalized = normalizeHostUsage(rawUsage ?? (reason === "stop" ? config.usage : undefined) ?? ZERO_USAGE);
+      replay.push({ type: "finish", reason, finishReason, response: result, usage: normalized });
+      replay.close();
+      resolveResponse(result); resolveUsage(normalized);
+      notify(config.onTerminal, { terminalClass: reason, toolCallCount: toolCalls.length });
+      controller.abort();
+      // A stuck producer's return must not hold the terminal promises or Host cancellation hostage.
+      try { void Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* producer cleanup is best effort */ }
+    };
+    const abort = () => finish("abort");
+    const failStream = (code: string) => finish("error", failure(code, [...new Set([...calls.keys(), ...pending.keys()])]));
+    const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value);
+    const accept = (raw: StreamPart) => {
+      if (complete) return;
+      const part = cloneJson(raw) as unknown as StreamPart;
+      if (++parts > partLimit) return failStream("stream_limit");
+      bytes += Buffer.byteLength(JSON.stringify(part));
+      if (bytes > byteLimit) return failStream("stream_limit");
+      if (part.type === "finish") {
+        if (!["stop", "error", "abort"].includes(part.reason) || pending.size) return failStream("invalid_stream");
+        finish(part.reason, part.reason === "error" ? failure("model_error") : undefined, part.usage); return;
+      }
+      if (part.type === "error") return failStream("model_error");
+      if (part.type === "text-delta" || part.type === "reasoning") {
+        if (typeof part.textDelta !== "string") return failStream("invalid_stream");
+        pushText(part.type === "text-delta" ? "text" : "reasoning", part.textDelta);
+        replay.push({ type: part.type, textDelta: part.textDelta }); return;
+      }
+      if (part.type !== "tool-call" && part.type !== "tool-call-delta" && part.type !== "tool-call-streaming-start") return failStream("invalid_stream");
+      if (!validId(part.toolCallId) || !validId(part.toolName)) return failStream("invalid_stream");
+      if (part.type !== "tool-call") {
+        const current = pending.get(part.toolCallId);
+        if (calls.has(part.toolCallId) || (current && (part.type === "tool-call-streaming-start" || current.name !== part.toolName))) return failStream("invalid_stream");
+        if (part.type === "tool-call-delta" && typeof part.argsTextDelta !== "string") return failStream("invalid_stream");
+        pending.set(part.toolCallId, { name: part.toolName, text: (current?.text ?? "") + (part.type === "tool-call-delta" ? part.argsTextDelta : "") });
+        replay.push(part.type === "tool-call-streaming-start"
+          ? { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName }
+          : { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName, argsTextDelta: part.argsTextDelta }); return;
+      }
+      const call: ToolCall = { type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: cloneJson(part.args) };
+      const assembling = pending.get(call.toolCallId);
+      if (assembling && (assembling.name !== call.toolName || (assembling.text && !isDeepStrictEqual(JSON.parse(assembling.text), call.args)))) return failStream("invalid_stream");
+      pending.delete(call.toolCallId);
+      const prior = calls.get(call.toolCallId);
+      if (prior) { if (!isDeepStrictEqual(prior, call)) failStream("invalid_stream"); return; }
+      calls.set(call.toolCallId, call);
+      if (serial && calls.size > 1) return failStream("parallel_tools");
+      if (serial) held.push(call);
+      else { content.push(call); replay.push(call); observeTool(); }
+    };
+    request.abortSignal?.addEventListener("abort", abort, { once: true });
+    if (request.abortSignal?.aborted) abort();
+    else {
+      if (config.providerCalls) config.providerCalls.count += 1;
+      void (async () => {
+        try {
+          const source = await config.produce({ ...request, envelope, abortSignal: controller.signal });
+          iterator = source[Symbol.asyncIterator]();
+          if (complete) { void Promise.resolve(iterator.return?.()).catch(() => {}); return; }
+          while (!complete) {
+            const next = await iterator.next();
+            if (complete) break;
+            if (next.done) { failStream("invalid_stream"); break; }
+            try { accept(next.value); } catch { failStream("invalid_stream"); }
+          }
+        } catch { if (!complete) failStream("model_error"); }
+      })();
+    }
+    return { fullStream: replay.iterable, response, usage };
+  } };
 }
 
-function settledHandle(
-  modelId: string,
-  parts: StreamPart[],
-  usage = { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-): StreamHandle {
-  const normalized = normalizeHostUsage(usage);
-  const copy = withHostFinish([...parts], modelId, normalized);
-  return {
-    fullStream: iterableFromParts(copy),
-    response: Promise.resolve({ modelId, messages: messagesFromParts(copy) }),
-    usage: Promise.resolve(normalized),
-  };
-}
-
-function toolCallCountFromParts(parts: StreamPart[]): number {
-  return messagesFromParts(parts).reduce((count, message) => count + (message.toolCalls?.length ?? 0), 0);
-}
-
-function notifyTerminal(onTerminal: ManagedSessionConfig["onTerminal"], produced: StreamPart[]): void {
-  if (!onTerminal) return;
-  const finish = [...produced].reverse().find((part) => part.type === "finish");
-  const terminalClass = finish && finish.type === "finish" ? finish.reason : undefined;
-  if (terminalClass !== "stop" && terminalClass !== "error" && terminalClass !== "abort") return;
-  try {
-    onTerminal({ terminalClass, toolCallCount: toolCallCountFromParts(produced) });
-  } catch {
-    /* event emission must not change the Host loop */
-  }
-}
-
-function failedHandle(
-  modelId: string,
-  error: VisibleFailure,
-  onTerminal?: ManagedSessionConfig["onTerminal"],
-): StreamHandle {
-  const terminal: StreamPart = { type: "finish", reason: "error" };
-  notifyTerminal(onTerminal, [terminal]);
-  const message: SessionMessage = { role: "assistant", content: "" };
-  if (error.toolCallIds && error.toolCallIds.length > 0) {
-    message.toolCalls = error.toolCallIds.map((id) => ({ id, name: "", args: {} }));
-  }
-  const handle = settledHandle(modelId, [terminal], { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
-  return {
-    ...handle,
-    response: Promise.resolve({ modelId, messages: [message] }),
-  };
-}
-
+export type ManagedSessionConfig = Omit<StreamingSessionConfig, "produce"> & { parts: StreamPart[]; transcriptWrites?: unknown[] };
 export function createManagedPromptSession(config: ManagedSessionConfig): PromptSession {
-  if (!config.transcriptWrites) config.transcriptWrites = [];
-  if (!config.providerCalls) config.providerCalls = { count: 0 };
-  return {
-    stream(request = {}) {
-      if (hasImage(request) && !config.vision) {
-        return failedHandle(
-          config.modelId,
-          {
-            userVisible: true,
-            message: "Configured model does not accept images.",
-          },
-          config.onTerminal,
-        );
-      }
-
-      const toolIds = collectToolIds(config.parts);
-      if (toolIds.length > 1 && config.parallel === "fail-closed") {
-        return failedHandle(
-          config.modelId,
-          {
-            userVisible: true,
-            message: "Parallel tool calls are not supported by the configured model.",
-            toolCallIds: toolIds,
-          },
-          config.onTerminal,
-        );
-      }
-
-      config.providerCalls!.count += 1;
-      const produced: StreamPart[] = [];
-      let terminal: StreamPart | undefined;
-      for (const part of config.parts) {
-        if (request.abortSignal?.aborted) {
-          terminal = { type: "finish", reason: "abort" };
-          break;
-        }
-        if (terminal) break;
-        produced.push(part);
-        if (part.type === "finish") terminal = part;
-      }
-      if (!terminal) {
-        terminal = { type: "finish", reason: request.abortSignal?.aborted ? "abort" : "stop" };
-      }
-      if (produced.at(-1)?.type !== "finish") produced.push(terminal);
-      notifyTerminal(config.onTerminal, produced);
-      return settledHandle(config.modelId, produced);
-    },
-  };
+  const session = createStreamingPromptSession({ ...config, usage: config.usage ?? { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    produce: () => ({ async *[Symbol.asyncIterator]() { for (const part of config.parts) yield part; } }) });
+  return { stream(request = {}) {
+    const calls = config.parts.filter((part): part is Extract<StreamPart, { type: "tool-call" }> => part.type === "tool-call");
+    if (!request.abortSignal?.aborted && config.parallel === "fail-closed" && new Set(calls.map((call) => call.toolCallId)).size > 1) {
+      return visibleFailureHandle(config.modelId, "parallel_tools", calls.map((call) => call.toolCallId), config.onTerminal);
+    }
+    return session.stream(request);
+  } };
 }

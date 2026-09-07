@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { BoxRuntimeError } from "./errors.ts";
 import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { StreamPart } from "./session.ts";
+import { buildModelEnvelope, envelopeHasImage, parseModelEnvelope } from "./envelope.ts";
+import { sha256Text } from "./hash.ts";
 
 export { STUB_ECHO_MODEL_ID };
 
@@ -25,11 +27,14 @@ export type StubModeldFailureCode =
   | "excess-fields"
   | "wrong-model"
   | "missing-ids"
+  | "invalid-envelope"
+  | "unsupported-content"
   | "conflict"
   | "disconnected"
   | "down";
 
 type InvocationRow = {
+  envelopeHash: string;
   agentId: string;
   modelId: string;
   parts: StreamPart[];
@@ -102,20 +107,27 @@ function handleRequest(
     if (invocationId == null) return fail("missing-ids");
     const existing = registry.get(invocationId);
     if (existing) existing.disconnected = true;
-    else registry.set(invocationId, { agentId: "", modelId: STUB_ECHO_MODEL_ID, parts: [], dispatched: false, disconnected: true });
+    else registry.set(invocationId, { envelopeHash: "", agentId: "", modelId: STUB_ECHO_MODEL_ID, parts: [], dispatched: false, disconnected: true });
     return { ok: true, method: "disconnect" };
   }
   if (method !== "submit") return fail("unknown-method");
-  if (!exactKeys(raw, SUBMIT_KEYS)) return fail("excess-fields");
+  if (!exactKeys(raw, Object.hasOwn(raw, "envelope") ? [...SUBMIT_KEYS, "envelope"] : SUBMIT_KEYS)) return fail("excess-fields");
   const invocationId = boundedId(raw.invocationId);
   const agentId = boundedId(raw.agentId);
   const modelId = boundedId(raw.modelId);
   if (invocationId == null || agentId == null || modelId == null) return fail("missing-ids");
   if (modelId !== STUB_ECHO_MODEL_ID) return fail("wrong-model");
+  let envelopeHash: string;
+  try {
+    // Legacy ids-only health fixtures mean an empty envelope, not a dropped request body.
+    const envelope = Object.hasOwn(raw, "envelope") ? parseModelEnvelope(raw.envelope) : buildModelEnvelope([]);
+    if (envelopeHasImage(envelope)) return fail("unsupported-content");
+    envelopeHash = sha256Text(JSON.stringify(envelope));
+  } catch { return fail("invalid-envelope"); }
   const existing = registry.get(invocationId);
   if (existing) {
     if (existing.disconnected) return fail("disconnected");
-    if (existing.agentId !== agentId || existing.modelId !== modelId) return fail("conflict");
+    if (existing.agentId !== agentId || existing.modelId !== modelId || existing.envelopeHash !== envelopeHash) return fail("conflict");
     return {
       ok: true,
       method: "submit",
@@ -126,6 +138,7 @@ function handleRequest(
   }
   const parts = STUB_ECHO_PARTS.map((part) => ({ ...part }));
   registry.set(invocationId, {
+    envelopeHash,
     agentId,
     modelId,
     parts,

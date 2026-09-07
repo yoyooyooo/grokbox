@@ -60,6 +60,12 @@ When explicitly selected on macOS, the built-in compatibility path can resolve t
 
 This path provides Gateway access only. It does not provide daemon, Sandbox lifecycle, quota, SSH, or host-process authority. Passwordless SSH bootstrap is separately declared and never becomes an implicit business-command fallback.
 
+## Host session boundary
+
+The minimum Host-shaped contract retained by box-runtime is `getModelId()`, both executor accessors, Array message/state access, and synchronous `stream(ctx, invocationId, tools, options)`. The returned handle exposes an async `fullStream` and independent completion promises. Text and tool-call/result content blocks must keep matching ids; the Host owns tool execution, final delivery, Transcript and Memory.
+
+The provider-neutral supported subset and explicit refusal cases live in `docs/box-runtime.md` §2 and `packages/box-runtime/src/envelope.ts`. `host-envelope.test.ts`, `stream-contract.test.ts`, and `envelope-seam.test.ts` use synthetic input and a scripted driver, not private Host code or provider traffic. They are bounded compatibility evidence, not validation of every live Host generation or provider-specific message format.
+
 ## Freshness
 
 Revalidate this document and the corresponding tests when discovery shape, Gateway routes or schemas, event framing, credential storage, token scope, or host lifecycle changes. A real read-only observation can invalidate an assumption but cannot replace fake-provider refusal and redaction coverage.

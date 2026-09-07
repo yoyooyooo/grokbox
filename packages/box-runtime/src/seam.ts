@@ -1,398 +1,196 @@
-import {
-  appendTurnSeamTerminal,
-  TURN_SEAM_BOUNDED_STRING,
-  type TurnSeamAssignment,
-  type TurnSeamOutcome,
-  type TurnSeamTerminalClass,
-  type TurnSeamWriteResult,
-} from "./events.ts";
-import {
-  callStubModeld,
-  isModeldFailure,
-  STUB_ECHO_MODEL_ID,
-  STUB_ECHO_PARTS,
-  submitPartsFromResponse,
-} from "./modeld-ipc.ts";
-import {
-  asHostPromptSession,
-  createManagedPromptSession,
-  type HostPromptSession,
-  type PromptSession,
-  type SessionTerminal,
-  type StreamHandle,
-  type StreamPart,
-  type StreamRequest,
-} from "./session.ts";
+import { appendTurnSeamTerminal, TURN_SEAM_BOUNDED_STRING, type TurnSeamAssignment,
+  type TurnSeamOutcome, type TurnSeamTerminalClass, type TurnSeamWriteResult } from "./events.ts";
+import { callStubModeld, isModeldFailure, STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
+import { buildModelEnvelope, type ModelEnvelope } from "./envelope.ts";
+import { sha256Text } from "./hash.ts";
+import { combineAbortSignals } from "./abort-signals.ts";
+import { asHostPromptSession, createStreamingPromptSession, visibleFailureHandle,
+  type HostPromptSession, type PromptSession, type StreamHandle, type StreamPart } from "./session.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
-
-export type SeamEvidence = {
-  emitted: boolean;
-  gap: null | "write_failed" | "unprojected";
-};
-
-export type StubRouteSubmit = {
-  invocationId: string;
-  agentId: string;
-  modelId: string;
-  abortSignal?: AbortSignal;
-};
-
+export type SeamEvidence = { emitted: boolean; gap: null | "write_failed" | "unprojected" };
+export type StubRouteSubmit = { invocationId: string; agentId: string; modelId: string; envelope: ModelEnvelope; abortSignal?: AbortSignal };
 export type StubRouteDriver = {
-  dispatches: number;
-  officialCalls: number;
-  secondProviderCalls: number;
+  dispatches: number; officialCalls: number; secondProviderCalls: number;
   parts: StreamPart[];
+  delivery: "response-only" | "stream";
+  vision?: boolean;
+  parallel?: "allow" | "fail-closed";
+  stream?: (request: StubRouteSubmit) => AsyncIterable<StreamPart> | Promise<AsyncIterable<StreamPart>>;
   submit?: (request: StubRouteSubmit) => Promise<{ parts: StreamPart[]; dispatched: boolean }>;
   disconnectInvocation?: (invocationId: string) => Promise<void>;
-  resolveCredential: () => never;
-  openNetwork: () => never;
+  resolveCredential: () => never; openNetwork: () => never;
 };
-
-function disabledCredential(): never {
-  throw new Error("stub route driver has credential resolution disabled");
-}
-
-function disabledNetwork(): never {
-  throw new Error("stub route driver has network disabled");
-}
-
+function disabledCredential(): never { throw new Error("stub route driver has credential resolution disabled"); }
+function disabledNetwork(): never { throw new Error("stub route driver has network disabled"); }
 export function createStubRouteDriver(parts: StreamPart[]): StubRouteDriver {
-  return {
-    dispatches: 0,
-    officialCalls: 0,
-    secondProviderCalls: 0,
-    parts,
-    resolveCredential: disabledCredential,
-    openNetwork: disabledNetwork,
-  };
+  return { dispatches: 0, officialCalls: 0, secondProviderCalls: 0, parts,
+    delivery: parts.some((part) => part.type === "tool-call") ? "stream" : "response-only",
+    resolveCredential: disabledCredential, openNetwork: disabledNetwork };
 }
-
 export function createModeldRouteDriver(runRoot: string): StubRouteDriver {
   const driver = createStubRouteDriver(STUB_ECHO_PARTS);
   driver.submit = async (request) => {
-    if (request.abortSignal?.aborted) {
-      return { parts: [{ type: "finish", reason: "abort" }], dispatched: false };
-    }
-    if (request.modelId !== STUB_ECHO_MODEL_ID) {
-      throw new Error("stub route driver rejects non-stub models");
-    }
-    const response = await callStubModeld(runRoot, {
-      method: "submit",
-      invocationId: request.invocationId,
-      agentId: request.agentId,
-      modelId: request.modelId,
-    });
-    if (isModeldFailure(response)) throw new Error(`modeld ${response.code}`);
+    if (request.abortSignal?.aborted) return { parts: [{ type: "finish", reason: "abort" }], dispatched: false };
+    if (request.modelId !== STUB_ECHO_MODEL_ID) throw new Error("stub route driver rejects non-stub models");
+    const response = await callStubModeld(runRoot, { method: "submit", invocationId: request.invocationId,
+      agentId: request.agentId, modelId: request.modelId, envelope: request.envelope });
+    if (isModeldFailure(response)) throw new Error("modeld submit failed");
     return submitPartsFromResponse(response);
   };
   driver.disconnectInvocation = async (invocationId) => {
-    try {
-      await callStubModeld(runRoot, { method: "disconnect", invocationId });
-    } catch {
-      /* disconnect is best-effort */
-    }
+    try { await callStubModeld(runRoot, { method: "disconnect", invocationId }); }
+    catch { /* Disconnect is best-effort, never a retry or fallback. */ }
   };
   return driver;
 }
-
 export type SessionSeamConfig = {
-  mode: SeamMode;
-  root: string;
-  assignment: TurnSeamAssignment;
-  modelId?: string;
-  now?: () => string;
-  driver?: StubRouteDriver;
+  mode: SeamMode; root: string; assignment: TurnSeamAssignment; modelId?: string;
+  now?: () => string; driver?: StubRouteDriver;
   writeTerminal?: (root: string, input: unknown) => Promise<TurnSeamWriteResult>;
 };
-
 type InvocationState = {
-  session: HostPromptSession;
-  dispatched: boolean;
-  recorded: boolean;
-  evidence: SeamEvidence;
-  agentId: string;
-  modelId: string;
-  invocationId: string;
+  session: HostPromptSession; dispatched: boolean; recorded: boolean; disconnected: boolean;
+  evidence: SeamEvidence; agentId: string; modelId: string; invocationId: string;
+  requestHash?: string; cancel?: () => void; toolCallCount: number;
 };
-
-function invocationIdOf(sessionOptions: unknown): string | undefined {
-  if (sessionOptions === null || typeof sessionOptions !== "object") return undefined;
-  const value = (sessionOptions as { invocationId?: unknown }).invocationId;
-  return typeof value === "string" ? value : undefined;
+function invocationIdOf(options: unknown): string | undefined {
+  if (!options || typeof options !== "object") return undefined;
+  const id = (options as { invocationId?: unknown }).invocationId;
+  return typeof id === "string" ? id : undefined;
 }
-
 function agentIdOf(args: { agentId?: string; sessionOptions?: unknown }): string | undefined {
   if (typeof args.agentId === "string") return args.agentId;
-  if (args.sessionOptions === null || typeof args.sessionOptions !== "object") return undefined;
-  const value = (args.sessionOptions as { agentId?: unknown }).agentId;
-  return typeof value === "string" ? value : undefined;
+  if (!args.sessionOptions || typeof args.sessionOptions !== "object") return undefined;
+  const id = (args.sessionOptions as { agentId?: unknown }).agentId;
+  return typeof id === "string" ? id : undefined;
 }
-
-function emptyFullStream(): AsyncIterable<StreamPart> {
-  return {
-    async *[Symbol.asyncIterator]() {},
-  };
+function emptyFullStream(): AsyncIterable<StreamPart> { return { async *[Symbol.asyncIterator]() {} }; }
+function deliveryHandle(handle: StreamHandle, responseOnly: boolean): StreamHandle {
+  // Production stub IPC is still one buffered response. Do not market it as token streaming.
+  return responseOnly ? { ...handle, fullStream: emptyFullStream() } : handle;
 }
-
-function deferredHandle(handle: StreamHandle | Promise<StreamHandle>, responseOnly: boolean): StreamHandle {
-  const resolved = Promise.resolve(handle);
-  return {
-    // Text-only stub answers live in response.messages. An empty Host-facing
-    // stream lets duplicateStream close before either backpressured fork reads.
-    fullStream: responseOnly
-      ? emptyFullStream()
-      : {
-          async *[Symbol.asyncIterator]() {
-            yield* (await resolved).fullStream;
-          },
-        },
-    response: resolved.then((value) => value.response),
-    usage: resolved.then((value) => value.usage),
-  };
-}
-
 function idleStreamHandle(modelId: string): StreamHandle {
-  return {
-    fullStream: emptyFullStream(),
-    response: Promise.resolve({ modelId, messages: [{ role: "assistant", content: "" }] }),
-    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
-  };
+  return { fullStream: emptyFullStream(), response: Promise.resolve({ modelId, messages: [{ role: "assistant", content: "" }] }),
+    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }) };
 }
-
-function boundedRouteModelId(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  if (value.length === 0 || value.length > TURN_SEAM_BOUNDED_STRING) return null;
-  if (/[\n\r]/.test(value)) return null;
-  return value;
+function boundedId(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= TURN_SEAM_BOUNDED_STRING && !/[\x00-\x1f]/.test(value) ? value : null;
 }
-
-function boundedAdmissionId(value: unknown): string | null {
-  return boundedRouteModelId(value);
-}
-
-function isOrdinaryMain(sessionOptions: unknown, agentId: string | undefined): boolean {
-  if (sessionOptions !== null && typeof sessionOptions === "object") {
-    const reason = (sessionOptions as { inferenceReason?: unknown }).inferenceReason;
+function isOrdinaryMain(options: unknown, agentId: string | undefined): boolean {
+  if (options && typeof options === "object") {
+    const reason = (options as { inferenceReason?: unknown }).inferenceReason;
     if (typeof reason === "string") return reason === "main";
   }
   return typeof agentId === "string" && agentId.length > 0;
 }
-
 function errorSession(modelId: string): HostPromptSession {
-  const inner = createManagedPromptSession({
-    modelId,
-    vision: false,
-    parallel: "allow",
-    parts: [{ type: "finish", reason: "error" }],
-  });
-  return asHostPromptSession(
-    { stream: (request) => deferredHandle(inner.stream(request), true) },
-    modelId,
-  );
+  return asHostPromptSession({ stream: () => deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope"), true) }, modelId);
 }
-
-function abortHandle(modelId: string, onTerminal?: (terminal: SessionTerminal) => void): StreamHandle {
-  return createManagedPromptSession({
-    modelId,
-    vision: false,
-    parallel: "allow",
-    parts: [{ type: "finish", reason: "abort" }],
-    onTerminal,
-  }).stream();
-}
-
-function handleFromParts(
-  modelId: string,
-  parts: StreamPart[],
-  request: StreamRequest | undefined,
-  onTerminal?: (terminal: SessionTerminal) => void,
-): StreamHandle {
-  return createManagedPromptSession({
-    modelId,
-    vision: false,
-    parallel: "allow",
-    parts,
-    onTerminal,
-  }).stream(request);
+function fromParts(parts: StreamPart[]): AsyncIterable<StreamPart> {
+  return { async *[Symbol.asyncIterator]() { for (const part of parts) yield part; } };
 }
 
 export function createSessionSeam(config: SessionSeamConfig) {
-  if (config.mode === "route" && !config.driver) {
-    throw new Error("route seam requires a stub driver");
-  }
-  if (config.mode === "route" && config.assignment === "official") {
-    throw new Error("route seam does not admit assignment=official");
-  }
-  const routeModelId = config.mode === "route" ? boundedRouteModelId(config.modelId) : null;
-  if (config.mode === "route" && routeModelId == null) {
-    throw new Error("route seam requires a bounded modelId");
-  }
+  if (config.mode === "route" && !config.driver) throw new Error("route seam requires a stub driver");
+  if (config.mode === "route" && config.assignment === "official") throw new Error("route seam does not admit assignment=official");
+  const routeModelId = config.mode === "route" ? boundedId(config.modelId) : null;
+  if (config.mode === "route" && routeModelId == null) throw new Error("route seam requires a bounded modelId");
   const invocations = new Map<string, InvocationState>();
   let writes = Promise.resolve();
-
-  const enqueue = (work: () => Promise<void>): void => {
-    writes = writes.then(work, work);
-  };
-
   const writeTerminal = config.writeTerminal ?? appendTurnSeamTerminal;
-
-  const record = (
-    state: InvocationState,
-    terminalClass: TurnSeamTerminalClass,
-    toolCallCount: number,
-    outcome: TurnSeamOutcome,
-  ): void => {
+  const record = (state: InvocationState, terminalClass: TurnSeamTerminalClass, toolCallCount: number, outcome: TurnSeamOutcome) => {
     if (state.recorded) return;
     state.recorded = true;
-    enqueue(async () => {
+    const work = async () => {
       try {
-        const result = await writeTerminal(config.root, {
-          name: "turn_seam_terminal",
-          at: (config.now ?? (() => new Date().toISOString()))(),
-          mode: "route",
-          agentId: state.agentId,
-          assignment: config.assignment,
-          modelId: routeModelId,
-          invocationId: state.invocationId,
-          toolCallCount,
-          terminalClass,
-          outcome,
-        });
-        if (result === "written") {
-          state.evidence = { emitted: true, gap: null };
-          return;
-        }
-        state.evidence = { emitted: false, gap: result };
-      } catch {
-        state.evidence = { emitted: false, gap: "write_failed" };
-      }
-    });
+        const result = await writeTerminal(config.root, { name: "turn_seam_terminal", at: (config.now ?? (() => new Date().toISOString()))(),
+          mode: "route", agentId: state.agentId, assignment: config.assignment, modelId: routeModelId,
+          invocationId: state.invocationId, toolCallCount, terminalClass, outcome });
+        state.evidence = result === "written" ? { emitted: true, gap: null } : { emitted: false, gap: result };
+      } catch { state.evidence = { emitted: false, gap: "write_failed" }; }
+    };
+    writes = writes.then(work, work);
   };
-
-  const hook = (args: {
-    originalSession: unknown;
-    sessionOptions?: unknown;
-    agentId?: string;
-    onRequestId?: (id: string) => void;
-  }): unknown => {
+  const hook = (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string; onRequestId?: (id: string) => void }): unknown => {
     if (config.mode !== "route" || routeModelId == null) return args.originalSession;
     const modelId = routeModelId;
-    const agentIdRaw = agentIdOf(args);
-    if (!isOrdinaryMain(args.sessionOptions, agentIdRaw)) return args.originalSession;
-    const invocationId = boundedAdmissionId(invocationIdOf(args.sessionOptions));
-    const agentId = boundedAdmissionId(agentIdRaw);
-    if (invocationId == null || agentId == null) {
-      return errorSession(modelId);
-    }
+    const agentRaw = agentIdOf(args);
+    if (!isOrdinaryMain(args.sessionOptions, agentRaw)) return args.originalSession;
+    const invocationId = boundedId(invocationIdOf(args.sessionOptions));
+    const agentId = boundedId(agentRaw);
+    if (!invocationId || !agentId) return errorSession(modelId);
     const existing = invocations.get(invocationId);
-    if (existing) {
-      if (existing.agentId !== agentId || existing.modelId !== modelId) {
-        return errorSession(modelId);
-      }
-      return existing.session;
-    }
+    if (existing) return existing.agentId === agentId && existing.modelId === modelId ? existing.session : errorSession(modelId);
     const driver = config.driver!;
-    const responseOnly = !driver.parts.some((part) => part.type === "tool-call");
-
-    const onTerminal = (terminal: SessionTerminal): void => {
-      const current = invocations.get(invocationId);
-      if (!current) return;
-      record(current, terminal.terminalClass, terminal.toolCallCount, "managed");
-    };
-
-    const inner = createManagedPromptSession({
-      modelId,
-      vision: false,
-      parallel: "allow",
-      parts: driver.parts,
-      onTerminal,
-    });
-
     let state: InvocationState;
-    const prompt: PromptSession = {
-      stream(request) {
-        if (state.dispatched) return idleStreamHandle(modelId);
-        if (request?.abortSignal?.aborted) {
-          state.dispatched = true;
-          return deferredHandle(abortHandle(modelId, onTerminal), responseOnly);
-        }
-        state.dispatched = true;
+    const streaming = createStreamingPromptSession({ modelId, vision: driver.vision === true, parallel: driver.parallel ?? "allow",
+      usage: driver.stream ? undefined : { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      onToolCall: () => { state.toolCallCount += 1; },
+      onTerminal: (terminal) => {
+        state.cancel = undefined;
+        record(state, terminal.terminalClass, terminal.toolCallCount, terminal.rejected ? "rejected" : "managed");
+      },
+      produce: async (request) => {
+        const submit: StubRouteSubmit = { invocationId, agentId, modelId, envelope: request.envelope, abortSignal: request.abortSignal };
+        if (driver.stream) { driver.dispatches += 1; return await driver.stream(submit); }
         if (driver.submit) {
-          const processing = (async (): Promise<StreamHandle> => {
-            try {
-              const result = await driver.submit!({
-                invocationId,
-                agentId,
-                modelId,
-                abortSignal: request?.abortSignal,
-              });
-              driver.dispatches += result.dispatched ? 1 : 0;
-              return handleFromParts(modelId, result.parts, request, onTerminal);
-            } catch {
-              driver.dispatches += 1;
-              return handleFromParts(modelId, [{ type: "finish", reason: "error" }], request, onTerminal);
-            }
-          })();
-          return deferredHandle(processing, responseOnly);
+          try {
+            const result = await driver.submit(submit);
+            driver.dispatches += result.dispatched ? 1 : 0;
+            return fromParts(result.parts);
+          } catch { driver.dispatches += 1; throw new Error("modeld submit failed"); }
         }
         driver.dispatches += 1;
-        return deferredHandle(inner.stream(request), responseOnly);
+        return fromParts(driver.parts);
       },
-    };
-
+    });
+    const prompt: PromptSession = { stream(request = {}) {
+      if (state.disconnected) return idleStreamHandle(modelId);
+      const envelope = request.envelope ?? buildModelEnvelope(request.messages ?? []);
+      const hash = sha256Text(JSON.stringify(envelope));
+      if (state.dispatched) return state.requestHash === hash || request.abortSignal?.aborted
+        ? idleStreamHandle(modelId) : visibleFailureHandle(modelId, "invocation_conflict");
+      state.dispatched = true;
+      state.requestHash = hash;
+      const controller = new AbortController();
+      state.cancel = () => controller.abort();
+      const cancellation = combineAbortSignals(request.abortSignal ? [request.abortSignal, controller.signal] : [controller.signal]);
+      const handle = streaming.stream({ ...request, envelope, abortSignal: cancellation.signal });
+      void handle.response.then(cancellation.dispose, cancellation.dispose);
+      return deliveryHandle(handle, driver.delivery === "response-only");
+    } };
     state = {
-      session: asHostPromptSession(prompt, modelId, args.onRequestId),
-      dispatched: false,
-      recorded: false,
-      evidence: { emitted: false, gap: null },
-      agentId,
-      modelId,
-      invocationId,
+      session: asHostPromptSession(prompt, modelId, args.onRequestId, { invocationId, reject: (code) => {
+        if (state.dispatched || state.disconnected) return idleStreamHandle(modelId);
+        state.dispatched = true;
+        return deliveryHandle(visibleFailureHandle(modelId, code, undefined, (terminal) => record(state, terminal.terminalClass, 0, "rejected")), driver.delivery === "response-only");
+      } }),
+      dispatched: false, recorded: false, disconnected: false, evidence: { emitted: false, gap: null }, agentId, modelId, invocationId, toolCallCount: 0,
     };
     invocations.set(invocationId, state);
     return state.session;
   };
-
   return {
     hook,
     async disconnect(invocationId: string): Promise<void> {
       const state = invocations.get(invocationId);
       if (!state) return;
-      if (config.driver?.disconnectInvocation) {
-        try {
-          await config.driver.disconnectInvocation(invocationId);
-        } catch {
-          /* modeld disconnect is best-effort */
-        }
-      }
-      record(state, "unknown", 0, "managed");
+      state.disconnected = true;
+      record(state, "unknown", state.toolCallCount, "managed");
+      state.cancel?.();
+      try { await config.driver?.disconnectInvocation?.(invocationId); } catch { /* never retry */ }
       await writes;
     },
-    evidence(invocationId: string): SeamEvidence | undefined {
-      return invocations.get(invocationId)?.evidence;
-    },
-    async flush(): Promise<void> {
-      await writes;
-    },
+    evidence: (invocationId: string) => invocations.get(invocationId)?.evidence,
+    async flush(): Promise<void> { await writes; },
   };
 }
 
-export function bindHostSessionHook(input: {
-  mode: SeamMode;
-  durableRoot: string;
-  runRoot: string;
-}): (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string }) => unknown {
-  if (input.mode !== "route") {
-    return (args) => args.originalSession;
-  }
-  const driver = createModeldRouteDriver(input.runRoot);
-  const seam = createSessionSeam({
-    mode: "route",
-    root: input.durableRoot,
-    assignment: "main",
-    modelId: STUB_ECHO_MODEL_ID,
-    driver,
-  });
+export function bindHostSessionHook(input: { mode: SeamMode; durableRoot: string; runRoot: string }):
+  (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string }) => unknown {
+  if (input.mode !== "route") return (args) => args.originalSession;
+  const seam = createSessionSeam({ mode: "route", root: input.durableRoot, assignment: "main", modelId: STUB_ECHO_MODEL_ID,
+    driver: createModeldRouteDriver(input.runRoot) });
   return (args) => seam.hook(args);
 }
