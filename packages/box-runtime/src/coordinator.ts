@@ -1,10 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { clearAttestation, readAttestation, routeAttestationAgrees, writeAttestation } from "./attestation.ts";
+import { readFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
+import { clearAttestation, readAttestation, routeAttestationAgrees, type CoverageAttestation } from "./attestation.ts";
+import { writeRuntimeArtifact } from "./runtime-artifact.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { BoxRuntimeError } from "./errors.ts";
 import { appendEvent, compactEvents } from "./events.ts";
-import { canonicalOwnershipAgrees } from "./identity-op.ts";
+import { canonicalOwnershipAgrees, type IdentityOpResult } from "./identity-op.ts";
 import { inspectPid, linuxProcessPort, roleOf } from "./live-proc.ts";
 import { probeStubModeld } from "./modeld-ipc.ts";
 import { routeHasNonStubAssignment, type DesiredFile, type ModelsFile } from "./models.ts";
@@ -49,6 +50,7 @@ export type WatchdogTickResult = {
   circuit: "closed" | "open";
   watchdogState: "idle" | "running" | "degraded";
   origin: HostOrigin;
+  committedAttestation?: CoverageAttestation;
 };
 
 export type WatchdogAdoptPorts = Pick<
@@ -132,9 +134,7 @@ async function loadState(root: string): Promise<CoordinatorState> {
 }
 
 async function saveState(root: string, state: CoordinatorState): Promise<void> {
-  const path = coordinatorStatePath(root);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+  await writeRuntimeArtifact(coordinatorStatePath(root), state);
 }
 
 function resultOf(
@@ -292,7 +292,7 @@ async function prepareNextTarget(input: WatchdogTickInput, ctx: TargetContext): 
   if (!checked.ok) return checked;
   const adopt = input.adopt!;
   try {
-    await adopt.prepareTempLaunch?.();
+    await adopt.prepareTempLaunch?.(structuredClone(checked.profile));
   } catch {
     return { ok: false, code: "launch-preparation-failed" };
   }
@@ -341,9 +341,24 @@ async function waitDirectOfficialReplacement(
   return null;
 }
 
+type AttemptProgress = {
+  signaled: boolean;
+  injected: boolean;
+  attemptKey: string | null;
+  committedAttestation?: CoverageAttestation;
+};
+
+function recordOperation(progress: AttemptProgress, result: IdentityOpResult, key: string | null): void {
+  progress.signaled ||= result.signaled;
+  progress.injected ||= result.ok && result.coverage === "attested";
+  if (result.signaled) progress.attemptKey ??= key;
+  if (result.committedAttestation) progress.committedAttestation = result.committedAttestation;
+}
+
 async function runAttestedRefresh(
   input: WatchdogTickInput,
   ctx: {
+    progress: AttemptProgress;
     state: CoordinatorState;
     ephemeralRoot: string;
     processes: ProcessPort;
@@ -444,6 +459,7 @@ async function runAttestedRefresh(
     beforeSignal: () => preflightNextTarget(nextInput, ctx),
   });
 
+  recordOperation(ctx.progress, deact, key);
   if (!deact.ok && !deact.signaled) return refusedTarget(state, origin, key, deact.code ?? "deactivate_failed");
   if (deact.signaled) {
     state = {
@@ -476,7 +492,7 @@ async function runAttestedRefresh(
     mutationCount: state.mutationCount + (deact.signaled ? 1 : 0),
   };
   await saveState(input.root, state);
-  const next = await runWatchdogTickBody({ ...nextInput, confirmed: true });
+  const next = await runWatchdogTickBody({ ...nextInput, confirmed: true }, ctx.progress);
   return { ...next, attemptKey: key, signaled: deact.signaled || next.signaled };
 }
 
@@ -511,7 +527,7 @@ async function withCoordinatorLease<T>(
   }
 }
 
-async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTickResult> {
+async function runWatchdogTickBody(input: WatchdogTickInput, progress: AttemptProgress): Promise<WatchdogTickResult> {
   const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   const processes = input.processes ?? readOnlyProcessPort(linuxProcessPort());
   const classify = input.classify ?? roleOf;
@@ -596,6 +612,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
         await clearAttestation(ephemeralRoot);
       },
     });
+    recordOperation(progress, deact, attemptKey(input.desired.mode, input.legacyWitness.identity, sha));
     if (!deact.ok) {
       state = {
         ...state,
@@ -629,7 +646,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
         watchdogState: "idle",
       });
     }
-    return await runWatchdogTickBody({ ...continuation, legacyWitness: undefined });
+    return await runWatchdogTickBody({ ...continuation, legacyWitness: undefined }, progress);
   }
 
   if (origin === "grokbox-unattested" || origin === "ambiguous") {
@@ -705,15 +722,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
           return blocked("modeld_not_ready");
         }
         return await runAttestedRefresh(input, {
-          state,
-          ephemeralRoot,
-          processes,
-          classify,
-          freshDiskSha,
-          iso,
-          liveHost,
-          sha,
-          origin,
+          progress, state, ephemeralRoot, processes, classify, freshDiskSha, iso, liveHost, sha, origin,
         });
       }
       if (att?.mode === "route" && ownership && shaMatch && !profileMatch) {
@@ -726,15 +735,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
           return blocked("modeld_not_ready");
         }
         return await runAttestedRefresh(input, {
-          state,
-          ephemeralRoot,
-          processes,
-          classify,
-          freshDiskSha,
-          iso,
-          liveHost,
-          sha,
-          origin,
+          progress, state, ephemeralRoot, processes, classify, freshDiskSha, iso, liveHost, sha, origin,
         });
       }
       if (!ready && att?.mode === "route" && shaMatch && ownership) {
@@ -789,6 +790,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
       });
     }
     return await runAttestedRefresh(input, {
+      progress,
       state,
       ephemeralRoot,
       processes,
@@ -871,46 +873,15 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
     readGatewayPid: input.adopt.readGatewayPid,
     armGuardian: input.adopt.armGuardian,
     expectedMode: markerMode,
-    persistAttestation:
-      markerMode === "route"
-        ? async (host, nextSha, windowMs) => {
-            const reviewed = nextInput.reviewedProfile;
-            await writeAttestation(ephemeralRoot, {
-              mode: "route",
-              coverage: "attested",
-              diskSha: nextSha,
-              pid: host.pid,
-              start: host.start,
-              identity: host,
-              at: iso(),
-              modeld: true,
-              windowMs,
-              launchMode: "transient-adopt",
-              profileId: reviewed.profileId,
-              transformedSha: reviewed.transformedSourceSha256,
-            });
-          }
-        : input.adopt.persistAttestation ??
-          (async (host, nextSha, windowMs) => {
-            await writeAttestation(ephemeralRoot, {
-              mode: "identity",
-              coverage: "attested",
-              diskSha: nextSha,
-              pid: host.pid,
-              start: host.start,
-              identity: host,
-              at: iso(),
-              modeld: false,
-              windowMs,
-              launchMode: "transient-adopt",
-            });
-          }),
+    persistAttestation: input.adopt.persistAttestation,
+    modeldReady: () => resolveModeldReady(input, ephemeralRoot),
     beforeSignal: () => preflightNextTarget(nextInput, targetContext),
     hasGrokboxPreload: input.adopt.hasGrokboxPreload,
     now: input.now,
     adoptProveMs: input.adopt.adoptProveMs,
   });
 
+  recordOperation(progress, adopted, key);
   if (adopted.signaled || adopted.ok) {
     const attemptedKeys = [...state.attemptedKeys.filter((entry) => entry !== key), key].slice(-32);
     state = {
@@ -933,6 +904,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
       reason: null,
       attemptKey: key,
       signaled: adopted.signaled,
+      committedAttestation: adopted.committedAttestation,
       injected: true,
       watchdogState: "running",
     });
@@ -942,6 +914,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput): Promise<WatchdogTi
     reason: adopted.code ?? "adopt_failed",
     attemptKey: key,
     signaled: adopted.signaled,
+    committedAttestation: adopted.committedAttestation,
     injected: false,
     watchdogState: "degraded",
   });
@@ -951,19 +924,65 @@ function needsMutationLease(input: WatchdogTickInput): boolean {
   return Boolean(input.adopt) || Boolean(input.legacyWitness);
 }
 
-export async function runWatchdogTick(input: WatchdogTickInput): Promise<WatchdogTickResult> {
+async function runCoordinatedTick(input: WatchdogTickInput, forceLease = false): Promise<WatchdogTickResult> {
   const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
-  const result = !needsMutationLease(input)
-    ? await runWatchdogTickBody(input)
-    : (await withCoordinatorLease(input, ephemeralRoot, () => runWatchdogTickBody(input))) as WatchdogTickResult;
-  await compactEvents(input.root);
-  return result;
+  const progress: AttemptProgress = { signaled: false, injected: false, attemptKey: null };
+  const failed = (): WatchdogTickResult => ({
+    reconcile: "recovery-required", reason: "coordinator-persistence-failed", ...progress,
+    circuit: "open", origin: "ambiguous", watchdogState: "degraded",
+  });
+  const fenceUncertain = async () => {
+    if (!progress.signaled) return;
+    try {
+      const journal = await readAdoptOpState(ephemeralRoot);
+      await writeAdoptOpState(ephemeralRoot, {
+        launchMode: "transient-adopt", tempSupervisor: null, adoptingSupervisor: null, host: null,
+        ...journal, phase: "recovery-required",
+      });
+    } catch { /* An unreadable journal/lock is still fail-closed; never retry here. */ }
+  };
+  const body = async (): Promise<WatchdogTickResult> => {
+    try {
+      let result = await runWatchdogTickBody(input, progress);
+      await compactEvents(input.root);
+      if (result.reconcile === "converged" && progress.committedAttestation) {
+        const expected = progress.committedAttestation;
+        progress.committedAttestation = undefined;
+        const record = await readAttestation(ephemeralRoot);
+        let reason: string | null = null;
+        if (!isDeepStrictEqual(record, expected)) reason = "attestation-uncommitted";
+        else {
+          progress.committedAttestation = record!;
+          if (record!.mode === "route" && !await resolveModeldReady(input, ephemeralRoot)) reason = "modeld_not_ready";
+        }
+        if (reason) result = { ...result, committedAttestation: progress.committedAttestation,
+          reconcile: "recovery-required", reason, watchdogState: "degraded" };
+      }
+      if (progress.signaled && (result.reconcile !== "converged" || result.reason === "generation_attempted")) {
+        await fenceUncertain();
+        return { ...result, ...progress, reconcile: "recovery-required", watchdogState: "degraded" };
+      }
+      return { ...result, signaled: progress.signaled || result.signaled,
+        ...(progress.committedAttestation ? { committedAttestation: progress.committedAttestation } : {}) };
+    } catch {
+      await fenceUncertain();
+      return failed();
+    }
+  };
+  try {
+    return !forceLease && !needsMutationLease(input) ? await body() : await withCoordinatorLease(input, ephemeralRoot, body);
+  } catch {
+    // Lease release can fail after an otherwise committed operation. Preserve its evidence.
+    return failed();
+  }
+}
+
+export async function runWatchdogTick(input: WatchdogTickInput): Promise<WatchdogTickResult> {
+  return await runCoordinatedTick(input);
 }
 
 export async function runWatchdogCutover(input: WatchdogTickInput): Promise<WatchdogTickResult> {
-  const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
-  const leased = await withCoordinatorLease(input, ephemeralRoot, () => runWatchdogTickBody(input));
-  return leased as WatchdogTickResult;
+  return await runCoordinatedTick(input, true);
 }
 
 export type ManualReadoptInput = WatchdogTickInput & {

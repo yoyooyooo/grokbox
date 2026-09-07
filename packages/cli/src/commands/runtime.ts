@@ -189,6 +189,15 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
       signaled: result.signaled,
       circuit: result.circuit,
       origin: result.origin,
+      ...(result.committedAttestation ? { committedAttestation: {
+        mode: result.committedAttestation.mode,
+        pid: result.committedAttestation.pid,
+        start: result.committedAttestation.start,
+        diskSha: result.committedAttestation.diskSha,
+        operationId: result.committedAttestation.operationId,
+        compile: result.committedAttestation.compile,
+        at: result.committedAttestation.at,
+      } } : {}),
     });
   } catch (error) {
     rethrow(error);

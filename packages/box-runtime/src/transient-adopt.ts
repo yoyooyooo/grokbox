@@ -1,5 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { readAttestation, writeAttestation, type CoverageAttestation } from "./attestation.ts";
+import { compileReceiptAgrees, expectedCompileReceipt, type CompileReceipt } from "./compile-receipt.ts";
+import { writeRuntimeArtifact } from "./runtime-artifact.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
 import { acquireExclusiveLock, operationLockPath } from "./op-lock.ts";
 import {
@@ -30,6 +34,7 @@ export type AdoptOpPhase =
   | "temp-host-ready"
   | "term-temp"
   | "await-adopt"
+  | "commit-attestation"
   | "attested"
   | "deactivate-preflight"
   | "deactivate-term"
@@ -40,6 +45,7 @@ export type AdoptOpState = {
   launchMode: "transient-adopt";
   phase?: AdoptOpPhase;
   operationId?: string;
+  compile?: CompileReceipt;
   tempSupervisor: ProcessIdentity | null;
   adoptingSupervisor: ProcessIdentity | null;
   host: StableProcessIdentity | null;
@@ -64,7 +70,7 @@ export function settleStaleAdoptJournal(input: {
   gatewayPid: number | null;
 }): AdoptOpState | null {
   const state = input.state;
-  if (!state || !adoptJournalNeedsRecovery(state)) return state;
+  if (!state || !adoptJournalNeedsRecovery(state) || state.phase === "recovery-required" || state.phase === "commit-attestation") return state;
   if (state.tempSupervisor) {
     const temp = input.inspect(state.tempSupervisor.pid);
     if (temp && temp.start === state.tempSupervisor.start) return state;
@@ -99,9 +105,7 @@ export function adoptOpStatePath(ephemeralRoot: string): string {
 }
 
 export async function writeAdoptOpState(root: string, state: AdoptOpState): Promise<void> {
-  const path = adoptOpStatePath(root);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+  await writeRuntimeArtifact(adoptOpStatePath(root), state);
 }
 
 export async function readAdoptOpState(root: string): Promise<AdoptOpState | null> {
@@ -143,6 +147,15 @@ function rolesCensus(port: ProcessPort, classify: RoleClassifier) {
   );
 }
 
+function failureDiskSha(read: () => string): string {
+  try { return read(); } catch { return "none"; }
+}
+
+function failureCensus(processes: ProcessPort, classify: RoleClassifier) {
+  try { return rolesCensus(processes, classify); }
+  catch { return { wrapper: 0, supervisor: 0, host: 0, tempSupervisor: 0, guardian: 0, extras: 0 }; }
+}
+
 export type AdoptTargetPorts = {
   readSource: () => string;
   launchStrategy: (supervisor: ProcessIdentity) => H3LaunchStrategy;
@@ -160,14 +173,16 @@ export type TransientAdoptContext = {
   readMarker: () => IdentityMarker | null;
   waitGone: (old: ProcessIdentity) => Promise<boolean>;
   waitReady: (hostPid: number) => Promise<IdentityMarker | null>;
-  prepareTempLaunch?: () => Promise<void>;
+  prepareTempLaunch?: (profile: PatchProfile) => Promise<void>;
   /** Coordinator-supplied admission recheck under the operation lock, before arming a guardian. */
   beforeSignal?: BeforeAdoptSignal;
   spawnTempSupervisor: () => Promise<ProcessIdentity | null>;
   waitNewHost: (oldHostPid: number) => Promise<ProcessIdentity | null>;
   readGatewayPid: () => number | null;
   armGuardian: (frozen: ProcessIdentity[]) => Promise<{ ok: true; release: () => void } | { ok: false }>;
-  persistAttestation?: (host: ProcessIdentity, sha: string, windowMs: number) => Promise<void>;
+  /** Storage port only: the operation owns the marker-derived value and canonical read-back. */
+  persistAttestation?: (value: CoverageAttestation) => Promise<void>;
+  modeldReady?: () => Promise<boolean>;
   hasGrokboxPreload: (ident: ProcessIdentity) => boolean;
   now: () => number;
   adoptProveMs?: number;
@@ -176,15 +191,21 @@ export type TransientAdoptContext = {
 
 export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Promise<IdentityOpResult> {
   const shaBefore = ctx.diskSha();
-  const fail = (code: string, signaled: boolean, recoveryRequired = true): IdentityOpResult => ({
+  let signaled = false;
+  let complete = false;
+  let committedAttestation: CoverageAttestation | undefined;
+  const profile = structuredClone(ctx.reviewedProfile);
+  const expectedCompile = expectedCompileReceipt(profile);
+  const fail = (code: string, didSignal: boolean, recoveryRequired = true): IdentityOpResult => ({
     ok: false,
     recoveryRequired,
     code,
-    signaled,
+    signaled: signaled || didSignal,
+    ...(committedAttestation ? { committedAttestation } : {}),
     diskShaBefore: shaBefore,
-    diskShaAfter: ctx.diskSha(),
-    census: rolesCensus(ctx.processes, ctx.classify),
-    coverage: signaled ? "window-open" : "none",
+    diskShaAfter: failureDiskSha(ctx.diskSha),
+    census: failureCensus(ctx.processes, ctx.classify),
+    coverage: signaled || didSignal ? "window-open" : "none",
     launchMode: "transient-adopt",
   });
 
@@ -192,7 +213,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
   if (!lock.ok) return fail("lock-conflict", false, false);
 
   try {
-    const reviewed = loadReviewedProfile(ctx.reviewedProfile, shaBefore);
+    const reviewed = loadReviewedProfile(profile, shaBefore);
     if (!reviewed.ok) return fail(reviewed.code, false, false);
 
     const stale = ctx.readMarker();
@@ -203,31 +224,35 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
     const { wrapper, supervisor, host } = unique.chain;
 
     try {
-      await ctx.prepareTempLaunch?.();
+      await ctx.prepareTempLaunch?.(profile);
       if (ctx.diskSha() !== shaBefore) return fail("disk-sha-changed", false, false);
       const admitted = await ctx.beforeSignal?.();
       if (admitted && !admitted.ok) return fail(admitted.code, false, false);
     } catch {
       return fail("launch-preparation-failed", false, false);
     }
+    await writeAdoptOpState(ctx.ephemeralRoot, {
+      launchMode: "transient-adopt", phase: "wrapper-stop", operationId: ctx.operationId,
+      tempSupervisor: null, adoptingSupervisor: null, host: stableOf(host),
+    });
     const guardian = await ctx.armGuardian([wrapper]);
     if (!guardian.ok) return fail("guardian-not-armed", false, false);
     const started = ctx.now();
-    const release = () => guardian.release();
+    let failureCode: string | undefined;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      signaled = true; // Guardian release can emit CONT, including a failed STOP attempt.
+      guardian.release();
+    };
 
     try {
-      await writeAdoptOpState(ctx.ephemeralRoot, {
-        launchMode: "transient-adopt",
-        phase: "wrapper-stop",
-        operationId: ctx.operationId,
-        tempSupervisor: null,
-        adoptingSupervisor: null,
-        host: stableOf(host),
-      });
       if (!signalIfMatch(ctx.processes, wrapper, "SIGSTOP").ok) {
         release();
         return fail("identity-mismatch", false, true);
       }
+      signaled = true;
       if (ctx.diskSha() !== shaBefore) {
         release();
         return fail("disk-sha-changed", true, true);
@@ -300,16 +325,18 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         release();
         return fail("relaunch-failed", true, true);
       }
-      const marker = await ctx.waitReady(replacement.pid);
+      const marker = structuredClone(await ctx.waitReady(replacement.pid));
       const expectedMode = ctx.expectedMode ?? "identity";
       if (
         !marker ||
         marker.operationId !== ctx.operationId ||
         marker.pid !== replacement.pid ||
+        marker.start !== replacement.start ||
         marker.mode !== expectedMode ||
         marker.transformed !== true ||
         marker.compiled !== true ||
-        marker.modeld !== false
+        marker.modeld !== false ||
+        !compileReceiptAgrees(marker.compile, expectedCompile)
       ) {
         await reapOperationOwned(ctx, temp, replacement);
         release();
@@ -386,17 +413,62 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       if (ctx.diskSha() !== shaBefore) return fail("disk-sha-changed", true, true);
       const census = rolesCensus(ctx.processes, ctx.classify);
       if (!singleOfficialChain(census)) return fail("census-invalid", true, true);
-      await writeAdoptOpState(ctx.ephemeralRoot, {
-        launchMode: "transient-adopt",
-        phase: "attested",
-        operationId: ctx.operationId,
-        tempSupervisor: null,
-        adoptingSupervisor: adopted.supervisor,
-        host: stableHost,
-      });
       const shaAfter = ctx.diskSha();
       const windowMs = Math.max(0, ctx.now() - started);
-      await ctx.persistAttestation?.(adopted.host, shaAfter, windowMs);
+      const finalCheck = async (): Promise<string | null> => {
+        if (expectedMode === "route" && !await ctx.modeldReady?.()) return "modeld_not_ready";
+        if (ctx.diskSha() !== shaBefore) return "disk-sha-changed";
+        const current = findAdoptedHostState(ctx.processes, ctx.classify, {
+          gatewayPid: ctx.readGatewayPid(), expectedHost: stableHost,
+        });
+        if (!current.ok) return current.code;
+        if (!ctx.hasGrokboxPreload(current.state.host) || ctx.hasGrokboxPreload(current.state.supervisor)) return "preload-mismatch";
+        return null;
+      };
+      const beforeCommit = await finalCheck();
+      if (beforeCommit) return fail(beforeCommit, true);
+      const { profileId, profileSha256, sourceSha256, transformedSha256 } = marker.compile!;
+      const compile = { profileId, profileSha256, sourceSha256, transformedSha256 };
+      const base = {
+        coverage: "attested" as const, diskSha: compile.sourceSha256, pid: adopted.host.pid,
+        start: adopted.host.start, identity: adopted.host, at: new Date(ctx.now()).toISOString(),
+        windowMs, launchMode: "transient-adopt" as const, operationId: ctx.operationId,
+        profileId: compile.profileId, transformedSha: compile.transformedSha256, compile,
+      };
+      const proposed: CoverageAttestation = expectedMode === "route"
+        ? { ...base, mode: "route", modeld: true }
+        : { ...base, mode: "identity", modeld: false };
+      const journal: AdoptOpState = {
+        launchMode: "transient-adopt", phase: "commit-attestation", operationId: ctx.operationId, compile,
+        tempSupervisor: null, adoptingSupervisor: adopted.supervisor, host: stableHost,
+      };
+      failureCode = "attestation-persist-failed";
+      await writeAdoptOpState(ctx.ephemeralRoot, journal);
+      const atCommit = await finalCheck();
+      if (atCommit) return fail(atCommit, true);
+      let persistFailed = false;
+      try {
+        await (ctx.persistAttestation ?? ((value) => writeAttestation(ctx.ephemeralRoot, value)))(structuredClone(proposed));
+      } catch {
+        persistFailed = true;
+      }
+      const record = await readAttestation(ctx.ephemeralRoot);
+      if (!isDeepStrictEqual(record, proposed)) return fail("attestation-uncommitted", true);
+      committedAttestation = record!;
+      if (persistFailed) return fail("attestation-persist-failed", true);
+      const afterCommit = await finalCheck();
+      if (afterCommit) return fail(afterCommit, true);
+      const done: AdoptOpState = { ...journal, phase: "attested" };
+      failureCode = "journal-persist-failed";
+      await writeAdoptOpState(ctx.ephemeralRoot, done);
+      if (!isDeepStrictEqual(await readAdoptOpState(ctx.ephemeralRoot), done)) return fail("journal-uncommitted", true);
+      committedAttestation = undefined;
+      const finalRecord = await readAttestation(ctx.ephemeralRoot);
+      if (!isDeepStrictEqual(finalRecord, proposed)) return fail("attestation-uncommitted", true);
+      committedAttestation = finalRecord!;
+      const afterReadBack = await finalCheck();
+      if (afterReadBack) return fail(afterReadBack, true);
+      complete = true;
       return {
         ok: true,
         recoveryRequired: false,
@@ -408,13 +480,26 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         host: adopted.host,
         windowMs,
         launchMode: "transient-adopt",
+        committedAttestation,
       };
     } catch (error) {
       release();
-      return fail(error instanceof Error ? error.message : "inject-error", true, true);
+      return fail(failureCode ?? (error instanceof Error ? error.message : "inject-error"), true, true);
     }
+  } catch {
+    return fail("adopt-persistence-failed", signaled, signaled);
   } finally {
-    await lock.lock.release();
+    if (signaled && !complete) {
+      try {
+        const journal = await readAdoptOpState(ctx.ephemeralRoot);
+        await writeAdoptOpState(ctx.ephemeralRoot, {
+          launchMode: "transient-adopt", tempSupervisor: null, adoptingSupervisor: null, host: null,
+          ...journal, phase: "recovery-required",
+        });
+      } catch { /* An unreadable/pending journal remains fail-closed. */ }
+    }
+    try { await lock.lock.release(); }
+    catch { return fail("operation-lock-release-failed", signaled); }
   }
 }
 
@@ -523,15 +608,16 @@ export async function runTransientAdoptDeactivate(
   ctx: TransientAdoptDeactivateContext,
 ): Promise<IdentityOpResult> {
   const shaBefore = ctx.diskSha();
-  const fail = (code: string, signaled = true): IdentityOpResult => ({
+  let signaled = false;
+  const fail = (code: string, didSignal = signaled): IdentityOpResult => ({
     ok: false,
     recoveryRequired: true,
     code,
-    signaled,
+    signaled: didSignal,
     diskShaBefore: shaBefore,
-    diskShaAfter: ctx.diskSha(),
-    census: rolesCensus(ctx.processes, ctx.classify),
-    coverage: signaled ? "window-open" : "none",
+    diskShaAfter: failureDiskSha(ctx.diskSha),
+    census: failureCensus(ctx.processes, ctx.classify),
+    coverage: didSignal ? "window-open" : "none",
     launchMode: "transient-adopt",
   });
   const lock = await acquireExclusiveLock(operationLockPath(ctx.ephemeralRoot));
@@ -585,6 +671,7 @@ export async function runTransientAdoptDeactivate(
     if (!signalIfMatch(ctx.processes, live, "SIGTERM").ok) {
       return fail("deactivate-signal-failed");
     }
+    signaled = true;
     if (!(await ctx.waitGone(live))) return fail("patched-host-still-alive");
     const replacement = await ctx.waitReplacement(live.pid);
     if (!replacement || replacement.pid === live.pid) return fail("replacement-unproven");
@@ -613,7 +700,10 @@ export async function runTransientAdoptDeactivate(
       host: unique.chain.host,
       launchMode: "transient-adopt",
     };
+  } catch {
+    return fail("deactivate-persistence-failed");
   } finally {
-    await lock.lock.release();
+    try { await lock.lock.release(); }
+    catch { return fail("operation-lock-release-failed"); }
   }
 }

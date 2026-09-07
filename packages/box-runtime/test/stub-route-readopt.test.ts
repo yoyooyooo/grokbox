@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { expectedCompileReceipt } from "../src/compile-receipt.ts";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -125,6 +126,7 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid
   if (gateway.pid == null) gateway.pid = tree.roles().find((row) => row.role === "host")?.pid ?? null;
   let patchedPid = 0;
   let spawns = 0;
+  let launchProfile = reviewed;
   const touched = new Set<number>();
   return {
     spawns: () => spawns,
@@ -133,6 +135,7 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid
       (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER"),
     adopt: {
       target: targetFor(),
+      prepareTempLaunch: async (profile: PatchProfile) => { launchProfile = structuredClone(profile); },
       spawnTempSupervisor: async () => {
         spawns += 1;
         const temp = tree.spawn("temp-supervisor");
@@ -148,10 +151,12 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid
       waitReady: async (pid: number) => ({
         operationId: WATCHDOG_OPERATION_ID,
         pid,
+        start: tree.inspect(pid)!.start,
         mode: markerMode.current,
         transformed: true as const,
         compiled: true as const,
         modeld: false as const,
+        compile: expectedCompileReceipt(launchProfile),
       }),
       armGuardian: async (frozen: ProcessIdentity[]) =>
         guard(tree, frozen, () => {

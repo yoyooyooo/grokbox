@@ -1,4 +1,7 @@
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { sha256Bytes } from "./hash.ts";
+import { inspectPid } from "./live-proc.ts";
 import { installCompileHook } from "./hook.ts";
 import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { DEFAULT_DURABLE_ROOT } from "./paths.ts";
@@ -20,7 +23,9 @@ const liveBlocked = isLiveHostPath(target) && !allowLiveHost;
 const admittedMode = mode === "identity" || mode === "route" ? mode : null;
 
 if (!liveBlocked && profilePath && admittedMode && operationId) {
-  const profile = JSON.parse(readFileSync(profilePath, "utf8")) as PatchProfile;
+  const bytes = readFileSync(profilePath);
+  const profile = JSON.parse(bytes.toString("utf8")) as PatchProfile;
+  const profileSha256 = sha256Bytes(bytes);
   (globalThis as Record<symbol, unknown>)[Symbol.for(ROUTE_SESSION_SYMBOL)] = bindHostSessionHook({
     mode: admittedMode,
     durableRoot,
@@ -31,20 +36,24 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     profile,
     argv: process.argv,
     allowLiveHost,
-    onTransformed: () => {
+    onTransformed: (actual) => {
       if (!markerPath) return;
+      const staging = `${markerPath}.${randomUUID()}.tmp`;
       writeFileSync(
-        markerPath,
+        staging,
         `${JSON.stringify({
           operationId,
           pid: process.pid,
+          start: inspectPid(process.pid)?.start,
           mode: admittedMode,
           transformed: true,
           compiled: true,
           modeld: false,
+          compile: { profileId: profile.profileId, profileSha256, ...actual },
         })}\n`,
-        { mode: 0o600 },
+        { mode: 0o600, flag: "wx" },
       );
+      renameSync(staging, markerPath);
     },
   });
 }

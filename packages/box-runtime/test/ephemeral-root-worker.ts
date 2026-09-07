@@ -1,4 +1,5 @@
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { expectedCompileReceipt } from "../src/compile-receipt.ts";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { readAttestation, writeAttestation, type CoverageAttestation } from "../src/attestation.ts";
@@ -170,10 +171,12 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity) {
       waitReady: async (pid: number) => ({
         operationId: WATCHDOG_OPERATION_ID,
         pid,
+        start: tree.inspect(pid)!.start,
         mode: "identity" as const,
         transformed: true as const,
         compiled: true as const,
         modeld: false as const,
+        compile: expectedCompileReceipt(reviewed),
       }),
       armGuardian: async (frozen: ProcessIdentity[]) =>
         guard(tree, frozen, () => {

@@ -224,7 +224,17 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 
 `profile write` 在 `0700` 的 `profiles/` 内使用每次独有、独占创建的 `0600` `.reviewed-*.tmp`：只写 profile JSON，校验读回并 sync 文件后 rename 为 `reviewed.json`。并发成功 writer 以最后一次 rename 为准；reader 只见完整旧版或新版，不见半份 JSON。输入不得与输出同文件（包括 symlink/hardlink 别名）；读取和发布前核对源文件身份、大小与时间戳，检测到变化即拒绝。失败/中断可遗留未发布的 protected staging，canonical reader 忽略它；不自动删除 staging 或已有 legacy 整包副本，清理由 operator 另行决定。这里不承诺掉电后的目录元数据持久性或防御同 UID 恶意文件系统替换。
 
-生成 profile 只证明这些显式切片可重放且 hashes 一致，不自动批准未知补丁，不替代人工审查或后续 live 授权；实际 preload/marker/attestation 的 generation 绑定仍属后续接线。首信号 gate 复用 H3 的现有 launch-strategy/capability 判定，不把离线通过或当前 capability signature 当成具体 live supervisor 版本已经审阅、H3 已执行或最终 attestation 已证明。
+生成 profile 只证明这些显式切片可重放且 hashes 一致，不自动批准未知补丁，不替代人工审查或后续 live 授权。首信号 gate 复用 H3 的现有 launch-strategy/capability 判定，不把离线通过或当前 capability signature 当成具体 live supervisor 版本已经审阅或 H3 已执行。
+
+**实际 compile → 最终 receipt（transient-adopt）**
+
+- manual/H3 adopt 将已准入的 profile 序列化为独占创建、读回并 sync 的 `0600` 短效 `state/launch-profiles/<uuid>.json`；目录 `0700`。preload 不再重开可变的 `profiles/reviewed.json`。并发 authoring 留给下一次显式请求，不在一次 refresh 中追逐多个目标。不保留 Host 整包；不自动清理 snapshot 或失败 staging。
+- preload 仅在实际 transformed `_compile` 返回后原子发布 marker：operationId、PID、进程自行读取的 Linux start ticks，以及 `compile.{profileId,profileSha256,sourceSha256,transformedSha256}`。profile hash 是实际读取的 JSON bytes（包括换行）；source/transformed hashes 来自实际 transform。marker 的 `modeld:false` 保持不变：它不是 modeld readiness 证明。
+- 同一 operation 对照准入目标、marker 与新 Host 的 PID/start，核对 handoff；route 在提交前、读回后及 coordinator 最终回执前另行探测 modeld。attestation 的 profile/hash 来自匹配的 compile receipt，不来自之后重新 author 的目标。storage port 只落盘，不拥有签字语义。
+- attestation/journal/coordinator JSON 均 protected staging → 文件 sync → rename。journal 先写未决 `commit-attestation`，canonical attestation 精确读回后才可写 `attested`，随后再读回核对。`committedAttestation` 是实际读回的制品；CLI 只公开 mode/PID/start/SHA/operationId/compile/时间，不输出原始进程 argv。它可与 `recovery-required` 同时存在，表示“已提交，但最终健康或收尾未完成”，不是整体成功。
+- deactivate→adopt 是一个逻辑 attempt：原始 key 与已发生的 `signaled` 不因后半段拒绝、落盘异常或 modeld 掉线丢失。`injected:true` 只表示本次 adopt operation 曾完整提交；随后 coordinator 收尾失败仍报 recovery-required。不恢复旧 attestation 来伪造回滚；`commit-attestation` / `recovery-required` journal 不自动结清重试。
+
+以上由 fake processes + 隔离真实文件、disposable Node preload/adopt helper 验证；只证明一次新 generation，不是 live Host/provider 或 modeld generation-admission（后续 S5）证明。read-back/readiness 是时点证据，不承诺返回后的持续存活、掉电目录持久性或防御同 UID 恶意替换。desired disabled 的实际恢复/投影仍是后续 S3，不由这份 receipt 偷偷实现。
 
 **人 / 另一次授权**
 

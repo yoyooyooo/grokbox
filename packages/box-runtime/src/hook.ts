@@ -16,6 +16,8 @@ function sameFile(left: string, right: string): boolean {
 export type CompileTransform = {
   content: string;
   transformed: boolean;
+  sourceSha256?: string;
+  transformedSha256?: string;
   code?: string;
   refused?: "live-host-blocked" | "argv-blocked";
 };
@@ -35,7 +37,7 @@ export function transformCompileInput(input: {
   }
   const result = applyPatchProfile(input.content, input.profile);
   if (!result.ok) return { content: input.content, transformed: false, code: result.code };
-  return { content: result.source, transformed: true };
+  return { content: result.source, transformed: true, sourceSha256: result.sourceSha256, transformedSha256: result.transformedSha256 };
 }
 
 export function installCompileHook(input: {
@@ -43,7 +45,7 @@ export function installCompileHook(input: {
   profile: PatchProfile;
   argv?: readonly string[];
   allowLiveHost?: boolean;
-  onTransformed?: () => void;
+  onTransformed?: (actual: { sourceSha256: string; transformedSha256: string }) => void;
 }): { restore: () => void; applied: () => boolean; refused?: CompileTransform["refused"] } {
   if (!shouldTransformArgv(input.argv ?? process.argv)) {
     return { restore() {}, applied: () => false, refused: "argv-blocked" };
@@ -69,7 +71,7 @@ export function installCompileHook(input: {
       proto._compile = original;
       const compiled = original.call(this, next.content, filename);
       applied = next.transformed;
-      if (next.transformed) input.onTransformed?.();
+      if (next.transformed) input.onTransformed?.({ sourceSha256: next.sourceSha256!, transformedSha256: next.transformedSha256! });
       return compiled;
     }
     return original.call(this, next.content, filename);

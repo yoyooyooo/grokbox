@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { expectedCompileReceipt } from "../src/compile-receipt.ts";
 import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -77,8 +78,9 @@ async function fixture(kind: Scenario) {
       waitNewHost: async (oldPid) => tree.roles().find((row) => row.role === "host" && row.pid !== oldPid) ?? null,
       waitGone: async (old) => tree.inspect(old.pid) === null,
       waitReady: async (pid) => ({
-        operationId: WATCHDOG_OPERATION_ID, pid, mode: route ? "route" : "identity",
+        operationId: WATCHDOG_OPERATION_ID, pid, start: tree.inspect(pid)!.start, mode: route ? "route" : "identity",
         transformed: true, compiled: true, modeld: false,
+        compile: expectedCompileReceipt(profile),
       }),
       armGuardian: async (frozen) => {
         counts.guardian += 1;

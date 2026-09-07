@@ -1,5 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile, unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { writeRuntimeArtifact } from "./runtime-artifact.ts";
+import type { CompileReceipt } from "./compile-receipt.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import type { ProcessIdentity } from "./process.ts";
 import type { PatchProfile } from "./transform.ts";
@@ -13,6 +15,8 @@ type CoverageAttestationBase = {
   at: string;
   windowMs?: number;
   launchMode?: "direct-launch" | "transient-adopt";
+  operationId?: string;
+  compile?: CompileReceipt;
 };
 
 export type IdentityAttestation = CoverageAttestationBase & {
@@ -65,18 +69,13 @@ export async function readAttestation(root = ephemeralRuntimeRoot()): Promise<Co
 }
 
 export async function writeAttestation(root: string, value: CoverageAttestation): Promise<void> {
-  const path = attestationPath(root);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  await writeRuntimeArtifact(attestationPath(root), value);
 }
 
 export async function clearAttestation(root = ephemeralRuntimeRoot()): Promise<void> {
-  const path = attestationPath(root);
-  await writeFile(path, "", { mode: 0o600 }).catch(() => undefined);
   try {
-    const { unlink } = await import("node:fs/promises");
-    await unlink(path);
-  } catch {
-    /* ignore */
+    await unlink(attestationPath(root));
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
 }

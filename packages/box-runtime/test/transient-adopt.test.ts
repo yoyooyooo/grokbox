@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readAttestation } from "../src/attestation.ts";
+import { expectedCompileReceipt } from "../src/compile-receipt.ts";
+import { writeReviewedProfileFromCopy } from "../src/reviewed-profile.ts";
 import { runH3OfflineAdopt, runH3OfflineAdoptDeactivate } from "../src/h3-identity.ts";
 import { armGuardian } from "../src/guardian.ts";
 import { sha256Bytes } from "../src/hash.ts";
@@ -157,10 +159,12 @@ describe("transient-adopt fake tree", () => {
       waitReady: async (pid) => ({
         operationId: "adopt-ok",
         pid,
+        start: tree.inspect(pid)!.start,
         mode: "identity",
         transformed: true,
         compiled: true,
         modeld: false,
+        compile: expectedCompileReceipt(reviewed),
       }),
       spawnTempSupervisor: async () => {
         const temp = tree.spawn("temp-supervisor");
@@ -304,10 +308,12 @@ describe("transient-adopt fake tree", () => {
       waitReady: async (pid) => ({
         operationId: "adopt-race",
         pid,
+        start: tree.inspect(pid)!.start,
         mode: "identity",
         transformed: true,
         compiled: true,
         modeld: false,
+        compile: expectedCompileReceipt(reviewed),
       }),
       spawnTempSupervisor: async () => {
         const temp = tree.spawn("temp-supervisor");
@@ -359,10 +365,12 @@ describe("transient-adopt fake tree", () => {
       waitReady: async (pid) => ({
         operationId: "adopt-own",
         pid,
+        start: tree.inspect(pid)!.start,
         mode: "identity",
         transformed: true,
         compiled: true,
         modeld: false,
+        compile: expectedCompileReceipt(reviewed),
       }),
       spawnTempSupervisor: async () => {
         const extra = tree.spawn("host");
@@ -490,6 +498,8 @@ describeLinux("disposable Linux orphan-adopt fixture", () => {
     const runningHost = `${SYNTHETIC_HOST}\nsetInterval(() => {}, 1000);\n`;
     await writeFile(copyPath, runningHost);
     const profile = profileFromSource(runningHost, SYNTHETIC_SLICES, "reviewed-adopt");
+    let launches = 0;
+    let pinnedPath = "";
     await writeFile(profilePath, `${JSON.stringify(profile)}\n`);
     await writeFile(specFile, `${JSON.stringify({ argv: [initialHost] })}\n`);
     const built = Bun.spawn(
@@ -563,6 +573,10 @@ describeLinux("disposable Linux orphan-adopt fixture", () => {
           return JSON.parse(await readFile(markerPath, "utf8"));
         },
         applyLaunchEnv: async (env: Record<string, string>) => {
+          pinnedPath = env.GROKBOX_PATCH_PROFILE!;
+          expect(pinnedPath).not.toBe(profilePath);
+          // Publish another valid profile after launch preparation but before the child compiles.
+          await writeReviewedProfileFromCopy({ hostBundle: copyPath, destDir: dir, slices: SYNTHETIC_SLICES, profileId: "authored-during-launch" });
           await writeFile(specFile, `${JSON.stringify({ argv: [copyPath], env, replaceEnv: true })}\n`);
         },
         hasGrokboxPreload: (host: { pid: number }) => {
@@ -573,6 +587,7 @@ describeLinux("disposable Linux orphan-adopt fixture", () => {
           }
         },
         spawnTempSupervisor: async () => {
+          launches += 1;
           spawn(NODE, [tempPath, copyPath, pidFile, specFile, gatewayFile], { stdio: "ignore" });
           expect(
             await waitUntil(() => port.list().some((ident) => classifyLinux(ident) === "temp-supervisor")),
@@ -635,6 +650,20 @@ describeLinux("disposable Linux orphan-adopt fixture", () => {
       expect(ports.hasGrokboxPreload(adopted.state.supervisor)).toBe(false);
       expect(readEnviron(result.host.pid).ACME_KEY).not.toBe(FORBIDDEN);
       const record = await readAttestation(dir);
+      expect(record).not.toBeNull();
+      expect(result.committedAttestation).toEqual(record!);
+      expect(record?.compile).toEqual(expectedCompileReceipt(profile));
+      expect(JSON.parse(await readFile(profilePath, "utf8")).profileId).toBe("authored-during-launch");
+      expect(JSON.parse(await readFile(pinnedPath, "utf8"))).toEqual(profile);
+      const marker = JSON.parse(await readFile(markerPath, "utf8"));
+      expect(marker.compile).toEqual(record?.compile);
+      expect(marker.pid).toBe(record?.pid);
+      expect(marker.start).toBe(record?.start);
+      expect(marker.modeld).toBe(false);
+      expect(launches).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(ports.readGatewayPid()).toBe(result.host.pid);
+      expect(port.list().filter((ident) => classifyLinux(ident) === "host")).toHaveLength(1);
       expect(record).toMatchObject({
         mode: "identity",
         coverage: "attested",

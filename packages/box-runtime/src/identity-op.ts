@@ -10,14 +10,20 @@ import {
   type ProcessPort,
 } from "./process.ts";
 import type { PatchProfile } from "./transform.ts";
+import type { CompileReceipt } from "./compile-receipt.ts";
+import type { CoverageAttestation } from "./attestation.ts";
 
 export type IdentityMarker = {
   operationId: string;
   pid: number;
+  /** Linux process start ticks, captured by the compiling process itself. */
+  start?: number;
   mode: "identity" | "route";
   transformed: true;
   compiled: true;
   modeld: false;
+  /** Required for transient-adopt receipts; old markers cannot attest a new launch. */
+  compile?: CompileReceipt;
 };
 
 export type IdentityOpResult = {
@@ -32,6 +38,8 @@ export type IdentityOpResult = {
   host?: ProcessIdentity;
   windowMs?: number;
   launchMode?: "direct-launch" | "transient-adopt";
+  /** Exact canonical read-back, not a planned or reconstructed attestation. */
+  committedAttestation?: CoverageAttestation;
 };
 
 export type IdentityOpContext = {

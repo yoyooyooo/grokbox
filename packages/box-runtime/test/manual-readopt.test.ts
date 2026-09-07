@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { expectedCompileReceipt } from "../src/compile-receipt.ts";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -133,10 +134,12 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid
       waitReady: async (pid: number) => ({
         operationId: WATCHDOG_OPERATION_ID,
         pid,
+        start: tree.inspect(pid)!.start,
         mode: "identity" as const,
         transformed: true as const,
         compiled: true as const,
         modeld: false as const,
+        compile: expectedCompileReceipt(reviewedFor(sha)),
       }),
       armGuardian: async (frozen: ProcessIdentity[]) =>
         guard(tree, frozen, () => {
@@ -280,7 +283,7 @@ describe("manual re-adopt one-shot", () => {
     expect(src).not.toContain("h3-live");
     const live = await readFile(new URL("../src/live-readopt.ts", import.meta.url), "utf8");
     expect(live).toContain("createLiveH3AdoptPorts");
-    expect(live).toContain("reviewedProfilePath");
+    expect(live).toContain("pinLaunchProfile");
     expect(live).not.toContain("/tmp");
     expect(live).not.toMatch(/glob\(/);
     expect(live).not.toMatch(/SIGKILL/);

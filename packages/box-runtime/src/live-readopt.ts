@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { writeAttestation } from "./attestation.ts";
+import { pinLaunchProfile } from "./compile-receipt.ts";
 import { type WatchdogAdoptPorts, WATCHDOG_OPERATION_ID } from "./coordinator.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { spawnIndependentGuardian } from "./guardian-process.ts";
@@ -11,7 +11,6 @@ import { IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { procEnvHas, readNamedProcEnv } from "./live-proc.ts";
 import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
-import { reviewedProfilePath } from "./paths.ts";
 import type { ProcessIdentity, ProcessPort } from "./process.ts";
 import { loadDurableReviewedProfile } from "./reviewed-profile.ts";
 import { resolvePreloadPath } from "./runtime-helpers.ts";
@@ -45,7 +44,6 @@ export function wireLiveManualReadopt(input: {
   const ephemeralRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
   const overlayPath = join(ephemeralRoot, "state", "launch-env.json");
-  const profilePath = reviewedProfilePath(input.root);
   const execPath = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
   const preloadMode = input.mode === "route" ? "route" : "identity";
   const ports = liveH3AdoptAdapter.createLiveH3AdoptPorts({
@@ -65,7 +63,8 @@ export function wireLiveManualReadopt(input: {
     readGatewayPid: ports.readGatewayPid,
     hasGrokboxPreload: ports.hasGrokboxPreload,
     adoptProveMs: ports.adoptProveMs,
-    prepareTempLaunch: async () => {
+    prepareTempLaunch: async (profile) => {
+      const profilePath = await pinLaunchProfile(ephemeralRoot, profile);
       const host = ports.processes.list().find((ident) => ports.classify(ident) === "host");
       if (!host) throw new Error("missing-host");
       const launched = identityLaunchFields({
@@ -91,42 +90,6 @@ export function wireLiveManualReadopt(input: {
       });
       if (!guardian.armed) return { ok: false };
       return { ok: true, release: guardian.release };
-    },
-    persistAttestation: async (host, nextSha, windowMs) => {
-      const at = new Date(input.now()).toISOString();
-      if (preloadMode === "route") {
-        if (!reviewedProfile) throw new Error("missing_reviewed_profile");
-        await writeAttestation(ephemeralRoot, {
-          mode: "route",
-          coverage: "attested",
-          diskSha: nextSha,
-          pid: host.pid,
-          start: host.start,
-          identity: host,
-          at,
-          modeld: true,
-          windowMs,
-          launchMode: "transient-adopt",
-          profileId: reviewedProfile.profileId,
-          transformedSha: reviewedProfile.transformedSourceSha256,
-        });
-        return;
-      }
-      await writeAttestation(ephemeralRoot, {
-        mode: "identity",
-        coverage: "attested",
-        diskSha: nextSha,
-        pid: host.pid,
-        start: host.start,
-        identity: host,
-        at,
-        modeld: false,
-        windowMs,
-        launchMode: "transient-adopt",
-        ...(reviewedProfile
-          ? { profileId: reviewedProfile.profileId, transformedSha: reviewedProfile.transformedSourceSha256 }
-          : {}),
-      });
     },
   };
   return {

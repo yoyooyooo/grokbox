@@ -8,6 +8,11 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Bind transient-adopt receipts to pinned profile bytes and actual compile hashes,
+  PID/start and operation identity. Read back canonical attestation/journal, check
+  route modeld readiness independently, and preserve aggregate signals/committed
+  evidence on partial failure. Fence uncertain attempts rather than retrying;
+  fake/disposable verification only, no live Host/provider claim.
 - Share first-signal admission across manual identity/route refresh: replay the
   exact reviewed target against source bytes, require H3 launch capability,
   canonical ownership/topology, gateway and settled journal before launch

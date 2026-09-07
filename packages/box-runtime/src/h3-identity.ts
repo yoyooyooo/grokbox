@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { pinLaunchProfile } from "./compile-receipt.ts";
 import { readAttestation, writeAttestation, clearAttestation } from "./attestation.ts";
 import { spawnIndependentGuardian } from "./guardian-process.ts";
 import {
@@ -234,7 +235,7 @@ export async function runH3OfflineAdopt(input: {
       launchMode: "transient-adopt",
     };
   }
-  const result = await runTransientAdoptOperation({
+  return await runTransientAdoptOperation({
     processes: input.ports.processes,
     classify: input.ports.classify,
     reviewedProfile: profile,
@@ -244,11 +245,12 @@ export async function runH3OfflineAdopt(input: {
     readMarker: () => null,
     waitGone: input.ports.waitHostGone,
     waitReady: input.ports.waitReady,
-    prepareTempLaunch: async () => {
+    prepareTempLaunch: async (admittedProfile) => {
+      const profilePath = await pinLaunchProfile(input.ephemeralRoot, admittedProfile);
       const launched = identityLaunchFields({
         source: input.launchSource,
         preloadPath: input.preloadPath,
-        profilePath: input.reviewedProfilePath,
+        profilePath,
         markerPath: input.markerPath,
         operationId: input.operationId,
         hostBundle: input.hostBundle,
@@ -270,44 +272,9 @@ export async function runH3OfflineAdopt(input: {
       if (!guardian.armed) return { ok: false };
       return { ok: true, release: guardian.release };
     },
-    persistAttestation: async (host, sha, windowMs) => {
-      await writeAttestation(input.ephemeralRoot, {
-        mode: "identity",
-        coverage: "attested",
-        diskSha: sha,
-        pid: host.pid,
-        start: host.start,
-        identity: host,
-        at: new Date().toISOString(),
-        modeld: false,
-        windowMs,
-        launchMode: "transient-adopt",
-      });
-    },
     hasGrokboxPreload: input.ports.hasGrokboxPreload,
     now: input.ports.now ?? (() => Date.now()),
   });
-  if (!result.ok || !result.host) return result;
-  const record = await readAttestation(input.ephemeralRoot);
-  if (
-    !record ||
-    record.launchMode !== "transient-adopt" ||
-    !attestationAgrees({
-      attestation: record,
-      liveHost: result.host,
-      diskSha: result.diskShaAfter,
-      census: result.census,
-    })
-  ) {
-    return {
-      ...result,
-      ok: false,
-      recoveryRequired: true,
-      code: "attestation-uncommitted",
-      coverage: "window-open",
-    };
-  }
-  return result;
 }
 
 export async function runH3OfflineAdoptDeactivate(input: {

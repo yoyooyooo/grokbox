@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { liveH3AdoptAdapter } from "../packages/cli/src/commands/runtime.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import * as modeldModule from "../packages/box-runtime/src/modeld.ts";
+import * as coordinatorModule from "../packages/box-runtime/src/coordinator.ts";
+import { receiptFixture } from "../packages/box-runtime/test/receipt-fixture.ts";
 import { sha256Bytes } from "../packages/box-runtime/src/hash.ts";
 import { applyPatchProfile } from "../packages/box-runtime/src/transform.ts";
 import { modeldSocketPath, probeStubModeld, STUB_ECHO_MODEL_ID } from "../packages/box-runtime/src/modeld-ipc.ts";
@@ -348,6 +350,30 @@ describe("box-local runtime CLI", () => {
       "invalid_usage",
     );
     expect((parseJson(refused.stderr) as { error: { message: string } }).error.message).toContain("--confirm");
+  });
+
+  test("re-adopt receipt preserves half-success while omitting raw process argv", async () => {
+    const f = await receiptFixture();
+    const done = await coordinatorModule.runManualReadopt(f.input);
+    expect(done.reconcile).toBe("converged");
+    const committed = done.committedAttestation!;
+    // A fixture-only sentinel proves raw process identity never enters CLI output.
+    committed.identity = { ...committed.identity, cmdline: ["fixture-private-argv"] };
+    const factory = spyLiveAdoptFactory();
+    const coordinator = spyOn(coordinatorModule, "runManualReadopt").mockResolvedValue({
+      ...done, reconcile: "recovery-required", reason: "coordinator-persistence-failed", committedAttestation: committed,
+    });
+    try {
+      const boxRuntimeRoot = await withRoot();
+      const receipt = await captureCli(["runtime", "re-adopt", "--confirm"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+      expect(receipt.code).toBe(0); // Existing command acknowledgement contract; reconcile is the outcome.
+      expect(data(receipt.stdout)).toMatchObject({
+        reconcile: "recovery-required", signaled: true,
+        committedAttestation: { pid: committed.pid, start: committed.start, compile: committed.compile },
+      });
+      expect(receipt.stdout).not.toContain("fixture-private-argv");
+      expect(receipt.stdout).not.toContain('"identity"');
+    } finally { coordinator.mockRestore(); factory.mockRestore(); }
   });
 
   test("re-adopt --profile and remote transports return runtime_local_only", async () => {
