@@ -164,7 +164,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     expect(response.error).toMatchObject({ code: "parallel_tools", toolCallIds: ["a", "b"] });
     expect((await collectStreamParts(handle.fullStream)).some((part) => part.type === "tool-call")).toBe(false);
     expect(response.messages[0]!.toolCalls).toBeUndefined();
-    expect(f.terminals).toEqual([{ terminalClass: "error", toolCallCount: 0 }]);
+    expect(f.terminals).toEqual([{ terminalClass: "error", toolCallCount: 0, errorCode: "parallel_tools" }]);
   });
 
   test.each(["parts", "bytes"])("%s cap stops production visibly and completes every observer", async (limit) => {

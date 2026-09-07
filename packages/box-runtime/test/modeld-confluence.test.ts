@@ -33,7 +33,7 @@ describe("Host seam → Unix modeld → admitted stub/fake", () => {
       expect(reply).toMatchObject({ ok: false, code: field === "generationId" ? "wrong-generation" : field === "activationId" ? "wrong-activation" : field === "sourceSha" ? "wrong-source" : "wrong-identity" });
       const driver = createModeldRouteDriver(f.runRoot, host);
       const seam = createSessionSeam({ mode: "route", root: f.durable, assignment: "main", modelId: "stub/echo", driver });
-      const handle = (seam.hook(hookArgs("wrong-host")) as HostPromptSession).getExecutor().stream();
+      const handle = (seam.hook(hookArgs("wrong-host")) as HostPromptSession).getExecutor().stream({}, "wrong-host");
       expect((await handle.response).error?.userVisible).toBe(true);
       expect((await consumeHandle(handle)).finalDeliveryCount).toBe(1);
       await seam.flush();
@@ -50,7 +50,7 @@ describe("Host seam → Unix modeld → admitted stub/fake", () => {
       const hook = bindHostSessionHook({ mode: "route", runRoot: f.runRoot, durableRoot: f.durable, binding: f.binding });
       for (const [id, agent] of [["tom", "agent-tom"], ["jerry", "agent-jerry"]]) {
         const session = hook(hookArgs(id!, agent!)) as HostPromptSession;
-        const handle = session.getExecutor([{ role: "user", content: "private-envelope-sentinel" }]).stream();
+        const handle = session.getExecutor([{ role: "user", content: "private-envelope-sentinel" }]).stream({}, id);
         expect((await handle.response).messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "echo" }] }]);
       }
       // Terminal writes are asynchronous; wait for exactly two bounded rows, not model body persistence.
@@ -194,7 +194,7 @@ describe("Host seam → Unix modeld → admitted stub/fake", () => {
   test("restart changes the server fence: same driver never re-handshakes a used invocation, a fresh invocation can proceed", async () => {
     const off = providerHardOff(); const f = await modeldFixture();
     const driver = createModeldRouteDriver(f.runRoot, f.binding);
-    const request = { invocationId: "before-restart", agentId: "agent-tom", modelId: "stub/echo", envelope: buildModelEnvelope([]) };
+    const request = { invocationId: "before-restart", turnId: "before-restart", agentId: "agent-tom", modelId: "stub/echo", envelope: buildModelEnvelope([]) };
     const first = await startStubModeldServer({ ...f, durableRoot: f.durable });
     await driver.submit!(request); const oldPacket = submitRequest(first, "stale-packet"); await first.stop();
     const next = await startStubModeldServer({ ...f, durableRoot: f.durable });

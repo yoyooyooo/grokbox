@@ -677,9 +677,9 @@ describe("box-local runtime CLI", () => {
       const hook = bindHostSessionHook({ mode: "route", durableRoot: f.durable, runRoot: f.runRoot, binding: f.binding });
       const session = (id: string) => hook({ originalSession: { stream: () => { throw new Error("official hard-off"); } },
         agentId: "agent-tom", sessionOptions: { invocationId: id, inferenceReason: "main" } }) as HostPromptSession;
-      expect((await session("admitted").getExecutor().stream().response).messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "echo" }] }]);
+      expect((await session("admitted").getExecutor().stream({}, "admitted").response).messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "echo" }] }]);
       await f.store.saveDesired({ version: 1, mode: "disabled" });
-      expect((await session("disabled").getExecutor().stream().response).error?.userVisible).toBe(true);
+      expect((await session("disabled").getExecutor().stream({}, "disabled").response).error?.userVisible).toBe(true);
       ac.abort(); expect((await within(running)).code).toBe(0);
       expect([process.listenerCount("SIGTERM"), process.listenerCount("SIGINT")]).toEqual(listeners);
       expect(off.counts).toEqual({ fetch: 0, dns: 0, tcp: 0, credential: 0 });

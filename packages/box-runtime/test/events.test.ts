@@ -5,9 +5,13 @@ import { dirname, join } from "node:path";
 import { runWatchdogTick } from "../src/coordinator.ts";
 import {
   appendEvent,
+  appendHostStreamRejected,
+  appendModelStepTerminal,
   appendTurnSeamTerminal,
   compactEvents,
   CONTROL_PLANE_EVENT_RETENTION,
+  projectHostStreamRejected,
+  projectModelStepTerminal,
   projectTurnSeamTerminal,
   sanitizeEvent,
   TURN_SEAM_BOUNDED_STRING,
@@ -108,6 +112,37 @@ describe("turn_seam_terminal projector", () => {
     }
   });
 
+  test("keeps bounded errorCode on rejected terminals and drops unknown codes", () => {
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-rej"),
+        terminalClass: "error",
+        outcome: "rejected",
+        errorCode: "unsupported_options",
+        prompt: "SENTINEL_PROMPT",
+      }),
+    ).toMatchObject({ outcome: "rejected", errorCode: "unsupported_options" });
+    expect(
+      projectTurnSeamTerminal({
+        ...turnEvent("inv-rej-unknown"),
+        terminalClass: "error",
+        outcome: "rejected",
+        errorCode: "not-a-code",
+      }),
+    ).toEqual({
+      name: "turn_seam_terminal",
+      at: AT,
+      mode: "route",
+      agentId: "agent-tom",
+      assignment: "main",
+      modelId: "stub/echo",
+      invocationId: "inv-rej-unknown",
+      toolCallCount: 2,
+      terminalClass: "error",
+      outcome: "rejected",
+    });
+  });
+
   test("omits modelId for official execution and rejects invalid required fields", () => {
     expect(
       projectTurnSeamTerminal({
@@ -206,6 +241,75 @@ describe("turn_seam_terminal projector", () => {
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-bad"), agentId: "x".repeat(TURN_SEAM_BOUNDED_STRING + 1) })).toBeNull();
     expect(projectTurnSeamTerminal({ ...turnEvent("inv-bad"), invocationId: { id: "nested" } })).toBeNull();
     expect(projectTurnSeamTerminal({ name: "census", at: AT })).toBeNull();
+  });
+});
+
+describe("model_step_terminal and host_stream_rejected projectors", () => {
+  const stepEvent = {
+    name: "model_step_terminal" as const,
+    schemaVersion: 2,
+    at: AT,
+    mode: "route" as const,
+    hostGenerationId: "unbound",
+    agentId: "agent-tom",
+    turnId: "turn-1",
+    invocationId: "step-1",
+    modelId: "stub/echo",
+    assignment: "main" as const,
+    terminalClass: "stop" as const,
+    outcome: "managed" as const,
+    toolCallCount: 0,
+    stage: "host-normalize" as const,
+    admission: "none" as const,
+  };
+
+  test("keeps bounded STEP fields and drops prompt bodies", () => {
+    expect(projectModelStepTerminal({ ...stepEvent, prompt: "SENTINEL_PROMPT", invocationId: "step-1" })).toEqual(stepEvent);
+    expect(projectModelStepTerminal({ ...stepEvent, schemaVersion: 1 })).toBeNull();
+    expect(projectModelStepTerminal({ ...stepEvent, mode: "identity" })).toBeNull();
+    expect(projectModelStepTerminal({ ...stepEvent, assignment: "official" })).toBeNull();
+    expect(projectModelStepTerminal({ ...stepEvent, stage: "custom" })).toBeNull();
+  });
+
+  test("host_stream_rejected never stores the illegal STEP value", () => {
+    expect(projectHostStreamRejected({
+      name: "host_stream_rejected",
+      schemaVersion: 2,
+      at: AT,
+      mode: "route",
+      hostGenerationId: "unbound",
+      agentId: "agent-tom",
+      turnId: "turn-1",
+      stage: "stream-id",
+      errorCode: "invalid_envelope",
+      reason: "invalid-step-id",
+      invocationId: "step\nid",
+    })).toEqual({
+      name: "host_stream_rejected",
+      schemaVersion: 2,
+      at: AT,
+      mode: "route",
+      hostGenerationId: "unbound",
+      agentId: "agent-tom",
+      turnId: "turn-1",
+      stage: "stream-id",
+      errorCode: "invalid_envelope",
+      reason: "invalid-step-id",
+    });
+    expect(projectHostStreamRejected({ name: "host_stream_rejected", schemaVersion: 2, at: AT })).toBeNull();
+  });
+
+  test("generic control append cannot write the new seam events", async () => {
+    const dir = await root();
+    await appendEvent(dir, { name: "model_step_terminal", at: AT });
+    await appendEvent(dir, { name: "host_stream_rejected", at: AT });
+    expect(await linesOf(dir)).toEqual([]);
+    expect(await appendModelStepTerminal(dir, stepEvent)).toBe("written");
+    expect(await appendHostStreamRejected(dir, {
+      name: "host_stream_rejected", schemaVersion: 2, at: AT, mode: "route", hostGenerationId: "unbound",
+      agentId: "agent-tom", turnId: "turn-1", stage: "stream-id", errorCode: "invalid_envelope", reason: "missing-step-id",
+    })).toBe("written");
+    expect(parsed(await linesOf(dir)).map((row) => row.name)).toEqual(["model_step_terminal", "host_stream_rejected"]);
   });
 });
 

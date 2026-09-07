@@ -117,12 +117,12 @@ export async function consumePromptSession(
 
 export async function consumeHostSession(
   session: HostPromptSession,
-  request?: StreamRequest,
+  invocationId?: string,
 ): Promise<HostSideEffectVector> {
   session.getModelId().trim();
   const executor = session.getExecutor({});
   void session.getExecutorWithoutResolvedModelTracking({});
-  return consumeHandle(executor.stream({}, undefined, undefined, request));
+  return consumeHandle(executor.stream({}, invocationId));
 }
 
 export async function collectStreamParts(stream: AsyncIterable<StreamPart>): Promise<StreamPart[]> {

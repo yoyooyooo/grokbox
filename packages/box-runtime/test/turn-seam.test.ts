@@ -15,6 +15,7 @@ import {
 import { createSessionSeam, createStubRouteDriver } from "../src/seam.ts";
 import { applyPatchProfile, profileFromSource, ROUTE_SESSION_SYMBOL } from "../src/transform.ts";
 import {
+  consumeHandle,
   consumeHostSession,
   consumePromptSession,
   SEAM_STOP_PARTS,
@@ -40,7 +41,7 @@ async function turnLines(dir: string): Promise<Array<Record<string, unknown>>> {
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>)
-    .filter((row) => row.name === "turn_seam_terminal");
+    .filter((row) => row.name === "model_step_terminal" || row.name === "host_stream_rejected");
 }
 
 function officialSession(parts: StreamPart[] = SEAM_STOP_PARTS): PromptSession {
@@ -166,7 +167,7 @@ describe("turn seam identity vs route", () => {
     }) as HostPromptSession;
     expect(managed).not.toBe(original);
     expect(isHostPromptSession(managed)).toBe(true);
-    const treatment = await consumeHostSession(managed);
+    const treatment = await consumeHostSession(managed, "inv-stop");
     await seam.flush();
     expect(treatment).toEqual(control);
     expect(driver.dispatches).toBe(1);
@@ -175,16 +176,21 @@ describe("turn seam identity vs route", () => {
     const events = await turnLines(dir);
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({
-      name: "turn_seam_terminal",
+      name: "model_step_terminal",
+      schemaVersion: 2,
       at: AT,
       mode: "route",
+      hostGenerationId: "unbound",
       agentId: "agent-tom",
-      assignment: "main",
-      modelId: "stub/echo",
+      turnId: "inv-stop",
       invocationId: "inv-stop",
+      modelId: "stub/echo",
+      assignment: "main",
       toolCallCount: 2,
       terminalClass: "stop",
       outcome: "managed",
+      stage: "host-normalize",
+      admission: "none",
     });
     expect(JSON.stringify(events)).not.toMatch(/fixture-memory-body|fixture-final-response|true/);
   });
@@ -211,7 +217,7 @@ describe("turn seam identity vs route", () => {
       sessionOptions: { invocationId: "inv-error" },
       agentId: "agent-tom",
     }) as HostPromptSession;
-    await consumeHostSession(errorSession);
+    await consumeHostSession(errorSession, "inv-error");
     await errorSeam.flush();
 
     const abortDriver = createStubRouteDriver(SEAM_STOP_PARTS);
@@ -230,7 +236,7 @@ describe("turn seam identity vs route", () => {
     }) as HostPromptSession;
     const controller = new AbortController();
     controller.abort();
-    abortSession.getExecutor().stream(undefined, undefined, undefined, { abortSignal: controller.signal });
+    abortSession.getExecutor().stream(undefined, "inv-abort", undefined, { abortSignal: controller.signal });
     await abortSeam.flush();
 
     const unknownDriver = createStubRouteDriver(SEAM_STOP_PARTS);
@@ -251,14 +257,13 @@ describe("turn seam identity vs route", () => {
 
     const events = await turnLines(dir);
     expect(events).toEqual([
-      expect.objectContaining({ invocationId: "inv-error", terminalClass: "error", outcome: "managed", toolCallCount: 0 }),
-      expect.objectContaining({ invocationId: "inv-abort", terminalClass: "abort", outcome: "managed" }),
-      expect.objectContaining({ invocationId: "inv-unknown", terminalClass: "unknown", outcome: "managed", toolCallCount: 0 }),
+      expect.objectContaining({ name: "model_step_terminal", invocationId: "inv-error", turnId: "inv-error", terminalClass: "error", outcome: "managed", toolCallCount: 0 }),
+      expect.objectContaining({ name: "model_step_terminal", invocationId: "inv-abort", turnId: "inv-abort", terminalClass: "abort", outcome: "managed" }),
     ]);
     expect(errorDriver.officialCalls + abortDriver.officialCalls + unknownDriver.officialCalls).toBe(0);
     expect(errorDriver.secondProviderCalls + abortDriver.secondProviderCalls + unknownDriver.secondProviderCalls).toBe(0);
     expect(unknownDriver.dispatches).toBe(0);
-    expect(events).toHaveLength(3);
+    expect(events).toHaveLength(2);
   });
 
   test("duplicate submit does not replay the Host side-effect vector", async () => {
@@ -278,11 +283,11 @@ describe("turn seam identity vs route", () => {
       agentId: "agent-tom",
     };
     const first = seam.hook(args) as HostPromptSession;
-    const firstVector = await consumeHostSession(first);
-    first.getExecutor().stream();
+    const firstVector = await consumeHostSession(first, "inv-dup");
+    first.getExecutor().stream({}, "inv-dup");
     const second = seam.hook(args);
     expect(second).toBe(first);
-    const secondVector = await consumeHostSession(second as HostPromptSession);
+    const secondVector = await consumeHostSession(second as HostPromptSession, "inv-dup");
     await seam.flush();
     const aggregate: HostSideEffectVector = {
       toolExecutionCount: firstVector.toolExecutionCount + secondVector.toolExecutionCount,
@@ -333,7 +338,7 @@ describe("turn seam identity vs route", () => {
       sessionOptions: { invocationId: "inv-gap" },
       agentId: "agent-tom",
     }) as HostPromptSession;
-    const treatment = await consumeHostSession(managed);
+    const treatment = await consumeHostSession(managed, "inv-gap");
     await seam.flush();
     expect(treatment).toEqual(control);
     expect(await turnLines(dir)).toEqual([]);
@@ -396,5 +401,246 @@ describe("turn seam identity vs route", () => {
     });
     expect(untouched).toBe(original);
     expect(isHostPromptSession(untouched)).toBe(false);
+  });
+
+  test("Host-shaped stream extras dispatch; Redacted content writes rejected errorCode", async () => {
+    const dir = await root();
+    const driver = createStubRouteDriver(SEAM_STOP_PARTS);
+    const seam = createSessionSeam({
+      mode: "route",
+      root: dir,
+      assignment: "main",
+      modelId: "stub/echo",
+      driver,
+      now: () => AT,
+    });
+    const original: PromptSession = { stream() { throw new Error("official session must not run"); } };
+    const managed = seam.hook({
+      originalSession: original,
+      sessionOptions: { invocationId: "inv-extras", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const schema = { type: "object", properties: {} };
+    await managed.getExecutor([{ role: "user", content: "ok", _privacyMode: "x", id: "m1" }]).stream(
+      {},
+      "inv-extras",
+      [{ name: "lookup", parameters: { jsonSchema: schema }, render: () => "nope" }],
+      { acceptedUnadvertisedToolNames: ["alias"] },
+    ).response;
+    await seam.flush();
+    expect(driver.dispatches).toBe(1);
+    expect(await turnLines(dir)).toEqual([expect.objectContaining({
+      invocationId: "inv-extras", terminalClass: "stop", outcome: "managed",
+    })]);
+
+    class HostRedacted { constructor(readonly hidden: string) {} }
+    const blocked = seam.hook({
+      originalSession: original,
+      sessionOptions: { invocationId: "inv-redacted", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const failed = await blocked.getExecutor([{ role: "user", content: new HostRedacted("private-plain") }])
+      .stream({}, "inv-redacted", [], { acceptedUnadvertisedToolNames: [] }).response;
+    await seam.flush();
+    expect(failed.error?.code).toBe("unsupported_content");
+    expect(JSON.stringify(failed)).not.toContain("private-plain");
+    const events = await turnLines(dir);
+    expect(events).toEqual([
+      expect.objectContaining({ invocationId: "inv-extras", outcome: "managed" }),
+      expect.objectContaining({
+        invocationId: "inv-redacted",
+        terminalClass: "error",
+        outcome: "rejected",
+        errorCode: "unsupported_content",
+      }),
+    ]);
+  });
+
+  test("Host step id may differ from pinned turn id; submit splits STEP vs TURN", async () => {
+    const dir = await root();
+    const driver = createStubRouteDriver([
+      { type: "text-delta", textDelta: "echo" },
+      { type: "finish", reason: "stop" },
+    ]);
+    const submitted: Array<{ invocationId: string; turnId: string }> = [];
+    driver.submit = async (request) => {
+      submitted.push({ invocationId: request.invocationId, turnId: request.turnId });
+      return { parts: [{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }], dispatched: true };
+    };
+    const seam = createSessionSeam({
+      mode: "route",
+      root: dir,
+      assignment: "main",
+      modelId: "stub/echo",
+      driver,
+      now: () => AT,
+    });
+    const original: PromptSession = { stream() { throw new Error("official session must not run"); } };
+    const managed = seam.hook({
+      originalSession: original,
+      sessionOptions: { invocationId: "turn-aaaa-bbbb-cccc-dddd", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const response = await managed.getExecutor([{ role: "user", content: "plain-step-text" }])
+      .stream({}, "step-1111-2222-3333-4444", [], {}).response;
+    await seam.flush();
+    expect(response.error).toBeUndefined();
+    expect(driver.dispatches).toBe(1);
+    expect(driver.officialCalls).toBe(0);
+    expect(submitted).toEqual([{
+      invocationId: "step-1111-2222-3333-4444",
+      turnId: "turn-aaaa-bbbb-cccc-dddd",
+    }]);
+    expect(await turnLines(dir)).toEqual([expect.objectContaining({
+      name: "model_step_terminal",
+      turnId: "turn-aaaa-bbbb-cccc-dddd",
+      invocationId: "step-1111-2222-3333-4444",
+      terminalClass: "stop",
+      outcome: "managed",
+      admission: "new",
+    })]);
+  });
+
+  test("same executor STEP-2 does not collide with STEP-1 on one TURN", async () => {
+    const dir = await root();
+    const submitted: string[] = [];
+    const driver = createStubRouteDriver([{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }]);
+    driver.submit = async (request) => {
+      submitted.push(request.invocationId);
+      return { parts: [{ type: "text-delta", textDelta: request.invocationId }, { type: "finish", reason: "stop" }], dispatched: true };
+    };
+    const seam = createSessionSeam({
+      mode: "route", root: dir, assignment: "main", modelId: "stub/echo", driver, now: () => AT,
+    });
+    const managed = seam.hook({
+      originalSession: { stream() { throw new Error("official session must not run"); } },
+      sessionOptions: { invocationId: "turn-multi", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const executor = managed.getExecutor([{ role: "user", content: "step-one" }]);
+    expect((await executor.stream({}, "step-one", [], {}).response).error).toBeUndefined();
+    executor.appendMessages({ role: "assistant", content: "echo" });
+    executor.appendMessages({ role: "user", content: "step-two" });
+    expect((await executor.stream({}, "step-two", [], {}).response).error).toBeUndefined();
+    await seam.flush();
+    expect(submitted).toEqual(["step-one", "step-two"]);
+    expect(driver.dispatches).toBe(2);
+    expect(await turnLines(dir)).toEqual([
+      expect.objectContaining({ name: "model_step_terminal", turnId: "turn-multi", invocationId: "step-one", terminalClass: "stop" }),
+      expect.objectContaining({ name: "model_step_terminal", turnId: "turn-multi", invocationId: "step-two", terminalClass: "stop" }),
+    ]);
+  });
+
+  test("omitted and illegal STEP reject without falling back to TURN", async () => {
+    const dir = await root();
+    const driver = createStubRouteDriver([{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }]);
+    const seam = createSessionSeam({
+      mode: "route", root: dir, assignment: "main", modelId: "stub/echo", driver, now: () => AT,
+    });
+    const managed = seam.hook({
+      originalSession: { stream() { throw new Error("official session must not run"); } },
+      sessionOptions: { invocationId: "turn-missing-step", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const omitted = await managed.getExecutor([{ role: "user", content: "plain" }]).stream({}, undefined, [], {}).response;
+    const illegal = await managed.getExecutor([{ role: "user", content: "plain" }]).stream({}, "step\nid", [], {}).response;
+    await seam.flush();
+    expect(omitted.error?.code).toBe("invalid_envelope");
+    expect(illegal.error?.code).toBe("invalid_envelope");
+    expect(driver.dispatches).toBe(0);
+    expect(await turnLines(dir)).toEqual([
+      expect.objectContaining({ name: "host_stream_rejected", turnId: "turn-missing-step", reason: "missing-step-id", errorCode: "invalid_envelope" }),
+      expect.objectContaining({ name: "host_stream_rejected", turnId: "turn-missing-step", reason: "invalid-step-id", errorCode: "invalid_envelope" }),
+    ]);
+    expect(JSON.stringify(await turnLines(dir))).not.toContain("step\\nid");
+  });
+
+  test("duplicate STEP is idle; changed payload conflicts; rejected STEP cannot revive after latch/clear", async () => {
+    const dir = await root();
+    const driver = createStubRouteDriver([{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }]);
+    const seam = createSessionSeam({
+      mode: "route", root: dir, assignment: "main", modelId: "stub/echo", driver, now: () => AT,
+    });
+    const managed = seam.hook({
+      originalSession: { stream() { throw new Error("official session must not run"); } },
+      sessionOptions: { invocationId: "turn-latch", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const executor = managed.getExecutor([{ role: "user", content: "ok" }]);
+    const first = await consumeHandle(executor.stream({}, "step-ok", [], {}));
+    const idle = await consumeHandle(executor.stream({}, "step-ok", [], {}));
+    executor.appendMessages({ role: "user", content: "changed" });
+    const conflict = await executor.stream({}, "step-ok", [], {}).response;
+    expect(first).toEqual({ toolExecutionCount: 0, finalDeliveryCount: 1, transcriptEntryDelta: 1, transcriptSequenceDelta: 1, memoryIdDelta: 0, duplicateCount: 0 });
+    expect(idle).toEqual({ toolExecutionCount: 0, finalDeliveryCount: 0, transcriptEntryDelta: 0, transcriptSequenceDelta: 0, memoryIdDelta: 0, duplicateCount: 0 });
+    expect(conflict.error?.code).toBe("invocation_conflict");
+    expect(driver.dispatches).toBe(1);
+
+    const broken = managed.getExecutor([{ role: "user", content: { nested: "private-latch" } }]);
+    expect((await broken.stream({}, "step-bad", [], {}).response).error?.code).toBe("unsupported_content");
+    broken.clearMessages();
+    broken.appendMessages({ role: "user", content: "repaired" });
+    expect((await broken.stream({}, "step-bad", [], {}).response).error?.code).toBe("invocation_conflict");
+
+    const latched = managed.getExecutor({ transcript: "private-state" });
+    expect(latched.getState()).toEqual([]);
+    latched.appendMessages({ role: "user", content: "ignored-after-latch" });
+    expect(latched.getMessages()).toEqual([]);
+    expect((await latched.stream({}, "step-latched", [], {}).response).error?.code).toBe("invalid_envelope");
+    await seam.flush();
+    expect(driver.dispatches).toBe(1);
+    const events = await turnLines(dir);
+    expect(events.filter((row) => row.invocationId === "step-ok")).toHaveLength(1);
+    expect(events.filter((row) => row.invocationId === "step-bad")).toEqual([
+      expect.objectContaining({ name: "model_step_terminal", invocationId: "step-bad", outcome: "rejected", errorCode: "unsupported_content" }),
+    ]);
+  });
+
+  test("STEP-1 abort does not cancel STEP-2 on the same executor", async () => {
+    const dir = await root();
+    const started: string[] = [];
+    const driver = createStubRouteDriver([]);
+    driver.delivery = "stream";
+    driver.stream = (request) => ({
+      async *[Symbol.asyncIterator]() {
+        started.push(request.invocationId);
+        if (request.invocationId === "step-s1") {
+          await new Promise<void>((resolve) => {
+            if (request.abortSignal?.aborted) { resolve(); return; }
+            request.abortSignal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+          return;
+        }
+        yield { type: "text-delta" as const, textDelta: "s2-ok" };
+        yield { type: "finish" as const, reason: "stop" as const };
+      },
+    });
+    const seam = createSessionSeam({
+      mode: "route", root: dir, assignment: "main", modelId: "stub/echo", driver, now: () => AT,
+    });
+    const managed = seam.hook({
+      originalSession: { stream() { throw new Error("official session must not run"); } },
+      sessionOptions: { invocationId: "turn-isolate", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const executor = managed.getExecutor([{ role: "user", content: "plain" }]);
+    const s1Abort = new AbortController();
+    const s1 = executor.stream({ abortSignal: s1Abort.signal }, "step-s1", [], {});
+    const s2 = executor.stream({}, "step-s2", [], {});
+    const deadline = Date.now() + 2000;
+    while (started.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(started.sort()).toEqual(["step-s1", "step-s2"]);
+    s1Abort.abort();
+    expect((await s1.response).finishReason).toBe("abort");
+    expect((await s2.response).error).toBeUndefined();
+    expect((await s2.response).messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "s2-ok" }] }]);
+    await seam.flush();
+    expect(driver.dispatches).toBe(2);
+    const events = await turnLines(dir);
+    expect(events).toHaveLength(2);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "model_step_terminal", invocationId: "step-s2", terminalClass: "stop", turnId: "turn-isolate" }),
+      expect.objectContaining({ name: "model_step_terminal", invocationId: "step-s1", terminalClass: "abort", turnId: "turn-isolate" }),
+    ]));
   });
 });

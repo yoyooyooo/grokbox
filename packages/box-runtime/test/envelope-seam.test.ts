@@ -115,7 +115,7 @@ describe("Host envelope seam, no provider or second Host loop", () => {
     const f = await fixture();
     const session = f.seam.hook(hookArgs("inv-rejected")) as HostPromptSession;
     const executor = session.getExecutor([{ role: "user", content: fault === "image" ? [{ type: "image", url: "https://invalid.test/private-image" }] : "private-prompt" }]);
-    const handle = executor.stream({}, "inv-rejected", [], fault === "bad-options" ? { privateOption: "private-body" } : {});
+    const handle = executor.stream({}, "inv-rejected", [], fault === "bad-options" ? { temperature: NaN, privateOption: "private-body" } : {});
     expect(hasMeaningfulResponseMessageContent((await within(handle.response)).messages)).toBe(true);
     expect(await consumeHandle(handle)).toMatchObject({ toolExecutionCount: 0, finalDeliveryCount: 1 });
     expect(f.driver.dispatches).toBe(0);
@@ -157,7 +157,7 @@ describe("buffered stub IPC envelope boundary (not token-streaming proof)", () =
       const driver = createModeldRouteDriver(root, binding);
       const envelope = buildModelEnvelope([{ role: "system", content: "system-sentinel" }, { role: "user", content: "body-sentinel" }],
         { lookup: { parameters: { jsonSchema: { type: "object", properties: {} } } } }, { temperature: 0.5 });
-      const request = { invocationId: "inv-ipc", agentId: "agent-test", modelId: "stub/echo", envelope };
+      const request = { invocationId: "inv-ipc", turnId: "inv-ipc", agentId: "agent-test", modelId: "stub/echo", envelope };
       expect((await driver.submit!(request)).dispatched).toBe(true);
       const raw = submitRequest(server, request.invocationId, { agentId: request.agentId, envelope });
       expect(await callStubModeld(root, raw)).toMatchObject({ ok: true, dispatched: false });

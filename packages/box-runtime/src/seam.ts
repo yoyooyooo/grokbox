@@ -1,5 +1,6 @@
-import { appendTurnSeamTerminal, TURN_SEAM_BOUNDED_STRING, type TurnSeamAssignment,
-  type TurnSeamOutcome, type TurnSeamTerminalClass, type TurnSeamWriteResult } from "./events.ts";
+import { appendSeamRouteEvent, TURN_SEAM_BOUNDED_STRING, type HostStreamRejectReason, type ModelStepAdmission,
+  type ModelStepStage, type TurnSeamAssignment, type TurnSeamOutcome, type TurnSeamTerminalClass,
+  type TurnSeamWriteResult } from "./events.ts";
 import { callStubModeld, isModeldFailure, modeldHandshake, STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
 import { parseHostBinding, type HostBinding } from "./modeld-binding.ts";
 import { buildModelEnvelope, type ModelEnvelope } from "./envelope.ts";
@@ -10,7 +11,14 @@ import { asHostPromptSession, createStreamingPromptSession, visibleFailureHandle
 
 export type SeamMode = "observe" | "identity" | "route";
 export type SeamEvidence = { emitted: boolean; gap: null | "write_failed" | "unprojected" };
-export type StubRouteSubmit = { invocationId: string; agentId: string; modelId: string; envelope: ModelEnvelope; abortSignal?: AbortSignal };
+export type StubRouteSubmit = {
+  invocationId: string;
+  turnId: string;
+  agentId: string;
+  modelId: string;
+  envelope: ModelEnvelope;
+  abortSignal?: AbortSignal;
+};
 export type StubRouteDriver = {
   dispatches: number; officialCalls: number; secondProviderCalls: number;
   parts: StreamPart[];
@@ -50,7 +58,7 @@ export function createModeldRouteDriver(runRoot: string, binding?: HostBinding):
       const serverGeneration = await entry.generation;
       if (entry.unknown) throw new Error("modeld invocation unknown");
       const response = await callStubModeld(runRoot, { method: "submit", serverGeneration, host,
-        invocationId: request.invocationId, turnId: request.invocationId, agentId: request.agentId, envelope: request.envelope }, 1000, request.abortSignal);
+        invocationId: request.invocationId, turnId: request.turnId, agentId: request.agentId, envelope: request.envelope }, 1000, request.abortSignal);
       if (isModeldFailure(response)) throw new Error("modeld admission failed");
       return submitPartsFromResponse(response);
     } catch { entry.unknown = true; throw new Error("modeld request failed without retry"); }
@@ -63,15 +71,21 @@ export function createModeldRouteDriver(runRoot: string, binding?: HostBinding):
   };
   return driver;
 }
+export const UNBOUND_HOST_GENERATION = "unbound";
+const STEP_SLOT_LIMIT = 1024;
 export type SessionSeamConfig = {
   mode: SeamMode; root: string; assignment: TurnSeamAssignment; modelId?: string;
-  now?: () => string; driver?: StubRouteDriver;
+  now?: () => string; driver?: StubRouteDriver; hostGenerationId?: string;
   writeTerminal?: (root: string, input: unknown) => Promise<TurnSeamWriteResult>;
 };
-type InvocationState = {
-  session: HostPromptSession; dispatched: boolean; recorded: boolean; disconnected: boolean;
-  evidence: SeamEvidence; agentId: string; modelId: string; invocationId: string;
-  requestHash?: string; cancel?: () => void; toolCallCount: number; assignment: TurnSeamAssignment;
+type SessionRow = {
+  session: HostPromptSession; turnId: string; agentId: string; modelId: string; disconnected: boolean;
+};
+type StepSlot = {
+  stepId: string; turnId: string; agentId: string; hostGenerationId: string;
+  dispatched: boolean; recorded: boolean; disconnected: boolean;
+  evidence: SeamEvidence; requestHash?: string; cancel?: () => void;
+  toolCallCount: number; assignment: TurnSeamAssignment; admission: ModelStepAdmission;
 };
 function invocationIdOf(options: unknown): string | undefined {
   if (!options || typeof options !== "object") return undefined;
@@ -110,99 +124,200 @@ function fromParts(parts: StreamPart[]): AsyncIterable<StreamPart> {
   return { async *[Symbol.asyncIterator]() { for (const part of parts) yield part; } };
 }
 
+function stageForError(code: string): ModelStepStage {
+  if (code === "invalid_tools" || code === "parallel_tools") return "tools";
+  if (code === "unsupported_options") return "options";
+  if (code === "unsupported_content" || code === "invalid_envelope" || code === "envelope_too_large" || code === "unsupported_image") return "message-shape";
+  return "internal";
+}
+
 export function createSessionSeam(config: SessionSeamConfig) {
   if (config.mode === "route" && !config.driver) throw new Error("route seam requires a stub driver");
   if (config.mode === "route" && config.assignment === "official") throw new Error("route seam does not admit assignment=official");
   const routeModelId = config.mode === "route" ? boundedId(config.modelId) : null;
   if (config.mode === "route" && routeModelId == null) throw new Error("route seam requires a bounded modelId");
-  const invocations = new Map<string, InvocationState>();
+  const hostGenerationId = config.hostGenerationId == null ? UNBOUND_HOST_GENERATION : boundedId(config.hostGenerationId);
+  if (hostGenerationId == null) throw new Error("route seam requires a bounded hostGenerationId");
+  const sessions = new Map<string, SessionRow>();
+  const steps = new Map<string, StepSlot>();
+  const streamRejects = new Set<string>();
   let writes = Promise.resolve();
-  const writeTerminal = config.writeTerminal ?? appendTurnSeamTerminal;
-  const record = (state: InvocationState, terminalClass: TurnSeamTerminalClass, toolCallCount: number, outcome: TurnSeamOutcome) => {
-    if (state.recorded) return;
-    state.recorded = true;
+  const writeEvent = config.writeTerminal ?? appendSeamRouteEvent;
+  const sessionKey = (turnId: string) => `${hostGenerationId}:${turnId}`;
+  const stepKey = (stepId: string) => `${hostGenerationId}:${stepId}`;
+  const enqueue = (slot: StepSlot | { evidence: SeamEvidence }, input: unknown) => {
     const work = async () => {
       try {
-        const result = await writeTerminal(config.root, { name: "turn_seam_terminal", at: (config.now ?? (() => new Date().toISOString()))(),
-          mode: "route", agentId: state.agentId, assignment: state.assignment, modelId: routeModelId,
-          invocationId: state.invocationId, toolCallCount, terminalClass, outcome });
-        state.evidence = result === "written" ? { emitted: true, gap: null } : { emitted: false, gap: result };
-      } catch { state.evidence = { emitted: false, gap: "write_failed" }; }
+        const result = await writeEvent(config.root, input);
+        slot.evidence = result === "written" ? { emitted: true, gap: null } : { emitted: false, gap: result };
+      } catch { slot.evidence = { emitted: false, gap: "write_failed" }; }
     };
     writes = writes.then(work, work);
+  };
+  const recordStep = (slot: StepSlot, terminalClass: TurnSeamTerminalClass, toolCallCount: number, outcome: TurnSeamOutcome,
+    stage: ModelStepStage, errorCode?: string) => {
+    if (slot.recorded) return;
+    slot.recorded = true;
+    enqueue(slot, {
+      name: "model_step_terminal", schemaVersion: 2, at: (config.now ?? (() => new Date().toISOString()))(),
+      mode: "route", hostGenerationId: slot.hostGenerationId, agentId: slot.agentId, turnId: slot.turnId,
+      invocationId: slot.stepId, modelId: routeModelId, assignment: slot.assignment, terminalClass, outcome,
+      toolCallCount, stage, admission: slot.admission, ...(errorCode ? { errorCode } : {}),
+    });
+  };
+  const recordStreamRejected = (row: SessionRow, reason: HostStreamRejectReason) => {
+    const key = `${hostGenerationId}:${row.agentId}:${row.turnId}:${reason}`;
+    if (streamRejects.has(key)) return;
+    streamRejects.add(key);
+    const evidence = { evidence: { emitted: false, gap: null } as SeamEvidence };
+    enqueue(evidence, {
+      name: "host_stream_rejected", schemaVersion: 2, at: (config.now ?? (() => new Date().toISOString()))(),
+      mode: "route", hostGenerationId, agentId: row.agentId, turnId: row.turnId, stage: "stream-id",
+      errorCode: "invalid_envelope", reason,
+    });
+  };
+  const occupy = (stepId: string, turnId: string, agentId: string): StepSlot | "conflict" | "capacity" => {
+    const existing = steps.get(stepKey(stepId));
+    if (existing) return existing.turnId === turnId && existing.agentId === agentId ? existing : "conflict";
+    if (steps.size >= STEP_SLOT_LIMIT) return "capacity";
+    const slot: StepSlot = {
+      stepId, turnId, agentId, hostGenerationId, dispatched: false, recorded: false, disconnected: false,
+      evidence: { emitted: false, gap: null }, toolCallCount: 0, assignment: config.assignment, admission: "none",
+    };
+    steps.set(stepKey(stepId), slot);
+    return slot;
   };
   const hook = (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string; onRequestId?: (id: string) => void }): unknown => {
     if (config.mode !== "route" || routeModelId == null) return args.originalSession;
     const modelId = routeModelId;
     const agentRaw = agentIdOf(args);
     if (!isOrdinaryMain(args.sessionOptions, agentRaw)) return args.originalSession;
-    const invocationId = boundedId(invocationIdOf(args.sessionOptions));
+    const turnId = boundedId(invocationIdOf(args.sessionOptions));
     const agentId = boundedId(agentRaw);
-    if (!invocationId || !agentId) return errorSession(modelId);
-    const existing = invocations.get(invocationId);
-    if (existing) return existing.agentId === agentId && existing.modelId === modelId ? existing.session : errorSession(modelId);
+    if (!turnId || !agentId) return errorSession(modelId);
+    const existingSession = sessions.get(sessionKey(turnId));
+    if (existingSession) return existingSession.agentId === agentId && existingSession.modelId === modelId ? existingSession.session : errorSession(modelId);
     const driver = config.driver!;
-    let state: InvocationState;
-    const streaming = createStreamingPromptSession({ modelId, vision: driver.vision === true, parallel: driver.parallel ?? "allow",
-      usage: driver.stream ? undefined : { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-      onToolCall: () => { state.toolCallCount += 1; },
-      onTerminal: (terminal) => {
-        state.cancel = undefined;
-        record(state, terminal.terminalClass, terminal.toolCallCount, terminal.rejected ? "rejected" : "managed");
-      },
-      produce: async (request) => {
-        const submit: StubRouteSubmit = { invocationId, agentId, modelId, envelope: request.envelope, abortSignal: request.abortSignal };
-        if (driver.stream) { driver.dispatches += 1; return await driver.stream(submit); }
-        if (driver.submit) {
-          try {
-            const result = await driver.submit(submit);
-            driver.dispatches += result.dispatched ? 1 : 0;
-            if (result.assignment) state.assignment = result.assignment;
-            return fromParts(result.parts);
-          } catch { throw new Error("modeld submit failed"); }
-        }
-        driver.dispatches += 1;
-        return fromParts(driver.parts);
-      },
-    });
+    const row: SessionRow = { session: undefined as unknown as HostPromptSession, turnId, agentId, modelId, disconnected: false };
     const prompt: PromptSession = { stream(request = {}) {
-      if (state.disconnected) return idleStreamHandle(modelId);
+      if (row.disconnected) return idleStreamHandle(modelId);
+      if (request.invocationId === undefined) {
+        recordStreamRejected(row, "missing-step-id");
+        return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope"), driver.delivery === "response-only");
+      }
+      const stepId = boundedId(request.invocationId);
+      if (!stepId) {
+        recordStreamRejected(row, "invalid-step-id");
+        return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope"), driver.delivery === "response-only");
+      }
+      const slotOr = occupy(stepId, turnId, agentId);
+      if (slotOr === "capacity" || slotOr === "conflict") {
+        return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict"), driver.delivery === "response-only");
+      }
+      const slot = slotOr;
       const envelope = request.envelope ?? buildModelEnvelope(request.messages ?? []);
       const hash = sha256Text(JSON.stringify(envelope));
-      if (state.dispatched) return state.requestHash === hash || request.abortSignal?.aborted
-        ? idleStreamHandle(modelId) : visibleFailureHandle(modelId, "invocation_conflict");
-      state.dispatched = true;
-      state.requestHash = hash;
+      if (slot.dispatched) {
+        return slot.requestHash === hash || request.abortSignal?.aborted
+          ? idleStreamHandle(modelId) : visibleFailureHandle(modelId, "invocation_conflict");
+      }
+      slot.dispatched = true;
+      slot.requestHash = hash;
+      const streaming = createStreamingPromptSession({
+        modelId, vision: driver.vision === true, parallel: driver.parallel ?? "allow",
+        usage: driver.stream ? undefined : { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        onToolCall: () => { slot.toolCallCount += 1; },
+        onTerminal: (terminal) => {
+          slot.cancel = undefined;
+          const duplicate = slot.admission === "duplicate";
+          const terminalClass = duplicate ? "unknown" : terminal.terminalClass;
+          const outcome = terminal.rejected || duplicate ? "rejected" : "managed";
+          const stage: ModelStepStage = slot.disconnected ? "disconnect" : duplicate ? "admission"
+            : terminalClass === "abort" ? "abort" : "host-normalize";
+          recordStep(slot, terminalClass, duplicate ? 0 : terminal.toolCallCount, outcome, stage, terminal.errorCode);
+        },
+        produce: async (produced) => {
+          const submit: StubRouteSubmit = {
+            invocationId: stepId, turnId, agentId, modelId, envelope: produced.envelope, abortSignal: produced.abortSignal,
+          };
+          if (driver.stream) { driver.dispatches += 1; return await driver.stream(submit); }
+          if (driver.submit) {
+            try {
+              const result = await driver.submit(submit);
+              if (result.assignment) slot.assignment = result.assignment;
+              if (!result.dispatched) {
+                slot.admission = "duplicate";
+                return fromParts([{ type: "finish", reason: "error" }]);
+              }
+              slot.admission = "new";
+              driver.dispatches += 1;
+              return fromParts(result.parts);
+            } catch { slot.admission = "unknown"; throw new Error("modeld submit failed"); }
+          }
+          driver.dispatches += 1;
+          return fromParts(driver.parts);
+        },
+      });
       const controller = new AbortController();
-      state.cancel = () => controller.abort();
+      slot.cancel = () => controller.abort();
       const cancellation = combineAbortSignals(request.abortSignal ? [request.abortSignal, controller.signal] : [controller.signal]);
       const handle = streaming.stream({ ...request, envelope, abortSignal: cancellation.signal });
       void handle.response.then(cancellation.dispose, cancellation.dispose);
       return deliveryHandle(handle, driver.delivery === "response-only");
     } };
-    state = {
-      session: asHostPromptSession(prompt, modelId, args.onRequestId, { invocationId, reject: (code) => {
-        if (state.dispatched || state.disconnected) return idleStreamHandle(modelId);
-        state.dispatched = true;
-        return deliveryHandle(visibleFailureHandle(modelId, code, undefined, (terminal) => record(state, terminal.terminalClass, 0, "rejected")), driver.delivery === "response-only");
-      } }),
-      dispatched: false, recorded: false, disconnected: false, evidence: { emitted: false, gap: null }, agentId, modelId, invocationId, toolCallCount: 0, assignment: config.assignment,
-    };
-    invocations.set(invocationId, state);
-    return state.session;
+    row.session = asHostPromptSession(prompt, modelId, args.onRequestId, {
+      invocationId: turnId,
+      requireStepId: true,
+      reject: (code, detail) => {
+        if (row.disconnected) return idleStreamHandle(modelId);
+        if (detail?.reason === "missing-step-id" || detail?.reason === "invalid-step-id") {
+          recordStreamRejected(row, detail.reason);
+          return deliveryHandle(visibleFailureHandle(modelId, code), driver.delivery === "response-only");
+        }
+        const stepId = boundedId(detail?.invocationId);
+        if (!stepId) {
+          recordStreamRejected(row, "invalid-step-id");
+          return deliveryHandle(visibleFailureHandle(modelId, code), driver.delivery === "response-only");
+        }
+        const slotOr = occupy(stepId, turnId, agentId);
+        if (slotOr === "capacity" || slotOr === "conflict") {
+          return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict"), driver.delivery === "response-only");
+        }
+        const slot = slotOr;
+        if (slot.dispatched) return idleStreamHandle(modelId);
+        slot.dispatched = true;
+        return deliveryHandle(visibleFailureHandle(modelId, code, undefined, (terminal) => {
+          recordStep(slot, "error", 0, "rejected", stageForError(terminal.errorCode ?? code), terminal.errorCode ?? code);
+        }), driver.delivery === "response-only");
+      },
+    });
+    sessions.set(sessionKey(turnId), row);
+    return row.session;
+  };
+  const disconnectSlot = (slot: StepSlot) => {
+    if (slot.disconnected) return;
+    slot.disconnected = true;
+    recordStep(slot, "unknown", slot.toolCallCount, "managed", "disconnect");
+    slot.cancel?.();
+    try { void config.driver?.disconnectInvocation?.(slot.stepId); } catch { /* never retry */ }
   };
   return {
     hook,
-    async disconnect(invocationId: string): Promise<void> {
-      const state = invocations.get(invocationId);
-      if (!state) return;
-      state.disconnected = true;
-      record(state, "unknown", state.toolCallCount, "managed");
-      state.cancel?.();
-      try { await config.driver?.disconnectInvocation?.(invocationId); } catch { /* never retry */ }
+    async disconnect(id: string): Promise<void> {
+      const session = sessions.get(sessionKey(id));
+      if (session) {
+        session.disconnected = true;
+        for (const slot of steps.values()) {
+          if (slot.turnId === session.turnId && slot.agentId === session.agentId) disconnectSlot(slot);
+        }
+        await writes;
+        return;
+      }
+      const slot = steps.get(stepKey(id));
+      if (slot) disconnectSlot(slot);
       await writes;
     },
-    evidence: (invocationId: string) => invocations.get(invocationId)?.evidence,
+    evidence: (id: string) => steps.get(stepKey(id))?.evidence,
     async flush(): Promise<void> { await writes; },
   };
 }
@@ -210,7 +325,10 @@ export function createSessionSeam(config: SessionSeamConfig) {
 export function bindHostSessionHook(input: { mode: SeamMode; durableRoot: string; runRoot: string; binding?: HostBinding }):
   (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string }) => unknown {
   if (input.mode !== "route") return (args) => args.originalSession;
-  const seam = createSessionSeam({ mode: "route", root: input.durableRoot, assignment: "main", modelId: STUB_ECHO_MODEL_ID,
-    driver: createModeldRouteDriver(input.runRoot, input.binding) });
+  const seam = createSessionSeam({
+    mode: "route", root: input.durableRoot, assignment: "main", modelId: STUB_ECHO_MODEL_ID,
+    hostGenerationId: input.binding?.generationId,
+    driver: createModeldRouteDriver(input.runRoot, input.binding),
+  });
   return (args) => seam.hook(args);
 }

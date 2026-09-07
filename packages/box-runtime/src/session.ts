@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { buildModelEnvelope, cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
-  type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "./envelope.ts";
+  type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "./envelope.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "./envelope.ts";
@@ -102,28 +102,41 @@ export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown)
   };
 }
 
+export type HostStreamRejectDetail = { invocationId?: unknown; reason?: "missing-step-id" | "invalid-step-id" };
 export function asHostPromptSession(session: PromptSession, modelId: string, onRequestId?: (id: string) => void,
-  input: { invocationId?: string; reject?: (code: string) => StreamHandle } = {}): HostPromptSession {
+  input: { invocationId?: string; requireStepId?: boolean; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
   let messages: unknown[] = [];
   let invalidState = false;
+  let invalidCode: EnvelopeErrorCode = "invalid_envelope";
+  const rememberInvalid = (error: unknown) => {
+    invalidState = true;
+    invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope";
+  };
   const notified = new Set<string>();
   const executor: HostPromptExecutor = {
     appendMessages(next) {
+      if (invalidState) return executor;
       try { messages.push(...cloneJson(Array.isArray(next) ? next : next == null ? [] : [next]) as unknown[]); }
-      catch { invalidState = true; }
+      catch (error) { rememberInvalid(error); }
       return executor;
     },
     getMessages: () => structuredClone(messages), getState: () => structuredClone(messages),
-    clearMessages() { messages = []; invalidState = false; },
+    clearMessages() { messages = []; invalidState = false; invalidCode = "invalid_envelope"; },
     stream(ctx, invocationId, tools, options) {
-      const requestId = invocationId ?? input.invocationId;
+      const requestId = input.requireStepId ? invocationId : (invocationId ?? input.invocationId);
       let cancellation: ReturnType<typeof combineAbortSignals> | undefined;
       try {
-        if (requestId !== undefined && (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId))) throw new EnvelopeError("invalid_envelope");
-        if (input.invocationId && requestId !== input.invocationId) throw new EnvelopeError("invalid_envelope");
+        if (input.requireStepId) {
+          if (requestId === undefined) throw new EnvelopeError("invalid_envelope", "missing-step-id");
+          if (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId)) {
+            throw new EnvelopeError("invalid_envelope", "invalid-step-id");
+          }
+        } else if (requestId !== undefined && (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId))) {
+          throw new EnvelopeError("invalid_envelope");
+        }
         cancellation = abortSignalFrom(ctx, options);
         const signal = cancellation.signal;
-        if (invalidState && !signal?.aborted) throw new EnvelopeError("invalid_envelope");
+        if (invalidState && !signal?.aborted) throw new EnvelopeError(invalidCode);
         const envelope = signal?.aborted ? buildModelEnvelope([]) : buildModelEnvelope(messages, tools, options);
         const handle = session.stream({ envelope, abortSignal: signal, ...(typeof requestId === "string" ? { invocationId: requestId } : {}) });
         void handle.response.then(cancellation.dispose, cancellation.dispose);
@@ -135,7 +148,11 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
       } catch (error) {
         cancellation?.dispose();
         const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
-        return toHostStreamResult(input.reject?.(code) ?? visibleFailureHandle(modelId, code), requestId);
+        const reason = error instanceof EnvelopeError ? error.stepReason : undefined;
+        return toHostStreamResult(
+          input.reject?.(code, { invocationId: requestId, ...(reason ? { reason } : {}) }) ?? visibleFailureHandle(modelId, code),
+          requestId,
+        );
       }
     },
   };
@@ -148,7 +165,8 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
         else if (snapshot && typeof snapshot === "object" && Object.keys(snapshot).length === 0) messages = [];
         else throw new EnvelopeError("invalid_envelope");
         invalidState = false;
-      } catch { messages = []; invalidState = true; }
+        invalidCode = "invalid_envelope";
+      } catch (error) { messages = []; rememberInvalid(error); }
     }
     return executor;
   };
@@ -175,7 +193,7 @@ function failure(code: string, ids?: string[]): VisibleFailure {
   return { userVisible: true, code: Object.hasOwn(FAILURE_MESSAGES, code) ? code : "model_error",
     message: FAILURE_MESSAGES[code] ?? FAILURE_MESSAGES.model_error!, ...(ids?.length ? { toolCallIds: [...ids] } : {}) };
 }
-export type SessionTerminal = { terminalClass: FinishReason; toolCallCount: number; rejected?: boolean };
+export type SessionTerminal = { terminalClass: FinishReason; toolCallCount: number; rejected?: boolean; errorCode?: string };
 function notify(onTerminal: ((terminal: SessionTerminal) => void) | undefined, terminal: SessionTerminal) {
   try { onTerminal?.(terminal); } catch { /* Evidence is not the Host loop. */ }
 }
@@ -186,7 +204,7 @@ export function visibleFailureHandle(modelId: string, code: string, ids?: string
   stream.push({ type: "text-delta", textDelta: error.message });
   stream.push({ type: "finish", reason: "error", finishReason: "error", response, usage: ZERO_USAGE });
   stream.close();
-  notify(onTerminal, { terminalClass: "error", toolCallCount: 0, rejected: true });
+  notify(onTerminal, { terminalClass: "error", toolCallCount: 0, rejected: true, errorCode: error.code });
   return { fullStream: stream.iterable, response: Promise.resolve(response), usage: Promise.resolve({ ...ZERO_USAGE }) };
 }
 export type StreamingSessionConfig = {
@@ -249,7 +267,11 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       replay.push({ type: "finish", reason, finishReason, response: result, usage: normalized });
       replay.close();
       resolveResponse(result); resolveUsage(normalized);
-      notify(config.onTerminal, { terminalClass: reason, toolCallCount: toolCalls.length });
+      notify(config.onTerminal, {
+        terminalClass: reason,
+        toolCallCount: toolCalls.length,
+        ...(error ? { errorCode: error.code } : {}),
+      });
       controller.abort();
       // A stuck producer's return must not hold the terminal promises or Host cancellation hostage.
       try { void Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* producer cleanup is best effort */ }

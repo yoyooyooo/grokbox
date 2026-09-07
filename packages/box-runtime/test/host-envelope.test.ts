@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildModelEnvelope, ENVELOPE_MAX_BYTES, type ModelEnvelope, type PromptMessage } from "../src/envelope.ts";
+import { buildModelEnvelope, EnvelopeError, ENVELOPE_MAX_BYTES, type ModelEnvelope, type PromptMessage } from "../src/envelope.ts";
 import { asHostPromptSession, createStreamingPromptSession, type StreamPart } from "../src/session.ts";
 import { collectStreamParts, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
 
@@ -91,7 +91,6 @@ describe("Host messages/state/tools/options envelope", () => {
   test.each([
     ["unknown block", [{ role: "user", content: [{ type: "file", url: "private-file-sentinel" }] }]],
     ["opaque text", [{ role: "user", content: [{ type: "text", text: { value: "private-redacted-sentinel" } }] }]],
-    ["hidden attachment", [{ role: "user", content: "hello", attachments: ["private-attachment"] }]],
     ["missing tool call", [{ role: "tool", content: [{ type: "tool-result", toolCallId: "missing", result: "private-result" }] }]],
     ["wrong tool result name", [...history().slice(0, 3), { role: "tool", content: [{ type: "tool-result", toolCallId: "call:one/α", toolName: "other", result: "private-result" }] }]],
     ["too large", [{ role: "user", content: "x".repeat(ENVELOPE_MAX_BYTES + 1) }]],
@@ -111,7 +110,6 @@ describe("Host messages/state/tools/options envelope", () => {
     ["non-object schema", [{ name: "lookup", inputSchema: { type: "array" } }], {}],
     ["opaque registry", new Map([["lookup", { schema }]]), {}],
     ["duplicate tool name", [{ name: "lookup", schema }, { name: "lookup", schema }], {}],
-    ["unsupported options", [], { vendorCredential: "private-secret-sentinel" }],
     ["invalid number", [], { temperature: NaN }],
     ["invalid abort signal", [], { abortSignal: "not-a-signal" }],
     ["missing selected tool", [], { toolChoice: { type: "tool", toolName: "missing" } }],
@@ -166,5 +164,112 @@ describe("Host messages/state/tools/options envelope", () => {
     expect(handle).not.toBeInstanceOf(Promise);
     expect((await handle.response).error?.userVisible).toBe(true);
     expect(f.calls.count).toBe(0);
+  });
+
+  test("Host-shaped extras are stripped: unknown options, extra message keys, render-bearing tools", async () => {
+    const f = fixture();
+    let renderCalls = 0;
+    const hostMessages = [{
+      role: "user",
+      content: "host-plain-text",
+      _privacyMode: "UNSPECIFIED",
+      providerOptions: { cursor: { inferenceReason: "main" } },
+      id: "msg-host-1",
+      attachments: ["private-attachment"],
+    }];
+    const tools = [{
+      name: "lookup",
+      description: "lookup schema",
+      parameters: { jsonSchema: schema },
+      customToolFormat: "host-only",
+      render: () => { renderCalls += 1; return "private-render"; },
+    }];
+    const result = f.session.getExecutor(hostMessages).stream(
+      {},
+      "inv-host-shape",
+      tools,
+      { acceptedUnadvertisedToolNames: ["alias"], vendorCredential: "private-secret-sentinel", temperature: 0.1 },
+    );
+    const response = await result.response;
+    expect(response.error).toBeUndefined();
+    expect(f.calls.count).toBe(1);
+    expect(renderCalls).toBe(0);
+    expect(f.requests[0]!.envelope).toEqual({
+      version: 1,
+      messages: [{ role: "user", content: "host-plain-text" }],
+      tools: [{ name: "lookup", description: "lookup schema", inputSchema: schema }],
+      options: { temperature: 0.1 },
+    });
+    const leaked = JSON.stringify(f.requests[0]!.envelope);
+    expect(leaked).not.toContain("private-");
+    expect(leaked).not.toContain("acceptedUnadvertisedToolNames");
+    expect(leaked).not.toContain("_privacyMode");
+  });
+
+  test("inherited getters on required fields and options are not invoked", async () => {
+    let reads = 0;
+    const proto = {
+      get role() { reads += 1; return "user"; },
+      get temperature() { reads += 1; return 0.2; },
+    };
+    const message = Object.create(proto) as { content: string };
+    Object.defineProperty(message, "content", { enumerable: true, value: "plain-inherited" });
+    expect(() => buildModelEnvelope([message])).toThrow(EnvelopeError);
+    expect(reads).toBe(0);
+
+    const ownGetter = { get role() { reads += 1; return "user"; }, content: "plain-own-getter" };
+    expect(() => buildModelEnvelope([ownGetter])).toThrow(EnvelopeError);
+    expect(reads).toBe(0);
+
+    const f = fixture();
+    const options = Object.create(proto) as Record<string, unknown>;
+    Object.defineProperty(options, "topP", { enumerable: true, value: 0.5 });
+    const response = await f.session.getExecutor([{ role: "user", content: "plain-options" }])
+      .stream({}, "inv-inherited-options", [], options).response;
+    expect(reads).toBe(0);
+    expect(response.error).toBeUndefined();
+    expect(f.calls.count).toBe(1);
+    expect(f.requests[0]!.envelope.options).toEqual({ topP: 0.5 });
+
+    const blocked = fixture();
+    const hot = { get temperature() { reads += 1; return 0.1; } };
+    expect((await blocked.session.getExecutor([{ role: "user", content: "plain" }])
+      .stream({}, "inv-own-option-getter", [], hot).response).error?.code).toBe("unsupported_options");
+    expect(reads).toBe(0);
+    expect(blocked.calls.count).toBe(0);
+  });
+
+  test("Host step invocationId may differ from pinned turn id without invalid_envelope", async () => {
+    const requests: Array<{ envelope: ModelEnvelope; invocationId?: string }> = [];
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: "fake/envelope", vision: false, parallel: "allow",
+      produce: (request) => {
+        requests.push({ envelope: request.envelope, invocationId: request.invocationId });
+        return { async *[Symbol.asyncIterator]() { yield { type: "text-delta" as const, textDelta: "accepted" }; yield FINISH; } };
+      },
+    }), "fake/envelope", undefined, { invocationId: "turn-aaaa-bbbb-cccc-dddd" });
+    const result = session.getExecutor([{ role: "user", content: "plain-step-text" }]).stream({}, "step-1111-2222-3333-4444", [], {});
+    const response = await result.response;
+    expect(response.error).toBeUndefined();
+    expect(await result.invocationId).toBe("step-1111-2222-3333-4444");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.invocationId).toBe("step-1111-2222-3333-4444");
+    const bad = session.getExecutor([{ role: "user", content: "again" }]).stream({}, "step\nid", [], {});
+    expect((await bad.response).error?.code).toBe("invalid_envelope");
+  });
+
+  test("Redacted class content is explicit unsupported_content, not swallowed invalid_envelope", async () => {
+    class HostRedacted {
+      constructor(readonly hidden: string) {}
+    }
+    const f = fixture();
+    const result = f.session.getExecutor([
+      { role: "user", content: new HostRedacted("private-redacted-plain") },
+    ]).stream({}, "inv-redacted", [], { acceptedUnadvertisedToolNames: [] });
+    const response = await result.response;
+    expect(response.error?.code).toBe("unsupported_content");
+    expect(response.error?.userVisible).toBe(true);
+    expect(f.calls.count).toBe(0);
+    expect(JSON.stringify(response)).not.toContain("private-redacted-plain");
   });
 });

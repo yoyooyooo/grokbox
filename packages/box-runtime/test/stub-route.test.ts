@@ -75,7 +75,7 @@ async function turnLines(dir: string): Promise<Array<Record<string, unknown>>> {
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>)
-    .filter((row) => row.name === "turn_seam_terminal");
+    .filter((row) => row.name === "model_step_terminal" || row.name === "host_stream_rejected");
 }
 
 function officialSession(): PromptSession {
@@ -151,7 +151,7 @@ describe("stub route synthetic compile/load", () => {
       expect(main).not.toBe(loaded.createSession({ inferenceReason: "computer" }));
       const computer = loaded.createSession({ inferenceReason: "computer" });
       expect(computer.kind).toBe("official-session");
-      const vector = await consumeHost(managed);
+      const vector = await consumeHost(managed, "inv-main");
       expect(vector.toolExecutionCount).toBe(0);
       expect(vector.finalDeliveryCount).toBe(1);
     } finally {
@@ -275,11 +275,11 @@ describe("stub modeld IPC", () => {
       };
       const first = seam.hook(args) as HostPromptSession;
       expect(first).not.toBe(original);
-      await consumeHost(first);
-      first.getExecutor().stream();
+      await consumeHost(first, "inv-text");
+      first.getExecutor().stream({}, "inv-text");
       const second = seam.hook(args);
       expect(second).toBe(first);
-      await consumeHost(second as HostPromptSession);
+      await consumeHost(second as HostPromptSession, "inv-text");
       await seam.flush();
       expect(driver.dispatches).toBe(1);
       expect(server.dispatches()).toBe(1);
@@ -287,18 +287,22 @@ describe("stub modeld IPC", () => {
       expect(driver.secondProviderCalls).toBe(0);
       const events = await turnLines(durable);
       expect(events).toEqual([
-        {
-          name: "turn_seam_terminal",
+        expect.objectContaining({
+          name: "model_step_terminal",
+          schemaVersion: 2,
           at: AT,
           mode: "route",
           agentId: "agent-tom",
           assignment: "main",
           modelId: STUB_ECHO_MODEL_ID,
+          turnId: "inv-text",
           invocationId: "inv-text",
           toolCallCount: 0,
           terminalClass: "stop",
           outcome: "managed",
-        },
+          stage: "host-normalize",
+          admission: "new",
+        }),
       ]);
     } finally {
       await server.stop();
@@ -334,8 +338,8 @@ describe("stub modeld IPC", () => {
         agentId: "agent-jerry",
       }) as HostPromptSession;
       expect(second).not.toBe(first);
-      await consumeHost(first);
-      await consumeHost(second);
+      await consumeHost(first, "inv-conflict-seam");
+      await consumeHost(second, "inv-conflict-seam");
       await seam.flush();
       expect(second).not.toBe(first);
       expect(driver.officialCalls).toBe(0);
@@ -376,7 +380,7 @@ describe("stub modeld IPC", () => {
       sessionOptions: { invocationId: "inv-down", inferenceReason: "main" },
       agentId: "agent-tom",
     }) as HostPromptSession;
-    await consumeHost(downSession);
+    await consumeHost(downSession, "inv-down");
     await downSeam.flush();
     expect(downDriver.officialCalls).toBe(0);
     expect(downDriver.secondProviderCalls).toBe(0);
@@ -438,7 +442,7 @@ describe("stub modeld IPC", () => {
       }) as HostPromptSession;
       const controller = new AbortController();
       controller.abort();
-      abortSession.getExecutor().stream(undefined, undefined, undefined, { abortSignal: controller.signal });
+      abortSession.getExecutor().stream(undefined, "inv-abort", undefined, { abortSignal: controller.signal });
       await abortSeam.flush();
       expect(abortDriver.officialCalls).toBe(0);
       expect(server.dispatches()).toBe(1);
@@ -467,7 +471,7 @@ describe("stub modeld IPC", () => {
         sessionOptions: { invocationId: "inv-hardoff", inferenceReason: "main" },
         agentId: "agent-tom",
       }) as HostPromptSession;
-      await consumeHost(managed);
+      await consumeHost(managed, "inv-hardoff");
       await seam.flush();
       expect(driver.dispatches).toBe(1);
       expect(() => driver.resolveCredential()).toThrow(/credential/);
@@ -498,7 +502,7 @@ describe("stub modeld IPC", () => {
         sessionOptions: { invocationId: "inv-hardoff-down", inferenceReason: "main" },
         agentId: "agent-tom",
       }) as HostPromptSession;
-      await consumeHost(downSession);
+      await consumeHost(downSession, "inv-hardoff-down");
       await downSeam.flush();
       expect(downDriver.officialCalls).toBe(0);
       expect(downDriver.secondProviderCalls).toBe(0);

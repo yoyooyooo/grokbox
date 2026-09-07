@@ -17,7 +17,9 @@ export type GenerationOptions = {
 export type ModelEnvelope = { version: 1; messages: PromptMessage[]; tools: ToolDefinition[]; options: GenerationOptions };
 export type EnvelopeErrorCode = "invalid_envelope" | "unsupported_content" | "invalid_tools" | "unsupported_options" | "envelope_too_large";
 export class EnvelopeError extends Error {
-  constructor(readonly code: EnvelopeErrorCode) { super(code); }
+  constructor(readonly code: EnvelopeErrorCode, readonly stepReason?: "missing-step-id" | "invalid-step-id") {
+    super(code);
+  }
 }
 export const ENVELOPE_MAX_BYTES = 64 * 1024;
 const fail = (code: EnvelopeErrorCode = "invalid_envelope"): never => { throw new EnvelopeError(code); };
@@ -81,11 +83,37 @@ function contentPart(value: unknown, role: PromptMessage["role"]): PromptContent
   return fail("unsupported_content");
 }
 
+function ownData(value: object, key: string): { kind: "absent" } | { kind: "accessor" } | { kind: "value"; value: unknown } {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (!descriptor) return { kind: "absent" };
+  if (!Object.hasOwn(descriptor, "value")) return { kind: "accessor" };
+  return { kind: "value", value: descriptor.value };
+}
+
+function hostMessageFields(raw: unknown): { role: string; content: unknown; toolCalls?: unknown } {
+  if (!object(raw)) return fail();
+  const role = ownData(raw, "role");
+  const content = ownData(raw, "content");
+  if (role.kind === "absent" || content.kind === "absent") return fail();
+  if (role.kind === "accessor" || content.kind === "accessor") return fail("unsupported_content");
+  if (typeof role.value !== "string") return fail();
+  const tool = ownData(raw, "toolCalls");
+  if (tool.kind === "accessor") return fail("unsupported_content");
+  return {
+    role: role.value,
+    content: content.value,
+    ...(tool.kind === "value" ? { toolCalls: tool.value } : {}),
+  };
+}
+
 function messagesFrom(value: unknown): PromptMessage[] {
   if (!Array.isArray(value) || value.length > 1024) return fail();
-  return value.map((raw) => {
-    if (!object(raw) || !["system", "user", "assistant", "tool"].includes(String(raw.role))) return fail();
-    if (Object.keys(raw).some((key) => !["role", "content", "toolCalls"].includes(key))) return fail("unsupported_content");
+  if (Object.keys(value).length !== value.length) return fail();
+  return Array.from({ length: value.length }, (_, index) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, index);
+    if (!descriptor || !Object.hasOwn(descriptor, "value")) return fail("unsupported_content");
+    const raw = hostMessageFields(descriptor.value);
+    if (!["system", "user", "assistant", "tool"].includes(raw.role)) return fail();
     const role = raw.role as PromptMessage["role"];
     let content: PromptMessage["content"];
     if (typeof raw.content === "string") content = raw.content;
@@ -147,29 +175,38 @@ function toolsFrom(value: unknown): ToolDefinition[] {
 function optionsFrom(value: unknown): GenerationOptions {
   if (value == null) return {};
   if (!object(value)) return fail("unsupported_options");
-  const allowed = ["abortSignal", "signal", "temperature", "topP", "maxTokens", "seed", "stopSequences", "parallelToolCalls", "toolChoice"];
-  if (Object.entries(Object.getOwnPropertyDescriptors(value)).some(([key, descriptor]) => descriptor.enumerable && (!allowed.includes(key) || !Object.hasOwn(descriptor, "value")))) return fail("unsupported_options");
+  const read = (key: string): unknown => {
+    const field = ownData(value, key);
+    if (field.kind === "accessor") return fail("unsupported_options");
+    return field.kind === "value" ? field.value : undefined;
+  };
   const out: GenerationOptions = {};
-  for (const key of ["abortSignal", "signal"]) if (value[key] !== undefined && !(value[key] instanceof AbortSignal)) return fail("unsupported_options");
+  for (const key of ["abortSignal", "signal"]) {
+    const signal = read(key);
+    if (signal !== undefined && !(signal instanceof AbortSignal)) return fail("unsupported_options");
+  }
   for (const key of ["temperature", "topP", "maxTokens", "seed"] as const) {
-    const n = value[key];
+    const n = read(key);
     if (n === undefined) continue;
     if (typeof n !== "number" || !Number.isFinite(n) || (key === "maxTokens" && (!Number.isSafeInteger(n) || n <= 0)) ||
       (key === "seed" && !Number.isSafeInteger(n)) || (key === "temperature" && n < 0) || (key === "topP" && (n < 0 || n > 1))) return fail("unsupported_options");
     out[key] = n;
   }
-  if (value.stopSequences !== undefined) {
-    if (!Array.isArray(value.stopSequences) || value.stopSequences.length > 32 || !value.stopSequences.every((s) => typeof s === "string")) return fail("unsupported_options");
-    out.stopSequences = [...value.stopSequences];
+  const stopSequences = read("stopSequences");
+  if (stopSequences !== undefined) {
+    if (!Array.isArray(stopSequences) || stopSequences.length > 32 || !stopSequences.every((s) => typeof s === "string")) return fail("unsupported_options");
+    out.stopSequences = [...stopSequences];
   }
-  if (value.parallelToolCalls !== undefined) {
-    if (typeof value.parallelToolCalls !== "boolean") return fail("unsupported_options");
-    out.parallelToolCalls = value.parallelToolCalls;
+  const parallelToolCalls = read("parallelToolCalls");
+  if (parallelToolCalls !== undefined) {
+    if (typeof parallelToolCalls !== "boolean") return fail("unsupported_options");
+    out.parallelToolCalls = parallelToolCalls;
   }
-  if (value.toolChoice !== undefined) {
-    if (typeof value.toolChoice === "string" && ["auto", "none", "required"].includes(value.toolChoice)) out.toolChoice = value.toolChoice as "auto" | "none" | "required";
+  const toolChoice = read("toolChoice");
+  if (toolChoice !== undefined) {
+    if (typeof toolChoice === "string" && ["auto", "none", "required"].includes(toolChoice)) out.toolChoice = toolChoice as "auto" | "none" | "required";
     else {
-      const choice = cloneJson(value.toolChoice);
+      const choice = cloneJson(toolChoice);
       if (!object(choice) || choice.type !== "tool" || Object.keys(choice).some((key) => !["type", "toolName"].includes(key))) return fail("unsupported_options");
       out.toolChoice = { type: "tool", toolName: id(choice.toolName) };
     }
@@ -184,7 +221,7 @@ function freezeJson(value: unknown): void {
 }
 
 export function buildModelEnvelope(messages: unknown, tools?: unknown, options?: unknown): ModelEnvelope {
-  const envelope: ModelEnvelope = { version: 1, messages: messagesFrom(cloneJson(messages)), tools: toolsFrom(tools), options: optionsFrom(options) };
+  const envelope: ModelEnvelope = { version: 1, messages: messagesFrom(messages), tools: toolsFrom(tools), options: optionsFrom(options) };
   const calls = new Map<string, string>();
   const results = new Set<string>();
   for (const message of envelope.messages) {

@@ -16,6 +16,9 @@ export const EVENT_NAMES = [
   "circuit_open",
   "inject_phase",
   "turn_seam_terminal",
+  // TODO(owner): names follow the MINI-1918 v2 review proposal; not a dated owner adjudication.
+  "model_step_terminal",
+  "host_stream_rejected",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -45,6 +48,37 @@ const TURN_SEAM_MODES = new Set(["identity", "route"]);
 const TURN_SEAM_ASSIGNMENTS = new Set(["official", "main", "agent"]);
 const TURN_SEAM_TERMINAL_CLASSES = new Set(["stop", "error", "abort", "unknown"]);
 const TURN_SEAM_OUTCOMES = new Set(["official", "managed", "last_resort_official", "rejected"]);
+const SEAM_EVENT_NAMES = new Set(["turn_seam_terminal", "model_step_terminal", "host_stream_rejected"]);
+export const MODEL_STEP_STAGES = new Set([
+  "stream-id",
+  "append-snapshot",
+  "bind-state",
+  "message-shape",
+  "tool-history",
+  "tools",
+  "options",
+  "ipc",
+  "admission",
+  "host-normalize",
+  "abort",
+  "disconnect",
+  "internal",
+]);
+export const MODEL_STEP_ADMISSIONS = new Set(["none", "new", "duplicate", "unknown"]);
+export const HOST_STREAM_REJECT_REASONS = new Set(["missing-step-id", "invalid-step-id"]);
+export const TURN_SEAM_ERROR_CODES = new Set([
+  "invalid_envelope",
+  "unsupported_content",
+  "invalid_tools",
+  "unsupported_options",
+  "envelope_too_large",
+  "unsupported_image",
+  "parallel_tools",
+  "invocation_conflict",
+  "model_error",
+  "stream_limit",
+  "invalid_stream",
+]);
 
 export type RuntimeEvent = {
   name: EventName;
@@ -68,6 +102,45 @@ export type TurnSeamTerminalEvent = {
   toolCallCount: number;
   terminalClass: TurnSeamTerminalClass;
   outcome: TurnSeamOutcome;
+  errorCode?: string;
+};
+
+export type ModelStepStage = "stream-id" | "append-snapshot" | "bind-state" | "message-shape" | "tool-history" | "tools"
+  | "options" | "ipc" | "admission" | "host-normalize" | "abort" | "disconnect" | "internal";
+export type ModelStepAdmission = "none" | "new" | "duplicate" | "unknown";
+export type HostStreamRejectReason = "missing-step-id" | "invalid-step-id";
+
+export type ModelStepTerminalEvent = {
+  name: "model_step_terminal";
+  schemaVersion: 2;
+  at: string;
+  mode: "route";
+  hostGenerationId: string;
+  agentId: string;
+  turnId: string;
+  invocationId: string;
+  modelId: string;
+  assignment: TurnSeamAssignment;
+  terminalClass: TurnSeamTerminalClass;
+  outcome: TurnSeamOutcome;
+  toolCallCount: number;
+  stage: ModelStepStage;
+  admission: ModelStepAdmission;
+  errorCode?: string;
+  serverGeneration?: string;
+};
+
+export type HostStreamRejectedEvent = {
+  name: "host_stream_rejected";
+  schemaVersion: 2;
+  at: string;
+  mode: "route";
+  hostGenerationId: string;
+  agentId: string;
+  turnId: string;
+  stage: "stream-id";
+  errorCode: "invalid_envelope";
+  reason: HostStreamRejectReason;
 };
 
 export type TurnSeamWriteResult = "written" | "unprojected" | "write_failed";
@@ -174,6 +247,7 @@ export function projectTurnSeamTerminal(input: unknown): TurnSeamTerminalEvent |
   const officialExecution = outcome === "official" || outcome === "last_resort_official";
   const modelId = officialExecution ? null : boundedString(input.modelId);
   if (!officialExecution && modelId == null) return null;
+  const errorCode = boundedEnum(input.errorCode, TURN_SEAM_ERROR_CODES);
   return {
     name: "turn_seam_terminal",
     at,
@@ -185,7 +259,87 @@ export function projectTurnSeamTerminal(input: unknown): TurnSeamTerminalEvent |
     toolCallCount,
     terminalClass,
     outcome,
+    ...(errorCode != null ? { errorCode } : {}),
   };
+}
+
+export function projectModelStepTerminal(input: unknown): ModelStepTerminalEvent | null {
+  if (!isRecord(input) || input.name !== "model_step_terminal" || input.schemaVersion !== 2) return null;
+  const at = boundedString(input.at, TURN_SEAM_BOUNDED_STRING);
+  const mode = boundedEnum(input.mode, TURN_SEAM_MODES);
+  const hostGenerationId = boundedString(input.hostGenerationId);
+  const agentId = boundedString(input.agentId);
+  const turnId = boundedString(input.turnId);
+  const invocationId = boundedString(input.invocationId);
+  const modelId = boundedString(input.modelId);
+  const assignment = boundedEnum(input.assignment, TURN_SEAM_ASSIGNMENTS) as TurnSeamAssignment | null;
+  const terminalClass = boundedEnum(input.terminalClass, TURN_SEAM_TERMINAL_CLASSES) as TurnSeamTerminalClass | null;
+  const outcome = boundedEnum(input.outcome, TURN_SEAM_OUTCOMES) as TurnSeamOutcome | null;
+  const toolCallCount = boundedCount(input.toolCallCount);
+  const stage = boundedEnum(input.stage, MODEL_STEP_STAGES) as ModelStepStage | null;
+  const admission = boundedEnum(input.admission, MODEL_STEP_ADMISSIONS) as ModelStepAdmission | null;
+  if (
+    at == null || mode !== "route" || hostGenerationId == null || agentId == null || turnId == null ||
+    invocationId == null || modelId == null || assignment == null || assignment === "official" ||
+    terminalClass == null || outcome == null || toolCallCount == null || stage == null || admission == null
+  ) {
+    return null;
+  }
+  const errorCode = boundedEnum(input.errorCode, TURN_SEAM_ERROR_CODES);
+  const serverGeneration = boundedString(input.serverGeneration);
+  return {
+    name: "model_step_terminal",
+    schemaVersion: 2,
+    at,
+    mode: "route",
+    hostGenerationId,
+    agentId,
+    turnId,
+    invocationId,
+    modelId,
+    assignment,
+    terminalClass,
+    outcome,
+    toolCallCount,
+    stage,
+    admission,
+    ...(errorCode != null ? { errorCode } : {}),
+    ...(serverGeneration != null ? { serverGeneration } : {}),
+  };
+}
+
+export function projectHostStreamRejected(input: unknown): HostStreamRejectedEvent | null {
+  if (!isRecord(input) || input.name !== "host_stream_rejected" || input.schemaVersion !== 2) return null;
+  const at = boundedString(input.at, TURN_SEAM_BOUNDED_STRING);
+  const mode = boundedEnum(input.mode, TURN_SEAM_MODES);
+  const hostGenerationId = boundedString(input.hostGenerationId);
+  const agentId = boundedString(input.agentId);
+  const turnId = boundedString(input.turnId);
+  const stage = boundedEnum(input.stage, MODEL_STEP_STAGES);
+  const errorCode = boundedEnum(input.errorCode, TURN_SEAM_ERROR_CODES);
+  const reason = boundedEnum(input.reason, HOST_STREAM_REJECT_REASONS) as HostStreamRejectReason | null;
+  if (
+    at == null || mode !== "route" || hostGenerationId == null || agentId == null || turnId == null ||
+    stage !== "stream-id" || errorCode !== "invalid_envelope" || reason == null
+  ) {
+    return null;
+  }
+  return {
+    name: "host_stream_rejected",
+    schemaVersion: 2,
+    at,
+    mode: "route",
+    hostGenerationId,
+    agentId,
+    turnId,
+    stage: "stream-id",
+    errorCode: "invalid_envelope",
+    reason,
+  };
+}
+
+function isSeamEventName(name: unknown): boolean {
+  return typeof name === "string" && SEAM_EVENT_NAMES.has(name);
 }
 
 export function selectRetainedEventLines(lines: string[]): string[] {
@@ -195,7 +349,7 @@ export function selectRetainedEventLines(lines: string[]): string[] {
       let turn = false;
       try {
         const value = JSON.parse(line) as { name?: unknown };
-        turn = value.name === "turn_seam_terminal";
+        turn = isSeamEventName(value.name);
       } catch {
         turn = false;
       }
@@ -211,7 +365,7 @@ export function selectRetainedEventLines(lines: string[]): string[] {
 }
 
 export async function appendEvent(root: string, event: RuntimeEvent): Promise<void> {
-  if (event.name === "turn_seam_terminal") return;
+  if (isSeamEventName(event.name)) return;
   await appendLine(root, JSON.stringify(sanitizeEvent(event)));
 }
 
@@ -226,9 +380,40 @@ export async function appendTurnSeamTerminal(root: string, input: unknown): Prom
   }
 }
 
-function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | null {
+export async function appendModelStepTerminal(root: string, input: unknown): Promise<TurnSeamWriteResult> {
+  const projected = projectModelStepTerminal(input);
+  if (!projected) return "unprojected";
+  try {
+    await appendLine(root, JSON.stringify(projected));
+    return "written";
+  } catch {
+    return "write_failed";
+  }
+}
+
+export async function appendHostStreamRejected(root: string, input: unknown): Promise<TurnSeamWriteResult> {
+  const projected = projectHostStreamRejected(input);
+  if (!projected) return "unprojected";
+  try {
+    await appendLine(root, JSON.stringify(projected));
+    return "written";
+  } catch {
+    return "write_failed";
+  }
+}
+
+export async function appendSeamRouteEvent(root: string, input: unknown): Promise<TurnSeamWriteResult> {
+  if (!isRecord(input)) return "unprojected";
+  if (input.name === "model_step_terminal") return appendModelStepTerminal(root, input);
+  if (input.name === "host_stream_rejected") return appendHostStreamRejected(root, input);
+  return "unprojected";
+}
+
+function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
+  if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
+  if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);
   const at = boundedString(input.at);
   if (!at || !Number.isFinite(Date.parse(at))) return null;
   const out: RuntimeEvent = { name: input.name as EventName, at };
@@ -271,7 +456,7 @@ function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEve
 
 export type EventsObservation = {
   state: ObservationState | "partial";
-  events: Array<RuntimeEvent | TurnSeamTerminalEvent | { invalid: true }>;
+  events: Array<RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | { invalid: true }>;
   truncated: boolean;
 };
 
