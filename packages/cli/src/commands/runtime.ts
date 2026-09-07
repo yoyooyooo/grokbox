@@ -17,9 +17,13 @@ import {
   liveH3AdoptAdapter,
   reviewedProfilePath,
   runManualReadopt,
+  parseRuntimeStartMode,
+  prepareRuntimeStart,
+  probeStubModeld,
   runWatchdogTick,
   startStubModeldServer,
   STUB_ECHO_MODEL_ID,
+  watchdogRequiredForStart,
   wireLiveManualReadopt,
   writeReviewedProfileFromCopy,
   type DesiredMode,
@@ -73,6 +77,39 @@ export async function runRuntimeActivate(deps: CliDeps, mode: string | undefined
       inject: false,
       takesEffect: "next_user_turn",
     });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeStart(deps: CliDeps, mode: string | undefined): Promise<void> {
+  try {
+    const parsed = parseRuntimeStartMode(mode);
+    const runtime = store(deps);
+    const models = await runtime.loadModels();
+    if (parsed === "route") assertRouteAssignment(models);
+    const runRoot = deps.env.GROKBOX_RUN_ROOT ?? ephemeralRuntimeRoot();
+    const payload = await prepareRuntimeStart({
+      mode: parsed,
+      probeModeld: () => probeStubModeld(runRoot),
+      startModeld: async () => {
+        // Same listen path as `modeld run`; do not wait() — return readiness. Never re-adopt.
+        await startStubModeldServer({ runRoot, durableRoot: runtime.root, signal: deps.signal });
+      },
+      activate: async (desired) => {
+        await runtime.saveDesired({ version: 1, mode: desired });
+      },
+      ...(watchdogRequiredForStart(parsed) ? {
+        tickWatchdog: async () => await runWatchdogTick({
+          root: runtime.root,
+          desired: await runtime.loadDesired(),
+          models: await runtime.loadModels(),
+          now: deps.now,
+        }),
+      } : {}),
+      status: async () => await projectLiveStatus({ root: runtime.root, ephemeralRoot: runRoot }),
+    });
+    writeSuccess(deps.stdout, payload);
   } catch (error) {
     rethrow(error);
   }

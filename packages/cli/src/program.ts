@@ -83,6 +83,7 @@ import {
   runRuntimeModelsUse,
   runRuntimeProfileWrite,
   runRuntimeReAdopt,
+  runRuntimeStart,
   runRuntimeStatus,
   runRuntimeWatchdog,
 } from "./commands/runtime.ts";
@@ -259,6 +260,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     events: async (deps, _args, options) => await runEvents(deps, options),
     "is running": async (deps, args, options) => await runIsRunning(deps, args[0] ?? "", options),
     "runtime status": async (deps) => await runRuntimeStatus(deps),
+    "runtime start": async (deps, _args, options) => await runRuntimeStart(deps, options.mode),
     "runtime activate": async (deps, _args, options) => await runRuntimeActivate(deps, options.mode),
     "runtime deactivate": async (deps) => await runRuntimeDeactivate(deps),
     "runtime log": async (deps, _args, options) => await runRuntimeLog(deps, options.follow),

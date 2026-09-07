@@ -150,6 +150,7 @@ describe("box-local runtime CLI", () => {
     const keys = LEAF_COMMANDS.map((leaf) => leaf.path.join(" "));
     for (const key of [
       "runtime status",
+      "runtime start",
       "runtime activate",
       "runtime deactivate",
       "runtime log",
@@ -174,6 +175,137 @@ describe("box-local runtime CLI", () => {
           key.split(" ").includes("ctl"),
       ),
     ).toBe(false);
+  });
+
+  test("runtime start requires a valid --mode and never re-adopts", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const missing = await captureCli(["runtime", "start"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+    expect(missing.code).toBe(2);
+    const bad = await captureCli(["runtime", "start", "--mode", "canary"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+    expect(bad.code).toBe(2);
+    expect((parseJson(bad.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
+    const readopt = spyOn(coordinatorModule, "runManualReadopt");
+    expect(readopt).not.toHaveBeenCalled();
+    readopt.mockRestore();
+  });
+
+  test("runtime start --mode observe ensures modeld, writes desired, skips watchdog and re-adopt", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const runRoot = await mkdtemp(join(tmpdir(), "grokbox-runtime-start-"));
+    const ac = new AbortController();
+    const spies = [
+      spyOn(liveStatusAdapter, "runRoot").mockReturnValue(runRoot),
+      spyOn(liveStatusAdapter, "processes").mockImplementation(() => stubLiveAdoptPorts().processes),
+      spyOn(liveStatusAdapter, "envHas").mockReturnValue(false),
+      spyOn(liveStatusAdapter, "diskSha").mockResolvedValue({ state: "unavailable" }),
+      spyOn(liveStatusAdapter, "gatewayPid").mockResolvedValue({ state: "missing" }),
+    ];
+    const tick = spyOn(coordinatorModule, "runWatchdogTick");
+    const readopt = spyOn(coordinatorModule, "runManualReadopt");
+    try {
+      const started = await captureCli(["runtime", "start", "--mode", "observe"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+        env: { GROKBOX_RUN_ROOT: runRoot },
+        signal: ac.signal,
+      });
+      expect(started.code, started.stderr).toBe(0);
+      expect(data(started.stdout)).toMatchObject({
+        process: "start",
+        desired: "observe",
+        inject: false,
+        reAdopt: false,
+        modeld: { ready: true, started: true, alreadyRunning: false },
+        watchdog: { ran: false },
+        status: { activation: { desired: "observe" } },
+      });
+      expect(await probeStubModeld(runRoot)).toBe(true);
+      expect(JSON.parse(await readFile(desiredPath(boxRuntimeRoot), "utf8"))).toMatchObject({ mode: "observe" });
+      expect(tick).not.toHaveBeenCalled();
+      expect(readopt).not.toHaveBeenCalled();
+    } finally {
+      ac.abort();
+      tick.mockRestore();
+      readopt.mockRestore();
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  test("runtime start --mode route refuses non-stub assignment and identity ticks watchdog once", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const refused = await captureCli(["runtime", "start", "--mode", "route"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(refused.code).toBe(2);
+    await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify({
+      version: 1,
+      models: { "stub/echo": { id: "stub/echo", provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "" } },
+      assignments: { main: "stub/echo", agents: {} },
+    })}\n`);
+    const runRoot = await mkdtemp(join(tmpdir(), "grokbox-runtime-start-id-"));
+    const ac = new AbortController();
+    const spies = [
+      spyOn(liveStatusAdapter, "runRoot").mockReturnValue(runRoot),
+      spyOn(liveStatusAdapter, "processes").mockImplementation(() => stubLiveAdoptPorts().processes),
+      spyOn(liveStatusAdapter, "envHas").mockReturnValue(false),
+      spyOn(liveStatusAdapter, "diskSha").mockResolvedValue({ state: "unavailable" }),
+      spyOn(liveStatusAdapter, "gatewayPid").mockResolvedValue({ state: "missing" }),
+    ];
+    const tick = spyOn(coordinatorModule, "runWatchdogTick").mockResolvedValue({
+      reconcile: "unknown",
+      reason: null,
+      attemptKey: null,
+      signaled: false,
+      injected: false,
+      circuit: "closed",
+      watchdogState: "idle",
+      origin: "official",
+    });
+    const readopt = spyOn(coordinatorModule, "runManualReadopt");
+    try {
+      const started = await captureCli(["runtime", "start", "--mode", "identity"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+        env: { GROKBOX_RUN_ROOT: runRoot },
+        signal: ac.signal,
+      });
+      expect(started.code, started.stderr).toBe(0);
+      expect(data(started.stdout)).toMatchObject({
+        process: "start",
+        desired: "identity",
+        inject: false,
+        reAdopt: false,
+        watchdog: { ran: true, state: "idle" },
+      });
+      expect(JSON.parse(await readFile(desiredPath(boxRuntimeRoot), "utf8"))).toMatchObject({ mode: "identity" });
+      expect(tick).toHaveBeenCalledTimes(1);
+      expect(readopt).not.toHaveBeenCalled();
+
+      const routed = await captureCli(["runtime", "start", "--mode", "route"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+        env: { GROKBOX_RUN_ROOT: runRoot },
+        signal: ac.signal,
+      });
+      expect(routed.code, routed.stderr).toBe(0);
+      expect(data(routed.stdout)).toMatchObject({
+        process: "start",
+        desired: "route",
+        inject: false,
+        reAdopt: false,
+        modeld: { ready: true, alreadyRunning: true },
+        watchdog: { ran: true },
+      });
+      expect(JSON.parse(await readFile(desiredPath(boxRuntimeRoot), "utf8"))).toMatchObject({ mode: "route" });
+      expect(tick).toHaveBeenCalledTimes(2);
+      expect(readopt).not.toHaveBeenCalled();
+    } finally {
+      ac.abort();
+      tick.mockRestore();
+      readopt.mockRestore();
+      for (const spy of spies) spy.mockRestore();
+    }
   });
 
   test("runtime profile write atomically authors protected JSON only from a synthetic Host", async () => {

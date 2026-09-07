@@ -140,6 +140,13 @@ export {
   type HostBundleDiff,
 } from "./host-bundles.ts";
 export {
+  parseRuntimeStartMode,
+  prepareRuntimeStart,
+  watchdogRequiredForStart,
+  type RuntimeStartMode,
+  type RuntimeStartResult,
+} from "./runtime-start.ts";
+export {
   runWatchdogTick,
   runWatchdogCutover,
   runManualReadopt,

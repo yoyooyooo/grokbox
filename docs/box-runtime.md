@@ -237,10 +237,11 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 **Agent CLI（盒内，JSON）**
 
 - 写 desired：`activate` / `deactivate` / `models *`
+- 统一入口：`start --mode observe|identity|route` — probe `modeld.sock`，down 则在本进程 listen stub server（与 `modeld run` 同一 `startStubModeldServer`，不 `wait()`、不另起 daemon）；再按 `activate` 语义写 desired（route 同样校验 stub assignment）；identity/route 再单次 `runWatchdogTick`（不把 watchdog 并进 `daemon serve`）；最后打印 `status`。已有 modeld 则复用。默认路径 **永不** `re-adopt` / canary，也不是 live writer。
 - 离线审 profile：`profile write --from <host-bundle>`（显式绝对路径、只读输入 → 两处精确切片及 source/transformed SHA 校验 → 原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
-- 进程入口：`modeld run` / `watchdog run`
+- 进程入口：`modeld run` / `watchdog run`（`start` 复用二者，不替代长驻 `modeld run`）
 - 显式确认一次：`re-adopt --confirm`（**唯一**带 live adopt 权限的公开档 / sole live writer；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）。**No live unless authorized。**
 - 本 slice route 只承认 `stub/echo`（models/CLI fail-closed；stub modeld/seam 再拒非 stub；无真实 provider admit list）
 - 短效 live state 默认 `~/.grokbox/run/`（见 §4）

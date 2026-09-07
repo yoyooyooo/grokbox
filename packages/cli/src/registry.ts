@@ -1082,6 +1082,23 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     streaming: false,
   },
   {
+    path: ["runtime", "start"],
+    usage: "grokbox runtime start --mode observe|identity|route",
+    summary: "Ensure modeld, write desired activation, optionally tick watchdog, and print status. Never re-adopts.",
+    arguments: [],
+    options: options([
+      { flags: "--mode <mode>", description: "observe, identity, or route", required: true },
+    ]),
+    stdin: "none",
+    table: false,
+    timeout: false,
+    destructive: false,
+    gateway: false,
+    streaming: false,
+    profile: false,
+    localOnly: true,
+  },
+  {
     path: ["runtime", "status"],
     usage: "grokbox runtime status",
     summary: "Read box-local model runtime desired state, coverage, and census.",
