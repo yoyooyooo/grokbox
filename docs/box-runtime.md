@@ -87,7 +87,7 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - 单正常 mutation writer = coordinator。guardian 不得 start/kill/改配置/重试注入。
 - 未知 bundle 不猜 anchor。coverage 与 watchdog.state 分开：`coverage=window-open`，`watchdog.state=degraded`，`reason=unsupported_bundle`。
 - 未补丁窗口只保证测得到 duration；无可信 turn 信号时 `affectedInvocations=unknown`。
-- **长效根** `/workspace/.grokbox/box-runtime/`：配置、PatchProfile、合同切片、事件日志（云电脑重置后仍在）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
+- **长效根** `/workspace/.grokbox/box-runtime/`：配置、PatchProfile、合同切片、**Host 整包 provenance**（`host-bundles/`）、事件日志（云电脑重置后仍在）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
 - **短效**：盒本地 live state 固定 `~/.grokbox/run/`（`attestation.json`、operation journal/lock、preload/launch markers、`modeld.sock`）。不读 `XDG_RUNTIME_DIR`。显式 `ephemeralRoot` 只用于测试/合成隔离。daemon/Profile socket 仍走现有 XDG 合同，不是这棵树。
 - 不新建独立 npm package；一个源码模块、多个 entry。
 - PatchProfile 含两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId` 与同一切片上的 `invocationId`。任一处锚点不唯一即拒绝。
@@ -269,6 +269,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - `coordinator` 读取实际 `state/coordinator.json` 的 circuit、mutationCount、lastAttemptKey/circuitReason；缺失或损坏不伪造 closed/0。`lastHeal` 是有界事件快照中最后一条可验证的 heal 记录，不是恢复动作。持久 metadata 不是 heartbeat：watchdog 无存活探针时为 unknown，已知 circuit-open / 未决状态可报 degraded，不能凭旧 attestation 宣称 running。
 - `evidence`、`coordinator.state`、`operation.state`、`contracts.state` 区分 present / missing / invalid / unavailable；多记录快照还可为 partial。provided 表示调用者提供的测试/读端口事实。未知 drift 是 null；只有实际 generation metadata 的空 drift 才是 []。`contracts.sourceSha` 将 drift 绑定到已观察的磁盘代，而不是盲用旧 HEAD。
 - `contracts` 只读取 canonical HEAD 与最多 32 个 generation 的 `meta.json`，返回每代 state/metadata（sourceSha、sliceHashes、driftedSlices、时间/大小），报告 truncated/invalidEntries；不读取切片正文、不 snapshot/prune，不接受 HEAD traversal 或 symlink 制品。常规 metadata 读取上限 128 KiB。
+- `host-bundles/` 是按 `sourceSha` 寻址的 **append-only 整包 provenance**：`generations/<sha>/source` + `meta.json`（bytes、observedAt、optional matchedProfileId）+ 相对上一 HEAD 的 `diff.json`（行统计与 slice→patch-impact，不存正文）。同一 SHA 不改写已存 bytes。保留最多 **16** 代；永不删当前 live SHA 或最近一次 profile-matched SHA。observe/status 只读 metadata（`bundles.head` / `liveRetained` / `lastMatchedSha`），不把 bundle 正文送进 CLI JSON。与 `contracts/` 切片树隔离，不走 transform/preload，不从档案还原官方 Host，不按 diff 自动打补丁。
 - `log` 是最多 512 条、1 MiB 文件上限的 schema-only 快照，返回 state/events/truncated；坏行用 `{invalid:true}`，未知或越界文件不冒充正常空日志。**`log --follow` 当前明确 invalid_usage / exit 2**；不会输出一次成功快照假装持续监听。reader 不加锁、不 compact、不修复。
 - `models.assignmentState` 只验证本地 assignment 引用；`models check` 明确 `checked:["schema"]` / `serviceReadiness:"not_checked"`，不证明 provider 可用，也不增加 agent name→id 解析或 credential/provider 调用。
 
@@ -289,7 +290,7 @@ status/log/contracts 只读，缺树仍缺树；这些未知语义和 before/aft
 
 - 不把 runtime 实现或 Host dump 提交进本仓库
 - 不做 RoutePolicy 引擎、不做「有的 Bot 继续官方」的混合路由（另一次产品决定）
-- 不把整份 `host-main.cjs` 当滚动备份，不从快照还原官方 Host，不按 diff 自动猜补丁
+- 不把 `host-bundles/` 当官方 Host 还原盘，不按 diff 自动猜补丁；整包只作 content-addressed provenance
 - 首期 WebUI（盒内 VNC UI 是后续客户端）
 - 不把 watchdog 并进 `daemon serve` 或 jobs
 - 不把完整 Pi/Cursor agent 伪装成一次 PromptSession

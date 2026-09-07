@@ -8,6 +8,7 @@ export {
   DEFAULT_DURABLE_ROOT,
   contractsDir,
   eventsPath,
+  hostBundlesDir,
   resolveDurableRoot,
   reviewedProfilePath,
 } from "./paths.ts";
@@ -31,6 +32,7 @@ export {
   projectLiveStatus,
   liveStatusAdapter,
   readContracts,
+  readHostBundles,
   readEvents,
   type HostOrigin,
   type HostReason,
@@ -129,6 +131,14 @@ export {
 } from "./seam.ts";
 export { observeAndHeal } from "./watchdog.ts";
 export { observeEvents } from "./events.ts";
+export {
+  retainHostBundle,
+  observeHostBundles,
+  pruneHostBundles,
+  HOST_BUNDLE_KEEP,
+  type HostBundleMeta,
+  type HostBundleDiff,
+} from "./host-bundles.ts";
 export {
   runWatchdogTick,
   runWatchdogCutover,

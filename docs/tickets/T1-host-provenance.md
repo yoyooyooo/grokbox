@@ -16,3 +16,6 @@ Official will keep changing Host (harness/token/efficiency). Contracts today onl
 
 ## Driver
 Herdr (grok). Cite this issue key in the session prompt.
+
+## Status
+**done.** Append-only `host-bundles/generations/<sourceSha>/` (KEEP=16), observe/watchdog retain + slice patch-impact, prune protects live and last matched SHA, status `bundles.*` metadata only. Isolated from transform. No in-place Host rewrite, no auto re-adopt.

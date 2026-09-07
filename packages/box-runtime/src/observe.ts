@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { observeAttestation, routeAttestationAgrees } from "./attestation.ts";
 import { observeContracts } from "./contracts.ts";
+import { observeHostBundles } from "./host-bundles.ts";
 import { observeCoordinatorState } from "./coordinator-state.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { observeEvents } from "./events.ts";
@@ -40,6 +41,7 @@ export type RuntimeStatus = {
   lastHeal: null | { at: string; outcome: string };
   driftedSlices: string[] | null;
   contracts: { state: EvidenceState; head: string | null; sourceSha: string | null; diskMatchesHead: boolean | null };
+  bundles: { state: EvidenceState; head: string | null; retained: number | null; liveRetained: boolean | null; lastMatchedSha: string | null };
   watchdog: { required: boolean; state: "stopped" | "running" | "degraded" | "unknown" };
   modeld: { required: boolean; state: "stopped" | "running" | "unknown" };
   models: { main: string | null; agents: Record<string, string>; assignmentState: "valid" | "invalid" | "unknown" };
@@ -94,6 +96,7 @@ export function projectStatus(input: { root: string; desired: DesiredFile | null
     circuit: "unknown", coordinator: { state: "not_observed", mutationCount: null, lastAttemptKey: null, circuitReason: null },
     operation: { state: "not_observed", phase: null, pending: null },
     lastHeal: null, driftedSlices: null, contracts: { state: "not_observed", head: null, sourceSha: null, diskMatchesHead: null },
+    bundles: { state: "not_observed", head: null, retained: null, liveRetained: null, lastMatchedSha: null },
     watchdog: { required: mode === "identity" || mode === "route", state: "unknown" },
     modeld: { required: mode === "route", state: "unknown" },
     models: { main: input.models?.assignments.main ?? null, agents: { ...input.models?.assignments.agents }, assignmentState: assignmentState(input.models) },
@@ -113,11 +116,11 @@ export async function projectLiveStatus(input: { root: string; desired?: Desired
   status.evidence.models = input.models ? "provided" : models.state;
   const mode = status.activation.desired;
   const runRoot = input.ephemeralRoot ?? liveStatusAdapter.runRoot();
-  const [attRead, profile, coordinator, journal, contracts, events] = await Promise.all([
+  const [attRead, profile, coordinator, journal, contracts, bundles, events] = await Promise.all([
     observeAttestation(runRoot),
     input.reviewedProfile ? Promise.resolve({ state: "present" as const, value: input.reviewedProfile }) : observeJson(reviewedProfilePath(input.root), parseReviewedProfile),
     observeCoordinatorState(input.root), observeJson(adoptOpStatePath(runRoot), parseAdoptOpState),
-    observeContracts(input.root), observeEvents(input.root),
+    observeContracts(input.root), observeHostBundles(input.root), observeEvents(input.root),
   ]);
   const att = attRead.state === "present" ? attRead.value : null;
   status.evidence.attestation = attRead.state;
@@ -147,6 +150,14 @@ export async function projectLiveStatus(input: { root: string; desired?: Desired
   const generation = sha ? contracts.generations.find((row) => row.sourceSha === sha)?.metadata : null;
   status.contracts = { state: contracts.state, head: contracts.head, sourceSha: generation?.sourceSha ?? null,
     diskMatchesHead: sha && contracts.head ? sha === contracts.head : null };
+  const matchedBundle = bundles.generations.find((row) => row.metadata?.matchedProfileId);
+  status.bundles = {
+    state: bundles.state,
+    head: bundles.head,
+    retained: bundles.generations.length,
+    liveRetained: sha ? bundles.generations.some((row) => row.sourceSha === sha && row.state === "present") : null,
+    lastMatchedSha: matchedBundle?.sourceSha ?? null,
+  };
   status.driftedSlices = generation ? [...generation.driftedSlices] : null;
   const gateway = input.gatewayPid !== undefined
     ? input.gatewayPid === null ? { state: "unavailable" as const } : { state: "present" as const, value: input.gatewayPid }
@@ -255,3 +266,4 @@ export async function readEvents(root: string, limit?: number): Promise<unknown[
 }
 
 export const readContracts = observeContracts;
+export const readHostBundles = observeHostBundles;

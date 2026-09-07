@@ -6,7 +6,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | id | status | title |
 |---|---|---|
 | T0 | open | Tracker / sequencing |
-| T1 | open | Host full-bundle provenance + diff + patch impact |
+| T1 | done | Host full-bundle provenance + diff + patch impact |
 | T2 | done | Land offline STEP-slot / envelope seam work |
 | T3 | blocked | Live G1 stub path (needs 可以预检/补丁/canary) |
 | T4 | open | Real model A+S1 inside modeld |

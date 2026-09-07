@@ -42,6 +42,11 @@ export function contractsDir(root: string): string {
   return join(root, "contracts");
 }
 
+/** Append-only full Host source archive. Isolated from contracts/ slices and transform. */
+export function hostBundlesDir(root: string): string {
+  return join(root, "host-bundles");
+}
+
 export function reviewedProfilePath(root: string): string {
   return join(root, "profiles", "reviewed.json");
 }

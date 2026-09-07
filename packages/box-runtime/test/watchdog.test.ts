@@ -60,6 +60,8 @@ describe("watchdog observe and stale-patched heal", () => {
 
     const generations = await readdir(join(root, "contracts", "generations"));
     expect(generations).toHaveLength(2);
+    const bundles = await readdir(join(root, "host-bundles", "generations"));
+    expect(bundles).toHaveLength(2);
     const head = (await readFile(join(root, "contracts", "HEAD"), "utf8")).trim();
     expect(head.length).toBe(64);
     const events = (await readFile(eventsPath(root), "utf8")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { name: string });

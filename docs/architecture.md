@@ -318,7 +318,7 @@ Accepted ownership, not an implementation completion claim. Product obligations 
 packages/box-runtime/   unpublished workspace package (not a second npm)
 
 /workspace/.grokbox/box-runtime/          durable (survives box reset; not git)
-  models.json  profiles/  contracts/  log/events.ndjson  secrets/
+  models.json  profiles/  contracts/  host-bundles/  log/events.ndjson  secrets/
 
 ~/.grokbox/run/                           box-runtime live state (not XDG)
   attestation.json  modeld.sock  ops/  state/
@@ -328,7 +328,7 @@ packages/box-runtime/   unpublished workspace package (not a second npm)
 
 Box-runtime live artifacts default to `~/.grokbox/run` even when `XDG_RUNTIME_DIR` is set. Daemon/Profile socket selection stays the existing XDG contract (`$XDG_RUNTIME_DIR/grokbox/daemon.sock`, fallback `~/.grokbox/run/daemon.sock`) and is not this tree.
 
-Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. It does not inject an unknown bundle, cache rolling full `host-main.cjs`, or write git. Keep at most 5 SHAs, never deleting the live SHA or the last SHA that matched a PatchProfile.
+Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. The same observe append-only retains full source bytes under `host-bundles/generations/<sourceSha>/`, isolated from transform/preload. It does not inject an unknown bundle, rewrite official `host-main.cjs` in place, restore Host from the archive, or write git. Contract slices keep at most 5 SHAs; host-bundles keep at most 16. Neither deletes the live SHA or the last SHA that matched a PatchProfile.
 
 PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`) plus `invocationId: inferenceRequestId` on that same agent-id slice. modeld resolves `assignments.agents[agentId] ?? assignments.main`.
 

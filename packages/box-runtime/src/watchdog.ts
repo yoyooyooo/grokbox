@@ -1,5 +1,6 @@
 import { appendEvent, compactEvents } from "./events.ts";
 import { hashSource, pruneGenerations, readGeneration, readHead, snapshotContracts } from "./contracts.ts";
+import { pruneHostBundles, retainHostBundle } from "./host-bundles.ts";
 import { signalIfMatch, type ProcessIdentity, type ProcessPort } from "./process.ts";
 
 export type AttestationRecord = {
@@ -41,6 +42,18 @@ export async function observeAndHeal(input: {
 
   const head = await readHead(input.root);
   let driftedSlices: string[] = [];
+  const retained = await retainHostBundle({
+    root: input.root,
+    source: input.disk.source,
+    sourceSha: sha,
+    observedAt: at,
+    matchedProfileId: input.matchedProfileId,
+  });
+  await pruneHostBundles({
+    root: input.root,
+    liveSha: sha,
+    lastMatchedSha: input.matchedProfileId ? sha : retained.meta.matchedProfileId ? retained.meta.sourceSha : null,
+  });
   if (head !== sha) {
     const previous = head ? await readGeneration(input.root, head) : null;
     const generation = await snapshotContracts({
@@ -51,7 +64,7 @@ export async function observeAndHeal(input: {
       previous,
       matchedProfileId: input.matchedProfileId,
     });
-    driftedSlices = generation.driftedSlices;
+    driftedSlices = generation.driftedSlices.length ? generation.driftedSlices : retained.diff?.driftedSlices ?? [];
     await appendEvent(input.root, {
       name: "contracts_snapshot",
       at,
