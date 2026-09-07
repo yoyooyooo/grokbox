@@ -11,7 +11,8 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T3 | blocked | Live G1 stub path (needs 可以预检/补丁/canary) |
 | T4 | done | Real model A+S1 inside modeld |
 | T4b | done | AI SDK OpenAI chat+responses driver (sub2api baseURL) |
-| T5 | backlog | S2 streaming IPC + C1 credentials |
+| T4c | done | Default modeld composite stub∪openai admit + minimal C1 |
+| T5 | backlog | S2 streaming IPC + full C1 credentials |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
 
 Driver: herdr grok main line; true blockers → new session gpt-6-astra max.

@@ -248,7 +248,7 @@ export function createModeld(input: ModeldPorts & {
 }
 export type ModelD = ReturnType<typeof createModeld>;
 
-/** Legacy unadmitted helper; NOT wired to the stub service. Provider/file-secret admission remains a later gate. */
+/** File/env secret resolver. Default modeld C1 slice (T4c) uses this for fingerprint + OpenAI resolveApiKey; never put the secret into pin/IPC. Full C1 productization remains T5. */
 export type SecretResolver = (ref: string) => Promise<string>;
 export function createFileEnvSecretResolver(env: NodeJS.Dict<string>): SecretResolver {
   return async (ref) => {

@@ -1,9 +1,14 @@
 import type { ModelEnvelope, PromptContentPart, PromptMessage } from "./envelope.ts";
-import type { As1GenerateChunk } from "./modeld-as1.ts";
+import type { As1GenerateChunk, As1GenerateRequest } from "./modeld-as1.ts";
 import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { ModelRecord } from "./models.ts";
 
 export type OpenAiApiMode = "chat" | "responses";
+export type OpenAiStreamEvent = { type: string } & Record<string, unknown>;
+export type OpenAiGenerateCall = As1GenerateRequest & {
+  api: OpenAiApiMode;
+  baseURL: string;
+};
 
 /** Structural AI SDK prompt messages. Mapping stays SDK-package-free. */
 export type OpenAiPromptMessage = {

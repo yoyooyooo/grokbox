@@ -118,11 +118,11 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 
 ### 当前 Unix admission / pin 合流（S5）
 
-`Host seam → modeld.sock → createModeld → admitted stub driver` 是一条路径。`modeld-ipc.ts` 只负责有界协议/连接，删去独立 stub registry；`modeld.ts` 独占 admission、pin、重复/取消/过期及 effect，fake 测试替换同一内核的 ports/driver，不另造 offline admission。CLI 默认只有无 credential、无网络的 `stub/echo`；带 fake driver 的 Unix 测试不构成生产 provider allowlist。
+`Host seam → modeld.sock → createModeld → admitted driver` 是一条路径。`modeld-ipc.ts` 只负责有界协议/连接，删去独立 stub registry；`modeld.ts` 独占 admission、pin、重复/取消/过期及 effect，fake 测试替换同一内核的 ports/driver，不另造 offline admission。CLI/Unix 默认 driver 是 **composite**：`stub/echo` ∪ openai*（`modeld-default.ts`）；带 fake driver 的 Unix 测试不构成 route 的 provider allowlist。
 
 - `modeld-binding.ts` 从已 pin 的 compile receipt、operationId 和稳定进程身份构造 Host binding。`generationId` 散列 PID/start + operationId + 全部 compile 字段；`activationId` 指本次 adopt operationId，**不是** desired 文件的修订号；`sourceSha` 是 compiled source SHA；`identitySha` 散列 PID/UID/start/exe/cmdline（不含收养时变化的 PPID/ancestry，不传 raw argv）。preload 用自身身份与已读 profile 传入这些不可变事实，hook 不读配置/attestation、不做 live census。
 - `modeld-store.ts` 在服务内以有界 no-follow regular-file reader 读取 desired、canonical attestation 和 operation journal，双读不一致只等待、不 admit。route 必须具有 S2 compile receipt；transient-adopt 还要求同 operation/compile/稳定身份的 `attested` journal，临时 supervisor 已释放。legacy/坏/uncertain 证据不被 health 成功替代；正常未签完可在预算内等待。不存在“把 committed 布尔设成 true”或使用 caller 自报身份作为权威的路径。
-- effect 前先比对 binding，再解析该 Bot 的 `assignments.agents[id] ?? main`；配置快照含 model/provider/endpoint/apiKeyRef/capabilities/dataTypes，深冻结后才允许 fingerprint await。credential hook 前及 driver effect 前重新核对 canonical authority。stub 完全不调用 credential hook；fake hook 只交回 64 字符十六进制 fingerprint，既不把 secret 放入 pin 返回值/IPC，也不实现真实 provider/file-secret 安全边界。旧 `createFileEnvSecretResolver` 未被接线；不得作为 M3 的 credential 验收证据。
+- effect 前先比对 binding，再解析该 Bot 的 `assignments.agents[id] ?? main`；配置快照含 model/provider/endpoint/apiKeyRef/capabilities/dataTypes，深冻结后才允许 fingerprint await。credential hook 前及 driver effect 前重新核对 canonical authority。stub 完全不调用 credential hook；fingerprint 只交回 64 字符十六进制，secret 永不进入 pin/IPC/parts。T4c 默认路径把 `createFileEnvSecretResolver(process.env)` 接到 fingerprint + OpenAI `resolveApiKey`（lazy）；完整 C1 产品化仍归 T5。
 - PatchProfile 注入的 `sessionOptions.invocationId` 是 TURN。Host `stream` 的 invocationId 是 STEP。seam 按 `(hostGenerationId, STEP)` 占槽，向 modeld submit 分传 `turnId=TURN`、`invocationId=STEP`，不另发明 Host id。省略或非法 STEP 显式拒绝，不回退 TURN。内核按 generation + Bot + turn 共享正在使用的 pin，最后一个使用者 terminal/取消/过期后释放。重复 invocation 用完整 binding/ids/envelope hash 校验，在配置变化后也不重新选模型/dispatch；改变 payload 明确 conflict。终态结果只保留到 TTL，过期变成 refusal tombstone，不以缓存丢失为由再 dispatch。
 - 默认 admission 预算 **500 ms**，工作/终态保留 TTL **30 s**，ledger 上限 **1024**。过期释放 pin/response，但 bounded tombstone 留到 canonical Host generation 替换或服务重启；同代满额明确 `capacity`，不驱逐旧 id 后偷偷重跑。观察到新 canonical generation 时取消旧工作、清除旧 pins/ledger，旧 Host 不能借新代继续调用。
 - v2 health 只证明服务/协议 readiness，返回独立 `serverGeneration`；submit 不再接受 caller 指定 modelId 或旧 ids-only 请求。每个新 invocation 握手一次，已用 invocation 保留原 fence；服务重启后旧包拒绝，新 invocation 可新握手。disconnect、客户端掉线、取消/timeout 后标 unknown 并 abort，迟到 port/driver 完成不产生新 effect/成功；不盲目重试、不静默回官方。内存 ledger 不提供跨重启续传或跨客户端强制重握的 exactly-once 保证。
@@ -136,11 +136,11 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 
 **S1**：adapter 通过注入的 `generate` port 产出 chunk 流；driver 在 `complete()` 内缓冲成现有 `StreamPart[]`，走 response-only IPC。Host-facing `fullStream` 仍可为空。这不是 token transport，也不是 live streaming 证据。
 
-复用现有 pin / STEP / admission 内核，不另建 registry。CLI 默认仍是无网络 `stub/echo`；A+S1 / OpenAI driver 不接线默认 Unix server。`pin.credentialFingerprint` 可传给 generate（C1 指纹干接线）；driver 不见 secret。
+复用现有 pin / STEP / admission 内核，不另建 registry。T4c：默认 Unix/CLI `startStubModeldServer` 使用 **composite**（stub ∪ openai*）。`models.json` 可列出 openai*（https endpoint + `apiKeyRef`）并在 assignment 下被 modeld admit；**route activate / `assertRouteAssignment` 仍只承认 `stub/echo`**（fail-closed，直到后续 ticket）。`pin.credentialFingerprint` 可传给 generate；driver 不见 secret（仅 `resolveApiKey` 在 openai complete 时解析）。
 
-T4b：`modeld-openai.ts` 在 modeld 内使用 `ai` + `@ai-sdk/openai`。`provider=openai|openai-chat` 走 Chat Completions（`openai.chat`）；`provider=openai-responses` 走 Responses（`openai.responses`）。`endpoint` 是自定义 `baseURL`（含 sub2api）。Host 继续拥有工具循环：不传 `execute`、不用 `openai.tools.*` / ToolLoopAgent，默认一步 `stopWhen`。真实 HTTP 仅在 admitted 模型 + 注入的 `resolveApiKey` + 非 `hardOff` 时发生；测试 mock fetch / 注入 stream events，禁止真实 spend。
+T4b：`modeld-openai.ts` 在 modeld 内使用 `ai` + `@ai-sdk/openai`。`provider=openai|openai-chat` 走 Chat Completions（`openai.chat`）；`provider=openai-responses` 走 Responses（`openai.responses`）。`endpoint` 是自定义 `baseURL`（含 sub2api）。Host 继续拥有工具循环：不传 `execute`、不用 `openai.tools.*` / ToolLoopAgent，默认一步 `stopWhen`。真实 HTTP 仅在 admitted 模型 + 解析到的 key + 非 `hardOff` 时发生；测试 mock fetch / 注入 stream events，禁止真实 spend。
 
-非目标：S2 streaming IPC、C1 凭据产品化、Host 内 SDK、默认 CLI 改走真实模型、xAI server-side agentic tools。Host PromptSession 仍拥有工具循环 / Transcript / Memory / `SendToUser`。
+非目标：S2 streaming IPC、完整 C1 凭据产品化（T5）、Host 内 SDK、route 默认改走真实模型、xAI server-side agentic tools。Host PromptSession 仍拥有工具循环 / Transcript / Memory / `SendToUser`。
 
 ### 窗口（W1 / W2）
 
@@ -255,7 +255,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - `status` / `log` / `contracts` 不 repair
 - 进程入口：`modeld run` / `watchdog run`（`start` 复用二者，不替代长驻 `modeld run`）
 - 显式确认一次：`re-adopt --confirm`（**唯一**带 live adopt 权限的公开档 / sole live writer；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）。**No live unless authorized。**
-- 本 slice route 只承认 `stub/echo`（models/CLI fail-closed；stub modeld/seam 再拒非 stub；无真实 provider admit list）
+- 本 slice **route activate** 只承认 `stub/echo`（models/CLI fail-closed；seam route driver 仍 stub）。modeld 默认 composite 可 admit openai*（若 models 赋值），但不打开 route 模式门禁
 - 短效 live state 默认 `~/.grokbox/run/`（见 §4）
 - 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot

@@ -232,6 +232,7 @@ describe("OpenAI SDK fence", () => {
     expect(openai).not.toMatch(/openai\.tools|ToolLoopAgent|maxSteps|execute:/);
     const ipc = await readFile(join(srcDir, "modeld-ipc.ts"), "utf8");
     expect(ipc).not.toContain("createOpenAiModeldDriver");
+    expect(ipc).toContain("createDefaultModeldDriver");
     expect(ipc).toContain("STUB_ECHO_MODEL_ID");
 
     const box = JSON.parse(await readFile(join(import.meta.dir, "../package.json"), "utf8")) as { dependencies: Record<string, string> };

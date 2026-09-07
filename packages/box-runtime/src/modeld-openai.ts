@@ -1,8 +1,8 @@
 import { jsonSchema, streamText, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { JSONSchema7 } from "ai";
-import type { ModelEnvelope, ToolDefinition } from "./envelope.ts";
-import { createAs1ModeldDriver, type As1GenerateChunk, type As1GenerateRequest } from "./modeld-as1.ts";
+import type { ToolDefinition } from "./envelope.ts";
+import { createAs1ModeldDriver, type As1GenerateChunk } from "./modeld-as1.ts";
 import type { ModeldDriver } from "./modeld.ts";
 import type { ModelRecord } from "./models.ts";
 import {
@@ -12,18 +12,12 @@ import {
   openAiAccepts,
   openAiApiMode,
   sanitizeOpenAiError,
-  type OpenAiApiMode,
+  type OpenAiGenerateCall,
+  type OpenAiStreamEvent,
 } from "./modeld-openai-map.ts";
 
 export { openAiAccepts, openAiApiMode, envelopeToOpenAiMessages, mapOpenAiStreamEvent, sanitizeOpenAiError };
-export type { OpenAiApiMode };
-
-export type OpenAiStreamEvent = { type: string } & Record<string, unknown>;
-
-export type OpenAiGenerateCall = As1GenerateRequest & {
-  api: OpenAiApiMode;
-  baseURL: string;
-};
+export type { OpenAiApiMode, OpenAiGenerateCall, OpenAiStreamEvent } from "./modeld-openai-map.ts";
 
 /**
  * OpenAI Chat Completions or Responses behind existing A+S1.

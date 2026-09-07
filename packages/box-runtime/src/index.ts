@@ -133,6 +133,14 @@ export {
   mapOpenAiStreamEvent,
   type OpenAiApiMode,
 } from "./modeld-openai.ts";
+export {
+  createCompositeModeldDriver,
+  createDefaultModeldDriver,
+  createDefaultCredentialFingerprint,
+  createStubEchoModeldDriver,
+  stubEchoAccepts,
+  type DefaultModeldDriverOptions,
+} from "./modeld-default.ts";
 export { bindCompiledHost, type HostBinding } from "./modeld-binding.ts";
 export {
   startStubModeldServer,

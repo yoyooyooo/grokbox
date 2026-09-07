@@ -5,11 +5,16 @@ import { BoxRuntimeError } from "./errors.ts";
 import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { StreamPart } from "./session.ts";
 import { createModeld, type AdmissionFailureCode, type AdmitRequest, type ModelD, type ModeldDriver, type ModeldPorts } from "./modeld.ts";
+import {
+  createDefaultCredentialFingerprint,
+  createDefaultModeldDriver,
+  STUB_ECHO_PARTS,
+  type DefaultModeldDriverOptions,
+} from "./modeld-default.ts";
 import { modeldStorePorts } from "./modeld-store.ts";
 
-export { STUB_ECHO_MODEL_ID };
+export { STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS };
 export const MODELD_MAX_FRAME = 16 * 1024;
-export const STUB_ECHO_PARTS: StreamPart[] = [{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }];
 export function modeldSocketPath(runRoot: string): string { return join(runRoot, "modeld.sock"); }
 export type StubModeldFailureCode = AdmissionFailureCode | "malformed" | "too-large" | "unknown-method" | "excess-fields" | "down";
 const SUBMIT_KEYS = ["method", "serverGeneration", "host", "invocationId", "turnId", "agentId", "envelope"];
@@ -107,15 +112,32 @@ export async function startStubModeldServer(input: {
   runRoot: string; durableRoot: string; signal?: AbortSignal;
   /** Tests replace dependencies on the SAME kernel/transport. CLI never supplies a fake driver or credential port. */
   ports?: ModeldPorts; driver?: ModeldDriver; now?: () => number; budgetMs?: number; idleTtlMs?: number; maxRecords?: number;
+  /**
+   * Only used when `driver` is omitted. Production CLI leaves this empty (composite stub∪openai + process.env).
+   * Tests inject env / streamEvents / fetch / hardOff for offline openai admit.
+   */
+  defaultDriver?: DefaultModeldDriverOptions;
 }): Promise<StubModeldServer> {
   const socketPath = modeldSocketPath(input.runRoot);
   await mkdir(input.runRoot, { recursive: true, mode: 0o700 });
   await chmod(input.runRoot, 0o700).catch(() => undefined);
   if (await socketInUse(socketPath)) throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
-  const kernel = createModeld({ ...(input.ports ?? modeldStorePorts(input.durableRoot, input.runRoot)),
-    driver: input.driver ?? { accepts: (model) => model.id === STUB_ECHO_MODEL_ID && model.provider === "stub" &&
-      model.endpoint === "stub:echo" && model.apiKeyRef === "", complete: () => STUB_ECHO_PARTS },
-    now: input.now, budgetMs: input.budgetMs, idleTtlMs: input.idleTtlMs, maxRecords: input.maxRecords });
+  // Merge, do not replace: keep store loadModels/authority, wire fingerprint on the default driver path,
+  // then let caller ports override individual hooks (including omitting/replacing fingerprint).
+  const defaultDriver = input.defaultDriver ?? {};
+  const usingDefaultDriver = input.driver === undefined;
+  const ports = {
+    ...modeldStorePorts(input.durableRoot, input.runRoot),
+    ...(usingDefaultDriver
+      ? { credentialFingerprint: createDefaultCredentialFingerprint(defaultDriver.env ?? process.env) }
+      : {}),
+    ...input.ports,
+  };
+  const kernel = createModeld({
+    ...ports,
+    driver: input.driver ?? createDefaultModeldDriver(defaultDriver),
+    now: input.now, budgetMs: input.budgetMs, idleTtlMs: input.idleTtlMs, maxRecords: input.maxRecords,
+  });
   const clients = new Set<Socket>();
   const server: Server = createServer((socket) => {
     if (clients.size >= 64) { socket.destroy(); return; }
