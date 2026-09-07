@@ -19,6 +19,8 @@ export {
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
   routeModelAdmitted,
+  loadModelsFileSync,
+  resolveRouteSessionModel,
   disclosure,
   openRuntimeStore,
   parseApiKeyRef,

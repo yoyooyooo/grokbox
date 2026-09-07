@@ -13,6 +13,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T4b | done | AI SDK OpenAI chat+responses driver (sub2api baseURL) |
 | T4c | done | Default modeld composite stub∪openai admit + minimal C1 |
 | T4d | done | Route activate admits openai* (offline) |
+| T4e | done | Route Host/preload session modelId follows models.json |
 | T5 | backlog | S2 streaming IPC + full C1 credentials |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
 

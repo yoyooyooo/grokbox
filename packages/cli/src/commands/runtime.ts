@@ -22,7 +22,6 @@ import {
   probeStubModeld,
   runWatchdogTick,
   startStubModeldServer,
-  STUB_ECHO_MODEL_ID,
   watchdogRequiredForStart,
   wireLiveManualReadopt,
   writeReviewedProfileFromCopy,
@@ -272,8 +271,7 @@ export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
     writeSuccess(deps.stdout, {
       process: "modeld",
       state: "running",
-      provider: false,
-      model: STUB_ECHO_MODEL_ID,
+      driver: "composite",
     });
     const stop = () => { void server.stop(); };
     process.once("SIGTERM", stop);

@@ -1,7 +1,8 @@
 import { appendSeamRouteEvent, TURN_SEAM_BOUNDED_STRING, type HostStreamRejectReason, type ModelStepAdmission,
   type ModelStepStage, type TurnSeamAssignment, type TurnSeamOutcome, type TurnSeamTerminalClass,
   type TurnSeamWriteResult } from "./events.ts";
-import { callStubModeld, isModeldFailure, modeldHandshake, STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
+import { callStubModeld, isModeldFailure, modeldHandshake, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
+import { loadModelsFileSync, resolveRouteSessionModel } from "./models.ts";
 import { parseHostBinding, type HostBinding } from "./modeld-binding.ts";
 import { buildModelEnvelope, type ModelEnvelope } from "./envelope.ts";
 import { sha256Text } from "./hash.ts";
@@ -75,6 +76,8 @@ export const UNBOUND_HOST_GENERATION = "unbound";
 const STEP_SLOT_LIMIT = 1024;
 export type SessionSeamConfig = {
   mode: SeamMode; root: string; assignment: TurnSeamAssignment; modelId?: string;
+  /** Route only. Resolve per-agent at session create so agents.* overrides apply without Host reading models in the hook body. */
+  resolveSession?: (agentId: string) => { modelId: string; assignment?: TurnSeamAssignment };
   now?: () => string; driver?: StubRouteDriver; hostGenerationId?: string;
   writeTerminal?: (root: string, input: unknown) => Promise<TurnSeamWriteResult>;
 };
@@ -82,7 +85,7 @@ type SessionRow = {
   session: HostPromptSession; turnId: string; agentId: string; modelId: string; disconnected: boolean;
 };
 type StepSlot = {
-  stepId: string; turnId: string; agentId: string; hostGenerationId: string;
+  stepId: string; turnId: string; agentId: string; hostGenerationId: string; modelId: string;
   dispatched: boolean; recorded: boolean; disconnected: boolean;
   evidence: SeamEvidence; requestHash?: string; cancel?: () => void;
   toolCallCount: number; assignment: TurnSeamAssignment; admission: ModelStepAdmission;
@@ -134,8 +137,20 @@ function stageForError(code: string): ModelStepStage {
 export function createSessionSeam(config: SessionSeamConfig) {
   if (config.mode === "route" && !config.driver) throw new Error("route seam requires a stub driver");
   if (config.mode === "route" && config.assignment === "official") throw new Error("route seam does not admit assignment=official");
-  const routeModelId = config.mode === "route" ? boundedId(config.modelId) : null;
-  if (config.mode === "route" && routeModelId == null) throw new Error("route seam requires a bounded modelId");
+  const staticRouteModelId = config.mode === "route" ? boundedId(config.modelId) : null;
+  if (config.mode === "route" && !config.resolveSession && staticRouteModelId == null) throw new Error("route seam requires a bounded modelId");
+  const resolveHookModel = (agentId: string): { modelId: string; assignment: TurnSeamAssignment } | null => {
+    if (config.resolveSession) {
+      try {
+        const next = config.resolveSession(agentId);
+        const modelId = boundedId(next.modelId);
+        if (!modelId) return null;
+        return { modelId, assignment: next.assignment ?? config.assignment };
+      } catch { return null; }
+    }
+    if (staticRouteModelId == null) return null;
+    return { modelId: staticRouteModelId, assignment: config.assignment };
+  };
   const hostGenerationId = config.hostGenerationId == null ? UNBOUND_HOST_GENERATION : boundedId(config.hostGenerationId);
   if (hostGenerationId == null) throw new Error("route seam requires a bounded hostGenerationId");
   const sessions = new Map<string, SessionRow>();
@@ -161,7 +176,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     enqueue(slot, {
       name: "model_step_terminal", schemaVersion: 2, at: (config.now ?? (() => new Date().toISOString()))(),
       mode: "route", hostGenerationId: slot.hostGenerationId, agentId: slot.agentId, turnId: slot.turnId,
-      invocationId: slot.stepId, modelId: routeModelId, assignment: slot.assignment, terminalClass, outcome,
+      invocationId: slot.stepId, modelId: slot.modelId, assignment: slot.assignment, terminalClass, outcome,
       toolCallCount, stage, admission: slot.admission, ...(errorCode ? { errorCode } : {}),
     });
   };
@@ -176,25 +191,28 @@ export function createSessionSeam(config: SessionSeamConfig) {
       errorCode: "invalid_envelope", reason,
     });
   };
-  const occupy = (stepId: string, turnId: string, agentId: string): StepSlot | "conflict" | "capacity" => {
+  const occupy = (stepId: string, turnId: string, agentId: string, session: { modelId: string; assignment: TurnSeamAssignment }): StepSlot | "conflict" | "capacity" => {
     const existing = steps.get(stepKey(stepId));
     if (existing) return existing.turnId === turnId && existing.agentId === agentId ? existing : "conflict";
     if (steps.size >= STEP_SLOT_LIMIT) return "capacity";
     const slot: StepSlot = {
-      stepId, turnId, agentId, hostGenerationId, dispatched: false, recorded: false, disconnected: false,
-      evidence: { emitted: false, gap: null }, toolCallCount: 0, assignment: config.assignment, admission: "none",
+      stepId, turnId, agentId, hostGenerationId, modelId: session.modelId, dispatched: false, recorded: false, disconnected: false,
+      evidence: { emitted: false, gap: null }, toolCallCount: 0, assignment: session.assignment, admission: "none",
     };
     steps.set(stepKey(stepId), slot);
     return slot;
   };
   const hook = (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string; onRequestId?: (id: string) => void }): unknown => {
-    if (config.mode !== "route" || routeModelId == null) return args.originalSession;
-    const modelId = routeModelId;
+    if (config.mode !== "route") return args.originalSession;
     const agentRaw = agentIdOf(args);
     if (!isOrdinaryMain(args.sessionOptions, agentRaw)) return args.originalSession;
     const turnId = boundedId(invocationIdOf(args.sessionOptions));
     const agentId = boundedId(agentRaw);
-    if (!turnId || !agentId) return errorSession(modelId);
+    if (!agentId) return errorSession("invalid");
+    const resolved = resolveHookModel(agentId);
+    if (!resolved) return errorSession("invalid");
+    const { modelId } = resolved;
+    if (!turnId) return errorSession(modelId);
     const existingSession = sessions.get(sessionKey(turnId));
     if (existingSession) return existingSession.agentId === agentId && existingSession.modelId === modelId ? existingSession.session : errorSession(modelId);
     const driver = config.driver!;
@@ -210,7 +228,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
         recordStreamRejected(row, "invalid-step-id");
         return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope"), driver.delivery === "response-only");
       }
-      const slotOr = occupy(stepId, turnId, agentId);
+      const slotOr = occupy(stepId, turnId, agentId, resolved);
       if (slotOr === "capacity" || slotOr === "conflict") {
         return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict"), driver.delivery === "response-only");
       }
@@ -279,7 +297,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
           recordStreamRejected(row, "invalid-step-id");
           return deliveryHandle(visibleFailureHandle(modelId, code), driver.delivery === "response-only");
         }
-        const slotOr = occupy(stepId, turnId, agentId);
+        const slotOr = occupy(stepId, turnId, agentId, resolved);
         if (slotOr === "capacity" || slotOr === "conflict") {
           return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict"), driver.delivery === "response-only");
         }
@@ -326,9 +344,14 @@ export function bindHostSessionHook(input: { mode: SeamMode; durableRoot: string
   (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string }) => unknown {
   if (input.mode !== "route") return (args) => args.originalSession;
   const seam = createSessionSeam({
-    mode: "route", root: input.durableRoot, assignment: "main", modelId: STUB_ECHO_MODEL_ID,
+    mode: "route", root: input.durableRoot, assignment: "main",
     hostGenerationId: input.binding?.generationId,
     driver: createModeldRouteDriver(input.runRoot, input.binding),
+    resolveSession: (agentId) => {
+      const file = loadModelsFileSync(input.durableRoot);
+      if (!file) throw new Error("models unavailable");
+      return resolveRouteSessionModel(file, agentId);
+    },
   });
   return (args) => seam.hook(args);
 }

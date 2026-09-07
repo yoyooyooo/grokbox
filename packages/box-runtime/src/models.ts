@@ -1,7 +1,9 @@
+import { closeSync, constants as fsConstants, fstatSync, openSync, readSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { BoxRuntimeError } from "./errors.ts";
 import { openAiAccepts } from "./modeld-openai-map.ts";
+import { OBSERVATION_MAX_BYTES } from "./observation.ts";
 import { desiredPath, modelsPath, resolveDurableRoot } from "./paths.ts";
 
 export type DesiredMode = "disabled" | "observe" | "identity" | "route";
@@ -318,6 +320,33 @@ export function resolveAssignment(file: ModelsFile, agentId?: string): ModelReco
     throw new BoxRuntimeError("invalid_usage", "No assignments.main; missing override is not official inference.");
   }
   return requireModel(file, id);
+}
+
+/** Bounded no-follow regular-file read for preload/hook. Never mkdir or repair. */
+export function loadModelsFileSync(root: string): ModelsFile | null {
+  let fd: number | undefined;
+  try {
+    fd = openSync(modelsPath(root), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.size > OBSERVATION_MAX_BYTES) return null;
+    const bytes = Buffer.alloc(OBSERVATION_MAX_BYTES + 1);
+    const n = readSync(fd, bytes, 0, bytes.length, 0);
+    if (n > OBSERVATION_MAX_BYTES) return null;
+    return parseModelsFile(JSON.parse(bytes.subarray(0, n).toString("utf8")));
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { closeSync(fd); } catch { /* ignore */ }
+  }
+}
+
+export function resolveRouteSessionModel(file: ModelsFile, agentId?: string): { modelId: string; assignment: "main" | "agent" } {
+  const overridden = Boolean(agentId && Object.hasOwn(file.assignments.agents, agentId));
+  const record = resolveAssignment(file, agentId);
+  if (!routeModelAdmitted(record)) {
+    throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo or openai* in this slice.");
+  }
+  return { modelId: record.id, assignment: overridden ? "agent" : "main" };
 }
 
 export function secretsDir(root: string): string {

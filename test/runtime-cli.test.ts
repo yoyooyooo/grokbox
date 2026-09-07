@@ -16,7 +16,7 @@ import { snapshotContracts } from "../packages/box-runtime/src/contracts.ts";
 import { SHA, SOURCE } from "../packages/box-runtime/test/admission-fixture.ts";
 import { sha256Bytes } from "../packages/box-runtime/src/hash.ts";
 import { applyPatchProfile } from "../packages/box-runtime/src/transform.ts";
-import { modeldSocketPath, probeStubModeld, STUB_ECHO_MODEL_ID } from "../packages/box-runtime/src/modeld-ipc.ts";
+import { modeldSocketPath, probeStubModeld } from "../packages/box-runtime/src/modeld-ipc.ts";
 import { bindHostSessionHook } from "../packages/box-runtime/src/seam.ts";
 import type { HostPromptSession } from "../packages/box-runtime/src/session.ts";
 import { modeldFixture } from "../packages/box-runtime/test/modeld-fixture.ts";
@@ -811,9 +811,9 @@ describe("box-local runtime CLI", () => {
       expect(data(result.stdout)).toMatchObject({
         process: "modeld",
         state: "running",
-        provider: false,
-        model: STUB_ECHO_MODEL_ID,
+        driver: "composite",
       });
+      expect(data(result.stdout)).not.toHaveProperty("model");
       expect(await probeStubModeld(runRoot)).toBe(false);
       await expect(lstat(modeldSocketPath(runRoot))).rejects.toMatchObject({ code: "ENOENT" });
       expect(counts.fetch).toBe(0);

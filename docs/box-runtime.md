@@ -136,7 +136,7 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 
 **S1**：adapter 通过注入的 `generate` port 产出 chunk 流；driver 在 `complete()` 内缓冲成现有 `StreamPart[]`，走 response-only IPC。Host-facing `fullStream` 仍可为空。这不是 token transport，也不是 live streaming 证据。
 
-复用现有 pin / STEP / admission 内核，不另建 registry。T4c：默认 Unix/CLI `startStubModeldServer` 使用 **composite**（stub ∪ openai*）。T4d：`assertRouteAssignment` / route `models use` 承认 stub **或** openai*（与 `openAiAccepts` 对齐）。未知 provider 仍 fail-closed。Host hook 仍不读 `models.json`；seam 把 modeld 返回的 modelId 交给 Host，不再要求 response 只能是 `stub/echo`。`pin.credentialFingerprint` 可传给 generate；driver 不见 secret（仅 `resolveApiKey` 在 openai complete 时解析）。
+复用现有 pin / STEP / admission 内核，不另建 registry。T4c：默认 Unix/CLI `startStubModeldServer` 使用 **composite**（stub ∪ openai*）。T4d：`assertRouteAssignment` / route `models use` 承认 stub **或** openai*（与 `openAiAccepts` 对齐）。未知 provider 仍 fail-closed。T4e：route Host hook 在 session create 用同步有界读取 `models.json` 解析 `modelId`（per-agent 覆盖）；不 import `ai`。`pin.credentialFingerprint` 可传给 generate；driver 不见 secret（仅 `resolveApiKey` 在 openai complete 时解析）。
 
 T4b：`modeld-openai.ts` 在 modeld 内使用 `ai` + `@ai-sdk/openai`。`provider=openai|openai-chat` 走 Chat Completions（`openai.chat`）；`provider=openai-responses` 走 Responses（`openai.responses`）。`endpoint` 是自定义 `baseURL`（含 sub2api）。Host 继续拥有工具循环：不传 `execute`、不用 `openai.tools.*` / ToolLoopAgent，默认一步 `stopWhen`。真实 HTTP 仅在 admitted 模型 + 解析到的 key + 非 `hardOff` 时发生；测试 mock fetch / 注入 stream events，禁止真实 spend。
 
@@ -255,7 +255,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - `status` / `log` / `contracts` 不 repair
 - 进程入口：`modeld run` / `watchdog run`（`start` 复用二者，不替代长驻 `modeld run`）
 - 显式确认一次：`re-adopt --confirm`（**唯一**带 live adopt 权限的公开档 / sole live writer；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）。**No live unless authorized。**
-- 本 slice **route activate** 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`；models/CLI fail-closed 对其它 provider）。seam 不再在 modeld 前拒绝 openai modelId。默认 assignment 仍是 stub
+- 本 slice **route activate** 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`；models/CLI fail-closed 对其它 provider）。route Host hook 在 createSession 时按 `models.json` 的 `assignments.agents[agentId] ?? main` 解析 session `modelId`（缺文件或非 allowlist fail-closed）。默认 assignment 仍是 stub。`modeld run` 回执是 `driver: "composite"`，不是单一 stub 模型。
 - 短效 live state 默认 `~/.grokbox/run/`（见 §4）
 - 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
