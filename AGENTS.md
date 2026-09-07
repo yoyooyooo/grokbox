@@ -14,7 +14,7 @@ This public repository is self-contained for build, test, review, and contributi
 
 ## Box-local model runtime
 
-Accepted design is `docs/box-runtime.md`. Product obligations are `docs/product-contract.md` §12. Composition roots are `docs/architecture.md` §17. Delivery slices, if any, stay machine-local and are not a public git dependency.
+Accepted design is `docs/box-runtime.md`. Product obligations are `docs/product-contract.md` §12. Composition roots are `docs/architecture.md` §17. Follow the [Effect adoption standard](docs/effect-box-runtime.md) for box-runtime side effects and incremental migration. Delivery slices, if any, stay machine-local and are not a public git dependency.
 
 ## Issues
 

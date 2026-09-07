@@ -2,7 +2,7 @@
 
 本文是 Grok Bot **模型替换运行时**的设计 Current Home：接缝、注入、modeld、配置和失败语义。它描述已接受的**未来完成态**，不是当前源码已实现清单。
 
-产品命令、本机边界、envelope 和可见错误义务见 [产品合同 §12](product-contract.md)。模块与 composition roots 见 [架构 §17](architecture.md)。交付进度只在本地 Issue tracker。源码和可执行测试拥有当前实现真相。
+产品命令、本机边界、envelope 和可见错误义务见 [产品合同 §12](product-contract.md)。模块与 composition roots 见 [架构 §17](architecture.md)。重副作用与渐进迁移遵循 [Effect 标准](effect-box-runtime.md)。交付进度只在本地 Issue tracker。源码和可执行测试拥有当前实现真相。
 
 本仓库是公开、自包含的控制面。上游 Host 研究材料若存在于 maintainer 私有环境，只作证据输入，不是本仓库实现权威，也不得把私有 dump 提交进 git。
 
