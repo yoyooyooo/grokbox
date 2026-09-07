@@ -13,6 +13,7 @@ import type { ProcessIdentity, ProcessPort } from "./process.ts";
 import {
   runTransientAdoptDeactivate,
   runTransientAdoptOperation,
+  type AdoptTargetPorts,
 } from "./transient-adopt.ts";
 import type { PatchProfile } from "./transform.ts";
 
@@ -28,6 +29,7 @@ export type H3OfflinePorts = {
 };
 
 export type H3AdoptPorts = H3OfflinePorts & {
+  target?: AdoptTargetPorts;
   spawnTempSupervisor: () => Promise<ProcessIdentity | null>;
   waitNewHost: (oldHostPid: number) => Promise<ProcessIdentity | null>;
   readGatewayPid: () => number | null;

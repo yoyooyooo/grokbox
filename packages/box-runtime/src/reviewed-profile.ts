@@ -58,6 +58,31 @@ function authoringSlices(value: unknown): SlicePatch[] {
   });
 }
 
+/** Pure admission check shared by coordinator and H3 preflight; returns a detached target. */
+export function validateReviewedProfile(value: unknown, source: string):
+  | { ok: true; profile: PatchProfile }
+  | { ok: false; code: string } {
+  try {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, code: "unreviewed-profile" };
+    const row = value as Record<string, unknown>;
+    if (typeof row.profileId !== "string" || !row.profileId.trim() || row.profileId.length > 128 || /[\r\n]/.test(row.profileId) ||
+      typeof row.sourceSha256 !== "string" || typeof row.transformedSourceSha256 !== "string") {
+      return { ok: false, code: "unreviewed-profile" };
+    }
+    const profile: PatchProfile = {
+      profileId: row.profileId,
+      sourceSha256: row.sourceSha256,
+      transformedSourceSha256: row.transformedSourceSha256,
+      slices: authoringSlices(row.slices),
+    };
+    const applied = applyPatchProfile(source, profile);
+    if (!applied.ok) return { ok: false, code: applied.code };
+    return { ok: true, profile };
+  } catch {
+    return { ok: false, code: "unreviewed-profile" };
+  }
+}
+
 function sameFile(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }

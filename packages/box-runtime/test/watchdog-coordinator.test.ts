@@ -12,21 +12,11 @@ import { armGuardian } from "../src/guardian.ts";
 import type { DesiredFile, ModelsFile } from "../src/models.ts";
 import type { ProcessIdentity } from "../src/process.ts";
 import { writeAdoptOpState } from "../src/transient-adopt.ts";
-import type { PatchProfile } from "../src/transform.ts";
+import { SHA, reviewed, targetFor } from "./admission-fixture.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 
 const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: null, agents: {} } };
-const SHA = "sha-reviewed";
-const DECOY_DIR = "/tmp/box-runtime-keep-identity-ephemeral";
-const reviewed: PatchProfile = {
-  profileId: "reviewed",
-  sourceSha256: SHA,
-  transformedSourceSha256: "sha-transformed",
-  slices: [
-    { id: "create-session", startAnchor: "a", endAnchor: "b", find: "c", replacement: "d" },
-    { id: "agent-id", startAnchor: "e", endAnchor: "f", find: "g", replacement: "h" },
-  ],
-};
+const DECOY_DIR = join(tmpdir(), "box-runtime-keep-identity-ephemeral");
 
 function desired(mode: DesiredFile["mode"]): DesiredFile {
   return { version: 1, mode };
@@ -92,7 +82,7 @@ function spawnOfficial(tree: FakeProcessTree) {
 
 function harness(tree: FakeProcessTree, wrapper: ProcessIdentity) {
   let patchedPid = 0;
-  let gatewayPid: number | null = null;
+  let gatewayPid: number | null = tree.roles().find((row) => row.role === "host")?.pid ?? null;
   const touched = new Set<number>();
   return {
     patchedPid: () => patchedPid,
@@ -102,10 +92,12 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity) {
     clearTouched: () => {
       touched.clear();
     },
+    setGatewayPid: (pid: number) => { gatewayPid = pid; },
     envHas: (pid: number, key: string) =>
       touched.has(pid) &&
       (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER"),
     adopt: {
+      target: targetFor(),
       spawnTempSupervisor: async () => {
         const temp = tree.spawn("temp-supervisor");
         const born = tree.spawn("host", { parent: temp });
@@ -281,7 +273,8 @@ describe("offline watchdog desired-state coordinator", () => {
       const supervisor = tree.roles().find((row) => row.role === "supervisor");
       expect(supervisor).toBeDefined();
       ports.clearTouched();
-      tree.spawn("host", { parent: supervisor });
+      const replacement = tree.spawn("host", { parent: supervisor });
+      ports.setGatewayPid(replacement.pid);
       const { unlink } = await import("node:fs/promises");
       await unlink(join(ephemeralRoot, "attestation.json")).catch(() => undefined);
     }
@@ -317,7 +310,7 @@ describe("offline watchdog desired-state coordinator", () => {
       reviewedProfile: reviewed,
       adopt: {
         ...ports.adopt,
-        prepareTempLaunch: async () => {
+        spawnTempSupervisor: async () => {
           throw new Error("injector-dead");
         },
       },
@@ -329,7 +322,9 @@ describe("offline watchdog desired-state coordinator", () => {
     expect(first.reason).toBe("injector-dead");
     expect(first.circuit).toBe("open");
     expect(first.injected).toBe(false);
-    expect(tree.alive(host.pid)).toBe(true);
+    expect(first.signaled).toBe(true);
+    // The injected fault is now after TERM, not in the pre-signal preparation phase.
+    expect(tree.alive(host.pid)).toBe(false);
     const afterFirst = tree.signals.length;
 
     const second = await runWatchdogTick(tick);

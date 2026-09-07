@@ -220,10 +220,11 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - 短效 live state 默认 `~/.grokbox/run/`（见 §4）
 - 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
+- identity/route 接管与 refresh 的首信号 admission：共享 coordinator 在任何旧 Host 信号及 guardian 启动前，校验下一份 profile 的两刀重放/source/transformed SHA、当前源、canonical ownership/严格拓扑、gateway PID、未决 journal、launch capability；route 还要求 stub main assignment 与 modeld readiness。缺少 source/capability 事实不授权 mutation。launch preparation 先于 STOP/TERM，operation lock 内在首信号前再核对。identity stale refresh 与 route profile/mode refresh 走同一 admission/budget 路径，保留原始 generation key；匹配目标仍零信号 no-op。公开 manual root 不接受 legacy witness。
 
 `profile write` 在 `0700` 的 `profiles/` 内使用每次独有、独占创建的 `0600` `.reviewed-*.tmp`：只写 profile JSON，校验读回并 sync 文件后 rename 为 `reviewed.json`。并发成功 writer 以最后一次 rename 为准；reader 只见完整旧版或新版，不见半份 JSON。输入不得与输出同文件（包括 symlink/hardlink 别名）；读取和发布前核对源文件身份、大小与时间戳，检测到变化即拒绝。失败/中断可遗留未发布的 protected staging，canonical reader 忽略它；不自动删除 staging 或已有 legacy 整包副本，清理由 operator 另行决定。这里不承诺掉电后的目录元数据持久性或防御同 UID 恶意文件系统替换。
 
-生成 profile 只证明这些显式切片可重放且 hashes 一致，不自动批准未知补丁，不替代人工审查或后续 live 授权；实际 preload/marker/attestation 的 generation 绑定仍属后续接线。
+生成 profile 只证明这些显式切片可重放且 hashes 一致，不自动批准未知补丁，不替代人工审查或后续 live 授权；实际 preload/marker/attestation 的 generation 绑定仍属后续接线。首信号 gate 复用 H3 的现有 launch-strategy/capability 判定，不把离线通过或当前 capability signature 当成具体 live supervisor 版本已经审阅、H3 已执行或最终 attestation 已证明。
 
 **人 / 另一次授权**
 

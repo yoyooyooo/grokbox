@@ -5,7 +5,8 @@ import { type WatchdogAdoptPorts, WATCHDOG_OPERATION_ID } from "./coordinator.ts
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { spawnIndependentGuardian } from "./guardian-process.ts";
 import { identityLaunchFields } from "./h3-identity.ts";
-import { createLiveH3AdoptPorts, liveDiskSha } from "./h3-live.ts";
+import { createLiveH3AdoptPorts } from "./h3-live.ts";
+import { sha256Text } from "./hash.ts";
 import { IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { procEnvHas, readNamedProcEnv } from "./live-proc.ts";
@@ -34,14 +35,6 @@ export type LiveManualReadoptPorts = {
   waitReplacement: (oldPid: number) => Promise<ProcessIdentity | null>;
 };
 
-function safeLiveDiskSha(): string {
-  try {
-    return liveDiskSha();
-  } catch {
-    return "none";
-  }
-}
-
 /** Live adopt ports + durable reviewed profile. Call only after --confirm and assertBoxLocal. */
 export function wireLiveManualReadopt(input: {
   root: string;
@@ -64,6 +57,7 @@ export function wireLiveManualReadopt(input: {
   });
   const reviewedProfile = loadDurableReviewedProfile(input.root);
   const adopt: WatchdogAdoptPorts = {
+    target: ports.target,
     spawnTempSupervisor: ports.spawnTempSupervisor,
     waitNewHost: ports.waitNewHost,
     waitGone: ports.waitHostGone,
@@ -140,7 +134,13 @@ export function wireLiveManualReadopt(input: {
     processes: ports.processes,
     classify: ports.classify,
     envHas: (pid, key) => procEnvHas(pid, key),
-    freshDiskSha: safeLiveDiskSha,
+    freshDiskSha: () => {
+      try {
+        return ports.target ? sha256Text(ports.target.readSource()) : "none";
+      } catch {
+        return "none";
+      }
+    },
     ...(reviewedProfile ? { reviewedProfile } : {}),
     adopt,
     waitReplacement: async (oldPid) => {

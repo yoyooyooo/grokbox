@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ephemeralRuntimeRoot } from "../src/ephemeral.ts";
+import { SHA } from "./admission-fixture.ts";
 
 const XDG_TEST = "/tmp/xdg-runtime-test";
 const WORKER = fileURLToPath(new URL("./ephemeral-root-worker.ts", import.meta.url));
@@ -95,13 +96,13 @@ describe("default composition uses the home run root", () => {
     const markerPaths = result.markerPaths as Array<{ markerPath: string; overlayPath: string }>;
     expect(first.reconcile).toBe("converged");
     expect(first.origin).toBe("grokbox-attested");
-    expect(homeAtt).toMatchObject({ coverage: "attested", diskSha: "disk-sha-fixture", launchMode: "transient-adopt" });
+    expect(homeAtt).toMatchObject({ coverage: "attested", diskSha: SHA, launchMode: "transient-adopt" });
     expect(result.journalHasAttested).toBe(true);
     expect(result.leasePath).toBe(join(String(result.wiredDefaultRoot), "ops", "coordinator.lock"));
     expect(result.lockPath).toBe(join(String(result.wiredDefaultRoot), "ops", "identity.lock"));
     expect(result.xdgUnchanged).toBe(true);
     expect(second.reconcile).toBe("converged");
-    expect(overrideAtt).toMatchObject({ coverage: "attested", diskSha: "disk-sha-fixture" });
+    expect(overrideAtt).toMatchObject({ coverage: "attested", diskSha: SHA });
     expect(result.homeUnchangedAfterOverride).toBe(true);
     expect(markerPaths[0]).toMatchObject({
       markerPath: join(String(result.wiredDefaultRoot), "state", "preload-marker.json"),

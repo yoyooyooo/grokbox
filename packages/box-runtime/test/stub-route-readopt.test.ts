@@ -17,18 +17,9 @@ import { reviewedProfilePath } from "../src/paths.ts";
 import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
 import type { PatchProfile } from "../src/transform.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
+import { SHA, reviewed, nextProfile, targetFor } from "./admission-fixture.ts";
 
 const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: "stub/echo", agents: {} } };
-const SHA = "sha-reviewed";
-const reviewed: PatchProfile = {
-  profileId: "reviewed-route",
-  sourceSha256: SHA,
-  transformedSourceSha256: "sha-transformed-route",
-  slices: [
-    { id: "create-session", startAnchor: "a", endAnchor: "b", find: "c", replacement: "d" },
-    { id: "agent-id", startAnchor: "e", endAnchor: "f", find: "g", replacement: "h" },
-  ],
-};
 
 function desired(mode: DesiredFile["mode"]): DesiredFile {
   return { version: 1, mode };
@@ -131,6 +122,7 @@ function countingPort(inner: ProcessPort) {
 }
 
 function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid: number | null }, markerMode: { current: "identity" | "route" }) {
+  if (gateway.pid == null) gateway.pid = tree.roles().find((row) => row.role === "host")?.pid ?? null;
   let patchedPid = 0;
   let spawns = 0;
   const touched = new Set<number>();
@@ -140,6 +132,7 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid
       touched.has(pid) &&
       (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER"),
     adopt: {
+      target: targetFor(),
       spawnTempSupervisor: async () => {
         spawns += 1;
         const temp = tree.spawn("temp-supervisor");
@@ -363,11 +356,7 @@ describe("stub route fake-process re-adopt", () => {
     expect(live).toBeDefined();
     const afterAdoptSignals = tree.signals.length;
 
-    const nextReviewed: PatchProfile = {
-      ...reviewed,
-      profileId: "reviewed-route-v2",
-      transformedSourceSha256: "sha-transformed-route-v2",
-    };
+    const nextReviewed = nextProfile;
     const unconfirmed = await runWatchdogTick({ ...base, reviewedProfile: nextReviewed });
     expect(unconfirmed.reconcile).toBe("recovery-required");
     expect(unconfirmed.reason).toBe("route_mismatch");

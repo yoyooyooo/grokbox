@@ -8,6 +8,11 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Share first-signal admission across manual identity/route refresh: replay the
+  exact reviewed target against source bytes, require H3 launch capability,
+  canonical ownership/topology, gateway and settled journal before launch
+  preparation or signals. Recheck under the operation lock; keep generation
+  dedupe/budget and matching-target no-op. Fake tests only; no live cutover.
 - Close offline `runtime profile write --from <host-bundle>` authoring: validate
   two exact slices and recomputed source/transformed hashes, then read back and
   sync private per-writer profile staging before atomic `reviewed.json` publication.

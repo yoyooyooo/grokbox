@@ -16,21 +16,10 @@ import { findAdoptedHostState, findUniqueOfficialChain } from "../src/official-c
 import { coordinatorStatePath } from "../src/paths.ts";
 import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
 import { writeAdoptOpState } from "../src/transient-adopt.ts";
-import type { PatchProfile } from "../src/transform.ts";
+import { SHA, NEW_SHA, reviewed, reviewedFor, targetFor } from "./admission-fixture.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 
 const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: null, agents: {} } };
-const SHA = "sha-reviewed";
-const NEW_SHA = "sha-reviewed-new";
-const reviewed: PatchProfile = {
-  profileId: "reviewed",
-  sourceSha256: SHA,
-  transformedSourceSha256: "sha-transformed",
-  slices: [
-    { id: "create-session", startAnchor: "a", endAnchor: "b", find: "c", replacement: "d" },
-    { id: "agent-id", startAnchor: "e", endAnchor: "f", find: "g", replacement: "h" },
-  ],
-};
 
 function desired(mode: DesiredFile["mode"]): DesiredFile {
   return { version: 1, mode };
@@ -97,10 +86,6 @@ function attFor(host: ProcessIdentity, diskSha = SHA) {
   };
 }
 
-function reviewedFor(sha: string): PatchProfile {
-  return { ...reviewed, sourceSha256: sha };
-}
-
 function countingPort(inner: ProcessPort) {
   const counts = { list: 0, inspect: 0, signal: 0 };
   const port: ProcessPort = {
@@ -120,7 +105,8 @@ function countingPort(inner: ProcessPort) {
   return { port, counts };
 }
 
-function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid: number | null }) {
+function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid: number | null }, sha = SHA) {
+  if (gateway.pid == null) gateway.pid = tree.roles().find((row) => row.role === "host")?.pid ?? null;
   let patchedPid = 0;
   let spawns = 0;
   const touched = new Set<number>();
@@ -131,6 +117,7 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid
       touched.has(pid) &&
       (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER"),
     adopt: {
+      target: targetFor(sha),
       spawnTempSupervisor: async () => {
         spawns += 1;
         const temp = tree.spawn("temp-supervisor");
@@ -344,7 +331,7 @@ describe("manual re-adopt stale attestation and live-port no-op", () => {
     const tree = new FakeProcessTree();
     const { wrapper, host } = spawnAdopted(tree);
     const gateway = { pid: host.pid as number | null };
-    const ports = harness(tree, wrapper, gateway);
+    const ports = harness(tree, wrapper, gateway, NEW_SHA);
     await writeAttestation(ephemeralRoot, attFor(host, "old-sha"));
     const result = await runWatchdogTick({
       root,
@@ -375,7 +362,7 @@ describe("manual re-adopt stale attestation and live-port no-op", () => {
     const tree = new FakeProcessTree();
     const { wrapper, supervisor, host } = spawnAdopted(tree);
     const gateway = { pid: host.pid as number | null };
-    const ports = harness(tree, wrapper, gateway);
+    const ports = harness(tree, wrapper, gateway, NEW_SHA);
     await writeAttestation(ephemeralRoot, attFor(host, "old-sha"));
     const envHas = (pid: number, key: string) =>
       ports.envHas(pid, key) ||
@@ -454,7 +441,7 @@ describe("manual re-adopt stale attestation and live-port no-op", () => {
       const tree = new FakeProcessTree();
       const { wrapper, host } = spawnAdopted(tree);
       const gateway = { pid: host.pid as number | null };
-      const ports = harness(tree, wrapper, gateway);
+      const ports = harness(tree, wrapper, gateway, NEW_SHA);
       await writeAttestation(ephemeralRoot, attFor(host, "old-sha"));
       const tick = await mutate({ tree, host, wrapper, gateway, ports, root, ephemeralRoot });
       const beforeSignals = tree.signals.length;
@@ -707,7 +694,7 @@ describe("manual re-adopt stale attestation and live-port no-op", () => {
     const tree = new FakeProcessTree();
     const { wrapper, supervisor, host } = spawnAdopted(tree);
     const gateway = { pid: host.pid as number | null };
-    const ports = harness(tree, wrapper, gateway);
+    const ports = harness(tree, wrapper, gateway, NEW_SHA);
     await writeAttestation(ephemeralRoot, attFor(host, "old-sha"));
     let spawns = 0;
     const tick = {

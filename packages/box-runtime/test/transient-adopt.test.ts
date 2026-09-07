@@ -136,7 +136,7 @@ describe("adopted topology proof is not PPID parentage", () => {
 });
 
 describe("transient-adopt fake tree", () => {
-  test("orphan Host is attested; PPID is not the new supervisor; drift and injector death do not attest", async () => {
+  test("orphan Host is attested; PPID is not the new supervisor; drift and preparation failure do not attest", async () => {
     const tree = new FakeProcessTree();
     const wrapper = tree.spawn("wrapper");
     const supervisor = tree.spawn("supervisor", { parent: wrapper });
@@ -276,9 +276,11 @@ describe("transient-adopt fake tree", () => {
     });
     expect(crashed).toMatchObject({
       ok: false,
-      recoveryRequired: true,
-      code: "injector-dead",
+      recoveryRequired: false,
+      code: "launch-preparation-failed",
+      signaled: false,
     });
+    expect(crashTree.signals).toEqual([]);
     expect(crashed.coverage).not.toBe("attested");
     expect(crashTree.stopped(cw.pid)).toBe(false);
   });

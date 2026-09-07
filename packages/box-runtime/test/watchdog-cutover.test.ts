@@ -11,20 +11,10 @@ import { armGuardian } from "../src/guardian.ts";
 import type { DesiredFile, ModelsFile } from "../src/models.ts";
 import { coordinatorLeasePath } from "../src/op-lock.ts";
 import type { ProcessIdentity } from "../src/process.ts";
-import type { PatchProfile } from "../src/transform.ts";
+import { SHA, reviewed, targetFor } from "./admission-fixture.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 
 const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: null, agents: {} } };
-const SHA = "sha-reviewed";
-const reviewed: PatchProfile = {
-  profileId: "reviewed",
-  sourceSha256: SHA,
-  transformedSourceSha256: "sha-transformed",
-  slices: [
-    { id: "create-session", startAnchor: "a", endAnchor: "b", find: "c", replacement: "d" },
-    { id: "agent-id", startAnchor: "e", endAnchor: "f", find: "g", replacement: "h" },
-  ],
-};
 
 function desired(mode: DesiredFile["mode"]): DesiredFile {
   return { version: 1, mode };
@@ -64,6 +54,7 @@ async function roots() {
 }
 
 function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid: number | null }) {
+  if (gateway.pid == null) gateway.pid = tree.roles().find((row) => row.role === "host")?.pid ?? null;
   let patchedPid = 0;
   const touched = new Set<number>();
   return {
@@ -75,6 +66,7 @@ function harness(tree: FakeProcessTree, wrapper: ProcessIdentity, gateway: { pid
       touched.has(pid) &&
       (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER"),
     adopt: {
+      target: targetFor(),
       spawnTempSupervisor: async () => {
         const temp = tree.spawn("temp-supervisor");
         const born = tree.spawn("host", { parent: temp });

@@ -32,6 +32,7 @@ import {
   type ProcessPort,
 } from "./process.ts";
 import type { PatchProfile } from "./transform.ts";
+import { validateReviewedProfile } from "./reviewed-profile.ts";
 export { writeReviewedProfileFromCopy, type WriteReviewedProfileFromCopyInput } from "./reviewed-profile.ts";
 
 const EMPTY_CENSUS: Census = {
@@ -235,6 +236,18 @@ export function createLiveH3AdoptPorts(input: {
   const waitMs = input.waitMs ?? LIVE_WAIT_MS;
   const hostBundle = input.hostBundle ?? LIVE_HOST_BUNDLE;
   return {
+    target: {
+      readSource: () => {
+        const bytes = readFileSync(hostBundle);
+        const source = bytes.toString("utf8");
+        if (!Buffer.from(source, "utf8").equals(bytes)) throw new Error("unsupported-host-encoding");
+        return source;
+      },
+      launchStrategy: (supervisor) => decideH3LaunchStrategy({
+        supervisor,
+        reviewedAdoptCapability: reviewOfficialAdoptCapability(supervisor),
+      }),
+    },
     processes: port,
     classify: liveClassify,
     waitHostGone: async (old) =>
@@ -308,6 +321,7 @@ export function preflightLiveH3(input: {
     try {
       const profile = JSON.parse(readFileSync(input.reviewedProfilePath, "utf8")) as PatchProfile;
       reviewed = loadReviewedProfile(profile, diskSha);
+      if (reviewed.ok) reviewed = validateReviewedProfile(profile, readFileSync(LIVE_HOST_BUNDLE, "utf8"));
     } catch {
       reviewed = { ok: false, code: "unreviewed-profile" };
     }

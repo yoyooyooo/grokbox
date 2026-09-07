@@ -19,6 +19,7 @@ import {
   type StableProcessIdentity,
 } from "./process.ts";
 import type { PatchProfile } from "./transform.ts";
+import type { H3LaunchStrategy } from "./launch-strategy.ts";
 
 export type AdoptOpPhase =
   | "preflight"
@@ -142,6 +143,13 @@ function rolesCensus(port: ProcessPort, classify: RoleClassifier) {
   );
 }
 
+export type AdoptTargetPorts = {
+  readSource: () => string;
+  launchStrategy: (supervisor: ProcessIdentity) => H3LaunchStrategy;
+};
+
+export type BeforeAdoptSignal = () => Promise<{ ok: true } | { ok: false; code: string }>;
+
 export type TransientAdoptContext = {
   processes: ProcessPort;
   classify: RoleClassifier;
@@ -153,6 +161,8 @@ export type TransientAdoptContext = {
   waitGone: (old: ProcessIdentity) => Promise<boolean>;
   waitReady: (hostPid: number) => Promise<IdentityMarker | null>;
   prepareTempLaunch?: () => Promise<void>;
+  /** Coordinator-supplied admission recheck under the operation lock, before arming a guardian. */
+  beforeSignal?: BeforeAdoptSignal;
   spawnTempSupervisor: () => Promise<ProcessIdentity | null>;
   waitNewHost: (oldHostPid: number) => Promise<ProcessIdentity | null>;
   readGatewayPid: () => number | null;
@@ -192,6 +202,14 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
     if (!unique.ok) return fail(unique.code, false, false);
     const { wrapper, supervisor, host } = unique.chain;
 
+    try {
+      await ctx.prepareTempLaunch?.();
+      if (ctx.diskSha() !== shaBefore) return fail("disk-sha-changed", false, false);
+      const admitted = await ctx.beforeSignal?.();
+      if (admitted && !admitted.ok) return fail(admitted.code, false, false);
+    } catch {
+      return fail("launch-preparation-failed", false, false);
+    }
     const guardian = await ctx.armGuardian([wrapper]);
     if (!guardian.ok) return fail("guardian-not-armed", false, false);
     const started = ctx.now();
@@ -214,7 +232,6 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         release();
         return fail("disk-sha-changed", true, true);
       }
-      await ctx.prepareTempLaunch?.();
       await writeAdoptOpState(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "term-old-host",
@@ -499,6 +516,7 @@ export type TransientAdoptDeactivateContext = {
   clearAttestation: () => Promise<void>;
   /** Relax only attestation-vs-live SHA equality. Fresh SHA must still be stable. */
   allowStaleAttestedSha?: boolean;
+  beforeSignal?: BeforeAdoptSignal;
 };
 
 export async function runTransientAdoptDeactivate(
@@ -551,6 +569,12 @@ export async function runTransientAdoptDeactivate(
     if (!adopted.ok) return fail(adopted.code, false);
     if (!ctx.hasGrokboxPreload(adopted.state.host)) return fail("preload-missing", false);
     if (ctx.hasGrokboxPreload(adopted.state.supervisor)) return fail("supervisor-preloaded", false);
+    try {
+      const admitted = await ctx.beforeSignal?.();
+      if (admitted && !admitted.ok) return fail(admitted.code, false);
+    } catch {
+      return fail("target-admission-failed", false);
+    }
     await writeAdoptOpState(ctx.ephemeralRoot, {
       launchMode: "transient-adopt",
       phase: "deactivate-term",
