@@ -7,6 +7,7 @@ import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { DEFAULT_DURABLE_ROOT } from "./paths.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { bindHostSessionHook } from "./seam.ts";
+import { bindCompiledHost } from "./modeld-binding.ts";
 import { ROUTE_SESSION_SYMBOL, type PatchProfile } from "./transform.ts";
 import { readFileSync } from "node:fs";
 
@@ -26,10 +27,14 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   const bytes = readFileSync(profilePath);
   const profile = JSON.parse(bytes.toString("utf8")) as PatchProfile;
   const profileSha256 = sha256Bytes(bytes);
+  const self = inspectPid(process.pid);
+  const binding = self ? bindCompiledHost(self, operationId, { profileId: profile.profileId, profileSha256,
+    sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 }) : undefined;
   (globalThis as Record<symbol, unknown>)[Symbol.for(ROUTE_SESSION_SYMBOL)] = bindHostSessionHook({
     mode: admittedMode,
     durableRoot,
     runRoot,
+    binding,
   });
   installCompileHook({
     targetPath: target,

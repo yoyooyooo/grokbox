@@ -8,6 +8,13 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Converge Unix modeld on one generation-bound admission/pinning kernel. Bind
+  requests to compiled Host identity and a service-incarnation fence; resolve
+  per-Bot config inside modeld, pin immutable config/fingerprints, and reject
+  mismatches before driver effects. Bound wait/TTL/ledger/client lifetimes,
+  cancel uncertain work without retry or official fallback, and preserve active
+  socket owners. Offline stub/fake proof only; no provider credentials/egress or
+  live Host patch, and production IPC remains response-only.
 - Add a frozen, bounded Host message/state/tool/options envelope and an incremental
   single-producer session with independent completion, late-reader replay and
   visible cancellation/errors. Preserve tool ids without a second Host tool loop;

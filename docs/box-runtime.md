@@ -55,7 +55,7 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - tool-start/delta/complete 在同一 id 上关联，interleaved ids 不混线；同内容 complete 重复只投影一次，冲突重复拒绝。serial-only 时 executable calls 留到完成门禁后再放行；意外并行用 error.toolCallIds 披露拒绝的 ids，不造空名字的假可执行 tool calls。
 - seam 仍一 invocation 一次 dispatch/terminal：重复相同输入返回无副作用 idle handle，不重放工具；同 id 改 payload 可见 conflict。disconnect 先记 unknown 再取消，并阻止未发出的迟到调用。只有 Host 显式提供下一段历史、tool result 和新 invocation 才进入下一模型步，不新增模型/工具循环。事件只存 bounded ids/count/class，不存 envelope/body。
 
-**证据上限分开**：scripted driver 测试确实在 terminal 尚未提供时收到首 chunk，并证明 response 可先结算、Host UI fork 随后接入，以及取消/工具向量/重复调用不重复 dispatch。生产 `createModeldRouteDriver` 仍是固定 text stub 的 **response-only** IPC（Host-facing fullStream 为空）；它现在校验 envelope 并只缓存冲突用 hash，不是 token transport、provider SDK 或 S5 generation/activation admission。离线首 chunk 与 response-only 两种通过都不证明 live Host 各种订阅顺序、真实 first-token latency、provider vision、计费 usage 或实际工具/Transcript/Memory 写入。
+**证据上限分开**：scripted driver 测试确实在 terminal 尚未提供时收到首 chunk，并证明 response 可先结算、Host UI fork 随后接入，以及取消/工具向量/重复调用不重复 dispatch。生产 `createModeldRouteDriver` 仍是固定 text stub 的 **response-only** IPC（Host-facing fullStream 为空）；它经下述单一 modeld admission 内核校验 envelope 与 generation/activation，仍不是 token transport 或 provider SDK。离线首 chunk 与 response-only 两种通过都不证明 live Host 各种订阅顺序、真实 first-token latency、provider vision、计费 usage 或实际工具/Transcript/Memory 写入。
 
 ---
 
@@ -116,6 +116,20 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 - MVP envelope 见产品合同 §12：文本、工具、视觉（模型声明才送；否则可见告警）、并行不得丢 id。
 - 可见告警最终由 Host 写入 Transcript（`SendToUser` 或等价），runtime 不私写产品库。
 
+### 当前 Unix admission / pin 合流（S5）
+
+`Host seam → modeld.sock → createModeld → admitted stub driver` 是一条路径。`modeld-ipc.ts` 只负责有界协议/连接，删去独立 stub registry；`modeld.ts` 独占 admission、pin、重复/取消/过期及 effect，fake 测试替换同一内核的 ports/driver，不另造 offline admission。CLI 默认只有无 credential、无网络的 `stub/echo`；带 fake driver 的 Unix 测试不构成生产 provider allowlist。
+
+- `modeld-binding.ts` 从已 pin 的 compile receipt、operationId 和稳定进程身份构造 Host binding。`generationId` 散列 PID/start + operationId + 全部 compile 字段；`activationId` 指本次 adopt operationId，**不是** desired 文件的修订号；`sourceSha` 是 compiled source SHA；`identitySha` 散列 PID/UID/start/exe/cmdline（不含收养时变化的 PPID/ancestry，不传 raw argv）。preload 用自身身份与已读 profile 传入这些不可变事实，hook 不读配置/attestation、不做 live census。
+- `modeld-store.ts` 在服务内以有界 no-follow regular-file reader 读取 desired、canonical attestation 和 operation journal，双读不一致只等待、不 admit。route 必须具有 S2 compile receipt；transient-adopt 还要求同 operation/compile/稳定身份的 `attested` journal，临时 supervisor 已释放。legacy/坏/uncertain 证据不被 health 成功替代；正常未签完可在预算内等待。不存在“把 committed 布尔设成 true”或使用 caller 自报身份作为权威的路径。
+- effect 前先比对 binding，再解析该 Bot 的 `assignments.agents[id] ?? main`；配置快照含 model/provider/endpoint/apiKeyRef/capabilities/dataTypes，深冻结后才允许 fingerprint await。credential hook 前及 driver effect 前重新核对 canonical authority。stub 完全不调用 credential hook；fake hook 只交回 64 字符十六进制 fingerprint，既不把 secret 放入 pin 返回值/IPC，也不实现真实 provider/file-secret 安全边界。旧 `createFileEnvSecretResolver` 未被接线；不得作为 M3 的 credential 验收证据。
+- 当前 Host 连接线把注入的 invocationId 同时作为 turnId，不发明第二个 Host turn id。内核按 generation + Bot + turn 共享正在使用的 pin，最后一个使用者 terminal/取消/过期后释放。重复 invocation 用完整 binding/ids/envelope hash 校验，在配置变化后也不重新选模型/dispatch；改变 payload 明确 conflict。终态结果只保留到 TTL，过期变成 refusal tombstone，不以缓存丢失为由再 dispatch。
+- 默认 admission 预算 **500 ms**，工作/终态保留 TTL **30 s**，ledger 上限 **1024**。过期释放 pin/response，但 bounded tombstone 留到 canonical Host generation 替换或服务重启；同代满额明确 `capacity`，不驱逐旧 id 后偷偷重跑。观察到新 canonical generation 时取消旧工作、清除旧 pins/ledger，旧 Host 不能借新代继续调用。
+- v2 health 只证明服务/协议 readiness，返回独立 `serverGeneration`；submit 不再接受 caller 指定 modelId 或旧 ids-only 请求。每个新 invocation 握手一次，已用 invocation 保留原 fence；服务重启后旧包拒绝，新 invocation 可新握手。disconnect、客户端掉线、取消/timeout 后标 unknown 并 abort，迟到 port/driver 完成不产生新 effect/成功；不盲目重试、不静默回官方。内存 ledger 不提供跨重启续传或跨客户端强制重握的 exactly-once 保证。
+- Unix frame 仍 **16 KiB**、一连接一请求、最多 **64** 活跃客户端；idle/partial client **1 s** 超时。stop 先取消内核、destroy 所有活跃 socket，再等 server close，不等待卡住的 driver。可连接但不答 health/旧协议的 socket 仍视为竞争 owner；普通文件不当 stale socket 删除。stop 的 bound 不等于外部 driver 一定配合物理取消，更不是 live Host 的恢复 SLA。
+
+这些结论来自 `modeld.test.ts`、`modeld-confluence.test.ts`、实际 CLI + Unix/socket + fake canonical files；未读取现役 Host，未产生 provider credential/network effect。身份/receipt 校验不是对恶意同 UID 客户端的 peer authentication；double read 是时点证据，不是跨文件事务或对同 UID 写入者的原子隔离。G1/G2/M3/07 仍需独立授权。
+
 ### 窗口（W1 / W2）
 
 ```text
@@ -131,7 +145,7 @@ W2 有钩子未签字
   后续句继续抢自定义；官方不升格为默认
 ```
 
-managed 一旦对供应商出门，失败不得静默回官方或换 provider。
+managed 一旦对供应商出门，失败不得静默回官方或换 provider。上面的 last-resort 是完成态设计：当前 S5 timeout 只返回脱敏可见 managed error，没有 official fallback 执行器。
 
 ---
 
@@ -246,7 +260,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - attestation/journal/coordinator JSON 均 protected staging → 文件 sync → rename。journal 先写未决 `commit-attestation`，canonical attestation 精确读回后才可写 `attested`，随后再读回核对。`committedAttestation` 是实际读回的制品；CLI 只公开 mode/PID/start/SHA/operationId/compile/时间，不输出原始进程 argv。它可与 `recovery-required` 同时存在，表示“已提交，但最终健康或收尾未完成”，不是整体成功。
 - deactivate→adopt 是一个逻辑 attempt：原始 key 与已发生的 `signaled` 不因后半段拒绝、落盘异常或 modeld 掉线丢失。`injected:true` 只表示本次 adopt operation 曾完整提交；随后 coordinator 收尾失败仍报 recovery-required。不恢复旧 attestation 来伪造回滚；`commit-attestation` / `recovery-required` journal 不自动结清重试。
 
-以上由 fake processes + 隔离真实文件、disposable Node preload/adopt helper 验证；只证明一次新 generation，不是 live Host/provider 或 modeld generation-admission（后续 S5）证明。read-back/readiness 是时点证据，不承诺返回后的持续存活、掉电目录持久性或防御同 UID 恶意替换。desired disabled 不是恢复完成的证据；当前观察按下面的 desired/actual 分离，不由这份 receipt 偷偷执行恢复。
+以上由 fake processes + 隔离真实文件、disposable Node preload/adopt helper 验证；只证明一次新 generation，不是 live Host/provider 证明；modeld generation-admission 的独立离线证据见 §5。read-back/readiness 是时点证据，不承诺返回后的持续存活、掉电目录持久性或防御同 UID 恶意替换。desired disabled 不是恢复完成的证据；当前观察按下面的 desired/actual 分离，不由这份 receipt 偷偷执行恢复。
 
 **只读 desired/actual 观察**
 

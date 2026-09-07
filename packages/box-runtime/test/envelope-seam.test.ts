@@ -9,6 +9,7 @@ import { createSessionSeam, createStubRouteDriver, createModeldRouteDriver, type
 import type { HostPromptSession, StreamPart } from "../src/session.ts";
 import { collectStreamParts, consumeHandle, hasMeaningfulResponseMessageContent, SEAM_STOP_PARTS } from "./host-consumer.ts";
 import { providerHardOff } from "./provider-hard-off.ts";
+import { modeldFixture, submitRequest } from "./modeld-fixture.ts";
 import { scriptedStream, within } from "./scripted-stream.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
@@ -150,18 +151,19 @@ describe("Host envelope seam, no provider or second Host loop", () => {
 describe("buffered stub IPC envelope boundary (not token-streaming proof)", () => {
   test("forwarded envelope participates in conflict admission, with provider effects hard-off", async () => {
     const off = providerHardOff();
-    const root = await mkdtemp(join(tmpdir(), "grokbox-envelope-ipc-"));
-    const server = await startStubModeldServer({ runRoot: root });
+    const { runRoot: root, durable, binding } = await modeldFixture();
+    const server = await startStubModeldServer({ runRoot: root, durableRoot: durable });
     try {
-      const driver = createModeldRouteDriver(root);
+      const driver = createModeldRouteDriver(root, binding);
       const envelope = buildModelEnvelope([{ role: "system", content: "system-sentinel" }, { role: "user", content: "body-sentinel" }],
         { lookup: { parameters: { jsonSchema: { type: "object", properties: {} } } } }, { temperature: 0.5 });
       const request = { invocationId: "inv-ipc", agentId: "agent-test", modelId: "stub/echo", envelope };
       expect((await driver.submit!(request)).dispatched).toBe(true);
-      expect(await callStubModeld(root, { method: "submit", ...request })).toMatchObject({ ok: true, dispatched: false });
-      expect(await callStubModeld(root, { method: "submit", ...request, envelope: buildModelEnvelope([{ role: "user", content: "changed" }]) })).toMatchObject({ ok: false, code: "conflict" });
-      expect(await callStubModeld(root, { method: "submit", ...request, invocationId: "invalid", envelope: { version: 99 } })).toMatchObject({ ok: false, code: "invalid-envelope" });
-      expect(await callStubModeld(root, { method: "submit", ...request, invocationId: "image", envelope: buildModelEnvelope([{ role: "user", content: [{ type: "image", data: "fixture-image" }] }]) })).toMatchObject({ ok: false, code: "unsupported-content" });
+      const raw = submitRequest(server, request.invocationId, { agentId: request.agentId, envelope });
+      expect(await callStubModeld(root, raw)).toMatchObject({ ok: true, dispatched: false });
+      expect(await callStubModeld(root, { ...raw, envelope: buildModelEnvelope([{ role: "user", content: "changed" }]) })).toMatchObject({ ok: false, code: "conflict" });
+      expect(await callStubModeld(root, { ...raw, invocationId: "invalid", envelope: { version: 99 } })).toMatchObject({ ok: false, code: "invalid-envelope" });
+      expect(await callStubModeld(root, { ...raw, invocationId: "image", envelope: buildModelEnvelope([{ role: "user", content: [{ type: "image", data: "fixture-image" }] }]) })).toMatchObject({ ok: false, code: "unsupported-content" });
       expect(server.dispatches()).toBe(1);
       expect(off.counts).toEqual({ fetch: 0, dns: 0, tcp: 0, credential: 0 });
     } finally { await server.stop(); off.restore(); }

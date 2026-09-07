@@ -1,204 +1,156 @@
 import { describe, expect, test } from "bun:test";
-import { createModeld } from "../src/modeld.ts";
+import { createModeld, type AdmissionAuthority, type ModeldPorts, type ModelPin } from "../src/modeld.ts";
+import { sha256Text } from "../src/hash.ts";
+import { buildModelEnvelope } from "../src/envelope.ts";
 import type { ModelsFile } from "../src/models.ts";
+import { FAKE_BINDING, FAKE_COMPILE, FAKE_HOST, STUB_MODELS, fakeModels, submitRequest } from "./modeld-fixture.ts";
+import { bindCompiledHost } from "../src/modeld-binding.ts";
+import { within } from "./scripted-stream.ts";
 
-const models = (overrides?: Partial<ModelsFile["assignments"]>): ModelsFile => ({
-  version: 1,
-  models: {
-    "acme/fast": {
-      id: "acme/fast",
-      provider: "acme",
-      model: "fast",
-      endpoint: "https://api.acme.test/v1",
-      apiKeyRef: "env:ACME_FAST",
-      capabilities: { vision: false, tools: true, images: false },
-      dataTypes: ["text", "tools"],
-    },
-    "acme/smart": {
-      id: "acme/smart",
-      provider: "acme",
-      model: "smart",
-      endpoint: "https://api.acme.test/v1",
-      apiKeyRef: "env:ACME_SMART",
-      capabilities: { vision: true, tools: true, images: true },
-      dataTypes: ["text", "tools", "images"],
-    },
-  },
-  assignments: {
-    main: "acme/fast",
-    agents: { "agent-tom": "acme/smart", ...overrides?.agents },
-    ...overrides,
-  },
-});
+const parts = [{ type: "text-delta" as const, textDelta: "fixture" }, { type: "finish" as const, reason: "stop" as const }];
+const authority = (): AdmissionAuthority => ({ state: "committed", host: FAKE_BINDING });
 
-describe("modeld admission", () => {
-  test("resolves per-bot override else main, never official on missing main", async () => {
-    const driver = { calls: 0, complete() {} };
-    let file = models();
-    const modeld = createModeld({
-      loadModels: () => file,
-      getAttestation: () => ({
-        generationId: "g1",
-        activationId: "a1",
-        pid: 1,
-        start: 1,
-        sourceSha: "sha",
-        committed: true,
-      }),
-      wait: async () => true,
-      now: () => 0,
-      budgetMs: 20,
-      resolveSecret: async (ref) => ref,
-      driver,
-    });
-    const tom = await modeld.admit({ invocationId: "inv-tom", turnId: "turn-tom", agentId: "agent-tom" });
-    const jerry = await modeld.admit({ invocationId: "inv-jerry", turnId: "turn-jerry", agentId: "agent-jerry" });
-    expect(tom).toMatchObject({ ok: true, dispatched: true, modelId: "acme/smart" });
-    expect(jerry).toMatchObject({ ok: true, dispatched: true, modelId: "acme/fast" });
-    file = models({ main: null, agents: {} });
-    const missing = await modeld.admit({ invocationId: "inv-x", turnId: "turn-x", agentId: "nobody" });
-    expect(missing).toMatchObject({ ok: false, code: "missing-assignment" });
-  });
-
-  test("waits for attestation then dispatches; timeout is visible last-resort not a new default", async () => {
-    const driver = { calls: 0, complete() {} };
-    let clock = 0;
-    const timed = createModeld({
-      loadModels: () => models(),
-      getAttestation: () => null,
-      wait: async (ms) => {
-        clock += ms;
-        return true;
-      },
-      now: () => clock,
-      budgetMs: 10,
-      pollMs: 5,
-      resolveSecret: async (ref) => ref,
-      driver,
-    });
-    const burned = await timed.admit({ invocationId: "inv-wait", turnId: "turn-wait", agentId: "agent-jerry" });
-    expect(burned).toMatchObject({
-      ok: true,
-      dispatched: false,
-      lastResortOfficial: true,
-      userVisible: true,
-    });
-    expect(driver.calls).toBe(0);
-    expect(timed.officialBecameDefault()).toBe(false);
-
-    let committed = false;
-    clock = 0;
-    const waiting = createModeld({
-      loadModels: () => models(),
-      getAttestation: () =>
-        committed
-          ? {
-              generationId: "g1",
-              activationId: "a1",
-              pid: 1,
-              start: 1,
-              sourceSha: "sha",
-              committed: true,
-            }
-          : null,
-      wait: async (ms) => {
-        clock += ms;
-        committed = true;
-        return true;
-      },
-      now: () => clock,
-      budgetMs: 50,
-      pollMs: 5,
-      resolveSecret: async (ref) => ref,
-      driver,
-    });
-    const ok = await waiting.admit({ invocationId: "inv-ok", turnId: "turn-ok" });
-    expect(ok).toMatchObject({ ok: true, dispatched: true, modelId: "acme/fast" });
-    expect(driver.calls).toBe(1);
-  });
-
-  test("pins Tom while Jerry's assignment changes; duplicate submit does not re-dispatch", async () => {
-    const driver = { calls: 0, complete() {} };
-    let file = models();
-    const modeld = createModeld({
-      loadModels: () => file,
-      getAttestation: () => ({
-        generationId: "g1",
-        activationId: "a1",
-        pid: 1,
-        start: 1,
-        sourceSha: "sha",
-        committed: true,
-      }),
-      wait: async () => true,
-      now: () => 0,
-      budgetMs: 20,
-      resolveSecret: async (ref) => `${ref}:secret`,
-      driver,
-    });
-    const first = await modeld.admit({ invocationId: "inv-tom", turnId: "turn-tom", agentId: "agent-tom" });
-    expect(first).toMatchObject({ dispatched: true, modelId: "acme/smart" });
-    file = models({ agents: { "agent-tom": "acme/fast" } });
-    const again = await modeld.admit({ invocationId: "inv-tom", turnId: "turn-tom", agentId: "agent-tom" });
-    expect(again).toMatchObject({ dispatched: true, modelId: "acme/smart" });
-    expect(driver.calls).toBe(1);
-    const conflict = await modeld.admit({ invocationId: "inv-tom", turnId: "turn-other", agentId: "agent-jerry" });
-    expect(conflict).toMatchObject({ ok: false, code: "conflict" });
-    expect(modeld.managedFailure()).toEqual({ calledOriginalSession: false, calledSecondProvider: false });
-  });
-
-  test("disconnect marks unknown and secrets stay inside modeld", async () => {
-    const seen: string[] = [];
-    const driver = { calls: 0, complete() {} };
-    const modeld = createModeld({
-      loadModels: () => models(),
-      getAttestation: () => ({
-        generationId: "g1",
-        activationId: "a1",
-        pid: 1,
-        start: 1,
-        sourceSha: "sha",
-        committed: true,
-      }),
-      wait: async () => true,
-      now: () => 0,
-      budgetMs: 20,
-      resolveSecret: async (ref) => {
-        seen.push(ref);
-        return "super-secret";
-      },
-      driver,
-    });
-    const result = await modeld.admit({ invocationId: "inv-1", turnId: "turn-1" });
-    expect(result).toMatchObject({ ok: true });
-    if (result.ok && result.dispatched) {
-      expect(result.fingerprint).not.toContain("super-secret");
+describe("one modeld admission/pin kernel", () => {
+  test("binding covers every compile field and stable identity but not transient re-parenting", () => {
+    for (const field of ["profileId", "profileSha256", "sourceSha256", "transformedSha256"] as const) {
+      const compile = { ...FAKE_COMPILE, [field]: field === "profileId" ? "other-profile" : "a".repeat(64) };
+      expect(bindCompiledHost(FAKE_HOST, FAKE_BINDING.activationId, compile).generationId).not.toBe(FAKE_BINDING.generationId);
     }
-    expect(JSON.stringify(result)).not.toContain("super-secret");
-    expect(seen).toEqual(["env:ACME_FAST"]);
-    const driver2 = { calls: 0, complete() {} };
-    let clock = 0;
-    let releaseWait: ((value: boolean) => void) | undefined;
-    const running = createModeld({
-      loadModels: () => models(),
-      getAttestation: () => null,
-      wait: async () => await new Promise<boolean>((resolve) => {
-        releaseWait = resolve;
-      }),
-      now: () => clock,
-      budgetMs: 50,
-      pollMs: 5,
-      resolveSecret: async (ref) => ref,
-      driver: driver2,
-    });
-    const pending = running.admit({ invocationId: "inv-d", turnId: "turn-d" });
-    for (let i = 0; i < 50 && !releaseWait; i += 1) await Bun.sleep(1);
-    expect(releaseWait).toBeDefined();
-    running.disconnect("inv-d");
-    clock = 50;
-    releaseWait?.(true);
-    await pending;
-    expect(running.get("inv-d")?.state).toBe("unknown");
-    expect(driver2.calls).toBe(0);
+    const reparented = { ...FAKE_HOST, ppid: 999, ancestry: [999] };
+    expect(bindCompiledHost(reparented, FAKE_BINDING.activationId, FAKE_COMPILE)).toEqual(FAKE_BINDING);
+    expect(bindCompiledHost({ ...FAKE_HOST, exe: "/fixture/other-node" }, FAKE_BINDING.activationId, FAKE_COMPILE).identitySha).not.toBe(FAKE_BINDING.identitySha);
+    expect(JSON.stringify(FAKE_BINDING)).not.toMatch(/cmdline|\/fixture\/|uid|ppid/);
+  });
+
+  test("invalid limit overrides cannot unbound the ledger or admission lifetime", () => {
+    for (const limits of [{ maxRecords: Infinity }, { maxRecords: 0 }, { idleTtlMs: NaN }, { budgetMs: 1e9 }]) {
+      expect(() => createModeld({ ...limits, authority, loadModels: () => STUB_MODELS, driver: { accepts: () => true, complete: () => parts } })).toThrow(/limit/);
+    }
+  });
+  test.each(["generationId", "activationId", "sourceSha", "pid", "start", "identitySha"] as const)("wrong %s precedes configuration, credentials and driver", async (field) => {
+    const effects = { models: 0, credential: 0, driver: 0 };
+    const kernel = createModeld({ authority, loadModels: () => { effects.models++; return STUB_MODELS; },
+      credentialFingerprint: () => { effects.credential++; return sha256Text("fake"); },
+      driver: { accepts: () => true, complete: () => { effects.driver++; return parts; } } });
+    try {
+      const wrong = { ...FAKE_BINDING, [field]: typeof FAKE_BINDING[field] === "number" ? 999 : field === "activationId" ? "other-operation" : "f".repeat(64) };
+      expect(await kernel.admit(submitRequest(kernel, "inv", { host: wrong }))).toMatchObject({ ok: false });
+      expect(effects).toEqual({ models: 0, credential: 0, driver: 0 });
+    } finally { kernel.stop(); }
+  });
+
+  test("bounded pending wait succeeds only on matching commit, never last-resort official", async () => {
+    let fact: AdmissionAuthority = { state: "pending" };
+    const kernel = createModeld({ authority: () => fact, loadModels: () => STUB_MODELS, budgetMs: 35,
+      driver: { accepts: () => true, complete: () => parts } });
+    try {
+      const timeout = await within(kernel.admit(submitRequest(kernel, "timeout")));
+      expect(timeout).toMatchObject({ ok: false, code: "admission-timeout", userVisible: true });
+      expect(JSON.stringify(timeout)).not.toMatch(/official|lastResort/);
+      const pending = kernel.admit(submitRequest(kernel, "commits"));
+      fact = authority();
+      expect(await within(pending)).toMatchObject({ ok: true, dispatched: true });
+      expect(kernel.stats().dispatches).toBe(1);
+    } finally { kernel.stop(); }
+  });
+
+  test("per-bot resolve snapshots every config field before fingerprint awaits; active Tom is isolated from Jerry", async () => {
+    let file = fakeModels();
+    const pins: ModelPin[] = [];
+    const releases: Array<() => void> = [];
+    let fingerprints = 0;
+    let releaseFingerprint!: () => void;
+    const ports: ModeldPorts = { authority, loadModels: () => file, credentialFingerprint: async () => {
+      fingerprints++;
+      if (fingerprints === 1) await new Promise<void>((r) => { releaseFingerprint = r; });
+      return sha256Text(`fake-credential-${fingerprints}`);
+    } };
+    const kernel = createModeld({ ...ports, driver: { accepts: () => true, complete: async ({ pin }) => {
+      pins.push(pin); await new Promise<void>((r) => releases.push(r)); return parts;
+    } } });
+    try {
+      const first = kernel.admit(submitRequest(kernel, "tom"));
+      while (!releaseFingerprint) await Bun.sleep(1);
+      file.models["fake/smart"]!.endpoint = "fake:changed";
+      file.models["fake/smart"]!.dataTypes.push("changed");
+      file.models["fake/smart"]!.capabilities.vision = true;
+      file.assignments.agents["agent-tom"] = "fake/fast";
+      releaseFingerprint();
+      while (pins.length < 1) await Bun.sleep(1);
+      const duplicate = kernel.admit(submitRequest(kernel, "tom"));
+      const jerry = kernel.admit(submitRequest(kernel, "jerry", { agentId: "agent-jerry" }));
+      while (pins.length < 2) await Bun.sleep(1);
+      expect(pins[0]!.model).toMatchObject({ id: "fake/smart", endpoint: "fake:smart", dataTypes: ["text", "tools"], capabilities: { vision: false } });
+      expect(pins[1]!.model.id).toBe("fake/fast");
+      expect(Object.isFrozen(pins[0])).toBe(true);
+      expect(Object.isFrozen(pins[0]!.model.capabilities)).toBe(true);
+      expect(() => pins[0]!.model.dataTypes.push("mutation")).toThrow();
+      releases.forEach((r) => r());
+      expect(await first).toMatchObject({ ok: true, dispatched: true, assignment: "agent" });
+      expect(await duplicate).toMatchObject({ ok: true, dispatched: false });
+      expect(await jerry).toMatchObject({ ok: true, assignment: "main" });
+      expect(fingerprints).toBe(2); expect(kernel.stats()).toMatchObject({ dispatches: 2, pins: 0 });
+      file = { ...file, assignments: { main: null, agents: {} } };
+      expect(await kernel.admit(submitRequest(kernel, "missing"))).toMatchObject({ ok: false, code: "missing-assignment" });
+    } finally { kernel.stop(); }
+  });
+
+  test("rechecks authority after fingerprint await before any driver effect", async () => {
+    let fact = authority(); let release!: () => void;
+    const kernel = createModeld({ authority: () => fact, loadModels: fakeModels,
+      credentialFingerprint: async () => { await new Promise<void>((r) => { release = r; }); return sha256Text("synthetic-only"); },
+      driver: { accepts: () => true, complete: () => parts } });
+    try {
+      const pending = kernel.admit(submitRequest(kernel, "late-drift"));
+      while (!release) await Bun.sleep(1);
+      fact = { state: "disabled" }; release();
+      expect(await pending).toMatchObject({ ok: false, code: "disabled" }); expect(kernel.stats().dispatches).toBe(0);
+    } finally { kernel.stop(); }
+  });
+
+  test("same turn pin reservation is shared; envelope conflicts cannot mutate the original invocation", async () => {
+    let fingerprints = 0; const ends: Array<() => void> = [];
+    const kernel = createModeld({ authority, loadModels: fakeModels, credentialFingerprint: () => { fingerprints++; return sha256Text("fake"); },
+      driver: { accepts: () => true, complete: async () => { await new Promise<void>((r) => ends.push(r)); return parts; } } });
+    try {
+      const one = kernel.admit(submitRequest(kernel, "one", { turnId: "same-turn" }));
+      const two = kernel.admit(submitRequest(kernel, "two", { turnId: "same-turn" }));
+      while (ends.length < 2) await Bun.sleep(1);
+      expect(fingerprints).toBe(1); expect(kernel.stats().pins).toBe(1);
+      expect(await kernel.admit(submitRequest(kernel, "one", { envelope: buildModelEnvelope([{ role: "user", content: "different" }]) }))).toMatchObject({ ok: false, code: "conflict" });
+      ends.forEach((r) => r()); await Promise.all([one, two]); expect(kernel.stats().pins).toBe(0);
+    } finally { kernel.stop(); }
+  });
+
+  test("TTL releases heavy pins/results but keeps bounded refusal tombstones; generation retirement frees capacity", async () => {
+    let clock = 0; let fact = authority();
+    const kernel = createModeld({ authority: () => fact, loadModels: () => STUB_MODELS, now: () => clock, idleTtlMs: 1000, maxRecords: 1,
+      driver: { accepts: () => true, complete: () => parts } });
+    try {
+      expect(await kernel.admit(submitRequest(kernel, "old"))).toMatchObject({ ok: true });
+      clock = 1001; kernel.sweep();
+      expect(await kernel.admit(submitRequest(kernel, "old"))).toMatchObject({ ok: false, code: "expired" });
+      expect(await kernel.admit(submitRequest(kernel, "new"))).toMatchObject({ ok: false, code: "capacity" });
+      expect(kernel.stats()).toEqual({ dispatches: 1, records: 1, pins: 0 });
+      const next = { ...FAKE_BINDING, generationId: "b".repeat(64), activationId: "new-operation" };
+      fact = { state: "committed", host: next };
+      expect(await kernel.admit(submitRequest(kernel, "new", { host: next }))).toMatchObject({ ok: true });
+      expect(kernel.stats()).toEqual({ dispatches: 2, records: 1, pins: 0 });
+    } finally { kernel.stop(); }
+  });
+
+  test("disconnect/stop fence pending ports without waiting or late dispatch", async () => {
+    let release!: () => void;
+    const kernel = createModeld({ authority, loadModels: async () => { await new Promise<void>((r) => { release = r; }); return STUB_MODELS; },
+      driver: { accepts: () => true, complete: () => parts } });
+    try {
+      const request = submitRequest(kernel, "pending"); const pending = kernel.admit(request);
+      while (!release) await Bun.sleep(1);
+      kernel.disconnect(request);
+      expect(await within(pending)).toMatchObject({ ok: false, code: "disconnected" });
+      release(); await Bun.sleep(1); expect(kernel.stats().dispatches).toBe(0);
+      expect(await kernel.admit(request)).toMatchObject({ ok: false, code: "disconnected" });
+      kernel.stop(); expect(await kernel.admit(submitRequest(kernel, "stopped"))).toMatchObject({ ok: false, code: "stopped" });
+    } finally { kernel.stop(); }
   });
 });

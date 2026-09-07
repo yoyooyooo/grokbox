@@ -10,6 +10,8 @@ import {
   disclosure,
   openRuntimeStore,
   parseApiKeyRef,
+  parseModelsFile,
+  resolveAssignment,
 } from "../src/models.ts";
 import { CLI_INSTALL_ROOT, resolveDurableRoot } from "../src/paths.ts";
 import { projectStatus } from "../src/observe.ts";
@@ -37,6 +39,13 @@ describe("models.json store", () => {
     expect(() => parseApiKeyRef("sk-live")).toThrow(BoxRuntimeError);
     expect(() => parseApiKeyRef("env:$TOKEN")).toThrow(BoxRuntimeError);
     expect(() => parseApiKeyRef("file:relative")).toThrow(BoxRuntimeError);
+  });
+
+  test("agent lookup uses own data keys, including explicit prototype-shaped ids", () => {
+    const file = parseModelsFile({ ...SAMPLE, assignments: { main: "stub/echo", agents: JSON.parse('{"__proto__":"acme/fast"}') } });
+    expect(resolveAssignment(file, "__proto__").id).toBe("acme/fast");
+    expect(resolveAssignment(file, "toString").id).toBe("stub/echo");
+    expect(resolveAssignment(file, "constructor").id).toBe("stub/echo");
   });
 
   test("durable root cannot be the CLI install tree", () => {

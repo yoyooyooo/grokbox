@@ -229,26 +229,20 @@ export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
 
 export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
   try {
-    store(deps);
+    const runtime = store(deps);
     const runRoot = deps.env.GROKBOX_RUN_ROOT ?? ephemeralRuntimeRoot();
-    const server = await startStubModeldServer({ runRoot, signal: deps.signal });
+    const server = await startStubModeldServer({ runRoot, durableRoot: runtime.root, signal: deps.signal });
     writeSuccess(deps.stdout, {
       process: "modeld",
       state: "running",
       provider: false,
       model: STUB_ECHO_MODEL_ID,
     });
-    await new Promise<void>((resolve) => {
-      const stop = () => {
-        void server.stop().finally(() => resolve());
-      };
-      process.once("SIGTERM", stop);
-      process.once("SIGINT", stop);
-      if (deps.signal) {
-        if (deps.signal.aborted) stop();
-        else deps.signal.addEventListener("abort", stop, { once: true });
-      }
-    });
+    const stop = () => { void server.stop(); };
+    process.once("SIGTERM", stop);
+    process.once("SIGINT", stop);
+    try { await server.wait(); }
+    finally { process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop); }
   } catch (error) {
     rethrow(error);
   }

@@ -17,6 +17,11 @@ import { SHA, SOURCE } from "../packages/box-runtime/test/admission-fixture.ts";
 import { sha256Bytes } from "../packages/box-runtime/src/hash.ts";
 import { applyPatchProfile } from "../packages/box-runtime/src/transform.ts";
 import { modeldSocketPath, probeStubModeld, STUB_ECHO_MODEL_ID } from "../packages/box-runtime/src/modeld-ipc.ts";
+import { bindHostSessionHook } from "../packages/box-runtime/src/seam.ts";
+import type { HostPromptSession } from "../packages/box-runtime/src/session.ts";
+import { modeldFixture } from "../packages/box-runtime/test/modeld-fixture.ts";
+import { providerHardOff } from "../packages/box-runtime/test/provider-hard-off.ts";
+import { within } from "../packages/box-runtime/test/scripted-stream.ts";
 import { LIVE_SHAPED_HOST } from "../packages/box-runtime/test/live-shaped-host.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
@@ -660,6 +665,25 @@ describe("box-local runtime CLI", () => {
       secretSpy.mockRestore();
       restore();
     }
+  });
+
+  test("modeld run wires canonical admission to the Host seam and releases signal listeners", async () => {
+    const f = await modeldFixture(); const ac = new AbortController(); const off = providerHardOff();
+    const listeners = [process.listenerCount("SIGTERM"), process.listenerCount("SIGINT")];
+    const running = captureCli(["runtime", "modeld", "run"], { discoveryPath: "/dev/null", boxRuntimeRoot: f.durable,
+      env: { GROKBOX_RUN_ROOT: f.runRoot }, signal: ac.signal });
+    try {
+      await within((async () => { while (!(await probeStubModeld(f.runRoot))) await Bun.sleep(5); })());
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: f.durable, runRoot: f.runRoot, binding: f.binding });
+      const session = (id: string) => hook({ originalSession: { stream: () => { throw new Error("official hard-off"); } },
+        agentId: "agent-tom", sessionOptions: { invocationId: id, inferenceReason: "main" } }) as HostPromptSession;
+      expect((await session("admitted").getExecutor().stream().response).messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "echo" }] }]);
+      await f.store.saveDesired({ version: 1, mode: "disabled" });
+      expect((await session("disabled").getExecutor().stream().response).error?.userVisible).toBe(true);
+      ac.abort(); expect((await within(running)).code).toBe(0);
+      expect([process.listenerCount("SIGTERM"), process.listenerCount("SIGINT")]).toEqual(listeners);
+      expect(off.counts).toEqual({ fetch: 0, dns: 0, tcp: 0, credential: 0 });
+    } finally { ac.abort(); await running; off.restore(); }
   });
 
   test("literal secrets are rejected", async () => {

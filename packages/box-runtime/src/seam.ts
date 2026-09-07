@@ -1,6 +1,7 @@
 import { appendTurnSeamTerminal, TURN_SEAM_BOUNDED_STRING, type TurnSeamAssignment,
   type TurnSeamOutcome, type TurnSeamTerminalClass, type TurnSeamWriteResult } from "./events.ts";
-import { callStubModeld, isModeldFailure, STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
+import { callStubModeld, isModeldFailure, modeldHandshake, STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
+import { parseHostBinding, type HostBinding } from "./modeld-binding.ts";
 import { buildModelEnvelope, type ModelEnvelope } from "./envelope.ts";
 import { sha256Text } from "./hash.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
@@ -17,7 +18,7 @@ export type StubRouteDriver = {
   vision?: boolean;
   parallel?: "allow" | "fail-closed";
   stream?: (request: StubRouteSubmit) => AsyncIterable<StreamPart> | Promise<AsyncIterable<StreamPart>>;
-  submit?: (request: StubRouteSubmit) => Promise<{ parts: StreamPart[]; dispatched: boolean }>;
+  submit?: (request: StubRouteSubmit) => Promise<{ parts: StreamPart[]; dispatched: boolean; assignment?: "main" | "agent" }>;
   disconnectInvocation?: (invocationId: string) => Promise<void>;
   resolveCredential: () => never; openNetwork: () => never;
 };
@@ -28,19 +29,37 @@ export function createStubRouteDriver(parts: StreamPart[]): StubRouteDriver {
     delivery: parts.some((part) => part.type === "tool-call") ? "stream" : "response-only",
     resolveCredential: disabledCredential, openNetwork: disabledNetwork };
 }
-export function createModeldRouteDriver(runRoot: string): StubRouteDriver {
+export function createModeldRouteDriver(runRoot: string, binding?: HostBinding): StubRouteDriver {
   const driver = createStubRouteDriver(STUB_ECHO_PARTS);
+  const host = binding ? parseHostBinding(binding) : undefined;
+  const invocations = new Map<string, { generation: Promise<string>; unknown: boolean }>();
+  const entryFor = (id: string, signal?: AbortSignal) => {
+    const old = invocations.get(id);
+    if (old) return old;
+    if (!host || invocations.size >= 1024) throw new Error("modeld binding unavailable");
+    // A new invocation may handshake after restart. The SAME invocation never refreshes its fence or retries uncertainty.
+    const entry = { generation: modeldHandshake(runRoot, signal), unknown: false };
+    invocations.set(id, entry); return entry;
+  };
   driver.submit = async (request) => {
     if (request.abortSignal?.aborted) return { parts: [{ type: "finish", reason: "abort" }], dispatched: false };
     if (request.modelId !== STUB_ECHO_MODEL_ID) throw new Error("stub route driver rejects non-stub models");
-    const response = await callStubModeld(runRoot, { method: "submit", invocationId: request.invocationId,
-      agentId: request.agentId, modelId: request.modelId, envelope: request.envelope });
-    if (isModeldFailure(response)) throw new Error("modeld submit failed");
-    return submitPartsFromResponse(response);
+    const entry = entryFor(request.invocationId, request.abortSignal);
+    if (entry.unknown) throw new Error("modeld invocation unknown");
+    try {
+      const serverGeneration = await entry.generation;
+      if (entry.unknown) throw new Error("modeld invocation unknown");
+      const response = await callStubModeld(runRoot, { method: "submit", serverGeneration, host,
+        invocationId: request.invocationId, turnId: request.invocationId, agentId: request.agentId, envelope: request.envelope }, 1000, request.abortSignal);
+      if (isModeldFailure(response)) throw new Error("modeld admission failed");
+      return submitPartsFromResponse(response);
+    } catch { entry.unknown = true; throw new Error("modeld request failed without retry"); }
   };
   driver.disconnectInvocation = async (invocationId) => {
-    try { await callStubModeld(runRoot, { method: "disconnect", invocationId }); }
-    catch { /* Disconnect is best-effort, never a retry or fallback. */ }
+    try {
+      const entry = entryFor(invocationId); entry.unknown = true;
+      await callStubModeld(runRoot, { method: "disconnect", serverGeneration: await entry.generation, host, invocationId });
+    } catch { /* Disconnect is best-effort, never a retry or fallback. */ }
   };
   return driver;
 }
@@ -52,7 +71,7 @@ export type SessionSeamConfig = {
 type InvocationState = {
   session: HostPromptSession; dispatched: boolean; recorded: boolean; disconnected: boolean;
   evidence: SeamEvidence; agentId: string; modelId: string; invocationId: string;
-  requestHash?: string; cancel?: () => void; toolCallCount: number;
+  requestHash?: string; cancel?: () => void; toolCallCount: number; assignment: TurnSeamAssignment;
 };
 function invocationIdOf(options: unknown): string | undefined {
   if (!options || typeof options !== "object") return undefined;
@@ -105,7 +124,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     const work = async () => {
       try {
         const result = await writeTerminal(config.root, { name: "turn_seam_terminal", at: (config.now ?? (() => new Date().toISOString()))(),
-          mode: "route", agentId: state.agentId, assignment: config.assignment, modelId: routeModelId,
+          mode: "route", agentId: state.agentId, assignment: state.assignment, modelId: routeModelId,
           invocationId: state.invocationId, toolCallCount, terminalClass, outcome });
         state.evidence = result === "written" ? { emitted: true, gap: null } : { emitted: false, gap: result };
       } catch { state.evidence = { emitted: false, gap: "write_failed" }; }
@@ -138,8 +157,9 @@ export function createSessionSeam(config: SessionSeamConfig) {
           try {
             const result = await driver.submit(submit);
             driver.dispatches += result.dispatched ? 1 : 0;
+            if (result.assignment) state.assignment = result.assignment;
             return fromParts(result.parts);
-          } catch { driver.dispatches += 1; throw new Error("modeld submit failed"); }
+          } catch { throw new Error("modeld submit failed"); }
         }
         driver.dispatches += 1;
         return fromParts(driver.parts);
@@ -166,7 +186,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
         state.dispatched = true;
         return deliveryHandle(visibleFailureHandle(modelId, code, undefined, (terminal) => record(state, terminal.terminalClass, 0, "rejected")), driver.delivery === "response-only");
       } }),
-      dispatched: false, recorded: false, disconnected: false, evidence: { emitted: false, gap: null }, agentId, modelId, invocationId, toolCallCount: 0,
+      dispatched: false, recorded: false, disconnected: false, evidence: { emitted: false, gap: null }, agentId, modelId, invocationId, toolCallCount: 0, assignment: config.assignment,
     };
     invocations.set(invocationId, state);
     return state.session;
@@ -187,10 +207,10 @@ export function createSessionSeam(config: SessionSeamConfig) {
   };
 }
 
-export function bindHostSessionHook(input: { mode: SeamMode; durableRoot: string; runRoot: string }):
+export function bindHostSessionHook(input: { mode: SeamMode; durableRoot: string; runRoot: string; binding?: HostBinding }):
   (args: { originalSession: unknown; sessionOptions?: unknown; agentId?: string }) => unknown {
   if (input.mode !== "route") return (args) => args.originalSession;
   const seam = createSessionSeam({ mode: "route", root: input.durableRoot, assignment: "main", modelId: STUB_ECHO_MODEL_ID,
-    driver: createModeldRouteDriver(input.runRoot) });
+    driver: createModeldRouteDriver(input.runRoot, input.binding) });
   return (args) => seam.hook(args);
 }

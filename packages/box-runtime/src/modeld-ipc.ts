@@ -4,75 +4,25 @@ import { join } from "node:path";
 import { BoxRuntimeError } from "./errors.ts";
 import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { StreamPart } from "./session.ts";
-import { buildModelEnvelope, envelopeHasImage, parseModelEnvelope } from "./envelope.ts";
-import { sha256Text } from "./hash.ts";
+import { createModeld, type AdmissionFailureCode, type AdmitRequest, type ModelD, type ModeldDriver, type ModeldPorts } from "./modeld.ts";
+import { modeldStorePorts } from "./modeld-store.ts";
 
 export { STUB_ECHO_MODEL_ID };
-
 export const MODELD_MAX_FRAME = 16 * 1024;
-
-export const STUB_ECHO_PARTS: StreamPart[] = [
-  { type: "text-delta", textDelta: "echo" },
-  { type: "finish", reason: "stop" },
-];
-
-export function modeldSocketPath(runRoot: string): string {
-  return join(runRoot, "modeld.sock");
-}
-
-export type StubModeldFailureCode =
-  | "malformed"
-  | "too-large"
-  | "unknown-method"
-  | "excess-fields"
-  | "wrong-model"
-  | "missing-ids"
-  | "invalid-envelope"
-  | "unsupported-content"
-  | "conflict"
-  | "disconnected"
-  | "down";
-
-type InvocationRow = {
-  envelopeHash: string;
-  agentId: string;
-  modelId: string;
-  parts: StreamPart[];
-  dispatched: boolean;
-  disconnected: boolean;
-};
-
-const HEALTH_KEYS = ["method"] as const;
-const SUBMIT_KEYS = ["method", "invocationId", "agentId", "modelId"] as const;
-const DISCONNECT_KEYS = ["method", "invocationId"] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
+export const STUB_ECHO_PARTS: StreamPart[] = [{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }];
+export function modeldSocketPath(runRoot: string): string { return join(runRoot, "modeld.sock"); }
+export type StubModeldFailureCode = AdmissionFailureCode | "malformed" | "too-large" | "unknown-method" | "excess-fields" | "down";
+const SUBMIT_KEYS = ["method", "serverGeneration", "host", "invocationId", "turnId", "agentId", "envelope"];
+const DISCONNECT_KEYS = ["method", "serverGeneration", "host", "invocationId"];
+function isRecord(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function exactKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const keys = Object.keys(value);
-  if (keys.length !== allowed.length) return false;
-  return allowed.every((key) => keys.includes(key));
+  const keys = Object.keys(value); return keys.length === allowed.length && allowed.every((key) => keys.includes(key));
 }
-
-function boundedId(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  if (value.length === 0 || value.length > 128) return null;
-  if (/[\n\r]/.test(value)) return null;
-  return value;
-}
-
 export function encodeModeldFrame(value: unknown): Buffer {
   const json = Buffer.from(JSON.stringify(value), "utf8");
-  if (json.length > MODELD_MAX_FRAME) {
-    throw new Error("modeld frame too large");
-  }
-  const header = Buffer.alloc(4);
-  header.writeUInt32BE(json.length);
-  return Buffer.concat([header, json]);
+  if (json.length > MODELD_MAX_FRAME) throw new Error("modeld frame too large");
+  const header = Buffer.alloc(4); header.writeUInt32BE(json.length); return Buffer.concat([header, json]);
 }
-
 export function decodeModeldFrame(buffer: Buffer): { value: unknown; rest: Buffer } | { error: StubModeldFailureCode } | null {
   if (buffer.length < 4) return null;
   const length = buffer.readUInt32BE(0);
@@ -80,290 +30,178 @@ export function decodeModeldFrame(buffer: Buffer): { value: unknown; rest: Buffe
   if (buffer.length < 4 + length) return null;
   const payload = buffer.subarray(4, 4 + length);
   try {
-    return { value: JSON.parse(payload.toString("utf8")) as unknown, rest: Buffer.from(buffer.subarray(4 + length)) };
-  } catch {
-    return { error: "malformed" };
-  }
+    const text = payload.toString("utf8");
+    if (!Buffer.from(text).equals(payload)) return { error: "malformed" };
+    return { value: JSON.parse(text) as unknown, rest: Buffer.from(buffer.subarray(4 + length)) };
+  } catch { return { error: "malformed" }; }
 }
-
-function fail(code: StubModeldFailureCode): { ok: false; code: StubModeldFailureCode } {
-  return { ok: false, code };
-}
-
-function handleRequest(
-  registry: Map<string, InvocationRow>,
-  stats: { dispatches: number },
-  raw: unknown,
-): unknown {
+const fail = (code: StubModeldFailureCode) => ({ ok: false as const, code, userVisible: true });
+async function handleRequest(kernel: ModelD, raw: unknown, signal: AbortSignal): Promise<unknown> {
   if (!isRecord(raw)) return fail("malformed");
-  const method = raw.method;
-  if (method === "health") {
-    if (!exactKeys(raw, HEALTH_KEYS)) return fail("excess-fields");
-    return { ok: true, method: "health" };
+  if (raw.method === "health") {
+    if (!exactKeys(raw, ["method"])) return fail("excess-fields");
+    // Readiness is service liveness, NOT committed Host admission (which would create a signing cycle).
+    return { ok: true, method: "health", version: 2, serverGeneration: kernel.serverGeneration };
   }
-  if (method === "disconnect") {
+  if (raw.method === "disconnect") {
     if (!exactKeys(raw, DISCONNECT_KEYS)) return fail("excess-fields");
-    const invocationId = boundedId(raw.invocationId);
-    if (invocationId == null) return fail("missing-ids");
-    const existing = registry.get(invocationId);
-    if (existing) existing.disconnected = true;
-    else registry.set(invocationId, { envelopeHash: "", agentId: "", modelId: STUB_ECHO_MODEL_ID, parts: [], dispatched: false, disconnected: true });
-    return { ok: true, method: "disconnect" };
+    return { ...kernel.disconnect(raw as unknown as Pick<AdmitRequest, "serverGeneration" | "host" | "invocationId">), method: "disconnect" };
   }
-  if (method !== "submit") return fail("unknown-method");
-  if (!exactKeys(raw, Object.hasOwn(raw, "envelope") ? [...SUBMIT_KEYS, "envelope"] : SUBMIT_KEYS)) return fail("excess-fields");
-  const invocationId = boundedId(raw.invocationId);
-  const agentId = boundedId(raw.agentId);
-  const modelId = boundedId(raw.modelId);
-  if (invocationId == null || agentId == null || modelId == null) return fail("missing-ids");
-  if (modelId !== STUB_ECHO_MODEL_ID) return fail("wrong-model");
-  let envelopeHash: string;
-  try {
-    // Legacy ids-only health fixtures mean an empty envelope, not a dropped request body.
-    const envelope = Object.hasOwn(raw, "envelope") ? parseModelEnvelope(raw.envelope) : buildModelEnvelope([]);
-    if (envelopeHasImage(envelope)) return fail("unsupported-content");
-    envelopeHash = sha256Text(JSON.stringify(envelope));
-  } catch { return fail("invalid-envelope"); }
-  const existing = registry.get(invocationId);
-  if (existing) {
-    if (existing.disconnected) return fail("disconnected");
-    if (existing.agentId !== agentId || existing.modelId !== modelId || existing.envelopeHash !== envelopeHash) return fail("conflict");
-    return {
-      ok: true,
-      method: "submit",
-      dispatched: false,
-      modelId: STUB_ECHO_MODEL_ID,
-      parts: existing.parts,
-    };
-  }
-  const parts = STUB_ECHO_PARTS.map((part) => ({ ...part }));
-  registry.set(invocationId, {
-    envelopeHash,
-    agentId,
-    modelId,
-    parts,
-    dispatched: true,
-    disconnected: false,
-  });
-  stats.dispatches += 1;
-  return {
-    ok: true,
-    method: "submit",
-    dispatched: true,
-    modelId: STUB_ECHO_MODEL_ID,
-    parts,
-  };
+  if (raw.method !== "submit") return fail("unknown-method");
+  if (!exactKeys(raw, SUBMIT_KEYS)) return fail("excess-fields");
+  const result = await kernel.admit(raw as unknown as AdmitRequest, signal);
+  return result.ok ? { ...result, method: "submit" } : result;
 }
-
 function writeFrame(socket: Socket, value: unknown): void {
-  try {
-    socket.write(encodeModeldFrame(value));
-  } catch {
-    socket.write(encodeModeldFrame(fail("too-large")));
-  }
+  try { socket.end(encodeModeldFrame(value)); }
+  catch { socket.end(encodeModeldFrame(fail("too-large"))); }
 }
-
-function attachClient(socket: Socket, registry: Map<string, InvocationRow>, stats: { dispatches: number }): void {
+function attachClient(socket: Socket, kernel: ModelD): void {
   let buf: Buffer = Buffer.alloc(0);
+  let received = false;
+  let finished = false;
+  const controller = new AbortController();
+  const disconnect = () => { if (!finished) controller.abort(); };
+  socket.on("error", disconnect); socket.on("end", disconnect); socket.on("close", disconnect);
+  socket.setTimeout(1000, () => socket.destroy());
   socket.on("data", (chunk: Buffer) => {
+    if (received || buf.length + chunk.length > MODELD_MAX_FRAME + 4) { controller.abort(); writeFrame(socket, fail("too-large")); return; }
     buf = Buffer.concat([buf, chunk]);
-    while (buf.length > 0) {
-      const decoded = decodeModeldFrame(buf);
-      if (decoded == null) return;
-      if ("error" in decoded) {
-        writeFrame(socket, fail(decoded.error));
-        socket.end();
-        return;
-      }
-      writeFrame(socket, handleRequest(registry, stats, decoded.value));
-      buf = Buffer.from(decoded.rest);
-    }
+    const decoded = decodeModeldFrame(buf);
+    if (decoded == null) return;
+    received = true; buf = Buffer.alloc(0);
+    if ("error" in decoded) { finished = true; writeFrame(socket, fail(decoded.error)); return; }
+    if (decoded.rest.length > 0) { finished = true; writeFrame(socket, fail("malformed")); return; }
+    void handleRequest(kernel, decoded.value, controller.signal).then((result) => {
+      finished = true; if (!socket.destroyed) writeFrame(socket, result);
+    }, () => { finished = true; if (!socket.destroyed) writeFrame(socket, fail("malformed")); });
   });
 }
-
 function isAddrInUse(error: unknown): boolean {
-  return Boolean(
-    error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error.code === "EADDRINUSE" || error.code === "EEXIST"),
-  );
+  return Boolean(error && typeof error === "object" && "code" in error && (error.code === "EADDRINUSE" || error.code === "EEXIST"));
 }
-
 async function listenUnix(server: Server, socketPath: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => reject(error);
     server.once("error", onError);
-    server.listen({ path: socketPath, exclusive: true }, () => {
-      server.off("error", onError);
-      resolve();
-    });
+    server.listen({ path: socketPath, exclusive: true }, () => { server.off("error", onError); resolve(); });
   });
 }
-
-async function closeServer(server: Server): Promise<void> {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+async function closeServer(server: Server): Promise<void> { await new Promise<void>((resolve) => server.close(() => resolve())); }
+/** A connectable socket is owned even if it is old-protocol, saturated or not answering health. */
+async function socketInUse(path: string): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const socket = createConnection({ path });
+    let done = false;
+    const finish = (value: boolean) => { if (done) return; done = true; clearTimeout(timer); socket.destroy(); resolve(value); };
+    const timer = setTimeout(() => finish(true), 80); // uncertainty never authorizes unlink
+    socket.once("connect", () => finish(true));
+    socket.once("error", (error: NodeJS.ErrnoException) => finish(error.code !== "ENOENT" && error.code !== "ECONNREFUSED"));
+  });
 }
-
 export type StubModeldServer = {
-  socketPath: string;
-  dispatches: () => number;
-  stop: () => Promise<void>;
-  wait: () => Promise<void>;
+  socketPath: string; serverGeneration: string; dispatches: () => number;
+  admissionStats: ModelD["stats"]; stop: () => Promise<void>; wait: () => Promise<void>;
 };
-
-export async function startStubModeldServer(input: { runRoot: string; signal?: AbortSignal }): Promise<StubModeldServer> {
+export async function startStubModeldServer(input: {
+  runRoot: string; durableRoot: string; signal?: AbortSignal;
+  /** Tests replace dependencies on the SAME kernel/transport. CLI never supplies a fake driver or credential port. */
+  ports?: ModeldPorts; driver?: ModeldDriver; now?: () => number; budgetMs?: number; idleTtlMs?: number; maxRecords?: number;
+}): Promise<StubModeldServer> {
   const socketPath = modeldSocketPath(input.runRoot);
   await mkdir(input.runRoot, { recursive: true, mode: 0o700 });
   await chmod(input.runRoot, 0o700).catch(() => undefined);
-  if (await probeStubModeld(input.runRoot)) {
-    throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
-  }
-
-  const registry = new Map<string, InvocationRow>();
-  const stats = { dispatches: 0 };
-  const server: Server = createServer((socket) => attachClient(socket, registry, stats));
-
-  try {
-    try {
-      await listenUnix(server, socketPath);
-    } catch (error) {
-      if (!isAddrInUse(error)) throw error;
-      if (await probeStubModeld(input.runRoot)) {
-        throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
-      }
-      await unlink(socketPath).catch(() => undefined);
-      await listenUnix(server, socketPath);
-    }
-  } catch (error) {
-    await closeServer(server);
-    throw error;
-  }
-  await chmod(socketPath, 0o600).catch(() => undefined);
-  const owned = await lstat(socketPath)
-    .then((info) => ({ dev: info.dev, ino: info.ino }))
-    .catch(() => null);
-
-  let closed = false;
-  const stopped = new Promise<void>((resolve) => {
-    server.once("close", () => resolve());
+  if (await socketInUse(socketPath)) throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
+  const kernel = createModeld({ ...(input.ports ?? modeldStorePorts(input.durableRoot, input.runRoot)),
+    driver: input.driver ?? { accepts: (model) => model.id === STUB_ECHO_MODEL_ID && model.provider === "stub" &&
+      model.endpoint === "stub:echo" && model.apiKeyRef === "", complete: () => STUB_ECHO_PARTS },
+    now: input.now, budgetMs: input.budgetMs, idleTtlMs: input.idleTtlMs, maxRecords: input.maxRecords });
+  const clients = new Set<Socket>();
+  const server: Server = createServer((socket) => {
+    if (clients.size >= 64) { socket.destroy(); return; }
+    clients.add(socket); socket.once("close", () => clients.delete(socket)); attachClient(socket, kernel);
   });
-
-  const stop = async (): Promise<void> => {
-    if (closed) return;
-    closed = true;
+  try {
+    try { await listenUnix(server, socketPath); }
+    catch (error) {
+      if (!isAddrInUse(error)) throw error;
+      if (await socketInUse(socketPath)) throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
+      const stale = await lstat(socketPath);
+      if (!stale.isSocket() || (process.getuid && stale.uid !== process.getuid())) throw new BoxRuntimeError("invalid_usage", "modeld path is not an owned stale socket.");
+      await unlink(socketPath); await listenUnix(server, socketPath);
+    }
+  } catch (error) { kernel.stop(); for (const socket of clients) socket.destroy(); await closeServer(server); throw error; }
+  await chmod(socketPath, 0o600).catch(() => undefined);
+  const owned = await lstat(socketPath).then((info) => ({ dev: info.dev, ino: info.ino })).catch(() => null);
+  const timer = setInterval(kernel.sweep, Math.min(1000, input.idleTtlMs ?? 1000)); timer.unref?.();
+  let stopping: Promise<void> | undefined;
+  const stopped = new Promise<void>((resolve) => server.once("close", resolve));
+  const stop = (): Promise<void> => stopping ??= (async () => {
+    clearInterval(timer); input.signal?.removeEventListener("abort", onAbort);
+    kernel.stop(); // cancel first; do not await a stuck driver or a client holding the socket open
+    for (const socket of clients) socket.destroy();
     let displaced: string | null = null;
     if (owned) {
       try {
         const current = await lstat(socketPath);
-        if (current.dev !== owned.dev || current.ino !== owned.ino) {
-          displaced = `${socketPath}.keep.${process.pid}`;
-          await rename(socketPath, displaced);
-        }
-      } catch {
-        /* path already gone */
-      }
+        if (current.dev !== owned.dev || current.ino !== owned.ino) { displaced = `${socketPath}.keep.${process.pid}`; await rename(socketPath, displaced); }
+      } catch { /* path already gone */ }
     }
     await closeServer(server);
-    if (displaced) {
-      await rename(displaced, socketPath).catch(() => undefined);
-      return;
-    }
+    if (displaced) { await rename(displaced, socketPath).catch(() => undefined); return; }
     if (!owned) return;
-    try {
-      const current = await lstat(socketPath);
-      if (current.dev === owned.dev && current.ino === owned.ino) {
-        await unlink(socketPath);
-      }
-    } catch {
-      /* socket already gone or not ours */
-    }
-  };
-
-  const onAbort = () => {
-    void stop();
-  };
+    try { const current = await lstat(socketPath); if (current.dev === owned.dev && current.ino === owned.ino) await unlink(socketPath); }
+    catch { /* socket already gone or not ours */ }
+  })();
+  const onAbort = () => { void stop(); };
   input.signal?.addEventListener("abort", onAbort, { once: true });
   if (input.signal?.aborted) await stop();
-
-  return {
-    socketPath,
-    dispatches: () => stats.dispatches,
-    stop,
-    wait: async () => {
-      await stopped;
-      input.signal?.removeEventListener("abort", onAbort);
-    },
-  };
+  return { socketPath, serverGeneration: kernel.serverGeneration, dispatches: () => kernel.stats().dispatches,
+    admissionStats: kernel.stats, stop, wait: async () => { await stopped; await stopping; } };
 }
-
-export async function callStubModeld(runRoot: string, request: unknown, timeoutMs = 1000): Promise<unknown> {
-  const socketPath = modeldSocketPath(runRoot);
+export async function callStubModeld(runRoot: string, request: unknown, timeoutMs = 1000, signal?: AbortSignal): Promise<unknown> {
+  if (signal?.aborted) throw new Error("modeld cancelled");
   return await new Promise<unknown>((resolve, reject) => {
-    const socket = createConnection({ path: socketPath });
-    let buf: Buffer = Buffer.alloc(0);
-    let settled = false;
+    const socket = createConnection({ path: modeldSocketPath(runRoot) });
+    let buf: Buffer = Buffer.alloc(0); let settled = false;
     const timer = setTimeout(() => finish(new Error("modeld timeout")), timeoutMs);
-
+    const abort = () => finish(new Error("modeld cancelled"));
     const finish = (error?: Error, value?: unknown): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      socket.destroy();
-      if (error) reject(error);
-      else resolve(value);
+      if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener("abort", abort); socket.destroy();
+      if (error) reject(error); else resolve(value);
     };
-
-    socket.on("connect", () => {
-      try {
-        socket.write(encodeModeldFrame(request));
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error("modeld write failed"));
-      }
-    });
+    signal?.addEventListener("abort", abort, { once: true });
+    socket.on("connect", () => { try { socket.write(encodeModeldFrame(request)); } catch { finish(new Error("modeld write failed")); } });
     socket.on("data", (chunk: Buffer) => {
-      buf = Buffer.concat([buf, chunk]);
-      const decoded = decodeModeldFrame(buf);
+      if (buf.length + chunk.length > MODELD_MAX_FRAME + 4) { finish(undefined, fail("too-large")); return; }
+      buf = Buffer.concat([buf, chunk]); const decoded = decodeModeldFrame(buf);
       if (decoded == null) return;
-      if ("error" in decoded) {
-        finish(undefined, fail(decoded.error));
-        return;
-      }
+      if ("error" in decoded) { finish(undefined, fail(decoded.error)); return; }
       finish(undefined, decoded.value);
     });
-    socket.on("error", (error) => {
-      const wrapped = new Error("modeld down");
-      wrapped.cause = error;
-      finish(wrapped);
-    });
-    socket.on("end", () => {
-      if (!settled) finish(new Error("modeld disconnected"));
-    });
+    socket.on("error", () => finish(new Error("modeld down")));
+    socket.on("end", () => finish(new Error("modeld disconnected")));
+    socket.on("close", () => finish(new Error("modeld disconnected")));
+    if (signal?.aborted) abort();
   });
 }
-
-export async function probeStubModeld(runRoot: string, timeoutMs = 80): Promise<boolean> {
-  try {
-    const response = await callStubModeld(runRoot, { method: "health" }, timeoutMs);
-    return isRecord(response) && response.ok === true && response.method === "health";
-  } catch {
-    return false;
-  }
+export async function modeldHandshake(runRoot: string, signal?: AbortSignal): Promise<string> {
+  const response = await callStubModeld(runRoot, { method: "health" }, 1000, signal);
+  if (!isRecord(response) || response.ok !== true || response.method !== "health" || response.version !== 2 ||
+    typeof response.serverGeneration !== "string" || !/^[a-f0-9-]{36}$/.test(response.serverGeneration)) throw new Error("modeld handshake failed");
+  return response.serverGeneration;
 }
-
+export async function probeStubModeld(runRoot: string, timeoutMs = 80): Promise<boolean> {
+  try { const response = await callStubModeld(runRoot, { method: "health" }, timeoutMs);
+    return isRecord(response) && response.ok === true && response.method === "health" && response.version === 2 &&
+      typeof response.serverGeneration === "string" && /^[a-f0-9-]{36}$/.test(response.serverGeneration);
+  } catch { return false; }
+}
 export function isModeldFailure(value: unknown): value is { ok: false; code: StubModeldFailureCode } {
   return isRecord(value) && value.ok === false && typeof value.code === "string";
 }
-
-export function submitPartsFromResponse(value: unknown): { parts: StreamPart[]; dispatched: boolean } {
-  if (!isRecord(value) || value.ok !== true || value.method !== "submit") {
-    throw new Error("modeld submit failed");
-  }
-  if (value.modelId !== STUB_ECHO_MODEL_ID || !Array.isArray(value.parts)) {
-    throw new Error("modeld malformed output");
-  }
-  return {
-    parts: value.parts as StreamPart[],
-    dispatched: value.dispatched === true,
-  };
+export function submitPartsFromResponse(value: unknown): { parts: StreamPart[]; dispatched: boolean; assignment: "main" | "agent" } {
+  if (!isRecord(value) || value.ok !== true || value.method !== "submit") throw new Error("modeld submit failed");
+  if (value.modelId !== STUB_ECHO_MODEL_ID || !Array.isArray(value.parts) || (value.assignment !== "main" && value.assignment !== "agent")) throw new Error("modeld malformed output");
+  return { parts: value.parts as StreamPart[], dispatched: value.dispatched === true, assignment: value.assignment };
 }

@@ -137,7 +137,7 @@ export function parseModelsFile(value: unknown): ModelsFile {
     (isRecord(value.assignments) && value.assignments.agents !== undefined && !isRecord(value.assignments.agents))) {
     throw new BoxRuntimeError("invalid_usage", "models and assignments must be objects.");
   }
-  const models: Record<string, ModelRecord> = {};
+  const models: Record<string, ModelRecord> = Object.create(null);
   if (isRecord(value.models)) {
     for (const [id, record] of Object.entries(value.models)) models[id] = parseModel(id, record);
   }
@@ -149,7 +149,7 @@ export function parseModelsFile(value: unknown): ModelsFile {
       : (() => {
           throw new BoxRuntimeError("invalid_usage", "assignments.main must be a model id or null.");
         })();
-  const agents: Record<string, string> = {};
+  const agents: Record<string, string> = Object.create(null);
   if (isRecord(assignmentsRaw.agents)) {
     for (const [agentId, modelId] of Object.entries(assignmentsRaw.agents)) {
       if (typeof modelId !== "string") {
@@ -218,7 +218,7 @@ export function parseModelId(value: string): { provider: string; model: string; 
 
 export function requireModel(file: ModelsFile, id: string): ModelRecord {
   if (id === STUB_ECHO_MODEL_ID) return STUB_ECHO_MODEL;
-  const record = file.models[id];
+  const record = Object.hasOwn(file.models, id) ? file.models[id] : undefined;
   if (!record) throw new BoxRuntimeError("invalid_usage", `Unknown model '${id}'. Add it to models.json first.`);
   return record;
 }
@@ -299,7 +299,7 @@ export function disclosure(file: ModelsFile, modelId: string, forAgent?: string)
 }
 
 export function resolveAssignment(file: ModelsFile, agentId?: string): ModelRecord {
-  const id = agentId && file.assignments.agents[agentId] ? file.assignments.agents[agentId] : file.assignments.main;
+  const id = agentId && Object.hasOwn(file.assignments.agents, agentId) ? file.assignments.agents[agentId] : file.assignments.main;
   if (!id) {
     throw new BoxRuntimeError("invalid_usage", "No assignments.main; missing override is not official inference.");
   }

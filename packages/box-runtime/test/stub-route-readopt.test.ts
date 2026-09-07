@@ -403,7 +403,7 @@ describe("stub route fake-process re-adopt", () => {
     const envHas = (pid: number, key: string) =>
       pid === host.pid &&
       (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER");
-    const modeld = await startStubModeldServer({ runRoot: ephemeralRoot });
+    const modeld = await startStubModeldServer({ runRoot: ephemeralRoot, durableRoot: root });
     try {
       const healthy = await runWatchdogTick({
         gatewayPid: host.pid,

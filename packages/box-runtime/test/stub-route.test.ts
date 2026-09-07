@@ -1,9 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as dns from "node:dns";
-import { lstat, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
+import { lstat, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import * as net from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { FAKE_BINDING, modeldFixture, submitRequest } from "./modeld-fixture.ts";
 import { createContext, runInContext } from "node:vm";
 import { BoxRuntimeError } from "../src/errors.ts";
 import { eventsPath } from "../src/paths.ts";
@@ -62,12 +61,7 @@ function installNetworkTraps(counts: { fetch: number; dns: number; tcp: number }
   return () => { globalThis.fetch = originalFetch; for (const spy of spies) spy.mockRestore(); };
 }
 
-async function roots() {
-  return {
-    durable: await mkdtemp(join(tmpdir(), "grokbox-stub-durable-")),
-    runRoot: await mkdtemp(join(tmpdir(), "grokbox-stub-run-")),
-  };
-}
+const roots = modeldFixture;
 
 async function turnLines(dir: string): Promise<Array<Record<string, unknown>>> {
   let text = "";
@@ -116,10 +110,10 @@ function loadSynthetic(hook: (args: { originalSession: object; sessionOptions?: 
 describe("stub route synthetic compile/load", () => {
   test("identity returns the official object, skips modeld, and writes no seam event", async () => {
     const { durable, runRoot } = await roots();
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const original = officialSession();
-      const hook = bindHostSessionHook({ mode: "identity", durableRoot: durable, runRoot });
+      const hook = bindHostSessionHook({ mode: "identity", durableRoot: durable, runRoot, binding: FAKE_BINDING });
       const returned = hook({
         originalSession: original,
         sessionOptions: { invocationId: "inv-id", agentId: "agent-tom", inferenceReason: "main" },
@@ -139,10 +133,10 @@ describe("stub route synthetic compile/load", () => {
 
   test("route ordinary-main is managed; non-main stays official", async () => {
     const { durable, runRoot } = await roots();
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const original = officialSession();
-      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot });
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot, binding: FAKE_BINDING });
       const managed = hook({
         originalSession: original,
         sessionOptions: { invocationId: "inv-main", inferenceReason: "main" },
@@ -167,10 +161,10 @@ describe("stub route synthetic compile/load", () => {
 
   test("route executor stream is synchronous, Host-shaped, and does not tee waiters", async () => {
     const { durable, runRoot } = await roots();
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const original = officialSession();
-      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot });
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot, binding: FAKE_BINDING });
       const managed = hook({
         originalSession: original,
         sessionOptions: { invocationId: "inv-shape", inferenceReason: "main" },
@@ -223,10 +217,10 @@ describe("stub route synthetic compile/load", () => {
   test("response-only route reaches a meaningful response before duplicateStream's second reader attaches",
     async () => {
     const { durable, runRoot } = await roots();
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const original = officialSession();
-      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot });
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot, binding: FAKE_BINDING });
       const managed = hook({
         originalSession: original,
         sessionOptions: { invocationId: "inv-dup", inferenceReason: "main" },
@@ -260,9 +254,9 @@ describe("stub route synthetic compile/load", () => {
 describe("stub modeld IPC", () => {
   test("one text submit dispatches once and writes one terminal; duplicate stream does not", async () => {
     const { durable, runRoot } = await roots();
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
-      const driver = createModeldRouteDriver(runRoot);
+      const driver = createModeldRouteDriver(runRoot, FAKE_BINDING);
       expect(() => driver.resolveCredential()).toThrow(/credential/);
       expect(() => driver.openNetwork()).toThrow(/network/);
       const seam = createSessionSeam({
@@ -313,9 +307,9 @@ describe("stub modeld IPC", () => {
 
   test("conflicting duplicate invocation ids fail closed at the seam", async () => {
     const { durable, runRoot } = await roots();
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
-      const driver = createModeldRouteDriver(runRoot);
+      const driver = createModeldRouteDriver(runRoot, FAKE_BINDING);
       const seam = createSessionSeam({
         mode: "route",
         root: durable,
@@ -368,7 +362,7 @@ describe("stub modeld IPC", () => {
       },
     };
 
-    const downDriver = createModeldRouteDriver(runRoot);
+    const downDriver = createModeldRouteDriver(runRoot, FAKE_BINDING);
     const downSeam = createSessionSeam({
       mode: "route",
       root: durable,
@@ -387,7 +381,7 @@ describe("stub modeld IPC", () => {
     expect(downDriver.officialCalls).toBe(0);
     expect(downDriver.secondProviderCalls).toBe(0);
 
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const malformed = await new Promise<Buffer>((resolve, reject) => {
         const socket = net.createConnection({ path: modeldSocketPath(runRoot) });
@@ -400,20 +394,15 @@ describe("stub modeld IPC", () => {
       });
       expect(malformed.length).toBeGreaterThan(4);
 
-      const wrong = await callStubModeld(runRoot, {
-        method: "submit",
-        invocationId: "inv-wrong",
-        agentId: "agent-tom",
-        modelId: "acme/fast",
-      });
-      expect(wrong).toMatchObject({ ok: false, code: "wrong-model" });
+      const wrong = await callStubModeld(runRoot, { ...submitRequest(server, "inv-wrong"), modelId: "acme/fast" });
+      expect(wrong).toMatchObject({ ok: false, code: "excess-fields" });
 
       const missing = createSessionSeam({
         mode: "route",
         root: durable,
         assignment: "main",
         modelId: STUB_ECHO_MODEL_ID,
-        driver: createModeldRouteDriver(runRoot),
+        driver: createModeldRouteDriver(runRoot, FAKE_BINDING),
         now: () => AT,
       });
       const missingSession = missing.hook({
@@ -424,31 +413,16 @@ describe("stub modeld IPC", () => {
       await consumeHost(missingSession);
       expect(server.dispatches()).toBe(0);
 
-      const first = await callStubModeld(runRoot, {
-        method: "submit",
-        invocationId: "inv-conflict",
-        agentId: "agent-tom",
-        modelId: STUB_ECHO_MODEL_ID,
-      });
+      const first = await callStubModeld(runRoot, submitRequest(server, "inv-conflict"));
       expect(first).toMatchObject({ ok: true, dispatched: true });
-      const conflict = await callStubModeld(runRoot, {
-        method: "submit",
-        invocationId: "inv-conflict",
-        agentId: "agent-jerry",
-        modelId: STUB_ECHO_MODEL_ID,
-      });
+      const conflict = await callStubModeld(runRoot, submitRequest(server, "inv-conflict", { agentId: "agent-jerry" }));
       expect(conflict).toMatchObject({ ok: false, code: "conflict" });
 
-      await callStubModeld(runRoot, { method: "disconnect", invocationId: "inv-gone" });
-      const disconnected = await callStubModeld(runRoot, {
-        method: "submit",
-        invocationId: "inv-gone",
-        agentId: "agent-tom",
-        modelId: STUB_ECHO_MODEL_ID,
-      });
+      await callStubModeld(runRoot, { method: "disconnect", serverGeneration: server.serverGeneration, host: FAKE_BINDING, invocationId: "inv-gone" });
+      const disconnected = await callStubModeld(runRoot, submitRequest(server, "inv-gone"));
       expect(disconnected).toMatchObject({ ok: false, code: "disconnected" });
 
-      const abortDriver = createModeldRouteDriver(runRoot);
+      const abortDriver = createModeldRouteDriver(runRoot, FAKE_BINDING);
       const abortSeam = createSessionSeam({
         mode: "route",
         root: durable,
@@ -475,11 +449,11 @@ describe("stub modeld IPC", () => {
 
   test("hard-off: no credential resolver, fetch, DNS, or TCP while unix IPC works", async () => {
     const { durable, runRoot } = await roots();
-    const server = await startStubModeldServer({ runRoot });
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     const counts = { fetch: 0, dns: 0, tcp: 0 };
     const restore = installNetworkTraps(counts);
     try {
-      const driver = createModeldRouteDriver(runRoot);
+      const driver = createModeldRouteDriver(runRoot, FAKE_BINDING);
       const seam = createSessionSeam({
         mode: "route",
         root: durable,
@@ -501,12 +475,7 @@ describe("stub modeld IPC", () => {
       expect(counts.dns).toBe(0);
       expect(counts.tcp).toBe(0);
       const payload = JSON.stringify(
-        await callStubModeld(runRoot, {
-          method: "submit",
-          invocationId: "inv-hardoff-2",
-          agentId: "agent-tom",
-          modelId: STUB_ECHO_MODEL_ID,
-        }),
+        await callStubModeld(runRoot, submitRequest(server, "inv-hardoff-2")),
       );
       expect(payload).not.toMatch(/https?:|apiKey|sk-|ACME_|env:/);
       expect(encodeModeldFrame({ method: "health" }).includes(Buffer.from("https://"))).toBe(false);
@@ -515,7 +484,7 @@ describe("stub modeld IPC", () => {
       expect(counts.tcp).toBe(0);
 
       await server.stop();
-      const downDriver = createModeldRouteDriver(runRoot);
+      const downDriver = createModeldRouteDriver(runRoot, FAKE_BINDING);
       const downSeam = createSessionSeam({
         mode: "route",
         root: durable,
@@ -544,11 +513,11 @@ describe("stub modeld IPC", () => {
 
 describe("stub modeld socket ownership", () => {
   test("refuses a live competitor and stop unlinks only the owned socket", async () => {
-    const { runRoot } = await roots();
+    const { runRoot, durable } = await roots();
     const socketPath = modeldSocketPath(runRoot);
-    const first = await startStubModeldServer({ runRoot });
+    const first = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
-      await expect(startStubModeldServer({ runRoot })).rejects.toMatchObject({
+      await expect(startStubModeldServer({ runRoot, durableRoot: durable })).rejects.toMatchObject({
         code: "invalid_usage",
       });
       expect(await probeStubModeld(runRoot)).toBe(true);
@@ -568,13 +537,18 @@ describe("stub modeld socket ownership", () => {
   });
 
   test("stale socket is replaced; live health remains after a refused second start", async () => {
-    const { runRoot } = await roots();
+    const { runRoot, durable } = await roots();
     const socketPath = modeldSocketPath(runRoot);
-    await writeFile(socketPath, "stale");
-    const server = await startStubModeldServer({ runRoot });
+    const orphanPath = `${socketPath}.orphan`;
+    const orphan = net.createServer();
+    await new Promise<void>((resolve) => orphan.listen(orphanPath, resolve));
+    await rename(orphanPath, socketPath);
+    await new Promise<void>((resolve) => orphan.close(() => resolve()));
+    expect((await lstat(socketPath)).isSocket()).toBe(true);
+    const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       expect(await probeStubModeld(runRoot)).toBe(true);
-      await expect(startStubModeldServer({ runRoot })).rejects.toBeInstanceOf(BoxRuntimeError);
+      await expect(startStubModeldServer({ runRoot, durableRoot: durable })).rejects.toBeInstanceOf(BoxRuntimeError);
       expect(await probeStubModeld(runRoot)).toBe(true);
     } finally {
       await server.stop();
