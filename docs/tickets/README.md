@@ -14,7 +14,9 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T4c | done | Default modeld composite stub∪openai admit + minimal C1 |
 | T4d | done | Route activate admits openai* (offline) |
 | T4e | done | Route Host/preload session modelId follows models.json |
-| T5 | backlog | S2 streaming IPC + full C1 credentials |
+| T5 | split | see T5a (C1, done) / T5b (S2, backlog) |
+| T5a | done | C1 credentials productization (modeld Effect seam) |
+| T5b | backlog | S2 streaming IPC |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
 
 Driver: herdr grok main line; true blockers → new session gpt-6-astra max.

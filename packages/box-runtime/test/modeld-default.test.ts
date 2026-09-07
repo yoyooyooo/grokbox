@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildModelEnvelope } from "../src/envelope.ts";
 import { sha256Text } from "../src/hash.ts";
@@ -79,7 +80,7 @@ describe("composite / default modeld driver", () => {
   });
 
   test("openai admit with env key fingerprint + injected stream; missing key → credential-unavailable", async () => {
-    const env = { OPENAI_API_KEY: "offline-test-key" };
+    const env = { OPENAI_API_KEY: "  offline-test-key\n" };
     const expectedFp = sha256Text("offline-test-key");
     const driver = createDefaultModeldDriver({
       env,
@@ -121,6 +122,33 @@ describe("composite / default modeld driver", () => {
       });
     } finally {
       missing.stop();
+    }
+  });
+
+  test("openai complete re-reads env via the same C1 Effect; secret never enters parts", async () => {
+    const env = { OPENAI_API_KEY: "  offline-resolve-key\n" };
+    const expectedFp = sha256Text("offline-resolve-key");
+    const driver = createDefaultModeldDriver({
+      env,
+      fetch: (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch,
+    });
+    const kernel = createModeld({
+      authority: () => ({ state: "committed", host: FAKE_BINDING }),
+      loadModels: () => openaiModels,
+      credentialFingerprint: createDefaultCredentialFingerprint(env),
+      driver,
+    });
+    try {
+      const result = await kernel.admit(submitRequest(kernel, "openai-resolve"));
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected dispatched complete");
+      expect(result.dispatched).toBe(true);
+      expect(result.modelId).toBe(openaiModel.id);
+      expect(result.fingerprint).toBe(sha256Text(JSON.stringify([openaiModel, expectedFp])));
+      expect(result.parts.some((part) => part.type === "error")).toBe(true);
+      expect(JSON.stringify(result)).not.toContain("offline-resolve-key");
+    } finally {
+      kernel.stop();
     }
   });
 
@@ -205,5 +233,31 @@ describe("default driver fence", () => {
 
     const models = await readFile(join(srcDir, "models.ts"), "utf8");
     expect(models).toContain("route admits only stub/echo or openai*");
+  });
+
+  test("Host/preload/seam/session/hook/ipc stay Effect-free; preload bundle does not include effect", async () => {
+    const effectImport = /(?:from|import\(|require\()\s*["']effect(?:\/[^"']*)?["']/;
+    for (const file of ["preload.ts", "seam.ts", "session.ts", "hook.ts", "transform.ts", "modeld-ipc.ts"]) {
+      const text = await readFile(join(srcDir, file), "utf8");
+      expect(text.match(effectImport), file).toBeNull();
+    }
+    const creds = await readFile(join(srcDir, "modeld-credentials.ts"), "utf8");
+    expect(creds).toMatch(/from "effect"/);
+    expect(creds).not.toMatch(/from "\.\/(preload|seam|hook|transform|session)\.ts"/);
+    const def = await readFile(join(srcDir, "modeld-default.ts"), "utf8");
+    expect(def.match(effectImport)).toBeNull();
+    expect(def).toContain('import("./modeld-credentials.ts")');
+
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-preload-effect-"));
+    const outfile = join(dir, "preload.cjs");
+    const built = Bun.spawn(
+      ["bun", "build", join(srcDir, "preload.ts"), "--outfile", outfile, "--target", "node", "--format", "cjs"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    expect(await built.exited).toBe(0);
+    const bundle = await readFile(outfile, "utf8");
+    expect(bundle).not.toMatch(/from ["']effect["']|require\(["']effect["']\)|node_modules\/effect/);
+    expect(bundle).not.toContain("fingerprintApiKeyRef");
+    expect(bundle).not.toContain("materializeApiKeyRef");
   });
 });

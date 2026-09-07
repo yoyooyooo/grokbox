@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { BoxRuntimeError } from "./errors.ts";
 import { sha256Text } from "./hash.ts";
 import { cloneJson, envelopeHasImage, parseModelEnvelope, type ModelEnvelope } from "./envelope.ts";
 import { bindingMismatch, parseHostBinding, type HostBinding } from "./modeld-binding.ts";
 import { boundedText } from "./observation.ts";
-import { parseApiKeyRef, parseModelsFile, resolveAssignment, type ModelRecord, type ModelsFile } from "./models.ts";
+import { parseModelsFile, resolveAssignment, type ModelRecord, type ModelsFile } from "./models.ts";
 import type { StreamPart } from "./session.ts";
 
 export type AdmissionAuthority = { state: "committed"; host: HostBinding } | { state: "pending" | "disabled" | "unavailable" };
@@ -248,16 +246,8 @@ export function createModeld(input: ModeldPorts & {
 }
 export type ModelD = ReturnType<typeof createModeld>;
 
-/** File/env secret resolver. Default modeld C1 slice (T4c) uses this for fingerprint + OpenAI resolveApiKey; never put the secret into pin/IPC. Full C1 productization remains T5. */
-export type SecretResolver = (ref: string) => Promise<string>;
+/** Promise facade over the modeld C1 Effect in `modeld-credentials.ts`. Never put the secret into pin/IPC. */
+export type SecretResolver = (ref: string, signal?: AbortSignal) => Promise<string>;
 export function createFileEnvSecretResolver(env: NodeJS.Dict<string>): SecretResolver {
-  return async (ref) => {
-    const parsed = parseApiKeyRef(ref);
-    if (parsed.kind === "env") {
-      const value = env[parsed.ref.slice(4)];
-      if (!value) throw new BoxRuntimeError("credential_invalid", "Referenced env credential is missing.");
-      return value;
-    }
-    return await readFile(parsed.ref.slice(5), "utf8");
-  };
+  return (ref, signal) => import("./modeld-credentials.ts").then((mod) => mod.materializeApiKeyRef(ref, env, signal));
 }

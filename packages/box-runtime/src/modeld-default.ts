@@ -1,5 +1,4 @@
-import { sha256Text } from "./hash.ts";
-import { createFileEnvSecretResolver, type ModeldDriver, type ModeldPorts } from "./modeld.ts";
+import type { ModeldDriver, ModeldPorts } from "./modeld.ts";
 import { openAiAccepts, type OpenAiGenerateCall, type OpenAiStreamEvent } from "./modeld-openai-map.ts";
 import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { ModelRecord } from "./models.ts";
@@ -43,15 +42,14 @@ export function createCompositeModeldDriver(input: {
   };
 }
 
-/** Lazy file/env secret → sha256 hex. Never returns or embeds the secret. Stub never calls this. */
+/** Lazy file/env secret → sha256 hex via the C1 Effect. Never returns or embeds the secret. Stub never calls this. */
 export function createDefaultCredentialFingerprint(
   env: NodeJS.Dict<string> = process.env,
 ): NonNullable<ModeldPorts["credentialFingerprint"]> {
-  return async (model) => {
+  return async (model, signal) => {
     if (!model.apiKeyRef) throw new Error("credential-unavailable");
-    const secret = await createFileEnvSecretResolver(env)(model.apiKeyRef);
-    if (!secret) throw new Error("credential-unavailable");
-    return sha256Text(secret);
+    const { fingerprintApiKeyRef } = await import("./modeld-credentials.ts");
+    return fingerprintApiKeyRef(model.apiKeyRef, env, signal);
   };
 }
 
@@ -80,11 +78,10 @@ export function createDefaultModeldDriver(input: DefaultModeldDriverOptions = {}
       if (!openai) {
         const { createOpenAiModeldDriver } = await import("./modeld-openai.ts");
         openai = createOpenAiModeldDriver({
-          resolveApiKey: async (model) => {
+          resolveApiKey: async (model, signal) => {
             if (!model.apiKeyRef) throw new Error("credential-unavailable");
-            const secret = await createFileEnvSecretResolver(env)(model.apiKeyRef);
-            if (!secret) throw new Error("credential-unavailable");
-            return secret;
+            const { materializeApiKeyRef } = await import("./modeld-credentials.ts");
+            return materializeApiKeyRef(model.apiKeyRef, env, signal);
           },
           ...(input.fetch ? { fetch: input.fetch } : {}),
           ...(input.hardOff === true ? { hardOff: true } : {}),

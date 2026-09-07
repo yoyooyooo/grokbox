@@ -122,7 +122,7 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 
 - `modeld-binding.ts` 从已 pin 的 compile receipt、operationId 和稳定进程身份构造 Host binding。`generationId` 散列 PID/start + operationId + 全部 compile 字段；`activationId` 指本次 adopt operationId，**不是** desired 文件的修订号；`sourceSha` 是 compiled source SHA；`identitySha` 散列 PID/UID/start/exe/cmdline（不含收养时变化的 PPID/ancestry，不传 raw argv）。preload 用自身身份与已读 profile 传入这些不可变事实，hook 不读配置/attestation、不做 live census。
 - `modeld-store.ts` 在服务内以有界 no-follow regular-file reader 读取 desired、canonical attestation 和 operation journal，双读不一致只等待、不 admit。route 必须具有 S2 compile receipt；transient-adopt 还要求同 operation/compile/稳定身份的 `attested` journal，临时 supervisor 已释放。legacy/坏/uncertain 证据不被 health 成功替代；正常未签完可在预算内等待。不存在“把 committed 布尔设成 true”或使用 caller 自报身份作为权威的路径。
-- effect 前先比对 binding，再解析该 Bot 的 `assignments.agents[id] ?? main`；配置快照含 model/provider/endpoint/apiKeyRef/capabilities/dataTypes，深冻结后才允许 fingerprint await。credential hook 前及 driver effect 前重新核对 canonical authority。stub 完全不调用 credential hook；fingerprint 只交回 64 字符十六进制，secret 永不进入 pin/IPC/parts。T4c 默认路径把 `createFileEnvSecretResolver(process.env)` 接到 fingerprint + OpenAI `resolveApiKey`（lazy）；完整 C1 产品化仍归 T5。
+- effect 前先比对 binding，再解析该 Bot 的 `assignments.agents[id] ?? main`；配置快照含 model/provider/endpoint/apiKeyRef/capabilities/dataTypes，深冻结后才允许 fingerprint await。credential hook 前及 driver effect 前重新核对 canonical authority。stub 完全不调用 credential hook；fingerprint 只交回 64 字符十六进制，secret 永不进入 pin/IPC/parts。T5a：`modeld-credentials.ts` 是唯一 C1 实现（Effect 拥有 env/file 读取与取消；`file:` 为 no-follow 常规文件、4 KiB 上限、UTF-8 + 一次 `trim()`）。`createDefaultCredentialFingerprint` 与 OpenAI `resolveApiKey` 只是同一 Effect 的 Promise 门面；resolve **重读**，不把 secret 缓存在 pin。Host/preload/seam 仍 Effect-free。
 - PatchProfile 注入的 `sessionOptions.invocationId` 是 TURN。Host `stream` 的 invocationId 是 STEP。seam 按 `(hostGenerationId, STEP)` 占槽，向 modeld submit 分传 `turnId=TURN`、`invocationId=STEP`，不另发明 Host id。省略或非法 STEP 显式拒绝，不回退 TURN。内核按 generation + Bot + turn 共享正在使用的 pin，最后一个使用者 terminal/取消/过期后释放。重复 invocation 用完整 binding/ids/envelope hash 校验，在配置变化后也不重新选模型/dispatch；改变 payload 明确 conflict。终态结果只保留到 TTL，过期变成 refusal tombstone，不以缓存丢失为由再 dispatch。
 - 默认 admission 预算 **500 ms**，工作/终态保留 TTL **30 s**，ledger 上限 **1024**。过期释放 pin/response，但 bounded tombstone 留到 canonical Host generation 替换或服务重启；同代满额明确 `capacity`，不驱逐旧 id 后偷偷重跑。观察到新 canonical generation 时取消旧工作、清除旧 pins/ledger，旧 Host 不能借新代继续调用。
 - v2 health 只证明服务/协议 readiness，返回独立 `serverGeneration`；submit 不再接受 caller 指定 modelId 或旧 ids-only 请求。每个新 invocation 握手一次，已用 invocation 保留原 fence；服务重启后旧包拒绝，新 invocation 可新握手。disconnect、客户端掉线、取消/timeout 后标 unknown 并 abort，迟到 port/driver 完成不产生新 effect/成功；不盲目重试、不静默回官方。内存 ledger 不提供跨重启续传或跨客户端强制重握的 exactly-once 保证。
@@ -140,7 +140,7 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 
 T4b：`modeld-openai.ts` 在 modeld 内使用 `ai` + `@ai-sdk/openai`。`provider=openai|openai-chat` 走 Chat Completions（`openai.chat`）；`provider=openai-responses` 走 Responses（`openai.responses`）。`endpoint` 是自定义 `baseURL`（含 sub2api）。Host 继续拥有工具循环：不传 `execute`、不用 `openai.tools.*` / ToolLoopAgent，默认一步 `stopWhen`。真实 HTTP 仅在 admitted 模型 + 解析到的 key + 非 `hardOff` 时发生；测试 mock fetch / 注入 stream events，禁止真实 spend。
 
-非目标：S2 streaming IPC、完整 C1 凭据产品化（T5）、Host 内 SDK、route 默认改走真实模型、xAI server-side agentic tools。Host PromptSession 仍拥有工具循环 / Transcript / Memory / `SendToUser`。
+非目标：S2 streaming IPC（T5b）、Host 内 SDK、route 默认改走真实模型、xAI server-side agentic tools。C1 凭据产品化已由 T5a 落地。Host PromptSession 仍拥有工具循环 / Transcript / Memory / `SendToUser`。
 
 ### 窗口（W1 / W2）
 

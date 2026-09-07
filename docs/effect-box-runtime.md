@@ -45,9 +45,11 @@ Host 不读 models/attestation，不拥有 provider credential。保留 pinned-p
 |---|---|
 | **E1：artifact IO** | `runtime-artifact.ts` 的 acquire/write/read-back/sync/close/rename，接回 attestation/adopt journal；不顺带搬 terminal journal 或重写所有 store |
 | **E2：coordinator** | 分步迁移 lease/lock、guardian/signal/wait、commit/recovery 和所用 control-event IO；复用现有 manual/coordinator，保留独立 deadman |
-| **E3：modeld** | 先 scoped server acquire/stop 与 CLI signal bridge，再同一 kernel 的 authority/pin/admit/TTL/disconnect；只改外壳不算完成 |
+| **E3：modeld** | 先 scoped server acquire/stop 与 CLI signal bridge，再同一 kernel 的 authority/pin/admit/TTL/disconnect；只改外壳不算完成。T5a 已落地 C1 credential Effect 接缝（`modeld-credentials.ts`）；E3 其余 listener/admit/TTL 仍开放 |
 | **J13：放置待决** | owner 决策后才实现相应 journal 方案；不阻塞无关接缝，也不被它们的通过掩盖 |
 | **E4：SDK driver** | T4 已锁定 A+S1 形状（generate port → `complete()` 缓冲）。后续才安装 AI SDK 并接真实 generate，加上 C1/S2 合同与验证；真实 provider 调用另需授权。不得把 S1 骨架或 stub 当 streaming 证据 |
+
+T5a 已把 C1 credential 读取收口为 modeld 内 Effect 接缝；E3（listener/admit/TTL）与 T5b/S2 streaming IPC 仍开放。
 
 其余配置/合同重 IO 在后续触及的切片中迁移，不把整个模块清单塞进 E1。迁移不改变已接受的 generation/operation identity、pending 与 unavailable 区分、dispatch 前 authority 复核、immutable pins、重复拒绝/tombstone/capacity 或有界 shutdown。不得重新握手重投旧 invocation；不得静默回官方。
 
