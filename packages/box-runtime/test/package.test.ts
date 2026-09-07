@@ -12,7 +12,7 @@ describe("workspace packages", () => {
     expect(cliPackage.private).toBe(true);
     expect(rootPackage.name).toBe("grokbox");
     expect("private" in rootPackage).toBe(false);
-    expect(rootPackage.workspaces).toEqual(["packages/*"]);
+    expect(rootPackage.workspaces.packages).toEqual(["packages/*"]);
     expect(rootPackage.dependencies).toEqual({});
     expect(cliPackage.dependencies).toEqual({ "@grokbox/box-runtime": "workspace:*" });
   });

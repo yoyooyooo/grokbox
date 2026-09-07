@@ -14,7 +14,14 @@
     "url": "https://github.com/yoyooyooo/grokbox/issues"
   },
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": {
+    "packages": ["packages/*"],
+    "catalogs": {
+      "effect-v4-beta": {
+        "effect": "4.0.0-beta.107"
+      }
+    }
+  },
   "bin": {
     "grokbox": "bin/grokbox",
     "gbox": "bin/grokbox"
