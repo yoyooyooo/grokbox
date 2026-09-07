@@ -116,6 +116,15 @@ export { armGuardian } from "./guardian.ts";
 export { runObserveOrIdentityInject, type InjectContext } from "./inject.ts";
 export { ephemeralRuntimeRoot } from "./ephemeral.ts";
 export { createModeld, createFileEnvSecretResolver, type AdmitRequest, type AdmitResult, type ModeldPorts, type ModeldDriver } from "./modeld.ts";
+export {
+  createAs1ModeldDriver,
+  collectAs1Chunks,
+  as1Accepts,
+  AS1_SKELETON_PROVIDER,
+  type As1GeneratePort,
+  type As1GenerateChunk,
+  type As1GenerateRequest,
+} from "./modeld-as1.ts";
 export { bindCompiledHost, type HostBinding } from "./modeld-binding.ts";
 export {
   startStubModeldServer,

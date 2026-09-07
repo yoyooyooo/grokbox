@@ -19,7 +19,7 @@
 - E0 只增加 `effect`。不安装 AI SDK、`@effect/platform-*`、Vitest 或另换测试框架；发布目标仍是 Node 20+，Bun 是开发工具。
 - Fake/Live **Layers 替换能力，不替换业务程序**。既有 CLI → coordinator、Host IPC → `createModeld` 仍是唯一执行路径；无第二 reconciler、第二 admission kernel 或 `effectMode`。
 - 每个真实进程/命令生命周期一个执行根；callback 需要时复用其 ManagedRuntime 并明确 dispose。Promise facade 只在宿主边界调用同一 Effect 实现，不在每个 helper/Bot/request 自建 Runtime。
-- 后续 AI SDK 只能实现 modeld 内的 **ModeldDriver Service**。Effect 拥有调用及整个流的 lifetime、interrupt、资源；SDK 接收取消信号，不另执行工具/Agent loop、写 Transcript/Memory 或调用 SendToUser。SDK/credential snapshot/streaming 协议须另行核定，不能把 response-only stub 当作真实 streaming 证据。
+- 后续 AI SDK 只能实现 modeld 内的 **ModeldDriver Service**。Effect 拥有调用及整个流的 lifetime、interrupt、资源；SDK 接收取消信号，不另执行工具/Agent loop、写 Transcript/Memory 或调用 SendToUser。SDK/credential snapshot/streaming 协议须另行核定，不能把 response-only stub 当作真实 streaming 证据。T4 已锁定 **A+S1** 形状：A = `ModeldDriver` adapter（`modeld-as1.ts` + 注入的 generate port）；S1 = 在 `complete()` 内缓冲 chunk。当前骨架不安装 AI SDK、不接线默认 stub、不发起真实 provider 调用。
 
 ## Host import fence 与 J13
 
@@ -47,7 +47,7 @@ Host 不读 models/attestation，不拥有 provider credential。保留 pinned-p
 | **E2：coordinator** | 分步迁移 lease/lock、guardian/signal/wait、commit/recovery 和所用 control-event IO；复用现有 manual/coordinator，保留独立 deadman |
 | **E3：modeld** | 先 scoped server acquire/stop 与 CLI signal bridge，再同一 kernel 的 authority/pin/admit/TTL/disconnect；只改外壳不算完成 |
 | **J13：放置待决** | owner 决策后才实现相应 journal 方案；不阻塞无关接缝，也不被它们的通过掩盖 |
-| **E4：SDK driver** | 后续一个 AI SDK-backed ModeldDriver，加上必要的 credential/streaming 合同与验证；真实 provider 调用另需授权 |
+| **E4：SDK driver** | T4 已锁定 A+S1 形状（generate port → `complete()` 缓冲）。后续才安装 AI SDK 并接真实 generate，加上 C1/S2 合同与验证；真实 provider 调用另需授权。不得把 S1 骨架或 stub 当 streaming 证据 |
 
 其余配置/合同重 IO 在后续触及的切片中迁移，不把整个模块清单塞进 E1。迁移不改变已接受的 generation/operation identity、pending 与 unavailable 区分、dispatch 前 authority 复核、immutable pins、重复拒绝/tombstone/capacity 或有界 shutdown。不得重新握手重投旧 invocation；不得静默回官方。
 

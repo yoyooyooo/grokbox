@@ -130,6 +130,16 @@ Guardian 只对精确 frozen wrapper 幂等 `SIGCONT`；不得 start/kill/改配
 
 这些结论来自 `modeld.test.ts`、`modeld-confluence.test.ts`、实际 CLI + Unix/socket + fake canonical files；未读取现役 Host，未产生 provider credential/network effect。身份/receipt 校验不是对恶意同 UID 客户端的 peer authentication；double read 是时点证据，不是跨文件事务或对同 UID 写入者的原子隔离。G1/G2/M3/07 仍需独立授权。
 
+### A+S1（真实模型路径，骨架）
+
+**A**：provider / AI SDK adapter **只**实现 `ModeldDriver`，且只存在于 modeld（`modeld-as1.ts`）。preload / seam / session / hook / Host 保持 SDK-free，也不读 models/attestation、不持有 provider secret。
+
+**S1**：adapter 通过注入的 `generate` port 产出 chunk 流；driver 在 `complete()` 内缓冲成现有 `StreamPart[]`，走 response-only IPC。Host-facing `fullStream` 仍可为空。这不是 token transport，也不是 live streaming 证据。
+
+复用现有 pin / STEP / admission 内核，不另建 registry。CLI 默认仍是无网络 `stub/echo`；A+S1 driver 不接线默认 Unix server。`pin.credentialFingerprint` 可传给 generate（C1 指纹干接线）；driver 不见 secret。
+
+非目标：S2 streaming IPC、C1 凭据产品化、Host 内 SDK、安装 AI SDK、“看起来就绪”的真实 provider spend。Host PromptSession 仍拥有工具循环 / Transcript / Memory / `SendToUser`。
+
 ### 窗口（W1 / W2）
 
 ```text

@@ -12,3 +12,6 @@ Implement / design-lock real model path **A+S1**: AI SDK (or provider SDK) only 
 
 ## Driver
 Herdr (grok); astra only on true design blockers.
+
+## Status
+**done** (skeleton, not live provider). A = `createAs1ModeldDriver` behind existing `ModeldDriver`; S1 = `collectAs1Chunks` into `complete()` `StreamPart[]`. Injected generate port, no AI SDK package, not wired as CLI stub default. Host/preload/seam/session/hook fenced. Fingerprint-only pin passed through; no secret material. S2/C1/T3 out of scope.
