@@ -60,3 +60,26 @@ Do not rewrite history of earlier sections. Do not reopen closed P1s that Astra 
 ### Evidence ceiling
 
 Validation used a Git-object-checked archive of `pre-publication-revision`, with workspace imports resolving inside that snapshot; only existing third-party tools were linked in. Actual toolchain: Bun 1.4.2 / Node v24.18.0. No T21 attribution, live/provider operations, runtime edits, full build/package verification, or Bun 1.3.14/Node20 release claim. Final audit note: `PRIVATE_EVIDENCE`.
+
+## M2 / T21 — pre-publication-revision — 2026-09-08
+
+- Reviewed SHA: `pre-publication-revision`; source references below are pinned to this M2 tip, excluding later main-chain work.
+- First review: `PRIVATE_EVIDENCE`
+- Relook report: `PRIVATE_EVIDENCE`
+- Grok residual receipt: `PRIVATE_EVIDENCE`
+- Disposition: relook-held P1-01/P1-04 are closed on the named counterexamples; one still-material P2 is retained for owner end-of-rebuild triage. P1-02/P1-03 remain closed and are not reopened. No grok handoff or main-chain pause.
+
+### Closed at this M2 tip
+
+- **P1-01 — closed:** `systemText` in `packages/box-runtime/src/internal/backends/ccs-codec.ts:27–36` rejects non-text system parts instead of filtering them. The Host-accepted state-root text/image snapshot fails with `unsupported_content`, HTTP 0 and API-key argument reads 0 for both Chat/Responses; plain-text system controls each reach mock HTTP once.
+- **P1-04 — closed on the held schema/count gaps:** `packages/box-runtime/test/ccs-codec.test.ts:139–208` compares complete call/result arrays and tool name/description/parameters. AST-extracted, unchanged tip oracles reject the prior missing-parameters and same-message duplicate-result mutants on both APIs; both unmodified actual SDK request bodies pass.
+
+### Items
+
+- **P2-01 — still material: snapshot parsing and immutability are not yet a complete canonical boundary.** `packages/runtime-kernel/src/internal/contract/snapshot.ts:31–56` still accepts a synthetic `role:"alien"`, invalid `toolChoice`, and a digest that is only format-valid; the encoder then emits an empty message list. `packages/box-runtime/src/internal/host/context-codec.ts:118–130` still returns a mutable system root: changing its content after construction leaves the old digest in place and makes it disagree with recomputed content.
+  - Evidence: `PRIVATE_EVIDENCE` (`parser`, `mutability`); reproducible probe: `probe.ts` in that directory.
+  - Why retained / not forced onto grok: the contract is intended to cross future adapter/wire boundaries, so strict content validation, stable snapshots and digest/byte-validation ownership still need explicit proof before that use. At this SHA the parser has no production caller found in the runtime source scan; this is not an observed live admission bypass and is not promoted to P1. The normal milestone loop is over; reserve it for the owner's final triage rather than dispatching another fix or pausing the main chain.
+
+### Evidence ceiling
+
+The audit used a Git-object-checked `pre-publication-revision` archive with workspace imports resolved inside it. `codec` passed 11 tests / 176 assertions; independent real-SDK/mock-fetch controls and the four held oracle mutants produced the dispositions above. Actual toolchain: Bun 1.4.2 / Node v24.18.0, AI SDK 5.0.253 / OpenAI provider 2.0.125. No production fixes, provider spend, live operations, full build/package or pinned Bun/Node20 release claim. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
