@@ -12,9 +12,9 @@ import {
   encodeModeldFrame,
   modeldSocketPath,
   probeStubModeld,
-  startStubModeldServer,
   STUB_ECHO_MODEL_ID,
 } from "../src/modeld-ipc.ts";
+import { startStubModeldServer } from "../src/modeld-serve.ts";
 import { applyPatchProfile, profileFromSource, ROUTE_SESSION_SYMBOL } from "../src/transform.ts";
 import { createManagedPromptSession, type HostPromptSession, type PromptSession } from "../src/session.ts";
 import {

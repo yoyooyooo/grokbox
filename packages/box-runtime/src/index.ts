@@ -148,12 +148,12 @@ export {
 } from "./modeld-default.ts";
 export { bindCompiledHost, type HostBinding } from "./modeld-binding.ts";
 export {
-  startStubModeldServer,
   probeStubModeld,
   modeldSocketPath,
   STUB_ECHO_PARTS,
   MODELD_SUBMIT_TIMEOUT_MS,
 } from "./modeld-ipc.ts";
+export { startStubModeldServer } from "./modeld-serve.ts";
 export {
   bindHostSessionHook,
   createSessionSeam,

@@ -13,7 +13,8 @@ import {
 } from "../src/modeld-openai.ts";
 import { createDefaultModeldDriver } from "../src/modeld-default.ts";
 import { materializeApiKeyRef } from "../src/modeld-credentials.ts";
-import { callStubModeld, startStubModeldServer } from "../src/modeld-ipc.ts";
+import { callStubModeld } from "../src/modeld-ipc.ts";
+import { startStubModeldServer } from "../src/modeld-serve.ts";
 import { loadModelsFileSync, type ModelsFile } from "../src/models.ts";
 import { bindHostSessionHook, createSessionSeam, createStubRouteDriver } from "../src/seam.ts";
 import type { HostPromptSession, PromptSession } from "../src/session.ts";

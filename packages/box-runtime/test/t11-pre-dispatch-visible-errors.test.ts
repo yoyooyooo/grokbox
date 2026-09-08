@@ -5,7 +5,7 @@ import { eventsPath, modelsPath } from "../src/paths.ts";
 import { STUB_ECHO_MODEL_ID } from "../src/models.ts";
 import type { HostPromptSession, PromptSession } from "../src/session.ts";
 import { FAKE_BINDING, modeldFixture } from "./modeld-fixture.ts";
-import { startStubModeldServer } from "../src/modeld-ipc.ts";
+import { startStubModeldServer } from "../src/modeld-serve.ts";
 import { consumeHandle } from "./host-consumer.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";

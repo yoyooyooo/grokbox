@@ -11,7 +11,7 @@ import {
 } from "../src/attestation.ts";
 import { runManualReadopt, runWatchdogTick, WATCHDOG_OPERATION_ID } from "../src/coordinator.ts";
 import { armGuardian } from "../src/guardian.ts";
-import { startStubModeldServer } from "../src/modeld-ipc.ts";
+import { startStubModeldServer } from "../src/modeld-serve.ts";
 import type { DesiredFile, ModelsFile } from "../src/models.ts";
 import { projectLiveStatus } from "../src/observe.ts";
 import { reviewedProfilePath } from "../src/paths.ts";

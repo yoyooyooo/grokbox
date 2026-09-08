@@ -5,7 +5,7 @@ import { BoxRuntimeError } from "../src/errors.ts";
 import { submitPartsFromResponse } from "../src/modeld-ipc.ts";
 import { createModeldRouteDriver } from "../src/seam.ts";
 import { createDefaultCredentialFingerprint } from "../src/modeld-default.ts";
-import { startStubModeldServer } from "../src/modeld-ipc.ts";
+import { startStubModeldServer } from "../src/modeld-serve.ts";
 import { FAKE_BINDING, modeldFixture, submitRequest } from "./modeld-fixture.ts";
 
 const openaiModel = {

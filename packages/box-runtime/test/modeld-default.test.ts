@@ -15,7 +15,8 @@ import {
 import { createModeld } from "../src/modeld.ts";
 import { createOpenAiModeldDriver, openAiAccepts } from "../src/modeld-openai.ts";
 import { STUB_ECHO_MODEL, type ModelsFile } from "../src/models.ts";
-import { callStubModeld, startStubModeldServer } from "../src/modeld-ipc.ts";
+import { callStubModeld } from "../src/modeld-ipc.ts";
+import { startStubModeldServer } from "../src/modeld-serve.ts";
 import { modeldStorePorts } from "../src/modeld-store.ts";
 import { FAKE_BINDING, modeldFixture, submitRequest } from "./modeld-fixture.ts";
 
@@ -253,9 +254,11 @@ describe("default driver fence", () => {
       expect(text.match(sdkImport), file).toBeNull();
     }
     const ipc = await readFile(join(srcDir, "modeld-ipc.ts"), "utf8");
-    expect(ipc).toContain("createDefaultModeldDriver");
-    expect(ipc).toContain("createDefaultCredentialFingerprint");
     expect(ipc).not.toMatch(/from "\.\/modeld-openai\.ts"/);
+    expect(ipc).not.toMatch(/from "effect"/);
+    const serve = await readFile(join(srcDir, "modeld-serve.ts"), "utf8");
+    expect(serve).toContain("createDefaultModeldDriver");
+    expect(serve).toContain("createDefaultCredentialFingerprint");
 
     const def = await readFile(join(srcDir, "modeld-default.ts"), "utf8");
     expect(def).toContain("createOpenAiModeldDriver");
@@ -274,6 +277,9 @@ describe("default driver fence", () => {
     const creds = await readFile(join(srcDir, "modeld-credentials.ts"), "utf8");
     expect(creds).toMatch(/from "effect"/);
     expect(creds).not.toMatch(/from "\.\/(preload|seam|hook|transform|session)\.ts"/);
+    const serve = await readFile(join(srcDir, "modeld-serve.ts"), "utf8");
+    expect(serve).toMatch(/from "effect"/);
+    expect(serve).not.toMatch(/from "\.\/(preload|seam|hook|transform|session)\.ts"/);
     const def = await readFile(join(srcDir, "modeld-default.ts"), "utf8");
     expect(def.match(effectImport)).toBeNull();
     expect(def).toContain('import("./modeld-credentials.ts")');
