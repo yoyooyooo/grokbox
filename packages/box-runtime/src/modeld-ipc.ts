@@ -14,7 +14,7 @@ import {
 import { modeldStorePorts } from "./modeld-store.ts";
 
 export { STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS };
-export const MODELD_MAX_FRAME = 16 * 1024;
+export const MODELD_MAX_FRAME = 256 * 1024;
 /** Submit wait bound; matches default kernel idle TTL. Health/disconnect keep a short timeout. */
 export const MODELD_SUBMIT_TIMEOUT_MS = 30_000;
 export function modeldSocketPath(runRoot: string): string { return join(runRoot, "modeld.sock"); }
