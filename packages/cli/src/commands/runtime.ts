@@ -299,7 +299,7 @@ export async function runRuntimeProfileWrite(deps: CliDeps, fromPath: string | u
       written = await writeReviewedProfileFromCopy({
         destDir,
         hostBundle,
-        profileId: "reviewed-copy",
+        profileId: "reviewed-copy-envelope",
       });
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
