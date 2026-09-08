@@ -67,9 +67,9 @@ describe("OpenAI envelope mapping", () => {
       ] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "lookup", result: { ok: true } }] },
     ], [{ name: "lookup", description: "look", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]);
-    expect(envelopeToOpenAiLivePrompt(envelope)).toMatchObject({
+    expect(envelopeToOpenAiLivePrompt(envelope)).toEqual({
       system: "sys",
-      messages: [{ role: "user" }],
+      messages: [{ role: "user", content: "see" }],
     });
     expect(envelopeToOpenAiLivePrompt(buildModelEnvelope([
       { role: "system", content: "sys" },
@@ -84,19 +84,16 @@ describe("OpenAI envelope mapping", () => {
         { role: "user", content: "again" },
       ],
     });
-    expect(envelopeToOpenAiLivePrompt(buildModelEnvelope([
+    const withTools = envelopeToOpenAiLivePrompt(buildModelEnvelope([
       { role: "user", content: "ask" },
       { role: "assistant", content: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "x" } }] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "lookup", result: { ok: true } }] },
       { role: "user", content: "follow" },
-    ], [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]))).toMatchObject({
-      messages: [
-        { role: "user", content: "ask" },
-        { role: "assistant" },
-        { role: "tool" },
-        { role: "user", content: "follow" },
-      ],
-    });
+    ], [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]));
+    expect(withTools.messages.every((message) => message.role === "user" || message.role === "assistant")).toBe(true);
+    expect(withTools.messages.some((message) => message.role === "tool")).toBe(false);
+    expect(JSON.stringify(withTools.messages)).not.toMatch(/tool-call|tool-result/);
+    expect(withTools.messages.at(-1)).toEqual({ role: "user", content: "follow" });
     expect(envelopeToOpenAiMessages(envelope)).toEqual([
       { role: "system", content: "sys" },
       { role: "user", content: [

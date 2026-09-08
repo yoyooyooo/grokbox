@@ -220,12 +220,14 @@ function failure(code: string, ids?: string[], ctx?: VisibleFailureContext): Vis
     extra.invocationId ? `invocationId=${extra.invocationId}` : undefined,
     extra.stage ? `stage=${extra.stage}` : undefined,
   ].filter((bit): bit is string => bit !== undefined);
-  return {
-    userVisible: true, code: resolved,
-    message: bits.length ? `${FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!} (${bits.join(" ")})` : FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!,
+  const message = bits.length ? `${FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!} (${bits.join(" ")})` : FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!;
+  const error: VisibleFailure = {
+    userVisible: true, code: resolved, message,
     ...(ids?.length ? { toolCallIds: [...ids] } : {}),
     ...extra,
   };
+  Object.defineProperty(error, "toString", { value: () => error.message, enumerable: false });
+  return error;
 }
 export class VisibleStreamError extends Error {
   readonly code: string;

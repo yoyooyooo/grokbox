@@ -40,39 +40,43 @@ export function envelopeToOpenAiMessages(envelope: ModelEnvelope): OpenAiPromptM
   return envelope.messages.map(messageToOpenAi);
 }
 
-const LIVE_MESSAGE_CAP = 32;
-const LIVE_JSON_CHAR_CAP = 48_000;
+const LIVE_TEXT_MESSAGE_CAP = 24;
+const LIVE_TEXT_CHAR_CAP = 24_000;
 
 /**
- * Live managed prompt: Host system + recent user/assistant/tool turns.
- * Skip malformed rows instead of failing the turn. Cap by count and JSON size.
- * Host still owns Transcript / SendToUser execution.
+ * Live managed prompt: Host system + recent user/assistant **text only**.
+ * Tool roles and tool-call parts stay off the provider snapshot — Responses rejected
+ * those turns (`model_error` / normalize). Host still executes SendToUser from the
+ * current step's streamed tool-call, not from replayed tool history.
  */
 export function envelopeToOpenAiLivePrompt(envelope: ModelEnvelope): {
   system?: string;
   messages: OpenAiPromptMessage[];
 } {
   const systems: string[] = [];
-  const rest: OpenAiPromptMessage[] = [];
+  const texts: OpenAiPromptMessage[] = [];
   for (const message of envelope.messages) {
     if (message.role === "system") {
       const text = contentText(message.content).trim();
       if (text) systems.push(text);
       continue;
     }
-    try {
-      rest.push(messageToOpenAi(message));
-    } catch {
-      continue;
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const text = contentText(message.content).trim();
+    if (!text) continue;
+    texts.push({ role: message.role, content: text });
+  }
+  let kept = texts.slice(-LIVE_TEXT_MESSAGE_CAP);
+  while (kept.length > 0 && kept[kept.length - 1]!.role !== "user") kept.pop();
+  let chars = kept.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : 0), 0);
+  while (kept.length > 1 && chars > LIVE_TEXT_CHAR_CAP) {
+    const removed = kept.shift()!;
+    chars -= typeof removed.content === "string" ? removed.content.length : 0;
+    if (kept[0]?.role === "assistant") {
+      const extra = kept.shift()!;
+      chars -= typeof extra.content === "string" ? extra.content.length : 0;
     }
   }
-  let kept = rest.slice(-LIVE_MESSAGE_CAP);
-  while (kept.length > 0 && kept[kept.length - 1]!.role !== "user") kept.pop();
-  while (kept.length > 1 && Buffer.byteLength(JSON.stringify(kept), "utf8") > LIVE_JSON_CHAR_CAP) {
-    kept.shift();
-    if (kept[0]?.role === "tool") kept.shift();
-  }
-  while (kept.length > 0 && kept[kept.length - 1]!.role !== "user") kept.pop();
   if (kept.length === 0 || kept[kept.length - 1]!.role !== "user") {
     throw new Error("openai-live-prompt-missing-user");
   }
