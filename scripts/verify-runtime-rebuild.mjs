@@ -61,11 +61,19 @@ for (const argv of mapped) {
   }
 }
 
+const SUPPORTS = {
+  layout: ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
+  codec: ["host-context-snapshot", "ccs-chat-responses-http-oracle"],
+};
+const REALITY = {
+  layout: "offline-layout",
+  codec: "offline-sdk-mock-fetch",
+};
 const report = {
   case: kase,
   commit: sha(),
-  dependencyReality: "offline-layout",
-  supports: failed ? [] : ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
+  dependencyReality: REALITY[kase] ?? "offline",
+  supports: failed ? [] : (SUPPORTS[kase] ?? []),
   notProven: [
     "inference",
     "controller-effect-program",

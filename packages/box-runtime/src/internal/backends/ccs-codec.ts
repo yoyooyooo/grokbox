@@ -4,15 +4,20 @@ import {
   ENCODED_PROVIDER_REQUEST_MAX_BYTES,
   EnvelopeError,
   type ContextSnapshot,
+  type GenerationOptions,
+  type PromptContentPart,
   type PromptMessage,
 } from "@grokbox/runtime-kernel/contract";
 
 export type CcsApi = "chat" | "responses";
 
 export type CcsTextPart = { type: "text"; text: string };
+export type CcsImagePart = { type: "image"; image: string; mediaType?: string };
+export type CcsReasoningPart = { type: "reasoning"; text: string };
+export type CcsPart = CcsTextPart | CcsImagePart | CcsReasoningPart;
 export type CcsMessage = {
   role: "user" | "assistant";
-  content: string | CcsTextPart[];
+  content: string | CcsPart[];
 };
 export type CcsPrompt = {
   system?: string;
@@ -37,43 +42,86 @@ function toolResultPayload(part: { toolCallId: string; toolName?: string; result
   };
 }
 
-function userParts(message: PromptMessage): CcsTextPart[] {
+function mapPart(part: PromptContentPart, role: PromptMessage["role"]): CcsPart {
+  if (part.type === "text") return { type: "text", text: part.text };
+  if (part.type === "tool-result") return toolResultPayload(part);
+  if (part.type === "tool-call") {
+    if (role !== "assistant") throw new EnvelopeError("unsupported_content");
+    return {
+      type: "text",
+      text: JSON.stringify({
+        type: "tool-call",
+        toolCallId: part.toolCallId,
+        toolName: part.toolName,
+        args: part.args,
+      }),
+    };
+  }
+  if (part.type === "image") {
+    if (role !== "user") throw new EnvelopeError("unsupported_content");
+    const image = part.url ?? part.data;
+    if (!image) throw new EnvelopeError("unsupported_content");
+    return { type: "image", image, ...(part.mimeType ? { mediaType: part.mimeType } : {}) };
+  }
+  if (part.type === "reasoning") {
+    throw new EnvelopeError("unsupported_content");
+  }
+  throw new EnvelopeError("unsupported_content");
+}
+
+function userParts(message: PromptMessage): CcsPart[] {
   if (typeof message.content === "string") return [{ type: "text", text: message.content }];
-  const parts: CcsTextPart[] = [];
-  for (const part of message.content) {
-    if (part.type === "text") parts.push({ type: "text", text: part.text });
-    if (part.type === "tool-result") parts.push(toolResultPayload(part));
-  }
-  return parts;
+  return message.content.map((part) => mapPart(part, message.role === "tool" ? "user" : message.role));
 }
 
-function assistantContent(message: PromptMessage): string | CcsTextPart[] {
+function assistantContent(message: PromptMessage): string | CcsPart[] {
   if (typeof message.content === "string") return message.content;
-  const parts: CcsTextPart[] = [];
-  for (const part of message.content) {
-    if (part.type === "text") parts.push({ type: "text", text: part.text });
-    if (part.type === "tool-call") {
-      parts.push({
-        type: "text",
-        text: JSON.stringify({
-          type: "tool-call",
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          args: part.args,
-        }),
-      });
-    }
+  return message.content.map((part) => mapPart(part, "assistant"));
+}
+
+function pushUser(out: CcsMessage[], parts: CcsPart[]): void {
+  if (parts.length === 1 && parts[0]!.type === "text") out.push({ role: "user", content: parts[0]!.text });
+  else out.push({ role: "user", content: parts });
+}
+
+function toSdkMessages(messages: CcsMessage[]) {
+  return messages.map((message) => {
+    if (typeof message.content === "string") return { role: message.role, content: message.content };
+    return {
+      role: message.role,
+      content: message.content.map((part) => {
+        if (part.type === "text") return { type: "text" as const, text: part.text };
+        if (part.type === "image") return { type: "image" as const, image: part.image, ...(part.mediaType ? { mediaType: part.mediaType } : {}) };
+        return { type: "reasoning" as const, text: part.text };
+      }),
+    };
+  });
+}
+
+function generationSettings(options: GenerationOptions, api: CcsApi): {
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+  seed?: number;
+  stopSequences?: string[];
+  toolChoice?: GenerationOptions["toolChoice"];
+  providerOptions?: { openai: { parallelToolCalls: boolean } };
+} {
+  if (api === "responses" && (options.seed !== undefined || options.stopSequences !== undefined)) {
+    throw new EnvelopeError("unsupported_options");
   }
-  return parts.length === 1 && parts[0]!.text !== undefined ? parts : parts;
+  return {
+    ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+    ...(options.topP !== undefined ? { topP: options.topP } : {}),
+    ...(options.maxTokens !== undefined ? { maxOutputTokens: options.maxTokens } : {}),
+    ...(options.seed !== undefined ? { seed: options.seed } : {}),
+    ...(options.stopSequences !== undefined ? { stopSequences: options.stopSequences } : {}),
+    ...(options.toolChoice !== undefined ? { toolChoice: options.toolChoice } : {}),
+    ...(options.parallelToolCalls !== undefined ? { providerOptions: { openai: { parallelToolCalls: options.parallelToolCalls } } } : {}),
+  };
 }
 
-function pushUser(out: CcsMessage[], parts: CcsTextPart[]): void {
-  if (parts.length === 1) out.push({ role: "user", content: parts[0]!.text });
-  else if (parts.length > 1) out.push({ role: "user", content: parts });
-  else out.push({ role: "user", content: "" });
-}
-
-/** Canonical snapshot → CCS-safe Chat/Responses prompt. No role=tool, no extra Human turn, no 1500/8000 truncation. */
+/** Canonical snapshot → CCS-safe Chat/Responses prompt. Unsupported parts fail closed. */
 export function encodeCcsMessages(snapshot: ContextSnapshot): CcsPrompt {
   const systems: string[] = [];
   for (const message of snapshot.systemMessages) {
@@ -117,10 +165,12 @@ export async function sendCcsRequest(input: {
     tool.name,
     { description: tool.description, inputSchema: jsonSchema(tool.inputSchema) },
   ]));
+  const settings = generationSettings(input.snapshot.options, input.api);
   await generateText({
     model,
     system: prompt.system,
-    messages: prompt.messages as never,
+    messages: toSdkMessages(prompt.messages) as never,
     ...(input.snapshot.tools.length > 0 ? { tools } : {}),
+    ...settings,
   });
 }

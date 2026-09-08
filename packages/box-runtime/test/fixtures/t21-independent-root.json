@@ -1,6 +1,7 @@
 {
   "profileId": "t21-independent-root",
   "abiIdentity": "host-abi-v1",
+  "rootSource": "independent",
   "independentRoot": "root-independent",
   "state": [
     { "role": "user", "content": "hello" }

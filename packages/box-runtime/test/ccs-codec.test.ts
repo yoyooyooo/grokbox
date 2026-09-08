@@ -1,75 +1,55 @@
 import { describe, expect, test } from "bun:test";
+import { EnvelopeError } from "@grokbox/runtime-kernel/contract";
 import { hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
-import { sendCcsRequest, type CcsApi } from "../src/internal/backends/ccs-codec.ts";
+import { encodeCcsMessages, sendCcsRequest, type CcsApi } from "../src/internal/backends/ccs-codec.ts";
 
 const schema = { type: "object", properties: { q: { type: "string" } } };
 const longArg = `α${"x".repeat(1600)}`;
 const longResult = `中文${"y".repeat(8100)}`;
 const mixedText = "mixed SAND_HIDDEN ack-redrive ";
 const root = "required-root-once";
-const oracle = {
-  toolCallId: "c1",
-  toolName: "lookup",
-  argsQ: longArg,
-  result: { rows: [0, false, ""] as const, note: longResult },
-  isError: false,
-  mixedText,
-  root,
-  userTurns: 2,
+const imageSentinel = "https://ccs.test/image-sentinel.png";
+const reasonSentinel = "reason-sentinel";
+const textSentinel = "text-sentinel";
+
+const options = {
+  temperature: 0.2,
+  topP: 0.7,
+  maxTokens: 11,
+  seed: 17,
+  stopSequences: ["STOP_SENTINEL"],
+  parallelToolCalls: false,
+  toolChoice: "none" as const,
 };
 
-function userContainedSnapshot() {
-  return hostToContextSnapshot({
-    profileId: "ccs-user-contained",
-    abiIdentity: "host-abi-v1",
-    independentRoot: root,
-    tools: [{ name: "lookup", description: "lookup schema", inputSchema: schema }],
-    state: [
-      { role: "user", content: "ask" },
-      {
-        role: "assistant",
-        content: [{ type: "tool-call", toolCallId: oracle.toolCallId, toolName: oracle.toolName, args: { q: longArg } }],
-      },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: mixedText },
-          {
-            type: "tool-result",
-            toolCallId: oracle.toolCallId,
-            toolName: oracle.toolName,
-            result: { rows: [0, false, ""], note: longResult },
-            isError: false,
-          },
-        ],
-      },
-    ],
-  });
+function continuationState(resultRole: "user" | "tool") {
+  const resultPart = {
+    type: "tool-result" as const,
+    toolCallId: "c1",
+    toolName: "lookup",
+    result: { rows: [0, false, ""], note: longResult },
+    isError: false,
+  };
+  return [
+    { role: "user" as const, content: resultRole === "user" ? "ask" : "" },
+    {
+      role: "assistant" as const,
+      content: [{ type: "tool-call" as const, toolCallId: "c1", toolName: "lookup", args: { q: longArg } }],
+    },
+    resultRole === "user"
+      ? { role: "user" as const, content: [{ type: "text" as const, text: mixedText }, resultPart] }
+      : { role: "tool" as const, content: [resultPart] },
+  ];
 }
 
-function toolRoleSnapshot() {
+function snapshot(state: unknown, extra?: { options?: Partial<typeof options> & { toolChoice?: "none" | "auto" | "required" }; tools?: unknown }) {
   return hostToContextSnapshot({
-    profileId: "ccs-tool-role",
+    profileId: "t21-independent-root",
     abiIdentity: "host-abi-v1",
     independentRoot: root,
-    tools: [{ name: "lookup", description: "lookup schema", inputSchema: schema }],
-    state: [
-      { role: "user", content: "" },
-      {
-        role: "assistant",
-        content: [{ type: "tool-call", toolCallId: oracle.toolCallId, toolName: oracle.toolName, args: { q: longArg } }],
-      },
-      {
-        role: "tool",
-        content: [{
-          type: "tool-result",
-          toolCallId: oracle.toolCallId,
-          toolName: oracle.toolName,
-          result: { rows: [0, false, ""], note: longResult },
-          isError: false,
-        }],
-      },
-    ],
+    tools: extra?.tools ?? [{ name: "lookup", description: "lookup schema", inputSchema: schema }],
+    options: extra?.options,
+    state,
   });
 }
 
@@ -97,83 +77,149 @@ function responsesCompletion(): Response {
   }), { status: 200, headers: { "content-type": "application/json" } });
 }
 
-function walkStrings(value: unknown, acc: string[]): void {
-  if (typeof value === "string") acc.push(value);
-  else if (Array.isArray(value)) for (const entry of value) walkStrings(entry, acc);
-  else if (value && typeof value === "object") for (const entry of Object.values(value)) walkStrings(entry, acc);
-}
-
-function rolesOf(body: unknown): string[] {
+function history(body: unknown): unknown[] {
   if (!body || typeof body !== "object") return [];
   const record = body as Record<string, unknown>;
-  const list = Array.isArray(record.messages) ? record.messages : Array.isArray(record.input) ? record.input : [];
-  return list.map((entry) => {
-    if (!entry || typeof entry !== "object" || !("role" in entry)) return "";
-    return String((entry as { role: unknown }).role);
-  });
+  if (Array.isArray(record.messages)) return record.messages;
+  if (Array.isArray(record.input)) return record.input;
+  return [];
 }
 
-function parseToolResults(body: unknown): Array<{ toolCallId: string; toolName?: string; result: unknown; isError: boolean }> {
-  const strings: string[] = [];
-  walkStrings(body, strings);
-  const found: Array<{ toolCallId: string; toolName?: string; result: unknown; isError: boolean }> = [];
-  for (const text of strings) {
-    try {
-      const value = JSON.parse(text) as { type?: unknown; toolCallId?: unknown; toolName?: unknown; result?: unknown; isError?: unknown };
-      if (value && value.type === "tool-result" && typeof value.toolCallId === "string") {
-        found.push({
-          toolCallId: value.toolCallId,
-          toolName: typeof value.toolName === "string" ? value.toolName : undefined,
-          result: value.result,
-          isError: value.isError === true,
-        });
-      }
-    } catch {
-      /* not a tool-result payload */
-    }
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const value = JSON.parse(text) as unknown;
+    return asRecord(value);
+  } catch {
+    return null;
+  }
+}
+
+function contentStrings(content: unknown): string[] {
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  const out: string[] = [];
+  for (const part of content) {
+    const rec = asRecord(part);
+    if (!rec) continue;
+    if (typeof rec.text === "string") out.push(rec.text);
+    if (typeof rec.image_url === "string") out.push(rec.image_url);
+    const image = asRecord(rec.image_url);
+    if (image && typeof image.url === "string") out.push(image.url);
+    if (typeof rec.image === "string") out.push(rec.image);
+    if (typeof rec.url === "string") out.push(rec.url);
+  }
+  return out;
+}
+
+function parsePayloads(content: unknown, type: string): Record<string, unknown>[] {
+  const found: Record<string, unknown>[] = [];
+  for (const text of contentStrings(content)) {
+    const rec = parseJsonObject(text);
+    if (rec?.type === type) found.push(rec);
   }
   return found;
 }
 
-function assertHttpOracle(body: unknown, extras: { mixed?: boolean } = { mixed: true }): void {
-  expect(body).toBeTruthy();
-  const text = JSON.stringify(body);
-  expect(text).toContain(oracle.toolCallId);
-  expect(text).toContain(oracle.toolName);
-  expect(text).toContain(longArg);
-  expect(text).toContain(longResult);
-  expect(text).toContain("中文");
-  expect(text).toContain(root);
-  if (extras.mixed !== false) {
-    expect(text).toContain("SAND_HIDDEN");
-    expect(text).toContain("ack-redrive");
-    expect(text).toContain(mixedText.trim());
+function systemRoots(body: unknown): string[] {
+  const rec = asRecord(body);
+  if (!rec) return [];
+  const roots: string[] = [];
+  if (typeof rec.instructions === "string" && rec.instructions.length > 0) roots.push(rec.instructions);
+  for (const entry of history(body)) {
+    const item = asRecord(entry);
+    if (item?.role === "system" && typeof item.content === "string") roots.push(item.content);
   }
-  expect(text).not.toMatch(/"role":"tool"/);
-  expect(text).not.toContain("extra-human");
-  const roles = rolesOf(body);
-  expect(roles.filter((role) => role === "user")).toHaveLength(oracle.userTurns);
-  expect(roles).not.toContain("tool");
-  const results = parseToolResults(body);
-  expect(results).toHaveLength(1);
-  expect(results[0]).toEqual({
-    toolCallId: oracle.toolCallId,
-    toolName: oracle.toolName,
-    result: { rows: [0, false, ""], note: longResult },
-    isError: false,
+  return roots;
+}
+
+function sequence(body: unknown): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const entry of history(body)) {
+    const item = asRecord(entry);
+    if (!item || item.role === "system") continue;
+    const role = String(item.role);
+    const calls = parsePayloads(item.content, "tool-call");
+    const results = parsePayloads(item.content, "tool-result");
+    const texts = contentStrings(item.content).filter((text) => !parseJsonObject(text));
+    if (role === "assistant" && calls.length > 0) {
+      out.push({ kind: "assistant-call", ...calls[0] });
+      continue;
+    }
+    if (role === "user" && results.length > 0) {
+      out.push({ kind: "user-result", mixedText: texts.join(""), ...results[0] });
+      continue;
+    }
+    out.push({ kind: role, text: contentStrings(item.content).join("") });
+  }
+  return out;
+}
+
+function toolNames(body: unknown): string[] {
+  const rec = asRecord(body);
+  const tools = rec && Array.isArray(rec.tools) ? rec.tools : [];
+  return tools.map((tool) => {
+    const item = asRecord(tool);
+    const fn = item ? asRecord(item.function) : null;
+    const name = (fn && typeof fn.name === "string" ? fn.name : undefined) ?? (item && typeof item.name === "string" ? item.name : undefined);
+    return name ?? "";
   });
 }
 
-async function capture(api: CcsApi, snapshot = userContainedSnapshot()): Promise<unknown> {
+function toolChoiceOf(body: unknown): unknown {
+  const rec = asRecord(body);
+  return rec?.tool_choice ?? rec?.toolChoice;
+}
+
+function expectedSequence(mixed: boolean): Array<Record<string, unknown>> {
+  return [
+    { kind: "user", text: mixed ? "ask" : "" },
+    { kind: "assistant-call", type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: longArg } },
+    {
+      kind: "user-result",
+      mixedText: mixed ? mixedText : "",
+      type: "tool-result",
+      toolCallId: "c1",
+      toolName: "lookup",
+      result: { rows: [0, false, ""], note: longResult },
+      isError: false,
+    },
+  ];
+}
+
+function assertHttpOracle(body: unknown, extras: { mixed?: boolean } = { mixed: true }): void {
+  expect(body).toBeTruthy();
+  const rec = asRecord(body);
+  expect(rec).toBeTruthy();
+  expect(systemRoots(body)).toEqual([root]);
+  expect(sequence(body)).toEqual(expectedSequence(extras.mixed !== false));
+  expect(toolNames(body)).toEqual(["lookup"]);
+  expect(history(body).some((entry) => asRecord(entry)?.role === "tool")).toBe(false);
+  const text = JSON.stringify(body);
+  expect(text).toContain(longArg);
+  expect(text).toContain(longResult);
+  expect(text).toContain("中文");
+  if (extras.mixed !== false) {
+    expect(text).toContain("SAND_HIDDEN");
+    expect(text).toContain("ack-redrive");
+  }
+}
+
+async function capture(api: CcsApi, snap = snapshot(continuationState("user"))): Promise<{ body: unknown; http: number }> {
+  let http = 0;
   let body: unknown;
   const deny = async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    http += 1;
     body = JSON.parse(typeof init?.body === "string" ? init.body : await new Response(init?.body).text());
     return api === "responses" ? responsesCompletion() : chatCompletion();
   };
   const fetch = Object.assign(deny, { preconnect: deny }) as typeof globalThis.fetch;
   try {
     await sendCcsRequest({
-      snapshot,
+      snapshot: snap,
       api,
       model: "gpt-4o-mini",
       apiKey: "test-key",
@@ -181,40 +227,112 @@ async function capture(api: CcsApi, snapshot = userContainedSnapshot()): Promise
       fetch,
     });
   } catch {
-    /* T21 oracle is the request body, not provider response parse. */
+    /* request body is the oracle */
   }
-  return body;
+  return { body, http };
 }
 
 describe("CCS codec", () => {
-  test("Chat and Responses HTTP bodies keep user-contained tool id/name/result/isError without a new Human turn", async () => {
+  test("Chat and Responses HTTP bodies keep ordered call/result, root once, and tools schema", async () => {
     const chat = await capture("chat");
     const responses = await capture("responses");
-    assertHttpOracle(chat);
-    assertHttpOracle(responses);
+    expect(chat.http).toBe(1);
+    expect(responses.http).toBe(1);
+    assertHttpOracle(chat.body);
+    assertHttpOracle(responses.body);
   });
 
   test("tool-role results fold into user.content, never raw role=tool", async () => {
-    const chat = await capture("chat", toolRoleSnapshot());
-    const responses = await capture("responses", toolRoleSnapshot());
-    assertHttpOracle(chat, { mixed: false });
-    assertHttpOracle(responses, { mixed: false });
+    const chat = await capture("chat", snapshot(continuationState("tool")));
+    const responses = await capture("responses", snapshot(continuationState("tool")));
+    assertHttpOracle(chat.body, { mixed: false });
+    assertHttpOracle(responses.body, { mixed: false });
   });
 
-  test("HTTP oracle fails if result, tail, or root is stripped or extra Human/raw-tool is injected", async () => {
+  test("generation options reach Chat and Responses bodies, including tool_choice none", async () => {
+    const chatSnap = snapshot(continuationState("user"), { options });
+    const chat = await capture("chat", chatSnap);
+    expect(chat.http).toBe(1);
+    const chatBody = asRecord(chat.body)!;
+    expect(chatBody.temperature).toBe(0.2);
+    expect(chatBody.top_p).toBe(0.7);
+    expect(chatBody.max_tokens).toBe(11);
+    expect(chatBody.seed).toBe(17);
+    expect(chatBody.stop).toEqual(["STOP_SENTINEL"]);
+    expect(chatBody.parallel_tool_calls).toBe(false);
+    expect(toolChoiceOf(chat.body)).toBe("none");
+
+    const responsesSnap = snapshot(continuationState("user"), {
+      options: { temperature: 0.2, topP: 0.7, maxTokens: 11, parallelToolCalls: false, toolChoice: "none" },
+    });
+    const responses = await capture("responses", responsesSnap);
+    expect(responses.http).toBe(1);
+    const responsesBody = asRecord(responses.body)!;
+    expect(responsesBody.temperature).toBe(0.2);
+    expect(responsesBody.top_p).toBe(0.7);
+    expect(responsesBody.max_output_tokens).toBe(11);
+    expect(responsesBody.parallel_tool_calls).toBe(false);
+    expect(toolChoiceOf(responses.body)).toBe("none");
+
+    const rejected = await capture("responses", chatSnap);
+    expect(rejected.http).toBe(0);
+  });
+
+  test("mixed image is in HTTP bodies; reasoning/text is rejected before provider", async () => {
+    const mixedImage = snapshot([
+      { role: "user", content: [{ type: "text", text: textSentinel }, { type: "image", url: imageSentinel }] },
+    ]);
+    const mixedReason = snapshot([
+      { role: "user", content: textSentinel },
+      { role: "assistant", content: [{ type: "reasoning", text: reasonSentinel }, { type: "text", text: textSentinel }] },
+    ]);
+    const loneImage = snapshot([{ role: "user", content: [{ type: "image", url: imageSentinel }] }]);
+    const loneReason = snapshot([
+      { role: "user", content: "ask" },
+      { role: "assistant", content: [{ type: "reasoning", text: reasonSentinel }] },
+    ]);
+    for (const api of ["chat", "responses"] as const) {
+      const imageChat = await capture(api, mixedImage);
+      expect(imageChat.http).toBe(1);
+      expect(JSON.stringify(imageChat.body)).toContain(imageSentinel);
+      expect(JSON.stringify(imageChat.body)).toContain(textSentinel);
+      const lone = await capture(api, loneImage);
+      expect(lone.http).toBe(1);
+      expect(JSON.stringify(lone.body)).toContain(imageSentinel);
+      const reason = await capture(api, mixedReason);
+      expect(reason.http).toBe(0);
+      expect(() => encodeCcsMessages(mixedReason)).toThrow(EnvelopeError);
+      const loneR = await capture(api, loneReason);
+      expect(loneR.http).toBe(0);
+      expect(() => encodeCcsMessages(loneReason)).toThrow(EnvelopeError);
+    }
+  });
+
+  test("HTTP oracle fails on reorder, missing tools, and duplicate root for both APIs", async () => {
     const chat = await capture("chat");
-    assertHttpOracle(chat);
-    const strippedResult = JSON.parse(JSON.stringify(chat).replace(longResult, "")) as unknown;
-    expect(() => assertHttpOracle(strippedResult)).toThrow();
-    const strippedRoot = JSON.parse(JSON.stringify(chat).replace(root, "")) as unknown;
-    expect(() => assertHttpOracle(strippedRoot)).toThrow();
-    const extraHuman = JSON.parse(JSON.stringify(chat)) as { messages?: unknown[]; input?: unknown[] };
-    const list = extraHuman.messages ?? extraHuman.input;
-    expect(Array.isArray(list)).toBe(true);
-    list!.push({ role: "user", content: "extra-human" });
-    expect(() => assertHttpOracle(extraHuman)).toThrow();
-    const rawTool = JSON.parse(JSON.stringify(chat)) as { messages?: unknown[]; input?: unknown[] };
-    (rawTool.messages ?? rawTool.input)!.push({ role: "tool", content: "raw-tool" });
-    expect(() => assertHttpOracle(rawTool)).toThrow();
+    const responses = await capture("responses");
+    for (const body of [chat.body, responses.body]) {
+      assertHttpOracle(body);
+      const rec = asRecord(JSON.parse(JSON.stringify(body)))!;
+      const list = (Array.isArray(rec.messages) ? rec.messages : rec.input) as unknown[];
+      const rest = list.filter((entry) => asRecord(entry)?.role !== "system");
+      const system = list.filter((entry) => asRecord(entry)?.role === "system");
+      const reordered = [...system, rest[0], ...rest.slice(1).reverse()];
+      if (Array.isArray(rec.messages)) rec.messages = reordered;
+      else rec.input = reordered;
+      expect(() => assertHttpOracle(rec)).toThrow();
+
+      const noTools = asRecord(JSON.parse(JSON.stringify(body)))!;
+      delete noTools.tools;
+      expect(() => assertHttpOracle(noTools)).toThrow();
+
+      const dup = asRecord(JSON.parse(JSON.stringify(body)))!;
+      const hist = history(dup);
+      if (typeof dup.instructions === "string") dup.instructions = `${dup.instructions}${root}`;
+      else hist.unshift({ role: "system", content: root });
+      if (Array.isArray(dup.messages) && !dup.instructions) dup.messages = hist;
+      else if (Array.isArray(dup.input) && !dup.instructions) dup.input = hist;
+      expect(() => assertHttpOracle(dup)).toThrow();
+    }
   });
 });

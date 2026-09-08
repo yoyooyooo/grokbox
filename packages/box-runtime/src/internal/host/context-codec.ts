@@ -12,6 +12,7 @@ import {
   type ToolDefinition,
 } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
+import { qualifyHostRootContract } from "./root-contract.ts";
 
 const ENVELOPE_MAX_BYTES = 7 * 1024 * 1024;
 
@@ -98,20 +99,20 @@ export function hostToContextSnapshot(input: {
   options?: unknown;
   independentRoot?: string;
 }): ContextSnapshot {
-  if (!input.profileId || !input.abiIdentity) throw new EnvelopeError("invalid_envelope");
+  const contract = qualifyHostRootContract(input.profileId, input.abiIdentity);
   const selected = hostStateToMessages(input.state);
   const fromState = selected.filter((message) => message.role === "system");
   const rest = selected.filter((message) => message.role !== "system");
   const independent = input.independentRoot;
   let systemMessages: PromptMessage[];
-  if (typeof independent === "string") {
-    if (independent.length === 0) throw new EnvelopeError("invalid_envelope");
+  if (contract.rootSource === "independent") {
+    if (typeof independent !== "string" || independent.length === 0) throw new EnvelopeError("invalid_envelope");
     if (fromState.length > 0) throw new EnvelopeError("invalid_envelope");
     systemMessages = [{ role: "system", content: independent }];
-  } else if (fromState.length === 1) {
-    systemMessages = fromState;
   } else {
-    throw new EnvelopeError("invalid_envelope");
+    if (independent !== undefined) throw new EnvelopeError("invalid_envelope");
+    if (fromState.length !== 1) throw new EnvelopeError("invalid_envelope");
+    systemMessages = fromState;
   }
   const envelope = buildHostEnvelope(rest, input.tools, input.options);
   const body = contextSnapshotBody({

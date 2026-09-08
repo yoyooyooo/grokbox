@@ -1,6 +1,7 @@
 {
   "profileId": "t21-state-root",
   "abiIdentity": "host-abi-v1",
+  "rootSource": "state-system",
   "state": [
     { "role": "system", "content": "root-from-state" },
     { "role": "user", "content": "hello" }

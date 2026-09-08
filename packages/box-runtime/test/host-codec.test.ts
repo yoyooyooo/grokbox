@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { EnvelopeError, SNAPSHOT_JSON_MAX_BYTES, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
 import { hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
+import { sendCcsRequest } from "../src/internal/backends/ccs-codec.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const schema = { type: "object", properties: { q: { type: "string" } } };
@@ -25,6 +26,26 @@ function loadProfile(name: string): {
   };
 }
 
+async function httpCount(snapshot: ReturnType<typeof hostToContextSnapshot>): Promise<number> {
+  let count = 0;
+  const deny = async (): Promise<Response> => {
+    count += 1;
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const fetch = Object.assign(deny, { preconnect: deny }) as typeof globalThis.fetch;
+  try {
+    await sendCcsRequest({
+      snapshot,
+      api: "chat",
+      model: "gpt-4o-mini",
+      apiKey: "test-key",
+      baseURL: "https://ccs.test/v1",
+      fetch,
+    });
+  } catch { /* ignore */ }
+  return count;
+}
+
 describe("Host context snapshot", () => {
   test("authored state-root profile has required root exactly once", () => {
     const profile = loadProfile("t21-state-root.json");
@@ -42,33 +63,38 @@ describe("Host context snapshot", () => {
     const snapshot = hostToContextSnapshot(profile);
     expect(snapshot.systemMessages).toEqual([{ role: "system", content: "root-independent" }]);
     expect(snapshot.messages.some((message) => message.role === "system")).toBe(false);
-    expect(() => hostToContextSnapshot({
-      ...profile,
-      state: [{ role: "system", content: "also" }, { role: "user", content: "hello" }],
-    })).toThrow(EnvelopeError);
   });
 
-  test("missing or unknown root provenance fails before provider", () => {
+  test("wrong source, unknown provenance, and stray system do not fall back", async () => {
+    const independent = loadProfile("t21-independent-root.json");
     expect(() => hostToContextSnapshot({
-      profileId: "missing",
+      ...independent,
+      independentRoot: undefined,
+      state: [{ role: "system", content: "stray-system" }, { role: "user", content: "hello" }],
+    })).toThrow(EnvelopeError);
+
+    const stateRoot = loadProfile("t21-state-root.json");
+    expect(() => hostToContextSnapshot({
+      ...stateRoot,
+      independentRoot: "wrong-source-root",
+    })).toThrow(EnvelopeError);
+
+    expect(() => hostToContextSnapshot({
+      profileId: "unqualified-profile",
       abiIdentity: "host-abi-v1",
+      independentRoot: "should-not-count",
       state: [{ role: "user", content: "hello" }],
       tools: [{ name: "lookup", inputSchema: schema }],
     })).toThrow(EnvelopeError);
-    expect(() => hostToContextSnapshot({
-      profileId: "empty-root",
-      abiIdentity: "host-abi-v1",
-      independentRoot: "",
-      state: [{ role: "user", content: "hello" }],
-      tools: [{ name: "lookup", inputSchema: schema }],
-    })).toThrow(EnvelopeError);
+
+    expect(await httpCount(hostToContextSnapshot(loadProfile("t21-independent-root.json")))).toBeGreaterThan(0);
   });
 
   test("Host execute/getters never enter snapshot; bad schema does not catch/continue", () => {
     let executed = 0;
     let read = 0;
     const snapshot = hostToContextSnapshot({
-      profileId: "tools",
+      profileId: "t21-independent-root",
       abiIdentity: "host-abi-v1",
       independentRoot: "root",
       state: [{ role: "user", content: "hello" }],
@@ -93,7 +119,7 @@ describe("Host context snapshot", () => {
       },
     };
     expect(() => hostToContextSnapshot({
-      profileId: "getter",
+      profileId: "t21-independent-root",
       abiIdentity: "host-abi-v1",
       independentRoot: "root",
       state: [{ role: "user", content: "hello" }],
@@ -102,7 +128,7 @@ describe("Host context snapshot", () => {
     expect(read).toBe(0);
 
     expect(() => hostToContextSnapshot({
-      profileId: "bad-schema",
+      profileId: "t21-independent-root",
       abiIdentity: "host-abi-v1",
       independentRoot: "root",
       state: [{ role: "user", content: "hello" }],
@@ -113,7 +139,7 @@ describe("Host context snapshot", () => {
   test("unsupported content and oversize fail before provider without leaking sentinels", () => {
     try {
       hostToContextSnapshot({
-        profileId: "unsupported",
+        profileId: "t21-independent-root",
         abiIdentity: "host-abi-v1",
         independentRoot: "root",
         state: [{ role: "user", content: [{ type: "file", url: "private-file-sentinel" }] }],
@@ -125,7 +151,7 @@ describe("Host context snapshot", () => {
       expect(String(error)).not.toContain("private-file-sentinel");
     }
     expect(() => hostToContextSnapshot({
-      profileId: "oversize",
+      profileId: "t21-independent-root",
       abiIdentity: "host-abi-v1",
       independentRoot: "root",
       state: [{ role: "user", content: "x".repeat(SNAPSHOT_JSON_MAX_BYTES + 1) }],
