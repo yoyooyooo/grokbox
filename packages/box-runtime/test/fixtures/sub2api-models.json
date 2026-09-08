@@ -5,7 +5,7 @@
       "id": "openai-responses/gpt-5.6-luna",
       "provider": "openai-responses",
       "model": "gpt-5.6-luna",
-      "endpoint": "http://provider-b.example.invalid/",
+      "endpoint": "https://provider.example.invalid/",
       "apiKeyRef": "env:GROKBOX_SUB2API_KEY",
       "capabilities": { "vision": false, "tools": true, "images": false },
       "dataTypes": ["text", "tools"]
@@ -14,7 +14,7 @@
       "id": "openai-responses/grok-4.6",
       "provider": "openai-responses",
       "model": "grok-4.6",
-      "endpoint": "http://provider-b.example.invalid/",
+      "endpoint": "https://provider.example.invalid/",
       "apiKeyRef": "env:GROKBOX_SUB2API_KEY",
       "capabilities": { "vision": false, "tools": true, "images": false },
       "dataTypes": ["text", "tools"]

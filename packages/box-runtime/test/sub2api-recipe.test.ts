@@ -13,14 +13,15 @@ import {
 } from "../src/models.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures/sub2api-models.json");
+const CCS_BASE = "https://provider.example.invalid/";
 
-describe("T8 sub2api recipe (offline, no spend)", () => {
-  test("fixture admits luna and grok over http://provider-b.example.invalid/; other schemes fail-closed", async () => {
+describe("T8 CCS sub2api recipe (offline, no spend)", () => {
+  test("fixture admits luna and grok over CCS https; other schemes fail-closed", async () => {
     const file = parseModelsFile(JSON.parse(await readFile(FIXTURE, "utf8")));
     expect(file.assignments.main).toBe("openai-responses/gpt-5.6-luna");
     const luna = file.models["openai-responses/gpt-5.6-luna"]!;
     const grok = file.models["openai-responses/grok-4.6"]!;
-    expect(luna.endpoint).toBe("http://provider-b.example.invalid/");
+    expect(luna.endpoint).toBe(CCS_BASE);
     expect(luna.apiKeyRef).toBe("env:GROKBOX_SUB2API_KEY");
     expect(grok.provider).toBe("openai-responses");
     expect(openAiAccepts(luna)).toBe(true);
@@ -30,7 +31,7 @@ describe("T8 sub2api recipe (offline, no spend)", () => {
     expect(JSON.stringify(file)).not.toMatch(/sk-|Bearer |api[_-]?key\s*[:=]/i);
 
     expect(openAiAccepts(STUB_ECHO_MODEL)).toBe(false);
-    expect(openAiAccepts({ ...luna, endpoint: "wss://mini:8319/" })).toBe(false);
+    expect(openAiAccepts({ ...luna, endpoint: "wss://example.test/" })).toBe(false);
     expect(openAiAccepts({ ...luna, endpoint: "stub:echo" })).toBe(false);
     expect(openAiAccepts({ ...luna, apiKeyRef: "" })).toBe(false);
     expect(() => assertRouteAssignment({
@@ -40,13 +41,13 @@ describe("T8 sub2api recipe (offline, no spend)", () => {
     })).toThrow(BoxRuntimeError);
   });
 
-  test("Responses driver joins PI baseURL to /responses without requiring /v1", async () => {
+  test("Responses driver joins CCS https baseURL to /responses without requiring /v1", async () => {
     const urls: string[] = [];
     const luna: ModelRecord = {
       id: "openai-responses/gpt-5.6-luna",
       provider: "openai-responses",
       model: "gpt-5.6-luna",
-      endpoint: "http://provider-b.example.invalid/",
+      endpoint: CCS_BASE,
       apiKeyRef: "env:GROKBOX_SUB2API_KEY",
       capabilities: { vision: false, tools: true, images: false },
       dataTypes: ["text", "tools"],
@@ -70,7 +71,7 @@ describe("T8 sub2api recipe (offline, no spend)", () => {
       agentId: "agent-tom",
       signal: new AbortController().signal,
     })).catch(() => undefined);
-    expect(urls.some((url) => url.startsWith("http://provider-b.example.invalid/responses"))).toBe(true);
+    expect(urls.some((url) => url.startsWith("https://provider.example.invalid/responses"))).toBe(true);
     expect(urls.some((url) => url.includes("/v1/"))).toBe(false);
     expect(JSON.stringify(urls)).not.toMatch(/test-key|GROKBOX_SUB2API_KEY|sk-/);
   });
