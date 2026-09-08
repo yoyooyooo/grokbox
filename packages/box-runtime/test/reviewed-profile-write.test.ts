@@ -76,7 +76,7 @@ describe("offline reviewed profile authoring", () => {
     if (!applied.ok) throw new Error(applied.code);
     expect(applied.source).toContain("agentId: host.getConversationId()");
     expect(applied.source).toContain("invocationId: inferenceRequestId");
-    expect(applied.source).toContain("originalSession: session");
+    expect(applied.source).toContain("originalSession: __grokbox_session");
     expect(written.sourceSha256).toBe(hash(LIVE_SHAPED_HOST));
     expect(written.transformedSourceSha256).toBe(hash(applied.source));
     expect(await fs.readdir(f.destDir)).toEqual(["reviewed.json"]);

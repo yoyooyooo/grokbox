@@ -14,9 +14,9 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     id: "create-session",
     startAnchor: "createSession(onRequestId, sessionOptions) {",
     endAnchor: "    },\n    recordPostTurnLabeling(args) {",
-    find: "      return session;\n",
+    find: "      return createCursorInferencePromptSession(inferenceOptions);\n",
     replacement:
-      `      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      return typeof __grokbox_hook === "function" ? __grokbox_hook({ originalSession: session, sessionOptions, agentId: sessionOptions?.agentId, onRequestId }) : session;\n`,
+      `      const __grokbox_session = createCursorInferencePromptSession(inferenceOptions);\n      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      return typeof __grokbox_hook === "function" ? __grokbox_hook({ originalSession: __grokbox_session, sessionOptions, agentId: sessionOptions?.agentId, onRequestId }) : __grokbox_session;\n`,
   },
   {
     id: "agent-id",

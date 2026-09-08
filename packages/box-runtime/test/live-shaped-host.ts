@@ -2,11 +2,11 @@
 export const LIVE_SHAPED_HOST = `"use strict";
 const api = {
   createSession(onRequestId, sessionOptions) {
-    const session = { kind: "official-session", sessionOptions, onRequestId };
+    const inferenceOptions = { sessionOptions, onRequestId };
     if (false) {
       void 0;
     }
-      return session;
+      return createCursorInferencePromptSession(inferenceOptions);
     },
     recordPostTurnLabeling(args) {
       return args;
