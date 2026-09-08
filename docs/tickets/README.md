@@ -29,6 +29,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T13 | open | Status honesty: circuit/watchdog vs attested coverage after adopt |
 | T14 | done | Overflow observability (`provider_error_observed`) |
 | T14b | open | Host-reuse compact on confirmed overflow (after live signals) |
+| T15 | open | WebUI ops console + config/storage interoperability (analysis) |
 
 ## Live canary bots
 
