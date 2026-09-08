@@ -75,3 +75,9 @@ export function fakeModelBackendLayer(events: InferenceEvent[], counts?: Counted
 export function peekFakeSecret(lease: AuthLease): string | undefined {
   return leases.get(lease)?.secret;
 }
+
+export function unsealFakeAuth(lease: AuthLease): string {
+  const record = leases.get(lease);
+  if (!record) throw new BackendFailure("auth_mismatch");
+  return record.secret;
+}

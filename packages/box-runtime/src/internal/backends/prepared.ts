@@ -1,6 +1,6 @@
 import type { AuthLease, PreparedCall } from "@grokbox/runtime-kernel/ports";
-import type { ContextSnapshot } from "@grokbox/runtime-kernel/contract";
-import type { CcsApi, CcsPrompt } from "./ccs-codec.ts";
+import { cloneJson, type ContextSnapshot, type GenerationOptions, type ToolDefinition } from "@grokbox/runtime-kernel/contract";
+import { generationSettings, type CcsApi, type CcsPrompt } from "./ccs-codec.ts";
 
 export type PreparedPayload = {
   kind: "echo" | "openai-chat" | "openai-responses";
@@ -8,8 +8,9 @@ export type PreparedPayload = {
   model: string;
   endpoint: string;
   api: CcsApi;
-  tools: ContextSnapshot["tools"];
-  options: ContextSnapshot["options"];
+  tools: ToolDefinition[];
+  options: GenerationOptions;
+  settings: ReturnType<typeof generationSettings>;
 };
 
 const prepared = new WeakMap<PreparedCall, PreparedPayload>();
@@ -22,6 +23,16 @@ export function makePreparedCall(payload: PreparedPayload): PreparedCall {
 
 export function readPreparedCall(call: PreparedCall): PreparedPayload | undefined {
   return prepared.get(call);
+}
+
+export function freezePreparedSnapshot(snapshot: ContextSnapshot, api: CcsApi): {
+  tools: ToolDefinition[];
+  options: GenerationOptions;
+  settings: ReturnType<typeof generationSettings>;
+} {
+  const tools = cloneJson(snapshot.tools) as ToolDefinition[];
+  const options = cloneJson(snapshot.options) as GenerationOptions;
+  return { tools, options, settings: generationSettings(options, api) };
 }
 
 export function makeAuthLease(): AuthLease {

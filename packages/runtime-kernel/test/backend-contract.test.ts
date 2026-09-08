@@ -92,6 +92,11 @@ describe("backend contract", () => {
     applyInferenceEvent(open, { type: "text_delta", text: "x" });
     expect(() => finishInferenceStream(open)).toThrow(BackendFailure);
 
+    const incomplete = emptyStreamValidation();
+    applyInferenceEvent(incomplete, { type: "tool_start", toolCallId: "c1", toolName: "lookup" });
+    applyInferenceEvent(incomplete, finish);
+    expect(() => finishInferenceStream(incomplete)).toThrow(BackendFailure);
+
     const mixed = classifyProviderFailure({ auth: true, overflow: true });
     expect(mixed.code).toBe("provider_error");
     expect(mixed.overflowCandidate).toBe(false);

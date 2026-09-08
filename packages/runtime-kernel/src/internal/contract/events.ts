@@ -30,6 +30,7 @@ export type BackendFailureCode =
   | "stream_invalid"
   | "envelope_too_large"
   | "unsupported_content"
+  | "unsupported_options"
   | "credential_invalid";
 
 export const BACKEND_FAILURE_CODES: readonly BackendFailureCode[] = [
@@ -41,6 +42,7 @@ export const BACKEND_FAILURE_CODES: readonly BackendFailureCode[] = [
   "stream_invalid",
   "envelope_too_large",
   "unsupported_content",
+  "unsupported_options",
   "credential_invalid",
 ];
 
@@ -58,12 +60,13 @@ export class BackendFailure extends Error {
 
 export type StreamValidationState = {
   tools: Map<string, string>;
+  open: Set<string>;
   finished: boolean;
   sawUsage: boolean;
 };
 
 export function emptyStreamValidation(): StreamValidationState {
-  return { tools: new Map(), finished: false, sawUsage: false };
+  return { tools: new Map(), open: new Set(), finished: false, sawUsage: false };
 }
 
 function failStream(): never {
@@ -82,6 +85,7 @@ export function applyInferenceEvent(state: StreamValidationState, event: Inferen
     const existing = state.tools.get(event.toolCallId);
     if (existing && existing !== event.toolName) failStream();
     state.tools.set(event.toolCallId, event.toolName);
+    state.open.add(event.toolCallId);
     return state;
   }
   if (event.type === "tool_delta" || event.type === "tool_complete") {
@@ -89,6 +93,7 @@ export function applyInferenceEvent(state: StreamValidationState, event: Inferen
     if (!named || named !== event.toolName) failStream();
     if (event.type === "tool_complete") {
       if (event.args === undefined) failStream();
+      state.open.delete(event.toolCallId);
     }
     return state;
   }
@@ -102,7 +107,7 @@ export function applyInferenceEvent(state: StreamValidationState, event: Inferen
 }
 
 export function finishInferenceStream(state: StreamValidationState): void {
-  if (!state.finished) failStream();
+  if (!state.finished || state.open.size > 0) failStream();
 }
 
 export function classifyProviderFailure(input: {

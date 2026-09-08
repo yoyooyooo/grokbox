@@ -152,36 +152,39 @@ export function fingerprintApiKeyRef(
 }
 
 type LeaseRecord = { fingerprint: string; secret: string; ref: string; env: NodeJS.Dict<string> };
-const leases = new WeakMap<AuthLease, LeaseRecord>();
 
 function makeLease(): AuthLease {
   return Object.freeze(Object.create(null)) as AuthLease;
 }
 
-export function unsealAuthLease(lease: AuthLease): string {
-  const record = leases.get(lease);
-  if (!record) throw new BackendFailure("auth_mismatch");
-  return record.secret;
-}
+export type LiveBackendAuth = {
+  layer: Layer.Layer<BackendAuth>;
+  unseal: (lease: AuthLease) => string;
+};
 
-export function liveBackendAuthLayer(env: NodeJS.Dict<string> = process.env): Layer.Layer<BackendAuth> {
-  return Layer.succeed(BackendAuth, {
+/** Per-root auth. Unseal is injected into backends; maps are not shared across roots. */
+export function createLiveBackendAuth(env: NodeJS.Dict<string> = process.env): LiveBackendAuth {
+  const leases = new WeakMap<AuthLease, LeaseRecord>();
+  const unseal = (lease: AuthLease): string => {
+    const record = leases.get(lease);
+    if (!record) throw new BackendFailure("auth_mismatch");
+    return record.secret;
+  };
+  const layer = Layer.succeed(BackendAuth, {
     pin: (input: unknown) => {
       const ref = input && typeof input === "object" && "apiKeyRef" in input && typeof (input as { apiKeyRef: unknown }).apiKeyRef === "string"
         ? (input as { apiKeyRef: string }).apiKeyRef
         : "";
-      const localEnv = input && typeof input === "object" && "env" in input && (input as { env?: NodeJS.Dict<string> }).env
-        ? (input as { env: NodeJS.Dict<string> }).env
-        : env;
       return Effect.acquireRelease(
-        materializeApiKeyRefEffect(ref, localEnv).pipe(
+        materializeApiKeyRefEffect(ref, env).pipe(
           Effect.mapError((error) => error instanceof BackendFailure ? error : new BackendFailure("credential_invalid")),
           Effect.map((secret) => {
-          const lease = makeLease();
-          const fingerprint = fingerprintSecret(secret);
-          leases.set(lease, { fingerprint, secret, ref, env: localEnv });
-          return { lease, fingerprint };
-        })),
+            const lease = makeLease();
+            const fingerprint = fingerprintSecret(secret);
+            leases.set(lease, { fingerprint, secret, ref, env });
+            return { lease, fingerprint };
+          }),
+        ),
         ({ lease }) => Effect.sync(() => {
           const record = leases.get(lease);
           if (record) record.secret = "";
@@ -196,4 +199,9 @@ export function liveBackendAuthLayer(env: NodeJS.Dict<string> = process.env): La
       if (current !== record.fingerprint) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
     }),
   });
+  return { layer, unseal };
+}
+
+export function liveBackendAuthLayer(env: NodeJS.Dict<string> = process.env): Layer.Layer<BackendAuth> {
+  return createLiveBackendAuth(env).layer;
 }

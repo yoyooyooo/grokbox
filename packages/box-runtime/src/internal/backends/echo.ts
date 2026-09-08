@@ -6,7 +6,7 @@ import {
 } from "@grokbox/runtime-kernel/contract";
 import { ModelBackend, type AuthLease, type PreparedCall } from "@grokbox/runtime-kernel/ports";
 import { encodeCcsMessages, type CcsPrompt } from "./ccs-codec.ts";
-import { makePreparedCall, readPreparedCall } from "./prepared.ts";
+import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
 
 function lastUserFromPrompt(prompt: CcsPrompt): string {
   for (let index = prompt.messages.length - 1; index >= 0; index -= 1) {
@@ -21,6 +21,7 @@ function lastUserFromPrompt(prompt: CcsPrompt): string {
 function mapPrepareError(error: unknown): BackendFailure {
   if (error instanceof BackendFailure) return error;
   if (error instanceof EnvelopeError && error.code === "envelope_too_large") return new BackendFailure("envelope_too_large");
+  if (error instanceof EnvelopeError && error.code === "unsupported_options") return new BackendFailure("unsupported_options");
   if (error instanceof EnvelopeError) return new BackendFailure("unsupported_content");
   return new BackendFailure("invalid_prepared_call");
 }
@@ -30,14 +31,14 @@ export const echoModelBackendLayer: Layer.Layer<ModelBackend> = Layer.succeed(Mo
     try: () => {
       const snap = snapshot as Parameters<typeof encodeCcsMessages>[0];
       const encoded = encodeCcsMessages(snap);
+      const frozen = freezePreparedSnapshot(snap, "chat");
       return makePreparedCall({
         kind: "echo",
         prompt: encoded,
         model: "echo",
         endpoint: "stub:echo",
         api: "chat",
-        tools: snap.tools,
-        options: snap.options,
+        ...frozen,
       });
     },
     catch: mapPrepareError,
