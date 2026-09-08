@@ -30,6 +30,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T14 | done | Overflow observability (`provider_error_observed`) |
 | T14b | open | Host-reuse compact on confirmed overflow (after live signals) |
 | T15 | open | WebUI ops console + config/storage interoperability (analysis) |
+| T16 | open | Model backend adapters: AI SDK + pi JSON-RPC + Cursor SDK (Effect DI) |
 
 ## Live canary bots
 
