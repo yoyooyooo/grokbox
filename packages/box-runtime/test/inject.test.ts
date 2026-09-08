@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { armGuardian } from "../src/guardian.ts";
-import { runObserveOrIdentityInject } from "../src/inject.ts";
-import { signalIfMatch, singleOfficialChain } from "../src/process.ts";
+import { armGuardian } from "../src/internal/process/guardian.node.ts";
+import { runObserveOrIdentityInject } from "../src/internal/process/inject.ts";
+import { signalIfMatch, singleOfficialChain } from "../src/internal/process/process-port.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 
 function officialChain(tree: FakeProcessTree) {

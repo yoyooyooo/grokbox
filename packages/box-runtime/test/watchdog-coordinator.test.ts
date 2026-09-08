@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { expectedCompileReceipt } from "../src/compile-receipt.ts";
+import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeAttestation, type CoverageAttestation } from "../src/attestation.ts";
+import { writeAttestation, type CoverageAttestation } from "../src/internal/io/authority.node.ts";
 import {
   runWatchdogTick,
   WATCHDOG_MUTATION_BUDGET,
   WATCHDOG_OPERATION_ID,
-} from "../src/coordinator.ts";
-import { armGuardian } from "../src/guardian.ts";
-import type { DesiredFile, ModelsFile } from "../src/models.ts";
-import type { ProcessIdentity } from "../src/process.ts";
-import { writeAdoptOpState } from "../src/transient-adopt.ts";
+} from "../src/internal/roots/controller.runtime.ts";
+import { armGuardian } from "../src/internal/process/guardian.node.ts";
+import type { DesiredFile, ModelsFile } from "@grokbox/runtime-kernel/selection";
+import type { ProcessIdentity } from "../src/internal/process/process-port.ts";
+import { writeAdoptOpState } from "../src/internal/process/transient-adopt.ts";
 import { SHA, reviewed, targetFor } from "./admission-fixture.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 

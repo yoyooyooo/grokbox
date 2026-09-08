@@ -1,6 +1,6 @@
 import { lstat, readFile, readlink, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256Text } from "../src/hash.ts";
+import { sha256Text } from "@grokbox/runtime-kernel/hash";
 
 /** No writes; access times are OS read effects, not mutation by the observed command. */
 export async function snapshotTree(root: string): Promise<Record<string, unknown>> {

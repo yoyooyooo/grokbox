@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeRuntimeArtifact } from "../src/runtime-artifact.ts";
+import { writeRuntimeArtifact } from "../src/internal/io/artifacts.node.ts";
 
 describe("runtime receipt artifact publication", () => {
   test("concurrent readers see complete private JSON, not staged bytes", async () => {

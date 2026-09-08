@@ -1,13 +1,13 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeAttestation } from "../src/attestation.ts";
-import { pinLaunchProfile } from "../src/compile-receipt.ts";
-import { WATCHDOG_OPERATION_ID, type ManualReadoptInput } from "../src/coordinator.ts";
-import { sha256Bytes } from "../src/hash.ts";
-import type { IdentityMarker } from "../src/identity-op.ts";
-import { reviewedProfilePath } from "../src/paths.ts";
-import { applyPatchProfile, type PatchProfile } from "../src/transform.ts";
+import { writeAttestation } from "../src/internal/io/authority.node.ts";
+import { pinLaunchProfile } from "../src/internal/host/compile-receipt.ts";
+import { WATCHDOG_OPERATION_ID, type ManualReadoptInput } from "../src/internal/roots/controller.runtime.ts";
+import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import type { IdentityMarker } from "../src/internal/process/identity-op.ts";
+import { reviewedProfilePath } from "../src/internal/io/paths.ts";
+import { applyPatchProfile, type PatchProfile } from "../src/internal/host/profile.ts";
 import { SOURCE, SHA, reviewed } from "./admission-fixture.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 

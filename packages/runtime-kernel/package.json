@@ -1,0 +1,14 @@
+{
+  "name": "@grokbox/runtime-kernel",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contract": "./src/contract.ts",
+    "./hash": "./src/hash.ts",
+    "./selection": "./src/selection.ts",
+    "./ports": "./src/ports.ts"
+  },
+  "dependencies": {
+    "effect": "catalog:effect-v4-beta"
+  }
+}

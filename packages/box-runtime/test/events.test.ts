@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { runWatchdogTick } from "../src/coordinator.ts";
+import { runWatchdogTick } from "../src/internal/roots/controller.runtime.ts";
 import {
   appendEvent,
   appendHostStreamRejected,
@@ -18,8 +18,8 @@ import {
   sanitizeEvent,
   TURN_SEAM_BOUNDED_STRING,
   TURN_SEAM_TERMINAL_RETENTION,
-} from "../src/events.ts";
-import { eventsPath } from "../src/paths.ts";
+} from "../src/internal/io/journal.node.ts";
+import { eventsPath } from "../src/internal/io/paths.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
@@ -249,7 +249,7 @@ describe("turn_seam_terminal projector", () => {
 describe("model_step_terminal and host_stream_rejected projectors", () => {
   const stepEvent = {
     name: "model_step_terminal" as const,
-    schemaVersion: 2,
+    schemaVersion: 2 as const,
     at: AT,
     mode: "route" as const,
     hostGenerationId: "unbound",

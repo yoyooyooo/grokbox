@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { waitOfficialReplacement } from "../src/official-chain.ts";
-import { runTransientAdoptDeactivate } from "../src/transient-adopt.ts";
+import { waitOfficialReplacement } from "../src/internal/process/official-chain.ts";
+import { runTransientAdoptDeactivate } from "../src/internal/process/transient-adopt.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 
 function classify(tree: FakeProcessTree) {

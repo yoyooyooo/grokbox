@@ -6,12 +6,12 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readAttestation } from "../src/attestation.ts";
-import { attestationAgrees } from "../src/identity-op.ts";
-import { runH3OfflineDeactivate, runH3OfflineInject } from "../src/h3-identity.ts";
-import { inspectPid, linuxProcessPort, readEnviron } from "../src/live-proc.ts";
-import { profileFromSource } from "../src/transform.ts";
-import { sha256Bytes } from "../src/hash.ts";
+import { readAttestation } from "../src/internal/io/authority.node.ts";
+import { attestationAgrees } from "../src/internal/process/identity-op.ts";
+import { runH3OfflineDeactivate, runH3OfflineInject } from "../src/internal/process/h3-identity.ts";
+import { inspectPid, linuxProcessPort, readEnviron } from "../src/internal/process/linux.node.ts";
+import { profileFromSource } from "../src/internal/host/profile.ts";
+import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const WRAPPER = fileURLToPath(new URL("./fixtures/disposable-wrapper.cjs", import.meta.url));

@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ephemeralRuntimeRoot } from "../src/ephemeral.ts";
+import { ephemeralRuntimeRoot } from "../src/internal/io/ephemeral.ts";
 import { SHA } from "./admission-fixture.ts";
 
 const XDG_TEST = "/tmp/xdg-runtime-test";

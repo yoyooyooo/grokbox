@@ -8,14 +8,14 @@ import {
   assertResetAllowed,
   assertRouteAssignment,
   disclosure,
-  openRuntimeStore,
   parseApiKeyRef,
   parseModelsFile,
   resolveAssignment,
-} from "../src/models.ts";
-import { CLI_INSTALL_ROOT, resolveDurableRoot } from "../src/paths.ts";
-import { projectStatus } from "../src/observe.ts";
-import { BoxRuntimeError } from "../src/errors.ts";
+} from "@grokbox/runtime-kernel/selection";
+import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
+import { CLI_INSTALL_ROOT, resolveDurableRoot } from "../src/internal/io/paths.ts";
+import { projectStatus } from "../src/internal/io/observe.ts";
+import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 
 const SAMPLE = {
   version: 1 as const,

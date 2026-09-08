@@ -1,21 +1,21 @@
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
-import { expectedCompileReceipt } from "../src/compile-receipt.ts";
+import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { readAttestation, writeAttestation, type CoverageAttestation } from "../src/attestation.ts";
+import { readAttestation, writeAttestation, type CoverageAttestation } from "../src/internal/io/authority.node.ts";
 import {
   runManualReadopt,
   runWatchdogTick,
   WATCHDOG_OPERATION_ID,
-} from "../src/coordinator.ts";
-import { ephemeralRuntimeRoot } from "../src/ephemeral.ts";
-import { armGuardian } from "../src/guardian.ts";
-import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/live-readopt.ts";
-import type { DesiredFile, ModelsFile } from "../src/models.ts";
-import { projectLiveStatus } from "../src/observe.ts";
-import { coordinatorLeasePath, operationLockPath } from "../src/op-lock.ts";
-import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
-import { adoptOpStatePath } from "../src/transient-adopt.ts";
+} from "../src/internal/roots/controller.runtime.ts";
+import { ephemeralRuntimeRoot } from "../src/internal/io/ephemeral.ts";
+import { armGuardian } from "../src/internal/process/guardian.node.ts";
+import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/internal/process/live-readopt.ts";
+import type { DesiredFile, ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { projectLiveStatus } from "../src/internal/io/observe.ts";
+import { coordinatorLeasePath, operationLockPath } from "../src/internal/io/op-lock.ts";
+import type { ProcessIdentity, ProcessPort, SignalName } from "../src/internal/process/process-port.ts";
+import { adoptOpStatePath } from "../src/internal/process/transient-adopt.ts";
 import { SHA, reviewed, targetFor } from "./admission-fixture.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 

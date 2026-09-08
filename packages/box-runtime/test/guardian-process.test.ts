@@ -5,8 +5,8 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { inspectPid } from "../src/live-proc.ts";
-import { spawnIndependentGuardian } from "../src/guardian-process.ts";
+import { inspectPid } from "../src/internal/process/linux.node.ts";
+import { spawnIndependentGuardian } from "../src/internal/process/guardian-process.ts";
 
 const CHILD = fileURLToPath(new URL("../src/guardian-child.cjs", import.meta.url));
 const NODE = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;

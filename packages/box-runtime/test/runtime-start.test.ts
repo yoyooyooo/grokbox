@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseRuntimeStartMode, prepareRuntimeStart, watchdogRequiredForStart } from "../src/runtime-start.ts";
-import type { RuntimeStatus } from "../src/observe.ts";
+import { parseRuntimeStartMode, prepareRuntimeStart, watchdogRequiredForStart } from "../src/internal/roots/command.runtime.ts";
+import type { RuntimeStatus } from "../src/internal/io/observe.ts";
 
 function fakeStatus(): RuntimeStatus {
   return {

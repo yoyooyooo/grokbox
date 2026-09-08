@@ -7,10 +7,10 @@ import {
   liveAdoptLaunchSpec,
   liveClassify,
   reviewOfficialAdoptCapability,
-} from "../src/h3-live.ts";
-import { decideH3LaunchStrategy } from "../src/launch-strategy.ts";
-import { runLiveIdentityInject } from "../src/live-inject.ts";
-import { LIVE_TEMP_SUPERVISOR_NEEDLE, procEnvHas, readNamedProcEnv } from "../src/live-proc.ts";
+} from "../src/internal/process/h3-live.ts";
+import { decideH3LaunchStrategy } from "../src/internal/process/launch-strategy.ts";
+import { runLiveIdentityInject } from "../src/internal/process/live-inject.ts";
+import { LIVE_TEMP_SUPERVISOR_NEEDLE, procEnvHas, readNamedProcEnv } from "../src/internal/process/linux.node.ts";
 
 const ident = {
   pid: 1,

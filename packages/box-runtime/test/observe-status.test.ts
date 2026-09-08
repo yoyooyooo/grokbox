@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeAttestation, type CoverageAttestation, type RouteAttestation } from "../src/attestation.ts";
-import { projectLiveStatus } from "../src/observe.ts";
-import type { DesiredFile, ModelsFile } from "../src/models.ts";
-import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
-import type { PatchProfile } from "../src/transform.ts";
+import { writeAttestation, type CoverageAttestation, type RouteAttestation } from "../src/internal/io/authority.node.ts";
+import { projectLiveStatus } from "../src/internal/io/observe.ts";
+import type { DesiredFile, ModelsFile } from "@grokbox/runtime-kernel/selection";
+import type { ProcessIdentity, ProcessPort, SignalName } from "../src/internal/process/process-port.ts";
+import type { PatchProfile } from "../src/internal/host/profile.ts";
 
 const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: "stub/echo", agents: {} } };
 const SHA = "disk-sha-fixture";

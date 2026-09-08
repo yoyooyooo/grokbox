@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eventsPath } from "../src/paths.ts";
-import { observeAndHeal } from "../src/watchdog.ts";
+import { eventsPath } from "../src/internal/io/paths.ts";
+import { observeAndHeal } from "../src/internal/process/watchdog.ts";
 import { SYNTHETIC_HOST } from "./synthetic-host.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 

@@ -4,7 +4,7 @@ import { copyFile, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { liveH3AdoptAdapter, runManualReadopt, wireLiveManualReadopt } from "../src/index.ts";
+import { liveH3AdoptAdapter, runManualReadopt, wireLiveManualReadopt } from "../src/runtime.ts";
 import {
   resolveRuntimeHelpers,
   RUNTIME_HELPER_FILES,
@@ -12,9 +12,9 @@ import {
   RUNTIME_HELPER_INJECTOR_HOLD,
   RUNTIME_HELPER_PRELOAD,
   RUNTIME_HELPER_TEMP_SUPERVISOR,
-} from "../src/runtime-helpers.ts";
+} from "../src/internal/process/helpers/runtime-helpers.ts";
 
-const SRC = dirname(fileURLToPath(new URL("../src/runtime-helpers.ts", import.meta.url)));
+const SRC = dirname(fileURLToPath(new URL("../src/internal/process/helpers/runtime-helpers.ts", import.meta.url)));
 
 function stubLiveAdoptPorts() {
   const processes = {

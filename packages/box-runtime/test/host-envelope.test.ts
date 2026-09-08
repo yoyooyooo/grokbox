@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildModelEnvelope, EnvelopeError, ENVELOPE_MAX_BYTES, type ModelEnvelope, type PromptMessage } from "../src/envelope.ts";
-import { asHostPromptSession, createStreamingPromptSession, type StreamPart } from "../src/session.ts";
+import { buildModelEnvelope, EnvelopeError, ENVELOPE_MAX_BYTES, type ModelEnvelope, type PromptMessage } from "@grokbox/runtime-kernel/contract";
+import { asHostPromptSession, createStreamingPromptSession, type StreamPart } from "../src/internal/host/session.ts";
 import { collectStreamParts, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
 
 const FINISH: StreamPart = { type: "finish", reason: "stop", usage: { promptTokens: 11, completionTokens: 3, totalTokens: 14 } };

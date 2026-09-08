@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { adoptJournalNeedsRecovery, settleStaleAdoptJournal } from "../src/transient-adopt.ts";
+import { adoptJournalNeedsRecovery, settleStaleAdoptJournal } from "../src/internal/process/transient-adopt.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 
 describe("settleStaleAdoptJournal", () => {

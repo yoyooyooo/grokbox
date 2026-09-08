@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { collectHostDuplicateStream, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
-import { asHostPromptSession, createManagedPromptSession, type StreamPart } from "../src/session.ts";
+import { asHostPromptSession, createManagedPromptSession, type StreamPart } from "../src/internal/host/session.ts";
 
 const textParts: StreamPart[] = [
   { type: "text-delta", textDelta: "hello" },

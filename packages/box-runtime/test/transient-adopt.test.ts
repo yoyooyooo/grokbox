@@ -5,26 +5,26 @@ import { copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readAttestation } from "../src/attestation.ts";
-import { expectedCompileReceipt } from "../src/compile-receipt.ts";
-import { writeReviewedProfileFromCopy } from "../src/reviewed-profile.ts";
-import { runH3OfflineAdopt, runH3OfflineAdoptDeactivate } from "../src/h3-identity.ts";
-import { armGuardian } from "../src/guardian.ts";
-import { sha256Bytes } from "../src/hash.ts";
-import { inspectPid, linuxProcessPort, readEnviron } from "../src/live-proc.ts";
+import { readAttestation } from "../src/internal/io/authority.node.ts";
+import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
+import { writeReviewedProfileFromCopy } from "../src/internal/process/profile.node.ts";
+import { runH3OfflineAdopt, runH3OfflineAdoptDeactivate } from "../src/internal/process/h3-identity.ts";
+import { armGuardian } from "../src/internal/process/guardian.node.ts";
+import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { inspectPid, linuxProcessPort, readEnviron } from "../src/internal/process/linux.node.ts";
 import {
   findAdoptedHostState,
   findUniqueOfficialChain,
   proveStableOfficialState,
-} from "../src/official-chain.ts";
+} from "../src/internal/process/official-chain.ts";
 import {
   canHandoffAdopt,
   officialWouldSpawn,
   readAdoptOpState,
   runTransientAdoptDeactivate,
   runTransientAdoptOperation,
-} from "../src/transient-adopt.ts";
-import { profileFromSource, type PatchProfile } from "../src/transform.ts";
+} from "../src/internal/process/transient-adopt.ts";
+import { profileFromSource, type PatchProfile } from "../src/internal/host/profile.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 

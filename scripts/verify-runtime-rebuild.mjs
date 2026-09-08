@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const kase = process.argv[2];
+if (!kase) {
+  console.error("usage: bun scripts/verify-runtime-rebuild.mjs <case>");
+  process.exit(1);
+}
+
+const CASES = {
+  layout: [
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+    ["bun", "test", "packages/box-runtime/test/architecture.test.ts"],
+  ],
+};
+
+const mapped = CASES[kase];
+if (!mapped) {
+  console.error(`unknown case: ${kase}`);
+  process.exit(1);
+}
+
+function sha() {
+  try {
+    return execSync("git rev-parse HEAD", { cwd: root, encoding: "utf8" }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+const commands = [];
+let failed = false;
+for (const argv of mapped) {
+  const ran = spawnSync(argv[0], argv.slice(1), { cwd: root, encoding: "utf8" });
+  const entry = {
+    case: kase,
+    argv,
+    exit: ran.status ?? 1,
+    stdoutTail: (ran.stdout ?? "").slice(-2000),
+    stderrTail: (ran.stderr ?? "").slice(-2000),
+  };
+  const combined = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
+  const pass = [...combined.matchAll(/\b(\d+) pass\b/g)].map((m) => Number(m[1])).at(-1);
+  const skip = [...combined.matchAll(/\b(\d+) skip\b/g)].map((m) => Number(m[1])).at(-1);
+  const failn = [...combined.matchAll(/\b(\d+) fail\b/g)].map((m) => Number(m[1])).at(-1);
+  entry.asserts = { pass, skip, fail: failn };
+  commands.push(entry);
+  if (ran.status !== 0) failed = true;
+}
+
+const report = {
+  case: kase,
+  commit: sha(),
+  dependencyReality: "offline-layout",
+  supports: failed ? [] : ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
+  notProven: [
+    "inference",
+    "controller-effect-program",
+    "v3-wire-server",
+    "Host-fullStream",
+    "status-facets",
+    "live-adopt",
+  ],
+  commands,
+  ok: !failed,
+};
+console.log(JSON.stringify(report, null, 2));
+process.exit(failed ? 1 : 0);

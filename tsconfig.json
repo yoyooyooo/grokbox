@@ -12,11 +12,21 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
     "types": ["bun"],
-    "rootDir": "."
+    "rootDir": ".",
+    "paths": {
+      "@grokbox/box-runtime/runtime": ["./packages/box-runtime/src/runtime.ts"],
+      "@grokbox/runtime-kernel/contract": ["./packages/runtime-kernel/src/contract.ts"],
+      "@grokbox/runtime-kernel/hash": ["./packages/runtime-kernel/src/hash.ts"],
+      "@grokbox/runtime-kernel/selection": ["./packages/runtime-kernel/src/selection.ts"],
+      "@grokbox/runtime-kernel/ports": ["./packages/runtime-kernel/src/ports.ts"]
+    }
   },
   "include": [
     "packages/cli/src/**/*.ts",
     "packages/cli/package.json",
+    "packages/runtime-kernel/src/**/*.ts",
+    "packages/runtime-kernel/test/**/*.ts",
+    "packages/runtime-kernel/package.json",
     "packages/box-runtime/src/**/*.ts",
     "packages/box-runtime/test/**/*.ts",
     "packages/box-runtime/package.json",

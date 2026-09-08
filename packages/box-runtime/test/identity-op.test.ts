@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runIdentityDeactivate, runIdentityOperation } from "../src/identity-op.ts";
-import { armGuardian } from "../src/guardian.ts";
-import type { PatchProfile } from "../src/transform.ts";
+import { runIdentityDeactivate, runIdentityOperation } from "../src/internal/process/identity-op.ts";
+import { armGuardian } from "../src/internal/process/guardian.node.ts";
+import type { PatchProfile } from "../src/internal/host/profile.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 
 const reviewed: PatchProfile = {
@@ -88,7 +88,7 @@ describe("identity operation preflight (zero-signal abort)", () => {
     const s = tree2.spawn("supervisor", { parent: w });
     const h = tree2.spawn("host", { parent: s });
     const lockRoot = await ephemeral();
-    const { acquireExclusiveLock, operationLockPath } = await import("../src/op-lock.ts");
+    const { acquireExclusiveLock, operationLockPath } = await import("../src/internal/io/op-lock.ts");
     const held = await acquireExclusiveLock(operationLockPath(lockRoot));
     expect(held.ok).toBe(true);
     const locked = await runIdentityOperation({

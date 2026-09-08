@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { asHostPromptSession, createStreamingPromptSession, type SessionTerminal, type StreamPart } from "../src/session.ts";
+import { asHostPromptSession, createStreamingPromptSession, type SessionTerminal, type StreamPart } from "../src/internal/host/session.ts";
 import { collectStreamParts, duplicateHostStream, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
 import { scriptedStream, within } from "./scripted-stream.ts";
 

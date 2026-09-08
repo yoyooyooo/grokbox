@@ -1,14 +1,14 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import * as liveProc from "../src/live-proc.ts";
-import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/live-readopt.ts";
+import * as liveProc from "../src/internal/process/linux.node.ts";
+import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/internal/process/live-readopt.ts";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { attestationPath, readAttestation, writeAttestation } from "../src/attestation.ts";
-import { expectedCompileReceipt, profileBytes } from "../src/compile-receipt.ts";
-import { runManualReadopt } from "../src/coordinator.ts";
-import { coordinatorStatePath, reviewedProfilePath } from "../src/paths.ts";
-import { writeReviewedProfileFromCopy } from "../src/reviewed-profile.ts";
-import { adoptOpStatePath, readAdoptOpState } from "../src/transient-adopt.ts";
+import { attestationPath, readAttestation, writeAttestation } from "../src/internal/io/authority.node.ts";
+import { expectedCompileReceipt, profileBytes } from "../src/internal/host/compile-receipt.ts";
+import { runManualReadopt } from "../src/internal/roots/controller.runtime.ts";
+import { coordinatorStatePath, reviewedProfilePath } from "../src/internal/io/paths.ts";
+import { writeReviewedProfileFromCopy } from "../src/internal/process/profile.node.ts";
+import { adoptOpStatePath, readAdoptOpState } from "../src/internal/process/transient-adopt.ts";
 import { nextProfile, reviewed } from "./admission-fixture.ts";
 import { receiptFixture } from "./receipt-fixture.ts";
 

@@ -1,17 +1,17 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { expectedCompileReceipt } from "../src/compile-receipt.ts";
+import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
 import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readAttestation, writeAttestation, type CoverageAttestation } from "../src/attestation.ts";
-import { runManualReadopt, runWatchdogCutover, runWatchdogTick, WATCHDOG_MUTATION_BUDGET, WATCHDOG_OPERATION_ID, type WatchdogTickInput } from "../src/coordinator.ts";
-import { armGuardian } from "../src/guardian.ts";
-import { createLiveH3AdoptPorts, decideLivePreflight } from "../src/h3-live.ts";
-import type { H3LaunchStrategy } from "../src/launch-strategy.ts";
-import * as liveProc from "../src/live-proc.ts";
-import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/live-readopt.ts";
-import { coordinatorStatePath, reviewedProfilePath } from "../src/paths.ts";
-import { writeAdoptOpState } from "../src/transient-adopt.ts";
+import { readAttestation, writeAttestation, type CoverageAttestation } from "../src/internal/io/authority.node.ts";
+import { runManualReadopt, runWatchdogCutover, runWatchdogTick, WATCHDOG_MUTATION_BUDGET, WATCHDOG_OPERATION_ID, type WatchdogTickInput } from "../src/internal/roots/controller.runtime.ts";
+import { armGuardian } from "../src/internal/process/guardian.node.ts";
+import { createLiveH3AdoptPorts, decideLivePreflight } from "../src/internal/process/h3-live.ts";
+import type { H3LaunchStrategy } from "../src/internal/process/launch-strategy.ts";
+import * as liveProc from "../src/internal/process/linux.node.ts";
+import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/internal/process/live-readopt.ts";
+import { coordinatorStatePath, reviewedProfilePath } from "../src/internal/io/paths.ts";
+import { writeAdoptOpState } from "../src/internal/process/transient-adopt.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 import { SOURCE, NEW_SOURCE, SHA, NEW_SHA, reviewed, reviewedFor, nextProfile } from "./admission-fixture.ts";
 

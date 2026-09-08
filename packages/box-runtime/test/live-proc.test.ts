@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { LIVE_TEMP_SUPERVISOR_NEEDLE, roleOf } from "../src/live-proc.ts";
-import type { ProcessIdentity } from "../src/process.ts";
+import { LIVE_TEMP_SUPERVISOR_NEEDLE, roleOf } from "../src/internal/process/linux.node.ts";
+import type { ProcessIdentity } from "../src/internal/process/process-port.ts";
 
 function proc(cmdline: readonly string[], exe = cmdline[0] ?? "/bin/true"): ProcessIdentity {
   return {

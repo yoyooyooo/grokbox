@@ -1,0 +1,10 @@
+{
+  "ticket": "T20-extracted",
+  "activateIn": ["T32"],
+  "notes": "Do not treat 401+overflow, 429, or payload-too-large as confirmed compact.",
+  "vectors": [
+    { "id": "401-is-not-overflow", "http": 401, "recover": false },
+    { "id": "429-is-not-overflow", "http": 429, "recover": false },
+    { "id": "payload-too-large-is-not-confirmed-overflow", "code": "payload-too-large", "recover": false }
+  ]
+}

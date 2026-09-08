@@ -1,22 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { expectedCompileReceipt } from "../src/compile-receipt.ts";
+import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readAttestation, writeAttestation } from "../src/attestation.ts";
+import { readAttestation, writeAttestation } from "../src/internal/io/authority.node.ts";
 import {
   runManualReadopt,
   runWatchdogTick,
   WATCHDOG_MUTATION_BUDGET,
   WATCHDOG_OPERATION_ID,
-} from "../src/coordinator.ts";
-import { BoxRuntimeError } from "../src/errors.ts";
-import { armGuardian } from "../src/guardian.ts";
-import type { DesiredFile, ModelsFile } from "../src/models.ts";
-import { findAdoptedHostState, findUniqueOfficialChain } from "../src/official-chain.ts";
-import { coordinatorStatePath } from "../src/paths.ts";
-import type { ProcessIdentity, ProcessPort, SignalName } from "../src/process.ts";
-import { writeAdoptOpState } from "../src/transient-adopt.ts";
+} from "../src/internal/roots/controller.runtime.ts";
+import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
+import { armGuardian } from "../src/internal/process/guardian.node.ts";
+import type { DesiredFile, ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { findAdoptedHostState, findUniqueOfficialChain } from "../src/internal/process/official-chain.ts";
+import { coordinatorStatePath } from "../src/internal/io/paths.ts";
+import type { ProcessIdentity, ProcessPort, SignalName } from "../src/internal/process/process-port.ts";
+import { writeAdoptOpState } from "../src/internal/process/transient-adopt.ts";
 import { SHA, NEW_SHA, reviewed, reviewedFor, targetFor } from "./admission-fixture.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 

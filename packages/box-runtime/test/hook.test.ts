@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installCompileHook, transformCompileInput } from "../src/hook.ts";
-import { LIVE_HOST_BUNDLE } from "../src/live-slices.ts";
-import { profileFromSource } from "../src/transform.ts";
+import { installCompileHook, transformCompileInput } from "../src/internal/host/compile-hook.ts";
+import { LIVE_HOST_BUNDLE } from "../src/internal/host/live-slices.ts";
+import { profileFromSource } from "../src/internal/host/profile.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 describe("compile hook", () => {

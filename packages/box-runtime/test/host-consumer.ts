@@ -6,7 +6,7 @@ import type {
   StreamHandle,
   StreamPart,
   StreamRequest,
-} from "../src/session.ts";
+} from "../src/internal/host/session.ts";
 
 export type HostSideEffectVector = {
   toolExecutionCount: number;

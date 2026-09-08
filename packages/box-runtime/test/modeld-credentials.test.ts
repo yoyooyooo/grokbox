@@ -2,15 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BoxRuntimeError } from "../src/errors.ts";
-import { sha256Text } from "../src/hash.ts";
+import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
+import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import {
   CREDENTIAL_SECRET_MAX_BYTES,
   fingerprintApiKeyRef,
   fingerprintSecret,
   materializeApiKeyRef,
-} from "../src/modeld-credentials.ts";
-import { createFileEnvSecretResolver } from "../src/modeld.ts";
+} from "../src/internal/io/credentials.node.ts";
 
 async function tmpDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "grokbox-c1-"));
@@ -61,12 +60,9 @@ describe("modeld C1 credentials", () => {
     await expect(materializeApiKeyRef(`file:${link}`, {})).rejects.toMatchObject({ code: "credential_invalid" });
   });
 
-  test("Promise facade maps already-aborted signal to cancelled; createFileEnvSecretResolver shares the Effect", async () => {
+  test("Promise facade maps already-aborted signal to cancelled", async () => {
     const ac = new AbortController();
     ac.abort();
     await expect(materializeApiKeyRef("env:K", { K: "v" }, ac.signal)).rejects.toThrow(/cancelled/);
-
-    const env = { K: " shared \n" };
-    expect(await createFileEnvSecretResolver(env)("env:K")).toBe("shared");
   });
 });

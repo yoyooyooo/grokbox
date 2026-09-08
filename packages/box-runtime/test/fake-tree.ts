@@ -4,7 +4,7 @@ import {
   type ProcessPort,
   type SignalName,
   type SignalResult,
-} from "../src/process.ts";
+} from "../src/internal/process/process-port.ts";
 
 export type FakeRole = "wrapper" | "supervisor" | "host" | "temp-supervisor" | "guardian" | "extra";
 

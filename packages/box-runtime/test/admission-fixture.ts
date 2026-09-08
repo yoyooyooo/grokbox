@@ -1,6 +1,6 @@
-import { sha256Text } from "../src/hash.ts";
-import type { AdoptTargetPorts } from "../src/transient-adopt.ts";
-import { profileFromSource, type PatchProfile } from "../src/transform.ts";
+import { sha256Text } from "@grokbox/runtime-kernel/hash";
+import type { AdoptTargetPorts } from "../src/internal/process/transient-adopt.ts";
+import { profileFromSource, type PatchProfile } from "../src/internal/host/profile.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 export const SOURCE = SYNTHETIC_HOST;

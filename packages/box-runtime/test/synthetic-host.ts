@@ -1,4 +1,4 @@
-import type { SlicePatch } from "../src/transform.ts";
+import type { SlicePatch } from "../src/internal/host/profile.ts";
 
 export const SYNTHETIC_HOST = `"use strict";
 function createSession(sessionOptions) {

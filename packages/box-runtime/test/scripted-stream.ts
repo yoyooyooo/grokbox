@@ -1,4 +1,4 @@
-import type { StreamPart } from "../src/session.ts";
+import type { StreamPart } from "../src/internal/host/session.ts";
 
 /** No provider, timer pacing or transport: the test alone releases each producer step. */
 export function scriptedStream() {

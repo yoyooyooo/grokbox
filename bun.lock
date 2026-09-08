@@ -16,6 +16,7 @@
       "name": "@grokbox/box-runtime",
       "dependencies": {
         "@ai-sdk/openai": "catalog:ai-sdk",
+        "@grokbox/runtime-kernel": "workspace:*",
         "ai": "catalog:ai-sdk",
         "effect": "catalog:effect-v4-beta",
       },
@@ -24,6 +25,12 @@
       "name": "@grokbox/cli",
       "dependencies": {
         "@grokbox/box-runtime": "workspace:*",
+      },
+    },
+    "packages/runtime-kernel": {
+      "name": "@grokbox/runtime-kernel",
+      "dependencies": {
+        "effect": "catalog:effect-v4-beta",
       },
     },
   },
@@ -102,6 +109,8 @@
     "@grokbox/box-runtime": ["@grokbox/box-runtime@workspace:packages/box-runtime"],
 
     "@grokbox/cli": ["@grokbox/cli@workspace:packages/cli"],
+
+    "@grokbox/runtime-kernel": ["@grokbox/runtime-kernel@workspace:packages/runtime-kernel"],
 
     "@msgpackr-extract/msgpackr-extract-darwin-arm64": ["@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-LCkGo6JDfaBhgST7UpPWgNgLINpcpabaHfyz5OBx75nUYxBsaEPxjnyNjWpeb/xBup/682QnBfRBy2/LvPutZQ=="],
 

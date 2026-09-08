@@ -15,12 +15,13 @@ describe("workspace packages", () => {
     expect(rootPackage.workspaces.packages).toEqual(["packages/*"]);
     expect(rootPackage.dependencies).toEqual({});
     expect(cliPackage.dependencies).toEqual({ "@grokbox/box-runtime": "workspace:*" });
+    expect(runtimePackage.exports).toEqual({ "./runtime": "./src/runtime.ts" });
   });
 
   test("runtime package has no daemon or profile entry", () => {
     expect(Object.keys(runtimePackage).includes("bin")).toBe(false);
-    expect(join(dirname(import.meta.dir), "src", "index.ts").replaceAll("\\", "/")).toMatch(
-      /packages\/box-runtime\/src\/index\.ts$/,
+    expect(join(dirname(import.meta.dir), "src", "runtime.ts").replaceAll("\\", "/")).toMatch(
+      /packages\/box-runtime\/src\/runtime\.ts$/,
     );
   });
 });

@@ -63,6 +63,7 @@ export const EXIT_CODES = {
   export_forbidden: 67,
   export_destination_exists: 68,
   export_source_unavailable: 69,
+  runtime_not_ready: 70,
 } as const;
 
 export type ErrorCode = Exclude<keyof typeof EXIT_CODES, "ok">;
@@ -142,6 +143,7 @@ const RETRYABLE: Record<ErrorCode, boolean> = {
   export_forbidden: false,
   export_destination_exists: false,
   export_source_unavailable: false,
+  runtime_not_ready: false,
 };
 
 export class CliError extends Error {

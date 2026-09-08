@@ -8,7 +8,6 @@ import {
   assertStubOnlyRouteAssignments,
   BoxRuntimeError,
   disclosure,
-  ephemeralRuntimeRoot,
   openRuntimeStore,
   parseModelId,
   projectLiveStatus,
@@ -17,16 +16,12 @@ import {
   liveH3AdoptAdapter,
   reviewedProfilePath,
   runManualReadopt,
-  parseRuntimeStartMode,
-  prepareRuntimeStart,
-  probeStubModeld,
+  runtimeNotReady,
   runWatchdogTick,
-  startStubModeldServer,
-  watchdogRequiredForStart,
   wireLiveManualReadopt,
   writeReviewedProfileFromCopy,
   type DesiredMode,
-} from "@grokbox/box-runtime";
+} from "@grokbox/box-runtime/runtime";
 
 export { liveH3AdoptAdapter };
 import type { CliDeps } from "../deps.ts";
@@ -81,34 +76,10 @@ export async function runRuntimeActivate(deps: CliDeps, mode: string | undefined
   }
 }
 
-export async function runRuntimeStart(deps: CliDeps, mode: string | undefined): Promise<void> {
+export async function runRuntimeStart(deps: CliDeps, _mode: string | undefined): Promise<void> {
   try {
-    const parsed = parseRuntimeStartMode(mode);
-    const runtime = store(deps);
-    const models = await runtime.loadModels();
-    if (parsed === "route") assertRouteAssignment(models);
-    const runRoot = deps.env.GROKBOX_RUN_ROOT ?? ephemeralRuntimeRoot();
-    const payload = await prepareRuntimeStart({
-      mode: parsed,
-      probeModeld: () => probeStubModeld(runRoot),
-      startModeld: async () => {
-        // Same listen path as `modeld run`; do not wait() — return readiness. Never re-adopt.
-        await startStubModeldServer({ runRoot, durableRoot: runtime.root, signal: deps.signal });
-      },
-      activate: async (desired) => {
-        await runtime.saveDesired({ version: 1, mode: desired });
-      },
-      ...(watchdogRequiredForStart(parsed) ? {
-        tickWatchdog: async () => await runWatchdogTick({
-          root: runtime.root,
-          desired: await runtime.loadDesired(),
-          models: await runtime.loadModels(),
-          now: deps.now,
-        }),
-      } : {}),
-      status: async () => await projectLiveStatus({ root: runtime.root, ephemeralRoot: runRoot }),
-    });
-    writeSuccess(deps.stdout, payload);
+    store(deps);
+    runtimeNotReady("runtime start / modeld", "T26");
   } catch (error) {
     rethrow(error);
   }
@@ -265,19 +236,8 @@ export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
 
 export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
   try {
-    const runtime = store(deps);
-    const runRoot = deps.env.GROKBOX_RUN_ROOT ?? ephemeralRuntimeRoot();
-    const server = await startStubModeldServer({ runRoot, durableRoot: runtime.root, signal: deps.signal });
-    writeSuccess(deps.stdout, {
-      process: "modeld",
-      state: "running",
-      driver: "composite",
-    });
-    const stop = () => { void server.stop(); };
-    process.once("SIGTERM", stop);
-    process.once("SIGINT", stop);
-    try { await server.wait(); }
-    finally { process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop); }
+    store(deps);
+    runtimeNotReady("modeld inference", "T26");
   } catch (error) {
     rethrow(error);
   }

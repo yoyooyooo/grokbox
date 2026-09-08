@@ -5,10 +5,10 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { profileFromSource } from "../src/transform.ts";
-import { expectedCompileReceipt, pinLaunchProfile, profileBytes } from "../src/compile-receipt.ts";
-import type { IdentityMarker } from "../src/identity-op.ts";
-import { inspectPid } from "../src/live-proc.ts";
+import { profileFromSource } from "../src/internal/host/profile.ts";
+import { expectedCompileReceipt, pinLaunchProfile, profileBytes } from "../src/internal/host/compile-receipt.ts";
+import type { IdentityMarker } from "../src/internal/process/identity-op.ts";
+import { inspectPid } from "../src/internal/process/linux.node.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const PRELOAD_SRC = fileURLToPath(new URL("../src/preload.ts", import.meta.url));

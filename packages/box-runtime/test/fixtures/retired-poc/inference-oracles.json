@@ -1,0 +1,45 @@
+{
+  "ticket": "T20-extracted",
+  "activateIn": ["T23", "T24", "T25", "T26"],
+  "notes": "POC createModeld / As1 / StubRouteDriver / callStubModeld entrypoints revoked. Replay these oracles against the new ModelBackend + runStep, not the deleted APIs.",
+  "vectors": [
+    {
+      "id": "stub-echo-model-id",
+      "expected": "stub/echo"
+    },
+    {
+      "id": "selective-route-unassigned-is-official",
+      "agentId": null,
+      "expectedKind": "official"
+    },
+    {
+      "id": "selective-route-assigned-agent-is-managed",
+      "agentId": "agent-tom",
+      "assignment": "stub/echo",
+      "expectedKind": "managed"
+    },
+    {
+      "id": "main-is-not-session-fallback",
+      "assignments": { "main": "stub/echo", "agents": {} },
+      "agentId": "unassigned",
+      "expectedKind": "official"
+    },
+    {
+      "id": "duplicate-same-step-does-not-second-dispatch",
+      "expectedCode": "duplicate"
+    },
+    {
+      "id": "payload-change-same-key-is-conflict",
+      "expectedCode": "conflict"
+    },
+    {
+      "id": "unassigned-route-returns-original-session",
+      "expected": "originalSession"
+    },
+    {
+      "id": "t11-managed-session-failure-is-visible",
+      "expectedUserVisible": true,
+      "noOfficialFallback": true
+    }
+  ]
+}

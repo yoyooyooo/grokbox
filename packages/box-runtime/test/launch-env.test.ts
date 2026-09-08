@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { envHasProviderCredential, fillMissingLaunchEnv, pickLaunchEnv } from "../src/launch-env.ts";
+import { envHasProviderCredential, fillMissingLaunchEnv, pickLaunchEnv } from "../src/internal/process/launch.node.ts";
 
 describe("identity launch allowlist", () => {
   test("copies approved Host launch fields and excludes provider keys", () => {

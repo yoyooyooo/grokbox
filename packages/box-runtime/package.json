@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./runtime": "./src/runtime.ts"
   },
   "dependencies": {
+    "@grokbox/runtime-kernel": "workspace:*",
     "@ai-sdk/openai": "catalog:ai-sdk",
     "ai": "catalog:ai-sdk",
     "effect": "catalog:effect-v4-beta"

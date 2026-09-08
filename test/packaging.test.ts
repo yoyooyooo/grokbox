@@ -10,9 +10,9 @@ import {
   liveH3AdoptAdapter,
   runManualReadopt,
   wireLiveManualReadopt,
-} from "../packages/box-runtime/src/index.ts";
-import { resolveRuntimeHelpers, RUNTIME_HELPER_FILES } from "../packages/box-runtime/src/runtime-helpers.ts";
-import { profileFromSource } from "../packages/box-runtime/src/transform.ts";
+} from "@grokbox/box-runtime/runtime";
+import { resolveRuntimeHelpers, RUNTIME_HELPER_FILES } from "../packages/box-runtime/src/internal/process/helpers/runtime-helpers.ts";
+import { profileFromSource } from "../packages/box-runtime/src/internal/host/profile.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "../packages/box-runtime/test/synthetic-host.ts";
 import {
   jobStateProvesCleanup,

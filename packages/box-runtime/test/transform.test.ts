@@ -3,15 +3,15 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, runInContext } from "node:vm";
-import { shouldTransformArgv } from "../src/argv.ts";
-import { sha256Bytes, sha256Text } from "../src/hash.ts";
+import { shouldTransformArgv } from "../src/internal/host/argv.ts";
+import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import {
   applyPatchProfile,
   extractContractSlices,
   profileFromSource,
   ROUTE_SESSION_SYMBOL,
   sliceHashes,
-} from "../src/transform.ts";
+} from "../src/internal/host/profile.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const LIVE_HOST = "/home/box/sand-host/host-main.cjs";

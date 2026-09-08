@@ -3,10 +3,10 @@ import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { transformCompileInput } from "../src/hook.ts";
-import { sha256Bytes } from "../src/hash.ts";
-import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/live-slices.ts";
-import { applyPatchProfile, extractContractSlices, profileFromSource } from "../src/transform.ts";
+import { transformCompileInput } from "../src/internal/host/compile-hook.ts";
+import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { applyPatchProfile, extractContractSlices, profileFromSource } from "../src/internal/host/profile.ts";
 
 async function liveSnapshot(): Promise<{ digest: string | null; pids: string[] }> {
   let digest: string | null = null;

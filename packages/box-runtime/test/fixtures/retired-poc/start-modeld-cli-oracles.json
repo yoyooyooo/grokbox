@@ -1,0 +1,10 @@
+{
+  "ticket": "T20-extracted",
+  "activateIn": ["T25", "T26"],
+  "notes": "CLI runtime start / modeld run no longer call startStubModeldServer. Composition returns runtime_not_ready until T26.",
+  "vectors": [
+    { "id": "start-requires-valid-mode", "argv": ["runtime", "start"], "expectedCode": "invalid_usage" },
+    { "id": "start-observe-ensures-modeld-skips-watchdog", "mode": "observe", "watchdog": false, "reAdopt": false },
+    { "id": "modeld-run-hard-off-no-network", "fetch": 0, "dns": 0, "tcp": 0 }
+  ]
+}

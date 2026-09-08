@@ -1,14 +1,14 @@
 import { renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { sha256Bytes } from "./hash.ts";
-import { inspectPid } from "./live-proc.ts";
-import { installCompileHook } from "./hook.ts";
-import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./live-slices.ts";
-import { DEFAULT_DURABLE_ROOT } from "./paths.ts";
-import { ephemeralRuntimeRoot } from "./ephemeral.ts";
-import { bindHostSessionHook } from "./seam.ts";
-import { bindCompiledHost } from "./modeld-binding.ts";
-import { ROUTE_SESSION_SYMBOL, type PatchProfile } from "./transform.ts";
+import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { inspectPid } from "./internal/host/self-identity.node.ts";
+import { installCompileHook } from "./internal/host/compile-hook.ts";
+import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts";
+import { DEFAULT_DURABLE_ROOT } from "./internal/io/paths.ts";
+import { ephemeralRuntimeRoot } from "./internal/io/ephemeral.ts";
+import { bindHostSessionHook } from "./internal/host/session-hook.ts";
+import { bindCompiledHost } from "./internal/host/host-binding.ts";
+import { ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
 import { readFileSync } from "node:fs";
 
 const target = process.env.GROKBOX_HOST_BUNDLE ?? LIVE_HOST_BUNDLE;

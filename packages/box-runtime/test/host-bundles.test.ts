@@ -2,16 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { lstat, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sha256Text } from "../src/hash.ts";
+import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import {
   HOST_BUNDLE_KEEP,
   buildHostBundleDiff,
   observeHostBundles,
   pruneHostBundles,
   retainHostBundle,
-} from "../src/host-bundles.ts";
-import { hostBundlesDir } from "../src/paths.ts";
-import { observeAndHeal } from "../src/watchdog.ts";
+} from "../src/internal/io/provenance.node.ts";
+import { hostBundlesDir } from "../src/internal/io/paths.ts";
+import { observeAndHeal } from "../src/internal/process/watchdog.ts";
 import { SYNTHETIC_HOST } from "./synthetic-host.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 
@@ -78,7 +78,7 @@ describe("host full-bundle provenance", () => {
     expect(retained.diff?.driftedSlices.length).toBeGreaterThan(0);
     expect(retained.diff?.patchImpact.some((row) => row.slice === "session-options" && row.review === "re-review")).toBe(true);
     const rebuilt = buildHostBundleDiff(firstSha, SYNTHETIC_HOST, next);
-    expect(rebuilt.driftedSlices).toEqual(retained.diff?.driftedSlices);
+    expect(rebuilt.driftedSlices).toEqual(retained.diff?.driftedSlices ?? []);
     const observed = await observeHostBundles(dir);
     expect(JSON.stringify(observed)).not.toContain("function createSession");
     expect(JSON.stringify(observed)).not.toContain("official-next");

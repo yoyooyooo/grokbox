@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeReviewedProfileFromCopy } from "../src/h3-live.ts";
-import { LIVE_SLICE_PATCHES } from "../src/live-slices.ts";
-import { loadDurableReviewedProfile } from "../src/reviewed-profile.ts";
-import { applyPatchProfile, type SlicePatch } from "../src/transform.ts";
+import { writeReviewedProfileFromCopy } from "../src/internal/process/h3-live.ts";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { loadDurableReviewedProfile } from "../src/internal/process/profile.node.ts";
+import { applyPatchProfile, type SlicePatch } from "../src/internal/host/profile.ts";
 import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 

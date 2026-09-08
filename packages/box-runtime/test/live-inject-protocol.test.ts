@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { runIdentityChainInject } from "../src/live-inject.ts";
-import { singleOfficialChain } from "../src/process.ts";
+import { runIdentityChainInject } from "../src/internal/process/live-inject.ts";
+import { singleOfficialChain } from "../src/internal/process/process-port.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 
 function chain(tree: FakeProcessTree) {
