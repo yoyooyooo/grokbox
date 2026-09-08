@@ -27,6 +27,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T11 | done | Pre-dispatch official passthrough + STEP-correlated visible errors |
 | T12 | done | Adopt preserves official Host renewer env (create-bot / other bots) |
 | T13 | open | Status honesty: circuit/watchdog vs attested coverage after adopt |
+| T14 | open | Managed context compact/overflow when switched model window is smaller |
 
 ## Live canary bots
 
