@@ -3,6 +3,7 @@ import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import {
   STUB_ECHO_MODEL_ID,
   applyUse,
+  captureManagedSelection,
   computeSelectionRevision,
   decideRouteSession,
   parseApiKeyRef,
@@ -51,5 +52,38 @@ describe("kernel selection", () => {
     expect(computeSelectionRevision({ agentId: "a", model })).toMatch(/^[a-f0-9]{64}$/);
     expect(computeSelectionRevision({ agentId: "a", model })).toBe(computeSelectionRevision({ agentId: "a", model }));
     expect(computeSelectionRevision({ agentId: "b", model })).not.toBe(computeSelectionRevision({ agentId: "a", model }));
+  });
+
+  test("other bot assignment does not change this selectionRevision; endpoint/ref does", () => {
+    const openai = {
+      provider: "openai",
+      model: "gpt",
+      endpoint: "https://api.example.test/v1",
+      apiKeyRef: "env:KEY",
+      capabilities: { vision: false, tools: true, images: false },
+      dataTypes: ["text", "tools"],
+    };
+    const base = parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": openai },
+      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+    });
+    const first = captureManagedSelection(base, "agent-a");
+    const otherBot = applyUse(base, STUB_ECHO_MODEL_ID, "agent-b");
+    const afterOther = captureManagedSelection(otherBot, "agent-a");
+    expect(first).toMatchObject({ kind: "managed", modelId: "openai/gpt" });
+    expect(afterOther).toEqual(first);
+    expect(captureManagedSelection(base, "agent-b").kind).toBe("official");
+
+    const moved = parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, endpoint: "https://other.test/v1" } },
+      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+    });
+    const afterEndpoint = captureManagedSelection(moved, "agent-a");
+    expect(afterEndpoint.kind).toBe("managed");
+    if (first.kind === "managed" && afterEndpoint.kind === "managed") {
+      expect(afterEndpoint.selectionRevision).not.toBe(first.selectionRevision);
+    }
   });
 });

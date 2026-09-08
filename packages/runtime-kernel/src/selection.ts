@@ -20,6 +20,7 @@ export {
   routeHasNonStubAssignment,
   routeModelAdmitted,
   backendKindForModel,
+  modelForAgent,
   type BackendKind,
   type DesiredFile,
   type DesiredMode,
@@ -28,4 +29,4 @@ export {
   type ModelsFile,
   type RouteSessionDecision,
 } from "./internal/selection/models.ts";
-export { computeSelectionRevision } from "./internal/selection/selection-revision.ts";
+export { captureManagedSelection, computeSelectionRevision, type CapturedSelection } from "./internal/selection/selection-revision.ts";

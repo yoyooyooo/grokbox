@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { STUB_ECHO_MODEL_ID } from "@grokbox/runtime-kernel/selection";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
+import { captureHostSelection } from "../src/internal/host/selection.node.ts";
 
 const official = { kind: "official" };
 
@@ -22,6 +23,7 @@ describe("Host session hook placeholders", () => {
     })}\n`);
     const emptyHook = bindHostSessionHook({ mode: "route", durableRoot: empty, runRoot: empty });
     expect(emptyHook({ originalSession: official, agentId: "agent-1" })).toBe(official);
+    expect(captureHostSelection(empty, "agent-1")).toEqual({ kind: "official" });
   });
 
   test("managed assignment is visible runtime_not_ready without dispatch", async () => {
@@ -39,5 +41,10 @@ describe("Host session hook placeholders", () => {
       expect(error).toBeInstanceOf(BoxRuntimeError);
       expect(error).toMatchObject({ code: "runtime_not_ready", userVisible: true });
     }
+    expect(captureHostSelection(root, "agent-tom")).toMatchObject({
+      kind: "managed",
+      modelId: STUB_ECHO_MODEL_ID,
+    });
+    expect(captureHostSelection(root, "agent-other")).toEqual({ kind: "official" });
   });
 });

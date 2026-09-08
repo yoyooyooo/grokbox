@@ -1,6 +1,8 @@
 export {
   createCountedSeams,
+  fakeAdmissionAuthorityLayer,
   fakeBackendAuthLayer,
+  fakeConfigurationReadLayer,
   fakeModelBackendLayer,
   peekFakeSecret,
   unsealFakeAuth,

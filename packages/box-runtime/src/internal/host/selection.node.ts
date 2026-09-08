@@ -1,7 +1,7 @@
 import { closeSync, constants as fsConstants, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG_READ_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
-import { parseModelsFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { captureManagedSelection, parseModelsFile, type CapturedSelection, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 
 /** Bounded no-follow nonblocking regular-file read for preload/hook. Never mkdir or repair. */
 export function loadModelsFileSync(root: string): ModelsFile | null {
@@ -19,4 +19,11 @@ export function loadModelsFileSync(root: string): ModelsFile | null {
   } finally {
     if (fd !== undefined) try { closeSync(fd); } catch { /* ignore */ }
   }
+}
+
+/** Thin Host capture. Uncovered agents stay official; no credential values. */
+export function captureHostSelection(root: string, agentId?: string): CapturedSelection {
+  const file = loadModelsFileSync(root);
+  if (!file) return { kind: "official" };
+  return captureManagedSelection(file, agentId);
 }

@@ -321,3 +321,10 @@ export function resolveRouteSessionModel(file: ModelsFile, agentId?: string): { 
   }
   return { modelId: decided.modelId, assignment: decided.assignment };
 }
+
+export function modelForAgent(file: ModelsFile, agentId: string): ModelRecord | undefined {
+  const decided = decideRouteSession(file, agentId);
+  if (decided.kind !== "managed") return undefined;
+  if (decided.modelId === STUB_ECHO_MODEL_ID) return STUB_ECHO_MODEL;
+  return Object.hasOwn(file.models, decided.modelId) ? file.models[decided.modelId] : undefined;
+}

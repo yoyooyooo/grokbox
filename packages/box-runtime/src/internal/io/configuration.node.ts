@@ -1,5 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { Effect, Layer } from "effect";
+import { ConfigurationRead } from "@grokbox/runtime-kernel/ports";
 import { parseDesiredFile, parseModelsFile, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { desiredPath, modelsPath, resolveDurableRoot } from "./paths.ts";
 
@@ -40,4 +42,17 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
 
 export function secretsDir(root: string): string {
   return join(root, "secrets");
+}
+
+/** Effect read of the same parseModelsFile / parseDesiredFile Host sync uses. */
+export function configurationReadLayer(store: RuntimeStore): Layer.Layer<ConfigurationRead> {
+  return Layer.succeed(ConfigurationRead, {
+    snapshot: () => Effect.tryPromise({
+      try: async () => ({
+        models: await store.loadModels(),
+        desired: await store.loadDesired(),
+      }),
+      catch: (error) => error,
+    }),
+  });
 }

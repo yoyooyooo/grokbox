@@ -7,7 +7,8 @@ import {
   type InferenceEvent,
 } from "../contract/events.ts";
 import { sha256Text } from "../../hash.ts";
-import { BackendAuth, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
+import type { ModelsFile, DesiredFile } from "../../selection.ts";
 
 const prepared = new WeakMap<PreparedCall, { snapshot: unknown }>();
 const leases = new WeakMap<AuthLease, { fingerprint: string; secret: string }>();
@@ -45,7 +46,11 @@ export function fakeBackendAuthLayer(secret = "synthetic-secret", counts?: Count
   });
 }
 
-export function fakeModelBackendLayer(events: InferenceEvent[], counts?: CountedSeams): Layer.Layer<ModelBackend> {
+export function fakeModelBackendLayer(
+  events: InferenceEvent[],
+  counts?: CountedSeams,
+  options?: { beforeInfer?: Effect.Effect<void> },
+): Layer.Layer<ModelBackend> {
   return Layer.succeed(ModelBackend, {
     prepare: (_selection: unknown, snapshot: unknown) => Effect.sync(() => {
       const call = handle<PreparedCall>("prepared");
@@ -57,18 +62,43 @@ export function fakeModelBackendLayer(events: InferenceEvent[], counts?: Counted
         return Stream.fail(new BackendFailure("invalid_prepared_call"));
       }
       let started = false;
-      return Stream.fromAsyncIterable((async function* () {
-        if (started) return;
-        started = true;
-        if (counts) counts.network += 1;
-        const state = emptyStreamValidation();
-        for (const event of events) {
-          applyInferenceEvent(state, event);
-          yield event;
-        }
-        finishInferenceStream(state);
-      })(), (error) => error instanceof BackendFailure ? error : new BackendFailure("stream_invalid"));
+      return Stream.unwrap(Effect.gen(function* () {
+        if (options?.beforeInfer) yield* options.beforeInfer;
+        return Stream.fromAsyncIterable((async function* () {
+          if (started) return;
+          started = true;
+          if (counts) counts.network += 1;
+          const state = emptyStreamValidation();
+          for (const event of events) {
+            applyInferenceEvent(state, event);
+            yield event;
+          }
+          finishInferenceStream(state);
+        })(), (error) => error instanceof BackendFailure ? error : new BackendFailure("stream_invalid"));
+      }));
     },
+  });
+}
+
+export function fakeConfigurationReadLayer(input: {
+  models: () => ModelsFile;
+  desired?: DesiredFile;
+  beforeRead?: Effect.Effect<void>;
+}): Layer.Layer<ConfigurationRead> {
+  return Layer.succeed(ConfigurationRead, {
+    snapshot: () => Effect.gen(function* () {
+      if (input.beforeRead) yield* input.beforeRead;
+      return {
+        models: input.models(),
+        desired: input.desired ?? { version: 1, mode: "route" as const },
+      };
+    }),
+  });
+}
+
+export function fakeAdmissionAuthorityLayer(): Layer.Layer<AdmissionAuthority> {
+  return Layer.succeed(AdmissionAuthority, {
+    current: () => Effect.succeed({ admitted: true }),
   });
 }
 

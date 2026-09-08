@@ -54,6 +54,7 @@ const requiredSources = [
   "packages/runtime-kernel/src/hash.ts",
   "packages/runtime-kernel/src/selection.ts",
   "packages/runtime-kernel/src/ports.ts",
+  "packages/runtime-kernel/src/inference.ts",
 ];
 for (const path of requiredSources) {
   if (!existsSync(join(root, path))) fail("missing required source", { path });
@@ -99,6 +100,7 @@ const requiredKernelExports = {
   "./ports": "./src/ports.ts",
   "./status": "./src/status.ts",
   "./testing": "./src/testing.ts",
+  "./inference": "./src/inference.ts",
 };
 const kernelExports = kernelPkg.exports ?? {};
 for (const [key, target] of Object.entries(requiredKernelExports)) {
@@ -119,6 +121,7 @@ const KERNEL_SUBPATH = {
   "@grokbox/runtime-kernel/ports": "packages/runtime-kernel/src/ports.ts",
   "@grokbox/runtime-kernel/status": "packages/runtime-kernel/src/status.ts",
   "@grokbox/runtime-kernel/testing": "packages/runtime-kernel/src/testing.ts",
+  "@grokbox/runtime-kernel/inference": "packages/runtime-kernel/src/inference.ts",
 };
 
 function layerOf(path) {
@@ -223,7 +226,7 @@ for (const dir of productionDirs) {
         fail("Host leaf imports Effect/SDK", { path, spec });
       }
       if (fromLayer === "cli" && resolved.kind === "forbidden-pkg") fail("CLI imported SDK/Effect", { path, spec });
-      if (fromLayer === "kernel" && !path.endsWith("/ports.ts") && !path.endsWith("/testing.ts") && !path.includes("/internal/testing/") && (spec === "effect" || spec.startsWith("effect/") || resolved.kind === "forbidden-pkg")) {
+      if (fromLayer === "kernel" && !path.endsWith("/ports.ts") && !path.endsWith("/testing.ts") && !path.endsWith("/inference.ts") && !path.includes("/internal/testing/") && !path.includes("/internal/inference/") && (spec === "effect" || spec.startsWith("effect/") || resolved.kind === "forbidden-pkg")) {
         fail("kernel non-ports file imports Effect", { path, spec });
       }
       if (fromLayer === "kernel" && spec.startsWith("node:") && !(path.endsWith("src/hash.ts") && spec === "node:crypto")) {

@@ -8,7 +8,8 @@
     "./selection": "./src/selection.ts",
     "./ports": "./src/ports.ts",
     "./status": "./src/status.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./inference": "./src/inference.ts"
   },
   "dependencies": {
     "effect": "catalog:effect-v4-beta"

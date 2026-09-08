@@ -1,7 +1,6 @@
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
-import { decideRouteSession } from "@grokbox/runtime-kernel/selection";
 import type { HostBinding } from "./host-binding.ts";
-import { loadModelsFileSync } from "./selection.node.ts";
+import { captureHostSelection } from "./selection.node.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
 
@@ -20,11 +19,9 @@ export function bindHostSessionHook(input: {
   void input.binding;
   if (input.mode !== "route") return (args) => args.originalSession;
   return (args) => {
-    const file = loadModelsFileSync(input.durableRoot);
     const agentId = typeof args.agentId === "string" ? args.agentId : undefined;
-    if (!file) return args.originalSession;
-    const decided = decideRouteSession(file, agentId);
-    if (decided.kind === "official") return args.originalSession;
+    const captured = captureHostSelection(input.durableRoot, agentId);
+    if (captured.kind === "official") return args.originalSession;
     throw new BoxRuntimeError(
       "runtime_not_ready",
       "managed route inference is not ready (T26). No credential, network, or modeld dispatch ran.",

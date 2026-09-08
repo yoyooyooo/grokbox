@@ -28,6 +28,9 @@ const CASES = {
     ["bun", "scripts/check-runtime-boundaries.mjs"],
     ["bun", "test", "packages/box-runtime/test/architecture.test.ts"],
   ],
+  binding: [
+    ["bun", "test", "packages/runtime-kernel/test/selection.test.ts", "packages/runtime-kernel/test/route-binding.test.ts", "packages/runtime-kernel/test/step-ledger.test.ts"],
+  ],
 };
 
 const mapped = CASES[kase];
@@ -76,12 +79,14 @@ const SUPPORTS = {
   codec: ["host-context-snapshot", "ccs-chat-responses-http-oracle"],
   status: ["status-facets", "host-journal-roles", "readonly-status-ports"],
   backend: ["model-backend-port", "backend-auth-lease", "ccs-codec-prepare"],
+  binding: ["selection-capture", "route-binding", "step-ledger"],
 };
 const REALITY = {
   layout: "offline-layout",
   codec: "offline-sdk-mock-fetch",
   status: "offline-status-facets",
   backend: "offline-sdk-mock-fetch",
+  binding: "offline-testclock-barrier",
 };
 const report = {
   case: kase,
@@ -89,7 +94,7 @@ const report = {
   dependencyReality: REALITY[kase] ?? "offline",
   supports: failed ? [] : (SUPPORTS[kase] ?? []),
   notProven: [
-    ...(kase === "backend" ? ["T24-route-binding", "T25-modeld-lifecycle", "T26-host-fullStream"] : ["inference"]),
+    ...(kase === "backend" ? ["T25-modeld-lifecycle", "T26-host-fullStream"] : kase === "binding" ? ["T25-modeld-lifecycle", "T26-host-fullStream"] : ["inference"]),
     "controller-effect-program",
     "v3-wire-server",
     "Host-fullStream",
