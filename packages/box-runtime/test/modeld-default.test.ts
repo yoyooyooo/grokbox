@@ -174,6 +174,36 @@ describe("composite / default modeld driver", () => {
     })).rejects.toThrow(/openai-hard-off/);
   });
 
+  test("Unix submit waits past idle 1s once a complete request is owned", async () => {
+    const f = await modeldFixture();
+    await f.store.saveModels(openaiModels);
+    const env = { OPENAI_API_KEY: "offline-delay-key" };
+    const server = await startStubModeldServer({
+      ...f,
+      durableRoot: f.durable,
+      defaultDriver: {
+        env,
+        streamEvents: async function* () {
+          await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+          yield { type: "text-delta", text: "slow" };
+          yield { type: "finish", finishReason: "stop" };
+        },
+      },
+    });
+    try {
+      const started = Date.now();
+      const reply = await callStubModeld(f.runRoot, submitRequest(server, "slow-openai"), 5000);
+      expect(reply).toMatchObject({
+        ok: true,
+        modelId: openaiModel.id,
+        parts: [{ type: "text-delta", textDelta: "slow" }, { type: "finish", reason: "stop" }],
+      });
+      expect(Date.now() - started).toBeGreaterThanOrEqual(1100);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("default Unix startStubModeldServer uses composite; stub still echoes; openai admit with inject", async () => {
     const f = await modeldFixture();
     const stubServer = await startStubModeldServer({ ...f, durableRoot: f.durable });

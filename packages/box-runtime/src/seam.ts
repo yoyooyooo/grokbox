@@ -1,7 +1,7 @@
 import { appendSeamRouteEvent, TURN_SEAM_BOUNDED_STRING, type HostStreamRejectReason, type ModelStepAdmission,
   type ModelStepStage, type TurnSeamAssignment, type TurnSeamOutcome, type TurnSeamTerminalClass,
   type TurnSeamWriteResult } from "./events.ts";
-import { callStubModeld, isModeldFailure, modeldHandshake, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
+import { callStubModeld, isModeldFailure, modeldHandshake, MODELD_SUBMIT_TIMEOUT_MS, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
 import { loadModelsFileSync, resolveRouteSessionModel } from "./models.ts";
 import { parseHostBinding, type HostBinding } from "./modeld-binding.ts";
 import { buildModelEnvelope, type ModelEnvelope } from "./envelope.ts";
@@ -59,7 +59,7 @@ export function createModeldRouteDriver(runRoot: string, binding?: HostBinding):
       const serverGeneration = await entry.generation;
       if (entry.unknown) throw new Error("modeld invocation unknown");
       const response = await callStubModeld(runRoot, { method: "submit", serverGeneration, host,
-        invocationId: request.invocationId, turnId: request.turnId, agentId: request.agentId, envelope: request.envelope }, 1000, request.abortSignal);
+        invocationId: request.invocationId, turnId: request.turnId, agentId: request.agentId, envelope: request.envelope }, MODELD_SUBMIT_TIMEOUT_MS, request.abortSignal);
       if (isModeldFailure(response)) throw new Error("modeld admission failed");
       return submitPartsFromResponse(response);
     } catch { entry.unknown = true; throw new Error("modeld request failed without retry"); }

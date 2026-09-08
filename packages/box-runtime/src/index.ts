@@ -151,6 +151,7 @@ export {
   probeStubModeld,
   modeldSocketPath,
   STUB_ECHO_PARTS,
+  MODELD_SUBMIT_TIMEOUT_MS,
 } from "./modeld-ipc.ts";
 export {
   bindHostSessionHook,

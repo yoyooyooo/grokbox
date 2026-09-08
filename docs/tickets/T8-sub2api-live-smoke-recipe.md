@@ -62,7 +62,7 @@ Offline fixture (no secrets): `packages/box-runtime/test/fixtures/sub2api-models
 
 ## Runbook (offline until a later spend ticket)
 
-1. Export `GROKBOX_SUB2API_KEY` in the operator shell (from PI CCS provider). Not argv, not git, not fixtures.
+1. Export `GROKBOX_SUB2API_KEY` in the operator shell from the PI CCS provider. PI `apiKey` may be a `!command` wrapper — export the **resolved** bearer, not the wrapper string. Not argv, not git, not fixtures.
 2. Write the catalog to the durable `models.json` (merge if other models exist).
 3. `grokbox runtime models check`
 4. `grokbox runtime models use openai-responses/gpt-5.6-luna`  
