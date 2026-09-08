@@ -4,6 +4,7 @@ import { jsonSchema, streamText, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { JSONSchema7 } from "ai";
 import type { ModelEnvelope, ToolDefinition } from "./envelope.ts";
+import { mergeLivePromptWithProductHistory, readProductHistoryForAgent } from "./product-history.ts";
 import { sha256Text } from "./hash.ts";
 import { createAs1ModeldDriver, type As1GenerateChunk } from "./modeld-as1.ts";
 import type { ModeldDriver } from "./modeld.ts";
@@ -115,7 +116,10 @@ async function liveOpenAiEvents(
     ...(input.fetch ? { fetch: input.fetch } : {}),
   });
   const model = call.api === "responses" ? openai.responses(call.pin.model.model) : openai.chat(call.pin.model.model);
-  const prompt = envelopeToOpenAiLivePrompt(call.envelope);
+  const prompt = mergeLivePromptWithProductHistory(
+    envelopeToOpenAiLivePrompt(call.envelope),
+    readProductHistoryForAgent(call.agentId),
+  );
   writeLivePromptCensus(call.envelope, prompt);
   const tools = toSdkTools(call.envelope.tools);
   const toolChoice = envelopeToOpenAiToolChoice(call.envelope);

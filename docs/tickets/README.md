@@ -42,7 +42,7 @@ Driver: herdr grok main line; true blockers → new session gpt-6-astra max.
 
 ## Residual (not this closeout)
 
-- **Live prompt:** default is Host conversation passthrough (CCS-safe text + SendToUser bubbles + tool stdout as assistant text; no `role=tool` replay). `GROKBOX_LIVE_PROMPT_MESSAGE_CAP` / `GROKBOX_LIVE_PROMPT_CHAR_CAP` are debug-only and must stay **unset** in live launch-env / modeld / Host. Unix `ENVELOPE_MAX_BYTES` / `MODELD_MAX_FRAME` fail visibly. Model-window overflow is **T14**. Live census: `/tmp/grokbox-live-prompt-census.json`.
+- **Live prompt:** default is Host conversation passthrough (CCS-safe text + SendToUser bubbles + tool stdout as assistant text; no `role=tool` replay). When Host’s executor window has already compacted away App-visible turns, managed STEPs prepend **this bot’s** `store.db` user/`send-message` history (not other agents). `GROKBOX_LIVE_PROMPT_*_CAP` stay unset in live. Unix envelope/frame fail visibly. T14 is provider overflow, not the first fix for folded store turns. Census: `/tmp/grokbox-live-prompt-census.json`. Diagnose: `/tmp/grokbox-context-t96-note.md`.
 - **T13 / Astra:** `status.circuit=open` + `watchdog=degraded` (`circuitReason=pending-uncertain`) can coexist with `coverage=attested` after many live adopts. Do not silently close the circuit. Host `transcript-publish` `writerSeq` vs `publishedThroughSeq` lag is Host-owned, not a grokbox writer.
 - **Wontfix here:** dirty `packages/cli/src/commands/runtime.ts` (`profileId: reviewed-copy-envelope`) and untracked root `src/` — leftover CLI/envelope WIP, not E3/T5b. Leave unstaged.
 - **test1** dual-model opt-in: not assigned.
