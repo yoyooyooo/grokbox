@@ -19,9 +19,13 @@ export type ModelPin = {
   readonly fingerprint: string;
   readonly credentialFingerprint: string | null;
 };
+export type ModeldCompleteInput = {
+  pin: ModelPin; envelope: ModelEnvelope; invocationId: string; agentId: string; signal: AbortSignal;
+  onPart?: (part: StreamPart) => void | Promise<void>;
+};
 export type ModeldDriver = {
   accepts: (model: Readonly<ModelRecord>) => boolean;
-  complete: (input: { pin: ModelPin; envelope: ModelEnvelope; invocationId: string; agentId: string; signal: AbortSignal }) => StreamPart[] | Promise<StreamPart[]>;
+  complete: (input: ModeldCompleteInput) => StreamPart[] | Promise<StreamPart[]>;
 };
 export type AdmitRequest = {
   serverGeneration: string;
@@ -42,6 +46,7 @@ type Row = {
   host: HostBinding; hash: string | null; state: InvocationState; expiresAt: number;
   controller: AbortController; result?: AdmitResult; work?: Promise<AdmitResult>;
   timer?: ReturnType<typeof setTimeout>; pinKey?: string; code?: AdmissionFailureCode;
+  onPart?: (part: StreamPart) => void | Promise<void>;
 };
 const fail = (code: AdmissionFailureCode): AdmitResult => ({ ok: false, code, userVisible: true });
 function frozen<T>(value: T): T {
@@ -173,8 +178,10 @@ export function createModeld(input: ModeldPorts & {
       row.state = "running"; arm(row, ttl, "expired");
       dispatches += 1;
       let parts: StreamPart[];
-      try { parts = await abortable(input.driver.complete({ pin: pinned, envelope: request.envelope,
-        invocationId: request.invocationId, agentId: request.agentId, signal }), signal); }
+      try { parts = await abortable(input.driver.complete({
+        pin: pinned, envelope: request.envelope, invocationId: request.invocationId, agentId: request.agentId, signal,
+        ...(row.onPart ? { onPart: row.onPart } : {}),
+      }), signal); }
       catch { return fail(row.code ?? "driver-failed"); }
       if (signal.aborted) return fail(row.code ?? "disconnected");
       // Drivers are trusted adapters. Snapshot their bounded output; no mutable driver array retained in the ledger.
@@ -185,7 +192,11 @@ export function createModeld(input: ModeldPorts & {
       if (!retainPin) releasePin(row);
     }
   }
-  async function admit(raw: AdmitRequest, clientSignal?: AbortSignal): Promise<AdmitResult> {
+  async function admit(
+    raw: AdmitRequest,
+    clientSignal?: AbortSignal,
+    onPart?: (part: StreamPart) => void | Promise<void>,
+  ): Promise<AdmitResult> {
     if (stopped) return fail("stopped");
     if (raw.serverGeneration !== serverGeneration) return fail("wrong-server-generation");
     let host: HostBinding; let envelope: ModelEnvelope;
@@ -214,7 +225,7 @@ export function createModeld(input: ModeldPorts & {
       const denied = await verify(probe); clearTimeout(probe.timer);
       return denied ? fail(denied) : await admit(request, clientSignal);
     }
-    const row: Row = { host, hash, state: "pending", expiresAt: now() + budget, controller: new AbortController() };
+    const row: Row = { host, hash, state: "pending", expiresAt: now() + budget, controller: new AbortController(), ...(onPart ? { onPart } : {}) };
     registry.set(key, row); arm(row, budget, "admission-timeout");
     const disconnected = () => cancel(row, "disconnected");
     if (clientSignal?.aborted) disconnected(); else clientSignal?.addEventListener("abort", disconnected, { once: true });

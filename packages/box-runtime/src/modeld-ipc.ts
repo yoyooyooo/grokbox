@@ -55,6 +55,14 @@ function writeFrame(socket: Socket, value: unknown): void {
   try { socket.end(encodeModeldFrame(value)); }
   catch { socket.end(encodeModeldFrame(fail("too-large"))); }
 }
+function writeChunk(socket: Socket, part: StreamPart): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (socket.destroyed) { resolve(); return; }
+    try {
+      socket.write(encodeModeldFrame({ ok: true, method: "chunk", part }), (error) => error ? reject(error) : resolve());
+    } catch (error) { reject(error); }
+  });
+}
 export function attachClient(socket: Socket, kernel: ModelD): void {
   let buf: Buffer = Buffer.alloc(0);
   let received = false;
@@ -72,9 +80,24 @@ export function attachClient(socket: Socket, kernel: ModelD): void {
     if ("error" in decoded) { finished = true; writeFrame(socket, fail(decoded.error)); return; }
     if (decoded.rest.length > 0) { finished = true; writeFrame(socket, fail("malformed")); return; }
     socket.setTimeout(0);
-    void handleRequest(kernel, decoded.value, controller.signal).then((result) => {
-      finished = true; if (!socket.destroyed) writeFrame(socket, result);
-    }, () => { finished = true; if (!socket.destroyed) writeFrame(socket, fail("malformed")); });
+    const raw = decoded.value;
+    void (async () => {
+      try {
+        if (isRecord(raw) && raw.method === "submit") {
+          if (!exactKeys(raw, SUBMIT_KEYS)) { finished = true; writeFrame(socket, fail("excess-fields")); return; }
+          const result = await kernel.admit(raw as unknown as AdmitRequest, controller.signal, async (part) => {
+            if (!socket.destroyed) await writeChunk(socket, part);
+          });
+          finished = true;
+          if (!socket.destroyed) writeFrame(socket, result.ok ? { ...result, method: "submit" } : result);
+          return;
+        }
+        const result = await handleRequest(kernel, raw, controller.signal);
+        finished = true; if (!socket.destroyed) writeFrame(socket, result);
+      } catch {
+        finished = true; if (!socket.destroyed) writeFrame(socket, fail("malformed"));
+      }
+    })();
   });
 }
 export function isAddrInUse(error: unknown): boolean {
@@ -104,7 +127,13 @@ export type StubModeldServer = {
   admissionStats: ModelD["stats"]; stop: () => Promise<void>; wait: () => Promise<void>;
 };
 /** Unix listen/sweep/stop live in `modeld-serve.ts` (Effect). This file stays Host/preload-safe. */
-export async function callStubModeld(runRoot: string, request: unknown, timeoutMs = 1000, signal?: AbortSignal): Promise<unknown> {
+export async function callStubModeld(
+  runRoot: string,
+  request: unknown,
+  timeoutMs = 1000,
+  signal?: AbortSignal,
+  onPart?: (part: StreamPart) => void,
+): Promise<unknown> {
   if (signal?.aborted) throw new Error("modeld cancelled");
   return await new Promise<unknown>((resolve, reject) => {
     const socket = createConnection({ path: modeldSocketPath(runRoot) });
@@ -118,15 +147,25 @@ export async function callStubModeld(runRoot: string, request: unknown, timeoutM
     signal?.addEventListener("abort", abort, { once: true });
     socket.on("connect", () => { try { socket.write(encodeModeldFrame(request)); } catch { finish(new Error("modeld write failed")); } });
     socket.on("data", (chunk: Buffer) => {
-      if (buf.length + chunk.length > MODELD_MAX_FRAME + 4) { finish(undefined, fail("too-large")); return; }
-      buf = Buffer.concat([buf, chunk]); const decoded = decodeModeldFrame(buf);
-      if (decoded == null) return;
-      if ("error" in decoded) { finish(undefined, fail(decoded.error)); return; }
-      finish(undefined, decoded.value);
+      if (buf.length + chunk.length > MODELD_MAX_FRAME * 4 + 16) { finish(undefined, fail("too-large")); return; }
+      buf = Buffer.concat([buf, chunk]);
+      while (true) {
+        const decoded = decodeModeldFrame(buf);
+        if (decoded == null) return;
+        if ("error" in decoded) { finish(undefined, fail(decoded.error)); return; }
+        buf = decoded.rest;
+        const value = decoded.value;
+        if (isRecord(value) && value.method === "chunk" && value.part && typeof value.part === "object") {
+          try { onPart?.(value.part as StreamPart); } catch { /* Host delivery must not fail admit */ }
+          continue;
+        }
+        finish(undefined, value);
+        return;
+      }
     });
     socket.on("error", () => finish(new Error("modeld down")));
-    socket.on("end", () => finish(new Error("modeld disconnected")));
-    socket.on("close", () => finish(new Error("modeld disconnected")));
+    socket.on("end", () => { if (!settled) finish(new Error("modeld disconnected")); });
+    socket.on("close", () => { if (!settled) finish(new Error("modeld disconnected")); });
     if (signal?.aborted) abort();
   });
 }

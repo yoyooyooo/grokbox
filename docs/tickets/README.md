@@ -18,7 +18,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T4e | done | Route Host/preload session modelId follows models.json |
 | T5 | split | see T5a (C1, done) / T5b (S2, backlog) |
 | T5a | done | C1 credentials productization (modeld Effect seam) |
-| T5b | backlog | S2 streaming IPC |
+| T5b | done | S2 streaming IPC (chunk frames + Host fullStream) |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
 | T7 | done | Prove official replacement via Gateway pid |
 | T8 | ready | Offline CCS sub2api live-smoke recipe (not spent) |

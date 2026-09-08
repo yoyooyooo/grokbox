@@ -38,28 +38,30 @@ export function as1Accepts(model: Readonly<ModelRecord>): boolean {
 export async function collectAs1Chunks(
   chunks: AsyncIterable<As1GenerateChunk>,
   signal: AbortSignal,
+  onPart?: (part: StreamPart) => void | Promise<void>,
 ): Promise<StreamPart[]> {
   if (signal.aborted) throw new Error("cancelled");
   const parts: StreamPart[] = [];
   let finished = false;
+  const emit = async (part: StreamPart) => { parts.push(part); await onPart?.(part); };
   for await (const chunk of chunks) {
     if (signal.aborted) throw new Error("cancelled");
     if (chunk.type === "text") {
       if (chunk.text.length === 0) continue;
-      parts.push({ type: "text-delta", textDelta: chunk.text });
+      await emit({ type: "text-delta", textDelta: chunk.text });
       continue;
     }
     if (chunk.type === "reasoning") {
       if (chunk.text.length === 0) continue;
-      parts.push({ type: "reasoning", textDelta: chunk.text });
+      await emit({ type: "reasoning", textDelta: chunk.text });
       continue;
     }
     if (chunk.type === "tool-call-start") {
-      parts.push({ type: "tool-call-streaming-start", toolCallId: chunk.toolCallId, toolName: chunk.toolName });
+      await emit({ type: "tool-call-streaming-start", toolCallId: chunk.toolCallId, toolName: chunk.toolName });
       continue;
     }
     if (chunk.type === "tool-call-delta") {
-      parts.push({
+      await emit({
         type: "tool-call-delta",
         toolCallId: chunk.toolCallId,
         toolName: chunk.toolName,
@@ -68,20 +70,20 @@ export async function collectAs1Chunks(
       continue;
     }
     if (chunk.type === "tool-call") {
-      parts.push({ type: "tool-call", toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
+      await emit({ type: "tool-call", toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
       continue;
     }
     if (chunk.type === "error") {
-      parts.push({
+      await emit({
         type: "error",
         error: { userVisible: true, code: chunk.code, message: chunk.message },
       });
-      parts.push({ type: "finish", reason: "error" });
+      await emit({ type: "finish", reason: "error" });
       finished = true;
       break;
     }
     if (chunk.type === "finish") {
-      parts.push({ type: "finish", reason: chunk.reason ?? "stop" });
+      await emit({ type: "finish", reason: chunk.reason ?? "stop" });
       finished = true;
       break;
     }
@@ -89,7 +91,7 @@ export async function collectAs1Chunks(
     throw new Error(`as1-unknown-chunk:${String(_never)}`);
   }
   if (signal.aborted) throw new Error("cancelled");
-  if (!finished) parts.push({ type: "finish", reason: "stop" });
+  if (!finished) await emit({ type: "finish", reason: "stop" });
   return parts;
 }
 
@@ -104,11 +106,11 @@ export function createAs1ModeldDriver(input: {
   const accepts = input.accepts ?? as1Accepts;
   return {
     accepts,
-    complete: async ({ pin, envelope, invocationId, agentId, signal }) => {
+    complete: async ({ pin, envelope, invocationId, agentId, signal, onPart }) => {
       if (signal.aborted) throw new Error("cancelled");
       const stream = await input.generate({ pin, envelope, invocationId, agentId, signal });
       if (signal.aborted) throw new Error("cancelled");
-      return await collectAs1Chunks(stream, signal);
+      return await collectAs1Chunks(stream, signal, onPart);
     },
   };
 }

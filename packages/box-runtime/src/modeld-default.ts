@@ -18,7 +18,12 @@ export function stubEchoAccepts(model: Readonly<ModelRecord>): boolean {
 export function createStubEchoModeldDriver(): ModeldDriver {
   return {
     accepts: stubEchoAccepts,
-    complete: () => STUB_ECHO_PARTS,
+    complete: async (request) => {
+      if (request.onPart) {
+        for (const part of STUB_ECHO_PARTS) await request.onPart(part);
+      }
+      return STUB_ECHO_PARTS;
+    },
   };
 }
 
