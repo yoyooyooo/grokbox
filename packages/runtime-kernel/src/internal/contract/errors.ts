@@ -20,5 +20,6 @@ export function runtimeNotReady(capability: string, untilTicket: "T26" | "T28"):
   throw new BoxRuntimeError(
     "runtime_not_ready",
     `${capability} is not ready; ${untilTicket} must replace this placeholder. No credential, network, or signal side effects ran.`,
+    { userVisible: true },
   );
 }

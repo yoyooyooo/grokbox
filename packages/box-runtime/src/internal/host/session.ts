@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
-import { buildModelEnvelope, cloneJson, envelopeHasImage, EnvelopeError, hostStateToMessages, parseModelEnvelope,
+import { buildModelEnvelope, cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
+import { hostStateToMessages } from "./context-codec.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";

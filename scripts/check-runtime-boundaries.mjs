@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "..");
 const args = process.argv.slice(2);
 const rootIdx = args.indexOf("--root");
-const root = rootIdx >= 0 ? args[rootIdx + 1] : join(here, "..");
+const root = resolve(rootIdx >= 0 ? args[rootIdx + 1] : repoRoot);
 const json = args.includes("--json");
-
 const failures = [];
-const notes = [];
 
 function fail(message, extra = {}) {
   failures.push({ message, ...extra });
@@ -29,23 +30,34 @@ function walk(dir, acc = []) {
   return acc;
 }
 
-function read(path) {
-  return readFileSync(path, "utf8");
+function rel(path) {
+  return relative(root, path).split(sep).join("/");
 }
 
-const IMPORT_RE = /\b(?:import|export)\s+(?:type\s+)?(?:[^'"\n]+?\sfrom\s*)?["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
-
-function specs(source) {
-  const found = [];
-  for (const match of source.matchAll(IMPORT_RE)) {
-    found.push(match[1] ?? match[2] ?? match[3]);
+function readJson(path) {
+  if (!existsSync(path)) {
+    fail("missing package.json", { path: rel(path) });
+    return null;
   }
-  return found;
+  return JSON.parse(readFileSync(path, "utf8"));
 }
 
+const SRC_EXTS = new Set([".ts", ".js", ".cjs", ".mjs", ".mts", ".cts"]);
 const kernelRoot = join(root, "packages", "runtime-kernel");
 const boxRoot = join(root, "packages", "box-runtime");
 const cliRoot = join(root, "packages", "cli");
+
+const requiredSources = [
+  "packages/box-runtime/src/preload.ts",
+  "packages/box-runtime/src/runtime.ts",
+  "packages/runtime-kernel/src/contract.ts",
+  "packages/runtime-kernel/src/hash.ts",
+  "packages/runtime-kernel/src/selection.ts",
+  "packages/runtime-kernel/src/ports.ts",
+];
+for (const path of requiredSources) {
+  if (!existsSync(join(root, path))) fail("missing required source", { path });
+}
 
 const retired = [
   "packages/box-runtime/src/index.ts",
@@ -59,150 +71,214 @@ const retired = [
   "packages/box-runtime/src/modeld-serve.ts",
   "packages/box-runtime/src/provider-overflow.ts",
 ];
-for (const rel of retired) {
-  if (existsSync(join(root, rel))) fail("retired POC entry still present", { path: rel });
+for (const path of retired) {
+  if (existsSync(join(root, path))) fail("retired POC entry still present", { path });
 }
 
-if (existsSync(join(boxRoot, "src", "internal", "console")) || existsSync(join(boxRoot, "src", "console"))) {
-  fail("T20 must not create console/", { path: "packages/box-runtime/src/console" });
-}
-
-function readJson(path) {
-  if (!existsSync(path)) {
-    fail("missing package.json", { path: relative(root, path) });
-    return {};
+for (const file of walk(join(root, "packages"))) {
+  const path = rel(file);
+  if (path.includes("/legacy/") || path.includes("/vNext/") || /(^|\/)legacy\//.test(path)) {
+    fail("legacy/vNext path present", { path });
   }
-  return JSON.parse(read(path));
+  if (path.endsWith("/console.runtime.ts") || path.includes("/src/console/") || path.includes("/internal/console/")) {
+    fail("later-only console surface present", { path });
+  }
 }
-const boxPkg = readJson(join(boxRoot, "package.json"));
-const kernelPkg = readJson(join(kernelRoot, "package.json"));
+
+const boxPkg = readJson(join(boxRoot, "package.json")) ?? {};
+const kernelPkg = readJson(join(kernelRoot, "package.json")) ?? {};
 if (JSON.stringify(boxPkg.exports) !== JSON.stringify({ "./runtime": "./src/runtime.ts" })) {
   fail("box-runtime exports must be only ./runtime", { exports: boxPkg.exports });
 }
 if (boxPkg.exports?.["."]) fail("box-runtime still has root barrel export");
+
+const requiredKernelExports = {
+  "./contract": "./src/contract.ts",
+  "./hash": "./src/hash.ts",
+  "./selection": "./src/selection.ts",
+  "./ports": "./src/ports.ts",
+};
 const kernelExports = kernelPkg.exports ?? {};
-const allowedKernel = ["./contract", "./hash", "./selection", "./ports"];
+for (const [key, target] of Object.entries(requiredKernelExports)) {
+  if (kernelExports[key] !== target) fail("kernel export key/target mismatch", { key, expected: target, actual: kernelExports[key] });
+  const file = join(kernelRoot, target);
+  if (!existsSync(file)) fail("kernel export target missing", { key, target });
+}
+if (kernelExports["./contract"] === "./src/ports.ts") fail("kernel contract export must not target ports");
 for (const key of Object.keys(kernelExports)) {
-  if (!allowedKernel.includes(key)) fail("kernel export not in S2 subpaths", { key });
-}
-if (kernelExports["."] || kernelExports["./*"] || Object.keys(kernelExports).some((k) => k.includes("internal"))) {
-  fail("kernel must not export root barrel or internal/*");
+  if (!(key in requiredKernelExports)) fail("kernel export not in S2 subpaths", { key });
+  if (String(kernelExports[key]).includes("internal")) fail("kernel must not export internal/*", { key });
 }
 
-const bunApi = /from\s+["']bun:[^"']+["']|require\s*\(\s*["']bun:[^"']+["']|import\s*\(\s*["']bun:[^"']+["']\)|\bBun\.(file|serve|spawn|write|which)\b/;
-const productionGlobs = [
-  join(kernelRoot, "src"),
-  join(boxRoot, "src"),
-  join(cliRoot, "src"),
-];
-for (const dir of productionGlobs) {
-  for (const file of walk(dir).filter((p) => p.endsWith(".ts") || p.endsWith(".js") || p.endsWith(".cjs") || p.endsWith(".mjs"))) {
-    const rel = relative(root, file);
-    const source = read(file);
-    if (bunApi.test(source)) fail("production module uses bun:* or Bun globals", { path: rel });
+const KERNEL_SUBPATH = {
+  "@grokbox/runtime-kernel/contract": "packages/runtime-kernel/src/contract.ts",
+  "@grokbox/runtime-kernel/hash": "packages/runtime-kernel/src/hash.ts",
+  "@grokbox/runtime-kernel/selection": "packages/runtime-kernel/src/selection.ts",
+  "@grokbox/runtime-kernel/ports": "packages/runtime-kernel/src/ports.ts",
+};
+
+function layerOf(path) {
+  const p = path.split(sep).join("/");
+  if (p.startsWith("packages/runtime-kernel/")) return "kernel";
+  if (p === "packages/box-runtime/src/preload.ts" || p.includes("/internal/host/")) return "host";
+  if (p.includes("/internal/io/")) return "io";
+  if (p.includes("/internal/roots/")) return "roots";
+  if (p.includes("/internal/process/")) return "process";
+  if (p.includes("/internal/wire/")) return "wire";
+  if (p.includes("/internal/backends/")) return "backends";
+  if (p.includes("/internal/modeld/")) return "modeld";
+  if (p === "packages/box-runtime/src/runtime.ts") return "runtime";
+  if (p.startsWith("packages/cli/")) return "cli";
+  if (p.startsWith("packages/box-runtime/src/")) return "box";
+  return "other";
+}
+
+function resolveSpec(fromFile, spec) {
+  if (spec.startsWith("bun:")) return { kind: "bun", path: spec };
+  if (spec === "effect" || spec.startsWith("effect/") || spec === "ai" || spec.startsWith("@ai-sdk/")) {
+    return { kind: "forbidden-pkg", path: spec };
   }
+  if (spec === "@grokbox/box-runtime/runtime") return { kind: "file", path: "packages/box-runtime/src/runtime.ts" };
+  if (spec === "@grokbox/box-runtime" || spec === "@grokbox/box-runtime/") {
+    return { kind: "file", path: "packages/box-runtime/src/index.ts" };
+  }
+  if (spec in KERNEL_SUBPATH) return { kind: "file", path: KERNEL_SUBPATH[spec] };
+  if (spec.startsWith("@grokbox/runtime-kernel/")) return { kind: "file", path: `packages/runtime-kernel/src/${spec.slice("@grokbox/runtime-kernel/".length)}.ts` };
+  if (spec.startsWith("./") || spec.startsWith("../")) {
+    const resolved = normalize(join(dirname(join(root, fromFile)), spec));
+    return { kind: "file", path: rel(resolved) };
+  }
+  if (isAbsolute(spec)) return { kind: "file", path: rel(spec) };
+  return { kind: "other", path: spec };
 }
 
-const hostFiles = walk(join(boxRoot, "src", "internal", "host")).concat([join(boxRoot, "src", "preload.ts")]);
-const hostForbidden = /from\s+["']effect["']|from\s+["']ai["']|from\s+["']@ai-sdk\//;
-for (const file of hostFiles.filter((p) => existsSync(p) && p.endsWith(".ts"))) {
-  const source = read(file);
-  const rel = relative(root, file);
-  if (hostForbidden.test(source)) fail("Host leaf imports Effect/SDK", { path: rel });
-  for (const spec of specs(source)) {
-    if (spec === "@grokbox/runtime-kernel/ports" || spec.endsWith("/ports")) {
-      fail("Host leaf imports kernel Effect ports", { path: rel, spec });
+function collectSpecs(source, scriptKind) {
+  const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true, scriptKind);
+  const specs = [];
+  const topLevelWrites = [];
+  function calleeName(node) {
+    if (ts.isIdentifier(node)) return node.text;
+    if (ts.isPropertyAccessExpression(node)) {
+      const obj = calleeName(node.expression);
+      return obj ? `${obj}.${node.name.text}` : node.name.text;
     }
-    if (spec.includes("/runtime.ts") || spec === "@grokbox/box-runtime/runtime") {
-      fail("preload/host must not import runtime facade", { path: rel, spec });
+    if (ts.isElementAccessExpression(node) && ts.isStringLiteral(node.argumentExpression)) {
+      const obj = calleeName(node.expression);
+      return obj ? `${obj}[${JSON.stringify(node.argumentExpression.text)}]` : node.argumentExpression.text;
+    }
+    return "";
+  }
+  function visit(node, top) {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+        specs.push(node.moduleSpecifier.text);
+      }
+    }
+    if (ts.isCallExpression(node)) {
+      const name = calleeName(node.expression);
+      if (name === "require" || name === "import") {
+        const arg = node.arguments[0];
+        if (arg && ts.isStringLiteral(arg)) specs.push(arg.text);
+      }
+      if (top && /^(writeFileSync|writeFile|renameSync|mkdirSync|fetch|spawn|spawnSync|exec|execFile|createConnection|createServer|listen)$/.test(name)) {
+        topLevelWrites.push(name);
+      }
+    }
+    const nextTop = top && (ts.isSourceFile(node) || ts.isIfStatement(node) || ts.isBlock(node) || ts.isExpressionStatement(node) || ts.isVariableStatement(node));
+    ts.forEachChild(node, (child) => visit(child, Boolean(nextTop && !ts.isFunctionLike(node) && !ts.isClassDeclaration(node))));
+  }
+  visit(sf, true);
+  return { specs, topLevelWrites, sf };
+}
+
+function bunHits(source) {
+  const hits = [];
+  if (/\bbun:/.test(source)) hits.push("bun-scheme");
+  if (/\bBun\.(file|serve|spawn|write|which|sleep)\b/.test(source)) hits.push("Bun.dot");
+  if (/\bBun\s*\[\s*["'](file|serve|spawn|write|which|sleep)["']\s*\]/.test(source)) hits.push("Bun.bracket");
+  return hits;
+}
+
+const productionDirs = [join(kernelRoot, "src"), join(boxRoot, "src"), join(cliRoot, "src")];
+for (const dir of productionDirs) {
+  for (const file of walk(dir)) {
+    const ext = extname(file);
+    if (!SRC_EXTS.has(ext)) continue;
+    const path = rel(file);
+    const source = readFileSync(file, "utf8");
+    const kind = ext === ".cjs" || ext === ".js" ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+    const { specs, topLevelWrites } = collectSpecs(source, kind);
+    const fromLayer = layerOf(path);
+    if (fromLayer !== "other" && bunHits(source).length) fail("production module uses bun:* or Bun globals", { path });
+    if (fromLayer === "host" && topLevelWrites.length) fail("preload/host import-time side effect", { path, topLevelWrites });
+    for (const spec of specs) {
+      const resolved = resolveSpec(path, spec);
+      if (resolved.kind === "bun") fail("production module uses bun:* or Bun globals", { path, spec });
+      if (fromLayer === "host" && (resolved.kind === "forbidden-pkg" || spec === "effect")) {
+        fail("Host leaf imports Effect/SDK", { path, spec });
+      }
+      if (fromLayer === "cli" && resolved.kind === "forbidden-pkg") fail("CLI imported SDK/Effect", { path, spec });
+      if (fromLayer === "kernel" && spec.startsWith("node:") && !(path.endsWith("src/hash.ts") && spec === "node:crypto")) {
+        fail("kernel imported node:* outside hash.ts", { path, spec });
+      }
+      if (resolved.kind !== "file") continue;
+      const to = resolved.path.split(sep).join("/");
+      const toLayer = layerOf(to);
+      if (fromLayer === "host" && (toLayer === "io" || toLayer === "process" || toLayer === "roots" || toLayer === "runtime")) {
+        fail("forbidden Host import edge", { path, spec, to });
+      }
+      if (fromLayer === "host" && to === "packages/runtime-kernel/src/ports.ts") {
+        fail("Host leaf imports kernel Effect ports", { path, spec });
+      }
+      if (fromLayer === "io" && toLayer === "roots") fail("forbidden IO import of roots", { path, spec, to });
+      if (fromLayer === "kernel" && to.startsWith("packages/box-runtime/")) fail("kernel imported box-runtime", { path, spec, to });
+      if (fromLayer === "cli" && to.includes("packages/box-runtime/src/internal/")) {
+        fail("CLI imported box-runtime internals", { path, spec, to });
+      }
+      if (fromLayer === "cli" && (spec === "@grokbox/box-runtime" || spec === "@grokbox/box-runtime/")) {
+        fail("CLI imported removed box-runtime root barrel", { path, spec });
+      }
     }
   }
 }
 
 const preload = join(boxRoot, "src", "preload.ts");
 if (existsSync(preload)) {
-  for (const spec of specs(read(preload))) {
-    if (spec.includes("linux.node") || spec.includes("guardian.node") || spec.includes("/roots/")) {
-      fail("preload imports process census or roots", { spec });
-    }
-  }
-}
-
-const contractFiles = walk(join(kernelRoot, "src")).filter((p) => p.endsWith(".ts") && !p.endsWith("ports.ts"));
-for (const file of contractFiles) {
-  const source = read(file);
-  const rel = relative(root, file);
-  for (const spec of specs(source)) {
-    if (spec === "effect" || spec.startsWith("effect/")) fail("kernel non-ports file imports Effect", { path: rel, spec });
-    if (spec.startsWith("node:") && !(rel.endsWith("src/hash.ts") && spec === "node:crypto")) {
-      fail("kernel imported node:* outside hash.ts", { path: rel, spec });
-    }
-    if (spec.startsWith("bun:")) fail("kernel imported bun:*", { path: rel, spec });
-  }
-}
-
-const runtimeFacade = join(boxRoot, "src", "runtime.ts");
-if (existsSync(runtimeFacade)) {
-  for (const spec of specs(read(runtimeFacade))) {
-    if (spec.includes("preload.ts")) fail("runtime.ts must not import preload.ts", { spec });
-  }
-}
-
-if (existsSync(join(cliRoot, "src"))) {
-  for (const file of walk(join(cliRoot, "src")).filter((p) => p.endsWith(".ts"))) {
-    const source = read(file);
-    const rel = relative(root, file);
-    for (const spec of specs(source)) {
-      if (spec === "@grokbox/box-runtime" || spec === "@grokbox/box-runtime/") {
-        fail("CLI imported removed box-runtime root barrel", { path: rel, spec });
+  const esbuild = join(repoRoot, "node_modules", ".bin", "esbuild");
+  if (!existsSync(esbuild)) fail("missing esbuild evidence");
+  else {
+    const dir = mkdtempSync(join(tmpdir(), "t20-preload-"));
+    const outfile = join(dir, "preload.cjs");
+    const metafile = join(dir, "meta.json");
+    const ran = spawnSync(esbuild, [preload, "--bundle", "--platform=node", "--format=cjs", `--outfile=${outfile}`, `--metafile=${metafile}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    if (ran.status !== 0) fail("preload esbuild failed", { stderr: (ran.stderr ?? "").slice(0, 500) });
+    else {
+      const bundle = readFileSync(outfile, "utf8");
+      if (/\bfrom ["']effect["']/.test(bundle) || bundle.includes("@ai-sdk/") || /\bfrom ["']ai["']/.test(bundle)) {
+        fail("preload bundle contributes Effect/SDK");
       }
-      if (spec.includes("runtime-kernel/internal") || spec.includes("/internal/")) {
-        if (spec.includes("@grokbox/runtime-kernel")) fail("CLI imported kernel internals", { path: rel, spec });
-      }
-      if (spec === "ai" || spec.startsWith("@ai-sdk/") || spec === "effect") {
-        fail("CLI imported SDK/Effect", { path: rel, spec });
-      }
-    }
-  }
-}
-
-const flags = ["effectMode", "legacy/", "vNext/", "old || new"];
-for (const file of walk(join(boxRoot, "src")).concat(walk(join(kernelRoot, "src"))).filter((p) => p.endsWith(".ts"))) {
-  const source = read(file);
-  if (source.includes("effectMode")) fail("migration flag effectMode present", { path: relative(root, file) });
-}
-
-if (existsSync(preload)) {
-  const esbuild = spawnSync("bun", ["x", "esbuild", preload, "--bundle", "--platform=node", "--format=cjs", "--outfile=/tmp/t20-preload-check.cjs", "--metafile=/tmp/t20-preload-meta.json"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  if (esbuild.status !== 0) {
-    fail("preload esbuild failed", { stderr: esbuild.stderr?.slice(0, 500) });
-  } else {
-    const bundle = read("/tmp/t20-preload-check.cjs");
-    if (/\bfrom ["']effect["']/.test(bundle) || bundle.includes("@ai-sdk/") || /\bfrom ["']ai["']/.test(bundle)) {
-      fail("preload bundle contributes Effect/SDK");
-    }
-    if (bunApi.test(bundle)) fail("preload bundle uses bun APIs");
-    try {
-      const meta = JSON.parse(read("/tmp/t20-preload-meta.json"));
-      for (const input of Object.keys(meta.inputs ?? {})) {
-        if (input.includes("node_modules/effect") || input.includes("node_modules/ai") || input.includes("@ai-sdk")) {
-          fail("preload metafile includes Effect/SDK", { input });
+      if (bunHits(bundle).length) fail("preload bundle uses bun APIs");
+      try {
+        const meta = JSON.parse(readFileSync(metafile, "utf8"));
+        for (const input of Object.keys(meta.inputs ?? {})) {
+          if (input.includes("node_modules/effect") || input.includes("node_modules/ai") || input.includes("@ai-sdk")) {
+            fail("preload metafile includes Effect/SDK", { input });
+          }
         }
+      } catch {
+        fail("preload metafile unreadable");
       }
-    } catch {
-      notes.push("preload metafile unreadable");
     }
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
-const result = { ok: failures.length === 0, failures, notes, root };
+const result = { ok: failures.length === 0, failures, root };
 if (json) console.log(JSON.stringify(result, null, 2));
-else {
-  if (failures.length) {
-    for (const f of failures) console.error(`FAIL ${f.message}${f.path ? ` (${f.path})` : ""}`);
-  } else console.log("runtime boundaries ok");
-}
+else if (failures.length) {
+  for (const f of failures) console.error(`FAIL ${f.message}${f.path ? ` (${f.path})` : ""}`);
+} else console.log("runtime boundaries ok");
 process.exit(failures.length ? 1 : 0);

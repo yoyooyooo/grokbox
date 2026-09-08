@@ -1,12 +1,5 @@
-export type ProcessIdentity = {
-  pid: number;
-  uid: number;
-  start: number;
-  exe: string;
-  cmdline: readonly string[];
-  ppid: number;
-  ancestry: readonly number[];
-};
+import type { ProcessIdentity, StableProcessIdentity } from "@grokbox/runtime-kernel/contract";
+export type { ProcessIdentity, StableProcessIdentity } from "@grokbox/runtime-kernel/contract";
 
 export type SignalName = "SIGSTOP" | "SIGCONT" | "SIGTERM" | "SIGKILL";
 
@@ -17,8 +10,6 @@ export type ProcessPort = {
   list: () => ProcessIdentity[];
   signal: (expected: ProcessIdentity, signal: SignalName) => SignalResult;
 };
-
-export type StableProcessIdentity = Pick<ProcessIdentity, "pid" | "uid" | "start" | "exe" | "cmdline">;
 
 export function identitiesMatch(expected: ProcessIdentity, observed: ProcessIdentity | null): boolean {
   if (!observed) return false;

@@ -1,7 +1,6 @@
+import { boundedText, count, isRecord, type StableProcessIdentity } from "@grokbox/runtime-kernel/contract";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import type { CompileReceipt } from "./compile-receipt.ts";
-import type { StableProcessIdentity } from "../process/process-port.ts";
-import { boundedText, count, isRecord } from "../io/observation.node.ts";
 
 /** Correlation/fencing facts, not a bearer capability or peer authentication. No argv on the wire. */
 export type HostBinding = {

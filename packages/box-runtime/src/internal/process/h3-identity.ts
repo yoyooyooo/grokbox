@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { pinLaunchProfile } from "../host/compile-receipt.ts";
+import { pinLaunchProfile } from "./profile.node.ts";
 import { readAttestation, writeAttestation, clearAttestation } from "../io/authority.node.ts";
 import { spawnIndependentGuardian } from "./guardian-process.ts";
 import {

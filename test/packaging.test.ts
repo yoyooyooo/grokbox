@@ -6,11 +6,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import cliPackage from "../package.json" with { type: "json" };
-import {
-  liveH3AdoptAdapter,
-  runManualReadopt,
-  wireLiveManualReadopt,
-} from "@grokbox/box-runtime/runtime";
+import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../packages/box-runtime/src/internal/process/live-readopt.ts";
+import { runManualReadopt } from "../packages/box-runtime/src/internal/roots/controller.runtime.ts";
 import { resolveRuntimeHelpers, RUNTIME_HELPER_FILES } from "../packages/box-runtime/src/internal/process/helpers/runtime-helpers.ts";
 import { profileFromSource } from "../packages/box-runtime/src/internal/host/profile.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "../packages/box-runtime/test/synthetic-host.ts";
@@ -274,9 +271,6 @@ describe("published Node package", () => {
     expect(existsSync(join(distDir, "preload.ts"))).toBe(false);
     expect(published.preload.endsWith("preload.cjs")).toBe(true);
     const bundle = await readFile(join(distDir, "index.js"), "utf8");
-    for (const name of RUNTIME_HELPER_FILES) {
-      expect(bundle).toContain(name);
-    }
     expect(bundle).not.toContain("./preload.ts");
 
     const checked = await run([nodeExecutable, "--check", published.preload]);

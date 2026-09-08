@@ -21,15 +21,14 @@ export function bindHostSessionHook(input: {
   if (input.mode !== "route") return (args) => args.originalSession;
   return (args) => {
     const file = loadModelsFileSync(input.durableRoot);
-    if (!file) {
-      throw new BoxRuntimeError("runtime_not_ready", "route session requires models.json; inference is not ready (T26).");
-    }
     const agentId = typeof args.agentId === "string" ? args.agentId : undefined;
+    if (!file) return args.originalSession;
     const decided = decideRouteSession(file, agentId);
     if (decided.kind === "official") return args.originalSession;
     throw new BoxRuntimeError(
       "runtime_not_ready",
       "managed route inference is not ready (T26). No credential, network, or modeld dispatch ran.",
+      { userVisible: true },
     );
   };
 }

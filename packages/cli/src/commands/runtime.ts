@@ -13,17 +13,11 @@ import {
   projectLiveStatus,
   readContracts,
   observeEvents,
-  liveH3AdoptAdapter,
   reviewedProfilePath,
-  runManualReadopt,
   runtimeNotReady,
-  runWatchdogTick,
-  wireLiveManualReadopt,
   writeReviewedProfileFromCopy,
   type DesiredMode,
 } from "@grokbox/box-runtime/runtime";
-
-export { liveH3AdoptAdapter };
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { writeSuccess } from "../output.ts";
@@ -173,38 +167,8 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
     if (confirmed !== true) {
       throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
     }
-    const runtime = store(deps);
-    const desired = await runtime.loadDesired();
-    const wired = wireLiveManualReadopt({ root: runtime.root, now: deps.now, mode: desired.mode });
-    const result = await runManualReadopt({
-      confirmed: true,
-      root: runtime.root,
-      desired,
-      models: await runtime.loadModels(),
-      now: deps.now,
-      ...wired,
-    });
-    writeSuccess(deps.stdout, {
-      process: "re-adopt",
-      confirmed: true,
-      attempts: 1,
-      reconcile: result.reconcile,
-      reason: result.reason,
-      attemptKey: result.attemptKey,
-      injected: result.injected,
-      signaled: result.signaled,
-      circuit: result.circuit,
-      origin: result.origin,
-      ...(result.committedAttestation ? { committedAttestation: {
-        mode: result.committedAttestation.mode,
-        pid: result.committedAttestation.pid,
-        start: result.committedAttestation.start,
-        diskSha: result.committedAttestation.diskSha,
-        operationId: result.committedAttestation.operationId,
-        compile: result.committedAttestation.compile,
-        at: result.committedAttestation.at,
-      } } : {}),
-    });
+    store(deps);
+    runtimeNotReady("controller operation", "T28");
   } catch (error) {
     rethrow(error);
   }
@@ -212,23 +176,8 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
 
 export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
   try {
-    const runtime = store(deps);
-    const result = await runWatchdogTick({
-      root: runtime.root,
-      desired: await runtime.loadDesired(),
-      models: await runtime.loadModels(),
-      now: deps.now,
-    });
-    writeSuccess(deps.stdout, {
-      process: "watchdog",
-      state: result.watchdogState,
-      reconcile: result.reconcile,
-      reason: result.reason,
-      attemptKey: result.attemptKey,
-      inject: false,
-      signaled: false,
-      circuit: result.circuit,
-    });
+    store(deps);
+    runtimeNotReady("controller operation", "T28");
   } catch (error) {
     rethrow(error);
   }

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { pinLaunchProfile } from "../host/compile-receipt.ts";
+import { pinLaunchProfile } from "./profile.node.ts";
 import { type WatchdogAdoptPorts, WATCHDOG_OPERATION_ID } from "../roots/controller.runtime.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { spawnIndependentGuardian } from "./guardian-process.ts";

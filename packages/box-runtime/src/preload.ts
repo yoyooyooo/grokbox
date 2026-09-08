@@ -1,15 +1,14 @@
-import { renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
 import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts";
-import { DEFAULT_DURABLE_ROOT } from "./internal/io/paths.ts";
-import { ephemeralRuntimeRoot } from "./internal/io/ephemeral.ts";
 import { bindHostSessionHook } from "./internal/host/session-hook.ts";
 import { bindCompiledHost } from "./internal/host/host-binding.ts";
 import { ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
-import { readFileSync } from "node:fs";
 
 const target = process.env.GROKBOX_HOST_BUNDLE ?? LIVE_HOST_BUNDLE;
 const profilePath = process.env.GROKBOX_PATCH_PROFILE;
@@ -17,8 +16,8 @@ const allowLiveHost = process.env.GROKBOX_ALLOW_LIVE_HOST === "1";
 const mode = process.env.GROKBOX_PRELOAD_MODE ?? "identity";
 const markerPath = process.env.GROKBOX_PRELOAD_MARKER;
 const operationId = process.env.GROKBOX_OPERATION_ID;
-const runRoot = process.env.GROKBOX_RUN_ROOT ?? ephemeralRuntimeRoot();
-const durableRoot = process.env.GROKBOX_BOX_RUNTIME_ROOT ?? DEFAULT_DURABLE_ROOT;
+const runRoot = process.env.GROKBOX_RUN_ROOT ?? join(homedir(), ".grokbox", "run");
+const durableRoot = process.env.GROKBOX_BOX_RUNTIME_ROOT ?? "/workspace/.grokbox/box-runtime";
 
 const liveBlocked = isLiveHostPath(target) && !allowLiveHost;
 const admittedMode = mode === "identity" || mode === "route" ? mode : null;

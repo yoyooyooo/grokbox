@@ -1,0 +1,89 @@
+{
+  "ticket": "T20-extracted",
+  "source": "packages/box-runtime/test/p1-canary-safety.test.ts",
+  "activateIn": ["T21", "T23", "T24", "T25", "T26"],
+  "notes": "Keep these safety properties. Do not revive createOpenAiModeldDriver/createModeld/callStubModeld. Do not lock old complete-array or v2 EOF-success as golden.",
+  "vectors": [
+    {
+      "id": "tool-start-delta-correlates-by-id",
+      "activateIn": ["T21", "T23"],
+      "input": {
+        "events": [
+          { "type": "tool-input-start", "id": "c1", "toolName": "lookup" },
+          { "type": "tool-input-delta", "id": "c1", "delta": "{\"q\":1}" },
+          { "type": "tool-call", "toolCallId": "c1", "toolName": "lookup", "input": { "q": 1 } },
+          { "type": "finish", "finishReason": "tool-calls" }
+        ]
+      },
+      "expectedParts": [
+        { "type": "tool-call-streaming-start", "toolCallId": "c1", "toolName": "lookup" },
+        { "type": "tool-call-delta", "toolCallId": "c1", "toolName": "lookup", "argsTextDelta": "{\"q\":1}" },
+        { "type": "tool-call", "toolCallId": "c1", "toolName": "lookup", "args": { "q": 1 } },
+        { "type": "finish", "reason": "stop" }
+      ],
+      "forbidden": { "inventedToolName": "tool" },
+      "sideEffects": { "fetch": 0, "credentialsLeaked": false }
+    },
+    {
+      "id": "unknown-toolCallId-is-invalid_stream",
+      "activateIn": ["T21", "T23"],
+      "input": { "events": [{ "type": "tool-input-delta", "id": "c1", "delta": "{\"q\":1}" }] },
+      "expected": { "type": "error", "code": "invalid_stream" },
+      "forbidden": { "inventedToolName": "tool" }
+    },
+    {
+      "id": "401-body-never-on-unix-ipc",
+      "activateIn": ["T23", "T25"],
+      "input": { "streamError": "401 syncred_opaque_7c91", "ipcStatus": 401, "body": "unauthorized syncred_opaque_7c91" },
+      "expectedHostMessage": "The configured model request failed. No fallback model was used.",
+      "forbiddenSubstrings": ["syncred_opaque_7c91", "offline-ipc-key", "sk-", "Bearer "],
+      "sideEffects": { "secretOnWire": false }
+    },
+    {
+      "id": "pin-materialize-rotation-zero-fetch",
+      "activateIn": ["T23", "T24"],
+      "input": { "pinKey": "offline-pin-key", "rotatedKey": "offline-rotated-key" },
+      "expected": { "ok": false, "code": "driver-failed", "userVisible": true },
+      "sideEffects": { "fetch": 0 },
+      "forbiddenSubstrings": ["offline-pin-key", "offline-rotated-key"]
+    },
+    {
+      "id": "models-json-fifo-returns-null-within-250ms",
+      "activateIn": ["T26"],
+      "input": { "modelsPath": "FIFO", "boundMs": 250 },
+      "expected": { "loadModelsFileSync": null, "hook": "originalSession" },
+      "sideEffects": { "hang": false }
+    },
+    {
+      "id": "credential-fifo-fails-or-cancels-within-250ms",
+      "activateIn": ["T23"],
+      "input": { "apiKeyRef": "file:FIFO", "boundMs": 250 },
+      "expected": { "success": false }
+    },
+    {
+      "id": "turn-pin-ignores-later-assignment-change",
+      "activateIn": ["T24"],
+      "input": {
+        "turnId": "turn-keep",
+        "firstAssignment": "fake/smart",
+        "secondAssignment": "fake/fast",
+        "steps": ["s1", "s2"]
+      },
+      "expected": { "seen": ["fake/smart", "fake/smart"] },
+      "forbiddenSubstrings": ["fake/fast"],
+      "barriers": ["first admit terminal before second admit"]
+    },
+    {
+      "id": "host-two-steps-remain-on-A-mismatch-does-not-report-B-as-A",
+      "activateIn": ["T24", "T26"],
+      "input": {
+        "agentId": "00000000-0000-4000-8000-000000000114",
+        "modelA": "openai/model-a",
+        "modelB": "openai/model-b"
+      },
+      "expected": { "firstModelId": "openai/model-a", "secondModelId": "openai/model-a", "mismatchUserVisible": true, "mismatchStage": "normalize" },
+      "forbiddenSubstrings": ["openai/model-b", "from-b"],
+      "sideEffects": { "officialCalls": 0 }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { clearAttestation, readAttestation, routeAttestationAgrees, type CoverageAttestation } from "../io/authority.node.ts";
 import { writeRuntimeArtifact } from "../io/artifacts.node.ts";
-import { observeCoordinatorState, type CoordinatorState } from "./coordinator-state.ts";
-export type { CoordinatorState } from "./coordinator-state.ts";
+import { observeCoordinatorState, type CoordinatorState } from "../io/coordinator-state.ts";
+export type { CoordinatorState } from "../io/coordinator-state.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { appendEvent, compactEvents } from "../io/journal.node.ts";

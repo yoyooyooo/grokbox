@@ -260,17 +260,9 @@ export function buildModelEnvelope(messages: unknown, tools?: unknown, options?:
   return envelope;
 }
 
-/** Host `getExecutor(state)` snapshot: array, `{ messages }`, empty, or a single message. Does not deep-clone the whole state tree. */
-export function hostStateToMessages(state: unknown): PromptMessage[] {
-  if (state === undefined || state === null) return [];
-  if (Array.isArray(state)) return messagesFrom(state);
-  if (object(state)) {
-    const field = ownData(state, "messages");
-    if (field.kind === "accessor") return fail("unsupported_content");
-    if (field.kind === "value" && Array.isArray(field.value)) return messagesFrom(field.value);
-    if (Object.keys(state).length === 0) return [];
-  }
-  return messagesFrom([state]);
+/** Canonical prompt-message array. Host state shapes belong in host/context-codec. */
+export function parsePromptMessages(value: unknown): PromptMessage[] {
+  return messagesFrom(value);
 }
 
 export function parseModelEnvelope(value: unknown): ModelEnvelope {

@@ -1,5 +1,5 @@
-import { boundedText, count, isRecord, observeJson } from "../io/observation.node.ts";
-import { coordinatorStatePath } from "../io/paths.ts";
+import { boundedText, count, isRecord, observeJson } from "./observation.node.ts";
+import { coordinatorStatePath } from "./paths.ts";
 
 export type CoordinatorState = {
   version: 1;

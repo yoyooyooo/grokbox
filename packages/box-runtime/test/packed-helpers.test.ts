@@ -4,7 +4,8 @@ import { copyFile, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { liveH3AdoptAdapter, runManualReadopt, wireLiveManualReadopt } from "../src/runtime.ts";
+import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/internal/process/live-readopt.ts";
+import { runManualReadopt } from "../src/internal/roots/controller.runtime.ts";
 import {
   resolveRuntimeHelpers,
   RUNTIME_HELPER_FILES,

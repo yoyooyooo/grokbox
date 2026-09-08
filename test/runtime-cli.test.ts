@@ -4,7 +4,7 @@ import { lstat, mkdtemp, writeFile, mkdir, readFile, readdir } from "node:fs/pro
 import * as net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { liveH3AdoptAdapter } from "../packages/cli/src/commands/runtime.ts";
+import { liveH3AdoptAdapter } from "../packages/box-runtime/src/internal/process/live-readopt.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import * as credentials from "../packages/box-runtime/src/internal/io/credentials.node.ts";
 import * as coordinatorModule from "../packages/box-runtime/src/internal/roots/controller.runtime.ts";
@@ -193,7 +193,7 @@ describe("box-local runtime CLI", () => {
       expect(body.diskSha).toBe(body.sourceSha256);
       expect(body).not.toHaveProperty("copyPath");
       const profile = JSON.parse(await readFile(String(body.profilePath), "utf8"));
-      expect(profile.profileId).toBe("reviewed-copy");
+      expect(profile.profileId).toBe("reviewed-copy-envelope");
       const applied = applyPatchProfile(LIVE_SHAPED_HOST, profile);
       expect(applied.ok).toBe(true);
       if (!applied.ok) throw new Error(applied.code);
@@ -422,28 +422,20 @@ describe("box-local runtime CLI", () => {
     expect((parseJson(refused.stderr) as { error: { message: string } }).error.message).toContain("--confirm");
   });
 
-  test("re-adopt receipt preserves half-success while omitting raw process argv", async () => {
-    const f = await receiptFixture();
-    const done = await coordinatorModule.runManualReadopt(f.input);
-    expect(done.reconcile).toBe("converged");
-    const committed = done.committedAttestation!;
-    // A fixture-only sentinel proves raw process identity never enters CLI output.
-    committed.identity = { ...committed.identity, cmdline: ["fixture-private-argv"] };
+  test("confirmed re-adopt is runtime_not_ready before live ports", async () => {
     const factory = spyLiveAdoptFactory();
-    const coordinator = spyOn(coordinatorModule, "runManualReadopt").mockResolvedValue({
-      ...done, reconcile: "recovery-required", reason: "coordinator-persistence-failed", committedAttestation: committed,
-    });
+    const coordinator = spyOn(coordinatorModule, "runManualReadopt");
     try {
       const boxRuntimeRoot = await withRoot();
       const receipt = await captureCli(["runtime", "re-adopt", "--confirm"], { discoveryPath: "/dev/null", boxRuntimeRoot });
-      expect(receipt.code).toBe(0); // Existing command acknowledgement contract; reconcile is the outcome.
-      expect(data(receipt.stdout)).toMatchObject({
-        reconcile: "recovery-required", signaled: true,
-        committedAttestation: { pid: committed.pid, start: committed.start, compile: committed.compile },
-      });
-      expect(receipt.stdout).not.toContain("fixture-private-argv");
-      expect(receipt.stdout).not.toContain('"identity"');
-    } finally { coordinator.mockRestore(); factory.mockRestore(); }
+      expect(receipt.code).toBe(70);
+      expect((parseJson(receipt.stderr) as { error: { code: string } }).error.code).toBe("runtime_not_ready");
+      expect(factory).not.toHaveBeenCalled();
+      expect(coordinator).not.toHaveBeenCalled();
+    } finally {
+      coordinator.mockRestore();
+      factory.mockRestore();
+    }
   });
 
   test("re-adopt --profile and remote transports return runtime_local_only", async () => {
@@ -475,32 +467,10 @@ describe("box-local runtime CLI", () => {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
-    expect(watchdog.code, watchdog.stderr).toBe(0);
-    const body = data(watchdog.stdout);
-    expect(body.process).toBe("watchdog");
-    expect(body.inject).toBe(false);
-    expect(body.signaled).toBe(false);
-    expect(["converged", "pending", "blocked", "recovery-required"]).toContain(String(body.reconcile));
-    expect(JSON.stringify(body)).not.toContain("ctl");
-
-    const spy = spyLiveAdoptFactory();
-    try {
-      const readopt = await captureCli(["runtime", "re-adopt", "--confirm"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(readopt.code, readopt.stderr).toBe(0);
-      const readoptBody = data(readopt.stdout);
-      expect(readoptBody.process).toBe("re-adopt");
-      expect(readoptBody.confirmed).toBe(true);
-      expect(readoptBody.attempts).toBe(1);
-      expect(readoptBody.injected).toBe(false);
-      expect(readoptBody.signaled).toBe(false);
-      expect(JSON.stringify(data(activate.stdout))).not.toContain("re-adopt");
-      expect(spy).toHaveBeenCalled();
-    } finally {
-      spy.mockRestore();
-    }
+    expect(watchdog.code).toBe(70);
+    expect((parseJson(watchdog.stderr) as { error: { code: string } }).error.code).toBe("runtime_not_ready");
+    expect(JSON.stringify(data(activate.stdout))).not.toContain("ctl");
+    expect(JSON.stringify(data(activate.stdout))).not.toContain("re-adopt");
   });
 
   test("live-adapter factory is constructed only by confirmed local re-adopt", async () => {
@@ -558,17 +528,16 @@ describe("box-local runtime CLI", () => {
         discoveryPath: "/dev/null",
         boxRuntimeRoot,
       });
-      expect(watchdog.code, watchdog.stderr).toBe(0);
+      expect(watchdog.code).toBe(70);
       expect(spy).not.toHaveBeenCalled();
 
       const confirmed = await captureCli(["runtime", "re-adopt", "--confirm"], {
         discoveryPath: "/dev/null",
         boxRuntimeRoot,
       });
-      expect(confirmed.code, confirmed.stderr).toBe(0);
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(data(confirmed.stdout).injected).toBe(false);
-      expect(data(confirmed.stdout).signaled).toBe(false);
+      expect(confirmed.code).toBe(70);
+      expect((parseJson(confirmed.stderr) as { error: { code: string } }).error.code).toBe("runtime_not_ready");
+      expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
     }

@@ -1,5 +1,5 @@
 import { readFileSync, readlinkSync } from "node:fs";
-import type { ProcessIdentity } from "../process/process-port.ts";
+import type { ProcessIdentity } from "@grokbox/runtime-kernel/contract";
 
 /** Inspect one pid. Host leaf must not import process census (list /proc). */
 export function inspectPid(pid: number): ProcessIdentity | null {

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { observeAttestation, routeAttestationAgrees } from "./authority.node.ts";
 import { observeContracts } from "./contracts.ts";
 import { observeHostBundles } from "./provenance.node.ts";
-import { observeCoordinatorState } from "../roots/coordinator-state.ts";
+import { observeCoordinatorState } from "./coordinator-state.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { observeEvents } from "./journal.node.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";

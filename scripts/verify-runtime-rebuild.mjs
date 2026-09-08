@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
+import { spawnSync, execSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const kase = process.argv[2];
@@ -36,20 +35,27 @@ const commands = [];
 let failed = false;
 for (const argv of mapped) {
   const ran = spawnSync(argv[0], argv.slice(1), { cwd: root, encoding: "utf8" });
+  const combined = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
+  const pass = [...combined.matchAll(/\b(\d+) pass\b/g)].map((m) => Number(m[1])).at(-1);
+  const skip = [...combined.matchAll(/\b(\d+) skip\b/g)].map((m) => Number(m[1])).at(-1);
+  const failn = [...combined.matchAll(/\b(\d+) fail\b/g)].map((m) => Number(m[1])).at(-1);
+  const expects = [...combined.matchAll(/\b(\d+) expect\(\) calls\b/g)].map((m) => Number(m[1])).at(-1);
+  const isTest = argv.includes("test");
   const entry = {
     case: kase,
     argv,
     exit: ran.status ?? 1,
     stdoutTail: (ran.stdout ?? "").slice(-2000),
     stderrTail: (ran.stderr ?? "").slice(-2000),
+    asserts: { pass, skip, fail: failn, expects },
   };
-  const combined = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
-  const pass = [...combined.matchAll(/\b(\d+) pass\b/g)].map((m) => Number(m[1])).at(-1);
-  const skip = [...combined.matchAll(/\b(\d+) skip\b/g)].map((m) => Number(m[1])).at(-1);
-  const failn = [...combined.matchAll(/\b(\d+) fail\b/g)].map((m) => Number(m[1])).at(-1);
-  entry.asserts = { pass, skip, fail: failn };
   commands.push(entry);
   if (ran.status !== 0) failed = true;
+  if (isTest) {
+    if (pass == null || pass === 0) failed = true;
+    if ((skip ?? 0) > 0 && (pass ?? 0) === 0) failed = true;
+    if ((failn ?? 0) > 0) failed = true;
+  }
 }
 
 const report = {

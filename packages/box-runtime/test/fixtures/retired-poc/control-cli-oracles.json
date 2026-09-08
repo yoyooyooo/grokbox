@@ -1,0 +1,27 @@
+{
+  "ticket": "T20-extracted",
+  "activateIn": ["T28"],
+  "notes": "CLI composition now returns runtime_not_ready before live ports. These oracles are the previous control receipts, not current public behavior.",
+  "vectors": [
+    {
+      "id": "re-adopt-without-confirm-invalid_usage",
+      "argv": ["runtime", "re-adopt"],
+      "expectedCode": "invalid_usage",
+      "sideEffects": { "signals": 0, "spawn": 0 }
+    },
+    {
+      "id": "re-adopt-confirm-previous-receipt",
+      "argv": ["runtime", "re-adopt", "--confirm"],
+      "previousPublicBehavior": { "process": "re-adopt", "confirmed": true },
+      "currentPublicBehavior": { "code": "runtime_not_ready" },
+      "sideEffects": { "createLiveH3AdoptPorts": 0, "signals": 0, "spawn": 0 }
+    },
+    {
+      "id": "watchdog-run-previous-receipt",
+      "argv": ["runtime", "watchdog", "run"],
+      "previousPublicBehavior": { "process": "watchdog", "inject": false, "signaled": false },
+      "currentPublicBehavior": { "code": "runtime_not_ready" },
+      "sideEffects": { "signals": 0, "spawn": 0 }
+    }
+  ]
+}

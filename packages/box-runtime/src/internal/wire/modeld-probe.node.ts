@@ -26,7 +26,7 @@ export async function probeModeldHealth(runRoot: string, timeoutMs = 80): Promis
     };
     socket.on("connect", () => {
       try {
-        socket.write(encodeModeldFrame({ method: "health" }));
+        socket.write(encodeModeldFrame({ method: "health", version: 3 }));
       } catch {
         finish(false);
       }
@@ -48,8 +48,9 @@ export async function probeModeldHealth(runRoot: string, timeoutMs = 80): Promis
         isRecord(value) &&
           value.ok === true &&
           value.method === "health" &&
-          (value.version === 2 || value.version === 3) &&
-          typeof value.serverGeneration === "string",
+          value.version === 3 &&
+          typeof value.serverGeneration === "string" &&
+          /^[a-f0-9-]{36}$/.test(value.serverGeneration),
       );
     });
     socket.on("error", () => finish(false));

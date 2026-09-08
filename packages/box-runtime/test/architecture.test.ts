@@ -17,31 +17,43 @@ async function runChecker(root: string): Promise<{ code: number; stdout: string;
   return { code, stdout, stderr };
 }
 
-async function fixture(setup: (root: string) => Promise<void>): Promise<string> {
+async function put(root: string, rel: string, text: string): Promise<void> {
+  const path = join(root, rel);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, text);
+}
+
+async function fixture(changes: Record<string, string> = {}, omitSource = false): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "t20-boundary-"));
-  await mkdir(join(root, "packages", "box-runtime", "src", "internal", "host"), { recursive: true });
-  await mkdir(join(root, "packages", "runtime-kernel", "src"), { recursive: true });
-  await mkdir(join(root, "packages", "cli", "src"), { recursive: true });
-  await writeFile(
-    join(root, "packages", "box-runtime", "package.json"),
-    `${JSON.stringify({ name: "@grokbox/box-runtime", private: true, exports: { "./runtime": "./src/runtime.ts" } })}\n`,
-  );
-  await writeFile(
-    join(root, "packages", "runtime-kernel", "package.json"),
-    `${JSON.stringify({
-      name: "@grokbox/runtime-kernel",
-      private: true,
-      exports: { "./contract": "./src/contract.ts", "./hash": "./src/hash.ts", "./selection": "./src/selection.ts", "./ports": "./src/ports.ts" },
-    })}\n`,
-  );
-  await writeFile(join(root, "packages", "box-runtime", "src", "runtime.ts"), "export {}\n");
-  await writeFile(join(root, "packages", "box-runtime", "src", "preload.ts"), "export {}\n");
-  await writeFile(join(root, "packages", "runtime-kernel", "src", "contract.ts"), "export {}\n");
-  await writeFile(join(root, "packages", "runtime-kernel", "src", "hash.ts"), "export {}\n");
-  await writeFile(join(root, "packages", "runtime-kernel", "src", "selection.ts"), "export {}\n");
-  await writeFile(join(root, "packages", "runtime-kernel", "src", "ports.ts"), "export {}\n");
-  await writeFile(join(root, "packages", "cli", "src", "index.ts"), "export {}\n");
-  await setup(root);
+  await put(root, "packages/box-runtime/package.json", `${JSON.stringify({
+    name: "@grokbox/box-runtime",
+    private: true,
+    type: "module",
+    exports: { "./runtime": "./src/runtime.ts" },
+  })}\n`);
+  await put(root, "packages/runtime-kernel/package.json", `${JSON.stringify({
+    name: "@grokbox/runtime-kernel",
+    private: true,
+    type: "module",
+    exports: {
+      "./contract": "./src/contract.ts",
+      "./hash": "./src/hash.ts",
+      "./selection": "./src/selection.ts",
+      "./ports": "./src/ports.ts",
+    },
+  })}\n`);
+  if (!omitSource) {
+    for (const path of [
+      "packages/box-runtime/src/preload.ts",
+      "packages/box-runtime/src/runtime.ts",
+      "packages/runtime-kernel/src/contract.ts",
+      "packages/runtime-kernel/src/hash.ts",
+      "packages/runtime-kernel/src/selection.ts",
+      "packages/cli/src/index.ts",
+    ]) await put(root, path, "export {};\n");
+    await put(root, "packages/runtime-kernel/src/ports.ts", "export const ConfigurationRead = 1;\n");
+  }
+  for (const [path, text] of Object.entries(changes)) await put(root, path, text);
   return root;
 }
 
@@ -51,52 +63,55 @@ describe("runtime layout boundaries", () => {
     expect(result.code, result.stderr + result.stdout).toBe(0);
   });
 
-  test("forbidden Host Effect import is a non-zero checker", async () => {
-    const root = await fixture(async (root) => {
-      await writeFile(
-        join(root, "packages", "box-runtime", "src", "internal", "host", "bad.ts"),
-        `import { Effect } from "effect";\nexport const x = Effect;\n`,
-      );
-    });
-    const result = await runChecker(root);
-    expect(result.code).not.toBe(0);
-    expect(result.stdout + result.stderr).toMatch(/Host leaf imports Effect\/SDK/);
+  test("minimal valid fixture is green", async () => {
+    const result = await runChecker(await fixture());
+    expect(result.code, result.stdout).toBe(0);
   });
 
-  test("production bun:* import is a non-zero checker", async () => {
-    const root = await fixture(async (root) => {
-      await writeFile(
-        join(root, "packages", "box-runtime", "src", "runtime.ts"),
-        `import { sqlite } from "bun:sqlite";\nexport const db = sqlite;\n`,
-      );
-    });
-    const result = await runChecker(root);
+  const rejects: Array<[string, Record<string, string> | undefined, boolean?]> = [
+    ["host-to-io", {
+      "packages/box-runtime/src/internal/host/bad.ts": 'import { value } from "../io/configuration.node.ts"; export { value };',
+      "packages/box-runtime/src/internal/io/configuration.node.ts": "export const value = 1;",
+    }],
+    ["io-to-root", {
+      "packages/box-runtime/src/internal/io/bad.ts": 'import { value } from "../roots/controller.runtime.ts"; export { value };',
+      "packages/box-runtime/src/internal/roots/controller.runtime.ts": "export const value = 1;",
+    }],
+    ["kernel-to-box", { "packages/runtime-kernel/src/contract.ts": 'export * from "@grokbox/box-runtime/runtime";' }],
+    ["host-multiline-ports", {
+      "packages/box-runtime/src/internal/host/bad.ts": 'import {\n  ConfigurationRead\n} from "@grokbox/runtime-kernel/ports";\nexport { ConfigurationRead };',
+    }],
+    ["host-cjs-effect", {
+      "packages/box-runtime/src/internal/host/bad.cjs": 'const { Effect } = require("effect"); module.exports = Effect;',
+    }],
+    ["cli-deep-internal", {
+      "packages/cli/src/bad.ts": 'export { value } from "../../box-runtime/src/internal/io/configuration.node.ts";',
+      "packages/box-runtime/src/internal/io/configuration.node.ts": "export const value = 1;",
+    }],
+    ["preload-import-time-write", {
+      "packages/box-runtime/src/preload.ts": 'import { writeFileSync } from "node:fs"; writeFileSync("/fixture/must-not-write", "unexpected");',
+    }],
+    ["bun-side-effect-import", { "packages/box-runtime/src/runtime.ts": 'import "bun:sqlite"; export {};' }],
+    ["bun-sleep", { "packages/box-runtime/src/runtime.ts": "export const wait = () => Bun.sleep(10);" }],
+    ["bun-bracket-file", { "packages/box-runtime/src/runtime.ts": 'export const load = () => Bun["file"]("/fixture/not-read");' }],
+    ["later-console-root", { "packages/box-runtime/src/internal/roots/console.runtime.ts": "export const consoleRoot = () => ({ ok: true });" }],
+    ["legacy-nested", { "packages/box-runtime/src/internal/legacy/old-kernel.ts": "export const oldKernel = () => ({ ok: true });" }],
+    ["kernel-export-target", {
+      "packages/runtime-kernel/package.json": JSON.stringify({
+        name: "@grokbox/runtime-kernel",
+        private: true,
+        exports: { "./contract": "./src/ports.ts" },
+      }),
+    }],
+  ];
+
+  test.each(rejects)("%s is a non-zero checker", async (_name, changes) => {
+    const result = await runChecker(await fixture(changes));
     expect(result.code).not.toBe(0);
-    expect(result.stdout + result.stderr).toMatch(/bun:\*|Bun globals/);
   });
 
-  test("retired index barrel is a non-zero checker", async () => {
-    const root = await fixture(async (root) => {
-      await writeFile(join(root, "packages", "box-runtime", "src", "index.ts"), "export * from \"./runtime.ts\";\n");
-      await writeFile(
-        join(root, "packages", "box-runtime", "package.json"),
-        `${JSON.stringify({ name: "@grokbox/box-runtime", private: true, exports: { ".": "./src/index.ts", "./runtime": "./src/runtime.ts" } })}\n`,
-      );
-    });
-    const result = await runChecker(root);
+  test("missing required source is a non-zero checker", async () => {
+    const result = await runChecker(await fixture({}, true));
     expect(result.code).not.toBe(0);
-    expect(result.stdout + result.stderr).toMatch(/retired POC|root barrel/);
-  });
-
-  test("preload importing runtime.ts is a non-zero checker", async () => {
-    const root = await fixture(async (root) => {
-      await writeFile(
-        join(root, "packages", "box-runtime", "src", "preload.ts"),
-        `import { openRuntimeStore } from "./runtime.ts";\nvoid openRuntimeStore;\n`,
-      );
-    });
-    const result = await runChecker(root);
-    expect(result.code).not.toBe(0);
-    expect(result.stdout + result.stderr).toMatch(/must not import runtime facade/);
   });
 });

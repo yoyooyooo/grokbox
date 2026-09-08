@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeAttestation } from "../src/internal/io/authority.node.ts";
-import { pinLaunchProfile } from "../src/internal/host/compile-receipt.ts";
+import { pinLaunchProfile } from "../src/internal/process/profile.node.ts";
 import { WATCHDOG_OPERATION_ID, type ManualReadoptInput } from "../src/internal/roots/controller.runtime.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import type { IdentityMarker } from "../src/internal/process/identity-op.ts";
