@@ -21,7 +21,8 @@ export class EnvelopeError extends Error {
     super(code);
   }
 }
-export const ENVELOPE_MAX_BYTES = 256 * 1024;
+/** Must fit one modeld Unix frame (`MODELD_MAX_FRAME` 16KiB) plus submit wrapper fields. */
+export const ENVELOPE_MAX_BYTES = 12 * 1024;
 const fail = (code: EnvelopeErrorCode = "invalid_envelope"): never => { throw new EnvelopeError(code); };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const id = (value: unknown): string => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value) ? value : fail();

@@ -157,7 +157,7 @@ describe("Host messages/state/tools/options envelope", () => {
   });
 
   test("oversized Host history drops oldest messages until the envelope fits", () => {
-    const filler = "y".repeat(8000);
+    const filler = "y".repeat(400);
     const messages: PromptMessage[] = [];
     for (let i = 0; i < 80; i += 1) messages.push({ role: "user", content: `${filler}-${i}` });
     messages.push({ role: "user", content: "tail-sentinel" });
