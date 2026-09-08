@@ -29,6 +29,10 @@ function canonicalize(value: unknown): unknown {
   throw new Error("canonicalJson cannot encode this value");
 }
 
+export function computeSnapshotDigest(body: unknown): string {
+  return sha256Text(canonicalJson(body));
+}
+
 export function countOccurrences(haystack: string, needle: string): number {
   if (needle.length === 0) throw new Error("empty needle");
   let count = 0;

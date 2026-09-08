@@ -15,6 +15,9 @@ const CASES = {
     ["bun", "scripts/check-runtime-boundaries.mjs"],
     ["bun", "test", "packages/box-runtime/test/architecture.test.ts"],
   ],
+  codec: [
+    ["bun", "test", "packages/box-runtime/test/host-codec.test.ts", "packages/box-runtime/test/ccs-codec.test.ts"],
+  ],
 };
 
 const mapped = CASES[kase];

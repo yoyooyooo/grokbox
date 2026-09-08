@@ -1,13 +1,17 @@
 import {
   EnvelopeError,
+  SNAPSHOT_JSON_MAX_BYTES,
   buildModelEnvelope,
   cloneJson,
+  contextSnapshotBody,
   parseModelEnvelope,
   parsePromptMessages,
+  type ContextSnapshot,
   type ModelEnvelope,
   type PromptMessage,
   type ToolDefinition,
 } from "@grokbox/runtime-kernel/contract";
+import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
 
 const ENVELOPE_MAX_BYTES = 7 * 1024 * 1024;
 
@@ -84,6 +88,45 @@ export function hostToolsToCanonical(value: unknown): ToolDefinition[] {
 
 export function buildHostEnvelope(messages: unknown, tools?: unknown, options?: unknown): ModelEnvelope {
   return buildModelEnvelope(messages, hostToolsToCanonical(tools), options);
+}
+
+export function hostToContextSnapshot(input: {
+  profileId: string;
+  abiIdentity: string;
+  state: unknown;
+  tools?: unknown;
+  options?: unknown;
+  independentRoot?: string;
+}): ContextSnapshot {
+  if (!input.profileId || !input.abiIdentity) throw new EnvelopeError("invalid_envelope");
+  const selected = hostStateToMessages(input.state);
+  const fromState = selected.filter((message) => message.role === "system");
+  const rest = selected.filter((message) => message.role !== "system");
+  const independent = input.independentRoot;
+  let systemMessages: PromptMessage[];
+  if (typeof independent === "string") {
+    if (independent.length === 0) throw new EnvelopeError("invalid_envelope");
+    if (fromState.length > 0) throw new EnvelopeError("invalid_envelope");
+    systemMessages = [{ role: "system", content: independent }];
+  } else if (fromState.length === 1) {
+    systemMessages = fromState;
+  } else {
+    throw new EnvelopeError("invalid_envelope");
+  }
+  const envelope = buildHostEnvelope(rest, input.tools, input.options);
+  const body = contextSnapshotBody({
+    version: 1,
+    profileId: input.profileId,
+    abiIdentity: input.abiIdentity,
+    systemMessages,
+    messages: envelope.messages,
+    tools: envelope.tools,
+    options: envelope.options,
+  });
+  const snapshot: ContextSnapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
+  const bytes = new TextEncoder().encode(JSON.stringify(snapshot)).length;
+  if (bytes > SNAPSHOT_JSON_MAX_BYTES) throw new EnvelopeError("envelope_too_large");
+  return snapshot;
 }
 
 export { parseModelEnvelope, type ModelEnvelope, type PromptMessage };
