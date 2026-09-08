@@ -330,7 +330,7 @@ Box-runtime live artifacts default to `~/.grokbox/run` even when `XDG_RUNTIME_DI
 
 Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. The same observe append-only retains full source bytes under `host-bundles/generations/<sourceSha>/`, isolated from transform/preload. It does not inject an unknown bundle, rewrite official `host-main.cjs` in place, restore Host from the archive, or write git. Contract slices keep at most 5 SHAs; host-bundles keep at most 16. Neither deletes the live SHA or the last SHA that matched a PatchProfile.
 
-PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`) plus `invocationId: inferenceRequestId` on that same agent-id slice. modeld resolves `assignments.agents[agentId] ?? assignments.main`.
+PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`) plus `invocationId: inferenceRequestId` on that same agent-id slice. Route seam sends a Bot to modeld only when `assignments.agents[agentId]` is set to an admitted managed model; missing override is official passthrough. `assignments.main` is not a session fallback.
 
 Composition roots:
 

@@ -1210,7 +1210,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     usage: "grokbox runtime models use <provider/model> [--for <agent>]",
     summary: "Assign a catalog model as the box default or one bot override.",
     arguments: [{ syntax: "<provider/model>", description: "Catalog model id" }],
-    options: options([{ flags: "--for <agent>", description: "Override one bot instead of assignments.main" }]),
+    options: options([{ flags: "--for <agent>", description: "Route one bot through modeld; omitted bots stay official in route mode" }]),
     stdin: "none",
     table: false,
     timeout: false,

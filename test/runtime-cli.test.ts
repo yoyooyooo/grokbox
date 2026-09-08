@@ -233,6 +233,11 @@ describe("box-local runtime CLI", () => {
 
   test("runtime start --mode route refuses non-stub assignment and identity ticks watchdog once", async () => {
     const boxRuntimeRoot = await withRoot();
+    const assigned = await captureCli(["runtime", "models", "use", "acme/fast"], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(assigned.code, assigned.stderr).toBe(0);
     const refused = await captureCli(["runtime", "start", "--mode", "route"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
@@ -834,6 +839,7 @@ describe("box-local runtime CLI", () => {
       env: { GROKBOX_RUN_ROOT: f.runRoot }, signal: ac.signal });
     try {
       await within((async () => { while (!(await probeStubModeld(f.runRoot))) await Bun.sleep(5); })());
+      await f.store.saveModels({ version: 1, models: {}, assignments: { main: null, agents: { "agent-tom": "stub/echo" } } });
       const hook = bindHostSessionHook({ mode: "route", durableRoot: f.durable, runRoot: f.runRoot, binding: f.binding });
       const session = (id: string) => hook({ originalSession: { stream: () => { throw new Error("official hard-off"); } },
         agentId: "agent-tom", sessionOptions: { invocationId: id, inferenceReason: "main" } }) as HostPromptSession;

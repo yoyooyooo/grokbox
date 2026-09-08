@@ -253,7 +253,6 @@ async function preflightNextTarget(input: WatchdogTickInput, ctx: TargetContext)
     if (!validated.ok) return validated;
     if (ctx.freshDiskSha() !== ctx.sha) return { ok: false, code: "disk-sha-changed" };
     if (input.desired.mode === "route") {
-      if (!input.models.assignments.main) return { ok: false, code: "missing_main_assignment" };
       if (routeHasNonStubAssignment(input.models)) return { ok: false, code: "non_stub_assignment" };
       if (!await resolveModeldReady(input, ctx.ephemeralRoot)) return { ok: false, code: "modeld_not_ready" };
     }

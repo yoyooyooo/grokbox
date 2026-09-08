@@ -48,22 +48,23 @@ describe("Host seam → Unix modeld → admitted stub/fake", () => {
     const server = await startStubModeldServer({ ...f, durableRoot: f.durable });
     try {
       const hook = bindHostSessionHook({ mode: "route", runRoot: f.runRoot, durableRoot: f.durable, binding: f.binding });
-      for (const [id, agent] of [["tom", "agent-tom"], ["jerry", "agent-jerry"]]) {
-        const session = hook(hookArgs(id!, agent!)) as HostPromptSession;
-        const handle = session.getExecutor([{ role: "user", content: "private-envelope-sentinel" }]).stream({}, id);
-        expect((await handle.response).messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "echo" }] }]);
-      }
-      // Terminal writes are asynchronous; wait for exactly two bounded rows, not model body persistence.
-      await within((async () => { for (;;) { try { if ((await readFile(eventsPath(f.durable), "utf8")).trim().split("\n").length === 2) return; } catch {} await Bun.sleep(1); } })());
+      const tom = hook(hookArgs("tom", "agent-tom")) as HostPromptSession;
+      expect(tom).not.toBe(original);
+      const handle = tom.getExecutor([{ role: "user", content: "private-envelope-sentinel" }]).stream({}, "tom");
+      expect((await handle.response).messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "echo" }] }]);
+      const jerry = hook(hookArgs("jerry", "agent-jerry"));
+      expect(jerry).toBe(original);
+      // Terminal writes are asynchronous; wait for exactly one bounded row, not model body persistence.
+      await within((async () => { for (;;) { try { if ((await readFile(eventsPath(f.durable), "utf8")).trim().split("\n").length === 1) return; } catch {} await Bun.sleep(1); } })());
       const log = await readFile(eventsPath(f.durable), "utf8");
       expect(log).not.toContain("private-envelope-sentinel");
-      expect(log.trim().split("\n").map((line) => JSON.parse(line).assignment)).toEqual(["agent", "main"]);
+      expect(log.trim().split("\n").map((line) => JSON.parse(line).assignment)).toEqual(["agent"]);
       expect(await callStubModeld(f.runRoot, { ...submitRequest(server, "spoof"), modelId: "stub/echo" })).toMatchObject({ ok: false, code: "excess-fields" });
       const models = fakeModels(); models.assignments.main = "stub/echo";
       await f.store.saveModels(models);
       expect(await callStubModeld(f.runRoot, submitRequest(server, "unadmitted-tom"))).toMatchObject({ ok: false, code: "wrong-model" });
       expect(await callStubModeld(f.runRoot, submitRequest(server, "still-jerry", { agentId: "agent-jerry" }))).toMatchObject({ ok: true, assignment: "main" });
-      expect(server.dispatches()).toBe(3);
+      expect(server.dispatches()).toBe(2);
       expect(off.counts).toEqual({ fetch: 0, dns: 0, tcp: 0, credential: 0 });
     } finally { await server.stop(); off.restore(); }
   });

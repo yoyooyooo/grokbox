@@ -1,5 +1,7 @@
 # Box-local model runtime
 
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
+
 本文是 Grok Bot **模型替换运行时**的设计 Current Home：接缝、注入、modeld、配置和失败语义。它描述已接受的**未来完成态**，不是当前源码已实现清单。
 
 产品命令、本机边界、envelope 和可见错误义务见 [产品合同 §12](product-contract.md)。模块与 composition roots 见 [架构 §17](architecture.md)。重副作用与渐进迁移遵循 [Effect 标准](effect-box-runtime.md)。交付进度只在本地 Issue tracker。源码和可执行测试拥有当前实现真相。
@@ -33,15 +35,15 @@ App / Gateway / Host queue
   -> createSession
   -> hook
        非 route 或非 ordinary main -> originalSession（官方）
-       route 且 ordinary main     -> Host-shaped session
-                                     getModelId / getExecutor / getExecutorWithoutResolvedModelTracking
+       route 且 ordinary main 且 assignments.agents[agentId] 已设 -> Host-shaped session（modeld）
+       route 且 ordinary main 且无 per-agent 覆盖 -> originalSession（官方 passthrough）
   -> modeld（provider effect 前检查 committed attestation + envelope）
   -> Host tool loop / SendToUser / Transcript
 ```
 
-Host 内 hook **不读** `models.json`，**不读** attestation 文件。`activate --mode route` 必须已有有效 `assignments.main`（全盒默认）。
+Host 内 hook **不读** attestation 文件。route 下 hook 同步有界读取 `models.json` 只为决定 **该 Bot 是否 opt-in modeld**。`activate --mode route` 允许 **agents-only**（`assignments.main` 可为 null）；未覆盖的 Bot 官方 passthrough。
 
-现役 `createSession` 的 `sessionOptions` **没有** agent id，也 **没有** invocation id。按 Bot 分流和 turn 相关是核心能力，因此 PatchProfile 除 `return session` 外还有 **第二精确切片**（仍只两刀，不加第三刀）：在 `runTurn` 构造 `mainSessionOptions` 时写入 `agentId: host.getConversationId()` 与 `invocationId: inferenceRequestId`。仍是 NODE_OPTIONS 内存 transform，不写官方磁盘。modeld 用 `assignments.agents[agentId] ?? assignments.main`。缺少 invocationId 不得发明第二相关 id，route 显式失败。没有覆盖不是回官方。
+现役 `createSession` 的 `sessionOptions` **没有** agent id，也 **没有** invocation id。按 Bot 分流和 turn 相关是核心能力，因此 PatchProfile 除 `return session` 外还有 **第二精确切片**（仍只两刀，不加第三刀）：在 `runTurn` 构造 `mainSessionOptions` 时写入 `agentId: host.getConversationId()` 与 `invocationId: inferenceRequestId`。仍是 NODE_OPTIONS 内存 transform，不写官方磁盘。**Seam 只把 `assignments.agents[agentId]` 已设的 Bot 交给 modeld**；缺覆盖 = 官方 passthrough。`assignments.main` 不是 session 回退。缺少 invocationId 不得发明第二相关 id；已 opt-in 的 route session 缺 id 显式失败。
 
 protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后再决策，不双轨。
 
@@ -111,7 +113,7 @@ Deactivate / 官方替换等待（`waitOfficialReplacement`）：仅 census 到�
 ## 5. 模型运行时
 
 - `/workspace/.grokbox/box-runtime/models.json`；`apiKeyRef` 仅为 `env:<NAME>` 或 `file:/absolute/path`（`file:` 也放长效树下的 `secrets/`，不进 git）。
-- `assignments.main` 是全盒默认；`assignments.agents.<id>` 按 Bot 覆盖。键用稳定 agent id；CLI 在盒内解析名字。省略 `--for` 的 `models use` 改默认。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。本 slice 的 **route activate** 承认 `stub/echo` **或** openai*（`openAiAccepts`：provider `openai`/`openai-chat`/`openai-responses`、http(s) `endpoint` 作 baseURL、非空 `apiKeyRef`）。其它 provider / 缺 key / 非 http endpoint fail-closed。默认 assignment 仍是 stub。
+- **Selective route：** `assignments.agents.<id>` 是唯一的 managed opt-in。未列出的 Bot 走官方 Host session。`assignments.main` 可选（catalog/披露用），**不是** 未覆盖 Bot 的回退。键用稳定 agent id；CLI `--for` 写 agents 覆盖（例：grok bot `00000000-0000-4000-8000-000000000114`）。省略 `--for` 的 `models use` 仍写 `main`，不把其它 Bot 拉进 modeld。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。本 slice 的 **route activate** 承认已出现的赋值是 `stub/echo` **或** openai*（`openAiAccepts`：provider `openai`/`openai-chat`/`openai-responses`、http(s) `endpoint` 作 baseURL、非空 `apiKeyRef`）。允许 agents-only、`main=null`。其它 provider / 缺 key / 非 http endpoint fail-closed。
 - turn 钉住该 Bot 的 immutable resolved-config **和 credential fingerprint**，直到 terminal 或 idle TTL；不在 turn 内 refresh/换账户。改 Jerry 不影响 Tom 正在跑的回合。
 - modeld 有 generation-scoped 内存 registry（id → fingerprint + state + terminal）。`status` 不对账续传正文。disconnect → abort + unknown。duplicate submit 不重新 dispatch。
 - 体验不降级：优先让 Host 既有 retry/checkpoint 工作。不另建第二套消息队列。
@@ -257,11 +259,11 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 - `status` / `log` / `contracts` 不 repair
 - 进程入口：`modeld run` / `watchdog run`（`start` 复用二者，不替代长驻 `modeld run`）
 - 显式确认一次：`re-adopt --confirm`（**唯一**带 live adopt 权限的公开档 / sole live writer；匹配身份 + `diskSha` + reviewed profile 是 no-op；所有权精确但 `diskSha` 过期才允许一次 stale → official → transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。不是循环，也不替代 watchdog）。**No live unless authorized。**
-- 本 slice **route activate** 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`；models/CLI fail-closed 对其它 provider）。route Host hook 在 createSession 时按 `models.json` 的 `assignments.agents[agentId] ?? main` 解析 session `modelId`（缺文件或非 allowlist fail-closed）。默认 assignment 仍是 stub。`modeld run` 回执是 `driver: "composite"`，不是单一 stub 模型。
+- 本 slice **route activate** 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`；models/CLI fail-closed 对其它 provider）。route Host hook 在 createSession 时只把 `assignments.agents[agentId]` 已设的 Bot 解析为 managed `modelId`（缺覆盖 = 官方 passthrough；缺文件或该覆盖非 allowlist fail-closed）。`modeld run` 回执是 `driver: "composite"`，不是单一 stub 模型。
 - 短效 live state 默认 `~/.grokbox/run/`（见 §4）
 - 所有权与新鲜度分开：canonical attestation 对上唯一 grokbox-touched Host 身份和单例拓扑即为 `origin=grokbox-attested`；`attestation.diskSha === liveDiskSha()` 才是当前代。SHA 过期报 `reason=stale_attestation`，desired 为 identity/route 时 `coverage=window-open`。身份/普查/gateway/拓扑/attestation 对不上仍是 unattested/ambiguous，零信号 recovery-required
 - 禁止：`inject` / `heal` / `kill` / 手动 snapshot
-- identity/route 接管与 refresh 的首信号 admission：共享 coordinator 在任何旧 Host 信号及 guardian 启动前，校验下一份 profile 的两刀重放/source/transformed SHA、当前源、canonical ownership/严格拓扑、gateway PID、未决 journal、launch capability；route 还要求 stub main assignment 与 modeld readiness。缺少 source/capability 事实不授权 mutation。launch preparation 先于 STOP/TERM，operation lock 内在首信号前再核对。identity stale refresh 与 route profile/mode refresh 走同一 admission/budget 路径，保留原始 generation key；匹配目标仍零信号 no-op。公开 manual root 不接受 legacy witness。
+- identity/route 接管与 refresh 的首信号 admission：共享 coordinator 在任何旧 Host 信号及 guardian 启动前，校验下一份 profile 的两刀重放/source/transformed SHA、当前源、canonical ownership/严格拓扑、gateway PID、未决 journal、launch capability；route 还要求已出现的赋值均为 admitted stub/openai*（允许 agents-only）与 modeld readiness。缺少 source/capability 事实不授权 mutation。launch preparation 先于 STOP/TERM，operation lock 内在首信号前再核对。identity stale refresh 与 route profile/mode refresh 走同一 admission/budget 路径，保留原始 generation key；匹配目标仍零信号 no-op。公开 manual root 不接受 legacy witness。
 
 `profile write` 在 `0700` 的 `profiles/` 内使用每次独有、独占创建的 `0600` `.reviewed-*.tmp`：只写 profile JSON，校验读回并 sync 文件后 rename 为 `reviewed.json`。并发成功 writer 以最后一次 rename 为准；reader 只见完整旧版或新版，不见半份 JSON。输入不得与输出同文件（包括 symlink/hardlink 别名）；读取和发布前核对源文件身份、大小与时间戳，检测到变化即拒绝。失败/中断可遗留未发布的 protected staging，canonical reader 忽略它；不自动删除 staging 或已有 legacy 整包副本，清理由 operator 另行决定。这里不承诺掉电后的目录元数据持久性或防御同 UID 恶意文件系统替换。
 

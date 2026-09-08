@@ -2,7 +2,7 @@ import { appendSeamRouteEvent, TURN_SEAM_BOUNDED_STRING, type HostStreamRejectRe
   type ModelStepStage, type TurnSeamAssignment, type TurnSeamOutcome, type TurnSeamTerminalClass,
   type TurnSeamWriteResult } from "./events.ts";
 import { callStubModeld, isModeldFailure, modeldHandshake, MODELD_SUBMIT_TIMEOUT_MS, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
-import { loadModelsFileSync, resolveRouteSessionModel } from "./models.ts";
+import { decideRouteSession, loadModelsFileSync } from "./models.ts";
 import { parseHostBinding, type HostBinding } from "./modeld-binding.ts";
 import { buildModelEnvelope, type ModelEnvelope } from "./envelope.ts";
 import { sha256Text } from "./hash.ts";
@@ -76,7 +76,7 @@ export const UNBOUND_HOST_GENERATION = "unbound";
 const STEP_SLOT_LIMIT = 1024;
 export type SessionSeamConfig = {
   mode: SeamMode; root: string; assignment: TurnSeamAssignment; modelId?: string;
-  /** Route only. Resolve per-agent at session create so agents.* overrides apply without Host reading models in the hook body. */
+  /** Route only. Resolve per-agent at session create. `assignment: "official"` returns originalSession (passthrough). */
   resolveSession?: (agentId: string) => { modelId: string; assignment?: TurnSeamAssignment };
   now?: () => string; driver?: StubRouteDriver; hostGenerationId?: string;
   writeTerminal?: (root: string, input: unknown) => Promise<TurnSeamWriteResult>;
@@ -143,6 +143,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     if (config.resolveSession) {
       try {
         const next = config.resolveSession(agentId);
+        if (next.assignment === "official") return { modelId: "official", assignment: "official" };
         const modelId = boundedId(next.modelId);
         if (!modelId) return null;
         return { modelId, assignment: next.assignment ?? config.assignment };
@@ -211,6 +212,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     if (!agentId) return errorSession("invalid");
     const resolved = resolveHookModel(agentId);
     if (!resolved) return errorSession("invalid");
+    if (resolved.assignment === "official") return args.originalSession;
     const { modelId } = resolved;
     if (!turnId) return errorSession(modelId);
     const existingSession = sessions.get(sessionKey(turnId));
@@ -350,7 +352,9 @@ export function bindHostSessionHook(input: { mode: SeamMode; durableRoot: string
     resolveSession: (agentId) => {
       const file = loadModelsFileSync(input.durableRoot);
       if (!file) throw new Error("models unavailable");
-      return resolveRouteSessionModel(file, agentId);
+      const decided = decideRouteSession(file, agentId);
+      if (decided.kind === "official") return { modelId: "official", assignment: "official" };
+      return { modelId: decided.modelId, assignment: decided.assignment };
     },
   });
   return (args) => seam.hook(args);

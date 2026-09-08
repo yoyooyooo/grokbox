@@ -94,6 +94,11 @@ describe("models.json store", () => {
       assignments: { main: "openai/gpt-4o-mini", agents: {} },
     };
     assertRouteAssignment(openai);
+    assertRouteAssignment({
+      version: 1,
+      models: openai.models,
+      assignments: { main: null, agents: { "00000000-0000-4000-8000-000000000114": "openai/gpt-4o-mini" } },
+    });
     const status = projectStatus({
       root: store.root,
       desired: await store.loadDesired(),

@@ -21,6 +21,7 @@ export {
   routeModelAdmitted,
   loadModelsFileSync,
   resolveRouteSessionModel,
+  decideRouteSession,
   disclosure,
   openRuntimeStore,
   parseApiKeyRef,

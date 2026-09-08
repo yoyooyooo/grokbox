@@ -62,6 +62,15 @@ function installNetworkTraps(counts: { fetch: number; dns: number; tcp: number }
 }
 
 const roots = modeldFixture;
+async function canaryRoots(agentId = "agent-tom") {
+  const f = await modeldFixture();
+  await f.store.saveModels({
+    version: 1,
+    models: {},
+    assignments: { main: null, agents: { [agentId]: STUB_ECHO_MODEL_ID } },
+  });
+  return f;
+}
 
 async function turnLines(dir: string): Promise<Array<Record<string, unknown>>> {
   let text = "";
@@ -132,7 +141,7 @@ describe("stub route synthetic compile/load", () => {
   });
 
   test("route ordinary-main is managed; non-main stays official", async () => {
-    const { durable, runRoot } = await roots();
+    const { durable, runRoot } = await canaryRoots();
     const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const original = officialSession();
@@ -160,7 +169,7 @@ describe("stub route synthetic compile/load", () => {
   });
 
   test("route executor stream is synchronous, Host-shaped, and does not tee waiters", async () => {
-    const { durable, runRoot } = await roots();
+    const { durable, runRoot } = await canaryRoots();
     const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const original = officialSession();
@@ -216,7 +225,7 @@ describe("stub route synthetic compile/load", () => {
 
   test("response-only route reaches a meaningful response before duplicateStream's second reader attaches",
     async () => {
-    const { durable, runRoot } = await roots();
+    const { durable, runRoot } = await canaryRoots();
     const server = await startStubModeldServer({ runRoot, durableRoot: durable });
     try {
       const original = officialSession();

@@ -293,11 +293,8 @@ export function assertStubOnlyRouteAssignments(file: ModelsFile): void {
 }
 
 export function assertRouteAssignment(file: ModelsFile): void {
-  if (!file.assignments.main) {
-    throw new BoxRuntimeError("invalid_usage", "activate --mode route requires a valid assignments.main.");
-  }
   assertStubOnlyRouteAssignments(file);
-  requireModel(file, file.assignments.main);
+  if (file.assignments.main) requireModel(file, file.assignments.main);
 }
 
 export function disclosure(file: ModelsFile, modelId: string, forAgent?: string) {
@@ -317,9 +314,24 @@ export function disclosure(file: ModelsFile, modelId: string, forAgent?: string)
 export function resolveAssignment(file: ModelsFile, agentId?: string): ModelRecord {
   const id = agentId && Object.hasOwn(file.assignments.agents, agentId) ? file.assignments.agents[agentId] : file.assignments.main;
   if (!id) {
-    throw new BoxRuntimeError("invalid_usage", "No assignments.main; missing override is not official inference.");
+    throw new BoxRuntimeError("invalid_usage", "No assignments.main; modeld pin requires a managed model id.");
   }
   return requireModel(file, id);
+}
+
+/** Selective route: only `assignments.agents[agentId]` opts into modeld. Missing override is official passthrough. `main` is not a session fallback. */
+export type RouteSessionDecision =
+  | { kind: "official" }
+  | { kind: "managed"; modelId: string; assignment: "agent" };
+
+export function decideRouteSession(file: ModelsFile, agentId?: string): RouteSessionDecision {
+  if (!agentId || !Object.hasOwn(file.assignments.agents, agentId)) return { kind: "official" };
+  const id = file.assignments.agents[agentId]!;
+  const record = id === STUB_ECHO_MODEL_ID ? STUB_ECHO_MODEL : Object.hasOwn(file.models, id) ? file.models[id] : undefined;
+  if (!record || !routeModelAdmitted(record)) {
+    throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo or openai* in this slice.");
+  }
+  return { kind: "managed", modelId: record.id, assignment: "agent" };
 }
 
 /** Bounded no-follow regular-file read for preload/hook. Never mkdir or repair. */
@@ -340,13 +352,12 @@ export function loadModelsFileSync(root: string): ModelsFile | null {
   }
 }
 
-export function resolveRouteSessionModel(file: ModelsFile, agentId?: string): { modelId: string; assignment: "main" | "agent" } {
-  const overridden = Boolean(agentId && Object.hasOwn(file.assignments.agents, agentId));
-  const record = resolveAssignment(file, agentId);
-  if (!routeModelAdmitted(record)) {
-    throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo or openai* in this slice.");
+export function resolveRouteSessionModel(file: ModelsFile, agentId?: string): { modelId: string; assignment: "agent" } {
+  const decided = decideRouteSession(file, agentId);
+  if (decided.kind !== "managed") {
+    throw new BoxRuntimeError("invalid_usage", "unassigned route session is official passthrough, not a managed modelId.");
   }
-  return { modelId: record.id, assignment: overridden ? "agent" : "main" };
+  return { modelId: decided.modelId, assignment: decided.assignment };
 }
 
 export function secretsDir(root: string): string {

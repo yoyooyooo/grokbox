@@ -58,7 +58,7 @@ Offline fixture (no secrets): `packages/box-runtime/test/fixtures/sub2api-models
 }
 ```
 
-`models use` ids must already exist in `models`. Prefer luna as `assignments.main` for a first smoke.
+`models use` ids must already exist in `models`. For a grok-bot-only canary (T10), assign luna with `--for 00000000-0000-4000-8000-000000000114` and leave `main` unset so other bots stay official.
 
 ## Runbook (offline until a later spend ticket)
 

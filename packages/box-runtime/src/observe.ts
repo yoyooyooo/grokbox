@@ -233,7 +233,7 @@ export async function projectLiveStatus(input: { root: string; desired?: Desired
     const routeMain = routeMainId === STUB_ECHO_MODEL_ID ? STUB_ECHO_MODEL
       : routeMainId && effectiveModels && Object.hasOwn(effectiveModels.models, routeMainId) ? effectiveModels.models[routeMainId]! : null;
     const routeReady = mode !== "route" || (effectiveModels && status.models.assignmentState === "valid" &&
-      routeMain != null && routeModelAdmitted(routeMain) && !routeHasNonStubAssignment(effectiveModels) &&
+      (routeMain == null || routeModelAdmitted(routeMain)) && !routeHasNonStubAssignment(effectiveModels) &&
       profile.state === "present" && routeAttestationAgrees(att, profile.value) && status.modeld.state === "running");
     if (fresh && topologyValid && modeAgrees && routeReady && status.operation.pending === false) status.coverage = "attested";
     if (fresh && topologyValid && status.operation.pending === false) status.window.durationMs = att?.windowMs ?? null;

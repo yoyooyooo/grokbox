@@ -213,16 +213,27 @@ describe("first-signal target admission on the shared coordinator", () => {
     }
   });
 
-  test("route target requires the stub main assignment even when modeld is ready", async () => {
+  test("route target allows agents-only assignment; missing main is not a refusal", async () => {
     for (const kind of ["official route", "identity to route", "route profile refresh"] as const) {
       const f = await fixture(kind);
       f.input.models.assignments.main = null;
+      f.input.models.assignments.agents = { "00000000-0000-4000-8000-000000000114": "stub/echo" };
+      f.input.modeldReady = async () => false;
       const result = await runManualReadopt(f.input);
-      expect(result.reason).toBe("missing_main_assignment");
+      expect(result.reason, `${kind}: ${JSON.stringify(result)}`).toBe("modeld_not_ready");
       expect(result.signaled).toBe(false);
       expect(f.tree.signals).toEqual([]);
-      expect(f.counts).toEqual({ prepare: 0, guardian: 0, spawn: 0 });
     }
+  });
+
+  test("route target still refuses a disallowed per-agent assignment", async () => {
+    const f = await fixture("official route");
+    f.input.models.assignments.main = null;
+    f.input.models.assignments.agents = { "agent-tom": "acme/fast" };
+    const result = await runManualReadopt(f.input);
+    expect(result.reason).toBe("non_stub_assignment");
+    expect(result.signaled).toBe(false);
+    expect(f.tree.signals).toEqual([]);
   });
 
   test("manual confirmation does not admit a legacy ownership witness", async () => {
