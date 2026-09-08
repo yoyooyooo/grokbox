@@ -1,8 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { jsonSchema, streamText, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { JSONSchema7 } from "ai";
-import type { ToolDefinition } from "./envelope.ts";
+import type { ModelEnvelope, ToolDefinition } from "./envelope.ts";
 import { sha256Text } from "./hash.ts";
 import { createAs1ModeldDriver, type As1GenerateChunk } from "./modeld-as1.ts";
 import type { ModeldDriver } from "./modeld.ts";
@@ -17,6 +18,7 @@ import {
   openAiApiMode,
   sanitizeOpenAiError,
   type OpenAiGenerateCall,
+  type OpenAiPromptMessage,
   type OpenAiToolNameState,
   type OpenAiStreamEvent,
 } from "./modeld-openai-map.ts";
@@ -25,6 +27,36 @@ export {
   openAiAccepts, openAiApiMode, envelopeToOpenAiLivePrompt, envelopeToOpenAiMessages,
   mapOpenAiStreamEvent, sanitizeOpenAiError, OPENAI_LOCAL_ERROR_MESSAGES,
 };
+
+function writeLivePromptCensus(
+  envelope: ModelEnvelope,
+  prompt: { system?: string; messages: OpenAiPromptMessage[] },
+): void {
+  const users = prompt.messages.filter((message) => message.role === "user").map((message) => String(message.content ?? ""));
+  const envelopeRoles: Record<string, number> = {};
+  for (const message of envelope.messages) envelopeRoles[message.role] = (envelopeRoles[message.role] ?? 0) + 1;
+  const liveRoles: Record<string, number> = {};
+  for (const message of prompt.messages) liveRoles[message.role] = (liveRoles[message.role] ?? 0) + 1;
+  const joined = users.join("\n");
+  try {
+    writeFileSync("/tmp/grokbox-live-prompt-census.json", JSON.stringify({
+      at: new Date().toISOString(),
+      envelopeCount: envelope.messages.length,
+      envelopeRoles,
+      liveCount: prompt.messages.length,
+      liveRoles,
+      userCount: users.length,
+      hasT0u: joined.includes("[t0u]") || joined.includes("grok bot"),
+      hasMylifcc: joined.includes("mylifcc"),
+      firstUsers: users.slice(0, 8).map((text) => text.slice(0, 80)),
+      lastUsers: users.slice(-3).map((text) => text.slice(0, 80)),
+      caps: {
+        message: process.env.GROKBOX_LIVE_PROMPT_MESSAGE_CAP ?? null,
+        char: process.env.GROKBOX_LIVE_PROMPT_CHAR_CAP ?? null,
+      },
+    }, null, 2));
+  } catch { /* Census is evidence, not the turn. */ }
+}
 
 function credentialMatchesPin(secret: string, fingerprint: string | null): boolean {
   if (!fingerprint || !/^[a-f0-9]{64}$/.test(fingerprint)) return false;
@@ -84,6 +116,7 @@ async function liveOpenAiEvents(
   });
   const model = call.api === "responses" ? openai.responses(call.pin.model.model) : openai.chat(call.pin.model.model);
   const prompt = envelopeToOpenAiLivePrompt(call.envelope);
+  writeLivePromptCensus(call.envelope, prompt);
   const tools = toSdkTools(call.envelope.tools);
   const toolChoice = envelopeToOpenAiToolChoice(call.envelope);
   const result = streamText({

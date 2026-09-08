@@ -92,7 +92,9 @@ describe("OpenAI envelope mapping", () => {
     ], [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]));
     expect(withTools.messages.every((message) => message.role === "user" || message.role === "assistant")).toBe(true);
     expect(withTools.messages.some((message) => message.role === "tool")).toBe(false);
-    expect(JSON.stringify(withTools.messages)).not.toMatch(/tool-call|tool-result/);
+    expect(withTools.messages.some((message) => String(message.content).includes("Called lookup"))).toBe(true);
+    expect(withTools.messages.some((message) => String(message.content).includes("lookup result"))).toBe(true);
+    expect(JSON.stringify(withTools.messages)).not.toMatch(/"role":"tool"/);
     expect(withTools.messages.at(-1)).toEqual({ role: "user", content: "follow" });
     expect(envelopeToOpenAiMessages(envelope)).toEqual([
       { role: "system", content: "sys" },
@@ -146,6 +148,19 @@ describe("OpenAI envelope mapping", () => {
     const charCapped = envelopeToOpenAiLivePrompt(envelope, { GROKBOX_LIVE_PROMPT_CHAR_CAP: "80" });
     expect(charCapped.messages.some((message) => String(message.content).includes("topic-0"))).toBe(false);
     expect(charCapped.messages.at(-1)).toEqual({ role: "user", content: "list earlier topics" });
+  });
+
+  test("prior STEP tool stdout is in the next live prompt as CCS-safe assistant text", () => {
+    const live = envelopeToOpenAiLivePrompt(buildModelEnvelope([
+      { role: "user", content: "read the file" },
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "c1", toolName: "Shell", args: { command: "cat note" } }] },
+      { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "Shell", result: { stdout: "FILE_CONTENTS_FROM_PRIOR_STEP" } }] },
+      { role: "user", content: "what did the file say?" },
+    ], [{ name: "Shell", inputSchema: { type: "object", properties: { command: { type: "string" } } } }]), {});
+    expect(live.messages.some((message) => message.role === "tool")).toBe(false);
+    expect(live.messages.some((message) => message.role === "assistant" && String(message.content).includes("FILE_CONTENTS_FROM_PRIOR_STEP"))).toBe(true);
+    expect(live.messages.some((message) => message.role === "assistant" && String(message.content).includes("Called Shell"))).toBe(true);
+    expect(live.messages.at(-1)).toEqual({ role: "user", content: "what did the file say?" });
   });
 
   test("maps SDK stream events including tool streaming into As1 chunks then StreamPart[]", async () => {

@@ -74,17 +74,58 @@ function sendToUserBubble(content: PromptMessage["content"]): string {
   return "";
 }
 
+function previewJson(value: unknown, max: number): string {
+  if (typeof value === "string") return value.length > max ? `${value.slice(0, max)}…` : value;
+  if (value === null || value === undefined) return "";
+  try {
+    const text = JSON.stringify(value);
+    return text.length > max ? `${text.slice(0, max)}…` : text;
+  } catch {
+    return "";
+  }
+}
+
+function isSendToUserName(name: string | undefined): boolean {
+  return typeof name === "string" && /send[_-]?to[_-]?user|send[_-]?message/i.test(name);
+}
+
 function liveTurnText(message: PromptMessage): string {
-  const text = contentText(message.content).trim();
-  if (message.role === "assistant") return text || sendToUserBubble(message.content);
-  return text;
+  if (message.role === "user") return contentText(message.content).trim();
+  if (message.role === "assistant") {
+    const bits: string[] = [];
+    const text = contentText(message.content).trim();
+    if (text) bits.push(text);
+    const bubble = sendToUserBubble(message.content);
+    if (bubble && bubble !== text) bits.push(bubble);
+    if (Array.isArray(message.content)) {
+      for (const part of message.content) {
+        if (part.type !== "tool-call" || isSendToUserName(part.toolName)) continue;
+        const args = previewJson(part.args, 1500);
+        bits.push(args ? `Called ${part.toolName} ${args}` : `Called ${part.toolName}`);
+      }
+    }
+    return bits.join("\n");
+  }
+  if (message.role === "tool") {
+    if (typeof message.content === "string") return message.content.trim();
+    const bits: string[] = [];
+    for (const part of message.content) {
+      if (part.type !== "tool-result" || isSendToUserName(part.toolName)) continue;
+      const body = previewJson(part.result, 8000);
+      if (!body) continue;
+      bits.push(`${part.toolName ?? "tool"} result:\n${body}`);
+    }
+    return bits.join("\n\n");
+  }
+  return "";
 }
 
 /**
  * Live managed prompt: Host conversation as CCS-safe user/assistant **text**.
- * Reconstructs SendToUser bubbles as assistant text. Drops tool roles, tool-call
- * parts, SAND_HIDDEN / ack-redrive, and synthetic failure rows. Responses rejected
- * raw tool history (`model_error` / normalize); Host still executes SendToUser.
+ * Reconstructs SendToUser bubbles as assistant text. Tool-call/tool-result history
+ * becomes CCS-safe assistant text (stdout preserved) — raw role=tool replay rejected
+ * Responses (`model_error` / normalize). Host still executes SendToUser.
+ * Filters SAND_HIDDEN / ack-redrive / synthetic failure rows.
  * Default: no count/char near-window. `GROKBOX_LIVE_PROMPT_*_CAP` is debug-only.
  * Always ends on the latest user turn.
  */
@@ -103,12 +144,13 @@ export function envelopeToOpenAiLivePrompt(
       if (text) systems.push(text);
       continue;
     }
-    if (message.role !== "user" && message.role !== "assistant") continue;
+    if (message.role !== "user" && message.role !== "assistant" && message.role !== "tool") continue;
     const text = liveTurnText(message);
     if (!text) continue;
+    const rawText = contentText(message.content).trim();
     if (message.role === "user" && LIVE_NOISE_USER.test(text)) continue;
-    if (message.role === "assistant" && LIVE_NOISE_ASSISTANT.test(text)) continue;
-    texts.push({ role: message.role, content: text });
+    if (message.role === "assistant" && LIVE_NOISE_ASSISTANT.test(rawText)) continue;
+    texts.push({ role: message.role === "tool" ? "assistant" : message.role, content: text });
   }
   const messageCap = parsePositiveInt(env[LIVE_PROMPT_MESSAGE_CAP_ENV]);
   const charCap = parsePositiveInt(env[LIVE_PROMPT_CHAR_CAP_ENV]);
