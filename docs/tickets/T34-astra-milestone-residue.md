@@ -108,3 +108,26 @@ The audit used a Git-object-checked `pre-publication-revision` archive with work
 ### Evidence ceiling
 
 Git-object-checked `pre-publication-revision` archive; workspace imports resolve inside the frozen snapshot or isolated mutant. Original status gate passed 39 + 23 tests / 226 + 189 assertions, layout passed 20 tests / 20 assertions, and read-only typecheck passed. Actual toolchain: Bun 1.4.2 / Node v24.18.0. HOME/TMPDIR and default CLI observation adapters were isolated; real egress/signals were blocked, with zero blocked attempts recorded. Only synthetic inputs/owned fixtures were used, and cleanup targets were retained by rename. No production fixes, live/provider operations, full build/package or pinned Bun/Node20 release claim. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
+
+## M3 / T23 — pre-publication-revision — 2026-09-08
+
+- Reviewed SHA: `pre-publication-revision`; this entry records the accepted relook at that exact tip, not later main-chain work.
+- First review: `PRIVATE_EVIDENCE`
+- Relook report: `PRIVATE_EVIDENCE`
+- Disposition: **ACCEPT; P1-01 through P1-05 closed on the held counterexamples and controls.** No closed P1 is reopened. This T23 disposition does not close or supersede the earlier M1/M2/M3-T27 residue. No grok dispatch, main-chain pause, or automatic owner-review trigger.
+
+### Closed at this M3/T23 tip
+
+- **P1-01 — closed:** actual SDK/mock EOF, non-SSE and bad-tool-JSON cases fail `stream_invalid`; absent usage stays omitted. Valid text, interleaved tools and 64 ordered chunks are preserved. The drop-all-SDK-output mutant now fails the full backend gate with four backend-test failures.
+- **P1-02 — closed on the cancellation barrier:** the SDK receives an abort signal; Effect completion and lease release no longer await another provider chunk. The abort-honoring mock closes its body; the passive mock is separately cleaned up without claiming it honored cancellation. Late output is not delivered.
+- **P1-03 — closed:** post-prepare caller mutations do not change the actual HTTP tools/schema/settings. Unsupported Responses seed fails during prepare with zero credential reads and zero HTTP calls.
+- **P1-04 — closed:** the held within-snapshot/config-budget input is rejected at final SDK egress with `envelope_too_large` and zero injected fetch calls; its one prior credential read is not misrepresented as zero.
+- **P1-05 — closed:** matching root-owned unseal and Fake-auth/SDK compositions work; sibling-root verify/unseal/infer reject the foreign lease, pin input cannot override the root env, and closed leases cannot be unsealed.
+
+### Items
+
+- None carried forward for M3/T23: the accepted relook identified no remaining P1 or still-material nit/P2 for this closeout. Qualification limits below are not new findings, grok work, or permission to pause the main chain.
+
+### Evidence ceiling
+
+This documentation-only closeout checked the accepted report/artifacts and all 11 recorded source fingerprints against `pre-publication-revision`; it did not rerun runtime tests or open a new review pass. Retained relook evidence: backend 15 tests / 66 assertions, codec 11 / 176, layout 20 / 20, typecheck and actual build passed; the output-loss mutant failed as expected. Actual toolchain was Bun 1.4.2 / Node v24.18.0, Effect 4.0.0-beta.107, AI SDK 5.0.253 / OpenAI 2.0.125. This is not T24/T25/T26, production-root, live/provider, pinned Bun/Node20 runtime or `verify:package` qualification. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
