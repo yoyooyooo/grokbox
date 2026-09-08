@@ -156,6 +156,24 @@ describe("Host messages/state/tools/options envelope", () => {
     }
   });
 
+  test("getExecutor accepts Host conversation snapshots with extra keys and text parts with providerOptions", async () => {
+    const f = fixture();
+    const result = f.session.getExecutor({
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: "host-part", providerOptions: { cursor: { inferenceReason: "main" } } }],
+        _privacyMode: "UNSPECIFIED",
+      }],
+      transcript: "private-sibling",
+      version: 2,
+    }).stream({}, "inv-host-snapshot", [], {});
+    const response = await result.response;
+    expect(response.error).toBeUndefined();
+    expect(f.calls.count).toBe(1);
+    expect(f.requests[0]!.envelope.messages).toEqual([{ role: "user", content: [{ type: "text", text: "host-part" }] }]);
+    expect(JSON.stringify(f.requests[0]!.envelope)).not.toContain("private-sibling");
+  });
+
   test("invalid state still gives an Array state and a synchronous visible failure", async () => {
     const f = fixture();
     const executor = f.session.getExecutor({ transcript: "private-state" });

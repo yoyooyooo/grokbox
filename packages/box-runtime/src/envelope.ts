@@ -58,7 +58,7 @@ function contentPart(value: unknown, role: PromptMessage["role"]): PromptContent
     text: ["type", "text"], reasoning: ["type", "text"], image: ["type", "url", "image", "data", "mimeType"],
     "tool-call": ["type", "toolCallId", "toolName", "args"], "tool-result": ["type", "toolCallId", "toolName", "result", "isError"],
   };
-  if (typeof value.type !== "string" || !Object.hasOwn(fields, value.type) || Object.keys(value).some((key) => !fields[value.type as string]!.includes(key))) return fail("unsupported_content");
+  if (typeof value.type !== "string" || !Object.hasOwn(fields, value.type)) return fail("unsupported_content");
   if (value.type === "text" || value.type === "reasoning") {
     if (typeof value.text !== "string") return fail("unsupported_content");
     return { type: value.type, text: value.text };
@@ -241,6 +241,19 @@ export function buildModelEnvelope(messages: unknown, tools?: unknown, options?:
   if (Buffer.byteLength(JSON.stringify(envelope)) > ENVELOPE_MAX_BYTES) return fail("envelope_too_large");
   freezeJson(envelope);
   return envelope;
+}
+
+/** Host `getExecutor(state)` snapshot: array, `{ messages }`, empty, or a single message. Does not deep-clone the whole state tree. */
+export function hostStateToMessages(state: unknown): PromptMessage[] {
+  if (state === undefined || state === null) return [];
+  if (Array.isArray(state)) return messagesFrom(state);
+  if (object(state)) {
+    const field = ownData(state, "messages");
+    if (field.kind === "accessor") return fail("unsupported_content");
+    if (field.kind === "value" && Array.isArray(field.value)) return messagesFrom(field.value);
+    if (Object.keys(state).length === 0) return [];
+  }
+  return messagesFrom([state]);
 }
 
 export function parseModelEnvelope(value: unknown): ModelEnvelope {

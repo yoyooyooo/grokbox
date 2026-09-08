@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { buildModelEnvelope, cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
+import { buildModelEnvelope, cloneJson, envelopeHasImage, EnvelopeError, hostStateToMessages, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "./envelope.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
@@ -130,7 +130,7 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
   const executor: HostPromptExecutor = {
     appendMessages(next) {
       if (invalidState) return executor;
-      try { messages.push(...cloneJson(Array.isArray(next) ? next : next == null ? [] : [next]) as unknown[]); }
+      try { messages.push(...hostStateToMessages(next == null ? [] : next)); }
       catch (error) { rememberInvalid(error); }
       return executor;
     },
@@ -173,11 +173,7 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
   const bind = (state?: unknown) => {
     if (state !== undefined) {
       try {
-        const snapshot = cloneJson(state);
-        if (Array.isArray(snapshot)) messages = snapshot;
-        else if (snapshot && typeof snapshot === "object" && Array.isArray(snapshot.messages) && Object.keys(snapshot).length === 1) messages = snapshot.messages;
-        else if (snapshot && typeof snapshot === "object" && Object.keys(snapshot).length === 0) messages = [];
-        else throw new EnvelopeError("invalid_envelope");
+        messages = hostStateToMessages(state);
         invalidState = false;
         invalidCode = "invalid_envelope";
       } catch (error) { messages = []; rememberInvalid(error); }
