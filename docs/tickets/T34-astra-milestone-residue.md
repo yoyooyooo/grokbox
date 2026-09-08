@@ -83,3 +83,28 @@ Validation used a Git-object-checked archive of `pre-publication-revision`, with
 ### Evidence ceiling
 
 The audit used a Git-object-checked `pre-publication-revision` archive with workspace imports resolved inside it. `codec` passed 11 tests / 176 assertions; independent real-SDK/mock-fetch controls and the four held oracle mutants produced the dispositions above. Actual toolchain: Bun 1.4.2 / Node v24.18.0, AI SDK 5.0.253 / OpenAI provider 2.0.125. No production fixes, provider spend, live operations, full build/package or pinned Bun/Node20 release claim. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
+
+## M3 / T27 — pre-publication-revision — 2026-09-08
+
+- Reviewed SHA: `pre-publication-revision`; all source/evidence below is pinned to this tip, excluding later main-chain work.
+- Relook report: `PRIVATE_EVIDENCE`
+- Grok residual receipt: `PRIVATE_EVIDENCE`
+- Disposition: still-open after grok handoff, narrowed to two remaining publication/proof concerns under the original P1-02/P1-03 IDs. The named relook counterexamples are fixed; P1-01 remains closed and is not reopened. Owner end-of-rebuild triage only; no grok dispatch, main-chain pause, or further review loop.
+
+### Verified fixes at this M3 tip
+
+- **P1-02 — held payloads fixed:** `projectSafeIdentity` / `copyInferenceTupleOrReject` in `packages/runtime-kernel/src/internal/status/projection.ts:26–56` rejects the unsafe provided Agent ID before Host append. The actual writer returns `unprojected`, with no corresponding log row or sentinel in CLI stdout/stderr. Control `phase`/`outcome` nested objects are now dropped before NDJSON. Valid full/missing tuples still round-trip, so the closed P1-01 is not reintroduced.
+- **P1-03 — held open/write mutant fixed:** `packages/box-runtime/test/observe-status.test.ts:478–492,531` now counts write-mode `fs.promises.open`. The same indirect-path `open(...,"a")` / `handle.write` mutant changes write from 0 to 1 and makes the complete status gate exit 1 / `ok:false`.
+
+### Items
+
+- **P1-02 — still held in the control-log header:** `packages/box-runtime/src/internal/io/journal.node.ts:209–213,372–375` copies `at` directly into the output and skips its validation. An actual `appendEvent` with a valid control event name and a synthetic credential sentinel as `at` persists that sentinel in raw NDJSON; the reader/CLI later reports an invalid row without leaking it, but cannot retract the raw-log publication. This is an incomplete write-side schema boundary, not an observed real-credential leak; the relook Agent-ID and nested-field fixes above are not disputed.
+  - Evidence: `PRIVATE_EVIDENCE` (`controlHeader`, with the fixed controls in `hostTupleField` / `allowedFieldVariants`); reproducible `probe.ts` alongside it.
+  - Why not forced onto grok: the milestone review/relook/handoff is over. Retain this narrower publication concern for owner triage rather than creating another fix round or stopping the rebuild.
+- **P1-03 — still held for equivalent direct file writes:** the new spy observes `fs.promises.open`, not all writes through that module. A status-path mutant using `fs.promises.writeFile(ownedFixture, syntheticLine, {flag:"a"})` bypasses the counter: the full gate returns exit 0 / `ok:true`, 39 + 23 passing tests / 226 + 189 assertions, while the isolated marker contains 27 actual synthetic writes. The marker is outside each test's input data root, so input-tree snapshots do not prove global zero side effects. This is a remaining gate-coverage gap, not evidence that the unmodified status implementation writes files.
+  - Evidence: `PRIVATE_EVIDENCE`, `held-open-write.stdout.log`, `sibling-write-file.stdout.log`, `sibling-write-file-owned-marker.ndjson`; reproducible `mutants.mjs` alongside them.
+  - Why not forced onto grok: the original open/write counterexample is genuinely fixed; the broader readonly proof remains incomplete. Reserve that residual disagreement for the owner's final triage, without another grok handoff or a new main-chain gate.
+
+### Evidence ceiling
+
+Git-object-checked `pre-publication-revision` archive; workspace imports resolve inside the frozen snapshot or isolated mutant. Original status gate passed 39 + 23 tests / 226 + 189 assertions, layout passed 20 tests / 20 assertions, and read-only typecheck passed. Actual toolchain: Bun 1.4.2 / Node v24.18.0. HOME/TMPDIR and default CLI observation adapters were isolated; real egress/signals were blocked, with zero blocked attempts recorded. Only synthetic inputs/owned fixtures were used, and cleanup targets were retained by rename. No production fixes, live/provider operations, full build/package or pinned Bun/Node20 release claim. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
