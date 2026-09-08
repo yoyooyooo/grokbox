@@ -56,7 +56,18 @@ export async function runDaemonEnsure(
         context: { operationId, phase: "daemon-ensure" },
       });
     }
-    const handshake = await client.handshake();
+    let handshake: Awaited<ReturnType<typeof client.handshake>>;
+    try {
+      handshake = await client.handshake();
+    } catch (error) {
+      if (!(error instanceof CliError)) throw error;
+      throw new CliError(error.code, error.message, {
+        ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
+        ...(error.failureCode === undefined ? {} : { failureCode: error.failureCode }),
+        retryable: error.retryable,
+        context: { operationId, phase: "daemon-ensure" },
+      });
+    }
     writeSuccess(deps.stdout, {
       ensured: true,
       changed: ensured.changed,
