@@ -1,0 +1,14 @@
+{
+  "profileId": "t21-independent-root",
+  "abiIdentity": "host-abi-v1",
+  "independentRoot": "root-independent",
+  "state": [
+    { "role": "user", "content": "hello" }
+  ],
+  "tools": [
+    {
+      "name": "lookup",
+      "inputSchema": { "type": "object", "properties": { "q": { "type": "string" } } }
+    }
+  ]
+}
