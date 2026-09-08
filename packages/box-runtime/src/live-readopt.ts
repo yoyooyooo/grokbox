@@ -17,7 +17,15 @@ import { resolvePreloadPath } from "./runtime-helpers.ts";
 import type { DesiredMode } from "./models.ts";
 import type { PatchProfile } from "./transform.ts";
 
-const PRELOAD_PATH = resolvePreloadPath();
+/** Node `--require` cannot load the source `preload.ts` fallback. Prefer a built CJS in the run root. */
+function nodeRequireablePreload(): string {
+  const resolved = resolvePreloadPath();
+  if (resolved.endsWith(".cjs") && existsSync(resolved)) return resolved;
+  const runBuilt = join(ephemeralRuntimeRoot(), "preload.cjs");
+  if (existsSync(runBuilt)) return runBuilt;
+  return resolved;
+}
+const PRELOAD_PATH = nodeRequireablePreload();
 
 export const liveH3AdoptAdapter = {
   createLiveH3AdoptPorts,
