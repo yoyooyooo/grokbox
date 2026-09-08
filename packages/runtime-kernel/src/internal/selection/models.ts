@@ -237,6 +237,16 @@ export function routeModelAdmitted(record: ModelRecord): boolean {
   return openaiCompatibleAdmitted(record);
 }
 
+export type BackendKind = "echo" | "openai-chat" | "openai-responses";
+
+/** Exact kind for registry lookup. Unknown providers fail closed. */
+export function backendKindForModel(record: ModelRecord): BackendKind {
+  if (record.id === STUB_ECHO_MODEL_ID || record.provider === "stub") return "echo";
+  if (record.provider === "openai-responses") return "openai-responses";
+  if (record.provider === "openai" || record.provider === "openai-chat") return "openai-chat";
+  throw new BoxRuntimeError("invalid_usage", "Unknown backend kind.");
+}
+
 function assignedModelIds(file: ModelsFile): string[] {
   const ids: string[] = [];
   if (file.assignments.main) ids.push(file.assignments.main);

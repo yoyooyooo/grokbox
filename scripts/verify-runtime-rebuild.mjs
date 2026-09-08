@@ -22,6 +22,12 @@ const CASES = {
     ["bun", "test", "packages/runtime-kernel/test/status-facets.test.ts", "packages/box-runtime/test/host-journal.test.ts", "packages/box-runtime/test/observe-status.test.ts"],
     ["bun", "test", "test/runtime-cli.test.ts"],
   ],
+  backend: [
+    ["bun", "test", "packages/runtime-kernel/test/backend-contract.test.ts", "packages/box-runtime/test/backend-conformance.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/host-codec.test.ts", "packages/box-runtime/test/ccs-codec.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+    ["bun", "test", "packages/box-runtime/test/architecture.test.ts"],
+  ],
 };
 
 const mapped = CASES[kase];
@@ -69,11 +75,13 @@ const SUPPORTS = {
   layout: ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
   codec: ["host-context-snapshot", "ccs-chat-responses-http-oracle"],
   status: ["status-facets", "host-journal-roles", "readonly-status-ports"],
+  backend: ["model-backend-port", "backend-auth-lease", "ccs-codec-prepare"],
 };
 const REALITY = {
   layout: "offline-layout",
   codec: "offline-sdk-mock-fetch",
   status: "offline-status-facets",
+  backend: "offline-sdk-mock-fetch",
 };
 const report = {
   case: kase,
@@ -81,7 +89,7 @@ const report = {
   dependencyReality: REALITY[kase] ?? "offline",
   supports: failed ? [] : (SUPPORTS[kase] ?? []),
   notProven: [
-    "inference",
+    ...(kase === "backend" ? ["T24-route-binding", "T25-modeld-lifecycle", "T26-host-fullStream"] : ["inference"]),
     "controller-effect-program",
     "v3-wire-server",
     "Host-fullStream",

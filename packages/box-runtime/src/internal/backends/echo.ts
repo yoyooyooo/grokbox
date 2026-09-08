@@ -1,0 +1,55 @@
+import { Effect, Layer, Stream } from "effect";
+import {
+  BackendFailure,
+  EnvelopeError,
+  type InferenceEvent,
+} from "@grokbox/runtime-kernel/contract";
+import { ModelBackend, type AuthLease, type PreparedCall } from "@grokbox/runtime-kernel/ports";
+import { encodeCcsMessages, type CcsPrompt } from "./ccs-codec.ts";
+import { makePreparedCall, readPreparedCall } from "./prepared.ts";
+
+function lastUserFromPrompt(prompt: CcsPrompt): string {
+  for (let index = prompt.messages.length - 1; index >= 0; index -= 1) {
+    const message = prompt.messages[index];
+    if (!message || message.role !== "user") continue;
+    if (typeof message.content === "string") return message.content;
+    return message.content.filter((part) => part.type === "text").map((part) => part.text).join("");
+  }
+  return "";
+}
+
+function mapPrepareError(error: unknown): BackendFailure {
+  if (error instanceof BackendFailure) return error;
+  if (error instanceof EnvelopeError && error.code === "envelope_too_large") return new BackendFailure("envelope_too_large");
+  if (error instanceof EnvelopeError) return new BackendFailure("unsupported_content");
+  return new BackendFailure("invalid_prepared_call");
+}
+
+export const echoModelBackendLayer: Layer.Layer<ModelBackend> = Layer.succeed(ModelBackend, {
+  prepare: (_selection: unknown, snapshot: unknown) => Effect.try({
+    try: () => {
+      const snap = snapshot as Parameters<typeof encodeCcsMessages>[0];
+      const encoded = encodeCcsMessages(snap);
+      return makePreparedCall({
+        kind: "echo",
+        prompt: encoded,
+        model: "echo",
+        endpoint: "stub:echo",
+        api: "chat",
+        tools: snap.tools,
+        options: snap.options,
+      });
+    },
+    catch: mapPrepareError,
+  }),
+  infer: (_admitted: unknown, prepared: PreparedCall, _lease: AuthLease) => {
+    const payload = readPreparedCall(prepared);
+    if (!payload || payload.kind !== "echo") return Stream.fail(new BackendFailure("invalid_prepared_call"));
+    const text = lastUserFromPrompt(payload.prompt);
+    const events: InferenceEvent[] = [
+      ...(text ? [{ type: "text_delta" as const, text }] : []),
+      { type: "backend_finish", finishReason: "stop" },
+    ];
+    return Stream.fromIterable(events);
+  },
+});

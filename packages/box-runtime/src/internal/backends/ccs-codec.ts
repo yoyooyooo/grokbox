@@ -104,7 +104,7 @@ function toSdkMessages(messages: CcsMessage[]) {
   });
 }
 
-function generationSettings(options: GenerationOptions, api: CcsApi): {
+export function generationSettings(options: GenerationOptions, api: CcsApi): {
   temperature?: number;
   topP?: number;
   maxOutputTokens?: number;

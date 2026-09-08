@@ -1,9 +1,10 @@
 import { constants } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
-import { Cause, Effect, Exit } from "effect";
-import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
+import { Cause, Effect, Exit, Layer } from "effect";
+import { BackendFailure, BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { parseApiKeyRef } from "@grokbox/runtime-kernel/selection";
+import { BackendAuth, type AuthLease } from "@grokbox/runtime-kernel/ports";
 
 /**
  * C1 secret materialization (modeld-owned).
@@ -148,4 +149,51 @@ export function fingerprintApiKeyRef(
   signal?: AbortSignal,
 ): Promise<string> {
   return runCredentialEffect(fingerprintApiKeyRefEffect(ref, env), signal);
+}
+
+type LeaseRecord = { fingerprint: string; secret: string; ref: string; env: NodeJS.Dict<string> };
+const leases = new WeakMap<AuthLease, LeaseRecord>();
+
+function makeLease(): AuthLease {
+  return Object.freeze(Object.create(null)) as AuthLease;
+}
+
+export function unsealAuthLease(lease: AuthLease): string {
+  const record = leases.get(lease);
+  if (!record) throw new BackendFailure("auth_mismatch");
+  return record.secret;
+}
+
+export function liveBackendAuthLayer(env: NodeJS.Dict<string> = process.env): Layer.Layer<BackendAuth> {
+  return Layer.succeed(BackendAuth, {
+    pin: (input: unknown) => {
+      const ref = input && typeof input === "object" && "apiKeyRef" in input && typeof (input as { apiKeyRef: unknown }).apiKeyRef === "string"
+        ? (input as { apiKeyRef: string }).apiKeyRef
+        : "";
+      const localEnv = input && typeof input === "object" && "env" in input && (input as { env?: NodeJS.Dict<string> }).env
+        ? (input as { env: NodeJS.Dict<string> }).env
+        : env;
+      return Effect.acquireRelease(
+        materializeApiKeyRefEffect(ref, localEnv).pipe(
+          Effect.mapError((error) => error instanceof BackendFailure ? error : new BackendFailure("credential_invalid")),
+          Effect.map((secret) => {
+          const lease = makeLease();
+          const fingerprint = fingerprintSecret(secret);
+          leases.set(lease, { fingerprint, secret, ref, env: localEnv });
+          return { lease, fingerprint };
+        })),
+        ({ lease }) => Effect.sync(() => {
+          const record = leases.get(lease);
+          if (record) record.secret = "";
+          leases.delete(lease);
+        }),
+      );
+    },
+    verify: (lease: AuthLease) => Effect.gen(function* () {
+      const record = leases.get(lease);
+      if (!record) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
+      const current = yield* fingerprintApiKeyRefEffect(record.ref, record.env);
+      if (current !== record.fingerprint) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
+    }),
+  });
 }

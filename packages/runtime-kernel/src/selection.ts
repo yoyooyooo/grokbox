@@ -19,6 +19,8 @@ export {
   resolveRouteSessionModel,
   routeHasNonStubAssignment,
   routeModelAdmitted,
+  backendKindForModel,
+  type BackendKind,
   type DesiredFile,
   type DesiredMode,
   type ModelCapabilities,

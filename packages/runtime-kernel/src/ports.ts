@@ -1,6 +1,8 @@
 import { Context, Effect, Stream } from "effect";
+import type { Scope } from "effect/Scope";
 import type { ModelsFile, DesiredFile } from "./selection.ts";
 import type { StatusEvidence } from "./internal/contract/status.ts";
+import type { InferenceEvent } from "./internal/contract/events.ts";
 
 /** Process-local opaque handle. Not a contract DTO; never stringify, log, or put on the wire. */
 export type PreparedCall = { readonly _PreparedCall: unique symbol };
@@ -25,7 +27,7 @@ export class AdmissionAuthority extends Context.Service<AdmissionAuthority, {
 }>()("grokbox/AdmissionAuthority") {}
 
 export class BackendAuth extends Context.Service<BackendAuth, {
-  readonly pin: (input: unknown) => Effect.Effect<{ lease: AuthLease; fingerprint: string }, unknown>;
+  readonly pin: (input: unknown) => Effect.Effect<{ lease: AuthLease; fingerprint: string }, unknown, Scope>;
   readonly verify: (lease: AuthLease) => Effect.Effect<void, unknown>;
 }>()("grokbox/BackendAuth") {}
 
@@ -35,7 +37,7 @@ export class ModelBackend extends Context.Service<ModelBackend, {
     admittedCall: unknown,
     prepared: PreparedCall,
     authLease: AuthLease,
-  ) => Stream.Stream<unknown, unknown>;
+  ) => Stream.Stream<InferenceEvent, unknown>;
 }>()("grokbox/ModelBackend") {}
 
 export class RuntimeEvents extends Context.Service<RuntimeEvents, {
