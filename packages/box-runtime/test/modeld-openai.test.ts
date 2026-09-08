@@ -13,8 +13,11 @@ import {
   openAiApiMode,
   sanitizeOpenAiError,
 } from "../src/modeld-openai.ts";
+import { sha256Text } from "../src/hash.ts";
 import { STUB_ECHO_MODEL, type ModelsFile } from "../src/models.ts";
 import { FAKE_BINDING, submitRequest } from "./modeld-fixture.ts";
+
+const TEST_KEY = "test-key";
 
 const openaiModel = {
   id: "openai/gpt-4o-mini",
@@ -30,7 +33,7 @@ const pin: ModelPin = {
   model: openaiModel,
   assignment: "main",
   fingerprint: "a".repeat(64),
-  credentialFingerprint: "b".repeat(64),
+  credentialFingerprint: sha256Text(TEST_KEY),
 };
 const openaiModels: ModelsFile = {
   version: 1,
@@ -94,7 +97,7 @@ describe("OpenAI envelope mapping", () => {
       { type: "text", text: "lo" },
       { type: "reasoning", text: "think" },
       { type: "tool-call-start", toolCallId: "c1", toolName: "lookup" },
-      { type: "tool-call-delta", toolCallId: "c1", toolName: "tool", argsTextDelta: "{\"q\"" },
+      { type: "tool-call-delta", toolCallId: "c1", toolName: "lookup", argsTextDelta: "{\"q\"" },
       { type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "x" } },
       { type: "finish", reason: "stop" },
     ]);
@@ -106,16 +109,20 @@ describe("OpenAI envelope mapping", () => {
       { type: "text-delta", textDelta: "lo" },
       { type: "reasoning", textDelta: "think" },
       { type: "tool-call-streaming-start", toolCallId: "c1", toolName: "lookup" },
-      { type: "tool-call-delta", toolCallId: "c1", toolName: "tool", argsTextDelta: "{\"q\"" },
+      { type: "tool-call-delta", toolCallId: "c1", toolName: "lookup", argsTextDelta: "{\"q\"" },
       { type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "x" } },
       { type: "finish", reason: "stop" },
     ]);
     expect(mapOpenAiStreamEvent({ type: "start-step" })).toBeNull();
   });
 
-  test("redacts credential material from error text", () => {
-    expect(sanitizeOpenAiError(new Error("Bearer sk-live-secret failed"))).not.toMatch(/sk-live-secret|Bearer sk/);
-    expect(sanitizeOpenAiError("sk-abc123")).toBe("[redacted]");
+  test("never forwards provider error text; only the local model_error message leaves the mapper", () => {
+    const opaque = "syncred_opaque_7c91";
+    expect(sanitizeOpenAiError(new Error(`Bearer ${opaque} failed`))).toBe(
+      "The configured model request failed. No fallback model was used.",
+    );
+    expect(sanitizeOpenAiError(opaque)).toBe("The configured model request failed. No fallback model was used.");
+    expect(sanitizeOpenAiError(opaque)).not.toContain(opaque);
   });
 });
 

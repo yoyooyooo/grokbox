@@ -225,8 +225,8 @@ export async function probeStubModeld(runRoot: string, timeoutMs = 80): Promise<
 export function isModeldFailure(value: unknown): value is { ok: false; code: StubModeldFailureCode } {
   return isRecord(value) && value.ok === false && typeof value.code === "string";
 }
-export function submitPartsFromResponse(value: unknown): { parts: StreamPart[]; dispatched: boolean; assignment: "main" | "agent" } {
+export function submitPartsFromResponse(value: unknown): { parts: StreamPart[]; dispatched: boolean; assignment: "main" | "agent"; modelId: string } {
   if (!isRecord(value) || value.ok !== true || value.method !== "submit") throw new Error("modeld submit failed");
   if (typeof value.modelId !== "string" || value.modelId.length === 0 || !Array.isArray(value.parts) || (value.assignment !== "main" && value.assignment !== "agent")) throw new Error("modeld malformed output");
-  return { parts: value.parts as StreamPart[], dispatched: value.dispatched === true, assignment: value.assignment };
+  return { parts: value.parts as StreamPart[], dispatched: value.dispatched === true, assignment: value.assignment, modelId: value.modelId };
 }

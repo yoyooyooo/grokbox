@@ -170,7 +170,7 @@ describe("Host seam → Unix modeld → admitted stub/fake", () => {
       releases.forEach((r) => r()); const responses = await Promise.all([tom, jerry]);
       expect(JSON.stringify(responses)).not.toMatch(/FAKE_|apiKey|fake:|fake-fingerprint/);
       const next = callStubModeld(f.runRoot, submitRequest(server, "tom-next")); await until(() => pins.length === 3); releases[2]!();
-      expect(await next).toMatchObject({ ok: true, modelId: "fake/fast" }); expect(server.admissionStats().pins).toBe(0);
+      expect(await next).toMatchObject({ ok: true, modelId: "fake/fast" }); expect(server.admissionStats().pins).toBe(3);
       expect(fingerprints).toBe(3); expect(off.counts).toEqual({ fetch: 0, dns: 0, tcp: 0, credential: 0 });
     } finally { releases.forEach((r) => r()); await server.stop(); off.restore(); }
   });

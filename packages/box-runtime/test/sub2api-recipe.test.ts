@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BoxRuntimeError } from "../src/errors.ts";
 import { buildModelEnvelope } from "../src/envelope.ts";
+import { sha256Text } from "../src/hash.ts";
 import { createOpenAiModeldDriver, openAiAccepts } from "../src/modeld-openai.ts";
 import {
   assertRouteAssignment,
@@ -64,7 +65,7 @@ describe("T8 CCS sub2api recipe (offline, no spend)", () => {
         model: luna,
         assignment: "main",
         fingerprint: "a".repeat(64),
-        credentialFingerprint: "b".repeat(64),
+        credentialFingerprint: sha256Text("test-key"),
       },
       envelope: buildModelEnvelope([{ role: "user", content: "hi" }]),
       invocationId: "t8-luna",

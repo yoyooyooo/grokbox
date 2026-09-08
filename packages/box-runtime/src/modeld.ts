@@ -154,6 +154,7 @@ export function createModeld(input: ModeldPorts & {
   }
   async function execute(row: Row, request: AdmitRequest): Promise<AdmitResult> {
     const signal = row.controller.signal;
+    let retainPin = false;
     try {
       let denied = await verify(row);
       if (denied) return fail(denied);
@@ -165,6 +166,7 @@ export function createModeld(input: ModeldPorts & {
           "wrong-generation", "wrong-activation", "wrong-source", "wrong-identity", "disabled", "authority-unavailable"];
         return fail(row.code ?? (error instanceof Error && allowed.includes(error.message) ? error.message as AdmissionFailureCode : "credential-unavailable"));
       }
+      retainPin = true;
       if (envelopeHasImage(request.envelope) && !pinned.model.capabilities.vision) return fail("unsupported-content");
       denied = await verify(row); // after configuration/fingerprint awaits; no await between this check and the effect
       if (denied || signal.aborted) return fail(denied ?? row.code ?? "disconnected");
@@ -178,7 +180,10 @@ export function createModeld(input: ModeldPorts & {
       // Drivers are trusted adapters. Snapshot their bounded output; no mutable driver array retained in the ledger.
       try { parts = frozen(cloneJson(parts) as StreamPart[]); } catch { return fail("driver-failed"); }
       return { ok: true, dispatched: true, modelId: pinned.model.id, assignment: pinned.assignment, fingerprint: pinned.fingerprint, parts };
-    } finally { releasePin(row); }
+    } finally {
+      // First successful pin for the turn stays until disconnect/TTL/stop. Failed pin attempts still release.
+      if (!retainPin) releasePin(row);
+    }
   }
   async function admit(raw: AdmitRequest, clientSignal?: AbortSignal): Promise<AdmitResult> {
     if (stopped) return fail("stopped");

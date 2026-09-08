@@ -10,8 +10,10 @@ import { parseApiKeyRef } from "./models.ts";
  *
  * - `apiKeyRef` is `env:<NAME>` or `file:/absolute` via `parseApiKeyRef` (no `$VAR`, no literals).
  * - Env: missing, non-string, or empty after one `String.prototype.trim()` fails.
- * - File: `O_NOFOLLOW` regular file only; `stat.size` and bytes read must be ≤
- *   `CREDENTIAL_SECRET_MAX_BYTES`; body must be valid UTF-8; then the same trim.
+ * - File: `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` then `fstat`; regular file only.
+ *   FIFOs/sockets/dirs fail as non-regular without blocking the Host or modeld.
+ *   `stat.size` and bytes read must be ≤ `CREDENTIAL_SECRET_MAX_BYTES`; body must
+ *   be valid UTF-8; then the same trim.
  * - Trim follows ECMAScript `trim()` (Unicode Space_Separator plus TAB/LF/VT/FF/CR/BOM/NEL).
  * - Empty after trim fails. Invalid UTF-8 fails. Directories, sockets, fifos, and
  *   symlinks fail as non-regular (`ELOOP` / `!isFile`).
@@ -36,7 +38,7 @@ function trimUtf8Secret(value: unknown): string | null {
 function mapFsError(error: unknown): BoxRuntimeError {
   const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
   if (code === "ENOENT") return new BoxRuntimeError("credential_invalid", "Referenced file credential is missing.");
-  if (code === "ELOOP" || code === "EISDIR" || code === "ENOTDIR") {
+  if (code === "ELOOP" || code === "EISDIR" || code === "ENOTDIR" || code === "ENXIO" || code === "ENOTSUP" || code === "EAGAIN" || code === "EWOULDBLOCK") {
     return new BoxRuntimeError("credential_invalid", "Referenced file credential is not a regular file.");
   }
   return new BoxRuntimeError("credential_invalid", "Referenced file credential is unavailable.");
@@ -54,7 +56,7 @@ function parseRef(ref: string): Effect.Effect<{ kind: "env" | "file"; ref: strin
 function readSecretFile(path: string): Effect.Effect<string, BoxRuntimeError> {
   return Effect.acquireUseRelease(
     Effect.tryPromise({
-      try: () => open(path, constants.O_RDONLY | constants.O_NOFOLLOW),
+      try: () => open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK),
       catch: mapFsError,
     }),
     (file: FileHandle) => Effect.gen(function* () {

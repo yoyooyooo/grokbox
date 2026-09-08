@@ -9,6 +9,13 @@ export type OpenAiGenerateCall = As1GenerateRequest & {
   baseURL: string;
 };
 
+export const OPENAI_LOCAL_ERROR_MESSAGES = {
+  invalid_stream: "The model returned an invalid stream. The request was stopped without retry.",
+  model_error: "The configured model request failed. No fallback model was used.",
+} as const;
+
+export type OpenAiToolNameState = Map<string, string>;
+
 /** Structural AI SDK prompt messages. Mapping stays SDK-package-free. */
 export type OpenAiPromptMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -99,8 +106,15 @@ export function envelopeToOpenAiToolChoice(envelope: ModelEnvelope): "auto" | "n
   return envelope.options.toolChoice;
 }
 
+function invalidToolStream(): As1GenerateChunk {
+  return { type: "error", code: "invalid_stream", message: OPENAI_LOCAL_ERROR_MESSAGES.invalid_stream };
+}
+
 /** Map AI SDK v5 fullStream parts (and v4 aliases) onto As1 chunks. Unknown types are skipped. */
-export function mapOpenAiStreamEvent(part: { type: string } & Record<string, unknown>): As1GenerateChunk | null {
+export function mapOpenAiStreamEvent(
+  part: { type: string } & Record<string, unknown>,
+  toolNames: OpenAiToolNameState = new Map(),
+): As1GenerateChunk | null {
   if (part.type === "text-delta") {
     const text = stringField(part, "text") ?? stringField(part, "textDelta") ?? "";
     return text ? { type: "text", text } : null;
@@ -112,25 +126,36 @@ export function mapOpenAiStreamEvent(part: { type: string } & Record<string, unk
   if (part.type === "tool-input-start" || part.type === "tool-call-streaming-start") {
     const toolCallId = stringField(part, "id") ?? stringField(part, "toolCallId");
     const toolName = stringField(part, "toolName");
-    if (!toolCallId || !toolName) return null;
+    if (!toolCallId || !toolName || toolNames.has(toolCallId)) return invalidToolStream();
+    toolNames.set(toolCallId, toolName);
     return { type: "tool-call-start", toolCallId, toolName };
   }
   if (part.type === "tool-input-delta" || part.type === "tool-call-delta") {
     const toolCallId = stringField(part, "id") ?? stringField(part, "toolCallId");
-    const toolName = stringField(part, "toolName") ?? "tool";
+    if (!toolCallId) return invalidToolStream();
+    const correlatedName = toolNames.get(toolCallId);
+    const explicitName = stringField(part, "toolName");
+    if (correlatedName && explicitName && correlatedName !== explicitName) return invalidToolStream();
+    const toolName = correlatedName ?? explicitName;
+    if (!toolName) return invalidToolStream();
+    if (!correlatedName) toolNames.set(toolCallId, toolName);
     const argsTextDelta = stringField(part, "delta") ?? stringField(part, "argsTextDelta") ?? "";
-    if (!toolCallId) return null;
     return { type: "tool-call-delta", toolCallId, toolName, argsTextDelta };
   }
   if (part.type === "tool-call") {
-    const toolCallId = stringField(part, "toolCallId");
-    const toolName = stringField(part, "toolName");
-    if (!toolCallId || !toolName) return null;
+    const toolCallId = stringField(part, "toolCallId") ?? stringField(part, "id");
+    if (!toolCallId) return invalidToolStream();
+    const correlatedName = toolNames.get(toolCallId);
+    const explicitName = stringField(part, "toolName");
+    if (correlatedName && explicitName && correlatedName !== explicitName) return invalidToolStream();
+    const toolName = correlatedName ?? explicitName;
+    if (!toolName) return invalidToolStream();
+    toolNames.delete(toolCallId);
     const args = "input" in part ? part.input : part.args;
     return { type: "tool-call", toolCallId, toolName, args };
   }
   if (part.type === "error") {
-    return { type: "error", code: "driver-failed", message: sanitizeOpenAiError(part.error) };
+    return { type: "error", code: "model_error", message: OPENAI_LOCAL_ERROR_MESSAGES.model_error };
   }
   if (part.type === "abort") return { type: "finish", reason: "abort" };
   if (part.type === "finish") {
@@ -140,12 +165,9 @@ export function mapOpenAiStreamEvent(part: { type: string } & Record<string, unk
   return null;
 }
 
-export function sanitizeOpenAiError(error: unknown): string {
-  const text = error instanceof Error ? error.message : typeof error === "string" ? error : "openai-driver-failed";
-  return text
-    .replace(/sk-[a-zA-Z0-9_-]+/g, "[redacted]")
-    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
-    .slice(0, 240);
+/** Compatibility export: provider text never crosses the modeld boundary; all failures use one local message. */
+export function sanitizeOpenAiError(_error: unknown): string {
+  return OPENAI_LOCAL_ERROR_MESSAGES.model_error;
 }
 
 function stringField(part: Record<string, unknown>, key: string): string | undefined {

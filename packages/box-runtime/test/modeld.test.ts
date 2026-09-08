@@ -89,7 +89,10 @@ describe("one modeld admission/pin kernel", () => {
       expect(await first).toMatchObject({ ok: true, dispatched: true, assignment: "agent" });
       expect(await duplicate).toMatchObject({ ok: true, dispatched: false });
       expect(await jerry).toMatchObject({ ok: true, assignment: "main" });
-      expect(fingerprints).toBe(2); expect(kernel.stats()).toMatchObject({ dispatches: 2, pins: 0 });
+      expect(fingerprints).toBe(2); expect(kernel.stats()).toMatchObject({ dispatches: 2, pins: 2 });
+      kernel.disconnect(submitRequest(kernel, "tom"));
+      kernel.disconnect(submitRequest(kernel, "jerry"));
+      expect(kernel.stats().pins).toBe(0);
       file = { ...file, assignments: { main: null, agents: {} } };
       expect(await kernel.admit(submitRequest(kernel, "missing"))).toMatchObject({ ok: false, code: "missing-assignment" });
     } finally { kernel.stop(); }
@@ -118,7 +121,10 @@ describe("one modeld admission/pin kernel", () => {
       while (ends.length < 2) await Bun.sleep(1);
       expect(fingerprints).toBe(1); expect(kernel.stats().pins).toBe(1);
       expect(await kernel.admit(submitRequest(kernel, "one", { envelope: buildModelEnvelope([{ role: "user", content: "different" }]) }))).toMatchObject({ ok: false, code: "conflict" });
-      ends.forEach((r) => r()); await Promise.all([one, two]); expect(kernel.stats().pins).toBe(0);
+      ends.forEach((r) => r()); await Promise.all([one, two]); expect(kernel.stats().pins).toBe(1);
+      kernel.disconnect(submitRequest(kernel, "one", { turnId: "same-turn" }));
+      kernel.disconnect(submitRequest(kernel, "two", { turnId: "same-turn" }));
+      expect(kernel.stats().pins).toBe(0);
     } finally { kernel.stop(); }
   });
 
@@ -135,7 +141,7 @@ describe("one modeld admission/pin kernel", () => {
       const next = { ...FAKE_BINDING, generationId: "b".repeat(64), activationId: "new-operation" };
       fact = { state: "committed", host: next };
       expect(await kernel.admit(submitRequest(kernel, "new", { host: next }))).toMatchObject({ ok: true });
-      expect(kernel.stats()).toEqual({ dispatches: 2, records: 1, pins: 0 });
+      expect(kernel.stats()).toEqual({ dispatches: 2, records: 1, pins: 1 });
     } finally { kernel.stop(); }
   });
 

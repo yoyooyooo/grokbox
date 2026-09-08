@@ -334,11 +334,11 @@ export function decideRouteSession(file: ModelsFile, agentId?: string): RouteSes
   return { kind: "managed", modelId: record.id, assignment: "agent" };
 }
 
-/** Bounded no-follow regular-file read for preload/hook. Never mkdir or repair. */
+/** Bounded no-follow nonblocking regular-file read for preload/hook. Never mkdir or repair. */
 export function loadModelsFileSync(root: string): ModelsFile | null {
   let fd: number | undefined;
   try {
-    fd = openSync(modelsPath(root), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    fd = openSync(modelsPath(root), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK);
     const info = fstatSync(fd);
     if (!info.isFile() || info.size > OBSERVATION_MAX_BYTES) return null;
     const bytes = Buffer.alloc(OBSERVATION_MAX_BYTES + 1);

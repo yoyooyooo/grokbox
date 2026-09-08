@@ -1,7 +1,9 @@
+import { timingSafeEqual } from "node:crypto";
 import { jsonSchema, streamText, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { JSONSchema7 } from "ai";
 import type { ToolDefinition } from "./envelope.ts";
+import { sha256Text } from "./hash.ts";
 import { createAs1ModeldDriver, type As1GenerateChunk } from "./modeld-as1.ts";
 import type { ModeldDriver } from "./modeld.ts";
 import type { ModelRecord } from "./models.ts";
@@ -9,14 +11,25 @@ import {
   envelopeToOpenAiMessages,
   envelopeToOpenAiToolChoice,
   mapOpenAiStreamEvent,
+  OPENAI_LOCAL_ERROR_MESSAGES,
   openAiAccepts,
   openAiApiMode,
   sanitizeOpenAiError,
   type OpenAiGenerateCall,
+  type OpenAiToolNameState,
   type OpenAiStreamEvent,
 } from "./modeld-openai-map.ts";
 
-export { openAiAccepts, openAiApiMode, envelopeToOpenAiMessages, mapOpenAiStreamEvent, sanitizeOpenAiError };
+export {
+  openAiAccepts, openAiApiMode, envelopeToOpenAiMessages, mapOpenAiStreamEvent, sanitizeOpenAiError,
+  OPENAI_LOCAL_ERROR_MESSAGES,
+};
+
+function credentialMatchesPin(secret: string, fingerprint: string | null): boolean {
+  if (!fingerprint || !/^[a-f0-9]{64}$/.test(fingerprint)) return false;
+  const actual = sha256Text(secret);
+  return timingSafeEqual(Buffer.from(actual, "utf8"), Buffer.from(fingerprint, "utf8"));
+}
 export type { OpenAiApiMode, OpenAiGenerateCall, OpenAiStreamEvent } from "./modeld-openai-map.ts";
 
 /**
@@ -41,10 +54,12 @@ export function createOpenAiModeldDriver(input: {
       const events = input.streamEvents
         ? await input.streamEvents(call)
         : await liveOpenAiEvents(call, input);
+      const toolNames: OpenAiToolNameState = new Map();
       for await (const event of events) {
         if (request.signal.aborted) throw new Error("cancelled");
-        const chunk = mapOpenAiStreamEvent(event);
+        const chunk = mapOpenAiStreamEvent(event, toolNames);
         if (chunk) yield chunk;
+        if (chunk?.type === "error") return;
       }
     },
   });
@@ -58,7 +73,9 @@ async function liveOpenAiEvents(
   },
 ): Promise<AsyncIterable<OpenAiStreamEvent>> {
   const apiKey = await input.resolveApiKey(call.pin.model, call.signal);
-  if (!apiKey) throw new Error("credential-unavailable");
+  if (!apiKey || !credentialMatchesPin(apiKey, call.pin.credentialFingerprint)) {
+    throw new Error("credential-unavailable");
+  }
   const openai = createOpenAI({
     apiKey,
     baseURL: call.baseURL,
@@ -87,8 +104,8 @@ async function liveOpenAiEvents(
 async function* mapLiveStream(stream: AsyncIterable<{ type: string } & Record<string, unknown>>): AsyncIterable<OpenAiStreamEvent> {
   try {
     for await (const part of stream) yield part;
-  } catch (error) {
-    yield { type: "error", error: sanitizeOpenAiError(error) };
+  } catch {
+    yield { type: "error" };
   }
 }
 
@@ -106,9 +123,11 @@ function toSdkTools(definitions: ToolDefinition[]): ToolSet | undefined {
 
 export function as1ChunksFromOpenAiEvents(events: Iterable<OpenAiStreamEvent>): As1GenerateChunk[] {
   const chunks: As1GenerateChunk[] = [];
+  const toolNames: OpenAiToolNameState = new Map();
   for (const event of events) {
-    const chunk = mapOpenAiStreamEvent(event);
+    const chunk = mapOpenAiStreamEvent(event, toolNames);
     if (chunk) chunks.push(chunk);
+    if (chunk?.type === "error") break;
   }
   return chunks;
 }

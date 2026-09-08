@@ -29,7 +29,7 @@ export type StubRouteDriver = {
   vision?: boolean;
   parallel?: "allow" | "fail-closed";
   stream?: (request: StubRouteSubmit) => AsyncIterable<StreamPart> | Promise<AsyncIterable<StreamPart>>;
-  submit?: (request: StubRouteSubmit) => Promise<{ parts: StreamPart[]; dispatched: boolean; assignment?: "main" | "agent" }>;
+  submit?: (request: StubRouteSubmit) => Promise<{ parts: StreamPart[]; dispatched: boolean; assignment?: "main" | "agent"; modelId?: string }>;
   disconnectInvocation?: (invocationId: string) => Promise<void>;
   resolveCredential: () => never; openNetwork: () => never;
 };
@@ -70,8 +70,17 @@ export function createModeldRouteDriver(runRoot: string, binding?: HostBinding):
       if (isModeldFailure(response)) {
         throw new VisibleStreamError(response.code === "driver-failed" ? "provider" : "admit", "model_error", "modeld admission failed");
       }
-      try { return submitPartsFromResponse(response); }
-      catch { throw new VisibleStreamError("normalize", "model_error", "modeld malformed output"); }
+      try {
+        const result = submitPartsFromResponse(response);
+        if (result.modelId !== request.modelId) {
+          throw new VisibleStreamError("normalize", "model_error", "modeld malformed output");
+        }
+        return result;
+      }
+      catch (error) {
+        if (error instanceof VisibleStreamError) throw error;
+        throw new VisibleStreamError("normalize", "model_error", "modeld malformed output");
+      }
     } catch (error) {
       entry.unknown = true;
       if (error instanceof VisibleStreamError) throw error;
@@ -306,6 +315,9 @@ export function createSessionSeam(config: SessionSeamConfig) {
           if (driver.submit) {
             try {
               const result = await driver.submit(submit);
+              if (typeof result.modelId === "string" && result.modelId !== modelId) {
+                throw new VisibleStreamError("normalize", "model_error", "modeld malformed output");
+              }
               if (result.assignment) slot.assignment = result.assignment;
               if (!result.dispatched) {
                 slot.admission = "duplicate";
