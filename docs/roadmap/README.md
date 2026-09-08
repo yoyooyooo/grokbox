@@ -4,7 +4,7 @@ This directory contains the accepted box-runtime implementation plan and deferre
 
 ## Active implementation plan
 
-[Box-runtime implementation plan](box-runtime-plan.md) is the single Current Home for its forward execution order, contracts, owners, and phase exits. Use it for Phase 0–4 and T13–T16 work. The dated `2026-09-08-box-runtime-next.md` is only a redirect; intermediate comparison and review reports are not required for day-to-day work.
+[Box-runtime implementation plan](box-runtime-plan.md) is the single Current Home for its forward execution order, contracts, owners, and phase exits. Use it for Phase 0–4 and T13–T16 work. Its normalization, patch-surface and scope choices are recorded in the [2026-09-08 adjudication](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md); the plan already incorporates them and is sufficient for daily execution. The dated `2026-09-08-box-runtime-next.md` remains only a redirect, not a parallel plan.
 
 ## Authority
 

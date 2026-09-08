@@ -30,7 +30,9 @@
 
 ## 架构与所有权
 
-**Host 负责 Agent 产品；Host compatibility leaf 只做版本适配；grokbox 内核负责每个逻辑 STEP 的唯一准入与执行生命周期；CLI/WebUI 只调用共同用例。**
+**Host 负责 Agent 产品；Host compatibility leaf 与 provider codec 完成双向归一化；grokbox 内核负责每个逻辑 STEP 的唯一准入与执行生命周期；CLI/WebUI 只调用共同用例。**
+
+Host → Provider 保真传递 Host 已选择的上下文；Provider → Host 将模型输出重整为原有 PromptSession、session/executor 与 `fullStream` 合同，让 Host 继续管理会话、store、工具与 SendToUser。为这两个方向保留必要的 codec/normalizer 抽象，不把“薄接缝”解释成只转发 prompt 或最终文本。见 [ADR D1](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d1--bidirectional-normalization)。
 
 ```text
 Grok Bot Host
@@ -38,7 +40,7 @@ Grok Bot Host
   tools / SendToUser / Transcript / Memory / Gateway publish
     │
     ▼
-Host compatibility leaf（preload / 两处精确切片 / 同步 session ABI）
+Host compatibility leaf（preload / 默认两处薄切片 / 同步 session ABI）
     │ Host identity + TURN + STEP + expected selection + ContextSnapshot
     ▼
 grokbox admission / lifecycle kernel（modeld / box-runtime）
@@ -47,7 +49,8 @@ grokbox admission / lifecycle kernel（modeld / box-runtime）
     ├─ ModelBackend port ── AI SDK / Fake / 经准入的 pi、Cursor adapters
     └─ bounded inference events / safe observations
     │
-    └─ Host-facing stream / outcome → Host 执行工具与产品交付
+    └─ provider events / outcome → Host normalizer → 原 PromptSession/fullStream
+                                                    → Host 会话/store/工具/SendToUser
 
 CLI ──────────┐
 本盒 WebUI API ├─ shared config / control / observation use cases
@@ -55,11 +58,11 @@ CLI ──────────┐
 ```
 
 - **Host 唯一拥有**：Agent loop、工具授权/执行、身份与 root assembly、上下文选择与 compact materialization、Memory/Transcript writer、SendToUser、官方 renewal 协议、Gateway publish。
-- **grokbox 内核拥有**：per-agent admission、不可变模型绑定、credential 身份复核、输入验证/保真编码、provider invocation、流/取消/终态/unknown/退休。
-- **grokbox 控制面拥有**：配置发布、兼容性验证与批准记录、获授权采用的 lease/artifact/guardian/信号/等待/commit/recovery。保留同一 coordinator，不增加第二 writer。
+- **grokbox 内核拥有**：per-agent admission、不可变模型绑定、credential 身份复核、输入验证/保真编码、provider invocation、输出归一化及流/取消/终态/unknown/退休。它交还 Host-compatible 结果，不接管 Host session/store writer。
+- **grokbox 控制面拥有**：配置发布、兼容性验证与批准记录、获授权采用的 lease/artifact/guardian/信号/等待/commit/recovery。保留同一 coordinator，不增加第二个 Host process-mutation writer；CLI/UI 的配置保存仍进入共同用例。
 - **客户端拥有**：用户意图、草稿和观察投影，不拥有模型绑定、运行状态或发布事实。事件与 status 是证据，不是恢复命令或配置权威。
 
-保持现有 private workspaces 与一个 published `grokbox` 包。按变化、信任与生命周期边界隔离代码，不为每个名词生成新包或 Service。
+保持现有 private workspaces 与一个 published `grokbox` 包。按变化、信任与生命周期边界隔离代码，不为每个名词生成新包或 Service。Host compact 决定当前上下文窗口，长期事实由 Host-owned Memory 蒸馏承载；不以 store.db 历史补写抵消 compact，live caps 始终 unset。
 
 ## 执行顺序与共同门禁
 
@@ -71,35 +74,34 @@ Phase 0：默认安全与输入保真
        └→ Phase 4：已确认 overflow 的 Host compact + 深层诊断
 ```
 
-Phase 2–4 分别满足自己的依赖后推进。T13 最小状态语义从 Phase 1 开始，先于可写 WebUI；Phase 4 **不等待所有 T16 backend 完成**。安全只读 console 可提前准备，不把全量控制面重构设为只读前置条件。
+阶段表示能力依赖，不把无关小修串成阻塞链。Phase 0 优先交付 A3fu/A7，A6 独立收尾；RouteBinding 首切不等待完整 streaming、退休或 WebUI CAS。A8 真流、随长寿命根闭合的 A9、T13 最小 facets 仍是 **Phase 1 明确工作**，不是随意后移的 polish。T13 从 Phase 1 早期定义并交付，可与 RouteBinding 并行，不等 WebUI 出现才补。Phase 2–4 分别满足自己的依赖后推进；Phase 4 **不等待所有 T16 backend 完成**。
+
+按消融判断切片是否必要：D = 可诊断/可观测性，S = live STEP 稳定与安全，H = Host harness 变动下的可维护性。删除后损害任一轴的归一化、准入、流或资源边界应保留；不推动这些性质、也非当前产品出口必需的工件族、Service 层、全量退休/图表证明延后。不为“防过度设计”删掉核心合同，也不以完整架构外形作为首切前置。见 [ADR D12](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d12--ablation-guided-scope)。
 
 每个切片接回唯一生产路径，记录具体性质、依赖现实、未证明项与退出条件。使用声明的 Bun `1.3.14`、frozen lock 和项目 typecheck/相关测试；既有质量门失败须显式处理，不用局部 green 宣称整个 phase 完成。默认测试不得访问现役 Host、真实 credential 或 provider；需要时使用合成 Host、mock fetch、隔离文件/transport 与 disposable process。真实 canary、采用和 provider spend 另行授权。
 
 ## Phase 0：默认安全与输入保真
 
-保持现有两处 Host seam 不变，完成三个局部修复，不引入新 hook 或 compact：
+本阶段沿现有 seam 完成输入与日志局部修复，不需要新增 Host patch 或 compact。先做 A3fu/A7；A6 可以并行或随后完成，不作为工具保真及其后续内核切片的前置：
 
-1. **A6：关闭默认 raw Host sink。** 移除临时 supervisor 默认向 `/tmp/sand-host-adopt.err` 捕获 stdout/stderr 的行为；保留 T12 renewer allowlist 与传递。确需诊断时使用独立 opt-in、受保护、有界的能力，不把原始输出捕获作为产品启动依赖。
-2. **A3fu：完整传递工具结果。** 同时处理 tool-role、user-contained 与混合 text/tool-result 内容。保留工具相关性、结果与错误事实，以 CCS-safe 文本编码；不能静默丢失结果，不能补一个 Human user 来通过测试。无法安全表达的输入在 provider effect 前明确拒绝。
-3. **A7：去掉隐式选择策略。** 取消默认 1500/8000 字符截断及按 `SAND_HIDDEN`/`ack-redrive` 等正文词删除整行的规则。只有 profile 已验证的结构/provenance 才能标识控制消息；无法证明时不得把普通用户文本判为噪声。Host-selected 内容保真，超出明确安全预算可见拒绝，不自行缩窗。
+1. **A3fu：完整传递工具结果。** 同时处理 tool-role、user-contained 与混合 text/tool-result 内容。保留工具相关性、结果与错误事实，以 CCS-safe 文本编码；不能静默丢失结果，不能补一个 Human user 来通过测试。无法安全表达的输入在 provider effect 前明确拒绝。
+2. **A7：去掉隐式选择策略。** 取消默认 1500/8000 字符截断及按 `SAND_HIDDEN`/`ack-redrive` 等正文词删除整行的规则。只有 profile 已验证的结构/provenance 才能标识控制消息；无法证明时不得把普通用户文本判为噪声。Host-selected 内容保真，超出明确安全预算可见拒绝，不自行缩窗。
+3. **A6：关闭默认 raw Host sink。** 独立移除临时 supervisor 默认向 `/tmp/sand-host-adopt.err` 捕获 stdout/stderr 的行为，优先恢复默认 ignore；保留 T12 renewer allowlist 与传递。不为这个修复先建设诊断产品，也不以源码变更擅自清理运行中 fd 或遗留文件。
 
 **出口**：
 
 - 默认路径无 prompt/error/Host-raw 正文 dump；A1/A2 的安全回归保持通过。
-- actual Chat 与 Responses 编码请求都保留两种工具结果形状及长结果尾部；无额外 Human user，无 raw `role=tool`。
+- actual Chat 与 Responses 编码请求都保留 tool-role、`user.content` 混合 text/tool-result 及长结果尾部；无额外 Human user，无 raw `role=tool`。A3fu/A7 可先独立验收，A6 未完成不阻塞该出口；Phase 0 全部完成仍须关闭默认 raw sink。
 - 用户引用控制词不会丢句；无 STEP 在已完成工具 STEP 之后仍拒绝，零旧工具 replay、零额外 dispatch。
 - 不 re-adopt，不改变官方 renewal、非目标 Bot 路由或 Host compact。A8/A9 归 Phase 1，不计入本阶段完成声明。
 
 ## Phase 1：准入、Host 接缝与 Effect 生命周期内核
 
-### 1.1 建立 RouteBinding 与共享配置发布
+### 1.1 建立 RouteBinding 与薄模型选择字段
 
-区分两个修订：
+先在现有 session ABI 的构造入参/本地状态上携带少量有界字段：agentId、TURN、modelId 与 `selectionRevision`，让 `getModelId()`、STEP submit 与返回结果一致。复用现有有界配置读取和纯选择计算，不先建设 HostRouteProjection 文件族、额外发布器或修订数据库。完整 provider admission、canonical activation 和 credential 仍归 modeld；Host 不取得 secret 或自行访问 provider。见 [ADR D5](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d5--thin-host-visible-selection)。
 
-- **`configRevision`**：canonical 配置的 CAS 标识，供 CLI/UI 防止读改写丢更新。
-- **`selectionRevision`**：某 Bot 有效选择的标识，覆盖 opt-in、backend/model、endpoint、credential reference 身份、capabilities/限制与所需 codec。它不是 Host epoch、service generation 或时间戳。其它 Bot 的无关配置变化不使已接受的 binding 失效。
-
-配置 writer 发布最小无秘密 **HostRouteProjection**，供同步 `getModelId()` 读取 agent/modelId/selectionRevision。Host 不解析完整 provider catalog，不取得 secret 或 canonical activation 文件。projection 是派生读模型，不增加配置权威。
+`selectionRevision` 标识某 Bot 的有效选择，覆盖 opt-in、backend/model、endpoint、credential reference 身份、capabilities/限制及所需 codec。它不是全局配置时间戳、Host epoch 或 service generation；其它 Bot 的保存不应使已接受的 binding 失效。`configRevision` 只用于有第二 writer 后的防覆盖/CAS，不作为本切片的文件体系或服务前置。
 
 按以下规则执行：
 
@@ -108,19 +110,24 @@ Phase 2–4 分别满足自己的依赖后推进。T13 最小状态语义从 Pha
 3. 普通配置更新影响下个新 TURN。deactivation、Host generation 变化、credential 身份不匹配仍可拒绝继续；不得换账号/endpoint 完成旧 turn。
 4. TTL/服务重启后保留已证明 binding，或明确拒绝旧 TURN；不能用新 STEP 重新握手后静默 re-pin。新 TURN 可以握手新服务代。
 
-CLI/UI 共用一次配置 mutation 程序：短锁 → 重读 models/desired → expected revision 与业务 gate → unique protected staging → read-back/sync/rename → source receipt。现有 CLI writer 同步接入，不只给 UI 加锁。配置/projection 多文件发布不宣称原子事务；失败返回真实 partial/pending，读端错配拒绝，不回写旧文件伪造回滚。不同客户端冲突保留意图并重读，不自动覆盖。
+保留一个窄配置读/改/保存入口、schema/gate 与基本原子发布，先按单 writer 路径推进，不声称它具有并发写保证。WebUI 或其它真实第二 writer 出现时，再在同一入口补足短锁、重读与 expected revision 检查；不要为尚未出现的并发先设计通用事务/CAS 服务。RouteBinding 的出门前核对现在就做，不能随 CAS 一起延期。
 
 ### 1.2 建立 ContextSnapshot 与 Host compatibility leaf
 
 **ContextSnapshot** 只含 Host 已选择的当前输入：resolved root/system、selected messages、tool schema/相关性、generation constraints，以及 snapshot revision/digest。普通 messages/tools/options 数据不携带可执行函数、SDK session 或 credential。
 
-把转换隔离为三段：Host ABI decode → canonical snapshot validation → provider-specific encode。内核决定“能否送、如何保真编码”，不决定“留哪段历史”。CCS codec 保持 text + SendToUser bubble + tool stdout fold；其它 adapter 只在验证自己的能力后编码，不继承未证明的 endpoint workaround。
+建立两个方向的归一化链：
+
+- **Host → Provider**：Host ABI decode → canonical snapshot validation → provider-specific encode。保真保留 Host-selected 内容，包括 user-contained tool-result；不静默截断、不重选历史。CCS codec 保持 text + SendToUser bubble + tool stdout fold，其它 adapter 只采用已验证的自身编码规则。
+- **Provider → Host**：provider stream/result decode → canonical events/outcome → 原 PromptSession/session/executor/`fullStream` 形状。保持同步返回 handle、独立 response/usage、modelId 对齐、Array state/messages、工具 id 相关及 finish/response 一致性；由 Host 继续 append 会话、写 store、执行工具与 SendToUser。不以一个最终 string 或自建会话仓库替代原合同。
 
 每个支持的 Host profile 必须证明 required root 的来源和恰好一次出现；只允许 profile 明确证明的空 root。无法判断 root 是否已在 executor state 中时标 unsupported/unproven，不静默当作没有。`rootPromptMessagesJson`、`sessionOptions`、`getExecutor` 私有形状仅留在 compatibility leaf，不进入 kernel/UI 合同；不得从 store.db 或多个隐式来源拼出另一份 root/history。
 
-保留 CJS preload、两处精确切片、source/anchor/transformed SHA 与 compile 校验。兼容性集合绑定 Host source/profile、bridge artifact digest、Host ABI、wire/codec/features，并包含适用的 supervisor/launch/官方 renewal 能力证据。先观察、生成候选、验证、批准，再经显式授权采用；只匹配锚点不等于批准。
+优先保留 CJS preload 和当前两处薄切片；**切片数量不是永久硬禁令**。当额外 Host patch 的稳定性或能力收益明显大于新增耦合时，允许扩展：明确目标 Host 版本、所需事实、影响范围与失效/退出路径，验证双向归一化、未覆盖 Bot 与恢复边界，并通过精确 profile 审查。当前代码仍按两处 profile 验证，扩展必须同时更新相关 schema/validator/contract tests，不能跳过现有 gate。见 [ADR D2](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d2--evidence-bounded-host-patch-surface)。
 
-所需 root、turn-close 或 compact 事实若无法从已批准 seam 取得，停止受影响能力并记录缺口；本计划不授权第三处 monkey-patch。未知组合在尚可返回 `originalSession` 时遵守 T11；已经 wrap 的 managed STEP 只拒绝/可见失败，出门后不 official replay。
+保留 source/anchor/transformed SHA 与 compile 校验；先用已有 source/profile、bridge digest、ABI/wire 特征固定兼容性，再按实际 Host/launch 变化补所需 supervisor/renewal 证据，不先铺满工件矩阵。候选生成、验证、批准与获授权采用分开；只匹配锚点不等于批准。
+
+所需 root、turn-close 或 compact 事实不可得时，不编造数据或绕 gate；按收益/耦合规则评估额外 patch，未获证明和批准前停止受影响能力。未知组合在尚可返回 `originalSession` 时遵守 T11；已经 wrap 的 managed STEP 只拒绝/可见失败，出门后不 official replay。
 
 ### 1.3 建立 Effect DI 与 ModelBackend port
 
@@ -128,7 +135,7 @@ CLI/UI 共用一次配置 mutation 程序：短锁 → 重读 models/desired →
 
 | 能力 | 合同与 owner |
 |---|---|
-| 配置/发布 | runtime 用例拥有 parser、CAS、引用与 desired gate；Effect 能力提供受控文件/锁/发布 IO。 |
+| 配置/保存 | runtime 用例拥有 parser、引用与 desired gate；Effect 能力提供所需 IO。第二 writer 出现后在同一入口补轻量防覆盖，不为每个文件锁建立 Service。 |
 | Activation authority | 内核读取 committed/pending/disabled/unavailable 事实；control owner 写入。provider adapter 不获得签字/进程权限。 |
 | Credential/auth | service/backend 内部 scoped access 与身份/fingerprint 校验；secret 不进入 pin DTO、IPC、日志或 UI。 |
 | **ModelBackend** | 接受已 admitted 的单次推理输入，产出 typed failure 与 bounded inference events；不执行工具、不写 Host 数据。 |
@@ -150,7 +157,7 @@ confirmed coordinator operation Scope
 
 每个真实进程/命令一个运行根，不在每个 Bot/request 创建 Runtime；官方 Host/preload 保持 **Effect-free、SDK-free**。turn 共享资源不受首个 STEP 的取消意外支配。Layer 构造/readiness 不隐式发模型请求；backend 启动/认证资源有明确权限与 owner。
 
-在新长期 root 启用前闭合 **A9**：acquire 与 finalizer 注册成对、partial acquire 可收尾、启动失败/abort/stop 对称释放 Scope 与 listeners。停止服务先拒绝新工作，再有界取消/drain，释放 owned resources；不等待不合作的外部 driver 永远结束，保留 unknown。不要把旧 Promise/timer 编排包一层 Effect 就宣布完成。
+在 Phase 1 接入/扩展长寿命 Effect root 时，**同一生命周期切片闭合 A9**：acquire 与 finalizer 注册成对、partial acquire 可收尾、启动失败/abort/stop 对称释放 Scope 与 listeners。这是低成本的必要边界，不因外层仍有 Promise facade 而略过，也不要求为此重写所有纯逻辑。停止服务先拒绝新工作，再有界取消/drain，释放 owned resources；不等待不合作的外部 driver 永远结束，保留 unknown。不要把旧 Promise/timer 编排包一层 Effect 就宣布完成。见 [ADR D8](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d8--effect-root-and-resource-ownership)。
 
 控制面沿既有 coordinator 渐进收口重 IO 与 operation lifetime；独立 guardian 保留，不改成随父进程死亡的 Fiber。**J13 保持 Host append / watchdog compact**，不借本阶段改 journal placement 或新增 terminal-report IPC。
 
@@ -158,7 +165,9 @@ confirmed coordinator operation Scope
 
 每个逻辑 STEP 只有一个 admission/dispatch owner，当前默认一个 attempt。adapter 不自行 retry、failover 或换模型；T14b 的恢复例外由 Phase 4 的明确 attempt 协议控制。
 
-- 接通 provider → canonical events → Unix → Host consumer，修复 **A8**。为 active concurrency、全链路 bytes/parts、背压和慢 reader 设界；terminal 只带终态/usage，不再重复运输全文。response/usage 完成不依赖 UI reader。
+**Provider 支持流式输出时，在 Phase 1 完成 A8 真流与 Host `fullStream` consumer。** 官方 Host 的 Transcript/SendToUser 消费链是 stream-oriented，不能将它视为仅 TTFT 美化而后移。Provider 只能 batch 时明确披露 buffered 能力，仍归一化为原 Host handle/fullStream 合同，不伪造 provider streaming。见 [ADR D7](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d7--true-streaming-in-phase-1)。
+
+- 接通 provider → canonical events → Unix → Host normalizer/consumer。为 active concurrency、全链路 bytes/parts、背压和慢 reader 设界；wire terminal 只带终态/usage，不再重复运输全文。Host response/usage 完成不依赖 UI reader。
 - 保留 text/reasoning、tool-call 相关性与完整终态。区分 stop、tool-calls、length、error、cancel、unknown；EOF 缺 terminal 不补成功。验证工具参数/并行策略后才按 Host 合同放行；reader replay 不变成再次执行工具。
 - usage 未提供则 unavailable；若 Host ABI 必须接收数字，兼容投影不得被当成真实计量。当前 fixture 数字不能进入预算/费用承诺。
 - 分开 envelope bytes、encoded request bytes、system/messages/tools 大小、可信 token limit 与 response reserve。传输上限不是 context window；字符数不是精确 tokens。预算未知如实标识，不能按模型名猜窗口。
@@ -166,11 +175,11 @@ confirmed coordinator operation Scope
 
 临时旧 wire codec 只接同一内核，不双 dispatch。无法携带 revision/features 的旧 bridge 不宣称具有新保护；完成协商与获授权迁移、确认旧客户端退休后移除兼容路径。
 
-### 1.5 建立安全 correlation 与 T13 最小状态语义
+### 1.5 早期交付 T13 最小 facets 与安全 correlation
 
-从 kernel 已校验的上下文生成 HostEpoch、Bot、TURN、STEP、ServiceEpoch、selection/binding revision，或可在安全 DTO 中关联的 opaque request reference；记录 phase、dispatch state、观察时间与 evidence gap。provider 错误仅提供本地枚举，不从 error body 信任关联字段、不恢复 bodySnippet，也不按时间最近邻猜因果。
+从 Phase 1 开始明确并实现这组最小语义，可与 RouteBinding 分切片并行；不等可写 UI 或深层诊断才补。优先复用现有 `model_step_terminal` 的 Host/Bot/TURN/STEP tuple，在 kernel 已校验的边界补必要 ServiceEpoch、selection/binding 关联、phase/dispatch state 与 gap，不先建完整 trace graph。provider 错误只给本地枚举，不从 error body 信任关联字段、不恢复正文、不按时间最近邻猜因果。
 
-在共同 status/observation 用例中分开：
+在共同 status/observation 用例中立即分开：
 
 - bridge/activation evidence；
 - modeld readiness；
@@ -183,13 +192,13 @@ confirmed coordinator operation Scope
 
 ### Phase 1 出口
 
-1. 首次选择竞态、同 modelId 改 endpoint/ref、移除覆盖、不同 Bot 并发更新均不产生错误 credential/provider effect；T10 exact passthrough 保持。
+1. 首次 STEP 的选择竞态（同 modelId 改 endpoint/ref、移除覆盖等）在错误 credential/provider effect 前拒绝；其它 Bot 配置变化不误失效当前 binding，T10 exact passthrough 保持。
 2. 长工具空档、首 STEP 取消、TTL、service restart、重复 STEP 不导致旧 TURN 换 binding 或重复 dispatch。
-3. 两个自行编写、state/root/reader 顺序不同的 Host-shaped adapters 复用同一内核；required root 缺失拒绝，root 恰好一次；实际 preload bundle 和 import-time 行为保持 Effect/SDK-free。
-4. terminal 被 barrier 阻住时 Host reader 已见首 chunk；慢/晚 reader 不阻塞 completion；取消/断线无迟到成功或额外工具；EOF 与 usage unknown 如实表达。
-5. partial acquire/失败/中断/stop 无 orphan listener、socket、Fiber 或 backend process；只释放 owned resource。
-6. 越过当前累计 1024 STEP 的合法退休/有界运行测试通过，且旧身份仍不可重投，才能声明长期 lifecycle 完成。未达到时仅交付明确限额的局部能力。
-7. shared CAS、safe correlation 与 T13 facets 可由 CLI/API 同义消费；日志缺失/截断不冒充“没有调用”。
+3. 两个自行编写、state/root/reader 顺序不同的 Host-shaped adapters 复用同一内核；输入保真，返回对象满足原 PromptSession/session/fullStream，required root 缺失拒绝、出现时恰好一次。额外 patch 若采用，须有收益/耦合、精确 profile 与双向合同证明；实际 preload 保持 Effect/SDK-free。
+4. 在支持 streaming 的 Provider 上，terminal 被 barrier 阻住时 Host reader 已见首 chunk，且 Host 消费链能继续处理 Transcript/SendToUser；慢/晚 reader 不阻塞 completion，取消/断线无迟到成功或额外工具。buffered Provider 不冒称真流，EOF 与 usage unknown 如实表达。
+5. 长寿命 root 的 partial acquire/失败/中断/stop 无 orphan listener、socket、Fiber 或 backend process；只释放 owned resource。
+6. 达到容量上限时明确拒绝且可观察，旧身份不可重投；不把完整历史退休体系设为 RouteBinding 首切门槛。声明持续运行超过当前 1024 STEP 限额前，再提供合法退休、旧 id 拒绝与有界 soak 证据，不承诺无限精确去重。
+7. 薄模型选择字段、safe correlation 与 T13 最小 facets 早期交付且可由 CLI/API 同义消费；日志缺失/截断不冒充“没有调用”。第二 writer 尚未引入时，WebUI CAS 不是本阶段出口。
 
 ## Phase 2：共享用例上的 WebUI MVP（T15）
 
@@ -199,7 +208,9 @@ confirmed coordinator operation Scope
 
 固定 **同盒** roster 来源与 runtime root，不混用任意 current Profile 的 Bot 与本机 assignments。稳定 agentId 用于提交；身份不确定则阻止写入。catalog GET 只提供安全选项、配置状态与能力披露，不返回 secret、任意 apiKeyRef 路径、带凭据 URL 或原 `models.json` 全对象。
 
-CLI/API 共用 Phase 1 的 typed use cases：
+引入 WebUI 这个第二 writer 时，在 Phase 1 的窄配置入口补**最小防覆盖闭环**：短锁 → 重读 canonical models/desired → `configRevision`/expected revision 检查 → 同一 parser/业务 gate → unique staging 与原子发布 → source receipt。CLI 与 API 都走此入口；不同进程/同进程并发及旧 revision 冲突必须被覆盖，不只串行浏览器内部请求。不增加通用事务服务、多文件版本族或第二配置 SoT；若此前已出现真实并发 writer，按同一条件提前补此闭环。见 [ADR D6](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d6--simple-anti-overwrite-at-the-second-writer)。
+
+保存失败保留真实 partial/unknown，不用旧 JSON 回写伪造回滚；客户端保留草稿并重读，不自动覆盖。UI 复用 Phase 1 早期交付的 T13 最小 facets，不临时解释健康语义。CLI/API 共用以下 typed use cases：
 
 | 能力 | 行为 |
 |---|---|
@@ -272,7 +283,7 @@ UI 分开 draft → saving → saved-awaiting-use 与 observed usage。URL 拥�
 
 无法证明没有已放行副作用时禁止自动恢复。使用本机 attempt identity 保留原 Host TURN/STEP 关联、更新 snapshot hash，并在同一 ledger 限制一次预算；不新造 Host invocationId、不清旧记录绕过去重。重复 compact completion/重连不再 dispatch。
 
-Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry 后失败时立即结束；不循环、不用 grokbox summarizer 补位。用户错误保持固定可见白名单。样本不足或 seam 未证明时维持 open/unavailable，不扩大 hook 面。
+Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry 后失败时立即结束；不循环、不用 grokbox summarizer 补位，长期事实仍由 Host Memory 蒸馏。用户错误保持固定可见白名单。样本不足或 seam 未证明时维持 open/unavailable；需要额外 patch 时遵守收益/耦合审查与精确批准，不以恢复需求绕过 gate。见 [ADR D11](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d11--confirmed-overflow-host-recovery)。
 
 ### 4.2 完成 T13 深层诊断
 
@@ -291,14 +302,14 @@ A3fu/A5–A10 是本计划复用的缺口标签，不增加一套票据系统。
 | 工作 | 当前范围 / 目标 | 阶段 |
 |---|---|---|
 | T10–T12、A1/A2/A4 | 保留 selective passthrough、可见错误、官方能力与已关闭安全路径的回归 | 全程 |
-| A6 / A3fu / A7 | 默认 raw sink、user-contained 工具结果、输入截断/关键词过滤 | 0 |
-| A5 | RouteBinding、两种 revision、首次/续步/TTL/重启与 opt-in | 1 |
+| A3fu / A7；A6 独立收尾 | 工具结果保真、取消隐式截断/关键词过滤优先；默认 raw sink 不阻塞它们 | 0 |
+| A5 | 薄 session 选择字段、RouteBinding、首次/续步/TTL/重启与 opt-in | 1 |
 | [T5b](../tickets/T5b-s2-streaming-ipc.md) / A8 | framing 已有；完成 Host consumer、背压与终态合同 | 1 |
 | A9 / E3 | scoped acquire、admission/credential/stream/stop lifetime | 1 |
 | [T13](../tickets/T13-status-honesty-after-adopt.md) | 最小 shared status facets 先交付；深层恢复/发布诊断后补 | 1 → 2 → 4 |
 | [T14](../tickets/T14-managed-context-compact-on-model-switch.md) / A10 | enums-only observation 已有；补可信本地关联及分类证据 | 1 → 4 |
-| [T15](../tickets/T15-webui-ops-config-storage.md) | shared CAS/use cases、local command boundary、WebUI MVP | 1 → 2 |
-| [T16](../tickets/T16-model-backend-adapters-pi-cursor.md) | DI 已在 Phase 1；逐个准入和实现 pi/Cursor backend | 3 |
+| [T15](../tickets/T15-webui-ops-config-storage.md) | 复用 Phase 1 窄用例；第二 writer 时补轻量 CAS、local command boundary 与 WebUI MVP | 2 |
+| [T16](../tickets/T16-model-backend-adapters-pi-cursor.md) | DI 在 Phase 1 建立；此阶段逐个准入和实现 pi/Cursor backend | 3 |
 | [T14b](../tickets/T14b-host-reuse-compact-on-confirmed-overflow.md) | confirmed context overflow 的 Host compact 与一次恢复 | 4 |
 
 ## 非目标与禁止事项
@@ -307,13 +318,14 @@ A3fu/A5–A10 是本计划复用的缺口标签，不增加一套票据系统。
 - 不将已知拒绝的 Responses raw `role=tool` 恢复为 CCS 通用路径，不用正文关键词、40ms 延迟或无 STEP replay 充当协议。
 - 不建第二 admission/reconciler、`effectMode`、SDK 内部 Agent loop/隐式 retry；不把 Scope 当跨文件事务或 crash recovery。
 - 不引入 authoritative SQLite、UI assignment table、自动 outbox、通用 provider/插件平台或新 npm 包家族；纯 shadow 仅比较映射/投影，不双真实 dispatch。
-- 不在 Host/preload 加 Effect/SDK，不改变两刀/J13/独立 guardian 的边界；缺能力停止受影响路径，不猜接口。
+- 不在 Host/preload 加 Effect/SDK，不改变 J13/独立 guardian 的边界；不未经收益/耦合审查增加 Host patch，也不把“两刀”当成永久硬禁令。未证明能力停止受影响路径，不猜接口。
+- 不先建设模型选择投影文件族、第二 writer 尚未出现的复杂 CAS/事务层或无 D/S/H 收益的架构外形；必要双向 codec、Phase 1 真流和 A9 资源边界不属于可删装饰。
 - 不以 UI 超时、缺事件、candidate overflow 或 publish pending 自动重发/compact/re-adopt；不自动关 circuit、批准未知 profile 或转发远程 runtime mutation。
 - 不以本计划或 offline green 授权 live spend、re-adopt、test1 opt-in、遗留数据清理或已部署能力声明。
 
 ## 立即执行的两个切片
 
-1. **Phase 0 安全与输入保真**：按 A6 → A3fu → A7 完成默认 raw sink 与 codec 小闭环，补 actual Chat/Responses 编码、长工具结果、控制词引用及无 STEP 回归。只改相应 helper/codec 与测试，不加 Host hook、不 re-adopt；完成 Phase 0 出口。
-2. **Phase 1 首个内核切片：RouteBinding**：建立 config/selection revision 与共同发布接缝，让 Host projection → submit → canonical admission 在首次 credential/provider effect 前一致；同 TURN 保持 binding，TTL/restart 拒绝或保留证据，不 main fallback。以现有 AI SDK/Fake 接入共同 Effect 能力边界，先证明配置与生命周期竞态，不先实现 Pi/Cursor 或 compact。
+1. **Phase 0 工具保真切片：A3fu + A7**：先修 user-contained/混合 tool-result、取消隐式截断与关键词删行；用 actual Chat/Responses mock body、长结果尾部与无额外 Human user 的 fixture 验收。A6 默认 raw-fd 关闭作为独立小修并行或随后收尾，不 gate 此切片，也不因关闭 finding 执行 re-adopt/遗留文件清理。
+2. **Phase 1 首个内核切片：RouteBinding**：在现有 session ABI 上携带薄 modelId/selectionRevision，让 `getModelId` → submit → canonical admission 在首次 credential/provider effect 前一致；同 TURN 保持 binding，TTL/restart 拒绝或保留证据，不 main fallback。用当前 AI SDK + Fake 建立 Effect DI ModelBackend port，不先建设投影文件族或 WebUI CAS。
 
-随后按 Phase 1 剩余出口接通 stream、退休、安全 correlation 与 T13 facets，再逐项开放客户端能力。Host ABI、配置/wire schema、backend 能力、Effect pin 或验收结论变化时更新本文及对应产品/架构合同，不另起日期版方案。
+T13 最小 facets 从 Phase 1 早期并行交付；长寿命 Effect root 与 A9 acquire/finalizer 同片闭合；支持流式的 Provider 在 Phase 1 接通双向归一化与 Host fullStream/A8，不因首个 RouteBinding 切片可独立交付而移出本阶段。完整退休证明按持续运行需求补齐，WebUI 第二 writer 出现时才加轻量防覆盖。Host ABI、配置/wire schema、backend 能力、Effect pin 或验收结论变化时更新本文及对应产品/架构合同，不另起日期版方案。

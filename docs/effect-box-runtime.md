@@ -25,7 +25,7 @@
 
 **preload / Host 保持 Effect-free、SDK-free。** 在首次向 Host 可达模块引入 Effect 前，先隔离 server/client 和纯合同的 value imports；验证 preload 实际 bundle contribution、external imports 及 import-time side effects，不只检查 `preload.ts` 的直接 imports，也不把被 tree-shake 的 parsed input 当作已执行代码。
 
-Host 不读 models/attestation，不拥有 provider credential。保留 pinned-profile/exact compile 所需的最小同步 bootstrap 与成功编译后的 marker；marker 不是 committed attestation。外部 operation 负责等待、核对和签字。
+Host 不读 canonical attestation、不拥有 provider credential。允许复用有界模型选择读取，在现有 session ABI 上携带 modelId/selectionRevision 等薄字段；完整 admission 与 credential/provider effect 留在 modeld，不先增加投影文件族。保留 pinned-profile/exact compile 所需的最小同步 bootstrap 与成功编译后的 marker；marker 不是 committed attestation。外部 operation 负责等待、核对和签字。见 [Host seam ADR](decisions/2026-09-08-host-seam-normalization-and-roadmap.md)。
 
 **J13 决策门：当前保留 Host append-only terminal journal，watchdog 仍唯一 compactor。** Journal-via-modeld 尚未接受：不得迁移 writer、新增 terminal-report IPC method 或在 Host 加 Effect。现有锁等待/fsync 是明确的 **decision-gated gap，不是永久豁免**；完整重副作用收口不能跳过它。未来放置变化必须先获 owner 决定，并更新同日志的并发、去重、ack/gap、拒绝/断线/重启合同；模型完成不能冒充 Host normalized delivery。日志失败只影响证据，不改变 Host 回复或工具循环。
 
@@ -39,7 +39,7 @@ Host 不读 models/attestation，不拥有 provider credential。保留 pinned-p
 
 ## 渐进迁移顺序
 
-这些标签表示局部接缝，不表示交付状态或 live 授权。每步接回相同生产入口；临时 Promise 边界不得变成永久双执行器。
+这些标签表示局部接缝，不表示交付状态或 live 授权。每步接回相同生产入口；临时 Promise 边界不得变成永久双执行器。Phase 1 接入/扩展长寿命 root 时同片闭合 A9 acquire/finalizer，并用现有 AI SDK + Fake 建立 ModelBackend 的共同 Effect DI 边界；不为此把每个纯 helper 或文件锁单独 Service 化。具体顺序见[实施方案](roadmap/box-runtime-plan.md)。
 
 | 接缝 | 最小闭环 |
 |---|---|

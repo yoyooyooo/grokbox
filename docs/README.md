@@ -29,6 +29,8 @@ Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokb
 
 Current behavior is owned by source and executable tests. Product and architecture documents may describe accepted targets. Compatibility observations can invalidate assumptions but do not silently redefine product behavior.
 
+The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normalization-and-roadmap.md) records binding normalization, patch-surface and execution-scope decisions. They are incorporated into the [box-runtime plan](roadmap/box-runtime-plan.md); the ADR is not a second roadmap.
+
 ## Freshness
 
 Review the relevant current homes when any of these change:
