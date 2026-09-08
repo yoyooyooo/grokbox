@@ -16,7 +16,7 @@
 ## 版本与唯一生产路径
 
 - `effect` 精确固定 **`4.0.0-beta.107`**，根 Bun named catalog 为 **`effect-v4-beta`**；workspace 使用 `"effect": "catalog:effect-v4-beta"`。禁止 caret/tilde、dist-tag、RC 或混用 v3；升级必须显式更新 catalog、生成锁并复验。
-- E0 只增加 `effect`。不安装 AI SDK、`@effect/platform-*`、Vitest 或另换测试框架；发布目标仍是 Node 20+，Bun 是开发工具。
+- E0 只增加 `effect`。不安装 AI SDK、`@effect/platform-*`、Vitest 或另换测试框架；发布目标仍是 Node 20+，Bun 是 package manager 与本地测试/脚本工具。runtime-kernel / Host / modeld / CLI runtime 禁止 `bun:*` 与 Bun globals。
 - Fake/Live **Layers 替换能力，不替换业务程序**。重建目标是 CLI/API → kernel commands、Host IPC → kernel inference，各只有一套程序；旧 `createModeld`/coordinator 名称不是兼容承诺。按[实施规格](roadmap/box-runtime-impl-spec.md)撤旧入口，无第二 reconciler/admission kernel、旧 facade 或 `effectMode`。
 - 每个真实进程/命令生命周期一个执行根；callback 需要时复用其 ManagedRuntime 并明确 dispose。Promise facade 只在宿主边界调用同一 Effect 实现，不在每个 helper/Bot/request 自建 Runtime。
 - 重建后的 AI SDK 只能实现 **ModelBackend Service**（唯一 port，kernel 定义、box-runtime backend 实现）。Effect 拥有调用与流的 lifetime/interrupt/resources；SDK 不执行 tools/Agent loop、不写 Transcript/Memory/SendToUser。T4/T4b 的 A+S1/ModeldDriver/complete-buffer 是历史 substrate，不能作为永久 Promise shim 保留；T23–T26 原地换成唯一 port/stream/root，Host fullStream 真实接通。SDK 仍仅在 box-runtime backend；测试默认零真实 spend。

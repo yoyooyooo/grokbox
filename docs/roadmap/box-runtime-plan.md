@@ -68,17 +68,17 @@ CLI ──────────┐
 
 ```text
 Phase 0：T20 最小骨架切割 → T21 输入保真（T22 raw fd 独立）
-  → Phase 1：早期 T27 facets → DI / binding / Effect root / Host 真流 / Controller
-       ├→ Phase 2：共享命令边界上的 WebUI MVP
-       ├→ Phase 3：T16 backend qualification + implementation
+  → Phase 1：早期 T27 facets → DI / binding / Effect root / Host 真流 / Controller（默认主链止于此）
+       ├→ Phase 2：命令边界/CAS 预置；浏览器 MVP deferred（非 T28 后默认施工）
+       ├→ Phase 3：T16 backend qualification + implementation（不依赖 T29）
        └→ Phase 4：已确认 overflow 的 Host compact + 深层诊断
 ```
 
-先完成 T20 的最小实体切割/import 门禁，紧随 T21 的 A3fu/A7；不把骨架扩成阻塞保真的全量平台重写，A6/T22 独立收尾。T27 最小 facets 在 Phase 1 最早交付，随后 T23–T26 接通 DI、binding、Effect root/A9 和 A8 真流，T28 闭合统一 Controller。各票依赖和退场截止见[实施规格 S8](box-runtime-impl-spec.md#tickets)。未齐能力显式拒绝，禁止旧内核兜底；中间单轨版本不部署。Phase 2–4 分别满足自己的依赖后推进；Phase 4 **不等待所有 T16 backend 完成**。
+先完成 T20 的最小实体切割/import 门禁，紧随 T21 的 A3fu/A7；不把骨架扩成阻塞保真的全量平台重写，A6/T22 独立收尾。T27 最小 facets 在 Phase 1 最早交付，随后 T23–T26 接通 DI、binding、Effect root/A9 和 A8 真流，T28 闭合统一 Controller。各票依赖和退场截止见[实施规格 S8](box-runtime-impl-spec.md#tickets)。未齐能力显式拒绝，禁止旧内核兜底；中间单轨版本不部署。Phase 2–4 分别满足自己的依赖后推进，**不把 T29/WebUI 接在 T28 后面当默认主链**；Phase 4 **不等待所有 T16 backend 或完整 WebUI**。
 
 按消融判断切片是否必要：D = 可诊断/可观测性，S = live STEP 稳定与安全，H = Host harness 变动下的可维护性。删除后损害任一轴的归一化、准入、流或资源边界应保留；不推动这些性质、也非当前产品出口必需的工件族、Service 层、全量退休/图表证明延后。不为“防过度设计”删掉核心合同，也不以完整架构外形作为首切前置。见 [ADR D12](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d12--ablation-guided-scope)。
 
-每个切片接回唯一生产路径，记录具体性质、依赖现实、未证明项与退出条件。使用声明的 Bun `1.3.14`、frozen lock 和项目 typecheck/相关测试；既有质量门失败须显式处理，不用局部 green 宣称整个 phase 完成。默认测试不得访问现役 Host、真实 credential 或 provider；需要时使用合成 Host、mock fetch、隔离文件/transport 与 disposable process。真实 canary、采用和 provider spend 另行授权。
+每个切片接回唯一生产路径，记录具体性质、依赖现实、未证明项与退出条件。使用声明的 Bun `1.3.14` 作为 package manager 与本地 `bun test` / `bun run` / `bun scripts/*`，加上 frozen lock 和项目 typecheck/相关测试；生产 Host/modeld/CLI runtime/runtime-kernel 仍只用 Node-portable API。既有质量门失败须显式处理，不用局部 green 宣称整个 phase 完成。默认测试不得访问现役 Host、真实 credential 或 provider；需要时使用合成 Host、mock fetch、隔离文件/transport 与 disposable process。真实 canary、采用和 provider spend 另行授权。
 
 ## Phase 0：默认安全与输入保真
 
@@ -200,7 +200,7 @@ confirmed coordinator operation Scope
 6. 达到容量上限时明确拒绝且可观察，旧身份不可重投；不把完整历史退休体系设为 RouteBinding 首切门槛。声明持续运行超过当前 1024 STEP 限额前，再提供合法退休、旧 id 拒绝与有界 soak 证据，不承诺无限精确去重。
 7. 薄模型选择字段、safe correlation 与 T13 最小 facets 早期交付且可由 CLI/API 同义消费；日志缺失/截断不冒充“没有调用”。第二 writer 尚未引入时，WebUI CAS 不是本阶段出口。
 
-## Phase 2：共享用例上的 WebUI MVP（T15）
+## Phase 2：共享命令边界与 WebUI MVP（T15 / T29，默认主链外）
 
 ### 2.1 固定 SoT 与有限命令面
 
@@ -304,7 +304,7 @@ Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry
 | 骨架切割、保真、独立 raw-fd 修复 | T20 / T21 / T22 | 0 |
 | ModelBackend DI、RouteBinding/STEP、A9 root、A8 Host 流 | T23 / T24 / T25 / T26 | 1 |
 | T13 最小 facets、统一 Controller 与整合出口 | T27（尽早）/ T28 | 1 |
-| T15 共同用例、第二 writer CAS、安全 WebUI | T29 | 2 |
+| T15 共同用例、第二 writer CAS；浏览器 MVP deferred | T29 | 2 deferred |
 | T16 pi/Cursor 独立资格与 adapter | T30 / T31 | 3 |
 | T14b confirmed-overflow 恢复、T13 深层证据 | T32 / T33 | 4 |
 
@@ -328,4 +328,4 @@ T10–T12 与 A1/A2/A4 的产品性质全程回归；已完成 POC ticket 不是
 1. **[T20 骨架切割](../tickets/T20-runtime-layout-cut.md)**：直接建立唯一目标 package/module/import 树，撤旧推理入口与 compat shims，建立结构/pack/proof gate。未齐能力显式拒绝，不包 POC 兜底，不部署中间状态。
 2. **[T21 codec 保真](../tickets/T21-runtime-codec-fidelity.md)**：在新 owner 落点修 A3fu/A7，用真实 SDK 编码的 Chat/Responses body 与负对照验收。T22/A6 独立穿插，不 gate 保真。
 
-随后按规格先交付 T27 最小 facets，再接 T23–T26 DI/binding/Effect root/真流与 T28 Controller；所有必需 proof、退场与 Astra 复审完整后才关闭 Phase 1。WebUI、额外 backend、T14b 按自己的依赖推进，后者不等待所有 backend。本文维护策略，规格维护施工合同，票据维护证据，不另起日期版实施路线。
+随后按规格先交付 T27 最小 facets，再接 T23–T26 DI/binding/Effect root/真流与 T28 Controller；所有必需 proof、退场与 Astra 复审完整后才关闭 Phase 1。T29 不在 T28 后的默认主链上。WebUI、额外 backend、T14b 按自己的依赖推进，后者不等待所有 backend。本文维护策略，规格维护施工合同，票据维护证据，不另起日期版实施路线。

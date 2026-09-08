@@ -1,7 +1,7 @@
 # T27 — Early status facets / J13 writer boundaries
 
 ## Status
-**Open · Phase 1 早期。** 主排期紧随 T21，依赖仅 T20；不等 streaming/UI/compact。
+**Open · Phase 1 早期。** 主排期紧随 T21，依赖仅 T20；不等 streaming/UI/compact。本票在默认主链上；T29/WebUI 不在。
 
 ## Goal
 建立一份 status DTO、六 facets 与安全本地相关性。当前接缝有证据、controller 是否活着、允许 mutation、operation recovery、Host delivery 分开；保留真实 circuit，不留旧聚合 status 兼容解释。

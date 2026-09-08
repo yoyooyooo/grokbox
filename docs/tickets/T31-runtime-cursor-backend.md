@@ -13,7 +13,7 @@
 - package/lock 仅为 exact qualified SDK，不夹带其它 CLI/agent 依赖或升级。
 
 ## Depends-on
-[T23](T23-runtime-model-backend.md)、[T24](T24-runtime-route-binding.md)、[T25](T25-runtime-effect-root.md)、[T26](T26-runtime-host-fullstream.md)。默认 UI 后排期，但不依赖 T29/T30；T32 不等待本票。
+[T23](T23-runtime-model-backend.md)、[T24](T24-runtime-route-binding.md)、[T25](T25-runtime-effect-root.md)、[T26](T26-runtime-host-fullstream.md)。不依赖 T29/T30；T32 不等待本票。不因 WebUI deferred 而改合同。
 
 ## Forbidden
 未核定就启动 cloud Agent/花费/仓库工作；SDK 隐式工具/多步/重试/auto-compact；继承另一用户/session 的 root/history/Memory；复用 Gateway/daemon/Sandbox/quota 凭据；final string shim 或另一个 kernel。

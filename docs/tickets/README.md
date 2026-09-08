@@ -19,13 +19,13 @@
 | [T26](T26-runtime-host-fullstream.md) | open | 1 | A8 Host fullStream/双向端到端整合 |
 | [T27](T27-runtime-status-facets.md) | open | 1 early | T13 最小 facets/J13 角色，主排期 T21 后立即做 |
 | [T28](T28-runtime-controller-cut.md) | open | 1 | 单 Controller program/安全 IO/整合与占位清零 |
-| [T29](T29-runtime-webui.md) | open | 2 | 共同 API/WebUI/第二 writer CAS/浏览器证明 |
+| [T29](T29-runtime-webui.md) | open | 2 deferred | CLI/API 共享命令边界、第二 writer CAS；浏览器 MVP 另标 deferred，非 T28 后默认施工 |
 | [T30](T30-runtime-pi-backend.md) | open | 3 | pi RPC 独立 qualification 与 adapter |
 | [T31](T31-runtime-cursor-backend.md) | open | 3 | Cursor SDK 独立 qualification 与 adapter |
 | [T32](T32-runtime-confirmed-compact.md) | open | 4 | confirmed overflow/Host compact/一次恢复/v4 |
 | [T33](T33-runtime-diagnostics.md) | open | 4 | source-scoped 深层诊断与 delivery gaps |
 
-默认先 T20 → T21；T22 不 gate 保真/内核。T27 尽早，随后完成 Phase 1 核心。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。
+默认主链 **T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28**。T22 不 gate 保真/内核。T27 尽早。Phase 1 出口停在 T28；T29 不自动开工。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。
 
 ## Historical delivery and product-scope trackers
 
@@ -55,7 +55,7 @@
 | [T13](T13-status-honesty-after-adopt.md) | open | 产品范围；执行 T27/T33 |
 | T14 | observation done | 历史 enums-only observation；当前分类/恢复执行 T23/T32 |
 | [T14b](T14b-host-reuse-compact-on-confirmed-overflow.md) | open | 产品范围；执行 T32，不能拿 T14 的 done 当恢复授权 |
-| [T15](T15-webui-ops-config-storage.md) | open | 产品范围；执行 T29，依赖 T27/T28 |
+| [T15](T15-webui-ops-config-storage.md) | open | 产品范围；执行权在 T29 边界合同，浏览器 MVP deferred |
 | [T16](T16-model-backend-adapters-pi-cursor.md) | open | 产品范围；基础 T23，候选实现 T30/T31 |
 
 ## Live canary bots

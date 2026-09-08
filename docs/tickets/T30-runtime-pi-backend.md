@@ -13,7 +13,7 @@
 - package/lock 仅用于已核定的精确依赖，Bun 更新，不引入私有 runner 作为 CI 依赖。
 
 ## Depends-on
-[T23](T23-runtime-model-backend.md)、[T24](T24-runtime-route-binding.md)、[T25](T25-runtime-effect-root.md)、[T26](T26-runtime-host-fullstream.md)。默认排期 UI 后，但不依赖 T29/T31，也不阻塞 T32。
+[T23](T23-runtime-model-backend.md)、[T24](T24-runtime-route-binding.md)、[T25](T25-runtime-effect-root.md)、[T26](T26-runtime-host-fullstream.md)。不依赖 T29/T31，也不阻塞 T32；不因 WebUI deferred 而改合同。
 
 ## Forbidden
 猜 JSON-RPC 2.0/Codex app-server 方法、hidden root/history/Memory、tools execution、auto-compact、SDK/CLI retry、repo 修改、跨 Bot session 复用、把完整 Agent final string 包成 inference、另建 binding/STEP ledger。

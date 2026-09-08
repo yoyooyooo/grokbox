@@ -1,7 +1,7 @@
 # T28 — One Effect Controller program / finish the core cut
 
 ## Status
-**Open · Phase 1 控制与整合出口。** 控制能力未闭合前不可开放 UI apply；本票不授权任何 live signal。
+**Open · Phase 1 控制与整合出口。** 控制能力未闭合前不可开放 UI apply；本票不授权任何 live signal。关闭本票等于默认主链结束，**不**自动开始 T29 / 浏览器 MVP。
 
 ## Goal
 把预检、lease、guardian、精确信号、等待、commit/recovery 收为一个 Effect operation program；CLI confirmed apply 和 reconcile 只走它，清除旧 inject/heal/manual 执行器与控制占位。
@@ -29,7 +29,7 @@ LegacyWitness、旧 fallback live ports、多个 coordinator/registry、manual �
 8. **Astra 复审 exact SHA 的单程序、权限、资源与负对照**；给出 offline 完成与 L1 live-not-proven 的明确分界。无 live adopted canary 不声称已部署/全部官方能力验证。
 
 ## Non-goals / out-of-scope
-WebUI、自动授予 watchdog 新权限、daemon/SSH runtime mutation、改 launch 产品语义/J13/Bun pin、现役 re-adopt 或测试1赋值。
+WebUI/`console/`、把 T29 当本票后续默认施工、自动授予 watchdog 新权限、daemon/SSH runtime mutation、改 launch 产品语义/J13/Bun pin、现役 re-adopt 或测试1赋值。
 
 ## Related
 [spec Controller](../roadmap/box-runtime-impl-spec.md#controller) · [delete](../roadmap/box-runtime-impl-spec.md#delete) · [proof/live](../roadmap/box-runtime-impl-spec.md#review-live) · [plan Phase 1 §1.3](../roadmap/box-runtime-plan.md) · [ADR D8](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d8--effect-root-and-resource-ownership) · [既有 J13/G1/Bun 约束](../decisions/2026-09-07-offline-live-adjudication.md)

@@ -9,7 +9,7 @@
 ## Module / dirs touched
 - `packages/runtime-kernel/src/status.ts`、`contract.ts`、`internal/status/projection.ts`。
 - `packages/box-runtime/src/internal/io/{observation,journal,provenance}.node.ts`；可靠 Host 只读事实使用同 owner 的窄 adapter，不增加 writer。
-- T29 已落地时只更新 `packages/box-runtime/src/internal/console/browser/evidence.ts` 的 safe DTO 消费；未落地不创建另一 UI。
+- T29 浏览器 MVP 若已显式落地，只更新 `packages/box-runtime/src/internal/console/browser/evidence.ts` 的 safe DTO 消费；未落地不创建 `console/` 或另一 UI。
 - `packages/box-runtime/test/diagnostics.test.ts`、`packages/runtime-kernel/test/status-facets.test.ts`、合成 source/epoch fixtures。
 
 ## Depends-on

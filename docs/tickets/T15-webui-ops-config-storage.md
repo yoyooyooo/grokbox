@@ -1,7 +1,7 @@
 # T15 — WebUI ops console + config/storage interoperability
 
 ## Status
-**Open · product-scope tracker, not an implementation lane.** Rebuild execution is [T29](T29-runtime-webui.md), using the [implementation spec](../roadmap/box-runtime-impl-spec.md#webui) and T27/T28 facts/control. Phase 1 establishes thin selection and early facets; simple shared CAS starts with the second writer, not as the first binding gate. Do not create a parallel UI/layout from this older scope ticket.
+**Open · product-scope tracker, not an implementation lane.** Rebuild execution is [T29](T29-runtime-webui.md): the default ticket pressure is the shared CLI/API command boundary and second-writer CAS. The browser MVP stays deferred in T29 and [plan Phase 2](../roadmap/box-runtime-plan.md); it is not the next slice after T28. Phase 1 establishes thin selection and early facets; simple shared CAS starts with the second writer, not as the first binding gate. Do not create a parallel UI/layout from this older scope ticket.
 
 ## Goal
 Deliver a box-local ops console for preparation/confirmed application, Bot inspection, existing-model selection and recent runtime evidence through the same use cases as CLI.

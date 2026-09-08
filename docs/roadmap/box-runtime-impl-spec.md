@@ -16,6 +16,7 @@
 5. Host leaf 做双向归一化，保持 Effect-free、SDK-free。默认两处薄 patch；新增 patch 须按 ADR D2 有版本/收益/耦合/失效证据并获精确批准。没有所需 root/compact 事实就拒绝受影响能力，不编造接口。
 6. 持久根仍为 `/workspace/.grokbox/box-runtime/`，live root 仍为 `~/.grokbox/run/`，CLI 安装仍为 `~/.grokbox/runtime/`。不迁走 Host store，不 prepend `store.db`；live 的 `GROKBOX_LIVE_PROMPT_*_CAP` unset。长期事实留给 Host Memory 蒸馏。
 7. 本次只交付文档。后续源文件退场按当时安全删除策略移入已验证 trash 后 stage；不使用永久清理、reset/clean 或在 repo 留 `old/` 墓地。不得触碰他人 WIP、现役 fd、现役服务或遗留数据来关闭源码 finding。
+8. **运行时 API：Node-portable。** Bun 只作 package manager 与本地 `bun test` / `bun run` / `bun scripts/*`；pin 仍为已声明的 `bun@1.3.14`，本规格不升 Bun/Node engines。published CLI/daemon、Host preload、modeld、CLI runtime、`runtime-kernel` 生产模块只用 Node-portable API，禁止 `import "bun:*"` 与 Bun globals（`Bun.file`、`Bun.serve` 等）。测试 runner 不得把 Bun-only API 泄漏进生产 import。盒上可以本地跑 Node 24；engines 下限仍是既有 Node 20+ 政策，本批次不改。
 
 <a id="layout"></a>
 ## S2. 唯一目标树
@@ -28,13 +29,13 @@
 |---|---|---|
 | `packages/runtime-kernel` | 纯数据合同/选择规则；Effect-owned RouteBinding、STEP、控制用例、status 语义及 capability ports | Host 私有 ABI、SDK、fs/net/process 实现、CLI/HTTP/DOM、Live Layer 选择 |
 | `packages/box-runtime` | Host leaf；Node/SDK adapters；modeld/CLI runtime/console 的资源装配；独立 guardian helpers | 第二 admission/控制决策器、另一份模型选择规则、私有产品 store writer |
-| `packages/cli` | 参数/帮助/JSON 输出；意图交 runtime facade；仅 roster composition bridge 复用已有 Gateway 只读客户端 | runtime 配置读改写、adopt steps、模型 credential/provider 选择、status 推断 |
+| `packages/cli` | 参数/帮助/JSON 输出；意图交 runtime facade；later/T29-only roster bridge 才复用已有 Gateway 只读客户端 | runtime 配置读改写、adopt steps、模型 credential/provider 选择、status 推断 |
 
-Effect 同 pin `4.0.0-beta.107`，kernel 与 box-runtime 使用现有 catalog。AI SDK `5.0.253` / OpenAI `2.0.125` 只留 box-runtime backend；不顺带升级 Bun `1.3.14`、Node 20+ 发布目标或测试框架。新私有包通过现有 `packages/*` workspace 发现并 bundled 进同一个发布包。
+Effect 同 pin `4.0.0-beta.107`，kernel 与 box-runtime 使用现有 catalog。AI SDK `5.0.253` / OpenAI `2.0.125` 只留 box-runtime backend；不顺带升级 Bun `1.3.14`、Node 20+ 发布目标或测试框架。新私有包通过现有 `packages/*` workspace 发现并 bundled 进同一个发布包。生产模块的 Node-portable 禁令见 S1.8；`bun:*` / Bun globals 不是“开发便利可进 Host/modeld/kernel”的例外。
 
 ### S2.2 文件落点
 
-以下为**最终必需骨架**，不是要求 T20 建空文件。注明后续票据的叶子到该票才创建；小型 owner-private helper 可在同目录内增加，禁止自行增加另一层 `domain/application/services/utils`。顶层入口只显式导出本表规定的符号族。
+以下为**最终必需骨架**，不是要求 T20 建空文件。注明后续票据的叶子到该票才创建；标 **later / T29-only** 的 `console/` 与 browser 资产不属 T20 骨架。小型 owner-private helper 可在同目录内增加，禁止自行增加另一层 `domain/application/services/utils`。顶层入口只显式导出本表规定的符号族。
 
 ```text
 packages/runtime-kernel/
@@ -123,32 +124,29 @@ packages/box-runtime/
         modeld.runtime.ts        # modeld run 及 prepare 的同一服务 scope
         command.runtime.ts       # CLI 一次性命令/foreground prepare
         controller.runtime.ts    # 长期 watchdog 与 confirmed operation ownership
-        console.runtime.ts       # T29：HTTP/操作/borrowed-or-owned modeld lifetime
-      console/                   # T29；不早建框架或假 API
-        api.ts  auth.node.ts  client.ts
-        browser/
-          main.ts  state.ts  overview.ts  bots.ts  evidence.ts  index.html  style.css
+        console.runtime.ts       # later / T29-only：HTTP/操作/borrowed-or-owned modeld lifetime；T20 不建
+      console/                   # later / T29-only；T20 不建空目录、框架、假 API 或 Playwright
   test/
     architecture.test.ts  host-codec.test.ts  ccs-codec.test.ts
     host-session.test.ts  host-fullstream.test.ts  modeld-wire.test.ts
     modeld-lifecycle.test.ts  runtime-pipeline.test.ts  host-journal.test.ts
-    controller-io.test.ts  console-api.test.ts  console-state.test.ts
-    console-browser.test.ts
+    controller-io.test.ts
     backend-conformance.test.ts  overflow-bridge.test.ts  diagnostics.test.ts
+    # later / T29-only: console-api.test.ts console-state.test.ts console-browser.test.ts
     fixtures/                    # 自行编写 Host/profile/SDK/进程 fixtures，绝不放 provider dumps
 
 packages/cli/src/commands/runtime.ts   # 只路由；不吸收当前未提交 WIP
-packages/cli/src/commands/runtime-roster.ts # T29：既有 GatewayClient 的本盒只读 composition bridge
+packages/cli/src/commands/runtime-roster.ts # later / T29-only：既有 GatewayClient 的本盒只读 composition bridge
 packages/cli/src/registry.ts           # 命令唯一 registry
 packages/cli/src/program.ts            # dispatcher，只绑定 facade
-scripts/check-runtime-boundaries.mjs   # T20：结构/import/export/退场检查
-scripts/pack-runtime-helpers.mjs       # 唯一打包清单，指向新 helpers/preload；T29 加 browser
+scripts/check-runtime-boundaries.mjs   # T20：结构/import/export/退场检查；生产模块 bun:* / Bun globals 失败
+scripts/pack-runtime-helpers.mjs       # 唯一打包清单，指向新 helpers/preload；later / T29-only 才加 browser
 scripts/verify-runtime-rebuild.mjs     # T20 起维护：有限 case→真实测试命令映射
 test/runtime-cli.test.ts               # 既有 CLI 集成测试位置，不另开 CLI test 树
 test/packaging.test.ts                # 既有 Node20 发布验证位置
 ```
 
-`contract.ts` 只转导 `internal/contract` 的纯声明/校验（含共享 identity/authority 判断）；不得从 Effect 模块 `export *`。仅 `hash.ts` 允许 `node:crypto` 的确定性 SHA-256；selection、Host 与 kernel 使用同一 canonical JSON/hash，不把通用 digest 藏在 model selector。除此之外 kernel 不导入 `node:*`、环境或 wall-clock IO；Effect Clock/ports 提供时间和外部能力。browser 只导入 `contract`，不导入 Node hash/selection。
+`contract.ts` 只转导 `internal/contract` 的纯声明/校验（含共享 identity/authority 判断）；不得从 Effect 模块 `export *`。仅 `hash.ts` 允许 `node:crypto` 的确定性 SHA-256；selection、Host 与 kernel 使用同一 canonical JSON/hash，不把通用 digest 藏在 model selector。除此之外 kernel 不导入 `node:*`、`bun:*`、环境或 wall-clock IO；Effect Clock/ports 提供时间和外部能力。未来 browser 只导入 `contract`，不导入 Node hash/selection；该约束属于 T29，不要求 T20 创建 browser。
 
 `box-runtime` package exports 只有 `./runtime`；移除原 `.` mega barrel。preload 由 pack 脚本直接构建，Host 私有模块不是其它 package 的 API。kernel 只开放上述八个显式 subpath；不导出根 barrel，不开放 `internal/*`。
 
@@ -165,8 +163,9 @@ test/packaging.test.ts                # 既有 Node20 发布验证位置
 | backend adapters | contract、ports、自己的 codec/auth 实现、所需 SDK | inference/commands/status 程序、Host/store/SendToUser、进程 mutator |
 | Node IO/process | contract、ports 与被声明的纯规则 | 调用上层 use case、构造 Runtime、反向导入 roots |
 | roots | kernel public programs/ports、Live adapters、有限 framework boundary | 在 wiring 里重写选择、admission、状态或恢复规则 |
-| CLI | box-runtime `runtime`、kernel contract、CLI 输出/参数；仅 runtime-roster bridge 可复用既有 GatewayClient/redaction | kernel internals、SDK、runtime 配置/模型 credential/adopt 决策；任意 Profile roster |
-| console API/browser | API：runtime-bound commands/status；browser：安全 contract + client/state | 原始 store/SDK/Host ABI、第二 writer/SQLite/通用 exec |
+| CLI | box-runtime `runtime`、kernel contract、CLI 输出/参数；仅 later/T29 roster bridge 可复用既有 GatewayClient/redaction | kernel internals、SDK、runtime 配置/模型 credential/adopt 决策；任意 Profile roster；`bun:*` / Bun globals |
+| console API/browser（later / T29-only） | API：runtime-bound commands/status；browser：安全 contract + client/state | 原始 store/SDK/Host ABI、第二业务程序/SQLite/通用 exec；T20 创建这些文件 |
+| 生产 Host / modeld / CLI runtime / runtime-kernel | Node-portable APIs 与上表允许列 | `import "bun:*"`、`Bun.file` / `Bun.serve` 等 globals；把测试 runner 的 Bun API 当生产依赖 |
 | 测试 | 所有者包内可测 private；跨包只走 public/testing 或真实进程入口 | 测试专用 admission、生产 Layer 偷用 Fake、绕过 SDK encode 证明请求保真 |
 
 结构检查解析 import/export/require/dynamic import 和 package exports，追踪 re-export；测试必须证明故意加入 forbidden edge 会失败。preload 再检查实际 bundled bytes、external imports、import-time effects；仅“没有直接 import Effect”不够。不能只靠 tree shaking 掩盖错误依赖。
@@ -193,7 +192,7 @@ test/packaging.test.ts                # 既有 Node20 发布验证位置
 | Port / public program | 合同与实现位置 | 禁止 caller / 行为 |
 |---|---|---|
 | `ConfigurationRead` | 读一次 canonical models/desired 的有界快照；`io/configuration.node.ts`。parser/选择规则只在 kernel selection | inference 不能写配置；Host 不调用这个 Effect Service |
-| `ConfigurationWrite` | 为 commands 保存 canonical 文件，返回 source receipt；同一 IO 文件实现，modeld root 不提供此能力 | UI/CLI 不直写；T29 前不建通用 CAS 服务 |
+| `ConfigurationWrite` | 为 commands 保存 canonical 文件，返回 source receipt；同一 IO 文件实现，modeld root 不提供此能力 | UI/CLI 不直写；第二 writer 出现前不建通用 CAS 服务 |
 | `AdmissionAuthority` | 当前 committed/pending/disabled/unavailable、Host identity、inhibit/recovery 证据；`io/authority.node.ts` | caller 自报 committed、health 或旧日志不能替代权威 |
 | `BackendAuth` | `pin` 在 TURN scope materialize；`verify` 在后续出门前核对原身份；返回 opaque lease + 安全 fingerprint；`io/credentials.node.ts` | secret 不进入 contract/wire/status/journal；不 mid-turn remint/换账号 |
 | `ModelBackend` | 纯 `prepare(selection, snapshot)` 验证/编码为 PreparedCall（零 auth/网络）；`infer(admittedCall, prepared, authLease)` 为**一个**有界 canonical event Stream + typed failure。实现 ai-sdk/显式 echo/测试 Fake，后来合格 pi/Cursor | 不执行 tools、不自循环/重试、不读取隐藏 history；不得导入 kernel 程序 |
@@ -216,7 +215,7 @@ Auth lease 只在同进程受信任适配边界使用，backend 的 unseal 能�
 
 T23 将 provider allowlist/能力描述收回 kernel 的有限数据规则，解除 `models.ts → modeld-openai-map.ts` 反向依赖。root 在 `backends/registry.ts` 装配有限 kind→ModelBackend 实现表，精确查找，未知 kind 拒绝；不是 accepts 扫描、轮流尝试或另一 admission registry。AI SDK Chat/Responses 共用 CCS codec；删掉仅测试走 raw messages、生产走另一编码器的双轨。新 backend 需要的 schema 变化由 T30/T31 在同一 parser 更新；若必须换格式，使用显式一次性离线转换，不留双 parser，也不删除原始用户数据。
 
-当前单 writer 只做 schema/gate、unique protected stage、read-back/sync/rename 和回执。WebUI 成为第二 writer 时，T29 在同一入口加短锁 → canonical 重读 → expected configRevision → mutation/publish；CLI 同时接入。`configRevision` 用 canonical 内容摘要即可，不建 revision DB/projection 文件族。锁防合作 writer 的丢更新，不宣称对任意外部编辑器的原子 CAS。
+当前单 writer 只做 schema/gate、unique protected stage、read-back/sync/rename 和回执。真实第二 writer（未来 WebUI 或其它）出现时，在**同一入口**加短锁 → canonical 重读 → expected configRevision → mutation/publish；CLI 同时接入，不另建 UI-only lock。`configRevision` 用 canonical 内容摘要即可，不建 revision DB/projection 文件族。锁防合作 writer 的丢更新，不宣称对任意外部编辑器的原子 CAS。该 CAS 属于 T29 合同，不是 T20–T28 的默认施工项。
 
 <a id="chain"></a>
 ## S4. 一条完整执行链
@@ -305,7 +304,7 @@ grokbox process Scope / 唯一 ManagedRuntime（framework callbacks 需要时）
  ├─ TURN scopes：binding/auth lease（不挂首 STEP scope）
  │    └─ STEP scopes：backend stream、验证、emit、deadline
  ├─ controller operation scopes：lease → preflight → guardian → signals/wait → commit/recovery
- └─ console HTTP / 观察订阅（T29；无 provider 请求的初始化）
+ └─ console HTTP / 观察订阅（later / T29-only；无 provider 请求的初始化；T20 不建）
 ```
 
 资源有 allocation 时即配对 finalizer，成功返回前保证 ownership 注册；必须覆盖 `bind` 未完成时 interruption、listen 后后续步骤失败、late callback、stop 重入。不能 `tryPromise(bindUnixKernel)` 完成后才 addFinalizer，也不能全流程 uninterruptible。Node syscall 可以是窄 Promise adapter，业务程序不能藏回 Promise/timer 链。
@@ -343,19 +342,16 @@ J13 **不迁移**：Host 的 `terminal-journal.node.ts` 唯一写 Host normaliza
 ## S6. 后续表面仍只有一个内核
 
 <a id="webui"></a>
-### S6.1 T29 WebUI
+### S6.1 T29 内核/API 边界（默认主链外）
 
-入口固定 `grokbox runtime webui run`，只绑定 loopback；registry/program/runtime facade 同时接线。新增参数只允许受校验 port，仍拒绝远程 Profile。复用当前 esbuild，browser 使用 **TypeScript + DOM** 和小型纯 state reducer；不引入另一 UI package、React/Query 框架、SQLite 或通用控制台平台。
+T29 **不是** T28 之后的默认下一张施工票，也不要求现在建浏览器控制台。Phase 1 出口停在 T28。内核必须预先暴露、且未来 UI 不得另写的边界：
 
-API 在 `console/api.ts`：GET status/bots/catalog/events/operation；POST model selection/prepare/preview/confirmed apply。只有这些有限用例，无路径/RPC/exec passthrough。API 通过 root-bound commands/status 调用，不加载 fs/SDK/Host ABI。配置第二 writer 按 S3.3 加短锁 CAS；same-box roster/id 与 runtime root 绑定，不能用任意 current Profile 拼接。
+- CLI 与未来 API 只调用同一 `commands` / `status`；不得出现第二套业务程序、admission 或 controller。
+- `ConfigurationWrite` 是唯一配置写 port。单 writer 阶段不做通用 CAS；真实第二 writer 出现时按 S3.3 在同一入口加短锁 CAS，CLI 同时接入，禁止 UI-only lock / SQLite SoT。
+- 命令边界绑定本盒 runtime root 与 agentId；拒绝任意 current Profile 拼接或远程 Profile。身份不明不保存。GET/只读观察零 write、零 signal、零模型 spend。
+- `console/`、`console.runtime.ts`、roster bridge 与 browser 资产均为 **later / T29-only**；T20 不建空目录、假 API 或 Playwright。
 
-roster 由 `packages/cli/src/commands/runtime-roster.ts` 在命令 composition 时注入窄 readonly callback，复用既有 `GatewayClient.listAgents`/redaction，强制 local discovery/transport 与 loopback dial，并拒绝 remote Profile/endpoint。只交回安全 rows 与 Gateway pid/startedAt/source identity；console root 将 callback 纳入 ObservationRead 的 Effect 边界并与本盒证据核对。box-runtime 不反向 import CLI、不复制 Gateway RPC、不自己读 Host SQLite。这里的必要 Gateway 只读认证与模型 BackendAuth 是不同能力：GET 可使用前者，但模型 credential/provider/write/signal 计数必须为零，Gateway secret 不回浏览器。
-
-`console/auth.node.ts` 管理独立、短期的本盒会话：owner-only bootstrap secret 文件 → 同源登录 POST → HttpOnly/SameSite cookie + CSRF nonce，精确 Host/Origin allowlist；secret 不放 argv/URL/日志，不复用 Gateway/provider/daemon 身份。登录/失败/无 Origin 写请求亦须测试。首次只读 API 同样需要 auth 与安全渲染。
-
-state.ts 区分 draft/saving/saved-awaiting-use/observed/error；URL 拥有 Bot/tab/filter。Overview、Bots/detail、Evidence 三面板只显示 API 事实。GET 零写/零信号/零 spend；旧 revision 保留草稿并重读。route 下 reset 继续明确不可用，不自动 deactivate/reset/reactivate。
-
-confirmed apply 绑定本盒 identity/config/profile/Host 修订、operationId 和期限；双击/断线/ack 丢失只对账同一 receipt。operation 归 process Scope，非 HTTP request Scope。只停止 owned modeld，browser 关闭不停止服务。无跨进程新 controller registry 或自动 outbox。
+产品三面板、cookie 会话、Playwright MVP 见 [plan Phase 2](box-runtime-plan.md) 与 [T29 deferred UI MVP](../tickets/T29-runtime-webui.md)。本规格只预置边界，不把它们当成近端骨架。
 
 <a id="backends"></a>
 ### S6.2 T30/T31 backend
@@ -421,13 +417,13 @@ T33 扩充只读 source-scoped retention/cursor/gap、operation/交付观察。�
 | 1 · 内核 | [T24 RouteBinding/STEP](../tickets/T24-runtime-route-binding.md) | T23；expected selection、TURN/STEP/epoch、auth 与拒绝证明 |
 | 1 · 资源 | [T25 Effect root/A9/v3](../tickets/T25-runtime-effect-root.md) | T24；root acquire/interrupt/close 与生产 transport |
 | 1 · 接通 | [T26 A8 Host fullStream](../tickets/T26-runtime-host-fullstream.md) | T21/T24/T25/T27；唯一端到端 producer/Host reshape，无推理占位 |
-| 1 · 控制/整合 | [T28 Controller cut](../tickets/T28-runtime-controller-cut.md) | T25/T26/T27；同一 Effect control program/安全 IO，无控制占位 |
-| 2 | [T29 WebUI boundary](../tickets/T29-runtime-webui.md) | T27/T28；第二 writer CAS + 安全 API/browser |
-| 3 | [T30 pi](../tickets/T30-runtime-pi-backend.md) / [T31 Cursor](../tickets/T31-runtime-cursor-backend.md) | T23–T26；默认 UI 后排期，但彼此无依赖；资格不成立就阻塞本 adapter |
+| 1 · 控制/整合 | [T28 Controller cut](../tickets/T28-runtime-controller-cut.md) | T25/T26/T27；同一 Effect control program/安全 IO，无控制占位；Phase 1 默认出口 |
+| 2 · deferred | [T29 命令边界/CAS](../tickets/T29-runtime-webui.md) | T27/T28；共享 commands/status、第二 writer CAS、identity 绑定。浏览器 MVP 另标 deferred，不自动开工 |
+| 3 | [T30 pi](../tickets/T30-runtime-pi-backend.md) / [T31 Cursor](../tickets/T31-runtime-cursor-backend.md) | T23–T26；不依赖 T29；彼此无依赖；资格不成立就阻塞本 adapter |
 | 4 | [T32 confirmed compact](../tickets/T32-runtime-confirmed-compact.md) | T24/T25/T26；另需 Host seam/provider qualification；不依赖 T29/T30/T31 |
-| 4 | [T33 深层诊断](../tickets/T33-runtime-diagnostics.md) | T27/T28；不依赖 compact 或所有 backend，缺能力保留 not_observed |
+| 4 | [T33 深层诊断](../tickets/T33-runtime-diagnostics.md) | T27/T28；不依赖 compact、WebUI 或所有 backend，缺能力保留 not_observed |
 
-默认主链：**T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28 → T29 → 合格 backend → T32/T33**。T22 独立穿插；backend 受阻不堵住 T32/T33。每个写入车道一名 writer，跨 worktree 先后集成；规格不授权创建云端 agent、花费或改现役服务。
+默认主链：**T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28**。T22 独立穿插。T29 与合格 backend、T32/T33 各自满足依赖后推进，**T28 后不默认施工 WebUI**；backend 受阻不堵住 T32/T33。每个写入车道一名 writer，跨 worktree 先后集成；规格不授权创建云端 agent、花费或改现役服务。
 
 <a id="proof"></a>
 ## S9. 防呆证明与关闭规则
@@ -436,11 +432,11 @@ T33 扩充只读 source-scoped retention/cursor/gap、operation/交付观察。�
 
 T20 增加一次性 `bun scripts/verify-runtime-rebuild.mjs <case>`，有限 case 映射下表列出的真实 `bun test <path>`/结构检查，不能根据票号打印 pass。不存在的文件/命令、跳过所有断言、未知 case 必须非零。公共 CI/test 自包含；不得依赖本机 inv-pi、私人 upstream 或 credential。
 
-运行时证明统一用 Bun `1.3.14`、`bun install --frozen-lockfile`、`bun run typecheck`、受影响测试、`bun run build`、`bun run verify:package`。本规格编写不运行 runtime suites；历史 typecheck 失败不是重建豁免。实现前记录基线诊断；触及文件不得新增/留下错误，Phase 1 整体出口必须 typecheck/build/package 通过。禁止缩小 tsconfig、删业务断言或一揽子 skip 取代修复。
+证明编排统一用已 pin 的 Bun `1.3.14` 跑 `bun install --frozen-lockfile`、`bun run typecheck`、受影响测试、`bun run build`、`bun run verify:package`。这不授权生产模块使用 Bun runtime API。本规格编写不运行 runtime suites；历史 typecheck 失败不是重建豁免。实现前记录基线诊断；触及文件不得新增/留下错误，Phase 1 整体出口必须 typecheck/build/package 通过。禁止缩小 tsconfig、删业务断言或一揽子 skip 取代修复。
 
 | case / 必须断言的性质 | 目标 fixture/test 路径与依赖现实 | 必須能抓到的负对照 |
 |---|---|---|
-| `layout` | box-runtime/test/architecture + check-runtime-boundaries；真实源码/exports/esbuild graph | 虚拟 forbidden import、残留旧入口/flag、preload 贡献 SDK/Effect 时失败 |
+| `layout` | box-runtime/test/architecture + check-runtime-boundaries；真实源码/exports/esbuild graph | 虚拟 forbidden import、残留旧入口/flag、preload 贡献 SDK/Effect、生产模块 `bun:*` / Bun globals 时失败 |
 | `codec` | host-codec、ccs-codec；两个自行编写 Host root/state profile + **真实 AI SDK 调用，mock fetch 截获 Chat/Responses HTTP body** | 去掉 user-contained result、长尾、root，或补 Human user/raw tool 后失败；不能用 mapper 自己生成 expected |
 | `backend` | kernel/backend-contract + backend-conformance；同一 port 的 Fake/echo/SDK mock | 多消费 cold stream、工具 execute、SDK retry、缺名关联/secret 泄漏被抓住 |
 | `binding` | selection/route-binding/step-ledger；Effect TestClock + barriers + counted ports | 选择捕获后换同 id endpoint/ref/opt-in；凭据/provider 次数必须 0；旧 TURN 重握后测试必须失败 |
@@ -449,7 +445,7 @@ T20 增加一次性 `bun scripts/verify-runtime-rebuild.mjs <case>`，有限 cas
 | `status` | status-facets/host-journal；同源/错代/缺失/损坏证据 + counted read/write ports | open circuit 被清、pending 被盖、GET 写入、finish 当 delivery 都失败 |
 | `raw-output` | controller-io + helper fixture；受控 child fds / fake renewer env | 默认打开 raw file、stdout/stderr 泄漏 sentinel，或丢掉 T12 env 都失败 |
 | `control` | kernel/controller + controller-io + runtime-cli；Fake process tree/文件 + 已隔离 disposable processes | PID reuse、target drift、失败收尾、parent death guardian、重复确认第二次 signal 被抓住 |
-| `console` | console-api/state + runtime-cli；真实 loopback API/mock runtime + 浏览器路径 | CSRF/Origin/错盒/旧 revision 写成功、GET effect、双击/断线重跑、借用服务被停都失败 |
+| `console`（later / T29-only） | 仅 T29 显式排期后：console-api + 共享 CAS/identity；浏览器路径属 deferred UI MVP | 第二业务程序、UI-only lock、错盒写入、GET effect；未排期时不得为通过本 case 铺空 console/ |
 | `pi` / `cursor` | backend-conformance + 各自协议 fixtures，真实依赖另列 qualification | 工具执行、hidden context、跨 Bot state、取消后重跑/隐式请求不能通过 |
 | `compact` | overflow-recovery/overflow-bridge；同一 kernel + fake Host compact + provider outcomes | 401+overflow、429、payload-too-large、EOF、候选日志、重复 completion 任一产生恢复即失败 |
 | `diagnostics` | diagnostics + status-facets；retention/gap/source/epoch vectors | 错代拼 timeline、缺事件推出零调用、无 watermark 显示 delivered 即失败 |
@@ -469,13 +465,13 @@ T20 增加一次性 `bun scripts/verify-runtime-rebuild.mjs <case>`，有限 cas
 <a id="review-live"></a>
 ### S9.3 独立复审与 live 门
 
-实现者提交可复现证据，不自签关键合同。**Astra/max 必须复审**：T20 树/退场/import graph；T21 实际 request oracle；T23–T26 selection/Scope/stream/取消 proof；T27/T28 权限与证据 writer；T29 auth/CAS/operation lifetime；T30/T31 qualification；T32 恢复预算；T33 claim ceiling。T22 可随下一次 core review 同审。复审绑定 exact SHA，修改关键路径后旧 review 失效；不把模型名字硬编码成构建依赖。
+实现者提交可复现证据，不自签关键合同。**Astra/max 必须复审**：T20 树/退场/import graph；T21 实际 request oracle；T23–T26 selection/Scope/stream/取消 proof；T27/T28 权限与证据 writer；T29 仅在显式排期后审 CAS/identity（浏览器 MVP 另审）；T30/T31 qualification；T32 恢复预算；T33 claim ceiling。T22 可随下一次 core review 同审。复审绑定 exact SHA，修改关键路径后旧 review 失效；不把模型名字硬编码成构建依赖。
 
 票据 Done = **本票范围**代码/退场完成 + required offline proofs + 上述独立复审，无本票占位/未知必需断言。只有 T20 明列的未建能力可作为结构交付的 notProven，不能据此关闭后续功能票；T26/T28 必须分别清零推理/控制占位。依赖事实不成立时标 blocked，不勉强实现。offline Done 不等于 live-qualified；每次 live 另需 owner 明确授权、当前身份/源 SHA/profile/bridge artifact 预检与成本/停止边界。
 
 - **L1 core canary**：T22/T26/T28 offline gates 与 Astra review 后，获授权才采用 exact bundle/profile；只用 test0 `00000000-0000-4000-8000-000000000114`。验证真实首 chunk/Host terminal/一次工具续步/SendToUser 与官方 renewal；分别记录 observed 层级。test1 `00000000-0000-4000-8000-000000000113` 保持 unassigned，验证官方路径，不 opt-in。
 - **L2 backend**：每个新 provider/backend 的真实协议/auth/流取消资格独立采集；SDK mock 和 L1 AI SDK 不能给 pi/Cursor 背书。
 - **L3 compact**：只在经批准 Host compact seam 与 provider-specific confirmed overflow 证据可用时验证一次恢复；不能为了构造证据无预算地灌大 prompt/反复重试。
-- **UI proof**：实际浏览器覆盖登录、选择保存、旧 revision、reload/断线/重复确认与 safe rendering；使用 Bun 测试驱动的 Playwright Chromium（T29 pin dev-only driver，不替换 Bun runner）。缺 browser 环境就阻塞此证明，不能 skip 后宣称通过；headless reducer/API pass 不能冒充 UI proof。默认离线 mock runtime，访问现役实例另需授权。
+- **UI proof（T29 deferred MVP，非默认主链）**：仅在显式授权做 console 时才适用。实际浏览器覆盖登录、选择保存、旧 revision、reload/断线/重复确认与 safe rendering；Playwright Chromium 只作 pin 的 dev-only driver，由 Bun 测试驱动，不替换既有 runner。缺 browser 环境就阻塞此证明，不能 skip 后宣称通过；headless reducer/API pass 不能冒充 UI proof。默认离线 mock runtime，访问现役实例另需授权。T20–T28 不得为了本条铺 `console/`。
 
 只把最小可公开 interoperability facts 与自行编写的 fixture 放进 repo。真实凭据、Host dumps、私人源码/完整对话及机器路径证据留在受控外部；公开票据只引用可复核 SHA/计数/结论和明确未证明项。
