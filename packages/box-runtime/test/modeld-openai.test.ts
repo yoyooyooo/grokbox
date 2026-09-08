@@ -163,6 +163,17 @@ describe("OpenAI envelope mapping", () => {
     expect(live.messages.at(-1)).toEqual({ role: "user", content: "what did the file say?" });
   });
 
+  test("live prompt follows the Host envelope window only; does not invent earlier store turns", () => {
+    const live = envelopeToOpenAiLivePrompt(buildModelEnvelope([
+      { role: "user", content: "[t96u]\nping — reply with exactly: pong" },
+      { role: "assistant", content: "pong" },
+      { role: "user", content: "作者 handle 是什么？" },
+    ]), {});
+    expect(live.messages[0]).toEqual({ role: "user", content: "[t96u]\nping — reply with exactly: pong" });
+    expect(JSON.stringify(live.messages)).not.toMatch(/mylifcc|grok bot本身/);
+    expect(live.messages.at(-1)).toEqual({ role: "user", content: "作者 handle 是什么？" });
+  });
+
   test("maps SDK stream events including tool streaming into As1 chunks then StreamPart[]", async () => {
     const events = [
       { type: "text-delta", text: "hel" },
