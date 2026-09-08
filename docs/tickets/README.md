@@ -45,8 +45,8 @@ Driver: herdr grok main line; true blockers → new session gpt-6-astra max.
 
 ## Residual (not this closeout)
 
-- **Live prompt:** pass through Host-compacted `getExecutor` context only (CCS-safe text + SendToUser bubbles + prior tool stdout fold; no `role=tool` replay). Host compact dropping early turns is product-OK (Memory distillation owns long-term facts). **Reverted** `store.db` prompt prepend (`pre-publication-revision`) as policy. `GROKBOX_LIVE_PROMPT_*_CAP` stay unset in live. Unix envelope/frame fail visibly. Census: `/tmp/grokbox-live-prompt-census.json`.
-- **T14 done / T14b open:** step1 `provider_error_observed` landed. Step2 Host-reuse compact is ticket **T14b** (wait for live overflow signals; never generic `model_error`).
+- **Live prompt:** pass through Host-compacted `getExecutor` context only (CCS-safe text + SendToUser bubbles + prior tool stdout fold; no `role=tool` replay). Keep the current STEP tool fold even without a new human user. Host compact dropping early turns is product-OK. **Reverted** `store.db` prompt prepend (`pre-publication-revision`). `GROKBOX_LIVE_PROMPT_*_CAP` stay unset in live.
+- **T14 done / T14b open:** step1 `provider_error_observed` enums only (no bodySnippet; unknown providerCode/type). App IPC stays `model_error`. Step2 Host-reuse compact is **T14b** (confirmed overflow only).
 - **T13 / Astra:** `status.circuit=open` + `watchdog=degraded` (`circuitReason=pending-uncertain`) can coexist with `coverage=attested` after many live adopts. Do not silently close the circuit. Host `transcript-publish` `writerSeq` vs `publishedThroughSeq` lag is Host-owned, not a grokbox writer.
 - **Wontfix here:** dirty `packages/cli/src/commands/runtime.ts` (`profileId: reviewed-copy-envelope`) and untracked root `src/` — leftover CLI/envelope WIP, not E3/T5b. Leave unstaged.
 - **test1** dual-model opt-in: not assigned.

@@ -323,17 +323,21 @@ describe("model_step_terminal and host_stream_rejected projectors", () => {
       name: "provider_error_observed", schemaVersion: 1, at: AT,
       overflowCandidate: true, overflowReasons: ["provider_code"],
       status: 400, providerCode: "context_length_exceeded",
-      bodySnippet: "This model's maximum context length is 128000 tokens.",
-      api: "responses", modelId: "openai-responses/gpt-5.6-luna",
+      api: "responses",
     })?.overflowCandidate).toBe(true);
     expect(projectProviderErrorObserved({
       name: "provider_error_observed", schemaVersion: 1, at: AT,
       overflowCandidate: true, overflowReasons: [],
     })).toBeNull();
+    expect(projectProviderErrorObserved({
+      name: "provider_error_observed", schemaVersion: 1, at: AT,
+      overflowCandidate: false, overflowReasons: [],
+      providerCode: "invalid_api_key",
+    })).toBeNull();
     expect(await appendProviderErrorObserved(dir, {
       name: "provider_error_observed", schemaVersion: 1, at: AT,
       overflowCandidate: false, overflowReasons: [],
-      status: 401, providerCode: "invalid_api_key",
+      status: 401, providerCode: "unknown",
     })).toBe("written");
     await appendEvent(dir, { name: "provider_error_observed", at: AT });
     expect(parsed(await linesOf(dir)).map((row) => row.name)).toEqual(["provider_error_observed"]);

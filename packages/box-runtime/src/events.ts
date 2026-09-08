@@ -153,16 +153,12 @@ export type ProviderErrorObservedEvent = {
   at: string;
   overflowCandidate: boolean;
   overflowReasons: string[];
-  modelId?: string;
   api?: "chat" | "responses";
   status?: number;
-  providerCode?: string;
-  providerType?: string;
-  bodySnippet?: string;
+  providerCode?: "context_length_exceeded" | "context_window_exceeded" | "prompt_too_long" | "request_too_large" | "unknown";
+  providerType?: "unknown";
   promptMessages?: number;
   promptChars?: number;
-  agentId?: string;
-  invocationId?: string;
 };
 
 export type TurnSeamWriteResult = "written" | "unprojected" | "write_failed";
@@ -362,7 +358,8 @@ export function projectHostStreamRejected(input: unknown): HostStreamRejectedEve
 
 const PROVIDER_ERROR_APIS = new Set(["chat", "responses"]);
 const PROVIDER_ERROR_REASONS = new Set(["provider_code", "status_message"]);
-const SNIPPET_FORBIDDEN = /api[_-]?key|authorization|Bearer\s+\S|\bsk-[A-Za-z0-9]/i;
+const PROVIDER_ERROR_CODES = new Set(["context_length_exceeded", "context_window_exceeded", "prompt_too_long", "request_too_large", "unknown"]);
+const PROVIDER_ERROR_TYPES = new Set(["unknown"]);
 
 export function projectProviderErrorObserved(input: unknown): ProviderErrorObservedEvent | null {
   if (!isRecord(input) || input.name !== "provider_error_observed" || input.schemaVersion !== 1) return null;
@@ -377,40 +374,29 @@ export function projectProviderErrorObserved(input: unknown): ProviderErrorObser
   }
   if (input.overflowCandidate && overflowReasons.length === 0) return null;
   if (!input.overflowCandidate && overflowReasons.length > 0) return null;
-  const modelId = boundedString(input.modelId);
   const api = boundedEnum(input.api, PROVIDER_ERROR_APIS) as "chat" | "responses" | null;
   const status = typeof input.status === "number" && Number.isInteger(input.status) && input.status >= 100 && input.status <= 599
     ? input.status : undefined;
-  const providerCode = boundedString(input.providerCode, 64);
-  const providerType = boundedString(input.providerType, 64);
-  let bodySnippet: string | undefined;
-  if (input.bodySnippet !== undefined) {
-    const snippet = boundedString(input.bodySnippet, 240);
-    if (snippet == null || SNIPPET_FORBIDDEN.test(snippet)) return null;
-    bodySnippet = snippet;
-  }
+  const providerCode = input.providerCode === undefined ? undefined : boundedEnum(input.providerCode, PROVIDER_ERROR_CODES) as ProviderErrorObservedEvent["providerCode"] | null;
+  const providerType = input.providerType === undefined ? undefined : boundedEnum(input.providerType, PROVIDER_ERROR_TYPES) as "unknown" | null;
+  if (input.providerCode !== undefined && providerCode == null) return null;
+  if (input.providerType !== undefined && providerType == null) return null;
   const promptMessages = input.promptMessages === undefined ? undefined : boundedCount(input.promptMessages);
   const promptChars = input.promptChars === undefined ? undefined : boundedCount(input.promptChars);
   if (input.promptMessages !== undefined && promptMessages == null) return null;
   if (input.promptChars !== undefined && promptChars == null) return null;
-  const agentId = boundedString(input.agentId);
-  const invocationId = boundedString(input.invocationId);
   return {
     name: "provider_error_observed",
     schemaVersion: 1,
     at,
     overflowCandidate: input.overflowCandidate,
     overflowReasons,
-    ...(modelId != null ? { modelId } : {}),
     ...(api != null ? { api } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(providerCode != null ? { providerCode } : {}),
     ...(providerType != null ? { providerType } : {}),
-    ...(bodySnippet !== undefined ? { bodySnippet } : {}),
     ...(promptMessages !== undefined ? { promptMessages } : {}),
     ...(promptChars !== undefined ? { promptChars } : {}),
-    ...(agentId != null ? { agentId } : {}),
-    ...(invocationId != null ? { invocationId } : {}),
   };
 }
 

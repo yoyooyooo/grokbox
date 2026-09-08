@@ -68,10 +68,12 @@ describe("OpenAI envelope mapping", () => {
       ] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "lookup", result: { ok: true } }] },
     ], [{ name: "lookup", description: "look", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]);
-    expect(envelopeToOpenAiLivePrompt(envelope)).toEqual({
-      system: "sys",
-      messages: [{ role: "user", content: "see" }],
-    });
+    const liveFromTools = envelopeToOpenAiLivePrompt(envelope);
+    expect(liveFromTools.system).toBe("sys");
+    expect(liveFromTools.messages[0]).toEqual({ role: "user", content: "see" });
+    expect(liveFromTools.messages.some((message) => message.role === "assistant" && String(message.content).includes("Called lookup"))).toBe(true);
+    expect(liveFromTools.messages.some((message) => message.role === "assistant" && String(message.content).includes("lookup result"))).toBe(true);
+    expect(liveFromTools.messages.some((message) => message.role === "tool")).toBe(false);
     expect(envelopeToOpenAiLivePrompt(buildModelEnvelope([
       { role: "system", content: "sys" },
       { role: "user", content: "old" },
@@ -162,6 +164,20 @@ describe("OpenAI envelope mapping", () => {
     expect(live.messages.some((message) => message.role === "assistant" && String(message.content).includes("FILE_CONTENTS_FROM_PRIOR_STEP"))).toBe(true);
     expect(live.messages.some((message) => message.role === "assistant" && String(message.content).includes("Called Shell"))).toBe(true);
     expect(live.messages.at(-1)).toEqual({ role: "user", content: "what did the file say?" });
+  });
+
+  test("tool-call + tool-result stay in the next encode without a new human user", () => {
+    const live = envelopeToOpenAiLivePrompt(buildModelEnvelope([
+      { role: "user", content: "read the file" },
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "c1", toolName: "Shell", args: { command: "cat note" } }] },
+      { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "Shell", result: { stdout: "FILE_CONTENTS_FROM_PRIOR_STEP" } }] },
+    ], [{ name: "Shell", inputSchema: { type: "object", properties: { command: { type: "string" } } } }]), {});
+    expect(live.messages.some((message) => message.role === "user" && message.content === "read the file")).toBe(true);
+    expect(live.messages.some((message) => message.role === "assistant" && String(message.content).includes("FILE_CONTENTS_FROM_PRIOR_STEP"))).toBe(true);
+    expect(live.messages.some((message) => message.role === "assistant" && String(message.content).includes("Called Shell"))).toBe(true);
+    expect(live.messages.some((message) => message.role === "tool")).toBe(false);
+    expect(live.messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(live.messages.at(-1)?.role).toBe("assistant");
   });
 
   test("live prompt follows the Host envelope window only; does not invent earlier store turns", () => {

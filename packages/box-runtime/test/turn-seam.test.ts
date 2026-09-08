@@ -527,7 +527,7 @@ describe("turn seam identity vs route", () => {
     ]);
   });
 
-  test("after a successful STEP, omitted STEP replays the last handle without redispatches", async () => {
+  test("after a successful STEP, omitted STEP rejects without replaying lastHandle", async () => {
     const dir = await root();
     const driver = createStubRouteDriver([{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }]);
     const seam = createSessionSeam({
@@ -540,12 +540,15 @@ describe("turn seam identity vs route", () => {
     }) as HostPromptSession;
     const executor = managed.getExecutor([{ role: "user", content: "plain" }]);
     const first = await consumeHandle(executor.stream({}, "step-ok", [], {}));
-    const replayed = await consumeHandle(executor.stream({}, undefined, [], {}));
+    const omitted = await executor.stream({}, undefined, [], {}).response;
     await seam.flush();
     expect(first.finalDeliveryCount).toBe(1);
-    expect(replayed.finalDeliveryCount).toBe(1);
+    expect(omitted.error?.code).toBe("invalid_envelope");
     expect(driver.dispatches).toBe(1);
-    expect(JSON.stringify(await turnLines(dir))).not.toContain("missing-step-id");
+    expect(await turnLines(dir)).toEqual([
+      expect.objectContaining({ name: "model_step_terminal", turnId: "turn-replay-step", invocationId: "step-ok", terminalClass: "stop" }),
+      expect.objectContaining({ name: "host_stream_rejected", turnId: "turn-replay-step", reason: "missing-step-id", errorCode: "invalid_envelope" }),
+    ]);
   });
 
   test("omitted and illegal STEP reject without falling back to TURN", async () => {

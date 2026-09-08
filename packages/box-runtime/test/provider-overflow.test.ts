@@ -28,12 +28,15 @@ describe("provider overflow classification (log-only)", () => {
     expect(inspectProviderError(new Error("network down")).overflowCandidate).toBe(false);
   });
 
-  test("redacts secrets from snippets", () => {
+  test("does not persist body snippets or unknown provider tokens", () => {
     const evidence = inspectProviderError({
       statusCode: 401,
-      message: "Bearer syncred_opaque_7c91 failed with sk-abc123",
+      data: { error: { code: "invalid_api_key", type: "invalid_request_error", message: "Bearer syncred_opaque_7c91 failed with sk-abc123" } },
     });
-    expect(evidence.bodySnippet).not.toMatch(/syncred_opaque_7c91|sk-abc123|Bearer \S+failed/);
+    expect(evidence).not.toHaveProperty("bodySnippet");
+    expect(evidence.providerCode).toBe("unknown");
+    expect(evidence.providerType).toBe("unknown");
+    expect(JSON.stringify(evidence)).not.toMatch(/syncred_opaque_7c91|sk-abc123/);
     expect(evidence.overflowCandidate).toBe(false);
   });
 });

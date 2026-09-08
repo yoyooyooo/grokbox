@@ -110,7 +110,6 @@ export type SessionSeamConfig = {
 };
 type SessionRow = {
   session: HostPromptSession; turnId: string; agentId: string; modelId: string; disconnected: boolean;
-  lastHandle?: StreamHandle;
 };
 type StepSlot = {
   stepId: string; turnId: string; agentId: string; hostGenerationId: string; modelId: string;
@@ -278,7 +277,6 @@ export function createSessionSeam(config: SessionSeamConfig) {
     const prompt: PromptSession = { stream(request = {}) {
       if (row.disconnected) return idleStreamHandle(modelId);
       if (request.invocationId === undefined) {
-        if (row.lastHandle) return deliveryHandle(row.lastHandle, driver.delivery === "response-only");
         recordStreamRejected(row, "missing-step-id");
         return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope", undefined, undefined, { agentId, stage: "admit" }), driver.delivery === "response-only");
       }
@@ -358,9 +356,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
       const cancellation = combineAbortSignals(request.abortSignal ? [request.abortSignal, controller.signal] : [controller.signal]);
       const handle = streaming.stream({ ...request, envelope, abortSignal: cancellation.signal });
       void handle.response.then(cancellation.dispose, cancellation.dispose);
-      const delivered = deliveryHandle(handle, driver.delivery === "response-only");
-      row.lastHandle = delivered;
-      return delivered;
+      return deliveryHandle(handle, driver.delivery === "response-only");
     } };
     row.session = asHostPromptSession(prompt, modelId, args.onRequestId, {
       invocationId: turnId,
@@ -370,9 +366,6 @@ export function createSessionSeam(config: SessionSeamConfig) {
         const ctx = (invocationId?: string): VisibleFailureContext => ({
           agentId, ...(invocationId ? { invocationId } : {}), stage: "admit",
         });
-        if (detail?.reason === "missing-step-id" && row.lastHandle) {
-          return deliveryHandle(row.lastHandle, driver.delivery === "response-only");
-        }
         if (detail?.reason === "missing-step-id" || detail?.reason === "invalid-step-id") {
           recordStreamRejected(row, detail.reason);
           return deliveryHandle(visibleFailureHandle(modelId, code, undefined, undefined, ctx()), driver.delivery === "response-only");

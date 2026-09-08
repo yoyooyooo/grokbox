@@ -13,27 +13,20 @@ export const PROVIDER_OVERFLOW_MESSAGE =
 export const PROVIDER_OVERFLOW_REASON_TAGS = new Set(["provider_code", "status_message"]);
 
 export type ProviderErrorHint = {
-  modelId?: string;
   api?: "chat" | "responses";
   promptMessages?: number;
   promptChars?: number;
-  agentId?: string;
-  invocationId?: string;
 };
 
 export type ProviderErrorEvidence = {
   overflowCandidate: boolean;
   overflowReasons: string[];
   status?: number;
-  providerCode?: string;
-  providerType?: string;
-  bodySnippet?: string;
-  modelId?: string;
+  providerCode?: "context_length_exceeded" | "context_window_exceeded" | "prompt_too_long" | "request_too_large" | "unknown";
+  providerType?: "unknown";
   api?: "chat" | "responses";
   promptMessages?: number;
   promptChars?: number;
-  agentId?: string;
-  invocationId?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,7 +97,10 @@ function collect(error: unknown): { status?: number; code?: string; type?: strin
 export function inspectProviderError(error: unknown, hint: ProviderErrorHint = {}): ProviderErrorEvidence {
   const bag = collect(error);
   const overflowReasons: string[] = [];
-  if (bag.code && PROVIDER_OVERFLOW_CODES.has(bag.code.toLowerCase())) overflowReasons.push("provider_code");
+  const knownCode = bag.code && PROVIDER_OVERFLOW_CODES.has(bag.code.toLowerCase())
+    ? bag.code.toLowerCase() as "context_length_exceeded" | "context_window_exceeded" | "prompt_too_long" | "request_too_large"
+    : undefined;
+  if (knownCode) overflowReasons.push("provider_code");
   if ((bag.status === 400 || bag.status === 413) && bag.snippet && PROVIDER_OVERFLOW_MESSAGE.test(bag.snippet)) {
     overflowReasons.push("status_message");
   }
@@ -112,15 +108,11 @@ export function inspectProviderError(error: unknown, hint: ProviderErrorHint = {
     overflowCandidate: overflowReasons.length > 0,
     overflowReasons,
     ...(bag.status !== undefined ? { status: bag.status } : {}),
-    ...(bag.code ? { providerCode: bag.code } : {}),
-    ...(bag.type ? { providerType: bag.type } : {}),
-    ...(bag.snippet ? { bodySnippet: bag.snippet } : {}),
-    ...(hint.modelId ? { modelId: hint.modelId } : {}),
+    ...(bag.code ? { providerCode: knownCode ?? "unknown" } : {}),
+    ...(bag.type ? { providerType: "unknown" } : {}),
     ...(hint.api ? { api: hint.api } : {}),
     ...(hint.promptMessages !== undefined ? { promptMessages: hint.promptMessages } : {}),
     ...(hint.promptChars !== undefined ? { promptChars: hint.promptChars } : {}),
-    ...(hint.agentId ? { agentId: hint.agentId } : {}),
-    ...(hint.invocationId ? { invocationId: hint.invocationId } : {}),
   };
 }
 

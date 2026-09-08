@@ -127,7 +127,7 @@ function liveTurnText(message: PromptMessage): string {
  * Responses (`model_error` / normalize). Host still executes SendToUser.
  * Filters SAND_HIDDEN / ack-redrive / synthetic failure rows.
  * Default: no count/char near-window. `GROKBOX_LIVE_PROMPT_*_CAP` is debug-only.
- * Always ends on the latest user turn.
+ * Keep the current STEP tool-call/result fold even when Host has not appended a new user yet.
  */
 export function envelopeToOpenAiLivePrompt(
   envelope: ModelEnvelope,
@@ -155,7 +155,6 @@ export function envelopeToOpenAiLivePrompt(
   const messageCap = parsePositiveInt(env[LIVE_PROMPT_MESSAGE_CAP_ENV]);
   const charCap = parsePositiveInt(env[LIVE_PROMPT_CHAR_CAP_ENV]);
   let kept = messageCap === undefined ? texts : texts.slice(-messageCap);
-  while (kept.length > 0 && kept[kept.length - 1]!.role !== "user") kept.pop();
   if (charCap !== undefined) {
     let chars = kept.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : 0), 0);
     while (kept.length > 1 && chars > charCap) {
@@ -167,7 +166,7 @@ export function envelopeToOpenAiLivePrompt(
       }
     }
   }
-  if (kept.length === 0 || kept[kept.length - 1]!.role !== "user") {
+  if (kept.length === 0 || !kept.some((message) => message.role === "user")) {
     throw new Error("openai-live-prompt-missing-user");
   }
   return {
