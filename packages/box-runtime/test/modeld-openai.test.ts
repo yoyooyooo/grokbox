@@ -7,6 +7,7 @@ import { collectAs1Chunks } from "../src/modeld-as1.ts";
 import {
   as1ChunksFromOpenAiEvents,
   createOpenAiModeldDriver,
+  envelopeToOpenAiLivePrompt,
   envelopeToOpenAiMessages,
   mapOpenAiStreamEvent,
   openAiAccepts,
@@ -66,6 +67,23 @@ describe("OpenAI envelope mapping", () => {
       ] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "lookup", result: { ok: true } }] },
     ], [{ name: "lookup", description: "look", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]);
+    expect(envelopeToOpenAiLivePrompt(envelope)).toEqual({
+      system: "sys",
+      messages: [{ role: "user", content: "see" }],
+    });
+    expect(envelopeToOpenAiLivePrompt(buildModelEnvelope([
+      { role: "system", content: "sys" },
+      { role: "user", content: "old" },
+      { role: "assistant", content: "hi" },
+      { role: "user", content: "again" },
+    ]))).toEqual({
+      system: "sys",
+      messages: [
+        { role: "user", content: "old" },
+        { role: "assistant", content: "hi" },
+        { role: "user", content: "again" },
+      ],
+    });
     expect(envelopeToOpenAiMessages(envelope)).toEqual([
       { role: "system", content: "sys" },
       { role: "user", content: [
@@ -183,6 +201,36 @@ describe("OpenAI ModeldDriver", () => {
     }).catch(() => undefined);
     expect(urls.some((url) => url.includes("/responses"))).toBe(true);
     expect(urls.some((url) => url.includes("/chat/completions"))).toBe(false);
+  });
+
+  test("live path forwards Host tool schemas without execute metadata", async () => {
+    const bodies: string[] = [];
+    const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      bodies.push(await request.text());
+      return new Response("nope", { status: 401 });
+    }) as typeof globalThis.fetch;
+    const driver = createOpenAiModeldDriver({
+      resolveApiKey: async () => TEST_KEY,
+      fetch,
+    });
+    const envelope = buildModelEnvelope(
+      [
+        { role: "system", content: "you are grok with lookup" },
+        { role: "user", content: "old ping" },
+        { role: "assistant", content: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "x" } }] },
+        { role: "user", content: "diag ping — reply with exactly: pong" },
+      ],
+      [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }],
+    );
+    await driver.complete({
+      pin, envelope, invocationId: "no-tools", agentId: "agent-tom", signal: new AbortController().signal,
+    }).catch(() => undefined);
+    expect(bodies.length).toBeGreaterThan(0);
+    const body = bodies.join("\n");
+    expect(body).toMatch(/lookup/);
+    expect(body).toMatch(/diag ping/);
+    expect(body).not.toMatch(/"execute"/);
   });
 
   test("reuses admission kernel; stub stays wrong-model; tools have no execute", async () => {

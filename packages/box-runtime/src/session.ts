@@ -104,6 +104,9 @@ export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown)
           const next = await iterator.next();
           if (next.done) return next;
           const part = next.value;
+          if (part.type === "text-delta" || part.type === "reasoning") {
+            return { done: false as const, value: { ...part, text: part.textDelta } as StreamPart };
+          }
           return { done: false as const, value: part.type === "finish" && part.response
             ? { ...part, response: normalizeHostResponse(part.response) } : part };
         },
@@ -355,7 +358,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (part.type === "text-delta" || part.type === "reasoning") {
         if (typeof part.textDelta !== "string") return failStream("invalid_stream");
         pushText(part.type === "text-delta" ? "text" : "reasoning", part.textDelta);
-        replay.push({ type: part.type, textDelta: part.textDelta }); return;
+        replay.push({ type: part.type, textDelta: part.textDelta, text: part.textDelta } as StreamPart); return;
       }
       if (part.type !== "tool-call" && part.type !== "tool-call-delta" && part.type !== "tool-call-streaming-start") return failStream("invalid_stream");
       if (!validId(part.toolCallId) || !validId(part.toolName)) return failStream("invalid_stream");

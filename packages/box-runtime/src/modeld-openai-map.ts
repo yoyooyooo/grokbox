@@ -40,6 +40,51 @@ export function envelopeToOpenAiMessages(envelope: ModelEnvelope): OpenAiPromptM
   return envelope.messages.map(messageToOpenAi);
 }
 
+const LIVE_TEXT_MESSAGE_CAP = 24;
+const LIVE_TEXT_CHAR_CAP = 24_000;
+
+/**
+ * Live Grok Bot prompt: Host system + recent user/assistant text.
+ * Drop tool roles and tool-call parts; those turns made Responses reject the full snapshot.
+ * Host still owns Transcript / SendToUser.
+ */
+export function envelopeToOpenAiLivePrompt(envelope: ModelEnvelope): {
+  system?: string;
+  messages: OpenAiPromptMessage[];
+} {
+  const systems: string[] = [];
+  const texts: OpenAiPromptMessage[] = [];
+  for (const message of envelope.messages) {
+    if (message.role === "system") {
+      const text = contentText(message.content).trim();
+      if (text) systems.push(text);
+      continue;
+    }
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const text = contentText(message.content).trim();
+    if (!text) continue;
+    texts.push({ role: message.role, content: text });
+  }
+  let kept = texts.slice(-LIVE_TEXT_MESSAGE_CAP);
+  while (kept.length > 0 && kept[kept.length - 1]!.role !== "user") kept.pop();
+  let chars = kept.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : 0), 0);
+  while (kept.length > 1 && chars > LIVE_TEXT_CHAR_CAP) {
+    const removed = kept.shift()!;
+    chars -= typeof removed.content === "string" ? removed.content.length : 0;
+    if (kept[0]?.role === "assistant") {
+      const extra = kept.shift()!;
+      chars -= typeof extra.content === "string" ? extra.content.length : 0;
+    }
+  }
+  if (kept.length === 0 || kept[kept.length - 1]!.role !== "user") {
+    throw new Error("openai-live-prompt-missing-user");
+  }
+  return {
+    ...(systems.length > 0 ? { system: systems.join("\n\n") } : {}),
+    messages: kept,
+  };
+}
+
 function messageToOpenAi(message: PromptMessage): OpenAiPromptMessage {
   if (message.role === "system") {
     return { role: "system", content: contentText(message.content) };

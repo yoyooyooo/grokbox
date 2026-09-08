@@ -202,7 +202,7 @@ describe("stub route synthetic compile/load", () => {
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") fromStream.push(part.textDelta);
       }
-      expect(fromStream).toEqual([]);
+      expect(fromStream).toEqual(["echo"]);
       expect(await result.extendedUsage).toMatchObject({ inputTokens: 1, outputTokens: 1, maxTokens: 0 });
       expect(await result.invocationId).toBe("inv-shape");
 
@@ -234,15 +234,15 @@ describe("stub route synthetic compile/load", () => {
       expect("then" in result).toBe(false);
 
       const [inner, late] = duplicateHostStream(result.fullStream);
-      const [innerParts, response] = await Promise.all([
-        collectStreamParts(inner),
+      const innerPartsPromise = collectStreamParts(inner);
+      await new Promise<void>((resolve) => { setTimeout(resolve, 25); });
+      const [innerParts, response, fullParts] = await Promise.all([
+        innerPartsPromise,
         result.response,
+        collectStreamParts(late),
       ]);
-      expect(innerParts).toEqual([]);
-
-      // Attach the second fork only after the Host can settle its model response.
-      const fullParts = await collectStreamParts(late);
-      expect(fullParts).toEqual([]);
+      expect(innerParts.some((part) => part.type === "text-delta" && part.textDelta === "echo")).toBe(true);
+      expect(fullParts.some((part) => part.type === "text-delta" && part.textDelta === "echo")).toBe(true);
       expect(response.messages).toEqual([
         { role: "assistant", content: [{ type: "text", text: "echo" }] },
       ]);

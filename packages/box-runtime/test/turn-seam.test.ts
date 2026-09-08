@@ -527,6 +527,27 @@ describe("turn seam identity vs route", () => {
     ]);
   });
 
+  test("after a successful STEP, omitted STEP replays the last handle without redispatches", async () => {
+    const dir = await root();
+    const driver = createStubRouteDriver([{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }]);
+    const seam = createSessionSeam({
+      mode: "route", root: dir, assignment: "main", modelId: "stub/echo", driver, now: () => AT,
+    });
+    const managed = seam.hook({
+      originalSession: { stream() { throw new Error("official session must not run"); } },
+      sessionOptions: { invocationId: "turn-replay-step", inferenceReason: "main" },
+      agentId: "agent-tom",
+    }) as HostPromptSession;
+    const executor = managed.getExecutor([{ role: "user", content: "plain" }]);
+    const first = await consumeHandle(executor.stream({}, "step-ok", [], {}));
+    const replayed = await consumeHandle(executor.stream({}, undefined, [], {}));
+    await seam.flush();
+    expect(first.finalDeliveryCount).toBe(1);
+    expect(replayed.finalDeliveryCount).toBe(1);
+    expect(driver.dispatches).toBe(1);
+    expect(JSON.stringify(await turnLines(dir))).not.toContain("missing-step-id");
+  });
+
   test("omitted and illegal STEP reject without falling back to TURN", async () => {
     const dir = await root();
     const driver = createStubRouteDriver([{ type: "text-delta", textDelta: "echo" }, { type: "finish", reason: "stop" }]);

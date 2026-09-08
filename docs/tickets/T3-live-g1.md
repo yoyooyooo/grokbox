@@ -1,13 +1,14 @@
-## Goal
-When explicitly authorized, run G1 live stub path: identity/SHA preflight → at most one `re-adopt --confirm` → at most one stub text canary.
+# T3 — Live G1 path
 
-## Gates (human phrases)
-- `可以预检` / `可以补丁` / `可以 canary`
-- No real model / no second dangerous call without fresh `继续` after hard fail
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-## Blockers until ready
-- Offline STEP contract credible (see sibling land ticket)
-- W-LOAD / W-DELIVERY / G2 safe-input still called out as gaps — do not fake green
+## Goal (original)
+When explicitly authorized: identity/SHA preflight → at most one `re-adopt --confirm` → at most one stub text canary.
 
-## Driver
-Herdr only after human gate phrases. Do not self-open.
+## Status
+**done (live, luna not stub).** grokbox test0 `00000000-0000-4000-8000-000000000114` replies via modeld `openai-responses/gpt-5.6-luna` and Host `SendToUser` (bounded `pong` canary). T12 green: create-bot and uncovered bots still official after adopt. grokbox test1 stays official until opted in.
+
+Original stub-only canary was superseded by the luna opt-in; do not reopen for a stub ping.
+
+## Fence
+No extra Host re-adopt for E3/T5b unless a later ticket requires it.

@@ -52,6 +52,8 @@ export function createModeldRouteDriver(runRoot: string, binding?: HostBinding):
     const entry = { generation: modeldHandshake(runRoot, signal), unknown: false };
     invocations.set(id, entry); return entry;
   };
+  // Buffered S1 parts still have to reach Host fullStream so Transcript/SendToUser can run.
+  driver.delivery = "stream";
   driver.submit = async (request) => {
     if (request.abortSignal?.aborted) return { parts: [{ type: "finish", reason: "abort" }], dispatched: false };
     if (!request.modelId) throw new VisibleStreamError("admit", "model_error", "route driver requires a modelId");
@@ -108,6 +110,7 @@ export type SessionSeamConfig = {
 };
 type SessionRow = {
   session: HostPromptSession; turnId: string; agentId: string; modelId: string; disconnected: boolean;
+  lastHandle?: StreamHandle;
 };
 type StepSlot = {
   stepId: string; turnId: string; agentId: string; hostGenerationId: string; modelId: string;
@@ -128,9 +131,19 @@ function agentIdOf(args: { agentId?: string; sessionOptions?: unknown }): string
   return typeof id === "string" ? id : undefined;
 }
 function emptyFullStream(): AsyncIterable<StreamPart> { return { async *[Symbol.asyncIterator]() {} }; }
+/** Host duplicateStream writes both forks; the UI fork attaches after return. Instant S1 yield deadlocks the unread fork. */
+const HOST_UI_FORK_DELAY_MS = 40;
+function delayedFullStream(source: AsyncIterable<StreamPart>): AsyncIterable<StreamPart> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      await new Promise<void>((resolve) => { setTimeout(resolve, HOST_UI_FORK_DELAY_MS); });
+      yield* source;
+    },
+  };
+}
 function deliveryHandle(handle: StreamHandle, responseOnly: boolean): StreamHandle {
-  // Production stub IPC is still one buffered response. Do not market it as token streaming.
-  return responseOnly ? { ...handle, fullStream: emptyFullStream() } : handle;
+  // S1 is still one buffered response. Delay the Host-facing replay so duplicateStream's UI fork can attach.
+  return responseOnly ? { ...handle, fullStream: emptyFullStream() } : { ...handle, fullStream: delayedFullStream(handle.fullStream) };
 }
 function idleStreamHandle(modelId: string): StreamHandle {
   return { fullStream: emptyFullStream(), response: Promise.resolve({ modelId, messages: [{ role: "assistant", content: "" }] }),
@@ -265,6 +278,7 @@ export function createSessionSeam(config: SessionSeamConfig) {
     const prompt: PromptSession = { stream(request = {}) {
       if (row.disconnected) return idleStreamHandle(modelId);
       if (request.invocationId === undefined) {
+        if (row.lastHandle) return deliveryHandle(row.lastHandle, driver.delivery === "response-only");
         recordStreamRejected(row, "missing-step-id");
         return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope", undefined, undefined, { agentId, stage: "admit" }), driver.delivery === "response-only");
       }
@@ -344,7 +358,9 @@ export function createSessionSeam(config: SessionSeamConfig) {
       const cancellation = combineAbortSignals(request.abortSignal ? [request.abortSignal, controller.signal] : [controller.signal]);
       const handle = streaming.stream({ ...request, envelope, abortSignal: cancellation.signal });
       void handle.response.then(cancellation.dispose, cancellation.dispose);
-      return deliveryHandle(handle, driver.delivery === "response-only");
+      const delivered = deliveryHandle(handle, driver.delivery === "response-only");
+      row.lastHandle = delivered;
+      return delivered;
     } };
     row.session = asHostPromptSession(prompt, modelId, args.onRequestId, {
       invocationId: turnId,
@@ -354,6 +370,9 @@ export function createSessionSeam(config: SessionSeamConfig) {
         const ctx = (invocationId?: string): VisibleFailureContext => ({
           agentId, ...(invocationId ? { invocationId } : {}), stage: "admit",
         });
+        if (detail?.reason === "missing-step-id" && row.lastHandle) {
+          return deliveryHandle(row.lastHandle, driver.delivery === "response-only");
+        }
         if (detail?.reason === "missing-step-id" || detail?.reason === "invalid-step-id") {
           recordStreamRejected(row, detail.reason);
           return deliveryHandle(visibleFailureHandle(modelId, code, undefined, undefined, ctx()), driver.delivery === "response-only");

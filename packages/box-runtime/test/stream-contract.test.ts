@@ -34,7 +34,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     expect(response.messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "first second" }] }]);
     expect(await within(handle.usage)).toEqual({ promptTokens: 8, completionTokens: 4, totalTokens: 12 });
     const late = await within(collectStreamParts(handle.fullStream));
-    expect(late.filter((part) => part.type === "text-delta")).toEqual([
+    expect(late.filter((part) => part.type === "text-delta")).toMatchObject([
       { type: "text-delta", textDelta: "first" }, { type: "text-delta", textDelta: " second" },
     ]);
     expect(late.at(-1)).toMatchObject({ type: "finish", reason: "stop", response });
@@ -52,7 +52,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     expect(await within(pending)).toMatchObject({ done: true });
     expect(f.driverSignal()?.aborted).toBe(false);
     f.script.push({ type: "text-delta", textDelta: "still available" }); f.script.push(STOP);
-    expect((await within(collectStreamParts(handle.fullStream)))[0]).toEqual({ type: "text-delta", textDelta: "still available" });
+    expect((await within(collectStreamParts(handle.fullStream)))[0]).toMatchObject({ type: "text-delta", textDelta: "still available" });
     expect((await within(handle.response)).finishReason).toBe("stop");
     expect(f.calls.count).toBe(1);
   });
@@ -68,7 +68,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
     const [left, right] = await within(Promise.all([innerParts, collectStreamParts(late)]));
     expect(left).toEqual(right);
-    expect(left[0]).toEqual({ type: "text-delta", textDelta: "before UI" });
+    expect(left[0]).toMatchObject({ type: "text-delta", textDelta: "before UI" });
     expect(left.at(-1)).toMatchObject({ type: "finish", response });
     expect(f.calls.count).toBe(1);
   });

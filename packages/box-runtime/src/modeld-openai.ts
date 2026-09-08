@@ -8,6 +8,7 @@ import { createAs1ModeldDriver, type As1GenerateChunk } from "./modeld-as1.ts";
 import type { ModeldDriver } from "./modeld.ts";
 import type { ModelRecord } from "./models.ts";
 import {
+  envelopeToOpenAiLivePrompt,
   envelopeToOpenAiMessages,
   envelopeToOpenAiToolChoice,
   mapOpenAiStreamEvent,
@@ -21,8 +22,8 @@ import {
 } from "./modeld-openai-map.ts";
 
 export {
-  openAiAccepts, openAiApiMode, envelopeToOpenAiMessages, mapOpenAiStreamEvent, sanitizeOpenAiError,
-  OPENAI_LOCAL_ERROR_MESSAGES,
+  openAiAccepts, openAiApiMode, envelopeToOpenAiLivePrompt, envelopeToOpenAiMessages,
+  mapOpenAiStreamEvent, sanitizeOpenAiError, OPENAI_LOCAL_ERROR_MESSAGES,
 };
 
 function credentialMatchesPin(secret: string, fingerprint: string | null): boolean {
@@ -82,11 +83,13 @@ async function liveOpenAiEvents(
     ...(input.fetch ? { fetch: input.fetch } : {}),
   });
   const model = call.api === "responses" ? openai.responses(call.pin.model.model) : openai.chat(call.pin.model.model);
+  const prompt = envelopeToOpenAiLivePrompt(call.envelope);
   const tools = toSdkTools(call.envelope.tools);
   const toolChoice = envelopeToOpenAiToolChoice(call.envelope);
   const result = streamText({
     model,
-    messages: envelopeToOpenAiMessages(call.envelope) as ModelMessage[],
+    ...(prompt.system ? { system: prompt.system } : {}),
+    messages: prompt.messages as ModelMessage[],
     ...(tools ? { tools } : {}),
     ...(toolChoice ? { toolChoice } : {}),
     temperature: call.envelope.options.temperature,
@@ -109,16 +112,21 @@ async function* mapLiveStream(stream: AsyncIterable<{ type: string } & Record<st
   }
 }
 
+
 function toSdkTools(definitions: ToolDefinition[]): ToolSet | undefined {
   if (definitions.length === 0) return undefined;
   const tools: ToolSet = {};
   for (const definition of definitions) {
-    tools[definition.name] = {
-      ...(definition.description ? { description: definition.description } : {}),
-      inputSchema: jsonSchema(definition.inputSchema as JSONSchema7),
-    };
+    try {
+      tools[definition.name] = {
+        ...(definition.description ? { description: definition.description } : {}),
+        inputSchema: jsonSchema(definition.inputSchema as JSONSchema7),
+      };
+    } catch {
+      continue;
+    }
   }
-  return tools;
+  return Object.keys(tools).length > 0 ? tools : undefined;
 }
 
 export function as1ChunksFromOpenAiEvents(events: Iterable<OpenAiStreamEvent>): As1GenerateChunk[] {
