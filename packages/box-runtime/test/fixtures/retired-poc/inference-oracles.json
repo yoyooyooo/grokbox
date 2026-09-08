@@ -1,7 +1,7 @@
 {
   "ticket": "T20-extracted",
   "activateIn": ["T23", "T24", "T25", "T26"],
-  "notes": "POC createModeld / As1 / StubRouteDriver / callStubModeld entrypoints revoked. Replay these oracles against the new ModelBackend + runStep, not the deleted APIs.",
+  "notes": "POC createModeld / As1 / StubRouteDriver / callStubModeld entrypoints revoked. Replay against ModelBackend + runStep, not deleted APIs. Drop complete-array, v2 server, StubRouteDriver, EOF-success.",
   "vectors": [
     {
       "id": "stub-echo-model-id",
@@ -26,11 +26,90 @@
     },
     {
       "id": "duplicate-same-step-does-not-second-dispatch",
-      "expectedCode": "duplicate"
+      "source": "modeld-confluence.test.ts:IPC pending commit wait and duplicate concurrency",
+      "activateIn": ["T24", "T25"],
+      "input": {
+        "sameKey": { "invocationId": "wait", "turnId": "wait", "agentId": "agent-tom", "envelope": { "version": 1, "messages": [], "tools": [], "options": {} } },
+        "concurrentSubmits": 2
+      },
+      "barriers": ["records===1 before authority write", "both submits started before first dispatch"],
+      "expected": {
+        "outcomes": [
+          { "ok": true, "dispatched": true },
+          { "ok": true, "dispatched": false }
+        ],
+        "dispatches": 1
+      },
+      "sideEffects": { "fetch": 0, "dns": 0, "tcp": 0, "credential": 0, "abort": 0 }
     },
     {
       "id": "payload-change-same-key-is-conflict",
-      "expectedCode": "conflict"
+      "source": "modeld-confluence.test.ts:changed envelope is not a second request",
+      "activateIn": ["T24", "T25"],
+      "input": {
+        "original": { "invocationId": "wait", "envelope": { "messages": [] } },
+        "changed": { "invocationId": "wait", "envelope": { "messages": [{ "role": "user", "content": "changed" }] } }
+      },
+      "barriers": ["first key terminal or in-flight before changed submit"],
+      "expected": { "ok": false, "code": "conflict" },
+      "sideEffects": { "dispatches": 1 }
+    },
+    {
+      "id": "generation-replacement-cancels-old-and-rejects-old-packets",
+      "source": "modeld-confluence.test.ts:canonical generation replacement",
+      "activateIn": ["T24", "T25"],
+      "input": {
+        "oldInvocationId": "old",
+        "newInvocationId": "new",
+        "newActivationId": "new-activation",
+        "lateOldInvocationId": "late-old"
+      },
+      "barriers": ["old driver signal captured before generation write", "new admit before asserting old abort"],
+      "expected": {
+        "newAdmit": { "ok": true },
+        "oldInFlight": { "ok": false, "code": "wrong-generation" },
+        "oldAborted": true,
+        "lateOld": { "ok": false, "code": "wrong-generation" },
+        "dispatches": 2
+      },
+      "sideEffects": { "fetch": 0, "dns": 0, "tcp": 0, "credential": 0 }
+    },
+    {
+      "id": "restart-does-not-rehandshake-used-turn-fresh-invocation-ok",
+      "source": "modeld-confluence.test.ts:restart changes the server fence",
+      "activateIn": ["T24", "T25"],
+      "input": {
+        "usedInvocationId": "before-restart",
+        "stalePacket": "stale-packet",
+        "freshInvocationId": "fresh"
+      },
+      "barriers": ["first server stop before second listen", "stale packet submitted to new generation"],
+      "expected": {
+        "stale": { "ok": false, "code": "wrong-server-generation" },
+        "reuseUsedInvocation": { "throws": true },
+        "newServerDispatchesAfterReuse": 0,
+        "fresh": { "dispatched": true },
+        "newServerDispatchesAfterFresh": 1
+      },
+      "sideEffects": { "fetch": 0, "rehandshakeUsedTurn": 0 }
+    },
+    {
+      "id": "disconnect-and-stop-cancel-owned-work-bounded",
+      "source": "modeld-confluence.test.ts:socket disconnect and active-client stop",
+      "activateIn": ["T25"],
+      "input": {
+        "lostInvocationId": "lost",
+        "stopActiveInvocationId": "stop-active",
+        "partialIdleWrite": [0, 0]
+      },
+      "barriers": ["driver signal assigned before client.destroy", "dispatches===2 before server.stop"],
+      "expected": {
+        "lostReplay": { "ok": false, "code": "disconnected" },
+        "stopActive": "disconnected",
+        "ownedSignalAborted": true,
+        "socketUnlinked": true
+      },
+      "sideEffects": { "fetch": 0, "waitedForever": false }
     },
     {
       "id": "unassigned-route-returns-original-session",

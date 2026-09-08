@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -156,6 +156,7 @@ function collectSpecs(source, scriptKind) {
   const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true, scriptKind);
   const specs = [];
   const topLevelWrites = [];
+  const bunIdents = [];
   function calleeName(node) {
     if (ts.isIdentifier(node)) return node.text;
     if (ts.isPropertyAccessExpression(node)) {
@@ -169,6 +170,7 @@ function collectSpecs(source, scriptKind) {
     return "";
   }
   function visit(node, top) {
+    if (ts.isIdentifier(node) && node.text === "Bun") bunIdents.push(true);
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
         specs.push(node.moduleSpecifier.text);
@@ -180,7 +182,7 @@ function collectSpecs(source, scriptKind) {
         const arg = node.arguments[0];
         if (arg && ts.isStringLiteral(arg)) specs.push(arg.text);
       }
-      if (top && /^(writeFileSync|writeFile|renameSync|mkdirSync|fetch|spawn|spawnSync|exec|execFile|createConnection|createServer|listen)$/.test(name)) {
+      if (top && /^(writeFileSync|writeFile|renameSync|mkdirSync|fetch|spawn|spawnSync|exec|execFile|createConnection|createServer|listen|fs\.writeFileSync)$/.test(name)) {
         topLevelWrites.push(name);
       }
     }
@@ -188,14 +190,13 @@ function collectSpecs(source, scriptKind) {
     ts.forEachChild(node, (child) => visit(child, Boolean(nextTop && !ts.isFunctionLike(node) && !ts.isClassDeclaration(node))));
   }
   visit(sf, true);
-  return { specs, topLevelWrites, sf };
+  return { specs, topLevelWrites, bunIdents, sf };
 }
 
-function bunHits(source) {
+function bunHits(source, bunIdents = []) {
   const hits = [];
   if (/\bbun:/.test(source)) hits.push("bun-scheme");
-  if (/\bBun\.(file|serve|spawn|write|which|sleep)\b/.test(source)) hits.push("Bun.dot");
-  if (/\bBun\s*\[\s*["'](file|serve|spawn|write|which|sleep)["']\s*\]/.test(source)) hits.push("Bun.bracket");
+  if (bunIdents.length) hits.push("Bun.ident");
   return hits;
 }
 
@@ -207,9 +208,9 @@ for (const dir of productionDirs) {
     const path = rel(file);
     const source = readFileSync(file, "utf8");
     const kind = ext === ".cjs" || ext === ".js" ? ts.ScriptKind.JS : ts.ScriptKind.TS;
-    const { specs, topLevelWrites } = collectSpecs(source, kind);
+    const { specs, topLevelWrites, bunIdents } = collectSpecs(source, kind);
     const fromLayer = layerOf(path);
-    if (fromLayer !== "other" && bunHits(source).length) fail("production module uses bun:* or Bun globals", { path });
+    if (fromLayer !== "other" && bunHits(source, bunIdents).length) fail("production module uses bun:* or Bun globals", { path });
     if (fromLayer === "host" && topLevelWrites.length) fail("preload/host import-time side effect", { path, topLevelWrites });
     for (const spec of specs) {
       const resolved = resolveSpec(path, spec);
@@ -218,6 +219,9 @@ for (const dir of productionDirs) {
         fail("Host leaf imports Effect/SDK", { path, spec });
       }
       if (fromLayer === "cli" && resolved.kind === "forbidden-pkg") fail("CLI imported SDK/Effect", { path, spec });
+      if (fromLayer === "kernel" && !path.endsWith("/ports.ts") && (spec === "effect" || spec.startsWith("effect/") || resolved.kind === "forbidden-pkg")) {
+        fail("kernel non-ports file imports Effect", { path, spec });
+      }
       if (fromLayer === "kernel" && spec.startsWith("node:") && !(path.endsWith("src/hash.ts") && spec === "node:crypto")) {
         fail("kernel imported node:* outside hash.ts", { path, spec });
       }
@@ -271,8 +275,21 @@ if (existsSync(preload)) {
       } catch {
         fail("preload metafile unreadable");
       }
+      const trap = spawnSync(process.execPath, ["-e", `
+        const fs = require("node:fs");
+        const writes = [];
+        for (const name of ["writeFileSync", "writeFile", "mkdirSync", "renameSync"]) {
+          fs[name] = (...args) => { writes.push({ name, path: String(args[0] ?? "") }); };
+        }
+        try { require(${JSON.stringify(outfile)}); } catch {}
+        process.stdout.write(JSON.stringify({ writes }));
+      `], { encoding: "utf8", timeout: 5000 });
+      let trapResult;
+      try { trapResult = JSON.parse(trap.stdout || "{}"); } catch { fail("preload import-time trap unreadable"); }
+      if (Array.isArray(trapResult?.writes) && trapResult.writes.length > 0) {
+        fail("preload import-time side effect", { writes: trapResult.writes });
+      }
     }
-    rmSync(dir, { recursive: true, force: true });
   }
 }
 

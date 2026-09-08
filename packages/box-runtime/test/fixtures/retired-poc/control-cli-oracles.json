@@ -1,7 +1,7 @@
 {
   "ticket": "T20-extracted",
   "activateIn": ["T28"],
-  "notes": "CLI composition now returns runtime_not_ready before live ports. These oracles are the previous control receipts, not current public behavior.",
+  "notes": "CLI composition now returns runtime_not_ready before live ports. Previous receipt obligations remain for T28; they are not current public behavior.",
   "vectors": [
     {
       "id": "re-adopt-without-confirm-invalid_usage",
@@ -11,16 +11,35 @@
     },
     {
       "id": "re-adopt-confirm-previous-receipt",
+      "source": "test/runtime-cli.test.ts:re-adopt receipt preserves half-success while omitting raw process argv",
       "argv": ["runtime", "re-adopt", "--confirm"],
-      "previousPublicBehavior": { "process": "re-adopt", "confirmed": true },
-      "currentPublicBehavior": { "code": "runtime_not_ready" },
+      "currentPublicBehavior": { "code": "runtime_not_ready", "createLiveH3AdoptPorts": 0, "runManualReadopt": 0 },
+      "previousPublicBehavior": {
+        "ok": true,
+        "process": "re-adopt",
+        "confirmed": true,
+        "reconcile": "recovery-required",
+        "reason": "coordinator-persistence-failed",
+        "signaled": true,
+        "committedAttestation": {
+          "keep": ["pid", "start", "compile", "mode", "diskSha", "operationId", "at"],
+          "omit": ["identity", "cmdline"]
+        },
+        "stdoutMustNotContain": ["fixture-private-argv", "\"identity\""]
+      },
       "sideEffects": { "createLiveH3AdoptPorts": 0, "signals": 0, "spawn": 0 }
     },
     {
       "id": "watchdog-run-previous-receipt",
       "argv": ["runtime", "watchdog", "run"],
-      "previousPublicBehavior": { "process": "watchdog", "inject": false, "signaled": false },
       "currentPublicBehavior": { "code": "runtime_not_ready" },
+      "previousPublicBehavior": {
+        "process": "watchdog",
+        "inject": false,
+        "signaled": false,
+        "reconcileOneOf": ["converged", "pending", "blocked", "recovery-required"],
+        "stdoutMustNotContain": ["ctl"]
+      },
       "sideEffects": { "signals": 0, "spawn": 0 }
     }
   ]

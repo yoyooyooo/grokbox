@@ -103,6 +103,18 @@ describe("runtime layout boundaries", () => {
         exports: { "./contract": "./src/ports.ts" },
       }),
     }],
+    ["preload-namespaced-write", {
+      "packages/box-runtime/src/preload.ts": 'import * as fs from "node:fs"; fs.writeFileSync("/fixture/must-not-write", "x");',
+    }],
+    ["preload-immediate-write", {
+      "packages/box-runtime/src/preload.ts": 'import { writeFileSync } from "node:fs"; (() => writeFileSync("/fixture/must-not-write", "x"))();',
+    }],
+    ["kernel-effect-regression", {
+      "packages/runtime-kernel/src/contract.ts": 'import { Effect } from "effect"; export const program = Effect.succeed(1);',
+    }],
+    ["bun-global-version", {
+      "packages/box-runtime/src/runtime.ts": "export const version = () => Bun.version;",
+    }],
   ];
 
   test.each(rejects)("%s is a non-zero checker", async (_name, changes) => {

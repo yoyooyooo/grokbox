@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildModelEnvelope, EnvelopeError, ENVELOPE_MAX_BYTES, type ModelEnvelope, type PromptMessage } from "@grokbox/runtime-kernel/contract";
+import { buildHostEnvelope } from "../src/internal/host/context-codec.ts";
 import { asHostPromptSession, createStreamingPromptSession, type StreamPart } from "../src/internal/host/session.ts";
 import { collectStreamParts, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
 
@@ -74,7 +75,9 @@ describe("Host messages/state/tools/options envelope", () => {
     let called = 0;
     const tools = { lookup: { [key]: key === "parameters" ? { jsonSchema: schema } : schema,
       execute: () => { called += 1; } } };
-    expect(buildModelEnvelope([], tools).tools).toEqual([{ name: "lookup", inputSchema: schema }]);
+    expect(buildHostEnvelope([], tools).tools).toEqual([{ name: "lookup", inputSchema: schema }]);
+    expect(called).toBe(0);
+    expect(() => buildModelEnvelope([], [{ name: "lookup", parameters: { jsonSchema: schema }, execute: () => { called += 1; } }])).toThrow(EnvelopeError);
     expect(called).toBe(0);
   });
 

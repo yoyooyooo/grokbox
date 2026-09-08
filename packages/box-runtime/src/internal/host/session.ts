@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
-import { buildModelEnvelope, cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
+import { cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
-import { hostStateToMessages } from "./context-codec.ts";
+import { buildHostEnvelope, hostStateToMessages } from "./context-codec.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
@@ -155,7 +155,7 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
         cancellation = abortSignalFrom(ctx, options);
         const signal = cancellation.signal;
         if (invalidState && !signal?.aborted) throw new EnvelopeError(invalidCode);
-        const envelope = signal?.aborted ? buildModelEnvelope([]) : buildModelEnvelope(messages, tools, options);
+        const envelope = signal?.aborted ? buildHostEnvelope([]) : buildHostEnvelope(messages, tools, options);
         const handle = session.stream({ envelope, abortSignal: signal, ...(typeof requestId === "string" ? { invocationId: requestId } : {}) });
         void handle.response.then(cancellation.dispose, cancellation.dispose);
         if (typeof requestId === "string" && !notified.has(requestId)) {
@@ -283,7 +283,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     let envelope: ModelEnvelope;
     try {
       if (request.envelope && request.messages) throw new EnvelopeError("invalid_envelope");
-      envelope = request.envelope ? parseModelEnvelope(request.envelope) : buildModelEnvelope(request.messages ?? []);
+      envelope = request.envelope ? parseModelEnvelope(request.envelope) : buildHostEnvelope(request.messages ?? []);
     } catch (error) {
       const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
       return visibleFailureHandle(config.modelId, code, undefined, config.onTerminal, streamCtx(stageFor(code)));

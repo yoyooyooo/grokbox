@@ -145,26 +145,19 @@ function toolField(value: object, key: string): unknown {
 
 function toolsFrom(value: unknown): ToolDefinition[] {
   if (value == null) return [];
-  let entries: Array<readonly [string | undefined, unknown]>;
-  if (Array.isArray(value)) {
-    if (value.length > 128 || Object.keys(value).length !== value.length) return fail("invalid_tools");
-    entries = Array.from({ length: value.length }, (_, index) => [undefined, toolField(value, String(index))] as const);
-  } else {
-    if (!object(value)) return fail("invalid_tools");
-    const proto = Object.getPrototypeOf(value);
-    if (proto !== null && (Object.getPrototypeOf(proto) !== null || Object.getOwnPropertyDescriptor(proto, "constructor")?.value?.name !== "Object")) return fail("invalid_tools");
-    entries = Object.keys(value).map((key) => [key, toolField(value, key)] as const);
-  }
-  if (entries.length > 128) return fail("invalid_tools");
+  if (!Array.isArray(value) || value.length > 128 || Object.keys(value).length !== value.length) return fail("invalid_tools");
   const names = new Set<string>();
-  return entries.map(([key, tool]) => {
+  return Array.from({ length: value.length }, (_, index) => {
+    const tool = toolField(value, String(index));
     if (!object(tool)) return fail("invalid_tools");
-    const declaredName = toolField(tool, "name");
-    const name = id(declaredName ?? key);
-    if (names.has(name) || (key !== undefined && declaredName !== undefined && key !== declaredName)) return fail("invalid_tools");
+    if (toolField(tool, "parameters") !== undefined || toolField(tool, "schema") !== undefined || toolField(tool, "execute") !== undefined) {
+      return fail("invalid_tools");
+    }
+    const name = id(toolField(tool, "name"));
+    if (names.has(name)) return fail("invalid_tools");
     names.add(name);
-    let schema = toolField(tool, "inputSchema") ?? toolField(tool, "parameters") ?? toolField(tool, "schema");
-    if (object(schema) && toolField(schema, "jsonSchema") !== undefined) schema = toolField(schema, "jsonSchema");
+    const schema = toolField(tool, "inputSchema");
+    if (object(schema) && toolField(schema, "jsonSchema") !== undefined) return fail("invalid_tools");
     const cloned = cloneJson(schema);
     if (!object(cloned) || cloned.type !== "object") return fail("invalid_tools");
     const description = toolField(tool, "description");
