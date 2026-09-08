@@ -11,10 +11,11 @@ This documentation separates current source truth, accepted product behavior, up
 - [Sandbox control plane](cursor-sandbox-control-plane.md): lifecycle terminology, trust separation, and validation requirements.
 - [Quota](quota.md): implemented explicit source, normalized output, and failure boundary.
 - [Box-local model runtime](box-runtime.md): accepted createSession seam, inject/watchdog/guardian, modeld, window semantics, and evidence ladder. Not an implementation-complete claim. Product obligations are in the [product contract](product-contract.md) §12.
+- [Box-runtime implementation plan](roadmap/box-runtime-plan.md): the single Current Home for forward execution order, contracts, owners, phase exits, and T13–T16 routing. It does not claim implementation completion.
 
 ## Roadmap
 
-[Roadmap](roadmap/README.md) contains deferred candidates and promotion gates. It does not prove delivery or override a current home.
+[Roadmap](roadmap/README.md) routes to the accepted box-runtime implementation plan and deferred candidates. Plans and candidates do not prove delivery or override product and architecture authority.
 
 ## Maintainers
 
@@ -22,7 +23,7 @@ This documentation separates current source truth, accepted product behavior, up
 - [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
 - [Release runbook](maintainers/release.md)
 
-Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokbox/issues). Security reports follow [`SECURITY.md`](../SECURITY.md). Machine-local plans, raw operational evidence, credentials, provider dumps, and private research do not belong in this repository.
+Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokbox/issues). Security reports follow [`SECURITY.md`](../SECURITY.md). Machine-local execution notes, raw operational evidence, credentials, provider dumps, and private research do not belong in this repository.
 
 ## Authority
 

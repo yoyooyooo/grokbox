@@ -1,27 +1,24 @@
-# T15 — WebUI ops console + config/storage interoperability (analysis)
+# T15 — WebUI ops console + config/storage interoperability
 
 ## Status
-**open / queued** — independent Astra analysis after incr+Host-kernel review.
+**Open.** Implement Phase 2 of the [Box-runtime implementation plan](../roadmap/box-runtime-plan.md). Shared configuration, binding and status contracts begin in Phase 1; safe read-only UI may be delivered before writable capabilities.
 
 ## Goal
-Cloud-box WebUI: one-click bring-up, bot detail/ops, visual monitoring, convenient model switching. Decide how config/storage interoperate with CLI/runtime **without** forking a second source of truth.
+Deliver a box-local ops console for preparation/confirmed application, Bot inspection, existing-model selection and recent runtime evidence through the same use cases as CLI.
 
-## Product bar (seed)
-- **Source of truth**: existing runtime contracts (`models.json` / desired / assignments, events.ndjson, status/observe, Host agent stores)—WebUI reads/writes via API/CLI facades.
-- **SQLite**: optional local index/cache for UX only — not a parallel authoritative store for model route or runtime desired state.
-- Config fields shaped so CLI and WebUI share the same schema/operations where possible.
+## Scope
+- Keep canonical runtime configuration/control artifacts and Host stores authoritative. Status/events are observations, not recovery commands.
+- Share parser, CAS mutation, source receipts and safe DTOs between CLI and API; fix same-box roster/runtime identity and preserve T10 absence=official.
+- Separate prepare from confirmed apply. Bind confirmation to target/revisions/expiry; use one operation identity and query unknown outcomes without redispatch.
+- Own server/modeld/control lifetimes outside browser requests; only stop owned services, never borrowed ones.
+- Build browser auth, Host/Origin/CSRF protection and finite command limits before exposing the API.
+- Separate saved selection, readiness, last observed use and Host delivery. Preserve current route-reset restrictions.
 
-## Analysis asks
-1. Which current config surfaces need rename/split for UI+CLI parity?
-2. What APIs does one-click launch need (`runtime start`, adopt, modeld, status)?
-3. Model switch UX vs T10 assignments + T4e modelId alignment.
-4. Viz of `provider_error_observed` / STEP terminals / attestation.
-5. Risks of embedding SQLite as SoT vs cache.
+## Acceptance
+Use the Phase 2 exits in the implementation plan: CLI/API equivalence, concurrent writes, wrong-box refusal, read-only GET, stale confirmation, double-click/reload/disconnect, safe output and truthful partial/unknown states.
 
 ## Non-goals
-- Implementing the WebUI
-- Replacing Host Memory/transcript stores
-- T14b compact automation
-
-## Depends on
-- Astra incr+Host-kernel: `/tmp/grokbox-astra-incr-host-kernel-20260908T090905Z.md`
+- SQLite in MVP; later SQLite is disposable UX cache/index only.
+- Catalog/secret CRUD, chat composer, long-term charts or a second assignment store.
+- Host ABI/SQLite access, Memory/transcript replacement or T14b compact automation.
+- Runtime mutation over arbitrary Profile, daemon/SSH or raw exec/RPC.

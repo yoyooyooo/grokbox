@@ -1,9 +1,8 @@
-# box-runtime-v2 remaining tickets (local)
+# Box-runtime tickets
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-Herdr-driven backlog. **Not** Multica issues.
-Cite ticket ids in herdr prompts. Update status in this file.
+后续实施统一遵循 [Box-runtime 实施方案](../roadmap/box-runtime-plan.md)。本文只索引票据范围与状态，不维护第二套执行顺序；阶段完成以方案中的出口证据为准。
 
 | id | status | title |
 |---|---|---|
@@ -16,9 +15,9 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T4c | done | Default modeld composite stub∪openai admit + minimal C1 |
 | T4d | done | Route activate admits openai* (offline) |
 | T4e | done | Route Host/preload session modelId follows models.json |
-| T5 | split | T5a done / T5b done |
+| T5 | split | T5a done / T5b framing done; Host streaming remains Phase 1 |
 | T5a | done | C1 credentials productization (modeld Effect seam) |
-| T5b | done | S2 streaming IPC (chunk frames + Host fullStream) |
+| T5b | framing done | Unix chunk frames; bounded Host stream consumer is Phase 1 / A8 |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
 | T7 | done | Prove official replacement via Gateway pid |
 | T8 | done | Offline CCS sub2api recipe; spend superseded by T9 / test0 luna |
@@ -26,11 +25,11 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T10 | done | Per-Bot official passthrough (selective route) |
 | T11 | done | Pre-dispatch official passthrough + STEP-correlated visible errors |
 | T12 | done | Adopt preserves official Host renewer env (create-bot / other bots) |
-| T13 | open | Status honesty: circuit/watchdog vs attested coverage after adopt |
-| T14 | done | Overflow observability (`provider_error_observed`) |
-| T14b | open | Host-reuse compact on confirmed overflow (after live signals) |
-| T15 | open | WebUI ops console + config/storage interoperability (analysis) |
-| T16 | open | Model backend adapters: AI SDK + pi JSON-RPC + Cursor SDK (Effect DI) |
+| T13 | open | Shared status facets in Phase 1; deeper diagnostics in Phase 4 |
+| T14 | observation done | Enums-only overflow observation; correlation/classification work remains |
+| T14b | open | Confirmed-overflow Host compact + one recovery attempt; Phase 4 |
+| T15 | open | Shared use cases / command boundary / WebUI MVP; Phase 2 |
+| T16 | open | Qualify and implement pi/Cursor backends on Phase 1 DI; Phase 3 |
 
 ## Live canary bots
 
@@ -41,12 +40,6 @@ Stable ids (App names may change). Route is `assignments.agents[id]`; missing ke
 | grokbox test0 | `00000000-0000-4000-8000-000000000114` | opted-in (currently luna) |
 | grokbox test1 | `00000000-0000-4000-8000-000000000113` | unassigned / official until opted in |
 
-Driver: herdr grok main line; true blockers → new session gpt-6-astra max.
+## Open follow-through
 
-## Residual (not this closeout)
-
-- **Live prompt:** pass through Host-compacted `getExecutor` context only (CCS-safe text + SendToUser bubbles + prior tool stdout fold; no `role=tool` replay). Keep the current STEP tool fold even without a new human user. Host compact dropping early turns is product-OK. **Reverted** `store.db` prompt prepend (`pre-publication-revision`). `GROKBOX_LIVE_PROMPT_*_CAP` stay unset in live.
-- **T14 done / T14b open:** step1 `provider_error_observed` enums only (no bodySnippet; unknown providerCode/type). App IPC stays `model_error`. Step2 Host-reuse compact is **T14b** (confirmed overflow only).
-- **T13 / Astra:** `status.circuit=open` + `watchdog=degraded` (`circuitReason=pending-uncertain`) can coexist with `coverage=attested` after many live adopts. Do not silently close the circuit. Host `transcript-publish` `writerSeq` vs `publishedThroughSeq` lag is Host-owned, not a grokbox writer.
-- **Wontfix here:** dirty `packages/cli/src/commands/runtime.ts` (`profileId: reviewed-copy-envelope`) and untracked root `src/` — leftover CLI/envelope WIP, not E3/T5b. Leave unstaged.
-- **test1** dual-model opt-in: not assigned.
+A1/A2/A4 are closed in source at `pre-publication-revision`. A3 tool-role continuation is fixed; **A3fu user-contained tool-result preservation remains open**. A3fu/A5–A10 reuse the gap labels and phase mapping in the [implementation plan](../roadmap/box-runtime-plan.md), without creating a parallel ticket series. Live adoption, provider spend, and test1 opt-in require separate authorization.
