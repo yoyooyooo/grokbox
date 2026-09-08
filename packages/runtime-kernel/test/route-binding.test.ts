@@ -174,6 +174,19 @@ describe("route binding", () => {
     expect(counts.network).toBe(2);
     expect(result.missing._tag).toBe("Failure");
     expect(result.missing._tag === "Failure" ? result.missing.failure : undefined).toMatchObject({ code: "binding_missing" });
+
+    let live = models({ "agent-a": "openai/gpt" });
+    const captured = request(live);
+    const saveCounts = createCountedSeams();
+    const saveLayer = graph({ file: () => live, counts: saveCounts });
+    const afterSave = await run(Effect.scoped(Effect.gen(function* () {
+      const first = yield* collect(captured);
+      if (first.kind !== "live") throw new Error("expected live");
+      live = models({ "agent-a": "openai/gpt" }, { endpoint: "https://other.test/v1" });
+      return yield* collect({ ...request(live, { stepId: "step-2", selection: captured.selection }), bindingId: first.bindingId });
+    }).pipe(Effect.provide(saveLayer))));
+    expect(afterSave.kind).toBe("live");
+    expect(saveCounts.credential).toBe(1);
   });
 
   test("idle expiry uses TestClock; restart rejects old ServiceEpoch", async () => {

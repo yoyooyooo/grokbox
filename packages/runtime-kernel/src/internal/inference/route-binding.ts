@@ -4,6 +4,7 @@ import { canonicalJson, sha256Text } from "../../hash.ts";
 import { LEDGER_ENTRIES_MAX, TURN_IDLE_MS } from "../contract/limits.ts";
 import type { AuthLease } from "../../ports.ts";
 import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "../contract/identity.ts";
+import type { ModelRecord } from "../../selection.ts";
 import type { RunStepRequest } from "../contract/binding.ts";
 
 export type LedgerStatus = "active" | "terminal" | "rejected" | "cancelled";
@@ -22,6 +23,7 @@ export type RouteBindingRecord = {
   agentId: string;
   turnId: string;
   selection: SelectionIdentity;
+  model: ModelRecord;
   fingerprint: string;
   lease: AuthLease;
   lastActivityMs: number;

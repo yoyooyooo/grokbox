@@ -1,7 +1,7 @@
 import { Clock, Effect, Stream, SynchronizedRef } from "effect";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, ModelBackend, type AuthLease } from "../../ports.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
 import { captureManagedSelection, modelForAgent } from "../../selection.ts";
 import {
   InferenceMemory,
@@ -71,29 +71,17 @@ export function runStep(request: RunStepRequest) {
 function admitLive(request: RunStepRequest, now: number) {
   return Effect.gen(function* () {
     const memory = yield* InferenceMemory;
-    const config = yield* ConfigurationRead;
-    const snapshot = yield* config.snapshot();
-    const captured = captureManagedSelection(snapshot.models, request.agentId);
-    if (captured.kind !== "managed") return yield* Effect.fail(new BindingFailure("not_admitted"));
-    if (captured.modelId !== request.selection.modelId || captured.selectionRevision !== request.selection.selectionRevision) {
-      return yield* Effect.fail(new BindingFailure("selection_mismatch"));
-    }
-    const model = modelForAgent(snapshot.models, request.agentId);
-    if (!model) return yield* Effect.fail(new BindingFailure("not_admitted"));
-
+    const auth = yield* BackendAuth;
+    const backend = yield* ModelBackend;
     const authority = yield* AdmissionAuthority;
     yield* authority.current().pipe(Effect.mapError(() => new BindingFailure("not_admitted")));
 
-    const backend = yield* ModelBackend;
-    const prepared = yield* backend.prepare(model, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
-
-    const auth = yield* BackendAuth;
-    const state = yield* SynchronizedRef.get(memory.ref);
     const storeKey = bindingStoreKey(request);
-    const existing = state.bindings.get(storeKey);
+    const existing = (yield* SynchronizedRef.get(memory.ref)).bindings.get(storeKey);
 
     let bindingId: string;
     let lease: AuthLease;
+    let prepared: PreparedCall;
     if (existing) {
       if (!request.bindingId) return yield* Effect.fail(new BindingFailure("binding_missing"));
       if (request.bindingId !== existing.bindingId) return yield* Effect.fail(new BindingFailure("binding_mismatch"));
@@ -106,6 +94,7 @@ function admitLive(request: RunStepRequest, now: number) {
       yield* auth.verify(existing.lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
       bindingId = existing.bindingId;
       lease = existing.lease;
+      prepared = yield* backend.prepare(existing.model, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
       yield* SynchronizedRef.update(memory.ref, (current) => {
         const bound = current.bindings.get(storeKey);
         if (bound) bound.lastActivityMs = now;
@@ -117,7 +106,17 @@ function admitLive(request: RunStepRequest, now: number) {
       });
     } else {
       if (request.bindingId) return yield* Effect.fail(new BindingFailure("binding_missing"));
-      const pinned = yield* auth.pin({ apiKeyRef: model.apiKeyRef }).pipe(Effect.mapError(asBindingOrBackend));
+      const config = yield* ConfigurationRead;
+      const snapshot = yield* config.snapshot();
+      const captured = captureManagedSelection(snapshot.models, request.agentId);
+      if (captured.kind !== "managed") return yield* Effect.fail(new BindingFailure("not_admitted"));
+      if (captured.modelId !== request.selection.modelId || captured.selectionRevision !== request.selection.selectionRevision) {
+        return yield* Effect.fail(new BindingFailure("selection_mismatch"));
+      }
+      const resolved = modelForAgent(snapshot.models, request.agentId);
+      if (!resolved) return yield* Effect.fail(new BindingFailure("not_admitted"));
+      prepared = yield* backend.prepare(resolved, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
+      const pinned = yield* auth.pin({ apiKeyRef: resolved.apiKeyRef }).pipe(Effect.mapError(asBindingOrBackend));
       bindingId = makeBindingId({
         hostEpoch: request.hostEpoch,
         agentId: request.agentId,
@@ -133,6 +132,7 @@ function admitLive(request: RunStepRequest, now: number) {
         agentId: request.agentId,
         turnId: request.turnId,
         selection: request.selection,
+        model: resolved,
         fingerprint: pinned.fingerprint,
         lease,
         lastActivityMs: now,
@@ -149,7 +149,6 @@ function admitLive(request: RunStepRequest, now: number) {
         return current;
       });
     }
-
     const cancelled = SynchronizedRef.get(memory.ref).pipe(
       Effect.map((current) => current.cancelled.has(ledgerKey(request))),
     );
