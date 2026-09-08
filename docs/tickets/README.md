@@ -16,16 +16,17 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T4c | done | Default modeld composite stub∪openai admit + minimal C1 |
 | T4d | done | Route activate admits openai* (offline) |
 | T4e | done | Route Host/preload session modelId follows models.json |
-| T5 | split | see T5a (C1, done) / T5b (S2, backlog) |
+| T5 | split | T5a done / T5b done |
 | T5a | done | C1 credentials productization (modeld Effect seam) |
 | T5b | done | S2 streaming IPC (chunk frames + Host fullStream) |
 | T6 | done | Unified `runtime start` facade (ensure modeld/watchdog + activate) |
 | T7 | done | Prove official replacement via Gateway pid |
-| T8 | ready | Offline CCS sub2api live-smoke recipe (not spent) |
+| T8 | done | Offline CCS sub2api recipe; spend superseded by T9 / test0 luna |
 | T9 | done | Live CCS modeld smoke (luna + grok Responses) |
 | T10 | done | Per-Bot official passthrough (selective route) |
 | T11 | done | Pre-dispatch official passthrough + STEP-correlated visible errors |
 | T12 | done | Adopt preserves official Host renewer env (create-bot / other bots) |
+| T13 | open | Status honesty: circuit/watchdog vs attested coverage after adopt |
 
 ## Live canary bots
 
@@ -37,3 +38,9 @@ Stable ids (App names may change). Route is `assignments.agents[id]`; missing ke
 | grokbox test1 | `00000000-0000-4000-8000-000000000113` | unassigned / official until opted in |
 
 Driver: herdr grok main line; true blockers → new session gpt-6-astra max.
+
+## Residual (not this closeout)
+
+- **T13 / Astra:** `status.circuit=open` + `watchdog=degraded` (`circuitReason=pending-uncertain`) can coexist with `coverage=attested` after many live adopts. Do not silently close the circuit. Host `transcript-publish` `writerSeq` vs `publishedThroughSeq` lag is Host-owned, not a grokbox writer.
+- **Wontfix here:** dirty `packages/cli/src/commands/runtime.ts` (`profileId: reviewed-copy-envelope`) and untracked root `src/` — leftover CLI/envelope WIP, not E3/T5b. Leave unstaged.
+- **test1** dual-model opt-in: not assigned.

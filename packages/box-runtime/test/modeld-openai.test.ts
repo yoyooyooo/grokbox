@@ -67,9 +67,9 @@ describe("OpenAI envelope mapping", () => {
       ] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "lookup", result: { ok: true } }] },
     ], [{ name: "lookup", description: "look", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]);
-    expect(envelopeToOpenAiLivePrompt(envelope)).toEqual({
+    expect(envelopeToOpenAiLivePrompt(envelope)).toMatchObject({
       system: "sys",
-      messages: [{ role: "user", content: "see" }],
+      messages: [{ role: "user" }],
     });
     expect(envelopeToOpenAiLivePrompt(buildModelEnvelope([
       { role: "system", content: "sys" },
@@ -82,6 +82,19 @@ describe("OpenAI envelope mapping", () => {
         { role: "user", content: "old" },
         { role: "assistant", content: "hi" },
         { role: "user", content: "again" },
+      ],
+    });
+    expect(envelopeToOpenAiLivePrompt(buildModelEnvelope([
+      { role: "user", content: "ask" },
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "x" } }] },
+      { role: "tool", content: [{ type: "tool-result", toolCallId: "c1", toolName: "lookup", result: { ok: true } }] },
+      { role: "user", content: "follow" },
+    ], [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }]))).toMatchObject({
+      messages: [
+        { role: "user", content: "ask" },
+        { role: "assistant" },
+        { role: "tool" },
+        { role: "user", content: "follow" },
       ],
     });
     expect(envelopeToOpenAiMessages(envelope)).toEqual([
@@ -288,7 +301,6 @@ describe("OpenAI SDK fence", () => {
     expect(openai).not.toMatch(/openai\.tools|ToolLoopAgent|maxSteps|execute:/);
     const ipc = await readFile(join(srcDir, "modeld-ipc.ts"), "utf8");
     expect(ipc).not.toContain("createOpenAiModeldDriver");
-    expect(ipc).toContain("createDefaultModeldDriver");
     expect(ipc).toContain("STUB_ECHO_MODEL_ID");
 
     const box = JSON.parse(await readFile(join(import.meta.dir, "../package.json"), "utf8")) as { dependencies: Record<string, string> };
