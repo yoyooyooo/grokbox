@@ -146,11 +146,11 @@ function sequence(body: unknown): Array<Record<string, unknown>> {
     const results = parsePayloads(item.content, "tool-result");
     const texts = contentStrings(item.content).filter((text) => !parseJsonObject(text));
     if (role === "assistant" && calls.length > 0) {
-      out.push({ kind: "assistant-call", ...calls[0] });
+      out.push({ kind: "assistant-calls", calls });
       continue;
     }
     if (role === "user" && results.length > 0) {
-      out.push({ kind: "user-result", mixedText: texts.join(""), ...results[0] });
+      out.push({ kind: "user-results", mixedText: texts.join(""), results });
       continue;
     }
     out.push({ kind: role, text: contentStrings(item.content).join("") });
@@ -158,14 +158,18 @@ function sequence(body: unknown): Array<Record<string, unknown>> {
   return out;
 }
 
-function toolNames(body: unknown): string[] {
+function toolDefinitions(body: unknown): Array<{ name: unknown; description: unknown; parameters: unknown }> {
   const rec = asRecord(body);
   const tools = rec && Array.isArray(rec.tools) ? rec.tools : [];
   return tools.map((tool) => {
     const item = asRecord(tool);
     const fn = item ? asRecord(item.function) : null;
-    const name = (fn && typeof fn.name === "string" ? fn.name : undefined) ?? (item && typeof item.name === "string" ? item.name : undefined);
-    return name ?? "";
+    const source = fn ?? item;
+    return {
+      name: source?.name,
+      description: source?.description,
+      parameters: source?.parameters,
+    };
   });
 }
 
@@ -177,15 +181,20 @@ function toolChoiceOf(body: unknown): unknown {
 function expectedSequence(mixed: boolean): Array<Record<string, unknown>> {
   return [
     { kind: "user", text: mixed ? "ask" : "" },
-    { kind: "assistant-call", type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: longArg } },
     {
-      kind: "user-result",
+      kind: "assistant-calls",
+      calls: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: longArg } }],
+    },
+    {
+      kind: "user-results",
       mixedText: mixed ? mixedText : "",
-      type: "tool-result",
-      toolCallId: "c1",
-      toolName: "lookup",
-      result: { rows: [0, false, ""], note: longResult },
-      isError: false,
+      results: [{
+        type: "tool-result",
+        toolCallId: "c1",
+        toolName: "lookup",
+        result: { rows: [0, false, ""], note: longResult },
+        isError: false,
+      }],
     },
   ];
 }
@@ -196,7 +205,7 @@ function assertHttpOracle(body: unknown, extras: { mixed?: boolean } = { mixed: 
   expect(rec).toBeTruthy();
   expect(systemRoots(body)).toEqual([root]);
   expect(sequence(body)).toEqual(expectedSequence(extras.mixed !== false));
-  expect(toolNames(body)).toEqual(["lookup"]);
+  expect(toolDefinitions(body)).toEqual([{ name: "lookup", description: "lookup schema", parameters: schema }]);
   expect(history(body).some((entry) => asRecord(entry)?.role === "tool")).toBe(false);
   const text = JSON.stringify(body);
   expect(text).toContain(longArg);
@@ -308,7 +317,7 @@ describe("CCS codec", () => {
     }
   });
 
-  test("HTTP oracle fails on reorder, missing tools, and duplicate root for both APIs", async () => {
+  test("HTTP oracle fails on reorder, missing tools, duplicate root, dropped schema, and duplicated results", async () => {
     const chat = await capture("chat");
     const responses = await capture("responses");
     for (const body of [chat.body, responses.body]) {
@@ -333,6 +342,46 @@ describe("CCS codec", () => {
       if (Array.isArray(dup.messages) && !dup.instructions) dup.messages = hist;
       else if (Array.isArray(dup.input) && !dup.instructions) dup.input = hist;
       expect(() => assertHttpOracle(dup)).toThrow();
+
+      const noSchema = asRecord(JSON.parse(JSON.stringify(body)))!;
+      const tools = Array.isArray(noSchema.tools) ? noSchema.tools : [];
+      const firstTool = asRecord(tools[0]);
+      const fn = firstTool ? asRecord(firstTool.function) : null;
+      if (fn) delete fn.parameters;
+      else if (firstTool) delete firstTool.parameters;
+      expect(() => assertHttpOracle(noSchema)).toThrow();
+
+      const dupResult = asRecord(JSON.parse(JSON.stringify(body)))!;
+      for (const entry of history(dupResult)) {
+        const item = asRecord(entry);
+        if (!item || !Array.isArray(item.content)) continue;
+        const results = parsePayloads(item.content, "tool-result");
+        if (results.length === 0) continue;
+        item.content = [...item.content, item.content.at(-1)];
+      }
+      expect(() => assertHttpOracle(dupResult)).toThrow();
+    }
+  });
+
+  test("state-root mixed system image is rejected before provider", async () => {
+    const snap = hostToContextSnapshot({
+      profileId: "t21-state-root",
+      abiIdentity: "host-abi-v1",
+      state: [
+        { role: "system", content: [{ type: "text", text: "root-text" }, { type: "image", url: imageSentinel }] },
+        { role: "user", content: "hello" },
+      ],
+      tools: [{ name: "lookup", description: "lookup schema", inputSchema: schema }],
+    });
+    expect(snap.systemMessages).toEqual([{
+      role: "system",
+      content: [{ type: "text", text: "root-text" }, { type: "image", url: imageSentinel }],
+    }]);
+    expect(() => encodeCcsMessages(snap)).toThrow(EnvelopeError);
+    for (const api of ["chat", "responses"] as const) {
+      const captured = await capture(api, snap);
+      expect(captured.http).toBe(0);
+      expect(captured.body).toBeUndefined();
     }
   });
 });

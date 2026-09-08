@@ -24,9 +24,15 @@ export type CcsPrompt = {
   messages: CcsMessage[];
 };
 
-function textOf(content: PromptMessage["content"]): string {
+function systemText(content: PromptMessage["content"]): string {
   if (typeof content === "string") return content;
-  return content.filter((part) => part.type === "text" || part.type === "reasoning").map((part) => part.text).join("");
+  if (!Array.isArray(content) || content.length === 0) throw new EnvelopeError("unsupported_content");
+  let text = "";
+  for (const part of content) {
+    if (part.type !== "text") throw new EnvelopeError("unsupported_content");
+    text += part.text;
+  }
+  return text;
 }
 
 function toolResultPayload(part: { toolCallId: string; toolName?: string; result: unknown; isError?: boolean }): CcsTextPart {
@@ -125,8 +131,9 @@ function generationSettings(options: GenerationOptions, api: CcsApi): {
 export function encodeCcsMessages(snapshot: ContextSnapshot): CcsPrompt {
   const systems: string[] = [];
   for (const message of snapshot.systemMessages) {
-    const text = textOf(message.content);
-    if (text) systems.push(text);
+    const text = systemText(message.content);
+    if (text.length === 0) throw new EnvelopeError("invalid_envelope");
+    systems.push(text);
   }
   if (systems.length !== 1) throw new EnvelopeError("invalid_envelope");
   const messages: CcsMessage[] = [];
