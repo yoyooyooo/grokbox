@@ -27,7 +27,7 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T11 | done | Pre-dispatch official passthrough + STEP-correlated visible errors |
 | T12 | done | Adopt preserves official Host renewer env (create-bot / other bots) |
 | T13 | open | Status honesty: circuit/watchdog vs attested coverage after adopt |
-| T14 | open | Managed context compact/overflow when switched model window is smaller |
+| T14 | step1 | Overflow observability; auto-compact / Host-reuse compact still open |
 
 ## Live canary bots
 
@@ -42,7 +42,8 @@ Driver: herdr grok main line; true blockers → new session gpt-6-astra max.
 
 ## Residual (not this closeout)
 
-- **Live prompt:** pass through Host-compacted `getExecutor` context only (CCS-safe text + SendToUser bubbles + prior tool stdout fold; no `role=tool` replay). Host compact dropping early turns is product-OK (Memory distillation owns long-term facts). **Reverted** `store.db` prompt prepend (`pre-publication-revision`) as policy. `GROKBOX_LIVE_PROMPT_*_CAP` stay unset in live. Unix envelope/frame fail visibly. T14 is provider overflow, not a substitute for Host compact. Census: `/tmp/grokbox-live-prompt-census.json`.
+- **Live prompt:** pass through Host-compacted `getExecutor` context only (CCS-safe text + SendToUser bubbles + prior tool stdout fold; no `role=tool` replay). Host compact dropping early turns is product-OK (Memory distillation owns long-term facts). **Reverted** `store.db` prompt prepend (`pre-publication-revision`) as policy. `GROKBOX_LIVE_PROMPT_*_CAP` stay unset in live. Unix envelope/frame fail visibly. Census: `/tmp/grokbox-live-prompt-census.json`.
+- **T14 step1:** `provider_error_observed` in events.ndjson (conservative `overflowCandidate`). App IPC stays `model_error`. Auto-compact / Host-reuse compact is step2+.
 - **T13 / Astra:** `status.circuit=open` + `watchdog=degraded` (`circuitReason=pending-uncertain`) can coexist with `coverage=attested` after many live adopts. Do not silently close the circuit. Host `transcript-publish` `writerSeq` vs `publishedThroughSeq` lag is Host-owned, not a grokbox writer.
 - **Wontfix here:** dirty `packages/cli/src/commands/runtime.ts` (`profileId: reviewed-copy-envelope`) and untracked root `src/` — leftover CLI/envelope WIP, not E3/T5b. Leave unstaged.
 - **test1** dual-model opt-in: not assigned.

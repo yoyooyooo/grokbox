@@ -1,5 +1,6 @@
 import type { ModeldDriver, ModeldPorts } from "./modeld.ts";
 import { openAiAccepts, type OpenAiGenerateCall, type OpenAiStreamEvent } from "./modeld-openai-map.ts";
+import type { ProviderErrorEvidence } from "./provider-overflow.ts";
 import { STUB_ECHO_MODEL_ID } from "./models.ts";
 import type { ModelRecord } from "./models.ts";
 import type { StreamPart } from "./session.ts";
@@ -65,6 +66,7 @@ export type DefaultModeldDriverOptions = {
   /** Tests set true. Production CLI omits so admitted+credential models may network. */
   hardOff?: boolean;
   streamEvents?: (call: OpenAiGenerateCall) => AsyncIterable<OpenAiStreamEvent> | Promise<AsyncIterable<OpenAiStreamEvent>>;
+  onProviderError?: (evidence: ProviderErrorEvidence) => void | Promise<void>;
 };
 
 /**
@@ -91,6 +93,7 @@ export function createDefaultModeldDriver(input: DefaultModeldDriverOptions = {}
           ...(input.fetch ? { fetch: input.fetch } : {}),
           ...(input.hardOff === true ? { hardOff: true } : {}),
           ...(input.streamEvents ? { streamEvents: input.streamEvents } : {}),
+          ...(input.onProviderError ? { onProviderError: input.onProviderError } : {}),
         });
       }
       return await openai.complete(request);

@@ -5,6 +5,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { JSONSchema7 } from "ai";
 import type { ModelEnvelope, ToolDefinition } from "./envelope.ts";
 import { sha256Text } from "./hash.ts";
+import {
+  inspectProviderError,
+  livePromptSize,
+  type ProviderErrorEvidence,
+  type ProviderErrorHint,
+} from "./provider-overflow.ts";
 import { createAs1ModeldDriver, type As1GenerateChunk } from "./modeld-as1.ts";
 import type { ModeldDriver } from "./modeld.ts";
 import type { ModelRecord } from "./models.ts";
@@ -76,6 +82,8 @@ export function createOpenAiModeldDriver(input: {
   hardOff?: boolean;
   /** Tests replace streamText. Must not be used to hide a second admission kernel. */
   streamEvents?: (call: OpenAiGenerateCall) => AsyncIterable<OpenAiStreamEvent> | Promise<AsyncIterable<OpenAiStreamEvent>>;
+  /** Log-only. Must not change Host-visible errors or trigger compact. */
+  onProviderError?: (evidence: ProviderErrorEvidence) => void | Promise<void>;
 }): ModeldDriver {
   return createAs1ModeldDriver({
     accepts: openAiAccepts,
@@ -98,11 +106,24 @@ export function createOpenAiModeldDriver(input: {
   });
 }
 
+function noteProviderError(
+  error: unknown,
+  hint: ProviderErrorHint,
+  onProviderError?: (evidence: ProviderErrorEvidence) => void | Promise<void>,
+): void {
+  if (!onProviderError) return;
+  try {
+    const evidence = inspectProviderError(error, hint);
+    void Promise.resolve(onProviderError(evidence)).catch(() => undefined);
+  } catch { /* Observability must not fail the turn. */ }
+}
+
 async function liveOpenAiEvents(
   call: OpenAiGenerateCall,
   input: {
     resolveApiKey: (model: Readonly<ModelRecord>, signal: AbortSignal) => string | Promise<string>;
     fetch?: typeof fetch;
+    onProviderError?: (evidence: ProviderErrorEvidence) => void | Promise<void>;
   },
 ): Promise<AsyncIterable<OpenAiStreamEvent>> {
   const apiKey = await input.resolveApiKey(call.pin.model, call.signal);
@@ -117,6 +138,13 @@ async function liveOpenAiEvents(
   const model = call.api === "responses" ? openai.responses(call.pin.model.model) : openai.chat(call.pin.model.model);
   const prompt = envelopeToOpenAiLivePrompt(call.envelope);
   writeLivePromptCensus(call.envelope, prompt);
+  const hint: ProviderErrorHint = {
+    modelId: call.pin.model.id,
+    api: call.api,
+    agentId: call.agentId,
+    invocationId: call.invocationId,
+    ...livePromptSize(prompt.messages),
+  };
   const tools = toSdkTools(call.envelope.tools);
   const toolChoice = envelopeToOpenAiToolChoice(call.envelope);
   const result = streamText({
@@ -134,13 +162,21 @@ async function liveOpenAiEvents(
     maxRetries: 0,
     onError: () => undefined,
   });
-  return mapLiveStream(result.fullStream);
+  return mapLiveStream(result.fullStream, hint, input.onProviderError);
 }
 
-async function* mapLiveStream(stream: AsyncIterable<{ type: string } & Record<string, unknown>>): AsyncIterable<OpenAiStreamEvent> {
+async function* mapLiveStream(
+  stream: AsyncIterable<{ type: string } & Record<string, unknown>>,
+  hint: ProviderErrorHint,
+  onProviderError?: (evidence: ProviderErrorEvidence) => void | Promise<void>,
+): AsyncIterable<OpenAiStreamEvent> {
   try {
-    for await (const part of stream) yield part;
-  } catch {
+    for await (const part of stream) {
+      if (part.type === "error") noteProviderError(part.error ?? part, hint, onProviderError);
+      yield part;
+    }
+  } catch (error) {
+    noteProviderError(error, hint, onProviderError);
     yield { type: "error" };
   }
 }

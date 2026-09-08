@@ -1,26 +1,22 @@
-# T14 — Managed context compact / overflow on model switch (analysis)
+# T14 — Managed context compact / overflow on model switch
 
 ## Goal
 When a bot is opted into a managed model (e.g. test0 → luna) and **Host-accumulated conversation > that model’s context window**, product parity requires an explicit **compact / overflow** path—not silent near-window amnesia.
 
-## Why separate from continuity fix
-Feeding honest Host history into the managed prompt (continuity) is necessary but not sufficient. Cross-model window mismatch needs detect → compact/summarize → retry (or visible failure), with clear UX.
+## Status
+**step 1 landed: overflow observability only.** Auto-compact is **open**. Host-reuse compact is **step 2+**, and only on distinctly identified overflow—never generic `model_error`.
 
-## Open questions (analysis)
-1. Do CCS / OpenAI Responses surface context overflow distinctly (error code/body fields), or only generic 400/`model_error`?
-2. Does AI SDK / our driver preserve enough of that body after T11 allowlisted IPC errors, or do we strip the signal?
-3. Should compact run **before** first managed dispatch (proactive, using model catalog `contextWindow` if known) or **reactively** on overflow error?
-4. Who owns compact: Host (official session compaction), modeld (provider-facing summarize), or a grokbox-side transcript view?
-5. What is preserved across compact for App/bot cognition (user-visible summary vs invisible system fold)?
-6. Interaction with live prompt noise filters (failed-model rows, ack-redrive) and tool-history CCS-safety.
+## Step 1 (this slice)
+- Inspect OpenAI/CCS chat+responses errors in modeld (`inspectProviderError`).
+- Conservative `overflowCandidate` (provider code or 400/413 + overflow-shaped message). Auth / rate-limit / generic 400 / 500 → false.
+- Durable `provider_error_observed` in events.ndjson (status, provider code/type, truncated redacted snippet, modelId, api, prompt size hints).
+- Host IPC / App still allowlisted `model_error` (T11). No compact, retry, or near-window chop.
 
-## Non-goals (this ticket)
-- Implementing full compact in the first analysis land
-- Renaming modeld / Effect rebuild
-- Opting in test1
+## Step 2+ (not this slice)
+Reuse Host compact core **only** when overflow is distinctly identified from step 1 signals.
+
+## Product bar (context selection)
+Managed STEPs pass through Host-compacted `getExecutor` context (CCS-safe shape). No `store.db` prompt prepend. `GROKBOX_LIVE_PROMPT_*_CAP` unset in live. Long-term facts stay Memory distillation.
 
 ## Note
 Repo `compactEvents` is **event-log** compaction, not conversation compact. Do not confuse.
-
-## Status
-**open / analysis.** Spawn focused investigate (tests + one live overflow probe if safe) before implementation wave.

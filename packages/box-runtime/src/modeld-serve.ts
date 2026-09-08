@@ -18,6 +18,7 @@ import {
   socketInUse,
   type StubModeldServer,
 } from "./modeld-ipc.ts";
+import { appendProviderErrorObserved } from "./events.ts";
 
 export type { StubModeldServer };
 
@@ -41,7 +42,17 @@ async function bindUnixKernel(input: StartStubModeldServerInput): Promise<Bound>
   await mkdir(input.runRoot, { recursive: true, mode: 0o700 });
   await chmod(input.runRoot, 0o700).catch(() => undefined);
   if (await socketInUse(socketPath)) throw new BoxRuntimeError("invalid_usage", "modeld socket is owned by a live competitor.");
-  const defaultDriver = input.defaultDriver ?? {};
+  const defaultDriver: DefaultModeldDriverOptions = {
+    ...(input.defaultDriver ?? {}),
+    onProviderError: input.defaultDriver?.onProviderError ?? (async (evidence) => {
+      await appendProviderErrorObserved(input.durableRoot, {
+        name: "provider_error_observed",
+        schemaVersion: 1,
+        at: new Date().toISOString(),
+        ...evidence,
+      });
+    }),
+  };
   const usingDefaultDriver = input.driver === undefined;
   const ports = {
     ...modeldStorePorts(input.durableRoot, input.runRoot),

@@ -19,6 +19,7 @@ export const EVENT_NAMES = [
   // TODO(owner): names follow the MINI-1918 v2 review proposal; not a dated owner adjudication.
   "model_step_terminal",
   "host_stream_rejected",
+  "provider_error_observed",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -48,7 +49,7 @@ const TURN_SEAM_MODES = new Set(["identity", "route"]);
 const TURN_SEAM_ASSIGNMENTS = new Set(["official", "main", "agent"]);
 const TURN_SEAM_TERMINAL_CLASSES = new Set(["stop", "error", "abort", "unknown"]);
 const TURN_SEAM_OUTCOMES = new Set(["official", "managed", "last_resort_official", "rejected"]);
-const SEAM_EVENT_NAMES = new Set(["turn_seam_terminal", "model_step_terminal", "host_stream_rejected"]);
+const SEAM_EVENT_NAMES = new Set(["turn_seam_terminal", "model_step_terminal", "host_stream_rejected", "provider_error_observed"]);
 export const MODEL_STEP_STAGES = new Set([
   "stream-id",
   "append-snapshot",
@@ -144,6 +145,24 @@ export type HostStreamRejectedEvent = {
   stage: "stream-id";
   errorCode: "invalid_envelope";
   reason: HostStreamRejectReason;
+};
+
+export type ProviderErrorObservedEvent = {
+  name: "provider_error_observed";
+  schemaVersion: 1;
+  at: string;
+  overflowCandidate: boolean;
+  overflowReasons: string[];
+  modelId?: string;
+  api?: "chat" | "responses";
+  status?: number;
+  providerCode?: string;
+  providerType?: string;
+  bodySnippet?: string;
+  promptMessages?: number;
+  promptChars?: number;
+  agentId?: string;
+  invocationId?: string;
 };
 
 export type TurnSeamWriteResult = "written" | "unprojected" | "write_failed";
@@ -341,6 +360,60 @@ export function projectHostStreamRejected(input: unknown): HostStreamRejectedEve
   };
 }
 
+const PROVIDER_ERROR_APIS = new Set(["chat", "responses"]);
+const PROVIDER_ERROR_REASONS = new Set(["provider_code", "status_message"]);
+const SNIPPET_FORBIDDEN = /api[_-]?key|authorization|Bearer\s+\S|\bsk-[A-Za-z0-9]/i;
+
+export function projectProviderErrorObserved(input: unknown): ProviderErrorObservedEvent | null {
+  if (!isRecord(input) || input.name !== "provider_error_observed" || input.schemaVersion !== 1) return null;
+  const at = boundedString(input.at, TURN_SEAM_BOUNDED_STRING);
+  if (at == null || typeof input.overflowCandidate !== "boolean") return null;
+  if (!Array.isArray(input.overflowReasons) || input.overflowReasons.length > 4) return null;
+  const overflowReasons: string[] = [];
+  for (const reason of input.overflowReasons) {
+    const tag = boundedEnum(reason, PROVIDER_ERROR_REASONS);
+    if (tag == null) return null;
+    overflowReasons.push(tag);
+  }
+  if (input.overflowCandidate && overflowReasons.length === 0) return null;
+  if (!input.overflowCandidate && overflowReasons.length > 0) return null;
+  const modelId = boundedString(input.modelId);
+  const api = boundedEnum(input.api, PROVIDER_ERROR_APIS) as "chat" | "responses" | null;
+  const status = typeof input.status === "number" && Number.isInteger(input.status) && input.status >= 100 && input.status <= 599
+    ? input.status : undefined;
+  const providerCode = boundedString(input.providerCode, 64);
+  const providerType = boundedString(input.providerType, 64);
+  let bodySnippet: string | undefined;
+  if (input.bodySnippet !== undefined) {
+    const snippet = boundedString(input.bodySnippet, 240);
+    if (snippet == null || SNIPPET_FORBIDDEN.test(snippet)) return null;
+    bodySnippet = snippet;
+  }
+  const promptMessages = input.promptMessages === undefined ? undefined : boundedCount(input.promptMessages);
+  const promptChars = input.promptChars === undefined ? undefined : boundedCount(input.promptChars);
+  if (input.promptMessages !== undefined && promptMessages == null) return null;
+  if (input.promptChars !== undefined && promptChars == null) return null;
+  const agentId = boundedString(input.agentId);
+  const invocationId = boundedString(input.invocationId);
+  return {
+    name: "provider_error_observed",
+    schemaVersion: 1,
+    at,
+    overflowCandidate: input.overflowCandidate,
+    overflowReasons,
+    ...(modelId != null ? { modelId } : {}),
+    ...(api != null ? { api } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(providerCode != null ? { providerCode } : {}),
+    ...(providerType != null ? { providerType } : {}),
+    ...(bodySnippet !== undefined ? { bodySnippet } : {}),
+    ...(promptMessages !== undefined ? { promptMessages } : {}),
+    ...(promptChars !== undefined ? { promptChars } : {}),
+    ...(agentId != null ? { agentId } : {}),
+    ...(invocationId != null ? { invocationId } : {}),
+  };
+}
+
 function isSeamEventName(name: unknown): boolean {
   return typeof name === "string" && SEAM_EVENT_NAMES.has(name);
 }
@@ -405,18 +478,31 @@ export async function appendHostStreamRejected(root: string, input: unknown): Pr
   }
 }
 
+export async function appendProviderErrorObserved(root: string, input: unknown): Promise<TurnSeamWriteResult> {
+  const projected = projectProviderErrorObserved(input);
+  if (!projected) return "unprojected";
+  try {
+    await appendLine(root, JSON.stringify(projected));
+    return "written";
+  } catch {
+    return "write_failed";
+  }
+}
+
 export async function appendSeamRouteEvent(root: string, input: unknown): Promise<TurnSeamWriteResult> {
   if (!isRecord(input)) return "unprojected";
   if (input.name === "model_step_terminal") return appendModelStepTerminal(root, input);
   if (input.name === "host_stream_rejected") return appendHostStreamRejected(root, input);
+  if (input.name === "provider_error_observed") return appendProviderErrorObserved(root, input);
   return "unprojected";
 }
 
-function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | null {
+function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
   if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);
+  if (input.name === "provider_error_observed") return projectProviderErrorObserved(input);
   const at = boundedString(input.at);
   if (!at || !Number.isFinite(Date.parse(at))) return null;
   const out: RuntimeEvent = { name: input.name as EventName, at };

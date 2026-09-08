@@ -7,11 +7,13 @@ import {
   appendEvent,
   appendHostStreamRejected,
   appendModelStepTerminal,
+  appendProviderErrorObserved,
   appendTurnSeamTerminal,
   compactEvents,
   CONTROL_PLANE_EVENT_RETENTION,
   projectHostStreamRejected,
   projectModelStepTerminal,
+  projectProviderErrorObserved,
   projectTurnSeamTerminal,
   sanitizeEvent,
   TURN_SEAM_BOUNDED_STRING,
@@ -313,6 +315,29 @@ describe("model_step_terminal and host_stream_rejected projectors", () => {
       agentId: "agent-tom", turnId: "turn-1", stage: "stream-id", errorCode: "invalid_envelope", reason: "missing-step-id",
     })).toBe("written");
     expect(parsed(await linesOf(dir)).map((row) => row.name)).toEqual(["model_step_terminal", "host_stream_rejected"]);
+  });
+
+  test("provider_error_observed is durable and not a Host IPC field", async () => {
+    const dir = await root();
+    expect(projectProviderErrorObserved({
+      name: "provider_error_observed", schemaVersion: 1, at: AT,
+      overflowCandidate: true, overflowReasons: ["provider_code"],
+      status: 400, providerCode: "context_length_exceeded",
+      bodySnippet: "This model's maximum context length is 128000 tokens.",
+      api: "responses", modelId: "openai-responses/gpt-5.6-luna",
+    })?.overflowCandidate).toBe(true);
+    expect(projectProviderErrorObserved({
+      name: "provider_error_observed", schemaVersion: 1, at: AT,
+      overflowCandidate: true, overflowReasons: [],
+    })).toBeNull();
+    expect(await appendProviderErrorObserved(dir, {
+      name: "provider_error_observed", schemaVersion: 1, at: AT,
+      overflowCandidate: false, overflowReasons: [],
+      status: 401, providerCode: "invalid_api_key",
+    })).toBe("written");
+    await appendEvent(dir, { name: "provider_error_observed", at: AT });
+    expect(parsed(await linesOf(dir)).map((row) => row.name)).toEqual(["provider_error_observed"]);
+    expect(parsed(await linesOf(dir))[0]?.overflowCandidate).toBe(false);
   });
 });
 

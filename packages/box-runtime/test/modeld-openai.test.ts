@@ -12,6 +12,7 @@ import {
   mapOpenAiStreamEvent,
   openAiAccepts,
   openAiApiMode,
+  OPENAI_LOCAL_ERROR_MESSAGES,
   sanitizeOpenAiError,
 } from "../src/modeld-openai.ts";
 import { sha256Text } from "../src/hash.ts";
@@ -275,6 +276,33 @@ describe("OpenAI ModeldDriver", () => {
     }).catch(() => undefined);
     expect(urls.some((url) => url.includes("/responses"))).toBe(true);
     expect(urls.some((url) => url.includes("/chat/completions"))).toBe(false);
+  });
+
+  test("overflow-shaped provider errors are logged as candidates; others are not; Host still sees model_error", async () => {
+    const seen: Array<{ overflowCandidate: boolean; providerCode?: string; status?: number }> = [];
+    const jsonResponse = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    const run = async (status: number, body: unknown) => {
+      seen.length = 0;
+      const driver = createOpenAiModeldDriver({
+        resolveApiKey: async () => TEST_KEY,
+        fetch: (async () => jsonResponse(status, body)) as typeof fetch,
+        onProviderError: (evidence) => { seen.push(evidence); },
+      });
+      const parts = await driver.complete({
+        pin, envelope: buildModelEnvelope([{ role: "user", content: "hi" }]),
+        invocationId: "ovf-1", agentId: "agent-tom", signal: new AbortController().signal,
+      });
+      expect(parts.some((part) => part.type === "error" && part.error.message === OPENAI_LOCAL_ERROR_MESSAGES.model_error)).toBe(true);
+      expect(parts.some((part) => part.type === "error" && JSON.stringify(part).includes("context_length"))).toBe(false);
+      return seen[0];
+    };
+    const overflow = await run(400, { error: { message: "This model's maximum context length is 128000 tokens.", type: "invalid_request_error", code: "context_length_exceeded" } });
+    expect(overflow?.overflowCandidate).toBe(true);
+    expect(overflow?.providerCode).toBe("context_length_exceeded");
+    expect((await run(401, { error: { code: "invalid_api_key", message: "Incorrect API key provided: sk-secret" } }))?.overflowCandidate).toBe(false);
+    expect((await run(429, { error: { code: "rate_limit_exceeded", message: "Rate limit exceeded" } }))?.overflowCandidate).toBe(false);
+    expect((await run(500, { error: { message: "internal" } }))?.overflowCandidate).toBe(false);
   });
 
   test("live path forwards Host tool schemas without execute metadata", async () => {
