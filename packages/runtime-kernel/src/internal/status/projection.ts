@@ -14,8 +14,30 @@ export type CorrelationResult =
   | { state: "correlated"; tuple: CompleteInferenceCorrelation }
   | { state: "unknown"; missing: Array<(typeof INFERENCE_CORRELATION_KEYS)[number]> };
 
+const UNSAFE_REASON = /secret|prompt|token|auth|api_key|sk-|error_body|password/i;
+
+/** Controlled public reason codes. Arbitrary bounded strings become unknown. */
+export function projectSafeReason(value: unknown): string | null {
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(value) || UNSAFE_REASON.test(value)) return null;
+  return value;
+}
+
+/** Copy only allowlisted correlation fields. Extra keys never survive. */
+export function copyInferenceTuple(input: unknown): InferenceCorrelation {
+  const out: InferenceCorrelation = {};
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return out;
+  const record = input as Record<string, unknown>;
+  for (const key of INFERENCE_CORRELATION_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\n\r]/.test(value)) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 export function correlateInferenceTuple(input: InferenceCorrelation | null | undefined): CorrelationResult {
-  const tuple = input ?? {};
+  const tuple = copyInferenceTuple(input);
   const missing = INFERENCE_CORRELATION_KEYS.filter((key) => {
     const value = tuple[key];
     return typeof value !== "string" || value.length === 0;
@@ -31,7 +53,7 @@ function facet<T>(source: Observed<unknown>, value: T, gap: Observed<unknown>["g
 /** Unique status projector. Never aggregates to watchdog.state=degraded or closes a stored circuit. */
 export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFacets {
   const circuitValue = evidence.coordinator.gap === null && evidence.coordinator.value
-    ? { state: evidence.coordinator.value.circuit, reason: evidence.coordinator.value.circuitReason }
+    ? { state: evidence.coordinator.value.circuit, reason: projectSafeReason(evidence.coordinator.value.circuitReason) }
     : null;
   const circuitOpen = circuitValue?.state === "open";
 
@@ -60,17 +82,15 @@ export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFac
   let correlated = false;
   if (evidence.eventsUnsupported) {
     deliveryGap = "unsupported_schema";
-  } else if (evidence.eventsTruncated && evidence.hostDelivery.gap === null && evidence.hostDelivery.value == null) {
-    deliveryGap = deliveryGap ?? "truncated";
-  } else if (evidence.hostDelivery.value) {
+  }
+  if (evidence.hostDelivery.value) {
     deliveryKind = evidence.hostDelivery.value.kind;
     const linked = correlateInferenceTuple(evidence.hostDelivery.value.tuple);
-    if (linked.state === "correlated") {
-      correlated = true;
-      deliveryTuple = linked.tuple;
-    } else {
-      deliveryTuple = evidence.hostDelivery.value.tuple;
-    }
+    deliveryTuple = linked.state === "correlated" ? linked.tuple : copyInferenceTuple(evidence.hostDelivery.value.tuple);
+    correlated = linked.state === "correlated";
+    if (evidence.eventsTruncated && deliveryGap === null) deliveryGap = "truncated";
+  } else if (evidence.eventsTruncated && deliveryGap === null) {
+    deliveryGap = "truncated";
   }
 
   return {
@@ -94,7 +114,7 @@ export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFac
       mutation: facet(evidence.coordinator, {
         inhibited: circuitOpen,
         allowed: circuitValue?.state === "closed",
-        reason: circuitOpen ? (circuitValue.reason ?? "circuit_open") : null,
+        reason: circuitOpen ? (projectSafeReason(circuitValue.reason) ?? "circuit_open") : null,
       }),
       recovery: facet(evidence.operationJournal, {
         state: recoveryState,

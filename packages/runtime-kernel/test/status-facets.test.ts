@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  copyInferenceTuple,
   correlateInferenceTuple,
   journalRoleAllows,
   projectRuntimeStatus,
+  projectSafeReason,
   STATUS_SCHEMA_VERSION,
   type StatusEvidence,
 } from "@grokbox/runtime-kernel/status";
@@ -170,13 +172,59 @@ describe("status facets projector", () => {
     expect(result.missing).toContain("serviceEpoch");
   });
 
-  test("projector output has no secret/prompt/error-body sentinels", () => {
-    const status = projectRuntimeStatus(base());
-    const text = JSON.stringify(status);
+  test("tuple copy drops extra secret fields; unsafe reasons become unknown", () => {
+    const copied = copyInferenceTuple({
+      hostId: "h1", agentId: "a1", turnId: "t1", stepId: "s1",
+      serviceEpoch: "e1", binding: "b1", attempt: "1",
+      authorization: SECRET, providerError: ERROR_BODY, invocationId: "inv-should-not-copy",
+    });
+    expect(copied).toEqual({
+      hostId: "h1", agentId: "a1", turnId: "t1", stepId: "s1",
+      serviceEpoch: "e1", binding: "b1", attempt: "1",
+    });
+    expect(JSON.stringify(copied)).not.toContain(SECRET);
+    expect(copied).not.toHaveProperty("authorization");
+    expect(copied).not.toHaveProperty("invocationId");
+    const correlated = correlateInferenceTuple({
+      ...copied,
+      authorization: SECRET,
+    } as never);
+    expect(correlated.state).toBe("correlated");
+    if (correlated.state === "correlated") {
+      expect(JSON.stringify(correlated.tuple)).not.toContain(SECRET);
+      expect(correlated.tuple).not.toHaveProperty("authorization");
+    }
+    expect(projectSafeReason("unsupported_bundle")).toBe("unsupported_bundle");
+    expect(projectSafeReason(SECRET)).toBeNull();
+    expect(projectSafeReason(PROMPT)).toBeNull();
+    expect(projectSafeReason("SENTINEL_ERROR_BODY")).toBeNull();
+    const leaked = projectRuntimeStatus(base({
+      coordinator: observed("state/coordinator.json", { circuit: "open", circuitReason: SECRET }),
+      hostDelivery: observed("log/events.ndjson", {
+        kind: "host_terminal",
+        tuple: { ...copied, authorization: SECRET, providerError: ERROR_BODY } as never,
+      }),
+    }));
+    const text = JSON.stringify(leaked);
+    expect(leaked.circuit.value?.reason).toBeNull();
+    expect(leaked.facets.mutation.value?.reason).toBe("circuit_open");
     expect(text).not.toContain(SECRET);
     expect(text).not.toContain(PROMPT);
     expect(text).not.toContain(ERROR_BODY);
     expect(text).not.toContain("sk-live");
+    expect(leaked.facets.hostDelivery.value?.tuple).not.toHaveProperty("authorization");
+  });
+
+  test("truncated history keeps the visible terminal and still reports truncated gap", () => {
+    const status = projectRuntimeStatus(base({
+      hostDelivery: observed("log/events.ndjson", {
+        kind: "host_rejected",
+        tuple: { agentId: "a1", turnId: "t1" },
+      }),
+      eventsTruncated: true,
+    }));
+    expect(status.facets.hostDelivery.value?.kind).toBe("host_rejected");
+    expect(status.facets.hostDelivery.gap).toBe("truncated");
   });
 
   test("journal roles: host/modeld/control allowlists and watchdog cannot append", () => {

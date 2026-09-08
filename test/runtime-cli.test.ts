@@ -12,6 +12,7 @@ import { receiptFixture } from "../packages/box-runtime/test/receipt-fixture.ts"
 import { snapshotTree } from "../packages/box-runtime/test/observation-fixture.ts";
 import { liveStatusAdapter } from "../packages/box-runtime/src/internal/io/observe.ts";
 import { desiredPath } from "../packages/box-runtime/src/internal/io/paths.ts";
+import { appendHostJournal } from "../packages/box-runtime/src/internal/host/terminal-journal.node.ts";
 import { snapshotContracts } from "../packages/box-runtime/src/internal/io/contracts.ts";
 import { SHA, SOURCE } from "../packages/box-runtime/test/admission-fixture.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
@@ -346,6 +347,53 @@ describe("box-local runtime CLI", () => {
       expect((body.facets as { bridge: { value: { desired: unknown }; gap: string } }).bridge.value.desired).toBeNull();
       expect((body.facets as { bridge: { gap: string } }).bridge.gap).toBe("invalid");
       expect(body).not.toHaveProperty("watchdog");
+      expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
+    } finally { restore(); }
+  });
+
+  test("status Host terminal round-trip and unsafe circuit reasons stay off stdout/stderr", async () => {
+    const boxRuntimeRoot = await withRoot();
+    const restore = spyStatusReaders(join(boxRuntimeRoot, "missing-run"));
+    const secret = "sk-live-SENTINEL_SECRET";
+    const prompt = "SENTINEL_PROMPT";
+    const errorBody = "SENTINEL_ERROR_BODY";
+    try {
+      expect(await appendHostJournal(boxRuntimeRoot, {
+        name: "host_normalized_terminal",
+        at: "2026-01-01T00:00:00.000Z",
+        hostId: "host-1",
+        agentId: "agent-tom",
+        turnId: "turn-1",
+        stepId: "step-1",
+        serviceEpoch: "epoch-1",
+        binding: "bind-1",
+        attempt: "1",
+        invocationId: "inv-must-not-become-attempt",
+        authorization: secret,
+      })).toBe("written");
+      await mkdir(join(boxRuntimeRoot, "state"), { recursive: true });
+      await writeFile(join(boxRuntimeRoot, "state", "coordinator.json"), JSON.stringify({
+        version: 1, circuit: "open", mutationCount: 1, attemptedKeys: ["k"], circuitReason: secret,
+      }));
+      const before = await snapshotTree(boxRuntimeRoot);
+      const status = await captureCli(["runtime", "status"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+      expect(status.code).toBe(0);
+      const body = data(status.stdout);
+      const delivery = (body.facets as { hostDelivery: { gap: unknown; value: { kind: string; correlated: boolean; tuple: Record<string, string> } } }).hostDelivery;
+      expect(delivery.gap).toBeNull();
+      expect(delivery.value.kind).toBe("host_terminal");
+      expect(delivery.value.correlated).toBe(true);
+      expect(delivery.value.tuple).toEqual({
+        hostId: "host-1", agentId: "agent-tom", turnId: "turn-1", stepId: "step-1",
+        serviceEpoch: "epoch-1", binding: "bind-1", attempt: "1",
+      });
+      expect((body.circuit as { value: { state: string; reason: unknown } }).value.state).toBe("open");
+      expect((body.circuit as { value: { reason: unknown } }).value.reason).toBeNull();
+      expect(status.stdout).not.toContain(secret);
+      expect(status.stdout).not.toContain(prompt);
+      expect(status.stdout).not.toContain(errorBody);
+      expect(status.stderr).not.toContain(secret);
+      expect(status.stdout).not.toContain("inv-must-not-become-attempt");
       expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
     } finally { restore(); }
   });

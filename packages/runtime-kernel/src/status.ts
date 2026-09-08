@@ -13,4 +13,10 @@ export {
   type HostDeliveryKind,
 } from "./internal/contract/status.ts";
 
-export { projectRuntimeStatus, correlateInferenceTuple, type CorrelationResult } from "./internal/status/projection.ts";
+export {
+  projectRuntimeStatus,
+  correlateInferenceTuple,
+  copyInferenceTuple,
+  projectSafeReason,
+  type CorrelationResult,
+} from "./internal/status/projection.ts";

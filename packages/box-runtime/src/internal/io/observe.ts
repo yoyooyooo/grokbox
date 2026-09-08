@@ -10,7 +10,7 @@ import { canonicalOwnershipAgrees } from "../process/identity-op.ts";
 import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "../process/linux.node.ts";
-import { projectRuntimeStatus, type ObservationGap, type RuntimeStatusFacets, type StatusEvidence } from "@grokbox/runtime-kernel/status";
+import { copyInferenceTuple, projectRuntimeStatus, type ObservationGap, type RuntimeStatusFacets, type StatusEvidence } from "@grokbox/runtime-kernel/status";
 import { parseDesiredFile, parseModelsFile, routeHasNonStubAssignment, routeModelAdmitted, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { boundedText, count, isRecord, observeJson, type Observation, type ObservationState } from "./observation.node.ts";
 import { parseReviewedProfile } from "../process/profile.node.ts";
@@ -114,56 +114,34 @@ function facetsFromDraft(status: LiveStatusDraft, events: { state: EvidenceState
   });
   const unsupported = events.events.some((row) => row.invalid === true);
   let hostDelivery: StatusEvidence["hostDelivery"];
-  if (unsupported) {
+  if (unsupported && !hostRow) {
     hostDelivery = { source: "log/events.ndjson", observedAt: null, gap: "unsupported_schema", value: null };
   } else if (hostRow && hostRow.name === "host_stream_rejected") {
     hostDelivery = {
       source: "log/events.ndjson",
       observedAt: typeof hostRow.at === "string" ? hostRow.at : null,
-      gap: null,
-      value: {
-        kind: "host_rejected",
-        tuple: {
-          hostId: typeof hostRow.hostGenerationId === "string" ? hostRow.hostGenerationId : undefined,
-          agentId: typeof hostRow.agentId === "string" ? hostRow.agentId : undefined,
-          turnId: typeof hostRow.turnId === "string" ? hostRow.turnId : undefined,
-        },
-      },
+      gap: unsupported ? "unsupported_schema" : null,
+      value: { kind: "host_rejected", tuple: copyInferenceTuple(hostRow) },
     };
   } else if (hostRow && (hostRow.name === "turn_seam_terminal" || hostRow.name === "host_normalized_terminal")) {
     hostDelivery = {
       source: "log/events.ndjson",
       observedAt: typeof hostRow.at === "string" ? hostRow.at : null,
-      gap: null,
-      value: {
-        kind: "host_terminal",
-        tuple: {
-          agentId: typeof hostRow.agentId === "string" ? hostRow.agentId : undefined,
-          turnId: typeof hostRow.turnId === "string" ? hostRow.turnId : undefined,
-          attempt: typeof hostRow.invocationId === "string" ? hostRow.invocationId : undefined,
-        },
-      },
+      gap: unsupported ? "unsupported_schema" : null,
+      value: { kind: "host_terminal", tuple: copyInferenceTuple(hostRow) },
     };
   } else if (hostRow && hostRow.name === "model_step_terminal") {
     hostDelivery = {
       source: "log/events.ndjson",
       observedAt: typeof hostRow.at === "string" ? hostRow.at : null,
-      gap: null,
-      value: {
-        kind: "model_terminal",
-        tuple: {
-          hostId: typeof hostRow.hostGenerationId === "string" ? hostRow.hostGenerationId : undefined,
-          agentId: typeof hostRow.agentId === "string" ? hostRow.agentId : undefined,
-          turnId: typeof hostRow.turnId === "string" ? hostRow.turnId : undefined,
-          attempt: typeof hostRow.invocationId === "string" ? hostRow.invocationId : undefined,
-        },
-      },
+      gap: unsupported ? "unsupported_schema" : null,
+      value: { kind: "model_terminal", tuple: copyInferenceTuple(hostRow) },
     };
   } else {
     hostDelivery = {
       source: "log/events.ndjson",
       observedAt: null,
-      gap: events.state === "present" || events.state === "provided" ? (events.truncated ? "truncated" : "missing") : observationGap(events.state),
+      gap: unsupported ? "unsupported_schema" : events.state === "present" || events.state === "provided" ? (events.truncated ? "truncated" : "missing") : observationGap(events.state),
       value: null,
     };
   }
@@ -274,7 +252,6 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
   }
   status.operation = { state: journal.state, phase: journal.state === "present" ? journal.value.phase ?? null : null,
     pending: journal.state === "present" ? adoptJournalNeedsRecovery(journal.value) : journal.state === "missing" ? false : null };
-  if (status.operation.pending || bad(journal.state) || status.circuit === "open" || bad(coordinator.state)) status.watchdog.state = "degraded";
   // A stored circuit/attestation is not a heartbeat. Liveness otherwise remains unknown.
   const lastHeal = [...events.events].reverse().find((row) => "name" in row && row.name === "stale_patched_term" &&
     "outcome" in row && ["exited", "supervisor_relaunched", "failed", "skipped"].includes(String(row.outcome)));
@@ -325,7 +302,6 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
     if (ownership && journal.state === "present" && status.operation.pending === false &&
       (journal.value.phase !== "attested" || journal.value.host?.pid !== host?.pid || journal.value.host?.start !== host?.start)) {
       status.operation = { ...status.operation, state: "invalid", pending: null };
-      status.watchdog.state = "degraded";
     }
     const direct = findUniqueOfficialChain(snapshot, classify);
     const boundariesUntouched = identities.filter((ident) => ["wrapper", "supervisor"].includes(classify(ident) ?? ""))

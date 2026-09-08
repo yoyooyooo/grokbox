@@ -1,10 +1,11 @@
 import { chmod, mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { journalRoleAllows } from "@grokbox/runtime-kernel/status";
+import { journalRoleAllows, projectSafeReason } from "@grokbox/runtime-kernel/status";
 import {
   appendHostStreamRejected,
   appendNdjsonLine,
   appendTurnSeamTerminal,
+  projectHostNormalizedTerminal,
   projectHostStreamRejected,
   projectTurnSeamTerminal,
   withEventsLock,
@@ -13,7 +14,13 @@ import { eventsPath } from "./paths.ts";
 import { observeText, type ObservationState } from "./observation.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 
-export { appendHostStreamRejected, appendTurnSeamTerminal, projectHostStreamRejected, projectTurnSeamTerminal } from "../host/terminal-journal.node.ts";
+export {
+  appendHostStreamRejected,
+  appendTurnSeamTerminal,
+  projectHostNormalizedTerminal,
+  projectHostStreamRejected,
+  projectTurnSeamTerminal,
+} from "../host/terminal-journal.node.ts";
 
 export const EVENT_NAMES = [
   "disk_sha_observed",
@@ -25,6 +32,7 @@ export const EVENT_NAMES = [
   "circuit_open",
   "inject_phase",
   "turn_seam_terminal",
+  "host_normalized_terminal",
   // TODO(owner): names follow the MINI-1918 v2 review proposal; not a dated owner adjudication.
   "model_step_terminal",
   "host_stream_rejected",
@@ -58,7 +66,13 @@ const TURN_SEAM_MODES = new Set(["identity", "route"]);
 const TURN_SEAM_ASSIGNMENTS = new Set(["official", "main", "agent"]);
 const TURN_SEAM_TERMINAL_CLASSES = new Set(["stop", "error", "abort", "unknown"]);
 const TURN_SEAM_OUTCOMES = new Set(["official", "managed", "last_resort_official", "rejected"]);
-const SEAM_EVENT_NAMES = new Set(["turn_seam_terminal", "model_step_terminal", "host_stream_rejected", "provider_error_observed"]);
+const SEAM_EVENT_NAMES = new Set([
+  "turn_seam_terminal",
+  "host_normalized_terminal",
+  "model_step_terminal",
+  "host_stream_rejected",
+  "provider_error_observed",
+]);
 export const MODEL_STEP_STAGES = new Set([
   "stream-id",
   "append-snapshot",
@@ -198,6 +212,21 @@ export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent {
     if (key === "name" || key === "at") continue;
     if (!ALLOWED_FIELDS.has(key)) continue;
     if (FORBIDDEN.test(key)) continue;
+    if (key === "reason") {
+      const reason = projectSafeReason(value);
+      if (reason) out.reason = reason;
+      continue;
+    }
+    if (key === "counts") {
+      if (!isRecord(value)) continue;
+      const counts: Record<string, number> = {};
+      for (const role of ["wrapper", "supervisor", "host", "tempSupervisor", "guardian", "extras"]) {
+        const count = boundedCount(value[role]);
+        if (count !== null) counts[role] = count;
+      }
+      out.counts = counts;
+      continue;
+    }
     if (typeof value === "string" && FORBIDDEN.test(value)) continue;
     out[key] = value;
   }
@@ -360,6 +389,7 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
 function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
+  if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input) as RuntimeEvent | null;
   if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input) as HostStreamRejectedEvent | null;
   if (input.name === "provider_error_observed") return projectProviderErrorObserved(input);

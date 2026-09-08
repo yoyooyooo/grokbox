@@ -1,9 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeAttestation, type CoverageAttestation, type RouteAttestation } from "../src/internal/io/authority.node.ts";
-import { projectLiveStatus } from "../src/internal/io/observe.ts";
+import { createStatusPortCounts, projectLiveStatus } from "../src/internal/io/observe.ts";
+import { appendHostJournal } from "../src/internal/host/terminal-journal.node.ts";
+import * as artifacts from "../src/internal/io/artifacts.node.ts";
+import * as credentials from "../src/internal/io/credentials.node.ts";
+import * as journal from "../src/internal/io/journal.node.ts";
 import type { DesiredFile, ModelsFile } from "@grokbox/runtime-kernel/selection";
 import type { ProcessIdentity, ProcessPort, SignalName } from "../src/internal/process/process-port.ts";
 import type { PatchProfile } from "../src/internal/host/profile.ts";
@@ -464,36 +468,135 @@ describe("status facets IO wiring", () => {
     expect(status).not.toHaveProperty("watchdog");
   });
 
-  test("readonly counted ports stay 0; repair/circuit-close oracle is live", async () => {
-    const counts = { write: 0, signal: 0, credential: 0, provider: 0, compaction: 0 };
+  test("readonly counted ports wrap real seams; violations make the zero oracle fail", async () => {
+    const counts = createStatusPortCounts();
+    const originalWrite = artifacts.writeRuntimeArtifact;
+    const originalCredential = credentials.materializeApiKeyRef;
+    const originalCompact = journal.compactEvents;
+    const originalFetch = globalThis.fetch;
+    const spies = [
+      spyOn(artifacts, "writeRuntimeArtifact").mockImplementation(async (path, value) => {
+        counts.write += 1;
+        return originalWrite(path, value);
+      }),
+      spyOn(credentials, "materializeApiKeyRef").mockImplementation(async (ref, env, signal) => {
+        counts.credential += 1;
+        return originalCredential(ref, env, signal);
+      }),
+      spyOn(journal, "compactEvents").mockImplementation(async (root) => {
+        counts.compaction += 1;
+        return originalCompact(root);
+      }),
+    ];
+    const deny = async (): Promise<Response> => {
+      counts.provider += 1;
+      return new Response("{}", { status: 200 });
+    };
+    globalThis.fetch = Object.assign(deny, { preconnect: deny }) as typeof fetch;
     const { wrapper, supervisor, host } = officialChain();
     const { root, ephemeralRoot } = await roots();
     const before = await snapshot(root);
-    const status = await projectLiveStatus({
+    try {
+      const status = await projectLiveStatus({
+        root,
+        desired: desired("disabled"),
+        models: MODELS,
+        processes: {
+          inspect: (pid) => [wrapper, supervisor, host].find((row) => row.pid === pid) ?? null,
+          list: () => [wrapper, supervisor, host],
+          signal: () => {
+            counts.signal += 1;
+            return { ok: false, reason: "not-found" };
+          },
+        },
+        ephemeralRoot,
+        diskSha: SHA,
+        envHas: envHasMap({}),
+      });
+      expect(status.schemaVersion).toBe(1);
+      expect(counts).toEqual({ write: 0, signal: 0, credential: 0, provider: 0, compaction: 0 });
+      expect(await snapshot(root)).toBe(before);
+      const src = await readFile(new URL("../src/internal/io/observe.ts", import.meta.url), "utf8");
+      expect(src).not.toContain("compactEvents");
+      expect(src).not.toContain("writeAttestation");
+      expect(src).not.toContain("materializeApiKeyRef");
+
+      await artifacts.writeRuntimeArtifact(join(root, "state", "probe.json"), { ok: true });
+      await credentials.materializeApiKeyRef("env:T27_STATUS_SENTINEL", { T27_STATUS_SENTINEL: "synthetic-not-a-real-key" });
+      await journal.compactEvents(root);
+      await globalThis.fetch("https://ccs.test/status-must-not-call");
+      expect(counts.write).toBeGreaterThan(0);
+      expect(counts.credential).toBeGreaterThan(0);
+      expect(counts.compaction).toBeGreaterThan(0);
+      expect(counts.provider).toBeGreaterThan(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  test("host_normalized_terminal append observes as host_terminal with full or missing tuple", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const { root, ephemeralRoot } = await roots();
+    await mkdir(join(root, "log"), { recursive: true });
+    expect(await appendHostJournal(root, {
+      name: "host_normalized_terminal",
+      at: "2026-01-01T00:00:00.000Z",
+      hostId: "host-1",
+      agentId: "agent-tom",
+      turnId: "turn-1",
+      stepId: "step-1",
+      serviceEpoch: "epoch-1",
+      binding: "bind-1",
+      attempt: "1",
+      invocationId: "inv-must-not-become-attempt",
+      authorization: "sk-live-SENTINEL_SECRET",
+    })).toBe("written");
+    const full = await projectLiveStatus({
       root,
       desired: desired("disabled"),
       models: MODELS,
-      processes: {
-        inspect: (pid) => [wrapper, supervisor, host].find((row) => row.pid === pid) ?? null,
-        list: () => [wrapper, supervisor, host],
-        signal: () => {
-          counts.signal += 1;
-          return { ok: false, reason: "not-found" };
-        },
-      },
+      processes: portOf([wrapper, supervisor, host], []),
       ephemeralRoot,
       diskSha: SHA,
       envHas: envHasMap({}),
     });
-    expect(status.schemaVersion).toBe(1);
-    expect(counts).toEqual({ write: 0, signal: 0, credential: 0, provider: 0, compaction: 0 });
-    expect(await snapshot(root)).toBe(before);
-    const src = await readFile(new URL("../src/internal/io/observe.ts", import.meta.url), "utf8");
-    expect(src).not.toContain("compactEvents");
-    expect(src).not.toContain("writeAttestation");
-    counts.write += 1;
-    counts.compaction += 1;
-    expect(counts.write).toBeGreaterThan(0);
-    expect(counts.compaction).toBeGreaterThan(0);
+    expect(full.facets.hostDelivery.gap).toBeNull();
+    expect(full.facets.hostDelivery.value).toEqual({
+      kind: "host_terminal",
+      correlated: true,
+      tuple: {
+        hostId: "host-1",
+        agentId: "agent-tom",
+        turnId: "turn-1",
+        stepId: "step-1",
+        serviceEpoch: "epoch-1",
+        binding: "bind-1",
+        attempt: "1",
+      },
+    });
+    expect(JSON.stringify(full)).not.toContain("inv-must-not-become-attempt");
+    expect(JSON.stringify(full)).not.toContain("sk-live-SENTINEL_SECRET");
+
+    const missingRoots = await roots();
+    await mkdir(join(missingRoots.root, "log"), { recursive: true });
+    expect(await appendHostJournal(missingRoots.root, {
+      name: "host_normalized_terminal",
+      at: "2026-01-01T00:00:00.000Z",
+      agentId: "agent-tom",
+      turnId: "turn-1",
+    })).toBe("written");
+    const missing = await projectLiveStatus({
+      root: missingRoots.root,
+      desired: desired("disabled"),
+      models: MODELS,
+      processes: portOf([wrapper, supervisor, host], []),
+      ephemeralRoot: missingRoots.ephemeralRoot,
+      diskSha: SHA,
+      envHas: envHasMap({}),
+    });
+    expect(missing.facets.hostDelivery.value?.kind).toBe("host_terminal");
+    expect(missing.facets.hostDelivery.value?.correlated).toBe(false);
+    expect(missing.facets.hostDelivery.value?.tuple).toEqual({ agentId: "agent-tom", turnId: "turn-1" });
   });
 });

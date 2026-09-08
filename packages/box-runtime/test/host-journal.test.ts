@@ -8,7 +8,7 @@ import {
   appendTurnSeamTerminal,
   hostEventsPath,
 } from "../src/internal/host/terminal-journal.node.ts";
-import { appendEvent, appendModelStepTerminal, compactEvents } from "../src/internal/io/journal.node.ts";
+import { appendEvent, appendModelStepTerminal, compactEvents, observeEvents } from "../src/internal/io/journal.node.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
 const SECRET = "sk-live-SENTINEL_SECRET";
@@ -118,6 +118,69 @@ describe("Host terminal journal roles", () => {
       .sort();
     expect(invocations).toEqual([...ids].sort());
     expect(fileLines.some((line) => line.includes("census"))).toBe(true);
+  });
+
+  test("host_normalized_terminal round-trip keeps verified tuple fields and drops extras", async () => {
+    const root = await dir();
+    const full = {
+      name: "host_normalized_terminal" as const,
+      at: AT,
+      hostId: "host-1",
+      agentId: "agent-tom",
+      turnId: "turn-1",
+      stepId: "step-1",
+      serviceEpoch: "epoch-1",
+      binding: "bind-1",
+      attempt: "1",
+      invocationId: "inv-must-not-become-attempt",
+      authorization: SECRET,
+      providerError: ERROR_BODY,
+      prompt: PROMPT,
+    };
+    expect(await appendHostJournal(root, full)).toBe("written");
+    const observed = await observeEvents(root);
+    expect(observed.state).toBe("present");
+    expect(observed.events).toEqual([{
+      name: "host_normalized_terminal",
+      at: AT,
+      hostId: "host-1",
+      agentId: "agent-tom",
+      turnId: "turn-1",
+      stepId: "step-1",
+      serviceEpoch: "epoch-1",
+      binding: "bind-1",
+      attempt: "1",
+    }]);
+    const text = JSON.stringify(observed);
+    expect(text).not.toContain(SECRET);
+    expect(text).not.toContain(PROMPT);
+    expect(text).not.toContain(ERROR_BODY);
+    expect(text).not.toContain("inv-must-not-become-attempt");
+
+    const missingRoot = await dir();
+    expect(await appendHostJournal(missingRoot, {
+      name: "host_normalized_terminal",
+      at: AT,
+      agentId: "agent-tom",
+      turnId: "turn-1",
+    })).toBe("written");
+    const missing = await observeEvents(missingRoot);
+    expect(missing.state).toBe("present");
+    expect(missing.events).toEqual([{ name: "host_normalized_terminal", at: AT, agentId: "agent-tom", turnId: "turn-1" }]);
+  });
+
+  test("control append projects nested counts so secret objects never reach NDJSON", async () => {
+    const root = await dir();
+    await appendEvent(root, {
+      name: "census",
+      at: AT,
+      counts: { host: 1, extra: { apiKey: SECRET, prompt: PROMPT, error: ERROR_BODY } },
+    });
+    const raw = (await lines(root)).join("\n");
+    expect(raw).not.toContain(SECRET);
+    expect(raw).not.toContain(PROMPT);
+    expect(raw).not.toContain(ERROR_BODY);
+    expect(JSON.parse(raw)).toEqual({ name: "census", at: AT, counts: { host: 1 } });
   });
 
   test("compaction does not delete old durable records to invent a single-track log", async () => {
