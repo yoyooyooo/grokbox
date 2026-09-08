@@ -21,7 +21,7 @@ export class EnvelopeError extends Error {
     super(code);
   }
 }
-export const ENVELOPE_MAX_BYTES = 64 * 1024;
+export const ENVELOPE_MAX_BYTES = 256 * 1024;
 const fail = (code: EnvelopeErrorCode = "invalid_envelope"): never => { throw new EnvelopeError(code); };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const id = (value: unknown): string => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value) ? value : fail();
@@ -220,25 +220,48 @@ function freezeJson(value: unknown): void {
   Object.freeze(value);
 }
 
-export function buildModelEnvelope(messages: unknown, tools?: unknown, options?: unknown): ModelEnvelope {
-  const envelope: ModelEnvelope = { version: 1, messages: messagesFrom(messages), tools: toolsFrom(tools), options: optionsFrom(options) };
+function envelopeBytes(messages: PromptMessage[], tools: ToolDefinition[], options: GenerationOptions): number {
+  return Buffer.byteLength(JSON.stringify({ version: 1, messages, tools, options }));
+}
+
+function toolPairingHolds(messages: PromptMessage[]): boolean {
   const calls = new Map<string, string>();
   const results = new Set<string>();
-  for (const message of envelope.messages) {
-    if (message.role === "tool" && (typeof message.content === "string" || message.content.some((part) => part.type !== "tool-result"))) return fail();
+  for (const message of messages) {
+    if (message.role === "tool" && (typeof message.content === "string" || message.content.some((part) => part.type !== "tool-result"))) return false;
     for (const part of typeof message.content === "string" ? [] : message.content) {
       if (part.type === "tool-call") {
-        if (calls.has(part.toolCallId)) return fail();
+        if (calls.has(part.toolCallId)) return false;
         calls.set(part.toolCallId, part.toolName);
       }
       if (part.type === "tool-result") {
-        if (!calls.has(part.toolCallId) || results.has(part.toolCallId) || (part.toolName !== undefined && calls.get(part.toolCallId) !== part.toolName)) return fail();
+        if (!calls.has(part.toolCallId) || results.has(part.toolCallId) || (part.toolName !== undefined && calls.get(part.toolCallId) !== part.toolName)) return false;
         results.add(part.toolCallId);
       }
     }
   }
+  return true;
+}
+
+function fitMessages(messages: PromptMessage[], tools: ToolDefinition[], options: GenerationOptions): PromptMessage[] {
+  let kept = messages;
+  while (kept.length > 1 && envelopeBytes(kept, tools, options) > ENVELOPE_MAX_BYTES) kept = kept.slice(1);
+  while (kept.length > 1 && !toolPairingHolds(kept)) kept = kept.slice(1);
+  return kept;
+}
+
+export function buildModelEnvelope(messages: unknown, tools?: unknown, options?: unknown): ModelEnvelope {
+  const parsedTools = toolsFrom(tools);
+  const parsedOptions = optionsFrom(options);
+  const envelope: ModelEnvelope = {
+    version: 1,
+    messages: fitMessages(messagesFrom(messages), parsedTools, parsedOptions),
+    tools: parsedTools,
+    options: parsedOptions,
+  };
+  if (!toolPairingHolds(envelope.messages)) return fail();
   if (typeof envelope.options.toolChoice === "object" && !envelope.tools.some((tool) => tool.name === (envelope.options.toolChoice as { toolName: string }).toolName)) return fail("invalid_tools");
-  if (Buffer.byteLength(JSON.stringify(envelope)) > ENVELOPE_MAX_BYTES) return fail("envelope_too_large");
+  if (envelopeBytes(envelope.messages, envelope.tools, envelope.options) > ENVELOPE_MAX_BYTES) return fail("envelope_too_large");
   freezeJson(envelope);
   return envelope;
 }

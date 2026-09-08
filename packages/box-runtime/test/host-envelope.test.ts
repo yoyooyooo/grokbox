@@ -156,6 +156,18 @@ describe("Host messages/state/tools/options envelope", () => {
     }
   });
 
+  test("oversized Host history drops oldest messages until the envelope fits", () => {
+    const filler = "y".repeat(8000);
+    const messages: PromptMessage[] = [];
+    for (let i = 0; i < 80; i += 1) messages.push({ role: "user", content: `${filler}-${i}` });
+    messages.push({ role: "user", content: "tail-sentinel" });
+    const envelope = buildModelEnvelope(messages);
+    expect(Buffer.byteLength(JSON.stringify(envelope)) <= ENVELOPE_MAX_BYTES).toBe(true);
+    expect(envelope.messages.length).toBeGreaterThan(0);
+    expect(envelope.messages.length).toBeLessThan(messages.length);
+    expect(envelope.messages.at(-1)).toEqual({ role: "user", content: "tail-sentinel" });
+  });
+
   test("getExecutor accepts Host conversation snapshots with extra keys and text parts with providerOptions", async () => {
     const f = fixture();
     const result = f.session.getExecutor({
