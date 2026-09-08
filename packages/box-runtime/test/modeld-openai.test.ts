@@ -110,6 +110,40 @@ describe("OpenAI envelope mapping", () => {
     ]);
   });
 
+  test("keeps early user turns past recent pings; filters noise; SendToUser becomes assistant text", () => {
+    const history: Array<Record<string, unknown>> = [{ role: "system", content: "sys" }];
+    for (let i = 0; i < 80; i += 1) {
+      history.push({ role: "user", content: `topic-${i} remember this` });
+      history.push({
+        role: "assistant",
+        content: [{ type: "tool-call", toolCallId: `s${i}`, toolName: "SendToUser", args: { text: { content: `ack-${i}` } } }],
+      });
+      history.push({
+        role: "tool",
+        content: [{ type: "tool-result", toolCallId: `s${i}`, toolName: "SendToUser", result: { ok: true } }],
+      });
+    }
+    history.push({ role: "user", content: "SAND_HIDDEN ping" });
+    history.push({ role: "assistant", content: "The configured model request failed. No fallback model was used." });
+    for (let i = 0; i < 30; i += 1) {
+      history.push({ role: "user", content: `canary ping ${i}` });
+      history.push({ role: "assistant", content: "pong" });
+    }
+    history.push({ role: "user", content: "list earlier topics" });
+    const live = envelopeToOpenAiLivePrompt(buildModelEnvelope(history, [
+      { name: "SendToUser", inputSchema: { type: "object", properties: {} } },
+    ]));
+    expect(live.system).toBe("sys");
+    expect(live.messages.length).toBeGreaterThan(24);
+    expect(live.messages.some((message) => message.role === "user" && String(message.content).includes("topic-0"))).toBe(true);
+    expect(live.messages.some((message) => message.role === "assistant" && String(message.content).includes("ack-0"))).toBe(true);
+    expect(live.messages.some((message) => String(message.content).includes("SAND_HIDDEN"))).toBe(false);
+    expect(live.messages.some((message) => String(message.content).includes("configured model request failed"))).toBe(false);
+    expect(live.messages.some((message) => message.role === "tool")).toBe(false);
+    expect(JSON.stringify(live.messages)).not.toMatch(/tool-call|tool-result/);
+    expect(live.messages.at(-1)).toEqual({ role: "user", content: "list earlier topics" });
+  });
+
   test("maps SDK stream events including tool streaming into As1 chunks then StreamPart[]", async () => {
     const events = [
       { type: "text-delta", text: "hel" },

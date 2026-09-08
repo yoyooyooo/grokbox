@@ -168,6 +168,25 @@ describe("Host messages/state/tools/options envelope", () => {
     expect(envelope.messages.at(-1)).toEqual({ role: "user", content: "tail-sentinel" });
   });
 
+  test("oversized tool results drop before user/assistant history", () => {
+    const envelope = buildModelEnvelope([
+      { role: "user", content: "keep-early-topic" },
+      {
+        role: "assistant",
+        content: [{ type: "tool-call", toolCallId: "c1", toolName: "SendToUser", args: { text: { content: "early-reply" } } }],
+      },
+      {
+        role: "tool",
+        content: [{ type: "tool-result", toolCallId: "c1", toolName: "SendToUser", result: { blob: "z".repeat(104_000), extra: "y".repeat(104_000) } }],
+      },
+      { role: "user", content: "tail-now" },
+    ], [{ name: "SendToUser", inputSchema: { type: "object", properties: {} } }]);
+    expect(Buffer.byteLength(JSON.stringify(envelope)) <= ENVELOPE_MAX_BYTES).toBe(true);
+    expect(envelope.messages.some((message) => typeof message.content === "string" && message.content.includes("keep-early-topic"))).toBe(true);
+    expect(envelope.messages.some((message) => typeof message.content === "string" && message.content.includes("early-reply"))).toBe(true);
+    expect(envelope.messages.at(-1)).toEqual({ role: "user", content: "tail-now" });
+  });
+
   test("getExecutor accepts Host conversation snapshots with extra keys and text parts with providerOptions", async () => {
     const f = fixture();
     const result = f.session.getExecutor({

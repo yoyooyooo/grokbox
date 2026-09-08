@@ -40,14 +40,44 @@ export function envelopeToOpenAiMessages(envelope: ModelEnvelope): OpenAiPromptM
   return envelope.messages.map(messageToOpenAi);
 }
 
-const LIVE_TEXT_MESSAGE_CAP = 24;
-const LIVE_TEXT_CHAR_CAP = 24_000;
+const LIVE_TEXT_MESSAGE_CAP = 400;
+const LIVE_TEXT_CHAR_CAP = 160_000;
+const LIVE_NOISE_USER = /SAND_HIDDEN|ack-redrive/i;
+const LIVE_NOISE_ASSISTANT = /The configured model request failed|No fallback model was used|No model request was sent/;
+
+function sendToUserBubble(content: PromptMessage["content"]): string {
+  if (typeof content === "string") return "";
+  for (const part of content) {
+    if (part.type !== "tool-call") continue;
+    if (!/send[_-]?to[_-]?user|send[_-]?message/i.test(part.toolName)) continue;
+    const args = part.args;
+    if (typeof args === "string" && args.trim()) return args.trim();
+    if (args === null || typeof args !== "object" || Array.isArray(args)) continue;
+    const record = args as Record<string, unknown>;
+    const text = record.text;
+    if (text !== null && typeof text === "object" && !Array.isArray(text) && typeof (text as { content?: unknown }).content === "string") {
+      const bubble = (text as { content: string }).content.trim();
+      if (bubble) return bubble;
+    }
+    if (typeof text === "string" && text.trim()) return text.trim();
+    if (typeof record.content === "string" && record.content.trim()) return record.content.trim();
+    if (typeof record.message === "string" && record.message.trim()) return record.message.trim();
+  }
+  return "";
+}
+
+function liveTurnText(message: PromptMessage): string {
+  const text = contentText(message.content).trim();
+  if (message.role === "assistant") return text || sendToUserBubble(message.content);
+  return text;
+}
 
 /**
- * Live managed prompt: Host system + recent user/assistant **text only**.
- * Tool roles and tool-call parts stay off the provider snapshot — Responses rejected
- * those turns (`model_error` / normalize). Host still executes SendToUser from the
- * current step's streamed tool-call, not from replayed tool history.
+ * Live managed prompt: Host conversation as CCS-safe user/assistant **text**.
+ * Reconstructs SendToUser bubbles as assistant text. Drops tool roles, tool-call
+ * parts, SAND_HIDDEN / ack-redrive, and synthetic failure rows. Responses rejected
+ * raw tool history (`model_error` / normalize); Host still executes SendToUser.
+ * Oldest-first drop under count/char caps; always ends on the latest user turn.
  */
 export function envelopeToOpenAiLivePrompt(envelope: ModelEnvelope): {
   system?: string;
@@ -62,8 +92,10 @@ export function envelopeToOpenAiLivePrompt(envelope: ModelEnvelope): {
       continue;
     }
     if (message.role !== "user" && message.role !== "assistant") continue;
-    const text = contentText(message.content).trim();
+    const text = liveTurnText(message);
     if (!text) continue;
+    if (message.role === "user" && LIVE_NOISE_USER.test(text)) continue;
+    if (message.role === "assistant" && LIVE_NOISE_ASSISTANT.test(text)) continue;
     texts.push({ role: message.role, content: text });
   }
   let kept = texts.slice(-LIVE_TEXT_MESSAGE_CAP);

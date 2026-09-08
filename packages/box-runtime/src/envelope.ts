@@ -244,8 +244,57 @@ function toolPairingHolds(messages: PromptMessage[]): boolean {
   return true;
 }
 
+function textBits(content: PromptMessage["content"]): string {
+  if (typeof content === "string") return content.trim();
+  return content
+    .filter((part): part is Extract<PromptContentPart, { type: "text" | "reasoning" }> => part.type === "text" || part.type === "reasoning")
+    .map((part) => part.text)
+    .join("")
+    .trim();
+}
+
+function sendToUserText(args: JsonValue): string {
+  if (typeof args === "string") return args.trim();
+  if (!object(args)) return "";
+  const text = args.text;
+  if (object(text) && typeof text.content === "string") return text.content.trim();
+  if (typeof text === "string") return text.trim();
+  if (typeof args.content === "string") return args.content.trim();
+  if (typeof args.message === "string") return args.message.trim();
+  return "";
+}
+
+function sendToUserFrom(content: PromptMessage["content"]): string {
+  if (typeof content === "string") return "";
+  for (const part of content) {
+    if (part.type !== "tool-call") continue;
+    if (!/send[_-]?to[_-]?user|send[_-]?message/i.test(part.toolName)) continue;
+    const text = sendToUserText(part.args);
+    if (text) return text;
+  }
+  return "";
+}
+
+/** Prefer user/assistant text (including SendToUser bubble text) over tool rows when the snapshot exceeds the Unix envelope cap. */
+function conversationOnly(messages: PromptMessage[]): PromptMessage[] {
+  const kept: PromptMessage[] = [];
+  for (const message of messages) {
+    if (message.role === "tool") continue;
+    if (message.role === "system" || message.role === "user") {
+      const text = textBits(message.content);
+      if (text) kept.push({ role: message.role, content: text });
+      continue;
+    }
+    if (message.role !== "assistant") continue;
+    const text = textBits(message.content) || sendToUserFrom(message.content);
+    if (text) kept.push({ role: "assistant", content: text });
+  }
+  return kept;
+}
+
 function fitMessages(messages: PromptMessage[], tools: ToolDefinition[], options: GenerationOptions): PromptMessage[] {
   let kept = messages;
+  if (envelopeBytes(kept, tools, options) > ENVELOPE_MAX_BYTES) kept = conversationOnly(kept);
   while (kept.length > 1 && envelopeBytes(kept, tools, options) > ENVELOPE_MAX_BYTES) kept = kept.slice(1);
   while (kept.length > 1 && !toolPairingHolds(kept)) kept = kept.slice(1);
   return kept;
