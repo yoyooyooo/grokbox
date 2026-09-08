@@ -139,7 +139,7 @@ export class EventJournal {
     }
 
     let page = this.page(after, input, gap);
-    if (page.events.length === 0 && page.gap === undefined && page.cursor === `${this.generation}:${after}` && input.waitMs > 0) {
+    if (page.events.length === 0 && page.gap === undefined && input.waitMs > 0) {
       await this.wait(input.waitMs, input.signal);
       page = this.page(after, input, undefined);
     }
