@@ -183,6 +183,40 @@ describe("Host terminal journal roles", () => {
     expect(JSON.parse(raw)).toEqual({ name: "census", at: AT, counts: { host: 1 } });
   });
 
+  test("unsafe Host tuple values are rejected before append; nested phase/outcome never land in NDJSON", async () => {
+    const hostRoot = await dir();
+    expect(await appendHostJournal(hostRoot, {
+      name: "host_normalized_terminal",
+      at: AT,
+      hostId: "host-1",
+      agentId: SECRET,
+      turnId: "turn-1",
+      stepId: "step-1",
+      serviceEpoch: "epoch-1",
+      binding: "bind-1",
+      attempt: "1",
+    })).toBe("unprojected");
+    expect(await lines(hostRoot)).toEqual([]);
+
+    const controlRoot = await dir();
+    await appendEvent(controlRoot, {
+      name: "inject_phase",
+      at: AT,
+      phase: { detail: { apiKey: SECRET, prompt: PROMPT, error: ERROR_BODY } },
+    });
+    await appendEvent(controlRoot, {
+      name: "stale_patched_term",
+      at: AT,
+      outcome: { detail: { apiKey: SECRET, prompt: PROMPT, error: ERROR_BODY } },
+    });
+    const controlRaw = (await lines(controlRoot)).join("\n");
+    expect(controlRaw).not.toContain(SECRET);
+    expect(controlRaw).not.toContain(PROMPT);
+    expect(controlRaw).not.toContain(ERROR_BODY);
+    expect(JSON.parse((await lines(controlRoot))[0]!)).toEqual({ name: "inject_phase", at: AT });
+    expect(JSON.parse((await lines(controlRoot))[1]!)).toEqual({ name: "stale_patched_term", at: AT });
+  });
+
   test("compaction does not delete old durable records to invent a single-track log", async () => {
     const root = await dir();
     await appendEvent(root, { name: "census", at: AT, counts: { host: 1 } });

@@ -1,7 +1,7 @@
 import { constants as fsConstants } from "node:fs";
 import { chmod, mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { copyInferenceTuple, journalRoleAllows } from "@grokbox/runtime-kernel/status";
+import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
 
 export type HostJournalWriteResult = "written" | "unprojected" | "write_failed";
 
@@ -167,7 +167,8 @@ export function projectHostNormalizedTerminal(input: unknown): Record<string, un
   if (!isRecord(input) || input.name !== "host_normalized_terminal") return null;
   const at = boundedString(input.at);
   if (!at) return null;
-  const tuple = copyInferenceTuple(input);
+  const tuple = copyInferenceTupleOrReject(input);
+  if (tuple == null) return null;
   return { name: "host_normalized_terminal", at, ...tuple };
 }
 

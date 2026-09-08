@@ -185,6 +185,8 @@ describe("status facets projector", () => {
     expect(JSON.stringify(copied)).not.toContain(SECRET);
     expect(copied).not.toHaveProperty("authorization");
     expect(copied).not.toHaveProperty("invocationId");
+    expect(copyInferenceTuple({ ...copied, agentId: SECRET }).agentId).toBeUndefined();
+    expect(JSON.stringify(copyInferenceTuple({ ...copied, agentId: SECRET }))).not.toContain(SECRET);
     const correlated = correlateInferenceTuple({
       ...copied,
       authorization: SECRET,

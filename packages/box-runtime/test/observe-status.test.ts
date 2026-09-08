@@ -1,5 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { constants as fsConstants } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import * as fsp from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeAttestation, type CoverageAttestation, type RouteAttestation } from "../src/internal/io/authority.node.ts";
@@ -473,8 +475,20 @@ describe("status facets IO wiring", () => {
     const originalWrite = artifacts.writeRuntimeArtifact;
     const originalCredential = credentials.materializeApiKeyRef;
     const originalCompact = journal.compactEvents;
+    const originalOpen = fsp.open;
     const originalFetch = globalThis.fetch;
+    const isWriteOpen = (flags: unknown): boolean => {
+      if (typeof flags === "string") return /[aw+]/.test(flags);
+      if (typeof flags === "number") {
+        return (flags & (fsConstants.O_WRONLY | fsConstants.O_RDWR | fsConstants.O_APPEND | fsConstants.O_TRUNC)) !== 0;
+      }
+      return false;
+    };
     const spies = [
+      spyOn(fsp, "open").mockImplementation(((path: Parameters<typeof fsp.open>[0], flags?: unknown, mode?: unknown) => {
+        if (isWriteOpen(flags)) counts.write += 1;
+        return originalOpen(path, flags as never, mode as never);
+      }) as typeof fsp.open),
       spyOn(artifacts, "writeRuntimeArtifact").mockImplementation(async (path, value) => {
         counts.write += 1;
         return originalWrite(path, value);
@@ -521,7 +535,10 @@ describe("status facets IO wiring", () => {
       expect(src).not.toContain("writeAttestation");
       expect(src).not.toContain("materializeApiKeyRef");
 
-      await artifacts.writeRuntimeArtifact(join(root, "state", "probe.json"), { ok: true });
+      const marker = join(tmpdir(), "t27-status-write-marker.ndjson");
+      const handle = await fsp.open(marker, "a");
+      try { await handle.write("synthetic-status-write\n"); }
+      finally { await handle.close(); }
       await credentials.materializeApiKeyRef("env:T27_STATUS_SENTINEL", { T27_STATUS_SENTINEL: "synthetic-not-a-real-key" });
       await journal.compactEvents(root);
       await globalThis.fetch("https://ccs.test/status-must-not-call");

@@ -14,7 +14,7 @@ export type CorrelationResult =
   | { state: "correlated"; tuple: CompleteInferenceCorrelation }
   | { state: "unknown"; missing: Array<(typeof INFERENCE_CORRELATION_KEYS)[number]> };
 
-const UNSAFE_REASON = /secret|prompt|token|auth|api_key|sk-|error_body|password/i;
+const UNSAFE_REASON = /secret|prompt|token|auth|api_key|sk-|error_body|password|apiKey/i;
 
 /** Controlled public reason codes. Arbitrary bounded strings become unknown. */
 export function projectSafeReason(value: unknown): string | null {
@@ -22,16 +22,35 @@ export function projectSafeReason(value: unknown): string | null {
   return value;
 }
 
-/** Copy only allowlisted correlation fields. Extra keys never survive. */
+/** Local identity/tuple scalars. Rejects secret-shaped values, not only extra keys. */
+export function projectSafeIdentity(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > 128) return null;
+  if (/[\n\r\x00-\x1f]/.test(value) || UNSAFE_REASON.test(value)) return null;
+  return value;
+}
+
+/** Copy only allowlisted correlation fields with safe values. Extra keys never survive. */
 export function copyInferenceTuple(input: unknown): InferenceCorrelation {
   const out: InferenceCorrelation = {};
   if (input === null || typeof input !== "object" || Array.isArray(input)) return out;
   const record = input as Record<string, unknown>;
   for (const key of INFERENCE_CORRELATION_KEYS) {
-    const value = record[key];
-    if (typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\n\r]/.test(value)) {
-      out[key] = value;
-    }
+    const value = projectSafeIdentity(record[key]);
+    if (value !== null) out[key] = value;
+  }
+  return out;
+}
+
+/** Fail closed when a provided tuple field is present but unsafe. */
+export function copyInferenceTupleOrReject(input: unknown): InferenceCorrelation | null {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return {};
+  const record = input as Record<string, unknown>;
+  const out: InferenceCorrelation = {};
+  for (const key of INFERENCE_CORRELATION_KEYS) {
+    if (record[key] === undefined) continue;
+    const value = projectSafeIdentity(record[key]);
+    if (value === null) return null;
+    out[key] = value;
   }
   return out;
 }

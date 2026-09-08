@@ -17,6 +17,8 @@ export {
   projectRuntimeStatus,
   correlateInferenceTuple,
   copyInferenceTuple,
+  copyInferenceTupleOrReject,
+  projectSafeIdentity,
   projectSafeReason,
   type CorrelationResult,
 } from "./internal/status/projection.ts";

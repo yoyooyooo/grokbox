@@ -395,6 +395,24 @@ describe("box-local runtime CLI", () => {
       expect(status.stderr).not.toContain(secret);
       expect(status.stdout).not.toContain("inv-must-not-become-attempt");
       expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
+
+      expect(await appendHostJournal(boxRuntimeRoot, {
+        name: "host_normalized_terminal",
+        at: "2026-01-01T00:00:00.000Z",
+        hostId: "host-1",
+        agentId: secret,
+        turnId: "turn-1",
+        stepId: "step-1",
+        serviceEpoch: "epoch-1",
+        binding: "bind-1",
+        attempt: "1",
+      })).toBe("unprojected");
+      const rejected = await captureCli(["runtime", "status"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+      expect(rejected.code).toBe(0);
+      expect(rejected.stdout).not.toContain(secret);
+      expect(rejected.stderr).not.toContain(secret);
+      const rejectedDelivery = (data(rejected.stdout).facets as { hostDelivery: { value: { tuple: Record<string, string> } } }).hostDelivery;
+      expect(JSON.stringify(rejectedDelivery)).not.toContain(secret);
     } finally { restore(); }
   });
 

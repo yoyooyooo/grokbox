@@ -227,8 +227,29 @@ export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent {
       out.counts = counts;
       continue;
     }
-    if (typeof value === "string" && FORBIDDEN.test(value)) continue;
-    out[key] = value;
+    if (key === "outcome" || key === "phase") {
+      const text = boundedString(value);
+      if (text && /^[a-zA-Z0-9_-]+$/.test(text) && !FORBIDDEN.test(text)) out[key] = text;
+      continue;
+    }
+    if (key === "sha" || key === "oldSha" || key === "newDiskSha") {
+      const text = boundedString(value);
+      if (text && !FORBIDDEN.test(text)) out[key] = text;
+      continue;
+    }
+    if (key === "pid" || key === "start") {
+      const n = boundedCount(value);
+      if (n !== null) out[key] = n;
+      continue;
+    }
+    if (key === "driftedSlices") {
+      if (!Array.isArray(value)) continue;
+      out.driftedSlices = value.filter((item) => typeof item === "string" && (CONTRACT_SLICE_NAMES as readonly string[]).includes(item));
+      continue;
+    }
+    if (typeof value === "string" && !FORBIDDEN.test(value) && value.length <= TURN_SEAM_BOUNDED_STRING && !/[\n\r]/.test(value)) {
+      out[key] = value;
+    }
   }
   return out;
 }
