@@ -1,14 +1,16 @@
+import { lstatSync } from "node:fs";
 import { appendSeamRouteEvent, TURN_SEAM_BOUNDED_STRING, type HostStreamRejectReason, type ModelStepAdmission,
   type ModelStepStage, type TurnSeamAssignment, type TurnSeamOutcome, type TurnSeamTerminalClass,
   type TurnSeamWriteResult } from "./events.ts";
-import { callStubModeld, isModeldFailure, modeldHandshake, MODELD_SUBMIT_TIMEOUT_MS, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
+import { callStubModeld, isModeldFailure, modeldHandshake, modeldSocketPath, MODELD_SUBMIT_TIMEOUT_MS, STUB_ECHO_PARTS, submitPartsFromResponse } from "./modeld-ipc.ts";
 import { decideRouteSession, loadModelsFileSync } from "./models.ts";
 import { parseHostBinding, type HostBinding } from "./modeld-binding.ts";
 import { buildModelEnvelope, type ModelEnvelope } from "./envelope.ts";
 import { sha256Text } from "./hash.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
-import { asHostPromptSession, createStreamingPromptSession, visibleFailureHandle,
-  type HostPromptSession, type PromptSession, type StreamHandle, type StreamPart } from "./session.ts";
+import { asHostPromptSession, createStreamingPromptSession, visibleFailureHandle, VisibleStreamError,
+  type HostPromptSession, type PromptSession, type StreamHandle, type StreamPart, type VisibleFailureContext,
+  type VisibleFailureStage } from "./session.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
 export type SeamEvidence = { emitted: boolean; gap: null | "write_failed" | "unprojected" };
@@ -45,24 +47,36 @@ export function createModeldRouteDriver(runRoot: string, binding?: HostBinding):
   const entryFor = (id: string, signal?: AbortSignal) => {
     const old = invocations.get(id);
     if (old) return old;
-    if (!host || invocations.size >= 1024) throw new Error("modeld binding unavailable");
+    if (!host || invocations.size >= 1024) throw new VisibleStreamError("admit", "model_error", "modeld binding unavailable");
     // A new invocation may handshake after restart. The SAME invocation never refreshes its fence or retries uncertainty.
     const entry = { generation: modeldHandshake(runRoot, signal), unknown: false };
     invocations.set(id, entry); return entry;
   };
   driver.submit = async (request) => {
     if (request.abortSignal?.aborted) return { parts: [{ type: "finish", reason: "abort" }], dispatched: false };
-    if (!request.modelId) throw new Error("route driver requires a modelId");
-    const entry = entryFor(request.invocationId, request.abortSignal);
-    if (entry.unknown) throw new Error("modeld invocation unknown");
+    if (!request.modelId) throw new VisibleStreamError("admit", "model_error", "route driver requires a modelId");
+    let entry: { generation: Promise<string>; unknown: boolean };
+    try { entry = entryFor(request.invocationId, request.abortSignal); }
+    catch (error) {
+      if (error instanceof VisibleStreamError) throw error;
+      throw new VisibleStreamError("admit", "model_error", "modeld binding unavailable");
+    }
+    if (entry.unknown) throw new VisibleStreamError("admit", "model_error", "modeld invocation unknown");
     try {
       const serverGeneration = await entry.generation;
-      if (entry.unknown) throw new Error("modeld invocation unknown");
+      if (entry.unknown) throw new VisibleStreamError("admit", "model_error", "modeld invocation unknown");
       const response = await callStubModeld(runRoot, { method: "submit", serverGeneration, host,
         invocationId: request.invocationId, turnId: request.turnId, agentId: request.agentId, envelope: request.envelope }, MODELD_SUBMIT_TIMEOUT_MS, request.abortSignal);
-      if (isModeldFailure(response)) throw new Error("modeld admission failed");
-      return submitPartsFromResponse(response);
-    } catch { entry.unknown = true; throw new Error("modeld request failed without retry"); }
+      if (isModeldFailure(response)) {
+        throw new VisibleStreamError(response.code === "driver-failed" ? "provider" : "admit", "model_error", "modeld admission failed");
+      }
+      try { return submitPartsFromResponse(response); }
+      catch { throw new VisibleStreamError("normalize", "model_error", "modeld malformed output"); }
+    } catch (error) {
+      entry.unknown = true;
+      if (error instanceof VisibleStreamError) throw error;
+      throw new VisibleStreamError("admit", "model_error", "modeld request failed without retry");
+    }
   };
   driver.disconnectInvocation = async (invocationId) => {
     try {
@@ -78,6 +92,8 @@ export type SessionSeamConfig = {
   mode: SeamMode; root: string; assignment: TurnSeamAssignment; modelId?: string;
   /** Route only. Resolve per-agent at session create. `assignment: "official"` returns originalSession (passthrough). */
   resolveSession?: (agentId: string) => { modelId: string; assignment?: TurnSeamAssignment };
+  /** Sync pre-dispatch probe. True → return originalSession (no wrap). */
+  preflightOfficial?: () => boolean;
   now?: () => string; driver?: StubRouteDriver; hostGenerationId?: string;
   writeTerminal?: (root: string, input: unknown) => Promise<TurnSeamWriteResult>;
 };
@@ -89,6 +105,7 @@ type StepSlot = {
   dispatched: boolean; recorded: boolean; disconnected: boolean;
   evidence: SeamEvidence; requestHash?: string; cancel?: () => void;
   toolCallCount: number; assignment: TurnSeamAssignment; admission: ModelStepAdmission;
+  failureStage?: VisibleFailureStage;
 };
 function invocationIdOf(options: unknown): string | undefined {
   if (!options || typeof options !== "object") return undefined;
@@ -120,8 +137,18 @@ function isOrdinaryMain(options: unknown, agentId: string | undefined): boolean 
   }
   return typeof agentId === "string" && agentId.length > 0;
 }
-function errorSession(modelId: string): HostPromptSession {
-  return asHostPromptSession({ stream: () => deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope"), true) }, modelId);
+function errorSession(modelId: string, ctx?: VisibleFailureContext): HostPromptSession {
+  return asHostPromptSession({
+    stream: (request) => deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope", undefined, undefined, {
+      ...ctx,
+      invocationId: ctx?.invocationId ?? (typeof request?.invocationId === "string" ? request.invocationId : undefined),
+      stage: ctx?.stage ?? "admit",
+    }), true),
+  }, modelId);
+}
+function modeldSocketMissing(runRoot: string): boolean {
+  try { return !lstatSync(modeldSocketPath(runRoot)).isSocket(); }
+  catch { return true; }
 }
 function fromParts(parts: StreamPart[]): AsyncIterable<StreamPart> {
   return { async *[Symbol.asyncIterator]() { for (const part of parts) yield part; } };
@@ -209,43 +236,53 @@ export function createSessionSeam(config: SessionSeamConfig) {
     if (!isOrdinaryMain(args.sessionOptions, agentRaw)) return args.originalSession;
     const turnId = boundedId(invocationIdOf(args.sessionOptions));
     const agentId = boundedId(agentRaw);
-    if (!agentId) return errorSession("invalid");
+    // Pre-dispatch local failures: Host can still take originalSession (no tool side effects).
+    if (!agentId) return args.originalSession;
     const resolved = resolveHookModel(agentId);
-    if (!resolved) return errorSession("invalid");
+    if (!resolved) return args.originalSession;
     if (resolved.assignment === "official") return args.originalSession;
+    if (!turnId) return args.originalSession;
+    try { if (config.preflightOfficial?.() === true) return args.originalSession; }
+    catch { return args.originalSession; }
     const { modelId } = resolved;
-    if (!turnId) return errorSession(modelId);
     const existingSession = sessions.get(sessionKey(turnId));
-    if (existingSession) return existingSession.agentId === agentId && existingSession.modelId === modelId ? existingSession.session : errorSession(modelId);
+    if (existingSession) {
+      return existingSession.agentId === agentId && existingSession.modelId === modelId
+        ? existingSession.session
+        : errorSession(modelId, { agentId, invocationId: turnId, stage: "admit" });
+    }
     const driver = config.driver!;
     const row: SessionRow = { session: undefined as unknown as HostPromptSession, turnId, agentId, modelId, disconnected: false };
     const prompt: PromptSession = { stream(request = {}) {
       if (row.disconnected) return idleStreamHandle(modelId);
       if (request.invocationId === undefined) {
         recordStreamRejected(row, "missing-step-id");
-        return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope"), driver.delivery === "response-only");
+        return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope", undefined, undefined, { agentId, stage: "admit" }), driver.delivery === "response-only");
       }
       const stepId = boundedId(request.invocationId);
       if (!stepId) {
         recordStreamRejected(row, "invalid-step-id");
-        return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope"), driver.delivery === "response-only");
+        return deliveryHandle(visibleFailureHandle(modelId, "invalid_envelope", undefined, undefined, { agentId, stage: "admit" }), driver.delivery === "response-only");
       }
       const slotOr = occupy(stepId, turnId, agentId, resolved);
       if (slotOr === "capacity" || slotOr === "conflict") {
-        return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict"), driver.delivery === "response-only");
+        return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict", undefined, undefined, { agentId, invocationId: stepId, stage: "admit" }), driver.delivery === "response-only");
       }
       const slot = slotOr;
       const envelope = request.envelope ?? buildModelEnvelope(request.messages ?? []);
       const hash = sha256Text(JSON.stringify(envelope));
       if (slot.dispatched) {
         return slot.requestHash === hash || request.abortSignal?.aborted
-          ? idleStreamHandle(modelId) : visibleFailureHandle(modelId, "invocation_conflict");
+          ? idleStreamHandle(modelId)
+          : visibleFailureHandle(modelId, "invocation_conflict", undefined, undefined, { agentId, invocationId: stepId, stage: "admit" });
       }
       slot.dispatched = true;
       slot.requestHash = hash;
       const streaming = createStreamingPromptSession({
         modelId, vision: driver.vision === true, parallel: driver.parallel ?? "allow",
         usage: driver.stream ? undefined : { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        agentId, invocationId: stepId,
+        visibleStage: (code) => (code === "invalid_stream" || code === "stream_limit") ? "normalize" : (slot.failureStage ?? "admit"),
         onToolCall: () => { slot.toolCallCount += 1; },
         onTerminal: (terminal) => {
           slot.cancel = undefined;
@@ -253,14 +290,19 @@ export function createSessionSeam(config: SessionSeamConfig) {
           const terminalClass = duplicate ? "unknown" : terminal.terminalClass;
           const outcome = terminal.rejected || duplicate ? "rejected" : "managed";
           const stage: ModelStepStage = slot.disconnected ? "disconnect" : duplicate ? "admission"
-            : terminalClass === "abort" ? "abort" : "host-normalize";
+            : terminalClass === "abort" ? "abort"
+            : terminal.stage ?? (terminal.rejected ? stageForError(terminal.errorCode ?? "") : "host-normalize");
           recordStep(slot, terminalClass, duplicate ? 0 : terminal.toolCallCount, outcome, stage, terminal.errorCode);
         },
         produce: async (produced) => {
           const submit: StubRouteSubmit = {
             invocationId: stepId, turnId, agentId, modelId, envelope: produced.envelope, abortSignal: produced.abortSignal,
           };
-          if (driver.stream) { driver.dispatches += 1; return await driver.stream(submit); }
+          if (driver.stream) {
+            driver.dispatches += 1;
+            slot.failureStage = "provider";
+            return await driver.stream(submit);
+          }
           if (driver.submit) {
             try {
               const result = await driver.submit(submit);
@@ -270,11 +312,18 @@ export function createSessionSeam(config: SessionSeamConfig) {
                 return fromParts([{ type: "finish", reason: "error" }]);
               }
               slot.admission = "new";
+              slot.failureStage = "normalize";
               driver.dispatches += 1;
               return fromParts(result.parts);
-            } catch { slot.admission = "unknown"; throw new Error("modeld submit failed"); }
+            } catch (error) {
+              slot.admission = "unknown";
+              if (error instanceof VisibleStreamError) { slot.failureStage = error.stage; throw error; }
+              slot.failureStage = "admit";
+              throw new VisibleStreamError("admit", "model_error", "modeld submit failed");
+            }
           }
           driver.dispatches += 1;
+          slot.failureStage = "normalize";
           return fromParts(driver.parts);
         },
       });
@@ -290,25 +339,29 @@ export function createSessionSeam(config: SessionSeamConfig) {
       requireStepId: true,
       reject: (code, detail) => {
         if (row.disconnected) return idleStreamHandle(modelId);
+        const ctx = (invocationId?: string): VisibleFailureContext => ({
+          agentId, ...(invocationId ? { invocationId } : {}), stage: "admit",
+        });
         if (detail?.reason === "missing-step-id" || detail?.reason === "invalid-step-id") {
           recordStreamRejected(row, detail.reason);
-          return deliveryHandle(visibleFailureHandle(modelId, code), driver.delivery === "response-only");
+          return deliveryHandle(visibleFailureHandle(modelId, code, undefined, undefined, ctx()), driver.delivery === "response-only");
         }
         const stepId = boundedId(detail?.invocationId);
         if (!stepId) {
           recordStreamRejected(row, "invalid-step-id");
-          return deliveryHandle(visibleFailureHandle(modelId, code), driver.delivery === "response-only");
+          return deliveryHandle(visibleFailureHandle(modelId, code, undefined, undefined, ctx()), driver.delivery === "response-only");
         }
         const slotOr = occupy(stepId, turnId, agentId, resolved);
         if (slotOr === "capacity" || slotOr === "conflict") {
-          return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict"), driver.delivery === "response-only");
+          return deliveryHandle(visibleFailureHandle(modelId, "invocation_conflict", undefined, undefined, ctx(stepId)), driver.delivery === "response-only");
         }
         const slot = slotOr;
         if (slot.dispatched) return idleStreamHandle(modelId);
         slot.dispatched = true;
+        slot.failureStage = "admit";
         return deliveryHandle(visibleFailureHandle(modelId, code, undefined, (terminal) => {
-          recordStep(slot, "error", 0, "rejected", stageForError(terminal.errorCode ?? code), terminal.errorCode ?? code);
-        }), driver.delivery === "response-only");
+          recordStep(slot, "error", 0, "rejected", terminal.stage ?? stageForError(terminal.errorCode ?? code), terminal.errorCode ?? code);
+        }, ctx(stepId)), driver.delivery === "response-only");
       },
     });
     sessions.set(sessionKey(turnId), row);
@@ -349,6 +402,7 @@ export function bindHostSessionHook(input: { mode: SeamMode; durableRoot: string
     mode: "route", root: input.durableRoot, assignment: "main",
     hostGenerationId: input.binding?.generationId,
     driver: createModeldRouteDriver(input.runRoot, input.binding),
+    preflightOfficial: () => modeldSocketMissing(input.runRoot),
     resolveSession: (agentId) => {
       const file = loadModelsFileSync(input.durableRoot);
       if (!file) throw new Error("models unavailable");

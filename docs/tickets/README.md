@@ -22,5 +22,6 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T8 | ready | Offline CCS sub2api live-smoke recipe (not spent) |
 | T9 | done | Live CCS modeld smoke (luna + grok Responses) |
 | T10 | done | Per-Bot official passthrough (selective route) |
+| T11 | done | Pre-dispatch official passthrough + STEP-correlated visible errors |
 
 Driver: herdr grok main line; true blockers → new session gpt-6-astra max.

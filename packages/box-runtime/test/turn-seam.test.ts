@@ -346,7 +346,7 @@ describe("turn seam identity vs route", () => {
     expect(driver.dispatches).toBe(1);
   });
 
-  test("route Host consumer uses getModelId then getExecutor().stream; missing invocationId fail-closed",
+  test("route Host consumer uses getModelId then getExecutor().stream; missing TURN is originalSession",
     async () => {
     const dir = await root();
     const original: PromptSession = {
@@ -385,11 +385,7 @@ describe("turn seam identity vs route", () => {
       sessionOptions: { inferenceReason: "main" },
       agentId: "agent-tom",
     });
-    expect(missing).not.toBe(original);
-    expect(isHostPromptSession(missing)).toBe(true);
-    if (!isHostPromptSession(missing)) return;
-    expect(missing.getModelId().trim()).toBe("stub/echo");
-    await consumeHostSession(missing);
+    expect(missing).toBe(original);
     expect(driver.dispatches).toBe(1);
     expect(driver.officialCalls).toBe(0);
 

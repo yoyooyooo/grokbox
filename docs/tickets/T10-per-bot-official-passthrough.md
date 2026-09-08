@@ -24,4 +24,4 @@ CLI `--for` takes the stable agent id (no extra name map in this slice).
 **done.** Seam `decideRouteSession`; coordinator no longer requires main; observe routeReady allows null main.
 
 ## Next
-T3 G1 canary on grok bot only, after this contract.
+T11 pre-dispatch passthrough + visible STEP errors (done). T3 G1 canary on grok bot only, after T11.

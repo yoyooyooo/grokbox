@@ -1,5 +1,7 @@
 # `grokbox` CLI 产品合同
 
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
+
 本文是 `grokbox` 命令、Profile、输出和能力边界的 Current Home。它描述已经接受的**未来完成态**，不是当前源码能力清单。当前实现已覆盖 agent-first CLI、Profile/init、local/remote daemon、agent/group management、governed filesystem、structured exec/durable Jobs、generation-aware unified events/recovery、显式 OAuth quota adapter、Cursor Sandbox lifecycle adapter、实验性 desktop 管理，以及 layered doctor/explicit recovery；最终外部 evidence matrix 仍由后续本地 Ticket 跟踪。交付进度必须由本地 Issue tracker 与源码/测试证明，不能只从本文的未来完成态推断。
 
 实现边界见 [CLI 架构](architecture.md)。当前 quota source、DTO、错误和真实证据见 [Quota Current Home](quota.md)。Cursor Sandbox、`EnsureSandBox`、freeze 与外部 keeper 背景见 [Sandbox 控制面](cursor-sandbox-control-plane.md)。当前 Gateway 与 box 信任事实见 [上游集成](upstream-integration.md)。非官方身份、商标和上游私有接口的稳定性等级见 [兼容性边界](compatibility.md)。Box-local 模型运行时义务见 §12；设计见 [Box-local model runtime](box-runtime.md)。
@@ -476,6 +478,8 @@ Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` �
 
 `assignments.agents.<id>` 是 route 下唯一的 managed opt-in（稳定 agent id；CLI `--for` 写入该覆盖）。**没有覆盖的 Bot 回官方 Host session。** `assignments.main` 可选，不是未覆盖 Bot 的回退。`activate --mode route` 允许 agents-only（`main` 可为 null）；已出现的赋值须为 `stub/echo` 或 openai*（http(s) endpoint + `env:`/`file:` `apiKeyRef`）；其它赋值 fail-closed。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 写 `main`，不把其它 Bot 拉进 modeld。route 期间 `models reset`（默认或某一 Bot）拒绝，须先 `activate --mode identity` 或 `deactivate`。
 
+T11 失败分流：createSession 预 dispatch（缺 `models.json`、resolve 失败、缺 agent/TURN、`modeld.sock` 不在、尚无工具副作用）回官方 `originalSession`。Host 已持有 managed session 之后（handshake/admit/provider/normalize，含 mid-tool）只投递可见 managed error，字段含 `agentId`、STEP `invocationId`、`stage=admit|provider|normalize`；**禁止**静默官方 replay。Debug canary 是 grok bot `00000000-0000-4000-8000-000000000114`；其它 Bot 经 T10 官方。
+
 长效 `contracts/` 保存 Host **合同切片**快照（不进 git）：仅在 live source SHA 变化时写入，最多保留 5 个 SHA，默认不存整份 `host-main.cjs`。快照用于报告切片 drift，不自动打补丁、不还原官方 Host。
 
 MVP / 可发布声明的 ordinary main envelope：
@@ -487,7 +491,7 @@ MVP / 可发布声明的 ordinary main envelope：
 
 当前 S4 离线证据只覆盖 provider-neutral envelope、同步 handle、scripted incremental producer/replay、可见拒绝/取消与 Host 合成副作用向量；生产 stub IPC 仍 response-only，不能据此宣称已满足真实 provider streaming 或完整 S5 admission。错误响应须含可投递的 assistant content，不以空 messages 或假 tool call 冒充可见错误；执行工具和写 Transcript/Memory 始终由 Host 拥有。详见 [Box-local model runtime](box-runtime.md) §2。
 
-managed 调用一旦出门，失败不得静默回官方模型或换 provider。Host 继续拥有工具循环、Transcript、Memory 与 `SendToUser`。`runtime status` 分层：installation / activation `{desired,actual,reconcile,reason}` / host `{diskSha,origin,reason,topology}` / coverage / coordinator / operation / watchdog / modeld `{required,state}` / models / window `{durationMs,affectedInvocations}`。disabled 但仍 patched 时必须 pending，不能把意图写入当 rollback-done。缺失/损坏的 coordinator、journal、attestation 或 contract metadata 明确 unknown/null 及文件 evidence 状态；不能填入假 closed/0/空 drift，不能把持久记录当 heartbeat。`contracts` 返回有界 generation metadata 的真实 hashes/drift，不读取正文或修复；`log` 返回有界投影快照，当前 `--follow` 明确拒绝（invalid_usage），未实现前不得静默返回单次成功快照。`models check` 只承诺 schema 检查，输出 serviceReadiness=not_checked。详细当前字段语义与上限见 [Box-local model runtime](box-runtime.md) §8。`claimCeiling` 留在文档与测试证据，不进首发 status JSON。
+managed 调用一旦出门，失败不得静默回官方模型或换 provider。出门前、Host 仍可收下 `originalSession` 时允许 T11 预 dispatch 官方 passthrough；出门后只可见失败（`agentId` + STEP + `stage`），不实现静默 `last_resort_official`。Host 继续拥有工具循环、Transcript、Memory 与 `SendToUser`。`runtime status` 分层：installation / activation `{desired,actual,reconcile,reason}` / host `{diskSha,origin,reason,topology}` / coverage / coordinator / operation / watchdog / modeld `{required,state}` / models / window `{durationMs,affectedInvocations}`。disabled 但仍 patched 时必须 pending，不能把意图写入当 rollback-done。缺失/损坏的 coordinator、journal、attestation 或 contract metadata 明确 unknown/null 及文件 evidence 状态；不能填入假 closed/0/空 drift，不能把持久记录当 heartbeat。`contracts` 返回有界 generation metadata 的真实 hashes/drift，不读取正文或修复；`log` 返回有界投影快照，当前 `--follow` 明确拒绝（invalid_usage），未实现前不得静默返回单次成功快照。`models check` 只承诺 schema 检查，输出 serviceReadiness=not_checked。详细当前字段语义与上限见 [Box-local model runtime](box-runtime.md) §8。`claimCeiling` 留在文档与测试证据，不进首发 status JSON。
 
 ## 13. 输出与错误
 

@@ -210,14 +210,8 @@ describe("stub route synthetic compile/load", () => {
         originalSession: original,
         sessionOptions: { inferenceReason: "main" },
         agentId: "agent-tom",
-      }) as HostPromptSession;
-      const failed = missing.getExecutor().stream({}, "inv-missing", [], {});
-      expect(failed).not.toBeInstanceOf(Promise);
-      const errorResponse = await failed.response;
-      expect(errorResponse.modelId.trim()).toBe(STUB_ECHO_MODEL_ID);
-      expect(errorResponse.messages.some((message) => message.role === "assistant")).toBe(true);
-      expect(await failed.usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
-      expect(hasMeaningfulResponseMessageContent(errorResponse.messages)).toBe(true);
+      });
+      expect(missing).toBe(original);
     } finally {
       await server.stop();
     }
@@ -389,7 +383,16 @@ describe("stub modeld IPC", () => {
       sessionOptions: { invocationId: "inv-down", inferenceReason: "main" },
       agentId: "agent-tom",
     }) as HostPromptSession;
-    await consumeHost(downSession, "inv-down");
+    const downError = (await downSession.getExecutor([]).stream({}, "inv-down").response).error;
+    expect(downError).toMatchObject({
+      userVisible: true,
+      agentId: "agent-tom",
+      invocationId: "inv-down",
+      stage: "admit",
+    });
+    expect(downError?.message).toContain("agentId=agent-tom");
+    expect(downError?.message).toContain("invocationId=inv-down");
+    expect(downError?.message).toContain("stage=admit");
     await downSeam.flush();
     expect(downDriver.officialCalls).toBe(0);
     expect(downDriver.secondProviderCalls).toBe(0);
@@ -422,8 +425,8 @@ describe("stub modeld IPC", () => {
         originalSession: original,
         sessionOptions: { inferenceReason: "main" },
         agentId: "agent-tom",
-      }) as HostPromptSession;
-      await consumeHost(missingSession);
+      });
+      expect(missingSession).toBe(original);
       expect(server.dispatches()).toBe(0);
 
       const first = await callStubModeld(runRoot, submitRequest(server, "inv-conflict"));

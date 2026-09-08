@@ -65,7 +65,7 @@ describe("T4e route session modelId follows models.json", () => {
     }
   });
 
-  test("stub assignment still labels stub; missing override is official; disallowed assignment fails closed", async () => {
+  test("stub assignment still labels stub; missing override is official; disallowed assignment is originalSession", async () => {
     const f = await modeldFixture();
     await f.store.saveModels({ version: 1, models: {}, assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } } });
     const server = await startStubModeldServer({ ...f, durableRoot: f.durable });
@@ -105,8 +105,8 @@ describe("T4e route session modelId follows models.json", () => {
       originalSession: official,
       agentId: "agent-tom",
       sessionOptions: { invocationId: "turn-acme", inferenceReason: "main" },
-    }) as HostPromptSession;
-    expect((await rejected.getExecutor([]).stream({}, "step-acme").response).error?.userVisible).toBe(true);
+    });
+    expect(rejected).toBe(official);
   });
 
   test("agents.* override is the only managed path; unassigned uses originalSession", async () => {

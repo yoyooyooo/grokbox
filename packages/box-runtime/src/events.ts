@@ -59,6 +59,9 @@ export const MODEL_STEP_STAGES = new Set([
   "options",
   "ipc",
   "admission",
+  "admit",
+  "provider",
+  "normalize",
   "host-normalize",
   "abort",
   "disconnect",
@@ -106,7 +109,7 @@ export type TurnSeamTerminalEvent = {
 };
 
 export type ModelStepStage = "stream-id" | "append-snapshot" | "bind-state" | "message-shape" | "tool-history" | "tools"
-  | "options" | "ipc" | "admission" | "host-normalize" | "abort" | "disconnect" | "internal";
+  | "options" | "ipc" | "admission" | "admit" | "provider" | "normalize" | "host-normalize" | "abort" | "disconnect" | "internal";
 export type ModelStepAdmission = "none" | "new" | "duplicate" | "unknown";
 export type HostStreamRejectReason = "missing-step-id" | "invalid-step-id";
 

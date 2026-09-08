@@ -1,5 +1,7 @@
 # `grokbox` CLI 目标实现架构
 
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
+
 本文是 CLI、Profile、transport、box daemon 和 host capability 的实现边界 Current Home。它描述已接受的**未来完成态**；当前源码已经交付 Node.js 20+/Commander 的 agent-first registry、严格 Profile v1、local/remote `init` 和 daemon transport、Grok roster/transcript/Memory/send/management 有限方法、离线只读 `export agent`、daemon-only 命名 root 文件能力、结构化 process 与 durable Jobs、generation-aware unified events/recovery、explicit OAuth quota adapter、external Sandbox lifecycle adapter、实验性 desktop classification/prune，以及 layered doctor/explicit recovery。剩余差距由外部 evidence、源码测试与本地 Issue tracker 共同拥有。
 
 产品命令与输出合同见 [CLI 产品合同](product-contract.md)。显式 OAuth quota adapter 与 evidence 见 [Quota Current Home](quota.md)。Cursor Sandbox、freeze 与 keeper 边界见 [Sandbox 控制面](cursor-sandbox-control-plane.md)。Gateway 当前事实见 [上游集成](upstream-integration.md)。非官方身份和上游私有 adapter 的稳定性见 [兼容性边界](compatibility.md)。
@@ -330,7 +332,7 @@ Box-runtime live artifacts default to `~/.grokbox/run` even when `XDG_RUNTIME_DI
 
 Watchdog observes live Host source SHA read-only. On SHA change it extracts contract slices into `contracts/generations/<sha>/` (mode 0700/0600), updates HEAD, and reports slice drift. The same observe append-only retains full source bytes under `host-bundles/generations/<sourceSha>/`, isolated from transform/preload. It does not inject an unknown bundle, rewrite official `host-main.cjs` in place, restore Host from the archive, or write git. Contract slices keep at most 5 SHAs; host-bundles keep at most 16. Neither deletes the live SHA or the last SHA that matched a PatchProfile.
 
-PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`) plus `invocationId: inferenceRequestId` on that same agent-id slice. Route seam sends a Bot to modeld only when `assignments.agents[agentId]` is set to an admitted managed model; missing override is official passthrough. `assignments.main` is not a session fallback.
+PatchProfile includes two exact slices: `createSession` hook and `mainSessionOptions.agentId` (`host.getConversationId()`) plus `invocationId: inferenceRequestId` on that same agent-id slice. Route seam sends a Bot to modeld only when `assignments.agents[agentId]` is set to an admitted managed model; missing override is official passthrough. `assignments.main` is not a session fallback. T11: pre-dispatch local failures (missing models/resolve/TURN/socket) return `originalSession`; after wrap or provider dispatch the Host sees a correlated managed error (`agentId`, STEP, `stage=admit|provider|normalize`) and never a silent official replay. Debug canary is grok bot `00000000-0000-4000-8000-000000000114`.
 
 Composition roots:
 

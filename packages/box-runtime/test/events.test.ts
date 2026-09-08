@@ -269,6 +269,9 @@ describe("model_step_terminal and host_stream_rejected projectors", () => {
     expect(projectModelStepTerminal({ ...stepEvent, mode: "identity" })).toBeNull();
     expect(projectModelStepTerminal({ ...stepEvent, assignment: "official" })).toBeNull();
     expect(projectModelStepTerminal({ ...stepEvent, stage: "custom" })).toBeNull();
+    expect(projectModelStepTerminal({ ...stepEvent, stage: "admit" })).toMatchObject({ stage: "admit" });
+    expect(projectModelStepTerminal({ ...stepEvent, stage: "provider" })).toMatchObject({ stage: "provider" });
+    expect(projectModelStepTerminal({ ...stepEvent, stage: "normalize" })).toMatchObject({ stage: "normalize" });
   });
 
   test("host_stream_rejected never stores the illegal STEP value", () => {

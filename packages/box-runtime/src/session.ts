@@ -23,7 +23,21 @@ export type SessionMessage = {
   toolCalls?: Array<{ id: string; name: string; args: unknown }>;
 };
 export type HostUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
-export type VisibleFailure = { userVisible: true; code: string; message: string; toolCallIds?: string[] };
+export type VisibleFailureStage = "admit" | "provider" | "normalize";
+export type VisibleFailure = {
+  userVisible: true;
+  code: string;
+  message: string;
+  toolCallIds?: string[];
+  agentId?: string;
+  invocationId?: string;
+  stage?: VisibleFailureStage;
+};
+export type VisibleFailureContext = {
+  agentId?: string;
+  invocationId?: string;
+  stage?: VisibleFailureStage;
+};
 export type HostResponse = { modelId: string; messages: SessionMessage[]; finishReason?: HostFinishReason; error?: VisibleFailure };
 export type StreamHandle = { fullStream: AsyncIterable<StreamPart>; response: Promise<HostResponse>; usage: Promise<HostUsage> };
 export type StreamRequest = { messages?: PromptMessage[]; envelope?: ModelEnvelope; invocationId?: string; abortSignal?: AbortSignal };
@@ -189,22 +203,55 @@ const FAILURE_MESSAGES: Record<string, string> = {
   invocation_conflict: "This invocation was already used with different inputs. It was not dispatched again.",
   model_error: "The configured model request failed. No fallback model was used.",
 };
-function failure(code: string, ids?: string[]): VisibleFailure {
-  return { userVisible: true, code: Object.hasOwn(FAILURE_MESSAGES, code) ? code : "model_error",
-    message: FAILURE_MESSAGES[code] ?? FAILURE_MESSAGES.model_error!, ...(ids?.length ? { toolCallIds: [...ids] } : {}) };
+const VISIBLE_STAGES = new Set<VisibleFailureStage>(["admit", "provider", "normalize"]);
+function boundedVisible(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value) ? value : undefined;
 }
-export type SessionTerminal = { terminalClass: FinishReason; toolCallCount: number; rejected?: boolean; errorCode?: string };
+function visibleContext(ctx?: VisibleFailureContext): VisibleFailureContext {
+  const agentId = boundedVisible(ctx?.agentId);
+  const invocationId = boundedVisible(ctx?.invocationId);
+  const stage = ctx?.stage && VISIBLE_STAGES.has(ctx.stage) ? ctx.stage : undefined;
+  return { ...(agentId ? { agentId } : {}), ...(invocationId ? { invocationId } : {}), ...(stage ? { stage } : {}) };
+}
+function failure(code: string, ids?: string[], ctx?: VisibleFailureContext): VisibleFailure {
+  const resolved = Object.hasOwn(FAILURE_MESSAGES, code) ? code : "model_error";
+  const extra = visibleContext(ctx);
+  const bits = [
+    extra.agentId ? `agentId=${extra.agentId}` : undefined,
+    extra.invocationId ? `invocationId=${extra.invocationId}` : undefined,
+    extra.stage ? `stage=${extra.stage}` : undefined,
+  ].filter((bit): bit is string => bit !== undefined);
+  return {
+    userVisible: true, code: resolved,
+    message: bits.length ? `${FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!} (${bits.join(" ")})` : FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!,
+    ...(ids?.length ? { toolCallIds: [...ids] } : {}),
+    ...extra,
+  };
+}
+export class VisibleStreamError extends Error {
+  readonly code: string;
+  readonly stage: VisibleFailureStage;
+  constructor(stage: VisibleFailureStage, code = "model_error", message?: string) {
+    super(message ?? code);
+    this.code = Object.hasOwn(FAILURE_MESSAGES, code) ? code : "model_error";
+    this.stage = VISIBLE_STAGES.has(stage) ? stage : "provider";
+  }
+}
+export type SessionTerminal = {
+  terminalClass: FinishReason; toolCallCount: number; rejected?: boolean; errorCode?: string; stage?: VisibleFailureStage;
+};
 function notify(onTerminal: ((terminal: SessionTerminal) => void) | undefined, terminal: SessionTerminal) {
   try { onTerminal?.(terminal); } catch { /* Evidence is not the Host loop. */ }
 }
-export function visibleFailureHandle(modelId: string, code: string, ids?: string[], onTerminal?: (terminal: SessionTerminal) => void): StreamHandle {
-  const error = failure(code, ids);
+export function visibleFailureHandle(modelId: string, code: string, ids?: string[], onTerminal?: (terminal: SessionTerminal) => void,
+  ctx?: VisibleFailureContext): StreamHandle {
+  const error = failure(code, ids, ctx);
   const response: HostResponse = { modelId, finishReason: "error", error, messages: [{ role: "assistant", content: error.message }] };
   const stream = replayStream<StreamPart>();
   stream.push({ type: "text-delta", textDelta: error.message });
   stream.push({ type: "finish", reason: "error", finishReason: "error", response, usage: ZERO_USAGE });
   stream.close();
-  notify(onTerminal, { terminalClass: "error", toolCallCount: 0, rejected: true, errorCode: error.code });
+  notify(onTerminal, { terminalClass: "error", toolCallCount: 0, rejected: true, errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}) });
   return { fullStream: stream.iterable, response: Promise.resolve(response), usage: Promise.resolve({ ...ZERO_USAGE }) };
 }
 export type StreamingSessionConfig = {
@@ -215,6 +262,9 @@ export type StreamingSessionConfig = {
   onTerminal?: (terminal: SessionTerminal) => void;
   onToolCall?: () => void;
   maxParts?: number; maxBytes?: number;
+  agentId?: string;
+  invocationId?: string;
+  visibleStage?: (code: string) => VisibleFailureStage | undefined;
 };
 
 /** Eager single producer, bounded replay and independent completion. No observer drives or steals production. */
@@ -222,14 +272,23 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
   const partLimit = Number.isSafeInteger(config.maxParts) && config.maxParts! > 0 ? Math.min(config.maxParts!, STREAM_MAX_PARTS) : STREAM_MAX_PARTS;
   const byteLimit = Number.isSafeInteger(config.maxBytes) && config.maxBytes! > 0 ? Math.min(config.maxBytes!, STREAM_MAX_BYTES) : STREAM_MAX_BYTES;
   return { stream(request = {}) {
+    const streamCtx = (stage?: VisibleFailureStage): VisibleFailureContext => ({
+      agentId: config.agentId,
+      invocationId: typeof request.invocationId === "string" ? request.invocationId : config.invocationId,
+      ...(stage ? { stage } : {}),
+    });
+    const stageFor = (code: string): VisibleFailureStage | undefined => config.visibleStage?.(code);
     let envelope: ModelEnvelope;
     try {
       if (request.envelope && request.messages) throw new EnvelopeError("invalid_envelope");
       envelope = request.envelope ? parseModelEnvelope(request.envelope) : buildModelEnvelope(request.messages ?? []);
     } catch (error) {
-      return visibleFailureHandle(config.modelId, error instanceof EnvelopeError ? error.code : "invalid_envelope", undefined, config.onTerminal);
+      const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
+      return visibleFailureHandle(config.modelId, code, undefined, config.onTerminal, streamCtx(stageFor(code)));
     }
-    if (!request.abortSignal?.aborted && envelopeHasImage(envelope) && !config.vision) return visibleFailureHandle(config.modelId, "unsupported_image", undefined, config.onTerminal);
+    if (!request.abortSignal?.aborted && envelopeHasImage(envelope) && !config.vision) {
+      return visibleFailureHandle(config.modelId, "unsupported_image", undefined, config.onTerminal, streamCtx(stageFor("unsupported_image")));
+    }
     const replay = replayStream<StreamPart>();
     const controller = new AbortController();
     let complete = false;
@@ -270,14 +329,15 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       notify(config.onTerminal, {
         terminalClass: reason,
         toolCallCount: toolCalls.length,
-        ...(error ? { errorCode: error.code } : {}),
+        ...(error ? { errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}) } : {}),
       });
       controller.abort();
       // A stuck producer's return must not hold the terminal promises or Host cancellation hostage.
       try { void Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* producer cleanup is best effort */ }
     };
     const abort = () => finish("abort");
-    const failStream = (code: string) => finish("error", failure(code, [...new Set([...calls.keys(), ...pending.keys()])]));
+    const failStream = (code: string, stage?: VisibleFailureStage) => finish("error", failure(code, [...new Set([...calls.keys(), ...pending.keys()])],
+      streamCtx(stage ?? stageFor(code))));
     const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value);
     const accept = (raw: StreamPart) => {
       if (complete) return;
@@ -287,9 +347,15 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (bytes > byteLimit) return failStream("stream_limit");
       if (part.type === "finish") {
         if (!["stop", "error", "abort"].includes(part.reason) || pending.size) return failStream("invalid_stream");
-        finish(part.reason, part.reason === "error" ? failure("model_error") : undefined, part.usage); return;
+        finish(part.reason, part.reason === "error" ? failure("model_error", undefined, streamCtx(stageFor("model_error"))) : undefined, part.usage); return;
       }
-      if (part.type === "error") return failStream("model_error");
+      if (part.type === "error") {
+        const vis = part.error;
+        if (vis && vis.userVisible === true && typeof vis.code === "string") {
+          return failStream(vis.code, vis.stage ?? stageFor(vis.code));
+        }
+        return failStream("model_error");
+      }
       if (part.type === "text-delta" || part.type === "reasoning") {
         if (typeof part.textDelta !== "string") return failStream("invalid_stream");
         pushText(part.type === "text-delta" ? "text" : "reasoning", part.textDelta);
@@ -332,7 +398,12 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
             if (next.done) { failStream("invalid_stream"); break; }
             try { accept(next.value); } catch { failStream("invalid_stream"); }
           }
-        } catch { if (!complete) failStream("model_error"); }
+        } catch (error) {
+          if (!complete) {
+            if (error instanceof VisibleStreamError) failStream(error.code, error.stage);
+            else failStream("model_error");
+          }
+        }
       })();
     }
     return { fullStream: replay.iterable, response, usage };
@@ -346,7 +417,9 @@ export function createManagedPromptSession(config: ManagedSessionConfig): Prompt
   return { stream(request = {}) {
     const calls = config.parts.filter((part): part is Extract<StreamPart, { type: "tool-call" }> => part.type === "tool-call");
     if (!request.abortSignal?.aborted && config.parallel === "fail-closed" && new Set(calls.map((call) => call.toolCallId)).size > 1) {
-      return visibleFailureHandle(config.modelId, "parallel_tools", calls.map((call) => call.toolCallId), config.onTerminal);
+      return visibleFailureHandle(config.modelId, "parallel_tools", calls.map((call) => call.toolCallId), config.onTerminal, {
+        agentId: config.agentId, invocationId: request.invocationId ?? config.invocationId, stage: "admit",
+      });
     }
     return session.stream(request);
   } };
