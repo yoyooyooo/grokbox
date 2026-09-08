@@ -103,7 +103,7 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
 
 function isLoopbackUrlHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  return host === "localhost" || host === "::1" || host === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 
 function validateUrl(value: string | undefined, key: string): string | undefined {
