@@ -1,7 +1,7 @@
 # T15 — WebUI ops console + config/storage interoperability
 
 ## Status
-**Open.** Implement Phase 2 of the [Box-runtime implementation plan](../roadmap/box-runtime-plan.md). Phase 1 provides thin selection/binding, a narrow config entry and early status facets. Add simple shared anti-overwrite/CAS when WebUI introduces the second writer; it is not a prerequisite for the first binding slice. Safe read-only UI may be delivered before writable capabilities.
+**Open · product-scope tracker, not an implementation lane.** Rebuild execution is [T29](T29-runtime-webui.md), using the [implementation spec](../roadmap/box-runtime-impl-spec.md#webui) and T27/T28 facts/control. Phase 1 establishes thin selection and early facets; simple shared CAS starts with the second writer, not as the first binding gate. Do not create a parallel UI/layout from this older scope ticket.
 
 ## Goal
 Deliver a box-local ops console for preparation/confirmed application, Bot inspection, existing-model selection and recent runtime evidence through the same use cases as CLI.

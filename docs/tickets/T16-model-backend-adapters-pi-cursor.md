@@ -1,7 +1,7 @@
 # T16 — ModelBackend adapters: AI SDK + pi + Cursor SDK
 
 ## Status
-**Open.** Qualify and implement candidates in Phase 3 of the [implementation plan](../roadmap/box-runtime-plan.md). Phase 1 establishes the canonical Effect DI / ModelBackend port using current AI SDK + Fake; do not create a second admission path here.
+**Open · product-scope tracker, not an implementation lane.** Rebuild foundation is [T23](T23-runtime-model-backend.md) in Phase 1; candidate execution is [T30 pi](T30-runtime-pi-backend.md) and [T31 Cursor](T31-runtime-cursor-backend.md) in Phase 3. The [implementation spec](../roadmap/box-runtime-impl-spec.md#backends) owns the one DI/ModelBackend shape; do not maintain a second adapter/kernel track in this ticket.
 
 ## Goal
 Add pi JSON-RPC and Cursor SDK inference backends behind the same binding, STEP/attempt lifecycle, typed events and failure contract.

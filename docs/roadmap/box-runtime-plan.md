@@ -2,13 +2,13 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-本文是 box-runtime **后续实施顺序、合同与验收出口的唯一 Current Home**。按本文推进，票据只承载对应范围与交付证据，不维护另一套路线。
+本文是 box-runtime **策略、Phases 0–4 与产品出口的 Current Home**。具体模块树、内部 ports、执行合同、退场清单与必需证明统一由 [单轨重建实施规格](box-runtime-impl-spec.md) 拥有；实现者按该规格和 T20–T33 施工，不从本文另造布局。票据只承载切片与交付证据。
 
 产品义务遵循[产品合同 §12](../product-contract.md#12-box-local-model-runtime)，运行时边界遵循[设计](../box-runtime.md)与[架构 §17](../architecture.md#17-box-local-model-runtime)，重副作用遵循 [Effect 标准](../effect-box-runtime.md)。本文描述待建链条；源码与可执行测试拥有当前实现真相，不以计划存在证明交付。
 
 ## 当前基线
 
-实施基线为 `pre-publication-revision`，包含 `pre-publication-revision` 的安全修复。
+本轮单轨重建基线为 `pre-publication-revision`；运行时代码仍为 `pre-publication-revision` 的状态，包含 `pre-publication-revision` 安全修复。下面列的是保留的产品性质/研究素材，不要求保留 POC 的内部接口或实现路径。
 
 保留以下已有能力：
 
@@ -43,7 +43,7 @@ Grok Bot Host
 Host compatibility leaf（preload / 默认两处薄切片 / 同步 session ABI）
     │ Host identity + TURN + STEP + expected selection + ContextSnapshot
     ▼
-grokbox admission / lifecycle kernel（modeld / box-runtime）
+grokbox admission / lifecycle kernel（runtime-kernel；modeld 是 transport/root）
     ├─ canonical configuration / activation authority
     ├─ turn binding / STEP-attempt ledger / limits / cancellation
     ├─ ModelBackend port ── AI SDK / Fake / 经准入的 pi、Cursor adapters
@@ -62,19 +62,19 @@ CLI ──────────┐
 - **grokbox 控制面拥有**：配置发布、兼容性验证与批准记录、获授权采用的 lease/artifact/guardian/信号/等待/commit/recovery。保留同一 coordinator，不增加第二个 Host process-mutation writer；CLI/UI 的配置保存仍进入共同用例。
 - **客户端拥有**：用户意图、草稿和观察投影，不拥有模型绑定、运行状态或发布事实。事件与 status 是证据，不是恢复命令或配置权威。
 
-保持现有 private workspaces 与一个 published `grokbox` 包。按变化、信任与生命周期边界隔离代码，不为每个名词生成新包或 Service。Host compact 决定当前上下文窗口，长期事实由 Host-owned Memory 蒸馏承载；不以 store.db 历史补写抵消 compact，live caps 始终 unset。
+维持一个 published `grokbox` 包；实施规格锁定新增私有 `runtime-kernel`，既有 `box-runtime` 承载薄 Host leaf、adapters 与 roots，CLI 只路由。按真实信任/生命周期隔离代码，不另增包家族或每 helper Service。POC 内部 API、旧 wire、dual tracks 与 compat shims 直接退场，不包住旧程序冒充新边界。Host compact 决定当前上下文窗口，长期事实由 Host-owned Memory 蒸馏承载；不以 store.db 历史补写抵消 compact，live caps 始终 unset。
 
 ## 执行顺序与共同门禁
 
 ```text
-Phase 0：默认安全与输入保真
-  → Phase 1：binding / Host leaf / Effect DI / lifecycle / stream
+Phase 0：T20 最小骨架切割 → T21 输入保真（T22 raw fd 独立）
+  → Phase 1：早期 T27 facets → DI / binding / Effect root / Host 真流 / Controller
        ├→ Phase 2：共享命令边界上的 WebUI MVP
        ├→ Phase 3：T16 backend qualification + implementation
        └→ Phase 4：已确认 overflow 的 Host compact + 深层诊断
 ```
 
-阶段表示能力依赖，不把无关小修串成阻塞链。Phase 0 优先交付 A3fu/A7，A6 独立收尾；RouteBinding 首切不等待完整 streaming、退休或 WebUI CAS。A8 真流、随长寿命根闭合的 A9、T13 最小 facets 仍是 **Phase 1 明确工作**，不是随意后移的 polish。T13 从 Phase 1 早期定义并交付，可与 RouteBinding 并行，不等 WebUI 出现才补。Phase 2–4 分别满足自己的依赖后推进；Phase 4 **不等待所有 T16 backend 完成**。
+先完成 T20 的最小实体切割/import 门禁，紧随 T21 的 A3fu/A7；不把骨架扩成阻塞保真的全量平台重写，A6/T22 独立收尾。T27 最小 facets 在 Phase 1 最早交付，随后 T23–T26 接通 DI、binding、Effect root/A9 和 A8 真流，T28 闭合统一 Controller。各票依赖和退场截止见[实施规格 S8](box-runtime-impl-spec.md#tickets)。未齐能力显式拒绝，禁止旧内核兜底；中间单轨版本不部署。Phase 2–4 分别满足自己的依赖后推进；Phase 4 **不等待所有 T16 backend 完成**。
 
 按消融判断切片是否必要：D = 可诊断/可观测性，S = live STEP 稳定与安全，H = Host harness 变动下的可维护性。删除后损害任一轴的归一化、准入、流或资源边界应保留；不推动这些性质、也非当前产品出口必需的工件族、Service 层、全量退休/图表证明延后。不为“防过度设计”删掉核心合同，也不以完整架构外形作为首切前置。见 [ADR D12](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d12--ablation-guided-scope)。
 
@@ -82,7 +82,7 @@ Phase 0：默认安全与输入保真
 
 ## Phase 0：默认安全与输入保真
 
-本阶段沿现有 seam 完成输入与日志局部修复，不需要新增 Host patch 或 compact。先做 A3fu/A7；A6 可以并行或随后完成，不作为工具保真及其后续内核切片的前置：
+先按 T20 切出唯一 kernel/Host/adapters 树并撤销旧推理入口；保留 Host 产品 seam，不保留 POC 内部兼容面。紧接 T21 完成 A3fu/A7，不需要额外 Host patch 或 compact。A6/T22 可并行或随后完成，不作为保真及后续内核切片前置：
 
 1. **A3fu：完整传递工具结果。** 同时处理 tool-role、user-contained 与混合 text/tool-result 内容。保留工具相关性、结果与错误事实，以 CCS-safe 文本编码；不能静默丢失结果，不能补一个 Human user 来通过测试。无法安全表达的输入在 provider effect 前明确拒绝。
 2. **A7：去掉隐式选择策略。** 取消默认 1500/8000 字符截断及按 `SAND_HIDDEN`/`ack-redrive` 等正文词删除整行的规则。只有 profile 已验证的结构/provenance 才能标识控制消息；无法证明时不得把普通用户文本判为噪声。Host-selected 内容保真，超出明确安全预算可见拒绝，不自行缩窗。
@@ -90,7 +90,7 @@ Phase 0：默认安全与输入保真
 
 **出口**：
 
-- 默认路径无 prompt/error/Host-raw 正文 dump；A1/A2 的安全回归保持通过。
+- T20 的包/目录/exports/import/退场门禁通过；未完成能力显式 not_ready，不假称 serving。默认路径无 prompt/error/Host-raw 正文 dump；A1/A2 安全回归保持。
 - actual Chat 与 Responses 编码请求都保留 tool-role、`user.content` 混合 text/tool-result 及长结果尾部；无额外 Human user，无 raw `role=tool`。A3fu/A7 可先独立验收，A6 未完成不阻塞该出口；Phase 0 全部完成仍须关闭默认 raw sink。
 - 用户引用控制词不会丢句；无 STEP 在已完成工具 STEP 之后仍拒绝，零旧工具 replay、零额外 dispatch。
 - 不 re-adopt，不改变官方 renewal、非目标 Bot 路由或 Host compact。A8/A9 归 Phase 1，不计入本阶段完成声明。
@@ -141,7 +141,7 @@ Phase 0：默认安全与输入保真
 | **ModelBackend** | 接受已 admitted 的单次推理输入，产出 typed failure 与 bounded inference events；不执行工具、不写 Host 数据。 |
 | Observation/control facade | runtime owners 提供安全观察与 operation receipt，CLI/API 复用。Layer 只选择实现，不决定产品状态。 |
 
-Effect Service 可以直接作为 canonical Port；不复制同义 Promise Port 与 Service。Fake/Live Layers 替换能力，不替换业务程序。纯 hash/parser/codec 保持 TS，Promise/iterator facade 只用于 Node、Host、HTTP 边界。沿用 `effect@4.0.0-beta.107`，不顺带升级。
+Effect Service 就是 canonical Port，精确落点/操作见[实施规格 S3](box-runtime-impl-spec.md#ports)；不复制同义 Promise Port 与 Service，不保留 ModeldDriver/As1 的兼容包装。Fake/Live Layers 替换能力，不替换业务程序。纯 hash/parser/codec 保持 TS，Promise/iterator facade 只用于 Node、Host、HTTP 边界。沿用 `effect@4.0.0-beta.107`，不顺带升级。
 
 ```text
 grokbox process root Scope
@@ -159,7 +159,7 @@ confirmed coordinator operation Scope
 
 在 Phase 1 接入/扩展长寿命 Effect root 时，**同一生命周期切片闭合 A9**：acquire 与 finalizer 注册成对、partial acquire 可收尾、启动失败/abort/stop 对称释放 Scope 与 listeners。这是低成本的必要边界，不因外层仍有 Promise facade 而略过，也不要求为此重写所有纯逻辑。停止服务先拒绝新工作，再有界取消/drain，释放 owned resources；不等待不合作的外部 driver 永远结束，保留 unknown。不要把旧 Promise/timer 编排包一层 Effect 就宣布完成。见 [ADR D8](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d8--effect-root-and-resource-ownership)。
 
-控制面沿既有 coordinator 渐进收口重 IO 与 operation lifetime；独立 guardian 保留，不改成随父进程死亡的 Fiber。**J13 保持 Host append / watchdog compact**，不借本阶段改 journal placement 或新增 terminal-report IPC。
+控制面按 T28 将保留的安全性质重建成一个 Effect Controller operation program，旧 coordinator/inject/manual 执行器退场；独立 guardian 保留，不改成随父进程死亡的 Fiber。**J13 保持 Host append / watchdog compact**，不借本阶段改 journal placement 或新增 terminal-report IPC。
 
 ### 1.4 接通流、终态与安全退休
 
@@ -173,7 +173,7 @@ confirmed coordinator operation Scope
 - 分开 envelope bytes、encoded request bytes、system/messages/tools 大小、可信 token limit 与 response reserve。传输上限不是 context window；字符数不是精确 tokens。预算未知如实标识，不能按模型名猜窗口。
 - 分开 request timeout、turn binding 寿命、短期 replay 与 refusal/tombstone 退休。保留重复 STEP 拒绝与跨服务代 fencing，不随机逐出旧 id 后重投。建立合法 closed-turn/epoch 退休规则；缺少可靠关闭边界时保守拒绝并披露容量，不能承诺无限期精确去重。
 
-临时旧 wire codec 只接同一内核，不双 dispatch。无法携带 revision/features 的旧 bridge 不宣称具有新保护；完成协商与获授权迁移、确认旧客户端退休后移除兼容路径。
+每次 wire 变更只留下一个当前版本，旧 bridge/protocol 明确拒绝；不保留临时旧 codec、协商降级或双 server。新 bundle/profile 与调用方整体通过离线证明、获授权后采用；具体 v3/v4 切换见[实施规格 S4/S6](box-runtime-impl-spec.md#wire)，文档本身不授权 live cutover。
 
 ### 1.5 早期交付 T13 最小 facets 与安全 correlation
 
@@ -188,7 +188,7 @@ confirmed coordinator operation Scope
 - operation recovery；
 - Host delivery observation。
 
-当前代接缝证据完整、没有实际未决 operation，但遗留 circuit 仍 open 时，表达“接缝有证据、后续变更受限、controller 存活未证明”；不清 circuit、不涂全绿。实际 journal pending/invalid/unavailable 仍为 recovery/unknown，不被旧 attestation 覆盖。为兼容旧 CLI，可暂留 `watchdog.state=degraded`，同时提供上述 facets/reasons，明确它不是 heartbeat。前端不得自行改义。
+当前代接缝证据完整、没有实际未决 operation，但遗留 circuit 仍 open 时，表达“接缝有证据、后续变更受限、controller 存活未证明”；不清 circuit、不涂全绿。实际 journal pending/invalid/unavailable 仍为 recovery/unknown，不被旧 attestation 覆盖。T27 用单一新 DTO 表达 facets/reasons，不再保留 `watchdog.state=degraded` 的旧聚合兼容解释；circuit 自身事实不删除。前端不得自行改义。
 
 ### Phase 1 出口
 
@@ -297,20 +297,18 @@ Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry
 
 ## 票据与实施对应
 
-A3fu/A5–A10 是本计划复用的缺口标签，不增加一套票据系统。实施与验收按以下映射归档；阶段完成以出口证据为准。
+本轮执行采用 **T20–T33 新票据**，不重用旧 T2/T4 的交付意义。A3fu/A5–A10 仅用于追踪原 finding；历史 done 仍为 done，旧 open 产品票作范围索引。唯一详细依赖与证明映射见[实施规格 S8/S9](box-runtime-impl-spec.md#tickets)和[票据索引](../tickets/README.md)。
 
-| 工作 | 当前范围 / 目标 | 阶段 |
+| 策略范围 | 实施票据 | 阶段 |
 |---|---|---|
-| T10–T12、A1/A2/A4 | 保留 selective passthrough、可见错误、官方能力与已关闭安全路径的回归 | 全程 |
-| A3fu / A7；A6 独立收尾 | 工具结果保真、取消隐式截断/关键词过滤优先；默认 raw sink 不阻塞它们 | 0 |
-| A5 | 薄 session 选择字段、RouteBinding、首次/续步/TTL/重启与 opt-in | 1 |
-| [T5b](../tickets/T5b-s2-streaming-ipc.md) / A8 | framing 已有；完成 Host consumer、背压与终态合同 | 1 |
-| A9 / E3 | scoped acquire、admission/credential/stream/stop lifetime | 1 |
-| [T13](../tickets/T13-status-honesty-after-adopt.md) | 最小 shared status facets 先交付；深层恢复/发布诊断后补 | 1 → 2 → 4 |
-| [T14](../tickets/T14-managed-context-compact-on-model-switch.md) / A10 | enums-only observation 已有；补可信本地关联及分类证据 | 1 → 4 |
-| [T15](../tickets/T15-webui-ops-config-storage.md) | 复用 Phase 1 窄用例；第二 writer 时补轻量 CAS、local command boundary 与 WebUI MVP | 2 |
-| [T16](../tickets/T16-model-backend-adapters-pi-cursor.md) | DI 在 Phase 1 建立；此阶段逐个准入和实现 pi/Cursor backend | 3 |
-| [T14b](../tickets/T14b-host-reuse-compact-on-confirmed-overflow.md) | confirmed context overflow 的 Host compact 与一次恢复 | 4 |
+| 骨架切割、保真、独立 raw-fd 修复 | T20 / T21 / T22 | 0 |
+| ModelBackend DI、RouteBinding/STEP、A9 root、A8 Host 流 | T23 / T24 / T25 / T26 | 1 |
+| T13 最小 facets、统一 Controller 与整合出口 | T27（尽早）/ T28 | 1 |
+| T15 共同用例、第二 writer CAS、安全 WebUI | T29 | 2 |
+| T16 pi/Cursor 独立资格与 adapter | T30 / T31 | 3 |
+| T14b confirmed-overflow 恢复、T13 深层证据 | T32 / T33 | 4 |
+
+T10–T12 与 A1/A2/A4 的产品性质全程回归；已完成 POC ticket 不是保留旧实现的理由。
 
 ## 非目标与禁止事项
 
@@ -325,7 +323,9 @@ A3fu/A5–A10 是本计划复用的缺口标签，不增加一套票据系统。
 
 ## 立即执行的两个切片
 
-1. **Phase 0 工具保真切片：A3fu + A7**：先修 user-contained/混合 tool-result、取消隐式截断与关键词删行；用 actual Chat/Responses mock body、长结果尾部与无额外 Human user 的 fixture 验收。A6 默认 raw-fd 关闭作为独立小修并行或随后收尾，不 gate 此切片，也不因关闭 finding 执行 re-adopt/遗留文件清理。
-2. **Phase 1 首个内核切片：RouteBinding**：在现有 session ABI 上携带薄 modelId/selectionRevision，让 `getModelId` → submit → canonical admission 在首次 credential/provider effect 前一致；同 TURN 保持 binding，TTL/restart 拒绝或保留证据，不 main fallback。用当前 AI SDK + Fake 建立 Effect DI ModelBackend port，不先建设投影文件族或 WebUI CAS。
+先读[单轨重建实施规格](box-runtime-impl-spec.md)，它是施工依据；不要从本策略文档重新推导 ports/布局，也不把 owner 决策另挂成补丁附录。
 
-T13 最小 facets 从 Phase 1 早期并行交付；长寿命 Effect root 与 A9 acquire/finalizer 同片闭合；支持流式的 Provider 在 Phase 1 接通双向归一化与 Host fullStream/A8，不因首个 RouteBinding 切片可独立交付而移出本阶段。完整退休证明按持续运行需求补齐，WebUI 第二 writer 出现时才加轻量防覆盖。Host ABI、配置/wire schema、backend 能力、Effect pin 或验收结论变化时更新本文及对应产品/架构合同，不另起日期版方案。
+1. **[T20 骨架切割](../tickets/T20-runtime-layout-cut.md)**：直接建立唯一目标 package/module/import 树，撤旧推理入口与 compat shims，建立结构/pack/proof gate。未齐能力显式拒绝，不包 POC 兜底，不部署中间状态。
+2. **[T21 codec 保真](../tickets/T21-runtime-codec-fidelity.md)**：在新 owner 落点修 A3fu/A7，用真实 SDK 编码的 Chat/Responses body 与负对照验收。T22/A6 独立穿插，不 gate 保真。
+
+随后按规格先交付 T27 最小 facets，再接 T23–T26 DI/binding/Effect root/真流与 T28 Controller；所有必需 proof、退场与 Astra 复审完整后才关闭 Phase 1。WebUI、额外 backend、T14b 按自己的依赖推进，后者不等待所有 backend。本文维护策略，规格维护施工合同，票据维护证据，不另起日期版实施路线。

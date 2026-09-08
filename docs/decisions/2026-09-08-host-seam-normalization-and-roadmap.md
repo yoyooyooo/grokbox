@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-Owner decisions for the box-runtime execution chain. Binding until a later dated adjudication supersedes them. The [implementation plan](../roadmap/box-runtime-plan.md) remains the single forward-looking Current Home; this record preserves the decisions and their scope.
+Owner decisions for the box-runtime execution chain. Binding until a later dated adjudication supersedes them. The [strategy plan](../roadmap/box-runtime-plan.md) owns phases/product exits; the [Current Implementation Spec](../roadmap/box-runtime-impl-spec.md) owns the subsequently authorized single-track rebuild topology, ports and proof. This record preserves D1–D12; its permission to retain transitional internal compatibility does not require doing so in the destructive rebuild.
 
 ## Context
 

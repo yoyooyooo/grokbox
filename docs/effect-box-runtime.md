@@ -1,6 +1,6 @@
 # Box-runtime Effect 标准
 
-本标准约束 `packages/box-runtime` 及其 CLI composition roots 的后续改动：**重副作用必须由 Effect 拥有执行、失败、取消和资源生命周期，不只是返回类型换皮。** 依赖安装不代表迁移完成；当前实现以源码和测试为准。产品与权限仍由 [产品合同 §12](product-contract.md#12-box-local-model-runtime)、[运行时设计](box-runtime.md) 和 [架构 §17](architecture.md#17-box-local-model-runtime) 拥有。
+本标准约束 `packages/runtime-kernel`、`packages/box-runtime` 及其 CLI/console composition roots 的后续改动：**重副作用必须由 Effect 拥有执行、失败、取消和资源生命周期，不只是返回类型换皮。** 依赖安装不代表迁移完成；当前实现以源码和测试为准。产品与权限仍由 [产品合同 §12](product-contract.md#12-box-local-model-runtime)、[运行时设计](box-runtime.md) 和 [架构 §17](architecture.md#17-box-local-model-runtime) 拥有。
 
 ## 强制范围与普通 TS 边界
 
@@ -17,9 +17,9 @@
 
 - `effect` 精确固定 **`4.0.0-beta.107`**，根 Bun named catalog 为 **`effect-v4-beta`**；workspace 使用 `"effect": "catalog:effect-v4-beta"`。禁止 caret/tilde、dist-tag、RC 或混用 v3；升级必须显式更新 catalog、生成锁并复验。
 - E0 只增加 `effect`。不安装 AI SDK、`@effect/platform-*`、Vitest 或另换测试框架；发布目标仍是 Node 20+，Bun 是开发工具。
-- Fake/Live **Layers 替换能力，不替换业务程序**。既有 CLI → coordinator、Host IPC → `createModeld` 仍是唯一执行路径；无第二 reconciler、第二 admission kernel 或 `effectMode`。
+- Fake/Live **Layers 替换能力，不替换业务程序**。重建目标是 CLI/API → kernel commands、Host IPC → kernel inference，各只有一套程序；旧 `createModeld`/coordinator 名称不是兼容承诺。按[实施规格](roadmap/box-runtime-impl-spec.md)撤旧入口，无第二 reconciler/admission kernel、旧 facade 或 `effectMode`。
 - 每个真实进程/命令生命周期一个执行根；callback 需要时复用其 ManagedRuntime 并明确 dispose。Promise facade 只在宿主边界调用同一 Effect 实现，不在每个 helper/Bot/request 自建 Runtime。
-- 后续 AI SDK 只能实现 modeld 内的 **ModeldDriver Service**。Effect 拥有调用及整个流的 lifetime、interrupt、资源；SDK 接收取消信号，不另执行工具/Agent loop、写 Transcript/Memory 或调用 SendToUser。SDK/credential snapshot/streaming 协议须另行核定，不能把 response-only stub 当作真实 streaming 证据。T4 已锁定 **A+S1** 形状：A = `ModeldDriver` adapter（`modeld-as1.ts` + 注入的 generate port）；S1 = 在 `complete()` 内缓冲 chunk。T4b 在 `modeld-openai.ts` 安装 `ai` + `@ai-sdk/openai`（仅 box-runtime catalog），Chat Completions / Responses 可选，自定义 baseURL；不接线默认 stub，测试禁止真实 spend。
+- 重建后的 AI SDK 只能实现 **ModelBackend Service**（唯一 port，kernel 定义、box-runtime backend 实现）。Effect 拥有调用与流的 lifetime/interrupt/resources；SDK 不执行 tools/Agent loop、不写 Transcript/Memory/SendToUser。T4/T4b 的 A+S1/ModeldDriver/complete-buffer 是历史 substrate，不能作为永久 Promise shim 保留；T23–T26 原地换成唯一 port/stream/root，Host fullStream 真实接通。SDK 仍仅在 box-runtime backend；测试默认零真实 spend。
 
 ## Host import fence 与 J13
 
@@ -37,9 +37,9 @@ Host 不读 canonical attestation、不拥有 provider credential。允许复用
 2. **G1**：身份/SHA 预检通过后即可推进 stub live；**不**把 E1–E2 当 G1 前置墙。
 3. **Bun**：合并/CI 以声明的 `packageManager`（`bun@1.3.14`）+ frozen lock 为准；不在临界路径升 1.4.2。
 
-## 渐进迁移顺序
+## 历史 E 接缝与本轮替代
 
-这些标签表示局部接缝，不表示交付状态或 live 授权。每步接回相同生产入口；临时 Promise 边界不得变成永久双执行器。Phase 1 接入/扩展长寿命 root 时同片闭合 A9 acquire/finalizer，并用现有 AI SDK + Fake 建立 ModelBackend 的共同 Effect DI 边界；不为此把每个纯 helper 或文件锁单独 Service 化。具体顺序见[实施方案](roadmap/box-runtime-plan.md)。
+下表保留 E1–E4 的原始范围便于追溯，不再拥有当前文件布局/执行顺序，也不授权保留旧 API。当前破坏式重建按[实施规格](roadmap/box-runtime-impl-spec.md)与 T20–T33 执行。Phase 1 的 T25 引入长寿命 root 时同片闭合 A9 acquire/finalizer；T23 用 AI SDK + Fake 建立一个 ModelBackend port，T28 关闭控制面的单程序/IO。每 helper/文件锁不单独 Service 化；不留双执行器。
 
 | 接缝 | 最小闭环 |
 |---|---|
@@ -51,7 +51,7 @@ Host 不读 canonical attestation、不拥有 provider credential。允许复用
 
 T5a 已把 C1 credential 读取收口为 modeld 内 Effect 接缝；E3（listener/admit/TTL）与 T5b/S2 streaming IPC 仍开放。
 
-其余配置/合同重 IO 在后续触及的切片中迁移，不把整个模块清单塞进 E1。迁移不改变已接受的 generation/operation identity、pending 与 unavailable 区分、dispatch 前 authority 复核、immutable pins、重复拒绝/tombstone/capacity 或有界 shutdown。不得重新握手重投旧 invocation；不得静默回官方。
+重建各能力按对应新票据接回唯一程序，不以这份历史清单另开迁移轨。结构替换不改变已接受的 generation/operation identity、pending 与 unavailable 区分、dispatch 前 authority 复核、immutable pins、重复拒绝/tombstone/capacity 或有界 shutdown。不得重新握手重投旧 invocation；不得静默回官方。
 
 ## 拒绝的反模式
 

@@ -1,10 +1,15 @@
 # Roadmap
 
-This directory contains the accepted box-runtime implementation plan and deferred candidates. Neither a plan nor a candidate proves current behavior or implementation completion.
+This directory contains the accepted box-runtime strategy plan, its current implementation spec, and deferred candidates. None proves current implementation or deployment.
 
-## Active implementation plan
+## Active box-runtime homes
 
-[Box-runtime implementation plan](box-runtime-plan.md) is the single Current Home for its forward execution order, contracts, owners, and phase exits. Use it for Phase 0–4 and T13–T16 work. Its normalization, patch-surface and scope choices are recorded in the [2026-09-08 adjudication](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md); the plan already incorporates them and is sufficient for daily execution. The dated `2026-09-08-box-runtime-next.md` remains only a redirect, not a parallel plan.
+- [Strategy plan](box-runtime-plan.md): Phases 0–4, product exits and scope. Not a second source-layout specification.
+- [Current Implementation Spec](box-runtime-impl-spec.md): the **single-track destructive rebuild** tree, ports, import rules, execution chain, removal inventory and proof gates. Implementers use this build reference; do not preserve POC internal compatibility.
+- [T20–T33 tickets](../tickets/README.md): executable slices and evidence. Start T20 → T21; establish T27 facets early. Historical done tickets stay done.
+- [2026-09-08 adjudication](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md): D1–D12 product/trust decisions retained by the strategy/spec.
+
+The dated `2026-09-08-box-runtime-next.md` remains only a redirect. No intermediate review report or machine-local artifact is required for public build/contribution.
 
 ## Authority
 
@@ -24,4 +29,4 @@ A candidate moves into a current home only after a concrete need, an accepted se
 
 ## Freshness
 
-Review the box-runtime plan when Host ABI, configuration/wire schema, backend capabilities, Effect pin, or phase evidence changes. Review deferred candidates when daemon consumers, box lifecycle, network transport, provider-supported credential surfaces, quota contracts, or real implementation constraints change.
+Review the strategy, implementation spec and affected tickets when Host ABI, package/import ownership, configuration/wire schema, backend capabilities, Effect pin, or phase evidence changes. Review deferred candidates when daemon consumers, box lifecycle, network transport, provider-supported credential surfaces, quota contracts, or real implementation constraints change.

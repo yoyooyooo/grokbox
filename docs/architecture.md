@@ -314,10 +314,11 @@ Current implementation remains source reality until each slice lands. This docum
 
 ## 17. Box-local model runtime
 
-Accepted ownership, not an implementation completion claim. Product obligations live in [product-contract §12](product-contract.md). Design lives in [box-runtime.md](box-runtime.md).
+Accepted ownership, not an implementation completion claim. Product obligations live in [product-contract §12](product-contract.md). Design lives in [box-runtime.md](box-runtime.md). The [Current Implementation Spec](roadmap/box-runtime-impl-spec.md) now owns the forward **single-track rebuild** topology: new private `packages/runtime-kernel` for contracts/Effect programs, existing `packages/box-runtime` for Host leaf/adapters/roots, CLI as a thin caller. Its import/removal rules supersede preservation of POC internal APIs; the source-shaped descriptions below are substrate references, not permission to keep old execution tracks.
 
 ```text
-packages/box-runtime/   unpublished workspace package (not a second npm)
+packages/runtime-kernel/  accepted new private kernel (T20 target, not yet implemented)
+packages/box-runtime/     private Host/adapters/roots target (not a second npm)
 
 /workspace/.grokbox/box-runtime/          durable (survives box reset; not git)
   models.json  profiles/  contracts/  host-bundles/  log/events.ndjson  secrets/

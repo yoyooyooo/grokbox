@@ -4,7 +4,7 @@
 
 本文是 Grok Bot **模型替换运行时**的设计 Current Home：接缝、注入、modeld、配置和失败语义。它描述已接受的**未来完成态**，不是当前源码已实现清单。
 
-产品命令、本机边界、envelope 和可见错误义务见 [产品合同 §12](product-contract.md)。模块与 composition roots 见 [架构 §17](architecture.md)。重副作用与渐进迁移遵循 [Effect 标准](effect-box-runtime.md)。后续实施顺序、合同与阶段出口统一见 [Box-runtime 实施方案](roadmap/box-runtime-plan.md)；票据记录对应范围与交付证据。源码和可执行测试拥有当前实现真相。
+产品命令、本机边界、envelope 和可见错误义务见 [产品合同 §12](product-contract.md)。模块与 composition roots 见 [架构 §17](architecture.md)。重副作用遵循 [Effect 标准](effect-box-runtime.md)。策略/阶段出口见 [plan](roadmap/box-runtime-plan.md)；唯一目标树、ports、退场与 executable proof 见 [单轨重建实施规格](roadmap/box-runtime-impl-spec.md)，施工使用 T20–T33。本页旧 POC 函数/路径描述仅作 substrate，不要求保留 A+S1、旧 wire、旧聚合 status 或 compat shims。Host 产品合同/J13/独立 guardian 不因此改变。源码和可执行测试拥有当前实现真相。
 
 本仓库是公开、自包含的控制面。上游 Host 研究材料若存在于 maintainer 私有环境，只作证据输入，不是本仓库实现权威，也不得把私有 dump 提交进 git。
 

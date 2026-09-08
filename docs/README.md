@@ -11,11 +11,12 @@ This documentation separates current source truth, accepted product behavior, up
 - [Sandbox control plane](cursor-sandbox-control-plane.md): lifecycle terminology, trust separation, and validation requirements.
 - [Quota](quota.md): implemented explicit source, normalized output, and failure boundary.
 - [Box-local model runtime](box-runtime.md): accepted createSession seam, inject/watchdog/guardian, modeld, window semantics, and evidence ladder. Not an implementation-complete claim. Product obligations are in the [product contract](product-contract.md) §12.
-- [Box-runtime implementation plan](roadmap/box-runtime-plan.md): the single Current Home for forward execution order, contracts, owners, phase exits, and T13–T16 routing. It does not claim implementation completion.
+- [Box-runtime strategy plan](roadmap/box-runtime-plan.md): Phases 0–4, product exits and scope.
+- [Box-runtime Current Implementation Spec](roadmap/box-runtime-impl-spec.md): the single-track target package/module tree, ports, allowed imports, execution chain, POC removal inventory and proof gates. [T20–T33](tickets/README.md) own rebuild slices; neither document proves implementation completion.
 
 ## Roadmap
 
-[Roadmap](roadmap/README.md) routes to the accepted box-runtime implementation plan and deferred candidates. Plans and candidates do not prove delivery or override product and architecture authority.
+[Roadmap](roadmap/README.md) routes to the box-runtime strategy/spec pair and deferred candidates. Plans and candidates do not prove delivery or override product and architecture authority.
 
 ## Maintainers
 
@@ -29,7 +30,7 @@ Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokb
 
 Current behavior is owned by source and executable tests. Product and architecture documents may describe accepted targets. Compatibility observations can invalidate assumptions but do not silently redefine product behavior.
 
-The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normalization-and-roadmap.md) records binding normalization, patch-surface and execution-scope decisions. They are incorporated into the [box-runtime plan](roadmap/box-runtime-plan.md); the ADR is not a second roadmap.
+The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normalization-and-roadmap.md) records binding normalization, patch-surface and execution-scope decisions. They are incorporated into the [strategy plan](roadmap/box-runtime-plan.md) and [implementation spec](roadmap/box-runtime-impl-spec.md); the ADR is not a second roadmap. The spec records this rebuild's explicit single-track policy without turning earlier POC implementation details into compatibility obligations.
 
 ## Freshness
 

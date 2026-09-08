@@ -3,7 +3,7 @@
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
 ## Status
-**Open.** Phase 4 of the [implementation plan](../roadmap/box-runtime-plan.md): requires the Phase 1 binding/lifecycle contract, a verified Host compact capability, and separately authorized provider evidence. Does not wait for all T16 backends.
+**Open · product-scope tracker, not an implementation lane.** Rebuild execution is [T32](T32-runtime-confirmed-compact.md), using the [implementation spec](../roadmap/box-runtime-impl-spec.md#recovery-diagnostics). Phase 4 still requires binding/lifecycle, verified Host compact and authorized provider evidence; it does not wait for all T16 backends. Do not add another compact executor here.
 
 ## Goal
 When managed model switch leaves Host-compacted context still too large for the **new** model, trigger **Host’s own conversation compact** (same core / experience as official), then retry the managed STEP. Do **not** invent a grokbox near-window compactor.
