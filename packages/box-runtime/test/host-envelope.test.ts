@@ -156,35 +156,22 @@ describe("Host messages/state/tools/options envelope", () => {
     }
   });
 
-  test("oversized Host history drops oldest messages until the envelope fits", () => {
-    const filler = "y".repeat(4000);
-    const messages: PromptMessage[] = [];
-    for (let i = 0; i < 80; i += 1) messages.push({ role: "user", content: `${filler}-${i}` });
-    messages.push({ role: "user", content: "tail-sentinel" });
-    const envelope = buildModelEnvelope(messages);
-    expect(Buffer.byteLength(JSON.stringify(envelope)) <= ENVELOPE_MAX_BYTES).toBe(true);
-    expect(envelope.messages.length).toBeGreaterThan(0);
-    expect(envelope.messages.length).toBeLessThan(messages.length);
-    expect(envelope.messages.at(-1)).toEqual({ role: "user", content: "tail-sentinel" });
-  });
-
-  test("oversized tool results drop before user/assistant history", () => {
-    const envelope = buildModelEnvelope([
-      { role: "user", content: "keep-early-topic" },
-      {
-        role: "assistant",
-        content: [{ type: "tool-call", toolCallId: "c1", toolName: "SendToUser", args: { text: { content: "early-reply" } } }],
-      },
-      {
-        role: "tool",
-        content: [{ type: "tool-result", toolCallId: "c1", toolName: "SendToUser", result: { blob: "z".repeat(104_000), extra: "y".repeat(104_000) } }],
-      },
-      { role: "user", content: "tail-now" },
-    ], [{ name: "SendToUser", inputSchema: { type: "object", properties: {} } }]);
-    expect(Buffer.byteLength(JSON.stringify(envelope)) <= ENVELOPE_MAX_BYTES).toBe(true);
-    expect(envelope.messages.some((message) => typeof message.content === "string" && message.content.includes("keep-early-topic"))).toBe(true);
-    expect(envelope.messages.some((message) => typeof message.content === "string" && message.content.includes("early-reply"))).toBe(true);
-    expect(envelope.messages.at(-1)).toEqual({ role: "user", content: "tail-now" });
+  test("oversized Host history fails visibly instead of dropping oldest messages", () => {
+    const filler = "y".repeat(2_000_000);
+    const oversized = [
+      { role: "user" as const, content: `${filler}-0` },
+      { role: "assistant" as const, content: `${filler}-1` },
+      { role: "user" as const, content: `${filler}-2` },
+      { role: "assistant" as const, content: `${filler}-3` },
+      { role: "user" as const, content: "tail-sentinel" },
+    ];
+    expect(() => buildModelEnvelope(oversized)).toThrow(EnvelopeError);
+    try {
+      buildModelEnvelope(oversized);
+    } catch (error) {
+      expect(error).toBeInstanceOf(EnvelopeError);
+      expect((error as EnvelopeError).code).toBe("envelope_too_large");
+    }
   });
 
   test("getExecutor accepts Host conversation snapshots with extra keys and text parts with providerOptions", async () => {

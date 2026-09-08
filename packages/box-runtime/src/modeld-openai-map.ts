@@ -40,10 +40,18 @@ export function envelopeToOpenAiMessages(envelope: ModelEnvelope): OpenAiPromptM
   return envelope.messages.map(messageToOpenAi);
 }
 
-const LIVE_TEXT_MESSAGE_CAP = 400;
-const LIVE_TEXT_CHAR_CAP = 160_000;
+/** Debug-only cost caps. Unset = no grokbox near-window; Host envelope passes through. */
+export const LIVE_PROMPT_MESSAGE_CAP_ENV = "GROKBOX_LIVE_PROMPT_MESSAGE_CAP";
+export const LIVE_PROMPT_CHAR_CAP_ENV = "GROKBOX_LIVE_PROMPT_CHAR_CAP";
 const LIVE_NOISE_USER = /SAND_HIDDEN|ack-redrive/i;
 const LIVE_NOISE_ASSISTANT = /The configured model request failed|No fallback model was used|No model request was sent/;
+
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "" || !/^[0-9]+$/.test(raw.trim())) return undefined;
+  const n = Number(raw.trim());
+  if (!Number.isSafeInteger(n) || n <= 0) return undefined;
+  return n;
+}
 
 function sendToUserBubble(content: PromptMessage["content"]): string {
   if (typeof content === "string") return "";
@@ -77,9 +85,13 @@ function liveTurnText(message: PromptMessage): string {
  * Reconstructs SendToUser bubbles as assistant text. Drops tool roles, tool-call
  * parts, SAND_HIDDEN / ack-redrive, and synthetic failure rows. Responses rejected
  * raw tool history (`model_error` / normalize); Host still executes SendToUser.
- * Oldest-first drop under count/char caps; always ends on the latest user turn.
+ * Default: no count/char near-window. `GROKBOX_LIVE_PROMPT_*_CAP` is debug-only.
+ * Always ends on the latest user turn.
  */
-export function envelopeToOpenAiLivePrompt(envelope: ModelEnvelope): {
+export function envelopeToOpenAiLivePrompt(
+  envelope: ModelEnvelope,
+  env: NodeJS.Dict<string | undefined> = process.env,
+): {
   system?: string;
   messages: OpenAiPromptMessage[];
 } {
@@ -98,15 +110,19 @@ export function envelopeToOpenAiLivePrompt(envelope: ModelEnvelope): {
     if (message.role === "assistant" && LIVE_NOISE_ASSISTANT.test(text)) continue;
     texts.push({ role: message.role, content: text });
   }
-  let kept = texts.slice(-LIVE_TEXT_MESSAGE_CAP);
+  const messageCap = parsePositiveInt(env[LIVE_PROMPT_MESSAGE_CAP_ENV]);
+  const charCap = parsePositiveInt(env[LIVE_PROMPT_CHAR_CAP_ENV]);
+  let kept = messageCap === undefined ? texts : texts.slice(-messageCap);
   while (kept.length > 0 && kept[kept.length - 1]!.role !== "user") kept.pop();
-  let chars = kept.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : 0), 0);
-  while (kept.length > 1 && chars > LIVE_TEXT_CHAR_CAP) {
-    const removed = kept.shift()!;
-    chars -= typeof removed.content === "string" ? removed.content.length : 0;
-    if (kept[0]?.role === "assistant") {
-      const extra = kept.shift()!;
-      chars -= typeof extra.content === "string" ? extra.content.length : 0;
+  if (charCap !== undefined) {
+    let chars = kept.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : 0), 0);
+    while (kept.length > 1 && chars > charCap) {
+      const removed = kept.shift()!;
+      chars -= typeof removed.content === "string" ? removed.content.length : 0;
+      if (kept[0]?.role === "assistant") {
+        const extra = kept.shift()!;
+        chars -= typeof extra.content === "string" ? extra.content.length : 0;
+      }
     }
   }
   if (kept.length === 0 || kept[kept.length - 1]!.role !== "user") {

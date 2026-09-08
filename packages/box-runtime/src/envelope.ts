@@ -21,8 +21,8 @@ export class EnvelopeError extends Error {
     super(code);
   }
 }
-/** Must fit one modeld Unix frame (`MODELD_MAX_FRAME` 256KiB) plus submit wrapper fields. */
-export const ENVELOPE_MAX_BYTES = 200 * 1024;
+/** Unix IPC transport ceiling (`MODELD_MAX_FRAME` 8MiB) minus submit wrapper. Over = visible `envelope_too_large`, never silent oldest-drop. */
+export const ENVELOPE_MAX_BYTES = 7 * 1024 * 1024;
 const fail = (code: EnvelopeErrorCode = "invalid_envelope"): never => { throw new EnvelopeError(code); };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const id = (value: unknown): string => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value) ? value : fail();
@@ -108,7 +108,7 @@ function hostMessageFields(raw: unknown): { role: string; content: unknown; tool
 }
 
 function messagesFrom(value: unknown): PromptMessage[] {
-  if (!Array.isArray(value) || value.length > 1024) return fail();
+  if (!Array.isArray(value) || value.length > 16384) return fail();
   if (Object.keys(value).length !== value.length) return fail();
   return Array.from({ length: value.length }, (_, index) => {
     const descriptor = Object.getOwnPropertyDescriptor(value, index);
@@ -244,68 +244,12 @@ function toolPairingHolds(messages: PromptMessage[]): boolean {
   return true;
 }
 
-function textBits(content: PromptMessage["content"]): string {
-  if (typeof content === "string") return content.trim();
-  return content
-    .filter((part): part is Extract<PromptContentPart, { type: "text" | "reasoning" }> => part.type === "text" || part.type === "reasoning")
-    .map((part) => part.text)
-    .join("")
-    .trim();
-}
-
-function sendToUserText(args: JsonValue): string {
-  if (typeof args === "string") return args.trim();
-  if (!object(args)) return "";
-  const text = args.text;
-  if (object(text) && typeof text.content === "string") return text.content.trim();
-  if (typeof text === "string") return text.trim();
-  if (typeof args.content === "string") return args.content.trim();
-  if (typeof args.message === "string") return args.message.trim();
-  return "";
-}
-
-function sendToUserFrom(content: PromptMessage["content"]): string {
-  if (typeof content === "string") return "";
-  for (const part of content) {
-    if (part.type !== "tool-call") continue;
-    if (!/send[_-]?to[_-]?user|send[_-]?message/i.test(part.toolName)) continue;
-    const text = sendToUserText(part.args);
-    if (text) return text;
-  }
-  return "";
-}
-
-/** Prefer user/assistant text (including SendToUser bubble text) over tool rows when the snapshot exceeds the Unix envelope cap. */
-function conversationOnly(messages: PromptMessage[]): PromptMessage[] {
-  const kept: PromptMessage[] = [];
-  for (const message of messages) {
-    if (message.role === "tool") continue;
-    if (message.role === "system" || message.role === "user") {
-      const text = textBits(message.content);
-      if (text) kept.push({ role: message.role, content: text });
-      continue;
-    }
-    if (message.role !== "assistant") continue;
-    const text = textBits(message.content) || sendToUserFrom(message.content);
-    if (text) kept.push({ role: "assistant", content: text });
-  }
-  return kept;
-}
-
-function fitMessages(messages: PromptMessage[], tools: ToolDefinition[], options: GenerationOptions): PromptMessage[] {
-  let kept = messages;
-  if (envelopeBytes(kept, tools, options) > ENVELOPE_MAX_BYTES) kept = conversationOnly(kept);
-  while (kept.length > 1 && envelopeBytes(kept, tools, options) > ENVELOPE_MAX_BYTES) kept = kept.slice(1);
-  while (kept.length > 1 && !toolPairingHolds(kept)) kept = kept.slice(1);
-  return kept;
-}
-
 export function buildModelEnvelope(messages: unknown, tools?: unknown, options?: unknown): ModelEnvelope {
   const parsedTools = toolsFrom(tools);
   const parsedOptions = optionsFrom(options);
   const envelope: ModelEnvelope = {
     version: 1,
-    messages: fitMessages(messagesFrom(messages), parsedTools, parsedOptions),
+    messages: messagesFrom(messages),
     tools: parsedTools,
     options: parsedOptions,
   };

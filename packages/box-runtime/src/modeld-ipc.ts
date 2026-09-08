@@ -6,7 +6,8 @@ import type { AdmissionFailureCode, AdmitRequest, ModelD } from "./modeld.ts";
 import { STUB_ECHO_PARTS } from "./modeld-default.ts";
 
 export { STUB_ECHO_MODEL_ID, STUB_ECHO_PARTS };
-export const MODELD_MAX_FRAME = 256 * 1024;
+/** Unix length-prefixed frame ceiling. Over = visible too-large, not silent history drop. */
+export const MODELD_MAX_FRAME = 8 * 1024 * 1024;
 /** Submit wait bound; matches default kernel idle TTL. Health/disconnect keep a short timeout. */
 export const MODELD_SUBMIT_TIMEOUT_MS = 30_000;
 export function modeldSocketPath(runRoot: string): string { return join(runRoot, "modeld.sock"); }
