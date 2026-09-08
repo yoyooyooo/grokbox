@@ -183,7 +183,6 @@ export async function runFsDownload(
   const transferId = deps.randomUUID();
   let opened: DownloadOpen | null = null;
   let received = 0;
-  let completed = false;
   try {
     opened = downloadOpen(
       (await client.call("fsDownloadOpen", { path: remotePath, transferId })).result,
@@ -211,7 +210,6 @@ export async function runFsDownload(
       if (error.code === "EEXIST") throw new CliError("fs_destination_exists", "Local download destination already exists.");
       throw new CliError("fs_forbidden", "Downloaded file cannot be committed to its destination.");
     });
-    completed = true;
     await rm(temporary, { force: true }).catch(() => undefined);
     writeSuccess(deps.stdout, {
       remotePath: opened.path,
@@ -222,10 +220,8 @@ export async function runFsDownload(
       verified: true,
     });
   } finally {
-    if (!completed) {
-      await handle.close().catch(() => undefined);
-      await rm(temporary, { force: true }).catch(() => undefined);
-    }
+    await handle.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
     await client.call(
       "fsDownloadCancel",
       { transferId },
