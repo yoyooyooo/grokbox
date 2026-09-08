@@ -7,7 +7,7 @@ import { spawnIndependentGuardian } from "./guardian-process.ts";
 import { identityLaunchFields } from "./h3-identity.ts";
 import { createLiveH3AdoptPorts } from "./h3-live.ts";
 import { sha256Text } from "./hash.ts";
-import { IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
+import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import { procEnvHas, readNamedProcEnv } from "./live-proc.ts";
 import { waitOfficialReplacement, type RoleClassifier } from "./official-chain.ts";
@@ -75,8 +75,12 @@ export function wireLiveManualReadopt(input: {
       const profilePath = await pinLaunchProfile(ephemeralRoot, profile);
       const host = ports.processes.list().find((ident) => ports.classify(ident) === "host");
       if (!host) throw new Error("missing-host");
+      const supervisor = ports.processes.list().find((ident) => ports.classify(ident) === "supervisor");
       const launched = identityLaunchFields({
-        source: readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST),
+        source: fillMissingLaunchEnv(
+          readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST),
+          supervisor ? readNamedProcEnv(supervisor.pid, IDENTITY_LAUNCH_ALLOWLIST) : {},
+        ),
         preloadPath: PRELOAD_PATH,
         profilePath,
         markerPath,

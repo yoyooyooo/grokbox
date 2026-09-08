@@ -13,7 +13,7 @@ import {
   type H3OfflinePorts,
 } from "./h3-identity.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
-import { IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
+import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "./launch-env.ts";
 import { LIVE_HOST_BUNDLE } from "./live-slices.ts";
 import {
   inspectPid,
@@ -378,7 +378,11 @@ export async function runH3LiveIdentitySession(input: {
   }
   const execPath = input.execPath ?? (existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath);
   const host = preflight.chain!.host;
-  const launchSource = readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST);
+  const supervisor = linuxProcessPort().list().find((ident) => liveClassify(ident) === "supervisor");
+  const launchSource = fillMissingLaunchEnv(
+    readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST),
+    supervisor ? readNamedProcEnv(supervisor.pid, IDENTITY_LAUNCH_ALLOWLIST) : {},
+  );
   if (preflight.strategy === "transient-adopt-candidate") {
     const ports = createLiveH3AdoptPorts({
       markerPath,

@@ -23,5 +23,6 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T9 | done | Live CCS modeld smoke (luna + grok Responses) |
 | T10 | done | Per-Bot official passthrough (selective route) |
 | T11 | done | Pre-dispatch official passthrough + STEP-correlated visible errors |
+| T12 | done | Adopt preserves official Host renewer env (create-bot / other bots) |
 
 Driver: herdr grok main line; true blockers → new session gpt-6-astra max.

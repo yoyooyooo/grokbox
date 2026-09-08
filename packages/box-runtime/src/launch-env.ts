@@ -13,6 +13,8 @@ export const IDENTITY_LAUNCH_ALLOWLIST = [
   "SAND_HOST_PORT",
   "SAND_SUPERVISOR_ENABLED",
   "SAND_GATEWAY_TOKEN",
+  /** Official Host inference renewer. Not a grokbox provider key; required for uncovered bots / create-bot. */
+  "SAND_INFERENCE_RENEWAL_CREDENTIAL",
 ] as const;
 
 const FORBIDDEN = /(?:API_KEY|SECRET|ACME_|GROKBOX_ALLOW_LIVE_HOST)/i;
@@ -27,6 +29,21 @@ export function pickLaunchEnv(
     if (typeof value === "string" && value.length > 0) env[key] = value;
   }
   return { ok: true, env };
+}
+
+/** Copy allowlisted fields the Host lost; used when adopt would otherwise spawn without official renewer delivery. */
+export function fillMissingLaunchEnv(
+  primary: NodeJS.Dict<string>,
+  fallback: NodeJS.Dict<string>,
+): NodeJS.Dict<string> {
+  const out: NodeJS.Dict<string> = { ...primary };
+  for (const key of IDENTITY_LAUNCH_ALLOWLIST) {
+    const have = out[key];
+    if (typeof have === "string" && have.length > 0) continue;
+    const extra = fallback[key];
+    if (typeof extra === "string" && extra.length > 0) out[key] = extra;
+  }
+  return out;
 }
 
 export function envHasProviderCredential(env: NodeJS.Dict<string>): boolean {
