@@ -1,10 +1,19 @@
-import { constants as fsConstants } from "node:fs";
 import { chmod, mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { acquireExclusiveLock } from "./op-lock.ts";
+import { journalRoleAllows } from "@grokbox/runtime-kernel/status";
+import {
+  appendHostStreamRejected,
+  appendNdjsonLine,
+  appendTurnSeamTerminal,
+  projectHostStreamRejected,
+  projectTurnSeamTerminal,
+  withEventsLock,
+} from "../host/terminal-journal.node.ts";
 import { eventsPath } from "./paths.ts";
 import { observeText, type ObservationState } from "./observation.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
+
+export { appendHostStreamRejected, appendTurnSeamTerminal, projectHostStreamRejected, projectTurnSeamTerminal } from "../host/terminal-journal.node.ts";
 
 export const EVENT_NAMES = [
   "disk_sha_observed",
@@ -183,48 +192,6 @@ function boundedCount(value: unknown): number | null {
   return value;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function ensureLogDir(filePath: string): Promise<void> {
-  const dir = dirname(filePath);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  await chmod(dir, 0o700);
-}
-
-async function withEventsLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
-  const lockPath = eventsPath(root).replace(/events\.ndjson$/, "events.lock");
-  for (let attempt = 0; attempt < 1000; attempt += 1) {
-    const got = await acquireExclusiveLock(lockPath);
-    if (got.ok) {
-      try {
-        return await fn();
-      } finally {
-        await got.lock.release();
-      }
-    }
-    await delay(2);
-  }
-  throw new Error("box-runtime events journal lock timeout");
-}
-
-async function appendLine(root: string, line: string): Promise<void> {
-  const path = eventsPath(root);
-  const payload = line.endsWith("\n") ? line : `${line}\n`;
-  await withEventsLock(root, async () => {
-    await ensureLogDir(path);
-    const handle = await open(path, fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY, 0o600);
-    try {
-      await chmod(path, 0o600);
-      await handle.write(Buffer.from(payload));
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  });
-}
-
 export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent {
   const out: RuntimeEvent = { name: input.name, at: input.at };
   for (const [key, value] of Object.entries(input)) {
@@ -235,50 +202,6 @@ export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent {
     out[key] = value;
   }
   return out;
-}
-
-export function projectTurnSeamTerminal(input: unknown): TurnSeamTerminalEvent | null {
-  if (!isRecord(input)) return null;
-  if (input.name !== "turn_seam_terminal") return null;
-  const at = boundedString(input.at, TURN_SEAM_BOUNDED_STRING);
-  const mode = boundedEnum(input.mode, TURN_SEAM_MODES) as TurnSeamMode | null;
-  const agentId = boundedString(input.agentId);
-  const assignment = boundedEnum(input.assignment, TURN_SEAM_ASSIGNMENTS) as TurnSeamAssignment | null;
-  const invocationId = boundedString(input.invocationId);
-  const toolCallCount = boundedCount(input.toolCallCount);
-  const terminalClass = boundedEnum(input.terminalClass, TURN_SEAM_TERMINAL_CLASSES) as TurnSeamTerminalClass | null;
-  const outcome = boundedEnum(input.outcome, TURN_SEAM_OUTCOMES) as TurnSeamOutcome | null;
-  if (
-    at == null ||
-    mode == null ||
-    agentId == null ||
-    assignment == null ||
-    invocationId == null ||
-    toolCallCount == null ||
-    terminalClass == null ||
-    outcome == null
-  ) {
-    return null;
-  }
-  if (mode === "route" && assignment === "official") return null;
-  if (assignment === "official" && outcome === "managed") return null;
-  const officialExecution = outcome === "official" || outcome === "last_resort_official";
-  const modelId = officialExecution ? null : boundedString(input.modelId);
-  if (!officialExecution && modelId == null) return null;
-  const errorCode = boundedEnum(input.errorCode, TURN_SEAM_ERROR_CODES);
-  return {
-    name: "turn_seam_terminal",
-    at,
-    mode,
-    agentId,
-    assignment,
-    ...(modelId != null ? { modelId } : {}),
-    invocationId,
-    toolCallCount,
-    terminalClass,
-    outcome,
-    ...(errorCode != null ? { errorCode } : {}),
-  };
 }
 
 export function projectModelStepTerminal(input: unknown): ModelStepTerminalEvent | null {
@@ -323,36 +246,6 @@ export function projectModelStepTerminal(input: unknown): ModelStepTerminalEvent
     admission,
     ...(errorCode != null ? { errorCode } : {}),
     ...(serverGeneration != null ? { serverGeneration } : {}),
-  };
-}
-
-export function projectHostStreamRejected(input: unknown): HostStreamRejectedEvent | null {
-  if (!isRecord(input) || input.name !== "host_stream_rejected" || input.schemaVersion !== 2) return null;
-  const at = boundedString(input.at, TURN_SEAM_BOUNDED_STRING);
-  const mode = boundedEnum(input.mode, TURN_SEAM_MODES);
-  const hostGenerationId = boundedString(input.hostGenerationId);
-  const agentId = boundedString(input.agentId);
-  const turnId = boundedString(input.turnId);
-  const stage = boundedEnum(input.stage, MODEL_STEP_STAGES);
-  const errorCode = boundedEnum(input.errorCode, TURN_SEAM_ERROR_CODES);
-  const reason = boundedEnum(input.reason, HOST_STREAM_REJECT_REASONS) as HostStreamRejectReason | null;
-  if (
-    at == null || mode !== "route" || hostGenerationId == null || agentId == null || turnId == null ||
-    stage !== "stream-id" || errorCode !== "invalid_envelope" || reason == null
-  ) {
-    return null;
-  }
-  return {
-    name: "host_stream_rejected",
-    schemaVersion: 2,
-    at,
-    mode: "route",
-    hostGenerationId,
-    agentId,
-    turnId,
-    stage: "stream-id",
-    errorCode: "invalid_envelope",
-    reason,
   };
 }
 
@@ -427,37 +320,16 @@ export function selectRetainedEventLines(lines: string[]): string[] {
 }
 
 export async function appendEvent(root: string, event: RuntimeEvent): Promise<void> {
-  if (isSeamEventName(event.name)) return;
-  await appendLine(root, JSON.stringify(sanitizeEvent(event)));
-}
-
-export async function appendTurnSeamTerminal(root: string, input: unknown): Promise<TurnSeamWriteResult> {
-  const projected = projectTurnSeamTerminal(input);
-  if (!projected) return "unprojected";
-  try {
-    await appendLine(root, JSON.stringify(projected));
-    return "written";
-  } catch {
-    return "write_failed";
-  }
+  if (!journalRoleAllows("control", event.name)) return;
+  await appendNdjsonLine(root, JSON.stringify(sanitizeEvent(event)));
 }
 
 export async function appendModelStepTerminal(root: string, input: unknown): Promise<TurnSeamWriteResult> {
+  if (!isRecord(input) || !journalRoleAllows("modeld", String(input.name))) return "unprojected";
   const projected = projectModelStepTerminal(input);
   if (!projected) return "unprojected";
   try {
-    await appendLine(root, JSON.stringify(projected));
-    return "written";
-  } catch {
-    return "write_failed";
-  }
-}
-
-export async function appendHostStreamRejected(root: string, input: unknown): Promise<TurnSeamWriteResult> {
-  const projected = projectHostStreamRejected(input);
-  if (!projected) return "unprojected";
-  try {
-    await appendLine(root, JSON.stringify(projected));
+    await appendNdjsonLine(root, JSON.stringify(projected));
     return "written";
   } catch {
     return "write_failed";
@@ -465,10 +337,11 @@ export async function appendHostStreamRejected(root: string, input: unknown): Pr
 }
 
 export async function appendProviderErrorObserved(root: string, input: unknown): Promise<TurnSeamWriteResult> {
+  if (!isRecord(input) || !journalRoleAllows("modeld", String(input.name))) return "unprojected";
   const projected = projectProviderErrorObserved(input);
   if (!projected) return "unprojected";
   try {
-    await appendLine(root, JSON.stringify(projected));
+    await appendNdjsonLine(root, JSON.stringify(projected));
     return "written";
   } catch {
     return "write_failed";
@@ -480,14 +353,15 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
   if (input.name === "model_step_terminal") return appendModelStepTerminal(root, input);
   if (input.name === "host_stream_rejected") return appendHostStreamRejected(root, input);
   if (input.name === "provider_error_observed") return appendProviderErrorObserved(root, input);
+  if (input.name === "turn_seam_terminal") return appendTurnSeamTerminal(root, input);
   return "unprojected";
 }
 
 function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
-  if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
+  if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
   if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
-  if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);
+  if (input.name === "host_stream_rejected") return projectHostStreamRejected(input) as HostStreamRejectedEvent | null;
   if (input.name === "provider_error_observed") return projectProviderErrorObserved(input);
   const at = boundedString(input.at);
   if (!at || !Number.isFinite(Date.parse(at))) return null;
@@ -563,7 +437,8 @@ export async function compactEvents(root: string): Promise<void> {
     }
     const kept = selectRetainedEventLines(text.split("\n"));
     const body = kept.length > 0 ? `${kept.join("\n")}\n` : "";
-    await ensureLogDir(path);
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await chmod(dirname(path), 0o700);
     const tmp = `${path}.tmp`;
     await writeFile(tmp, body, { mode: 0o600 });
     await chmod(tmp, 0o600);

@@ -10,7 +10,7 @@ import { canonicalOwnershipAgrees, type IdentityOpResult } from "../process/iden
 import { inspectPid, linuxProcessPort, roleOf } from "../process/linux.node.ts";
 import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
 import { routeHasNonStubAssignment, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
-import { projectLiveStatus, type HostOrigin } from "../io/observe.ts";
+import { observeLiveDraft, type HostOrigin } from "../io/observe.ts";
 import { findAdoptedHostState, findUniqueOfficialChain, loadReviewedProfile, waitOfficialReplacement, type RoleClassifier } from "../process/official-chain.ts";
 import { loadDurableReviewedProfile, validateReviewedProfile } from "../process/profile.node.ts";
 import { acquireCoordinatorLease, coordinatorLeasePath, type LeaseOwner } from "../io/op-lock.ts";
@@ -529,7 +529,7 @@ async function runWatchdogTickBody(input: WatchdogTickInput, progress: AttemptPr
     });
   }
 
-  const status = await projectLiveStatus({
+  const status = await observeLiveDraft({
     root: input.root,
     desired: input.desired,
     models: input.models,

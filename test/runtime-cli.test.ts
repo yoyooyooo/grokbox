@@ -296,10 +296,12 @@ describe("box-local runtime CLI", () => {
       const status = await captureCli(["runtime", "status"], { discoveryPath: "/dev/null", boxRuntimeRoot });
       expect(status.code).toBe(0);
       const body = data(status.stdout);
-      expect(body).toMatchObject({ circuit: "unknown", lastHeal: null, driftedSlices: null });
-      expect(["none", "window-open", "attested"]).toContain(String(body.coverage));
-      expect(body.census).toBeDefined();
-      expect((body.window as { affectedInvocations: string }).affectedInvocations).toBe("unknown");
+      expect(body.schemaVersion).toBe(1);
+      expect(body).not.toHaveProperty("watchdog");
+      expect(JSON.stringify(body)).not.toContain("degraded");
+      expect(Object.keys(body.facets as object).sort()).toEqual([
+        "bridge", "controller", "hostDelivery", "modeld", "mutation", "recovery",
+      ]);
       expect((body.installation as { durableRoot: string }).durableRoot).toBe(boxRuntimeRoot);
       expect((body.installation as { durableRoot: string }).durableRoot).not.toContain("/.grokbox/runtime/");
       const log = await captureCli(["runtime", "log"], { discoveryPath: "/dev/null", boxRuntimeRoot });
@@ -339,7 +341,11 @@ describe("box-local runtime CLI", () => {
     try {
       const status = await captureCli(["runtime", "status"], { discoveryPath: "/dev/null", boxRuntimeRoot });
       expect(status.code).toBe(0);
-      expect(data(status.stdout)).toMatchObject({ activation: { desired: null, reconcile: "unknown" }, evidence: { desired: "invalid", models: "invalid" } });
+      const body = data(status.stdout);
+      expect(body.schemaVersion).toBe(1);
+      expect((body.facets as { bridge: { value: { desired: unknown }; gap: string } }).bridge.value.desired).toBeNull();
+      expect((body.facets as { bridge: { gap: string } }).bridge.gap).toBe("invalid");
+      expect(body).not.toHaveProperty("watchdog");
       expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
     } finally { restore(); }
   });

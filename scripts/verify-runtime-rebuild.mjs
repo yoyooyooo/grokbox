@@ -18,6 +18,10 @@ const CASES = {
   codec: [
     ["bun", "test", "packages/box-runtime/test/host-codec.test.ts", "packages/box-runtime/test/ccs-codec.test.ts"],
   ],
+  status: [
+    ["bun", "test", "packages/runtime-kernel/test/status-facets.test.ts", "packages/box-runtime/test/host-journal.test.ts"],
+    ["bun", "test", "test/runtime-cli.test.ts"],
+  ],
 };
 
 const mapped = CASES[kase];
@@ -64,10 +68,12 @@ for (const argv of mapped) {
 const SUPPORTS = {
   layout: ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
   codec: ["host-context-snapshot", "ccs-chat-responses-http-oracle"],
+  status: ["status-facets", "host-journal-roles", "readonly-status-ports"],
 };
 const REALITY = {
   layout: "offline-layout",
   codec: "offline-sdk-mock-fetch",
+  status: "offline-status-facets",
 };
 const report = {
   case: kase,
@@ -79,7 +85,7 @@ const report = {
     "controller-effect-program",
     "v3-wire-server",
     "Host-fullStream",
-    "status-facets",
+    ...(kase === "status" ? [] : ["status-facets"]),
     "live-adopt",
   ],
   commands,

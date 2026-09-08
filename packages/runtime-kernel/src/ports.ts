@@ -1,5 +1,6 @@
 import { Context, Effect, Stream } from "effect";
 import type { ModelsFile, DesiredFile } from "./selection.ts";
+import type { StatusEvidence } from "./internal/contract/status.ts";
 
 /** Process-local opaque handle. Not a contract DTO; never stringify, log, or put on the wire. */
 export type PreparedCall = { readonly _PreparedCall: unique symbol };
@@ -50,7 +51,7 @@ export class ControlResources extends Context.Service<ControlResources, {
 }>()("grokbox/ControlResources") {}
 
 export class ObservationRead extends Context.Service<ObservationRead, {
-  readonly snapshot: () => Effect.Effect<unknown, unknown>;
+  readonly snapshot: () => Effect.Effect<StatusEvidence, unknown>;
 }>()("grokbox/ObservationRead") {}
 
 export class HostCompact extends Context.Service<HostCompact, {

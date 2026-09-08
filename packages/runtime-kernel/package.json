@@ -6,7 +6,8 @@
     "./contract": "./src/contract.ts",
     "./hash": "./src/hash.ts",
     "./selection": "./src/selection.ts",
-    "./ports": "./src/ports.ts"
+    "./ports": "./src/ports.ts",
+    "./status": "./src/status.ts"
   },
   "dependencies": {
     "effect": "catalog:effect-v4-beta"

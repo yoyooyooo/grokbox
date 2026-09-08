@@ -97,6 +97,7 @@ const requiredKernelExports = {
   "./hash": "./src/hash.ts",
   "./selection": "./src/selection.ts",
   "./ports": "./src/ports.ts",
+  "./status": "./src/status.ts",
 };
 const kernelExports = kernelPkg.exports ?? {};
 for (const [key, target] of Object.entries(requiredKernelExports)) {
@@ -115,6 +116,7 @@ const KERNEL_SUBPATH = {
   "@grokbox/runtime-kernel/hash": "packages/runtime-kernel/src/hash.ts",
   "@grokbox/runtime-kernel/selection": "packages/runtime-kernel/src/selection.ts",
   "@grokbox/runtime-kernel/ports": "packages/runtime-kernel/src/ports.ts",
+  "@grokbox/runtime-kernel/status": "packages/runtime-kernel/src/status.ts",
 };
 
 function layerOf(path) {

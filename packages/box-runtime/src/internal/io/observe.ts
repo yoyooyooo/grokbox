@@ -10,6 +10,7 @@ import { canonicalOwnershipAgrees } from "../process/identity-op.ts";
 import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "../process/linux.node.ts";
+import { projectRuntimeStatus, type ObservationGap, type RuntimeStatusFacets, type StatusEvidence } from "@grokbox/runtime-kernel/status";
 import { parseDesiredFile, parseModelsFile, routeHasNonStubAssignment, routeModelAdmitted, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { boundedText, count, isRecord, observeJson, type Observation, type ObservationState } from "./observation.node.ts";
 import { parseReviewedProfile } from "../process/profile.node.ts";
@@ -24,7 +25,7 @@ export type HostReason = null | "unmanaged_preload" | "stale_attestation" | "dup
   "bad_parentage" | "invalid_attestation" | "source_unavailable" | "observation_unavailable" | "gateway_mismatch" | "gateway_unknown";
 type EvidenceState = ObservationState | "partial" | "not_observed" | "provided";
 
-export type RuntimeStatus = {
+type LiveStatusDraft = {
   installation: { durableRoot: string; cliInstallRootUnused: true };
   activation: {
     desired: DesiredFile["mode"] | null;
@@ -80,13 +81,151 @@ const GROKBOX_TOUCH_ENV = ["GROKBOX_PRELOAD_MODE", "GROKBOX_OPERATION_ID", "GROK
 const bad = (state: EvidenceState) => state === "invalid" || state === "unavailable";
 const safeToken = (value: unknown): string | null => boundedText(value) && /^[a-zA-Z0-9_:.-]+$/.test(value) ? value : null;
 
-function assignmentState(models: ModelsFile | null): RuntimeStatus["models"]["assignmentState"] {
+function assignmentState(models: ModelsFile | null): LiveStatusDraft["models"]["assignmentState"] {
   if (!models) return "unknown";
   return [models.assignments.main, ...Object.values(models.assignments.agents)].filter((id) => id !== null)
     .every((id) => id === STUB_ECHO_MODEL_ID || Object.hasOwn(models.models, id)) ? "valid" : "invalid";
 }
 
-export function projectStatus(input: { root: string; desired: DesiredFile | null; models: ModelsFile | null }): RuntimeStatus {
+export type RuntimeStatus = RuntimeStatusFacets;
+export type StatusPortCounts = {
+  write: number;
+  signal: number;
+  credential: number;
+  provider: number;
+  compaction: number;
+};
+
+export function createStatusPortCounts(): StatusPortCounts {
+  return { write: 0, signal: 0, credential: 0, provider: 0, compaction: 0 };
+}
+
+function observationGap(state: EvidenceState): ObservationGap {
+  if (state === "present" || state === "provided") return null;
+  if (state === "not_observed") return "missing";
+  if (state === "missing" || state === "invalid" || state === "unavailable" || state === "partial") return state;
+  return "unavailable";
+}
+
+function facetsFromDraft(status: LiveStatusDraft, events: { state: EvidenceState; truncated: boolean; events: Array<{ name?: string; invalid?: true } & Record<string, unknown>> }): RuntimeStatusFacets {
+  const hostRow = [...events.events].reverse().find((row) => {
+    const name = row.name;
+    return name === "host_stream_rejected" || name === "host_normalized_terminal" || name === "turn_seam_terminal" || name === "model_step_terminal";
+  });
+  const unsupported = events.events.some((row) => row.invalid === true);
+  let hostDelivery: StatusEvidence["hostDelivery"];
+  if (unsupported) {
+    hostDelivery = { source: "log/events.ndjson", observedAt: null, gap: "unsupported_schema", value: null };
+  } else if (hostRow && hostRow.name === "host_stream_rejected") {
+    hostDelivery = {
+      source: "log/events.ndjson",
+      observedAt: typeof hostRow.at === "string" ? hostRow.at : null,
+      gap: null,
+      value: {
+        kind: "host_rejected",
+        tuple: {
+          hostId: typeof hostRow.hostGenerationId === "string" ? hostRow.hostGenerationId : undefined,
+          agentId: typeof hostRow.agentId === "string" ? hostRow.agentId : undefined,
+          turnId: typeof hostRow.turnId === "string" ? hostRow.turnId : undefined,
+        },
+      },
+    };
+  } else if (hostRow && (hostRow.name === "turn_seam_terminal" || hostRow.name === "host_normalized_terminal")) {
+    hostDelivery = {
+      source: "log/events.ndjson",
+      observedAt: typeof hostRow.at === "string" ? hostRow.at : null,
+      gap: null,
+      value: {
+        kind: "host_terminal",
+        tuple: {
+          agentId: typeof hostRow.agentId === "string" ? hostRow.agentId : undefined,
+          turnId: typeof hostRow.turnId === "string" ? hostRow.turnId : undefined,
+          attempt: typeof hostRow.invocationId === "string" ? hostRow.invocationId : undefined,
+        },
+      },
+    };
+  } else if (hostRow && hostRow.name === "model_step_terminal") {
+    hostDelivery = {
+      source: "log/events.ndjson",
+      observedAt: typeof hostRow.at === "string" ? hostRow.at : null,
+      gap: null,
+      value: {
+        kind: "model_terminal",
+        tuple: {
+          hostId: typeof hostRow.hostGenerationId === "string" ? hostRow.hostGenerationId : undefined,
+          agentId: typeof hostRow.agentId === "string" ? hostRow.agentId : undefined,
+          turnId: typeof hostRow.turnId === "string" ? hostRow.turnId : undefined,
+          attempt: typeof hostRow.invocationId === "string" ? hostRow.invocationId : undefined,
+        },
+      },
+    };
+  } else {
+    hostDelivery = {
+      source: "log/events.ndjson",
+      observedAt: null,
+      gap: events.state === "present" || events.state === "provided" ? (events.truncated ? "truncated" : "missing") : observationGap(events.state),
+      value: null,
+    };
+  }
+  const evidence: StatusEvidence = {
+    now: new Date().toISOString(),
+    durableRoot: status.installation.durableRoot,
+    desired: {
+      source: "state/desired.json",
+      observedAt: null,
+      gap: observationGap(status.evidence.desired),
+      value: status.activation.desired,
+    },
+    attestation: {
+      source: "attestation.json",
+      observedAt: null,
+      gap: observationGap(status.evidence.attestation),
+      value: status.coverage === "attested" && (status.activation.actual === "identity" || status.activation.actual === "route")
+        ? { coverage: "attested", mode: status.activation.actual }
+        : null,
+    },
+    coordinator: {
+      source: "state/coordinator.json",
+      observedAt: null,
+      gap: observationGap(status.coordinator.state),
+      value: status.circuit === "open" || status.circuit === "closed"
+        ? { circuit: status.circuit, circuitReason: status.coordinator.circuitReason }
+        : null,
+    },
+    operationJournal: {
+      source: "ops/adopt.json",
+      observedAt: null,
+      gap: observationGap(status.operation.state),
+      value: status.operation.pending === null && status.operation.state !== "present" && status.operation.state !== "provided" && status.operation.state !== "missing"
+        ? null
+        : { pending: status.operation.pending === true, phase: status.operation.phase },
+    },
+    modeld: {
+      source: "modeld.sock",
+      observedAt: null,
+      gap: status.modeld.state === "unknown" ? "missing" : null,
+      value: { required: status.modeld.required, ready: status.modeld.state === "running" },
+    },
+    controllerLiveness: { source: "controller", observedAt: null, gap: "missing", value: null },
+    bridgeHost: {
+      source: "processes",
+      observedAt: null,
+      gap: observationGap(status.evidence.processes),
+      value: {
+        actual: status.activation.actual,
+        origin: status.host.origin,
+        coverage: status.coverage,
+        reason: status.host.reason,
+      },
+    },
+    hostDelivery,
+    eventsTruncated: events.truncated,
+    eventsUnsupported: unsupported,
+  };
+  return projectRuntimeStatus(evidence);
+}
+
+export function projectStatus(input: { root: string; desired: DesiredFile | null; models: ModelsFile | null }): LiveStatusDraft {
   const mode = input.desired?.mode ?? null;
   return {
     installation: { durableRoot: input.root, cliInstallRootUnused: true },
@@ -106,7 +245,7 @@ export function projectStatus(input: { root: string; desired: DesiredFile | null
   };
 }
 
-export async function projectLiveStatus(input: { root: string; desired?: DesiredFile; models?: ModelsFile } & LiveStatusPorts): Promise<RuntimeStatus> {
+export async function observeLiveDraft(input: { root: string; desired?: DesiredFile; models?: ModelsFile } & LiveStatusPorts): Promise<LiveStatusDraft> {
   const desired = input.desired ? { state: "present" as const, value: input.desired } : await observeJson(desiredPath(input.root), parseDesiredFile);
   const models = input.models ? { state: "present" as const, value: input.models } : await observeJson(modelsPath(input.root), parseModelsFile);
   const effectiveDesired = desired.state === "present" ? desired.value : desired.state === "missing" ? parseDesiredFile(undefined) : null;
@@ -191,7 +330,7 @@ export async function projectLiveStatus(input: { root: string; desired?: Desired
     const direct = findUniqueOfficialChain(snapshot, classify);
     const boundariesUntouched = identities.filter((ident) => ["wrapper", "supervisor"].includes(classify(ident) ?? ""))
       .every((ident) => !GROKBOX_TOUCH_ENV.some((key) => envHas(ident.pid, key)));
-    let topology: RuntimeStatus["host"]["topology"] = "invalid";
+    let topology: LiveStatusDraft["host"]["topology"] = "invalid";
     let topologyReason: HostReason = direct.ok ? "bad_parentage" : direct.code === "bad-parentage" ? "bad_parentage" : direct.code === "missing-role" ? "missing_role" : "duplicate_role";
     if (singleOfficialChain(census) && boundariesUntouched) {
       if (direct.ok && att?.launchMode !== "transient-adopt") topology = "direct";
@@ -261,6 +400,12 @@ export async function projectLiveStatus(input: { root: string; desired?: Desired
     status.coverage = "none";
   }
   return status;
+}
+
+export async function projectLiveStatus(input: { root: string; desired?: DesiredFile; models?: ModelsFile } & LiveStatusPorts): Promise<RuntimeStatus> {
+  const draft = await observeLiveDraft(input);
+  const events = await observeEvents(input.root);
+  return facetsFromDraft(draft, events);
 }
 
 /** Compatibility snapshot list; the CLI uses observeEvents for missing/bad-file evidence too. */

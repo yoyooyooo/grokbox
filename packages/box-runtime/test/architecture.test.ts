@@ -40,6 +40,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "./hash": "./src/hash.ts",
       "./selection": "./src/selection.ts",
       "./ports": "./src/ports.ts",
+      "./status": "./src/status.ts",
     },
   })}\n`);
   if (!omitSource) {
@@ -49,6 +50,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "packages/runtime-kernel/src/contract.ts",
       "packages/runtime-kernel/src/hash.ts",
       "packages/runtime-kernel/src/selection.ts",
+      "packages/runtime-kernel/src/status.ts",
       "packages/cli/src/index.ts",
     ]) await put(root, path, "export {};\n");
     await put(root, "packages/runtime-kernel/src/ports.ts", "export const ConfigurationRead = 1;\n");

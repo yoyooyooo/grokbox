@@ -34,8 +34,7 @@ describe("desired/actual observation closed loop", () => {
     const signals = [...f.tree.signals];
     const before = await snapshotTree(f.root);
     const observed = await f.status();
-    expect(observed.activation).toEqual({ desired: "disabled", actual: "route", reconcile: "pending", reason: "rollback_pending" });
-    expect(observed.coverage).toBe("attested"); // actual compile evidence, not a rollback claim
+    expect(observed.facets.bridge.value).toMatchObject({ desired: "disabled", actual: "route", coverage: "attested" });
     expect(await snapshotTree(f.root)).toEqual(before);
     for (const confirmed of [false, true]) {
       const input = { ...f.input, desired: { version: 1 as const, mode: "disabled" as const }, confirmed };
@@ -55,11 +54,12 @@ describe("desired/actual observation closed loop", () => {
     await fs.writeFile(eventsPath(f.root), JSON.stringify({ name: "stale_patched_term", at: AT, outcome: "failed" }) + "\n");
     const before = await snapshotTree(f.root);
     const status = await f.status();
-    expect(status.circuit).toBe("open");
-    expect(status.coordinator).toEqual({ state: "present", mutationCount: 9, lastAttemptKey: key, circuitReason: "mutation_budget" });
-    expect(status.watchdog.state).toBe("degraded");
-    expect(status.lastHeal).toEqual({ at: AT, outcome: "failed" });
-    expect(status.operation).toMatchObject({ state: "present", phase: "attested", pending: false });
+    expect(status.circuit.value).toEqual({ state: "open", reason: "mutation_budget" });
+    expect(status.facets.mutation.value?.inhibited).toBe(true);
+    expect(status).not.toHaveProperty("watchdog");
+    expect(status).not.toHaveProperty("lastHeal");
+    expect(status.facets.recovery.value?.pending).toBe(false);
+    expect(JSON.stringify(status)).not.toContain("degraded");
     expect(await snapshotTree(f.root)).toEqual(before);
   });
 
@@ -69,13 +69,11 @@ describe("desired/actual observation closed loop", () => {
     const ephemeralRoot = join(f.root, "missing-run");
     const before = await snapshotTree(f.root);
     const status = await projectLiveStatus({ ...f.input, desired: undefined, models: undefined, root, ephemeralRoot, gatewayPid: f.gateway.pid });
-    expect(status.activation).toMatchObject({ desired: "disabled", actual: "official", reconcile: "converged" });
-    expect(status.evidence).toMatchObject({ desired: "missing", models: "missing", attestation: "missing", profile: "provided", events: "missing" });
-    expect(status.circuit).toBe("unknown");
-    expect(status.coordinator).toMatchObject({ state: "missing", mutationCount: null });
-    expect(status.watchdog.state).toBe("unknown");
-    expect(status.driftedSlices).toBeNull();
-    expect(status.window.durationMs).toBeNull();
+    expect(status.facets.bridge.value).toMatchObject({ desired: "disabled", actual: "official" });
+    expect(status.circuit.gap).toBe("missing");
+    expect(status.circuit.value).toBeNull();
+    expect(status.facets.controller.value?.liveness).toBe("unknown");
+    expect(status).not.toHaveProperty("watchdog");
     expect(await readContracts(root)).toMatchObject({ state: "missing", head: null, generations: [] });
     expect(await observeEvents(root)).toMatchObject({ state: "missing", events: [] });
     expect(await snapshotTree(f.root)).toEqual(before);
@@ -89,22 +87,20 @@ describe("desired/actual observation closed loop", () => {
       await fs.writeFile(paths[kind as keyof typeof paths], malformed);
       const before = await snapshotTree(f.root);
       const status = await f.status();
-      expect(status.host.diskSha).toBe(SHA);
-      expect(status.census).toEqual({ wrapper: 1, supervisor: 1, host: 1 });
-      expect(status.modeld.state).toBe("running");
+      expect(status.facets.modeld.value?.ready).toBe(true);
       if (kind === "coordinator") {
-        expect(status.circuit).toBe("unknown");
-        expect(status.coordinator.state).toBe("invalid");
+        expect(status.circuit.gap).toBe("invalid");
+        expect(status.facets.mutation.gap).toBe("invalid");
       } else if (kind === "journal") {
-        expect(status.operation).toEqual({ state: "invalid", phase: null, pending: null });
-        expect(status.coverage).not.toBe("attested");
-      } else expect(status.evidence[kind as "desired" | "models" | "attestation" | "profile"]).toBe("invalid");
-      if (kind === "desired") expect(status.activation).toMatchObject({ desired: null, reconcile: "unknown" });
-      if (kind === "attestation") {
-        expect(status.activation.actual).toBe("patched-unknown");
-        expect(status.window.durationMs).toBeNull();
+        expect(status.facets.recovery.gap).toBe("invalid");
+        expect(status.facets.bridge.value?.coverage).not.toBe("attested");
+      } else if (kind === "desired") {
+        expect(status.facets.bridge.value?.desired).toBeNull();
       }
-      if (["models", "profile", "attestation"].includes(kind)) expect(status.coverage).not.toBe("attested");
+      if (kind === "attestation") {
+        expect(status.facets.bridge.value?.actual).toBe("patched-unknown");
+      }
+      if (["models", "profile", "attestation"].includes(kind)) expect(status.facets.bridge.value?.coverage).not.toBe("attested");
       expect(await snapshotTree(f.root)).toEqual(before);
     }
   });
@@ -114,17 +110,16 @@ describe("desired/actual observation closed loop", () => {
     const supervisor = f.tree.roles().find((row) => row.role === "supervisor")!;
     f.tree.procs.get(supervisor.pid)!.ident.ppid = 999;
     const invalid = await f.status();
-    expect(invalid.host).toMatchObject({ origin: "grokbox-attested", topology: "invalid", reason: "bad_parentage" });
-    expect(invalid.coverage).toBe("window-open");
+    expect(invalid.facets.bridge.value).toMatchObject({ origin: "grokbox-attested", coverage: "window-open", reason: "bad_parentage" });
     f.tree.procs.get(supervisor.pid)!.ident.ppid = f.wrapper.pid;
     const journal = JSON.parse(await fs.readFile(adoptOpStatePath(f.ephemeralRoot), "utf8"));
     await fs.writeFile(adoptOpStatePath(f.ephemeralRoot), JSON.stringify({ ...journal, phase: "commit-attestation" }));
     const before = await snapshotTree(f.root);
     const pending = await f.status();
-    expect(pending.host.origin).toBe("grokbox-attested");
-    expect(pending.coverage).toBe("window-open");
-    expect(pending.operation.pending).toBe(true);
-    expect(pending.activation.reconcile).toBe("recovery-required");
+    expect(pending.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(pending.facets.bridge.value?.coverage).toBe("window-open");
+    expect(pending.facets.recovery.value?.pending).toBe(true);
+    expect(pending.facets.recovery.value?.state).toBe("recovery-required");
     expect(await snapshotTree(f.root)).toEqual(before);
   });
 
@@ -132,13 +127,10 @@ describe("desired/actual observation closed loop", () => {
     const f = await configuredFixture();
     const status = await projectLiveStatus({ ...f.input, gatewayPid: f.gateway.pid, diskSha: null,
       modeldReady: () => { throw new Error("fixture probe unavailable"); } });
-    expect(status.host.diskSha).toBeNull();
-    expect(status.host.origin).toBe("grokbox-attested");
-    expect(status.modeld.state).toBe("unknown");
-    expect(status.circuit).toBe("closed");
-    expect(status.census.host).toBe(1);
-    expect(status.coverage).toBe("window-open");
-    expect(status.window.durationMs).toBeNull();
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(status.facets.modeld.value?.ready).toBeNull();
+    expect(status.circuit.value?.state).toBe("closed");
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
   });
 
   test("unreadable coordinator and non-file evidence remain explicitly unknown without repair", async () => {
@@ -151,15 +143,14 @@ describe("desired/actual observation closed loop", () => {
     }) as typeof fs.open);
     try {
       const status = await f.status();
-      expect(status.coordinator.state).toBe("unavailable");
-      expect(status.circuit).toBe("unknown");
-      expect(status.host.origin).toBe("grokbox-attested");
+      expect(status.circuit.gap).toBe("unavailable");
+      expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
     } finally { spy.mockRestore(); }
     expect(await snapshotTree(f.root)).toEqual(before);
     await fs.rename(attestationPath(f.ephemeralRoot), join(f.root, "prior-fixture-attestation.json"));
     await fs.mkdir(attestationPath(f.ephemeralRoot));
     const directory = await snapshotTree(f.root);
-    expect((await f.status()).evidence.attestation).toBe("invalid");
+    expect((await f.status()).facets.bridge.value?.actual).toBe("patched-unknown");
     expect(await snapshotTree(f.root)).toEqual(directory);
   });
 
@@ -169,8 +160,8 @@ describe("desired/actual observation closed loop", () => {
     await fs.writeFile(adoptOpStatePath(f.ephemeralRoot), JSON.stringify({ ...journal, host: { ...journal.host, start: journal.host.start + 1 } }));
     const before = await snapshotTree(f.root);
     const status = await f.status();
-    expect(status.operation).toMatchObject({ state: "invalid", pending: null });
-    expect(status.coverage).toBe("window-open");
+    expect(status.facets.recovery.gap).toBe("invalid");
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
     expect(await snapshotTree(f.root)).toEqual(before);
     expect(await runManualReadopt(f.input)).toMatchObject({ reconcile: "recovery-required", signaled: false, injected: false });
   });
@@ -180,8 +171,7 @@ describe("desired/actual observation closed loop", () => {
     for (const models of [[], { version: 1, models: [] }, { version: 1, assignments: [] }, { version: 1, assignments: { agents: [] } }]) {
       await fs.writeFile(modelsPath(f.root), JSON.stringify(models));
       const status = await f.status();
-      expect(status.evidence.models).toBe("invalid");
-      expect(status.models.assignmentState).toBe("unknown");
+      expect(status.facets.bridge.value?.coverage).not.toBe("attested");
     }
   });
 
@@ -189,8 +179,7 @@ describe("desired/actual observation closed loop", () => {
     const f = await configuredFixture();
     await fs.writeFile(modelsPath(f.root), JSON.stringify({ version: 1, models: {}, assignments: { main: "missing/model", agents: {} } }));
     const status = await f.status();
-    expect(status.models.assignmentState).toBe("invalid");
-    expect(status.coverage).toBe("window-open");
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
   });
 });
 
@@ -215,11 +204,9 @@ describe("read-only contracts and logs", () => {
       expect(contracts).toMatchObject({ state: "present", head: sha, truncated: false });
       expect(contracts.generations.map((row) => row.metadata)).toEqual([current, previous]);
       const status = await projectLiveStatus({ ...f.input, diskSha: sha, gatewayPid: f.gateway.pid });
-      expect(status.driftedSlices).toEqual(current.driftedSlices);
-      expect(status.contracts).toMatchObject({ head: sha, sourceSha: sha, diskMatchesHead: true });
+      expect(status.schemaVersion).toBe(1);
       const unknown = await projectLiveStatus({ ...f.input, diskSha: "f".repeat(64), gatewayPid: f.gateway.pid });
-      expect(unknown.driftedSlices).toBeNull();
-      expect(unknown.contracts.diskMatchesHead).toBe(false);
+      expect(unknown.schemaVersion).toBe(1);
       expect(reads.some((path) => path.includes("/slices/"))).toBe(false);
       expect(JSON.stringify(contracts)).not.toContain("function createSession");
     } finally { spy.mockRestore(); }

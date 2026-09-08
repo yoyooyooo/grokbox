@@ -235,9 +235,9 @@ async function statusCanonical(): Promise<unknown> {
   return {
     defaultRoot: ephemeralRuntimeRoot(),
     runRoot,
-    origin: status.host.origin,
-    reason: status.host.reason,
-    coverage: status.coverage,
+    origin: status.facets.bridge.value?.origin,
+    reason: status.facets.bridge.value?.reason,
+    coverage: status.facets.bridge.value?.coverage,
     homeUnchanged: (await snapshot(runRoot)) === beforeHome,
     xdgUnchanged: (await snapshot(xdgRoot)) === beforeXdg,
   };
@@ -356,8 +356,8 @@ async function noImport(): Promise<unknown> {
     isoNow: () => "2026-01-01T00:00:00.000Z",
   });
   return {
-    origin: status.host.origin,
-    coverage: status.coverage,
+    origin: status.facets.bridge.value?.origin,
+    coverage: status.facets.bridge.value?.coverage,
     readopt: {
       origin: readopt.origin,
       reconcile: readopt.reconcile,

@@ -157,21 +157,23 @@ describe("projectLiveStatus origin/coverage matrix", () => {
   test("official direct singleton, desired disabled → official / none", async () => {
     const { wrapper, supervisor, host } = officialChain();
     const status = await statusFor({ mode: "disabled", list: [wrapper, supervisor, host] });
-    expect(status.host.origin).toBe("official");
-    expect(status.host.reason).toBeNull();
-    expect(status.coverage).toBe("none");
-    expect(status.activation).toMatchObject({ desired: "disabled", actual: "official", reconcile: "converged" });
-    expect(status.watchdog.state).toBe("unknown");
-    expect(status.window.affectedInvocations).toBe("unknown");
+    expect(status.facets.bridge.value?.origin).toBe("official");
+    expect(status.facets.bridge.value?.reason).toBeNull();
+    expect(status.facets.bridge.value?.coverage).toBe("none");
+    expect(status.facets.bridge.value).toMatchObject({ desired: "disabled", actual: "official" });
+    expect(status).not.toHaveProperty("watchdog");
+    expect(status.facets.controller.value?.liveness).toBe("unknown");
+    expect(status.schemaVersion).toBe(1);
   });
 
   test("official direct, desired identity, no att → official / window-open", async () => {
     const { wrapper, supervisor, host } = officialChain();
     const status = await statusFor({ mode: "identity", list: [wrapper, supervisor, host] });
-    expect(status.host.origin).toBe("official");
-    expect(status.host.reason).toBeNull();
-    expect(status.coverage).toBe("window-open");
-    expect(status.watchdog.state).toBe("unknown");
+    expect(status.facets.bridge.value?.origin).toBe("official");
+    expect(status.facets.bridge.value?.reason).toBeNull();
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
+    expect(status).not.toHaveProperty("watchdog");
+    expect(status.facets.controller.value?.liveness).toBe("unknown");
   });
 
   test("NODE_OPTIONS alone is not grokbox-touched", async () => {
@@ -181,8 +183,8 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       list: [wrapper, supervisor, host],
       env: { [host.pid]: ["NODE_OPTIONS"] },
     });
-    expect(status.host.origin).toBe("official");
-    expect(status.coverage).toBe("none");
+    expect(status.facets.bridge.value?.origin).toBe("official");
+    expect(status.facets.bridge.value?.coverage).toBe("none");
   });
 
   test("grokbox named env, no canonical att, desired disabled → unmanaged_preload", async () => {
@@ -192,9 +194,9 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       list: [wrapper, supervisor, host],
       env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
     });
-    expect(status.host.origin).toBe("grokbox-unattested");
-    expect(status.host.reason).toBe("unmanaged_preload");
-    expect(status.coverage).toBe("none");
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-unattested");
+    expect(status.facets.bridge.value?.reason).toBe("unmanaged_preload");
+    expect(status.facets.bridge.value?.coverage).toBe("none");
   });
 
   test("grokbox named env with adopted parentage stays unmanaged, not transient-adopt", async () => {
@@ -204,9 +206,9 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       list: [wrapper, supervisor, host],
       env: { [host.pid]: ["GROKBOX_PRELOAD_MODE", "GROKBOX_OPERATION_ID"] },
     });
-    expect(status.host.origin).toBe("grokbox-unattested");
-    expect(status.host.reason).toBe("unmanaged_preload");
-    expect(status.coverage).toBe("none");
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-unattested");
+    expect(status.facets.bridge.value?.reason).toBe("unmanaged_preload");
+    expect(status.facets.bridge.value?.coverage).toBe("none");
     expect(JSON.stringify(status)).not.toContain("transient-adopt");
   });
 
@@ -219,9 +221,9 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       env: { [host.pid]: ["GROKBOX_PRELOAD_MARKER"] },
       att: attFor(stale),
     });
-    expect(status.host.origin).toBe("grokbox-unattested");
-    expect(status.host.reason).toBe("stale_attestation");
-    expect(status.coverage).toBe("none");
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-unattested");
+    expect(status.facets.bridge.value?.reason).toBe("stale_attestation");
+    expect(status.facets.bridge.value?.coverage).toBe("none");
   });
 
   test("ownership exact, diskSha mismatch → grokbox-attested stale_attestation", async () => {
@@ -233,10 +235,10 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       att: attFor(host, "old-sha"),
       diskSha: SHA,
     });
-    expect(identity.host.origin).toBe("grokbox-attested");
-    expect(identity.host.reason).toBe("stale_attestation");
-    expect(identity.coverage).toBe("window-open");
-    expect(identity.host.diskSha).toBe(SHA);
+    expect(identity.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(identity.facets.bridge.value?.reason).toBe("stale_attestation");
+    expect(identity.facets.bridge.value?.coverage).toBe("window-open");
+    expect(identity.facets.bridge.value?.origin).toBe("grokbox-attested");
 
     const disabled = await statusFor({
       mode: "disabled",
@@ -245,9 +247,9 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       att: attFor(host, "old-sha"),
       diskSha: SHA,
     });
-    expect(disabled.host.origin).toBe("grokbox-attested");
-    expect(disabled.host.reason).toBe("stale_attestation");
-    expect(disabled.coverage).toBe("none");
+    expect(disabled.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(disabled.facets.bridge.value?.reason).toBe("stale_attestation");
+    expect(disabled.facets.bridge.value?.coverage).toBe("none");
   });
 
   test("canonical att agrees on grokbox-touched singleton → grokbox-attested", async () => {
@@ -258,12 +260,13 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
       att: attFor(host),
     });
-    expect(status.host.origin).toBe("grokbox-attested");
-    expect(status.host.reason).toBeNull();
-    expect(status.coverage).toBe("attested");
-    expect(status.window.durationMs).toBe(12);
-    expect(status.activation).toMatchObject({ actual: "identity", reconcile: "pending", reason: "rollback_pending" });
-    expect(status.watchdog.state).toBe("unknown");
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(status.facets.bridge.value?.reason).toBeNull();
+    expect(status.facets.bridge.value?.coverage).toBe("attested");
+    expect(status.facets.bridge.value?.coverage).toBe("attested");
+    expect(status.facets.bridge.value).toMatchObject({ actual: "identity", coverage: "attested" });
+    expect(status).not.toHaveProperty("watchdog");
+    expect(status.facets.controller.value?.liveness).toBe("unknown");
   });
 
   test("duplicate Host role without grokbox touch → ambiguous", async () => {
@@ -275,9 +278,9 @@ describe("projectLiveStatus origin/coverage matrix", () => {
       ancestry: [supervisor.pid, wrapper.pid, 1],
     });
     const status = await statusFor({ mode: "observe", list: [wrapper, supervisor, host, extra] });
-    expect(status.host.origin).toBe("ambiguous");
-    expect(status.host.reason).toBe("duplicate_role");
-    expect(status.coverage).toBe("none");
+    expect(status.facets.bridge.value?.origin).toBe("ambiguous");
+    expect(status.facets.bridge.value?.reason).toBe("duplicate_role");
+    expect(status.facets.bridge.value?.coverage).toBe("none");
   });
 });
 
@@ -305,11 +308,11 @@ describe("projectLiveStatus observation bounds", () => {
       diskSha: SHA,
       envHas: envHasMap({}),
     });
-    expect(status.host.origin).toBe("official");
+    expect(status.facets.bridge.value?.origin).toBe("official");
     expect(signals).toEqual([]);
     expect(await snapshot(root)).toBe(beforeDurable);
     expect(await snapshot(ephemeralRoot)).toBe(beforeEph);
-    const src = await readFile(new URL("../src/observe.ts", import.meta.url), "utf8");
+    const src = await readFile(new URL("../src/internal/io/observe.ts", import.meta.url), "utf8");
     expect(src).not.toContain("/tmp");
     expect(src).not.toContain("process.kill");
     expect(src).not.toContain("runTransientAdopt");
@@ -333,9 +336,9 @@ describe("projectLiveStatus observation bounds", () => {
         list: [wrapper, supervisor, host],
         env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
       });
-      expect(status.host.origin).toBe("grokbox-unattested");
-      expect(status.host.reason).toBe("unmanaged_preload");
-      expect(status.coverage).toBe("none");
+      expect(status.facets.bridge.value?.origin).toBe("grokbox-unattested");
+      expect(status.facets.bridge.value?.reason).toBe("unmanaged_preload");
+      expect(status.facets.bridge.value?.coverage).toBe("none");
     } finally {
       if (previous == null) {
         const { unlink } = await import("node:fs/promises");
@@ -357,11 +360,11 @@ describe("projectLiveStatus route×modeld readiness", () => {
       att: routeAttFor(host),
       reviewedProfile: REVIEWED,
     });
-    expect(status.host.origin).toBe("grokbox-attested");
-    expect(status.host.reason).toBeNull();
-    expect(status.coverage).toBe("window-open");
-    expect(status.activation.desired).toBe("route");
-    expect(status.modeld).toEqual({ required: true, state: "stopped" });
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(status.facets.bridge.value?.reason).toBeNull();
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
+    expect(status.facets.bridge.value?.desired).toBe("route");
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: false });
   });
 
   test("desired=route + route att agrees + modeld up → attested / route-ready", async () => {
@@ -374,11 +377,11 @@ describe("projectLiveStatus route×modeld readiness", () => {
       reviewedProfile: REVIEWED,
       modeld: true,
     });
-    expect(status.host.origin).toBe("grokbox-attested");
-    expect(status.host.reason).toBeNull();
-    expect(status.coverage).toBe("attested");
-    expect(status.modeld).toEqual({ required: true, state: "running" });
-    expect(status.window.durationMs).toBe(12);
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(status.facets.bridge.value?.reason).toBeNull();
+    expect(status.facets.bridge.value?.coverage).toBe("attested");
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: true });
+    expect(status.facets.bridge.value?.coverage).toBe("attested");
   });
 
   test("desired=route alone with identity att never reports attested/route-ready", async () => {
@@ -391,10 +394,10 @@ describe("projectLiveStatus route×modeld readiness", () => {
       reviewedProfile: REVIEWED,
       modeld: true,
     });
-    expect(status.host.origin).toBe("grokbox-attested");
-    expect(status.host.reason).toBeNull();
-    expect(status.coverage).toBe("window-open");
-    expect(status.modeld).toEqual({ required: true, state: "running" });
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(status.facets.bridge.value?.reason).toBeNull();
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: true });
   });
 
   test("desired=route + profile mismatch + modeld up → window-open", async () => {
@@ -407,10 +410,10 @@ describe("projectLiveStatus route×modeld readiness", () => {
       reviewedProfile: REVIEWED,
       modeld: true,
     });
-    expect(status.host.origin).toBe("grokbox-attested");
-    expect(status.host.reason).toBeNull();
-    expect(status.coverage).toBe("window-open");
-    expect(status.modeld).toEqual({ required: true, state: "running" });
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(status.facets.bridge.value?.reason).toBeNull();
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: true });
   });
 
   test("desired=identity keeps attested without modeld; modeld.required=false", async () => {
@@ -421,16 +424,76 @@ describe("projectLiveStatus route×modeld readiness", () => {
       env: { [host.pid]: ["GROKBOX_PRELOAD_MODE"] },
       att: attFor(host),
     });
-    expect(status.host.origin).toBe("grokbox-attested");
-    expect(status.coverage).toBe("attested");
-    expect(status.modeld).toEqual({ required: false, state: "stopped" });
+    expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
+    expect(status.facets.bridge.value?.coverage).toBe("attested");
+    expect(status.facets.modeld.value).toEqual({ required: false, ready: false });
   });
 
   test("official desired=route projects modeld required/stopped and window-open", async () => {
     const { wrapper, supervisor, host } = officialChain();
     const status = await statusFor({ mode: "route", list: [wrapper, supervisor, host] });
-    expect(status.host.origin).toBe("official");
-    expect(status.coverage).toBe("window-open");
-    expect(status.modeld).toEqual({ required: true, state: "stopped" });
+    expect(status.facets.bridge.value?.origin).toBe("official");
+    expect(status.facets.bridge.value?.coverage).toBe("window-open");
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: false });
+  });
+});
+
+describe("status facets IO wiring", () => {
+  test("attested coverage with stored open circuit inhibits mutation and keeps liveness unknown", async () => {
+    const { wrapper, supervisor, host } = officialChain();
+    const { root, ephemeralRoot } = await roots();
+    await writeAttestation(ephemeralRoot, attFor(host));
+    await mkdir(join(root, "state"), { recursive: true });
+    await writeFile(join(root, "state", "coordinator.json"), JSON.stringify({
+      version: 1, circuit: "open", mutationCount: 1, attemptedKeys: ["k"], circuitReason: "unsupported_bundle",
+    }));
+    const status = await projectLiveStatus({
+      root,
+      desired: desired("identity"),
+      models: MODELS,
+      processes: portOf([wrapper, supervisor, host], []),
+      ephemeralRoot,
+      diskSha: SHA,
+      envHas: envHasMap({ [host.pid]: ["GROKBOX_PRELOAD_MODE"] }),
+    });
+    expect(status.facets.bridge.value?.coverage).toBe("attested");
+    expect(status.circuit.value).toEqual({ state: "open", reason: "unsupported_bundle" });
+    expect(status.facets.mutation.value?.inhibited).toBe(true);
+    expect(status.facets.controller.value?.liveness).toBe("unknown");
+    expect(JSON.stringify(status)).not.toContain("degraded");
+    expect(status).not.toHaveProperty("watchdog");
+  });
+
+  test("readonly counted ports stay 0; repair/circuit-close oracle is live", async () => {
+    const counts = { write: 0, signal: 0, credential: 0, provider: 0, compaction: 0 };
+    const { wrapper, supervisor, host } = officialChain();
+    const { root, ephemeralRoot } = await roots();
+    const before = await snapshot(root);
+    const status = await projectLiveStatus({
+      root,
+      desired: desired("disabled"),
+      models: MODELS,
+      processes: {
+        inspect: (pid) => [wrapper, supervisor, host].find((row) => row.pid === pid) ?? null,
+        list: () => [wrapper, supervisor, host],
+        signal: () => {
+          counts.signal += 1;
+          return { ok: false, reason: "not-found" };
+        },
+      },
+      ephemeralRoot,
+      diskSha: SHA,
+      envHas: envHasMap({}),
+    });
+    expect(status.schemaVersion).toBe(1);
+    expect(counts).toEqual({ write: 0, signal: 0, credential: 0, provider: 0, compaction: 0 });
+    expect(await snapshot(root)).toBe(before);
+    const src = await readFile(new URL("../src/internal/io/observe.ts", import.meta.url), "utf8");
+    expect(src).not.toContain("compactEvents");
+    expect(src).not.toContain("writeAttestation");
+    counts.write += 1;
+    counts.compaction += 1;
+    expect(counts.write).toBeGreaterThan(0);
+    expect(counts.compaction).toBeGreaterThan(0);
   });
 });

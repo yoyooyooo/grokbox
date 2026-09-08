@@ -3,26 +3,19 @@ import { parseRuntimeStartMode, prepareRuntimeStart, watchdogRequiredForStart } 
 import type { RuntimeStatus } from "../src/internal/io/observe.ts";
 
 function fakeStatus(): RuntimeStatus {
+  const observed = { source: "test", observedAt: null, gap: "missing" as const, value: null };
   return {
-    installation: { durableRoot: "/tmp/fake", cliInstallRootUnused: true },
-    activation: { desired: "observe", actual: "unknown", reconcile: "unknown", reason: null },
-    host: { diskSha: null, origin: "official", reason: null, topology: "unknown" },
-    coverage: "none",
-    census: { wrapper: null, supervisor: null, host: null },
-    circuit: "unknown",
-    coordinator: { state: "not_observed", mutationCount: null, lastAttemptKey: null, circuitReason: null },
-    operation: { state: "not_observed", phase: null, pending: null },
-    lastHeal: null,
-    driftedSlices: null,
-    contracts: { state: "not_observed", head: null, sourceSha: null, diskMatchesHead: null },
-    bundles: { state: "not_observed", head: null, retained: null, liveRetained: null, lastMatchedSha: null },
-    watchdog: { required: false, state: "unknown" },
-    modeld: { required: false, state: "unknown" },
-    models: { main: null, agents: {}, assignmentState: "unknown" },
-    window: { durationMs: null, affectedInvocations: "unknown" },
-    evidence: {
-      desired: "not_observed", models: "not_observed", source: "not_observed", processes: "not_observed",
-      gateway: "not_observed", attestation: "not_observed", profile: "not_observed", events: "not_observed",
+    schemaVersion: 1,
+    observedAt: "2026-01-01T00:00:00.000Z",
+    installation: { durableRoot: "/tmp/fake" },
+    circuit: observed,
+    facets: {
+      bridge: { ...observed, value: { desired: "observe", actual: "unknown", origin: null, coverage: "unknown", reason: null } },
+      modeld: { ...observed, value: { required: false, ready: null } },
+      controller: { ...observed, value: { liveness: "unknown" } },
+      mutation: { ...observed, value: { inhibited: false, allowed: false, reason: null } },
+      recovery: { ...observed, value: { state: "unknown", pending: null } },
+      hostDelivery: { ...observed, value: { kind: "not_observed", correlated: false, tuple: null } },
     },
   };
 }
