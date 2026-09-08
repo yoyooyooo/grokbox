@@ -18,7 +18,7 @@ Evidence on current adopted Host (do not treat as merge proof):
 - `privacy-mode lookup failed … Unauthenticated`
 - uncovered bots: no Working, no reply
 - App: cannot create bot
-- grok bot still replies (modeld / luna / `SendToUser`)
+- grokbox test0 (then grok bot) still replies (modeld / luna / `SendToUser`)
 
 ## Non-goals
 - Do not rebuild official `createCursorInferencePromptSession`.
@@ -40,7 +40,7 @@ Landing without A/B/C chosen is guessing.
 - Uncovered bot: App shows Working then an official assistant bubble (not luna).
 - Create-bot in App succeeds.
 - Adopted Host no longer loops `Waiting for an inference credential` / privacy `Unauthenticated` as steady state.
-- Grok bot `a0cf5282-…` still luna when listed in `assignments.agents`.
+- grokbox test0 `a0cf5282-…` still luna when listed in `assignments.agents`.
 - No new secret material in repo, CLI argv, or status JSON.
 
 ## Status

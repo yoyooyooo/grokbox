@@ -478,7 +478,7 @@ Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` �
 
 `assignments.agents.<id>` 是 route 下唯一的 managed opt-in（稳定 agent id；CLI `--for` 写入该覆盖）。**没有覆盖的 Bot 回官方 Host session。** `assignments.main` 可选，不是未覆盖 Bot 的回退。`activate --mode route` 允许 agents-only（`main` 可为 null）；已出现的赋值须为 `stub/echo` 或 openai*（http(s) endpoint + `env:`/`file:` `apiKeyRef`）；其它赋值 fail-closed。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 写 `main`，不把其它 Bot 拉进 modeld。route 期间 `models reset`（默认或某一 Bot）拒绝，须先 `activate --mode identity` 或 `deactivate`。
 
-T11 失败分流：createSession 预 dispatch（缺 `models.json`、resolve 失败、缺 agent/TURN、`modeld.sock` 不在、尚无工具副作用）回官方 `originalSession`。Host 已持有 managed session 之后（handshake/admit/provider/normalize，含 mid-tool）只投递可见 managed error，字段含 `agentId`、STEP `invocationId`、`stage=admit|provider|normalize`；**禁止**静默官方 replay。Debug canary 是 grok bot `00000000-0000-4000-8000-000000000114`；其它 Bot 经 T10 官方。
+T11 失败分流：createSession 预 dispatch（缺 `models.json`、resolve 失败、缺 agent/TURN、`modeld.sock` 不在、尚无工具副作用）回官方 `originalSession`。Host 已持有 managed session 之后（handshake/admit/provider/normalize，含 mid-tool）只投递可见 managed error，字段含 `agentId`、STEP `invocationId`、`stage=admit|provider|normalize`；**禁止**静默官方 replay。Debug canary 是 grokbox test0 `00000000-0000-4000-8000-000000000114`；grokbox test1 `00000000-0000-4000-8000-000000000113` 未 opt-in 则官方。其它 Bot 经 T10 官方。
 
 长效 `contracts/` 保存 Host **合同切片**快照（不进 git）：仅在 live source SHA 变化时写入，最多保留 5 个 SHA，默认不存整份 `host-main.cjs`。快照用于报告切片 drift，不自动打补丁、不还原官方 Host。
 

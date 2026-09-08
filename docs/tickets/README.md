@@ -1,5 +1,7 @@
 # box-runtime-v2 remaining tickets (local)
 
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
+
 Herdr-driven backlog. **Not** Multica issues.
 Cite ticket ids in herdr prompts. Update status in this file.
 
@@ -24,5 +26,14 @@ Cite ticket ids in herdr prompts. Update status in this file.
 | T10 | done | Per-Bot official passthrough (selective route) |
 | T11 | done | Pre-dispatch official passthrough + STEP-correlated visible errors |
 | T12 | done | Adopt preserves official Host renewer env (create-bot / other bots) |
+
+## Live canary bots
+
+Stable ids (App names may change). Route is `assignments.agents[id]`; missing key = official (T10).
+
+| App name | id | live route |
+|---|---|---|
+| grokbox test0 | `00000000-0000-4000-8000-000000000114` | opted-in (currently luna) |
+| grokbox test1 | `00000000-0000-4000-8000-000000000113` | unassigned / official until opted in |
 
 Driver: herdr grok main line; true blockers → new session gpt-6-astra max.

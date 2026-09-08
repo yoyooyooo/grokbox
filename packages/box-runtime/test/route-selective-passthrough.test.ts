@@ -12,6 +12,7 @@ import type { HostPromptSession } from "../src/session.ts";
 import { FAKE_BINDING, modeldFixture } from "./modeld-fixture.ts";
 import { startStubModeldServer } from "../src/modeld-ipc.ts";
 
+/** grokbox test0 (stable id). grokbox test1 is unassigned unless opted in. */
 const GROK_BOT = "00000000-0000-4000-8000-000000000114";
 const openaiModel = {
   id: "openai/gpt-4o-mini",

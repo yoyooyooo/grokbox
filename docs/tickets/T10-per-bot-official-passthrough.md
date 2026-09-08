@@ -5,7 +5,7 @@
 ## Goal
 Route Host patch may be installed while **only opted-in bots** use modeld. Everyone else keeps the official Host session.
 
-Canary: grok bot `00000000-0000-4000-8000-000000000114`. grokbox and other bots stay official.
+Canary: grokbox test0 `00000000-0000-4000-8000-000000000114`. grokbox test1 `00000000-0000-4000-8000-000000000113` and other bots stay official until opted in.
 
 ## Rule
 - `assignments.agents[agentId]` set to stub/echo or openai* → modeld (current managed path).
@@ -24,4 +24,4 @@ CLI `--for` takes the stable agent id (no extra name map in this slice).
 **done.** Seam `decideRouteSession`; coordinator no longer requires main; observe routeReady allows null main.
 
 ## Next
-T11 pre-dispatch passthrough + visible STEP errors (done). T3 G1 canary on grok bot only, after T11.
+T11 pre-dispatch passthrough + visible STEP errors (done). T3 G1 canary on grokbox test0 only, after T11.

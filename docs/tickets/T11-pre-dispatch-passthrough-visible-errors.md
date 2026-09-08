@@ -5,7 +5,7 @@
 ## Goal
 Assigned-bot route is availability-first **until** the managed provider has gone out. After dispatch, fail visibly. Never silently replay official.
 
-Debug canary: grok bot `00000000-0000-4000-8000-000000000114`. Other bots stay official via T10.
+Debug canary: grokbox test0 `00000000-0000-4000-8000-000000000114`. grokbox test1 and other bots stay official via T10 until opted in.
 
 ## Policy (operator-confirmed)
 
@@ -43,4 +43,4 @@ VisibleFailure fields: `agentId`, `invocationId`, `stage`. Message appends the s
 
 ## Next
 
-T3 G1 canary on grok bot only, after this contract. Still no silent post-dispatch official.
+T3 G1 canary on grokbox test0 only, after this contract. Still no silent post-dispatch official.

@@ -9,7 +9,7 @@ import { startStubModeldServer } from "../src/modeld-ipc.ts";
 import { consumeHandle } from "./host-consumer.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
-/** T11 debug canary: grok bot. Other bots stay official via T10. */
+/** T11 debug canary: grokbox test0. grokbox test1 and others stay official via T10 until opted in. */
 const GROK_BOT = "00000000-0000-4000-8000-000000000114";
 
 function officialOff(): PromptSession {
