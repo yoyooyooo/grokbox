@@ -24,8 +24,9 @@
 | [T31](T31-runtime-cursor-backend.md) | open | 3 | Cursor SDK 独立 qualification 与 adapter |
 | [T32](T32-runtime-confirmed-compact.md) | open | 4 | confirmed overflow/Host compact/一次恢复/v4 |
 | [T33](T33-runtime-diagnostics.md) | open | 4 | source-scoped 深层诊断与 delivery gaps |
+| [T34](T34-astra-milestone-residue.md) | open | process | Astra 里程碑终审残留积累；不交 grok 主链；owner 最终审视 |
 
-默认主链 **T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28**。T22 不 gate 保真/内核。T27 尽早。Phase 1 出口停在 T28；T29 不自动开工。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。
+默认主链 **T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28**。T22 不 gate 保真/内核。T27 尽早。Phase 1 出口停在 T28；T29 不自动开工。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。里程碑「审→修→复看→交 grok」之后的异步终审残留只进 [T34](T34-astra-milestone-residue.md)，不交 grok。
 
 ## Historical delivery and product-scope trackers
 
