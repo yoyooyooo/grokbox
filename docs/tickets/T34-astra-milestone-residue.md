@@ -175,3 +175,30 @@ Git-object-checked `pre-publication-revision` archive; all five residual changed
 ### Evidence ceiling
 
 Git-object-checked `pre-publication-revision` archive; eight residual changed files match target blobs and workspace imports resolve within it. Lifecycle passed 14 tests / 47 assertions, binding 19 / 88 plus composition 2 / 5, backend 15 / 66, codec 11 / 176, layout 20 / 20 and typecheck. Actual toolchains: Bun 1.4.2 / Node v24.18.0 for gates, `/usr/bin/node v20.19.2` for isolated Unix probes. The native process failure above is not overridden by green Bun gates; guard exit records do not cover an aborted process's finalization. No production fixes, live/provider spend, build/package rerun, full committed-attestation CLI binary qualification, or T26 acceptance. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
+
+## M4 / T26 — pre-publication-revision — 2026-09-09
+
+- Reviewed SHA: `pre-publication-revision`; all source/evidence below is pinned to this residual tip, excluding later main-chain work.
+- First review: `PRIVATE_EVIDENCE`
+- Relook report: `PRIVATE_EVIDENCE`
+- First P1 receipt: `PRIVATE_EVIDENCE`
+- Grok residual receipt: `PRIVATE_EVIDENCE`
+- Disposition: the named seam-facts failure is fixed and P1-06/P1-07 are closed on the held cases. Tip evidence reintroduces a narrower root/profile-provenance concern under P1-02; the existing P2-01 removal item is also retained. P1-01/P1-03/P1-04/P1-05 remain closed. Owner end-of-rebuild triage only; no grok dispatch, main-chain pause, automatic owner review, or additional review loop.
+
+### Verified closures at this M4 tip
+
+- **P1-02 — wiring repair acknowledged:** preload now supplies compile facts; the unchanged LIVE-shaped caller reaches SDK mock HTTP once without adding profile/ABI/digest fields to sessionOptions. Missing root still rejects, and no fixture root text is invented. The qualification concern below does not dispute this repair.
+- **P1-06 — closed:** the early unsupported-image rejection records its own STEP, without duplicating the previous STEP or borrowing its serviceEpoch/binding/attempt. Missing-STEP rejection and normal full-tuple rows remain correct; journal failure leaves the reply intact and does not repeat inference.
+- **P1-07 — closed:** the first-chunk/terminal-Deferred case now runs through the production modeld root and SDK mock. The formerly green production-fetch deny mutant fails (14 pass / 1 fail), as does the buffer-all mutant. The original stream gate passes 15 tests / 66 assertions; true streaming is not in dispute.
+
+### Items
+
+- **P1-02 — still held, narrowed to root/profile provenance:** `packages/box-runtime/src/internal/host/modeld-produce.node.ts:29–36,107–112` chooses `t21-state-root` / `t21-independent-root` and `host-abi-v1` from message shape or independentRoot presence; `session-hook.ts:55,84–93` consumes compile.transformedSha256 but does not bind root qualification to the supplied compile/profile identity. Under Node20, a consistent synthetic compiled profile declaring independent-root but providing only state-system input is relabeled `t21-state-root` and reaches SDK HTTP1. An unsupported compiled profile is likewise relabeled and dispatched (HTTP1, two synthetic credential-getter reads in each case). Proper state/independent positive controls also work. Thus successful root preservation does not establish the profile-bound provenance required by impl-spec S4/S8; this is not evidence of a live unauthorized adoption, real credential leak, or paid request.
+  - Evidence: `PRIVATE_EVIDENCE`, `node-source-seam.json`, `node-roots.json`, `final-scope.json`; reproducer: `node-probe.ts` / `run-node.mjs` alongside them. The wire observer records request and accepted frames; qualification comparisons select the request carrying snapshot/HostEpoch.
+  - Why not forced onto grok: the normal review/relook/handoff is complete. Preserve this remaining source-of-qualification disagreement for owner triage, without another implementation round or a new main-chain gate.
+- **P2-01 — still material explicit removal debt:** `packages/box-runtime/src/internal/host/session.ts:20–24,83–117,333,424–437` retains the internal toolCalls alias, its response normalizer/PromptSession wrapper, and the fixture helper's default 1/1/2 usage. The residual receipt explicitly leaves the alias unproven. This confirms the original T26 removal-contract item, not a new finding or evidence that current managed inference invents usage or replays tools; the default-usage helper is not the managed producer's billing source.
+  - Evidence: the Git-blob-checked source at this tip, the first/relook reports above, and `PRIVATE_EVIDENCE`. Retained for owner cleanup triage only, not a grok handoff.
+
+### Evidence ceiling
+
+Five residual changed files match the target Git blobs; workspace imports resolve inside the frozen archive. Frozen Bun 1.3.14 with 90s gate bounds passed stream 15/66, hook+journal 10/62, and typecheck. Seven bounded `/usr/bin/node v20.19.2` scenarios include the four qualification vectors, real Unix/SDK mock streaming, and actual Host journal writes; completed guard records show zero blocked egress/signals. Only synthetic inputs, owned sockets and retained cleanup targets were used. No production fixes, live/provider spend, build/package/lifecycle rerun, T28 work or supersession of earlier T34 residue. Evidence: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
