@@ -48,6 +48,8 @@ Host 内 hook **不读** attestation 文件、不解封 provider credential。ro
 
 Host-owned `host_seam_stage` 的 `hook_enter` 在选择前记录；`stream_enter` 带可用 STEP，`connect_attempt` 表示 health 结果，`first_chunk` 仅在 modeld 返回有效且非空的内容事件时记录一次。local rejection/error text 不计作模型首块；stage 不携带 prompt、tool payload 或 credential。
 
+modeld 另写 `model_step_terminal` schemaVersion=3：保留同一 Host generation / Agent / TURN / STEP / ServiceEpoch / binding、outcome、phase、服务端内容事件数，以及固定白名单 failure code、HTTP status、provider code/参数名。它区分 admission/prepare/auth/SDK/provider/normalize，**不证明 Host delivery**，不替代 Host J13 writer。未知错误保持 unknown；不持久化 message、Cause、body、headers、endpoint、prompt 或工具参数。AI SDK 默认 raw `onError` logger 被禁用，但 fullStream error 仍进入分类。观察写入在 request Scope 内至多等待 100ms，失败不改变模型结果；只有 watchdog 做保留/压缩。
+
 接缝须双向归一化：Host → Provider 保留 Host-selected 上下文（含 user-contained tool-result），不静默删减；Provider → Host 重整为原 PromptSession/session/`fullStream`，由 Host 继续维护会话/store、工具执行与 SendToUser。支持 streaming 的 Provider 在实施方案 Phase 1 接通 Host consumer；必要 codec 抽象保留，不以单个最终文本替代原合同。见 [ADR D1](decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d1--bidirectional-normalization)。
 
 protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后再决策，不双轨。

@@ -33,7 +33,7 @@ const CASES = {
     ["bun", "test", "packages/box-runtime/test/binding-composition.test.ts"],
   ],
   lifecycle: [
-    ["bun", "test", "packages/box-runtime/test/modeld-lifecycle.test.ts", "packages/box-runtime/test/modeld-wire.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/modeld-lifecycle.test.ts", "packages/box-runtime/test/modeld-wire.test.ts", "packages/box-runtime/test/modeld-outcome.test.ts"],
   ],
   stream: [
     ["bun", "test", "packages/box-runtime/test/host-entry.test.ts", "packages/box-runtime/test/host-session.test.ts", "packages/box-runtime/test/host-fullstream.test.ts", "packages/box-runtime/test/runtime-pipeline.test.ts"],

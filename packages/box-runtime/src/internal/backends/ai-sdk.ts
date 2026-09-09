@@ -16,6 +16,7 @@ import { backendKindForModel, type ModelRecord } from "@grokbox/runtime-kernel/s
 import { encodeCcsMessages, type CcsApi } from "./ccs-codec.ts";
 import { mapSdkStreamPart } from "./openai-events.ts";
 import { backendFailureFromUnknown } from "./provider-error.ts";
+import { observeBackendFailure } from "./failure-observation.ts";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
 
 export type UnsealAuth = (lease: AuthLease) => string;
@@ -58,7 +59,8 @@ function guardEgress(fetchImpl: typeof fetch): typeof fetch {
       throw new BackendFailure("envelope_too_large");
     }
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    return fetchImpl(input, init);
+    try { return await fetchImpl(input, init); }
+    catch (error) { throw backendFailureFromUnknown(error, "provider"); }
   };
   return Object.assign(run, { preconnect: fetchImpl.preconnect ?? run }) as typeof fetch;
 }
@@ -104,7 +106,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
           ...frozen,
         });
       },
-      catch: mapPrepareError,
+      catch: (error) => observeBackendFailure(mapPrepareError(error), "prepare", error),
     }),
     infer: (_admitted: unknown, prepared: PreparedCall, lease: AuthLease) => {
       const payload = readPreparedCall(prepared);
@@ -129,7 +131,9 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
           void (async () => {
             const iterator = (() => {
               try {
-                const secret = unseal(lease);
+                let secret: string;
+                try { secret = unseal(lease); }
+                catch (error) { throw observeBackendFailure(new BackendFailure("auth_mismatch"), "auth", error); }
                 const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guarded });
                 const model = payload.api === "responses" ? openai.responses(payload.model) : openai.chat(payload.model);
                 const tools = Object.fromEntries(payload.tools.map((tool) => [
@@ -142,6 +146,9 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
                   messages: toSdkMessages(payload.prompt) as never,
                   ...(payload.tools.length > 0 ? { tools } : {}),
                   maxRetries: 0,
+                  // SDK's default logger includes request bodies and provider response bodies.
+                  // The fullStream error still flows to our allowlisted classifier below.
+                  onError: () => {},
                   abortSignal: ac.signal,
                   ...payload.settings,
                 });

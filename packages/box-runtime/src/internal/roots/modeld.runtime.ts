@@ -7,6 +7,7 @@ import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
 import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { modeldStorePorts } from "../io/store.node.ts";
+import { writeModeldStepOutcome } from "../io/modeld-outcome.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
 import { probeModeldHealth, modeldSocketPath } from "../wire/modeld-probe.node.ts";
 import { serveModeld } from "../modeld/server.node.ts";
@@ -85,6 +86,7 @@ export function ensureModeld(options: ModeldRootOptions) {
       yield* serveModeld({
         path,
         generation,
+        observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
         counts: options.counts,
         hooks: options.hooks,
         maxClients: options.maxClients,
@@ -127,6 +129,7 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
       yield* serveModeld({
         path,
         generation,
+        observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
         counts: options.counts,
         hooks,
         maxClients: options.maxClients,

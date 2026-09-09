@@ -13,6 +13,7 @@ import {
 import { eventsPath } from "./paths.ts";
 import { observeText, type ObservationState } from "./observation.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
+import { projectModeldStepOutcome, type ModeldStepOutcomeEvent } from "./modeld-outcome.node.ts";
 
 export {
   appendHostStreamRejected,
@@ -256,7 +257,8 @@ export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent {
   return out;
 }
 
-export function projectModelStepTerminal(input: unknown): ModelStepTerminalEvent | null {
+export function projectModelStepTerminal(input: unknown): ModelStepTerminalEvent | ModeldStepOutcomeEvent | null {
+  if (isRecord(input) && input.schemaVersion === 3) return projectModeldStepOutcome(input);
   if (!isRecord(input) || input.name !== "model_step_terminal" || input.schemaVersion !== 2) return null;
   const at = boundedString(input.at, TURN_SEAM_BOUNDED_STRING);
   const mode = boundedEnum(input.mode, TURN_SEAM_MODES);

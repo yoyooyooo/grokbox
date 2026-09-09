@@ -1,5 +1,5 @@
 import type { Socket } from "node:net";
-import { Deferred, Effect, Queue, Stream } from "effect";
+import { Cause, Deferred, Effect, Queue, Stream } from "effect";
 import {
   ADMISSION_WAIT_MS,
   BackendFailure,
@@ -10,10 +10,12 @@ import {
   SERVER_ACTIVE_CLIENTS_MAX,
   WireError,
   type InferenceEvent,
+  type RunStepRequest,
 } from "@grokbox/runtime-kernel/contract";
 import { cancelStep, runStep } from "@grokbox/runtime-kernel/inference";
 import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseV3Request } from "../wire/modeld-wire.ts";
 import { acquireUnixListener, trackSocket, type ListenHooks, type ResourceCounts } from "./unix-listen.node.ts";
+import { modeldFailureOutcome, type ModeldStepOutcome } from "./step-outcome.ts";
 
 function errorFrame(code: string): unknown {
   return { ok: false, version: 3, error: { code } };
@@ -137,7 +139,7 @@ function emit(socket: Socket, value: unknown) {
   return writeFrame(socket, value).pipe(Effect.ignore);
 }
 
-function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer) {
+function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer, observeStep?: ServeOptions["observeStep"]) {
   const socket = incoming.socket;
   return Effect.gen(function* () {
     incoming.consumed = true;
@@ -167,6 +169,20 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       return;
     }
 
+    const request = parsed.request;
+    let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0 };
+    yield* Effect.addFinalizer((exit) => {
+      if (!observeStep) return Effect.void;
+      if (exit._tag === "Failure") {
+        const defect = Cause.hasDies(exit.cause);
+        const interrupted = Cause.hasInterruptsOnly(exit.cause);
+        observation = { ...observation, outcome: interrupted ? "cancelled" : "error", phase: "internal",
+          failureCode: defect ? "defect" : interrupted ? "interrupted" : "unknown" };
+      }
+      return Effect.suspend(() => observeStep(request, observation)).pipe(
+        Effect.interruptible, Effect.timeout("100 millis"), Effect.catchCause(() => Effect.void),
+      );
+    });
     const disconnected = yield* Deferred.make<void>();
     const late = yield* Deferred.make<void>();
     incoming.onLate = () => {
@@ -181,21 +197,26 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       runStep(parsed.request).pipe(Effect.timeout(`${ADMISSION_WAIT_MS} millis`)),
     );
     if (admitted._tag === "Failure") {
+      observation = modeldFailureOutcome(admitted.failure, "admission", 0);
       yield* emit(socket, errorFrame(mapFail(admitted.failure)));
       return;
     }
     if (yield* Deferred.isDone(disconnected)) {
+      observation = { ...observation, outcome: "cancelled", phase: "transport", failureCode: "disconnected" };
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
       return;
     }
     if (yield* Deferred.isDone(late)) {
+      observation = { ...observation, outcome: "error", phase: "transport", failureCode: incoming.overflow ? "capacity" : "extra_keys" };
       yield* emit(socket, errorFrame(incoming.overflow ? "capacity" : "extra_keys"));
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
       return;
     }
     const step = admitted.success;
+    observation = { ...observation, phase: "provider", bindingId: step.bindingId };
     yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: 3, bindingId: step.bindingId });
     if (!("stream" in step)) {
+      observation = { ...observation, outcome: "duplicate", phase: "complete" };
       yield* emit(socket, {
         kind: "terminal",
         outcome: "duplicate",
@@ -221,6 +242,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
             return yield* Effect.fail(new BindingFailure("capacity"));
           }
           if (event.type === "backend_finish") {
+            observation = { ...observation, outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete" };
             yield* emit(socket, {
               kind: "terminal",
               outcome: "ok",
@@ -232,14 +254,17 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           }
           yield* emit(socket, { kind: "event", sequence, event });
           sequence += 1;
+          observation.eventCount = sequence;
         }),
       ).pipe(Effect.timeout(`${REQUEST_WALL_DEADLINE_MS} millis`)),
     );
     if (yield* Deferred.isDone(disconnected)) {
+      if (observation.phase !== "complete") observation = { ...observation, outcome: "cancelled", phase: "transport", failureCode: "disconnected" };
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
       return;
     }
     if (collected._tag === "Failure") {
+      observation = { ...modeldFailureOutcome(collected.failure, "provider", sequence), bindingId: step.bindingId };
       yield* emit(socket, { kind: "terminal", outcome: "error", code: mapFail(collected.failure) });
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
     }
@@ -247,6 +272,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 }
 
 export type ServeOptions = {
+  observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
   path: string;
   generation: string;
   counts?: ResourceCounts;
@@ -308,7 +334,7 @@ export function serveModeld(options: ServeOptions) {
       yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
         const socket = yield* trackSocket(raw.socket, options.counts, capacity);
         const frame = yield* readOneFrame(raw);
-        yield* handleRequest(raw, options.generation, frame.value, frame.rest);
+        yield* handleRequest(raw, options.generation, frame.value, frame.rest, options.observeStep);
         void socket;
       })).pipe(Effect.ignore, Effect.onExit(() => Effect.sync(() => {
         if (options.counts) options.counts.fibers = Math.max(0, options.counts.fibers - 1);
