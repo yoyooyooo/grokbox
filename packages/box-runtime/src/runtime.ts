@@ -25,11 +25,6 @@ export { writeReviewedProfileFromCopy } from "./internal/process/profile.node.ts
 import { runtimeNotReady } from "@grokbox/runtime-kernel/contract";
 export { startModeldProcess, ensureModeld, modeldRootLayer, type StartedModeld, type ModeldEnsure } from "./internal/roots/modeld.runtime.ts";
 
-/** T26 composition boundary. POC createModeld / stub Unix server are revoked. */
-export function startInferenceServer(): never {
-  return runtimeNotReady("modeld inference", "T26");
-}
-
 /** T28 composition boundary. Old coordinator/inject/watchdog executors are not public. */
 export function startControlOperation(): never {
   return runtimeNotReady("controller operation", "T28");

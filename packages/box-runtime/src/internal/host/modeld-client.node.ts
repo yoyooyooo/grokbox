@@ -75,3 +75,121 @@ export async function requestModeld(runRoot: string, body: unknown, timeoutMs = 
     socket.on("close", () => { if (!settled) finish(); });
   });
 }
+
+/** Yield each validated frame as it arrives. Buffer-all mutants cannot satisfy first-chunk-before-terminal. */
+export function streamModeld(
+  runRoot: string,
+  body: unknown,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+): AsyncIterable<unknown> {
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<unknown> {
+      let session: ClientSession;
+      try { session = clientSessionFor(body); }
+      catch (error) {
+        const failed = error instanceof Error ? error : new Error("request");
+        return {
+          next: async () => { throw failed; },
+        };
+      }
+      const socket = createConnection({ path: modeldSocketPath(runRoot) });
+      const pending: unknown[] = [];
+      let waiting: ((result: IteratorResult<unknown>) => void) | undefined;
+      let closed = false;
+      let complete = false;
+      let failure: Error | undefined;
+      let buf = Buffer.alloc(0);
+      const timer = setTimeout(() => settle(new Error("timeout")), timeoutMs);
+      const settle = (error?: Error) => {
+        if (closed) return;
+        closed = true;
+        clearTimeout(timer);
+        try { socket.destroy(); } catch { /* ignore */ }
+        if (error) failure = error;
+        else if (!complete) failure = new Error("incomplete");
+        if (waiting) {
+          const resume = waiting;
+          waiting = undefined;
+          if (failure) resume({ done: true, value: undefined });
+          else resume({ done: true, value: undefined });
+        }
+      };
+      const emit = (value: unknown) => {
+        if (waiting) {
+          const resume = waiting;
+          waiting = undefined;
+          resume({ done: false, value });
+          return;
+        }
+        pending.push(value);
+      };
+      const onAbort = () => settle(new Error("aborted"));
+      if (options.signal?.aborted) {
+        settle(new Error("aborted"));
+      } else {
+        options.signal?.addEventListener("abort", onAbort, { once: true });
+        socket.on("connect", () => {
+          try { socket.write(encodeModeldFrame(body)); }
+          catch (error) { settle(error instanceof Error ? error : new Error("write")); }
+        });
+        socket.on("data", (chunk: Buffer) => {
+          if (buf.length + chunk.length > MODELD_MAX_FRAME + 4) {
+            settle(new Error("frame"));
+            return;
+          }
+          buf = Buffer.concat([buf, chunk]);
+          while (!closed) {
+            const decoded = decodeModeldFrame(buf);
+            if (decoded == null) break;
+            if ("error" in decoded) {
+              settle(new Error(decoded.error));
+              return;
+            }
+            buf = Buffer.from(decoded.rest);
+            try {
+              const next = acceptModeldFrame(session, decoded.value);
+              session = next.session;
+              emit(decoded.value);
+              if (next.done) {
+                complete = true;
+                if (buf.length > 0) settle(new Error("extra_keys"));
+                else settle();
+                return;
+              }
+            } catch (error) {
+              settle(error instanceof Error ? error : new Error("malformed_frame"));
+              return;
+            }
+          }
+        });
+        socket.on("error", (error) => settle(error));
+        socket.on("end", () => settle());
+        socket.on("close", () => { if (!closed) settle(); });
+      }
+      return {
+        next: () => {
+          if (pending.length > 0) return Promise.resolve({ done: false as const, value: pending.shift()! });
+          if (closed) {
+            if (failure) return Promise.reject(failure);
+            return Promise.resolve({ done: true as const, value: undefined });
+          }
+          return new Promise((resolve, reject) => {
+            waiting = (result) => {
+              if (result.done) {
+                if (failure) reject(failure);
+                else resolve(result);
+                return;
+              }
+              resolve(result);
+            };
+          });
+        },
+        return: async () => {
+          settle(new Error("aborted"));
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
+}
