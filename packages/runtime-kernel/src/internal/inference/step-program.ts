@@ -48,11 +48,13 @@ function dispatchFence(request: RunStepRequest, lease: AuthLease) {
   return Effect.gen(function* () {
     yield* readAuthority();
     const memory = yield* InferenceMemory;
-    const state = yield* SynchronizedRef.get(memory.ref);
-    const entry = state.ledger.get(ledgerKey(request));
-    if (entry?.status === "cancelled") return yield* Effect.fail(new BindingFailure("cancelled"));
+    const cancelled = (yield* SynchronizedRef.get(memory.ref)).ledger.get(ledgerKey(request))?.status === "cancelled";
+    if (cancelled) return yield* Effect.fail(new BindingFailure("cancelled"));
     const auth = yield* BackendAuth;
     yield* auth.verify(lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
+    yield* readAuthority();
+    const after = (yield* SynchronizedRef.get(memory.ref)).ledger.get(ledgerKey(request))?.status === "cancelled";
+    if (after) return yield* Effect.fail(new BindingFailure("cancelled"));
   });
 }
 
@@ -80,18 +82,26 @@ function haltProducer(cancels: Map<string, Deferred.Deferred<void>>, key: string
 }
 
 function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: AuthLease, halt: Deferred.Deferred<void>) {
-  return Stream.interruptWhen(
-    Stream.unwrap(Effect.gen(function* () {
-      yield* dispatchFence(request, lease);
-      const backend = yield* ModelBackend;
+  const key = ledgerKey(request);
+  return Stream.ensuring(
+    Stream.interruptWhen(
+      Stream.unwrap(Effect.gen(function* () {
+        const memory = yield* InferenceMemory;
+        memory.started.add(key);
+        yield* dispatchFence(request, lease);
+        const backend = yield* ModelBackend;
+        const cancelled = SynchronizedRef.get(memory.ref).pipe(
+          Effect.map((current) => current.ledger.get(key)?.status === "cancelled"),
+        );
+        return fenceStream(backend.infer({}, prepared, lease), cancelled);
+      })),
+      Deferred.await(halt).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
+    ),
+    Effect.gen(function* () {
       const memory = yield* InferenceMemory;
-      const key = ledgerKey(request);
-      const cancelled = SynchronizedRef.get(memory.ref).pipe(
-        Effect.map((current) => current.ledger.get(key)?.status === "cancelled"),
-      );
-      return fenceStream(backend.infer({}, prepared, lease), cancelled);
-    })),
-    Deferred.await(halt),
+      const done = memory.quiesce.get(key);
+      if (done) yield* Deferred.succeed(done, undefined).pipe(Effect.ignore);
+    }),
   );
 }
 
@@ -216,15 +226,20 @@ function admitLive(request: RunStepRequest, now: number) {
         return current;
       });
     }
+    const key = ledgerKey(request);
     const halt = yield* Deferred.make<void>();
-    memory.cancels.set(ledgerKey(request), halt);
+    const done = yield* Deferred.make<void>();
+    memory.cancels.set(key, halt);
+    memory.quiesce.set(key, done);
     return {
       kind: "live" as const,
       bindingId,
       stream: Stream.ensuring(
         ownedInfer(request, prepared, lease, halt),
         Effect.sync(() => {
-          memory.cancels.delete(ledgerKey(request));
+          memory.cancels.delete(key);
+          memory.quiesce.delete(key);
+          memory.started.delete(key);
         }),
       ),
     };
@@ -240,6 +255,8 @@ export function cancelStep(request: CancelStepRequest): Effect.Effect<void, Bind
       return yield* Effect.fail(new BindingFailure("service_epoch_mismatch"));
     }
     yield* haltProducer(memory.cancels, key);
+    const done = memory.quiesce.get(key);
+    if (done && memory.started.has(key)) yield* Deferred.await(done);
     const applied = yield* SynchronizedRef.modify(memory.ref, (state): readonly [ReturnType<typeof applyCancel>, InferenceState] => {
       const result = applyCancel(state, request);
       if (!result.ok) return [result, state];

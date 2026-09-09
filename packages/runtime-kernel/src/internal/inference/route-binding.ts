@@ -1,5 +1,5 @@
-import { Context, Deferred, Layer, SynchronizedRef } from "effect";
-import type * as Scope from "effect/Scope";
+import { Context, Deferred, Effect, Exit, Layer, SynchronizedRef } from "effect";
+import * as Scope from "effect/Scope";
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import { LEDGER_ENTRIES_MAX, TURN_IDLE_MS } from "../contract/limits.ts";
 import type { AuthLease } from "../../ports.ts";
@@ -112,13 +112,31 @@ export function cloneState(state: InferenceState): InferenceState {
 export class InferenceMemory extends Context.Service<InferenceMemory, {
   readonly ref: SynchronizedRef.SynchronizedRef<InferenceState>;
   readonly cancels: Map<string, Deferred.Deferred<void>>;
+  readonly quiesce: Map<string, Deferred.Deferred<void>>;
+  readonly started: Set<string>;
   readonly turnScopes: Map<string, Scope.Closeable>;
 }>()("grokbox/InferenceMemory") {}
 
 export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
-  return Layer.succeed(InferenceMemory, {
-    ref: SynchronizedRef.makeUnsafe(emptyInferenceState(options)),
-    cancels: new Map<string, Deferred.Deferred<void>>(),
-    turnScopes: new Map<string, Scope.Closeable>(),
-  });
+  return Layer.effect(InferenceMemory, Effect.gen(function* () {
+    const memory = {
+      ref: SynchronizedRef.makeUnsafe(emptyInferenceState(options)),
+      cancels: new Map<string, Deferred.Deferred<void>>(),
+      quiesce: new Map<string, Deferred.Deferred<void>>(),
+      started: new Set<string>(),
+      turnScopes: new Map<string, Scope.Closeable>(),
+    };
+    yield* Effect.addFinalizer(() => Effect.gen(function* () {
+      for (const halt of memory.cancels.values()) {
+        yield* Deferred.succeed(halt, undefined).pipe(Effect.ignore);
+      }
+      for (const done of memory.quiesce.values()) {
+        yield* Deferred.succeed(done, undefined).pipe(Effect.ignore);
+      }
+      for (const scope of memory.turnScopes.values()) {
+        yield* Scope.close(scope, Exit.void);
+      }
+    }));
+    return memory;
+  }));
 }

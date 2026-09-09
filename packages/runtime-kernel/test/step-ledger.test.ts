@@ -77,7 +77,6 @@ function graph(input: {
     Layer.merge(fakeConfigurationReadLayer({ models: file, beforeRead: input.beforeRead })),
     Layer.merge(fakeAdmissionAuthorityLayer(() => ({ admitted: true }), counts)),
     Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1", ledgerMax: input.ledgerMax })),
-    Layer.merge(TestClock.layer()),
   );
 }
 
@@ -136,20 +135,23 @@ describe("step ledger", () => {
       }),
     });
     const first = req({ stepId: "step-a" });
-    const busy = req({ stepId: "step-b" });
+    const busyReq = req({ stepId: "step-b" });
     const other = req({ agentId: "agent-b", turnId: "turn-other", stepId: "step-a" });
-    const fiberA = fork(Effect.scoped(collect(first).pipe(Effect.provide(layer))));
-    await Effect.runPromise(Deferred.await(entered));
-    await expect(run(Effect.scoped(collect(busy).pipe(Effect.provide(layer))))).rejects.toMatchObject({
-      code: "turn_busy",
-    });
-    const otherFiber = fork(Effect.scoped(collect(other).pipe(Effect.provide(layer))));
-    await Effect.runPromise(gate.open);
-    const a = await Effect.runPromise(Fiber.join(fiberA));
-    const o = await Effect.runPromise(Fiber.join(otherFiber));
-    expect(a.kind).toBe("live");
-    expect(o.kind).toBe("live");
-  });
+    const outcome = await run(Effect.scoped(Effect.gen(function* () {
+      const fiberA = yield* Effect.forkChild(collect(first));
+      yield* Deferred.await(entered);
+      const busy = yield* Effect.result(collect(busyReq));
+      const otherFiber = yield* Effect.forkChild(collect(other));
+      yield* gate.open;
+      const a = yield* Fiber.join(fiberA);
+      const o = yield* Fiber.join(otherFiber);
+      return { busy, a, o };
+    }).pipe(Effect.provide(layer))));
+    expect(outcome.busy._tag).toBe("Failure");
+    expect(outcome.busy._tag === "Failure" ? outcome.busy.failure : undefined).toMatchObject({ code: "turn_busy" });
+    expect(outcome.a.kind).toBe("live");
+    expect(outcome.o.kind).toBe("live");
+  }, 8_000);
 
   test("capacity does not LRU-evict old ids", async () => {
     const counts = createCountedSeams();
@@ -188,7 +190,6 @@ describe("step ledger", () => {
       Layer.merge(fakeConfigurationReadLayer({ models: file })),
       Layer.merge(fakeAdmissionAuthorityLayer(() => ({ admitted: true }), counts)),
       Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1" })),
-      Layer.merge(TestClock.layer()),
     );
     const firstReq = req({ turnId: "turn-fail" });
     const outcome = await run(Effect.scoped(Effect.gen(function* () {

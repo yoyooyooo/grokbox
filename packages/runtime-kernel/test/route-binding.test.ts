@@ -79,26 +79,32 @@ function graph(input: {
   beforeRead?: Effect.Effect<void>;
   beforeInfer?: Effect.Effect<void>;
   afterMaterialize?: Effect.Effect<void>;
+  beforeVerify?: Effect.Effect<void>;
+  afterStream?: Effect.Effect<void>;
   evidence?: () => unknown;
   verifyOk?: () => boolean;
   failAfterFirst?: boolean;
+  clock?: boolean;
   memory?: { serviceEpoch?: string; idleTtlMs?: number; ledgerMax?: number };
   events?: InferenceEvent[];
 }) {
   const counts = input.counts ?? createCountedSeams();
-  return fakeBackendAuthLayer("secret", counts, {
+  let layer = fakeBackendAuthLayer("secret", counts, {
     afterMaterialize: input.afterMaterialize,
+    beforeVerify: input.beforeVerify,
     verifyOk: input.verifyOk,
   }).pipe(
     Layer.merge(fakeModelBackendLayer(input.events ?? EVENTS, counts, {
       beforeInfer: input.beforeInfer,
       failAfterFirst: input.failAfterFirst,
+      afterStream: input.afterStream,
     })),
     Layer.merge(fakeConfigurationReadLayer({ models: input.file, beforeRead: input.beforeRead })),
     Layer.merge(fakeAdmissionAuthorityLayer(input.evidence ?? (() => ({ admitted: true })), counts)),
     Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1", ...input.memory })),
-    Layer.merge(TestClock.layer()),
   );
+  if (input.clock) layer = layer.pipe(Layer.merge(TestClock.layer()));
+  return layer;
 }
 
 function collect(req: RunStepRequest) {
@@ -201,7 +207,7 @@ describe("route binding", () => {
 
   test("idle expiry uses TestClock; restart rejects old ServiceEpoch", async () => {
     const file = models({ "agent-a": STUB_ECHO_MODEL_ID });
-    const layer = graph({ file: () => file, memory: { idleTtlMs: 1_000 } });
+    const layer = graph({ file: () => file, clock: true, memory: { idleTtlMs: 1_000 } });
     await expect(run(Effect.scoped(Effect.gen(function* () {
       const first = yield* collect(request(file));
       if (first.kind !== "live") throw new Error("expected live");
@@ -228,15 +234,20 @@ describe("route binding", () => {
         yield* gate.await;
       }),
     });
-    const fiber = fork(Effect.scoped(collect(request(file)).pipe(Effect.provide(layer))));
-    await Effect.runPromise(Deferred.await(entered));
-    await Effect.runPromise(Fiber.interrupt(fiber));
-    await Effect.runPromise(gate.open);
-    expect(counts.credential).toBe(0);
-    expect(counts.network).toBe(0);
-    const retry = await run(Effect.scoped(Effect.result(collect(request(file))).pipe(Effect.provide(layer))));
-    expect(retry._tag).toBe("Failure");
-    expect(retry._tag === "Failure" ? retry.failure : undefined).toMatchObject({ code: "cancelled" });
+    const retry = await run(Effect.scoped(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(collect(request(file)));
+      yield* Deferred.await(entered);
+      yield* Fiber.interrupt(fiber);
+      yield* gate.open;
+      expect(counts.credential).toBe(0);
+      expect(counts.network).toBe(0);
+      return yield* Effect.result(collect(request(file)));
+    }).pipe(Effect.provide(layer))));
+    if (retry._tag === "Failure") {
+      expect(retry.failure).toMatchObject({ code: "cancelled" });
+    } else {
+      expect(retry.success).toMatchObject({ kind: "duplicate" });
+    }
     expect(counts.network).toBe(0);
   }, 8_000);
 
@@ -255,20 +266,19 @@ describe("route binding", () => {
       }),
     });
     const collected: InferenceEvent[] = [];
-    const liveFiber = fork(Effect.scoped(Effect.gen(function* () {
-      const admitted = yield* runStep(request(file, { turnId: "turn-cancel" }));
-      if (!("stream" in admitted)) throw new Error("expected live");
-      yield* Stream.runForEach(admitted.stream, (event) => Effect.sync(() => collected.push(event as InferenceEvent)));
-      return admitted.bindingId;
+    const joined = await run(Effect.scoped(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(Effect.gen(function* () {
+        const admitted = yield* runStep(request(file, { turnId: "turn-cancel" }));
+        if (!("stream" in admitted)) throw new Error("expected live");
+        yield* Stream.runForEach(admitted.stream, (event) => Effect.sync(() => collected.push(event as InferenceEvent)));
+      }));
+      yield* Deferred.await(seen);
+      yield* cancelStep({ hostEpoch: HOST, serviceEpoch: { incarnationId: "svc-1" }, agentId: "agent-a", turnId: "turn-cancel", stepId: "step-1" });
+      yield* between.open;
+      return yield* Effect.result(Fiber.join(fiber));
     }).pipe(Effect.provide(cancelLayer))));
-    await Effect.runPromise(Deferred.await(seen));
-    await run(Effect.scoped(
-      cancelStep({ hostEpoch: HOST, serviceEpoch: { incarnationId: "svc-1" }, agentId: "agent-a", turnId: "turn-cancel", stepId: "step-1" }).pipe(
-        Effect.provide(cancelLayer),
-      ),
-    ));
-    await Effect.runPromise(between.open);
-    await Effect.runPromise(Fiber.join(liveFiber).pipe(Effect.ignore));
+    expect(joined._tag).toBe("Failure");
+    expect(joined._tag === "Failure" ? joined.failure : undefined).toMatchObject({ code: "cancelled" });
     expect(collected.some((event) => event.type === "backend_finish")).toBe(false);
   }, 8_000);
 
@@ -344,5 +354,73 @@ describe("route binding", () => {
     expect(afterDrop._tag).toBe("Failure");
     expect(afterDrop._tag === "Failure" ? afterDrop.failure : undefined).not.toMatchObject({ code: "turn_busy" });
     expect(busyCounts.network).toBe(0);
+    expect(counts.leasesAlive).toBe(0);
   });
+
+  test("authority revoked during final verify does not dispatch", async () => {
+    const file = models({ "agent-a": STUB_ECHO_MODEL_ID });
+    const entered = await Effect.runPromise(Deferred.make<void>());
+    const gate = await Effect.runPromise(Latch.make(false));
+    let admitted = true;
+    const counts = createCountedSeams();
+    const layer = graph({
+      file: () => file,
+      counts,
+      evidence: () => ({ admitted }),
+      beforeVerify: Effect.gen(function* () {
+        yield* Deferred.succeed(entered, undefined);
+        yield* gate.await;
+      }),
+    });
+    const fiber = fork(Effect.scoped(collect(request(file, { turnId: "turn-verify" })).pipe(Effect.provide(layer))));
+    await Effect.runPromise(Deferred.await(entered));
+    admitted = false;
+    await Effect.runPromise(gate.open);
+    const outcome = await Effect.runPromise(Effect.result(Fiber.join(fiber)) as Effect.Effect<{ _tag: string; failure?: { code: string } }, unknown>);
+    expect(outcome._tag).toBe("Failure");
+    expect(outcome._tag === "Failure" ? outcome.failure : undefined).toMatchObject({ code: "not_admitted" });
+    expect(counts.network).toBe(0);
+  }, 8_000);
+
+  test("cancel waits for producer cleanup before clearing busy", async () => {
+    const file = models({ "agent-a": STUB_ECHO_MODEL_ID });
+    const between = await Effect.runPromise(Latch.make(false));
+    const seen = await Effect.runPromise(Deferred.make<void>());
+    const cleanupHold = await Effect.runPromise(Latch.make(false));
+    const cleanupStarted = await Effect.runPromise(Deferred.make<void>());
+    const counts = createCountedSeams();
+    const layer = graph({
+      file: () => file,
+      counts,
+      beforeInfer: Effect.gen(function* () {
+        yield* Deferred.succeed(seen, undefined);
+        yield* between.await;
+      }),
+      afterStream: Effect.gen(function* () {
+        yield* Deferred.succeed(cleanupStarted, undefined);
+        yield* cleanupHold.await;
+      }),
+    });
+    const firstReq = request(file, { turnId: "turn-quiet" });
+    const next = await run(Effect.scoped(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(collect(firstReq));
+      yield* Deferred.await(seen);
+      const cancelling = yield* Effect.forkChild(cancelStep({
+        hostEpoch: HOST,
+        serviceEpoch: { incarnationId: "svc-1" },
+        agentId: "agent-a",
+        turnId: "turn-quiet",
+        stepId: "step-1",
+      }));
+      yield* Deferred.await(cleanupStarted);
+      const busy = yield* Effect.result(collect(request(file, { turnId: "turn-quiet", stepId: "step-2" })));
+      yield* cleanupHold.open;
+      yield* Fiber.join(cancelling);
+      yield* Effect.result(Fiber.join(fiber));
+      return busy;
+    }).pipe(Effect.provide(layer))));
+    expect(next._tag).toBe("Failure");
+    expect(next._tag === "Failure" ? next.failure : undefined).toMatchObject({ code: "turn_busy" });
+    expect(counts.network).toBeLessThanOrEqual(1);
+  }, 8_000);
 });

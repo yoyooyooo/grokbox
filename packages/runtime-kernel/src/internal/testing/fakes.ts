@@ -19,11 +19,12 @@ export type CountedSeams = {
   prepare: number;
   verify: number;
   authority: number;
+  leasesAlive: number;
   order: string[];
 };
 
 export function createCountedSeams(): CountedSeams {
-  return { credential: 0, network: 0, prepare: 0, verify: 0, authority: 0, order: [] };
+  return { credential: 0, network: 0, prepare: 0, verify: 0, authority: 0, leasesAlive: 0, order: [] };
 }
 
 function handle<T extends object>(tag: string): T {
@@ -35,6 +36,7 @@ export function fakeBackendAuthLayer(
   counts?: CountedSeams,
   options?: {
     afterMaterialize?: Effect.Effect<void>;
+    beforeVerify?: Effect.Effect<void>;
     verifyOk?: () => boolean;
   },
 ): Layer.Layer<BackendAuth> {
@@ -44,6 +46,7 @@ export function fakeBackendAuthLayer(
       Effect.gen(function* () {
         if (counts) {
           counts.credential += 1;
+          counts.leasesAlive += 1;
           counts.order.push("pin");
         }
         if (options?.afterMaterialize) yield* options.afterMaterialize;
@@ -53,15 +56,17 @@ export function fakeBackendAuthLayer(
       }),
       ({ lease }) => Effect.sync(() => {
         leases.delete(lease);
+        if (counts) counts.leasesAlive = Math.max(0, counts.leasesAlive - 1);
       }),
     ),
-    verify: (lease: AuthLease) => Effect.sync(() => {
+    verify: (lease: AuthLease) => Effect.gen(function* () {
       if (counts) {
         counts.verify += 1;
         counts.order.push("verify");
       }
-      if (options?.verifyOk && !options.verifyOk()) throw new BackendFailure("auth_mismatch");
-      if (!leases.has(lease)) throw new BackendFailure("auth_mismatch");
+      if (options?.beforeVerify) yield* options.beforeVerify;
+      if (options?.verifyOk && !options.verifyOk()) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
+      if (!leases.has(lease)) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
     }),
   });
 }
@@ -69,7 +74,7 @@ export function fakeBackendAuthLayer(
 export function fakeModelBackendLayer(
   events: InferenceEvent[],
   counts?: CountedSeams,
-  options?: { beforeInfer?: Effect.Effect<void>; failAfterFirst?: boolean },
+  options?: { beforeInfer?: Effect.Effect<void>; failAfterFirst?: boolean; afterStream?: Effect.Effect<void> },
 ): Layer.Layer<ModelBackend> {
   return Layer.succeed(ModelBackend, {
     prepare: (_selection: unknown, snapshot: unknown) => Effect.sync(() => {
@@ -86,24 +91,27 @@ export function fakeModelBackendLayer(
         return Stream.fail(new BackendFailure("invalid_prepared_call"));
       }
       let started = false;
-      return Stream.unwrap(Effect.gen(function* () {
-        if (options?.beforeInfer) yield* options.beforeInfer;
-        return Stream.fromAsyncIterable((async function* () {
-          if (started) return;
-          started = true;
-          if (counts) {
-            counts.network += 1;
-            counts.order.push("infer");
-          }
-          const state = emptyStreamValidation();
-          for (const [index, event] of events.entries()) {
-            applyInferenceEvent(state, event);
-            yield event;
-            if (options?.failAfterFirst && index === 0) throw new BackendFailure("provider_error");
-          }
-          finishInferenceStream(state);
-        })(), (error) => error instanceof BackendFailure ? error : new BackendFailure("stream_invalid"));
-      }));
+      return Stream.ensuring(
+        Stream.unwrap(Effect.gen(function* () {
+          if (options?.beforeInfer) yield* options.beforeInfer;
+          return Stream.fromAsyncIterable((async function* () {
+            if (started) return;
+            started = true;
+            if (counts) {
+              counts.network += 1;
+              counts.order.push("infer");
+            }
+            const state = emptyStreamValidation();
+            for (const [index, event] of events.entries()) {
+              applyInferenceEvent(state, event);
+              yield event;
+              if (options?.failAfterFirst && index === 0) throw new BackendFailure("provider_error");
+            }
+            finishInferenceStream(state);
+          })(), (error) => error instanceof BackendFailure ? error : new BackendFailure("stream_invalid"));
+        })),
+        options?.afterStream ?? Effect.void,
+      );
     },
   });
 }
