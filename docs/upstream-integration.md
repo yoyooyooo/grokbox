@@ -62,6 +62,8 @@ This path provides Gateway access only. It does not provide daemon, Sandbox life
 
 ## Host session boundary
 
+The exact-profile interception is at `createSession` entry, before official-provider model resolution or client/session construction. The hook returns a managed session only for a configured per-agent route; `undefined` declines interception and leaves the original Host body in charge of constructing its official session. `host-entry.test.ts` exercises that ordering with failing official-provider preconditions and exact official passthrough.
+
 The minimum Host-shaped contract retained by box-runtime is `getModelId()`, both executor accessors, Array message/state access, and synchronous `stream(ctx, invocationId, tools, options)`. The returned handle exposes an async `fullStream` and independent completion promises. Text and tool-call/result content blocks must keep matching ids; the Host owns tool execution, final delivery, Transcript and Memory.
 
 The provider-neutral supported subset and explicit refusal cases live in `docs/box-runtime.md` §2 and `packages/box-runtime/src/envelope.ts`. `host-envelope.test.ts`, `stream-contract.test.ts`, and `envelope-seam.test.ts` use synthetic input and a scripted driver, not private Host code or provider traffic. They are bounded compatibility evidence, not validation of every live Host generation or provider-specific message format.

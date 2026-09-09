@@ -412,6 +412,10 @@ describe("host fullStream unix", () => {
         { role: "user", content: "prod-hi" },
       ]).stream({}, "J13_REAL_STEP").response;
       expect(ok.finishReason).toBe("stop");
+      const observed = await waitJournal(runRoot, (text) => text.includes('"stage":"first_chunk"'));
+      const stages = observed.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { stage?: string; stepId?: string });
+      expect(stages.filter((row) => row.stage === "first_chunk" && row.stepId === "J13_REAL_STEP")).toHaveLength(1);
+      expect(stages.some((row) => row.stage === "stream_enter" && row.stepId === "J13_REAL_STEP")).toBe(true);
       const image = await managed.getExecutor([
         { role: "system", content: "state-root-once" },
         { role: "user", content: [{ type: "image", data: "AAAA", mimeType: "image/png" }] },

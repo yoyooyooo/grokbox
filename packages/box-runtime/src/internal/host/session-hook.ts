@@ -28,8 +28,8 @@ function nowIso(): string {
 }
 
 /**
- * Identity/observe: official session passthrough.
- * Route + unassigned agent: official passthrough (S4.1).
+ * Entry interceptor: undefined declines, letting the unchanged Host construct its official session.
+ * Identity/observe and route + unassigned agent decline (S4.1).
  * Route + managed assignment: Host fullStream over v3 modeld (T26).
  * profile/ABI come from Host-selected root at stream time; bridgeDigest from compile.
  */
@@ -40,7 +40,7 @@ export function bindHostSessionHook(input: {
   binding?: HostBinding;
   compile?: CompileReceipt;
 }): (args: {
-  originalSession: unknown;
+  originalSession?: unknown;
   sessionOptions?: unknown;
   agentId?: string;
   onRequestId?: (id: string) => void;
@@ -49,9 +49,6 @@ export function bindHostSessionHook(input: {
   return (args) => {
     const options = isRecord(args.sessionOptions) ? args.sessionOptions : {};
     const agentId = boundedId(args.agentId) ?? boundedId(options.agentId);
-    const captured = captureHostSelection(input.durableRoot, agentId);
-    if (captured.kind === "official") return args.originalSession;
-    const modelId = captured.modelId;
     const turnId = boundedId(options.invocationId);
     const independentRoot = typeof options.independentRoot === "string" ? options.independentRoot : undefined;
     const bridgeDigest = input.compile?.transformedSha256 ?? boundedId(options.bridgeDigest);
@@ -70,6 +67,10 @@ export function bindHostSessionHook(input: {
       result: "entered",
       ...facts,
     });
+    // A real hook entry remains observable even if selection declines or lacks an agent id.
+    const captured = captureHostSelection(input.durableRoot, agentId);
+    if (captured.kind === "official") return args.originalSession;
+    const modelId = captured.modelId;
     const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope") => {
       if (!agentId) return;
       void appendHostStreamRejected(input.runRoot, {
@@ -104,7 +105,8 @@ export function bindHostSessionHook(input: {
     };
     const wrapStream = (session: PromptSession): PromptSession => ({
       stream(request) {
-        writeStage("stream_enter", "entered");
+        const stepId = boundedId(request?.invocationId);
+        writeStage("stream_enter", "entered", stepId ? { stepId } : {});
         return session.stream(request);
       },
     });
@@ -146,6 +148,7 @@ export function bindHostSessionHook(input: {
       bridgeDigest,
       independentRoot,
       onConnectAttempt: (result) => writeStage("connect_attempt", result),
+      onFirstChunk: (stepId) => writeStage("first_chunk", "ok", { stepId }),
     });
     const session = createStreamingPromptSession({
       modelId,

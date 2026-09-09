@@ -14,9 +14,11 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     id: "create-session",
     startAnchor: "createSession(onRequestId, sessionOptions) {",
     endAnchor: "    },\n    recordPostTurnLabeling(args) {",
-    find: "      return createCursorInferencePromptSession(inferenceOptions);\n",
+    // Select the managed backend before *any* official model resolution/client construction.
+    // Undefined declines the interception; the unchanged Host body then creates its own session.
+    find: "createSession(onRequestId, sessionOptions) {\n",
     replacement:
-      `      const __grokbox_session = createCursorInferencePromptSession(inferenceOptions);\n      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      return typeof __grokbox_hook === "function" ? __grokbox_hook({ originalSession: __grokbox_session, sessionOptions, agentId: sessionOptions?.agentId, onRequestId }) : __grokbox_session;\n`,
+      `createSession(onRequestId, sessionOptions) {\n      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      if (typeof __grokbox_hook === "function") {\n        const __grokbox_session = __grokbox_hook({ sessionOptions, agentId: sessionOptions?.agentId, onRequestId });\n        if (__grokbox_session !== undefined) return __grokbox_session;\n      }\n`,
   },
   {
     id: "agent-id",

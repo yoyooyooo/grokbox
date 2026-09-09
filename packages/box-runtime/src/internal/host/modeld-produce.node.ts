@@ -77,6 +77,7 @@ export type ModeldProduceInput = {
   abiIdentity?: string;
   independentRoot?: string;
   onConnectAttempt?: (result: "ok" | "fail") => void;
+  onFirstChunk?: (stepId: string) => void;
 };
 
 export type ModeldProduceRuntime = {
@@ -152,6 +153,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       stepId,
     };
     let finished = false;
+    let observedChunk = false;
     try {
       for await (const frame of streamModeld(input.runRoot, body, { signal: request.abortSignal })) {
         if (!isRecord(frame)) continue;
@@ -166,6 +168,11 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
           const part = reshaped.part;
           if ((part.type === "tool-call" || part.type === "tool-call-delta" || part.type === "tool-call-streaming-start") && !names.has(part.toolName)) {
             throw new VisibleStreamError("normalize", "invalid_stream");
+          }
+          const hasContent = (part.type !== "text-delta" && part.type !== "reasoning") || part.textDelta.length > 0;
+          if (!observedChunk && hasContent) {
+            observedChunk = true;
+            try { input.onFirstChunk?.(stepId); } catch { /* Observation cannot fail inference. */ }
           }
           yield part;
           continue;

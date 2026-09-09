@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { Effect, Layer } from "effect";
 import { runControllerOperation } from "@grokbox/runtime-kernel/commands";
 import { sha256Bytes, sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
@@ -58,15 +58,21 @@ export function diskPreloadSha256(path = resolvePreloadPath()): string | null {
   }
 }
 
+export function reviewedProfileSha256(boxRoot: string): string | null {
+  const profile = loadDurableReviewedProfile(boxRoot);
+  return profile ? expectedCompileReceipt(profile).profileSha256 : null;
+}
+
 export function controllerOperationId(
   intent: "apply" | "reconcile",
   boxRoot: string,
-  generation?: { preloadSha256?: string },
+  generation?: { preloadSha256?: string; profileSha256?: string },
 ): string {
   return sha256Text(canonicalJson({
     intent,
     boxRoot,
     ...(generation?.preloadSha256 ? { preloadSha256: generation.preloadSha256 } : {}),
+    ...(generation?.profileSha256 ? { profileSha256: generation.profileSha256 } : {}),
   }));
 }
 
@@ -277,6 +283,18 @@ export function observedAdoptMarkerMatches(
   );
 }
 
+/** Reuse only the generation that actually compiled this profile with this preload. */
+export function observedAdoptGenerationMatches(
+  marker: IdentityMarker | null,
+  host: { pid: number; start: number },
+  profile: NonNullable<ReturnType<typeof loadDurableReviewedProfile>>,
+  preloadSha256: string,
+): boolean {
+  return Boolean(marker && typeof marker.operationId === "string" && marker.operationId.length > 0 &&
+    observedAdoptMarkerMatches(marker, host, marker.operationId, preloadSha256) &&
+    compileReceiptAgrees(marker.compile, expectedCompileReceipt(profile)));
+}
+
 function readMarkerFile(path: string): IdentityMarker | null {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as IdentityMarker;
@@ -372,23 +390,10 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const supervisor = proven.chain.supervisor;
   const marker = readMarkerFile(markerPath);
   const preloadSha = diskPreloadSha256(preloadPath);
-  const hostRequire = (() => {
-    const opt = readNamedProcEnv(host.pid, ["NODE_OPTIONS"]).NODE_OPTIONS;
-    const matched = typeof opt === "string" ? opt.match(/--require(?:=|\s+)(\S+)/) : null;
-    return matched?.[1] ?? null;
-  })();
-  const hostPreloadSha = (() => {
-    if (!hostRequire) return null;
-    try {
-      return sha256Bytes(readFileSync(hostRequire));
-    } catch {
-      return null;
-    }
-  })();
-  const identMatch = observedAdoptMarkerMatches(marker, host, marker?.operationId ?? command.operationId);
-  const pathMatch = Boolean(hostRequire && resolve(hostRequire) === resolve(preloadPath));
-  const preloadMatch = pathMatch || (preloadSha != null && (marker?.preloadSha256 === preloadSha || hostPreloadSha === preloadSha));
-  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && identMatch && preloadMatch) {
+  if (!preloadSha) return emptyAdoptResult("preload-unavailable");
+  // A matching pathname (or today's bytes at that path) says nothing about already-loaded code.
+  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) &&
+      observedAdoptGenerationMatches(marker, host, profile, preloadSha)) {
     return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker: marker!, profile });
   }
   const strategy = decideH3LaunchStrategy({

@@ -76,7 +76,8 @@ describe("offline reviewed profile authoring", () => {
     if (!applied.ok) throw new Error(applied.code);
     expect(applied.source).toContain("agentId: host.getConversationId()");
     expect(applied.source).toContain("invocationId: inferenceRequestId");
-    expect(applied.source).toContain("originalSession: __grokbox_session");
+    expect(applied.source).toContain("if (__grokbox_session !== undefined) return __grokbox_session;");
+    expect(applied.source.indexOf("const __grokbox_hook")).toBeLessThan(applied.source.indexOf("const inferenceOptions"));
     expect(written.sourceSha256).toBe(hash(LIVE_SHAPED_HOST));
     expect(written.transformedSourceSha256).toBe(hash(applied.source));
     expect(await fs.readdir(f.destDir)).toEqual(["reviewed.json"]);

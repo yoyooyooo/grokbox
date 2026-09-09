@@ -33,7 +33,7 @@ const HOST_STREAM_REJECT_REASONS = new Set([
   "invalid-state",
   "connect-failed",
 ]);
-const HOST_SEAM_STAGES = new Set(["hook_enter", "stream_enter", "connect_attempt"]);
+const HOST_SEAM_STAGES = new Set(["hook_enter", "stream_enter", "connect_attempt", "first_chunk"]);
 const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail"]);
 const FORBIDDEN = /env|token|prompt|authorization|secret|apiKey/i;
 

@@ -28,17 +28,15 @@ Host bundle SHA、PromptSession/`SendToUser` 合同、官方 wrapper/supervisor�
 
 ## 2. 接缝
 
-生产接缝是 `createCursorSandInference.createSession` 上的 Host session adapter。现役 Host 立刻调用 `session.getModelId()` 再 `session.getExecutor(state).stream(ctx, invocationId, tools, options)`。`stream` 必须同步返回 `{ fullStream, response, usage, extendedUsage }` 及 Host 所需 promise，不得把整个对象做成 Promise，也不得把 `fullStream` tee 给 response/usage 等待者。成功和失败的 `response` 都要有可 `.trim()` 的 `modelId` 和 `messages` 数组；`usage` 为 Host camelCase `{ promptTokens, completionTokens, totalTokens }`；executor 的 `getMessages()` / `getState()` 必须返回 Array。identity 仍按对象身份交还 `originalSession`，不得包一层。
+生产接缝在 `createCursorSandInference.createSession` **入口**，先做 per-agent managed 选择，再允许原 Host 解析官方模型或构造官方 client/session。hook 返回 `undefined` 表示不接管，由未改变的 Host body 构造并返回官方 session；不得先调用官方 provider factory 再判断是否 managed。现役 Host 立刻调用 `session.getModelId()` 再 `session.getExecutor(state).stream(ctx, invocationId, tools, options)`。`stream` 必须同步返回 `{ fullStream, response, usage, extendedUsage }` 及 Host 所需 promise，不得把整个对象做成 Promise，也不得把 `fullStream` tee 给 response/usage 等待者。成功和失败的 `response` 都要有可 `.trim()` 的 `modelId` 和 `messages` 数组；`usage` 为 Host camelCase `{ promptTokens, completionTokens, totalTokens }`；executor 的 `getMessages()` / `getState()` 必须返回 Array。identity 仍按对象身份交还 `originalSession`，不得包一层。
 
 ```text
 App / Gateway / Host queue
-  -> createSession
-  -> hook
-       非 route 或非 ordinary main -> originalSession（官方）
-       route 且 ordinary main 且 assignments.agents[agentId] 已设
-         且 models/resolve/TURN/modeld socket 可用 -> Host-shaped session（modeld）
-         否则（缺 models、resolve 失败、缺 agent/TURN、socket 不在）-> originalSession（T11 预 dispatch passthrough）
-       route 且 ordinary main 且无 per-agent 覆盖 -> originalSession（官方 passthrough）
+  -> createSession entry hook（先于官方 provider 前置逻辑）
+       非 route 或无 per-agent 覆盖 -> undefined -> 原 Host body / 官方 session
+       route 且 assignments.agents[agentId] 已设 -> Host-shaped session（modeld）
+         缺 TURN/binding/bridge 或规范化失败 -> Host-owned rejection / 可见 error
+         不因官方 provider 的模型解析或 client 构造失败而阻塞 managed 分流
   -> modeld（provider effect 前检查 committed attestation + envelope）
   -> 失败：wrap 之后可见 managed error（agentId + STEP + stage=admit|provider|normalize）；出门后不静默回官方
   -> Host tool loop / SendToUser / Transcript
@@ -46,7 +44,9 @@ App / Gateway / Host queue
 
 Host 内 hook **不读** attestation 文件、不解封 provider credential。route 下复用同步有界 `models.json` 读取，只取得 **该 Bot 的 opt-in 与现有 session ABI 所需模型选择字段**，保持 `getModelId()` 对齐；后续 selectionRevision 也走这个薄入口，不先建立投影文件族。canonical admission 仍归 modeld。`activate --mode route` 允许 **agents-only**（`assignments.main` 可为 null）；未覆盖的 Bot 官方 passthrough。
 
-现役 `createSession` 的 `sessionOptions` **没有** agent id，也 **没有** invocation id。按 Bot 分流和 turn 相关是核心能力，因此 PatchProfile 除 `return session` 外还有 **第二精确切片**（当前实现为两处薄切片，扩展按 §4 审查）：在 `runTurn` 构造 `mainSessionOptions` 时写入 `agentId: host.getConversationId()` 与 `invocationId: inferenceRequestId`。仍是 NODE_OPTIONS 内存 transform，不写官方磁盘。**Seam 只把 `assignments.agents[agentId]` 已设的 Bot 交给 modeld**；缺覆盖 = 官方 passthrough。`assignments.main` 不是 session 回退。缺少 TURN（`sessionOptions.invocationId`）不得发明第二相关 id，createSession 预 dispatch 回 `originalSession`。已 wrap 的 route session 缺/非法 STEP 显式 `host_stream_rejected`，不回退 TURN。Debug canary 是 grokbox test0 `00000000-0000-4000-8000-000000000114`；grokbox test1 `00000000-0000-4000-8000-000000000113` 未 opt-in 则官方。其它 Bot 走 T10 官方。
+现役 `createSession` 的 `sessionOptions` **没有** agent id，也 **没有** invocation id。按 Bot 分流和 turn 相关是核心能力，因此 PatchProfile 除 `createSession` 入口外还有 **第二精确切片**（当前实现为两处薄切片，扩展按 §4 审查）：在 `runTurn` 构造 `mainSessionOptions` 时写入 `agentId: host.getConversationId()` 与 `invocationId: inferenceRequestId`。仍是 NODE_OPTIONS 内存 transform，不写官方磁盘。**Seam 只把 `assignments.agents[agentId]` 已设的 Bot 交给 modeld**；缺覆盖 = 官方 passthrough。`assignments.main` 不是 session 回退。已选 managed 后缺少 TURN（`sessionOptions.invocationId`）不得发明第二相关 id；应记录 `missing-turn` 并返回可见错误。已 wrap 的 route session 缺/非法 STEP 显式 `host_stream_rejected`，不回退 TURN。Debug canary 是 grokbox test0 `00000000-0000-4000-8000-000000000114`；grokbox test1 `00000000-0000-4000-8000-000000000113` 未 opt-in 则官方。其它 Bot 走 T10 官方。
+
+Host-owned `host_seam_stage` 的 `hook_enter` 在选择前记录；`stream_enter` 带可用 STEP，`connect_attempt` 表示 health 结果，`first_chunk` 仅在 modeld 返回有效且非空的内容事件时记录一次。local rejection/error text 不计作模型首块；stage 不携带 prompt、tool payload 或 credential。
 
 接缝须双向归一化：Host → Provider 保留 Host-selected 上下文（含 user-contained tool-result），不静默删减；Provider → Host 重整为原 PromptSession/session/`fullStream`，由 Host 继续维护会话/store、工具执行与 SendToUser。支持 streaming 的 Provider 在实施方案 Phase 1 接通 Host consumer；必要 codec 抽象保留，不以单个最终文本替代原合同。见 [ADR D1](decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d1--bidirectional-normalization)。
 
@@ -101,6 +101,8 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - 默认选择薄两切片 leaf，但数量不是永久禁令。额外 Host patch 的稳定性/能力收益明显大于新增耦合时，允许在精确 profile 审查、schema/validator 更新、双向合同/官方 passthrough 与恢复证明后扩展。未经批准不绕 gate，不复制 Host core。见 [ADR D2](decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d2--evidence-bounded-host-patch-surface)。
 
 Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制完整 `/proc/environ`。只许 `identityLaunchFields` / 固定 allowlist，不得整份克隆 supervisor 环境。
+
+复用已运行 Host 必须核对其 marker 捕获的 preload digest 及实际 compile/profile digest；相同 require pathname 或该路径现在的磁盘字节不能证明内存代码相同。preload digest 在执行 Host 之前捕获。确认操作身份包含 preload 与已审 profile 身份，避免只改 profile 时被旧 terminal operation 吞掉；真正更换编译代次仍只能由唯一 controller 完成，不因此取得任意重启授权。
 
 H3 有两条互斥启动策略（非公开，不是 CLI；身份注入 ≠ route）：
 

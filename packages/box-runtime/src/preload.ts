@@ -38,6 +38,9 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   const bytes = readFileSync(profilePath);
   const profile = JSON.parse(bytes.toString("utf8")) as PatchProfile;
   const profileSha256 = sha256Bytes(bytes);
+  // Capture the loaded module generation before executing Host code or re-reading mutable paths.
+  const preloadPath = typeof __filename === "string" ? __filename : requiredPreloadPath();
+  const preloadSha256 = preloadPath ? sha256Bytes(readFileSync(preloadPath)) : undefined;
   const self = inspectPid(process.pid);
   const binding = self ? bindCompiledHost(self, operationId, { profileId: profile.profileId, profileSha256,
     sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 }) : undefined;
@@ -72,7 +75,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
           compiled: true,
           modeld: false,
           compile: { profileId: profile.profileId, profileSha256, ...actual },
-          ...(requiredPreloadPath() ? { preloadSha256: sha256Bytes(readFileSync(requiredPreloadPath()!)) } : {}),
+          ...(preloadSha256 ? { preloadSha256 } : {}),
         })}\n`,
         { mode: 0o600, flag: "wx" },
       );
