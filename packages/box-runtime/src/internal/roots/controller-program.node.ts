@@ -306,7 +306,7 @@ async function commitObservedAdopt(input: {
     identity: input.host,
     at: new Date().toISOString(),
     launchMode: "transient-adopt",
-    operationId: input.command.operationId,
+    operationId: input.marker.operationId,
     profileId: compile.profileId,
     transformedSha: compile.transformedSha256,
     compile: {
@@ -324,7 +324,7 @@ async function commitObservedAdopt(input: {
   const done = {
     launchMode: "transient-adopt" as const,
     phase: "attested" as const,
-    operationId: input.command.operationId,
+    operationId: input.marker.operationId,
     compile: proposed.compile,
     tempSupervisor: null,
     adoptingSupervisor: input.supervisor,
@@ -385,7 +385,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
       return null;
     }
   })();
-  const identMatch = observedAdoptMarkerMatches(marker, host, command.operationId);
+  const identMatch = observedAdoptMarkerMatches(marker, host, marker?.operationId ?? command.operationId);
   const pathMatch = Boolean(hostRequire && resolve(hostRequire) === resolve(preloadPath));
   const preloadMatch = pathMatch || (preloadSha != null && (marker?.preloadSha256 === preloadSha || hostPreloadSha === preloadSha));
   if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && identMatch && preloadMatch) {
