@@ -16,22 +16,37 @@ const leases = new WeakMap<AuthLease, { fingerprint: string; secret: string }>()
 export type CountedSeams = {
   credential: number;
   network: number;
+  prepare: number;
+  verify: number;
+  authority: number;
+  order: string[];
 };
 
 export function createCountedSeams(): CountedSeams {
-  return { credential: 0, network: 0 };
+  return { credential: 0, network: 0, prepare: 0, verify: 0, authority: 0, order: [] };
 }
 
 function handle<T extends object>(tag: string): T {
   return Object.freeze(Object.create(null)) as T;
 }
 
-export function fakeBackendAuthLayer(secret = "synthetic-secret", counts?: CountedSeams): Layer.Layer<BackendAuth> {
+export function fakeBackendAuthLayer(
+  secret = "synthetic-secret",
+  counts?: CountedSeams,
+  options?: {
+    afterMaterialize?: Effect.Effect<void>;
+    verifyOk?: () => boolean;
+  },
+): Layer.Layer<BackendAuth> {
   const fingerprint = sha256Text(secret);
   return Layer.succeed(BackendAuth, {
     pin: (_input: unknown) => Effect.acquireRelease(
-      Effect.sync(() => {
-        if (counts) counts.credential += 1;
+      Effect.gen(function* () {
+        if (counts) {
+          counts.credential += 1;
+          counts.order.push("pin");
+        }
+        if (options?.afterMaterialize) yield* options.afterMaterialize;
         const lease = handle<AuthLease>("auth");
         leases.set(lease, { fingerprint, secret });
         return { lease, fingerprint };
@@ -41,6 +56,11 @@ export function fakeBackendAuthLayer(secret = "synthetic-secret", counts?: Count
       }),
     ),
     verify: (lease: AuthLease) => Effect.sync(() => {
+      if (counts) {
+        counts.verify += 1;
+        counts.order.push("verify");
+      }
+      if (options?.verifyOk && !options.verifyOk()) throw new BackendFailure("auth_mismatch");
       if (!leases.has(lease)) throw new BackendFailure("auth_mismatch");
     }),
   });
@@ -49,10 +69,14 @@ export function fakeBackendAuthLayer(secret = "synthetic-secret", counts?: Count
 export function fakeModelBackendLayer(
   events: InferenceEvent[],
   counts?: CountedSeams,
-  options?: { beforeInfer?: Effect.Effect<void> },
+  options?: { beforeInfer?: Effect.Effect<void>; failAfterFirst?: boolean },
 ): Layer.Layer<ModelBackend> {
   return Layer.succeed(ModelBackend, {
     prepare: (_selection: unknown, snapshot: unknown) => Effect.sync(() => {
+      if (counts) {
+        counts.prepare += 1;
+        counts.order.push("prepare");
+      }
       const call = handle<PreparedCall>("prepared");
       prepared.set(call, { snapshot });
       return call;
@@ -67,11 +91,15 @@ export function fakeModelBackendLayer(
         return Stream.fromAsyncIterable((async function* () {
           if (started) return;
           started = true;
-          if (counts) counts.network += 1;
+          if (counts) {
+            counts.network += 1;
+            counts.order.push("infer");
+          }
           const state = emptyStreamValidation();
-          for (const event of events) {
+          for (const [index, event] of events.entries()) {
             applyInferenceEvent(state, event);
             yield event;
+            if (options?.failAfterFirst && index === 0) throw new BackendFailure("provider_error");
           }
           finishInferenceStream(state);
         })(), (error) => error instanceof BackendFailure ? error : new BackendFailure("stream_invalid"));
@@ -96,9 +124,18 @@ export function fakeConfigurationReadLayer(input: {
   });
 }
 
-export function fakeAdmissionAuthorityLayer(): Layer.Layer<AdmissionAuthority> {
+export function fakeAdmissionAuthorityLayer(
+  evidence: () => unknown = () => ({ admitted: true }),
+  counts?: CountedSeams,
+): Layer.Layer<AdmissionAuthority> {
   return Layer.succeed(AdmissionAuthority, {
-    current: () => Effect.succeed({ admitted: true }),
+    current: () => Effect.gen(function* () {
+      if (counts) {
+        counts.authority += 1;
+        counts.order.push("authority");
+      }
+      return evidence();
+    }),
   });
 }
 

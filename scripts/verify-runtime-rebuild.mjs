@@ -30,6 +30,7 @@ const CASES = {
   ],
   binding: [
     ["bun", "test", "packages/runtime-kernel/test/selection.test.ts", "packages/runtime-kernel/test/route-binding.test.ts", "packages/runtime-kernel/test/step-ledger.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/binding-composition.test.ts"],
   ],
 };
 

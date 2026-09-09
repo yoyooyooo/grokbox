@@ -3,7 +3,7 @@ import { Deferred, Effect, Fiber, Latch, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { BindingFailure, contextSnapshotBody, type ContextSnapshot, type HostEpoch, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
-import { inferenceMemoryLayer, runStep, type RunStepRequest } from "@grokbox/runtime-kernel/inference";
+import { cancelStep, inferenceMemoryLayer, runStep, type RunStepRequest } from "@grokbox/runtime-kernel/inference";
 import { STUB_ECHO_MODEL_ID, captureManagedSelection, parseModelsFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
   createCountedSeams,
@@ -75,7 +75,7 @@ function graph(input: {
   return fakeBackendAuthLayer("secret", counts).pipe(
     Layer.merge(fakeModelBackendLayer(EVENTS, counts)),
     Layer.merge(fakeConfigurationReadLayer({ models: file, beforeRead: input.beforeRead })),
-    Layer.merge(fakeAdmissionAuthorityLayer()),
+    Layer.merge(fakeAdmissionAuthorityLayer(() => ({ admitted: true }), counts)),
     Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1", ledgerMax: input.ledgerMax })),
     Layer.merge(TestClock.layer()),
   );
@@ -172,5 +172,81 @@ describe("step ledger", () => {
   test("BindingFailure codes stay explicit", () => {
     expect(new BindingFailure("turn_busy").code).toBe("turn_busy");
     expect(TestClock.layer).toBeDefined();
+  });
+
+  test("canonical digest is recomputed; absorbed IDs do not rerun", async () => {
+    const forged = req();
+    forged.snapshot = { ...forged.snapshot, snapshotDigest: "0".repeat(64) };
+    expect(occupy(emptyInferenceState({ serviceEpoch: "svc-1" }), forged, 0)).toMatchObject({
+      ok: false,
+      error: { code: "step_invalid" },
+    });
+
+    const counts = createCountedSeams();
+    const failLayer = fakeBackendAuthLayer("secret", counts).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failAfterFirst: true })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer(() => ({ admitted: true }), counts)),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1" })),
+      Layer.merge(TestClock.layer()),
+    );
+    const firstReq = req({ turnId: "turn-fail" });
+    const outcome = await run(Effect.scoped(Effect.gen(function* () {
+      const failed = yield* Effect.result(collect(firstReq));
+      const retry = yield* collect(firstReq);
+      return { failed, retry };
+    }).pipe(Effect.provide(failLayer))));
+    expect(outcome.failed._tag).toBe("Failure");
+    expect(outcome.retry.kind).toBe("duplicate");
+    expect(counts.network).toBe(1);
+
+    const lateCounts = createCountedSeams();
+    const lateLayer = graph({ counts: lateCounts });
+    const step1 = req({ turnId: "turn-late", stepId: "s1" });
+    const step2 = req({ turnId: "turn-late", stepId: "s2" });
+    const late = await run(Effect.scoped(Effect.gen(function* () {
+      const first = yield* collect(step1);
+      if (first.kind !== "live") throw new Error("expected live");
+      const second = yield* collect({ ...step2, bindingId: first.bindingId });
+      yield* cancelStep({
+        hostEpoch: HOST,
+        serviceEpoch: { incarnationId: "svc-1" },
+        agentId: "agent-a",
+        turnId: "turn-late",
+        stepId: "s1",
+      });
+      const again = yield* collect({ ...step1, bindingId: first.bindingId });
+      return { second, again };
+    }).pipe(Effect.provide(lateLayer))));
+    expect(late.again.kind).toBe("duplicate");
+    expect(lateCounts.network).toBe(2);
+  });
+
+  test("unknown cancel is bounded; wrong ServiceEpoch is rejected", async () => {
+    const counts = createCountedSeams();
+    const layer = graph({ counts, ledgerMax: 2 });
+    await expect(run(Effect.scoped(Effect.gen(function* () {
+      yield* collect(req({ stepId: "keep-1" }));
+      yield* collect(req({ turnId: "turn-2", stepId: "keep-2" }));
+      for (let i = 0; i < 20; i += 1) {
+        yield* cancelStep({
+          hostEpoch: HOST,
+          serviceEpoch: { incarnationId: "svc-1" },
+          agentId: "agent-a",
+          turnId: "ghost",
+          stepId: `ghost-${i}`,
+        });
+      }
+    }).pipe(Effect.provide(layer))))).rejects.toMatchObject({ code: "capacity" });
+
+    await expect(run(Effect.scoped(
+      cancelStep({
+        hostEpoch: HOST,
+        serviceEpoch: { incarnationId: "other" },
+        agentId: "agent-a",
+        turnId: "turn-1",
+        stepId: "step-1",
+      }).pipe(Effect.provide(graph())),
+    ))).rejects.toMatchObject({ code: "service_epoch_mismatch" });
   });
 });

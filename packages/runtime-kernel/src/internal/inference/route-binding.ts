@@ -1,5 +1,5 @@
-import { Layer, SynchronizedRef } from "effect";
-import { Context } from "effect";
+import { Context, Deferred, Layer, SynchronizedRef } from "effect";
+import type * as Scope from "effect/Scope";
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import { LEDGER_ENTRIES_MAX, TURN_IDLE_MS } from "../contract/limits.ts";
 import type { AuthLease } from "../../ports.ts";
@@ -111,10 +111,14 @@ export function cloneState(state: InferenceState): InferenceState {
 
 export class InferenceMemory extends Context.Service<InferenceMemory, {
   readonly ref: SynchronizedRef.SynchronizedRef<InferenceState>;
+  readonly cancels: Map<string, Deferred.Deferred<void>>;
+  readonly turnScopes: Map<string, Scope.Closeable>;
 }>()("grokbox/InferenceMemory") {}
 
-export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}): Layer.Layer<InferenceMemory> {
+export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
   return Layer.succeed(InferenceMemory, {
     ref: SynchronizedRef.makeUnsafe(emptyInferenceState(options)),
+    cancels: new Map<string, Deferred.Deferred<void>>(),
+    turnScopes: new Map<string, Scope.Closeable>(),
   });
 }

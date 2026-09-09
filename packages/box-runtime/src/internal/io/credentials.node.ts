@@ -175,8 +175,14 @@ export function createLiveBackendAuth(env: NodeJS.Dict<string> = process.env): L
       const ref = input && typeof input === "object" && "apiKeyRef" in input && typeof (input as { apiKeyRef: unknown }).apiKeyRef === "string"
         ? (input as { apiKeyRef: string }).apiKeyRef
         : "";
-      return Effect.acquireRelease(
-        materializeApiKeyRefEffect(ref, env).pipe(
+      const acquire = ref === ""
+        ? Effect.sync(() => {
+          const lease = makeLease();
+          const fingerprint = fingerprintSecret("");
+          leases.set(lease, { fingerprint, secret: "", ref: "", env });
+          return { lease, fingerprint };
+        })
+        : materializeApiKeyRefEffect(ref, env).pipe(
           Effect.mapError((error) => error instanceof BackendFailure ? error : new BackendFailure("credential_invalid")),
           Effect.map((secret) => {
             const lease = makeLease();
@@ -184,7 +190,9 @@ export function createLiveBackendAuth(env: NodeJS.Dict<string> = process.env): L
             leases.set(lease, { fingerprint, secret, ref, env });
             return { lease, fingerprint };
           }),
-        ),
+        );
+      return Effect.acquireRelease(
+        acquire,
         ({ lease }) => Effect.sync(() => {
           const record = leases.get(lease);
           if (record) record.secret = "";
@@ -195,7 +203,9 @@ export function createLiveBackendAuth(env: NodeJS.Dict<string> = process.env): L
     verify: (lease: AuthLease) => Effect.gen(function* () {
       const record = leases.get(lease);
       if (!record) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
-      const current = yield* fingerprintApiKeyRefEffect(record.ref, record.env);
+      const current = record.ref === ""
+        ? fingerprintSecret("")
+        : yield* fingerprintApiKeyRefEffect(record.ref, record.env);
       if (current !== record.fingerprint) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
     }),
   });

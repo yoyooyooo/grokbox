@@ -1,4 +1,5 @@
-import { Clock, Effect, Stream, SynchronizedRef } from "effect";
+import { Clock, Deferred, Effect, Stream, SynchronizedRef } from "effect";
+import * as Scope from "effect/Scope";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
 import { AdmissionAuthority, BackendAuth, ConfigurationRead, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
@@ -11,7 +12,7 @@ import {
   turnKey,
   type RouteBindingRecord,
 } from "./route-binding.ts";
-import { markCancelled, occupy, releaseOccupancy, type OccupyResult } from "./step-ledger.ts";
+import { applyCancel, occupy, releaseOccupancy, type OccupyResult } from "./step-ledger.ts";
 import type { InferenceState } from "./route-binding.ts";
 import { fenceStream } from "./stream-state.ts";
 
@@ -26,6 +27,72 @@ export type AdmittedStep = DuplicateStep | LiveStep;
 function asBindingOrBackend(error: unknown): BindingFailure | BackendFailure {
   if (error instanceof BindingFailure || error instanceof BackendFailure) return error;
   return new BindingFailure("not_admitted");
+}
+
+function requireAdmitted(evidence: unknown): Effect.Effect<void, BindingFailure> {
+  if (evidence && typeof evidence === "object" && "admitted" in evidence && (evidence as { admitted: unknown }).admitted === true) {
+    return Effect.void;
+  }
+  return Effect.fail(new BindingFailure("not_admitted"));
+}
+
+function readAuthority() {
+  return Effect.gen(function* () {
+    const authority = yield* AdmissionAuthority;
+    const evidence = yield* authority.current().pipe(Effect.mapError(() => new BindingFailure("not_admitted")));
+    yield* requireAdmitted(evidence);
+  });
+}
+
+function dispatchFence(request: RunStepRequest, lease: AuthLease) {
+  return Effect.gen(function* () {
+    yield* readAuthority();
+    const memory = yield* InferenceMemory;
+    const state = yield* SynchronizedRef.get(memory.ref);
+    const entry = state.ledger.get(ledgerKey(request));
+    if (entry?.status === "cancelled") return yield* Effect.fail(new BindingFailure("cancelled"));
+    const auth = yield* BackendAuth;
+    yield* auth.verify(lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
+  });
+}
+
+function pinOnTurn(request: RunStepRequest, apiKeyRef: string) {
+  return Effect.gen(function* () {
+    const memory = yield* InferenceMemory;
+    const key = bindingStoreKey(request);
+    let scope = memory.turnScopes.get(key);
+    if (!scope) {
+      scope = Scope.makeUnsafe();
+      memory.turnScopes.set(key, scope);
+    }
+    const auth = yield* BackendAuth;
+    return yield* auth.pin({ apiKeyRef }).pipe(
+      Effect.provideService(Scope.Scope, scope),
+      Effect.mapError(asBindingOrBackend),
+    );
+  });
+}
+
+function haltProducer(cancels: Map<string, Deferred.Deferred<void>>, key: string) {
+  const halt = cancels.get(key);
+  if (!halt) return Effect.void;
+  return Deferred.succeed(halt, undefined).pipe(Effect.ignore);
+}
+
+function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: AuthLease, halt: Deferred.Deferred<void>) {
+  return Stream.interruptWhen(
+    Stream.unwrap(Effect.gen(function* () {
+      yield* dispatchFence(request, lease);
+      const backend = yield* ModelBackend;
+      const memory = yield* InferenceMemory;
+      const key = ledgerKey(request);
+      const cancelled = SynchronizedRef.get(memory.ref).pipe(
+        Effect.map((current) => current.ledger.get(key)?.status === "cancelled"),
+      );
+      return fenceStream(backend.infer({}, prepared, lease), cancelled);
+    })),
+    Deferred.await(halt),
+  );
 }
 
 export function runStep(request: RunStepRequest) {
@@ -46,22 +113,26 @@ export function runStep(request: RunStepRequest) {
     const release = (status: "rejected" | "terminal" | "cancelled") =>
       SynchronizedRef.update(memory.ref, (state) => releaseOccupancy(state, request, status));
 
+    yield* Effect.addFinalizer(() => Effect.gen(function* () {
+      yield* haltProducer(memory.cancels, ledgerKey(request));
+      yield* SynchronizedRef.update(memory.ref, (state) => {
+        const entry = state.ledger.get(ledgerKey(request));
+        if (entry?.status !== "active") return state;
+        const turn = state.turns.get(turnKey(request));
+        if (turn && !turn.bindingId) {
+          const cancelled = applyCancel(state, request);
+          return cancelled.ok ? cancelled.state : releaseOccupancy(state, request, "cancelled");
+        }
+        return releaseOccupancy(state, request, "rejected");
+      });
+    }));
+
     return yield* admitLive(request, now).pipe(
-      Effect.onInterrupt(() => SynchronizedRef.update(memory.ref, (state) => markCancelled(state, request))),
       Effect.matchEffect({
         onFailure: (error) => release("rejected").pipe(Effect.andThen(Effect.fail(asBindingOrBackend(error)))),
         onSuccess: (live) => Effect.succeed({
           ...live,
-          stream: Stream.ensuring(
-            Stream.tap(live.stream, (event) => event.type === "backend_finish" ? release("terminal") : Effect.void),
-            Effect.gen(function* () {
-              const current = yield* SynchronizedRef.get(memory.ref);
-              const entry = current.ledger.get(ledgerKey(request));
-              if (entry?.status === "active") {
-                yield* release(current.cancelled.has(ledgerKey(request)) ? "cancelled" : "rejected");
-              }
-            }),
-          ),
+          stream: Stream.tap(live.stream, (event) => event.type === "backend_finish" ? release("terminal") : Effect.void),
         }),
       }),
     );
@@ -70,12 +141,9 @@ export function runStep(request: RunStepRequest) {
 
 function admitLive(request: RunStepRequest, now: number) {
   return Effect.gen(function* () {
+    yield* readAuthority();
     const memory = yield* InferenceMemory;
-    const auth = yield* BackendAuth;
     const backend = yield* ModelBackend;
-    const authority = yield* AdmissionAuthority;
-    yield* authority.current().pipe(Effect.mapError(() => new BindingFailure("not_admitted")));
-
     const storeKey = bindingStoreKey(request);
     const existing = (yield* SynchronizedRef.get(memory.ref)).bindings.get(storeKey);
 
@@ -91,10 +159,9 @@ function admitLive(request: RunStepRequest, now: number) {
       if (existing.serviceEpoch.incarnationId !== request.serviceEpoch.incarnationId) {
         return yield* Effect.fail(new BindingFailure("service_epoch_mismatch"));
       }
-      yield* auth.verify(existing.lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
+      prepared = yield* backend.prepare(existing.model, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
       bindingId = existing.bindingId;
       lease = existing.lease;
-      prepared = yield* backend.prepare(existing.model, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
       yield* SynchronizedRef.update(memory.ref, (current) => {
         const bound = current.bindings.get(storeKey);
         if (bound) bound.lastActivityMs = now;
@@ -116,7 +183,7 @@ function admitLive(request: RunStepRequest, now: number) {
       const resolved = modelForAgent(snapshot.models, request.agentId);
       if (!resolved) return yield* Effect.fail(new BindingFailure("not_admitted"));
       prepared = yield* backend.prepare(resolved, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
-      const pinned = yield* auth.pin({ apiKeyRef: resolved.apiKeyRef }).pipe(Effect.mapError(asBindingOrBackend));
+      const pinned = yield* pinOnTurn(request, resolved.apiKeyRef);
       bindingId = makeBindingId({
         hostEpoch: request.hostEpoch,
         agentId: request.agentId,
@@ -149,13 +216,17 @@ function admitLive(request: RunStepRequest, now: number) {
         return current;
       });
     }
-    const cancelled = SynchronizedRef.get(memory.ref).pipe(
-      Effect.map((current) => current.cancelled.has(ledgerKey(request))),
-    );
+    const halt = yield* Deferred.make<void>();
+    memory.cancels.set(ledgerKey(request), halt);
     return {
       kind: "live" as const,
       bindingId,
-      stream: fenceStream(backend.infer({}, prepared, lease), cancelled),
+      stream: Stream.ensuring(
+        ownedInfer(request, prepared, lease, halt),
+        Effect.sync(() => {
+          memory.cancels.delete(ledgerKey(request));
+        }),
+      ),
     };
   });
 }
@@ -163,6 +234,17 @@ function admitLive(request: RunStepRequest, now: number) {
 export function cancelStep(request: CancelStepRequest): Effect.Effect<void, BindingFailure, InferenceMemory> {
   return Effect.gen(function* () {
     const memory = yield* InferenceMemory;
-    yield* SynchronizedRef.update(memory.ref, (state) => markCancelled(state, request));
+    const key = ledgerKey(request);
+    const current = yield* SynchronizedRef.get(memory.ref);
+    if (request.serviceEpoch.incarnationId !== current.serviceEpoch) {
+      return yield* Effect.fail(new BindingFailure("service_epoch_mismatch"));
+    }
+    yield* haltProducer(memory.cancels, key);
+    const applied = yield* SynchronizedRef.modify(memory.ref, (state): readonly [ReturnType<typeof applyCancel>, InferenceState] => {
+      const result = applyCancel(state, request);
+      if (!result.ok) return [result, state];
+      return [result, result.state];
+    });
+    if (!applied.ok) return yield* Effect.fail(applied.error);
   });
 }
