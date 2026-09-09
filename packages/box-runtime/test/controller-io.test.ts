@@ -285,6 +285,12 @@ describe("controller IO facade", () => {
       expect(observedAdoptMarkerMatches({
         pid: 13, start: 102, operationId: "op-old", compiled: true, transformed: true, mode: "route",
       }, hostIdent, "op-now")).toBe(false);
+      expect(observedAdoptMarkerMatches({
+        pid: 13, start: 102, operationId: "op-now", compiled: true, transformed: true, mode: "route",
+      }, hostIdent, "op-now", "f".repeat(64))).toBe(false);
+      expect(observedAdoptMarkerMatches({
+        pid: 13, start: 102, operationId: "op-now", compiled: true, transformed: true, mode: "route", preloadSha256: "f".repeat(64),
+      }, hostIdent, "op-now", "f".repeat(64))).toBe(true);
       expect(kills).toEqual([]);
       expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 });
     } finally {

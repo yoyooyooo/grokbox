@@ -17,6 +17,7 @@ import {
   observeEvents,
   reviewedProfilePath,
   controllerOperationId,
+  diskPreloadSha256,
   runtimeNotReady,
   startControlOperation,
   startModeldProcess,
@@ -173,10 +174,11 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
       throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
     }
     const runtime = store(deps);
+    const preloadSha256 = diskPreloadSha256();
     const receipt = await startControlOperation({
       intent: "apply",
       confirmed: true,
-      operationId: controllerOperationId("apply", runtime.root),
+      operationId: controllerOperationId("apply", runtime.root, preloadSha256 ? { preloadSha256 } : undefined),
       boxRoot: runtime.root,
     });
     writeSuccess(deps.stdout, receipt);

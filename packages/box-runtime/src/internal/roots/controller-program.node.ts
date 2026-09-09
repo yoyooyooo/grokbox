@@ -50,8 +50,24 @@ export function resetLiveMutationAttempts(): void {
   lastLiveAdopt = null;
 }
 
-export function controllerOperationId(intent: "apply" | "reconcile", boxRoot: string): string {
-  return sha256Text(canonicalJson({ intent, boxRoot }));
+export function diskPreloadSha256(path = resolvePreloadPath()): string | null {
+  try {
+    return sha256Bytes(readFileSync(path));
+  } catch {
+    return null;
+  }
+}
+
+export function controllerOperationId(
+  intent: "apply" | "reconcile",
+  boxRoot: string,
+  generation?: { preloadSha256?: string },
+): string {
+  return sha256Text(canonicalJson({
+    intent,
+    boxRoot,
+    ...(generation?.preloadSha256 ? { preloadSha256: generation.preloadSha256 } : {}),
+  }));
 }
 
 type StoreFile = Record<string, OperationRecord>;
@@ -244,9 +260,10 @@ function emptyAdoptResult(code: string): IdentityOpResult {
 }
 
 export function observedAdoptMarkerMatches(
-  marker: { pid?: number; start?: number; operationId?: string; compiled?: boolean; transformed?: boolean; mode?: string } | null,
+  marker: { pid?: number; start?: number; operationId?: string; compiled?: boolean; transformed?: boolean; mode?: string; preloadSha256?: string } | null,
   host: { pid: number; start: number },
   operationId: string,
+  preloadSha256?: string,
 ): boolean {
   return Boolean(
     marker &&
@@ -255,7 +272,8 @@ export function observedAdoptMarkerMatches(
     marker.operationId === operationId &&
     marker.compiled === true &&
     marker.transformed === true &&
-    marker.mode === "route",
+    marker.mode === "route" &&
+    (preloadSha256 == null || marker.preloadSha256 === preloadSha256),
   );
 }
 
@@ -353,22 +371,24 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const host = proven.chain.host;
   const supervisor = proven.chain.supervisor;
   const marker = readMarkerFile(markerPath);
-  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && observedAdoptMarkerMatches(marker, host, command.operationId)) {
+  const preloadSha = diskPreloadSha256(preloadPath);
+  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && observedAdoptMarkerMatches(marker, host, command.operationId, preloadSha ?? undefined)) {
     return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker: marker!, profile });
   }
-  if (proven.mode === "transient-adopt" && marker && !observedAdoptMarkerMatches(marker, host, command.operationId)) {
-    return emptyAdoptResult("marker-generation-mismatch");
-  }
-  if (proven.mode !== "direct-launch") return emptyAdoptResult("adopt-unproven");
   const strategy = decideH3LaunchStrategy({
     supervisor,
     reviewedAdoptCapability: reviewOfficialAdoptCapability(supervisor),
   });
-  if (command.strategy === "transient" && strategy !== "transient-adopt-candidate") {
-    return emptyAdoptResult("launch-strategy-unavailable");
-  }
-  if (command.strategy === "direct" && strategy !== "direct-overlay") {
-    return emptyAdoptResult("launch-strategy-unavailable");
+  const canSpawnTransient = command.strategy === "transient" && strategy === "transient-adopt-candidate";
+  if (!canSpawnTransient) {
+    if (proven.mode === "transient-adopt" && marker && !observedAdoptMarkerMatches(marker, host, command.operationId, preloadSha ?? undefined)) {
+      return emptyAdoptResult("marker-generation-mismatch");
+    }
+    if (proven.mode !== "direct-launch") return emptyAdoptResult("adopt-unproven");
+    if (command.strategy === "direct" && strategy !== "direct-overlay") {
+      return emptyAdoptResult("launch-strategy-unavailable");
+    }
+    if (command.strategy === "transient") return emptyAdoptResult("launch-strategy-unavailable");
   }
   const launchSource = fillMissingLaunchEnv(
     readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST),

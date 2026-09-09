@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
@@ -60,6 +61,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
           compiled: true,
           modeld: false,
           compile: { profileId: profile.profileId, profileSha256, ...actual },
+          preloadSha256: sha256Bytes(readFileSync(fileURLToPath(import.meta.url))),
         })}\n`,
         { mode: 0o600, flag: "wx" },
       );

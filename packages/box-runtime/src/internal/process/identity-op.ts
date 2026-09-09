@@ -24,6 +24,8 @@ export type IdentityMarker = {
   modeld: false;
   /** Required for transient-adopt receipts; old markers cannot attest a new launch. */
   compile?: CompileReceipt;
+  /** SHA-256 of the preload module that compiled this Host. Missing ⇒ other generation. */
+  preloadSha256?: string;
 };
 
 export type IdentityOpResult = {
