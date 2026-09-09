@@ -9,7 +9,8 @@
     "./ports": "./src/ports.ts",
     "./status": "./src/status.ts",
     "./testing": "./src/testing.ts",
-    "./inference": "./src/inference.ts"
+    "./inference": "./src/inference.ts",
+    "./commands": "./src/commands.ts"
   },
   "dependencies": {
     "effect": "catalog:effect-v4-beta"

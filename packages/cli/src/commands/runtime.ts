@@ -17,6 +17,7 @@ import {
   observeEvents,
   reviewedProfilePath,
   runtimeNotReady,
+  startControlOperation,
   startModeldProcess,
   writeReviewedProfileFromCopy,
   type DesiredMode,
@@ -170,8 +171,14 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
     if (confirmed !== true) {
       throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
     }
-    store(deps);
-    runtimeNotReady("controller operation", "T28");
+    const runtime = store(deps);
+    const receipt = await startControlOperation({
+      intent: "apply",
+      confirmed: true,
+      operationId: "cli-readopt",
+      boxRoot: runtime.root,
+    });
+    writeSuccess(deps.stdout, receipt);
   } catch (error) {
     rethrow(error);
   }
@@ -179,8 +186,14 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
 
 export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
   try {
-    store(deps);
-    runtimeNotReady("controller operation", "T28");
+    const runtime = store(deps);
+    const receipt = await startControlOperation({
+      intent: "reconcile",
+      confirmed: false,
+      operationId: "cli-reconcile",
+      boxRoot: runtime.root,
+    });
+    writeSuccess(deps.stdout, receipt);
   } catch (error) {
     rethrow(error);
   }

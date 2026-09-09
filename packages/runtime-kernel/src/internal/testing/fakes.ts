@@ -7,7 +7,7 @@ import {
   type InferenceEvent,
 } from "../contract/events.ts";
 import { sha256Text } from "../../hash.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, ModelBackend, type AuthLease, type ControllerRequest, type PreparedCall } from "../../ports.ts";
 import type { ModelsFile, DesiredFile } from "../../selection.ts";
 
 const prepared = new WeakMap<PreparedCall, { snapshot: unknown }>();
@@ -155,4 +155,77 @@ export function unsealFakeAuth(lease: AuthLease): string {
   const record = leases.get(lease);
   if (!record) throw new BackendFailure("auth_mismatch");
   return record.secret;
+}
+
+export type FakeControlCounts = {
+  lease: number;
+  preflight: number;
+  recheck: number;
+  signal: number;
+  spawn: number;
+  guardian: number;
+  wait: number;
+  commit: number;
+};
+
+export function emptyFakeControlCounts(): FakeControlCounts {
+  return { lease: 0, preflight: 0, recheck: 0, signal: 0, spawn: 0, guardian: 0, wait: 0, commit: 0 };
+}
+
+export function fakeControlResourcesLayer(options: {
+  counts?: FakeControlCounts;
+  preflight?: { ok: boolean; reason: string | null; strategy?: "direct" | "transient" };
+  recheck?: { ok: boolean; reason: string | null };
+  duplicate?: boolean;
+  wait?: Effect.Effect<void, unknown>;
+  failSignal?: boolean;
+} = {}): Layer.Layer<ControlResources> {
+  const committed = new Set<string>();
+  const counts = options.counts;
+  const bump = (key: keyof FakeControlCounts) => {
+    if (counts) counts[key] += 1;
+  };
+  return Layer.succeed(ControlResources, {
+    lease: (input: { operationId: string }) => Effect.acquireRelease(
+      Effect.sync(() => {
+        bump("lease");
+        if (options.duplicate || committed.has(input.operationId)) return { duplicate: true };
+        return { duplicate: false };
+      }),
+      () => Effect.void,
+    ),
+    preflight: (_input: ControllerRequest) => Effect.sync(() => {
+      bump("preflight");
+      return options.preflight ?? { ok: false, reason: "preflight-incomplete" };
+    }),
+    recheck: (_input: ControllerRequest) => Effect.sync(() => {
+      bump("recheck");
+      return options.recheck ?? options.preflight ?? { ok: false, reason: "recheck-incomplete" };
+    }),
+    signal: (_input: ControllerRequest) => Effect.try({
+      try: () => {
+        bump("signal");
+        if (options.failSignal) throw new Error("signal-failed");
+        return { signaled: true };
+      },
+      catch: (error) => error,
+    }),
+    spawn: (_input: ControllerRequest) => Effect.sync(() => {
+      bump("spawn");
+      return { spawned: true };
+    }),
+    armGuardian: (_input: ControllerRequest) => Effect.sync(() => {
+      bump("guardian");
+      return { guardian: true };
+    }),
+    wait: (_input: ControllerRequest) => Effect.gen(function* () {
+      bump("wait");
+      if (options.wait) yield* options.wait;
+    }),
+    commit: (input: ControllerRequest) => Effect.sync(() => {
+      bump("commit");
+      committed.add(input.operationId);
+      return { committed: true };
+    }),
+  });
 }

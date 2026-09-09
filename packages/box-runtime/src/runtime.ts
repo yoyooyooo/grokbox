@@ -22,10 +22,5 @@ export {
 export { observeEvents } from "./internal/io/journal.node.ts";
 export { writeReviewedProfileFromCopy } from "./internal/process/profile.node.ts";
 
-import { runtimeNotReady } from "@grokbox/runtime-kernel/contract";
 export { startModeldProcess, ensureModeld, modeldRootLayer, type StartedModeld, type ModeldEnsure } from "./internal/roots/modeld.runtime.ts";
-
-/** T28 composition boundary. Old coordinator/inject/watchdog executors are not public. */
-export function startControlOperation(): never {
-  return runtimeNotReady("controller operation", "T28");
-}
+export { startControlOperation } from "./internal/roots/controller-program.node.ts";

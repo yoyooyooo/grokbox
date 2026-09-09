@@ -43,6 +43,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "./status": "./src/status.ts",
       "./testing": "./src/testing.ts",
       "./inference": "./src/inference.ts",
+      "./commands": "./src/commands.ts",
     },
   })}\n`);
   if (!omitSource) {
@@ -55,6 +56,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "packages/runtime-kernel/src/status.ts",
       "packages/runtime-kernel/src/testing.ts",
       "packages/runtime-kernel/src/inference.ts",
+      "packages/runtime-kernel/src/commands.ts",
       "packages/cli/src/index.ts",
     ]) await put(root, path, "export {};\n");
     await put(root, "packages/runtime-kernel/src/ports.ts", "export const ConfigurationRead = 1;\n");

@@ -494,14 +494,14 @@ describe("box-local runtime CLI", () => {
     expect((parseJson(refused.stderr) as { error: { message: string } }).error.message).toContain("--confirm");
   });
 
-  test("confirmed re-adopt is runtime_not_ready before live ports", async () => {
+  test("confirmed re-adopt runs the controller program with zero live mutation", async () => {
     const factory = spyLiveAdoptFactory();
     const coordinator = spyOn(coordinatorModule, "runManualReadopt");
     try {
       const boxRuntimeRoot = await withRoot();
       const receipt = await captureCli(["runtime", "re-adopt", "--confirm"], { discoveryPath: "/dev/null", boxRuntimeRoot });
-      expect(receipt.code).toBe(70);
-      expect((parseJson(receipt.stderr) as { error: { code: string } }).error.code).toBe("runtime_not_ready");
+      expect(receipt.code, receipt.stderr).toBe(0);
+      expect(data(receipt.stdout)).toMatchObject({ outcome: "refused", signaled: false, spawned: false, guardian: false });
       expect(factory).not.toHaveBeenCalled();
       expect(coordinator).not.toHaveBeenCalled();
     } finally {
@@ -539,8 +539,8 @@ describe("box-local runtime CLI", () => {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
-    expect(watchdog.code).toBe(70);
-    expect((parseJson(watchdog.stderr) as { error: { code: string } }).error.code).toBe("runtime_not_ready");
+    expect(watchdog.code, watchdog.stderr).toBe(0);
+    expect(data(watchdog.stdout)).toMatchObject({ signaled: false, spawned: false, guardian: false });
     expect(JSON.stringify(data(activate.stdout))).not.toContain("ctl");
     expect(JSON.stringify(data(activate.stdout))).not.toContain("re-adopt");
   });
@@ -600,15 +600,16 @@ describe("box-local runtime CLI", () => {
         discoveryPath: "/dev/null",
         boxRuntimeRoot,
       });
-      expect(watchdog.code).toBe(70);
+      expect(watchdog.code, watchdog.stderr).toBe(0);
+      expect(data(watchdog.stdout).signaled).toBe(false);
       expect(spy).not.toHaveBeenCalled();
 
       const confirmed = await captureCli(["runtime", "re-adopt", "--confirm"], {
         discoveryPath: "/dev/null",
         boxRuntimeRoot,
       });
-      expect(confirmed.code).toBe(70);
-      expect((parseJson(confirmed.stderr) as { error: { code: string } }).error.code).toBe("runtime_not_ready");
+      expect(confirmed.code, confirmed.stderr).toBe(0);
+      expect(data(confirmed.stdout)).toMatchObject({ signaled: false, spawned: false, guardian: false });
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();

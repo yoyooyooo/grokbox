@@ -38,6 +38,9 @@ const CASES = {
   stream: [
     ["bun", "test", "packages/box-runtime/test/host-session.test.ts", "packages/box-runtime/test/host-fullstream.test.ts", "packages/box-runtime/test/runtime-pipeline.test.ts"],
   ],
+  control: [
+    ["bun", "test", "packages/runtime-kernel/test/controller.test.ts", "packages/box-runtime/test/controller-io.test.ts", "test/runtime-cli.test.ts"],
+  ],
 };
 
 const mapped = CASES[kase];
@@ -89,6 +92,7 @@ const SUPPORTS = {
   binding: ["selection-capture", "route-binding", "step-ledger"],
   lifecycle: ["modeld-v3-wire", "effect-unix-root"],
   stream: ["host-fullStream", "v3-unix-host-consumer"],
+  control: ["controller-effect-program", "cli-confirmed-apply"],
 };
 const REALITY = {
   layout: "offline-layout",
@@ -98,6 +102,7 @@ const REALITY = {
   binding: "offline-testclock-barrier",
   lifecycle: "offline-unix-disposable",
   stream: "offline-unix-sdk-mock-host",
+  control: "offline-controller-fakes",
 };
 const report = {
   case: kase,
@@ -105,8 +110,8 @@ const report = {
   dependencyReality: REALITY[kase] ?? "offline",
   supports: failed ? [] : (SUPPORTS[kase] ?? []),
   notProven: [
-    ...(kase === "stream" ? [] : kase === "lifecycle" ? ["T26-host-fullStream"] : kase === "backend" || kase === "binding" ? ["T26-host-fullStream"] : ["inference"]),
-    "controller-effect-program",
+    ...(kase === "stream" || kase === "control" ? [] : kase === "lifecycle" ? ["T26-host-fullStream"] : kase === "backend" || kase === "binding" ? ["T26-host-fullStream"] : ["inference"]),
+    ...(kase === "control" ? [] : ["controller-effect-program"]),
     ...(kase === "lifecycle" || kase === "stream" ? [] : ["v3-wire-server"]),
     ...(kase === "stream" ? [] : ["Host-fullStream"]),
     ...(kase === "status" ? [] : ["status-facets"]),
