@@ -41,6 +41,9 @@ const CASES = {
   control: [
     ["bun", "test", "packages/runtime-kernel/test/controller.test.ts", "packages/box-runtime/test/controller-io.test.ts", "test/runtime-cli.test.ts"],
   ],
+  "raw-output": [
+    ["bun", "test", "packages/box-runtime/test/controller-io.test.ts", "-t", "raw output"],
+  ],
 };
 
 const mapped = CASES[kase];
@@ -93,6 +96,7 @@ const SUPPORTS = {
   lifecycle: ["modeld-v3-wire", "effect-unix-root"],
   stream: ["host-fullStream", "v3-unix-host-consumer"],
   control: ["controller-effect-program", "cli-confirmed-apply"],
+  "raw-output": ["default-child-stdio-ignore", "t12-renewer-allowlist"],
 };
 const REALITY = {
   layout: "offline-layout",
@@ -103,6 +107,7 @@ const REALITY = {
   lifecycle: "offline-unix-disposable",
   stream: "offline-unix-sdk-mock-host",
   control: "offline-controller-fakes",
+  "raw-output": "offline-helper-fd-renewer",
 };
 const report = {
   case: kase,

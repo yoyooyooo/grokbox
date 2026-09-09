@@ -1,3 +1,6 @@
+/** Default Host child stdio. Never a raw stdout/stderr file sink. */
+export const HOST_CHILD_STDIO = ["ignore", "ignore", "ignore"] as const;
+
 export const IDENTITY_LAUNCH_ALLOWLIST = [
   "HOME",
   "USER",

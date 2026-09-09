@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { liveAdoptLaunchSpec } from "../src/internal/process/h3-live.ts";
+import {
+  HOST_CHILD_STDIO,
+  IDENTITY_LAUNCH_ALLOWLIST,
+  pickLaunchEnv,
+} from "../src/internal/process/launch.node.ts";
 import {
   inspectControllerFacts,
   resetLiveMutationAttempts,
@@ -195,5 +203,114 @@ describe("controller IO facade", () => {
     expect(receipt.spawned).toBe(false);
     expect(receipt.guardian).toBe(false);
     expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 });
+  });
+});
+
+const NODE20 = "/usr/bin/node";
+const SOURCE_HELPER = fileURLToPath(new URL("../src/internal/process/helpers/grokbox-temp-supervisor.cjs", import.meta.url));
+const RAW_SINK = "/tmp/sand-host-adopt.err";
+
+async function waitForFile(path: string, timeoutMs = 4000): Promise<string> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const text = await readFile(path, "utf8");
+      if (text.trim().length > 0) return text;
+    } catch {
+      /* wait */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for ${path}`);
+}
+
+async function runRawOutputHelper(helperPath: string) {
+  const dir = await mkdtemp(join(tmpdir(), "grokbox-t22-raw-"));
+  const sentinel = `T22_SENTINEL_${randomUUID()}`;
+  const secret = `sk-live-${randomUUID()}`;
+  const renewer = `renewal-${randomUUID()}`;
+  const reportPath = join(dir, "report.json");
+  const childPath = join(dir, "child.cjs");
+  await writeFile(childPath, `"use strict";
+const { writeFileSync, readlinkSync } = require("node:fs");
+process.stdout.write(process.env.T22_SENTINEL + "\\n");
+process.stderr.write(process.env.T22_SENTINEL + "-err\\n");
+writeFileSync(process.argv[2], JSON.stringify({
+  fd1: readlinkSync("/proc/self/fd/1"),
+  fd2: readlinkSync("/proc/self/fd/2"),
+  renewer: process.env.SAND_INFERENCE_RENEWAL_CREDENTIAL ?? null,
+  gateway: process.env.SAND_GATEWAY_TOKEN ?? null,
+  secret: process.env.ACME_KEY ?? null,
+  openai: process.env.OPENAI_API_KEY ?? null,
+  sentinelEnv: process.env.T22_SENTINEL ?? null,
+}) + "\\n");
+`);
+  const picked = pickLaunchEnv({
+    HOME: dir,
+    PATH: process.env.PATH,
+    SAND_INFERENCE_RENEWAL_CREDENTIAL: renewer,
+    SAND_GATEWAY_TOKEN: "gw-token",
+    ACME_KEY: secret,
+    OPENAI_API_KEY: secret,
+    T22_SENTINEL: sentinel,
+  });
+  expect(picked.ok).toBe(true);
+  if (!picked.ok) throw new Error("pickLaunchEnv failed");
+  expect(picked.env.SAND_INFERENCE_RENEWAL_CREDENTIAL).toBe(renewer);
+  expect(picked.env.ACME_KEY).toBeUndefined();
+  const spec = {
+    execPath: NODE20,
+    argv: [childPath, reportPath],
+    cwd: dir,
+    env: { ...picked.env, T22_SENTINEL: sentinel },
+    stdio: HOST_CHILD_STDIO,
+  };
+  await writeFile(join(dir, "spec.json"), `${JSON.stringify(spec)}\n`);
+  const existed = existsSync(RAW_SINK);
+  const before = existed ? readFileSync(RAW_SINK, "utf8") : null;
+  const helper = spawn(NODE20, [helperPath, join(dir, "spec.json")], {
+    stdio: "ignore",
+    env: { ...process.env, ACME_KEY: secret, OPENAI_API_KEY: secret },
+  });
+  try {
+    const report = JSON.parse(await waitForFile(reportPath));
+    expect(report.fd1).toBe("/dev/null");
+    expect(report.fd2).toBe("/dev/null");
+    expect(report.renewer).toBe(renewer);
+    expect(report.gateway).toBe("gw-token");
+    expect(report.secret).toBeNull();
+    expect(report.openai).toBeNull();
+    if (!existed) expect(existsSync(RAW_SINK)).toBe(false);
+    else {
+      expect(readFileSync(RAW_SINK, "utf8")).toBe(before ?? "");
+      expect((before ?? "").includes(sentinel)).toBe(false);
+    }
+  } finally {
+    helper.kill("SIGTERM");
+  }
+  return { dir, sentinel, secret, renewer };
+}
+
+describe("raw output", () => {
+  test("raw output default helper does not capture child stdout/stderr", async () => {
+    expect(HOST_CHILD_STDIO).toEqual(["ignore", "ignore", "ignore"]);
+    expect(IDENTITY_LAUNCH_ALLOWLIST).toContain("SAND_INFERENCE_RENEWAL_CREDENTIAL");
+    const helperSource = readFileSync(SOURCE_HELPER, "utf8");
+    expect(helperSource.includes("sand-host-adopt.err")).toBe(false);
+    expect(helperSource.includes("openSync")).toBe(false);
+    const spec = liveAdoptLaunchSpec({ PATH: "/usr/bin" }, {
+      execPath: NODE20,
+      hostBundle: "/tmp/host.js",
+      cwd: "/tmp",
+    });
+    expect(spec.stdio).toEqual(["ignore", "ignore", "ignore"]);
+    await runRawOutputHelper(SOURCE_HELPER);
+  });
+
+  test("raw output packed helper does not capture child stdout/stderr", async () => {
+    const packedDir = await mkdtemp(join(tmpdir(), "grokbox-t22-packed-"));
+    const packed = join(packedDir, "grokbox-temp-supervisor.cjs");
+    await copyFile(SOURCE_HELPER, packed);
+    await runRawOutputHelper(packed);
   });
 });

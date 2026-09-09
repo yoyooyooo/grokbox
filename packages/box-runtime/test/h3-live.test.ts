@@ -131,11 +131,13 @@ describe("live H3 preflight (zero-signal abort)", () => {
     expect(spec.argv).toEqual(["/home/box/sand-host/host-main.cjs"]);
     expect(spec.env.GROKBOX_ALLOW_LIVE_HOST).toBe("1");
     expect(spec.env.ACME_KEY).toBeUndefined();
+    expect(spec.stdio).toEqual(["ignore", "ignore", "ignore"]);
     const tempSrc = readFileSync(
-      fileURLToPath(new URL("../src/grokbox-temp-supervisor.cjs", import.meta.url)),
+      fileURLToPath(new URL("../src/internal/process/helpers/grokbox-temp-supervisor.cjs", import.meta.url)),
       "utf8",
     );
     expect(tempSrc).not.toMatch(/SIGKILL/);
+    expect(tempSrc.includes("sand-host-adopt.err")).toBe(false);
     const marker = {
       operationId: "op",
       pid: 9,

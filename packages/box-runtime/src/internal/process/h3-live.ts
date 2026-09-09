@@ -13,7 +13,7 @@ import {
   type H3OfflinePorts,
 } from "./h3-identity.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
-import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "./launch.node.ts";
+import { fillMissingLaunchEnv, HOST_CHILD_STDIO, IDENTITY_LAUNCH_ALLOWLIST } from "./launch.node.ts";
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import {
   inspectPid,
@@ -126,12 +126,13 @@ export function liveDiskSha(): string {
 export function liveAdoptLaunchSpec(
   env: Record<string, string>,
   input: { execPath: string; hostBundle: string; cwd: string },
-): { execPath: string; argv: string[]; cwd: string; env: Record<string, string> } {
+): { execPath: string; argv: string[]; cwd: string; env: Record<string, string>; stdio: readonly ["ignore", "ignore", "ignore"] } {
   return {
     execPath: input.execPath,
     argv: [input.hostBundle],
     cwd: input.cwd,
     env: { ...env, GROKBOX_ALLOW_LIVE_HOST: "1" },
+    stdio: HOST_CHILD_STDIO,
   };
 }
 

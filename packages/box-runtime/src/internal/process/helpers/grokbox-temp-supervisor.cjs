@@ -1,6 +1,6 @@
 "use strict";
 const { spawn } = require("node:child_process");
-const { openSync, readFileSync } = require("node:fs");
+const { readFileSync } = require("node:fs");
 
 const specPath = process.argv[2];
 if (!specPath) process.exit(2);
@@ -8,12 +8,10 @@ const spec = JSON.parse(readFileSync(specPath, "utf8"));
 if (typeof spec.execPath !== "string" || !Array.isArray(spec.argv) || typeof spec.env !== "object" || spec.env == null) {
   process.exit(2);
 }
-let errFd = "ignore";
-try { errFd = openSync("/tmp/sand-host-adopt.err", "a"); } catch { /* keep ignore */ }
 const child = spawn(spec.execPath, spec.argv, {
   env: spec.env,
   cwd: typeof spec.cwd === "string" ? spec.cwd : undefined,
-  stdio: ["ignore", errFd, errFd],
+  stdio: ["ignore", "ignore", "ignore"],
   detached: true,
 });
 child.unref();
