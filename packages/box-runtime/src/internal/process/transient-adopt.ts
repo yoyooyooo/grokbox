@@ -229,8 +229,13 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
     if (stale && stale.operationId !== ctx.operationId) return fail("stale-marker", false, false);
 
     const unique = findUniqueOfficialChain(ctx.processes, ctx.classify);
-    if (!unique.ok) return fail(unique.code, false, false);
-    const { wrapper, supervisor, host } = unique.chain;
+    let chain = unique.ok ? unique.chain : null;
+    if (!chain) {
+      const adopted = findAdoptedHostState(ctx.processes, ctx.classify, { gatewayPid: ctx.readGatewayPid() });
+      if (!adopted.ok) return fail(unique.ok ? "adopt-unproven" : unique.code === "bad-parentage" ? adopted.code : unique.code, false, false);
+      chain = adopted.state;
+    }
+    const { wrapper, supervisor, host } = chain;
 
     try {
       await ctx.prepareTempLaunch?.(profile);
