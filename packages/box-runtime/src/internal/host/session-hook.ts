@@ -1,8 +1,8 @@
 import { modelForAgent } from "@grokbox/runtime-kernel/selection";
 import type { HostBinding } from "./host-binding.ts";
+import type { CompileReceipt } from "./compile-receipt.ts";
 import { captureHostSelection, loadModelsFileSync } from "./selection.node.ts";
-import { createModeldProduce, hostEpochFromFacts } from "./modeld-produce.node.ts";
-import { qualifyHostRootContract } from "./root-contract.ts";
+import { createModeldProduce } from "./modeld-produce.node.ts";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
@@ -29,12 +29,14 @@ function deadSession(modelId: string): PromptSession {
  * Identity/observe: official session passthrough.
  * Route + unassigned agent: official passthrough (S4.1).
  * Route + managed assignment: Host fullStream over v3 modeld (T26).
+ * profile/ABI come from Host-selected root at stream time; bridgeDigest from compile.
  */
 export function bindHostSessionHook(input: {
   mode: SeamMode;
   durableRoot: string;
   runRoot: string;
   binding?: HostBinding;
+  compile?: CompileReceipt;
 }): (args: {
   originalSession: unknown;
   sessionOptions?: unknown;
@@ -49,10 +51,8 @@ export function bindHostSessionHook(input: {
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
     const turnId = boundedId(options.invocationId);
-    const profileId = boundedId(options.profileId);
-    const abiIdentity = boundedId(options.abiIdentity);
     const independentRoot = typeof options.independentRoot === "string" ? options.independentRoot : undefined;
-    const bridgeDigest = boundedId(options.bridgeDigest);
+    const bridgeDigest = input.compile?.transformedSha256 ?? boundedId(options.bridgeDigest);
     const onRequestId = typeof args.onRequestId === "function" ? args.onRequestId : undefined;
     const reject = (code: string, detail?: { invocationId?: unknown; reason?: "missing-step-id" | "invalid-step-id" }) => {
       if (turnId && input.binding && agentId) {
@@ -71,16 +71,7 @@ export function bindHostSessionHook(input: {
       }
       return visibleFailureHandle(modelId, code);
     };
-    let rootOk = false;
-    if (profileId && abiIdentity) {
-      try {
-        qualifyHostRootContract(profileId, abiIdentity);
-        rootOk = true;
-      } catch {
-        rootOk = false;
-      }
-    }
-    if (!turnId || !agentId || !input.binding || !profileId || !abiIdentity || !bridgeDigest || !rootOk) {
+    if (!turnId || !agentId || !input.binding || !bridgeDigest) {
       return asHostPromptSession(deadSession(modelId), modelId, onRequestId, { requireStepId: true, reject });
     }
     const models = loadModelsFileSync(input.durableRoot);
@@ -93,10 +84,9 @@ export function bindHostSessionHook(input: {
       modelId,
       selectionRevision: captured.selectionRevision,
       turnId,
-      profileId,
-      abiIdentity,
+      binding: input.binding,
+      bridgeDigest,
       independentRoot,
-      hostEpoch: hostEpochFromFacts({ binding: input.binding, profileId, bridgeDigest }),
     });
     const session = createStreamingPromptSession({
       modelId,
@@ -105,16 +95,23 @@ export function bindHostSessionHook(input: {
       produce: runtime.produce,
       agentId,
       onTerminal: (terminal) => {
+        const stepId = terminal.invocationId;
+        if (!stepId) return;
+        const producedThisStep = runtime.last.stepId === stepId;
         void appendHostJournal(input.runRoot, {
           name: "host_normalized_terminal",
           at: new Date().toISOString(),
           hostId: input.binding!.identitySha,
           agentId,
           turnId,
-          stepId: terminal.invocationId ?? runtime.last.stepId,
-          serviceEpoch: runtime.last.serviceEpoch,
-          binding: runtime.last.bindingId,
-          attempt: "0",
+          stepId,
+          ...(producedThisStep
+            ? {
+              serviceEpoch: runtime.last.serviceEpoch,
+              binding: runtime.last.bindingId,
+              attempt: "0",
+            }
+            : {}),
         });
       },
     });

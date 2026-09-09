@@ -25,6 +25,18 @@ export function hostEpochFromFacts(input: {
   };
 }
 
+/** Host-selected root: one system message → state-root; explicit independentRoot → independent. No fixture default. */
+export function inferRootFromHostSelection(envelope: ModelEnvelope, independentRoot?: string) {
+  if (typeof independentRoot === "string" && independentRoot.length > 0) {
+    return { profileId: "t21-independent-root", abiIdentity: "host-abi-v1", independentRoot };
+  }
+  const systems = envelope.messages.filter((message) => message.role === "system");
+  if (systems.length === 1) {
+    return { profileId: "t21-state-root", abiIdentity: "host-abi-v1" };
+  }
+  throw new EnvelopeError("invalid_envelope");
+}
+
 export function snapshotFromEnvelope(envelope: ModelEnvelope, input: {
   profileId: string;
   abiIdentity: string;
@@ -58,10 +70,11 @@ export type ModeldProduceInput = {
   agentId: string;
   modelId: string;
   selectionRevision: string;
-  hostEpoch: HostEpoch;
+  binding: HostBinding;
+  bridgeDigest: string;
   turnId: string;
-  profileId: string;
-  abiIdentity: string;
+  profileId?: string;
+  abiIdentity?: string;
   independentRoot?: string;
 };
 
@@ -84,12 +97,13 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       last.serviceEpoch = frame.serverGeneration;
     }
     let snapshot;
+    let hostEpoch: HostEpoch;
     try {
-      snapshot = snapshotFromEnvelope(request.envelope, {
-        profileId: input.profileId,
-        abiIdentity: input.abiIdentity,
-        independentRoot: input.independentRoot,
-      });
+      const root = input.profileId && input.abiIdentity
+        ? { profileId: input.profileId, abiIdentity: input.abiIdentity, independentRoot: input.independentRoot }
+        : inferRootFromHostSelection(request.envelope, input.independentRoot);
+      snapshot = snapshotFromEnvelope(request.envelope, root);
+      hostEpoch = hostEpochFromFacts({ binding: input.binding, profileId: root.profileId, bridgeDigest: input.bridgeDigest });
     } catch (error) {
       if (error instanceof EnvelopeError) throw new VisibleStreamError("admit", error.code);
       throw error;
@@ -106,7 +120,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
     const body: Record<string, unknown> = {
       version: 3,
       method: "run-step",
-      hostEpoch: input.hostEpoch,
+      hostEpoch,
       serviceEpoch: { incarnationId: last.serviceEpoch },
       agentId: input.agentId,
       turnId: input.turnId,
@@ -122,7 +136,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
     const cancel = {
       version: 3,
       method: "cancel-step",
-      hostEpoch: input.hostEpoch,
+      hostEpoch,
       serviceEpoch: { incarnationId: last.serviceEpoch },
       agentId: input.agentId,
       turnId: input.turnId,

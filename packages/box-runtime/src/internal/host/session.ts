@@ -253,7 +253,14 @@ export function visibleFailureHandle(modelId: string, code: string, ids?: string
   stream.push({ type: "text-delta", textDelta: error.message });
   stream.push({ type: "finish", reason: "error", finishReason: "error", response, usage: ZERO_USAGE });
   stream.close();
-  notify(onTerminal, { terminalClass: "error", toolCallCount: 0, rejected: true, errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}) });
+  notify(onTerminal, {
+    terminalClass: "error",
+    toolCallCount: 0,
+    rejected: true,
+    errorCode: error.code,
+    ...(error.stage ? { stage: error.stage } : {}),
+    ...(ctx?.invocationId ? { invocationId: ctx.invocationId } : {}),
+  });
   return { fullStream: stream.iterable, response: Promise.resolve(response), usage: Promise.resolve({ ...ZERO_USAGE }) };
 }
 export type StreamingSessionConfig = {

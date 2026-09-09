@@ -34,6 +34,12 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     durableRoot,
     runRoot,
     binding,
+    compile: {
+      profileId: profile.profileId,
+      profileSha256,
+      sourceSha256: profile.sourceSha256,
+      transformedSha256: profile.transformedSourceSha256,
+    },
   });
   installCompileHook({
     targetPath: target,
