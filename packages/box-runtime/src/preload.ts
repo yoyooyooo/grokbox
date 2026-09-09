@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
@@ -19,6 +18,16 @@ const markerPath = process.env.GROKBOX_PRELOAD_MARKER;
 const operationId = process.env.GROKBOX_OPERATION_ID;
 const runRoot = process.env.GROKBOX_RUN_ROOT ?? join(homedir(), ".grokbox", "run");
 const durableRoot = process.env.GROKBOX_BOX_RUNTIME_ROOT ?? "/workspace/.grokbox/box-runtime";
+
+function requiredPreloadPath(): string | null {
+  const argv = process.execArgv;
+  for (let i = 0; i < argv.length; i += 1) {
+    const part = argv[i];
+    if (part === "--require" && argv[i + 1]) return argv[i + 1]!;
+    if (part.startsWith("--require=")) return part.slice("--require=".length);
+  }
+  return null;
+}
 
 const liveBlocked = isLiveHostPath(target) && !allowLiveHost;
 const admittedMode = mode === "identity" || mode === "route" ? mode : null;
@@ -61,7 +70,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
           compiled: true,
           modeld: false,
           compile: { profileId: profile.profileId, profileSha256, ...actual },
-          preloadSha256: sha256Bytes(readFileSync(fileURLToPath(import.meta.url))),
+          ...(requiredPreloadPath() ? { preloadSha256: sha256Bytes(readFileSync(requiredPreloadPath()!)) } : {}),
         })}\n`,
         { mode: 0o600, flag: "wx" },
       );
