@@ -23,6 +23,7 @@ export { observeEvents } from "./internal/io/journal.node.ts";
 export { writeReviewedProfileFromCopy } from "./internal/process/profile.node.ts";
 
 import { runtimeNotReady } from "@grokbox/runtime-kernel/contract";
+export { startModeldProcess, ensureModeld, modeldRootLayer, type StartedModeld, type ModeldEnsure } from "./internal/roots/modeld.runtime.ts";
 
 /** T26 composition boundary. POC createModeld / stub Unix server are revoked. */
 export function startInferenceServer(): never {

@@ -32,6 +32,9 @@ const CASES = {
     ["bun", "test", "packages/runtime-kernel/test/selection.test.ts", "packages/runtime-kernel/test/route-binding.test.ts", "packages/runtime-kernel/test/step-ledger.test.ts"],
     ["bun", "test", "packages/box-runtime/test/binding-composition.test.ts"],
   ],
+  lifecycle: [
+    ["bun", "test", "packages/box-runtime/test/modeld-lifecycle.test.ts", "packages/box-runtime/test/modeld-wire.test.ts"],
+  ],
 };
 
 const mapped = CASES[kase];
@@ -81,6 +84,7 @@ const SUPPORTS = {
   status: ["status-facets", "host-journal-roles", "readonly-status-ports"],
   backend: ["model-backend-port", "backend-auth-lease", "ccs-codec-prepare"],
   binding: ["selection-capture", "route-binding", "step-ledger"],
+  lifecycle: ["modeld-v3-wire", "effect-unix-root"],
 };
 const REALITY = {
   layout: "offline-layout",
@@ -88,6 +92,7 @@ const REALITY = {
   status: "offline-status-facets",
   backend: "offline-sdk-mock-fetch",
   binding: "offline-testclock-barrier",
+  lifecycle: "offline-unix-disposable",
 };
 const report = {
   case: kase,
@@ -95,9 +100,9 @@ const report = {
   dependencyReality: REALITY[kase] ?? "offline",
   supports: failed ? [] : (SUPPORTS[kase] ?? []),
   notProven: [
-    ...(kase === "backend" ? ["T25-modeld-lifecycle", "T26-host-fullStream"] : kase === "binding" ? ["T25-modeld-lifecycle", "T26-host-fullStream"] : ["inference"]),
+    ...(kase === "lifecycle" ? ["T26-host-fullStream"] : kase === "backend" || kase === "binding" ? ["T26-host-fullStream"] : ["inference"]),
     "controller-effect-program",
-    "v3-wire-server",
+    ...(kase === "lifecycle" ? [] : ["v3-wire-server"]),
     "Host-fullStream",
     ...(kase === "status" ? [] : ["status-facets"]),
     "live-adopt",

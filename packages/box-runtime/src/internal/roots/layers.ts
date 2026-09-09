@@ -24,3 +24,4 @@ export function testSdkBackendLayer(options: BackendLayerOptions): Layer.Layer<M
 }
 
 export { echoModelBackendLayer, aiSdkModelBackendLayer, liveBackendAuthLayer, createLiveBackendAuth };
+export { modeldRootLayer, liveAdmissionAuthorityLayer } from "./modeld.runtime.ts";

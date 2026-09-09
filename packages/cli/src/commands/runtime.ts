@@ -1,4 +1,6 @@
 import { dirname, isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   applyReset,
   applyUse,
@@ -15,6 +17,7 @@ import {
   observeEvents,
   reviewedProfilePath,
   runtimeNotReady,
+  startModeldProcess,
   writeReviewedProfileFromCopy,
   type DesiredMode,
 } from "@grokbox/box-runtime/runtime";
@@ -185,8 +188,27 @@ export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
 
 export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
   try {
-    store(deps);
-    runtimeNotReady("modeld inference", "T26");
+    const runtime = store(deps);
+    const runRoot = typeof deps.env.GROKBOX_RUN_ROOT === "string" && deps.env.GROKBOX_RUN_ROOT.length > 0
+      ? deps.env.GROKBOX_RUN_ROOT
+      : join(homedir(), ".grokbox", "run");
+    const started = await startModeldProcess({ durableRoot: runtime.root, runRoot, env: deps.env });
+    writeSuccess(deps.stdout, {
+      process: "modeld",
+      kind: started.ensure.kind,
+      path: started.ensure.path,
+      generation: started.ensure.kind === "owned" ? started.ensure.generation : undefined,
+    });
+    if (started.ensure.kind === "borrowed") return;
+    await new Promise<void>((resolve) => {
+      const stop = () => {
+        process.off("SIGINT", stop);
+        process.off("SIGTERM", stop);
+        void started.stop().finally(resolve);
+      };
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+    });
   } catch (error) {
     rethrow(error);
   }
