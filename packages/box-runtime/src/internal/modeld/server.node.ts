@@ -1,5 +1,5 @@
 import type { Socket } from "node:net";
-import { Deferred, Effect, Fiber, Queue, Stream } from "effect";
+import { Deferred, Effect, Queue, Stream } from "effect";
 import {
   ADMISSION_WAIT_MS,
   BackendFailure,
@@ -12,7 +12,7 @@ import {
   type InferenceEvent,
 } from "@grokbox/runtime-kernel/contract";
 import { cancelStep, runStep } from "@grokbox/runtime-kernel/inference";
-import { decodeModeldFrame, encodeModeldFrame, parseV3Request } from "../wire/modeld-wire.ts";
+import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseV3Request } from "../wire/modeld-wire.ts";
 import { acquireUnixListener, trackSocket, type ListenHooks, type ResourceCounts } from "./unix-listen.node.ts";
 
 function errorFrame(code: string): unknown {
@@ -29,25 +29,61 @@ function mapFail(error: unknown): string {
   return "provider_error";
 }
 
-function writeFrame(socket: Socket, value: unknown, retained?: { bytes: number }): Effect.Effect<void, Error> {
-  return Effect.callback<void, Error>((resume) => {
+function writable(socket: Socket): boolean {
+  return !socket.destroyed && socket.writable;
+}
+
+function writeFrame(socket: Socket, value: unknown): Effect.Effect<void, Error> {
+  return Effect.callback<void, Error>((resume, signal) => {
+    if (!writable(socket)) {
+      resume(Effect.fail(new Error("disconnected")));
+      return;
+    }
     let buf: Buffer;
     try { buf = encodeModeldFrame(value); }
     catch (error) {
       resume(Effect.fail(error instanceof Error ? error : new Error("encode")));
       return;
     }
-    if (retained) retained.bytes += buf.length;
-    const ok = socket.write(buf);
-    if (ok) {
-      resume(Effect.void);
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      socket.off("drain", onDrain);
+      socket.off("error", onFail);
+      socket.off("close", onFail);
+      if (error) resume(Effect.fail(error));
+      else resume(Effect.void);
+    };
+    const onDrain = () => finish();
+    const onFail = () => finish(new Error("disconnected"));
+    if (signal.aborted) {
+      finish(new Error("aborted"));
       return;
     }
-    socket.once("drain", () => resume(Effect.void));
+    signal.addEventListener("abort", () => finish(new Error("aborted")), { once: true });
+    try {
+      const ok = socket.write(buf);
+      if (ok) finish();
+      else {
+        socket.once("drain", onDrain);
+        socket.once("error", onFail);
+        socket.once("close", onFail);
+      }
+    } catch {
+      finish(new Error("disconnected"));
+    }
   });
 }
 
-type Incoming = { socket: Socket; buf: Buffer };
+type Incoming = {
+  socket: Socket;
+  buf: Buffer;
+  consumed: boolean;
+  extra: boolean;
+  overflow: boolean;
+  onLate?: () => void;
+};
 
 function tryDecode(buf: Buffer): { value: unknown; rest: Buffer } | Error | null {
   const decoded = decodeModeldFrame(buf);
@@ -70,6 +106,10 @@ function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS): Effect
       else resume(Effect.succeed(value!));
     };
     const check = () => {
+      if (incoming.overflow) {
+        finish(new WireError("capacity"));
+        return;
+      }
       const decoded = tryDecode(incoming.buf);
       if (decoded == null) return;
       if (decoded instanceof Error) finish(decoded);
@@ -92,34 +132,47 @@ function watchDisconnect(socket: Socket, onClose: () => void): void {
   socket.on("error", fire);
 }
 
-function handleRequest(socket: Socket, generation: string, value: unknown, extra: Buffer) {
+function emit(socket: Socket, value: unknown) {
+  if (!writable(socket)) return Effect.void;
+  return writeFrame(socket, value).pipe(Effect.ignore);
+}
+
+function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer) {
+  const socket = incoming.socket;
   return Effect.gen(function* () {
+    incoming.consumed = true;
+    incoming.buf = Buffer.alloc(0);
     if (extra.length > 0) {
-      yield* writeFrame(socket, errorFrame("extra_keys"));
+      yield* emit(socket, errorFrame("extra_keys"));
       return;
     }
     let parsed;
     try {
       parsed = parseV3Request(value);
     } catch (error) {
-      yield* writeFrame(socket, errorFrame(mapFail(error)));
+      yield* emit(socket, errorFrame(mapFail(error)));
       return;
     }
     if (parsed.method === "health") {
-      yield* writeFrame(socket, { ok: true, method: "health", version: 3, serverGeneration: generation });
+      yield* emit(socket, { ok: true, method: "health", version: 3, serverGeneration: generation });
       return;
     }
     if (parsed.method === "cancel-step") {
       const result = yield* Effect.result(cancelStep(parsed.request));
       if (result._tag === "Failure") {
-        yield* writeFrame(socket, errorFrame(mapFail(result.failure)));
+        yield* emit(socket, errorFrame(mapFail(result.failure)));
         return;
       }
-      yield* writeFrame(socket, { ok: true, method: "cancel-step", version: 3 });
+      yield* emit(socket, { ok: true, method: "cancel-step", version: 3 });
       return;
     }
 
     const disconnected = yield* Deferred.make<void>();
+    const late = yield* Deferred.make<void>();
+    incoming.onLate = () => {
+      void Effect.runPromise(Deferred.succeed(late, undefined).pipe(Effect.ignore));
+    };
+    if (incoming.extra || incoming.overflow) incoming.onLate();
     watchDisconnect(socket, () => {
       void Effect.runPromise(Deferred.succeed(disconnected, undefined).pipe(Effect.ignore));
     });
@@ -128,17 +181,22 @@ function handleRequest(socket: Socket, generation: string, value: unknown, extra
       runStep(parsed.request).pipe(Effect.timeout(`${ADMISSION_WAIT_MS} millis`)),
     );
     if (admitted._tag === "Failure") {
-      yield* writeFrame(socket, errorFrame(mapFail(admitted.failure)));
+      yield* emit(socket, errorFrame(mapFail(admitted.failure)));
       return;
     }
     if (yield* Deferred.isDone(disconnected)) {
-      yield* writeFrame(socket, { kind: "terminal", outcome: "error", code: "cancelled" });
+      yield* cancelStep(parsed.request).pipe(Effect.ignore);
+      return;
+    }
+    if (yield* Deferred.isDone(late)) {
+      yield* emit(socket, errorFrame(incoming.overflow ? "capacity" : "extra_keys"));
+      yield* cancelStep(parsed.request).pipe(Effect.ignore);
       return;
     }
     const step = admitted.success;
-    yield* writeFrame(socket, { ok: true, method: "run-step", kind: "accepted", version: 3, bindingId: step.bindingId });
+    yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: 3, bindingId: step.bindingId });
     if (!("stream" in step)) {
-      yield* writeFrame(socket, {
+      yield* emit(socket, {
         kind: "terminal",
         outcome: "duplicate",
         snapshotDigest: "snapshotDigest" in step ? step.snapshotDigest : "",
@@ -149,7 +207,10 @@ function handleRequest(socket: Socket, generation: string, value: unknown, extra
 
     let sequence = 0;
     let outputBytes = 0;
-    const halt = Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled"))));
+    const halt = Effect.raceFirst(
+      Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
+      Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
+    );
     const collected = yield* Effect.result(
       Stream.runForEach(
         Stream.interruptWhen(step.stream, halt),
@@ -160,7 +221,7 @@ function handleRequest(socket: Socket, generation: string, value: unknown, extra
             return yield* Effect.fail(new BindingFailure("capacity"));
           }
           if (event.type === "backend_finish") {
-            yield* writeFrame(socket, {
+            yield* emit(socket, {
               kind: "terminal",
               outcome: "ok",
               bindingId: step.bindingId,
@@ -169,13 +230,17 @@ function handleRequest(socket: Socket, generation: string, value: unknown, extra
             });
             return;
           }
-          yield* writeFrame(socket, { kind: "event", sequence, event });
+          yield* emit(socket, { kind: "event", sequence, event });
           sequence += 1;
         }),
       ).pipe(Effect.timeout(`${REQUEST_WALL_DEADLINE_MS} millis`)),
     );
+    if (yield* Deferred.isDone(disconnected)) {
+      yield* cancelStep(parsed.request).pipe(Effect.ignore);
+      return;
+    }
     if (collected._tag === "Failure") {
-      yield* writeFrame(socket, { kind: "terminal", outcome: "error", code: mapFail(collected.failure) });
+      yield* emit(socket, { kind: "terminal", outcome: "error", code: mapFail(collected.failure) });
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
     }
   });
@@ -193,18 +258,35 @@ export function serveModeld(options: ServeOptions) {
   return Effect.gen(function* () {
     const maxClients = options.maxClients ?? SERVER_ACTIVE_CLIENTS_MAX;
     const capacity = { clients: 0 };
+    const live = new Set<Socket>();
     const incoming = yield* Queue.bounded<Incoming>(maxClients);
+    const hooks = options.hooks ?? {};
     const listener = yield* acquireUnixListener(options.path, options.counts, {
-      ...options.hooks,
+      ...hooks,
+      afterListen: undefined,
+      failAfterListen: undefined,
       onConnection: (socket) => {
+        live.add(socket);
+        socket.once("close", () => live.delete(socket));
         if (capacity.clients >= maxClients) {
           socket.destroy();
           return;
         }
         capacity.clients += 1;
         if (options.counts) options.counts.sockets += 1;
-        const held: Incoming = { socket, buf: Buffer.alloc(0) };
+        const held: Incoming = { socket, buf: Buffer.alloc(0), consumed: false, extra: false, overflow: false };
         socket.on("data", (chunk: Buffer) => {
+          if (held.consumed) {
+            held.extra = true;
+            held.onLate?.();
+            return;
+          }
+          if (held.buf.length + chunk.length > MODELD_MAX_FRAME + 4) {
+            held.overflow = true;
+            held.buf = Buffer.alloc(0);
+            held.onLate?.();
+            return;
+          }
           held.buf = Buffer.concat([held.buf, chunk]);
         });
         if (!Queue.offerUnsafe(incoming, held)) {
@@ -214,18 +296,26 @@ export function serveModeld(options: ServeOptions) {
         }
       },
     });
-    const accept = yield* Effect.forkDetach(Effect.forever(Effect.gen(function* () {
+    yield* Effect.addFinalizer(() => Effect.sync(() => {
+      for (const socket of live) {
+        try { socket.destroy(); } catch { /* ignore */ }
+      }
+      live.clear();
+    }));
+    yield* Effect.forkChild(Effect.forever(Effect.gen(function* () {
       const raw = yield* Queue.take(incoming);
       if (options.counts) options.counts.fibers += 1;
-      yield* Effect.forkDetach(Effect.scoped(Effect.gen(function* () {
+      yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
         const socket = yield* trackSocket(raw.socket, options.counts, capacity);
         const frame = yield* readOneFrame(raw);
-        yield* handleRequest(socket, options.generation, frame.value, frame.rest);
+        yield* handleRequest(raw, options.generation, frame.value, frame.rest);
+        void socket;
       })).pipe(Effect.ignore, Effect.onExit(() => Effect.sync(() => {
         if (options.counts) options.counts.fibers = Math.max(0, options.counts.fibers - 1);
       }))));
     })));
-    yield* Effect.addFinalizer(() => Fiber.interrupt(accept));
+    if (hooks.afterListen) yield* hooks.afterListen;
+    if (hooks.failAfterListen) yield* hooks.failAfterListen;
     return { path: listener.path, generation: options.generation, server: listener.server };
   });
 }

@@ -10,7 +10,7 @@ describe("modeld root construction", () => {
       throw new Error("no fetch");
     }) as unknown as typeof fetch;
     try {
-      modeldRootLayer({ durableRoot: "/tmp", serviceEpoch: "svc", env: {} });
+      modeldRootLayer({ durableRoot: "/tmp", runRoot: "/tmp", serviceEpoch: "svc", env: {} });
       expect(http).toBe(0);
     } finally {
       globalThis.fetch = original;

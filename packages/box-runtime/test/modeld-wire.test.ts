@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { WireError } from "@grokbox/runtime-kernel/contract";
-import { decodeModeldFrame, encodeModeldFrame, parseV3Request } from "../src/internal/wire/modeld-wire.ts";
+import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV3Request } from "../src/internal/wire/modeld-wire.ts";
 
 describe("modeld v3 wire", () => {
   test("round-trips health and rejects v2, extra keys, malformed utf-8", () => {
@@ -44,5 +44,10 @@ describe("modeld v3 wire", () => {
     };
     expect(() => parseV3Request({ ...base, bindingId: 123 })).toThrow(WireError);
     expect(() => parseV3Request({ ...base, snapshot: { ...base.snapshot, extra: true } })).toThrow(WireError);
+  });
+
+  test("client response SM rejects version-2 garbage terminal", () => {
+    const session = clientSessionFor({ version: 3, method: "health" });
+    expect(() => acceptModeldFrame(session, { kind: "terminal", outcome: "ok", version: 2, garbage: true })).toThrow(WireError);
   });
 });

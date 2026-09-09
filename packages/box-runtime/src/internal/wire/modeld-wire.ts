@@ -130,3 +130,72 @@ export function parseV3Request(value: unknown): ParsedWireRequest {
   }
   throw new WireError("unknown_method");
 }
+
+export type ClientSession =
+  | { method: "health" }
+  | { method: "cancel-step" }
+  | { method: "run-step"; phase: "start" | "events"; sequence: number };
+
+export function clientSessionFor(body: unknown): ClientSession {
+  if (!isRecord(body) || typeof body.method !== "string") throw new WireError("malformed_frame");
+  if (body.method === "health") return { method: "health" };
+  if (body.method === "cancel-step") return { method: "cancel-step" };
+  if (body.method === "run-step") return { method: "run-step", phase: "start", sequence: 0 };
+  throw new WireError("unknown_method");
+}
+
+function uuidLike(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9-]{36}$/.test(value);
+}
+
+/** Strict v3 response. Returns whether the session is complete. */
+export function acceptModeldFrame(session: ClientSession, value: unknown): { session: ClientSession; done: boolean } {
+  if (!isRecord(value)) throw new WireError("malformed_frame");
+  if (value.ok === false) {
+    if (!exactKeys(value, ["ok", "version", "error"])) throw new WireError("extra_keys");
+    if (value.version !== 3 || !isRecord(value.error) || !exactKeys(value.error, ["code"]) || typeof value.error.code !== "string") {
+      throw new WireError("malformed_frame");
+    }
+    return { session, done: true };
+  }
+  if (session.method === "health") {
+    if (!exactKeys(value, ["ok", "method", "version", "serverGeneration"])) throw new WireError("extra_keys");
+    if (value.ok !== true || value.method !== "health" || value.version !== 3 || !uuidLike(value.serverGeneration)) {
+      throw new WireError("malformed_frame");
+    }
+    return { session, done: true };
+  }
+  if (session.method === "cancel-step") {
+    if (!exactKeys(value, ["ok", "method", "version"])) throw new WireError("extra_keys");
+    if (value.ok !== true || value.method !== "cancel-step" || value.version !== 3) throw new WireError("malformed_frame");
+    return { session, done: true };
+  }
+  if (session.phase === "start") {
+    if (!exactKeys(value, ["ok", "method", "kind", "version", "bindingId"])) throw new WireError("extra_keys");
+    if (value.ok !== true || value.method !== "run-step" || value.kind !== "accepted" || value.version !== 3 || typeof value.bindingId !== "string") {
+      throw new WireError("malformed_frame");
+    }
+    return { session: { method: "run-step", phase: "events", sequence: 0 }, done: false };
+  }
+  if (value.kind === "event") {
+    if (!exactKeys(value, ["kind", "sequence", "event"])) throw new WireError("extra_keys");
+    if (value.sequence !== session.sequence || !isRecord(value.event)) throw new WireError("malformed_frame");
+    return { session: { ...session, sequence: session.sequence + 1 }, done: false };
+  }
+  if (value.kind === "terminal") {
+    if (Object.hasOwn(value, "version") && value.version !== 3) throw new WireError("unsupported_version");
+    if (value.outcome === "ok") {
+      if (!exactKeys(value, ["kind", "outcome", "bindingId"], ["finishReason", "usage", "version"])) throw new WireError("extra_keys");
+      if (typeof value.bindingId !== "string") throw new WireError("malformed_frame");
+    } else if (value.outcome === "error") {
+      if (!exactKeys(value, ["kind", "outcome", "code"], ["version"])) throw new WireError("extra_keys");
+      if (typeof value.code !== "string") throw new WireError("malformed_frame");
+    } else if (value.outcome === "duplicate") {
+      if (!exactKeys(value, ["kind", "outcome", "snapshotDigest", "bindingId"], ["version"])) throw new WireError("extra_keys");
+    } else {
+      throw new WireError("malformed_frame");
+    }
+    return { session, done: true };
+  }
+  throw new WireError("malformed_frame");
+}
