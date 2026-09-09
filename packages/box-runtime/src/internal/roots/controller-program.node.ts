@@ -17,6 +17,7 @@ import { expectedCompileReceipt, compileReceiptAgrees, type CompileReceipt } fro
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { parseCoordinatorState } from "../io/coordinator-state.ts";
+import { readAttestation, writeAttestation, type CoverageAttestation } from "../io/authority.node.ts";
 import { acquireExclusiveLock } from "../io/op-lock.ts";
 import { coordinatorStatePath, desiredPath, modelsPath, reviewedProfilePath } from "../io/paths.ts";
 import { pinLaunchProfile, parseReviewedProfile, loadDurableReviewedProfile } from "../process/profile.node.ts";
@@ -31,11 +32,12 @@ import {
 import { decideH3LaunchStrategy } from "../process/launch-strategy.ts";
 import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "../process/launch.node.ts";
 import { linuxProcessPort, roleOf, readNamedProcEnv } from "../process/linux.node.ts";
-import { findUniqueOfficialChain, type RoleClassifier } from "../process/official-chain.ts";
+import { proveStableOfficialState, type RoleClassifier } from "../process/official-chain.ts";
 import type { ProcessPort } from "../process/process-port.ts";
 import { resolvePreloadPath } from "../process/helpers/runtime-helpers.ts";
-import { runTransientAdoptOperation } from "../process/transient-adopt.ts";
-import type { IdentityOpResult } from "../process/identity-op.ts";
+import { runTransientAdoptOperation, writeAdoptOpState } from "../process/transient-adopt.ts";
+import type { IdentityMarker, IdentityOpResult } from "../process/identity-op.ts";
+import { isDeepStrictEqual } from "node:util";
 
 export const liveMutationAttempts = { signal: 0, spawn: 0, guardian: 0 };
 
@@ -158,11 +160,11 @@ function inspectLiveHost(
   const sha = live.readHostSha();
   if (sha == null) return { ok: false, reason: "host-bundle-missing" };
   if (sha !== profileSourceSha) return { ok: false, reason: "source-mismatch" };
-  const unique = findUniqueOfficialChain(live.processes, live.classify);
-  if (!unique.ok) {
-    return { ok: false, reason: unique.code === "missing-role" ? "host-missing" : unique.code };
+  const proven = proveStableOfficialState(live.processes, live.classify, { gatewayPid: live.gatewayPid() });
+  if (!proven.ok) {
+    return { ok: false, reason: proven.code === "missing-role" ? "host-missing" : proven.code };
   }
-  const host = unique.chain.host;
+  const host = proven.chain.host;
   const observed = live.processes.inspect(host.pid);
   if (!observed || observed.start !== host.start || observed.uid !== host.uid) {
     return { ok: false, reason: "identity-mismatch" };
@@ -241,6 +243,80 @@ function emptyAdoptResult(code: string): IdentityOpResult {
   };
 }
 
+function readMarkerFile(path: string): IdentityMarker | null {
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as IdentityMarker;
+  } catch {
+    return null;
+  }
+}
+
+async function commitObservedAdopt(input: {
+  command: FrozenControllerCommand;
+  ephemeralRoot: string;
+  host: import("../process/process-port.ts").ProcessIdentity;
+  supervisor: import("../process/process-port.ts").ProcessIdentity;
+  marker: IdentityMarker;
+  profile: NonNullable<ReturnType<typeof loadDurableReviewedProfile>>;
+}): Promise<IdentityOpResult> {
+  const sha = liveDiskSha();
+  const compile = input.marker.compile;
+  if (!compile || compile.sourceSha256 !== sha) return emptyAdoptResult("compile-mismatch");
+  const expected = expectedCompileReceipt(input.profile);
+  if (!compileReceiptAgrees(compile, expected)) return emptyAdoptResult("compile-mismatch");
+  const proposed: CoverageAttestation = {
+    coverage: "attested",
+    diskSha: compile.sourceSha256,
+    pid: input.host.pid,
+    start: input.host.start,
+    identity: input.host,
+    at: new Date().toISOString(),
+    launchMode: "transient-adopt",
+    operationId: input.command.operationId,
+    profileId: compile.profileId,
+    transformedSha: compile.transformedSha256,
+    compile: {
+      profileId: compile.profileId,
+      profileSha256: compile.profileSha256,
+      sourceSha256: compile.sourceSha256,
+      transformedSha256: compile.transformedSha256,
+    },
+    mode: "route",
+    modeld: true,
+  };
+  await writeAttestation(input.ephemeralRoot, proposed);
+  const record = await readAttestation(input.ephemeralRoot);
+  if (!isDeepStrictEqual(record, proposed)) return emptyAdoptResult("attestation-uncommitted");
+  const done = {
+    launchMode: "transient-adopt" as const,
+    phase: "attested" as const,
+    operationId: input.command.operationId,
+    compile: proposed.compile,
+    tempSupervisor: null,
+    adoptingSupervisor: input.supervisor,
+    host: {
+      pid: input.host.pid,
+      uid: input.host.uid,
+      start: input.host.start,
+      exe: input.host.exe,
+      cmdline: input.host.cmdline,
+    },
+  };
+  await writeAdoptOpState(input.ephemeralRoot, done);
+  return {
+    ok: true,
+    recoveryRequired: false,
+    signaled: false,
+    diskShaBefore: sha,
+    diskShaAfter: sha,
+    census: { wrapper: 1, supervisor: 1, host: 1, tempSupervisor: 0, guardian: 0, extras: 0 },
+    coverage: "attested",
+    host: input.host,
+    launchMode: "transient-adopt",
+    committedAttestation: record!,
+  };
+}
+
 async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promise<IdentityOpResult> {
   const ephemeralRoot = ephemeralRuntimeRoot();
   const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
@@ -254,11 +330,28 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
     execPath,
     hostBundle: LIVE_HOST_BUNDLE,
   });
-  const unique = findUniqueOfficialChain(ports.processes, ports.classify);
-  if (!unique.ok) return emptyAdoptResult(unique.code === "missing-role" ? "host-missing" : unique.code);
+  const proven = proveStableOfficialState(ports.processes, ports.classify, { gatewayPid: ports.readGatewayPid() });
+  if (!proven.ok) return emptyAdoptResult(proven.code === "missing-role" ? "host-missing" : proven.code);
+  const profile = loadDurableReviewedProfile(command.boxRoot);
+  if (!profile) return emptyAdoptResult("missing-source");
+  const host = proven.chain.host;
+  const supervisor = proven.chain.supervisor;
+  const marker = readMarkerFile(markerPath);
+  if (
+    proven.mode === "transient-adopt" &&
+    ports.hasGrokboxPreload(host) &&
+    marker &&
+    marker.pid === host.pid &&
+    marker.compiled === true &&
+    marker.transformed === true &&
+    marker.mode === "route"
+  ) {
+    return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker, profile });
+  }
+  if (proven.mode !== "direct-launch") return emptyAdoptResult("adopt-unproven");
   const strategy = decideH3LaunchStrategy({
-    supervisor: unique.chain.supervisor,
-    reviewedAdoptCapability: reviewOfficialAdoptCapability(unique.chain.supervisor),
+    supervisor,
+    reviewedAdoptCapability: reviewOfficialAdoptCapability(supervisor),
   });
   if (command.strategy === "transient" && strategy !== "transient-adopt-candidate") {
     return emptyAdoptResult("launch-strategy-unavailable");
@@ -266,10 +359,6 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   if (command.strategy === "direct" && strategy !== "direct-overlay") {
     return emptyAdoptResult("launch-strategy-unavailable");
   }
-  const profile = loadDurableReviewedProfile(command.boxRoot);
-  if (!profile) return emptyAdoptResult("missing-source");
-  const host = unique.chain.host;
-  const supervisor = unique.chain.supervisor;
   const launchSource = fillMissingLaunchEnv(
     readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST),
     readNamedProcEnv(supervisor.pid, IDENTITY_LAUNCH_ALLOWLIST),
@@ -339,10 +428,17 @@ export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
         if (existing) {
           if (existing.fingerprint !== input.fingerprint) decision = { status: "conflict" };
           else if (existing.state === "terminal") decision = { status: "duplicate" };
-          else if (existing.state === "unknown") decision = { status: "uncertain" };
+          else if (existing.state === "unknown") {
+            const live = defaultLiveAdmissionPorts();
+            const proven = proveStableOfficialState(live.processes, live.classify, { gatewayPid: live.gatewayPid() });
+            decision = proven.ok && proven.mode === "transient-adopt"
+              ? { status: "acquired" }
+              : { status: "uncertain" };
+          }
           else decision = { status: "busy" };
-        } else {
-          loaded.store[input.operationId] = { fingerprint: input.fingerprint, state: "running" };
+        }
+        if (decision.status === "acquired") {
+          loaded.store[input.operationId] = { fingerprint: input.fingerprint, state: "running", prefix: existing?.prefix };
           saveStore(input.boxRoot, loaded.store);
         }
         if (decision.status !== "acquired") {

@@ -250,6 +250,30 @@ describe("controller IO facade", () => {
       expect(inspectControllerFacts(boxRoot, portFor(99, validProfile.sourceSha256)).reason).toBe("gateway-mismatch");
       const admitted = inspectControllerFacts(boxRoot, portFor(13, validProfile.sourceSha256));
       expect(admitted).toMatchObject({ ok: true, reason: null, strategy: "direct" });
+      const adoptedHost: ProcessIdentity = {
+        ...host,
+        ppid: 53,
+        ancestry: [53, 1],
+      };
+      const adoptedRows = [wrapper, supervisor, adoptedHost];
+      const adoptedLive: LiveAdmissionPorts = {
+        processes: {
+          inspect: (pid) => adoptedRows.find((row) => row.pid === pid) ?? null,
+          list: () => adoptedRows,
+          signal: () => ({ ok: false, reason: "not-found" }),
+        },
+        classify: (ident) => {
+          if (ident.pid === 11) return "wrapper";
+          if (ident.pid === 12) return "supervisor";
+          if (ident.pid === 13) return "host";
+          return null;
+        },
+        gatewayPid: () => 13,
+        hostBundlePath: "/tmp/host-main.cjs",
+        readHostSha: () => validProfile.sourceSha256,
+      };
+      expect(inspectControllerFacts(boxRoot, adoptedLive)).toMatchObject({ ok: true, reason: null });
+      expect(inspectControllerFacts(boxRoot, { ...adoptedLive, gatewayPid: () => 99 }).reason).toBe("gateway-mismatch");
       expect(kills).toEqual([]);
       expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 });
     } finally {
