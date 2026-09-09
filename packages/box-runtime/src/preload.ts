@@ -26,7 +26,9 @@ function requiredPreloadPath(): string | null {
     if (part === "--require" && argv[i + 1]) return argv[i + 1]!;
     if (part.startsWith("--require=")) return part.slice("--require=".length);
   }
-  return null;
+  const opt = process.env.NODE_OPTIONS ?? "";
+  const matched = opt.match(/--require(?:=|\s+)(\S+)/);
+  return matched?.[1] ?? null;
 }
 
 const liveBlocked = isLiveHostPath(target) && !allowLiveHost;

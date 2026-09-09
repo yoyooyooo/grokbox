@@ -372,7 +372,19 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const supervisor = proven.chain.supervisor;
   const marker = readMarkerFile(markerPath);
   const preloadSha = diskPreloadSha256(preloadPath);
-  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && observedAdoptMarkerMatches(marker, host, command.operationId, preloadSha ?? undefined)) {
+  const hostPreloadSha = (() => {
+    const opt = readNamedProcEnv(host.pid, ["NODE_OPTIONS"]).NODE_OPTIONS;
+    const matched = typeof opt === "string" ? opt.match(/--require(?:=|\s+)(\S+)/) : null;
+    if (!matched?.[1]) return null;
+    try {
+      return sha256Bytes(readFileSync(matched[1]));
+    } catch {
+      return null;
+    }
+  })();
+  const identMatch = observedAdoptMarkerMatches(marker, host, command.operationId);
+  const preloadMatch = preloadSha != null && (marker?.preloadSha256 === preloadSha || hostPreloadSha === preloadSha);
+  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && identMatch && preloadMatch) {
     return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker: marker!, profile });
   }
   const strategy = decideH3LaunchStrategy({
