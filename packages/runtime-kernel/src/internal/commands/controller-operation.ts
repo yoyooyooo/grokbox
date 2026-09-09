@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import {
   ControlResources,
@@ -6,6 +6,7 @@ import {
   type ControllerRequest,
   type FrozenControllerCommand,
   type LaunchStrategy,
+  type OperationPrefix,
 } from "../../ports.ts";
 
 const INTENTS = new Set(["preview", "apply", "reconcile"]);
@@ -77,10 +78,18 @@ function withStrategy(command: FrozenControllerCommand, strategy: LaunchStrategy
 }
 
 function markUnknown(
-  control: { settle: (input: { operationId: string; boxRoot: string; state: "unknown" | "terminal" }) => Effect.Effect<void, unknown> },
+  control: {
+    settle: (input: {
+      operationId: string;
+      boxRoot: string;
+      state: "running" | "unknown" | "terminal";
+      prefix?: OperationPrefix;
+    }) => Effect.Effect<void, unknown>;
+  },
   command: FrozenControllerCommand,
+  prefix: OperationPrefix,
 ) {
-  return control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "unknown" });
+  return control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "unknown", prefix });
 }
 
 /** Unique controller program. Preview/reconcile never mutate; apply requires confirm + frozen command. */
@@ -103,7 +112,11 @@ export function runControllerOperation(request: ControllerRequest) {
       return receipt(command, "refused", { reason: "no-confirm" });
     }
     if (command.intent === "preview" || command.intent === "reconcile") {
-      const existing = yield* control.peek({ operationId: command.operationId, boxRoot: command.boxRoot });
+      const existingResult = yield* Effect.result(control.peek({ operationId: command.operationId, boxRoot: command.boxRoot }));
+      if (existingResult._tag === "Failure") {
+        return receipt(command, "recovery-required", { reason: "store-corrupt" });
+      }
+      const existing = existingResult.success;
       const pre = yield* Effect.result(control.preflight(command));
       if (existing?.state === "unknown") {
         return receipt(command, "recovery-required", { reason: "uncertain-operation" });
@@ -117,7 +130,7 @@ export function runControllerOperation(request: ControllerRequest) {
       return receipt(command, "preview", { reason: pre.success.reason });
     }
 
-    const progress = { signaled: false, spawned: false, guardian: false };
+    const progress: OperationPrefix = { signaled: false, spawned: false, guardian: false };
     return yield* Effect.scoped(Effect.gen(function* () {
       if (command.strategy == null) {
         const pre = yield* Effect.result(control.preflight(command));
@@ -146,6 +159,9 @@ export function runControllerOperation(request: ControllerRequest) {
       if (held.success.status === "conflict") {
         return receipt(command, "refused", { reason: "operation-conflict" });
       }
+      if (held.success.status === "corrupt") {
+        return receipt(command, "recovery-required", { reason: "store-corrupt" });
+      }
 
       const pre = yield* Effect.result(control.preflight(command));
       if (pre._tag === "Failure" || !pre.success.ok) {
@@ -158,46 +174,52 @@ export function runControllerOperation(request: ControllerRequest) {
 
       if (command.strategy === "transient") {
         const spawnedResult = yield* Effect.result(control.spawn(command));
-        progress.spawned = true;
         if (spawnedResult._tag === "Failure") {
-          yield* markUnknown(control, command);
+          yield* markUnknown(control, command, progress);
           return receipt(command, "partial", { reason: "spawn-failed", ...progress });
         }
-        progress.spawned = spawnedResult.success.spawned;
+        progress.spawned = spawnedResult.success.spawned === true;
+        yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "running", prefix: progress }).pipe(Effect.ignore);
         const armed = yield* Effect.result(control.armGuardian(command));
-        progress.guardian = true;
         if (armed._tag === "Failure") {
-          yield* markUnknown(control, command);
+          yield* markUnknown(control, command, progress);
           return receipt(command, "partial", { reason: "guardian-failed", ...progress });
         }
-        progress.guardian = armed.success.guardian;
+        progress.guardian = armed.success.guardian === true;
+        yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "running", prefix: progress }).pipe(Effect.ignore);
       } else if (command.strategy === "direct") {
         const signaledResult = yield* Effect.result(control.signal(command));
-        progress.signaled = true;
         if (signaledResult._tag === "Failure") {
-          yield* markUnknown(control, command);
+          yield* markUnknown(control, command, progress);
           return receipt(command, "partial", { reason: "signal-failed", ...progress });
         }
-        progress.signaled = signaledResult.success.signaled;
+        progress.signaled = signaledResult.success.signaled === true;
+        yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "running", prefix: progress }).pipe(Effect.ignore);
       } else {
         return receipt(command, "refused", { reason: "missing-strategy" });
       }
 
       const waited = yield* Effect.result(control.wait(command));
       if (waited._tag === "Failure") {
-        yield* markUnknown(control, command);
+        yield* markUnknown(control, command, progress);
         return receipt(command, "unknown", { reason: "wait-failed", ...progress });
       }
       const committed = yield* Effect.result(control.commit(command));
       if (committed._tag === "Failure" || !committed.success.committed) {
-        yield* markUnknown(control, command);
+        yield* markUnknown(control, command, progress);
         return receipt(command, "recovery-required", { reason: "commit-failed", ...progress });
       }
-      yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "terminal" });
+      yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "terminal", prefix: progress });
       return receipt(command, "signaled", progress);
-    })).pipe(Effect.catchCause(() => Effect.gen(function* () {
-      yield* markUnknown(control, command).pipe(Effect.ignore);
-      return receipt(command, "unknown", { reason: "interrupted", ...progress });
-    })));
+    })).pipe(Effect.catchCause((cause) => Effect.uninterruptible(Effect.gen(function* () {
+      yield* markUnknown(control, command, progress).pipe(Effect.ignore);
+      if (Cause.hasInterruptsOnly(cause)) {
+        return yield* Effect.failCause(cause);
+      }
+      return receipt(command, "unknown", {
+        reason: Cause.hasDies(cause) ? "defect" : "fault",
+        ...progress,
+      });
+    }))));
   });
 }

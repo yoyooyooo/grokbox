@@ -7,7 +7,7 @@ import {
   type InferenceEvent,
 } from "../contract/events.ts";
 import { sha256Text } from "../../hash.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationRecord, type PreparedCall } from "../../ports.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationPrefix, type OperationRecord, type PreparedCall } from "../../ports.ts";
 import type { ModelsFile, DesiredFile } from "../../selection.ts";
 
 const prepared = new WeakMap<PreparedCall, { snapshot: unknown }>();
@@ -180,6 +180,10 @@ export function fakeControlResourcesLayer(options: {
   wait?: Effect.Effect<void, unknown>;
   failSignal?: boolean;
   failPreflight?: boolean;
+  failSpawn?: boolean;
+  failGuardian?: boolean;
+  dieRecheck?: boolean;
+  dieSignal?: boolean;
 } = {}): Layer.Layer<ControlResources> {
   const store = options.store ?? new Map<string, OperationRecord>();
   const counts = options.counts;
@@ -208,9 +212,9 @@ export function fakeControlResourcesLayer(options: {
       }),
     ),
     peek: (input: { operationId: string; boxRoot: string }) => Effect.sync(() => store.get(input.operationId) ?? null),
-    settle: (input: { operationId: string; boxRoot: string; state: "unknown" | "terminal" }) => Effect.sync(() => {
+    settle: (input: { operationId: string; boxRoot: string; state: "running" | "unknown" | "terminal"; prefix?: OperationPrefix }) => Effect.sync(() => {
       const existing = store.get(input.operationId);
-      if (existing) store.set(input.operationId, { ...existing, state: input.state });
+      if (existing) store.set(input.operationId, { ...existing, state: input.state, prefix: input.prefix ?? existing.prefix });
     }),
     preflight: (_input: FrozenControllerCommand) => Effect.try({
       try: () => {
@@ -220,25 +224,39 @@ export function fakeControlResourcesLayer(options: {
       },
       catch: (error) => error,
     }),
-    recheck: (_input: FrozenControllerCommand) => Effect.sync(() => {
-      bump("recheck");
-      return options.recheck ?? options.preflight ?? { ok: false, reason: "recheck-incomplete" };
-    }),
-    signal: (_input: FrozenControllerCommand) => Effect.try({
+    recheck: (_input: FrozenControllerCommand) => {
+      if (options.dieRecheck) return Effect.die(new Error("recheck-defect"));
+      return Effect.sync(() => {
+        bump("recheck");
+        return options.recheck ?? options.preflight ?? { ok: false, reason: "recheck-incomplete" };
+      });
+    },
+    signal: (_input: FrozenControllerCommand) => {
+      if (options.dieSignal) return Effect.die(new Error("signal-defect"));
+      return Effect.try({
+        try: () => {
+          bump("signal");
+          if (options.failSignal) throw new Error("signal-failed");
+          return { signaled: true };
+        },
+        catch: (error) => error,
+      });
+    },
+    spawn: (_input: FrozenControllerCommand) => Effect.try({
       try: () => {
-        bump("signal");
-        if (options.failSignal) throw new Error("signal-failed");
-        return { signaled: true };
+        bump("spawn");
+        if (options.failSpawn) throw new Error("spawn-failed");
+        return { spawned: true };
       },
       catch: (error) => error,
     }),
-    spawn: (_input: FrozenControllerCommand) => Effect.sync(() => {
-      bump("spawn");
-      return { spawned: true };
-    }),
-    armGuardian: (_input: FrozenControllerCommand) => Effect.sync(() => {
-      bump("guardian");
-      return { guardian: true };
+    armGuardian: (_input: FrozenControllerCommand) => Effect.try({
+      try: () => {
+        bump("guardian");
+        if (options.failGuardian) throw new Error("guardian-failed");
+        return { guardian: true };
+      },
+      catch: (error) => error,
     }),
     wait: (_input: FrozenControllerCommand) => Effect.gen(function* () {
       bump("wait");

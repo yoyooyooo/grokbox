@@ -140,4 +140,52 @@ describe("controller operation program", () => {
     expect(done._tag).toBe("Success");
     expect(counts.signal).toBe(1);
   });
+
+  test("typed action failure does not claim completed flags", async () => {
+    const counts = emptyFakeControlCounts();
+    const failed = await run(apply, fakeControlResourcesLayer({
+      counts,
+      preflight: { ok: true, reason: null, strategy: "direct" },
+      failSignal: true,
+    }));
+    expect(failed).toMatchObject({ outcome: "partial", reason: "signal-failed", signaled: false });
+    expect(counts.signal).toBe(1);
+    const spawnCounts = emptyFakeControlCounts();
+    const spawnFailed = await run({ ...apply, operationId: "op-spawn", strategy: "transient" }, fakeControlResourcesLayer({
+      counts: spawnCounts,
+      preflight: { ok: true, reason: null, strategy: "transient" },
+      failSpawn: true,
+    }));
+    expect(spawnFailed).toMatchObject({ outcome: "partial", reason: "spawn-failed", spawned: false, guardian: false });
+    expect(spawnCounts.spawn).toBe(1);
+    expect(spawnCounts.guardian).toBe(0);
+  });
+
+  test("defect is not relabeled interrupted; interrupt keeps completed prefix", async () => {
+    const defect = await run(apply, fakeControlResourcesLayer({
+      preflight: { ok: true, reason: null, strategy: "direct" },
+      dieRecheck: true,
+    }));
+    expect(defect).toMatchObject({ outcome: "unknown", reason: "defect", signaled: false });
+
+    const counts = emptyFakeControlCounts();
+    const store = new Map();
+    const gate = await Effect.runPromise(Deferred.make<void>());
+    const layer = fakeControlResourcesLayer({
+      counts,
+      store,
+      preflight: { ok: true, reason: null, strategy: "direct" },
+      wait: Deferred.await(gate),
+    });
+    const fiber = Effect.runFork(runControllerOperation(apply).pipe(Effect.provide(layer), Effect.scoped));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(counts.signal).toBe(1);
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    const done = await Effect.runPromise(Fiber.await(fiber));
+    expect(done._tag).toBe("Failure");
+    expect(store.get("op-1")).toMatchObject({
+      state: "unknown",
+      prefix: { signaled: true, spawned: false, guardian: false },
+    });
+  });
 });

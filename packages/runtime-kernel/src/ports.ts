@@ -82,17 +82,25 @@ export type LeaseDecision =
   | { status: "duplicate" }
   | { status: "busy" }
   | { status: "uncertain" }
-  | { status: "conflict" };
+  | { status: "conflict" }
+  | { status: "corrupt" };
+
+export type OperationPrefix = {
+  signaled: boolean;
+  spawned: boolean;
+  guardian: boolean;
+};
 
 export type OperationRecord = {
   fingerprint: string;
   state: "reserved" | "running" | "unknown" | "terminal";
+  prefix?: OperationPrefix;
 };
 
 export class ControlResources extends Context.Service<ControlResources, {
   readonly lease: (input: FrozenControllerCommand) => Effect.Effect<LeaseDecision, unknown, Scope>;
   readonly peek: (input: { operationId: string; boxRoot: string }) => Effect.Effect<OperationRecord | null, unknown>;
-  readonly settle: (input: { operationId: string; boxRoot: string; state: "unknown" | "terminal" }) => Effect.Effect<void, unknown>;
+  readonly settle: (input: { operationId: string; boxRoot: string; state: "running" | "unknown" | "terminal"; prefix?: OperationPrefix }) => Effect.Effect<void, unknown>;
   readonly preflight: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null; strategy?: LaunchStrategy }, unknown>;
   readonly recheck: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null }, unknown>;
   readonly signal: (input: FrozenControllerCommand) => Effect.Effect<{ signaled: boolean }, unknown>;
