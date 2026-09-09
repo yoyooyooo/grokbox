@@ -7,7 +7,7 @@ import {
   type InferenceEvent,
 } from "../contract/events.ts";
 import { sha256Text } from "../../hash.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, ModelBackend, type AuthLease, type ControllerRequest, type PreparedCall } from "../../ports.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationRecord, type PreparedCall } from "../../ports.ts";
 import type { ModelsFile, DesiredFile } from "../../selection.ts";
 
 const prepared = new WeakMap<PreparedCall, { snapshot: unknown }>();
@@ -174,35 +174,57 @@ export function emptyFakeControlCounts(): FakeControlCounts {
 
 export function fakeControlResourcesLayer(options: {
   counts?: FakeControlCounts;
+  store?: Map<string, OperationRecord>;
   preflight?: { ok: boolean; reason: string | null; strategy?: "direct" | "transient" };
   recheck?: { ok: boolean; reason: string | null };
-  duplicate?: boolean;
   wait?: Effect.Effect<void, unknown>;
   failSignal?: boolean;
+  failPreflight?: boolean;
 } = {}): Layer.Layer<ControlResources> {
-  const committed = new Set<string>();
+  const store = options.store ?? new Map<string, OperationRecord>();
   const counts = options.counts;
   const bump = (key: keyof FakeControlCounts) => {
     if (counts) counts[key] += 1;
   };
   return Layer.succeed(ControlResources, {
-    lease: (input: { operationId: string }) => Effect.acquireRelease(
+    lease: (input: FrozenControllerCommand) => Effect.acquireRelease(
       Effect.sync(() => {
         bump("lease");
-        if (options.duplicate || committed.has(input.operationId)) return { duplicate: true };
-        return { duplicate: false };
+        const existing = store.get(input.operationId);
+        if (existing) {
+          if (existing.fingerprint !== input.fingerprint) return { status: "conflict" as const };
+          if (existing.state === "terminal") return { status: "duplicate" as const };
+          if (existing.state === "unknown") return { status: "uncertain" as const };
+          if (existing.state === "running" || existing.state === "reserved") return { status: "busy" as const };
+        }
+        store.set(input.operationId, { fingerprint: input.fingerprint, state: "running" });
+        return { status: "acquired" as const };
       }),
-      () => Effect.void,
+      () => Effect.sync(() => {
+        const existing = store.get(input.operationId);
+        if (existing && existing.state === "running") {
+          store.set(input.operationId, { ...existing, state: "unknown" });
+        }
+      }),
     ),
-    preflight: (_input: ControllerRequest) => Effect.sync(() => {
-      bump("preflight");
-      return options.preflight ?? { ok: false, reason: "preflight-incomplete" };
+    peek: (input: { operationId: string; boxRoot: string }) => Effect.sync(() => store.get(input.operationId) ?? null),
+    settle: (input: { operationId: string; boxRoot: string; state: "unknown" | "terminal" }) => Effect.sync(() => {
+      const existing = store.get(input.operationId);
+      if (existing) store.set(input.operationId, { ...existing, state: input.state });
     }),
-    recheck: (_input: ControllerRequest) => Effect.sync(() => {
+    preflight: (_input: FrozenControllerCommand) => Effect.try({
+      try: () => {
+        bump("preflight");
+        if (options.failPreflight) throw new Error("preflight");
+        return options.preflight ?? { ok: false, reason: "preflight-incomplete" };
+      },
+      catch: (error) => error,
+    }),
+    recheck: (_input: FrozenControllerCommand) => Effect.sync(() => {
       bump("recheck");
       return options.recheck ?? options.preflight ?? { ok: false, reason: "recheck-incomplete" };
     }),
-    signal: (_input: ControllerRequest) => Effect.try({
+    signal: (_input: FrozenControllerCommand) => Effect.try({
       try: () => {
         bump("signal");
         if (options.failSignal) throw new Error("signal-failed");
@@ -210,21 +232,20 @@ export function fakeControlResourcesLayer(options: {
       },
       catch: (error) => error,
     }),
-    spawn: (_input: ControllerRequest) => Effect.sync(() => {
+    spawn: (_input: FrozenControllerCommand) => Effect.sync(() => {
       bump("spawn");
       return { spawned: true };
     }),
-    armGuardian: (_input: ControllerRequest) => Effect.sync(() => {
+    armGuardian: (_input: FrozenControllerCommand) => Effect.sync(() => {
       bump("guardian");
       return { guardian: true };
     }),
-    wait: (_input: ControllerRequest) => Effect.gen(function* () {
+    wait: (_input: FrozenControllerCommand) => Effect.gen(function* () {
       bump("wait");
       if (options.wait) yield* options.wait;
     }),
-    commit: (input: ControllerRequest) => Effect.sync(() => {
+    commit: (_input: FrozenControllerCommand) => Effect.sync(() => {
       bump("commit");
-      committed.add(input.operationId);
       return { committed: true };
     }),
   });

@@ -16,6 +16,7 @@ import {
   readContracts,
   observeEvents,
   reviewedProfilePath,
+  controllerOperationId,
   runtimeNotReady,
   startControlOperation,
   startModeldProcess,
@@ -175,7 +176,7 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
     const receipt = await startControlOperation({
       intent: "apply",
       confirmed: true,
-      operationId: "cli-readopt",
+      operationId: controllerOperationId("apply", runtime.root),
       boxRoot: runtime.root,
     });
     writeSuccess(deps.stdout, receipt);
@@ -190,7 +191,7 @@ export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
     const receipt = await startControlOperation({
       intent: "reconcile",
       confirmed: false,
-      operationId: "cli-reconcile",
+      operationId: controllerOperationId("reconcile", runtime.root),
       boxRoot: runtime.root,
     });
     writeSuccess(deps.stdout, receipt);

@@ -49,13 +49,24 @@ export class ModeldControl extends Context.Service<ModeldControl, {
 }>()("grokbox/ModeldControl") {}
 
 export type ControllerIntent = "preview" | "apply" | "reconcile";
+export type LaunchStrategy = "direct" | "transient";
 
 export type ControllerRequest = {
   intent: ControllerIntent;
   confirmed: boolean;
   operationId: string;
   boxRoot: string;
+  strategy?: LaunchStrategy;
 };
+
+export type FrozenControllerCommand = Readonly<{
+  intent: ControllerIntent;
+  confirmed: boolean;
+  operationId: string;
+  boxRoot: string;
+  strategy: LaunchStrategy | null;
+  fingerprint: string;
+}>;
 
 export type ControllerReceipt = {
   outcome: "preview" | "refused" | "signaled" | "partial" | "recovery-required" | "unknown" | "converged";
@@ -66,15 +77,29 @@ export type ControllerReceipt = {
   operationId: string;
 };
 
+export type LeaseDecision =
+  | { status: "acquired" }
+  | { status: "duplicate" }
+  | { status: "busy" }
+  | { status: "uncertain" }
+  | { status: "conflict" };
+
+export type OperationRecord = {
+  fingerprint: string;
+  state: "reserved" | "running" | "unknown" | "terminal";
+};
+
 export class ControlResources extends Context.Service<ControlResources, {
-  readonly lease: (input: { operationId: string }) => Effect.Effect<{ duplicate: boolean }, unknown, Scope>;
-  readonly preflight: (input: ControllerRequest) => Effect.Effect<{ ok: boolean; reason: string | null; strategy?: "direct" | "transient" }, unknown>;
-  readonly recheck: (input: ControllerRequest) => Effect.Effect<{ ok: boolean; reason: string | null }, unknown>;
-  readonly signal: (input: ControllerRequest) => Effect.Effect<{ signaled: boolean }, unknown>;
-  readonly spawn: (input: ControllerRequest) => Effect.Effect<{ spawned: boolean }, unknown>;
-  readonly armGuardian: (input: ControllerRequest) => Effect.Effect<{ guardian: boolean }, unknown>;
-  readonly wait: (input: ControllerRequest) => Effect.Effect<void, unknown>;
-  readonly commit: (input: ControllerRequest) => Effect.Effect<{ committed: boolean }, unknown>;
+  readonly lease: (input: FrozenControllerCommand) => Effect.Effect<LeaseDecision, unknown, Scope>;
+  readonly peek: (input: { operationId: string; boxRoot: string }) => Effect.Effect<OperationRecord | null, unknown>;
+  readonly settle: (input: { operationId: string; boxRoot: string; state: "unknown" | "terminal" }) => Effect.Effect<void, unknown>;
+  readonly preflight: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null; strategy?: LaunchStrategy }, unknown>;
+  readonly recheck: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null }, unknown>;
+  readonly signal: (input: FrozenControllerCommand) => Effect.Effect<{ signaled: boolean }, unknown>;
+  readonly spawn: (input: FrozenControllerCommand) => Effect.Effect<{ spawned: boolean }, unknown>;
+  readonly armGuardian: (input: FrozenControllerCommand) => Effect.Effect<{ guardian: boolean }, unknown>;
+  readonly wait: (input: FrozenControllerCommand) => Effect.Effect<void, unknown>;
+  readonly commit: (input: FrozenControllerCommand) => Effect.Effect<{ committed: boolean }, unknown>;
 }>()("grokbox/ControlResources") {}
 
 export class ObservationRead extends Context.Service<ObservationRead, {
