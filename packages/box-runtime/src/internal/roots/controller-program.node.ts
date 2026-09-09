@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Effect, Layer } from "effect";
 import { runControllerOperation } from "@grokbox/runtime-kernel/commands";
 import { sha256Bytes, sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
@@ -372,18 +372,22 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const supervisor = proven.chain.supervisor;
   const marker = readMarkerFile(markerPath);
   const preloadSha = diskPreloadSha256(preloadPath);
-  const hostPreloadSha = (() => {
+  const hostRequire = (() => {
     const opt = readNamedProcEnv(host.pid, ["NODE_OPTIONS"]).NODE_OPTIONS;
     const matched = typeof opt === "string" ? opt.match(/--require(?:=|\s+)(\S+)/) : null;
-    if (!matched?.[1]) return null;
+    return matched?.[1] ?? null;
+  })();
+  const hostPreloadSha = (() => {
+    if (!hostRequire) return null;
     try {
-      return sha256Bytes(readFileSync(matched[1]));
+      return sha256Bytes(readFileSync(hostRequire));
     } catch {
       return null;
     }
   })();
   const identMatch = observedAdoptMarkerMatches(marker, host, command.operationId);
-  const preloadMatch = preloadSha != null && (marker?.preloadSha256 === preloadSha || hostPreloadSha === preloadSha);
+  const pathMatch = Boolean(hostRequire && resolve(hostRequire) === resolve(preloadPath));
+  const preloadMatch = pathMatch || (preloadSha != null && (marker?.preloadSha256 === preloadSha || hostPreloadSha === preloadSha));
   if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && identMatch && preloadMatch) {
     return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker: marker!, profile });
   }
