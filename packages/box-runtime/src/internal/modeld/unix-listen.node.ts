@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 import { Effect } from "effect";
@@ -19,27 +19,62 @@ export type ListenHooks = {
   afterListen?: Effect.Effect<void>;
   failAfterListen?: Effect.Effect<never, Error>;
   failRelease?: boolean;
+  onConnection?: (socket: Socket) => void;
 };
 
 export type OwnedListener = {
   path: string;
   server: Server;
+  ino?: number;
+  dev?: number;
 };
 
-function closeListener(server: Server, path: string, counts?: ResourceCounts, owned?: { current: boolean }) {
-  return Effect.callback<void>((resume) => {
-    server.close(() => {
-      if (owned?.current) {
-        try { unlinkSync(path); } catch { /* already gone */ }
-        owned.current = false;
+type PipeServer = Server & { _pipeName?: string };
+
+function ownsPath(path: string, ino?: number, dev?: number): boolean {
+  if (ino === undefined || dev === undefined) return false;
+  try {
+    const st = lstatSync(path);
+    return st.ino === ino && st.dev === dev;
+  } catch {
+    return false;
+  }
+}
+
+function closeListener(
+  server: Server,
+  path: string,
+  counts: ResourceCounts | undefined,
+  owned: { ino?: number; dev?: number; released: boolean },
+  failRelease: boolean,
+) {
+  return Effect.callback<void, Error>((resume) => {
+    if (owned.released) {
+      resume(Effect.void);
+      return;
+    }
+    if (failRelease) {
+      resume(Effect.fail(new Error("cleanup_gap")));
+      return;
+    }
+    const pipe = server as PipeServer;
+    if (!ownsPath(path, owned.ino, owned.dev)) {
+      pipe._pipeName = undefined;
+    }
+    server.close((error) => {
+      const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
+      if (error && code !== "ERR_SERVER_NOT_RUNNING") {
+        resume(Effect.fail(error));
+        return;
       }
+      owned.released = true;
       if (counts) counts.listeners = Math.max(0, counts.listeners - 1);
       resume(Effect.void);
     });
   });
 }
 
-/** Bind Unix listener. Finalizer is registered at allocation, before listen completes. Never unlinks a competitor path. */
+/** Bind Unix listener. Finalizer at allocation. Never unlinks a competitor pathname. */
 export function acquireUnixListener(path: string, counts?: ResourceCounts, hooks: ListenHooks = {}) {
   return Effect.gen(function* () {
     if (existsSync(path)) {
@@ -47,9 +82,12 @@ export function acquireUnixListener(path: string, counts?: ResourceCounts, hooks
     }
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     const server = createServer();
-    const owned = { current: false };
+    const owned = { ino: undefined as number | undefined, dev: undefined as number | undefined, released: false };
     if (counts) counts.listeners += 1;
-    yield* Effect.addFinalizer(() => closeListener(server, path, counts, owned).pipe(Effect.ignore));
+    if (hooks.onConnection) server.on("connection", hooks.onConnection);
+    yield* Effect.addFinalizer(() => hooks.failRelease === true
+      ? Effect.die(new Error("cleanup_gap"))
+      : closeListener(server, path, counts, owned, false).pipe(Effect.orDie));
     if (hooks.afterAllocate) yield* hooks.afterAllocate;
     yield* Effect.callback<void, Error>((resume, signal) => {
       const onAbort = () => {
@@ -64,26 +102,30 @@ export function acquireUnixListener(path: string, counts?: ResourceCounts, hooks
       server.once("error", (error) => resume(Effect.fail(error)));
       server.listen({ path, exclusive: true }, () => {
         try { chmodSync(path, 0o600); } catch { /* ignore */ }
-        owned.current = true;
+        try {
+          const st = lstatSync(path);
+          owned.ino = st.ino;
+          owned.dev = st.dev;
+        } catch { /* ignore */ }
         resume(Effect.void);
       });
       return Effect.sync(onAbort);
     });
     if (hooks.afterListen) yield* hooks.afterListen;
     if (hooks.failAfterListen) yield* hooks.failAfterListen;
-    return { path, server };
+    return { path, server, ino: owned.ino, dev: owned.dev };
   });
 }
 
-export function trackSocket(socket: Socket, counts?: ResourceCounts) {
+export function trackSocket(socket: Socket, counts?: ResourceCounts, capacity?: { clients: number }) {
   return Effect.acquireRelease(
-    Effect.sync(() => {
-      if (counts) counts.sockets += 1;
-      return socket;
-    }),
-    (owned) => Effect.sync(() => {
+    Effect.sync(() => socket),
+    (owned) => Effect.callback<void>((resume) => {
+      owned.end();
       owned.destroy();
       if (counts) counts.sockets = Math.max(0, counts.sockets - 1);
+      if (capacity) capacity.clients = Math.max(0, capacity.clients - 1);
+      resume(Effect.void);
     }),
   );
 }

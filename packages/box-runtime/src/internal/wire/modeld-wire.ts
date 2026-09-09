@@ -88,6 +88,10 @@ export function parseV3Request(value: unknown): ParsedWireRequest {
     if (typeof value.agentId !== "string" || typeof value.turnId !== "string" || typeof value.stepId !== "string") {
       throw new WireError("malformed_frame");
     }
+    if (Object.hasOwn(value, "bindingId") && typeof value.bindingId !== "string") throw new WireError("malformed_frame");
+    if (!isRecord(value.snapshot) || !exactKeys(value.snapshot, ["version", "profileId", "abiIdentity", "systemMessages", "messages", "tools", "snapshotDigest"], ["options"])) {
+      throw new WireError("extra_keys");
+    }
     let snapshot;
     try { snapshot = parseContextSnapshot(value.snapshot); }
     catch { throw new WireError("malformed_frame"); }

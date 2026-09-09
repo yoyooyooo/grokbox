@@ -21,4 +21,28 @@ describe("modeld v3 wire", () => {
     huge.writeUInt32BE(9_000_000, 0);
     expect(decodeModeldFrame(huge)).toEqual({ error: "too-large" });
   });
+
+  test("rejects non-string bindingId and extra snapshot keys", () => {
+    const base = {
+      version: 3,
+      method: "run-step",
+      hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },
+      serviceEpoch: { incarnationId: "svc" },
+      agentId: "a",
+      turnId: "t",
+      stepId: "s1",
+      selection: { agentId: "a", modelId: "stub/echo", selectionRevision: "0".repeat(64) },
+      snapshot: {
+        version: 1,
+        profileId: "p",
+        abiIdentity: "abi",
+        systemMessages: [{ role: "system", content: "r" }],
+        messages: [{ role: "user", content: "hi" }],
+        tools: [],
+        snapshotDigest: "0".repeat(64),
+      },
+    };
+    expect(() => parseV3Request({ ...base, bindingId: 123 })).toThrow(WireError);
+    expect(() => parseV3Request({ ...base, snapshot: { ...base.snapshot, extra: true } })).toThrow(WireError);
+  });
 });
