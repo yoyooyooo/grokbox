@@ -152,3 +152,26 @@ This documentation-only closeout checked the accepted report/artifacts and all 1
 ### Evidence ceiling
 
 Git-object-checked `pre-publication-revision` archive; all five residual changed files match the target blobs and workspace imports resolve inside that snapshot. Binding passed 19 tests / 88 assertions plus composition 2 / 5; backend 15 / 66, codec 11 / 176, layout 20 / 20 and typecheck passed. Independent Deferred/Scope probes used current codec/auth adapters, synthetic credentials and counted backend ports (not paid HTTP); 24 guarded processes recorded zero blocked egress/signals. Actual toolchain: Bun 1.4.2 / Node v24.18.0. No production fixes, live operations, build/package rerun, pinned Bun/Node20 runtime qualification, or T25/T26 acceptance is implied. Evidence: `PRIVATE_EVIDENCE` (`audit-results.json`, `final-scope.json`, command logs); final note: `PRIVATE_EVIDENCE`.
+
+## M4 / T25 — pre-publication-revision — 2026-09-09
+
+- Reviewed SHA: `pre-publication-revision`; all references below are pinned to this residual tip, excluding later main-chain work.
+- Relook report: `PRIVATE_EVIDENCE`
+- First P1 receipt: `PRIVATE_EVIDENCE`
+- Grok residual receipt: `PRIVATE_EVIDENCE`
+- Disposition: P1-01/P1-03/P1-04/P1-05/P1-06 are closed on the held counterexamples; one narrower native-cleanup concern remains under P1-02. Owner end-of-rebuild triage only; no grok handoff, main-chain pause, or automatic final review. Earlier milestone residue is unchanged.
+
+### Verified fixes at this M4 tip
+
+- **P1-01/03/04/05/06 — closed on the held cases:** desired route without attestation now rejects with zero HTTP/credential reads; a synthetic committed-attestation control reaches the SDK mock once through default global fetch. Root interruption and peer disconnect stop the cooperative backend and leave listener/socket/fiber counts zero. Late extra data now cancels with `extra_keys`, the receive-growth case no longer accumulates the full 9 MiB, and the illegal v2/garbage terminal is rejected. Prior slow-reader/output-cap controls remain green.
+- **P1-02 — partial fixes acknowledged:** the competitor pathname now survives, and public stop surfaces injected release failure as `cleanup_gap` instead of claiming success. Path preservation alone does not establish safe native-handle teardown.
+
+### Items
+
+- **P1-02 — still held: competing-path cleanup does not yet have a clean Node20 process proof.** `packages/box-runtime/src/internal/modeld/unix-listen.node.ts:52–60,80–86` clears the private `_handle`/`_pipeName`, closes the raw fd with `closeSync`, then marks release successful and listener count zero. Replaying the owned competing-socket scenario under `/usr/bin/node v20.19.2` preserves the competitor pathname/listener and prints zero owned counters, but the process subsequently terminates with **SIGABRT** (exit status null). An earlier replay also ended abnormally. Thus the original pathname-loss counterexample is fixed, but the replacement cleanup path cannot be accepted as safe resource release; the exact native assertion is not inferred without a native stack.
+  - Evidence: `PRIVATE_EVIDENCE`, `node-competitor.json`, `node-competitor.stdout.log`, `node-run-3348566.json`; first observation retained as `node-competitor-initial.*`. Reproducer: `node-probe.ts` / `run-node.mjs` alongside them. All sockets and the preserved hard link are owned review fixtures, not a live Host or competitor service.
+  - Why not forced onto grok: the milestone review/relook/handoff is over. This remaining A9/native-lifetime concern is reserved for owner triage; no new fix round, alternate implementation, or pause is authorized here.
+
+### Evidence ceiling
+
+Git-object-checked `pre-publication-revision` archive; eight residual changed files match target blobs and workspace imports resolve within it. Lifecycle passed 14 tests / 47 assertions, binding 19 / 88 plus composition 2 / 5, backend 15 / 66, codec 11 / 176, layout 20 / 20 and typecheck. Actual toolchains: Bun 1.4.2 / Node v24.18.0 for gates, `/usr/bin/node v20.19.2` for isolated Unix probes. The native process failure above is not overridden by green Bun gates; guard exit records do not cover an aborted process's finalization. No production fixes, live/provider spend, build/package rerun, full committed-attestation CLI binary qualification, or T26 acceptance. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
