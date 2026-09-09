@@ -122,7 +122,7 @@ Deactivate / 官方替换等待（`waitOfficialReplacement`）：仅 census 到�
 
 ## 5. 模型运行时
 
-- `/workspace/.grokbox/box-runtime/models.json`；`apiKeyRef` 仅为 `env:<NAME>` 或 `file:/absolute/path`（`file:` 也放长效树下的 `secrets/`，不进 git）。
+- `/workspace/.grokbox/box-runtime/models.json`；`apiKeyRef` 仅为 `env:<NAME>` 或 `file:/absolute/path`（`file:` 也放长效树下的 `secrets/`，不进 git）。`env:` 必须是已解析的 bearer（例如 `GROKBOX_SUB2API_KEY`）；trim 后以 `!/` 开头的 pi command-form apiKey 会 `credential_invalid`，modeld 不会执行该命令。
 - **Selective route：** `assignments.agents.<id>` 是唯一的 managed opt-in。未列出的 Bot 走官方 Host session。`assignments.main` 可选（catalog/披露用），**不是** 未覆盖 Bot 的回退。键用稳定 agent id；CLI `--for` 写 agents 覆盖。Debug canary 是 grokbox test0 `00000000-0000-4000-8000-000000000114`；grokbox test1 未 opt-in 则官方。其它 Bot 官方。省略 `--for` 的 `models use` 仍写 `main`，不把其它 Bot 拉进 modeld。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。本 slice 的 **route activate** 承认已出现的赋值是 `stub/echo` **或** openai*（`openAiAccepts`：provider `openai`/`openai-chat`/`openai-responses`、http(s) `endpoint` 作 baseURL、非空 `apiKeyRef`）。允许 agents-only、`main=null`。其它 provider / 缺 key / 非 http endpoint fail-closed。T11：预 dispatch 本地失败回官方；wrap 之后可见 `stage=admit|provider|normalize` 错误，出门后不静默回官方。
 - turn 钉住该 Bot 的 immutable resolved-config **和 credential fingerprint**，直到 terminal 或 idle TTL；不在 turn 内 refresh/换账户。改 Jerry 不影响 Tom 正在跑的回合。
 - modeld 有 generation-scoped 内存 registry（id → fingerprint + state + terminal）。`status` 不对账续传正文。disconnect → abort + unknown。duplicate submit 不重新 dispatch。

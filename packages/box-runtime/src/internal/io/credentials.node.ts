@@ -11,6 +11,8 @@ import { BackendAuth, type AuthLease } from "@grokbox/runtime-kernel/ports";
  *
  * - `apiKeyRef` is `env:<NAME>` or `file:/absolute` via `parseApiKeyRef` (no `$VAR`, no literals).
  * - Env: missing, non-string, or empty after one `String.prototype.trim()` fails.
+ * - After trim, values that start with `!/` are rejected as pi command-form apiKeys
+ *   (`credential_invalid`). This path never executes the command.
  * - File: `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` then `fstat`; regular file only.
  *   FIFOs/sockets/dirs fail as non-regular without blocking the Host or modeld.
  *   `stat.size` and bytes read must be ≤ `CREDENTIAL_SECRET_MAX_BYTES`; body must
@@ -34,6 +36,17 @@ function trimUtf8Secret(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Pi models.json command-form apiKey. Do not treat as a Bearer; do not exec. */
+function rejectCommandFormSecret(secret: string): Effect.Effect<string, BoxRuntimeError> {
+  if (secret.startsWith("!/")) {
+    return Effect.fail(new BoxRuntimeError(
+      "credential_invalid",
+      "Referenced env credential holds a command reference, not a secret.",
+    ));
+  }
+  return Effect.succeed(secret);
 }
 
 function mapFsError(error: unknown): BoxRuntimeError {
@@ -88,7 +101,7 @@ function readSecretFile(path: string): Effect.Effect<string, BoxRuntimeError> {
       if (secret === null) {
         return yield* Effect.fail(new BoxRuntimeError("credential_invalid", "Referenced file credential is empty."));
       }
-      return secret;
+      return yield* rejectCommandFormSecret(secret);
     }),
     (file) => Effect.promise(() => file.close().then(() => undefined, () => undefined)),
   );
@@ -107,7 +120,7 @@ export function materializeApiKeyRefEffect(
       if (secret === null) {
         return yield* Effect.fail(new BoxRuntimeError("credential_invalid", "Referenced env credential is missing."));
       }
-      return secret;
+      return yield* rejectCommandFormSecret(secret);
     }
     return yield* readSecretFile(parsed.ref.slice(5));
   });

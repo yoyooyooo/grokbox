@@ -33,6 +33,19 @@ describe("modeld C1 credentials", () => {
     await expect(materializeApiKeyRef("sk-live", { OPENAI_API_KEY: "x" })).rejects.toBeInstanceOf(BoxRuntimeError);
   });
 
+  test("pi command-form env values are rejected and not used as Bearer", async () => {
+    const command = "!/usr/bin/env sh -lc 'printf %s placeholder-not-a-key'";
+    await expect(materializeApiKeyRef("env:GROKBOX_SUB2API_KEY", { GROKBOX_SUB2API_KEY: `  ${command}\n` })).rejects.toMatchObject({
+      code: "credential_invalid",
+      message: "Referenced env credential holds a command reference, not a secret.",
+    });
+    expect(await materializeApiKeyRef("env:GROKBOX_SUB2API_KEY", { GROKBOX_SUB2API_KEY: "opaque-token-not-a-command" })).toBe("opaque-token-not-a-command");
+    const dir = await tmpDir();
+    const file = join(dir, "cmd");
+    await writeFile(file, `${command}\n`, { mode: 0o600 });
+    await expect(materializeApiKeyRef(`file:${file}`, {})).rejects.toMatchObject({ code: "credential_invalid" });
+  });
+
   test("file hit/miss/too-large/non-regular; env and file fingerprint the same trimmed payload", async () => {
     const dir = await tmpDir();
     const file = join(dir, "key");
