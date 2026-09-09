@@ -131,3 +131,24 @@ Git-object-checked `pre-publication-revision` archive; workspace imports resolve
 ### Evidence ceiling
 
 This documentation-only closeout checked the accepted report/artifacts and all 11 recorded source fingerprints against `pre-publication-revision`; it did not rerun runtime tests or open a new review pass. Retained relook evidence: backend 15 tests / 66 assertions, codec 11 / 176, layout 20 / 20, typecheck and actual build passed; the output-loss mutant failed as expected. Actual toolchain was Bun 1.4.2 / Node v24.18.0, Effect 4.0.0-beta.107, AI SDK 5.0.253 / OpenAI 2.0.125. This is not T24/T25/T26, production-root, live/provider, pinned Bun/Node20 runtime or `verify:package` qualification. Evidence directory: `PRIVATE_EVIDENCE`; final note: `PRIVATE_EVIDENCE`.
+
+## M3 / T24 — pre-publication-revision — 2026-09-09
+
+- Reviewed SHA: `pre-publication-revision`; all evidence below is pinned to this residual tip, excluding later main-chain work.
+- Relook report: `PRIVATE_EVIDENCE`
+- Grok residual receipt: `PRIVATE_EVIDENCE`
+- Disposition: **relook-held P1-01/P1-03/P1-04 closed on the held barriers and controls.** P1-02/P1-05/P1-06 remain closed. This T24 disposition neither closes nor supersedes earlier M1/M2/M3-T27 residue; no grok dispatch, main-chain pause, or automatic owner-review trigger.
+
+### Closed at this M3/T24 tip
+
+- **P1-01 — closed:** `dispatchFence` re-reads authority after credential verify. Revocation during the final verify barrier now yields `not_admitted`, with zero backend starts; ordinary config saves still preserve the same TURN binding/model and one pin.
+- **P1-03 — closed:** the `inferenceMemoryLayer` owner closes TURN scopes. Two independent STEP scopes retain one live lease while their owner is open; after owner teardown the real auth adapter rejects that lease without manual test disposal. Retiring an unconsumed admission leaves no busy slot or late backend dispatch.
+- **P1-04 — closed:** cancel waits for local producer quiescence. While a real Effect finalizer is blocked, cancel has not returned and the next same-TURN STEP is `turn_busy`; after release, cancellation is a typed `cancelled` failure, the old resources are released, and the next STEP proceeds without overlap (peak owned backend count 1). Cancellation during verify starts no backend and no longer yields successful empty EOF. This does not claim an external provider honored cancellation.
+
+### Items
+
+- None carried forward for M3/T24: no still-held P1 or new material P2/process concern was identified in this bounded final audit. The qualification limits below are not new findings, grok work, or permission to pause the main chain.
+
+### Evidence ceiling
+
+Git-object-checked `pre-publication-revision` archive; all five residual changed files match the target blobs and workspace imports resolve inside that snapshot. Binding passed 19 tests / 88 assertions plus composition 2 / 5; backend 15 / 66, codec 11 / 176, layout 20 / 20 and typecheck passed. Independent Deferred/Scope probes used current codec/auth adapters, synthetic credentials and counted backend ports (not paid HTTP); 24 guarded processes recorded zero blocked egress/signals. Actual toolchain: Bun 1.4.2 / Node v24.18.0. No production fixes, live operations, build/package rerun, pinned Bun/Node20 runtime qualification, or T25/T26 acceptance is implied. Evidence: `PRIVATE_EVIDENCE` (`audit-results.json`, `final-scope.json`, command logs); final note: `PRIVATE_EVIDENCE`.
