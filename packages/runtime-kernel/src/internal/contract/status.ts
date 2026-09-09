@@ -105,7 +105,7 @@ export type RuntimeStatusFacets = {
 export type JournalWriterRole = "host" | "modeld" | "control" | "watchdog";
 
 export const JOURNAL_EVENT_ALLOWLIST = {
-  host: ["host_stream_rejected", "host_normalized_terminal", "turn_seam_terminal"],
+  host: ["host_stream_rejected", "host_normalized_terminal", "turn_seam_terminal", "host_seam_stage"],
   modeld: ["model_step_terminal", "provider_error_observed"],
   control: [
     "disk_sha_observed",

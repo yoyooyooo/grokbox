@@ -243,6 +243,22 @@ function emptyAdoptResult(code: string): IdentityOpResult {
   };
 }
 
+export function observedAdoptMarkerMatches(
+  marker: { pid?: number; start?: number; operationId?: string; compiled?: boolean; transformed?: boolean; mode?: string } | null,
+  host: { pid: number; start: number },
+  operationId: string,
+): boolean {
+  return Boolean(
+    marker &&
+    marker.pid === host.pid &&
+    marker.start === host.start &&
+    marker.operationId === operationId &&
+    marker.compiled === true &&
+    marker.transformed === true &&
+    marker.mode === "route",
+  );
+}
+
 function readMarkerFile(path: string): IdentityMarker | null {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as IdentityMarker;
@@ -337,16 +353,11 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const host = proven.chain.host;
   const supervisor = proven.chain.supervisor;
   const marker = readMarkerFile(markerPath);
-  if (
-    proven.mode === "transient-adopt" &&
-    ports.hasGrokboxPreload(host) &&
-    marker &&
-    marker.pid === host.pid &&
-    marker.compiled === true &&
-    marker.transformed === true &&
-    marker.mode === "route"
-  ) {
-    return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker, profile });
+  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) && observedAdoptMarkerMatches(marker, host, command.operationId)) {
+    return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker: marker!, profile });
+  }
+  if (proven.mode === "transient-adopt" && marker && !observedAdoptMarkerMatches(marker, host, command.operationId)) {
+    return emptyAdoptResult("marker-generation-mismatch");
   }
   if (proven.mode !== "direct-launch") return emptyAdoptResult("adopt-unproven");
   const strategy = decideH3LaunchStrategy({

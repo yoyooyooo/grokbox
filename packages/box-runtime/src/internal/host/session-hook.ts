@@ -7,7 +7,9 @@ import {
   asHostPromptSession,
   createStreamingPromptSession,
   visibleFailureHandle,
+  type HostStreamRejectDetail,
   type PromptSession,
+  type StreamHandle,
 } from "./session.ts";
 import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.node.ts";
 
@@ -21,8 +23,8 @@ function boundedId(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value) ? value : undefined;
 }
 
-function deadSession(modelId: string): PromptSession {
-  return { stream: () => visibleFailureHandle(modelId, "invalid_envelope") };
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
 /**
@@ -54,25 +56,81 @@ export function bindHostSessionHook(input: {
     const independentRoot = typeof options.independentRoot === "string" ? options.independentRoot : undefined;
     const bridgeDigest = input.compile?.transformedSha256 ?? boundedId(options.bridgeDigest);
     const onRequestId = typeof args.onRequestId === "function" ? args.onRequestId : undefined;
-    const reject = (code: string, detail?: { invocationId?: unknown; reason?: "missing-step-id" | "invalid-step-id" }) => {
-      if (turnId && input.binding && agentId) {
-        void appendHostStreamRejected(input.runRoot, {
-          name: "host_stream_rejected",
-          schemaVersion: 2,
-          at: new Date().toISOString(),
-          mode: "route",
-          hostGenerationId: input.binding.generationId,
-          agentId,
-          turnId,
-          stage: "stream-id",
-          errorCode: "invalid_envelope",
-          reason: detail?.reason,
-        });
-      }
+    const generationId = input.binding?.generationId;
+    const facts = {
+      ...(generationId ? { hostGenerationId: generationId } : {}),
+      ...(agentId ? { agentId } : {}),
+      ...(turnId ? { turnId } : {}),
+    };
+    void appendHostJournal(input.runRoot, {
+      name: "host_seam_stage",
+      schemaVersion: 1,
+      at: nowIso(),
+      stage: "hook_enter",
+      result: "entered",
+      ...facts,
+    });
+    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope") => {
+      if (!agentId) return;
+      void appendHostStreamRejected(input.runRoot, {
+        name: "host_stream_rejected",
+        schemaVersion: 2,
+        at: nowIso(),
+        mode: "route",
+        ...facts,
+        stage,
+        errorCode,
+        reason,
+      });
+    };
+    const writeStage = (stage: string, result: string, extra: Record<string, string> = {}) => {
+      void appendHostJournal(input.runRoot, {
+        name: "host_seam_stage",
+        schemaVersion: 1,
+        at: nowIso(),
+        stage,
+        result,
+        ...facts,
+        ...extra,
+      });
+    };
+    const reject = (code: string, detail?: HostStreamRejectDetail): StreamHandle => {
+      const stage = detail?.stage
+        ?? (detail?.reason === "missing-step-id" || detail?.reason === "invalid-step-id" ? "stream-id" : "admit");
+      const reason = detail?.reason
+        ?? (stage === "admit" ? "invalid-state" : undefined);
+      if (reason) writeReject(stage, reason, code);
       return visibleFailureHandle(modelId, code);
     };
-    if (!turnId || !agentId || !input.binding || !bridgeDigest) {
-      return asHostPromptSession(deadSession(modelId), modelId, onRequestId, { requireStepId: true, reject });
+    const wrapStream = (session: PromptSession): PromptSession => ({
+      stream(request) {
+        writeStage("stream_enter", "entered");
+        return session.stream(request);
+      },
+    });
+    if (!turnId) {
+      writeReject("admit", "missing-turn");
+      return asHostPromptSession(wrapStream({
+        stream: () => visibleFailureHandle(modelId, "invalid_envelope"),
+      }), modelId, onRequestId, { requireStepId: true, reject });
+    }
+    if (!agentId) {
+      writeReject("admit", "missing-binding");
+      return asHostPromptSession(wrapStream({
+        stream: () => visibleFailureHandle(modelId, "invalid_envelope"),
+      }), modelId, onRequestId, { requireStepId: true, reject });
+    }
+    if (!input.binding) {
+      writeReject("admit", "missing-binding");
+      return asHostPromptSession(wrapStream({
+        stream: () => visibleFailureHandle(modelId, "invalid_envelope"),
+      }), modelId, onRequestId, { requireStepId: true, reject });
+    }
+    if (!bridgeDigest) {
+      writeReject("admit", "missing-bridge");
+      return asHostPromptSession(wrapStream({
+        stream: () => visibleFailureHandle(modelId, "invalid_envelope"),
+      }), modelId, onRequestId, { requireStepId: true, reject });
     }
     const models = loadModelsFileSync(input.durableRoot);
     const record = models ? modelForAgent(models, agentId) : undefined;
@@ -87,6 +145,7 @@ export function bindHostSessionHook(input: {
       binding: input.binding,
       bridgeDigest,
       independentRoot,
+      onConnectAttempt: (result) => writeStage("connect_attempt", result),
     });
     const session = createStreamingPromptSession({
       modelId,
@@ -100,7 +159,7 @@ export function bindHostSessionHook(input: {
         const producedThisStep = runtime.last.stepId === stepId;
         void appendHostJournal(input.runRoot, {
           name: "host_normalized_terminal",
-          at: new Date().toISOString(),
+          at: nowIso(),
           hostId: input.binding!.identitySha,
           agentId,
           turnId,
@@ -115,6 +174,6 @@ export function bindHostSessionHook(input: {
         });
       },
     });
-    return asHostPromptSession(session, modelId, onRequestId, { requireStepId: true, reject });
+    return asHostPromptSession(wrapStream(session), modelId, onRequestId, { requireStepId: true, reject });
   };
 }

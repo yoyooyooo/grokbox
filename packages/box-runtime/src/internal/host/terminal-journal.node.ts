@@ -23,7 +23,18 @@ const TURN_SEAM_ERROR_CODES = new Set([
   "stream_limit",
   "invalid_stream",
 ]);
-const HOST_STREAM_REJECT_REASONS = new Set(["missing-step-id", "invalid-step-id"]);
+const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect"]);
+const HOST_STREAM_REJECT_REASONS = new Set([
+  "missing-step-id",
+  "invalid-step-id",
+  "missing-turn",
+  "missing-binding",
+  "missing-bridge",
+  "invalid-state",
+  "connect-failed",
+]);
+const HOST_SEAM_STAGES = new Set(["hook_enter", "stream_enter", "connect_attempt"]);
+const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail"]);
 const FORBIDDEN = /env|token|prompt|authorization|secret|apiKey/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -145,21 +156,48 @@ export function projectHostStreamRejected(input: unknown): Record<string, unknow
   const hostGenerationId = boundedString(input.hostGenerationId);
   const agentId = boundedString(input.agentId);
   const turnId = boundedString(input.turnId);
-  const stage = input.stage === "stream-id" ? "stream-id" : null;
-  const errorCode = input.errorCode === "invalid_envelope" ? "invalid_envelope" : null;
+  const stage = boundedEnum(input.stage, HOST_STREAM_REJECT_STAGES);
+  const errorCode = boundedEnum(input.errorCode, TURN_SEAM_ERROR_CODES);
   const reason = boundedEnum(input.reason, HOST_STREAM_REJECT_REASONS);
-  if (!at || mode !== "route" || !hostGenerationId || !agentId || !turnId || !stage || !errorCode || !reason) return null;
+  if (!at || mode !== "route" || !agentId || !stage || !errorCode || !reason) return null;
+  if (reason !== "missing-turn" && !turnId) return null;
+  if (reason === "missing-step-id" || reason === "invalid-step-id") {
+    if (stage !== "stream-id" || !turnId || !hostGenerationId) return null;
+  }
   return {
     name: "host_stream_rejected",
     schemaVersion: 2,
     at,
     mode: "route",
-    hostGenerationId,
+    ...(hostGenerationId ? { hostGenerationId } : {}),
     agentId,
-    turnId,
-    stage: "stream-id",
-    errorCode: "invalid_envelope",
+    ...(turnId ? { turnId } : {}),
+    stage,
+    errorCode,
     reason,
+  };
+}
+
+export function projectHostSeamStage(input: unknown): Record<string, unknown> | null {
+  if (!isRecord(input) || input.name !== "host_seam_stage" || input.schemaVersion !== 1) return null;
+  const at = boundedString(input.at);
+  const stage = boundedEnum(input.stage, HOST_SEAM_STAGES);
+  const result = boundedEnum(input.result, HOST_SEAM_RESULTS);
+  if (!at || !stage || !result) return null;
+  const hostGenerationId = boundedString(input.hostGenerationId);
+  const agentId = boundedString(input.agentId);
+  const turnId = boundedString(input.turnId);
+  const stepId = boundedString(input.stepId);
+  return {
+    name: "host_seam_stage",
+    schemaVersion: 1,
+    at,
+    stage,
+    result,
+    ...(hostGenerationId ? { hostGenerationId } : {}),
+    ...(agentId ? { agentId } : {}),
+    ...(turnId ? { turnId } : {}),
+    ...(stepId ? { stepId } : {}),
   };
 }
 
@@ -177,6 +215,7 @@ function projectHostEvent(input: unknown): Record<string, unknown> | null {
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input);
+  if (input.name === "host_seam_stage") return projectHostSeamStage(input);
   return null;
 }
 

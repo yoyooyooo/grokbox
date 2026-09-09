@@ -120,7 +120,11 @@ export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown)
   };
 }
 
-export type HostStreamRejectDetail = { invocationId?: unknown; reason?: "missing-step-id" | "invalid-step-id" };
+export type HostStreamRejectDetail = {
+  invocationId?: unknown;
+  reason?: "missing-step-id" | "invalid-step-id" | "invalid-state";
+  stage?: "stream-id" | "admit" | "normalize";
+};
 export function asHostPromptSession(session: PromptSession, modelId: string, onRequestId?: (id: string) => void,
   input: { invocationId?: string; requireStepId?: boolean; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
   let messages: unknown[] = [];
@@ -167,8 +171,13 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
         cancellation?.dispose();
         const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
         const reason = error instanceof EnvelopeError ? error.stepReason : undefined;
+        const stage = reason === "missing-step-id" || reason === "invalid-step-id" ? "stream-id" : "admit";
         return toHostStreamResult(
-          input.reject?.(code, { invocationId: requestId, ...(reason ? { reason } : {}) }) ?? visibleFailureHandle(modelId, code),
+          input.reject?.(code, {
+            invocationId: requestId,
+            reason: reason ?? "invalid-state",
+            stage,
+          }) ?? visibleFailureHandle(modelId, code),
           requestId,
         );
       }

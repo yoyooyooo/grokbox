@@ -76,6 +76,7 @@ export type ModeldProduceInput = {
   profileId?: string;
   abiIdentity?: string;
   independentRoot?: string;
+  onConnectAttempt?: (result: "ok" | "fail") => void;
 };
 
 export type ModeldProduceRuntime = {
@@ -89,12 +90,20 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
   const declared = (envelope: ModelEnvelope) => new Set(envelope.tools.map((tool) => tool.name));
   const produce = async function* (request: StreamRequest & { envelope: ModelEnvelope; abortSignal: AbortSignal }): AsyncIterable<StreamPart> {
     if (!last.serviceEpoch) {
-      const health = await requestModeld(input.runRoot, { version: 3, method: "health" });
-      const frame = health[0];
-      if (!isRecord(frame) || typeof frame.serverGeneration !== "string") {
+      try {
+        const health = await requestModeld(input.runRoot, { version: 3, method: "health" });
+        const frame = health[0];
+        if (!isRecord(frame) || typeof frame.serverGeneration !== "string") {
+          input.onConnectAttempt?.("fail");
+          throw new VisibleStreamError("admit", "model_error");
+        }
+        input.onConnectAttempt?.("ok");
+        last.serviceEpoch = frame.serverGeneration;
+      } catch (error) {
+        if (error instanceof VisibleStreamError) throw error;
+        input.onConnectAttempt?.("fail");
         throw new VisibleStreamError("admit", "model_error");
       }
-      last.serviceEpoch = frame.serverGeneration;
     }
     let snapshot;
     let hostEpoch: HostEpoch;

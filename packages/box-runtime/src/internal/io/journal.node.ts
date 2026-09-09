@@ -36,6 +36,7 @@ export const EVENT_NAMES = [
   // TODO(owner): names follow the MINI-1918 v2 review proposal; not a dated owner adjudication.
   "model_step_terminal",
   "host_stream_rejected",
+  "host_seam_stage",
   "provider_error_observed",
 ] as const;
 
@@ -71,6 +72,7 @@ const SEAM_EVENT_NAMES = new Set([
   "host_normalized_terminal",
   "model_step_terminal",
   "host_stream_rejected",
+  "host_seam_stage",
   "provider_error_observed",
 ]);
 export const MODEL_STEP_STAGES = new Set([

@@ -14,6 +14,7 @@ import {
 } from "../src/internal/process/launch.node.ts";
 import {
   inspectControllerFacts,
+  observedAdoptMarkerMatches,
   resetLiveMutationAttempts,
   liveMutationAttempts,
   startControlOperation,
@@ -274,6 +275,16 @@ describe("controller IO facade", () => {
       };
       expect(inspectControllerFacts(boxRoot, adoptedLive)).toMatchObject({ ok: true, reason: null });
       expect(inspectControllerFacts(boxRoot, { ...adoptedLive, gatewayPid: () => 99 }).reason).toBe("gateway-mismatch");
+      const hostIdent = { pid: 13, start: 102 };
+      expect(observedAdoptMarkerMatches({
+        pid: 13, start: 102, operationId: "op-now", compiled: true, transformed: true, mode: "route",
+      }, hostIdent, "op-now")).toBe(true);
+      expect(observedAdoptMarkerMatches({
+        pid: 13, start: 99, operationId: "op-now", compiled: true, transformed: true, mode: "route",
+      }, hostIdent, "op-now")).toBe(false);
+      expect(observedAdoptMarkerMatches({
+        pid: 13, start: 102, operationId: "op-old", compiled: true, transformed: true, mode: "route",
+      }, hostIdent, "op-now")).toBe(false);
       expect(kills).toEqual([]);
       expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 });
     } finally {
