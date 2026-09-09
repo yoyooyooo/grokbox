@@ -6,6 +6,7 @@ import {
   type StreamPart,
 } from "../src/internal/host/session.ts";
 import { reshapeInferenceEvent } from "../src/internal/host/stream-codec.ts";
+import { buildHostEnvelope } from "../src/internal/host/context-codec.ts";
 import { collectStreamParts, consumeHandle } from "./host-consumer.ts";
 
 describe("host session ABI", () => {
@@ -110,13 +111,15 @@ describe("host session ABI", () => {
   });
 
   test("reshape maps canonical events and drops backend_finish", () => {
-    expect(reshapeInferenceEvent({ type: "text_delta", text: "a" })).toEqual({ type: "text-delta", textDelta: "a" });
-    expect(reshapeInferenceEvent({ type: "backend_finish", finishReason: "stop" })).toBeUndefined();
+    expect(reshapeInferenceEvent({ type: "text_delta", text: "a" })).toEqual({ kind: "part", part: { type: "text-delta", textDelta: "a" } });
+    expect(reshapeInferenceEvent({ type: "backend_finish", finishReason: "stop" })).toEqual({ kind: "ignore" });
+    expect(reshapeInferenceEvent({ type: "mystery_event" })).toEqual({ kind: "invalid" });
+    expect(reshapeInferenceEvent({ type: "text_delta", text: 42 })).toEqual({ kind: "invalid" });
     expect(reshapeInferenceEvent({ type: "tool_complete", toolCallId: "c1", toolName: "lookup", args: { q: "1" } }))
-      .toEqual({ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "1" } });
+      .toEqual({ kind: "part", part: { type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "1" } } });
   });
 
-  test("serial extra tool fails closed and records released call", async () => {
+  test("serial extra tool fails closed with zero executable releases", async () => {
     const parts: StreamPart[] = [
       { type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "1" } },
       { type: "tool-call", toolCallId: "c2", toolName: "lookup", args: { q: "2" } },
@@ -128,9 +131,35 @@ describe("host session ABI", () => {
       parallel: "fail-closed",
       produce: async function* () { for (const part of parts) yield part; },
     });
-    const vector = await consumeHandle(prompt.stream({ messages: [{ role: "user", content: "hi" }] }));
-    expect(vector.toolExecutionCount).toBeGreaterThanOrEqual(0);
-    const response = await prompt.stream({ messages: [{ role: "user", content: "hi" }] }).response;
-    expect(response.finishReason === "error" || response.finishReason === "tool-calls" || response.finishReason === "stop").toBe(true);
+    const envelope = buildHostEnvelope(
+      [{ role: "user", content: "hi" }],
+      [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }],
+    );
+    const handle = prompt.stream({ envelope });
+    const vector = await consumeHandle(handle);
+    expect(vector.toolExecutionCount).toBe(0);
+    const response = await handle.response;
+    expect(response.finishReason).toBe("error");
+    expect(response.error?.code).toBe("parallel_tools");
+  });
+
+  test("undeclared tool name is not released as an executable Host call", async () => {
+    const prompt = createStreamingPromptSession({
+      modelId: "stub/echo",
+      vision: false,
+      parallel: "allow",
+      produce: async function* () {
+        yield { type: "tool-call", toolCallId: "c1", toolName: "undeclared", args: {} };
+        yield { type: "finish", reason: "stop" };
+      },
+    });
+    const envelope = buildHostEnvelope(
+      [{ role: "user", content: "hi" }],
+      [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }],
+    );
+    const handle = prompt.stream({ envelope });
+    const vector = await consumeHandle(handle);
+    expect(vector.toolExecutionCount).toBe(0);
+    expect((await handle.response).finishReason).toBe("error");
   });
 });

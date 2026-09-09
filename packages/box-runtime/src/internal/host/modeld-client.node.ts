@@ -150,13 +150,17 @@ export function streamModeld(
             try {
               const next = acceptModeldFrame(session, decoded.value);
               session = next.session;
-              emit(decoded.value);
               if (next.done) {
                 complete = true;
-                if (buf.length > 0) settle(new Error("extra_keys"));
-                else settle();
+                if (buf.length > 0) {
+                  settle(new Error("extra_keys"));
+                  return;
+                }
+                emit(decoded.value);
+                settle();
                 return;
               }
+              emit(decoded.value);
             } catch (error) {
               settle(error instanceof Error ? error : new Error("malformed_frame"));
               return;

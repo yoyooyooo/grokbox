@@ -1,28 +1,80 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Deferred, Effect, Fiber, Layer } from "effect";
-import { computeSelectionRevision, parseModelsFile, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID } from "@grokbox/runtime-kernel/selection";
+import { computeSelectionRevision, parseModelsFile, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type ModelRecord } from "@grokbox/runtime-kernel/selection";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { fakeConfigurationReadLayer } from "@grokbox/runtime-kernel/testing";
 import { isHostPromptSession } from "../src/internal/host/session.ts";
-import { admitAllAuthorityLayer } from "../src/internal/roots/modeld.runtime.ts";
+import { admitAllAuthorityLayer, startModeldProcess } from "../src/internal/roots/modeld.runtime.ts";
 import { echoModelBackendLayer } from "../src/internal/backends/echo.ts";
 import { dispatchingModelBackendLayer } from "../src/internal/backends/dispatch.ts";
 import { createLiveBackendAuth, liveBackendAuthLayer } from "../src/internal/io/credentials.node.ts";
+import { writeAttestation } from "../src/internal/io/authority.node.ts";
 import { serveModeld } from "../src/internal/modeld/server.node.ts";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { asHostPromptSession, createStreamingPromptSession } from "../src/internal/host/session.ts";
-import { createModeldProduce, hostEpochFromBinding } from "../src/internal/host/modeld-produce.node.ts";
+import { createModeldProduce, hostEpochFromFacts } from "../src/internal/host/modeld-produce.node.ts";
+import type { HostBinding } from "../src/internal/host/host-binding.ts";
+import { probeModeldHealth } from "../src/internal/wire/modeld-probe.node.ts";
+import { hostEventsPath } from "../src/internal/host/terminal-journal.node.ts";
 import { collectStreamParts } from "./host-consumer.ts";
 
+const HEX = (ch: string) => ch.repeat(64);
+const TEST_BINDING: HostBinding = {
+  generationId: HEX("a"),
+  activationId: "op-1",
+  pid: 1,
+  start: 1,
+  sourceSha: HEX("b"),
+  identitySha: HEX("c"),
+};
+const ROOT = {
+  profileId: "t21-independent-root",
+  abiIdentity: "host-abi-v1",
+  independentRoot: "root-from-host",
+  bridgeDigest: HEX("d"),
+};
 const echoModels = parseModelsFile({
   version: 1,
   models: {},
   assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
 });
+
+function produceFor(runRoot: string, turnId: string, model: ModelRecord = STUB_ECHO_MODEL) {
+  return createModeldProduce({
+    runRoot,
+    agentId: "agent-tom",
+    modelId: model.id,
+    selectionRevision: computeSelectionRevision({ agentId: "agent-tom", model }),
+    hostEpoch: hostEpochFromFacts({ binding: TEST_BINDING, profileId: ROOT.profileId, bridgeDigest: ROOT.bridgeDigest }),
+    turnId,
+    profileId: ROOT.profileId,
+    abiIdentity: ROOT.abiIdentity,
+    independentRoot: ROOT.independentRoot,
+  }).produce;
+}
+
+async function waitReady(runRoot: string): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < 2_000) {
+    if (await probeModeldHealth(runRoot, 200)) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("modeld not ready");
+}
+
+async function waitJournal(runRoot: string, match: (text: string) => boolean): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < 1_000) {
+    const text = await readFile(hostEventsPath(runRoot), "utf8").catch(() => "");
+    if (match(text)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return await readFile(hostEventsPath(runRoot), "utf8").catch(() => "");
+}
 
 function echoLayer(generation: string) {
   const config = fakeConfigurationReadLayer({ models: () => echoModels, desired: { version: 1, mode: "route" } });
@@ -52,7 +104,7 @@ async function serve(path: string, generation: string, layer: Layer.Layer<unknow
       Effect.provide(layer),
     ) as Effect.Effect<never, unknown>,
   ));
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await waitReady(join(path, ".."));
   return () => Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.ignore));
 }
 
@@ -63,18 +115,11 @@ describe("host fullStream unix", () => {
     const generation = randomUUID();
     const stop = await serve(path, generation, echoLayer(generation) as Layer.Layer<unknown, never, never>);
     try {
-      const produce = createModeldProduce({
-        runRoot: dir,
-        agentId: "agent-tom",
-        modelId: STUB_ECHO_MODEL_ID,
-        selectionRevision: computeSelectionRevision({ agentId: "agent-tom", model: STUB_ECHO_MODEL }),
-        hostEpoch: hostEpochFromBinding(),
-      });
       const session = asHostPromptSession(createStreamingPromptSession({
         modelId: STUB_ECHO_MODEL_ID,
         vision: false,
         parallel: "fail-closed",
-        produce,
+        produce: produceFor(dir, "HOST_TURN_ECHO"),
       }), STUB_ECHO_MODEL_ID, undefined, { requireStepId: true });
       const executor = session.getExecutor([{ role: "user", content: "ping-echo" }]);
       const handle = executor.stream({}, "step-echo");
@@ -127,18 +172,11 @@ describe("host fullStream unix", () => {
     const generation = randomUUID();
     const stop = await serve(path, generation, dispatchLayer(generation, models, fetchImpl, { OPENAI_API_KEY: "sk-test" }) as Layer.Layer<unknown, never, never>);
     try {
-      const produce = createModeldProduce({
-        runRoot: dir,
-        agentId: "agent-tom",
-        modelId: openaiModel.id,
-        selectionRevision: computeSelectionRevision({ agentId: "agent-tom", model: openaiModel }),
-        hostEpoch: hostEpochFromBinding(),
-      });
       const session = asHostPromptSession(createStreamingPromptSession({
         modelId: openaiModel.id,
         vision: false,
         parallel: "fail-closed",
-        produce,
+        produce: produceFor(dir, "HOST_TURN_STREAM", openaiModel),
       }), openaiModel.id, undefined, { requireStepId: true });
       const handle = session.getExecutor([{ role: "user", content: "stream-me" }]).stream({}, "step-live");
       const iterator = handle.fullStream[Symbol.asyncIterator]();
@@ -157,14 +195,6 @@ describe("host fullStream unix", () => {
       const usage = await handle.usage;
       expect(usage.promptTokens).toBe(3);
       expect(usage.completionTokens).toBe(2);
-
-      async function bufferAllMutant() {
-        const frames: unknown[] = [];
-        for await (const frame of handle.fullStream) frames.push(frame);
-        return frames;
-      }
-      void bufferAllMutant;
-      expect(settled).toBe(true);
     } finally {
       await stop();
     }
@@ -199,18 +229,11 @@ describe("host fullStream unix", () => {
     const generation = randomUUID();
     const stop = await serve(join(dir, "modeld.sock"), generation, dispatchLayer(generation, models, fetchImpl, { OPENAI_API_KEY: "sk-test" }) as Layer.Layer<unknown, never, never>);
     try {
-      const produce = createModeldProduce({
-        runRoot: dir,
-        agentId: "agent-tom",
-        modelId: openaiModel.id,
-        selectionRevision: computeSelectionRevision({ agentId: "agent-tom", model: openaiModel }),
-        hostEpoch: hostEpochFromBinding(),
-      });
       const session = asHostPromptSession(createStreamingPromptSession({
         modelId: openaiModel.id,
         vision: false,
         parallel: "fail-closed",
-        produce,
+        produce: produceFor(dir, "HOST_TURN_TOOLS", openaiModel),
       }), openaiModel.id, undefined, { requireStepId: true });
       const tools = [{ name: "lookup", description: "lookup schema", inputSchema: { type: "object", properties: { q: { type: "string" } } } }];
       const first = session.getExecutor([{ role: "user", content: "use-tool" }]).stream({}, "same-step", tools);
@@ -237,18 +260,131 @@ describe("host fullStream unix", () => {
     const path = join(runRoot, "modeld.sock");
     const stop = await serve(path, generation, echoLayer(generation) as Layer.Layer<unknown, never, never>);
     try {
-      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot });
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot, binding: TEST_BINDING });
       const official = { kind: "official" };
       expect(hook({ originalSession: official, agentId: "other" })).toBe(official);
-      const managed = hook({ originalSession: official, agentId: "agent-tom" });
+      let notified = 0;
+      const managed = hook({
+        originalSession: official,
+        agentId: "agent-tom",
+        onRequestId: () => { notified += 1; },
+        sessionOptions: {
+          invocationId: "HOST_TURN_HOOK",
+          profileId: ROOT.profileId,
+          abiIdentity: ROOT.abiIdentity,
+          independentRoot: ROOT.independentRoot,
+          bridgeDigest: ROOT.bridgeDigest,
+        },
+      });
       expect(isHostPromptSession(managed)).toBe(true);
       if (!isHostPromptSession(managed)) throw new Error("session");
       expect(managed.getModelId()).toBe(STUB_ECHO_MODEL_ID);
       const handle = managed.getExecutor([{ role: "user", content: "hook-hi" }]).stream({}, "step-hook");
       const response = await handle.response;
       expect(response.modelId).toBe(STUB_ECHO_MODEL_ID);
+      expect(notified).toBe(1);
+      const journal = await waitJournal(runRoot, (text) => text.includes("host_normalized_terminal"));
+      expect(journal).toContain("host_normalized_terminal");
+      expect(journal).toContain("HOST_TURN_HOOK");
+      expect(journal).not.toContain("host-step");
+      expect(journal).not.toContain("turn_seam_terminal");
+
+      const missingTurn = hook({ originalSession: official, agentId: "agent-tom" });
+      if (!isHostPromptSession(missingTurn)) throw new Error("session");
+      const refused = await missingTurn.getExecutor([{ role: "user", content: "no-turn" }]).stream({}, "step-x").response;
+      expect(refused.finishReason).toBe("error");
     } finally {
       await stop();
     }
   }, 10_000);
+
+  test("two Host TURNs bind independently; missing root does not invent fixture text", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-t26-turns-"));
+    const generation = randomUUID();
+    const stop = await serve(join(dir, "modeld.sock"), generation, echoLayer(generation) as Layer.Layer<unknown, never, never>);
+    try {
+      const sessionA = asHostPromptSession(createStreamingPromptSession({
+        modelId: STUB_ECHO_MODEL_ID, vision: false, parallel: "fail-closed",
+        produce: produceFor(dir, "HOST_TURN_A"),
+      }), STUB_ECHO_MODEL_ID, undefined, { requireStepId: true });
+      const sessionB = asHostPromptSession(createStreamingPromptSession({
+        modelId: STUB_ECHO_MODEL_ID, vision: false, parallel: "fail-closed",
+        produce: produceFor(dir, "HOST_TURN_B"),
+      }), STUB_ECHO_MODEL_ID, undefined, { requireStepId: true });
+      const a = await sessionA.getExecutor([{ role: "user", content: "turn-a" }]).stream({}, "step-a").response;
+      const b = await sessionB.getExecutor([{ role: "user", content: "turn-b" }]).stream({}, "step-b").response;
+      expect(a.finishReason).toBe("stop");
+      expect(b.finishReason).toBe("stop");
+
+      const noRoot = createModeldProduce({
+        runRoot: dir,
+        agentId: "agent-tom",
+        modelId: STUB_ECHO_MODEL_ID,
+        selectionRevision: computeSelectionRevision({ agentId: "agent-tom", model: STUB_ECHO_MODEL }),
+        hostEpoch: hostEpochFromFacts({ binding: TEST_BINDING, profileId: ROOT.profileId, bridgeDigest: ROOT.bridgeDigest }),
+        turnId: "HOST_TURN_NOROOT",
+        profileId: ROOT.profileId,
+        abiIdentity: ROOT.abiIdentity,
+      }).produce;
+      const missing = asHostPromptSession(createStreamingPromptSession({
+        modelId: STUB_ECHO_MODEL_ID, vision: false, parallel: "fail-closed", produce: noRoot,
+      }), STUB_ECHO_MODEL_ID, undefined, { requireStepId: true });
+      const denied = await missing.getExecutor([{ role: "user", content: "no-root" }]).stream({}, "step-noroot").response;
+      expect(denied.finishReason).toBe("error");
+    } finally {
+      await stop();
+    }
+  }, 10_000);
+
+  test("production root + ready barrier + Host consumer + missing STEP writes J13 rejection", async () => {
+    const durable = await mkdtemp(join(tmpdir(), "grokbox-t26-prod-d-"));
+    const runRoot = await mkdtemp(join(tmpdir(), "grokbox-t26-prod-r-"));
+    await writeFile(join(durable, "models.json"), `${JSON.stringify({
+      version: 1, models: {}, assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+    })}\n`);
+    await mkdir(join(durable, "state"), { recursive: true });
+    await writeFile(join(durable, "state", "desired.json"), `${JSON.stringify({ version: 1, mode: "route" })}\n`);
+    const sha = HEX("e");
+    await writeAttestation(runRoot, {
+      mode: "route",
+      coverage: "attested",
+      modeld: true,
+      diskSha: sha,
+      pid: process.pid,
+      start: 1,
+      identity: { pid: process.pid, uid: 1, ppid: 1, start: 1, exe: "/bin/test", cmdline: ["node"], ancestry: [1] },
+      at: new Date().toISOString(),
+      profileId: "p",
+      transformedSha: sha,
+      operationId: "op-1",
+      launchMode: "direct-launch",
+      compile: { profileId: "p", profileSha256: sha, sourceSha256: sha, transformedSha256: sha },
+    });
+    const started = await startModeldProcess({ durableRoot: durable, runRoot, env: {} });
+    await waitReady(runRoot);
+    try {
+      const hook = bindHostSessionHook({ mode: "route", durableRoot: durable, runRoot, binding: TEST_BINDING });
+      const managed = hook({
+        originalSession: { kind: "official" },
+        agentId: "agent-tom",
+        sessionOptions: {
+          invocationId: "HOST_TURN_PROD",
+          profileId: ROOT.profileId,
+          abiIdentity: ROOT.abiIdentity,
+          independentRoot: ROOT.independentRoot,
+          bridgeDigest: ROOT.bridgeDigest,
+        },
+      });
+      if (!isHostPromptSession(managed)) throw new Error("session");
+      const missing = await managed.getExecutor([{ role: "user", content: "x" }]).stream({}).response;
+      expect(missing.finishReason).toBe("error");
+      const journal = await waitJournal(runRoot, (text) => text.includes("host_stream_rejected"));
+      const rows = journal.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { name?: string; reason?: string; turnId?: string });
+      expect(rows.some((row) => row.name === "host_stream_rejected" && row.reason === "missing-step-id" && row.turnId === "HOST_TURN_PROD")).toBe(true);
+      const ok = await managed.getExecutor([{ role: "user", content: "prod-hi" }]).stream({}, "J13_REAL_STEP").response;
+      expect(ok.finishReason).toBe("stop");
+    } finally {
+      await started.stop();
+    }
+  }, 12_000);
 });

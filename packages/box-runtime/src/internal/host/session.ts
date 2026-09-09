@@ -240,7 +240,7 @@ export class VisibleStreamError extends Error {
   }
 }
 export type SessionTerminal = {
-  terminalClass: FinishReason; toolCallCount: number; rejected?: boolean; errorCode?: string; stage?: VisibleFailureStage;
+  terminalClass: FinishReason; toolCallCount: number; rejected?: boolean; errorCode?: string; stage?: VisibleFailureStage; invocationId?: string;
 };
 function notify(onTerminal: ((terminal: SessionTerminal) => void) | undefined, terminal: SessionTerminal) {
   try { onTerminal?.(terminal); } catch { /* Evidence is not the Host loop. */ }
@@ -306,6 +306,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     let parts = 0;
     let iterator: AsyncIterator<StreamPart> | undefined;
     const serial = config.parallel === "fail-closed" || envelope.options.parallelToolCalls === false;
+    const declaredTools = new Set(envelope.tools.map((tool) => tool.name));
     const observeTool = () => { try { config.onToolCall?.(); } catch { /* diagnostics do not execute tools */ } };
     const pushText = (type: "text" | "reasoning", text: string) => {
       const previous = content.at(-1);
@@ -331,6 +332,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       notify(config.onTerminal, {
         terminalClass: reason,
         toolCallCount: toolCalls.length,
+        ...(typeof request.invocationId === "string" ? { invocationId: request.invocationId } : {}),
         ...(error ? { errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}) } : {}),
       });
       controller.abort();
@@ -364,7 +366,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
         replay.push({ type: part.type, textDelta: part.textDelta, text: part.textDelta } as StreamPart); return;
       }
       if (part.type !== "tool-call" && part.type !== "tool-call-delta" && part.type !== "tool-call-streaming-start") return failStream("invalid_stream");
-      if (!validId(part.toolCallId) || !validId(part.toolName)) return failStream("invalid_stream");
+      if (!validId(part.toolCallId) || !validId(part.toolName) || !declaredTools.has(part.toolName)) return failStream("invalid_stream");
       if (part.type !== "tool-call") {
         const current = pending.get(part.toolCallId);
         if (calls.has(part.toolCallId) || (current && (part.type === "tool-call-streaming-start" || current.name !== part.toolName))) return failStream("invalid_stream");
