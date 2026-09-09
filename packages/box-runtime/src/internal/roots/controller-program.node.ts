@@ -2,7 +2,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "
 import { dirname, join } from "node:path";
 import { Effect, Layer } from "effect";
 import { runControllerOperation } from "@grokbox/runtime-kernel/commands";
-import { sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
+import { sha256Bytes, sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
 import {
   ControlResources,
   type ControllerReceipt,
@@ -14,17 +14,38 @@ import {
 } from "@grokbox/runtime-kernel/ports";
 import { parseDesiredFile, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import { expectedCompileReceipt, compileReceiptAgrees, type CompileReceipt } from "../host/compile-receipt.ts";
+import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
+import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { parseCoordinatorState } from "../io/coordinator-state.ts";
 import { acquireExclusiveLock } from "../io/op-lock.ts";
 import { coordinatorStatePath, desiredPath, modelsPath, reviewedProfilePath } from "../io/paths.ts";
-import { parseReviewedProfile } from "../process/profile.node.ts";
+import { pinLaunchProfile, parseReviewedProfile, loadDurableReviewedProfile } from "../process/profile.node.ts";
+import { spawnIndependentGuardian } from "../process/guardian-process.ts";
+import { identityLaunchFields } from "../process/h3-identity.ts";
+import {
+  createLiveH3AdoptPorts,
+  liveDiskSha,
+  readGatewayPid,
+  reviewOfficialAdoptCapability,
+} from "../process/h3-live.ts";
+import { decideH3LaunchStrategy } from "../process/launch-strategy.ts";
+import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "../process/launch.node.ts";
+import { linuxProcessPort, roleOf, readNamedProcEnv } from "../process/linux.node.ts";
+import { findUniqueOfficialChain, type RoleClassifier } from "../process/official-chain.ts";
+import type { ProcessPort } from "../process/process-port.ts";
+import { resolvePreloadPath } from "../process/helpers/runtime-helpers.ts";
+import { runTransientAdoptOperation } from "../process/transient-adopt.ts";
+import type { IdentityOpResult } from "../process/identity-op.ts";
 
 export const liveMutationAttempts = { signal: 0, spawn: 0, guardian: 0 };
+
+let lastLiveAdopt: IdentityOpResult | null = null;
 
 export function resetLiveMutationAttempts(): void {
   liveMutationAttempts.signal = 0;
   liveMutationAttempts.spawn = 0;
   liveMutationAttempts.guardian = 0;
+  lastLiveAdopt = null;
 }
 
 export function controllerOperationId(intent: "apply" | "reconcile", boxRoot: string): string {
@@ -106,8 +127,57 @@ function readOptionalJson(path: string): { present: false } | { present: true; v
   }
 }
 
-/** Inspect durable facts. Never authorizes live mutation. */
-export function inspectControllerFacts(boxRoot: string): { ok: boolean; reason: string | null; strategy?: "direct" | "transient" } {
+export type LiveAdmissionPorts = {
+  processes: ProcessPort;
+  classify: RoleClassifier;
+  gatewayPid: () => number | null;
+  hostBundlePath: string;
+  readHostSha: () => string | null;
+};
+
+export function defaultLiveAdmissionPorts(): LiveAdmissionPorts {
+  return {
+    processes: linuxProcessPort(),
+    classify: roleOf,
+    gatewayPid: () => readGatewayPid(),
+    hostBundlePath: LIVE_HOST_BUNDLE,
+    readHostSha: () => {
+      try {
+        return sha256Bytes(readFileSync(LIVE_HOST_BUNDLE));
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+function inspectLiveHost(
+  profileSourceSha: string,
+  live: LiveAdmissionPorts,
+): { ok: true } | { ok: false; reason: string } {
+  const sha = live.readHostSha();
+  if (sha == null) return { ok: false, reason: "host-bundle-missing" };
+  if (sha !== profileSourceSha) return { ok: false, reason: "source-mismatch" };
+  const unique = findUniqueOfficialChain(live.processes, live.classify);
+  if (!unique.ok) {
+    return { ok: false, reason: unique.code === "missing-role" ? "host-missing" : unique.code };
+  }
+  const host = unique.chain.host;
+  const observed = live.processes.inspect(host.pid);
+  if (!observed || observed.start !== host.start || observed.uid !== host.uid) {
+    return { ok: false, reason: "identity-mismatch" };
+  }
+  const names = host.cmdline.join(" ");
+  if (!names.includes("host-main.cjs")) return { ok: false, reason: "topology-mismatch" };
+  if (live.gatewayPid() !== host.pid) return { ok: false, reason: "gateway-mismatch" };
+  return { ok: true };
+}
+
+/** Durable facts plus optional live Host identity. Omit `live` to skip /proc (tests). */
+export function inspectControllerFacts(
+  boxRoot: string,
+  live?: LiveAdmissionPorts | null,
+): { ok: boolean; reason: string | null; strategy?: "direct" | "transient" } {
   try {
     if (!existsSync(desiredPath(boxRoot))) return { ok: false, reason: "missing-desired" };
     const desired = parseDesiredFile(JSON.parse(readFileSync(desiredPath(boxRoot), "utf8")));
@@ -148,10 +218,107 @@ export function inspectControllerFacts(boxRoot: string): { ok: boolean; reason: 
       }
     }
     if (desired.mode === "disabled") return { ok: false, reason: "desired-disabled" };
-    return { ok: false, reason: "live-not-proven", strategy: desired.mode === "route" ? "transient" : "direct" };
+    const strategy = desired.mode === "route" ? "transient" as const : "direct" as const;
+    if (!live) return { ok: false, reason: "host-missing", strategy };
+    const liveHost = inspectLiveHost(profile.sourceSha256, live);
+    if (!liveHost.ok) return { ok: false, reason: liveHost.reason, strategy };
+    return { ok: true, reason: null, strategy };
   } catch {
     return { ok: false, reason: "preflight-invalid" };
   }
+}
+
+function emptyAdoptResult(code: string): IdentityOpResult {
+  return {
+    ok: false,
+    recoveryRequired: true,
+    code,
+    signaled: false,
+    diskShaBefore: "",
+    diskShaAfter: "",
+    census: { wrapper: 0, supervisor: 0, host: 0, tempSupervisor: 0, guardian: 0, extras: 0 },
+    coverage: "none",
+  };
+}
+
+async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promise<IdentityOpResult> {
+  const ephemeralRoot = ephemeralRuntimeRoot();
+  const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
+  const overlayPath = join(ephemeralRoot, "state", "launch-env.json");
+  const execPath = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
+  const preloadPath = resolvePreloadPath();
+  const ports = createLiveH3AdoptPorts({
+    markerPath,
+    preloadNeedle: preloadPath,
+    overlayPath,
+    execPath,
+    hostBundle: LIVE_HOST_BUNDLE,
+  });
+  const unique = findUniqueOfficialChain(ports.processes, ports.classify);
+  if (!unique.ok) return emptyAdoptResult(unique.code === "missing-role" ? "host-missing" : unique.code);
+  const strategy = decideH3LaunchStrategy({
+    supervisor: unique.chain.supervisor,
+    reviewedAdoptCapability: reviewOfficialAdoptCapability(unique.chain.supervisor),
+  });
+  if (command.strategy === "transient" && strategy !== "transient-adopt-candidate") {
+    return emptyAdoptResult("launch-strategy-unavailable");
+  }
+  if (command.strategy === "direct" && strategy !== "direct-overlay") {
+    return emptyAdoptResult("launch-strategy-unavailable");
+  }
+  const profile = loadDurableReviewedProfile(command.boxRoot);
+  if (!profile) return emptyAdoptResult("missing-source");
+  const host = unique.chain.host;
+  const supervisor = unique.chain.supervisor;
+  const launchSource = fillMissingLaunchEnv(
+    readNamedProcEnv(host.pid, IDENTITY_LAUNCH_ALLOWLIST),
+    readNamedProcEnv(supervisor.pid, IDENTITY_LAUNCH_ALLOWLIST),
+  );
+  const expectedMode = command.strategy === "transient" ? "route" : "identity";
+  return await runTransientAdoptOperation({
+    processes: ports.processes,
+    classify: ports.classify,
+    reviewedProfile: profile,
+    diskSha: liveDiskSha,
+    ephemeralRoot,
+    operationId: command.operationId,
+    readMarker: () => null,
+    waitGone: ports.waitHostGone,
+    waitReady: ports.waitReady,
+    prepareTempLaunch: async (admitted) => {
+      const profilePath = await pinLaunchProfile(ephemeralRoot, admitted);
+      const launched = identityLaunchFields({
+        source: launchSource,
+        preloadPath,
+        profilePath,
+        markerPath,
+        operationId: command.operationId,
+        hostBundle: LIVE_HOST_BUNDLE,
+        mode: expectedMode,
+        durableRoot: command.boxRoot,
+        runRoot: ephemeralRoot,
+      });
+      if (!launched.ok) throw new Error(launched.code);
+      await ports.applyLaunchEnv(launched.env);
+    },
+    spawnTempSupervisor: ports.spawnTempSupervisor,
+    waitNewHost: ports.waitNewHost,
+    readGatewayPid: ports.readGatewayPid,
+    adoptProveMs: ports.adoptProveMs,
+    armGuardian: async (frozen) => {
+      const guardian = await spawnIndependentGuardian({
+        frozen,
+        deadlineMs: ports.guardianDeadlineMs ?? 8000,
+        stateDir: ephemeralRoot,
+        execPath,
+      });
+      if (!guardian.armed) return { ok: false };
+      return { ok: true, release: guardian.release };
+    },
+    expectedMode,
+    hasGrokboxPreload: ports.hasGrokboxPreload,
+    now: () => Date.now(),
+  });
 }
 
 export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
@@ -220,22 +387,30 @@ export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
       },
       catch: (error) => error,
     }),
-    preflight: (input: FrozenControllerCommand) => Effect.sync(() => inspectControllerFacts(input.boxRoot)),
-    recheck: (input: FrozenControllerCommand) => Effect.sync(() => inspectControllerFacts(input.boxRoot)),
-    signal: (_input: FrozenControllerCommand) => Effect.sync(() => {
-      liveMutationAttempts.signal += 1;
-      return { signaled: false };
+    preflight: (input: FrozenControllerCommand) => Effect.sync(() => inspectControllerFacts(input.boxRoot, defaultLiveAdmissionPorts())),
+    recheck: (input: FrozenControllerCommand) => Effect.sync(() => inspectControllerFacts(input.boxRoot, defaultLiveAdmissionPorts())),
+    signal: (input: FrozenControllerCommand) => Effect.tryPromise({
+      try: async () => {
+        liveMutationAttempts.signal += 1;
+        lastLiveAdopt = await applyLiveControllerAdopt(input);
+        return { signaled: lastLiveAdopt.signaled === true };
+      },
+      catch: (error) => error,
     }),
-    spawn: (_input: FrozenControllerCommand) => Effect.sync(() => {
-      liveMutationAttempts.spawn += 1;
-      return { spawned: false };
+    spawn: (input: FrozenControllerCommand) => Effect.tryPromise({
+      try: async () => {
+        liveMutationAttempts.spawn += 1;
+        lastLiveAdopt = await applyLiveControllerAdopt(input);
+        return { spawned: lastLiveAdopt.signaled === true };
+      },
+      catch: (error) => error,
     }),
     armGuardian: (_input: FrozenControllerCommand) => Effect.sync(() => {
       liveMutationAttempts.guardian += 1;
-      return { guardian: false };
+      return { guardian: lastLiveAdopt?.ok === true || lastLiveAdopt?.signaled === true };
     }),
     wait: (_input: FrozenControllerCommand) => Effect.void,
-    commit: (_input: FrozenControllerCommand) => Effect.succeed({ committed: false }),
+    commit: (_input: FrozenControllerCommand) => Effect.succeed({ committed: lastLiveAdopt?.ok === true }),
   });
 }
 

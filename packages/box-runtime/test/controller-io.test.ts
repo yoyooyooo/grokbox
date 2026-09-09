@@ -17,7 +17,9 @@ import {
   resetLiveMutationAttempts,
   liveMutationAttempts,
   startControlOperation,
+  type LiveAdmissionPorts,
 } from "../src/internal/roots/controller-program.node.ts";
+import type { ProcessIdentity } from "../src/internal/process/process-port.ts";
 import { reviewedProfilePath } from "../src/internal/io/paths.ts";
 import { SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
@@ -88,7 +90,7 @@ describe("controller IO facade", () => {
       })}\n`);
       expect(inspectControllerFacts(boxRoot).reason).toBe("invalid-compile");
       await writeFile(reviewedProfilePath(boxRoot), `${JSON.stringify(validProfile)}\n`);
-      expect(inspectControllerFacts(boxRoot)).toMatchObject({ ok: false, reason: "live-not-proven" });
+      expect(inspectControllerFacts(boxRoot)).toMatchObject({ ok: false, reason: "host-missing" });
       const complete = await startControlOperation({
         intent: "apply", confirmed: true, operationId: "op-complete", boxRoot,
       });
@@ -188,6 +190,71 @@ describe("controller IO facade", () => {
     expect(JSON.parse(await readFile(secondOut, "utf8"))).toEqual({ status: "busy" });
     first.kill("SIGTERM");
     second.kill("SIGTERM");
+  });
+
+  test("live admission refuses absent Host and sha/pid mismatch; matching fixture admits without signal", async () => {
+    resetLiveMutationAttempts();
+    const boxRoot = await emptyRoot();
+    await writeFacts(boxRoot);
+    const kills: number[] = [];
+    const original = process.kill;
+    process.kill = ((pid: number, sig?: NodeJS.Signals | number) => {
+      kills.push(pid);
+      return original.call(process, pid, sig as NodeJS.Signals);
+    }) as typeof process.kill;
+    try {
+      const wrapper: ProcessIdentity = {
+        pid: 11, uid: 1000, start: 100, exe: "/bin/bash", ppid: 1, ancestry: [1],
+        cmdline: ["bash", "/usr/local/bin/supervise-sand-supervisor"],
+      };
+      const supervisor: ProcessIdentity = {
+        pid: 12, uid: 1000, start: 101, exe: "/exec-daemon/node", ppid: 11, ancestry: [11, 1],
+        cmdline: ["/exec-daemon/node", "/usr/local/bin/sand-supervisor.mjs"],
+      };
+      const host: ProcessIdentity = {
+        pid: 13, uid: 1000, start: 102, exe: "/exec-daemon/node", ppid: 12, ancestry: [12, 11, 1],
+        cmdline: ["/exec-daemon/node", "/tmp/host-main.cjs"],
+      };
+      const rows = [wrapper, supervisor, host];
+      const portFor = (gatewayPid: number | null, sha: string): LiveAdmissionPorts => ({
+        processes: {
+          inspect: (pid) => rows.find((row) => row.pid === pid) ?? null,
+          list: () => rows,
+          signal: () => ({ ok: false, reason: "not-found" }),
+        },
+        classify: (ident) => {
+          if (ident.pid === 11) return "wrapper";
+          if (ident.pid === 12) return "supervisor";
+          if (ident.pid === 13) return "host";
+          return null;
+        },
+        gatewayPid: () => gatewayPid,
+        hostBundlePath: "/tmp/host-main.cjs",
+        readHostSha: () => sha,
+      });
+      expect(inspectControllerFacts(boxRoot, {
+        processes: { inspect: () => null, list: () => [], signal: () => ({ ok: false, reason: "not-found" }) },
+        classify: () => null,
+        gatewayPid: () => null,
+        hostBundlePath: "/tmp/missing.cjs",
+        readHostSha: () => null,
+      }).reason).toBe("host-bundle-missing");
+      expect(inspectControllerFacts(boxRoot, {
+        processes: { inspect: () => null, list: () => [], signal: () => ({ ok: false, reason: "not-found" }) },
+        classify: () => null,
+        gatewayPid: () => null,
+        hostBundlePath: "/tmp/host-main.cjs",
+        readHostSha: () => validProfile.sourceSha256,
+      }).reason).toBe("host-missing");
+      expect(inspectControllerFacts(boxRoot, portFor(13, "c".repeat(64))).reason).toBe("source-mismatch");
+      expect(inspectControllerFacts(boxRoot, portFor(99, validProfile.sourceSha256)).reason).toBe("gateway-mismatch");
+      const admitted = inspectControllerFacts(boxRoot, portFor(13, validProfile.sourceSha256));
+      expect(admitted).toMatchObject({ ok: true, reason: null, strategy: "direct" });
+      expect(kills).toEqual([]);
+      expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 });
+    } finally {
+      process.kill = original;
+    }
   });
 
   test("reconcile never signals", async () => {
