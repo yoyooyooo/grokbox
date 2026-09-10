@@ -66,6 +66,7 @@
     "release:check": "bun run check",
     "release:precheck": "bun run scripts/release.ts --precheck",
     "release": "bun run scripts/release.ts",
+    "verify:context-continuity": "bun scripts/verify-context-continuity.mjs",
     "verify:external": "node scripts/verify-external.mjs",
     "observe:sandbox": "node scripts/observe-sandbox.mjs",
     "experiment:sandbox-ssh-activity": "node scripts/experiment-sandbox-ssh-activity.mjs",
