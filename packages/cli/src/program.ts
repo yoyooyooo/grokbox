@@ -81,6 +81,7 @@ import {
   runRuntimeModelsList,
   runRuntimeModelsReset,
   runRuntimeModelsUse,
+  runRuntimeProfileObserve,
   runRuntimeProfileWrite,
   runRuntimeReAdopt,
   runRuntimeStart,
@@ -270,6 +271,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime models use": async (deps, args, options) =>
       await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
     "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
     "runtime profile write": async (deps, _args, options) => await runRuntimeProfileWrite(deps, options.from),
     "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),
     "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),

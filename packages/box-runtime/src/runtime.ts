@@ -21,6 +21,7 @@ export {
 } from "./internal/io/observe.ts";
 export { observeEvents } from "./internal/io/journal.node.ts";
 export { writeReviewedProfileFromCopy } from "./internal/process/profile.node.ts";
+export { observeHostProvenance, type HostSeamObserveReceipt } from "./internal/ops/host-seam/observe.ts";
 
 export { startModeldProcess, ensureModeld, modeldRootLayer, type StartedModeld, type ModeldEnsure } from "./internal/roots/modeld.runtime.ts";
 export { startControlOperation, controllerOperationId, diskPreloadSha256, reviewedProfileSha256 } from "./internal/roots/controller-program.node.ts";

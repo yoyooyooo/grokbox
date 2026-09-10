@@ -1236,6 +1236,23 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     localOnly: true,
   },
   {
+    path: ["runtime", "profile", "observe"],
+    usage: "grokbox runtime profile observe --from <host-bundle>",
+    summary: "Retain Host bytes and emit exact knife-point observation without process mutation.",
+    arguments: [],
+    options: options([
+      { flags: "--from <host-bundle>", description: "Absolute Host bundle input; retain provenance only", required: true },
+    ]),
+    stdin: "none",
+    table: false,
+    timeout: false,
+    destructive: false,
+    gateway: false,
+    streaming: false,
+    profile: false,
+    localOnly: true,
+  },
+  {
     path: ["runtime", "profile", "write"],
     usage: "grokbox runtime profile write --from <host-bundle>",
     summary: "Atomically author a durable PatchProfile from read-only input (no live inject or retained bundle).",

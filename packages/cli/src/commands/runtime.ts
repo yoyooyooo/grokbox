@@ -23,6 +23,7 @@ import {
   startControlOperation,
   startModeldProcess,
   writeReviewedProfileFromCopy,
+  observeHostProvenance,
   type DesiredMode,
 } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
@@ -229,6 +230,26 @@ export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
       };
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);
+    });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfileObserve(deps: CliDeps, fromPath: string | undefined): Promise<void> {
+  try {
+    if (!fromPath || fromPath.trim().length === 0) {
+      throw new CliError("invalid_usage", "runtime profile observe requires --from <host-bundle>.");
+    }
+    if (!isAbsolute(fromPath)) {
+      throw new CliError("invalid_usage", "--from must be an absolute Host bundle path.");
+    }
+    const runtime = store(deps);
+    const receipt = await observeHostProvenance({ root: runtime.root, from: resolve(fromPath) });
+    writeSuccess(deps.stdout, {
+      process: "profile-observe",
+      offline: true,
+      ...receipt,
     });
   } catch (error) {
     rethrow(error);
