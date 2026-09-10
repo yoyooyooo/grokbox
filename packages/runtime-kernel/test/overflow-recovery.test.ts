@@ -126,6 +126,29 @@ describe("overflow recovery ledger", () => {
     expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedText: undefined }) })).toBe("unconfirmed");
     expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedText: Number.NaN }) })).toBe("unconfirmed");
     expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedTools: -1 }) })).toBe("unconfirmed");
+    expect(admitOverflowRecovery({
+      ...base,
+      evidence: evidence({ httpStatus: undefined, releasedText: 0, releasedReasoning: 0, releasedTools: 0 }),
+    })).toBe("unconfirmed");
+  });
+
+  test("absent HTTP surface with known-zero releases does not consume a slot", async () => {
+    const counts = { invocations: 0 };
+    const ledger = emptyRecoveryLedger(TUPLE, NONCE);
+    const result = await Effect.runPromise(Effect.result(runOverflowRecovery({
+      ledger,
+      evidence: evidence({ httpStatus: undefined }),
+      identity: TUPLE,
+      recoveryNonce: NONCE,
+    }).pipe(Effect.provide(fakeHostCompactLayer({
+      counts,
+      handle: () => ({ kind: "snapshot", snapshot: snapshot("compacted") }),
+    })))));
+    expect(result._tag).toBe("Failure");
+    expect(result._tag === "Failure" ? (result.failure as CompactFailure).code : undefined).toBe("unconfirmed");
+    expect(counts.invocations).toBe(0);
+    expect(ledger.nonceConsumed).toBe(false);
+    expect(ledger.compactInvocations).toBe(0);
   });
 
   test("cancelled and unknown compact outcomes stop without resume", async () => {

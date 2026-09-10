@@ -71,10 +71,7 @@ export function isConfirmedOverflow(evidence: OverflowEvidence): boolean {
     return false;
   }
   const status = evidence.httpStatus;
-  if (status === 401 || status === 403 || status === 429 || status === 413 || status === 500 || status === 502 || status === 503) {
-    return false;
-  }
-  if (status !== undefined && status !== 200 && status !== 400) return false;
+  if (status !== 200 && status !== 400) return false;
   return typeof evidence.providerCode === "string" && CONFIRMED_CODES.has(evidence.providerCode);
 }
 

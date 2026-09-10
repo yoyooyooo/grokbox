@@ -18,6 +18,9 @@ describe("confirmed overflow classifier", () => {
     expect(isProviderConfirmedOverflow({
       providerCode: "context_length_exceeded", httpStatus: 400, releasedText: 1,
     })).toBe(true);
+    expect(isProviderConfirmedOverflow({
+      providerCode: "context_length_exceeded", releasedText: 0, releasedReasoning: 0, releasedTools: 0,
+    })).toBe(false);
   });
 
   test("message-only overflow is not confirmation", () => {
@@ -52,6 +55,18 @@ describe("confirmed overflow classifier", () => {
       ...base,
       evidence: overflowEvidenceFromProvider({
         providerCode: "context_length_exceeded", httpStatus: 400, releasedText: 0, releasedReasoning: 0, releasedTools: 0,
+      }),
+    })).toBeUndefined();
+    expect(admitOverflowRecovery({
+      ...base,
+      evidence: overflowEvidenceFromProvider({
+        providerCode: "context_length_exceeded", releasedText: 0, releasedReasoning: 0, releasedTools: 0,
+      }),
+    })).toBe("unconfirmed");
+    expect(admitOverflowRecovery({
+      ...base,
+      evidence: overflowEvidenceFromProvider({
+        providerCode: "context_length_exceeded", httpStatus: 200, releasedText: 0, releasedReasoning: 0, releasedTools: 0,
       }),
     })).toBeUndefined();
   });
