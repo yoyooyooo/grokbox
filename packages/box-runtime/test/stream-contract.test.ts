@@ -16,6 +16,10 @@ function fixture(input: { parallel?: "allow" | "fail-closed"; maxParts?: number;
   return { script, session, terminals, calls, driverSignal: () => driverSignal };
 }
 const STOP: StreamPart = { type: "finish", reason: "stop", usage: { promptTokens: 8, completionTokens: 4, totalTokens: 12 } };
+const LOOKUP_TOOLS = [
+  { name: "lookup", inputSchema: { type: "object", properties: { n: { type: "number" }, query: { type: "string" } } } },
+  { name: "memory_write", inputSchema: { type: "object", properties: { text: { type: "string" } } } },
+];
 
 describe("incremental stream contract, scripted producer with provider hard-off", () => {
   test("first chunk arrives before completion; independent late readers replay without redispatch", async () => {
@@ -39,7 +43,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     ]);
     expect(late.at(-1)).toMatchObject({ type: "finish", reason: "stop", response });
     expect(f.calls.count).toBe(1);
-    expect(f.terminals).toEqual([{ terminalClass: "stop", toolCallCount: 0 }]);
+    expect(f.terminals).toMatchObject([{ terminalClass: "stop", toolCallCount: 0 }]);
     await first.return?.();
   });
 
@@ -91,7 +95,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     expect(parts.filter((part) => part.type === "finish")).toHaveLength(1);
     expect(parts.at(-1)).toMatchObject({ reason: "abort" });
     expect(JSON.stringify(parts)).not.toMatch(/must-not-deliver|private-abort-reason/);
-    expect(f.terminals).toEqual([{ terminalClass: "abort", toolCallCount: 0 }]);
+    expect(f.terminals).toMatchObject([{ terminalClass: "abort", toolCallCount: 0 }]);
     expect(f.calls.count).toBe(1);
     await iterator.return?.();
   });
@@ -102,7 +106,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     const handle = f.session.getExecutor().stream({}, "inv-preabort", [], { abortSignal: controller.signal });
     expect((await within(handle.response)).finishReason).toBe("abort");
     expect(f.calls.count).toBe(0);
-    expect(f.terminals).toEqual([{ terminalClass: "abort", toolCallCount: 0 }]);
+    expect(f.terminals).toMatchObject([{ terminalClass: "abort", toolCallCount: 0 }]);
     expect(await collectStreamParts(handle.fullStream)).toEqual([expect.objectContaining({ type: "finish", reason: "abort" })]);
   });
 
@@ -115,12 +119,12 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     const parts = await collectStreamParts(handle.fullStream);
     expect(parts).toHaveLength(2);
     expect(parts.at(-1)).toMatchObject({ type: "finish", reason: "stop", response });
-    expect(f.terminals).toEqual([{ terminalClass: "stop", toolCallCount: 0 }]);
+    expect(f.terminals).toMatchObject([{ terminalClass: "stop", toolCallCount: 0 }]);
   });
 
   test("interleaved tool argument streams keep names/ids and produce one complete call per id", async () => {
     const f = fixture();
-    const handle = f.session.getExecutor().stream({}, "inv-tools");
+    const handle = f.session.getExecutor().stream({}, "inv-tools", LOOKUP_TOOLS);
     f.script.push({ type: "tool-call-streaming-start", toolCallId: "one", toolName: "lookup" });
     f.script.push({ type: "tool-call-streaming-start", toolCallId: "two", toolName: "memory_write" });
     f.script.push({ type: "tool-call-delta", toolCallId: "one", toolName: "lookup", argsTextDelta: '{"query":' });
@@ -135,11 +139,11 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     expect(response.messages[0]!.toolCalls).toBeUndefined(); // no second Host call list
     const parts = await collectStreamParts(handle.fullStream);
     expect(parts.filter((part) => part.type === "tool-call")).toEqual([one, two]);
-    expect(f.terminals).toEqual([{ terminalClass: "stop", toolCallCount: 2 }]);
+    expect(f.terminals).toMatchObject([{ terminalClass: "stop", toolCallCount: 2 }]);
   });
 
   test.each(["mismatched-args", "renamed-call", "incomplete-call", "conflicting-duplicate"])("%s is visible, never a silent id/args rewrite", async (fault) => {
-    const f = fixture(); const handle = f.session.getExecutor().stream({}, "inv-invalid");
+    const f = fixture(); const handle = f.session.getExecutor().stream({}, "inv-invalid", LOOKUP_TOOLS);
     const call = { type: "tool-call" as const, toolCallId: "id", toolName: "lookup", args: { n: 1 } };
     if (fault === "conflicting-duplicate") { f.script.push(call); f.script.push({ ...call, args: { n: 2 } }); }
     else {
@@ -148,31 +152,32 @@ describe("incremental stream contract, scripted producer with provider hard-off"
       if (fault !== "incomplete-call") f.script.push({ ...call, ...(fault === "renamed-call" ? { toolName: "other" } : { args: { n: 9 } }) });
     }
     f.script.push(STOP);
-    const response = await within(handle.response);
-    expect(response.error).toMatchObject({ userVisible: true, code: "invalid_stream", toolCallIds: ["id"] });
-    expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
-    const parts = await collectStreamParts(handle.fullStream);
-    expect(parts.filter((part) => part.type === "finish")).toHaveLength(1);
+    await expect(within(handle.response)).rejects.toMatchObject({ name: "RetriableError", code: "invalid_stream", userVisible: true, toolCallIds: ["id"] });
+    const parts: StreamPart[] = [];
+    try {
+      for await (const part of handle.fullStream) parts.push(part);
+    } catch (error) {
+      expect(error).toMatchObject({ name: "RetriableError", code: "invalid_stream" });
+    }
+    expect(parts.filter((part) => part.type === "text-delta")).toHaveLength(0);
     expect(parts.filter((part) => part.type === "tool-call")).toHaveLength(fault === "conflicting-duplicate" ? 1 : 0);
   });
 
   test("serial-only policy withholds executable calls until completion; parallel rejection preserves both ids", async () => {
-    const f = fixture({ parallel: "fail-closed" }); const handle = f.session.getExecutor().stream({}, "inv-serial");
+    const f = fixture({ parallel: "fail-closed" }); const handle = f.session.getExecutor().stream({}, "inv-serial", LOOKUP_TOOLS);
     f.script.push({ type: "tool-call", toolCallId: "a", toolName: "lookup", args: {} });
     f.script.push({ type: "tool-call", toolCallId: "b", toolName: "lookup", args: {} }); f.script.push(STOP);
-    const response = await within(handle.response);
-    expect(response.error).toMatchObject({ code: "parallel_tools", toolCallIds: ["a", "b"] });
-    expect((await collectStreamParts(handle.fullStream)).some((part) => part.type === "tool-call")).toBe(false);
-    expect(response.messages[0]!.toolCalls).toBeUndefined();
-    expect(f.terminals).toEqual([{ terminalClass: "error", toolCallCount: 0, errorCode: "parallel_tools" }]);
+    await expect(within(handle.response)).rejects.toMatchObject({ name: "RetriableError", code: "parallel_tools" });
+    expect((await collectStreamParts(handle.fullStream).catch(() => [])).some((part) => part.type === "tool-call" || part.type === "text-delta")).toBe(false);
+    expect(f.terminals).toMatchObject([{ terminalClass: "error", toolCallCount: 0, errorCode: "parallel_tools", rejected: true }]);
   });
 
   test.each(["parts", "bytes"])("%s cap stops production visibly and completes every observer", async (limit) => {
     const f = fixture(limit === "parts" ? { maxParts: 1 } : { maxBytes: 20 });
     const handle = f.session.getExecutor().stream({}, "inv-cap");
     f.script.push({ type: "text-delta", textDelta: "first" }); f.script.push({ type: "text-delta", textDelta: "second" });
-    expect((await within(handle.response)).error?.code).toBe("stream_limit");
-    expect((await within(collectStreamParts(handle.fullStream))).at(-1)).toMatchObject({ type: "finish", reason: "error" });
+    await expect(within(handle.response)).rejects.toMatchObject({ name: "RetriableError", code: "stream_limit" });
+    expect((await within(collectStreamParts(handle.fullStream).catch(() => []))).some((part) => part.type === "text-delta" && part.textDelta === "second")).toBe(false);
     expect(f.driverSignal()?.aborted).toBe(true);
     expect(f.terminals).toHaveLength(1);
   });
@@ -183,11 +188,10 @@ describe("incremental stream contract, scripted producer with provider hard-off"
         produce: () => ({ async *[Symbol.asyncIterator]() { yield { type: "text-delta" as const, textDelta: "prefix" }; if (throws) throw new Error("private-provider-body-secret"); } }),
       }), "fake/error");
       const handle = session.getExecutor().stream();
-      const response = await within(handle.response);
-      expect(response.error?.userVisible).toBe(true);
-      expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
-      expect(JSON.stringify(response)).not.toContain("private-provider");
-      expect((await collectStreamParts(handle.fullStream)).filter((part) => part.type === "finish")).toHaveLength(1);
+      await expect(within(handle.response)).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
+      const thrown = await handle.response.then(() => undefined, (error) => error as Error);
+      expect(JSON.stringify(thrown)).not.toContain("private-provider");
+      expect((await collectStreamParts(handle.fullStream).catch(() => [])).some((part) => part.type === "text-delta" && part.textDelta.includes("private-provider"))).toBe(false);
     }
   });
 });

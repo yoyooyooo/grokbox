@@ -57,15 +57,15 @@ describe("host session ABI", () => {
       },
     }), "stub/echo", undefined, { requireStepId: true });
     const result = session.getExecutor([]).stream({});
-    const response = await result.response;
-    expect(response.finishReason).toBe("error");
+    await expect(result.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
+    await expect(collectStreamParts(result.fullStream)).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
     expect(produced).toBe(0);
   });
 
   test("error handle does not invent 1/1/2 usage", async () => {
     const handle = visibleFailureHandle("stub/echo", "invalid_envelope");
-    const usage = await handle.usage;
-    expect(usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+    await expect(handle.usage).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError" });
   });
 
   test("slow second reader does not retrigger produce", async () => {
@@ -138,9 +138,7 @@ describe("host session ABI", () => {
     const handle = prompt.stream({ envelope });
     const vector = await consumeHandle(handle);
     expect(vector.toolExecutionCount).toBe(0);
-    const response = await handle.response;
-    expect(response.finishReason).toBe("error");
-    expect(response.error?.code).toBe("parallel_tools");
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", code: "parallel_tools" });
   });
 
   test("undeclared tool name is not released as an executable Host call", async () => {
@@ -160,6 +158,6 @@ describe("host session ABI", () => {
     const handle = prompt.stream({ envelope });
     const vector = await consumeHandle(handle);
     expect(vector.toolExecutionCount).toBe(0);
-    expect((await handle.response).finishReason).toBe("error");
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_stream" });
   });
 });

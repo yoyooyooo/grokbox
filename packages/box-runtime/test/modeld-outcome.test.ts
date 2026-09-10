@@ -77,8 +77,7 @@ describe("modeld STEP outcome", () => {
     const f = await fixture(fetch);
     const logging = spyOn(console, "error").mockImplementation(() => {});
     try {
-      const response = await f.session.getExecutor([{ role: "system", content: "owned root" }, { role: "user", content: "owned question" }]).stream({}, "step-http").response;
-      expect(response.finishReason).toBe("error");
+      await expect(f.session.getExecutor([{ role: "system", content: "owned root" }, { role: "user", content: "owned question" }]).stream({}, "step-http").response).rejects.toMatchObject({ name: "RetriableError" });
       const rows = await outcomes(f.runRoot);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ agentId: "fixture-agent", turnId: "turn", stepId: "step-http", outcome: "error", phase: "provider", failureCode: "provider_error", eventCount: 0,
@@ -112,8 +111,7 @@ describe("modeld STEP outcome", () => {
     const fetch = Object.assign(async () => { requests++; throw Error("unexpected HTTP"); }, { preconnect: async () => {} }) as typeof globalThis.fetch;
     const f = await fixture(fetch);
     try {
-      const response = await f.session.getExecutor([{ role: "system", content: "owned root" }, { role: "user", content: "owned question" }]).stream({}, "step-prepare", undefined, { seed: 1 }).response;
-      expect(response.finishReason).toBe("error");
+      await expect(f.session.getExecutor([{ role: "system", content: "owned root" }, { role: "user", content: "owned question" }]).stream({}, "step-prepare", undefined, { seed: 1 }).response).rejects.toMatchObject({ name: "RetriableError" });
       const rows = await outcomes(f.runRoot);
       expect(rows[0]).toMatchObject({ stepId: "step-prepare", phase: "prepare", failureCode: "unsupported_options", eventCount: 0 });
       expect(rows[0].bindingId).toBeUndefined();

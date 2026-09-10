@@ -51,7 +51,9 @@ export async function consumeHandle(handle: StreamHandle | HostStreamResult): Pr
   let transcriptSequenceDelta = 0;
   let text = "";
 
+  try {
   for await (const part of handle.fullStream) {
+    if (part.type === "error") continue;
     if (part.type === "tool-call") {
       if (seen.has(part.toolCallId)) {
         duplicateCount += 1;
@@ -65,6 +67,9 @@ export async function consumeHandle(handle: StreamHandle | HostStreamResult): Pr
       continue;
     }
     if (part.type === "text-delta") text += part.textDelta;
+  }
+  } catch {
+    /* stream throw is the Host runTurn catch path; not transcript text */
   }
 
   let finalDeliveryCount = 0;

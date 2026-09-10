@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { buildModelEnvelope, EnvelopeError, ENVELOPE_MAX_BYTES, type ModelEnvelope, type PromptMessage } from "@grokbox/runtime-kernel/contract";
 import { buildHostEnvelope } from "../src/internal/host/context-codec.ts";
 import { asHostPromptSession, createStreamingPromptSession, type StreamPart } from "../src/internal/host/session.ts";
-import { collectStreamParts, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
+import { collectStreamParts } from "./host-consumer.ts";
 
 const FINISH: StreamPart = { type: "finish", reason: "stop", usage: { promptTokens: 11, completionTokens: 3, totalTokens: 14 } };
 const history = (): PromptMessage[] => [
@@ -100,13 +100,12 @@ describe("Host messages/state/tools/options envelope", () => {
   ])("%s fails visibly before dispatch and never leaks input in its error", async (_name, messages) => {
     const f = fixture();
     const result = f.session.getExecutor(messages).stream({}, "inv-refused", [], {});
-    const response = await result.response;
+    await expect(result.response).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
     expect(f.calls.count).toBe(0);
     expect(f.requests).toEqual([]);
-    expect(response.error?.userVisible).toBe(true);
-    expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
-    expect(JSON.stringify(response)).not.toContain("private-");
-    expect((await collectStreamParts(result.fullStream)).at(-1)).toMatchObject({ type: "finish", reason: "error", response });
+    const thrown = await result.response.then(() => undefined, (error) => error as Error);
+    expect(JSON.stringify(thrown)).not.toContain("private-");
+    await expect(collectStreamParts(result.fullStream)).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
   });
 
   test.each([
@@ -119,7 +118,7 @@ describe("Host messages/state/tools/options envelope", () => {
   ])("%s is refused, not dropped", async (_name, tools, options) => {
     const f = fixture();
     const result = f.session.getExecutor([{ role: "user", content: "hello" }]).stream({}, "inv-options", tools, options);
-    expect((await result.response).error?.userVisible).toBe(true);
+    await expect(result.response).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
     expect(f.calls.count).toBe(0);
   });
 
@@ -127,8 +126,7 @@ describe("Host messages/state/tools/options envelope", () => {
     const f = fixture();
     let reads = 0;
     const tool = { name: "lookup", get inputSchema() { reads += 1; return schema; } };
-    const response = await f.session.getExecutor([]).stream({}, "inv-schema-accessor", [tool]).response;
-    expect(response.error?.code).toBe("invalid_tools");
+    await expect(f.session.getExecutor([]).stream({}, "inv-schema-accessor", [tool]).response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_tools" });
     expect(reads).toBe(0);
     expect(f.calls.count).toBe(0);
   });
@@ -137,8 +135,7 @@ describe("Host messages/state/tools/options envelope", () => {
     const image = { type: "image" as const, data: "synthetic-image-data", mimeType: "image/png" };
     const f = fixture();
     const failed = f.session.getExecutor([{ role: "user", content: [image] }]).stream({}, "inv-image");
-    expect((await failed.response).error?.code).toBe("unsupported_image");
-    expect(hasMeaningfulResponseMessageContent((await failed.response).messages)).toBe(true);
+    await expect(failed.response).rejects.toMatchObject({ name: "RetriableError", code: "unsupported_image" });
     expect(f.calls.count).toBe(0);
     const vision = fixture(true);
     await vision.session.getExecutor([{ role: "user", content: [image] }]).stream({}, "inv-vision").response;
@@ -152,10 +149,9 @@ describe("Host messages/state/tools/options envelope", () => {
       let reads = 0;
       const state = new Array(1);
       if (accessor) Object.defineProperty(state, "0", { enumerable: true, get: () => { reads += 1; return { role: "user", content: "private-getter" }; } });
-      const response = await f.session.getExecutor(state).stream().response;
+      await expect(f.session.getExecutor(state).stream().response).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
       expect(reads).toBe(0);
       expect(f.calls.count).toBe(0);
-      expect(response.error?.userVisible).toBe(true);
     }
   });
 
@@ -201,7 +197,7 @@ describe("Host messages/state/tools/options envelope", () => {
     expect(executor.getState()).toEqual([]);
     const handle = executor.stream({}, "inv-state");
     expect(handle).not.toBeInstanceOf(Promise);
-    expect((await handle.response).error?.userVisible).toBe(true);
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
     expect(f.calls.count).toBe(0);
   });
 
@@ -272,8 +268,8 @@ describe("Host messages/state/tools/options envelope", () => {
 
     const blocked = fixture();
     const hot = { get temperature() { reads += 1; return 0.1; } };
-    expect((await blocked.session.getExecutor([{ role: "user", content: "plain" }])
-      .stream({}, "inv-own-option-getter", [], hot).response).error?.code).toBe("unsupported_options");
+    await expect(blocked.session.getExecutor([{ role: "user", content: "plain" }])
+      .stream({}, "inv-own-option-getter", [], hot).response).rejects.toMatchObject({ name: "RetriableError", code: "unsupported_options" });
     expect(reads).toBe(0);
     expect(blocked.calls.count).toBe(0);
   });
@@ -294,7 +290,7 @@ describe("Host messages/state/tools/options envelope", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]!.invocationId).toBe("step-1111-2222-3333-4444");
     const bad = session.getExecutor([{ role: "user", content: "again" }]).stream({}, "step\nid", [], {});
-    expect((await bad.response).error?.code).toBe("invalid_envelope");
+    await expect(bad.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
   });
 
   test("Redacted class content is explicit unsupported_content, not swallowed invalid_envelope", async () => {
@@ -305,10 +301,9 @@ describe("Host messages/state/tools/options envelope", () => {
     const result = f.session.getExecutor([
       { role: "user", content: new HostRedacted("private-redacted-plain") },
     ]).stream({}, "inv-redacted", [], { acceptedUnadvertisedToolNames: [] });
-    const response = await result.response;
-    expect(response.error?.code).toBe("unsupported_content");
-    expect(response.error?.userVisible).toBe(true);
+    await expect(result.response).rejects.toMatchObject({ name: "RetriableError", code: "unsupported_content", userVisible: true });
     expect(f.calls.count).toBe(0);
-    expect(JSON.stringify(response)).not.toContain("private-redacted-plain");
+    const thrown = await result.response.then(() => undefined, (error) => error as Error);
+    expect(JSON.stringify(thrown)).not.toContain("private-redacted-plain");
   });
 });

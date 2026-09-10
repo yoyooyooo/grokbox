@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { collectHostDuplicateStream, hasMeaningfulResponseMessageContent } from "./host-consumer.ts";
 import { asHostPromptSession, createManagedPromptSession, type StreamPart } from "../src/internal/host/session.ts";
+import { buildHostEnvelope } from "../src/internal/host/context-codec.ts";
 
 const textParts: StreamPart[] = [
   { type: "text-delta", textDelta: "hello" },
@@ -51,7 +52,12 @@ describe("managed PromptSession contract", () => {
         { type: "finish", reason: "stop" },
       ],
     });
-    const handle = session.stream();
+    const handle = session.stream({
+      envelope: buildHostEnvelope(
+        [{ role: "user", content: "hi" }],
+        [{ name: "bash", inputSchema: { type: "object", properties: { command: { type: "string" } } } }],
+      ),
+    });
     const ids: string[] = [];
     for await (const part of handle.fullStream) {
       if (part.type === "tool-call") ids.push(part.toolCallId);
@@ -74,9 +80,7 @@ describe("managed PromptSession contract", () => {
       messages: [{ role: "user", content: [{ type: "image", url: "https://example.test/a.png" }] }],
     });
     expect(providerCalls.count).toBe(0);
-    const failed = await handle.response;
-    expect(failed.modelId.trim()).toBe("fake/text");
-    expect(failed.messages.some((message) => message.role === "assistant")).toBe(true);
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", code: "unsupported_image" });
     const vision = createManagedPromptSession({
       modelId: "fake/vision",
       vision: true,
@@ -103,16 +107,14 @@ describe("managed PromptSession contract", () => {
       ],
     });
     const handle = session.stream();
-    const failed = await handle.response;
-    expect(failed.modelId.trim()).toBe("fake/serial");
-    expect(Array.isArray(failed.messages)).toBe(true);
-    expect(failed.messages.some((message) => message.role === "assistant")).toBe(true);
-    expect(failed.error).toMatchObject({ userVisible: true, code: "parallel_tools", toolCallIds: ["a", "b"] });
-    expect(failed.messages[0]?.toolCalls).toBeUndefined(); // rejected ids must not become executable fake calls
-    expect(hasMeaningfulResponseMessageContent(failed.messages)).toBe(true);
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", code: "parallel_tools", userVisible: true });
     const parts: StreamPart[] = [];
-    for await (const part of handle.fullStream) parts.push(part);
-    expect(parts.some((part) => part.type === "finish" && part.reason === "error")).toBe(true);
+    try {
+      for await (const part of handle.fullStream) parts.push(part);
+    } catch { /* Host consumeStream throw path */ }
+    expect(parts.some((part) => part.type === "tool-call")).toBe(false);
+    expect(parts.some((part) => part.type === "text-delta")).toBe(false);
+    expect(parts.some((part) => part.type === "error")).toBe(true);
   });
 
   test("abort yields one terminal and discards later parts", async () => {

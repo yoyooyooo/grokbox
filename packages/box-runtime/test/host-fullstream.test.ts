@@ -268,8 +268,7 @@ describe("host fullStream unix", () => {
       const first = session.getExecutor([{ role: "user", content: "use-tool" }]).stream({}, "same-step", tools);
       await first.response;
       const conflict = session.getExecutor([{ role: "user", content: "different" }]).stream({}, "same-step", tools);
-      const conflicted = await conflict.response;
-      expect(conflicted.finishReason).toBe("error");
+      await expect(conflict.response).rejects.toMatchObject({ name: "RetriableError" });
       expect(JSON.stringify(bodies)).toContain("use-tool");
       expect(JSON.stringify(bodies)).toContain("lookup");
     } finally {
@@ -319,8 +318,8 @@ describe("host fullStream unix", () => {
 
       const missingTurn = hook({ originalSession: official, agentId: "agent-tom" });
       if (!isHostPromptSession(missingTurn)) throw new Error("session");
-      const refused = await missingTurn.getExecutor([{ role: "user", content: "no-turn" }]).stream({}, "step-x").response;
-      expect(refused.finishReason).toBe("error");
+      const refused = missingTurn.getExecutor([{ role: "user", content: "no-turn" }]).stream({}, "step-x");
+      await expect(refused.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
     } finally {
       await stop();
     }
@@ -356,8 +355,8 @@ describe("host fullStream unix", () => {
       const missing = asHostPromptSession(createStreamingPromptSession({
         modelId: STUB_ECHO_MODEL_ID, vision: false, parallel: "fail-closed", produce: noRoot,
       }), STUB_ECHO_MODEL_ID, undefined, { requireStepId: true });
-      const denied = await missing.getExecutor([{ role: "user", content: "no-root" }]).stream({}, "step-noroot").response;
-      expect(denied.finishReason).toBe("error");
+      const denied = missing.getExecutor([{ role: "user", content: "no-root" }]).stream({}, "step-noroot");
+      await expect(denied.response).rejects.toMatchObject({ name: "RetriableError" });
     } finally {
       await stop();
     }
@@ -399,11 +398,11 @@ describe("host fullStream unix", () => {
         sessionOptions: { invocationId: "HOST_TURN_PROD" },
       });
       if (!isHostPromptSession(managed)) throw new Error("session");
-      const missing = await managed.getExecutor([
+      const missing = managed.getExecutor([
         { role: "system", content: "state-root-once" },
         { role: "user", content: "x" },
-      ]).stream({}).response;
-      expect(missing.finishReason).toBe("error");
+      ]).stream({});
+      await expect(missing.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
       const journal = await waitJournal(runRoot, (text) => text.includes("host_stream_rejected"));
       const rows = journal.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { name?: string; reason?: string; turnId?: string });
       expect(rows.some((row) => row.name === "host_stream_rejected" && row.reason === "missing-step-id" && row.turnId === "HOST_TURN_PROD")).toBe(true);
@@ -416,12 +415,11 @@ describe("host fullStream unix", () => {
       const stages = observed.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { stage?: string; stepId?: string });
       expect(stages.filter((row) => row.stage === "first_chunk" && row.stepId === "J13_REAL_STEP")).toHaveLength(1);
       expect(stages.some((row) => row.stage === "stream_enter" && row.stepId === "J13_REAL_STEP")).toBe(true);
-      const image = await managed.getExecutor([
+      const image = managed.getExecutor([
         { role: "system", content: "state-root-once" },
         { role: "user", content: [{ type: "image", data: "AAAA", mimeType: "image/png" }] },
-      ]).stream({}, "STEP_UNSUPPORTED_IMAGE").response;
-      expect(image.finishReason).toBe("error");
-      expect(image.error?.code).toBe("unsupported_image");
+      ]).stream({}, "STEP_UNSUPPORTED_IMAGE");
+      await expect(image.response).rejects.toMatchObject({ name: "RetriableError", code: "unsupported_image" });
       const after = await waitJournal(runRoot, (text) => text.includes("STEP_UNSUPPORTED_IMAGE"));
       expect(after).toContain("STEP_UNSUPPORTED_IMAGE");
       const stepRows = after.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { stepId?: string; name?: string });

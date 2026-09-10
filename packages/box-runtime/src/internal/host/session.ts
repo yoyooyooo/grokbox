@@ -95,8 +95,37 @@ export function normalizeHostResponse(value: unknown): HostResponse {
   return { modelId: typeof record.modelId === "string" ? record.modelId : "", messages: messages.length ? messages : [{ role: "assistant", content: [] }],
     ...(record.finishReason ? { finishReason: record.finishReason } : {}), ...(record.error ? { error: structuredClone(record.error) } : {}) };
 }
+/** Error Host `classifyError2` wraps as RetriableError → runTurn catch → official tray. Not assistant text. */
+export function hostVisibleStreamError(failure: VisibleFailure): Error {
+  const err = new Error(failure.message);
+  err.name = "RetriableError";
+  Object.defineProperty(err, "kind", { value: "RetriableError", enumerable: true });
+  Object.assign(err, {
+    code: failure.code,
+    userVisible: true as const,
+    ...(failure.toolCallIds ? { toolCallIds: failure.toolCallIds } : {}),
+    ...(failure.stage ? { stage: failure.stage } : {}),
+    ...(failure.agentId ? { agentId: failure.agentId } : {}),
+    ...(failure.invocationId ? { invocationId: failure.invocationId } : {}),
+  });
+  return err;
+}
+
+function settleRejected(thrown: Error): { response: Promise<HostResponse>; usage: Promise<HostUsage> } {
+  const response = Promise.reject(thrown);
+  const usage = Promise.reject(thrown);
+  void response.catch(() => undefined);
+  void usage.catch(() => undefined);
+  return { response, usage };
+}
+
 export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown): HostStreamResult {
   const usage = handle.usage.then(normalizeHostUsage);
+  const response = handle.response.then(normalizeHostResponse);
+  const extendedUsage = usage.then((u) => ({ inputTokens: u.promptTokens, outputTokens: u.completionTokens, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 0 }));
+  void usage.catch(() => undefined);
+  void response.catch(() => undefined);
+  void extendedUsage.catch(() => undefined);
   return {
     fullStream: { [Symbol.asyncIterator]() {
       const iterator = handle.fullStream[Symbol.asyncIterator]();
@@ -105,6 +134,13 @@ export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown)
           const next = await iterator.next();
           if (next.done) return next;
           const part = next.value;
+          if (part.type === "error") {
+            const raw = part.error;
+            if (raw instanceof Error) throw raw;
+            const vis = raw && typeof raw === "object" && raw.userVisible === true && typeof raw.code === "string"
+              ? raw : failure("model_error");
+            throw hostVisibleStreamError(vis);
+          }
           if (part.type === "text-delta" || part.type === "reasoning") {
             return { done: false as const, value: { ...part, text: part.textDelta } as unknown as StreamPart };
           }
@@ -114,8 +150,7 @@ export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown)
         async return() { return await iterator.return?.() ?? { done: true as const, value: undefined }; },
       };
     } },
-    response: handle.response.then(normalizeHostResponse), usage,
-    extendedUsage: usage.then((u) => ({ inputTokens: u.promptTokens, outputTokens: u.completionTokens, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 0 })),
+    response, usage, extendedUsage,
     providerMetadata: Promise.resolve({}), invocationId: Promise.resolve(invocationId),
   };
 }
@@ -256,21 +291,21 @@ function notify(onTerminal: ((terminal: SessionTerminal) => void) | undefined, t
 }
 export function visibleFailureHandle(modelId: string, code: string, ids?: string[], onTerminal?: (terminal: SessionTerminal) => void,
   ctx?: VisibleFailureContext): StreamHandle {
-  const error = failure(code, ids, ctx);
-  const response: HostResponse = { modelId, finishReason: "error", error, messages: [{ role: "assistant", content: error.message }] };
+  void modelId;
+  const vis = failure(code, ids, ctx);
+  const thrown = hostVisibleStreamError(vis);
   const stream = replayStream<StreamPart>();
-  stream.push({ type: "text-delta", textDelta: error.message });
-  stream.push({ type: "finish", reason: "error", finishReason: "error", response, usage: ZERO_USAGE });
+  stream.push({ type: "error", error: vis });
   stream.close();
   notify(onTerminal, {
     terminalClass: "error",
     toolCallCount: 0,
     rejected: true,
-    errorCode: error.code,
-    ...(error.stage ? { stage: error.stage } : {}),
+    errorCode: vis.code,
+    ...(vis.stage ? { stage: vis.stage } : {}),
     ...(ctx?.invocationId ? { invocationId: ctx.invocationId } : {}),
   });
-  return { fullStream: stream.iterable, response: Promise.resolve(response), usage: Promise.resolve({ ...ZERO_USAGE }) };
+  return { fullStream: stream.iterable, ...settleRejected(thrown) };
 }
 export type StreamingSessionConfig = {
   modelId: string; vision: boolean; parallel: "allow" | "fail-closed";
@@ -311,9 +346,13 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     const controller = new AbortController();
     let complete = false;
     let resolveResponse!: (value: HostResponse) => void;
+    let rejectResponse!: (reason: Error) => void;
     let resolveUsage!: (value: HostUsage) => void;
-    const response = new Promise<HostResponse>((resolve) => { resolveResponse = resolve; });
-    const usage = new Promise<HostUsage>((resolve) => { resolveUsage = resolve; });
+    let rejectUsage!: (reason: Error) => void;
+    const response = new Promise<HostResponse>((resolve, reject) => { resolveResponse = resolve; rejectResponse = reject; });
+    const usage = new Promise<HostUsage>((resolve, reject) => { resolveUsage = resolve; rejectUsage = reject; });
+    void response.catch(() => undefined);
+    void usage.catch(() => undefined);
     const content: Exclude<SessionMessage["content"], string> = [];
     const calls = new Map<string, ToolCall>();
     const pending = new Map<string, { name: string; text: string }>();
@@ -334,25 +373,33 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       complete = true;
       request.abortSignal?.removeEventListener("abort", abort);
       if (reason === "stop") for (const call of held) { replay.push(call); content.push(call); observeTool(); }
-      if (error) { pushText("text", error.message); replay.push({ type: "text-delta", textDelta: error.message }); }
       const toolCalls = content.filter((part): part is ToolCall => part.type === "tool-call");
-      const finishReason = reason === "stop" && toolCalls.length ? "tool-calls" : reason;
-      const textOnly = content.every((part) => part.type === "text");
-      const message: SessionMessage = { role: "assistant", content: textOnly ? content.map((part) => (part as SessionTextContentPart).text).join("") : structuredClone(content) };
-      if (toolCalls.length) message.toolCalls = toolCalls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: structuredClone(call.args) }));
-      const result: HostResponse = { modelId: config.modelId, finishReason, messages: [message], ...(error ? { error } : {}) };
-      const normalized = normalizeHostUsage(rawUsage ?? (reason === "stop" ? config.usage : undefined) ?? ZERO_USAGE);
-      replay.push({ type: "finish", reason, finishReason, response: result, usage: normalized });
-      replay.close();
-      resolveResponse(result); resolveUsage(normalized);
       notify(config.onTerminal, {
         terminalClass: reason,
         toolCallCount: toolCalls.length,
         ...(typeof request.invocationId === "string" ? { invocationId: request.invocationId } : {}),
-        ...(error ? { errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}) } : {}),
+        ...(error ? { errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}), rejected: true } : {}),
       });
+      if (reason === "error" && error) {
+        const thrown = hostVisibleStreamError(error);
+        replay.push({ type: "error", error });
+        replay.close();
+        rejectResponse(thrown);
+        rejectUsage(thrown);
+        controller.abort();
+        try { void Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* producer cleanup is best effort */ }
+        return;
+      }
+      const finishReason = reason === "stop" && toolCalls.length ? "tool-calls" : reason;
+      const textOnly = content.every((part) => part.type === "text");
+      const message: SessionMessage = { role: "assistant", content: textOnly ? content.map((part) => (part as SessionTextContentPart).text).join("") : structuredClone(content) };
+      if (toolCalls.length) message.toolCalls = toolCalls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: structuredClone(call.args) }));
+      const result: HostResponse = { modelId: config.modelId, finishReason, messages: [message] };
+      const normalized = normalizeHostUsage(rawUsage ?? (reason === "stop" ? config.usage : undefined) ?? ZERO_USAGE);
+      replay.push({ type: "finish", reason, finishReason, response: result, usage: normalized });
+      replay.close();
+      resolveResponse(result); resolveUsage(normalized);
       controller.abort();
-      // A stuck producer's return must not hold the terminal promises or Host cancellation hostage.
       try { void Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* producer cleanup is best effort */ }
     };
     const abort = () => finish("abort");
@@ -370,7 +417,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
         finish(part.reason, part.reason === "error" ? failure("model_error", undefined, streamCtx(stageFor("model_error"))) : undefined, part.usage); return;
       }
       if (part.type === "error") {
-        const vis = part.error;
+        const vis = part.error as { userVisible?: unknown; code?: unknown; stage?: VisibleFailureStage };
         if (vis && vis.userVisible === true && typeof vis.code === "string") {
           return failStream(vis.code, vis.stage ?? stageFor(vis.code));
         }
