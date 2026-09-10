@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { isConfirmedOverflow } from "@grokbox/runtime-kernel/contract";
+import { admitOverflowRecovery } from "@grokbox/runtime-kernel/inference";
+import { emptyRecoveryLedger } from "@grokbox/runtime-kernel/contract";
 import { isProviderConfirmedOverflow, overflowEvidenceFromProvider } from "../src/internal/backends/provider-error.ts";
 
 describe("confirmed overflow classifier", () => {
@@ -15,11 +16,8 @@ describe("confirmed overflow classifier", () => {
     expect(isProviderConfirmedOverflow({ httpStatus: 400, providerCode: "invalid_request_error" })).toBe(false);
     expect(isProviderConfirmedOverflow({ httpStatus: 400 })).toBe(false);
     expect(isProviderConfirmedOverflow({
-      providerCode: "context_length_exceeded", releasedText: 1,
+      providerCode: "context_length_exceeded", httpStatus: 400, releasedText: 1,
     })).toBe(true);
-    expect(isConfirmedOverflow(overflowEvidenceFromProvider({
-      providerCode: "context_length_exceeded", releasedText: 1,
-    }))).toBe(true);
   });
 
   test("message-only overflow is not confirmation", () => {
@@ -30,5 +28,31 @@ describe("confirmed overflow classifier", () => {
     const evidence = overflowEvidenceFromProvider({ httpStatus: 400 });
     expect(JSON.stringify(evidence)).not.toContain("sk-");
     expect(evidence.providerCode).toBeUndefined();
+    expect(evidence.releasedText).toBeUndefined();
+  });
+
+  test("omitted or invalid release counts do not admit recovery", () => {
+    const tuple = { agentId: "a", turnId: "t", stepId: "s", bindingId: "b", selectionRevision: "r" };
+    const base = {
+      ledger: emptyRecoveryLedger(tuple, "n"),
+      identity: tuple,
+      recoveryNonce: "n",
+    };
+    expect(admitOverflowRecovery({
+      ...base,
+      evidence: overflowEvidenceFromProvider({ providerCode: "context_length_exceeded", httpStatus: 400 }),
+    })).toBe("unconfirmed");
+    expect(admitOverflowRecovery({
+      ...base,
+      evidence: overflowEvidenceFromProvider({
+        providerCode: "context_length_exceeded", httpStatus: 400, releasedText: Number.NaN, releasedReasoning: 0, releasedTools: 0,
+      }),
+    })).toBe("unconfirmed");
+    expect(admitOverflowRecovery({
+      ...base,
+      evidence: overflowEvidenceFromProvider({
+        providerCode: "context_length_exceeded", httpStatus: 400, releasedText: 0, releasedReasoning: 0, releasedTools: 0,
+      }),
+    })).toBeUndefined();
   });
 });

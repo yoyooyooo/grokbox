@@ -3,6 +3,7 @@ import { HostCompact } from "../../ports.ts";
 import {
   CompactFailure,
   isConfirmedOverflow,
+  isKnownZeroRelease,
   type CompactFailureCode,
   type HostCompactRequest,
   type OverflowEvidence,
@@ -26,9 +27,9 @@ export function admitOverflowRecovery(input: {
   recoveryNonce: string;
 }): CompactFailureCode | undefined {
   if (!isConfirmedOverflow(input.evidence)) return "unconfirmed";
-  if (input.evidence.releasedText > 0 || input.evidence.releasedReasoning > 0 || input.evidence.releasedTools > 0) {
-    return "released";
-  }
+  const released = [input.evidence.releasedText, input.evidence.releasedReasoning, input.evidence.releasedTools];
+  if (released.some((count) => typeof count === "number" && Number.isFinite(count) && count > 0)) return "released";
+  if (!released.every((count) => isKnownZeroRelease(count))) return "unconfirmed";
   if (!sameTuple(input.ledger.tuple, input.identity)) return "identity";
   if (input.recoveryNonce !== input.ledger.recoveryNonce || input.ledger.nonceConsumed) return "nonce";
   if (input.ledger.compactInvocations >= 1 || input.ledger.managedAttempts >= 2) return "exhausted";
@@ -42,22 +43,20 @@ export function runOverflowRecovery(input: {
   recoveryNonce: string;
 }): Effect.Effect<{ ledger: RecoveryLedger; snapshot: ContextSnapshot }, CompactFailure> {
   return Effect.gen(function* () {
-    const blocked = admitOverflowRecovery(input);
-    if (blocked) return yield* Effect.fail(new CompactFailure(blocked));
     const ctx = yield* Effect.context<never>();
     const compact = Context.getOption(ctx as Context.Context<HostCompact>, HostCompact);
     if (Option.isNone(compact)) return yield* Effect.fail(new CompactFailure("capability_not_ready"));
+    const blocked = admitOverflowRecovery(input);
+    if (blocked) return yield* Effect.fail(new CompactFailure(blocked));
+    input.ledger.nonceConsumed = true;
+    input.ledger.compactInvocations += 1;
     const request: HostCompactRequest = { tuple: input.identity, recoveryNonce: input.recoveryNonce };
     const result = yield* compact.value.request(request);
-    const ledger: RecoveryLedger = {
-      ...input.ledger,
-      compactInvocations: input.ledger.compactInvocations + 1,
-      nonceConsumed: true,
-    };
     if (result.kind === "unavailable") {
       return yield* Effect.fail(new CompactFailure(result.reason === "capability_not_ready" ? "capability_not_ready" : result.reason === "cancelled" ? "cancelled" : result.reason === "blocked" ? "blocked" : "unknown"));
     }
     if (result.kind === "no_improvement") return yield* Effect.fail(new CompactFailure("no_improvement"));
-    return { ledger: { ...ledger, managedAttempts: ledger.managedAttempts + 1 }, snapshot: result.snapshot };
+    input.ledger.managedAttempts += 1;
+    return { ledger: input.ledger, snapshot: result.snapshot };
   });
 }

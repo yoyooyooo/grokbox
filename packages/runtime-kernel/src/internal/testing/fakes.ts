@@ -272,11 +272,13 @@ export function fakeControlResourcesLayer(options: {
 
 export function fakeHostCompactLayer(input: {
   counts: { invocations: number };
+  before?: Effect.Effect<void>;
   handle?: (request: HostCompactRequest) => HostCompactResult;
 }): Layer.Layer<HostCompact> {
   return Layer.succeed(HostCompact, {
-    request: (request) => Effect.sync(() => {
+    request: (request) => Effect.gen(function* () {
       input.counts.invocations += 1;
+      if (input.before) yield* input.before;
       return input.handle?.(request) ?? { kind: "unavailable", reason: "capability_not_ready" };
     }),
   });

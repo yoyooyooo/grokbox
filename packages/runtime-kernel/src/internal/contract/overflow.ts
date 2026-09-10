@@ -29,9 +29,9 @@ export type OverflowEvidence = {
   timeout?: boolean;
   disconnected?: boolean;
   unknown?: boolean;
-  releasedText: number;
-  releasedReasoning: number;
-  releasedTools: number;
+  releasedText?: number;
+  releasedReasoning?: number;
+  releasedTools?: number;
 };
 
 export type RecoveryLedger = {
@@ -80,4 +80,8 @@ export function isConfirmedOverflow(evidence: OverflowEvidence): boolean {
 
 export function emptyRecoveryLedger(tuple: RecoveryTuple, recoveryNonce: string): RecoveryLedger {
   return { tuple, recoveryNonce, compactInvocations: 0, managedAttempts: 1, nonceConsumed: false };
+}
+
+export function isKnownZeroRelease(value: unknown): boolean {
+  return value === 0 && Number.isInteger(value);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { Deferred, Effect, Fiber, Latch } from "effect";
 import {
   CompactFailure,
   contextSnapshotBody,
@@ -70,28 +70,31 @@ describe("overflow recovery ledger", () => {
   });
 
   test("missing HostCompact is capability_not_ready with zero invocations", async () => {
+    const ledger = emptyRecoveryLedger(TUPLE, NONCE);
     const result = await Effect.runPromise(Effect.result(runOverflowRecovery({
-      ledger: emptyRecoveryLedger(TUPLE, NONCE),
-      evidence: evidence(),
-      identity: TUPLE,
-      recoveryNonce: NONCE,
+      ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
     })));
     expect(result._tag).toBe("Failure");
-    expect(result._tag === "Failure" ? result.failure : undefined).toBeInstanceOf(CompactFailure);
     expect(result._tag === "Failure" ? (result.failure as CompactFailure).code : undefined).toBe("capability_not_ready");
+    expect(ledger.nonceConsumed).toBe(false);
+    expect(ledger.compactInvocations).toBe(0);
   });
 
   test("unavailable compact does not resume", async () => {
     const counts = { invocations: 0 };
+    const ledger = emptyRecoveryLedger(TUPLE, NONCE);
     const result = await Effect.runPromise(Effect.result(runOverflowRecovery({
-      ledger: emptyRecoveryLedger(TUPLE, NONCE),
-      evidence: evidence(),
-      identity: TUPLE,
-      recoveryNonce: NONCE,
+      ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
     }).pipe(Effect.provide(fakeHostCompactLayer({ counts })))));
     expect(counts.invocations).toBe(1);
     expect(result._tag).toBe("Failure");
     expect(result._tag === "Failure" ? (result.failure as CompactFailure).code : undefined).toBe("capability_not_ready");
+    expect(ledger.nonceConsumed).toBe(true);
+    expect(ledger.compactInvocations).toBe(1);
+    await Effect.runPromise(Effect.result(runOverflowRecovery({
+      ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
+    }).pipe(Effect.provide(fakeHostCompactLayer({ counts })))));
+    expect(counts.invocations).toBe(1);
   });
 
   test("identity and nonce fences refuse extra dispatch", async () => {
@@ -120,22 +123,83 @@ describe("overflow recovery ledger", () => {
     expect(admitOverflowRecovery({ ...base, evidence: evidence({ unknown: true }) })).toBe("unconfirmed");
     expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedText: 1 }) })).toBe("released");
     expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedTools: 1 }) })).toBe("released");
+    expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedText: undefined }) })).toBe("unconfirmed");
+    expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedText: Number.NaN }) })).toBe("unconfirmed");
+    expect(admitOverflowRecovery({ ...base, evidence: evidence({ releasedTools: -1 }) })).toBe("unconfirmed");
   });
 
   test("cancelled and unknown compact outcomes stop without resume", async () => {
     for (const reason of ["cancelled", "unknown", "blocked"] as const) {
       const counts = { invocations: 0 };
+      const ledger = emptyRecoveryLedger(TUPLE, NONCE);
       const result = await Effect.runPromise(Effect.result(runOverflowRecovery({
-        ledger: emptyRecoveryLedger(TUPLE, NONCE),
-        evidence: evidence(),
-        identity: TUPLE,
-        recoveryNonce: NONCE,
+        ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
       }).pipe(Effect.provide(fakeHostCompactLayer({
         counts,
         handle: () => ({ kind: "unavailable", reason }),
       })))));
       expect(counts.invocations).toBe(1);
       expect(result._tag === "Failure" ? (result.failure as CompactFailure).code : undefined).toBe(reason);
+      expect(ledger.nonceConsumed).toBe(true);
+      await Effect.runPromise(Effect.result(runOverflowRecovery({
+        ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
+      }).pipe(Effect.provide(fakeHostCompactLayer({ counts })))));
+      expect(counts.invocations).toBe(1);
     }
+  });
+
+  test("concurrent duplicates share one reserved compact slot", async () => {
+    const counts = { invocations: 0 };
+    const hold = await Effect.runPromise(Latch.make(false));
+    const seen = await Effect.runPromise(Deferred.make<void>());
+    const ledger = emptyRecoveryLedger(TUPLE, NONCE);
+    const layer = fakeHostCompactLayer({
+      counts,
+      before: Effect.gen(function* () {
+        yield* Deferred.succeed(seen, undefined).pipe(Effect.ignore);
+        yield* hold.await;
+      }),
+      handle: () => ({ kind: "snapshot", snapshot: snapshot("compacted") }),
+    });
+    const run = runOverflowRecovery({
+      ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
+    }).pipe(Effect.provide(layer), Effect.result);
+    const first = Effect.runFork(run);
+    const second = Effect.runFork(run);
+    await Effect.runPromise(Deferred.await(seen));
+    expect(counts.invocations).toBe(1);
+    await Effect.runPromise(hold.open);
+    const [a, b] = [await Effect.runPromise(Fiber.join(first)), await Effect.runPromise(Fiber.join(second))];
+    const tags = [a._tag, b._tag].sort();
+    expect(tags).toEqual(["Failure", "Success"]);
+    expect(counts.invocations).toBe(1);
+    expect(ledger.compactInvocations).toBe(1);
+    expect(ledger.nonceConsumed).toBe(true);
+  });
+
+  test("interruption keeps the reserved slot", async () => {
+    const counts = { invocations: 0 };
+    const hold = await Effect.runPromise(Latch.make(false));
+    const seen = await Effect.runPromise(Deferred.make<void>());
+    const ledger = emptyRecoveryLedger(TUPLE, NONCE);
+    const layer = fakeHostCompactLayer({
+      counts,
+      before: Effect.gen(function* () {
+        yield* Deferred.succeed(seen, undefined);
+        yield* hold.await;
+      }),
+      handle: () => ({ kind: "snapshot", snapshot: snapshot("compacted") }),
+    });
+    const fiber = Effect.runFork(runOverflowRecovery({
+      ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
+    }).pipe(Effect.provide(layer)));
+    await Effect.runPromise(Deferred.await(seen));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    expect(ledger.nonceConsumed).toBe(true);
+    expect(ledger.compactInvocations).toBe(1);
+    await Effect.runPromise(Effect.result(runOverflowRecovery({
+      ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
+    }).pipe(Effect.provide(fakeHostCompactLayer({ counts })))));
+    expect(counts.invocations).toBe(1);
   });
 });

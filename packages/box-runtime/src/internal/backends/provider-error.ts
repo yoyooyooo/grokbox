@@ -30,9 +30,9 @@ export function overflowEvidenceFromProvider(input: {
     timeout: input.timeout === true,
     disconnected: input.disconnected === true,
     unknown: input.unknown === true,
-    releasedText: input.releasedText ?? 0,
-    releasedReasoning: input.releasedReasoning ?? 0,
-    releasedTools: input.releasedTools ?? 0,
+    ...(typeof input.releasedText === "number" ? { releasedText: input.releasedText } : {}),
+    ...(typeof input.releasedReasoning === "number" ? { releasedReasoning: input.releasedReasoning } : {}),
+    ...(typeof input.releasedTools === "number" ? { releasedTools: input.releasedTools } : {}),
   };
 }
 
