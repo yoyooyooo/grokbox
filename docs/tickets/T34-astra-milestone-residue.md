@@ -229,3 +229,26 @@ Five residual changed files match the target Git blobs; workspace imports resolv
 The **T25 → T26 → T28 offline review/relook/residue cycle is recorded**, not converted into blanket implementation acceptance: T25 retains native-cleanup P1-02 (Node20 SIGABRT); T26 retains root/profile-provenance P1-02 and alias/removal P2-01; T28 retains only the items above. Earlier sections and their evidence limits remain unchanged. **L1 live-not-proven is separate and still applies**; this append neither authorizes live adopt nor starts T29/WebUI.
 
 Seven residual changed files and all 374 tracked archive files match `pre-publication-revision`; first-party imports resolve inside the frozen snapshot. Frozen Bun 1.3.14 / 90s gates passed control 37/258, layout 20/20 and typecheck; independent `/usr/bin/node v20.19.2` probes exercised the barriers, file faults and controls above. An initial stock-worker test failure was a review wrapper build-dispatch error, corrected without source/test changes; initial logs and `gate-harness-note.json` are retained. Stock tests terminate only their own lease-worker child handles; independent probes finish normally. Guard records show no blocked egress or direct process.kill attempts, not an OS-level census or proof of finalization of SIGTERM-killed workers. No controller OS signal/spawn/guardian action, live/provider spend, production fix, full product build/package qualification or earlier-milestone re-audit. Evidence directory: `PRIVATE_EVIDENCE`.
+
+## Continuity / E08 — pre-publication-revision — 2026-09-10
+
+- Reviewed SHA: `pre-publication-revision` on `feat/context-continuity-verify`.
+- First review: `PRIVATE_EVIDENCE` (P1 N1–N3).
+- Absorb: `pre-publication-revision` then `pre-publication-revision` (receipts `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`).
+- Relooks: `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`.
+- Disposition under one-pass closure: **E08 accepted as partial/shippable offline slice**. Prior R-N2/R-N3 closed on tip. Relook2 leftover **N4** is residue only — **no further grok↔Astra absorb on this tip**. Owner end-of-rebuild triage; no main-chain pause for this item alone. B remains open (E07/E09–E11, packed/native/live, production W still out).
+
+### Closed at this tip
+
+- E08-N1 real size gates / encoded 8MiB backend path.
+- E08 R-N2 full over-envelope checkpoint/reopen (and over-snapshot/cancel paths).
+- E08 R-N3 consumer error propagation + held-late tool ID (stream-exception false-greens red).
+
+### Items
+
+- **E08-N4 — abort finish counted as live delivery (test fixture consumer).** `packages/box-runtime/test/context-continuity-fixture.ts` treats any `finish` part as delivery-qualified; real session `abort()` emits `finish("abort")` with zero model/tool output, yet consumer still records live delivery (pre-admit abort HTTP=0 and post-admit abort HTTP=1). Late E08 callback can false-green after main abort. Minimal fix (when owner picks it up): require successful completion reason before delivery; keep observed tools; add pre/post/tool-after abort controls. Not a production Host delivery claim; do not reopen the E08 milestone loop.
+  - Evidence: `PRIVATE_EVIDENCE` §N4; tip tests still green under frozen Bun 1.3.14.
+
+### Evidence ceiling
+
+Offline contract-e2e only; no packed preload, native Host, live adopt, or production `contextWindowTokens`. One-pass closure applied after second relook; sibling tip to be FF'd into integration `feat/box-runtime-v2` without a third absorb.
