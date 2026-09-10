@@ -44,6 +44,9 @@ const CASES = {
   "raw-output": [
     ["bun", "test", "packages/box-runtime/test/controller-io.test.ts", "-t", "raw output"],
   ],
+  compact: [
+    ["bun", "test", "packages/runtime-kernel/test/overflow-recovery.test.ts", "packages/box-runtime/test/overflow-bridge.test.ts", "packages/box-runtime/test/modeld-wire.test.ts"],
+  ],
 };
 
 const mapped = CASES[kase];

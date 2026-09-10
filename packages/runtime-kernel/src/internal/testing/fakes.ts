@@ -7,7 +7,8 @@ import {
   type InferenceEvent,
 } from "../contract/events.ts";
 import { sha256Text } from "../../hash.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationPrefix, type OperationRecord, type PreparedCall } from "../../ports.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, HostCompact, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationPrefix, type OperationRecord, type PreparedCall } from "../../ports.ts";
+import type { HostCompactRequest, HostCompactResult } from "../contract/overflow.ts";
 import type { ModelsFile, DesiredFile } from "../../selection.ts";
 
 const prepared = new WeakMap<PreparedCall, { snapshot: unknown }>();
@@ -265,6 +266,18 @@ export function fakeControlResourcesLayer(options: {
     commit: (_input: FrozenControllerCommand) => Effect.sync(() => {
       bump("commit");
       return { committed: true };
+    }),
+  });
+}
+
+export function fakeHostCompactLayer(input: {
+  counts: { invocations: number };
+  handle?: (request: HostCompactRequest) => HostCompactResult;
+}): Layer.Layer<HostCompact> {
+  return Layer.succeed(HostCompact, {
+    request: (request) => Effect.sync(() => {
+      input.counts.invocations += 1;
+      return input.handle?.(request) ?? { kind: "unavailable", reason: "capability_not_ready" };
     }),
   });
 }

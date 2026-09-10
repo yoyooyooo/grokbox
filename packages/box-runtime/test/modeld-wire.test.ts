@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { WireError } from "@grokbox/runtime-kernel/contract";
-import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV3Request } from "../src/internal/wire/modeld-wire.ts";
+import { WireError, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
+import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
+import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV3Request, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
 
 describe("modeld v3 wire", () => {
   test("round-trips health and rejects v2, extra keys, malformed utf-8", () => {
@@ -49,5 +50,44 @@ describe("modeld v3 wire", () => {
   test("client response SM rejects version-2 garbage terminal", () => {
     const session = clientSessionFor({ version: 3, method: "health" });
     expect(() => acceptModeldFrame(session, { kind: "terminal", outcome: "ok", version: 2, garbage: true })).toThrow(WireError);
+  });
+
+  test("v4 control frames parse offline; production v3 still rejects version 4", () => {
+    expect(() => parseV3Request({ version: 4, method: "compact-request" })).toThrow(WireError);
+    const compact = parseV4ControlFrame({
+      version: 4,
+      method: "compact-request",
+      agentId: "a",
+      turnId: "t",
+      stepId: "s1",
+      bindingId: "b",
+      selectionRevision: "r",
+      recoveryNonce: "n",
+      deadlineMs: 5_000,
+    });
+    expect(compact).toMatchObject({ method: "compact-request", recoveryNonce: "n", deadlineMs: 5_000 });
+    const body = contextSnapshotBody({
+      version: 1,
+      profileId: "p",
+      abiIdentity: "abi",
+      systemMessages: [{ role: "system", content: "r" }],
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+      options: {},
+    });
+    const snapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
+    const resume = parseV4ControlFrame({
+      version: 4,
+      method: "resume-step",
+      agentId: "a",
+      turnId: "t",
+      stepId: "s1",
+      bindingId: "b",
+      selectionRevision: "r",
+      recoveryNonce: "n",
+      snapshot,
+    });
+    expect(resume.method).toBe("resume-step");
+    expect(() => parseV4ControlFrame({ version: 4, method: "run-step" })).toThrow(WireError);
   });
 });

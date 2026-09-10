@@ -3,6 +3,7 @@ import type { Scope } from "effect/Scope";
 import type { ModelsFile, DesiredFile } from "./selection.ts";
 import type { StatusEvidence } from "./internal/contract/status.ts";
 import type { InferenceEvent } from "./internal/contract/events.ts";
+import type { HostCompactRequest, HostCompactResult } from "./internal/contract/overflow.ts";
 
 /** Process-local opaque handle. Not a contract DTO; never stringify, log, or put on the wire. */
 export type PreparedCall = { readonly _PreparedCall: unique symbol };
@@ -115,5 +116,5 @@ export class ObservationRead extends Context.Service<ObservationRead, {
 }>()("grokbox/ObservationRead") {}
 
 export class HostCompact extends Context.Service<HostCompact, {
-  readonly request: (input: unknown) => Effect.Effect<unknown, unknown>;
+  readonly request: (input: HostCompactRequest) => Effect.Effect<HostCompactResult>;
 }>()("grokbox/HostCompact") {}

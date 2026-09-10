@@ -5,6 +5,7 @@ export {
   fakeConfigurationReadLayer,
   fakeModelBackendLayer,
   fakeControlResourcesLayer,
+  fakeHostCompactLayer,
   emptyFakeControlCounts,
   peekFakeSecret,
   unsealFakeAuth,

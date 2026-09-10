@@ -199,3 +199,47 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
   }
   throw new WireError("malformed_frame");
 }
+
+export type ParsedV4Control =
+  | { method: "compact-request"; agentId: string; turnId: string; stepId: string; bindingId: string; selectionRevision: string; recoveryNonce: string; deadlineMs: number }
+  | { method: "resume-step"; agentId: string; turnId: string; stepId: string; bindingId: string; selectionRevision: string; recoveryNonce: string; snapshot: ReturnType<typeof parseContextSnapshot> };
+
+/** Fake/offline v4 control frames. Production parseV3Request still rejects version 4. */
+export function parseV4ControlFrame(value: unknown): ParsedV4Control {
+  const version = parseWireVersion(value);
+  if (version !== 4) throw new WireError("unsupported_version");
+  if (!isRecord(value) || typeof value.method !== "string") throw new WireError("malformed_frame");
+  if (value.method === "compact-request") {
+    if (!exactKeys(value, ["version", "method", "agentId", "turnId", "stepId", "bindingId", "selectionRevision", "recoveryNonce", "deadlineMs"])) {
+      throw new WireError("extra_keys");
+    }
+    const compactIds = [value.agentId, value.turnId, value.stepId, value.bindingId, value.selectionRevision, value.recoveryNonce];
+    if (compactIds.some((item) => typeof item !== "string")) throw new WireError("malformed_frame");
+    const [agentId, turnId, stepId, bindingId, selectionRevision, recoveryNonce] = compactIds as string[];
+    if (typeof value.deadlineMs !== "number" || !Number.isSafeInteger(value.deadlineMs) || value.deadlineMs <= 0) {
+      throw new WireError("malformed_frame");
+    }
+    return {
+      method: "compact-request",
+      agentId, turnId, stepId, bindingId, selectionRevision, recoveryNonce,
+      deadlineMs: value.deadlineMs,
+    };
+  }
+  if (value.method === "resume-step") {
+    if (!exactKeys(value, ["version", "method", "agentId", "turnId", "stepId", "bindingId", "selectionRevision", "recoveryNonce", "snapshot"])) {
+      throw new WireError("extra_keys");
+    }
+    const resumeIds = [value.agentId, value.turnId, value.stepId, value.bindingId, value.selectionRevision, value.recoveryNonce];
+    if (resumeIds.some((item) => typeof item !== "string")) throw new WireError("malformed_frame");
+    const [agentId, turnId, stepId, bindingId, selectionRevision, recoveryNonce] = resumeIds as string[];
+    let snapshot;
+    try { snapshot = parseContextSnapshot(value.snapshot); }
+    catch { throw new WireError("malformed_frame"); }
+    return {
+      method: "resume-step",
+      agentId, turnId, stepId, bindingId, selectionRevision, recoveryNonce,
+      snapshot,
+    };
+  }
+  throw new WireError("unknown_method");
+}
