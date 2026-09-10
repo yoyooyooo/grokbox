@@ -9,6 +9,7 @@ export function computeSelectionRevision(input: {
     agentId: input.agentId,
     apiKeyRef: input.model.apiKeyRef,
     capabilities: input.model.capabilities,
+    ...(typeof input.model.contextWindowTokens === "number" ? { contextWindowTokens: input.model.contextWindowTokens } : {}),
     dataTypes: input.model.dataTypes,
     endpoint: input.model.endpoint,
     model: input.model.model,

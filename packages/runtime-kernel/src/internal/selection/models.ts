@@ -18,6 +18,8 @@ export type ModelRecord = {
   apiKeyRef: string;
   capabilities: ModelCapabilities;
   dataTypes: string[];
+  /** Qualified context window for this model/endpoint. Not generation maxTokens. */
+  contextWindowTokens?: number;
 };
 
 export const STUB_ECHO_MODEL: ModelRecord = {
@@ -84,6 +86,23 @@ function looksLikeNetworkEndpoint(endpoint: string): boolean {
   return /^(https?|wss?):/i.test(endpoint);
 }
 
+function parseContextWindowTokens(value: unknown, id: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new BoxRuntimeError("invalid_usage", `Model '${id}' contextWindowTokens must be a positive safe integer.`);
+  }
+  return value;
+}
+
+/** Trusted adapter window if positive safe int; else canonical record. Never guess from name. */
+export function qualifiedContextWindowTokens(record: ModelRecord, adapterWindow?: unknown): number | undefined {
+  if (typeof adapterWindow === "number" && Number.isSafeInteger(adapterWindow) && adapterWindow > 0) return adapterWindow;
+  if (typeof record.contextWindowTokens === "number" && Number.isSafeInteger(record.contextWindowTokens) && record.contextWindowTokens > 0) {
+    return record.contextWindowTokens;
+  }
+  return undefined;
+}
+
 function parseModel(id: string, value: unknown): ModelRecord {
   if (!isRecord(value)) throw new BoxRuntimeError("invalid_usage", `Model '${id}' is invalid.`);
   if (id === STUB_ECHO_MODEL_ID) {
@@ -93,7 +112,8 @@ function parseModel(id: string, value: unknown): ModelRecord {
     if (typeof value.endpoint === "string" && looksLikeNetworkEndpoint(value.endpoint)) {
       throw new BoxRuntimeError("invalid_usage", "stub/echo forbids network endpoints.");
     }
-    return STUB_ECHO_MODEL;
+    const stubWindow = parseContextWindowTokens(value.contextWindowTokens, id);
+    return stubWindow !== undefined ? { ...STUB_ECHO_MODEL, contextWindowTokens: stubWindow } : STUB_ECHO_MODEL;
   }
   const provider = value.provider;
   const model = value.model;
@@ -125,7 +145,11 @@ function parseModel(id: string, value: unknown): ModelRecord {
         ...(capabilities.tools ? ["tools"] : []),
         ...(capabilities.vision || capabilities.images ? ["images"] : []),
       ];
-  return { id, provider, model, endpoint, apiKeyRef, capabilities, dataTypes };
+  const contextWindowTokens = parseContextWindowTokens(value.contextWindowTokens, id);
+  return {
+    id, provider, model, endpoint, apiKeyRef, capabilities, dataTypes,
+    ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
+  };
 }
 
 export function parseModelsFile(value: unknown): ModelsFile {

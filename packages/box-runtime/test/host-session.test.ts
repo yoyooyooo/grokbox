@@ -160,4 +160,28 @@ describe("host session ABI", () => {
     expect(vector.toolExecutionCount).toBe(0);
     await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_stream" });
   });
+
+  test("qualified context window is projected as extendedUsage.maxTokens; unknown stays unqualified", async () => {
+    const produce = async function* () {
+      yield { type: "text-delta" as const, textDelta: "hi" };
+      yield {
+        type: "finish" as const, reason: "stop" as const,
+        usage: { promptTokens: 179999, completionTokens: 20, totalTokens: 180019, cacheReadTokens: 12, cacheWriteTokens: 3 },
+      };
+    };
+    const qualified = asHostPromptSession(createStreamingPromptSession({
+      modelId: "openai/gpt", vision: false, parallel: "allow", produce,
+    }), "openai/gpt", undefined, { contextWindowTokens: 200000 });
+    const known = await qualified.getExecutor([{ role: "user", content: "hi" }]).stream({}, "step-w").extendedUsage;
+    expect(known).toEqual({
+      inputTokens: 179999, outputTokens: 20, cacheReadTokens: 12, cacheWriteTokens: 3, maxTokens: 200000,
+    });
+    expect(known.maxTokens).not.toBe(20);
+    const unknown = asHostPromptSession(createStreamingPromptSession({
+      modelId: "openai/gpt", vision: false, parallel: "allow", produce,
+    }), "openai/gpt");
+    const missing = await unknown.getExecutor([{ role: "user", content: "hi" }]).stream({}, "step-unknown").extendedUsage;
+    expect(missing.maxTokens).toBe(0);
+    expect(missing.inputTokens).toBe(179999);
+  });
 });

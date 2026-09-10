@@ -177,6 +177,8 @@ export function bindHostSessionHook(input: {
         });
       },
     });
-    return asHostPromptSession(wrapStream(session), modelId, onRequestId, { requireStepId: true, reject });
+    return asHostPromptSession(wrapStream(session), modelId, onRequestId, {
+      requireStepId: true, reject, contextWindowTokens: record?.contextWindowTokens,
+    });
   };
 }

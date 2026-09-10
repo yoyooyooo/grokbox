@@ -14,6 +14,7 @@ export {
   parseDesiredFile,
   parseModelId,
   parseModelsFile,
+  qualifiedContextWindowTokens,
   requireModel,
   resolveAssignment,
   resolveRouteSessionModel,

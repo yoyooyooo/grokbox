@@ -23,7 +23,10 @@ export type SessionMessage = {
   /** Internal compatibility only; Host projection uses tool-call content blocks. */
   toolCalls?: Array<{ id: string; name: string; args: unknown }>;
 };
-export type HostUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
+export type HostUsage = {
+  promptTokens: number; completionTokens: number; totalTokens: number;
+  cacheReadTokens?: number; cacheWriteTokens?: number;
+};
 export type VisibleFailureStage = "admit" | "provider" | "normalize";
 export type VisibleFailure = {
   userVisible: true;
@@ -80,11 +83,32 @@ function abortSignalFrom(ctx: unknown, options: unknown): ReturnType<typeof comb
   return combineAbortSignals(signals);
 }
 function numberOrZero(value: unknown): number { const n = Number(value); return Number.isFinite(n) && n >= 0 ? n : 0; }
+function optionalCacheTokens(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+  return value;
+}
 export function normalizeHostUsage(usage: unknown): HostUsage {
   const u = usage !== null && typeof usage === "object" ? usage as Record<string, unknown> : {};
   const promptTokens = numberOrZero(u.promptTokens ?? u.prompt_tokens ?? u.inputTokens ?? u.input_tokens);
   const completionTokens = numberOrZero(u.completionTokens ?? u.completion_tokens ?? u.outputTokens ?? u.output_tokens);
-  return { promptTokens, completionTokens, totalTokens: numberOrZero(u.totalTokens ?? u.total_tokens) || promptTokens + completionTokens };
+  const cacheReadTokens = optionalCacheTokens(u.cacheReadTokens ?? u.cache_read_tokens ?? u.cachedInputTokens);
+  const cacheWriteTokens = optionalCacheTokens(u.cacheWriteTokens ?? u.cache_write_tokens);
+  return {
+    promptTokens, completionTokens, totalTokens: numberOrZero(u.totalTokens ?? u.total_tokens) || promptTokens + completionTokens,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
+  };
+}
+export function projectExtendedUsage(usage: HostUsage, contextWindowTokens?: number): ExtendedUsage {
+  const maxTokens = typeof contextWindowTokens === "number" && Number.isSafeInteger(contextWindowTokens) && contextWindowTokens > 0
+    ? contextWindowTokens : 0;
+  return {
+    inputTokens: usage.promptTokens,
+    outputTokens: usage.completionTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? 0,
+    cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+    maxTokens,
+  };
 }
 export function normalizeHostResponse(value: unknown): HostResponse {
   const record = value !== null && typeof value === "object" ? value as HostResponse : { modelId: "", messages: [] };
@@ -125,10 +149,10 @@ function settleRejected(thrown: Error): { response: Promise<HostResponse>; usage
   return { response, usage };
 }
 
-export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown): HostStreamResult {
+export function toHostStreamResult(handle: StreamHandle, invocationId?: unknown, capacity?: { contextWindowTokens?: number }): HostStreamResult {
   const usage = handle.usage.then(normalizeHostUsage);
   const response = handle.response.then(normalizeHostResponse);
-  const extendedUsage = usage.then((u) => ({ inputTokens: u.promptTokens, outputTokens: u.completionTokens, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 0 }));
+  const extendedUsage = usage.then((u) => projectExtendedUsage(u, capacity?.contextWindowTokens));
   void usage.catch(() => undefined);
   void response.catch(() => undefined);
   void extendedUsage.catch(() => undefined);
@@ -167,7 +191,7 @@ export type HostStreamRejectDetail = {
   stage?: "stream-id" | "admit" | "normalize";
 };
 export function asHostPromptSession(session: PromptSession, modelId: string, onRequestId?: (id: string) => void,
-  input: { invocationId?: string; requireStepId?: boolean; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
+  input: { invocationId?: string; requireStepId?: boolean; contextWindowTokens?: number; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
   const notified = new Set<string>();
   const createExecutor = (state?: unknown): HostPromptExecutor => {
     let messages: ReturnType<typeof cloneHostExecutorWindow> = [];
@@ -216,7 +240,7 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
             notified.add(requestId);
             try { onRequestId?.(requestId); } catch { /* Host notification is not a model effect. */ }
           }
-          return toHostStreamResult(handle, requestId);
+          return toHostStreamResult(handle, requestId, { contextWindowTokens: input.contextWindowTokens });
         } catch (error) {
           cancellation?.dispose();
           const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
@@ -229,6 +253,7 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
               stage,
             }) ?? visibleFailureHandle(modelId, code),
             requestId,
+            { contextWindowTokens: input.contextWindowTokens },
           );
         }
       },

@@ -29,7 +29,13 @@ function readUsage(raw: unknown): InferenceUsage | undefined {
   if (typeof prompt !== "number" || typeof completion !== "number" || !Number.isFinite(prompt) || !Number.isFinite(completion)) {
     return undefined;
   }
-  return { promptTokens: prompt, completionTokens: completion };
+  const cacheRead = rec.cacheReadTokens ?? rec.cache_read_tokens ?? rec.cachedInputTokens;
+  const cacheWrite = rec.cacheWriteTokens ?? rec.cache_write_tokens;
+  return {
+    promptTokens: prompt, completionTokens: completion,
+    ...(typeof cacheRead === "number" && Number.isFinite(cacheRead) && cacheRead >= 0 ? { cacheReadTokens: cacheRead } : {}),
+    ...(typeof cacheWrite === "number" && Number.isFinite(cacheWrite) && cacheWrite >= 0 ? { cacheWriteTokens: cacheWrite } : {}),
+  };
 }
 
 function finishReasonOf(value: unknown): "stop" | "error" | "abort" | null {

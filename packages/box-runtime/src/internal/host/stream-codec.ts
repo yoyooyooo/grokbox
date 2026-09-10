@@ -54,7 +54,13 @@ export function usageFromTerminal(value: unknown): HostUsage | undefined {
   const prompt = Number(usage.promptTokens ?? usage.prompt_tokens);
   const completion = Number(usage.completionTokens ?? usage.completion_tokens);
   if (!Number.isFinite(prompt) || !Number.isFinite(completion) || prompt < 0 || completion < 0) return undefined;
-  return { promptTokens: prompt, completionTokens: completion, totalTokens: prompt + completion };
+  const cacheRead = Number(usage.cacheReadTokens ?? usage.cache_read_tokens);
+  const cacheWrite = Number(usage.cacheWriteTokens ?? usage.cache_write_tokens);
+  return {
+    promptTokens: prompt, completionTokens: completion, totalTokens: prompt + completion,
+    ...(Number.isFinite(cacheRead) && cacheRead >= 0 ? { cacheReadTokens: cacheRead } : {}),
+    ...(Number.isFinite(cacheWrite) && cacheWrite >= 0 ? { cacheWriteTokens: cacheWrite } : {}),
+  };
 }
 
 export function finishFromTerminal(value: unknown): { reason: FinishReason; usage?: HostUsage } | undefined {

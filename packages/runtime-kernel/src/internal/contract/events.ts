@@ -11,6 +11,8 @@ export type InferenceEventName =
 export type InferenceUsage = {
   promptTokens: number;
   completionTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 };
 
 export type InferenceEvent =

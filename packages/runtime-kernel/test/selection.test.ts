@@ -9,6 +9,7 @@ import {
   parseApiKeyRef,
   parseModelId,
   parseModelsFile,
+  qualifiedContextWindowTokens,
   routeModelAdmitted,
 } from "@grokbox/runtime-kernel/selection";
 
@@ -85,5 +86,64 @@ describe("kernel selection", () => {
     if (first.kind === "managed" && afterEndpoint.kind === "managed") {
       expect(afterEndpoint.selectionRevision).not.toBe(first.selectionRevision);
     }
+  });
+
+  test("contextWindowTokens is retained, fenced in selectionRevision, and never guessed", () => {
+    const openai = {
+      provider: "openai",
+      model: "gpt",
+      endpoint: "https://api.example.test/v1",
+      apiKeyRef: "env:KEY",
+      capabilities: { vision: false, tools: true, images: false },
+      dataTypes: ["text", "tools"],
+    };
+    const withWindow = parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindowTokens: 200000 } },
+      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+    });
+    expect(withWindow.models["openai/gpt"]?.contextWindowTokens).toBe(200000);
+    expect(qualifiedContextWindowTokens(withWindow.models["openai/gpt"]!)).toBe(200000);
+    expect(qualifiedContextWindowTokens(withWindow.models["openai/gpt"]!, 128000)).toBe(128000);
+    const without = parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": openai },
+      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+    });
+    expect(without.models["openai/gpt"]?.contextWindowTokens).toBeUndefined();
+    expect(qualifiedContextWindowTokens(without.models["openai/gpt"]!)).toBeUndefined();
+    const first = captureManagedSelection(withWindow, "agent-a");
+    const same = captureManagedSelection(withWindow, "agent-a");
+    const smaller = captureManagedSelection(parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindowTokens: 32000 } },
+      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+    }), "agent-a");
+    expect(first).toEqual(same);
+    expect(first.kind).toBe("managed");
+    expect(smaller.kind).toBe("managed");
+    if (first.kind === "managed" && smaller.kind === "managed") {
+      expect(smaller.selectionRevision).not.toBe(first.selectionRevision);
+    }
+    const noWindowRev = captureManagedSelection(without, "agent-a");
+    if (first.kind === "managed" && noWindowRev.kind === "managed") {
+      expect(noWindowRev.selectionRevision).not.toBe(first.selectionRevision);
+    }
+    expect(() => parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindowTokens: 0 } },
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
+    expect(() => parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindowTokens: -1 } },
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
+    expect(() => parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindowTokens: 1.5 } },
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
+    expect(qualifiedContextWindowTokens(without.models["openai/gpt"]!, "gpt-4")).toBeUndefined();
   });
 });
