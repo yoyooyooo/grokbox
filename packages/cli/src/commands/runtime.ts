@@ -27,6 +27,10 @@ import {
   applyRetentionPlan,
   readRetentionPlanFile,
   watchHostSeamOnce,
+  replayHostSeam,
+  assertReplayCoverage,
+  writeReplayReport,
+  projectHostSeamStatus,
   type DesiredMode,
 } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
@@ -286,6 +290,51 @@ export async function runRuntimeProfilePrune(
       signaled: false,
       adopted: false,
       ...result,
+    });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfileReplay(
+  deps: CliDeps,
+  sha: string | undefined,
+  all: boolean | undefined,
+): Promise<void> {
+  try {
+    if (Boolean(sha) === Boolean(all)) {
+      throw new CliError("invalid_usage", "runtime profile replay requires exactly one of --sha <sha> or --all.");
+    }
+    const runtime = store(deps);
+    const report = await replayHostSeam({
+      root: runtime.root,
+      ...(sha ? { sha } : { all: true }),
+    });
+    assertReplayCoverage(report);
+    await writeReplayReport(runtime.root, report);
+    writeSuccess(deps.stdout, {
+      process: "profile-replay",
+      signaled: false,
+      adopted: false,
+      ...report,
+    });
+    if (!report.supportGatePassed || report.codes.includes("corpus_corrupt") || report.codes.includes("missing_profile") || report.corpus === "missing") {
+      throw new CliError("runtime_unsupported", "Host seam replay support gate failed.");
+    }
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfileStatus(deps: CliDeps, sha: string | undefined): Promise<void> {
+  try {
+    const runtime = store(deps);
+    const facets = await projectHostSeamStatus({ root: runtime.root, ...(sha ? { sha } : {}) });
+    writeSuccess(deps.stdout, {
+      process: "profile-status",
+      signaled: false,
+      adopted: false,
+      ...facets,
     });
   } catch (error) {
     rethrow(error);

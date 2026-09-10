@@ -202,6 +202,10 @@ export async function readHostBundleMeta(root: string, sha: string): Promise<Hos
   }
 }
 
+export async function readHostBundleSource(root: string, sha: string): Promise<string | null> {
+  return await readStoredSource(root, sha);
+}
+
 async function readStoredSource(root: string, sha: string): Promise<string | null> {
   if (!SHA.test(sha)) return null;
   try {
