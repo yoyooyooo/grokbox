@@ -316,4 +316,89 @@ describe("runStep overflow recovery is default-off without HostCompact", () => {
     expect(counts.network).toBe(2);
     expect([...events].some((event) => event.type === "text_delta")).toBe(true);
   });
+
+  test("auth+overflow structured conflict does not compact under HostCompact", async () => {
+    const counts = createCountedSeams();
+    const compactCounts = { invocations: 0 };
+    const conflict = new BackendFailure("overflow_candidate", {
+      overflowCandidate: true,
+      overflowEvidence: { providerCode: "context_length_exceeded", httpStatus: 400, auth: true },
+    });
+    const layer = fakeBackendAuthLayer("secret", counts).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: conflict })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer()),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1" })),
+      Layer.merge(fakeHostCompactLayer({
+        counts: compactCounts,
+        handle: () => ({ kind: "snapshot", snapshot: snapshot("compacted") }),
+      })),
+    );
+    const result = await Effect.runPromise(Effect.gen(function* () {
+      const admitted = yield* runStep(req());
+      if (!("stream" in admitted)) return yield* Effect.fail(new Error("expected live"));
+      return yield* Effect.result(Stream.runCollect(admitted.stream));
+    }).pipe(Effect.provide(layer), Effect.scoped));
+    expect(result._tag).toBe("Failure");
+    expect(compactCounts.invocations).toBe(0);
+    expect(counts.network).toBe(1);
+    expect(counts.prepare).toBe(1);
+  });
+
+  test("post-compact authority revoke does not start a second infer", async () => {
+    const counts = createCountedSeams();
+    const compactCounts = { invocations: 0 };
+    let admittedAuth = true;
+    const layer = fakeBackendAuthLayer("secret", counts).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer(() => ({ admitted: admittedAuth }), counts)),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1" })),
+      Layer.merge(fakeHostCompactLayer({
+        counts: compactCounts,
+        handle: () => {
+          admittedAuth = false;
+          return { kind: "snapshot", snapshot: snapshot("compacted") };
+        },
+      })),
+    );
+    const result = await Effect.runPromise(Effect.gen(function* () {
+      const admitted = yield* runStep(req());
+      if (!("stream" in admitted)) return yield* Effect.fail(new Error("expected live"));
+      return yield* Effect.result(Stream.runCollect(admitted.stream));
+    }).pipe(Effect.provide(layer), Effect.scoped));
+    expect(result._tag).toBe("Failure");
+    expect(compactCounts.invocations).toBe(1);
+    expect(counts.network).toBe(1);
+    expect(counts.prepare).toBe(1);
+  });
+
+  test("post-compact auth verify failure does not start a second infer", async () => {
+    const counts = createCountedSeams();
+    const compactCounts = { invocations: 0 };
+    let verifyOk = true;
+    const layer = fakeBackendAuthLayer("secret", counts, { verifyOk: () => verifyOk }).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer()),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1" })),
+      Layer.merge(fakeHostCompactLayer({
+        counts: compactCounts,
+        handle: () => {
+          verifyOk = false;
+          return { kind: "snapshot", snapshot: snapshot("compacted") };
+        },
+      })),
+    );
+    const result = await Effect.runPromise(Effect.gen(function* () {
+      const admitted = yield* runStep(req());
+      if (!("stream" in admitted)) return yield* Effect.fail(new Error("expected live"));
+      return yield* Effect.result(Stream.runCollect(admitted.stream));
+    }).pipe(Effect.provide(layer), Effect.scoped));
+    expect(result._tag).toBe("Failure");
+    expect(compactCounts.invocations).toBe(1);
+    expect(counts.network).toBe(1);
+    expect(counts.prepare).toBe(1);
+    expect(counts.verify).toBeGreaterThan(1);
+  });
 });

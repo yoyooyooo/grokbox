@@ -50,6 +50,42 @@ describe("confirmed overflow classifier", () => {
     expect(isProviderConfirmedOverflow({ httpStatus: 400, providerCode: "context_window_exceeded" })).toBe(false);
   });
 
+  test("structured auth/status conflicts veto overflow confirmation", () => {
+    expect(isProviderConfirmedOverflow({
+      statusCode: 400,
+      data: { error: { type: "authentication_error", code: "context_length_exceeded" } },
+    })).toBe(false);
+    expect(overflowEvidenceFromProvider({
+      statusCode: 400,
+      data: { error: { type: "authentication_error", code: "context_length_exceeded" } },
+    }).auth).toBe(true);
+    expect(isProviderConfirmedOverflow({
+      code: "invalid_api_key",
+      data: { error: { code: "context_length_exceeded" } },
+      statusCode: 400,
+    })).toBe(false);
+    expect(overflowEvidenceFromProvider({
+      statusCode: 400,
+      status: 429,
+      data: { error: { code: "context_length_exceeded" } },
+    }).unknown).toBe(true);
+    expect(isProviderConfirmedOverflow({
+      statusCode: 400,
+      status: 429,
+      data: { error: { code: "context_length_exceeded" } },
+    })).toBe(false);
+    expect(isProviderConfirmedOverflow({
+      type: "response.failed",
+      statusCode: "401",
+      response: { error: { code: "context_length_exceeded" } },
+    })).toBe(false);
+    expect(overflowEvidenceFromProvider({
+      type: "response.failed",
+      statusCode: "401",
+      response: { error: { code: "context_length_exceeded" } },
+    }).unknown).toBe(true);
+  });
+
   test("message-only overflow is not confirmation", () => {
     expect(isProviderConfirmedOverflow({
       httpStatus: 400,

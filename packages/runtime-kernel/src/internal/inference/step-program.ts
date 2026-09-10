@@ -122,6 +122,8 @@ function recoverOverflowStream(
       recoveryNonce: request.stepId,
     }));
     if (recovered._tag === "Failure") return Stream.fail(error);
+    const fenced = yield* Effect.result(dispatchFence(request, lease));
+    if (fenced._tag === "Failure") return Stream.fail(fenced.failure);
     const backend = yield* ModelBackend;
     const prepared = yield* backend.prepare(binding.model, recovered.success.snapshot).pipe(Effect.mapError(asBindingOrBackend));
     return fenceStream(backend.infer({}, prepared, lease), cancelled);
