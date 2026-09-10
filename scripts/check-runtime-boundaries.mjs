@@ -137,6 +137,7 @@ function layerOf(path) {
   if (p.includes("/internal/wire/")) return "wire";
   if (p.includes("/internal/backends/")) return "backends";
   if (p.includes("/internal/modeld/")) return "modeld";
+  if (p.includes("/internal/ops/")) return "ops";
   if (p === "packages/box-runtime/src/runtime.ts") return "runtime";
   if (p.startsWith("packages/cli/")) return "cli";
   if (p.startsWith("packages/box-runtime/src/")) return "box";
@@ -238,8 +239,12 @@ for (const dir of productionDirs) {
       if (resolved.kind !== "file") continue;
       const to = resolved.path.split(sep).join("/");
       const toLayer = layerOf(to);
-      if (fromLayer === "host" && (toLayer === "io" || toLayer === "process" || toLayer === "roots" || toLayer === "runtime")) {
+      if (fromLayer === "host" && (toLayer === "io" || toLayer === "process" || toLayer === "roots" || toLayer === "runtime" || toLayer === "ops")) {
         fail("forbidden Host import edge", { path, spec, to });
+      }
+      if (fromLayer === "modeld" && toLayer === "ops") fail("forbidden modeld import of ops", { path, spec, to });
+      if (fromLayer === "ops" && (toLayer === "modeld" || toLayer === "roots" || toLayer === "runtime")) {
+        fail("forbidden ops import edge", { path, spec, to });
       }
       if (fromLayer === "host" && to === "packages/runtime-kernel/src/ports.ts") {
         fail("Host leaf imports kernel Effect ports", { path, spec });
