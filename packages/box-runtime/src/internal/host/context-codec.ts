@@ -74,8 +74,8 @@ const HOST_PART_KEYS: Record<string, Set<string>> = {
   text: new Set(["type", "text", "providerOptions"]),
   reasoning: new Set(["type", "text", "providerOptions"]),
   image: new Set(["type", "url", "image", "data", "mimeType", "providerOptions"]),
-  "tool-call": new Set(["type", "toolCallId", "toolName", "args"]),
-  "tool-result": new Set(["type", "toolCallId", "toolName", "result", "isError"]),
+  "tool-call": new Set(["type", "toolCallId", "toolName", "args", "providerOptions"]),
+  "tool-result": new Set(["type", "toolCallId", "toolName", "result", "isError", "providerOptions", "experimental_content"]),
 };
 
 export type HostExecutorMessage = {
@@ -148,12 +148,21 @@ function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<stri
     const toolName = ownData(value, "toolName");
     const args = ownData(value, "args");
     if (toolCallId.kind !== "value" || toolName.kind !== "value" || args.kind !== "value") fail("unsupported_content");
-    return { type, toolCallId: boundedMessageId(toolCallId.value), toolName: boundedMessageId(toolName.value), args: cloneJson(args.value) };
+    const options = optionalDefined(ownData(value, "providerOptions"));
+    return {
+      type,
+      toolCallId: boundedMessageId(toolCallId.value),
+      toolName: boundedMessageId(toolName.value),
+      args: cloneJson(args.value),
+      ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
+    };
   }
   const toolCallId = ownData(value, "toolCallId");
   const toolName = optionalDefined(ownData(value, "toolName"));
   const result = ownData(value, "result");
   const isError = optionalDefined(ownData(value, "isError"));
+  const options = optionalDefined(ownData(value, "providerOptions"));
+  const experimental = optionalDefined(ownData(value, "experimental_content"));
   if (toolCallId.kind !== "value" || result.kind !== "value") fail("unsupported_content");
   if (role !== "tool" && role !== "user") fail("unsupported_content");
   if (isError !== undefined && typeof isError !== "boolean") fail("unsupported_content");
@@ -163,6 +172,8 @@ function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<stri
     result: cloneJson(result.value),
     ...(toolName !== undefined ? { toolName: boundedMessageId(toolName) } : {}),
     ...(isError !== undefined ? { isError } : {}),
+    ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
+    ...(experimental !== undefined ? { experimental_content: cloneJson(experimental) } : {}),
   };
 }
 

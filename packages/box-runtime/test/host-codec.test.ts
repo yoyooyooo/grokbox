@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EnvelopeError, SNAPSHOT_JSON_MAX_BYTES, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
-import { hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
+import { cloneHostExecutorWindow, hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
 import { sendCcsRequest } from "../src/internal/backends/ccs-codec.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -157,5 +157,43 @@ describe("Host context snapshot", () => {
       state: [{ role: "user", content: "x".repeat(SNAPSHOT_JSON_MAX_BYTES + 1) }],
       tools: [{ name: "lookup", inputSchema: schema }],
     })).toThrow(EnvelopeError);
+  });
+});
+
+describe("Host tool-result extras from live Host unredact", () => {
+  test("providerOptions and experimental_content on tool-result do not unsupported_content", () => {
+    const cloned = cloneHostExecutorWindow([
+      { role: "user", content: "hi" },
+      {
+        role: "assistant",
+        content: [{ type: "tool-call", toolCallId: "call-1", toolName: "SendToUser", args: { text: "ok" }, providerOptions: { cursor: { t: 1 } } }],
+      },
+      {
+        role: "tool",
+        content: [{
+          type: "tool-result",
+          toolCallId: "call-1",
+          toolName: "SendToUser",
+          result: { ok: true },
+          providerOptions: { cursor: { t: 1 } },
+          experimental_content: [{ type: "text", text: "ok" }],
+        }],
+      },
+    ]);
+    expect(cloned).toHaveLength(3);
+    const tool = cloned[2]!;
+    expect(tool.role).toBe("tool");
+    expect(Array.isArray(tool.content)).toBe(true);
+    const part = (tool.content as Array<Record<string, unknown>>)[0]!;
+    expect(part.type).toBe("tool-result");
+    expect(part.providerOptions).toEqual({ cursor: { t: 1 } });
+    expect(part.experimental_content).toEqual([{ type: "text", text: "ok" }]);
+  });
+
+  test("unknown tool-result keys still fail closed", () => {
+    expect(() => cloneHostExecutorWindow([{
+      role: "tool",
+      content: [{ type: "tool-result", toolCallId: "call-1", result: {}, extra: true }],
+    }])).toThrow(EnvelopeError);
   });
 });
