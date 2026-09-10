@@ -22,6 +22,7 @@ This documentation separates current source truth, accepted product behavior, up
 ## Maintainers
 
 - [Source provenance review](maintainers/provenance.md)
+- [Official Host inbound → Agent loop](maintainers/host-inbound-agent-loop.md): source-pinned admission, context/pins/compact, inference/tools, delivery, ledgers and settlement map; includes corrected research claims and explicit evidence gaps, not fix designs.
 - [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
 - [Release runbook](maintainers/release.md)
 
