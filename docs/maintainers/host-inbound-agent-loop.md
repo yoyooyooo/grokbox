@@ -6,6 +6,8 @@
 
 [产品合同](../product-contract.md)、[运行时设计](../box-runtime.md)和 [D1–D12 裁决](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md)仍拥有 grokbox 的接受行为。官方 Host 代码只是版本相关的互操作事实，不能把其偶然实现升级为 grokbox 产品义务。
 
+2026-09-10 owner后续选择以B（前向预防+e2e）处理早期上下文损失，见 [修正与验收规格](managed-context-continuity.md)。历史A维持 **closed-notProven**，无新直接证据不再考古；这不修改下文的源码事实，也不表示修正已经实现。
+
 ## 1. 范围、来源与证据等级
 
 ### 1.1 覆盖边界
