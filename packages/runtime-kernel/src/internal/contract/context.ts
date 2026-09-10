@@ -43,7 +43,12 @@ export function cloneJson(value: unknown, depth = 0, budget = { nodes: 0 }): Jso
   }
   if (!object(value)) return fail();
   const proto = Object.getPrototypeOf(value);
-  if (proto !== null && (Object.getPrototypeOf(proto) !== null || Object.getOwnPropertyDescriptor(proto, "constructor")?.value?.name !== "Object")) return fail("unsupported_content");
+  if (proto !== null) {
+    const ctor = Object.getOwnPropertyDescriptor(proto, "constructor");
+    if (Object.getPrototypeOf(proto) !== null || !ctor || !Object.hasOwn(ctor, "value") || ctor.value !== Object) {
+      return fail("unsupported_content");
+    }
+  }
   const result: Record<string, JsonValue> = {};
   for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
     if (!descriptor.enumerable) continue;

@@ -212,11 +212,19 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
     const toolCalls = toolCallsRaw !== undefined ? cloneHostToolCalls(toolCallsRaw) : undefined;
     if (toolCalls !== undefined) {
       if (role !== "assistant") fail();
-      const blocks = typeof content === "string" ? [] : content;
+      const seen: Array<{ type: "tool-call"; toolCallId: string; toolName: string; args: JsonValue }> = [];
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          if (part.type === "tool-call" && typeof part.toolCallId === "string" && typeof part.toolName === "string") {
+            seen.push({ type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: part.args });
+          }
+        }
+      }
       for (const call of toolCalls) {
         const next = { type: "tool-call" as const, toolCallId: call.id, toolName: call.name, args: call.args };
-        const existing = blocks.find((part) => part.type === "tool-call" && part.toolCallId === next.toolCallId);
+        const existing = seen.find((part) => part.toolCallId === next.toolCallId);
         if (existing && JSON.stringify(existing) !== JSON.stringify(next)) fail();
+        if (!existing) seen.push(next);
       }
     }
     return {
@@ -242,6 +250,9 @@ export function cloneHostExecutorWindow(state: unknown): HostExecutorMessage[] {
     return cloneHostMessages(field.value);
   }
   if ("messages" in state) fail("unsupported_content");
+  for (const key of HOST_MESSAGE_KEYS) {
+    if (ownData(state, key).kind !== "absent") return cloneHostMessages([state]);
+  }
   if (Object.keys(state).length === 0) return [];
   return cloneHostMessages([state]);
 }

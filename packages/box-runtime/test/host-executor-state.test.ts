@@ -269,4 +269,80 @@ describe("F2 invalid windows are not checkpoint-serializable", () => {
     await ok.stream({}, "step-options").response;
     expect(JSON.stringify(requests.at(-1)!.messages)).not.toContain("isSummary");
   });
+
+  test("duplicate toolCalls aliases must agree; identical aliases coalesce without rewriting Host metadata", () => {
+    const { session: host } = session();
+    const identical = host.getExecutor([{
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        { id: "c", name: "lookup", args: { q: 1 } },
+        { id: "c", name: "lookup", args: { q: 1 } },
+      ],
+    }]);
+    expect(identical.getState()).toEqual([{
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        { id: "c", name: "lookup", args: { q: 1 } },
+        { id: "c", name: "lookup", args: { q: 1 } },
+      ],
+    }]);
+    const argsConflict = host.getExecutor([{
+      role: "assistant", content: "",
+      toolCalls: [
+        { id: "c", name: "lookup", args: { q: 1 } },
+        { id: "c", name: "lookup", args: { q: 2 } },
+      ],
+    }]);
+    expect(() => argsConflict.getState()).toThrow(InvalidHostStateError);
+    expect(() => JSON.stringify(argsConflict.getMessages())).toThrow();
+    const nameConflict = host.getExecutor([{
+      role: "assistant", content: "",
+      toolCalls: [
+        { id: "c", name: "lookup", args: {} },
+        { id: "c", name: "other", args: {} },
+      ],
+    }]);
+    expect(() => nameConflict.getState()).toThrow(EnvelopeError);
+  });
+
+  test("non-enumerable own single-message fields are not erased as empty", () => {
+    const { session: host } = session();
+    const msg = {};
+    Object.defineProperties(msg, {
+      role: { value: "user" },
+      content: { value: "synthetic-non-enumerable-window" },
+    });
+    expect(host.getExecutor(msg).getState()).toEqual([{ role: "user", content: "synthetic-non-enumerable-window" }]);
+    expect(host.getExecutor([msg]).getState()).toEqual([{ role: "user", content: "synthetic-non-enumerable-window" }]);
+    expect(host.getExecutor({}).getState()).toEqual([]);
+  });
+
+  test("nested providerOptions objects and array elements do not run constructor name getters", () => {
+    const { session: host } = session();
+    const spoof = () => {
+      let reads = 0;
+      const proto = Object.create(null);
+      Object.defineProperty(proto, "constructor", {
+        value: { get name() { reads += 1; return "Object"; } },
+      });
+      return { reads: () => reads, nested: Object.assign(Object.create(proto), { isSummary: true }) };
+    };
+    const objectNest = spoof();
+    const nestedObject = host.getExecutor([{
+      role: "user", content: "x", providerOptions: { cursor: objectNest.nested },
+    }]);
+    expect(objectNest.reads()).toBe(0);
+    expect(() => nestedObject.getState()).toThrow(InvalidHostStateError);
+    const arrayNest = spoof();
+    const nestedArray = host.getExecutor([{
+      role: "user", content: "x", providerOptions: { items: [arrayNest.nested] },
+    }]);
+    expect(arrayNest.reads()).toBe(0);
+    expect(() => nestedArray.getState()).toThrow(InvalidHostStateError);
+    expect(host.getExecutor([{
+      role: "user", content: "x", providerOptions: { cursor: { isSummary: true } },
+    }]).getState()).toEqual([{ role: "user", content: "x", providerOptions: { cursor: { isSummary: true } } }]);
+  });
 });
