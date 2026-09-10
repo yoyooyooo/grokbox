@@ -314,7 +314,11 @@ describe("D2 Host compact registration", () => {
 
   test("missing or unsupported snapshot qualification never invokes the core", async () => {
     resetHostCompactSlotForTests();
-    for (const options of [undefined, { profileId: "not-a-profile", abiIdentity: "host-abi-v1" }]) {
+    for (const options of [
+      undefined,
+      { profileId: "not-a-profile", abiIdentity: "host-abi-v1" },
+      { profileId: "t21-independent-root", abiIdentity: "host-abi-v1" },
+    ]) {
       const counts = { compact: 0 };
       bindHostCompactHook(options)({
         orchestrator: { handleSummarization: async () => { counts.compact += 1; return "summary"; } },

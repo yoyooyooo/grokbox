@@ -78,7 +78,8 @@ function unavailable(reason: "capability_not_ready" | "blocked" | "cancelled" | 
 
 function snapshotQualified(profileId: string | undefined, abiIdentity: string | undefined): boolean {
   if (!profileId || !abiIdentity) return false;
-  return HOST_ROOT_CONTRACTS.some((row) => row.profileId === profileId && row.abiIdentity === abiIdentity);
+  return HOST_ROOT_CONTRACTS.some((row) =>
+    row.profileId === profileId && row.abiIdentity === abiIdentity && row.rootSource === "state-system");
 }
 
 function unqualifiedResourceChain(config: unknown, requestContext: unknown): boolean {
