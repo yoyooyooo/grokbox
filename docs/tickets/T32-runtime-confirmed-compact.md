@@ -1,7 +1,7 @@
 # T32 — Confirmed overflow / Host compact / one recovery attempt
 
 ## Status
-**Open · Phase 4，Host compact capability 与 provider qualification 未证明。** 本票不能以候选日志或旧 T14 observation done 作为恢复授权。
+**Open · Phase 4；Host core的限定等待点资格已固定，runtime接线/provider资格尚未完成。** [接缝资格与死锁边界](T32-host-compact-seam.md)记录直接调用core的条件性source+隔离切片证明、精确挂起点和实现gate；不是已安装capability或live证明。本票不能以候选日志或旧T14 observation done作为恢复授权。
 
 ## Goal
 在同一 STEP 程序中处理 confirmed context overflow：原 attempt 终止、无已放行内容/工具时调用 Host 自有 compact，取得新 snapshot，至多再推理一次。只升级当前 wire 到 v4，不留 v3 兼容路径。
@@ -17,12 +17,12 @@
 [T24](T24-runtime-route-binding.md)、[T25](T25-runtime-effect-root.md)、[T26](T26-runtime-host-fullstream.md)。另需 **Astra 审过的 Host compact seam（含挂起点可调用性）与非冲突 provider 证据**。不依赖 T29/T30/T31 完成。
 
 ## Forbidden
-candidate/generic model_error 触发、从 durable 日志重建命令、HTTP payload-too-large 当 context overflow、跨账号/模型重试、改 Host STEP id、清 ledger、第二 summarizer/store.db prepend、错误 bubble 已释放后再偷偷恢复、第二 compact executor。
+candidate/generic model_error 触发、从 durable 日志重建命令、HTTP payload-too-large 当 context overflow、跨账号/模型重试、改 Host STEP id、清 ledger、第二 summarizer/store.db prepend、grokbox near-window/产品CAP、错误 bubble 已释放后再偷偷恢复、第二 compact executor。不得用queued summarizeAction或触发Host外层五轮error retry替代当前STEP-scoped delegate。
 
 ## Acceptance (executable)
-1. 先资格审查实际 Host compact 可在等待 STEP 时被调用、不会因同一 Host loop 等待而死锁；未知/不支持即 blocked/unavailable，不能编造方法。额外 patch 另按 D2 精确审批。
+1. 按[已固定接缝](T32-host-compact-seam.md)实现main runStep等待点的有界delegate，直接复用当前orchestrator/root/stateHandler；对现有pending summary、未审hook/资源链、未ready/旧tuple/取消等返回blocked/unavailable。此次仅证明限定native方法等待关系；完整production bridge、state/metadata保真及取消/晚完成负例仍须通过，额外patch按D2精确审批。
 2. `bun scripts/verify-runtime-rebuild.mjs compact` → `bun test packages/runtime-kernel/test/overflow-recovery.test.ts packages/box-runtime/test/overflow-bridge.test.ts packages/box-runtime/test/modeld-wire.test.ts`。
-3. 同一 production kernel+wire+Host adapter fixture：attempt0 已终止但未结算 Host STEP；confirmed overflow、released text/tools=0 → 一个 compact-request → 同连接一个 resume-step 新 snapshot → attempt1 → 唯一 Host terminal。模型最多 2 次、compact 最多 1 次。
+3. 同一 production kernel+wire+Host adapter fixture：attempt0 已终止并确认quiescence但未结算Host STEP；confirmed overflow、released text/reasoning/tools=0 → 一个compact-request → 同连接一个resume-step新snapshot → attempt1 → 唯一Host terminal。目标managed STEP推理最多2次、Host compact invocation最多1次；Host内部summary provider重试独立计数并受总期限约束，不冒充所有HTTP总数≤2。
 4. 原 TURN/STEP/binding/ServiceEpoch 固定；recovery nonce/attempt 绑定原连接/期限，消费一次。重复 completion、重连、旧代/错 tuple、旧 snapshot、取消或预算过期不能再次 dispatch。
 5. auth+overflow（含 401）、429、generic 400/500、HTTP limit、EOF/timeout/断线/unknown、仅 candidate、已释放工具/文本均零 compact。错误 evidence 不带 raw body/secret，不从 provider 自报 id 关联。
 6. compact 不可用、取消、无改善/仍超限、auth/authority 变化、retry 失败停止；原失败不先投递 bubble 再改口成功。Host compact 自身的未知完成如实记录，不虚构回滚。
