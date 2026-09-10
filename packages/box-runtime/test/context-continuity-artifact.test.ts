@@ -57,7 +57,14 @@ describe("source Host SHA unit and bun packed smoke", () => {
     const probe = spawnSync(process.execPath, ["--require", PACKED, "-e", "process.stdout.write('preload-probe-ok')"], {
       cwd: repoRoot,
       encoding: "utf8",
-      env: { ...process.env, GROKBOX_ALLOW_LIVE_HOST: "", GROKBOX_PATCH_PROFILE: "", GROKBOX_OPERATION_ID: "" },
+      env: {
+        ...process.env,
+        GROKBOX_ALLOW_LIVE_HOST: "",
+        GROKBOX_PACKED_SESSION_FACTORY: "",
+        GROKBOX_PACKED_PRELOAD: "",
+        GROKBOX_PATCH_PROFILE: "",
+        GROKBOX_OPERATION_ID: "",
+      },
     });
     expect(probe.status).toBe(0);
     expect(probe.stdout).toContain("preload-probe-ok");
@@ -76,6 +83,7 @@ describe("source Host SHA unit and bun packed smoke", () => {
         ...process.env,
         GROKBOX_ALLOW_LIVE_HOST: "",
         GROKBOX_PACKED_SESSION_FACTORY: "",
+        GROKBOX_PACKED_PRELOAD: "",
         GROKBOX_PATCH_PROFILE: "",
         GROKBOX_OPERATION_ID: "",
       },

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync, execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,7 +15,12 @@ const lane = laneIdx >= 0 ? args[laneIdx + 1] : undefined;
 const LANES = new Set(["contract-e2e", "artifact-e2e"]);
 const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"];
 const PACKED = join(root, "dist", "preload.cjs");
+const PACKED_SESSION_SYMBOL = "grokbox.box-runtime.packed-session.v1";
 const REBUILD = "bun scripts/pack-runtime-helpers.mjs";
+const OBS_REQUIRED = [
+  "bun smoke: packed preload --require load",
+  "default packed --require does not install session factory",
+];
 const CONTRACT_TESTS = [
   "packages/box-runtime/test/context-continuity.test.ts",
   "packages/box-runtime/test/context-continuity-e2e.test.ts",
@@ -52,6 +56,33 @@ function bunVersion() {
 
 function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function childEnv(overrides = {}) {
+  const env = { ...process.env };
+  delete env.NODE_OPTIONS;
+  delete env.GROKBOX_PACKED_SESSION_FACTORY;
+  delete env.GROKBOX_PACKED_PRELOAD;
+  delete env.GROKBOX_ALLOW_LIVE_HOST;
+  delete env.GROKBOX_PATCH_PROFILE;
+  delete env.GROKBOX_OPERATION_ID;
+  return { ...env, ...overrides };
+}
+
+function nodeFactoryProbe({ factory, live, expectFactory }) {
+  const code = [
+    `const api = globalThis[Symbol.for(${JSON.stringify(PACKED_SESSION_SYMBOL)})];`,
+    expectFactory
+      ? "const ok = !!(api && api.asHostPromptSession && api.createStreamingPromptSession && api.InvalidHostStateError);"
+      : "const ok = api == null;",
+    "process.stdout.write(ok ? \"preload-probe-ok\" : \"preload-probe-mismatch\");",
+    "process.exit(ok ? 0 : 2);",
+  ].join("\n");
+  const env = childEnv({
+    ...(factory ? { GROKBOX_PACKED_SESSION_FACTORY: factory } : {}),
+    ...(live ? { GROKBOX_ALLOW_LIVE_HOST: live } : {}),
+  });
+  return spawnSync("node", ["--require", PACKED, "-e", code], { cwd: root, encoding: "utf8", env });
 }
 
 function parseBunTest(combined) {
@@ -105,7 +136,7 @@ const notProven = [
 
 if (lane === "contract-e2e") {
   const argv = ["bun", "test", ...CONTRACT_TESTS];
-  const ran = spawnSync(argv[0], argv.slice(1), { cwd: root, encoding: "utf8" });
+  const ran = spawnSync(argv[0], argv.slice(1), { cwd: root, encoding: "utf8", env: childEnv() });
   const combined = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
   const parsed = parseBunTest(combined);
   const cases = [
@@ -135,12 +166,14 @@ if (lane === "contract-e2e") {
     bun,
     dependencyReality: "offline-unix-sdk-mock-http-owned-store",
     packedPreload: false,
+    constructorSource: "source",
     liveHost: false,
     supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08"],
     cases,
     asserts: { pass: parsed.pass, fail: parsed.fail, skip: parsed.skip, expects: parsed.expects },
     commands: [{
       argv,
+      env: { GROKBOX_PACKED_SESSION_FACTORY: null, GROKBOX_PACKED_PRELOAD: null },
       exit: ran.status ?? 1,
       stdoutTail: (ran.stdout ?? "").slice(-4000),
       stderrTail: (ran.stderr ?? "").slice(-2000),
@@ -151,12 +184,15 @@ if (lane === "contract-e2e") {
 }
 
 const packedExists = existsSync(PACKED);
+const packedSha = packedExists ? sha256File(PACKED) : null;
 const artifact = {
-  path: "dist/preload.cjs",
+  path: PACKED,
   rebuildCommand: REBUILD,
   present: packedExists,
-  sha256: packedExists ? sha256File(PACKED) : null,
+  sha256: packedSha,
+  constructorSource: PACKED,
   loadProbe: null,
+  factoryProbes: null,
   liveHost: false,
 };
 
@@ -180,49 +216,48 @@ if (!packedExists) {
   }, true);
 }
 
-const probeFile = join(tmpdir(), `grokbox-ctx-continuity-preload-probe-${process.pid}.cjs`);
-writeFileSync(probeFile, "console.log('preload-probe-ok');\n");
-const probe = spawnSync("node", ["--require", PACKED, probeFile], {
-  cwd: root,
-  encoding: "utf8",
-  env: {
-    ...process.env,
-    GROKBOX_ALLOW_LIVE_HOST: "",
-    GROKBOX_PATCH_PROFILE: "",
-    GROKBOX_OPERATION_ID: "",
-  },
-});
-const probeOut = `${probe.stdout ?? ""}\n${probe.stderr ?? ""}`;
-const loadOk = probe.status === 0 && probeOut.includes("preload-probe-ok");
+const defaultProbe = nodeFactoryProbe({ expectFactory: false });
+const optInProbe = nodeFactoryProbe({ factory: "1", expectFactory: true });
+const liveRefuseProbe = nodeFactoryProbe({ factory: "1", live: "1", expectFactory: false });
+const probeOk = (ran) => ran.status === 0 && (ran.stdout ?? "").includes("preload-probe-ok");
+const loadOk = probeOk(defaultProbe) && probeOk(optInProbe) && probeOk(liveRefuseProbe);
 artifact.loadProbe = {
-  exit: probe.status ?? 1,
-  ok: loadOk,
-  stdoutTail: (probe.stdout ?? "").slice(-500),
-  stderrTail: (probe.stderr ?? "").slice(-500),
+  exit: defaultProbe.status ?? 1,
+  ok: probeOk(defaultProbe),
+  stdoutTail: (defaultProbe.stdout ?? "").slice(-500),
+  stderrTail: (defaultProbe.stderr ?? "").slice(-500),
+};
+artifact.factoryProbes = {
+  defaultClosed: { exit: defaultProbe.status ?? 1, ok: probeOk(defaultProbe) },
+  optIn: { exit: optInProbe.status ?? 1, ok: probeOk(optInProbe) },
+  liveRefuse: { exit: liveRefuseProbe.status ?? 1, ok: probeOk(liveRefuseProbe) },
 };
 
-const packedEnv = {
-  ...process.env,
+const packedEnv = childEnv({
   GROKBOX_PACKED_SESSION_FACTORY: "1",
-  GROKBOX_ALLOW_LIVE_HOST: "",
-  GROKBOX_PATCH_PROFILE: "",
-  GROKBOX_OPERATION_ID: "",
-};
+  GROKBOX_PACKED_PRELOAD: PACKED,
+});
 const packedArgv = ["bun", "test", ...ARTIFACT_PACKED_TESTS];
 const packedRan = spawnSync(packedArgv[0], packedArgv.slice(1), { cwd: root, encoding: "utf8", env: packedEnv });
 const packedParsed = parseBunTest(`${packedRan.stdout ?? ""}\n${packedRan.stderr ?? ""}`);
 const packedCases = REQUIRED_CASES.map((id) => caseStatus(id, packedParsed, true));
 
 const obsArgv = ["bun", "test", ...ARTIFACT_OBS_TESTS];
-const obsRan = spawnSync(obsArgv[0], obsArgv.slice(1), { cwd: root, encoding: "utf8" });
+const obsRan = spawnSync(obsArgv[0], obsArgv.slice(1), { cwd: root, encoding: "utf8", env: childEnv() });
 const obsParsed = parseBunTest(`${obsRan.stdout ?? ""}\n${obsRan.stderr ?? ""}`);
+const obsRequiredMissing = OBS_REQUIRED.filter((name) => !obsParsed.passNames.some((n) => n.includes(name)));
 
 const packedFailed = packedRan.status !== 0
   || packedParsed.fail > 0
   || packedParsed.skip > 0
   || packedParsed.pass === 0
   || packedCases.some((c) => c.status !== "pass");
-const obsFailed = obsRan.status !== 0 || obsParsed.fail > 0;
+const obsFailed = obsRan.status !== 0
+  || obsParsed.fail > 0
+  || obsParsed.skip > 0
+  || obsParsed.pass === 0
+  || obsParsed.expects === 0
+  || obsRequiredMissing.length > 0;
 const failed = !loadOk || packedFailed || obsFailed;
 
 emit({
@@ -231,7 +266,7 @@ emit({
   bun,
   dependencyReality: "offline-packed-preload",
   native_qualification_pending: true,
-  packedSessionFactory: !packedFailed,
+  packedSessionFactory: !failed,
   artifact,
   cases: [...packedCases, {
     id: "E07",
@@ -249,7 +284,7 @@ emit({
   },
   commands: [{
     argv: packedArgv,
-    env: { GROKBOX_PACKED_SESSION_FACTORY: "1" },
+    env: { GROKBOX_PACKED_SESSION_FACTORY: "1", GROKBOX_PACKED_PRELOAD: PACKED },
     exit: packedRan.status ?? 1,
     stdoutTail: (packedRan.stdout ?? "").slice(-2000),
     stderrTail: (packedRan.stderr ?? "").slice(-1000),
@@ -264,9 +299,11 @@ emit({
   ok: !failed,
   ...(failed ? {
     error: !loadOk
-      ? "packed preload Node load probe failed"
+      ? "packed preload Node factory probes failed"
       : packedFailed
         ? "packed E01–E06+E08 against dist/preload.cjs failed"
-        : "packed bun smoke / source SHA unit failed",
+        : obsRequiredMissing.length > 0
+          ? `packed observation required checks missing: ${obsRequiredMissing.join(", ")}`
+          : "packed observation checks failed, skipped, or did not execute",
   } : {}),
 }, failed);

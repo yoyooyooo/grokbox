@@ -1,6 +1,7 @@
 /**
  * Source session constructors by default.
  * When GROKBOX_PACKED_SESSION_FACTORY=1, load constructors from dist/preload.cjs.
+ * GROKBOX_PACKED_PRELOAD is ignored so ambient override cannot retarget the artifact.
  * Never enable with GROKBOX_ALLOW_LIVE_HOST=1.
  */
 import { createRequire } from "node:module";
@@ -35,7 +36,7 @@ export function loadPackedHostSessionApi(): PackedHostSessionApi {
   if (process.env.GROKBOX_ALLOW_LIVE_HOST === "1") {
     throw new Error("packed session factory refused while GROKBOX_ALLOW_LIVE_HOST=1");
   }
-  const packed = process.env.GROKBOX_PACKED_PRELOAD ?? join(repoRoot, "dist", "preload.cjs");
+  const packed = join(repoRoot, "dist", "preload.cjs");
   require(packed);
   const api = (globalThis as Record<symbol, PackedHostSessionApi | undefined>)[Symbol.for(PACKED_SESSION_SYMBOL)];
   if (!api?.asHostPromptSession || !api?.createStreamingPromptSession || !api?.InvalidHostStateError) {
