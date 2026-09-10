@@ -14,13 +14,15 @@ const laneIdx = args.indexOf("--lane");
 const lane = laneIdx >= 0 ? args[laneIdx + 1] : undefined;
 
 const LANES = new Set(["contract-e2e", "artifact-e2e"]);
-const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"];
+const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E08", "E09"];
 const PACKED = join(root, "dist", "preload.cjs");
 const REBUILD = "bun scripts/pack-runtime-helpers.mjs";
 const CONTRACT_TESTS = [
   "packages/box-runtime/test/context-continuity.test.ts",
   "packages/box-runtime/test/context-continuity-e2e.test.ts",
+  "packages/box-runtime/test/context-continuity-artifact.test.ts",
 ];
+const ARTIFACT_TESTS = ["packages/box-runtime/test/context-continuity-artifact.test.ts"];
 
 function usage(code) {
   const text = "usage: bun scripts/verify-context-continuity.mjs --lane contract-e2e|artifact-e2e [--json]";
@@ -88,7 +90,8 @@ const bun = bunVersion();
 const notProven = [
   "E07",
   "auxiliary_unqualified",
-  "E09", "E10", "E11",
+  "E09-packed-e01-e08-session-factory",
+  "E10", "E11",
   "native_host_consumer_qualification",
   "live-adopt",
   "B-closed",
@@ -122,7 +125,7 @@ if (lane === "contract-e2e") {
     dependencyReality: "offline-unix-sdk-mock-http-owned-store",
     packedPreload: false,
     liveHost: false,
-    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08"],
+    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08", "E09-source-sha-old-dist-oracle"],
     cases,
     asserts: { pass: parsed.pass, fail: parsed.fail, skip: parsed.skip, expects: parsed.expects },
     commands: [{
@@ -187,11 +190,15 @@ artifact.loadProbe = {
   stderrTail: (probe.stderr ?? "").slice(-500),
 };
 
-const cases = REQUIRED_CASES.map((id) => ({
+const artifactArgv = ["bun", "test", ...ARTIFACT_TESTS];
+const artifactRan = spawnSync(artifactArgv[0], artifactArgv.slice(1), { cwd: root, encoding: "utf8" });
+const artifactParsed = parseBunTest(`${artifactRan.stdout ?? ""}\n${artifactRan.stderr ?? ""}`);
+const e09 = caseStatus("E09", artifactParsed, true);
+const packedCases = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"].map((id) => ({
   id,
   status: "unavailable",
   reason: "packed_preload_does_not_export_session_factory",
-  note: "E09 needs an owned Host fixture driving dist/preload.cjs; this lane only SHA-gates and load-probes the packed artifact.",
+  note: "dist/preload.cjs is --require-only; it does not export a session factory for E01–E08.",
 }));
 
 emit({
@@ -200,12 +207,26 @@ emit({
   bun,
   dependencyReality: "offline-packed-preload",
   native_qualification_pending: true,
+  packedSessionFactory: false,
   artifact,
-  cases,
+  cases: [...packedCases, e09, {
+    id: "E07",
+    status: "unavailable",
+    reason: "auxiliary_unqualified",
+  }],
+  asserts: { pass: artifactParsed.pass, fail: artifactParsed.fail, skip: artifactParsed.skip, expects: artifactParsed.expects },
+  commands: [{
+    argv: artifactArgv,
+    exit: artifactRan.status ?? 1,
+    stdoutTail: (artifactRan.stdout ?? "").slice(-2000),
+    stderrTail: (artifactRan.stderr ?? "").slice(-1000),
+  }],
   notProven,
-  shaGate: "Compare dist/preload.cjs sha256 after rebuilding with the recorded command before claiming artifact E01–E09.",
+  shaGate: "Compare dist/preload.cjs sha256 after rebuilding with the recorded command before claiming packed E01–E08.",
   ok: false,
-  error: loadOk
-    ? "native_qualification_pending: packed preload loaded but contract cases cannot run against an unexported session factory without a Host fixture"
-    : "packed preload load probe failed",
+  error: !loadOk
+    ? "packed preload load probe failed"
+    : e09.status !== "pass" || artifactRan.status !== 0
+      ? "E09 packed SHA/old-dist oracle failed"
+      : "packed_preload_does_not_export_session_factory: E01–E08 cannot run against dist/preload.cjs; E09 SHA/old-dist oracle is subset-only",
 }, true);
