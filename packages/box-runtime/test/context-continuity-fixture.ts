@@ -177,13 +177,13 @@ export function padWindow(label: string, padChars: number): HostWindowMessage[] 
 }
 
 export type HostEffectRecord = {
-  kind: "tool" | "delivery";
+  kind: "tool" | "delivery" | "error";
   stepId: string;
   id: string;
   late: boolean;
 };
 
-/** Host-owned tool/delivery sink. Retired STEPs record late=true and are not live effects. */
+/** Host-owned tool/delivery sink. Delivery requires a finish part. Stream errors propagate. */
 export function createHostOutputConsumer() {
   const retired = new Set<string>();
   const effects: HostEffectRecord[] = [];
@@ -194,17 +194,22 @@ export function createHostOutputConsumer() {
       return effects.filter((row) => row.kind === kind && !row.late);
     },
     async consume(stepId: string, handle: { fullStream: AsyncIterable<{ type: string; toolCallId?: string; toolName?: string; textDelta?: string; text?: string }> }) {
+      let finished = false;
       try {
         for await (const part of handle.fullStream) {
           const late = retired.has(stepId);
           if (part.type === "tool-call" && typeof part.toolCallId === "string") {
             effects.push({ kind: "tool", stepId, id: part.toolCallId, late });
           }
+          if (part.type === "finish") finished = true;
         }
-      } catch {
-        /* stream failure is not a delivery */
+      } catch (error) {
+        effects.push({ kind: "error", stepId, id: `${stepId}:error`, late: retired.has(stepId) });
+        throw error;
       }
-      effects.push({ kind: "delivery", stepId, id: `${stepId}:delivery`, late: retired.has(stepId) });
+      if (finished) {
+        effects.push({ kind: "delivery", stepId, id: `${stepId}:delivery`, late: retired.has(stepId) });
+      }
     },
   };
 }

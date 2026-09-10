@@ -356,7 +356,8 @@ describe("E08 budget/cancel/fault", () => {
         expect(Array.isArray(snapState) ? snapState.length : 0).not.toBe(0);
         await publishHostRoot(store, snapState as unknown[]);
         expect((await readHostRoot(store)).state).toEqual(overSnap);
-        await publishHostRoot(store, legal as unknown[]);
+        const overSnapReopen = await runWorker("reopen-state", store);
+        expect(overSnapReopen.state).toEqual(overSnap);
         const overEnv = [{ role: "user" as const, content: "x".repeat(ENVELOPE_MAX_BYTES + 1) }];
         const envEx = session.getExecutor(overEnv);
         await expect(envEx.stream({}, "step-e08-over-env", [LOOKUP_TOOL]).response).rejects.toMatchObject({
@@ -364,14 +365,18 @@ describe("E08 budget/cancel/fault", () => {
         });
         let envState: unknown;
         try { envState = envEx.getState(); } catch { envState = { threw: true }; }
-        if (!envState || typeof envState !== "object" || !("threw" in envState)) {
-          expect(Array.isArray(envState) ? envState.length : 0).toBeGreaterThan(0);
-          expect(JSON.stringify(envState)).not.toBe("[]");
+        if (envState && typeof envState === "object" && "threw" in envState) {
+          expect((await readHostRoot(store)).state).toEqual(overSnap);
+          const refused = await runWorker("reopen-state", store);
+          expect(refused.state).toEqual(overSnap);
+        } else {
+          expect(envState).toEqual(overEnv);
+          await publishHostRoot(store, envState as unknown[]);
+          const envReopen = await runWorker("reopen-state", store);
+          expect(envReopen.state).toEqual(overEnv);
+          expect(envReopen.pid).not.toBe(process.pid);
         }
         expect(requests).toHaveLength(0);
-        expect((await readHostRoot(store)).refs.sha256).toBe(sha256Json(legal));
-        const reopened = await runWorker("reopen-state", store);
-        expect(reopened.state).toEqual(legal);
       },
     });
   }, 60_000);
@@ -406,8 +411,10 @@ describe("E08 budget/cancel/fault", () => {
   }, 20_000);
 
   test("E08 late retired STEP does not duplicate tool or delivery effects", async () => {
-    let release!: () => void;
-    const hold = new Promise<void>((resolve) => { release = resolve; });
+    let releaseOld!: () => void;
+    const oldHold = new Promise<void>((resolve) => { releaseOld = resolve; });
+    let oldAtHold!: () => void;
+    const oldHeld = new Promise<void>((resolve) => { oldAtHold = resolve; });
     const consumer = createHostOutputConsumer();
     const session = asHostPromptSession(createStreamingPromptSession({
       modelId: SYNTHETIC_OPENAI.id,
@@ -416,7 +423,10 @@ describe("E08 budget/cancel/fault", () => {
       produce: async function* (request) {
         const step = typeof request.invocationId === "string" ? request.invocationId : "unknown";
         yield { type: "text-delta" as const, textDelta: `text-${step}` };
-        await hold;
+        if (step === "step-e08-old") {
+          oldAtHold();
+          await oldHold;
+        }
         yield { type: "tool-call" as const, toolCallId: `call-${step}`, toolName: "lookup", args: { q: step } };
         yield { type: "finish" as const, reason: "stop" as const, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
       },
@@ -427,14 +437,19 @@ describe("E08 budget/cancel/fault", () => {
     const mainEx = session.getExecutor(mainWindow);
     const oldHandle = oldEx.stream({}, "step-e08-old", [LOOKUP_TOOL]);
     const oldConsume = consumer.consume("step-e08-old", oldHandle);
+    await oldHeld;
     consumer.retire("step-e08-old");
     const mainHandle = mainEx.stream({}, "step-e08-main", [LOOKUP_TOOL]);
     const mainConsume = consumer.consume("step-e08-main", mainHandle);
-    release();
-    await Promise.all([oldConsume, mainConsume, oldHandle.response, mainHandle.response]);
-    expect(consumer.live("tool").map((row) => row.stepId)).toEqual(["step-e08-main"]);
-    expect(consumer.live("delivery").map((row) => row.stepId)).toEqual(["step-e08-main"]);
-    expect(consumer.effects.some((row) => row.stepId === "step-e08-old" && row.late)).toBe(true);
+    await Promise.all([mainConsume, mainHandle.response]);
+    releaseOld();
+    await Promise.all([oldConsume, oldHandle.response]);
+    expect(consumer.live("tool").map((row) => row.id)).toEqual(["call-step-e08-main"]);
+    expect(consumer.live("delivery").map((row) => row.id)).toEqual(["step-e08-main:delivery"]);
+    expect(consumer.effects).toContainEqual({
+      kind: "tool", stepId: "step-e08-old", id: "call-step-e08-old", late: true,
+    });
+    expect(consumer.live("tool")).not.toContainEqual(expect.objectContaining({ stepId: "step-e08-old" }));
     expect(mainEx.getState()).toEqual(mainWindow);
     expect(oldEx.getState()).toEqual(oldWindow);
   });

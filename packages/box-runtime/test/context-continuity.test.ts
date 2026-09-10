@@ -16,9 +16,11 @@ import {
   type StreamPart,
 } from "../src/internal/host/session.ts";
 import {
+  createHostOutputConsumer,
   HOST_P_USED,
   HOST_S_USED,
   hostObserveExtendedUsage,
+  LOOKUP_TOOL,
   metadataWindow,
   mulberry32,
   readHostRoot,
@@ -272,5 +274,29 @@ describe("E08 encoded-request gate", () => {
       return yield* Stream.runCollect(backend.infer({}, prepared, pinned.lease));
     }).pipe(Effect.provide(testSdkBackendLayer({ fetch: fetchImpl, env: { OPENAI_API_KEY: "sk-test" } })))))).rejects.toMatchObject({ code: "envelope_too_large" });
     expect(http).toBe(0);
+  });
+
+  test("E08 consumer records no delivery on zero-output or post-tool stream failure", async () => {
+    const failNow = createHostOutputConsumer();
+    const zero = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      produce: async function* () { throw new Error("zero-output"); },
+    }), SYNTHETIC_OPENAI.id, undefined, { contextWindowTokens: 200000 });
+    await expect(failNow.consume("step-zero", zero.getExecutor([{ role: "user", content: "z" }]).stream({}, "step-zero"))).rejects.toBeDefined();
+    expect(failNow.live("delivery")).toEqual([]);
+    expect(failNow.live("tool")).toEqual([]);
+    expect(failNow.effects.some((row) => row.kind === "error" && row.stepId === "step-zero")).toBe(true);
+
+    const afterTool = createHostOutputConsumer();
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      produce: async function* () {
+        yield { type: "tool-call", toolCallId: "call-then-fail", toolName: "lookup", args: { q: "x" } };
+        yield { type: "error", error: { userVisible: true as const, code: "model_error", message: "after-tool" } };
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { contextWindowTokens: 200000 });
+    await expect(afterTool.consume("step-tool", session.getExecutor([{ role: "user", content: "t" }]).stream({}, "step-tool", [LOOKUP_TOOL]))).rejects.toBeDefined();
+    expect(afterTool.live("tool").map((row) => row.id)).toEqual(["call-then-fail"]);
+    expect(afterTool.live("delivery")).toEqual([]);
   });
 });
