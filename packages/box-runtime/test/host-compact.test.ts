@@ -189,7 +189,7 @@ describe("D2 Host compact registration", () => {
       tuple: { ...TUPLE, stepId: "other" },
       recoveryNonce: "n".repeat(32),
     });
-    expect(mismatched).toEqual({ kind: "unavailable", reason: "blocked" });
+    expect(mismatched).toEqual({ kind: "unavailable", reason: "capability_not_ready" });
     expect(seen).toHaveLength(1);
     release("ok");
     await running;
@@ -263,6 +263,159 @@ describe("D2 Host compact registration", () => {
     const kinds = [a.kind, b.kind].sort();
     expect(kinds).toEqual(["snapshot", "unavailable"]);
     expect(counts.compact).toBe(1);
+  });
+
+  test("late core completion after dispose, close, or abort is not resume success", async () => {
+    for (const mode of ["dispose", "close", "abort"] as const) {
+      resetHostCompactSlotForTests();
+      const hook = bindHostCompactHook({ profileId: "t21-state-root", abiIdentity: "host-abi-v1" });
+      let resume!: (value: unknown) => void;
+      const held = new Promise((resolve) => { resume = resolve; });
+      const counts = { compact: 0 };
+      const closed = { value: false };
+      const signal = { aborted: false };
+      const slot = hook({
+        orchestrator: {
+          handleSummarization: async () => {
+            counts.compact += 1;
+            return held;
+          },
+        },
+        ctx: { get: () => TUPLE.turnId, signal },
+        stateHandler: { backgroundSummarizationPromiseInfo: null, lastStepInvocationId: TUPLE.stepId },
+        rootPromptExecutor: { getState: () => rootState() },
+        interactionListener: {},
+        config: {},
+        requestContext: {},
+        invocationId: TUPLE.stepId,
+        turnId: TUPLE.turnId,
+        agentId: TUPLE.agentId,
+        resourceAccessor: {},
+        stepClosed: () => closed.value,
+      });
+      const pending = requestHostCompact({ tuple: TUPLE, recoveryNonce: "n".repeat(32) });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(counts.compact).toBe(1);
+      if (mode === "dispose") slot?.[Symbol.dispose]();
+      if (mode === "close") closed.value = true;
+      if (mode === "abort") signal.aborted = true;
+      resume("summary");
+      const result = await pending;
+      expect(result.kind).toBe("unavailable");
+      expect(result).toEqual({
+        kind: "unavailable",
+        reason: mode === "abort" ? "cancelled" : "unknown",
+      });
+      const replay = await requestHostCompact({ tuple: TUPLE, recoveryNonce: "n".repeat(32) });
+      expect(replay.kind).toBe("unavailable");
+      expect(counts.compact).toBe(1);
+    }
+  });
+
+  test("missing or unsupported snapshot qualification never invokes the core", async () => {
+    resetHostCompactSlotForTests();
+    for (const options of [undefined, { profileId: "not-a-profile", abiIdentity: "host-abi-v1" }]) {
+      const counts = { compact: 0 };
+      bindHostCompactHook(options)({
+        orchestrator: { handleSummarization: async () => { counts.compact += 1; return "summary"; } },
+        ctx: { get: () => TUPLE.turnId, signal: { aborted: false } },
+        stateHandler: { backgroundSummarizationPromiseInfo: null },
+        rootPromptExecutor: { getState: () => rootState() },
+        interactionListener: {},
+        config: {},
+        requestContext: {},
+        invocationId: TUPLE.stepId,
+        turnId: TUPLE.turnId,
+        agentId: TUPLE.agentId,
+        resourceAccessor: {},
+        stepClosed: () => false,
+      });
+      expect(await requestHostCompact({ tuple: TUPLE, recoveryNonce: "n".repeat(32) })).toEqual({
+        kind: "unavailable", reason: "capability_not_ready",
+      });
+      expect(counts.compact).toBe(0);
+      resetHostCompactSlotForTests();
+    }
+  });
+
+  test("unqualified hook or named-document callback never invokes the core", async () => {
+    resetHostCompactSlotForTests();
+    const cases = [
+      { config: { enableExecuteHookExec: true }, requestContext: { hooksConfig: { configuredSteps: ["preCompact"] } } },
+      { config: { getNamedAgentSelfDocument: async () => "doc" }, requestContext: {} },
+    ];
+    for (const extra of cases) {
+      const counts = { compact: 0 };
+      bindHostCompactHook({ profileId: "t21-state-root", abiIdentity: "host-abi-v1" })({
+        orchestrator: { handleSummarization: async () => { counts.compact += 1; return "summary"; } },
+        ctx: { get: () => TUPLE.turnId, signal: { aborted: false } },
+        stateHandler: { backgroundSummarizationPromiseInfo: null },
+        rootPromptExecutor: { getState: () => rootState() },
+        interactionListener: {},
+        ...extra,
+        invocationId: TUPLE.stepId,
+        turnId: TUPLE.turnId,
+        agentId: TUPLE.agentId,
+        resourceAccessor: {},
+        stepClosed: () => false,
+      });
+      expect(await requestHostCompact({ tuple: TUPLE, recoveryNonce: "n".repeat(32) })).toEqual({
+        kind: "unavailable", reason: "blocked",
+      });
+      expect(counts.compact).toBe(0);
+      resetHostCompactSlotForTests();
+    }
+  });
+
+  test("a later STEP registration does not overwrite a live earlier owner", async () => {
+    resetHostCompactSlotForTests();
+    const hook = bindHostCompactHook({ profileId: "t21-state-root", abiIdentity: "host-abi-v1" });
+    const counts = { a: 0, b: 0 };
+    const other = { ...TUPLE, agentId: "agent-b", turnId: "turn-2", stepId: "step-2" };
+    const a = hook({
+      orchestrator: { handleSummarization: async () => { counts.a += 1; return "summary"; } },
+      ctx: { get: () => TUPLE.turnId, signal: { aborted: false } },
+      stateHandler: { backgroundSummarizationPromiseInfo: null },
+      rootPromptExecutor: { getState: () => rootState("a") },
+      interactionListener: {},
+      config: {},
+      requestContext: {},
+      invocationId: TUPLE.stepId,
+      turnId: TUPLE.turnId,
+      agentId: TUPLE.agentId,
+      resourceAccessor: {},
+      stepClosed: () => false,
+    });
+    const b = hook({
+      orchestrator: { handleSummarization: async () => { counts.b += 1; return "summary"; } },
+      ctx: { get: () => other.turnId, signal: { aborted: false } },
+      stateHandler: { backgroundSummarizationPromiseInfo: null },
+      rootPromptExecutor: { getState: () => rootState("b") },
+      interactionListener: {},
+      config: {},
+      requestContext: {},
+      invocationId: other.stepId,
+      turnId: other.turnId,
+      agentId: other.agentId,
+      resourceAccessor: {},
+      stepClosed: () => false,
+    });
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    b?.[Symbol.dispose]();
+    const kept = await requestHostCompact({ tuple: TUPLE, recoveryNonce: "n".repeat(32) });
+    expect(kept.kind).toBe("snapshot");
+    if (kept.kind === "snapshot") {
+      expect(kept.snapshot.messages).toEqual([{ role: "user", content: "a" }]);
+    }
+    expect(counts).toEqual({ a: 1, b: 0 });
+    expect(await requestHostCompact({ tuple: other, recoveryNonce: "n".repeat(32) })).toEqual({
+      kind: "unavailable", reason: "capability_not_ready",
+    });
+    expect(await requestHostCompact({ tuple: TUPLE, recoveryNonce: "n".repeat(32) })).toEqual({
+      kind: "unavailable", reason: "blocked",
+    });
+    a?.[Symbol.dispose]();
   });
 });
 

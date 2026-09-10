@@ -1,8 +1,11 @@
 import type { ContextSnapshot, HostCompactRequest, HostCompactResult } from "@grokbox/runtime-kernel/contract";
 import { HOST_COMPACT_SYMBOL } from "./profile.ts";
 import { hostToContextSnapshot } from "./context-codec.ts";
+import { HOST_ROOT_CONTRACTS } from "./root-contract.ts";
 
 export { HOST_COMPACT_SYMBOL };
+
+const MAX_LIVE_SLOTS = 16;
 
 type CompactCapture = {
   orchestrator: { handleSummarization: (...args: unknown[]) => Promise<unknown> };
@@ -27,7 +30,7 @@ type CompactSlot = {
   disposed: boolean;
 };
 
-let active: CompactSlot | undefined;
+const slots = new Map<string, CompactSlot>();
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -37,6 +40,10 @@ function boundedId(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value)
     ? value
     : undefined;
+}
+
+function ownerKey(agentId: string, turnId: string, stepId: string): string {
+  return `${agentId}\n${turnId}\n${stepId}`;
 }
 
 function parseCapture(value: unknown): CompactCapture | undefined {
@@ -69,14 +76,29 @@ function unavailable(reason: "capability_not_ready" | "blocked" | "cancelled" | 
   return { kind: "unavailable", reason };
 }
 
-function sameIdentity(slot: CompactSlot, request: HostCompactRequest): boolean {
-  return request.tuple.agentId === slot.capture.agentId
-    && request.tuple.turnId === slot.capture.turnId
-    && request.tuple.stepId === slot.capture.invocationId;
+function snapshotQualified(profileId: string | undefined, abiIdentity: string | undefined): boolean {
+  if (!profileId || !abiIdentity) return false;
+  return HOST_ROOT_CONTRACTS.some((row) => row.profileId === profileId && row.abiIdentity === abiIdentity);
+}
+
+function unqualifiedResourceChain(config: unknown, requestContext: unknown): boolean {
+  if (record(config) && config.getNamedAgentSelfDocument !== undefined) return true;
+  if (!record(config) || config.enableExecuteHookExec !== true) return false;
+  const hooks = record(requestContext) && record(requestContext.hooksConfig) ? requestContext.hooksConfig : undefined;
+  const steps = hooks && Array.isArray(hooks.configuredSteps) ? hooks.configuredSteps : [];
+  return steps.includes("preCompact");
+}
+
+function slotInvalid(slot: CompactSlot): boolean {
+  return slot.disposed || slot.capture.stepClosed();
+}
+
+function signalAborted(ctx: CompactCapture["ctx"]): boolean {
+  return ctx.signal?.aborted === true;
 }
 
 function readSnapshot(slot: CompactSlot): ContextSnapshot | undefined {
-  if (!slot.profileId || !slot.abiIdentity) return undefined;
+  if (!snapshotQualified(slot.profileId, slot.abiIdentity) || !slot.profileId || !slot.abiIdentity) return undefined;
   const root = slot.capture.rootPromptExecutor;
   const state = typeof root.getState === "function" ? root.getState() : typeof root.getMessages === "function" ? root.getMessages() : undefined;
   try {
@@ -84,6 +106,10 @@ function readSnapshot(slot: CompactSlot): ContextSnapshot | undefined {
   } catch {
     return undefined;
   }
+}
+
+function lookup(input: HostCompactRequest): CompactSlot | undefined {
+  return slots.get(ownerKey(input.tuple.agentId, input.tuple.turnId, input.tuple.stepId));
 }
 
 /** Effect-free Host hook. Preload-safe. Returns a disposable for the native env_2 stack. */
@@ -94,6 +120,10 @@ export function bindHostCompactHook(options?: {
   return (raw) => {
     const capture = parseCapture(raw);
     if (!capture) return undefined;
+    const key = ownerKey(capture.agentId, capture.turnId, capture.invocationId);
+    const existing = slots.get(key);
+    if (existing && !existing.disposed) return undefined;
+    if (slots.size >= MAX_LIVE_SLOTS && !existing) return undefined;
     const slot: CompactSlot = {
       capture,
       profileId: options?.profileId,
@@ -101,23 +131,24 @@ export function bindHostCompactHook(options?: {
       consumed: false,
       disposed: false,
     };
-    active = slot;
+    slots.set(key, slot);
     return {
       [Symbol.dispose]() {
         slot.disposed = true;
-        if (active === slot) active = undefined;
+        if (slots.get(key) === slot) slots.delete(key);
       },
     };
   };
 }
 
 export async function requestHostCompact(input: HostCompactRequest): Promise<HostCompactResult> {
-  const slot = active;
-  if (!slot || slot.disposed || slot.capture.stepClosed()) return unavailable("capability_not_ready");
-  if (!sameIdentity(slot, input)) return unavailable("blocked");
+  const slot = lookup(input);
+  if (!slot || slotInvalid(slot)) return unavailable("capability_not_ready");
   if (slot.consumed) return unavailable("blocked");
+  if (!snapshotQualified(slot.profileId, slot.abiIdentity)) return unavailable("capability_not_ready");
+  if (unqualifiedResourceChain(slot.capture.config, slot.capture.requestContext)) return unavailable("blocked");
   if (slot.capture.stateHandler.backgroundSummarizationPromiseInfo != null) return unavailable("blocked");
-  if (slot.capture.ctx.signal?.aborted === true) return unavailable("cancelled");
+  if (signalAborted(slot.capture.ctx)) return unavailable("cancelled");
   slot.consumed = true;
   try {
     const summary = await slot.capture.orchestrator.handleSummarization(
@@ -135,6 +166,10 @@ export async function requestHostCompact(input: HostCompactRequest): Promise<Hos
         resourceAccessor: slot.capture.resourceAccessor,
       },
     );
+    if (signalAborted(slot.capture.ctx)) return unavailable("cancelled");
+    if (slotInvalid(slot)) return unavailable("unknown");
+    const last = slot.capture.stateHandler.lastStepInvocationId;
+    if (last !== undefined && last !== slot.capture.invocationId) return unavailable("unknown");
     if (summary === undefined) return { kind: "no_improvement" };
     const snapshot = readSnapshot(slot);
     if (!snapshot) return { kind: "no_improvement" };
@@ -145,5 +180,5 @@ export async function requestHostCompact(input: HostCompactRequest): Promise<Hos
 }
 
 export function resetHostCompactSlotForTests(): void {
-  active = undefined;
+  slots.clear();
 }
