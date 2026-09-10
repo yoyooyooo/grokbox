@@ -4,13 +4,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectStreamParts } from "./host-consumer.ts";
-import { BoxRuntimeError, ENVELOPE_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
+import {
+  asHostPromptSession,
+  createStreamingPromptSession,
+} from "../src/internal/host/session.ts";
+import { BoxRuntimeError, ENVELOPE_MAX_BYTES, SNAPSHOT_JSON_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
 import { computeSelectionRevision, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
   ARCHIVED_ONLY,
   assertIndependentGoldenInHttp,
   assertNoCapStoreOrDecoy,
   compactJourneyWindow,
+  createHostOutputConsumer,
   createHostSummaryControl,
   END_SENTINEL,
   FACT_ALPHA,
@@ -21,6 +26,7 @@ import {
   LOOKUP_TOOL,
   metadataWindow,
   PAD_BODY,
+  padWindow,
   publishHostRoot,
   readHostRoot,
   sha256Json,
@@ -30,6 +36,7 @@ import {
   TOOL_BODY,
   UI_DECOY,
   UNICODE_SENTINEL,
+  utf8JsonBytes,
   withFakeHttpSession,
   writeHostRoot,
   writeUiDecoy,
@@ -299,16 +306,25 @@ describe("E06 unknown window/usage and pinned selection", () => {
 });
 
 describe("E08 budget/cancel/fault", () => {
-  test("E08 near-boundary success does not chop; reopen reads committed root", async () => {
-    const { window } = longZeroCapWindow();
+  const SNAPSHOT_NEAR_PAD = SNAPSHOT_JSON_MAX_BYTES - 65_536;
+  const SNAPSHOT_OVER_PAD = SNAPSHOT_JSON_MAX_BYTES + 8_192;
+
+  test("E08 near-snapshot-boundary success does not chop; reopen reads committed root", async () => {
+    const window = padWindow("near-snap", SNAPSHOT_NEAR_PAD);
+    const selectedBytes = utf8JsonBytes(window);
+    expect(selectedBytes).toBeGreaterThan(SNAPSHOT_JSON_MAX_BYTES - 80_000);
+    expect(selectedBytes).toBeLessThan(SNAPSHOT_JSON_MAX_BYTES);
+    expect(selectedBytes).toBeLessThan(ENVELOPE_MAX_BYTES);
     await withFakeHttpSession({
       turnId: "HOST_TURN_E08_near",
       fn: async ({ session, requests, dir }) => {
         const store = join(dir, "host-window-root.json");
         const executor = session.getExecutor(window);
-        const handle = executor.stream({}, "step-e08-near", [LOOKUP_TOOL]);
-        await handle.response;
+        await executor.stream({}, "step-e08-near", [LOOKUP_TOOL]).response;
         expect(requests).toHaveLength(1);
+        const encoded = utf8JsonBytes(requests[0]!.body);
+        expect(encoded).toBeGreaterThan(SNAPSHOT_JSON_MAX_BYTES - 80_000);
+        expect(encoded).toBeLessThan(8 * 1024 * 1024);
         assertIndependentGoldenInHttp(requests[0]!.body, window);
         assertNoCapStoreOrDecoy(requests[0]!.body);
         expect(executor.getState()).toEqual(window);
@@ -320,28 +336,47 @@ describe("E08 budget/cancel/fault", () => {
         expect(reopened.state).toEqual(window);
       },
     });
-  }, 60_000);
+  }, 90_000);
 
-  test("E08 over-limit reject does not publish shortened root", async () => {
+  test("E08 over-snapshot and over-envelope refuse; getter checkpoint does not publish empty", async () => {
     const legal = windowRows();
     await withFakeHttpSession({
       turnId: "HOST_TURN_E08_over",
       fn: async ({ session, requests, dir }) => {
         const store = join(dir, "host-window-root.json");
         const prior = await publishHostRoot(store, legal as unknown[]);
-        const oversized = [{ role: "user" as const, content: "x".repeat(ENVELOPE_MAX_BYTES + 1) }];
-        const executor = session.getExecutor(oversized);
-        await expect(executor.stream({}, "step-e08-over", [LOOKUP_TOOL]).response).rejects.toMatchObject({
+        const overSnap = padWindow("over-snap", SNAPSHOT_OVER_PAD);
+        expect(utf8JsonBytes(overSnap)).toBeGreaterThan(SNAPSHOT_JSON_MAX_BYTES);
+        expect(utf8JsonBytes(overSnap)).toBeLessThan(ENVELOPE_MAX_BYTES);
+        const snapEx = session.getExecutor(overSnap);
+        await expect(snapEx.stream({}, "step-e08-over-snap", [LOOKUP_TOOL]).response).rejects.toMatchObject({
           name: "RetriableError",
         });
+        const snapState = snapEx.getState();
+        expect(Array.isArray(snapState) ? snapState.length : 0).not.toBe(0);
+        await publishHostRoot(store, snapState as unknown[]);
+        expect((await readHostRoot(store)).state).toEqual(overSnap);
+        await publishHostRoot(store, legal as unknown[]);
+        const overEnv = [{ role: "user" as const, content: "x".repeat(ENVELOPE_MAX_BYTES + 1) }];
+        const envEx = session.getExecutor(overEnv);
+        await expect(envEx.stream({}, "step-e08-over-env", [LOOKUP_TOOL]).response).rejects.toMatchObject({
+          name: "RetriableError",
+        });
+        let envState: unknown;
+        try { envState = envEx.getState(); } catch { envState = { threw: true }; }
+        if (!envState || typeof envState !== "object" || !("threw" in envState)) {
+          expect(Array.isArray(envState) ? envState.length : 0).toBeGreaterThan(0);
+          expect(JSON.stringify(envState)).not.toBe("[]");
+        }
         expect(requests).toHaveLength(0);
-        expect((await readHostRoot(store)).refs.sha256).toBe(prior.refs.sha256);
-        expect((await readFile(store)).includes("x".repeat(64))).toBe(false);
+        expect((await readHostRoot(store)).refs.sha256).toBe(sha256Json(legal));
+        const reopened = await runWorker("reopen-state", store);
+        expect(reopened.state).toEqual(legal);
       },
     });
-  }, 30_000);
+  }, 60_000);
 
-  test("E08 cancel does not publish shortened root", async () => {
+  test("E08 cancel error-checkpoint keeps full prior, not empty", async () => {
     let release!: () => void;
     const hold = new Promise<void>((resolve) => { release = resolve; });
     const selected = windowRows();
@@ -350,7 +385,7 @@ describe("E08 budget/cancel/fault", () => {
       hold,
       fn: async ({ session, requests, dir, admitted }) => {
         const store = join(dir, "host-window-root.json");
-        const prior = await publishHostRoot(store, selected as unknown[]);
+        await publishHostRoot(store, selected as unknown[]);
         const executor = session.getExecutor(selected);
         const ac = new AbortController();
         const handle = executor.stream({ signal: ac.signal }, "step-e08-cancel", [LOOKUP_TOOL]);
@@ -358,42 +393,51 @@ describe("E08 budget/cancel/fault", () => {
         ac.abort();
         await handle.response.then(() => undefined, () => undefined);
         release();
-        expect(executor.getState()).toEqual(selected);
-        expect((await readHostRoot(store)).refs.sha256).toBe(prior.refs.sha256);
+        const after = executor.getState();
+        expect(after).toEqual(selected);
+        expect(Array.isArray(after) ? after.length : 0).not.toBe(0);
+        await publishHostRoot(store, after as unknown[]);
+        const reopened = await runWorker("reopen-state", store);
+        expect(reopened.state).toEqual(selected);
+        expect(reopened.pid).not.toBe(process.pid);
         expect(requests.length).toBeLessThanOrEqual(1);
       },
     });
   }, 20_000);
 
-  test("E08 late old executor does not pollute new main or duplicate delivery", async () => {
+  test("E08 late retired STEP does not duplicate tool or delivery effects", async () => {
     let release!: () => void;
     const hold = new Promise<void>((resolve) => { release = resolve; });
-    const delivery: string[] = [];
-    await withFakeHttpSession({
-      turnId: "HOST_TURN_E08_late_old",
-      hold,
-      fn: async ({ session, requests, admitted }) => {
-        const oldWindow = windowRows();
-        const mainWindow = [{ role: "user" as const, content: "main-only-window" }];
-        const oldEx = session.getExecutor(oldWindow);
-        const mainEx = session.getExecutor(mainWindow);
-        const oldHandle = oldEx.stream({}, "step-e08-old", [LOOKUP_TOOL]);
-        await admitted;
-        expect(mainEx.getState()).toEqual(mainWindow);
-        release();
-        await oldHandle.response;
-        delivery.push("old");
-        expect(mainEx.getState()).toEqual(mainWindow);
-        expect(oldEx.getState()).toEqual(oldWindow);
-        const mainHandle = mainEx.stream({}, "step-e08-main", [LOOKUP_TOOL]);
-        await mainHandle.response;
-        delivery.push("main");
-        expect(delivery).toEqual(["old", "main"]);
-        expect(requests).toHaveLength(2);
-        expect(mainEx.getState()).toEqual(mainWindow);
+    const consumer = createHostOutputConsumer();
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id,
+      vision: false,
+      parallel: "allow",
+      produce: async function* (request) {
+        const step = typeof request.invocationId === "string" ? request.invocationId : "unknown";
+        yield { type: "text-delta" as const, textDelta: `text-${step}` };
+        await hold;
+        yield { type: "tool-call" as const, toolCallId: `call-${step}`, toolName: "lookup", args: { q: step } };
+        yield { type: "finish" as const, reason: "stop" as const, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
       },
-    });
-  }, 20_000);
+    }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: true, contextWindowTokens: SYNTHETIC_W });
+    const oldWindow = [{ role: "user" as const, content: "old-window" }];
+    const mainWindow = [{ role: "user" as const, content: "main-only-window" }];
+    const oldEx = session.getExecutor(oldWindow);
+    const mainEx = session.getExecutor(mainWindow);
+    const oldHandle = oldEx.stream({}, "step-e08-old", [LOOKUP_TOOL]);
+    const oldConsume = consumer.consume("step-e08-old", oldHandle);
+    consumer.retire("step-e08-old");
+    const mainHandle = mainEx.stream({}, "step-e08-main", [LOOKUP_TOOL]);
+    const mainConsume = consumer.consume("step-e08-main", mainHandle);
+    release();
+    await Promise.all([oldConsume, mainConsume, oldHandle.response, mainHandle.response]);
+    expect(consumer.live("tool").map((row) => row.stepId)).toEqual(["step-e08-main"]);
+    expect(consumer.live("delivery").map((row) => row.stepId)).toEqual(["step-e08-main"]);
+    expect(consumer.effects.some((row) => row.stepId === "step-e08-old" && row.late)).toBe(true);
+    expect(mainEx.getState()).toEqual(mainWindow);
+    expect(oldEx.getState()).toEqual(oldWindow);
+  });
 
   test("E08 publish-before fault keeps prior root; mirror fault does not roll back", async () => {
     const selected = windowRows();

@@ -164,6 +164,51 @@ export type HostWindowRoot = {
   archive?: unknown[];
 };
 
+export function utf8JsonBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+export function padWindow(label: string, padChars: number): HostWindowMessage[] {
+  return [
+    { role: "user", id: `${label}-head`, content: `E08-${label}-HEAD` },
+    { role: "user", id: `${label}-pad`, content: "Q".repeat(padChars) },
+    { role: "user", id: `${label}-tail`, content: `E08-${label}-TAIL` },
+  ];
+}
+
+export type HostEffectRecord = {
+  kind: "tool" | "delivery";
+  stepId: string;
+  id: string;
+  late: boolean;
+};
+
+/** Host-owned tool/delivery sink. Retired STEPs record late=true and are not live effects. */
+export function createHostOutputConsumer() {
+  const retired = new Set<string>();
+  const effects: HostEffectRecord[] = [];
+  return {
+    retire(stepId: string) { retired.add(stepId); },
+    effects,
+    live(kind: HostEffectRecord["kind"]) {
+      return effects.filter((row) => row.kind === kind && !row.late);
+    },
+    async consume(stepId: string, handle: { fullStream: AsyncIterable<{ type: string; toolCallId?: string; toolName?: string; textDelta?: string; text?: string }> }) {
+      try {
+        for await (const part of handle.fullStream) {
+          const late = retired.has(stepId);
+          if (part.type === "tool-call" && typeof part.toolCallId === "string") {
+            effects.push({ kind: "tool", stepId, id: part.toolCallId, late });
+          }
+        }
+      } catch {
+        /* stream failure is not a delivery */
+      }
+      effects.push({ kind: "delivery", stepId, id: `${stepId}:delivery`, late: retired.has(stepId) });
+    },
+  };
+}
+
 export function sha256Text(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }

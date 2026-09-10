@@ -3,8 +3,12 @@ import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BoxRuntimeError, EnvelopeError } from "@grokbox/runtime-kernel/contract";
+import { Effect, Stream } from "effect";
+import { BoxRuntimeError, EnvelopeError, ENCODED_PROVIDER_REQUEST_MAX_BYTES, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
+import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
+import { BackendAuth, ModelBackend } from "@grokbox/runtime-kernel/ports";
 import { parseModelsFile } from "@grokbox/runtime-kernel/selection";
+import { testSdkBackendLayer } from "../src/internal/roots/layers.ts";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
@@ -230,5 +234,43 @@ describe("E06 window parse fail-closed", () => {
         assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
       })).toThrow(BoxRuntimeError);
     }
+  });
+});
+
+describe("E08 encoded-request gate", () => {
+  test("E08 encoded provider request over 8MiB fails before fetch", async () => {
+    let http = 0;
+    const fetchImpl = Object.assign(async () => {
+      http += 1;
+      return new Response("nope");
+    }, { preconnect: async () => undefined }) as typeof fetch;
+    const body = contextSnapshotBody({
+      version: 1,
+      profileId: "t21-independent-root",
+      abiIdentity: "host-abi-v1",
+      systemMessages: [{ role: "system", content: "root" }],
+      messages: [{ role: "user", content: "tiny" }],
+      tools: [],
+      options: {},
+    });
+    const snap = { ...body, snapshotDigest: computeSnapshotDigest(body) };
+    const longModel = "m".repeat(ENCODED_PROVIDER_REQUEST_MAX_BYTES);
+    await expect(Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const auth = yield* BackendAuth;
+      const backend = yield* ModelBackend;
+      const pinned = yield* auth.pin({ apiKeyRef: "env:OPENAI_API_KEY" });
+      const prepared = yield* backend.prepare({
+        id: "openai/gpt-4o-mini",
+        provider: "openai",
+        model: longModel,
+        endpoint: "https://ccs.test/v1",
+        apiKeyRef: "env:OPENAI_API_KEY",
+        capabilities: { vision: false, tools: true, images: false },
+        dataTypes: ["text", "tools"],
+        contextWindowTokens: 200000,
+      }, snap);
+      return yield* Stream.runCollect(backend.infer({}, prepared, pinned.lease));
+    }).pipe(Effect.provide(testSdkBackendLayer({ fetch: fetchImpl, env: { OPENAI_API_KEY: "sk-test" } })))))).rejects.toMatchObject({ code: "envelope_too_large" });
+    expect(http).toBe(0);
   });
 });
