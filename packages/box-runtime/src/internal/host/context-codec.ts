@@ -32,6 +32,20 @@ function ownData(value: object, key: string): { kind: "absent" } | { kind: "acce
   return { kind: "value", value: descriptor.value };
 }
 
+function isSafePlainRecord(value: object): boolean {
+  const proto = Object.getPrototypeOf(value);
+  if (proto === null) return true;
+  if (Object.getPrototypeOf(proto) !== null) return false;
+  const ctor = Object.getOwnPropertyDescriptor(proto, "constructor");
+  return !!ctor && Object.hasOwn(ctor, "value") && ctor.value === Object;
+}
+
+function optionalDefined(field: ReturnType<typeof ownData>): unknown {
+  if (field.kind === "accessor") fail("unsupported_content");
+  if (field.kind === "absent" || field.value === undefined) return undefined;
+  return field.value;
+}
+
 function toolField(value: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
   if (descriptor && !Object.hasOwn(descriptor, "value")) return fail("invalid_tools");
@@ -85,7 +99,7 @@ function boundedMessageId(value: unknown): string {
 }
 
 function cloneProviderOptions(value: unknown): { [key: string]: JsonValue } {
-  if (!object(value)) fail("unsupported_content");
+  if (!object(value) || !isSafePlainRecord(value)) fail("unsupported_content");
   const cloned = cloneJson(value);
   if (!object(cloned)) fail("unsupported_content");
   return cloned;
@@ -102,33 +116,30 @@ function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<stri
   if (type === "text" || type === "reasoning") {
     const text = ownData(value, "text");
     if (text.kind !== "value" || typeof text.value !== "string") fail("unsupported_content");
-    const options = ownData(value, "providerOptions");
-    if (options.kind === "accessor") fail("unsupported_content");
+    const options = optionalDefined(ownData(value, "providerOptions"));
     return {
       type,
       text: text.value,
-      ...(options.kind === "value" ? { providerOptions: cloneProviderOptions(options.value) } : {}),
+      ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
     };
   }
   if (type === "image") {
     if (role !== "user") fail("unsupported_content");
-    const url = ownData(value, "url");
-    const image = ownData(value, "image");
-    const data = ownData(value, "data");
-    const mime = ownData(value, "mimeType");
-    if (url.kind === "accessor" || image.kind === "accessor" || data.kind === "accessor" || mime.kind === "accessor") fail("unsupported_content");
-    const href = url.kind === "value" ? url.value : image.kind === "value" ? image.value : undefined;
-    const binary = data.kind === "value" ? data.value : undefined;
-    if ((typeof href !== "string" || !href) && (typeof binary !== "string" || !binary)) fail("unsupported_content");
-    if (href !== undefined && binary !== undefined) fail("unsupported_content");
-    if (url.kind === "value" && image.kind === "value") fail("unsupported_content");
-    const options = ownData(value, "providerOptions");
-    if (options.kind === "accessor") fail("unsupported_content");
+    const url = optionalDefined(ownData(value, "url"));
+    const image = optionalDefined(ownData(value, "image"));
+    const data = optionalDefined(ownData(value, "data"));
+    const mime = optionalDefined(ownData(value, "mimeType"));
+    const href = url !== undefined ? url : image;
+    if ((typeof href !== "string" || !href) && (typeof data !== "string" || !data)) fail("unsupported_content");
+    if (href !== undefined && data !== undefined) fail("unsupported_content");
+    if (url !== undefined && image !== undefined) fail("unsupported_content");
+    if (mime !== undefined && typeof mime !== "string") fail("unsupported_content");
+    const options = optionalDefined(ownData(value, "providerOptions"));
     return {
       type,
-      ...(typeof href === "string" ? (url.kind === "value" ? { url: href } : { image: href }) : { data: binary as string }),
-      ...(mime.kind === "value" ? (typeof mime.value === "string" ? { mimeType: mime.value } : fail("unsupported_content")) : {}),
-      ...(options.kind === "value" ? { providerOptions: cloneProviderOptions(options.value) } : {}),
+      ...(typeof href === "string" ? (url !== undefined ? { url: href } : { image: href }) : { data: data as string }),
+      ...(mime !== undefined ? { mimeType: mime } : {}),
+      ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
     };
   }
   if (type === "tool-call") {
@@ -140,19 +151,18 @@ function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<stri
     return { type, toolCallId: boundedMessageId(toolCallId.value), toolName: boundedMessageId(toolName.value), args: cloneJson(args.value) };
   }
   const toolCallId = ownData(value, "toolCallId");
-  const toolName = ownData(value, "toolName");
+  const toolName = optionalDefined(ownData(value, "toolName"));
   const result = ownData(value, "result");
-  const isError = ownData(value, "isError");
+  const isError = optionalDefined(ownData(value, "isError"));
   if (toolCallId.kind !== "value" || result.kind !== "value") fail("unsupported_content");
   if (role !== "tool" && role !== "user") fail("unsupported_content");
-  if (toolName.kind === "accessor" || isError.kind === "accessor") fail("unsupported_content");
-  if (isError.kind === "value" && typeof isError.value !== "boolean") fail("unsupported_content");
+  if (isError !== undefined && typeof isError !== "boolean") fail("unsupported_content");
   return {
     type: "tool-result",
     toolCallId: boundedMessageId(toolCallId.value),
     result: cloneJson(result.value),
-    ...(toolName.kind === "value" ? { toolName: boundedMessageId(toolName.value) } : {}),
-    ...(isError.kind === "value" ? { isError: isError.value as boolean } : {}),
+    ...(toolName !== undefined ? { toolName: boundedMessageId(toolName) } : {}),
+    ...(isError !== undefined ? { isError } : {}),
   };
 }
 
@@ -186,22 +196,36 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
     let content: HostExecutorMessage["content"];
     if (typeof contentField.value === "string") content = contentField.value;
     else if (Array.isArray(contentField.value)) {
-      if (Object.keys(contentField.value).length !== contentField.value.length) fail("unsupported_content");
-      content = contentField.value.map((part) => cloneHostPart(part, role));
+      const parts = contentField.value;
+      if (parts.length > 16384 || Object.keys(parts).length !== parts.length) fail("unsupported_content");
+      content = Array.from({ length: parts.length }, (_, partIndex) => {
+        const part = Object.getOwnPropertyDescriptor(parts, partIndex);
+        if (!part || !Object.hasOwn(part, "value")) fail("unsupported_content");
+        return cloneHostPart(part.value, role);
+      });
     } else fail("unsupported_content");
-    const idField = ownData(raw, "id");
-    const options = ownData(raw, "providerOptions");
-    const summary = ownData(raw, "isSummary");
-    const toolCalls = ownData(raw, "toolCalls");
-    if (idField.kind === "accessor" || options.kind === "accessor" || summary.kind === "accessor" || toolCalls.kind === "accessor") fail("unsupported_content");
-    if (summary.kind === "value" && typeof summary.value !== "boolean") fail("unsupported_content");
+    const id = optionalDefined(ownData(raw, "id"));
+    const options = optionalDefined(ownData(raw, "providerOptions"));
+    const summary = optionalDefined(ownData(raw, "isSummary"));
+    const toolCallsRaw = optionalDefined(ownData(raw, "toolCalls"));
+    if (summary !== undefined && typeof summary !== "boolean") fail("unsupported_content");
+    const toolCalls = toolCallsRaw !== undefined ? cloneHostToolCalls(toolCallsRaw) : undefined;
+    if (toolCalls !== undefined) {
+      if (role !== "assistant") fail();
+      const blocks = typeof content === "string" ? [] : content;
+      for (const call of toolCalls) {
+        const next = { type: "tool-call" as const, toolCallId: call.id, toolName: call.name, args: call.args };
+        const existing = blocks.find((part) => part.type === "tool-call" && part.toolCallId === next.toolCallId);
+        if (existing && JSON.stringify(existing) !== JSON.stringify(next)) fail();
+      }
+    }
     return {
       role,
       content,
-      ...(idField.kind === "value" ? { id: boundedMessageId(idField.value) } : {}),
-      ...(options.kind === "value" ? { providerOptions: cloneProviderOptions(options.value) } : {}),
-      ...(summary.kind === "value" ? { isSummary: summary.value as boolean } : {}),
-      ...(toolCalls.kind === "value" ? { toolCalls: cloneHostToolCalls(toolCalls.value) } : {}),
+      ...(id !== undefined ? { id: boundedMessageId(id) } : {}),
+      ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
+      ...(summary !== undefined ? { isSummary: summary as boolean } : {}),
+      ...(toolCalls !== undefined ? { toolCalls } : {}),
     };
   });
 }
@@ -210,12 +234,15 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
 export function cloneHostExecutorWindow(state: unknown): HostExecutorMessage[] {
   if (state === undefined || state === null) return [];
   if (Array.isArray(state)) return cloneHostMessages(state);
-  if (object(state)) {
-    const field = ownData(state, "messages");
-    if (field.kind === "accessor") fail("unsupported_content");
-    if (field.kind === "value" && Array.isArray(field.value)) return cloneHostMessages(field.value);
-    if (Object.keys(state).length === 0) return [];
+  if (!object(state) || !isSafePlainRecord(state)) fail("unsupported_content");
+  const field = ownData(state, "messages");
+  if (field.kind === "accessor") fail("unsupported_content");
+  if (field.kind === "value") {
+    if (!Array.isArray(field.value)) fail("unsupported_content");
+    return cloneHostMessages(field.value);
   }
+  if ("messages" in state) fail("unsupported_content");
+  if (Object.keys(state).length === 0) return [];
   return cloneHostMessages([state]);
 }
 

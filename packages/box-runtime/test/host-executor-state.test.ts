@@ -141,4 +141,132 @@ describe("F2 invalid windows are not checkpoint-serializable", () => {
     expect(calls()).toBe(0);
     expect(reads).toBe(0);
   });
+
+  test("content index accessors and pooled Array species cannot alias executor windows", () => {
+    const { session: host } = session();
+    let reads = 0;
+    const indexed = [{ type: "text", text: "placeholder" }];
+    Object.defineProperty(indexed, 0, { enumerable: true, configurable: true, get() { reads += 1; return { type: "text", text: "secret" }; } });
+    const fromAccessor = host.getExecutor([{ role: "user", content: indexed }]);
+    expect(reads).toBe(0);
+    expect(() => fromAccessor.getState()).toThrow(InvalidHostStateError);
+
+    const pool: unknown[] = [];
+    const parts = [{ type: "text", text: "first" }];
+    Object.defineProperty(parts, "constructor", {
+      value: { [Symbol.species]: function Species(this: unknown[]) { return pool; } },
+    });
+    const a = host.getExecutor([{ role: "user", content: parts }]);
+    parts[0]!.text = "second";
+    const b = host.getExecutor([{ role: "user", content: parts }]);
+    expect(a).not.toBe(b);
+    expect((a.getState() as Array<{ content: Array<{ text: string }> }>)[0]!.content[0]!.text).toBe("first");
+    expect((b.getState() as Array<{ content: Array<{ text: string }> }>)[0]!.content[0]!.text).toBe("second");
+  });
+
+  test("unsupported or inherited roots are not successful empty windows", () => {
+    const { session: host, calls } = session();
+    expect(host.getExecutor({}).getState()).toEqual([]);
+    expect(host.getExecutor({ messages: [] }).getState()).toEqual([]);
+
+    class Hidden {
+      #window = [{ role: "user", content: "hidden" }];
+    }
+    const inherited = Object.create({ messages: [{ role: "user", content: "inherited" }] });
+    const wrongType = {};
+    Object.defineProperty(wrongType, "messages", { enumerable: false, value: "not-an-array" });
+    for (const root of [new Hidden(), inherited, new Map([["messages", [{ role: "user", content: "map" }]]]), wrongType]) {
+      const executor = host.getExecutor(root);
+      expect(() => executor.getState()).toThrow(InvalidHostStateError);
+      expect(() => JSON.stringify(executor.getMessages())).toThrow();
+    }
+    expect(calls()).toBe(0);
+  });
+
+  test("legacy toolCalls aliases are assistant-only and must agree with content", () => {
+    const { session: host } = session();
+    const equal = host.getExecutor([{
+      role: "assistant",
+      content: [{ type: "tool-call", toolCallId: "c", toolName: "lookup", args: { q: 1 } }],
+      toolCalls: [{ id: "c", name: "lookup", args: { q: 1 } }],
+    }]);
+    expect(equal.getState()).toEqual([{
+      role: "assistant",
+      content: [{ type: "tool-call", toolCallId: "c", toolName: "lookup", args: { q: 1 } }],
+      toolCalls: [{ id: "c", name: "lookup", args: { q: 1 } }],
+    }]);
+    expect(JSON.stringify(equal.getState())).toContain("lookup");
+
+    const userAlias = host.getExecutor([{
+      role: "user", content: "bad-tool-role",
+      toolCalls: [{ id: "c", name: "lookup", args: {} }],
+    }]);
+    expect(() => userAlias.getState()).toThrow(InvalidHostStateError);
+    const conflict = host.getExecutor([{
+      role: "assistant",
+      content: [{ type: "tool-call", toolCallId: "c", toolName: "lookup", args: { q: 1 } }],
+      toolCalls: [{ id: "c", name: "lookup", args: { q: 2 } }],
+    }]);
+    expect(() => conflict.getMessages()).toThrow(EnvelopeError);
+    expect(() => JSON.stringify(conflict.getState())).toThrow();
+  });
+
+  test("stream/tool errors do not poison an already valid window", async () => {
+    const { session: host } = session();
+    const executor = host.getExecutor([{ role: "user", content: "keep" }]);
+    await expect(executor.stream({}, "step-tools", [{ name: "lookup", get inputSchema() { return { type: "object" }; } }]).response)
+      .rejects.toMatchObject({ name: "RetriableError" });
+    expect(executor.getState()).toEqual([{ role: "user", content: "keep" }]);
+  });
+
+  test("supported optional fields may be undefined in memory and after JSON roundtrip", () => {
+    const { session: host } = session();
+    const input = [{
+      role: "assistant" as const,
+      id: undefined,
+      content: [
+        { type: "text" as const, text: "note", providerOptions: undefined },
+        { type: "tool-call" as const, toolCallId: "c", toolName: "lookup", args: {} },
+      ],
+      providerOptions: undefined,
+      isSummary: undefined,
+    }, {
+      role: "user" as const,
+      content: [{ type: "image" as const, data: "AAAA", mimeType: undefined }],
+    }, {
+      role: "tool" as const,
+      content: [{ type: "tool-result" as const, toolCallId: "c", result: { ok: true }, isError: undefined }],
+    }];
+    const live = host.getExecutor(input);
+    const restored = host.getExecutor(JSON.parse(JSON.stringify(input)) as unknown);
+    expect(live.getState()).toEqual(restored.getState());
+    expect((live.getState() as Array<{ id?: string }>)[0]!.id).toBeUndefined();
+    expect(() => host.getExecutor([{ role: "user", get content() { return "x"; } }]).getState()).toThrow(EnvelopeError);
+    expect(() => host.getExecutor([{ role: "user", content: "x", isSummary: "yes" }]).getState()).toThrow(EnvelopeError);
+  });
+
+  test("providerOptions prototype check does not execute constructor name getters", async () => {
+    const { session: host, requests } = session();
+    let reads = 0;
+    const proto = Object.create(null);
+    Object.defineProperty(proto, "constructor", {
+      value: { get name() { reads += 1; return "Object"; } },
+    });
+    const spoofed = Object.assign(Object.create(proto), { cursor: { isSummary: true } });
+    const refused = host.getExecutor([{ role: "user", content: "x", providerOptions: spoofed }]);
+    expect(reads).toBe(0);
+    expect(() => refused.getState()).toThrow(InvalidHostStateError);
+
+    const ok = host.getExecutor([{
+      role: "user",
+      content: "x",
+      providerOptions: { cursor: { isSummary: true } },
+    }]);
+    expect(ok.getState()).toEqual([{ role: "user", content: "x", providerOptions: { cursor: { isSummary: true } } }]);
+    const nullProto = Object.assign(Object.create(null), { cursor: { inferenceReason: "main" } });
+    expect(host.getExecutor([{ role: "user", content: "y", providerOptions: nullProto }]).getState())
+      .toEqual([{ role: "user", content: "y", providerOptions: { cursor: { inferenceReason: "main" } } }]);
+    await ok.stream({}, "step-options").response;
+    expect(JSON.stringify(requests.at(-1)!.messages)).not.toContain("isSummary");
+  });
 });
