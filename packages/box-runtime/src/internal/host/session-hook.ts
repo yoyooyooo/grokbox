@@ -1,7 +1,6 @@
-import { modelForAgent } from "@grokbox/runtime-kernel/selection";
 import type { HostBinding } from "./host-binding.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
-import { captureHostSelection, loadModelsFileSync } from "./selection.node.ts";
+import { captureHostManagedSelection } from "./selection.node.ts";
 import { createModeldProduce } from "./modeld-produce.node.ts";
 import {
   asHostPromptSession,
@@ -68,9 +67,10 @@ export function bindHostSessionHook(input: {
       ...facts,
     });
     // A real hook entry remains observable even if selection declines or lacks an agent id.
-    const captured = captureHostSelection(input.durableRoot, agentId);
+    const captured = captureHostManagedSelection(input.durableRoot, agentId);
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
+    const record = captured.record;
     const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope") => {
       if (!agentId) return;
       void appendHostStreamRejected(input.runRoot, {
@@ -134,10 +134,8 @@ export function bindHostSessionHook(input: {
         stream: () => visibleFailureHandle(modelId, "invalid_envelope"),
       }), modelId, onRequestId, { requireStepId: true, reject });
     }
-    const models = loadModelsFileSync(input.durableRoot);
-    const record = models ? modelForAgent(models, agentId) : undefined;
-    const vision = record?.capabilities.vision === true || record?.capabilities.images === true
-      || (record?.dataTypes ?? []).includes("images");
+    const vision = record.capabilities.vision === true || record.capabilities.images === true
+      || (record.dataTypes ?? []).includes("images");
     const runtime = createModeldProduce({
       runRoot: input.runRoot,
       agentId,
@@ -178,7 +176,7 @@ export function bindHostSessionHook(input: {
       },
     });
     return asHostPromptSession(wrapStream(session), modelId, onRequestId, {
-      requireStepId: true, reject, contextWindowTokens: record?.contextWindowTokens,
+      requireStepId: true, reject, contextWindowTokens: record.contextWindowTokens,
     });
   };
 }

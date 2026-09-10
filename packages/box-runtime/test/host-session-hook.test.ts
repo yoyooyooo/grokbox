@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { STUB_ECHO_MODEL_ID } from "@grokbox/runtime-kernel/selection";
+import { STUB_ECHO_MODEL_ID, computeSelectionRevision, modelForAgent } from "@grokbox/runtime-kernel/selection";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
-import { captureHostSelection } from "../src/internal/host/selection.node.ts";
+import { captureHostManagedSelection, captureHostSelection, loadModelsFileSync } from "../src/internal/host/selection.node.ts";
 import { isHostPromptSession } from "../src/internal/host/session.ts";
 import { hostEventsPath } from "../src/internal/host/terminal-journal.node.ts";
 import type { HostBinding } from "../src/internal/host/host-binding.ts";
@@ -113,5 +113,46 @@ describe("Host session hook", () => {
     const invalid = rows.find((row) => row.reason === "invalid-state");
     expect(invalid).toMatchObject({ name: "host_stream_rejected", stage: "admit", turnId: "turn-1" });
     expect(rows.length).toBeGreaterThan(0);
+  });
+
+  test("Host W and selectionRevision come from one models.json snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "grokbox-hook-capacity-"));
+    const openai = {
+      provider: "openai",
+      model: "gpt",
+      endpoint: "https://api.example.test/v1",
+      apiKeyRef: "env:KEY",
+      capabilities: { vision: false, tools: true, images: false },
+      dataTypes: ["text", "tools"],
+    };
+    const write = async (window: number) => {
+      await writeFile(join(root, "models.json"), `${JSON.stringify({
+        version: 1,
+        models: { "openai/gpt": { ...openai, contextWindowTokens: window } },
+        assignments: { main: null, agents: { "agent-tom": "openai/gpt" } },
+      })}\n`);
+    };
+    await write(32000);
+    const captureA = captureHostManagedSelection(root, "agent-tom");
+    expect(captureA.kind).toBe("managed");
+    if (captureA.kind !== "managed") throw new Error("A");
+    expect(captureA.record.contextWindowTokens).toBe(32000);
+    expect(captureA.selectionRevision).toBe(computeSelectionRevision({ agentId: "agent-tom", model: captureA.record }));
+
+    await write(200000);
+    const fileB = loadModelsFileSync(root);
+    expect(fileB).not.toBeNull();
+    const recordB = modelForAgent(fileB!, "agent-tom");
+    expect(recordB?.contextWindowTokens).toBe(200000);
+    expect(computeSelectionRevision({ agentId: "agent-tom", model: recordB! })).not.toBe(captureA.selectionRevision);
+    expect(captureA.record.contextWindowTokens).toBe(32000);
+
+    await write(32000);
+    const captureAgain = captureHostManagedSelection(root, "agent-tom");
+    expect(captureAgain.kind).toBe("managed");
+    if (captureAgain.kind !== "managed") throw new Error("A2");
+    expect(captureAgain.record.contextWindowTokens).toBe(32000);
+    expect(captureAgain.selectionRevision).toBe(captureA.selectionRevision);
+    expect(captureA.record.contextWindowTokens).toBe(32000);
   });
 });

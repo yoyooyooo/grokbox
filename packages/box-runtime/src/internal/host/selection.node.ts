@@ -1,7 +1,10 @@
 import { closeSync, constants as fsConstants, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG_READ_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
-import { captureManagedSelection, parseModelsFile, type CapturedSelection, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import {
+  captureManagedSelection, computeSelectionRevision, modelForAgent, parseModelsFile,
+  type CapturedSelection, type ModelRecord, type ModelsFile,
+} from "@grokbox/runtime-kernel/selection";
 
 /** Bounded no-follow nonblocking regular-file read for preload/hook. Never mkdir or repair. */
 export function loadModelsFileSync(root: string): ModelsFile | null {
@@ -21,9 +24,25 @@ export function loadModelsFileSync(root: string): ModelsFile | null {
   }
 }
 
-/** Thin Host capture. Uncovered agents stay official; no credential values. */
-export function captureHostSelection(root: string, agentId?: string): CapturedSelection {
+export type HostManagedCapture =
+  | { kind: "official" }
+  | { kind: "managed"; modelId: string; selectionRevision: string; assignment: "agent"; record: ModelRecord };
+
+/** One models.json snapshot for capture identity and Host capacity. Uncovered agents stay official. */
+export function captureHostManagedSelection(root: string, agentId?: string): HostManagedCapture {
   const file = loadModelsFileSync(root);
   if (!file) return { kind: "official" };
-  return captureManagedSelection(file, agentId);
+  const captured = captureManagedSelection(file, agentId);
+  if (captured.kind !== "managed" || !agentId) return { kind: "official" };
+  const record = modelForAgent(file, agentId);
+  if (!record) return { kind: "official" };
+  if (computeSelectionRevision({ agentId, model: record }) !== captured.selectionRevision) return { kind: "official" };
+  return { ...captured, record };
+}
+
+/** Thin Host capture. Uncovered agents stay official; no credential values. */
+export function captureHostSelection(root: string, agentId?: string): CapturedSelection {
+  const captured = captureHostManagedSelection(root, agentId);
+  if (captured.kind !== "managed") return { kind: "official" };
+  return { kind: "managed", modelId: captured.modelId, selectionRevision: captured.selectionRevision, assignment: captured.assignment };
 }
