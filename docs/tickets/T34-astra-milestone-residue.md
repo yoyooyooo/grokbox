@@ -271,3 +271,22 @@ Offline contract-e2e only; no packed preload, native Host, live adopt, or produc
 
 - **E07 Path B / F5 — still held:** no qualified aux request-kind; aux does not ride the managed selection/auth/backend chain with parent binding; production must not call `runAuxiliary` as a STEP bypass. Implementing Path B is a new milestone, not a continuation of this tip’s review loop.
   - Evidence: `PRIVATE_EVIDENCE` §N1/Path B Acceptance; relook confirmation in `PRIVATE_EVIDENCE`.
+
+## Continuity / E09 Path A — pre-publication-revision — 2026-09-10
+
+- Reviewed SHA: `pre-publication-revision` on `feat/box-runtime-v2`.
+- First review: `PRIVATE_EVIDENCE` (P1 N1–N2; recommend honest partial).
+- Absorb: `pre-publication-revision` (`PRIVATE_EVIDENCE`).
+- Relook: `PRIVATE_EVIDENCE` — **ship for Path A honest-partial only**.
+- Disposition: E09 no longer false-passes; Bun smoke vs Node load separated. **E09 remains unavailable / `e09_reject_old_oracle_not_qualified`.** Full reject-old pin/behavior oracle and packed E01–E08 session factory are residue — **no further absorb on this tip**. B stays open.
+
+### Closed at this tip (Path A)
+
+- N1 false E09 pass from non-executable reject-old oracle / name.includes.
+- N2 Bun-only smoke no longer mixed into Node/artifact E09 pass.
+
+### Items
+
+- **E09 full reject-old oracle — still held:** needs independent pin/currentness + real old-vs-source failure consumption before any E09 pass claim.
+- **Packed E01–E08 session factory — still held:** `packed_preload_does_not_export_session_factory`; artifact lane remains fail-closed.
+  - Evidence: `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`.
