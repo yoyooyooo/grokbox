@@ -22,5 +22,24 @@ function runTurn(host) {
   };
   return (async () => host.inference.createSession(emitRequestId, mainSessionOptions))();
 }
-module.exports = { api, runTurn };
+const compactOwner = {
+  async runStep() {
+    const env_2 = { stack: [], error: void 0, hasError: false };
+    const ctx = { get() { return "turn-live-shaped"; } };
+    let stepClosed = false;
+      let response;
+      let extendedUsage;
+      let usage;
+      let finalInvocationId;
+      try {
+        [response, extendedUsage, usage, finalInvocationId] = await Promise.all([
+          Promise.resolve(), Promise.resolve(), Promise.resolve(), Promise.resolve()
+        ]);
+      } finally {
+        stepClosed = true;
+      }
+    return { response, env_2, ctx };
+  },
+};
+module.exports = { api, runTurn, compactOwner };
 `;

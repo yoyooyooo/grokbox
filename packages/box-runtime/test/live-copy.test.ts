@@ -46,7 +46,8 @@ describeLive("live Host bundle copy H1", () => {
     if (!result.ok) return;
     expect(result.source).toContain("agentId: host.getConversationId()");
     expect(result.source).toContain("invocationId: inferenceRequestId");
-    expect(result.source).toContain("originalSession: __grokbox_session");
+    expect(result.source).toContain("if (__grokbox_session !== undefined) return __grokbox_session");
+    expect(result.source).toContain("grokbox.box-runtime.host-compact.v1");
     const compiled = transformCompileInput({
       content: source,
       filename: copyPath,

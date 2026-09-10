@@ -45,7 +45,7 @@ const CASES = {
     ["bun", "test", "packages/box-runtime/test/controller-io.test.ts", "-t", "raw output"],
   ],
   compact: [
-    ["bun", "test", "packages/runtime-kernel/test/overflow-recovery.test.ts", "packages/box-runtime/test/overflow-bridge.test.ts", "packages/box-runtime/test/modeld-wire.test.ts"],
+    ["bun", "test", "packages/runtime-kernel/test/overflow-recovery.test.ts", "packages/box-runtime/test/overflow-bridge.test.ts", "packages/box-runtime/test/modeld-wire.test.ts", "packages/box-runtime/test/host-compact.test.ts"],
   ],
 };
 

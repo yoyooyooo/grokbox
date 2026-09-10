@@ -6,7 +6,7 @@ import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
 import { reviewedProfilePath } from "../io/paths.ts";
-import { applyPatchProfile, profileFromSource, type PatchProfile, type SlicePatch } from "../host/profile.ts";
+import { applyPatchProfile, approvedSliceSet, profileFromSource, type PatchProfile, type SlicePatch } from "../host/profile.ts";
 
 export function loadDurableReviewedProfile(root: string): PatchProfile | undefined {
   try {
@@ -38,9 +38,11 @@ function invalid(message: string): never {
 /** Snapshot caller-owned patches before any await; authoring is not approval of their semantics. */
 function authoringSlices(value: unknown): SlicePatch[] {
   const fields = ["id", "startAnchor", "endAnchor", "find", "replacement"] as const;
-  if (!Array.isArray(value) || value.length !== 2) invalid("Profile authoring requires exactly two slices.");
+  if (!Array.isArray(value) || (value.length !== 2 && value.length !== 3)) {
+    invalid("Profile authoring requires two or three approved slices.");
+  }
   const ids = new Set<string>();
-  return value.map((slice: unknown) => {
+  const patches = value.map((slice: unknown) => {
     if (!slice || typeof slice !== "object" || Array.isArray(slice)) invalid("Invalid profile slice.");
     const record = slice as Record<string, unknown>;
     if (
@@ -49,14 +51,19 @@ function authoringSlices(value: unknown): SlicePatch[] {
     ) {
       invalid("Invalid profile slice fields.");
     }
-    if (record.id !== "create-session" && record.id !== "agent-id") invalid("Invalid profile slice id.");
+    if (record.id !== "create-session" && record.id !== "agent-id" && record.id !== "compact-register") {
+      invalid("Invalid profile slice id.");
+    }
     if (ids.has(record.id)) invalid("Profile slice ids must be unique.");
     ids.add(record.id);
     const patch = Object.fromEntries(fields.map((key) => [key, record[key]])) as SlicePatch;
     if (patch.find === patch.replacement) invalid("Profile slices must change the source.");
     return patch;
   });
+  if (!approvedSliceSet(patches)) invalid("Profile authoring requires two or three approved slices.");
+  return patches;
 }
+
 
 /** Structural parsing for observation. Does not assert replayability against an unobserved source. */
 export function parseReviewedProfile(value: unknown): PatchProfile {
@@ -161,7 +168,7 @@ export async function writeReviewedProfileFromCopy(input: WriteReviewedProfileFr
   try {
     profile = profileFromSource(source, slices, profileId);
   } catch {
-    invalid("Host bundle does not match the two exact profile slices.");
+    invalid("Host bundle does not match the approved profile slices.");
   }
   const applied = applyPatchProfile(source, profile);
   if (!applied.ok || profile.sourceSha256 !== diskSha ||
