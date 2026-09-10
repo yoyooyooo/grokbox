@@ -8,6 +8,7 @@ This directory contains the accepted box-runtime strategy plan, its current impl
 - [Current Implementation Spec](box-runtime-impl-spec.md): the **single-track destructive rebuild** tree, ports, import rules, execution chain, removal inventory and proof gates. Implementers use this build reference; do not preserve POC internal compatibility.
 - [T20–T33 tickets](../tickets/README.md): executable slices and evidence. Default chain T20 → T21 → T27 … → T28; T29/WebUI is deferred. Historical done tickets stay done.
 - [2026-09-08 adjudication](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md): D1–D12 product/trust decisions retained by the strategy/spec.
+- [Host seam ops recognition](host-seam-ops-recognition.md): forward-only retain/replay/propose/human-review scheme and HSO-0–HSO-6 delivery gates. Smart recognition stays outside preload; no live adoption authorization.
 
 The dated `2026-09-08-box-runtime-next.md` remains only a redirect. No intermediate review report or machine-local artifact is required for public build/contribution.
 
