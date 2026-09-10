@@ -146,6 +146,39 @@ describe("kernel selection", () => {
       assignments: { main: null, agents: {} },
     })).toThrow(BoxRuntimeError);
     expect(qualifiedContextWindowTokens(without.models["openai/gpt"]!, "gpt-4")).toBeUndefined();
+    const fromAlias = parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindow: 200000 } },
+      assignments: { main: null, agents: {} },
+    });
+    expect(fromAlias.models["openai/gpt"]?.contextWindowTokens).toBe(200000);
+    expect("contextWindow" in (fromAlias.models["openai/gpt"] ?? {})).toBe(false);
+    const bothAgree = parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindowTokens: 200000, contextWindow: 200000 } },
+      assignments: { main: null, agents: {} },
+    });
+    expect(bothAgree.models["openai/gpt"]?.contextWindowTokens).toBe(200000);
+    expect(() => parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindowTokens: 200000, contextWindow: 32000 } },
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
+    expect(() => parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindow: 0 } },
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
+    expect(() => parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindow: -1 } },
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
+    expect(() => parseModelsFile({
+      version: 1,
+      models: { "openai/gpt": { ...openai, contextWindow: 1.5 } },
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
   });
 
   test("configured stub contextWindowTokens is selected, not discarded for STUB_ECHO_MODEL", () => {

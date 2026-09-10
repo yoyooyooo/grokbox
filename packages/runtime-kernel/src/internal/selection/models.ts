@@ -94,6 +94,25 @@ function parseContextWindowTokens(value: unknown, id: string): number | undefine
   return value;
 }
 
+/** Pi models.json uses `contextWindow`; grokbox canonical is `contextWindowTokens`. Never guess. */
+function parseRecordContextWindowTokens(value: Record<string, unknown>, id: string): number | undefined {
+  const tokens = value.contextWindowTokens;
+  const alias = value.contextWindow;
+  if (tokens === undefined && alias === undefined) return undefined;
+  if (tokens !== undefined && alias !== undefined) {
+    const parsedTokens = parseContextWindowTokens(tokens, id);
+    const parsedAlias = parseContextWindowTokens(alias, id);
+    if (parsedTokens !== parsedAlias) {
+      throw new BoxRuntimeError(
+        "invalid_usage",
+        `Model '${id}' contextWindow and contextWindowTokens disagree.`,
+      );
+    }
+    return parsedTokens;
+  }
+  return parseContextWindowTokens(tokens !== undefined ? tokens : alias, id);
+}
+
 /** Trusted adapter window if positive safe int; else canonical record. Never guess from name. */
 export function qualifiedContextWindowTokens(record: ModelRecord, adapterWindow?: unknown): number | undefined {
   if (typeof adapterWindow === "number" && Number.isSafeInteger(adapterWindow) && adapterWindow > 0) return adapterWindow;
@@ -112,7 +131,7 @@ function parseModel(id: string, value: unknown): ModelRecord {
     if (typeof value.endpoint === "string" && looksLikeNetworkEndpoint(value.endpoint)) {
       throw new BoxRuntimeError("invalid_usage", "stub/echo forbids network endpoints.");
     }
-    const stubWindow = parseContextWindowTokens(value.contextWindowTokens, id);
+    const stubWindow = parseRecordContextWindowTokens(value, id);
     return stubWindow !== undefined ? { ...STUB_ECHO_MODEL, contextWindowTokens: stubWindow } : STUB_ECHO_MODEL;
   }
   const provider = value.provider;
@@ -145,7 +164,7 @@ function parseModel(id: string, value: unknown): ModelRecord {
         ...(capabilities.tools ? ["tools"] : []),
         ...(capabilities.vision || capabilities.images ? ["images"] : []),
       ];
-  const contextWindowTokens = parseContextWindowTokens(value.contextWindowTokens, id);
+  const contextWindowTokens = parseRecordContextWindowTokens(value, id);
   return {
     id, provider, model, endpoint, apiKeyRef, capabilities, dataTypes,
     ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
