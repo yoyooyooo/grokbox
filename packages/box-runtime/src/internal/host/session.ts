@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
-import { buildHostEnvelope, hostStateToMessages } from "./context-codec.ts";
+import { buildHostEnvelope, cloneHostExecutorWindow } from "./context-codec.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
@@ -47,6 +47,12 @@ export type ExtendedUsage = { inputTokens: number; outputTokens: number; cacheRe
 export type HostStreamResult = StreamHandle & {
   extendedUsage: Promise<ExtendedUsage>; providerMetadata: Promise<Record<string, unknown>>; invocationId: Promise<unknown>;
 };
+export class InvalidHostStateError extends EnvelopeError {
+  readonly name = "InvalidHostStateError";
+  constructor(code: EnvelopeErrorCode = "invalid_envelope") {
+    super(code);
+  }
+}
 export type HostPromptExecutor = {
   appendMessages: (messages?: unknown) => HostPromptExecutor;
   getMessages: () => unknown[]; getState: () => unknown[]; clearMessages: () => void;
@@ -162,73 +168,74 @@ export type HostStreamRejectDetail = {
 };
 export function asHostPromptSession(session: PromptSession, modelId: string, onRequestId?: (id: string) => void,
   input: { invocationId?: string; requireStepId?: boolean; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
-  let messages: unknown[] = [];
-  let invalidState = false;
-  let invalidCode: EnvelopeErrorCode = "invalid_envelope";
-  const rememberInvalid = (error: unknown) => {
-    invalidState = true;
-    invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope";
-  };
   const notified = new Set<string>();
-  const executor: HostPromptExecutor = {
-    appendMessages(next) {
-      if (invalidState) return executor;
-      try { messages.push(...hostStateToMessages(next == null ? [] : next)); }
-      catch (error) { rememberInvalid(error); }
-      return executor;
-    },
-    getMessages: () => structuredClone(messages), getState: () => structuredClone(messages),
-    clearMessages() { messages = []; invalidState = false; invalidCode = "invalid_envelope"; },
-    stream(ctx, invocationId, tools, options) {
-      const requestId = input.requireStepId ? invocationId : (invocationId ?? input.invocationId);
-      let cancellation: ReturnType<typeof combineAbortSignals> | undefined;
-      try {
-        if (input.requireStepId) {
-          if (requestId === undefined) throw new EnvelopeError("invalid_envelope", "missing-step-id");
-          if (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId)) {
-            throw new EnvelopeError("invalid_envelope", "invalid-step-id");
-          }
-        } else if (requestId !== undefined && (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId))) {
-          throw new EnvelopeError("invalid_envelope");
-        }
-        cancellation = abortSignalFrom(ctx, options);
-        const signal = cancellation.signal;
-        if (invalidState && !signal?.aborted) throw new EnvelopeError(invalidCode);
-        const envelope = signal?.aborted ? buildHostEnvelope([]) : buildHostEnvelope(messages, tools, options);
-        const handle = session.stream({ envelope, abortSignal: signal, ...(typeof requestId === "string" ? { invocationId: requestId } : {}) });
-        void handle.response.then(cancellation.dispose, cancellation.dispose);
-        if (typeof requestId === "string" && !notified.has(requestId)) {
-          notified.add(requestId);
-          try { onRequestId?.(requestId); } catch { /* Host notification is not a model effect. */ }
-        }
-        return toHostStreamResult(handle, requestId);
-      } catch (error) {
-        cancellation?.dispose();
-        const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
-        const reason = error instanceof EnvelopeError ? error.stepReason : undefined;
-        const stage = reason === "missing-step-id" || reason === "invalid-step-id" ? "stream-id" : "admit";
-        return toHostStreamResult(
-          input.reject?.(code, {
-            invocationId: requestId,
-            reason: reason ?? "invalid-state",
-            stage,
-          }) ?? visibleFailureHandle(modelId, code),
-          requestId,
-        );
-      }
-    },
-  };
-  const bind = (state?: unknown) => {
+  const createExecutor = (state?: unknown): HostPromptExecutor => {
+    let messages: ReturnType<typeof cloneHostExecutorWindow> = [];
+    let invalidCode: EnvelopeErrorCode | undefined;
     if (state !== undefined) {
-      try {
-        messages = hostStateToMessages(state);
-        invalidState = false;
-        invalidCode = "invalid_envelope";
-      } catch (error) { messages = []; rememberInvalid(error); }
+      try { messages = cloneHostExecutorWindow(state); }
+      catch (error) { invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope"; }
     }
+    const read = (): unknown[] => {
+      if (invalidCode) throw new InvalidHostStateError(invalidCode);
+      return structuredClone(messages);
+    };
+    const executor: HostPromptExecutor = {
+      appendMessages(next) {
+        if (invalidCode) return executor;
+        try {
+          const batch = cloneHostExecutorWindow(next == null ? [] : next);
+          messages = [...messages, ...batch];
+        } catch (error) {
+          invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope";
+        }
+        return executor;
+      },
+      getMessages: read,
+      getState: read,
+      clearMessages() { messages = []; invalidCode = undefined; },
+      stream(ctx, invocationId, tools, options) {
+        const requestId = input.requireStepId ? invocationId : (invocationId ?? input.invocationId);
+        let cancellation: ReturnType<typeof combineAbortSignals> | undefined;
+        try {
+          if (input.requireStepId) {
+            if (requestId === undefined) throw new EnvelopeError("invalid_envelope", "missing-step-id");
+            if (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId)) {
+              throw new EnvelopeError("invalid_envelope", "invalid-step-id");
+            }
+          } else if (requestId !== undefined && (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId))) {
+            throw new EnvelopeError("invalid_envelope");
+          }
+          cancellation = abortSignalFrom(ctx, options);
+          const signal = cancellation.signal;
+          if (invalidCode && !signal?.aborted) throw new EnvelopeError(invalidCode);
+          const envelope = signal?.aborted ? buildHostEnvelope([]) : buildHostEnvelope(messages, tools, options);
+          const handle = session.stream({ envelope, abortSignal: signal, ...(typeof requestId === "string" ? { invocationId: requestId } : {}) });
+          void handle.response.then(cancellation.dispose, cancellation.dispose);
+          if (typeof requestId === "string" && !notified.has(requestId)) {
+            notified.add(requestId);
+            try { onRequestId?.(requestId); } catch { /* Host notification is not a model effect. */ }
+          }
+          return toHostStreamResult(handle, requestId);
+        } catch (error) {
+          cancellation?.dispose();
+          const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
+          const reason = error instanceof EnvelopeError ? error.stepReason : undefined;
+          const stage = reason === "missing-step-id" || reason === "invalid-step-id" ? "stream-id" : "admit";
+          return toHostStreamResult(
+            input.reject?.(code, {
+              invocationId: requestId,
+              reason: reason ?? "invalid-state",
+              stage,
+            }) ?? visibleFailureHandle(modelId, code),
+            requestId,
+          );
+        }
+      },
+    };
     return executor;
   };
-  return { getModelId: () => modelId, getExecutor: bind, getExecutorWithoutResolvedModelTracking: bind };
+  return { getModelId: () => modelId, getExecutor: createExecutor, getExecutorWithoutResolvedModelTracking: createExecutor };
 }
 
 const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };

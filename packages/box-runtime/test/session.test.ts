@@ -177,7 +177,7 @@ describe("managed PromptSession contract", () => {
     });
     expect(await result.providerMetadata).toEqual({});
     expect(await result.invocationId).toBe("inv-1");
-    expect(session.getExecutorWithoutResolvedModelTracking()).toBe(session.getExecutor());
+    expect(session.getExecutorWithoutResolvedModelTracking()).not.toBe(session.getExecutor());
   });
 
   test("Host adapter needs no producer delay when duplicateStream's second reader attaches late",

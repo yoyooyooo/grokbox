@@ -175,26 +175,36 @@ describe("Host messages/state/tools/options envelope", () => {
 
   test("getExecutor accepts Host conversation snapshots with extra keys and text parts with providerOptions", async () => {
     const f = fixture();
-    const result = f.session.getExecutor({
+    const executor = f.session.getExecutor({
       messages: [{
         role: "user",
+        id: "msg-host-1",
         content: [{ type: "text", text: "host-part", providerOptions: { cursor: { inferenceReason: "main" } } }],
-        _privacyMode: "UNSPECIFIED",
+        providerOptions: { cursor: { inferenceReason: "main" } },
       }],
       transcript: "private-sibling",
       version: 2,
-    }).stream({}, "inv-host-snapshot", [], {});
+    });
+    expect(executor.getState()).toEqual([{
+      role: "user",
+      id: "msg-host-1",
+      content: [{ type: "text", text: "host-part", providerOptions: { cursor: { inferenceReason: "main" } } }],
+      providerOptions: { cursor: { inferenceReason: "main" } },
+    }]);
+    const result = executor.stream({}, "inv-host-snapshot", [], {});
     const response = await result.response;
     expect(response.error).toBeUndefined();
     expect(f.calls.count).toBe(1);
     expect(f.requests[0]!.envelope.messages).toEqual([{ role: "user", content: [{ type: "text", text: "host-part" }] }]);
     expect(JSON.stringify(f.requests[0]!.envelope)).not.toContain("private-sibling");
+    expect(JSON.stringify(f.requests[0]!.envelope)).not.toContain("msg-host-1");
   });
 
-  test("invalid state still gives an Array state and a synchronous visible failure", async () => {
+  test("invalid state refuses getters instead of serializing an empty window", async () => {
     const f = fixture();
     const executor = f.session.getExecutor({ transcript: "private-state" });
-    expect(executor.getState()).toEqual([]);
+    expect(() => executor.getState()).toThrow(EnvelopeError);
+    expect(() => JSON.stringify(executor.getMessages())).toThrow();
     const handle = executor.stream({}, "inv-state");
     expect(handle).not.toBeInstanceOf(Promise);
     await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
@@ -207,10 +217,8 @@ describe("Host messages/state/tools/options envelope", () => {
     const hostMessages = [{
       role: "user",
       content: "host-plain-text",
-      _privacyMode: "UNSPECIFIED",
       providerOptions: { cursor: { inferenceReason: "main" } },
       id: "msg-host-1",
-      attachments: ["private-attachment"],
     }];
     const tools = [{
       name: "lookup",
@@ -219,7 +227,9 @@ describe("Host messages/state/tools/options envelope", () => {
       customToolFormat: "host-only",
       render: () => { renderCalls += 1; return "private-render"; },
     }];
-    const result = f.session.getExecutor(hostMessages).stream(
+    const executor = f.session.getExecutor(hostMessages);
+    expect(executor.getState()).toEqual(hostMessages);
+    const result = executor.stream(
       {},
       "inv-host-shape",
       tools,
@@ -238,7 +248,18 @@ describe("Host messages/state/tools/options envelope", () => {
     const leaked = JSON.stringify(f.requests[0]!.envelope);
     expect(leaked).not.toContain("private-");
     expect(leaked).not.toContain("acceptedUnadvertisedToolNames");
-    expect(leaked).not.toContain("_privacyMode");
+    expect(leaked).not.toContain("msg-host-1");
+    const refused = f.session.getExecutor([{
+      role: "user",
+      content: "host-plain-text",
+      _privacyMode: "UNSPECIFIED",
+      attachments: ["private-attachment"],
+    }]);
+    expect(() => refused.getState()).toThrow(EnvelopeError);
+    await expect(refused.stream({}, "inv-host-unknown-keys", tools, {}).response).rejects.toMatchObject({
+      name: "RetriableError", userVisible: true,
+    });
+    expect(renderCalls).toBe(0);
   });
 
   test("inherited getters on required fields and options are not invoked", async () => {
