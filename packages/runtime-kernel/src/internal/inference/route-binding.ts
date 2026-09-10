@@ -6,6 +6,7 @@ import type { AuthLease } from "../../ports.ts";
 import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "../contract/identity.ts";
 import type { ModelRecord } from "../../selection.ts";
 import type { RunStepRequest } from "../contract/binding.ts";
+import type { RecoveryLedger } from "../contract/overflow.ts";
 
 export type LedgerStatus = "active" | "terminal" | "rejected" | "cancelled";
 
@@ -115,6 +116,7 @@ export class InferenceMemory extends Context.Service<InferenceMemory, {
   readonly quiesce: Map<string, Deferred.Deferred<void>>;
   readonly started: Set<string>;
   readonly turnScopes: Map<string, Scope.Closeable>;
+  readonly recoveries: Map<string, RecoveryLedger>;
 }>()("grokbox/InferenceMemory") {}
 
 export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
@@ -125,6 +127,7 @@ export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
       quiesce: new Map<string, Deferred.Deferred<void>>(),
       started: new Set<string>(),
       turnScopes: new Map<string, Scope.Closeable>(),
+      recoveries: new Map<string, RecoveryLedger>(),
     };
     yield* Effect.addFinalizer(() => Effect.gen(function* () {
       for (const halt of memory.cancels.values()) {

@@ -1,4 +1,5 @@
 import type { JsonValue } from "./context.ts";
+import type { OverflowEvidence } from "./overflow.ts";
 
 export type InferenceEventName =
   | "text_delta"
@@ -51,12 +52,14 @@ export const BACKEND_FAILURE_CODES: readonly BackendFailureCode[] = [
 export class BackendFailure extends Error {
   readonly code: BackendFailureCode;
   readonly overflowCandidate: boolean;
+  readonly overflowEvidence?: OverflowEvidence;
 
-  constructor(code: BackendFailureCode, extras: { overflowCandidate?: boolean } = {}) {
+  constructor(code: BackendFailureCode, extras: { overflowCandidate?: boolean; overflowEvidence?: OverflowEvidence } = {}) {
     super(code);
     this.name = "BackendFailure";
     this.code = code;
     this.overflowCandidate = extras.overflowCandidate === true;
+    if (extras.overflowEvidence) this.overflowEvidence = extras.overflowEvidence;
   }
 }
 

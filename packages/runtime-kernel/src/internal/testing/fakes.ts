@@ -75,8 +75,14 @@ export function fakeBackendAuthLayer(
 export function fakeModelBackendLayer(
   events: InferenceEvent[],
   counts?: CountedSeams,
-  options?: { beforeInfer?: Effect.Effect<void>; failAfterFirst?: boolean; afterStream?: Effect.Effect<void> },
+  options?: {
+    beforeInfer?: Effect.Effect<void>;
+    failAfterFirst?: boolean;
+    afterStream?: Effect.Effect<void>;
+    failFirst?: BackendFailure;
+  },
 ): Layer.Layer<ModelBackend> {
+  let inferAttempts = 0;
   return Layer.succeed(ModelBackend, {
     prepare: (_selection: unknown, snapshot: unknown) => Effect.sync(() => {
       if (counts) {
@@ -98,9 +104,13 @@ export function fakeModelBackendLayer(
           return Stream.fromAsyncIterable((async function* () {
             if (started) return;
             started = true;
+            inferAttempts += 1;
             if (counts) {
               counts.network += 1;
               counts.order.push("infer");
+            }
+            if (options?.failFirst && inferAttempts === 1) {
+              throw options.failFirst;
             }
             const state = emptyStreamValidation();
             for (const [index, event] of events.entries()) {

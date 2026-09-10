@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Deferred, Effect, Fiber, Latch } from "effect";
+import { Deferred, Effect, Fiber, Latch, Layer, Stream } from "effect";
 import {
   CompactFailure,
   contextSnapshotBody,
@@ -8,8 +8,17 @@ import {
   type RecoveryTuple,
 } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
-import { admitOverflowRecovery, runOverflowRecovery } from "@grokbox/runtime-kernel/inference";
-import { fakeHostCompactLayer } from "@grokbox/runtime-kernel/testing";
+import { BackendFailure, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
+import { admitOverflowRecovery, inferenceMemoryLayer, runOverflowRecovery, runStep } from "@grokbox/runtime-kernel/inference";
+import { STUB_ECHO_MODEL_ID, captureManagedSelection, parseModelsFile } from "@grokbox/runtime-kernel/selection";
+import {
+  createCountedSeams,
+  fakeAdmissionAuthorityLayer,
+  fakeBackendAuthLayer,
+  fakeConfigurationReadLayer,
+  fakeHostCompactLayer,
+  fakeModelBackendLayer,
+} from "@grokbox/runtime-kernel/testing";
 
 const TUPLE: RecoveryTuple = {
   agentId: "agent-a",
@@ -224,5 +233,87 @@ describe("overflow recovery ledger", () => {
       ledger, evidence: evidence(), identity: TUPLE, recoveryNonce: NONCE,
     }).pipe(Effect.provide(fakeHostCompactLayer({ counts })))));
     expect(counts.invocations).toBe(1);
+  });
+});
+
+describe("runStep overflow recovery is default-off without HostCompact", () => {
+  const EVENTS: InferenceEvent[] = [
+    { type: "text_delta", text: "ok" },
+    { type: "backend_finish", finishReason: "stop", usage: { promptTokens: 1, completionTokens: 1 } },
+  ];
+  const overflow = new BackendFailure("overflow_candidate", {
+    overflowCandidate: true,
+    overflowEvidence: { providerCode: "context_length_exceeded", httpStatus: 400 },
+  });
+
+  function file() {
+    return parseModelsFile({
+      version: 1,
+      models: {
+        [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "" },
+        "openai/gpt": {
+          provider: "openai", model: "gpt", endpoint: "https://api.example.test/v1", apiKeyRef: "env:KEY",
+          capabilities: { vision: false, tools: true, images: false }, dataTypes: ["text", "tools"],
+          contextWindowTokens: 200000,
+        },
+      },
+      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+    });
+  }
+
+  function req() {
+    const captured = captureManagedSelection(file(), "agent-a");
+    if (captured.kind !== "managed") throw new Error("expected managed");
+    return {
+      hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },
+      serviceEpoch: { incarnationId: "svc-1" },
+      agentId: "agent-a",
+      turnId: "turn-1",
+      stepId: "step-1",
+      selection: { agentId: "agent-a", modelId: captured.modelId, selectionRevision: captured.selectionRevision },
+      snapshot: snapshot("hi"),
+    };
+  }
+
+  test("without HostCompact the original overflow fails and compact is not invoked", async () => {
+    const counts = createCountedSeams();
+    const compactCounts = { invocations: 0 };
+    const layer = fakeBackendAuthLayer("secret", counts).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer()),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1" })),
+    );
+    const result = await Effect.runPromise(Effect.gen(function* () {
+      const admitted = yield* runStep(req());
+      if (!("stream" in admitted)) return yield* Effect.fail(new Error("expected live"));
+      return yield* Effect.result(Stream.runCollect(admitted.stream));
+    }).pipe(Effect.provide(layer), Effect.scoped));
+    expect(result._tag).toBe("Failure");
+    expect(compactCounts.invocations).toBe(0);
+    expect(counts.network).toBe(1);
+  });
+
+  test("with HostCompact a confirmed zero-release overflow compact-resumes once", async () => {
+    const counts = createCountedSeams();
+    const compactCounts = { invocations: 0 };
+    const layer = fakeBackendAuthLayer("secret", counts).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer()),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1" })),
+      Layer.merge(fakeHostCompactLayer({
+        counts: compactCounts,
+        handle: () => ({ kind: "snapshot", snapshot: snapshot("compacted") }),
+      })),
+    );
+    const events = await Effect.runPromise(Effect.gen(function* () {
+      const admitted = yield* runStep(req());
+      if (!("stream" in admitted)) return yield* Effect.fail(new Error("expected live"));
+      return yield* Stream.runCollect(admitted.stream);
+    }).pipe(Effect.provide(layer), Effect.scoped));
+    expect(compactCounts.invocations).toBe(1);
+    expect(counts.network).toBe(2);
+    expect([...events].some((event) => event.type === "text_delta")).toBe(true);
   });
 });

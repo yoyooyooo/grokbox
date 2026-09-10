@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { admitOverflowRecovery } from "@grokbox/runtime-kernel/inference";
 import { emptyRecoveryLedger } from "@grokbox/runtime-kernel/contract";
-import { isProviderConfirmedOverflow, overflowEvidenceFromProvider } from "../src/internal/backends/provider-error.ts";
+import { isProviderConfirmedOverflow, overflowEvidenceFromProvider, structuredOverflowFromUnknown } from "../src/internal/backends/provider-error.ts";
 
 describe("confirmed overflow classifier", () => {
   test("structured overflow codes confirm; auth/429/413/unknown do not", () => {
@@ -21,6 +21,33 @@ describe("confirmed overflow classifier", () => {
     expect(isProviderConfirmedOverflow({
       providerCode: "context_length_exceeded", releasedText: 0, releasedReasoning: 0, releasedTools: 0,
     })).toBe(false);
+  });
+
+  test("structured Responses 400 and response.failed codes confirm; message-only does not", () => {
+    expect(structuredOverflowFromUnknown({
+      statusCode: 400,
+      data: { error: { code: "context_length_exceeded", type: "invalid_request_error" } },
+    })).toEqual({ httpStatus: 400, providerCode: "context_length_exceeded" });
+    expect(structuredOverflowFromUnknown({
+      type: "response.failed",
+      response: { error: { code: "context_too_large", message: "too big" } },
+    })).toEqual({ httpStatus: 200, providerCode: "context_too_large" });
+    expect(isProviderConfirmedOverflow(structuredOverflowFromUnknown({
+      statusCode: 400,
+      data: { error: { code: "context_length_exceeded" } },
+    }))).toBe(true);
+    expect(isProviderConfirmedOverflow(structuredOverflowFromUnknown({
+      type: "response.failed",
+      response: { error: { code: "context_length_exceeded" } },
+    }))).toBe(true);
+    expect(isProviderConfirmedOverflow({
+      httpStatus: 200,
+      providerCode: "context_length_exceeded",
+    })).toBe(true);
+    expect(structuredOverflowFromUnknown({ statusCode: 400, message: "context_length_exceeded in prose" })).toEqual({
+      httpStatus: 400,
+    });
+    expect(isProviderConfirmedOverflow({ httpStatus: 400, providerCode: "context_window_exceeded" })).toBe(false);
   });
 
   test("message-only overflow is not confirmation", () => {

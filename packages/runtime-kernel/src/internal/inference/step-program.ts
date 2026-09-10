@@ -1,8 +1,10 @@
-import { Clock, Deferred, Effect, Stream, SynchronizedRef } from "effect";
+import { Clock, Context, Deferred, Effect, Option, Stream, SynchronizedRef } from "effect";
 import * as Scope from "effect/Scope";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
+import { emptyRecoveryLedger } from "../contract/overflow.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, HostCompact, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
+import { runOverflowRecovery } from "./overflow-recovery.ts";
 import { STUB_ECHO_MODEL_ID, captureManagedSelection, modelForAgent, qualifiedContextWindowTokens } from "../../selection.ts";
 import {
   InferenceMemory,
@@ -81,6 +83,51 @@ function haltProducer(cancels: Map<string, Deferred.Deferred<void>>, key: string
   return Deferred.succeed(halt, undefined).pipe(Effect.ignore);
 }
 
+function recoverOverflowStream(
+  request: RunStepRequest,
+  lease: AuthLease,
+  error: BackendFailure,
+  released: { text: number; reasoning: number; tools: number },
+  cancelled: Effect.Effect<boolean>,
+) {
+  return Stream.unwrap(Effect.gen(function* () {
+    const ctx = yield* Effect.context<never>();
+    const compact = Context.getOption(ctx as Context.Context<HostCompact>, HostCompact);
+    if (Option.isNone(compact)) return Stream.fail(error);
+    const memory = yield* InferenceMemory;
+    const binding = (yield* SynchronizedRef.get(memory.ref)).bindings.get(bindingStoreKey(request));
+    if (!binding) return Stream.fail(error);
+    const identity = {
+      agentId: request.agentId,
+      turnId: request.turnId,
+      stepId: request.stepId,
+      bindingId: binding.bindingId,
+      selectionRevision: request.selection.selectionRevision,
+    };
+    const key = ledgerKey(request);
+    let ledger = memory.recoveries.get(key);
+    if (!ledger) {
+      ledger = emptyRecoveryLedger(identity, request.stepId);
+      memory.recoveries.set(key, ledger);
+    }
+    const recovered = yield* Effect.result(runOverflowRecovery({
+      ledger,
+      evidence: {
+        ...error.overflowEvidence,
+        releasedText: released.text,
+        releasedReasoning: released.reasoning,
+        releasedTools: released.tools,
+      },
+      identity,
+      recoveryNonce: request.stepId,
+    }));
+    if (recovered._tag === "Failure") return Stream.fail(error);
+    const backend = yield* ModelBackend;
+    const prepared = yield* backend.prepare(binding.model, recovered.success.snapshot).pipe(Effect.mapError(asBindingOrBackend));
+    return fenceStream(backend.infer({}, prepared, lease), cancelled);
+  }));
+}
+
 function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: AuthLease, halt: Deferred.Deferred<void>) {
   const key = ledgerKey(request);
   return Stream.ensuring(
@@ -93,7 +140,16 @@ function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: Auth
         const cancelled = SynchronizedRef.get(memory.ref).pipe(
           Effect.map((current) => current.ledger.get(key)?.status === "cancelled"),
         );
-        return fenceStream(backend.infer({}, prepared, lease), cancelled);
+        const released = { text: 0, reasoning: 0, tools: 0 };
+        const counted = Stream.tap(fenceStream(backend.infer({}, prepared, lease), cancelled), (event) => Effect.sync(() => {
+          if (event.type === "text_delta" && event.text.length > 0) released.text += 1;
+          if (event.type === "reasoning_delta" && event.text.length > 0) released.reasoning += 1;
+          if (event.type === "tool_start") released.tools += 1;
+        }));
+        return counted.pipe(Stream.catchIf(
+          (error): error is BackendFailure => error instanceof BackendFailure,
+          (error) => recoverOverflowStream(request, lease, error, released, cancelled),
+        ));
       })),
       Deferred.await(halt).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
     ),
