@@ -39,6 +39,7 @@ function models(agents: Record<string, string>, extra: Record<string, unknown> =
         apiKeyRef: extra.apiKeyRef ?? "env:KEY",
         capabilities: { vision: false, tools: true, images: false },
         dataTypes: ["text", "tools"],
+        ...(extra.noWindow === true ? {} : { contextWindowTokens: extra.contextWindowTokens ?? 200000 }),
       },
     },
     assignments: { main: null, agents },
@@ -423,4 +424,38 @@ describe("route binding", () => {
     expect(next._tag === "Failure" ? next.failure : undefined).toMatchObject({ code: "turn_busy" });
     expect(counts.network).toBeLessThanOrEqual(1);
   }, 8_000);
+
+  test("non-stub missing context window is not admitted before pin/HTTP", async () => {
+    const file = models({ "agent-a": "openai/gpt" }, { noWindow: true });
+    const counts = createCountedSeams();
+    const layer = graph({ file: () => file, counts });
+    await expect(run(Effect.scoped(collect(request(file)).pipe(Effect.provide(layer))))).rejects.toMatchObject({ code: "not_admitted" });
+    expect(counts.credential).toBe(0);
+    expect(counts.network).toBe(0);
+    expect(counts.prepare).toBe(0);
+  });
+
+  test("existing TURN rejects a different selectionRevision before prepare", async () => {
+    const wide = models({ "agent-a": "openai/gpt" }, { contextWindowTokens: 200000 });
+    const narrow = models({ "agent-a": "openai/gpt" }, { contextWindowTokens: 32000 });
+    const counts = createCountedSeams();
+    const layer = graph({ file: () => wide, counts });
+    const firstReq = request(wide);
+    const result = await run(Effect.scoped(Effect.gen(function* () {
+      const first = yield* collect(firstReq);
+      if (first.kind !== "live") throw new Error("expected live");
+      const original = yield* collect({ ...request(wide, { stepId: "step-2" }), bindingId: first.bindingId });
+      const changed = yield* Effect.result(collect({
+        ...request(narrow, { stepId: "step-3" }),
+        bindingId: first.bindingId,
+      }));
+      return { first, original, changed };
+    }).pipe(Effect.provide(layer))));
+    expect(result.original.kind).toBe("live");
+    expect(result.changed._tag).toBe("Failure");
+    expect(result.changed._tag === "Failure" ? result.changed.failure : undefined).toMatchObject({ code: "selection_mismatch" });
+    expect(counts.credential).toBe(1);
+    expect(counts.network).toBe(2);
+    expect(counts.prepare).toBe(2);
+  });
 });

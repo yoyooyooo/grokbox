@@ -45,6 +45,7 @@ function openaiRecord(model = "gpt-4o-mini") {
     apiKeyRef: "env:OPENAI_API_KEY",
     capabilities: { vision: false, tools: true, images: false },
     dataTypes: ["text", "tools"],
+    contextWindowTokens: 200000,
   };
 }
 

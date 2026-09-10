@@ -206,8 +206,12 @@ export function parseModelId(value: string): { provider: string; model: string; 
   return { provider: value.slice(0, index), model: value.slice(index + 1), id: value };
 }
 
+function stubFromFile(file: ModelsFile): ModelRecord {
+  return Object.hasOwn(file.models, STUB_ECHO_MODEL_ID) ? file.models[STUB_ECHO_MODEL_ID]! : STUB_ECHO_MODEL;
+}
+
 export function requireModel(file: ModelsFile, id: string): ModelRecord {
-  if (id === STUB_ECHO_MODEL_ID) return STUB_ECHO_MODEL;
+  if (id === STUB_ECHO_MODEL_ID) return stubFromFile(file);
   const record = Object.hasOwn(file.models, id) ? file.models[id] : undefined;
   if (!record) throw new BoxRuntimeError("invalid_usage", `Unknown model '${id}'. Add it to models.json first.`);
   return record;
@@ -331,7 +335,7 @@ export type RouteSessionDecision =
 export function decideRouteSession(file: ModelsFile, agentId?: string): RouteSessionDecision {
   if (!agentId || !Object.hasOwn(file.assignments.agents, agentId)) return { kind: "official" };
   const id = file.assignments.agents[agentId]!;
-  const record = id === STUB_ECHO_MODEL_ID ? STUB_ECHO_MODEL : Object.hasOwn(file.models, id) ? file.models[id] : undefined;
+  const record = id === STUB_ECHO_MODEL_ID ? stubFromFile(file) : Object.hasOwn(file.models, id) ? file.models[id] : undefined;
   if (!record || !routeModelAdmitted(record)) {
     throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo or openai* in this slice.");
   }
@@ -349,6 +353,6 @@ export function resolveRouteSessionModel(file: ModelsFile, agentId?: string): { 
 export function modelForAgent(file: ModelsFile, agentId: string): ModelRecord | undefined {
   const decided = decideRouteSession(file, agentId);
   if (decided.kind !== "managed") return undefined;
-  if (decided.modelId === STUB_ECHO_MODEL_ID) return STUB_ECHO_MODEL;
+  if (decided.modelId === STUB_ECHO_MODEL_ID) return stubFromFile(file);
   return Object.hasOwn(file.models, decided.modelId) ? file.models[decided.modelId] : undefined;
 }

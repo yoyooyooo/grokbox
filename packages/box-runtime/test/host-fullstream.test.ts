@@ -169,6 +169,7 @@ describe("host fullStream unix", () => {
       apiKeyRef: "env:OPENAI_API_KEY",
       capabilities: { vision: false, tools: true, images: false },
       dataTypes: ["text", "tools"],
+      contextWindowTokens: 200000,
     };
     const durable = await mkdtemp(join(tmpdir(), "grokbox-t26-stream-d-"));
     const runRoot = await mkdtemp(join(tmpdir(), "grokbox-t26-stream-r-"));
@@ -205,7 +206,7 @@ describe("host fullStream unix", () => {
         vision: false,
         parallel: "fail-closed",
         produce: produceFor(runRoot, "HOST_TURN_STREAM", openaiModel),
-      }), openaiModel.id, undefined, { requireStepId: true });
+      }), openaiModel.id, undefined, { requireStepId: true, contextWindowTokens: 200000 });
       const handle = session.getExecutor([{ role: "user", content: "stream-me" }]).stream({}, "step-live");
       const iterator = handle.fullStream[Symbol.asyncIterator]();
       const first = await iterator.next();
@@ -248,6 +249,7 @@ describe("host fullStream unix", () => {
       apiKeyRef: "env:OPENAI_API_KEY",
       capabilities: { vision: false, tools: true, images: false },
       dataTypes: ["text", "tools"],
+      contextWindowTokens: 200000,
     };
     const models = parseModelsFile({
       version: 1,
@@ -263,7 +265,7 @@ describe("host fullStream unix", () => {
         vision: false,
         parallel: "fail-closed",
         produce: produceFor(dir, "HOST_TURN_TOOLS", openaiModel),
-      }), openaiModel.id, undefined, { requireStepId: true });
+      }), openaiModel.id, undefined, { requireStepId: true, contextWindowTokens: 200000 });
       const tools = [{ name: "lookup", description: "lookup schema", inputSchema: { type: "object", properties: { q: { type: "string" } } } }];
       const first = session.getExecutor([{ role: "user", content: "use-tool" }]).stream({}, "same-step", tools);
       await first.response;

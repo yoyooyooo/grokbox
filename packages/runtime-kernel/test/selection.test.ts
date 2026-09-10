@@ -10,6 +10,7 @@ import {
   parseModelId,
   parseModelsFile,
   qualifiedContextWindowTokens,
+  modelForAgent,
   routeModelAdmitted,
 } from "@grokbox/runtime-kernel/selection";
 
@@ -145,5 +146,27 @@ describe("kernel selection", () => {
       assignments: { main: null, agents: {} },
     })).toThrow(BoxRuntimeError);
     expect(qualifiedContextWindowTokens(without.models["openai/gpt"]!, "gpt-4")).toBeUndefined();
+  });
+
+  test("configured stub contextWindowTokens is selected, not discarded for STUB_ECHO_MODEL", () => {
+    const withWindow = parseModelsFile({
+      version: 1,
+      models: { [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "", contextWindowTokens: 200000 } },
+      assignments: { main: null, agents: { "agent-a": STUB_ECHO_MODEL_ID } },
+    });
+    const smaller = parseModelsFile({
+      version: 1,
+      models: { [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "", contextWindowTokens: 32000 } },
+      assignments: { main: null, agents: { "agent-a": STUB_ECHO_MODEL_ID } },
+    });
+    expect(modelForAgent(withWindow, "agent-a")?.contextWindowTokens).toBe(200000);
+    expect(modelForAgent(smaller, "agent-a")?.contextWindowTokens).toBe(32000);
+    const first = captureManagedSelection(withWindow, "agent-a");
+    const second = captureManagedSelection(smaller, "agent-a");
+    expect(first.kind).toBe("managed");
+    expect(second.kind).toBe("managed");
+    if (first.kind === "managed" && second.kind === "managed") {
+      expect(first.selectionRevision).not.toBe(second.selectionRevision);
+    }
   });
 });

@@ -98,7 +98,7 @@ describe("host session ABI", () => {
       produce: async function* () {
         produced += 1;
         yield { type: "text-delta", textDelta: "keep" };
-        yield { type: "finish", reason: "stop" };
+        yield { type: "finish", reason: "stop", usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
       },
     });
     const handle = prompt.stream({ messages: [{ role: "user", content: "hi" }] });
@@ -177,11 +177,54 @@ describe("host session ABI", () => {
       inputTokens: 179999, outputTokens: 20, cacheReadTokens: 12, cacheWriteTokens: 3, maxTokens: 200000,
     });
     expect(known.maxTokens).not.toBe(20);
-    const unknown = asHostPromptSession(createStreamingPromptSession({
-      modelId: "openai/gpt", vision: false, parallel: "allow", produce,
-    }), "openai/gpt");
-    const missing = await unknown.getExecutor([{ role: "user", content: "hi" }]).stream({}, "step-unknown").extendedUsage;
+    const stubUnknown = asHostPromptSession(createStreamingPromptSession({
+      modelId: "stub/echo", vision: false, parallel: "allow", produce,
+    }), "stub/echo");
+    const missing = await stubUnknown.getExecutor([{ role: "user", content: "hi" }]).stream({}, "step-unknown").extendedUsage;
     expect(missing.maxTokens).toBe(0);
     expect(missing.inputTokens).toBe(179999);
+  });
+
+  test("stub contextWindowTokens is projected as Host W", async () => {
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: "stub/echo", vision: false, parallel: "allow",
+      produce: async function* () {
+        yield { type: "text-delta", textDelta: "hi" };
+        yield { type: "finish", reason: "stop", usage: { promptTokens: 2, completionTokens: 1, totalTokens: 3 } };
+      },
+    }), "stub/echo", undefined, { contextWindowTokens: 200000 });
+    expect(await session.getExecutor([{ role: "user", content: "hi" }]).stream({}, "step-stub-w").extendedUsage).toMatchObject({
+      inputTokens: 2, outputTokens: 1, maxTokens: 200000,
+    });
+  });
+
+  test("non-stub missing window refuses before produce", async () => {
+    let produced = 0;
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: "openai/gpt", vision: false, parallel: "allow",
+      produce: async function* () {
+        produced += 1;
+        yield { type: "finish", reason: "stop", usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
+      },
+    }), "openai/gpt");
+    const executor = session.getExecutor([{ role: "user", content: "hi" }]);
+    await expect(executor.stream({}, "step-nowindow").response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
+    expect(produced).toBe(0);
+    expect(executor.getState()).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  test("stop without measured usage does not settle 0/0 success", async () => {
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: "openai/gpt", vision: false, parallel: "allow",
+      produce: async function* () {
+        yield { type: "text-delta", textDelta: "partial" };
+        yield { type: "finish", reason: "stop" };
+      },
+    }), "openai/gpt", undefined, { contextWindowTokens: 200000 });
+    const executor = session.getExecutor([{ role: "user", content: "hi" }]);
+    const handle = executor.stream({}, "step-nousage");
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError" });
+    await expect(handle.usage).rejects.toBeDefined();
+    expect(executor.getState()).toEqual([{ role: "user", content: "hi" }]);
   });
 });

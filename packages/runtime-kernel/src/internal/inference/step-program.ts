@@ -3,7 +3,7 @@ import * as Scope from "effect/Scope";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
 import { AdmissionAuthority, BackendAuth, ConfigurationRead, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
-import { captureManagedSelection, modelForAgent } from "../../selection.ts";
+import { STUB_ECHO_MODEL_ID, captureManagedSelection, modelForAgent, qualifiedContextWindowTokens } from "../../selection.ts";
 import {
   InferenceMemory,
   bindingStoreKey,
@@ -166,8 +166,14 @@ function admitLive(request: RunStepRequest, now: number) {
       if (request.selection.modelId !== existing.selection.modelId) {
         return yield* Effect.fail(new BindingFailure("binding_mismatch"));
       }
+      if (request.selection.selectionRevision !== existing.selection.selectionRevision) {
+        return yield* Effect.fail(new BindingFailure("selection_mismatch"));
+      }
       if (existing.serviceEpoch.incarnationId !== request.serviceEpoch.incarnationId) {
         return yield* Effect.fail(new BindingFailure("service_epoch_mismatch"));
+      }
+      if (existing.model.id !== STUB_ECHO_MODEL_ID && qualifiedContextWindowTokens(existing.model) === undefined) {
+        return yield* Effect.fail(new BindingFailure("not_admitted"));
       }
       prepared = yield* backend.prepare(existing.model, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
       bindingId = existing.bindingId;
@@ -192,6 +198,9 @@ function admitLive(request: RunStepRequest, now: number) {
       }
       const resolved = modelForAgent(snapshot.models, request.agentId);
       if (!resolved) return yield* Effect.fail(new BindingFailure("not_admitted"));
+      if (resolved.id !== STUB_ECHO_MODEL_ID && qualifiedContextWindowTokens(resolved) === undefined) {
+        return yield* Effect.fail(new BindingFailure("not_admitted"));
+      }
       prepared = yield* backend.prepare(resolved, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
       const pinned = yield* pinOnTurn(request, resolved.apiKeyRef);
       bindingId = makeBindingId({

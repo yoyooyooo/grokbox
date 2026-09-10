@@ -24,7 +24,7 @@ function fixture(vision = false) {
       requests.push(request);
       return { async *[Symbol.asyncIterator]() { yield { type: "text-delta" as const, textDelta: "accepted" }; yield FINISH; } };
     },
-  }), "fake/envelope");
+  }), "fake/envelope", undefined, { contextWindowTokens: 200000 });
   return { session, requests, calls };
 }
 
@@ -303,7 +303,7 @@ describe("Host messages/state/tools/options envelope", () => {
         requests.push({ envelope: request.envelope, invocationId: request.invocationId });
         return { async *[Symbol.asyncIterator]() { yield { type: "text-delta" as const, textDelta: "accepted" }; yield FINISH; } };
       },
-    }), "fake/envelope", undefined, { invocationId: "turn-aaaa-bbbb-cccc-dddd" });
+    }), "fake/envelope", undefined, { invocationId: "turn-aaaa-bbbb-cccc-dddd", contextWindowTokens: 200000 });
     const result = session.getExecutor([{ role: "user", content: "plain-step-text" }]).stream({}, "step-1111-2222-3333-4444", [], {});
     const response = await result.response;
     expect(response.error).toBeUndefined();

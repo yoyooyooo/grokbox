@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
+import { STUB_ECHO_MODEL_ID } from "@grokbox/runtime-kernel/selection";
 import { buildHostEnvelope, cloneHostExecutorWindow } from "./context-codec.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
@@ -98,6 +99,16 @@ export function normalizeHostUsage(usage: unknown): HostUsage {
     ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
     ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
   };
+}
+function measuredHostUsage(raw: unknown): HostUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const rec = raw as Record<string, unknown>;
+  const prompt = rec.promptTokens ?? rec.prompt_tokens ?? rec.inputTokens ?? rec.input_tokens;
+  const completion = rec.completionTokens ?? rec.completion_tokens ?? rec.outputTokens ?? rec.output_tokens;
+  if (typeof prompt !== "number" || typeof completion !== "number" || !Number.isFinite(prompt) || !Number.isFinite(completion) || prompt < 0 || completion < 0) {
+    return undefined;
+  }
+  return normalizeHostUsage(raw);
 }
 export function projectExtendedUsage(usage: HostUsage, contextWindowTokens?: number): ExtendedUsage {
   const maxTokens = typeof contextWindowTokens === "number" && Number.isSafeInteger(contextWindowTokens) && contextWindowTokens > 0
@@ -233,6 +244,12 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
           cancellation = abortSignalFrom(ctx, options);
           const signal = cancellation.signal;
           if (invalidCode && !signal?.aborted) throw new EnvelopeError(invalidCode);
+          if (!signal?.aborted && modelId !== STUB_ECHO_MODEL_ID) {
+            const window = input.contextWindowTokens;
+            if (typeof window !== "number" || !Number.isSafeInteger(window) || window <= 0) {
+              throw new EnvelopeError("invalid_envelope");
+            }
+          }
           const envelope = signal?.aborted ? buildHostEnvelope([]) : buildHostEnvelope(messages, tools, options);
           const handle = session.stream({ envelope, abortSignal: signal, ...(typeof requestId === "string" ? { invocationId: requestId } : {}) });
           void handle.response.then(cancellation.dispose, cancellation.dispose);
@@ -446,6 +463,9 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (bytes > byteLimit) return failStream("stream_limit");
       if (part.type === "finish") {
         if (!["stop", "error", "abort"].includes(part.reason) || pending.size) return failStream("invalid_stream");
+        if (part.reason === "stop" && !measuredHostUsage(part.usage) && !measuredHostUsage(config.usage)) {
+          return failStream("model_error", "provider");
+        }
         finish(part.reason, part.reason === "error" ? failure("model_error", undefined, streamCtx(stageFor("model_error"))) : undefined, part.usage); return;
       }
       if (part.type === "error") {

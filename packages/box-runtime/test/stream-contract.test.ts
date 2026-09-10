@@ -12,7 +12,7 @@ function fixture(input: { parallel?: "allow" | "fail-closed"; maxParts?: number;
     parallel: input.parallel ?? "allow", maxParts: input.maxParts, maxBytes: input.maxBytes, providerCalls: calls,
     onTerminal: (terminal) => terminals.push(terminal),
     produce: (request) => { driverSignal = request.abortSignal; return script.source; },
-  }), "fake/stream");
+  }), "fake/stream", undefined, { contextWindowTokens: 200000 });
   return { script, session, terminals, calls, driverSignal: () => driverSignal };
 }
 const STOP: StreamPart = { type: "finish", reason: "stop", usage: { promptTokens: 8, completionTokens: 4, totalTokens: 12 } };
@@ -186,7 +186,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     for (const throws of [true, false]) {
       const session = asHostPromptSession(createStreamingPromptSession({ modelId: "fake/error", vision: false, parallel: "allow",
         produce: () => ({ async *[Symbol.asyncIterator]() { yield { type: "text-delta" as const, textDelta: "prefix" }; if (throws) throw new Error("private-provider-body-secret"); } }),
-      }), "fake/error");
+      }), "fake/error", undefined, { contextWindowTokens: 200000 });
       const handle = session.getExecutor().stream();
       await expect(within(handle.response)).rejects.toMatchObject({ name: "RetriableError", userVisible: true });
       const thrown = await handle.response.then(() => undefined, (error) => error as Error);

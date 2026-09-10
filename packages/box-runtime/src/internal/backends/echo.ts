@@ -49,7 +49,7 @@ export const echoModelBackendLayer: Layer.Layer<ModelBackend> = Layer.succeed(Mo
     const text = lastUserFromPrompt(payload.prompt);
     const events: InferenceEvent[] = [
       ...(text ? [{ type: "text_delta" as const, text }] : []),
-      { type: "backend_finish", finishReason: "stop" },
+      { type: "backend_finish", finishReason: "stop", usage: { promptTokens: 1, completionTokens: 1 } },
     ];
     return Stream.fromIterable(events);
   },
