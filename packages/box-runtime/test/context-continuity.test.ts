@@ -3,7 +3,8 @@ import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { EnvelopeError } from "@grokbox/runtime-kernel/contract";
+import { BoxRuntimeError, EnvelopeError } from "@grokbox/runtime-kernel/contract";
+import { parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
@@ -11,9 +12,14 @@ import {
   type StreamPart,
 } from "../src/internal/host/session.ts";
 import {
+  HOST_P_USED,
+  HOST_S_USED,
+  hostObserveExtendedUsage,
   metadataWindow,
   mulberry32,
   readHostRoot,
+  SYNTHETIC_OPENAI,
+  SYNTHETIC_W,
   writeHostRoot,
   writeUiDecoy,
 } from "./context-continuity-fixture.ts";
@@ -190,5 +196,39 @@ describe("E02 invalid state → checkpoint", () => {
     expect(reopened.state).toEqual(legal);
     expect(reopened.pid).not.toBe(process.pid);
     expect(reopened.decoyPresent).toBe(false);
+  });
+});
+
+describe("E05 Host S/P oracle vs W mutants", () => {
+  test("E05 zero-W and output-cap mutants never start or persist", () => {
+    const honest = hostObserveExtendedUsage({
+      inputTokens: HOST_P_USED - 20, outputTokens: 20, cacheReadTokens: 1, cacheWriteTokens: 2, maxTokens: SYNTHETIC_W,
+    }, "turn-tail");
+    expect(honest.W).toBe(SYNTHETIC_W);
+    expect(honest.started).toBe(true);
+    expect(honest.persist).toBe(true);
+    const zeroW = hostObserveExtendedUsage({
+      inputTokens: HOST_P_USED, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 0,
+    }, "turn-tail");
+    expect(zeroW.started).toBe(false);
+    expect(zeroW.persist).toBe(false);
+    expect(zeroW.accepted).toBe(false);
+    const outputCap = hostObserveExtendedUsage({
+      inputTokens: HOST_S_USED, outputTokens: 4096, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 4096,
+    }, "mid-loop");
+    expect(outputCap.W).not.toBe(SYNTHETIC_W);
+    expect(outputCap.W).toBe(4096);
+  });
+});
+
+describe("E06 window parse fail-closed", () => {
+  test("E06 unknown 0/neg/non-int windows are not qualified models", () => {
+    for (const contextWindowTokens of [0, -8, 3.14]) {
+      expect(() => parseModelsFile({
+        version: 1,
+        models: { [SYNTHETIC_OPENAI.id]: { ...SYNTHETIC_OPENAI, contextWindowTokens } },
+        assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
+      })).toThrow(BoxRuntimeError);
+    }
   });
 });

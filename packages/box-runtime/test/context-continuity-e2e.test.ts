@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectStreamParts } from "./host-consumer.ts";
+import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
+import { computeSelectionRevision, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
   ARCHIVED_ONLY,
   assertIndependentGoldenInHttp,
@@ -11,12 +13,18 @@ import {
   compactJourneyWindow,
   END_SENTINEL,
   FACT_ALPHA,
+  HOST_P_USED,
+  HOST_S_USED,
   hostAcceptSummary,
+  hostObserveExtendedUsage,
   longZeroCapWindow,
   LOOKUP_TOOL,
   metadataWindow,
   PAD_BODY,
   sha256Json,
+  SYNTHETIC_OPENAI,
+  SYNTHETIC_OPENAI_NO_WINDOW,
+  SYNTHETIC_W,
   TOOL_BODY,
   UI_DECOY,
   UNICODE_SENTINEL,
@@ -129,4 +137,125 @@ describe("E04 Host legal compact → reload", () => {
     expect(http).not.toContain("store.db");
     expect(result.decoyPresent).toBe(false);
   }, 30_000);
+});
+
+function windowRows() {
+  return metadataWindow().filter((message) => message.role !== "system");
+}
+
+describe("E05 W/U feedback through Host extendedUsage", () => {
+  const cases: Array<{ used: number; phase: "mid-loop" | "turn-tail" }> = [
+    { used: 179999, phase: "mid-loop" },
+    { used: 179999, phase: "turn-tail" },
+    { used: HOST_S_USED, phase: "mid-loop" },
+    { used: HOST_S_USED, phase: "turn-tail" },
+    { used: HOST_P_USED, phase: "mid-loop" },
+    { used: HOST_P_USED, phase: "turn-tail" },
+  ];
+  test.each(cases)("E05 W/U used=$used phase=$phase", async ({ used, phase }) => {
+    const output = 20;
+    const cacheRead = 12;
+    const cacheWrite = 3;
+    let rootCommitted = false;
+    await withFakeHttpSession({
+      turnId: `HOST_TURN_E05_${used}_${phase}`,
+      usage: {
+        prompt_tokens: used - output,
+        completion_tokens: output,
+        total_tokens: used,
+        cache_read_tokens: cacheRead,
+        cache_write_tokens: cacheWrite,
+      },
+      fn: async ({ session, requests }) => {
+        const executor = session.getExecutor(windowRows());
+        const handle = executor.stream({}, `step-e05-${used}-${phase}`, [LOOKUP_TOOL]);
+        const extended = await handle.extendedUsage;
+        expect(extended.maxTokens).toBe(SYNTHETIC_W);
+        expect(extended.maxTokens).not.toBe(0);
+        expect(extended.maxTokens).not.toBe(extended.outputTokens);
+        expect(extended.inputTokens).toBe(used - output);
+        expect(extended.outputTokens).toBe(output);
+        expect(extended.cacheReadTokens).toBe(cacheRead);
+        expect(extended.cacheWriteTokens).not.toBe(extended.inputTokens);
+        const body = requests[0]?.body as { max_tokens?: unknown } | undefined;
+        if (typeof body?.max_tokens === "number") expect(extended.maxTokens).not.toBe(body.max_tokens);
+        const observed = hostObserveExtendedUsage(extended, phase);
+        expect(observed.W).toBe(SYNTHETIC_W);
+        expect(observed.U).toBe(used);
+        expect(observed.started).toBe(used >= HOST_S_USED);
+        expect(observed.persist).toBe(used >= HOST_P_USED);
+        if (phase === "mid-loop") expect(observed.accepted).toBe(observed.started);
+        else expect(observed.accepted).toBe(observed.persist);
+        expect(rootCommitted).toBe(false);
+        if (phase === "turn-tail" && observed.accepted) rootCommitted = true;
+        expect(rootCommitted).toBe(phase === "turn-tail" && observed.accepted);
+        expect(executor.getState()).toEqual(windowRows());
+        await handle.response;
+      },
+    });
+  }, 20_000);
+});
+
+describe("E06 unknown window/usage and pinned selection", () => {
+  test("E06 missing window is not a qualified success and does not chop", async () => {
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E06_missing",
+      model: SYNTHETIC_OPENAI_NO_WINDOW,
+      fn: async ({ session, requests }) => {
+        const window = windowRows();
+        const executor = session.getExecutor(window);
+        await expect(executor.stream({}, "step-e06-missing", [LOOKUP_TOOL]).response).rejects.toMatchObject({
+          name: "RetriableError",
+        });
+        expect(requests).toHaveLength(0);
+        expect(executor.getState()).toEqual(window);
+      },
+    });
+  }, 20_000);
+
+  test("E06 0/negative/non-integer windows fail closed at parse", () => {
+    for (const contextWindowTokens of [0, -1, 1.5, Number.NaN]) {
+      expect(() => parseModelsFile({
+        version: 1,
+        models: { [SYNTHETIC_OPENAI.id]: { ...SYNTHETIC_OPENAI, contextWindowTokens } },
+        assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
+      })).toThrow(BoxRuntimeError);
+    }
+  });
+
+  test("E06 unknown usage does not settle 0/0 success", async () => {
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E06_nousage",
+      usage: "omit",
+      fn: async ({ session }) => {
+        const handle = session.getExecutor(windowRows()).stream({}, "step-e06-nousage", [LOOKUP_TOOL]);
+        await expect(handle.response).rejects.toBeDefined();
+        await expect(handle.usage).rejects.toBeDefined();
+        await expect(handle.extendedUsage).rejects.toBeDefined();
+      },
+    });
+  }, 20_000);
+
+  test("E06 next TURN smaller window does not rewrite a live TURN", async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const narrow = { ...SYNTHETIC_OPENAI, contextWindowTokens: 32000 };
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E06_live",
+      hold,
+      usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 },
+      fn: async ({ session, makeSession, requests }) => {
+        const live = session.getExecutor(windowRows());
+        const pending = live.stream({}, "step-e06-live", [LOOKUP_TOOL]);
+        makeSession({ turnId: "HOST_TURN_E06_next", model: narrow, contextWindowTokens: 32000 });
+        expect(computeSelectionRevision({ agentId: "agent-tom", model: SYNTHETIC_OPENAI }))
+          .not.toBe(computeSelectionRevision({ agentId: "agent-tom", model: narrow }));
+        release();
+        const liveUsage = await pending.extendedUsage;
+        expect(liveUsage.maxTokens).toBe(SYNTHETIC_W);
+        expect(live.getState()).toEqual(windowRows());
+        expect(requests).toHaveLength(1);
+      },
+    });
+  }, 20_000);
 });

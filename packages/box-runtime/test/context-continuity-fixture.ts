@@ -50,6 +50,10 @@ export const TEST_BINDING: HostBinding = {
   identitySha: HEX("c"),
 };
 
+export const SYNTHETIC_W = 200000;
+export const HOST_S_USED = 180000;
+export const HOST_P_USED = 190000;
+
 export const SYNTHETIC_OPENAI: ModelRecord = {
   id: "openai/gpt-4o-mini",
   provider: "openai",
@@ -58,8 +62,49 @@ export const SYNTHETIC_OPENAI: ModelRecord = {
   apiKeyRef: "env:OPENAI_API_KEY",
   capabilities: { vision: false, tools: true, images: false },
   dataTypes: ["text", "tools"],
-  contextWindowTokens: 200000,
+  contextWindowTokens: SYNTHETIC_W,
 };
+
+export const SYNTHETIC_OPENAI_NO_WINDOW: ModelRecord = {
+  id: "openai/gpt-4o-mini",
+  provider: "openai",
+  model: "gpt-4o-mini",
+  endpoint: "https://ccs.test/v1",
+  apiKeyRef: "env:OPENAI_API_KEY",
+  capabilities: { vision: false, tools: true, images: false },
+  dataTypes: ["text", "tools"],
+};
+
+export type ProviderUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+};
+
+export type HostUsagePhase = "mid-loop" | "turn-tail";
+
+/** Host-owned S/P oracle. Not grokbox compact and not generation maxTokens. */
+export function hostObserveExtendedUsage(
+  extended: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; maxTokens: number },
+  phase: HostUsagePhase,
+) {
+  const W = extended.maxTokens;
+  const U = extended.inputTokens + extended.outputTokens;
+  const started = W > 0 && U >= HOST_S_USED;
+  const persist = W > 0 && U >= HOST_P_USED;
+  const accepted = phase === "mid-loop" ? started : persist;
+  return {
+    W,
+    U,
+    cacheReadTokens: extended.cacheReadTokens,
+    cacheWriteTokens: extended.cacheWriteTokens,
+    started,
+    persist,
+    accepted,
+  };
+}
 
 export type HostWindowMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -264,10 +309,33 @@ export function assertNoCapStoreOrDecoy(body: unknown): void {
   }
 }
 
-export function sseChatOk(text = "ok"): Response {
+export function sseChatOk(text = "ok", usage: ProviderUsage | "omit" = {
+  prompt_tokens: 1,
+  completion_tokens: 1,
+  total_tokens: 2,
+}): Response {
+  const usageObj = usage === "omit" ? undefined : {
+    prompt_tokens: usage.prompt_tokens,
+    completion_tokens: usage.completion_tokens,
+    total_tokens: usage.total_tokens ?? usage.prompt_tokens + usage.completion_tokens,
+    ...(usage.cache_read_tokens !== undefined || usage.cache_write_tokens !== undefined
+      ? {
+        prompt_tokens_details: {
+          ...(usage.cache_read_tokens !== undefined ? { cached_tokens: usage.cache_read_tokens } : {}),
+          ...(usage.cache_write_tokens !== undefined ? { cache_write_tokens: usage.cache_write_tokens } : {}),
+        },
+      }
+      : {}),
+  };
+  const finish: Record<string, unknown> = {
+    id: "c",
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+  };
+  if (usageObj) finish.usage = usageObj;
   const chunks = [
     `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`,
-    `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
+    `data: ${JSON.stringify(finish)}\n\n`,
     "data: [DONE]\n\n",
   ];
   return new Response(chunks.join(""), { status: 200, headers: { "content-type": "text/event-stream" } });
@@ -362,26 +430,33 @@ export type CapturedRequest = { body: unknown; text: string };
 
 export async function withFakeHttpSession<T>(input: {
   turnId: string;
+  model?: ModelRecord;
+  contextWindowTokens?: number;
+  usage?: ProviderUsage | "omit";
+  hold?: Promise<void>;
   inspect?: (body: unknown, text: string) => void;
   fn: (ctx: {
     session: HostPromptSession;
     requests: CapturedRequest[];
     dir: string;
+    makeSession: (opts: { turnId: string; model: ModelRecord; contextWindowTokens?: number }) => HostPromptSession;
   }) => Promise<T>;
 }): Promise<T> {
   const requests: CapturedRequest[] = [];
+  const model = input.model ?? SYNTHETIC_OPENAI;
   const fetchImpl = Object.assign(async (_url: string | URL | Request, init?: RequestInit) => {
     const raw = typeof init?.body === "string" ? init.body : await new Response(init?.body).text();
     const body = JSON.parse(raw) as unknown;
     const text = JSON.stringify(body);
     input.inspect?.(body, text);
     requests.push({ body, text });
-    return sseChatOk("ok");
+    if (input.hold) await input.hold;
+    return sseChatOk("ok", input.usage ?? { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 });
   }, { preconnect: async () => undefined }) as typeof fetch;
   const models = parseModelsFile({
     version: 1,
-    models: { [SYNTHETIC_OPENAI.id]: SYNTHETIC_OPENAI },
-    assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
+    models: { [model.id]: model },
+    assignments: { main: null, agents: { "agent-tom": model.id } },
   });
   const dir = await mkdtemp(join(tmpdir(), "grokbox-ctx-cont-"));
   const generation = randomUUID();
@@ -390,14 +465,25 @@ export async function withFakeHttpSession<T>(input: {
     generation,
     dispatchLayer(generation, models, fetchImpl, { OPENAI_API_KEY: "sk-test" }) as Layer.Layer<unknown, never, never>,
   );
-  try {
-    const session = asHostPromptSession(createStreamingPromptSession({
-      modelId: SYNTHETIC_OPENAI.id,
+  const makeSession = (opts: { turnId: string; model: ModelRecord; contextWindowTokens?: number }) => {
+    const window = opts.contextWindowTokens ?? opts.model.contextWindowTokens;
+    return asHostPromptSession(createStreamingPromptSession({
+      modelId: opts.model.id,
       vision: false,
       parallel: "fail-closed",
-      produce: produceFor(dir, input.turnId, SYNTHETIC_OPENAI),
-    }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: true, contextWindowTokens: 200000 });
-    return await input.fn({ session, requests, dir });
+      produce: produceFor(dir, opts.turnId, opts.model),
+    }), opts.model.id, undefined, {
+      requireStepId: true,
+      ...(window !== undefined ? { contextWindowTokens: window } : {}),
+    });
+  };
+  try {
+    const session = makeSession({
+      turnId: input.turnId,
+      model,
+      contextWindowTokens: input.contextWindowTokens ?? model.contextWindowTokens,
+    });
+    return await input.fn({ session, requests, dir, makeSession });
   } finally {
     await stop();
   }
