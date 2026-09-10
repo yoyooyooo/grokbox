@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect, Stream } from "effect";
-import { BoxRuntimeError, EnvelopeError, ENCODED_PROVIDER_REQUEST_MAX_BYTES, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
+import { BoxRuntimeError, ENCODED_PROVIDER_REQUEST_MAX_BYTES, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
 import { BackendAuth, ModelBackend } from "@grokbox/runtime-kernel/ports";
 import { parseModelsFile } from "@grokbox/runtime-kernel/selection";
@@ -14,7 +14,7 @@ import {
   createStreamingPromptSession,
   InvalidHostStateError,
   type StreamPart,
-} from "../src/internal/host/session.ts";
+} from "./packed-host-session.ts";
 import { admitAuxiliary, runAuxiliary } from "../src/internal/host/auxiliary.ts";
 import { captureHostManagedSelection } from "../src/internal/host/selection.node.ts";
 import {
@@ -168,7 +168,7 @@ describe("E02 invalid state → checkpoint", () => {
       get content() { reads += 1; return "private-getter"; },
     }]);
     expect(reads).toBe(0);
-    expect(() => hot.getState()).toThrow(EnvelopeError);
+    expect(() => hot.getState()).toThrow(/unsupported_content/);
     await expect(hot.stream({}, "step-invalid").response).rejects.toMatchObject({ name: "RetriableError" });
     expect(reads).toBe(0);
     expect(calls()).toBe(0);

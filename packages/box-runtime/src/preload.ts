@@ -9,7 +9,8 @@ import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts
 import { bindHostSessionHook } from "./internal/host/session-hook.ts";
 import { bindHostCompactHook } from "./internal/host/compact.ts";
 import { bindCompiledHost } from "./internal/host/host-binding.ts";
-import { HOST_COMPACT_SYMBOL, ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
+import { asHostPromptSession, createStreamingPromptSession, InvalidHostStateError } from "./internal/host/session.ts";
+import { HOST_COMPACT_SYMBOL, PACKED_SESSION_SYMBOL, ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
 
 const target = process.env.GROKBOX_HOST_BUNDLE ?? LIVE_HOST_BUNDLE;
 const profilePath = process.env.GROKBOX_PATCH_PROFILE;
@@ -86,4 +87,13 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       renameSync(staging, markerPath);
     },
   });
+}
+
+/** Opt-in packed test factory. Default --require does not export this. Forbidden with live Host. */
+if (process.env.GROKBOX_PACKED_SESSION_FACTORY === "1" && process.env.GROKBOX_ALLOW_LIVE_HOST !== "1") {
+  (globalThis as Record<symbol, unknown>)[Symbol.for(PACKED_SESSION_SYMBOL)] = {
+    asHostPromptSession,
+    createStreamingPromptSession,
+    InvalidHostStateError,
+  };
 }

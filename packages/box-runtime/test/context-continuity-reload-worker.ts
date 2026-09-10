@@ -4,7 +4,7 @@ import {
   asHostPromptSession,
   createStreamingPromptSession,
   type StreamPart,
-} from "../src/internal/host/session.ts";
+} from "./packed-host-session.ts";
 import {
   LOOKUP_TOOL,
   readHostRoot,

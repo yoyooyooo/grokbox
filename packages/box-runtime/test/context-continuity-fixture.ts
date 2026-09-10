@@ -17,7 +17,7 @@ import { createLiveBackendAuth } from "../src/internal/io/credentials.node.ts";
 import { dispatchingModelBackendLayer } from "../src/internal/backends/dispatch.ts";
 import { admitAllAuthorityLayer } from "../src/internal/roots/modeld.runtime.ts";
 import { serveModeld } from "../src/internal/modeld/server.node.ts";
-import { asHostPromptSession, createStreamingPromptSession, type HostPromptSession } from "../src/internal/host/session.ts";
+import { asHostPromptSession, createStreamingPromptSession, type HostPromptSession } from "./packed-host-session.ts";
 import { createModeldProduce } from "../src/internal/host/modeld-produce.node.ts";
 import type { HostBinding } from "../src/internal/host/host-binding.ts";
 import { probeModeldHealth } from "../src/internal/wire/modeld-probe.node.ts";

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
-import { applyPatchProfile, profileFromSource } from "../src/internal/host/profile.ts";
+import { applyPatchProfile, PACKED_SESSION_SYMBOL, profileFromSource } from "../src/internal/host/profile.ts";
 import { hostVisibleStreamError } from "../src/internal/host/session.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
@@ -61,5 +61,26 @@ describe("source Host SHA unit and bun packed smoke", () => {
     });
     expect(probe.status).toBe(0);
     expect(probe.stdout).toContain("preload-probe-ok");
+  });
+
+  test("default packed --require does not install session factory", () => {
+    const probe = spawnSync(process.execPath, [
+      "--require",
+      PACKED,
+      "-e",
+      `process.stdout.write(String(globalThis[Symbol.for(${JSON.stringify(PACKED_SESSION_SYMBOL)})] == null))`,
+    ], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GROKBOX_ALLOW_LIVE_HOST: "",
+        GROKBOX_PACKED_SESSION_FACTORY: "",
+        GROKBOX_PATCH_PROFILE: "",
+        GROKBOX_OPERATION_ID: "",
+      },
+    });
+    expect(probe.status).toBe(0);
+    expect(probe.stdout).toBe("true");
   });
 });

@@ -7,7 +7,7 @@ import { collectStreamParts } from "./host-consumer.ts";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
-} from "../src/internal/host/session.ts";
+} from "./packed-host-session.ts";
 import { runAuxiliary } from "../src/internal/host/auxiliary.ts";
 import { BoxRuntimeError, ENVELOPE_MAX_BYTES, SNAPSHOT_JSON_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
 import { computeSelectionRevision, parseModelsFile } from "@grokbox/runtime-kernel/selection";

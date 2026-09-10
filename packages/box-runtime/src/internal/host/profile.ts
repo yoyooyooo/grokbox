@@ -117,6 +117,7 @@ export function transformUnchecked(source: string, slices: readonly SlicePatch[]
 
 export const ROUTE_SESSION_SYMBOL = "grokbox.box-runtime.route-session.v1";
 export const HOST_COMPACT_SYMBOL = "grokbox.box-runtime.host-compact.v1";
+export const PACKED_SESSION_SYMBOL = "grokbox.box-runtime.packed-session.v1";
 
 export function approvedSliceSet(slices: readonly { id: string }[]): boolean {
   const ids = slices.map((slice) => slice.id);

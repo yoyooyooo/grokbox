@@ -22,7 +22,11 @@ const CONTRACT_TESTS = [
   "packages/box-runtime/test/context-continuity-e2e.test.ts",
   "packages/box-runtime/test/context-continuity-artifact.test.ts",
 ];
-const ARTIFACT_TESTS = ["packages/box-runtime/test/context-continuity-artifact.test.ts"];
+const ARTIFACT_PACKED_TESTS = [
+  "packages/box-runtime/test/context-continuity.test.ts",
+  "packages/box-runtime/test/context-continuity-e2e.test.ts",
+];
+const ARTIFACT_OBS_TESTS = ["packages/box-runtime/test/context-continuity-artifact.test.ts"];
 
 function usage(code) {
   const text = "usage: bun scripts/verify-context-continuity.mjs --lane contract-e2e|artifact-e2e [--json]";
@@ -92,7 +96,6 @@ const notProven = [
   "auxiliary_unqualified",
   "E09",
   "e09_reject_old_oracle_not_qualified",
-  "E09-packed-e01-e08-session-factory",
   "E10", "E11",
   "native_host_consumer_qualification",
   "live-adopt",
@@ -198,15 +201,29 @@ artifact.loadProbe = {
   stderrTail: (probe.stderr ?? "").slice(-500),
 };
 
-const artifactArgv = ["bun", "test", ...ARTIFACT_TESTS];
-const artifactRan = spawnSync(artifactArgv[0], artifactArgv.slice(1), { cwd: root, encoding: "utf8" });
-const artifactParsed = parseBunTest(`${artifactRan.stdout ?? ""}\n${artifactRan.stderr ?? ""}`);
-const packedCases = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"].map((id) => ({
-  id,
-  status: "unavailable",
-  reason: "packed_preload_does_not_export_session_factory",
-  note: "dist/preload.cjs is --require-only; it does not export a session factory for E01–E08.",
-}));
+const packedEnv = {
+  ...process.env,
+  GROKBOX_PACKED_SESSION_FACTORY: "1",
+  GROKBOX_ALLOW_LIVE_HOST: "",
+  GROKBOX_PATCH_PROFILE: "",
+  GROKBOX_OPERATION_ID: "",
+};
+const packedArgv = ["bun", "test", ...ARTIFACT_PACKED_TESTS];
+const packedRan = spawnSync(packedArgv[0], packedArgv.slice(1), { cwd: root, encoding: "utf8", env: packedEnv });
+const packedParsed = parseBunTest(`${packedRan.stdout ?? ""}\n${packedRan.stderr ?? ""}`);
+const packedCases = REQUIRED_CASES.map((id) => caseStatus(id, packedParsed, true));
+
+const obsArgv = ["bun", "test", ...ARTIFACT_OBS_TESTS];
+const obsRan = spawnSync(obsArgv[0], obsArgv.slice(1), { cwd: root, encoding: "utf8" });
+const obsParsed = parseBunTest(`${obsRan.stdout ?? ""}\n${obsRan.stderr ?? ""}`);
+
+const packedFailed = packedRan.status !== 0
+  || packedParsed.fail > 0
+  || packedParsed.skip > 0
+  || packedParsed.pass === 0
+  || packedCases.some((c) => c.status !== "pass");
+const obsFailed = obsRan.status !== 0 || obsParsed.fail > 0;
+const failed = !loadOk || packedFailed || obsFailed;
 
 emit({
   lane,
@@ -214,7 +231,7 @@ emit({
   bun,
   dependencyReality: "offline-packed-preload",
   native_qualification_pending: true,
-  packedSessionFactory: false,
+  packedSessionFactory: !packedFailed,
   artifact,
   cases: [...packedCases, {
     id: "E07",
@@ -224,21 +241,32 @@ emit({
     id: "E09",
     status: "unavailable",
     reason: !loadOk ? "packed_node_load_failed" : "e09_reject_old_oracle_not_qualified",
-    note: "Bun packed smoke may run in tests; Node loadProbe is separate. Reject-old oracle is not qualified. Packed E01–E08 session factory is not exported.",
+    note: "Reject-old oracle is not qualified. Packed E01–E06+E08 uses opt-in Symbol factory, not E09 pass.",
   }],
-  asserts: { pass: artifactParsed.pass, fail: artifactParsed.fail, skip: artifactParsed.skip, expects: artifactParsed.expects },
+  asserts: {
+    packed: { pass: packedParsed.pass, fail: packedParsed.fail, skip: packedParsed.skip, expects: packedParsed.expects },
+    obs: { pass: obsParsed.pass, fail: obsParsed.fail, skip: obsParsed.skip, expects: obsParsed.expects },
+  },
   commands: [{
-    argv: artifactArgv,
-    exit: artifactRan.status ?? 1,
-    stdoutTail: (artifactRan.stdout ?? "").slice(-2000),
-    stderrTail: (artifactRan.stderr ?? "").slice(-1000),
+    argv: packedArgv,
+    env: { GROKBOX_PACKED_SESSION_FACTORY: "1" },
+    exit: packedRan.status ?? 1,
+    stdoutTail: (packedRan.stdout ?? "").slice(-2000),
+    stderrTail: (packedRan.stderr ?? "").slice(-1000),
+  }, {
+    argv: obsArgv,
+    exit: obsRan.status ?? 1,
+    stdoutTail: (obsRan.stdout ?? "").slice(-1000),
+    stderrTail: (obsRan.stderr ?? "").slice(-500),
   }],
   notProven,
   shaGate: "Compare dist/preload.cjs sha256 after rebuilding with the recorded command before claiming packed E01–E08.",
-  ok: false,
-  error: !loadOk
-    ? "packed preload Node load probe failed"
-    : artifactRan.status !== 0
-      ? "packed bun smoke / source SHA unit failed"
-      : "packed_preload_does_not_export_session_factory: E01–E08 cannot run against dist/preload.cjs; E09 reject-old oracle is notQualified",
-}, true);
+  ok: !failed,
+  ...(failed ? {
+    error: !loadOk
+      ? "packed preload Node load probe failed"
+      : packedFailed
+        ? "packed E01–E06+E08 against dist/preload.cjs failed"
+        : "packed bun smoke / source SHA unit failed",
+  } : {}),
+}, failed);
