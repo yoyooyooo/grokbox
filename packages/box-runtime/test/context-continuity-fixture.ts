@@ -214,6 +214,31 @@ export function createHostOutputConsumer() {
   };
 }
 
+export type HostMemoryRecord = { purpose: "memory-extraction" | "episode"; auxRequestId: string; text: string };
+
+/** Host-owned Memory writer. grokbox must not replace this. */
+export function createHostMemoryControl() {
+  const memories: HostMemoryRecord[] = [];
+  const evidence: Array<{ id: string; note: string }> = [];
+  let turns = 0;
+  return {
+    memories,
+    evidence,
+    recordMemoryEvidence(note: string) {
+      evidence.push({ id: `ev-${evidence.length + 1}`, note });
+    },
+    noteTurn() { turns += 1; return turns; },
+    episodeDue(interval: number) {
+      return interval > 0 && turns > 0 && turns % interval === 0;
+    },
+    commit(result: { kind: string; purpose?: string; auxRequestId?: string; text?: string }) {
+      if (result.kind !== "ok" || (result.purpose !== "memory-extraction" && result.purpose !== "episode")) return;
+      if (typeof result.auxRequestId !== "string" || typeof result.text !== "string" || result.text.length === 0) return;
+      memories.push({ purpose: result.purpose, auxRequestId: result.auxRequestId, text: result.text });
+    },
+  };
+}
+
 export function sha256Text(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }

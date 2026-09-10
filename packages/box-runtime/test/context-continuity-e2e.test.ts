@@ -8,6 +8,7 @@ import {
   asHostPromptSession,
   createStreamingPromptSession,
 } from "../src/internal/host/session.ts";
+import { runAuxiliary } from "../src/internal/host/auxiliary.ts";
 import { BoxRuntimeError, ENVELOPE_MAX_BYTES, SNAPSHOT_JSON_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
 import { computeSelectionRevision, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
@@ -15,6 +16,7 @@ import {
   assertIndependentGoldenInHttp,
   assertNoCapStoreOrDecoy,
   compactJourneyWindow,
+  createHostMemoryControl,
   createHostOutputConsumer,
   createHostSummaryControl,
   END_SENTINEL,
@@ -486,4 +488,38 @@ describe("E08 budget/cancel/fault", () => {
       },
     });
   }, 30_000);
+});
+
+describe("E07 auxiliary after main STEP", () => {
+  test("E07 main STEP then extraction Memory; main window unchanged", async () => {
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E07_main",
+      fn: async ({ session, requests }) => {
+        const mainWindow = windowRows();
+        const mainEx = session.getExecutor(mainWindow);
+        await mainEx.stream({}, "step-e07-main", [LOOKUP_TOOL]).response;
+        expect(requests).toHaveLength(1);
+        const before = mainEx.getState();
+        const auxCounts = { n: 0 };
+        const aux = asHostPromptSession(createStreamingPromptSession({
+          modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+          produce: async function* () {
+            auxCounts.n += 1;
+            yield { type: "text-delta" as const, textDelta: "MEM-ALPHA" };
+            yield { type: "finish" as const, reason: "stop" as const, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
+          },
+        }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: false, contextWindowTokens: SYNTHETIC_W });
+        const memory = createHostMemoryControl();
+        const seen = new Set<string>();
+        memory.commit(await runAuxiliary({
+          session: aux, purpose: "memory-extraction", auxRequestId: "aux-e07", parentLive: true, seen,
+          messages: [{ role: "user", content: "purpose: episode" }],
+        }));
+        expect(auxCounts.n).toBe(1);
+        expect(requests).toHaveLength(1);
+        expect(memory.memories).toEqual([{ purpose: "memory-extraction", auxRequestId: "aux-e07", text: "MEM-ALPHA" }]);
+        expect(mainEx.getState()).toEqual(before);
+      },
+    });
+  }, 20_000);
 });

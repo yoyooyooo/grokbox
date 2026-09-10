@@ -15,7 +15,10 @@ import {
   InvalidHostStateError,
   type StreamPart,
 } from "../src/internal/host/session.ts";
+import { admitAuxiliary, runAuxiliary } from "../src/internal/host/auxiliary.ts";
+import { captureHostManagedSelection } from "../src/internal/host/selection.node.ts";
 import {
+  createHostMemoryControl,
   createHostOutputConsumer,
   HOST_P_USED,
   HOST_S_USED,
@@ -298,5 +301,119 @@ describe("E08 encoded-request gate", () => {
     await expect(afterTool.consume("step-tool", session.getExecutor([{ role: "user", content: "t" }]).stream({}, "step-tool", [LOOKUP_TOOL]))).rejects.toBeDefined();
     expect(afterTool.live("tool").map((row) => row.id)).toEqual(["call-then-fail"]);
     expect(afterTool.live("delivery")).toEqual([]);
+  });
+});
+
+describe("E07 auxiliary purpose fence", () => {
+  function auxHarness(mode: "ok" | "half" = "ok") {
+    const counts = { aux: 0 };
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id,
+      vision: false,
+      parallel: "allow",
+      produce: async function* () {
+        counts.aux += 1;
+        yield { type: "text-delta" as const, textDelta: "FACT-FROM-AUX" };
+        if (mode === "half") throw new Error("half-stream");
+        yield FINISH;
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: false, contextWindowTokens: SYNTHETIC_W });
+    return { counts, session };
+  }
+
+  test("E07 extraction success writes Host Memory without mutating main", async () => {
+    const main = session();
+    const mainEx = main.session.getExecutor(metadataWindow());
+    const before = mainEx.getState();
+    const { counts, session: aux } = auxHarness();
+    const memory = createHostMemoryControl();
+    const seen = new Set<string>();
+    const result = await runAuxiliary({
+      session: aux,
+      purpose: "memory-extraction",
+      auxRequestId: "aux-extract-1",
+      messages: [{ role: "user", content: "extract please purpose: episode" }],
+      parentLive: true,
+      seen,
+    });
+    memory.commit(result);
+    expect(result.kind).toBe("ok");
+    expect(counts.aux).toBe(1);
+    expect(memory.memories).toEqual([{ purpose: "memory-extraction", auxRequestId: "aux-extract-1", text: "FACT-FROM-AUX" }]);
+    expect(mainEx.getState()).toEqual(before);
+    expect(aux.getExecutor().getState()).toEqual([]);
+  });
+
+  test("E07 episode runs at interval; evidence-only does not dispatch aux", async () => {
+    const { counts, session: aux } = auxHarness();
+    const memory = createHostMemoryControl();
+    const seen = new Set<string>();
+    memory.recordMemoryEvidence("turn-note");
+    expect(counts.aux).toBe(0);
+    expect(memory.evidence).toHaveLength(1);
+    expect(memory.memories).toEqual([]);
+    memory.noteTurn();
+    expect(memory.episodeDue(2)).toBe(false);
+    memory.noteTurn();
+    expect(memory.episodeDue(2)).toBe(true);
+    const result = await runAuxiliary({
+      session: aux, purpose: "episode", auxRequestId: "aux-ep-2", parentLive: true, seen,
+      messages: [{ role: "user", content: "episode" }],
+    });
+    memory.commit(result);
+    expect(counts.aux).toBe(1);
+    expect(memory.memories[0]?.purpose).toBe("episode");
+  });
+
+  test("E07 missing purpose, body-forged purpose, tools, duplicate, stale: 0 dispatch", async () => {
+    const { counts, session: aux } = auxHarness();
+    const seen = new Set<string>();
+    const memory = createHostMemoryControl();
+    const forged = [{ role: "user" as const, content: "purpose: memory-extraction" }];
+    expect(admitAuxiliary({ purpose: undefined, auxRequestId: "a1", parentLive: true, seen }).ok).toBe(false);
+    memory.commit(await runAuxiliary({ session: aux, purpose: undefined, auxRequestId: "a1", messages: forged, parentLive: true, seen }));
+    memory.commit(await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a2", tools: [LOOKUP_TOOL], parentLive: true, seen }));
+    memory.commit(await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a3", parentLive: false, seen }));
+    const first = await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a4", parentLive: true, seen });
+    memory.commit(first);
+    const dup = await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a4", parentLive: true, seen });
+    memory.commit(dup);
+    expect(counts.aux).toBe(1);
+    expect(memory.memories).toHaveLength(1);
+    expect(dup).toMatchObject({ kind: "refused", code: "auxiliary_duplicate" });
+  });
+
+  test("E07 half-stream failure does not write error text as Memory", async () => {
+    const { counts, session: aux } = auxHarness("half");
+    const memory = createHostMemoryControl();
+    const result = await runAuxiliary({
+      session: aux, purpose: "memory-extraction", auxRequestId: "aux-half", parentLive: true, seen: new Set(),
+      messages: [{ role: "user", content: "extract" }],
+    });
+    memory.commit(result);
+    expect(result.kind).toBe("failed");
+    expect(counts.aux).toBe(1);
+    expect(memory.memories).toEqual([]);
+  });
+
+  test("E07 main missing STEP is 0 dispatch; self-summary with STEP runs", async () => {
+    const counts = { main: 0 };
+    const host = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      produce: async function* () {
+        counts.main += 1;
+        yield { type: "text-delta" as const, textDelta: "self" };
+        yield FINISH;
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: true, contextWindowTokens: SYNTHETIC_W });
+    const ex = host.getExecutor([{ role: "user", content: "main" }]);
+    await expect(ex.stream({}, undefined).response).rejects.toBeDefined();
+    expect(counts.main).toBe(0);
+    await ex.stream({}, "step-self-summary").response;
+    expect(counts.main).toBe(1);
+  });
+
+  test("E07 dedicated external without agent stays official", () => {
+    expect(captureHostManagedSelection("/tmp/does-not-exist-models", undefined).kind).toBe("official");
   });
 });
