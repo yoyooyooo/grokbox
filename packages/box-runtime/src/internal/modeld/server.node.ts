@@ -1,5 +1,6 @@
 import type { Socket } from "node:net";
 import { Cause, Deferred, Effect, Queue, Stream } from "effect";
+import type { Layer } from "effect";
 import {
   ADMISSION_WAIT_MS,
   BackendFailure,
@@ -35,7 +36,7 @@ function writable(socket: Socket): boolean {
   return !socket.destroyed && socket.writable;
 }
 
-function writeFrame(socket: Socket, value: unknown): Effect.Effect<void, Error> {
+export function writeFrame(socket: Socket, value: unknown): Effect.Effect<void, Error> {
   return Effect.callback<void, Error>((resume, signal) => {
     if (!writable(socket)) {
       resume(Effect.fail(new Error("disconnected")));
@@ -78,12 +79,13 @@ function writeFrame(socket: Socket, value: unknown): Effect.Effect<void, Error> 
   });
 }
 
-type Incoming = {
+export type Incoming = {
   socket: Socket;
   buf: Buffer;
   consumed: boolean;
   extra: boolean;
   overflow: boolean;
+  awaitingResume: boolean;
   onLate?: () => void;
 };
 
@@ -94,7 +96,7 @@ function tryDecode(buf: Buffer): { value: unknown; rest: Buffer } | Error | null
   return { value: decoded.value, rest: decoded.rest };
 }
 
-function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS): Effect.Effect<{ value: unknown; rest: Buffer }, Error> {
+export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS): Effect.Effect<{ value: unknown; rest: Buffer }, Error> {
   return Effect.callback<{ value: unknown; rest: Buffer }, Error>((resume, signal) => {
     const socket = incoming.socket;
     let settled = false;
@@ -139,7 +141,7 @@ function emit(socket: Socket, value: unknown) {
   return writeFrame(socket, value).pipe(Effect.ignore);
 }
 
-function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer, observeStep?: ServeOptions["observeStep"]) {
+function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer, options: ServeOptions) {
   const socket = incoming.socket;
   return Effect.gen(function* () {
     incoming.consumed = true;
@@ -170,6 +172,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     }
 
     const request = parsed.request;
+    const observeStep = options.observeStep;
     let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0 };
     yield* Effect.addFinalizer((exit) => {
       if (!observeStep) return Effect.void;
@@ -273,6 +276,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 
 export type ServeOptions = {
   observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
+  compactForIncoming?: (incoming: Incoming) => Layer.Layer<import("@grokbox/runtime-kernel/ports").HostCompact>;
   path: string;
   generation: string;
   counts?: ResourceCounts;
@@ -300,8 +304,17 @@ export function serveModeld(options: ServeOptions) {
         }
         capacity.clients += 1;
         if (options.counts) options.counts.sockets += 1;
-        const held: Incoming = { socket, buf: Buffer.alloc(0), consumed: false, extra: false, overflow: false };
+        const held: Incoming = { socket, buf: Buffer.alloc(0), consumed: false, extra: false, overflow: false, awaitingResume: false };
         socket.on("data", (chunk: Buffer) => {
+          if (held.awaitingResume) {
+            if (held.buf.length + chunk.length > MODELD_MAX_FRAME + 4) {
+              held.overflow = true;
+              held.buf = Buffer.alloc(0);
+              return;
+            }
+            held.buf = Buffer.concat([held.buf, chunk]);
+            return;
+          }
           if (held.consumed) {
             held.extra = true;
             held.onLate?.();
@@ -334,7 +347,10 @@ export function serveModeld(options: ServeOptions) {
       yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
         const socket = yield* trackSocket(raw.socket, options.counts, capacity);
         const frame = yield* readOneFrame(raw);
-        yield* handleRequest(raw, options.generation, frame.value, frame.rest, options.observeStep);
+        const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options);
+        yield* options.compactForIncoming
+          ? handled.pipe(Effect.provide(options.compactForIncoming(raw)))
+          : handled;
         void socket;
       })).pipe(Effect.ignore, Effect.onExit(() => Effect.sync(() => {
         if (options.counts) options.counts.fibers = Math.max(0, options.counts.fibers - 1);

@@ -54,6 +54,10 @@ export async function requestModeld(runRoot: string, body: unknown, timeoutMs = 
         try {
           const next = acceptModeldFrame(session, decoded.value);
           session = next.session;
+          if (next.control) {
+            finish(new Error("unexpected_compact"));
+            return;
+          }
           frames.push(decoded.value);
           if (next.done) {
             done = true;
@@ -150,6 +154,10 @@ export function streamModeld(
             try {
               const next = acceptModeldFrame(session, decoded.value);
               session = next.session;
+              if (next.control) {
+                settle(new Error("unexpected_compact"));
+                return;
+              }
               if (next.done) {
                 complete = true;
                 if (buf.length > 0) {

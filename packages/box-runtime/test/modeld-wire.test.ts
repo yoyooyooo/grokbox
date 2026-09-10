@@ -89,5 +89,19 @@ describe("modeld v3 wire", () => {
     });
     expect(resume.method).toBe("resume-step");
     expect(() => parseV4ControlFrame({ version: 4, method: "run-step" })).toThrow(WireError);
+    const events = acceptModeldFrame({ method: "run-step", phase: "events", sequence: 0 }, {
+      version: 4,
+      method: "compact-request",
+      agentId: "a",
+      turnId: "t",
+      stepId: "s1",
+      bindingId: "b",
+      selectionRevision: "r",
+      recoveryNonce: "n",
+      deadlineMs: 5_000,
+    });
+    expect(events.done).toBe(false);
+    expect(events.control).toMatchObject({ method: "compact-request", recoveryNonce: "n" });
+    expect(events.session).toEqual({ method: "run-step", phase: "events", sequence: 0 });
   });
 });

@@ -149,7 +149,7 @@ function uuidLike(value: unknown): value is string {
 }
 
 /** Strict v3 response. Returns whether the session is complete. */
-export function acceptModeldFrame(session: ClientSession, value: unknown): { session: ClientSession; done: boolean } {
+export function acceptModeldFrame(session: ClientSession, value: unknown): { session: ClientSession; done: boolean; control?: ParsedV4Control } {
   if (!isRecord(value)) throw new WireError("malformed_frame");
   if (value.ok === false) {
     if (!exactKeys(value, ["ok", "version", "error"])) throw new WireError("extra_keys");
@@ -176,6 +176,11 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
       throw new WireError("malformed_frame");
     }
     return { session: { method: "run-step", phase: "events", sequence: 0 }, done: false };
+  }
+  if (isRecord(value) && value.version === 4) {
+    const control = parseV4ControlFrame(value);
+    if (control.method !== "compact-request") throw new WireError("unknown_method");
+    return { session, done: false, control };
   }
   if (value.kind === "event") {
     if (!exactKeys(value, ["kind", "sequence", "event"])) throw new WireError("extra_keys");
