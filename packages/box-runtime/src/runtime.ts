@@ -22,6 +22,15 @@ export {
 export { observeEvents } from "./internal/io/journal.node.ts";
 export { writeReviewedProfileFromCopy } from "./internal/process/profile.node.ts";
 export { observeHostProvenance, type HostSeamObserveReceipt } from "./internal/ops/host-seam/observe.ts";
+export {
+  applyRetentionPlan,
+  buildRetentionPlan,
+  readRetentionPlanFile,
+  unavailableTrash,
+  type RetentionPlan,
+} from "./internal/ops/host-seam/prune.ts";
+export { watchHostSeamOnce, type HostSeamWatchOnceReceipt } from "./internal/ops/host-seam/watch.ts";
+export { readOnlyHostStatus, HOST_UPGRADE_RPC_FORBIDDEN } from "./internal/ops/host-seam/gateway-readonly.ts";
 
 export { startModeldProcess, ensureModeld, modeldRootLayer, type StartedModeld, type ModeldEnsure } from "./internal/roots/modeld.runtime.ts";
 export { startControlOperation, controllerOperationId, diskPreloadSha256, reviewedProfileSha256 } from "./internal/roots/controller-program.node.ts";

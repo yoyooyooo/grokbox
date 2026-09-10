@@ -155,6 +155,8 @@ describe("box-local runtime CLI", () => {
       "runtime models use",
       "runtime models reset",
       "runtime profile observe",
+      "runtime profile prune",
+      "runtime profile watch",
       "runtime profile write",
       "runtime re-adopt",
       "runtime watchdog run",

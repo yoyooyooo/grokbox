@@ -7,6 +7,7 @@ import { LIVE_SLICE_PATCHES } from "../../host/live-slices.ts";
 import type { PatchProfile } from "../../host/profile.ts";
 import { HOST_BUNDLE_KEEP, retainHostBundle } from "../../io/provenance.node.ts";
 import { observeKnifePoints, type KnifePointObservation } from "./knife-points.ts";
+import { buildRetentionPlan, type RetentionPlan } from "./prune.ts";
 
 const SOURCE_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -21,6 +22,7 @@ export type HostSeamObserveReceipt = {
   keep: typeof HOST_BUNDLE_KEEP;
   protectedShas: string[];
   retentionPressure: boolean;
+  retentionPlan: RetentionPlan;
   signaled: false;
   adopted: false;
   gaps: string[];
@@ -48,6 +50,7 @@ export async function observeHostProvenance(input: {
     throw error;
   }
   if (!info.isFile() || info.isSymbolicLink()) invalid("Host bundle input must be a regular non-symlink file.");
+  if (info.nlink > 1) invalid("Host bundle input must not be a hardlink alias.");
   if (info.size > SOURCE_MAX_BYTES) invalid("Host bundle exceeds the observe size budget.");
 
   const handle = await open(from, constants.O_RDONLY | constants.O_NONBLOCK);
@@ -77,7 +80,7 @@ export async function observeHostProvenance(input: {
   };
   const knife = observeKnifePoints(source, profile);
   const at = input.now?.() ?? new Date().toISOString();
-  const retained = await retainHostBundle({
+  const retainInput = {
     root: input.root,
     source,
     sourceSha: observedSha,
@@ -85,7 +88,24 @@ export async function observeHostProvenance(input: {
     ...(profile.profileId !== "hso-observe-recipe" && profile.sourceSha256 === observedSha
       ? { matchedProfileId: profile.profileId }
       : {}),
-  });
+  };
+  let retained;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      retained = await retainHostBundle(retainInput);
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "retain_failed";
+      const retryable = message.includes("bytes-mismatch") && attempt < 7;
+      if (!retryable) {
+        if (message.includes("bytes-mismatch") || message.includes("sha-mismatch")) invalid("corpus_corrupt");
+        invalid(message);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+  if (!retained) invalid("corpus_corrupt");
+  const retentionPlan = await buildRetentionPlan(input.root, observedSha);
 
   return {
     observedSha,
@@ -96,8 +116,9 @@ export async function observeHostProvenance(input: {
     knifePoints: knife.rows,
     applyCode: knife.applyCode,
     keep: HOST_BUNDLE_KEEP,
-    protectedShas: [observedSha],
-    retentionPressure: false,
+    protectedShas: retentionPlan.protectedShas,
+    retentionPressure: retentionPlan.retentionPressure,
+    retentionPlan,
     signaled: false,
     adopted: false,
     gaps: knife.traceMismatch ? ["trace_mismatch"] : [],

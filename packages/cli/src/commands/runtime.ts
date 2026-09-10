@@ -24,6 +24,9 @@ import {
   startModeldProcess,
   writeReviewedProfileFromCopy,
   observeHostProvenance,
+  applyRetentionPlan,
+  readRetentionPlanFile,
+  watchHostSeamOnce,
   type DesiredMode,
 } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
@@ -251,6 +254,62 @@ export async function runRuntimeProfileObserve(deps: CliDeps, fromPath: string |
       offline: true,
       ...receipt,
     });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfilePrune(
+  deps: CliDeps,
+  planPath: string | undefined,
+  confirmed: boolean | undefined,
+): Promise<void> {
+  try {
+    if (!planPath || planPath.trim().length === 0) {
+      throw new CliError("invalid_usage", "runtime profile prune requires --plan <abs>.");
+    }
+    if (!isAbsolute(planPath)) {
+      throw new CliError("invalid_usage", "--plan must be an absolute path.");
+    }
+    const runtime = store(deps);
+    const plan = await readRetentionPlanFile(planPath);
+    const liveSha = plan.head ?? plan.protectedShas[0];
+    if (!liveSha) throw new CliError("invalid_usage", "retention plan has no live SHA.");
+    const result = await applyRetentionPlan({
+      root: runtime.root,
+      plan,
+      confirm: confirmed === true,
+      liveSha,
+    });
+    writeSuccess(deps.stdout, {
+      process: "profile-prune",
+      signaled: false,
+      adopted: false,
+      ...result,
+    });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfileWatch(
+  deps: CliDeps,
+  once: boolean | undefined,
+  fromPath: string | undefined,
+): Promise<void> {
+  try {
+    if (once !== true) {
+      throw new CliError("invalid_usage", "runtime profile watch requires --once until the long-running watcher lands.");
+    }
+    if (fromPath && !isAbsolute(fromPath)) {
+      throw new CliError("invalid_usage", "--from must be an absolute Host bundle path.");
+    }
+    const runtime = store(deps);
+    const receipt = await watchHostSeamOnce({
+      root: runtime.root,
+      ...(fromPath ? { from: resolve(fromPath) } : {}),
+    });
+    writeSuccess(deps.stdout, receipt);
   } catch (error) {
     rethrow(error);
   }

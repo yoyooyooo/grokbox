@@ -232,13 +232,20 @@ export async function retainHostBundle(input: {
   const existed = await isRealDir(genDir);
   if (existed) {
     const stored = await readStoredSource(input.root, input.sourceSha);
-    if (stored === null || stored !== input.source) throw new Error("host-bundle-bytes-mismatch");
-    const meta = await readHostBundleMeta(input.root, input.sourceSha);
-    if (!meta || meta.sourceSha !== input.sourceSha) throw new Error("host-bundle-bytes-mismatch");
-    await writeFile(join(dir, "HEAD"), `${input.sourceSha}\n`, { mode: 0o600 });
-    return { sourceSha: input.sourceSha, retained: "existing", meta, diff: null };
-  }
-  if (await lstat(genDir).then(() => true, (error) => {
+    if (stored !== null) {
+      if (stored !== input.source) throw new Error("host-bundle-bytes-mismatch");
+      const meta = await readHostBundleMeta(input.root, input.sourceSha);
+      if (!meta || meta.sourceSha !== input.sourceSha) throw new Error("host-bundle-bytes-mismatch");
+      await writeFile(join(dir, "HEAD"), `${input.sourceSha}\n`, { mode: 0o600 });
+      return { sourceSha: input.sourceSha, retained: "existing", meta, diff: null };
+    }
+    try {
+      await lstat(dest);
+      throw new Error("host-bundle-bytes-mismatch");
+    } catch (error) {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+    }
+  } else if (await lstat(genDir).then(() => true, (error) => {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return false;
     throw error;
   })) throw new Error("invalid host-bundle path");
