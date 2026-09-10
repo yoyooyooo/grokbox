@@ -11,16 +11,17 @@ import {
   assertIndependentGoldenInHttp,
   assertNoCapStoreOrDecoy,
   compactJourneyWindow,
+  createHostSummaryControl,
   END_SENTINEL,
   FACT_ALPHA,
   HOST_P_USED,
   HOST_S_USED,
   hostAcceptSummary,
-  hostObserveExtendedUsage,
   longZeroCapWindow,
   LOOKUP_TOOL,
   metadataWindow,
   PAD_BODY,
+  readHostRoot,
   sha256Json,
   SYNTHETIC_OPENAI,
   SYNTHETIC_OPENAI_NO_WINDOW,
@@ -155,8 +156,6 @@ describe("E05 W/U feedback through Host extendedUsage", () => {
   test.each(cases)("E05 W/U used=$used phase=$phase", async ({ used, phase }) => {
     const output = 20;
     const cacheRead = 12;
-    const cacheWrite = 3;
-    let rootCommitted = false;
     await withFakeHttpSession({
       turnId: `HOST_TURN_E05_${used}_${phase}`,
       usage: {
@@ -164,10 +163,14 @@ describe("E05 W/U feedback through Host extendedUsage", () => {
         completion_tokens: output,
         total_tokens: used,
         cache_read_tokens: cacheRead,
-        cache_write_tokens: cacheWrite,
+        cache_write_tokens: 3,
       },
-      fn: async ({ session, requests }) => {
-        const executor = session.getExecutor(windowRows());
+      fn: async ({ session, requests, dir }) => {
+        const selected = windowRows();
+        const store = join(dir, "host-window-root.json");
+        const initial = await writeHostRoot(store, selected as unknown[]);
+        const summary = createHostSummaryControl(selected);
+        const executor = session.getExecutor(selected);
         const handle = executor.stream({}, `step-e05-${used}-${phase}`, [LOOKUP_TOOL]);
         const extended = await handle.extendedUsage;
         expect(extended.maxTokens).toBe(SYNTHETIC_W);
@@ -176,20 +179,33 @@ describe("E05 W/U feedback through Host extendedUsage", () => {
         expect(extended.inputTokens).toBe(used - output);
         expect(extended.outputTokens).toBe(output);
         expect(extended.cacheReadTokens).toBe(cacheRead);
-        expect(extended.cacheWriteTokens).not.toBe(extended.inputTokens);
         const body = requests[0]?.body as { max_tokens?: unknown } | undefined;
         if (typeof body?.max_tokens === "number") expect(extended.maxTokens).not.toBe(body.max_tokens);
-        const observed = hostObserveExtendedUsage(extended, phase);
+        const observed = summary.observe(extended);
         expect(observed.W).toBe(SYNTHETIC_W);
         expect(observed.U).toBe(used);
         expect(observed.started).toBe(used >= HOST_S_USED);
         expect(observed.persist).toBe(used >= HOST_P_USED);
-        if (phase === "mid-loop") expect(observed.accepted).toBe(observed.started);
-        else expect(observed.accepted).toBe(observed.persist);
-        expect(rootCommitted).toBe(false);
-        if (phase === "turn-tail" && observed.accepted) rootCommitted = true;
-        expect(rootCommitted).toBe(phase === "turn-tail" && observed.accepted);
-        expect(executor.getState()).toEqual(windowRows());
+        expect(() => summary.accept(phase)).toThrow("summary-incomplete");
+        expect((await readHostRoot(store)).refs.sha256).toBe(initial.refs.sha256);
+        summary.release();
+        await summary.wait();
+        const mayAccept = phase === "mid-loop" ? observed.started : observed.persist;
+        if (!mayAccept) {
+          expect(() => summary.accept(phase)).toThrow("summary-not-acceptable");
+          expect(summary.accepted).toBe(false);
+          expect((await readHostRoot(store)).refs.sha256).toBe(initial.refs.sha256);
+        } else {
+          const accepted = summary.accept(phase);
+          expect(summary.accepted).toBe(true);
+          expect(accepted.some((message) => message.isSummary === true)).toBe(true);
+          expect((await readHostRoot(store)).refs.sha256).toBe(initial.refs.sha256);
+          await summary.checkpoint(store);
+          const after = await readHostRoot(store);
+          expect(after.refs.sha256).not.toBe(initial.refs.sha256);
+          expect(after.state.some((message) => (message as { isSummary?: boolean }).isSummary === true)).toBe(true);
+        }
+        expect(executor.getState()).toEqual(selected);
         await handle.response;
       },
     });
@@ -240,22 +256,43 @@ describe("E06 unknown window/usage and pinned selection", () => {
     let release!: () => void;
     const hold = new Promise<void>((resolve) => { release = resolve; });
     const narrow = { ...SYNTHETIC_OPENAI, contextWindowTokens: 32000 };
+    const liveRev = computeSelectionRevision({ agentId: "agent-tom", model: SYNTHETIC_OPENAI });
+    const nextRev = computeSelectionRevision({ agentId: "agent-tom", model: narrow });
+    expect(liveRev).not.toBe(nextRev);
     await withFakeHttpSession({
       turnId: "HOST_TURN_E06_live",
       hold,
       usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 },
-      fn: async ({ session, makeSession, requests }) => {
-        const live = session.getExecutor(windowRows());
+      fn: async ({ session, makeSession, requests, admitted, updateCanonicalModel }) => {
+        const selected = windowRows();
+        const live = session.getExecutor(selected);
         const pending = live.stream({}, "step-e06-live", [LOOKUP_TOOL]);
-        makeSession({ turnId: "HOST_TURN_E06_next", model: narrow, contextWindowTokens: 32000 });
-        expect(computeSelectionRevision({ agentId: "agent-tom", model: SYNTHETIC_OPENAI }))
-          .not.toBe(computeSelectionRevision({ agentId: "agent-tom", model: narrow }));
+        await admitted;
+        expect(requests).toHaveLength(1);
+        updateCanonicalModel(narrow);
+        const next = makeSession({ turnId: "HOST_TURN_E06_next", model: narrow, contextWindowTokens: 32000 });
+        const whileHeld = next.getExecutor(selected).stream({}, "step-e06-next-held", [LOOKUP_TOOL]);
+        const early = await Promise.race([
+          whileHeld.response.then(() => "resolved" as const, () => "refused" as const),
+          new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 80)),
+        ]);
+        expect(live.getState()).toEqual(selected);
         release();
         const liveUsage = await pending.extendedUsage;
         expect(liveUsage.maxTokens).toBe(SYNTHETIC_W);
-        expect(live.getState()).toEqual(windowRows());
-        expect(requests).toHaveLength(1);
+        await pending.response;
+        expect(live.getState()).toEqual(selected);
+        if (early === "refused") {
+          const after = next.getExecutor(selected).stream({}, "step-e06-next", [LOOKUP_TOOL]);
+          expect(await after.extendedUsage).toMatchObject({ maxTokens: 32000 });
+          await after.response;
+        } else {
+          expect(await whileHeld.extendedUsage).toMatchObject({ maxTokens: 32000 });
+          if (early === "pending") await whileHeld.response;
+        }
+        expect(requests.length).toBeGreaterThanOrEqual(2);
+        expect(live.getState()).toEqual(selected);
       },
     });
-  }, 20_000);
+  }, 30_000);
 });

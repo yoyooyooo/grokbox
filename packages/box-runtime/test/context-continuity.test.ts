@@ -212,7 +212,7 @@ describe("E05 Host S/P oracle vs W mutants", () => {
     }, "turn-tail");
     expect(zeroW.started).toBe(false);
     expect(zeroW.persist).toBe(false);
-    expect(zeroW.accepted).toBe(false);
+    expect(zeroW.eligible).toBe(false);
     const outputCap = hostObserveExtendedUsage({
       inputTokens: HOST_S_USED, outputTokens: 4096, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 4096,
     }, "mid-loop");

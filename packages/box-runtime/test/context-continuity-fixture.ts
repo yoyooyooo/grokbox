@@ -85,7 +85,7 @@ export type ProviderUsage = {
 
 export type HostUsagePhase = "mid-loop" | "turn-tail";
 
-/** Host-owned S/P oracle. Not grokbox compact and not generation maxTokens. */
+/** Threshold oracle only. Accept/commit live in createHostSummaryControl. */
 export function hostObserveExtendedUsage(
   extended: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; maxTokens: number },
   phase: HostUsagePhase,
@@ -94,7 +94,6 @@ export function hostObserveExtendedUsage(
   const U = extended.inputTokens + extended.outputTokens;
   const started = W > 0 && U >= HOST_S_USED;
   const persist = W > 0 && U >= HOST_P_USED;
-  const accepted = phase === "mid-loop" ? started : persist;
   return {
     W,
     U,
@@ -102,7 +101,50 @@ export function hostObserveExtendedUsage(
     cacheWriteTokens: extended.cacheWriteTokens,
     started,
     persist,
-    accepted,
+    eligible: phase === "mid-loop" ? started : persist,
+  };
+}
+
+/** Host-owned summary candidate/accept/checkpoint. Not grokbox T32 compact. */
+export function createHostSummaryControl(window: HostWindowMessage[]) {
+  let released = false;
+  let started = false;
+  let persist = false;
+  let accepted = false;
+  const waiters: Array<() => void> = [];
+  return {
+    get released() { return released; },
+    get started() { return started; },
+    get persist() { return persist; },
+    get accepted() { return accepted; },
+    observe(extended: { inputTokens: number; outputTokens: number; maxTokens: number }) {
+      const W = extended.maxTokens;
+      const U = extended.inputTokens + extended.outputTokens;
+      started = W > 0 && U >= HOST_S_USED;
+      persist = W > 0 && U >= HOST_P_USED;
+      return { W, U, started, persist };
+    },
+    release() {
+      released = true;
+      for (const wait of waiters) wait();
+      waiters.length = 0;
+    },
+    wait() {
+      if (released) return Promise.resolve();
+      return new Promise<void>((resolve) => waiters.push(resolve));
+    },
+    accept(phase: HostUsagePhase): HostWindowMessage[] {
+      if (!released) throw new Error("summary-incomplete");
+      const ok = phase === "mid-loop" ? started : persist;
+      if (!ok) throw new Error("summary-not-acceptable");
+      accepted = true;
+      return hostAcceptSummary(window).window;
+    },
+    async checkpoint(path: string) {
+      if (!accepted) throw new Error("summary-not-accepted");
+      const compacted = hostAcceptSummary(window);
+      return writeHostRoot(path, compacted.window as unknown[], compacted.archive);
+    },
   };
 }
 
@@ -404,8 +446,8 @@ export function produceFor(runRoot: string, turnId: string, model: ModelRecord =
   }).produce;
 }
 
-function dispatchLayer(generation: string, models: ReturnType<typeof parseModelsFile>, fetchImpl: typeof fetch, env: NodeJS.Dict<string>) {
-  const config = fakeConfigurationReadLayer({ models: () => models, desired: { version: 1, mode: "route" } });
+function dispatchLayer(generation: string, models: () => ReturnType<typeof parseModelsFile>, fetchImpl: typeof fetch, env: NodeJS.Dict<string>) {
+  const config = fakeConfigurationReadLayer({ models, desired: { version: 1, mode: "route" } });
   const auth = createLiveBackendAuth(env);
   return config.pipe(
     Layer.merge(admitAllAuthorityLayer()),
@@ -439,31 +481,41 @@ export async function withFakeHttpSession<T>(input: {
     session: HostPromptSession;
     requests: CapturedRequest[];
     dir: string;
+    admitted: Promise<void>;
+    updateCanonicalModel: (model: ModelRecord) => void;
     makeSession: (opts: { turnId: string; model: ModelRecord; contextWindowTokens?: number }) => HostPromptSession;
   }) => Promise<T>;
 }): Promise<T> {
   const requests: CapturedRequest[] = [];
   const model = input.model ?? SYNTHETIC_OPENAI;
+  let admit!: () => void;
+  const admitted = new Promise<void>((resolve) => { admit = resolve; });
+  let first = true;
   const fetchImpl = Object.assign(async (_url: string | URL | Request, init?: RequestInit) => {
     const raw = typeof init?.body === "string" ? init.body : await new Response(init?.body).text();
     const body = JSON.parse(raw) as unknown;
     const text = JSON.stringify(body);
     input.inspect?.(body, text);
     requests.push({ body, text });
+    if (first) {
+      first = false;
+      admit();
+    }
     if (input.hold) await input.hold;
     return sseChatOk("ok", input.usage ?? { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 });
   }, { preconnect: async () => undefined }) as typeof fetch;
-  const models = parseModelsFile({
+  const fileOf = (row: ModelRecord) => parseModelsFile({
     version: 1,
-    models: { [model.id]: model },
-    assignments: { main: null, agents: { "agent-tom": model.id } },
+    models: { [row.id]: row },
+    assignments: { main: null, agents: { "agent-tom": row.id } },
   });
+  let models = fileOf(model);
   const dir = await mkdtemp(join(tmpdir(), "grokbox-ctx-cont-"));
   const generation = randomUUID();
   const stop = await serve(
     join(dir, "modeld.sock"),
     generation,
-    dispatchLayer(generation, models, fetchImpl, { OPENAI_API_KEY: "sk-test" }) as Layer.Layer<unknown, never, never>,
+    dispatchLayer(generation, () => models, fetchImpl, { OPENAI_API_KEY: "sk-test" }) as Layer.Layer<unknown, never, never>,
   );
   const makeSession = (opts: { turnId: string; model: ModelRecord; contextWindowTokens?: number }) => {
     const window = opts.contextWindowTokens ?? opts.model.contextWindowTokens;
@@ -483,7 +535,14 @@ export async function withFakeHttpSession<T>(input: {
       model,
       contextWindowTokens: input.contextWindowTokens ?? model.contextWindowTokens,
     });
-    return await input.fn({ session, requests, dir, makeSession });
+    return await input.fn({
+      session,
+      requests,
+      dir,
+      admitted,
+      updateCanonicalModel: (next) => { models = fileOf(next); },
+      makeSession,
+    });
   } finally {
     await stop();
   }
