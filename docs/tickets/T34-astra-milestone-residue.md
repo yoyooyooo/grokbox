@@ -252,3 +252,22 @@ Seven residual changed files and all 374 tracked archive files match `pre-public
 ### Evidence ceiling
 
 Offline contract-e2e only; no packed preload, native Host, live adopt, or production `contextWindowTokens`. One-pass closure applied after second relook; sibling tip to be FF'd into integration `feat/box-runtime-v2` without a third absorb.
+
+## Continuity / E07 Path A — pre-publication-revision — 2026-09-10
+
+- Reviewed SHA: `pre-publication-revision` on `feat/box-runtime-v2`.
+- First review: `PRIVATE_EVIDENCE` (Path A recommended; P1 N1–N3).
+- Absorb: `pre-publication-revision` (`PRIVATE_EVIDENCE`).
+- Relook: `PRIVATE_EVIDENCE` — **ship for Path A honest-partial only**.
+- Disposition: verifier no longer false-passes E07; helper lifetime/tools tightened. **E07 remains `unavailable` / `auxiliary_unqualified`.** Full F5/Path B (aux request-kind, captured parent binding, same managed selection) is residue — **no further absorb on this tip**. Owner triage; B stays open.
+
+### Closed at this tip (Path A)
+
+- N1 false E07 contract-e2e pass → unavailable/notProven.
+- N2 abort/stale/partial cannot yield ok Memory.
+- N3 only `undefined`/`[]` tools; registry/string/non-empty array refuse pre-dispatch.
+
+### Items
+
+- **E07 Path B / F5 — still held:** no qualified aux request-kind; aux does not ride the managed selection/auth/backend chain with parent binding; production must not call `runAuxiliary` as a STEP bypass. Implementing Path B is a new milestone, not a continuation of this tip’s review loop.
+  - Evidence: `PRIVATE_EVIDENCE` §N1/Path B Acceptance; relook confirmation in `PRIVATE_EVIDENCE`.
