@@ -373,6 +373,8 @@ describe("E07 auxiliary purpose fence", () => {
     expect(admitAuxiliary({ purpose: undefined, auxRequestId: "a1", parentLive: true, seen }).ok).toBe(false);
     memory.commit(await runAuxiliary({ session: aux, purpose: undefined, auxRequestId: "a1", messages: forged, parentLive: true, seen }));
     memory.commit(await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a2", tools: [LOOKUP_TOOL], parentLive: true, seen }));
+    memory.commit(await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a2b", tools: { lookup: LOOKUP_TOOL }, parentLive: true, seen }));
+    memory.commit(await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a2c", tools: "lookup", parentLive: true, seen }));
     memory.commit(await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a3", parentLive: false, seen }));
     const first = await runAuxiliary({ session: aux, purpose: "memory-extraction", auxRequestId: "a4", parentLive: true, seen });
     memory.commit(first);
@@ -381,6 +383,55 @@ describe("E07 auxiliary purpose fence", () => {
     expect(counts.aux).toBe(1);
     expect(memory.memories).toHaveLength(1);
     expect(dup).toMatchObject({ kind: "refused", code: "auxiliary_duplicate" });
+    expect(admitAuxiliary({ purpose: "memory-extraction", auxRequestId: "reg", tools: { lookup: LOOKUP_TOOL }, parentLive: true, seen: new Set() })).toMatchObject({ ok: false, code: "auxiliary_tools" });
+  });
+
+  test("E07 abort and parent expiry after await do not commit Memory", async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    let live = true;
+    const counts = { aux: 0 };
+    const session = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      produce: async function* () {
+        counts.aux += 1;
+        yield { type: "text-delta" as const, textDelta: "PARTIAL-AUX" };
+        await hold;
+        yield FINISH;
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: false, contextWindowTokens: SYNTHETIC_W });
+    const ac = new AbortController();
+    const abortRun = runAuxiliary({
+      session, purpose: "memory-extraction", auxRequestId: "aux-abort", parentLive: () => live, seen: new Set(),
+      abortSignal: ac.signal, messages: [{ role: "user", content: "x" }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    ac.abort();
+    release();
+    const abortResult = await abortRun;
+    expect(abortResult.kind).not.toBe("ok");
+    expect(counts.aux).toBe(1);
+
+    live = true;
+    const staleHold = new Promise<void>((resolve) => { release = resolve; });
+    const staleSession = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      produce: async function* () {
+        counts.aux += 1;
+        yield { type: "text-delta" as const, textDelta: "FULL-AUX" };
+        await staleHold;
+        yield FINISH;
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: false, contextWindowTokens: SYNTHETIC_W });
+    const staleRun = runAuxiliary({
+      session: staleSession, purpose: "memory-extraction", auxRequestId: "aux-stale-late", parentLive: () => live, seen: new Set(),
+      messages: [{ role: "user", content: "x" }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    live = false;
+    release();
+    const staleResult = await staleRun;
+    expect(staleResult).toMatchObject({ kind: "failed", code: "auxiliary_stale" });
   });
 
   test("E07 half-stream failure does not write error text as Memory", async () => {

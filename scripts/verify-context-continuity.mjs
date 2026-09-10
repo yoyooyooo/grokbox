@@ -14,7 +14,7 @@ const laneIdx = args.indexOf("--lane");
 const lane = laneIdx >= 0 ? args[laneIdx + 1] : undefined;
 
 const LANES = new Set(["contract-e2e", "artifact-e2e"]);
-const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08"];
+const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"];
 const PACKED = join(root, "dist", "preload.cjs");
 const REBUILD = "bun scripts/pack-runtime-helpers.mjs";
 const CONTRACT_TESTS = [
@@ -86,6 +86,8 @@ function emit(report, failed) {
 const commit = sha();
 const bun = bunVersion();
 const notProven = [
+  "E07",
+  "auxiliary_unqualified",
   "E09", "E10", "E11",
   "native_host_consumer_qualification",
   "live-adopt",
@@ -98,13 +100,21 @@ if (lane === "contract-e2e") {
   const ran = spawnSync(argv[0], argv.slice(1), { cwd: root, encoding: "utf8" });
   const combined = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
   const parsed = parseBunTest(combined);
-  const cases = REQUIRED_CASES.map((id) => caseStatus(id, parsed, true));
+  const cases = [
+    ...REQUIRED_CASES.map((id) => caseStatus(id, parsed, true)),
+    {
+      id: "E07",
+      status: "unavailable",
+      reason: "auxiliary_unqualified",
+      note: "F5 aux request-kind / captured parent binding not admitted. Helper unit tests are subset-only and do not grant E07 pass.",
+    },
+  ];
   const executed = parsed.pass > 0;
   const failed = ran.status !== 0
     || !executed
     || parsed.fail > 0
     || parsed.skip > 0
-    || cases.some((row) => row.status !== "pass");
+    || REQUIRED_CASES.some((id) => caseStatus(id, parsed, true).status !== "pass");
   emit({
     lane,
     commit,
@@ -112,7 +122,7 @@ if (lane === "contract-e2e") {
     dependencyReality: "offline-unix-sdk-mock-http-owned-store",
     packedPreload: false,
     liveHost: false,
-    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08"],
+    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08"],
     cases,
     asserts: { pass: parsed.pass, fail: parsed.fail, skip: parsed.skip, expects: parsed.expects },
     commands: [{
