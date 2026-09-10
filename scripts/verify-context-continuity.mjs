@@ -14,7 +14,7 @@ const laneIdx = args.indexOf("--lane");
 const lane = laneIdx >= 0 ? args[laneIdx + 1] : undefined;
 
 const LANES = new Set(["contract-e2e", "artifact-e2e"]);
-const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E08", "E09"];
+const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"];
 const PACKED = join(root, "dist", "preload.cjs");
 const REBUILD = "bun scripts/pack-runtime-helpers.mjs";
 const CONTRACT_TESTS = [
@@ -90,6 +90,8 @@ const bun = bunVersion();
 const notProven = [
   "E07",
   "auxiliary_unqualified",
+  "E09",
+  "e09_reject_old_oracle_not_qualified",
   "E09-packed-e01-e08-session-factory",
   "E10", "E11",
   "native_host_consumer_qualification",
@@ -111,6 +113,12 @@ if (lane === "contract-e2e") {
       reason: "auxiliary_unqualified",
       note: "F5 aux request-kind / captured parent binding not admitted. Helper unit tests are subset-only and do not grant E07 pass.",
     },
+    {
+      id: "E09",
+      status: "unavailable",
+      reason: "e09_reject_old_oracle_not_qualified",
+      note: "Source SHA refuse, RetriableError constructor, and bun packed smoke are observations only. No expected-artifact pin or executed old-vs-source failure consumer. Node load is the verifier loadProbe, not this case pass.",
+    },
   ];
   const executed = parsed.pass > 0;
   const failed = ran.status !== 0
@@ -125,7 +133,7 @@ if (lane === "contract-e2e") {
     dependencyReality: "offline-unix-sdk-mock-http-owned-store",
     packedPreload: false,
     liveHost: false,
-    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08", "E09-source-sha-old-dist-oracle"],
+    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08"],
     cases,
     asserts: { pass: parsed.pass, fail: parsed.fail, skip: parsed.skip, expects: parsed.expects },
     commands: [{
@@ -193,7 +201,6 @@ artifact.loadProbe = {
 const artifactArgv = ["bun", "test", ...ARTIFACT_TESTS];
 const artifactRan = spawnSync(artifactArgv[0], artifactArgv.slice(1), { cwd: root, encoding: "utf8" });
 const artifactParsed = parseBunTest(`${artifactRan.stdout ?? ""}\n${artifactRan.stderr ?? ""}`);
-const e09 = caseStatus("E09", artifactParsed, true);
 const packedCases = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"].map((id) => ({
   id,
   status: "unavailable",
@@ -209,10 +216,15 @@ emit({
   native_qualification_pending: true,
   packedSessionFactory: false,
   artifact,
-  cases: [...packedCases, e09, {
+  cases: [...packedCases, {
     id: "E07",
     status: "unavailable",
     reason: "auxiliary_unqualified",
+  }, {
+    id: "E09",
+    status: "unavailable",
+    reason: !loadOk ? "packed_node_load_failed" : "e09_reject_old_oracle_not_qualified",
+    note: "Bun packed smoke may run in tests; Node loadProbe is separate. Reject-old oracle is not qualified. Packed E01–E08 session factory is not exported.",
   }],
   asserts: { pass: artifactParsed.pass, fail: artifactParsed.fail, skip: artifactParsed.skip, expects: artifactParsed.expects },
   commands: [{
@@ -225,8 +237,8 @@ emit({
   shaGate: "Compare dist/preload.cjs sha256 after rebuilding with the recorded command before claiming packed E01–E08.",
   ok: false,
   error: !loadOk
-    ? "packed preload load probe failed"
-    : e09.status !== "pass" || artifactRan.status !== 0
-      ? "E09 packed SHA/old-dist oracle failed"
-      : "packed_preload_does_not_export_session_factory: E01–E08 cannot run against dist/preload.cjs; E09 SHA/old-dist oracle is subset-only",
+    ? "packed preload Node load probe failed"
+    : artifactRan.status !== 0
+      ? "packed bun smoke / source SHA unit failed"
+      : "packed_preload_does_not_export_session_factory: E01–E08 cannot run against dist/preload.cjs; E09 reject-old oracle is notQualified",
 }, true);

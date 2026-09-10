@@ -18,8 +18,8 @@ function sha256Bytes(buf: Buffer | string): string {
   return createHash("sha256").update(buf).digest("hex");
 }
 
-describe("E09 source vs artifact SHA and old-dist refuse", () => {
-  test("E09 unknown Host SHA and transformed mismatch refuse", () => {
+describe("source Host SHA unit and bun packed smoke", () => {
+  test("source Host SHA unknown and transformed mismatch refuse", () => {
     const profile = profileFromSource(SYNTHETIC_HOST, SYNTHETIC_SLICES, "e09");
     expect(applyPatchProfile(`${SYNTHETIC_HOST}\n// drift\n`, profile)).toMatchObject({ ok: false, code: "unknown-sha" });
     expect(applyPatchProfile(SYNTHETIC_HOST, { ...profile, transformedSourceSha256: "0".repeat(64) })).toMatchObject({
@@ -33,7 +33,7 @@ describe("E09 source vs artifact SHA and old-dist refuse", () => {
     expect(applied.sourceSha256).toBe(profile.sourceSha256);
   });
 
-  test("E09 current source errors are RetriableError, not old text-delta", () => {
+  test("source visibleFailure constructor is RetriableError", () => {
     const src = readFileSync(SESSION_SRC, "utf8");
     expect(src).toContain("hostVisibleStreamError");
     expect(src).toContain("RetriableError");
@@ -45,7 +45,7 @@ describe("E09 source vs artifact SHA and old-dist refuse", () => {
     expect(src.includes("yield { type: \"text-delta\", textDelta: message }")).toBe(false);
   });
 
-  test("E09 packed preload SHA mismatches a mutated copy; unknown packed SHA is not current", () => {
+  test("bun smoke: packed preload --require load", () => {
     expect(existsSync(PACKED)).toBe(true);
     const bytes = readFileSync(PACKED);
     const sha = sha256Bytes(bytes);
