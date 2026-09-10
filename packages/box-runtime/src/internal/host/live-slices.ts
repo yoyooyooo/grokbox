@@ -14,11 +14,11 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     id: "create-session",
     startAnchor: "createSession(onRequestId, sessionOptions) {",
     endAnchor: "    },\n    recordPostTurnLabeling(args) {",
-    // Select the managed backend before *any* official model resolution/client construction.
-    // Undefined declines the interception; the unchanged Host body then creates its own session.
-    find: "createSession(onRequestId, sessionOptions) {\n",
+    // Wrap after the official session exists so no-STEP compact/memory can use it.
+    // Undefined still declines to the official session. STEP streams stay managed.
+    find: "      return createCursorInferencePromptSession(inferenceOptions);\n",
     replacement:
-      `createSession(onRequestId, sessionOptions) {\n      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      if (typeof __grokbox_hook === "function") {\n        const __grokbox_session = __grokbox_hook({ sessionOptions, agentId: sessionOptions?.agentId, onRequestId });\n        if (__grokbox_session !== undefined) return __grokbox_session;\n      }\n`,
+      `      const __grokbox_original = createCursorInferencePromptSession(inferenceOptions);\n      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      if (typeof __grokbox_hook === "function") {\n        const __grokbox_session = __grokbox_hook({ originalSession: __grokbox_original, sessionOptions, agentId: sessionOptions?.agentId, onRequestId });\n        if (__grokbox_session !== undefined) return __grokbox_session;\n      }\n      return __grokbox_original;\n`,
   },
   {
     id: "agent-id",

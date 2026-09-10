@@ -41,14 +41,14 @@ function fixture(hook: ((args: { agentId?: string; sessionOptions?: { invocation
 }
 
 describe("Host entry interception", () => {
-  test("managed routing precedes official model resolution and factory creation", async () => {
+  test("managed overlay receives the official session after factory creation", async () => {
     const managed = { getModelId: () => "managed" };
-    const entries: unknown[] = [];
+    const entries: Array<{ originalSession?: unknown; agentId?: string; sessionOptions?: { invocationId?: string } }> = [];
     const f = fixture((args) => { entries.push(args); return managed; });
-    f.failOfficial();
     expect(await f.run("canary")).toBe(managed);
-    expect(f.counts).toEqual({ prepare: 0, factory: 0 });
+    expect(f.counts).toEqual({ prepare: 1, factory: 1 });
     expect(entries).toMatchObject([{ agentId: "canary", sessionOptions: { invocationId: "inv-live-shaped" } }]);
+    expect(entries[0]?.originalSession).toBe(f.official);
   });
 
   test("declining and absent hooks preserve the exact official session", async () => {
@@ -59,9 +59,9 @@ describe("Host entry interception", () => {
     }
   });
 
-  test("an entered hook failure does not silently construct an official fallback", async () => {
+  test("an entered hook failure does not silently replace the official session", async () => {
     const f = fixture(() => { throw Error("controlled hook failure"); });
     await expect(f.run("canary")).rejects.toThrow("controlled hook failure");
-    expect(f.counts).toEqual({ prepare: 0, factory: 0 });
+    expect(f.counts).toEqual({ prepare: 1, factory: 1 });
   });
 });

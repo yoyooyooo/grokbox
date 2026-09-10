@@ -33,8 +33,8 @@ const HOST_STREAM_REJECT_REASONS = new Set([
   "invalid-state",
   "connect-failed",
 ]);
-const HOST_SEAM_STAGES = new Set(["hook_enter", "stream_enter", "connect_attempt", "first_chunk"]);
-const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail"]);
+const HOST_SEAM_STAGES = new Set(["hook_enter", "hook_decline", "stream_enter", "connect_attempt", "first_chunk"]);
+const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail", "compact_passthrough"]);
 const FORBIDDEN = /env|token|prompt|authorization|secret|apiKey/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

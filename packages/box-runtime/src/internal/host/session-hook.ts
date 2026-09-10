@@ -6,6 +6,8 @@ import {
   asHostPromptSession,
   createStreamingPromptSession,
   visibleFailureHandle,
+  type HostPromptExecutor,
+  type HostPromptSession,
   type HostStreamRejectDetail,
   type PromptSession,
   type StreamHandle,
@@ -24,6 +26,45 @@ function boundedId(value: unknown): string | undefined {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function officialExecutor(original: unknown, state: unknown): HostPromptExecutor | undefined {
+  if (!original || typeof original !== "object") return undefined;
+  const session = original as { getExecutor?: (value?: unknown) => HostPromptExecutor };
+  if (typeof session.getExecutor !== "function") return undefined;
+  const executor = session.getExecutor(state);
+  return executor && typeof executor.stream === "function" ? executor : undefined;
+}
+
+function overlayOfficialNoStepStreams(
+  managed: HostPromptSession,
+  original: unknown,
+  onDecline: () => void,
+): HostPromptSession {
+  const overlay = (getManaged: (state?: unknown) => HostPromptExecutor) => (state?: unknown): HostPromptExecutor => {
+    const managedEx = getManaged(state);
+    return {
+      appendMessages: (messages) => managedEx.appendMessages(messages),
+      getMessages: () => managedEx.getMessages(),
+      getState: () => managedEx.getState(),
+      clearMessages: () => managedEx.clearMessages(),
+      stream(ctx, invocationId, tools, options) {
+        if (!boundedId(invocationId)) {
+          const official = officialExecutor(original, state);
+          if (official) {
+            onDecline();
+            return official.stream(ctx, invocationId, tools, options);
+          }
+        }
+        return managedEx.stream(ctx, invocationId, tools, options);
+      },
+    };
+  };
+  return {
+    getModelId: () => managed.getModelId(),
+    getExecutor: overlay((state) => managed.getExecutor(state)),
+    getExecutorWithoutResolvedModelTracking: overlay((state) => managed.getExecutorWithoutResolvedModelTracking(state)),
+  };
 }
 
 /**
@@ -111,10 +152,8 @@ export function bindHostSessionHook(input: {
       },
     });
     if (!turnId) {
-      writeReject("admit", "missing-turn");
-      return asHostPromptSession(wrapStream({
-        stream: () => visibleFailureHandle(modelId, "invalid_envelope"),
-      }), modelId, onRequestId, { requireStepId: true, reject });
+      writeStage("hook_decline", "compact_passthrough");
+      return args.originalSession;
     }
     if (!agentId) {
       writeReject("admit", "missing-binding");
@@ -175,8 +214,11 @@ export function bindHostSessionHook(input: {
         });
       },
     });
-    return asHostPromptSession(wrapStream(session), modelId, onRequestId, {
+    const managed = asHostPromptSession(wrapStream(session), modelId, onRequestId, {
       requireStepId: true, reject, contextWindowTokens: record.contextWindowTokens,
+    });
+    return overlayOfficialNoStepStreams(managed, args.originalSession, () => {
+      writeStage("hook_decline", "compact_passthrough");
     });
   };
 }

@@ -15,7 +15,7 @@ import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-
 import { applyPatchProfile, HOST_COMPACT_SYMBOL as PROFILE_COMPACT_SYMBOL, profileFromSource, transformUnchecked } from "../src/internal/host/profile.ts";
 import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 
-const LIVE_SHA = "f5cc35b57135ddbb5e32bbfa8e3bdcbdc9d6a88540043059feb8049280df2740";
+const LIVE_SHA = "2ede71e2db066b32dfe75b5073c0cac8052faf76d23ed34b8fea4567ea0e9baa";
 const TUPLE = {
   agentId: "agent-a",
   turnId: "turn-1",
