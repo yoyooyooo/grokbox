@@ -396,6 +396,30 @@ export async function writeHostRoot(path: string, state: unknown[], archive?: un
   return payload;
 }
 
+export class OwnedRootFault extends Error {
+  readonly kind: "before-publish" | "mirror";
+  readonly committedSha?: string;
+  constructor(kind: "before-publish" | "mirror", committedSha?: string) {
+    super(kind === "before-publish" ? "owned-root-publish-fault" : "owned-mirror-fault");
+    this.name = "OwnedRootFault";
+    this.kind = kind;
+    this.committedSha = committedSha;
+  }
+}
+
+/** Host-owned root publisher. Mirror is a second ledger, not a rollback of committed bytes. */
+export async function publishHostRoot(
+  path: string,
+  state: unknown[],
+  archive?: unknown[],
+  fault: "none" | "before-publish" | "mirror" = "none",
+): Promise<HostWindowRoot> {
+  if (fault === "before-publish") throw new OwnedRootFault("before-publish");
+  const written = await writeHostRoot(path, state, archive);
+  if (fault === "mirror") throw new OwnedRootFault("mirror", written.refs.sha256);
+  return written;
+}
+
 export async function readHostRoot(path: string): Promise<HostWindowRoot> {
   const value = JSON.parse(await readFile(path, "utf8")) as HostWindowRoot;
   if (value.version !== 1 || !Array.isArray(value.state) || typeof value.refs?.sha256 !== "string") {

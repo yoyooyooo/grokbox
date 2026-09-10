@@ -14,7 +14,7 @@ const laneIdx = args.indexOf("--lane");
 const lane = laneIdx >= 0 ? args[laneIdx + 1] : undefined;
 
 const LANES = new Set(["contract-e2e", "artifact-e2e"]);
-const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06"];
+const REQUIRED_CASES = ["E01", "E02", "E03", "E04", "E05", "E06", "E08"];
 const PACKED = join(root, "dist", "preload.cjs");
 const REBUILD = "bun scripts/pack-runtime-helpers.mjs";
 const CONTRACT_TESTS = [
@@ -86,7 +86,7 @@ function emit(report, failed) {
 const commit = sha();
 const bun = bunVersion();
 const notProven = [
-  "E07", "E08", "E09", "E10", "E11",
+  "E07", "E09", "E10", "E11",
   "native_host_consumer_qualification",
   "live-adopt",
   "B-closed",
@@ -112,7 +112,7 @@ if (lane === "contract-e2e") {
     dependencyReality: "offline-unix-sdk-mock-http-owned-store",
     packedPreload: false,
     liveHost: false,
-    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06"],
+    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08"],
     cases,
     asserts: { pass: parsed.pass, fail: parsed.fail, skip: parsed.skip, expects: parsed.expects },
     commands: [{

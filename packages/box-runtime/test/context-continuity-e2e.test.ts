@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectStreamParts } from "./host-consumer.ts";
-import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
+import { BoxRuntimeError, ENVELOPE_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
 import { computeSelectionRevision, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
   ARCHIVED_ONLY,
@@ -21,6 +21,7 @@ import {
   LOOKUP_TOOL,
   metadataWindow,
   PAD_BODY,
+  publishHostRoot,
   readHostRoot,
   sha256Json,
   SYNTHETIC_OPENAI,
@@ -292,6 +293,137 @@ describe("E06 unknown window/usage and pinned selection", () => {
         }
         expect(requests.length).toBeGreaterThanOrEqual(2);
         expect(live.getState()).toEqual(selected);
+      },
+    });
+  }, 30_000);
+});
+
+describe("E08 budget/cancel/fault", () => {
+  test("E08 near-boundary success does not chop; reopen reads committed root", async () => {
+    const { window } = longZeroCapWindow();
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E08_near",
+      fn: async ({ session, requests, dir }) => {
+        const store = join(dir, "host-window-root.json");
+        const executor = session.getExecutor(window);
+        const handle = executor.stream({}, "step-e08-near", [LOOKUP_TOOL]);
+        await handle.response;
+        expect(requests).toHaveLength(1);
+        assertIndependentGoldenInHttp(requests[0]!.body, window);
+        assertNoCapStoreOrDecoy(requests[0]!.body);
+        expect(executor.getState()).toEqual(window);
+        const committed = await publishHostRoot(store, executor.getState() as unknown[]);
+        const reopened = await runWorker("reopen-state", store);
+        expect(reopened.ok).toBe(true);
+        expect(reopened.pid).not.toBe(process.pid);
+        expect(reopened.diskSha).toBe(committed.refs.sha256);
+        expect(reopened.state).toEqual(window);
+      },
+    });
+  }, 60_000);
+
+  test("E08 over-limit reject does not publish shortened root", async () => {
+    const legal = windowRows();
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E08_over",
+      fn: async ({ session, requests, dir }) => {
+        const store = join(dir, "host-window-root.json");
+        const prior = await publishHostRoot(store, legal as unknown[]);
+        const oversized = [{ role: "user" as const, content: "x".repeat(ENVELOPE_MAX_BYTES + 1) }];
+        const executor = session.getExecutor(oversized);
+        await expect(executor.stream({}, "step-e08-over", [LOOKUP_TOOL]).response).rejects.toMatchObject({
+          name: "RetriableError",
+        });
+        expect(requests).toHaveLength(0);
+        expect((await readHostRoot(store)).refs.sha256).toBe(prior.refs.sha256);
+        expect((await readFile(store)).includes("x".repeat(64))).toBe(false);
+      },
+    });
+  }, 30_000);
+
+  test("E08 cancel does not publish shortened root", async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const selected = windowRows();
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E08_cancel",
+      hold,
+      fn: async ({ session, requests, dir, admitted }) => {
+        const store = join(dir, "host-window-root.json");
+        const prior = await publishHostRoot(store, selected as unknown[]);
+        const executor = session.getExecutor(selected);
+        const ac = new AbortController();
+        const handle = executor.stream({ signal: ac.signal }, "step-e08-cancel", [LOOKUP_TOOL]);
+        await admitted;
+        ac.abort();
+        await handle.response.then(() => undefined, () => undefined);
+        release();
+        expect(executor.getState()).toEqual(selected);
+        expect((await readHostRoot(store)).refs.sha256).toBe(prior.refs.sha256);
+        expect(requests.length).toBeLessThanOrEqual(1);
+      },
+    });
+  }, 20_000);
+
+  test("E08 late old executor does not pollute new main or duplicate delivery", async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const delivery: string[] = [];
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E08_late_old",
+      hold,
+      fn: async ({ session, requests, admitted }) => {
+        const oldWindow = windowRows();
+        const mainWindow = [{ role: "user" as const, content: "main-only-window" }];
+        const oldEx = session.getExecutor(oldWindow);
+        const mainEx = session.getExecutor(mainWindow);
+        const oldHandle = oldEx.stream({}, "step-e08-old", [LOOKUP_TOOL]);
+        await admitted;
+        expect(mainEx.getState()).toEqual(mainWindow);
+        release();
+        await oldHandle.response;
+        delivery.push("old");
+        expect(mainEx.getState()).toEqual(mainWindow);
+        expect(oldEx.getState()).toEqual(oldWindow);
+        const mainHandle = mainEx.stream({}, "step-e08-main", [LOOKUP_TOOL]);
+        await mainHandle.response;
+        delivery.push("main");
+        expect(delivery).toEqual(["old", "main"]);
+        expect(requests).toHaveLength(2);
+        expect(mainEx.getState()).toEqual(mainWindow);
+      },
+    });
+  }, 20_000);
+
+  test("E08 publish-before fault keeps prior root; mirror fault does not roll back", async () => {
+    const selected = windowRows();
+    const next = [...selected, { role: "user" as const, content: "committed-after-success" }];
+    await withFakeHttpSession({
+      turnId: "HOST_TURN_E08_fault",
+      fn: async ({ session, dir }) => {
+        const store = join(dir, "host-window-root.json");
+        const prior = await publishHostRoot(store, selected as unknown[]);
+        await session.getExecutor(selected).stream({}, "step-e08-fault", [LOOKUP_TOOL]).response;
+        await expect(publishHostRoot(store, next as unknown[], undefined, "before-publish")).rejects.toMatchObject({
+          name: "OwnedRootFault",
+          kind: "before-publish",
+        });
+        expect((await readHostRoot(store)).refs.sha256).toBe(prior.refs.sha256);
+        const reopenPrior = await runWorker("reopen-state", store);
+        expect(reopenPrior.state).toEqual(selected);
+        try {
+          await publishHostRoot(store, next as unknown[], undefined, "mirror");
+          throw new Error("expected mirror fault");
+        } catch (error) {
+          expect(error).toMatchObject({ name: "OwnedRootFault", kind: "mirror" });
+        }
+        const committed = await readHostRoot(store);
+        expect(committed.refs.sha256).not.toBe(prior.refs.sha256);
+        expect(committed.state).toEqual(next);
+        const reopenCommitted = await runWorker("reopen-state", store);
+        expect(reopenCommitted.diskSha).toBe(committed.refs.sha256);
+        expect(reopenCommitted.state).toEqual(next);
+        expect(reopenCommitted.pid).not.toBe(process.pid);
       },
     });
   }, 30_000);
