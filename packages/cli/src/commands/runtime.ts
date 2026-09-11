@@ -31,6 +31,13 @@ import {
   assertReplayCoverage,
   writeReplayReport,
   projectHostSeamStatus,
+  proposeFromSource,
+  readProposeSource,
+  writeCandidateArtifact,
+  proposeSummary,
+  createAnalysisSession,
+  writeAnalysisArtifact,
+  readLastReplayReport,
   type DesiredMode,
 } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
@@ -238,6 +245,69 @@ export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);
     });
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfilePropose(
+  deps: CliDeps,
+  fromPath: string | undefined,
+  outPath: string | undefined,
+  against: string | undefined,
+): Promise<void> {
+  try {
+    if (!fromPath || !isAbsolute(fromPath)) {
+      throw new CliError("invalid_usage", "runtime profile propose requires --from <abs>.");
+    }
+    if (!outPath || !isAbsolute(outPath)) {
+      throw new CliError("invalid_usage", "runtime profile propose requires --out <abs>.");
+    }
+    store(deps);
+    const source = await readProposeSource(resolve(fromPath));
+    const baseline = against && /^[a-f0-9]{64}$/.test(against)
+      ? { sourceSha256: against, reviewedProfileSha256: "0".repeat(64) }
+      : null;
+    const artifact = proposeFromSource(source, baseline);
+    const written = await writeCandidateArtifact(resolve(outPath), resolve(fromPath), artifact);
+    writeSuccess(deps.stdout, proposeSummary(artifact, written));
+  } catch (error) {
+    rethrow(error);
+  }
+}
+
+export async function runRuntimeProfileAnalyze(
+  deps: CliDeps,
+  sha: string | undefined,
+  outPath: string | undefined,
+): Promise<void> {
+  try {
+    if (!sha || !/^[a-f0-9]{64}$/.test(sha)) {
+      throw new CliError("invalid_usage", "runtime profile analyze requires --sha <sha>.");
+    }
+    if (!outPath || !isAbsolute(outPath)) {
+      throw new CliError("invalid_usage", "runtime profile analyze requires --out <abs>.");
+    }
+    const runtime = store(deps);
+    const last = await readLastReplayReport(runtime.root);
+    const session = createAnalysisSession();
+    const result = await session.run({
+      analysis: {
+        sourceSha: sha,
+        evidenceDigest: last?.replayKey ?? sha,
+        workKey: `analyze:${sha}`,
+        episodeRevision: 1,
+        mechanical: {
+          supportGatePassed: last?.supportGatePassed ?? false,
+          codes: last?.codes ?? [],
+          candidateCount: 0,
+        },
+      },
+      runner: false,
+      port: null,
+    });
+    await writeAnalysisArtifact(resolve(outPath), result);
+    writeSuccess(deps.stdout, result);
   } catch (error) {
     rethrow(error);
   }

@@ -81,7 +81,9 @@ import {
   runRuntimeModelsList,
   runRuntimeModelsReset,
   runRuntimeModelsUse,
+  runRuntimeProfileAnalyze,
   runRuntimeProfileObserve,
+  runRuntimeProfilePropose,
   runRuntimeProfilePrune,
   runRuntimeProfileReplay,
   runRuntimeProfileStatus,
@@ -147,6 +149,7 @@ type CliOptions = ProfileOptions & {
   plan?: string;
   sha?: string;
   all?: boolean;
+  against?: string;
 };
 
 type LeafAction = (
@@ -278,7 +281,9 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime models use": async (deps, args, options) =>
       await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
     "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out),
     "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
+    "runtime profile propose": async (deps, _args, options) => await runRuntimeProfilePropose(deps, options.from, options.out, options.against),
     "runtime profile prune": async (deps, _args, options) => await runRuntimeProfilePrune(deps, options.plan, options.confirm),
     "runtime profile replay": async (deps, _args, options) => await runRuntimeProfileReplay(deps, options.sha, options.all),
     "runtime profile status": async (deps, _args, options) => await runRuntimeProfileStatus(deps, options.sha),

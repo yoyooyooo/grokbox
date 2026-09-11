@@ -37,9 +37,24 @@ export {
   bindReviewedProfile,
   writeGoldenLabels,
   writeReplayReport,
+  readLastReplayReport,
   type ReplayReport,
 } from "./internal/ops/host-seam/replay.ts";
 export { projectHostSeamStatus, type HostSeamStatusFacets } from "./internal/ops/host-seam/seam-status.ts";
+export {
+  proposeFromSource,
+  readProposeSource,
+  writeCandidateArtifact,
+  proposeSummary,
+  autoPublishTopCandidate,
+  type CandidateArtifact,
+} from "./internal/ops/host-seam/propose.ts";
+export {
+  createAnalysisSession,
+  createFakeAnalysisPort,
+  writeAnalysisArtifact,
+  type AnalysisResult,
+} from "./internal/ops/host-seam/analyze.ts";
 
 export { startModeldProcess, ensureModeld, modeldRootLayer, type StartedModeld, type ModeldEnsure } from "./internal/roots/modeld.runtime.ts";
 export { startControlOperation, controllerOperationId, diskPreloadSha256, reviewedProfileSha256 } from "./internal/roots/controller-program.node.ts";
