@@ -161,6 +161,31 @@ describe("controller operation program", () => {
     expect(spawnCounts.guardian).toBe(0);
   });
 
+  test("failed running-prefix checkpoint does not enter wait", async () => {
+    const counts = emptyFakeControlCounts();
+    const store = new Map();
+    const receipt = await run(apply, fakeControlResourcesLayer({
+      counts,
+      store,
+      preflight: { ok: true, reason: null, strategy: "direct" },
+      failRunningPrefix: true,
+    }));
+    expect(receipt).toMatchObject({
+      outcome: "recovery-required",
+      reason: "checkpoint-failed",
+      signaled: true,
+      spawned: false,
+      guardian: false,
+    });
+    expect(counts.signal).toBe(1);
+    expect(counts.wait).toBe(0);
+    expect(counts.commit).toBe(0);
+    expect(store.get("op-1")).toMatchObject({
+      state: "unknown",
+      prefix: { signaled: true, spawned: false, guardian: false },
+    });
+  });
+
   test("defect is not relabeled interrupted; interrupt keeps completed prefix", async () => {
     const defect = await run(apply, fakeControlResourcesLayer({
       preflight: { ok: true, reason: null, strategy: "direct" },

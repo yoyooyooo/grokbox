@@ -213,6 +213,7 @@ export function fakeControlResourcesLayer(options: {
   failPreflight?: boolean;
   failSpawn?: boolean;
   failGuardian?: boolean;
+  failRunningPrefix?: boolean;
   dieRecheck?: boolean;
   dieSignal?: boolean;
 } = {}): Layer.Layer<ControlResources> {
@@ -243,9 +244,15 @@ export function fakeControlResourcesLayer(options: {
       }),
     ),
     peek: (input: { operationId: string; boxRoot: string }) => Effect.sync(() => store.get(input.operationId) ?? null),
-    settle: (input: { operationId: string; boxRoot: string; state: "running" | "unknown" | "terminal"; prefix?: OperationPrefix }) => Effect.sync(() => {
-      const existing = store.get(input.operationId);
-      if (existing) store.set(input.operationId, { ...existing, state: input.state, prefix: input.prefix ?? existing.prefix });
+    settle: (input: { operationId: string; boxRoot: string; state: "running" | "unknown" | "terminal"; prefix?: OperationPrefix }) => Effect.try({
+      try: () => {
+        if (options.failRunningPrefix && input.state === "running" && input.prefix) {
+          throw new Error("checkpoint-failed");
+        }
+        const existing = store.get(input.operationId);
+        if (existing) store.set(input.operationId, { ...existing, state: input.state, prefix: input.prefix ?? existing.prefix });
+      },
+      catch: (error) => error,
     }),
     preflight: (_input: FrozenControllerCommand) => Effect.try({
       try: () => {

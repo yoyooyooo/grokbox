@@ -7,6 +7,7 @@ import {
   type FrozenControllerCommand,
   type LaunchStrategy,
   type OperationPrefix,
+  type OperationRecord,
 } from "../../ports.ts";
 
 const INTENTS = new Set(["preview", "apply", "reconcile"]);
@@ -77,19 +78,42 @@ function withStrategy(command: FrozenControllerCommand, strategy: LaunchStrategy
   });
 }
 
+type ControlStore = {
+  peek: (input: { operationId: string; boxRoot: string }) => Effect.Effect<OperationRecord | null, unknown>;
+  settle: (input: {
+    operationId: string;
+    boxRoot: string;
+    state: "running" | "unknown" | "terminal";
+    prefix?: OperationPrefix;
+  }) => Effect.Effect<void, unknown>;
+};
+
 function markUnknown(
-  control: {
-    settle: (input: {
-      operationId: string;
-      boxRoot: string;
-      state: "running" | "unknown" | "terminal";
-      prefix?: OperationPrefix;
-    }) => Effect.Effect<void, unknown>;
-  },
+  control: ControlStore,
   command: FrozenControllerCommand,
   prefix: OperationPrefix,
 ) {
   return control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "unknown", prefix });
+}
+
+function persistRunningPrefix(
+  control: ControlStore,
+  command: FrozenControllerCommand,
+  progress: OperationPrefix,
+) {
+  return Effect.gen(function* () {
+    const published = yield* Effect.result(control.settle({
+      operationId: command.operationId,
+      boxRoot: command.boxRoot,
+      state: "running",
+      prefix: progress,
+    }));
+    if (published._tag === "Failure") {
+      yield* markUnknown(control, command, progress).pipe(Effect.ignore);
+      return receipt(command, "recovery-required", { reason: "checkpoint-failed", ...progress });
+    }
+    return null;
+  });
 }
 
 /** Unique controller program. Preview/reconcile never mutate; apply requires confirm + frozen command. */
@@ -163,6 +187,18 @@ export function runControllerOperation(request: ControllerRequest) {
         return receipt(command, "recovery-required", { reason: "store-corrupt" });
       }
 
+      yield* Effect.addFinalizer(() =>
+        Effect.gen(function* () {
+          const existing = yield* Effect.result(control.peek({
+            operationId: command.operationId,
+            boxRoot: command.boxRoot,
+          }));
+          if (existing._tag === "Success" && existing.success?.state === "running") {
+            yield* markUnknown(control, command, progress);
+          }
+        }).pipe(Effect.ignore),
+      );
+
       const pre = yield* Effect.result(control.preflight(command));
       if (pre._tag === "Failure" || !pre.success.ok) {
         return receipt(command, "refused", { reason: pre._tag === "Failure" ? "preflight" : pre.success.reason ?? "preflight" });
@@ -179,14 +215,16 @@ export function runControllerOperation(request: ControllerRequest) {
           return receipt(command, "partial", { reason: "spawn-failed", ...progress });
         }
         progress.spawned = spawnedResult.success.spawned === true;
-        yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "running", prefix: progress }).pipe(Effect.ignore);
+        const spawnCheckpoint = yield* persistRunningPrefix(control, command, progress);
+        if (spawnCheckpoint) return spawnCheckpoint;
         const armed = yield* Effect.result(control.armGuardian(command));
         if (armed._tag === "Failure") {
           yield* markUnknown(control, command, progress);
           return receipt(command, "partial", { reason: "guardian-failed", ...progress });
         }
         progress.guardian = armed.success.guardian === true;
-        yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "running", prefix: progress }).pipe(Effect.ignore);
+        const guardianCheckpoint = yield* persistRunningPrefix(control, command, progress);
+        if (guardianCheckpoint) return guardianCheckpoint;
       } else if (command.strategy === "direct") {
         const signaledResult = yield* Effect.result(control.signal(command));
         if (signaledResult._tag === "Failure") {
@@ -194,7 +232,8 @@ export function runControllerOperation(request: ControllerRequest) {
           return receipt(command, "partial", { reason: "signal-failed", ...progress });
         }
         progress.signaled = signaledResult.success.signaled === true;
-        yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "running", prefix: progress }).pipe(Effect.ignore);
+        const signalCheckpoint = yield* persistRunningPrefix(control, command, progress);
+        if (signalCheckpoint) return signalCheckpoint;
       } else {
         return receipt(command, "refused", { reason: "missing-strategy" });
       }
