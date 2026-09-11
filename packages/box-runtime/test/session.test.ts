@@ -3,9 +3,10 @@ import { collectHostDuplicateStream, hasMeaningfulResponseMessageContent } from 
 import { asHostPromptSession, createManagedPromptSession, type StreamPart } from "../src/internal/host/session.ts";
 import { buildHostEnvelope } from "../src/internal/host/context-codec.ts";
 
+const MEASURED_USAGE = { promptTokens: 8, completionTokens: 3, totalTokens: 11 };
 const textParts: StreamPart[] = [
   { type: "text-delta", textDelta: "hello" },
-  { type: "finish", reason: "stop" },
+  { type: "finish", reason: "stop", usage: MEASURED_USAGE },
 ];
 
 describe("managed PromptSession contract", () => {
@@ -30,7 +31,7 @@ describe("managed PromptSession contract", () => {
     expect(fromStream).toEqual(["hello"]);
     expect(response.modelId).toBe("fake/main");
     expect(response.messages[0]?.content).toBe("hello");
-    expect(usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+    expect(usage).toEqual(MEASURED_USAGE);
     expect(finishes[0]).toMatchObject({
       type: "finish",
       reason: "stop",
@@ -49,7 +50,7 @@ describe("managed PromptSession contract", () => {
       parallel: "allow",
       parts: [
         { type: "tool-call", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } },
-        { type: "finish", reason: "stop" },
+        { type: "finish", reason: "stop", usage: MEASURED_USAGE },
       ],
     });
     const handle = session.stream({
@@ -64,7 +65,25 @@ describe("managed PromptSession contract", () => {
     }
     const response = await handle.response;
     expect(ids).toEqual(["call-1"]);
-    expect(response.messages[0]?.toolCalls?.map((call) => call.id)).toEqual(["call-1"]);
+    expect(response.messages[0]?.content).toEqual([
+      { type: "tool-call", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } },
+    ]);
+    expect(Object.hasOwn(response.messages[0]!, "toolCalls")).toBe(false);
+  });
+
+  test("managed fixture does not invent 1/1/2 usage when finish has none", async () => {
+    const session = createManagedPromptSession({
+      modelId: "fake/nousage",
+      vision: false,
+      parallel: "allow",
+      parts: [
+        { type: "text-delta", textDelta: "hello" },
+        { type: "finish", reason: "stop" },
+      ],
+    });
+    const handle = session.stream();
+    await expect(handle.response).rejects.toMatchObject({ name: "RetriableError" });
+    await expect(handle.usage).rejects.toBeDefined();
   });
 
   test("images without vision fail before provider effect", async () => {
@@ -162,15 +181,15 @@ describe("managed PromptSession contract", () => {
       { role: "assistant", content: [{ type: "text", text: "hello" }] },
     ]);
     expect(hasMeaningfulResponseMessageContent(response.messages)).toBe(true);
-    expect(await result.usage).toEqual({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+    expect(await result.usage).toEqual(MEASURED_USAGE);
     const fromStream: string[] = [];
     for await (const part of result.fullStream) {
       if (part.type === "text-delta") fromStream.push(part.textDelta);
     }
     expect(fromStream).toEqual(["hello"]);
     expect(await result.extendedUsage).toEqual({
-      inputTokens: 1,
-      outputTokens: 1,
+      inputTokens: 8,
+      outputTokens: 3,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       maxTokens: 0,
@@ -201,7 +220,7 @@ describe("managed PromptSession contract", () => {
         type: "finish",
         reason: "stop",
         finishReason: "stop",
-        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        usage: MEASURED_USAGE,
         response: { modelId: "stub/echo", messages: [{ role: "assistant", content: [{ type: "text", text: "hello" }] }] },
       });
     }

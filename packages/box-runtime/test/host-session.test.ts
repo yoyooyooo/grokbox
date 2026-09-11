@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
+  normalizeHostResponse,
   visibleFailureHandle,
   type StreamPart,
 } from "../src/internal/host/session.ts";
@@ -211,6 +215,64 @@ describe("host session ABI", () => {
     await expect(executor.stream({}, "step-nowindow").response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
     expect(produced).toBe(0);
     expect(executor.getState()).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  test("settled tool-call response has no toolCalls alias", async () => {
+    const prompt = createStreamingPromptSession({
+      modelId: "stub/echo",
+      vision: false,
+      parallel: "allow",
+      produce: async function* () {
+        yield { type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "1" } };
+        yield { type: "finish", reason: "stop", usage: { promptTokens: 3, completionTokens: 1, totalTokens: 4 } };
+      },
+    });
+    const envelope = buildHostEnvelope(
+      [{ role: "user", content: "hi" }],
+      [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }],
+    );
+    const handle = prompt.stream({ envelope });
+    const response = await handle.response;
+    expect(response.finishReason).toBe("tool-calls");
+    expect(response.messages[0]).toEqual({
+      role: "assistant",
+      content: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "1" } }],
+    });
+    expect(Object.hasOwn(response.messages[0]!, "toolCalls")).toBe(false);
+    const wrapped = await asHostPromptSession(createStreamingPromptSession({
+      modelId: "stub/echo", vision: false, parallel: "allow",
+      produce: async function* () {
+        yield { type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: "1" } };
+        yield { type: "finish", reason: "stop", usage: { promptTokens: 3, completionTokens: 1, totalTokens: 4 } };
+      },
+    }), "stub/echo", undefined, { contextWindowTokens: 200000 })
+      .getExecutor([{ role: "user", content: "hi" }])
+      .stream({}, "step-alias", [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }])
+      .response;
+    expect(Object.hasOwn(wrapped.messages[0]!, "toolCalls")).toBe(false);
+    expect(JSON.stringify(wrapped.messages[0])).not.toContain("\"toolCalls\"");
+  });
+
+  test("normalizeHostResponse does not rehydrate a toolCalls alias", () => {
+    const normalized = normalizeHostResponse({
+      modelId: "stub/echo",
+      finishReason: "tool-calls",
+      messages: [{
+        role: "assistant",
+        content: [],
+        toolCalls: [{ id: "c1", name: "lookup", args: { q: 1 } }],
+      }],
+    });
+    expect(normalized.messages).toEqual([{ role: "assistant", content: [] }]);
+    expect(Object.hasOwn(normalized.messages[0]!, "toolCalls")).toBe(false);
+  });
+
+  test("session source does not keep the internal toolCalls alias or 1/1/2 fixture default", () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/internal/host/session.ts"), "utf8");
+    expect(src).not.toMatch(/message\.toolCalls/);
+    expect(src).not.toMatch(/toolCalls\?:\s*Array</);
+    expect(src).not.toMatch(/promptTokens:\s*1,\s*completionTokens:\s*1,\s*totalTokens:\s*2/);
+    expect(src).not.toMatch(/usage:\s*config\.usage\s*\?\?/);
   });
 
   test("stop without measured usage does not settle 0/0 success", async () => {

@@ -136,7 +136,7 @@ describe("incremental stream contract, scripted producer with provider hard-off"
     const response = await within(handle.response);
     expect(response.finishReason).toBe("tool-calls");
     expect(response.messages[0]!.content).toEqual([one, two]);
-    expect(response.messages[0]!.toolCalls).toBeUndefined(); // no second Host call list
+    expect(Object.hasOwn(response.messages[0]!, "toolCalls")).toBe(false); // no second Host call list
     const parts = await collectStreamParts(handle.fullStream);
     expect(parts.filter((part) => part.type === "tool-call")).toEqual([one, two]);
     expect(f.terminals).toMatchObject([{ terminalClass: "stop", toolCallCount: 2 }]);

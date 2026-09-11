@@ -22,8 +22,6 @@ export type SessionTextContentPart = { type: "text"; text: string };
 export type SessionMessage = {
   role: "assistant";
   content: string | Array<SessionTextContentPart | ToolCall | { type: "reasoning"; text: string }>;
-  /** Internal compatibility only; Host projection uses tool-call content blocks. */
-  toolCalls?: Array<{ id: string; name: string; args: unknown }>;
 };
 export type HostUsage = {
   promptTokens: number; completionTokens: number; totalTokens: number;
@@ -133,11 +131,6 @@ export function normalizeHostResponse(value: unknown): HostResponse {
   const messages = (record.messages ?? []).map((message) => {
     const content: Exclude<SessionMessage["content"], string> = typeof message.content === "string"
       ? (message.content ? [{ type: "text", text: message.content }] : []) : structuredClone(message.content);
-    for (const call of message.toolCalls ?? []) {
-      if (!content.some((part) => part.type === "tool-call" && part.toolCallId === call.id)) {
-        content.push({ type: "tool-call", toolCallId: call.id, toolName: call.name, args: cloneJson(call.args) });
-      }
-    }
     return { role: "assistant" as const, content };
   });
   return { modelId: typeof record.modelId === "string" ? record.modelId : "", messages: messages.length ? messages : [{ role: "assistant", content: [] }],
@@ -460,7 +453,6 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       const finishReason = reason === "stop" && toolCalls.length ? "tool-calls" : reason;
       const textOnly = content.every((part) => part.type === "text");
       const message: SessionMessage = { role: "assistant", content: textOnly ? content.map((part) => (part as SessionTextContentPart).text).join("") : structuredClone(content) };
-      if (toolCalls.length) message.toolCalls = toolCalls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: structuredClone(call.args) }));
       const result: HostResponse = { modelId: config.modelId, finishReason, messages: [message] };
       const normalized = normalizeHostUsage(rawUsage ?? (reason === "stop" ? config.usage : undefined) ?? ZERO_USAGE);
       replay.push({ type: "finish", reason, finishReason, response: result, usage: normalized });
@@ -549,8 +541,10 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
 
 export type ManagedSessionConfig = Omit<StreamingSessionConfig, "produce"> & { parts: StreamPart[]; transcriptWrites?: unknown[] };
 export function createManagedPromptSession(config: ManagedSessionConfig): PromptSession {
-  const session = createStreamingPromptSession({ ...config, usage: config.usage ?? { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-    produce: () => ({ async *[Symbol.asyncIterator]() { for (const part of config.parts) yield part; } }) });
+  const session = createStreamingPromptSession({
+    ...config,
+    produce: () => ({ async *[Symbol.asyncIterator]() { for (const part of config.parts) yield part; } }),
+  });
   return { stream(request = {}) {
     const calls = config.parts.filter((part): part is Extract<StreamPart, { type: "tool-call" }> => part.type === "tool-call");
     if (!request.abortSignal?.aborted && config.parallel === "fail-closed" && new Set(calls.map((call) => call.toolCallId)).size > 1) {
