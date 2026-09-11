@@ -78,9 +78,8 @@ Validation used a Git-object-checked archive of `pre-publication-revision`, with
 
 ### Items
 
-- **P2-01 — still material: snapshot parsing and immutability are not yet a complete canonical boundary.** `packages/runtime-kernel/src/internal/contract/snapshot.ts:31–56` still accepts a synthetic `role:"alien"`, invalid `toolChoice`, and a digest that is only format-valid; the encoder then emits an empty message list. `packages/box-runtime/src/internal/host/context-codec.ts:118–130` still returns a mutable system root: changing its content after construction leaves the old digest in place and makes it disagree with recomputed content.
-  - Evidence: `PRIVATE_EVIDENCE` (`parser`, `mutability`); reproducible probe: `probe.ts` in that directory.
-  - Why retained / not forced onto grok: the contract is intended to cross future adapter/wire boundaries, so strict content validation, stable snapshots and digest/byte-validation ownership still need explicit proof before that use. At this SHA the parser has no production caller found in the runtime source scan; this is not an observed live admission bypass and is not promoted to P1. The normal milestone loop is over; reserve it for the owner's final triage rather than dispatching another fix or pausing the main chain.
+- **P2-01 — closed** on `pre-publication-revision` / `pre-publication-revision` (offline contract hardening; not a live admission bypass). `parseContextSnapshot` now reuses prompt/envelope validators, rejects unknown roles (incl. `alien`), invalid `toolChoice`, and digest mismatch vs `computeSnapshotDigest(body)`; returned snapshots freeze digest-relevant content so a post-construction system-root write cannot keep a stale digest.
+  - Evidence: `packages/runtime-kernel/test/snapshot.test.ts`, `packages/box-runtime/test/host-snapshot.test.ts`; receipt `PRIVATE_EVIDENCE`. Original SHA-pinned finding: `PRIVATE_EVIDENCE` (`parser`, `mutability`).
 
 ### Evidence ceiling
 
@@ -315,7 +314,7 @@ Ranked smallest-first:
 1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
-4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
+4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal. M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only).
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
