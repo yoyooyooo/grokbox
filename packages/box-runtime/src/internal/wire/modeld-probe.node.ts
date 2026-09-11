@@ -1,5 +1,6 @@
 import { createConnection } from "node:net";
 import { join } from "node:path";
+import { WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
 import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME } from "./modeld-wire.ts";
 
 export function modeldSocketPath(runRoot: string): string {
@@ -26,7 +27,7 @@ export async function probeModeldHealth(runRoot: string, timeoutMs = 80): Promis
     };
     socket.on("connect", () => {
       try {
-        socket.write(encodeModeldFrame({ method: "health", version: 3 }));
+        socket.write(encodeModeldFrame({ method: "health", version: WIRE_VERSION }));
       } catch {
         finish(false);
       }
@@ -48,7 +49,7 @@ export async function probeModeldHealth(runRoot: string, timeoutMs = 80): Promis
         isRecord(value) &&
           value.ok === true &&
           value.method === "health" &&
-          value.version === 3 &&
+          value.version === WIRE_VERSION &&
           typeof value.serverGeneration === "string" &&
           /^[a-f0-9-]{36}$/.test(value.serverGeneration),
       );

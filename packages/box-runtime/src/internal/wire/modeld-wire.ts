@@ -1,5 +1,6 @@
 import {
   WIRE_FRAME_MAX_BYTES,
+  WIRE_VERSION,
   WireError,
   exactKeys,
   parseWireVersion,
@@ -69,9 +70,15 @@ export type ParsedWireRequest =
   | { method: "run-step"; request: RunStepRequest }
   | { method: "cancel-step"; request: CancelStepRequest };
 
+/** v3 is rejected with zero effects. Production parser is parseModeldRequest. */
 export function parseV3Request(value: unknown): ParsedWireRequest {
+  void value;
+  throw new WireError("unsupported_version");
+}
+
+export function parseModeldRequest(value: unknown): ParsedWireRequest {
   const version = parseWireVersion(value);
-  if (version !== 3) throw new WireError("unsupported_version");
+  if (version === 3 || version !== WIRE_VERSION) throw new WireError("unsupported_version");
   if (!isRecord(value) || typeof value.method !== "string") throw new WireError("malformed_frame");
   if (value.method === "health") {
     if (!exactKeys(value, ["version", "method"])) throw new WireError("extra_keys");
@@ -153,26 +160,26 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
   if (!isRecord(value)) throw new WireError("malformed_frame");
   if (value.ok === false) {
     if (!exactKeys(value, ["ok", "version", "error"])) throw new WireError("extra_keys");
-    if (value.version !== 3 || !isRecord(value.error) || !exactKeys(value.error, ["code"]) || typeof value.error.code !== "string") {
+    if (value.version !== WIRE_VERSION || !isRecord(value.error) || !exactKeys(value.error, ["code"]) || typeof value.error.code !== "string") {
       throw new WireError("malformed_frame");
     }
     return { session, done: true };
   }
   if (session.method === "health") {
     if (!exactKeys(value, ["ok", "method", "version", "serverGeneration"])) throw new WireError("extra_keys");
-    if (value.ok !== true || value.method !== "health" || value.version !== 3 || !uuidLike(value.serverGeneration)) {
+    if (value.ok !== true || value.method !== "health" || value.version !== WIRE_VERSION || !uuidLike(value.serverGeneration)) {
       throw new WireError("malformed_frame");
     }
     return { session, done: true };
   }
   if (session.method === "cancel-step") {
     if (!exactKeys(value, ["ok", "method", "version"])) throw new WireError("extra_keys");
-    if (value.ok !== true || value.method !== "cancel-step" || value.version !== 3) throw new WireError("malformed_frame");
+    if (value.ok !== true || value.method !== "cancel-step" || value.version !== WIRE_VERSION) throw new WireError("malformed_frame");
     return { session, done: true };
   }
   if (session.phase === "start") {
     if (!exactKeys(value, ["ok", "method", "kind", "version", "bindingId"])) throw new WireError("extra_keys");
-    if (value.ok !== true || value.method !== "run-step" || value.kind !== "accepted" || value.version !== 3 || typeof value.bindingId !== "string") {
+    if (value.ok !== true || value.method !== "run-step" || value.kind !== "accepted" || value.version !== WIRE_VERSION || typeof value.bindingId !== "string") {
       throw new WireError("malformed_frame");
     }
     return { session: { method: "run-step", phase: "events", sequence: 0 }, done: false };
@@ -188,7 +195,7 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
     return { session: { ...session, sequence: session.sequence + 1 }, done: false };
   }
   if (value.kind === "terminal") {
-    if (Object.hasOwn(value, "version") && value.version !== 3) throw new WireError("unsupported_version");
+    if (Object.hasOwn(value, "version") && value.version !== WIRE_VERSION) throw new WireError("unsupported_version");
     if (value.outcome === "ok") {
       if (!exactKeys(value, ["kind", "outcome", "bindingId"], ["finishReason", "usage", "version"])) throw new WireError("extra_keys");
       if (typeof value.bindingId !== "string") throw new WireError("malformed_frame");
@@ -209,7 +216,7 @@ export type ParsedV4Control =
   | { method: "compact-request"; agentId: string; turnId: string; stepId: string; bindingId: string; selectionRevision: string; recoveryNonce: string; deadlineMs: number }
   | { method: "resume-step"; agentId: string; turnId: string; stepId: string; bindingId: string; selectionRevision: string; recoveryNonce: string; snapshot: ReturnType<typeof parseContextSnapshot> };
 
-/** Fake/offline v4 control frames. Production parseV3Request still rejects version 4. */
+/** v4 compact-request / resume-step. Initial connection still uses parseModeldRequest. */
 export function parseV4ControlFrame(value: unknown): ParsedV4Control {
   const version = parseWireVersion(value);
   if (version !== 4) throw new WireError("unsupported_version");

@@ -11,6 +11,7 @@ import { writeModeldStepOutcome } from "../io/modeld-outcome.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
 import { probeModeldHealth, modeldSocketPath } from "../wire/modeld-probe.node.ts";
 import { serveModeld } from "../modeld/server.node.ts";
+import { sameConnectionHostCompactLayer } from "../modeld/same-connection-compact.ts";
 import type { ListenHooks, ReleaseStatus, ResourceCounts } from "../modeld/unix-listen.node.ts";
 
 /** Fail-closed: only store `committed` route+attestation+host is admitted. */
@@ -31,6 +32,13 @@ export function admitAllAuthorityLayer(): Layer.Layer<AdmissionAuthority> {
   return Layer.succeed(AdmissionAuthority, {
     current: () => Effect.succeed({ admitted: true }),
   });
+}
+
+export const MODELD_HOST_COMPACT_ENV = "GROKBOX_MODELD_HOST_COMPACT";
+
+/** Explicit opt-in only. Any other value, including unset, keeps HostCompact off. */
+export function modeldHostCompactEnabled(env: NodeJS.Dict<string> = {}): boolean {
+  return env[MODELD_HOST_COMPACT_ENV] === "1";
 }
 
 export type ModeldRootOptions = {
@@ -90,6 +98,9 @@ export function ensureModeld(options: ModeldRootOptions) {
         counts: options.counts,
         hooks: options.hooks,
         maxClients: options.maxClients,
+        ...(modeldHostCompactEnabled(options.env)
+          ? { compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming) }
+          : {}),
       });
       yield* Effect.never;
     }).pipe(Effect.provide(layer));
@@ -133,6 +144,9 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
         counts: options.counts,
         hooks,
         maxClients: options.maxClients,
+        ...(modeldHostCompactEnabled(options.env)
+          ? { compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming) }
+          : {}),
       });
       yield* Deferred.succeed(ready, { kind: "owned", path, generation });
       yield* Effect.never;

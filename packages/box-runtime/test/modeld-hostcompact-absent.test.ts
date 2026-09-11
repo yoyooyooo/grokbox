@@ -4,9 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Context, Effect, Option } from "effect";
 import { HostCompact } from "@grokbox/runtime-kernel/ports";
-import { modeldRootLayer } from "../src/internal/roots/modeld.runtime.ts";
+import { modeldHostCompactEnabled, modeldRootLayer } from "../src/internal/roots/modeld.runtime.ts";
 
 describe("production modeld root", () => {
+  test("HostCompact gate is off unless GROKBOX_MODELD_HOST_COMPACT=1", () => {
+    expect(modeldHostCompactEnabled({})).toBe(false);
+    expect(modeldHostCompactEnabled({ GROKBOX_MODELD_HOST_COMPACT: "true" })).toBe(false);
+    expect(modeldHostCompactEnabled({ GROKBOX_MODELD_HOST_COMPACT: "1" })).toBe(true);
+  });
+
   test("does not provide HostCompact", async () => {
     const layer = modeldRootLayer({
       durableRoot: mkdtempSync(join(tmpdir(), "grokbox-hc-")),

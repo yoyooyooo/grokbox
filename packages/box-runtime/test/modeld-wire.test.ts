@@ -1,15 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { WireError, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
+import { WIRE_VERSION, WireError, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
-import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV3Request, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
+import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseModeldRequest, parseV3Request, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
 
-describe("modeld v3 wire", () => {
-  test("round-trips health and rejects v2, extra keys, malformed utf-8", () => {
-    const encoded = encodeModeldFrame({ version: 3, method: "health" });
+describe("modeld v4 wire", () => {
+  test("round-trips health and rejects v3/v2, extra keys, malformed utf-8", () => {
+    const encoded = encodeModeldFrame({ version: WIRE_VERSION, method: "health" });
     const decoded = decodeModeldFrame(encoded);
-    expect(decoded && "value" in decoded ? parseV3Request(decoded.value) : undefined).toEqual({ method: "health" });
-    expect(() => parseV3Request({ version: 2, method: "health" })).toThrow(WireError);
-    expect(() => parseV3Request({ version: 3, method: "health", extra: true })).toThrow(WireError);
+    expect(decoded && "value" in decoded ? parseModeldRequest(decoded.value) : undefined).toEqual({ method: "health" });
+    expect(() => parseModeldRequest({ version: 2, method: "health" })).toThrow(WireError);
+    expect(() => parseModeldRequest({ version: 3, method: "health" })).toThrow(WireError);
+    expect(() => parseV3Request({ version: 3, method: "health" })).toThrow(WireError);
+    expect(() => parseModeldRequest({ version: WIRE_VERSION, method: "health", extra: true })).toThrow(WireError);
     const bad = Buffer.from(encoded);
     bad[5] = 0xff;
     const malformed = decodeModeldFrame(bad);
@@ -17,7 +19,7 @@ describe("modeld v3 wire", () => {
   });
 
   test("rejects unknown method and oversized frames", () => {
-    expect(() => parseV3Request({ version: 3, method: "complete" })).toThrow(WireError);
+    expect(() => parseModeldRequest({ version: WIRE_VERSION, method: "complete" })).toThrow(WireError);
     const huge = Buffer.alloc(8);
     huge.writeUInt32BE(9_000_000, 0);
     expect(decodeModeldFrame(huge)).toEqual({ error: "too-large" });
@@ -25,9 +27,9 @@ describe("modeld v3 wire", () => {
 
   test("rejects non-string bindingId and extra snapshot keys", () => {
     const base = {
-      version: 3,
+      version: WIRE_VERSION,
       method: "run-step",
-      hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },
+      hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v4" },
       serviceEpoch: { incarnationId: "svc" },
       agentId: "a",
       turnId: "t",
@@ -43,17 +45,17 @@ describe("modeld v3 wire", () => {
         snapshotDigest: "0".repeat(64),
       },
     };
-    expect(() => parseV3Request({ ...base, bindingId: 123 })).toThrow(WireError);
-    expect(() => parseV3Request({ ...base, snapshot: { ...base.snapshot, extra: true } })).toThrow(WireError);
+    expect(() => parseModeldRequest({ ...base, bindingId: 123 })).toThrow(WireError);
+    expect(() => parseModeldRequest({ ...base, snapshot: { ...base.snapshot, extra: true } })).toThrow(WireError);
   });
 
   test("client response SM rejects version-2 garbage terminal", () => {
-    const session = clientSessionFor({ version: 3, method: "health" });
+    const session = clientSessionFor({ version: WIRE_VERSION, method: "health" });
     expect(() => acceptModeldFrame(session, { kind: "terminal", outcome: "ok", version: 2, garbage: true })).toThrow(WireError);
   });
 
-  test("v4 control frames parse offline; production v3 still rejects version 4", () => {
-    expect(() => parseV3Request({ version: 4, method: "compact-request" })).toThrow(WireError);
+  test("compact-request and resume-step are first-class v4 control frames", () => {
+    expect(() => parseModeldRequest({ version: 4, method: "compact-request" })).toThrow(WireError);
     const compact = parseV4ControlFrame({
       version: 4,
       method: "compact-request",

@@ -1,6 +1,6 @@
-export const WIRE_VERSION = 3 as const;
+export const WIRE_VERSION = 4 as const;
 
-export type WireMethod = "health" | "run-step" | "cancel-step";
+export type WireMethod = "health" | "run-step" | "cancel-step" | "compact-request" | "resume-step";
 
 export type WireErrorCode =
   | "unsupported_version"

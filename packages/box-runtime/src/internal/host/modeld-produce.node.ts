@@ -1,4 +1,4 @@
-import { EnvelopeError, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
+import { EnvelopeError, WIRE_VERSION, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { qualifyHostRootContract } from "./root-contract.ts";
 import { requestModeld, streamModeld } from "./modeld-client.node.ts";
@@ -21,7 +21,7 @@ export function hostEpochFromFacts(input: {
     profile: input.profileId,
     hostIdentity: input.binding.identitySha,
     bridgeDigest: input.bridgeDigest,
-    wireVersion: "v3",
+    wireVersion: "v4",
   };
 }
 
@@ -92,7 +92,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
   const produce = async function* (request: StreamRequest & { envelope: ModelEnvelope; abortSignal: AbortSignal }): AsyncIterable<StreamPart> {
     if (!last.serviceEpoch) {
       try {
-        const health = await requestModeld(input.runRoot, { version: 3, method: "health" });
+        const health = await requestModeld(input.runRoot, { version: WIRE_VERSION, method: "health" });
         const frame = health[0];
         if (!isRecord(frame) || typeof frame.serverGeneration !== "string") {
           input.onConnectAttempt?.("fail");
@@ -137,7 +137,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
     last.stepId = stepId;
     const names = declared(request.envelope);
     const body: Record<string, unknown> = {
-      version: 3,
+      version: WIRE_VERSION,
       method: "run-step",
       hostEpoch,
       serviceEpoch: { incarnationId: last.serviceEpoch },
@@ -153,7 +153,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
     };
     if (last.bindingId) body.bindingId = last.bindingId;
     const cancel = {
-      version: 3,
+      version: WIRE_VERSION,
       method: "cancel-step",
       hostEpoch,
       serviceEpoch: { incarnationId: last.serviceEpoch },

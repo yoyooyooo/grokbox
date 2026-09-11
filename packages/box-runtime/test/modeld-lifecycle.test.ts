@@ -119,8 +119,8 @@ describe("modeld lifecycle", () => {
     const started = await startModeldProcess({ durableRoot: durable, runRoot, env: {}, counts });
     expect(started.ensure.kind).toBe("owned");
     expect(await probeModeldHealth(runRoot, 500)).toBe(true);
-    const health = await requestModeld(runRoot, { version: 3, method: "health" });
-    expect(health[0]).toMatchObject({ ok: true, method: "health", version: 3 });
+    const health = await requestModeld(runRoot, { version: 4, method: "health" });
+    expect(health[0]).toMatchObject({ ok: true, method: "health", version: 4 });
     const v2 = await requestModeld(runRoot, { version: 2, method: "health" });
     expect(v2[0]).toMatchObject({ ok: false, error: { code: "unsupported_version" } });
     const borrowed = await startModeldProcess({ durableRoot: durable, runRoot, env: {} });
@@ -175,11 +175,11 @@ describe("modeld lifecycle", () => {
     const fakeDir = await mkdtemp(join(tmpdir(), "grokbox-t25-eof-"));
     const fakePath = join(fakeDir, "modeld.sock");
     const fake = createServer((socket) => {
-      socket.write(encodeModeldFrame({ ok: true, method: "run-step", kind: "accepted", version: 3, bindingId: "x" }));
+      socket.write(encodeModeldFrame({ ok: true, method: "run-step", kind: "accepted", version: 4, bindingId: "x" }));
       socket.end();
     });
     await new Promise<void>((resolve) => fake.listen(fakePath, resolve));
-    await expect(requestModeld(fakeDir, { version: 3, method: "health" })).rejects.toBeTruthy();
+    await expect(requestModeld(fakeDir, { version: 4, method: "health" })).rejects.toBeTruthy();
     fake.close();
   }, 8_000);
 
@@ -198,7 +198,7 @@ describe("modeld lifecycle", () => {
     await new Promise<void>((resolve, reject) => {
       sock.on("connect", () => {
         sock.write(Buffer.concat([
-          encodeModeldFrame({ version: 3, method: "health" }),
+          encodeModeldFrame({ version: 4, method: "health" }),
           encodeModeldFrame({ version: 2, method: "health" }),
         ]));
       });
@@ -237,7 +237,7 @@ describe("modeld lifecycle", () => {
     };
     const echoRev = computeSelectionRevision({ agentId: "a", model: STUB_ECHO_MODEL });
     const step = (generation: string, turnId: string) => ({
-      version: 3,
+      version: 4,
       method: "run-step",
       hostEpoch,
       serviceEpoch: { incarnationId: generation },
@@ -331,7 +331,7 @@ describe("modeld lifecycle", () => {
       ));
       await new Promise((resolve) => setTimeout(resolve, 40));
       const streamed = await requestModeld(sdkDir, {
-        version: 3,
+        version: 4,
         method: "run-step",
         hostEpoch,
         serviceEpoch: { incarnationId: sdkGen },
@@ -412,7 +412,7 @@ describe("modeld lifecycle", () => {
       socket.end();
     });
     await new Promise<void>((resolve) => fake.listen(join(fakeDir, "modeld.sock"), resolve));
-    await expect(requestModeld(fakeDir, { version: 3, method: "health" })).rejects.toBeTruthy();
+    await expect(requestModeld(fakeDir, { version: 4, method: "health" })).rejects.toBeTruthy();
     fake.close();
   }, 8_000);
 
@@ -446,7 +446,7 @@ describe("modeld lifecycle", () => {
     await new Promise<void>((resolve, reject) => {
       sock.on("connect", () => {
         sock.write(encodeModeldFrame({
-          version: 3,
+          version: 4,
           method: "run-step",
           hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },
           serviceEpoch: { incarnationId: generation },

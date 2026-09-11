@@ -9,17 +9,18 @@ import {
   PARTIAL_SOCKET_MS,
   REQUEST_WALL_DEADLINE_MS,
   SERVER_ACTIVE_CLIENTS_MAX,
+  WIRE_VERSION,
   WireError,
   type InferenceEvent,
   type RunStepRequest,
 } from "@grokbox/runtime-kernel/contract";
 import { cancelStep, runStep } from "@grokbox/runtime-kernel/inference";
-import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseV3Request } from "../wire/modeld-wire.ts";
+import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseModeldRequest } from "../wire/modeld-wire.ts";
 import { acquireUnixListener, trackSocket, type ListenHooks, type ResourceCounts } from "./unix-listen.node.ts";
 import { modeldFailureOutcome, type ModeldStepOutcome } from "./step-outcome.ts";
 
 function errorFrame(code: string): unknown {
-  return { ok: false, version: 3, error: { code } };
+  return { ok: false, version: WIRE_VERSION, error: { code } };
 }
 
 function mapFail(error: unknown): string {
@@ -152,13 +153,13 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     }
     let parsed;
     try {
-      parsed = parseV3Request(value);
+      parsed = parseModeldRequest(value);
     } catch (error) {
       yield* emit(socket, errorFrame(mapFail(error)));
       return;
     }
     if (parsed.method === "health") {
-      yield* emit(socket, { ok: true, method: "health", version: 3, serverGeneration: generation });
+      yield* emit(socket, { ok: true, method: "health", version: WIRE_VERSION, serverGeneration: generation });
       return;
     }
     if (parsed.method === "cancel-step") {
@@ -167,7 +168,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
         yield* emit(socket, errorFrame(mapFail(result.failure)));
         return;
       }
-      yield* emit(socket, { ok: true, method: "cancel-step", version: 3 });
+      yield* emit(socket, { ok: true, method: "cancel-step", version: WIRE_VERSION });
       return;
     }
 
@@ -217,7 +218,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     }
     const step = admitted.success;
     observation = { ...observation, phase: "provider", bindingId: step.bindingId };
-    yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: 3, bindingId: step.bindingId });
+    yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: step.bindingId });
     if (!("stream" in step)) {
       observation = { ...observation, outcome: "duplicate", phase: "complete" };
       yield* emit(socket, {

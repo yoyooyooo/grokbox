@@ -29,12 +29,12 @@ describe("modeld health probe", () => {
 
   test("v3 with empty generation is not ready; v3 uuid is ready", async () => {
     const emptyRoot = await mkdtemp(join(tmpdir(), "grokbox-probe-empty-"));
-    expect(await reply(emptyRoot, { ok: true, method: "health", version: 3, serverGeneration: "" })).toBe(false);
+    expect(await reply(emptyRoot, { ok: true, method: "health", version: 4, serverGeneration: "" })).toBe(false);
     const v3Root = await mkdtemp(join(tmpdir(), "grokbox-probe-v3-"));
     expect(await reply(v3Root, {
       ok: true,
       method: "health",
-      version: 3,
+      version: 4,
       serverGeneration: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     })).toBe(true);
   });

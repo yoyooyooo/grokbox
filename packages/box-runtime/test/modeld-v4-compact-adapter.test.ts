@@ -4,6 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
 import { Effect, Fiber, Layer } from "effect";
 import { BackendFailure, contextSnapshotBody, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
@@ -66,9 +67,9 @@ function stepBody(generation: string) {
   const captured = captureManagedSelection(models, "a");
   if (captured.kind !== "managed") throw new Error("managed");
   return {
-    version: 3,
+    version: WIRE_VERSION,
     method: "run-step",
-    hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },
+    hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v4" },
     serviceEpoch: { incarnationId: generation },
     agentId: "a",
     turnId: "t-v4",
@@ -172,7 +173,7 @@ describe("same-connection v4 HostCompact adapter", () => {
     expect(frames.some((frame) => frame && typeof frame === "object" && (frame as { kind?: string }).kind === "terminal")).toBe(true);
     const terminal = frames.find((frame) => frame && typeof frame === "object" && (frame as { kind?: string }).kind === "terminal") as { outcome?: string };
     expect(terminal.outcome).toBe("ok");
-    expect(frames.filter((frame) => frame && typeof frame === "object" && (frame as { version?: number }).version === 4)).toHaveLength(0);
+    expect(frames.filter((frame) => frame && typeof frame === "object" && (frame as { method?: string }).method === "compact-request")).toHaveLength(0);
   });
 
   test("wrong nonce resume does not start attempt1", async () => {
