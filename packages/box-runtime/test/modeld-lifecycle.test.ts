@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, linkSync, renameSync } from "node:fs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Context, Deferred, Effect, Fiber, Layer, Latch } from "effect";
 import { ConfigurationWrite, ControlResources } from "@grokbox/runtime-kernel/ports";
 import { emptyResourceCounts } from "../src/internal/modeld/unix-listen.node.ts";
@@ -415,6 +417,42 @@ describe("modeld lifecycle", () => {
     await expect(requestModeld(fakeDir, { version: 4, method: "health" })).rejects.toBeTruthy();
     fake.close();
   }, 8_000);
+
+  test("Node20 competing-path owner stop exits 0 without SIGABRT", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-t25-n20-"));
+    const worker = fileURLToPath(new URL("./modeld-unix-close-worker.ts", import.meta.url));
+    const bundle = join(dir, "unix-close-worker.mjs");
+    const out = join(dir, "result.json");
+    const build = spawn("bun", ["build", worker, "--outfile", bundle, "--target", "node"], { stdio: "ignore" });
+    await new Promise<void>((resolve, reject) => {
+      build.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`bun build ${code}`)));
+    });
+    const child = spawn("/usr/bin/node", [bundle, dir, out], { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+      child.on("exit", (code, signal) => resolve({ code, signal }));
+    });
+    expect({ code: exit.code, signal: exit.signal, stderr: stderr.slice(-400) }).toEqual({
+      code: 0,
+      signal: null,
+      stderr: "",
+    });
+    const result = JSON.parse(await readFile(out, "utf8")) as {
+      pathExists: boolean;
+      backupExists: boolean;
+      competitorListening: boolean;
+      sameInode: boolean;
+      counts: { listeners: number; sockets: number; fibers: number };
+    };
+    expect(result).toMatchObject({
+      pathExists: true,
+      backupExists: true,
+      competitorListening: true,
+      sameInode: true,
+      counts: { listeners: 0, sockets: 0, fibers: 0 },
+    });
+  }, 15_000);
 
   test("late extra frame after first request is rejected", async () => {
     const echoFile = parseModelsFile({
