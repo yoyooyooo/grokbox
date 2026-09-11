@@ -97,6 +97,27 @@ function parseBunTest(combined) {
   return { passNames, failNames, skipNames, pass, fail, skip, expects };
 }
 
+function e09OracleStatus(parsed, extra = {}) {
+  const failed = parsed.failNames.some((name) => name.includes("E09 reject-old"));
+  const consumer = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: old error-text consumer"));
+  const pin = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: packed pin"));
+  if (failed) return { id: "E09", status: "fail", tests: parsed.failNames.filter((name) => name.includes("E09 reject-old")) };
+  if (extra.requirePacked) {
+    if (extra.loadOk && extra.pinOk && consumer && pin) {
+      return { id: "E09", status: "pass", tests: parsed.passNames.filter((name) => name.includes("E09 reject-old oracle")) };
+    }
+    return {
+      id: "E09",
+      status: "unavailable",
+      reason: extra.loadOk === false ? "packed_node_load_failed" : extra.pinOk === false ? "packed_pin_mismatch" : "e09_reject_old_oracle_not_qualified",
+    };
+  }
+  if (consumer && pin) {
+    return { id: "E09", status: "pass", tests: parsed.passNames.filter((name) => name.includes("E09 reject-old oracle")) };
+  }
+  return { id: "E09", status: "unavailable", reason: "e09_reject_old_oracle_not_qualified" };
+}
+
 function caseStatus(id, parsed, ran) {
   const names = [...parsed.passNames, ...parsed.failNames, ...parsed.skipNames];
   const mentioned = names.filter((name) => name.includes(id));
@@ -122,17 +143,18 @@ function emit(report, failed) {
 
 const commit = sha();
 const bun = bunVersion();
-const notProven = [
-  "E07",
-  "auxiliary_unqualified",
-  "E09",
-  "e09_reject_old_oracle_not_qualified",
-  "E10", "E11",
-  "native_host_consumer_qualification",
-  "live-adopt",
-  "B-closed",
-  "production-contextWindowTokens",
-];
+function continuityNotProven(e09) {
+  return [
+    "E07",
+    "auxiliary_unqualified",
+    ...(e09?.status === "pass" ? [] : ["E09", "e09_reject_old_oracle_not_qualified"]),
+    "E10", "E11",
+    "native_host_consumer_qualification",
+    "live-adopt",
+    "B-closed",
+    "production-contextWindowTokens",
+  ];
+}
 
 if (lane === "contract-e2e") {
   const argv = ["bun", "test", ...CONTRACT_TESTS];
@@ -145,21 +167,18 @@ if (lane === "contract-e2e") {
       id: "E07",
       status: "unavailable",
       reason: "auxiliary_unqualified",
-      note: "F5 aux request-kind / captured parent binding not admitted. Helper unit tests are subset-only and do not grant E07 pass.",
+      note: "Path B grokbox aux request-kind / parent binding landed on the managed session. Host purpose seam / D2 still missing. Helper and Path B tests do not grant E07 pass.",
     },
-    {
-      id: "E09",
-      status: "unavailable",
-      reason: "e09_reject_old_oracle_not_qualified",
-      note: "Source SHA refuse, RetriableError constructor, and bun packed smoke are observations only. No expected-artifact pin or executed old-vs-source failure consumer. Node load is the verifier loadProbe, not this case pass.",
-    },
+    e09OracleStatus(parsed),
   ];
+  const e09 = cases.find((row) => row.id === "E09");
   const executed = parsed.pass > 0;
   const failed = ran.status !== 0
     || !executed
     || parsed.fail > 0
     || parsed.skip > 0
-    || REQUIRED_CASES.some((id) => caseStatus(id, parsed, true).status !== "pass");
+    || REQUIRED_CASES.some((id) => caseStatus(id, parsed, true).status !== "pass")
+    || e09?.status === "fail";
   emit({
     lane,
     commit,
@@ -178,7 +197,7 @@ if (lane === "contract-e2e") {
       stdoutTail: (ran.stdout ?? "").slice(-4000),
       stderrTail: (ran.stderr ?? "").slice(-2000),
     }],
-    notProven,
+    notProven: continuityNotProven(e09),
     ok: !failed,
   }, failed);
 }
@@ -210,7 +229,7 @@ if (!packedExists) {
     native_qualification_pending: true,
     artifact,
     cases,
-    notProven,
+    notProven: continuityNotProven({ status: "unavailable" }),
     ok: false,
     error: `packed preload missing; rebuild with: ${REBUILD}`,
   }, true);
@@ -258,7 +277,13 @@ const obsFailed = obsRan.status !== 0
   || obsParsed.pass === 0
   || obsParsed.expects === 0
   || obsRequiredMissing.length > 0;
-const failed = !loadOk || packedFailed || obsFailed;
+const e09 = e09OracleStatus(obsParsed, {
+  requirePacked: true,
+  loadOk,
+  pinOk: packedExists && existsSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"))
+    && readFileSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"), "utf8").trim() === packedSha,
+});
+const failed = !loadOk || packedFailed || obsFailed || e09.status === "fail";
 
 emit({
   lane,
@@ -272,12 +297,8 @@ emit({
     id: "E07",
     status: "unavailable",
     reason: "auxiliary_unqualified",
-  }, {
-    id: "E09",
-    status: "unavailable",
-    reason: !loadOk ? "packed_node_load_failed" : "e09_reject_old_oracle_not_qualified",
-    note: "Reject-old oracle is not qualified. Packed E01–E06+E08 uses opt-in Symbol factory, not E09 pass.",
-  }],
+    note: "Path B grokbox aux request-kind exists; Host purpose seam / D2 still missing.",
+  }, e09],
   asserts: {
     packed: { pass: packedParsed.pass, fail: packedParsed.fail, skip: packedParsed.skip, expects: packedParsed.expects },
     obs: { pass: obsParsed.pass, fail: obsParsed.fail, skip: obsParsed.skip, expects: obsParsed.expects },
@@ -294,7 +315,7 @@ emit({
     stdoutTail: (obsRan.stdout ?? "").slice(-1000),
     stderrTail: (obsRan.stderr ?? "").slice(-500),
   }],
-  notProven,
+  notProven: continuityNotProven(e09),
   shaGate: "Compare dist/preload.cjs sha256 after rebuilding with the recorded command before claiming packed E01–E08.",
   ok: !failed,
   ...(failed ? {

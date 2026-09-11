@@ -118,7 +118,16 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       if (error instanceof EnvelopeError) throw new VisibleStreamError("admit", error.code);
       throw error;
     }
-    const stepId = typeof request.invocationId === "string" ? request.invocationId : "";
+    const aux = request.aux;
+    if (aux) {
+      if (aux.parent.agentId !== input.agentId || aux.parent.turnId !== input.turnId
+        || aux.parent.modelId !== input.modelId || aux.parent.selectionRevision !== input.selectionRevision) {
+        throw new VisibleStreamError("admit", "invalid_envelope");
+      }
+      if (!seen.has(aux.parent.stepId)) throw new VisibleStreamError("admit", "invalid_envelope");
+      if (request.envelope.tools.length > 0) throw new VisibleStreamError("admit", "invalid_tools");
+    }
+    const stepId = aux ? aux.auxRequestId : (typeof request.invocationId === "string" ? request.invocationId : "");
     if (!stepId) throw new VisibleStreamError("admit", "invalid_envelope");
     const prior = seen.get(stepId);
     if (prior && prior !== snapshot.snapshotDigest) {

@@ -6,13 +6,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { applyPatchProfile, PACKED_SESSION_SYMBOL, profileFromSource } from "../src/internal/host/profile.ts";
-import { hostVisibleStreamError } from "../src/internal/host/session.ts";
+import { hostVisibleStreamError, toHostStreamResult, visibleFailureHandle } from "../src/internal/host/session.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const PACKED = join(repoRoot, "dist", "preload.cjs");
 const SESSION_SRC = join(repoRoot, "packages", "box-runtime", "src", "internal", "host", "session.ts");
 const OLD_SNIPPET = join(repoRoot, "packages", "box-runtime", "test", "fixtures", "e09-old-error-text-snippet.cjs");
+const PACKED_PIN = join(repoRoot, "packages", "box-runtime", "test", "fixtures", "e09-packed-preload.sha256");
 
 function sha256Bytes(buf: Buffer | string): string {
   return createHash("sha256").update(buf).digest("hex");
@@ -68,6 +69,39 @@ describe("source Host SHA unit and bun packed smoke", () => {
     });
     expect(probe.status).toBe(0);
     expect(probe.stdout).toContain("preload-probe-ok");
+  });
+
+  test("E09 reject-old oracle: packed pin matches dist/preload.cjs", () => {
+    expect(existsSync(PACKED)).toBe(true);
+    expect(existsSync(PACKED_PIN)).toBe(true);
+    const pin = readFileSync(PACKED_PIN, "utf8").trim();
+    expect(pin).toMatch(/^[a-f0-9]{64}$/);
+    const packed = readFileSync(PACKED);
+    expect(sha256Bytes(packed)).toBe(pin);
+    expect(sha256Bytes(Buffer.concat([packed, Buffer.from("\n// drift\n")]))).not.toBe(pin);
+    expect(sha256Bytes(Buffer.alloc(0))).not.toBe(pin);
+  });
+
+  test("E09 reject-old oracle: old error-text consumer vs source throw", async () => {
+    const { createRequire } = await import("node:module");
+    const require = createRequire(import.meta.url);
+    const old = require(OLD_SNIPPET) as { visibleFailureHandle: (message: string) => { fullStream: AsyncIterable<unknown> } };
+    const oldParts: unknown[] = [];
+    for await (const part of old.visibleFailureHandle("The model request exceeds the supported envelope limit. No model request was sent.").fullStream) {
+      oldParts.push(part);
+    }
+    expect(oldParts.some((part) => part && typeof part === "object" && (part as { type?: string }).type === "text-delta")).toBe(true);
+    const current = toHostStreamResult(visibleFailureHandle("openai/gpt", "invalid_envelope"));
+    const currentParts: unknown[] = [];
+    let threw: Error | undefined;
+    try {
+      for await (const part of current.fullStream) currentParts.push(part);
+    } catch (error) {
+      threw = error instanceof Error ? error : new Error(String(error));
+    }
+    expect(threw?.name).toBe("RetriableError");
+    expect(currentParts.some((part) => part && typeof part === "object" && (part as { type?: string }).type === "text-delta")).toBe(false);
+    await expect(current.response).rejects.toBeDefined();
   });
 
   test("default packed --require does not install session factory", () => {

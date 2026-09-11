@@ -1,7 +1,8 @@
 import type { HostPromptSession, HostResponse } from "./session.ts";
+import { grokboxAuxFrom, type AuxParentBinding, type AuxPurpose } from "./aux-request.ts";
 
-export const AUX_PURPOSES = ["memory-extraction", "episode"] as const;
-export type AuxPurpose = (typeof AUX_PURPOSES)[number];
+export { AUX_PURPOSES, grokboxAuxFrom } from "./aux-request.ts";
+export type { AuxParentBinding, AuxPurpose, GrokboxAuxRequest } from "./aux-request.ts";
 
 export type AuxRefuseCode = "auxiliary_unqualified" | "auxiliary_duplicate" | "auxiliary_stale" | "auxiliary_tools";
 
@@ -70,14 +71,35 @@ export async function runAuxiliary(input: {
   tools?: unknown;
   messages?: unknown;
   parentLive: boolean | (() => boolean);
+  parent?: AuxParentBinding;
   seen: Set<string>;
   abortSignal?: AbortSignal;
 }): Promise<AuxOutcome> {
   const admitted = admitAuxiliary(input);
   if (!admitted.ok) return { kind: "refused", code: admitted.code };
+  if (input.parent) {
+    if (input.session.getModelId() !== input.parent.modelId) {
+      return { kind: "refused", code: "auxiliary_unqualified" };
+    }
+    if (grokboxAuxFrom({ grokboxAux: { purpose: admitted.purpose, auxRequestId: admitted.auxRequestId, parent: input.parent } }) == null) {
+      return { kind: "refused", code: "auxiliary_unqualified" };
+    }
+  }
   input.seen.add(admitted.auxRequestId);
   const executor = input.session.getExecutor(input.messages);
-  const handle = executor.stream(input.abortSignal ? { signal: input.abortSignal } : {}, undefined, undefined);
+  const ctx = {
+    ...(input.abortSignal ? { signal: input.abortSignal } : {}),
+    ...(input.parent
+      ? {
+        grokboxAux: {
+          purpose: admitted.purpose,
+          auxRequestId: admitted.auxRequestId,
+          parent: input.parent,
+        },
+      }
+      : {}),
+  };
+  const handle = executor.stream(ctx, undefined, undefined);
   try {
     const response = await handle.response;
     if (!parentIsLive(input.parentLive)) {

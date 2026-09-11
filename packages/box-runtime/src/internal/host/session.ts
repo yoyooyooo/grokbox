@@ -5,6 +5,7 @@ import { STUB_ECHO_MODEL_ID } from "@grokbox/runtime-kernel/selection";
 import { buildHostEnvelope, cloneHostExecutorWindow } from "./context-codec.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
+import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
 
 export type FinishReason = "stop" | "error" | "abort";
@@ -45,7 +46,13 @@ export type VisibleFailureContext = {
 };
 export type HostResponse = { modelId: string; messages: SessionMessage[]; finishReason?: HostFinishReason; error?: VisibleFailure };
 export type StreamHandle = { fullStream: AsyncIterable<StreamPart>; response: Promise<HostResponse>; usage: Promise<HostUsage> };
-export type StreamRequest = { messages?: PromptMessage[]; envelope?: ModelEnvelope; invocationId?: string; abortSignal?: AbortSignal };
+export type StreamRequest = {
+  messages?: PromptMessage[];
+  envelope?: ModelEnvelope;
+  invocationId?: string;
+  abortSignal?: AbortSignal;
+  aux?: GrokboxAuxRequest;
+};
 export type PromptSession = { stream: (request?: StreamRequest) => StreamHandle };
 export type ExtendedUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; maxTokens: number };
 export type HostStreamResult = StreamHandle & {
@@ -230,10 +237,16 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
       getState: read,
       clearMessages() { messages = []; invalidCode = undefined; },
       stream(ctx, invocationId, tools, options) {
-        const requestId = input.requireStepId ? invocationId : (invocationId ?? input.invocationId);
+        const aux = grokboxAuxFrom(ctx) ?? grokboxAuxFrom(options);
+        const requestId = aux
+          ? aux.auxRequestId
+          : (input.requireStepId ? invocationId : (invocationId ?? input.invocationId));
         let cancellation: ReturnType<typeof combineAbortSignals> | undefined;
         try {
-          if (input.requireStepId) {
+          if (aux) {
+            if (boundedVisible(invocationId)) throw new EnvelopeError("invalid_envelope", "invalid-step-id");
+            if (aux.parent.modelId !== modelId) throw new EnvelopeError("invalid_envelope");
+          } else if (input.requireStepId) {
             if (requestId === undefined) throw new EnvelopeError("invalid_envelope", "missing-step-id");
             if (typeof requestId !== "string" || !requestId || requestId.length > 128 || /[\x00-\x1f]/.test(requestId)) {
               throw new EnvelopeError("invalid_envelope", "invalid-step-id");
@@ -251,9 +264,14 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
             }
           }
           const envelope = signal?.aborted ? buildHostEnvelope([]) : buildHostEnvelope(messages, tools, options);
-          const handle = session.stream({ envelope, abortSignal: signal, ...(typeof requestId === "string" ? { invocationId: requestId } : {}) });
+          const handle = session.stream({
+            envelope,
+            abortSignal: signal,
+            ...(typeof requestId === "string" ? { invocationId: requestId } : {}),
+            ...(aux ? { aux } : {}),
+          });
           void handle.response.then(cancellation.dispose, cancellation.dispose);
-          if (typeof requestId === "string" && !notified.has(requestId)) {
+          if (!aux && typeof requestId === "string" && !notified.has(requestId)) {
             notified.add(requestId);
             try { onRequestId?.(requestId); } catch { /* Host notification is not a model effect. */ }
           }

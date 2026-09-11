@@ -13,6 +13,7 @@ import {
   type StreamHandle,
 } from "./session.ts";
 import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.node.ts";
+import { grokboxAuxFrom } from "./aux-request.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
 
@@ -49,6 +50,9 @@ function overlayOfficialNoStepStreams(
       getState: () => managedEx.getState(),
       clearMessages: () => managedEx.clearMessages(),
       stream(ctx, invocationId, tools, options) {
+        if (grokboxAuxFrom(ctx) ?? grokboxAuxFrom(options)) {
+          return managedEx.stream(ctx, invocationId, tools, options);
+        }
         if (!boundedId(invocationId)) {
           const official = officialExecutor(original, state);
           if (official) {

@@ -491,34 +491,51 @@ describe("E08 budget/cancel/fault", () => {
 });
 
 describe("E07 auxiliary after main STEP", () => {
-  test("E07 main STEP then extraction Memory; main window unchanged", async () => {
+  test("E07 Path B same-session aux uses captured selection; wrong-model 0 extra dispatch", async () => {
     await withFakeHttpSession({
       turnId: "HOST_TURN_E07_main",
       fn: async ({ session, requests }) => {
         const mainWindow = windowRows();
         const mainEx = session.getExecutor(mainWindow);
+        const parent = {
+          agentId: "agent-tom",
+          turnId: "HOST_TURN_E07_main",
+          stepId: "step-e07-main",
+          modelId: SYNTHETIC_OPENAI.id,
+          selectionRevision: computeSelectionRevision({ agentId: "agent-tom", model: SYNTHETIC_OPENAI }),
+        };
+        const seen = new Set<string>();
+        const memory = createHostMemoryControl();
+        memory.commit(await runAuxiliary({
+          session, purpose: "memory-extraction", auxRequestId: "aux-early", parentLive: true, parent, seen,
+          messages: [{ role: "user", content: "extract" }],
+        }));
+        expect(requests).toHaveLength(0);
         await mainEx.stream({}, "step-e07-main", [LOOKUP_TOOL]).response;
         expect(requests).toHaveLength(1);
+        expect(requests[0]!.text).toContain("gpt-4o-mini");
         const before = mainEx.getState();
-        const auxCounts = { n: 0 };
-        const aux = asHostPromptSession(createStreamingPromptSession({
-          modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
-          produce: async function* () {
-            auxCounts.n += 1;
-            yield { type: "text-delta" as const, textDelta: "MEM-ALPHA" };
-            yield { type: "finish" as const, reason: "stop" as const, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
-          },
-        }), SYNTHETIC_OPENAI.id, undefined, { requireStepId: false, contextWindowTokens: SYNTHETIC_W });
-        const memory = createHostMemoryControl();
-        const seen = new Set<string>();
         memory.commit(await runAuxiliary({
-          session: aux, purpose: "memory-extraction", auxRequestId: "aux-e07", parentLive: true, seen,
+          session, purpose: "memory-extraction", auxRequestId: "aux-e07", parentLive: true, parent, seen,
           messages: [{ role: "user", content: "purpose: episode" }],
         }));
-        expect(auxCounts.n).toBe(1);
-        expect(requests).toHaveLength(1);
-        expect(memory.memories).toEqual([{ purpose: "memory-extraction", auxRequestId: "aux-e07", text: "MEM-ALPHA" }]);
+        expect(requests).toHaveLength(2);
+        expect(requests[1]!.text).toContain("gpt-4o-mini");
+        expect(requests[1]!.text).not.toContain("unrelated-model");
+        expect(memory.memories).toEqual([{ purpose: "memory-extraction", auxRequestId: "aux-e07", text: "ok" }]);
         expect(mainEx.getState()).toEqual(before);
+        const wrong = await runAuxiliary({
+          session, purpose: "memory-extraction", auxRequestId: "aux-wrong-model", parentLive: true,
+          parent: { ...parent, modelId: "other/unrelated-model" }, seen,
+          messages: [{ role: "user", content: "extract" }],
+        });
+        expect(wrong).toMatchObject({ kind: "refused", code: "auxiliary_unqualified" });
+        expect(requests).toHaveLength(2);
+        memory.commit(await runAuxiliary({
+          session, purpose: "memory-extraction", auxRequestId: "aux-tools", parentLive: true, parent, seen,
+          tools: [LOOKUP_TOOL], messages: [{ role: "user", content: "extract" }],
+        }));
+        expect(requests).toHaveLength(2);
       },
     });
   }, 20_000);
