@@ -325,7 +325,7 @@ Ranked smallest-first:
 1. **E07 Host purpose seam — admission landed `pre-publication-revision` (2026-09-11 update).** D2 is approved. Source/packed Host admission passes; complete E07/native consumer qualification is still partial, not an approval blocker or a Path B closure.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
-4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt. T26 P2-01 toolCalls alias closed on `639ddc0` (offline only). T28 P2-01 legacy executor removal closed on `d5ec95d` (offline only). M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
+4. **SHA-pinned M1–M4 leftovers** (still not grok dispatch): T25 P1-02 Node20 SIGABRT closed on `pre-publication-revision` (offline only). Remaining: T26 P1-02 profile-bound root provenance; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt. T26 P2-01 toolCalls alias closed on `639ddc0` (offline only). T28 P2-01 legacy executor removal closed on `d5ec95d` (offline only). M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
@@ -366,3 +366,23 @@ Current home: [E07 Host admission](../maintainers/e07-path-b-host-admission.md).
 ### Evidence ceiling
 
 Offline contract tests and typecheck only. `verify-runtime-rebuild.mjs stream` still has a pre-existing `pre-publication-revision` failure (`managed hook returns Host session not runtime_not_ready`) from T32 missing-turnId `compact_passthrough`; host-session ABI cases in that gate pass. Not live adopt, not packed preload, not T26 ticket close, not a billing claim.
+
+## M4 / T25 P1-02 close — pre-publication-revision — 2026-09-11
+
+- Base tip: `pre-publication-revision` on `feat/t25-sigabrt`.
+- Close SHA: `pre-publication-revision`.
+- Receipt: `PRIVATE_EVIDENCE`.
+- Disposition: **P1-02 Node20 SIGABRT closed offline.** Pathname survival plus process exit 0 under `/usr/bin/node v20.19.2`. No live Host/re-adopt, no T26/T28, no T32/canary in this lane.
+
+### Closed at this tip
+
+- **P1-02 — closed (native competitor close):** `unix-listen.node.ts` no longer nulls `_handle` or `closeSync(fd)`. When the pathname inode is not owned, teardown removes directory write so libuv `pipe_fname` unlink fails, then `Server.close` still `uv_close`s the handle; rename-aside is the fallback. Owned sockets still unlink. The `_handle=null` + `closeSync` counterexample still SIGABRTs as a negative control.
+  - Evidence: `packages/box-runtime/test/modeld-lifecycle.test.ts` Node20 spawn; `PRIVATE_EVIDENCE` (`code:0`, `signal:null`, pathname/inode kept); baseline `PRIVATE_EVIDENCE` (`SIGABRT`). Original SHA-pinned finding: `PRIVATE_EVIDENCE`.
+
+### Items
+
+- None remaining for this T25 native-close residue. T26 P1-02 and T28 P1-02/P1-04 stay held on their SHA-pinned sections.
+
+### Evidence ceiling
+
+Offline typecheck + lifecycle/wire tests and `/usr/bin/node v20.19.2` owned-stop spawn. Pre-existing `modeld-outcome.test.ts` journal misses on this sibling tip are unchanged and not this close. Not live adopt, not packed preload, not T25 ticket close beyond this native abort, not a Host/canary claim.
