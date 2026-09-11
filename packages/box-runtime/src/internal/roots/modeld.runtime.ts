@@ -41,6 +41,16 @@ export function modeldHostCompactEnabled(env: NodeJS.Dict<string> = {}): boolean
   return env[MODELD_HOST_COMPACT_ENV] === "1";
 }
 
+/** Production attach for ensure/start. Undefined unless the env gate is exactly `1`. */
+export function modeldCompactForIncoming(env: NodeJS.Dict<string> = {}) {
+  return modeldHostCompactEnabled(env) ? sameConnectionHostCompactLayer : undefined;
+}
+
+function compactAttach(env?: NodeJS.Dict<string>) {
+  const compactForIncoming = modeldCompactForIncoming(env);
+  return compactForIncoming ? { compactForIncoming } : {};
+}
+
 export type ModeldRootOptions = {
   durableRoot: string;
   runRoot: string;
@@ -98,9 +108,7 @@ export function ensureModeld(options: ModeldRootOptions) {
         counts: options.counts,
         hooks: options.hooks,
         maxClients: options.maxClients,
-        ...(modeldHostCompactEnabled(options.env)
-          ? { compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming) }
-          : {}),
+        ...compactAttach(options.env),
       });
       yield* Effect.never;
     }).pipe(Effect.provide(layer));
@@ -144,9 +152,7 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
         counts: options.counts,
         hooks,
         maxClients: options.maxClients,
-        ...(modeldHostCompactEnabled(options.env)
-          ? { compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming) }
-          : {}),
+        ...compactAttach(options.env),
       });
       yield* Deferred.succeed(ready, { kind: "owned", path, generation });
       yield* Effect.never;
