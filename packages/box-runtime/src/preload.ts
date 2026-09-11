@@ -7,7 +7,7 @@ import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
 import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts";
 import { bindHostSessionHook } from "./internal/host/session-hook.ts";
-import { bindHostCompactHook } from "./internal/host/compact.ts";
+import { bindHostCompactHook, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
 import { wrapHostAuxExecutor } from "./internal/host/aux-purpose.ts";
 import { bindCompiledHost } from "./internal/host/host-binding.ts";
 import { asHostPromptSession, createStreamingPromptSession, InvalidHostStateError } from "./internal/host/session.ts";
@@ -61,7 +61,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   });
   if (admittedMode === "route") {
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_AUX_SYMBOL)] = wrapHostAuxExecutor;
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook();
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook(stateSystemCompactHookOptions());
   }
   installCompileHook({
     targetPath: target,

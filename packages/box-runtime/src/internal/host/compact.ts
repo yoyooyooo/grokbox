@@ -82,6 +82,12 @@ function snapshotQualified(profileId: string | undefined, abiIdentity: string | 
     row.profileId === profileId && row.abiIdentity === abiIdentity && row.rootSource === "state-system");
 }
 
+/** Snapshot codec identity for managed STEPs. Not the Host patch profileId. Omitted bind stays unqualified. */
+export function stateSystemCompactHookOptions(): { profileId: string; abiIdentity: string } | undefined {
+  const row = HOST_ROOT_CONTRACTS.find((item) => item.rootSource === "state-system");
+  return row ? { profileId: row.profileId, abiIdentity: row.abiIdentity } : undefined;
+}
+
 function unqualifiedResourceChain(config: unknown, requestContext: unknown): boolean {
   if (record(config) && config.getNamedAgentSelfDocument !== undefined) return true;
   if (!record(config) || config.enableExecuteHookExec !== true) return false;

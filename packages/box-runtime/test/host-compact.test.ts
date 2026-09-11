@@ -10,6 +10,7 @@ import {
   HOST_COMPACT_SYMBOL,
   requestHostCompact,
   resetHostCompactSlotForTests,
+  stateSystemCompactHookOptions,
 } from "../src/internal/host/compact.ts";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 import { applyPatchProfile, HOST_COMPACT_SYMBOL as PROFILE_COMPACT_SYMBOL, profileFromSource, transformUnchecked } from "../src/internal/host/profile.ts";
@@ -310,6 +311,35 @@ describe("D2 Host compact registration", () => {
       expect(replay.kind).toBe("unavailable");
       expect(counts.compact).toBe(1);
     }
+  });
+
+  test("state-system hook options qualify a D2 slot; omitted options stay fail-closed", async () => {
+    expect(stateSystemCompactHookOptions()).toEqual({
+      profileId: "t21-state-root",
+      abiIdentity: "host-abi-v1",
+    });
+    const preload = await readFile(new URL("../src/preload.ts", import.meta.url), "utf8");
+    expect(preload).toContain("bindHostCompactHook(stateSystemCompactHookOptions())");
+    expect(preload).not.toContain("bindHostCompactHook();");
+    resetHostCompactSlotForTests();
+    const counts = { compact: 0 };
+    bindHostCompactHook(stateSystemCompactHookOptions())({
+      orchestrator: { handleSummarization: async () => { counts.compact += 1; return "summary"; } },
+      ctx: { get: () => TUPLE.turnId, signal: { aborted: false } },
+      stateHandler: { backgroundSummarizationPromiseInfo: null },
+      rootPromptExecutor: { getState: () => rootState() },
+      interactionListener: {},
+      config: {},
+      requestContext: {},
+      invocationId: TUPLE.stepId,
+      turnId: TUPLE.turnId,
+      agentId: TUPLE.agentId,
+      resourceAccessor: {},
+      stepClosed: () => false,
+    });
+    const qualified = await requestHostCompact({ tuple: TUPLE, recoveryNonce: "n".repeat(32) });
+    expect(qualified.kind).toBe("snapshot");
+    expect(counts.compact).toBe(1);
   });
 
   test("missing or unsupported snapshot qualification never invokes the core", async () => {

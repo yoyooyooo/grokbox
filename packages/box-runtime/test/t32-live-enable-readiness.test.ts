@@ -88,6 +88,8 @@ describe("T32 live-enable readiness (default-off; opt-in env=1)", () => {
     expect(text).toContain("resume-step");
     expect(text).toContain("compact_rejected");
     expect(text).toContain(HOST_COMPACT_SYMBOL);
+    expect(text).not.toContain("= bindHostCompactHook();");
+    expect(text).toContain("t21-state-root");
     const sha = createHash("sha256").update(readFileSync(packed)).digest("hex");
     expect(sha).toMatch(/^[a-f0-9]{64}$/);
   });

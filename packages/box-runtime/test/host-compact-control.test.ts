@@ -17,6 +17,7 @@ import {
   requestHostCompact,
   resetHostCompactSlotForTests,
   resumeStepFrameForCompactRequest,
+  stateSystemCompactHookOptions,
   type CompactControlIdentity,
   type CompactInFlight,
 } from "../src/internal/host/compact.ts";
@@ -78,7 +79,11 @@ function runStepBody() {
 }
 
 function registerSlot(text = "compacted") {
-  const hook = bindHostCompactHook({ profileId: "t21-state-root", abiIdentity: "host-abi-v1" });
+  return registerSlotWith({ profileId: "t21-state-root", abiIdentity: "host-abi-v1" }, text);
+}
+
+function registerSlotWith(options: { profileId?: string; abiIdentity?: string } | undefined, text = "compacted") {
+  const hook = bindHostCompactHook(options);
   const counts = { compact: 0, stream: 0 };
   hook({
     orchestrator: {
@@ -261,6 +266,41 @@ describe("Host compact-request → resume-step", () => {
     );
   });
 
+  test("empty production bind compact_rejects; state-system options resume", async () => {
+    bindHostCompactHook()({
+      orchestrator: { handleSummarization: async () => "summary" },
+      ctx: { get: () => TUPLE.turnId, signal: { aborted: false } },
+      stateHandler: { backgroundSummarizationPromiseInfo: null },
+      rootPromptExecutor: { getState: () => rootState() },
+      interactionListener: {},
+      config: {},
+      requestContext: {},
+      invocationId: TUPLE.stepId,
+      turnId: TUPLE.turnId,
+      agentId: TUPLE.agentId,
+      resourceAccessor: {},
+      stepClosed: () => false,
+    });
+    await withPeer(
+      (socket, seen) => acceptedThenCompact(socket, seen, {}, "hang"),
+      async (runRoot, seen) => {
+        await expect(requestModeld(runRoot, runStepBody(), 1_500)).rejects.toMatchObject({ message: "compact_rejected" });
+        expect(seen.resumes).toHaveLength(0);
+      },
+    );
+    resetHostCompactSlotForTests();
+    const counts = registerSlotWith(stateSystemCompactHookOptions());
+    await withPeer(
+      (socket, seen) => acceptedThenCompact(socket, seen),
+      async (runRoot, seen) => {
+        const frames = await requestModeld(runRoot, runStepBody(), 4_000);
+        expect(frames.some((frame) => isKind(frame, "terminal"))).toBe(true);
+        expect(seen.resumes).toHaveLength(1);
+        expect(counts.compact).toBe(1);
+      },
+    );
+  });
+
   test("compact-request does not satisfy managed requireStepId turns", async () => {
     registerSlot();
     let produced = 0;
@@ -298,6 +338,7 @@ describe("packed preload contains Host control-frame path", () => {
     expect(text).toContain("compact-request");
     expect(text).toContain("resume-step");
     expect(text).toContain("compact_rejected");
+    expect(text).not.toContain("= bindHostCompactHook();");
   });
 });
 
