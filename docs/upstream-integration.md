@@ -68,6 +68,12 @@ The minimum Host-shaped contract retained by box-runtime is `getModelId()`, both
 
 The provider-neutral supported subset and explicit refusal cases live in `docs/box-runtime.md` §2 and `packages/box-runtime/src/envelope.ts`. `host-envelope.test.ts`, `stream-contract.test.ts`, and `envelope-seam.test.ts` use synthetic input and a scripted driver, not private Host code or provider traffic. They are bounded compatibility evidence, not validation of every live Host generation or provider-specific message format.
 
+## Host auxiliary purpose boundary
+
+The reviewed memory-extraction and interval-episode sites each obtain a new executor from the main session. Their collector omits STEP; the usage wrapper preserves the four stream arguments. These facts alone do not identify arbitrary no-STEP requests as auxiliary. The optional `memory-purpose` / `episode-purpose` slices carry explicit call-site purpose and the real parent TURN; the managed session supplies its actual completed STEP and captured selection. The evidence-only Memory branch does not invoke either factory. Dedicated external summary and STEP-bearing self-summary are separate paths.
+
+See [E07 Host admission](maintainers/e07-path-b-host-admission.md) and `e07-host-*.test.ts` for exact-apply, passthrough, cancellation, source/packed proof and remaining native qualification. Host continues to own all Memory policy and writes. No native prompts or consumer implementation are a public dependency.
+
 ## Freshness
 
 Revalidate this document and the corresponding tests when discovery shape, Gateway routes or schemas, event framing, credential storage, token scope, or host lifecycle changes. A real read-only observation can invalidate an assumption but cannot replace fake-provider refusal and redaction coverage.

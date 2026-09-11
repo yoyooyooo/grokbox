@@ -60,6 +60,8 @@ H为主链地图中固定SHA的`host-main.cjs`。这里“已证”指源码和�
 
 ### F5 — 辅助推理正向能力：必须显式purpose，不能全放开无STEP
 
+**2026-09-11 局部进展：** Owner 已批准 D2；`pre-publication-revision` 落地 [Host purpose seam](e07-path-b-host-admission.md)，source/packed Host admission 已有证明。下列完整 F5/E07/native 验收仍未全部闭合；本页其余 B 关闭门不因这片而取消。
+
 **F1/F2/F4能阻止辅助调用污染main，但不能恢复Memory生成。M5不得被偷偷从B的验收中删掉。**
 
 选定的最小方向是：保留专用external summary的official routing；memory-extraction/episode在新独立executor上走**同一已选managed模型的inference-only辅助请求**，Host仍负责提取策略与Memory写入。主STEP fence原样保留，不以无STEP、无tools、prompt文本/模型名、executor调用次数来猜purpose，不静默回官方模型。

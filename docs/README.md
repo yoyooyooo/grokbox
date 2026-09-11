@@ -27,7 +27,7 @@ This documentation separates current source truth, accepted product behavior, up
 - [Managed context continuity](maintainers/managed-context-continuity.md): forward prevention fixes and end-to-end acceptance for managed context loss; historical cause closed-notProven, implementation and qualification still pending.
 - [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
 - [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): offline checklist; HostCompact default-off; live overflow dogfood deferred (not a tip gate).
-- [E07 Path B Host admission](maintainers/e07-path-b-host-admission.md): grokbox aux request-kind exists; live Host purpose seam still D2-blocked; E07 stays unqualified.
+- [E07 Path B Host admission](maintainers/e07-path-b-host-admission.md): D2-approved purpose slices and source/packed admission proofs; full E07/native qualification remains partial.
 - [T29 command/API boundary incubate](maintainers/t29-command-boundary-incubate.md): shared commands/status/ConfigurationWrite inventory; no console/, no fake CAS, not post-T28 default chain.
 - [Release runbook](maintainers/release.md)
 

@@ -99,7 +99,7 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - **长效根** `/workspace/.grokbox/box-runtime/`：配置、PatchProfile、合同切片、**Host 整包 provenance**（`host-bundles/`）、事件日志（云电脑重置后仍在）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
 - **短效**：盒本地 live state 固定 `~/.grokbox/run/`（`attestation.json`、operation journal/lock、preload/launch markers、`modeld.sock`）。不读 `XDG_RUNTIME_DIR`。显式 `ephemeralRoot` 只用于测试/合成隔离。daemon/Profile socket 仍走现有 XDG 合同，不是这棵树。
 - 不新建独立 npm package；一个源码模块、多个 entry。
-- 当前 PatchProfile/validator 支持两处精确切片：`createSession` 的 hook，以及 `mainSessionOptions.agentId` 与同一切片上的 `invocationId`。任一处锚点不唯一即拒绝。
+- 当前 PatchProfile/validator 必需 `create-session` / `agent-id`，可选 `compact-register` / `activity-bridge` / `memory-purpose` / `episode-purpose`（共两至六处唯一切片）。D2 已批准的 [E07 purpose seam](maintainers/e07-path-b-host-admission.md) 只标注真实 memory/episode 调用，并关联同 session 已完成的父 STEP/捕获选择；任一处锚点不唯一仍拒绝。
 - 默认选择薄两切片 leaf，但数量不是永久禁令。额外 Host patch 的稳定性/能力收益明显大于新增耦合时，允许在精确 profile 审查、schema/validator 更新、双向合同/官方 passthrough 与恢复证明后扩展。未经批准不绕 gate，不复制 Host core。见 [ADR D2](decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d2--evidence-bounded-host-patch-surface)。
 
 Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制完整 `/proc/environ`。只许 `identityLaunchFields` / 固定 allowlist，不得整份克隆 supervisor 环境。
@@ -264,7 +264,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 
 - 写 desired：`activate` / `deactivate` / `models *`
 - 统一入口：`start --mode observe|identity|route` — probe `modeld.sock`，down 则在本进程 listen stub server（与 `modeld run` 同一 `startStubModeldServer`，不 `wait()`、不另起 daemon）；再按 `activate` 语义写 desired（route 校验 stub 或 openai* assignment）；identity/route 再单次 `runWatchdogTick`（不把 watchdog 并进 `daemon serve`）；最后打印 `status`。已有 modeld 则复用。默认路径 **永不** `re-adopt` / canary，也不是 live writer。
-- 离线审 profile：`profile write --from <host-bundle>`（显式绝对路径、只读输入 → 两处精确切片及 source/transformed SHA 校验 → 原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）
+- 离线审 profile：`profile write --from <host-bundle>`（显式绝对路径、只读输入 → 已批准精确切片及 source/transformed SHA 校验 → 原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair
 - 进程入口：`modeld run` / `watchdog run`（`start` 复用二者，不替代长驻 `modeld run`）

@@ -269,7 +269,7 @@ Offline contract-e2e only; no packed preload, native Host, live adopt, or produc
 
 ### Items
 
-- **E07 Path B / F5 — still held:** grokbox aux request-kind + parent binding exist; **Host admission does not.** Live memory/episode call sites still have no purpose seam (D2). E07 stays `auxiliary_unqualified`. Do not add a live aux-purpose slice without D2. See [e07-path-b-host-admission](../maintainers/e07-path-b-host-admission.md).
+- **E07 Path B / F5 — updated 2026-09-11:** owner approved D2; `pre-publication-revision` implements the Host purpose seam and source/packed admission proofs. The earlier Host-admission blocker is superseded; full E07/native qualification remains partial (`e07_full_matrix_not_qualified`). See [e07-path-b-host-admission](../maintainers/e07-path-b-host-admission.md) and the E07 update below.
   - Evidence: `PRIVATE_EVIDENCE` §N1/Path B Acceptance; relook confirmation in `PRIVATE_EVIDENCE`.
 
 ## Continuity / E09 Path A — pre-publication-revision — 2026-09-10
@@ -309,7 +309,7 @@ Integration tip `pre-publication-revision` on `feat/box-runtime-v2`. This sectio
 
 Ranked smallest-first:
 
-1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
+1. **E07 Host purpose seam — admission landed `pre-publication-revision` (2026-09-11 update).** D2 is approved. Source/packed Host admission passes; complete E07/native consumer qualification is still partial, not an approval blocker or a Path B closure.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
 4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal. M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
@@ -320,4 +320,15 @@ E08-N4 closed test-only on `pre-publication-revision`. SlicePatch emit landed `p
 
 ### Smallest next residue slice
 
-**If code:** E07 Host purpose seam only with D2. **If docs-only / no dispatch:** this section is enough; do not auto-start E09 packed factory, T29 CAS, or T32 GATE.
+E07 Host-purpose implementation is no longer waiting for D2; see the dated update below. Do not auto-start broader native/E10/E11 qualification, E09 work, T29 CAS or T32 GATE from this residue list.
+
+## E07 Host purpose admission — pre-publication-revision — 2026-09-11
+
+Owner D2 approval on 2026-09-11 supersedes the approval blocker recorded at tip `pre-publication-revision` above. This is **Astra implementation-seat/self-check**, not an independent review verdict.
+
+- **Closed for this slice:** `memory-purpose` / `episode-purpose` exact factory patches; strict two-to-six slice authoring; real TURN plus completed session-local parent STEP/captured selection; usage-wrapper capability transport; unchanged invalid contexts; no official fallback for known invalid auxiliary bindings; canceled/half-stream consumers cannot commit successful Memory.
+- **Proof:** `e07-host-admission.test.ts`, `e07-host-purpose-e2e.test.ts`, `e07-host-purpose-packed.test.ts`; packed Node executes the real preload/hook/compile, checks hashes and rejects the old-profile positive oracle. Native source H1 only applies and syntax-compiles; it does not execute native Host code.
+- **Still held:** complete E07/native consumer/state-lifecycle matrix, E10/E11 and broader B qualification. The verifier reports Host admission `pass` with overall E07 `partial` / `e07_full_matrix_not_qualified`, never full E07 or B closed. Existing E09 lane ceilings remain separate.
+- **Deployment:** no re-adopt in this slice. No production profile/state/assignment writes, circuit clearing or attestation fabrication. Build output is not a loaded-live receipt.
+
+Current home: [E07 Host admission](../maintainers/e07-path-b-host-admission.md). T25–T28 and T32 residues are not reopened by this change.
