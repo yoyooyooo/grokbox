@@ -68,11 +68,45 @@ describe("control-plane event projector", () => {
       agentId: "agent-tom",
       invocationId: "inv-1",
     });
-    expect(census.sha).toBe("abc");
-    expect(census.counts).toEqual({ wrapper: 1, supervisor: 1, host: 1 });
-    expect(census).not.toHaveProperty("prompt");
-    expect(census).not.toHaveProperty("agentId");
-    expect(census).not.toHaveProperty("invocationId");
+    expect(census).toEqual({
+      name: "census",
+      at: AT,
+      sha: "abc",
+      counts: { wrapper: 1, supervisor: 1, host: 1 },
+    });
+  });
+
+  test("rejects a non-timestamp at instead of copying it through", () => {
+    expect(sanitizeEvent({
+      name: "inject_phase",
+      at: "sk-live-SENTINEL_SECRET",
+      phase: "ready",
+    })).toBeNull();
+    expect(sanitizeEvent({
+      name: "census",
+      at: "not-a-timestamp",
+      counts: { host: 1 },
+    })).toBeNull();
+    expect(sanitizeEvent({
+      name: "inject_phase",
+      at: `${AT}\n`,
+      phase: "ready",
+    })).toBeNull();
+  });
+
+  test("control append does not persist an invalid at in raw NDJSON", async () => {
+    const dir = await root();
+    const sentinel = "sk-live-SENTINEL_SECRET";
+    await appendEvent(dir, { name: "inject_phase", at: sentinel, phase: "ready" });
+    expect(await linesOf(dir)).toEqual([]);
+    const raw = await readFile(eventsPath(dir), "utf8").catch((error) => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return "";
+      throw error;
+    });
+    expect(raw).not.toContain(sentinel);
+    await appendEvent(dir, { name: "inject_phase", at: AT, phase: "ready" });
+    expect(parsed(await linesOf(dir))).toEqual([{ name: "inject_phase", at: AT, phase: "ready" }]);
+    expect((await linesOf(dir)).join("\n")).not.toContain(sentinel);
   });
 });
 

@@ -200,6 +200,12 @@ function boundedString(value: unknown, max = TURN_SEAM_BOUNDED_STRING): string |
   return value;
 }
 
+function boundedTimestamp(value: unknown, max = TURN_SEAM_BOUNDED_STRING): string | null {
+  const at = boundedString(value, max);
+  if (!at || !Number.isFinite(Date.parse(at))) return null;
+  return at;
+}
+
 function boundedEnum(value: unknown, allowed: Set<string>): string | null {
   return typeof value === "string" && allowed.has(value) ? value : null;
 }
@@ -209,8 +215,10 @@ function boundedCount(value: unknown): number | null {
   return value;
 }
 
-export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent {
-  const out: RuntimeEvent = { name: input.name, at: input.at };
+export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent | null {
+  const at = boundedTimestamp(input.at);
+  if (!at) return null;
+  const out: RuntimeEvent = { name: input.name, at };
   for (const [key, value] of Object.entries(input)) {
     if (key === "name" || key === "at") continue;
     if (!ALLOWED_FIELDS.has(key)) continue;
@@ -375,7 +383,9 @@ export function selectRetainedEventLines(lines: string[]): string[] {
 
 export async function appendEvent(root: string, event: RuntimeEvent): Promise<void> {
   if (!journalRoleAllows("control", event.name)) return;
-  await appendNdjsonLine(root, JSON.stringify(sanitizeEvent(event)));
+  const sanitized = sanitizeEvent(event);
+  if (!sanitized) return;
+  await appendNdjsonLine(root, JSON.stringify(sanitized));
 }
 
 export async function appendModelStepTerminal(root: string, input: unknown): Promise<TurnSeamWriteResult> {
@@ -418,8 +428,8 @@ function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEve
   if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input) as HostStreamRejectedEvent | null;
   if (input.name === "provider_error_observed") return projectProviderErrorObserved(input);
-  const at = boundedString(input.at);
-  if (!at || !Number.isFinite(Date.parse(at))) return null;
+  const at = boundedTimestamp(input.at);
+  if (!at) return null;
   const out: RuntimeEvent = { name: input.name as EventName, at };
   for (const key of ["sha", "oldSha", "newDiskSha"]) {
     const value = input[key];

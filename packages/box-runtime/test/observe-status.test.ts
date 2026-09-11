@@ -476,6 +476,8 @@ describe("status facets IO wiring", () => {
     const originalCredential = credentials.materializeApiKeyRef;
     const originalCompact = journal.compactEvents;
     const originalOpen = fsp.open;
+    const originalWriteFile = fsp.writeFile;
+    const originalAppendFile = fsp.appendFile;
     const originalFetch = globalThis.fetch;
     const isWriteOpen = (flags: unknown): boolean => {
       if (typeof flags === "string") return /[aw+]/.test(flags);
@@ -489,6 +491,14 @@ describe("status facets IO wiring", () => {
         if (isWriteOpen(flags)) counts.write += 1;
         return originalOpen(path, flags as never, mode as never);
       }) as typeof fsp.open),
+      spyOn(fsp, "writeFile").mockImplementation(((path, data, options) => {
+        counts.write += 1;
+        return originalWriteFile(path, data, options as never);
+      }) as typeof fsp.writeFile),
+      spyOn(fsp, "appendFile").mockImplementation(((path, data, options) => {
+        counts.write += 1;
+        return originalAppendFile(path, data, options as never);
+      }) as typeof fsp.appendFile),
       spyOn(artifacts, "writeRuntimeArtifact").mockImplementation(async (path, value) => {
         counts.write += 1;
         return originalWrite(path, value);
@@ -539,10 +549,17 @@ describe("status facets IO wiring", () => {
       const handle = await fsp.open(marker, "a");
       try { await handle.write("synthetic-status-write\n"); }
       finally { await handle.close(); }
+      expect(counts.write).toBeGreaterThan(0);
+      const afterOpen = counts.write;
+      await (await import("node:fs/promises")).writeFile(marker, "synthetic-status-write\n", { flag: "a" });
+      expect(counts.write).toBeGreaterThan(afterOpen);
+      const afterWriteFile = counts.write;
+      await (await import("node:fs/promises")).appendFile(marker, "synthetic-status-write\n");
+      expect(counts.write).toBeGreaterThan(afterWriteFile);
       await credentials.materializeApiKeyRef("env:T27_STATUS_SENTINEL", { T27_STATUS_SENTINEL: "synthetic-not-a-real-key" });
       await journal.compactEvents(root);
       await globalThis.fetch("https://ccs.test/status-must-not-call");
-      expect(counts.write).toBeGreaterThan(0);
+      expect(counts.write).toBeGreaterThan(afterWriteFile);
       expect(counts.credential).toBeGreaterThan(0);
       expect(counts.compaction).toBeGreaterThan(0);
       expect(counts.provider).toBeGreaterThan(0);
