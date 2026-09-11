@@ -1,22 +1,33 @@
 import { constants } from "node:fs";
-import { mkdir, open, readFile, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export type LockHandle = { path: string; release: () => Promise<void> };
 
 export type LeaseOwner = { pid: number; start: number; uid: number };
 
-function lockHandle(path: string): LockHandle {
+function lockHandle(path: string, dev: number, ino: number): LockHandle {
   return {
     path,
     release: async () => {
       try {
+        const st = await lstat(path);
+        if (st.dev !== dev || st.ino !== ino) return;
         await unlink(path);
       } catch {
-        /* ignore */
+        /* ignore missing or foreign path */
       }
     },
   };
+}
+
+async function ownCreated(path: string, handle: FileHandle): Promise<LockHandle> {
+  try {
+    const st = await handle.stat();
+    return lockHandle(path, st.dev, st.ino);
+  } finally {
+    await handle.close();
+  }
 }
 
 export async function acquireExclusiveLock(lockPath: string): Promise<{ ok: true; lock: LockHandle } | { ok: false; code: "lock-conflict" }> {
@@ -24,8 +35,7 @@ export async function acquireExclusiveLock(lockPath: string): Promise<{ ok: true
   try {
     const handle = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
     await handle.writeFile(`${process.pid}\n`);
-    await handle.close();
-    return { ok: true, lock: lockHandle(lockPath) };
+    return { ok: true, lock: await ownCreated(lockPath, handle) };
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "EEXIST") {
       return { ok: false, code: "lock-conflict" };
@@ -40,18 +50,18 @@ export async function acquireCoordinatorLease(input: {
   inspect: (pid: number) => LeaseOwner | null;
 }): Promise<{ ok: true; lock: LockHandle } | { ok: false; code: "lock-conflict" }> {
   await mkdir(dirname(input.path), { recursive: true, mode: 0o700 });
-  const create = async (): Promise<boolean> => {
+  const create = async (): Promise<LockHandle | null> => {
     try {
       const handle = await open(input.path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
       await handle.writeFile(`${JSON.stringify(input.self)}\n`);
-      await handle.close();
-      return true;
+      return await ownCreated(input.path, handle);
     } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") return null;
       throw error;
     }
   };
-  if (await create()) return { ok: true, lock: lockHandle(input.path) };
+  const first = await create();
+  if (first) return { ok: true, lock: first };
   let recorded: LeaseOwner | null = null;
   try {
     const parsed = JSON.parse(await readFile(input.path, "utf8")) as Partial<LeaseOwner>;
@@ -74,7 +84,8 @@ export async function acquireCoordinatorLease(input: {
   } catch {
     return { ok: false, code: "lock-conflict" };
   }
-  if (await create()) return { ok: true, lock: lockHandle(input.path) };
+  const retry = await create();
+  if (retry) return { ok: true, lock: retry };
   return { ok: false, code: "lock-conflict" };
 }
 

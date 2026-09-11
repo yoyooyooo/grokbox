@@ -464,57 +464,49 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
 
 export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
   return Layer.succeed(ControlResources, {
-    lease: (input: FrozenControllerCommand) => Effect.acquireRelease(
-      Effect.tryPromise(async () => {
-        const locked = await acquireExclusiveLock(lockPath(input.boxRoot));
-        if (!locked.ok) {
-          return { decision: { status: "busy" as const } satisfies LeaseDecision, lock: null, boxRoot: input.boxRoot, operationId: input.operationId };
+    lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
+      const locked = yield* Effect.acquireRelease(
+        Effect.tryPromise(() => acquireExclusiveLock(lockPath(input.boxRoot))),
+        (acquired) => acquired.ok ? Effect.promise(() => acquired.lock.release()) : Effect.void,
+      );
+      if (!locked.ok) return { status: "busy" as const } satisfies LeaseDecision;
+      const loaded = loadStore(input.boxRoot);
+      if (!loaded.ok) return { status: "corrupt" as const } satisfies LeaseDecision;
+      const existing = loaded.store[input.operationId];
+      let decision: LeaseDecision = { status: "acquired" };
+      if (existing) {
+        if (existing.fingerprint !== input.fingerprint) decision = { status: "conflict" };
+        else if (existing.state === "terminal") decision = { status: "duplicate" };
+        else if (existing.state === "unknown") {
+          const live = defaultLiveAdmissionPorts();
+          const proven = proveStableOfficialState(live.processes, live.classify, { gatewayPid: live.gatewayPid() });
+          decision = proven.ok && proven.mode === "transient-adopt"
+            ? { status: "acquired" }
+            : { status: "uncertain" };
         }
-        const loaded = loadStore(input.boxRoot);
-        if (!loaded.ok) {
-          await locked.lock.release();
-          return { decision: { status: "corrupt" as const } satisfies LeaseDecision, lock: null, boxRoot: input.boxRoot, operationId: input.operationId };
-        }
-        const existing = loaded.store[input.operationId];
-        let decision: LeaseDecision = { status: "acquired" };
-        if (existing) {
-          if (existing.fingerprint !== input.fingerprint) decision = { status: "conflict" };
-          else if (existing.state === "terminal") decision = { status: "duplicate" };
-          else if (existing.state === "unknown") {
-            const live = defaultLiveAdmissionPorts();
-            const proven = proveStableOfficialState(live.processes, live.classify, { gatewayPid: live.gatewayPid() });
-            decision = proven.ok && proven.mode === "transient-adopt"
-              ? { status: "acquired" }
-              : { status: "uncertain" };
-          }
-          else decision = { status: "busy" };
-        }
-        if (decision.status === "acquired") {
-          loaded.store[input.operationId] = { fingerprint: input.fingerprint, state: "running", prefix: existing?.prefix };
-          saveStore(input.boxRoot, loaded.store);
-        }
-        if (decision.status !== "acquired") {
-          await locked.lock.release();
-          return { decision, lock: null, boxRoot: input.boxRoot, operationId: input.operationId };
-        }
-        return { decision, lock: locked.lock, boxRoot: input.boxRoot, operationId: input.operationId };
-      }),
-      (held) => Effect.promise(async () => {
-        if (!held.lock) return;
+        else decision = { status: "busy" };
+      }
+      if (decision.status !== "acquired") return decision;
+      loaded.store[input.operationId] = { fingerprint: input.fingerprint, state: "running", prefix: existing?.prefix };
+      yield* Effect.try({
+        try: () => saveStore(input.boxRoot, loaded.store),
+        catch: (error) => error,
+      });
+      yield* Effect.addFinalizer(() => Effect.promise(async () => {
         try {
-          const loaded = loadStore(held.boxRoot);
-          if (loaded.ok) {
-            const existing = loaded.store[held.operationId];
-            if (existing && existing.state === "running") {
-              loaded.store[held.operationId] = { ...existing, state: "unknown" };
-              saveStore(held.boxRoot, loaded.store);
-            }
+          const latest = loadStore(input.boxRoot);
+          if (!latest.ok) return;
+          const row = latest.store[input.operationId];
+          if (row && row.state === "running") {
+            latest.store[input.operationId] = { ...row, state: "unknown" };
+            saveStore(input.boxRoot, latest.store);
           }
-        } finally {
-          await held.lock.release();
+        } catch {
+          /* lock release still runs */
         }
-      }),
-    ).pipe(Effect.map((held) => held.decision)),
+      }));
+      return decision;
+    }),
     peek: (input: { operationId: string; boxRoot: string }) => Effect.try({
       try: () => {
         const loaded = loadStore(input.boxRoot);
