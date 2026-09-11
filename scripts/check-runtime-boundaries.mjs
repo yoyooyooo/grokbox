@@ -229,6 +229,9 @@ for (const dir of productionDirs) {
       if (fromLayer === "host" && (resolved.kind === "forbidden-pkg" || spec === "effect")) {
         fail("Host leaf imports Effect/SDK", { path, spec });
       }
+      if (fromLayer === "host" && (spec === "acorn" || spec.startsWith("acorn/"))) {
+        fail("Host leaf imports parser", { path, spec });
+      }
       if (fromLayer === "cli" && resolved.kind === "forbidden-pkg") fail("CLI imported SDK/Effect", { path, spec });
       if (fromLayer === "kernel" && !path.endsWith("/ports.ts") && !path.endsWith("/testing.ts") && !path.endsWith("/inference.ts") && !path.endsWith("/commands.ts") && !path.includes("/internal/testing/") && !path.includes("/internal/inference/") && !path.includes("/internal/commands/") && (spec === "effect" || spec.startsWith("effect/") || resolved.kind === "forbidden-pkg")) {
         fail("kernel non-ports file imports Effect", { path, spec });
@@ -279,12 +282,18 @@ if (existsSync(preload)) {
       if (/\bfrom ["']effect["']/.test(bundle) || bundle.includes("@ai-sdk/") || /\bfrom ["']ai["']/.test(bundle)) {
         fail("preload bundle contributes Effect/SDK");
       }
+      if (/\bacorn\b/.test(bundle) || bundle.includes("shape-worker") || bundle.includes("shape-acorn")) {
+        fail("preload bundle contributes parser/ops shape worker");
+      }
       if (bunHits(bundle).length) fail("preload bundle uses bun APIs");
       try {
         const meta = JSON.parse(readFileSync(metafile, "utf8"));
         for (const input of Object.keys(meta.inputs ?? {})) {
           if (input.includes("node_modules/effect") || input.includes("node_modules/ai") || input.includes("@ai-sdk")) {
             fail("preload metafile includes Effect/SDK", { input });
+          }
+          if (input.includes("acorn") || input.includes("host-seam/shape") || input.includes("shape-worker") || input.includes("shape-acorn")) {
+            fail("preload metafile includes parser/ops shape worker", { input });
           }
         }
       } catch {

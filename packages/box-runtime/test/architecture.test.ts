@@ -123,6 +123,12 @@ describe("runtime layout boundaries", () => {
     ["bun-global-version", {
       "packages/box-runtime/src/runtime.ts": "export const version = () => Bun.version;",
     }],
+    ["compile-hook-shape-worker", {
+      "packages/box-runtime/src/internal/host/compile-hook.ts": 'import { shapeFromSource } from "../ops/host-seam/shape-worker.ts"; export { shapeFromSource };',
+    }],
+    ["preload-acorn", {
+      "packages/box-runtime/src/preload.ts": 'import * as acorn from "acorn"; export const parse = acorn.parse;',
+    }],
   ];
 
   test.each(rejects)("%s is a non-zero checker", async (_name, changes) => {
