@@ -19,3 +19,9 @@ export function qualifyHostRootContract(profileId: string, abiIdentity: string):
   if (!found) throw new EnvelopeError("invalid_envelope");
   return found;
 }
+
+/** Snapshot-root contracts only. Unknown patch profileIds stay unqualified (no live fail-close). */
+export function lookupHostRootContract(profileId: string | undefined): HostRootContract | undefined {
+  if (typeof profileId !== "string" || profileId.length === 0) return undefined;
+  return HOST_ROOT_CONTRACTS.find((row) => row.profileId === profileId);
+}

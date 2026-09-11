@@ -25,7 +25,7 @@ export function hostEpochFromFacts(input: {
   };
 }
 
-/** Host-selected root: one system message → state-root; explicit independentRoot → independent. No fixture default. */
+/** Unbound fallback only: one system message → state-root; explicit independentRoot → independent. No fixture default. Known compile snapshot-root contracts bind in the session hook instead of this relabel. */
 export function inferRootFromHostSelection(envelope: ModelEnvelope, independentRoot?: string) {
   if (typeof independentRoot === "string" && independentRoot.length > 0) {
     return { profileId: "t21-independent-root", abiIdentity: "host-abi-v1", independentRoot };

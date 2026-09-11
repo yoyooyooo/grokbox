@@ -1,5 +1,6 @@
 import type { HostBinding } from "./host-binding.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
+import { lookupHostRootContract } from "./root-contract.ts";
 import { captureHostManagedSelection } from "./selection.node.ts";
 import { createModeldProduce } from "./modeld-produce.node.ts";
 import {
@@ -109,7 +110,9 @@ function overlayOfficialNoStepStreams(
  * Entry interceptor: undefined declines, letting the unchanged Host construct its official session.
  * Identity/observe and route + unassigned agent decline (S4.1).
  * Route + managed assignment: Host fullStream over v3 modeld (T26).
- * profile/ABI come from Host-selected root at stream time; bridgeDigest from compile.
+ * Known compile profileIds that match snapshot-root contracts bind produce qualification.
+ * Unknown compiled patch profiles keep Host-selected root at stream time (no live fail-close).
+ * bridgeDigest from compile.transformedSha256.
  */
 export function bindHostSessionHook(input: {
   mode: SeamMode;
@@ -216,6 +219,7 @@ export function bindHostSessionHook(input: {
     }
     const vision = record.capabilities.vision === true || record.capabilities.images === true
       || (record.dataTypes ?? []).includes("images");
+    const compiledRoot = lookupHostRootContract(input.compile?.profileId);
     const runtime = createModeldProduce({
       runRoot: input.runRoot,
       agentId,
@@ -224,6 +228,7 @@ export function bindHostSessionHook(input: {
       turnId,
       binding: input.binding,
       bridgeDigest,
+      ...(compiledRoot ? { profileId: compiledRoot.profileId, abiIdentity: compiledRoot.abiIdentity } : {}),
       independentRoot,
       onConnectAttempt: (result) => writeStage("connect_attempt", result),
       onFirstChunk: (stepId) => {
