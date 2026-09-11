@@ -199,13 +199,11 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     });
 
     const backend = yield* ModelBackend;
+    const compactBackend = withOverflowCanary(backend, parsed.request.agentId, options.env ?? process.env);
     const admitted = yield* Effect.result(
       runStep(parsed.request).pipe(
         Effect.timeout(`${ADMISSION_WAIT_MS} millis`),
-        Effect.provide(Layer.succeed(
-          ModelBackend,
-          withOverflowCanary(backend, parsed.request.agentId, options.env ?? {}),
-        )),
+        Effect.provideService(ModelBackend, compactBackend),
       ),
     );
     if (admitted._tag === "Failure") {
@@ -246,7 +244,9 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     );
     const collected = yield* Effect.result(
       Stream.runForEach(
-        Stream.interruptWhen(step.stream, halt),
+        Stream.interruptWhen(step.stream, halt).pipe(
+          Stream.provideService(ModelBackend, compactBackend),
+        ),
         (event: InferenceEvent) => Effect.gen(function* () {
           const encoded = Buffer.byteLength(JSON.stringify(event), "utf8");
           outputBytes += encoded;

@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Stream } from "effect";
-import { BackendFailure, isConfirmedOverflow } from "@grokbox/runtime-kernel/contract";
+import { randomUUID } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Effect, Fiber, Layer, Stream } from "effect";
+import { BackendFailure, contextSnapshotBody, isConfirmedOverflow, WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
+import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
+import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import type { AuthLease, PreparedCall } from "@grokbox/runtime-kernel/ports";
+import { computeSelectionRevision, parseModelsFile } from "@grokbox/runtime-kernel/selection";
+import { fakeConfigurationReadLayer } from "@grokbox/runtime-kernel/testing";
 import {
   canaryOverflowFailure,
   estimateCanaryTokens,
@@ -9,7 +17,12 @@ import {
   shouldInterceptOverflowCanary,
   withOverflowCanary,
 } from "../src/internal/backends/overflow-canary.ts";
+import { dispatchingModelBackendLayer } from "../src/internal/backends/dispatch.ts";
 import { makeAuthLease, makePreparedCall } from "../src/internal/backends/prepared.ts";
+import { createLiveBackendAuth } from "../src/internal/io/credentials.node.ts";
+import { admitAllAuthorityLayer } from "../src/internal/roots/modeld.runtime.ts";
+import { requestModeld } from "../src/internal/host/modeld-client.node.ts";
+import { serveModeld } from "../src/internal/modeld/server.node.ts";
 
 delete process.env.GROKBOX_MODELD_HOST_COMPACT;
 delete process.env.GROKBOX_MODELD_OVERFLOW_CANARY_AGENT;
@@ -130,4 +143,79 @@ describe("modeld overflow canary (default-off CCS intercept)", () => {
     expect(offCalls.infer).toBe(1);
     expect(off).toBe(offInner);
   });
+
+  test("serveModeld canary replaces backend: matching agent skips fetch", async () => {
+    const agentId = AGENT;
+    const openai = {
+      id: "openai/gpt-4o-mini",
+      provider: "openai" as const,
+      model: "gpt-4o-mini",
+      endpoint: "https://ccs.test/v1",
+      apiKeyRef: "env:OPENAI_API_KEY",
+      capabilities: { vision: false, tools: true, images: false },
+      dataTypes: ["text", "tools"],
+      contextWindowTokens: 200000,
+    };
+    const models = parseModelsFile({
+      version: 1,
+      models: { [openai.id]: openai },
+      assignments: { main: null, agents: { [agentId]: openai.id } },
+    });
+    const body = contextSnapshotBody({
+      version: 1,
+      profileId: "p",
+      abiIdentity: "abi",
+      systemMessages: [{ role: "system", content: "root" }],
+      messages: [{ role: "user", content: "x".repeat(40) }],
+      tools: [],
+      options: {},
+    });
+    const snapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
+    let http = 0;
+    const fetchImpl = Object.assign(async () => {
+      http += 1;
+      return new Response("nope", { status: 500 });
+    }, { preconnect: async () => undefined }) as typeof fetch;
+    const env = {
+      OPENAI_API_KEY: "sk-test",
+      GROKBOX_MODELD_OVERFLOW_CANARY_AGENT: agentId,
+      GROKBOX_MODELD_OVERFLOW_CANARY_WINDOW_TOKENS: "2",
+    };
+    const auth = createLiveBackendAuth(env);
+    const generation = randomUUID();
+    const layer = fakeConfigurationReadLayer({ models: () => models, desired: { version: 1, mode: "route" } }).pipe(
+      Layer.merge(admitAllAuthorityLayer()),
+      Layer.merge(auth.layer),
+      Layer.merge(dispatchingModelBackendLayer(fetchImpl, auth.unseal)),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: generation })),
+    );
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-overflow-canary-"));
+    const path = join(dir, "modeld.sock");
+    const fiber = Effect.runFork(Effect.scoped(
+      serveModeld({ path, generation, env }).pipe(
+        Effect.andThen(Effect.never),
+        Effect.provide(layer),
+      ) as Effect.Effect<never, unknown>,
+    ));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    try {
+      const frames = await requestModeld(dir, {
+        version: WIRE_VERSION,
+        method: "run-step",
+        hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v4" },
+        serviceEpoch: { incarnationId: generation },
+        agentId,
+        turnId: "t-canary",
+        stepId: "s-canary",
+        selection: { agentId, modelId: openai.id, selectionRevision: computeSelectionRevision({ agentId, model: openai }) },
+        snapshot,
+      }, 8_000);
+      expect(http).toBe(0);
+      const terminal = frames.find((frame) => frame && typeof frame === "object" && (frame as { kind?: string }).kind === "terminal") as { outcome?: string; code?: string };
+      expect(terminal?.outcome).toBe("error");
+      expect(terminal?.code).toBe("overflow_candidate");
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.ignore));
+    }
+  }, 15_000);
 });
