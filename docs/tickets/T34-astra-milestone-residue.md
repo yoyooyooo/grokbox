@@ -205,9 +205,8 @@ Git-object-checked `pre-publication-revision` archive; eight residual changed fi
 
 ### Items
 
-- **P1-02 — still held, narrowed to root/profile provenance:** `packages/box-runtime/src/internal/host/modeld-produce.node.ts:29–36,107–112` chooses `t21-state-root` / `t21-independent-root` and `host-abi-v1` from message shape or independentRoot presence; `session-hook.ts:55,84–93` consumes compile.transformedSha256 but does not bind root qualification to the supplied compile/profile identity. Under Node20, a consistent synthetic compiled profile declaring independent-root but providing only state-system input is relabeled `t21-state-root` and reaches SDK HTTP1. An unsupported compiled profile is likewise relabeled and dispatched (HTTP1, two synthetic credential-getter reads in each case). Proper state/independent positive controls also work. Thus successful root preservation does not establish the profile-bound provenance required by impl-spec S4/S8; this is not evidence of a live unauthorized adoption, real credential leak, or paid request.
-  - Evidence: `PRIVATE_EVIDENCE`, `node-source-seam.json`, `node-roots.json`, `final-scope.json`; reproducer: `node-probe.ts` / `run-node.mjs` alongside them. The wire observer records request and accepted frames; qualification comparisons select the request carrying snapshot/HostEpoch.
-  - Why not forced onto grok: the normal review/relook/handoff is complete. Preserve this remaining source-of-qualification disagreement for owner triage, without another implementation round or a new main-chain gate.
+- **P1-02 — closed later** on `c974f19` (offline compile-root bind; not a live Host/re-adopt). SHA-pinned finding at `pre-publication-revision`: `inferRootFromHostSelection` labeled `t21-state-root` / `t21-independent-root` from message shape; `session-hook.ts` used compile only for `transformedSha256`. A synthetic independent-root compile with state-only input was relabeled `t21-state-root` and reached SDK HTTP1; an unsupported compiled profile was likewise relabeled. Later close binds known snapshot-root compile ids and leaves unknown patch profiles on Host-shape inference.
+  - Evidence: `packages/box-runtime/test/host-root-provenance.test.ts`; receipt `PRIVATE_EVIDENCE`. Original SHA-pinned vectors: `PRIVATE_EVIDENCE`, `node-source-seam.json`, `node-roots.json`, `final-scope.json`.
 - **P2-01 — closed** on `639ddc0` (offline removal; not a live Host/tool-replay or billing claim). `SessionMessage` no longer carries an internal `toolCalls` alias; `normalizeHostResponse` does not rehydrate one into content; `createManagedPromptSession` no longer defaults 1/1/2 usage. Host inbound window `toolCalls` in `context-codec` is unchanged. Original SHA-pinned finding: `PRIVATE_EVIDENCE`; receipt `PRIVATE_EVIDENCE`.
 
 ### Evidence ceiling
@@ -238,7 +237,7 @@ Five residual changed files match the target Git blobs; workspace imports resolv
 
 ### Offline M4 disposition and evidence ceiling
 
-The **T25 → T26 → T28 offline review/relook/residue cycle is recorded**, not converted into blanket implementation acceptance: T25 retains native-cleanup P1-02 (Node20 SIGABRT); T26 retains root/profile-provenance P1-02 and alias/removal P2-01; T28 retains P1-02 lock ownership and P1-04 checkpoint-then-interrupt. T28 P2-01 source-removal closed later on `d5ec95d`. Earlier sections and their evidence limits remain unchanged. **L1 live-not-proven is separate and still applies**; this append neither authorizes live adopt nor starts T29/WebUI.
+The **T25 → T26 → T28 offline review/relook/residue cycle is recorded**, not converted into blanket implementation acceptance: T25 retains native-cleanup P1-02 (Node20 SIGABRT); T26 root/profile-provenance P1-02 closed later on `c974f19`; T26 alias/removal P2-01 closed on `639ddc0`; T28 retains P1-02 lock ownership and P1-04 checkpoint-then-interrupt. T28 P2-01 source-removal closed later on `d5ec95d`. Earlier sections and their evidence limits remain unchanged. **L1 live-not-proven is separate and still applies**; this append neither authorizes live adopt nor starts T29/WebUI.
 
 Seven residual changed files and all 374 tracked archive files match `pre-publication-revision`; first-party imports resolve inside the frozen snapshot. Frozen Bun 1.3.14 / 90s gates passed control 37/258, layout 20/20 and typecheck; independent `/usr/bin/node v20.19.2` probes exercised the barriers, file faults and controls above. An initial stock-worker test failure was a review wrapper build-dispatch error, corrected without source/test changes; initial logs and `gate-harness-note.json` are retained. Stock tests terminate only their own lease-worker child handles; independent probes finish normally. Guard records show no blocked egress or direct process.kill attempts, not an OS-level census or proof of finalization of SIGTERM-killed workers. No controller OS signal/spawn/guardian action, live/provider spend, production fix, full product build/package qualification or earlier-milestone re-audit. Evidence directory: `PRIVATE_EVIDENCE`.
 
@@ -325,7 +324,7 @@ Ranked smallest-first:
 1. **E07 Host purpose seam — admission landed `pre-publication-revision` (2026-09-11 update).** D2 is approved. Source/packed Host admission passes; complete E07/native consumer qualification is still partial, not an approval blocker or a Path B closure.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
-4. **SHA-pinned M1–M4 leftovers** (still not grok dispatch): T25 P1-02 Node20 SIGABRT closed on `pre-publication-revision` (offline only). T28 P1-02 lock ownership closed on `fbb1909` (offline only). T28 P1-04 checkpoint-then-interrupt closed on `1171250` (offline only). Remaining: T26 P1-02 profile-bound root provenance. T26 P2-01 toolCalls alias closed on `639ddc0` (offline only). T28 P2-01 legacy executor removal closed on `d5ec95d` (offline only). M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
+4. **SHA-pinned M1–M4 leftovers** (still not grok dispatch): T25 P1-02 Node20 SIGABRT closed on `pre-publication-revision` (offline only). T28 P1-02 lock ownership closed on `fbb1909` (offline only). T28 P1-04 checkpoint-then-interrupt closed on `1171250` (offline only). T26 P1-02 profile-bound root provenance closed on `c974f19` (offline only). T26 P2-01 toolCalls alias closed on `639ddc0` (offline only). T28 P2-01 legacy executor removal closed on `d5ec95d` (offline only). M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only). No remaining M4 T25/T26/T28 P1 SHA-pinned residual on tip after this close.
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
@@ -351,7 +350,7 @@ Current home: [E07 Host admission](../maintainers/e07-path-b-host-admission.md).
 - Base tip: `pre-publication-revision` on `feat/t26-residue`.
 - Close SHA: `639ddc05a5c01577ebedc82930b51507ef0cebff`.
 - Receipt: `PRIVATE_EVIDENCE`.
-- Disposition: **P2-01 closed offline.** P1-02 still held. No live Host/re-adopt, no T28, no T32/canary in this lane.
+- Disposition: **P2-01 closed offline.** P1-02 closed later on `c974f19`. No live Host/re-adopt, no T28, no T32/canary in this lane.
 
 ### Closed at this tip
 
@@ -360,12 +359,32 @@ Current home: [E07 Host admission](../maintainers/e07-path-b-host-admission.md).
 
 ### Items
 
-- **P1-02 — still held:** `inferRootFromHostSelection` still labels `t21-state-root` / `t21-independent-root` from message shape; `session-hook.ts` still uses compile only for `transformedSha256`. Binding root qualification to compile/profile identity is not a small removal and would fail-close unknown live compiled profiles that currently dispatch via Host-shape inference. Left residual rather than widening the live surface.
-  - Evidence (unchanged SHA-pinned vectors): `PRIVATE_EVIDENCE`, `final-scope.json`.
+- **P1-02 — closed later** on `c974f19` (offline compile-root bind; not a live fail-close of unknown compiled profiles). See the dated section below.
+  - Original SHA-pinned vectors: `PRIVATE_EVIDENCE`, `final-scope.json`.
 
 ### Evidence ceiling
 
 Offline contract tests and typecheck only. `verify-runtime-rebuild.mjs stream` still has a pre-existing `pre-publication-revision` failure (`managed hook returns Host session not runtime_not_ready`) from T32 missing-turnId `compact_passthrough`; host-session ABI cases in that gate pass. Not live adopt, not packed preload, not T26 ticket close, not a billing claim.
+
+## M4 / T26 P1-02 close — c974f19 — 2026-09-11
+
+- Base tip: `pre-publication-revision` on `feat/t26-p102` (rebased onto `pre-publication-revision`).
+- Close SHA: `c974f19c09e39396f28462f61985d5780115e3b1`.
+- Receipt: `PRIVATE_EVIDENCE`.
+- Disposition: **P1-02 closed offline.** Unknown live compiled patch profiles are not fail-closed. No live Host/re-adopt, no T25/T28, no T32/canary in this lane.
+
+### Closed at this tip
+
+- **P1-02 — closed:** `bindHostSessionHook` looks up `compile.profileId` against `HOST_ROOT_CONTRACTS`. Known `t21-state-root` / `t21-independent-root` ids bind `createModeldProduce` profile/ABI so snapshot qualification cannot relabel from message shape. Synthetic independent-root compile + state-only input now rejects `invalid_envelope` with HTTP 0. Unknown patch profileIds (`unsupported-review-profile`, `e07-shaped`, `patch-profile`) stay unqualified and keep Host-shape inference. `inferRootFromHostSelection` remains the unbound fallback. `qualifyHostRootContract` still throws on unknown snapshot ids.
+  - Evidence: `packages/box-runtime/test/host-root-provenance.test.ts` (3 pass / 18 expects, including the four Astra vectors); `bun run typecheck`.
+
+### Items
+
+- None carried for T26 P1-02. T25 P1-02 and T28 P1-02/P1-04 already closed on tip. T26 ticket stays Open. Not live adopt / packed preload / T32 GATE.
+
+### Evidence ceiling
+
+Offline hook + fake-HTTP Unix tests and typecheck only. Not a Node20 Astra probe rerun, not packed preload, not live Host/re-adopt, not T26 ticket close, not a billing or unauthorized-adoption claim. Pre-existing `host-fullstream` missing-turnId `compact_passthrough` and `modeld-outcome` journal-timing failures on the prior tip are unchanged.
 
 ## M4 / T28 P1-02/P1-04 close — 1171250 — 2026-09-11
 
@@ -383,7 +402,7 @@ Offline contract tests and typecheck only. `verify-runtime-rebuild.mjs stream` s
 
 ### Items
 
-- None for T28 P1-02/P1-04. T26 P1-02 profile-bound provenance stays SHA-pinned leftover (T25 P1-02 already closed on `pre-publication-revision`). T28 ticket itself stays open (L1 live-not-proven).
+- None for T28 P1-02/P1-04. T26 P1-02 closed in later tip section above; T25 P1-02 already closed on `pre-publication-revision`. T28 ticket itself stays open (L1 live-not-proven).
 
 ### Evidence ceiling
 
@@ -403,8 +422,9 @@ Offline control tests and typecheck only. Publish-failure proof uses a post-lock
 
 ### Items
 
-- None remaining for this T25 native-close residue. T26 P1-02 stays held; T28 P1-02/P1-04 closed in later tip section above.
+- None remaining for this T25 native-close residue. T26/T28 M4 P1 residues closed in later tip sections above.
 
 ### Evidence ceiling
 
 Offline typecheck + lifecycle/wire tests and `/usr/bin/node v20.19.2` owned-stop spawn. Pre-existing `modeld-outcome.test.ts` journal misses on this sibling tip are unchanged and not this close. Not live adopt, not packed preload, not T25 ticket close beyond this native abort, not a Host/canary claim.
+
