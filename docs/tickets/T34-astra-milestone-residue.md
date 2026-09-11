@@ -238,18 +238,19 @@ Seven residual changed files and all 374 tracked archive files match `pre-public
 - First review: `PRIVATE_EVIDENCE` (P1 N1–N3).
 - Absorb: `pre-publication-revision` then `pre-publication-revision` (receipts `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`).
 - Relooks: `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`.
-- Disposition under one-pass closure: **E08 accepted as partial/shippable offline slice**. Prior R-N2/R-N3 closed on tip. Relook2 leftover **N4** is residue only — **no further grok↔Astra absorb on this tip**. Owner end-of-rebuild triage; no main-chain pause for this item alone. B remains open (E07/E09–E11, packed/native/live, production W still out).
+- Disposition under one-pass closure: **E08 accepted as partial/shippable offline slice**. Prior R-N2/R-N3 closed on tip. Relook2 leftover **N4** closed test-only on `pre-publication-revision` — **no E08 absorb loop reopen**. B remains open (E07/E09–E11, packed/native/live, production W still out).
 
 ### Closed at this tip
 
 - E08-N1 real size gates / encoded 8MiB backend path.
 - E08 R-N2 full over-envelope checkpoint/reopen (and over-snapshot/cancel paths).
 - E08 R-N3 consumer error propagation + held-late tool ID (stream-exception false-greens red).
+- E08-N4 abort finish is not live delivery (test fixture consumer) — `pre-publication-revision`. Not a production Host delivery claim.
 
 ### Items
 
-- **E08-N4 — abort finish counted as live delivery (test fixture consumer).** `packages/box-runtime/test/context-continuity-fixture.ts` treats any `finish` part as delivery-qualified; real session `abort()` emits `finish("abort")` with zero model/tool output, yet consumer still records live delivery (pre-admit abort HTTP=0 and post-admit abort HTTP=1). Late E08 callback can false-green after main abort. Minimal fix (when owner picks it up): require successful completion reason before delivery; keep observed tools; add pre/post/tool-after abort controls. Not a production Host delivery claim; do not reopen the E08 milestone loop.
-  - Evidence: `PRIVATE_EVIDENCE` §N4; tip tests still green under frozen Bun 1.3.14.
+- **E08-N4 — closed** on `pre-publication-revision` (test-only). Do not reopen the E08 milestone loop.
+  - Evidence: `PRIVATE_EVIDENCE` §N4; `PRIVATE_EVIDENCE`.
 
 ### Evidence ceiling
 
@@ -311,13 +312,14 @@ Integration tip `pre-publication-revision` on `feat/box-runtime-v2`. This sectio
 
 Ranked smallest-first:
 
-1. **E08-N4** — continuity fixture treats `finish("abort")` as live delivery. Smallest *code-ready* residue if owner wants a slice; test-only, no Host mutation.
-2. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
-3. **E09** — reject-old oracle + packed session factory; artifact lane fail-closed.
-4. **HSO-4 remainder** — emit literal SlicePatch from bindings; synthetic two-slice Host behavior; preload `_compile` mutant.
-5. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
-6. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M1 P1-03 import-time proof fail-open; M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
+1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
+2. **E09** — reject-old oracle + packed session factory; artifact lane fail-closed.
+3. **HSO-4 remainder** — synthetic two-slice Host behavior; preload `_compile` mutant.
+4. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
+5. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M1 P1-03 import-time proof fail-open; M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
+
+E08-N4 closed test-only on `pre-publication-revision`. SlicePatch emit landed `pre-publication-revision`.
 
 ### Smallest next residue slice
 
-**If code:** E08-N4 fixture consumer (abort ≠ delivery). **If docs-only / no dispatch:** this section is enough; do not auto-start E07 D2, E09 packed factory, T29 CAS, or T32 GATE.
+**If code:** E07 Host purpose seam only with D2. **If docs-only / no dispatch:** this section is enough; do not auto-start E09 packed factory, T29 CAS, or T32 GATE.
