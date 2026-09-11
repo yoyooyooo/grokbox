@@ -325,7 +325,7 @@ Ranked smallest-first:
 1. **E07 Host purpose seam — admission landed `pre-publication-revision` (2026-09-11 update).** D2 is approved. Source/packed Host admission passes; complete E07/native consumer qualification is still partial, not an approval blocker or a Path B closure.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
-4. **SHA-pinned M1–M4 leftovers** (still not grok dispatch): T25 P1-02 Node20 SIGABRT closed on `pre-publication-revision` (offline only). Remaining: T26 P1-02 profile-bound root provenance; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt. T26 P2-01 toolCalls alias closed on `639ddc0` (offline only). T28 P2-01 legacy executor removal closed on `d5ec95d` (offline only). M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
+4. **SHA-pinned M1–M4 leftovers** (still not grok dispatch): T25 P1-02 Node20 SIGABRT closed on `pre-publication-revision` (offline only). T28 P1-02 lock ownership closed on `fbb1909` (offline only). T28 P1-04 checkpoint-then-interrupt closed on `1171250` (offline only). Remaining: T26 P1-02 profile-bound root provenance. T26 P2-01 toolCalls alias closed on `639ddc0` (offline only). T28 P2-01 legacy executor removal closed on `d5ec95d` (offline only). M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
@@ -367,6 +367,28 @@ Current home: [E07 Host admission](../maintainers/e07-path-b-host-admission.md).
 
 Offline contract tests and typecheck only. `verify-runtime-rebuild.mjs stream` still has a pre-existing `pre-publication-revision` failure (`managed hook returns Host session not runtime_not_ready`) from T32 missing-turnId `compact_passthrough`; host-session ABI cases in that gate pass. Not live adopt, not packed preload, not T26 ticket close, not a billing claim.
 
+## M4 / T28 P1-02/P1-04 close — 1171250 — 2026-09-11
+
+- Base tip: `pre-publication-revision` on `feat/t28-p1` (rebased onto `pre-publication-revision`).
+- Close SHAs: `fbb1909` (P1-02), `1171250` (P1-04).
+- Receipt: `PRIVATE_EVIDENCE`.
+- Disposition: **P1-02 and P1-04 closed offline.** SHA-pinned `pre-publication-revision` text is unchanged. No live Host/re-adopt, no T25/T26 files, no legacy-executor reopen.
+
+### Closed at this tip
+
+- **P1-02 — closed:** exclusive lock is an `acquireRelease` resource before store publish, so a failed initial write returns `lease-failed` and does not leave `controller-operations.lock` after Scope. `op-lock` release compares inode/dev and does not unlink a replaced competitor pathname. Original atomicity/corruption cases are not reopened.
+  - Evidence: `packages/box-runtime/test/controller-lock.test.ts`, `packages/box-runtime/test/op-lock.test.ts`; original vectors `PRIVATE_EVIDENCE`, `tip-replacement-lock.json`.
+- **P1-04 — closed:** running-prefix `settle` is no longer `Effect.ignore`. A failed completed-signal checkpoint persists in-memory prefix as `unknown` / `recovery-required` / `checkpoint-failed` and does not enter wait. A Scope finalizer writes that prefix if interrupt hits while still `running`. Healthy interrupt-keeps-prefix remains.
+  - Evidence: `packages/runtime-kernel/test/controller.test.ts`; original vectors `PRIVATE_EVIDENCE`, `tip-checkpoint-control.json`.
+
+### Items
+
+- None for T28 P1-02/P1-04. T26 P1-02 profile-bound provenance stays SHA-pinned leftover (T25 P1-02 already closed on `pre-publication-revision`). T28 ticket itself stays open (L1 live-not-proven).
+
+### Evidence ceiling
+
+Offline control tests and typecheck only. Publish-failure proof uses a post-lock tmp-dir collision (same acquire-then-throw class as Astra's injected rename EIO); competitor-path proof uses owned fixtures only. Not live adopt, not packed preload, not T28 ticket close.
+
 ## M4 / T25 P1-02 close — pre-publication-revision — 2026-09-11
 
 - Base tip: `pre-publication-revision` on `feat/t25-sigabrt`.
@@ -381,7 +403,7 @@ Offline contract tests and typecheck only. `verify-runtime-rebuild.mjs stream` s
 
 ### Items
 
-- None remaining for this T25 native-close residue. T26 P1-02 and T28 P1-02/P1-04 stay held on their SHA-pinned sections.
+- None remaining for this T25 native-close residue. T26 P1-02 stays held; T28 P1-02/P1-04 closed in later tip section above.
 
 ### Evidence ceiling
 
