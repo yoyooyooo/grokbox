@@ -6,6 +6,9 @@ import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
+import { admitControllerRequest } from "@grokbox/runtime-kernel/commands";
+import { ControlResources } from "@grokbox/runtime-kernel/ports";
 import { liveAdoptLaunchSpec } from "../src/internal/process/h3-live.ts";
 import {
   HOST_CHILD_STDIO,
@@ -14,7 +17,9 @@ import {
 } from "../src/internal/process/launch.node.ts";
 import {
   inspectControllerFacts,
+  liveControlResourcesLayer,
   observedAdoptMarkerMatches,
+  recoverUnknownLease,
   resetLiveMutationAttempts,
   liveMutationAttempts,
   startControlOperation,
@@ -311,6 +316,95 @@ describe("controller IO facade", () => {
     expect(receipt.spawned).toBe(false);
     expect(receipt.guardian).toBe(false);
     expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 });
+  });
+});
+
+const officialWrapper: ProcessIdentity = {
+  pid: 11, uid: 1000, start: 100, exe: "/bin/bash", ppid: 1, ancestry: [1],
+  cmdline: ["bash", "/usr/local/bin/supervise-sand-supervisor"],
+};
+const officialSupervisor: ProcessIdentity = {
+  pid: 12, uid: 1000, start: 101, exe: "/exec-daemon/node", ppid: 11, ancestry: [11, 1],
+  cmdline: ["/exec-daemon/node", "/usr/local/bin/sand-supervisor.mjs"],
+};
+const officialHost: ProcessIdentity = {
+  pid: 13, uid: 1000, start: 102, exe: "/exec-daemon/node", ppid: 12, ancestry: [12, 11, 1],
+  cmdline: ["/exec-daemon/node", "/tmp/host-main.cjs"],
+};
+
+function censusLive(rows: ProcessIdentity[], gatewayPid: number | null): LiveAdmissionPorts {
+  return {
+    processes: {
+      inspect: (pid) => rows.find((row) => row.pid === pid) ?? null,
+      list: () => rows,
+      signal: () => ({ ok: false, reason: "not-found" }),
+    },
+    classify: (ident) => {
+      const names = ident.cmdline.join(" ");
+      if (names.includes("supervise-sand-supervisor")) return "wrapper";
+      if (names.includes("sand-supervisor.mjs")) return "supervisor";
+      if (names.includes("host-main.cjs")) return "host";
+      return null;
+    },
+    gatewayPid: () => gatewayPid,
+    hostBundlePath: "/tmp/host-main.cjs",
+    readHostSha: () => validProfile.sourceSha256,
+  };
+}
+
+async function leaseUnknown(boxRoot: string, live: LiveAdmissionPorts) {
+  const command = admitControllerRequest({
+    intent: "apply",
+    confirmed: true,
+    operationId: "op-unknown",
+    boxRoot,
+    strategy: "direct",
+  });
+  if (!command) throw new Error("admit failed");
+  await mkdir(join(boxRoot, "state"), { recursive: true });
+  await writeFile(join(boxRoot, "state", "controller-operations.json"), `${JSON.stringify({
+    [command.operationId]: {
+      fingerprint: command.fingerprint,
+      state: "unknown",
+      prefix: { signaled: false, spawned: true, guardian: true },
+    },
+  })}\n`);
+  return Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const control = yield* ControlResources;
+    return yield* control.lease(command);
+  }).pipe(Effect.provide(liveControlResourcesLayer(live)))));
+}
+
+describe("unknown controller lease recovery", () => {
+  const uniqueOfficial = [officialWrapper, officialSupervisor, officialHost];
+  const adoptedOfficial = [officialWrapper, officialSupervisor, { ...officialHost, ppid: 53, ancestry: [53, 1] }];
+
+  test("unique official direct-launch re-acquires unknown", async () => {
+    const live = censusLive(uniqueOfficial, 13);
+    expect(recoverUnknownLease(live)).toEqual({ status: "acquired" });
+    expect(await leaseUnknown(await emptyRoot(), live)).toEqual({ status: "acquired" });
+  });
+
+  test("transient-adopt unique official still re-acquires unknown", async () => {
+    const live = censusLive(adoptedOfficial, 13);
+    expect(recoverUnknownLease(live)).toEqual({ status: "acquired" });
+    expect(await leaseUnknown(await emptyRoot(), live)).toEqual({ status: "acquired" });
+  });
+
+  test("gateway mismatch stays uncertain", async () => {
+    const direct = censusLive(uniqueOfficial, 99);
+    const adopted = censusLive(adoptedOfficial, 99);
+    expect(recoverUnknownLease(direct)).toEqual({ status: "uncertain" });
+    expect(recoverUnknownLease(adopted)).toEqual({ status: "uncertain" });
+    expect(await leaseUnknown(await emptyRoot(), direct)).toEqual({ status: "uncertain" });
+  });
+
+  test("invalid census stays uncertain", async () => {
+    const empty = censusLive([], 13);
+    const duplicateHost = censusLive([...uniqueOfficial, { ...officialHost, pid: 14, start: 103 }], 13);
+    expect(recoverUnknownLease(empty)).toEqual({ status: "uncertain" });
+    expect(recoverUnknownLease(duplicateHost)).toEqual({ status: "uncertain" });
+    expect(await leaseUnknown(await emptyRoot(), empty)).toEqual({ status: "uncertain" });
   });
 });
 

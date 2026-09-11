@@ -175,6 +175,17 @@ export function defaultLiveAdmissionPorts(): LiveAdmissionPorts {
   };
 }
 
+/** Re-acquire an unknown operation only when the live census is a unique official chain. */
+export function recoverUnknownLease(live: LiveAdmissionPorts): Extract<LeaseDecision, { status: "acquired" } | { status: "uncertain" }> {
+  const gatewayPid = live.gatewayPid();
+  const proven = proveStableOfficialState(live.processes, live.classify, { gatewayPid });
+  return proven.ok
+    && (proven.mode === "transient-adopt" || proven.mode === "direct-launch")
+    && gatewayPid === proven.chain.host.pid
+    ? { status: "acquired" }
+    : { status: "uncertain" };
+}
+
 function inspectLiveHost(
   profileSourceSha: string,
   live: LiveAdmissionPorts,
@@ -462,7 +473,9 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   });
 }
 
-export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
+export function liveControlResourcesLayer(
+  live: LiveAdmissionPorts = defaultLiveAdmissionPorts(),
+): Layer.Layer<ControlResources> {
   return Layer.succeed(ControlResources, {
     lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
       const locked = yield* Effect.acquireRelease(
@@ -477,13 +490,7 @@ export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
       if (existing) {
         if (existing.fingerprint !== input.fingerprint) decision = { status: "conflict" };
         else if (existing.state === "terminal") decision = { status: "duplicate" };
-        else if (existing.state === "unknown") {
-          const live = defaultLiveAdmissionPorts();
-          const proven = proveStableOfficialState(live.processes, live.classify, { gatewayPid: live.gatewayPid() });
-          decision = proven.ok && proven.mode === "transient-adopt"
-            ? { status: "acquired" }
-            : { status: "uncertain" };
-        }
+        else if (existing.state === "unknown") decision = recoverUnknownLease(live);
         else decision = { status: "busy" };
       }
       if (decision.status !== "acquired") return decision;
