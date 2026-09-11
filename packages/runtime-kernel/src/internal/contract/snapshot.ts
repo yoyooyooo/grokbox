@@ -1,5 +1,6 @@
 import type { GenerationOptions, PromptMessage, ToolDefinition } from "./context.ts";
-import { EnvelopeError } from "./context.ts";
+import { EnvelopeError, buildModelEnvelope, parsePromptMessages } from "./context.ts";
+import { computeSnapshotDigest } from "../../hash.ts";
 
 export type ContextSnapshot = {
   version: 1;
@@ -14,6 +15,12 @@ export type ContextSnapshot = {
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function freezeJson(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  for (const child of Object.values(value)) freezeJson(child);
+  Object.freeze(value);
 }
 
 export function contextSnapshotBody(snapshot: Omit<ContextSnapshot, "snapshotDigest">): Omit<ContextSnapshot, "snapshotDigest"> {
@@ -38,20 +45,22 @@ export function parseContextSnapshot(value: unknown): ContextSnapshot {
   if (typeof value.snapshotDigest !== "string" || !/^[a-f0-9]{64}$/.test(value.snapshotDigest)) {
     throw new EnvelopeError("invalid_envelope");
   }
-  if (value.systemMessages.some((message) => !object(message) || message.role !== "system")) {
-    throw new EnvelopeError("invalid_envelope");
-  }
-  if (value.messages.some((message) => object(message) && message.role === "system")) {
-    throw new EnvelopeError("invalid_envelope");
-  }
-  return {
+  const systemMessages = parsePromptMessages(value.systemMessages);
+  if (systemMessages.some((message) => message.role !== "system")) throw new EnvelopeError("invalid_envelope");
+  const envelope = buildModelEnvelope(value.messages, value.tools, value.options);
+  if (envelope.messages.some((message) => message.role === "system")) throw new EnvelopeError("invalid_envelope");
+  const body = contextSnapshotBody({
     version: 1,
     profileId: value.profileId,
     abiIdentity: value.abiIdentity,
-    systemMessages: value.systemMessages as PromptMessage[],
-    messages: value.messages as PromptMessage[],
-    tools: value.tools as ToolDefinition[],
-    options: (object(value.options) ? value.options : {}) as GenerationOptions,
-    snapshotDigest: value.snapshotDigest,
-  };
+    systemMessages,
+    messages: envelope.messages,
+    tools: envelope.tools,
+    options: envelope.options,
+  });
+  const snapshotDigest = computeSnapshotDigest(body);
+  if (snapshotDigest !== value.snapshotDigest) throw new EnvelopeError("invalid_envelope");
+  const snapshot: ContextSnapshot = { ...body, snapshotDigest };
+  freezeJson(snapshot);
+  return snapshot;
 }

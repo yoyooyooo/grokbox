@@ -4,6 +4,7 @@ import {
   buildModelEnvelope,
   cloneJson,
   contextSnapshotBody,
+  parseContextSnapshot,
   parseModelEnvelope,
   parsePromptMessages,
   type ContextSnapshot,
@@ -341,7 +342,7 @@ export function hostToContextSnapshot(input: {
   const snapshot: ContextSnapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
   const bytes = new TextEncoder().encode(JSON.stringify(snapshot)).length;
   if (bytes > SNAPSHOT_JSON_MAX_BYTES) throw new EnvelopeError("envelope_too_large");
-  return snapshot;
+  return parseContextSnapshot(snapshot);
 }
 
 export { parseModelEnvelope, type ModelEnvelope, type PromptMessage };
