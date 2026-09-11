@@ -129,6 +129,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
           };
           signal.addEventListener("abort", stop, { once: true });
           void (async () => {
+            let sdkError: unknown;
             const iterator = (() => {
               try {
                 let secret: string;
@@ -146,9 +147,9 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
                   messages: toSdkMessages(payload.prompt) as never,
                   ...(payload.tools.length > 0 ? { tools } : {}),
                   maxRetries: 0,
-                  // SDK's default logger includes request bodies and provider response bodies.
-                  // The fullStream error still flows to our allowlisted classifier below.
-                  onError: () => {},
+                  // Default SDK logger includes bodies. Capture onError so an unfinished
+                  // fullStream cannot hide the provider failure as stream_invalid.
+                  onError: ({ error }) => { sdkError = error; },
                   abortSignal: ac.signal,
                   ...payload.settings,
                 });
@@ -173,6 +174,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
                 Queue.offerUnsafe(queue, mapped);
               }
               if (ac.signal.aborted) Queue.endUnsafe(queue);
+              else if (!state.finished && sdkError) throw sdkError;
               else {
                 finishInferenceStream(state);
                 Queue.endUnsafe(queue);

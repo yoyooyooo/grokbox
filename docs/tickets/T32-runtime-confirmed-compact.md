@@ -32,5 +32,8 @@ candidate/generic model_error 触发、从 durable 日志重建命令、HTTP pay
 ## Non-goals / out-of-scope
 默认每错 compact、Host Memory 产品/summary 实现、跨重启恢复未知 STEP、全 backend 支持、无限重试、全量上下文压缩或自动 live spend。
 
+## Live residual
+Near-`SNAPSHOT_JSON_MAX_BYTES` fills fail `stream_invalid` (`normalize/stream_shape`, eventCount 0) before CCS overflow codes. Fail site is modeld SDK `fullStream` unfinished (empty/skip-only), not Host reshape. test0 transcript polluted; further overflow canary is **test2**. Filling to the 4 MiB wire cap is not an overflow recipe.
+
 ## Related
 [spec recovery](../roadmap/box-runtime-impl-spec.md#recovery-diagnostics) · [wire](../roadmap/box-runtime-impl-spec.md#wire) · [proof/live](../roadmap/box-runtime-impl-spec.md#review-live) · [plan Phase 4 §4.1](../roadmap/box-runtime-plan.md) · [ADR D3](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d3--host-context-and-memory-ownership) / [D11](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d11--confirmed-overflow-host-recovery)

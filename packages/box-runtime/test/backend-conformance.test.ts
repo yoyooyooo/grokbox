@@ -17,7 +17,7 @@ import { fakeBackendAuthLayer, unsealFakeAuth } from "@grokbox/runtime-kernel/te
 import { lookupBackend, lookupBackendKind } from "../src/internal/backends/registry.ts";
 import { echoModelBackendLayer } from "../src/internal/backends/echo.ts";
 import { aiSdkModelBackendLayer } from "../src/internal/backends/ai-sdk.ts";
-import { mapSdkStreamPart } from "../src/internal/backends/openai-events.ts";
+import { drainSdkStream, mapSdkStreamPart } from "../src/internal/backends/openai-events.ts";
 import { testEchoBackendLayer, testSdkBackendLayer } from "../src/internal/roots/layers.ts";
 import { createLiveBackendAuth, liveBackendAuthLayer } from "../src/internal/io/credentials.node.ts";
 
@@ -164,7 +164,7 @@ describe("backend conformance", () => {
       const pinned = yield* auth.pin({ apiKeyRef: "env:OPENAI_API_KEY" });
       const prepared = yield* backend.prepare(openaiRecord(), snapshot([{ role: "user", content: "x" }]));
       return yield* Stream.runCollect(backend.infer({}, prepared, pinned.lease));
-    }))).rejects.toBeTruthy();
+    }))).rejects.toMatchObject({ code: "stream_invalid" });
 
     const textEof = mockFetch(() => sseResponse([textChunk("partial")], true));
     await expect(runSdk(textEof, { OPENAI_API_KEY: "sk-test" }, (backend, auth) => Effect.gen(function* () {
@@ -183,6 +183,23 @@ describe("backend conformance", () => {
     const finish = listed.find((event) => event.type === "backend_finish");
     expect(finish).toMatchObject({ type: "backend_finish", finishReason: "stop" });
     expect(finish?.type === "backend_finish" ? finish.usage : undefined).toBeUndefined();
+  });
+
+  test("skip-only SDK parts then EOF are unfinished stream_invalid, not overflow", async () => {
+    const events: InferenceEvent[] = [];
+    await expect(drainSdkStream((async function* () {
+      yield { type: "start" };
+      yield { type: "start-step", request: {}, warnings: [] };
+      yield {
+        type: "finish-step",
+        finishReason: "error",
+        usage: { promptTokens: 1, completionTokens: 0 },
+        response: { id: "r", timestamp: new Date(), modelId: "m" },
+        providerMetadata: undefined,
+      };
+    })(), (event) => { events.push(event); })).rejects.toMatchObject({ name: "BackendFailure", code: "stream_invalid" });
+    expect(events).toEqual([]);
+    await expect(drainSdkStream((async function* () {})(), () => {})).rejects.toMatchObject({ code: "stream_invalid" });
   });
 
   test("prepare freezes tools/options and rejects Responses seed before pin", async () => {
