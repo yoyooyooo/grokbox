@@ -23,6 +23,12 @@ describe("T29 command boundary incubate (no browser, no fake CAS)", () => {
     expect(io).not.toMatch(/\bfcntl\b|\bflock\b/);
     const commands = readFileSync(join(repoRoot, "packages/runtime-kernel/src/commands.ts"), "utf8");
     expect(commands).toContain("runControllerOperation");
-    expect(commands).not.toContain("saveModels");
+    expect(commands).toContain("runConfigurationSave");
+    expect(commands).not.toContain("expectedConfigRevision");
+    const cli = readFileSync(join(repoRoot, "packages/cli/src/commands/runtime.ts"), "utf8");
+    expect(cli).toContain("saveRuntimeModels");
+    expect(cli).toContain("saveRuntimeDesired");
+    expect(cli).not.toMatch(/runtime\.saveModels\(/);
+    expect(cli).not.toMatch(/runtime\.saveDesired\(/);
   });
 });

@@ -6,8 +6,8 @@ import {
   finishInferenceStream,
   type InferenceEvent,
 } from "../contract/events.ts";
-import { sha256Text } from "../../hash.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, ControlResources, HostCompact, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationPrefix, type OperationRecord, type PreparedCall } from "../../ports.ts";
+import { canonicalJson, sha256Text } from "../../hash.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ConfigurationWrite, ControlResources, HostCompact, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationPrefix, type OperationRecord, type PreparedCall } from "../../ports.ts";
 import type { HostCompactRequest, HostCompactResult } from "../contract/overflow.ts";
 import type { ModelsFile, DesiredFile } from "../../selection.ts";
 
@@ -124,6 +124,26 @@ export function fakeModelBackendLayer(
         options?.afterStream ?? Effect.void,
       );
     },
+  });
+}
+
+export function fakeConfigurationWriteLayer(input: {
+  writes?: { models: number; desired: number };
+  models?: ModelsFile[];
+  desired?: DesiredFile[];
+} = {}): Layer.Layer<ConfigurationWrite> {
+  const writes = input.writes ?? { models: 0, desired: 0 };
+  return Layer.succeed(ConfigurationWrite, {
+    saveModels: (file) => Effect.sync(() => {
+      writes.models += 1;
+      input.models?.push(file);
+      return { configRevision: sha256Text(canonicalJson(file)) };
+    }),
+    saveDesired: (file) => Effect.sync(() => {
+      writes.desired += 1;
+      input.desired?.push(file);
+      return { configRevision: sha256Text(canonicalJson(file)) };
+    }),
   });
 }
 

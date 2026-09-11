@@ -11,6 +11,8 @@ import {
   BoxRuntimeError,
   disclosure,
   openRuntimeStore,
+  saveRuntimeModels,
+  saveRuntimeDesired,
   parseModelId,
   projectLiveStatus,
   readContracts,
@@ -81,7 +83,7 @@ export async function runRuntimeActivate(deps: CliDeps, mode: string | undefined
     const models = await runtime.loadModels();
     if (mode === "route") assertRouteAssignment(models);
     const desiredMode: DesiredMode = mode;
-    await runtime.saveDesired({ version: 1, mode: desiredMode });
+    await saveRuntimeDesired(runtime, { version: 1, mode: desiredMode });
     writeSuccess(deps.stdout, {
       desired: desiredMode,
       inject: false,
@@ -104,7 +106,7 @@ export async function runRuntimeStart(deps: CliDeps, _mode: string | undefined):
 export async function runRuntimeDeactivate(deps: CliDeps): Promise<void> {
   try {
     const runtime = store(deps);
-    await runtime.saveDesired({ version: 1, mode: "disabled" });
+    await saveRuntimeDesired(runtime, { version: 1, mode: "disabled" });
     writeSuccess(deps.stdout, {
       desired: "disabled",
       requested: true,
@@ -165,7 +167,7 @@ export async function runRuntimeModelsUse(
     const desired = await runtime.loadDesired();
     const next = applyUse(await runtime.loadModels(), modelId, forAgent);
     if (desired.mode === "route") assertStubOnlyRouteAssignments(next);
-    await runtime.saveModels(next);
+    await saveRuntimeModels(runtime, next);
     writeSuccess(deps.stdout, disclosure(next, modelId, forAgent));
   } catch (error) {
     rethrow(error);
@@ -177,7 +179,7 @@ export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | un
     const runtime = store(deps);
     assertResetAllowed(await runtime.loadDesired());
     const next = applyReset(await runtime.loadModels(), forAgent);
-    await runtime.saveModels(next);
+    await saveRuntimeModels(runtime, next);
     writeSuccess(deps.stdout, { assignments: next.assignments });
   } catch (error) {
     rethrow(error);

@@ -3,6 +3,7 @@ export {
   fakeAdmissionAuthorityLayer,
   fakeBackendAuthLayer,
   fakeConfigurationReadLayer,
+  fakeConfigurationWriteLayer,
   fakeModelBackendLayer,
   fakeControlResourcesLayer,
   fakeHostCompactLayer,

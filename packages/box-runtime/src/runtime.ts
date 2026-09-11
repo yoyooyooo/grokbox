@@ -14,6 +14,7 @@ export {
 export { assertBoxLocal, type LocalRuntimeContext } from "./internal/io/local.ts";
 export { reviewedProfilePath } from "./internal/io/paths.ts";
 export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration.node.ts";
+export { saveRuntimeModels, saveRuntimeDesired, configurationWriteLayer } from "./internal/io/configuration-write.node.ts";
 export {
   projectLiveStatus,
   readContracts,

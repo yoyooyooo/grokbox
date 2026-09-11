@@ -6,7 +6,7 @@
 
 | Surface | Exists | Honest gap |
 |---|---|---|
-| `kernel/commands` | Yes — controller admit/run/fingerprint only | No configuration save use case yet |
+| `kernel/commands` | Yes — controller + `runConfigurationSave` | CAS / second writer still absent |
 | `kernel/status` | Yes — facets, correlation, journal roles | Future API must consume this, not a console projector |
 | `ConfigurationWrite` **port** | Yes — `saveModels`/`saveDesired` → `{ configRevision }` | No live Layer; modeld graph correctly lacks this port |
 | Config IO | `openRuntimeStore` atomic tmp+rename; `configurationReadLayer` | Returns `void`, no expected revision, no short lock |
@@ -22,6 +22,6 @@ This incubate does **not** add that CAS. Atomic rename is not concurrency-safe p
 
 ## Next (when actually scheduled)
 
-1. Configuration use case on `kernel/commands` over the existing port.
+1. Configuration use case on `kernel/commands` — landed (`runConfigurationSave` / `saveRuntimeModels`). No CAS.
 2. CAS only with a real second writer.
 3. Browser MVP only under a separate owner authorization.
