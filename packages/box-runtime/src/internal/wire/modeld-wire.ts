@@ -184,11 +184,6 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
     }
     return { session: { method: "run-step", phase: "events", sequence: 0 }, done: false };
   }
-  if (isRecord(value) && value.version === 4) {
-    const control = parseV4ControlFrame(value);
-    if (control.method !== "compact-request") throw new WireError("unknown_method");
-    return { session, done: false, control };
-  }
   if (value.kind === "event") {
     if (!exactKeys(value, ["kind", "sequence", "event"])) throw new WireError("extra_keys");
     if (value.sequence !== session.sequence || !isRecord(value.event)) throw new WireError("malformed_frame");
@@ -208,6 +203,11 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
       throw new WireError("malformed_frame");
     }
     return { session, done: true };
+  }
+  if (typeof value.method === "string") {
+    const control = parseV4ControlFrame(value);
+    if (control.method !== "compact-request") throw new WireError("unknown_method");
+    return { session, done: false, control };
   }
   throw new WireError("malformed_frame");
 }

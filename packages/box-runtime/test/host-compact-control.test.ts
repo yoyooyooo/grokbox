@@ -230,7 +230,7 @@ describe("Host compact-request → resume-step", () => {
           expect(resume.stepId).toBe("step-1");
           expect(resume.snapshot.messages).toEqual([{ role: "user", content: "via-socket" }]);
         }
-        expect(frames.some((frame) => isV4(frame))).toBe(false);
+        expect(frames.some((frame) => isRecord(frame) && frame.method === "compact-request")).toBe(false);
         expect(frames.some((frame) => isKind(frame, "accepted"))).toBe(true);
         expect(frames.some((frame) => isKind(frame, "terminal"))).toBe(true);
         expect(counts.compact).toBe(1);
@@ -303,10 +303,6 @@ describe("packed preload contains Host control-frame path", () => {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isV4(value: unknown): boolean {
-  return isRecord(value) && value.version === 4;
 }
 
 function isKind(value: unknown, kind: string): boolean {

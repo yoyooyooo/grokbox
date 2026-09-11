@@ -106,4 +106,17 @@ describe("modeld v4 wire", () => {
     expect(events.control).toMatchObject({ method: "compact-request", recoveryNonce: "n" });
     expect(events.session).toEqual({ method: "run-step", phase: "events", sequence: 0 });
   });
+
+  test("events-phase v4 terminal is not parsed as compact-request", () => {
+    const start = acceptModeldFrame({ method: "run-step", phase: "start", sequence: 0 }, {
+      ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: "b",
+    });
+    expect(start.done).toBe(false);
+    expect(start.control).toBeUndefined();
+    const terminal = acceptModeldFrame(start.session, {
+      kind: "terminal", outcome: "ok", bindingId: "b", version: WIRE_VERSION,
+    });
+    expect(terminal.done).toBe(true);
+    expect(terminal.control).toBeUndefined();
+  });
 });
