@@ -26,7 +26,7 @@ This documentation separates current source truth, accepted product behavior, up
 - [Host / App live projections](maintainers/host-app-projections.md): sidebar Working vs composer `currentActivity` vs tray vs nonce; grokbox managed-turn activity gap. Not App pixel proof.
 - [Managed context continuity](maintainers/managed-context-continuity.md): forward prevention fixes and end-to-end acceptance for managed context loss; historical cause closed-notProven, implementation and qualification still pending.
 - [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
-- [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): offline checklist only; does not authorize a production HostCompact flip.
+- [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): offline checklist; HostCompact default-off; live overflow dogfood deferred (not a tip gate).
 - [Release runbook](maintainers/release.md)
 
 Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokbox/issues). Security reports follow [`SECURITY.md`](../SECURITY.md). Machine-local execution notes, raw operational evidence, credentials, provider dumps, and private research do not belong in this repository.
