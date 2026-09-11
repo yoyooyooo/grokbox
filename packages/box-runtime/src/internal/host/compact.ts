@@ -142,6 +142,70 @@ export function bindHostCompactHook(options?: {
   };
 }
 
+export type CompactInFlight = {
+  agentId: string;
+  turnId: string;
+  stepId: string;
+  selectionRevision: string;
+  bindingId?: string;
+};
+
+export type CompactControlIdentity = {
+  agentId: string;
+  turnId: string;
+  stepId: string;
+  bindingId: string;
+  selectionRevision: string;
+  recoveryNonce: string;
+};
+
+export type ResumeStepFrame = CompactControlIdentity & {
+  version: 4;
+  method: "resume-step";
+  snapshot: ContextSnapshot;
+};
+
+export function compactControlMatchesInFlight(control: CompactControlIdentity, inFlight: CompactInFlight | undefined): boolean {
+  if (!inFlight) return false;
+  if (!control.recoveryNonce) return false;
+  if (control.agentId !== inFlight.agentId) return false;
+  if (control.turnId !== inFlight.turnId) return false;
+  if (control.stepId !== inFlight.stepId) return false;
+  if (control.selectionRevision !== inFlight.selectionRevision) return false;
+  if (inFlight.bindingId !== undefined && control.bindingId !== inFlight.bindingId) return false;
+  return true;
+}
+
+/** Same-connection resume-step. Echoes compact-request tuple/nonce; never invents a second STEP. */
+export async function resumeStepFrameForCompactRequest(
+  control: CompactControlIdentity,
+  inFlight: CompactInFlight | undefined,
+): Promise<ResumeStepFrame | undefined> {
+  if (!compactControlMatchesInFlight(control, inFlight)) return undefined;
+  const result = await requestHostCompact({
+    tuple: {
+      agentId: control.agentId,
+      turnId: control.turnId,
+      stepId: control.stepId,
+      bindingId: control.bindingId,
+      selectionRevision: control.selectionRevision,
+    },
+    recoveryNonce: control.recoveryNonce,
+  });
+  if (result.kind !== "snapshot") return undefined;
+  return {
+    version: 4,
+    method: "resume-step",
+    agentId: control.agentId,
+    turnId: control.turnId,
+    stepId: control.stepId,
+    bindingId: control.bindingId,
+    selectionRevision: control.selectionRevision,
+    recoveryNonce: control.recoveryNonce,
+    snapshot: result.snapshot,
+  };
+}
+
 export async function requestHostCompact(input: HostCompactRequest): Promise<HostCompactResult> {
   const slot = lookup(input);
   if (!slot || slotInvalid(slot)) return unavailable("capability_not_ready");
