@@ -3,9 +3,9 @@
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
 ### 2026-09-11 evening — T32 overflow surface absorb
-- Failure class: `no_structured_overflow_surface` (prior grok seat receipt `PRIVATE_EVIDENCE`).
-- GATE-on canary left running; compact-request not fired; do not 4 MiB-pad.
-- Next: Astra absorb on `feat/t32-astra-absorb`.
+- Failure class was `no_structured_overflow_surface` (prior grok seat `PRIVATE_EVIDENCE`). Astra absorb died on provider `cyber_policy` before code change.
+- Grok absorb landed default-off modeld CCS intercept (`GROKBOX_MODELD_OVERFLOW_CANARY_*`); not real provider W; not mini Sub2API.
+- Do not 4 MiB-pad. Live journal overflow → compact-request → resume on test2 is the remaining proof, not an Astra leftover.
 
 ## Status
 **Open · process ticket · never on the default grok main chain.**

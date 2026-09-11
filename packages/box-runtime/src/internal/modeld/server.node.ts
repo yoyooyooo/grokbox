@@ -1,6 +1,5 @@
 import type { Socket } from "node:net";
-import { Cause, Deferred, Effect, Queue, Stream } from "effect";
-import type { Layer } from "effect";
+import { Cause, Deferred, Effect, Layer, Queue, Stream } from "effect";
 import {
   ADMISSION_WAIT_MS,
   BackendFailure,
@@ -15,6 +14,8 @@ import {
   type RunStepRequest,
 } from "@grokbox/runtime-kernel/contract";
 import { cancelStep, runStep } from "@grokbox/runtime-kernel/inference";
+import { HostCompact, ModelBackend } from "@grokbox/runtime-kernel/ports";
+import { withOverflowCanary } from "../backends/overflow-canary.ts";
 import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseModeldRequest } from "../wire/modeld-wire.ts";
 import { acquireUnixListener, trackSocket, type ListenHooks, type ResourceCounts } from "./unix-listen.node.ts";
 import { modeldFailureOutcome, type ModeldStepOutcome } from "./step-outcome.ts";
@@ -197,8 +198,15 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       void Effect.runPromise(Deferred.succeed(disconnected, undefined).pipe(Effect.ignore));
     });
 
+    const backend = yield* ModelBackend;
     const admitted = yield* Effect.result(
-      runStep(parsed.request).pipe(Effect.timeout(`${ADMISSION_WAIT_MS} millis`)),
+      runStep(parsed.request).pipe(
+        Effect.timeout(`${ADMISSION_WAIT_MS} millis`),
+        Effect.provide(Layer.succeed(
+          ModelBackend,
+          withOverflowCanary(backend, parsed.request.agentId, options.env ?? {}),
+        )),
+      ),
     );
     if (admitted._tag === "Failure") {
       observation = modeldFailureOutcome(admitted.failure, "admission", 0);
@@ -277,7 +285,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 
 export type ServeOptions = {
   observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
-  compactForIncoming?: (incoming: Incoming) => Layer.Layer<import("@grokbox/runtime-kernel/ports").HostCompact>;
+  compactForIncoming?: (incoming: Incoming) => Layer.Layer<HostCompact>;
+  env?: NodeJS.Dict<string>;
   path: string;
   generation: string;
   counts?: ResourceCounts;

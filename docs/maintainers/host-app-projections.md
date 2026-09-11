@@ -25,7 +25,7 @@ Live `create-session` wraps `createCursorInferencePromptSession` so STEP streams
 
 Intended restore: slice `activity-bridge` stashes the Host `emitUpdate` sink on `Symbol.for("grokbox.box-runtime.host-activity.v1")`; managed `onFirstChunk` calls `emitHostActivity({ type: "thinking-delta", text: " " })`. Official proto still uses the same sink. Missing sink or throw is a no-op for inference.
 
-No-STEP compact / memory still declines to the original session. HostCompact remains opt-in (`GROKBOX_MODELD_HOST_COMPACT=== "1"` on modeld only). Owner unlocked that live path 2026-09-11 evening; unset stays off. See [t32-live-enable-readiness](t32-live-enable-readiness.md).
+No-STEP compact / memory still declines to the original session. HostCompact remains opt-in (`GROKBOX_MODELD_HOST_COMPACT=== "1"` on modeld only). Overflow canary intercept is a separate default-off modeld pair (`GROKBOX_MODELD_OVERFLOW_CANARY_*`). Owner unlocked that live path 2026-09-11 evening; unset stays off. See [t32-live-enable-readiness](t32-live-enable-readiness.md).
 
 ## Evidence
 

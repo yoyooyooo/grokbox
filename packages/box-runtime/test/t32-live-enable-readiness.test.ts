@@ -14,9 +14,12 @@ import {
   modeldRootLayer,
 } from "../src/internal/roots/modeld.runtime.ts";
 import { HOST_COMPACT_SYMBOL } from "../src/internal/host/profile.ts";
+import { parseOverflowCanary } from "../src/internal/backends/overflow-canary.ts";
 import { parseModeldRequest, parseV3Request } from "../src/internal/wire/modeld-wire.ts";
 
 delete process.env.GROKBOX_MODELD_HOST_COMPACT;
+delete process.env.GROKBOX_MODELD_OVERFLOW_CANARY_AGENT;
+delete process.env.GROKBOX_MODELD_OVERFLOW_CANARY_WINDOW_TOKENS;
 delete process.env.GROKBOX_CONTEXT_CAP;
 delete process.env.GROKBOX_ALLOW_LIVE_HOST;
 
@@ -33,6 +36,8 @@ describe("T32 live-enable readiness (default-off; opt-in env=1)", () => {
     expect(modeldCompactForIncoming({})).toBeUndefined();
     expect(modeldCompactForIncoming({ GROKBOX_MODELD_HOST_COMPACT: "true" })).toBeUndefined();
     expect(modeldCompactForIncoming({ GROKBOX_MODELD_HOST_COMPACT: "0" })).toBeUndefined();
+    expect(parseOverflowCanary()).toBeUndefined();
+    expect(parseOverflowCanary({})).toBeUndefined();
     const layer = modeldRootLayer({
       durableRoot: mkdtempSync(join(tmpdir(), "grokbox-ready-d-")),
       runRoot: mkdtempSync(join(tmpdir(), "grokbox-ready-r-")),

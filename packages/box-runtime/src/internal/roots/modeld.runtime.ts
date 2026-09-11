@@ -108,6 +108,7 @@ export function ensureModeld(options: ModeldRootOptions) {
         counts: options.counts,
         hooks: options.hooks,
         maxClients: options.maxClients,
+        env: options.env ?? process.env,
         ...compactAttach(options.env ?? process.env),
       });
       yield* Effect.never;
@@ -152,6 +153,7 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
         counts: options.counts,
         hooks,
         maxClients: options.maxClients,
+        env: options.env ?? process.env,
         ...compactAttach(options.env ?? process.env),
       });
       yield* Deferred.succeed(ready, { kind: "owned", path, generation });
