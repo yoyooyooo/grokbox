@@ -304,7 +304,7 @@ Integration tip `pre-publication-revision` on `feat/box-runtime-v2`. This sectio
 |---|---|---|
 | T32 live overflow / Sub2API small-W / 4 MiB pads | Owner: HostCompact **default-off**; offline gates enough; live dogfood deferred ([t32-live-enable-readiness](../maintainers/t32-live-enable-readiness.md)) | No — parked, do not re-dig |
 | E07 Path B grokbox aux request-kind | Landed `pre-publication-revision`; Host purpose seam still D2; E07 `auxiliary_unqualified` | Host D2 only |
-| HSO-4 lexical + Acorn workers | Landed `pre-publication-revision` / `pre-publication-revision`; SlicePatch emit / two-slice Host / `_compile` mutant deferred | HSO-4 remainder, not M1–M4 |
+| HSO-4 lexical + Acorn workers | Landed `pre-publication-revision` / `pre-publication-revision`; SlicePatch `pre-publication-revision`; two-slice `pre-publication-revision`; `_compile` mutant `pre-publication-revision` | No — HSO-4 items 1–5 on tip |
 | T29 command/API incubate | Landed `pre-publication-revision`; no console/, no fake CAS | Browser MVP / real second-writer CAS still owner-gated |
 | T32 v4 wire + Host CF + classifier + readiness | Landed W-T32-A…D; GATE stays unset | Live enable not a tip gate |
 
@@ -314,9 +314,10 @@ Ranked smallest-first:
 
 1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
 2. **E09** — reject-old oracle + packed session factory; artifact lane fail-closed.
-3. **HSO-4 remainder** — synthetic two-slice Host behavior; preload `_compile` mutant.
-4. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
-5. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M1 P1-03 import-time proof fail-open; M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
+3. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
+4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M1 P1-03 import-time proof fail-open; M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
+
+HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
 E08-N4 closed test-only on `pre-publication-revision`. SlicePatch emit landed `pre-publication-revision`.
 
