@@ -90,7 +90,7 @@ The audit used a Git-object-checked `pre-publication-revision` archive with work
 - Reviewed SHA: `pre-publication-revision`; all source/evidence below is pinned to this tip, excluding later main-chain work.
 - Relook report: `PRIVATE_EVIDENCE`
 - Grok residual receipt: `PRIVATE_EVIDENCE`
-- Disposition: still-open after grok handoff, narrowed to two remaining publication/proof concerns under the original P1-02/P1-03 IDs. The named relook counterexamples are fixed; P1-01 remains closed and is not reopened. Owner end-of-rebuild triage only; no grok dispatch, main-chain pause, or further review loop.
+- Disposition: remaining P1-02/P1-03 closed on `pre-publication-revision` for the named publication/proof counterexamples. Relook-held payload and open/write fixes at this M3 tip are unchanged. P1-01 remains closed and is not reopened. This close does not supersede later M3/M4 residue.
 
 ### Verified fixes at this M3 tip
 
@@ -99,12 +99,10 @@ The audit used a Git-object-checked `pre-publication-revision` archive with work
 
 ### Items
 
-- **P1-02 — still held in the control-log header:** `packages/box-runtime/src/internal/io/journal.node.ts:209–213,372–375` copies `at` directly into the output and skips its validation. An actual `appendEvent` with a valid control event name and a synthetic credential sentinel as `at` persists that sentinel in raw NDJSON; the reader/CLI later reports an invalid row without leaking it, but cannot retract the raw-log publication. This is an incomplete write-side schema boundary, not an observed real-credential leak; the relook Agent-ID and nested-field fixes above are not disputed.
-  - Evidence: `PRIVATE_EVIDENCE` (`controlHeader`, with the fixed controls in `hostTupleField` / `allowedFieldVariants`); reproducible `probe.ts` alongside it.
-  - Why not forced onto grok: the milestone review/relook/handoff is over. Retain this narrower publication concern for owner triage rather than creating another fix round or stopping the rebuild.
-- **P1-03 — still held for equivalent direct file writes:** the new spy observes `fs.promises.open`, not all writes through that module. A status-path mutant using `fs.promises.writeFile(ownedFixture, syntheticLine, {flag:"a"})` bypasses the counter: the full gate returns exit 0 / `ok:true`, 39 + 23 passing tests / 226 + 189 assertions, while the isolated marker contains 27 actual synthetic writes. The marker is outside each test's input data root, so input-tree snapshots do not prove global zero side effects. This is a remaining gate-coverage gap, not evidence that the unmodified status implementation writes files.
-  - Evidence: `PRIVATE_EVIDENCE`, `held-open-write.stdout.log`, `sibling-write-file.stdout.log`, `sibling-write-file-owned-marker.ndjson`; reproducible `mutants.mjs` alongside them.
-  - Why not forced onto grok: the original open/write counterexample is genuinely fixed; the broader readonly proof remains incomplete. Reserve that residual disagreement for the owner's final triage, without another grok handoff or a new main-chain gate.
+- **P1-02 — closed** on `pre-publication-revision` (offline write-path timestamp bound; not an observed real-credential leak). `sanitizeEvent` / `appendEvent` now require `boundedString` + finite `Date.parse` for `at` and skip the write when invalid, so a valid control name plus synthetic sentinel `at` never lands in raw NDJSON. Valid timestamps still append. The relook Agent-ID and nested-field fixes above are not reopened.
+  - Evidence: `packages/box-runtime/test/events.test.ts`; receipt `PRIVATE_EVIDENCE`. Original SHA-pinned finding: `PRIVATE_EVIDENCE` (`controlHeader`).
+- **P1-03 — closed** on `pre-publication-revision` (gate coverage; not evidence the unmodified status path writes files). Status zero-write spies now count `fs.promises.writeFile` and `appendFile` in addition to write-mode `open`. A dynamic `writeFile(..., {flag:"a"})` increments the counter; the original open/write mutant still fails.
+  - Evidence: `packages/box-runtime/test/observe-status.test.ts`; original SHA-pinned finding: `PRIVATE_EVIDENCE` (`sibling-write-file`).
 
 ### Evidence ceiling
 
@@ -314,7 +312,7 @@ Ranked smallest-first:
 1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
-4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal. M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only).
+4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal. M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
