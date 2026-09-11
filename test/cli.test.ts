@@ -349,6 +349,47 @@ describe("strict agents, groups, and target resolution", () => {
     });
   });
 
+  test("agents create always sends harness box", async () => {
+    const result = await withGateway(["agents", "create", "--name", "beta"]);
+    expect(result.code).toBe(0);
+    const created = result.mock.requests.find((request) => request.pathname === "/api/createAgent");
+    expect(created?.body).toMatchObject({ name: "beta", harness: "box" });
+  });
+
+  test("agents create --harness temporal is sent at the create root", async () => {
+    const result = await withGateway(["agents", "create", "--name", "beta", "--harness", "temporal"]);
+    expect(result.code).toBe(0);
+    const created = result.mock.requests.find((request) => request.pathname === "/api/createAgent");
+    expect(created?.body).toMatchObject({ name: "beta", harness: "temporal" });
+  });
+
+  test("agents update without --harness still sends box", async () => {
+    const result = await withGateway(["agents", "update", "alpha", "--title", "Alpha"]);
+    expect(result.code).toBe(0);
+    const updated = result.mock.requests.find((request) => request.pathname === "/api/updateAgent");
+    expect(updated?.body).toMatchObject({
+      id: "agent-alpha",
+      profile: { name: "alpha", description: "research buddy", title: "Alpha", harness: "box" },
+    });
+  });
+
+  test("agents update --harness temporal preserves description", async () => {
+    const result = await withGateway(["agents", "update", "alpha", "--harness", "temporal"]);
+    expect(result.code).toBe(0);
+    const updated = result.mock.requests.find((request) => request.pathname === "/api/updateAgent");
+    expect(updated?.body).toMatchObject({
+      id: "agent-alpha",
+      profile: { name: "alpha", description: "research buddy", harness: "temporal" },
+    });
+  });
+
+  test("agents create rejects unknown --harness before Gateway", async () => {
+    const result = await withGateway(["agents", "create", "--name", "beta", "--harness", "server"]);
+    expect(result.code).toBe(2);
+    expect(errorCode(result.stderr)).toBe("invalid_usage");
+    expect(result.mock.requests).toEqual([]);
+  });
+
   test("ambiguous names fail before side effects", async () => {
     const duplicate = {
       ...sampleAgents()[0] as Record<string, unknown>,

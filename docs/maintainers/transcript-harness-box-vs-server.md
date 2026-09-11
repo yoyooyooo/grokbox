@@ -4,7 +4,7 @@
 
 **Role: grokbox implications of the stock App/Host dual ledger.** Not a second Host inbound map. Stock protocol (wire omit, Gateway proxy, desktop coordinator, Mac replica, Cmd-Q) is owned by grok-bot `private interoperability notes (not distributed)` (sibling checkout on this box: `PRIVATE_EVIDENCE`; not vendored here). Working / tray vs pixels stay in [Host / App live projections](host-app-projections.md).
 
-This page does not implement Host or App patches. It does not authorize profile flips, re-adopt, or circuit clears.
+CLI `--harness box|temporal` is implemented on `grokbox agents create/update` and always sends `profile.harness` (box default). Host always-emit is slices `harness-blank` / `harness-summary` in `live-slices.ts`; living Host only picks them up after a legal pack/re-adopt. This page does not authorize circuit clears.
 
 ## Why grokbox cares
 
@@ -17,16 +17,11 @@ harness=temporal   → Host does not run that turn locally → intercept skipped
 
 `SendToUser` still writes the **box** `store.db` when Host actually ran the turn. The App may paint a **Cursor server** replica instead. That is stock dual-SoT, not a missing tool call. Do not treat desktop bubbles as proof the intercept ran, or their absence as proof it did not.
 
-## CLI gap: `grokbox agents update` cannot persist `harness`
+## CLI: `--harness` is sent on create/update
 
-`packages/cli/src/commands/agents.ts` `runAgentsUpdate` → Gateway `updateAgent` / notify / hidden only.
+`RosterAttributes.harness` plus `--harness box|temporal`. `createProfile` / `mergedProfile` always include `harness` (`box` if omitted). Other profile fields are preserved. Create sends `harness` at the `createAgent` root (Host RPC accepts it). Update sends `profile.harness`.
 
-`packages/cli/src/commands/management.ts`:
-
-- `RosterAttributes` has `name`, `description`, `title`, avatar, `notify`, `hidden`. **No `harness`.**
-- `registry.ts` `agents update` flags match that set. No `--harness`.
-
-Host `profile.json` is the durable field. `grokbox agents update` does not write it. Do not assume a roster PATCH kept a canary on box.
+Offline Host source (`/home/box/sand-host/host-main.cjs`, not repo authority): `updateAgent` `agentProfile` is name/description/title/avatar only; extra `harness` is dropped, and `manager.updateAgent` writes a trimmed identity without `harness`. Disk `profile.json` harness is binding-owned via `serializeSandProfileFile`. Live write-back remains dogfood. Do not assume a roster PATCH stuck a canary on box until that is re-checked.
 
 ## Patching expectation
 
@@ -38,11 +33,7 @@ Keep overflow / managed-session canaries on **`harness=box`** (test2 while it is
 
 Stock Host `buildSummary` emits `harness` **only** when `"temporal"`; box is omitted. Desktop coordinator `db({ raw: undefined, previous })` **keeps** a prior `temporal`. Official Host restart therefore cannot unstick a desktop that already classified a canary as temporal, and it cannot clear Mac `transcript.replicas`.
 
-Future unpatch contract (pointer only; **not implemented here**):
-
-1. Host always emits `harness: "box" | "temporal"`.
-2. Coordinator must not preserve `temporal` across omitted fields; must not promote unmarked box rows from `onAgentState`.
-3. That contract still does not delete Mac `sand-client-persistence`. Cmd-Q recycles coordinator maps; wiping the replica dir is a separate Mac step. Host restart is not backfill.
+Always-emit Host slices (`harness-blank`, `harness-summary`) replace omit-box spreads with `harness: … ? "temporal" : "box"`. Coordinator still must not preserve `temporal` across omitted fields (App-side; not this repo). Mac replica wipe remains separate. Living Host emit requires pack + legal re-adopt of those slices.
 
 Live re-adopt / harness profile edits are out of scope for this document. Circuit `uncertain-operation` remains a live-writer blocker elsewhere; do not hand-clear.
 

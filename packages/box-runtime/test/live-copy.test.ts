@@ -53,6 +53,12 @@ describeLive("live Host bundle copy H1", () => {
     expect(result.source).toContain('purpose: "episode", turnId: ctx.get(requestIdKey), ctx');
     expect(profile.slices.map((slice) => slice.id)).toContain("memory-purpose");
     expect(profile.slices.map((slice) => slice.id)).toContain("episode-purpose");
+    expect(profile.slices.map((slice) => slice.id)).toContain("harness-blank");
+    expect(profile.slices.map((slice) => slice.id)).toContain("harness-summary");
+    expect(result.source).toContain(
+      'harness: readSandProfileHarness(profilePath) === "temporal" ? "temporal" : "box"',
+    );
+    expect(result.source).not.toContain('? { harness: "temporal" } : {}');
     // Syntax-compile only. Never execute the native Host bundle or its consumers.
     expect(() => new Script(result.source, { filename: copyPath })).not.toThrow();
     const compiled = transformCompileInput({

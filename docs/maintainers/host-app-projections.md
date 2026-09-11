@@ -36,4 +36,4 @@ Do not treat a single Gateway field as “the App looks fine.”
 
 ## Transcript source (pointer)
 
-Historical bubbles are a different surface from Working / tray. Stock App/Host may paint Cursor server transcript while box `store.db` has the `SendToUser` rows. Grokbox intercept requires Host `harness=box`; CLI cannot persist that field. See [Transcript harness: box vs temporal](transcript-harness-box-vs-server.md).
+Historical bubbles are a different surface from Working / tray. Stock App/Host may paint Cursor server transcript while box `store.db` has the `SendToUser` rows. Grokbox intercept requires Host `harness=box`; CLI `--harness` always sends the field, and Host `updateAgent` does not persist it (offline Host source). See [Transcript harness: box vs temporal](transcript-harness-box-vs-server.md).

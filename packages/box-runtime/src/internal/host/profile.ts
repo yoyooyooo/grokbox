@@ -1,6 +1,6 @@
 import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
 
-export type SliceId = "create-session" | "agent-id" | "compact-register" | "activity-bridge" | "memory-purpose" | "episode-purpose";
+export type SliceId = "create-session" | "agent-id" | "compact-register" | "activity-bridge" | "memory-purpose" | "episode-purpose" | "harness-blank" | "harness-summary";
 
 export type SlicePatch = {
   id: SliceId;
@@ -121,7 +121,7 @@ export const HOST_ACTIVITY_SYMBOL = "grokbox.box-runtime.host-activity.v1";
 export const HOST_AUX_SYMBOL = "grokbox.box-runtime.host-aux.v1";
 export const PACKED_SESSION_SYMBOL = "grokbox.box-runtime.packed-session.v1";
 
-const OPTIONAL_SLICES = new Set<string>(["compact-register", "activity-bridge", "memory-purpose", "episode-purpose"]);
+const OPTIONAL_SLICES = new Set<string>(["compact-register", "activity-bridge", "memory-purpose", "episode-purpose", "harness-blank", "harness-summary"]);
 
 export function approvedSliceSet(slices: readonly { id: string }[]): boolean {
   const ids = slices.map((slice) => slice.id);

@@ -64,4 +64,21 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "        executor: session.getExecutor(),\n",
     replacement: auxExecutor("episode", "        "),
   },
+  {
+    id: "harness-blank",
+    startAnchor:
+      "    ...fileProfile?.namedBy === void 0 ? {} : { namedBy: fileProfile.namedBy },\n    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {},\n",
+    endAnchor: "async function buildSummary(args)",
+    find: "    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {},\n    isGroup: false,\n",
+    replacement:
+      "    harness: readSandProfileHarness(profilePath) === \"temporal\" ? \"temporal\" : \"box\",\n    isGroup: false,\n",
+  },
+  {
+    id: "harness-summary",
+    startAnchor: "    isGroup,\n    memberIds,\n",
+    endAnchor: "async function agentHasDurableFootprint(agentDir, agentHasMemory)",
+    find: "    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {}\n",
+    replacement:
+      "    harness: readSandProfileHarness(profilePath) === \"temporal\" ? \"temporal\" : \"box\"\n",
+  },
 ];

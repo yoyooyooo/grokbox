@@ -19,7 +19,7 @@ const OLD_SLICES = LIVE_SLICE_PATCHES.filter((slice) => !slice.id.endsWith("-pur
 describe("E07 Host admission D2", () => {
   test("optional purpose slices replay with all strict profile gates; older profiles remain valid", () => {
     expect(LIVE_SLICE_PATCHES.map((slice) => slice.id)).toEqual([
-      "create-session", "agent-id", "compact-register", "activity-bridge", "memory-purpose", "episode-purpose",
+      "create-session", "agent-id", "compact-register", "activity-bridge", "memory-purpose", "episode-purpose", "harness-blank", "harness-summary",
     ]);
     for (const slices of [OLD_SLICES.slice(0, 2), OLD_SLICES, [...OLD_SLICES, PURPOSE_SLICES[0]!], LIVE_SLICE_PATCHES]) {
       const profile = profileFromSource(LIVE_SHAPED_HOST, slices, "e07-admission");

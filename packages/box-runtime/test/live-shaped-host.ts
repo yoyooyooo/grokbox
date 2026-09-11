@@ -80,5 +80,26 @@ async function runMemoryExtraction(memoryStore, session, ctx, exchange) {
     });
   memoryStore.addMemory({ purpose: "memory-extraction", text: extraction });
 }
-module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction };
+function blankRoster(profilePath, fileProfile) {
+  return {
+    ...fileProfile?.namedBy === void 0 ? {} : { namedBy: fileProfile.namedBy },
+    ...readSandProfileHarness(profilePath) === "temporal" ? { harness: "temporal" } : {},
+    isGroup: false,
+    memberIds: []
+  };
+}
+async function buildSummary(args) {
+  const { extras, isGroup, memberIds, fileProfile, profilePath } = args;
+  return {
+    origin: extras?.origin ?? "user",
+    ...fileProfile?.namedBy === void 0 ? {} : { namedBy: fileProfile.namedBy },
+    isGroup,
+    memberIds,
+    ...readSandProfileHarness(profilePath) === "temporal" ? { harness: "temporal" } : {}
+  };
+}
+async function agentHasDurableFootprint(agentDir, agentHasMemory) {
+  return Boolean(agentDir && agentHasMemory);
+}
+module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction, blankRoster, buildSummary };
 `;

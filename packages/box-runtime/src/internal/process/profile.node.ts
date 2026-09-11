@@ -38,8 +38,8 @@ function invalid(message: string): never {
 /** Snapshot caller-owned patches before any await; authoring is not approval of their semantics. */
 function authoringSlices(value: unknown): SlicePatch[] {
   const fields = ["id", "startAnchor", "endAnchor", "find", "replacement"] as const;
-  if (!Array.isArray(value) || value.length < 2 || value.length > 6) {
-    invalid("Profile authoring requires two to six approved slices.");
+  if (!Array.isArray(value) || value.length < 2 || value.length > 8) {
+    invalid("Profile authoring requires two to eight approved slices.");
   }
   const ids = new Set<string>();
   const patches = value.map((slice: unknown) => {
@@ -51,7 +51,7 @@ function authoringSlices(value: unknown): SlicePatch[] {
     ) {
       invalid("Invalid profile slice fields.");
     }
-    if (record.id !== "create-session" && record.id !== "agent-id" && record.id !== "compact-register" && record.id !== "activity-bridge" && record.id !== "memory-purpose" && record.id !== "episode-purpose") {
+    if (record.id !== "create-session" && record.id !== "agent-id" && record.id !== "compact-register" && record.id !== "activity-bridge" && record.id !== "memory-purpose" && record.id !== "episode-purpose" && record.id !== "harness-blank" && record.id !== "harness-summary") {
       invalid("Invalid profile slice id.");
     }
     if (ids.has(record.id)) invalid("Profile slice ids must be unique.");
@@ -60,7 +60,7 @@ function authoringSlices(value: unknown): SlicePatch[] {
     if (patch.find === patch.replacement) invalid("Profile slices must change the source.");
     return patch;
   });
-  if (!approvedSliceSet(patches)) invalid("Profile authoring requires two to six approved slices.");
+  if (!approvedSliceSet(patches)) invalid("Profile authoring requires two to eight approved slices.");
   return patches;
 }
 

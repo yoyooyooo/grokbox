@@ -15,6 +15,7 @@ export type RosterAttributes = {
   avatarColor?: string;
   notify?: string;
   hidden?: string;
+  harness?: string;
 };
 
 export function requiredName(value: string | undefined, option = "--name"): string {
@@ -37,6 +38,12 @@ export function parseToggle(value: string | undefined, option: string): boolean 
   throw usage(`${option} must be on or off.`);
 }
 
+export function parseHarness(value: string | undefined): "box" | "temporal" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "box" || value === "temporal") return value;
+  throw usage("--harness must be box or temporal.");
+}
+
 export function createNonce(raw: string | undefined, deps: CliDeps): string {
   return assertUuidV4(raw ?? deps.randomUUID(), "--nonce");
 }
@@ -49,6 +56,7 @@ export function createProfile(raw: RosterAttributes & { name?: string }): Record
   if (raw.title !== undefined) profile.title = raw.title.trim();
   if (raw.avatarShape !== undefined) profile.avatarShape = raw.avatarShape.trim();
   if (raw.avatarColor !== undefined) profile.avatarColor = raw.avatarColor.trim();
+  profile.harness = parseHarness(raw.harness) ?? "box";
   return profile;
 }
 
@@ -58,7 +66,8 @@ export function hasProfilePatch(raw: RosterAttributes): boolean {
     raw.instructions !== undefined ||
     raw.title !== undefined ||
     raw.avatarShape !== undefined ||
-    raw.avatarColor !== undefined;
+    raw.avatarColor !== undefined ||
+    raw.harness !== undefined;
 }
 
 export function mergedProfile(
@@ -80,6 +89,10 @@ export function mergedProfile(
     if (patch !== undefined) profile[wire] = patch.trim();
     else if (typeof existing === "string") profile[wire] = existing;
   }
+  const harness = parseHarness(raw.harness);
+  if (harness !== undefined) profile.harness = harness;
+  else if (row.harness === "box" || row.harness === "temporal") profile.harness = row.harness;
+  else profile.harness = "box";
   return profile;
 }
 
@@ -96,6 +109,7 @@ export function assertAnyAttribute(raw: RosterAttributes): void {
 export function validateRosterSettings(raw: RosterAttributes): void {
   parseToggle(raw.notify, "--notify");
   parseToggle(raw.hidden, "--hidden");
+  parseHarness(raw.harness);
 }
 
 export async function applyRosterSettings(
