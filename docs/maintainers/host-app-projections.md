@@ -33,3 +33,7 @@ No-STEP compact / memory still declines to the original session. HostCompact rem
 - Host SHA for inbound line pins: [host-inbound-agent-loop.md](host-inbound-agent-loop.md) §1.2 (`H` = `f5cc35b5…` as of 2026-09-10). Recheck before citing new line numbers against a later Host disk SHA.
 
 Do not treat a single Gateway field as “the App looks fine.”
+
+## Transcript source (pointer)
+
+Historical bubbles are a different surface from Working / tray. Stock App/Host may paint Cursor server transcript while box `store.db` has the `SendToUser` rows. Grokbox intercept requires Host `harness=box`; CLI cannot persist that field. See [Transcript harness: box vs temporal](transcript-harness-box-vs-server.md).
