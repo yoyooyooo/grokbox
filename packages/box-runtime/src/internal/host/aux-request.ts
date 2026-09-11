@@ -46,3 +46,23 @@ export function grokboxAuxFrom(value: unknown): GrokboxAuxRequest | undefined {
     parent: { agentId, turnId, stepId, modelId, selectionRevision },
   };
 }
+
+/** Host admission helper. Call-site purpose only; never reads message body. Undefined = leave ctx unchanged. */
+export function attachHostAuxStreamContext(input: {
+  purpose: unknown;
+  auxRequestId: unknown;
+  parent: unknown;
+  ctx?: unknown;
+}): { ctx: Record<string, unknown>; aux: GrokboxAuxRequest } | undefined {
+  const aux = grokboxAuxFrom({
+    grokboxAux: {
+      purpose: input.purpose,
+      auxRequestId: input.auxRequestId,
+      parent: input.parent,
+    },
+  });
+  if (!aux) return undefined;
+  const base = isRecord(input.ctx) ? { ...input.ctx } : {};
+  delete base.grokboxAux;
+  return { ctx: { ...base, grokboxAux: aux }, aux };
+}

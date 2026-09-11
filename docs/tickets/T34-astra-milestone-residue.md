@@ -269,7 +269,7 @@ Offline contract-e2e only; no packed preload, native Host, live adopt, or produc
 
 ### Items
 
-- **E07 Path B / F5 — still held:** no qualified aux request-kind; aux does not ride the managed selection/auth/backend chain with parent binding; production must not call `runAuxiliary` as a STEP bypass. Implementing Path B is a new milestone, not a continuation of this tip’s review loop.
+- **E07 Path B / F5 — still held:** grokbox aux request-kind + parent binding exist; **Host admission does not.** Live memory/episode call sites still have no purpose seam (D2). E07 stays `auxiliary_unqualified`. Do not add a live aux-purpose slice without D2. See [e07-path-b-host-admission](../maintainers/e07-path-b-host-admission.md).
   - Evidence: `PRIVATE_EVIDENCE` §N1/Path B Acceptance; relook confirmation in `PRIVATE_EVIDENCE`.
 
 ## Continuity / E09 Path A — pre-publication-revision — 2026-09-10

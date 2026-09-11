@@ -1,7 +1,7 @@
 import type { HostPromptSession, HostResponse } from "./session.ts";
 import { grokboxAuxFrom, type AuxParentBinding, type AuxPurpose } from "./aux-request.ts";
 
-export { AUX_PURPOSES, grokboxAuxFrom } from "./aux-request.ts";
+export { AUX_PURPOSES, attachHostAuxStreamContext, grokboxAuxFrom } from "./aux-request.ts";
 export type { AuxParentBinding, AuxPurpose, GrokboxAuxRequest } from "./aux-request.ts";
 
 export type AuxRefuseCode = "auxiliary_unqualified" | "auxiliary_duplicate" | "auxiliary_stale" | "auxiliary_tools";
