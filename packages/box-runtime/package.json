@@ -6,8 +6,9 @@
     "./runtime": "./src/runtime.ts"
   },
   "dependencies": {
-    "@grokbox/runtime-kernel": "workspace:*",
     "@ai-sdk/openai": "catalog:ai-sdk",
+    "@grokbox/runtime-kernel": "workspace:*",
+    "acorn": "8.14.1",
     "ai": "catalog:ai-sdk",
     "effect": "catalog:effect-v4-beta"
   }

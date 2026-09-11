@@ -24,7 +24,7 @@ export type ShapeCandidate = {
 export type ShapeReport = {
   status: "ok" | "unavailable";
   reason?: "grammar_error" | "timeout" | "oom" | "candidate_explosion" | "source_too_large";
-  engine: typeof SHAPE_ENGINE;
+  engine: string;
   utf8Bytes: number;
   candidates: ShapeCandidate[];
   truncated: boolean;
