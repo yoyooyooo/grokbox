@@ -2,10 +2,14 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
+### 2026-09-11 evening — T32 re-adopt commit-failed
+- Packed `dist/preload.cjs` `5271e99e…` still binds D2 slot. Source-CLI `runtime re-adopt --confirm` returned `recovery-required` / `commit-failed` (hashed `preload.ts`). Living Host **REDACTED_PROCESS_ID** is official. Canary unset. Receipt `PRIVATE_EVIDENCE`.
+- Next live writer is packed `node dist/index.js runtime re-adopt --confirm` only with owner. Do not hand-clear.
+
 ### 2026-09-11 evening — T32 overflow surface absorb
 - Failure class was `no_structured_overflow_surface` (prior grok seat `PRIVATE_EVIDENCE`). Astra absorb died on provider `cyber_policy` before code change.
 - Grok absorb landed default-off modeld CCS intercept (`GROKBOX_MODELD_OVERFLOW_CANARY_*`); not real provider W; not mini Sub2API.
-- Live test2 canary-on disconnected Host CF (eventCount 0 / attempt 0 / no resume). Canary env left unset. Next lever is Host compact slot, not overflow surface.
+- Live test2 canary-on disconnected Host CF (eventCount 0 / attempt 0 / no resume). Canary env left unset. Compact-slot bind landed offline; live re-adopt this pass is `commit-failed`, not overflow surface.
 
 ## Status
 **Open · process ticket · never on the default grok main chain.**
