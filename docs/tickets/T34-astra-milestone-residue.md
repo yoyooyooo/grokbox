@@ -314,7 +314,7 @@ Ranked smallest-first:
 
 1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
-3. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
+3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
 4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
