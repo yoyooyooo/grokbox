@@ -2,6 +2,11 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
+### 2026-09-11 evening — T32 overflow surface absorb
+- Failure class: `no_structured_overflow_surface` (prior grok seat receipt `PRIVATE_EVIDENCE`).
+- GATE-on canary left running; compact-request not fired; do not 4 MiB-pad.
+- Next: Astra absorb on `feat/t32-astra-absorb`.
+
 ## Status
 **Open · process ticket · never on the default grok main chain.**
 
