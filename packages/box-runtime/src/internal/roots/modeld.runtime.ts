@@ -36,17 +36,17 @@ export function admitAllAuthorityLayer(): Layer.Layer<AdmissionAuthority> {
 
 export const MODELD_HOST_COMPACT_ENV = "GROKBOX_MODELD_HOST_COMPACT";
 
-/** Explicit opt-in only. Any other value, including unset, keeps HostCompact off. */
-export function modeldHostCompactEnabled(env: NodeJS.Dict<string> = {}): boolean {
+/** Explicit opt-in only. Any other value, including unset, keeps HostCompact off. Omitted env follows process.env so live `runtime modeld run` can set/read GATE=1. */
+export function modeldHostCompactEnabled(env: NodeJS.Dict<string> = process.env): boolean {
   return env[MODELD_HOST_COMPACT_ENV] === "1";
 }
 
 /** Production attach for ensure/start. Undefined unless the env gate is exactly `1`. */
-export function modeldCompactForIncoming(env: NodeJS.Dict<string> = {}) {
+export function modeldCompactForIncoming(env: NodeJS.Dict<string> = process.env) {
   return modeldHostCompactEnabled(env) ? sameConnectionHostCompactLayer : undefined;
 }
 
-function compactAttach(env?: NodeJS.Dict<string>) {
+function compactAttach(env: NodeJS.Dict<string> = process.env) {
   const compactForIncoming = modeldCompactForIncoming(env);
   return compactForIncoming ? { compactForIncoming } : {};
 }
@@ -108,7 +108,7 @@ export function ensureModeld(options: ModeldRootOptions) {
         counts: options.counts,
         hooks: options.hooks,
         maxClients: options.maxClients,
-        ...compactAttach(options.env),
+        ...compactAttach(options.env ?? process.env),
       });
       yield* Effect.never;
     }).pipe(Effect.provide(layer));
@@ -152,7 +152,7 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
         counts: options.counts,
         hooks,
         maxClients: options.maxClients,
-        ...compactAttach(options.env),
+        ...compactAttach(options.env ?? process.env),
       });
       yield* Deferred.succeed(ready, { kind: "owned", path, generation });
       yield* Effect.never;

@@ -22,13 +22,14 @@ delete process.env.GROKBOX_ALLOW_LIVE_HOST;
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-describe("T32 live-enable readiness (offline, not a production flip)", () => {
+describe("T32 live-enable readiness (default-off; opt-in env=1)", () => {
   test("default-off: unset/true/0 keep HostCompact detached", async () => {
     expect(modeldHostCompactEnabled()).toBe(false);
     expect(modeldHostCompactEnabled({})).toBe(false);
     expect(modeldHostCompactEnabled({ GROKBOX_MODELD_HOST_COMPACT: "true" })).toBe(false);
     expect(modeldHostCompactEnabled({ GROKBOX_MODELD_HOST_COMPACT: "0" })).toBe(false);
     expect(modeldHostCompactEnabled({ GROKBOX_MODELD_HOST_COMPACT: "" })).toBe(false);
+    expect(modeldCompactForIncoming()).toBeUndefined();
     expect(modeldCompactForIncoming({})).toBeUndefined();
     expect(modeldCompactForIncoming({ GROKBOX_MODELD_HOST_COMPACT: "true" })).toBeUndefined();
     expect(modeldCompactForIncoming({ GROKBOX_MODELD_HOST_COMPACT: "0" })).toBeUndefined();
@@ -48,6 +49,22 @@ describe("T32 live-enable readiness (offline, not a production flip)", () => {
   test("opt-in wiring: env=1 attaches sameConnectionHostCompactLayer only", () => {
     expect(modeldHostCompactEnabled({ GROKBOX_MODELD_HOST_COMPACT: "1" })).toBe(true);
     expect(modeldCompactForIncoming({ GROKBOX_MODELD_HOST_COMPACT: "1" })).toBe(sameConnectionHostCompactLayer);
+  });
+
+  test("omitted env follows process.env exact-1 only", () => {
+    const previous = process.env.GROKBOX_MODELD_HOST_COMPACT;
+    try {
+      process.env.GROKBOX_MODELD_HOST_COMPACT = "1";
+      expect(modeldHostCompactEnabled()).toBe(true);
+      expect(modeldCompactForIncoming()).toBe(sameConnectionHostCompactLayer);
+      expect(modeldHostCompactEnabled({})).toBe(false);
+      process.env.GROKBOX_MODELD_HOST_COMPACT = "true";
+      expect(modeldHostCompactEnabled()).toBe(false);
+      expect(modeldCompactForIncoming()).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.GROKBOX_MODELD_HOST_COMPACT;
+      else process.env.GROKBOX_MODELD_HOST_COMPACT = previous;
+    }
   });
 
   test("wire is v4; compact-request is not an initial method", () => {
