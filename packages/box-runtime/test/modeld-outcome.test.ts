@@ -52,6 +52,10 @@ describe("modeld STEP outcome", () => {
     const output = projectModeldStepOutcome(input);
     expect(JSON.stringify(output)).not.toContain("DO_NOT_PUBLISH");
     expect(output).toMatchObject({ stepId: "step", diagnostic: { httpStatus: 400, providerParam: "instructions" } });
+    expect(projectModeldStepOutcome({ ...base, snapshotBytes: 128, messageChars: 40, messageCount: 2, prompt: "DO_NOT_PUBLISH" })).toMatchObject({
+      snapshotBytes: 128, messageChars: 40, messageCount: 2,
+    });
+    expect(JSON.stringify(projectModeldStepOutcome({ ...base, snapshotBytes: 128, prompt: "DO_NOT_PUBLISH" }))).not.toContain("DO_NOT_PUBLISH");
     expect(projectModelStepTerminal(input)).toEqual(output);
     for (const changed of [{ at: "DO_NOT_PUBLISH" }, { phase: "DO_NOT_PUBLISH" }, { stepId: "bad\nvalue" }, { eventCount: Infinity }]) {
       expect(projectModeldStepOutcome({ ...input, ...changed })).toBeNull();
@@ -101,6 +105,9 @@ describe("modeld STEP outcome", () => {
           expect(rows).toHaveLength(1);
           expect(rows[0]).toMatchObject({ stepId: "step-ok", outcome: "ok", phase: "complete" });
           expect(rows[0].eventCount).toBeGreaterThan(0);
+          expect(rows[0].snapshotBytes).toBeGreaterThan(0);
+          expect(rows[0].messageChars).toBeGreaterThan(0);
+          expect(rows[0].messageCount).toBeGreaterThan(0);
         }
       } finally { await f.server.stop(); }
     }
