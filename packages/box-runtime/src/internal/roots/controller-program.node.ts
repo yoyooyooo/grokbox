@@ -33,10 +33,11 @@ import { decideH3LaunchStrategy } from "../process/launch-strategy.ts";
 import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "../process/launch.node.ts";
 import { linuxProcessPort, roleOf, readNamedProcEnv } from "../process/linux.node.ts";
 import { proveStableOfficialState, type RoleClassifier } from "../process/official-chain.ts";
-import type { ProcessPort } from "../process/process-port.ts";
+import type { ProcessIdentity, ProcessPort } from "../process/process-port.ts";
 import { resolvePreloadPath } from "../process/helpers/runtime-helpers.ts";
 import { runTransientAdoptOperation, writeAdoptOpState } from "../process/transient-adopt.ts";
 import type { IdentityMarker, IdentityOpResult } from "../process/identity-op.ts";
+import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
 import { isDeepStrictEqual } from "node:util";
 
 export const liveMutationAttempts = { signal: 0, spawn: 0, guardian: 0 };
@@ -306,6 +307,44 @@ export function observedAdoptGenerationMatches(
     compileReceiptAgrees(marker.compile, expectedCompileReceipt(profile)));
 }
 
+/** Honest unique Host+supervisor from census. Missing/duplicate → null; never invent PIDs. */
+export function uniqueObservedAdoptIdentities(
+  processes: ProcessPort,
+  classify: RoleClassifier,
+): { host: ProcessIdentity; supervisor: ProcessIdentity } | null {
+  let host: ProcessIdentity | null = null;
+  let supervisor: ProcessIdentity | null = null;
+  for (const ident of processes.list()) {
+    const role = classify(ident);
+    if (role === "host") {
+      if (host) return null;
+      host = ident;
+    } else if (role === "supervisor") {
+      if (supervisor) return null;
+      supervisor = ident;
+    }
+  }
+  return host && supervisor ? { host, supervisor } : null;
+}
+
+/**
+ * Commit eligibility does not require prove.mode === "transient-adopt".
+ * Post-handoff orphan Host (ppid ≠ supervisor) is allowed when preload + marker generation match.
+ * Unique supervisor must be observed; mismatch/missing stays ineligible.
+ */
+export function observedAdoptCommitEligible(input: {
+  marker: IdentityMarker | null;
+  host: { pid: number; start: number };
+  supervisor: { pid: number } | null;
+  profile: NonNullable<ReturnType<typeof loadDurableReviewedProfile>>;
+  preloadSha256: string;
+  hasGrokboxPreload: boolean;
+}): boolean {
+  if (!input.supervisor || !Number.isInteger(input.supervisor.pid) || input.supervisor.pid <= 0) return false;
+  if (!input.hasGrokboxPreload) return false;
+  return observedAdoptGenerationMatches(input.marker, input.host, input.profile, input.preloadSha256);
+}
+
 function readMarkerFile(path: string): IdentityMarker | null {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as IdentityMarker;
@@ -393,27 +432,50 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
     execPath,
     hostBundle: LIVE_HOST_BUNDLE,
   });
-  const proven = proveStableOfficialState(ports.processes, ports.classify, { gatewayPid: ports.readGatewayPid() });
-  if (!proven.ok) return emptyAdoptResult(proven.code === "missing-role" ? "host-missing" : proven.code);
   const profile = loadDurableReviewedProfile(command.boxRoot);
   if (!profile) return emptyAdoptResult("missing-source");
+  const preloadSha = diskPreloadSha256(preloadPath);
+  if (!preloadSha) return emptyAdoptResult("preload-unavailable");
+
+  const tryCommitObserved = async (): Promise<IdentityOpResult | null> => {
+    const identities = uniqueObservedAdoptIdentities(ports.processes, ports.classify);
+    if (!identities) return null;
+    const marker = readMarkerFile(markerPath);
+    if (!observedAdoptCommitEligible({
+      marker,
+      host: identities.host,
+      supervisor: identities.supervisor,
+      profile,
+      preloadSha256: preloadSha,
+      hasGrokboxPreload: ports.hasGrokboxPreload(identities.host),
+    })) {
+      return null;
+    }
+    return await commitObservedAdopt({
+      command,
+      ephemeralRoot,
+      host: identities.host,
+      supervisor: identities.supervisor,
+      marker: marker!,
+      profile,
+    });
+  };
+
+  const observed = await tryCommitObserved();
+  if (observed) return observed;
+
+  const proven = proveStableOfficialState(ports.processes, ports.classify, { gatewayPid: ports.readGatewayPid() });
+  if (!proven.ok) return emptyAdoptResult(proven.code === "missing-role" ? "host-missing" : proven.code);
   const host = proven.chain.host;
   const supervisor = proven.chain.supervisor;
   const marker = readMarkerFile(markerPath);
-  const preloadSha = diskPreloadSha256(preloadPath);
-  if (!preloadSha) return emptyAdoptResult("preload-unavailable");
-  // A matching pathname (or today's bytes at that path) says nothing about already-loaded code.
-  if (proven.mode === "transient-adopt" && ports.hasGrokboxPreload(host) &&
-      observedAdoptGenerationMatches(marker, host, profile, preloadSha)) {
-    return await commitObservedAdopt({ command, ephemeralRoot, host, supervisor, marker: marker!, profile });
-  }
   const strategy = decideH3LaunchStrategy({
     supervisor,
     reviewedAdoptCapability: reviewOfficialAdoptCapability(supervisor),
   });
   const canSpawnTransient = command.strategy === "transient" && strategy === "transient-adopt-candidate";
   if (!canSpawnTransient) {
-    if (proven.mode === "transient-adopt" && marker && !observedAdoptMarkerMatches(marker, host, command.operationId, preloadSha ?? undefined)) {
+    if (proven.mode === "transient-adopt" && marker && !observedAdoptMarkerMatches(marker, host, command.operationId, preloadSha)) {
       return emptyAdoptResult("marker-generation-mismatch");
     }
     if (proven.mode !== "direct-launch") return emptyAdoptResult("adopt-unproven");
@@ -427,7 +489,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
     readNamedProcEnv(supervisor.pid, IDENTITY_LAUNCH_ALLOWLIST),
   );
   const expectedMode = command.strategy === "transient" ? "route" : "identity";
-  return await runTransientAdoptOperation({
+  const spawned = await runTransientAdoptOperation({
     processes: ports.processes,
     classify: ports.classify,
     reviewedProfile: profile,
@@ -469,8 +531,13 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
     },
     expectedMode,
     hasGrokboxPreload: ports.hasGrokboxPreload,
+    modeldReady: () => probeModeldHealth(ephemeralRoot),
     now: () => Date.now(),
   });
+  if (spawned.ok) return spawned;
+  const after = await tryCommitObserved();
+  if (after) return { ...after, signaled: spawned.signaled || after.signaled };
+  return spawned;
 }
 
 export function liveControlResourcesLayer(

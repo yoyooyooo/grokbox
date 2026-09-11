@@ -430,7 +430,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       const shaAfter = ctx.diskSha();
       const windowMs = Math.max(0, ctx.now() - started);
       const finalCheck = async (): Promise<string | null> => {
-        if (expectedMode === "route" && !await ctx.modeldReady?.()) return "modeld_not_ready";
+        if (expectedMode === "route" && ctx.modeldReady && !await ctx.modeldReady()) return "modeld_not_ready";
         if (ctx.diskSha() !== shaBefore) return "disk-sha-changed";
         const current = findAdoptedHostState(ctx.processes, ctx.classify, {
           gatewayPid: ctx.readGatewayPid(), expectedHost: stableHost,
