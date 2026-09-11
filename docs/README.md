@@ -26,7 +26,7 @@ This documentation separates current source truth, accepted product behavior, up
 - [Host / App live projections](maintainers/host-app-projections.md): sidebar Working vs composer `currentActivity` vs tray vs nonce; grokbox managed-turn activity gap. Not App pixel proof.
 - [Managed context continuity](maintainers/managed-context-continuity.md): forward prevention fixes and end-to-end acceptance for managed context loss; historical cause closed-notProven, implementation and qualification still pending.
 - [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
-- [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): default-off still fail-closed; owner unlocked GATE-on + live overflow dogfood (evening 2026-09-11); canary CCS intercept default-off (test2-scoped); live compact journal proof still required.
+- [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): default-off still fail-closed; owner unlocked GATE-on; canary CCS intercept default-off; live test2 intercept hit Host CF disconnect (no resume).
 - [E07 Path B Host admission](maintainers/e07-path-b-host-admission.md): D2-approved purpose slices and source/packed admission proofs; full E07/native qualification remains partial.
 - [T29 command/API boundary incubate](maintainers/t29-command-boundary-incubate.md): shared commands/status/ConfigurationWrite inventory; no console/, no fake CAS, not post-T28 default chain.
 - [Release runbook](maintainers/release.md)

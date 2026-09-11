@@ -5,7 +5,7 @@
 ### 2026-09-11 evening — T32 overflow surface absorb
 - Failure class was `no_structured_overflow_surface` (prior grok seat `PRIVATE_EVIDENCE`). Astra absorb died on provider `cyber_policy` before code change.
 - Grok absorb landed default-off modeld CCS intercept (`GROKBOX_MODELD_OVERFLOW_CANARY_*`); not real provider W; not mini Sub2API.
-- Do not 4 MiB-pad. Live journal overflow → compact-request → resume on test2 is the remaining proof, not an Astra leftover.
+- Live test2 canary-on disconnected Host CF (eventCount 0 / attempt 0 / no resume). Canary env left unset. Next lever is Host compact slot, not overflow surface.
 
 ## Status
 **Open · process ticket · never on the default grok main chain.**
