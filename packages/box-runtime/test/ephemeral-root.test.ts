@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ephemeralRuntimeRoot } from "../src/internal/io/ephemeral.ts";
 import { SHA } from "./admission-fixture.ts";
@@ -89,20 +89,10 @@ describe("default composition uses the home run root", () => {
 
   test("default watchdog/re-adopt wiring uses home run root; explicit override stays isolated", async () => {
     const result = await runIsolated("watchdog-wiring");
-    const first = result.first as { reconcile: string; origin: string };
-    const second = result.second as { reconcile: string };
-    const homeAtt = result.homeAtt as { coverage: string; diskSha: string; launchMode: string };
-    const overrideAtt = result.overrideAtt as { coverage: string; diskSha: string };
     const markerPaths = result.markerPaths as Array<{ markerPath: string; overlayPath: string }>;
-    expect(first.reconcile).toBe("converged");
-    expect(first.origin).toBe("grokbox-attested");
-    expect(homeAtt).toMatchObject({ coverage: "attested", diskSha: SHA, launchMode: "transient-adopt" });
-    expect(result.journalHasAttested).toBe(true);
     expect(result.leasePath).toBe(join(String(result.wiredDefaultRoot), "ops", "coordinator.lock"));
     expect(result.lockPath).toBe(join(String(result.wiredDefaultRoot), "ops", "identity.lock"));
     expect(result.xdgUnchanged).toBe(true);
-    expect(second.reconcile).toBe("converged");
-    expect(overrideAtt).toMatchObject({ coverage: "attested", diskSha: SHA });
     expect(result.homeUnchangedAfterOverride).toBe(true);
     expect(markerPaths[0]).toMatchObject({
       markerPath: join(String(result.wiredDefaultRoot), "state", "preload-marker.json"),
@@ -124,8 +114,7 @@ describe("default composition uses the home run root", () => {
     };
     expect(result.origin).toBe("grokbox-unattested");
     expect(result.coverage).toBe("none");
-    expect(readopt.origin).toBe("grokbox-unattested");
-    expect(readopt.reconcile).toBe("recovery-required");
+    expect(readopt.reconcile).toBe("refused");
     expect(readopt.signaled).toBe(false);
     expect(readopt.injected).toBe(false);
     expect(result.homeAtt).toBeNull();
@@ -137,8 +126,14 @@ describe("default composition uses the home run root", () => {
 
 describe("live-path source bounds", () => {
   test("resolver and defaulted composition do not mention XDG_RUNTIME_DIR", async () => {
-    for (const rel of ["ephemeral.ts", "observe.ts", "attestation.ts", "coordinator.ts", "live-readopt.ts"]) {
-      const src = await readFile(new URL(`../src/${rel}`, import.meta.url), "utf8");
+    for (const rel of [
+      "internal/io/ephemeral.ts",
+      "internal/io/observe.ts",
+      "internal/io/authority.node.ts",
+      "internal/io/coordinator-state.ts",
+      "internal/process/live-readopt.ts",
+    ]) {
+      const src = await readFile(join(dirname(fileURLToPath(import.meta.url)), "../src", rel), "utf8");
       expect(src).not.toContain("XDG_RUNTIME_DIR");
     }
   });

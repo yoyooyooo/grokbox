@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { runWatchdogTick } from "../src/internal/roots/controller.runtime.ts";
 import {
   appendEvent,
   appendHostStreamRejected,
@@ -20,7 +19,6 @@ import {
   TURN_SEAM_TERMINAL_RETENTION,
 } from "../src/internal/io/journal.node.ts";
 import { eventsPath } from "../src/internal/io/paths.ts";
-import { FakeProcessTree } from "./fake-tree.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
 
@@ -452,48 +450,4 @@ describe("append-only host journal and watchdog compaction", () => {
     expect(rows.some((row) => row.name === "inject_phase")).toBe(true);
   });
 
-  test("runWatchdogTick composition root compacts control-plane and terminals independently", async () => {
-    const dir = await root();
-    const ephemeralRoot = await mkdtemp(join(tmpdir(), "grokbox-wd-eph-"));
-    const tree = new FakeProcessTree();
-    const extra = 20;
-    for (let i = 0; i < CONTROL_PLANE_EVENT_RETENTION + extra; i += 1) {
-      await appendEvent(dir, { name: "disk_sha_observed", at: AT, sha: `sha-${i}` });
-    }
-    for (let i = 0; i < TURN_SEAM_TERMINAL_RETENTION + extra; i += 1) {
-      expect(await appendTurnSeamTerminal(dir, turnEvent(`inv-tick-${i}`))).toBe("written");
-    }
-    expect(await linesOf(dir)).toHaveLength(
-      CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION + extra * 2,
-    );
-
-    const result = await runWatchdogTick({
-      root: dir,
-      desired: { version: 1, mode: "observe" },
-      models: { version: 1, models: {}, assignments: { main: null, agents: {} } },
-      processes: tree,
-      classify: () => null,
-      ephemeralRoot,
-      diskSha: "sha-reviewed",
-      now: () => 10,
-      isoNow: () => AT,
-    });
-    expect(result.injected).toBe(false);
-    expect(result.signaled).toBe(false);
-    expect(tree.signals).toEqual([]);
-
-    const rows = parsed(await linesOf(dir));
-    const control = rows.filter((row) => row.name !== "turn_seam_terminal");
-    const turns = rows.filter((row) => row.name === "turn_seam_terminal");
-    expect(rows.length).toBeLessThanOrEqual(CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION);
-    expect(control.length).toBeLessThanOrEqual(CONTROL_PLANE_EVENT_RETENTION);
-    expect(turns.length).toBeLessThanOrEqual(TURN_SEAM_TERMINAL_RETENTION);
-    expect(control.at(-1)).toMatchObject({
-      name: "disk_sha_observed",
-      sha: `sha-${CONTROL_PLANE_EVENT_RETENTION + extra - 1}`,
-    });
-    expect(turns.at(-1)).toMatchObject({
-      invocationId: `inv-tick-${TURN_SEAM_TERMINAL_RETENTION + extra - 1}`,
-    });
-  });
 });

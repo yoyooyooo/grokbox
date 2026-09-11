@@ -83,7 +83,7 @@ describe("runtime helper published layout", () => {
       const needle = (spy.mock.calls[0]?.[0] as { preloadNeedle?: string } | undefined)?.preloadNeedle;
       expect(typeof needle).toBe("string");
       expect(existsSync(needle!)).toBe(true);
-      const result = await runManualReadopt({
+      await expect(runManualReadopt({
         confirmed: true,
         root,
         desired: { version: 1, mode: "identity" },
@@ -91,9 +91,7 @@ describe("runtime helper published layout", () => {
         now: () => 0,
         ...wired,
         freshDiskSha: () => "none",
-      });
-      expect(result.injected).toBe(false);
-      expect(result.signaled).toBe(false);
+      })).rejects.toMatchObject({ code: "invalid_usage" });
     } finally {
       spy.mockRestore();
     }

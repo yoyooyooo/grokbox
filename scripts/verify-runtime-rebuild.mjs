@@ -39,7 +39,7 @@ const CASES = {
     ["bun", "test", "packages/box-runtime/test/host-entry.test.ts", "packages/box-runtime/test/host-session.test.ts", "packages/box-runtime/test/host-fullstream.test.ts", "packages/box-runtime/test/runtime-pipeline.test.ts"],
   ],
   control: [
-    ["bun", "test", "packages/runtime-kernel/test/controller.test.ts", "packages/box-runtime/test/controller-generation.test.ts", "packages/box-runtime/test/controller-io.test.ts", "test/runtime-cli.test.ts"],
+    ["bun", "test", "packages/runtime-kernel/test/controller.test.ts", "packages/box-runtime/test/controller-generation.test.ts", "packages/box-runtime/test/controller-io.test.ts", "packages/box-runtime/test/legacy-executor-removed.test.ts", "test/runtime-cli.test.ts"],
   ],
   "raw-output": [
     ["bun", "test", "packages/box-runtime/test/controller-io.test.ts", "-t", "raw output"],

@@ -103,12 +103,15 @@ describe("live H3 preflight (zero-signal abort)", () => {
     ).toBe("transient-adopt-candidate");
   });
 
-  test("runLiveIdentityInject without reviewed profile stays blocked", async () => {
-    const result = await runLiveIdentityInject();
-    expect(result.ok).toBe(false);
-    expect(result.recoveryRequired).toBe(false);
-    expect(result.code).toBe("live-host-blocked");
-    expect(result.coverage).toBe("none");
+  test("runLiveIdentityInject stays blocked even with profile paths", async () => {
+    const empty = await runLiveIdentityInject();
+    expect(empty).toMatchObject({ ok: false, recoveryRequired: false, code: "live-host-blocked", coverage: "none" });
+    const withPaths = await runLiveIdentityInject({
+      root: "/tmp/legacy-h3-inject",
+      preloadPath: "/tmp/preload.cjs",
+      reviewedProfilePath: "/tmp/reviewed.json",
+    });
+    expect(withPaths).toMatchObject({ ok: false, recoveryRequired: false, code: "live-host-blocked", coverage: "none" });
   });
 
   test("temp supervisor is not classified as host; launch spec is allowlisted", () => {

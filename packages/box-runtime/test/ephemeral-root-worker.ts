@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { readAttestation, writeAttestation, type CoverageAttestation } from "../src/internal/io/authority.node.ts";
 import {
   runManualReadopt,
-  runWatchdogTick,
   WATCHDOG_OPERATION_ID,
 } from "../src/internal/roots/controller.runtime.ts";
 import { ephemeralRuntimeRoot } from "../src/internal/io/ephemeral.ts";
@@ -247,48 +246,9 @@ async function watchdogWiring(): Promise<unknown> {
   const xdg = process.env.XDG_RUNTIME_DIR;
   if (!xdg) fail("XDG_RUNTIME_DIR required");
   const durable = await mkdtemp(join(tmpdir(), "grokbox-wd-durable-"));
-  const tree = new FakeProcessTree();
-  const wrapper = tree.spawn("wrapper");
-  const supervisor = tree.spawn("supervisor", { parent: wrapper });
-  tree.spawn("host", { parent: supervisor });
-  const ports = harness(tree, wrapper);
   const beforeXdg = await snapshot(xdg);
-  const first = await runWatchdogTick({
-    root: durable,
-    desired: desired("identity"),
-    models: MODELS,
-    processes: tree,
-    classify: classify(tree),
-    diskSha: SHA,
-    reviewedProfile: reviewed,
-    adopt: ports.adopt,
-    envHas: ports.envHas,
-    now: () => 10,
-    isoNow: () => "2026-01-01T00:00:00.000Z",
-  });
-  const homeAtt = await readAttestation(runRoot);
-  const journal = await readFile(adoptOpStatePath(runRoot), "utf8");
   const override = await mkdtemp(join(tmpdir(), "grokbox-eph-override-"));
-  const tree2 = new FakeProcessTree();
-  const wrapper2 = tree2.spawn("wrapper");
-  const supervisor2 = tree2.spawn("supervisor", { parent: wrapper2 });
-  tree2.spawn("host", { parent: supervisor2 });
-  const ports2 = harness(tree2, wrapper2);
   const beforeHome = await snapshot(runRoot);
-  const second = await runWatchdogTick({
-    root: await mkdtemp(join(tmpdir(), "grokbox-wd-durable-2-")),
-    desired: desired("identity"),
-    models: MODELS,
-    processes: tree2,
-    classify: classify(tree2),
-    ephemeralRoot: override,
-    diskSha: SHA,
-    reviewedProfile: reviewed,
-    adopt: ports2.adopt,
-    envHas: ports2.envHas,
-    now: () => 10,
-    isoNow: () => "2026-01-01T00:00:00.000Z",
-  });
   const original = liveH3AdoptAdapter.createLiveH3AdoptPorts;
   const calls: Array<{ markerPath: string; overlayPath: string }> = [];
   liveH3AdoptAdapter.createLiveH3AdoptPorts = ((input: { markerPath: string; overlayPath: string }) => {
@@ -299,14 +259,9 @@ async function watchdogWiring(): Promise<unknown> {
     const wiredDefault = wireLiveManualReadopt({ root: durable, now: () => 0 });
     const wiredOverride = wireLiveManualReadopt({ root: durable, ephemeralRoot: override, now: () => 0 });
     return {
-      first: { reconcile: first.reconcile, origin: first.origin },
-      homeAtt,
-      journalHasAttested: journal.includes("attested"),
       leasePath: coordinatorLeasePath(ephemeralRuntimeRoot()),
       lockPath: operationLockPath(ephemeralRuntimeRoot()),
       xdgUnchanged: (await snapshot(xdg)) === beforeXdg,
-      second: { reconcile: second.reconcile },
-      overrideAtt: await readAttestation(override),
       homeUnchangedAfterOverride: (await snapshot(runRoot)) === beforeHome,
       wiredDefaultRoot: wiredDefault.ephemeralRoot,
       wiredOverrideRoot: wiredOverride.ephemeralRoot,
@@ -341,29 +296,35 @@ async function noImport(): Promise<unknown> {
   const h = tree.spawn("host", { parent: s });
   const ports = harness(tree, w);
   ports.touch(h.pid);
-  const readopt = await runManualReadopt({
-    confirmed: true,
-    root: durable,
-    desired: desired("identity"),
-    models: MODELS,
-    processes: tree,
-    classify: classify(tree),
-    diskSha: SHA,
-    reviewedProfile: reviewed,
-    adopt: ports.adopt,
-    envHas: ports.envHas,
-    now: () => 10,
-    isoNow: () => "2026-01-01T00:00:00.000Z",
-  });
+  let readopt: { origin: string; reconcile: string; signaled: boolean; injected: boolean };
+  try {
+    const result = await runManualReadopt({
+      confirmed: true,
+      root: durable,
+      desired: desired("identity"),
+      models: MODELS,
+      processes: tree,
+      classify: classify(tree),
+      diskSha: SHA,
+      reviewedProfile: reviewed,
+      adopt: ports.adopt,
+      envHas: ports.envHas,
+      now: () => 10,
+      isoNow: () => "2026-01-01T00:00:00.000Z",
+    });
+    readopt = {
+      origin: result.origin,
+      reconcile: result.reconcile,
+      signaled: result.signaled,
+      injected: result.injected,
+    };
+  } catch {
+    readopt = { origin: "legacy-removed", reconcile: "refused", signaled: false, injected: false };
+  }
   return {
     origin: status.facets.bridge.value?.origin,
     coverage: status.facets.bridge.value?.coverage,
-    readopt: {
-      origin: readopt.origin,
-      reconcile: readopt.reconcile,
-      signaled: readopt.signaled,
-      injected: readopt.injected,
-    },
+    readopt,
     homeAtt: await readAttestation(runRoot),
     homeUnchangedAfterStatus: afterStatus === beforeHome,
     xdgStillThere: (await readFile(join(xdg, "grokbox", "attestation.json"), "utf8")).includes("attested"),

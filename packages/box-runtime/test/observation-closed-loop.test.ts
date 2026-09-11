@@ -1,24 +1,49 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { attestationPath } from "../src/internal/io/authority.node.ts";
+import { attestationPath, writeAttestation } from "../src/internal/io/authority.node.ts";
 import { snapshotContracts, CONTRACT_OBSERVATION_LIMIT } from "../src/internal/io/contracts.ts";
-import { runManualReadopt, runWatchdogTick } from "../src/internal/roots/controller.runtime.ts";
+import { runManualReadopt, runWatchdogTick, WATCHDOG_OPERATION_ID } from "../src/internal/roots/controller.runtime.ts";
 import { observeEvents } from "../src/internal/io/journal.node.ts";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { projectLiveStatus, readContracts, readEvents } from "../src/internal/io/observe.ts";
 import { coordinatorStatePath, desiredPath, eventsPath, modelsPath, reviewedProfilePath } from "../src/internal/io/paths.ts";
-import { adoptOpStatePath } from "../src/internal/process/transient-adopt.ts";
-import { SHA, SOURCE } from "./admission-fixture.ts";
+import { adoptOpStatePath, writeAdoptOpState } from "../src/internal/process/transient-adopt.ts";
+import { SHA, SOURCE, reviewed } from "./admission-fixture.ts";
 import { receiptFixture } from "./receipt-fixture.ts";
 import { snapshotTree } from "./observation-fixture.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
 
 async function configuredFixture(adopt = true) {
-  const f = await receiptFixture();
-  if (adopt) expect((await runManualReadopt(f.input)).reconcile).toBe("converged");
+  const f = await receiptFixture("route", adopt);
   await fs.mkdir(dirname(desiredPath(f.root)), { recursive: true });
+  if (adopt) {
+    await writeAttestation(f.ephemeralRoot, {
+      mode: "route",
+      coverage: "attested",
+      modeld: true,
+      diskSha: SHA,
+      pid: f.host.pid,
+      start: f.host.start,
+      identity: f.host,
+      launchMode: "transient-adopt",
+      at: new Date(0).toISOString(),
+      profileId: reviewed.profileId,
+      transformedSha: reviewed.transformedSourceSha256,
+    });
+    await fs.writeFile(coordinatorStatePath(f.root), JSON.stringify({
+      version: 1, circuit: "closed", mutationCount: 0, attemptedKeys: [],
+    }));
+    await writeAdoptOpState(f.ephemeralRoot, {
+      launchMode: "transient-adopt",
+      phase: "attested",
+      operationId: WATCHDOG_OPERATION_ID,
+      tempSupervisor: null,
+      adoptingSupervisor: f.supervisor,
+      host: f.host,
+    });
+  }
   await fs.writeFile(desiredPath(f.root), JSON.stringify(f.input.desired));
   await fs.writeFile(modelsPath(f.root), JSON.stringify(f.input.models));
   const status = () => projectLiveStatus({ root: f.root, ephemeralRoot: f.ephemeralRoot,
@@ -38,8 +63,8 @@ describe("desired/actual observation closed loop", () => {
     expect(await snapshotTree(f.root)).toEqual(before);
     for (const confirmed of [false, true]) {
       const input = { ...f.input, desired: { version: 1 as const, mode: "disabled" as const }, confirmed };
-      const result = confirmed ? await runManualReadopt(input) : await runWatchdogTick(input);
-      expect(result).toMatchObject({ reconcile: "pending", reason: "rollback_pending", signaled: false, injected: false });
+      if (confirmed) await expect(runManualReadopt(input)).rejects.toMatchObject({ code: "invalid_usage" });
+      else await expect(runWatchdogTick(input)).rejects.toMatchObject({ code: "invalid_usage" });
       expect(f.tree.signals).toEqual(signals);
       expect(f.tree.alive(f.gateway.pid)).toBe(true);
     }
@@ -163,7 +188,7 @@ describe("desired/actual observation closed loop", () => {
     expect(status.facets.recovery.gap).toBe("invalid");
     expect(status.facets.bridge.value?.coverage).toBe("window-open");
     expect(await snapshotTree(f.root)).toEqual(before);
-    expect(await runManualReadopt(f.input)).toMatchObject({ reconcile: "recovery-required", signaled: false, injected: false });
+    await expect(runManualReadopt(f.input)).rejects.toMatchObject({ code: "invalid_usage" });
   });
 
   test("models arrays cannot silently become empty valid objects", async () => {
