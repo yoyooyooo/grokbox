@@ -39,6 +39,8 @@ Do not rewrite history of earlier sections. Do not reopen closed P1s that Astra 
 ## Related
 [impl-spec S9](../roadmap/box-runtime-impl-spec.md#proof) · milestone loop in agent memory · M1 relook `PRIVATE_EVIDENCE`
 
+**Current integration tip `pre-publication-revision` (2026-09-11):** later E07/HSO/T29/T32 work did **not** close SHA-pinned M1–M4 residue. See [Tip pre-publication-revision status](#tip-pre-publication-revision--2026-09-11) for what that tip settled vs what remains owner-triage.
+
 ## M1 / T20 — pre-publication-revision — 2026-09-08
 
 - Reviewed SHA: `pre-publication-revision`; source references below are pinned to this SHA, not the current branch tip.
@@ -290,3 +292,32 @@ Offline contract-e2e only; no packed preload, native Host, live adopt, or produc
 - **E09 full reject-old oracle — still held:** needs independent pin/currentness + real old-vs-source failure consumption before any E09 pass claim.
 - **Packed E01–E08 session factory — still held:** `packed_preload_does_not_export_session_factory`; artifact lane remains fail-closed.
   - Evidence: `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`.
+
+## Tip pre-publication-revision — 2026-09-11
+
+Integration tip `pre-publication-revision` on `feat/box-runtime-v2`. This section does **not** rewrite SHA-pinned M1–M4 items above. It records what later slices settled or deferred, so the owner does not re-dig closed queues.
+
+### Settled or deferred on this tip (not T34 reopen)
+
+| Queue | Tip settlement | Still T34? |
+|---|---|---|
+| T32 live overflow / Sub2API small-W / 4 MiB pads | Owner: HostCompact **default-off**; offline gates enough; live dogfood deferred ([t32-live-enable-readiness](../maintainers/t32-live-enable-readiness.md)) | No — parked, do not re-dig |
+| E07 Path B grokbox aux request-kind | Landed `pre-publication-revision`; Host purpose seam still D2; E07 `auxiliary_unqualified` | Host D2 only |
+| HSO-4 lexical + Acorn workers | Landed `pre-publication-revision` / `pre-publication-revision`; SlicePatch emit / two-slice Host / `_compile` mutant deferred | HSO-4 remainder, not M1–M4 |
+| T29 command/API incubate | Landed `pre-publication-revision`; no console/, no fake CAS | Browser MVP / real second-writer CAS still owner-gated |
+| T32 v4 wire + Host CF + classifier + readiness | Landed W-T32-A…D; GATE stays unset | Live enable not a tip gate |
+
+### Still open residue (owner triage; not grok main chain)
+
+Ranked smallest-first:
+
+1. **E08-N4** — continuity fixture treats `finish("abort")` as live delivery. Smallest *code-ready* residue if owner wants a slice; test-only, no Host mutation.
+2. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
+3. **E09** — reject-old oracle + packed session factory; artifact lane fail-closed.
+4. **HSO-4 remainder** — emit literal SlicePatch from bindings; synthetic two-slice Host behavior; preload `_compile` mutant.
+5. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
+6. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M1 P1-03 import-time proof fail-open; M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
+
+### Smallest next residue slice
+
+**If code:** E08-N4 fixture consumer (abort ≠ delivery). **If docs-only / no dispatch:** this section is enough; do not auto-start E07 D2, E09 packed factory, T29 CAS, or T32 GATE.
