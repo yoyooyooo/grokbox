@@ -204,8 +204,7 @@ Git-object-checked `pre-publication-revision` archive; eight residual changed fi
 - **P1-02 — still held, narrowed to root/profile provenance:** `packages/box-runtime/src/internal/host/modeld-produce.node.ts:29–36,107–112` chooses `t21-state-root` / `t21-independent-root` and `host-abi-v1` from message shape or independentRoot presence; `session-hook.ts:55,84–93` consumes compile.transformedSha256 but does not bind root qualification to the supplied compile/profile identity. Under Node20, a consistent synthetic compiled profile declaring independent-root but providing only state-system input is relabeled `t21-state-root` and reaches SDK HTTP1. An unsupported compiled profile is likewise relabeled and dispatched (HTTP1, two synthetic credential-getter reads in each case). Proper state/independent positive controls also work. Thus successful root preservation does not establish the profile-bound provenance required by impl-spec S4/S8; this is not evidence of a live unauthorized adoption, real credential leak, or paid request.
   - Evidence: `PRIVATE_EVIDENCE`, `node-source-seam.json`, `node-roots.json`, `final-scope.json`; reproducer: `node-probe.ts` / `run-node.mjs` alongside them. The wire observer records request and accepted frames; qualification comparisons select the request carrying snapshot/HostEpoch.
   - Why not forced onto grok: the normal review/relook/handoff is complete. Preserve this remaining source-of-qualification disagreement for owner triage, without another implementation round or a new main-chain gate.
-- **P2-01 — still material explicit removal debt:** `packages/box-runtime/src/internal/host/session.ts:20–24,83–117,333,424–437` retains the internal toolCalls alias, its response normalizer/PromptSession wrapper, and the fixture helper's default 1/1/2 usage. The residual receipt explicitly leaves the alias unproven. This confirms the original T26 removal-contract item, not a new finding or evidence that current managed inference invents usage or replays tools; the default-usage helper is not the managed producer's billing source.
-  - Evidence: the Git-blob-checked source at this tip, the first/relook reports above, and `PRIVATE_EVIDENCE`. Retained for owner cleanup triage only, not a grok handoff.
+- **P2-01 — closed** on `639ddc0` (offline removal; not a live Host/tool-replay or billing claim). `SessionMessage` no longer carries an internal `toolCalls` alias; `normalizeHostResponse` does not rehydrate one into content; `createManagedPromptSession` no longer defaults 1/1/2 usage. Host inbound window `toolCalls` in `context-codec` is unchanged. Original SHA-pinned finding: `PRIVATE_EVIDENCE`; receipt `PRIVATE_EVIDENCE`.
 
 ### Evidence ceiling
 
@@ -321,7 +320,7 @@ Ranked smallest-first:
 1. **E07 Host purpose seam — admission landed `pre-publication-revision` (2026-09-11 update).** D2 is approved. Source/packed Host admission passes; complete E07/native consumer qualification is still partial, not an approval blocker or a Path B closure.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command landed `pre-publication-revision`; CAS only when a real second writer exists; browser MVP separately authorized.
-4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal. M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
+4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal. T26 P2-01 toolCalls alias closed on `639ddc0` (offline only). M2 P2-01 snapshot parse/immutability closed on `pre-publication-revision` / `pre-publication-revision` (offline only). M3 T27 journal `at` header + status `writeFile` spy gap closed on `pre-publication-revision` (offline only).
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
@@ -341,3 +340,24 @@ Owner D2 approval on 2026-09-11 supersedes the approval blocker recorded at tip 
 - **Deployment:** no re-adopt in this slice. No production profile/state/assignment writes, circuit clearing or attestation fabrication. Build output is not a loaded-live receipt.
 
 Current home: [E07 Host admission](../maintainers/e07-path-b-host-admission.md). T25–T28 and T32 residues are not reopened by this change.
+
+## M4 / T26 P2-01 close — 639ddc0 — 2026-09-11
+
+- Base tip: `pre-publication-revision` on `feat/t26-residue`.
+- Close SHA: `639ddc05a5c01577ebedc82930b51507ef0cebff`.
+- Receipt: `PRIVATE_EVIDENCE`.
+- Disposition: **P2-01 closed offline.** P1-02 still held. No live Host/re-adopt, no T28, no T32/canary in this lane.
+
+### Closed at this tip
+
+- **P2-01 — closed:** internal `toolCalls` alias removed from `SessionMessage` / streaming finish; `normalizeHostResponse` no longer folds an alias into content; managed fixture helper no longer invents 1/1/2 usage. Runtime + source tests fail if the alias or fixture default returns. `asHostPromptSession` remains the Host ABI wrapper (not a parallel shim). Host inbound window aliases in `context-codec` / executor state are unchanged.
+  - Evidence: `packages/box-runtime/test/host-session.test.ts`, `session.test.ts`, `stream-contract.test.ts`; `bun run typecheck`.
+
+### Items
+
+- **P1-02 — still held:** `inferRootFromHostSelection` still labels `t21-state-root` / `t21-independent-root` from message shape; `session-hook.ts` still uses compile only for `transformedSha256`. Binding root qualification to compile/profile identity is not a small removal and would fail-close unknown live compiled profiles that currently dispatch via Host-shape inference. Left residual rather than widening the live surface.
+  - Evidence (unchanged SHA-pinned vectors): `PRIVATE_EVIDENCE`, `final-scope.json`.
+
+### Evidence ceiling
+
+Offline contract tests and typecheck only. `verify-runtime-rebuild.mjs stream` still has a pre-existing `pre-publication-revision` failure (`managed hook returns Host session not runtime_not_ready`) from T32 missing-turnId `compact_passthrough`; host-session ABI cases in that gate pass. Not live adopt, not packed preload, not T26 ticket close, not a billing claim.
