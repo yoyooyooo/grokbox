@@ -71,14 +71,26 @@ describe("source Host SHA unit and bun packed smoke", () => {
     expect(probe.stdout).toContain("preload-probe-ok");
   });
 
-  test("E09 reject-old oracle: packed pin matches dist/preload.cjs", () => {
-    expect(existsSync(PACKED)).toBe(true);
+  test("E09 reject-old oracle: pin matches pack from source", () => {
     expect(existsSync(PACKED_PIN)).toBe(true);
     const pin = readFileSync(PACKED_PIN, "utf8").trim();
     expect(pin).toMatch(/^[a-f0-9]{64}$/);
-    const packed = readFileSync(PACKED);
-    expect(sha256Bytes(packed)).toBe(pin);
-    expect(sha256Bytes(Buffer.concat([packed, Buffer.from("\n// drift\n")]))).not.toBe(pin);
+    expect(pin).not.toBe("0".repeat(64));
+    const packed = spawnSync("bun", ["scripts/pack-runtime-helpers.mjs"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GROKBOX_ALLOW_LIVE_HOST: "",
+        GROKBOX_PACKED_SESSION_FACTORY: "",
+        GROKBOX_PACKED_PRELOAD: "",
+      },
+    });
+    expect(packed.status).toBe(0);
+    expect(existsSync(PACKED)).toBe(true);
+    const bytes = readFileSync(PACKED);
+    expect(sha256Bytes(bytes)).toBe(pin);
+    expect(sha256Bytes(Buffer.concat([bytes, Buffer.from("\n// drift\n")]))).not.toBe(pin);
     expect(sha256Bytes(Buffer.alloc(0))).not.toBe(pin);
   });
 

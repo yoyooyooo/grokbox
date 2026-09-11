@@ -100,22 +100,35 @@ function parseBunTest(combined) {
 function e09OracleStatus(parsed, extra = {}) {
   const failed = parsed.failNames.some((name) => name.includes("E09 reject-old"));
   const consumer = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: old error-text consumer"));
-  const pin = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: packed pin"));
+  const pin = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: pin matches pack from source"))
+    || parsed.passNames.some((name) => name.includes("E09 reject-old oracle: packed pin"));
   if (failed) return { id: "E09", status: "fail", tests: parsed.failNames.filter((name) => name.includes("E09 reject-old")) };
+  const oracle = consumer && pin;
+  if (!oracle) {
+    return { id: "E09", status: "unavailable", reason: "e09_reject_old_oracle_not_qualified" };
+  }
   if (extra.requirePacked) {
-    if (extra.loadOk && extra.pinOk && consumer && pin) {
+    if (extra.loadOk && extra.pinOk && extra.packedOk) {
       return { id: "E09", status: "pass", tests: parsed.passNames.filter((name) => name.includes("E09 reject-old oracle")) };
     }
     return {
       id: "E09",
       status: "unavailable",
-      reason: extra.loadOk === false ? "packed_node_load_failed" : extra.pinOk === false ? "packed_pin_mismatch" : "e09_reject_old_oracle_not_qualified",
+      reason: extra.loadOk === false
+        ? "packed_node_load_failed"
+        : extra.pinOk === false
+          ? "packed_pin_mismatch"
+          : extra.packedOk === false
+            ? "packed_preload_does_not_export_session_factory"
+            : "e09_reject_old_oracle_not_qualified",
     };
   }
-  if (consumer && pin) {
-    return { id: "E09", status: "pass", tests: parsed.passNames.filter((name) => name.includes("E09 reject-old oracle")) };
-  }
-  return { id: "E09", status: "unavailable", reason: "e09_reject_old_oracle_not_qualified" };
+  return {
+    id: "E09",
+    status: "unavailable",
+    reason: "e09_reject_old_oracle_not_qualified",
+    note: "oracle observations are not E09 pass; packed E01–E08 factory still required",
+  };
 }
 
 function caseStatus(id, parsed, ran) {
@@ -280,6 +293,7 @@ const obsFailed = obsRan.status !== 0
 const e09 = e09OracleStatus(obsParsed, {
   requirePacked: true,
   loadOk,
+  packedOk: !packedFailed,
   pinOk: packedExists && existsSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"))
     && readFileSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"), "utf8").trim() === packedSha,
 });
