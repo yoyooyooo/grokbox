@@ -51,13 +51,13 @@ Do not rewrite history of earlier sections. Do not reopen closed P1s that Astra 
 ### Closed at this M1 tip
 
 - **P1-02 — closed:** Host registry / `parameters` / `schema` / `jsonSchema` decoding now belongs to `hostToolsToCanonical` / `buildHostEnvelope` in `packages/box-runtime/src/internal/host/context-codec.ts:53–87`; session uses that path, while kernel canonical tool validation rejects Host wrappers. The frozen-M1 Host-envelope suite passed 26 tests / 125 assertions.
+- **P1-03 — closed:** preload import-time trap fail-closed on `pre-publication-revision` (status 0 + parseable `{ imported: true, writes: [] }`; throw / `process.exit(7)` / `fs.promises.writeFile` mutants non-zero). Not a live Host incident.
 - **P1-05 — closed at the material-preservation boundary:** `test/fixtures/retired-poc/inference-oracles.json` and `control-cli-oracles.json` under `packages/box-runtime/` now preserve the named concurrency, generation cancellation, restart/no-rehandshake, disconnect/stop, and CLI half-success/argv-redaction inputs, barriers and expectations. These remain unactivated materials, not proof that the replacement runtime behavior is implemented. Previously closed findings are not reopened.
 
 ### Items
 
-- **P1-03 — still held: import-time proof remains fail-open.** The four relook counterexamples now fail correctly, and the frozen-M1 architecture suite passes 20 tests / 20 assertions. However, `scripts/check-runtime-boundaries.mjs:278–290` catches import exceptions, ignores the trap subprocess exit/error, accepts empty stdout as `{}`, and only records four `node:fs` write functions. Bounded fixtures with a throwing preload or `process.exit(7)` still return checker exit 0 / `ok:true`; an async `node:fs/promises.writeFile` also returns green while creating its synthetic sentinel in the isolated evidence directory. Thus a green gate still does not establish successful, side-effect-free preload import. This is a remaining proof-surface concern, not an observed live Host incident.
-  - Evidence: `PRIVATE_EVIDENCE`, `preload-throws.stdout.log`, `preload-exits.stdout.log`, `preload-fs-promises.stdout.log`; reproducible harness: `audit-m1.mjs` in that directory.
-  - Why not forced onto grok: the normal M1 review/relook/handoff is over; this ticket deliberately reserves the residual disagreement for the owner's final triage. No runtime fix or new milestone gate is authorized by this entry.
+- **P1-03 — closed** on `pre-publication-revision`. Import-time proof is fail-closed. Not a live Host incident.
+  - Evidence: `PRIVATE_EVIDENCE`.
 
 ### Evidence ceiling
 
@@ -315,7 +315,7 @@ Ranked smallest-first:
 1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
 2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
-4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M1 P1-03 import-time proof fail-open; M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
+4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
 
 HSO-4 `_compile` mutant closed on `pre-publication-revision`. Do not start HSO-5 from this closeout.
 
