@@ -5,7 +5,7 @@ import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
+import { WIRE_VERSION, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
 import {
   asHostPromptSession,
@@ -65,9 +65,9 @@ function runStepBody() {
   });
   const snapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
   return {
-    version: 3,
+    version: WIRE_VERSION,
     method: "run-step",
-    hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },
+    hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: `v${WIRE_VERSION}` },
     serviceEpoch: { incarnationId: "00000000-0000-4000-8000-000000000001" },
     agentId: TUPLE.agentId,
     turnId: TUPLE.turnId,
@@ -157,7 +157,7 @@ async function acceptedThenCompact(
   const record = first && typeof first === "object" ? first as { method?: string } : {};
   if (record.method === "run-step") seen.runSteps += 1;
   socket.write(encodeModeldFrame({
-    ok: true, method: "run-step", kind: "accepted", version: 3, bindingId: TUPLE.bindingId,
+    ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: TUPLE.bindingId,
   }));
   socket.write(encodeModeldFrame({
     version: 4,
@@ -169,7 +169,7 @@ async function acceptedThenCompact(
   const resume = await readOne(socket, buf);
   seen.resumes.push(resume);
   socket.write(encodeModeldFrame({
-    kind: "terminal", outcome: "ok", bindingId: TUPLE.bindingId, version: 3,
+    kind: "terminal", outcome: "ok", bindingId: TUPLE.bindingId, version: WIRE_VERSION,
   }));
 }
 
