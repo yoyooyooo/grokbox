@@ -581,6 +581,7 @@ export async function withFakeHttpSession<T>(input: {
   usage?: ProviderUsage | "omit";
   hold?: Promise<void>;
   inspect?: (body: unknown, text: string) => void;
+  respond?: (requestNumber: number) => Response | Promise<Response>;
   fn: (ctx: {
     session: HostPromptSession;
     requests: CapturedRequest[];
@@ -606,7 +607,7 @@ export async function withFakeHttpSession<T>(input: {
       admit();
     }
     if (input.hold) await input.hold;
-    return sseChatOk("ok", input.usage ?? { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 });
+    return input.respond ? await input.respond(requests.length) : sseChatOk("ok", input.usage ?? { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 });
   }, { preconnect: async () => undefined }) as typeof fetch;
   const fileOf = (row: ModelRecord) => parseModelsFile({
     version: 1,

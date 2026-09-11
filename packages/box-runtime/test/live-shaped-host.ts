@@ -54,5 +54,31 @@ function attachListener(host, streamWatchdog, updateObservers) {
           },
   );
 }
-module.exports = { api, runTurn, compactOwner, attachListener };
+// Independent memory policy fixture: only the small ABI anchor lines mirror Host.
+async function runTurnMemory(memoryStore, episodeProgress, session, ctx, turnTs, exchange) {
+  if (memoryStore.recordMemoryEvidence) {
+    memoryStore.recordMemoryEvidence(exchange);
+    return;
+  }
+  await runMemoryExtraction(memoryStore, session, ctx, exchange);
+  const pending = episodeProgress ?? [];
+  if (pending.length >= 2) {
+      const narrative = await summarizeEpisode({
+        executor: session.getExecutor(),
+        ctx,
+        turns: pending
+      });
+    memoryStore.addMemory({ purpose: "episode", text: narrative });
+  }
+}
+async function runMemoryExtraction(memoryStore, session, ctx, exchange) {
+    const extraction = await extractMemories({
+      executor: session.getExecutor(),
+      ctx,
+      userMessage: exchange.user,
+      agentMessage: exchange.agent,
+    });
+  memoryStore.addMemory({ purpose: "memory-extraction", text: extraction });
+}
+module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction };
 `;

@@ -25,12 +25,29 @@ const CONTRACT_TESTS = [
   "packages/box-runtime/test/context-continuity.test.ts",
   "packages/box-runtime/test/context-continuity-e2e.test.ts",
   "packages/box-runtime/test/context-continuity-artifact.test.ts",
+  "packages/box-runtime/test/e07-host-admission.test.ts",
+  "packages/box-runtime/test/e07-host-purpose-e2e.test.ts",
 ];
 const ARTIFACT_PACKED_TESTS = [
   "packages/box-runtime/test/context-continuity.test.ts",
   "packages/box-runtime/test/context-continuity-e2e.test.ts",
 ];
-const ARTIFACT_OBS_TESTS = ["packages/box-runtime/test/context-continuity-artifact.test.ts"];
+const ARTIFACT_OBS_TESTS = [
+  "packages/box-runtime/test/context-continuity-artifact.test.ts",
+  "packages/box-runtime/test/e07-host-purpose-packed.test.ts",
+];
+const E07_SOURCE_REQUIRED = [
+  "optional purpose slices replay with all strict profile gates; older profiles remain valid",
+  "E07 invalid attach leaves ctx unchanged (step-main)",
+  "E07 Host memory and interval episode use the actual parent STEP and captured selection",
+  "E07 missing parent, mismatched TURN, and failed newest main STEP never fall back to official",
+  "E07 pending main is not a parent; late completion cannot relabel an earlier auxiliary attempt",
+  "E07 duplicate and stale aux, foreign ctx, tools and malformed options do not dispatch again",
+  "E07 evidence-only and dedicated external stay official; self-summary still needs a STEP",
+  "E07 half-stream failure at request %s cannot commit partial Memory",
+  "E07 canceled auxiliary fullStream rejects instead of committing an empty/partial success",
+];
+const E07_PACKED_REQUIRED = ["positive", "missing-parent", "half-stream", "abort", "old-profile"].map((name) => `E07 packed ${name}`);
 
 function usage(code) {
   const text = "usage: bun scripts/verify-context-continuity.mjs --lane contract-e2e|artifact-e2e [--json]";
@@ -131,6 +148,19 @@ function e09OracleStatus(parsed, extra = {}) {
   };
 }
 
+function e07HostStatus(parsed, packed = false) {
+  const required = packed ? E07_PACKED_REQUIRED : E07_SOURCE_REQUIRED;
+  const passed = required.every((name) => parsed.passNames.some((test) => test.endsWith(`> ${name}`)));
+  const failed = parsed.failNames.some((name) => name.includes("E07"));
+  return {
+    id: "E07",
+    status: failed ? "fail" : passed ? "partial" : "unavailable",
+    reason: passed && !failed ? "e07_full_matrix_not_qualified" : "auxiliary_unqualified",
+    hostAdmission: { status: failed ? "fail" : passed ? "pass" : "unavailable", lane: packed ? "packed-node-exact-compile" : "source-host-shaped-unix-sdk-fake" },
+    note: "D2 Host purpose slices are implemented. This is Host admission proof only, not the complete E07 matrix or native Host consumer qualification.",
+  };
+}
+
 function caseStatus(id, parsed, ran) {
   const names = [...parsed.passNames, ...parsed.failNames, ...parsed.skipNames];
   const mentioned = names.filter((name) => name.includes(id));
@@ -156,10 +186,10 @@ function emit(report, failed) {
 
 const commit = sha();
 const bun = bunVersion();
-function continuityNotProven(e09) {
+function continuityNotProven(e09, e07) {
   return [
     "E07",
-    "auxiliary_unqualified",
+    e07?.hostAdmission.status === "pass" ? "e07_full_matrix_not_qualified" : "auxiliary_unqualified",
     ...(e09?.status === "pass" ? [] : ["E09", "e09_reject_old_oracle_not_qualified"]),
     "E10", "E11",
     "native_host_consumer_qualification",
@@ -176,14 +206,10 @@ if (lane === "contract-e2e") {
   const parsed = parseBunTest(combined);
   const cases = [
     ...REQUIRED_CASES.map((id) => caseStatus(id, parsed, true)),
-    {
-      id: "E07",
-      status: "unavailable",
-      reason: "auxiliary_unqualified",
-      note: "Path B grokbox aux request-kind / parent binding landed on the managed session. Host purpose seam / D2 still missing. Helper and Path B tests do not grant E07 pass.",
-    },
+    e07HostStatus(parsed),
     e09OracleStatus(parsed),
   ];
+  const e07 = cases.find((row) => row.id === "E07");
   const e09 = cases.find((row) => row.id === "E09");
   const executed = parsed.pass > 0;
   const failed = ran.status !== 0
@@ -191,6 +217,7 @@ if (lane === "contract-e2e") {
     || parsed.fail > 0
     || parsed.skip > 0
     || REQUIRED_CASES.some((id) => caseStatus(id, parsed, true).status !== "pass")
+    || e07?.hostAdmission.status !== "pass"
     || e09?.status === "fail";
   emit({
     lane,
@@ -200,7 +227,7 @@ if (lane === "contract-e2e") {
     packedPreload: false,
     constructorSource: "source",
     liveHost: false,
-    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08"],
+    supports: failed ? [] : ["F1-executor-isolation", "F2-invalid-not-checkpointable", "F3-fixture-window-only", "E01", "E02", "E03", "E04", "E05", "E06", "E08", "E07-Host-admission"],
     cases,
     asserts: { pass: parsed.pass, fail: parsed.fail, skip: parsed.skip, expects: parsed.expects },
     commands: [{
@@ -210,7 +237,7 @@ if (lane === "contract-e2e") {
       stdoutTail: (ran.stdout ?? "").slice(-4000),
       stderrTail: (ran.stderr ?? "").slice(-2000),
     }],
-    notProven: continuityNotProven(e09),
+    notProven: continuityNotProven(e09, e07),
     ok: !failed,
   }, failed);
 }
@@ -297,7 +324,8 @@ const e09 = e09OracleStatus(obsParsed, {
   pinOk: packedExists && existsSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"))
     && readFileSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"), "utf8").trim() === packedSha,
 });
-const failed = !loadOk || packedFailed || obsFailed || e09.status === "fail";
+const e07 = e07HostStatus(obsParsed, true);
+const failed = !loadOk || packedFailed || obsFailed || e09.status === "fail" || e07.hostAdmission.status !== "pass";
 
 emit({
   lane,
@@ -307,12 +335,7 @@ emit({
   native_qualification_pending: true,
   packedSessionFactory: !failed,
   artifact,
-  cases: [...packedCases, {
-    id: "E07",
-    status: "unavailable",
-    reason: "auxiliary_unqualified",
-    note: "Path B grokbox aux request-kind exists; Host purpose seam / D2 still missing.",
-  }, e09],
+  cases: [...packedCases, e07, e09],
   asserts: {
     packed: { pass: packedParsed.pass, fail: packedParsed.fail, skip: packedParsed.skip, expects: packedParsed.expects },
     obs: { pass: obsParsed.pass, fail: obsParsed.fail, skip: obsParsed.skip, expects: obsParsed.expects },
@@ -329,7 +352,7 @@ emit({
     stdoutTail: (obsRan.stdout ?? "").slice(-1000),
     stderrTail: (obsRan.stderr ?? "").slice(-500),
   }],
-  notProven: continuityNotProven(e09),
+  notProven: continuityNotProven(e09, e07),
   shaGate: "Compare dist/preload.cjs sha256 after rebuilding with the recorded command before claiming packed E01–E08.",
   ok: !failed,
   ...(failed ? {

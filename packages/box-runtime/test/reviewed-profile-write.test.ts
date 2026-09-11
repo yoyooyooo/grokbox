@@ -71,6 +71,8 @@ describe("offline reviewed profile authoring", () => {
       destDir: f.destDir, hostBundle: f.hostBundle, profileId: "reviewed-copy",
     });
     expect(written.profile.slices).toEqual(LIVE_SLICE_PATCHES);
+    expect(written.profile.slices.map((slice) => slice.id)).toContain("memory-purpose");
+    expect(written.profile.slices.map((slice) => slice.id)).toContain("episode-purpose");
     const applied = applyPatchProfile(LIVE_SHAPED_HOST, written.profile);
     expect(applied.ok).toBe(true);
     if (!applied.ok) throw new Error(applied.code);
@@ -90,6 +92,7 @@ describe("offline reviewed profile authoring", () => {
     ["one", [SYNTHETIC_SLICES[0]]],
     ["three", [...SYNTHETIC_SLICES, SYNTHETIC_SLICES[0]]],
     ["duplicate ids", [SYNTHETIC_SLICES[0], SYNTHETIC_SLICES[0]]],
+    ["seventh slice", [...LIVE_SLICE_PATCHES, LIVE_SLICE_PATCHES[0]]],
     ["wrong id", [{ ...SYNTHETIC_SLICES[0], id: "other" }, SYNTHETIC_SLICES[1]]],
     ["null slice", [null, SYNTHETIC_SLICES[1]]],
     ["empty anchor", [{ ...SYNTHETIC_SLICES[0], startAnchor: "" }, SYNTHETIC_SLICES[1]]],

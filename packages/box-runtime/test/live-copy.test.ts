@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { Script } from "node:vm";
 import { join } from "node:path";
 import { transformCompileInput } from "../src/internal/host/compile-hook.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
@@ -32,7 +33,7 @@ async function liveSnapshot(): Promise<{ digest: string | null; pids: string[] }
 const describeLive = existsSync(LIVE_HOST_BUNDLE) ? describe : describe.skip;
 
 describeLive("live Host bundle copy H1", () => {
-  test("unique two-slice transform on a tmp copy; live file and PIDs unchanged", async () => {
+  test("unique approved-slice transform on a tmp copy; live file and PIDs unchanged", async () => {
     const before = await liveSnapshot();
     expect(before.digest).toBeTruthy();
     const dir = join(tmpdir(), `grokbox-live-copy-${process.pid}`);
@@ -48,6 +49,12 @@ describeLive("live Host bundle copy H1", () => {
     expect(result.source).toContain("invocationId: inferenceRequestId");
     expect(result.source).toContain("if (__grokbox_session !== undefined) return __grokbox_session");
     expect(result.source).toContain("grokbox.box-runtime.host-compact.v1");
+    expect(result.source).toContain('purpose: "memory-extraction", turnId: ctx.get(requestIdKey), ctx');
+    expect(result.source).toContain('purpose: "episode", turnId: ctx.get(requestIdKey), ctx');
+    expect(profile.slices.map((slice) => slice.id)).toContain("memory-purpose");
+    expect(profile.slices.map((slice) => slice.id)).toContain("episode-purpose");
+    // Syntax-compile only. Never execute the native Host bundle or its consumers.
+    expect(() => new Script(result.source, { filename: copyPath })).not.toThrow();
     const compiled = transformCompileInput({
       content: source,
       filename: copyPath,

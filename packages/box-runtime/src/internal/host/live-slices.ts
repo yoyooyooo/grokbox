@@ -1,11 +1,16 @@
 import { resolve } from "node:path";
 import type { SlicePatch } from "./profile.ts";
-import { HOST_ACTIVITY_SYMBOL, HOST_COMPACT_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
+import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
 
 export const LIVE_HOST_BUNDLE = "/home/box/sand-host/host-main.cjs";
 
 export function isLiveHostPath(path: string): boolean {
   return resolve(path) === resolve(LIVE_HOST_BUNDLE);
+}
+
+/** One explicit call-site purpose; the managed session supplies the completed parent STEP/selection. */
+function auxExecutor(purpose: "memory-extraction" | "episode", indent: string): string {
+  return `${indent}executor: ((__grokbox_executor) => {\n${indent}  const __grokbox_aux = globalThis[Symbol.for("${HOST_AUX_SYMBOL}")];\n${indent}  return typeof __grokbox_aux === "function"\n${indent}    ? __grokbox_aux({ executor: __grokbox_executor, purpose: "${purpose}", turnId: ctx.get(requestIdKey), ctx }) ?? __grokbox_executor\n${indent}    : __grokbox_executor;\n${indent}})(session.getExecutor()),\n`;
 }
 
 /** Unique anchors observed on current Grok Box Host bundles. SHA is computed at runtime. */
@@ -43,5 +48,20 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "          (update) => {\n            streamWatchdog.noteUpdate(update);\n            host.emitUpdate(update, updateObservers);\n          },\n",
     replacement:
       `          ((__grokbox_activity_emit) => {\n            globalThis[Symbol.for("${HOST_ACTIVITY_SYMBOL}")] = __grokbox_activity_emit;\n            return __grokbox_activity_emit;\n          })((update) => {\n            streamWatchdog.noteUpdate(update);\n            host.emitUpdate(update, updateObservers);\n          }),\n`,
+  },
+  // Separate unique replacements: do not relax find-count or copy the Host memory policy.
+  {
+    id: "memory-purpose",
+    startAnchor: "    const extraction = await extractMemories({\n",
+    endAnchor: "      userMessage: exchange.user,\n",
+    find: "      executor: session.getExecutor(),\n",
+    replacement: auxExecutor("memory-extraction", "      "),
+  },
+  {
+    id: "episode-purpose",
+    startAnchor: "      const narrative = await summarizeEpisode({\n",
+    endAnchor: "        turns: pending\n",
+    find: "        executor: session.getExecutor(),\n",
+    replacement: auxExecutor("episode", "        "),
   },
 ];

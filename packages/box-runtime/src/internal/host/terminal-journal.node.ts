@@ -184,6 +184,12 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
   const stage = boundedEnum(input.stage, HOST_SEAM_STAGES);
   const result = boundedEnum(input.result, HOST_SEAM_RESULTS);
   if (!at || !stage || !result) return null;
+  const auxPurpose = input.auxPurpose === "memory-extraction" || input.auxPurpose === "episode" ? input.auxPurpose : undefined;
+  const parentStepId = boundedString(input.parentStepId);
+  const hasAux = input.auxPurpose !== undefined || input.parentStepId !== undefined;
+  if (hasAux && (stage !== "stream_enter" || !auxPurpose || !parentStepId
+    || !boundedString(input.stepId) || input.stepId === parentStepId
+    || !boundedString(input.agentId) || !boundedString(input.turnId))) return null;
   const hostGenerationId = boundedString(input.hostGenerationId);
   const agentId = boundedString(input.agentId);
   const turnId = boundedString(input.turnId);
@@ -198,6 +204,7 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
     ...(agentId ? { agentId } : {}),
     ...(turnId ? { turnId } : {}),
     ...(stepId ? { stepId } : {}),
+    ...(hasAux ? { auxPurpose, parentStepId } : {}),
   };
 }
 

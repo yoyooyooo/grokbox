@@ -6,6 +6,7 @@ import {
   asHostPromptSession,
   createStreamingPromptSession,
   visibleFailureHandle,
+  toHostStreamResult,
   type HostPromptExecutor,
   type HostPromptSession,
   type HostStreamRejectDetail,
@@ -13,7 +14,8 @@ import {
   type StreamHandle,
 } from "./session.ts";
 import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.node.ts";
-import { grokboxAuxFrom } from "./aux-request.ts";
+import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } from "./aux-request.ts";
+import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
 import { emitHostActivity } from "./activity.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
@@ -42,15 +44,34 @@ function overlayOfficialNoStepStreams(
   managed: HostPromptSession,
   original: unknown,
   onDecline: () => void,
+  binding: Omit<AuxParentBinding, "stepId">,
 ): HostPromptSession {
+  // Session-local, not a process-global latest STEP. A new main attempt invalidates
+  // the prior parent immediately; only its successful Host response qualifies it.
+  let attempt: object | undefined;
+  let parent: AuxParentBinding | undefined;
+  const capturedParents = new WeakMap<HostAuxIntent, { attempt: object | undefined; parent: AuxParentBinding | undefined }>();
   const overlay = (getManaged: (state?: unknown) => HostPromptExecutor) => (state?: unknown): HostPromptExecutor => {
     const managedEx = getManaged(state);
-    return {
-      appendMessages: (messages) => managedEx.appendMessages(messages),
+    const overlayEx: HostPromptExecutor = {
+      appendMessages(messages) { managedEx.appendMessages(messages); return overlayEx; },
       getMessages: () => managedEx.getMessages(),
       getState: () => managedEx.getState(),
       clearMessages: () => managedEx.clearMessages(),
       stream(ctx, invocationId, tools, options) {
+        const auxCall = hostAuxIntentFrom(options);
+        if (auxCall) {
+          const { intent } = auxCall;
+          if (!capturedParents.has(intent)) capturedParents.set(intent, { attempt, parent });
+          const captured = capturedParents.get(intent)!;
+          const attached = intent.turnId === binding.turnId && intent.ctx === ctx && captured.attempt === attempt
+            ? attachHostAuxStreamContext({ purpose: intent.purpose, auxRequestId: intent.auxRequestId, parent: captured.parent, ctx })
+            : undefined;
+          // A known aux call without a valid parent stays on the managed rejection
+          // path, never the official no-STEP fallback. Do not mutate the Host ctx.
+          if (!attached) return toHostStreamResult(visibleFailureHandle(binding.modelId, "invalid_envelope"));
+          return managedEx.stream(attached.ctx, invocationId, tools, auxCall.options);
+        }
         if (grokboxAuxFrom(ctx) ?? grokboxAuxFrom(options)) {
           return managedEx.stream(ctx, invocationId, tools, options);
         }
@@ -61,9 +82,21 @@ function overlayOfficialNoStepStreams(
             return official.stream(ctx, invocationId, tools, options);
           }
         }
-        return managedEx.stream(ctx, invocationId, tools, options);
+        const current = {};
+        attempt = current;
+        parent = undefined;
+        const stepId = boundedId(invocationId);
+        const result = managedEx.stream(ctx, invocationId, tools, options);
+        void result.response.then((response) => {
+          if (attempt === current && stepId && !response.error
+            && (response.finishReason === "stop" || response.finishReason === "tool-calls")) {
+            parent = { ...binding, stepId };
+          }
+        }, () => { /* Rejection never qualifies a parent. */ });
+        return result;
       },
     };
+    return overlayEx;
   };
   return {
     getModelId: () => managed.getModelId(),
@@ -152,7 +185,10 @@ export function bindHostSessionHook(input: {
     const wrapStream = (session: PromptSession): PromptSession => ({
       stream(request) {
         const stepId = boundedId(request?.invocationId);
-        writeStage("stream_enter", "entered", stepId ? { stepId } : {});
+        writeStage("stream_enter", "entered", {
+          ...(stepId ? { stepId } : {}),
+          ...(request?.aux ? { auxPurpose: request.aux.purpose, parentStepId: request.aux.parent.stepId } : {}),
+        });
         return session.stream(request);
       },
     });
@@ -227,6 +263,6 @@ export function bindHostSessionHook(input: {
     });
     return overlayOfficialNoStepStreams(managed, args.originalSession, () => {
       writeStage("hook_decline", "compact_passthrough");
-    });
+    }, { agentId, turnId, modelId, selectionRevision: captured.selectionRevision });
   };
 }
