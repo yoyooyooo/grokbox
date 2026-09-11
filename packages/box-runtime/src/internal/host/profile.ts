@@ -1,6 +1,6 @@
 import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
 
-export type SliceId = "create-session" | "agent-id" | "compact-register";
+export type SliceId = "create-session" | "agent-id" | "compact-register" | "activity-bridge";
 
 export type SlicePatch = {
   id: SliceId;
@@ -117,15 +117,20 @@ export function transformUnchecked(source: string, slices: readonly SlicePatch[]
 
 export const ROUTE_SESSION_SYMBOL = "grokbox.box-runtime.route-session.v1";
 export const HOST_COMPACT_SYMBOL = "grokbox.box-runtime.host-compact.v1";
+export const HOST_ACTIVITY_SYMBOL = "grokbox.box-runtime.host-activity.v1";
 export const PACKED_SESSION_SYMBOL = "grokbox.box-runtime.packed-session.v1";
+
+const OPTIONAL_SLICES = new Set<string>(["compact-register", "activity-bridge"]);
 
 export function approvedSliceSet(slices: readonly { id: string }[]): boolean {
   const ids = slices.map((slice) => slice.id);
   const unique = new Set(ids);
   if (unique.size !== ids.length) return false;
   if (!unique.has("create-session") || !unique.has("agent-id")) return false;
-  if (ids.length === 2) return unique.size === 2;
-  return ids.length === 3 && unique.has("compact-register");
+  for (const id of unique) {
+    if (id !== "create-session" && id !== "agent-id" && !OPTIONAL_SLICES.has(id)) return false;
+  }
+  return unique.size >= 2 && unique.size <= 4;
 }
 
 export function extractContractSlices(source: string): Record<string, string> {

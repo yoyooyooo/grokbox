@@ -41,5 +41,18 @@ const compactOwner = {
     return { response, env_2, ctx };
   },
 };
-module.exports = { api, runTurn, compactOwner };
+function attachListener(host, streamWatchdog, updateObservers) {
+  return new ForwardingInteractionListener(
+          (update) => {
+            streamWatchdog.noteUpdate(update);
+            host.emitUpdate(update, updateObservers);
+          },
+          {
+            onToolCall: (event, callId, toolCall) => {
+              return { event, callId, toolCall };
+            },
+          },
+  );
+}
+module.exports = { api, runTurn, compactOwner, attachListener };
 `;

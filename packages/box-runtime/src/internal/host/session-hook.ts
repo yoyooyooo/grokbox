@@ -14,6 +14,7 @@ import {
 } from "./session.ts";
 import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.node.ts";
 import { grokboxAuxFrom } from "./aux-request.ts";
+import { emitHostActivity } from "./activity.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
 
@@ -189,7 +190,10 @@ export function bindHostSessionHook(input: {
       bridgeDigest,
       independentRoot,
       onConnectAttempt: (result) => writeStage("connect_attempt", result),
-      onFirstChunk: (stepId) => writeStage("first_chunk", "ok", { stepId }),
+      onFirstChunk: (stepId) => {
+        writeStage("first_chunk", "ok", { stepId });
+        emitHostActivity({ type: "thinking-delta", text: " " });
+      },
     });
     const session = createStreamingPromptSession({
       modelId,

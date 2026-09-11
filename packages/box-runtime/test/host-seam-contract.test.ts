@@ -41,7 +41,7 @@ function runTurn(host) {
 }
 `;
 
-const TWO_LIVE = LIVE_SLICE_PATCHES.filter((slice) => slice.id !== "compact-register");
+const TWO_LIVE = LIVE_SLICE_PATCHES.filter((slice) => slice.id === "create-session" || slice.id === "agent-id");
 
 function recipeProfile(source: string, slices: readonly SlicePatch[]): PatchProfile {
   return {

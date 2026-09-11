@@ -280,7 +280,7 @@ R1的D证据发现stable sections经Host路径别名归一化后确实进入当�
 
 ### 6.2 Plain assistant text、SendToUser与reply obligations
 
-普通text/thinking delta进入outline/活动观察与模型状态；`handleAgentUpdate`对这类update不追加send-message（`H:726946–727165`）。ordinary chat的用户投递工具是`SendToUser`，保留旧`SendMessage` execution alias；不是所有assistant文本都自动变成普通聊天泡泡。
+普通text/thinking delta进入outline/活动观察与模型状态；`handleAgentUpdate`对这类update不追加send-message（`H:726946–727165`）。ordinary chat的用户投递工具是`SendToUser`，保留旧`SendMessage` execution alias；不是所有assistant文本都自动变成普通聊天泡泡。Gateway/App 上同一条路径如何分成 sidebar Working、composer-above Working、tray 见 [Host/App projections](host-app-projections.md)；本文仍只 pin Host inbound。
 
 `H:748886–748982` 的tool按类型解析文本/附件/widget/card等，检查awaiting-user和transport block；`H:749378–749410` 发 `send-message` update，`H:727026–727098` 做reply合法性、thread/batch、addressed store追加、ack与roster更新。附件可先经过ingest。widget/secret-request会进入等待用户路径；可选end_turn在checkpoint后的stop判断中结束运行。这里只描述Host已有能力，不授权本任务请求用户输入或发送内容。
 
