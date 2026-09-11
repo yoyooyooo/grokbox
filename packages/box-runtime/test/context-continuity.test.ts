@@ -302,6 +302,66 @@ describe("E08 encoded-request gate", () => {
     expect(afterTool.live("tool").map((row) => row.id)).toEqual(["call-then-fail"]);
     expect(afterTool.live("delivery")).toEqual([]);
   });
+
+  test("E08-N4 abort finish is not live delivery; tools stay observed", async () => {
+    const pre = createHostOutputConsumer();
+    let preProduce = 0;
+    const preSession = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      providerCalls: { get count() { return preProduce; }, set count(value) { preProduce = value; } },
+      produce: async function* () {
+        yield { type: "text-delta", textDelta: "should-not-run" };
+        yield FINISH;
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { contextWindowTokens: 200000 });
+    const preAc = new AbortController();
+    preAc.abort();
+    await pre.consume("step-pre-abort", preSession.getExecutor([{ role: "user", content: "pre" }]).stream({ abortSignal: preAc.signal }, "step-pre-abort"));
+    expect(preProduce).toBe(0);
+    expect(pre.live("delivery")).toEqual([]);
+    expect(pre.live("tool")).toEqual([]);
+
+    const post = createHostOutputConsumer();
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const postSession = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      produce: async function* () {
+        yield { type: "text-delta", textDelta: "partial" };
+        await hold;
+        yield FINISH;
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { contextWindowTokens: 200000 });
+    const postAc = new AbortController();
+    const postHandle = postSession.getExecutor([{ role: "user", content: "post" }]).stream({ abortSignal: postAc.signal }, "step-post-abort");
+    const postConsume = post.consume("step-post-abort", postHandle);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    postAc.abort();
+    release();
+    await postConsume;
+    expect(post.live("delivery")).toEqual([]);
+
+    const afterToolAbort = createHostOutputConsumer();
+    let releaseTool!: () => void;
+    const holdTool = new Promise<void>((resolve) => { releaseTool = resolve; });
+    const toolSession = asHostPromptSession(createStreamingPromptSession({
+      modelId: SYNTHETIC_OPENAI.id, vision: false, parallel: "allow",
+      produce: async function* () {
+        yield { type: "tool-call", toolCallId: "call-then-abort", toolName: "lookup", args: { q: "x" } };
+        await holdTool;
+        yield FINISH;
+      },
+    }), SYNTHETIC_OPENAI.id, undefined, { contextWindowTokens: 200000 });
+    const toolAc = new AbortController();
+    const toolHandle = toolSession.getExecutor([{ role: "user", content: "t" }]).stream({ abortSignal: toolAc.signal }, "step-tool-abort", [LOOKUP_TOOL]);
+    const toolConsume = afterToolAbort.consume("step-tool-abort", toolHandle);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    toolAc.abort();
+    releaseTool();
+    await toolConsume;
+    expect(afterToolAbort.live("tool").map((row) => row.id)).toEqual(["call-then-abort"]);
+    expect(afterToolAbort.live("delivery")).toEqual([]);
+  });
 });
 
 describe("E07 auxiliary purpose fence", () => {

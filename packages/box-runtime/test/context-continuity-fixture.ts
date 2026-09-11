@@ -183,7 +183,9 @@ export type HostEffectRecord = {
   late: boolean;
 };
 
-/** Host-owned tool/delivery sink. Delivery requires a finish part. Stream errors propagate. */
+const LIVE_DELIVERY_REASONS = new Set(["stop", "tool-calls"]);
+
+/** Host-owned tool/delivery sink. Delivery requires a successful completion reason, not abort/error. Stream errors propagate. */
 export function createHostOutputConsumer() {
   const retired = new Set<string>();
   const effects: HostEffectRecord[] = [];
@@ -193,21 +195,24 @@ export function createHostOutputConsumer() {
     live(kind: HostEffectRecord["kind"]) {
       return effects.filter((row) => row.kind === kind && !row.late);
     },
-    async consume(stepId: string, handle: { fullStream: AsyncIterable<{ type: string; toolCallId?: string; toolName?: string; textDelta?: string; text?: string }> }) {
-      let finished = false;
+    async consume(stepId: string, handle: { fullStream: AsyncIterable<{ type: string; reason?: string; finishReason?: string; toolCallId?: string; toolName?: string; textDelta?: string; text?: string }> }) {
+      let delivered = false;
       try {
         for await (const part of handle.fullStream) {
           const late = retired.has(stepId);
           if (part.type === "tool-call" && typeof part.toolCallId === "string") {
             effects.push({ kind: "tool", stepId, id: part.toolCallId, late });
           }
-          if (part.type === "finish") finished = true;
+          if (part.type === "finish") {
+            const reason = part.reason ?? part.finishReason;
+            if (typeof reason === "string" && LIVE_DELIVERY_REASONS.has(reason)) delivered = true;
+          }
         }
       } catch (error) {
         effects.push({ kind: "error", stepId, id: `${stepId}:error`, late: retired.has(stepId) });
         throw error;
       }
-      if (finished) {
+      if (delivered) {
         effects.push({ kind: "delivery", stepId, id: `${stepId}:delivery`, late: retired.has(stepId) });
       }
     },
