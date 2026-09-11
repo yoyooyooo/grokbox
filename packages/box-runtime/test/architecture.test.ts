@@ -129,6 +129,15 @@ describe("runtime layout boundaries", () => {
     ["preload-acorn", {
       "packages/box-runtime/src/preload.ts": 'import * as acorn from "acorn"; export const parse = acorn.parse;',
     }],
+    ["preload-throws", {
+      "packages/box-runtime/src/preload.ts": 'throw new Error("synthetic-import-failure");',
+    }],
+    ["preload-exits", {
+      "packages/box-runtime/src/preload.ts": "process.exit(7);",
+    }],
+    ["preload-fs-promises", {
+      "packages/box-runtime/src/preload.ts": 'import { writeFile } from "node:fs/promises"; (async () => { await writeFile("/fixture/must-not-write", "synthetic"); })();',
+    }],
   ];
 
   test.each(rejects)("%s is a non-zero checker", async (_name, changes) => {

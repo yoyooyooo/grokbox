@@ -301,17 +301,32 @@ if (existsSync(preload)) {
       }
       const trap = spawnSync(process.execPath, ["-e", `
         const fs = require("node:fs");
+        const fsp = require("node:fs/promises");
         const writes = [];
-        for (const name of ["writeFileSync", "writeFile", "mkdirSync", "renameSync"]) {
-          fs[name] = (...args) => { writes.push({ name, path: String(args[0] ?? "") }); };
+        const record = (name, args) => { writes.push({ name, path: String(args[0] ?? "") }); };
+        for (const name of ["writeFileSync", "writeFile", "mkdirSync", "renameSync", "appendFileSync", "appendFile", "copyFileSync", "copyFile"]) {
+          if (typeof fs[name] === "function") fs[name] = (...args) => { record("fs." + name, args); };
         }
-        try { require(${JSON.stringify(outfile)}); } catch {}
-        process.stdout.write(JSON.stringify({ writes }));
+        for (const name of ["writeFile", "appendFile", "mkdir", "rename", "copyFile"]) {
+          if (typeof fsp[name] === "function") fsp[name] = (...args) => { record("fs.promises." + name, args); return Promise.resolve(); };
+        }
+        require(${JSON.stringify(outfile)});
+        setImmediate(() => { process.stdout.write(JSON.stringify({ imported: true, writes })); });
       `], { encoding: "utf8", timeout: 5000 });
-      let trapResult;
-      try { trapResult = JSON.parse(trap.stdout || "{}"); } catch { fail("preload import-time trap unreadable"); }
-      if (Array.isArray(trapResult?.writes) && trapResult.writes.length > 0) {
-        fail("preload import-time side effect", { writes: trapResult.writes });
+      if (trap.error) {
+        fail("preload import-time trap failed", { error: String(trap.error.message ?? trap.error) });
+      } else if (trap.status !== 0) {
+        fail("preload import-time proof failed", { status: trap.status, stderr: (trap.stderr ?? "").slice(0, 500) });
+      } else if (!trap.stdout || !String(trap.stdout).trim()) {
+        fail("preload import-time proof missing");
+      } else {
+        let trapResult;
+        try { trapResult = JSON.parse(trap.stdout); } catch { trapResult = null; }
+        if (!trapResult || trapResult.imported !== true || !Array.isArray(trapResult.writes)) {
+          fail("preload import-time trap unreadable");
+        } else if (trapResult.writes.length > 0) {
+          fail("preload import-time side effect", { writes: trapResult.writes });
+        }
       }
     }
   }
