@@ -290,9 +290,9 @@ Offline contract-e2e only; no packed preload, native Host, live adopt, or produc
 
 ### Items
 
-- **E09 full reject-old oracle — still held:** needs independent pin/currentness + real old-vs-source failure consumption before any E09 pass claim.
-- **Packed E01–E08 session factory — still held:** `packed_preload_does_not_export_session_factory`; artifact lane remains fail-closed.
-  - Evidence: `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`.
+- **E09 reject-old oracle currentness — landed** `pre-publication-revision`. Pack-from-source pin + old-vs-source throw. **Contract E09 stays `unavailable` / `e09_reject_old_oracle_not_qualified`.** Artifact E09 pass only with opt-in packed factory + E01–E08. Default `--require` still factory-free.
+- **Packed default-require factory — not a reopen:** `packed_preload_does_not_export_session_factory` remains required on default `--require`.
+  - Evidence: `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`, `PRIVATE_EVIDENCE`.
 
 ## Tip pre-publication-revision — 2026-09-11
 
@@ -313,7 +313,7 @@ Integration tip `pre-publication-revision` on `feat/box-runtime-v2`. This sectio
 Ranked smallest-first:
 
 1. **E07 Host purpose seam (D2)** — live memory/episode call sites still omit `grokboxAux`. Blocked on Host slice approval; helper exists.
-2. **E09** — reject-old oracle + packed session factory; artifact lane fail-closed.
+2. **E09 remainder** — native/live / B-closed still notProven; contract lane stays unavailable. Do not reopen default-require factory.
 3. **T29 remainder** — configuration command use case; CAS only when a real second writer exists; browser MVP separately authorized.
 4. **SHA-pinned M1–M4 leftovers** (unchanged; still not grok dispatch): M1 P1-03 import-time proof fail-open; M2 P2-01 snapshot parse/immutability; M3 T27 journal `at` header + status `writeFile` spy gap; T25 P1-02 Node20 SIGABRT cleanup; T26 P1-02 profile-bound root provenance + P2-01 toolCalls alias; T28 P1-02 lock ownership / P1-04 checkpoint-then-interrupt / P2-01 legacy executor removal.
 
