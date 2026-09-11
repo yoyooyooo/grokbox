@@ -3,6 +3,10 @@ import { admitOverflowRecovery } from "@grokbox/runtime-kernel/inference";
 import { emptyRecoveryLedger } from "@grokbox/runtime-kernel/contract";
 import { isProviderConfirmedOverflow, overflowEvidenceFromProvider, structuredOverflowFromUnknown } from "../src/internal/backends/provider-error.ts";
 
+delete process.env.GROKBOX_MODELD_HOST_COMPACT;
+delete process.env.GROKBOX_CONTEXT_CAP;
+delete process.env.GROKBOX_ALLOW_LIVE_HOST;
+
 describe("confirmed overflow classifier", () => {
   test("structured overflow codes confirm; auth/429/413/unknown do not", () => {
     expect(isProviderConfirmedOverflow({ providerCode: "context_length_exceeded", httpStatus: 400 })).toBe(true);
@@ -95,6 +99,79 @@ describe("confirmed overflow classifier", () => {
     expect(JSON.stringify(evidence)).not.toContain("sk-");
     expect(evidence.providerCode).toBeUndefined();
     expect(evidence.releasedText).toBeUndefined();
+  });
+
+  test("live Responses 400+code and response.failed+code confirm", () => {
+    expect(isProviderConfirmedOverflow({
+      statusCode: 400,
+      responseBody: JSON.stringify({
+        error: { type: "invalid_request_error", code: "context_length_exceeded", message: "too many tokens" },
+      }),
+    })).toBe(true);
+    expect(isProviderConfirmedOverflow({
+      type: "response.failed",
+      response: {
+        status: "failed",
+        error: { code: "context_length_exceeded", message: "window full" },
+      },
+    })).toBe(true);
+    expect(isProviderConfirmedOverflow({
+      type: "error",
+      error: { code: "context_too_large", type: "invalid_request_error" },
+    })).toBe(true);
+  });
+
+  test("Sub2API passthrough message-fallback is medium and allowlisted", () => {
+    // Passthrough HTTP: type=upstream_error, no code, sanitized message (survey medium).
+    expect(isProviderConfirmedOverflow({
+      statusCode: 400,
+      data: { error: { type: "upstream_error", message: "This model's maximum context length was exceeded" } },
+    })).toBe(true);
+    expect(overflowEvidenceFromProvider({
+      statusCode: 400,
+      data: { error: { type: "upstream_error", message: "This model's maximum context length was exceeded" } },
+    }).messageFallback).toBe(true);
+    expect(structuredOverflowFromUnknown({
+      statusCode: 400,
+      data: { error: { type: "upstream_error", message: "This model's maximum context length was exceeded" } },
+    }).providerCode).toBeUndefined();
+    expect(isProviderConfirmedOverflow({
+      statusCode: 400,
+      data: { error: { type: "invalid_request_error", message: "bad json" } },
+    })).toBe(false);
+    expect(isProviderConfirmedOverflow({
+      type: "response.failed",
+      response: { status: "failed", error: { message: "context length exceeded" } },
+    })).toBe(true);
+  });
+
+  test("401/429/413/stream-truncate/max_tokens never classify as overflow", () => {
+    expect(isProviderConfirmedOverflow({
+      statusCode: 401,
+      data: { error: { type: "authentication_error", message: "invalid api key" } },
+    })).toBe(false);
+    expect(isProviderConfirmedOverflow({
+      statusCode: 429,
+      data: { error: { type: "rate_limit_error", code: "rate_limit_exceeded" } },
+    })).toBe(false);
+    expect(isProviderConfirmedOverflow({
+      statusCode: 413,
+      data: { error: { type: "invalid_request_error", message: "Request payload is too large" } },
+    })).toBe(false);
+    expect(isProviderConfirmedOverflow({
+      statusCode: 502,
+      data: { error: { code: "upstream_stream_truncated", message: "context length exceeded" } },
+    })).toBe(false);
+    expect(isProviderConfirmedOverflow({
+      type: "error",
+      error: { code: "upstream_stream_read_error", message: "context window exceeded" },
+    })).toBe(false);
+    expect(isProviderConfirmedOverflow({ finishReason: "length" })).toBe(false);
+    expect(isProviderConfirmedOverflow({ stop_reason: "max_tokens" })).toBe(false);
+    expect(isProviderConfirmedOverflow({
+      statusCode: 400,
+      data: { error: { type: "invalid_request_error", message: "max_tokens is too large" } },
+    })).toBe(false);
   });
 
   test("omitted or invalid release counts do not admit recovery", () => {

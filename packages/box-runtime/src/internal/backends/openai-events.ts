@@ -91,7 +91,8 @@ export function mapSdkStreamPart(part: unknown, tools: ToolNames): InferenceEven
     return { type: "backend_finish", finishReason: reason, ...(usage ? { usage } : {}) };
   }
   if (type === "error" || type === "tool-error") {
-    throw backendFailureFromUnknown(rec.error ?? rec);
+    const inner = rec.error;
+    throw inner instanceof BackendFailure ? inner : backendFailureFromUnknown(rec);
   }
   if (type === "abort") return { type: "backend_finish", finishReason: "abort" };
   if (

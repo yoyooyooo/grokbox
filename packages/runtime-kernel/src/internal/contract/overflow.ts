@@ -29,6 +29,8 @@ export type OverflowEvidence = {
   timeout?: boolean;
   disconnected?: boolean;
   unknown?: boolean;
+  /** Sub2API passthrough / chat 400 message phrases. Never a guess from logs. */
+  messageFallback?: boolean;
   releasedText?: number;
   releasedReasoning?: number;
   releasedTools?: number;
@@ -65,14 +67,15 @@ export class CompactFailure extends Error {
 
 const CONFIRMED_CODES = new Set(["context_length_exceeded", "context_too_large"]);
 
-/** Structured overflow only. Auth/429/413/5xx/timeout/unknown/message-only stay unconfirmed. */
+/** Structured codes, or allowlisted Sub2API message fallback. Auth/429/413/5xx/timeout/unknown stay unconfirmed. */
 export function isConfirmedOverflow(evidence: OverflowEvidence): boolean {
   if (evidence.auth || evidence.rateLimited || evidence.payloadTooLarge || evidence.timeout || evidence.disconnected || evidence.unknown) {
     return false;
   }
   const status = evidence.httpStatus;
   if (status !== 200 && status !== 400) return false;
-  return typeof evidence.providerCode === "string" && CONFIRMED_CODES.has(evidence.providerCode);
+  if (typeof evidence.providerCode === "string" && CONFIRMED_CODES.has(evidence.providerCode)) return true;
+  return evidence.messageFallback === true;
 }
 
 export function emptyRecoveryLedger(tuple: RecoveryTuple, recoveryNonce: string): RecoveryLedger {
