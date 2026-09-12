@@ -27,7 +27,7 @@ Offline Host source (`/home/box/sand-host/host-main.cjs`, not repo authority): `
 
 Keep overflow / managed-session canaries on **`harness=box`** (test2 while it is the heavy canary; never opt-in test1 unless asked). A temporal fork is a **different product path**: no wrapped `createCursorInferencePromptSession`, Gateway transcript reads go through `server-agent-proxy`, desktop coordinator treats the id as `requiredAgents`.
 
-`activity-bridge` restores composer-above Working. It does **not** hydrate historical bubbles and does **not** copy Host `send-message` into the Cursor server replica. See [host-app-projections](host-app-projections.md).
+`activity-bridge` restores Gateway composer `currentActivity` on managed box turns. It does **not** hydrate historical bubbles and does **not** copy Host `send-message` into the Cursor server replica. Desktop chrome / sticky-temporal leftover is [composer-working-status](composer-working-status.md). See [host-app-projections](host-app-projections.md).
 
 ## Clean rollback vs always-emit harness
 

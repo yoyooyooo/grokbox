@@ -25,7 +25,8 @@ This documentation separates current source truth, accepted product behavior, up
 
 - [Source provenance review](maintainers/provenance.md)
 - [Official Host inbound → Agent loop](maintainers/host-inbound-agent-loop.md): source-pinned admission, context/pins/compact, inference/tools, delivery, ledgers and settlement map; includes corrected research claims and explicit evidence gaps, not fix designs.
-- [Host / App live projections](maintainers/host-app-projections.md): sidebar Working vs composer `currentActivity` vs tray vs nonce; grokbox managed-turn activity gap. Not App pixel proof.
+- [Host / App live projections](maintainers/host-app-projections.md): sidebar Working vs composer `currentActivity` vs tray vs nonce; managed `activity-bridge` restore. Not App pixel proof.
+- [Composer Working residual](maintainers/composer-working-status.md): desktop composer-above miss after Gateway activity is proven; App/coordinator Cmd-Q and official unload, not a missing tip slice.
 - [Transcript harness: box vs temporal](maintainers/transcript-harness-box-vs-server.md): managed intercept needs `harness=box`; CLI `--harness` always sends the field; Host `updateAgent` persistence is dogfood; stock dual ledger is grok-bot `private interoperability notes (not distributed)`. Always-emit is optional Host slices; living emit still needs pack + legal profile/re-adopt.
 - [Official Host rollback acceptance](maintainers/official-rollback-acceptance.md): future clean return to official Host; `deactivate` is intent-only; live unload writer missing; this pass does not unload.
 - [Managed context continuity](maintainers/managed-context-continuity.md): forward prevention fixes and end-to-end acceptance for managed context loss; historical cause closed-notProven, implementation and qualification still pending.
@@ -52,4 +53,5 @@ Review the relevant current homes when any of these change:
 - daemon protocol, filesystem/process policy, or network transport;
 - Profile format, package layout, runtime requirements, license, or bundled dependencies;
 - Host PromptSession/`SendToUser` contract, or box-runtime config root / local-only boundary;
-- `runtime deactivate` / watchdog live-writer / official Host rollback path.
+- `runtime deactivate` / watchdog live-writer / official Host rollback path;
+- Host `activity-bridge` / App coordinator Working chrome.

@@ -76,6 +76,7 @@ This pass does **not** claim those accept criteria. Unload was deferred.
 |---|---|
 | [transcript-harness-box-vs-server.md](transcript-harness-box-vs-server.md) | grokbox intercept needs `harness=box`; CLI `--harness`; Host `updateAgent` dogfood; always-emit slices |
 | [host-app-projections.md](host-app-projections.md) | sidebar vs composer Working vs tray |
+| [composer-working-status.md](composer-working-status.md) | desktop composer residual after Gateway `currentActivity`; not a tip-slice gap |
 | grok-bot `private interoperability notes (not distributed)` | stock omit-box, proxy, Cmd-Q, Mac replica |
 | `PRIVATE_EVIDENCE` | offline always-emit slices + CLI `--harness` |
 | `PRIVATE_EVIDENCE` | packed re-adopt; 4-slice profile; live omit-box |
