@@ -14,6 +14,7 @@ This documentation separates current source truth, accepted product behavior, up
 - [Quota](quota.md): implemented explicit source, normalized output, and failure boundary.
 - [Box-local model runtime](box-runtime.md): accepted createSession seam, inject/watchdog/guardian, modeld, window semantics, and evidence ladder. Not an implementation-complete claim. Product obligations are in the [product contract](product-contract.md) §12.
 - [Box-runtime strategy plan](roadmap/box-runtime-plan.md): Phases 0–4, product exits and scope.
+- [Managed custom-model path through Host Compact](roadmap/2026-09-12-managed-compact-path.md): forward sequence for custom-model continuity through Host Compact; reuse vs wait-point patch. Not live-enable and not an implementation-complete claim.
 - [Box-runtime Current Implementation Spec](roadmap/box-runtime-impl-spec.md): the single-track target package/module tree, ports, allowed imports, execution chain, POC removal inventory and proof gates. [T20–T33](tickets/README.md) own rebuild slices; neither document proves implementation completion.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
@@ -55,4 +56,5 @@ Review the relevant current homes when any of these change:
 - Host PromptSession/`SendToUser` contract, or box-runtime config root / local-only boundary;
 - `runtime deactivate` / watchdog live-writer / official Host rollback path;
 - Host `activity-bridge` / App coordinator Working chrome;
-- Host `profile.harness` persist / always-emit / createSession managed path.
+- Host `profile.harness` persist / always-emit / createSession managed path;
+- Host Compact wait-point / `runStep` order vs custom-model overflow recovery.
