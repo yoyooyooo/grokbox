@@ -4,6 +4,8 @@
 
 **Status:** forward plan @ `pre-publication-revision` (2026-09-12). Working / future sequence — not live-enable, not an implementation-complete claim, not a GATE.
 
+**Owner review (Chinese briefing):** [2026-09-12-managed-compact-owner-brief.md](./2026-09-12-managed-compact-owner-brief.md)
+
 **Upper goal (binding):** a Bot opted into a managed custom model must send the Host-selected conversation into that model; when the window is too large, compress through Host Compact, then continue on the compacted context **on the same custom-model binding**.
 
 **Means (separate):** reuse Host Compact up/downstream when it fits. If a segment does not fit, patch at Host’s original Compact-related points. Do not invent a parallel grokbox summarizer, near-window CAP, or `store.db` prepend.

@@ -9,6 +9,7 @@ This directory contains the accepted box-runtime strategy plan, its current impl
 - [T20–T33 tickets](../tickets/README.md): executable slices and evidence. Default chain T20 → T21 → T27 … → T28; T29/WebUI is deferred. Historical done tickets stay done.
 - [2026-09-08 adjudication](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md): D1–D12 product/trust decisions retained by the strategy/spec.
 - [Host seam ops recognition](host-seam-ops-recognition.md): forward-only retain/replay/propose/human-review scheme and HSO-0–HSO-6 delivery gates. Smart recognition stays outside preload; no live adoption authorization.
+- [自定义模型 × Host Compact 业主审阅稿](2026-09-12-managed-compact-owner-brief.md): 中文口径/背景/后续思路；配套英文详稿见下条。
 - [Managed custom-model path through Host Compact](2026-09-12-managed-compact-path.md): forward sequence only. Custom-model continuity is the goal; Host Compact is the means. Does not replace [T32](../tickets/T32-runtime-confirmed-compact.md) or [live-enable](../maintainers/t32-live-enable-readiness.md).
 
 The dated `2026-09-08-box-runtime-next.md` remains only a redirect. No intermediate review report or machine-local artifact is required for public build/contribution.
