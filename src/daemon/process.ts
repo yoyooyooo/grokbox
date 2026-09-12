@@ -1,4 +1,4 @@
-import { lstat, realpath } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import { CliError } from "../errors.ts";
 import type { DaemonProcessConfig } from "./config.ts";
 
@@ -47,8 +47,8 @@ export class ProcessAuthority {
 
 async function verifyExecutable(name: string, path: string): Promise<VerifiedExecutable> {
   try {
-    const [info, canonical] = await Promise.all([lstat(path), realpath(path)]);
-    if (!info.isFile() || canonical !== path || (info.mode & 0o111) === 0) {
+    const info = await lstat(path);
+    if (!info.isFile() || (info.mode & 0o111) === 0) {
       throw new CliError("process_forbidden", "Configured executable must be an executable non-symlink file.");
     }
     return { name, path, dev: info.dev, ino: info.ino };
