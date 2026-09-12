@@ -392,6 +392,105 @@ describeLinux("structured execution and durable Jobs", () => {
     expect(alive).toBe(false);
   }, 15_000);
 
+  test("cancel then close preserves a cancelled running job across reload", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-jobs-cancel-close-config-"));
+    const root = await mkdtemp(join(tmpdir(), "grokbox-jobs-cancel-close-root-"));
+    const executable = await nodeExecutable();
+    const policy: DaemonProcessConfig = {
+      cwdRoots: ["workspace"], defaultCwdRoot: "workspace",
+      executables: [{ name: "node", path: executable }], environment: [],
+      maxConcurrent: 1, maxQueued: 2, maxRuntimeMs: 10_000, maxOutputBytes: 1024,
+    };
+    const writable = async () => await GovernedFilesystem.create([{ name: "workspace", path: root, operations: ["exec"] }], Date.now);
+    const filesystem = await writable();
+    const manager = await JobManager.create(configDir, await ProcessAuthority.create(policy), filesystem, Date.now);
+    const jobId = randomUUID();
+    const cancelOperationId = randomUUID();
+    try {
+      await manager.submit({
+        jobId, cwd: "workspace:/", argv: ["node", "-e", `process.on("SIGTERM",()=>{});setInterval(()=>{},1000);`],
+        environment: {}, runTimeoutMs: 10_000, output: "discard", shell: false,
+      });
+      for (let count = 0; count < 200 && manager.show(jobId).state !== "running"; count += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(manager.show(jobId).state).toBe("running");
+      await manager.cancel(jobId, cancelOperationId);
+      await manager.close();
+      const closed = manager.show(jobId);
+      expect(closed.state).toBe("cancelled");
+      expect(closed.cancelOperationId).toBe(cancelOperationId);
+    } finally {
+      await filesystem.close().catch(() => undefined);
+    }
+    const filesystem2 = await writable();
+    const reloaded = await JobManager.create(configDir, await ProcessAuthority.create(policy), filesystem2, Date.now);
+    try {
+      const persisted = reloaded.show(jobId);
+      expect(persisted.state).toBe("cancelled");
+      expect(persisted.cancelOperationId).toBe(cancelOperationId);
+    } finally {
+      await reloaded.close();
+      await filesystem2.close();
+    }
+  }, 30_000);
+
+  test("cancel then close preserves a cancelled queued launching job across reload", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-jobs-launch-cancel-config-"));
+    const root = await mkdtemp(join(tmpdir(), "grokbox-jobs-launch-cancel-root-"));
+    const executable = await nodeExecutable();
+    const policy: DaemonProcessConfig = {
+      cwdRoots: ["workspace"], defaultCwdRoot: "workspace",
+      executables: [{ name: "node", path: executable }], environment: [],
+      maxConcurrent: 1, maxQueued: 2, maxRuntimeMs: 10_000, maxOutputBytes: 1024,
+    };
+    const filesystem = await GovernedFilesystem.create([{ name: "workspace", path: root, operations: ["exec"] }], Date.now);
+    const authority = await ProcessAuthority.create(policy);
+    const manager = await JobManager.create(configDir, authority, filesystem, Date.now);
+    const jobId = randomUUID();
+    const cancelOperationId = randomUUID();
+    let executableCalls = 0;
+    let launchingEntered!: () => void;
+    const launching = new Promise<void>((resolve) => { launchingEntered = resolve; });
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+    const realExecutable = authority.executable.bind(authority);
+    authority.executable = async (name: string, shell: boolean) => {
+      const result = await realExecutable(name, shell);
+      executableCalls += 1;
+      if (executableCalls === 2 && name === "node" && !shell) { launchingEntered(); await gate; }
+      return result;
+    };
+    try {
+      await manager.submit({
+        jobId, cwd: "workspace:/", argv: ["node", "-e", `setInterval(()=>{},1000);`],
+        environment: {}, runTimeoutMs: 10_000, output: "discard", shell: false,
+      });
+      await launching;
+      await manager.cancel(jobId, cancelOperationId);
+      const closing = manager.close();
+      releaseGate();
+      await closing;
+      const closed = manager.show(jobId);
+      expect(closed.state).toBe("cancelled");
+      expect(closed.reason).toBe("cancelled_before_spawn");
+      expect(closed.cancelOperationId).toBe(cancelOperationId);
+    } finally {
+      await filesystem.close().catch(() => undefined);
+    }
+    const filesystem2 = await GovernedFilesystem.create([{ name: "workspace", path: root, operations: ["exec"] }], Date.now);
+    const reloaded = await JobManager.create(configDir, await ProcessAuthority.create(policy), filesystem2, Date.now);
+    try {
+      const persisted = reloaded.show(jobId);
+      expect(persisted.state).toBe("cancelled");
+      expect(persisted.reason).toBe("cancelled_before_spawn");
+      expect(persisted.cancelOperationId).toBe(cancelOperationId);
+    } finally {
+      await reloaded.close();
+      await filesystem2.close();
+    }
+  }, 30_000);
+
   test("a prior-generation nonterminal record restarts as unknown", async () => {
     const f = await fixture();
     await host!.close(); host = undefined;
