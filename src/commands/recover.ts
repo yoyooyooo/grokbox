@@ -21,6 +21,12 @@ type RecoveryAction = {
   outcome: string;
 };
 
+const SANDBOX_CREDENTIAL_FAILURE_CODES = new Set([
+  "credential_unavailable",
+  "credential_locked",
+  "credential_invalid",
+]);
+
 function recoverError(
   operationId: string,
   message: string,
@@ -65,6 +71,13 @@ async function wakeSandbox(deps: CliDeps, timeoutMs: number, operationId: string
       now: deps.now,
     }).tick();
   } catch (error) {
+    if (error instanceof CliError && SANDBOX_CREDENTIAL_FAILURE_CODES.has(error.code)) {
+      throw new CliError(
+        "recover_unavailable",
+        "Recovery requires the configured Sandbox wake credential to resolve before mutation.",
+        { failureCode: error.code, context: { operationId, phase: "sandbox-credential-preflight" } },
+      );
+    }
     const failureCode = error instanceof CursorSandboxError
       ? error.kind
       : error instanceof CursorSandboxCancelledError
@@ -149,6 +162,19 @@ export async function runRecover(
       {
         failureCode: initial.checks.daemonAuth.code,
         context: { operationId, phase: "daemon-authority-preflight" },
+      },
+    );
+  }
+  if (
+    initial.checks.sandbox.status === "fail" &&
+    SANDBOX_CREDENTIAL_FAILURE_CODES.has(initial.checks.sandbox.code)
+  ) {
+    throw new CliError(
+      "recover_unavailable",
+      "Recovery requires the configured Sandbox wake credential to resolve before mutation.",
+      {
+        failureCode: initial.checks.sandbox.code,
+        context: { operationId, phase: "sandbox-credential-preflight" },
       },
     );
   }

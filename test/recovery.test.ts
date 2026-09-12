@@ -57,6 +57,7 @@ function execSuccess(): Buffer {
 
 async function remoteFixture(options: {
   sandbox?: boolean;
+  sandboxAccessTokenRef?: string;
   missingDaemonCredential?: boolean;
   fetch: typeof fetch;
   runCommand: ReturnType<typeof commandAdapter>;
@@ -66,13 +67,14 @@ async function remoteFixture(options: {
   const sandboxSecret = join(configDir, "secrets", "sandbox");
   if (!options.missingDaemonCredential) await writeProtectedSecret(daemonSecret, token);
   if (options.sandbox) await writeProtectedSecret(sandboxSecret, sandboxToken);
+  const sandboxRef = options.sandboxAccessTokenRef ?? (options.sandbox ? `file:${sandboxSecret}` : undefined);
   await writeProfileFile(configDir, profileName, {
     version: 1,
     transport: "daemon",
     server_url: endpoint,
     daemon_token_ref: options.missingDaemonCredential ? "env:MISSING_DAEMON_TOKEN" : `file:${daemonSecret}`,
     ssh_host: hostname,
-    ...(options.sandbox ? { sandbox: { access_token_ref: `file:${sandboxSecret}` } } : {}),
+    ...(sandboxRef ? { sandbox: { access_token_ref: sandboxRef } } : {}),
   });
   return async (argv: string[]) => await captureCli(["--profile", profileName, ...argv], {
     configDir,
@@ -344,6 +346,102 @@ describe("layered doctor and explicit recovery", () => {
     expect(trace).not.toContain("tailscale serve --bg");
     expect(trace).not.toContain("daemon serve");
     expect(JSON.stringify(events)).not.toContain("EnsureSandBox");
+  });
+
+  test("recover stops before mutation when the configured sandbox wake credential is unavailable", async () => {
+    const commands = commandAdapter((argv) => {
+      if (argv[0] === "tailscale" && argv[1] === "status") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ Peer: { peer: { DNSName: `${hostname}.`, HostName: "box", Online: false, TailscaleIPs: [] } } }),
+          stderr: "",
+        };
+      }
+      if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 1, stdout: "", stderr: "unreachable" };
+      return { code: 127, stdout: "", stderr: "unexpected" };
+    });
+    const run = await remoteFixture({
+      sandboxAccessTokenRef: "env:MISSING_SANDBOX_TOKEN",
+      fetch: (async () => { throw new Error("daemon down"); }) as unknown as typeof fetch,
+      runCommand: commands,
+    });
+    const result = await run(["recover", "--timeout-ms", "10000"]);
+    expect(result.code, result.stderr).toBe(57);
+    const error = (parseJson(result.stderr) as {
+      error: { code: string; failureCode: string; retryable: boolean; context: { operationId: string; phase: string } };
+    }).error;
+    expect(error).toMatchObject({
+      code: "recover_unavailable",
+      failureCode: "credential_unavailable",
+      retryable: false,
+      context: { operationId: nonce, phase: "sandbox-credential-preflight" },
+    });
+    const trace = JSON.stringify(commands.calls);
+    expect(trace).not.toContain("EnsureSandBox");
+    expect(trace).not.toContain("tailscale serve --bg");
+    expect(trace).not.toContain("daemon serve");
+  });
+
+  test("recover stops before mutation when the configured sandbox wake credential is locked", async () => {
+    const commands = commandAdapter((argv) => {
+      if (argv[0] === "tailscale" && argv[1] === "status") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ Peer: { peer: { DNSName: `${hostname}.`, HostName: "box", Online: false, TailscaleIPs: [] } } }),
+          stderr: "",
+        };
+      }
+      if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 1, stdout: "", stderr: "unreachable" };
+      if (argv[0] === "security") {
+        return { code: 1, stdout: "", stderr: "SecKeychainItemDeserialize: user interaction is not allowed" };
+      }
+      return { code: 127, stdout: "", stderr: "unexpected" };
+    });
+    const run = await remoteFixture({
+      sandboxAccessTokenRef: "keychain:grokbox-sandbox/box",
+      fetch: (async () => { throw new Error("daemon down"); }) as unknown as typeof fetch,
+      runCommand: commands,
+    });
+    const result = await run(["recover", "--timeout-ms", "10000"]);
+    expect(result.code, result.stderr).toBe(57);
+    const error = (parseJson(result.stderr) as { error: { code: string; failureCode: string; retryable: boolean } }).error;
+    expect(error).toMatchObject({
+      code: "recover_unavailable",
+      failureCode: "credential_locked",
+      retryable: false,
+    });
+    const trace = JSON.stringify(commands.calls);
+    expect(trace).not.toContain("EnsureSandBox");
+    expect(trace).not.toContain("tailscale serve --bg");
+    expect(trace).not.toContain("daemon serve");
+  });
+
+  test("recover classifies a transient sandbox provider outage as retryable recover_failed", async () => {
+    const commands = commandAdapter((argv) => {
+      if (argv[0] === "tailscale" && argv[1] === "status") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ Peer: { peer: { DNSName: `${hostname}.`, HostName: "box", Online: false, TailscaleIPs: [] } } }),
+          stderr: "",
+        };
+      }
+      if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 1, stdout: "", stderr: "unreachable" };
+      return { code: 127, stdout: "", stderr: "unexpected" };
+    });
+    const fetchFn = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("api2.cursor.sh")) return new Response("", { status: 503 });
+      throw new Error("daemon down");
+    }) as unknown as typeof fetch;
+    const run = await remoteFixture({ sandbox: true, fetch: fetchFn, runCommand: commands });
+    const result = await run(["recover", "--timeout-ms", "10000"]);
+    expect(result.code, result.stderr).toBe(58);
+    const error = (parseJson(result.stderr) as { error: { code: string; failureCode: string; retryable: boolean } }).error;
+    expect(error).toMatchObject({
+      code: "recover_failed",
+      failureCode: "sandbox_provider_unavailable",
+      retryable: true,
+    });
   });
 
   test("recover refuses Serve drift without overwriting the occupied handler or starting the daemon", async () => {
