@@ -216,10 +216,13 @@ export async function runEvents(
     const watchdog = setInterval(() => {
       if (deps.now() - lastChunk > deps.idleWatchdogMs) void opened.response.body?.cancel();
     }, 1_000);
+    const streamStop = new AbortController();
+    const streamSignal = stop ? AbortSignal.any([stop, streamStop.signal]) : streamStop.signal;
     try {
       for await (const frame of parseSse(opened.response.body, {
         onChunk: () => { lastChunk = deps.now(); },
         onGap: (reason) => {
+          if (once && streamGapEmitted) return;
           const event: UnifiedEvent = {
             source: "gateway",
             kind: "gap",
@@ -231,8 +234,9 @@ export async function runEvents(
           emit(deps, event, `direct:${sequence}`);
           emitted = true;
           streamGapEmitted = true;
+          if (once) streamStop.abort();
         },
-        signal: stop,
+        signal: streamSignal,
       })) {
         if (stop?.aborted) return;
         if (once && streamGapEmitted) return;
