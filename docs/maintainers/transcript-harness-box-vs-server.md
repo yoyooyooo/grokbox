@@ -4,7 +4,7 @@
 
 **Role: grokbox implications of the stock App/Host dual ledger.** Not a second Host inbound map. Stock protocol (wire omit, Gateway proxy, desktop coordinator, Mac replica, Cmd-Q) is owned by grok-bot `private interoperability notes (not distributed)` (sibling checkout on this box: `PRIVATE_EVIDENCE`; not vendored here). Working / tray vs pixels stay in [Host / App live projections](host-app-projections.md).
 
-CLI `--harness box|temporal` is implemented on `grokbox agents create/update` and always sends `profile.harness` (box default). Host always-emit is slices `harness-blank` / `harness-summary` in `live-slices.ts`; living Host only picks them up after a legal pack/re-adopt. This page does not authorize circuit clears.
+CLI `--harness box|temporal` is implemented on `grokbox agents create/update` and always sends `profile.harness` (box default). Host always-emit is slices `harness-blank` / `harness-summary` in `live-slices.ts`; living Host only picks them up after a legal pack + `runtime profile write` + `re-adopt`. Official rollback / Cmd-Q / Mac replica acceptance is [official-rollback-acceptance](official-rollback-acceptance.md). This page does not authorize circuit clears.
 
 ## Why grokbox cares
 
@@ -33,9 +33,9 @@ Keep overflow / managed-session canaries on **`harness=box`** (test2 while it is
 
 Stock Host `buildSummary` emits `harness` **only** when `"temporal"`; box is omitted. Desktop coordinator `db({ raw: undefined, previous })` **keeps** a prior `temporal`. Official Host restart therefore cannot unstick a desktop that already classified a canary as temporal, and it cannot clear Mac `transcript.replicas`.
 
-Always-emit Host slices (`harness-blank`, `harness-summary`) replace omit-box spreads with `harness: … ? "temporal" : "box"`. Coordinator still must not preserve `temporal` across omitted fields (App-side; not this repo). Mac replica wipe remains separate. Living Host emit requires pack + legal re-adopt of those slices.
+Always-emit Host slices (`harness-blank`, `harness-summary`) replace omit-box spreads with `harness: … ? "temporal" : "box"`. Coordinator still must not preserve `temporal` across omitted fields (App-side; not this repo). Mac replica wipe remains separate. Living emit still requires those slices on the compile in use; official Host without grokbox slices stays omit-box. See [official-rollback-acceptance](official-rollback-acceptance.md).
 
-Live re-adopt / harness profile edits are out of scope for this document. Circuit `uncertain-operation` remains a live-writer blocker elsewhere; do not hand-clear.
+Live unload of an attested Host is out of scope for this document. Circuit `uncertain-operation` remains a live-writer blocker elsewhere; do not hand-clear. Machine-local L2 receipts under `PRIVATE_EVIDENCE` observed always-emit on an attested grokbox Host; they are not repo authority.
 
 ## Dated observation (not a standing inventory)
 
