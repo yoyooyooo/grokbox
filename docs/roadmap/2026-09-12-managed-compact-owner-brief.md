@@ -4,6 +4,7 @@
 
 **状态：** 规划/口径稳稿（2026-09-12）。**不是**实现完成声明，**不是** GATE 授权，**不开**实现 lane。  
 **配套技术详稿：** [2026-09-12-managed-compact-path.md](./2026-09-12-managed-compact-path.md)  
+**继任交接：** [2026-09-12-orchestrator-handoff.md](./2026-09-12-orchestrator-handoff.md)  
 **活证/诊断回执（机内）：** `PRIVATE_EVIDENCE`、`PRIVATE_EVIDENCE`
 
 ---
