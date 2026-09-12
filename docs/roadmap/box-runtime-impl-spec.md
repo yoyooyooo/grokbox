@@ -367,7 +367,7 @@ T32 仅在 typed 当前 attempt outcome + 合格 provider-specific 非冲突证�
 
 v4 在原 run-step 连接增加一个 server `compact-request`（原 tuple、一次性 recovery nonce、期限与可信目标预算）及 client `resume-step`（原 tuple/nonce、新 snapshot）。Host IPC client 将控制帧交给 `host/compact.ts` 的已批准 Host delegate，不投影成 assistant/tool event；delegate 使用 Host 选上下文，不能自己总结。server 只接受当前连接匹配、未消费且未过期的 nonce；拒绝其它追加请求/旧代/重复回复。重新验证原 binding/authority/snapshot 后同一 ledger 执行 attempt=1，最终才产生唯一 Host STEP terminal。v4 caller/profile/bridge digest 同票切换，旧 v3 拒绝，不留双版本。
 
-compact seam 必须证明能在这个 Host 挂起点调用、不会与等待中的 Host loop 死锁；未知时拒绝，不编造 callback 能力。auth/429/generic 400/500/HTTP too-large/timeout/unknown、取消、无改善、二次失败均停止，零额外 compact/retry。候选日志不是命令；无匹配字段时拒绝，不能从 body 捞 id。T32 不等待所有 T30/T31 或完整 UI。
+compact seam 必须证明能在这个 Host 挂起点调用、不会与等待中的 Host loop 死锁；未知时拒绝，不编造 callback 能力。auth/429/generic 400/500/HTTP too-large/timeout/unknown、取消、无改善、二次失败均停止，零额外 compact/retry。候选日志不是命令；无匹配字段时拒绝，不能从 body 捞 id。T32 不等待所有 T30/T31 或完整 UI。 **Wait-point / first-request overflow live close is [T35](../tickets/T35-host-compact-wait-point.md)** (owner-gated). Composer `currentActivity` App residual is [T36](../tickets/T36-composer-working-activity.md), not a T32 substitute.
 
 T33 扩充只读 source-scoped retention/cursor/gap、operation/交付观察。只有可核对来源/代/序列的 Host 能力才提供 publish watermark；否则 not_observed。缺记录、模型 finish、Gateway PID 不成为 App delivery 证明，不驱动 SendToUser/model replay、re-adopt 或游标写入。
 
@@ -421,6 +421,8 @@ T33 扩充只读 source-scoped retention/cursor/gap、operation/交付观察。�
 | 2 · deferred | [T29 命令边界/CAS](../tickets/T29-runtime-webui.md) | T27/T28；共享 commands/status、第二 writer CAS、identity 绑定。浏览器 MVP 另标 deferred，不自动开工 |
 | 3 | [T30 pi](../tickets/T30-runtime-pi-backend.md) / [T31 Cursor](../tickets/T31-runtime-cursor-backend.md) | T23–T26；不依赖 T29；彼此无依赖；资格不成立就阻塞本 adapter |
 | 4 | [T32 confirmed compact](../tickets/T32-runtime-confirmed-compact.md) | T24/T25/T26；另需 Host seam/provider qualification；不依赖 T29/T30/T31 |
+| 4 | [T35 HostCompact wait-point](../tickets/T35-host-compact-wait-point.md) | T32 seam；owner-gated；first-request overflow live |
+| — | [T36 composer Working](../tickets/T36-composer-working-activity.md) | product residual；不替代 T32/T35 |
 | 4 | [T33 深层诊断](../tickets/T33-runtime-diagnostics.md) | T27/T28；不依赖 compact、WebUI 或所有 backend，缺能力保留 not_observed |
 
 默认主链：**T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28**。T22 独立穿插。T29 与合格 backend、T32/T33 各自满足依赖后推进，**T28 后不默认施工 WebUI**；backend 受阻不堵住 T32/T33。每个写入车道一名 writer，跨 worktree 先后集成；规格不授权创建云端 agent、花费或改现役服务。

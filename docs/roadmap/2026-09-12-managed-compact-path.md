@@ -6,6 +6,8 @@
 
 **Owner review (Chinese briefing):** [2026-09-12-managed-compact-owner-brief.md](./2026-09-12-managed-compact-owner-brief.md)
 
+**Execution authority:** [T35 wait-point](../tickets/T35-host-compact-wait-point.md) / [T36 composer Working](../tickets/T36-composer-working-activity.md) under Spec — this roadmap page does not authorize implement.
+
 **Upper goal (binding):** a Bot opted into a managed custom model must send the Host-selected conversation into that model; when the window is too large, compress through Host Compact, then continue on the compacted context **on the same custom-model binding**.
 
 **Means (separate):** reuse Host Compact up/downstream when it fits. If a segment does not fit, patch at Host’s original Compact-related points. Do not invent a parallel grokbox summarizer, near-window CAP, or `store.db` prepend.

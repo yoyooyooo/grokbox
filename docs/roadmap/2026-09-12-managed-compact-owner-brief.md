@@ -142,3 +142,7 @@ Compact **不是**「模型自己同步砍上下文」；是同连接声明 → 
 ## Freshness
 
 失效条件：wait-point / background 补丁合入并活证 resume；Living Host `runStep` 顺序相对 `2ede71e2…` 漂移；产品改判摘要也必须走自定义模型；或明确接受 C 并改写上层目标。
+
+## Spec/Ticket 矫正（2026-09-12）
+
+施工权威回到 **Spec + Ticket**。[T35](../tickets/T35-host-compact-wait-point.md) = wait-point；[T36](../tickets/T36-composer-working-activity.md) = composer Working。本文与英文 plan 只作口径/序列，**不授权**实现。
