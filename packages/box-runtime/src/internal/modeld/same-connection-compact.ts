@@ -4,7 +4,8 @@ import type { HostCompactRequest, HostCompactResult } from "@grokbox/runtime-ker
 import { parseV4ControlFrame } from "../wire/modeld-wire.ts";
 import { readOneFrame, writeFrame, type Incoming } from "./server.node.ts";
 
-const COMPACT_WAIT_MS = 5_000;
+/** Same-connection resume wait. Host handleSummarization is unbounded; this is the modeld fail-closed bound. */
+export const COMPACT_WAIT_MS = 5_000;
 
 function sameTuple(request: HostCompactRequest, resume: {
   agentId: string;

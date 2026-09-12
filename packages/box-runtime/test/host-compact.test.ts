@@ -467,6 +467,11 @@ describeLive("D2 live Host compact anchors", () => {
     if (!applied.ok) return;
     expect(applied.source).toContain(HOST_COMPACT_SYMBOL);
     expect(applied.source).toContain("__addDisposableResource23(env_2, __grokbox_compact_slot, false)");
+    const streamAt = source.indexOf("result = rootPromptExecutor.executeToolStream(");
+    const closedAt = source.indexOf("let stepClosed = false;");
+    expect(streamAt).toBeGreaterThan(-1);
+    expect(closedAt).toBeGreaterThan(streamAt);
+    expect(applied.source.indexOf("__grokbox_compact_slot")).toBeGreaterThan(applied.source.indexOf("let stepClosed = false;"));
     expect(await readFile(LIVE_HOST_BUNDLE, "utf8")).toBe(before);
   });
 });

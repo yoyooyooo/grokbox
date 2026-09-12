@@ -18,7 +18,7 @@ import {
   fakeModelBackendLayer,
 } from "@grokbox/runtime-kernel/testing";
 import { serveModeld } from "../src/internal/modeld/server.node.ts";
-import { sameConnectionHostCompactLayer } from "../src/internal/modeld/same-connection-compact.ts";
+import { COMPACT_WAIT_MS, sameConnectionHostCompactLayer } from "../src/internal/modeld/same-connection-compact.ts";
 import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
 
 const EVENTS: InferenceEvent[] = [
@@ -214,4 +214,77 @@ describe("same-connection v4 HostCompact adapter", () => {
     const terminal = frames.find((frame) => frame && typeof frame === "object" && (frame as { kind?: string }).kind === "terminal") as { outcome?: string; code?: string };
     expect(terminal.outcome).toBe("error");
   });
+
+  test("no resume-step before COMPACT_WAIT_MS is overflow, not attempt1", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-v4-compact-wait-"));
+    const path = join(dir, "modeld.sock");
+    const generation = randomUUID();
+    const counts = createCountedSeams();
+    const layer = fakeBackendAuthLayer("secret", counts).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer()),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: generation })),
+    );
+    const fiber = Effect.runFork(Effect.scoped(
+      serveModeld({
+        path,
+        generation,
+        compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming),
+      }).pipe(Effect.andThen(Effect.never), Effect.provide(layer)) as Effect.Effect<never, unknown>,
+    ));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const frames = await new Promise<unknown[]>((resolve, reject) => {
+      const socket = createConnection({ path });
+      const body = stepBody(generation);
+      let session = clientSessionFor(body);
+      const collected: unknown[] = [];
+      let buf = Buffer.alloc(0);
+      let settled = false;
+      const timer = setTimeout(() => finish(new Error("timeout")), COMPACT_WAIT_MS + 3_000);
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        socket.destroy();
+        if (error) reject(error);
+        else resolve(collected);
+      };
+      socket.on("connect", () => {
+        try { socket.write(encodeModeldFrame(body)); }
+        catch (error) { finish(error instanceof Error ? error : new Error("write")); }
+      });
+      socket.on("data", (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        while (!settled) {
+          const decoded = decodeModeldFrame(buf);
+          if (decoded == null) break;
+          if ("error" in decoded) {
+            finish(new Error(decoded.error));
+            return;
+          }
+          buf = Buffer.from(decoded.rest);
+          try {
+            const next = acceptModeldFrame(session, decoded.value);
+            session = next.session;
+            if (next.control) continue;
+            collected.push(decoded.value);
+            if (next.done) {
+              finish();
+              return;
+            }
+          } catch (error) {
+            finish(error instanceof Error ? error : new Error("malformed"));
+            return;
+          }
+        }
+      });
+      socket.on("error", (error) => finish(error));
+      socket.on("end", () => { if (!settled) finish(new Error("incomplete")); });
+    });
+    await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.ignore));
+    expect(counts.network).toBe(1);
+    const terminal = frames.find((frame) => frame && typeof frame === "object" && (frame as { kind?: string }).kind === "terminal") as { outcome?: string };
+    expect(terminal.outcome).toBe("error");
+  }, COMPACT_WAIT_MS + 4_000);
 });

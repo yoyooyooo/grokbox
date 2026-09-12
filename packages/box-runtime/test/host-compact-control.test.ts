@@ -256,6 +256,30 @@ describe("Host compact-request → resume-step", () => {
     );
   });
 
+  test("pending background summary compact_rejects without invoking Host compact", async () => {
+    bindHostCompactHook({ profileId: "t21-state-root", abiIdentity: "host-abi-v1" })({
+      orchestrator: { handleSummarization: async () => { throw new Error("must_not_compact"); } },
+      ctx: { get: () => TUPLE.turnId, signal: { aborted: false } },
+      stateHandler: { backgroundSummarizationPromiseInfo: { pending: true } },
+      rootPromptExecutor: { getState: () => rootState() },
+      interactionListener: {},
+      config: {},
+      requestContext: {},
+      invocationId: TUPLE.stepId,
+      turnId: TUPLE.turnId,
+      agentId: TUPLE.agentId,
+      resourceAccessor: {},
+      stepClosed: () => false,
+    });
+    await withPeer(
+      (socket, seen) => acceptedThenCompact(socket, seen, {}, "hang"),
+      async (runRoot, seen) => {
+        await expect(requestModeld(runRoot, runStepBody(), 1_500)).rejects.toMatchObject({ message: "compact_rejected" });
+        expect(seen.resumes).toHaveLength(0);
+      },
+    );
+  });
+
   test("missing D2 slot rejects compact-request without resume-step", async () => {
     await withPeer(
       (socket, seen) => acceptedThenCompact(socket, seen, {}, "hang"),

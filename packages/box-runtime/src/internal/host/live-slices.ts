@@ -35,6 +35,8 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
   },
   {
     id: "compact-register",
+    // After executeToolStream + optional approaching-limit background summary.
+    // Fast overflow before this insert is seam-intentional capability_not_ready.
     startAnchor: "let stepClosed = false;",
     endAnchor: "        [response, extendedUsage, usage, finalInvocationId] = await Promise.all([",
     find: "      let response;\n      let extendedUsage;\n      let usage;\n      let finalInvocationId;\n      try {\n",
