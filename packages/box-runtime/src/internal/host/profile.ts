@@ -1,6 +1,21 @@
 import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
 
-export type SliceId = "create-session" | "agent-id" | "compact-register" | "activity-bridge" | "memory-purpose" | "episode-purpose" | "harness-blank" | "harness-summary";
+export const REQUIRED_SLICE_IDS = ["create-session", "agent-id"] as const;
+export const OPTIONAL_SLICE_IDS = [
+  "compact-register",
+  "activity-bridge",
+  "memory-purpose",
+  "episode-purpose",
+  "harness-blank",
+  "harness-summary",
+  "harness-profile-rpc",
+  "harness-update-trim",
+  "harness-agent-write",
+  "harness-local-write",
+  "harness-server-write",
+] as const;
+export type SliceId = (typeof REQUIRED_SLICE_IDS)[number] | (typeof OPTIONAL_SLICE_IDS)[number];
+export const MAX_APPROVED_SLICES = REQUIRED_SLICE_IDS.length + OPTIONAL_SLICE_IDS.length;
 
 export type SlicePatch = {
   id: SliceId;
@@ -120,8 +135,9 @@ export const HOST_COMPACT_SYMBOL = "grokbox.box-runtime.host-compact.v1";
 export const HOST_ACTIVITY_SYMBOL = "grokbox.box-runtime.host-activity.v1";
 export const HOST_AUX_SYMBOL = "grokbox.box-runtime.host-aux.v1";
 export const PACKED_SESSION_SYMBOL = "grokbox.box-runtime.packed-session.v1";
+export const HOST_HARNESS_STICK_SYMBOL = "grokbox.box-runtime.harness-stick.v1";
 
-const OPTIONAL_SLICES = new Set<string>(["compact-register", "activity-bridge", "memory-purpose", "episode-purpose", "harness-blank", "harness-summary"]);
+const OPTIONAL_SLICES = new Set<string>(OPTIONAL_SLICE_IDS);
 
 export function approvedSliceSet(slices: readonly { id: string }[]): boolean {
   const ids = slices.map((slice) => slice.id);
@@ -131,7 +147,7 @@ export function approvedSliceSet(slices: readonly { id: string }[]): boolean {
   for (const id of unique) {
     if (id !== "create-session" && id !== "agent-id" && !OPTIONAL_SLICES.has(id)) return false;
   }
-  return unique.size >= 2 && unique.size <= 2 + OPTIONAL_SLICES.size;
+  return unique.size >= REQUIRED_SLICE_IDS.length && unique.size <= MAX_APPROVED_SLICES;
 }
 
 export function extractContractSlices(source: string): Record<string, string> {

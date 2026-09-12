@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { SlicePatch } from "./profile.ts";
-import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
+import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_HARNESS_STICK_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
 
 export const LIVE_HOST_BUNDLE = "/home/box/sand-host/host-main.cjs";
 
@@ -80,5 +80,48 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {}\n",
     replacement:
       "    harness: readSandProfileHarness(profilePath) === \"temporal\" ? \"temporal\" : \"box\"\n",
+  },
+  {
+    id: "harness-profile-rpc",
+    startAnchor: "var agentProfileFields = {",
+    endAnchor: "var createAgentArgs = rpcObject({",
+    find: "  avatarColor: rpcOptional(rpcString())\n};",
+    replacement:
+      "  avatarColor: rpcOptional(rpcString()),\n  harness: rpcOptional(\n    rpcUnion(\n      rpcLiteral(SAND_REQUESTED_AGENT_HARNESS_BOX),\n      rpcLiteral(SAND_REQUESTED_AGENT_HARNESS_TEMPORAL)\n    )\n  )\n};",
+  },
+  {
+    id: "harness-update-trim",
+    startAnchor: "async updateAgent(agentId, profile) {",
+    endAnchor: "async seedConversationName({",
+    find:
+      "      ...profile.title === void 0 ? {} : { title: profile.title.trim() }\n    };",
+    replacement:
+      "      ...profile.title === void 0 ? {} : { title: profile.title.trim() },\n      ...profile.harness === \"box\" || profile.harness === \"temporal\" ? { harness: profile.harness } : {}\n    };",
+  },
+  {
+    id: "harness-agent-write",
+    startAnchor: "writeAgentProfileFile(agentId, profile) {",
+    endAnchor: "async withAgentDb(agentId, fn) {",
+    find: "      ...namedBy == null ? {} : { namedBy }\n    });",
+    replacement:
+      "      ...namedBy == null ? {} : { namedBy },\n      ...profile.harness === \"box\" || profile.harness === \"temporal\" ? { harness: profile.harness } : {}\n    });",
+  },
+  {
+    id: "harness-local-write",
+    startAnchor: "function writeSandProfileFile(path31, profile) {",
+    endAnchor: "function seedRoomProfileName(seed) {",
+    find:
+      "  const parsed = parseProfileJson2(path31);\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, parsed == null ? {} : profileServerBindingFromJson(parsed))\n  );\n",
+    replacement:
+      `  const parsed = parseProfileJson2(path31);\n  const existing = parsed == null ? {} : profileServerBindingFromJson(parsed);\n  const __grokbox_stick = globalThis[Symbol.for("${HOST_HARNESS_STICK_SYMBOL}")];\n  const __grokbox_harness = typeof __grokbox_stick === "function" ? __grokbox_stick({\n    kind: "local",\n    incoming: profile == null ? void 0 : profile.harness,\n    existing: existing.harness\n  }) : void 0;\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, {\n      ...existing,\n      ...__grokbox_harness == null ? {} : { harness: __grokbox_harness }\n    })\n  );\n`,
+  },
+  {
+    id: "harness-server-write",
+    startAnchor: "function writeServerBackedProfileFile(path31, profile, binding) {",
+    endAnchor: "function isServerTemporalHarnessRefusal(error41) {",
+    find:
+      "  const previous = readSandProfileCreationMetadata(path31);\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, {\n      ...binding,\n      origin: binding.origin ?? previous.origin,\n      purpose: binding.purpose ?? previous.purpose\n    })\n  );\n",
+    replacement:
+      `  const previous = readSandProfileCreationMetadata(path31);\n  const parsed = parseProfileJson2(path31);\n  const existing = parsed == null ? {} : profileServerBindingFromJson(parsed);\n  const __grokbox_stick = globalThis[Symbol.for("${HOST_HARNESS_STICK_SYMBOL}")];\n  const __grokbox_harness = typeof __grokbox_stick === "function" ? __grokbox_stick({\n    kind: "server",\n    fileExists: parsed != null,\n    existing: existing.harness,\n    remote: binding.harness\n  }) : void 0;\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, {\n      ...binding,\n      origin: binding.origin ?? previous.origin,\n      purpose: binding.purpose ?? previous.purpose,\n      ...__grokbox_harness == null ? {} : { harness: __grokbox_harness }\n    })\n  );\n`,
   },
 ];

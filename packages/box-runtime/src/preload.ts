@@ -8,10 +8,11 @@ import { installCompileHook } from "./internal/host/compile-hook.ts";
 import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts";
 import { bindHostSessionHook } from "./internal/host/session-hook.ts";
 import { bindHostCompactHook, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
+import { bindHarnessStickHook } from "./internal/host/harness-stick.ts";
 import { wrapHostAuxExecutor } from "./internal/host/aux-purpose.ts";
 import { bindCompiledHost } from "./internal/host/host-binding.ts";
 import { asHostPromptSession, createStreamingPromptSession, InvalidHostStateError } from "./internal/host/session.ts";
-import { HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, PACKED_SESSION_SYMBOL, ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
+import { HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_HARNESS_STICK_SYMBOL, PACKED_SESSION_SYMBOL, ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
 
 const target = process.env.GROKBOX_HOST_BUNDLE ?? LIVE_HOST_BUNDLE;
 const profilePath = process.env.GROKBOX_PATCH_PROFILE;
@@ -59,6 +60,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       transformedSha256: profile.transformedSourceSha256,
     },
   });
+  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_HARNESS_STICK_SYMBOL)] = bindHarnessStickHook();
   if (admittedMode === "route") {
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_AUX_SYMBOL)] = wrapHostAuxExecutor;
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook(stateSystemCompactHookOptions());

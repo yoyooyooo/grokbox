@@ -99,7 +99,7 @@ protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后
 - **长效根** `/workspace/.grokbox/box-runtime/`：配置、PatchProfile、合同切片、**Host 整包 provenance**（`host-bundles/`）、事件日志（云电脑重置后仍在）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。
 - **短效**：盒本地 live state 固定 `~/.grokbox/run/`（`attestation.json`、operation journal/lock、preload/launch markers、`modeld.sock`）。不读 `XDG_RUNTIME_DIR`。显式 `ephemeralRoot` 只用于测试/合成隔离。daemon/Profile socket 仍走现有 XDG 合同，不是这棵树。
 - 不新建独立 npm package；一个源码模块、多个 entry。
-- 当前 PatchProfile/validator 必需 `create-session` / `agent-id`，可选 `compact-register` / `activity-bridge` / `memory-purpose` / `episode-purpose`（共两至六处唯一切片）。D2 已批准的 [E07 purpose seam](maintainers/e07-path-b-host-admission.md) 只标注真实 memory/episode 调用，并关联同 session 已完成的父 STEP/捕获选择；任一处锚点不唯一仍拒绝。
+- 当前 PatchProfile/validator 必需 `create-session` / `agent-id`，可选 `compact-register` / `activity-bridge` / `memory-purpose` / `episode-purpose` / harness always-emit (`harness-blank` / `harness-summary`) / harness persist (`harness-profile-rpc` / `harness-update-trim` / `harness-agent-write` / `harness-local-write` / `harness-server-write`)。数量不是永久禁令；authoring 只接受已批准的唯一切片 id。D2 已批准的 [E07 purpose seam](maintainers/e07-path-b-host-admission.md) 只标注真实 memory/episode 调用，并关联同 session 已完成的父 STEP/捕获选择；任一处锚点不唯一仍拒绝。
 - 默认选择薄两切片 leaf，但数量不是永久禁令。额外 Host patch 的稳定性/能力收益明显大于新增耦合时，允许在精确 profile 审查、schema/validator 更新、双向合同/官方 passthrough 与恢复证明后扩展。未经批准不绕 gate，不复制 Host core。见 [ADR D2](decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d2--evidence-bounded-host-patch-surface)。
 
 Launch context：从已验证 generation 捕获 allowlist 字段，禁止复制完整 `/proc/environ`。只许 `identityLaunchFields` / 固定 allowlist，不得整份克隆 supervisor 环境。

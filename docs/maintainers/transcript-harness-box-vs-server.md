@@ -4,7 +4,7 @@
 
 **Role: grokbox implications of the stock App/Host dual ledger.** Not a second Host inbound map. Stock protocol (wire omit, Gateway proxy, desktop coordinator, Mac replica, Cmd-Q) is owned by grok-bot `private interoperability notes (not distributed)` (sibling checkout on this box: `PRIVATE_EVIDENCE`; not vendored here). Working / tray vs pixels stay in [Host / App live projections](host-app-projections.md).
 
-CLI `--harness box|temporal` is implemented on `grokbox agents create/update` and always sends `profile.harness` (box default). Host always-emit is slices `harness-blank` / `harness-summary` in `live-slices.ts`; living Host only picks them up after a legal pack + `runtime profile write` + `re-adopt`. Official rollback / Cmd-Q / Mac replica acceptance is [official-rollback-acceptance](official-rollback-acceptance.md). This page does not authorize circuit clears.
+CLI `--harness box|temporal` is implemented on `grokbox agents create/update` and always sends `profile.harness` (box default). Host always-emit is slices `harness-blank` / `harness-summary`. Persist slices (`harness-profile-rpc`, `harness-update-trim`, `harness-agent-write`, `harness-local-write`, `harness-server-write`) keep `box|temporal` on disk through `agents update`, local identity writes, and server identity write-back. Living Host only picks them up after a legal pack + `runtime profile write` + `re-adopt`. Official rollback / Cmd-Q / Mac replica acceptance is [official-rollback-acceptance](official-rollback-acceptance.md). This page does not authorize circuit clears.
 
 ## Why grokbox cares
 
@@ -21,7 +21,7 @@ harness=temporal   → Host does not run that turn locally → intercept skipped
 
 `RosterAttributes.harness` plus `--harness box|temporal`. `createProfile` / `mergedProfile` always include `harness` (`box` if omitted). Other profile fields are preserved. Create sends `harness` at the `createAgent` root (Host RPC accepts it). Update sends `profile.harness`.
 
-Offline Host source (`/home/box/sand-host/host-main.cjs`, not repo authority): `updateAgent` `agentProfile` is name/description/title/avatar only; extra `harness` is dropped, and `manager.updateAgent` writes a trimmed identity without `harness`. Disk `profile.json` harness is binding-owned via `serializeSandProfileFile`. Live write-back remains dogfood. Do not assume a roster PATCH stuck a canary on box until that is re-checked.
+Tip persist (after pack + legal re-adopt): `agentProfileFields` keeps `harness`; `updateAgent` trim and `writeAgentProfileFile` pass `box|temporal` through; `writeSandProfileFile` honors incoming `box|temporal` and otherwise keeps the existing binding; `writeServerBackedProfileFile` never lets a server row change an existing file's harness (omit-on-disk is `box`). New files still take the create binding, so `--harness temporal` + `serverId` works. Official Host without these slices still drops update `harness` and can stamp server `temporal` on send. Always-emit roster `box` is not proof createSession wrapped.
 
 ## Patching expectation
 

@@ -24,6 +24,11 @@ describe("L2 Host harness always-emit", () => {
       "episode-purpose",
       "harness-blank",
       "harness-summary",
+      "harness-profile-rpc",
+      "harness-update-trim",
+      "harness-agent-write",
+      "harness-local-write",
+      "harness-server-write",
     ]);
   });
 

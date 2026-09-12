@@ -101,5 +101,94 @@ async function buildSummary(args) {
 async function agentHasDurableFootprint(agentDir, agentHasMemory) {
   return Boolean(agentDir && agentHasMemory);
 }
-module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction, blankRoster, buildSummary };
+function rpcString() { return "string"; }
+function rpcOptional(schema) { return schema; }
+function rpcObject(fields) { return fields; }
+function rpcUnion(left, right) { return left || right; }
+function rpcLiteral(value) { return value; }
+const SAND_REQUESTED_AGENT_HARNESS_BOX = "box";
+const SAND_REQUESTED_AGENT_HARNESS_TEMPORAL = "temporal";
+var agentProfileFields = {
+  name: rpcString(),
+  description: rpcString(),
+  title: rpcOptional(rpcString()),
+  avatarShape: rpcOptional(rpcString()),
+  avatarColor: rpcOptional(rpcString())
+};
+var agentProfile = rpcObject(agentProfileFields);
+var createAgentArgs = rpcObject({
+  ...agentProfileFields,
+});
+function parseProfileJson2() { return null; }
+function profileServerBindingFromJson(parsed) { return parsed || {}; }
+function serializeSandProfileFile(profile, binding) { return JSON.stringify({ profile, binding }); }
+function writeProfileJson() {}
+function readSandProfileCreationMetadata() { return {}; }
+function writeSandProfileFile(path31, profile) {
+  const parsed = parseProfileJson2(path31);
+  writeProfileJson(
+    path31,
+    serializeSandProfileFile(profile, parsed == null ? {} : profileServerBindingFromJson(parsed))
+  );
+}
+function seedRoomProfileName(seed) {
+  return seed;
+}
+function writeServerBackedProfileFile(path31, profile, binding) {
+  const previous = readSandProfileCreationMetadata(path31);
+  writeProfileJson(
+    path31,
+    serializeSandProfileFile(profile, {
+      ...binding,
+      origin: binding.origin ?? previous.origin,
+      purpose: binding.purpose ?? previous.purpose
+    })
+  );
+}
+function isServerTemporalHarnessRefusal(error41) {
+  return Boolean(error41);
+}
+const rosterOwner = {
+  async updateAgent(agentId, profile) {
+    const trimmedProfile = {
+      ...profile.avatarShape === void 0 ? {} : { avatarShape: profile.avatarShape.trim() },
+      ...profile.avatarColor === void 0 ? {} : { avatarColor: profile.avatarColor.trim() },
+      name: profile.name.trim(),
+      description: profile.description.trim(),
+      ...profile.title === void 0 ? {} : { title: profile.title.trim() }
+    };
+    return { agentId, trimmedProfile };
+  },
+  async seedConversationName({
+    id,
+    prompt
+  }) {
+    return { id, prompt };
+  }
+};
+const sessionStoreOwner = {
+  getAgentDir(agentId) { return agentId; },
+  writeAgentProfileFile(agentId, profile) {
+    const path31 = getSandProfilePath(this.getAgentDir(agentId));
+    const current = readSandProfileFile(path31);
+    const trimmedName = profile.name.trim();
+    const isRename = trimmedName.length > 0 && trimmedName !== current?.name.trim();
+    const namedBy = isRename ? "user" : current?.namedBy;
+    writeSandProfileFile(path31, {
+      name: resolveProfileName(trimmedName, current),
+      description: profile.description.trim(),
+      title: profile.title?.trim() ?? current?.title ?? "",
+      avatarShape: profile.avatarShape?.trim() ?? current?.avatarShape ?? "",
+      avatarColor: profile.avatarColor?.trim() ?? current?.avatarColor ?? "",
+      ...namedBy == null ? {} : { namedBy }
+    });
+  },
+  async withAgentDb(agentId, fn) {
+    return fn(agentId);
+  }
+};
+function getSandProfilePath(dir) { return dir; }
+function readSandProfileFile() { return { name: "fixture" }; }
+function resolveProfileName(name) { return name; }
+module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction, blankRoster, buildSummary, rosterOwner, sessionStoreOwner };
 `;
