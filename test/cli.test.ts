@@ -424,6 +424,41 @@ describe("send", () => {
     expect(sends).toHaveLength(1);
     expect((sends[0]?.body as { clientNonce: string }).clientNonce).toBe(nonce);
   });
+
+  test("unmapped 422 from gateway exits 10 (gateway_bad_request), not 15 (gateway_internal)", async () => {
+    const result = await withGateway(["send", "alpha", "--text", "hello", "--nonce", nonce], {
+      sendPrompt: () => ({ status: 422, body: { failureCode: "validation_failed" } }),
+    });
+    expect(result.code).toBe(10);
+    expect(errorCode(result.stderr)).toBe("gateway_bad_request");
+    const body = parseJson(result.stderr) as { error: { retryable: boolean; httpStatus: number; failureCode?: string } };
+    expect(body.error.retryable).toBe(false);
+    expect(body.error.httpStatus).toBe(422);
+    expect(body.error.failureCode).toBe("validation_failed");
+    expect(rpcCalls(result.mock.requests, "sendPrompt")).toHaveLength(1);
+  });
+
+  test("3xx (302) via the JSON send path exits 10 (gateway_bad_request), not 15", async () => {
+    const result = await withGateway(["send", "alpha", "--text", "hello", "--nonce", nonce], {
+      sendPrompt: () => ({ status: 302, body: { error: "redirect_refused" } }),
+    });
+    expect(result.code).toBe(10);
+    expect(errorCode(result.stderr)).toBe("gateway_bad_request");
+    const body = parseJson(result.stderr) as { error: { httpStatus: number } };
+    expect(body.error.httpStatus).toBe(302);
+  });
+
+  test("500 from gateway still maps to gateway_internal (exit 15)", async () => {
+    const result = await withGateway(["send", "alpha", "--text", "hello", "--nonce", nonce], {
+      sendPrompt: () => ({ status: 500, body: { error: "internal" } }),
+    });
+    expect(result.code).toBe(15);
+    expect(errorCode(result.stderr)).toBe("gateway_internal");
+    const body = parseJson(result.stderr) as { error: { retryable: boolean; httpStatus: number } };
+    expect(body.error.retryable).toBe(true);
+    expect(body.error.httpStatus).toBe(500);
+    expect(rpcCalls(result.mock.requests, "sendPrompt")).toHaveLength(1);
+  });
 });
 
 describe("history, memory, events, and running", () => {
@@ -514,6 +549,32 @@ describe("history, memory, events, and running", () => {
     expect(lines).toHaveLength(1);
     const line = parseJson(lines[0]!) as { event: { kind: string; payload: { reason: string; resumable: boolean } } };
     expect(line.event).toMatchObject({ kind: "gap", payload: { reason: "malformed_frame", resumable: false } });
+  });
+
+  test("3xx on the streaming /events path (redirect: manual) exits 10 (gateway_bad_request), not 15", async () => {
+    const result = await withGateway(["events", "--once"], {
+      eventsStatus: 302,
+      eventsBody: { failureCode: "redirect_refused" },
+    });
+    expect(result.code).toBe(10);
+    expect(errorCode(result.stderr)).toBe("gateway_bad_request");
+    const body = parseJson(result.stderr) as { error: { httpStatus: number; failureCode?: string; retryable: boolean } };
+    expect(body.error.httpStatus).toBe(302);
+    expect(body.error.failureCode).toBe("redirect_refused");
+    expect(body.error.retryable).toBe(false);
+    expect(result.mock.requests.some((request) => request.pathname === "/events")).toBe(true);
+  });
+
+  test("5xx on the streaming /events path still maps to gateway_internal (exit 15)", async () => {
+    const result = await withGateway(["events", "--once"], {
+      eventsStatus: 503,
+      eventsBody: { failureCode: "provider_unavailable" },
+    });
+    expect(result.code).toBe(15);
+    expect(errorCode(result.stderr)).toBe("gateway_internal");
+    const body = parseJson(result.stderr) as { error: { httpStatus: number; retryable: boolean } };
+    expect(body.error.httpStatus).toBe(503);
+    expect(body.error.retryable).toBe(true);
   });
 
   test("is running resolves a cross-kind title through listAgents", async () => {

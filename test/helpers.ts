@@ -32,6 +32,8 @@ export type MockOptions = {
   memories?: unknown[];
   sendPrompt?: (index: number, body: unknown) => { status: number; body?: unknown };
   eventsSse?: string;
+  eventsStatus?: number;
+  eventsBody?: unknown;
 };
 
 export type MockGateway = {
@@ -260,6 +262,9 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
         return Response.json({ accepted: true });
       }
       if (url.pathname === "/events" && req.method === "GET") {
+        if (options.eventsStatus !== undefined) {
+          return Response.json(options.eventsBody ?? { error: "events-error" }, { status: options.eventsStatus });
+        }
         const sse =
           options.eventsSse ??
           `retry: 1000\n\ndata: {"channel":"transcript","payload":{"type":"appended","entry":{"kind":"user"}}}\n\n`;
