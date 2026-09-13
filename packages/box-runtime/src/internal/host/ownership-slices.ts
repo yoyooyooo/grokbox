@@ -1,5 +1,6 @@
 import type { SlicePatch } from "./profile.ts";
 import { HOST_OWNERSHIP_READ_SYMBOL } from "./ownership-read.ts";
+import { HOST_RESUME_GATE_SYMBOL } from "./profile.ts";
 
 // A narrowly scoped read extension of the existing Gateway. The native client
 // owns authentication. No credential or generic RPC dispatch is exported.
@@ -57,6 +58,18 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
         }
       }) };
     },
+`,
+  },
+  {
+    id: "ownership-resume-gate",
+    startAnchor: "  startUpgradeResume(marker17) {",
+    endAnchor: "  finishUpgradeResume(marker17) {",
+    find: "    this.tm.upgradeResumeStore?.markPending(marker17);\n    this.pauseResumeInFlightAgentIds.add(marker17.agentId);\n",
+    replacement: `    const __grokbox_resumeGate = globalThis[Symbol.for("${HOST_RESUME_GATE_SYMBOL}")];
+    if (this.tm.execution.isLocalWorkAllowed !== true &&
+        (typeof __grokbox_resumeGate !== "function" || __grokbox_resumeGate(marker17.agentId, this.tm.execution.isLocalWorkAllowed))) return "skipped";
+    this.tm.upgradeResumeStore?.markPending(marker17);
+    this.pauseResumeInFlightAgentIds.add(marker17.agentId);
 `,
   },
 ];

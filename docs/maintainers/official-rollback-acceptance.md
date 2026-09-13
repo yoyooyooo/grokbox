@@ -11,7 +11,7 @@
 | `models reset --for <bot>`的目标能力 | 该Bot下一TURN使用原生`originalSession`，bridge仍安装 | harness/Server身份/会话/其它Bot；不调用全局deactivate |
 | 完整未补丁Host退出 | 所有批准补丁从实际运行代码退出，原生进程继续拥有同一持久状态 | 不重建Bot，不把旧会话换成另一执行者，不丢未知工具效果 |
 
-当前候选已支持route模式下单Bot reset（T24），现役与原生往返仍需分别核验；返回originalSession的单元测试不证明custom checkpoint可被纯原生代码恢复。现有`deactivate`意图回执也不等于未补丁代码已经运行。所有具体可执行入口以源码和T28/T40实现资格为准，不将旧POC操作步骤照搬到现场。
+当前候选已支持route模式下单Bot reset（T24），现役与原生往返仍需分别核验；显式reset即使在冲突/缺桥时也只能撤managed覆盖，`ownership:not_required_for_reset`不授予原生执行权；返回originalSession的单元测试不证明custom checkpoint可被纯原生代码恢复。现有`deactivate`意图回执也不等于未补丁代码已经运行。所有具体可执行入口以源码和T28/T40实现资格为准，不将旧POC操作步骤照搬到现场。
 
 ## 2. 完整退出的前置证据
 

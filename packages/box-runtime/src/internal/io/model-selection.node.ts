@@ -1,6 +1,6 @@
 import { Clock, Effect } from "effect";
 import { BoxRuntimeError, OWNERSHIP_EVIDENCE_MAX_AGE_MS } from "@grokbox/runtime-kernel/contract";
-import { canonicalJson } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { applyReset, applyUse, assertResetAllowed, assertStubOnlyRouteAssignments, disclosure } from "@grokbox/runtime-kernel/selection";
 import { runConfigurationSave } from "@grokbox/runtime-kernel/commands";
 import { configurationWriteLayer } from "./configuration-write.node.ts";
@@ -29,7 +29,11 @@ export async function changeRuntimeModel(input: {
       },
       catch: error => error instanceof BoxRuntimeError ? error : new BoxRuntimeError("invalid_usage", "Invalid model selection."),
     });
-    const ownership = input.forAgent ? yield* readManagedOwnership({ agentId: input.forAgent, read: input.ownershipRead }) : null;
+    // Enabling managed execution requires fresh Box ownership. Explicit reset
+    // only removes our override: it must remain possible after revocation or
+    // bridge loss, and never asserts that the native owner is now Box/ready.
+    const ownership = input.forAgent && input.modelId !== undefined
+      ? yield* readManagedOwnership({ agentId: input.forAgent, read: input.ownershipRead }) : null;
     // No repair/auto-adopt when a bridge is unavailable. Do not overwrite a
     // configuration changed while awaiting identity. This is not multi-writer CAS.
     const after = yield* load();
@@ -37,12 +41,12 @@ export async function changeRuntimeModel(input: {
     if (ownership && (yield* Clock.currentTimeMillis) - ownership.evidence.observedAtMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
       return yield* Effect.fail(new BoxRuntimeError("runtime_ownership_unavailable", "ownership_evidence_stale"));
     }
-    const receipt = yield* runConfigurationSave({ boxRoot: input.store.root, kind: "models", file: next }).pipe(Effect.provide(configurationWriteLayer(input.store)));
+    const receipt = yield* runConfigurationSave({ boxRoot: input.store.root, kind: "models", file: next }).pipe(Effect.provide(configurationWriteLayer(input.store, sha256Text(canonicalJson(before.models)))));
     if (!receipt.ok) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", receipt.reason));
     return {
       ...(input.modelId ? disclosure(next, input.modelId, input.forAgent) : { assignments: next.assignments, model: "official", takesEffect: "next_user_turn", blastRadius: input.forAgent ? "single_bot" : "box_default" }),
       configRevision: receipt.configRevision, selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed",
-      ownership: ownership ? "confirmed_box" : "not_applicable_default_only",
+      ownership: ownership ? "confirmed_box" : input.forAgent ? "not_required_for_reset" : "not_applicable_default_only",
     };
   }), { signal: input.signal });
 }

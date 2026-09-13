@@ -41,7 +41,7 @@ Spec：[Server归属优先](../roadmap/box-runtime-impl-spec.md#server-authority
 - 保全要使用可验证的一致性备份/原生快照手段，考虑SQLite WAL和在途writer；任意复制一个打开中的db文件不构成可恢复快照。
 - 在当前冲突上只读诊断；受控本地准入负例必须证明provider/tools/SendToUser零新增效果。不能从App向test2发一个真实任务期待Host拦下，因为App→Server可绕过Host。
 - 有未知旧操作先按原身份对账，不以改harness重新执行；保全路径/摘要、恢复可行性和影响范围确认后，才允许原生安全对齐。
-- 正式修复以Server的temporal登记为目标，让本地停止错误Box执行；撤掉该对象managed期望配置，保留旧Box历史为独立归档。它不是模型上下文自动合并，也不能恢复冲突配置作为“回滚”。
+- 正式修复以Server的temporal登记为目标，让本地停止错误Box执行；用显式`runtime models reset --for <id>`撤掉该对象managed期望配置（不要求它先通过managed准入、不授予官方执行权），保留旧Box历史为独立归档。它不是模型上下文自动合并，也不能恢复冲突配置作为“回滚”。
 - 修复后只读再确权；必要官方Temporal验证单独明确范围。UI可能恢复官方历史，不代表旧Box分支已迁入Server。不删Bot、不删任何一侧历史来取得绿灯。
 
 本票允许先达到“实现/阻断已证、现场保留待确认校准”。索引与readiness须清楚分开这两者；未做真实修复不能标全部Done，也不能让选择保留诊断样本无限阻塞无关的干净Box生产候选。

@@ -17,4 +17,14 @@ const ownershipFixtureAPI = {
     }),
     setBoxMigrating: async (args) => { throw new Error("mutation_forbidden"); }
 };
+const resumeFixture = {
+  startUpgradeResume(marker17) {
+    this.tm.upgradeResumeStore?.markPending(marker17);
+    this.pauseResumeInFlightAgentIds.add(marker17.agentId);
+    return this.resumeUpgradeAgent(marker17);
+  },
+  finishUpgradeResume(marker17) {
+    this.tm.upgradeResumeStore?.clear(marker17.agentId);
+  }
+};
 `;

@@ -21,7 +21,9 @@
 
 用户要求同Bot可随时选择官方或合格自定义模型，且只介入Host，不修改App。按Spec S0.1.1保持Server确认的Box归属和原生会话不变；所谓“回官方”是选择`originalSession`，不是Box→Temporal，也不是每次卸载bridge。配置生效点仍是下一TURN，旧TURN/工具恢复不重绑。
 
-**当前工作树已有逐Bot route-mode reset。** CLI use/reset经`changeRuntimeModel`复用T37共享归属判定和唯一ConfigurationWrite；`--for`明确目标时可保存下一TURN的official选择，全局/default reset仍受保护。返回selectionSaved/currentTurn/effectiveUse，不把保存当立即生效；其它Bot覆盖不变。配置在Server读取期间变化会拒绝覆盖，但这不是T29多writer CAS。当前已将不可读route配置与明确official选择分开拒绝；它不是继续信任最后一次成功配置的隐藏缓存。
+**当前工作树已有逐Bot route-mode reset。** CLI use/reset经`changeRuntimeModel`和唯一ConfigurationWrite；use消费T37新鲜归属，`--for`明确目标时reset只撤销managed覆盖，全局/default reset仍受保护。返回selectionSaved/currentTurn/effectiveUse，不把保存当立即生效；其它Bot覆盖不变。配置在Server读取期间变化会拒绝覆盖；最终commit新增协作writer短锁＋expected model revision检查及读回，关闭两条CLI同时读旧文件后覆盖另一Bot的窗口，不新增T29浏览器/CAS数据库。当前已将不可读route配置与明确official选择分开拒绝；它不是继续信任最后一次成功配置的隐藏缓存。
+
+**2026-09-13部署准备发现并修复撤权死锁：** 原reset也调用managed准入，冲突、已迁Temporal或旧桥失联时反而不能撤销managed期望。现在显式reset不请求Server、不授予执行权、不改变身份或在途TURN；输出`ownership:not_required_for_reset`、`effectiveUse:not_observed`，不能将其解释成已确认Box或已执行官方回程。use仍严格fail-closed。不可读配置/取消仍零写入；真实CLI及干净环境的packed Node无Gateway reset纳入同一verifier。固定结果归readiness。
 
 完整官方→A→B→官方→A的原生持久状态与真实旅程资格由新增[T39](T39-native-model-roundtrip.md)承接；本票交付可被它调用的选择机制和命令，不另记相同旅程的完成态。当前Responses三步mock和单独passthrough测试不证明回程已完成。
 
@@ -36,6 +38,8 @@ Server已temporal、本地/Server冲突或迁移未确认不属于已支持的�
 ### 下一实施片：独立可逆选择（按职责拆分，均未关闭）
 
 归属证据/时效/真实准入转由[T37](T37-server-ownership-admission.md)实现；资料更新/本地优先slice退场和test2校准由[T38](T38-identity-write-alignment.md)实现。本票消费同一个共享判定，保持RouteBinding/选择/STEP唯一程序，不能再复制归属规则。T37开发不等待本票的全部往返功能，避免循环依赖。
+
+**本窗口Astra并发发现已进入修复候选：** `RuntimeStore.saveModels`在同根`models-write.lock`内重新核对expectedRevision后发布和读回，stale/busy明确失败、不自动重试/合并。use/reset及persist-key经同一ConfigurationWrite提交旧revision；只把这个有界commit置于Effect不被取消抛离的边界，Server等待仍可取消且不占锁。真实临时文件并发测试证明两个同旧revision最多一次成功，另一写者显式重试后保留两Bot；不声称未知非协作writer、crash残锁恢复或跨文件事务已解决。
 
 本票须完成：
 

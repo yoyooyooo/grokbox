@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
-import { canonicalJson } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import { materializeApiKeyRef, CREDENTIAL_SECRET_MAX_BYTES } from "./credentials.node.ts";
 import type { RuntimeStore } from "./configuration.node.ts";
@@ -96,7 +96,7 @@ export async function persistModelCredential(input: PersistModelCredentialInput)
     if (input.signal?.aborted) refused("Credential import cancelled.");
     const apiKeyRef = `file:${path}`;
     const next = parseModelsFile({ ...fresh, models: { ...fresh.models, [input.modelId]: { ...model, apiKeyRef } } });
-    const receipt = await saveRuntimeModels(input.store, next);
+    const receipt = await saveRuntimeModels(input.store, next, input.store.root, sha256Text(canonicalJson(original)));
     if (!await referenced(path)) throw new BoxRuntimeError("invalid_usage", "Credential configuration could not be read back.");
     return { modelId: input.modelId, apiKeyRef, persisted: true, reused: false, takesEffect: "next_unbound_turn", ...receipt };
   } catch (error) {

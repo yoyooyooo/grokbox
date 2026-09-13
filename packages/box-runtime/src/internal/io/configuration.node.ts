@@ -1,4 +1,7 @@
 import { constants } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { acquireExclusiveLock } from "./op-lock.ts";
 import { mkdir, open, readFile, rename, writeFile, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Effect, Layer } from "effect";
@@ -18,7 +21,7 @@ async function readJson(path: string): Promise<unknown> {
 
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.tmp`;
+  const temporary = `${path}.${randomUUID()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, path);
 }
@@ -27,7 +30,7 @@ export type RuntimeStore = {
   root: string;
   loadModels: () => Promise<ModelsFile>;
   loadDesired: () => Promise<DesiredFile>;
-  saveModels: (file: ModelsFile) => Promise<void>;
+  saveModels: (file: ModelsFile, expectedRevision?: string) => Promise<void>;
   saveDesired: (file: DesiredFile) => Promise<void>;
 };
 
@@ -37,7 +40,23 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
     root,
     loadModels: async () => parseModelsFile(await readJson(modelsPath(root))),
     loadDesired: async () => parseDesiredFile(await readJson(desiredPath(root))),
-    saveModels: async (file) => await writeJsonAtomic(modelsPath(root), file),
+    saveModels: async (file, expectedRevision) => {
+      // One short cooperative commit boundary; no Server request while locked.
+      // A stale writer is refused, never silently merged or retried.
+      const held = await acquireExclusiveLock(join(root, "state", "models-write.lock"));
+      if (!held.ok) throw new BoxRuntimeError("invalid_usage", "model_configuration_busy");
+      try {
+        if (expectedRevision !== undefined) {
+          const current = parseModelsFile(await readJson(modelsPath(root)));
+          if (sha256Text(canonicalJson(current)) !== expectedRevision) {
+            throw new BoxRuntimeError("invalid_usage", "selection_configuration_changed");
+          }
+        }
+        await writeJsonAtomic(modelsPath(root), file);
+        const current = parseModelsFile(await readJson(modelsPath(root)));
+        if (canonicalJson(current) !== canonicalJson(file)) throw new BoxRuntimeError("invalid_usage", "model_configuration_readback_mismatch");
+      } finally { await held.lock.release(); }
+    },
     saveDesired: async (file) => await writeJsonAtomic(desiredPath(root), file),
   };
 }

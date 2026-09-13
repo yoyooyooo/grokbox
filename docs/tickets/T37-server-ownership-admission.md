@@ -12,6 +12,14 @@
 
 当前startup确实调用原生全局identity reconcile；T38的部署影响门因此是实质前置，不只“不要主动调用reconcile”。owner已单独允许满足安全前置后的受控同步窗口，尚未执行。下一步仍是独立审查和受控部署后的真实scoped桥/准入回读，不重做已通过的owned暂停测试。
 
+### Astra发现的原生恢复顺序差额与修复候选
+
+首审指出：当前原生`resumeConfirmedOwnership`先启动pending resume，再等待rearm，最后才开放`isLocalWorkAllowed`。真实`UpgradeRecreateResume`会在被拒绝的恢复结束后清原marker。已用当前原生完整恢复方法与实际packed reader/kernel准入隔离复现：hold未放开时runner=1、准入拒绝=1、marker丢失，不能用先前16断言中的替身resume签此链。
+
+新`ownership-resume-gate`位于原生ownership/gone/temporal检查之后、markPending/inFlight/runner之前。仅在native许可尚未开放且managed（或配置不可确认）时返回原生`skipped`；marker不消费，原生全局hold不提前释放，官方未opt-in分支保持原样。后续由**现有**resume-ownership recovery处理pending，不新增timer/重试/ledger。原oracle修后hold期间runner/provider/clear均0且marker保留；native释放后其原recovery恰好一次准入/runner/清标记。
+
+这只关闭受检版本的启动等待顺序子问题，不证明原生checkpoint事务、服务跨代旧TURN选择恢复、实际pending work或App。完整profile现需18-slice候选（含该guard）；旧17-slice资格不覆盖新字节。精确pin、回归和Astra复看见readiness。普通新TURN/后续STEP的T37门不接受paused，未削弱撤权合同。
+
 ## Reuse / module ownership
 
 - 复用`host/ownership-read.ts`、`ownership-slices.ts`及`GatewayClient.getAgentOwnership`的有界原生Server查询，不导出官方凭据、不提供任意RPC转发。

@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import { Script } from "node:vm";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 import { transformUnchecked } from "../src/internal/host/profile.ts";
 import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 
 const HARNESS_SLICES = LIVE_SLICE_PATCHES.filter((slice) => slice.id.startsWith("harness-"));
-const ALWAYS_EMIT = 'harness: readSandProfileHarness(profilePath) === "temporal" ? "temporal" : "box"';
+const ALWAYS_EMIT = 'harness: readSandProfileHarness(profilePath) ?? undefined';
 const OMIT_BOX = '? { harness: "temporal" } : {}';
 
 describe("L2 Host harness always-emit", () => {
@@ -33,7 +34,17 @@ describe("L2 Host harness always-emit", () => {
       "harness-summary",
       "ownership-read-schema",
       "ownership-read-api",
+      "ownership-resume-gate",
     ]);
+  });
+
+  test.each(HARNESS_SLICES)("$id preserves unknown instead of fabricating box", (slice) => {
+    for (const harness of ["box", "temporal", null, undefined]) {
+      const projected = new Script(`({${slice.replacement}})`).runInNewContext({ profilePath: "/owned/profile", readSandProfileHarness: () => harness });
+      const wire = JSON.parse(JSON.stringify(projected));
+      if (harness == null) expect(wire).not.toHaveProperty("harness");
+      else expect(wire.harness).toBe(harness);
+    }
   });
 
   test.each(HARNESS_SLICES)("$id startAnchor is before find and fail-closed on missing/duplicate", (slice) => {

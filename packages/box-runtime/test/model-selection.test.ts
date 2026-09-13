@@ -26,7 +26,7 @@ test("route per-Bot official/custom/official selection changes no other assignme
   const ownershipRead = ownedOwnershipReader(4242);
   for (const modelId of [undefined, "openai/second", undefined]) {
     const result = await changeRuntimeModel({ store: f.store, forAgent: A, modelId, ownershipRead });
-    expect(result).toMatchObject({ selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", ownership: "confirmed_box", blastRadius: "single_bot", takesEffect: "next_user_turn" });
+    expect(result).toMatchObject({ selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", ownership: modelId === undefined ? "not_required_for_reset" : "confirmed_box", blastRadius: "single_bot", takesEffect: "next_user_turn" });
     if (modelId === undefined) expect(f.get().assignments.agents).not.toHaveProperty(A);
     else expect(f.get().assignments.agents[A]).toBe(modelId);
     expect(f.get().assignments.agents[B]).toBe("stub/echo");
@@ -54,6 +54,32 @@ for (const mode of ["conflict", "missing-reader", "old-bridge", "stale", "cancel
     expect(f.get()).toEqual(before);
   });
 }
+
+test("explicit reset removes only managed intent even when execution ownership cannot admit", async () => {
+  for (const state of ["conflict", "paused", "unavailable", "missing-reader"] as const) {
+    const f = fixture();
+    const before = f.get();
+    let reads = 0;
+    const ownershipRead = state === "missing-reader" ? undefined : async (ids: string[]) => {
+      reads++;
+      if (state === "unavailable") throw new Error("owned-unavailable");
+      return { snapshot: ownedOwnershipSnapshot(ids, { serverHarness: "temporal" }), gateway: { pid: 4242, startedAt: 1 } };
+    };
+    const result = await changeRuntimeModel({ store: f.store, forAgent: A, ownershipRead });
+    expect(result).toMatchObject({ ownership: "not_required_for_reset", model: "official", selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed" });
+    expect(reads).toBe(0);
+    expect(f.get()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
+    expect(f.writes()).toBe(1);
+  }
+});
+
+test("reset still refuses cancelled or unreadable configuration without any write", async () => {
+  const f = fixture();
+  await expect(changeRuntimeModel({ store: f.store, forAgent: A, signal: AbortSignal.abort() })).rejects.toBeDefined();
+  await expect(changeRuntimeModel({ store: { ...f.store, loadModels: async () => { throw Error("owned-unavailable"); } }, forAgent: A })).rejects.toBeDefined();
+  expect(f.writes()).toBe(0);
+  expect(f.get().assignments.agents[A]).toBe("stub/echo");
+});
 
 test("another writer changing configuration during ownership read is not overwritten", async () => {
   const f = fixture();

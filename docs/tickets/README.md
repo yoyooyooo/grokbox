@@ -47,7 +47,7 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 | `feat/t32-ccs-overflow` / `feat/t32-live-enable-readiness` / `feat/t32-v4-cutover` | 本轮 `HEAD..branch` 均为 0；无独立提交 | 仍须确认活跃使用/引用后清理 |
 | 旧 `feat/box-runtime` / main 工作面 | 旧 runtime 有 dirty/untracked POC；main 有 staged 变更，不能强删 | 审查实际差额并保全可恢复本机快照；不把私有草稿塞入公开产品代码 |
 
-本节为当前收口入口，不将 branch 数量作为稳定发布门。本轮 owner 显式要求清理，但**目前仅完成内容核对与回归，未执行 Git 提交/删除/快照**：接口约定允许 bash 检查/测试/构建，不开放 Git 写操作；不得换脚本或通道绕过。现存主仓库 + 4 个 linked worktree 原样保留，old-runtime 的 dirty/untracked 与 main staged 改动未触碰；活跃引用/可恢复快照门也不能虚报通过。
+本节为当前收口入口，不将 branch 数量作为稳定发布门。2026-09-13本窗口正常Git写入口可用：V2的203文件继承成果已保存私有完整快照，并经固定验证提交为`pre-publication-revision`；早先Git写入受限属于历史，不再作为当前阻塞。主仓库 + 4 个linked worktree尚原样保留；main的15个staged及old-runtime的14项dirty/untracked未覆盖。现役modeld只引用保留的V2路径，Host使用原生路径；其它工作树的保全/清理仍须完成，不据此宣布已删除。
 
 ## Rebuild ticket allocation / formal closeout
 

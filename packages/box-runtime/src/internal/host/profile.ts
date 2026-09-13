@@ -5,6 +5,7 @@ export const REQUIRED_SLICE_IDS = ["create-session", "agent-id"] as const;
 export const OPTIONAL_SLICE_IDS = [
   "ownership-read-schema",
   "ownership-read-api",
+  "ownership-resume-gate",
   "compact-register",
   "compact-background-start",
   "compact-background-response",
@@ -142,6 +143,7 @@ export function transformUnchecked(source: string, slices: readonly SlicePatch[]
 
 export const ROUTE_SESSION_SYMBOL = "grokbox.box-runtime.route-session.v1";
 export const HOST_COMPACT_SYMBOL = "grokbox.box-runtime.host-compact.v1";
+export const HOST_RESUME_GATE_SYMBOL = "grokbox.box-runtime.resume-admission.v1";
 export const HOST_MANAGED_STEP_SYMBOL = "grokbox.box-runtime.managed-step.v1";
 export const HOST_MANAGED_FAILURE_SYMBOL = "grokbox.box-runtime.managed-failure.v1";
 export const HOST_MANAGED_STEP_FAILURE_SYMBOL = "grokbox.box-runtime.managed-step-failure.v1";

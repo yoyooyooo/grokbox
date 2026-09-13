@@ -101,8 +101,12 @@ export async function runSendOutcome(deps: CliDeps, target: string, raw: { timeo
       return;
     }
     // No send, retry, clear-tray, or runtime repair in this observation command.
-    await new Promise(resolve => setTimeout(resolve, Math.min(2000, Math.max(1, deadline - performance.now()))));
-    if (performance.now() >= deadline) {
+    const remaining = deadline - performance.now();
+    const lastWait = remaining <= 2000;
+    await new Promise(resolve => setTimeout(resolve, Math.ceil(Math.min(2000, Math.max(1, remaining)))));
+    // A fractional timer may wake just before the deadline. The final budget
+    // wait is not permission for another four-RPC sample with a 1ms timeout.
+    if (lastWait || performance.now() >= deadline) {
       writeSuccess(deps.stdout, { ...result, samples, waitExpired: true, elapsedMs: Math.round(performance.now() - started) }, gatewayMeta(afterRoster.discovery));
       return;
     }

@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -32,7 +34,8 @@ async function fixture(mode: "box" | "temporal" | "old" | "failure" | "wrong-id"
   await mkdir(join(boxRuntimeRoot, "state"), { recursive: true });
   await writeFile(join(boxRuntimeRoot, "state/desired.json"), JSON.stringify({ version: 1, mode: "route" }));
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({ version: 1,
-    models: { "openai/owned": { provider: "openai", model: "owned", endpoint: "https://model.invalid/v1", apiKeyRef: "env:OWNED", contextWindowTokens: 200000 } },
+    models: { "openai/owned": { id: "openai/owned", provider: "openai", model: "owned", endpoint: "https://model.invalid/v1", apiKeyRef: "env:OWNED", contextWindowTokens: 200000,
+      capabilities: { tools: true, images: false, vision: false }, dataTypes: ["text", "tools"] } },
     assignments: { main: null, agents: { [A]: "stub/echo", [B]: "stub/echo" } },
   }));
   const deps = { configDir: root, discoveryPath, boxRuntimeRoot, env: {}, transport: "local" as const, daemonSocket: join(root, "unused.sock") };
@@ -40,17 +43,51 @@ async function fixture(mode: "box" | "temporal" | "old" | "failure" | "wrong-id"
     close: async () => { gateway.stop(true); await rm(root, { recursive: true, force: true }); } };
 }
 
-test("real CLI use/reset reads scoped ownership via the existing local Gateway and preserves the other Bot", async () => {
+test("real CLI use admits ownership; explicit reset only removes intent and preserves the other Bot", async () => {
   const f = await fixture();
   try {
     for (const args of [["use", "openai/owned"], ["reset"]]) {
       const ran = await captureCli(["runtime", "models", ...args, "--for", A], f.deps);
       expect(ran.code, ran.stderr).toBe(0);
-      expect(parseJson(ran.stdout)).toMatchObject({ data: { selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", blastRadius: "single_bot", ownership: "confirmed_box" } });
+      expect(parseJson(ran.stdout)).toMatchObject({ data: { selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", blastRadius: "single_bot", ownership: args[0] === "reset" ? "not_required_for_reset" : "confirmed_box" } });
       expect((await f.load()).assignments.agents[B]).toBe("stub/echo");
       expect((await f.load()).assignments.agents[A]).toBe(args[0] === "reset" ? undefined : "openai/owned");
     }
-    expect(f.calls.map(call => call.path)).toEqual(["/api/getHostStatus", "/api/getHostStatus"]);
+    expect(f.calls.map(call => call.path)).toEqual(["/api/getHostStatus"]);
+  } finally { await f.close(); }
+});
+
+for (const mode of ["temporal", "old", "failure", "wrong-id"] as const) {
+  test(`explicit CLI reset with ${mode} cannot be trapped behind managed admission`, async () => {
+    const f = await fixture(mode);
+    try {
+      const before = await f.load();
+      const result = await captureCli(["runtime", "models", "reset", "--for", A], f.deps);
+      expect(result.code, result.stderr).toBe(0);
+      expect(parseJson(result.stdout)).toMatchObject({ data: { ownership: "not_required_for_reset", effectiveUse: "not_observed" } });
+      expect(f.calls).toEqual([]);
+      expect(await f.load()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
+      const use = await captureCli(["runtime", "models", "use", "openai/owned", "--for", A], f.deps);
+      expect(use.code).not.toBe(0);
+      expect((await f.load()).assignments.agents[A]).toBeUndefined();
+      expect(f.calls.map(c => c.path)).toEqual(["/api/getHostStatus"]);
+    } finally { await f.close(); }
+  });
+}
+
+test("actual packed Node reset removes an override with no Gateway/discovery or credential environment", async () => {
+  const f = await fixture("failure");
+  try {
+    const before = await f.load();
+    const cli = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+    const result = spawnSync("node", [cli, "runtime", "models", "reset", "--for", A, "--json"], {
+      env: { PATH: process.env.PATH, HOME: f.deps.configDir, GROKBOX_BOX_RUNTIME_ROOT: f.deps.boxRuntimeRoot, GROKBOX_RUN_ROOT: join(f.deps.configDir, "no-gateway") },
+      encoding: "utf8", timeout: 10_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(parseJson(result.stdout)).toMatchObject({ data: { selectionSaved: true, ownership: "not_required_for_reset", currentTurn: "unchanged", effectiveUse: "not_observed" } });
+    expect(f.calls).toEqual([]);
+    expect(await f.load()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
   } finally { await f.close(); }
 });
 

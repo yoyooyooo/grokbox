@@ -15,6 +15,7 @@ if (!kase) {
 const CASES = {
   all: [
     ["bun", "run", "typecheck"],
+    ["bun", "run", "build"],
     ["bun", "test"],
   ],
   layout: [
@@ -65,9 +66,10 @@ const CASES = {
     ["bun", "test", "packages/box-runtime/test/controller-io.test.ts", "-t", "raw output"],
   ],
   "ownership-admission": [
-    ["bun", "test", "packages/runtime-kernel/test/ownership-admission.test.ts", "packages/box-runtime/test/ownership-scope-cache.test.ts", "packages/box-runtime/test/ownership-native-pause.test.ts", "packages/box-runtime/test/host-ownership-read.test.ts", "packages/box-runtime/test/modeld-outcome.test.ts", "test/ownership.test.ts"],
+    ["bun", "test", "packages/runtime-kernel/test/ownership-admission.test.ts", "packages/box-runtime/test/ownership-scope-cache.test.ts", "packages/box-runtime/test/ownership-native-pause.test.ts", "packages/box-runtime/test/host-resume-admission.test.ts", "packages/box-runtime/test/host-ownership-read.test.ts", "packages/box-runtime/test/modeld-outcome.test.ts", "test/ownership.test.ts"],
   ],
   "identity-alignment": [
+    ["bun", "run", "build"],
     ["bun", "test", "test/identity-alignment.test.ts", "test/ownership-model-selection.test.ts", "packages/cli/test/harness-profile.test.ts", "test/management.test.ts", "packages/box-runtime/test/host-harness-stick.test.ts"],
   ],
   "ownership-artifact": [
@@ -75,7 +77,8 @@ const CASES = {
     ["bun", "test", "packages/box-runtime/test/ownership-packed-client.test.ts"],
   ],
   "model-selection": [
-    ["bun", "test", "packages/box-runtime/test/model-selection.test.ts", "packages/box-runtime/test/model-switch-pipeline.test.ts", "test/ownership-model-selection.test.ts", "packages/runtime-kernel/test/route-binding.test.ts", "packages/runtime-kernel/test/selection.test.ts", "packages/box-runtime/test/host-selection-unavailable.test.ts", "packages/box-runtime/test/host-session-hook.test.ts"],
+    ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/model-selection.test.ts", "packages/box-runtime/test/configuration-write.test.ts", "packages/box-runtime/test/model-switch-pipeline.test.ts", "test/ownership-model-selection.test.ts", "packages/runtime-kernel/test/route-binding.test.ts", "packages/runtime-kernel/test/selection.test.ts", "packages/box-runtime/test/host-selection-unavailable.test.ts", "packages/box-runtime/test/host-session-hook.test.ts"],
   ],
   compact: [
     ["bun", "test", "packages/runtime-kernel/test/overflow-recovery.test.ts", "packages/box-runtime/test/overflow-bridge.test.ts", "packages/box-runtime/test/modeld-wire.test.ts", "packages/box-runtime/test/host-compact.test.ts"],
@@ -155,7 +158,7 @@ const SUPPORTS = {
   "ownership-admission": ["shared-scoped-ownership-decision", "bounded-native-read-cache", "native-pause-observation-contract", "production-unix-admission-refusal", "attempt1-after-prepare-authority-fence"],
   "identity-alignment": ["ordinary-profile-update-no-harness", "direct-daemon-update-refusal", "create-once-ownership-readback", "retired-harness-writers-refused", "unchanged-owned-native-writer-bodies"],
   "ownership-artifact": ["actual-packed-node-host-client", "actual-packed-ownership-read", "packed-client-native-pause-refusal", "source-modeld-unix-admission-positive-negative"],
-  "model-selection": ["per-bot-use-reset", "captured-turn-survives-future-selection", "chat-responses-host-state-pipeline", "owned-official-object-passthrough", "unavailable-selection-no-fallback", "unqualified-no-step-no-official-dispatch"],
+  "model-selection": ["per-bot-use-reset", "explicit-reset-without-execution-authority", "packed-node-reset-without-gateway", "captured-turn-survives-future-selection", "chat-responses-host-state-pipeline", "owned-official-object-passthrough", "unavailable-selection-no-fallback", "unqualified-no-step-no-official-dispatch"],
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
@@ -176,7 +179,7 @@ const REALITY = {
   "ownership-admission": "production-kernel-unix-root-with-owned-server-clock-and-provider-fixtures",
   "identity-alignment": "owned-direct-daemon-gateway-config-and-native-shaped-writer-fixtures",
   "ownership-artifact": "packed-preload-in-owned-node-process-to-source-modeld-unix-sdk-mock-and-native-read-double",
-  "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-and-owned-official-consumer",
+  "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
   "observation-monitor": ["live-scoped-native-bridge", "cross-admission-priority-refresh", "abrupt-crash-lock-recovery", "schema-migration-backup-retention", "external-notification-delivery", "service-install-autostart", "full-T41-production-acceptance", "live-deployment"],

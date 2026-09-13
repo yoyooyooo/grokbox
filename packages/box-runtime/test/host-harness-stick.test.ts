@@ -25,7 +25,7 @@ test("active profile keeps observation but no harness mutation slices", () => {
   if (!applied.ok) throw new Error(applied.code);
   expect(applied.source).not.toContain(STICK_SYMBOL);
   expect(applied.source).not.toContain("harness: rpcOptional(");
-  expect(applied.source).toContain('harness: readSandProfileHarness(profilePath) === "temporal" ? "temporal" : "box"');
+  expect(applied.source).toContain('harness: readSandProfileHarness(profilePath) ?? undefined');
 });
 
 for (const id of RETIRED) {

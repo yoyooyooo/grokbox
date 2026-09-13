@@ -59,7 +59,7 @@ describeLive("live Host bundle copy H1", () => {
     expect((profile.slices.map((slice) => slice.id) as string[])).not.toContain("harness-server-write");
     expect(result.source).not.toContain("grokbox.box-runtime.harness-stick.v1");
     expect(result.source).toContain(
-      'harness: readSandProfileHarness(profilePath) === "temporal" ? "temporal" : "box"',
+      'harness: readSandProfileHarness(profilePath) ?? undefined',
     );
     expect(result.source).not.toContain('? { harness: "temporal" } : {}');
     // Syntax-compile only. Never execute the native Host bundle or its consumers.

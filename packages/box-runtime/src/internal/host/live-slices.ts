@@ -132,7 +132,7 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     endAnchor: "async function buildSummary(args)",
     find: "    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {},\n    isGroup: false,\n",
     replacement:
-      "    harness: readSandProfileHarness(profilePath) === \"temporal\" ? \"temporal\" : \"box\",\n    isGroup: false,\n",
+      "    harness: readSandProfileHarness(profilePath) ?? undefined,\n    isGroup: false,\n",
   },
   {
     id: "harness-summary",
@@ -140,7 +140,7 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     endAnchor: "async function agentHasDurableFootprint(agentDir, agentHasMemory)",
     find: "    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {}\n",
     replacement:
-      "    harness: readSandProfileHarness(profilePath) === \"temporal\" ? \"temporal\" : \"box\"\n",
+      "    harness: readSandProfileHarness(profilePath) ?? undefined\n",
   },
   ...OWNERSHIP_READ_SLICES,
 ];

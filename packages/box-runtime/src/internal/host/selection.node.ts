@@ -51,6 +51,17 @@ export function captureHostManagedSelection(root: string, agentId?: string): Hos
   return { ...captured, record };
 }
 
+/** Keep native recovery markers pending while its startup/recreate owner still
+ * withholds execution. Native resume-ownership already retries pending markers
+ * after releasing its barrier; this helper never starts a retry or grants work.
+ * Unknown configuration must not launch a resume that can lose its checkpoint. */
+export function deferManagedHostResume(root: string, agentId: unknown, localWorkAllowed: unknown): boolean {
+  if (localWorkAllowed === true) return false;
+  if (typeof agentId !== "string" || !agentId) return true;
+  try { return captureHostManagedSelection(root, agentId).kind === "managed"; }
+  catch { return true; }
+}
+
 /** Thin Host capture. Uncovered agents stay official; no credential values. */
 export function captureHostSelection(root: string, agentId?: string): CapturedSelection {
   const captured = captureHostManagedSelection(root, agentId);

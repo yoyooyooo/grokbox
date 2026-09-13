@@ -73,7 +73,7 @@ T37开发不等T38反向依赖；T38的writer退场依赖T37有效门。T24单�
 | `agents create --harness …` | 请求类型不等于已确认类型；Server确认/回读后才合格；未知用原nonce对账，不二次create/强写 | T38 |
 | `agents update` | 普通资料body无harness，显式修改既有归属写前拒绝；未知字段不补box | T38 |
 | `runtime models use … --for …` | 归属/模型预检，原子保存下一TURN选择；不改身份，不重绑在途执行 | T24+T37 |
-| `runtime models reset --for …` | route模式也能单Bot回原生官方；不全局停用、不变Temporal，选择保存与实际生效分开 | T24 |
+| `runtime models reset --for …` | 显式撤掉单Bot managed覆盖不以managed准入为前置；Box仍走原生官方，其它原生归属不变。不给冲突/缺桥对象签执行权；不全局停用，选择保存与实际生效分开 | T24 |
 | 模型/status投影 | 区分desired、当前TURN捕获、loaded/runtime状态与缺证；省略/损坏配置不伪装成用户选择official | T24/T27 |
 | `history outcome` / alerts / runtime日志 | 原nonce/TURN/代对账；进度不当完成，多STEP后续失败优先，读取不重发/repair | T26/T39 |
 | `runtime start`及部署/退出 | 复用唯一控制程序；干净环境与重启持久，准确区分日常官方选择与全卸载 | T28/T40 |

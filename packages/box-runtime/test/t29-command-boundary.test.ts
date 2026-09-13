@@ -13,13 +13,14 @@ describe("T29 command boundary incubate (no browser, no fake CAS)", () => {
     expect(existsSync(join(repoRoot, "packages/cli/src/commands/runtime-roster.ts"))).toBe(false);
   });
 
-  test("ConfigurationWrite is the config-write port; IO is still single-writer atomic save", () => {
+  test("ConfigurationWrite owns cooperative model commits without a browser-only revision API", () => {
     expect(ConfigurationWrite.key).toBe("grokbox/ConfigurationWrite");
     const io = readFileSync(join(repoRoot, "packages/box-runtime/src/internal/io/configuration.node.ts"), "utf8");
     expect(io).toContain("writeJsonAtomic");
     expect(io).toContain("saveModels");
     expect(io).not.toContain("expectedConfigRevision");
-    expect(io).not.toContain("configRevision");
+    expect(io).toContain("expectedRevision");
+    expect(io).toContain("models-write.lock");
     expect(io).not.toMatch(/\bfcntl\b|\bflock\b/);
     const commands = readFileSync(join(repoRoot, "packages/runtime-kernel/src/commands.ts"), "utf8");
     expect(commands).toContain("runControllerOperation");
