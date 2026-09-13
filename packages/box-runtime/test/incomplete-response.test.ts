@@ -33,6 +33,72 @@ for (const parts of [[], [{ type: "reasoning", textDelta: "Internal deliberation
   });
 }
 
+test("non-empty assistant text with SendToUser declared becomes a Host SendToUser call", async () => {
+  const session = createStreamingPromptSession({
+    modelId: "openai-responses/owned", vision: false, parallel: "fail-closed",
+    produce: async function* () {
+      yield { type: "text-delta", textDelta: "MANAGED_VISIBLE" };
+      yield { type: "finish", reason: "stop", usage: { promptTokens: 4, completionTokens: 8, totalTokens: 12 } };
+    },
+  });
+  const handle = session.stream({
+    envelope: {
+      version: 1,
+      messages: [{ role: "user", content: "say it" }],
+      tools: [{ name: "SendToUser", inputSchema: { type: "object", properties: { type: { type: "string" }, content: { type: "string" } } } }],
+      options: {},
+    },
+  });
+  const response = await handle.response;
+  expect(response.finishReason).toBe("tool-calls");
+  expect(response.messages).toEqual([{
+    role: "assistant",
+    content: [{ type: "tool-call", toolCallId: expect.any(String), toolName: "SendToUser", args: { type: "text", content: "MANAGED_VISIBLE" } }],
+  }]);
+});
+
+test("assistant text without SendToUser stays internal and does not invent a delivery tool", async () => {
+  const session = createStreamingPromptSession({
+    modelId: "openai-responses/owned", vision: false, parallel: "fail-closed",
+    produce: async function* () {
+      yield { type: "text-delta", textDelta: "private scratch" };
+      yield { type: "finish", reason: "stop", usage: { promptTokens: 4, completionTokens: 8, totalTokens: 12 } };
+    },
+  });
+  const handle = session.stream({ messages: [{ role: "user", content: "aux" }], invocationId: "aux-step" });
+  const response = await handle.response;
+  expect(response.finishReason).toBe("stop");
+  expect(response.messages).toEqual([{ role: "assistant", content: "private scratch" }]);
+});
+
+test("scratch text beside a real tool call is not rewritten into SendToUser", async () => {
+  const session = createStreamingPromptSession({
+    modelId: "openai-responses/owned", vision: false, parallel: "fail-closed",
+    produce: async function* () {
+      yield { type: "text-delta", textDelta: "thinking out loud" };
+      yield { type: "tool-call", toolName: "ReadProbe", toolCallId: "call-1", args: {} };
+      yield { type: "finish", reason: "stop", usage: { promptTokens: 4, completionTokens: 8, totalTokens: 12 } };
+    },
+  });
+  const handle = session.stream({
+    envelope: {
+      version: 1,
+      messages: [{ role: "user", content: "read" }],
+      tools: [
+        { name: "ReadProbe", inputSchema: { type: "object", properties: {} } },
+        { name: "SendToUser", inputSchema: { type: "object", properties: { type: { type: "string" }, content: { type: "string" } } } },
+      ],
+      options: {},
+    },
+  });
+  const response = await handle.response;
+  expect(response.finishReason).toBe("tool-calls");
+  expect(response.messages[0]?.content).toEqual([
+    { type: "text", text: "thinking out loud" },
+    { type: "tool-call", toolCallId: "call-1", toolName: "ReadProbe", args: {} },
+  ]);
+});
+
 test("a valid tool-only response remains executable with no assistant prose", async () => {
   const session = createStreamingPromptSession({
     modelId: "openai-responses/owned", vision: false, parallel: "fail-closed",

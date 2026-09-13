@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
@@ -475,10 +476,25 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (complete) return;
       // Transport completion is not an answer. Reasoning-only/blank output must
       // retain managed failure provenance instead of entering native empty-result retries.
-      if (reason === "stop" && calls.size === 0
-        && !content.some(part => part.type === "text" && part.text.trim().length > 0)) {
-        reason = "error";
-        error = failure("invalid_stream", undefined, streamCtx("normalize"));
+      // Host display only consumes SendToUser. A managed model that stops with
+      // leftover assistant text must be reshaped into that Host tool, not treated
+      // as a successful silent turn. Aux STEPs without the tool keep text internal.
+      if (reason === "stop" && calls.size === 0 && held.length === 0) {
+        const delivered = content.filter((part): part is SessionTextContentPart => part.type === "text").map((part) => part.text).join("");
+        if (!delivered.trim()) {
+          reason = "error";
+          error = failure("invalid_stream", undefined, streamCtx("normalize"));
+        } else if (declaredTools.has("SendToUser")) {
+          const call: ToolCall = {
+            type: "tool-call",
+            toolCallId: randomUUID(),
+            toolName: "SendToUser",
+            args: { type: "text", content: delivered },
+          };
+          content.length = 0;
+          held.push(call);
+          heldToolParts.push(call);
+        }
       }
       complete = true;
       request.abortSignal?.removeEventListener("abort", abort);

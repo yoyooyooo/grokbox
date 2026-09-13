@@ -12,6 +12,8 @@ test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToU
 
 **第三层（2026-09-13）：** 源 `34107bb1…` / 提交 `pre-publication-revision`。Host PID REDACTED_PROCESS_ID preload `d9c4ad45…`，profile 仍 `5a5c2e4e…`。modeld 切到同包 PID REDACTED_PROCESS_ID / epoch `484b5a7a-…`，status matched。新 nonce `d034bea0-…`：hook_enter → stream_enter → connect_attempt → first_chunk，随后同一 turnId 上 4 个 grok-4.6 STEP 均 `outcome=ok`（serviceEpoch 对上）。display tail 只有 user + send-message，无 SendToUser 正文；`history outcome` 为 progress / expectedMatched=false / executionCompleted=not_proven（requestId 已有）。末步 journal：`requestToolCount=0`、snapshot 从 ~166KiB 掉到 ~15KiB。未重放任何失败 nonce。官方独立文件对照仍只算先前那次 expected_result_observed。
 
+**第四层（2026-09-13）：** 末步 `dc5481b6-…` 是 `auxPurpose=memory-extraction`，不是主窗被清空。主 TURN 三步：① `SendToUser` 进度「先读文件，再原样发。」（display 已有）② Read 命中 oracle atime ③ grok-4.6 以普通 assistant text `stop`（118 events、toolCallCount=0、仍 10 个工具）。Host 把无工具文本当成功独白，不进 transcript。`lastTurnSettlement.outcome=success`，`history outcome` 只能看到进度所以 progress。修复：有声明的 `SendToUser` 时，把无工具的非空文本重整为 Host `SendToUser({type:"text",content})`；无该工具的 aux 仍内部文本。不重放 `d034bea0-…`。
+
 ## Status / boundary
 
 **Partial / open closeout · 2026-09-12：已有选择纵切，并新增独立原生消费者回程的隔离资格；完整原生持久化/真实旅程仍未关闭。** 本票拥有V23/V26及V16/V19的完整旅程证据，不重写T24选择、T26流、T32恢复或T35生命周期程序。原连续性F1–F6/E01–E11仍是数据安全合同；本票把已证子集连接成能关闭产品义务的双向往返，不能据此把旧历史失忆因果改成已知。
