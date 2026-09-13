@@ -18,6 +18,8 @@ test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToU
 
 **测试矩阵（2026-09-13 CLI，非生产）：** test0 在 reset 后官方回程 nonce `9f774425-…` 为 expected_result_observed。test1 未 opt-in，官方独立文件 nonce `eff25abc-…` 为 expected_result_observed。test2 `confirmed_temporal`/`blocked`，`models use grok-4.6 --for test2` 拒绝且未发任务。随后 test0 再绑 grok-4.6，nonce `090d985a-…` 为 expected_result_observed（9105ms）。CLI 官方→A→官方→A 已齐。desktop replica 仍 not_observed，circuit 仍 open，不是生产放行。
 
+**App 入口（pro 桌面，待真人发送）：** 只读 SSH `pro` 于 2026-09-13T05:46Z 见 `~/Library/Application Support/Grok Bot/sand-client-persistence` 的 roster：test0/test1 `harness=box`，test2 `temporal`，与当前 Gateway 一致。这不是 sendPrompt 路径证明。真人在 pro 的 Grok Bot App 打开 **grokbox test0** 发送独立标记后，Box 对 Host journal/`history outcome`，再 SSH pro 只投影该 Bot 的 roster.harness、replica 是否出现该标记、mtime；不 dump 全文。
+
 ## Status / boundary
 
 **Partial / open closeout · 2026-09-12：已有选择纵切，并新增独立原生消费者回程的隔离资格；完整原生持久化/真实旅程仍未关闭。** 本票拥有V23/V26及V16/V19的完整旅程证据，不重写T24选择、T26流、T32恢复或T35生命周期程序。原连续性F1–F6/E01–E11仍是数据安全合同；本票把已证子集连接成能关闭产品义务的双向往返，不能据此把旧历史失忆因果改成已知。
