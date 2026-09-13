@@ -16,9 +16,7 @@ test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToU
 
 **第五层（2026-09-13）：** 提交 `pre-publication-revision`，Host re-adopt 到 PID REDACTED_PROCESS_ID / preload `211e6b64…`，modeld 仍 1260305 / epoch `484b5a7a-…`（CLI 未变）。新 nonce `d22a4032-…`：`history outcome` **expected_result_observed**（2 samples / 2541ms，requestId `78ab6947-…`）。同一 turn 上 grok-4.6 三步 toolCallCount=1 后 memory-extraction；oracle atime 对上第二步。executionCompleted 仍 not_proven，desktop replica 未观察。这是 test0 同一 Bot 上官方对照之后的 managed 交付，不是 T39 全旅程（App 输入 / 模型 B / checkpoint 仍开），也不是生产。
 
-**测试矩阵（2026-09-13 CLI，非生产）：** test0 在 reset 后官方回程 nonce `9f774425-…` 为 expected_result_observed，assignments.agents 已空。test1 未 opt-in，官方独立文件 nonce `eff25abc-…` 为 expected_result_observed，全程无 grok-4.6 分配。test2 `confirmed_temporal`/`blocked`，`models use grok-4.6 --for test2` 以 `runtime_ownership_unavailable` 拒绝且未改 assignments；未向 test2 发任务。desktop replica 仍 not_observed，circuit 仍 open，不是生产放行。
-
-**测试矩阵（2026-09-13 CLI，非生产）：** test0 在 reset 后官方回程 nonce `9f774425-…` 为 expected_result_observed，assignments.agents 已空。test1 未 opt-in，官方独立文件 nonce `eff25abc-…` 为 expected_result_observed，全程无 grok-4.6 分配。test2 `confirmed_temporal`/`blocked`，`models use grok-4.6 --for test2` 以 `runtime_ownership_unavailable` 拒绝且未改 assignments；未向 test2 发任务。desktop replica 仍 not_observed，circuit 仍 open，不是生产放行。
+**测试矩阵（2026-09-13 CLI，非生产）：** test0 在 reset 后官方回程 nonce `9f774425-…` 为 expected_result_observed。test1 未 opt-in，官方独立文件 nonce `eff25abc-…` 为 expected_result_observed。test2 `confirmed_temporal`/`blocked`，`models use grok-4.6 --for test2` 拒绝且未发任务。随后 test0 再绑 grok-4.6，nonce `090d985a-…` 为 expected_result_observed（9105ms）。CLI 官方→A→官方→A 已齐。desktop replica 仍 not_observed，circuit 仍 open，不是生产放行。
 
 ## Status / boundary
 

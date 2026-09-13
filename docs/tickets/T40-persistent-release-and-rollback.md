@@ -1,5 +1,7 @@
 # T40 — 持久运行、限定生产放行与完整回滚
 
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
+
 ## Status / responsibility
 
 **Partial / open release closeout · 2026-09-12：前台modeld资源生命周期已补真实缺陷并验证source/Node制品；未执行现场部署或回滚。** 本票拥有V25/V27以及V17/V18的生产操作闭环；T28仍是唯一控制程序/精确进程操作owner，T25拥有modeld资源生命周期，T24拥有日常选模，T39拥有原生会话往返。
@@ -122,3 +124,5 @@ route启动前复用128KiB/no-follow/regular-file ConfigurationRead检查canonic
 正常发行包只包含生产实现，自写fixture自包含；私有research和现场receipt留在私有仓库/受控空间。T40签生产前需必需证据合取和可执行退路；仅清理worktree不提高产品资格，未清理则如实记交付残留。
 
 下一动作：前台start/borrow/orderly restart和失去listener的收尾已有source/Unix/packed子证明，不重复做占位修复。继续目标环境的受支持持久服务owner、安装/启动恢复和真实凭据推理回执，并与T37/T38当前原生资格、独立review、test2保全及T39原生checkpoint往返合流。tmux存在或本地PodDaemon历史机制可用不等于产品boot hook或跨recreate自启已证；不改官方wrapper/supervisor，不另建通用重启管理器，不用后台detach伪装安装完成。整票仍Open。
+
+**2026-09-13 现场 start 借用：** `runtime start --mode route` 对现役 modeld REDACTED_PROCESS_ID / epoch `484b5a7a-…` 回执 `lifetime=borrowed`、`productionAccepted:false`、`autostartInstalled:false`、reconcile `preview`。未新建 modeld、未 re-adopt、未改 circuit（仍 `open`/`pending-uncertain`，mtime 2026-09-08，禁止手清）。controller liveness 仍 unknown。这只证明同根借用，不是开机自启或生产放行。
