@@ -10,7 +10,7 @@ Spec：[Server归属优先](../roadmap/box-runtime-impl-spec.md#server-authority
 
 本窗口已刷新原始Server归属，test2仍为temporal/local box；test0/1保持box/box和原角色。test2两库已做私有只读SQLite online backup（包含WAL），备份窗口无观测到的DB提交/普通文件变化/Host换代，且两次不运行投影一致。新进程SQLite integrity与root blob存在性通过，加密元数据和pending episode保留；**尚非原生reader恢复或Server Temporal分支副本保全，没有回写现场**。准确收据与上限见[readiness](../maintainers/t32-live-enable-readiness.md)。
 
-当前原生源码/隔离运行确认startup通过`reconcileBeforeStartupResume`做全局身份同步，撤旧writer后可对齐test2。owner已单独允许完成保全、未知执行处理和审查后的受控启动同步窗口；不得把这次授权推广为任意身份修复、Server修改、历史合并或任务重放。两个未确认本地对象及remote-only/资料同步影响仍需诚实表达；仅枚举本地41个对象不证明全Server范围。现役尚未切换，不能标校准已执行。
+当前原生源码/隔离运行确认startup通过`reconcileBeforeStartupResume`做全局身份同步，撤旧writer后可对齐test2。owner已单独允许完成保全、未知执行处理和审查后的受控启动同步窗口；不得把这次授权推广为任意身份修复、Server修改、历史合并或任务重放。两个未确认本地对象及remote-only/资料同步影响仍需诚实表达；仅枚举本地41个对象不证明全Server范围。该保全窗口时现役尚未切换。随后经Grok xhigh复看和单独同步授权，首次受控Host启动已由原生writer将test2本地对齐temporal；原Box root blob/展示计数/pending episode与保全一致。新一代Server确认被T37异步machine scope缺陷阻塞，修复后的回读仍需完成；不宣称T38整票Done或合并两历史。
 
 ## Current gap / reuse
 

@@ -20,6 +20,10 @@
 
 这只关闭受检版本的启动等待顺序子问题，不证明原生checkpoint事务、服务跨代旧TURN选择恢复、实际pending work或App。完整profile现需18-slice候选（含该guard）；旧17-slice资格不覆盖新字节。精确pin、回归和Astra复看见readiness。普通新TURN/后续STEP的T37门不接受paused，未削弱撤权合同。
 
+### 首次真实部署发现的异步machine scope差额
+
+受控新Host已实际加载schema3桥，原生allowed/bound均ready；但scope_unavailable。当前原生`getMachineId`转调async `getOrCreateHostMachineId`，即便cache命中也返回Promise；候选readScope漏await。保持共享scope校验严格，仅在Host adapter等待真实值；原Gateway wrapper fixture改为async后先红，修后通过并核对前后两次读取、只输出hash无machine/credential值。额外使用当前原生machine helper重跑隔离资格；完整新制品回归与真实再部署回读归readiness。不把本地声明或health代替这项现场缺证。
+
 ## Reuse / module ownership
 
 - 复用`host/ownership-read.ts`、`ownership-slices.ts`及`GatewayClient.getAgentOwnership`的有界原生Server查询，不导出官方凭据、不提供任意RPC转发。

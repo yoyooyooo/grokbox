@@ -81,6 +81,7 @@ test("actual applied Gateway wrapper leaves ordinary status unchanged and borrow
   if (!applied.ok) throw Error(applied.code);
   let nativeReads = 0;
   let credentialReads = 0;
+  let machineReads = 0;
   const context = createContext({
     Symbol,
     globalThis: { [Symbol.for(HOST_OWNERSHIP_READ_SYMBOL)]: bindHostOwnershipRead() },
@@ -90,7 +91,9 @@ test("actual applied Gateway wrapper leaves ordinary status unchanged and borrow
         if (name === "host-upgrade") return { getVersionState: () => ({ version: "owned" }) };
         if (name === "auth") return {
           getAccessToken: async () => { credentialReads++; return "PRIVATE_SENTINEL"; },
-          peekAccessToken: () => "PRIVATE_SENTINEL", getTeamId: async () => null, getMachineId: () => "owned-machine",
+          peekAccessToken: () => "PRIVATE_SENTINEL", getTeamId: async () => null,
+          // Current native getOrCreateHostMachineId is asynchronous.
+          getMachineId: async () => { machineReads++; return "owned-machine"; },
         };
         if (name === "resume-ownership") return { getSettledHostWindow: readWindow };
         if (name === "turn-execution") return { isLocalWorkAllowed: true, canExecute: true };
@@ -121,5 +124,9 @@ test("actual applied Gateway wrapper leaves ordinary status unchanged and borrow
     agents: [{ server: { harness: "box" } }] });
   expect(nativeReads).toBe(1);
   expect(credentialReads).toBe(1);
+  expect(machineReads).toBe(2);
+  expect(result.grokboxOwnership.scope).toMatchObject({ stable: true });
+  expect(result.grokboxOwnership.scope.id).toMatch(/^[a-f0-9]{64}$/);
+  expect(JSON.stringify(result)).not.toContain("owned-machine");
   expect(JSON.stringify(result)).not.toContain("PRIVATE_SENTINEL");
 });

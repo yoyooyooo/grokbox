@@ -53,7 +53,7 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
             backend: deps.environment.backend?.backendUrl ?? "default",
             account: tokenSubjectScope(auth.peekAccessToken()),
             team: await auth.getTeamId(),
-            machine: auth.getMachineId()
+            machine: await auth.getMachineId()
           };
         }
       }) };
