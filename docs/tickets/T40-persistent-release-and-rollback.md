@@ -130,3 +130,5 @@ route启动前复用128KiB/no-follow/regular-file ConfigurationRead检查canonic
 **本机服务主人（2026-09-13）：** Host REDACTED_PROCESS_ID 由官方 `sand-supervisor.mjs`（7076）拉起；modeld 与 Host 同为 pid 53 子进程，**不是** supervisor 孩子。user systemd 无 session bus（`$XDG_RUNTIME_DIR` 空），本命令不安装自启。circuit 仍 open/`pending-uncertain`（2026-09-08），禁止手清。
 
 **modeld 受控重启：** SIGTERM REDACTED_PROCESS_ID 后从 `v2-a3a855f22af9` 拉起 PID **REDACTED_PROCESS_ID** / epoch `e97c91df-…`，Host 未信号、assignment 未变。随后 `runtime start` 再 borrowed；CLI nonce `af15ccfd-…` expected_result_observed。autostartInstalled 仍 false，不是开机恢复证明。
+
+**核心 vs 停下（2026-09-13）：** 产品目标是确认 box Bot 走 grokbox 流程。test0 现役 Host 带 preload、assignment=grok-4.6，CLI/App 发送都能进 managed。官方 supervisor **不含** NODE_OPTIONS；Host 被它自行拉起时补丁会丢，需再 `re-adopt`——这是预期缺口，不为此改官方 supervisor。App 详情 echo/Cmd-Q 假失败、circuit、user systemd 自启、模型 B、owned-JSON checkpoint 探针都不挡这条主路径，先放一边。
