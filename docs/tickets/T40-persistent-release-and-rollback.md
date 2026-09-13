@@ -125,4 +125,8 @@ route启动前复用128KiB/no-follow/regular-file ConfigurationRead检查canonic
 
 下一动作：前台start/borrow/orderly restart和失去listener的收尾已有source/Unix/packed子证明，不重复做占位修复。继续目标环境的受支持持久服务owner、安装/启动恢复和真实凭据推理回执，并与T37/T38当前原生资格、独立review、test2保全及T39原生checkpoint往返合流。tmux存在或本地PodDaemon历史机制可用不等于产品boot hook或跨recreate自启已证；不改官方wrapper/supervisor，不另建通用重启管理器，不用后台detach伪装安装完成。整票仍Open。
 
-**2026-09-13 现场 start 借用：** `runtime start --mode route` 对现役 modeld REDACTED_PROCESS_ID / epoch `484b5a7a-…` 回执 `lifetime=borrowed`、`productionAccepted:false`、`autostartInstalled:false`、reconcile `preview`。未新建 modeld、未 re-adopt、未改 circuit（仍 `open`/`pending-uncertain`，mtime 2026-09-08，禁止手清）。controller liveness 仍 unknown。这只证明同根借用，不是开机自启或生产放行。
+**2026-09-13 现场 start 借用：** `runtime start --mode route` 对当时 modeld REDACTED_PROCESS_ID 回执 borrowed / productionAccepted:false / autostartInstalled:false。
+
+**本机服务主人（2026-09-13）：** Host REDACTED_PROCESS_ID 由官方 `sand-supervisor.mjs`（7076）拉起；modeld 与 Host 同为 pid 53 子进程，**不是** supervisor 孩子。user systemd 无 session bus（`$XDG_RUNTIME_DIR` 空），本命令不安装自启。circuit 仍 open/`pending-uncertain`（2026-09-08），禁止手清。
+
+**modeld 受控重启：** SIGTERM REDACTED_PROCESS_ID 后从 `v2-a3a855f22af9` 拉起 PID **REDACTED_PROCESS_ID** / epoch `e97c91df-…`，Host 未信号、assignment 未变。随后 `runtime start` 再 borrowed；CLI nonce `af15ccfd-…` expected_result_observed。autostartInstalled 仍 false，不是开机恢复证明。
