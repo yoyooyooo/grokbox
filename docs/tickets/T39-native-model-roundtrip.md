@@ -18,7 +18,7 @@ test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToU
 
 **测试矩阵（2026-09-13 CLI，非生产）：** test0 在 reset 后官方回程 nonce `9f774425-…` 为 expected_result_observed。test1 未 opt-in，官方独立文件 nonce `eff25abc-…` 为 expected_result_observed。test2 `confirmed_temporal`/`blocked`，`models use grok-4.6 --for test2` 拒绝且未发任务。随后 test0 再绑 grok-4.6，nonce `090d985a-…` 为 expected_result_observed（9105ms）。CLI 官方→A→官方→A 已齐。desktop replica 仍 not_observed，circuit 仍 open，不是生产放行。
 
-**App 入口（pro 桌面，2026-09-13）：** 真人在 Grok Bot.app 对 test0 发送 `APP_V16_9f3c2a7e from pro desktop, no extra words`（nonce `45edf5b1-…`）。Box：`hook_enter` 06:04:21Z，grok-4.6 三步 toolCallCount=1 后 memory-extraction；store 有 user + 3 条 send-message（末条正文即标记）；`history outcome` expected_result_observed，route 全程 box。pro：roster test0 仍 `harness=box` 且含标记；本地发送队列 phase=`accepted-awaiting-echo`（同 nonce）；**transcript.replicas 83 条、无该标记**（persistedAt 06:05:33Z，晚于 TURN）。与用户观察一致：列表/通知能看到最新一句，详情区没有。V16 输入路径这次进了 Host；详情 echo/replica 未跟上。Host-only 不修 App；不清缓存当修复。
+**App 入口（pro 桌面，2026-09-13）：** 真人在 Grok Bot.app 对 test0 发送 `APP_V16_9f3c2a7e from pro desktop, no extra words`（nonce `45edf5b1-…`）。Box：`hook_enter` 06:04:21Z，grok-4.6 三步 toolCallCount=1 后 memory-extraction；store 有 user + 3 条 send-message（末条正文即标记）；`history outcome` expected_result_observed，route 全程 box。pro：roster test0 仍 `harness=box` 且含标记；本地发送队列 phase=`accepted-awaiting-echo`（同 nonce）；**transcript.replicas 83 条、无该标记**（persistedAt 06:05:33Z，晚于 TURN）。与用户观察一致：列表/通知能看到最新一句，详情区没有。V16 输入路径这次进了 Host；详情 echo/replica 未跟上。Cmd-Q 后同 nonce journal 有 `failedAtMs`，详情改画「发送失败」；Box 仍有 user/SendToUser。不要重新发送。Host-only 不修 App；不清缓存当修复。
 
 ## Status / boundary
 
