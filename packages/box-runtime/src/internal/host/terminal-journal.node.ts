@@ -2,6 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { chmod, mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
+import { HOST_STATE_SHAPES } from "./context-codec.ts";
 
 export type HostJournalWriteResult = "written" | "unprojected" | "write_failed";
 
@@ -11,6 +12,7 @@ const TURN_SEAM_ASSIGNMENTS = new Set(["official", "main", "agent"]);
 const TURN_SEAM_TERMINAL_CLASSES = new Set(["stop", "error", "abort", "unknown"]);
 const TURN_SEAM_OUTCOMES = new Set(["official", "managed", "last_resort_official", "rejected"]);
 const TURN_SEAM_ERROR_CODES = new Set([
+  "runtime_config_invalid",
   "invalid_envelope",
   "unsupported_content",
   "invalid_tools",
@@ -23,7 +25,7 @@ const TURN_SEAM_ERROR_CODES = new Set([
   "stream_limit",
   "invalid_stream",
 ]);
-const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect"]);
+const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect", "provider"]);
 const HOST_STREAM_REJECT_REASONS = new Set([
   "missing-step-id",
   "invalid-step-id",
@@ -31,7 +33,9 @@ const HOST_STREAM_REJECT_REASONS = new Set([
   "missing-binding",
   "missing-bridge",
   "invalid-state",
+  "selection-unavailable",
   "connect-failed",
+  "terminal-rejected",
 ]);
 const HOST_SEAM_STAGES = new Set(["hook_enter", "hook_decline", "stream_enter", "connect_attempt", "first_chunk"]);
 const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail", "compact_passthrough"]);
@@ -172,9 +176,12 @@ export function projectHostStreamRejected(input: unknown): Record<string, unknow
     ...(hostGenerationId ? { hostGenerationId } : {}),
     agentId,
     ...(turnId ? { turnId } : {}),
+    ...(boundedString(input.stepId) ? { stepId: boundedString(input.stepId) } : {}),
     stage,
     errorCode,
     reason,
+    ...(reason === "invalid-state" && (HOST_STATE_SHAPES as readonly unknown[]).includes(input.stateShape)
+      ? { stateShape: input.stateShape } : {}),
   };
 }
 
@@ -214,7 +221,18 @@ export function projectHostNormalizedTerminal(input: unknown): Record<string, un
   if (!at) return null;
   const tuple = copyInferenceTupleOrReject(input);
   if (tuple == null) return null;
-  return { name: "host_normalized_terminal", at, ...tuple };
+  const terminalClass = boundedEnum(input.terminalClass, TURN_SEAM_TERMINAL_CLASSES);
+  const errorCode = boundedEnum(input.errorCode, TURN_SEAM_ERROR_CODES);
+  const toolCallCount = boundedCount(input.toolCallCount);
+  const modelId = boundedString(input.modelId);
+  if (input.terminalClass !== undefined && !terminalClass) return null;
+  if (input.errorCode !== undefined && (!errorCode || terminalClass !== "error")) return null;
+  return { name: "host_normalized_terminal", at, ...tuple,
+    ...(terminalClass ? { terminalClass } : {}),
+    ...(errorCode ? { errorCode } : {}),
+    ...(toolCallCount !== null ? { toolCallCount } : {}),
+    ...(modelId ? { modelId } : {}),
+  };
 }
 
 function projectHostEvent(input: unknown): Record<string, unknown> | null {

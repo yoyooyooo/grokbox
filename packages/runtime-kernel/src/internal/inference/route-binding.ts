@@ -7,6 +7,7 @@ import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "../contract/ide
 import type { ModelRecord } from "../../selection.ts";
 import type { RunStepRequest } from "../contract/binding.ts";
 import type { RecoveryLedger } from "../contract/overflow.ts";
+import type { OwnershipAdmission } from "../contract/ownership.ts";
 
 export type LedgerStatus = "active" | "terminal" | "rejected" | "cancelled";
 
@@ -26,6 +27,7 @@ export type RouteBindingRecord = {
   selection: SelectionIdentity;
   model: ModelRecord;
   fingerprint: string;
+  ownership: OwnershipAdmission;
   lease: AuthLease;
   lastActivityMs: number;
 };

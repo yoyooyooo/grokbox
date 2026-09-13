@@ -40,6 +40,26 @@ function base(overrides: Partial<StatusEvidence> = {}): StatusEvidence {
 }
 
 describe("status facets projector", () => {
+  test("service scope prevents a responsive foreign or unqualified modeld from appearing ready", () => {
+    for (const [scope, ready] of [["matched", true], ["mismatch", false], ["unavailable", null], ["not_observed", false]] as const) {
+      const modeld = projectRuntimeStatus(base({ modeld: observed("modeld.sock/service-info", {
+        required: true, ready: true, scope, serviceEpoch: "77777777-7777-4777-8777-777777777777",
+      }) })).facets.modeld;
+      expect(modeld.value?.ready).toBe(ready);
+      expect(modeld.value?.scope).toBe(scope);
+      expect(modeld.value?.serviceEpoch).toBe(scope === "matched" || scope === "mismatch"
+        ? "77777777-7777-4777-8777-777777777777" : null);
+    }
+  });
+
+  test("unknown service scope and unsafe generation are never copied into status", () => {
+    const raw = { required: true, ready: true, scope: SECRET, serviceEpoch: PROMPT };
+    const modeld = projectRuntimeStatus(base({ modeld: observed("modeld.sock/service-info", raw) as StatusEvidence["modeld"] })).facets.modeld;
+    expect(modeld).toMatchObject({ gap: "invalid", value: { ready: null, scope: "unavailable", serviceEpoch: null } });
+    expect(JSON.stringify(modeld)).not.toContain(SECRET);
+    expect(JSON.stringify(modeld)).not.toContain(PROMPT);
+  });
+
   test("attested + open circuit + no pending keeps circuit, inhibits mutation, liveness unknown", () => {
     const status = projectRuntimeStatus(base({
       coordinator: observed("state/coordinator.json", { circuit: "open", circuitReason: "unsupported_bundle" }),

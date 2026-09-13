@@ -18,6 +18,17 @@ import { qualifyHostRootContract } from "./root-contract.ts";
 
 const ENVELOPE_MAX_BYTES = 7 * 1024 * 1024;
 
+const TOOL_REFERENCE_KINDS = ["call-id", "call-name", "result-id", "result-name", "legacy-id", "legacy-name"] as const;
+const TOOL_REFERENCE_ERRORS = ["non-string", "empty", "oversized", "control"] as const;
+export const HOST_STATE_SHAPES = ["unknown-field", "part-field", "tool-call-field", "part-kind", "text-type", "content-type", "metadata-shape", "message-id", "tool-id", "state-shape",
+  ...TOOL_REFERENCE_KINDS.flatMap((field) => TOOL_REFERENCE_ERRORS.map((error) => `${field}-${error}` as const)),
+] as const;
+export type HostStateShape = (typeof HOST_STATE_SHAPES)[number];
+export class HostStateCodecError extends EnvelopeError {
+  constructor(readonly stateShape: HostStateShape) { super("unsupported_content"); }
+}
+function stateFail(shape: HostStateShape): never { throw new HostStateCodecError(shape); }
+
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -81,44 +92,49 @@ const HOST_PART_KEYS: Record<string, Set<string>> = {
 
 export type HostExecutorMessage = {
   role: PromptMessage["role"];
-  content: PromptMessage["content"] | Array<Record<string, JsonValue>>;
-  id?: string;
+  content: PromptMessage["content"] | Array<Record<string, JsonValue | undefined>>;
+  id?: JsonValue;
   providerOptions?: { [key: string]: JsonValue };
   isSummary?: boolean;
   toolCalls?: Array<{ id: string; name: string; args: JsonValue }>;
 };
 
-function rejectUnknownKeys(value: object, allowed: Set<string>): void {
+function rejectUnknownKeys(value: object, allowed: Set<string>, shape: HostStateShape = "unknown-field"): void {
   for (const key of Object.keys(value)) {
-    if (!allowed.has(key)) fail("unsupported_content");
+    if (!allowed.has(key)) stateFail(shape);
   }
 }
 
-function boundedMessageId(value: unknown): string {
-  return typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value)
-    ? value : fail("unsupported_content");
+/** Provider tool references have a different contract from Host message metadata IDs. */
+function boundedToolId(value: unknown, field: (typeof TOOL_REFERENCE_KINDS)[number]): string {
+  if (typeof value !== "string") stateFail(`${field}-non-string`);
+  if (value.length === 0) stateFail(`${field}-empty`);
+  if (value.length > 128) stateFail(`${field}-oversized`);
+  if (/[\x00-\x1f]/.test(value)) stateFail(`${field}-control`);
+  return value;
 }
 
 function cloneProviderOptions(value: unknown): { [key: string]: JsonValue } {
-  if (!object(value) || !isSafePlainRecord(value)) fail("unsupported_content");
+  if (!object(value) || !isSafePlainRecord(value)) stateFail("metadata-shape");
   const cloned = cloneJson(value);
   if (!object(cloned)) fail("unsupported_content");
   return cloned;
 }
 
-function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<string, JsonValue> {
+function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<string, JsonValue | undefined> {
   if (!object(value)) fail("unsupported_content");
   const typeField = ownData(value, "type");
   if (typeField.kind !== "value" || typeof typeField.value !== "string" || !Object.hasOwn(HOST_PART_KEYS, typeField.value)) {
-    fail("unsupported_content");
+    stateFail("part-kind");
   }
   const type = typeField.value;
-  rejectUnknownKeys(value, HOST_PART_KEYS[type]!);
+  const metadata = cloneHostMetadata(value, HOST_PART_KEYS[type]!);
   if (type === "text" || type === "reasoning") {
     const text = ownData(value, "text");
-    if (text.kind !== "value" || typeof text.value !== "string") fail("unsupported_content");
+    if (text.kind !== "value" || typeof text.value !== "string") stateFail("text-type");
     const options = optionalDefined(ownData(value, "providerOptions"));
     return {
+      ...metadata,
       type,
       text: text.value,
       ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
@@ -137,6 +153,7 @@ function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<stri
     if (mime !== undefined && typeof mime !== "string") fail("unsupported_content");
     const options = optionalDefined(ownData(value, "providerOptions"));
     return {
+      ...metadata,
       type,
       ...(typeof href === "string" ? (url !== undefined ? { url: href } : { image: href }) : { data: data as string }),
       ...(mime !== undefined ? { mimeType: mime } : {}),
@@ -151,9 +168,10 @@ function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<stri
     if (toolCallId.kind !== "value" || toolName.kind !== "value" || args.kind !== "value") fail("unsupported_content");
     const options = optionalDefined(ownData(value, "providerOptions"));
     return {
+      ...metadata,
       type,
-      toolCallId: boundedMessageId(toolCallId.value),
-      toolName: boundedMessageId(toolName.value),
+      toolCallId: boundedToolId(toolCallId.value, "call-id"),
+      toolName: boundedToolId(toolName.value, "call-name"),
       args: cloneJson(args.value),
       ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
     };
@@ -168,10 +186,11 @@ function cloneHostPart(value: unknown, role: PromptMessage["role"]): Record<stri
   if (role !== "tool" && role !== "user") fail("unsupported_content");
   if (isError !== undefined && typeof isError !== "boolean") fail("unsupported_content");
   return {
+    ...metadata,
     type: "tool-result",
-    toolCallId: boundedMessageId(toolCallId.value),
+    toolCallId: boundedToolId(toolCallId.value, "result-id"),
     result: cloneJson(result.value),
-    ...(toolName !== undefined ? { toolName: boundedMessageId(toolName) } : {}),
+    ...(toolName !== undefined ? { toolName: boundedToolId(toolName, "result-name") } : {}),
     ...(isError !== undefined ? { isError } : {}),
     ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
     ...(experimental !== undefined ? { experimental_content: cloneJson(experimental) } : {}),
@@ -184,13 +203,38 @@ function cloneHostToolCalls(value: unknown): HostExecutorMessage["toolCalls"] {
     const descriptor = Object.getOwnPropertyDescriptor(value, index);
     if (!descriptor || !Object.hasOwn(descriptor, "value") || !object(descriptor.value)) fail("unsupported_content");
     const call = descriptor.value;
-    rejectUnknownKeys(call, new Set(["id", "name", "args"]));
+    rejectUnknownKeys(call, new Set(["id", "name", "args"]), "tool-call-field");
     const idField = ownData(call, "id");
     const name = ownData(call, "name");
     const args = ownData(call, "args");
     if (idField.kind !== "value" || name.kind !== "value" || args.kind !== "value") fail("unsupported_content");
-    return { id: boundedMessageId(idField.value), name: boundedMessageId(name.value), args: cloneJson(args.value) };
+    return { id: boundedToolId(idField.value, "legacy-id"), name: boundedToolId(name.value, "legacy-name"), args: cloneJson(args.value) };
   });
+}
+
+/** Own-data metadata belongs to the Host, not the provider envelope.
+ * Preserve safe JSON extensions at message and known content-part boundaries.
+ * The part type and its payload are still explicitly qualified; opaque wrappers/accessors
+ * are never unwrapped. Provider projection consumes only the declared semantic fields.
+ */
+function cloneHostMetadata(value: object, knownKeys: Set<string>): Record<string, JsonValue | undefined> {
+  // Only own descriptors are consumed. Message records can cross VM realms; their
+  // prototype is neither invoked nor copied. Nested opaque values still fail cloneJson.
+  const extra: Record<string, JsonValue | undefined> = {};
+  const budget = { nodes: 0 };
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (Object.keys(descriptors).length > 128) fail("envelope_too_large");
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") stateFail("metadata-shape");
+    const descriptor = descriptors[key];
+    if (!descriptor?.enumerable || knownKeys.has(key)) continue;
+    if (!Object.hasOwn(descriptor, "value")) stateFail("metadata-shape");
+    Object.defineProperty(extra, key, {
+      value: descriptor.value === undefined ? undefined : cloneJson(descriptor.value, 0, budget),
+      enumerable: true, writable: true, configurable: true,
+    });
+  }
+  return extra;
 }
 
 function cloneHostMessages(value: unknown): HostExecutorMessage[] {
@@ -199,7 +243,7 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
     const descriptor = Object.getOwnPropertyDescriptor(value, index);
     if (!descriptor || !Object.hasOwn(descriptor, "value") || !object(descriptor.value)) fail("unsupported_content");
     const raw = descriptor.value;
-    rejectUnknownKeys(raw, HOST_MESSAGE_KEYS);
+    const metadata = cloneHostMetadata(raw, HOST_MESSAGE_KEYS);
     const roleField = ownData(raw, "role");
     const contentField = ownData(raw, "content");
     if (roleField.kind !== "value" || contentField.kind !== "value") fail(roleField.kind === "accessor" || contentField.kind === "accessor" ? "unsupported_content" : "invalid_envelope");
@@ -215,7 +259,7 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
         if (!part || !Object.hasOwn(part, "value")) fail("unsupported_content");
         return cloneHostPart(part.value, role);
       });
-    } else fail("unsupported_content");
+    } else stateFail("content-type");
     const id = optionalDefined(ownData(raw, "id"));
     const options = optionalDefined(ownData(raw, "providerOptions"));
     const summary = optionalDefined(ownData(raw, "isSummary"));
@@ -227,7 +271,7 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
       const seen: Array<{ type: "tool-call"; toolCallId: string; toolName: string; args: JsonValue }> = [];
       if (Array.isArray(content)) {
         for (const part of content) {
-          if (part.type === "tool-call" && typeof part.toolCallId === "string" && typeof part.toolName === "string") {
+          if (part.type === "tool-call" && typeof part.toolCallId === "string" && typeof part.toolName === "string" && part.args !== undefined) {
             seen.push({ type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: part.args });
           }
         }
@@ -240,9 +284,10 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
       }
     }
     return {
+      ...metadata,
       role,
       content,
-      ...(id !== undefined ? { id: boundedMessageId(id) } : {}),
+      ...(id !== undefined ? { id: cloneJson(id) } : {}),
       ...(options !== undefined ? { providerOptions: cloneProviderOptions(options) } : {}),
       ...(summary !== undefined ? { isSummary: summary as boolean } : {}),
       ...(toolCalls !== undefined ? { toolCalls } : {}),
@@ -254,7 +299,7 @@ function cloneHostMessages(value: unknown): HostExecutorMessage[] {
 export function cloneHostExecutorWindow(state: unknown): HostExecutorMessage[] {
   if (state === undefined || state === null) return [];
   if (Array.isArray(state)) return cloneHostMessages(state);
-  if (!object(state) || !isSafePlainRecord(state)) fail("unsupported_content");
+  if (!object(state) || !isSafePlainRecord(state)) stateFail("state-shape");
   const field = ownData(state, "messages");
   if (field.kind === "accessor") fail("unsupported_content");
   if (field.kind === "value") {

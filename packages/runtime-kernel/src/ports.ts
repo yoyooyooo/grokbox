@@ -4,6 +4,7 @@ import type { ModelsFile, DesiredFile } from "./selection.ts";
 import type { StatusEvidence } from "./internal/contract/status.ts";
 import type { InferenceEvent } from "./internal/contract/events.ts";
 import type { HostCompactRequest, HostCompactResult } from "./internal/contract/overflow.ts";
+import type { RunStepRequest } from "./internal/contract/binding.ts";
 
 /** Process-local opaque handle. Not a contract DTO; never stringify, log, or put on the wire. */
 export type PreparedCall = { readonly _PreparedCall: unique symbol };
@@ -24,7 +25,7 @@ export class ConfigurationWrite extends Context.Service<ConfigurationWrite, {
 }>()("grokbox/ConfigurationWrite") {}
 
 export class AdmissionAuthority extends Context.Service<AdmissionAuthority, {
-  readonly current: () => Effect.Effect<unknown, unknown>;
+  readonly current: (request?: RunStepRequest) => Effect.Effect<unknown, unknown>;
 }>()("grokbox/AdmissionAuthority") {}
 
 export class BackendAuth extends Context.Service<BackendAuth, {

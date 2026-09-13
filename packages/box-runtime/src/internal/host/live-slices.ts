@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
+import { OWNERSHIP_READ_SLICES } from "./ownership-slices.ts";
 import type { SlicePatch } from "./profile.ts";
-import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_HARNESS_STICK_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
+import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
 
 export const LIVE_HOST_BUNDLE = "/home/box/sand-host/host-main.cjs";
 
@@ -19,7 +20,8 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     id: "create-session",
     startAnchor: "createSession(onRequestId, sessionOptions) {",
     endAnchor: "    },\n    recordPostTurnLabeling(args) {",
-    // Wrap after the official session exists so no-STEP compact/memory can use it.
+    // Construct the native session first for exact official passthrough when
+    // unassigned. Managed aux calls require the separately qualified purpose.
     // Undefined still declines to the official session. STEP streams stay managed.
     find: "      return createCursorInferencePromptSession(inferenceOptions);\n",
     replacement:
@@ -29,19 +31,76 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     id: "agent-id",
     startAnchor: "const mainSessionOptions = {",
     endAnchor: "async () => host.inference.createSession(emitRequestId, mainSessionOptions)",
-    find: "          modelId: host.subagentModelId,\n",
+    // Insert identity at the options boundary, preserving the Host's modelId /
+    // executorProfile choice and all native fields. Do not replace that choice.
+    find: "const mainSessionOptions = {\n",
     replacement:
-      "          agentId: host.getConversationId(),\n          invocationId: inferenceRequestId,\n          modelId: host.subagentModelId,\n",
+      "const mainSessionOptions = {\n          agentId: host.getConversationId(),\n          invocationId: inferenceRequestId,\n",
   },
   {
     id: "compact-register",
-    // After executeToolStream + optional approaching-limit background summary.
-    // Fast overflow before this insert is seam-intentional capability_not_ready.
-    startAnchor: "let stepClosed = false;",
-    endAnchor: "        [response, extendedUsage, usage, finalInvocationId] = await Promise.all([",
-    find: "      let response;\n      let extendedUsage;\n      let usage;\n      let finalInvocationId;\n      try {\n",
+    // Actual STEP/root/ctx already exist here, but the first provider request has not started.
+    // Own the full native env_2 lifetime; do not read the later stepClosed binding in its TDZ.
+    startAnchor: "        result = rootPromptExecutor.executeToolStream(\n",
+    endAnchor: "let stepClosed = false;",
+    find: "        result = rootPromptExecutor.executeToolStream(\n",
     replacement:
-      `      const __grokbox_compact = globalThis[Symbol.for("${HOST_COMPACT_SYMBOL}")];\n      if (typeof __grokbox_compact === "function") {\n        const __grokbox_compact_slot = __grokbox_compact({\n          orchestrator: this.orchestrator,\n          ctx,\n          stateHandler,\n          rootPromptExecutor,\n          interactionListener: this.interactionListener,\n          config: this.config,\n          requestContext,\n          invocationId,\n          turnId: ctx.get(requestIdKey),\n          agentId: this.config.conversationGroupId,\n          resourceAccessor: this.resourceAccessor,\n          stepClosed: () => stepClosed\n        });\n        if (__grokbox_compact_slot != null) __addDisposableResource23(env_2, __grokbox_compact_slot, false);\n      }\n      let response;\n      let extendedUsage;\n      let usage;\n      let finalInvocationId;\n      try {\n`,
+      `        const __grokbox_compact = globalThis[Symbol.for("${HOST_COMPACT_SYMBOL}")];\n        if (typeof __grokbox_compact === "function") {\n          let __grokbox_compact_active = true;\n          const __grokbox_compact_lease = __grokbox_compact({\n            orchestrator: this.orchestrator, ctx, stateHandler, rootPromptExecutor,\n            interactionListener: this.interactionListener, config: this.config, requestContext,\n            invocationId, turnId: ctx.get(requestIdKey), agentId: this.config.conversationGroupId,\n            resourceAccessor: this.resourceAccessor, stepClosed: () => !__grokbox_compact_active\n          });\n          if (__grokbox_compact_lease != null) {\n            const __grokbox_compact_slot = { [Symbol.dispose]() {\n              __grokbox_compact_active = false;\n              __grokbox_compact_lease[Symbol.dispose]();\n            } };\n            __addDisposableResource23(env_2, __grokbox_compact_slot, false);\n          }\n        }\n        result = rootPromptExecutor.executeToolStream(\n`,
+  },
+  {
+    id: "compact-background-start",
+    startAnchor: "        await startBackgroundSummary();\n",
+    endAnchor: "let stepClosed = false;",
+    find: "        await startBackgroundSummary();\n",
+    replacement:
+      `        const __grokbox_managed = globalThis[Symbol.for("${HOST_MANAGED_STEP_SYMBOL}")];\n        if (typeof __grokbox_managed !== "function" || !__grokbox_managed(rootPromptExecutor)) {\n          await startBackgroundSummary();\n        }\n`,
+  },
+  {
+    id: "compact-background-response",
+    startAnchor: "      const responseSummaryLaunch = result.extendedUsage.then((currentUsage) => {\n",
+    endAnchor: "        [response, extendedUsage, usage, finalInvocationId] = await Promise.all([",
+    find: "      const responseSummaryLaunch = result.extendedUsage.then((currentUsage) => {\n",
+    replacement:
+      `      const responseSummaryLaunch = result.extendedUsage.then((currentUsage) => {\n        const __grokbox_managed = globalThis[Symbol.for("${HOST_MANAGED_STEP_SYMBOL}")];\n        if (typeof __grokbox_managed === "function" && __grokbox_managed(rootPromptExecutor)) return;\n`,
+  },
+  {
+    id: "managed-retry-gate",
+    startAnchor: "  if (!(classifyError2(error41) instanceof RetriableError)) return false;\n",
+    endAnchor: "  if (classified instanceof NonRetriableError || classified instanceof ActionRequiredError) {",
+    find: "  if (!(classifyError2(error41) instanceof RetriableError)) return false;\n",
+    replacement:
+      `  const __grokbox_failed = globalThis[Symbol.for("${HOST_MANAGED_FAILURE_SYMBOL}")];\n  if (typeof __grokbox_failed === "function" && __grokbox_failed(error41)) return false;\n  if (!(classifyError2(error41) instanceof RetriableError)) return false;\n`,
+  },
+  {
+    id: "managed-turn-retry-gate",
+    // The final TURN policy also consults automation callbacks. Protect that
+    // owner, not only isRetryableProviderError's narrower classification path.
+    startAnchor: "function shouldRetryTurnAttempt(input) {\n",
+    endAnchor: "function computeBackoffDelayMs(params) {",
+    find: "function shouldRetryTurnAttempt(input) {\n",
+    replacement:
+      `function shouldRetryTurnAttempt(input) {\n  const __grokbox_failed = globalThis[Symbol.for("${HOST_MANAGED_FAILURE_SYMBOL}")];\n  if (typeof __grokbox_failed === "function" && __grokbox_failed(input.error)) return false;\n`,
+  },
+  {
+    id: "managed-step-error-scope",
+    startAnchor: "  async runStep(parentCtx, turn,",
+    endAnchor: "  async runWithMaxTokensRetry(",
+    find: "    } catch (e_2) {\n      env_2.error = e_2;\n",
+    replacement: `    } catch (e_2) {\n      const __grokbox_step_failure = globalThis[Symbol.for("${HOST_MANAGED_STEP_FAILURE_SYMBOL}")];\n      if (typeof __grokbox_step_failure === "function") {\n        try { __grokbox_step_failure(rootPromptExecutor, e_2); } catch {}\n      }\n      env_2.error = e_2;\n`,
+  },
+  {
+    id: "managed-output-retry-gate",
+    startAnchor: "  async runWithMaxTokensRetry(",
+    endAnchor: "  async runWithSummarizationRetry(",
+    find: "        } catch (error41) {\n          if (error41 instanceof OutputTokensLimitExceededError) {",
+    replacement: `        } catch (error41) {\n          const __grokbox_failed = globalThis[Symbol.for("${HOST_MANAGED_FAILURE_SYMBOL}")];\n          if (typeof __grokbox_failed === "function" && __grokbox_failed(error41)) throw error41;\n          if (error41 instanceof OutputTokensLimitExceededError) {`,
+  },
+  {
+    id: "managed-summary-retry-gate",
+    startAnchor: "  async runWithSummarizationRetry(",
+    endAnchor: "  async runTurnLoop(",
+    find: "        } catch (error41) {\n          const isProactiveSummarizationThresholdError = error41 instanceof ProactiveSummarizationThresholdError;",
+    replacement: `        } catch (error41) {\n          const __grokbox_failed = globalThis[Symbol.for("${HOST_MANAGED_FAILURE_SYMBOL}")];\n          if (typeof __grokbox_failed === "function" && __grokbox_failed(error41)) throw error41;\n          const isProactiveSummarizationThresholdError = error41 instanceof ProactiveSummarizationThresholdError;`,
   },
   {
     id: "activity-bridge",
@@ -83,47 +142,5 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     replacement:
       "    harness: readSandProfileHarness(profilePath) === \"temporal\" ? \"temporal\" : \"box\"\n",
   },
-  {
-    id: "harness-profile-rpc",
-    startAnchor: "var agentProfileFields = {",
-    endAnchor: "var createAgentArgs = rpcObject({",
-    find: "  avatarColor: rpcOptional(rpcString())\n};",
-    replacement:
-      "  avatarColor: rpcOptional(rpcString()),\n  harness: rpcOptional(\n    rpcUnion(\n      rpcLiteral(SAND_REQUESTED_AGENT_HARNESS_BOX),\n      rpcLiteral(SAND_REQUESTED_AGENT_HARNESS_TEMPORAL)\n    )\n  )\n};",
-  },
-  {
-    id: "harness-update-trim",
-    startAnchor: "async updateAgent(agentId, profile) {",
-    endAnchor: "async seedConversationName({",
-    find:
-      "      ...profile.title === void 0 ? {} : { title: profile.title.trim() }\n    };",
-    replacement:
-      "      ...profile.title === void 0 ? {} : { title: profile.title.trim() },\n      ...profile.harness === \"box\" || profile.harness === \"temporal\" ? { harness: profile.harness } : {}\n    };",
-  },
-  {
-    id: "harness-agent-write",
-    startAnchor: "writeAgentProfileFile(agentId, profile) {",
-    endAnchor: "async withAgentDb(agentId, fn) {",
-    find: "      ...namedBy == null ? {} : { namedBy }\n    });",
-    replacement:
-      "      ...namedBy == null ? {} : { namedBy },\n      ...profile.harness === \"box\" || profile.harness === \"temporal\" ? { harness: profile.harness } : {}\n    });",
-  },
-  {
-    id: "harness-local-write",
-    startAnchor: "function writeSandProfileFile(path31, profile) {",
-    endAnchor: "function seedRoomProfileName(seed) {",
-    find:
-      "  const parsed = parseProfileJson2(path31);\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, parsed == null ? {} : profileServerBindingFromJson(parsed))\n  );\n",
-    replacement:
-      `  const parsed = parseProfileJson2(path31);\n  const existing = parsed == null ? {} : profileServerBindingFromJson(parsed);\n  const __grokbox_stick = globalThis[Symbol.for("${HOST_HARNESS_STICK_SYMBOL}")];\n  const __grokbox_harness = typeof __grokbox_stick === "function" ? __grokbox_stick({\n    kind: "local",\n    incoming: profile == null ? void 0 : profile.harness,\n    existing: existing.harness\n  }) : void 0;\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, {\n      ...existing,\n      ...__grokbox_harness == null ? {} : { harness: __grokbox_harness }\n    })\n  );\n`,
-  },
-  {
-    id: "harness-server-write",
-    startAnchor: "function writeServerBackedProfileFile(path31, profile, binding) {",
-    endAnchor: "function isServerTemporalHarnessRefusal(error41) {",
-    find:
-      "  const previous = readSandProfileCreationMetadata(path31);\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, {\n      ...binding,\n      origin: binding.origin ?? previous.origin,\n      purpose: binding.purpose ?? previous.purpose\n    })\n  );\n",
-    replacement:
-      `  const previous = readSandProfileCreationMetadata(path31);\n  const parsed = parseProfileJson2(path31);\n  const existing = parsed == null ? {} : profileServerBindingFromJson(parsed);\n  const __grokbox_stick = globalThis[Symbol.for("${HOST_HARNESS_STICK_SYMBOL}")];\n  const __grokbox_harness = typeof __grokbox_stick === "function" ? __grokbox_stick({\n    kind: "server",\n    fileExists: parsed != null,\n    existing: existing.harness,\n    remote: binding.harness\n  }) : void 0;\n  writeProfileJson(\n    path31,\n    serializeSandProfileFile(profile, {\n      ...binding,\n      origin: binding.origin ?? previous.origin,\n      purpose: binding.purpose ?? previous.purpose,\n      ...__grokbox_harness == null ? {} : { harness: __grokbox_harness }\n    })\n  );\n`,
-  },
+  ...OWNERSHIP_READ_SLICES,
 ];

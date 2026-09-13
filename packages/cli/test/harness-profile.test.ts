@@ -7,12 +7,12 @@ describe("L2 roster harness contract", () => {
     expect(createProfile({ name: "alpha", harness: "temporal" }).harness).toBe("temporal");
   });
 
-  test("mergedProfile preserves other fields and never omits harness", () => {
+  test("mergedProfile preserves profile fields but never reasserts ownership", () => {
     const row = { name: "alpha", description: "d", title: "T", harness: "temporal" };
     const merged = mergedProfile(row, {});
-    expect(merged).toMatchObject({ name: "alpha", description: "d", title: "T", harness: "temporal" });
-    expect(mergedProfile({ name: "alpha", description: "" }, { harness: "box" }).harness).toBe("box");
-    expect(mergedProfile({ name: "alpha", description: "" }, {}).harness).toBe("box");
+    expect(merged).toEqual({ name: "alpha", description: "d", title: "T" });
+    expect(() => mergedProfile({ name: "alpha", description: "" }, { harness: "box" })).toThrow(/harness/);
+    expect(mergedProfile({ name: "alpha", description: "" }, {})).not.toHaveProperty("harness");
   });
 
   test("parseHarness is fail-closed", () => {

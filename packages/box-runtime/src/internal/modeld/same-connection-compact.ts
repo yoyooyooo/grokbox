@@ -1,11 +1,16 @@
 import { Effect, Layer } from "effect";
 import { HostCompact } from "@grokbox/runtime-kernel/ports";
-import type { HostCompactRequest, HostCompactResult } from "@grokbox/runtime-kernel/contract";
+import { REQUEST_WALL_DEADLINE_MS, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
 import { parseV4ControlFrame } from "../wire/modeld-wire.ts";
 import { readOneFrame, writeFrame, type Incoming } from "./server.node.ts";
 
-/** Same-connection resume wait. Host handleSummarization is unbounded; this is the modeld fail-closed bound. */
-export const COMPACT_WAIT_MS = 5_000;
+/** Reserve within the existing parent wall budget for snapshot admission, attempt1 and settlement. */
+export const COMPACT_RESUME_RESERVE_MS = 5_000;
+
+export function compactWaitBudget(remainingMs: number): number {
+  if (!Number.isFinite(remainingMs)) return 0;
+  return Math.max(0, Math.floor(Math.min(remainingMs, REQUEST_WALL_DEADLINE_MS) - COMPACT_RESUME_RESERVE_MS));
+}
 
 function sameTuple(request: HostCompactRequest, resume: {
   agentId: string;
@@ -25,11 +30,20 @@ function sameTuple(request: HostCompactRequest, resume: {
 }
 
 /** Same-connection v4 HostCompact: emit compact-request, wait for one matching resume-step. */
-export function sameConnectionHostCompactLayer(incoming: Incoming): Layer.Layer<HostCompact> {
+export function sameConnectionHostCompactLayer(incoming: Incoming, options: {
+  remainingMs?: () => number;
+} = {}): Layer.Layer<HostCompact> {
+  // Constructed once per incoming STEP, before its admission/producer starts.
+  const parentDeadline = performance.now() + REQUEST_WALL_DEADLINE_MS;
+  const remainingMs = options.remainingMs ?? (() => parentDeadline - performance.now());
   let consumed = false;
   return Layer.succeed(HostCompact, {
     request: (input: HostCompactRequest) => Effect.gen(function* () {
       if (consumed) return { kind: "unavailable", reason: "unknown" } satisfies HostCompactResult;
+      const budgetMs = compactWaitBudget(remainingMs());
+      if (budgetMs <= 0) return { kind: "unavailable", reason: "cancelled" } satisfies HostCompactResult;
+      consumed = true;
+      const resumeDeadline = performance.now() + budgetMs;
       const frame = {
         version: 4,
         method: "compact-request",
@@ -39,7 +53,7 @@ export function sameConnectionHostCompactLayer(incoming: Incoming): Layer.Layer<
         bindingId: input.tuple.bindingId,
         selectionRevision: input.tuple.selectionRevision,
         recoveryNonce: input.recoveryNonce,
-        deadlineMs: COMPACT_WAIT_MS,
+        deadlineMs: budgetMs,
       };
       incoming.awaitingResume = true;
       const written = yield* Effect.result(writeFrame(incoming.socket, frame));
@@ -47,7 +61,12 @@ export function sameConnectionHostCompactLayer(incoming: Incoming): Layer.Layer<
         incoming.awaitingResume = false;
         return { kind: "unavailable", reason: "unknown" };
       }
-      const read = yield* Effect.result(readOneFrame(incoming, COMPACT_WAIT_MS));
+      const waitMs = Math.floor(Math.min(resumeDeadline - performance.now(), compactWaitBudget(remainingMs())));
+      if (waitMs <= 0) {
+        incoming.awaitingResume = false;
+        return { kind: "unavailable", reason: "cancelled" };
+      }
+      const read = yield* Effect.result(readOneFrame(incoming, waitMs));
       incoming.awaitingResume = false;
       incoming.consumed = true;
       if (read._tag === "Failure") {
@@ -64,10 +83,10 @@ export function sameConnectionHostCompactLayer(incoming: Incoming): Layer.Layer<
       } catch {
         return { kind: "unavailable", reason: "unknown" };
       }
-      if (parsed.method !== "resume-step" || !sameTuple(input, parsed)) {
+      if (performance.now() >= resumeDeadline || compactWaitBudget(remainingMs()) <= 0
+        || parsed.method !== "resume-step" || !sameTuple(input, parsed)) {
         return { kind: "unavailable", reason: "unknown" };
       }
-      consumed = true;
       return { kind: "snapshot", snapshot: parsed.snapshot };
     }),
   });

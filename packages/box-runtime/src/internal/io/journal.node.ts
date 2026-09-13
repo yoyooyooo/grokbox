@@ -5,12 +5,14 @@ import {
   appendHostStreamRejected,
   appendNdjsonLine,
   appendTurnSeamTerminal,
+  projectHostSeamStage,
   projectHostNormalizedTerminal,
   projectHostStreamRejected,
   projectTurnSeamTerminal,
   withEventsLock,
 } from "../host/terminal-journal.node.ts";
 import { eventsPath } from "./paths.ts";
+import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { observeText, type ObservationState } from "./observation.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { projectModeldStepOutcome, type ModeldStepOutcomeEvent } from "./modeld-outcome.node.ts";
@@ -425,6 +427,7 @@ function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEve
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input) as RuntimeEvent | null;
+  if (input.name === "host_seam_stage") return projectHostSeamStage(input) as RuntimeEvent | null;
   if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input) as HostStreamRejectedEvent | null;
   if (input.name === "provider_error_observed") return projectProviderErrorObserved(input);
@@ -488,6 +491,14 @@ export async function observeEvents(root: string, limit = CONTROL_PLANE_EVENT_RE
     catch { return { invalid: true as const }; }
   });
   return { state: events.some((event) => "invalid" in event) ? "partial" : "present", events, truncated: lines.length > bounded };
+}
+
+/** Explicit source selection: current Host events are not durable controller history. */
+export async function observeRuntimeEvents(input: {
+  durableRoot: string; runRoot?: string; source: "control" | "host"; limit?: number;
+}): Promise<EventsObservation & { source: "control" | "host"; root: string }> {
+  const root = input.source === "host" ? ephemeralRuntimeRoot(input.runRoot) : input.durableRoot;
+  return { ...await observeEvents(root, input.limit), source: input.source, root };
 }
 
 export async function compactEvents(root: string): Promise<void> {

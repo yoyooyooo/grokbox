@@ -30,6 +30,7 @@ export type MockOptions = {
   tail?: unknown;
   thread?: unknown;
   memories?: unknown[];
+  trays?: unknown[];
   sendPrompt?: (index: number, body: unknown) => { status: number; body?: unknown };
   eventsSse?: string;
 };
@@ -152,6 +153,7 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
       if (!authorized) {
         return Response.json({ error: "unauthorized" }, { status: 401 });
       }
+      if (url.pathname === "/api/getTrays" && req.method === "POST") return Response.json(options.trays ?? []);
       if (url.pathname === "/api/listAgents" && req.method === "POST") {
         return Response.json(agents);
       }

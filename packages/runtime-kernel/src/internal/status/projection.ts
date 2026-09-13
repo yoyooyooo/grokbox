@@ -83,9 +83,15 @@ export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFac
   else if (journalGap === "invalid" || journalGap === "unavailable") recoveryState = "unknown";
   else recoveryState = "clear";
 
-  const modeldReady = evidence.modeld.gap === null && evidence.modeld.value?.ready === true;
+  const serviceScope = evidence.modeld.value?.scope;
+  const scopeValid = serviceScope === undefined || ["matched", "mismatch", "unavailable", "not_observed"].includes(serviceScope);
+  const modeldReady = evidence.modeld.gap === null && evidence.modeld.value?.ready === true
+    && (serviceScope === undefined || serviceScope === "matched");
   const modeldRequired = evidence.modeld.value?.required === true;
-  const modeldKnown = evidence.modeld.gap === null && evidence.modeld.value !== null;
+  const modeldKnown = evidence.modeld.gap === null && evidence.modeld.value !== null && scopeValid && serviceScope !== "unavailable";
+  const epoch = evidence.modeld.value?.serviceEpoch;
+  const serviceEpoch = (serviceScope === "matched" || serviceScope === "mismatch") && typeof epoch === "string"
+    && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(epoch) ? epoch : null;
 
   let liveness: "unknown" | "alive" | "stopped" = "unknown";
   if (evidence.controllerLiveness.gap === null && evidence.controllerLiveness.value) {
@@ -128,7 +134,8 @@ export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFac
       modeld: facet(evidence.modeld, {
         required: modeldRequired,
         ready: modeldKnown ? modeldReady : null,
-      }),
+        ...(serviceScope !== undefined ? { scope: scopeValid ? serviceScope : "unavailable" as const, serviceEpoch } : {}),
+      }, scopeValid ? evidence.modeld.gap : "invalid"),
       controller: facet(evidence.controllerLiveness, { liveness }),
       mutation: facet(evidence.coordinator, {
         inhibited: circuitOpen,

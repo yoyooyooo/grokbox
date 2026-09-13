@@ -1,18 +1,23 @@
 import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { containsRetiredHarnessWrite } from "./harness-stick.ts";
 
 export const REQUIRED_SLICE_IDS = ["create-session", "agent-id"] as const;
 export const OPTIONAL_SLICE_IDS = [
+  "ownership-read-schema",
+  "ownership-read-api",
   "compact-register",
+  "compact-background-start",
+  "compact-background-response",
+  "managed-retry-gate",
+  "managed-turn-retry-gate",
+  "managed-step-error-scope",
+  "managed-output-retry-gate",
+  "managed-summary-retry-gate",
   "activity-bridge",
   "memory-purpose",
   "episode-purpose",
   "harness-blank",
   "harness-summary",
-  "harness-profile-rpc",
-  "harness-update-trim",
-  "harness-agent-write",
-  "harness-local-write",
-  "harness-server-write",
 ] as const;
 export type SliceId = (typeof REQUIRED_SLICE_IDS)[number] | (typeof OPTIONAL_SLICE_IDS)[number];
 export const MAX_APPROVED_SLICES = REQUIRED_SLICE_IDS.length + OPTIONAL_SLICE_IDS.length;
@@ -41,7 +46,8 @@ export type TransformFailure = {
     | "find-missing"
     | "find-duplicate"
     | "transformed-mismatch"
-    | "slice-not-unique";
+    | "slice-not-unique"
+    | "retired-slice";
   sliceId?: SliceId;
 };
 
@@ -59,6 +65,7 @@ export function applyPatchProfile(source: string, profile: PatchProfile): Transf
   if (sourceSha256 !== profile.sourceSha256) {
     return { ok: false, code: "unknown-sha" };
   }
+  if (containsRetiredHarnessWrite(profile.slices)) return { ok: false, code: "retired-slice" };
   if (!approvedSliceSet(profile.slices)) {
     return { ok: false, code: "slice-not-unique" };
   }
@@ -102,6 +109,9 @@ export function profileFromSource(source: string, slices: readonly SlicePatch[],
 }
 
 export function transformUnchecked(source: string, slices: readonly SlicePatch[]): TransformResult {
+  // Authoring/inspection cannot resurrect a retired writer by bypassing the
+  // already-reviewed-profile loader. This check itself has no live effects.
+  if (containsRetiredHarnessWrite(slices)) return { ok: false, code: "retired-slice" };
   let next = source;
   for (const slice of slices) {
     const startCount = countOccurrences(next, slice.startAnchor);
@@ -132,10 +142,12 @@ export function transformUnchecked(source: string, slices: readonly SlicePatch[]
 
 export const ROUTE_SESSION_SYMBOL = "grokbox.box-runtime.route-session.v1";
 export const HOST_COMPACT_SYMBOL = "grokbox.box-runtime.host-compact.v1";
+export const HOST_MANAGED_STEP_SYMBOL = "grokbox.box-runtime.managed-step.v1";
+export const HOST_MANAGED_FAILURE_SYMBOL = "grokbox.box-runtime.managed-failure.v1";
+export const HOST_MANAGED_STEP_FAILURE_SYMBOL = "grokbox.box-runtime.managed-step-failure.v1";
 export const HOST_ACTIVITY_SYMBOL = "grokbox.box-runtime.host-activity.v1";
 export const HOST_AUX_SYMBOL = "grokbox.box-runtime.host-aux.v1";
 export const PACKED_SESSION_SYMBOL = "grokbox.box-runtime.packed-session.v1";
-export const HOST_HARNESS_STICK_SYMBOL = "grokbox.box-runtime.harness-stick.v1";
 
 const OPTIONAL_SLICES = new Set<string>(OPTIONAL_SLICE_IDS);
 

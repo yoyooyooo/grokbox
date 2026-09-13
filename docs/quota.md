@@ -1,6 +1,6 @@
 # `grokbox quota`
 
-This document owns the implemented account-quota command, explicit source configuration, output projection, and security boundary. Future sources remain in [Quota source expansion](roadmap/quota-query.md).
+This document owns the implemented account-quota command, explicit source configuration, output projection, and security boundary. Future sources remain in [Quota source expansion](roadmap/future/quota-query.md).
 
 ## Command
 

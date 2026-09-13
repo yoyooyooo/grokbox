@@ -16,7 +16,10 @@ import {
 } from "./route-binding.ts";
 import { applyCancel, occupy, releaseOccupancy, type OccupyResult } from "./step-ledger.ts";
 import type { InferenceState } from "./route-binding.ts";
+import { contextSnapshotBody, parseContextSnapshot } from "../contract/snapshot.ts";
+import { computeSnapshotDigest } from "../../hash.ts";
 import { fenceStream } from "./stream-state.ts";
+import { OWNERSHIP_EVIDENCE_MAX_AGE_MS, type OwnershipAdmission } from "../contract/ownership.ts";
 
 export type LiveStep = {
   kind: "live";
@@ -38,23 +41,47 @@ function requireAdmitted(evidence: unknown): Effect.Effect<void, BindingFailure>
   return Effect.fail(new BindingFailure("not_admitted"));
 }
 
-function readAuthority() {
+function readAuthority(request: RunStepRequest) {
   return Effect.gen(function* () {
     const authority = yield* AdmissionAuthority;
-    const evidence = yield* authority.current().pipe(Effect.mapError(() => new BindingFailure("not_admitted")));
+    const evidence = yield* authority.current(request).pipe(Effect.mapError(() => new BindingFailure("not_admitted")));
     yield* requireAdmitted(evidence);
-  });
+    const fact = evidence && typeof evidence === "object" && "ownership" in evidence ? evidence.ownership : undefined;
+    const now = yield* Clock.currentTimeMillis;
+    if (!fact || typeof fact !== "object" || !("scopeId" in fact) || !("serverId" in fact) || !("observedAtMs" in fact)
+      || typeof fact.scopeId !== "string" || !/^[a-f0-9]{64}$/.test(fact.scopeId)
+      || typeof fact.serverId !== "string" || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(fact.serverId)
+      || typeof fact.observedAtMs !== "number" || !Number.isFinite(fact.observedAtMs)
+      || fact.observedAtMs > now || now - fact.observedAtMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
+      return yield* Effect.fail(new BindingFailure("not_admitted"));
+    }
+    const memory = yield* InferenceMemory;
+    const state = yield* SynchronizedRef.get(memory.ref);
+    const bound = state.bindings.get(bindingStoreKey(request));
+    if (state.turns.get(turnKey(request))?.poisoned || (bound && (bound.ownership.scopeId !== fact.scopeId || bound.ownership.serverId !== fact.serverId))) {
+      return yield* Effect.fail(new BindingFailure("not_admitted"));
+    }
+    return fact as OwnershipAdmission;
+  }).pipe(Effect.tapError(() => Effect.gen(function* () {
+    // Revoked/unknown authority never comes back by reusing the same old TURN.
+    const memory = yield* InferenceMemory;
+    yield* SynchronizedRef.update(memory.ref, state => {
+      const turn = state.turns.get(turnKey(request));
+      if (turn) turn.poisoned = true;
+      return state;
+    });
+  })));
 }
 
 function dispatchFence(request: RunStepRequest, lease: AuthLease) {
   return Effect.gen(function* () {
-    yield* readAuthority();
+    yield* readAuthority(request);
     const memory = yield* InferenceMemory;
     const cancelled = (yield* SynchronizedRef.get(memory.ref)).ledger.get(ledgerKey(request))?.status === "cancelled";
     if (cancelled) return yield* Effect.fail(new BindingFailure("cancelled"));
     const auth = yield* BackendAuth;
     yield* auth.verify(lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
-    yield* readAuthority();
+    yield* readAuthority(request);
     const after = (yield* SynchronizedRef.get(memory.ref)).ledger.get(ledgerKey(request))?.status === "cancelled";
     if (after) return yield* Effect.fail(new BindingFailure("cancelled"));
   });
@@ -110,6 +137,7 @@ function recoverOverflowStream(
       ledger = emptyRecoveryLedger(identity, request.stepId);
       memory.recoveries.set(key, ledger);
     }
+    yield* readAuthority(request);
     const recovered = yield* Effect.result(runOverflowRecovery({
       ledger,
       evidence: {
@@ -125,8 +153,26 @@ function recoverOverflowStream(
     const fenced = yield* Effect.result(dispatchFence(request, lease));
     if (fenced._tag === "Failure") return Stream.fail(fenced.failure);
     const backend = yield* ModelBackend;
-    const prepared = yield* backend.prepare(binding.model, recovered.success.snapshot).pipe(Effect.mapError(asBindingOrBackend));
-    return fenceStream(backend.infer({}, prepared, lease), cancelled);
+    const resumed = yield* Effect.try({
+      try: () => {
+        const compacted = parseContextSnapshot(recovered.success.snapshot);
+        if (compacted.profileId !== request.snapshot.profileId || compacted.abiIdentity !== request.snapshot.abiIdentity) {
+          throw new BackendFailure("invalid_prepared_call");
+        }
+        // Host Compact owns replacement messages, not the STEP's admitted tool
+        // capability or generation options. It must not remove or inject either.
+        const body = contextSnapshotBody({ ...compacted, tools: request.snapshot.tools, options: request.snapshot.options });
+        return parseContextSnapshot({ ...body, snapshotDigest: computeSnapshotDigest(body) });
+      },
+      catch: () => new BackendFailure("invalid_prepared_call"),
+    });
+    const prepared = yield* backend.prepare(binding.model, resumed).pipe(Effect.mapError(asBindingOrBackend));
+    // prepare may suspend: the earlier fence cannot authorize an effect after
+    // an ownership/credential change during that suspension. Match attempt0.
+    yield* dispatchFence(request, lease);
+    return Stream.tap(fenceStream(backend.infer({}, prepared, lease), cancelled), event =>
+      event.type === "tool_start" || event.type === "tool_complete" || event.type === "backend_finish"
+        ? readAuthority(request).pipe(Effect.asVoid) : Effect.void);
   }));
 }
 
@@ -143,7 +189,10 @@ function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: Auth
           Effect.map((current) => current.ledger.get(key)?.status === "cancelled"),
         );
         const released = { text: 0, reasoning: 0, tools: 0 };
-        const counted = Stream.tap(fenceStream(backend.infer({}, prepared, lease), cancelled), (event) => Effect.sync(() => {
+        const counted = Stream.tap(fenceStream(backend.infer({}, prepared, lease), cancelled), (event) => Effect.gen(function* () {
+          // Check again before exposing an executable tool or successful completion.
+          // This is not per-token polling, nor a distributed ownership lease.
+          if (event.type === "tool_start" || event.type === "tool_complete" || event.type === "backend_finish") yield* readAuthority(request);
           if (event.type === "text_delta" && event.text.length > 0) released.text += 1;
           if (event.type === "reasoning_delta" && event.text.length > 0) released.reasoning += 1;
           if (event.type === "tool_start") released.tools += 1;
@@ -209,7 +258,7 @@ export function runStep(request: RunStepRequest) {
 
 function admitLive(request: RunStepRequest, now: number) {
   return Effect.gen(function* () {
-    yield* readAuthority();
+    const ownership = yield* readAuthority(request);
     const memory = yield* InferenceMemory;
     const backend = yield* ModelBackend;
     const storeKey = bindingStoreKey(request);
@@ -278,6 +327,7 @@ function admitLive(request: RunStepRequest, now: number) {
         selection: request.selection,
         model: resolved,
         fingerprint: pinned.fingerprint,
+        ownership,
         lease,
         lastActivityMs: now,
       };

@@ -67,6 +67,7 @@ function parseSelection(value: unknown): SelectionIdentity | undefined {
 
 export type ParsedWireRequest =
   | { method: "health" }
+  | { method: "service-info" }
   | { method: "run-step"; request: RunStepRequest }
   | { method: "cancel-step"; request: CancelStepRequest };
 
@@ -80,9 +81,9 @@ export function parseModeldRequest(value: unknown): ParsedWireRequest {
   const version = parseWireVersion(value);
   if (version === 3 || version !== WIRE_VERSION) throw new WireError("unsupported_version");
   if (!isRecord(value) || typeof value.method !== "string") throw new WireError("malformed_frame");
-  if (value.method === "health") {
+  if (value.method === "health" || value.method === "service-info") {
     if (!exactKeys(value, ["version", "method"])) throw new WireError("extra_keys");
-    return { method: "health" };
+    return { method: value.method };
   }
   if (value.method === "run-step") {
     if (!exactKeys(value, ["version", "method", "hostEpoch", "serviceEpoch", "agentId", "turnId", "stepId", "selection", "snapshot"], ["bindingId"])) {
@@ -140,12 +141,13 @@ export function parseModeldRequest(value: unknown): ParsedWireRequest {
 
 export type ClientSession =
   | { method: "health" }
+  | { method: "service-info" }
   | { method: "cancel-step" }
   | { method: "run-step"; phase: "start" | "events"; sequence: number };
 
 export function clientSessionFor(body: unknown): ClientSession {
   if (!isRecord(body) || typeof body.method !== "string") throw new WireError("malformed_frame");
-  if (body.method === "health") return { method: "health" };
+  if (body.method === "health" || body.method === "service-info") return { method: body.method };
   if (body.method === "cancel-step") return { method: "cancel-step" };
   if (body.method === "run-step") return { method: "run-step", phase: "start", sequence: 0 };
   throw new WireError("unknown_method");
@@ -161,6 +163,14 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
   if (value.ok === false) {
     if (!exactKeys(value, ["ok", "version", "error"])) throw new WireError("extra_keys");
     if (value.version !== WIRE_VERSION || !isRecord(value.error) || !exactKeys(value.error, ["code"]) || typeof value.error.code !== "string") {
+      throw new WireError("malformed_frame");
+    }
+    return { session, done: true };
+  }
+  if (session.method === "service-info") {
+    if (!exactKeys(value, ["ok", "method", "version", "serverGeneration", "rootId"])) throw new WireError("extra_keys");
+    if (value.ok !== true || value.method !== "service-info" || value.version !== WIRE_VERSION || !uuidLike(value.serverGeneration)
+      || (value.rootId !== null && (typeof value.rootId !== "string" || !/^[a-f0-9]{64}$/.test(value.rootId)))) {
       throw new WireError("malformed_frame");
     }
     return { session, done: true };

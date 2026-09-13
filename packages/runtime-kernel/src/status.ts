@@ -11,6 +11,7 @@ export {
   type InferenceCorrelation,
   type JournalWriterRole,
   type HostDeliveryKind,
+  type ModeldServiceScope,
 } from "./internal/contract/status.ts";
 
 export {

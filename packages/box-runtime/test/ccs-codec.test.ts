@@ -287,7 +287,7 @@ describe("CCS codec", () => {
     expect(rejected.http).toBe(0);
   });
 
-  test("mixed image is in HTTP bodies; reasoning/text is rejected before provider", async () => {
+  test("mixed images and plain reasoning history survive SDK HTTP projection without fake provider IDs", async () => {
     const mixedImage = snapshot([
       { role: "user", content: [{ type: "text", text: textSentinel }, { type: "image", url: imageSentinel }] },
     ]);
@@ -309,11 +309,19 @@ describe("CCS codec", () => {
       expect(lone.http).toBe(1);
       expect(JSON.stringify(lone.body)).toContain(imageSentinel);
       const reason = await capture(api, mixedReason);
-      expect(reason.http).toBe(0);
-      expect(() => encodeCcsMessages(mixedReason)).toThrow(EnvelopeError);
+      expect(reason.http).toBe(1);
+      const assistantText = history(reason.body).map(asRecord).filter((row) => row?.role === "assistant")
+        .flatMap((row) => contentStrings(row?.content)).join("");
+      // Chat coalesces text parts, Responses may split them into message items.
+      // Compare the full ordered payload, not SDK-specific grouping.
+      expect(assistantText).toBe(JSON.stringify({ type: "reasoning", text: reasonSentinel }) + textSentinel);
+      expect(JSON.stringify(reason.body)).not.toContain("item_reference");
       const loneR = await capture(api, loneReason);
-      expect(loneR.http).toBe(0);
-      expect(() => encodeCcsMessages(loneReason)).toThrow(EnvelopeError);
+      expect(loneR.http).toBe(1);
+      expect(JSON.stringify(loneR.body)).toContain(reasonSentinel);
+      expect(encodeCcsMessages(loneReason).messages.at(-1)).toEqual({
+        role: "assistant", content: [{ type: "text", text: JSON.stringify({ type: "reasoning", text: reasonSentinel }) }],
+      });
     }
   });
 

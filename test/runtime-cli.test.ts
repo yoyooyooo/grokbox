@@ -360,12 +360,13 @@ describe("box-local runtime CLI", () => {
 
   test("status Host terminal round-trip and unsafe circuit reasons stay off stdout/stderr", async () => {
     const boxRuntimeRoot = await withRoot();
-    const restore = spyStatusReaders(join(boxRuntimeRoot, "missing-run"));
+    const runRoot = join(boxRuntimeRoot, "run");
+    const restore = spyStatusReaders(runRoot);
     const secret = "sk-live-SENTINEL_SECRET";
     const prompt = "SENTINEL_PROMPT";
     const errorBody = "SENTINEL_ERROR_BODY";
     try {
-      expect(await appendHostJournal(boxRuntimeRoot, {
+      expect(await appendHostJournal(runRoot, {
         name: "host_normalized_terminal",
         at: "2026-01-01T00:00:00.000Z",
         hostId: "host-1",
@@ -403,7 +404,7 @@ describe("box-local runtime CLI", () => {
       expect(status.stdout).not.toContain("inv-must-not-become-attempt");
       expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
 
-      expect(await appendHostJournal(boxRuntimeRoot, {
+      expect(await appendHostJournal(runRoot, {
         name: "host_normalized_terminal",
         at: "2026-01-01T00:00:00.000Z",
         hostId: "host-1",
@@ -441,7 +442,7 @@ describe("box-local runtime CLI", () => {
     expect(data(checked.stdout)).toMatchObject({ ok: true, checked: ["schema"], serviceReadiness: "not_checked" });
   });
 
-  test("models use discloses endpoint and --for vs default", async () => {
+  test("default models use discloses endpoint; per-Bot use requires a scoped ownership reader", async () => {
     const boxRuntimeRoot = await withRoot();
     const used = await captureCli(["runtime", "models", "use", "acme/fast"], {
       discoveryPath: "/dev/null",
@@ -460,11 +461,9 @@ describe("box-local runtime CLI", () => {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
-    expect(forBot.code, forBot.stderr).toBe(0);
-    expect(data(forBot.stdout)).toMatchObject({
-      blastRadius: "single_bot",
-      assignment: { agent: "agent-tom" },
-    });
+    expect(forBot.code).not.toBe(0);
+    expect(forBot.stdout).toBe("");
+    expect(parseJson(forBot.stderr)).toMatchObject({ error: { code: "runtime_ownership_unavailable" } });
   });
 
   test("models reset is refused while route is desired", async () => {

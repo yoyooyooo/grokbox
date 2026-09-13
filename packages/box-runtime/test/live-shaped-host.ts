@@ -1,5 +1,7 @@
+import { OWNERSHIP_SHAPED_HOST } from "./ownership-shaped-host.ts";
 /** Minimal Host-shaped source that matches LIVE_SLICE_PATCHES anchors (offline fixture). */
 export const LIVE_SHAPED_HOST = `"use strict";
+${OWNERSHIP_SHAPED_HOST}
 const api = {
   createSession(onRequestId, sessionOptions) {
     const inferenceOptions = { sessionOptions, onRequestId };
@@ -23,10 +25,26 @@ function runTurn(host) {
   return (async () => host.inference.createSession(emitRequestId, mainSessionOptions))();
 }
 const compactOwner = {
-  async runStep() {
+  async runStep(parentCtx, turn, rootPromptExecutor, stateHandler) {
     const env_2 = { stack: [], error: void 0, hasError: false };
+    try {
     const ctx = { get() { return "turn-live-shaped"; } };
+    const invocationId = "step-live-shaped";
+    stateHandler ??= { backgroundSummarizationPromiseInfo: null };
+    const requestContext = {};
+    rootPromptExecutor ??= { executeToolStream() { return { extendedUsage: Promise.resolve({}) }; } };
+    let result;
+        result = rootPromptExecutor.executeToolStream(
+          ctx
+        );
+    const startBackgroundSummary = async () => {};
+    if (false) {
+        await startBackgroundSummary();
+    }
     let stepClosed = false;
+      const responseSummaryLaunch = result.extendedUsage.then((currentUsage) => {
+        return currentUsage;
+      });
       let response;
       let extendedUsage;
       let usage;
@@ -39,8 +57,37 @@ const compactOwner = {
         stepClosed = true;
       }
     return { response, env_2, ctx };
+    } catch (e_2) {
+      env_2.error = e_2;
+      throw e_2;
+    }
   },
+  async runWithMaxTokensRetry(ctx, root, fn) {
+    for (let i = 0; i < 2; i++) {
+      try { return await fn();
+        } catch (error41) {
+          if (error41 instanceof OutputTokensLimitExceededError) {
+            if (i === 1) throw error41;
+          } else throw error41;
+        }
+    }
+  },
+  async runWithSummarizationRetry(ctx, state, root, fn) {
+    for (let i = 0; i < 2; i++) {
+      try { return await fn();
+        } catch (error41) {
+          const isProactiveSummarizationThresholdError = error41 instanceof ProactiveSummarizationThresholdError;
+          if (!isProactiveSummarizationThresholdError || i === 1) throw error41;
+        }
+    }
+  },
+  async runTurnLoop() {},
 };
+function shouldRetryTurnAttempt(input) {
+  if (input.canceled) return false;
+  return input.automationIsRetryable?.(input.error) ?? true;
+}
+function computeBackoffDelayMs(params) { return params.delay; }
 function attachListener(host, streamWatchdog, updateObservers) {
   return new ForwardingInteractionListener(
           (update) => {
@@ -190,5 +237,21 @@ const sessionStoreOwner = {
 function getSandProfilePath(dir) { return dir; }
 function readSandProfileFile() { return { name: "fixture" }; }
 function resolveProfileName(name) { return name; }
-module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction, blankRoster, buildSummary, rosterOwner, sessionStoreOwner };
+// Independent retry decision fixture; only exact ABI conditions are shared anchors.
+class RetriableError extends Error {}
+class NonRetriableError extends Error {}
+class ActionRequiredError extends Error {}
+function classifyError2(error41) { return error41; }
+function mayRetry(error41) {
+  if (!(classifyError2(error41) instanceof RetriableError)) return false;
+  return true;
+}
+function displayFailure(error41) {
+  const classified = classifyError2(error41);
+  if (classified instanceof NonRetriableError || classified instanceof ActionRequiredError) {
+    return false;
+  }
+  return true;
+}
+module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction, blankRoster, buildSummary, rosterOwner, sessionStoreOwner, mayRetry, RetriableError };
 `;

@@ -1,4 +1,6 @@
 import { asBoolean, asNumber, asString, emptyToNull, isRecord, utf8Bytes } from "./util.ts";
+import { projectAlert } from "./outcome.ts";
+import { observeRosterHarness, type ObservedHarness } from "./transcript-route.ts";
 
 export type AgentKind = "agent" | "group";
 
@@ -11,6 +13,7 @@ export type CompactRoster = {
   name: string;
   title: string | null;
   kind: AgentKind;
+  harness: ObservedHarness;
   isHidden: boolean;
   isRunning: boolean;
   isRunningTurn: boolean;
@@ -25,6 +28,7 @@ export function compactRosterRow(row: Record<string, unknown>): CompactRoster {
     name: asString(row.name),
     title: emptyToNull(row.title),
     kind: agentKind(row),
+    harness: observeRosterHarness(row),
     isHidden: asBoolean(row.isHiddenFromSidebar),
     isRunning: asBoolean(row.isRunning),
     isRunningTurn: asBoolean(row.isRunningTurn),
@@ -57,6 +61,7 @@ export function runningProjection(row: Record<string, unknown>, observedAtMs: nu
   return {
     id: asString(row.id),
     kind: agentKind(row),
+    harness: observeRosterHarness(row),
     isRunning: asBoolean(row.isRunning),
     isRunningTurn: asBoolean(row.isRunningTurn),
     awaitingUserResponse: asBoolean(row.awaitingUserResponse),
@@ -107,6 +112,11 @@ function safeTranscriptPayload(payload: Record<string, unknown>): Record<string,
   for (const key of ["agentId", "entryId", "rootId", "role", "status", "kind"] as const) {
     if (typeof payload[key] === "string") safe[key] = payload[key];
   }
+  for (const key of ["requestId", "clientNonce"] as const) {
+    const value = payload[key];
+    if (typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value)) safe[key] = value;
+  }
+  if (payload.type === "started" || payload.type === "ended") safe.type = payload.type;
   for (const key of ["sequence", "timestampMs", "createdAt", "updatedAt"] as const) {
     if (typeof payload[key] === "number" && Number.isFinite(payload[key])) safe[key] = payload[key];
   }
@@ -155,6 +165,15 @@ export function redactEventPayload(
       };
     }
     return { agentId: asString(payload.agentId), count: memories.length };
+  }
+  if (channel === "tray") {
+    if (payload.type === "pushed") {
+      const tray = projectAlert(payload.tray);
+      return tray ? { type: "pushed", tray } : {};
+    }
+    if (payload.type === "cleared") return { type: "cleared" };
+    if (payload.type === "dismissed" && typeof payload.id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(payload.id)) return { type: "dismissed", id: payload.id };
+    return {};
   }
   if (channel === "transcript") return safeTranscriptPayload(payload);
   if (channel === "subagents" || channel === "async-tasks") return safeTaskPayload(payload);

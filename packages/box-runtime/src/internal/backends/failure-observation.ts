@@ -3,7 +3,7 @@ import { BackendFailure } from "@grokbox/runtime-kernel/contract";
 export const BACKEND_PHASES = ["prepare", "auth", "sdk", "provider", "normalize"] as const;
 export type BackendPhase = (typeof BACKEND_PHASES)[number];
 export const FAILURE_REASONS = [
-  "unknown", "validation", "auth", "transport", "http", "sdk_validation", "sdk_no_output", "stream_shape",
+  "unknown", "validation", "auth", "transport", "http", "sdk_validation", "sdk_no_output", "stream_shape", "output_limit", "content_filter",
 ] as const;
 export const PROVIDER_CODES = [
   "invalid_request_error", "invalid_api_key", "insufficient_quota", "rate_limit_exceeded",
@@ -55,6 +55,13 @@ export function observeBackendFailure(failure: BackendFailure, phase: BackendPha
     if (param) result.providerParam = param;
   } catch { /* Malformed diagnostic fields cannot change inference semantics. */ }
   observations.set(failure, Object.freeze(result));
+  return failure;
+}
+
+/** A provider finish may end transport without completing the requested answer. */
+export function incompleteBackendFinish(reason: "length" | "content-filter"): BackendFailure {
+  const failure = new BackendFailure("provider_error");
+  observations.set(failure, Object.freeze({ phase: "sdk", reason: reason === "length" ? "output_limit" : "content_filter" }));
   return failure;
 }
 

@@ -10,7 +10,8 @@ export const SERVER_ACTIVE_STEPS_MAX = 64;
 export const PROCESS_RETAINED_PAYLOAD_MAX_BYTES = 128 * 1024 * 1024;
 export const ADMISSION_WAIT_MS = 500;
 export const PARTIAL_SOCKET_MS = 1_000;
-export const REQUEST_WALL_DEADLINE_MS = 30_000;
+/** Non-renewable STEP wall budget; shared by Host/client/modeld and recovery. */
+export const REQUEST_WALL_DEADLINE_MS = 180_000;
 export const TURN_IDLE_MS = 5 * 60_000;
 export const LEDGER_ENTRIES_MAX = 1024;
 export const OWNED_SHUTDOWN_MS = 2_000;

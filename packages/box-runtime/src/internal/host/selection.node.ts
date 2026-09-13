@@ -28,15 +28,26 @@ export type HostManagedCapture =
   | { kind: "official" }
   | { kind: "managed"; modelId: string; selectionRevision: string; assignment: "agent"; record: ModelRecord };
 
-/** One models.json snapshot for capture identity and Host capacity. Uncovered agents stay official. */
+export class HostSelectionUnavailableError extends Error {
+  readonly code = "runtime_config_invalid";
+  constructor() {
+    super("Model selection is unavailable; no model was selected.");
+    this.name = "HostSelectionUnavailableError";
+  }
+}
+
+/** One models.json snapshot for identity and capacity. A verified absence of an
+ * override selects official; unreadable state is not an official selection. */
 export function captureHostManagedSelection(root: string, agentId?: string): HostManagedCapture {
+  // Dedicated native summary sessions are outside per-Agent routing altogether.
+  if (!agentId) return { kind: "official" };
   const file = loadModelsFileSync(root);
-  if (!file) return { kind: "official" };
+  if (!file) throw new HostSelectionUnavailableError();
   const captured = captureManagedSelection(file, agentId);
   if (captured.kind !== "managed" || !agentId) return { kind: "official" };
   const record = modelForAgent(file, agentId);
-  if (!record) return { kind: "official" };
-  if (computeSelectionRevision({ agentId, model: record }) !== captured.selectionRevision) return { kind: "official" };
+  if (!record) throw new HostSelectionUnavailableError();
+  if (computeSelectionRevision({ agentId, model: record }) !== captured.selectionRevision) throw new HostSelectionUnavailableError();
   return { ...captured, record };
 }
 

@@ -13,3 +13,4 @@ export * from "./internal/contract/snapshot.ts";
 export * from "./internal/contract/binding.ts";
 export * from "./internal/contract/wire.ts";
 export * from "./internal/contract/overflow.ts";
+export * from "./internal/contract/ownership.ts";

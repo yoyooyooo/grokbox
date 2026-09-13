@@ -13,8 +13,7 @@ export type CcsApi = "chat" | "responses";
 
 export type CcsTextPart = { type: "text"; text: string };
 export type CcsImagePart = { type: "image"; image: string; mediaType?: string };
-export type CcsReasoningPart = { type: "reasoning"; text: string };
-export type CcsPart = CcsTextPart | CcsImagePart | CcsReasoningPart;
+export type CcsPart = CcsTextPart | CcsImagePart;
 export type CcsMessage = {
   role: "user" | "assistant";
   content: string | CcsPart[];
@@ -69,8 +68,11 @@ function mapPart(part: PromptContentPart, role: PromptMessage["role"]): CcsPart 
     if (!image) throw new EnvelopeError("unsupported_content");
     return { type: "image", image, ...(part.mimeType ? { mediaType: part.mimeType } : {}) };
   }
-  if (part.type === "reasoning") {
-    throw new EnvelopeError("unsupported_content");
+  if (part.type === "reasoning" && role === "assistant") {
+    // Host owns plain reasoning text, not OpenAI item IDs/encrypted blobs. Use
+    // the same typed-text history representation as tool calls/results. Passing
+    // this as native Responses reasoning makes the SDK silently discard it.
+    return { type: "text", text: JSON.stringify({ type: "reasoning", text: part.text }) };
   }
   throw new EnvelopeError("unsupported_content");
 }
@@ -90,7 +92,7 @@ function pushUser(out: CcsMessage[], parts: CcsPart[]): void {
   else out.push({ role: "user", content: parts });
 }
 
-function toSdkMessages(messages: CcsMessage[]) {
+export function toSdkMessages(messages: CcsMessage[]) {
   return messages.map((message) => {
     if (typeof message.content === "string") return { role: message.role, content: message.content };
     return {
@@ -98,7 +100,7 @@ function toSdkMessages(messages: CcsMessage[]) {
       content: message.content.map((part) => {
         if (part.type === "text") return { type: "text" as const, text: part.text };
         if (part.type === "image") return { type: "image" as const, image: part.image, ...(part.mediaType ? { mediaType: part.mediaType } : {}) };
-        return { type: "reasoning" as const, text: part.text };
+        throw new EnvelopeError("unsupported_content");
       }),
     };
   });

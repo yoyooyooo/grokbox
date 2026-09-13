@@ -45,7 +45,7 @@ export function estimateCanaryTokens(prompt: CcsPrompt): number {
       continue;
     }
     for (const part of message.content) {
-      if (part.type === "text" || part.type === "reasoning") chars += part.text.length;
+      if (part.type === "text") chars += part.text.length;
     }
   }
   return chars <= 0 ? 0 : Math.ceil(chars / 4);

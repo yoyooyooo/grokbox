@@ -46,14 +46,33 @@ export function snapshotWireMeasures(snapshot: ContextSnapshot): {
   snapshotBytes: number;
   messageChars: number;
   messageCount: number;
+  requestToolCount: number;
+  requestMaxOutputTokens?: number;
+  historyToolCallCount: number;
+  historyToolResultCount: number;
+  toolChoicePolicy: "unspecified" | "auto" | "none" | "required" | "named";
 } {
   const snapshotBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
   const system = messagesChars(snapshot.systemMessages);
   const rest = messagesChars(snapshot.messages);
+  let historyToolCallCount = 0;
+  let historyToolResultCount = 0;
+  for (const message of snapshot.messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (part.type === "tool-call") historyToolCallCount++;
+      if (part.type === "tool-result") historyToolResultCount++;
+    }
+  }
   return {
     snapshotBytes,
     messageChars: system.chars + rest.chars,
     messageCount: system.count + rest.count,
+    requestToolCount: snapshot.tools.length,
+    ...(snapshot.options.maxTokens !== undefined ? { requestMaxOutputTokens: snapshot.options.maxTokens } : {}),
+    historyToolCallCount,
+    historyToolResultCount,
+    toolChoicePolicy: typeof snapshot.options.toolChoice === "object" ? "named" : snapshot.options.toolChoice ?? "unspecified",
   };
 }
 
@@ -81,6 +100,13 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
   if (snapshotBytes !== undefined) out.snapshotBytes = snapshotBytes;
   if (messageChars !== undefined) out.messageChars = messageChars;
   if (messageCount !== undefined) out.messageCount = messageCount;
+  for (const field of ["requestToolCount", "historyToolCallCount", "historyToolResultCount"] as const) {
+    const n = boundedInt(v[field], 65_536);
+    if (n !== undefined) out[field] = n;
+  }
+  if (member(v.toolChoicePolicy, ["unspecified", "auto", "none", "required", "named"])) out.toolChoicePolicy = v.toolChoicePolicy;
+  const maxOutput = boundedInt(v.requestMaxOutputTokens, 8 * 1024 * 1024);
+  if (maxOutput !== undefined && maxOutput > 0) out.requestMaxOutputTokens = maxOutput;
   if (member(v.failureCode, STEP_FAILURE_CODES)) out.failureCode = v.failureCode;
   const d = record(v.diagnostic);
   if (d && member(d.phase, BACKEND_PHASES) && member(d.reason, FAILURE_REASONS)) {
@@ -95,7 +121,7 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
 
 export function writeModeldStepOutcome(root: string, request: RunStepRequest, outcome: ModeldStepOutcome) {
   return Effect.tryPromise(async () => {
-    let measures: { snapshotBytes: number; messageChars: number; messageCount: number } | undefined;
+    let measures: ReturnType<typeof snapshotWireMeasures> | undefined;
     try {
       measures = snapshotWireMeasures(request.snapshot);
     } catch {

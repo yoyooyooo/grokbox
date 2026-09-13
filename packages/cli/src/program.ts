@@ -11,6 +11,8 @@ import { runDaemonEnsure, runDaemonServe, runDaemonStatus } from "./commands/dae
 import { runDoctor } from "./commands/doctor.ts";
 import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
+import { runAgentsOwnership } from "./commands/ownership.ts";
+import { runRuntimeMonitor } from "./commands/monitor.ts";
 import {
   runDesktopKeepAdd,
   runDesktopKeepRemove,
@@ -44,6 +46,7 @@ import {
   runGroupsUpdate,
 } from "./commands/groups.ts";
 import { runHistorySearch, runHistoryTail, runHistoryThread } from "./commands/history.ts";
+import { runAlerts, runSendOutcome } from "./commands/outcome.ts";
 import { runJobsCancel, runJobsList, runJobsLogs, runJobsShow } from "./commands/jobs.ts";
 import { runInit } from "./commands/init.ts";
 import { runIsRunning } from "./commands/is.ts";
@@ -81,6 +84,7 @@ import {
   runRuntimeModelsList,
   runRuntimeModelsReset,
   runRuntimeModelsUse,
+  runRuntimeModelsPersistKey,
   runRuntimeProfileAnalyze,
   runRuntimeProfileObserve,
   runRuntimeProfilePropose,
@@ -97,6 +101,10 @@ import {
 import { runSkillsGet, runSkillsList } from "./skills.ts";
 
 type CliOptions = ProfileOptions & {
+  agents?: string;
+  after?: string;
+  expectedRevision?: string;
+  untilMs?: string;
   profile?: string;
   timeoutMs?: string;
   includeHidden?: boolean;
@@ -141,10 +149,12 @@ type CliOptions = ProfileOptions & {
   offset?: string;
   limitBytes?: string;
   follow?: boolean;
+  source?: string;
   intervalMs?: string;
   mode?: string;
   for?: string;
   from?: string;
+  fromPi?: string;
   confirm?: boolean;
   plan?: string;
   sha?: string;
@@ -179,6 +189,7 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   is: "Read state projections",
   runtime: "Box-local model runtime",
   "runtime models": "Box-local model catalog and assignments",
+  "runtime monitor": "Local observation history and incidents, not execution authority",
   "runtime profile": "Offline reviewed PatchProfile authoring",
   "runtime watchdog": "Box-local desired-state Host coordinator",
   "runtime modeld": "Box-local model daemon",
@@ -229,6 +240,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "box keepalive status": async (deps, _args, options) => await runBoxKeepaliveStatus(deps, options),
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
+    "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),
     "agents create": async (deps, _args, options) => await runAgentsCreate(deps, options),
     "agents update": async (deps, args, options) => await runAgentsUpdate(deps, args[0] ?? "", options),
     "agents delete": async (deps, args, options) => await runAgentsDelete(deps, args[0] ?? "", options),
@@ -249,6 +261,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "history search": async (deps, args, options) =>
       await runHistorySearch(deps, args[0] ?? "", options),
     "history tail": async (deps, args, options) => await runHistoryTail(deps, args[0] ?? "", options),
+    "alerts list": async (deps, _args, options) => await runAlerts(deps, options),
+    "history outcome": async (deps, args, options) => await runSendOutcome(deps, args[0] ?? "", options),
     "history thread": async (deps, args, options) =>
       await runHistoryThread(deps, args[0] ?? "", options),
     "memory list": async (deps, args, options) => await runMemoryList(deps, args[0] ?? "", options),
@@ -271,16 +285,24 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     events: async (deps, _args, options) => await runEvents(deps, options),
     "is running": async (deps, args, options) => await runIsRunning(deps, args[0] ?? "", options),
     "runtime status": async (deps) => await runRuntimeStatus(deps),
+    "runtime monitor init": async (deps,args,options) => await runRuntimeMonitor(deps,"init",args,options),
+    "runtime monitor run": async (deps,args,options) => await runRuntimeMonitor(deps,"run",args,options),
+    "runtime monitor ack": async (deps,args,options) => await runRuntimeMonitor(deps,"ack",args,options),
+    "runtime monitor snooze": async (deps,args,options) => await runRuntimeMonitor(deps,"snooze",args,options),
+    "runtime monitor snapshot": async (deps,args,options) => await runRuntimeMonitor(deps,"snapshot",args,options),
+    "runtime monitor events": async (deps,args,options) => await runRuntimeMonitor(deps,"events",args,options),
+    "runtime monitor incidents": async (deps,args,options) => await runRuntimeMonitor(deps,"incidents",args,options),
     "runtime start": async (deps, _args, options) => await runRuntimeStart(deps, options.mode),
     "runtime activate": async (deps, _args, options) => await runRuntimeActivate(deps, options.mode),
     "runtime deactivate": async (deps) => await runRuntimeDeactivate(deps),
-    "runtime log": async (deps, _args, options) => await runRuntimeLog(deps, options.follow),
+    "runtime log": async (deps, _args, options) => await runRuntimeLog(deps, options.follow, options.source),
     "runtime contracts": async (deps) => await runRuntimeContracts(deps),
     "runtime models check": async (deps) => await runRuntimeModelsCheck(deps),
     "runtime models list": async (deps) => await runRuntimeModelsList(deps),
     "runtime models use": async (deps, args, options) =>
       await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
     "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "runtime models persist-key": async (deps, args, options) => await runRuntimeModelsPersistKey(deps, args[0] ?? "", options.fromPi, options.confirm),
     "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out),
     "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
     "runtime profile propose": async (deps, _args, options) => await runRuntimeProfilePropose(deps, options.from, options.out, options.against),

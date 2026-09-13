@@ -2,6 +2,8 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
+**2026-09-12文档分流：** 本页是已有provenance/profile工具的专题合同，保留原路径及HSO引用，不与普通未来候选一起复制/迁移。哪些子能力已实现由source/tests说明，未实现的HSO阶段不自动进入当前主线。通用单盒运行/归属变化的持续采集、SQLite与incident归[T41](../tickets/T41-continuous-observation-and-alerting.md) / [Spec S0.1.4](box-runtime-impl-spec.md#continuous-observation)；HSO保留自己的source/profile/replay证据writer，T41仅引用安全结果，不复制另一套源码库或自动发布/领养。Web UI及多盒呈现归[future](future/README.md)，不把它们提前铺在本页。
+
 **状态：前向目标方案，尚非实现或部署完成声明。** 本文是官方 Host 升级后「保留证据、重新识别补丁点、审核并发布 profile」的方案主页；不替代运行时设计、D2 裁决或已有 adopt 授权。后续实现以本文的 HSO-0…HSO-6 交付，历史 T1 的 done 状态不重写。
 
 **固定分工：runtime 只精确应用；ops 感知变化并做机械判断；Agent 解释证据并提出/验证改动；Human 批准发布语义；adopt 另行确认。**

@@ -572,8 +572,8 @@ describe("status facets IO wiring", () => {
   test("host_normalized_terminal append observes as host_terminal with full or missing tuple", async () => {
     const { wrapper, supervisor, host } = officialChain();
     const { root, ephemeralRoot } = await roots();
-    await mkdir(join(root, "log"), { recursive: true });
-    expect(await appendHostJournal(root, {
+    await mkdir(join(ephemeralRoot, "log"), { recursive: true });
+    expect(await appendHostJournal(ephemeralRoot, {
       name: "host_normalized_terminal",
       at: "2026-01-01T00:00:00.000Z",
       hostId: "host-1",
@@ -613,8 +613,8 @@ describe("status facets IO wiring", () => {
     expect(JSON.stringify(full)).not.toContain("sk-live-SENTINEL_SECRET");
 
     const missingRoots = await roots();
-    await mkdir(join(missingRoots.root, "log"), { recursive: true });
-    expect(await appendHostJournal(missingRoots.root, {
+    await mkdir(join(missingRoots.ephemeralRoot, "log"), { recursive: true });
+    expect(await appendHostJournal(missingRoots.ephemeralRoot, {
       name: "host_normalized_terminal",
       at: "2026-01-01T00:00:00.000Z",
       agentId: "agent-tom",

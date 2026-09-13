@@ -7,6 +7,7 @@ import {
   type InferenceUsage,
 } from "@grokbox/runtime-kernel/contract";
 import { backendFailureFromUnknown } from "./provider-error.ts";
+import { incompleteBackendFinish } from "./failure-observation.ts";
 
 type ToolNames = Map<string, string>;
 
@@ -41,7 +42,8 @@ function readUsage(raw: unknown): InferenceUsage | undefined {
 function finishReasonOf(value: unknown): "stop" | "error" | "abort" | null {
   if (value === "error") return "error";
   if (value === "abort" || value === "cancelled") return "abort";
-  if (value === "stop" || value === "end-turn" || value === "length" || value === "tool-calls" || value === "content-filter") {
+  if (value === "length" || value === "content-filter") throw incompleteBackendFinish(value);
+  if (value === "stop" || value === "end-turn" || value === "tool-calls") {
     return "stop";
   }
   return null;
@@ -92,7 +94,10 @@ export function mapSdkStreamPart(part: unknown, tools: ToolNames): InferenceEven
   }
   if (type === "error" || type === "tool-error") {
     const inner = rec.error;
-    throw inner instanceof BackendFailure ? inner : backendFailureFromUnknown(rec);
+    // The SDK wraps APICallError in an error part. Keep the actual HTTP error
+    // for its allowlisted diagnostics; plain SSE error objects still need their
+    // enclosing type for structured overflow/HTTP-200 failure classification.
+    throw inner instanceof BackendFailure ? inner : backendFailureFromUnknown(inner instanceof Error ? inner : rec);
   }
   if (type === "abort") return { type: "backend_finish", finishReason: "abort" };
   if (

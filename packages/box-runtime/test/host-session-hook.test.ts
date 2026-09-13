@@ -12,10 +12,10 @@ import type { HostBinding } from "../src/internal/host/host-binding.ts";
 const official = { kind: "official" };
 
 describe("Host session hook", () => {
-  test("missing models and unassigned agents passthrough originalSession", async () => {
+  test("only a verified unassigned agent passes through; missing route config is unavailable", async () => {
     const missing = await mkdtemp(join(tmpdir(), "grokbox-hook-missing-"));
     const hook = bindHostSessionHook({ mode: "route", durableRoot: missing, runRoot: missing });
-    expect(hook({ originalSession: official, agentId: "agent-1" })).toBe(official);
+    expect(() => hook({ originalSession: official, agentId: "agent-1" })).toThrow("Model selection is unavailable");
 
     const empty = await mkdtemp(join(tmpdir(), "grokbox-hook-empty-"));
     await writeFile(join(empty, "models.json"), `${JSON.stringify({
@@ -36,8 +36,11 @@ describe("Host session hook", () => {
       assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
     })}\n`);
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
-    const declined = hook({ originalSession: official, agentId: "agent-tom" });
-    expect(declined).toBe(official);
+    const missingTurn = hook({ originalSession: official, agentId: "agent-tom" });
+    expect(isHostPromptSession(missingTurn)).toBe(true);
+    if (!isHostPromptSession(missingTurn)) throw new Error("managed rejection missing");
+    await expect(missingTurn.getExecutor([{ role: "user", content: "no turn" }]).stream({}, "step-missing-turn").response)
+      .rejects.toMatchObject({ code: "invalid_envelope" });
     const managed = hook({
       originalSession: official,
       agentId: "agent-tom",
@@ -52,7 +55,7 @@ describe("Host session hook", () => {
     expect(captureHostSelection(root, "agent-other")).toEqual({ kind: "official" });
   });
 
-  test("no-STEP createSession declines to the original Host session", async () => {
+  test("dedicated native createSession without managed Agent identity stays exactly official", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-hook-compact-"));
     await writeFile(join(root, "models.json"), `${JSON.stringify({
       version: 1,
@@ -60,7 +63,7 @@ describe("Host session hook", () => {
       assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
     })}\n`);
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
-    expect(hook({ originalSession: official, agentId: "agent-tom" })).toBe(official);
+    expect(hook({ originalSession: official })).toBe(official);
     const started = Date.now();
     let rows: Array<Record<string, unknown>> = [];
     while (Date.now() - started < 2000) {
@@ -72,14 +75,15 @@ describe("Host session hook", () => {
       } catch {
         rows = [];
       }
-      if (rows.some((row) => row.stage === "hook_decline" && row.result === "compact_passthrough")) break;
+      if (rows.some((row) => row.stage === "hook_enter")) break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     expect(rows.some((row) => row.reason === "missing-turn")).toBe(false);
-    expect(rows.some((row) => row.stage === "hook_decline" && row.result === "compact_passthrough")).toBe(true);
+    expect(rows.some((row) => row.stage === "hook_enter")).toBe(true);
+    expect(rows.some((row) => row.name === "host_stream_rejected")).toBe(false);
   });
 
-  test("STEP streams stay managed; no-STEP streams use the original Host session", async () => {
+  test("a selected managed session never routes an unqualified no-STEP call to the official executor", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-hook-overlay-"));
     await writeFile(join(root, "models.json"), `${JSON.stringify({
       version: 1,
@@ -129,10 +133,8 @@ describe("Host session hook", () => {
     });
     expect(isHostPromptSession(managed)).toBe(true);
     if (!isHostPromptSession(managed)) return;
-    managed.getExecutor([]).stream({}, undefined);
-    expect(officialCalls.length).toBe(1);
-    managed.getExecutor([]).stream({}, "step-1");
-    expect(officialCalls.length).toBe(1);
+    await expect(managed.getExecutor([]).stream({}, undefined).response).rejects.toMatchObject({ code: "invalid_envelope" });
+    expect(officialCalls.length).toBe(0);
     const started = Date.now();
     let rows: Array<Record<string, unknown>> = [];
     while (Date.now() - started < 2000) {
@@ -144,11 +146,12 @@ describe("Host session hook", () => {
       } catch {
         rows = [];
       }
-      if (rows.some((row) => row.stage === "hook_decline" && row.result === "compact_passthrough")) break;
+      if (rows.some((row) => row.reason === "missing-step-id")) break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    expect(rows.some((row) => row.reason === "missing-step-id")).toBe(false);
-    expect(rows.some((row) => row.stage === "hook_decline" && row.result === "compact_passthrough")).toBe(true);
+    expect(rows.some((row) => row.reason === "missing-step-id")).toBe(true);
+    expect(rows.some((row) => row.stage === "hook_decline" && row.result === "compact_passthrough")).toBe(false);
+    expect(officialCalls.length).toBe(0);
   });
 
   test("invalid executor state leaves Host rejection facts", async () => {

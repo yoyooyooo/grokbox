@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-This documentation separates current source truth, accepted product behavior, upstream compatibility facts, and deferred work.
+This documentation separates source truth, accepted contracts, interoperability facts, future candidates and dated evidence. The repository keeps its established Product/Architecture files and maintainers/decisions/tickets homes; roadmap retains the active Spec/strategy, `roadmap/future/` owns unstarted product extensions, and `reports/` owns historical explanations. No new synonym documentation tree is introduced.
 
 ## Current homes
 
@@ -14,27 +14,36 @@ This documentation separates current source truth, accepted product behavior, up
 - [Quota](quota.md): implemented explicit source, normalized output, and failure boundary.
 - [Box-local model runtime](box-runtime.md): accepted createSession seam, inject/watchdog/guardian, modeld, window semantics, and evidence ladder. Not an implementation-complete claim. Product obligations are in the [product contract](product-contract.md) §12.
 - [Box-runtime strategy plan](roadmap/box-runtime-plan.md): Phases 0–4, product exits and scope.
-- [Managed custom-model path through Host Compact](roadmap/2026-09-12-managed-compact-path.md): forward sequence for custom-model continuity through Host Compact; reuse vs wait-point patch. Not live-enable and not an implementation-complete claim.
-- [Box-runtime Current Implementation Spec](roadmap/box-runtime-impl-spec.md): the single-track target package/module tree, ports, allowed imports, execution chain, POC removal inventory and proof gates. [T20–T33](tickets/README.md) own rebuild slices; neither document proves implementation completion.
+- [Managed Compact evolution](reports/2026-09-12-managed-compact-evolution.md): historical reasons and rejected alternatives; not a current plan or permission. Old brief/path links now route here.
+- [Box-runtime Current Implementation Spec](roadmap/box-runtime-impl-spec.md): **S0 owns Server-authoritative, Host-only stable delivery and V01–V30**; [S9.1.1](roadmap/box-runtime-impl-spec.md#ownership-release-proof) lists planned proof cases, not existing commands. [Tickets](tickets/README.md) route T37→T38→T24→T39→T40 alongside existing stream/compact/Working mechanisms. No parallel ME spec or implementation-complete claim.
+- [T37 ownership admission](tickets/T37-server-ownership-admission.md): turn the implemented inspection into a real Host gate with scope/freshness/revocation proof.
+- [T38 identity alignment](tickets/T38-identity-write-alignment.md): retire implicit harness writes; preserve/block test2 before separately approved native calibration.
+- [T39 native model roundtrip](tickets/T39-native-model-roundtrip.md): same-session official/A/B/official, durable native-state return and original-App journey.
+- [T40 persistent release](tickets/T40-persistent-release-and-rollback.md): normal service lifecycle, scoped production release and distinct unpatched-Host exit, reusing T25/T28.
+- [T41 continuous observation](tickets/T41-continuous-observation-and-alerting.md): first local CLI/collector/SQLite/incident slice implemented; crash recovery, maintenance, shared scheduling and notification delivery remain open. Not an installed service or admission authority.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
 ## Roadmap
 
-[Roadmap](roadmap/README.md) routes to the box-runtime strategy/spec pair and deferred candidates. Plans and candidates do not prove delivery or override product and architecture authority.
+[Roadmap](roadmap/README.md) distinguishes current Spec/Tickets, the specialized HSO contract, [future product/extensions](roadmap/future/README.md) and [historical reports](reports/README.md). Web UI is accepted but not scheduled; its page/interaction contract lives in [future/webui-console](roadmap/future/webui-console.md). T41 monitoring/storage arrives before pages. Future presence is not permission or an implementation claim; old filenames retained as short redirects do not own content.
 
 ## Maintainers
 
+- [持续观测与本地 incident](maintainers/continuous-observation.md): explicit monitor init/run, pure snapshot/event/incident queries, revision-bound ack/snooze, portable bounded SQLite-image durability and failure/cursor boundaries; local-only, no execution authority or automatic repair.
+
+- [运行结果与 App 警告观测](maintainers/run-outcome-observation.md): `alerts list`、`history outcome`、`events --channels transcript,tray`；按原 nonce/requestId 区分 accepted、进度、匹配结果与失败，说明内存警告与持久运行日志的边界。
+
 - [Source provenance review](maintainers/provenance.md)
 - [Official Host inbound → Agent loop](maintainers/host-inbound-agent-loop.md): source-pinned admission, context/pins/compact, inference/tools, delivery, ledgers and settlement map; includes corrected research claims and explicit evidence gaps, not fix designs.
-- [Host / App live projections](maintainers/host-app-projections.md): sidebar Working vs composer `currentActivity` vs tray vs nonce; managed `activity-bridge` restore. Not App pixel proof.
-- [Composer Working residual](maintainers/composer-working-status.md): desktop composer-above miss after Gateway activity is proven; App/coordinator Cmd-Q and official unload, not a missing tip slice.
-- [Transcript harness: box vs temporal](maintainers/transcript-harness-box-vs-server.md): managed intercept needs `harness=box`; CLI `--harness` always sends the field; Host persist slices stick `box|temporal` on update/local write/server write-back; stock dual ledger is grok-bot `private interoperability notes (not distributed)`. Always-emit and persist still need pack + legal profile/re-adopt.
-- [Official Host rollback acceptance](maintainers/official-rollback-acceptance.md): future clean return to official Host; `deactivate` is intent-only; live unload writer missing; this pass does not unload.
-- [Managed context continuity](maintainers/managed-context-continuity.md): forward prevention fixes and end-to-end acceptance for managed context loss; historical cause closed-notProven, implementation and qualification still pending.
+- [Host / App live projections](maintainers/host-app-projections.md): Bot-wide running, current-session Working/typing, named activity and per-message streaming are distinct scopes; generic Working does not require currentActivity. T36 is a required semantic gate, not a pixel-only residual.
+- [Composer Working acceptance](maintainers/composer-working-status.md): current-session/run/generation, waiting/terminal/reconnect and original-App evidence. Host fields alone are insufficient; App patches or routine cache clearing are outside scope.
+- [Transcript harness: box vs temporal](maintainers/transcript-harness-box-vs-server.md): implemented `agents ownership` reads official Server registrations through the native Host and classifies agreement/conflict/unknown; production send/read route ownership, CLI harness sampling, Host persist scope, and the actual desktop cached-restore/server-roster conflict. It affects App input as well as history; CLI-only success is not desktop qualification. Private source/versioned replay stays in private interoperability notes (not distributed) / `docs/24`; no private build dependency. Always-emit and persist still require the correct loaded Host artifact.
+- [Official Host rollback acceptance](maintainers/official-rollback-acceptance.md): daily per-Bot official selection versus full unpatched-Host exit; native state, identity and original-App evidence, including loss of the inspection bridge. T40 closes implementation/operations; documentation does not execute rollback.
+- [Managed context continuity](maintainers/managed-context-continuity.md): F/E safety and daily-pipeline acceptance; implementation partly exists and must be reused. Verifier supports/notProven distinguish proved source/packed subsets from pending full/native qualification; historical cause remains closed-notProven.
 - [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
-- [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): default-off still fail-closed; owner unlocked GATE-on; canary CCS intercept default-off; live test2 intercept hit Host CF disconnect (no resume).
+- [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): current candidate/artifact evidence, scoped experience vs stable checkpoints, normal persistent enable vs fault injection, and install/exit gates. Historical GATE permission is not standing global rollout authorization.
 - [E07 Path B Host admission](maintainers/e07-path-b-host-admission.md): D2-approved purpose slices and source/packed admission proofs; full E07/native qualification remains partial.
-- [T29 command/API boundary incubate](maintainers/t29-command-boundary-incubate.md): shared commands/status/ConfigurationWrite inventory; no console/, no fake CAS, not post-T28 default chain.
+- [T29 command/API boundary incubate](maintainers/t29-command-boundary-incubate.md): shared commands/status/ConfigurationWrite inventory; browser still deferred, T41 observation DB allowed under its separate scope, no UI config SoT or speculative CAS.
 - [Release runbook](maintainers/release.md)
 
 Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokbox/issues). Security reports follow [`SECURITY.md`](../SECURITY.md). Machine-local execution notes, raw operational evidence, credentials, provider dumps, and private research do not belong in this repository.

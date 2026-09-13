@@ -25,6 +25,18 @@
 5. 本地 tuple 相关，不完整字段 unknown，不投射 provider 自报 id。日志/JSON/stdout/stderr 无合成 secret/prompt/error body sentinel。Host journal 失败不阻塞回复、不重跑。
 6. 旧 durable 记录不删除，不支持 schema 报 gap；新 status 唯一 projector，不保留旧 watchdog.state 的第二解释。`layout` 及 **Astra 六 facets/角色/负对照复审**通过。
 
+## 2026-09-13：服务范围与查询运行根对齐
+
+真实`runtime status`不再把任意健康socket视为当前安装ready。复用T40的service-info/rootId，modeld facet增加可选的`scope`、`serviceEpoch`及实际观察时间；真实adapter输出matched/mismatch/unavailable/not_observed。匹配才ready，已知不匹配为false，旧服务/无法读取身份为null，只有确认路径缺少才按未运行报告；非法父路径/访问错误不是缺少。原始health仍只证响应能力，不变成准入依据。
+
+CLI显式GROKBOX_RUN_ROOT必须传给同一观察器；无显式覆盖时保留原默认/injected adapter，避免新代码绕过测试或embedding选定的runRoot。`runtime-service-status.test.ts`用真实disposable Unix服务覆盖匹配/不同根/旧服务/无效目录/缺失；投影对未知scope和不安全epoch做白名单处理。所有status操作保持只读，不create/repair/clear circuit；T40的packed启动回执也观察对应service generation。schema保持兼容的字段增量，不新建第二状态解释器。最新计数和源码身份归readiness。
+
+## T41复用边界（2026-09-12）
+
+持续采集和SQLite/incident归[T41](T41-continuous-observation-and-alerting.md)。本票继续拥有原执行/控制事实及status语义，不迁J13、不让monitor重写Host terminal。T41可引用/索引现有安全事件；新增collector/incident事件有独立role和scope，不冒充provider或Host消息。GET仍零持久写；后台显式启动的collector写自己的观察是另一能力，不由GET隐式获取。
+
+Box身份、Bot身份、source epoch、观察时间/lastSuccess/gap字段可被CLI与未来API同义消费；不在前端派生另一套健康判断。SQLite中旧projection无法授权当前执行，也不是已采到完整历史的保证。
+
 ## Non-goals / out-of-scope
 真实 controller heartbeat/深层 trace 的无证据承诺、publication watermark 发明、自动恢复、UI、live sampling。深层 diagnostics 归 T33。
 

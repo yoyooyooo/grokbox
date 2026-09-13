@@ -2,7 +2,8 @@ export type BoxRuntimeErrorCode =
   | "runtime_local_only"
   | "invalid_usage"
   | "credential_invalid"
-  | "runtime_not_ready";
+  | "runtime_not_ready"
+  | "runtime_ownership_unavailable";
 
 export class BoxRuntimeError extends Error {
   readonly code: BoxRuntimeErrorCode;

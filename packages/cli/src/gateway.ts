@@ -474,6 +474,39 @@ export class GatewayClient {
     return await this.rpc("getAgentThread", { id: body.id, rootId: body.rootId }, { timeoutMs });
   }
 
+  async getAgentOwnership(agentIds: string[], timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+    if (agentIds.length < 1 || agentIds.length > 32 || new Set(agentIds).size !== agentIds.length
+      || agentIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
+      throw new CliError("invalid_usage", "Ownership requires 1 to 32 distinct Agent UUIDs.");
+    }
+    const daemon = await this.daemonFor("grok.roster.read", timeoutMs);
+    if (daemon) {
+      const response = await daemon.call("getAgentOwnership", { agentIds, timeoutMs });
+      if (!response.gateway) throw new CliError("gateway_internal", "Ownership read lacks Gateway generation.");
+      const discovery = this.discoveryFromDaemon(response.gateway);
+      this.lastDiscovery = discovery;
+      return { result: response.result, discovery };
+    }
+    const response = await this.rpc("getHostStatus", { grokboxOwnershipAgentIds: agentIds }, { timeoutMs });
+    return { result: isRecord(response.result) ? response.result.grokboxOwnership ?? null : null, discovery: response.discovery };
+  }
+
+  async getTrays(timeoutMs: number): Promise<{ trays: unknown[]; discovery: Discovery }> {
+    const daemon = await this.daemonFor("grok.alerts.read", timeoutMs);
+    if (daemon) {
+      const response = await daemon.call("getTrays", { timeoutMs });
+      if (!Array.isArray(response.result) || !response.gateway) {
+        throw new CliError("gateway_internal", "Daemon trays response has the wrong shape.");
+      }
+      const discovery = this.discoveryFromDaemon(response.gateway);
+      this.lastDiscovery = discovery;
+      return { trays: response.result, discovery };
+    }
+    const { result, discovery } = await this.rpc("getTrays", {}, { timeoutMs });
+    if (!Array.isArray(result)) throw new CliError("gateway_internal", "Gateway trays response has the wrong shape.");
+    return { trays: result, discovery };
+  }
+
   async getAgentMemories(id: string, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
     const daemon = await this.daemonFor("grok.memory.read", timeoutMs);
     if (daemon) {
@@ -526,6 +559,9 @@ export class GatewayClient {
     timeoutMs: number,
     operationId?: string,
   ): Promise<{ result: unknown; discovery: Discovery }> {
+    if (Object.hasOwn(body, "harness") || (isRecord(body.profile) && Object.hasOwn(body.profile, "harness"))) {
+      throw new CliError("invalid_usage", "updateAgent cannot change harness; ownership inspection and model selection are separate operations.");
+    }
     return await this.managementWrite("updateAgent", body, timeoutMs, operationId);
   }
 

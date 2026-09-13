@@ -97,6 +97,7 @@ describe("registry, help, and runtime", () => {
       "agents",
       "groups",
       "send",
+      "alerts",
       "history",
       "memory",
       "export",
@@ -363,24 +364,21 @@ describe("strict agents, groups, and target resolution", () => {
     expect(created?.body).toMatchObject({ name: "beta", harness: "temporal" });
   });
 
-  test("agents update without --harness still sends box", async () => {
+  test("agents update does not reassert a harness when changing a title", async () => {
     const result = await withGateway(["agents", "update", "alpha", "--title", "Alpha"]);
     expect(result.code).toBe(0);
     const updated = result.mock.requests.find((request) => request.pathname === "/api/updateAgent");
     expect(updated?.body).toMatchObject({
       id: "agent-alpha",
-      profile: { name: "alpha", description: "research buddy", title: "Alpha", harness: "box" },
+      profile: { name: "alpha", description: "research buddy", title: "Alpha" },
     });
   });
 
-  test("agents update --harness temporal preserves description", async () => {
+  test("agents update refuses harness migration before Gateway", async () => {
     const result = await withGateway(["agents", "update", "alpha", "--harness", "temporal"]);
-    expect(result.code).toBe(0);
-    const updated = result.mock.requests.find((request) => request.pathname === "/api/updateAgent");
-    expect(updated?.body).toMatchObject({
-      id: "agent-alpha",
-      profile: { name: "alpha", description: "research buddy", harness: "temporal" },
-    });
+    expect(result.code).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.mock.requests).toEqual([]);
   });
 
   test("agents create rejects unknown --harness before Gateway", async () => {

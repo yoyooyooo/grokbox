@@ -8,6 +8,7 @@
     "./selection": "./src/selection.ts",
     "./ports": "./src/ports.ts",
     "./status": "./src/status.ts",
+    "./monitor": "./src/monitor.ts",
     "./testing": "./src/testing.ts",
     "./inference": "./src/inference.ts",
     "./commands": "./src/commands.ts"

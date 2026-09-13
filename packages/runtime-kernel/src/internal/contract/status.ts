@@ -52,6 +52,8 @@ export const INFERENCE_CORRELATION_KEYS = [
 
 export type HostDeliveryKind = "not_observed" | "host_terminal" | "host_rejected" | "model_terminal";
 
+export type ModeldServiceScope = "matched" | "mismatch" | "unavailable" | "not_observed";
+
 export type StatusEvidence = {
   now: string;
   durableRoot: string;
@@ -59,7 +61,7 @@ export type StatusEvidence = {
   attestation: Observed<{ coverage: "attested"; mode: "identity" | "route" } | null>;
   coordinator: Observed<{ circuit: "open" | "closed"; circuitReason: string | null } | null>;
   operationJournal: Observed<{ pending: boolean; phase: string | null } | null>;
-  modeld: Observed<{ required: boolean; ready: boolean } | null>;
+  modeld: Observed<{ required: boolean; ready: boolean; scope?: ModeldServiceScope; serviceEpoch?: string | null } | null>;
   controllerLiveness: Observed<{ alive: boolean } | null>;
   bridgeHost: Observed<{
     actual: BridgeActual;
@@ -90,7 +92,7 @@ export type RuntimeStatusFacets = {
       coverage: BridgeCoverage;
       reason: string | null;
     }>;
-    modeld: StatusFacet<{ required: boolean; ready: boolean | null }>;
+    modeld: StatusFacet<{ required: boolean; ready: boolean | null; scope?: ModeldServiceScope; serviceEpoch?: string | null }>;
     controller: StatusFacet<{ liveness: "unknown" | "alive" | "stopped" }>;
     mutation: StatusFacet<{ inhibited: boolean; allowed: boolean; reason: string | null }>;
     recovery: StatusFacet<{ state: "clear" | "recovery-required" | "unknown"; pending: boolean | null }>;

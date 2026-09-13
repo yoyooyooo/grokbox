@@ -1,46 +1,42 @@
-# Composer Working residual
+# Composer / trailing Working residual
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**Role: residual class for desktop composer-above Working vs sidebar Working.** Not a second surface map. Surfaces stay in [Host / App live projections](host-app-projections.md). Not a live unload, re-adopt, circuit close, or App pixel proof.
+**Role: open desktop Working diagnosis and acceptance boundary.** Surface ownership stays in [Host / App live projections](host-app-projections.md); execution scope and acceptance are [T36](../tickets/T36-composer-working-activity.md). This page is not authorization to unload Host, clear a circuit/cache, or declare live UI success.
 
-Stock App coordinator / Cmd-Q / Mac replica stay in grok-bot `private interoperability notes (not distributed)` (sibling checkout: `PRIVATE_EVIDENCE`; not vendored). Always-emit harness stays in [Transcript harness: box vs temporal](transcript-harness-box-vs-server.md). Official unload stays in [official-rollback-acceptance](official-rollback-acceptance.md).
+## Current understanding — 2026-09-12
 
-## Residual class
+The current research now reaches the actual App 0.47 renderer, not only Host activity fields. Generic Working/typing comes from `Ibt/Nbt` (`isRunning`, `isComposingMessage`); named activity is optional enrichment. Final visibility also includes pending/failed sends, permission widgets, current-session selection and group state. Thus **missing currentActivity does not prove generic Working must be missing**, and a present field does not prove the indicator is mounted.
 
-**App / desktop coordinator + official-path proto, not a missing tip `activity-bridge`.**
+The managed `activity-bridge` emits a Host-shaped first-chunk update through the existing sink. This repairs a real producer-side activity gap, but does not prove correct App routing, message streaming, all activity transitions or termination. Do not conclude all remaining behavior is cosmetic after one Gateway thinking field appears.
 
-On the current attested/managed path, grokbox already forwards a Host-shaped `thinking-delta` into the same `emitUpdate` sink official proto uses. Raw Gateway `currentActivity` has been observed as `{ kind: "thinking" }` after first chunk. A desktop composer mark that is still missing while the sidebar shows Working is therefore not a cheap slice/projection bug on tip.
+History and live state have separate streams but shared routing risk: an App row classified temporal can take server `agent-activity`, replacing run/composing/activity fields. Cached temporal restoration can change that classification even while Box profile remains box. See [Transcript harness](transcript-harness-box-vs-server.md); private original-source map, test0 distinction and 7-assertion replay live in grok-bot `private interoperability notes (not distributed)`.
 
-## What is proven
+## Claims and evidence bounds
 
-| Claim | Grade | Bound |
+| Claim | Evidence | Limit |
 |---|---|---|
-| Sidebar Working is `isRunning` / `isRunningTurn` from `beginSessionRun` / `inFlightRunCounts` | S | Host `withRunStates`; does not need proto deltas |
-| Composer named activity is `sessionActivities` → Gateway `currentActivity` | S | `handleAgentUpdate` → `trackActivityFromUpdate`; `thinking-delta` / `text-delta` set `{ kind: "thinking" }` |
-| Managed STEP replaces proto `AgentService.Run` unless grokbox emits | S | `create-session` wrap + `fullStream` |
-| Tip `activity-bridge` + `onFirstChunk` emit `{ type: "thinking-delta", text: " " }` | S / P | `live-slices.ts`, `session-hook.ts`, `host-activity-bridge.test.ts` |
-| Always-emit `harness=box\|temporal` is **orthogonal** to Working | S | `box` and omit-box both use Host `sessionActivities`; only `harness === "temporal"` takes `serverActivityOverlayProvider` |
-| Gateway `currentActivity` after first chunk on a managed box turn | D | machine-local `PRIVATE_EVIDENCE` (Host pid REDACTED_PROCESS_ID; not this PID) |
-| Living Host **REDACTED_PROCESS_ID** is grokbox-attested, 8-slice compile includes `activity-bridge` + harness emit | D | attestation `8727c4c9…` / transformed `1cc38fb7…`; this pass did not unload or re-adopt |
+| Bot-wide running includes actual runs/subagent ownership | Host `withRunStates` | Not necessarily the currently selected session |
+| Generic current-chat mode is running/composing based | App `Ibt/Nbt`; original-function replay | React mount has additional conditions |
+| Named activity is Host activity or eligible server overlay | Host activity transitions; App `rft/aft/yW` | Not a run completion fact |
+| Per-message streaming is entry-scoped | `message.isStreaming` / `send-message.streaming` | One message stopping does not end the entire run |
+| Managed first chunk can publish thinking activity | Existing bridge/test and prior Gateway receipt | Not exact App pixel proof or full activity lifecycle |
+| Temporal overlay can clear a prior Box activity | Original `yW` replay | Does not prove every observed missing spinner came from this branch |
 
-Pre-bridge diagnose (`isRunningTurn=true`, `currentActivity` absent) is history: `PRIVATE_EVIDENCE`. Do not treat it as the current attested compile.
+Older machine-local receipts `PRIVATE_EVIDENCE` and `PRIVATE_EVIDENCE` preserve pre-bridge and post-bridge Gateway observations. PIDs REDACTED_PROCESS_ID and their old compile hashes are historical, not current running inventory. Do not use them to qualify the latest preload.
 
-## What remains
+## Remaining acceptance
 
-1. **App pixels N.** Exact composer chrome / renderer string is notProven unless a live App poll or screenshot is cited. Gateway `currentActivity` is not “the App looks fine.”
-2. **First-chunk window.** Sidebar Working starts at run begin. Managed `currentActivity` starts at `onFirstChunk`. A mid-connect look is sidebar-only by design.
-3. **`harness=temporal` (live test2).** Server overlay, not `activity-bridge`. Sidebar can show overlay `isRunning` while composer activity stays whatever Cursor server sent (often absent).
-4. **Desktop coordinator sticky-temporal.** Host always-emit / restart does not clear App `harnessOf` / `requiredAgents`. Coordinator may drop Gateway `/events` and paint the server replica until **Cmd-Q / Exit** (private interoperability notes (not distributed) §4 / §6). Mac `transcript.replicas` is a further optional wipe, not box `store.db`.
-5. **Official path.** After an authorized official unload, composer Working is proto `handleAgentUpdate` again — no grokbox bridge. That accept is [official-rollback-acceptance](official-rollback-acceptance.md); unload is deferred.
-6. **CLI redaction.** `agents show` / `compactRosterRow` / `runningProjection` drop `harness` and `currentActivity`. Use raw Gateway `listAgents`.
+The same bounded observation must correlate Bot/session, selected route, run/Host generation and event sequence with the relevant App view. Cover pre-first-chunk waiting, reasoning/activity, native tools, SendToUser streaming, permission waiting, success/failure/cancel and reconnection.
 
-## Not this pass
+A current run's terminal ends its own Working, not another run; late prior-generation updates cannot revive it. On loss of freshness show reconnecting/unknown, not a fabricated completion or indefinitely stale busy state. A pending local send is not evidence the Host is already executing. Different semantic scopes need consistent meanings, not identical animation at all times.
 
-No tip code change. No pack, re-adopt, deactivate, Host unload, circuit hand-clear, T32 GATE/canary, or test1 touch. Circuit `open` / `circuit_open` stays accepted.
+Fresh Gateway harness is now retained by CLI roster projections; `currentActivity` may still need the typed/raw Gateway observation. `history outcome --runtime --expect-harness box` guards history provenance, but is not an activity or desktop-pixel verifier.
 
-## Freshness
+Cmd-Q clears old coordinator Maps, not the persisted routing input that can recreate them; cache removal is not the default fix. Official unload is a separate [rollback acceptance](official-rollback-acceptance.md), not a way to test a spinner. Legitimate temporal and non-managed behavior must remain intact.
 
-Invalidate when any of these change: `activity-bridge` / `emitHostActivity` / `onFirstChunk`; Host `trackActivityFromUpdate` / `withRunStates` overlay; living compile slices; App coordinator `db({ raw, previous })`; official unload writer.
+## This investigation / freshness
 
-Machine-local `PRIVATE_EVIDENCE` and earlier composer receipts are evidence, not this repository’s authority.
+Only knowledge and isolated original-function replay changed here. No new model request, deployment, App restart or cache mutation was performed. T36 remains open.
+
+Requalify when App renderer/coordinator, Host run/activity transitions, bridge behavior, send-state projection, route authority or generation handling changes. Exact pixels require a real view observation; source replay alone remains bounded evidence.

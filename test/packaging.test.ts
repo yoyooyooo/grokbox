@@ -201,6 +201,7 @@ describe("published Node package", () => {
       "dist/guardian-child.cjs",
       "dist/index.js",
       "dist/injector-hold.cjs",
+      "dist/observation-sqlite.cjs",
       "dist/preload.cjs",
       "package.json",
       "skills/core.md",
@@ -259,6 +260,25 @@ describe("published Node package", () => {
     const notices = await readFile(join(installedRoot, "THIRD_PARTY_NOTICES"), "utf8");
     expect(notices).toContain("Commander.js");
     expect(notices).toContain("Copyright (c) 2011 TJ Holowaychuk");
+    expect(notices).toContain("Copyright (c) 2017 sql.js authors");
+
+    // Verify the published companion after installation with no workspace
+    // dependency resolution. Read operations must not initialize storage.
+    const observationRoot = join(fixture, "installed-observation-data");
+    const observationEnv = { PATH: process.env.PATH ?? "", HOME: fixture,
+      GROKBOX_CONFIG_DIR: join(fixture,"observation-config"), GROKBOX_BOX_RUNTIME_ROOT: observationRoot };
+    const absentObservation = await run([grokbox,"runtime","monitor","snapshot","--json"],fixture,observationEnv);
+    expect(absentObservation.code).not.toBe(0);
+    expect(existsSync(observationRoot)).toBe(false);
+    const initializeObservation = await run([grokbox,"runtime","monitor","init","--confirm","--json"],fixture,observationEnv);
+    expect(initializeObservation.code,initializeObservation.stderr).toBe(0);
+    expect(JSON.parse(initializeObservation.stdout).data.created).toBe(true);
+    const sqliteBytes = await readFile(join(observationRoot,"observability/observations.sqlite"));
+    expect(sqliteBytes.subarray(0,16).toString()).toBe("SQLite format 3" + String.fromCharCode(0));
+    const installedSnapshot = await run([gbox,"runtime","monitor","snapshot","--json"],fixture,observationEnv);
+    expect(installedSnapshot.code,installedSnapshot.stderr).toBe(0);
+    expect(JSON.parse(installedSnapshot.stdout).data.admissionAuthority).toBe(false);
+    expect(await readFile(join(observationRoot,"observability/observations.sqlite"))).toEqual(sqliteBytes);
 
     const distDir = join(installedRoot, "dist");
     const published = resolveRuntimeHelpers(pathToFileURL(join(distDir, "index.js")).href);

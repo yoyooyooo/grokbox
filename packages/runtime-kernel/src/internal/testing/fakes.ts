@@ -1,4 +1,4 @@
-import { Effect, Layer, Stream } from "effect";
+import { Clock, Effect, Layer, Stream } from "effect";
 import {
   BackendFailure,
   applyInferenceEvent,
@@ -173,7 +173,12 @@ export function fakeAdmissionAuthorityLayer(
         counts.authority += 1;
         counts.order.push("authority");
       }
-      return evidence();
+      const result = evidence();
+      // Explicit test authority includes synthetic ownership; production never
+      // derives ownership from admitted=true. Override ownership in fault tests.
+      return result && typeof result === "object" && "admitted" in result && result.admitted === true && !("ownership" in result)
+        ? { ...result, ownership: { scopeId: "a".repeat(64), serverId: "owned-server-agent", observedAtMs: yield* Clock.currentTimeMillis } }
+        : result;
     }),
   });
 }

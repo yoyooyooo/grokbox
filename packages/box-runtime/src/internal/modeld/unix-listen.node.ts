@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, renameSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import { Effect } from "effect";
+import { Effect, type Scope } from "effect";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 
 export type ResourceCounts = {
@@ -18,11 +18,14 @@ export type ReleaseStatus = { ok: boolean };
 
 export type ListenHooks = {
   afterAllocate?: Effect.Effect<void>;
-  afterListen?: Effect.Effect<void>;
+  /** Runs inside the owning listener Scope; faults may register a finalizer. */
+  afterListen?: Effect.Effect<void, never, Scope.Scope>;
   failAfterListen?: Effect.Effect<never, Error>;
   failRelease?: boolean;
   release?: ReleaseStatus;
   onConnection?: (socket: Socket) => void;
+  /** Bounded test instrumentation of the resource this Scope owns; never a CLI option. */
+  onAllocated?: (server: Server) => void;
 };
 
 export type OwnedListener = {
@@ -156,6 +159,7 @@ export function acquireUnixListener(path: string, counts?: ResourceCounts, hooks
     yield* Effect.addFinalizer(() => hooks.failRelease === true
       ? Effect.sync(() => markRelease(hooks, false)).pipe(Effect.andThen(Effect.die(new Error("cleanup_gap"))))
       : closeListener(server, path, counts, owned, hooks).pipe(Effect.orDie));
+    if (hooks.onAllocated) yield* Effect.sync(() => hooks.onAllocated!(server));
     if (hooks.afterAllocate) yield* hooks.afterAllocate;
     yield* Effect.callback<void, Error>((resume, signal) => {
       let settled = false;

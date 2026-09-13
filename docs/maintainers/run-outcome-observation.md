@@ -1,0 +1,57 @@
+# 运行结果与 App 警告观测
+
+> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
+
+当前用途：生产 grok-4.6 的 CLI 自测试闭环。合同归 [Spec S0.4.1](../roadmap/box-runtime-impl-spec.md)，Host 流合同归 [T26](../tickets/T26-runtime-host-fullstream.md)，发布事实归 [readiness](t32-live-enable-readiness.md)。本页是观测入口/含义，不另定义执行器、重试器或任务数据库。
+
+## 三类证据不能互相替代
+
+| 表面 | 实際 owner / 生命周期 | 能证明什么 |
+|---|---|---|
+| `Gateway.getTrays` / `tray` 事件 | 当前 Host `TrayManager` 的内存列表，非 SQLite 任务表。当前源码最多20条 tray、每条最多20个发生时间；会去重、dismiss、evict、新发送清理、重启丢失 | App 当前警告及推送/移除；空列表不能证明成功，不能回查已丢失告警 |
+| `Gateway.getAgentTranscriptTail` | 当前目标的 display transcript，明确 nonce、requestId、entry | 用户输入被记录、SendToUser 内容被记录；进度/ack 也在这里，不等于最终业务结果或整个 run 完成 |
+| `run/log/events.ndjson` | grokbox Host/modeld 的既有本机持久日志，投影有界，读取可能 truncated | 同一 Agent/TURN/STEP 的准入、推理、Host拒绝/终态；不直接证明用户已读或最终业务成功 |
+
+2026-09-12 对 Host source `307de399…` 检查：trays-service 的 `TrayManager` 只有数组/EventEmitter/去重/上限逻辑；Gateway `getTrays` 委托其 list，Host通过 singular `tray` channel 发布事件。这不否定 App 自己可能有缓存，但本功能不依赖未知客户端存储。源码变化时重审 API、事件形状及生命周期。
+
+## 稳定命令
+
+在源码工作树可用 `bun run grokbox`；实际打包版本可用 `node dist/index.js`；安装版本为 `grokbox`。
+
+```sh
+# 仅读当前警告，不 dismiss/clear，不输出 rawDetail、actions 或私密 URL。
+grokbox alerts list --agent <agent-id> --json
+
+# 自发送开始之前订阅可捕获短暂出现又被清除的警告；沿用既有事件游标/gap。
+grokbox events --channels transcript,tray
+
+# 原 nonce 对齐，不再发送一次来“查询结果”。
+grokbox history outcome <agent-id> --nonce <original-send-nonce> --json
+
+# 本机验证需要同时查runtime错误，并等一个明确的最终预期内容。
+grokbox history outcome <agent-id> --nonce <original-send-nonce> \
+  --runtime --expect-harness box --expect-text 'EXPECTED_FINAL_RESULT' --wait-ms 60000 --json
+
+# 从 App 警告中的调用 id 反向定位。
+grokbox history outcome <agent-id> --request-id <id> --runtime --json
+```
+
+`--runtime` 只允许明确本机 local/auto Profile，拒绝 remote/SSH/daemon/gateway Profile，避免用本机日志给远端任务背书。普通 alerts/outcome 通过 typed Gateway 和 daemon 两种实现；daemon 添加 `grok.alerts.read`，旧 daemon 未提供时不能伪造支持。
+
+同一 Bot 的两份历史不能混算：`agents show/list` 和 roster 事件保留 `harness: box|temporal|unknown`，结果查询用同一 Gateway 的 roster 在每次采样前后校验。`--expect-harness box|temporal` 声明要验的入口，`--runtime` 默认要求 box；路由变化/未知/不符保持 unknown，不返回借另一份历史匹配出来的成功。`evidence.transcriptRoute` 明确声明来源、前后值、非原子采样以及桌面 replica 未观测。完整边界与双账本区别见 [Transcript harness](transcript-harness-box-vs-server.md#acceptance-must-not-mix-transcript-sources)。这不是修复 App 缓存或同步两套 store。
+
+查询顶层 `ok:true` 只表示查询成功，必须读取 `data.state`。状态：`unknown`（证据缺失/版本变化/协议未知）、`accepted`（仅输入记录）、`delivered`（观察到同请求 SendToUser）、`progress`（有消息但未匹配预期）、`expected_result_observed`（精确预期内容出现）、`failed`（匹配警告或本机失败）。`executionCompleted:"not_proven"` 始终明确：该命令没有另造原生 run-completed 权威。预期内容只能验证业务断言，不能替代工具是否实际运行、模型身份、checkpoint/reload等独立证据。
+
+观测等待最多120秒，RPC受剩余预算约束，每次最多5页/1000项，间隔2秒，不在超时后发最后一轮多余请求。匹配失败优先于已发进度；Host明确拒绝优先于其后 modeld 的断连取消。Gateway代变化、nonce关联多个request或未知告警结构保持unknown。无原始body/密钥/操作action进告警投影。事件脱敏保留安全requestId/clientNonce、started/ended身份信息；ended仍不是成功。
+
+## 这次 App 反例及永久修复
+
+Synthetic regression scenario: an earlier progress message is not a final result. A later Host rejection must remain `state:failed` even when live trays have already disappeared. The owned regression fixtures carry the public proof; private transcripts and execution identities are not distributed.
+
+桥的原策略是 `parallel:fail-closed`，却未统一将它写入provider请求。当前源码在Host stream准入前设置canonical `parallelToolCalls:false`，Chat/Responses adapter按原合同编码成 `parallel_tool_calls:false`，恢复也保留原STEP参数。仍保留违约多调用时零 executable release 的拒绝，不靠删检查/丢弃调用/静默执行追绿。这不宣称已新增并行工具支持。
+
+Host终态持久投影新增terminalClass/errorCode/toolCallCount/modelId，拒绝记录增加stepId。这样以后可以分清Host的 `parallel_tools` 与模型端被关socket后的 `disconnected`，不用再依赖用户截图。该新增Host写入逻辑只有新preload被加载之后才生效，不能回填旧历史。
+
+## 验证与现场边界
+
+2026-09-12本轮 scoped regression **123 pass / 0 fail**（含CLI/事件/管理/运行时合同、12个结果观测测试、5个工具准入/终态测试、持久凭据与原生outer retry回归）。真实只读结果查询也已完成。完整全仓测试调用及候选 profile-write/re-adopt 调用被工具安全检查拦截，未执行；未改路重试部署，没有宣称串行策略修复已在现场加载或真实工具链已验完。具体制品身份与后续待验项以readiness为准。

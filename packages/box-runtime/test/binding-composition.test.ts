@@ -84,7 +84,7 @@ describe("T24 live composition", () => {
     expect(captureHostSelection(root, "agent-a").kind).toBe("managed");
     const padding = "x".repeat(CONFIG_READ_MAX_BYTES);
     await writeFile(join(root, "models.json"), `${JSON.stringify({ ...small, padding })}\n`);
-    expect(captureHostSelection(root, "agent-a").kind).toBe("official");
+    expect(() => captureHostSelection(root, "agent-a")).toThrow("Model selection is unavailable");
     const store = openRuntimeStore(root);
     await expect(run(Effect.scoped(
       Effect.gen(function* () {

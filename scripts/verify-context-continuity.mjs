@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { captureVerificationSource, withVerificationSource } from "./verification-source.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -180,12 +181,43 @@ function caseStatus(id, parsed, ran) {
 }
 
 function emit(report, failed) {
-  console.log(JSON.stringify(report, null, 2));
-  process.exit(failed ? 1 : 0);
+  const qualified = withVerificationSource({ toolchain, worktreeDirty, ...report }, sourceBefore, captureVerificationSource(root));
+  console.log(JSON.stringify(qualified, null, 2));
+  process.exit(failed || !qualified.ok ? 1 : 0);
 }
 
 const commit = sha();
+const sourceBefore = captureVerificationSource(root);
+const worktreeDirty = (() => {
+  try {
+    return execSync("git status --porcelain=v1 --untracked-files=normal", { cwd: root, encoding: "utf8" }).trim().length > 0;
+  } catch {
+    return null;
+  }
+})();
 const bun = bunVersion();
+const packageManager = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).packageManager;
+const expectedBun = typeof packageManager === "string" && /^bun@\d+\.\d+\.\d+$/.test(packageManager)
+  ? packageManager.slice(4)
+  : null;
+const toolchain = { packageManager: packageManager ?? null, expectedBun, actualBun: bun };
+
+// Evidence is version-scoped. Reject before any tests, preload probes or pack side effects.
+if (expectedBun === null || bun !== expectedBun) {
+  emit({
+    lane,
+    commit,
+    bun,
+    ok: false,
+    error: "toolchain_mismatch",
+    dependencyReality: "toolchain-check-only",
+    supports: [],
+    cases: [...REQUIRED_CASES, "E07", "E09"].map((id) => ({
+      id, status: "unavailable", reason: "toolchain_mismatch",
+    })),
+    notProven: ["continuity", "packed-artifact", "native_host_consumer_qualification", "live-adopt", "B-closed"],
+  }, true);
+}
 function continuityNotProven(e09, e07) {
   return [
     "E07",

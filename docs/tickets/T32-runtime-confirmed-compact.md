@@ -3,42 +3,53 @@
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
 ## Status
-**Open · Phase 4；Host core的限定等待点资格已固定，runtime接线/provider资格尚未完成。** [接缝资格与死锁边界](T32-host-compact-seam.md)记录直接调用core的条件性source+隔离切片证明、精确挂起点和实现gate；不是已安装capability或live证明。本票不能以候选日志或旧T14 observation done作为恢复授权。
+**Partial · Phase 4 · active stable-delivery track (2026-09-12).** 恢复内核、classifier、v4 同连接和默认关闭已存在；真实首请求恢复与稳定日用尚未关闭。以 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery) 为当前交付合同，不重做现有 GATE/env，不从历史分支文档推导新 live 权限。
 
-## Goal
-在同一 STEP 程序中处理 confirmed context overflow：原 attempt 终止、无已放行内容/工具时调用 Host 自有 compact，取得新 snapshot，至多再推理一次。只升级当前 wire 到 v4，不留 v3 兼容路径。
+## Goal / ownership
+用户在真实 Grok Bot 换用更小窗口模型后，合格 overflow 能经 Host 原 compact 取得有效新窗口，回到原 managed 模型并继续日用。kernel `step-program` / `overflow-recovery` / ledger 是 attempt、恢复预算、逻辑终态唯一 owner；[T35](T35-host-compact-wait-point.md) 拥有 Host scope/摘要调度/接受 fence/外层 retry 控制；Host 保留摘要策略与 root、工具、Memory、checkpoint 的实际 writer。
 
-## Module / dirs touched
-- `packages/runtime-kernel/src/internal/inference/overflow-recovery.ts`、`step-program.ts`/`step-ledger.ts`、`contract.ts`、`ports.ts` 的 STEP-scoped HostCompact capability。
-- `packages/box-runtime/src/internal/backends/provider-error.ts` 的 provider-specific confirmed classifier。
-- `packages/box-runtime/src/internal/host/compact.ts`（资格通过才创建）、`context-codec.ts`/`modeld-client.node.ts`/`stream-codec.ts`。
-- `packages/box-runtime/src/internal/wire/modeld-wire.ts`、`modeld/server.node.ts`；v4 及对应 exact bridge/profile receipt 接线。
-- `packages/runtime-kernel/test/overflow-recovery.test.ts`、`packages/box-runtime/test/overflow-bridge.test.ts`、`modeld-wire.test.ts`；最小公开互操作事实。
+## Reuse / implementation delta
+- 已有：structured overflow 分类、无放行内容/工具门、同 STEP 一次 compact + 至多 attempt1、tuple/nonce/binding/epoch 校验、v4 control frame、exact-1 GATE、source/packed Host client。
+- **期限**：从父 STEP 剩余预算分配摘要、校验、attempt1 与结算预留，贯穿 Host/modeld；不用固定 5 秒定义整个恢复，不无限续租，不比较跨进程 monotonic 原点。
+- **资源/取消**：attempt0 静止再摘要，保留逻辑 ledger 占用但释放摘要所需 producer/锁/容量；实际 root 的 late acceptance 由 T35 fence。已开始/已更新/未知副作用诚实区分，不把断连称回滚。
+- **snapshot**：同 active root 的合格 carrier/system/tail/metadata/tool 关联；验证结构、改善与目标预算。字符串、digest 改变、消息数下降不足以合格。unknown 不能冒充 qualified。
+- **唯一结算**：原 TURN/STEP/binding/selection/ServiceEpoch 至多恢复一次；恢复失败不换 native STEP/主模型，不由 Host 外层再试。
+- **发布**：能力 opt-in 与故障注入分开，批准 Bot 的正常配置持续生效；全局临时 GATE 不是 Bot-scoped 稳定配置。复用现有配置/admission，交 [readiness](../maintainers/t32-live-enable-readiness.md) 固定制品/支持范围/安装停用/有限真实旅程。
 
-## Depends-on
-[T24](T24-runtime-route-binding.md)、[T25](T25-runtime-effect-root.md)、[T26](T26-runtime-host-fullstream.md)。另需 **Astra 审过的 Host compact seam（含挂起点可调用性）与非冲突 provider 证据**。不依赖 T29/T30/T31 完成。
+## Module / dependencies
+kernel `internal/inference/{step-program,overflow-recovery,step-ledger,route-binding}.ts`、contract/ports；box-runtime `internal/modeld/{server.node,same-connection-compact}.ts`、wire、Host compact/client 和 modeld root。依赖 T24/T25/T26 的实际合同、[Host seam qualification](T32-host-compact-seam.md)、T35 与连续性日用必需子集；不依赖完整 T29/T30/T31。
 
-## Forbidden
-candidate/generic model_error 触发、从 durable 日志重建命令、HTTP payload-too-large 当 context overflow、跨账号/模型重试、改 Host STEP id、清 ledger、第二 summarizer/store.db prepend、grokbox near-window/产品CAP、错误 bubble 已释放后再偷偷恢复、第二 compact executor。不得用queued summarizeAction或触发Host外层五轮error retry替代当前STEP-scoped delegate。
+## Acceptance
+1. V05/V06/V09：合格零放行 overflow → 一次 compact → 一个匹配新 snapshot → 原绑定 attempt1 → 唯一 terminal。401/429/413/普通 400/500/EOF/超时/取消/已有正文思考工具/无改善/二次失败均不新增恢复或主模型 fallback。
+2. V07：可控时间验证慢于旧 5 秒但在父预算内可完成；过总预算不能 resume/attempt1，不靠 heartbeat 延期。
+3. V08/V11：取消阶段与 native 接受 fence 联测；未知 effect 不重放，Host 外层不扩大次数，official 对照不退化。
+4. V10/V13：合法新窗口、实际 SDK 编码、source/本次 packed 一致；旧 dist/错 profile/零 case 不通过。真实 provider 结构化拒绝资格与合成 canary 分开记录。
+5. 稳定候选还需 V01/V02/V12–V19 对应范围：per-Bot 路由、多 TURN/工具/必要 aux/Memory/checkpoint/reload、真实产品入口、持久正常启用与安全退路。执行细节由原连续性文档与 readiness 承载，不另建 ME 票。
+6. exact-SHA 独立 review；live 前按 S9.3 检查当前授权、身份/profile、制品、Bot/成本范围和停止条件。临时验证结束复原且注入关闭；稳定 rollout 另有明确范围。
 
-## Acceptance (executable)
-1. 按[已固定接缝](T32-host-compact-seam.md)实现main runStep等待点的有界delegate，直接复用当前orchestrator/root/stateHandler；对现有pending summary、未审hook/资源链、未ready/旧tuple/取消等返回blocked/unavailable。此次仅证明限定native方法等待关系；完整production bridge、state/metadata保真及取消/晚完成负例仍须通过，额外patch按D2精确审批。
-2. `bun scripts/verify-runtime-rebuild.mjs compact` → `bun test packages/runtime-kernel/test/overflow-recovery.test.ts packages/box-runtime/test/overflow-bridge.test.ts packages/box-runtime/test/modeld-wire.test.ts`。
-3. 同一 production kernel+wire+Host adapter fixture：attempt0 已终止并确认quiescence但未结算Host STEP；confirmed overflow、released text/reasoning/tools=0 → 一个compact-request → 同连接一个resume-step新snapshot → attempt1 → 唯一Host terminal。目标managed STEP推理最多2次、Host compact invocation最多1次；Host内部summary provider重试独立计数并受总期限约束，不冒充所有HTTP总数≤2。
-4. 原 TURN/STEP/binding/ServiceEpoch 固定；recovery nonce/attempt 绑定原连接/期限，消费一次。重复 completion、重连、旧代/错 tuple、旧 snapshot、取消或预算过期不能再次 dispatch。
-5. auth+overflow（含 401）、429、generic 400/500、HTTP limit、EOF/timeout/断线/unknown、仅 candidate、已释放工具/文本均零 compact。错误 evidence 不带 raw body/secret，不从 provider 自报 id 关联。
-6. compact 不可用、取消、无改善/仍超限、auth/authority 变化、retry 失败停止；原失败不先投递 bubble 再改口成功。Host compact 自身的未知完成如实记录，不虚构回滚。
-7. v4 同票替换全部当前 wire caller，v3 拒绝零 effects；无协商降级/legacy decoder。重跑 codec/binding/lifecycle/stream/status/layout 与 Node20 pack；故意重复 resume 或把 401 升格的负例必须失败。
-8. **Astra 复审恢复 authority、挂起点、attempt ledger 与负对照**。spec L3 real canary 另授权，仅 test0；offline fixture 不证明真实 compact 已可用。
+## Current next action — Server-authoritative rollout
 
-## Non-goals / out-of-scope
-默认每错 compact、Host Memory 产品/summary 实现、跨重启恢复未知 STEP、全 backend 支持、无限重试、全量上下文压缩或自动 live spend。
+恢复内核已有实现继续复用；下一真实恢复候选须先满足[T37](T37-server-ownership-admission.md)准入和[T38](T38-identity-write-alignment.md)身份写入门。test2已证Server temporal/local box，不再是正向heavy canary。合成overflow、真实provider拒绝、原生compact资格仍分层，不能将只读ownership确认当恢复通过。
 
-## Live residual
-**2026-09-12 refresh (control = Spec/Ticket):** Living Host **REDACTED_PROCESS_ID** grokbox-attested (preload with compact bind + harness-stick). Structured overflow journaled under GATE-on; **compact-request→resume still notProven**. Root cause class: slot register after `executeToolStream` (see CF dig). **Product lever tracked as [T35](T35-host-compact-wait-point.md)** — do not implement from roadmap alone. Composer Working App residual → [T36](T36-composer-working-activity.md). GATE/canary default **unset**. Circuit open accepted; no hand-clear.
+[T39](T39-native-model-roundtrip.md)在官方/A/B/官方旅程中消费本票的小窗口/恢复证明；普通模型切换只影响下一TURN，当前attempt0/compact/attempt1保持捕获模型，正式归属失效则按T37/T35真实fence停止后续效果。新增目标窗口更小不能静默截窗或新建会话。正常Bot-scoped启用与注入关闭交[T40](T40-persistent-release-and-rollback.md)持久发布验证。
 
-Historical live residual (kept for archaeology):
-Owner **unlocked** GATE + live overflow dogfood 2026-09-11 evening ([readiness](../maintainers/t32-live-enable-readiness.md)). Default-off is unchanged. Near-`SNAPSHOT_JSON_MAX_BYTES` fills fail `stream_invalid` (`normalize/stream_shape`, eventCount 0) before CCS overflow codes — still not an overflow recipe. test0 transcript polluted; overflow canary is **test2**. `harness=temporal` skips the patched `createSession`. Bounded CCS luna ping still completes **ok**. Grok absorb landed a **default-off** modeld CCS intercept (`GROKBOX_MODELD_OVERFLOW_CANARY_AGENT` + `GROKBOX_MODELD_OVERFLOW_CANARY_WINDOW_TOKENS`) that emits allowlisted `context_length_exceeded` without upstream; it is not real provider W and not a mini Sub2API patch. Live test2 with canary on (generation `de0e870b-…`) produced **no first_chunk**, `model_step_terminal` cancelled/`disconnected` eventCount 0 attempt 0, Host retry storm, **no resume**. Cause: route preload called `bindHostCompactHook()` with no snapshot contract, so `requestHostCompact` is `capability_not_ready`, Host CF throws `compact_rejected`, socket drop journals transport `disconnected` (control frames are not journaled). Offline fix: bind `stateSystemCompactHookOptions()` (`t21-state-root`/`host-abi-v1`). Packed `dist/preload.cjs` `5271e99e…` has that bind. Legal source-CLI `runtime re-adopt --confirm` returned **`recovery-required` / `commit-failed`** (hashed `preload.ts` `cfef0faa…`; Node `--require` cannot load it), TERMed grokbox Host REDACTED_PROCESS_ID, and left living Host **REDACTED_PROCESS_ID official** (no grokbox preload). test2 `profile.json` harness is **temporal**. Canary env stays **unset**. Do not hand-clear circuit / unknown ops. Do not re-run the source CLI. Packed `node dist/index.js runtime re-adopt --confirm` returned **`unknown` / `uncertain-operation`** on `d75b9f5f…` with **no mutation**; Host remains official **2868103**. Compact-request→resume journal **absent**. Canary env stays **unset**. Do not retry the same packed generation. Not another overflow pad. Receipt `PRIVATE_EVIDENCE`.
+本票下一责任是已有后台摘要协调与真实恢复缺证，不重新做已通过的内核；最新候选与统计只认readiness。本轮没有新执行source/live测试。
 
-## Related
-[T35 wait-point](T35-host-compact-wait-point.md) · [T36 composer Working](T36-composer-working-activity.md) · [spec recovery](../roadmap/box-runtime-impl-spec.md#recovery-diagnostics) · [wire](../roadmap/box-runtime-impl-spec.md#wire) · [proof/live](../roadmap/box-runtime-impl-spec.md#review-live) · [plan Phase 4 §4.1](../roadmap/box-runtime-plan.md) · [ADR D3](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d3--host-context-and-memory-ownership) / [D11](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d11--confirmed-overflow-host-recovery) · [custom-model compact path](../roadmap/2026-09-12-managed-compact-path.md)
+## Historical evidence windows — not the current task queue
+
+**最新生产补齐结果以 [readiness 的当前生产补齐](../maintainers/t32-live-enable-readiness.md) 为准；以下前轮版本不可当最新候选。** 本轮补 final TURN retry gate（T35）、managed 缺 TURN 拒绝（T24）、plain reasoning 的 Responses 续聊投影、真实 HTTP 错误分类；compact **79 pass**、stream **27 pass**、结果/工具/Host 生命周期等定向组 **91 pass**。新增 source-before/after 验证门，移动的源码不能签绿。
+
+当前仍不是 release：最新 contract-e2e **60 pass / 1 E09 fail**，另一个有明确旧 source digest 的 artifact 窗口曾 **35+11 pass**，两者不能混签；本轮真实 send/历史复核及凭据验证遇工具安全拦截，未绕过；独立 Astra review 无容量。凭据持久引用命令已落源码但未实测；`runtime start` 仍未实现，不能冒称自动恢复/安装已完成。原生 pending-background、完整真实恢复/必要 Memory/reload 与有限日用旅程的原验收保持未决。
+
+2026-09-12 latest working-tree refresh，基于 `pre-publication-revision`，**未提交；本轮已真实 re-adopt Host 并替换 modeld，但尚非稳定放行**。当前制品/凭据引用/现场收据统一归 [readiness](../maintainers/t32-live-enable-readiness.md)，Host scope 行为证明归 [T35](T35-host-compact-wait-point.md)。
+
+- 已有 budget 从固定 5 秒转为父剩余窗口内为 resume/attempt1 保留预算；慢于旧等待但未超父预算的用例通过。原生生命周期总预算及 native summary 实际资源收口仍须资格化，不把局部通过提升为完整日用。
+- 新隔离 e2e 真走 Host session/client → Unix server → kernel → AI SDK mock HTTP；400 首请求溢出，经 Host-owned synthetic summary、实际同连接 resume-step，原模型 attempt1 成功；401+overflow 冲突只一次请求，无恢复。不是 fake client 回传预设 resume，也不是真实 provider/App 证明。
+- 原 73+1 的 native source pin 红项已通过真实资格处理，不是直接换 pin：当前 307de399 Host 的 agent-id 模型选择形状变化已修复，两分支回归先红后绿；真实 AST 摘要/同步 mutator 成功、取消、root 换代三案通过。9 文件当前回归 **62 pass / 0 fail**，新 agent-id 用例也已进入统一 compact runner。独立 review 仍未取得有效结论。
+- 本轮 SDK e2e 扩展发现恢复时原 tools/options 会丢失；kernel 现在保留原已受理能力/生成选项，只接受 Host 新窗口，并核对 profile/ABI 后重算 digest。真实 SDK attempt0/1 body 回归先红后绿。当前 preload `5d5b85c8…`，CLI `f6425761…`；完整版本/验证统计由 readiness 保存，不能拿旧制品测试给新运行代背书。
+- owner 已明确允许必要 Host 切换/re-adopt 与 CLI send；后续批准的 **ccs-sub2api-xai/grok-4.6** 的 Pi 和相同 SDK 适配器真实 smoke 均成功。现场旧 modeld 使用另一凭据，box canary 在 SDK 失败且 native 外层出现新 TURN 重试；不能把有回复的 official/temporal 探针算 managed 成功。
+- 已实际发布 profile/re-adopt，Host route/attested；随后通过 canonical saveRuntimeModels 给 grok4.6 独立 XAI credential ref，保留其他模型旧引用，精确替换 modeld 且 health ready，gate/injection 均关闭。切换后新 Bot 请求被工具安全检查拦截、未受理，因此新凭据下 Bot→工具→SendToUser 与真实恢复仍未通过；安装重启凭据加载也未资格化。
+- 下一动作：在当前固定 Host/modeld/profile/独立凭据引用上做新 nonce 的限定 canary；定位外层 retry 真实边界，完成日用工具/必要 aux/reload 与正常安装。E07 完整矩阵、E10/E11/native、生产窗口、已有 background 收口和正常 Bot-scoped 持久启用仍有差额。真实 overflow GATE 不因普通模型可用自动打开；Git 提交/旁支清理仍未执行。
+
+## Related / deferred
+[T35](T35-host-compact-wait-point.md) · [Spec S0/S6/S9](../roadmap/box-runtime-impl-spec.md) · [连续性](../maintainers/managed-context-continuity.md) · [readiness](../maintainers/t32-live-enable-readiness.md)。T36的Working语义是并列生产门，不仅是像素；它不替代本票恢复，T39最终旅程同时验证二者。禁止无预算大 prompt、4 MiB pad 伪造 overflow、手清 circuit、store.db prepend、平行 compressor 和未知 STEP 跨重启自动恢复。

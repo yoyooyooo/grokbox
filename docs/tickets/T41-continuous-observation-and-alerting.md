@@ -1,0 +1,93 @@
+# T41 — 单盒持续观测、SQLite与告警
+
+## Status / responsibility
+
+**Open · 2026-09-13已有第一条本地纵切：scoped批量采样、真实SQLite镜像、incident/ack/snooze、CLI及Node冷进程读写；未安装现役collector，未关闭完整V28–V30。** 合同唯一入口为[Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation)，关闭V28–V30。本票拥有collector的长期生命周期、观测存储、incident和通知，不接管T37准入、T24配置、T27/J13执行事实或T28部署控制。浏览器与更远期能力归[future](../roadmap/future/README.md)。
+
+用户结果：没有打开网页时，也能发现归属冲突/变化或失去观察能力；重启后仍可查已有事件、告警处理记录；多个CLI/页面不成倍访问Server。告警不替代准入，不暗中修身份或重放任务。
+
+## 当前实现与证据范围
+
+当前使用方式、错误与存储合同的维护入口是[持续观测](../maintainers/continuous-observation.md)，不从下面的完整目标推断所有能力已落地。
+
+- Kernel `monitor.ts` 复用既有四类归属规则，提供单一有界policy、稳定scope/来源时间过滤、freshness；不会把schema1/旧/未知scope重新包装成准入证据。
+- `monitor-store.node.ts` 在原定observability路径持久化SQLite，采用固定sql.js asm+短写锁+事务镜像fsync/原子rename，不是原生WAL。schema有观察/事件/incident/管理请求，GET零写；同请求同意图对账、修订冲突、重启epoch及分页已覆盖。
+- `monitor.runtime.ts` 属于自己的Effect Scope，批量最多32目标、串行poll、错误退避与正常退出；新的scope不借旧scope确认状态。提交后输出有稳定ID的changes，不调用sendPrompt/provider/reconcile/控制信号。多个只读客户端不追加上游查询。
+- 现有CLI增加 `runtime monitor init/run/snapshot/events/incidents/ack/snooze`；init/run要求显式confirm，普通查询不初始化或采集。SQL引擎独立CJS companion懒加载，Node20运行合同及根包空dependencies不变。
+- 原协议隔离、source CLI/mock Gateway/真实SQLite与打包Node冷读/ack已验证；原生Server live scoped桥、全量调度/恢复/通知还不能据此签署。Node20与Node22以及安装后tarball的实际检查见readiness。
+
+**尚缺：** admission与背景刷新共用优先调度/事件触发；硬崩溃残留锁的安全恢复；schema迁移、备份/旧库恢复、retention维护；外部通知投递/unknown回执；T40服务owner安装/自启与真实长驻采集。当前限16MiB/50000events后报维护需求，绝不默删。local-only事件出口不等于外部告警已送达。仅正常退出重启的证据不替代crash recovery。
+
+## 实施边界与复用
+
+复用T37原生List读取/纯归属规则、T27/T33安全DTO及现有事件、配置回执。kernel保持纯合同与Effect观察/incident程序；box-runtime增加owner-private Node IO和长期root装配，CLI仅命令投影。不新建npm包、执行ledger、通用事件总线、身份数据库、App补丁或第二supervisor。
+
+未来Web UI不是collector owner；页面只读快照/订阅和调用共用命令。独立`getHostStatus`/`agents ownership`的一次性查询仍保持它们已定义的无持久写语义。不能在GET或普通读取时偷偷启动collector、迁移DB、投递告警或开启远程连接。
+
+## 1. 采集与共享证据
+
+Box机器身份与Bot harness分层。key覆盖可信Box身份、隔离的账号/team/backend scope、公开Bot UUID/Server行ID；Host/Gateway/service epoch为另一维。IP、PID、显示名不作永久身份。scope改变不延续旧缓存/incident的已确认语义，秘密原值不输出。
+
+事件触发与周期Server查证组合：同scope批处理/single-flight/总时限/并发上限；准入请求优先于背景刷新但不能无限饿死背景。一个页面关掉只退订；取消一个等待者不取消仍有等待者需要的共享查询。旧callback在scope/epoch失效后不能安装结果。
+
+保留lastKnown/lastSuccess与当前availability/freshness。首次观测作为baseline；box→temporal用前后成功观察给出发现区间；超时/401/缺行/分页不全分别记录，不制造迁移或删除。来源无revision时明确缺失，自身collector序号不冒充官方版本。采集崩溃期间可能漏中间变化，重启报告gap并重新确认，不能补造“整段无变化”。
+
+监控interval、最大staleness、刷新等待、退避/jitter、容量和关机drain预算在实施前作为单一policy明确值与范围并测试；T37 admission最大年龄独立但复用事实，后台间隔不自动成为安全窗口。先有可信实时失效再异步写观测，DB/通知失效不阻挡T37的原生fence。
+
+## 2. SQLite边界与数据生命期
+
+目标`${durableRoot}/observability/observations.sqlite`，后台单写入角色、读端受控；不放Host store，不让浏览器或多盒通过网络文件系统共享DB。Node-portable驱动和目标Node支持矩阵在实现时资格化，不能为方便引入Host Bun依赖或悄悄升运行时。
+
+| 逻辑内容（不锁表名） | 权威/恢复策略 |
+|---|---|
+| 当前观测和既有日志索引 | 派生，可从仍可读来源重建；重建前不称current |
+| observed transitions、源引用与gap | 只证明本监控看过什么；上游无历史回放时不可重新生成；保留期/删除有明确界限 |
+| incident生命周期、用户ack/snooze及revision | 本域事实，需持久/备份；不是全部可丢缓存 |
+| 通知deliveryId、尝试/回执/unknown | 仅通知管理的发送记录，不是provider、工具或控制命令outbox |
+
+采样/变更/incident更新在同一本地事务提交后才发布UI事件；不把上游查询放进写事务。按源revision/采样身份防重，崩溃重放不能重复开incident。数据库锁/磁盘满/损坏产生monitor degraded；保全原文件，不能自动drop/new空库报健康。查询不触发journal mode修改、schema migration/retention等隐式写。显式维护负责事务迁移、schema兼容、备份恢复和保留；测试包含中断迁移和旧备份恢复后的新collector epoch/cursor失效。
+
+不保存prompt、Memory/私有App源码、credential、raw auth headers、任意通知URL；只保存允许字段和证据引用。密钥仍通过既有secret refs。配置事实仍由ConfigurationWrite管理；SQLite不能经后台“同步回去”改models/desired/harness。J13/provenance原writer及保留规则不迁移，DB索引缺来源时标gap。
+
+## 3. Incident与通知
+
+首批规则：已确认归属改变、Server/local冲突、证据过期/采集不可用、来源已支持的关键运行代/期望配置不一致。不逐token写库；运行时明确的终态才关联对应run，不凭时间猜任务失败。
+
+同scope+对象+规则+发生周期去重；重复采样更新lastSeen。resolved需要新鲜正证据；读失败既不能解决旧冲突也不能冒充新harness。已存在冲突的test2首次可开baseline incident，不编造迁移过程。ack、snooze与open/resolved分别存，ack不修问题、不影响准入；新发生周期不继承无期限的旧ack。
+
+T41提供本地CLI读/处理和一个有限、显式配置的通知出口（优先安全NDJSON/受控消费者交接，或另获批准的一个固定渠道；不需Web UI）。消息包含安全Box/Bot身份、规则/影响、实际已采取保护、发现时间和证据定位；没证据不声称任务已暂停。通知最多按预算重试，稳定deliveryId贯穿尝试；渠道无幂等则如实可能重复。发送成功但未收到确认保留unknown，不能把告警ACK解释为投递ACK。
+
+通知是单独外部副作用，默认不对第三方外发；固定允许目标、凭据/重定向/网络边界及撤销需验证，不允许任意URL转发/远程exec。重试仅发送通知，永不调用sendPrompt、模型、reconcile、清circuit、迁移、adopt或工具。整体Box断网/关机由未来外部观察者发现，本机不承诺报告自身死亡。
+
+## 4. CLI/API合同（已实现子集与目标）
+
+现有`runtime monitor`已有显式init/run、snapshot、events、incidents和ack/snooze，具体参数以registry/[命令维护页](../maintainers/continuous-observation.md)为准。高级refresh/服务安装/订阅不由这些命令自动提供。`alerts list`仍是Host tray，不被新incident替换；UI可并列呈现但来源不同。模型/能力配置仍用原commands；通知策略走其唯一配置writer。
+
+查询返回scope/collectorEpoch、snapshotCursor、freshness、lastKnown和gap；分页游标绑定scope/epoch/retention。慢读者有界队列，断线/游标过期明确gap；先快照后续流不能漏掉快照交界事件，重连允许按cursor补拉或重新快照，不用客户端时间戳恢复。
+
+ack/snooze是有requestId与expected incident revision的管理写：重复同意图可对账，冲突保持草稿，不复活resolved周期。CLI与未来API调用同一程序。GET写DB次数0，显式refresh是有预算的观察操作/调度触发，不偷偷修复产品状态。
+
+## 5. 依赖与并行
+
+T37共享事实先建立；T41不阻塞T37 gate、T38 writer修复、T24选择或T39普通旅程。T41可复用T25/T40的服务安装基础并行实施，不等T40整票完成。T40的持续生产签署包含T41单盒最低监控、持久incident和范围披露；远端渠道未配时明示local-only，不以缺高级渠道阻塞普通推理。
+
+T27负责执行事实、T33负责深层诊断与J13 cursor；T41只收集安全投影/索引。T29前端后消费，不改变监控生命期；多盒、外部离线监测、多渠道升级与长周期统计在future，不能拖进本票。
+
+## 6. 验收与首个动作
+
+现有`verify-runtime-rebuild.mjs observation-monitor`已实现本地子集，实际执行typecheck/build及kernel、SQLite事务、source CLI、打包Node冷进程用例；报告保留live scoped读取、共享调度、crash恢复、维护、通知和部署未证项。下表仍为整票完整验收，不把当前子集绿称作V28–V30全部完成：
+
+| 反例/场景 | 必需oracle |
+|---|---|
+| 多读者/多窗口/背景与准入并发 | 上游查询有界合并；关一个订阅不杀其他请求或collector；不二次执行模型 |
+| 过期/401/缺页/账号或Host换代 | lastKnown保留但不授权；无假迁移/删除/恢复；旧结果不污染新scope |
+| 轮询间真实变更/无source revision | 只记录发现区间及缺口，不发明后台操作者/完整历史 |
+| 事务任一点崩溃、重复来源事件 | 快照/transition/incident一致；恢复不重复incident，未提交不得已广播 |
+| ack/snooze后重启/并发写/新周期 | 管理状态持久、幂等与revision冲突正确；不影响执行资格 |
+| DB满/锁/损坏/迁移中断/备份恢复 | gap可观察，不删库冒成功，不恢复旧授权，不阻塞独立推理/Host writer |
+| 通知发出后ack丢失/取消/渠道禁用 | 有界attempt/unknown，同一deliveryId；无模型、配置、Host信号或任务重发 |
+| cursor旧/retention/慢消费者/分页 | 明确gap和重取快照；没有无界内存或假完整时间线 |
+| GET/普通ownership/Host tray查询 | 不启动服务、不写DB或控制产品；secret sentinel不泄漏 |
+| 无网页、CLI退出、整机离线 | 服务owner与资源回收正确；本机无法报告自身断网的边界明确 |
+
+下一动作：先在当前真实SQLite/collector上补硬崩溃锁恢复、维护与明确的操作证据，并接T37共享刷新生命周期；T40服务安装/当前scoped桥合格后再验现场监控。不要重复建立已有init/GET/incident夹具，不用清锁/清库假装恢复，不搭React或向test2发模型任务。独立review仍检查权限/事实分层；测试与制品只引用最新readiness窗口。

@@ -1,4 +1,5 @@
 import { createConnection } from "node:net";
+import { REQUEST_WALL_DEADLINE_MS } from "@grokbox/runtime-kernel/contract";
 import {
   acceptModeldFrame,
   clientSessionFor,
@@ -53,13 +54,17 @@ async function applyIncomingFrame(input: {
   value: unknown;
   write: (value: unknown) => void;
   stopped: () => boolean;
+  remainingMs: () => number;
 }): Promise<{ done: boolean; emit?: unknown }> {
   const next = acceptModeldFrame(input.session.current, input.value);
   input.session.current = next.session;
   noteAccepted(input.inFlight, input.value);
   if (next.control) {
     if (next.control.method !== "compact-request") throw new Error("unexpected_compact");
-    const resume = await resumeStepFrameForCompactRequest(next.control, input.inFlight);
+    const resume = await resumeStepFrameForCompactRequest(next.control, input.inFlight, {
+      stopped: input.stopped,
+      deadlineMs: Math.max(0, input.remainingMs()),
+    });
     if (!resume || input.stopped()) throw new Error("compact_rejected");
     input.write(resume);
     return { done: false };
@@ -82,6 +87,7 @@ export async function requestModeld(runRoot: string, body: unknown, timeoutMs = 
     let buf = Buffer.alloc(0);
     let settled = false;
     let done = false;
+    const deadlineAt = performance.now() + timeoutMs;
     const timer = setTimeout(() => finish(new Error("timeout")), timeoutMs);
     const finish = (error?: Error) => {
       if (settled) return;
@@ -121,6 +127,7 @@ export async function requestModeld(runRoot: string, body: unknown, timeoutMs = 
               value: decoded.value,
               write: (value) => { socket.write(encodeModeldFrame(value)); },
               stopped: () => settled,
+              remainingMs: () => deadlineAt - performance.now(),
             });
             if (next.emit !== undefined) frames.push(next.emit);
             if (next.done) {
@@ -151,7 +158,7 @@ export function streamModeld(
   body: unknown,
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): AsyncIterable<unknown> {
-  const timeoutMs = options.timeoutMs ?? 30_000;
+  const timeoutMs = options.timeoutMs ?? REQUEST_WALL_DEADLINE_MS;
   return {
     [Symbol.asyncIterator](): AsyncIterator<unknown> {
       let session: ClientSession;
@@ -170,11 +177,13 @@ export function streamModeld(
       let complete = false;
       let failure: Error | undefined;
       let buf = Buffer.alloc(0);
+      const deadlineAt = performance.now() + timeoutMs;
       const timer = setTimeout(() => settle(new Error("timeout")), timeoutMs);
       const settle = (error?: Error) => {
         if (closed) return;
         closed = true;
         clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
         try { socket.destroy(); } catch { /* ignore */ }
         if (error) failure = error;
         else if (!complete) failure = new Error("incomplete");
@@ -228,6 +237,7 @@ export function streamModeld(
                   value: decoded.value,
                   write: (value) => { socket.write(encodeModeldFrame(value)); },
                   stopped: () => closed,
+                  remainingMs: () => deadlineAt - performance.now(),
                 });
                 if (next.done) {
                   complete = true;

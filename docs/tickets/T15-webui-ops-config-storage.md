@@ -12,13 +12,13 @@ Deliver a box-local ops console for preparation/confirmed application, Bot inspe
 - Separate prepare from confirmed apply. Bind confirmation to target/revisions/expiry; use one operation identity and query unknown outcomes without redispatch.
 - Own server/modeld/control lifetimes outside browser requests; only stop owned services, never borrowed ones.
 - Build browser auth, Host/Origin/CSRF protection and finite command limits before exposing the API.
-- Separate saved selection, readiness, last observed use and Host delivery. Preserve current route-reset restrictions.
+- Separate saved selection, readiness, last observed use and Host delivery. Per-Bot official reset follows T24's qualified implementation, not the historical blanket route-reset restriction.
 
 ## Acceptance
-Use the Phase 2 exits in the implementation plan: CLI/API equivalence, concurrent writes, wrong-box refusal, read-only GET, stale confirmation, double-click/reload/disconnect, safe output and truthful partial/unknown states.
+Future pages/interaction live in [future/webui-console](../roadmap/future/webui-console.md); T29 owns implementation, T41 owns persistent monitoring. Use the Phase 2 exits and their updated contracts: CLI/API equivalence, concurrent writes, wrong-box refusal, read-only GET, stale confirmation, double-click/reload/disconnect, safe output and truthful partial/unknown states.
 
 ## Non-goals
-- SQLite in MVP; later SQLite is disposable UX cache/index only.
+- SQLite configuration/execution SoT. The blanket SQLite ban is superseded by [Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation): T41 can persist observation/history/incident before UI; management facts are not wholly disposable cache.
 - Catalog/secret CRUD, chat composer, long-term charts or a second assignment store.
 - Host ABI/SQLite access, Memory/transcript replacement or T14b compact automation.
 - Runtime mutation over arbitrary Profile, daemon/SSH or raw exec/RPC.

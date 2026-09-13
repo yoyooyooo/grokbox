@@ -12,6 +12,7 @@ export const ALLOWED_EVENT_CHANNELS = [
   "memory",
   "subagents",
   "async-tasks",
+  "tray",
 ] as const;
 
 export type TargetKind = "agent" | "group";
@@ -421,6 +422,14 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     streaming: false,
   },
   {
+    path: ["agents", "ownership"],
+    usage: "grokbox agents ownership <agents...>",
+    summary: "Read official Server registrations through the Host and classify local ownership; never migrate or repair.",
+    arguments: [{ syntax: "<agents...>", description: "1 to 32 Agent IDs or unambiguous names", role: "agent", kinds: ["agent"] }],
+    options: options([], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false,
+  },
+  {
     path: ["agents", "create"],
     usage: "grokbox agents create --name <name> [agent attributes]",
     summary: "Create one non-group agent through the Gateway.",
@@ -435,7 +444,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
         { flags: "--avatar-color <color>", description: "Agent avatar color" },
         { flags: "--notify <on|off>", description: "Notify on agent updates" },
         { flags: "--hidden <on|off>", description: "Hide the agent from the sidebar" },
-        { flags: "--harness <box|temporal>", description: "Transcript harness; box is default and always sent" },
+        { flags: "--harness <box|temporal>", description: "Requested creation ownership (default box); not a migration or Server confirmation" },
         { flags: "--nonce <uuid>", description: "Stable create nonce (UUID v4)" },
       ],
       { timeout: true },
@@ -450,7 +459,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["agents", "update"],
     usage: "grokbox agents update <agent> [agent attributes]",
-    summary: "Update one non-group agent through the Gateway.",
+    summary: "Update agent profile/settings without changing Server ownership.",
     arguments: [
       { syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] },
     ],
@@ -464,7 +473,6 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
         { flags: "--avatar-color <color>", description: "Agent avatar color" },
         { flags: "--notify <on|off>", description: "Notify on agent updates" },
         { flags: "--hidden <on|off>", description: "Hide the agent from the sidebar" },
-        { flags: "--harness <box|temporal>", description: "Transcript harness; box is default and always sent" },
       ],
       { timeout: true },
     ),
@@ -678,6 +686,32 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     destructive: false,
     gateway: true,
     streaming: false,
+  },
+  {
+    path: ["alerts", "list"],
+    usage: "grokbox alerts list [--agent <id>] [--request-id <id>]",
+    summary: "Read active App warning trays; no dismissal, clearing or mutation.",
+    arguments: [],
+    options: options([
+      { flags: "--agent <id>", description: "Filter by exact agent ID" },
+      { flags: "--request-id <id>", description: "Filter by exact request ID" },
+    ], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false,
+  },
+  {
+    path: ["history", "outcome"],
+    usage: "grokbox history outcome <target> (--nonce <uuid> | --request-id <id>) [--wait-ms <n>] [--expect-harness box|temporal]",
+    summary: "Observe one send via correlated transcript and App warnings; accepted is not delivered.",
+    arguments: [{ syntax: "<target>", description: "Agent/group ID or unambiguous name/title", role: "target", kinds: ["agent", "group"] }],
+    options: options([
+      { flags: "--nonce <uuid>", description: "Original send nonce, never resend to obtain status" },
+      { flags: "--request-id <id>", description: "Exact transcript/Host request ID" },
+      { flags: "--wait-ms <n>", description: "Bounded observation wait (0..120000), default 0" },
+      { flags: "--expect-text <text>", description: "Exact expected user-visible result; progress messages do not satisfy it" },
+      { flags: "--expect-harness <box|temporal>", description: "Require a consistent declared transcript route before and after each observation" },
+      { flags: "--runtime", description: "Also correlate box-local runtime journal; requires box harness and refuses remote profiles" },
+    ], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false,
   },
   {
     path: ["history", "search"],
@@ -1086,7 +1120,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["runtime", "start"],
     usage: "grokbox runtime start --mode observe|identity|route",
-    summary: "Ensure modeld, write desired activation, optionally tick watchdog, and print status. Never re-adopts.",
+    summary: "Ensure a root-matched modeld, save desired and observe reconciliation; a new service stays foreground until signal. No adopt or autostart install.",
     arguments: [],
     options: options([
       { flags: "--mode <mode>", description: "observe, identity, or route", required: true },
@@ -1096,7 +1130,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     timeout: false,
     destructive: false,
     gateway: false,
-    streaming: false,
+    streaming: true,
     profile: false,
     localOnly: true,
   },
@@ -1114,6 +1148,76 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     streaming: false,
     profile: false,
     localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "init"],
+    usage: "grokbox runtime monitor init --confirm",
+    summary: "Initialize this installation's observation database with explicit confirmation; existing data is never replaced.",
+    arguments: [], options: options([{ flags: "--confirm", description: "Allow creating local observation storage", required: true }]),
+    stdin: "none", table: false, timeout: false, destructive: true,
+    gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "run"],
+    usage: "grokbox runtime monitor run --agents <uuid,...> --confirm [--once]",
+    summary: "Explicitly collect read-only Server facts into local observations; never send messages, change identity, or adopt Host.",
+    arguments: [], options: options([
+      { flags: "--confirm", description: "Allow the local collector and its observation writes", required: true },
+      { flags: "--agents <uuid,...>", description: "One to 32 explicit Bot UUIDs", required: true },
+      { flags: "--interval-ms <n>", description: "Serial polling interval, 10000–300000 ms; default 30000" },
+      { flags: "--once", description: "Commit one sample and stop" },
+    ]), stdin: "none", table: false, timeout: false, destructive: true,
+    gateway: false, streaming: true, profile: false, localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "snapshot"],
+    usage: "grokbox runtime monitor snapshot",
+    summary: "Read the existing local observation snapshot; never query Server, initialize storage or start a collector.",
+    arguments: [], options: options(), stdin: "none", table: false, timeout: false,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "events"],
+    usage: "grokbox runtime monitor events [--after <cursor>] [--limit <n>]",
+    summary: "Read bounded local observation events without modifying storage or product state.",
+    arguments: [], options: options([
+      { flags: "--after <cursor>", description: "Database and collector epoch cursor" },
+      { flags: "--limit <n>", description: "Page size from 1 to 200" },
+    ]), stdin: "none", table: false, timeout: false,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "incidents"],
+    usage: "grokbox runtime monitor incidents [--after <cursor>] [--limit <n>]",
+    summary: "Read local incidents; these are not Host tray alerts and do not authorize execution.",
+    arguments: [], options: options([
+      { flags: "--after <cursor>", description: "Database and collector epoch incident cursor" },
+      { flags: "--limit <n>", description: "Page size from 1 to 200" },
+    ]), stdin: "none", table: false, timeout: false,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "ack"],
+    usage: "grokbox runtime monitor ack <incident-id> --request-id <uuid> --expected-revision <n>",
+    summary: "Acknowledge a local incident with explicit request and revision; never repair identity or change execution permission.",
+    arguments: [{ syntax: "<incident-id>", description: "Local incident UUID" }],
+    options: options([
+      { flags: "--request-id <uuid>", description: "Stable management request identity", required: true },
+      { flags: "--expected-revision <n>", description: "Observed incident revision", required: true },
+    ]), stdin: "none", table: false, timeout: false, destructive: true,
+    gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "snooze"],
+    usage: "grokbox runtime monitor snooze <incident-id> --request-id <uuid> --expected-revision <n> --until-ms <n>",
+    summary: "Temporarily snooze one local incident; acknowledgement and resolution remain separate.",
+    arguments: [{ syntax: "<incident-id>", description: "Local incident UUID" }],
+    options: options([
+      { flags: "--request-id <uuid>", description: "Stable management request identity", required: true },
+      { flags: "--expected-revision <n>", description: "Observed incident revision", required: true },
+      { flags: "--until-ms <n>", description: "Absolute expiry in milliseconds; up to 24 hours", required: true },
+    ]), stdin: "none", table: false, timeout: false, destructive: true,
+    gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
     path: ["runtime", "activate"],
@@ -1149,10 +1253,13 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "log"],
-    usage: "grokbox runtime log [--follow]",
-    summary: "Read box-local runtime audit events.",
+    usage: "grokbox runtime log [--source control|host] [--follow]",
+    summary: "Read source-scoped runtime audit events without merging controller history and current Host observations.",
     arguments: [],
-    options: options([{ flags: "--follow", description: "Unsupported: fails closed; omit for a bounded event snapshot" }]),
+    options: options([
+      { flags: "--follow", description: "Unsupported: fails closed; omit for a bounded event snapshot" },
+      { flags: "--source <source>", description: "Event source: control (default) or host" },
+    ]),
     stdin: "none",
     table: false,
     timeout: false,
@@ -1223,11 +1330,23 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     localOnly: true,
   },
   {
+    path: ["runtime", "models", "persist-key"],
+    usage: "grokbox runtime models persist-key <provider/model> --from-pi <provider> --confirm",
+    summary: "Persist one catalog model's Pi API key as a private file reference; no Host restart or assignment change.",
+    arguments: [{ syntax: "<provider/model>", description: "Existing runtime catalog model id" }],
+    options: options([
+      { flags: "--from-pi <provider>", description: "Explicit Pi provider owning the API key; key is never passed in argv" },
+      { flags: "--confirm", description: "Confirm credential persistence and this model's reference update" },
+    ]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false,
+    streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["runtime", "models", "reset"],
     usage: "grokbox runtime models reset [--for <agent>]",
     summary: "Clear the box default or one bot override.",
     arguments: [],
-    options: options([{ flags: "--for <agent>", description: "Clear one bot override" }]),
+    options: options([{ flags: "--for <agent>", description: "Select native official model for one confirmed Box Bot next TURN; no global deactivate" }]),
     stdin: "none",
     table: false,
     timeout: false,
@@ -1488,6 +1607,8 @@ export function renderCommandReference(cliVersion: string): string {
 }
 
 export const GATEWAY_METHODS = [
+  "getHostStatus",
+  "getTrays",
   "listAgents",
   "searchAgents",
   "getAgentTranscriptTail",

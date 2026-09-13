@@ -232,6 +232,19 @@ export async function startDaemonHost(
       );
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
     }
+    if (method === "getAgentOwnership") {
+      assertParamKeys(params, ["agentIds", "timeoutMs"], "getAgentOwnership");
+      if (!Array.isArray(params.agentIds) || params.agentIds.some(id => typeof id !== "string")) {
+        throw new CliError("invalid_usage", "Ownership requires an Agent UUID array.");
+      }
+      const value = await gateway.getAgentOwnership(params.agentIds as string[], asNumber(params.timeoutMs, 15_000));
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "getTrays") {
+      assertParamKeys(params, ["timeoutMs"], "getTrays");
+      const value = await gateway.getTrays(asNumber(params.timeoutMs, 10_000));
+      return { result: value.trays, gateway: gatewayMeta(value.discovery) };
+    }
     if (method === "getAgentMemories") {
       const value = await gateway.getAgentMemories(asString(params.id), asNumber(params.timeoutMs, 10_000));
       return { result: value.result, gateway: gatewayMeta(value.discovery) };

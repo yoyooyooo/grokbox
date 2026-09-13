@@ -1,36 +1,48 @@
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { Deferred, Effect, Fiber, Layer } from "effect";
+import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
+import type { Server } from "node:net";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { BoxRuntimeError, OWNED_SHUTDOWN_MS } from "@grokbox/runtime-kernel/contract";
 import { AdmissionAuthority } from "@grokbox/runtime-kernel/ports";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
 import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { modeldStorePorts } from "../io/store.node.ts";
+import { readManagedOwnership, type OwnershipReader } from "../io/ownership-admission.node.ts";
 import { writeModeldStepOutcome } from "../io/modeld-outcome.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
-import { probeModeldHealth, modeldSocketPath } from "../wire/modeld-probe.node.ts";
+import { probeModeldHealth, probeModeldIdentity, modeldRootId, modeldSocketPath } from "../wire/modeld-probe.node.ts";
 import { serveModeld } from "../modeld/server.node.ts";
 import { sameConnectionHostCompactLayer } from "../modeld/same-connection-compact.ts";
 import type { ListenHooks, ReleaseStatus, ResourceCounts } from "../modeld/unix-listen.node.ts";
 
 /** Fail-closed: only store `committed` route+attestation+host is admitted. */
-export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string): Layer.Layer<AdmissionAuthority> {
+export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string, ownershipRead?: OwnershipReader): Layer.Layer<AdmissionAuthority> {
+  const ports = modeldStorePorts(durableRoot, runRoot);
   return Layer.succeed(AdmissionAuthority, {
-    current: () => Effect.promise(async () => {
-      try {
-        const authority = await modeldStorePorts(durableRoot, runRoot).authority();
-        return { admitted: authority.state === "committed" };
-      } catch {
-        return { admitted: false };
-      }
-    }),
+    current: (request) => Effect.gen(function* () {
+      const authority = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
+      if (authority.state !== "committed") return { admitted: false };
+      if (!request) return { admitted: true };
+      const host = authority.host;
+      if (request.hostEpoch.compile !== host.generationId || request.hostEpoch.source !== host.sourceSha
+        || request.hostEpoch.hostIdentity !== host.identitySha) return { admitted: false };
+      const observed = yield* readManagedOwnership({ agentId: request.agentId, read: ownershipRead, gatewayPid: host.pid });
+      // The native read can span a deployment: never combine two generations.
+      const after = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
+      if (after.state !== "committed" || after.host.generationId !== host.generationId || after.host.identitySha !== host.identitySha) return { admitted: false };
+      return { admitted: true, ownership: { ...observed.evidence,
+        scopeId: sha256Text(canonicalJson([observed.evidence.scopeId, observed.gateway.pid, observed.gateway.startedAt])),
+      } };
+    }).pipe(Effect.catch(() => Effect.succeed({ admitted: false }))),
   });
 }
 
 export function admitAllAuthorityLayer(): Layer.Layer<AdmissionAuthority> {
   return Layer.succeed(AdmissionAuthority, {
-    current: () => Effect.succeed({ admitted: true }),
+    current: () => Effect.map(Clock.currentTimeMillis, observedAtMs => ({ admitted: true,
+      ownership: { scopeId: "a".repeat(64), serverId: "owned-test-server", observedAtMs } })),
   });
 }
 
@@ -59,6 +71,10 @@ export type ModeldRootOptions = {
   counts?: ResourceCounts;
   hooks?: ListenHooks;
   maxClients?: number;
+  ownershipRead?: OwnershipReader;
+  /** The command/root lifetime, not a request or browser subscription. Borrowed
+   * services are never interrupted by this signal. */
+  signal?: AbortSignal;
 };
 
 export function modeldRootLayer(options: {
@@ -67,28 +83,54 @@ export function modeldRootLayer(options: {
   env?: NodeJS.Dict<string>;
   serviceEpoch: string;
   fetch?: typeof fetch;
+  ownershipRead?: OwnershipReader;
 }) {
   const store = openRuntimeStore(options.durableRoot, options.env);
   const config = configurationReadLayer(store);
   const auth = createLiveBackendAuth(options.env ?? {});
   const backend = dispatchingModelBackendLayer(options.fetch ?? globalThis.fetch, auth.unseal);
   return config.pipe(
-    Layer.merge(liveAdmissionAuthorityLayer(options.durableRoot, options.runRoot)),
+    Layer.merge(liveAdmissionAuthorityLayer(options.durableRoot, options.runRoot, options.ownershipRead)),
     Layer.merge(auth.layer),
     Layer.merge(backend),
     Layer.merge(inferenceMemoryLayer({ serviceEpoch: options.serviceEpoch })),
   );
 }
 
+/** The wait unregisters callbacks before normal listener finalization. */
+function listenerLifetime(server: Server): Effect.Effect<never, BoxRuntimeError> {
+  return Effect.callback<never, BoxRuntimeError>(resume => {
+    const closed = () => resume(Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_closed")));
+    const failed = () => resume(Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_error")));
+    if (!server.listening) { closed(); return; }
+    server.once("close", closed);
+    server.once("error", failed);
+    return Effect.sync(() => { server.off("close", closed); server.off("error", failed); });
+  });
+}
+
 export type ModeldEnsure =
-  | { kind: "borrowed"; path: string }
+  | { kind: "borrowed"; path: string; generation?: string }
   | { kind: "owned"; path: string; generation: string };
+
+/** A responsive old/foreign service is not proof that it consumes this root.
+ * Refuse instead of rewriting configuration under another service's socket. */
+function borrowModeld(options: ModeldRootOptions) {
+  return Effect.gen(function* () {
+    const identity = yield* Effect.promise(() => probeModeldIdentity(options.runRoot, 500));
+    if (!identity) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_identity_unavailable"));
+    if (identity.rootId !== modeldRootId(options.durableRoot, options.runRoot)) {
+      return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_root_mismatch"));
+    }
+    return { kind: "borrowed" as const, path: modeldSocketPath(options.runRoot), generation: identity.generation };
+  });
+}
 
 export function ensureModeld(options: ModeldRootOptions) {
   return Effect.gen(function* () {
     const path = modeldSocketPath(options.runRoot);
     const healthy = yield* Effect.promise(() => probeModeldHealth(options.runRoot, 200));
-    if (healthy) return { kind: "borrowed" as const, path };
+    if (healthy) return yield* borrowModeld(options);
     if (existsSync(path)) {
       return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld socket exists"));
     }
@@ -99,11 +141,13 @@ export function ensureModeld(options: ModeldRootOptions) {
       env: options.env,
       serviceEpoch: generation,
       fetch: options.fetch,
+      ownershipRead: options.ownershipRead,
     });
     yield* Effect.gen(function* () {
-      yield* serveModeld({
+      const listener = yield* serveModeld({
         path,
         generation,
+        rootId: modeldRootId(options.durableRoot, options.runRoot),
         observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
         counts: options.counts,
         hooks: options.hooks,
@@ -111,7 +155,7 @@ export function ensureModeld(options: ModeldRootOptions) {
         env: options.env ?? process.env,
         ...compactAttach(options.env ?? process.env),
       });
-      yield* Effect.never;
+      yield* listenerLifetime(listener.server);
     }).pipe(Effect.provide(layer));
     return { kind: "owned" as const, path, generation };
   });
@@ -119,6 +163,9 @@ export function ensureModeld(options: ModeldRootOptions) {
 
 export type StartedModeld = {
   ensure: ModeldEnsure;
+  /** This acquired lifetime, not the borrowed external owner's lifetime.
+   * Settles after Scope cleanup; unexpected service loss rejects. */
+  finished: Promise<void>;
   stop: () => Promise<void>;
 };
 
@@ -126,11 +173,15 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
   const ready = await Effect.runPromise(Deferred.make<ModeldEnsure, Error>());
   const release: ReleaseStatus = options.hooks?.release ?? { ok: true };
   const hooks: ListenHooks = { ...options.hooks, release };
+  // runFork may be interrupted before evaluating its first instruction when the
+  // signal is already aborted. Refuse before starting that otherwise-unobserved
+  // fiber so the public ready promise cannot be left pending forever.
+  if (options.signal?.aborted) throw new BoxRuntimeError("invalid_usage", "modeld_start_cancelled");
   const fiber = Effect.runFork(Effect.scoped(Effect.gen(function* () {
     const path = modeldSocketPath(options.runRoot);
     const healthy = yield* Effect.promise(() => probeModeldHealth(options.runRoot, 200));
     if (healthy) {
-      yield* Deferred.succeed(ready, { kind: "borrowed", path });
+      yield* Deferred.succeed(ready, yield* borrowModeld(options));
       return;
     }
     if (existsSync(path)) {
@@ -144,11 +195,13 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
       env: options.env,
       serviceEpoch: generation,
       fetch: options.fetch,
+      ownershipRead: options.ownershipRead,
     });
     yield* Effect.gen(function* () {
-      yield* serveModeld({
+      const listener = yield* serveModeld({
         path,
         generation,
+        rootId: modeldRootId(options.durableRoot, options.runRoot),
         observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
         counts: options.counts,
         hooks,
@@ -156,23 +209,34 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
         env: options.env ?? process.env,
         ...compactAttach(options.env ?? process.env),
       });
+      if (!listener.server.listening) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_closed"));
       yield* Deferred.succeed(ready, { kind: "owned", path, generation });
-      yield* Effect.never;
+      yield* listenerLifetime(listener.server);
     }).pipe(Effect.provide(layer));
-  }).pipe(Effect.tapError((error) => Deferred.isDone(ready).pipe(
-    Effect.flatMap((done) => done ? Effect.void : Deferred.fail(ready, error instanceof Error ? error : new Error(String(error)))),
-  )))));
+  })).pipe(Effect.onExit(exit => Deferred.isDone(ready).pipe(
+    // Complete failure only after the resource Scope has finalized. tapError
+    // inside the Scope missed defects/interruption and could leave callers
+    // waiting forever even though startup had already stopped.
+    Effect.flatMap(done => done ? Effect.void : Exit.isFailure(exit)
+      ? Deferred.failCause(ready, exit.cause)
+      : Deferred.fail(ready, new BoxRuntimeError("invalid_usage", "modeld_stopped_before_ready"))),
+  ))), { signal: options.signal });
   const ensure = await Effect.runPromise(Deferred.await(ready));
+  const finished = Effect.runPromise(Fiber.await(fiber)).then(exit => {
+    if (!release.ok) throw new BoxRuntimeError("invalid_usage", "cleanup_gap");
+    if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
+  });
+  // The lifetime can end while the caller is still publishing readiness.
+  void finished.catch(() => undefined);
   return {
-    ensure,
+    ensure, finished,
     stop: async () => {
-      await Effect.runPromise(
-        Fiber.interrupt(fiber).pipe(
-          Effect.timeout(`${OWNED_SHUTDOWN_MS} millis`),
-          Effect.catchCause(() => Effect.void),
-        ),
-      );
-      if (!release.ok) throw new Error("cleanup_gap");
+      const stopped = await Effect.runPromise(Effect.exit(
+        Fiber.interrupt(fiber).pipe(Effect.timeout(`${OWNED_SHUTDOWN_MS} millis`)),
+      ));
+      // Optional counters are diagnostics, not proof that a timed-out finalizer
+      // completed. A later caller may wait again, but this receipt stays a gap.
+      if (Exit.isFailure(stopped) || !release.ok) throw new Error("cleanup_gap");
       if (options.counts && options.counts.listeners > 0) throw new Error("cleanup_gap");
     },
   };

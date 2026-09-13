@@ -3,16 +3,17 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { OWNERSHIP_SERVER_CACHE_MS } from "@grokbox/runtime-kernel/contract";
 import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
 import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts";
 import { bindHostSessionHook } from "./internal/host/session-hook.ts";
-import { bindHostCompactHook, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
-import { bindHarnessStickHook } from "./internal/host/harness-stick.ts";
+import { bindHostCompactHook, isHostManagedRootActive, recordHostManagedStepFailure, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
+import { bindHostOwnershipRead, HOST_OWNERSHIP_READ_SYMBOL } from "./internal/host/ownership-read.ts";
 import { wrapHostAuxExecutor } from "./internal/host/aux-purpose.ts";
 import { bindCompiledHost } from "./internal/host/host-binding.ts";
-import { asHostPromptSession, createStreamingPromptSession, InvalidHostStateError } from "./internal/host/session.ts";
-import { HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_HARNESS_STICK_SYMBOL, PACKED_SESSION_SYMBOL, ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
+import { asHostPromptSession, createStreamingPromptSession, InvalidHostStateError, isHostManagedFailure } from "./internal/host/session.ts";
+import { HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, PACKED_SESSION_SYMBOL, ROUTE_SESSION_SYMBOL, type PatchProfile } from "./internal/host/profile.ts";
 
 const target = process.env.GROKBOX_HOST_BUNDLE ?? LIVE_HOST_BUNDLE;
 const profilePath = process.env.GROKBOX_PATCH_PROFILE;
@@ -60,10 +61,13 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       transformedSha256: profile.transformedSourceSha256,
     },
   });
-  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_HARNESS_STICK_SYMBOL)] = bindHarnessStickHook();
+  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_OWNERSHIP_READ_SYMBOL)] = bindHostOwnershipRead({ cacheMs: OWNERSHIP_SERVER_CACHE_MS });
   if (admittedMode === "route") {
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_AUX_SYMBOL)] = wrapHostAuxExecutor;
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook(stateSystemCompactHookOptions());
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_SYMBOL)] = isHostManagedRootActive;
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_FAILURE_SYMBOL)] = isHostManagedFailure;
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_FAILURE_SYMBOL)] = recordHostManagedStepFailure;
   }
   installCompileHook({
     targetPath: target,
@@ -99,5 +103,10 @@ if (process.env.GROKBOX_PACKED_SESSION_FACTORY === "1" && process.env.GROKBOX_AL
     asHostPromptSession,
     createStreamingPromptSession,
     InvalidHostStateError,
+    // Same explicit test-only/live-excluded boundary as the session factory.
+    // These are the bundled production functions, not substitute gate logic.
+    bindHostSessionHook,
+    bindHostOwnershipRead,
+    isHostManagedFailure,
   };
 }

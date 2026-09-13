@@ -2,11 +2,25 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**状态：修正规格，尚未实现或验收；B 还不能标 closed。** 本页只拥有“managed 额外上下文损失”的预防修正和验收，不复制 [Host 主链地图](host-inbound-agent-loop.md)，不重排历史 tickets，不启动 [HSO](../roadmap/host-seam-ops-recognition.md)。源码基线 `pre-publication-revision`，核对日期 2026-09-10。
+**状态（2026-09-12）：部分已实现/有界验证；B 仍未 closed。** 当前交付归 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery)、恢复归 [T32/T35](../tickets/T32-runtime-confirmed-compact.md)，本页保留 F/E 合同的唯一 owner。基线 `pre-publication-revision` 已有 F1 executor 隔离、F2 invalid getter 拒绝、F3 canonical window/selection/usage 投影，以及 F5 purpose admission；E01–E06/E08 source 与 packed 主体通过，E07 admission 通过但完整矩阵 partial。本轮未提交工作树已修复 E09 过期 pin：Bun 1.3.14 两次相同构建，source 61 pass、packed 35+11 pass，packed E09 pass；verifier 新增 toolchain/worktreeDirty 证据。E10/E11/native 仍未完整资格化。不要按下文 2026-09-10 旧缺陷快照重做现有实现。 本页只拥有“managed 额外上下文损失”的预防修正和验收，不复制 [Host 主链地图](host-inbound-agent-loop.md)，不重排历史 tickets，不启动 [HSO](../roadmap/host-seam-ops-recognition.md)。源码基线 `pre-publication-revision`，核对日期 2026-09-10。
 
 Owner 已选择 **B：修正可复发机制并以新 e2e 关闭** 为主。A（test0 早期上下文究竟何时、为何消失）记为 **closed-notProven**；只有新的直接前态/写入证据才重开，不再从 archive 覆盖时间反推 compact 执行时间。
 
 依据：[D1 双向保真 / D3 Host context与Memory所有权](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md)、`PRIVATE_EVIDENCE`（R1）、`PRIVATE_EVIDENCE`（R2）及主链地图。R1优先于早期amnesia census的冲突判断。原收据/证据保留，本页不搬运私有会话或原生Host源码。
+
+## 当前施工与新增往返门（2026-09-12）
+
+本页F/E保持数据安全的唯一合同；新增[T39](../tickets/T39-native-model-roundtrip.md)承接官方→A→B→官方→A、custom checkpoint的原生回程与原版App完整旅程，不另定义F/E。T24提供可逆选择，T26提供原生双向流，T32/T35提供合格压缩/恢复；T37/T38先保证归属与writer不会制造分支。
+
+| 既有合同 | T39补的完整证据 |
+|---|---|
+| F1/F2、E01/E02/E08 | custom保存的合法原生state由官方消费者新进程读回，非法窗口不会替代旧root |
+| F3、E05/E06 | A/B窗口不同与旧TURN固定选择；真实usage未知不归零，回官方不重新猜容量 |
+| F4/F5、E07 | 同原生会话Memory/episode实际经过；错误/半输出不成为Memory，切模型不换writer |
+| F6、E09 | 同候选source/packed/profile/原生版本，输入漂移不能借旧绿 |
+| E04/E10/E11 | 真恢复后续聊和checkpoint重启，原版App与官方回程，不用UI历史填prompt |
+
+Prompt cache属于性能证据，不是会话SoT：同原生窗口的历史投影不因App/cache来源变化而重写；冷缓存不损上下文，未知缓存统计不造0。完整矩阵、真实B与失败oracle归T39；本页旧计数为历史窗口，本轮没有新跑用例。
 
 ## 1. 产品锁与“关闭”的精确含义
 
@@ -90,7 +104,7 @@ H为主链地图中固定SHA的`host-main.cjs`。这里“已证”指源码和�
 - summary启动/接受/epoch、root/message/archive引用的读回；新进程只能从owned root恢复，不能继承测试RAM或把UI喂回去。
 - provider/aux/tool/delivery调用次数、关联id、禁用side effects的attempts及实际effects、异常/退出码；不以最终文本或计数大于0当完整证明。
 
-### 验收矩阵（均为待实现测试，不是本轮通过结果）
+### 验收矩阵（合同要求；实际已证子集与缺口见本页顶部和 verifier，非全部待实现）
 
 | case | 输入/动作 | 必须直接断言 / 会杀死的坏变体 |
 |---|---|---|
@@ -110,7 +124,7 @@ E01/E02用property-based合法操作序列补边界；E04/E08新进程不能用�
 
 ### 执行入口与证据上限
 
-实施时新增单一 verifier（以下命令当前尚不存在）：
+已存在的单一 verifier（执行输出必须保留 supports / notProven；入口存在不等于全矩阵通过）：
 
 ```bash
 bun scripts/verify-context-continuity.mjs --lane contract-e2e --json
@@ -131,4 +145,4 @@ verifier先明确reality与范围，逐案输出assertion/failure/mutant结果�
 4. **F5窄接口gate → E07/E10**：明确purpose/aux identity/生命周期与D2批准后落地；没批/没证则该片blocked，前几片可继续，但**不能标整个B关闭**。
 5. 完整E01–E11、source/artifact和所声称的native资格均给出实际收据；任何剩余M1–M6未闭合或关键case未执行，输出partial/notQualified。测试与源证明是版本/边界受限的，不把有限测试提升为任意未来代码的绝对保证。
 
-**建议下一步启动实现：是，先离线F1/F2及其红测；不启动live、不重开A。** F3的真实容量值与F5额外接缝批准是明示的局部gate。部署/Host刷新只有在已完成所需offline资格、写出确切blocker并另获owner「继续」后考虑；本页不是该授权。
+**当前下一步：复用已有F1/F2/F3/F5与已恢复的制品证明；按T37/T38准入条件推进T39的原生回程，补日用必需E07/E10/E11。** 当前E09是否通过按本次verifier输出，不按本文更早的红/绿快照；任何新产物仍须重验。 更广 proactive/更多模型后移，但当前旅程依赖的 usage/Memory/reload 不能删出稳定门。不重开历史 A；live 依 Spec S0/S9 和 readiness 的明确窗口。 F3的真实容量值与F5额外接缝批准是明示的局部gate。部署/Host刷新只有在已完成所需offline资格、写出确切blocker并另获owner「继续」后考虑；本页不是该授权。

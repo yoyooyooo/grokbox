@@ -11,25 +11,27 @@ This file is for operators who otherwise re-research Working / trays / activity 
 | User-facing mark | Owner | Host / Gateway fact | Not the same as |
 |---|---|---|---|
 | Sidebar **Working** | Gateway overlay on Host run counts | `isRunning` / `isRunningTurn` from `beginSessionRun` / `inFlightRunCounts` | Composer named activity |
-| Composer-above **Working** / named activity | Host activity map, then Gateway `currentActivity` | proto `onUpdate` → `handleAgentUpdate` → `trackActivityFromUpdate` → `sessionActivities` | Sidebar Working, tray |
+| Trailing/composer-area generic **Working / typing** | App current-session projection of live run facts | App `Ibt`: running + composing choose working/typing; no `currentActivity` prerequisite | Named activity; Bot-wide sidebar aggregate |
+| Specific activity label (thinking/tool/wait) | Host activity map or valid server activity overlay, then current-session selector | `handleAgentUpdate` → activity transition → `sessionActivities/currentActivity` | Generic working; message streaming |
+| Assistant message streaming | The installed transcript entry | `message.isStreaming` or `send-message.streaming` | Whole TURN or Bot still running |
 | Error tray above composer | Host RAM `TrayManager` | SAND-E04xx / classified turn failure on current epoch | Working, `lastTurnSettlement` |
 | Turn settlement | Host KV | `lastTurnSettlement` (nonce error/success) | Tray push, activity, App pixels |
 
-Sidebar Working does **not** require proto deltas. Composer-above Working **does**.
+**2026-09-12 correction from the actual App 0.47 renderer:** generic Working does **not** require proto deltas or a non-null `currentActivity`. `Ibt/Nbt` selects working from running=true/composing=false; the specific activity label adds richer information. Final indicator mounting also depends on pending/failed sends, permission widgets, group typing and current-session scope. Neither a missing activity field nor a present one alone proves whether the App must spin.
 
 App pixel claims (exact composer chrome, renderer strings, whether a trailing `activity-indicator` is enough) stay **N / notProven** unless a live App poll or screenshot is cited. Host line numbers in the inbound map are pinned to **that document’s SHA**, not to an unnamed live PID.
 
 ## Grokbox managed-turn restore
 
-Live `create-session` wraps `createCursorInferencePromptSession` so STEP streams come from grokbox `fullStream` instead of Cursor proto `AgentService.Run`. Official proto `thinkingDelta` / `textDelta` therefore never reach `handleAgentUpdate` unless grokbox forwards a Host-shaped update.
+Live `create-session` wraps `createCursorInferencePromptSession` so STEP streams come from grokbox `fullStream` instead of the original inference session's update path. The managed adapter must preserve the Host activity/update contract; do not label this replacement as `AgentService.Run` without exact source evidence.
 
-Slice `activity-bridge` stashes the Host `emitUpdate` sink on `Symbol.for("grokbox.box-runtime.host-activity.v1")`; managed `onFirstChunk` calls `emitHostActivity({ type: "thinking-delta", text: " " })`. Official proto still uses the same sink. Missing sink or throw is a no-op for inference. Sidebar Working can appear at `beginSessionRun`; composer `currentActivity` waits for that first chunk.
+Slice `activity-bridge` stashes the Host `emitUpdate` sink on `Symbol.for("grokbox.box-runtime.host-activity.v1")`; managed `onFirstChunk` calls `emitHostActivity({ type: "thinking-delta", text: " " })`. Official proto still uses the same sink. Missing sink or throw is a no-op for inference. Sidebar run state can appear at `beginSessionRun`; the bridge's named `currentActivity` waits for first chunk. This interval does not prove the App's generic Working is intentionally absent.
 
 Always-emit roster `harness=box|temporal` does **not** change this path: omit-box and `"box"` both read Host `sessionActivities`. Only `harness === "temporal"` uses the server activity overlay (no `activity-bridge`).
 
 No-STEP compact / memory still declines to the original session. HostCompact remains opt-in (`GROKBOX_MODELD_HOST_COMPACT=== "1"` on modeld only). Overflow canary intercept is a separate default-off modeld pair (`GROKBOX_MODELD_OVERFLOW_CANARY_*`). Owner unlocked that live path 2026-09-11 evening; unset stays off. See [t32-live-enable-readiness](t32-live-enable-readiness.md).
 
-Desktop composer-above miss after Gateway `currentActivity` is already set is the [Composer Working residual](composer-working-status.md) (App pixels / coordinator Cmd-Q / official unload) — not a missing tip slice.
+A missing indicator after valid Gateway activity is a consumer/routing/projection investigation, not proof that the whole product is correct. [Composer Working residual](composer-working-status.md) owns the open check; Cmd-Q/Host unload are not automatic fixes for restored routing.
 
 ## Evidence
 
@@ -41,4 +43,6 @@ Do not treat a single Gateway field as “the App looks fine.”
 
 ## Transcript source (pointer)
 
-Historical bubbles are a different surface from Working / tray. Stock App/Host may paint Cursor server transcript while box `store.db` has the `SendToUser` rows. Grokbox intercept requires Host `harness=box`; CLI `--harness` always sends the field, and Host `updateAgent` does not persist it (offline Host source). See [Transcript harness: box vs temporal](transcript-harness-box-vs-server.md).
+History, live run/activity and per-entry streaming are different surfaces, but must share the selected conversation route and scope. App `yW` uses a temporal row to replace run/composing/activity with server state; a wrong harness can therefore corrupt both history selection and Working. Mac's inspected roster cache does not itself contain live working fields; cached routing can indirectly select the wrong live source. See [Transcript harness](transcript-harness-box-vs-server.md).
+
+Private original-source map and test0-versus-test2 observations live in `PRIVATE_EVIDENCE`; the isolated original-renderer replay is `scripts/verify-desktop-working-projection.cjs` in that research repository (7 assertions, not live GUI proof). Current test0 is box in both Gateway and inspected Mac roster, unlike test2's temporal cached row. Do not reinterpret test0's historical context-amnesia closed-notProven as a proven routing fork. No private App source is vendored into grokbox.

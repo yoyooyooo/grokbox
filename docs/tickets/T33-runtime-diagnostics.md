@@ -26,6 +26,12 @@
 5. journal/compaction 并发保持 J13 分工，截断或不支持的历史 schema 只报 gap，不删除历史或猜补关联。JSON/UI/log/export 均只用安全 DTO。
 6. 复跑 status/control/layout；**Astra 复审 claim ceiling、来源/缺口与负对照**。真实 Host 读取/现役观察若需要，另获授权；未证明能力保留 blocked/未完成项，不能用全绿关闭产品义务。
 
+## T41的观测索引不是新的执行审计权威
+
+[T41](T41-continuous-observation-and-alerting.md)承接持续采样/SQLite索引、observed transitions、incident与通知；本票保留原始diagnostics的来源、序号、retention/gap及交付证据。读SQLite时引用仍在的原日志位置；来源已淘汰则报告不可重建，不能用聚合表补造精确事件。
+
+旧“SQLite审计权威”禁令针对替代Host/模型/控制的事实writer，不禁止T41保存自己产生的ack/snooze/notification事实；其本域数据不可全当可丢缓存。更长期统计和多渠道升级归[future](../roadmap/future/notification-escalation.md)，不让monitor建设膨胀为trace/analytics平台。
+
 ## Non-goals / out-of-scope
 新 trace/analytics 平台、收费计量、authoritative SQLite、Host/store writer、自动恢复、compactor 产品或 provider SDK 行为改造。
 

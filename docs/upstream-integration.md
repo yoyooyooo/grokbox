@@ -31,6 +31,8 @@ Protected requests use a Gateway bearer credential. The credential is high privi
 The implemented method allowlist is:
 
 ```text
+getHostStatus
+getTrays
 listAgents
 searchAgents
 getAgentTranscriptTail
@@ -49,6 +51,12 @@ deleteAgent
 Every write has an explicit schema and command. Groups reject nested groups, membership is bounded, updates preserve required existing fields, and uncertain delivery is not blindly replayed.
 
 `sendPrompt` represents one Human message to an ordinary agent or group. It is not peer delivery, an administrative broadcast, approval resolution, or arbitrary host execution.
+
+## Official registration inspection via Host
+
+A versioned optional `grokboxOwnershipAgentIds` field on the existing `getHostStatus` request activates the grokbox Host read bridge. It is absent from ordinary status requests. The native Host Gateway deps expose `environment` directly (not `context.host.environment`); the bridge constructs its official client with that backend and the Host auth API. Only `ListGrokBotAgents` is borrowed, with cancellation/deadline and target projection; no token value or generic remote invocation crosses Gateway.
+
+Server responses distinguish public `agentId`, Server row `id` and `harness`. Generic identity Update does not carry harness, and the native App's server-roster view may filter to temporal rows. Ownership inspection must therefore use unfiltered original List evidence, not infer box from an omitted row. Official controlled migration is separate, has side effects, and is not invoked by this command. Exact finite DTO/classifier and synthetic interoperability tests are in `ownership-read.ts`, `ownership-slices.ts`, CLI `ownership.ts`, and their tests. Unsupported Host versions remain unavailable, never silently replaced with local evidence.
 
 ## Capability separation
 

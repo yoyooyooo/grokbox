@@ -17,7 +17,8 @@ import { serveModeld } from "../src/internal/modeld/server.node.ts";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { asHostPromptSession, createStreamingPromptSession } from "../src/internal/host/session.ts";
 import { createModeldProduce } from "../src/internal/host/modeld-produce.node.ts";
-import type { HostBinding } from "../src/internal/host/host-binding.ts";
+import { bindCompiledHost, type HostBinding } from "../src/internal/host/host-binding.ts";
+import { ownedOwnershipReader } from "./ownership-fixture.ts";
 import { probeModeldHealth } from "../src/internal/wire/modeld-probe.node.ts";
 import { hostEventsPath } from "../src/internal/host/terminal-journal.node.ts";
 import { collectStreamParts } from "./host-consumer.ts";
@@ -50,14 +51,18 @@ const TEST_COMPILE = {
   transformedSha256: HEX("d"),
 };
 
-function produceFor(runRoot: string, turnId: string, model: ModelRecord = STUB_ECHO_MODEL) {
+const PRODUCTION_COMPILE = { profileId: "p", profileSha256: HEX("e"), sourceSha256: HEX("e"), transformedSha256: HEX("e") };
+const PRODUCTION_IDENTITY = { pid: process.pid, uid: 1, ppid: 1, start: 1, exe: "/bin/test", cmdline: ["node"], ancestry: [1] };
+const PRODUCTION_BINDING = bindCompiledHost(PRODUCTION_IDENTITY, "op-1", PRODUCTION_COMPILE);
+
+function produceFor(runRoot: string, turnId: string, model: ModelRecord = STUB_ECHO_MODEL, binding = TEST_BINDING, bridgeDigest = ROOT.bridgeDigest) {
   return createModeldProduce({
     runRoot,
     agentId: "agent-tom",
     modelId: model.id,
     selectionRevision: computeSelectionRevision({ agentId: "agent-tom", model }),
-    binding: TEST_BINDING,
-    bridgeDigest: ROOT.bridgeDigest,
+    binding,
+    bridgeDigest,
     turnId,
     profileId: ROOT.profileId,
     abiIdentity: ROOT.abiIdentity,
@@ -198,14 +203,14 @@ describe("host fullStream unix", () => {
     });
     const previousFetch = globalThis.fetch;
     globalThis.fetch = fetchImpl;
-    const started = await startModeldProcess({ durableRoot: durable, runRoot, env: { OPENAI_API_KEY: "sk-test" } });
+    const started = await startModeldProcess({ durableRoot: durable, runRoot, env: { OPENAI_API_KEY: "sk-test" }, ownershipRead: ownedOwnershipReader(process.pid) });
     await waitReady(runRoot);
     try {
       const session = asHostPromptSession(createStreamingPromptSession({
         modelId: openaiModel.id,
         vision: false,
         parallel: "fail-closed",
-        produce: produceFor(runRoot, "HOST_TURN_STREAM", openaiModel),
+        produce: produceFor(runRoot, "HOST_TURN_STREAM", openaiModel, PRODUCTION_BINDING, PRODUCTION_COMPILE.transformedSha256),
       }), openaiModel.id, undefined, { requireStepId: true, contextWindowTokens: 200000 });
       const handle = session.getExecutor([{ role: "user", content: "stream-me" }]).stream({}, "step-live");
       const iterator = handle.fullStream[Symbol.asyncIterator]();
@@ -388,11 +393,11 @@ describe("host fullStream unix", () => {
       launchMode: "direct-launch",
       compile: { profileId: "p", profileSha256: sha, sourceSha256: sha, transformedSha256: sha },
     });
-    const started = await startModeldProcess({ durableRoot: durable, runRoot, env: {} });
+    const started = await startModeldProcess({ durableRoot: durable, runRoot, env: {}, ownershipRead: ownedOwnershipReader(process.pid) });
     await waitReady(runRoot);
     try {
       const hook = bindHostSessionHook({
-        mode: "route", durableRoot: durable, runRoot, binding: TEST_BINDING, compile: TEST_COMPILE,
+        mode: "route", durableRoot: durable, runRoot, binding: PRODUCTION_BINDING, compile: PRODUCTION_COMPILE,
       });
       const managed = hook({
         originalSession: { kind: "official" },

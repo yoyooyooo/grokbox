@@ -1,0 +1,108 @@
+import { expect, test } from "bun:test";
+import { createContext, runInContext } from "node:vm";
+import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import ts from "typescript";
+import { hostVisibleStreamError, InvalidHostStateError, isHostManagedFailure } from "../src/internal/host/session.ts";
+import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { HOST_MANAGED_FAILURE_SYMBOL, transformUnchecked } from "../src/internal/host/profile.ts";
+
+// Owned policy fixture. Deliberately permissive: the outer automation route must
+// not turn a managed terminal into a new TURN, bypassing the inner provider gate.
+const SOURCE = `
+function shouldRetryTurnAttempt(input) {
+  if (input.canceled) return false;
+  if (input.automationIsRetryable) return input.automationIsRetryable(input.error);
+  return input.providerRetryable && (!input.streamOutputProduced || input.resumeCheckpointAvailable);
+}
+function computeBackoffDelayMs(params) { return params.delay; }
+module.exports = shouldRetryTurnAttempt;
+`;
+type Input = {
+  error: unknown; canceled: boolean; streamOutputProduced: boolean;
+  resumeCheckpointAvailable: boolean; providerRetryable: boolean;
+  automationIsRetryable?: (error: unknown) => boolean;
+};
+function load(enabled: boolean) {
+  const patches = LIVE_SLICE_PATCHES.filter((p) => p.id === "managed-turn-retry-gate");
+  const applied = patches.length === 0 ? { ok: true as const, source: SOURCE } : transformUnchecked(SOURCE, patches);
+  if (!applied.ok) throw new Error("owned_turn_retry_fixture_invalid");
+  const module = { exports: undefined as unknown as (input: Input) => boolean };
+  runInContext(applied.source, createContext({ module, Symbol, globalThis: enabled
+    ? { [Symbol.for(HOST_MANAGED_FAILURE_SYMBOL)]: isHostManagedFailure } : {} }));
+  return module.exports;
+}
+
+test("managed terminal blocks outer automation retry before a new TURN or checkpoint replay", () => {
+  const retry = load(true);
+  const managed = hostVisibleStreamError({ code: "model_error", userVisible: true, message: "owned failure" });
+  let automationCalls = 0;
+  for (const error of [managed, new Error("native wrapper", { cause: managed }), new InvalidHostStateError()]) {
+    for (const produced of [false, true]) {
+      const input = { error, canceled: false, streamOutputProduced: produced, resumeCheckpointAvailable: true,
+        providerRetryable: true, automationIsRetryable: () => { automationCalls++; return true; } };
+      let turns = 0;
+      do { turns++; } while (turns < 4 && retry(input));
+      expect(turns).toBe(1);
+    }
+  }
+  expect(automationCalls).toBe(0);
+});
+
+test.skipIf(!existsSync(LIVE_HOST_BUNDLE))("exact native outer retry loop keeps managed terminal at one attempt and official retries intact", async () => {
+  const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");
+  expect(createHash("sha256").update(source).digest("hex")).toBe("307de3990394efc6b9a868537bab8504fceec3cc898cdd2ad91de68830f2f8dd");
+  const parsed = ts.createSourceFile("qualified-host.cjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const wanted = new Set(["shouldRetryTurnAttempt", "runWithTransientRetry"]);
+  const selected = new Map<string, string>();
+  function visit(node: ts.Node): void {
+    if (ts.isFunctionDeclaration(node) && node.name && wanted.has(node.name.text)) {
+      expect(selected.has(node.name.text)).toBe(false);
+      selected.set(node.name.text, node.getText(parsed));
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  expect(selected.size).toBe(2);
+  const frame = `${selected.get("shouldRetryTurnAttempt")}\nfunction computeBackoffDelayMs(params) { return 0; }\n${selected.get("runWithTransientRetry")}\nmodule.exports = { shouldRetryTurnAttempt, runWithTransientRetry };`;
+  const patches = LIVE_SLICE_PATCHES.filter((p) => p.id === "managed-turn-retry-gate");
+  const applied = transformUnchecked(frame, patches);
+  if (!applied.ok) throw new Error("native_retry_patch_failed");
+  const module = { exports: undefined as unknown as {
+    shouldRetryTurnAttempt(input: Input): boolean;
+    runWithTransientRetry(run: () => Promise<never>, policy: Record<string, unknown>): Promise<never>;
+  } };
+  runInContext(applied.source, createContext({ module, Symbol,
+    isRetryableProviderError: () => false, isFirstTokenStallError: () => false, isStreamIdleError: () => false,
+    isTransientStreamError: () => true, serverRetryAfterMsFromError: () => undefined,
+    globalThis: { [Symbol.for(HOST_MANAGED_FAILURE_SYMBOL)]: isHostManagedFailure },
+  }));
+  const managed = hostVisibleStreamError({ code: "model_error", userVisible: true, message: "owned" });
+  for (const [error, expected] of [[managed, 1], [new Error("wrap", { cause: managed }), 1], [new Error("official"), 4]] as const) {
+    let calls = 0;
+    let sleeps = 0;
+    await expect(module.exports.runWithTransientRetry(async () => { calls++; throw error; }, {
+      maxAttempts: 4, baseDelayMs: 0, maxDelayMs: 0, sleep: async () => { sleeps++; },
+      isRetryable: (error: unknown) => module.exports.shouldRetryTurnAttempt({
+        error, canceled: false, providerRetryable: false, streamOutputProduced: false,
+        resumeCheckpointAvailable: true, automationIsRetryable: () => true,
+      }),
+    })).rejects.toBe(error);
+    expect(calls).toBe(expected);
+    expect(sleeps).toBe(expected - 1);
+  }
+});
+
+test("official retry, cancellation, and missing-hook behavior are unchanged", () => {
+  const on = load(true);
+  const off = load(false);
+  const official = new Error("official outage");
+  const forged = Object.assign(new Error("provider controlled"), { name: "RetriableError", code: "model_error" });
+  for (const error of [official, forged]) {
+    expect(on({ error, canceled: false, streamOutputProduced: false, resumeCheckpointAvailable: false, providerRetryable: true })).toBe(true);
+    expect(on({ error, canceled: true, streamOutputProduced: false, resumeCheckpointAvailable: true, providerRetryable: true })).toBe(false);
+    expect(on({ error, canceled: false, streamOutputProduced: true, resumeCheckpointAvailable: false, providerRetryable: true })).toBe(false);
+  }
+  const managed = hostVisibleStreamError({ code: "model_error", userVisible: true, message: "owned failure" });
+  expect(off({ error: managed, canceled: false, streamOutputProduced: false, resumeCheckpointAvailable: false, providerRetryable: true })).toBe(true);
+});

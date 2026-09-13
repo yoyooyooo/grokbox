@@ -249,16 +249,22 @@ describe("Host messages/state/tools/options envelope", () => {
     expect(leaked).not.toContain("private-");
     expect(leaked).not.toContain("acceptedUnadvertisedToolNames");
     expect(leaked).not.toContain("msg-host-1");
-    const refused = f.session.getExecutor([{
+    const metadataWindow = [{
       role: "user",
       content: "host-plain-text",
       _privacyMode: "UNSPECIFIED",
       attachments: ["private-attachment"],
-    }]);
-    expect(() => refused.getState()).toThrow(EnvelopeError);
-    await expect(refused.stream({}, "inv-host-unknown-keys", tools, {}).response).rejects.toMatchObject({
-      name: "RetriableError", userVisible: true,
-    });
+    }];
+    const retained = f.session.getExecutor(metadataWindow);
+    expect(retained.getState()).toEqual(metadataWindow);
+    await expect(retained.stream({}, "inv-host-metadata", tools, {}).response).resolves.toMatchObject({ finishReason: "stop" });
+    expect(f.requests.at(-1)!.envelope.messages).toEqual([{ role: "user", content: "host-plain-text" }]);
+    expect(JSON.stringify(f.requests.at(-1)!.envelope)).not.toContain("private-attachment");
+    const invalid = f.session.getExecutor([{ role: "user", content: "plain", opaque: () => "private" }]);
+    expect(() => invalid.getState()).toThrow(EnvelopeError);
+    const before = f.calls.count;
+    await expect(invalid.stream({}, "inv-host-opaque", tools, {}).response).rejects.toMatchObject({ name: "RetriableError" });
+    expect(f.calls.count).toBe(before);
     expect(renderCalls).toBe(0);
   });
 

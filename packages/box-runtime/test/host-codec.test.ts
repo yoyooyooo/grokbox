@@ -4,8 +4,41 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EnvelopeError, SNAPSHOT_JSON_MAX_BYTES, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
-import { cloneHostExecutorWindow, hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
+import { buildHostEnvelope, cloneHostExecutorWindow, hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
 import { sendCcsRequest } from "../src/internal/backends/ccs-codec.ts";
+
+test("Host message metadata survives state cloning but is not provider prompt material", () => {
+  const input = [{ role: "user" as const, content: "real message", nativeExtension: { cursor: 7, label: "METADATA_ONLY_SENTINEL" }, optionalNativeField: undefined }];
+  const copied = cloneHostExecutorWindow(input);
+  expect(copied).toEqual(input);
+  expect(copied[0]).not.toBe(input[0]);
+  input[0]!.nativeExtension.cursor = 99;
+  expect(copied[0]).toHaveProperty("nativeExtension.cursor", 7);
+  const envelope = buildHostEnvelope(copied);
+  expect(envelope.messages).toEqual([{ role: "user", content: "real message" }]);
+  expect(JSON.stringify(envelope)).not.toContain("METADATA_ONLY_SENTINEL");
+});
+
+test("Host metadata cloning rejects accessors and opaque values without evaluating them", () => {
+  let reads = 0;
+  const raw = { role: "user", content: "real message" };
+  Object.defineProperty(raw, "nativeExtension", { enumerable: true, get() { reads++; return "secret"; } });
+  expect(() => cloneHostExecutorWindow([raw])).toThrow();
+  expect(reads).toBe(0);
+  expect(() => cloneHostExecutorWindow([{ role: "user", content: "real message", nativeExtension: new Date() }])).toThrow();
+});
+
+test("Host message IDs retain native data identity without weakening provider tool IDs", () => {
+  for (const id of [null, 0, 42, "", "native-message", { segment: 3, index: 7 }]) {
+    const input = [{ role: "user" as const, content: "body", id }];
+    const copied = cloneHostExecutorWindow(input);
+    expect(copied).toEqual(input);
+    expect(buildHostEnvelope(copied).messages).toEqual([{ role: "user", content: "body" }]);
+  }
+  for (const toolCallId of [null, 0, "", "a".repeat(129)]) {
+    expect(() => cloneHostExecutorWindow([{ role: "assistant", content: [{ type: "tool-call", toolCallId, toolName: "read", args: {} }] }])).toThrow(EnvelopeError);
+  }
+});
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const schema = { type: "object", properties: { q: { type: "string" } } };
@@ -190,10 +223,33 @@ describe("Host tool-result extras from live Host unredact", () => {
     expect(part.experimental_content).toEqual([{ type: "text", text: "ok" }]);
   });
 
-  test("unknown tool-result keys still fail closed", () => {
-    expect(() => cloneHostExecutorWindow([{
-      role: "tool",
-      content: [{ type: "tool-result", toolCallId: "call-1", result: {}, extra: true }],
-    }])).toThrow(EnvelopeError);
+  test("safe known-part metadata is lossless in Host state and excluded from provider material", () => {
+    const result = { type: "tool-result", toolCallId: "call-1", result: { fact: "real" }, extra: { label: "PART_METADATA_SENTINEL" } };
+    const input = [
+      { role: "assistant" as const, content: [{ type: "tool-call", toolCallId: "call-1", toolName: "lookup", args: {} }] },
+      { role: "tool" as const, content: [result] },
+    ];
+    const cloned = cloneHostExecutorWindow(input);
+    expect(cloned).toEqual(input);
+    const envelope = buildHostEnvelope(cloned);
+    expect(envelope.messages).toEqual([
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "call-1", toolName: "lookup", args: {} }] },
+      { role: "tool", content: [{ type: "tool-result", toolCallId: "call-1", result: { fact: "real" } }] },
+    ]);
+    expect(JSON.stringify(envelope)).not.toContain("PART_METADATA_SENTINEL");
+    result.extra.label = "changed";
+    expect(cloned[1]).toHaveProperty("content.0.extra.label", "PART_METADATA_SENTINEL");
+  });
+
+  test("unknown part kinds and opaque or executable part metadata still fail closed", () => {
+    let reads = 0;
+    const part = { type: "tool-result", toolCallId: "call-1", result: {} };
+    Object.defineProperty(part, "extra", { enumerable: true, get() { reads++; return "never-read"; } });
+    for (const invalid of [part,
+      { type: "tool-result", toolCallId: "call-1", result: {}, extra: () => undefined },
+      { type: "tool-result", toolCallId: "call-1", result: {}, extra: new Date() },
+      { type: "unknown-native-kind", text: "unsupported payload" },
+    ]) expect(() => cloneHostExecutorWindow([{ role: "tool", content: [invalid] }])).toThrow(EnvelopeError);
+    expect(reads).toBe(0);
   });
 });

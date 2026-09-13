@@ -2,87 +2,60 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**Role: maintainer checklist + evidence map for a future clean return to official Host.** Not a live unload. Not a second harness or Working map. Do not run this pass against a living grokbox-attested Host just to exercise rollback.
+**Current Home：完整返回未补丁Host的目标与验收；2026-09-12治理，未执行回滚。** [T40](../tickets/T40-persistent-release-and-rollback.md)拥有生命周期/发布闭环，T28提供唯一控制程序；日常逐Bot官方选择归T24，原生会话往返归T39。本文不提供通用signal权限，不修改App/产品SQLite、Server归属或官方迁移hold。
 
-Stock App/Host dual ledger (omit-box, Gateway proxy, coordinator sticky-temporal, Mac replica, Cmd-Q) is owned by grok-bot `private interoperability notes (not distributed)` (sibling checkout on this box: `PRIVATE_EVIDENCE`; not vendored). Grokbox harness implications stay in [Transcript harness: box vs temporal](transcript-harness-box-vs-server.md). Working / tray stay in [Host / App live projections](host-app-projections.md).
+## 1. 两种“回官方”，不是同一个操作
 
-This page does not authorize circuit clears, `inject` / `heal` / `kill`, hand-TERM, or edits to box `store.db`.
+| 动作 | 应改变什么 | 不能顺带改变 |
+|---|---|---|
+| `models reset --for <bot>`的目标能力 | 该Bot下一TURN使用原生`originalSession`，bridge仍安装 | harness/Server身份/会话/其它Bot；不调用全局deactivate |
+| 完整未补丁Host退出 | 所有批准补丁从实际运行代码退出，原生进程继续拥有同一持久状态 | 不重建Bot，不把旧会话换成另一执行者，不丢未知工具效果 |
 
-## Freshness
+当前候选已支持route模式下单Bot reset（T24），现役与原生往返仍需分别核验；返回originalSession的单元测试不证明custom checkpoint可被纯原生代码恢复。现有`deactivate`意图回执也不等于未补丁代码已经运行。所有具体可执行入口以源码和T28/T40实现资格为准，不将旧POC操作步骤照搬到现场。
 
-Invalidate when any of these change: `runtime deactivate` / `re-adopt` / watchdog live-writer wiring; `inspectControllerFacts` `desired-disabled`; Host `buildSummary` omit-box vs always-emit; App coordinator `db({ raw, previous })`; Mac `sand-client-persistence` layout; product-contract §12 rollback wording.
+## 2. 完整退出的前置证据
 
-Machine-local L2 receipts under `PRIVATE_EVIDENCE` are evidence, not this repository’s authority.
+确认候选/原生目标制品、Host身份/拓扑、实际已加载profile/preload、原生持久状态格式和当前受影响Bot范围。Server/local须由有效来源确权；已知冲突test2不是成功判据。当前Host启动会经原生全局身份同步，因此完全退出也可能对齐其本地binding；须先明确影响、保全并取得对应授权，不能承诺“没有显式reconcile就不会改身份”，更不能屏蔽原生同步保留冲突。
 
-## 1. Unload grokbox preload / return Host to official
+禁止先停进程再寻找恢复方案。先停止受影响的新managed准入，枚举已受理/在途/未知执行并按原生策略有界排空或隔离。已发生副作用不可假回滚，未知STEP不可给官方再执行一次。保全使用原生/一致性快照能力，不能把任意db文件复制当恢复证明。
 
-**Intent (legal, documented, not done = not official):**
+必要的精确进程操作、guardian、lease与receipt复用T28；若缺合法执行入口或工具拒绝，只阻塞该操作/验收，不调用另一通道绕过。circuit或unknown operation不能手清以取得绿灯。只读status/ownership/outcome不含隐藏退出、repair、重发或迁移。
 
-```text
-grokbox runtime deactivate
-```
+## 3. 退出后的验收（同一固定窗口）
 
-Registry: “Set desired mode to disabled; live coverage is observed by status only.” Implementation writes `desired.mode=disabled` and returns `chain: "desired-disabled"` (`packages/cli/src/commands/runtime.ts` `runRuntimeDeactivate`). No TERM, no inject, no adopt.
+1. **代码确实退出。** 实际运行进程、源/制品/加载合同证明是未补丁Host；desired=disabled、命令accepted或单纯PID变更不足。
+2. **原生状态能继续。** 从custom阶段保存的原生checkpoint启动官方session，保留summary carrier、工具关联、Memory及正式transcript；实际工具与SendToUser成功，无重复效果。不从UI/Server显示窗口拼prompt补救。
+3. **归属没有被偷换。** 官方模型不等于Temporal。提前准备不依赖已卸bridge的受支持原生身份/执行证据；bridge接口缺失保持unknown，不能当Server字段改变或成功回滚。如果没有可用读法，这项先不签。
+4. **原版App真实继续。** 不改/重签/注入App、不清缓存作前置；真实输入到正确原生执行，结果在同一会话可见。正常关闭/重开只是韧性用例，不是“消除冲突”的万能步骤。
+5. **状态语义正确。** T36验证current-session running/composing、具名activity、entry streaming和权限等待的区别；普通Working不以currentActivity非空为前提。结束/失败/断连的UI不能被旧代事件污染。
+6. **其它对象与服务。** 未配置/合法temporal/其它Bot不受未经授权改变；凭据、官方renewal及必要持久目录仍有效，旧managed进程/重复socket不竞争writer。
 
-Accepted meaning ([product-contract](../product-contract.md) §12, [box-runtime](../box-runtime.md) §8): `deactivate` is the Agent’s sole large-rollback **intent** entry. The accepted recovery target is a single unpatched official chain. **The write receipt is not rollback-done.** While the Host is still patched, status must stay pending / `rollback_pending`. Prove with `runtime status` (`desired` vs `actual` / origin / coverage), not the deactivate JSON alone.
+以上各项必须记录同一版本、Bot/session/nonce/执行代与最终状态。模型stop、收到进度、空trays或一个绿色测试不能替代这六项。
 
-**Live unload (accepted design, not a current public CLI):**
+## 4. 官方迁移与Host-only边界
 
-- Self-heal `stale-patched` (one SIGTERM of the attested Host so official `sand-supervisor` respawns unpatched `host-main.cjs`) is **watchdog-only** (product-contract §12).
-- Current source: `runWatchdogTick` / `runWatchdogCutover` / `runManualReadopt` throw `invalid_usage` (`legacy controller executor removed; use startControlOperation`). `runtime start` is `runtimeNotReady` until T26.
-- Sole live writer remains `runtime re-adopt --confirm`. After deactivate, `inspectControllerFacts` returns `desired-disabled` and refuses the lease. `re-adopt` is for attested refresh / stale→official→transient-adopt when desired is still identity/route — not a deactivate executor.
-- Forbidden Agent commands: `inject` / `heal` / `kill`. Do not invent a hand-TERM of the living attested Host.
+原生协议在已应用升级窗口中包含Box→Temporal迁移pass；身份读取和执行fence必须尊重该变化。我们不主动用迁移完成普通模型切换，也不绕过迁移hold或永久压住Server写回。
 
-**Future unload is blocked** until an owner-authorized live writer exists that: (1) honors desired=disabled, (2) TERMs only the attested grokbox Host identity, (3) waits for a unique official chain + Gateway pid match, (4) does not hand-clear `coordinator.json` / leftover `unknown` ops. L1b circuit `pending-uncertain` stays accept-open ([review ledger](review-ledger.md)); it is not an unload step.
+若退出/升级期间确实发生官方迁移，如实记录为归属变化及支持范围变化，不能签为“同一Box路径无变化回滚”。Host补丁无法控制已绕过Host的App→Server主模型请求。仅重新领养、Cmd-Q或擦掉某一侧历史，都不是这个问题的证明。
 
-Do not `deactivate` on this box while L2 always-emit dogfood is the living Host.
+Stock Host的roster可能省略box；这是wire兼容事实，不应要求卸载后仍有grokbox always-emit切片。Gateway缺字段不能自动当Server确认，App选源也不能只从Gateway推断。版本事实与最低互操作要求见[harness](transcript-harness-box-vs-server.md)。
 
-## 2. Verify roster harness always-emit
+## 5. 故障、停止与恢复
 
-Use raw Gateway `listAgents` (or equivalent Host roster). CLI `agents show` / `compactRosterRow` **drop** `harness` — that is redaction, not emit proof.
+任何identity/源SHA/原生状态不匹配都停止后续危险操作。已经做过的操作按receipt/read-back对账，不重复signal或provider请求。停止或回到已验证配置只使用仍然合法的原生/控制路径，不能恢复Server temporal/local box冲突作为“旧版本回滚”。
 
-| Host path | Expected roster `harness` |
-|---|---|
-| grokbox compile with `harness-blank` / `harness-summary` | always `"box"` or `"temporal"`; **never omit box** |
-| official / stock `host-main.cjs` (no grokbox slices) | stock omit-box: temporal only; box agents **absent** |
+T40在readiness登记退出是否实际完成、缺证、影响范围和下一责任；日常回官方通过而完整退出失败时分别显示，不能把两者统一标可回滚。修复后重跑受影响门，不让其它无关测试数量抵消失败。
 
-Always-emit is grokbox slices, not an official Host patch. Unload therefore **returns omit-box** unless stock Host itself changes (private interoperability notes (not distributed) §1 / §8). Do not treat official restart as proof always-emit survived.
+## 6. 历史收据与Current Homes
 
-On this box, L2 already observed always-emit on the **attested grokbox** Host (43 `box` / 1 `temporal` / 0 absent). That does **not** prove the official path. Re-check `profile.json` + raw `listAgents` after any future unload.
+2026-09-11 L2曾观测attested Host always-emit（43 box/1 temporal/0 absent）；这不证明官方未补丁路径，也不是当前库存。历史`deactivate`/watchdog占位与L1b circuit状态不自动成为当前可执行指令。
 
-## 3. Cmd-Q the desktop App
+- `PRIVATE_EVIDENCE`：历史切片与CLI参数证明。
+- `PRIVATE_EVIDENCE`、`l2-profile-write-readopt-receipt.md`：历史profile/re-adopt和输出观察。
+- `PRIVATE_EVIDENCE`：历史未关闭的控制边界。
 
-Coordinator Maps (`harnessOf` / `requiredAgents` / `m`) live for the **coordinator process**. Host restart and preload unload do not clear them. Need a full App exit (Cmd-Q / Exit), not closing a chat window. Owned by private interoperability notes (not distributed) §4 / §6.
+这些私有收据仅为证据引用，不搬入公共依赖。研究源位置在私有grok-bot docs23–26；公开实现规则见[Spec S0](../roadmap/box-runtime-impl-spec.md#server-authority-rollout)、[T40](../tickets/T40-persistent-release-and-rollback.md)、[T39](../tickets/T39-native-model-roundtrip.md)、[Host/App投影](host-app-projections.md)。
 
-Cmd-Q **does not** delete Mac `sand-client-persistence/`. Sticky temporal is gone; `restoredSeed` may still replay.
+## Freshness / 本轮结果
 
-## 4. Optional: clear Mac replica only
-
-If the desktop still shows “saved messages” / a truncated server window after Cmd-Q: delete Mac `~/Library/Application Support/Grok Bot/sand-client-persistence/` (or the `transcript.replicas` keys). **Not** box `/home/box/sand-data/agents/*/store.db`. private interoperability notes (not distributed) §5–§6.
-
-## 5. Accept
-
-After a **completed** official unload (intent + authorized execution + observed unpatched chain):
-
-- Desktop and mobile read the **same** Gateway transcript source for a given id (no coordinator sticky-temporal; proxy only if roster `harness === "temporal"`).
-- Box agents: Gateway tail = box `store.db` when Host is official and roster is omit-box or `box` (stock omit ≈ box for Gateway proxy; coordinator is the sticky risk, and it is dead after Cmd-Q).
-- Composer-above Working under official uses proto `handleAgentUpdate` / `currentActivity` ([host-app-projections](host-app-projections.md)). Do not treat sidebar `isRunningTurn` as composer Working. App pixels stay N unless a live App poll/screenshot is cited.
-
-This pass does **not** claim those accept criteria. Unload was deferred.
-
-## 6. Pointers
-
-| Surface | Owns |
-|---|---|
-| [transcript-harness-box-vs-server.md](transcript-harness-box-vs-server.md) | grokbox intercept needs `harness=box`; CLI `--harness`; Host `updateAgent` dogfood; always-emit slices |
-| [host-app-projections.md](host-app-projections.md) | sidebar vs composer Working vs tray |
-| [composer-working-status.md](composer-working-status.md) | desktop composer residual after Gateway `currentActivity`; not a tip-slice gap |
-| grok-bot `private interoperability notes (not distributed)` | stock omit-box, proxy, Cmd-Q, Mac replica |
-| `PRIVATE_EVIDENCE` | offline always-emit slices + CLI `--harness` |
-| `PRIVATE_EVIDENCE` | packed re-adopt; 4-slice profile; live omit-box |
-| `PRIVATE_EVIDENCE` | 8-slice reviewed profile; live always-emit on attested Host |
-| `PRIVATE_EVIDENCE` | circuit still open; no legal closer |
-
-## This pass
-
-Checklist shipped. Living Host left grokbox-attested. Canary unset. No pack, no re-adopt, no deactivate, no circuit hand-clear.
+Host/App版本、加载制品、identity协议、controller入口、原生checkpoint格式或凭据生命周期变化均使相关证据失效。本轮只有文档调整；没有deactivate、重新领养、停止服务、修改Bot或App，也没有取得新的退出验收结果。

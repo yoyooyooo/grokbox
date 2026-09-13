@@ -74,6 +74,7 @@ export function mergedProfile(
   row: Record<string, unknown>,
   raw: RosterAttributes,
 ): Record<string, unknown> {
+  if (raw.harness !== undefined) throw usage("Changing an existing Bot's harness is not a profile update. Inspect agents ownership; model switching must keep ownership unchanged.");
   const description = descriptionInput(raw);
   const profile: Record<string, unknown> = {
     name: raw.name === undefined ? requiredName(asString(row.name), "Existing agent name") : requiredName(raw.name),
@@ -89,14 +90,12 @@ export function mergedProfile(
     if (patch !== undefined) profile[wire] = patch.trim();
     else if (typeof existing === "string") profile[wire] = existing;
   }
-  const harness = parseHarness(raw.harness);
-  if (harness !== undefined) profile.harness = harness;
-  else if (row.harness === "box" || row.harness === "temporal") profile.harness = row.harness;
-  else profile.harness = "box";
+  // Ordinary profile writes never reassert a cached ownership declaration.
   return profile;
 }
 
 export function assertAnyAttribute(raw: RosterAttributes): void {
+  if (raw.harness !== undefined) throw usage("Existing Bot ownership cannot be changed by agents update; use agents ownership to inspect it.");
   if (
     !hasProfilePatch(raw) &&
     raw.notify === undefined &&

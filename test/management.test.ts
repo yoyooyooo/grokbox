@@ -118,6 +118,7 @@ describe("agent and group management", () => {
         title: "Engineer",
         avatarShape: "square",
         avatarColor: "red",
+        harness: "box",
         clientNonce: nonce,
       });
 

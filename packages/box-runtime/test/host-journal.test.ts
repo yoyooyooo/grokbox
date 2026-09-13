@@ -8,7 +8,7 @@ import {
   appendTurnSeamTerminal,
   hostEventsPath,
 } from "../src/internal/host/terminal-journal.node.ts";
-import { appendEvent, appendModelStepTerminal, compactEvents, observeEvents } from "../src/internal/io/journal.node.ts";
+import { appendEvent, appendModelStepTerminal, compactEvents, observeEvents, observeRuntimeEvents } from "../src/internal/io/journal.node.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
 const SECRET = "sk-live-SENTINEL_SECRET";
@@ -58,6 +58,20 @@ const turn = {
 };
 
 describe("Host terminal journal roles", () => {
+  test("explicit host log source cannot substitute old durable controller events", async () => {
+    const durableRoot = await dir();
+    const runRoot = await dir();
+    await appendEvent(durableRoot, { name: "census", at: AT, counts: { host: 1 } });
+    await appendHostStreamRejected(runRoot, hostReject);
+    const control = await observeRuntimeEvents({ durableRoot, runRoot, source: "control" });
+    const host = await observeRuntimeEvents({ durableRoot, runRoot, source: "host" });
+    expect(control.source).toBe("control");
+    expect(control.root).toBe(durableRoot);
+    expect(control.events.map((e) => "name" in e ? e.name : null)).toEqual(["census"]);
+    expect(host.source).toBe("host");
+    expect(host.root).toBe(runRoot);
+    expect(host.events.map((e) => "name" in e ? e.name : null)).toEqual(["host_stream_rejected"]);
+  });
   test("Host append writes only Host terminal/reject events", async () => {
     const root = await dir();
     expect(await appendHostStreamRejected(root, hostReject)).toBe("written");
@@ -167,6 +181,29 @@ describe("Host terminal journal roles", () => {
     const missing = await observeEvents(missingRoot);
     expect(missing.state).toBe("present");
     expect(missing.events).toEqual([{ name: "host_normalized_terminal", at: AT, agentId: "agent-tom", turnId: "turn-1" }]);
+  });
+
+  test("invalid-state diagnostics admit only fixed shape labels, never field names or values", async () => {
+    const root = await dir();
+    expect(await appendHostStreamRejected(root, { ...hostReject, stage: "admit", reason: "invalid-state", stateShape: "content-type" })).toBe("written");
+    expect(await appendHostStreamRejected(root, { ...hostReject, stage: "admit", reason: "invalid-state", stateShape: PROMPT })).toBe("written");
+    const observed = await observeEvents(root);
+    expect(observed.events[0]).toHaveProperty("stateShape", "content-type");
+    expect(observed.events[1]).not.toHaveProperty("stateShape");
+    expect(JSON.stringify(observed)).not.toContain(PROMPT);
+  });
+
+  test("host stage survives writer-to-reader projection without leaking raw fields", async () => {
+    const root = await dir();
+    const row = {
+      name: "host_seam_stage" as const, schemaVersion: 1, at: AT,
+      agentId: "agent-tom", turnId: "turn-1", stepId: "step-1",
+      stage: "connect_attempt", result: "fail",
+    };
+    expect(await appendHostJournal(root, { ...row, prompt: PROMPT, apiKey: SECRET, body: ERROR_BODY })).toBe("written");
+    expect((await observeEvents(root)).events).toEqual([row]);
+    expect(JSON.stringify(await observeEvents(root))).not.toContain(SECRET);
+    expect(JSON.stringify(await observeEvents(root))).not.toContain(PROMPT);
   });
 
   test("control append projects nested counts so secret objects never reach NDJSON", async () => {

@@ -1,7 +1,7 @@
 import type { Socket } from "node:net";
 import { Cause, Deferred, Effect, Layer, Queue, Stream } from "effect";
 import {
-  ADMISSION_WAIT_MS,
+  OWNERSHIP_ADMISSION_WAIT_MS,
   BackendFailure,
   BindingFailure,
   CANONICAL_OUTPUT_MAX_BYTES,
@@ -163,6 +163,11 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       yield* emit(socket, { ok: true, method: "health", version: WIRE_VERSION, serverGeneration: generation });
       return;
     }
+    if (parsed.method === "service-info") {
+      yield* emit(socket, { ok: true, method: "service-info", version: WIRE_VERSION,
+        serverGeneration: generation, rootId: options.rootId ?? null });
+      return;
+    }
     if (parsed.method === "cancel-step") {
       const result = yield* Effect.result(cancelStep(parsed.request));
       if (result._tag === "Failure") {
@@ -174,6 +179,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     }
 
     const request = parsed.request;
+    // One STEP wall deadline, including the now network-backed ownership check.
+    const deadlineAt = performance.now() + REQUEST_WALL_DEADLINE_MS;
     const observeStep = options.observeStep;
     let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0 };
     yield* Effect.addFinalizer((exit) => {
@@ -202,7 +209,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     const compactBackend = withOverflowCanary(backend, parsed.request.agentId, options.env ?? process.env);
     const admitted = yield* Effect.result(
       runStep(parsed.request).pipe(
-        Effect.timeout(`${ADMISSION_WAIT_MS} millis`),
+        Effect.timeout(`${OWNERSHIP_ADMISSION_WAIT_MS} millis`),
         Effect.provideService(ModelBackend, compactBackend),
       ),
     );
@@ -268,7 +275,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           sequence += 1;
           observation.eventCount = sequence;
         }),
-      ).pipe(Effect.timeout(`${REQUEST_WALL_DEADLINE_MS} millis`)),
+      ).pipe(Effect.timeout(`${Math.max(0, Math.floor(deadlineAt - performance.now()))} millis`)),
     );
     if (yield* Deferred.isDone(disconnected)) {
       if (observation.phase !== "complete") observation = { ...observation, outcome: "cancelled", phase: "transport", failureCode: "disconnected" };
@@ -284,6 +291,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 }
 
 export type ServeOptions = {
+  /** Diagnostic scope only; never grants STEP admission or replaces attestation. */
+  rootId?: string;
   observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
   compactForIncoming?: (incoming: Incoming) => Layer.Layer<HostCompact>;
   env?: NodeJS.Dict<string>;

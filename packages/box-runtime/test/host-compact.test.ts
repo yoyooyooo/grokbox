@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { createContext, runInContext } from "node:vm";
+import { createContext, runInContext, Script } from "node:vm";
 import { emptyRecoveryLedger } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { admitOverflowRecovery } from "@grokbox/runtime-kernel/inference";
@@ -16,7 +16,10 @@ import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-
 import { applyPatchProfile, HOST_COMPACT_SYMBOL as PROFILE_COMPACT_SYMBOL, profileFromSource, transformUnchecked } from "../src/internal/host/profile.ts";
 import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 
-const LIVE_SHA = "2ede71e2db066b32dfe75b5073c0cac8052faf76d23ed34b8fea4567ea0e9baa";
+// Current source was requalified with AST-selected native summary/state mutators,
+// synchronous root acceptance, stop/root-replacement negatives and the new agent-id anchor.
+// Evidence home: docs/tickets/T32-host-compact-seam.md (2026-09-12 current qualification).
+const LIVE_SHA = "307de3990394efc6b9a868537bab8504fceec3cc898cdd2ad91de68830f2f8dd";
 const TUPLE = {
   agentId: "agent-a",
   turnId: "turn-1",
@@ -46,6 +49,11 @@ Handler.prototype.runStep = async function(parentCtx, wait) {
     const stateHandler = this.stateHandler;
     const rootPromptExecutor = this.rootPromptExecutor;
     const requestContext = {};
+    rootPromptExecutor.executeToolStream = () => ({ response: wait() });
+    let result;
+        result = rootPromptExecutor.executeToolStream(
+          ctx
+        );
     let stepClosed = false;
       let response;
       let extendedUsage;
@@ -53,7 +61,7 @@ Handler.prototype.runStep = async function(parentCtx, wait) {
       let finalInvocationId;
       try {
         [response, extendedUsage, usage, finalInvocationId] = await Promise.all([
-          wait(),
+          result.response,
           Promise.resolve(),
           Promise.resolve(),
           Promise.resolve()
@@ -103,6 +111,34 @@ describe("D2 Host compact registration", () => {
     expect(applied.source).toContain("__addDisposableResource23(env_2, __grokbox_compact_slot, false)");
     expect(applied.source.includes("handleSummarization")).toBe(false);
     expect(applied.source.includes("queued summarizeAction")).toBe(false);
+  });
+
+  test("first provider request can compact before executeToolStream returns", async () => {
+    resetHostCompactSlotForTests();
+    const applied = transformUnchecked(COMPACT_HOST, LIVE_SLICE_PATCHES.filter((s) => s.id === "compact-register"));
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const module = { exports: {} as { Handler: new () => Record<string, any> } };
+    const globals = { [Symbol.for(HOST_COMPACT_SYMBOL)]: bindHostCompactHook(stateSystemCompactHookOptions()) };
+    runInContext(applied.source, createContext({ module, exports: module.exports, Symbol, globalThis: globals }));
+    const handler = new module.exports.Handler();
+    let compactCalls = 0;
+    Object.assign(handler, {
+      invocationId: TUPLE.stepId,
+      orchestrator: { async handleSummarization() { compactCalls++; return "summary"; } },
+      config: { conversationGroupId: TUPLE.agentId }, resourceAccessor: {}, interactionListener: {},
+      stateHandler: { backgroundSummarizationPromiseInfo: null },
+      rootPromptExecutor: { getState: () => rootState() },
+    });
+    let recovered: Awaited<ReturnType<typeof requestHostCompact>> | undefined;
+    await handler.runStep({ get: () => TUPLE.turnId, signal: { aborted: false } }, async () => {
+      // Called synchronously by executeToolStream, not after the old registration point.
+      recovered = await requestHostCompact({ tuple: TUPLE, recoveryNonce: "first-overflow" });
+      return "provider-finished";
+    });
+    expect(recovered?.kind).toBe("snapshot");
+    expect(compactCalls).toBe(1);
+    expect(await requestHostCompact({ tuple: TUPLE, recoveryNonce: "again" })).toEqual({ kind: "unavailable", reason: "capability_not_ready" });
   });
 
   test("absent compact hook leaves the wait path inert", async () => {
@@ -471,7 +507,14 @@ describeLive("D2 live Host compact anchors", () => {
     const closedAt = source.indexOf("let stepClosed = false;");
     expect(streamAt).toBeGreaterThan(-1);
     expect(closedAt).toBeGreaterThan(streamAt);
-    expect(applied.source.indexOf("__grokbox_compact_slot")).toBeGreaterThan(applied.source.indexOf("let stepClosed = false;"));
+    expect(applied.source.indexOf("__grokbox_compact_slot")).toBeLessThan(applied.source.indexOf("result = rootPromptExecutor.executeToolStream("));
+    const stepStart = source.lastIndexOf("async runStep(", streamAt);
+    expect(stepStart).toBeGreaterThan(-1);
+    const beforeProvider = source.slice(stepStart, streamAt);
+    expect(beforeProvider).toContain("invocationId");
+    expect(beforeProvider).toContain("stateHandler.lastStepInvocationId = invocationId");
+    expect(applied.source).toContain("stepClosed: () => !__grokbox_compact_active");
+    expect(() => new Script(applied.source, { filename: "qualified-host-syntax.cjs" })).not.toThrow();
     expect(await readFile(LIVE_HOST_BUNDLE, "utf8")).toBe(before);
   });
 });

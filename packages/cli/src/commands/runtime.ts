@@ -2,26 +2,25 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
-  applyReset,
-  applyUse,
   assertBoxLocal,
-  assertResetAllowed,
+  changeRuntimeModel,
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
   BoxRuntimeError,
   disclosure,
   openRuntimeStore,
   saveRuntimeModels,
+  persistModelCredential,
   saveRuntimeDesired,
   parseModelId,
   projectLiveStatus,
   readContracts,
-  observeEvents,
+  observeRuntimeEvents,
   reviewedProfilePath,
   controllerOperationId,
   diskPreloadSha256,
   reviewedProfileSha256,
-  runtimeNotReady,
+  startRuntimeCommand,
   startControlOperation,
   startModeldProcess,
   writeReviewedProfileFromCopy,
@@ -45,6 +44,7 @@ import {
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { writeSuccess } from "../output.ts";
+import { runtimeOwnershipReader } from "../runtime-ownership.ts";
 
 function rethrow(error: unknown): never {
   if (error instanceof BoxRuntimeError) {
@@ -63,11 +63,17 @@ function store(deps: CliDeps) {
   return openRuntimeStore(deps.boxRuntimeRoot, deps.env);
 }
 
+function runtimeRunRoot(deps: CliDeps): string {
+  const configured = deps.env.GROKBOX_RUN_ROOT;
+  return typeof configured === "string" && configured.length > 0 ? configured : join(homedir(), ".grokbox", "run");
+}
+
 export async function runRuntimeStatus(deps: CliDeps): Promise<void> {
   try {
     const runtime = store(deps);
     writeSuccess(deps.stdout, await projectLiveStatus({
       root: runtime.root,
+      ...(deps.env.GROKBOX_RUN_ROOT ? { ephemeralRoot: deps.env.GROKBOX_RUN_ROOT } : {}),
     }));
   } catch (error) {
     rethrow(error);
@@ -94,12 +100,20 @@ export async function runRuntimeActivate(deps: CliDeps, mode: string | undefined
   }
 }
 
-export async function runRuntimeStart(deps: CliDeps, _mode: string | undefined): Promise<void> {
+export async function runRuntimeStart(deps: CliDeps, mode: string | undefined): Promise<void> {
+  const fallback = deps.signal ? undefined : new AbortController();
+  const signal = deps.signal ?? fallback!.signal;
+  const abort = () => fallback?.abort();
+  if (fallback) { process.on("SIGINT", abort); process.on("SIGTERM", abort); }
   try {
-    store(deps);
-    runtimeNotReady("runtime start / modeld", "T26");
+    const runtime = store(deps);
+    const runRoot = runtimeRunRoot(deps);
+    await startRuntimeCommand({ store: runtime, runRoot, mode, signal, env: deps.env,
+      ownershipRead: runtimeOwnershipReader(deps), publish: receipt => writeSuccess(deps.stdout, receipt) });
   } catch (error) {
     rethrow(error);
+  } finally {
+    if (fallback) { process.off("SIGINT", abort); process.off("SIGTERM", abort); }
   }
 }
 
@@ -117,11 +131,16 @@ export async function runRuntimeDeactivate(deps: CliDeps): Promise<void> {
   }
 }
 
-export async function runRuntimeLog(deps: CliDeps, follow = false): Promise<void> {
+export async function runRuntimeLog(deps: CliDeps, follow = false, source = "control"): Promise<void> {
   try {
     const runtime = store(deps);
     if (follow) throw new CliError("invalid_usage", "runtime log --follow is not supported; omit --follow for a bounded snapshot.");
-    writeSuccess(deps.stdout, await observeEvents(runtime.root));
+    if (source !== "control" && source !== "host") throw new CliError("invalid_usage", "runtime log --source must be control or host.");
+    writeSuccess(deps.stdout, await observeRuntimeEvents({
+      durableRoot: runtime.root,
+      runRoot: deps.env.GROKBOX_RUN_ROOT,
+      source,
+    }));
   } catch (error) {
     rethrow(error);
   }
@@ -164,23 +183,28 @@ export async function runRuntimeModelsUse(
   try {
     parseModelId(modelId);
     const runtime = store(deps);
-    const desired = await runtime.loadDesired();
-    const next = applyUse(await runtime.loadModels(), modelId, forAgent);
-    if (desired.mode === "route") assertStubOnlyRouteAssignments(next);
-    await saveRuntimeModels(runtime, next);
-    writeSuccess(deps.stdout, disclosure(next, modelId, forAgent));
+    writeSuccess(deps.stdout, await changeRuntimeModel({ store: runtime, modelId, forAgent,
+      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal }));
   } catch (error) {
     rethrow(error);
   }
 }
 
+export async function runRuntimeModelsPersistKey(deps: CliDeps, modelId: string, piProvider: string | undefined, confirmed: boolean | undefined): Promise<void> {
+  try {
+    const runtime = store(deps);
+    if (!piProvider) throw new CliError("invalid_usage", "models persist-key requires --from-pi <provider>.");
+    writeSuccess(deps.stdout, await persistModelCredential({
+      store: runtime, modelId, piProvider, confirmed: confirmed === true, signal: deps.signal,
+    }));
+  } catch (error) { rethrow(error); }
+}
+
 export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | undefined): Promise<void> {
   try {
     const runtime = store(deps);
-    assertResetAllowed(await runtime.loadDesired());
-    const next = applyReset(await runtime.loadModels(), forAgent);
-    await saveRuntimeModels(runtime, next);
-    writeSuccess(deps.stdout, { assignments: next.assignments });
+    writeSuccess(deps.stdout, await changeRuntimeModel({ store: runtime, forAgent,
+      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal }));
   } catch (error) {
     rethrow(error);
   }
@@ -225,12 +249,18 @@ export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
 }
 
 export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
+  // The published entry already translates process signals into deps.signal.
+  // Install a local owner only for embedders that did not supply one.
+  const fallback = deps.signal ? undefined : new AbortController();
+  const signal = deps.signal ?? fallback!.signal;
+  const abort = () => fallback?.abort();
+  if (fallback) { process.on("SIGINT", abort); process.on("SIGTERM", abort); }
+  let started: Awaited<ReturnType<typeof startModeldProcess>> | undefined;
   try {
     const runtime = store(deps);
-    const runRoot = typeof deps.env.GROKBOX_RUN_ROOT === "string" && deps.env.GROKBOX_RUN_ROOT.length > 0
-      ? deps.env.GROKBOX_RUN_ROOT
-      : join(homedir(), ".grokbox", "run");
-    const started = await startModeldProcess({ durableRoot: runtime.root, runRoot, env: deps.env });
+    const runRoot = runtimeRunRoot(deps);
+    started = await startModeldProcess({ durableRoot: runtime.root, runRoot, env: deps.env,
+      ownershipRead: runtimeOwnershipReader(deps), signal });
     writeSuccess(deps.stdout, {
       process: "modeld",
       kind: started.ensure.kind,
@@ -238,17 +268,19 @@ export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
       generation: started.ensure.kind === "owned" ? started.ensure.generation : undefined,
     });
     if (started.ensure.kind === "borrowed") return;
-    await new Promise<void>((resolve) => {
-      const stop = () => {
-        process.off("SIGINT", stop);
-        process.off("SIGTERM", stop);
-        void started.stop().finally(resolve);
-      };
-      process.on("SIGINT", stop);
-      process.on("SIGTERM", stop);
-    });
+    // The actual resource lifetime settles after cleanup. It can fail without
+    // another user signal (listener loss), so do not wait only for SIGTERM.
+    await started.finished;
+    if (!signal.aborted) throw new BoxRuntimeError("invalid_usage", "modeld_stopped_unexpectedly");
   } catch (error) {
     rethrow(error);
+  } finally {
+    if (fallback) { process.off("SIGINT", abort); process.off("SIGTERM", abort); }
+    // Output failure is also an exit path. Cleanup must be awaited and errors
+    // reported, not discarded by stop().finally(resolve).
+    if (started?.ensure.kind === "owned") {
+      try { await started.stop(); } catch (error) { rethrow(error); }
+    }
   }
 }
 

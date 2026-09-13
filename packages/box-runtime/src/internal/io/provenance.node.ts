@@ -1,4 +1,5 @@
-import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -230,30 +231,34 @@ export async function retainHostBundle(input: {
   }
   const dir = hostBundlesDir(input.root);
   const genDir = generationDir(input.root, input.sourceSha);
-  const dest = sourcePath(input.root, input.sourceSha);
-  await mkdir(join(dir, "generations"), { recursive: true, mode: 0o700 });
-  if (await isRealDir(join(dir, "generations")) === false) throw new Error("invalid host-bundle path");
-  const existed = await isRealDir(genDir);
-  if (existed) {
-    const stored = await readStoredSource(input.root, input.sourceSha);
-    if (stored !== null) {
-      if (stored !== input.source) throw new Error("host-bundle-bytes-mismatch");
-      const meta = await readHostBundleMeta(input.root, input.sourceSha);
-      if (!meta || meta.sourceSha !== input.sourceSha) throw new Error("host-bundle-bytes-mismatch");
-      await writeFile(join(dir, "HEAD"), `${input.sourceSha}\n`, { mode: 0o600 });
-      return { sourceSha: input.sourceSha, retained: "existing", meta, diff: null };
-    }
+  const generations = join(dir, "generations");
+  await mkdir(generations, { recursive: true, mode: 0o700 });
+  if (await isRealDir(generations) === false) throw new Error("invalid host-bundle path");
+  const publishHead = async () => {
+    const temporary = join(dir, `.HEAD-${randomUUID()}`);
     try {
-      await lstat(dest);
+      await writeProtected(temporary, `${input.sourceSha}\n`);
+      await rename(temporary, join(dir, "HEAD"));
+    } finally { await rm(temporary, { force: true }); }
+  };
+  const existingResult = async (): Promise<HostBundleRetainResult> => {
+    if (!await isRealDir(genDir)) throw new Error("invalid host-bundle path");
+    const stored = await readStoredSource(input.root, input.sourceSha);
+    let meta: HostBundleMeta | null;
+    try { meta = await readHostBundleMeta(input.root, input.sourceSha); }
+    catch { throw new Error("host-bundle-bytes-mismatch"); }
+    if (stored !== input.source || !meta || meta.sourceSha !== input.sourceSha || meta.bytes !== Buffer.byteLength(input.source)) {
       throw new Error("host-bundle-bytes-mismatch");
-    } catch (error) {
-      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
     }
-  } else if (await lstat(genDir).then(() => true, (error) => {
+    await publishHead();
+    return { sourceSha: input.sourceSha, retained: "existing", meta, diff: null };
+  };
+  // Readers must see the complete source+metadata generation or no generation.
+  // Never expose a final directory and then populate its files incrementally.
+  if (await lstat(genDir).then(() => true, (error) => {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return false;
     throw error;
-  })) throw new Error("invalid host-bundle path");
-  await mkdir(genDir, { recursive: true, mode: 0o700 });
+  })) return existingResult();
   const previousSha = await readHostBundleHead(input.root);
   const previousSource = previousSha && previousSha !== input.sourceSha ? await readStoredSource(input.root, previousSha) : null;
   const meta: HostBundleMeta = {
@@ -265,21 +270,24 @@ export async function retainHostBundle(input: {
   const diff = previousSha && previousSource !== null && previousSha !== input.sourceSha
     ? buildHostBundleDiff(previousSha, previousSource, input.source)
     : null;
+  const staging = await mkdtemp(join(generations, ".staging-"));
   try {
-    await writeProtected(dest, input.source);
-  } catch (error) {
-    if (!(error && typeof error === "object" && "code" in error && error.code === "EEXIST")) throw error;
-    const stored = await readStoredSource(input.root, input.sourceSha);
-    if (stored === null || stored !== input.source) throw new Error("host-bundle-bytes-mismatch");
-    const existing = await readHostBundleMeta(input.root, input.sourceSha);
-    if (!existing) throw new Error("host-bundle-bytes-mismatch");
-    await writeFile(join(dir, "HEAD"), `${input.sourceSha}\n`, { mode: 0o600 });
-    return { sourceSha: input.sourceSha, retained: "existing", meta: existing, diff: null };
+    await writeProtected(join(staging, SOURCE_NAME), input.source);
+    await writeProtected(join(staging, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
+    if (diff) await writeProtected(join(staging, "diff.json"), `${JSON.stringify(diff, null, 2)}\n`);
+    try { await rename(staging, genDir); }
+    catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      if (code !== "EEXIST" && code !== "ENOTEMPTY") throw error;
+      // A concurrent publisher won. Validate its immutable complete generation;
+      // corrupt/half-written existing generations are not repaired or overwritten.
+      return await existingResult();
+    }
+    await publishHead();
+    return { sourceSha: input.sourceSha, retained: "new", meta, diff };
+  } finally {
+    await rm(staging, { recursive: true, force: true });
   }
-  await writeProtected(join(genDir, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
-  if (diff) await writeProtected(join(genDir, "diff.json"), `${JSON.stringify(diff, null, 2)}\n`);
-  await writeFile(join(dir, "HEAD"), `${input.sourceSha}\n`, { mode: 0o600 });
-  return { sourceSha: input.sourceSha, retained: "new", meta, diff };
 }
 
 export async function observeHostBundles(root: string): Promise<HostBundlesObservation> {

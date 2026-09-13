@@ -1,36 +1,38 @@
-# Roadmap
+# Roadmap：当前施工、未来方向与历史分开
 
-This directory contains the accepted box-runtime strategy plan, its current implementation spec, and deferred candidates. None proves current implementation or deployment.
+本项目沿用既有位置：本目录中的`box-runtime-impl-spec.md`是已接受的实施规格，`box-runtime-plan.md`是策略背景；不是每份roadmap都代表待办或运行事实。源码/测试说明实现，Ticket记录关闭证据，[readiness](../maintainers/t32-live-enable-readiness.md)唯一记录实际候选与发布结果。
 
-## Active box-runtime homes
+## 现在围绕什么推进
 
-- [Strategy plan](box-runtime-plan.md): Phases 0–4, product exits and scope. Not a second source-layout specification.
-- [Current Implementation Spec](box-runtime-impl-spec.md): the **single-track destructive rebuild** tree, ports, import rules, execution chain, removal inventory and proof gates. Implementers use this build reference; do not preserve POC internal compatibility.
-- [T20–T33 tickets](../tickets/README.md): executable slices and evidence. Default chain T20 → T21 → T27 … → T28; T29/WebUI is deferred. Historical done tickets stay done.
-- [2026-09-08 adjudication](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md): D1–D12 product/trust decisions retained by the strategy/spec.
-- [Host seam ops recognition](host-seam-ops-recognition.md): forward-only retain/replay/propose/human-review scheme and HSO-0–HSO-6 delivery gates. Smart recognition stays outside preload; no live adoption authorization.
-- [Orchestrator handoff (2026-09-12)](2026-09-12-orchestrator-handoff.md): 给继任模型的背景/仓库/分支策略/L5 困境与残差。
-- [自定义模型 × Host Compact 业主审阅稿](2026-09-12-managed-compact-owner-brief.md): 中文口径/背景/后续思路；配套英文详稿见下条。
-- [Managed custom-model path through Host Compact](2026-09-12-managed-compact-path.md): forward sequence only. Custom-model continuity is the goal; Host Compact is the means. Does not replace [T32](../tickets/T32-runtime-confirmed-compact.md) or [live-enable](../maintainers/t32-live-enable-readiness.md).
+| 入口 | 拥有的内容 |
+|---|---|
+| [当前Spec](box-runtime-impl-spec.md#stable-delivery) | Server归属优先、Host-only、原生可逆选模与V01–V30；S0.1.4为持续观测/SQLite/incident合同 |
+| [Ticket索引](../tickets/README.md) | T37准入→T38身份写入→T24可逆选择→T39原生旅程→T40放行；T41在T37事实后并行，不等Web UI |
+| [策略plan](box-runtime-plan.md) | 保留Phases 0–4与架构理由；当前顺序链接Spec，不另记一套完成状态 |
+| [T41观测与告警](../tickets/T41-continuous-observation-and-alerting.md) | 浏览器前的共享采集、单盒SQLite、incident/通知及失败边界；不是新执行平台 |
+| [HSO升级识别](host-seam-ops-recognition.md) | 保留已有provenance/profile工具依赖的专题合同；未实现扩展不是当前默认主线，observe不等于自动adopt |
 
-The dated `2026-09-08-box-runtime-next.md` remains only a redirect. No intermediate review report or machine-local artifact is required for public build/contribution.
+T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修改。持续观测、安全准入、真实App/Working与原生状态往返不能被“UI以后做”一并延期。
 
-## Authority
+## Future：以后做的能力
 
-- [Product contract](../product-contract.md) owns accepted behavior.
-- [Architecture](../architecture.md) owns implementation boundaries.
-- [Upstream integration](../upstream-integration.md) and [Compatibility](../compatibility.md) own interoperability constraints.
-- [GitHub Issues](https://github.com/yoyooyooo/grokbox/issues) owns public work intake and delivery discussion.
+[future/README.md](future/README.md)是未排期范围的唯一目录，按能力命名，不按阶段/date/final-v2复制方案。包含：
 
-## Deferred candidates
+- 单盒Web UI；多盒与盒外失联监测；高级通知与长期保留。
+- daemon多客户端/通用流；额外环境与tailnet兼容；受控凭据发现；quota新来源。
 
-- [Daemon access and streaming](daemon-access-and-streaming.md)
-- [Box lifecycle and tailnet hardening](box-lifecycle-and-tailnet-hardening.md)
-- [Credential discovery](cursor-credential-discovery.md)
-- [Quota source expansion](quota-query.md)
+每页声明已接受方向还是候选、晋升条件、当前owner、验收与非目标。晋升后把合同写回当前home、挂同一Ticket序列；future页只保留剩余内容，不成为第二progress表。
 
-A candidate moves into a current home only after a concrete need, an accepted security/product decision, and executable acceptance criteria. Private research, local evidence, or documentation presence alone is insufficient.
+## History：不再执行的旧指令
 
-## Freshness
+[报告入口](../reports/README.md) / [Managed Compact演变](../reports/2026-09-12-managed-compact-evolution.md)保存仍解释现状的背景。旧owner brief与technical path已缩为跳转；旧[handoff](2026-09-12-orchestrator-handoff.md)仍以历史身份留存，缩减编辑未成功，不沿用其中旧权限/运行代/test2角色。
 
-Review the strategy, implementation spec and affected tickets when Host ABI, package/import ownership, configuration/wire schema, backend capabilities, Effect pin, or phase evidence changes. Review deferred candidates when daemon consumers, box lifecycle, network transport, provider-supported credential surfaces, quota contracts, or real implementation constraints change.
+`2026-09-08-box-runtime-next.md`及已搬往future的4个旧主题文件仅为旧链接兼容路由，不持有内容。新链接直接指向真实home；旧路由只有入链/外部书签仍需要时保留，获得安全删除能力并完成引用核对后可退场。没有为追求目录整齐删除Git历史或未提交内容。
+
+## 文档治理规则
+
+[Product](../product-contract.md)拥有产品承诺，[Architecture](../architecture.md)拥有边界，[Upstream](../upstream-integration.md)拥有最小兼容事实；Spec/Ticket不以假命令或mock成功冒充已实现。临时收据、私有dump和账号数据不进入公开roadmap。当前项目不为统一模板而重命名全部docs根；`maintainers/decisions/tickets`等既有角色保留。
+
+新增/移动必须同时修真实入链、相对路径、必要锚点和新鲜度；合并重复解释，降低旧假设，保留有价值证据引用。不能只加“历史”横幅却继续把旧稿列入当前施工入口。新日期不代表更高权威；未来项存在也不代表已获部署或费用授权。
+
+失效时复核：身份/权限/模型/Host ABI、配置/通知数据写入owner、观测scope/cursor、服务生命周期或产品优先级变化；不复制一个新roadmap文件替代修正原home。

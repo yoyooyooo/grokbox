@@ -2,9 +2,9 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-本文是 Grok Bot **模型替换运行时**的设计 Current Home：接缝、注入、modeld、配置和失败语义。它描述已接受的**未来完成态**，不是当前源码已实现清单。
+本文保留 Grok Bot **模型替换运行时**的设计背景：接缝、注入、modeld、配置和失败语义；不是当前源码已实现清单。**2026-09-12 R2：当前稳定日用范围、managed STEP 控制边界、用途/失败合同、V01–V30 与施工顺序统一归 [实施规格 S0](roadmap/box-runtime-impl-spec.md#stable-delivery)。** 本页旧 POC 阶段的 response-only、A+S1、fallback 和时限描述不覆盖该当前合同；Host 实际 writer 的受控委托见架构 §17，新增资格与源码差额归 T32/T35/T24。
 
-产品命令、本机边界、envelope 和可见错误义务见 [产品合同 §12](product-contract.md)。模块与 composition roots 见 [架构 §17](architecture.md)。重副作用遵循 [Effect 标准](effect-box-runtime.md)。策略/阶段出口见 [plan](roadmap/box-runtime-plan.md)；唯一目标树、ports、退场与 executable proof 见 [单轨重建实施规格](roadmap/box-runtime-impl-spec.md)，施工使用 T20–T33。本页旧 POC 函数/路径描述仅作 substrate，不要求保留 A+S1、旧 wire、旧聚合 status 或 compat shims。Host 产品合同/J13/独立 guardian 不因此改变。源码和可执行测试拥有当前实现真相。
+产品命令、本机边界、envelope 和可见错误义务见 [产品合同 §12](product-contract.md)。模块与 composition roots 见 [架构 §17](architecture.md)。重副作用遵循 [Effect 标准](effect-box-runtime.md)。策略/阶段出口见 [plan](roadmap/box-runtime-plan.md)；唯一目标树、ports、退场与 executable proof 见 [单轨重建实施规格](roadmap/box-runtime-impl-spec.md)，施工使用同一序列T20–T41，以Spec S0当前顺序为准：T37归属准入、T38身份writer退场、T24可逆选择、T39原生往返、T40持久发布；T41在UI前交持续观测/SQLite/incident，与相关主线并行；T26/T32/T35/T36保留本域证明。未来页面及扩展只看[future](roadmap/future/README.md)，不因此提前造console。本页旧 POC 函数/路径描述仅作 substrate，不要求保留 A+S1、旧 wire、旧聚合 status 或 compat shims。Host 产品合同/J13/独立 guardian 不因此改变。源码和可执行测试拥有当前实现真相。
 
 本仓库是公开、自包含的控制面。上游 Host 研究材料若存在于 maintainer 私有环境，只作证据输入，不是本仓库实现权威，也不得把私有 dump 提交进 git。
 
@@ -263,7 +263,7 @@ H3 与 I1 需要另一次明确授权。现役 Host 注入前必须有 H1/H2 离
 **Agent CLI（盒内，JSON）**
 
 - 写 desired：`activate` / `deactivate` / `models *`
-- 统一入口：`start --mode observe|identity|route` — probe `modeld.sock`，down 则在本进程 listen stub server（与 `modeld run` 同一 `startStubModeldServer`，不 `wait()`、不另起 daemon）；再按 `activate` 语义写 desired（route 校验 stub 或 openai* assignment）；identity/route 再单次 `runWatchdogTick`（不把 watchdog 并进 `daemon serve`）；最后打印 `status`。已有 modeld 则复用。默认路径 **永不** `re-adopt` / canary，也不是 live writer。
+- 统一入口：`start --mode observe|identity|route`复用`command.runtime.ts`与同一个production `startModeldProcess`，不再使用历史stub server。route在分配资源前校验有界canonical配置；借用必须通过service-info匹配数据根；随后用唯一ConfigurationWrite保存desired，identity/route运行一次未确认reconcile并输出真实配置/状态回执。新建服务的Effect Scope继续foreground等待命令signal，输出失败也释放；借用者直接结束且不停止原owner。默认 **不re-adopt、不canary、不安装自启、不偷偷detach**。配置已提交不因后续失败自动回滚；ready和保存回执不等于生产可用。最新实现与未证范围见[T40](tickets/T40-persistent-release-and-rollback.md)。
 - 离线审 profile：`profile write --from <host-bundle>`（显式绝对路径、只读输入 → 已批准精确切片及 source/transformed SHA 校验 → 原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）
 - 只读：`status`（含 census、diskSha、driftedSlices、circuit、lastHeal）、`log`、`contracts`（切片 SHA/drift，默认无正文）
 - `status` / `log` / `contracts` 不 repair

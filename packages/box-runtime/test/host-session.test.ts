@@ -14,6 +14,23 @@ import { buildHostEnvelope } from "../src/internal/host/context-codec.ts";
 import { collectStreamParts, consumeHandle } from "./host-consumer.ts";
 
 describe("host session ABI", () => {
+  test("invalid bind or append is observed before stream without exposing state or changing rejection", () => {
+    const codes: string[] = [];
+    const session = asHostPromptSession({ stream() { throw new Error("must not dispatch"); } }, "stub/echo", undefined, {
+      onInvalidState(code) { codes.push(code); throw new Error("observation failure"); },
+    });
+    const bad = { role: "user", content: [{ type: "unknown-private-part", text: "PRIVATE_SENTINEL" }] };
+    const executor = session.getExecutor([bad]);
+    expect(codes).toEqual(["unsupported_content"]);
+    expect(() => executor.getState()).toThrow();
+    expect(() => executor.getMessages()).toThrow();
+    expect(codes).toHaveLength(1);
+    executor.clearMessages();
+    executor.appendMessages([bad]);
+    expect(codes).toEqual(["unsupported_content", "unsupported_content"]);
+    expect(() => executor.getState()).toThrow();
+    expect(JSON.stringify(codes)).not.toContain("PRIVATE_SENTINEL");
+  });
   test("getModelId/getExecutor/stream getters are independent arrays", async () => {
     const session = asHostPromptSession(createStreamingPromptSession({
       modelId: "stub/echo",

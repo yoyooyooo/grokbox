@@ -1,13 +1,14 @@
 import type { HostBinding } from "./host-binding.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
 import { lookupHostRootContract } from "./root-contract.ts";
-import { captureHostManagedSelection } from "./selection.node.ts";
+import { captureHostManagedSelection, HostSelectionUnavailableError } from "./selection.node.ts";
 import { createModeldProduce } from "./modeld-produce.node.ts";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
   visibleFailureHandle,
   toHostStreamResult,
+  recordHostManagedFailure,
   type HostPromptExecutor,
   type HostPromptSession,
   type HostStreamRejectDetail,
@@ -18,6 +19,7 @@ import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.
 import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } from "./aux-request.ts";
 import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
 import { emitHostActivity } from "./activity.ts";
+import { noteHostManagedStep } from "./compact.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
 
@@ -33,18 +35,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function officialExecutor(original: unknown, state: unknown): HostPromptExecutor | undefined {
-  if (!original || typeof original !== "object") return undefined;
-  const session = original as { getExecutor?: (value?: unknown) => HostPromptExecutor };
-  if (typeof session.getExecutor !== "function") return undefined;
-  const executor = session.getExecutor(state);
-  return executor && typeof executor.stream === "function" ? executor : undefined;
-}
-
-function overlayOfficialNoStepStreams(
+function attachManagedAuxStreams(
   managed: HostPromptSession,
-  original: unknown,
-  onDecline: () => void,
   binding: Omit<AuxParentBinding, "stepId">,
 ): HostPromptSession {
   // Session-local, not a process-global latest STEP. A new main attempt invalidates
@@ -76,13 +68,9 @@ function overlayOfficialNoStepStreams(
         if (grokboxAuxFrom(ctx) ?? grokboxAuxFrom(options)) {
           return managedEx.stream(ctx, invocationId, tools, options);
         }
-        if (!boundedId(invocationId)) {
-          const official = officialExecutor(original, state);
-          if (official) {
-            onDecline();
-            return official.stream(ctx, invocationId, tools, options);
-          }
-        }
+        // Missing STEP is not proof of a native dedicated-summary purpose.
+        // Known aux calls are attached above; all other calls retain the managed
+        // validation path. Dedicated native sessions already declined at capture.
         const current = {};
         attempt = current;
         parent = undefined;
@@ -109,7 +97,7 @@ function overlayOfficialNoStepStreams(
 /**
  * Entry interceptor: undefined declines, letting the unchanged Host construct its official session.
  * Identity/observe and route + unassigned agent decline (S4.1).
- * Route + managed assignment: Host fullStream over v3 modeld (T26).
+ * Route + managed assignment: Host fullStream over v4 modeld (T26).
  * Known compile profileIds that match snapshot-root contracts bind produce qualification.
  * Unknown compiled patch profiles keep Host-selected root at stream time (no live fail-close).
  * bridgeDigest from compile.transformedSha256.
@@ -149,11 +137,26 @@ export function bindHostSessionHook(input: {
       ...facts,
     });
     // A real hook entry remains observable even if selection declines or lacks an agent id.
-    const captured = captureHostManagedSelection(input.durableRoot, agentId);
+    let captured: ReturnType<typeof captureHostManagedSelection>;
+    try {
+      captured = captureHostManagedSelection(input.durableRoot, agentId);
+    } catch (error) {
+      if (error instanceof HostSelectionUnavailableError) {
+        // A trusted local configuration refusal must not fall back or be
+        // multiplied by the native outer retry policy. Do not invent a modelId.
+        recordHostManagedFailure(error);
+        void appendHostStreamRejected(input.runRoot, {
+          name: "host_stream_rejected", schemaVersion: 2, at: nowIso(),
+          mode: "route", ...facts, stage: "admit",
+          errorCode: error.code, reason: "selection-unavailable",
+        });
+      }
+      throw error;
+    }
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
     const record = captured.record;
-    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope") => {
+    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string) => {
       if (!agentId) return;
       void appendHostStreamRejected(input.runRoot, {
         name: "host_stream_rejected",
@@ -164,6 +167,8 @@ export function bindHostSessionHook(input: {
         stage,
         errorCode,
         reason,
+        ...(stateShape ? { stateShape } : {}),
+        ...(stepId ? { stepId } : {}),
       });
     };
     const writeStage = (stage: string, result: string, extra: Record<string, string> = {}) => {
@@ -192,12 +197,18 @@ export function bindHostSessionHook(input: {
           ...(stepId ? { stepId } : {}),
           ...(request?.aux ? { auxPurpose: request.aux.purpose, parentStepId: request.aux.parent.stepId } : {}),
         });
+        if (stepId && agentId && turnId && !request?.aux) noteHostManagedStep({ agentId, turnId, stepId });
         return session.stream(request);
       },
     });
     if (!turnId) {
-      writeStage("hook_decline", "compact_passthrough");
-      return args.originalSession;
+      // A selected managed Agent without its TURN cannot be reclassified as a
+      // dedicated native summary. Those sessions have no managed Agent identity
+      // and already took the official branch above.
+      writeReject("admit", "missing-turn");
+      return asHostPromptSession(wrapStream({
+        stream: () => visibleFailureHandle(modelId, "invalid_envelope"),
+      }), modelId, onRequestId, { requireStepId: true, reject });
     }
     if (!agentId) {
       writeReject("admit", "missing-binding");
@@ -243,12 +254,20 @@ export function bindHostSessionHook(input: {
       produce: runtime.produce,
       agentId,
       onTerminal: (terminal) => {
+        if (terminal.rejected && terminal.errorCode) {
+          writeReject(terminal.stage === "admit" ? "admit" : terminal.stage === "normalize" ? "normalize" : "provider",
+            "terminal-rejected", terminal.errorCode, undefined, terminal.invocationId);
+        }
         const stepId = terminal.invocationId;
         if (!stepId) return;
         const producedThisStep = runtime.last.stepId === stepId;
         void appendHostJournal(input.runRoot, {
           name: "host_normalized_terminal",
           at: nowIso(),
+          terminalClass: terminal.terminalClass,
+          toolCallCount: terminal.toolCallCount,
+          modelId,
+          ...(terminal.errorCode ? { errorCode: terminal.errorCode } : {}),
           hostId: input.binding!.identitySha,
           agentId,
           turnId,
@@ -265,9 +284,8 @@ export function bindHostSessionHook(input: {
     });
     const managed = asHostPromptSession(wrapStream(session), modelId, onRequestId, {
       requireStepId: true, reject, contextWindowTokens: record.contextWindowTokens,
+      onInvalidState: (code, shape) => writeReject("admit", "invalid-state", code, shape),
     });
-    return overlayOfficialNoStepStreams(managed, args.originalSession, () => {
-      writeStage("hook_decline", "compact_passthrough");
-    }, { agentId, turnId, modelId, selectionRevision: captured.selectionRevision });
+    return attachManagedAuxStreams(managed, { agentId, turnId, modelId, selectionRevision: captured.selectionRevision });
   };
 }

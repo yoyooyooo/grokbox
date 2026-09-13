@@ -7,7 +7,7 @@ import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { observeEvents } from "./journal.node.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { canonicalOwnershipAgrees } from "../process/identity-op.ts";
-import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
+import { probeModeldHealth, observeModeldService, type ModeldServiceObservation } from "../wire/modeld-probe.node.ts";
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "../process/linux.node.ts";
 import { copyInferenceTuple, projectRuntimeStatus, type ObservationGap, type RuntimeStatusFacets, type StatusEvidence } from "@grokbox/runtime-kernel/status";
@@ -44,7 +44,8 @@ type LiveStatusDraft = {
   contracts: { state: EvidenceState; head: string | null; sourceSha: string | null; diskMatchesHead: boolean | null };
   bundles: { state: EvidenceState; head: string | null; retained: number | null; liveRetained: boolean | null; lastMatchedSha: string | null };
   watchdog: { required: boolean; state: "stopped" | "running" | "degraded" | "unknown" };
-  modeld: { required: boolean; state: "stopped" | "running" | "unknown" };
+  modeld: { required: boolean; state: "stopped" | "running" | "unknown";
+    scope?: ModeldServiceObservation["scope"]; serviceEpoch?: string | null; observedAt?: string };
   models: { main: string | null; agents: Record<string, string>; assignmentState: "valid" | "invalid" | "unknown" };
   window: { durationMs: number | null; affectedInvocations: "unknown" };
   evidence: Record<"desired" | "models" | "source" | "processes" | "gateway" | "attestation" | "profile" | "events", EvidenceState>;
@@ -67,6 +68,7 @@ export const liveStatusAdapter = {
   processes: linuxProcessPort,
   envHas: procEnvHas,
   modeldReady: probeModeldHealth,
+  modeldService: observeModeldService,
   diskSha: async (): Promise<Observation<string>> => {
     try { return { state: "present", value: sha256Bytes(await readFile(LIVE_HOST_BUNDLE)) }; }
     catch (error) { return { state: isRecord(error) && error.code === "ENOENT" ? "missing" : "unavailable" }; }
@@ -145,6 +147,8 @@ function facetsFromDraft(status: LiveStatusDraft, events: { state: EvidenceState
       value: null,
     };
   }
+  // The caller supplies current Host events from the live root, not durable control history.
+  hostDelivery = { ...hostDelivery, source: "run/log/events.ndjson" };
   const evidence: StatusEvidence = {
     now: new Date().toISOString(),
     durableRoot: status.installation.durableRoot,
@@ -179,10 +183,11 @@ function facetsFromDraft(status: LiveStatusDraft, events: { state: EvidenceState
         : { pending: status.operation.pending === true, phase: status.operation.phase },
     },
     modeld: {
-      source: "modeld.sock",
-      observedAt: null,
-      gap: status.modeld.state === "unknown" ? "missing" : null,
-      value: { required: status.modeld.required, ready: status.modeld.state === "running" },
+      source: status.modeld.scope === undefined ? "modeld.sock" : "modeld.sock/service-info",
+      observedAt: status.modeld.observedAt ?? null,
+      gap: status.modeld.state === "unknown" ? (status.modeld.scope === "unavailable" ? "unavailable" : "missing") : null,
+      value: { required: status.modeld.required, ready: status.modeld.state === "running",
+        ...(status.modeld.scope !== undefined ? { scope: status.modeld.scope, serviceEpoch: status.modeld.serviceEpoch ?? null } : {}) },
     },
     controllerLiveness: { source: "controller", observedAt: null, gap: "missing", value: null },
     bridgeHost: {
@@ -280,9 +285,17 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
     : input.processes ? { state: "unavailable" as const } : await liveStatusAdapter.gatewayPid();
   status.evidence.gateway = gateway.state;
   try {
-    const ready = input.modeldReady ? await input.modeldReady() : input.processes ? null : await liveStatusAdapter.modeldReady(runRoot);
-    status.modeld.state = ready === null ? "unknown" : ready ? "running" : "stopped";
-  } catch { status.modeld.state = "unknown"; }
+    if (input.modeldReady || input.processes) {
+      // Existing bounded test/adaptor observations do not invent service identity.
+      const ready = input.modeldReady ? await input.modeldReady() : null;
+      status.modeld.state = ready === null ? "unknown" : ready ? "running" : "stopped";
+    } else {
+      const observed = await liveStatusAdapter.modeldService(input.root, runRoot);
+      status.modeld = { required: status.modeld.required,
+        state: observed.ready === null ? "unknown" : observed.ready ? "running" : "stopped",
+        scope: observed.scope, serviceEpoch: observed.serviceEpoch, observedAt: observed.observedAt };
+    }
+  } catch { status.modeld.state = "unknown"; status.modeld.scope = "unavailable"; }
 
   try {
     const port = input.processes ?? liveStatusAdapter.processes();
@@ -380,7 +393,7 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
 
 export async function projectLiveStatus(input: { root: string; desired?: DesiredFile; models?: ModelsFile } & LiveStatusPorts): Promise<RuntimeStatus> {
   const draft = await observeLiveDraft(input);
-  const events = await observeEvents(input.root);
+  const events = await observeEvents(input.ephemeralRoot ?? liveStatusAdapter.runRoot());
   return facetsFromDraft(draft, events);
 }
 

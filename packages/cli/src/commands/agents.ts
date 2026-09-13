@@ -17,6 +17,7 @@ import {
   type RosterAttributes,
 } from "./management.ts";
 import { findRosterRow } from "./roster.ts";
+import { projectOwnership } from "../ownership.ts";
 
 export async function runAgentsList(
   deps: CliDeps,
@@ -68,7 +69,7 @@ export async function runAgentsCreate(
   validateRosterSettings(raw);
   const client = new GatewayClient(deps);
   const operationId = createNonce(raw.nonce, deps);
-  const body = { ...createProfile(raw), clientNonce: operationId };
+  const body: Record<string, unknown> = { ...createProfile(raw), clientNonce: operationId };
   const created = await client.createAgent(body, io.timeoutMs, operationId);
   if (!isRecord(created.result) || !isRecord(created.result.agent)) {
     throw new CliError("gateway_internal", "Gateway createAgent response has the wrong shape.");
@@ -79,7 +80,22 @@ export async function runAgentsCreate(
     await applyRosterSettings(client, id, raw, io.timeoutMs, operationId);
     const current = await client.listAgents(io.timeoutMs);
     const agent = detailRosterRow(findRosterRow(current.agents, id, ["agent"]));
-    writeSuccess(deps.stdout, { agent }, gatewayMeta(current.discovery));
+    let snapshot: unknown;
+    let gatewayChanged = current.discovery.pid !== created.discovery.pid || current.discovery.startedAt !== created.discovery.startedAt;
+    try {
+      const identity = await client.getAgentOwnership([id], io.timeoutMs);
+      snapshot = identity.result;
+      gatewayChanged ||= identity.discovery.pid !== current.discovery.pid || identity.discovery.startedAt !== current.discovery.startedAt;
+    } catch { /* Created is a fact; unavailable read-back must not create/delete again. */ }
+    const ownership = projectOwnership({ agentIds: [id], snapshot, gatewayChanged });
+    const actual = ownership.agents[0];
+    const requestedHarness = body.harness;
+    const ownershipConfirmed = actual?.state === `confirmed_${requestedHarness}`;
+    writeSuccess(deps.stdout, { agent,
+      creation: { operationId, created: true, requestedHarness, ownershipConfirmed,
+        outcome: ownershipConfirmed ? "created_ownership_confirmed" : actual?.state === "conflict" || actual?.state.startsWith("confirmed_") ? "created_ownership_mismatch" : "created_ownership_unconfirmed",
+        managedEnabled: false }, ownership,
+    }, gatewayMeta(current.discovery));
   } catch (error) {
     throw new CliError("operation_outcome_unknown", "Agent was created but its final settings or projection could not be reconciled.", {
       context: {

@@ -4,7 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
+import { WIRE_VERSION, REQUEST_WALL_DEADLINE_MS } from "@grokbox/runtime-kernel/contract";
 import { Effect, Fiber, Layer } from "effect";
 import { BackendFailure, contextSnapshotBody, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
@@ -18,7 +18,7 @@ import {
   fakeModelBackendLayer,
 } from "@grokbox/runtime-kernel/testing";
 import { serveModeld } from "../src/internal/modeld/server.node.ts";
-import { COMPACT_WAIT_MS, sameConnectionHostCompactLayer } from "../src/internal/modeld/same-connection-compact.ts";
+import { COMPACT_RESUME_RESERVE_MS, compactWaitBudget, sameConnectionHostCompactLayer } from "../src/internal/modeld/same-connection-compact.ts";
 import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
 
 const EVENTS: InferenceEvent[] = [
@@ -79,7 +79,7 @@ function stepBody(generation: string) {
   };
 }
 
-async function drive(path: string, body: unknown, resume: (control: ReturnType<typeof parseV4ControlFrame>) => unknown) {
+async function drive(path: string, body: unknown, resume: (control: ReturnType<typeof parseV4ControlFrame>) => unknown, resumeDelayMs = 0) {
   return await new Promise<unknown[]>((resolve, reject) => {
     const socket = createConnection({ path });
     let session = clientSessionFor(body);
@@ -113,7 +113,9 @@ async function drive(path: string, body: unknown, resume: (control: ReturnType<t
           const next = acceptModeldFrame(session, decoded.value);
           session = next.session;
           if (next.control) {
-            socket.write(encodeModeldFrame(resume(next.control)));
+            const frame = encodeModeldFrame(resume(next.control));
+            if (resumeDelayMs > 0) setTimeout(() => { if (!settled) socket.write(frame); }, resumeDelayMs);
+            else socket.write(frame);
             continue;
           }
           frames.push(decoded.value);
@@ -215,7 +217,7 @@ describe("same-connection v4 HostCompact adapter", () => {
     expect(terminal.outcome).toBe("error");
   });
 
-  test("no resume-step before COMPACT_WAIT_MS is overflow, not attempt1", async () => {
+  test("no resume within the remaining parent budget is overflow, not attempt1", async () => {
     const dir = await mkdtemp(join(tmpdir(), "grokbox-v4-compact-wait-"));
     const path = join(dir, "modeld.sock");
     const generation = randomUUID();
@@ -230,7 +232,9 @@ describe("same-connection v4 HostCompact adapter", () => {
       serveModeld({
         path,
         generation,
-        compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming),
+        compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming, {
+          remainingMs: () => COMPACT_RESUME_RESERVE_MS + 80,
+        }),
       }).pipe(Effect.andThen(Effect.never), Effect.provide(layer)) as Effect.Effect<never, unknown>,
     ));
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -241,7 +245,7 @@ describe("same-connection v4 HostCompact adapter", () => {
       const collected: unknown[] = [];
       let buf = Buffer.alloc(0);
       let settled = false;
-      const timer = setTimeout(() => finish(new Error("timeout")), COMPACT_WAIT_MS + 3_000);
+      const timer = setTimeout(() => finish(new Error("timeout")), 3_000);
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
@@ -286,5 +290,45 @@ describe("same-connection v4 HostCompact adapter", () => {
     expect(counts.network).toBe(1);
     const terminal = frames.find((frame) => frame && typeof frame === "object" && (frame as { kind?: string }).kind === "terminal") as { outcome?: string };
     expect(terminal.outcome).toBe("error");
-  }, COMPACT_WAIT_MS + 4_000);
+  }, 4_000);
+
+  test("budget reserves attempt1 and never grants a fresh or infinite parent lifetime", () => {
+    expect(compactWaitBudget(30_000)).toBe(25_000);
+    expect(compactWaitBudget(10_000)).toBe(5_000);
+    expect(compactWaitBudget(5_000)).toBe(0);
+    expect(compactWaitBudget(-1)).toBe(0);
+    expect(compactWaitBudget(Infinity)).toBe(0);
+    expect(compactWaitBudget(90_000)).toBe(85_000);
+    expect(compactWaitBudget(REQUEST_WALL_DEADLINE_MS + 90_000)).toBe(REQUEST_WALL_DEADLINE_MS - COMPACT_RESUME_RESERVE_MS);
+  });
+
+  test("summary slower than the old 5s wait can resume within its parent budget", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-v4-slow-compact-"));
+    const path = join(dir, "modeld.sock");
+    const generation = randomUUID();
+    const counts = createCountedSeams();
+    const layer = fakeBackendAuthLayer("secret", counts).pipe(
+      Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+      Layer.merge(fakeConfigurationReadLayer({ models: file })),
+      Layer.merge(fakeAdmissionAuthorityLayer()),
+      Layer.merge(inferenceMemoryLayer({ serviceEpoch: generation })),
+    );
+    const fiber = Effect.runFork(Effect.scoped(serveModeld({
+      path, generation, compactForIncoming: sameConnectionHostCompactLayer,
+    }).pipe(Effect.andThen(Effect.never), Effect.provide(layer)) as Effect.Effect<never, unknown>));
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const frames = await drive(path, stepBody(generation), (control) => {
+        if (control.method !== "compact-request") throw new Error("compact");
+        expect(control.deadlineMs).toBeGreaterThan(5_000);
+        expect(control.deadlineMs).toBeLessThanOrEqual(REQUEST_WALL_DEADLINE_MS - COMPACT_RESUME_RESERVE_MS);
+        return { ...control, version: 4, method: "resume-step", deadlineMs: undefined, snapshot: snapshot("compacted") };
+      }, 5_100);
+      expect(counts.network).toBe(2);
+      expect(frames.filter((f) => f && typeof f === "object" && (f as { kind?: string }).kind === "terminal")).toHaveLength(1);
+      expect(frames.at(-1)).toMatchObject({ kind: "terminal", outcome: "ok" });
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.ignore));
+    }
+  }, 9_000);
 });

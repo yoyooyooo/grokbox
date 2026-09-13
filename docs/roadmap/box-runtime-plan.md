@@ -6,6 +6,12 @@
 
 产品义务遵循[产品合同 §12](../product-contract.md#12-box-local-model-runtime)，运行时边界遵循[设计](../box-runtime.md)与[架构 §17](../architecture.md#17-box-local-model-runtime)，重副作用遵循 [Effect 标准](../effect-box-runtime.md)。本文描述待建链条；源码与可执行测试拥有当前实现真相，不以计划存在证明交付。
 
+## 2026-09-12 当前交付路线覆盖
+
+本文保留架构策略和Phase 0–4，不再以旧“立即切片”重做已有代码。当前用户裁决是Server归属优先、只改Host、不改App、同原生Box会话可逆切官方/自定义模型；完整合同与依赖以[实施Spec S0](box-runtime-impl-spec.md#server-authority-rollout)为准。
+
+沿同一票号序列新增[T37归属准入](../tickets/T37-server-ownership-admission.md)、[T38身份writer/test2](../tickets/T38-identity-write-alignment.md)、[T39原生往返](../tickets/T39-native-model-roundtrip.md)、[T40持久发布](../tickets/T40-persistent-release-and-rollback.md)。T24负责选择，T26/T32/T35/T36各交本域证据；T40服务隔离可与T39并行，最终发布才合取。test2已是冲突样本，不再沿用历史heavy canary授权；旧文档片段/测试计数均不能替代新门。
+
 ## 当前基线
 
 本轮单轨重建基线为 `pre-publication-revision`；运行时代码仍为 `pre-publication-revision` 的状态，包含 `pre-publication-revision` 安全修复。下面列的是保留的产品性质/研究素材，不要求保留 POC 的内部接口或实现路径。
@@ -202,6 +208,8 @@ confirmed coordinator operation Scope
 
 ## Phase 2：共享命令边界与 WebUI MVP（T15 / T29，默认主链外）
 
+**2026-09-12范围更新：** T41持续观测、SQLite与incident在浏览器之前交付，[Spec S0.1.4](box-runtime-impl-spec.md#continuous-observation)拥有数据/权限合同。未来页面与交互详细要求已归[future/webui-console](future/webui-console.md)，本节保留策略与接口边界，不维护第二份UI排期。新增一个有实际管理职责的DB，不等于引入SQLite配置/执行SSoT。
+
 ### 2.1 固定 SoT 与有限命令面
 
 在盒内提供 loopback API/VNC 运维 console。canonical models/desired、control artifacts 与 Host 产品 stores 继续拥有事实；status/events 是观察，browser cache 是投影。API 不直写文件、不读 Host SQLite/ABI，也不通过 daemon/SSH/generic exec 转发 runtime mutation。
@@ -228,26 +236,22 @@ GET 不调用 start/watchdog tick、不 compact 日志、不修复、不解析�
 
 prepare 与 apply 分开。CLI 沿用 `runtime re-adopt --confirm`；WebUI 的一次确认调用同一受控本地用例，不增加独立 mutator。确认绑定本盒目标、desired/profile/Host/config 修订及短有效期；变化后重读/重确认。一次授权对应唯一 operation identity；双击、重连、ack 丢失先查询原操作，不再次 dispatch。`ok:true`/exit 0 不抹掉 recovery-required；没有回执不等于没有执行。
 
-console/control process root 持有长期资源与操作，HTTP 只持有等待/订阅。只停止自己启动的 modeld，复用服务视为 borrowed resource。浏览器关闭不停止服务、不取消已授权操作；console 退出不等于恢复官方 Host。crash/restart 从 canonical journal/receipt 观察 unknown，不从 cache/outbox 自动重放。confirmed apply 的共享 owner、lease、guardian 与收尾证明先于开放写权限，不要求先重建全部无关控制面。
+长期runtime/monitor/control root持有资源与操作，console HTTP仅持有请求等待/订阅；collector不随console退出而消失。只停止自己启动的 modeld，复用服务视为 borrowed resource。浏览器关闭不停止服务、不取消已授权操作；console 退出不等于恢复官方 Host。crash/restart 从 canonical journal/receipt 观察 unknown，不从 cache/outbox 自动重放。confirmed apply 的共享 owner、lease、guardian 与收尾证明先于开放写权限，不要求先重建全部无关控制面。
 
-### 2.3 交付三个表面
+### 2.3 未来页面与数据边界
 
-- **Overview**：状态、prepare、需要时的一次 confirmed apply，保留 blocked/recovery-required/unknown。
-- **Bots/detail**：同盒 roster、配置选择、Host running 状态、最近有证据的模型使用；编辑已配置模型。
-- **Runtime evidence**：兼容性、coverage、mutation inhibit、operation、最近安全事件；不冒充完整 trace、精确费用或 App 交付证明。
+页面范围、URL状态、快照→订阅、草稿/冲突和真实浏览器验收统一见[Web UI未来合同](future/webui-console.md)：单Box概览/能力、Bot详情、事件/incident和操作结果。harness只读；supported/desired/effective、saved/actual TURN分开。原版App消息/Working不被自建Web UI取代。
 
-UI 分开 draft → saving → saved-awaiting-use 与 observed usage。URL 拥有 Bot/tab/filter，query 拥有远程投影和 freshness，组件拥有草稿；事件只触发失效/安全投影，不另建 assignment writer。
+未覆盖Bot不继承main；逐Bot回官方最终依T24 reset能力开放，不把当前route限制固定为未来产品规则，也不偷做全局deactivate→reset→activate。第二writer防覆盖仍在同一ConfigurationWrite。
 
-未覆盖 Bot 显示官方，不继承 main；route 下 reset 目前拒绝，MVP 明确禁用该操作，不偷偷 `deactivate→reset→activate`。可靠运行中切换以 RouteBinding 出口为准，不以一次 `isRunning=false` 采样消除竞态。
-
-**MVP 不使用 SQLite**，不含 catalog/secret CRUD、chat composer、长期图表。以后有真实查询需求才增加可丢弃的 UX index：只 ingest 安全投影，单向派生，绑定 source revision/epoch，损坏时降级到 canonical 快照；不能恢复配置/pin、驱动 admission 或保存自动命令 outbox。来源已淘汰的事件不能承诺重建，cache 不是审计权威。
+旧“MVP不使用SQLite/全部可丢弃索引”已由[Spec S0.1.4](box-runtime-impl-spec.md#continuous-observation)细化：T41在UI前保存观测、变化、incident及通知回执；current projection可重建，历史/ack不能假称随时可丢。浏览器/API不能直接写库，DB不能恢复配置/pin/准入或成为自动任务outbox；J13与Host stores不搬迁。长期图表、额外渠道、多盒等放[future](future/README.md)，不进入首版。
 
 ### Phase 2 出口
 
 - CLI/API 同义、两个 writer 不丢更新；错 Profile/错盒/过期 revision 不写入。
 - auth/Origin/CSRF 拒绝与 GET 零写/零信号/零 spend 有测试；响应、日志、缓存和导出均无凭据/原始 provider 正文。
 - preview drift、双击、断线、ack 丢失、reload 不重复 apply、不误停 borrowed modeld、不伪造成功。
-- saved、ready、last observed、delivered 在页面与恢复路径上分开；unknown/stale 保留，reset 限制明确。
+- saved、ready、last observed、delivered分开，unknown/stale保留；每个按钮只按其当前用例的真实资格开放，不将旧reset限制当永久规则。
 - 可先交付安全只读 console；可写选择、可靠切换、confirmed apply 分别通过相应门禁后开放。
 
 ## Phase 3：准入并实现额外 ModelBackend（T16）
@@ -297,6 +301,8 @@ Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry
 
 ## 票据与实施对应
 
+当前序列以[Ticket索引](../tickets/README.md)为准。T41是Web UI之前的持续观测/SQLite/incident，不接管T37安全准入；T40收长期运行最低闭环，T29未来仅消费。以下历史Phase映射不新增第二排期。
+
 本轮执行采用 **T20–T33 新票据**，不重用旧 T2/T4 的交付意义。A3fu/A5–A10 仅用于追踪原 finding；历史 done 仍为 done，旧 open 产品票作范围索引。唯一详细依赖与证明映射见[实施规格 S8/S9](box-runtime-impl-spec.md#tickets)和[票据索引](../tickets/README.md)。
 
 | 策略范围 | 实施票据 | 阶段 |
@@ -315,7 +321,7 @@ T10–T12 与 A1/A2/A4 的产品性质全程回归；已完成 POC ticket 不是
 - 不重建 Host loop/tools/root/compact/Memory/Transcript/SendToUser/官方 renewal/publish，不 prepend store.db，不设置默认 live 近窗 caps。
 - 不将已知拒绝的 Responses raw `role=tool` 恢复为 CCS 通用路径，不用正文关键词、40ms 延迟或无 STEP replay 充当协议。
 - 不建第二 admission/reconciler、`effectMode`、SDK 内部 Agent loop/隐式 retry；不把 Scope 当跨文件事务或 crash recovery。
-- 不引入 authoritative SQLite、UI assignment table、自动 outbox、通用 provider/插件平台或新 npm 包家族；纯 shadow 仅比较映射/投影，不双真实 dispatch。
+- 不引入SQLite配置/身份/执行权威、UI assignment table、自动任务/控制outbox、通用provider/插件平台或新npm包家族。T41允许本域观测/incident/通知回执，不因此获得模型/Host写权限；纯shadow不双真实dispatch。
 - 不在 Host/preload 加 Effect/SDK，不改变 J13/独立 guardian 的边界；不未经收益/耦合审查增加 Host patch，也不把“两刀”当成永久硬禁令。未证明能力停止受影响路径，不猜接口。
 - 不先建设模型选择投影文件族、第二 writer 尚未出现的复杂 CAS/事务层或无 D/S/H 收益的架构外形；必要双向 codec、Phase 1 真流和 A9 资源边界不属于可删装饰。
 - 不以 UI 超时、缺事件、candidate overflow 或 publish pending 自动重发/compact/re-adopt；不自动关 circuit、批准未知 profile 或转发远程 runtime mutation。

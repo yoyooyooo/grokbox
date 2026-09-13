@@ -2,6 +2,26 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
+## 当前资格增量（2026-09-12，先读本节）
+
+下文旧 2026-09-10 行号/接点结论保留为历史证据，不作为当前 release profile。owner 已授权真实 Host 切换/re-adopt 与有限 CLI e2e，当前模型使用 `ccs-sub2api-xai/grok-4.6`，不再调用已无额度的 luna。
+
+本轮实际读取当前 Host **`307de3990394efc6b9a868537bab8504fceec3cc898cdd2ad91de68830f2f8dd`**，发现旧 agent-id patch 的 `modelId` 字面片段已经改为 Host 自有 `modelId / executorProfile` 分支。实现改为在 mainSessionOptions 开头只插入 Agent/TURN 身份，保留原生选择；新增两个 ordinary/executor fixture 先红后绿。其余精确 slices 在此 SHA 上唯一匹配，转换后语法有效。
+
+- 当前 transformed SHA：`0f3e5e9665adccd80bab219ad93727347300914f96c52c5fc67925b0b5431f32`。
+- AST 选择真实 `handleSummarization` 及真实同步 state mutators，在无 Host 启动/外网/产品存储能力的 VM 执行；root/privacy/provider/blob/metrics 是 owned fixture。成功：provider=1、blob=4、clear=1、append=2、archive=1；生成等待中取消与 root 换代两反例：provider 已开始1，但 blob/root/archive 写入均0。所有等待释放并结算，Host 原文件未改。
+- native core SHA：`94aa52129230679f3a7386aae260955784c67610cff39614ac8657ae8f7a1415`。机器内可重放脚本：`PRIVATE_EVIDENCE`；私有原生源码不进入公共仓库。
+- 这补充当前 profile 的局部 native 接受/取消资格，**不证明全部 callback alias、pending-background 收口、完整 native loop 或真实 overflow 恢复**。不能把 guard facade 的证明泛化为任意 Host ABI。
+- SDK pipeline 回归同时抓到 Compact 后原 tools/options 丢失：kernel 现只用 Host 新 messages，保留原已受理 STEP 的 tools/options，并核对 profile/ABI、重算 snapshot digest。正/反向 SDK body 用例已通过。
+
+已执行的真实 profile publication、re-adopt、独立模型凭据切换及尚未闭合的 e2e 统一记在 [readiness](../maintainers/t32-live-enable-readiness.md)。本页不是生产总验收，T32/T35 不因局部 native 资格或模型 smoke 自动 Done。
+
+---
+
+## 历史资格（2026-09-10，不覆盖上述当前增量）
+
+**2026-09-12 当前资格状态：未通过。** 下文保留早期固定版本的诊断与条件性资格，不是最新 Host 的 GO。当前 source-pin 测试期望 `2ede71e2…`，现场实际为 `307de399…`，该红项未放宽。工作树已有注册前移、managed 摘要协调/原生 retry 控制与 delegate 生命周期修复；最新范围和隔离证明见 [T35](T35-host-compact-wait-point.md)，发布/模型可用性见 [readiness](../maintainers/t32-live-enable-readiness.md)。Owner 已允许必要重新领养；仍需针对实际版本验证摘要 mutator、迟到回调及 root 接受合同，不能用旧行号、方法名或 owned fixture 代替。下文的“尚未实现”“不得移动注册”等仅解释旧基线，不再构成当前施工约束。
+
 **2026-09-10：conditional GO for offline implementation；不是可直接启用的runtime capability。** 主票：[T32](T32-runtime-confirmed-compact.md)。源码基线 `pre-publication-revision`。H表示 `/home/box/sand-host/host-main.cjs` 的1-based行，SHA256 **`f5cc35b57135ddbb5e32bbfa8e3bdcbdc9d6a88540043059feb8049280df2740`**；换SHA须重资格，不能只沿用名字。
 
 结论分三层：

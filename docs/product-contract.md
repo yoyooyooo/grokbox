@@ -1,7 +1,5 @@
 # `grokbox` CLI 产品合同
 
-> Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
-
 本文是 `grokbox` 命令、Profile、输出和能力边界的 Current Home。它描述已经接受的**未来完成态**，不是当前源码能力清单。当前实现已覆盖 agent-first CLI、Profile/init、local/remote daemon、agent/group management、governed filesystem、structured exec/durable Jobs、generation-aware unified events/recovery、显式 OAuth quota adapter、Cursor Sandbox lifecycle adapter、实验性 desktop 管理，以及 layered doctor/explicit recovery；最终外部 evidence matrix 仍由后续本地 Ticket 跟踪。交付进度必须由本地 Issue tracker 与源码/测试证明，不能只从本文的未来完成态推断。
 
 实现边界见 [CLI 架构](architecture.md)。当前 quota source、DTO、错误和真实证据见 [Quota Current Home](quota.md)。Cursor Sandbox、`EnsureSandBox`、freeze 与外部 keeper 背景见 [Sandbox 控制面](cursor-sandbox-control-plane.md)。当前 Gateway 与 box 信任事实见 [上游集成](upstream-integration.md)。非官方身份、商标和上游私有接口的稳定性等级见 [兼容性边界](compatibility.md)。Box-local 模型运行时义务见 §12；设计见 [Box-local model runtime](box-runtime.md)。
@@ -355,6 +353,10 @@ Quota adapter 同样独立声明 `quota.read`。静态 Profile 只能报告 `pro
 
 名称解析规则：精确 ID 优先；否则匹配大小写不敏感的 name/title；零命中为 `target_not_found`，多命中为 `target_ambiguous`。破坏性命令默认要求交互确认；非 TTY 必须显式 `--yes`。
 
+Roster只读投影保留`harness: box|temporal|unknown`；字段缺失不假报box，也不从serverId推断。它是Gateway声明，不证明桌面实际选源。**2026-09-12目标合同：普通`agents update`不得发送/回填harness，显式修改既有归属写前拒绝；Create可请求类型，但Server确认/回读才构成资格，未知不重新create或强写本地。** 当前隐式写入仍待[T38](tickets/T38-identity-write-alignment.md)收口，文档更新不是已实现声明。
+
+`agents ownership <targets...>` is a read-only Host-backed inspection of official Server registrations, not a harness setter. It accepts 1–32 named/public-UUID targets, makes one native Server List call, and compares finite Server identity/harness fields with local before/after observations. Server credentials stay inside the Host; the explicit getHostStatus extension does not run on ordinary status calls. Unknown bridge/auth/identity, duplicates, unstable local evidence or Gateway changes must not produce a confirmed result. Classes are confirmed_box / confirmed_temporal / conflict / unconfirmed; App route and migration observations are separate facets. confirmed_box is not production approval, ownership inspection never reconciles/migrates/repairs, and the command does not yet automatically guard send/models-use. Implemented across direct Gateway and daemon transports; [harness current home](maintainers/transcript-harness-box-vs-server.md#read-only-ownership-inspection-contract) owns details.
+
 ### 7.2 Groups
 
 Group 是 roster 中 `isGroup=true` 的产品对象，不是 CLI 自建文件格式。正常 writer 是 Gateway。成员命令拒绝 nested group、重复成员和超过 Gateway 当前限制的集合；Gateway 拒绝仍是最终事实。
@@ -371,6 +373,8 @@ printf '%s' '<text>' | grokbox send <id-or-name>
 文本输入规则对 `send` 和 `fs write` 一致：显式 `--text` 存在时永远不读取 stdin，并且在非 TTY/CI/agent runner 中正常工作；只有未提供 `--text` 时才读取非 TTY stdin。两者都缺失时返回 `invalid_usage`；显式参数与可读 stdin 同时存在时，以显式参数为唯一输入。
 
 ### 7.4 History, Memory, Export, Events, Running
+
+`history outcome --expect-harness box|temporal` 在每次采样前后核对声明来源；本机 `--runtime` 隐含 box 要求。跨 harness、缺声明或不符时不得用另一账本的相同 entry/预期正文判成功，保持 unknown。前后采样不是原子快照，也不读取 App 的本地缓存；详见 [结果观测](maintainers/run-outcome-observation.md)。
 
 - `history search` 搜索 transcript 内容，不属于 agent roster 搜索。
 - `history tail` 支持 `--limit` 与 `--before-seq`。
@@ -466,19 +470,27 @@ Daemon 默认只监听 Unix socket或 `127.0.0.1`。远程暴露优先由 Tailsc
 
 ## 12. Box-local model runtime
 
-本节是已接受义务，不是当前源码已实现清单。详细注入与 PromptSession 设计见 [Box-local model runtime](box-runtime.md)。
+**2026-09-13观测扩展（本地CLI/SQLite子集已实现，T41未完整关闭）：** 持续观测在Web UI之前交付；共享采集、单盒SQLite变化/incident、有界通知与管理操作由[Spec S0.1.4](roadmap/box-runtime-impl-spec.md#continuous-observation)约束。Box与Bot分别标识，Server登记仍决定执行归属，SQL投影不能授权执行、改模型配置或替代Host历史。lastKnown与stale/unavailable分开，查询失败不伪造归属迁移；ack/snooze不等于问题恢复、不改变执行准入。
 
-`grokbox runtime *` 是 **Agent-first、盒内机器接口**，不是给人点的日常 UI。人用的表面只有未来的盒内 WebUI/VNC，且必须调用同一套 use case，不能另写一套 mutation。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外返回 `runtime_local_only`。同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。
+SQLite中的current projection/日志索引可按仍存在的来源重建，observed history及用户确认/通知回执是本域持久事实，不能一概清除为cache。通知默认不外发，渠道需显式配置与授权，重试只发通知；普通GET不启动采集/建库/迁移/repair。已有Host `alerts list` tray与新monitor incident分别表达。页面关闭后monitor仍运行，整机离线的主动监测需要future外部observer，不能承诺本机自报死亡。
 
-Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。离线审 profile：`runtime profile write --from <host-bundle>`（只读显式绝对路径输入，校验已批准切片及 source/transformed SHA，以私有临时 profile 文件原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）。失败可留下未发布的 protected staging，reader 只读 canonical artifact；并发成功写入以最后一次原子 rename 为准，生成不等于人工审核或 live 授权。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。**No live unless authorized**：`runtime re-adopt --confirm` 是唯一带 live Host adopt 权限的公开 CLI composition root：缺 `--confirm` 或非本机在构造 live ports 前拒绝；匹配的 canonical 身份、`attestation.diskSha === liveDiskSha()` 且 reviewed profile 一致时是零信号 no-op；所有权仍精确但 SHA 过期（`reason=stale_attestation`）才允许一次手动 deactivate→official→transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。一次调用最多一次 attempt。它不是 `activate` 的隐藏路径；本 slice 的 `watchdog run` 不接 live mutation ports，不能自动改 Host。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。`runtime start --mode observe|identity|route` 是统一确保入口：probe/start stub modeld（与 `modeld run` 同一 listen 路径，本进程、不另起 daemon）、按 `activate` 语义写 desired、identity/route 再单次 watchdog tick、打印 status。默认路径不 `re-adopt`、不 canary、不把 watchdog 并进 `daemon serve`。本 slice 的 route 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`）：`activate --mode route` 与 desired=route 下的 `models use` 对其它 provider 赋值 fail-closed。seam 不再在 modeld 前因非 stub modelId 拒绝；modeld composite 再 admit。默认 assignment 仍是 stub。
+当前本地入口为`runtime monitor init --confirm`、`run --agents <uuid,...> --confirm [--once]`、纯读`snapshot/events/incidents`及带requestId/expectedRevision的`ack/snooze`。只在显式init/run/管理中写观察域，GET不建立数据库、不打Server。前台run输出提交后的稳定ID变化；目前是local-only，没有外部通知投递/自启/硬崩溃锁回收的完成承诺。存储有限、错误与分页合同见[持续观测维护页](maintainers/continuous-observation.md)。
 
-当前 Unix modeld 复用单一 generation-bound admission/pinning 内核：服务侧核对 desired、S2 compile attestation 与匹配的 committed journal，按 Bot 解析不可变配置；Host hook 不读签字/journal authority，只可有界读取现有 session ABI 所需的模型选择字段。错误 generation/activation/source/稳定身份在 driver effect 前拒绝。stub 不解析凭据、不访问 provider；fingerprint 仅由 fake port 验证。重复 invocation 不重新 dispatch；过期保留有界拒绝记录，满额显式 capacity；断线/重启的不确定请求不盲目续传或回官方。默认 500 ms admission、30 s TTL、1024 条 ledger、64 个活跃 Unix 客户端，stop 取消内核并关闭客户端。health 是服务 readiness，不是 Host 已签字证明；详见 [Box-local model runtime](box-runtime.md) §5。这仍不证明 live Host/provider 或跨重启 exactly-once。真实模型路径 **A+S1**：AI SDK / provider SDK 只允许实现 modeld 内 `ModeldDriver`；S1 把 chunk 缓冲进现有 `complete()` 的 `StreamPart[]`。T4b 在 `@grokbox/box-runtime` 安装 `ai` + `@ai-sdk/openai`，Chat Completions / Responses 由 `provider` 选择，`endpoint` 为 baseURL。preload/seam/session/Host 与 CLI package 保持 SDK-free。默认 CLI 仍是 `stub/echo`。Host 拥有工具循环，不得默认打开 provider server-side agentic tools。S2 streaming IPC 与 C1 凭据产品化不在本切片；测试禁止真实 spend。
+Web UI是未来grokbox自己的控制台，不修改官方Grok Bot.app；按[future页面合同](roadmap/future/webui-console.md)展示Box/Bot、supported/desired/effective、历史/告警与操作回执，修改仍走共用commands/ConfigurationWrite。前端暂缓不推迟T37安全门或T41最低观测闭环；未来多盒/高级通知按各自晋升门实施。
+
+本节是已接受义务，不是当前源码已实现清单。**2026-09-12：以Server登记为执行归属权威，只改Host、不改App；在同一确认Box的原生会话内可逆切官方/A/B模型。** [Spec S0](roadmap/box-runtime-impl-spec.md#stable-delivery)定义V01–V30；新增T37–T40分别拥有归属准入、身份writer/test2、完整往返、持久发布，T24/T26/T32/T35/T36继续本域实现。不会修改Server harness来实现模型切换，也不另建ME路线。更多 provider、全 WebUI、完整 Harness 不作先决条件；工具、多 TURN、实际会经过的 Memory/episode 与 checkpoint/reload 不得为验收静默停掉。
+
+`grokbox runtime *` 是 **Agent-first、盒内机器接口**，不是给人点的日常 UI。用户日用入口是**真实 Grok Bot**；未来盒内 WebUI/VNC 仅为配置/运维入口，必须调用同一套 use case，不能另写一套 mutation。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外返回 `runtime_local_only`。同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。
+
+Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。离线审 profile：`runtime profile write --from <host-bundle>`（只读显式绝对路径输入，校验已批准切片及 source/transformed SHA，以私有临时 profile 文件原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）。失败可留下未发布的 protected staging，reader 只读 canonical artifact；并发成功写入以最后一次原子 rename 为准，生成不等于人工审核或 live 授权。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。**No live unless authorized**：`runtime re-adopt --confirm` 是唯一带 live Host adopt 权限的公开 CLI composition root：缺 `--confirm` 或非本机在构造 live ports 前拒绝；匹配的 canonical 身份、`attestation.diskSha === liveDiskSha()` 且 reviewed profile 一致时是零信号 no-op；所有权仍精确但 SHA 过期（`reason=stale_attestation`）才允许一次手动 deactivate→official→transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。一次调用最多一次 attempt。它不是 `activate` 的隐藏路径；本 slice 的 `watchdog run` 不接 live mutation ports，不能自动改 Host。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。`runtime start`的稳定目标是复用T25/T28唯一程序确保所选配置、持久凭据及服务生命周期，重复启动不重复实例；该产品闭环由[T40](tickets/T40-persistent-release-and-rollback.md)关闭。旧“启动stub＋一次tick”是POC历史。当前入口复用production root和Effect Scope：route配置先验、匹配根后借用或新建、保存desired、未确认reconcile及status；新建时打印ready回执后继续前台至signal，borrowed直接返回。`configRevision`不是运行生效证明，准备命令不安装自启、不批准生产；异常退出不会伪造配置回滚。源码接线、实际CLI/制品资格与持久部署分别由T40报告，不把局部单测当可生产。默认不借查询隐式re-adopt/canary，不把watchdog另并入daemon执行一套控制。本 slice 的 route 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`）：`activate --mode route` 与 desired=route 下的 `models use` 对其它 provider 赋值 fail-closed。seam 不再在 modeld 前因非 stub modelId 拒绝；modeld composite 再 admit。默认 assignment 仍是 stub。
+
+Unix modeld 复用唯一 `runtime-kernel` admission / RouteBinding / STEP ledger / Effect 程序，经当前 v4 transport 执行一个 `ModelBackend` Stream。AI SDK Chat/Responses 在 box-runtime adapter；Host leaf 与 CLI 保持 SDK-free，Host 拥有工具循环，不默认启用 provider agentic tools。旧 A+S1 `complete()/StreamPart[]` 是 POC 历史，不是当前兼容义务或实现架构。错误 generation/authority/selection/auth 在相应 effect 前拒绝；重复 STEP 不重新 dispatch，不确定执行不跨断线/重启盲目续传。health只证明服务响应；真实runtime status再通过service-info确认当前数据根，报告scope/serviceEpoch，错根或缺失身份不能显示安装ready。这仍不是Host已加载、Bot有执行权或用户已收到结果的证明。`stub/echo` 是显式无网络 backend，不是静默 fallback；实际资源上限见 canonical contract，而非旧阶段常数。
 
 长效根为 `/workspace/.grokbox/box-runtime/`（配置、PatchProfile、合同切片、事件日志；云电脑重置不丢）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。现有 grokbox Profile 仍在 `~/.grokbox`，本次不搬家。`models.json` 的凭据字段只接受 `env:<NAME>` 与 `file:/absolute/path`；`file:` 放长效树 `secrets/`；literal secret 与 `$VAR` 为 schema error。短效 live state 固定 `~/.grokbox/run/`（含 `attestation.json` 与 `modeld.sock`），不读 `XDG_RUNTIME_DIR`。daemon socket 仍按 §5.2：默认 XDG runtime 路径，缺失时回退 `~/.grokbox/run/daemon.sock`。
 
-`assignments.agents.<id>` 是 route 下唯一的 managed opt-in（稳定 agent id；CLI `--for` 写入该覆盖）。**没有覆盖的 Bot 回官方 Host session。** `assignments.main` 可选，不是未覆盖 Bot 的回退。`activate --mode route` 允许 agents-only（`main` 可为 null）；已出现的赋值须为 `stub/echo` 或 openai*（http(s) endpoint + `env:`/`file:` `apiKeyRef`）；其它赋值 fail-closed。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 写 `main`，不把其它 Bot 拉进 modeld。route 期间 `models reset`（默认或某一 Bot）拒绝，须先 `activate --mode identity` 或 `deactivate`。
+`assignments.agents.<id>` 是 route 下唯一的 managed opt-in（稳定 agent id；CLI `--for` 写入该覆盖）。**没有覆盖的 Bot 回官方 Host session。** `assignments.main` 可选，不是未覆盖 Bot 的回退。`activate --mode route` 允许 agents-only（`main` 可为 null）；已出现的赋值须为 `stub/echo` 或 openai*（http(s) endpoint + `env:`/`file:` `apiKeyRef`）；其它赋值 fail-closed。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 写 `main`，不把其它 Bot 拉进 modeld。**目标：route期间`models reset --for <bot>`必须支持仅该Bot下一TURN回原生official，不全局deactivate、不改harness。** 当前源码仍拒绝route reset，是[T24](tickets/T24-runtime-route-binding.md)的待修差额，不继续作为长期限制。合法未opt-in和用户明确official，与损坏/不可读配置导致decline严格区分；配置saved与当前TURN captured分开投影。
 
-T11 失败分流：createSession 预 dispatch（缺 `models.json`、resolve 失败、缺 agent/TURN、`modeld.sock` 不在、尚无工具副作用）回官方 `originalSession`。Host 已持有 managed session 之后（handshake/admit/provider/normalize，含 mid-tool）只投递可见 managed error，字段含 `agentId`、STEP `invocationId`、`stage=admit|provider|normalize`；**禁止**静默官方 replay。Debug canary 是 grokbox test0 `00000000-0000-4000-8000-000000000114`；grokbox test1 `00000000-0000-4000-8000-000000000113` 未 opt-in 则官方。其它 Bot 经 T10 官方。
+**R2 选择承诺覆盖旧 T11 隐式预 dispatch fallback。** 已选择 managed 的 Bot 若桥/资格/准入不可用，应明确 unavailable，不偷偷切官方主模型；尚未配置的 Bot 才是正常 official passthrough。当前实现中旧预 dispatch fallback 的剩余差额归 T24/Spec S0，不因更新文档就视作修好。managed 错误保持身份/阶段关联，不能转换为模型正文或写入有效 Memory。test0为每窗口重新确权的正例候选；**test2已证Server temporal/local box，仅用于冲突诊断/阻断，不能再作heavy/managed正例**；test1保持未opt-in官方对照。实际live仍须符合当次候选与授权边界，test2安全校准另行确认且不合并历史。
 
 长效 `contracts/` 保存 Host **合同切片**快照（不进 git）：仅在 live source SHA 变化时写入，最多保留 5 个 SHA，默认不存整份 `host-main.cjs`。快照用于报告切片 drift，不自动打补丁、不还原官方 Host。
 
@@ -487,11 +499,13 @@ MVP / 可发布声明的 ordinary main envelope：
 - 支持 text/system/history、tool schema、serial tool call、true streaming、abort；
 - image/attachment：所选模型声明视觉能力则必须送达；未配置视觉能力则在 provider effect 前失败，并尽量以 Bot 可见消息告警（Host 执行 `SendToUser` 或等价），不得静默；
 - parallel/interleaved：能关闭则关闭；仍出现则不得丢弃或错配；
-- 未补丁窗口：有界等待自定义模型；等待绑定该次注入/恢复预算；超时熔断并恢复健康官方链；**该用户句**在极端情况下可用官方模型接住以免无回复，且必须可见说明这次走了官方；**后续句子**继续抢自定义，官方不升格为默认。
+- 未补丁/不可用窗口：在已声明父预算内等待或明确拒绝；不把该 managed 用户句改送另一个主模型，不重放未知副作用。官方 Bot 独立保持原行为。
 
-当前 S4 离线证据只覆盖 provider-neutral envelope、同步 handle、scripted incremental producer/replay、可见拒绝/取消与 Host 合成副作用向量；生产 stub IPC 仍 response-only，不能据此宣称已满足真实 provider streaming 或完整 S5 admission。错误响应须含可投递的 assistant content，不以空 messages 或假 tool call 冒充可见错误；执行工具和写 Transcript/Memory 始终由 Host 拥有。详见 [Box-local model runtime](box-runtime.md) §2。
+证明按 source / 实际 packed / 原生隔离资格 / live 合成触发 / 真实 provider 分层。旧 response-only S4 描述不再是当前源码事实；当前实现与未证项由原 verifier/Ticket 给出。错误作为错误交给 Host，不产生假 assistant 正文、空成功或假 tool call；工具、Transcript/Memory 的写入仍归 Host。
 
-managed 调用一旦出门，失败不得静默回官方模型或换 provider。出门前、Host 仍可收下 `originalSession` 时允许 T11 预 dispatch 官方 passthrough；出门后只可见失败（`agentId` + STEP + `stage`），不实现静默 `last_resort_official`。Host 继续拥有工具循环、Transcript、Memory 与 `SendToUser`。`runtime status` 分层：installation / activation `{desired,actual,reconcile,reason}` / host `{diskSha,origin,reason,topology}` / coverage / coordinator / operation / watchdog / modeld `{required,state}` / models / window `{durationMs,affectedInvocations}`。disabled 但仍 patched 时必须 pending，不能把意图写入当 rollback-done。缺失/损坏的 coordinator、journal、attestation 或 contract metadata 明确 unknown/null 及文件 evidence 状态；不能填入假 closed/0/空 drift，不能把持久记录当 heartbeat。`contracts` 返回有界 generation metadata 的真实 hashes/drift，不读取正文或修复；`log` 返回有界投影快照，当前 `--follow` 明确拒绝（invalid_usage），未实现前不得静默返回单次成功快照。`models check` 只承诺 schema 检查，输出 serviceReadiness=not_checked。详细当前字段语义与上限见 [Box-local model runtime](box-runtime.md) §8。`claimCeiling` 留在文档与测试证据，不进首发 status JSON。
+`runtime status` 使用同一 status projector 的 installation/circuit 与 bridge、modeld、controller、mutation、recovery、hostDelivery facets；缺来源/错代/陈旧记录保持 unknown/gap，不用历史成功冒充当前 delivery。disabled 但仍 patched 不能显示 rollback-done，desired 写入不等于已卸载。只读命令不 repair/清 circuit/发模型请求；字段与上限由 canonical contract/source tests 验证。稳定版本还须固定 source/packed/Host profile 与运行代、支持模型/Bot、正常持久启用/停用及安全退路；临时 env canary 演示不是可持续配置，故障注入始终不作为正常功能。
+
+**发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。最终批准使用readiness现有记录，不由某个绿色测试或ownership结果直接生成。
 
 ## 13. 输出与错误
 

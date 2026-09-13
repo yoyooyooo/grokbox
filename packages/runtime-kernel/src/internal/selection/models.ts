@@ -261,11 +261,11 @@ export function applyReset(file: ModelsFile, forAgent?: string): ModelsFile {
   return { ...file, assignments: { ...file.assignments, agents } };
 }
 
-export function assertResetAllowed(desired: DesiredFile): void {
-  if (desired.mode === "route") {
+export function assertResetAllowed(desired: DesiredFile, forAgent?: string): void {
+  if (desired.mode === "route" && !forAgent) {
     throw new BoxRuntimeError(
       "invalid_usage",
-      "models reset is refused while desired mode is route; deactivate or activate identity first.",
+      "Reset of the box default is refused in route mode; use --for <agent-id> for a single Bot's next-turn official selection.",
     );
   }
 }

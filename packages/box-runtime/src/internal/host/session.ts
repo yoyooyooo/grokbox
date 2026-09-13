@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
 import { STUB_ECHO_MODEL_ID } from "@grokbox/runtime-kernel/selection";
-import { buildHostEnvelope, cloneHostExecutorWindow } from "./context-codec.ts";
+import { buildHostEnvelope, cloneHostExecutorWindow, HostStateCodecError, type HostStateShape } from "./context-codec.ts";
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
@@ -56,10 +56,32 @@ export type ExtendedUsage = { inputTokens: number; outputTokens: number; cacheRe
 export type HostStreamResult = StreamHandle & {
   extendedUsage: Promise<ExtendedUsage>; providerMetadata: Promise<Record<string, unknown>>; invocationId: Promise<unknown>;
 };
+// Process-local provenance, not provider-supplied codes/names/text. Bounded cause traversal
+// preserves this fact through native wrapping without admitting arbitrary provider errors.
+const managedFailures = new WeakSet<object>();
+/** Called only by a trusted local adapter/refusal or owned native STEP scope,
+ * never by interpreting a provider-supplied error code or message. */
+export function recordHostManagedFailure(error: unknown): boolean {
+  if (error === null || typeof error !== "object") return false;
+  managedFailures.add(error);
+  return true;
+}
+export function isHostManagedFailure(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 8 && current !== null && typeof current === "object"; depth++) {
+    if (managedFailures.has(current)) return true;
+    const cause = Object.getOwnPropertyDescriptor(current, "cause");
+    if (!cause || !Object.hasOwn(cause, "value") || cause.value === current) return false;
+    current = cause.value;
+  }
+  return false;
+}
+
 export class InvalidHostStateError extends EnvelopeError {
   readonly name = "InvalidHostStateError";
   constructor(code: EnvelopeErrorCode = "invalid_envelope") {
     super(code);
+    managedFailures.add(this);
   }
 }
 export type HostPromptExecutor = {
@@ -139,6 +161,7 @@ export function normalizeHostResponse(value: unknown): HostResponse {
 /** Error Host `classifyError2` wraps as RetriableError → runTurn catch → official tray. Not assistant text. */
 export function hostVisibleStreamError(failure: VisibleFailure): Error {
   const err = new Error(failure.message);
+  managedFailures.add(err);
   err.name = "RetriableError";
   Object.defineProperty(err, "kind", { value: "RetriableError", enumerable: true });
   Object.assign(err, {
@@ -202,14 +225,25 @@ export type HostStreamRejectDetail = {
   stage?: "stream-id" | "admit" | "normalize";
 };
 export function asHostPromptSession(session: PromptSession, modelId: string, onRequestId?: (id: string) => void,
-  input: { invocationId?: string; requireStepId?: boolean; contextWindowTokens?: number; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
+  input: { invocationId?: string; requireStepId?: boolean; contextWindowTokens?: number; onInvalidState?: (code: EnvelopeErrorCode, shape?: HostStateShape) => void; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
   const notified = new Set<string>();
   const createExecutor = (state?: unknown): HostPromptExecutor => {
     let messages: ReturnType<typeof cloneHostExecutorWindow> = [];
     let invalidCode: EnvelopeErrorCode | undefined;
+    let invalidReported = false;
+    let invalidShape: HostStateShape | undefined;
+    const reportInvalid = () => {
+      if (!invalidCode || invalidReported) return;
+      invalidReported = true;
+      try { input.onInvalidState?.(invalidCode, invalidShape); } catch { /* Observation cannot change Host state. */ }
+    };
     if (state !== undefined) {
       try { messages = cloneHostExecutorWindow(state); }
-      catch (error) { invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope"; }
+      catch (error) {
+        invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope";
+        invalidShape = error instanceof HostStateCodecError ? error.stateShape : undefined;
+        reportInvalid();
+      }
     }
     const read = (): unknown[] => {
       if (invalidCode) throw new InvalidHostStateError(invalidCode);
@@ -223,12 +257,14 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
           messages = [...messages, ...batch];
         } catch (error) {
           invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope";
+          invalidShape = error instanceof HostStateCodecError ? error.stateShape : undefined;
+          reportInvalid();
         }
         return executor;
       },
       getMessages: read,
       getState: read,
-      clearMessages() { messages = []; invalidCode = undefined; },
+      clearMessages() { messages = []; invalidCode = undefined; invalidReported = false; invalidShape = undefined; },
       stream(ctx, invocationId, tools, options) {
         const aux = grokboxAuxFrom(ctx) ?? grokboxAuxFrom(options);
         const requestId = aux
@@ -395,6 +431,12 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     try {
       if (request.envelope && request.messages) throw new EnvelopeError("invalid_envelope");
       envelope = request.envelope ? parseModelEnvelope(request.envelope) : buildHostEnvelope(request.messages ?? []);
+      // Host cannot safely consume a parallel batch in this mode. Advertise the
+      // restriction at provider admission, not only after receiving the second call.
+      // Keep the output guard: a non-compliant provider must not execute a partial batch.
+      if (config.parallel === "fail-closed") {
+        envelope = parseModelEnvelope({ ...envelope, options: { ...envelope.options, parallelToolCalls: false } });
+      }
     } catch (error) {
       const code = error instanceof EnvelopeError ? error.code : "invalid_envelope";
       return visibleFailureHandle(config.modelId, code, undefined, config.onTerminal, streamCtx(stageFor(code)));
@@ -417,6 +459,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     const calls = new Map<string, ToolCall>();
     const pending = new Map<string, { name: string; text: string }>();
     const held: ToolCall[] = [];
+    const heldToolParts: StreamPart[] = [];
     let bytes = 0;
     let parts = 0;
     let iterator: AsyncIterator<StreamPart> | undefined;
@@ -430,9 +473,21 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     };
     const finish = (reason: FinishReason, error?: VisibleFailure, rawUsage?: HostUsage) => {
       if (complete) return;
+      // Transport completion is not an answer. Reasoning-only/blank output must
+      // retain managed failure provenance instead of entering native empty-result retries.
+      if (reason === "stop" && calls.size === 0
+        && !content.some(part => part.type === "text" && part.text.trim().length > 0)) {
+        reason = "error";
+        error = failure("invalid_stream", undefined, streamCtx("normalize"));
+      }
       complete = true;
       request.abortSignal?.removeEventListener("abort", abort);
-      if (reason === "stop") for (const call of held) { replay.push(call); content.push(call); observeTool(); }
+      if (reason === "stop") {
+        // Preserve the full native parsing protocol, but release it only after
+        // the complete serial response has passed admission.
+        for (const part of heldToolParts) replay.push(part);
+        for (const call of held) { content.push(call); observeTool(); }
+      }
       const toolCalls = content.filter((part): part is ToolCall => part.type === "tool-call");
       notify(config.onTerminal, {
         terminalClass: reason,
@@ -497,9 +552,15 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
         if (calls.has(part.toolCallId) || (current && (part.type === "tool-call-streaming-start" || current.name !== part.toolName))) return failStream("invalid_stream");
         if (part.type === "tool-call-delta" && typeof part.argsTextDelta !== "string") return failStream("invalid_stream");
         pending.set(part.toolCallId, { name: part.toolName, text: (current?.text ?? "") + (part.type === "tool-call-delta" ? part.argsTextDelta : "") });
-        replay.push(part.type === "tool-call-streaming-start"
+        // Native Host consumers may execute incrementally from argument deltas.
+        // A serial response must pass the whole-response tool-count/finish gate
+        // before exposing any executable tool material, not just tool-complete.
+        const projected: StreamPart = part.type === "tool-call-streaming-start"
           ? { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName }
-          : { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName, argsTextDelta: part.argsTextDelta }); return;
+          : { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName, argsTextDelta: part.argsTextDelta };
+        if (serial) heldToolParts.push(projected);
+        else replay.push(projected);
+        return;
       }
       const call: ToolCall = { type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: cloneJson(part.args) };
       const assembling = pending.get(call.toolCallId);
@@ -508,8 +569,8 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       const prior = calls.get(call.toolCallId);
       if (prior) { if (!isDeepStrictEqual(prior, call)) failStream("invalid_stream"); return; }
       calls.set(call.toolCallId, call);
-      if (serial && calls.size > 1) return failStream("parallel_tools");
-      if (serial) held.push(call);
+      if (serial && calls.size > 1) return failStream("parallel_tools", "normalize");
+      if (serial) { held.push(call); heldToolParts.push(call); }
       else { content.push(call); replay.push(call); observeTool(); }
     };
     request.abortSignal?.addEventListener("abort", abort, { once: true });

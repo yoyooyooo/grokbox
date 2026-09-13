@@ -13,7 +13,7 @@ import {
 } from "@grokbox/runtime-kernel/contract";
 import { ModelBackend, type AuthLease, type PreparedCall } from "@grokbox/runtime-kernel/ports";
 import { backendKindForModel, type ModelRecord } from "@grokbox/runtime-kernel/selection";
-import { encodeCcsMessages, type CcsApi } from "./ccs-codec.ts";
+import { encodeCcsMessages, toSdkMessages, type CcsApi } from "./ccs-codec.ts";
 import { mapSdkStreamPart } from "./openai-events.ts";
 import { backendFailureFromUnknown } from "./provider-error.ts";
 import { observeBackendFailure } from "./failure-observation.ts";
@@ -27,22 +27,6 @@ function mapPrepareError(error: unknown): BackendFailure {
   if (error instanceof EnvelopeError && error.code === "unsupported_options") return new BackendFailure("unsupported_options");
   if (error instanceof EnvelopeError) return new BackendFailure("unsupported_content");
   return new BackendFailure("invalid_prepared_call");
-}
-
-function toSdkMessages(prompt: ReturnType<typeof encodeCcsMessages>) {
-  return prompt.messages.map((message) => {
-    if (typeof message.content === "string") return { role: message.role, content: message.content };
-    return {
-      role: message.role,
-      content: message.content.map((part) => {
-        if (part.type === "text") return { type: "text" as const, text: part.text };
-        if (part.type === "image") {
-          return { type: "image" as const, image: part.image, ...(part.mediaType ? { mediaType: part.mediaType } : {}) };
-        }
-        return { type: "text" as const, text: "" };
-      }),
-    };
-  });
 }
 
 function bodyBytes(init?: RequestInit): number {
@@ -144,7 +128,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
                 const result = streamText({
                   model,
                   system: payload.prompt.system,
-                  messages: toSdkMessages(payload.prompt) as never,
+                  messages: toSdkMessages(payload.prompt.messages) as never,
                   ...(payload.tools.length > 0 ? { tools } : {}),
                   maxRetries: 0,
                   // Default SDK logger includes bodies. Capture onError so an unfinished

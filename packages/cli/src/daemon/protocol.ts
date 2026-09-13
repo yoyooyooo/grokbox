@@ -4,9 +4,11 @@ export const DAEMON_METHODS = [
   "handshake",
   "health",
   "listAgents",
+  "getAgentOwnership",
   "searchAgents",
   "getAgentTranscriptTail",
   "getAgentThread",
+  "getTrays",
   "getAgentMemories",
   "sendPrompt",
   "createAgent",
@@ -55,6 +57,7 @@ export const DAEMON_CAPABILITIES = [
   "grok.memory.read",
   "grok.roster.write",
   "grok.events.read",
+  "grok.alerts.read",
 ] as const;
 
 export type DaemonRequest = {
