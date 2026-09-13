@@ -285,7 +285,7 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
           }
           cancellation = abortSignalFrom(ctx, options);
           const signal = cancellation.signal;
-          if (invalidCode && !signal?.aborted) throw new EnvelopeError(invalidCode);
+          if (invalidCode && !signal?.aborted) throw new InvalidHostStateError(invalidCode);
           if (!signal?.aborted && modelId !== STUB_ECHO_MODEL_ID) {
             const window = input.contextWindowTokens;
             if (typeof window !== "number" || !Number.isSafeInteger(window) || window <= 0) {

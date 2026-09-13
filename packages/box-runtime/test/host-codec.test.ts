@@ -35,7 +35,10 @@ test("Host message IDs retain native data identity without weakening provider to
     expect(copied).toEqual(input);
     expect(buildHostEnvelope(copied).messages).toEqual([{ role: "user", content: "body" }]);
   }
-  for (const toolCallId of [null, 0, "", "a".repeat(129)]) {
+  const nativeId = "call-native-\nassociation";
+  const copiedCall = cloneHostExecutorWindow([{ role: "assistant", content: [{ type: "tool-call", toolCallId: nativeId, toolName: "read", args: {} }] }]);
+  expect(copiedCall[0]?.content).toEqual([{ type: "tool-call", toolCallId: nativeId, toolName: "read", args: {} }]);
+  for (const toolCallId of [null, 0, "", "a".repeat(129), "call\u0000id", "call\u0001id"]) {
     expect(() => cloneHostExecutorWindow([{ role: "assistant", content: [{ type: "tool-call", toolCallId, toolName: "read", args: {} }] }])).toThrow(EnvelopeError);
   }
 });

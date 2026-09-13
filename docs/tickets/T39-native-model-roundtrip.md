@@ -2,6 +2,12 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
+## 现场官方→managed 首错（2026-09-13）
+
+test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToUser，`history outcome` 为 expected_result_observed（run 仍 not_proven）。随后 `models use grok-4.6 --for test0` 保存成功且 ownership=confirmed_box。下一 TURN 的 managed send 被 Gateway accepted，但 120s 内无 requestId/交付。Host journal：hook_enter 后 admit `unsupported_content` / `stateShape=call-id-control`，约 5s 间隔换新 turnId 共 4 次，modeld 无 STEP。未重放该 nonce。
+
+只读统计当前 test0 conversation-blobs JSON：toolCallId 共 1582，其中 1448 含 **仅 LF(0x0a)**，长度约 80–87，未发现其它 C0。官方回合写入的原生工具关联 ID 含换行；codec 的 `boundedToolId` 把 LF 当 control 拒绝。stream 在已 invalid 时抛普通 EnvelopeError，外层 native retry 看到的不是 InvalidHostStateError/managed failure。修复：保留 LF/CR 作为原生 ID 身份，NUL 及其余 C0 仍拒绝；已 invalid 的 stream 改为 InvalidHostStateError。原 nonce 不对账重发。
+
 ## Status / boundary
 
 **Partial / open closeout · 2026-09-12：已有选择纵切，并新增独立原生消费者回程的隔离资格；完整原生持久化/真实旅程仍未关闭。** 本票拥有V23/V26及V16/V19的完整旅程证据，不重写T24选择、T26流、T32恢复或T35生命周期程序。原连续性F1–F6/E01–E11仍是数据安全合同；本票把已证子集连接成能关闭产品义务的双向往返，不能据此把旧历史失忆因果改成已知。

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
+  isHostManagedFailure,
   normalizeHostResponse,
   visibleFailureHandle,
   type StreamPart,
@@ -14,7 +15,7 @@ import { buildHostEnvelope } from "../src/internal/host/context-codec.ts";
 import { collectStreamParts, consumeHandle } from "./host-consumer.ts";
 
 describe("host session ABI", () => {
-  test("invalid bind or append is observed before stream without exposing state or changing rejection", () => {
+  test("invalid bind or append is observed before stream without exposing state or changing rejection", async () => {
     const codes: string[] = [];
     const session = asHostPromptSession({ stream() { throw new Error("must not dispatch"); } }, "stub/echo", undefined, {
       onInvalidState(code) { codes.push(code); throw new Error("observation failure"); },
@@ -30,6 +31,9 @@ describe("host session ABI", () => {
     expect(codes).toEqual(["unsupported_content", "unsupported_content"]);
     expect(() => executor.getState()).toThrow();
     expect(JSON.stringify(codes)).not.toContain("PRIVATE_SENTINEL");
+    const handle = executor.stream({}, "step-owned");
+    await expect(handle.response).rejects.toMatchObject({ code: "unsupported_content" });
+    expect(isHostManagedFailure(await handle.response.catch((error: unknown) => error))).toBe(true);
   });
   test("getModelId/getExecutor/stream getters are independent arrays", async () => {
     const session = asHostPromptSession(createStreamingPromptSession({

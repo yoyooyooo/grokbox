@@ -110,7 +110,9 @@ function boundedToolId(value: unknown, field: (typeof TOOL_REFERENCE_KINDS)[numb
   if (typeof value !== "string") stateFail(`${field}-non-string`);
   if (value.length === 0) stateFail(`${field}-empty`);
   if (value.length > 128) stateFail(`${field}-oversized`);
-  if (/[\x00-\x1f]/.test(value)) stateFail(`${field}-control`);
+  // Current native Host tool IDs include LF (observed exclusively 0x0a). Keep
+  // association identity. NUL and other C0 remain closed.
+  if (/[\x00-\x09\x0b\x0c\x0e-\x1f]/.test(value)) stateFail(`${field}-control`);
   return value;
 }
 

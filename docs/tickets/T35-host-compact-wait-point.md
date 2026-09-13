@@ -5,6 +5,8 @@
 ## Status
 **In progress · Phase 4 · implementation authorized 2026-09-12.** Owner 已要求按 R2 继续，先治理 Spec/Ticket、回收必要旁支，再实施；不再等 A/B/C。权威是 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery)，本票拥有 Host 生命周期/接点差额，T32 仍拥有恢复决策与预算。离线实现授权不是任意 live 启用。
 
+**2026-09-13 现场：** test0 managed admit 失败后 Host 以新 turnId 约 5s 间隔再 hook 四次。这是 native 外层 TURN 重试。当时 stream 抛的不是 managed-failure 集合中的 InvalidHostStateError。T39 将已 invalid 的 stream 改为 InvalidHostStateError，本票不另造 retry owner。完整 overflow 合同仍未关。
+
 ## User blocker
 长会话换小窗口模型，首个请求就可能overflow。历史基线`pre-publication-revision`有注册过晚/已有background阻塞；当前工作树已前移注册并增加寿命/重试控制，不能重做历史缺陷。剩余是实际pending-background的可推进协调、原生接受/fence与真实恢复闭环；仅增加日志或调大等待不能关闭。
 
