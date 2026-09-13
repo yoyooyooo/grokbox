@@ -14,6 +14,8 @@ test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToU
 
 **第四层（2026-09-13）：** 末步 `dc5481b6-…` 是 `auxPurpose=memory-extraction`，不是主窗被清空。主 TURN 三步：① `SendToUser` 进度「先读文件，再原样发。」（display 已有）② Read 命中 oracle atime ③ grok-4.6 以普通 assistant text `stop`（118 events、toolCallCount=0、仍 10 个工具）。Host 把无工具文本当成功独白，不进 transcript。`lastTurnSettlement.outcome=success`，`history outcome` 只能看到进度所以 progress。修复：有声明的 `SendToUser` 时，把无工具的非空文本重整为 Host `SendToUser({type:"text",content})`；无该工具的 aux 仍内部文本。不重放 `d034bea0-…`。
 
+**第五层（2026-09-13）：** 提交 `pre-publication-revision`，Host re-adopt 到 PID REDACTED_PROCESS_ID / preload `211e6b64…`，modeld 仍 1260305 / epoch `484b5a7a-…`（CLI 未变）。新 nonce `d22a4032-…`：`history outcome` **expected_result_observed**（2 samples / 2541ms，requestId `78ab6947-…`）。同一 turn 上 grok-4.6 三步 toolCallCount=1 后 memory-extraction；oracle atime 对上第二步。executionCompleted 仍 not_proven，desktop replica 未观察。这是 test0 同一 Bot 上官方对照之后的 managed 交付，不是 T39 全旅程（App 输入 / 模型 B / checkpoint 仍开），也不是生产。
+
 ## Status / boundary
 
 **Partial / open closeout · 2026-09-12：已有选择纵切，并新增独立原生消费者回程的隔离资格；完整原生持久化/真实旅程仍未关闭。** 本票拥有V23/V26及V16/V19的完整旅程证据，不重写T24选择、T26流、T32恢复或T35生命周期程序。原连续性F1–F6/E01–E11仍是数据安全合同；本票把已证子集连接成能关闭产品义务的双向往返，不能据此把旧历史失忆因果改成已知。
