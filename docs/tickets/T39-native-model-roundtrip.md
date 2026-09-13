@@ -10,6 +10,8 @@ test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToU
 
 **第二层（2026-09-13）：** 仅 Host clone 放行 LF 后 re-adopt 到 preload `32ca67f1…`。新 nonce `b9aa63c3-…` 进入 transcript seq 670，admit 变为无 stateShape 的 `invalid_envelope`（仍外层重试四次、无 STEP）。原因是 kernel `id()` 仍把 LF 当 C0。toolCallId 走 association 例外，toolName/requestId 仍全 C0 关闭。该 nonce 不对账重发。
 
+**第三层（2026-09-13）：** 源 `34107bb1…` / 提交 `pre-publication-revision`。Host PID REDACTED_PROCESS_ID preload `d9c4ad45…`，profile 仍 `5a5c2e4e…`。modeld 切到同包 PID REDACTED_PROCESS_ID / epoch `484b5a7a-…`，status matched。新 nonce `d034bea0-…`：hook_enter → stream_enter → connect_attempt → first_chunk，随后同一 turnId 上 4 个 grok-4.6 STEP 均 `outcome=ok`（serviceEpoch 对上）。display tail 只有 user + send-message，无 SendToUser 正文；`history outcome` 为 progress / expectedMatched=false / executionCompleted=not_proven（requestId 已有）。末步 journal：`requestToolCount=0`、snapshot 从 ~166KiB 掉到 ~15KiB。未重放任何失败 nonce。官方独立文件对照仍只算先前那次 expected_result_observed。
+
 ## Status / boundary
 
 **Partial / open closeout · 2026-09-12：已有选择纵切，并新增独立原生消费者回程的隔离资格；完整原生持久化/真实旅程仍未关闭。** 本票拥有V23/V26及V16/V19的完整旅程证据，不重写T24选择、T26流、T32恢复或T35生命周期程序。原连续性F1–F6/E01–E11仍是数据安全合同；本票把已证子集连接成能关闭产品义务的双向往返，不能据此把旧历史失忆因果改成已知。
