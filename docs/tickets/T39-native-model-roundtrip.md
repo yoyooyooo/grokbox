@@ -95,4 +95,6 @@ App安装保持不变，不注入DevTools/重签/清缓存制造通过。至少�
 
 V23无必需未证项，实际原生往返和两个真实目标协议均确认，V26正确性通过且性能可观测边界如实报告，T26/T36的原App门齐备，才可交T40发布。仅官方↔A可形成受控阶段证据，但不能把用户要求的B回程删除出最终范围。
 
-本票只对完整旅程签证；发现源码缺陷回其owning ticket修复，再用同一未改写的oracle复验。下一动作：把已验证的原生消费者回程推进到当前版本的原生blob/checkpoint实际写入与新进程读取，再在T37/T38合格后进行真实模型/App旅程。不把owned JSON落盘当原生checkpoint，也不因部署前专项受阻而降低门。
+本票只对完整旅程签证；发现源码缺陷回其owning ticket修复，再用同一未改写的oracle复验。
+
+**2026-09-13：** 现役 Host `307de399…` + preload `211e6b64…` 上，隔离消费者 5 进程 first→A→B→return→A2 通过（工具 effect=1）。仍是 owned JSON，不是 blob-store writer。现场多次 re-adopt 后同一 test0 `store.db` 官方/managed 可续，是 Host 进程换代证据。App 详情 echo 未关；真实 B、Memory、原生 checkpoint 事务仍开。不把 owned JSON 当原生 checkpoint。
