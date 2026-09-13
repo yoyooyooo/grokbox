@@ -89,6 +89,8 @@ Current Host slices (`harness-blank`, `harness-summary`) emit the native reader'
 
 Live unload of an attested Host is out of scope for this document. Circuit `uncertain-operation` remains a live-writer blocker elsewhere; do not hand-clear. Machine-local L2 receipts under `PRIVATE_EVIDENCE` observed always-emit on an attested grokbox Host; they are not repo authority.
 
+**2026-09-13 pro V16：** App 对 test0 的发送进入 Host（box roster + hook_enter）。桌面 `transcript.replicas` 未含该标记；发送队列 `accepted-awaiting-echo`。列表预览有字、详情没有。always-emit 未把这次打成 temporal。
+
 ## Dated observation (not a standing inventory)
 
 2026-09-11 receipts (machine-local, not repo authority): test2 KV had evening canary `send-message` rows while Gateway tail returned a different 8-row server replica after `profile.harness` became `temporal`. App pixels N. Re-check `profile.json` + `listAgents.harness` before citing those counts.
