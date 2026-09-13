@@ -519,7 +519,8 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     const abort = () => finish("abort");
     const failStream = (code: string, stage?: VisibleFailureStage) => finish("error", failure(code, [...new Set([...calls.keys(), ...pending.keys()])],
       streamCtx(stage ?? stageFor(code))));
-    const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value);
+    const validId = (value: unknown): value is string =>
+      typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x09\x0b\x0c\x0e-\x1f]/.test(value);
     const accept = (raw: StreamPart) => {
       if (complete) return;
       const part = cloneJson(raw) as unknown as StreamPart;

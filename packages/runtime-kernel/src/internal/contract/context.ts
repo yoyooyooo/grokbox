@@ -25,7 +25,12 @@ export class EnvelopeError extends Error {
 export const ENVELOPE_MAX_BYTES = 7 * 1024 * 1024;
 const fail = (code: EnvelopeErrorCode = "invalid_envelope"): never => { throw new EnvelopeError(code); };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
-const id = (value: unknown): string => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value) ? value : fail();
+const id = (value: unknown, association = false): string => {
+  if (typeof value !== "string" || value.length === 0 || value.length > 128) return fail();
+  // Native Host toolCallId values include LF. Names and other IDs stay C0-closed.
+  if ((association ? /[\x00-\x09\x0b\x0c\x0e-\x1f]/ : /[\x00-\x1f]/).test(value)) return fail();
+  return value;
+};
 
 /** Plain JSON snapshots only. Accessors, opaque/redacted wrappers, cycles and executable values are not unwrapped. */
 export function cloneJson(value: unknown, depth = 0, budget = { nodes: 0 }): JsonValue {
@@ -78,11 +83,11 @@ function contentPart(value: unknown, role: PromptMessage["role"]): PromptContent
       ...(value.mimeType !== undefined ? { mimeType: value.mimeType as string } : {}) };
   }
   if (value.type === "tool-call" && role === "assistant") {
-    return { type: "tool-call", toolCallId: id(value.toolCallId), toolName: id(value.toolName), args: cloneJson(value.args) };
+    return { type: "tool-call", toolCallId: id(value.toolCallId, true), toolName: id(value.toolName), args: cloneJson(value.args) };
   }
   if (value.type === "tool-result" && (role === "tool" || role === "user")) {
     if (value.isError !== undefined && typeof value.isError !== "boolean") return fail();
-    return { type: "tool-result", toolCallId: id(value.toolCallId), result: cloneJson(value.result),
+    return { type: "tool-result", toolCallId: id(value.toolCallId, true), result: cloneJson(value.result),
       ...(value.toolName !== undefined ? { toolName: id(value.toolName) } : {}),
       ...(value.isError !== undefined ? { isError: value.isError as boolean } : {}) };
   }
@@ -131,7 +136,7 @@ function messagesFrom(value: unknown): PromptMessage[] {
       const blocks: PromptContentPart[] = typeof content === "string" ? (content ? [{ type: "text", text: content }] : []) : content;
       for (const call of raw.toolCalls) {
         if (!object(call)) return fail();
-        const next: ToolCall = { type: "tool-call", toolCallId: id(call.id), toolName: id(call.name), args: cloneJson(call.args) };
+        const next: ToolCall = { type: "tool-call", toolCallId: id(call.id, true), toolName: id(call.name), args: cloneJson(call.args) };
         const existing = blocks.find((part) => part.type === "tool-call" && part.toolCallId === next.toolCallId);
         if (existing && JSON.stringify(existing) !== JSON.stringify(next)) return fail();
         if (!existing) blocks.push(next);

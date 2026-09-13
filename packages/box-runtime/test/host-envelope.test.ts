@@ -89,6 +89,13 @@ describe("Host messages/state/tools/options envelope", () => {
     ]);
     expect(envelope.messages[0]!.content).toEqual([call]);
     expect(envelope.messages[1]!.content).toEqual([{ type: "tool-result", toolCallId: "call:one/α", result: "done" }]);
+    const nativeId = "call-native-\nassociation";
+    const native = buildHostEnvelope([
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: nativeId, toolName: "lookup", args: { query: "q" } }] },
+      { role: "tool", content: [{ type: "tool-result", toolCallId: nativeId, result: "done" }] },
+    ]);
+    expect(native.messages[0]?.content).toEqual([{ type: "tool-call", toolCallId: nativeId, toolName: "lookup", args: { query: "q" } }]);
+    expect(() => buildHostEnvelope([{ role: "assistant", content: [{ type: "tool-call", toolCallId: "call\u0000id", toolName: "lookup", args: {} }] }])).toThrow(EnvelopeError);
   });
 
   test.each([
