@@ -19,6 +19,7 @@
 | 5 · [T40 持久服务与发布](T40-persistent-release-and-rollback.md) | start实际CLI/Unix与Node制品start→borrow→orderly restart已证；listener丢失结算、T27同数据根status已补，固定全仓见readiness | 继续受支持持久owner/安装自启、T37/T38当前原生资格与保全、T39 checkpoint和现场；不重复修占位，不把前台重启当整机恢复 |
 | 并行 · [T41持续观测](T41-continuous-observation-and-alerting.md) | 首片已落地：显式前台批量采集、真实SQLite镜像、事件/incident分页、ack/snooze与冷Node读写 | 补安全crash锁恢复、维护/共享优先调度与通知receipt；T40安装自启/live scoped桥仍待，DB不决定准入 |
 | 延后 · [T29及future](../roadmap/future/README.md)、T30/31/33扩展 | 浏览器、多盒/高级通知、更多backend不是先决条件 | 各未来页有晋升门；不把T41与安全准入一起拖到Web UI |
+| 记录 · [T42 外部Host会话坑](T42-upstream-host-session-lessons.md) | grok-bot-setup 对照：已对齐的 ABI 坑 vs 换 Provider/隐私模式再展开 | 不进 S0 主链；不授权改补丁形态或整盒开关 |
 
 **依赖图（实施不是等待所有旧票重关）：**
 
@@ -77,6 +78,7 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 | [T39](T39-native-model-roundtrip.md) | open | integration | 官方/A/B/官方原生持久回程、真实App、cache正确性 |
 | [T40](T40-persistent-release-and-rollback.md) | open | release/lifecycle | 持久服务、两种回官方、限定生产合取与安全退场 |
 | [T41](T41-continuous-observation-and-alerting.md) | open / local vertical slice | pre-WebUI | 共享采集/变化、单盒SQLite观察与管理事实、incident/通知、cursor/故障边界 |
+| [T42](T42-upstream-host-session-lessons.md) | record / incubate | not S0 | grok-bot-setup Host 会话坑记录；已对齐项不重做，Redacted/tool-id/内部 model id 待撞上再展开 |
 
 原重建依赖链 **T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28** 不要求重做已有实现；当前主链见 Spec S0.5。T22 不 gate 保真/内核。T27 尽早。Phase 1 出口停在 T28；T29 不自动开工。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。里程碑「审→修→复看→交 grok」之后的异步终审残留只进 [T34](T34-astra-milestone-residue.md)，不交 grok。
 

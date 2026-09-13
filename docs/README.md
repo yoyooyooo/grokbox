@@ -21,6 +21,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T39 native model roundtrip](tickets/T39-native-model-roundtrip.md): same-session official/A/B/official, durable native-state return and original-App journey.
 - [T40 persistent release](tickets/T40-persistent-release-and-rollback.md): normal service lifecycle, scoped production release and distinct unpatched-Host exit, reusing T25/T28.
 - [T41 continuous observation](tickets/T41-continuous-observation-and-alerting.md): first local CLI/collector/SQLite/incident slice implemented; crash recovery, maintenance, shared scheduling and notification delivery remain open. Not an installed service or admission authority.
+- [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
 ## Roadmap
