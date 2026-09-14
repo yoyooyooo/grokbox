@@ -38,11 +38,31 @@ test("invalid current time cannot make ownership evidence fresh", () => {
 test("conflict and temporal cannot be forged into eligibility by top-level status or raw getters", () => {
   const snapshot = observed();
   snapshot.agents[0]!.server.harness = "temporal";
-  expect(decideManagedOwnership({ agentId: "agent", snapshot, nowMs: 10000 })).toMatchObject({ ok: false, reason: "harness_mismatch" });
+  expect(decideManagedOwnership({ agentId: "agent", snapshot, nowMs: 10000 })).toMatchObject({ ok: false, reason: "harness_mismatch", class: "conflict" });
   let reads = 0;
   const unsafe = { get schemaVersion() { reads++; throw Error("PRIVATE_SENTINEL"); } };
-  expect(decideManagedOwnership({ agentId: "agent", snapshot: unsafe, nowMs: 10000 }).ok).toBe(false);
+  expect(decideManagedOwnership({ agentId: "agent", snapshot: unsafe, nowMs: 10000 })).toMatchObject({ ok: false, class: "unavailable" });
   expect(reads).toBe(0);
+});
+
+test("managed refusal class distinguishes temporal, unconfirmed, conflict, and unavailable", () => {
+  const local = { harness: "temporal", serverId: "s1" };
+  const temporal = observed({
+    agents: [{ agentId: "agent", serverEvidence: "found", server: { agentId: "agent", serverId: "s1", harness: "temporal", viewerIsOwner: true },
+      local: { before: local, after: local, stable: true } }],
+  });
+  expect(decideManagedOwnership({ agentId: "agent", snapshot: temporal, nowMs: 10000 })).toMatchObject({
+    ok: false, reason: "confirmed_temporal", class: "temporal",
+  });
+  expect(decideManagedOwnership({ agentId: "agent", snapshot: observed({ agents: [] }), nowMs: 10000 })).toMatchObject({
+    ok: false, class: "unconfirmed",
+  });
+  expect(decideManagedOwnership({ agentId: "agent", snapshot: observed({ state: "unavailable" }), nowMs: 10000 })).toMatchObject({
+    ok: false, reason: "server_read_unavailable", class: "unavailable",
+  });
+  expect(decideManagedOwnership({ agentId: "agent", snapshot: observed({ schemaVersion: 1, scope: undefined }), nowMs: 10000 })).toMatchObject({
+    ok: false, class: "unavailable",
+  });
 });
 
 const models = parseModelsFile({ version: 1, assignments: { main: null, agents: { agent: "stub/echo" } } });

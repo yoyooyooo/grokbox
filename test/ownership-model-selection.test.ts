@@ -9,22 +9,32 @@ import { ownedOwnershipSnapshot } from "../packages/box-runtime/test/ownership-f
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
-async function fixture(mode: "box" | "temporal" | "old" | "failure" | "wrong-id" = "box") {
+async function fixture(mode: "box" | "temporal" | "confirmed-temporal" | "old" | "failure" | "wrong-id" = "box") {
   const root = await mkdtemp(join(tmpdir(), "grokbox-selection-command-"));
   const calls: Array<{ path: string; body: unknown }> = [];
+  let title = "Keep Me";
   const gateway = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === "/health") return Response.json({ ok: true, pid: 4242, startedAt: 1 });
+    if (path === "/v1/models") return Response.json({ data: [{ id: "owned" }] });
     if (request.headers.get("authorization") !== "Bearer owned-command-token") return Response.json({}, { status: 401 });
     const body = await request.json() as Record<string, unknown>;
     calls.push({ path, body });
     if (path === "/api/createAgent") return Response.json({ agent: { id: A, name: "owned", isGroup: false } });
-    if (path === "/api/listAgents") return Response.json([{ id: A, name: "owned", isGroup: false, harness: "box" }]);
+    if (path === "/api/listAgents") return Response.json([{ id: A, name: "owned", title, isGroup: false, harness: "box" }]);
+    if (path === "/api/updateAgent") {
+      const profile = body.profile as Record<string, unknown> | undefined;
+      if (typeof profile?.title === "string") title = profile.title;
+      return Response.json({ agent: { id: A, name: "owned", title, isGroup: false } });
+    }
     if (path === "/api/getHostStatus") {
       if (mode === "old") return Response.json({ version: "old" });
       if (mode === "failure") return Response.json({ error: "owned-failure" }, { status: 503 });
       const ids = body.grokboxOwnershipAgentIds as string[];
-      const snapshot = ownedOwnershipSnapshot(mode === "wrong-id" ? [B] : ids, { serverHarness: mode === "temporal" ? "temporal" : "box" });
+      const snapshot = ownedOwnershipSnapshot(mode === "wrong-id" ? [B] : ids, {
+        serverHarness: mode === "temporal" || mode === "confirmed-temporal" ? "temporal" : "box",
+        localHarness: mode === "confirmed-temporal" ? "temporal" : "box",
+      });
       return Response.json({ grokboxOwnership: snapshot });
     }
     return Response.json({}, { status: 404 });
@@ -34,11 +44,11 @@ async function fixture(mode: "box" | "temporal" | "old" | "failure" | "wrong-id"
   await mkdir(join(boxRuntimeRoot, "state"), { recursive: true });
   await writeFile(join(boxRuntimeRoot, "state/desired.json"), JSON.stringify({ version: 1, mode: "route" }));
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({ version: 1,
-    models: { "openai/owned": { id: "openai/owned", provider: "openai", model: "owned", endpoint: "https://model.invalid/v1", apiKeyRef: "env:OWNED", contextWindowTokens: 200000,
+    models: { "openai/owned": { id: "openai/owned", provider: "openai", model: "owned", endpoint: `http://127.0.0.1:${gateway.port}/v1`, apiKeyRef: "env:OWNED", contextWindowTokens: 200000,
       capabilities: { tools: true, images: false, vision: false }, dataTypes: ["text", "tools"] } },
     assignments: { main: null, agents: { [A]: "stub/echo", [B]: "stub/echo" } },
   }));
-  const deps = { configDir: root, discoveryPath, boxRuntimeRoot, env: {}, transport: "local" as const, daemonSocket: join(root, "unused.sock") };
+  const deps = { configDir: root, discoveryPath, boxRuntimeRoot, env: { OWNED: "owned-test-key" }, transport: "local" as const, daemonSocket: join(root, "unused.sock") };
   return { calls, deps, load: async () => JSON.parse(await readFile(join(boxRuntimeRoot, "models.json"), "utf8")),
     close: async () => { gateway.stop(true); await rm(root, { recursive: true, force: true }); } };
 }
@@ -49,11 +59,24 @@ test("real CLI use admits ownership; explicit reset only removes intent and pres
     for (const args of [["use", "openai/owned"], ["reset"]]) {
       const ran = await captureCli(["runtime", "models", ...args, "--for", A], f.deps);
       expect(ran.code, ran.stderr).toBe(0);
-      expect(parseJson(ran.stdout)).toMatchObject({ data: { selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", blastRadius: "single_bot", ownership: args[0] === "reset" ? "not_required_for_reset" : "confirmed_box" } });
+      const data = parseJson(ran.stdout) as { data: { title?: { from?: string; to?: string; written?: boolean; m?: string | null } } };
+      expect(data).toMatchObject({ data: { selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", blastRadius: "single_bot", ownership: args[0] === "reset" ? "not_required_for_reset" : "confirmed_box" } });
+      expect(data.data.title?.to).toContain("Keep Me");
+      if (args[0] === "use") {
+        expect(data.data.title).toMatchObject({ from: "Keep Me", written: true, m: "owned" });
+        expect(data.data.title?.to).toContain("m=owned");
+      } else {
+        expect(data.data.title?.from).toContain("m=owned");
+        expect(data.data.title?.written).toBe(true);
+        expect(data.data.title?.to.includes("m=") ?? false).toBe(false);
+      }
       expect((await f.load()).assignments.agents[B]).toBe("stub/echo");
       expect((await f.load()).assignments.agents[A]).toBe(args[0] === "reset" ? undefined : "openai/owned");
     }
-    expect(f.calls.map(call => call.path)).toEqual(["/api/getHostStatus"]);
+    expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(true);
+    const byName = await captureCli(["runtime", "models", "use", "openai/owned", "--for", "owned"], f.deps);
+    expect(byName.code, byName.stderr).toBe(0);
+    expect(f.calls.map(call => call.path).filter((path) => path === "/api/listAgents").length).toBeGreaterThan(0);
   } finally { await f.close(); }
 });
 
@@ -65,12 +88,39 @@ for (const mode of ["temporal", "old", "failure", "wrong-id"] as const) {
       const result = await captureCli(["runtime", "models", "reset", "--for", A], f.deps);
       expect(result.code, result.stderr).toBe(0);
       expect(parseJson(result.stdout)).toMatchObject({ data: { ownership: "not_required_for_reset", effectiveUse: "not_observed" } });
-      expect(f.calls).toEqual([]);
+      expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(false);
       expect(await f.load()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
       const use = await captureCli(["runtime", "models", "use", "openai/owned", "--for", A], f.deps);
       expect(use.code).not.toBe(0);
       expect((await f.load()).assignments.agents[A]).toBeUndefined();
-      expect(f.calls.map(c => c.path)).toEqual(["/api/getHostStatus"]);
+      expect(f.calls.some((c) => c.path === "/api/getHostStatus")).toBe(true);
+      const error = (parseJson(use.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
+      expect(error.message).not.toBe(error.failureCode ?? "");
+      expect(error.next).not.toContain("host on");
+    } finally { await f.close(); }
+  });
+}
+
+for (const [mode, expected] of [
+  ["temporal", { code: "runtime_ownership_conflict", next: `grokbox agents ownership ${A}` }],
+  ["confirmed-temporal", { code: "runtime_ownership_temporal", next: "grokbox agents create --harness box" }],
+  ["old", { code: "runtime_ownership_unavailable", next: "grokbox doctor then grokbox host start" }],
+  ["failure", { code: "runtime_ownership_unavailable", next: "grokbox doctor then grokbox host start" }],
+  ["wrong-id", { code: "runtime_ownership_unconfirmed", next: `grokbox agents ownership ${A}` }],
+] as const) {
+  test(`models use types ${mode} ownership refusal with next`, async () => {
+    const f = await fixture(mode);
+    try {
+      const before = await f.load();
+      const use = await captureCli(["runtime", "models", "use", "openai/owned", "--for", A], f.deps);
+      expect(use.code).not.toBe(0);
+      expect(use.stdout).toBe("");
+      const error = (parseJson(use.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
+      expect(error).toMatchObject(expected);
+      expect(error.message.length).toBeGreaterThan(20);
+      expect(error.message).not.toBe(error.failureCode ?? "");
+      expect(error.next).not.toContain("host on");
+      expect((await f.load()).assignments).toEqual(before.assignments);
     } finally { await f.close(); }
   });
 }

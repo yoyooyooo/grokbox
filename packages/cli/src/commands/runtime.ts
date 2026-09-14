@@ -60,7 +60,7 @@ function rethrow(error: unknown): never {
     throw new CliError(error.code, error.message, { next: error.next });
   }
   if (error instanceof BoxRuntimeError) {
-    throw new CliError(error.code, error.message);
+    throw new CliError(error.code, error.message, { next: error.next, failureCode: error.failureCode });
   }
   throw error;
 }

@@ -3,6 +3,8 @@ export {
   STUB_ECHO_MODEL_ID,
   applyReset,
   applyUse,
+  assignedModelAliases,
+  assignedModelTokens,
   assertResetAllowed,
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
@@ -14,6 +16,9 @@ export {
   parseDesiredFile,
   parseModelId,
   parseModelsFile,
+  persistModelsDocument,
+  resolveExternalCatalog,
+  resolveModelsWithPi,
   qualifiedContextWindowTokens,
   requireModel,
   resolveAssignment,
@@ -22,6 +27,7 @@ export {
   routeModelAdmitted,
   backendKindForModel,
   modelForAgent,
+  MODEL_ALIAS_PATTERN,
   type BackendKind,
   type DesiredFile,
   type DesiredMode,
@@ -30,4 +36,9 @@ export {
   type ModelsFile,
   type RouteSessionDecision,
 } from "./internal/selection/models.ts";
+export {
+  catalogWantsPi,
+  piModelsPathCandidates,
+  type ExternalCatalogEntry,
+} from "./internal/selection/pi-catalog.ts";
 export { captureManagedSelection, computeSelectionRevision, type CapturedSelection } from "./internal/selection/selection-revision.ts";

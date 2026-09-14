@@ -2,6 +2,7 @@ import { ADMISSION_WAIT_MS } from "./limits.ts";
 
 // Shared, effect-free ownership facts. Display snapshots are not execution leases.
 export type OwnershipState = "confirmed_box" | "confirmed_temporal" | "conflict" | "unconfirmed";
+export type OwnershipRefusalClass = "temporal" | "conflict" | "unconfirmed" | "unavailable";
 export const OWNERSHIP_EVIDENCE_MAX_AGE_MS = 5_000;
 export const OWNERSHIP_SERVER_CACHE_MS = 2_000;
 export const OWNERSHIP_WAIT_MS = 10_000;
@@ -9,6 +10,21 @@ export const OWNERSHIP_WAIT_MS = 10_000;
 // cannot wrap the entire RPC. This is one bounded combined admission budget.
 export const OWNERSHIP_ADMISSION_WAIT_MS = OWNERSHIP_WAIT_MS + ADMISSION_WAIT_MS;
 export const OWNERSHIP_MAX_TARGETS = 32;
+
+export function chunkOwnershipTargets(ids: readonly string[]): string[][] {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(id);
+  }
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += OWNERSHIP_MAX_TARGETS) {
+    chunks.push(unique.slice(i, i + OWNERSHIP_MAX_TARGETS));
+  }
+  return chunks;
+}
 
 const rec = (value: unknown): Record<string, unknown> => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -107,19 +123,46 @@ export function inspectOwnership(input: { agentIds: string[]; snapshot: unknown;
 
 /** An opaque evidence identity, not permission and never accepted from a run-step body. */
 export type OwnershipAdmission = { scopeId: string; serverId: string; observedAtMs: number };
-export type OwnershipDecision = { ok: true; evidence: OwnershipAdmission } | { ok: false; reason: string };
+export type OwnershipDecision =
+  | { ok: true; evidence: OwnershipAdmission }
+  | { ok: false; reason: string; class: OwnershipRefusalClass };
+
+const UNAVAILABLE_REASONS = new Set([
+  "ownership_reader_unavailable",
+  "ownership_read_unavailable",
+  "ownership_gateway_mismatch",
+  "ownership_bridge_unavailable",
+  "server_read_unavailable",
+  "ownership_clock_unavailable",
+  "native_execution_not_ready",
+]);
+const CONFLICT_REASONS = new Set(["harness_mismatch", "server_id_mismatch"]);
+
+export function classifyManagedOwnershipRefusal(reason: string, state?: OwnershipState): OwnershipRefusalClass {
+  if (state === "confirmed_temporal" || reason === "confirmed_temporal") return "temporal";
+  if (state === "conflict" || CONFLICT_REASONS.has(reason)) return "conflict";
+  if (UNAVAILABLE_REASONS.has(reason)) return "unavailable";
+  return "unconfirmed";
+}
+
+function refuse(reason: string, state?: OwnershipState): OwnershipDecision {
+  return { ok: false, reason, class: classifyManagedOwnershipRefusal(reason, state) };
+}
 
 export function decideManagedOwnership(input: { agentId: string; snapshot: unknown; nowMs: number; gatewayChanged?: boolean }): OwnershipDecision {
-  if (!Number.isFinite(input.nowMs) || input.nowMs < 0) return { ok: false, reason: "ownership_clock_unavailable" };
+  if (!Number.isFinite(input.nowMs) || input.nowMs < 0) return refuse("ownership_clock_unavailable");
   const fact = inspectOwnership({ ...input, agentIds: [input.agentId] });
   const row = fact.agents[0];
-  if (!row || row.managedEligibility !== "ownership_only") return { ok: false, reason: row?.reasons[0] ?? "ownership_unconfirmed" };
+  if (!row || row.managedEligibility !== "ownership_only") {
+    const reason = row?.state === "confirmed_temporal" ? "confirmed_temporal" : row?.reasons[0] ?? "ownership_unconfirmed";
+    return refuse(reason, row?.state);
+  }
   // Older schemas remain inspectable; an inactive migration window alone is
   // not permission to run during native startup/recovery/recreation pauses.
-  if (fact.localExecution !== "ready") return { ok: false, reason: "native_execution_not_ready" };
-  if (!fact.scope?.id || !fact.scope.stable) return { ok: false, reason: "ownership_scope_unconfirmed" };
+  if (fact.localExecution !== "ready") return refuse("native_execution_not_ready", row.state);
+  if (!fact.scope?.id || !fact.scope.stable) return refuse("ownership_scope_unconfirmed", row.state);
   const times = [fact.observedAt, fact.completedAt, fact.serverObservedAt].map(value => value ? Date.parse(value) : NaN);
   if (times.some(time => !Number.isFinite(time) || time > input.nowMs || input.nowMs - time > OWNERSHIP_EVIDENCE_MAX_AGE_MS)
-    || times[0]! > times[1]!) return { ok: false, reason: "ownership_evidence_stale" };
+    || times[0]! > times[1]!) return refuse("ownership_evidence_stale", row.state);
   return { ok: true, evidence: { scopeId: fact.scope.id, serverId: row.server!.serverId!, observedAtMs: times[2]! } };
 }

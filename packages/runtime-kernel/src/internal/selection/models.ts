@@ -1,4 +1,10 @@
 import { BoxRuntimeError } from "../contract/errors.ts";
+import {
+  adaptPiCatalog,
+  catalogWantsPi,
+  piModelsPathCandidates,
+  type ExternalCatalogEntry,
+} from "./pi-catalog.ts";
 
 export type DesiredMode = "disabled" | "observe" | "identity" | "route";
 
@@ -20,7 +26,13 @@ export type ModelRecord = {
   dataTypes: string[];
   /** Qualified context window for this model/endpoint. Not generation maxTokens. */
   contextWindowTokens?: number;
+  /** Short App Label token for `m=`. Unique among models when set. */
+  alias?: string;
+  /** Set on records adapted from externalCatalog. Never persisted. */
+  catalog?: "pi";
 };
+
+export const MODEL_ALIAS_PATTERN = /^[a-z0-9][a-z0-9._-]{0,15}$/;
 
 export const STUB_ECHO_MODEL: ModelRecord = {
   id: STUB_ECHO_MODEL_ID,
@@ -39,6 +51,8 @@ export type ModelsFile = {
     main: string | null;
     agents: Record<string, string>;
   };
+  externalCatalog?: ExternalCatalogEntry[];
+  credentials?: Record<string, string>;
 };
 
 export type DesiredFile = {
@@ -165,9 +179,18 @@ function parseModel(id: string, value: unknown): ModelRecord {
         ...(capabilities.vision || capabilities.images ? ["images"] : []),
       ];
   const contextWindowTokens = parseRecordContextWindowTokens(value, id);
+  const aliasRaw = value.alias;
+  let alias: string | undefined;
+  if (aliasRaw !== undefined) {
+    if (typeof aliasRaw !== "string" || !MODEL_ALIAS_PATTERN.test(aliasRaw)) {
+      throw new BoxRuntimeError("invalid_usage", `Model '${id}' alias must be 1-16 chars in [a-z0-9._-], starting with a letter or digit.`);
+    }
+    alias = aliasRaw;
+  }
   return {
     id, provider, model, endpoint, apiKeyRef, capabilities, dataTypes,
     ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
+    ...(alias !== undefined ? { alias } : {}),
   };
 }
 
@@ -183,8 +206,21 @@ export function parseModelsFile(value: unknown): ModelsFile {
   }
   const models: Record<string, ModelRecord> = Object.create(null);
   if (isRecord(value.models)) {
-    for (const [id, record] of Object.entries(value.models)) models[id] = parseModel(id, record);
+    const aliases = new Map<string, string>();
+    for (const [id, record] of Object.entries(value.models)) {
+      const parsed = parseModel(id, record);
+      if (parsed.alias !== undefined) {
+        const prior = aliases.get(parsed.alias);
+        if (prior !== undefined) {
+          throw new BoxRuntimeError("invalid_usage", `Model alias '${parsed.alias}' is used by '${prior}' and '${id}'.`);
+        }
+        aliases.set(parsed.alias, id);
+      }
+      models[id] = parsed;
+    }
   }
+  const externalCatalog = parseExternalCatalog(value.externalCatalog);
+  const credentials = parseCatalogCredentials(value.credentials);
   const assignmentsRaw = isRecord(value.assignments) ? value.assignments : {};
   const main = assignmentsRaw.main === null || assignmentsRaw.main === undefined
     ? null
@@ -202,7 +238,118 @@ export function parseModelsFile(value: unknown): ModelsFile {
       agents[agentId] = modelId;
     }
   }
-  return { version: 1, models, assignments: { main, agents } };
+  return {
+    version: 1,
+    models,
+    assignments: { main, agents },
+    ...(externalCatalog.length > 0 ? { externalCatalog } : {}),
+    ...(Object.keys(credentials).length > 0 ? { credentials } : {}),
+  };
+}
+
+function parseExternalCatalog(value: unknown): ExternalCatalogEntry[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new BoxRuntimeError("invalid_usage", "externalCatalog must be a short array.");
+  }
+  return value.map((entry, index) => {
+    if (entry === "pi") return "pi";
+    if (!isRecord(entry) || entry.id !== "pi") {
+      throw new BoxRuntimeError("invalid_usage", `externalCatalog[${index}] must be "pi".`);
+    }
+    if (entry.modelsPath !== undefined) {
+      if (typeof entry.modelsPath !== "string" || !isAbsolutePath(entry.modelsPath)) {
+        throw new BoxRuntimeError("invalid_usage", "Pi modelsPath must be an absolute path.");
+      }
+    }
+    return { id: "pi" as const, ...(typeof entry.modelsPath === "string" ? { modelsPath: entry.modelsPath } : {}) };
+  });
+}
+
+function parseCatalogCredentials(value: unknown): Record<string, string> {
+  if (value === undefined) return {};
+  if (!isRecord(value)) throw new BoxRuntimeError("invalid_usage", "credentials must be an object.");
+  const out: Record<string, string> = Object.create(null);
+  for (const [provider, ref] of Object.entries(value)) {
+    if (typeof ref !== "string") {
+      throw new BoxRuntimeError("invalid_usage", `credentials.${provider} must be env: or file:.`);
+    }
+    parseApiKeyRef(ref);
+    out[provider] = ref;
+  }
+  return out;
+}
+
+/** Disk document: assignments, catalog pointer, credentials, local models. Strips Pi-adapted records. */
+export function persistModelsDocument(file: ModelsFile): {
+  version: 1;
+  models: Record<string, ModelRecord>;
+  assignments: ModelsFile["assignments"];
+  externalCatalog?: ExternalCatalogEntry[];
+  credentials?: Record<string, string>;
+} {
+  const models: Record<string, ModelRecord> = Object.create(null);
+  for (const [id, record] of Object.entries(file.models)) {
+    if (record.catalog === "pi") continue;
+    const { catalog: _catalog, ...rest } = record;
+    models[id] = rest;
+  }
+  return {
+    version: 1,
+    models,
+    assignments: file.assignments,
+    ...(file.externalCatalog && file.externalCatalog.length > 0 ? { externalCatalog: file.externalCatalog } : {}),
+    ...(file.credentials && Object.keys(file.credentials).length > 0 ? { credentials: file.credentials } : {}),
+  };
+}
+
+/** Merge Pi providers into models. Local records win on id. Does not read the filesystem. */
+export function resolveExternalCatalog(file: ModelsFile, input: {
+  pi?: unknown;
+}): ModelsFile {
+  if (!file.externalCatalog || !catalogWantsPi(file.externalCatalog)) return file;
+  if (input.pi === undefined) {
+    throw new BoxRuntimeError("invalid_usage", "Pi models.json was not found for externalCatalog pi.");
+  }
+  const adapted = adaptPiCatalog(input.pi, file.credentials ?? {});
+  return { ...file, models: { ...adapted, ...file.models } };
+}
+
+/** Discover and merge Pi. `read` returns undefined when the path is missing. */
+export function resolveModelsWithPi(file: ModelsFile, input: {
+  homedir: string;
+  env: Record<string, string | undefined>;
+  read: (path: string) => unknown | undefined;
+}): ModelsFile {
+  if (!file.externalCatalog || !catalogWantsPi(file.externalCatalog)) return file;
+  const candidates = piModelsPathCandidates({
+    catalog: file.externalCatalog,
+    homedir: input.homedir,
+    env: input.env,
+  });
+  for (const path of candidates) {
+    const pi = input.read(path);
+    if (pi !== undefined) return resolveExternalCatalog(file, { pi });
+  }
+  throw new BoxRuntimeError("invalid_usage", "Pi models.json was not found for externalCatalog pi.");
+}
+
+export function assignedModelAliases(file: ModelsFile): Map<string, string> {
+  return assignedModelTokens(file, "alias-only");
+}
+
+const LABEL_TOKEN = /^[A-Za-z0-9._:/-]+$/;
+
+/** Label `m=` token: alias if set, otherwise the short `model` field when it fits. */
+export function assignedModelTokens(file: ModelsFile, mode: "alias-only" | "alias-or-model" = "alias-or-model"): Map<string, string> {
+  const tokens = new Map<string, string>();
+  for (const [agentId, modelId] of Object.entries(file.assignments.agents)) {
+    const record = file.models[modelId];
+    if (!record) continue;
+    const token = record.alias ?? (mode === "alias-or-model" && LABEL_TOKEN.test(record.model) ? record.model : undefined);
+    if (token !== undefined) tokens.set(agentId.toLowerCase(), token);
+  }
+  return tokens;
 }
 
 export function parseDesiredFile(value: unknown): DesiredFile {

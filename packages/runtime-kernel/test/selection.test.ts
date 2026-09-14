@@ -9,6 +9,9 @@ import {
   parseApiKeyRef,
   parseModelId,
   parseModelsFile,
+  persistModelsDocument,
+  piModelsPathCandidates,
+  resolveExternalCatalog,
   qualifiedContextWindowTokens,
   modelForAgent,
   routeModelAdmitted,
@@ -201,5 +204,102 @@ describe("kernel selection", () => {
     if (first.kind === "managed" && second.kind === "managed") {
       expect(first.selectionRevision).not.toBe(second.selectionRevision);
     }
+  });
+
+  test("Pi externalCatalog adapts openai-responses models and skips secrets and other APIs", () => {
+    const native = parseModelsFile({
+      version: 1,
+      externalCatalog: ["pi"],
+      credentials: { "example-provider-b": "env:MINI_KEY" },
+      models: {},
+      assignments: { main: null, agents: { bot: "example-provider-b/cursor-grok-4.6-xhigh" } },
+    });
+    const resolved = resolveExternalCatalog(native, {
+      pi: {
+        providers: {
+          "example-provider-b": {
+            api: "openai-responses",
+            baseUrl: "http://provider-b.example.invalid/",
+            apiKey: "sk-should-never-be-copied",
+            models: [
+              { id: "cursor-grok-4.6-xhigh", contextWindow: 256000, input: ["text"] },
+              { id: "cursor-grok-4.6-low", contextWindow: 256000 },
+            ],
+          },
+          claude: {
+            api: "anthropic-messages",
+            baseUrl: "https://api.anthropic.com",
+            apiKey: "sk-ant",
+            models: [{ id: "claude-opus" }],
+          },
+        },
+      },
+    });
+    expect(resolved.models["example-provider-b/cursor-grok-4.6-xhigh"]).toMatchObject({
+      provider: "openai-responses",
+      model: "cursor-grok-4.6-xhigh",
+      endpoint: "http://provider-b.example.invalid/",
+      apiKeyRef: "env:MINI_KEY",
+      catalog: "pi",
+      contextWindowTokens: 256000,
+    });
+    expect(JSON.stringify(resolved.models)).not.toContain("sk-should-never-be-copied");
+    expect(resolved.models["claude/claude-opus"]).toBeUndefined();
+    expect(persistModelsDocument(resolved).models).toEqual({});
+    expect(modelForAgent(resolved, "bot")?.model).toBe("cursor-grok-4.6-xhigh");
+  });
+
+  test("local models overlay Pi ids and persist without catalog records", () => {
+    const native = parseModelsFile({
+      version: 1,
+      externalCatalog: ["pi"],
+      credentials: { mini: "env:MINI_KEY" },
+      models: {
+        "mini/kept": {
+          provider: "openai-responses",
+          model: "kept",
+          endpoint: "http://provider-b.example.invalid/",
+          apiKeyRef: "env:OTHER_KEY",
+          alias: "g46x",
+        },
+      },
+      assignments: { main: null, agents: {} },
+    });
+    const resolved = resolveExternalCatalog(native, {
+      pi: {
+        providers: {
+          mini: {
+            api: "openai-responses",
+            baseUrl: "http://provider-b.example.invalid/",
+            models: [{ id: "kept" }, { id: "from-pi" }],
+          },
+        },
+      },
+    });
+    expect(resolved.models["mini/kept"]?.apiKeyRef).toBe("env:OTHER_KEY");
+    expect(resolved.models["mini/kept"]?.alias).toBe("g46x");
+    expect(resolved.models["mini/from-pi"]?.catalog).toBe("pi");
+    const persisted = persistModelsDocument(resolved);
+    expect(persisted.models["mini/from-pi"]).toBeUndefined();
+    expect(persisted.models["mini/kept"]?.alias).toBe("g46x");
+    expect(persisted.externalCatalog).toEqual(["pi"]);
+  });
+
+  test("Pi catalog discovery prefers PI_MODELS_PATH then agent then root", () => {
+    expect(piModelsPathCandidates({
+      catalog: ["pi"],
+      homedir: "/home/box",
+      env: {},
+    })).toEqual(["/home/box/.pi/agent/models.json", "/home/box/.pi/models.json"]);
+    expect(piModelsPathCandidates({
+      catalog: ["pi"],
+      homedir: "/home/box",
+      env: { PI_MODELS_PATH: "/custom/models.json" },
+    })[0]).toBe("/custom/models.json");
+    expect(piModelsPathCandidates({
+      catalog: [{ id: "pi", modelsPath: "/abs/pi.json" }],
+      homedir: "/home/box",
+      env: { PI_MODELS_PATH: "/custom/models.json" },
+    })).toEqual(["/abs/pi.json"]);
   });
 });

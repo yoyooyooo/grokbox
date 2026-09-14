@@ -1,26 +1,32 @@
-import { closeSync, constants as fsConstants, fstatSync, openSync, readSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import { CONFIG_READ_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
 import {
   captureManagedSelection, computeSelectionRevision, modelForAgent, parseModelsFile,
+  resolveModelsWithPi,
   type CapturedSelection, type ModelRecord, type ModelsFile,
 } from "@grokbox/runtime-kernel/selection";
+import { readBoundedJsonSync } from "../io/bounded-json.node.ts";
 
 /** Bounded no-follow nonblocking regular-file read for preload/hook. Never mkdir or repair. */
 export function loadModelsFileSync(root: string): ModelsFile | null {
-  let fd: number | undefined;
   try {
-    fd = openSync(join(root, "models.json"), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK);
-    const info = fstatSync(fd);
-    if (!info.isFile() || info.size > CONFIG_READ_MAX_BYTES) return null;
-    const bytes = Buffer.alloc(CONFIG_READ_MAX_BYTES + 1);
-    const n = readSync(fd, bytes, 0, bytes.length, 0);
-    if (n > CONFIG_READ_MAX_BYTES) return null;
-    return parseModelsFile(JSON.parse(bytes.subarray(0, n).toString("utf8")));
+    const raw = readBoundedJsonSync(join(root, "models.json"));
+    if (raw === undefined) return null;
+    const native = parseModelsFile(raw);
+    try {
+      return resolveModelsWithPi(native, {
+        homedir: homedir(),
+        env: process.env,
+        read: readBoundedJsonSync,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "Pi models.json was not found for externalCatalog pi.") {
+        return native;
+      }
+      throw error;
+    }
   } catch {
     return null;
-  } finally {
-    if (fd !== undefined) try { closeSync(fd); } catch { /* ignore */ }
   }
 }
 

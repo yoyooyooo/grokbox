@@ -66,7 +66,11 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
   const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
   const fetchImpl = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(input.url);
-    if (url.origin !== "https://owned.invalid" || typeof init?.body !== "string") throw Error("external_network_forbidden");
+    if (url.origin !== "https://owned.invalid") throw Error("external_network_forbidden");
+    if ((init?.method ?? "GET") === "GET" && url.pathname === "/v1/models") {
+      return new Response(JSON.stringify({ data: [{ id: "owned-a" }, { id: "owned-b" }] }), { status: 200 });
+    }
+    if (typeof init?.body !== "string") throw Error("external_network_forbidden");
     const body = JSON.parse(init.body) as Record<string, unknown>;
     if (body.model !== "owned-a" && body.model !== "owned-b") throw Error("unselected_provider_model");
     requests.push({ path: url.pathname, body });
@@ -86,7 +90,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
   try {
     expect(open("official-first")).toBe(originalSession);
     expect(requests).toHaveLength(0);
-    await changeRuntimeModel({ store, forAgent: AGENT, modelId: A, ownershipRead });
+    await changeRuntimeModel({ store, forAgent: AGENT, modelId: A, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
     const sessionA = open("turn-a");
     if (!isHostPromptSession(sessionA)) throw Error("managed_a_not_selected");
     const root = sessionA.getExecutor([
@@ -103,7 +107,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
     const toolResult = (() => { toolEffects++; return { river: 83 }; })();
     root.appendMessages([{ role: "tool", content: [{ type: "tool-result", toolCallId: "lookup-1", toolName: "lookup", result: toolResult }] }]);
     const checkpoint = root.getState();
-    const savedB = await changeRuntimeModel({ store, forAgent: AGENT, modelId: B, ownershipRead });
+    const savedB = await changeRuntimeModel({ store, forAgent: AGENT, modelId: B, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
     expect(savedB).toMatchObject({ currentTurn: "unchanged", effectiveUse: "not_observed", selectionSaved: true });
     expect((await store.loadModels()).assignments.agents[AGENT]).toBe(B);
     // Configuration changed while A was between tool steps: the admitted TURN stays A.
@@ -130,7 +134,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
     expect(requests).toHaveLength(4);
     // Owned durable snapshot with a new modeld lifetime; not native checkpoint qualification.
     await writeFile(join(dir, "owned-state.json"), JSON.stringify(officialState));
-    await changeRuntimeModel({ store, forAgent: AGENT, modelId: A, ownershipRead });
+    await changeRuntimeModel({ store, forAgent: AGENT, modelId: A, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
     await server.stop();
     server = await startModeldProcess(rootOptions);
     const nextA = open("turn-a-after-service-restart");
