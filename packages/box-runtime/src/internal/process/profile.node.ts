@@ -4,9 +4,18 @@ import { chmod, lstat, mkdir, open, rename, stat, writeFile } from "node:fs/prom
 import { isAbsolute, join, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
-import { LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
-import { reviewedProfilePath } from "../io/paths.ts";
-import { applyPatchProfile, approvedSliceSet, MAX_APPROVED_SLICES, OPTIONAL_SLICE_IDS, profileFromSource, type PatchProfile, type SlicePatch } from "../host/profile.ts";
+import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
+import {
+  ENVELOPE_SLICE_IDS,
+  admitWriteEnvelope,
+  envelopeWindowsFromReviewed,
+  generationEnvelopePath,
+  observeEnvelopeWindowsFile,
+  type EnvelopeInsertionGroup,
+  type WriteEnvelopeAdmission,
+} from "../ops/host-seam/envelope-windows.ts";
+import { retainedGenerationSourcePath, reviewedProfilePath } from "../io/paths.ts";
+import { applyPatchProfile, approvedSliceSet, MAX_APPROVED_SLICES, OPTIONAL_SLICE_IDS, profileFromSource, type PatchProfile, type SliceId, type SlicePatch } from "../host/profile.ts";
 
 export function loadDurableReviewedProfile(root: string): PatchProfile | undefined {
   try {
@@ -23,16 +32,130 @@ export function loadDurableReviewedProfile(root: string): PatchProfile | undefin
   }
 }
 
+const SHA = /^[a-f0-9]{64}$/;
+const ENVELOPE_SLICE_SET = new Set<string>(ENVELOPE_SLICE_IDS);
+
+export type ProfileWriteLineage = {
+  /** Runtime root for retain dir + current reviewed.json pin. */
+  root: string;
+  /** When set, hostBundle must be that generation's retain `source`. */
+  retainedSha?: string;
+  /** Waives retain-dir bind (A) only; never skips envelope reject-on-drift (B). */
+  allowUnretained?: boolean;
+  /** Exact rejecting slice ids (windowSha / count / find.inWindow). No superset. */
+  sliceReview?: readonly string[];
+};
+
 export type WriteReviewedProfileFromCopyInput = {
   destDir: string;
   /** Explicit absolute path to a read-only Host bundle input. No full-bundle copy is retained. */
   hostBundle: string;
   slices?: readonly SlicePatch[];
   profileId?: string;
+  /** Optional. CLI always supplies this; library tests may omit it. */
+  lineage?: ProfileWriteLineage;
 };
+
+export type ProfileWriteRefusal =
+  | "unretained_source"
+  | "retained_missing"
+  | "missing_golden"
+  | "envelope_unmeasurable"
+  | "envelope_drift";
+
+export type WriteEnvelopeReceipt = {
+  bootstrap: boolean;
+  baselineSourceSha: string | null;
+  rejectingIds: SliceId[];
+  informationalIds: SliceId[];
+  insertionGroups: EnvelopeInsertionGroup[];
+  sliceReview: string[];
+};
+
+export type WriteReviewedProfileReceipt = {
+  profilePath: string;
+  profile: PatchProfile;
+  sourceSha256: string;
+  transformedSourceSha256: string;
+  diskSha: string;
+  unretained_source?: true;
+  envelope?: WriteEnvelopeReceipt;
+};
+
+export function profileObserveThenWriteNext(fromPath: string): string {
+  return `grokbox runtime profile observe --from ${fromPath} then grokbox runtime profile write --sha <sourceSha256>`;
+}
+
+export function profileWriteUnretainedNext(fromPath: string): string {
+  return `grokbox runtime profile observe --from ${fromPath}`;
+}
+
+export function profileWriteMissingGoldenNext(pinSourcePath: string): string {
+  return `grokbox runtime profile observe --from ${pinSourcePath}`;
+}
+
+export function profileWriteDriftNext(candidateSha: string, driftedIds: readonly string[]): string {
+  const ids = driftedIds.length > 0 ? driftedIds.join(",") : "<drifted-slice-ids>";
+  return `grokbox runtime profile analyze --sha ${candidateSha} --out <abs> then grokbox runtime profile write --sha ${candidateSha} --slice-review ${ids}`;
+}
+
+export class ProfileWriteRefused extends BoxRuntimeError {
+  readonly refusal: ProfileWriteRefusal;
+  readonly next: string;
+  readonly details: Record<string, unknown>;
+
+  constructor(
+    refusal: ProfileWriteRefusal,
+    message: string,
+    next: string,
+    details: Record<string, unknown> = {},
+  ) {
+    super("invalid_usage", message);
+    this.name = "ProfileWriteRefused";
+    this.refusal = refusal;
+    this.next = next;
+    this.details = details;
+  }
+}
 
 function invalid(message: string): never {
   throw new BoxRuntimeError("invalid_usage", message);
+}
+
+function refuse(
+  refusal: ProfileWriteRefusal,
+  message: string,
+  next: string,
+  details: Record<string, unknown> = {},
+): never {
+  throw new ProfileWriteRefused(refusal, message, next, details);
+}
+
+function normalizeSliceReview(ids: readonly string[] | undefined): string[] {
+  if (!ids) return [];
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    if (typeof raw !== "string" || raw.length === 0) invalid("Invalid slice-review id.");
+    for (const id of raw.split(",").map((part) => part.trim()).filter((part) => part.length > 0)) {
+      if (!ENVELOPE_SLICE_SET.has(id)) invalid(`Unknown slice-review id '${id}'.`);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      unique.push(id);
+    }
+  }
+  return unique;
+}
+
+function envelopeReceipt(admission: WriteEnvelopeAdmission, sliceReview: readonly string[]): WriteEnvelopeReceipt {
+  return {
+    bootstrap: admission.bootstrap,
+    baselineSourceSha: admission.baselineSourceSha,
+    rejectingIds: admission.requiredIds,
+    informationalIds: admission.informational.map((row) => row.id),
+    insertionGroups: admission.insertionGroups,
+    sliceReview: [...sliceReview],
+  };
 }
 
 /** Snapshot caller-owned patches before any await; authoring is not approval of their semantics. */
@@ -127,13 +250,9 @@ async function checkDestination(path: string, source: Stats): Promise<void> {
  * Concurrent successful writers are last-rename-wins. Failed staging is retained, never promoted
  * or automatically deleted; canonical readers ignore it. This is authoring, not live approval.
  */
-export async function writeReviewedProfileFromCopy(input: WriteReviewedProfileFromCopyInput): Promise<{
-  profilePath: string;
-  profile: PatchProfile;
-  sourceSha256: string;
-  transformedSourceSha256: string;
-  diskSha: string;
-}> {
+export async function writeReviewedProfileFromCopy(
+  input: WriteReviewedProfileFromCopyInput,
+): Promise<WriteReviewedProfileReceipt> {
   if (typeof input.hostBundle !== "string" || !isAbsolute(input.hostBundle) ||
     typeof input.destDir !== "string" || !isAbsolute(input.destDir)) {
     invalid("Profile authoring requires absolute Host bundle and destination paths.");
@@ -146,6 +265,48 @@ export async function writeReviewedProfileFromCopy(input: WriteReviewedProfileFr
   const profileId = input.profileId === undefined ? "live-h3-copy" : input.profileId;
   if (typeof profileId !== "string" || !profileId.trim() || profileId.length > 128 || /[\r\n]/.test(profileId)) {
     invalid("Profile id must be a non-empty bounded string.");
+  }
+  const lineage = input.lineage;
+  if (lineage && (typeof lineage.root !== "string" || !isAbsolute(lineage.root))) {
+    invalid("Profile write lineage requires an absolute runtime root.");
+  }
+  const sliceReview = normalizeSliceReview(lineage?.sliceReview);
+  const allowUnretained = lineage?.allowUnretained === true;
+  if (lineage && allowUnretained && lineage.retainedSha !== undefined) {
+    invalid("Profile write --sha cannot be combined with --allow-unretained.");
+  }
+  let retainedInfo: Stats | undefined;
+  let retainedPath: string | undefined;
+  if (lineage && !allowUnretained) {
+    if (typeof lineage.retainedSha !== "string" || !SHA.test(lineage.retainedSha)) {
+      refuse(
+        "unretained_source",
+        "Profile write requires a retained source SHA, or --from with --allow-unretained --confirm.",
+        profileWriteUnretainedNext(hostBundle),
+      );
+    }
+    retainedPath = retainedGenerationSourcePath(resolve(lineage.root), lineage.retainedSha);
+    try {
+      retainedInfo = await lstat(retainedPath);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        refuse(
+          "retained_missing",
+          `No retained generation for ${lineage.retainedSha}.`,
+          profileWriteUnretainedNext(LIVE_HOST_BUNDLE),
+          { retainedSha: lineage.retainedSha },
+        );
+      }
+      throw error;
+    }
+    if (!retainedInfo.isFile() || retainedInfo.isSymbolicLink()) {
+      refuse(
+        "retained_missing",
+        `No retained generation for ${lineage.retainedSha}.`,
+        profileWriteUnretainedNext(LIVE_HOST_BUNDLE),
+        { retainedSha: lineage.retainedSha },
+      );
+    }
   }
 
   const sourceHandle = await open(hostBundle, constants.O_RDONLY | constants.O_NONBLOCK);
@@ -165,6 +326,27 @@ export async function writeReviewedProfileFromCopy(input: WriteReviewedProfileFr
   const source = sourceBytes.toString("utf8");
   if (!Buffer.from(source, "utf8").equals(sourceBytes)) invalid("Host bundle must be valid UTF-8.");
   const diskSha = sha256Bytes(sourceBytes);
+
+  if (lineage && !allowUnretained) {
+    const retainedSha = lineage.retainedSha as string;
+    if (retainedSha !== diskSha) {
+      refuse(
+        "unretained_source",
+        "Retained source SHA does not match the Host bundle bytes.",
+        profileWriteUnretainedNext(LIVE_HOST_BUNDLE),
+        { retainedSha, diskSha },
+      );
+    }
+    if (!retainedInfo || !retainedPath || !sameFile(sourceInfo, retainedInfo)) {
+      refuse(
+        "unretained_source",
+        "Profile write --sha must load bytes from the retain directory.",
+        profileWriteUnretainedNext(LIVE_HOST_BUNDLE),
+        { retainedSha, retainedPath, hostBundle },
+      );
+    }
+  }
+
   let profile: PatchProfile;
   try {
     profile = profileFromSource(source, slices, profileId);
@@ -176,6 +358,64 @@ export async function writeReviewedProfileFromCopy(input: WriteReviewedProfileFr
     sha256Bytes(Buffer.from(applied.source, "utf8")) !== profile.transformedSourceSha256) {
     invalid("Reviewed profile failed source/transformed hash validation.");
   }
+
+  let envelope: WriteEnvelopeReceipt | undefined;
+  if (lineage) {
+    const root = resolve(lineage.root);
+    const pin = loadDurableReviewedProfile(root);
+    const pinSha = pin && SHA.test(pin.sourceSha256) ? pin.sourceSha256 : null;
+    let golden = null;
+    let goldenInvalid = false;
+    if (pinSha) {
+      const goldenRead = await observeEnvelopeWindowsFile(generationEnvelopePath(root, pinSha));
+      if (goldenRead.state === "present") golden = goldenRead.value;
+      else if (goldenRead.state !== "missing") goldenInvalid = true;
+    }
+    const candidate = envelopeWindowsFromReviewed(source, profile, diskSha);
+    const admission = admitWriteEnvelope({
+      pinSha,
+      golden,
+      goldenInvalid,
+      candidate,
+      sliceReview,
+    });
+    envelope = envelopeReceipt(admission, sliceReview);
+    if (!admission.ok) {
+      if (admission.refusal === "missing_golden") {
+        const pinSource = retainedGenerationSourcePath(root, pinSha!);
+        refuse(
+          "missing_golden",
+          `Pinned generation ${pinSha} has no envelope-windows.json golden. Re-observe that generation before write.`,
+          profileWriteMissingGoldenNext(pinSource),
+          { pinSha, candidateSha: diskSha },
+        );
+      }
+      if (admission.refusal === "envelope_unmeasurable") {
+        refuse(
+          "envelope_unmeasurable",
+          "Candidate Host is not a 19-slice envelope; cannot compare against the pinned golden.",
+          profileWriteDriftNext(diskSha, []),
+          { pinSha, candidateSha: diskSha },
+        );
+      }
+      const groups = admission.insertionGroups.map((group) => group.id).join(", ") || "none";
+      refuse(
+        "envelope_drift",
+        `Envelope windows drifted at ${admission.requiredIds.join(",") || "(none)"} ` +
+          `(insertion groups: ${groups}). --slice-review must list exactly those ids; one review note per group.`,
+        profileWriteDriftNext(diskSha, admission.requiredIds),
+        {
+          pinSha,
+          candidateSha: diskSha,
+          requiredIds: admission.requiredIds,
+          informationalIds: admission.informational.map((row) => row.id),
+          insertionGroups: admission.insertionGroups,
+          sliceReview,
+        },
+      );
+    }
+  }
+
   const body = `${JSON.stringify(profile)}\n`;
 
   await mkdir(destDir, { recursive: true, mode: 0o700 });
@@ -202,6 +442,8 @@ export async function writeReviewedProfileFromCopy(input: WriteReviewedProfileFr
     sourceSha256: profile.sourceSha256,
     transformedSourceSha256: profile.transformedSourceSha256,
     diskSha,
+    ...(allowUnretained ? { unretained_source: true as const } : {}),
+    ...(envelope ? { envelope } : {}),
   };
 }
 

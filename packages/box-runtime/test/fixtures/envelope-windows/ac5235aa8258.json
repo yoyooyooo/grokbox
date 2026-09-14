@@ -1,0 +1,310 @@
+{
+  "sourceSha": "ac5235aa8258ecc923442244d15d2af68b7d7331fb94e8cad8f2ba1031197628",
+  "profileId": "reviewed-copy-envelope",
+  "slices": [
+    {
+      "id": "create-session",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "e796535e0da07dbee1c7edaa5f075b3b8ca1ec34a1dc77dd3eafa4f5f57cd24d",
+      "byteRange": {
+        "startByte": 26123707,
+        "endByte": 26125623
+      }
+    },
+    {
+      "id": "agent-id",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "330b17b0f5bb8dddf4b8a604d22dc31f1a78c1de19ac57f6b77ca223a9c82801",
+      "byteRange": {
+        "startByte": 29032237,
+        "endByte": 29033654
+      }
+    },
+    {
+      "id": "compact-register",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "214f8bb2a001f0786dad31de426df19f028da1f9e76db0c90c26fb884487c119",
+      "byteRange": {
+        "startByte": 22449780,
+        "endByte": 22456953
+      }
+    },
+    {
+      "id": "compact-background-start",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "ec843677a69ca2b6480e2050c693477d74efb93a579742b815012a161d92da72",
+      "byteRange": {
+        "startByte": 22456899,
+        "endByte": 22456953
+      }
+    },
+    {
+      "id": "compact-background-response",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "36710f38a468591e23af91eb4a001d6199be1f4acdf729be41ef88ce78f72e51",
+      "byteRange": {
+        "startByte": 22457182,
+        "endByte": 22458450
+      }
+    },
+    {
+      "id": "managed-retry-gate",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "85347dc905d22e1678da9aef7aae42519683f935dc759f9a476785983e1a7ff8",
+      "byteRange": {
+        "startByte": 27616933,
+        "endByte": 27619406
+      }
+    },
+    {
+      "id": "managed-turn-retry-gate",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "4a722f0d97e584af46a284496a9730fd0f27cf155f5c50ab58afb6f242a0f7c0",
+      "byteRange": {
+        "startByte": 27622993,
+        "endByte": 27623731
+      }
+    },
+    {
+      "id": "managed-step-error-scope",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 11
+      },
+      "windowSha": "03bb63fd581e6b2480217d265c3813c92ef5a3f0cf4c9c313417d328fe0261c3",
+      "byteRange": {
+        "startByte": 22445702,
+        "endByte": 22471075
+      }
+    },
+    {
+      "id": "managed-output-retry-gate",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "1f9597339aec35b22466a55798a946626a2d7efa224dcd79aee9399d605d35dc",
+      "byteRange": {
+        "startByte": 22471075,
+        "endByte": 22476936
+      }
+    },
+    {
+      "id": "managed-summary-retry-gate",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "f311cfecb4e29dfe8648aa6e2be11076f41146b3177db80e620f164336e2d09a",
+      "byteRange": {
+        "startByte": 22476936,
+        "endByte": 22488628
+      }
+    },
+    {
+      "id": "activity-bridge",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "61b83a03f4f1faa41eb03af986eaa47afb3af629576c69edc042ef3790a7d538",
+      "byteRange": {
+        "startByte": 28959210,
+        "endByte": 28959395
+      }
+    },
+    {
+      "id": "memory-purpose",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 2
+      },
+      "windowSha": "09faabe0a51cb350baa2deff49e1561468ccac893ab54140aed83c86d1ff8c32",
+      "byteRange": {
+        "startByte": 28998218,
+        "endByte": 28998315
+      }
+    },
+    {
+      "id": "episode-purpose",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "55d480e39aedccc5a121a32372072f21c9752e915b921586c2d2373c5839e891",
+      "byteRange": {
+        "startByte": 28997375,
+        "endByte": 28997478
+      }
+    },
+    {
+      "id": "harness-blank",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "0ca15236ca5109210824c8193689adcd7f5c144bd27b229059cc54c79f4821a2",
+      "byteRange": {
+        "startByte": 26981419,
+        "endByte": 26981634
+      }
+    },
+    {
+      "id": "profile-title-marker",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "732e5d35df8b53fe55aad8346a0d549a87b89ca75d9531d25fb1e1881770ac47",
+      "byteRange": {
+        "startByte": 27002465,
+        "endByte": 27003220
+      }
+    },
+    {
+      "id": "harness-summary",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "52117bcdddb27b72b5bf5bb9298e358e9c845570795c6aa423b0749a7b7106d4",
+      "byteRange": {
+        "startByte": 26985485,
+        "endByte": 26985609
+      }
+    },
+    {
+      "id": "ownership-read-schema",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "de80535162f9a3100d79faf4b3f6b33f34fb67bdd79b662eef26084b5d008ab2",
+      "byteRange": {
+        "startByte": 17897930,
+        "endByte": 17898023
+      }
+    },
+    {
+      "id": "ownership-read-api",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "cfd8d9b8b86490d3c7b85b23462624136ff6256c31b8b966f4a91c1fad954dc8",
+      "byteRange": {
+        "startByte": 18058415,
+        "endByte": 18058693
+      }
+    },
+    {
+      "id": "ownership-resume-gate",
+      "count": {
+        "start": 1,
+        "end": 1
+      },
+      "find": {
+        "inWindow": 1,
+        "global": 1
+      },
+      "windowSha": "9248e7e29ef32ca61b9765becea9cc8218a13110fc797804b80ab27af9b401a2",
+      "byteRange": {
+        "startByte": 28084393,
+        "endByte": 28085563
+      }
+    }
+  ]
+}

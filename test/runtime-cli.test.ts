@@ -179,26 +179,32 @@ describe("box-local runtime CLI", () => {
     ).toBe(false);
   });
 
-        test("runtime profile write atomically authors protected JSON only from a synthetic Host", async () => {
+        test("runtime profile write atomically authors protected JSON from a retained SHA", async () => {
     const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-profile-cli-"));
     const hostBundle = join(boxRuntimeRoot, "synthetic-host.cjs");
     await writeFile(hostBundle, LIVE_SHAPED_HOST);
     const liveSpy = spyLiveAdoptFactory();
     const secretSpy = spyOn(credentials, "materializeApiKeyRef");
+    const deps = {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+      fetch: (async (..._args: Parameters<typeof fetch>): Promise<Response> => {
+        throw new Error("profile authoring must not use network");
+      }) as typeof fetch,
+    };
     try {
-      const wrote = await captureCli(["runtime", "profile", "write", "--from", hostBundle], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-        fetch: (async (..._args: Parameters<typeof fetch>): Promise<Response> => {
-          throw new Error("profile authoring must not use network");
-        }) as typeof fetch,
-      });
+      const observed = await captureCli(["runtime", "profile", "observe", "--from", hostBundle], deps);
+      expect(observed.code, observed.stderr).toBe(0);
+      const sha = String(data(observed.stdout).observedSha);
+      const wrote = await captureCli(["runtime", "profile", "write", "--sha", sha], deps);
       expect(wrote.code, wrote.stderr).toBe(0);
       const body = data(wrote.stdout);
       expect(body).toMatchObject({ process: "profile-write", offline: true, signaled: false, inject: false });
       expect(body.profilePath).toBe(join(boxRuntimeRoot, "profiles", "reviewed.json"));
       expect(body.sourceSha256).toBe(sha256Bytes(Buffer.from(LIVE_SHAPED_HOST)));
       expect(body.diskSha).toBe(body.sourceSha256);
+      expect(body.unretained_source).toBeUndefined();
+      expect(body.envelope).toMatchObject({ bootstrap: true, baselineSourceSha: null, rejectingIds: [] });
       expect(body).not.toHaveProperty("copyPath");
       const profile = JSON.parse(await readFile(String(body.profilePath), "utf8"));
       expect(profile.profileId).toBe("reviewed-copy-envelope");
@@ -226,7 +232,10 @@ describe("box-local runtime CLI", () => {
     await writeFile(hostBundle, LIVE_SHAPED_HOST);
     await writeFile(badBundle, LIVE_SHAPED_HOST + LIVE_SHAPED_HOST);
     const deps = { discoveryPath: "/dev/null", boxRuntimeRoot };
-    const good = await captureCli(["runtime", "profile", "write", "--from", hostBundle], deps);
+    const observed = await captureCli(["runtime", "profile", "observe", "--from", hostBundle], deps);
+    expect(observed.code, observed.stderr).toBe(0);
+    const sha = String(data(observed.stdout).observedSha);
+    const good = await captureCli(["runtime", "profile", "write", "--sha", sha], deps);
     expect(good.code, good.stderr).toBe(0);
     const profilePath = String(data(good.stdout).profilePath);
     const previous = await readFile(profilePath, "utf8");
@@ -234,14 +243,45 @@ describe("box-local runtime CLI", () => {
       [], ["--from", "relative.cjs"], ["--from", "  "],
       ["--from", join(boxRuntimeRoot, "missing.cjs")],
       ["--from", badBundle], ["--from", profilePath],
+      ["--from", hostBundle],
+      ["--sha", "zzzz"],
+      ["--sha", sha, "--from", hostBundle],
+      ["--from", badBundle, "--allow-unretained", "--confirm"],
     ]) {
       const failed = await captureCli(["runtime", "profile", "write", ...args], deps);
       expect(failed.code, failed.stderr).toBe(2);
       expect(failed.stdout).toBe("");
-      expect(parseJson(failed.stderr)).toMatchObject({ error: { code: "invalid_usage" } });
+      const body = parseJson(failed.stderr) as { error: { code: string; next?: string; message: string } };
+      expect(body).toMatchObject({ error: { code: "invalid_usage" } });
+      expect(body.error.message).not.toContain("profile write --from /home/box/sand-host/host-main.cjs");
+      expect(body.error.next).not.toBe("grokbox runtime profile write --from /home/box/sand-host/host-main.cjs");
       expect(await readFile(profilePath, "utf8")).toBe(previous);
       expect(await readdir(join(boxRuntimeRoot, "profiles"))).toEqual(["reviewed.json"]);
     }
+    const backfill = await captureCli(["runtime", "profile", "observe", "--from", hostBundle], deps);
+    expect(backfill.code, backfill.stderr).toBe(0);
+    const escaped = await captureCli([
+      "runtime", "profile", "write", "--from", hostBundle, "--allow-unretained", "--confirm",
+    ], deps);
+    expect(escaped.code, escaped.stderr).toBe(0);
+    expect(data(escaped.stdout).unretained_source).toBe(true);
+  });
+
+  test("runtime profile write --from without confirm nexts to observe, not live write", async () => {
+    const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-profile-cli-unretained-"));
+    const hostBundle = join(boxRuntimeRoot, "synthetic-host.cjs");
+    await writeFile(hostBundle, LIVE_SHAPED_HOST);
+    const failed = await captureCli(["runtime", "profile", "write", "--from", hostBundle], {
+      discoveryPath: "/dev/null",
+      boxRuntimeRoot,
+    });
+    expect(failed.code).toBe(2);
+    expect(parseJson(failed.stderr)).toMatchObject({
+      error: {
+        code: "invalid_usage",
+        next: `grokbox runtime profile observe --from ${hostBundle}`,
+      },
+    });
   });
 
   test("runtime profile write refuses Profile/remote contexts before authoring or live ports", async () => {
@@ -251,7 +291,7 @@ describe("box-local runtime CLI", () => {
     const before = await readdir(boxRuntimeRoot);
     const spy = spyLiveAdoptFactory();
     try {
-      const args = ["runtime", "profile", "write", "--from", hostBundle];
+      const args = ["runtime", "profile", "write", "--from", hostBundle, "--allow-unretained", "--confirm"];
       const profiled = await captureCli(["--profile", "default", ...args], { boxRuntimeRoot });
       const remote = await captureCli(args, { boxRuntimeRoot, sshHost: "box.example" });
       for (const refused of [profiled, remote]) {
@@ -457,7 +497,7 @@ describe("box-local runtime CLI", () => {
       assignment: "main",
     });
 
-    const forBot = await captureCli(["runtime", "models", "use", "acme/fast", "--for", "agent-tom"], {
+    const forBot = await captureCli(["runtime", "models", "use", "acme/fast", "--for", "11111111-1111-4111-8111-111111111111"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });

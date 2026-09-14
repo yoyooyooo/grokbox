@@ -4,6 +4,7 @@ import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { projectOwnership } from "../ownership.ts";
 import { writeSuccess } from "../output.ts";
 import { ioFromOpts } from "../opts.ts";
+import { inspectOperator } from "./operator.ts";
 import { findRosterRow } from "./roster.ts";
 
 export async function runAgentsOwnership(deps: CliDeps, targets: string[], raw: { timeoutMs?: string }): Promise<void> {
@@ -19,5 +20,13 @@ export async function runAgentsOwnership(deps: CliDeps, targets: string[], raw: 
     || new Set(agentIds).size !== agentIds.length) throw usage("ownership targets must resolve to distinct Agent UUIDs.");
   const observation = await client.getAgentOwnership(agentIds, io.timeoutMs);
   const changed = roster.discovery.pid !== observation.discovery.pid || roster.discovery.startedAt !== observation.discovery.startedAt;
-  writeSuccess(deps.stdout, projectOwnership({ agentIds, snapshot: observation.result, gatewayChanged: changed }), gatewayMeta(observation.discovery));
+  const operator = await inspectOperator(deps, io.timeoutMs).catch(() => undefined);
+  writeSuccess(deps.stdout, projectOwnership({
+    agentIds,
+    snapshot: observation.result,
+    gatewayChanged: changed,
+    host: operator?.host,
+    hostNext: operator?.next,
+    hostReason: operator?.hostReason,
+  }), gatewayMeta(observation.discovery));
 }

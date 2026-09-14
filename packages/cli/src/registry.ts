@@ -100,7 +100,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["skills", "list"],
     usage: "grokbox skills list [--json|--table]",
-    summary: "List bundled skills (version-matched).",
+    summary: "List bundled skills that always match this CLI version.",
     arguments: [],
     options: options([], { table: true }),
     stdin: "none",
@@ -242,9 +242,9 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["skills", "get"],
     usage: "grokbox skills get <name> [--full] [--json]",
-    summary: "Print a bundled skill.",
-    arguments: [{ syntax: "<name>", description: "Skill name" }],
-    options: options([{ flags: "--full", description: "Include generated command reference" }]),
+    summary: "Print a bundled skill that always matches this CLI version.",
+    arguments: [{ syntax: "<name>", description: "Skill name: grokbox (product) or core (full CLI)" }],
+    options: options([{ flags: "--full", description: "Include companion docs (grokbox) or the generated command reference (core)" }]),
     stdin: "none",
     table: false,
     timeout: false,
@@ -299,7 +299,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["doctor"],
     usage: "grokbox doctor [--json|--table] [--timeout-ms <n>]",
-    summary: "Diagnose Profile, Sandbox, tailnet, Serve, daemon, and Gateway boundaries without mutation.",
+    summary: "Diagnose connection, custom-model channel, and Gateway boundaries without mutation.",
     arguments: [],
     options: options([], { table: true, timeout: true }),
     stdin: "none",
@@ -308,6 +308,102 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     destructive: false,
     gateway: true,
     streaming: false,
+  },
+  {
+    path: ["on"],
+    usage: "grokbox on",
+    summary: "Start grokbox services on this computer (title sync and idle screen reclaim). Does not switch Host.",
+    arguments: [],
+    options: options([], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: false, streaming: false,
+  },
+  {
+    path: ["off"],
+    usage: "grokbox off",
+    summary: "Stop grokbox-started services and idle screen reclaim. Does not switch Host.",
+    arguments: [],
+    options: options([], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: false, streaming: false,
+  },
+  {
+    path: ["upgrade"],
+    usage: "grokbox upgrade --yes",
+    summary: "Align this computer with the installed grokbox after a package update, including Host channel and idle screen reclaim.",
+    arguments: [],
+    options: options([{ flags: "--yes", description: "Confirm Host channel refresh" }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["host", "start"],
+    usage: "grokbox host start [--force]",
+    summary: "Ensure this computer is on the grokbox patched Host (custom-model channel). No-op when already custom. Refuses when bots are running unless --force.",
+    arguments: [],
+    options: options([{ flags: "--force", description: "Switch even if bots are running; Host kill interrupts them" }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["host", "stop"],
+    usage: "grokbox host stop [--force]",
+    summary: "Ensure this computer is on the official Host. No-op when already official. Refuses when bots are running unless --force.",
+    arguments: [],
+    options: options([{ flags: "--force", description: "Switch even if bots are running; Host kill interrupts them" }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["host", "restart"],
+    usage: "grokbox host restart [--force]",
+    summary: "Bounce the Host channel: official then custom. Always intends Host kill. Refuses when bots are running unless --force.",
+    arguments: [],
+    options: options([{ flags: "--force", description: "Bounce even if bots are running; Host kill interrupts them" }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["host", "status"],
+    usage: "grokbox host status",
+    summary: "Reserved. Host channel status is grokbox doctor.",
+    arguments: [],
+    options: options(),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["host", "realign"],
+    usage: "grokbox host realign",
+    summary: "Reserved. Host drift repair is grokbox upgrade after rewriting the reviewed profile.",
+    arguments: [],
+    options: options(),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["host", "logs"],
+    usage: "grokbox host logs",
+    summary: "Reserved. Host logs are not a v1 command; use grokbox doctor.",
+    arguments: [],
+    options: options(),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["models", "list"],
+    usage: "grokbox models list",
+    summary: "List box-local models and per-Bot assignments.",
+    arguments: [],
+    options: options(),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["models", "use"],
+    usage: "grokbox models use <provider/model> --for <agent>",
+    summary: "Send one confirmed box Bot through a catalog model next turn.",
+    arguments: [{ syntax: "<provider/model>", description: "Catalog model id" }],
+    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name", required: true }]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["models", "reset"],
+    usage: "grokbox models reset --for <agent>",
+    summary: "Return one Bot to the official model next turn.",
+    arguments: [],
+    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name", required: true }]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
     path: ["quota"],
@@ -392,11 +488,14 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["agents", "list"],
-    usage: "grokbox agents list [--include-hidden] [--json|--table]",
-    summary: "List non-group agents.",
+    usage: "grokbox agents list [--include-hidden] [--ownership] [--json|--table]",
+    summary: "List non-group agents. Roster harness is a declaration; --ownership adds Server class.",
     arguments: [],
     options: options(
-      [{ flags: "--include-hidden", description: "Include sidebar-hidden agents" }],
+      [
+        { flags: "--include-hidden", description: "Include sidebar-hidden agents" },
+        { flags: "--ownership", description: "Attach official Server ownership class (batched, read-only)" },
+      ],
       { table: true, timeout: true },
     ),
     stdin: "none",
@@ -408,12 +507,15 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["agents", "show"],
-    usage: "grokbox agents show <agent>",
+    usage: "grokbox agents show <agent> [--ownership]",
     summary: "Show one non-group agent without transcript side projections.",
     arguments: [
       { syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] },
     ],
-    options: options([], { timeout: true }),
+    options: options(
+      [{ flags: "--ownership", description: "Attach official Server ownership class" }],
+      { timeout: true },
+    ),
     stdin: "none",
     table: false,
     timeout: true,
@@ -428,6 +530,48 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     arguments: [{ syntax: "<agents...>", description: "1 to 32 Agent IDs or unambiguous names", role: "agent", kinds: ["agent"] }],
     options: options([], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false,
+  },
+  {
+    path: ["agents", "title", "show"],
+    usage: "grokbox agents title show <agents...> | grokbox agents title show --all",
+    summary: "Paint the grokbox title trailer from live ownership and model alias. Requires named agents or --all.",
+    arguments: [{ syntax: "[agents...]", description: "Agent IDs or unambiguous names", role: "agent", kinds: ["agent"] }],
+    options: options(
+      [
+        { flags: "--all", description: "Show trailers for every non-group roster Bot" },
+        { flags: "--dry-run", description: "Project title writes without calling updateAgent" },
+      ],
+      { table: true, timeout: true },
+    ),
+    stdin: "none", table: true, timeout: true, destructive: false, gateway: true, streaming: false,
+  },
+  {
+    path: ["agents", "title", "hide"],
+    usage: "grokbox agents title hide [agents...] [--all]",
+    summary: "Strip grokbox title trailers; keep the user segment. No names means every Bot.",
+    arguments: [{ syntax: "[agents...]", description: "Agent IDs or unambiguous names", role: "agent", kinds: ["agent"] }],
+    options: options(
+      [
+        { flags: "--all", description: "Hide trailers on every non-group roster Bot" },
+        { flags: "--dry-run", description: "Project title writes without calling updateAgent" },
+      ],
+      { table: true, timeout: true },
+    ),
+    stdin: "none", table: true, timeout: true, destructive: false, gateway: true, streaming: false,
+  },
+  {
+    path: ["agents", "title", "sync"],
+    usage: "grokbox agents title sync [agents...] [--all]",
+    summary: "Refresh trailers already showing. Hidden Bots stay hidden.",
+    arguments: [{ syntax: "[agents...]", description: "Agent IDs or unambiguous names", role: "agent", kinds: ["agent"] }],
+    options: options(
+      [
+        { flags: "--all", description: "Refresh every Bot that already has a trailer" },
+        { flags: "--dry-run", description: "Project title writes without calling updateAgent" },
+      ],
+      { table: true, timeout: true },
+    ),
+    stdin: "none", table: true, timeout: true, destructive: false, gateway: true, streaming: false,
   },
   {
     path: ["agents", "create"],
@@ -486,7 +630,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["agents", "delete"],
     usage: "grokbox agents delete <agent> [--yes]",
-    summary: "Delete one non-group agent after explicit confirmation.",
+    summary: "Delete one non-group agent after explicit confirmation, and stop its fork desktop if seated.",
     arguments: [
       { syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] },
     ],
@@ -818,6 +962,80 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     gateway: false,
     streaming: false,
     profile: false,
+  },
+  {
+    path: ["template", "pack"],
+    usage: "grokbox template pack <agent> --out <file>",
+    summary: "Assemble an official template recipe JSON from one local Bot without uploading.",
+    arguments: [{ syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] }],
+    options: options([
+      { flags: "--out <file>", description: "Destination recipe JSON", required: true },
+      { flags: "--agent-data <dir>", description: "Local agent-data root" },
+    ]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["template", "stage"],
+    usage: "grokbox template stage <agent> --visibility public|team [--from <file>] --yes",
+    summary: "Upload a recipe as an unpublished template version (aiserver Create + PUT).",
+    arguments: [{ syntax: "<agent>", description: "Source Bot ID or unambiguous name", role: "agent", kinds: ["agent"] }],
+    options: options([
+      { flags: "--visibility <public|team>", description: "Template audience", required: true },
+      { flags: "--from <file>", description: "Recipe JSON from template pack" },
+      { flags: "--yes", description: "Confirm staging" },
+      { flags: "--agent-data <dir>", description: "Local agent-data root" },
+    ], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["template", "publish"],
+    usage: "grokbox template publish <shareId> --rev <n> --yes",
+    summary: "Activate one staged template version on the official share URL.",
+    arguments: [{ syntax: "<shareId>", description: "Official template share id" }],
+    options: options([
+      { flags: "--rev <n>", description: "Staged version to activate", required: true },
+      { flags: "--yes", description: "Confirm publish" },
+    ], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false,
+  },
+  {
+    path: ["template", "show"],
+    usage: "grokbox template show <shareId> --rev <n>",
+    summary: "Read one owner template version (draft or active).",
+    arguments: [{ syntax: "<shareId>", description: "Official template share id" }],
+    options: options([{ flags: "--rev <n>", description: "Template version", required: true }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false,
+  },
+  {
+    path: ["template", "visibility"],
+    usage: "grokbox template visibility <shareId> --visibility public|team --yes",
+    summary: "Change template audience. TEAM to PUBLIC is a separate owner confirmation.",
+    arguments: [{ syntax: "<shareId>", description: "Official template share id" }],
+    options: options([
+      { flags: "--visibility <public|team>", description: "Template audience", required: true },
+      { flags: "--yes", description: "Confirm visibility change" },
+    ], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false,
+  },
+  {
+    path: ["template", "delete"],
+    usage: "grokbox template delete <shareId> --yes",
+    summary: "Delete one official template and free the source Bot binding.",
+    arguments: [{ syntax: "<shareId>", description: "Official template share id" }],
+    options: options([{ flags: "--yes", description: "Confirm deletion" }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false,
+  },
+  {
+    path: ["template", "import"],
+    usage: "grokbox template import <shareId> --name <name> --rev <n> --yes",
+    summary: "Mint a new Bot from a published template version.",
+    arguments: [{ syntax: "<shareId>", description: "Official template share id" }],
+    options: options([
+      { flags: "--name <name>", description: "New Bot name", required: true },
+      { flags: "--rev <n>", description: "Expected active template version", required: true },
+      { flags: "--yes", description: "Confirm import" },
+    ], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false,
   },
   {
     path: ["fs", "stat"],
@@ -1449,7 +1667,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["runtime", "profile", "status"],
     usage: "grokbox runtime profile status [--sha <sha>]",
-    summary: "Read-only Host seam provenance/replay/upgrade facets; does not re-run identification.",
+    summary: "Read-only Host seam provenance/replay/upgrade/envelopeDrift facets; four-window patchImpact green is not envelope green.",
     arguments: [],
     options: options([
       { flags: "--sha <sha>", description: "Optional retained source SHA to highlight" },
@@ -1483,11 +1701,15 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "write"],
-    usage: "grokbox runtime profile write --from <host-bundle>",
-    summary: "Atomically author a durable PatchProfile from read-only input (no live inject or retained bundle).",
+    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>]",
+    summary: "Atomically author a durable PatchProfile from a retained Host generation; envelope reject-on-drift. No live inject.",
     arguments: [],
     options: options([
-      { flags: "--from <host-bundle>", description: "Absolute Host bundle input; read only, no retained full-bundle copy", required: true },
+      { flags: "--sha <retainedSourceSha>", description: "Retained source SHA; load bytes from the retain directory" },
+      { flags: "--from <host-bundle>", description: "Unretained absolute Host path; requires --allow-unretained --confirm" },
+      { flags: "--allow-unretained", description: "Waive retain-dir bind only; never skips envelope reject-on-drift" },
+      { flags: "--confirm", description: "Required with --from --allow-unretained" },
+      { flags: "--slice-review <id...>", description: "Exact rejecting envelope slice ids (windowSha/count/find.inWindow)" },
     ]),
     stdin: "none",
     table: false,
@@ -1551,9 +1773,11 @@ export const TOP_LEVEL_COMMANDS = [
 
 export type TopLevelCommand = (typeof TOP_LEVEL_COMMANDS)[number];
 
-export const START_HERE = `Start here (for Agents):\n  grokbox skills get core --full`;
+export const START_HERE = `Start here (for Agents):\n  grokbox skills get grokbox`;
 
 export const EXAMPLES = [
+  "grokbox skills get grokbox",
+  "grokbox skills get grokbox --full",
   "grokbox skills get core --full",
   "grokbox doctor",
   "grokbox recover",
@@ -1622,6 +1846,13 @@ export const GATEWAY_METHODS = [
   "setAgentNotifyOnUpdates",
   "setAgentHiddenFromSidebar",
   "deleteAgent",
+  "publishBotTemplate",
+  "getBotTemplateVersion",
+  "getBotTemplateForSourceAgent",
+  "getBotTemplateExportPolicy",
+  "deleteBotTemplate",
+  "setBotTemplateVisibility",
+  "createAgentFromTemplate",
 ] as const;
 
 export type GatewayMethod = (typeof GATEWAY_METHODS)[number];

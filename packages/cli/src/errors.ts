@@ -65,6 +65,9 @@ export const EXIT_CODES = {
   export_source_unavailable: 69,
   runtime_not_ready: 70,
   runtime_ownership_unavailable: 65,
+  host_switch_blocked: 71,
+  host_mismatch: 72,
+  host_source_mismatch: 72,
 } as const;
 
 export type ErrorCode = Exclude<keyof typeof EXIT_CODES, "ok">;
@@ -75,6 +78,11 @@ export type ErrorBody = {
   httpStatus?: number;
   failureCode?: string;
   retryable: boolean;
+  running?: Array<{ id: string; name: string }>;
+  next?: string;
+  hostReason?: string;
+  liveShaPrefix?: string;
+  profileShaPrefix?: string;
   context?:
     | { clientNonce: string; target: { id: string; kind: "agent" | "group" } }
     | { operationId: string; object?: { id: string; kind: "agent" | "group" }; phase?: string };
@@ -146,6 +154,9 @@ const RETRYABLE: Record<ErrorCode, boolean> = {
   export_source_unavailable: false,
   runtime_not_ready: false,
   runtime_ownership_unavailable: false,
+  host_switch_blocked: false,
+  host_mismatch: false,
+  host_source_mismatch: false,
 };
 
 export class CliError extends Error {
@@ -153,6 +164,11 @@ export class CliError extends Error {
   readonly httpStatus?: number;
   readonly failureCode?: string;
   readonly retryable: boolean;
+  readonly running?: Array<{ id: string; name: string }>;
+  readonly next?: string;
+  readonly hostReason?: string;
+  readonly liveShaPrefix?: string;
+  readonly profileShaPrefix?: string;
   readonly context?: ErrorBody["context"];
 
   constructor(
@@ -162,6 +178,11 @@ export class CliError extends Error {
       httpStatus?: number;
       failureCode?: string;
       retryable?: boolean;
+      running?: Array<{ id: string; name: string }>;
+      next?: string;
+      hostReason?: string;
+      liveShaPrefix?: string;
+      profileShaPrefix?: string;
       context?: ErrorBody["context"];
     } = {},
   ) {
@@ -171,6 +192,11 @@ export class CliError extends Error {
     this.httpStatus = extras.httpStatus;
     this.failureCode = extras.failureCode;
     this.retryable = extras.retryable ?? RETRYABLE[code];
+    this.running = extras.running;
+    this.next = extras.next;
+    this.hostReason = extras.hostReason;
+    this.liveShaPrefix = extras.liveShaPrefix;
+    this.profileShaPrefix = extras.profileShaPrefix;
     this.context = extras.context;
   }
 
@@ -186,6 +212,11 @@ export class CliError extends Error {
     };
     if (this.httpStatus !== undefined) body.httpStatus = this.httpStatus;
     if (this.failureCode !== undefined) body.failureCode = this.failureCode;
+    if (this.running !== undefined) body.running = this.running;
+    if (this.next !== undefined) body.next = this.next;
+    if (this.hostReason !== undefined) body.hostReason = this.hostReason;
+    if (this.liveShaPrefix !== undefined) body.liveShaPrefix = this.liveShaPrefix;
+    if (this.profileShaPrefix !== undefined) body.profileShaPrefix = this.profileShaPrefix;
     if (this.context !== undefined) body.context = this.context;
     return body;
   }

@@ -1,6 +1,11 @@
 import { observeHostBundles } from "../../io/provenance.node.ts";
 import { classifyUpgradeSense, type UpgradeSenseInput, type UpgradeSenseVerdict } from "./upgrade-sense.ts";
 import { REPLAY_TOOL_REVISION, readLastReplayReport, recipeRevisionOf, liveKnifeRecipe, type ReplayReport } from "./replay.ts";
+import {
+  observeRetainedEnvelopeDrift,
+  type EnvelopeDriftObservation,
+  type EnvelopeWindows,
+} from "./envelope-windows.ts";
 
 export type HostSeamStatusFacets = {
   upstreamUpgrade: {
@@ -34,6 +39,8 @@ export type HostSeamStatusFacets = {
     toolRevision: string;
   };
   review: { lastReviewedMatch: string | null };
+  /** 19-slice window golden vs prior retained golden. Not driftedSlices / patchImpact. */
+  envelopeDrift: EnvelopeDriftObservation;
   adoptEligibility: false;
   gaps: string[];
 };
@@ -44,6 +51,7 @@ export async function projectHostSeamStatus(input: {
   sense?: UpgradeSenseInput;
   previousSense?: UpgradeSenseInput;
   currentRecipeRevision?: string;
+  envelopeWindows?: { previous: EnvelopeWindows; current: EnvelopeWindows };
 }): Promise<HostSeamStatusFacets> {
   const bundles = await observeHostBundles(input.root);
   const sense = classifyUpgradeSense(input.sense ?? { schemaVersion: 1 }, input.previousSense);
@@ -70,10 +78,20 @@ export async function projectHostSeamStatus(input: {
     && input.sense.installed.companionDigest
     && input.previousSense.installed.companionDigest !== input.sense.installed.companionDigest,
   );
+  const envelopeDrift = await observeRetainedEnvelopeDrift({
+    root: input.root,
+    bundles,
+    ...(input.sha ? { sha: input.sha } : {}),
+    ...(input.envelopeWindows ? { envelopeWindows: input.envelopeWindows } : {}),
+  });
   const gaps = [...sense.gaps];
   if (staleGreen) gaps.push("stale_replay_cache");
   if (bundles.state === "missing") gaps.push("corpus_missing");
   if (last?.truncated) gaps.push("replay_truncated");
+  // Observation-only. envelope_windows_* gaps are not a doctor/heal Host-seam surface.
+  if (envelopeDrift.state === "missing") gaps.push("envelope_windows_missing");
+  if (envelopeDrift.state === "partial") gaps.push("envelope_windows_incomplete");
+  if (envelopeDrift.state === "invalid" || envelopeDrift.state === "unavailable") gaps.push("envelope_windows_invalid");
 
   return {
     upstreamUpgrade: {
@@ -109,6 +127,7 @@ export async function projectHostSeamStatus(input: {
     review: {
       lastReviewedMatch: bundles.generations.find((row) => row.metadata?.matchedProfileId)?.sourceSha ?? null,
     },
+    envelopeDrift,
     adoptEligibility: false,
     gaps,
   };

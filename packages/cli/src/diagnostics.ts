@@ -7,6 +7,7 @@ import { CliError } from "./errors.ts";
 import { GatewayClient, type Discovery } from "./gateway.ts";
 import { CursorSandboxClient, CursorSandboxError } from "./sandbox/cursor.ts";
 import { asBoolean, asNumber, isRecord } from "./util.ts";
+import { inspectOperator, type OperatorReport } from "./commands/operator.ts";
 
 export type DiagnosticStatus = "pass" | "fail" | "skipped" | "unverified";
 
@@ -21,7 +22,9 @@ export type DiagnosticCheck = {
 
 export type DoctorReport = {
   ok: boolean;
+  next: string;
   profile: { name: string; transport: string };
+  operator?: OperatorReport;
   discovery?: Omit<Discovery, "token" | "baseUrl">;
   health?: Record<string, unknown>;
   daemon?: {
@@ -412,12 +415,20 @@ export async function diagnose(deps: CliDeps, timeoutMs: number): Promise<Doctor
 
   const required = [checks.profile, checks.secretSession, checks.tailnet, checks.daemonHttp, checks.daemonAuth, checks.capabilities, checks.gateway];
   const ok = required.every((check) => check.status !== "fail") && (checks.serve.status !== "fail");
+  let operator: OperatorReport | undefined;
+  try {
+    operator = await inspectOperator(deps, timeoutMs);
+  } catch {
+    operator = undefined;
+  }
   return {
     ok,
+    next: operator?.next ?? "none",
     profile: { name: deps.profileName ?? "default", transport: deps.transport },
     ...(discovery ? { discovery: discoveryProjection(discovery) } : {}),
     ...(health ? { health } : {}),
     ...(handshake ? { daemon: daemonProjection(handshake) } : {}),
+    ...(operator ? { operator } : {}),
     checks,
   };
 }

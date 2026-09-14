@@ -64,6 +64,7 @@ export async function observeAndHeal(input: {
       previous,
       matchedProfileId: input.matchedProfileId,
     });
+    // YELLOW: heal/journal driftedSlices stay 4-name. Envelope window drift is not a healable surface.
     driftedSlices = generation.driftedSlices.length ? generation.driftedSlices : retained.diff?.driftedSlices ?? [];
     await appendEvent(input.root, {
       name: "contracts_snapshot",

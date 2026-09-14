@@ -257,6 +257,7 @@ export function sanitizeEvent(input: RuntimeEvent): RuntimeEvent | null {
     }
     if (key === "driftedSlices") {
       if (!Array.isArray(value)) continue;
+      // YELLOW: journal keeps the 4-name lock. compact-register / envelope ids are dropped, not migrated.
       out.driftedSlices = value.filter((item) => typeof item === "string" && (CONTRACT_SLICE_NAMES as readonly string[]).includes(item));
       continue;
     }

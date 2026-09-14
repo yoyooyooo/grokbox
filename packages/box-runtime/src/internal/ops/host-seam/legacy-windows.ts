@@ -50,7 +50,8 @@ function allOffsets(haystack: string, needle: string): number[] {
   return offsets;
 }
 
-/** Four old contract windows as auxiliary evidence. Counts every hit; never first-hit patchImpact. */
+/** Four old contract windows as auxiliary evidence. Counts every hit; never first-hit patchImpact.
+ * YELLOW: this is not envelope green. 19-slice window drift is envelopeDrift, not these rows. */
 export function observeLegacyWindows(source: string): LegacyWindowRow[] {
   return LEGACY_WINDOW_NAMES.map((name) => {
     const needles = SELECTORS[name].map((selector) => {

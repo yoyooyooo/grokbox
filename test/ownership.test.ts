@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PROFILE_WRITE_NEXT } from "../packages/cli/src/host-source.ts";
 import { projectOwnership } from "../packages/cli/src/ownership.ts";
 import { startDaemonHost } from "../packages/cli/src/daemon/host.ts";
 import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
@@ -32,6 +33,37 @@ for (const [server, local, state] of [["box", "box", "confirmed_box"], ["tempora
     expect(JSON.stringify(result)).not.toContain("PRIVATE_SENTINEL");
   });
 }
+
+test("official Host channel is a blocker, not identity-lost wording", () => {
+  const result = projectOwnership({ agentIds: [A], snapshot: snapshot([row(A, "box", "box")]), host: "official" });
+  expect(result.next).toBe("grokbox host start");
+  expect(result.agents[0]?.blockers[0]).toBe("host_channel_not_enabled");
+  expect(result.agents[0]?.nextAction).toBe("grokbox host start");
+  expect(result.agents[0]?.nextAction).not.toBe("obtain_valid_identity_evidence");
+  const unconfirmed = projectOwnership({ agentIds: [A], snapshot: {}, host: "official" });
+  expect(unconfirmed.agents[0]?.state).toBe("unconfirmed");
+  expect(unconfirmed.agents[0]?.blockers).toContain("host_channel_not_enabled");
+  expect(unconfirmed.agents[0]?.nextAction).toBe("grokbox host start");
+  const custom = projectOwnership({ agentIds: [A], snapshot: {}, host: "custom", hostNext: "none" });
+  expect(custom.next).toBe("none");
+  expect(custom.agents[0]?.nextAction).toBe("obtain_valid_identity_evidence");
+  expect(custom.agents[0]?.blockers).not.toContain("host_channel_not_enabled");
+});
+
+test("source mismatch is a Host-channel blocker, not identity-lost wording", () => {
+  const result = projectOwnership({
+    agentIds: [A],
+    snapshot: snapshot([row(A, "box", "box")]),
+    host: "unknown",
+    hostReason: "source_mismatch",
+  });
+  expect(result.next).toBe(PROFILE_WRITE_NEXT);
+  expect(result.agents[0]?.blockers[0]).toBe("host_source_mismatch");
+  expect(result.agents[0]?.blockers).not.toContain("host_channel_not_enabled");
+  expect(result.agents[0]?.nextAction).toBe(PROFILE_WRITE_NEXT);
+  expect(result.agents[0]?.nextAction).not.toBe("obtain_valid_identity_evidence");
+  expect(result.agents[0]?.state).toBe("confirmed_box");
+});
 
 test("missing bridge/row, duplicate row and changed generation cannot confirm ownership", () => {
   for (const value of [null, {}, snapshot([]), snapshot([row(A, "box", "box"), row(A, "box", "box")])]) {

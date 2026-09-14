@@ -1,14 +1,25 @@
+import { BoxRuntimeError } from "@grokbox/box-runtime/runtime";
 import { Command, CommanderError } from "commander";
 import {
   runAgentsCreate,
   runAgentsDelete,
   runAgentsList,
   runAgentsShow,
+  runAgentsTitle,
   runAgentsUpdate,
 } from "./commands/agents.ts";
 import { runBoxKeepalive, runBoxKeepaliveStatus, runBoxStatus, runBoxWake } from "./commands/box.ts";
 import { runDaemonEnsure, runDaemonServe, runDaemonStatus } from "./commands/daemon.ts";
 import { runDoctor } from "./commands/doctor.ts";
+import {
+  runHostReserved,
+  runHostRestart,
+  runHostStart,
+  runHostStop,
+  runOperatorOff,
+  runOperatorOn,
+  runOperatorUpgrade,
+} from "./commands/operator.ts";
 import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
@@ -23,6 +34,15 @@ import {
 } from "./commands/desktop.ts";
 import { runExec } from "./commands/exec.ts";
 import { runExportAgent } from "./commands/export.ts";
+import {
+  runTemplateDelete,
+  runTemplateImport,
+  runTemplatePack,
+  runTemplatePublish,
+  runTemplateShow,
+  runTemplateStage,
+  runTemplateVisibility,
+} from "./commands/template.ts";
 import { runEvents } from "./commands/events.ts";
 import {
   runFsDownload,
@@ -108,6 +128,9 @@ type CliOptions = ProfileOptions & {
   profile?: string;
   timeoutMs?: string;
   includeHidden?: boolean;
+  ownership?: boolean;
+  dryRun?: boolean;
+  revert?: boolean;
   full?: boolean;
   text?: string;
   expectKind?: string;
@@ -129,6 +152,7 @@ type CliOptions = ProfileOptions & {
   expectedSha256?: string;
   recursive?: boolean;
   yes?: boolean;
+  force?: boolean;
   socket?: string;
   name?: string;
   description?: string;
@@ -154,12 +178,16 @@ type CliOptions = ProfileOptions & {
   mode?: string;
   for?: string;
   from?: string;
+  rev?: string;
+  visibility?: string;
   fromPi?: string;
   confirm?: boolean;
   plan?: string;
   sha?: string;
   all?: boolean;
   against?: string;
+  allowUnretained?: boolean;
+  sliceReview?: string | string[];
 };
 
 type LeafAction = (
@@ -169,7 +197,7 @@ type LeafAction = (
 ) => Promise<void>;
 
 const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
-  skills: "Bundled skills (version-matched)",
+  skills: "Version-matched bundled skills (prefer skills get grokbox)",
   profile: "Profile configuration and selection",
   daemon: "Local daemon lifecycle",
   agents: "Non-group Grok Bot agents",
@@ -186,6 +214,7 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   desktop: "Idle desktop fork status and prune",
   "desktop keep": "Persist Chrome keep protection on the box daemon",
   "desktop prune": "Plan, stop, or schedule idle desktop prune",
+  host: "Custom-model Host channel",
   is: "Read state projections",
   runtime: "Box-local model runtime",
   "runtime models": "Box-local model catalog and assignments",
@@ -193,6 +222,9 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "runtime profile": "Offline reviewed PatchProfile authoring",
   "runtime watchdog": "Box-local desired-state Host coordinator",
   "runtime modeld": "Box-local model daemon",
+  "agents title": "App title trailer show, hide, and sync",
+  models: "Assign a custom model to one Bot",
+  template: "Official Grok Bot templates",
 };
 
 function publicCommanderMessage(error: CommanderError): string {
@@ -226,6 +258,15 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "daemon ensure": async (deps, _args, options) => await runDaemonEnsure(deps, options),
     "daemon status": async (deps, _args, options) => await runDaemonStatus(deps, options),
     doctor: async (deps, _args, options) => await runDoctor(deps, options),
+    on: async (deps, _args, options) => await runOperatorOn(deps, options),
+    off: async (deps, _args, options) => await runOperatorOff(deps, options),
+    upgrade: async (deps, _args, options) => await runOperatorUpgrade(deps, options),
+    "host start": async (deps, _args, options) => await runHostStart(deps, options),
+    "host stop": async (deps, _args, options) => await runHostStop(deps, options),
+    "host restart": async (deps, _args, options) => await runHostRestart(deps, options),
+    "host status": async (deps) => await runHostReserved(deps, "status"),
+    "host realign": async (deps) => await runHostReserved(deps, "realign"),
+    "host logs": async (deps) => await runHostReserved(deps, "logs"),
     recover: async (deps, _args, options) => await runRecover(deps, options),
     quota: async (deps, _args, options) => await runQuota(deps, options),
     "desktop status": async (deps, _args, options) => await runDesktopStatus(deps, options),
@@ -244,6 +285,9 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents create": async (deps, _args, options) => await runAgentsCreate(deps, options),
     "agents update": async (deps, args, options) => await runAgentsUpdate(deps, args[0] ?? "", options),
     "agents delete": async (deps, args, options) => await runAgentsDelete(deps, args[0] ?? "", options),
+    "agents title show": async (deps, args, options) => await runAgentsTitle(deps, "show", args.filter((arg): arg is string => arg !== undefined), options),
+    "agents title hide": async (deps, args, options) => await runAgentsTitle(deps, "hide", args.filter((arg): arg is string => arg !== undefined), options),
+    "agents title sync": async (deps, args, options) => await runAgentsTitle(deps, "sync", args.filter((arg): arg is string => arg !== undefined), options),
     "groups list": async (deps, _args, options) => await runGroupsList(deps, options),
     "groups show": async (deps, args, options) => await runGroupsShow(deps, args[0] ?? "", options),
     "groups create": async (deps, _args, options) => await runGroupsCreate(deps, options),
@@ -257,6 +301,13 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
       await runGroupMembersRemove(deps, args[0] ?? "", args[1] ?? "", options),
     "groups members set": async (deps, args, options) =>
       await runGroupMembersSet(deps, args[0] ?? "", options),
+    "template pack": async (deps, args, options) => await runTemplatePack(deps, args[0] ?? "", options),
+    "template stage": async (deps, args, options) => await runTemplateStage(deps, args[0] ?? "", options),
+    "template publish": async (deps, args, options) => await runTemplatePublish(deps, args[0] ?? "", options),
+    "template show": async (deps, args, options) => await runTemplateShow(deps, args[0] ?? "", options),
+    "template visibility": async (deps, args, options) => await runTemplateVisibility(deps, args[0] ?? "", options),
+    "template delete": async (deps, args, options) => await runTemplateDelete(deps, args[0] ?? "", options),
+    "template import": async (deps, args, options) => await runTemplateImport(deps, args[0] ?? "", options),
     send: async (deps, args, options) => await runSend(deps, args[0] ?? "", options),
     "history search": async (deps, args, options) =>
       await runHistorySearch(deps, args[0] ?? "", options),
@@ -302,6 +353,9 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime models use": async (deps, args, options) =>
       await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
     "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "models list": async (deps) => await runRuntimeModelsList(deps),
+    "models use": async (deps, args, options) => await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
+    "models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
     "runtime models persist-key": async (deps, args, options) => await runRuntimeModelsPersistKey(deps, args[0] ?? "", options.fromPi, options.confirm),
     "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out),
     "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
@@ -310,7 +364,14 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime profile replay": async (deps, _args, options) => await runRuntimeProfileReplay(deps, options.sha, options.all),
     "runtime profile status": async (deps, _args, options) => await runRuntimeProfileStatus(deps, options.sha),
     "runtime profile watch": async (deps, _args, options) => await runRuntimeProfileWatch(deps, options.once, options.from),
-    "runtime profile write": async (deps, _args, options) => await runRuntimeProfileWrite(deps, options.from),
+    "runtime profile write": async (deps, _args, options) =>
+      await runRuntimeProfileWrite(deps, {
+        from: options.from,
+        sha: options.sha,
+        allowUnretained: options.allowUnretained,
+        confirm: options.confirm,
+        sliceReview: options.sliceReview,
+      }),
     "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),
     "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),
     "runtime modeld run": async (deps) => await runRuntimeModeld(deps),
@@ -422,7 +483,7 @@ export function createProgram(deps: CliDeps): Command {
     },
   });
   program.action(() => {
-    throw usage("Missing command. Try grokbox --help or grokbox skills get core --full.");
+    throw usage("Missing command. Try grokbox --help or grokbox skills get grokbox.");
   });
 
   const bindings = actionBindings();
@@ -466,6 +527,11 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     if (error instanceof CliError) {
       writeFailure(deps.stderr, error);
       return error.exitCode;
+    }
+    if (error instanceof BoxRuntimeError) {
+      const mapped = new CliError(error.code, error.message);
+      writeFailure(deps.stderr, mapped);
+      return mapped.exitCode;
     }
     writeFailure(deps.stderr, new CliError("gateway_internal", unexpectedMessage(error)));
     return 15;

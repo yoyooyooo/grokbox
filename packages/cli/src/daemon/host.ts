@@ -9,6 +9,7 @@ import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
 import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig, DaemonProcessConfig } from "./config.ts";
 import { DesktopManager, type DesktopIo } from "./desktop.ts";
+import { TitleSyncManager } from "./title-sync.ts";
 import { DaemonEventManager, type EventSource } from "./events.ts";
 import { JobManager, type JobState, type JobSubmit } from "./jobs.ts";
 import { ProcessAuthority } from "./process.ts";
@@ -163,6 +164,8 @@ export async function startDaemonHost(
   ) : null;
   const gateway = new GatewayClient(directDeps);
   const desktop = await DesktopManager.create(deps.configDir, deps.now, desktopConfig, desktopIo);
+  const titleSync = new TitleSyncManager(gateway, deps.boxRuntimeRoot, deps.env);
+  titleSync.start();
 
   const handshake = async (): Promise<DaemonHandshake> => {
     const discovery = await gateway.load();
@@ -185,6 +188,7 @@ export async function startDaemonHost(
         ...(hasRecursiveRemove ? ["host.fs.remove.recursive"] : []),
         ...(jobs?.capabilities() ?? []),
         ...desktop.capabilities(),
+        ...titleSync.capabilities(),
       ],
       filesystemRoots: roots,
       gateway: gatewayMeta(discovery),
@@ -294,6 +298,31 @@ export async function startDaemonHost(
     }
     if (method === "deleteAgent") {
       const value = await gateway.deleteAgent(asString(body.id), timeoutMs);
+      await desktop.reapAgent(asString(body.id));
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "publishBotTemplate") {
+      const value = await gateway.publishBotTemplate(body, timeoutMs);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "getBotTemplateVersion") {
+      const value = await gateway.getBotTemplateVersion(body, timeoutMs);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "getBotTemplateForSourceAgent") {
+      const value = await gateway.getBotTemplateForSourceAgent(body, timeoutMs);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "deleteBotTemplate") {
+      const value = await gateway.deleteBotTemplate(body, timeoutMs);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "setBotTemplateVisibility") {
+      const value = await gateway.setBotTemplateVisibility(body, timeoutMs);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "createAgentFromTemplate") {
+      const value = await gateway.createAgentFromTemplate(body, timeoutMs);
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
     }
     if (method === "fsStat") {
@@ -571,6 +600,7 @@ export async function startDaemonHost(
         ...(networkServer ? [closeServer(networkServer)] : []),
         jobs?.close() ?? Promise.resolve(),
         desktop.close(),
+        titleSync.close(),
         filesystem.close(),
       ]);
       await rm(socketPath, { force: true });

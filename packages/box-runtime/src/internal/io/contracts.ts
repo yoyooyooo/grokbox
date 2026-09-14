@@ -16,6 +16,7 @@ export type ContractGeneration = {
 
 const KEEP = 5;
 export const CONTRACT_OBSERVATION_LIMIT = 32;
+/** YELLOW: these four first-hit windows are not the 19-slice envelope. `driftedSlices=[]` / patchImpact unchanged is not envelope green. */
 export const CONTRACT_SLICE_NAMES = ["create-session", "session-options", "agent-id", "prompt-session"] as const;
 const SHA = /^[a-f0-9]{64}$/;
 
@@ -110,6 +111,7 @@ export async function snapshotContracts(input: {
   const hashes = sliceHashes(slices);
   const driftedSlices: string[] = [];
   if (input.previous) {
+    // YELLOW: contract snapshot drift is 4 first-hit windows, not envelopeDrift.
     for (const name of new Set([...Object.keys(hashes), ...Object.keys(input.previous.sliceHashes)])) {
       if (hashes[name] !== input.previous.sliceHashes[name]) driftedSlices.push(name);
     }

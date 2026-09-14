@@ -213,6 +213,7 @@ ops事件/任务索引仍在同一私有 provenance根，不建第二事实数�
 
 - `patchImpact` 以 **source SHA × slice-id × recipe/profile digest** 的精确重放结果为准。
 - `extractContractSlices` 的 first-`indexOf` 结果不能再产生 `patchImpact=unchanged` 或 `review=none`。保留历史 metadata 时标 `legacy-window`；缺少唯一位置/来源证明的值为 unknown，而不是空数组 `driftedSlices=[]`。
+- **YELLOW：** 四窗 `patchImpact` / `driftedSlices=[]` 不是 envelope 绿。19 片窗漂是并行 `envelopeDrift`（`runtime profile status` facet），禁止扩 `driftedSlices` 到 compact-register 等 envelope id。
 - 辅助 contract window 若继续输出，也须报告全部命中数与各自 selector 版本；多命中/缺失不取第一条。它们以 `contract:<name>` 命名空间显示，不进入两个 slice 的通过率。
 - `lineDiffStats` 只作大小/变更量提示；common-prefix/suffix 单 hunk 不是定位器，不生成 patch。
 

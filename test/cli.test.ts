@@ -91,6 +91,11 @@ describe("registry, help, and runtime", () => {
       "profile",
       "daemon",
       "doctor",
+      "on",
+      "off",
+      "upgrade",
+      "host",
+      "models",
       "quota",
       "recover",
       "box",
@@ -101,6 +106,7 @@ describe("registry, help, and runtime", () => {
       "history",
       "memory",
       "export",
+      "template",
       "fs",
       "exec",
       "jobs",
@@ -180,6 +186,11 @@ describe("registry, help, and runtime", () => {
       ["runtime", "inject"],
       ["runtime", "heal"],
       ["runtime", "kill"],
+      ["operator", "on"],
+      ["host", "on"],
+      ["host", "off"],
+      ["on", "--yes"],
+      ["off", "--revert", "--yes"],
     ];
     for (const argv of removed) {
       const result = await withGateway(argv);
@@ -197,6 +208,23 @@ describe("registry, help, and runtime", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("agent-alpha");
     expect(result.mock.requests.map((request) => request.pathname)).toEqual(["/api/listAgents"]);
+  });
+
+  test("bundled grokbox skill is version-matched and distinct from core", async () => {
+    const listed = await captureCli(["skills", "list"], { skillsDir, discoveryPath: "/dev/null" });
+    expect(listed.code).toBe(0);
+    const names = (parseJson(listed.stdout) as { data: { skills: Array<{ name: string }> } }).data.skills.map((row) => row.name);
+    expect(names).toEqual(["core", "grokbox"]);
+    const product = await captureCli(["skills", "get", "grokbox"], { skillsDir, discoveryPath: "/dev/null" });
+    expect(product.code).toBe(0);
+    expect(product.stdout).toContain("grokbox host start");
+    expect(product.stdout).not.toContain("Leaf commands");
+    const full = await captureCli(["skills", "get", "grokbox", "--full"], { skillsDir, discoveryPath: "/dev/null" });
+    expect(full.code).toBe(0);
+    expect(full.stdout).toContain("confirmed_box");
+    expect(full.stdout).toContain("# ownership");
+    const unknown = await captureCli(["skills", "get", "adopt"], { skillsDir, discoveryPath: "/dev/null" });
+    expect(unknown.code).toBe(2);
   });
 
   test("bundled full skill is generated from the same registry", async () => {
@@ -399,6 +427,17 @@ describe("strict agents, groups, and target resolution", () => {
     });
     expect(result.code).toBe(19);
     expect(errorCode(result.stderr)).toBe("target_ambiguous");
+    expect(rpcCalls(result.mock.requests, "sendPrompt")).toEqual([]);
+    expect(result.stderr).toContain("agent-alpha");
+    expect(result.stderr).toContain("agent-alpha-2");
+  });
+
+  test("unknown targets tell the caller to list Bots", async () => {
+    const result = await withGateway(["send", "no-such-bot", "--text", "x"]);
+    expect(result.code).toBe(17);
+    expect(errorCode(result.stderr)).toBe("target_not_found");
+    expect(result.stderr).toContain("grokbox agents list");
+    expect(result.stderr).toContain("no-such-bot");
     expect(rpcCalls(result.mock.requests, "sendPrompt")).toEqual([]);
   });
 });

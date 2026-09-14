@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { OWNERSHIP_READ_SLICES } from "./ownership-slices.ts";
 import type { SlicePatch } from "./profile.ts";
 import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
+import { HOST_PROFILE_TITLE_SYMBOL } from "./title-marker.ts";
 
 export const LIVE_HOST_BUNDLE = "/home/box/sand-host/host-main.cjs";
 
@@ -133,6 +134,14 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {},\n    isGroup: false,\n",
     replacement:
       "    harness: readSandProfileHarness(profilePath) ?? undefined,\n    isGroup: false,\n",
+  },
+  {
+    id: "profile-title-marker",
+    startAnchor: "writeAgentProfileFile(agentId, profile) {",
+    endAnchor: "async withAgentDb(agentId, fn) {",
+    find: "    const current = readSandProfileFile(path31);\n    const trimmedName = profile.name.trim();\n",
+    replacement:
+      `    const current = readSandProfileFile(path31);\n    const __grokbox_title = globalThis[Symbol.for("${HOST_PROFILE_TITLE_SYMBOL}")];\n    if (typeof __grokbox_title === "function") {\n      const __grokbox_next = __grokbox_title({ agentId, profile, localHarness: current?.harness });\n      if (__grokbox_next != null && typeof __grokbox_next.title === "string") profile = { ...profile, title: __grokbox_next.title };\n    }\n    const trimmedName = profile.name.trim();\n`,
   },
   {
     id: "harness-summary",

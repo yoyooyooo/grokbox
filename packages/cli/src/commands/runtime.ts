@@ -24,6 +24,8 @@ import {
   startControlOperation,
   startModeldProcess,
   writeReviewedProfileFromCopy,
+  ProfileWriteRefused,
+  retainedGenerationSourcePath,
   observeHostProvenance,
   applyRetentionPlan,
   readRetentionPlanFile,
@@ -43,10 +45,18 @@ import {
 } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
+import { LIVE_HOST_BUNDLE_PATH } from "../host-source.ts";
+import { GatewayClient } from "../gateway.ts";
+import { asString } from "../util.ts";
+import { findRosterRow } from "./roster.ts";
 import { writeSuccess } from "../output.ts";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
+import { paintTitleAfterModelAssignment } from "../title-sync.ts";
 
 function rethrow(error: unknown): never {
+  if (error instanceof ProfileWriteRefused) {
+    throw new CliError(error.code, error.message, { next: error.next });
+  }
   if (error instanceof BoxRuntimeError) {
     throw new CliError(error.code, error.message);
   }
@@ -66,6 +76,15 @@ function store(deps: CliDeps) {
 function runtimeRunRoot(deps: CliDeps): string {
   const configured = deps.env.GROKBOX_RUN_ROOT;
   return typeof configured === "string" && configured.length > 0 ? configured : join(homedir(), ".grokbox", "run");
+}
+
+const AGENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveBotId(deps: CliDeps, target: string): Promise<string> {
+  const query = target.trim();
+  if (AGENT_ID.test(query)) return query.toLowerCase();
+  const { agents } = await new GatewayClient(deps).listAgents(10_000);
+  return asString(findRosterRow(agents, query, ["agent"]).id);
 }
 
 export async function runRuntimeStatus(deps: CliDeps): Promise<void> {
@@ -119,13 +138,7 @@ export async function runRuntimeStart(deps: CliDeps, mode: string | undefined): 
 
 export async function runRuntimeDeactivate(deps: CliDeps): Promise<void> {
   try {
-    const runtime = store(deps);
-    await saveRuntimeDesired(runtime, { version: 1, mode: "disabled" });
-    writeSuccess(deps.stdout, {
-      desired: "disabled",
-      requested: true,
-      chain: "desired-disabled",
-    });
+    writeSuccess(deps.stdout, await applyHostDisable(deps));
   } catch (error) {
     rethrow(error);
   }
@@ -183,8 +196,15 @@ export async function runRuntimeModelsUse(
   try {
     parseModelId(modelId);
     const runtime = store(deps);
-    writeSuccess(deps.stdout, await changeRuntimeModel({ store: runtime, modelId, forAgent,
-      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal }));
+    const agentId = forAgent === undefined ? undefined : await resolveBotId(deps, forAgent);
+    const selection = await changeRuntimeModel({ store: runtime, modelId, forAgent: agentId,
+      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal, env: deps.env });
+    writeSuccess(deps.stdout, {
+      ...selection,
+      ...(agentId ? { title: await paintTitleAfterModelAssignment(new GatewayClient(deps), {
+        agentId, boxRuntimeRoot: deps.boxRuntimeRoot, env: deps.env, mode: "custom",
+      }) } : {}),
+    });
   } catch (error) {
     rethrow(error);
   }
@@ -203,11 +223,43 @@ export async function runRuntimeModelsPersistKey(deps: CliDeps, modelId: string,
 export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | undefined): Promise<void> {
   try {
     const runtime = store(deps);
-    writeSuccess(deps.stdout, await changeRuntimeModel({ store: runtime, forAgent,
-      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal }));
+    const agentId = forAgent === undefined ? undefined : await resolveBotId(deps, forAgent);
+    const selection = await changeRuntimeModel({ store: runtime, forAgent: agentId,
+      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal });
+    writeSuccess(deps.stdout, {
+      ...selection,
+      ...(agentId ? { title: await paintTitleAfterModelAssignment(new GatewayClient(deps), {
+        agentId, boxRuntimeRoot: deps.boxRuntimeRoot, env: deps.env, mode: "official",
+      }) } : {}),
+    });
   } catch (error) {
     rethrow(error);
   }
+}
+
+export async function applyHostEnable(deps: CliDeps): Promise<unknown> {
+  const runtime = store(deps);
+  const preloadSha256 = diskPreloadSha256();
+  const profileSha256 = reviewedProfileSha256(runtime.root);
+  return await startControlOperation({
+    intent: "apply",
+    confirmed: true,
+    operationId: controllerOperationId("apply", runtime.root, {
+      ...(preloadSha256 ? { preloadSha256 } : {}),
+      ...(profileSha256 ? { profileSha256 } : {}),
+    }),
+    boxRoot: runtime.root,
+  });
+}
+
+export async function applyHostDisable(deps: CliDeps): Promise<unknown> {
+  const runtime = store(deps);
+  await saveRuntimeDesired(runtime, { version: 1, mode: "disabled" });
+  return {
+    desired: "disabled",
+    requested: true,
+    host: "desired-disabled",
+  };
 }
 
 export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | undefined): Promise<void> {
@@ -215,19 +267,7 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
     if (confirmed !== true) {
       throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
     }
-    const runtime = store(deps);
-    const preloadSha256 = diskPreloadSha256();
-    const profileSha256 = reviewedProfileSha256(runtime.root);
-    const receipt = await startControlOperation({
-      intent: "apply",
-      confirmed: true,
-      operationId: controllerOperationId("apply", runtime.root, {
-        ...(preloadSha256 ? { preloadSha256 } : {}),
-        ...(profileSha256 ? { profileSha256 } : {}),
-      }),
-      boxRoot: runtime.root,
-    });
-    writeSuccess(deps.stdout, receipt);
+    writeSuccess(deps.stdout, await applyHostEnable(deps));
   } catch (error) {
     rethrow(error);
   }
@@ -468,28 +508,79 @@ export async function runRuntimeProfileWatch(
   }
 }
 
-export async function runRuntimeProfileWrite(deps: CliDeps, fromPath: string | undefined): Promise<void> {
+const SHA = /^[a-f0-9]{64}$/;
+
+function parseSliceReview(value: string | string[] | undefined): string[] {
+  if (value === undefined) return [];
+  const parts = (Array.isArray(value) ? value : [value])
+    .flatMap((entry) => String(entry).split(","))
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  return [...new Set(parts)];
+}
+
+export async function runRuntimeProfileWrite(
+  deps: CliDeps,
+  options: {
+    from?: string;
+    sha?: string;
+    allowUnretained?: boolean;
+    confirm?: boolean;
+    sliceReview?: string | string[];
+  },
+): Promise<void> {
   try {
-    if (!fromPath || fromPath.trim().length === 0) {
-      throw new CliError("invalid_usage", "runtime profile write requires --from <host-bundle>.");
+    const fromPath = options.from?.trim() || undefined;
+    const sha = options.sha?.trim() || undefined;
+    const allowUnretained = options.allowUnretained === true;
+    const confirmed = options.confirm === true;
+    if (Boolean(sha) === Boolean(fromPath)) {
+      throw new CliError(
+        "invalid_usage",
+        "runtime profile write requires exactly one of --sha <retainedSourceSha> or --from <host-bundle> --allow-unretained --confirm.",
+      );
     }
-    if (!isAbsolute(fromPath)) {
+    if (sha && (allowUnretained || fromPath)) {
+      throw new CliError("invalid_usage", "runtime profile write --sha cannot be combined with --from / --allow-unretained.");
+    }
+    if (fromPath && (!allowUnretained || !confirmed)) {
+      throw new CliError(
+        "invalid_usage",
+        "--from requires --allow-unretained --confirm. Escape waives retain bind only, never envelope reject-on-drift.",
+        { next: `grokbox runtime profile observe --from ${fromPath}` },
+      );
+    }
+    if (fromPath && !isAbsolute(fromPath)) {
       throw new CliError("invalid_usage", "--from must be an absolute Host bundle path.");
     }
-    const hostBundle = resolve(fromPath);
+    if (sha && !SHA.test(sha)) {
+      throw new CliError("invalid_usage", "--sha must be a 64-character lowercase hex source digest.");
+    }
     const runtime = store(deps);
     const destDir = dirname(reviewedProfilePath(runtime.root));
+    const hostBundle = sha ? retainedGenerationSourcePath(runtime.root, sha) : resolve(fromPath!);
+    const sliceReview = parseSliceReview(options.sliceReview);
     let written;
     try {
       written = await writeReviewedProfileFromCopy({
         destDir,
         hostBundle,
         profileId: "reviewed-copy-envelope",
+        lineage: {
+          root: runtime.root,
+          ...(sha ? { retainedSha: sha } : { allowUnretained: true }),
+          ...(sliceReview.length > 0 ? { sliceReview } : {}),
+        },
       });
     } catch (error) {
+      if (error instanceof ProfileWriteRefused) throw error;
       const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
       if (code === "ENOENT") {
-        throw new CliError("invalid_usage", "Profile authoring input or destination is unavailable.");
+        throw new CliError("invalid_usage", "Profile authoring input or destination is unavailable.", {
+          next: sha
+            ? `grokbox runtime profile observe --from ${LIVE_HOST_BUNDLE_PATH}`
+            : `grokbox runtime profile observe --from ${hostBundle}`,
+        });
       }
       throw error;
     }
@@ -504,6 +595,8 @@ export async function runRuntimeProfileWrite(deps: CliDeps, fromPath: string | u
       transformedSourceSha256: written.transformedSourceSha256,
       diskSha: written.diskSha,
       hostBundle,
+      ...(written.unretained_source ? { unretained_source: true } : {}),
+      ...(written.envelope ? { envelope: written.envelope } : {}),
     });
   } catch (error) {
     rethrow(error);

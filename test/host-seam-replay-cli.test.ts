@@ -82,6 +82,9 @@ describe("HSO-2 replay CLI", () => {
     expect(status.code, status.stderr).toBe(0);
     expect(data(status.stdout).adoptEligibility).toBe(false);
     expect((data(status.stdout).upstreamUpgrade as { pointerFreshness: string }).pointerFreshness).toBe("unknown");
+    const envelopeDrift = data(status.stdout).envelopeDrift as { evidenceKind: string; state: string };
+    expect(envelopeDrift.evidenceKind).toBe("envelope-windows");
+    expect(envelopeDrift.state).toBe("missing");
     expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
   });
 });

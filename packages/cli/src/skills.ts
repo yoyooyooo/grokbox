@@ -6,12 +6,59 @@ import { ioFromOpts, rejectTable } from "./opts.ts";
 import { renderCommandReference } from "./registry.ts";
 
 export const CORE_SKILL_NAME = "core";
-export const CORE_SKILL_SUMMARY = "Core grokbox usage guide.";
+export const GROKBOX_SKILL_NAME = "grokbox";
 
-export async function loadCoreMarkdown(deps: CliDeps, full: boolean): Promise<string> {
-  const overview = await deps.readFile(join(deps.skillsDir, "core.md"));
-  if (!full) return overview.trimEnd() + "\n";
-  return `${overview.trimEnd()}\n\n${renderCommandReference(deps.cliVersion)}`;
+type BundledSkill = {
+  name: string;
+  summary: string;
+  fullAvailable: true;
+  load: (deps: CliDeps, full: boolean) => Promise<string>;
+};
+
+async function readSkillFile(deps: CliDeps, relative: string): Promise<string> {
+  return (await deps.readFile(join(deps.skillsDir, relative))).trimEnd();
+}
+
+async function loadCoreMarkdown(deps: CliDeps, full: boolean): Promise<string> {
+  const overview = await readSkillFile(deps, "core.md");
+  if (!full) return `${overview}\n`;
+  return `${overview}\n\n${renderCommandReference(deps.cliVersion)}`;
+}
+
+async function loadGrokboxMarkdown(deps: CliDeps, full: boolean): Promise<string> {
+  const entry = await readSkillFile(deps, join("grokbox", "SKILL.md"));
+  if (!full) return `${entry}\n`;
+  const extras = ["ownership.md", "models.md", "label.md", "troubleshoot.md"];
+  const parts = [entry];
+  for (const extra of extras) {
+    parts.push(`# ${extra.replace(/\.md$/, "")}\n\n${await readSkillFile(deps, join("grokbox", extra))}`);
+  }
+  return `${parts.join("\n\n")}\n`;
+}
+
+const BUNDLED_SKILLS: readonly BundledSkill[] = [
+  {
+    name: CORE_SKILL_NAME,
+    summary: "Full grokbox CLI inventory (version-matched).",
+    fullAvailable: true,
+    load: loadCoreMarkdown,
+  },
+  {
+    name: GROKBOX_SKILL_NAME,
+    summary: "Turn grokbox on or off, assign a custom model, titles, and desktops.",
+    fullAvailable: true,
+    load: loadGrokboxMarkdown,
+  },
+];
+
+function bundledNames(): string {
+  return BUNDLED_SKILLS.map((skill) => skill.name).join(", ");
+}
+
+function findSkill(name: string): BundledSkill {
+  const skill = BUNDLED_SKILLS.find((item) => item.name === name);
+  if (!skill) throw usage(`Unknown skill '${name}'. Bundled: ${bundledNames()}.`);
+  return skill;
 }
 
 export async function runSkillsList(
@@ -21,7 +68,11 @@ export async function runSkillsList(
   const io = ioFromOpts(raw);
   const data = {
     cliVersion: deps.cliVersion,
-    skills: [{ name: CORE_SKILL_NAME, summary: CORE_SKILL_SUMMARY, fullAvailable: true }],
+    skills: BUNDLED_SKILLS.map((skill) => ({
+      name: skill.name,
+      summary: skill.summary,
+      fullAvailable: skill.fullAvailable,
+    })),
   };
   if (io.table) {
     deps.stdout.write(
@@ -45,10 +96,12 @@ export async function runSkillsGet(
 ): Promise<void> {
   const io = ioFromOpts(raw);
   rejectTable(io.table, false);
-  if (name !== CORE_SKILL_NAME) throw usage(`Unknown skill '${name}'. v1 only bundles core.`);
-  const content = await loadCoreMarkdown(deps, Boolean(raw.full));
+  const query = name.trim();
+  if (query.length === 0) throw usage(`Skill name is required. Bundled: ${bundledNames()}.`);
+  const skill = findSkill(query);
+  const content = await skill.load(deps, Boolean(raw.full));
   if (io.json) {
-    writeSuccess(deps.stdout, { name: CORE_SKILL_NAME, cliVersion: deps.cliVersion, content });
+    writeSuccess(deps.stdout, { name: skill.name, cliVersion: deps.cliVersion, content });
     return;
   }
   deps.stdout.write(content.endsWith("\n") ? content : `${content}\n`);

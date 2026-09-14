@@ -12,7 +12,12 @@ export {
 } from "@grokbox/runtime-kernel/selection";
 
 export { assertBoxLocal, type LocalRuntimeContext } from "./internal/io/local.ts";
-export { reviewedProfilePath } from "./internal/io/paths.ts";
+export {
+  reviewedProfilePath,
+  hostBundlesDir,
+  retainedGenerationDir,
+  retainedGenerationSourcePath,
+} from "./internal/io/paths.ts";
 export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration.node.ts";
 export { saveRuntimeModels, saveRuntimeDesired, configurationWriteLayer } from "./internal/io/configuration-write.node.ts";
 export { persistModelCredential } from "./internal/io/persist-model-credential.node.ts";
@@ -24,7 +29,17 @@ export {
   type RuntimeStatus,
 } from "./internal/io/observe.ts";
 export { observeEvents, observeRuntimeEvents } from "./internal/io/journal.node.ts";
-export { writeReviewedProfileFromCopy } from "./internal/process/profile.node.ts";
+export {
+  writeReviewedProfileFromCopy,
+  ProfileWriteRefused,
+  profileObserveThenWriteNext,
+  profileWriteUnretainedNext,
+  profileWriteMissingGoldenNext,
+  profileWriteDriftNext,
+  type ProfileWriteLineage,
+  type ProfileWriteRefusal,
+  type WriteReviewedProfileReceipt,
+} from "./internal/process/profile.node.ts";
 export { observeHostProvenance, type HostSeamObserveReceipt } from "./internal/ops/host-seam/observe.ts";
 export {
   applyRetentionPlan,
@@ -45,6 +60,23 @@ export {
   type ReplayReport,
 } from "./internal/ops/host-seam/replay.ts";
 export { projectHostSeamStatus, type HostSeamStatusFacets } from "./internal/ops/host-seam/seam-status.ts";
+export {
+  ENVELOPE_SLICE_COUNT,
+  ENVELOPE_SLICE_IDS,
+  ENVELOPE_WINDOWS_FILE,
+  admitWriteEnvelope,
+  classifyWriteEnvelopeDrift,
+  diffEnvelopeWindows,
+  encodeEnvelopeWindows,
+  generationEnvelopePath,
+  measureEnvelopeWindows,
+  parseEnvelopeWindows,
+  observeRetainedEnvelopeDrift,
+  type EnvelopeDrift,
+  type EnvelopeDriftObservation,
+  type EnvelopeWindows,
+  type WriteEnvelopeAdmission,
+} from "./internal/ops/host-seam/envelope-windows.ts";
 export {
   proposeFromSource,
   readProposeSource,

@@ -4,8 +4,14 @@ import { join } from "node:path";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { boundedText, count, isRecord, observeJson, observeText, type ObservationState } from "./observation.node.ts";
-import { hostBundlesDir } from "./paths.ts";
-import { extractContractSlices, sliceHashes } from "../host/profile.ts";
+import { hostBundlesDir, reviewedProfilePath } from "./paths.ts";
+import { extractContractSlices, sliceHashes, type PatchProfile } from "../host/profile.ts";
+import {
+  ENVELOPE_WINDOWS_FILE,
+  encodeEnvelopeWindows,
+  envelopeWindowsFromReviewed,
+  reviewedEnvelopeProfile,
+} from "../ops/host-seam/envelope-windows.ts";
 
 export const HOST_BUNDLE_KEEP = 16;
 export const HOST_BUNDLE_OBSERVATION_LIMIT = 32;
@@ -25,6 +31,8 @@ export type HostBundlePatchImpact = {
   review: "none" | "re-review";
 };
 
+/** YELLOW: driftedSlices/patchImpact are the 4 contract windows only. Envelope green is envelopeDrift.
+ * retain may persist envelope-windows.json from a contemporaneous 19-slice reviewed profile; never invent without reviewed. */
 export type HostBundleDiff = {
   previousSha: string;
   previousBytes: number;
@@ -73,6 +81,7 @@ export function parseHostBundleMeta(value: unknown): HostBundleMeta {
   };
 }
 
+/** YELLOW: driftedSlices/patchImpact remain the 4 legacy contract windows. Envelope comparison is envelopeDrift. */
 export function parseHostBundleDiff(value: unknown): HostBundleDiff {
   if (!isRecord(value) || typeof value.previousSha !== "string" || !SHA.test(value.previousSha) ||
     !count(value.previousBytes) || !count(value.currentBytes) ||
@@ -155,6 +164,7 @@ export function lineDiffStats(previous: string, current: string): Pick<HostBundl
   };
 }
 
+/** YELLOW: four-window first-hit patchImpact green is not envelope green. Use envelopeDrift for the 19 independent apply windows. */
 export function hostBundlePatchImpact(previous: string | null, current: string): HostBundlePatchImpact[] {
   const currentHashes = sliceHashes(extractContractSlices(current));
   const previousHashes = previous ? sliceHashes(extractContractSlices(previous)) : {};
@@ -177,6 +187,7 @@ export function buildHostBundleDiff(previousSha: string, previous: string, curre
     previousBytes: Buffer.byteLength(previous),
     currentBytes: Buffer.byteLength(current),
     ...stats,
+    // YELLOW: driftedSlices stays locked to CONTRACT_SLICE_NAMES (4). Do not add compact-register here.
     driftedSlices: impact.filter((row) => row.status === "drifted" || row.status === "missing" || row.status === "appeared")
       .map((row) => row.slice),
     patchImpact: impact,
@@ -219,12 +230,51 @@ async function readStoredSource(root: string, sha: string): Promise<string | nul
   }
 }
 
+async function durableReviewedEnvelope(root: string, sourceSha: string): Promise<PatchProfile | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(reviewedProfilePath(root), "utf8"));
+    if (!isRecord(parsed)) return undefined;
+    const profile = parsed as PatchProfile;
+    return reviewedEnvelopeProfile(profile, sourceSha) ? profile : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveRetainEnvelopeProfile(
+  root: string,
+  sourceSha: string,
+  passed?: PatchProfile,
+): Promise<PatchProfile | undefined> {
+  if (reviewedEnvelopeProfile(passed, sourceSha)) return passed;
+  return await durableReviewedEnvelope(root, sourceSha);
+}
+
+/** Persist envelope-windows.json only from a contemporaneous 19-slice reviewed profile. Never overwrite. */
+async function writeEnvelopeWindowsIfReviewed(
+  dir: string,
+  source: string,
+  sourceSha: string,
+  profile: PatchProfile | undefined,
+): Promise<void> {
+  const windows = envelopeWindowsFromReviewed(source, profile, sourceSha);
+  if (!windows) return;
+  try {
+    await writeProtected(join(dir, ENVELOPE_WINDOWS_FILE), encodeEnvelopeWindows(windows));
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+    if (code === "EEXIST") return;
+    throw error;
+  }
+}
+
 export async function retainHostBundle(input: {
   root: string;
   source: string;
   sourceSha: string;
   observedAt: string;
   matchedProfileId?: string;
+  profile?: PatchProfile;
 }): Promise<HostBundleRetainResult> {
   if (!SHA.test(input.sourceSha) || sha256Text(input.source) !== input.sourceSha) {
     throw new Error("host-bundle-sha-mismatch");
@@ -234,6 +284,7 @@ export async function retainHostBundle(input: {
   const generations = join(dir, "generations");
   await mkdir(generations, { recursive: true, mode: 0o700 });
   if (await isRealDir(generations) === false) throw new Error("invalid host-bundle path");
+  const envelopeProfile = await resolveRetainEnvelopeProfile(input.root, input.sourceSha, input.profile);
   const publishHead = async () => {
     const temporary = join(dir, `.HEAD-${randomUUID()}`);
     try {
@@ -250,11 +301,15 @@ export async function retainHostBundle(input: {
     if (stored !== input.source || !meta || meta.sourceSha !== input.sourceSha || meta.bytes !== Buffer.byteLength(input.source)) {
       throw new Error("host-bundle-bytes-mismatch");
     }
+    // Missing envelope golden may be filled once a contemporaneous reviewed profile exists; never overwrite.
+    await writeEnvelopeWindowsIfReviewed(genDir, input.source, input.sourceSha, envelopeProfile);
     await publishHead();
     return { sourceSha: input.sourceSha, retained: "existing", meta, diff: null };
   };
   // Readers must see the complete source+metadata generation or no generation.
-  // Never expose a final directory and then populate its files incrementally.
+  // Never expose a final directory and then populate source/meta/diff incrementally.
+  // envelope-windows.json is staged with a new generation when a 19-slice reviewed profile is present;
+  // an existing generation may gain a missing golden once, never an overwrite.
   if (await lstat(genDir).then(() => true, (error) => {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return false;
     throw error;
@@ -275,6 +330,7 @@ export async function retainHostBundle(input: {
     await writeProtected(join(staging, SOURCE_NAME), input.source);
     await writeProtected(join(staging, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
     if (diff) await writeProtected(join(staging, "diff.json"), `${JSON.stringify(diff, null, 2)}\n`);
+    await writeEnvelopeWindowsIfReviewed(staging, input.source, input.sourceSha, envelopeProfile);
     try { await rename(staging, genDir); }
     catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
