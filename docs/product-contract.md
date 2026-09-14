@@ -96,111 +96,86 @@ Bootstrap 安装、升级或轮换 credential 时必须原样保留既有 filesy
 
 `--profile` 始终表示“选择一个已经存在的 Profile”，不承担创建目标的命名职责。`init` 的可选位置参数 `<name>` 是要创建或更新的 Profile 名称；省略时使用 `default`。因此 parser 必须拒绝 `grokbox --profile remote init` 和 `grokbox init --profile remote`，避免同一个参数在不同命令中改变角色。
 
-## 3. 完整命令树
+## 3. 完整命令树（对外目标面）
+
+本节是 **收口后的使用侧命令面**。电源是顶级 `on` / `off` / `upgrade`；Host 通道是独立的 `host start` / `host stop` / `host restart`；状态进 `doctor`。`runtime *` / `daemon *` 实现可暂留，不写进 Skill/README。停服务不用 `--confirm`。切换 Host 用 `host start` / `host stop` / `host restart`（运行中 Bot 须 `--force`；`start`/`stop` 已到位则 no-op）。
 
 ```text
 grokbox (alias: gbox)
-├── init [<name>] [--local | --peer <name-or-dns>] [--bootstrap] [--admit-home-read] [--yes]
-├── skills
-│   ├── list
-│   └── get <name> [--full]
-├── profile
-│   ├── list
-│   ├── show [<name>]
-│   ├── use <name>
-│   ├── add <name> [connection options]
-│   ├── update <name> [connection options]
-│   ├── remove <name>
-│   └── capabilities [<name>]
-├── doctor
-├── quota
-├── recover
-├── agents
-│   ├── list
-│   ├── show <id-or-name>
-│   ├── create --name <name> [agent attributes]
-│   ├── update <id-or-name> [agent attributes]
-│   └── delete <id-or-name> [--yes]
-├── groups
-│   ├── list
-│   ├── show <id-or-name>
-│   ├── create --name <name> --member <id-or-name>...
-│   ├── update <id-or-name> [group attributes]
-│   ├── members
-│   │   ├── list <group>
-│   │   ├── add <group> <agent>
-│   │   ├── remove <group> <agent>
-│   │   └── set <group> --member <agent>...
-│   └── delete <id-or-name> [--yes]
-├── send <target> [--text <text> | stdin] [--expect-kind agent|group] [--nonce <uuid>]
-├── history
-│   ├── search <query>
-│   ├── tail <target>
-│   └── thread <target> --root <entry-id>
-├── memory
-│   └── list <agent> [--content]
-├── export
-│   └── agent <id-or-name> --out <dir> [--include-related-workflows] [--agent-data <dir>]
+│
+│  连接
+├── init [<name>] [--local | --peer] [--bootstrap] [--admit-home-read] [--yes]
+├── skills list | get grokbox [--full] | get core [--full]   # 与当前 CLI 同版本；不要拷进 Bot
+├── profile list|show|use|add|update|remove|capabilities
+│
+│  这台电脑上的 grokbox（电源）
+├── doctor                          # 含通道 official|custom|unknown+reason、服务是否在跑、next
+├── on                              # 开服务：daemon、title 定时、闲时息屏（座位表对齐，不改表）；不改 Host
+├── off                             # 停本命令拉起的服务和闲时息屏；不改 Host
+├── host start [--force]            # ensure grokbox 补丁 Host（自定义模型通道）；已是 custom 则 already_started。运行中 Bot 须 --force
+├── host stop [--force]             # ensure 官方 Host；已是 official 则 already_stopped。运行中 Bot 须 --force
+├── host restart [--force]          # 先 stop 再 start，总是打算 Host kill。运行中 Bot 须 --force
+├── upgrade --yes                   # grokbox 更新后对齐这台电脑（通道 + 闲时息屏）
+│
+│  换脑（按 Bot；须 confirmed_box）
+├── models list
+├── models use <provider/model> --for <agent>
+├── models reset --for <agent>
+│
+│  Bot / 群 / 消息
+├── agents list [--ownership]
+├── agents show <agent> [--ownership]
+├── agents ownership <agents...>
+├── agents title show <agents...> | --all
+├── agents title hide [agents...] | --all     # 无名字 = 清场
+├── agents title sync [agents...]             # 只刷新已 show 的 trailer
+├── agents create --name <name> [...]
+├── agents update <agent> [...]               # --title 只改用户段；show 时与 trailer 共存
+├── agents delete <agent> [--yes]          # 删花名册；若座位 ≥2，盒子上 stop-window（不改座位表）
+├── groups list|show|create|update|delete
+├── groups members list|add|remove|set
+├── send <target>
+├── history search|tail|thread|outcome
+├── memory list <agent>
+├── alerts list
+├── export agent <agent> --out <dir>       # 盒内文件快照；与 template pack 共用读盘/打码
+├── template pack <agent> --out <file>     # 只组官方 recipe JSON，不上传
+├── template stage <agent> --visibility team|public [--from <file>] --yes
+├── template publish <shareId> --rev <n> --yes
+├── template show <shareId> --rev <n>
+├── template visibility <shareId> --visibility team|public --yes
+├── template delete <shareId> --yes
+├── template import <shareId> --name <name> --rev <n> --yes
 ├── events
-├── is
-│   └── running <target>
-├── fs
-│   ├── stat <remote-path>
-│   ├── list <remote-path>
-│   ├── read <remote-path>
-│   ├── write <remote-path> [--text <text> | stdin]
-│   ├── mkdir <remote-path>
-│   ├── upload <local-path> <remote-path>
-│   ├── download <remote-path> <local-path>
-│   └── remove <remote-path> [--recursive] [--yes]
-├── exec
-│   └── run [--cwd <remote-path>] [--env <key=value>...] [--detach] -- <argv...>
-├── jobs
-│   ├── list
-│   ├── show <job-id>
-│   ├── logs <job-id> [--follow]
-│   └── cancel <job-id>
-├── desktop
-│   ├── status
-│   ├── keep
-│   │   ├── add <agent>
-│   │   └── remove <agent> --yes
-│   └── prune
-│       ├── run [--yes]
-│       ├── enable
-│       └── disable
-├── box
-│   ├── status
-│   ├── wake
-│   └── keepalive
-│       ├── run [--interval-ms <n>]
-│       └── status
-├── runtime
-│   ├── status
-│   ├── start --mode observe|identity|route
-│   ├── activate --mode observe|identity|route
-│   ├── deactivate
-│   ├── re-adopt --confirm
-│   ├── log [--follow]
-│   ├── contracts
-│   ├── models
-│   │   ├── check
-│   │   ├── list
-│   │   ├── use <provider/model> [--for <agent>]
-│   │   └── reset [--for <agent>]
-│   ├── profile
-│   │   └── write --from <host-bundle>
-│   ├── watchdog
-│   │   └── run
-│   └── modeld
-│       └── run
-└── daemon
-    ├── serve
-    ├── ensure [--bootstrap] [--admit-home-read] [--yes]
-    └── status
+├── is running <target>
+│
+│  云电脑文件 / 进程
+├── fs stat|list|read|write|mkdir|upload|download|remove
+├── exec run -- <argv...>
+├── jobs list|show|logs|cancel
+│
+│  桌面（查座位 + 保登录态；闲时息屏走 on/off，不在本族开关）
+├── desktop status                    # 座位表：谁坐 :N、亮/闲、是否 keep
+├── desktop keep add <agent>
+├── desktop keep remove <agent> --yes
+│
+│  Cursor Sandbox（与 Host 自定义模型通道无关）
+├── box status|wake
+├── box keepalive run|status
+│
+│  额度
+└── quota
 ```
 
-顶层不提供 `raw` 或任意 `/api/<method>` fallback。新增 Grok Bot 或 host 能力必须先获得命令语义、权限、输出和恢复合同。
+不进入本树（实现可暂留，不写进 Skill 正文）：`daemon *`、`runtime *`（含 re-adopt / watchdog / modeld / monitor / profile 切片工具）、`desktop prune *`（闲时息屏由 `on`/`off`/`upgrade` 开关）。`skills get grokbox` 是 Agent 入口；`skills get core --full` 给人看整棵 CLI。
+
+Title trailer：`[<用户字>][ | owner=box|temporal|conflict[,m=<alias-or-model>]]`。无参数 `title show` 非法；`hide` 无参数清场；`sync` 不把 hide 变成 show。`models use --for` 会给该 Bot 刷 trailer 并保留用户标题；`reset --for` 只刷新已在 show 的 trailer 并去掉 `m=`。
+
+**Export 与模板：** 共用对某个 Bot 的只读材料（profile、约定 Memory、automations、可打包的 skill 散文）和 secret 打码。`export agent` 写成盒内目录；`template pack` 写成官方 recipe JSON。`stage` = aiserver `CreateGrokBotTemplate` + PUT blob（不是 Gateway）；`publish` / `import` / `visibility` / `delete` 走 Gateway。`listBotTemplates` 是空 stub，不做 `template list`。Skill 散文进 recipe，不把 grokbox CLI 捆绑 skill 拷进模板。
+
+**Target 解析（所有 `<agent>` / `<group>` / `<target>` / `--for`）：** 先精确 ID（大小写不敏感），再唯一 name；name 零命中时才看 title。多名 → `target_ambiguous` 并列出候选 ID+name，提示改用 ID。零命中 → `target_not_found`，说明没匹配到 Bot 还是群，并指出 `agents list` / `groups list`（可加 `--include-hidden`）。找到了但 kind 不对 → `target_kind_mismatch`，指向对应命令族。`--for` 与位置参数同一套解析；内部 ownership/选模只用解析后的 UUID。
+
+顶层不提供 `raw` 或任意 `/api/<method>` fallback。新增能力必须先获得命令语义、权限、输出和恢复合同。
 
 ## 4. 全局选项
 
@@ -327,7 +302,7 @@ App descriptor 或 secret reference 的 absent、locked/denied、malformed、uns
 | desktop | `host.desktop.read/reap` | no | no | yes |
 | daemon health | `host.daemon.inspect` | no | no | yes |
 
-Daemon 的 `/v1/capabilities` 返回协议版本、允许的 capability、Gateway generation 与受控 filesystem roots。CLI 在副作用前校验 capability；缺失时返回 `capability_unavailable`。
+Daemon 的 `/v1/capabilities` 返回协议版本、允许的 capability、Gateway generation 与受控 filesystem roots。CLI 在副作用前校验 capability；缺失时返回 `capability_unavailable`。`auto` 与本地 `daemon` Profile 的 `profile capabilities` 对 `host.desktop.read/reap` 以本地 daemon handshake 为准：socket 可达且 advertised 则为 true；不可达时回退静态投影（未配置 `server_url` 的 `auto` 为 false）。远程 daemon Profile 仍按静态 transport 投影，不在 capabilities 命令里拨号。本地 daemon 不可达时，desktop 等 `host.*` 命令返回 `daemon_unreachable`，`next` 为 `grokbox on`。
 
 Sandbox adapter 独立声明 `sandbox.inspect`、`sandbox.wake`、`sandbox.keepalive`。它运行在 box 外，不由 daemon capability 隐式授予；能经 daemon 执行命令不代表能取得 Cursor account token 或维护 AnyRun lease。`profile capabilities` 对仅配置了 secret reference 的 Sandbox 项返回 `provider-authorization-dependent`，而不是已授权的 boolean `true`。`box status` 成功只验证 inspect；wake 必须由真实 `EnsureSandBox` 成功验证，keepalive 还必须通过 brokered no-op 和外部长时证据。
 
@@ -355,7 +330,9 @@ Quota adapter 同样独立声明 `quota.read`。静态 Profile 只能报告 `pro
 
 Roster只读投影保留`harness: box|temporal|unknown`；字段缺失不假报box，也不从serverId推断。它是Gateway声明，不证明桌面实际选源。**2026-09-12目标合同：普通`agents update`不得发送/回填harness，显式修改既有归属写前拒绝；Create可请求类型，但Server确认/回读才构成资格，未知不重新create或强写本地。** 当前隐式写入仍待[T38](tickets/T38-identity-write-alignment.md)收口，文档更新不是已实现声明。
 
-`agents ownership <targets...>` is a read-only Host-backed inspection of official Server registrations, not a harness setter. It accepts 1–32 named/public-UUID targets, makes one native Server List call, and compares finite Server identity/harness fields with local before/after observations. Server credentials stay inside the Host; the explicit getHostStatus extension does not run on ordinary status calls. Unknown bridge/auth/identity, duplicates, unstable local evidence or Gateway changes must not produce a confirmed result. Classes are confirmed_box / confirmed_temporal / conflict / unconfirmed; App route and migration observations are separate facets. confirmed_box is not production approval, ownership inspection never reconciles/migrates/repairs, and the command does not yet automatically guard send/models-use. Implemented across direct Gateway and daemon transports; [harness current home](maintainers/transcript-harness-box-vs-server.md#read-only-ownership-inspection-contract) owns details.
+App Label (`title`) is display-only. User text is optional; grokbox may append ` | owner=box|temporal|conflict[,m=<alias-or-model>]`. Trailer presence is the show switch. `agents title show` (named Bots or `--all`) paints from live ownership and `models.json`; `hide` strips the trailer; `sync` refreshes trailers already showing. Create does not paint. `models use --for` paints that Bot's trailer and keeps the user title; `models reset --for` only refreshes an already-showing trailer and omits `m=`. Title write failure does not undo model assignment. `agents update --title` replaces the user segment and, when showing, refreshes the trailer. Unconfirmed Bots are skipped on show/sync. The daemon interval only syncs showing Bots. Host profile writes refresh a showing trailer from local harness and models.json, and leave hidden titles unchanged.
+
+`agents ownership <targets...>` is a read-only Host-backed inspection of official Server registrations, not a harness setter. It accepts 1–32 named/public-UUID targets, makes one native Server List call, and compares finite Server identity/harness fields with local before/after observations. Server credentials stay inside the Host; the explicit getHostStatus extension does not run on ordinary status calls. Unknown bridge/auth/identity, duplicates, unstable local evidence or Gateway changes must not produce a confirmed result. Classes are confirmed_box / confirmed_temporal / conflict / unconfirmed; App route and migration observations are separate facets. When the Host channel is official, the projection adds blocker `host_channel_not_enabled` and `next` is `grokbox host start` (aligned with `doctor.next`), not identity-lost wording. When live Host SHA does not match the reviewed profile, the projection adds blocker `host_source_mismatch` and `next` is `grokbox runtime profile observe --from /home/box/sand-host/host-main.cjs then grokbox runtime profile write --sha <sourceSha256>`. confirmed_box is not production approval, ownership inspection never reconciles/migrates/repairs, and the command does not yet automatically guard send/models-use. Implemented across direct Gateway and daemon transports; [harness current home](maintainers/transcript-harness-box-vs-server.md#read-only-ownership-inspection-contract) owns details.
 
 ### 7.2 Groups
 
@@ -482,7 +459,7 @@ Web UI是未来grokbox自己的控制台，不修改官方Grok Bot.app；按[fut
 
 `grokbox runtime *` 是 **Agent-first、盒内机器接口**，不是给人点的日常 UI。用户日用入口是**真实 Grok Bot**；未来盒内 WebUI/VNC 仅为配置/运维入口，必须调用同一套 use case，不能另写一套 mutation。不接受 `--profile`，不经 daemon、SSH 或 generic exec 转发；盒外返回 `runtime_local_only`。同 UID 能执行代码的主体仍可能改文件，不得宣称硬隔离。
 
-Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。离线审 profile：`runtime profile write --from <host-bundle>`（只读显式绝对路径输入，校验已批准切片及 source/transformed SHA，以私有临时 profile 文件原子发布长效 `profiles/reviewed.json`；不保留整包副本，不 inject / 不 TERM / 不 re-adopt）。失败可留下未发布的 protected staging，reader 只读 canonical artifact；并发成功写入以最后一次原子 rename 为准，生成不等于人工审核或 live 授权。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。**No live unless authorized**：`runtime re-adopt --confirm` 是唯一带 live Host adopt 权限的公开 CLI composition root：缺 `--confirm` 或非本机在构造 live ports 前拒绝；匹配的 canonical 身份、`attestation.diskSha === liveDiskSha()` 且 reviewed profile 一致时是零信号 no-op；所有权仍精确但 SHA 过期（`reason=stale_attestation`）才允许一次手动 deactivate→official→transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。一次调用最多一次 attempt。它不是 `activate` 的隐藏路径；本 slice 的 `watchdog run` 不接 live mutation ports，不能自动改 Host。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。`runtime start`的稳定目标是复用T25/T28唯一程序确保所选配置、持久凭据及服务生命周期，重复启动不重复实例；该产品闭环由[T40](tickets/T40-persistent-release-and-rollback.md)关闭。旧“启动stub＋一次tick”是POC历史。当前入口复用production root和Effect Scope：route配置先验、匹配根后借用或新建、保存desired、未确认reconcile及status；新建时打印ready回执后继续前台至signal，borrowed直接返回。`configRevision`不是运行生效证明，准备命令不安装自启、不批准生产；异常退出不会伪造配置回滚。源码接线、实际CLI/制品资格与持久部署分别由T40报告，不把局部单测当可生产。默认不借查询隐式re-adopt/canary，不把watchdog另并入daemon执行一套控制。本 slice 的 route 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`）：`activate --mode route` 与 desired=route 下的 `models use` 对其它 provider 赋值 fail-closed。seam 不再在 modeld 前因非 stub modelId 拒绝；modeld composite 再 admit。默认 assignment 仍是 stub。
+Agent 只设 **desired** 和读观察：`activate` / `deactivate` / `models *` 写意图；`status` / `log` / `contracts` 只读，不得偷偷 repair。离线审 profile：`runtime profile write --sha <retainedSourceSha>`（从 retain 目录取字节；`--from` 仅配合 `--allow-unretained --confirm`，receipt `unretained_source=true`。逃生只豁免谱系绑定，不豁免 envelope 拒漂。基线是当前 `reviewed.json` sourceSha256 代的 golden；无 previous reviewed 时首针放行，有 pin 无 golden 则拒绝并要求对该代 re-observe。拒漂谓词为 windowSha/count/find.inWindow，名单须与漂移 slice id 精确相等。校验已批准切片及 source/transformed SHA，以私有临时 profile 文件原子发布长效 `profiles/reviewed.json`；author 路径不回写 retain、不 inject / 不 TERM / 不 re-adopt）。失败可留下未发布的 protected staging，reader 只读 canonical artifact；并发成功写入以最后一次原子 rename 为准，生成不等于人工审核或 live 授权。自愈（切片快照、作废 attestation、未知 SHA 不注入、注入普查、`stale-patched` 一次 TERM 旧 attested PID）只在 watchdog 内。禁止 Agent 命令：`inject` / `heal` / `kill`。**No live unless authorized**：`runtime re-adopt --confirm` 是唯一带 live Host adopt 权限的公开 CLI composition root：缺 `--confirm` 或非本机在构造 live ports 前拒绝；匹配的 canonical 身份、`attestation.diskSha === liveDiskSha()` 且 reviewed profile 一致时是零信号 no-op；所有权仍精确但 SHA 过期（`reason=stale_attestation`）才允许一次手动 deactivate→official→transient-adopt；已经是 route 且所有权与 `diskSha` 仍匹配、只是 reviewed profile SHA 变了时，确认后可再 refresh 一次。缺 `--confirm` 的 watchdog 对后者保持零信号 `route_mismatch`。一次调用最多一次 attempt。它不是 `activate` 的隐藏路径；本 slice 的 `watchdog run` 不接 live mutation ports，不能自动改 Host。`watchdog run` / `modeld run` 是进程入口，进 registry 与打包测试。`runtime start`的稳定目标是复用T25/T28唯一程序确保所选配置、持久凭据及服务生命周期，重复启动不重复实例；该产品闭环由[T40](tickets/T40-persistent-release-and-rollback.md)关闭。旧“启动stub＋一次tick”是POC历史。当前入口复用production root和Effect Scope：route配置先验、匹配根后借用或新建、保存desired、未确认reconcile及status；新建时打印ready回执后继续前台至signal，borrowed直接返回。`configRevision`不是运行生效证明，准备命令不安装自启、不批准生产；异常退出不会伪造配置回滚。源码接线、实际CLI/制品资格与持久部署分别由T40报告，不把局部单测当可生产。默认不借查询隐式re-adopt/canary，不把watchdog另并入daemon执行一套控制。本 slice 的 route 承认 `stub/echo` 或 openai*（http(s) endpoint + `apiKeyRef`）：`activate --mode route` 与 desired=route 下的 `models use` 对其它 provider 赋值 fail-closed。seam 不再在 modeld 前因非 stub modelId 拒绝；modeld composite 再 admit。默认 assignment 仍是 stub。
 
 Unix modeld 复用唯一 `runtime-kernel` admission / RouteBinding / STEP ledger / Effect 程序，经当前 v4 transport 执行一个 `ModelBackend` Stream。AI SDK Chat/Responses 在 box-runtime adapter；Host leaf 与 CLI 保持 SDK-free，Host 拥有工具循环，不默认启用 provider agentic tools。旧 A+S1 `complete()/StreamPart[]` 是 POC 历史，不是当前兼容义务或实现架构。错误 generation/authority/selection/auth 在相应 effect 前拒绝；重复 STEP 不重新 dispatch，不确定执行不跨断线/重启盲目续传。health只证明服务响应；真实runtime status再通过service-info确认当前数据根，报告scope/serviceEpoch，错根或缺失身份不能显示安装ready。这仍不是Host已加载、Bot有执行权或用户已收到结果的证明。`stub/echo` 是显式无网络 backend，不是静默 fallback；实际资源上限见 canonical contract，而非旧阶段常数。
 
@@ -550,6 +527,9 @@ recover_unavailable
 recover_failed
 runtime_unsupported
 runtime_local_only
+host_switch_blocked
+host_mismatch
+host_source_mismatch
 runtime_config_invalid
 runtime_window_open
 model_capability_mismatch

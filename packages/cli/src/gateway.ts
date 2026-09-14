@@ -128,6 +128,15 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
+const GROKBOX_ON_NEXT = "grokbox on";
+
+function localDaemonDown(error: CliError): CliError {
+  return new CliError("daemon_unreachable", error.message, {
+    retryable: true,
+    next: GROKBOX_ON_NEXT,
+  });
+}
+
 type HttpResult = {
   status: number;
   body: unknown;
@@ -212,12 +221,22 @@ export class GatewayClient {
     }
     if (this.deps.transport === "daemon") {
       this.lastDaemonRemote = Boolean(this.deps.daemonServerUrl);
-      const client = this.deps.daemonServerUrl
-        ? await this.remoteDaemon(timeoutMs)
-        : new LocalDaemonClient(this.deps.daemonSocket, timeoutMs, this.deps.signal);
-      return await this.requireCapability(client, capability, false);
+      try {
+        const client = this.deps.daemonServerUrl
+          ? await this.remoteDaemon(timeoutMs)
+          : new LocalDaemonClient(this.deps.daemonSocket, timeoutMs, this.deps.signal);
+        return await this.requireCapability(client, capability, false);
+      } catch (error) {
+        if (
+          this.deps.daemonServerUrl ||
+          !(error instanceof CliError) ||
+          error.code !== "daemon_unreachable"
+        ) throw error;
+        throw localDaemonDown(error);
+      }
     }
 
+    let localUnreachable = false;
     try {
       const local = await this.requireCapability(
         new LocalDaemonClient(this.deps.daemonSocket, timeoutMs, this.deps.signal),
@@ -230,6 +249,7 @@ export class GatewayClient {
       }
     } catch (error) {
       if (!(error instanceof CliError) || error.code !== "daemon_unreachable") throw error;
+      localUnreachable = true;
     }
 
     if (capability.startsWith("grok.")) {
@@ -245,6 +265,9 @@ export class GatewayClient {
     if (this.deps.daemonServerUrl) {
       this.lastDaemonRemote = true;
       return await this.requireCapability(await this.remoteDaemon(timeoutMs), capability, false);
+    }
+    if (localUnreachable && capability.startsWith("host.")) {
+      throw localDaemonDown(new CliError("daemon_unreachable", "Daemon is unreachable.", { retryable: true }));
     }
     if (this.deps.gatewayServerUrl) this.selectedGateway = "explicit";
     return null;
@@ -597,6 +620,30 @@ export class GatewayClient {
     return await this.managementWrite("deleteAgent", { id }, timeoutMs, operationId);
   }
 
+  async publishBotTemplate(body: Record<string, unknown>, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.managementWrite("publishBotTemplate", body, timeoutMs);
+  }
+
+  async getBotTemplateVersion(body: Record<string, unknown>, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.rpc("getBotTemplateVersion", body, { timeoutMs });
+  }
+
+  async getBotTemplateForSourceAgent(body: Record<string, unknown>, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.rpc("getBotTemplateForSourceAgent", body, { timeoutMs });
+  }
+
+  async deleteBotTemplate(body: Record<string, unknown>, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.managementWrite("deleteBotTemplate", body, timeoutMs);
+  }
+
+  async setBotTemplateVisibility(body: Record<string, unknown>, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.managementWrite("setBotTemplateVisibility", body, timeoutMs);
+  }
+
+  async createAgentFromTemplate(body: Record<string, unknown>, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.managementWrite("createAgentFromTemplate", body, timeoutMs);
+  }
+
   private async managementWrite(
     method: Extract<GatewayMethod,
       | "createAgent"
@@ -605,7 +652,11 @@ export class GatewayClient {
       | "setGroupMembers"
       | "setAgentNotifyOnUpdates"
       | "setAgentHiddenFromSidebar"
-      | "deleteAgent">,
+      | "deleteAgent"
+      | "publishBotTemplate"
+      | "deleteBotTemplate"
+      | "setBotTemplateVisibility"
+      | "createAgentFromTemplate">,
     body: Record<string, unknown>,
     timeoutMs: number,
     operationId?: string,

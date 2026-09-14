@@ -228,7 +228,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["profile", "capabilities"],
     usage: "grokbox profile capabilities [<name>]",
-    summary: "Show capabilities declared by one resolved Profile.",
+    summary: "Show capabilities for one resolved Profile, including live local-daemon desktop authority.",
     arguments: [{ syntax: "[name]", description: "Profile name" }],
     options: options(),
     stdin: "none",

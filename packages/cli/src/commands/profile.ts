@@ -3,6 +3,7 @@ import type { CliDeps } from "../deps.ts";
 import { CliError, usage } from "../errors.ts";
 import { formatTable, writeSuccess } from "../output.ts";
 import { ioFromOpts } from "../opts.ts";
+import { LocalDaemonClient } from "../daemon/client.ts";
 import { parseInteger, stripOneTrailingNewline, utf8Bytes } from "../util.ts";
 import {
   listProfileNames,
@@ -16,7 +17,11 @@ import {
   writeProfileFile,
   writeProtectedSecret,
   type ProfileFile,
+  type ResolvedProfile,
 } from "../config/profile.ts";
+
+const DESKTOP_READ = "host.desktop.read";
+const DESKTOP_REAP = "host.desktop.reap";
 
 export type ProfileOptions = {
   json?: boolean;
@@ -228,17 +233,41 @@ export async function runProfileRemove(
   writeSuccess(deps.stdout, { name, removed: true });
 }
 
+async function probeLiveDesktop(
+  profile: ResolvedProfile,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ read: boolean; reap: boolean } | null> {
+  if (profile.transport === "local" || profile.transport === "gateway") return null;
+  if (profile.transport === "daemon" && profile.server_url) return null;
+  try {
+    const handshake = await new LocalDaemonClient(profile.daemon_socket, timeoutMs, signal).handshake();
+    return {
+      read: handshake.capabilities.includes(DESKTOP_READ),
+      reap: handshake.capabilities.includes(DESKTOP_REAP),
+    };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return null;
+  }
+}
+
 export async function runProfileCapabilities(
   deps: CliDeps,
   name: string | undefined,
   raw: ProfileOptions,
 ): Promise<void> {
-  ioFromOpts(raw);
+  const io = ioFromOpts(raw);
   const profile = await resolveProfile(deps, name);
   const local = profile.transport === "auto" || profile.transport === "local";
   const directGateway = profile.transport === "gateway" || Boolean(profile.gateway_url);
   const daemon = profile.transport === "daemon"
     || (profile.transport === "auto" && Boolean(profile.server_url));
+  const liveDesktop = await probeLiveDesktop(profile, io.timeoutMs, deps.signal);
+  const desktopRead = liveDesktop ? liveDesktop.read : daemon;
+  const desktopReap = liveDesktop
+    ? liveDesktop.reap
+    : daemon ? "runtime-policy-dependent" : false;
   const sandboxConfigured = Boolean(profile.sandbox?.access_token_ref);
   const sandboxCapability = sandboxConfigured ? "provider-authorization-dependent" : false;
   const quotaCapability = profile.quota?.access_token_ref
@@ -271,8 +300,8 @@ export async function runProfileCapabilities(
       "host.process.run": daemon ? "runtime-policy-dependent" : false,
       "host.process.manage": daemon ? "runtime-policy-dependent" : false,
       "host.process.shell": daemon ? "runtime-policy-dependent" : false,
-      "host.desktop.read": daemon,
-      "host.desktop.reap": daemon ? "runtime-policy-dependent" : false,
+      [DESKTOP_READ]: desktopRead,
+      [DESKTOP_REAP]: desktopReap,
       "sandbox.inspect": sandboxCapability,
       "sandbox.wake": sandboxCapability,
       "sandbox.keepalive": sandboxCapability,
