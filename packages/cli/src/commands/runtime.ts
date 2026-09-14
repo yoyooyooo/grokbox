@@ -23,6 +23,7 @@ import {
   startRuntimeCommand,
   startControlOperation,
   startModeldProcess,
+  stopLivePatchedHost,
   writeReviewedProfileFromCopy,
   ProfileWriteRefused,
   retainedGenerationSourcePath,
@@ -42,6 +43,7 @@ import {
   writeAnalysisArtifact,
   readLastReplayReport,
   type DesiredMode,
+  type IdentityOpResult,
 } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
@@ -138,7 +140,7 @@ export async function runRuntimeStart(deps: CliDeps, mode: string | undefined): 
 
 export async function runRuntimeDeactivate(deps: CliDeps): Promise<void> {
   try {
-    writeSuccess(deps.stdout, await applyHostDisable(deps));
+    writeSuccess(deps.stdout, await writeDesiredDisabled(deps));
   } catch (error) {
     rethrow(error);
   }
@@ -237,11 +239,40 @@ export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | un
   }
 }
 
+export const hostControlPorts = {
+  apply: startControlOperation,
+  stopPatched: stopLivePatchedHost,
+};
+
+function runRootOf(deps: CliDeps): string | undefined {
+  const configured = deps.env.GROKBOX_RUN_ROOT;
+  return typeof configured === "string" && configured.length > 0 ? configured : undefined;
+}
+
+export async function ensureHostStartDesired(deps: CliDeps): Promise<DesiredMode> {
+  const runtime = store(deps);
+  const desired = await runtime.loadDesired();
+  if (desired.mode !== "disabled") return desired.mode;
+  await saveRuntimeDesired(runtime, { version: 1, mode: "route" });
+  return "route";
+}
+
+async function writeDesiredDisabled(deps: CliDeps): Promise<unknown> {
+  const runtime = store(deps);
+  await saveRuntimeDesired(runtime, { version: 1, mode: "disabled" });
+  return {
+    desired: "disabled",
+    requested: true,
+    host: "desired-disabled",
+  };
+}
+
 export async function applyHostEnable(deps: CliDeps): Promise<unknown> {
   const runtime = store(deps);
+  await ensureHostStartDesired(deps);
   const preloadSha256 = diskPreloadSha256();
   const profileSha256 = reviewedProfileSha256(runtime.root);
-  return await startControlOperation({
+  return await hostControlPorts.apply({
     intent: "apply",
     confirmed: true,
     operationId: controllerOperationId("apply", runtime.root, {
@@ -252,13 +283,41 @@ export async function applyHostEnable(deps: CliDeps): Promise<unknown> {
   });
 }
 
+function hostStopFailed(code: string): CliError {
+  return new CliError(
+    "host_mismatch",
+    `Host stop did not reach official coverage (${code}). Next: grokbox doctor`,
+    { next: "grokbox doctor", hostReason: code },
+  );
+}
+
 export async function applyHostDisable(deps: CliDeps): Promise<unknown> {
   const runtime = store(deps);
+  const previous = await runtime.loadDesired();
   await saveRuntimeDesired(runtime, { version: 1, mode: "disabled" });
+  let stopped: IdentityOpResult;
+  try {
+    stopped = await hostControlPorts.stopPatched({
+      ...(runRootOf(deps) ? { ephemeralRoot: runRootOf(deps) } : {}),
+    });
+  } catch (error) {
+    if (previous.mode !== "disabled") {
+      await saveRuntimeDesired(runtime, previous).catch(() => undefined);
+    }
+    throw error;
+  }
+  if (!stopped.ok) {
+    if (previous.mode !== "disabled") {
+      await saveRuntimeDesired(runtime, previous).catch(() => undefined);
+    }
+    throw hostStopFailed(stopped.code ?? "unproven");
+  }
   return {
     desired: "disabled",
     requested: true,
-    host: "desired-disabled",
+    signaled: stopped.signaled,
+    coverage: stopped.coverage,
+    host: "official",
   };
 }
 

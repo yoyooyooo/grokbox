@@ -336,6 +336,28 @@ describe("box-local runtime CLI", () => {
     expect(JSON.stringify(body)).not.toContain('"coverage":"none"');
   });
 
+  test("re-adopt after deactivate sets route and does not refuse desired-disabled", async () => {
+    const factory = spyLiveAdoptFactory();
+    try {
+      const boxRuntimeRoot = await withRoot();
+      const deactivated = await captureCli(["runtime", "deactivate"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(deactivated.code, deactivated.stderr).toBe(0);
+      const receipt = await captureCli(["runtime", "re-adopt", "--confirm"], {
+        discoveryPath: "/dev/null",
+        boxRuntimeRoot,
+      });
+      expect(receipt.code, receipt.stderr).toBe(0);
+      expect(data(receipt.stdout).reason).not.toBe("desired-disabled");
+      expect(JSON.parse(await readFile(desiredPath(boxRuntimeRoot), "utf8")).mode).toBe("route");
+      expect(factory).not.toHaveBeenCalled();
+    } finally {
+      factory.mockRestore();
+    }
+  });
+
   test("status/log/contracts do not repair and status has required fields", async () => {
     const boxRuntimeRoot = await withRoot();
     const restore = spyStatusReaders(join(boxRuntimeRoot, "missing-run"));

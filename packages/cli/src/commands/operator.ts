@@ -17,7 +17,7 @@ import {
 import { writeSuccess } from "../output.ts";
 import { ioFromOpts } from "../opts.ts";
 import { agentKind, compactRosterRow } from "../redaction.ts";
-import { applyHostDisable, applyHostEnable } from "./runtime.ts";
+import { applyHostDisable, applyHostEnable, ensureHostStartDesired } from "./runtime.ts";
 
 const HOST_SWITCH_HINT = "Host switch kills Host and interrupts running bots.";
 const HOST_START = "grokbox host start";
@@ -283,8 +283,20 @@ function isSourceMismatchReceipt(value: unknown): boolean {
   return row.outcome === "refused" && row.reason === "source-mismatch";
 }
 
+function isRefusedReceipt(value: unknown): value is { outcome: "refused"; reason: string } {
+  const row = rec(value);
+  return row.outcome === "refused" && typeof row.reason === "string" && row.reason.length > 0;
+}
+
 function admitEnableReceipt(receipt: unknown, prefixes: ShaPrefixes = {}): unknown {
   if (isSourceMismatchReceipt(receipt)) throw sourceMismatchError(prefixes);
+  if (isRefusedReceipt(receipt) && receipt.reason === "desired-disabled") {
+    throw new CliError(
+      "host_mismatch",
+      "Host start is blocked because desired mode is disabled. Next: grokbox runtime activate --mode route",
+      { next: "grokbox runtime activate --mode route", hostReason: "desired-disabled" },
+    );
+  }
   return receipt;
 }
 
@@ -354,6 +366,7 @@ async function runHostLifecycle(
   const pre = await inspectHostClass(deps, command !== "stop");
   refuseUnknown(pre);
   if (command === "start" && pre.host === "custom") {
+    await ensureHostStartDesired(deps);
     writeSuccess(deps.stdout, lifecyclePayload({
       command, outcome: "already_started", actual: pre, forced: false, running: [],
     }));
@@ -377,6 +390,13 @@ async function runHostLifecycle(
     receipt = { disable, enable };
   }
   const post = await inspectHostClass(deps, true);
+  if (command === "stop" && post.host === "custom") {
+    throw new CliError(
+      "host_mismatch",
+      "Host stop did not reach official coverage (still custom). Next: grokbox doctor",
+      { next: "grokbox doctor", hostReason: post.hostReason ?? "still_custom" },
+    );
+  }
   writeSuccess(deps.stdout, lifecyclePayload({
     command,
     outcome: command === "start" ? "started" : command === "stop" ? "stopped" : "restarted",

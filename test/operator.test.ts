@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
@@ -13,11 +13,13 @@ import {
   powerOnNext,
   type OperatorHost,
 } from "../packages/cli/src/commands/operator.ts";
+import { hostControlPorts } from "../packages/cli/src/commands/runtime.ts";
 import { hostSourcePorts, PROFILE_WRITE_NEXT } from "../packages/cli/src/host-source.ts";
 import { BoxRuntimeError } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson, sampleAgents, startMockGateway, writeDiscovery } from "./helpers.ts";
 
 const originalSwitch = { enable: hostSwitchPorts.enable, disable: hostSwitchPorts.disable };
+const originalControl = { apply: hostControlPorts.apply, stopPatched: hostControlPorts.stopPatched };
 const originalObserve = { classifyLive: hostObservePorts.classifyLive };
 const originalSource = { readLiveSha: hostSourcePorts.readLiveSha, readProfileSha: hostSourcePorts.readProfileSha };
 const SHA_A = "a".repeat(64);
@@ -32,6 +34,8 @@ beforeEach(() => {
 afterEach(() => {
   hostSwitchPorts.enable = originalSwitch.enable;
   hostSwitchPorts.disable = originalSwitch.disable;
+  hostControlPorts.apply = originalControl.apply;
+  hostControlPorts.stopPatched = originalControl.stopPatched;
   hostObservePorts.classifyLive = originalObserve.classifyLive;
   hostSourcePorts.readLiveSha = originalSource.readLiveSha;
   hostSourcePorts.readProfileSha = originalSource.readProfileSha;
@@ -43,7 +47,17 @@ function stubHost(host: OperatorHost, hostReason: string | null = null): { host:
   return { host: state };
 }
 
-async function run(argv: string[], extras?: { agents?: unknown[] }) {
+async function desiredMode(root: string): Promise<string> {
+  return JSON.parse(await readFile(join(root, "state", "desired.json"), "utf8")).mode as string;
+}
+
+async function writeDesired(root: string, mode: "disabled" | "route" | "identity"): Promise<void> {
+  await mkdir(join(root, "state"), { recursive: true });
+  await writeFile(join(root, "state", "desired.json"), `${JSON.stringify({ version: 1, mode })}
+`);
+}
+
+async function run(argv: string[], extras?: { agents?: unknown[]; boxRuntimeRoot?: string }) {
   const gateway = await startMockGateway({ agents: extras?.agents ?? sampleAgents() });
   const dir = await mkdtemp(join(tmpdir(), "grokbox-operator-"));
   const discoveryPath = await writeDiscovery({
@@ -59,6 +73,7 @@ async function run(argv: string[], extras?: { agents?: unknown[] }) {
     transport: "local",
     stdinIsTTY: false,
     daemonSocket: join(dir, "missing.sock"),
+    ...(extras?.boxRuntimeRoot ? { boxRuntimeRoot: extras.boxRuntimeRoot } : {}),
   };
   await writeProfileFile(dir, "default", { version: 1, transport: "local", gateway_discovery: discoveryPath });
   try {
@@ -133,6 +148,29 @@ test("upgrade without --yes is invalid usage", async () => {
   const { result, gateway } = await run(["upgrade"]);
   try {
     expect(result.code).toBe(2);
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("upgrade --yes recovers from desired disabled by setting route then enable", async () => {
+  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-desired-"));
+  await writeDesired(boxRuntimeRoot, "disabled");
+  hostControlPorts.apply = async () => ({
+    outcome: "signaled",
+    reason: null,
+    signaled: true,
+    spawned: true,
+    guardian: true,
+    operationId: "test-apply",
+  });
+  const { result, gateway } = await run(["upgrade", "--yes"], { boxRuntimeRoot });
+  try {
+    expect(result.code).toBe(0);
+    expect(await desiredMode(boxRuntimeRoot)).toBe("route");
+    expect(parseJson(result.stdout)).toMatchObject({
+      data: { host: "enable-requested", enable: { outcome: "signaled" } },
+    });
   } finally {
     gateway.stop();
   }
@@ -646,6 +684,157 @@ test("host restart refuses mismatch without mutating", async () => {
     expect(mutated).toBe(0);
     expect(parseJson(result.stderr)).toMatchObject({
       error: { code: "host_source_mismatch", next: PROFILE_WRITE_NEXT },
+    });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("host start already_started repairs desired disabled to route", async () => {
+  stubHost("custom");
+  hostSwitchPorts.enable = async () => {
+    throw new Error("must not enable");
+  };
+  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-desired-"));
+  await writeDesired(boxRuntimeRoot, "disabled");
+  const { result, gateway } = await run(["host", "start"], { boxRuntimeRoot });
+  try {
+    expect(result.code).toBe(0);
+    expect(await desiredMode(boxRuntimeRoot)).toBe("route");
+    expect(parseJson(result.stdout)).toMatchObject({
+      data: { command: "start", outcome: "already_started", actual: "custom" },
+    });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("host start remaps desired-disabled enable receipt to activate next", async () => {
+  stubHost("official");
+  hostSwitchPorts.enable = async () => ({ outcome: "refused", reason: "desired-disabled" });
+  const { result, gateway } = await run(["host", "start"]);
+  try {
+    expect(result.code).toBe(72);
+    expect(parseJson(result.stderr)).toMatchObject({
+      error: {
+        code: "host_mismatch",
+        next: "grokbox runtime activate --mode route",
+        hostReason: "desired-disabled",
+      },
+    });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("host stop fails closed when disable leaves custom", async () => {
+  stubHost("custom");
+  hostSwitchPorts.disable = async () => ({ desired: "disabled", host: "desired-disabled" });
+  const { result, gateway } = await run(["host", "stop"]);
+  try {
+    expect(result.code).toBe(72);
+    expect(parseJson(result.stderr)).toMatchObject({
+      error: { code: "host_mismatch", next: "grokbox doctor", hostReason: "still_custom" },
+    });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("host stop restores previous desired when unload fails", async () => {
+  stubHost("custom");
+  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-desired-"));
+  await writeDesired(boxRuntimeRoot, "route");
+  hostControlPorts.stopPatched = async () => ({
+    ok: false,
+    recoveryRequired: true,
+    code: "no-attestation",
+    signaled: false,
+    diskShaBefore: "sha",
+    diskShaAfter: "sha",
+    census: { wrapper: 0, supervisor: 0, host: 0, tempSupervisor: 0, guardian: 0, extras: 0 },
+    coverage: "none",
+  });
+  const { result, gateway } = await run(["host", "stop"], { boxRuntimeRoot });
+  try {
+    expect(result.code).toBe(72);
+    expect(await desiredMode(boxRuntimeRoot)).toBe("route");
+    expect(parseJson(result.stderr)).toMatchObject({
+      error: { code: "host_mismatch", hostReason: "no-attestation", next: "grokbox doctor" },
+    });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("host stop then start roundtrip does not leave desired disabled", async () => {
+  const state = stubHost("custom");
+  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-desired-"));
+  await writeDesired(boxRuntimeRoot, "route");
+  hostSwitchPorts.disable = async () => {
+    await writeDesired(boxRuntimeRoot, "disabled");
+    state.host.value = "official";
+    return { desired: "disabled", signaled: true, coverage: "none", host: "official" };
+  };
+  hostControlPorts.apply = async () => {
+    state.host.value = "custom";
+    return {
+      outcome: "signaled",
+      reason: null,
+      signaled: true,
+      spawned: true,
+      guardian: true,
+      operationId: "test-apply",
+    };
+  };
+  const stopped = await run(["host", "stop"], { boxRuntimeRoot });
+  try {
+    expect(stopped.result.code).toBe(0);
+    expect(await desiredMode(boxRuntimeRoot)).toBe("disabled");
+    expect(parseJson(stopped.result.stdout)).toMatchObject({
+      data: { outcome: "stopped", actual: "official" },
+    });
+  } finally {
+    stopped.gateway.stop();
+  }
+  const started = await run(["host", "start"], { boxRuntimeRoot });
+  try {
+    expect(started.result.code).toBe(0);
+    expect(await desiredMode(boxRuntimeRoot)).toBe("route");
+    expect(parseJson(started.result.stdout)).toMatchObject({
+      data: { outcome: "started", actual: "custom", desired: "custom" },
+    });
+  } finally {
+    started.gateway.stop();
+  }
+});
+
+test("host restart does not leave desired disabled after success", async () => {
+  const state = stubHost("custom");
+  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-desired-"));
+  await writeDesired(boxRuntimeRoot, "route");
+  hostSwitchPorts.disable = async () => {
+    await writeDesired(boxRuntimeRoot, "disabled");
+    state.host.value = "official";
+    return { desired: "disabled", signaled: true, coverage: "none", host: "official" };
+  };
+  hostControlPorts.apply = async () => {
+    state.host.value = "custom";
+    return {
+      outcome: "signaled",
+      reason: null,
+      signaled: true,
+      spawned: true,
+      guardian: true,
+      operationId: "test-apply",
+    };
+  };
+  const { result, gateway } = await run(["host", "restart"], { boxRuntimeRoot });
+  try {
+    expect(result.code).toBe(0);
+    expect(await desiredMode(boxRuntimeRoot)).toBe("route");
+    expect(parseJson(result.stdout)).toMatchObject({
+      data: { outcome: "restarted", actual: "custom", desired: "custom" },
     });
   } finally {
     gateway.stop();
