@@ -529,7 +529,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       return error.exitCode;
     }
     if (error instanceof BoxRuntimeError) {
-      const mapped = new CliError(error.code, error.message);
+      const mapped = new CliError(error.code, error.message, { next: error.next, failureCode: error.failureCode });
       writeFailure(deps.stderr, mapped);
       return mapped.exitCode;
     }

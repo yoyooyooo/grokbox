@@ -527,6 +527,10 @@ recover_unavailable
 recover_failed
 runtime_unsupported
 runtime_local_only
+runtime_ownership_unavailable
+runtime_ownership_unconfirmed
+runtime_ownership_temporal
+runtime_ownership_conflict
 host_switch_blocked
 host_mismatch
 host_source_mismatch
