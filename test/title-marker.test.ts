@@ -49,6 +49,10 @@ test("sync refreshes showing titles and skips hidden; set-user coexists when sho
   expect(composeAgentTitle("coding | owner=box", { type: "sync", owner: "box", m: "g46" }).title).toBe(`coding${TITLE_FENCE}owner=box,m=g46`);
   expect(composeAgentTitle("coding | owner=box,m=old", { type: "set-user", user: "new", owner: "box", m: "g46" }).title)
     .toBe(`new${TITLE_FENCE}owner=box,m=g46`);
+  expect(composeAgentTitle("coding | owner=box,m=old", { type: "set-user", user: "new", owner: "box" }).title)
+    .toBe(`new${TITLE_FENCE}owner=box,m=old`);
+  expect(composeAgentTitle("coding | owner=box,m=old", { type: "set-user", user: "new", owner: "box", m: null }).title)
+    .toBe(`new${TITLE_FENCE}owner=box`);
   expect(composeAgentTitle("coding", { type: "set-user", user: "new", owner: "box", m: "g46" }).title).toBe("new");
   expect(composeAgentTitle("coding | owner=box,x=keep", { type: "show", owner: "temporal", m: null }).title)
     .toBe(`coding${TITLE_FENCE}owner=temporal,x=keep`);

@@ -20,10 +20,10 @@ import { findRosterRow } from "./roster.ts";
 import { projectOwnership } from "../ownership.ts";
 import {
   applyAgentTitles,
-  loadAssignedModelTokens,
   loadTitleModelIndex,
   readOwnershipStates,
   rosterTitleProjection,
+  titleSyncModel,
   type TitleAction,
 } from "../title-sync.ts";
 import { composeAgentTitle, labelOwnerFromState, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
@@ -161,7 +161,7 @@ export async function runAgentsUpdate(
   if (hasProfilePatch(raw)) {
     const profile = mergedProfile(row, raw);
     if (raw.title !== undefined && parseAgentTitle(row.title).showing) {
-      const tokens = await loadAssignedModelTokens(deps.boxRuntimeRoot, deps.env);
+      const { tokens, assigned } = await loadTitleModelIndex(deps.boxRuntimeRoot, deps.env);
       let owner: ReturnType<typeof labelOwnerFromState> = "leave";
       try {
         const identity = await readOwnershipStates(client, [id], io.timeoutMs, before.discovery);
@@ -172,7 +172,7 @@ export async function runAgentsUpdate(
         type: "set-user",
         user: raw.title,
         owner,
-        ...(owner === "box" ? { m: tokens.get(id.toLowerCase()) ?? null } : owner === "leave" ? {} : { m: null }),
+        m: titleSyncModel(owner, id, tokens, assigned),
       });
       profile.title = composed.title;
     }

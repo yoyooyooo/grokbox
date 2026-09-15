@@ -19,6 +19,6 @@ grokbox agents title hide --all
 grokbox agents title sync [bot...]          # only Bots already showing
 ```
 
-`show` without names or `--all` is invalid usage. `show` paints even when Server ownership is unconfirmed: roster harness, existing trailer, `models.json` assignment, user text, or trailer-only `owner=box`. Empty App titles (name-only Bots) are still painted. Remaining skips appear under `--json` as `skips: [{ agent, id, reason }]`. `sync` never paints a hidden Bot; a named hidden target is skipped with `reason: hidden`. `agents update --title` replaces the user segment; a showing Bot keeps a refreshed trailer.
+`show` without names or `--all` is invalid usage. `show` paints even when Server ownership is unconfirmed: roster harness, existing trailer, `models.json` assignment, user text, or trailer-only `owner=box`. Empty App titles (name-only Bots) are still painted. Remaining skips appear under `--json` as `skips: [{ agent, id, reason }]`. `sync` never paints a hidden Bot; a named hidden target is skipped with `reason: hidden`. `agents update --title` replaces the user segment; a showing Bot keeps a refreshed trailer. Missing token → keep `m=`; confirmed no assignment → clear `m=` (same as `title sync`).
 
 Hide and show are display only. `models use --for` paints that Bot's trailer (`m=` from alias, else short model id) and keeps the user title. `models reset --for` only refreshes a trailer that is already showing and drops `m=`. Title write failure does not undo the model assignment.
