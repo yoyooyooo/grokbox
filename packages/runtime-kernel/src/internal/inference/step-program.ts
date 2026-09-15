@@ -298,12 +298,20 @@ function admitLive(request: RunStepRequest, now: number) {
       if (request.bindingId) return yield* Effect.fail(new BindingFailure("binding_missing"));
       const config = yield* ConfigurationRead;
       const snapshot = yield* config.snapshot();
-      const captured = captureManagedSelection(snapshot.models, request.agentId);
+      // Host capture throws BoxRuntimeError for assigned-but-unresolved models.
+      // That is an expected STEP admission failure here, not an Effect defect.
+      const captured = yield* Effect.try({
+        try: () => captureManagedSelection(snapshot.models, request.agentId),
+        catch: asBindingOrBackend,
+      });
       if (captured.kind !== "managed") return yield* Effect.fail(new BindingFailure("not_admitted"));
       if (captured.modelId !== request.selection.modelId || captured.selectionRevision !== request.selection.selectionRevision) {
         return yield* Effect.fail(new BindingFailure("selection_mismatch"));
       }
-      const resolved = modelForAgent(snapshot.models, request.agentId);
+      const resolved = yield* Effect.try({
+        try: () => modelForAgent(snapshot.models, request.agentId),
+        catch: asBindingOrBackend,
+      });
       if (!resolved) return yield* Effect.fail(new BindingFailure("not_admitted"));
       if (resolved.id !== STUB_ECHO_MODEL_ID && qualifiedContextWindowTokens(resolved) === undefined) {
         return yield* Effect.fail(new BindingFailure("not_admitted"));

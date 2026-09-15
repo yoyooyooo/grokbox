@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Deferred, Effect, Fiber, Latch, Layer, Stream } from "effect";
+import { Cause, Deferred, Effect, Fiber, Latch, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { BindingFailure, contextSnapshotBody, type ContextSnapshot, type HostEpoch, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
@@ -457,5 +457,38 @@ describe("route binding", () => {
     expect(counts.credential).toBe(1);
     expect(counts.network).toBe(2);
     expect(counts.prepare).toBe(2);
+  });
+
+  test("assigned model missing from modeld catalog fails as not_admitted, not a die", async () => {
+    const file = parseModelsFile({
+      version: 1,
+      models: {},
+      assignments: { main: null, agents: { "agent-a": "sub2api-xai/grok-4.6" } },
+    });
+    const counts = createCountedSeams();
+    const layer = graph({ file: () => file, counts });
+    const req: RunStepRequest = {
+      hostEpoch: HOST,
+      serviceEpoch: { incarnationId: "svc-1" },
+      agentId: "agent-a",
+      turnId: "turn-1",
+      stepId: "step-1",
+      selection: {
+        agentId: "agent-a",
+        modelId: "sub2api-xai/grok-4.6",
+        selectionRevision: "a".repeat(64),
+      },
+      snapshot: snapshot(),
+    };
+    const exit = await Effect.runPromise(Effect.exit(
+      Effect.scoped(runStep(req)).pipe(Effect.provide(layer)) as Effect.Effect<unknown>,
+    ));
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag !== "Failure") throw new Error("expected failure");
+    expect(Cause.hasDies(exit.cause)).toBe(false);
+    expect(Cause.squash(exit.cause)).toMatchObject({ name: "BindingFailure", code: "not_admitted" });
+    expect(counts.credential).toBe(0);
+    expect(counts.network).toBe(0);
+    expect(counts.prepare).toBe(0);
   });
 });

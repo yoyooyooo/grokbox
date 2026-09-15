@@ -11,7 +11,10 @@ export function dispatchingModelBackendLayer(fetchImpl: typeof fetch, unseal: Un
   const sdkLayer = aiSdkModelBackendLayer(fetchImpl, unseal);
   return Layer.succeed(ModelBackend, {
     prepare: (selection: unknown, snapshot: unknown) => Effect.gen(function* () {
-      const kind = backendKindForModel(selection as ModelRecord);
+      const kind = yield* Effect.try({
+        try: () => backendKindForModel(selection as ModelRecord),
+        catch: () => new BackendFailure("unknown_backend_kind"),
+      });
       const layer = kind === "echo" ? echoModelBackendLayer : sdkLayer;
       return yield* Effect.gen(function* () {
         const backend = yield* ModelBackend;
