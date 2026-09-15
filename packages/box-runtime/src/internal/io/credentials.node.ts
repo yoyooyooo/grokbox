@@ -1,15 +1,28 @@
 import { constants } from "node:fs";
+import { homedir } from "node:os";
 import { open, type FileHandle } from "node:fs/promises";
 import { Cause, Effect, Exit, Layer } from "effect";
 import { BackendFailure, BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
-import { parseApiKeyRef } from "@grokbox/runtime-kernel/selection";
+import {
+  lookupPiProviderApiKey,
+  parseApiKeyRef,
+  parseModelsFile,
+  PI_PROVIDER_REF_PREFIX,
+  piModelsPathCandidates,
+  type ExternalCatalogEntry,
+} from "@grokbox/runtime-kernel/selection";
 import { BackendAuth, type AuthLease } from "@grokbox/runtime-kernel/ports";
+import { readBoundedJson } from "./bounded-json.node.ts";
+import { modelsPath } from "./paths.ts";
 
 /**
  * C1 secret materialization (modeld-owned).
  *
- * - `apiKeyRef` is `env:<NAME>` or `file:/absolute` via `parseApiKeyRef` (no `$VAR`, no literals).
+ * - `apiKeyRef` is `env:<NAME>`, `file:/absolute`, or `pi-provider:<name>` via `parseApiKeyRef`
+ *   (no `$VAR`, no literals). `pi-provider:` re-reads the string `apiKey` from the same Pi
+ *   `models.json` candidate paths used for catalog load. It never copies that secret into
+ *   grokbox `models.json` and never executes command-form keys.
  * - Env: missing, non-string, or empty after one `String.prototype.trim()` fails.
  * - After trim, values that start with `!/` are rejected as pi command-form apiKeys
  *   (`credential_invalid`). This path never executes the command.
@@ -28,6 +41,12 @@ import { BackendAuth, type AuthLease } from "@grokbox/runtime-kernel/ports";
  */
 export const CREDENTIAL_SECRET_MAX_BYTES = 4 * 1024;
 
+export type ApiKeyRefResolveContext = {
+  homedir?: string;
+  catalog?: ExternalCatalogEntry[];
+  durableRoot?: string;
+};
+
 export function fingerprintSecret(secret: string): string {
   return sha256Text(secret);
 }
@@ -39,14 +58,22 @@ function trimUtf8Secret(value: unknown): string | null {
 }
 
 /** Pi models.json command-form apiKey. Do not treat as a Bearer; do not exec. */
-function rejectCommandFormSecret(secret: string): Effect.Effect<string, BoxRuntimeError> {
+function rejectCommandFormSecret(
+  secret: string,
+  kind: "env" | "file" | "pi-provider" = "env",
+): Effect.Effect<string, BoxRuntimeError> {
   if (secret.startsWith("!/")) {
+    const noun = kind === "pi-provider" ? "Pi provider credential" : kind === "file" ? "file credential" : "env credential";
     return Effect.fail(new BoxRuntimeError(
       "credential_invalid",
-      "Referenced env credential holds a command reference, not a secret.",
+      `Referenced ${noun} holds a command reference, not a secret.`,
     ));
   }
   return Effect.succeed(secret);
+}
+
+function piCredentialUnavailable(): BoxRuntimeError {
+  return new BoxRuntimeError("credential_invalid", "Referenced Pi provider credential is unavailable.");
 }
 
 function mapFsError(error: unknown): BoxRuntimeError {
@@ -58,12 +85,66 @@ function mapFsError(error: unknown): BoxRuntimeError {
   return new BoxRuntimeError("credential_invalid", "Referenced file credential is unavailable.");
 }
 
-function parseRef(ref: string): Effect.Effect<{ kind: "env" | "file"; ref: string }, BoxRuntimeError> {
+function parseRef(ref: string): Effect.Effect<{ kind: "env" | "file" | "pi-provider"; ref: string }, BoxRuntimeError> {
   return Effect.try({
     try: () => parseApiKeyRef(ref),
     catch: (error) => error instanceof BoxRuntimeError
       ? error
       : new BoxRuntimeError("credential_invalid", "Invalid apiKeyRef."),
+  });
+}
+
+function resolvePiCatalog(
+  context: ApiKeyRefResolveContext,
+): Effect.Effect<ExternalCatalogEntry[], BoxRuntimeError> {
+  if (context.catalog) return Effect.succeed(context.catalog);
+  if (!context.durableRoot) return Effect.succeed(["pi"]);
+  const root = context.durableRoot;
+  return Effect.tryPromise({
+    try: async () => {
+      const raw = await readBoundedJson(modelsPath(root));
+      const file = parseModelsFile(raw);
+      return file.externalCatalog && file.externalCatalog.length > 0 ? file.externalCatalog : ["pi"];
+    },
+    catch: () => piCredentialUnavailable(),
+  });
+}
+
+function materializePiProviderApiKey(
+  ref: string,
+  env: NodeJS.Dict<string>,
+  context: ApiKeyRefResolveContext,
+): Effect.Effect<string, BoxRuntimeError> {
+  return Effect.gen(function* () {
+    const name = ref.slice(PI_PROVIDER_REF_PREFIX.length);
+    const catalog = yield* resolvePiCatalog(context);
+    const candidates = yield* Effect.try({
+      try: () => piModelsPathCandidates({
+        catalog,
+        homedir: context.homedir ?? homedir(),
+        env: env as Record<string, string | undefined>,
+      }),
+      catch: () => piCredentialUnavailable(),
+    });
+    for (const path of candidates) {
+      const pi = yield* Effect.promise(() => readBoundedJson(path));
+      if (pi === undefined) continue;
+      const lookup = lookupPiProviderApiKey(pi, name);
+      if (lookup.kind === "command-form") {
+        return yield* Effect.fail(new BoxRuntimeError(
+          "credential_invalid",
+          "Referenced Pi provider credential holds a command reference, not a secret.",
+        ));
+      }
+      if (lookup.kind !== "string") {
+        return yield* Effect.fail(new BoxRuntimeError("credential_invalid", "Referenced Pi provider credential is missing."));
+      }
+      if (Buffer.byteLength(lookup.value, "utf8") > CREDENTIAL_SECRET_MAX_BYTES) {
+        return yield* Effect.fail(new BoxRuntimeError("credential_invalid", "Referenced Pi provider credential exceeds size limit."));
+      }
+      return yield* rejectCommandFormSecret(lookup.value, "pi-provider");
+    }
+    return yield* Effect.fail(new BoxRuntimeError("credential_invalid", "Referenced Pi provider credential is missing."));
   });
 }
 
@@ -111,6 +192,7 @@ function readSecretFile(path: string): Effect.Effect<string, BoxRuntimeError> {
 export function materializeApiKeyRefEffect(
   ref: string,
   env: NodeJS.Dict<string>,
+  context: ApiKeyRefResolveContext = {},
 ): Effect.Effect<string, BoxRuntimeError> {
   return Effect.gen(function* () {
     yield* Effect.yieldNow;
@@ -122,6 +204,9 @@ export function materializeApiKeyRefEffect(
       }
       return yield* rejectCommandFormSecret(secret);
     }
+    if (parsed.kind === "pi-provider") {
+      return yield* materializePiProviderApiKey(parsed.ref, env, context);
+    }
     return yield* readSecretFile(parsed.ref.slice(5));
   });
 }
@@ -129,8 +214,9 @@ export function materializeApiKeyRefEffect(
 export function fingerprintApiKeyRefEffect(
   ref: string,
   env: NodeJS.Dict<string>,
+  context: ApiKeyRefResolveContext = {},
 ): Effect.Effect<string, BoxRuntimeError> {
-  return materializeApiKeyRefEffect(ref, env).pipe(Effect.map(fingerprintSecret));
+  return materializeApiKeyRefEffect(ref, env, context).pipe(Effect.map(fingerprintSecret));
 }
 
 async function runCredentialEffect<A>(
@@ -151,8 +237,9 @@ export function materializeApiKeyRef(
   ref: string,
   env: NodeJS.Dict<string>,
   signal?: AbortSignal,
+  context?: ApiKeyRefResolveContext,
 ): Promise<string> {
-  return runCredentialEffect(materializeApiKeyRefEffect(ref, env), signal);
+  return runCredentialEffect(materializeApiKeyRefEffect(ref, env, context), signal);
 }
 
 /** Promise facade: SHA-256 hex. Never returns the secret. */
@@ -160,8 +247,9 @@ export function fingerprintApiKeyRef(
   ref: string,
   env: NodeJS.Dict<string>,
   signal?: AbortSignal,
+  context?: ApiKeyRefResolveContext,
 ): Promise<string> {
-  return runCredentialEffect(fingerprintApiKeyRefEffect(ref, env), signal);
+  return runCredentialEffect(fingerprintApiKeyRefEffect(ref, env, context), signal);
 }
 
 type LeaseRecord = { fingerprint: string; secret: string; ref: string; env: NodeJS.Dict<string> };
@@ -176,7 +264,10 @@ export type LiveBackendAuth = {
 };
 
 /** Per-root auth. Unseal is injected into backends; maps are not shared across roots. */
-export function createLiveBackendAuth(env: NodeJS.Dict<string> = process.env): LiveBackendAuth {
+export function createLiveBackendAuth(
+  env: NodeJS.Dict<string> = process.env,
+  context: ApiKeyRefResolveContext = {},
+): LiveBackendAuth {
   const leases = new WeakMap<AuthLease, LeaseRecord>();
   const unseal = (lease: AuthLease): string => {
     const record = leases.get(lease);
@@ -195,7 +286,7 @@ export function createLiveBackendAuth(env: NodeJS.Dict<string> = process.env): L
           leases.set(lease, { fingerprint, secret: "", ref: "", env });
           return { lease, fingerprint };
         })
-        : materializeApiKeyRefEffect(ref, env).pipe(
+        : materializeApiKeyRefEffect(ref, env, context).pipe(
           Effect.mapError((error) => error instanceof BackendFailure ? error : new BackendFailure("credential_invalid")),
           Effect.map((secret) => {
             const lease = makeLease();
@@ -218,13 +309,16 @@ export function createLiveBackendAuth(env: NodeJS.Dict<string> = process.env): L
       if (!record) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
       const current = record.ref === ""
         ? fingerprintSecret("")
-        : yield* fingerprintApiKeyRefEffect(record.ref, record.env);
+        : yield* fingerprintApiKeyRefEffect(record.ref, record.env, context);
       if (current !== record.fingerprint) return yield* Effect.fail(new BackendFailure("auth_mismatch"));
     }),
   });
   return { layer, unseal };
 }
 
-export function liveBackendAuthLayer(env: NodeJS.Dict<string> = process.env): Layer.Layer<BackendAuth> {
-  return createLiveBackendAuth(env).layer;
+export function liveBackendAuthLayer(
+  env: NodeJS.Dict<string> = process.env,
+  context: ApiKeyRefResolveContext = {},
+): Layer.Layer<BackendAuth> {
+  return createLiveBackendAuth(env, context).layer;
 }

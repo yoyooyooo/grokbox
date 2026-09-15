@@ -2,6 +2,8 @@ import { BoxRuntimeError } from "../contract/errors.ts";
 import {
   adaptPiCatalog,
   catalogWantsPi,
+  PI_PROVIDER_NAME_PATTERN,
+  PI_PROVIDER_REF_PREFIX,
   piModelsPathCandidates,
   type ExternalCatalogEntry,
 } from "./pi-catalog.ts";
@@ -72,7 +74,7 @@ function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }
 
-export function parseApiKeyRef(value: string): { kind: "env" | "file"; ref: string } {
+export function parseApiKeyRef(value: string): { kind: "env" | "file" | "pi-provider"; ref: string } {
   if (value.includes("$")) {
     throw new BoxRuntimeError("credential_invalid", "Secret interpolation with $VAR is not allowed.");
   }
@@ -86,9 +88,16 @@ export function parseApiKeyRef(value: string): { kind: "env" | "file"; ref: stri
     }
     return { kind: "file", ref: value };
   }
+  if (value.startsWith(PI_PROVIDER_REF_PREFIX)) {
+    const name = value.slice(PI_PROVIDER_REF_PREFIX.length);
+    if (!PI_PROVIDER_NAME_PATTERN.test(name)) {
+      throw new BoxRuntimeError("credential_invalid", "pi-provider: references must use a Pi provider name.");
+    }
+    return { kind: "pi-provider", ref: value };
+  }
   throw new BoxRuntimeError(
     "credential_invalid",
-    "apiKeyRef must be env:<NAME> or file:/absolute/path; literal secrets are not allowed.",
+    "apiKeyRef must be env:<NAME>, file:/absolute/path, or pi-provider:<name>; literal secrets are not allowed.",
   );
 }
 
@@ -274,7 +283,10 @@ function parseCatalogCredentials(value: unknown): Record<string, string> {
     if (typeof ref !== "string") {
       throw new BoxRuntimeError("invalid_usage", `credentials.${provider} must be env: or file:.`);
     }
-    parseApiKeyRef(ref);
+    const parsed = parseApiKeyRef(ref);
+    if (parsed.kind !== "env" && parsed.kind !== "file") {
+      throw new BoxRuntimeError("invalid_usage", `credentials.${provider} must be env: or file:.`);
+    }
     out[provider] = ref;
   }
   return out;

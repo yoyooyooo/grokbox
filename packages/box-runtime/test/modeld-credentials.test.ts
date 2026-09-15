@@ -1,15 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
+import { BackendAuth } from "@grokbox/runtime-kernel/ports";
+import { persistModelsDocument, resolveExternalCatalog, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
   CREDENTIAL_SECRET_MAX_BYTES,
+  createLiveBackendAuth,
   fingerprintApiKeyRef,
   fingerprintSecret,
   materializeApiKeyRef,
 } from "../src/internal/io/credentials.node.ts";
+import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
+import { modelsPath } from "../src/internal/io/paths.ts";
 
 async function tmpDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "grokbox-c1-"));
@@ -77,5 +83,93 @@ describe("modeld C1 credentials", () => {
     const ac = new AbortController();
     ac.abort();
     await expect(materializeApiKeyRef("env:K", { K: "v" }, ac.signal)).rejects.toThrow(/cancelled/);
+  });
+
+  test("pi-provider reuses a string Pi apiKey; command-form fails closed", async () => {
+    const dir = await tmpDir();
+    const piPath = join(dir, "pi-models.json");
+    const secret = "sk-pi-reuse-secret";
+    await writeFile(piPath, `${JSON.stringify({
+      providers: {
+        "sub2api-xai": {
+          api: "openai-responses",
+          baseUrl: "https://example.test/",
+          apiKey: `  ${secret}\n`,
+          models: [{ id: "grok-4.6" }],
+        },
+        cmd: {
+          api: "openai-responses",
+          baseUrl: "https://example.test/",
+          apiKey: "!/usr/bin/env sh -lc 'printf %s leaked'",
+          models: [{ id: "grok-4.6" }],
+        },
+      },
+    })}\n`, { mode: 0o600 });
+    const context = { catalog: [{ id: "pi" as const, modelsPath: piPath }], homedir: dir };
+    expect(await materializeApiKeyRef("pi-provider:sub2api-xai", {}, undefined, context)).toBe(secret);
+    const fp = await fingerprintApiKeyRef("pi-provider:sub2api-xai", {}, undefined, context);
+    expect(fp).toBe(sha256Text(secret));
+    expect(JSON.stringify({ fp })).not.toContain(secret);
+    await expect(materializeApiKeyRef("pi-provider:cmd", {}, undefined, context)).rejects.toMatchObject({
+      code: "credential_invalid",
+      message: "Referenced Pi provider credential holds a command reference, not a secret.",
+    });
+    await expect(materializeApiKeyRef("pi-provider:missing", {}, undefined, context)).rejects.toMatchObject({
+      code: "credential_invalid",
+    });
+
+    const auth = createLiveBackendAuth({}, context);
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const service = yield* BackendAuth;
+      const pinned = yield* service.pin({ apiKeyRef: "pi-provider:sub2api-xai" });
+      expect(auth.unseal(pinned.lease)).toBe(secret);
+      expect(pinned.fingerprint).toBe(sha256Text(secret));
+      expect(JSON.stringify(pinned)).not.toContain(secret);
+    }).pipe(Effect.provide(auth.layer))));
+  });
+
+  test("store persist of Pi-adapted models does not write Pi secrets", async () => {
+    const root = await tmpDir();
+    const piPath = join(root, "pi-models.json");
+    const secret = "sk-pi-must-not-persist";
+    await writeFile(piPath, `${JSON.stringify({
+      providers: {
+        "sub2api-xai": {
+          api: "openai-responses",
+          baseUrl: "https://example.test/",
+          apiKey: secret,
+          models: [{ id: "grok-4.6" }],
+        },
+      },
+    })}\n`, { mode: 0o600 });
+    const store = openRuntimeStore(root, {});
+    const native = parseModelsFile({
+      version: 1,
+      externalCatalog: [{ id: "pi", modelsPath: piPath }],
+      models: {},
+      assignments: { main: null, agents: {} },
+    });
+    await store.saveModels(native);
+    const loaded = await store.loadModels();
+    expect(loaded.models["sub2api-xai/grok-4.6"]?.apiKeyRef).toBe("pi-provider:sub2api-xai");
+    expect(JSON.stringify(loaded.models)).not.toContain(secret);
+    const context = { durableRoot: root, homedir: root };
+    expect(await materializeApiKeyRef(loaded.models["sub2api-xai/grok-4.6"]!.apiKeyRef, {}, undefined, context)).toBe(secret);
+    const auth = createLiveBackendAuth({}, context);
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const service = yield* BackendAuth;
+      const pinned = yield* service.pin({ apiKeyRef: "pi-provider:sub2api-xai" });
+      expect(auth.unseal(pinned.lease)).toBe(secret);
+    }).pipe(Effect.provide(auth.layer))));
+    await store.saveModels(loaded);
+    const disk = await readFile(modelsPath(root), "utf8");
+    expect(disk).not.toContain(secret);
+    expect(disk).not.toContain("pi-provider:");
+    const persisted = persistModelsDocument(loaded);
+    expect(persisted.models["sub2api-xai/grok-4.6"]).toBeUndefined();
+    expect(persisted.credentials).toBeUndefined();
+    expect(JSON.stringify(resolveExternalCatalog(native, {
+      pi: JSON.parse(await readFile(piPath, "utf8")),
+    }).models)).not.toContain(secret);
   });
 });

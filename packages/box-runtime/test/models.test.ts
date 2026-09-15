@@ -36,9 +36,11 @@ const SAMPLE = {
 describe("models.json store", () => {
   test("secret refs reject literals and $VAR", () => {
     expect(parseApiKeyRef("env:ACME_KEY")).toEqual({ kind: "env", ref: "env:ACME_KEY" });
+    expect(parseApiKeyRef("pi-provider:sub2api-xai")).toEqual({ kind: "pi-provider", ref: "pi-provider:sub2api-xai" });
     expect(() => parseApiKeyRef("sk-live")).toThrow(BoxRuntimeError);
     expect(() => parseApiKeyRef("env:$TOKEN")).toThrow(BoxRuntimeError);
     expect(() => parseApiKeyRef("file:relative")).toThrow(BoxRuntimeError);
+    expect(() => parseApiKeyRef("pi-provider:")).toThrow(BoxRuntimeError);
   });
 
   test("agent lookup uses own data keys, including explicit prototype-shaped ids", () => {

@@ -38,7 +38,12 @@ export {
 } from "./internal/selection/models.ts";
 export {
   catalogWantsPi,
+  lookupPiProviderApiKey,
+  PI_PROVIDER_NAME_PATTERN,
+  PI_PROVIDER_REF_PREFIX,
   piModelsPathCandidates,
+  piProviderApiKeyRef,
   type ExternalCatalogEntry,
+  type PiProviderApiKeyLookup,
 } from "./internal/selection/pi-catalog.ts";
 export { captureManagedSelection, computeSelectionRevision, type CapturedSelection } from "./internal/selection/selection-revision.ts";

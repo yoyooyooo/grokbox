@@ -28,6 +28,9 @@ describe("kernel selection", () => {
     expect(routeModelAdmitted(file.models[STUB_ECHO_MODEL_ID]!)).toBe(true);
     expect(parseModelId("acme/fast")).toEqual({ provider: "acme", model: "fast", id: "acme/fast" });
     expect(() => parseApiKeyRef("sk-live")).toThrow(BoxRuntimeError);
+    expect(parseApiKeyRef("pi-provider:sub2api-xai")).toEqual({ kind: "pi-provider", ref: "pi-provider:sub2api-xai" });
+    expect(() => parseApiKeyRef("pi-provider:")).toThrow(BoxRuntimeError);
+    expect(() => parseApiKeyRef("pi-provider:foo:bar")).toThrow(BoxRuntimeError);
   });
 
   test("selective route does not use main as session fallback", () => {
@@ -283,6 +286,110 @@ describe("kernel selection", () => {
     expect(persisted.models["mini/from-pi"]).toBeUndefined();
     expect(persisted.models["mini/kept"]?.alias).toBe("g46x");
     expect(persisted.externalCatalog).toEqual(["pi"]);
+  });
+
+  test("Pi string apiKey is reused as pi-provider ref without copying the secret", () => {
+    const native = parseModelsFile({
+      version: 1,
+      externalCatalog: ["pi"],
+      models: {},
+      assignments: { main: null, agents: { bot: "sub2api-xai/grok-4.6" } },
+    });
+    const resolved = resolveExternalCatalog(native, {
+      pi: {
+        providers: {
+          "sub2api-xai": {
+            api: "openai-responses",
+            baseUrl: "https://example.test/",
+            apiKey: "  sk-pi-reuse-secret\n",
+            models: [{ id: "grok-4.6", contextWindow: 256000 }],
+          },
+        },
+      },
+    });
+    expect(resolved.models["sub2api-xai/grok-4.6"]).toMatchObject({
+      provider: "openai-responses",
+      model: "grok-4.6",
+      endpoint: "https://example.test/",
+      apiKeyRef: "pi-provider:sub2api-xai",
+      catalog: "pi",
+    });
+    expect(JSON.stringify(resolved.models)).not.toContain("sk-pi-reuse-secret");
+    const persisted = persistModelsDocument(resolved);
+    expect(persisted.models).toEqual({});
+    expect(persisted.credentials).toBeUndefined();
+    expect(JSON.stringify(persisted)).not.toContain("sk-pi-reuse-secret");
+    expect(JSON.stringify(persisted)).not.toContain("pi-provider:");
+    expect(modelForAgent(resolved, "bot")?.apiKeyRef).toBe("pi-provider:sub2api-xai");
+  });
+
+  test("Pi command-form apiKey is skipped unless credentials override", () => {
+    const command = "!/usr/bin/env sh -lc 'printf %s placeholder-not-a-key'";
+    const native = parseModelsFile({
+      version: 1,
+      externalCatalog: ["pi"],
+      credentials: { kept: "env:KEPT_KEY" },
+      models: {},
+      assignments: { main: null, agents: {} },
+    });
+    const resolved = resolveExternalCatalog(native, {
+      pi: {
+        providers: {
+          skipped: {
+            api: "openai-responses",
+            baseUrl: "https://example.test/",
+            apiKey: command,
+            models: [{ id: "grok-4.6" }],
+          },
+          empty: {
+            api: "openai-responses",
+            baseUrl: "https://example.test/",
+            models: [{ id: "grok-4.6" }],
+          },
+          kept: {
+            api: "openai-responses",
+            baseUrl: "https://example.test/",
+            apiKey: command,
+            models: [{ id: "grok-4.6" }],
+          },
+        },
+      },
+    });
+    expect(resolved.models["skipped/grok-4.6"]).toBeUndefined();
+    expect(resolved.models["empty/grok-4.6"]).toBeUndefined();
+    expect(resolved.models["kept/grok-4.6"]?.apiKeyRef).toBe("env:KEPT_KEY");
+    expect(JSON.stringify(resolved.models)).not.toContain(command);
+    expect(JSON.stringify(persistModelsDocument(resolved))).not.toContain(command);
+  });
+
+  test("credentials override Pi string apiKey auto-reuse", () => {
+    const native = parseModelsFile({
+      version: 1,
+      externalCatalog: ["pi"],
+      credentials: { "sub2api-xai": "env:GROKBOX_SUB2API_KEY" },
+      models: {},
+      assignments: { main: null, agents: {} },
+    });
+    const resolved = resolveExternalCatalog(native, {
+      pi: {
+        providers: {
+          "sub2api-xai": {
+            api: "openai-responses",
+            baseUrl: "https://example.test/",
+            apiKey: "sk-pi-should-lose",
+            models: [{ id: "grok-4.6" }],
+          },
+        },
+      },
+    });
+    expect(resolved.models["sub2api-xai/grok-4.6"]?.apiKeyRef).toBe("env:GROKBOX_SUB2API_KEY");
+    expect(JSON.stringify(resolved.models)).not.toContain("sk-pi-should-lose");
+    expect(() => parseModelsFile({
+      version: 1,
+      credentials: { "sub2api-xai": "pi-provider:sub2api-xai" },
+      models: {},
+      assignments: { main: null, agents: {} },
+    })).toThrow(BoxRuntimeError);
   });
 
   test("Pi catalog discovery prefers PI_MODELS_PATH then agent then root", () => {

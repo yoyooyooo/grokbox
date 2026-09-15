@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import type { Server } from "node:net";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -87,7 +88,10 @@ export function modeldRootLayer(options: {
 }) {
   const store = openRuntimeStore(options.durableRoot, options.env);
   const config = configurationReadLayer(store);
-  const auth = createLiveBackendAuth(options.env ?? {});
+  const auth = createLiveBackendAuth(options.env ?? {}, {
+    homedir: homedir(),
+    durableRoot: options.durableRoot,
+  });
   const backend = dispatchingModelBackendLayer(options.fetch ?? globalThis.fetch, auth.unseal);
   return config.pipe(
     Layer.merge(liveAdmissionAuthorityLayer(options.durableRoot, options.runRoot, options.ownershipRead)),

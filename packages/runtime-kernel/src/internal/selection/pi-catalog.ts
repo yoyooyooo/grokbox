@@ -9,6 +9,38 @@ const PI_API_TO_PROVIDER = {
 export type ExternalCatalogId = "pi";
 export type ExternalCatalogEntry = ExternalCatalogId | { id: ExternalCatalogId; modelsPath?: string };
 
+export const PI_PROVIDER_REF_PREFIX = "pi-provider:";
+export const PI_PROVIDER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+export type PiProviderApiKeyLookup =
+  | { kind: "string"; value: string }
+  | { kind: "command-form" }
+  | { kind: "unavailable" };
+
+export function piProviderApiKeyRef(providerName: string): string | undefined {
+  if (!PI_PROVIDER_NAME_PATTERN.test(providerName)) return undefined;
+  return `${PI_PROVIDER_REF_PREFIX}${providerName}`;
+}
+
+/** Trimmed string bearer, command-form, or missing. Never executes `!/` keys. */
+export function lookupPiProviderApiKey(pi: unknown, providerName: string): PiProviderApiKeyLookup {
+  if (!isRecord(pi) || !isRecord(pi.providers) || !Object.hasOwn(pi.providers, providerName)) {
+    return { kind: "unavailable" };
+  }
+  const provider = pi.providers[providerName];
+  if (!isRecord(provider)) return { kind: "unavailable" };
+  return reusablePiApiKey(provider);
+}
+
+function reusablePiApiKey(provider: Record<string, unknown>): PiProviderApiKeyLookup {
+  const key = provider.apiKey;
+  if (typeof key !== "string") return { kind: "unavailable" };
+  const value = key.trim();
+  if (!value) return { kind: "unavailable" };
+  if (value.startsWith("!/")) return { kind: "command-form" };
+  return { kind: "string", value };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -55,6 +87,15 @@ function capabilitiesOf(model: Record<string, unknown>): ModelCapabilities {
   return { vision, tools: true, images: vision };
 }
 
+function apiKeyRefForPiProvider(providerName: string, provider: Record<string, unknown>, credentials: Record<string, string>): string | undefined {
+  if (Object.hasOwn(credentials, providerName)) {
+    const override = credentials[providerName];
+    return typeof override === "string" && override.length > 0 ? override : undefined;
+  }
+  if (reusablePiApiKey(provider).kind !== "string") return undefined;
+  return piProviderApiKeyRef(providerName);
+}
+
 /** Pi catalog only. Never copies apiKey or executes command-form keys. */
 export function adaptPiCatalog(pi: unknown, credentials: Record<string, string>): Record<string, ModelRecord> {
   if (!isRecord(pi) || !isRecord(pi.providers)) {
@@ -65,7 +106,7 @@ export function adaptPiCatalog(pi: unknown, credentials: Record<string, string>)
     if (!isRecord(provider)) continue;
     const api = provider.api;
     if (typeof api !== "string" || !(api in PI_API_TO_PROVIDER)) continue;
-    const apiKeyRef = credentials[providerName];
+    const apiKeyRef = apiKeyRefForPiProvider(providerName, provider, credentials);
     if (!apiKeyRef) continue;
     const endpoint = provider.baseUrl;
     if (typeof endpoint !== "string" || !/^https?:\/\//i.test(endpoint)) continue;
