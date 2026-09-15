@@ -25,3 +25,5 @@ grokbox models reset --for <agent>
 `models use --for` requires `confirmed_box`. Other ownership classes refuse before writing; `error.next` is the remediation. See [ownership.md](ownership.md).
 
 `models use --for` also paints that Bot's App title trailer (`m=`), keeping any user title. Official `reset --for` drops `m=` only if a trailer is already showing. Title is display-only; a failed title write does not undo the assignment.
+
+**Operator / template Bot:** stay on the official brain — never `models use` yourself. Create disposable Bots with `grokbox agents create` for custom-model experiments. Host recover when the channel is down: [adopt.md](adopt.md).

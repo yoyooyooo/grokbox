@@ -27,3 +27,5 @@ If `blockers` include `host_channel_not_enabled`, `next` is `grokbox host start`
 Create with `grokbox agents create --harness box` (default box). Then `agents ownership` until `confirmed_box`. Unknown create must not be retried as a second Bot.
 
 If ownership later becomes temporal or conflict: drop managed use for that id. A showing title trailer refreshes to `owner=temporal` or `owner=conflict` and drops `m=`. Official Host upgrade migration stays the Server's.
+
+Host-channel recover (observe → write → host start, or host stop if unrecoverable): [adopt.md](adopt.md). Operator / template Bots stay on the official brain — do not `models use` the operator Bot; create disposable Bots for model tests ([models.md](models.md)).
