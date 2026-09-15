@@ -73,6 +73,20 @@ Synthetic regression scenario: an earlier progress message is not a final result
 
 Host终态持久投影新增terminalClass/errorCode/toolCallCount/modelId，拒绝记录增加stepId。这样以后可以分清Host的 `parallel_tools` 与模型端被关socket后的 `disconnected`，不用再依赖用户截图。该新增Host写入逻辑只有新preload被加载之后才生效，不能回填旧历史。
 
+## AH-92.5 wave D：早期 admit 拒绝
+
+现场 catalog 里的可选模型都是 openai*，`models use` 对未登记 id 会在写入前拒绝（`Unknown model … Add it to models.json first.`）。因此不能再用 `models use <非 openai*>` 复现原始狗粮班。最小负例是：只给一个 box Bot 临时写入非 openai 赋值 `ah92-admit-deny/none`（provider `acme`），然后跑金丝雀两条命令，最后还原 `models.json`。不新增 CLI 面。维护入口：
+
+```sh
+bun scripts/verify-ah92-admit-observation.mjs --confirm [--agent model-dogfood]
+```
+
+缺 `--confirm` 不写盘。禁止打长期金丝雀 `grokbox` Bot。默认目标是 `model-dogfood`（`00000000-0000-4000-8000-000000000119`），跑完必须把它付回原先赋值。
+
+Expected message: `route admits only stub/echo or openai* in this slice.`. Public acceptance assertions: early admit denial remains `failed`, including with a null display request ID or empty alerts; the durable rejection must be nonce-bound and stable across readers. This is a synthetic test recipe, not a published live receipt.
+
+失效条件：Host preload 丢 nonce 绑定、catalog 出现 CLI 可 `models use` 的非 openai 模型、或 outcome 又把空 alerts 当成成功。
+
 ## 验证与现场边界
 
 2026-09-12本轮 scoped regression **123 pass / 0 fail**（含CLI/事件/管理/运行时合同、12个结果观测测试、5个工具准入/终态测试、持久凭据与原生outer retry回归）。真实只读结果查询也已完成。完整全仓测试调用及候选 profile-write/re-adopt 调用被工具安全检查拦截，未执行；未改路重试部署，没有宣称串行策略修复已在现场加载或真实工具链已验完。具体制品身份与后续待验项以readiness为准。
