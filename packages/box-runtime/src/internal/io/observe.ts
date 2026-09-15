@@ -279,6 +279,7 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
     liveRetained: sha ? bundles.generations.some((row) => row.sourceSha === sha && row.state === "present") : null,
     lastMatchedSha: matchedBundle?.sourceSha ?? null,
   };
+  // YELLOW: live status driftedSlices is the 4-window contract lock, not envelopeDrift.
   status.driftedSlices = generation ? [...generation.driftedSlices] : null;
   const gateway = input.gatewayPid !== undefined
     ? input.gatewayPid === null ? { state: "unavailable" as const } : { state: "present" as const, value: input.gatewayPid }

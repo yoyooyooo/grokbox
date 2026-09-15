@@ -47,6 +47,14 @@ export function hostBundlesDir(root: string): string {
   return join(root, "host-bundles");
 }
 
+export function retainedGenerationDir(root: string, sha: string): string {
+  return join(hostBundlesDir(root), "generations", sha);
+}
+
+export function retainedGenerationSourcePath(root: string, sha: string): string {
+  return join(retainedGenerationDir(root, sha), "source");
+}
+
 export function reviewedProfilePath(root: string): string {
   return join(root, "profiles", "reviewed.json");
 }

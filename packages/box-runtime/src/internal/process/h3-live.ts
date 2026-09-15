@@ -33,7 +33,12 @@ import {
 } from "./process-port.ts";
 import type { PatchProfile } from "../host/profile.ts";
 import { validateReviewedProfile } from "./profile.node.ts";
-export { writeReviewedProfileFromCopy, type WriteReviewedProfileFromCopyInput } from "./profile.node.ts";
+export {
+  writeReviewedProfileFromCopy,
+  ProfileWriteRefused,
+  type WriteReviewedProfileFromCopyInput,
+  type ProfileWriteLineage,
+} from "./profile.node.ts";
 
 const EMPTY_CENSUS: Census = {
   wrapper: 0,
