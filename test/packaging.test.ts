@@ -205,6 +205,13 @@ describe("published Node package", () => {
       "dist/preload.cjs",
       "package.json",
       "skills/core.md",
+      "skills/grokbox/SKILL.md",
+      "skills/grokbox/adopt.md",
+      "skills/grokbox/label.md",
+      "skills/grokbox/models.md",
+      "skills/grokbox/ownership.md",
+      "skills/grokbox/troubleshoot.md",
+      "skills/stubs/grokbox.md",
     ]);
 
     const prefix = join(fixture, "prefix");
@@ -238,6 +245,10 @@ describe("published Node package", () => {
     expect(gboxHelp.code, gboxHelp.stderr).toBe(0);
     expect(grokboxHelp.stdout).toBe(gboxHelp.stdout);
     expect(grokboxHelp.stdout).toContain("recover");
+    expect(grokboxHelp.stdout).toContain("grokbox skills get grokbox");
+    const skill = await run([grokbox, "skills", "get", "grokbox"]);
+    expect(skill.code, skill.stderr).toBe(0);
+    expect(skill.stdout).toContain("grokbox host start");
     expect(grokboxVersion.stdout.trim()).toBe(cliPackage.version);
     expect(gboxVersion.stdout).toBe(grokboxVersion.stdout);
 

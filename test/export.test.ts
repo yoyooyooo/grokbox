@@ -67,7 +67,7 @@ async function makeFixture(rootName = "agent-data"): Promise<Fixture> {
   await writeJson(join(agentData, "agents", "group-ops", "group.json"), { memberIds: ["agent-alpha"] });
   await writeJson(join(agentData, "agents", "agent-beta", "profile.json"), { name: "beta" });
   await writeJson(join(agentData, "agents", "agent-twin-a", "profile.json"), { name: "twin", title: "Twin" });
-  await writeJson(join(agentData, "agents", "agent-twin-b", "profile.json"), { name: "other", title: "twin" });
+  await writeJson(join(agentData, "agents", "agent-twin-b", "profile.json"), { name: "twin", title: "Twin B" });
   await writeText(join(agentData, "user-memory", "by-agent", "agent-alpha", "profile.md"), "# User shard\n");
   await writeText(
     join(agentData, "projects", "demo", "memory", "by-agent", "agent-alpha", "log", "2026-08.md"),

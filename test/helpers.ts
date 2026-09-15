@@ -33,6 +33,8 @@ export type MockOptions = {
   trays?: unknown[];
   sendPrompt?: (index: number, body: unknown) => { status: number; body?: unknown };
   eventsSse?: string;
+  createAgentId?: string;
+  hostStatus?: unknown;
 };
 
 export type MockGateway = {
@@ -154,6 +156,9 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
         return Response.json({ error: "unauthorized" }, { status: 401 });
       }
       if (url.pathname === "/api/getTrays" && req.method === "POST") return Response.json(options.trays ?? []);
+      if (url.pathname === "/api/getHostStatus" && req.method === "POST") {
+        return Response.json(options.hostStatus ?? { version: "stock" });
+      }
       if (url.pathname === "/api/listAgents" && req.method === "POST") {
         return Response.json(agents);
       }
@@ -161,7 +166,7 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
         const input = body as Record<string, unknown>;
         createdAgentCount += 1;
         const agent: Record<string, unknown> = {
-          id: `agent-created-${createdAgentCount}`,
+          id: options.createAgentId ?? `agent-created-${createdAgentCount}`,
           name: input.name,
           description: input.description,
           title: input.title ?? "",

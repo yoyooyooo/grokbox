@@ -23,7 +23,7 @@ const CASES = {
     ["bun", "test", "packages/box-runtime/test/architecture.test.ts"],
   ],
   codec: [
-    ["bun", "test", "packages/box-runtime/test/host-codec.test.ts", "packages/box-runtime/test/ccs-codec.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/host-codec.test.ts", "packages/box-runtime/test/openai-prompt-adapter.test.ts"],
   ],
   status: [
     ["bun", "test", "packages/runtime-kernel/test/status-facets.test.ts", "packages/box-runtime/test/host-journal.test.ts", "packages/box-runtime/test/observe-status.test.ts"],
@@ -31,7 +31,7 @@ const CASES = {
   ],
   backend: [
     ["bun", "test", "packages/runtime-kernel/test/backend-contract.test.ts", "packages/box-runtime/test/backend-conformance.test.ts"],
-    ["bun", "test", "packages/box-runtime/test/host-codec.test.ts", "packages/box-runtime/test/ccs-codec.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/host-codec.test.ts", "packages/box-runtime/test/openai-prompt-adapter.test.ts"],
     ["bun", "scripts/check-runtime-boundaries.mjs"],
     ["bun", "test", "packages/box-runtime/test/architecture.test.ts"],
   ],
@@ -144,10 +144,10 @@ for (const argv of mapped) {
 const SUPPORTS = {
   all: ["typecheck", "repository-regression-suite"],
   layout: ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
-  codec: ["host-context-snapshot", "ccs-chat-responses-http-oracle"],
+  codec: ["host-context-snapshot", "openai-prompt-http-oracle"],
   status: ["status-facets", "host-journal-roles", "readonly-status-ports"],
   "observation-monitor": ["scoped-batch-observations", "atomic-bounded-sqlite-images", "source-observation-time-not-arrival", "incident-cycle-ack-snooze-idempotency", "epoch-bound-pagination", "readonly-cli-zero-network-writes", "packed-node-cold-management"],
-  backend: ["model-backend-port", "backend-auth-lease", "ccs-codec-prepare"],
+  backend: ["model-backend-port", "backend-auth-lease", "openai-prompt-prepare"],
   binding: ["selection-capture", "route-binding", "step-ledger"],
   lifecycle: ["modeld-v3-wire", "effect-unix-root"],
   "runtime-start": ["scoped-start-preparation", "source-cli-start-and-root-qualified-borrow", "packed-node-start-borrow-orderly-restart", "root-qualified-service-status", "saved-intent-is-not-running-Host", "owned-signal-output-and-later-service-failure-cleanup"],
