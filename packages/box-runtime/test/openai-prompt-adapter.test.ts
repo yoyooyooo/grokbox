@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EnvelopeError } from "@grokbox/runtime-kernel/contract";
 import { hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
-import { encodeCcsMessages, sendCcsRequest, type CcsApi } from "../src/internal/backends/ccs-codec.ts";
+import { encodeOpenaiPrompt, sendOpenaiPrompt, type OpenaiPromptApi } from "../src/internal/backends/openai-prompt-adapter.ts";
 
 const schema = { type: "object", properties: { q: { type: "string" } } };
 const longArg = `α${"x".repeat(1600)}`;
@@ -136,24 +136,69 @@ function systemRoots(body: unknown): string[] {
   return roots;
 }
 
+function parseArgs(raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+  try { return JSON.parse(raw); } catch { return raw; }
+}
+
+function assistantCalls(item: Record<string, unknown>): Array<Record<string, unknown>> {
+  const calls: Array<Record<string, unknown>> = [];
+  if (item.type === "function_call" || item.type === "tool_call") {
+    calls.push({
+      type: "tool-call",
+      toolCallId: item.call_id ?? item.id,
+      toolName: item.name,
+      args: parseArgs(item.arguments),
+    });
+  }
+  const listed = item.tool_calls;
+  if (Array.isArray(listed)) {
+    for (const call of listed) {
+      const rec = asRecord(call);
+      const fn = rec ? asRecord(rec.function) : null;
+      if (!rec) continue;
+      calls.push({
+        type: "tool-call",
+        toolCallId: rec.id ?? rec.call_id,
+        toolName: fn?.name ?? rec.name,
+        args: parseArgs(fn?.arguments ?? rec.arguments),
+      });
+    }
+  }
+  return calls;
+}
+
+function toolResults(item: Record<string, unknown>): Array<Record<string, unknown>> {
+  if (item.role === "tool" || item.type === "function_call_output") {
+    const raw = item.content ?? item.output;
+    return [{
+      type: "tool-result",
+      toolCallId: item.tool_call_id ?? item.call_id,
+      result: parseArgs(raw),
+    }];
+  }
+  return [];
+}
+
 function sequence(body: unknown): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
   for (const entry of history(body)) {
     const item = asRecord(entry);
     if (!item || item.role === "system") continue;
-    const role = String(item.role);
-    const calls = parsePayloads(item.content, "tool-call");
-    const results = parsePayloads(item.content, "tool-result");
-    const texts = contentStrings(item.content).filter((text) => !parseJsonObject(text));
-    if (role === "assistant" && calls.length > 0) {
+    const calls = assistantCalls(item);
+    if (calls.length > 0) {
       out.push({ kind: "assistant-calls", calls });
       continue;
     }
-    if (role === "user" && results.length > 0) {
-      out.push({ kind: "user-results", mixedText: texts.join(""), results });
+    const results = toolResults(item);
+    if (results.length > 0) {
+      out.push({ kind: "tool-results", results });
       continue;
     }
-    out.push({ kind: role, text: contentStrings(item.content).join("") });
+    const role = String(item.role ?? item.type ?? "unknown");
+    const text = contentStrings(item.content).join("");
+    if (role === "assistant" && text.length === 0) continue;
+    out.push({ kind: role === "message" ? String(item.role ?? "user") : role, text });
   }
   return out;
 }
@@ -179,24 +224,18 @@ function toolChoiceOf(body: unknown): unknown {
 }
 
 function expectedSequence(mixed: boolean): Array<Record<string, unknown>> {
-  return [
-    { kind: "user", text: mixed ? "ask" : "" },
-    {
-      kind: "assistant-calls",
-      calls: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: longArg } }],
-    },
-    {
-      kind: "user-results",
-      mixedText: mixed ? mixedText : "",
-      results: [{
-        type: "tool-result",
-        toolCallId: "c1",
-        toolName: "lookup",
-        result: { rows: [0, false, ""], note: longResult },
-        isError: false,
-      }],
-    },
-  ];
+  const call = {
+    kind: "assistant-calls",
+    calls: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", args: { q: longArg } }],
+  };
+  const result = {
+    kind: "tool-results",
+    results: [{ type: "tool-result", toolCallId: "c1", result: { rows: [0, false, ""], note: longResult } }],
+  };
+  if (mixed) {
+    return [{ kind: "user", text: "ask" }, call, { kind: "user", text: mixedText }, result];
+  }
+  return [{ kind: "user", text: "" }, call, result];
 }
 
 function assertHttpOracle(body: unknown, extras: { mixed?: boolean } = { mixed: true }): void {
@@ -206,7 +245,6 @@ function assertHttpOracle(body: unknown, extras: { mixed?: boolean } = { mixed: 
   expect(systemRoots(body)).toEqual([root]);
   expect(sequence(body)).toEqual(expectedSequence(extras.mixed !== false));
   expect(toolDefinitions(body)).toEqual([{ name: "lookup", description: "lookup schema", parameters: schema }]);
-  expect(history(body).some((entry) => asRecord(entry)?.role === "tool")).toBe(false);
   const text = JSON.stringify(body);
   expect(text).toContain(longArg);
   expect(text).toContain(longResult);
@@ -217,7 +255,7 @@ function assertHttpOracle(body: unknown, extras: { mixed?: boolean } = { mixed: 
   }
 }
 
-async function capture(api: CcsApi, snap = snapshot(continuationState("user"))): Promise<{ body: unknown; http: number }> {
+async function capture(api: OpenaiPromptApi, snap = snapshot(continuationState("user"))): Promise<{ body: unknown; http: number }> {
   let http = 0;
   let body: unknown;
   const deny = async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -227,7 +265,7 @@ async function capture(api: CcsApi, snap = snapshot(continuationState("user"))):
   };
   const fetch = Object.assign(deny, { preconnect: deny }) as typeof globalThis.fetch;
   try {
-    await sendCcsRequest({
+    await sendOpenaiPrompt({
       snapshot: snap,
       api,
       model: "gpt-4o-mini",
@@ -241,7 +279,7 @@ async function capture(api: CcsApi, snap = snapshot(continuationState("user"))):
   return { body, http };
 }
 
-describe("CCS codec", () => {
+describe("openai prompt adapter", () => {
   test("Chat and Responses HTTP bodies keep ordered call/result, root once, and tools schema", async () => {
     const chat = await capture("chat");
     const responses = await capture("responses");
@@ -251,7 +289,7 @@ describe("CCS codec", () => {
     assertHttpOracle(responses.body);
   });
 
-  test("tool-role results fold into user.content, never raw role=tool", async () => {
+  test("tool-role results use Chat/Responses tool result items, not JSON-in-user-text", async () => {
     const chat = await capture("chat", snapshot(continuationState("tool")));
     const responses = await capture("responses", snapshot(continuationState("tool")));
     assertHttpOracle(chat.body, { mixed: false });
@@ -310,17 +348,12 @@ describe("CCS codec", () => {
       expect(JSON.stringify(lone.body)).toContain(imageSentinel);
       const reason = await capture(api, mixedReason);
       expect(reason.http).toBe(1);
-      const assistantText = history(reason.body).map(asRecord).filter((row) => row?.role === "assistant")
-        .flatMap((row) => contentStrings(row?.content)).join("");
-      // Chat coalesces text parts, Responses may split them into message items.
-      // Compare the full ordered payload, not SDK-specific grouping.
-      expect(assistantText).toBe(JSON.stringify({ type: "reasoning", text: reasonSentinel }) + textSentinel);
+      expect(JSON.stringify(reason.body)).toContain(textSentinel);
       expect(JSON.stringify(reason.body)).not.toContain("item_reference");
       const loneR = await capture(api, loneReason);
       expect(loneR.http).toBe(1);
-      expect(JSON.stringify(loneR.body)).toContain(reasonSentinel);
-      expect(encodeCcsMessages(loneReason).messages.at(-1)).toEqual({
-        role: "assistant", content: [{ type: "text", text: JSON.stringify({ type: "reasoning", text: reasonSentinel }) }],
+      expect(encodeOpenaiPrompt(loneReason).messages.at(-1)).toEqual({
+        role: "assistant", content: [{ type: "reasoning", text: reasonSentinel }],
       });
     }
   });
@@ -360,13 +393,15 @@ describe("CCS codec", () => {
       expect(() => assertHttpOracle(noSchema)).toThrow();
 
       const dupResult = asRecord(JSON.parse(JSON.stringify(body)))!;
-      for (const entry of history(dupResult)) {
+      const resultHist = history(dupResult);
+      const extraResults = resultHist.filter((entry) => {
         const item = asRecord(entry);
-        if (!item || !Array.isArray(item.content)) continue;
-        const results = parsePayloads(item.content, "tool-result");
-        if (results.length === 0) continue;
-        item.content = [...item.content, item.content.at(-1)];
-      }
+        return item?.role === "tool" || item?.type === "function_call_output";
+      });
+      expect(extraResults.length).toBeGreaterThan(0);
+      const doubled = [...resultHist, ...extraResults];
+      if (Array.isArray(dupResult.messages)) dupResult.messages = doubled;
+      else dupResult.input = doubled;
       expect(() => assertHttpOracle(dupResult)).toThrow();
     }
   });
@@ -385,7 +420,7 @@ describe("CCS codec", () => {
       role: "system",
       content: [{ type: "text", text: "root-text" }, { type: "image", url: imageSentinel }],
     }]);
-    expect(() => encodeCcsMessages(snap)).toThrow(EnvelopeError);
+    expect(() => encodeOpenaiPrompt(snap)).toThrow(EnvelopeError);
     for (const api of ["chat", "responses"] as const) {
       const captured = await capture(api, snap);
       expect(captured.http).toBe(0);

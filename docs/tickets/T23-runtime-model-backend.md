@@ -8,9 +8,9 @@
 
 ## Module / dirs touched
 - `packages/runtime-kernel/src/ports.ts`、`contract.ts`、`selection.ts`、`testing.ts` 及所属 internal 文件。
-- `packages/box-runtime/src/internal/backends/{registry,ai-sdk,ccs-codec,openai-events,provider-error,echo}.ts`。
+- `packages/box-runtime/src/internal/backends/{registry,ai-sdk,openai-prompt-adapter,openai-events,provider-error,echo}.ts`。
 - `packages/box-runtime/src/internal/io/credentials.node.ts`、`roots/layers.ts`。
-- `packages/runtime-kernel/test/backend-contract.test.ts`、`packages/box-runtime/test/backend-conformance.test.ts`、`ccs-codec.test.ts`。
+- `packages/runtime-kernel/test/backend-contract.test.ts`、`packages/box-runtime/test/backend-conformance.test.ts`、`openai-prompt-adapter.test.ts`。
 
 ## Depends-on
 [T20](T20-runtime-layout-cut.md)、[T21](T21-runtime-codec-fidelity.md)。消费程序 T24、长期生产 root T25 接同一合同，不新造转换 port。

@@ -1,7 +1,7 @@
 import { Effect, Stream } from "effect";
 import { BackendFailure, isConfirmedOverflow, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
 import type { AuthLease, PreparedCall } from "@grokbox/runtime-kernel/ports";
-import type { CcsPrompt } from "./ccs-codec.ts";
+import type { OpenaiPrompt } from "./openai-prompt-adapter.ts";
 import { observeBackendFailure } from "./failure-observation.ts";
 import { readPreparedCall } from "./prepared.ts";
 
@@ -37,7 +37,7 @@ export function parseOverflowCanary(env: NodeJS.Dict<string> = {}): OverflowCana
 }
 
 /** Canary estimator only. UTF-16 text length / 4, ceil. Not a tokenizer and not catalog W. */
-export function estimateCanaryTokens(prompt: CcsPrompt): number {
+export function estimateCanaryTokens(prompt: OpenaiPrompt): number {
   let chars = prompt.system?.length ?? 0;
   for (const message of prompt.messages) {
     if (typeof message.content === "string") {

@@ -1,13 +1,13 @@
 import type { AuthLease, PreparedCall } from "@grokbox/runtime-kernel/ports";
 import { cloneJson, type ContextSnapshot, type GenerationOptions, type ToolDefinition } from "@grokbox/runtime-kernel/contract";
-import { generationSettings, type CcsApi, type CcsPrompt } from "./ccs-codec.ts";
+import { generationSettings, type OpenaiPromptApi, type OpenaiPrompt } from "./openai-prompt-adapter.ts";
 
 export type PreparedPayload = {
   kind: "echo" | "openai-chat" | "openai-responses";
-  prompt: CcsPrompt;
+  prompt: OpenaiPrompt;
   model: string;
   endpoint: string;
-  api: CcsApi;
+  api: OpenaiPromptApi;
   tools: ToolDefinition[];
   options: GenerationOptions;
   settings: ReturnType<typeof generationSettings>;
@@ -25,7 +25,7 @@ export function readPreparedCall(call: PreparedCall): PreparedPayload | undefine
   return prepared.get(call);
 }
 
-export function freezePreparedSnapshot(snapshot: ContextSnapshot, api: CcsApi): {
+export function freezePreparedSnapshot(snapshot: ContextSnapshot, api: OpenaiPromptApi): {
   tools: ToolDefinition[];
   options: GenerationOptions;
   settings: ReturnType<typeof generationSettings>;

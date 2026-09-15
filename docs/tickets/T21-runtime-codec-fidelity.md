@@ -9,8 +9,8 @@
 ## Module / dirs touched
 - `packages/runtime-kernel/src/internal/contract/context.ts`、`src/contract.ts`：canonical 类型/校验/预算。
 - `packages/box-runtime/src/internal/host/context-codec.ts`、`host/profile.ts`：仅已批准 ABI decode/root provenance。
-- `packages/box-runtime/src/internal/backends/ccs-codec.ts`；必要工具 schema 映射同 owner，不引入第二 raw encoder。
-- `packages/box-runtime/test/host-codec.test.ts`、`ccs-codec.test.ts`、`fixtures/`。
+- `packages/box-runtime/src/internal/backends/openai-prompt-adapter.ts`；必要工具 schema 映射同 owner，不引入第二 raw encoder。
+- `packages/box-runtime/test/host-codec.test.ts`、`openai-prompt-adapter.test.ts`、`fixtures/`。
 
 ## Depends-on
 [T20](T20-runtime-layout-cut.md)。T23 尚未提供 Live Backend 时，用真实 SDK + mock fetch 消费此生产 codec；T23/T26 必须把同一 oracle 接入完整生产路径。
@@ -22,7 +22,7 @@
 - 未经 D2 证据/批准加 patch；从 private Host dump 复制 fixture。
 
 ## Acceptance (executable)
-1. `bun scripts/verify-runtime-rebuild.mjs codec`；直接测试为 `bun test packages/box-runtime/test/host-codec.test.ts packages/box-runtime/test/ccs-codec.test.ts`。
+1. `bun scripts/verify-runtime-rebuild.mjs codec`；直接测试为 `bun test packages/box-runtime/test/host-codec.test.ts packages/box-runtime/test/openai-prompt-adapter.test.ts`。
 2. 真实 AI SDK mock fetch 捕获两个 API 的最终 JSON body：原工具 call → user.content result（含 mixed text）→ 无新 Human turn 的 STEP。独立 expected 断言 id/name/result/isError、顺序与长尾；mapper 输出本身不是 oracle。
 3. 覆盖 tool-role/user-contained、长 args/results >1500/8000、空字符串/false/0/中文、正文引用 SAND_HIDDEN/ack-redrive；无静默丢块。明确超过安全 bytes 时拒绝，不截短到成功。
 4. 两个自编 Host profile（root 在 state / root 独立）证明 required root 恰好一次；缺失/未知 provenance/不支持内容在 provider 前失败。tools/options/schema 不携 execute/getter；坏 schema 不 catch/continue。

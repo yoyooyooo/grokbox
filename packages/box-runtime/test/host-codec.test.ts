@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { EnvelopeError, SNAPSHOT_JSON_MAX_BYTES, contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
 import { buildHostEnvelope, cloneHostExecutorWindow, hostToContextSnapshot } from "../src/internal/host/context-codec.ts";
-import { sendCcsRequest } from "../src/internal/backends/ccs-codec.ts";
+import { sendOpenaiPrompt } from "../src/internal/backends/openai-prompt-adapter.ts";
 
 test("Host message metadata survives state cloning but is not provider prompt material", () => {
   const input = [{ role: "user" as const, content: "real message", nativeExtension: { cursor: 7, label: "METADATA_ONLY_SENTINEL" }, optionalNativeField: undefined }];
@@ -70,7 +70,7 @@ async function httpCount(snapshot: ReturnType<typeof hostToContextSnapshot>): Pr
   };
   const fetch = Object.assign(deny, { preconnect: deny }) as typeof globalThis.fetch;
   try {
-    await sendCcsRequest({
+    await sendOpenaiPrompt({
       snapshot,
       api: "chat",
       model: "gpt-4o-mini",

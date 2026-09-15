@@ -5,10 +5,10 @@ import {
   type InferenceEvent,
 } from "@grokbox/runtime-kernel/contract";
 import { ModelBackend, type AuthLease, type PreparedCall } from "@grokbox/runtime-kernel/ports";
-import { encodeCcsMessages, type CcsPrompt } from "./ccs-codec.ts";
+import { encodeOpenaiPrompt, type OpenaiPrompt } from "./openai-prompt-adapter.ts";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
 
-function lastUserFromPrompt(prompt: CcsPrompt): string {
+function lastUserFromPrompt(prompt: OpenaiPrompt): string {
   for (let index = prompt.messages.length - 1; index >= 0; index -= 1) {
     const message = prompt.messages[index];
     if (!message || message.role !== "user") continue;
@@ -29,8 +29,8 @@ function mapPrepareError(error: unknown): BackendFailure {
 export const echoModelBackendLayer: Layer.Layer<ModelBackend> = Layer.succeed(ModelBackend, {
   prepare: (_selection: unknown, snapshot: unknown) => Effect.try({
     try: () => {
-      const snap = snapshot as Parameters<typeof encodeCcsMessages>[0];
-      const encoded = encodeCcsMessages(snap);
+      const snap = snapshot as Parameters<typeof encodeOpenaiPrompt>[0];
+      const encoded = encodeOpenaiPrompt(snap);
       const frozen = freezePreparedSnapshot(snap, "chat");
       return makePreparedCall({
         kind: "echo",

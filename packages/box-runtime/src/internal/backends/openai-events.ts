@@ -8,6 +8,10 @@ import {
 } from "@grokbox/runtime-kernel/contract";
 import { backendFailureFromUnknown } from "./provider-error.ts";
 import { incompleteBackendFinish } from "./failure-observation.ts";
+import {
+  admitNonstandardOpenaiEvent,
+  createNonstandardOpenaiStreamState,
+} from "./nonstandard-endpoint.ts";
 
 type ToolNames = Map<string, string>;
 
@@ -110,15 +114,26 @@ export function mapSdkStreamPart(part: unknown, tools: ToolNames): InferenceEven
   throw new BackendFailure("stream_invalid");
 }
 
+export function mapSdkStreamForHost(
+  part: unknown,
+  tools: Map<string, string>,
+  nonstandard: ReturnType<typeof createNonstandardOpenaiStreamState>,
+): InferenceEvent | "skip" | "drop" {
+  const mapped = mapSdkStreamPart(part, tools);
+  if (mapped === "skip") return "skip";
+  return admitNonstandardOpenaiEvent(mapped, nonstandard);
+}
+
 export async function drainSdkStream(
   parts: AsyncIterable<unknown>,
   emit: (event: InferenceEvent) => void,
 ): Promise<void> {
   const names = new Map<string, string>();
   const state = emptyStreamValidation();
+  const nonstandard = createNonstandardOpenaiStreamState();
   for await (const part of parts) {
-    const mapped = mapSdkStreamPart(part, names);
-    if (mapped === "skip") continue;
+    const mapped = mapSdkStreamForHost(part, names, nonstandard);
+    if (mapped === "skip" || mapped === "drop") continue;
     applyInferenceEvent(state, mapped);
     if (mapped.type === "backend_finish" && state.open.size > 0) throw new BackendFailure("stream_invalid");
     emit(mapped);

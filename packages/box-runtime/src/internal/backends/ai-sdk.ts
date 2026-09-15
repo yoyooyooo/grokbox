@@ -13,8 +13,9 @@ import {
 } from "@grokbox/runtime-kernel/contract";
 import { ModelBackend, type AuthLease, type PreparedCall } from "@grokbox/runtime-kernel/ports";
 import { backendKindForModel, type ModelRecord } from "@grokbox/runtime-kernel/selection";
-import { encodeCcsMessages, toSdkMessages, type CcsApi } from "./ccs-codec.ts";
-import { mapSdkStreamPart } from "./openai-events.ts";
+import { encodeOpenaiPrompt, toSdkMessages, type OpenaiPromptApi } from "./openai-prompt-adapter.ts";
+import { mapSdkStreamForHost } from "./openai-events.ts";
+import { createNonstandardOpenaiStreamState } from "./nonstandard-endpoint.ts";
 import { backendFailureFromUnknown } from "./provider-error.ts";
 import { observeBackendFailure } from "./failure-observation.ts";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
@@ -77,9 +78,9 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         const record = selection as ModelRecord;
         const kind = backendKindForModel(record);
         if (kind === "echo") throw new BackendFailure("unknown_backend_kind");
-        const api: CcsApi = kind === "openai-responses" ? "responses" : "chat";
+        const api: OpenaiPromptApi = kind === "openai-responses" ? "responses" : "chat";
         const snap = snapshot as ContextSnapshot;
-        const prompt = encodeCcsMessages(snap);
+        const prompt = encodeOpenaiPrompt(snap);
         const frozen = freezePreparedSnapshot(snap, api);
         return makePreparedCall({
           kind,
@@ -147,12 +148,13 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
             if (!iterator) return;
             const names = new Map<string, string>();
             const state = emptyStreamValidation();
+            const nonstandard = createNonstandardOpenaiStreamState();
             try {
               while (!ac.signal.aborted) {
                 const step = await Promise.race([iterator.next(), waitAbort(ac.signal)]);
                 if (step.done) break;
-                const mapped = mapSdkStreamPart(step.value, names);
-                if (mapped === "skip") continue;
+                const mapped = mapSdkStreamForHost(step.value, names, nonstandard);
+                if (mapped === "skip" || mapped === "drop") continue;
                 applyInferenceEvent(state, mapped);
                 if (mapped.type === "backend_finish" && state.open.size > 0) throw new BackendFailure("stream_invalid");
                 Queue.offerUnsafe(queue, mapped);

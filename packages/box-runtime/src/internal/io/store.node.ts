@@ -1,8 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { observeAttestation } from "./authority.node.ts";
 import { bindCompiledHost, stableIdentitySha, type HostBinding } from "../host/host-binding.ts";
-import { desiredPath, modelsPath } from "./paths.ts";
-import { parseDesiredFile, parseModelsFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { desiredPath } from "./paths.ts";
+import { parseDesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { openRuntimeStore } from "./configuration.node.ts";
 import { observeJson } from "./observation.node.ts";
 import { adoptOpStatePath, parseAdoptOpState } from "../process/transient-adopt.ts";
 
@@ -24,9 +25,11 @@ export function modeldStorePorts(durableRoot: string, runRoot: string): ModeldPo
   });
   return {
     loadModels: async () => {
-      const models = await observeJson(modelsPath(durableRoot), parseModelsFile);
-      if (models.state !== "present") throw new Error("models unavailable");
-      return models.value;
+      try {
+        return await openRuntimeStore(durableRoot).loadModels();
+      } catch {
+        throw new Error("models unavailable");
+      }
     },
     authority: async (): Promise<AdmissionAuthority> => {
       const first = await snapshot();

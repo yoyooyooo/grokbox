@@ -31,6 +31,7 @@ describe("L2 Host harness always-emit", () => {
       "memory-purpose",
       "episode-purpose",
       "harness-blank",
+      "profile-title-marker",
       "harness-summary",
       "ownership-read-schema",
       "ownership-read-api",

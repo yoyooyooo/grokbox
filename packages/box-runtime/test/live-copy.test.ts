@@ -55,6 +55,8 @@ describeLive("live Host bundle copy H1", () => {
     expect(profile.slices.map((slice) => slice.id)).toContain("episode-purpose");
     expect(profile.slices.map((slice) => slice.id)).toContain("harness-blank");
     expect(profile.slices.map((slice) => slice.id)).toContain("harness-summary");
+    expect(profile.slices.map((slice) => slice.id)).toContain("profile-title-marker");
+    expect(result.source).toContain("grokbox.box-runtime.profile-title.v1");
     expect((profile.slices.map((slice) => slice.id) as string[])).not.toContain("harness-local-write");
     expect((profile.slices.map((slice) => slice.id) as string[])).not.toContain("harness-server-write");
     expect(result.source).not.toContain("grokbox.box-runtime.harness-stick.v1");

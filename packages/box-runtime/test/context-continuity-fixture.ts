@@ -2,7 +2,7 @@
  * Owned Host-contract fixture for managed context continuity.
  *
  * Independent oracles live here. Do not import production context-codec,
- * ccs-codec, or compact algorithms to generate expected values.
+ * openai-prompt-adapter, or compact algorithms to generate expected values.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -361,7 +361,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Independent Chat/Responses content oracle. Must not call production encodeCcsMessages. */
+/** Independent Chat/Responses content oracle. Must not call production encodeOpenaiPrompt. */
 export function independentProviderTexts(window: HostWindowMessage[]): string[] {
   const out: string[] = [];
   for (const message of window) {

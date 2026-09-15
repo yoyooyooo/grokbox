@@ -3,11 +3,22 @@ import { randomUUID } from "node:crypto";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { acquireExclusiveLock } from "./op-lock.ts";
 import { mkdir, open, readFile, rename, writeFile, type FileHandle } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { Effect, Layer } from "effect";
 import { BoxRuntimeError, CONFIG_READ_MAX_BYTES } from "@grokbox/runtime-kernel/contract";
 import { ConfigurationRead } from "@grokbox/runtime-kernel/ports";
-import { parseDesiredFile, parseModelsFile, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import {
+  catalogWantsPi,
+  parseDesiredFile,
+  parseModelsFile,
+  persistModelsDocument,
+  piModelsPathCandidates,
+  resolveModelsWithPi,
+  type DesiredFile,
+  type ModelsFile,
+} from "@grokbox/runtime-kernel/selection";
+import { readBoundedJson as readExternalCatalogJson } from "./bounded-json.node.ts";
 import { desiredPath, modelsPath, resolveDurableRoot } from "./paths.ts";
 
 async function readJson(path: string): Promise<unknown> {
@@ -34,11 +45,26 @@ export type RuntimeStore = {
   saveDesired: (file: DesiredFile) => Promise<void>;
 };
 
+async function resolveStoreModels(native: ModelsFile, env?: NodeJS.Dict<string>): Promise<ModelsFile> {
+  if (!native.externalCatalog || !catalogWantsPi(native.externalCatalog)) return native;
+  const envMap = (env ?? process.env) as Record<string, string | undefined>;
+  const home = homedir();
+  const cache = new Map<string, unknown | undefined>();
+  for (const path of piModelsPathCandidates({ catalog: native.externalCatalog, homedir: home, env: envMap })) {
+    cache.set(path, await readExternalCatalogJson(path));
+  }
+  return resolveModelsWithPi(native, {
+    homedir: home,
+    env: envMap,
+    read: (path) => cache.get(path),
+  });
+}
+
 export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string>): RuntimeStore {
   const root = resolveDurableRoot(rootOverride, env);
   return {
     root,
-    loadModels: async () => parseModelsFile(await readJson(modelsPath(root))),
+    loadModels: async () => resolveStoreModels(parseModelsFile(await readJson(modelsPath(root))), env),
     loadDesired: async () => parseDesiredFile(await readJson(desiredPath(root))),
     saveModels: async (file, expectedRevision) => {
       // One short cooperative commit boundary; no Server request while locked.
@@ -46,15 +72,18 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
       const held = await acquireExclusiveLock(join(root, "state", "models-write.lock"));
       if (!held.ok) throw new BoxRuntimeError("invalid_usage", "model_configuration_busy");
       try {
+        const persisted = persistModelsDocument(file);
         if (expectedRevision !== undefined) {
-          const current = parseModelsFile(await readJson(modelsPath(root)));
+          const current = persistModelsDocument(parseModelsFile(await readJson(modelsPath(root))));
           if (sha256Text(canonicalJson(current)) !== expectedRevision) {
             throw new BoxRuntimeError("invalid_usage", "selection_configuration_changed");
           }
         }
-        await writeJsonAtomic(modelsPath(root), file);
+        await writeJsonAtomic(modelsPath(root), persisted);
         const current = parseModelsFile(await readJson(modelsPath(root)));
-        if (canonicalJson(current) !== canonicalJson(file)) throw new BoxRuntimeError("invalid_usage", "model_configuration_readback_mismatch");
+        if (canonicalJson(current) !== canonicalJson(parseModelsFile(persisted))) {
+          throw new BoxRuntimeError("invalid_usage", "model_configuration_readback_mismatch");
+        }
       } finally { await held.lock.release(); }
     },
     saveDesired: async (file) => await writeJsonAtomic(desiredPath(root), file),
@@ -111,8 +140,12 @@ export function configurationReadLayer(store: RuntimeStore): Layer.Layer<Configu
     snapshot: () => Effect.gen(function* () {
       const modelsRaw = yield* readBoundedJson(modelsPath(store.root));
       const desiredRaw = yield* readBoundedJson(desiredPath(store.root), true);
+      const models = yield* Effect.tryPromise({
+        try: () => resolveStoreModels(parseModelsFile(modelsRaw)),
+        catch: (error) => error instanceof BoxRuntimeError ? error : new BoxRuntimeError("invalid_usage", "Model configuration is unavailable."),
+      });
       return {
-        models: parseModelsFile(modelsRaw),
+        models,
         desired: parseDesiredFile(desiredRaw),
       };
     }),

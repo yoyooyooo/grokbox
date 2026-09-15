@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/internal/process/live-readopt.ts";
 import { runManualReadopt } from "../src/internal/roots/controller.runtime.ts";
 import {
+  resolveNodeRequireablePreload,
   resolveRuntimeHelpers,
   RUNTIME_HELPER_FILES,
   RUNTIME_HELPER_GUARDIAN_CHILD,
@@ -50,6 +51,13 @@ describe("runtime helper published layout", () => {
     expect(helpers.guardianChild).toBe(join(SRC, RUNTIME_HELPER_GUARDIAN_CHILD));
     expect(helpers.injectorHold).toBe(join(SRC, RUNTIME_HELPER_INJECTOR_HOLD));
     expect(helpers.tempSupervisor).toBe(join(SRC, RUNTIME_HELPER_TEMP_SUPERVISOR));
+  });
+
+  test("source layout live preload prefers dist/preload.cjs over preload.ts", () => {
+    const preload = resolveNodeRequireablePreload();
+    expect(preload.endsWith("preload.cjs")).toBe(true);
+    expect(preload.endsWith("preload.ts")).toBe(false);
+    expect(existsSync(preload)).toBe(true);
   });
 
   test("published dist layout resolves Node-runnable preload.cjs, not preload.ts", async () => {

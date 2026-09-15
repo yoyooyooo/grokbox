@@ -98,3 +98,7 @@ V23无必需未证项，实际原生往返和两个真实目标协议均确认�
 本票只对完整旅程签证；发现源码缺陷回其owning ticket修复，再用同一未改写的oracle复验。
 
 **2026-09-13：** 现役 Host `307de399…` + preload `211e6b64…` 上，隔离消费者 5 进程 first→A→B→return→A2 通过（工具 effect=1）。仍是 owned JSON，不是 blob-store writer。现场多次 re-adopt 后同一 test0 `store.db` 官方/managed 可续，是 Host 进程换代证据。App 详情 echo 未关；真实 B、Memory、原生 checkpoint 事务仍开。不把 owned JSON 当原生 checkpoint。
+
+**模型 B 目录（2026-09-13）：** 生产 A 仍是 `openai-responses/grok-4.6`（alias `g46`）。B 定为 `example-provider-b/cursor-grok-4.6-low`（provider `openai-responses`，alias `g46l`，endpoint `http://provider-b.example.invalid/`）。已 persist-key。
+
+**CLI A→B→官方→A2（2026-09-13，test0，非生产）：** `models use` B 后 nonce `d8ddbf72-…` 进 Host，display 把 SendToUser 写成了 **tool-call JSON 正文**（`B_OK_g46l` 在 args 里，不是工具调用）。`models reset` 后官方 nonce `f2c581e0-…` 读 `oracle-official-ret.txt` 得 `OFFICIAL_RET_7f3c1a90e2b4`。再 `models use grok-4.6` nonce `bf09eff9-…` 读 `oracle-a2-ret.txt` 得 `A2_RET_c91e04aa7712`。全程 harness=box，未重放 nonce。B **工具协议不合格**（当文本吐 tool-call）；官方回程与再回 A 的 CLI 文件 oracle 成立。仍非原生 blob checkpoint、非 App、非生产。
