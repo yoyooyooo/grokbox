@@ -8,8 +8,9 @@ export type LocalRuntimeContext = {
 };
 
 export function assertBoxLocal(context: LocalRuntimeContext): void {
+  // A local default Profile name is not a remote transport. `--profile` on
+  // localOnly commands is rejected at the CLI registry before this guard.
   if (
-    context.profileName ||
     context.sshHost ||
     context.daemonServerUrl ||
     context.transport === "daemon" ||
