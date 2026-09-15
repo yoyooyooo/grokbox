@@ -1,5 +1,22 @@
+import { catalogAgentMessage } from "@grokbox/box-runtime/runtime";
 import { isRecord } from "./util.ts";
 import type { TranscriptRouteObservation } from "./transcript-route.ts";
+
+/** CLI `history outcome` states. `accepted` is not a member: echo/bind is `recorded`. */
+export const SEND_OUTCOME_STATES = [
+  "unknown",
+  "recorded",
+  "failed",
+  "progress",
+  "delivered",
+  "expected_result_observed",
+] as const;
+export type SendOutcomeState = (typeof SEND_OUTCOME_STATES)[number];
+export const SETTLED_SEND_OUTCOME_STATES: ReadonlySet<SendOutcomeState> = new Set([
+  "failed",
+  "delivered",
+  "expected_result_observed",
+]);
 
 /** App trays are current Host memory, not a durable run ledger. Never return raw
  * provider details/actions (which can contain credentials or executable URLs). */
@@ -59,21 +76,49 @@ function boxHandoffDelivery(input: OutcomeInput, records: Record<string, unknown
   });
 }
 
-/** Pure, read-only reconciliation of one user send. A send-message is delivery
- * evidence, not proof that the full tool loop/checkpoint/run has completed. */
+function projectRuntimeFailure(failure: Record<string, unknown>) {
+  const reason = typeof failure.reason === "string" ? failure.reason : undefined;
+  const message = reason ? catalogAgentMessage(reason) : undefined;
+  const stage = typeof failure.stage === "string" ? failure.stage : undefined;
+  return {
+    source: failure.name, at: failure.at, stepId: failure.stepId ?? null, turnId: failure.turnId ?? null,
+    code: failure.errorCode ?? failure.failureCode ?? null,
+    outcome: failure.terminalClass ?? failure.outcome ?? "error",
+    ...(reason && message ? { reason, stage: stage ?? null, message } : {}),
+  };
+}
+
+/** Pure, read-only reconciliation of one user send. Journal is failure authority;
+ * trays are a live snapshot and may be empty. A send-message is delivery evidence,
+ * not proof that the full tool loop/checkpoint/run has completed. `recorded` is
+ * echo or journal bind only — not a successful reply. */
 export function projectSendOutcome(input: OutcomeInput) {
   const records = input.entries.filter(isRecord);
   const requests = input.nonce
     ? records.filter(r => r.kind === "message" && r.role === "user" && r.clientNonce === input.nonce)
     : records.filter(r => r.kind === "message" && r.role === "user" && r.requestId === input.requestId);
   const requestIds = [...new Set(requests.map(r => id(r.requestId)).filter((v): v is string => v !== null))];
+  const echoNonces = [...new Set(requests.map(r => id(r.clientNonce)).filter((v): v is string => v !== null))];
   const ambiguous = requestIds.length > 1;
   const requestId = input.requestId ?? (requestIds.length === 1 ? requestIds[0]! : null);
+  const clientNonce = input.nonce ?? (echoNonces.length === 1 ? echoNonces[0]! : null);
+  const echoObserved = requests.length > 0;
   const handoffDeliveries = boxHandoffDelivery(input, records, requests);
   const seedIds = new Set<string>(requestId === null ? [] : [requestId]);
   for (const delivery of handoffDeliveries) seedIds.add(delivery.requestId as string);
   const agentEvents = (input.runtimeEvents ?? []).filter(isRecord).filter(e => e.agentId === input.agentId);
-  const exact = agentEvents.filter(e => [e.stepId, e.turnId, e.invocationId].some(value => typeof value === "string" && seedIds.has(value)));
+  const nonceHits = clientNonce === null ? [] : agentEvents.filter(e => e.clientNonce === clientNonce);
+  const nonceTurnIds = new Set<string>();
+  for (const event of nonceHits) {
+    const step = id(event.stepId);
+    if (step) seedIds.add(step);
+    const turn = id(event.turnId);
+    if (turn) nonceTurnIds.add(turn);
+  }
+  const journalBound = nonceHits.length > 0;
+  const exact = agentEvents.filter(e => (clientNonce !== null && e.clientNonce === clientNonce)
+    || [e.stepId, e.turnId, e.invocationId].some(value => typeof value === "string" && seedIds.has(value))
+    || (typeof e.turnId === "string" && nonceTurnIds.has(e.turnId)));
   // A transcript request may name only the first STEP. Expand through actual
   // runtime identity, never timestamps, proximity, or the latest Bot activity.
   const turnEpochs = new Map<string, Set<string>>();
@@ -89,6 +134,7 @@ export function projectSendOutcome(input: OutcomeInput) {
       && id(e.serviceEpoch) !== null && !turnEpochs.get(e.turnId)!.has(e.serviceEpoch as string));
   const runtime = agentEvents.filter(e => exact.includes(e) || (typeof e.turnId === "string" && typeof e.serviceEpoch === "string"
     && turnEpochs.get(e.turnId)?.has(e.serviceEpoch)));
+  // Trays and SendToUser join on STEP/request ids only. Never put turnId here.
   const correlatedIds = new Set<string>(seedIds);
   for (const event of runtime) { const step = id(event.stepId); if (step) correlatedIds.add(step); }
   const alerts = input.alerts.filter(a => a.agentId === input.agentId
@@ -113,21 +159,18 @@ export function projectSendOutcome(input: OutcomeInput) {
   const routeInvalid = harnessChanged || harnessUnavailable || harnessMismatch;
   const invalid = input.gatewayChanged || ambiguous || input.alertsIncomplete || runtimeGenerationChanged || routeInvalid;
   const expectedMatched = input.expectedText !== undefined && delivery.some(d => d.content === input.expectedText);
-  const state = invalid ? "unknown" : alerts.length > 0 || failure ? "failed"
-    : input.expectedText !== undefined ? (expectedMatched ? "expected_result_observed" : delivery.length ? "progress" : requests.length ? "accepted" : "unknown")
-    : delivery.length > 0 ? "delivered" : requests.length > 0 ? "accepted" : "unknown";
+  const pending = echoObserved || journalBound;
+  const state: SendOutcomeState = invalid ? "unknown" : alerts.length > 0 || failure ? "failed"
+    : input.expectedText !== undefined ? (expectedMatched ? "expected_result_observed" : delivery.length ? "progress" : pending ? "recorded" : "unknown")
+    : delivery.length > 0 ? "delivered" : pending ? "recorded" : "unknown";
   return {
-    agentId: input.agentId, clientNonce: input.nonce ?? null, requestId,
-    state, acceptedObserved: requests.length > 0, delivery: invalid ? [] : delivery,
+    agentId: input.agentId, clientNonce, requestId,
+    state, echoObserved, delivery: invalid ? [] : delivery,
     alerts: invalid ? [] : alerts,
-    executionCompleted: "not_proven",
+    executionCompleted: "not_proven" as const,
     relatedStepIds: invalid ? [] : [...correlatedIds],
     expectedMatched: !invalid && expectedMatched,
-    runtimeFailure: !invalid && failure ? {
-      source: failure.name, at: failure.at, stepId: failure.stepId, turnId: failure.turnId,
-      code: failure.errorCode ?? failure.failureCode ?? null,
-      outcome: failure.terminalClass ?? failure.outcome ?? "error",
-    } : null,
+    runtimeFailure: !invalid && failure ? projectRuntimeFailure(failure) : null,
     evidence: { transcript: "Gateway.getAgentTranscriptTail", alerts: "Gateway.getTrays", alertsPersistence: "host-memory", transcriptWindowTruncated: input.truncated,
       runtime: input.runtimeEvents ? "box-local run/log/events.ndjson" : "not_checked", runtimeGap: input.runtimeGap ?? null,
       handoffDelivery: handoffDeliveries.length ? { profile: "box-complete-display-turn-v1", rootEntryId: requests[0]!.id,
@@ -138,8 +181,6 @@ export function projectSendOutcome(input: OutcomeInput) {
         declaredTranscriptSource: harnessChanged || harnessUnavailable ? "unknown" : route.before === "box" ? "box" : "server",
         sampling: "bracketed-not-atomic", desktopReplica: "not_observed",
       } : null },
-
-
     gaps: [
       ...(input.gatewayChanged ? ["gateway_generation_changed"] : []),
       ...(handoffDeliveries.length ? ["native_handoff_can_span_runtime_turns"] : []),
@@ -150,7 +191,7 @@ export function projectSendOutcome(input: OutcomeInput) {
       ...(runtimeGenerationChanged ? ["runtime_generation_changed"] : []),
       ...(ambiguous ? ["nonce_has_multiple_requests"] : []),
       ...(input.alertsIncomplete ? ["unsupported_alert_schema"] : []),
-      ...(!requests.length && !input.requestId ? ["nonce_not_in_transcript_window"] : []),
+      ...(!echoObserved && !input.requestId && !journalBound ? ["nonce_not_in_transcript_window"] : []),
       "dismissed_or_restarted_trays_not_recoverable_from_getTrays",
       "delivery_does_not_prove_run_completion",
     ],

@@ -845,7 +845,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["history", "outcome"],
     usage: "grokbox history outcome <target> (--nonce <uuid> | --request-id <id>) [--wait-ms <n>] [--expect-harness box|temporal]",
-    summary: "Observe one send via correlated transcript and App warnings; accepted is not delivered.",
+    summary: "Observe one send via journal-correlated events and live trays; recorded is not delivered.",
     arguments: [{ syntax: "<target>", description: "Agent/group ID or unambiguous name/title", role: "target", kinds: ["agent", "group"] }],
     options: options([
       { flags: "--nonce <uuid>", description: "Original send nonce, never resend to obtain status" },

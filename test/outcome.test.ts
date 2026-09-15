@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { projectAlert, projectSendOutcome } from "../packages/cli/src/outcome.ts";
+import { catalogAgentMessage, HOST_FAILURE_CATALOG } from "@grokbox/box-runtime/runtime";
+import { projectAlert, projectSendOutcome, SEND_OUTCOME_STATES } from "../packages/cli/src/outcome.ts";
 import { redactEventPayload } from "../packages/cli/src/redaction.ts";
 import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
@@ -43,8 +44,9 @@ test("Host's causal rejection is not replaced by a later modeld cancellation", (
   expect(result).toMatchObject({ state: "failed", runtimeFailure: { code: "parallel_tools" } });
 });
 
-test("accepted, delivered progress, and the exact expected result are distinct", () => {
-  expect(projectSendOutcome(base).state).toBe("accepted");
+test("recorded, delivered progress, and the exact expected result are distinct", () => {
+  expect(projectSendOutcome(base).state).toBe("recorded");
+  expect(projectSendOutcome(base)).toMatchObject({ echoObserved: true, requestId });
   expect(projectSendOutcome({ ...base, entries: [user, progress] }).state).toBe("delivered");
   expect(projectSendOutcome({ ...base, entries: [user, progress], expectedText: "DONE" }).state).toBe("progress");
   const done = { ...progress, id: "final", message: { type: "text", content: "DONE" } };
@@ -54,7 +56,7 @@ test("accepted, delivered progress, and the exact expected result are distinct",
 test("a same-request error wins over earlier SendToUser; other Bot and request warnings do not", () => {
   const alert = projectAlert(tray)!;
   expect(projectSendOutcome({ ...base, entries: [user, progress], alerts: [alert] }).state).toBe("failed");
-  expect(projectSendOutcome({ ...base, alerts: [{ ...alert, agentId: "other" }, { ...alert, requestId: "other" }] }).state).toBe("accepted");
+  expect(projectSendOutcome({ ...base, alerts: [{ ...alert, agentId: "other" }, { ...alert, requestId: "other" }] }).state).toBe("recorded");
 });
 
 test("durable runtime cancellation stays a failure after the ephemeral App warning disappears", () => {
@@ -69,8 +71,8 @@ test("later STEP failure joins the original send only through an observed TURN a
   const failed = { ...anchor, stepId: "step-2", terminalClass: "error", errorCode: "parallel_tools" };
   const result = projectSendOutcome({ ...base, entries: [user, progress], runtimeEvents: [anchor, failed] });
   expect(result).toMatchObject({ state: "failed", runtimeFailure: { stepId: "step-2", code: "parallel_tools" } });
-  expect(projectSendOutcome({ ...base, runtimeEvents: [anchor, { ...failed, turnId: "other-turn" }] }).state).toBe("accepted");
-  expect(projectSendOutcome({ ...base, runtimeEvents: [anchor, { ...failed, agentId: "other-agent" }] }).state).toBe("accepted");
+  expect(projectSendOutcome({ ...base, runtimeEvents: [anchor, { ...failed, turnId: "other-turn" }] }).state).toBe("recorded");
+  expect(projectSendOutcome({ ...base, runtimeEvents: [anchor, { ...failed, agentId: "other-agent" }] }).state).toBe("recorded");
 });
 
 test("a final SendToUser from a later STEP is linked through the same runtime TURN", () => {
@@ -91,7 +93,7 @@ test("a same-TURN runtime generation change cannot be merged into successful del
 
 test("missing runtime generation is not permission to join other STEP failures", () => {
   const anchor = { name: "host_normalized_terminal", agentId: "agent-alpha", turnId: "turn-A", stepId: requestId, terminalClass: "stop" };
-  expect(projectSendOutcome({ ...base, runtimeEvents: [anchor, { ...anchor, stepId: "step-2", terminalClass: "error", errorCode: "parallel_tools" }] }).state).toBe("accepted");
+  expect(projectSendOutcome({ ...base, runtimeEvents: [anchor, { ...anchor, stepId: "step-2", terminalClass: "error", errorCode: "parallel_tools" }] }).state).toBe("recorded");
 });
 
 test("a native handoff final uses a qualified display turn, not a guessed runtime TURN", () => {
@@ -121,7 +123,7 @@ test("the next Human turn cannot donate its handoff reply to the prior nonce", (
 });
 
 test("a historical Host terminal without class is not proof of success", () => {
-  expect(projectSendOutcome({ ...base, runtimeEvents: [{ name: "host_normalized_terminal", agentId: "agent-alpha", stepId: requestId }] }).state).toBe("accepted");
+  expect(projectSendOutcome({ ...base, runtimeEvents: [{ name: "host_normalized_terminal", agentId: "agent-alpha", stepId: requestId }] }).state).toBe("recorded");
 });
 
 test("nonce ambiguity and a Gateway restart cannot join observations into success", () => {
@@ -132,7 +134,7 @@ test("nonce ambiguity and a Gateway restart cannot join observations into succes
 
 test("missing or streaming messages cannot satisfy the final marker", () => {
   expect(projectSendOutcome({ ...base, entries: [], truncated: true }).state).toBe("unknown");
-  expect(projectSendOutcome({ ...base, entries: [user, { ...progress, isStreaming: true }], expectedText: "Running pwd" }).state).toBe("accepted");
+  expect(projectSendOutcome({ ...base, entries: [user, { ...progress, isStreaming: true }], expectedText: "Running pwd" }).state).toBe("recorded");
 });
 
 for (const daemonMode of [false, true]) {
@@ -150,7 +152,9 @@ for (const daemonMode of [false, true]) {
       expect(alerts.stdout).not.toContain("PRIVATE_SENTINEL");
       const outcome = await captureCli(["history", "outcome", "alpha", "--nonce", nonce, "--expect-text", "DONE", "--wait-ms", "1000"], baseDeps);
       expect(outcome.code).toBe(0);
-      expect(parseJson(outcome.stdout)).toMatchObject({ data: { state: "failed", acceptedObserved: true, samples: 1 } });
+      expect(parseJson(outcome.stdout)).toMatchObject({ data: { state: "failed", echoObserved: true, samples: 1 } });
+      expect(outcome.stdout).not.toContain("acceptedObserved");
+      expect(outcome.stdout).not.toContain('"state":"accepted"');
       const methods = gateway.requests.filter(r => r.pathname.startsWith("/api/")).map(r => r.pathname);
       expect(methods.length).toBeGreaterThan(0);
       expect(methods.every(m => ["/api/listAgents", "/api/getAgentTranscriptTail", "/api/getTrays"].includes(m))).toBe(true);
@@ -179,5 +183,129 @@ test("bounded wait expires on a progress message without resending or a final ex
     expect(result.code).toBe(0);
     expect(parseJson(result.stdout)).toMatchObject({ data: { state: "progress", waitExpired: true, samples: 1, expectedMatched: false } });
     expect(gateway.requests.filter(r => r.pathname.startsWith("/api/"))).toHaveLength(4); // includes the route-closing roster read
+  } finally { gateway.stop(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("outcome states never include accepted", () => {
+  expect(SEND_OUTCOME_STATES).toEqual([
+    "unknown", "recorded", "failed", "progress", "delivered", "expected_result_observed",
+  ]);
+  expect(SEND_OUTCOME_STATES).not.toContain("accepted");
+  const result = projectSendOutcome(base);
+  expect(result).not.toHaveProperty("acceptedObserved");
+  expect(JSON.stringify(result)).not.toContain("acceptedObserved");
+  expect(result.state).not.toBe("accepted");
+});
+
+const admitEcho = { kind: "message", id: "u", role: "user", clientNonce: nonce, requestId: null };
+const routeReject = {
+  name: "host_stream_rejected", agentId: "agent-alpha", clientNonce: nonce, turnId: "turn-admit",
+  stage: "admit", errorCode: "runtime_config_invalid", reason: "route-model-not-admitted",
+  message: "FREEFORM_MUST_NOT_LEAK",
+};
+
+test("null requestId plus journal reject is failed, empty trays do not fall back to recorded", () => {
+  const result = projectSendOutcome({
+    ...base, entries: [admitEcho], alerts: [], runtimeEvents: [routeReject],
+  });
+  expect(result).toMatchObject({
+    state: "failed", requestId: null, echoObserved: true, alerts: [], executionCompleted: "not_proven",
+    runtimeFailure: {
+      source: "host_stream_rejected",
+      reason: "route-model-not-admitted",
+      stage: "admit",
+      code: "runtime_config_invalid",
+      message: catalogAgentMessage("route-model-not-admitted"),
+    },
+  });
+  expect(result.runtimeFailure?.message).toBe("route admits only stub/echo or openai* in this slice.");
+  expect(JSON.stringify(result)).not.toContain("FREEFORM_MUST_NOT_LEAK");
+  expect(result.state).not.toBe("recorded");
+});
+
+test("journal reject with the send nonce is failed even without a transcript echo", () => {
+  const result = projectSendOutcome({
+    ...base, entries: [], truncated: true, alerts: [], runtimeEvents: [routeReject],
+  });
+  expect(result).toMatchObject({
+    state: "failed", echoObserved: false, requestId: null,
+    runtimeFailure: { reason: "route-model-not-admitted", message: catalogAgentMessage("route-model-not-admitted") },
+  });
+  expect(result.gaps).not.toContain("nonce_not_in_transcript_window");
+});
+
+test("request-id lookup joins journal reject through the echo clientNonce", () => {
+  const result = projectSendOutcome({
+    agentId: "agent-alpha", requestId, entries: [user], alerts: [], truncated: false, runtimeEvents: [routeReject],
+  });
+  expect(result).toMatchObject({
+    state: "failed", clientNonce: nonce, echoObserved: true,
+    runtimeFailure: { reason: "route-model-not-admitted", message: catalogAgentMessage("route-model-not-admitted") },
+  });
+});
+
+test("a journal bind without terminal evidence stays recorded, not delivered", () => {
+  expect(projectSendOutcome({
+    ...base, entries: [], runtimeEvents: [
+      { name: "host_seam_stage", agentId: "agent-alpha", clientNonce: nonce, stage: "hook_enter", turnId: "turn-admit" },
+    ],
+  })).toMatchObject({ state: "recorded", echoObserved: false });
+  expect(projectSendOutcome({ ...base, entries: [{ ...user, requestId: null }] })).toMatchObject({
+    state: "recorded", requestId: null, echoObserved: true, runtimeFailure: null,
+  });
+});
+
+test("a different nonce reject does not fail this send", () => {
+  expect(projectSendOutcome({
+    ...base, runtimeEvents: [{ ...routeReject, clientNonce: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }],
+  }).state).toBe("recorded");
+});
+
+for (const row of HOST_FAILURE_CATALOG) {
+  test(`catalog reason ${row.reason} projects failed with the catalog sentence`, () => {
+    const result = projectSendOutcome({
+      ...base, entries: [admitEcho], alerts: [], runtimeEvents: [{
+        name: "host_stream_rejected", agentId: "agent-alpha", clientNonce: nonce, turnId: "turn-admit",
+        reason: row.reason, errorCode: row.errorCode, stage: row.stage, message: "FREEFORM_MUST_NOT_LEAK",
+      }],
+    });
+    expect(result.state).toBe("failed");
+    expect(result.runtimeFailure).toMatchObject({
+      reason: row.reason, code: row.errorCode, stage: row.stage, message: row.agentMessage,
+    });
+    expect(result.runtimeFailure?.message).toBe(catalogAgentMessage(row.reason));
+    expect(JSON.stringify(result)).not.toContain("FREEFORM_MUST_NOT_LEAK");
+  });
+}
+
+test("CLI --runtime joins a nonce-only journal reject while trays stay empty", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "grokbox-outcome-runtime-"));
+  const runRoot = join(dir, "run");
+  await mkdir(join(runRoot, "log"), { recursive: true });
+  await writeFile(join(runRoot, "log", "events.ndjson"), `${JSON.stringify({
+    name: "host_stream_rejected", schemaVersion: 2, at: "2026-01-01T00:00:00.000Z", mode: "route",
+    agentId: "agent-alpha", turnId: "turn-admit", clientNonce: nonce, stage: "admit",
+    errorCode: "runtime_config_invalid", reason: "route-model-not-admitted",
+  })}\n`);
+  const gateway = await startMockGateway({ agents: routedAgents, trays: [], tail: { entries: [admitEcho] } });
+  const discoveryPath = await writeDiscovery({ port: gateway.port, pid: gateway.pid, startedAt: gateway.startedAt, token: gateway.token });
+  try {
+    const result = await captureCli(["history", "outcome", "alpha", "--nonce", nonce, "--runtime"], {
+      configDir: dir, env: { GROKBOX_RUN_ROOT: runRoot }, discoveryPath, transport: "local",
+      daemonSocket: join(dir, "none.sock"), boxRuntimeRoot: join(dir, "durable"),
+      skillsDir: join(import.meta.dir, "../skills"), stdinIsTTY: true,
+    });
+    expect(result.code).toBe(0);
+    expect(parseJson(result.stdout)).toMatchObject({
+      data: {
+        state: "failed", requestId: null, echoObserved: true, alerts: [],
+        runtimeFailure: {
+          reason: "route-model-not-admitted",
+          message: catalogAgentMessage("route-model-not-admitted"),
+        },
+      },
+    });
+    expect(result.stdout).not.toContain('"state":"accepted"');
+    expect(result.stdout).not.toContain("acceptedObserved");
   } finally { gateway.stop(); await rm(dir, { recursive: true, force: true }); }
 });

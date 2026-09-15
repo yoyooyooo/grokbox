@@ -4,7 +4,7 @@ import { CliError, usage } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ioFromOpts } from "../opts.ts";
 import { writeSuccess } from "../output.ts";
-import { projectAlert, projectSendOutcome, type AlertObservation } from "../outcome.ts";
+import { projectAlert, projectSendOutcome, SETTLED_SEND_OUTCOME_STATES, type AlertObservation } from "../outcome.ts";
 import { assertUuidV4, isRecord, parseInteger } from "../util.ts";
 import { findRosterRow } from "./roster.ts";
 import { observeRosterHarness } from "../transcript-route.ts";
@@ -94,7 +94,7 @@ export async function runSendOutcome(deps: CliDeps, target: string, raw: { timeo
       expectedText: raw.expectText, runtimeEvents: runtime?.events,
       runtimeGap: runtime ? (runtime.state !== "present" ? runtime.state : runtime.truncated ? "truncated" : undefined) : undefined });
     samples++;
-    const settled = result.state === "failed" || result.state === "delivered" || result.state === "expected_result_observed";
+    const settled = SETTLED_SEND_OUTCOME_STATES.has(result.state);
     if (!waitMs || settled || gatewayChanged || result.evidence.transcriptRoute?.usable === false || performance.now() >= deadline) {
       writeSuccess(deps.stdout, { ...result, samples, waitExpired: waitMs > 0 && !settled && performance.now() >= deadline,
         elapsedMs: Math.round(performance.now() - started) }, gatewayMeta(afterRoster.discovery));
