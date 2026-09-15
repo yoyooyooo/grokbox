@@ -8,12 +8,16 @@ import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
 import {
   ENVELOPE_SLICE_IDS,
   admitWriteEnvelope,
+  envelopeProfileShape,
+  envelopeWindowsFromRecipe,
   envelopeWindowsFromReviewed,
   generationEnvelopePath,
   observeEnvelopeWindowsFile,
   type EnvelopeInsertionGroup,
+  type EnvelopeWindows,
   type WriteEnvelopeAdmission,
 } from "../ops/host-seam/envelope-windows.ts";
+import { readHostBundleSource } from "../io/provenance.node.ts";
 import { retainedGenerationSourcePath, reviewedProfilePath } from "../io/paths.ts";
 import { applyPatchProfile, approvedSliceSet, MAX_APPROVED_SLICES, OPTIONAL_SLICE_IDS, profileFromSource, type PatchProfile, type SliceId, type SlicePatch } from "../host/profile.ts";
 
@@ -101,6 +105,110 @@ export function profileWriteMissingGoldenNext(pinSourcePath: string): string {
 export function profileWriteDriftNext(candidateSha: string, driftedIds: readonly string[]): string {
   const ids = driftedIds.length > 0 ? driftedIds.join(",") : "<drifted-slice-ids>";
   return `grokbox runtime profile analyze --sha ${candidateSha} --out <abs> then grokbox runtime profile write --sha ${candidateSha} --slice-review ${ids}`;
+}
+
+/** Write command after analyze has named reject ids. Does not loop back to analyze. */
+export function profileWriteExecutableNext(candidateSha: string, driftedIds: readonly string[]): string {
+  return driftedIds.length > 0
+    ? `grokbox runtime profile write --sha ${candidateSha} --slice-review ${driftedIds.join(",")}`
+    : `grokbox runtime profile write --sha ${candidateSha}`;
+}
+
+export type ProfileWriteInspect = {
+  pinSha: string | null;
+  candidateSha: string;
+  bootstrap: boolean;
+  refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | null;
+  requiredIds: SliceId[];
+  informationalIds: SliceId[];
+  insertionGroups: EnvelopeInsertionGroup[];
+  sliceReviewRequired: boolean;
+  generationPresent: boolean;
+  limitations: string[];
+  next: string;
+};
+
+async function loadWriteEnvelopeBaseline(root: string): Promise<{
+  pin: PatchProfile | undefined;
+  pinSha: string | null;
+  golden: EnvelopeWindows | null;
+  goldenInvalid: boolean;
+}> {
+  const pin = loadDurableReviewedProfile(root);
+  const pinSha = pin && SHA.test(pin.sourceSha256) ? pin.sourceSha256 : null;
+  let golden: EnvelopeWindows | null = null;
+  let goldenInvalid = false;
+  if (pinSha) {
+    const goldenRead = await observeEnvelopeWindowsFile(generationEnvelopePath(root, pinSha));
+    if (goldenRead.state === "present") golden = goldenRead.value;
+    else if (goldenRead.state !== "missing") goldenInvalid = true;
+  }
+  return { pin, pinSha, golden, goldenInvalid };
+}
+
+async function retainedGenerationPresent(root: string, sha: string): Promise<boolean> {
+  try {
+    const info = await lstat(retainedGenerationSourcePath(root, sha));
+    return info.isFile() && !info.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+async function loadCandidateEnvelopeWindows(
+  root: string,
+  candidateSha: string,
+  pin: PatchProfile | undefined,
+  generationPresent: boolean,
+): Promise<EnvelopeWindows | null> {
+  const file = await observeEnvelopeWindowsFile(generationEnvelopePath(root, candidateSha));
+  if (file.state === "present" && file.value.sourceSha === candidateSha) return file.value;
+  if (!generationPresent) return null;
+  const source = await readHostBundleSource(root, candidateSha);
+  if (!source) return null;
+  return envelopeWindowsFromRecipe(source, envelopeProfileShape(pin) ? pin : undefined);
+}
+
+/** Read-only write-gate compare for analyze. Never authors reviewed.json. */
+export async function inspectRetainedWriteEnvelope(root: string, candidateSha: string): Promise<ProfileWriteInspect> {
+  if (typeof root !== "string" || !isAbsolute(root)) invalid("Profile write lineage requires an absolute runtime root.");
+  if (!SHA.test(candidateSha)) invalid("--sha must be a 64-character lowercase hex source digest.");
+  const resolved = resolve(root);
+  const baseline = await loadWriteEnvelopeBaseline(resolved);
+  const generationPresent = await retainedGenerationPresent(resolved, candidateSha);
+  const candidate = await loadCandidateEnvelopeWindows(resolved, candidateSha, baseline.pin, generationPresent);
+  const admission = admitWriteEnvelope({
+    pinSha: baseline.pinSha,
+    golden: baseline.golden,
+    goldenInvalid: baseline.goldenInvalid,
+    candidate,
+    sliceReview: [],
+  });
+  const requiredIds = admission.requiredIds;
+  const sliceReviewRequired = !admission.ok && admission.refusal === "envelope_drift";
+  const limitations: string[] = [];
+  if (!generationPresent) limitations.push("retained_generation_missing");
+  let next: string;
+  if (!generationPresent) {
+    next = profileWriteUnretainedNext(LIVE_HOST_BUNDLE);
+  } else if (!admission.ok && admission.refusal === "missing_golden" && baseline.pinSha) {
+    next = profileWriteMissingGoldenNext(retainedGenerationSourcePath(resolved, baseline.pinSha));
+  } else {
+    next = profileWriteExecutableNext(candidateSha, requiredIds);
+  }
+  return {
+    pinSha: baseline.pinSha,
+    candidateSha,
+    bootstrap: admission.bootstrap,
+    refusal: admission.ok ? null : admission.refusal,
+    requiredIds,
+    informationalIds: admission.informational.map((row) => row.id),
+    insertionGroups: admission.insertionGroups,
+    sliceReviewRequired,
+    generationPresent,
+    limitations,
+    next,
+  };
 }
 
 export class ProfileWriteRefused extends BoxRuntimeError {
@@ -366,20 +474,13 @@ export async function writeReviewedProfileFromCopy(
   let envelope: WriteEnvelopeReceipt | undefined;
   if (lineage) {
     const root = resolve(lineage.root);
-    const pin = loadDurableReviewedProfile(root);
-    const pinSha = pin && SHA.test(pin.sourceSha256) ? pin.sourceSha256 : null;
-    let golden = null;
-    let goldenInvalid = false;
-    if (pinSha) {
-      const goldenRead = await observeEnvelopeWindowsFile(generationEnvelopePath(root, pinSha));
-      if (goldenRead.state === "present") golden = goldenRead.value;
-      else if (goldenRead.state !== "missing") goldenInvalid = true;
-    }
+    const baseline = await loadWriteEnvelopeBaseline(root);
+    const pinSha = baseline.pinSha;
     const candidate = envelopeWindowsFromReviewed(source, profile, diskSha);
     const admission = admitWriteEnvelope({
       pinSha,
-      golden,
-      goldenInvalid,
+      golden: baseline.golden,
+      goldenInvalid: baseline.goldenInvalid,
       candidate,
       sliceReview,
     });

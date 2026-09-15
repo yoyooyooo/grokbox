@@ -1577,7 +1577,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["runtime", "profile", "analyze"],
     usage: "grokbox runtime profile analyze --sha <sha> --out <abs>",
-    summary: "Triage retained snapshot with optional AgentAnalysisPort; unreviewed verdict only.",
+    summary: "Triage retained snapshot; missing runner still emits envelope reject ids and write next.",
     arguments: [],
     options: options([
       { flags: "--sha <sha>", description: "Retained source SHA", required: true },

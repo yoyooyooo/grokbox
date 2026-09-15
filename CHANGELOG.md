@@ -8,6 +8,10 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- `runtime profile analyze` still settles `missing_runner` when no Agent runner
+  is installed, but now emits write-gate envelope reject ids and an executable
+  `write --sha` / `--slice-review` `next` so Host recover can continue after
+  reject-on-drift.
 - Embed the full live Host source SHA in doctor/operator/ownership `next` for
   `source_mismatch` observe→write remediations. If the digest is unknown, `next`
   is observe-only; never leave a `<sourceSha256>` placeholder.

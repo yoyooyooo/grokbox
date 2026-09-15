@@ -2,10 +2,11 @@ import { lstat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
+import type { EnvelopeInsertionGroup } from "./envelope-windows.ts";
 import type { ReplayReport } from "./replay.ts";
 import type { CandidateArtifact } from "./propose.ts";
 
-export const ANALYZE_TOOL_REVISION = "hso-3.analyze.v1";
+export const ANALYZE_TOOL_REVISION = "hso-3.analyze.v2";
 
 export type AgentVerdict =
   | "reuse"
@@ -14,6 +15,19 @@ export type AgentVerdict =
   | "code_change_required"
   | "unrelated_or_not_proven"
   | "blocked_or_superseded";
+
+export type AnalysisEnvelopeEvidence = {
+  evidenceKind: "envelope-windows";
+  pinSha: string | null;
+  candidateSha: string;
+  bootstrap: boolean;
+  refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | null;
+  requiredIds: string[];
+  informationalIds: string[];
+  insertionGroups: EnvelopeInsertionGroup[];
+  sliceReviewRequired: boolean;
+  generationPresent: boolean;
+};
 
 export type AnalysisResult = {
   process: "profile-analyze";
@@ -30,7 +44,47 @@ export type AnalysisResult = {
   forbidden: string[];
   effects: { uploads: 0; executes: 0; writes: 0; publish: 0; upgradeRpc: 0 };
   limitations: string[];
+  envelope?: AnalysisEnvelopeEvidence;
+  next?: string;
 };
+
+export function attachWriteEnvelopeInspect(
+  result: AnalysisResult,
+  inspect: {
+    pinSha: string | null;
+    candidateSha: string;
+    bootstrap: boolean;
+    refusal: AnalysisEnvelopeEvidence["refusal"];
+    requiredIds: readonly string[];
+    informationalIds: readonly string[];
+    insertionGroups: EnvelopeInsertionGroup[];
+    sliceReviewRequired: boolean;
+    generationPresent: boolean;
+    next: string;
+    limitations?: readonly string[];
+  },
+): AnalysisResult {
+  const extra = inspect.limitations ?? [];
+  return {
+    ...result,
+    limitations: extra.length === 0
+      ? result.limitations
+      : [...result.limitations, ...extra.filter((row) => !result.limitations.includes(row))],
+    envelope: {
+      evidenceKind: "envelope-windows",
+      pinSha: inspect.pinSha,
+      candidateSha: inspect.candidateSha,
+      bootstrap: inspect.bootstrap,
+      refusal: inspect.refusal,
+      requiredIds: [...inspect.requiredIds],
+      informationalIds: [...inspect.informationalIds],
+      insertionGroups: inspect.insertionGroups,
+      sliceReviewRequired: inspect.sliceReviewRequired,
+      generationPresent: inspect.generationPresent,
+    },
+    next: inspect.next,
+  };
+}
 
 export type AnalysisInput = {
   sourceSha: string;

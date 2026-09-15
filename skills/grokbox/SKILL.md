@@ -37,7 +37,7 @@ App New Bot is often **temporal** and never uses the custom-model channel. Detai
 
 When doctor / `error.next` says the custom channel needs a Host update:
 
-1. Follow `next` exactly: observe → write; if write rejects on drift, follow that `next` (often includes `--slice-review`); then `grokbox host start`.
+1. Follow `next` exactly: observe → write; if write rejects on drift, follow that `next` (often analyze then `--slice-review`). Analyze may settle `missing_runner` and still names reject ids plus write `next`. Then `grokbox host start`.
 2. `--force` only when start/stop refuse because bots are running **and** that pause is accepted.
 3. If the path is **unrecoverable** → `grokbox host stop` (back on official channel), tell the person you’re on the official channel and waiting for a maintainer. Do **not** thrash `--force`.
 

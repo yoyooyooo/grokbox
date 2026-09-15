@@ -20,7 +20,7 @@ Official computer updates, package upgrades, or doctor saying the custom-model c
 | Custom channel off (`host` official) | “Opening the custom-model channel…” | `grokbox host start` |
 | Doctor / error next is observe → write | “Updating this computer for the new system build…” (no jargon) | Follow printed `next` literally. When the live digest is known it already includes `write --sha` plus the full hex; if not, run observe-only and do not invent a SHA placeholder. |
 | Write succeeds | “Almost done — switching the channel on…” | `grokbox host start` |
-| Write rejects on drift | “Still aligning with the new build…” | Follow **write’s** `error.next` exactly (often analyze then `write --sha … --slice-review …`). Do not invent flags. |
+| Write rejects on drift | “Still aligning with the new build…” | Follow **write’s** `error.next` exactly (often analyze then `write --sha … --slice-review …`). Analyze may settle `missing_runner`; still use its `envelope.requiredIds` / `next` (write `--sha`, with `--slice-review` when required). Do not invent flags. |
 | `host start` / `stop` refuse (bots running) | Ask if a short pause is OK; only then proceed | `grokbox host start --force` **only** if refuse + pause accepted. Operator Bot counts as running. |
 | `--force` still cannot bypass mismatch | “Need one more alignment step first…” | Do **not** thrash `--force`. Re-read doctor / write `next` and continue the recover path. |
 | **Unrecoverable** (next exhausted, repeated refuse, unknown with no safe next) | “I’m back on the official channel and waiting for a maintainer. I won’t keep forcing switches.” | `grokbox host stop` (cancel patch channel). Stop looping. Wait for maintainer. |
@@ -29,7 +29,7 @@ Official computer updates, package upgrades, or doctor saying the custom-model c
 
 1. `grokbox doctor` → read `next`.
 2. If next is observe → write: run observe, then write with the retained digest from observe (or the exact next string).
-3. If write reject-on-drift: run the **write** response’s `next` (commonly includes `--slice-review`); do not skip review.
+3. If write reject-on-drift: run the **write** response’s `next` (commonly analyze, then `write --sha … --slice-review …`). Analyze still emits rejecting ids and that write `next` when settled is `missing_runner` — do not treat the artifact as empty, and do not skip `--slice-review`.
 4. When write is durable: `grokbox host start`.
 5. Re-run `grokbox doctor`; done when next is `none` (or only unrelated work remains).
 

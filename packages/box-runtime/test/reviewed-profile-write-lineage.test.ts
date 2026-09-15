@@ -8,6 +8,8 @@ import { hostBundlesDir, retainedGenerationSourcePath } from "../src/internal/io
 import { retainHostBundle } from "../src/internal/io/provenance.node.ts";
 import {
   ProfileWriteRefused,
+  inspectRetainedWriteEnvelope,
+  profileWriteExecutableNext,
   writeReviewedProfileFromCopy,
 } from "../src/internal/process/profile.node.ts";
 import { toyEnvelope } from "./envelope-toy-fixture.ts";
@@ -220,5 +222,65 @@ describe("reviewed profile write retained bind + envelope reject-on-drift", () =
     expect(written.envelope?.rejectingIds).toEqual([]);
     expect(written.envelope?.informationalIds.length).toBeGreaterThan(0);
     expect(written.unretained_source).toBe(true);
+  });
+
+  test("inspect names write-gate reject ids from retained envelope-windows without a runner", async () => {
+    const { root, destDir } = await rootFixture();
+    const before = toyEnvelope("");
+    const after = toyEnvelope("settledMessageCount:inspect");
+    const pinSha = sha256Text(before.source);
+    const nextSha = sha256Text(after.source);
+    await retainHostBundle({
+      root, source: before.source, sourceSha: pinSha, observedAt: AT,
+      profile: before.profile, matchedProfileId: before.profile.profileId,
+    });
+    await writeReviewedProfileFromCopy({
+      destDir,
+      hostBundle: retainedGenerationSourcePath(root, pinSha),
+      slices: before.profile.slices,
+      profileId: before.profile.profileId,
+    });
+    await retainHostBundle({
+      root, source: after.source, sourceSha: nextSha, observedAt: "2026-01-01T00:00:01.000Z",
+    });
+    const inspect = await inspectRetainedWriteEnvelope(root, nextSha);
+    expect(inspect.generationPresent).toBe(true);
+    expect(inspect.refusal).toBe("envelope_drift");
+    expect(inspect.requiredIds).toEqual(["compact-register", "managed-step-error-scope"]);
+    expect(inspect.sliceReviewRequired).toBe(true);
+    expect(inspect.next).toBe(profileWriteExecutableNext(nextSha, inspect.requiredIds));
+    expect(inspect.next).toBe(
+      `grokbox runtime profile write --sha ${nextSha} --slice-review compact-register,managed-step-error-scope`,
+    );
+    await expect(writeReviewedProfileFromCopy({
+      destDir,
+      hostBundle: retainedGenerationSourcePath(root, nextSha),
+      slices: after.profile.slices,
+      profileId: after.profile.profileId,
+      lineage: { root, retainedSha: nextSha },
+    })).rejects.toMatchObject({ details: { requiredIds: inspect.requiredIds } });
+  });
+
+  test("inspect measures from reviewed recipe when candidate envelope-windows.json is missing", async () => {
+    const { root } = await rootFixture();
+    const before = toyEnvelope("");
+    const after = toyEnvelope("settledMessageCount:fallback");
+    const pinSha = sha256Text(before.source);
+    const nextSha = sha256Text(after.source);
+    await retainHostBundle({
+      root, source: after.source, sourceSha: nextSha, observedAt: AT,
+    });
+    await retainHostBundle({
+      root, source: before.source, sourceSha: pinSha, observedAt: "2026-01-01T00:00:01.000Z",
+      profile: before.profile, matchedProfileId: before.profile.profileId,
+    });
+    await mkdir(join(root, "profiles"), { recursive: true, mode: 0o700 });
+    await writeFile(join(root, "profiles", "reviewed.json"), `${JSON.stringify(before.profile)}\n`);
+    expect(await readFile(join(hostBundlesDir(root), "generations", nextSha, ENVELOPE_WINDOWS_FILE), "utf8").then(() => true, () => false)).toBe(false);
+    const inspect = await inspectRetainedWriteEnvelope(root, nextSha);
+    expect(inspect.refusal).toBe("envelope_drift");
+    expect(inspect.requiredIds).toEqual(["compact-register", "managed-step-error-scope"]);
+    expect(inspect.sliceReviewRequired).toBe(true);
+    expect(inspect.next).toContain(`write --sha ${nextSha} --slice-review compact-register,managed-step-error-scope`);
   });
 });

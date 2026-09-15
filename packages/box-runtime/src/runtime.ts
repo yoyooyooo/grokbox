@@ -36,8 +36,11 @@ export {
   profileWriteUnretainedNext,
   profileWriteMissingGoldenNext,
   profileWriteDriftNext,
+  profileWriteExecutableNext,
+  inspectRetainedWriteEnvelope,
   type ProfileWriteLineage,
   type ProfileWriteRefusal,
+  type ProfileWriteInspect,
   type WriteReviewedProfileReceipt,
 } from "./internal/process/profile.node.ts";
 export { observeHostProvenance, type HostSeamObserveReceipt } from "./internal/ops/host-seam/observe.ts";
@@ -89,7 +92,9 @@ export {
   createAnalysisSession,
   createFakeAnalysisPort,
   writeAnalysisArtifact,
+  attachWriteEnvelopeInspect,
   type AnalysisResult,
+  type AnalysisEnvelopeEvidence,
 } from "./internal/ops/host-seam/analyze.ts";
 
 export { startModeldProcess, ensureModeld, modeldRootLayer, type StartedModeld, type ModeldEnsure } from "./internal/roots/modeld.runtime.ts";

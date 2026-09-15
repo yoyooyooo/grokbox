@@ -41,6 +41,8 @@ import {
   proposeSummary,
   createAnalysisSession,
   writeAnalysisArtifact,
+  attachWriteEnvelopeInspect,
+  inspectRetainedWriteEnvelope,
   readLastReplayReport,
   type DesiredMode,
   type IdentityOpResult,
@@ -424,21 +426,25 @@ export async function runRuntimeProfileAnalyze(
     const runtime = store(deps);
     const last = await readLastReplayReport(runtime.root);
     const session = createAnalysisSession();
-    const result = await session.run({
-      analysis: {
-        sourceSha: sha,
-        evidenceDigest: last?.replayKey ?? sha,
-        workKey: `analyze:${sha}`,
-        episodeRevision: 1,
-        mechanical: {
-          supportGatePassed: last?.supportGatePassed ?? false,
-          codes: last?.codes ?? [],
-          candidateCount: 0,
+    const inspect = await inspectRetainedWriteEnvelope(runtime.root, sha);
+    const result = attachWriteEnvelopeInspect(
+      await session.run({
+        analysis: {
+          sourceSha: sha,
+          evidenceDigest: last?.replayKey ?? sha,
+          workKey: `analyze:${sha}`,
+          episodeRevision: 1,
+          mechanical: {
+            supportGatePassed: last?.supportGatePassed ?? false,
+            codes: last?.codes ?? [],
+            candidateCount: 0,
+          },
         },
-      },
-      runner: false,
-      port: null,
-    });
+        runner: false,
+        port: null,
+      }),
+      inspect,
+    );
     await writeAnalysisArtifact(resolve(outPath), result);
     writeSuccess(deps.stdout, result);
   } catch (error) {
