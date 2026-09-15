@@ -87,6 +87,25 @@ Expected message: `route admits only stub/echo or openai* in this slice.`. Publi
 
 失效条件：Host preload 丢 nonce 绑定、catalog 出现 CLI 可 `models use` 的非 openai 模型、或 outcome 又把空 alerts 当成成功。
 
+## 换模防回归（AH-97）
+
+立刻绿不够。金丝雀对长期狗粮 Bot（默认 `model-dogfood` / 当前 assigned Pi 模型）按顺序：
+
+```sh
+grokbox models use <model-id> --for model-dogfood
+grokbox send model-dogfood --text '<text>' --json
+# 记 data.clientNonce。入队不是回复。
+
+grokbox history outcome model-dogfood --nonce <clientNonce> --runtime [--wait-ms 60000] --json
+grokbox agents show model-dogfood --json
+# data.agent.title （App Label）须含 m=<alias-or-model>
+
+grokbox agents title sync
+# 再等至少一轮 daemon title-sync（~120s），再 show；m= 仍须在。
+```
+
+仍只打金丝雀两条观测命令；send 回执 / 空 alerts / 第一秒 title 不得当成换模成功。运行者文案见 [skill](../../skills/grokbox/SKILL.md#prove-a-model-switch)。禁止打长期金丝雀 `grokbox` Bot。
+
 ## 验证与现场边界
 
 2026-09-12本轮 scoped regression **123 pass / 0 fail**（含CLI/事件/管理/运行时合同、12个结果观测测试、5个工具准入/终态测试、持久凭据与原生outer retry回归）。真实只读结果查询也已完成。完整全仓测试调用及候选 profile-write/re-adopt 调用被工具安全检查拦截，未执行；未改路重试部署，没有宣称串行策略修复已在现场加载或真实工具链已验完。具体制品身份与后续待验项以readiness为准。

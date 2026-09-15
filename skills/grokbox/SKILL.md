@@ -67,6 +67,31 @@ Read outcome `data.state`. Outcome has **no** `accepted` token (`acceptedObserve
 
 Retry a send only with the same `--nonce` and the same target/prompt.
 
+## Prove a model switch
+
+Long-lived dogfood Bot only (`model-dogfood`). Not yourself. A send receipt or an immediate title paint is not enough: the App name must still show the model after a title refresh.
+
+```bash
+grokbox models use <model-id> --for model-dogfood
+grokbox send model-dogfood --text "<text>" --json
+# Keep data.clientNonce. data.accepted / data.status=accepted means queued, not a reply.
+
+grokbox history outcome model-dogfood --nonce <clientNonce> --runtime [--wait-ms 60000] --json
+grokbox agents show model-dogfood --json
+# data.agent.title (App Label) must include m=<alias-or-model>.
+
+grokbox agents title sync
+# Wait at least two minutes (one daemon title refresh), then show again. m= must still be there.
+```
+
+Read outcome `data.state` with the table above. Do not call the switch successful on `recorded`, empty alerts, or a title that looks right only in the first second.
+
+| You | Person hears |
+| --- | --- |
+| outcome delivered / expected, and `m=` stayed after the wait | "Switched the dogfood Bot. There's a reply. The name still shows which model it uses." |
+| outcome `failed` / `unknown` | say the outcome table line; do not claim the switch worked |
+| `m=` gone after the wait | "The name dropped the model tag; that is a title-refresh bug, not a successful switch." |
+
 ## Commands
 
 Prefer each command's `--help`. `<agent>` is an exact ID or a unique name.
