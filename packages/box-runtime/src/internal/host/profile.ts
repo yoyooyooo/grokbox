@@ -19,6 +19,7 @@ export const OPTIONAL_SLICE_IDS = [
   "episode-purpose",
   "harness-blank",
   "harness-summary",
+  "profile-title-marker",
 ] as const;
 export type SliceId = (typeof REQUIRED_SLICE_IDS)[number] | (typeof OPTIONAL_SLICE_IDS)[number];
 export const MAX_APPROVED_SLICES = REQUIRED_SLICE_IDS.length + OPTIONAL_SLICE_IDS.length;

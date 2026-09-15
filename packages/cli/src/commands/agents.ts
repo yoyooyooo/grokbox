@@ -1,9 +1,9 @@
 import type { CliDeps } from "../deps.ts";
-import { CliError } from "../errors.ts";
+import { CliError, usage } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { formatTable, writeSuccess } from "../output.ts";
 import { ioFromOpts } from "../opts.ts";
-import { compactRosterRow, detailRosterRow } from "../redaction.ts";
+import { detailRosterRow } from "../redaction.ts";
 import { asString, isRecord } from "../util.ts";
 import {
   applyRosterSettings,
@@ -18,10 +18,19 @@ import {
 } from "./management.ts";
 import { findRosterRow } from "./roster.ts";
 import { projectOwnership } from "../ownership.ts";
+import {
+  applyAgentTitles,
+  loadAssignedModelTokens,
+  readOwnershipStates,
+  rosterTitleProjection,
+  type TitleAction,
+} from "../title-sync.ts";
+import { composeAgentTitle, labelOwnerFromState, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
+import { liveDesktopIo, reapDeletedAgentSeat, type DesktopReapResult } from "../daemon/desktop.ts";
 
 export async function runAgentsList(
   deps: CliDeps,
-  raw: { json?: boolean; table?: boolean; timeoutMs?: string; includeHidden?: boolean },
+  raw: { json?: boolean; table?: boolean; timeoutMs?: string; includeHidden?: boolean; ownership?: boolean },
 ): Promise<void> {
   const io = ioFromOpts(raw);
   const client = new GatewayClient(deps);
@@ -29,18 +38,29 @@ export async function runAgentsList(
   const includeHidden = Boolean(raw.includeHidden);
   const projected = agents
     .filter(isRecord)
-    .map(compactRosterRow)
+    .map(rosterTitleProjection)
     .filter((row) => row.kind === "agent")
     .filter((row) => includeHidden || !row.isHidden);
-  const data = { count: projected.length, agents: projected };
+  let ownership: Awaited<ReturnType<typeof readOwnershipStates>> | undefined;
+  if (raw.ownership) {
+    ownership = await readOwnershipStates(client, projected.map((row) => row.id), io.timeoutMs, discovery);
+  }
+  const agentsOut = projected.map((row) => ({
+    ...row,
+    ...(ownership ? { ownership: ownership.states.get(row.id) ?? "unconfirmed" } : {}),
+  }));
+  const data = { count: agentsOut.length, agents: agentsOut, ...(ownership ? { gatewayChanged: ownership.gatewayChanged } : {}) };
   if (io.table) {
     deps.stdout.write(
       formatTable(
-        projected.map((row) => ({
+        agentsOut.map((row) => ({
           id: row.id,
           name: row.name,
-          running: String(row.isRunning),
-          unread: String(row.hasUnread),
+          title: row.title ?? "",
+          harness: row.harness,
+          owner: row.titleOwner ?? "",
+          m: row.titleModel ?? "",
+          ...(ownership ? { ownership: "ownership" in row ? String(row.ownership) : "unconfirmed" } : {}),
         })),
       ),
     );
@@ -52,13 +72,28 @@ export async function runAgentsList(
 export async function runAgentsShow(
   deps: CliDeps,
   target: string,
-  raw: { json?: boolean; timeoutMs?: string },
+  raw: { json?: boolean; timeoutMs?: string; ownership?: boolean },
 ): Promise<void> {
   const io = ioFromOpts(raw);
   const client = new GatewayClient(deps);
   const { agents, discovery } = await client.listAgents(io.timeoutMs);
   const row = findRosterRow(agents, target, ["agent"]);
-  writeSuccess(deps.stdout, { agent: detailRosterRow(row) }, gatewayMeta(discovery));
+  const agent = rosterTitleProjection(row);
+  let ownership: Awaited<ReturnType<typeof readOwnershipStates>> | undefined;
+  if (raw.ownership) {
+    ownership = await readOwnershipStates(client, [agent.id], io.timeoutMs, discovery);
+  }
+  writeSuccess(deps.stdout, {
+    agent: {
+      ...detailRosterRow(row),
+      titleUser: agent.titleUser,
+      titleShowing: agent.titleShowing,
+      titleOwner: agent.titleOwner,
+      titleModel: agent.titleModel,
+      titleStale: agent.titleStale,
+      ...(ownership ? { ownership: ownership.states.get(agent.id) ?? "unconfirmed" } : {}),
+    },
+  }, gatewayMeta(discovery));
 }
 
 export async function runAgentsCreate(
@@ -79,7 +114,8 @@ export async function runAgentsCreate(
   try {
     await applyRosterSettings(client, id, raw, io.timeoutMs, operationId);
     const current = await client.listAgents(io.timeoutMs);
-    const agent = detailRosterRow(findRosterRow(current.agents, id, ["agent"]));
+    const currentRow = findRosterRow(current.agents, id, ["agent"]);
+    let agent = { ...detailRosterRow(currentRow), ...rosterTitleProjection(currentRow) };
     let snapshot: unknown;
     let gatewayChanged = current.discovery.pid !== created.discovery.pid || current.discovery.startedAt !== created.discovery.startedAt;
     try {
@@ -122,7 +158,24 @@ export async function runAgentsUpdate(
   const row = findRosterRow(before.agents, target, ["agent"]);
   const id = asString(row.id);
   if (hasProfilePatch(raw)) {
-    const updated = await client.updateAgent({ id, profile: mergedProfile(row, raw) }, io.timeoutMs, operationId);
+    const profile = mergedProfile(row, raw);
+    if (raw.title !== undefined && parseAgentTitle(row.title).showing) {
+      const tokens = await loadAssignedModelTokens(deps.boxRuntimeRoot, deps.env);
+      let owner: ReturnType<typeof labelOwnerFromState> = "leave";
+      try {
+        const identity = await readOwnershipStates(client, [id], io.timeoutMs, before.discovery);
+        const state = identity.states.get(id);
+        if (state) owner = labelOwnerFromState(state);
+      } catch { /* Keep the existing trailer if ownership cannot be refreshed. */ }
+      const composed = composeAgentTitle(row.title, {
+        type: "set-user",
+        user: raw.title,
+        owner,
+        ...(owner === "box" ? { m: tokens.get(id.toLowerCase()) ?? null } : owner === "leave" ? {} : { m: null }),
+      });
+      profile.title = composed.title;
+    }
+    const updated = await client.updateAgent({ id, profile }, io.timeoutMs, operationId);
     if (updated.result === null) throw new CliError("target_not_found", "Agent disappeared before update.");
   }
   await applyRosterSettings(client, id, raw, io.timeoutMs, operationId);
@@ -141,10 +194,91 @@ export async function runAgentsDelete(
   const before = await client.listAgents(io.timeoutMs);
   const row = findRosterRow(before.agents, target, ["agent"]);
   await confirmDeletion(deps, raw.yes, "agent", row);
-  const deleted = await client.deleteAgent(asString(row.id), io.timeoutMs, createNonce(undefined, deps));
+  const id = asString(row.id);
+  const deleted = await client.deleteAgent(id, io.timeoutMs, createNonce(undefined, deps));
+  const desktop = await reapDesktopAfterDelete(deps, id);
   writeSuccess(
     deps.stdout,
-    { deleted: { id: asString(row.id), name: asString(row.name), kind: "agent" } },
+    { deleted: { id, name: asString(row.name), kind: "agent" }, ...(desktop ? { desktop } : {}) },
     gatewayMeta(deleted.discovery),
   );
+}
+
+async function reapDesktopAfterDelete(deps: CliDeps, agentId: string): Promise<DesktopReapResult | undefined> {
+  if (deps.transport !== "local" || deps.sshHost || deps.daemonServerUrl) return undefined;
+  const io = await liveDesktopIo();
+  if (!io) return { display: null, outcome: "unavailable" };
+  return await reapDeletedAgentSeat(agentId, deps.now(), io);
+}
+
+export async function runAgentsTitle(
+  deps: CliDeps,
+  action: TitleAction,
+  targets: string[],
+  raw: { json?: boolean; table?: boolean; timeoutMs?: string; dryRun?: boolean; all?: boolean },
+): Promise<void> {
+  const names = targets.map((target) => target.trim()).filter((target) => target.length > 0);
+  const all = Boolean(raw.all);
+  if (all && names.length > 0) throw usage("Do not combine --all with named agents.");
+  if (action === "show" && !all && names.length === 0) throw usage("title show requires agents or --all.");
+  const io = ioFromOpts(raw);
+  const client = new GatewayClient(deps);
+  const listed = await client.listAgents(io.timeoutMs);
+  const roster = listed.agents.filter(isRecord).filter((row) => row.isGroup !== true);
+  let rows: Record<string, unknown>[];
+  if (names.length > 0) {
+    rows = names.map((name) => findRosterRow(listed.agents, name, ["agent"]));
+  } else if (action === "sync") {
+    rows = roster.filter((row) => parseAgentTitle(row.title).showing);
+  } else {
+    rows = roster;
+  }
+  const tokens = action === "hide" ? new Map<string, string>() : await loadAssignedModelTokens(deps.boxRuntimeRoot, deps.env);
+  const applied = await applyAgentTitles(client, io.timeoutMs, {
+    action,
+    rows,
+    dryRun: Boolean(raw.dryRun),
+    tokens,
+  });
+  const written = applied.rows.filter((row) => row.written).length;
+  const skippedRows = applied.rows.filter((row) => row.skipped);
+  const skipped = skippedRows.length;
+  const pending = applied.rows.filter((row) => row.changed && !row.written).length;
+  const skips = skippedRows.map((row) => ({
+    agent: row.name || row.agentId,
+    id: row.agentId,
+    reason: row.skipped,
+  }));
+  const data = {
+    action,
+    dryRun: Boolean(raw.dryRun),
+    examined: applied.rows.length,
+    written,
+    skipped,
+    ...(raw.dryRun ? { pending } : {}),
+    ...(skips.length > 0 ? { skips } : {}),
+  };
+  if (io.table) {
+    deps.stdout.write(
+      formatTable(
+        skips.length === 0
+          ? [
+              {
+                action,
+                examined: String(data.examined),
+                written: String(written),
+                skipped: String(skipped),
+                ...(raw.dryRun ? { pending: String(pending) } : {}),
+              },
+            ]
+          : skips.map((row) => ({
+              agent: row.agent,
+              id: row.id,
+              reason: String(row.reason ?? ""),
+            })),
+      ),
+    );
+    return;
+  }
+  writeSuccess(deps.stdout, data, gatewayMeta(listed.discovery));
 }
