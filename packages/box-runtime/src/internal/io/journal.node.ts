@@ -10,6 +10,8 @@ import {
   projectHostStreamRejected,
   projectTurnSeamTerminal,
   withEventsLock,
+  TURN_SEAM_ERROR_CODES,
+  type HostStreamRejectedEvent,
 } from "../host/terminal-journal.node.ts";
 import { eventsPath } from "./paths.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
@@ -21,8 +23,12 @@ export {
   appendHostStreamRejected,
   appendTurnSeamTerminal,
   projectHostNormalizedTerminal,
+  projectHostSeamStage,
   projectHostStreamRejected,
   projectTurnSeamTerminal,
+  HOST_STREAM_REJECT_REASONS,
+  TURN_SEAM_ERROR_CODES,
+  type HostStreamRejectedEvent,
 } from "../host/terminal-journal.node.ts";
 
 export const EVENT_NAMES = [
@@ -97,20 +103,6 @@ export const MODEL_STEP_STAGES = new Set([
   "internal",
 ]);
 export const MODEL_STEP_ADMISSIONS = new Set(["none", "new", "duplicate", "unknown"]);
-export const HOST_STREAM_REJECT_REASONS = new Set(["missing-step-id", "invalid-step-id"]);
-export const TURN_SEAM_ERROR_CODES = new Set([
-  "invalid_envelope",
-  "unsupported_content",
-  "invalid_tools",
-  "unsupported_options",
-  "envelope_too_large",
-  "unsupported_image",
-  "parallel_tools",
-  "invocation_conflict",
-  "model_error",
-  "stream_limit",
-  "invalid_stream",
-]);
 
 export type RuntimeEvent = {
   name: EventName;
@@ -140,7 +132,7 @@ export type TurnSeamTerminalEvent = {
 export type ModelStepStage = "stream-id" | "append-snapshot" | "bind-state" | "message-shape" | "tool-history" | "tools"
   | "options" | "ipc" | "admission" | "admit" | "provider" | "normalize" | "host-normalize" | "abort" | "disconnect" | "internal";
 export type ModelStepAdmission = "none" | "new" | "duplicate" | "unknown";
-export type HostStreamRejectReason = "missing-step-id" | "invalid-step-id";
+export type { HostStreamRejectReason } from "../host/terminal-journal.node.ts";
 
 export type ModelStepTerminalEvent = {
   name: "model_step_terminal";
@@ -160,19 +152,6 @@ export type ModelStepTerminalEvent = {
   admission: ModelStepAdmission;
   errorCode?: string;
   serverGeneration?: string;
-};
-
-export type HostStreamRejectedEvent = {
-  name: "host_stream_rejected";
-  schemaVersion: 2;
-  at: string;
-  mode: "route";
-  hostGenerationId: string;
-  agentId: string;
-  turnId: string;
-  stage: "stream-id";
-  errorCode: "invalid_envelope";
-  reason: HostStreamRejectReason;
 };
 
 export type ProviderErrorObservedEvent = {
@@ -430,7 +409,7 @@ function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEve
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input) as RuntimeEvent | null;
   if (input.name === "host_seam_stage") return projectHostSeamStage(input) as RuntimeEvent | null;
   if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
-  if (input.name === "host_stream_rejected") return projectHostStreamRejected(input) as HostStreamRejectedEvent | null;
+  if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);
   if (input.name === "provider_error_observed") return projectProviderErrorObserved(input);
   const at = boundedTimestamp(input.at);
   if (!at) return null;

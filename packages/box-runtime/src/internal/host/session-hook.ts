@@ -1,7 +1,7 @@
 import type { HostBinding } from "./host-binding.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
 import { lookupHostRootContract } from "./root-contract.ts";
-import { captureHostManagedSelection, HostSelectionUnavailableError } from "./selection.node.ts";
+import { captureHostManagedSelection } from "./selection.node.ts";
 import { createModeldProduce } from "./modeld-produce.node.ts";
 import {
   asHostPromptSession,
@@ -20,6 +20,7 @@ import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } fro
 import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
 import { emitHostActivity } from "./activity.ts";
 import { noteHostManagedStep } from "./compact.ts";
+import { boundedClientNonce, mapAdmitCatch } from "./failure-catalog.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
 
@@ -119,6 +120,7 @@ export function bindHostSessionHook(input: {
     const options = isRecord(args.sessionOptions) ? args.sessionOptions : {};
     const agentId = boundedId(args.agentId) ?? boundedId(options.agentId);
     const turnId = boundedId(options.invocationId);
+    const clientNonce = boundedClientNonce(options.clientNonce);
     const independentRoot = typeof options.independentRoot === "string" ? options.independentRoot : undefined;
     const bridgeDigest = input.compile?.transformedSha256 ?? boundedId(options.bridgeDigest);
     const onRequestId = typeof args.onRequestId === "function" ? args.onRequestId : undefined;
@@ -127,6 +129,7 @@ export function bindHostSessionHook(input: {
       ...(generationId ? { hostGenerationId: generationId } : {}),
       ...(agentId ? { agentId } : {}),
       ...(turnId ? { turnId } : {}),
+      ...(clientNonce ? { clientNonce } : {}),
     };
     void appendHostJournal(input.runRoot, {
       name: "host_seam_stage",
@@ -141,23 +144,21 @@ export function bindHostSessionHook(input: {
     try {
       captured = captureHostManagedSelection(input.durableRoot, agentId);
     } catch (error) {
-      if (error instanceof HostSelectionUnavailableError) {
-        // A trusted local configuration refusal must not fall back or be
-        // multiplied by the native outer retry policy. Do not invent a modelId.
-        recordHostManagedFailure(error);
-        void appendHostStreamRejected(input.runRoot, {
-          name: "host_stream_rejected", schemaVersion: 2, at: nowIso(),
-          mode: "route", ...facts, stage: "admit",
-          errorCode: error.code, reason: "selection-unavailable",
-        });
-      }
+      // Capture throws stay Host-visible. Mark, journal the catalog reason, rethrow.
+      // Do not copy error.message. Do not call onRequestId(turnId).
+      recordHostManagedFailure(error);
+      const mapped = mapAdmitCatch(error);
+      void appendHostStreamRejected(input.runRoot, {
+        name: "host_stream_rejected", schemaVersion: 2, at: nowIso(),
+        mode: "route", ...facts, stage: mapped.stage,
+        errorCode: mapped.errorCode, reason: mapped.reason,
+      });
       throw error;
     }
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
     const record = captured.record;
     const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string) => {
-      if (!agentId) return;
       void appendHostStreamRejected(input.runRoot, {
         name: "host_stream_rejected",
         schemaVersion: 2,

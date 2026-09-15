@@ -7,6 +7,9 @@ import {
   computeSelectionRevision,
   decideRouteSession,
   parseApiKeyRef,
+  ROUTE_MODEL_NOT_ADMITTED_FAILURE_CODE,
+  ROUTE_MODEL_NOT_ADMITTED_MESSAGE,
+  assertStubOnlyRouteAssignments,
   parseModelId,
   parseModelsFile,
   persistModelsDocument,
@@ -390,6 +393,39 @@ describe("kernel selection", () => {
       models: {},
       assignments: { main: null, agents: {} },
     })).toThrow(BoxRuntimeError);
+  });
+
+  test("decideRouteSession names route_model_not_admitted for unofficial providers", () => {
+    const file = parseModelsFile({
+      version: 1,
+      models: {
+        "acme/fast": {
+          provider: "acme",
+          model: "fast",
+          endpoint: "https://example.test/v1",
+          apiKeyRef: "env:KEY",
+          capabilities: { vision: false, tools: true, images: false },
+          dataTypes: ["text", "tools"],
+        },
+      },
+      assignments: { main: null, agents: { "agent-1": "acme/fast" } },
+    });
+    expect(() => decideRouteSession(file, "agent-1")).toThrow(BoxRuntimeError);
+    try {
+      decideRouteSession(file, "agent-1");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: "invalid_usage",
+        failureCode: ROUTE_MODEL_NOT_ADMITTED_FAILURE_CODE,
+        message: ROUTE_MODEL_NOT_ADMITTED_MESSAGE,
+      });
+    }
+    expect(() => assertStubOnlyRouteAssignments(file)).toThrow(BoxRuntimeError);
+    try {
+      assertStubOnlyRouteAssignments(file);
+    } catch (error) {
+      expect(error).toMatchObject({ failureCode: ROUTE_MODEL_NOT_ADMITTED_FAILURE_CODE });
+    }
   });
 
   test("Pi catalog discovery prefers PI_MODELS_PATH then agent then root", () => {

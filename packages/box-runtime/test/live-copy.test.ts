@@ -47,6 +47,7 @@ describeLive("live Host bundle copy H1", () => {
     if (!result.ok) return;
     expect(result.source).toContain("agentId: host.getConversationId()");
     expect(result.source).toContain("invocationId: inferenceRequestId");
+    expect(result.source).toContain("clientNonce: options2.clientNonce");
     expect(result.source).toContain("if (__grokbox_session !== undefined) return __grokbox_session");
     expect(result.source).toContain("grokbox.box-runtime.host-compact.v1");
     expect(result.source).toContain('purpose: "memory-extraction", turnId: ctx.get(requestIdKey), ctx');
@@ -79,6 +80,7 @@ describeLive("live Host bundle copy H1", () => {
     expect(extracted["session-options"]).toContain("const mainSessionOptions");
     expect(extracted["agent-id"]).toContain("agentId: host.getConversationId()");
     expect(extracted["agent-id"]).toContain("invocationId: inferenceRequestId");
+    expect(extracted["agent-id"]).toContain("clientNonce: options2.clientNonce");
     const liveBlocked = transformCompileInput({
       content: source,
       filename: LIVE_HOST_BUNDLE,
@@ -93,5 +95,15 @@ describeLive("live Host bundle copy H1", () => {
     if (!before.digest) return;
     expect(sha256Bytes(await readFile(LIVE_HOST_BUNDLE))).toBe(before.digest);
     expect(await readFile(copyPath, "utf8")).toBe(source);
+  });
+
+  test("CP26 clientNonce is in the same runTurn scope as mainSessionOptions", async () => {
+    const source = await readFile(LIVE_HOST_BUNDLE, "utf8");
+    const optionsAt = source.indexOf("const mainSessionOptions = {");
+    expect(optionsAt).toBeGreaterThan(0);
+    const runTurnAt = source.lastIndexOf("async function runTurn(prompt, options2", optionsAt);
+    expect(runTurnAt).toBeGreaterThan(0);
+    expect(runTurnAt).toBeLessThan(optionsAt);
+    expect(source.includes("this.settleClientTurn(session, options2.clientNonce")).toBe(true);
   });
 });

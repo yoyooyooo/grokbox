@@ -34,9 +34,11 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     endAnchor: "async () => host.inference.createSession(emitRequestId, mainSessionOptions)",
     // Insert identity at the options boundary, preserving the Host's modelId /
     // executorProfile choice and all native fields. Do not replace that choice.
+    // clientNonce is the same runTurn options2 field CP26 writes to lastTurnSettlement.
+    // Live Host loads this only after reviewed profile write + runtime re-adopt --confirm.
     find: "const mainSessionOptions = {\n",
     replacement:
-      "const mainSessionOptions = {\n          agentId: host.getConversationId(),\n          invocationId: inferenceRequestId,\n",
+      "const mainSessionOptions = {\n          agentId: host.getConversationId(),\n          invocationId: inferenceRequestId,\n          clientNonce: options2.clientNonce,\n",
   },
   {
     id: "compact-register",

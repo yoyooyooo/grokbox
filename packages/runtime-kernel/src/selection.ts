@@ -11,6 +11,8 @@ export {
   assignmentTarget,
   decideRouteSession,
   disclosure,
+  ROUTE_MODEL_NOT_ADMITTED_FAILURE_CODE,
+  ROUTE_MODEL_NOT_ADMITTED_MESSAGE,
   openaiCompatibleAdmitted,
   parseApiKeyRef,
   parseDesiredFile,

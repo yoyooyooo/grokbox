@@ -216,9 +216,11 @@ function emitAgent(source: string, agent: ShapeCandidate, turnName: string): Sli
   const indent = find.match(/^[ \t]*/)?.[0] ?? "";
   const nl = find.endsWith("\r\n") ? "\r\n" : "\n";
   const live = LIVE_SLICE_PATCHES.find((slice) => slice.id === "agent-id");
-  const replacement = live && find === live.find && binding.hostName === "host" && binding.modelField === "subagentModelId" && turnName === "inferenceRequestId"
+  const sameFamily = binding.hostName === "host" && binding.modelField === "subagentModelId" && turnName === "inferenceRequestId";
+  const replacement = live && find === live.find && sameFamily
     ? live.replacement
-    : `${indent}agentId: ${binding.hostName}.getConversationId(),${nl}${indent}invocationId: ${turnName},${nl}${find}`;
+    : `${indent}agentId: ${binding.hostName}.getConversationId(),${nl}${indent}invocationId: ${turnName},${nl}${sameFamily ? `${indent}clientNonce: options2.clientNonce,${nl}` : ""}${find}`;
+
   return {
     id: "agent-id",
     startAnchor,

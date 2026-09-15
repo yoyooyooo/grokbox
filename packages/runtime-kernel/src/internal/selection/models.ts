@@ -469,13 +469,20 @@ export function routeHasNonStubAssignment(file: ModelsFile): boolean {
   return false;
 }
 
+export const ROUTE_MODEL_NOT_ADMITTED_FAILURE_CODE = "route_model_not_admitted";
+export const ROUTE_MODEL_NOT_ADMITTED_MESSAGE = "route admits only stub/echo or openai* in this slice.";
+
+function routeModelNotAdmitted(): never {
+  throw new BoxRuntimeError("invalid_usage", ROUTE_MODEL_NOT_ADMITTED_MESSAGE, {
+    failureCode: ROUTE_MODEL_NOT_ADMITTED_FAILURE_CODE,
+  });
+}
+
 export function assertStubOnlyRouteAssignments(file: ModelsFile): void {
   for (const id of assignedModelIds(file)) {
     if (id === STUB_ECHO_MODEL_ID) continue;
     const record = Object.hasOwn(file.models, id) ? file.models[id] : undefined;
-    if (!record || !openaiCompatibleAdmitted(record)) {
-      throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo or openai* in this slice.");
-    }
+    if (!record || !openaiCompatibleAdmitted(record)) routeModelNotAdmitted();
   }
 }
 
@@ -514,9 +521,7 @@ export function decideRouteSession(file: ModelsFile, agentId?: string): RouteSes
   if (!agentId || !Object.hasOwn(file.assignments.agents, agentId)) return { kind: "official" };
   const id = file.assignments.agents[agentId]!;
   const record = id === STUB_ECHO_MODEL_ID ? stubFromFile(file) : Object.hasOwn(file.models, id) ? file.models[id] : undefined;
-  if (!record || !routeModelAdmitted(record)) {
-    throw new BoxRuntimeError("invalid_usage", "route admits only stub/echo or openai* in this slice.");
-  }
+  if (!record || !routeModelAdmitted(record)) routeModelNotAdmitted();
   return { kind: "managed", modelId: record.id, assignment: "agent" };
 }
 

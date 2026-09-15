@@ -33,6 +33,7 @@ const api = {
 };
 function runTurn(host) {
   const inferenceRequestId = "inv-bg";
+  const options2 = {};
   const emitRequestId = () => inferenceRequestId;
   const mainSessionOptions = {
           modelId: host.subagentModelId,

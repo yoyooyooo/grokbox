@@ -16,6 +16,7 @@ const api = {
 };
 function runTurn(host) {
   const inferenceRequestId = "inv-live-shaped";
+  const options2 = {};
   const emitRequestId = () => inferenceRequestId;
   const mainSessionOptions = {
     inferenceReason: "main",

@@ -28,7 +28,23 @@ export {
   readContracts,
   type RuntimeStatus,
 } from "./internal/io/observe.ts";
-export { observeEvents, observeRuntimeEvents } from "./internal/io/journal.node.ts";
+export {
+  observeEvents,
+  observeRuntimeEvents,
+  HOST_STREAM_REJECT_REASONS,
+  TURN_SEAM_ERROR_CODES,
+  projectHostSeamStage,
+  projectHostStreamRejected,
+  type HostStreamRejectedEvent,
+} from "./internal/io/journal.node.ts";
+export {
+  HOST_FAILURE_CATALOG,
+  catalogAgentMessage,
+  catalogByFailureCode,
+  catalogByReason,
+  mapAdmitCatch,
+  type HostFailureCatalogRow,
+} from "./internal/host/failure-catalog.ts";
 export {
   writeReviewedProfileFromCopy,
   ProfileWriteRefused,

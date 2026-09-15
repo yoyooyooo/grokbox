@@ -185,11 +185,17 @@ export function extractContractSlices(source: string): Record<string, string> {
   }
   const agentNeedle = "agentId: host.getConversationId()";
   const invNeedle = "invocationId: inferenceRequestId";
+  const nonceNeedle = "clientNonce: options2.clientNonce";
   const agentIndex = source.indexOf(agentNeedle);
   const invIndex = source.indexOf(invNeedle);
+  const nonceIndex = source.indexOf(nonceNeedle);
   if (agentIndex >= 0 && invIndex >= 0) {
-    const start = Math.min(agentIndex, invIndex);
-    const end = Math.max(agentIndex + agentNeedle.length, invIndex + invNeedle.length);
+    const start = Math.min(agentIndex, invIndex, nonceIndex >= 0 ? nonceIndex : agentIndex);
+    const end = Math.max(
+      agentIndex + agentNeedle.length,
+      invIndex + invNeedle.length,
+      nonceIndex >= 0 ? nonceIndex + nonceNeedle.length : 0,
+    );
     slices["agent-id"] = source.slice(start, end);
   } else if (agentIndex >= 0) {
     slices["agent-id"] = source.slice(agentIndex, agentIndex + agentNeedle.length);

@@ -36,6 +36,7 @@ describe("HSO-4 literal SlicePatch emit", () => {
     expect(replay.source).toContain("__grokbox_original");
     expect(replay.source).toContain("agentId: host.getConversationId()");
     expect(replay.source).toContain("invocationId: inferenceRequestId");
+    expect(replay.source).toContain("clientNonce: options2.clientNonce");
     expect(replay.source).toContain("modelId: host.subagentModelId");
   });
 

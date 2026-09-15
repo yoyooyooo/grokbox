@@ -3,15 +3,22 @@ import { chmod, mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
 import { HOST_STATE_SHAPES } from "./context-codec.ts";
+import {
+  boundedClientNonce,
+  HOST_FAILURE_CATALOG,
+  HOST_JOURNAL_FORBIDDEN,
+  type HostStreamRejectReason,
+} from "./failure-catalog.ts";
 
 export type HostJournalWriteResult = "written" | "unprojected" | "write_failed";
+export type { HostStreamRejectReason };
 
 const TURN_SEAM_BOUNDED_STRING = 128;
 const TURN_SEAM_MODES = new Set(["identity", "route"]);
 const TURN_SEAM_ASSIGNMENTS = new Set(["official", "main", "agent"]);
 const TURN_SEAM_TERMINAL_CLASSES = new Set(["stop", "error", "abort", "unknown"]);
 const TURN_SEAM_OUTCOMES = new Set(["official", "managed", "last_resort_official", "rejected"]);
-const TURN_SEAM_ERROR_CODES = new Set([
+export const TURN_SEAM_ERROR_CODES = new Set([
   "runtime_config_invalid",
   "invalid_envelope",
   "unsupported_content",
@@ -26,20 +33,26 @@ const TURN_SEAM_ERROR_CODES = new Set([
   "invalid_stream",
 ]);
 const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect", "provider"]);
-const HOST_STREAM_REJECT_REASONS = new Set([
-  "missing-step-id",
-  "invalid-step-id",
-  "missing-turn",
-  "missing-binding",
-  "missing-bridge",
-  "invalid-state",
-  "selection-unavailable",
-  "connect-failed",
-  "terminal-rejected",
-]);
+export const HOST_STREAM_REJECT_REASONS = new Set<string>(HOST_FAILURE_CATALOG.map((row) => row.reason));
 const HOST_SEAM_STAGES = new Set(["hook_enter", "hook_decline", "stream_enter", "connect_attempt", "first_chunk"]);
 const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail", "compact_passthrough"]);
-const FORBIDDEN = /env|token|prompt|authorization|secret|apiKey/i;
+const FORBIDDEN = HOST_JOURNAL_FORBIDDEN;
+
+export type HostStreamRejectedEvent = {
+  name: "host_stream_rejected";
+  schemaVersion: 2;
+  at: string;
+  mode: "route";
+  hostGenerationId?: string;
+  agentId: string;
+  turnId?: string;
+  stepId?: string;
+  clientNonce?: string;
+  stage: string;
+  errorCode: string;
+  reason: string;
+  stateShape?: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -153,7 +166,7 @@ export function projectTurnSeamTerminal(input: unknown): Record<string, unknown>
   };
 }
 
-export function projectHostStreamRejected(input: unknown): Record<string, unknown> | null {
+export function projectHostStreamRejected(input: unknown): HostStreamRejectedEvent | null {
   if (!isRecord(input) || input.name !== "host_stream_rejected" || input.schemaVersion !== 2) return null;
   const at = boundedString(input.at);
   const mode = boundedEnum(input.mode, TURN_SEAM_MODES);
@@ -168,6 +181,8 @@ export function projectHostStreamRejected(input: unknown): Record<string, unknow
   if (reason === "missing-step-id" || reason === "invalid-step-id") {
     if (stage !== "stream-id" || !turnId || !hostGenerationId) return null;
   }
+  const clientNonce = boundedClientNonce(input.clientNonce);
+  const stepId = boundedString(input.stepId);
   return {
     name: "host_stream_rejected",
     schemaVersion: 2,
@@ -176,12 +191,13 @@ export function projectHostStreamRejected(input: unknown): Record<string, unknow
     ...(hostGenerationId ? { hostGenerationId } : {}),
     agentId,
     ...(turnId ? { turnId } : {}),
-    ...(boundedString(input.stepId) ? { stepId: boundedString(input.stepId) } : {}),
+    ...(stepId ? { stepId } : {}),
+    ...(clientNonce ? { clientNonce } : {}),
     stage,
     errorCode,
     reason,
     ...(reason === "invalid-state" && (HOST_STATE_SHAPES as readonly unknown[]).includes(input.stateShape)
-      ? { stateShape: input.stateShape } : {}),
+      ? { stateShape: input.stateShape as string } : {}),
   };
 }
 
@@ -201,6 +217,7 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
   const agentId = boundedString(input.agentId);
   const turnId = boundedString(input.turnId);
   const stepId = boundedString(input.stepId);
+  const clientNonce = boundedClientNonce(input.clientNonce);
   return {
     name: "host_seam_stage",
     schemaVersion: 1,
@@ -211,6 +228,7 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
     ...(agentId ? { agentId } : {}),
     ...(turnId ? { turnId } : {}),
     ...(stepId ? { stepId } : {}),
+    ...(clientNonce ? { clientNonce } : {}),
     ...(hasAux ? { auxPurpose, parentStepId } : {}),
   };
 }

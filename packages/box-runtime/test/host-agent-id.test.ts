@@ -7,6 +7,7 @@ import { transformUnchecked } from "../src/internal/host/profile.ts";
 const source = `
 module.exports = async function run(host) {
   const inferenceRequestId = "owned-turn";
+  const options2 = { clientNonce: "00000000-0000-4000-8000-000000000119" };
   const emitRequestId = () => {};
   const executorProfile = host.subagentType === "executor" ? host.subagentModelId : void 0;
   const mainSessionOptions = {
@@ -28,7 +29,9 @@ for (const subagentType of ["ordinary", "executor"]) {
       inference: { createSession: (_emit: unknown, options: unknown) => options },
     });
     expect(result).toEqual({
-      agentId: "owned-agent", invocationId: "owned-turn", requestSource: "owned-test",
+      agentId: "owned-agent", invocationId: "owned-turn",
+      clientNonce: "00000000-0000-4000-8000-000000000119",
+      requestSource: "owned-test",
       ...(subagentType === "executor" ? { executorProfile: "native-choice" } : { modelId: "native-choice" }),
     });
   });
