@@ -82,12 +82,16 @@ export type WriteReviewedProfileReceipt = {
   envelope?: WriteEnvelopeReceipt;
 };
 
-export function profileObserveThenWriteNext(fromPath: string): string {
-  return `grokbox runtime profile observe --from ${fromPath} then grokbox runtime profile write --sha <sourceSha256>`;
-}
-
 export function profileWriteUnretainedNext(fromPath: string): string {
   return `grokbox runtime profile observe --from ${fromPath}`;
+}
+
+/** Observe → write `--sha` when the live digest is a full hex SHA; otherwise observe-only. */
+export function profileObserveThenWriteNext(fromPath: string, sourceSha256?: string | null): string {
+  const observe = profileWriteUnretainedNext(fromPath);
+  return typeof sourceSha256 === "string" && SHA.test(sourceSha256)
+    ? `${observe} then grokbox runtime profile write --sha ${sourceSha256}`
+    : observe;
 }
 
 export function profileWriteMissingGoldenNext(pinSourcePath: string): string {

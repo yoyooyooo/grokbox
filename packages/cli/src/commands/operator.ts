@@ -10,8 +10,9 @@ import { GatewayClient } from "../gateway.ts";
 import {
   classifySourceMatch,
   hostSourcePorts,
+  isFullSourceSha,
   overlaySourceMatch,
-  PROFILE_WRITE_NEXT,
+  profileWriteNext,
   shaPrefix,
 } from "../host-source.ts";
 import { writeSuccess } from "../output.ts";
@@ -38,10 +39,11 @@ export type OperatorReport = {
   next: string;
   liveShaPrefix?: string;
   profileShaPrefix?: string;
+  liveSourceSha?: string;
 };
 
 type HostClass = { host: OperatorHost; hostReason: string | null };
-type ShaPrefixes = { liveShaPrefix?: string; profileShaPrefix?: string };
+type SourceFacts = { liveSha?: string; liveShaPrefix?: string; profileShaPrefix?: string };
 
 export const hostSwitchPorts = {
   enable: applyHostEnable,
@@ -108,8 +110,13 @@ export function classifyOperatorHost(status: unknown): HostClass {
   return { host: "unknown", hostReason: reason ?? "observation_unavailable" };
 }
 
-export function operatorNext(input: { daemon: OperatorDaemon; host: OperatorHost; hostReason: string | null }): string {
-  if (input.hostReason === "source_mismatch") return PROFILE_WRITE_NEXT;
+export function operatorNext(input: {
+  daemon: OperatorDaemon;
+  host: OperatorHost;
+  hostReason: string | null;
+  liveSha?: string | null;
+}): string {
+  if (input.hostReason === "source_mismatch") return profileWriteNext(input.liveSha);
   if (input.host === "unknown" && (input.hostReason === "stale_attestation" || input.hostReason === "unmanaged_preload")) {
     return "grokbox upgrade --yes";
   }
@@ -122,21 +129,23 @@ export function powerOnNext(host: OperatorHost): string {
   return host === "custom" ? "none" : HOST_START;
 }
 
-export function mismatchNext(hostReason: string | null): string {
-  if (hostReason === "source_mismatch") return PROFILE_WRITE_NEXT;
+export function mismatchNext(hostReason: string | null, liveSha?: string | null): string {
+  if (hostReason === "source_mismatch") return profileWriteNext(liveSha);
   if (hostReason === "stale_attestation" || hostReason === "unmanaged_preload") return "grokbox upgrade --yes";
   return "grokbox doctor";
 }
 
-async function inspectHostClass(deps: CliDeps, overlay: boolean): Promise<HostClass & ShaPrefixes> {
+async function inspectHostClass(deps: CliDeps, overlay: boolean): Promise<HostClass & SourceFacts> {
   const live = await hostObservePorts.classifyLive(deps);
   const liveSha = await hostSourcePorts.readLiveSha(deps);
   const profileSha = await hostSourcePorts.readProfileSha(deps);
   const match = classifySourceMatch(liveSha, profileSha);
   const classified = overlay ? overlaySourceMatch(live, match) : live;
-  if (match !== "mismatch") return classified;
+  const facts: SourceFacts = isFullSourceSha(liveSha) ? { liveSha } : {};
+  if (match !== "mismatch") return { ...classified, ...facts };
   return {
     ...classified,
+    ...facts,
     ...(shaPrefix(liveSha) ? { liveShaPrefix: shaPrefix(liveSha) } : {}),
     ...(shaPrefix(profileSha) ? { profileShaPrefix: shaPrefix(profileSha) } : {}),
   };
@@ -157,9 +166,17 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
     screenIdle: daemon === "up" && pruneEnabled,
     host: classified.host,
     hostReason: classified.hostReason,
-    next: operatorNext({ daemon, host: classified.host, hostReason: classified.hostReason }),
+    next: operatorNext({
+      daemon,
+      host: classified.host,
+      hostReason: classified.hostReason,
+      liveSha: classified.liveSha,
+    }),
     ...(classified.liveShaPrefix ? { liveShaPrefix: classified.liveShaPrefix } : {}),
     ...(classified.profileShaPrefix ? { profileShaPrefix: classified.profileShaPrefix } : {}),
+    ...(classified.hostReason === "source_mismatch" && classified.liveSha
+      ? { liveSourceSha: classified.liveSha }
+      : {}),
   };
 }
 
@@ -244,21 +261,22 @@ export async function listRunningBots(deps: CliDeps, timeoutMs: number): Promise
   }
 }
 
-function sourceMismatchError(prefixes: ShaPrefixes = {}): CliError {
+function sourceMismatchError(facts: SourceFacts = {}): CliError {
+  const next = profileWriteNext(facts.liveSha);
   return new CliError(
     "host_source_mismatch",
-    `Live Host SHA does not match the reviewed profile. Observe the live Host, then write from the retained SHA. Next: ${PROFILE_WRITE_NEXT}`,
+    `Live Host SHA does not match the reviewed profile. Observe the live Host, then write from the retained SHA. Next: ${next}`,
     {
-      next: PROFILE_WRITE_NEXT,
+      next,
       hostReason: "source_mismatch",
-      ...(prefixes.liveShaPrefix ? { liveShaPrefix: prefixes.liveShaPrefix } : {}),
-      ...(prefixes.profileShaPrefix ? { profileShaPrefix: prefixes.profileShaPrefix } : {}),
+      ...(facts.liveShaPrefix ? { liveShaPrefix: facts.liveShaPrefix } : {}),
+      ...(facts.profileShaPrefix ? { profileShaPrefix: facts.profileShaPrefix } : {}),
     },
   );
 }
 
-function hostMismatchError(hostReason: string | null): CliError {
-  const next = mismatchNext(hostReason);
+function hostMismatchError(hostReason: string | null, liveSha?: string): CliError {
+  const next = mismatchNext(hostReason, liveSha);
   const reason = hostReason ?? "observation_unavailable";
   return new CliError(
     "host_mismatch",
@@ -288,8 +306,8 @@ function isRefusedReceipt(value: unknown): value is { outcome: "refused"; reason
   return row.outcome === "refused" && typeof row.reason === "string" && row.reason.length > 0;
 }
 
-function admitEnableReceipt(receipt: unknown, prefixes: ShaPrefixes = {}): unknown {
-  if (isSourceMismatchReceipt(receipt)) throw sourceMismatchError(prefixes);
+function admitEnableReceipt(receipt: unknown, facts: SourceFacts = {}): unknown {
+  if (isSourceMismatchReceipt(receipt)) throw sourceMismatchError(facts);
   if (isRefusedReceipt(receipt) && receipt.reason === "desired-disabled") {
     throw new CliError(
       "host_mismatch",
@@ -300,20 +318,20 @@ function admitEnableReceipt(receipt: unknown, prefixes: ShaPrefixes = {}): unkno
   return receipt;
 }
 
-function refuseUnknown(classified: HostClass & ShaPrefixes): void {
+function refuseUnknown(classified: HostClass & SourceFacts): void {
   if (classified.hostReason === "source_mismatch") throw sourceMismatchError(classified);
-  if (classified.host === "unknown") throw hostMismatchError(classified.hostReason);
+  if (classified.host === "unknown") throw hostMismatchError(classified.hostReason, classified.liveSha);
 }
 
-function successNext(actual: HostClass): string {
+function successNext(actual: HostClass & SourceFacts): string {
   if (actual.host !== "unknown") return "none";
-  return mismatchNext(actual.hostReason);
+  return mismatchNext(actual.hostReason, actual.liveSha);
 }
 
 function lifecyclePayload(input: {
   command: HostLifecycleCommand;
   outcome: HostOutcome;
-  actual: HostClass;
+  actual: HostClass & SourceFacts;
   forced: boolean;
   running: RunningBot[];
   receipt?: unknown;

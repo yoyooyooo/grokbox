@@ -2,10 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { profileObserveThenWriteNext } from "@grokbox/box-runtime/runtime";
 import {
   classifySourceMatch,
+  LIVE_HOST_BUNDLE_PATH,
   overlaySourceMatch,
-  PROFILE_WRITE_NEXT,
+  profileWriteNext,
   readLiveShaFromPath,
   readProfileShaFromRoot,
   shaPrefix,
@@ -14,6 +16,8 @@ import { operatorNext } from "../packages/cli/src/commands/operator.ts";
 
 const A = "a".repeat(64);
 const B = "b".repeat(64);
+const OBSERVE_ONLY = `grokbox runtime profile observe --from ${LIVE_HOST_BUNDLE_PATH}`;
+const WRITE_A = `${OBSERVE_ONLY} then grokbox runtime profile write --sha ${A}`;
 
 test("classifySourceMatch distinguishes match, mismatch, and unavailable", () => {
   expect(classifySourceMatch(A, A)).toBe("match");
@@ -36,13 +40,33 @@ test("source mismatch overlay wins over official, custom, and stale_attestation"
     .toEqual({ host: "official", hostReason: null });
   expect(overlaySourceMatch({ host: "official", hostReason: null }, "unavailable"))
     .toEqual({ host: "official", hostReason: null });
+});
+
+test("observe then write next embeds a known full live SHA and never a placeholder", () => {
+  expect(profileWriteNext(A)).toBe(WRITE_A);
+  expect(profileWriteNext(A)).toContain(A);
+  expect(profileWriteNext(A)).not.toContain("<sourceSha256>");
+  expect(profileObserveThenWriteNext(LIVE_HOST_BUNDLE_PATH, A)).toBe(WRITE_A);
+  expect(operatorNext({ daemon: "up", host: "unknown", hostReason: "source_mismatch", liveSha: A }))
+    .toBe(WRITE_A);
+  expect(operatorNext({ daemon: "down", host: "unknown", hostReason: "source_mismatch", liveSha: A }))
+    .toBe(WRITE_A);
+  expect(WRITE_A).toContain("runtime profile observe --from /home/box/sand-host/host-main.cjs");
+  expect(WRITE_A).not.toContain("profile write --from /home/box/sand-host/host-main.cjs");
+});
+
+test("observe then write next is observe-only when the live SHA is unknown", () => {
+  expect(profileWriteNext()).toBe(OBSERVE_ONLY);
+  expect(profileWriteNext(null)).toBe(OBSERVE_ONLY);
+  expect(profileWriteNext("<sourceSha256>")).toBe(OBSERVE_ONLY);
+  expect(profileWriteNext("a".repeat(12))).toBe(OBSERVE_ONLY);
+  expect(profileObserveThenWriteNext(LIVE_HOST_BUNDLE_PATH)).toBe(OBSERVE_ONLY);
   expect(operatorNext({ daemon: "up", host: "unknown", hostReason: "source_mismatch" }))
-    .toBe(PROFILE_WRITE_NEXT);
+    .toBe(OBSERVE_ONLY);
   expect(operatorNext({ daemon: "down", host: "unknown", hostReason: "source_mismatch" }))
-    .toBe(PROFILE_WRITE_NEXT);
-  expect(PROFILE_WRITE_NEXT).toContain("runtime profile observe --from /home/box/sand-host/host-main.cjs");
-  expect(PROFILE_WRITE_NEXT).toContain("runtime profile write --sha <sourceSha256>");
-  expect(PROFILE_WRITE_NEXT).not.toContain("profile write --from /home/box/sand-host/host-main.cjs");
+    .toBe(OBSERVE_ONLY);
+  expect(OBSERVE_ONLY).not.toContain("write --sha");
+  expect(OBSERVE_ONLY).not.toContain("<sourceSha256>");
 });
 
 test("default SHA readers use temp Host bytes and reviewed.json, not the live bundle", async () => {

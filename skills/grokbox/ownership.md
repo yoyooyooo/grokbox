@@ -20,7 +20,7 @@ Server registration is the execution fact. Local `harness=` on `agents list` is 
 
 Do not run deleted `host on --yes`. Host channel is `grokbox host start`. A failed use does not mutate `models.json`.
 
-If `blockers` include `host_channel_not_enabled`, `next` is `grokbox host start`. If they include `host_source_mismatch`, `next` is `grokbox runtime profile observe --from /home/box/sand-host/host-main.cjs then grokbox runtime profile write --sha <sourceSha256>`. Those are Host-channel gaps, not identity loss.
+If `blockers` include `host_channel_not_enabled`, `next` is `grokbox host start`. If they include `host_source_mismatch`, follow printed `next` (observe then `write --sha` with the full live digest when known; observe-only if not). Those are Host-channel gaps, not identity loss.
 
 `confirmed_box` is not a production sign-off.
 

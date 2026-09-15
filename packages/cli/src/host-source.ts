@@ -5,9 +5,17 @@ import type { CliDeps } from "./deps.ts";
 
 /** Default live Host entry; keep in lockstep with box-runtime `LIVE_HOST_BUNDLE`. */
 export const LIVE_HOST_BUNDLE_PATH = "/home/box/sand-host/host-main.cjs";
-export const PROFILE_WRITE_NEXT = profileObserveThenWriteNext(LIVE_HOST_BUNDLE_PATH);
 
 const HEX64 = /^[a-f0-9]{64}$/;
+
+export function isFullSourceSha(sha: string | null | undefined): sha is string {
+  return typeof sha === "string" && HEX64.test(sha);
+}
+
+/** Copy-paste `next` for observe → write. Unknown digest stays observe-only. */
+export function profileWriteNext(sourceSha256?: string | null): string {
+  return profileObserveThenWriteNext(LIVE_HOST_BUNDLE_PATH, sourceSha256);
+}
 
 export type SourceMatch = "match" | "mismatch" | "unavailable";
 

@@ -14,7 +14,7 @@ import {
   type OperatorHost,
 } from "../packages/cli/src/commands/operator.ts";
 import { hostControlPorts } from "../packages/cli/src/commands/runtime.ts";
-import { hostSourcePorts, PROFILE_WRITE_NEXT } from "../packages/cli/src/host-source.ts";
+import { hostSourcePorts, profileWriteNext } from "../packages/cli/src/host-source.ts";
 import { BoxRuntimeError } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson, sampleAgents, startMockGateway, writeDiscovery } from "./helpers.ts";
 
@@ -24,6 +24,7 @@ const originalObserve = { classifyLive: hostObservePorts.classifyLive };
 const originalSource = { readLiveSha: hostSourcePorts.readLiveSha, readProfileSha: hostSourcePorts.readProfileSha };
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);
+const WRITE_NEXT_A = profileWriteNext(SHA_A);
 
 beforeEach(() => {
   hostObservePorts.classifyLive = async () => ({ host: "official", hostReason: null });
@@ -131,12 +132,15 @@ test("doctor reports source_mismatch with profile-write next when SHAs differ", 
   try {
     expect(result.code).toBe(0);
     const body = parseJson(result.stdout) as {
-      data: { next: string; operator?: { host: string; hostReason: string | null; next: string; liveShaPrefix?: string; profileShaPrefix?: string } };
+      data: { next: string; operator?: { host: string; hostReason: string | null; next: string; liveShaPrefix?: string; profileShaPrefix?: string; liveSourceSha?: string } };
     };
     expect(body.data.operator?.host).toBe("unknown");
     expect(body.data.operator?.hostReason).toBe("source_mismatch");
-    expect(body.data.operator?.next).toBe(PROFILE_WRITE_NEXT);
-    expect(body.data.next).toBe(PROFILE_WRITE_NEXT);
+    expect(body.data.operator?.next).toBe(WRITE_NEXT_A);
+    expect(body.data.next).toBe(WRITE_NEXT_A);
+    expect(body.data.next).toContain(SHA_A);
+    expect(body.data.next).not.toContain("<sourceSha256>");
+    expect(body.data.operator?.liveSourceSha).toBe(SHA_A);
     expect(body.data.operator?.liveShaPrefix).toBe("a".repeat(12));
     expect(body.data.operator?.profileShaPrefix).toBe("b".repeat(12));
   } finally {
@@ -207,7 +211,7 @@ test("upgrade --yes refuses source mismatch before enable", async () => {
     expect(result.code).toBe(72);
     expect(enabled).toBe(0);
     expect(parseJson(result.stderr)).toMatchObject({
-      error: { code: "host_source_mismatch", next: PROFILE_WRITE_NEXT, hostReason: "source_mismatch" },
+      error: { code: "host_source_mismatch", next: WRITE_NEXT_A, hostReason: "source_mismatch" },
     });
   } finally {
     gateway.stop();
@@ -404,7 +408,7 @@ test("host start refuses source mismatch even with --force", async () => {
     expect(parseJson(result.stderr)).toMatchObject({
       error: {
         code: "host_source_mismatch",
-        next: PROFILE_WRITE_NEXT,
+        next: WRITE_NEXT_A,
         hostReason: "source_mismatch",
         liveShaPrefix: "a".repeat(12),
         profileShaPrefix: "b".repeat(12),
@@ -429,7 +433,7 @@ test("host start remaps enable source-mismatch receipt", async () => {
     expect(result.code).toBe(72);
     expect(enabled).toBe(1);
     expect(parseJson(result.stderr)).toMatchObject({
-      error: { code: "host_source_mismatch", next: PROFILE_WRITE_NEXT, hostReason: "source_mismatch" },
+      error: { code: "host_source_mismatch", next: WRITE_NEXT_A, hostReason: "source_mismatch" },
     });
   } finally {
     gateway.stop();
@@ -561,7 +565,7 @@ test("host stop does not refuse source mismatch", async () => {
     expect(result.code).toBe(0);
     expect(disabled).toBe(1);
     expect(parseJson(result.stdout)).toMatchObject({
-      data: { outcome: "stopped", actual: "unknown", hostReason: "source_mismatch", next: PROFILE_WRITE_NEXT },
+      data: { outcome: "stopped", actual: "unknown", hostReason: "source_mismatch", next: WRITE_NEXT_A },
     });
   } finally {
     gateway.stop();
@@ -683,7 +687,7 @@ test("host restart refuses mismatch without mutating", async () => {
     expect(result.code).toBe(72);
     expect(mutated).toBe(0);
     expect(parseJson(result.stderr)).toMatchObject({
-      error: { code: "host_source_mismatch", next: PROFILE_WRITE_NEXT },
+      error: { code: "host_source_mismatch", next: WRITE_NEXT_A },
     });
   } finally {
     gateway.stop();

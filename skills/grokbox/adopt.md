@@ -18,7 +18,7 @@ Official computer updates, package upgrades, or doctor saying the custom-model c
 | Daemon / services down | “Turning grokbox services on…” | `grokbox on` (often doctor next) |
 | After grokbox package update | “Aligning this computer with the new grokbox…” | `grokbox upgrade --yes` when doctor next says so (e.g. stale / unmanaged cases) |
 | Custom channel off (`host` official) | “Opening the custom-model channel…” | `grokbox host start` |
-| Doctor / error next is observe → write | “Updating this computer for the new system build…” (no jargon) | Follow `next` literally: `grokbox runtime profile observe --from /home/box/sand-host/host-main.cjs` then `grokbox runtime profile write --sha <sourceSha256>` from observe output |
+| Doctor / error next is observe → write | “Updating this computer for the new system build…” (no jargon) | Follow printed `next` literally. When the live digest is known it already includes `write --sha` plus the full hex; if not, run observe-only and do not invent a SHA placeholder. |
 | Write succeeds | “Almost done — switching the channel on…” | `grokbox host start` |
 | Write rejects on drift | “Still aligning with the new build…” | Follow **write’s** `error.next` exactly (often analyze then `write --sha … --slice-review …`). Do not invent flags. |
 | `host start` / `stop` refuse (bots running) | Ask if a short pause is OK; only then proceed | `grokbox host start --force` **only** if refuse + pause accepted. Operator Bot counts as running. |

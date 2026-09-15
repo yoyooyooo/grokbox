@@ -28,5 +28,6 @@ export async function runAgentsOwnership(deps: CliDeps, targets: string[], raw: 
     host: operator?.host,
     hostNext: operator?.next,
     hostReason: operator?.hostReason,
+    liveSha: operator?.liveSourceSha,
   }), gatewayMeta(observation.discovery));
 }

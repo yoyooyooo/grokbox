@@ -1,6 +1,6 @@
 import { inspectOwnership } from "@grokbox/runtime-kernel/contract";
 import type { OperatorHost } from "./commands/operator.ts";
-import { PROFILE_WRITE_NEXT } from "./host-source.ts";
+import { profileWriteNext } from "./host-source.ts";
 
 const HOST_START = "grokbox host start";
 
@@ -12,26 +12,34 @@ export function projectOwnership(input: {
   host?: OperatorHost;
   hostNext?: string;
   hostReason?: string | null;
+  liveSha?: string | null;
 }) {
   const result = inspectOwnership(input);
-  return annotateOwnershipHost(result, input.host, input.hostNext, input.hostReason);
+  return annotateOwnershipHost(result, input.host, input.hostNext, input.hostReason, input.liveSha);
 }
 
 export function annotateOwnershipHost<T extends {
   agents: Array<{ blockers: string[]; nextAction: string }>;
-}>(result: T, host?: OperatorHost, hostNext?: string, hostReason?: string | null): T & { next: string } {
+}>(
+  result: T,
+  host?: OperatorHost,
+  hostNext?: string,
+  hostReason?: string | null,
+  liveSha?: string | null,
+): T & { next: string } {
   if (hostReason === "source_mismatch") {
+    const next = profileWriteNext(liveSha);
     return {
       ...result,
-      next: PROFILE_WRITE_NEXT,
+      next,
       agents: result.agents.map((agent) => ({
         ...agent,
         blockers: [
           "host_source_mismatch",
           ...agent.blockers.filter((code) => code !== "host_source_mismatch" && code !== "host_channel_not_enabled"),
         ],
-        nextAction: PROFILE_WRITE_NEXT,
-        next: PROFILE_WRITE_NEXT,
+        nextAction: next,
+        next,
       })),
     };
   }

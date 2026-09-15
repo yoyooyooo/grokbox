@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PROFILE_WRITE_NEXT } from "../packages/cli/src/host-source.ts";
+import { LIVE_HOST_BUNDLE_PATH, profileWriteNext } from "../packages/cli/src/host-source.ts";
 import { projectOwnership } from "../packages/cli/src/ownership.ts";
 import { startDaemonHost } from "../packages/cli/src/daemon/host.ts";
 import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
@@ -51,18 +51,33 @@ test("official Host channel is a blocker, not identity-lost wording", () => {
 });
 
 test("source mismatch is a Host-channel blocker, not identity-lost wording", () => {
+  const liveSha = "c".repeat(64);
+  const next = profileWriteNext(liveSha);
   const result = projectOwnership({
     agentIds: [A],
     snapshot: snapshot([row(A, "box", "box")]),
     host: "unknown",
     hostReason: "source_mismatch",
+    liveSha,
   });
-  expect(result.next).toBe(PROFILE_WRITE_NEXT);
+  expect(result.next).toBe(next);
+  expect(result.next).toContain(liveSha);
+  expect(result.next).not.toContain("<sourceSha256>");
   expect(result.agents[0]?.blockers[0]).toBe("host_source_mismatch");
   expect(result.agents[0]?.blockers).not.toContain("host_channel_not_enabled");
-  expect(result.agents[0]?.nextAction).toBe(PROFILE_WRITE_NEXT);
+  expect(result.agents[0]?.nextAction).toBe(next);
   expect(result.agents[0]?.nextAction).not.toBe("obtain_valid_identity_evidence");
   expect(result.agents[0]?.state).toBe("confirmed_box");
+  const unknown = projectOwnership({
+    agentIds: [A],
+    snapshot: snapshot([row(A, "box", "box")]),
+    host: "unknown",
+    hostReason: "source_mismatch",
+  });
+  expect(unknown.next).toBe(`grokbox runtime profile observe --from ${LIVE_HOST_BUNDLE_PATH}`);
+  expect(unknown.next).not.toContain("write --sha");
+  expect(unknown.next).not.toContain("<sourceSha256>");
+  expect(unknown.agents[0]?.nextAction).toBe(unknown.next);
 });
 
 test("missing bridge/row, duplicate row and changed generation cannot confirm ownership", () => {

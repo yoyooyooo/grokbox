@@ -8,6 +8,9 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Embed the full live Host source SHA in doctor/operator/ownership `next` for
+  `source_mismatch` observe→write remediations. If the digest is unknown, `next`
+  is observe-only; never leave a `<sourceSha256>` placeholder.
 - Converge Unix modeld on one generation-bound admission/pinning kernel. Bind
   requests to compiled Host identity and a service-incarnation fence; resolve
   per-Bot config inside modeld, pin immutable config/fingerprints, and reject
