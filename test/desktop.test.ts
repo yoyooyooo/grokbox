@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
 import { readDaemonConfig, validateDaemonConfig, writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
-import { DesktopManager, type DesktopIo } from "../packages/cli/src/daemon/desktop.ts";
+import { DesktopManager, reapDeletedAgentSeat, type DesktopIo } from "../packages/cli/src/daemon/desktop.ts";
 import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
 import {
   classifyDesktop,
@@ -151,10 +151,10 @@ describe("desktop daemon commands", () => {
     gateway = undefined;
   });
 
-  async function harness(current: { value: DesktopWorld }, stopped: number[] = []) {
+  async function harness(current: { value: DesktopWorld }, stopped: number[] = [], agents?: unknown[]) {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-desktop-"));
     const socket = join(configDir, "run", "daemon.sock");
-    gateway = await startMockGateway();
+    gateway = await startMockGateway(agents ? { agents } : undefined);
     const discoveryPath = await writeDiscovery({
       port: gateway.port,
       pid: gateway.pid,
@@ -299,6 +299,41 @@ describe("desktop daemon commands", () => {
       skillsDir,
     });
     expect(denied.code).toBe(22);
+  });
+
+  test("confirmed agent delete stops that bot's fork via stop-window", async () => {
+    const stopped: number[] = [];
+    const current = { value: world() };
+    const { run } = await harness(current, stopped, [{
+      id: AGENT_B,
+      name: "idle-bot",
+      title: "",
+      isGroup: false,
+      isHiddenFromSidebar: false,
+      isRunning: false,
+      memberIds: [],
+    }]);
+    const result = await run(["--profile", "daemon", "agents", "delete", "idle-bot", "--yes"]);
+    expect(result.code, result.stderr).toBe(0);
+    expect(stopped).toEqual([3]);
+    expect(gateway?.requests.some((request) => request.pathname === "/api/deleteAgent")).toBe(true);
+  });
+});
+
+describe("deleted-bot desktop reap", () => {
+  test("stops fork seats, skips the main desktop, and ignores non-UUIDs", async () => {
+    const stopped: number[] = [];
+    const io: DesktopIo = {
+      readWorld: async () => world({ assignments: { [AGENT_A]: 1, [AGENT_B]: 3 } }),
+      stopWindow: async (display) => {
+        stopped.push(display);
+      },
+      reapLogs: async () => {},
+    };
+    expect(await reapDeletedAgentSeat(AGENT_A, 1, io)).toEqual({ display: 1, outcome: "skipped_main" });
+    expect(await reapDeletedAgentSeat(AGENT_B, 1, io)).toEqual({ display: 3, outcome: "stopped" });
+    expect(await reapDeletedAgentSeat("not-a-bot", 1, io)).toEqual({ display: null, outcome: "no_seat" });
+    expect(stopped).toEqual([3]);
   });
 });
 

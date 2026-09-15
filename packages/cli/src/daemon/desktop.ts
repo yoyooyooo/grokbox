@@ -52,6 +52,45 @@ export type DesktopPruneResult = {
   rows: DesktopPruneRow[];
 };
 
+export type DesktopReapResult = {
+  display: number | null;
+  outcome: "stopped" | "skipped_main" | "no_seat" | "unavailable";
+};
+
+export async function liveDesktopIo(): Promise<DesktopIo | null> {
+  try {
+    return createLiveDesktopIo(await pinExecutable(DEFAULT_STOP_WINDOW));
+  } catch {
+    return null;
+  }
+}
+
+export async function reapDeletedAgentSeat(
+  agentId: string,
+  nowMs: number,
+  io: DesktopIo,
+): Promise<DesktopReapResult> {
+  const query = agentId.trim().toLowerCase();
+  if (!UUID_V4.test(query)) return { display: null, outcome: "no_seat" };
+  let world: DesktopWorld;
+  try {
+    world = await io.readWorld(nowMs);
+  } catch {
+    return { display: null, outcome: "unavailable" };
+  }
+  const match = Object.entries(world.assignments).find(([id]) => id.toLowerCase() === query);
+  if (!match) return { display: null, outcome: "no_seat" };
+  const display = match[1];
+  if (display <= MAIN_DISPLAY) return { display, outcome: "skipped_main" };
+  try {
+    await io.stopWindow(display);
+    await io.reapLogs(display);
+    return { display, outcome: "stopped" };
+  } catch {
+    return { display, outcome: "unavailable" };
+  }
+}
+
 async function pinExecutable(path: string): Promise<PinnedStopWindow> {
   try {
     const [info, canonical] = await Promise.all([lstat(path), realpath(path)]);
@@ -304,6 +343,10 @@ export class DesktopManager {
       minIdleMs: this.minIdleMs,
       displays,
     };
+  }
+
+  async reapAgent(agentId: string): Promise<DesktopReapResult> {
+    return await reapDeletedAgentSeat(agentId, this.now(), this.io);
   }
 
   async keepAdd(ref: string): Promise<{ agentId: string; kept: true }> {
