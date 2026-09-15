@@ -349,9 +349,17 @@ printf '%s' '<text>' | grokbox send <id-or-name>
 
 文本输入规则对 `send` 和 `fs write` 一致：显式 `--text` 存在时永远不读取 stdin，并且在非 TTY/CI/agent runner 中正常工作；只有未提供 `--text` 时才读取非 TTY stdin。两者都缺失时返回 `invalid_usage`；显式参数与可读 stdin 同时存在时，以显式参数为唯一输入。
 
+回执 `accepted:true` / `status:accepted` **只表示 Gateway 已入队**，不是回复成功。回执必带 `clientNonce`（Agent 主句柄）。send 没有 `--wait`。观测同一发送只用：
+
+```bash
+grokbox history outcome <id-or-name> --nonce <clientNonce> --runtime [--wait-ms 60000] --json
+```
+
+这是金丝雀唯一路径。`--request-id` 是同一 SendAttempt 的次查找，不是第二主键。没有 `alerts list --nonce`，也不新增 `correlationId`。
+
 ### 7.4 History, Memory, Export, Events, Running
 
-`history outcome --expect-harness box|temporal` 在每次采样前后核对声明来源；本机 `--runtime` 隐含 box 要求。跨 harness、缺声明或不符时不得用另一账本的相同 entry/预期正文判成功，保持 unknown。前后采样不是原子快照，也不读取 App 的本地缓存；详见 [结果观测](maintainers/run-outcome-observation.md)。
+`history outcome` 是只读投影，不是第二套生命周期。`data.state` 只准：`unknown`、`recorded`（仅 echo 或 journal bind，等待中）、`failed`（durable 拒绝 / 相关 terminal / 相关 live tray）、`progress`、`delivered`、`expected_result_observed`。**outcome 无 `accepted` 成功词**；旧 `acceptedObserved` 已改为 `echoObserved`。send 回执仍可带 Gateway 的 `accepted:true`（入队）。`--runtime` 以本机 journal 为失败权威；空 trays 不得把 `failed` 改回 `recorded`。`requestId` 在早期 admit 失败时可为 null。`--wait-ms` 只把 `failed|delivered|expected_result_observed` 当 settled；`recorded` 继续等。`executionCompleted` 保持 `not_proven`。`--expect-harness box|temporal` 在每次采样前后核对声明来源；本机 `--runtime` 隐含 box 要求。跨 harness、缺声明或不符时不得用另一账本的相同 entry/预期正文判成功，保持 unknown。前后采样不是原子快照，也不读取 App 的本地缓存；详见 [结果观测](maintainers/run-outcome-observation.md)。
 
 - `history search` 搜索 transcript 内容，不属于 agent roster 搜索。
 - `history tail` 支持 `--limit` 与 `--before-seq`。

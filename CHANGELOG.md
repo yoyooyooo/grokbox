@@ -8,6 +8,8 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Teach the canary send watch as `send` then `history outcome --nonce … --runtime`.
+  Outcome `data.state` has no `accepted` token; send receipt `accepted` means queued only.
 - `runtime profile analyze` still settles `missing_runner` when no Agent runner
   is installed, but now emits write-gate envelope reject ids and an executable
   `write --sha` / `--slice-review` `next` so Host recover can continue after

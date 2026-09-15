@@ -249,6 +249,10 @@ describe("published Node package", () => {
     const skill = await run([grokbox, "skills", "get", "grokbox"]);
     expect(skill.code, skill.stderr).toBe(0);
     expect(skill.stdout).toContain("grokbox host start");
+    expect(skill.stdout).toContain("history outcome");
+    expect(skill.stdout).toContain("--runtime");
+    expect(skill.stdout).toMatch(/queued, not a reply/);
+    expect(skill.stdout).not.toMatch(/data\.state\s*=\s*accepted/);
     expect(grokboxVersion.stdout.trim()).toBe(cliPackage.version);
     expect(gboxVersion.stdout).toBe(grokboxVersion.stdout);
 

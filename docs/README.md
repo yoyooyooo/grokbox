@@ -32,7 +32,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 - [持续观测与本地 incident](maintainers/continuous-observation.md): explicit monitor init/run, pure snapshot/event/incident queries, revision-bound ack/snooze, portable bounded SQLite-image durability and failure/cursor boundaries; local-only, no execution authority or automatic repair.
 
-- [运行结果与 App 警告观测](maintainers/run-outcome-observation.md): `alerts list`、`history outcome`、`events --channels transcript,tray`；按原 nonce/requestId 区分 accepted、进度、匹配结果与失败，说明内存警告与持久运行日志的边界。
+- [运行结果与 App 警告观测](maintainers/run-outcome-observation.md): 金丝雀路径是 `send` + `history outcome --nonce … --runtime`；outcome 状态为 recorded/failed/progress/delivered/expected_result_observed/unknown，无 accepted 成功词；send 回执 `accepted` 只表示入队。
 
 - [Source provenance review](maintainers/provenance.md)
 - [Official Host inbound → Agent loop](maintainers/host-inbound-agent-loop.md): source-pinned admission, context/pins/compact, inference/tools, delivery, ledgers and settlement map; includes corrected research claims and explicit evidence gaps, not fix designs.

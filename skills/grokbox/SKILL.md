@@ -3,8 +3,8 @@ name: grokbox
 description: >-
   Agent-operated grokbox on a Grok Bot cloud computer: friendly speech to people,
   exact CLI to yourself. Use when installing or recovering grokbox, host
-  start/stop, doctor next, custom models on disposable Bots, templates, or title
-  trailers. Always load via `grokbox skills get grokbox` first.
+  start/stop, doctor next, custom models on disposable Bots, templates, title
+  trailers, or watching a send. Always load via `grokbox skills get grokbox` first.
 ---
 
 # grokbox
@@ -28,7 +28,7 @@ Unofficial CLI for a Grok Bot **cloud computer** you already own. Alpha. Not aff
 
 ## Tracks
 
-1. **Remote the official product** — Profile, `grokbox doctor`, `agents list`, `send`, `history`. Done when doctor and list succeed.
+1. **Remote the official product** — Profile, `grokbox doctor`, `agents list`, `send`, then `history outcome --nonce … --runtime`. Done when doctor and list succeed; a send is not done at the receipt.
 2. **Custom model on this computer** — `grokbox on`, recover Host channel per [adopt.md](adopt.md), create box Bots with grokbox (not App New Bot), `agents ownership` is `confirmed_box`, `models use --for <disposable-agent>`, optional `title show`. After a grokbox package update: `grokbox upgrade --yes`.
 
 App New Bot is often **temporal** and never uses the custom-model channel. Details: [ownership.md](ownership.md). Title paint: [label.md](label.md). Catalog: [models.md](models.md). Failures: [troubleshoot.md](troubleshoot.md). **Host recover after official update:** [adopt.md](adopt.md).
@@ -43,12 +43,38 @@ When doctor / `error.next` says the custom channel needs a Host update:
 
 Full decision tree: [adopt.md](adopt.md). Short table: [troubleshoot.md](troubleshoot.md).
 
+## Watch a send
+
+One canary path. `clientNonce` is your handle. Do not invent a second id.
+
+```bash
+grokbox send <agent> --text "<text>" --json
+# Keep data.clientNonce. data.accepted / data.status=accepted means queued, not a reply.
+
+grokbox history outcome <agent> --nonce <clientNonce> --runtime [--wait-ms 60000] --json
+```
+
+Read outcome `data.state`. Outcome has **no** `accepted` token (`acceptedObserved` is gone). `data.requestId` may be null on an early failure — that is not “never sent”. Empty `data.alerts` is not success. `--runtime` reads the local journal (failure authority). `--wait-ms` keeps polling until `failed`, `delivered`, or `expected_result_observed`; `recorded` is not settled. `--request-id` looks up the **same** send, not a second handle. There is no `alerts list --nonce`.
+
+| `data.state` | You | Person hears |
+| --- | --- | --- |
+| `recorded` | Echo or journal bind only. Keep waiting. | “Queued; still waiting for a reply.” |
+| `failed` | Durable reject / terminal / live tray. Empty alerts do not undo this. Paraphrase `runtimeFailure.message` if present. | “The Bot couldn’t reply.” |
+| `progress` | A message showed up; expected text did not. | “Working…” |
+| `delivered` | A same-request reply is on the transcript. | “There’s a reply.” |
+| `expected_result_observed` | Exact `--expect-text` appeared. `executionCompleted` stays `not_proven`. | “Got the expected result.” |
+| `unknown` | Missing or conflicting evidence. | “Can’t tell from this check.” |
+
+Retry a send only with the same `--nonce` and the same target/prompt.
+
 ## Commands
 
 Prefer each command's `--help`. `<agent>` is an exact ID or a unique name.
 
 ```bash
 grokbox doctor
+grokbox send <agent> --text "<text>" --json
+grokbox history outcome <agent> --nonce <clientNonce> --runtime --json
 grokbox on
 grokbox host start
 grokbox host start --force

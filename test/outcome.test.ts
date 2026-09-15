@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { catalogAgentMessage, HOST_FAILURE_CATALOG } from "@grokbox/box-runtime/runtime";
@@ -308,4 +308,29 @@ test("CLI --runtime joins a nonce-only journal reject while trays stay empty", a
     expect(result.stdout).not.toContain('"state":"accepted"');
     expect(result.stdout).not.toContain("acceptedObserved");
   } finally { gateway.stop(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("canary skill teaches send then nonce+runtime outcome, not accepted-as-success", async () => {
+  const skill = await readFile(join(import.meta.dir, "../skills/grokbox/SKILL.md"), "utf8");
+  expect(skill).toContain("grokbox send <agent>");
+  expect(skill).toContain("history outcome <agent> --nonce <clientNonce> --runtime");
+  expect(skill).toMatch(/queued, not a reply/);
+  expect(skill).toContain("| `recorded` |");
+  expect(skill).toContain("| `failed` |");
+  expect(skill).toContain("`accepted` token");
+  expect(skill).not.toMatch(/data\.state\s*=\s*accepted/);
+});
+
+test("observation docs drop accepted as an outcome state", async () => {
+  const observation = await readFile(join(import.meta.dir, "../docs/maintainers/run-outcome-observation.md"), "utf8");
+  const contract = await readFile(join(import.meta.dir, "../docs/product-contract.md"), "utf8");
+  const core = await readFile(join(import.meta.dir, "../skills/core.md"), "utf8");
+  for (const [name, text] of [["observation", observation], ["contract", contract], ["core", core]] as const) {
+    expect(text, name).toContain("recorded");
+    expect(text, name).not.toMatch(/accepted（仅输入记录）/);
+    expect(text, name).not.toMatch(/Success means accepted, not\s+completed/);
+  }
+  expect(observation).toContain("history outcome <agent-id> --nonce <clientNonce> --runtime");
+  expect(contract).toContain("history outcome <id-or-name> --nonce <clientNonce> --runtime");
+  expect(core).toContain("history outcome <target> --nonce <clientNonce> --runtime");
 });
