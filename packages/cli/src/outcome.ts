@@ -103,7 +103,14 @@ function specializeRuntimeFailure(failure: Record<string, unknown>, recentRuntim
   const hostCode = typeof failure.errorCode === "string" ? failure.errorCode : "";
   if (failure.name !== "host_stream_rejected" && failure.name !== "host_normalized_terminal") return failure;
   if (hostCode && hostCode !== "model_error") return failure;
+  const agentId = id(failure.agentId), turnId = id(failure.turnId), stepId = id(failure.stepId);
+  if (agentId === null || turnId === null || stepId === null) return failure;
   const modeld = recentRuntime.find((event) => event.name === "model_step_terminal"
+    && event.agentId === agentId && event.turnId === turnId && event.stepId === stepId
+    // Historical Host rejects may omit generation fields. When the Host supplies
+    // one, the modeld terminal must supply the same valid identity, not a wildcard.
+    && (["hostGenerationId", "serviceEpoch"] as const).every((field) => failure[field] === undefined
+      || (id(failure[field]) !== null && event[field] === failure[field]))
     && (event.outcome === "error" || event.outcome === "cancelled")
     && event.failureCode === "stream_invalid");
   if (!modeld) return failure;

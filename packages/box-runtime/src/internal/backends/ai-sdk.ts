@@ -54,11 +54,25 @@ function abortError(): Error {
   return Object.assign(new Error("aborted"), { name: "AbortError" });
 }
 
-function waitAbort(signal: AbortSignal): Promise<never> {
-  return new Promise((_, reject) => {
-    const fail = () => reject(abortError());
-    if (signal.aborted) fail();
-    else signal.addEventListener("abort", fail, { once: true });
+/** One SDK pull owns one abort listener; release it on every settlement path.
+ * A shared pending abort Promise would retain one reaction per successful pull. */
+export function nextSdkStreamPart<T>(iterator: AsyncIterator<T>, signal: AbortSignal): Promise<IteratorResult<T>> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(abortError()); return; }
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => { cleanup(); reject(abortError()); };
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      // Attach both handlers even when next() synchronously triggers cancellation.
+      // A later rejection from the losing pull must not become unhandled.
+      Promise.resolve(iterator.next()).then(
+        (part) => { cleanup(); resolve(part); },
+        (error) => { cleanup(); reject(error); },
+      );
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 
@@ -110,6 +124,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
           started = true;
           const ac = new AbortController();
           const stop = () => {
+            signal.removeEventListener("abort", stop);
             if (!ac.signal.aborted) ac.abort();
           };
           signal.addEventListener("abort", stop, { once: true });
@@ -145,13 +160,13 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
                 return null;
               }
             })();
-            if (!iterator) return;
+            if (!iterator) { stop(); return; }
             const names = new Map<string, string>();
             const state = emptyStreamValidation();
             const nonstandard = createNonstandardOpenaiStreamState();
             try {
               while (!ac.signal.aborted) {
-                const step = await Promise.race([iterator.next(), waitAbort(ac.signal)]);
+                const step = await nextSdkStreamPart(iterator, ac.signal);
                 if (step.done) break;
                 const mapped = mapSdkStreamForHost(step.value, names, nonstandard);
                 if (mapped === "skip" || mapped === "drop") continue;
@@ -171,6 +186,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
               else failQueue(queue, error);
               settle(Effect.void);
             } finally {
+              stop();
               try { await iterator.return?.(); } catch { /* ignore */ }
             }
           })();

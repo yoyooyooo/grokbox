@@ -111,6 +111,74 @@ test("first_chunk then normalize stream_invalid is failed with invalid_stream, n
   expect(JSON.stringify(result)).not.toContain('"code":"model_error"');
 });
 
+for (const hostName of ["host_stream_rejected", "host_normalized_terminal"]) {
+  const identity = { agentId: base.agentId, turnId: "turn-1", stepId: requestId };
+  const host = {
+    ...identity, name: hostName, clientNonce: nonce, terminalClass: "error",
+    errorCode: "model_error", reason: "terminal-rejected", stage: "provider",
+  };
+  const modeld = { ...identity, name: "model_step_terminal", outcome: "error", failureCode: "stream_invalid" };
+
+  test(`${hostName} specializes only a matching STEP, not another STEP in the same TURN`, () => {
+    const result = projectSendOutcome({ ...base, runtimeEvents: [
+      { ...modeld, stepId: "older-step", serviceEpoch: "epoch-1" },
+      { ...modeld, failureCode: "provider_error", serviceEpoch: "epoch-1" },
+      host,
+    ] });
+    expect(result).toMatchObject({ state: "failed", runtimeFailure: { stepId: requestId, code: "model_error", stage: "provider" } });
+    expect(projectSendOutcome({ ...base, runtimeEvents: [modeld, host] })).toMatchObject({
+      state: "failed", runtimeFailure: { stepId: requestId, code: "invalid_stream", stage: "normalize" },
+    });
+  });
+
+  for (const [label, patch] of [
+    ["different agent", { agentId: "other-agent" }],
+    ["different turn", { turnId: "other-turn" }],
+    ["missing turn", { turnId: undefined }],
+    ["missing step", { stepId: undefined }],
+    ["invalid step", { stepId: "bad step" }],
+  ] as const) {
+    test(`${hostName} does not specialize from a modeld terminal with ${label}`, () => {
+      const result = projectSendOutcome({ ...base, runtimeEvents: [
+        { ...modeld, clientNonce: nonce, ...patch }, host,
+      ] });
+      expect(result).toMatchObject({ state: "failed", runtimeFailure: { code: "model_error", stage: "provider" } });
+    });
+  }
+
+  for (const field of ["turnId", "stepId"] as const) {
+    test(`${hostName} missing ${field} is not a wildcard for specialization`, () => {
+      const result = projectSendOutcome({ ...base, runtimeEvents: [modeld, { ...host, [field]: undefined }] });
+      expect(result).toMatchObject({ state: "failed", runtimeFailure: { code: "model_error", stage: "provider" } });
+    });
+  }
+
+  for (const field of ["hostGenerationId", "serviceEpoch"] as const) {
+    test(`${hostName} requires a modeld match for a supplied ${field}`, () => {
+      const qualifiedHost = { ...host, [field]: "generation-1" };
+      expect(projectSendOutcome({ ...base, runtimeEvents: [
+        { ...modeld, [field]: "generation-1" }, qualifiedHost,
+      ] })).toMatchObject({ state: "failed", runtimeFailure: { code: "invalid_stream" } });
+      for (const value of [undefined, "generation-2", "bad generation"]) {
+        const result = projectSendOutcome({ ...base, runtimeEvents: [
+          { ...modeld, [field]: value }, qualifiedHost,
+        ] });
+        // Conflicting service epochs already invalidate the whole observation.
+        if (field === "serviceEpoch" && value === "generation-2") {
+          expect(result).toMatchObject({ state: "unknown", runtimeFailure: null });
+        } else {
+          expect(result).toMatchObject({ state: "failed", runtimeFailure: { code: "model_error" } });
+        }
+      }
+    });
+  }
+
+  test(`${hostName} preserves a typed Host rejection even with same-STEP stream_invalid`, () => {
+    expect(projectSendOutcome({ ...base, runtimeEvents: [modeld, { ...host, errorCode: "parallel_tools" }] }))
+      .toMatchObject({ state: "failed", runtimeFailure: { code: "parallel_tools" } });
+  });
+}
+
 test("durable runtime cancellation stays a failure after the ephemeral App warning disappears", () => {
   const result = projectSendOutcome({ ...base, entries: [user, progress], runtimeEvents: [
     { name: "model_step_terminal", agentId: "agent-alpha", stepId: requestId, turnId: "turn-1", outcome: "cancelled", failureCode: "disconnected" },

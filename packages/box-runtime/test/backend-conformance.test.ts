@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { getEventListeners } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Fiber, Layer, Stream } from "effect";
@@ -271,6 +272,54 @@ describe("backend conformance", () => {
     }))).rejects.toMatchObject({ code: "envelope_too_large" });
     expect(http).toBe(0);
   });
+
+  for (const ending of ["stop", "provider_error", "stream_invalid"] as const) {
+    test(`SDK long stream bounds abort listeners and cleans up on ${ending}`, async () => {
+      const count = 256;
+      let requestSignal: AbortSignal | undefined;
+      let responseController: ReadableStreamDefaultController<Uint8Array> | undefined;
+      let baselineListeners = 0;
+      let pausedListeners = -1;
+      let textEvents = 0;
+      let http = 0;
+      const encoder = new TextEncoder();
+      const encode = (event: unknown) => encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+      const fetch = mockFetch((init) => {
+        http++;
+        requestSignal = init?.signal ?? undefined;
+        if (!requestSignal) throw new Error("SDK request must carry its abort signal");
+        baselineListeners = getEventListeners(requestSignal, "abort").length;
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            responseController = controller;
+            for (let i = 0; i < count; i++) controller.enqueue(encode(textChunk("x")));
+            // Hold the provider finish until the real backend has emitted all text.
+          },
+        }), { headers: { "content-type": "text/event-stream" } });
+      });
+      const result = await runSdk(fetch, { OPENAI_API_KEY: "sk-test" }, (backend, auth) => Effect.gen(function* () {
+        const pinned = yield* auth.pin({ apiKeyRef: "env:OPENAI_API_KEY" });
+        const prepared = yield* backend.prepare(openaiRecord(), snapshot([{ role: "user", content: "long stream" }]));
+        return yield* Effect.result(Stream.runForEach(backend.infer({}, prepared, pinned.lease), (event: InferenceEvent) => Effect.sync(() => {
+          if (event.type !== "text_delta" || ++textEvents !== count) return;
+          pausedListeners = getEventListeners(requestSignal!, "abort").length;
+          responseController!.enqueue(encode(ending === "provider_error"
+            ? { error: { message: "synthetic provider failure", type: "server_error" } }
+            : finishChunk(ending === "stop" ? "stop" : "unknown")));
+          responseController!.enqueue(encoder.encode("data: [DONE]\n\n"));
+          responseController!.close();
+        })));
+      }));
+      expect(http).toBe(1);
+      expect(textEvents).toBe(count);
+      if (ending === "stop") expect(result._tag).toBe("Success");
+      else expect(result).toMatchObject({ _tag: "Failure", failure: { code: ending } });
+      expect(pausedListeners).toBeGreaterThanOrEqual(0);
+      expect(pausedListeners).toBeLessThanOrEqual(baselineListeners + 1);
+      expect(requestSignal!.aborted).toBe(true);
+      expect(getEventListeners(requestSignal!, "abort")).toHaveLength(0);
+    });
+  }
 
   test("interrupt aborts the SDK request without waiting for the next chunk", async () => {
     let aborted = 0;
