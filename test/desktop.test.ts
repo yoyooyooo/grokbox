@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
 import { readDaemonConfig, validateDaemonConfig, writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
-import { DesktopManager, reapDeletedAgentSeat, type DesktopIo } from "../packages/cli/src/daemon/desktop.ts";
+import {
+  DesktopManager,
+  reapDeletedAgentSeat,
+  unseatAgentFromAssignments,
+  type DesktopIo,
+} from "../packages/cli/src/daemon/desktop.ts";
 import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
 import {
   classifyDesktop,
@@ -19,7 +24,20 @@ import { captureCli, parseJson, startMockGateway, writeDiscovery, type MockGatew
 const AGENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const AGENT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 const AGENT_KEEP = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const TOKEN_A = "11111111-1111-4111-8111-111111111111";
+const TOKEN_B = "22222222-2222-4222-8222-222222222222";
+const TOKEN_KEEP = "33333333-3333-4333-8333-333333333333";
 const skillsDir = join(import.meta.dir, "..", "skills");
+
+function dropAssignment(world: DesktopWorld, agentId: string): DesktopWorld {
+  const query = agentId.toLowerCase();
+  return {
+    ...world,
+    assignments: Object.fromEntries(
+      Object.entries(world.assignments).filter(([id]) => id.toLowerCase() !== query),
+    ),
+  };
+}
 
 function world(overrides: Partial<DesktopWorld> = {}): DesktopWorld {
   return {
@@ -171,6 +189,9 @@ describe("desktop daemon commands", () => {
         };
       },
       reapLogs: async () => {},
+      unseatAgent: async (agentId) => {
+        current.value = dropAssignment(current.value, agentId);
+      },
     };
     const deps = {
       ...createProductionDeps(),
@@ -275,6 +296,7 @@ describe("desktop daemon commands", () => {
         stopped.push(display);
       },
       reapLogs: async () => {},
+      unseatAgent: async () => {},
     };
     const manager = await DesktopManager.create(configDir, () => 2_000_000, { minIdleMs: 600_000, floorAgentIds: [AGENT_KEEP] }, io);
     const raced = await manager.prune(true);
@@ -316,24 +338,157 @@ describe("desktop daemon commands", () => {
     const result = await run(["--profile", "daemon", "agents", "delete", "idle-bot", "--yes"]);
     expect(result.code, result.stderr).toBe(0);
     expect(stopped).toEqual([3]);
+    expect(current.value.assignments).toEqual({ [AGENT_A]: 2, [AGENT_KEEP]: 10 });
+    const body = parseJson(result.stdout) as {
+      data: { deleted: { id: string }; desktop: { display: number; outcome: string } };
+    };
+    expect(body.data.deleted.id).toBe(AGENT_B);
+    expect(body.data.desktop).toEqual({ display: 3, outcome: "stopped" });
     expect(gateway?.requests.some((request) => request.pathname === "/api/deleteAgent")).toBe(true);
+    const status = await run(["--profile", "daemon", "desktop", "status"]);
+    expect(status.code).toBe(0);
+    const seats = parseJson(status.stdout) as { data: { displays: Array<{ agentId: string }> } };
+    expect(seats.data.displays.map((row) => row.agentId).sort()).toEqual([AGENT_A, AGENT_KEEP].sort());
+  });
+
+  test("unseated agent delete reports no_seat and leaves the table alone", async () => {
+    const stopped: number[] = [];
+    const current = { value: world({ assignments: { [AGENT_A]: 2, [AGENT_KEEP]: 10 } }) };
+    const { run } = await harness(current, stopped, [{
+      id: AGENT_B,
+      name: "idle-bot",
+      title: "",
+      isGroup: false,
+      isHiddenFromSidebar: false,
+      isRunning: false,
+      memberIds: [],
+    }]);
+    const result = await run(["--profile", "daemon", "agents", "delete", "idle-bot", "--yes"]);
+    expect(result.code, result.stderr).toBe(0);
+    expect(stopped).toEqual([]);
+    expect(current.value.assignments).toEqual({ [AGENT_A]: 2, [AGENT_KEEP]: 10 });
+    const body = parseJson(result.stdout) as { data: { desktop: { display: null; outcome: string } } };
+    expect(body.data.desktop).toEqual({ display: null, outcome: "no_seat" });
+  });
+
+  test("main-display seat is not stopped or removed", async () => {
+    const stopped: number[] = [];
+    const current = { value: world({ assignments: { [AGENT_B]: 1, [AGENT_A]: 2, [AGENT_KEEP]: 10 } }) };
+    const { run } = await harness(current, stopped, [{
+      id: AGENT_B,
+      name: "idle-bot",
+      title: "",
+      isGroup: false,
+      isHiddenFromSidebar: false,
+      isRunning: false,
+      memberIds: [],
+    }]);
+    const result = await run(["--profile", "daemon", "agents", "delete", "idle-bot", "--yes"]);
+    expect(result.code, result.stderr).toBe(0);
+    expect(stopped).toEqual([]);
+    expect(current.value.assignments).toEqual({ [AGENT_B]: 1, [AGENT_A]: 2, [AGENT_KEEP]: 10 });
+    const body = parseJson(result.stdout) as { data: { desktop: { display: number; outcome: string } } };
+    expect(body.data.desktop).toEqual({ display: 1, outcome: "skipped_main" });
+    const status = await run(["--profile", "daemon", "desktop", "status"]);
+    const seats = parseJson(status.stdout) as { data: { displays: Array<{ agentId: string; display: number }> } };
+    expect(seats.data.displays.find((row) => row.agentId === AGENT_B)).toMatchObject({ display: 1 });
   });
 });
 
 describe("deleted-bot desktop reap", () => {
   test("stops fork seats, skips the main desktop, and ignores non-UUIDs", async () => {
     const stopped: number[] = [];
+    const unseated: string[] = [];
+    const seated = { value: world({ assignments: { [AGENT_A]: 1, [AGENT_B]: 3 } }) };
     const io: DesktopIo = {
-      readWorld: async () => world({ assignments: { [AGENT_A]: 1, [AGENT_B]: 3 } }),
+      readWorld: async () => seated.value,
       stopWindow: async (display) => {
         stopped.push(display);
       },
       reapLogs: async () => {},
+      unseatAgent: async (agentId) => {
+        unseated.push(agentId);
+        seated.value = dropAssignment(seated.value, agentId);
+      },
     };
     expect(await reapDeletedAgentSeat(AGENT_A, 1, io)).toEqual({ display: 1, outcome: "skipped_main" });
+    expect(seated.value.assignments).toEqual({ [AGENT_A]: 1, [AGENT_B]: 3 });
     expect(await reapDeletedAgentSeat(AGENT_B, 1, io)).toEqual({ display: 3, outcome: "stopped" });
     expect(await reapDeletedAgentSeat("not-a-bot", 1, io)).toEqual({ display: null, outcome: "no_seat" });
     expect(stopped).toEqual([3]);
+    expect(unseated).toEqual([AGENT_B]);
+    expect(seated.value.assignments).toEqual({ [AGENT_A]: 1 });
+  });
+
+  test("unseated delete reports no_seat without touching the table", async () => {
+    const stopped: number[] = [];
+    const unseated: string[] = [];
+    const seated = { value: world({ assignments: { [AGENT_A]: 2 } }) };
+    const io: DesktopIo = {
+      readWorld: async () => seated.value,
+      stopWindow: async (display) => {
+        stopped.push(display);
+      },
+      reapLogs: async () => {},
+      unseatAgent: async (agentId) => {
+        unseated.push(agentId);
+        seated.value = dropAssignment(seated.value, agentId);
+      },
+    };
+    expect(await reapDeletedAgentSeat(AGENT_B, 1, io)).toEqual({ display: null, outcome: "no_seat" });
+    expect(stopped).toEqual([]);
+    expect(unseated).toEqual([]);
+    expect(seated.value.assignments).toEqual({ [AGENT_A]: 2 });
+  });
+
+  test("stop-window success then unseat failure is unavailable, not silent", async () => {
+    const stopped: number[] = [];
+    const io: DesktopIo = {
+      readWorld: async () => world({ assignments: { [AGENT_B]: 3 } }),
+      stopWindow: async (display) => {
+        stopped.push(display);
+      },
+      reapLogs: async () => {},
+      unseatAgent: async () => {
+        throw new Error("seat table locked");
+      },
+    };
+    expect(await reapDeletedAgentSeat(AGENT_B, 1, io)).toEqual({ display: 3, outcome: "unavailable" });
+    expect(stopped).toEqual([3]);
+  });
+
+  test("atomically drops one agent from assignments and tokens and preserves the rest", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-seat-table-"));
+    const path = join(dir, ".sand-window-assignments.json");
+    await writeFile(path, `${JSON.stringify({
+      assignments: { [AGENT_A]: 1, [AGENT_B]: 3, [AGENT_KEEP]: 10 },
+      tokens: { [AGENT_A]: TOKEN_A, [AGENT_B]: TOKEN_B, [AGENT_KEEP]: TOKEN_KEEP },
+      extra: { keep: true },
+    }, null, 2)}\n`, { mode: 0o644 });
+    await unseatAgentFromAssignments(path, AGENT_B.toUpperCase());
+    const parsed = JSON.parse(await readFile(path, "utf8")) as {
+      assignments: Record<string, number>;
+      tokens: Record<string, string>;
+      extra: { keep: boolean };
+    };
+    expect(parsed.assignments).toEqual({ [AGENT_A]: 1, [AGENT_KEEP]: 10 });
+    expect(parsed.tokens).toEqual({ [AGENT_A]: TOKEN_A, [AGENT_KEEP]: TOKEN_KEEP });
+    expect(parsed.extra).toEqual({ keep: true });
+    expect(JSON.stringify(parsed)).not.toContain(AGENT_B);
+    expect(JSON.stringify(parsed)).not.toContain(TOKEN_B);
+  });
+
+  test("corrupt seating JSON is left untouched", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-seat-corrupt-"));
+    const path = join(dir, ".sand-window-assignments.json");
+    await writeFile(path, "{not-json", { mode: 0o644 });
+    await expect(unseatAgentFromAssignments(path, AGENT_B)).rejects.toMatchObject({ code: "desktop_unavailable" });
+    expect(await readFile(path, "utf8")).toBe("{not-json");
+  });
+
+  test("missing seating file is a no-op", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grokbox-seat-missing-"));
+    await unseatAgentFromAssignments(join(dir, ".sand-window-assignments.json"), AGENT_B);
   });
 });
 
@@ -345,6 +500,7 @@ describe("desktop manager persist", () => {
       readWorld: async () => current,
       stopWindow: async () => {},
       reapLogs: async () => {},
+      unseatAgent: async () => {},
     };
     const manager = await DesktopManager.create(configDir, () => 2_000_000, { minIdleMs: 600_000 }, io);
     await manager.keepAdd(AGENT_A);
@@ -369,6 +525,7 @@ describe("desktop manager persist", () => {
         stopped.push(display);
       },
       reapLogs: async () => {},
+      unseatAgent: async () => {},
     };
     const manager = await DesktopManager.create(
       configDir,
@@ -396,6 +553,7 @@ describe("desktop keep id case canonicalization", () => {
       readWorld: async () => idle,
       stopWindow: async (display) => { stopped.push(display); },
       reapLogs: async () => {},
+      unseatAgent: async () => {},
     };
     const manager = await DesktopManager.create(configDir, () => 2_000_000, { minIdleMs: 600_000 }, io);
 
@@ -423,6 +581,7 @@ describe("desktop keep id case canonicalization", () => {
       readWorld: async () => idle,
       stopWindow: async () => {},
       reapLogs: async () => {},
+      unseatAgent: async () => {},
     };
     const manager = await DesktopManager.create(configDir, () => 2_000_000, { minIdleMs: 600_000 }, io);
     await manager.keepAdd(UPPER_A);

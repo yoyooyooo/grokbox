@@ -630,7 +630,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["agents", "delete"],
     usage: "grokbox agents delete <agent> [--yes]",
-    summary: "Delete one non-group agent after explicit confirmation, and stop its fork desktop if seated.",
+    summary: "Delete one non-group agent after explicit confirmation, stop its non-main fork, and drop its seat assignment.",
     arguments: [
       { syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] },
     ],

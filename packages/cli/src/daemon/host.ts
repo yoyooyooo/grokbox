@@ -298,8 +298,9 @@ export async function startDaemonHost(
     }
     if (method === "deleteAgent") {
       const value = await gateway.deleteAgent(asString(body.id), timeoutMs);
-      await desktop.reapAgent(asString(body.id));
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+      const desktopReap = await desktop.reapAgent(asString(body.id));
+      const result = isRecord(value.result) ? { ...value.result, desktop: desktopReap } : { desktop: desktopReap };
+      return { result, gateway: gatewayMeta(value.discovery) };
     }
     if (method === "publishBotTemplate") {
       const value = await gateway.publishBotTemplate(body, timeoutMs);

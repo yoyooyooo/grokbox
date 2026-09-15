@@ -26,7 +26,7 @@ import {
   type TitleAction,
 } from "../title-sync.ts";
 import { composeAgentTitle, labelOwnerFromState, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
-import { liveDesktopIo, reapDeletedAgentSeat, type DesktopReapResult } from "../daemon/desktop.ts";
+import { liveDesktopIo, readDesktopReap, reapDeletedAgentSeat, type DesktopReapResult } from "../daemon/desktop.ts";
 
 export async function runAgentsList(
   deps: CliDeps,
@@ -196,7 +196,7 @@ export async function runAgentsDelete(
   await confirmDeletion(deps, raw.yes, "agent", row);
   const id = asString(row.id);
   const deleted = await client.deleteAgent(id, io.timeoutMs, createNonce(undefined, deps));
-  const desktop = await reapDesktopAfterDelete(deps, id);
+  const desktop = readDesktopReap(deleted.result) ?? await reapDesktopAfterDelete(deps, id);
   writeSuccess(
     deps.stdout,
     { deleted: { id, name: asString(row.name), kind: "agent" }, ...(desktop ? { desktop } : {}) },

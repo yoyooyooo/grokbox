@@ -52,6 +52,7 @@ describe("profile capabilities vs desktop probe", () => {
       readWorld: async () => world(),
       stopWindow: async () => {},
       reapLogs: async () => {},
+      unseatAgent: async () => {},
     };
     const deps = {
       ...createProductionDeps(),

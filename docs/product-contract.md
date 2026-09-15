@@ -131,7 +131,7 @@ grokbox (alias: gbox)
 ├── agents title sync [agents...]             # 只刷新已 show 的 trailer
 ├── agents create --name <name> [...]
 ├── agents update <agent> [...]               # --title 只改用户段；show 时与 trailer 共存
-├── agents delete <agent> [--yes]          # 删花名册；若座位 ≥2，盒子上 stop-window（不改座位表）
+├── agents delete <agent> [--yes]          # 删花名册；若座位 ≥2，盒子上 stop-window 并从座位表摘掉该 agent（主屏不误伤）
 ├── groups list|show|create|update|delete
 ├── groups members list|add|remove|set
 ├── send <target>

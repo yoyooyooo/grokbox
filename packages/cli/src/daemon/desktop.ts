@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { chmod, lstat, readdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
 import { CliError } from "../errors.ts";
 import {
   classifyDesktop,
@@ -36,6 +37,7 @@ export type DesktopIo = {
   readWorld(nowMs: number): Promise<DesktopWorld>;
   stopWindow(display: number): Promise<void>;
   reapLogs(display: number): Promise<void>;
+  unseatAgent(agentId: string): Promise<void>;
 };
 
 export type DesktopStatusResult = {
@@ -52,10 +54,25 @@ export type DesktopPruneResult = {
   rows: DesktopPruneRow[];
 };
 
+export type DesktopReapOutcome = "stopped" | "skipped_main" | "no_seat" | "unavailable";
+
 export type DesktopReapResult = {
   display: number | null;
-  outcome: "stopped" | "skipped_main" | "no_seat" | "unavailable";
+  outcome: DesktopReapOutcome;
 };
+
+const REAP_OUTCOMES = new Set<DesktopReapOutcome>(["stopped", "skipped_main", "no_seat", "unavailable"]);
+
+export function readDesktopReap(value: unknown): DesktopReapResult | undefined {
+  if (!isRecord(value) || !isRecord(value.desktop)) return undefined;
+  const outcome = value.desktop.outcome;
+  if (typeof outcome !== "string" || !REAP_OUTCOMES.has(outcome as DesktopReapOutcome)) return undefined;
+  const display = value.desktop.display;
+  if (display !== null && (typeof display !== "number" || !Number.isInteger(display) || display < 1)) {
+    return undefined;
+  }
+  return { display, outcome: outcome as DesktopReapOutcome };
+}
 
 export async function liveDesktopIo(): Promise<DesktopIo | null> {
   try {
@@ -85,10 +102,108 @@ export async function reapDeletedAgentSeat(
   try {
     await io.stopWindow(display);
     await io.reapLogs(display);
-    return { display, outcome: "stopped" };
   } catch {
     return { display, outcome: "unavailable" };
   }
+  try {
+    await io.unseatAgent(match[0]);
+  } catch {
+    return { display, outcome: "unavailable" };
+  }
+  return { display, outcome: "stopped" };
+}
+
+function seatTableHasAgent(table: Record<string, unknown>, query: string): boolean {
+  for (const field of ["assignments", "tokens"] as const) {
+    const record = table[field];
+    if (!isRecord(record)) continue;
+    if (Object.keys(record).some((id) => id.toLowerCase() === query)) return true;
+  }
+  return false;
+}
+
+function dropAgentFromSeatTable(
+  table: Record<string, unknown>,
+  query: string,
+): { changed: boolean; value: Record<string, unknown> } {
+  const next: Record<string, unknown> = { ...table };
+  let changed = false;
+  for (const field of ["assignments", "tokens"] as const) {
+    const record = table[field];
+    if (!isRecord(record)) continue;
+    const copy: Record<string, unknown> = { ...record };
+    for (const id of Object.keys(copy)) {
+      if (id.toLowerCase() !== query) continue;
+      delete copy[id];
+      changed = true;
+    }
+    next[field] = copy;
+  }
+  return { changed, value: next };
+}
+
+async function atomicWriteSeatTable(path: string, value: unknown, mode: number): Promise<void> {
+  const temporary = join(dirname(path), `.sand-window-assignments.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode, flag: "wx" });
+    await chmod(temporary, mode);
+    await rename(temporary, path);
+  } catch (error) {
+    await unlink(temporary).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function unseatAgentFromAssignments(path: string, agentId: string): Promise<void> {
+  const query = agentId.trim().toLowerCase();
+  if (!UUID_V4.test(query)) {
+    throw new CliError("desktop_unavailable", "Desktop unseat requires a UUID agent id.");
+  }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let raw: string;
+    try {
+      raw = await readFile(path, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw new CliError("desktop_unavailable", "Desktop seating table is unreadable.");
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new CliError("desktop_unavailable", "Desktop seating table is not valid JSON.");
+    }
+    if (!isRecord(parsed)) {
+      throw new CliError("desktop_unavailable", "Desktop seating table has the wrong shape.");
+    }
+    const next = dropAgentFromSeatTable(parsed, query);
+    if (!next.changed) return;
+    let mode = 0o644;
+    try {
+      mode = (await stat(path)).mode & 0o777;
+    } catch {
+      // New or raced-away file uses the shared-desktop default mode.
+    }
+    try {
+      await atomicWriteSeatTable(path, next.value, mode);
+    } catch {
+      throw new CliError("desktop_unavailable", "Desktop seating table could not be updated.");
+    }
+    let verifyRaw: string;
+    try {
+      verifyRaw = await readFile(path, "utf8");
+    } catch {
+      throw new CliError("desktop_unavailable", "Desktop seating table could not be re-read after unseat.");
+    }
+    let verify: unknown;
+    try {
+      verify = JSON.parse(verifyRaw);
+    } catch {
+      throw new CliError("desktop_unavailable", "Desktop seating table is not valid JSON.");
+    }
+    if (isRecord(verify) && !seatTableHasAgent(verify, query)) return;
+  }
+  throw new CliError("desktop_unavailable", "Desktop seating table could not drop the deleted agent.");
 }
 
 async function pinExecutable(path: string): Promise<PinnedStopWindow> {
@@ -105,6 +220,7 @@ async function pinExecutable(path: string): Promise<PinnedStopWindow> {
 }
 
 export function createLiveDesktopIo(stopWindow: PinnedStopWindow | null): DesktopIo {
+  let unseatChain: Promise<void> = Promise.resolve();
   return {
     async readWorld(nowMs) {
       return await readLiveWorld(nowMs);
@@ -121,6 +237,11 @@ export function createLiveDesktopIo(stopWindow: PinnedStopWindow | null): Deskto
     },
     async reapLogs(display) {
       await reapLogWrappers(display);
+    },
+    async unseatAgent(agentId) {
+      const run = unseatChain.then(() => unseatAgentFromAssignments(DEFAULT_ASSIGNMENTS, agentId));
+      unseatChain = run.then(() => undefined, () => undefined);
+      await run;
     },
   };
 }
