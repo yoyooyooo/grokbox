@@ -287,7 +287,7 @@ packages/box-runtime/
       backends/
         registry.ts              # root 装配的有限 kind→实现表；不扫描/尝试 fallback
         ai-sdk.ts                # ModelBackend Live Layer；唯一 SDK stream 入口
-        ccs-codec.ts              # canonical input → 当前 CCS-safe Chat/Responses 编码
+        openai-prompt-adapter.ts              # Host snapshot → OpenAI Chat/Responses prompt
         openai-events.ts          # SDK event → canonical event；id/name 有界关联
         provider-error.ts         # 固定失败类/候选证据，不回传 raw body/Cause
         echo.ts                  # 显式 stub/echo 能力，同一 ModelBackend port
@@ -316,7 +316,7 @@ packages/box-runtime/
         console.runtime.ts       # later / T29-only：HTTP/操作/borrowed-or-owned modeld lifetime；T20 不建
       console/                   # later / T29-only；T20 不建空目录、框架、假 API 或 Playwright
   test/
-    architecture.test.ts  host-codec.test.ts  ccs-codec.test.ts
+    architecture.test.ts  host-codec.test.ts  openai-prompt-adapter.test.ts
     host-session.test.ts  host-fullstream.test.ts  modeld-wire.test.ts
     modeld-lifecycle.test.ts  runtime-pipeline.test.ts  host-journal.test.ts
     controller-io.test.ts
@@ -575,7 +575,7 @@ T33 扩充只读 source-scoped retention/cursor/gap、operation/交付观察。�
 | `modeld.ts`, `modeld-as1.ts`, `modeld-default.ts` | 旧执行器/complete-array/As1GeneratePort **不搬**；由 T23/T24 新 ports/program 替代。显式 echo 只重写成一个 ModelBackend；旧 accepts 扫描/composite/default factories 与 stub kernel 不保留 |
 | `seam.ts`, `session.ts`, `replay-stream.ts`, `abort-signals.ts` | Host ABI/有界 reader 性质保留到 host/session 与 stream-codec；旧 StubRouteDriver、submit/stream/parts 三分支、response-only、40ms delay、requireStepId=false、toolCalls 别名、fixture usage **不搬**。T26 出口无内部 PromptSession shim |
 | `envelope.ts` | 纯 ContextSnapshot 校验 → kernel contract；Host 私有字段 decode → host/context-codec；T21 丢弃静默解封/丢结果途径，不能保留第二 envelope SoT |
-| `modeld-openai.ts`, `modeld-openai-map.ts` | T21/T23 转为 ccs-codec/openai-events/ai-sdk；raw messages 测试旁路、关键词 drop、preview 截断、SDK 错误正文、silent tool schema catch/continue **删除** |
+| `modeld-openai.ts`, `modeld-openai-map.ts` | T21/T23 转为 openai-prompt-adapter/openai-events/ai-sdk；raw messages 测试旁路、关键词 drop、preview 截断、SDK 错误正文、silent tool schema catch/continue **删除** |
 | `models.ts` | 分到 kernel selection/config commands、io/configuration、host/selection.node；main fallback、misnamed stub-only guards、provider mapper 反向 import **删除**，T24 无第二 resolver |
 | `modeld-binding.ts` | compile identity 合同 → kernel contract；Host 自身构造 → host；不把 HostBinding 与 RouteBinding 混为一物 |
 | `modeld-ipc.ts`, `modeld-serve.ts` | T20 拆掉混合模块；T25 v3 wire/server、Host 独立 client。`callStubModeld`、v2 server、terminal.parts、晚注册 finalizer、竞争 socket 搬移还原逻辑 **不搬** |
@@ -641,7 +641,7 @@ T20 增加一次性 `bun scripts/verify-runtime-rebuild.mjs <case>`，有限 cas
 | case / 必须断言的性质 | 目标 fixture/test 路径与依赖现实 | 必須能抓到的负对照 |
 |---|---|---|
 | `layout` | box-runtime/test/architecture + check-runtime-boundaries；真实源码/exports/esbuild graph | 虚拟 forbidden import、残留旧入口/flag、preload 贡献 SDK/Effect、生产模块 `bun:*` / Bun globals 时失败 |
-| `codec` | host-codec、ccs-codec；两个自行编写 Host root/state profile + **真实 AI SDK 调用，mock fetch 截获 Chat/Responses HTTP body** | 去掉 user-contained result、长尾、root，或补 Human user/raw tool 后失败；不能用 mapper 自己生成 expected |
+| `codec` | host-codec、openai-prompt-adapter；两个自行编写 Host root/state profile + **真实 AI SDK 调用，mock fetch 截获 Chat/Responses HTTP body** | 去掉 user-contained result、长尾、root，或补 Human user/raw tool 后失败；不能用 mapper 自己生成 expected |
 | `backend` | kernel/backend-contract + backend-conformance；同一 port 的 Fake/echo/SDK mock | 多消费 cold stream、工具 execute、SDK retry、缺名关联/secret 泄漏被抓住 |
 | `binding` | selection/route-binding/step-ledger；Effect TestClock + barriers + counted ports | 选择捕获后换同 id endpoint/ref/opt-in；凭据/provider 次数必须 0；旧 TURN 重握后测试必须失败 |
 | `lifecycle` | modeld-lifecycle；Fake allocation barriers + 真实 Node20 disposable Unix process | allocation 后 interrupt、listen 后失败/late completion 留 listener 或动到竞争 path 时失败 |

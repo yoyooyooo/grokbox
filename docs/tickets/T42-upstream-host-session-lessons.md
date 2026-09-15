@@ -44,5 +44,5 @@
 
 ## Related
 - [T21 codec](T21-runtime-codec-fidelity.md) · [T23 backend](T23-runtime-model-backend.md) · [T24 选模](T24-runtime-route-binding.md) · [T26 fullStream](T26-runtime-host-fullstream.md)
-- [`session.ts`](../../packages/box-runtime/src/internal/host/session.ts) · [`context-codec.ts`](../../packages/box-runtime/src/internal/host/context-codec.ts) · [`ccs-codec.ts`](../../packages/box-runtime/src/internal/backends/ccs-codec.ts) · [`session-hook.ts`](../../packages/box-runtime/src/internal/host/session-hook.ts)
+- [`session.ts`](../../packages/box-runtime/src/internal/host/session.ts) · [`context-codec.ts`](../../packages/box-runtime/src/internal/host/context-codec.ts) · [`openai-prompt-adapter.ts`](../../packages/box-runtime/src/internal/backends/openai-prompt-adapter.ts) · [`session-hook.ts`](../../packages/box-runtime/src/internal/host/session-hook.ts)
 - 外部对照：https://github.com/BlockedPath/grok-bot-setup
