@@ -7,6 +7,7 @@ import { buildHostEnvelope, cloneHostExecutorWindow, HostStateCodecError, type H
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
+import { INVALID_STREAM_AGENT_MESSAGE } from "./failure-catalog.ts";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
 
 export type FinishReason = "stop" | "error" | "abort";
@@ -340,11 +341,15 @@ const FAILURE_MESSAGES: Record<string, string> = {
   unsupported_options: "The model request contains unsupported options. No model request was sent.",
   envelope_too_large: "The model request exceeds the supported envelope limit. No model request was sent.",
   stream_limit: "The model stream exceeded its safety limit and was stopped.",
-  invalid_stream: "The model returned an invalid stream. The request was stopped without retry.",
+  invalid_stream: INVALID_STREAM_AGENT_MESSAGE,
   invocation_conflict: "This invocation was already used with different inputs. It was not dispatched again.",
   model_error: "The configured model request failed. No fallback model was used.",
 };
 const VISIBLE_STAGES = new Set<VisibleFailureStage>(["admit", "provider", "normalize"]);
+function hostVisibleCode(code: string): string {
+  const mapped = code === "stream_invalid" ? "invalid_stream" : code;
+  return Object.hasOwn(FAILURE_MESSAGES, mapped) ? mapped : "model_error";
+}
 function boundedVisible(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f]/.test(value) ? value : undefined;
 }
@@ -355,7 +360,7 @@ function visibleContext(ctx?: VisibleFailureContext): VisibleFailureContext {
   return { ...(agentId ? { agentId } : {}), ...(invocationId ? { invocationId } : {}), ...(stage ? { stage } : {}) };
 }
 function failure(code: string, ids?: string[], ctx?: VisibleFailureContext): VisibleFailure {
-  const resolved = Object.hasOwn(FAILURE_MESSAGES, code) ? code : "model_error";
+  const resolved = hostVisibleCode(code);
   const extra = visibleContext(ctx);
   const bits = [
     extra.agentId ? `agentId=${extra.agentId}` : undefined,
@@ -375,9 +380,10 @@ export class VisibleStreamError extends Error {
   readonly code: string;
   readonly stage: VisibleFailureStage;
   constructor(stage: VisibleFailureStage, code = "model_error", message?: string) {
-    super(message ?? code);
-    this.code = Object.hasOwn(FAILURE_MESSAGES, code) ? code : "model_error";
-    this.stage = VISIBLE_STAGES.has(stage) ? stage : "provider";
+    const resolved = hostVisibleCode(code);
+    super(message ?? resolved);
+    this.code = resolved;
+    this.stage = resolved === "invalid_stream" ? "normalize" : VISIBLE_STAGES.has(stage) ? stage : "provider";
   }
 }
 export type SessionTerminal = {

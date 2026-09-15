@@ -39,10 +39,12 @@ export {
 } from "./internal/io/journal.node.ts";
 export {
   HOST_FAILURE_CATALOG,
+  INVALID_STREAM_AGENT_MESSAGE,
   catalogAgentMessage,
   catalogByFailureCode,
   catalogByReason,
   mapAdmitCatch,
+  mapTerminalReject,
   type HostFailureCatalogRow,
 } from "./internal/host/failure-catalog.ts";
 export {

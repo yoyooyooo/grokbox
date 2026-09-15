@@ -42,4 +42,5 @@ test("Host terminal projection persists actual failure instead of masking it as 
   expect(JSON.stringify(projectHostNormalizedTerminal(event))).not.toContain("PRIVATE_SENTINEL");
   expect(projectHostNormalizedTerminal({ ...event, terminalClass: "stop" })).toBeNull();
   expect(projectHostStreamRejected({ name: "host_stream_rejected", schemaVersion: 2, at: event.at, mode: "route", agentId: "agent", turnId: "turn", stepId: "step", stage: "normalize", errorCode: "parallel_tools", reason: "terminal-rejected" })).toMatchObject({ stepId: "step", errorCode: "parallel_tools" });
+  expect(projectHostStreamRejected({ name: "host_stream_rejected", schemaVersion: 2, at: event.at, mode: "route", agentId: "agent", turnId: "turn", stepId: "step", stage: "normalize", errorCode: "invalid_stream", reason: "invalid-stream" })).toMatchObject({ stepId: "step", errorCode: "invalid_stream", reason: "invalid-stream", stage: "normalize" });
 });

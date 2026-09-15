@@ -1,4 +1,4 @@
-import { catalogAgentMessage } from "@grokbox/box-runtime/runtime";
+import { catalogAgentMessage, INVALID_STREAM_AGENT_MESSAGE } from "@grokbox/box-runtime/runtime";
 import { isRecord } from "./util.ts";
 import type { TranscriptRouteObservation } from "./transcript-route.ts";
 
@@ -28,12 +28,28 @@ export type AlertObservation = {
 const id = (v: unknown): string | null => typeof v === "string" && v.length > 0 && v.length <= 128 && !/[\x00-\x20]/.test(v) ? v : null;
 const enumLabel = (v: unknown): string | null => typeof v === "string" && /^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(v) ? v : null;
 const number = (v: unknown): number | null => typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null;
+const PARALLEL_TOOLS_MESSAGE = "Parallel tool calls are not supported. Rejected calls were not executed.";
+const TRAY_MANAGED_CODES = {
+  parallel_tools: PARALLEL_TOOLS_MESSAGE,
+  invalid_stream: INVALID_STREAM_AGENT_MESSAGE,
+} as const;
+
+function projectManagedCode(value: Record<string, unknown>, details: string): string | null {
+  for (const candidate of [value.managedCode, value.code, value.errorCode, value.errorKind]) {
+    if (candidate === "parallel_tools") return "parallel_tools";
+    if (candidate === "invalid_stream" || candidate === "stream_invalid") return "invalid_stream";
+  }
+  for (const [code, needle] of Object.entries(TRAY_MANAGED_CODES)) {
+    if (details.includes(needle)) return code;
+  }
+  return null;
+}
 
 export function projectAlert(value: unknown): AlertObservation | null {
   if (!isRecord(value) || value.kind !== "error" || !id(value.id)) return null;
   const details = [value.detail, value.rawDetail].filter((v): v is string => typeof v === "string").map(v => v.slice(0, 16384)).join("\n");
   // This is a display classification only, not recovery authority or provider evidence.
-  const managedCode = value.managedCode === "parallel_tools" || details.includes("Parallel tool calls are not supported. Rejected calls were not executed.") ? "parallel_tools" : null;
+  const managedCode = projectManagedCode(value, details);
   const stepId = id(value.stepId) ?? details.match(/\binvocationId=([A-Za-z0-9_-]{1,128})(?:[)\s]|$)/)?.[1] ?? null;
   return {
     id: id(value.id)!, agentId: id(value.agentId), requestId: id(value.requestId), stepId,
@@ -76,13 +92,31 @@ function boxHandoffDelivery(input: OutcomeInput, records: Record<string, unknown
   });
 }
 
+function visibleFailureCode(value: unknown): string | null {
+  if (value === "stream_invalid") return "invalid_stream";
+  return typeof value === "string" ? value : null;
+}
+
+/** Host used to collapse backend stream_invalid into model_error. Recover the
+ * specific code from the same-step modeld terminal; do not replace a typed Host reject. */
+function specializeRuntimeFailure(failure: Record<string, unknown>, recentRuntime: Record<string, unknown>[]) {
+  const hostCode = typeof failure.errorCode === "string" ? failure.errorCode : "";
+  if (failure.name !== "host_stream_rejected" && failure.name !== "host_normalized_terminal") return failure;
+  if (hostCode && hostCode !== "model_error") return failure;
+  const modeld = recentRuntime.find((event) => event.name === "model_step_terminal"
+    && (event.outcome === "error" || event.outcome === "cancelled")
+    && event.failureCode === "stream_invalid");
+  if (!modeld) return failure;
+  return { ...failure, errorCode: "invalid_stream", reason: "invalid-stream", stage: "normalize" };
+}
+
 function projectRuntimeFailure(failure: Record<string, unknown>) {
   const reason = typeof failure.reason === "string" ? failure.reason : undefined;
   const message = reason ? catalogAgentMessage(reason) : undefined;
   const stage = typeof failure.stage === "string" ? failure.stage : undefined;
   return {
     source: failure.name, at: failure.at, stepId: failure.stepId ?? null, turnId: failure.turnId ?? null,
-    code: failure.errorCode ?? failure.failureCode ?? null,
+    code: visibleFailureCode(failure.errorCode ?? failure.failureCode),
     outcome: failure.terminalClass ?? failure.outcome ?? "error",
     ...(reason && message ? { reason, stage: stage ?? null, message } : {}),
   };
@@ -149,9 +183,10 @@ export function projectSendOutcome(input: OutcomeInput) {
   }));
   // Host rejection is the cause; a later modeld disconnect is often its consequence.
   const recentRuntime = [...runtime].reverse();
-  const failure = recentRuntime.find(e => e.name === "host_stream_rejected")
+  const rawFailure = recentRuntime.find(e => e.name === "host_stream_rejected")
     ?? recentRuntime.find(e => e.name === "host_normalized_terminal" && (e.terminalClass === "error" || e.terminalClass === "abort"))
     ?? recentRuntime.find(e => e.name === "model_step_terminal" && (e.outcome === "error" || e.outcome === "cancelled"));
+  const failure = rawFailure ? specializeRuntimeFailure(rawFailure, recentRuntime) : undefined;
   const route = input.transcriptRoute;
   const harnessChanged = route !== undefined && (route.initial !== route.before || route.before !== route.after);
   const harnessUnavailable = route !== undefined && [route.initial, route.before, route.after].includes("unknown");

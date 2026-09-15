@@ -185,6 +185,21 @@ describe("backend conformance", () => {
     expect(finish?.type === "backend_finish" ? finish.usage : undefined).toBeUndefined();
   });
 
+  test("first tool deltas then finish with an open tool is stream_invalid, not a successful stop", async () => {
+    const events: InferenceEvent[] = [];
+    await expect(drainSdkStream((async function* () {
+      yield { type: "start" };
+      yield { type: "tool-input-start", id: "c1", toolName: "SendToUser" };
+      for (let i = 0; i < 32; i++) yield { type: "tool-input-delta", id: "c1", delta: "{" };
+      yield { type: "tool-input-end", id: "c1" };
+      yield { type: "finish", finishReason: "tool-calls" };
+    })(), (event) => { events.push(event); })).rejects.toMatchObject({ name: "BackendFailure", code: "stream_invalid" });
+    expect(events[0]).toMatchObject({ type: "tool_start", toolCallId: "c1", toolName: "SendToUser" });
+    expect(events.length).toBeGreaterThan(1);
+    expect(events.some((event) => event.type === "backend_finish")).toBe(false);
+    expect(events.some((event) => event.type === "tool_complete")).toBe(false);
+  });
+
   test("skip-only SDK parts then EOF are unfinished stream_invalid, not overflow", async () => {
     const events: InferenceEvent[] = [];
     await expect(drainSdkStream((async function* () {

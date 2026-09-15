@@ -7,7 +7,9 @@ import {
   createStreamingPromptSession,
   isHostManagedFailure,
   normalizeHostResponse,
+  VisibleStreamError,
   visibleFailureHandle,
+  type SessionTerminal,
   type StreamPart,
 } from "../src/internal/host/session.ts";
 import { reshapeInferenceEvent } from "../src/internal/host/stream-codec.ts";
@@ -184,6 +186,41 @@ describe("host session ABI", () => {
     const vector = await consumeHandle(handle);
     expect(vector.toolExecutionCount).toBe(0);
     await expect(handle.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_stream" });
+  });
+
+  test("backend stream_invalid after first chunk is Host invalid_stream, not model_error", async () => {
+    const terminals: SessionTerminal[] = [];
+    const session = createStreamingPromptSession({
+      modelId: "sub2api-deepseek/deepseek-v4.1-flash",
+      vision: false,
+      parallel: "fail-closed",
+      onTerminal: (terminal) => { terminals.push(terminal); },
+      produce: async function* () {
+        yield { type: "text-delta", textDelta: "partial" };
+        throw new VisibleStreamError("provider", "stream_invalid");
+      },
+    });
+    const handle = session.stream({ messages: [{ role: "user", content: "hi" }], invocationId: "step-shape" });
+    const parts: StreamPart[] = [];
+    for await (const part of handle.fullStream) parts.push(part);
+    const rejected = await handle.response.catch((error: unknown) => error);
+    expect(rejected).toMatchObject({
+      name: "RetriableError",
+      code: "invalid_stream",
+      userVisible: true,
+      stage: "normalize",
+    });
+    expect(isHostManagedFailure(rejected)).toBe(true);
+    expect(JSON.stringify(rejected)).not.toContain("unknown_failure");
+    expect(parts.some((part) => part.type === "text-delta")).toBe(true);
+    expect(terminals).toEqual([expect.objectContaining({
+      terminalClass: "error",
+      errorCode: "invalid_stream",
+      stage: "normalize",
+      rejected: true,
+      invocationId: "step-shape",
+      toolCallCount: 0,
+    })]);
   });
 
   test("qualified context window is projected as extendedUsage.maxTokens; unknown stays unqualified", async () => {

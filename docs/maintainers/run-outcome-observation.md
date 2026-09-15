@@ -25,7 +25,7 @@ grokbox send <agent-id> --text '<text>' --json
 grokbox history outcome <agent-id> --nonce <clientNonce> --runtime [--wait-ms 60000] --json
 ```
 
-`--runtime` 把本机 journal 当作失败权威。查询顶层 `ok:true` 只表示查询成功，必须读 `data.state`。**outcome 无 `accepted` 成功词**；旧 `acceptedObserved` 已改为 `echoObserved`。`data.requestId` 在早期 admit 失败时可为 null，这不表示没发出去。
+`--runtime` 把本机 journal 当作失败权威。查询顶层 `ok:true` 只表示查询成功，必须读 `data.state`。若 modeld 是用显式 `GROKBOX_RUN_ROOT` 拉起的（活狗粮是 `$HOME/.grokbox/run`），`history outcome --runtime` 必须用同一个值；指到 workspace 默认根会出现 `runtimeGap=invalid` / `runtimeFailure=null`。**outcome 无 `accepted` 成功词**；旧 `acceptedObserved` 已改为 `echoObserved`。`data.requestId` 在早期 admit 失败时可为 null，这不表示没发出去。
 
 | `data.state` | 含义 |
 |---|---|

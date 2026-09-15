@@ -7,10 +7,12 @@ import {
 import {
   HOST_FAILURE_CATALOG,
   HOST_JOURNAL_FORBIDDEN,
+  INVALID_STREAM_AGENT_MESSAGE,
   catalogAgentMessage,
   catalogByFailureCode,
   catalogByReason,
   mapAdmitCatch,
+  mapTerminalReject,
 } from "../src/internal/host/failure-catalog.ts";
 import { HostSelectionUnavailableError } from "../src/internal/host/selection.node.ts";
 import {
@@ -75,4 +77,25 @@ describe("Host failure catalog", () => {
     });
     expect(catalogByReason("admit-threw")?.mapsFrom).toBe("unknown-throw");
   });
+
+  test("backend stream_invalid maps to Host invalid-stream, not model_error",
+    () => {
+      expect(mapTerminalReject("stream_invalid", "provider")).toEqual({
+        reason: "invalid-stream",
+        errorCode: "invalid_stream",
+        stage: "normalize",
+      });
+      expect(mapTerminalReject("invalid_stream", "provider")).toEqual({
+        reason: "invalid-stream",
+        errorCode: "invalid_stream",
+        stage: "normalize",
+      });
+      expect(mapTerminalReject("parallel_tools", "normalize")).toEqual({
+        reason: "terminal-rejected",
+        errorCode: "parallel_tools",
+        stage: "normalize",
+      });
+      expect(catalogAgentMessage("invalid-stream")).toBe(INVALID_STREAM_AGENT_MESSAGE);
+      expect(catalogByReason("invalid-stream")?.errorCode).toBe("invalid_stream");
+    });
 });

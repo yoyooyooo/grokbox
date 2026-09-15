@@ -8,6 +8,8 @@ import {
 export const HOST_JOURNAL_FORBIDDEN = /env|token|prompt|authorization|secret|apiKey/i;
 
 export const ROUTE_MODEL_NOT_ADMITTED_AGENT_MESSAGE = ROUTE_MODEL_NOT_ADMITTED_MESSAGE;
+export const INVALID_STREAM_AGENT_MESSAGE =
+  "The model returned an invalid stream. The request was stopped without retry.";
 
 export type HostFailureMapsFrom =
   | "BoxRuntimeError.failureCode"
@@ -109,6 +111,13 @@ export const HOST_FAILURE_CATALOG = [
     agentMessage: "Managed stream ended in a Host rejection.",
     mapsFrom: "hook-reason",
   },
+  {
+    reason: "invalid-stream",
+    errorCode: "invalid_stream",
+    stage: "normalize",
+    agentMessage: INVALID_STREAM_AGENT_MESSAGE,
+    mapsFrom: "hook-reason",
+  },
 ] as const satisfies readonly HostFailureCatalogRow[];
 
 export type HostStreamRejectReason = (typeof HOST_FAILURE_CATALOG)[number]["reason"];
@@ -130,6 +139,25 @@ export function catalogByFailureCode(failureCode: string): HostFailureCatalogEnt
 
 export function catalogAgentMessage(reason: string): string | undefined {
   return byReason.get(reason)?.agentMessage;
+}
+
+export type TerminalRejectMapping = {
+  reason: HostStreamRejectReason;
+  errorCode: string;
+  stage: "admit" | "normalize" | "provider";
+};
+
+/** Host-visible mapping for a rejected stream terminal. Backend stream_invalid
+ * is the same class as Host invalid_stream; do not collapse it to model_error. */
+export function mapTerminalReject(errorCode: string, stage?: string): TerminalRejectMapping {
+  if (errorCode === "invalid_stream" || errorCode === "stream_invalid") {
+    return { reason: "invalid-stream", errorCode: "invalid_stream", stage: "normalize" };
+  }
+  return {
+    reason: "terminal-rejected",
+    errorCode,
+    stage: stage === "admit" ? "admit" : stage === "normalize" ? "normalize" : "provider",
+  };
 }
 
 /** UUIDv4-shaped send nonce. Additive; invalid values are dropped, not a reject. */

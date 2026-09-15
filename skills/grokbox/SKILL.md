@@ -54,7 +54,7 @@ grokbox send <agent> --text "<text>" --json
 grokbox history outcome <agent> --nonce <clientNonce> --runtime [--wait-ms 60000] --json
 ```
 
-Read outcome `data.state`. Outcome has **no** `accepted` token (`acceptedObserved` is gone). `data.requestId` may be null on an early failure — that is not “never sent”. Empty `data.alerts` is not success. `--runtime` reads the local journal (failure authority). `--wait-ms` keeps polling until `failed`, `delivered`, or `expected_result_observed`; `recorded` is not settled. `--request-id` looks up the **same** send, not a second handle. There is no `alerts list --nonce`.
+Read outcome `data.state`. Outcome has **no** `accepted` token (`acceptedObserved` is gone). `data.requestId` may be null on an early failure — that is not “never sent”. Empty `data.alerts` is not success. `--runtime` reads the local journal (failure authority). If modeld was started with an explicit `GROKBOX_RUN_ROOT` (live dogfood uses `$HOME/.grokbox/run`), pass the **same** value to `history outcome --runtime`; a workspace default that is not that live root shows `runtimeGap=invalid`. `--wait-ms` keeps polling until `failed`, `delivered`, or `expected_result_observed`; `recorded` is not settled. `--request-id` looks up the **same** send, not a second handle. There is no `alerts list --nonce`.
 
 | `data.state` | You | Person hears |
 | --- | --- | --- |

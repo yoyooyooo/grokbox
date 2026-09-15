@@ -20,7 +20,7 @@ import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } fro
 import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
 import { emitHostActivity } from "./activity.ts";
 import { noteHostManagedStep } from "./compact.ts";
-import { boundedClientNonce, mapAdmitCatch } from "./failure-catalog.ts";
+import { boundedClientNonce, mapAdmitCatch, mapTerminalReject } from "./failure-catalog.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
 
@@ -256,8 +256,8 @@ export function bindHostSessionHook(input: {
       agentId,
       onTerminal: (terminal) => {
         if (terminal.rejected && terminal.errorCode) {
-          writeReject(terminal.stage === "admit" ? "admit" : terminal.stage === "normalize" ? "normalize" : "provider",
-            "terminal-rejected", terminal.errorCode, undefined, terminal.invocationId);
+          const mapped = mapTerminalReject(terminal.errorCode, terminal.stage);
+          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId);
         }
         const stepId = terminal.invocationId;
         if (!stepId) return;

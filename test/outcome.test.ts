@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { catalogAgentMessage, HOST_FAILURE_CATALOG } from "@grokbox/box-runtime/runtime";
+import { catalogAgentMessage, HOST_FAILURE_CATALOG, INVALID_STREAM_AGENT_MESSAGE } from "@grokbox/box-runtime/runtime";
 import { projectAlert, projectSendOutcome, SEND_OUTCOME_STATES } from "../packages/cli/src/outcome.ts";
 import { redactEventPayload } from "../packages/cli/src/redaction.ts";
 import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
@@ -27,6 +27,17 @@ test("App warning projection exposes stable codes/identity but no raw details or
   expect(JSON.stringify(projected)).not.toContain("PRIVATE_SENTINEL");
   expect(JSON.stringify(projected)).not.toContain("secret.invalid");
   expect(projectAlert({ ...tray, kind: "future-unknown" })).toBeNull();
+});
+
+test("opaque botFailedToReply tray with invalid-stream detail projects managedCode invalid_stream", () => {
+  const projected = projectAlert({
+    kind: "error", id: "alert-shape", agentId: "agent-alpha", requestId,
+    titleKind: "botFailedToReply", errorKind: "UnknownError", createdAt: 11, count: 1,
+    rawDetail: `${INVALID_STREAM_AGENT_MESSAGE} (agentId=agent-alpha invocationId=${requestId} stage=normalize)`,
+  });
+  expect(projected).toMatchObject({ managedCode: "invalid_stream", stepId: requestId, requestId, hasDetail: true });
+  expect(projected?.titleKind).toBe("botFailedToReply");
+  expect(JSON.stringify(projected)).not.toContain("unknown_failure");
 });
 
 test("tray streaming uses the same idempotent safe projection and never executes actions", () => {
@@ -57,6 +68,47 @@ test("a same-request error wins over earlier SendToUser; other Bot and request w
   const alert = projectAlert(tray)!;
   expect(projectSendOutcome({ ...base, entries: [user, progress], alerts: [alert] }).state).toBe("failed");
   expect(projectSendOutcome({ ...base, alerts: [{ ...alert, agentId: "other" }, { ...alert, requestId: "other" }] }).state).toBe("recorded");
+});
+
+test("first_chunk then normalize stream_invalid is failed with invalid_stream, not opaque model_error", () => {
+  const alert = projectAlert({
+    kind: "error", id: "alert-shape", agentId: "agent-alpha", requestId,
+    titleKind: "botFailedToReply", errorKind: "UnknownError", createdAt: 11, count: 1,
+    rawDetail: `${INVALID_STREAM_AGENT_MESSAGE} (agentId=agent-alpha invocationId=${requestId} stage=normalize)`,
+  })!;
+  const result = projectSendOutcome({
+    ...base,
+    alerts: [alert],
+    runtimeEvents: [
+      { name: "host_seam_stage", agentId: "agent-alpha", clientNonce: nonce, stage: "first_chunk", result: "ok", stepId: requestId, turnId: "turn-1" },
+      {
+        name: "model_step_terminal", agentId: "agent-alpha", stepId: requestId, turnId: "turn-1", serviceEpoch: "epoch",
+        outcome: "error", phase: "normalize", failureCode: "stream_invalid",
+        diagnostic: { phase: "normalize", reason: "stream_shape" },
+      },
+      {
+        name: "host_normalized_terminal", agentId: "agent-alpha", stepId: requestId, turnId: "turn-1", serviceEpoch: "epoch",
+        terminalClass: "error", errorCode: "model_error",
+      },
+      {
+        name: "host_stream_rejected", agentId: "agent-alpha", stepId: requestId, turnId: "turn-1", clientNonce: nonce,
+        stage: "provider", errorCode: "model_error", reason: "terminal-rejected",
+      },
+    ],
+  });
+  expect(result).toMatchObject({
+    state: "failed",
+    alerts: [expect.objectContaining({ managedCode: "invalid_stream" })],
+    runtimeFailure: {
+      code: "invalid_stream",
+      reason: "invalid-stream",
+      stage: "normalize",
+      message: catalogAgentMessage("invalid-stream"),
+    },
+  });
+  expect(result.runtimeFailure?.message).toBe(INVALID_STREAM_AGENT_MESSAGE);
+  expect(JSON.stringify(result)).not.toContain("unknown_failure");
+  expect(JSON.stringify(result)).not.toContain('"code":"model_error"');
 });
 
 test("durable runtime cancellation stays a failure after the ephemeral App warning disappears", () => {
@@ -318,6 +370,7 @@ test("canary skill teaches send then nonce+runtime outcome, not accepted-as-succ
   expect(skill).toContain("| `recorded` |");
   expect(skill).toContain("| `failed` |");
   expect(skill).toContain("`accepted` token");
+  expect(skill).toContain("GROKBOX_RUN_ROOT");
   expect(skill).not.toMatch(/data\.state\s*=\s*accepted/);
 });
 
