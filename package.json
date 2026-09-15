@@ -70,7 +70,8 @@
     "verify:external": "node scripts/verify-external.mjs",
     "observe:sandbox": "node scripts/observe-sandbox.mjs",
     "experiment:sandbox-ssh-activity": "node scripts/experiment-sandbox-ssh-activity.mjs",
-    "monitor:sandbox-ssh-activity": "node scripts/monitor-sandbox-ssh-activity.mjs"
+    "monitor:sandbox-ssh-activity": "node scripts/monitor-sandbox-ssh-activity.mjs",
+    "publish:template": "bun run scripts/publish-grokbox-template.ts"
   },
   "dependencies": {},
   "devDependencies": {

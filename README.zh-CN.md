@@ -37,6 +37,13 @@ fs  exec  jobs  desktop
 
 Daemon 不提供通用 raw RPC 或任意 shell。仅有 Gateway 权限的 Profile 不会获得 host 文件系统或进程权限。
 
+## 两条路径
+
+1. **遥控官方产品** — Profile、daemon、`agents` / `send` / `history`。可在盒子里或笔记本 Profile 上用。这是 Alpha CLI 主故事。
+2. **给单个 Bot 换大脑** — 在电脑上：`grokbox on`，`grokbox host start`，`agents create`，`models use --for <agent>`。grokbox 更新后：`grokbox upgrade --yes`。App 新建在不少账号上是 **temporal**，走不了自定义模型通道。
+
+给 Agent：`grokbox skills get grokbox`（与当前 CLI 同版本；不要把 skill 文件拷进 Bot）。模板桩：[`skills/stubs/grokbox.md`](./skills/stubs/grokbox.md)。给人：`grokbox skills get core --full` 看完整命令清单。
+
 ## 前置条件与平台支持
 
 - 发布版 CLI 运行时需要 Node.js 20+。

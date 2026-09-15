@@ -45,6 +45,19 @@ Highlights:
 The daemon does not provide a generic raw RPC or shell. Gateway-only Profiles
 never gain host filesystem or process authority.
 
+## Two tracks
+
+1. **Remote the official product** — Profile, daemon, `agents` / `send` / `history`.
+   Works from the box or a laptop Profile. This is the Alpha CLI story.
+2. **Switch one Bot's brain** — on the computer: `grokbox on`, `grokbox host start`,
+   `agents create`, `models use --for <agent>`. After a grokbox update:
+   `grokbox upgrade --yes`. App New Bot is often **temporal** and never uses
+   the custom-model channel.
+
+Agents: `grokbox skills get grokbox` (version-matched; do not copy skill files
+into a Bot). Template stub: [`skills/stubs/grokbox.md`](./skills/stubs/grokbox.md).
+Humans: `grokbox skills get core --full` for the full CLI inventory.
+
 ## Prerequisites and platform support
 
 - Node.js 20+ for the published-style CLI runtime.

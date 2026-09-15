@@ -1,0 +1,18 @@
+{
+  "profile": {
+    "name": "grokbox",
+    "description": "Unofficial grokbox CLI for a Grok Bot computer you already own. On the computer run: grokbox skills get grokbox",
+    "avatarShape": "wedge",
+    "avatarColor": "violet"
+  },
+  "memory": [],
+  "skills": [
+    {
+      "name": "grokbox",
+      "description": "Start grokbox from this computer.",
+      "content": "Run grokbox skills get grokbox before any grokbox work."
+    }
+  ],
+  "routines": [],
+  "plugins": []
+}
