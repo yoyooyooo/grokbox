@@ -54,6 +54,13 @@ test("sync refreshes showing titles and skips hidden; set-user coexists when sho
     .toBe(`coding${TITLE_FENCE}owner=temporal,x=keep`);
 });
 
+test("sync m=null clears; omit/undefined preserves a transient catalog miss", () => {
+  const showing = "coding | owner=box,m=old";
+  expect(composeAgentTitle(showing, { type: "sync", owner: "box" }).title).toBe(showing);
+  expect(composeAgentTitle(showing, { type: "sync", owner: "box", m: undefined }).title).toBe(showing);
+  expect(composeAgentTitle(showing, { type: "sync", owner: "box", m: null }).title).toBe(`coding${TITLE_FENCE}owner=box`);
+});
+
 test("ownership class maps to Label owner without treating unconfirmed as temporal", () => {
   expect(labelOwnerFromState("confirmed_box")).toBe("box");
   expect(labelOwnerFromState("unconfirmed")).toBe("leave");
