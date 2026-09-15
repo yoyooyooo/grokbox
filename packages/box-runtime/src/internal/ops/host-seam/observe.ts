@@ -6,7 +6,7 @@ import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { LIVE_SLICE_PATCHES } from "../../host/live-slices.ts";
 import type { PatchProfile } from "../../host/profile.ts";
 import { HOST_BUNDLE_KEEP, retainHostBundle } from "../../io/provenance.node.ts";
-import { reviewedEnvelopeProfile } from "./envelope-windows.ts";
+import { envelopeProfileShape } from "./envelope-windows.ts";
 import { observeKnifePoints, type KnifePointObservation } from "./knife-points.ts";
 import { buildRetentionPlan, type RetentionPlan } from "./prune.ts";
 
@@ -89,7 +89,7 @@ export async function observeHostProvenance(input: {
     ...(profile.profileId !== "hso-observe-recipe" && profile.sourceSha256 === observedSha
       ? { matchedProfileId: profile.profileId }
       : {}),
-    ...(reviewedEnvelopeProfile(profile, observedSha) ? { profile } : {}),
+    ...(envelopeProfileShape(profile) ? { profile } : {}),
   };
   let retained;
   for (let attempt = 0; attempt < 8; attempt += 1) {

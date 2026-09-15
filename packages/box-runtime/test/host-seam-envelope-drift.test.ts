@@ -294,6 +294,49 @@ describe("parallel envelopeDrift observation", () => {
     expect(third.retained).toBe("existing");
     expect(await readFile(path, "utf8")).toBe(body);
   });
+
+  test("new retain writes envelope-windows.json from previous-SHA reviewed recipe; status can compare", async () => {
+    const root = await mkdtemp(join(tmpdir(), "grokbox-envelope-retain-prev-pin-"));
+    const before = toyEnvelope("");
+    const insertion = "settledMessageCount: initialMessages.length;".padEnd(INSERTION_BYTES, "x");
+    const after = toyEnvelope(insertion);
+    const prevSha = sha256Text(before.source);
+    const nextSha = sha256Text(after.source);
+    expect(prevSha).not.toBe(nextSha);
+
+    const first = await retainHostBundle({
+      root, source: before.source, sourceSha: prevSha, observedAt: AT,
+      matchedProfileId: before.profile.profileId, profile: before.profile,
+    });
+    expect(first.retained).toBe("new");
+    await mkdir(join(root, "profiles"), { recursive: true, mode: 0o700 });
+    await writeFile(join(root, "profiles", "reviewed.json"), `${JSON.stringify(before.profile, null, 2)}\n`);
+
+    const from = join(root, "next.cjs");
+    await writeFile(from, after.source);
+    const observed = await observeHostProvenance({ root, from, now: () => "2026-01-02T00:00:00.000Z" });
+    expect(observed.retained).toBe("new");
+    expect(observed.observedSha).toBe(nextSha);
+
+    const path = join(hostBundlesDir(root), "generations", nextSha, ENVELOPE_WINDOWS_FILE);
+    const body = await readFile(path, "utf8");
+    const measured = measureEnvelopeWindows(after.source, before.profile);
+    expect(measured.sourceSha).toBe(nextSha);
+    expect(body).toBe(encodeEnvelopeWindows(measured));
+    expect(parseEnvelopeWindows(JSON.parse(body)).slices).toHaveLength(19);
+
+    const status = await projectHostSeamStatus({ root });
+    expect(status.envelopeDrift.state).toBe("present");
+    expect(status.envelopeDrift.compared).toBe(19);
+    expect(status.envelopeDrift.evidenceKind).toBe("envelope-windows");
+    expect(status.envelopeDrift.drifted.map((row) => row.id).sort()).toEqual([
+      "compact-register",
+      "managed-step-error-scope",
+    ]);
+    expect(status.gaps).not.toContain("envelope_windows_incomplete");
+    expect(status.gaps).not.toContain("envelope_windows_missing");
+    expect(status.gaps).not.toContain("envelope_windows_invalid");
+  });
 });
 
 describe("write-gate envelope reject predicate", () => {

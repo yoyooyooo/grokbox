@@ -1,5 +1,6 @@
 /** Parallel 19-slice envelope window observation.
- * Measure/encode may persist from retain when a contemporaneous 19-slice reviewed profile exists.
+ * Measure/encode may persist from retain when a 19-slice reviewed recipe exists
+ * (passed or profiles/reviewed.json). The recipe pin SHA need not match the new generation.
  * Status loads/diffs only. Never invents without reviewed, never expands driftedSlices,
  * never applies, never writes/adopts reviewed.
  * YELLOW: four-window patchImpact green is not this file.
@@ -116,10 +117,9 @@ function parseWindowSlice(value: unknown): EnvelopeWindowSlice | null {
   };
 }
 
-/** True only for a 19-slice reviewed envelope pinned to this sourceSha. 2-slice recipes do not qualify. */
-export function reviewedEnvelopeProfile(profile: PatchProfile | undefined, sourceSha: string): profile is PatchProfile {
-  if (!profile || profile.sourceSha256 !== sourceSha || !Array.isArray(profile.slices) ||
-    profile.slices.length !== ENVELOPE_SLICE_COUNT) {
+/** True for a complete 19-slice reviewed envelope recipe. SHA pin is not required. 2-slice recipes do not qualify. */
+export function envelopeProfileShape(profile: PatchProfile | undefined): profile is PatchProfile {
+  if (!profile || !Array.isArray(profile.slices) || profile.slices.length !== ENVELOPE_SLICE_COUNT) {
     return false;
   }
   const ids = new Set<string>();
@@ -133,23 +133,37 @@ export function reviewedEnvelopeProfile(profile: PatchProfile | undefined, sourc
   return ids.size === ENVELOPE_SLICE_COUNT && ENVELOPE_SLICE_IDS.every((id) => ids.has(id));
 }
 
+/** True only for a 19-slice reviewed envelope pinned to this sourceSha. Write-gate / AH-85. */
+export function reviewedEnvelopeProfile(profile: PatchProfile | undefined, sourceSha: string): profile is PatchProfile {
+  return envelopeProfileShape(profile) && profile.sourceSha256 === sourceSha;
+}
+
 /** Same encode as `envelope-windows.cjs`: pretty JSON + trailing newline. */
 export function encodeEnvelopeWindows(windows: EnvelopeWindows): string {
   return `${JSON.stringify(windows, null, 2)}\n`;
 }
 
-/** Measure 19 independent windows from a reviewed profile. Returns null instead of inventing. */
+/** Measure 19 independent windows from a reviewed recipe. Pin SHA need not match this source. Returns null instead of inventing. */
+export function envelopeWindowsFromRecipe(
+  source: string,
+  profile: PatchProfile | undefined,
+): EnvelopeWindows | null {
+  if (!envelopeProfileShape(profile)) return null;
+  try {
+    return measureEnvelopeWindows(source, profile);
+  } catch {
+    return null;
+  }
+}
+
+/** Measure 19 independent windows from a reviewed profile pinned to this sourceSha. Returns null instead of inventing. */
 export function envelopeWindowsFromReviewed(
   source: string,
   profile: PatchProfile | undefined,
   sourceSha: string,
 ): EnvelopeWindows | null {
   if (!reviewedEnvelopeProfile(profile, sourceSha)) return null;
-  try {
-    return measureEnvelopeWindows(source, profile);
-  } catch {
-    return null;
-  }
+  return envelopeWindowsFromRecipe(source, profile);
 }
 
 /** Loader for a retained generation / archive `envelope-windows.json`. Never invents rows. */

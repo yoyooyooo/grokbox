@@ -9,8 +9,8 @@ import { extractContractSlices, sliceHashes, type PatchProfile } from "../host/p
 import {
   ENVELOPE_WINDOWS_FILE,
   encodeEnvelopeWindows,
-  envelopeWindowsFromReviewed,
-  reviewedEnvelopeProfile,
+  envelopeProfileShape,
+  envelopeWindowsFromRecipe,
 } from "../ops/host-seam/envelope-windows.ts";
 
 export const HOST_BUNDLE_KEEP = 16;
@@ -32,7 +32,8 @@ export type HostBundlePatchImpact = {
 };
 
 /** YELLOW: driftedSlices/patchImpact are the 4 contract windows only. Envelope green is envelopeDrift.
- * retain may persist envelope-windows.json from a contemporaneous 19-slice reviewed profile; never invent without reviewed. */
+ * retain may persist envelope-windows.json from a 19-slice reviewed recipe even when the pin SHA
+ * does not match this generation; never invent without reviewed. */
 export type HostBundleDiff = {
   previousSha: string;
   previousBytes: number;
@@ -230,12 +231,12 @@ async function readStoredSource(root: string, sha: string): Promise<string | nul
   }
 }
 
-async function durableReviewedEnvelope(root: string, sourceSha: string): Promise<PatchProfile | undefined> {
+async function durableEnvelopeRecipe(root: string): Promise<PatchProfile | undefined> {
   try {
     const parsed: unknown = JSON.parse(await readFile(reviewedProfilePath(root), "utf8"));
     if (!isRecord(parsed)) return undefined;
     const profile = parsed as PatchProfile;
-    return reviewedEnvelopeProfile(profile, sourceSha) ? profile : undefined;
+    return envelopeProfileShape(profile) ? profile : undefined;
   } catch {
     return undefined;
   }
@@ -243,21 +244,19 @@ async function durableReviewedEnvelope(root: string, sourceSha: string): Promise
 
 async function resolveRetainEnvelopeProfile(
   root: string,
-  sourceSha: string,
   passed?: PatchProfile,
 ): Promise<PatchProfile | undefined> {
-  if (reviewedEnvelopeProfile(passed, sourceSha)) return passed;
-  return await durableReviewedEnvelope(root, sourceSha);
+  if (envelopeProfileShape(passed)) return passed;
+  return await durableEnvelopeRecipe(root);
 }
 
-/** Persist envelope-windows.json only from a contemporaneous 19-slice reviewed profile. Never overwrite. */
-async function writeEnvelopeWindowsIfReviewed(
+/** Persist envelope-windows.json from a 19-slice reviewed recipe. Pin SHA need not match. Never overwrite. */
+async function writeEnvelopeWindowsFromRecipe(
   dir: string,
   source: string,
-  sourceSha: string,
   profile: PatchProfile | undefined,
 ): Promise<void> {
-  const windows = envelopeWindowsFromReviewed(source, profile, sourceSha);
+  const windows = envelopeWindowsFromRecipe(source, profile);
   if (!windows) return;
   try {
     await writeProtected(join(dir, ENVELOPE_WINDOWS_FILE), encodeEnvelopeWindows(windows));
@@ -284,7 +283,7 @@ export async function retainHostBundle(input: {
   const generations = join(dir, "generations");
   await mkdir(generations, { recursive: true, mode: 0o700 });
   if (await isRealDir(generations) === false) throw new Error("invalid host-bundle path");
-  const envelopeProfile = await resolveRetainEnvelopeProfile(input.root, input.sourceSha, input.profile);
+  const envelopeProfile = await resolveRetainEnvelopeProfile(input.root, input.profile);
   const publishHead = async () => {
     const temporary = join(dir, `.HEAD-${randomUUID()}`);
     try {
@@ -301,15 +300,15 @@ export async function retainHostBundle(input: {
     if (stored !== input.source || !meta || meta.sourceSha !== input.sourceSha || meta.bytes !== Buffer.byteLength(input.source)) {
       throw new Error("host-bundle-bytes-mismatch");
     }
-    // Missing envelope golden may be filled once a contemporaneous reviewed profile exists; never overwrite.
-    await writeEnvelopeWindowsIfReviewed(genDir, input.source, input.sourceSha, envelopeProfile);
+    // Missing envelope golden may be filled once a 19-slice reviewed recipe exists; never overwrite.
+    await writeEnvelopeWindowsFromRecipe(genDir, input.source, envelopeProfile);
     await publishHead();
     return { sourceSha: input.sourceSha, retained: "existing", meta, diff: null };
   };
   // Readers must see the complete source+metadata generation or no generation.
   // Never expose a final directory and then populate source/meta/diff incrementally.
-  // envelope-windows.json is staged with a new generation when a 19-slice reviewed profile is present;
-  // an existing generation may gain a missing golden once, never an overwrite.
+  // envelope-windows.json is staged with a new generation when a 19-slice reviewed recipe is present
+  // (pin SHA need not match this sourceSha); an existing generation may gain a missing golden once, never an overwrite.
   if (await lstat(genDir).then(() => true, (error) => {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return false;
     throw error;
@@ -330,7 +329,7 @@ export async function retainHostBundle(input: {
     await writeProtected(join(staging, SOURCE_NAME), input.source);
     await writeProtected(join(staging, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
     if (diff) await writeProtected(join(staging, "diff.json"), `${JSON.stringify(diff, null, 2)}\n`);
-    await writeEnvelopeWindowsIfReviewed(staging, input.source, input.sourceSha, envelopeProfile);
+    await writeEnvelopeWindowsFromRecipe(staging, input.source, envelopeProfile);
     try { await rename(staging, genDir); }
     catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
