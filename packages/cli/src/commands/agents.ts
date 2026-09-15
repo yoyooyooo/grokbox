@@ -204,9 +204,18 @@ export async function runAgentsDelete(
   );
 }
 
+/** Box-local Profiles may reap this machine's seats; SSH / remote daemon must not. */
+export function isBoxLocalDesktopReap(
+  deps: Pick<CliDeps, "transport" | "sshHost" | "daemonServerUrl">,
+): boolean {
+  return (deps.transport === "local" || deps.transport === "auto")
+    && !deps.sshHost
+    && !deps.daemonServerUrl;
+}
+
 async function reapDesktopAfterDelete(deps: CliDeps, agentId: string): Promise<DesktopReapResult | undefined> {
-  if (deps.transport !== "local" || deps.sshHost || deps.daemonServerUrl) return undefined;
-  const io = await liveDesktopIo();
+  if (!isBoxLocalDesktopReap(deps)) return undefined;
+  const io = deps.desktopIo ?? await liveDesktopIo();
   if (!io) return { display: null, outcome: "unavailable" };
   return await reapDeletedAgentSeat(agentId, deps.now(), io);
 }

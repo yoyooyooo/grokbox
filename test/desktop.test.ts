@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isBoxLocalDesktopReap } from "../packages/cli/src/commands/agents.ts";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
 import { readDaemonConfig, validateDaemonConfig, writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
 import {
@@ -393,6 +394,34 @@ describe("desktop daemon commands", () => {
     const seats = parseJson(status.stdout) as { data: { displays: Array<{ agentId: string; display: number }> } };
     expect(seats.data.displays.find((row) => row.agentId === AGENT_B)).toMatchObject({ display: 1 });
   });
+
+  test("transport auto still attaches desktop when delete goes through the local daemon", async () => {
+    const stopped: number[] = [];
+    const current = { value: world() };
+    const { configDir, run } = await harness(current, stopped, [{
+      id: AGENT_B,
+      name: "idle-bot",
+      title: "",
+      isGroup: false,
+      isHiddenFromSidebar: false,
+      isRunning: false,
+      memberIds: [],
+    }]);
+    await writeProfileFile(configDir, "auto", {
+      version: 1,
+      transport: "auto",
+      daemon_socket: join(configDir, "run", "daemon.sock"),
+    });
+    const result = await run(["--profile", "auto", "agents", "delete", "idle-bot", "--yes", "--json"]);
+    expect(result.code, result.stderr).toBe(0);
+    const body = parseJson(result.stdout) as {
+      data: { deleted: { id: string }; desktop: { display: number; outcome: string } };
+    };
+    expect(body.data.deleted.id).toBe(AGENT_B);
+    expect(body.data.desktop).toEqual({ display: 3, outcome: "stopped" });
+    expect(stopped).toEqual([3]);
+    expect(current.value.assignments).toEqual({ [AGENT_A]: 2, [AGENT_KEEP]: 10 });
+  });
 });
 
 describe("deleted-bot desktop reap", () => {
@@ -617,5 +646,133 @@ describe("desktop keep id case canonicalization", () => {
       version: 1,
       desktop: { floorAgentIds: [UPPER_A, AGENT_A] },
     })).toThrow();
+  });
+});
+
+describe("AH-93 box-local transport auto desktop reap", () => {
+  let gateway: MockGateway | undefined;
+
+  afterEach(() => {
+    gateway?.stop();
+    gateway = undefined;
+  });
+
+  function idleBot() {
+    return {
+      id: AGENT_B,
+      name: "idle-bot",
+      title: "",
+      isGroup: false,
+      isHiddenFromSidebar: false,
+      isRunning: false,
+      memberIds: [],
+    };
+  }
+
+  function seatedIo(current: { value: DesktopWorld }, stopped: number[]): DesktopIo {
+    return {
+      readWorld: async () => current.value,
+      stopWindow: async (display) => {
+        stopped.push(display);
+      },
+      reapLogs: async () => {},
+      unseatAgent: async (agentId) => {
+        current.value = dropAssignment(current.value, agentId);
+      },
+    };
+  }
+
+  async function deleteThroughProfile(
+    profile: { transport: "auto" | "local"; ssh_host?: string; server_url?: string },
+    io: DesktopIo,
+  ) {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-ah93-"));
+    gateway = await startMockGateway({ agents: [idleBot()] });
+    const discoveryPath = await writeDiscovery({
+      port: gateway.port,
+      pid: gateway.pid,
+      startedAt: gateway.startedAt,
+      token: gateway.token,
+    });
+    await writeProfileFile(configDir, "box", {
+      version: 1,
+      ...profile,
+      gateway_discovery: discoveryPath,
+    });
+    return await captureCli(["--profile", "box", "agents", "delete", "idle-bot", "--yes", "--json"], {
+      configDir,
+      env: {},
+      discoveryPath,
+      transport: "auto",
+      desktopIo: io,
+      skillsDir,
+    });
+  }
+
+  test("gate treats auto like local and skips ssh or remote daemon URL", () => {
+    expect(isBoxLocalDesktopReap({ transport: "auto" })).toBe(true);
+    expect(isBoxLocalDesktopReap({ transport: "local" })).toBe(true);
+    expect(isBoxLocalDesktopReap({ transport: "daemon" })).toBe(false);
+    expect(isBoxLocalDesktopReap({ transport: "gateway" })).toBe(false);
+    expect(isBoxLocalDesktopReap({ transport: "auto", sshHost: "peer" })).toBe(false);
+    expect(isBoxLocalDesktopReap({ transport: "auto", daemonServerUrl: "https://daemon.example" })).toBe(false);
+    expect(isBoxLocalDesktopReap({ transport: "local", sshHost: "peer" })).toBe(false);
+    expect(isBoxLocalDesktopReap({
+      transport: "local",
+      daemonServerUrl: "https://daemon.example",
+    })).toBe(false);
+  });
+
+  test("transport auto delete reaps a non-main seat and includes desktop on the receipt", async () => {
+    const stopped: number[] = [];
+    const current = { value: world({ assignments: { [AGENT_A]: 2, [AGENT_B]: 27 } }) };
+    const result = await deleteThroughProfile({ transport: "auto" }, seatedIo(current, stopped));
+    expect(result.code, result.stderr).toBe(0);
+    const body = parseJson(result.stdout) as {
+      data: { deleted: { id: string }; desktop: { display: number | null; outcome: string } };
+    };
+    expect(body.data.deleted.id).toBe(AGENT_B);
+    expect(body.data.desktop).toEqual({ display: 27, outcome: "stopped" });
+    expect(stopped).toEqual([27]);
+    expect(current.value.assignments).toEqual({ [AGENT_A]: 2 });
+  });
+
+  test("transport local delete still reaps when no daemon attached desktop", async () => {
+    const stopped: number[] = [];
+    const current = { value: world({ assignments: { [AGENT_B]: 27 } }) };
+    const result = await deleteThroughProfile({ transport: "local" }, seatedIo(current, stopped));
+    expect(result.code, result.stderr).toBe(0);
+    const body = parseJson(result.stdout) as { data: { desktop: { display: number; outcome: string } } };
+    expect(body.data.desktop).toEqual({ display: 27, outcome: "stopped" });
+    expect(stopped).toEqual([27]);
+    expect(current.value.assignments).toEqual({});
+  });
+
+  test("auto plus ssh_host does not mutate this box's seat table", async () => {
+    const stopped: number[] = [];
+    const current = { value: world({ assignments: { [AGENT_B]: 27 } }) };
+    const result = await deleteThroughProfile(
+      { transport: "auto", ssh_host: "peer" },
+      seatedIo(current, stopped),
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const body = parseJson(result.stdout) as { data: { desktop?: unknown } };
+    expect(body.data.desktop).toBeUndefined();
+    expect(stopped).toEqual([]);
+    expect(current.value.assignments).toEqual({ [AGENT_B]: 27 });
+  });
+
+  test("auto plus remote daemon URL does not mutate this box's seat table", async () => {
+    const stopped: number[] = [];
+    const current = { value: world({ assignments: { [AGENT_B]: 27 } }) };
+    const result = await deleteThroughProfile(
+      { transport: "auto", server_url: "https://daemon.example" },
+      seatedIo(current, stopped),
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const body = parseJson(result.stdout) as { data: { desktop?: unknown } };
+    expect(body.data.desktop).toBeUndefined();
+    expect(stopped).toEqual([]);
+    expect(current.value.assignments).toEqual({ [AGENT_B]: 27 });
   });
 });

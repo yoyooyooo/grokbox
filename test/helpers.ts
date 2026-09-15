@@ -1,6 +1,8 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DesktopIo } from "../packages/cli/src/daemon/desktop.ts";
+import type { DesktopWorld } from "../packages/cli/src/desktop.ts";
 import { CLI_VERSION, createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
 import { runCli } from "../packages/cli/src/program.ts";
 
@@ -311,6 +313,29 @@ export async function writeDiscovery(file: {
   return path;
 }
 
+function isolatedDesktopIo(): DesktopIo {
+  const empty = (nowMs: number): DesktopWorld => ({
+    nowMs,
+    assignments: {},
+    names: {},
+    litDisplays: new Set(),
+    displayStartedAtMs: {},
+    transcriptWrittenAtMs: {},
+    busyMarkers: new Set(),
+    grokDisplays: new Set(),
+    taskDisplays: new Set(),
+    startWindowDisplays: new Set(),
+  });
+  return {
+    readWorld: async (nowMs) => empty(nowMs),
+    stopWindow: async () => {
+      throw new Error("test captureCli must not stop a live desktop");
+    },
+    reapLogs: async () => {},
+    unseatAgent: async () => {},
+  };
+}
+
 export async function captureCli(
   argv: string[],
   overrides: Partial<CliDeps>,
@@ -326,6 +351,7 @@ export async function captureCli(
     env: {},
     runCommand: async () => ({ code: 127, stdout: "", stderr: "not configured in test" }),
     transport: "auto",
+    desktopIo: isolatedDesktopIo(),
     daemonSocket: join(tmpdir(), `grokbox-test-${crypto.randomUUID()}.sock`),
     agentDataRoot: join(tmpdir(), `grokbox-missing-agent-data-${crypto.randomUUID()}`),
     confirm: async () => false,

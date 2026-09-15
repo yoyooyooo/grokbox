@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import cliPackage from "../../../package.json" with { type: "json" };
+import type { DesktopIo } from "./daemon/desktop.ts";
 import { DEFAULT_AGENT_DATA_ROOT, DEFAULT_DISCOVERY_PATH } from "./registry.ts";
 import type { Writable } from "./output.ts";
 
@@ -40,6 +41,7 @@ export type CliDeps = {
   runCommand: (argv: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
   wait: (ms: number, signal?: AbortSignal) => Promise<boolean>;
   transport: "auto" | "local" | "daemon" | "gateway";
+  desktopIo?: DesktopIo;
   daemonSocket: string;
   daemonServerUrl?: string;
   daemonTokenRef?: string;
