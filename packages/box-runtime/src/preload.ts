@@ -11,6 +11,7 @@ import { bindHostSessionHook } from "./internal/host/session-hook.ts";
 import { deferManagedHostResume } from "./internal/host/selection.node.ts";
 import { bindHostCompactHook, isHostManagedRootActive, recordHostManagedStepFailure, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
 import { bindHostOwnershipRead, HOST_OWNERSHIP_READ_SYMBOL } from "./internal/host/ownership-read.ts";
+import { bindHostProfileTitle, HOST_PROFILE_TITLE_SYMBOL } from "./internal/host/title-marker.ts";
 import { wrapHostAuxExecutor } from "./internal/host/aux-purpose.ts";
 import { bindCompiledHost } from "./internal/host/host-binding.ts";
 import { asHostPromptSession, createStreamingPromptSession, InvalidHostStateError, isHostManagedFailure } from "./internal/host/session.ts";
@@ -63,6 +64,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     },
   });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_OWNERSHIP_READ_SYMBOL)] = bindHostOwnershipRead({ cacheMs: OWNERSHIP_SERVER_CACHE_MS });
+  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_PROFILE_TITLE_SYMBOL)] = bindHostProfileTitle({ durableRoot });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RESUME_GATE_SYMBOL)] =
     (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed);
   if (admittedMode === "route") {

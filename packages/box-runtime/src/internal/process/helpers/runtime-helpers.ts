@@ -32,6 +32,17 @@ export function resolvePreloadPath(base = import.meta.url): string {
   return published;
 }
 
+/** Live Host is Node. Prefer a built CJS; `--require` cannot load the source `.ts` fallback. */
+export function resolveNodeRequireablePreload(
+  base = import.meta.url,
+  extraCandidates: readonly string[] = [],
+): string {
+  const resolved = resolvePreloadPath(base);
+  const repoDist = fileURLToPath(new URL("../../../../../../dist/preload.cjs", import.meta.url));
+  const match = [resolved, repoDist, ...extraCandidates].find((path) => path.endsWith(".cjs") && existsSync(path));
+  return match ?? resolved;
+}
+
 export function resolveRuntimeHelpers(base = import.meta.url): {
   preload: string;
   guardianChild: string;

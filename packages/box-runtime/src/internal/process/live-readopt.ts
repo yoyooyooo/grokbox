@@ -13,19 +13,11 @@ import { procEnvHas, readNamedProcEnv } from "./linux.node.ts";
 import { waitOfficialReplacement, type RoleClassifier } from "./official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "./process-port.ts";
 import { loadDurableReviewedProfile } from "./profile.node.ts";
-import { resolvePreloadPath } from "./helpers/runtime-helpers.ts";
+import { resolveNodeRequireablePreload } from "./helpers/runtime-helpers.ts";
 import type { DesiredMode } from "@grokbox/runtime-kernel/selection";
 import type { PatchProfile } from "../host/profile.ts";
 
-/** Node `--require` cannot load the source `preload.ts` fallback. Prefer a built CJS in the run root. */
-function nodeRequireablePreload(): string {
-  const resolved = resolvePreloadPath();
-  if (resolved.endsWith(".cjs") && existsSync(resolved)) return resolved;
-  const runBuilt = join(ephemeralRuntimeRoot(), "preload.cjs");
-  if (existsSync(runBuilt)) return runBuilt;
-  return resolved;
-}
-const PRELOAD_PATH = nodeRequireablePreload();
+const PRELOAD_PATH = resolveNodeRequireablePreload(undefined, [join(ephemeralRuntimeRoot(), "preload.cjs")]);
 
 export const liveH3AdoptAdapter = {
   createLiveH3AdoptPorts,

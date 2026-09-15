@@ -34,7 +34,7 @@ import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "../process/laun
 import { linuxProcessPort, roleOf, readNamedProcEnv } from "../process/linux.node.ts";
 import { proveStableOfficialState, type RoleClassifier } from "../process/official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "../process/process-port.ts";
-import { resolvePreloadPath } from "../process/helpers/runtime-helpers.ts";
+import { resolveNodeRequireablePreload } from "../process/helpers/runtime-helpers.ts";
 import { runTransientAdoptOperation, writeAdoptOpState } from "../process/transient-adopt.ts";
 import type { IdentityMarker, IdentityOpResult } from "../process/identity-op.ts";
 import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
@@ -51,7 +51,7 @@ export function resetLiveMutationAttempts(): void {
   lastLiveAdopt = null;
 }
 
-export function diskPreloadSha256(path = resolvePreloadPath()): string | null {
+export function diskPreloadSha256(path = resolveNodeRequireablePreload()): string | null {
   try {
     return sha256Bytes(readFileSync(path));
   } catch {
@@ -424,7 +424,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
   const overlayPath = join(ephemeralRoot, "state", "launch-env.json");
   const execPath = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
-  const preloadPath = resolvePreloadPath();
+  const preloadPath = resolveNodeRequireablePreload(undefined, [join(ephemeralRoot, "preload.cjs")]);
   const ports = createLiveH3AdoptPorts({
     markerPath,
     preloadNeedle: preloadPath,
