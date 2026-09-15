@@ -3,6 +3,7 @@ import { assignedModelTokens, type ModelsFile } from "@grokbox/runtime-kernel/se
 import { loadModelsFileSync } from "./selection.node.ts";
 
 export const HOST_PROFILE_TITLE_SYMBOL = "grokbox.box-runtime.profile-title.v1";
+const AGENT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -20,6 +21,7 @@ function assignedModelId(file: ModelsFile, agentId: string): string | undefined 
 /** Compose `m`: string paints, `null` clears, omit/`undefined` preserves a transient miss. */
 function syncBoxTitleModel(file: ModelsFile | null, agentId: string): string | null | undefined {
   if (!file || !agentId) return undefined;
+  if (!AGENT_UUID.test(agentId)) return undefined;
   if (assignedModelId(file, agentId) === undefined) return null;
   return assignedModelTokens(file).get(agentId);
 }

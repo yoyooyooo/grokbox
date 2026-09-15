@@ -54,6 +54,20 @@ describe("host profile title marker", () => {
     }
   });
 
+  test("non-uuid agentId keeps showing m=", () => {
+    const root = modelsRoot({
+      version: 1,
+      models: {},
+      assignments: { main: null, agents: { [AGENT]: "openai-responses/grok-4.6" } },
+    });
+    try {
+      const hook = bindHostProfileTitle({ durableRoot: root });
+      expect(hook({ profile: { title: SHOWING }, localHarness: "box", agentId: "3081925" })).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("no assignment clears showing m=", () => {
     const root = modelsRoot({
       version: 1,

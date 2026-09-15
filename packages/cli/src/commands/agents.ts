@@ -21,6 +21,7 @@ import { projectOwnership } from "../ownership.ts";
 import {
   applyAgentTitles,
   loadAssignedModelTokens,
+  loadTitleModelIndex,
   readOwnershipStates,
   rosterTitleProjection,
   type TitleAction,
@@ -242,12 +243,15 @@ export async function runAgentsTitle(
   } else {
     rows = roster;
   }
-  const tokens = action === "hide" ? new Map<string, string>() : await loadAssignedModelTokens(deps.boxRuntimeRoot, deps.env);
+  const { tokens, assigned } = action === "hide"
+    ? { tokens: new Map<string, string>() }
+    : await loadTitleModelIndex(deps.boxRuntimeRoot, deps.env);
   const applied = await applyAgentTitles(client, io.timeoutMs, {
     action,
     rows,
     dryRun: Boolean(raw.dryRun),
     tokens,
+    assigned,
   });
   const written = applied.rows.filter((row) => row.written).length;
   const skippedRows = applied.rows.filter((row) => row.skipped);

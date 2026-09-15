@@ -8,7 +8,7 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
-- Host profile title sync preserves `m=` when models.json is missing or the assigned record cannot be resolved; only a confirmed empty assignment clears it.
+- CLI/daemon title sync preserves `m=` when models.json is missing or the assigned record cannot be resolved; only a confirmed empty assignment clears it. Host profile writes keep the same contract, including a non-UUID agentId.
 - Teach the canary send watch as `send` then `history outcome --nonce … --runtime`.
   Outcome `data.state` has no `accepted` token; send receipt `accepted` means queued only.
 - `runtime profile analyze` still settles `missing_runner` when no Agent runner

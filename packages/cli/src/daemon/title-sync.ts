@@ -1,5 +1,5 @@
 import type { GatewayClient } from "../gateway.ts";
-import { applyAgentTitles, loadAssignedModelTokens } from "../title-sync.ts";
+import { applyAgentTitles, loadTitleModelIndex } from "../title-sync.ts";
 import { parseAgentTitle } from "@grokbox/runtime-kernel/contract";
 import { isRecord } from "../util.ts";
 
@@ -43,8 +43,8 @@ export class TitleSyncManager {
       const listed = await this.gateway.listAgents(TITLE_SYNC_TIMEOUT_MS);
       const rows = listed.agents.filter(isRecord).filter((row) => row.isGroup !== true && parseAgentTitle(row.title).showing);
       if (rows.length === 0) return;
-      const tokens = await loadAssignedModelTokens(this.boxRuntimeRoot, this.env);
-      await applyAgentTitles(this.gateway, TITLE_SYNC_TIMEOUT_MS, { action: "sync", rows, tokens });
+      const { tokens, assigned } = await loadTitleModelIndex(this.boxRuntimeRoot, this.env);
+      await applyAgentTitles(this.gateway, TITLE_SYNC_TIMEOUT_MS, { action: "sync", rows, tokens, assigned });
     } catch {
       /* Next interval retries. A failed Server read must not stop the daemon. */
     } finally {

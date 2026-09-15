@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import {
   composeAgentTitle,
   chunkOwnershipTargets,
@@ -103,16 +105,54 @@ export function profileWriteFromRoster(row: Record<string, unknown>, title: stri
   return profile;
 }
 
+export type TitleModelIndex = {
+  tokens: Map<string, string>;
+  /** Lowercased agent ids with a models.json assignment. Omitted when the snapshot is unavailable. */
+  assigned?: Set<string>;
+};
+
+/** Load label tokens and assignment presence. A missing/unreadable snapshot omits `assigned`. */
+export async function loadTitleModelIndex(
+  boxRuntimeRoot: string,
+  env: NodeJS.Dict<string>,
+): Promise<TitleModelIndex> {
+  try {
+    const store = openRuntimeStore(boxRuntimeRoot, env);
+    try {
+      await access(join(store.root, "models.json"));
+    } catch {
+      return { tokens: new Map() };
+    }
+    const file = await store.loadModels();
+    return {
+      tokens: assignedModelTokens(file),
+      assigned: new Set(Object.keys(file.assignments.agents).map((id) => id.toLowerCase())),
+    };
+  } catch {
+    return { tokens: new Map() };
+  }
+}
+
 export async function loadAssignedModelTokens(
   boxRuntimeRoot: string,
   env: NodeJS.Dict<string>,
 ): Promise<Map<string, string>> {
-  try {
-    const file = await openRuntimeStore(boxRuntimeRoot, env).loadModels();
-    return assignedModelTokens(file);
-  } catch {
-    return new Map();
-  }
+  return (await loadTitleModelIndex(boxRuntimeRoot, env)).tokens;
+}
+
+/** Compose `m`: string paints, `null` clears, omit/`undefined` preserves a transient miss. */
+export function titleSyncModel(
+  owner: LabelOwner | "leave",
+  agentId: string,
+  tokens: Map<string, string>,
+  assigned?: ReadonlySet<string>,
+): string | null | undefined {
+  if (owner === "leave") return undefined;
+  if (owner !== "box") return null;
+  const id = agentId.toLowerCase();
+  if (!id) return undefined;
+  if (assigned !== undefined && !assigned.has(id)) return null;
+  return tokens.get(id);
 }
 
 const MODEL_TITLE_TIMEOUT_MS = 10_000;
@@ -126,10 +166,12 @@ export async function paintTitleAfterModelAssignment(
     const listed = await client.listAgents(MODEL_TITLE_TIMEOUT_MS);
     const row = listed.agents.filter(isRecord).find((item) => asString(item.id).toLowerCase() === input.agentId.toLowerCase());
     if (!row) return { skipped: "no_roster" };
+    const { tokens, assigned } = await loadTitleModelIndex(input.boxRuntimeRoot, input.env);
     const applied = await applyAgentTitles(client, MODEL_TITLE_TIMEOUT_MS, {
       action: input.mode === "custom" ? "show" : "sync",
       rows: [row],
-      tokens: await loadAssignedModelTokens(input.boxRuntimeRoot, input.env),
+      tokens,
+      assigned,
     });
     const painted = applied.rows[0];
     if (!painted) return { skipped: "no_roster" };
@@ -154,6 +196,7 @@ export async function applyAgentTitles(
     rows: Record<string, unknown>[];
     dryRun?: boolean;
     tokens?: Map<string, string>;
+    assigned?: ReadonlySet<string>;
   },
 ): Promise<{ rows: TitleSyncRow[] }> {
   const tokens = input.tokens ?? new Map<string, string>();
@@ -181,12 +224,11 @@ export async function applyAgentTitles(
     const owner = input.action === "show"
       ? titleShowOwner(row, ownership, token)
       : titlePaintOwner(row, ownership, token);
-    const m = owner === "box" ? token ?? null : owner === "leave" ? undefined : null;
     const composed = input.action === "hide"
       ? composeAgentTitle(from, { type: "hide" })
       : input.action === "show" && owner !== "leave"
-        ? composeAgentTitle(from, { type: "show", owner, m: m ?? null })
-        : composeAgentTitle(from, { type: "sync", owner, m: m ?? null });
+        ? composeAgentTitle(from, { type: "show", owner, m: owner === "box" ? token ?? null : null })
+        : composeAgentTitle(from, { type: "sync", owner, m: titleSyncModel(owner, agentId, tokens, input.assigned) });
     let written = false;
     if (composed.changed && input.dryRun !== true) {
       await client.updateAgent({ id: agentId, profile: profileWriteFromRoster(row, composed.title) }, timeoutMs);
