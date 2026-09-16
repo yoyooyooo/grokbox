@@ -20,7 +20,19 @@ export const MODEL_CORE_CASES = Object.freeze({
     `${box}modeld-lifecycle.test.ts`,
     `${box}architecture.test.ts`,
   ],
-  lifecycle: null,
+  lifecycle: [
+    `${box}modeld-service-lifetime-parity.test.ts`,
+    `${box}modeld-start-failure.test.ts`,
+    `${box}modeld-running-failure.test.ts`,
+    `${box}modeld-lifecycle.test.ts`,
+    `${box}modeld-root-identity.test.ts`,
+    `${box}modeld-service-info.test.ts`,
+    `${box}runtime-start.test.ts`,
+    "test/runtime-start-lifetime.test.ts",
+    "test/runtime-modeld-lifetime.test.ts",
+    `${box}modeld-packaged-lifecycle.test.ts`,
+    `${box}runtime-start-packed.test.ts`,
+  ],
   evidence: null,
   state: null,
   authority: null,
@@ -75,8 +87,18 @@ export function runCoreProof(args) {
   };
   try {
     console.log(JSON.stringify({ ...reality, suites: selected.files, stage: "start" }));
+    const env = isolatedProofEnvironment(process.env, home);
+    // Packed tests must consume this source revision, not whichever dist a
+    // previous test happened to leave behind in the checkout.
+    if (["lifecycle", "evidence", "authority", "observation", "release-offline"].includes(selected.name)) {
+      const build = spawnSync(process.execPath, ["run", "build"], { cwd: root, env, stdio: "inherit", timeout: 180_000 });
+      if (!proofProcessSucceeded(build)) {
+        console.error(JSON.stringify({ ...reality, stage: "failed", reason: "required-build-failed" }));
+        return 1;
+      }
+    }
     const result = spawnSync(process.execPath, ["test", "--timeout", "30000", ...selected.files], {
-      cwd: root, env: isolatedProofEnvironment(process.env, home), stdio: "inherit", timeout: 180_000,
+      cwd: root, env, stdio: "inherit", timeout: 180_000,
     });
     if (!proofProcessSucceeded(result)) {
       console.error(JSON.stringify({ ...reality, stage: "failed", status: result.status, signal: result.signal ?? null,

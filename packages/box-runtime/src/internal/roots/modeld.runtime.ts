@@ -141,10 +141,21 @@ function borrowModeld(options: ModeldRootOptions) {
 }
 
 export function ensureModeld(options: ModeldRootOptions) {
+  return modeldServiceLifetime(options);
+}
+
+/** One acquisition program for the Effect and Promise host entrypoints. The
+ * caller owns its root Scope; readiness is observation, not another lifecycle.
+ * See Spec S10 / T44. */
+function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: ModeldEnsure) => Effect.Effect<void> = () => Effect.void) {
   return Effect.gen(function* () {
     const path = modeldSocketPath(options.runRoot);
     const healthy = yield* Effect.promise(() => probeModeldHealth(options.runRoot, 200));
-    if (healthy) return yield* borrowModeld(options);
+    if (healthy) {
+      const borrowed = yield* borrowModeld(options);
+      yield* ready(borrowed);
+      return borrowed;
+    }
     if (existsSync(path)) {
       return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld socket exists"));
     }
@@ -171,6 +182,8 @@ export function ensureModeld(options: ModeldRootOptions) {
         env: options.env ?? process.env,
         ...compactAttach(options.env ?? process.env),
       });
+      if (!listener.server.listening) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_closed"));
+      yield* ready({ kind: "owned", path, generation });
       yield* listenerLifetime(listener.server);
     }).pipe(Effect.provide(layer));
     return { kind: "owned" as const, path, generation };
@@ -193,45 +206,9 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
   // signal is already aborted. Refuse before starting that otherwise-unobserved
   // fiber so the public ready promise cannot be left pending forever.
   if (options.signal?.aborted) throw new BoxRuntimeError("invalid_usage", "modeld_start_cancelled");
-  const fiber = Effect.runFork(Effect.scoped(Effect.gen(function* () {
-    const path = modeldSocketPath(options.runRoot);
-    const healthy = yield* Effect.promise(() => probeModeldHealth(options.runRoot, 200));
-    if (healthy) {
-      yield* Deferred.succeed(ready, yield* borrowModeld(options));
-      return;
-    }
-    if (existsSync(path)) {
-      yield* Deferred.fail(ready, new BoxRuntimeError("invalid_usage", "modeld socket exists"));
-      return;
-    }
-    const generation = randomUUID();
-    const layer = modeldRootLayer({
-      durableRoot: options.durableRoot,
-      runRoot: options.runRoot,
-      env: options.env,
-      serviceEpoch: generation,
-      fetch: options.fetch,
-      ownershipRead: options.ownershipRead,
-    });
-    yield* Effect.gen(function* () {
-      const listener = yield* serveModeld({
-        path,
-        generation,
-        rootId: modeldRootId(options.durableRoot, options.runRoot),
-        observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
-        observeRecovery: (request, recovery) => writeModeldRecoveryProgress(options.runRoot, request, recovery),
-        onObservationTimeout: () => noteJournalObservationTimeout(options.runRoot, "modeld"),
-        counts: options.counts,
-        hooks,
-        maxClients: options.maxClients,
-        env: options.env ?? process.env,
-        ...compactAttach(options.env ?? process.env),
-      });
-      if (!listener.server.listening) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_closed"));
-      yield* Deferred.succeed(ready, { kind: "owned", path, generation });
-      yield* listenerLifetime(listener.server);
-    }).pipe(Effect.provide(layer));
-  })).pipe(Effect.onExit(exit => Deferred.isDone(ready).pipe(
+  const fiber = Effect.runFork(Effect.scoped(modeldServiceLifetime(
+    { ...options, hooks }, value => Deferred.succeed(ready, value).pipe(Effect.asVoid),
+  )).pipe(Effect.onExit(exit => Deferred.isDone(ready).pipe(
     // Complete failure only after the resource Scope has finalized. tapError
     // inside the Scope missed defects/interruption and could leave callers
     // waiting forever even though startup had already stopped.
@@ -241,7 +218,7 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
   ))), { signal: options.signal });
   const ensure = await Effect.runPromise(Deferred.await(ready));
   const finished = Effect.runPromise(Fiber.await(fiber)).then(exit => {
-    if (!release.ok) throw new BoxRuntimeError("invalid_usage", "cleanup_gap");
+    if (ensure.kind === "owned" && !release.ok) throw new BoxRuntimeError("invalid_usage", "cleanup_gap");
     if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
   });
   // The lifetime can end while the caller is still publishing readiness.
@@ -254,8 +231,12 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
       ));
       // Optional counters are diagnostics, not proof that a timed-out finalizer
       // completed. A later caller may wait again, but this receipt stays a gap.
-      if (Exit.isFailure(stopped) || !release.ok) throw new Error("cleanup_gap");
-      if (options.counts && options.counts.listeners > 0) throw new Error("cleanup_gap");
+      if (Exit.isFailure(stopped)) throw new Error("cleanup_gap");
+      // A borrower did not acquire this listener. Shared diagnostic counters
+      // can legitimately still describe its external owner's live resources.
+      if (ensure.kind === "owned" && (!release.ok || options.counts && options.counts.listeners > 0)) {
+        throw new Error("cleanup_gap");
+      }
     },
   };
 }

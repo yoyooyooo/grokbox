@@ -1,6 +1,6 @@
 # T44 — One modeld acquisition and service lifetime
 
-Status: planned. Milestone M1. Depends on: [T43](T43-modeld-authority-baseline.md). Spec: [S10.2, S10.5](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: implemented and offline verified; independent review pending. Milestone M1. Depends on: [T43](T43-modeld-authority-baseline.md). Spec: [S10.2, S10.5](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -36,4 +36,8 @@ No dependency upgrades, broad HTTP/RPC framework migration, live Host signal, co
 
 ## Exit evidence
 
-Pending: implementation, required proof and fixed-tip review. No live service replacement is part of this ticket.
+`ensureModeld` and `startModeldProcess` now consume the same private service-lifetime Effect. Owned/borrowed readiness and the original resource cleanup paths remain in that single program; the Promise facade only runs/observes it. The new parity tests exposed and corrected another ownership error: a borrowing handle must not report its external owner's shared listener counter as its own cleanup failure.
+
+Bun 1.3.14 typecheck passed. `verify:modeld-core lifecycle` performs a fresh build before testing and passed 82 tests across 11 suites, including four new two-entrypoint parity tests and actual packaged Node lifecycle/start cases. The initial cold worktree lacked dist; the verifier now builds the current source rather than relying on leftovers. Source failure/defect/interruption, listener loss, repeated stop, competing path and borrowed-owner behavior were exercised.
+
+Independent fixed-tip review remains pending. No live service replacement, dependency upgrade or wire/policy change occurred.
