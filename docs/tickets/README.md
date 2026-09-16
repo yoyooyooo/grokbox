@@ -114,6 +114,24 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 
 原重建依赖链 **T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28** 不要求重做已有实现；当前主链见 Spec S0.5。T22 不 gate 保真/内核。T27 尽早。Phase 1 出口停在 T28；T29 不自动开工。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。里程碑「审→修→复看→交 grok」之后的异步终审残留只进 [T34](T34-astra-milestone-residue.md)，不交 grok。
 
+<a id="template-ops-automation"></a>
+## Template Bot 运维闭环 — T43–T50（2026-09-16 Spec-first）
+
+专项合同唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，总运行时仍归 [主 Spec S0.1.5](../roadmap/box-runtime-impl-spec.md#template-ops-automation)。[决策](../decisions/2026-09-16-template-ops-automation.md)接受官方模板 Bot 主动告警、有界诊断和有限预授权静默维护；[维护手册](../maintainers/template-ops-automation.md)区分已有命令与未来入口。全部新票为 Planned / Spec-only，不代表现役 routine、collector 或自动维护已安装。
+
+| Ticket | 范围 | 依赖 / 独立退出 |
+|---|---|---|
+| [T43 原生 Webhook 合同](T43-native-webhook-contract.md) | Payload、认证、routine/clone、receipt、adapter | 先冻结合同/Fake，native 无权限则保留 not_proven |
+| [T44 持续感知](T44-host-ops-continuous-sensing.md) | HSO → T41 source/loaded/component/失联事实 | T43 合同；无信号的独立观察纵切 |
+| [T45 可靠投递](T45-template-webhook-delivery.md) | 原库 outbox、原生 Webhook、claim/报告对账 | T43；与 T44 并行，不先等真实来源 |
+| [T46 模板配对](T46-template-ops-pairing.md) | 无密钥蓝图、独立 endpoint、撤销、按需 ops skill | T43/T45；不依赖自动维护上线 |
+| [T47 有界诊断](T47-bounded-ops-diagnosis.md) | 受限工具、排障/报告、plan/handoff | T44–T46；无实际 Host 变更 |
+| [T48 低风险资格](T48-low-risk-host-qualification.md) | 全切片/依赖覆盖、等价派生、唯一 publisher/CAS | T43/T44；与诊断路线并行，不需要模型批准 |
+| [T49 受限维护](T49-policy-host-maintenance.md) | 唯一 controller、统一 drain、交接/执行/退出 | T48 与 T47 交接合同；复用 T28/T40，不重建控制栈 |
+| [T50 持久验收](T50-template-ops-release-proof.md) | 受支持安装、native 用户旅程、故障/退场证明 | notify/diagnose 可先验；自动维护另等 T48/T49 |
+
+这些票是具体能力依赖，不要求 T40/T41 整票先 Done；也不反向阻塞主线的准入/正常推理。先得到监测→Webhook→Bot 的只读真实闭环，再开启单个已资格化动作类。各票中的新测试路径和 verifier 是待实现验收目标，不是已存在命令。真实部署、模型成本与原生变更仍需相应范围授权。
+
 ## Historical delivery and product-scope trackers
 
 以下 done/partial 历史保持原意义，不意味着重建已通过同样证明，也不要求保留 POC 的内部代码。旧 open 票为产品范围入口，执行已转给新票据。

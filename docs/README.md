@@ -27,6 +27,8 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
+- [Template Bot 运维闭环 Spec](roadmap/template-ops-automation-spec.md)：2026-09-16 新增专项施工合同，T43–T50；持续采样 → 原生 Webhook/Payload → 官方模板 Bot 有界诊断/主动告警 → 有限预授权静默维护。仅 Spec，不代表现役启用；[决策](decisions/2026-09-16-template-ops-automation.md)明确 HSO 人工 gate 的狭窄预授权扩展，[操作手册](maintainers/template-ops-automation.md)区分当前命令与目标能力。
+
 ## Cross-worktree live acceptance
 
 [`LIVE` integration validation backlog](tickets/LIVE-integration-validation.md) is the long-lived scheduling/receipt home for acceptance that actually needs native Host, loaded Host/modeld, a real Provider, the original App or restart/rollback. Finish code, offline proof and code review in feature worktrees; register live-only entries with source commits and dependencies, then normally validate a fixed combined `feat/box-runtime-v2` artifact in one approved window. The queue records integration mappings, budgets, stop/rollback conditions and per-entry results. It neither authorizes cutover nor turns unresolved code/review into live-only residue; completed entries are invalidated explicitly when relevant artifacts change.
@@ -66,6 +68,8 @@ Current behavior is owned by source and executable tests. Product and architectu
 The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normalization-and-roadmap.md) records binding normalization, patch-surface and execution-scope decisions. They are incorporated into the [strategy plan](roadmap/box-runtime-plan.md) and [implementation spec](roadmap/box-runtime-impl-spec.md); the ADR is not a second roadmap. The spec records this rebuild's explicit single-track policy without turning earlier POC implementation details into compatibility obligations.
 
 ## Freshness
+
+Template ops 的原生 routine/模板克隆/Payload/认证、工具权限、安装绑定或预授权范围变化时，复核 [专项资格与失效条件](roadmap/template-ops-automation-spec.md#baseline)；模板发布和配对不等于维护授权。
 
 Review the relevant current homes when any of these change:
 

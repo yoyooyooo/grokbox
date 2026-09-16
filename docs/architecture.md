@@ -316,6 +316,14 @@ Current implementation remains source reality until each slice lands. This docum
 
 **2026-09-16 accepted modeld consolidation:** [ADR](decisions/2026-09-16-modeld-effect-core.md) and the existing [Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core) own the next execution-core change. Keep the native Host loop/tools/delivery, one kernel and one durable execution index. Separate deployment proof, live execution fences and observation. Audit native authority before removing supplemental Server checks; keep strict freshness defaults until a separately qualified policy decision. Effect owns shared source and waiter lifetimes; no second daemon, universal collector or hidden restart/replay. [T43–T50](tickets/README.md#modeld-effect-core) carry scope and proof, not an implementation-complete claim.
 
+### 2026-09-16 Template ops boundary（目标，尚未实现）
+
+[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T50 的最小增量骨架：HSO 继续拥有来源/资格证据，T41 原 SQLite 管理 incident/outbox/claim/报告，ConfigurationWrite 管理本安装 binding/grant，已有 controller operation store 管理 plan/实际动作。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
+
+模板 Bot 使用官方模型，按合法原生 Webhook/Payload 触发加载 ops 进阶能力；不常驻采样、不拥有原始 signals、不从 Payload 获得授权。`monitor.runtime.ts` 组合只读采样与通知子 Scope；计划中的 `ops.runtime.ts` 是独立 Bot/modeld 的受限维护调度，只调用唯一 controller。Bot 持久交接后结束，维护在已资格化安全屏障内推进，结果由原 controller 保存后再通知。
+
+普通纯规则保持 TS，重 IO/lease/退避/期限/取消按现有 Effect pin 与 Scope 标准；Host/preload 仍不导入 Effect/SQLite/Webhook/ops policy。上游 routine、模板克隆、Payload 和工具权限必须单独资格化。单 UID 的任意 shell 不构成硬隔离，无法证明 Bot 工具边界时只做固定只读报告；不能让 prompt 文字替代权限设计。
+
 ### 2026-09-12 Observation and incident management boundary
 
 **First local slice implemented; full T41 remains open.** [Spec S0.1.4](roadmap/box-runtime-impl-spec.md#continuous-observation) / [T41](tickets/T41-continuous-observation-and-alerting.md) add a scoped long-lived observer before Web UI. It reuses T37's native evidence acquisition and T27/T33 DTOs, not a second admission or controller. Box identity, account/team/backend scope, Bot identity and each source/runtime epoch remain explicit. CLI and future API read one projection and use the existing command programs.

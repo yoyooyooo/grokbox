@@ -6,7 +6,9 @@
 
 **状态：前向目标方案，尚非实现或部署完成声明。** 本文是官方 Host 升级后「保留证据、重新识别补丁点、审核并发布 profile」的方案主页；不替代运行时设计、D2 裁决或已有 adopt 授权。后续实现以本文的 HSO-0…HSO-6 交付，历史 T1 的 done 状态不重写。
 
-**固定分工：runtime 只精确应用；ops 感知变化并做机械判断；Agent 解释证据并提出/验证改动；Human 批准发布语义；adopt 另行确认。**
+**默认分工：runtime 只精确应用；ops 感知变化并做机械判断；Agent 解释证据并提出/验证改动；Human 批准发布语义；adopt 另行确认。**
+
+**2026-09-16 狭窄扩展，尚未实现：** [Template Ops 决策](../decisions/2026-09-16-template-ops-automation.md)接受由官方模板 Bot 的原生 Webhook/Payload 接收告警与有界诊断；[专项 Spec §6](template-ops-automation-spec.md#policy)为指定低风险动作类增加可撤销预授权，允许已经资格化组合的对齐及满足已审核等价规则的新 SHA profile 派生。它不是让 Agent 自批 recipe 或把旧批准直接继承到新 source；profile 发布与实际 adopt 仍分开验证。本文后续 Human/adopt gate 是未进入该限定政策的默认路径，T43–T50 实现前现有 CLI 权限保持不变。来源 writer/证据树仍归 HSO，T41 与 Bot 只消费安全结果，不新增源码库或 controller。
 
 唯一智能闭环是：**官方更新/换代信号 → 稳定性与身份核对 → retain/replay 机械判断 → Agent 判断 → grokbox 候选或代码的有界迭代/离线验证 → 人工 gate → 独立 adopt/verify**。升级感知是原 HSO 链的上游，不另建升级器或平行方案，HSO-0…6 编号与职责连续。
 
@@ -24,12 +26,12 @@ Inputs：
 - **Authoring wrong-site**：新 SHA 上错误字符串也可能唯一，`profileFromSource` 也能算出 transformed SHA。SHA 和唯一性不能替代位置的语义审核。
 
 运行时保持以下不变量，不加入识别策略：
-1. `LIVE_SLICE_PATCHES` 保留为现有字面 recipe；`PatchProfile` 仍是两个 `SlicePatch`，id 为 `create-session`、`agent-id`。
+1. `LIVE_SLICE_PATCHES` 保留为已批准的字面 recipe；`PatchProfile` 的合法集合以当前 `profile.ts` schema/validator 与实际 profile 为准。本文 HSO knife 检查围绕 `create-session`、`agent-id` 两个位置，属于专项证据，不再把历史「仅两个 SlicePatch」当成完整运行时限制，也不能据此声称检查了全部生效切片。
 2. `applyPatchProfile` 先验证整个 `sourceSha256`，按切片顺序在当前字符串上验证 start/end anchor 全局唯一、find 在 `[start, end)` 内唯一，最后验证 transformed SHA。失败码和拒绝行为不放宽。
 3. `_compile` / preload 只消费已审、已固定的 profile，对正确目标文件应用现有精确变换。不得解析 AST、扫描 corpus、排名候选或重写 profile。
 4. 不能匹配时不做 grokbox 变换；这不是 managed routing 成功。保留既有原字节路径、拒绝信息和 coverage/窗口语义。
 
-不在本方案内：改 Host Agent loop、TURN/STEP 定义、root/compact、工具、Memory/Transcript、SendToUser、官方 renewal；修改 provider 凭据；从档案恢复或执行 Host；自动修复 circuit/attestation；以 ops 验收代替 live canary。超过两个补丁点或扩大修改语义，必须另走 D2 明确批准及 schema/validator/tests，不能藏进候选生成。
+不在本方案内：改 Host Agent loop、TURN/STEP 定义、root/compact、工具、Memory/Transcript、SendToUser、官方 renewal；修改 provider 凭据；从档案恢复或执行 Host；自动修复 circuit/attestation；以 ops 验收代替 live canary。扩大当前已批准补丁点集合或修改语义，必须另走 D2 明确批准及 schema/validator/tests，不能藏进候选生成；低风险预授权不批准新的 recipe 语义。
 
 ### 1.1 官方更新机制与事实边界
 

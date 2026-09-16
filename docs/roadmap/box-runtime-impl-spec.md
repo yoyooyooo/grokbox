@@ -108,6 +108,15 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 
 **依赖**：T37先完成共享事实与真实门；T41可与T38/T24/T39并行，复用T25/T40长期服务安装能力。T40签持续生产时验证T41单盒最低监控闭环，T37开发和普通推理不依赖DB，T41不等待T40整票放行。T29仅在前端排期后消费；共用ConfigurationWrite的revision/冲突合同现在明确，真正第二写入入口落地时实现，不造UI-only writer。没有T41或没有外部通知渠道的运行应如实说明监控范围，不把future能力列入已完成。
 
+<a id="template-ops-automation"></a>
+### S0.1.5 Template Bot 告警与受限自动维护（2026-09-16 Spec-first）
+
+用户接受由 grokbox template bot 的原生 Webhook/Payload 入口主动告警、有界只读排障及有限预授权静默维护。专项施工合同唯一归 [Template Ops Spec](template-ops-automation-spec.md)，[T43–T50](../tickets/README.md#template-ops-automation)是新任务；本主 Spec 继续拥有总运行时树、Server/Host/session 与唯一 controller。不是重建 modeld 或新增 Agent loop，也不是现役已开启声明。
+
+本地 collector 无模型、无 Host mutation；T41 只管观察/incident/通知交付。官方模板 Bot 按需解释与提候选，Payload 和模型 confidence 无执行权；ConfigurationWrite 管理配对/预授权，既有 controller 管理不可变计划和实际变更。Bot 提交后结束回合，独立维护角色等待真正安全边界，不能边等自己重启边占 busy。具体布局、ports、预算和 native 资格只在专项 Spec 维护。
+
+[新决策](../decisions/2026-09-16-template-ops-automation.md)仅对指定低风险动作类接受作用域/证据/时效绑定的可撤销预授权，包含满足审核等价规则的新 SHA 派生；不放宽 exact SHA/唯一性、Server gate、语义审核、权限隔离或安全排空。其它未知/越界变化继续人工审核。通知成功不等于维护或用户交付成功，模板导入不继承活 endpoint/secret/grant。T43–T50 实现前既有无确认 reconcile 和显式 live 边界不变。
+
 ### S0.2 最小完整控制边界与用途
 
 复用现有 `runtime-kernel` 的 STEP program/ledger、binding、auth 和当前 v5 同连接，不增加第二 orchestrator、Context Store、Memory writer 或 provider loop。Host 侧的 **Managed STEP Scope** 是 T35 的生命周期边界，不强制新类、包或服务：在 provider 开始前取得真实有效 root/ctx/身份、协调本 root 的摘要入口，退出时释放并使旧能力失效。Host 保留摘要策略、root/归档/checkpoint、工具、Memory、SendToUser 的实际 writer。

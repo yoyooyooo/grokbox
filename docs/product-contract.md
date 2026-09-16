@@ -500,6 +500,14 @@ MVP / 可发布声明的 ordinary main envelope：
 
 **发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。最终批准使用readiness现有记录，不由某个绿色测试或ownership结果直接生成。
 
+### 12.1 Template Bot 主动运维（2026-09-16 接受方向，尚未实现）
+
+在已配对的单安装范围内，监测发现不能安全静默处理的问题时，可通过原生 Webhook/Payload 唤醒官方模型的 grokbox template bot，进行有限只读排障并主动报告；低风险静默维护需要用户另行预授权、完整组合资格和实时安全边界。配对默认不授权维护，模板不包含发布者的活 endpoint/secret/grant，Bot 不给自己切 custom model。
+
+[专项 Spec](roadmap/template-ops-automation-spec.md)拥有 T43–T50 的详细合同；[决策](decisions/2026-09-16-template-ops-automation.md)明确对 HSO 逐次人工 gate 的狭窄扩展：限定已审核动作类可使用有时效/作用域的预授权，新 SHA 只有满足已审核等价规则才可自动派生 profile。未知依赖或修改语义仍需人工审核；runtime 精确应用与 Server 权威不变。现有 CLI 行为不因此获得自动执行权。
+
+Bot 只解释/诊断/提交候选，唯一 controller 实际执行；Webhook HTTP 接收、Bot 领取、诊断、维护验证、报告交付和用户已读各自有证据。Bot 需先持久交接并结束回合再维护其所在 Host；整个 Box/原生服务离线的自我告警能力不作无条件承诺。撤销自动化不等于回滚已发生效果，自动退出补丁也不授权同 STEP 换供应商或重做工具。
+
 ## 13. 输出与错误
 
 除 Markdown 内容和 streaming 命令外，成功 stdout 是一个 JSON object：

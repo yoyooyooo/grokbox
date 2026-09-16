@@ -6,6 +6,12 @@
 
 用户结果：没有打开网页时，也能发现归属冲突/变化或失去观察能力；重启后仍可查已有事件、告警处理记录；多个CLI/页面不成倍访问Server。告警不替代准入，不暗中修身份或重放任务。
 
+## 2026-09-16 Template Bot 出口扩展（未实现）
+
+[T43–T50](README.md#template-ops-automation)在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 下扩展本票的一个固定通知出口：用户显式配对的原生 Webhook 可唤醒官方 grokbox template bot，由独立 Bot 回合做有界诊断/报告。它有原生推理成本，不能沿用“所有通知绝不触发模型”的无条件表述；collector 仍不直接调用 provider/sendPrompt，重试仍仅投递同一通知，不借此重做诊断工具或维护。
+
+本票仍唯一拥有观察/incident/交付管理与原 SQLite。后续 binding/grant 归 ConfigurationWrite，plan/实际变更归唯一 controller；通知 outbox 或 Bot 结论不授予任何执行权限。一般第三方外发保持默认禁止；新出口只对显式绑定目标开放。现有 `local_only` 与未完成 native/持久安装资格在实现前不改写。
+
 ## 当前实现与证据范围
 
 当前使用方式、错误与存储合同的维护入口是[持续观测](../maintainers/continuous-observation.md)，不从下面的完整目标推断所有能力已落地。

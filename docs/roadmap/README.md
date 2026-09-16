@@ -14,6 +14,10 @@
 
 T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修改。持续观测、安全准入、真实App/Working与原生状态往返不能被“UI以后做”一并延期。
 
+## 新专项施工：Template Bot 运维闭环
+
+[Template Ops Spec](template-ops-automation-spec.md) / [T43–T50](../tickets/README.md#template-ops-automation)于 2026-09-16 接受 Spec-first 推进：持续监测 → 带 Payload 的原生 Webhook → 官方 grokbox template bot 有界排障/主动告警 → 指定低风险类的预授权静默维护。不是泛化未来候选，也不是已实现/已部署声明；总树仍服从主 Spec，HSO/T41/唯一 controller 各守事实 owner。[决策](../decisions/2026-09-16-template-ops-automation.md)限定旧人工 gate 的扩展，[维护手册](../maintainers/template-ops-automation.md)拥有操作解释。
+
 ## Future：以后做的能力
 
 [future/README.md](future/README.md)是未排期范围的唯一目录，按能力命名，不按阶段/date/final-v2复制方案。包含：
