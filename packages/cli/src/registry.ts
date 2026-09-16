@@ -832,6 +832,13 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     streaming: false,
   },
   {
+    path: ["alerts", "trace"], usage: "grokbox alerts trace <tray-id> [--from journal|monitor] [--source-instance <id>]",
+    summary: "Trace native alert decisions and lifecycle; never infer App rendering or mutate alerts.",
+    arguments: [{ syntax: "<tray-id>", description: "Exact native Tray ID" }],
+    options: options([{flags:"--agent <id>",description:"Exact Agent identity"},{flags:"--source-instance <id>",description:"Disambiguate Host observer instances"},{flags:"--from <source>",description:"journal (default) or existing monitor index"}]),
+    stdin:"none",table:false,timeout:false,destructive:false,gateway:false,streaming:false,localOnly:true,
+  },
+  {
     path: ["alerts", "list"],
     usage: "grokbox alerts list [--agent <id>] [--request-id <id>]",
     summary: "Read active App warning trays; no dismissal, clearing or mutation.",
@@ -1499,10 +1506,11 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "incident"],
-    usage: "grokbox runtime incident <step-id> --agent <id>",
+    usage: "grokbox runtime incident <step-id> --agent <id> [--from journal|monitor]",
     summary: "Diagnose an exact STEP from bounded local evidence without Gateway, resend or repair.",
     arguments: [{ syntax: "<step-id>", description: "Exact STEP identity from the error banner" }],
-    options: options([{ flags: "--agent <id>", description: "Exact Agent ID, not a mutable name" }]),
+    options: options([{ flags: "--agent <id>", description: "Exact Agent ID, not a mutable name" },
+      { flags: "--from <source>", description: "journal (default) or an existing monitor evidence index; never initializes or polls" }]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false,
     streaming: false, profile: false, localOnly: true,
   },

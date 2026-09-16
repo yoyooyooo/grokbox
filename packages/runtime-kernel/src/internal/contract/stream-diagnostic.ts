@@ -6,12 +6,12 @@ export const NORMALIZE_CAUSES = [
   "event_after_finish", "empty_output", "invalid_usage", "invalid_terminal", "terminal_binding_mismatch", "stream_budget",
 ] as const;
 export type NormalizeCause = typeof NORMALIZE_CAUSES[number];
-export const STREAM_REJECT_SITES = ["provider_chat_wire", "provider_responses_wire", "sdk_part", "sdk_tool", "sdk_finish", "canonical_event", "canonical_finish", "host_event", "host_tool", "host_terminal", "wire_event", "wire_terminal", "stream_budget"] as const;
+export const STREAM_REJECT_SITES = ["provider_chat_wire", "provider_responses_wire", "sdk_part", "sdk_tool", "sdk_finish", "canonical_event", "canonical_finish", "host_event", "host_tool", "host_terminal", "wire_event", "wire_terminal", "stream_budget", "authority_check"] as const;
 export type StreamRejectSite = typeof STREAM_REJECT_SITES[number];
 export const STREAM_EVENT_TYPES = ["unknown", "data", "done", "eof", "body_error", "stream-start", "response-metadata", "start", "start-step", "finish-step", "text-start", "text-delta", "text-end", "reasoning", "reasoning-start", "reasoning-delta", "reasoning-end", "tool-input-start", "tool-input-delta", "tool-input-end", "tool-call-streaming-start", "tool-call-delta", "tool-call", "tool-error", "tool-result", "finish", "abort", "error", "raw", "source", "file", "text_delta", "reasoning_delta", "tool_start", "tool_delta", "tool_complete", "backend_finish", "accepted", "terminal", "response.completed", "response.failed", "response.incomplete", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.output_item.added", "response.output_item.done"] as const;
 export type StreamEventType = typeof STREAM_EVENT_TYPES[number];
 export const FINISH_REASONS = ["stop", "end-turn", "tool-calls", "tool_calls", "function_call", "length", "max_tokens", "content-filter", "content_filter", "error", "abort", "aborted", "cancelled", "unknown", "insufficient_system_resource", "completed", "incomplete", "failed", "other"] as const;
-export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased"] as const;
+export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased", "semanticOutputBytes", "replayRecords", "heldToolRecords", "retainedStorageBytes"] as const;
 export type StreamCountKey = typeof STREAM_COUNT_KEYS[number];
 export const STREAM_TIME_KEYS = ["headersMs", "providerFirstEventMs", "sdkFirstPartMs", "canonicalFirstEventMs", "hostFirstEventMs", "durationMs"] as const;
 export type StreamTimeKey = typeof STREAM_TIME_KEYS[number];
@@ -31,10 +31,19 @@ export type StreamSummary = {
   providerDoneObserved?: boolean;
   providerHttpStatus?: number;
   sdkInvalidToolObserved?: boolean;
+  requestedParallelToolCalls?: boolean;
+  hostToolPolicy?: "single-tool" | "validated-batch" | "incremental";
+  toolBatchState?: "held" | "released" | "discarded";
   wireToolValidation?: "not_instrumented" | "pending" | "validated" | "rejected";
   engine?: { api: "chat" | "responses"; aiVersion: string; providerVersion: string; adapterRevision: 1; pipeline?: "provider_v2_single_call" };
 };
+export const AUTHORITY_REASONS = ["unknown", "authority_unavailable", "authority_not_committed", "host_identity_mismatch", "host_generation_changed", "ownership_reader_unavailable", "ownership_read_unavailable", "ownership_read_timeout", "ownership_gateway_mismatch", "ownership_bridge_unavailable", "server_read_unavailable", "ownership_clock_unavailable", "native_execution_not_ready", "harness_mismatch", "server_id_mismatch", "confirmed_temporal", "ownership_unconfirmed", "ownership_scope_unconfirmed", "ownership_evidence_stale", "ownership_evidence_invalid", "turn_revoked", "ownership_identity_changed"] as const;
+export const AUTHORITY_CHECKPOINTS = ["admission", "before_dispatch", "after_auth", "tool_start", "tool_complete", "finish", "recovery"] as const;
+export type AuthorityDiagnostic = { reason: typeof AUTHORITY_REASONS[number]; checkpoint?: typeof AUTHORITY_CHECKPOINTS[number]; durationMs?: number; evidenceAgeMs?: number };
+export type StreamBudgetDiagnostic = { layer: "provider" | "canonical" | "host"; metric: "output_bytes" | "retained_bytes" | "event_count" | "wire_bytes" | "event_bytes" | "tool_count"; limit: number; measured: number };
 export type StreamDiagnostic = {
+  budget?: StreamBudgetDiagnostic;
+  authority?: AuthorityDiagnostic;
   normalizeCause?: NormalizeCause;
   rejectSite?: StreamRejectSite;
   eventType?: StreamEventType;
@@ -72,7 +81,11 @@ export function projectStreamSummary(value: unknown): StreamSummary | undefined 
     const state = member(own(value, "providerObservation"), ["not_started", "headers", "stream", "eof", "body_error", "cancelled"]);
     if (state) out.providerObservation = state;
     for (const k of ["providerFinishReason", "sdkFinishReason"] as const) { const r = member(own(value, k), FINISH_REASONS); if (r) out[k] = r; }
-    for (const k of ["providerFinishObserved", "providerDoneObserved", "sdkInvalidToolObserved"] as const) { const b = own(value, k); if (typeof b === "boolean") out[k] = b; }
+    for (const k of ["providerFinishObserved", "providerDoneObserved", "sdkInvalidToolObserved", "requestedParallelToolCalls"] as const) { const b = own(value, k); if (typeof b === "boolean") out[k] = b; }
+    const policy = member(own(value, "hostToolPolicy"), ["single-tool", "validated-batch", "incremental"]);
+    if (policy) out.hostToolPolicy = policy;
+    const batch = member(own(value, "toolBatchState"), ["held", "released", "discarded"]);
+    if (batch) out.toolBatchState = batch;
     const status = own(value, "providerHttpStatus");
     if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) out.providerHttpStatus = status;
     const validation = member(own(value, "wireToolValidation"), ["not_instrumented", "pending", "validated", "rejected"]);
@@ -98,6 +111,16 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
     if (typeof match === "boolean") out.declaredToolMatch = match;
     if (seq !== undefined) out.wireSequence = seq;
     if (stream) out.stream = stream;
+    const budget = own(value, "budget"), layer = member(own(budget, "layer"), ["provider", "canonical", "host"]);
+    const metric = member(own(budget, "metric"), ["output_bytes", "retained_bytes", "event_count", "wire_bytes", "event_bytes", "tool_count"]);
+    const limit = count(own(budget, "limit")), measured = count(own(budget, "measured"));
+    if (layer && metric && limit !== undefined && measured !== undefined) out.budget = { layer, metric, limit, measured };
+    const authority = own(value, "authority"), reason = member(own(authority, "reason"), AUTHORITY_REASONS);
+    if (reason) {
+      const checkpoint = member(own(authority, "checkpoint"), AUTHORITY_CHECKPOINTS);
+      const durationMs = count(own(authority, "durationMs")), evidenceAgeMs = count(own(authority, "evidenceAgeMs"));
+      out.authority = { reason, ...(checkpoint ? { checkpoint } : {}), ...(durationMs !== undefined ? { durationMs } : {}), ...(evidenceAgeMs !== undefined ? { evidenceAgeMs } : {}) };
+    }
     return Object.keys(out).length ? out : undefined;
   } catch { return undefined; }
 }
@@ -105,7 +128,7 @@ const diagnostics = new WeakMap<object, StreamDiagnostic>();
 export function annotateStreamFailure<T extends object>(error: T, value: StreamDiagnostic): T {
   const next = projectStreamDiagnostic(value), prior = diagnostics.get(error);
   // The detecting site/cause wins; later layers may append a later evidence snapshot.
-  if (next) diagnostics.set(error, Object.freeze({ ...next, ...prior, ...(next.stream ? { stream: next.stream } : {}) }));
+  if (next) diagnostics.set(error, Object.freeze({ ...next, ...prior, ...(next.stream ? { stream: next.stream } : {}), ...(next.authority || prior?.authority ? { authority: { ...next.authority, ...prior?.authority } as AuthorityDiagnostic } : {}) }));
   return error;
 }
 export function streamFailureDiagnostic(value: unknown): StreamDiagnostic | undefined {
@@ -134,6 +157,11 @@ export class StreamEvidence {
   httpStatus(n: number): void { this.value.providerHttpStatus = n; }
   invalidTool(): void { this.value.sdkInvalidToolObserved = true; }
   toolValidation(state: NonNullable<StreamSummary["wireToolValidation"]>): void { this.value.wireToolValidation = state; }
+  toolPolicy(policy: NonNullable<StreamSummary["hostToolPolicy"]>, requestedParallel: boolean | undefined): void {
+    this.value.hostToolPolicy = policy;
+    if (requestedParallel !== undefined) this.value.requestedParallelToolCalls = requestedParallel;
+  }
+  toolBatch(state: NonNullable<StreamSummary["toolBatchState"]>): void { this.value.toolBatchState = state; }
   snapshot(): StreamSummary { this.value.timings.durationMs = this.elapsed(); return projectStreamSummary(this.value)!; }
   private elapsed(): number { return Math.min(MAX_COUNT, Math.max(0, Math.floor(this.now() - this.startedAt))); }
 }

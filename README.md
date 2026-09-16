@@ -60,7 +60,7 @@ Humans: `grokbox skills get core --full` for the full CLI inventory.
 
 ## Prerequisites and platform support
 
-- Node.js 20+ for the published-style CLI runtime.
+- Node.js 20.17.0+ for the published-style CLI runtime (including the native monitor SQLite dependency).
 - Bun 1.3.14 for source development and the pre-release source shim.
 - An existing Grok Bot cloud computer that you own or are authorized to use.
 - Tailscale plus BatchMode SSH for remote bootstrap/recovery; bootstrap also

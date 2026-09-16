@@ -1,5 +1,5 @@
 import type { CliDeps } from "../deps.ts";
-import { openRuntimeStore, observeRuntimeEvents, observeJournalHealth } from "@grokbox/box-runtime/runtime";
+import { openRuntimeStore, observeRuntimeEvents, observeJournalHealth, openMonitorStore } from "@grokbox/box-runtime/runtime";
 import { CliError, usage } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ioFromOpts } from "../opts.ts";
@@ -16,7 +16,7 @@ function requestId(value: string | undefined): string | undefined {
 
 /** Incident diagnosis does not depend on a live Gateway, current Bot name, tray
  * or transcript route. Exact IDs only; no execution or recovery side effects. */
-export async function runRuntimeIncident(deps: CliDeps, step: string, raw: { agent?: string }) {
+export async function runRuntimeIncident(deps: CliDeps, step: string, raw: { agent?: string; from?: string }) {
   const selectedStep = requestId(step);
   const agentId = requestId(raw.agent);
   if (!selectedStep || !agentId) throw usage("runtime incident requires <step-id> and --agent <id>.");
@@ -24,6 +24,18 @@ export async function runRuntimeIncident(deps: CliDeps, step: string, raw: { age
     throw new CliError("runtime_local_only", "Incident evidence requires a box-local Profile.");
   }
   const durableRoot = openRuntimeStore(deps.boxRuntimeRoot, deps.env).root;
+  if (raw.from !== undefined && raw.from !== "journal" && raw.from !== "monitor") throw usage("--from must be journal or monitor.");
+  if (raw.from === "monitor") {
+    const store = openMonitorStore(durableRoot);
+    const evidence = await store.executionEvidence({ agentId, stepId: selectedStep });
+    const gap = evidence.truncated ? "truncated" : evidence.summaryUsed ? "retained_summary" : evidence.events.length === 0 ? "not_in_retained_window" : undefined;
+    const result = projectSendOutcome({ agentId, stepId: selectedStep, entries: [], alerts: [], truncated: false, runtimeEvents: evidence.events, runtimeGap: gap });
+    writeSuccess(deps.stdout, { ...result, presentation: await store.alertTrace({ agentId, stepId: selectedStep }),
+      evidence: { ...result.evidence, transcript: "not_checked", alerts: "not_checked", runtime: evidence.source,
+        summaryUsed: evidence.summaryUsed, retentionFloor: evidence.retentionFloor, runtimeRoot: durableRoot },
+      events: evidence.events, queryMode: "offline_step", replayAuthorized: false });
+    return;
+  }
   const read = await observeRuntimeEvents({ durableRoot, runRoot: deps.env.GROKBOX_RUN_ROOT, source: "host", selector: { agentId, stepId: selectedStep } });
   const writerHealth = await observeJournalHealth(read.root);
   const gap = read.state !== "present" ? read.state : read.truncated ? "truncated" : read.window?.selectorMatched === false ? "not_in_retained_window" : undefined;

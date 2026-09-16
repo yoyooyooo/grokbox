@@ -8,6 +8,7 @@ import { createModeldProduce } from "./modeld-produce.node.ts";
 import {
   asHostPromptSession,
   createStreamingPromptSession,
+  MANAGED_TOOL_POLICY,
   visibleFailureHandle,
   toHostStreamResult,
   recordHostManagedFailure,
@@ -164,7 +165,7 @@ export function bindHostSessionHook(input: {
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
     const record = captured.record;
-    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string, diagnostic?: StreamDiagnostic) => {
+    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string, diagnostic?: StreamDiagnostic, failureId?: string) => {
       void appendHostStreamRejected(input.runRoot, {
         name: "host_stream_rejected",
         schemaVersion: 2,
@@ -177,6 +178,7 @@ export function bindHostSessionHook(input: {
         ...(stateShape ? { stateShape } : {}),
         ...(stepId ? { stepId } : {}),
         ...(diagnostic ? { diagnostic } : {}),
+        ...(failureId ? { failureId } : {}),
       });
     };
     const writeStage = (stage: string, result: string, extra: Record<string, string> = {}) => {
@@ -258,13 +260,13 @@ export function bindHostSessionHook(input: {
     const session = createStreamingPromptSession({
       modelId,
       vision,
-      parallel: "fail-closed",
+      parallel: MANAGED_TOOL_POLICY,
       produce: runtime.produce,
       agentId,
       onTerminal: (terminal) => {
         if (terminal.rejected && terminal.errorCode) {
           const mapped = mapTerminalReject(terminal.errorCode, terminal.stage);
-          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId, terminal.diagnostic);
+          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId, terminal.diagnostic, terminal.failureId);
         }
         const stepId = terminal.invocationId;
         if (!stepId) return;
@@ -276,6 +278,7 @@ export function bindHostSessionHook(input: {
           toolCallCount: terminal.toolCallCount,
           modelId,
           ...(terminal.errorCode ? { errorCode: terminal.errorCode } : {}),
+          ...(terminal.failureId ? { failureId: terminal.failureId } : {}),
           hostId: input.binding!.identitySha,
           hostGenerationId: input.binding!.generationId,
           ...(clientNonce ? { clientNonce } : {}),

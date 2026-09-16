@@ -8,7 +8,7 @@
 
 `grokbox` 是 Grok Bot 云电脑的统一控制面 CLI。同一条命令可以在云电脑内外执行，调用者只选择 Profile，不需要知道背后使用 Unix socket、loopback Gateway、Tailscale daemon RPC 还是直接 Gateway。`gbox` 是完全等价的短别名；帮助、输出、配置与行为均以 canonical name `grokbox` 表述。
 
-发布的 CLI 与 daemon 运行时合同是 Node.js 20+，不得依赖 `Bun.*` globals 或要求最终用户安装 Bun。两个 executable name 共用一个 pre-bundle Node shim；Node major 低于 20 或不可解析时，在加载 bundle 前返回稳定 `runtime_unsupported`/59。仓库仍使用 Bun 执行依赖安装、`bun run`、测试和其他开发流程；开发工具选择不进入用户运行时合同。
+发布的 CLI 与 daemon 运行时合同是 Node.js 20.17.0+，与固定的原生 monitor SQLite 依赖最低版本一致；这是显式的发行兼容变更，不是执行次数或业务配额。不得依赖 `Bun.*` globals 或要求最终用户安装 Bun。两个 executable name 共用一个 pre-bundle Node shim；Node 版本低于 20.17.0 或不可解析时，在加载 bundle 前返回稳定 `runtime_unsupported`/59。仓库仍使用 Bun 执行依赖安装、`bun run`、测试和其他开发流程；开发工具选择不进入用户运行时合同。
 
 ```text
 User / Agent / Skill
@@ -483,7 +483,7 @@ MVP / 可发布声明的 ordinary main envelope：
 
 - 支持 text/system/history、tool schema、serial tool call、true streaming、abort；
 - image/attachment：所选模型声明视觉能力则必须送达；未配置视觉能力则在 provider effect 前失败，并尽量以 Bot 可见消息告警（Host 执行 `SendToUser` 或等价），不得静默；
-- parallel/interleaved：能关闭则关闭；仍出现则不得丢弃或错配；
+- parallel/interleaved：默认可请求 `parallel_tool_calls=false` 减少生成并行，但该生成偏好不是 Host 的批次大小上限。production managed seam 使用 `validated-batch`：整步工具 ID、声明名、完整参数及成功终态全部通过后，按首次出现顺序将完整调用批次交给原生 Host；不得仅因多于一个调用报错、丢弃后续调用、拆成多个模型 STEP 或自动重试。任何批次内结构错误或提交前取消保持零工具材料释放。权限/审批、实际并发、执行失败、结果和 checkpoint 仍归 Host；批次放行不等于副作用原子事务或已执行；
 - 未补丁/不可用窗口：在已声明父预算内等待或明确拒绝；不把该 managed 用户句改送另一个主模型，不重放未知副作用。官方 Bot 独立保持原行为。
 
 证明按 source / 实际 packed / 原生隔离资格 / live 合成触发 / 真实 provider 分层。旧 response-only S4 描述不再是当前源码事实；当前实现与未证项由原 verifier/Ticket 给出。错误作为错误交给 Host，不产生假 assistant 正文、空成功或假 tool call；工具、Transcript/Memory 的写入仍归 Host。

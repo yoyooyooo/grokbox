@@ -176,7 +176,7 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 
 Owner 明确生产目标为已可用的 grok-4.6；不再围绕 provider smoke 循环。真实工具/续聊/恢复/持久运行是主线。`Parallel tool calls are not supported` 的现场反例要求补齐 T26 Host 合同和 V16/V19 观测：
 
-- 保持当前串行工具策略时，必须在实际 provider 请求上设置 `parallel_tool_calls=false`，不能只在返回第二个调用时拒绝；模型违约仍零放行拒绝，不以静默执行/丢工具来追绿。
+- 生产 managed 工具策略为 `validated-batch`：默认向 provider 请求 `parallel_tool_calls=false`，显式调用选项保留；生成偏好与 Host 执行能力分离。不能仅在第二个合法调用完成时拒绝。完整批次验证后才按首次出现顺序释放所有 start/delta/complete 与同序 response calls，原生 Host 继续拥有执行/权限/结果归并。未闭合、身份冲突、坏参数、无有效成功终态及提交前取消均零工具材料释放。显式 `fail-closed` 只作为已声明单调用消费者的策略，不是生产 managed 默认；不以丢工具、自动重试或第二执行器实现兼容。
 - App 的 `getTrays` 是 Host 内存快照，会去重、淘汰、dismiss、随新发送清除及重启丢失；不得称它为持久警告数据库。CLI 增加只读 `alerts list`，不暴露或执行 raw actions/secret detail。
 - `history outcome` 按原 nonce/精确 requestId 对齐 transcript、当前 warning；本机可显式关联 runtime journal。SendToUser 进度、模型完成、Host 拒绝、最终业务结果分别表达；没有 warning 不等于成功，历史和新 Host 代不能混接。预期结果匹配只证明观测到所需内容，不自动证明整个 run/checkpoint 完成。
 - 同一个 Bot 的 box/server 展示账本不得混接：roster/事件保留有限 `harness`，省略或未知不伪造为已观察 box；结果查询在每次采样前后检查声明路由，`--expect-harness box`（本机 `--runtime` 隐含此要求）遇变更/缺失/不符返回 unknown。采样一致不等于原子快照，更不证明桌面缓存来源；已混用的 test2 保留反例，干净 Bot 验收不能替代回切缺陷处理。入口与边界见 [harness 观测](../maintainers/transcript-harness-box-vs-server.md)。
@@ -464,7 +464,7 @@ run-step 请求携 HostEpoch/agent/TURN/STEP、expected ServiceEpoch/Selection�
 |---|---|
 | 配置读取 | 128 KiB，有界 no-follow regular-file reader |
 | snapshot JSON / encoded provider request / wire frame | 4 MiB / 8 MiB / 8 MiB；分别计算实际 bytes，frame header 4 bytes 不计入 payload |
-| canonical output 与 Host replay | 每 STEP 各不超过 1 MiB / 4096 events；terminal 留独立有界结算空间，不把已达上限变成无终态挂起 |
+| canonical output 与 Host replay | 每 STEP 默认 1 MiB 语义 UTF-8 输出；重复帧头与同工具最终参数不重复收费，不以累计分片数限制生产流。replay 与工具参数按固定存储块合并，另设 8 MiB 表示存储估算保护；块大小为分配目标，不是执行额度。terminal 留独立有界结算空间，预算失败记录 layer/metric/limit/measured，原始事件数和传输字节只作观测 |
 | server active clients / active STEP | 各最多 64；同 TURN 一次；超额 busy/capacity |
 | 单进程 retained payload 总预算 | 128 MiB，所有 incoming/request/queued-output 缓存按实际 bytes 计入；分配/增长前预留，耗尽拒绝新 work，不能靠每连接各自有界隐藏总量 |
 | admission wait / partial socket / request wall deadline | 当前Server-backed准入为10.5 s（ownership读10 s + 原local预算0.5 s，作为一次复合上限）；partial socket仍1 s；STEP总期限仍180 s，modeld流只用扣除准入后的余量，不再另开完整180 s；证据5 s年龄与2 s缓存独立判定，慢RPC不更新证据起点 |
@@ -480,7 +480,7 @@ run-step 请求携 HostEpoch/agent/TURN/STEP、expected ServiceEpoch/Selection�
 
 `host/stream-codec.ts` 是唯一 Host reshape：text/reasoning、tool start/delta/complete、finish/response、camelCase usage 与 modelId 一致。删除内部 `toolCalls` 别名和多套 response normalizer；canonical events 不是 Host `StreamPart` 类型换名。保留已验证 Host wire 字段，不能为了“去兼容”删掉上游真正消费的字段。
 
-工具按调用 id 关联，名字必须属于该 snapshot 的工具声明（Host 最终授权不变），不能缺失后补通用名；interleaving、冲突重复、坏 JSON/未知形状、serial-only 意外多工具有显式拒绝。只将验证通过的 executable calls 释放给 Host；重复 complete 不再释放。失败后可能已经释放过的内容如实记录，不能伪装零副作用。
+工具按调用 id 关联，名字必须属于该 snapshot 的工具声明（Host 最终授权不变），不能缺失后补通用名。生产 `validated-batch` 支持多个调用及交错参数流，参数完成顺序不改变首次出现的调用顺序；冲突重复、坏 JSON/未知形状明确拒绝。整个成功批次通过前不释放任何工具 start/delta/complete；相同 complete 去重，任意一处错误拒绝全批次。显式单调用消费者仍可拒绝多调用，但不是 managed 生产策略。已在先前 STEP 释放的工具及提交后 Host 的执行结果不可伪称回滚或零副作用。
 
 slow/late/no reader 不阻塞 producer completion；超出有界缓存须明确 failure/gap，不能丢一部分然后成功。关闭一个 reader 只退订它；Host abort 才取消本次模型。真实 usage 缺失在 canonical/status 中为 unavailable；ABI 必须数字时只用声明过的 unknown 投影，不拿 1/1/2 或 cache=0 当真实账单。
 

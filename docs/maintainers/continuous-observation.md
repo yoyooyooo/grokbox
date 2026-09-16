@@ -1,84 +1,105 @@
-# 持续观测与本地 incident
+# 持续观测、原生警告与本地 incident
 
-本页拥有当前命令、存储和排障语义；产品合同在 [Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation)，剩余实现/完整验收归 [T41](../tickets/T41-continuous-observation-and-alerting.md)，候选及实际部署仅记 [readiness](t32-live-enable-readiness.md)。2026-09-13 已实现第一条本地纵切，**未安装常驻服务、未对现役 Bot 启动采集、未关闭 T41/V28–V30**。
+本页拥有命令、存储与诊断语义；产品合同见 [Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation)，服务安装/现役 Host 与 App 资格见 [T41](../tickets/T41-continuous-observation-and-alerting.md) 和当前 readiness。本轮实现不等于已安装 collector、已重新领养 Host、已配置外部通知或已证明用户看到警告。
 
-## 当前命令
+## 权威分开，投影共用
 
-命令绑定本机 runtime root，拒绝远程 Profile；目标为明确的公开 Bot UUID，不用名字猜身份。
+- 原生 Host 是 Tray 的唯一 writer。`alerts list` 读取当前 Host 内存快照，关闭、清除、去重与重启都可能改变它。
+- runtime journal 保存执行事实和提醒生命周期证据；监控只收集安全投影，不执行模型、不改 ownership/配置、不重发工具。
+- `runtime-kernel/alerts` 的纯分类、执行身份关联和 trace 同时被 CLI 与 monitor 使用。旧文案解析标为 `legacy_text_derived`；它不会升级成直接执行身份。
+- 现有 `observability/observations.sqlite` 保存索引、incident、ack/snooze、采集 cursor 及本地通知管理事实。没有 `alerts.db`，也不使用 modeld 执行去重库来保存 UI 状态。
+- 执行失败、原生 Tray 变化、通知管理、App 呈现是不同事实。Dismiss 不等于 ack，ack 不等于修复，snooze 不改变准入，服务恢复不将旧失败 STEP 改写为成功。
 
-```sh
+## 命令
+
+```bash
+# 既有观测域，显式创建或迁移；普通查询不会做这些操作。
 grokbox runtime monitor init --confirm --json
-grokbox runtime monitor run --agents <uuid1,uuid2> --confirm --once --json
-grokbox runtime monitor run --agents <uuid1,uuid2> --confirm --interval-ms 30000 --json
+
+# collector 为显式前台进程。GROKBOX_RUN_ROOT 选中要索引的 Host journal。
+GROKBOX_RUN_ROOT="$HOME/.grokbox/run" \
+  grokbox runtime monitor run --agents <uuid1,uuid2> --interval-ms 30000 --confirm --json
+
+# 一轮有界采集；有积压时披露 hasMore，下一轮从已提交 cursor 继续。
+GROKBOX_RUN_ROOT="$HOME/.grokbox/run" \
+  grokbox runtime monitor run --agents <uuid> --once --confirm --json
+
 grokbox runtime monitor snapshot --json
-grokbox runtime monitor events --limit 100 --json
 grokbox runtime monitor events --after <cursor> --limit 100 --json
 grokbox runtime monitor incidents --limit 100 --json
-grokbox runtime monitor incidents --after <cursor> --limit 100 --json
 grokbox runtime monitor ack <incident-id> --request-id <uuid> --expected-revision <n> --json
 grokbox runtime monitor snooze <incident-id> --request-id <uuid> --expected-revision <n> --until-ms <epoch-ms> --json
+
+# 当前原生警告；不是永久历史。
+grokbox alerts list --agent <agent-id> --json
+
+# 明确 Tray 身份。不同 Host observer 实例不混算。
+GROKBOX_RUN_ROOT="$HOME/.grokbox/run" grokbox alerts trace <tray-id> --from journal --json
+grokbox alerts trace <tray-id> --from monitor --source-instance <id> --json
+
+# 无 Gateway、无 Tray 也能诊断 STEP；monitor 查询不会启动采集。
+GROKBOX_RUN_ROOT="$HOME/.grokbox/run" grokbox runtime incident <step-id> --agent <agent-id> --json
+grokbox runtime incident <step-id> --agent <agent-id> --from monitor --json
 ```
 
-`init` 显式建库，已有数据库只验证，不覆盖；`run` 显式启动前台 collector，`--once` 只提交一轮后退出。未加 `--once` 时，命令持续串行查询，网页不存在也可以运行；正常 SIGINT/SIGTERM 结束本次 collector，**不是自启安装、不是新的 supervisor**。不能把 Shell 后台运行或 tmux 存在当作 T40 持久部署已完成。
+`--agents` 是 ownership 批量观察目标；显式 `GROKBOX_RUN_ROOT` 是本地执行/提醒 journal 的来源。未提供 run root 时 collector 披露 `journal.state=not_configured`，不把 ownership 采样冒充 Alert 采集。当前最多32个目标是原生 ownership 单批协议范围，不是累计运行次数配额。
 
-`run` 使用现有 Host 官方认证读取桥，批量查询1–32个 UUID；普通 snapshot/events/incidents 只读本地库，不查询 Server、不建库、不启动 collector。`alerts list` 仍是原 Host tray 入口，两类告警不混用。
+## 原生提醒链路
 
-## 事实、变化、显示和管理
+`host_alert_observation` 带 `eventId/sourceInstanceId/sourceSequence`、Host generation、发生与观察时间，以及已知的源码/preload 指纹。没有字段时保持未观测。
 
-输出始终保留 `admissionAuthority:false` / `productionAccepted:false`。Server 登记、执行准入、配置写入、Host 原生会话都没有改由本库负责。
+| 事件 | 证明什么 | 不证明什么 |
+| --- | --- | --- |
+| `observer_started` | 观测对象已创建 | 原生 hooks 已全部安装或 App 在线 |
+| `manager_attached` | 已挂接经过限定的原生 TrayManager 实例 | 所有原生拒绝分支均已插桩 |
+| `decision` | main 错误分支 emit/stale suppression，或 automation 背景/节流 suppression；`decisionBasis` 区分直接分支与仅观察到 mutation 的结果 | 没有 Tray 就一定被 suppress |
+| `tray_created/updated/removed` | 原生状态已经发生对应变化 | 模型/工具完成、用户已读 |
+| `channel_published` | 对应这一次原生 emitter 调用成功返回/完成，`publicationBoundary=native_emitter_returned` | Gateway 远端送达、App 接收或渲染 |
+| `tray_snapshot` | attach 时已存在该 Tray | 它刚刚创建或此前曾发布 |
 
-采样复用 `inspectOwnership`，保留四类状态；必须有原生读取桥提供的稳定 scope 与有效来源时间。旧 schema1 没有 scoped 证据时返回 `scope_unavailable`，不从本地配置或 UUID 造一个权威 scope。读取失败保存最后已知事实但标不可用；字段缺失不解释成 Bot 被删除或迁移。
+当前直接 decision 覆盖 main-turn error 与 automation 的已限定分支；其他产生的 Tray 仍可由 manager mutation 观察，不能据此猜出未插桩的抑制原因。Host 原生 pending/current-epoch、dedupe、cap、dismiss、clear 的行为均保持不变。
 
-同 scope 的两次成功观察才能生成 `ownership_changed`，记录“上次来源观察时间 → 本次发现时间”的区间，而不是把返回时间当后台迁移发生时间。`lastSuccessMs` 取上游读取桥的 `serverObservedAt`，不把慢回复抵达时刻算作刚查询成功。账号/team/backend/machine scope 变化单独记录；新 scope 不继承旧 Bot 的确认/静音状态。最近成功的 Gateway 运行代只作来源证据，不授予任何控制权。
+本地 managed Error 通过 WeakMap/cause 链传递受限 failureId/Agent/STEP。它与执行拒绝记录相连，不读取凭据、完整异常正文或动作 URL。没有可信链接时保留 nativeRequestId 或明确的 legacy 文本提取，不将 native request、展示 post、TURN 与 STEP 相互替代。
 
-首次就冲突可生成 baseline `ownership_conflict`，不能编造先前迁移。读取失败另开 `observation_unavailable`，不会解决既有冲突。`ownership_changed` 表示检测到一次变化；同 scope 下一次新鲜成功观察确认其稳定后可恢复此事件周期，是否仍冲突另由冲突 incident 表达。
+同一 Tray 可报告多个失败；同一失败也可有多种提醒。身份关联依赖直接引用，而非时间接近、Bot 显示名或相同英文文案。旧代变化只终止当前性证明，不伪造逐条 `dismissed` 或用户阅读回执。
 
-同一持续条件只保留一个 open incident，轮询更新 lastSeen；恢复后再发生生成新 ID，不继承原周期的 ack。Ack/snooze 与 open/resolved 独立；确认不等于修复，静音不改变准入。管理请求绑定 requestId+expectedRevision：同请求同意图可对账，改意图/旧 revision 明确冲突；已 resolved 周期不被复活。
+## 索引、诊断和降噪
 
-## 本地事件出口
+Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当前诊断版本、执行事实、来源完整性和 App 未观测边界。重复稳定 event ID 幂等；不同载荷或重复 sourceSequence 产生 integrity conflict，不覆盖原事件。乱序到达补齐 sequence hole 后收回临时缺口，不能把一次乱序永久计作丢失。
 
-每轮 `run` 的 NDJSON 包含提交后的 `changes`：稳定 eventId、incidentId、对象及 scope、观察时间和变化区间。只能在对应 SQLite 镜像原子提交完成后发布；写库失败不提前广播“成功”。`events` 支持游标补拉，`incidents` 支持有界 keyset 分页，`hasMore` 不隐藏截断。游标绑定 databaseId 与 collector epoch，旧 epoch/未来事件位置或错误格式明确拒绝。
+持久 incident 分为：
 
-当前 `notificationMode:local_only`：本地事件和 incident 可查，并没有把事件打印成功解释为远端通知已确认。尚无外部渠道/投递重试与 receipt，也没有动态提醒升级；ack/snooze 只是持久管理状态。输出错误使 collector 退出，不重发模型或修复身份；已经提交的观察仍可由 events 查询。
+- `ownership_*` / `observation_unavailable`：既有持续条件。
+- `execution_failure`：具体 STEP 的历史发生记录，状态 `recorded`，不是等待被改写成成功的运行。
+- `pre_step_failure`：有原生 operation/dispatch/事件引用但尚无 STEP 的明确拒绝；不编造 STEP。
+- `shared_runtime_failure`：由同 service epoch 的结构化 admission/capacity 或 ledger_unavailable 证据建立的共享条件。每个失败请求仍保留子记录。后续同服务、更晚、明确成功且存储可用的执行可以结束这个条件周期；旧失败不被解决。再次发生创建新周期，不继承旧周期 ack。
 
-## 一份有界 policy
+`notification_decided` 在 incident 事务中保存固定规则版本、deliveryKey 和 emit/suppress 原因。共享父事故汇总、ack、有效 snooze 可抑制 monitor 的重复提醒，不 dismiss 原生 Tray，也不改变执行。跨批晚到的父证据不会改写之前已经作出的通知决策。
 
-数值在 `packages/runtime-kernel/src/monitor.ts`，不由网页另定：默认间隔30秒，范围10–300秒；每次读取最多10秒，串行完成后再等待，不补跑错过的轮询。失败指数退避到最多300秒，0–10%正抖动，成功后复位。源观察90秒以上为 stale；观测新鲜度不是 T37 准入的5秒合同。
+当前唯一配置渠道是 `local_only`。collector callback 返回/抛错分别记录 `notification_exported` / `notification_export_unknown`；这是本地出口证据，不是远端通知回执。输出失败后不自动重发模型、工具或用户任务。外部通知渠道尚未配置，App received/rendered 保持 `not_observed`，userRead 保持 `not_proven`。
 
-最多32个目标；事件/incident每页最多200；数据库16MiB、事件50000条的硬上限，触顶明确要求维护，当前不自动删除管理事实。Snooze最多24小时。各查询读取当时完整本地镜像，不因四个视图打开而发四次 Server 请求。
+## 磁盘事务与迁移
 
-第一片尚未实现 admission/background 的跨调用统一优先调度、事件触发刷新或完整过期定时器；当前 collector 自身串行批处理，现有原生读取缓存和 T37 准入保持各自合同。
+Schema v2 用固定 `sqlite3@6.0.1` 的 Node-API 磁盘 SQLite。发布最低 Node 为 **20.17.0**；Host/preload 不导入 SQLite、SDK 或 Effect。`sql.js` 仅留在开发依赖中生成独立 v1 迁移夹具，退役的全库镜像 runtime companion 不再打包。
 
-## SQLite 与发行包
+这里刻意使用 **DELETE rollback-journal** 的增量页事务，而非 WAL：短事务串行写，严格只读连接不创建 WAL/SHM sidecar。不是每次加载、导出、替换整个 JS 数据库镜像。磁盘引擎缺失/文件坏时明确失败，禁止回退内存或创建空库报健康。
 
-路径为 `${durableRoot}/observability/observations.sqlite`。使用固定 `sql.js@1.13.0` asm 版作为 Node20 可运行的 SQLite 引擎，**不是 node:sqlite，也不是原生 WAL/VFS**。每次管理/采样写在短 exclusive writer lock 下读取最新完整镜像，执行 SQLite 事务，再 export 到独占0600临时文件、fsync、rename 和目录 fsync；成功后才返回。读者打开旧镜像或新镜像，不安装一半事务；不跨事务保留可回写的缓存实例。
+`init --confirm` 才迁移 v1：核对 root/schema/private file，持有 SQLite 事务及旧 writer lock，保全独占备份，再事务升级；旧 writer 在下次加载时拒绝 v2。活的、身份不明的旧 collector 不被抢占。迁移或旧文件锁恢复只在明确 PID 已不存在并且锁文件身份未变时进行；不存在“锁太旧就删掉”。跨平台不能证明 PID 身份时保持 recovery-required。
 
-这项选择用于目前低频、小规模本地观察，代价是每次写出完整数据库。16MiB上限和显式维护是当前支持范围；更大负载需另行资格化磁盘VFS，不把本实现宣传成适合无限审计日志。
+新的 collector 所有权记录使用 PID、启动身份和 boot 身份摘要；并发启动被数据库事务拒绝。正常退出释放；硬崩溃后显式 run 可在证实旧进程已退出后建立新 collector epoch，恢复 SQLite 自身事务。旧 callback/cursor 不得继续写新代。初始化先私有 staging 再独占发布，失败不留下一个被误当成有效库的空文件。
 
-引擎打包成 `dist/observation-sqlite.cjs`，只在实际读取/初始化监控库时加载；普通 CLI 与 Host preload 不加载这份引擎。Node20契约、根包 `dependencies:{}` 不变，MIT notice 随包分发。真实 Node20.19.0 / Node22.22.0 冷进程以及安装后的 tarball 已有独立检查，具体计数绑定 readiness 候选，不由本页永久背书。
+采集 cursor、证据、incident 和通知决定同一事务提交。提交后回执丢失为 unknown；相同 source cursor/batch 或 management request 的重试会对账，不重复开事故。数据库迁移与 collector 更替会使不适用的旧分页 cursor 失效；不会在普通 GET 中进行隐式迁移或恢复写。
 
-## 故障与未完成事项
+## 长期运行与维护
 
-| 结果 | 正确处理 / 当前限制 |
-|---|---|
-| `monitor_not_initialized` | GET不建库；明确确认后 init |
-| `monitor_store_invalid`、schema/root mismatch、unsafe、损坏 | 保留原文件，不删库“修复”，不推断原生执行失败 |
-| `monitor_writer_busy` | 当前事务未获得写锁；复用请求标识有界重试，不能覆盖锁 |
-| `monitor_already_running_or_recovery_required` | 当前 collector 或残留锁存在；不多启第二个 collector、不猜 PID 杀进程 |
-| `monitor_commit_failed` | 发布前失败，旧镜像保留，未广播本次成功 |
-| `monitor_commit_unknown` | rename后目录确认失败，可能已提交；同 requestId/同意图查询或重试，不造新业务操作 |
-| `monitor_cursor_invalid` | epoch/库或位置不匹配，重取快照并承认观察缺口 |
-| `monitor_revision_conflict` / `monitor_request_conflict` | 重新读取；同ID不能偷改意图，ack不是修复 |
-| capacity/retention required | 停止新增观察并报告；当前没有自动清理或无证据空库重建 |
+没有累计16MiB/50000事件后拒绝新观察的旧限额。保留期限与数量目标用于自动维护和压力披露，不是服务寿命：
 
-**硬崩溃锁回收、备份/旧库迁移/保留维护目前未实现。** 普通退出和重启保留管理状态；崩溃留下 lock 时保守拒绝，不能声称已具备无人值守 crash recovery。恢复后的 epoch 必须更新；`collectorRecordedRunning` 只是一项持久记录，不证明此刻进程活着。snapshot计算freshness，已停止collector的lastKnown不冒充live。整盒失联仍需未来盒外观察者。
+- journal cursor 每批有界前进；半行不确认，轮转、改写、坏 UTF-8、超长行和截断明确报告。
+- ownership RPC 按独立退避时钟采样；本地 journal 追赶每次让出执行时间，不把积压变成高频 Server 轮询。
+- collector 周期执行小批 retention 和增量空闲页回收；不等待一次全库重写。
+- 活跃条件、ack/snooze/management request 不能仅为达到数量目标而删除；历史高频证据可以过期，查询披露 retention floor。已管理的 occurrence 保留受限诊断摘要，不需要永久保存 Alert 对象或全文。
+- DB/collector 退化不参与模型准入，不取消正常业务。观测缺口不能证明没有失败；Alert 消失也不能证明恢复。
 
-剩余 production 路线：T41补安全恢复/维护、共享刷新与通知receipt；T40装配现有服务owner与自启；现役 scoped bridge/T37资格、T38保全及T39真实模型/原生checkpoint仍独立。没有因本模块引入而部署新Host、校准test2或创建真实Bot任务。
+## 资格边界
 
-## 可重复入口与失效条件
-
-```sh
-bun scripts/verify-runtime-rebuild.mjs observation-monitor
-```
-
-该入口使用合成Server/Clock/Gateway、真实SQLite文件、源collector/CLI和真实打包Node读写；没有调用真实Server或provider。安装回归另验tarball的companion与只读行为。SQL adapter、依赖、schema、policy、native scope/timestamp、打包布局或命令变化后，需要重新资格化；已保存观察不是源版本永久有效的证明。
+源码测试包含实际磁盘、Node 打包、旧库迁移/回滚、事务提交前后强制退出、cursor 原子性、超过旧限额、只读无 sidecar、事件冲突与乱序、共享父事故和独立通知周期。原生最小切片有独立 synthetic Host fixture 行为对照；它不等于现役私有 bundle 与 App 的资格证明。新源码/preload 必须走现有 profile/re-adopt 流程后才有现场覆盖，不能因构建或单测通过就声称已上线。

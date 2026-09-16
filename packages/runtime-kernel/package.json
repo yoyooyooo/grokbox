@@ -9,6 +9,7 @@
     "./ports": "./src/ports.ts",
     "./status": "./src/status.ts",
     "./monitor": "./src/monitor.ts",
+    "./alerts": "./src/alerts.ts",
     "./testing": "./src/testing.ts",
     "./inference": "./src/inference.ts",
     "./commands": "./src/commands.ts"

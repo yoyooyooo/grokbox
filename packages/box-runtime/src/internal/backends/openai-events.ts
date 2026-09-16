@@ -1,5 +1,5 @@
 import {
-  BackendFailure, CANONICAL_OUTPUT_MAX_BYTES, applyInferenceEvent, emptyStreamValidation,
+  BackendFailure, StreamOutputBudget, applyInferenceEvent, emptyStreamValidation,
   finishInferenceStream, invalidStream, annotateStreamFailure, observedStreamType, StreamEvidence,
   type InferenceEvent, type InferenceUsage,
 } from "@grokbox/runtime-kernel/contract";
@@ -87,7 +87,7 @@ export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet
   const names = new Map<string, string>(), state = emptyStreamValidation();
   const nonstandard = createNonstandardOpenaiStreamState(), evidence = options.evidence ?? new StreamEvidence();
   let terminal: Extract<InferenceEvent, { type: "backend_finish" }> | undefined;
-  let bytes = 0;
+  const budget = new StreamOutputBudget();
   const measure = () => {
     evidence.setCount("toolsStarted", state.tools.size); evidence.setCount("openTools", state.open.size);
     evidence.setCount("toolsCompleted", state.tools.size - state.open.size);
@@ -108,8 +108,9 @@ export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet
         }
         applyInferenceEvent(state, event); measure();
         const size = new TextEncoder().encode(JSON.stringify(event)).length;
-        bytes += size;
-        if (bytes > CANONICAL_OUTPUT_MAX_BYTES) throw annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: "stream_budget" });
+        const withinBudget = budget.add(event);
+        evidence.setCount("semanticOutputBytes", budget.used);
+        if (!withinBudget) throw annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: "canonical_event", budget: { layer: "canonical", metric: "output_bytes", limit: budget.limit, measured: budget.used } });
         evidence.increment("canonicalEvents"); evidence.increment("canonicalBytes", size); evidence.first("canonicalFirstEventMs"); evidence.note("canonical", event.type, size);
         if (event.type === "text_delta") evidence.increment("textBytes", new TextEncoder().encode(event.text).length);
         if (event.type === "reasoning_delta") evidence.increment("reasoningBytes", new TextEncoder().encode(event.text).length);

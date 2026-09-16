@@ -1,8 +1,8 @@
 Third-Party Notices
 ===================
 
-grokbox's published JavaScript bundle includes the following third-party
-software. This notice is distributed with every grokbox package artifact.
+This notice accompanies grokbox artifacts and identifies bundled, external
+runtime, and retained legacy/development dependencies.
 
 Commander.js
 ------------
@@ -28,8 +28,8 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-sql.js (portable SQLite observation engine)
------------------------------------------
+sql.js (legacy v1 / development compatibility fixtures)
+-----------------------------------------------------
 
 Copyright (c) 2017 sql.js authors (see AUTHORS in sql.js)
 
@@ -51,5 +51,20 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-SQLite is in the public domain. The optional observation engine is a separately
-packaged CommonJS companion; normal CLI commands and Host preload do not load it.
+SQLite is in the public domain. The former sql.js observation companion is no
+longer included in new runtime artifacts; the notice is retained for legacy and
+development compatibility materials.
+
+sqlite3 6.0.1 (external monitor runtime dependency)
+------------------------------------------------
+
+The npm sqlite3 package is distributed under BSD-3-Clause and includes its full
+LICENSE and native SQLite materials. It is installed as an external dependency,
+not bundled into Host preload. Its declared minimum Node version is 20.17.0.
+
+classic-level 3.0.0 (external execution-history runtime dependency)
+----------------------------------------------------------------
+
+The npm classic-level package and its dependencies retain their own license
+files. It is installed externally and is separate from the monitor SQLite store.
+No native database engine is imported into Host preload.

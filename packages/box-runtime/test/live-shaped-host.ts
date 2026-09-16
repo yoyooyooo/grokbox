@@ -1,7 +1,9 @@
 import { OWNERSHIP_SHAPED_HOST } from "./ownership-shaped-host.ts";
+import { ALERT_SHAPED_HOST } from "./alert-shaped-host.ts";
 /** Minimal Host-shaped source that matches LIVE_SLICE_PATCHES anchors (offline fixture). */
 export const LIVE_SHAPED_HOST = `"use strict";
 ${OWNERSHIP_SHAPED_HOST}
+${ALERT_SHAPED_HOST}
 const api = {
   createSession(onRequestId, sessionOptions) {
     const inferenceOptions = { sessionOptions, onRequestId };

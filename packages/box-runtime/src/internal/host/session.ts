@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { attachFailureLink } from "./alert-provenance.ts";
 import { isDeepStrictEqual } from "node:util";
 import { cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
@@ -7,8 +8,8 @@ import { buildHostEnvelope, cloneHostExecutorWindow, HostStateCodecError, type H
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
-import { INVALID_STREAM_AGENT_MESSAGE, LEDGER_UNAVAILABLE_AGENT_MESSAGE } from "./failure-catalog.ts";
-import { StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { INVALID_STREAM_AGENT_MESSAGE, LEDGER_UNAVAILABLE_AGENT_MESSAGE, AUTHORITY_AGENT_MESSAGE } from "./failure-catalog.ts";
+import { StreamOutputBudget, ChunkedText, STREAM_STORAGE_CHARS, type InferenceEvent, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
 
 export type FinishReason = "stop" | "error" | "abort";
@@ -30,8 +31,9 @@ export type HostUsage = {
   promptTokens: number; completionTokens: number; totalTokens: number;
   cacheReadTokens?: number; cacheWriteTokens?: number;
 };
-export type VisibleFailureStage = "admit" | "provider" | "normalize";
+export type VisibleFailureStage = "admit" | "provider" | "normalize" | "authority";
 export type VisibleFailure = {
+  failureId?: string;
   userVisible: true;
   code: string;
   message: string;
@@ -166,6 +168,7 @@ export function normalizeHostResponse(value: unknown): HostResponse {
 /** Error Host `classifyError2` wraps as RetriableError → runTurn catch → official tray. Not assistant text. */
 export function hostVisibleStreamError(failure: VisibleFailure): Error {
   const err = new Error(failure.message);
+  attachFailureLink(err, failure);
   managedFailures.add(err);
   if (failure.diagnostic) annotateStreamFailure(err, failure.diagnostic);
   err.name = "RetriableError";
@@ -334,8 +337,16 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
 }
 
 const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-export const STREAM_MAX_PARTS = 4096;
 export const STREAM_MAX_BYTES = 1024 * 1024;
+// Resource guard for retained representation, not a count of received fragments.
+export const STREAM_RETAINED_BYTES = 8 * STREAM_MAX_BYTES;
+function budgetEvent(part: StreamPart): InferenceEvent | undefined {
+  if (part.type === "text-delta" || part.type === "reasoning") return { type: part.type === "text-delta" ? "text_delta" : "reasoning_delta", text: part.textDelta };
+  if (part.type === "tool-call-streaming-start") return { type: "tool_start", toolCallId: part.toolCallId, toolName: part.toolName };
+  if (part.type === "tool-call-delta") return { type: "tool_delta", toolCallId: part.toolCallId, toolName: part.toolName, argsTextDelta: part.argsTextDelta };
+  if (part.type === "tool-call") return { type: "tool_complete", toolCallId: part.toolCallId, toolName: part.toolName, args: part.args as never };
+}
+
 const FAILURE_MESSAGES: Record<string, string> = {
   unsupported_image: "Configured model does not accept images. No model request was sent.",
   parallel_tools: "Parallel tool calls are not supported. Rejected calls were not executed.",
@@ -349,9 +360,10 @@ const FAILURE_MESSAGES: Record<string, string> = {
   ledger_unavailable: LEDGER_UNAVAILABLE_AGENT_MESSAGE,
   invalid_stream: INVALID_STREAM_AGENT_MESSAGE,
   invocation_conflict: "This invocation was already used with different inputs. It was not dispatched again.",
+  not_admitted: AUTHORITY_AGENT_MESSAGE,
   model_error: "The configured model request failed. No fallback model was used.",
 };
-const VISIBLE_STAGES = new Set<VisibleFailureStage>(["admit", "provider", "normalize"]);
+const VISIBLE_STAGES = new Set<VisibleFailureStage>(["admit", "provider", "normalize", "authority"]);
 function hostVisibleCode(code: string): string {
   const mapped = code === "stream_invalid" ? "invalid_stream" : code;
   return Object.hasOwn(FAILURE_MESSAGES, mapped) ? mapped : "model_error";
@@ -376,7 +388,7 @@ function failure(code: string, ids?: string[], ctx?: VisibleFailureContext): Vis
   ].filter((bit): bit is string => bit !== undefined);
   const message = bits.length ? `${FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!} (${bits.join(" ")})` : FAILURE_MESSAGES[resolved] ?? FAILURE_MESSAGES.model_error!;
   const error: VisibleFailure = {
-    userVisible: true, code: resolved, message,
+    userVisible: true, code: resolved, message, failureId: randomUUID(),
     ...(ids?.length ? { toolCallIds: [...ids] } : {}),
     ...extra,
   };
@@ -390,10 +402,11 @@ export class VisibleStreamError extends Error {
     const resolved = hostVisibleCode(code);
     super(message ?? resolved);
     this.code = resolved;
-    this.stage = resolved === "invalid_stream" ? "normalize" : VISIBLE_STAGES.has(stage) ? stage : "provider";
+    this.stage = resolved === "not_admitted" ? "authority" : resolved === "invalid_stream" || resolved === "stream_limit" ? "normalize" : VISIBLE_STAGES.has(stage) ? stage : "provider";
   }
 }
 export type SessionTerminal = {
+  failureId?: string;
   terminalClass: FinishReason; toolCallCount: number; rejected?: boolean; errorCode?: string; stage?: VisibleFailureStage; invocationId?: string;
   diagnostic?: StreamDiagnostic;
   purpose?: "main" | "memory-extraction" | "episode";
@@ -415,13 +428,17 @@ export function visibleFailureHandle(modelId: string, code: string, ids?: string
     toolCallCount: 0,
     rejected: true,
     errorCode: vis.code,
+    ...(vis.failureId ? { failureId: vis.failureId } : {}),
     ...(vis.stage ? { stage: vis.stage } : {}),
     ...(ctx?.invocationId ? { invocationId: ctx.invocationId } : {}),
   });
   return { fullStream: stream.iterable, ...settleRejected(thrown) };
 }
+/** Production validates the entire model batch before handing any executable
+ * material to the native Host. This is not a new tool executor or retry loop. */
+export const MANAGED_TOOL_POLICY = "validated-batch" as const;
 export type StreamingSessionConfig = {
-  modelId: string; vision: boolean; parallel: "allow" | "fail-closed";
+  modelId: string; vision: boolean; parallel: "allow" | "fail-closed" | typeof MANAGED_TOOL_POLICY;
   produce: (request: StreamRequest & { envelope: ModelEnvelope; abortSignal: AbortSignal }) => AsyncIterable<StreamPart> | Promise<AsyncIterable<StreamPart>>;
   usage?: HostUsage;
   providerCalls?: { count: number };
@@ -435,7 +452,8 @@ export type StreamingSessionConfig = {
 
 /** Eager single producer, bounded replay and independent completion. No observer drives or steals production. */
 export function createStreamingPromptSession(config: StreamingSessionConfig): PromptSession {
-  const partLimit = Number.isSafeInteger(config.maxParts) && config.maxParts! > 0 ? Math.min(config.maxParts!, STREAM_MAX_PARTS) : STREAM_MAX_PARTS;
+  // Optional caller/test policy only. Production has no received-event quota.
+  const partLimit = Number.isSafeInteger(config.maxParts) && config.maxParts! > 0 ? config.maxParts! : undefined;
   const byteLimit = Number.isSafeInteger(config.maxBytes) && config.maxBytes! > 0 ? Math.min(config.maxBytes!, STREAM_MAX_BYTES) : STREAM_MAX_BYTES;
   return { stream(request = {}) {
     const streamCtx = (stage?: VisibleFailureStage): VisibleFailureContext => ({
@@ -448,10 +466,10 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     try {
       if (request.envelope && request.messages) throw new EnvelopeError("invalid_envelope");
       envelope = request.envelope ? parseModelEnvelope(request.envelope) : buildHostEnvelope(request.messages ?? []);
-      // Host cannot safely consume a parallel batch in this mode. Advertise the
-      // restriction at provider admission, not only after receiving the second call.
-      // Keep the output guard: a non-compliant provider must not execute a partial batch.
-      if (config.parallel === "fail-closed") {
+      // Keep an explicit single-tool policy for consumers that require one.
+      // Production prefers single-call generation by default, but that preference
+      // is not the native Host's execution capability or a batch-size quota.
+      if (config.parallel === "fail-closed" || (config.parallel === MANAGED_TOOL_POLICY && envelope.options.parallelToolCalls === undefined)) {
         envelope = parseModelEnvelope({ ...envelope, options: { ...envelope.options, parallelToolCalls: false } });
       }
     } catch (error) {
@@ -461,7 +479,15 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     if (!request.abortSignal?.aborted && envelopeHasImage(envelope) && !config.vision) {
       return visibleFailureHandle(config.modelId, "unsupported_image", undefined, config.onTerminal, streamCtx(stageFor("unsupported_image")));
     }
-    const replay = replayStream<StreamPart>();
+    const replay = replayStream<StreamPart>(config.parallel === MANAGED_TOOL_POLICY ? {
+      read: part => part.type === "text-delta" || part.type === "reasoning" ? { key: part.type, text: part.textDelta } : undefined,
+      withText: (part, text) => {
+        if (part.type !== "text-delta" && part.type !== "reasoning") return part;
+        const projected = { ...part, textDelta: text, text };
+        return projected;
+      },
+    } : undefined);
+    const outputBudget = new StreamOutputBudget(byteLimit);
     const evidence = new StreamEvidence();
     evidence.setCount("declaredTools", envelope.tools.length);
     const controller = new AbortController();
@@ -476,13 +502,41 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     void usage.catch(() => undefined);
     const content: Exclude<SessionMessage["content"], string> = [];
     const calls = new Map<string, ToolCall>();
-    const pending = new Map<string, { name: string; text: string }>();
+    const pending = new Map<string, { name: string; text: ChunkedText }>();
     const held: ToolCall[] = [];
     const heldToolParts: StreamPart[] = [];
+    const lastHeldDelta = new Map<string, number>();
+    const holdPart = (part: StreamPart) => {
+      if (part.type !== "tool-call-delta") { heldToolParts.push(part); return; }
+      for (let offset = 0; offset < part.argsTextDelta.length;) {
+        const index = lastHeldDelta.get(part.toolCallId), prior = index === undefined ? undefined : heldToolParts[index];
+        const room = prior?.type === "tool-call-delta" ? STREAM_STORAGE_CHARS - prior.argsTextDelta.length : 0;
+        const take = Math.min(room || STREAM_STORAGE_CHARS, part.argsTextDelta.length - offset);
+        const text = part.argsTextDelta.slice(offset, offset + take);
+        if (room && prior?.type === "tool-call-delta") prior.argsTextDelta += text;
+        else { lastHeldDelta.set(part.toolCallId, heldToolParts.length); heldToolParts.push({ ...part, argsTextDelta: text }); }
+        offset += take;
+      }
+    };
+    const storage = () => {
+      const saved = replay.storage();
+      // Conservative representation accounting; duplicates of semantic payload
+      // (text state, parameter assembly, complete args) are included explicitly.
+      const estimated = saved.estimatedBytes + outputBudget.used * 6 + heldToolParts.length * 256 + content.length * 192;
+      evidence.setCount("replayRecords", saved.records); evidence.setCount("heldToolRecords", heldToolParts.length);
+      evidence.setCount("retainedStorageBytes", estimated);
+      return estimated;
+    };
+    // Completion order is not model order when argument streams interleave.
+    const toolOrder = new Map<string, number>();
     let bytes = 0;
     let parts = 0;
     let iterator: AsyncIterator<StreamPart> | undefined;
-    const serial = config.parallel === "fail-closed" || envelope.options.parallelToolCalls === false;
+    const validatedBatch = config.parallel === MANAGED_TOOL_POLICY;
+    const singleToolOnly = config.parallel === "fail-closed" || (!validatedBatch && envelope.options.parallelToolCalls === false);
+    const holdTools = validatedBatch || singleToolOnly;
+    evidence.toolPolicy(validatedBatch ? "validated-batch" : singleToolOnly ? "single-tool" : "incremental", envelope.options.parallelToolCalls);
+    if (holdTools) evidence.toolBatch("held");
     const declaredTools = new Set(envelope.tools.map((tool) => tool.name));
     const observeTool = () => { try { config.onToolCall?.(); } catch { /* diagnostics do not execute tools */ } };
     const pushText = (type: "text" | "reasoning", text: string) => {
@@ -514,23 +568,47 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
           heldToolParts.push(call);
         }
       }
+      if (reason === "stop") {
+        // Reserve the replay copies before releasing the first executable part.
+        // A finalization overrun cannot leave a partially admitted tool batch.
+        const projectedStorage = storage() + heldToolParts.reduce((sum, part) => sum + 192 + 2 * JSON.stringify(part).length, 0) + held.length * 192;
+        if (projectedStorage > STREAM_RETAINED_BYTES) {
+          reason = "error";
+          error = failure("stream_limit", undefined, { ...streamCtx("normalize"), diagnostic: { normalizeCause: "stream_budget", rejectSite: "host_terminal", budget: { layer: "host", metric: "retained_bytes", limit: STREAM_RETAINED_BYTES, measured: projectedStorage } } });
+        }
+      }
       complete = true;
       request.abortSignal?.removeEventListener("abort", abort);
       if (reason === "stop") {
-        // Preserve the full native parsing protocol, but release it only after
-        // the complete serial response has passed admission.
+        // A legal multi-call batch is one assistant response. Preserve every ID,
+        // start/delta/complete protocol, and first-seen call order in both views.
+        // Host still owns approvals, actual execution/concurrency and results.
+        // Publishing several descriptors here does NOT claim serial execution.
+        if (validatedBatch) {
+          const rank = (part: StreamPart) => "toolCallId" in part ? toolOrder.get(part.toolCallId) ?? toolOrder.size : toolOrder.size;
+          held.sort((a, b) => rank(a) - rank(b));
+          heldToolParts.sort((a, b) => rank(a) - rank(b));
+        }
         for (const part of heldToolParts) replay.push(part);
         for (const call of held) { content.push(call); observeTool(); }
       }
       const toolCalls = content.filter((part): part is ToolCall => part.type === "tool-call");
+      evidence.setCount("toolsStarted", toolOrder.size);
+      evidence.setCount("toolsCompleted", calls.size);
+      evidence.setCount("openTools", pending.size);
+      evidence.setCount("hostToolsReleased", toolCalls.length);
+      if (holdTools) evidence.toolBatch(reason === "stop" ? "released" : "discarded");
+      evidence.setCount("semanticOutputBytes", outputBudget.used); storage();
+      const terminalStream = evidence.snapshot();
+      if (error) error.diagnostic = { ...error.diagnostic, stream: terminalStream };
       notify(config.onTerminal, {
         terminalClass: reason,
         toolCallCount: toolCalls.length,
         purpose: request.aux?.purpose ?? "main",
         ...(request.aux ? { parentStepId: request.aux.parent.stepId } : {}),
-        diagnostic: error?.diagnostic ?? { stream: { ...evidence.snapshot(), counts: { ...evidence.snapshot().counts, hostToolsReleased: toolCalls.length }, tail: [] } },
+        diagnostic: error ? { ...error.diagnostic, stream: terminalStream } : { stream: { ...terminalStream, tail: [] } },
         ...(typeof request.invocationId === "string" ? { invocationId: request.invocationId } : {}),
-        ...(error ? { errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}), rejected: true } : {}),
+        ...(error ? { failureId: error.failureId, errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}), rejected: true } : {}),
       });
       if (reason === "error" && error) {
         const thrown = hostVisibleStreamError(error);
@@ -570,9 +648,12 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (complete) return;
       const part = cloneJson(raw) as unknown as StreamPart;
       evidence.note("host", part.type); evidence.increment("hostEvents"); evidence.first("hostFirstEventMs");
-      if (++parts > partLimit) return failStream("stream_limit");
+      ++parts;
       const partBytes = Buffer.byteLength(JSON.stringify(part)); bytes += partBytes; evidence.increment("hostBytes", partBytes);
-      if (bytes > byteLimit) return failStream("stream_limit");
+      if (partLimit !== undefined && parts > partLimit) return failStream("stream_limit", "normalize", { normalizeCause: "stream_budget", rejectSite: "host_event", budget: { layer: "host", metric: "event_count", limit: partLimit, measured: parts } });
+      const measured = budgetEvent(part);
+      if (measured && !outputBudget.add(measured)) return failStream("stream_limit", "normalize", { normalizeCause: "stream_budget", rejectSite: "host_event", budget: { layer: "host", metric: "output_bytes", limit: byteLimit, measured: outputBudget.used } });
+      evidence.setCount("semanticOutputBytes", outputBudget.used);
       if (part.type === "finish") {
         if (!["stop", "error", "abort"].includes(part.reason)) return failStream("invalid_stream", "normalize", { normalizeCause: "invalid_terminal", rejectSite: "host_terminal" });
         if (pending.size) return failStream("invalid_stream", "normalize", { normalizeCause: "open_tools_at_finish", rejectSite: "host_terminal" });
@@ -596,35 +677,38 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (part.type !== "tool-call" && part.type !== "tool-call-delta" && part.type !== "tool-call-streaming-start") return failStream("invalid_stream");
       if (!validId(part.toolCallId) || !validId(part.toolName)) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" });
       if (!declaredTools.has(part.toolName)) return failStream("invalid_stream", "normalize", { normalizeCause: "undeclared_tool", rejectSite: "host_tool", declaredToolMatch: false });
+      if (!toolOrder.has(part.toolCallId)) toolOrder.set(part.toolCallId, toolOrder.size);
       if (part.type !== "tool-call") {
         const current = pending.get(part.toolCallId);
         if (calls.has(part.toolCallId) || (current && (part.type === "tool-call-streaming-start" || current.name !== part.toolName))) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" });
         if (part.type === "tool-call-delta" && typeof part.argsTextDelta !== "string") return failStream("invalid_stream");
-        pending.set(part.toolCallId, { name: part.toolName, text: (current?.text ?? "") + (part.type === "tool-call-delta" ? part.argsTextDelta : "") });
+        const text = current?.text ?? new ChunkedText();
+        if (part.type === "tool-call-delta") text.append(part.argsTextDelta);
+        pending.set(part.toolCallId, { name: part.toolName, text });
         // Native Host consumers may execute incrementally from argument deltas.
-        // A serial response must pass the whole-response tool-count/finish gate
-        // before exposing any executable tool material, not just tool-complete.
+        // A held response must pass the complete structural/finish gate before
+        // exposing ANY executable material, not just tool-complete.
         const projected: StreamPart = part.type === "tool-call-streaming-start"
           ? { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName }
           : { type: part.type, toolCallId: part.toolCallId, toolName: part.toolName, argsTextDelta: part.argsTextDelta };
-        if (serial) heldToolParts.push(projected);
+        if (holdTools) holdPart(projected);
         else replay.push(projected);
         return;
       }
       const call: ToolCall = { type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: cloneJson(part.args) };
       const assembling = pending.get(call.toolCallId);
       if (assembling?.name && assembling.name !== call.toolName) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" });
-      if (assembling?.text) {
+      if (assembling && assembling.text.chars > 0) {
         let decoded: unknown;
-        try { decoded = JSON.parse(assembling.text); } catch { return failStream("invalid_stream", "normalize", { normalizeCause: "tool_arguments_invalid", rejectSite: "host_tool" }); }
+        try { decoded = JSON.parse(assembling.text.text()); } catch { return failStream("invalid_stream", "normalize", { normalizeCause: "tool_arguments_invalid", rejectSite: "host_tool" }); }
         if (!isDeepStrictEqual(decoded, call.args)) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_arguments_mismatch", rejectSite: "host_tool" });
       }
       pending.delete(call.toolCallId);
       const prior = calls.get(call.toolCallId);
       if (prior) { if (!isDeepStrictEqual(prior, call)) failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" }); return; }
       calls.set(call.toolCallId, call);
-      if (serial && calls.size > 1) return failStream("parallel_tools", "normalize");
-      if (serial) { held.push(call); heldToolParts.push(call); }
+      if (singleToolOnly && calls.size > 1) return failStream("parallel_tools", "normalize");
+      if (holdTools) { held.push(call); heldToolParts.push(call); }
       else { content.push(call); replay.push(call); observeTool(); }
     };
     request.abortSignal?.addEventListener("abort", abort, { once: true });
@@ -640,7 +724,11 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
             const next = await iterator.next();
             if (complete) break;
             if (next.done) { failStream("invalid_stream", "normalize", { normalizeCause: "missing_finish", rejectSite: "host_terminal" }); break; }
-            try { accept(next.value); } catch { failStream("invalid_stream"); }
+            try {
+              accept(next.value);
+              const retained = storage();
+              if (!complete && retained > STREAM_RETAINED_BYTES) failStream("stream_limit", "normalize", { normalizeCause: "stream_budget", rejectSite: "host_event", budget: { layer: "host", metric: "retained_bytes", limit: STREAM_RETAINED_BYTES, measured: retained } });
+            } catch { failStream("invalid_stream"); }
           }
         } catch (error) {
           if (!complete) {

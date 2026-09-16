@@ -2,7 +2,7 @@ import { BackendFailure, BindingFailure, WireError, BACKEND_FAILURE_CODES, BINDI
 import { backendFailureObservation, type BackendObservation } from "../backends/failure-observation.ts";
 
 export const STEP_OUTCOMES = ["ok", "error", "duplicate", "cancelled", "unknown"] as const;
-export const STEP_PHASES = ["admission", "prepare", "auth", "sdk", "provider", "normalize", "transport", "internal", "complete"] as const;
+export const STEP_PHASES = ["admission", "prepare", "auth", "sdk", "provider", "normalize", "authority", "transport", "internal", "complete"] as const;
 export const STEP_FAILURE_CODES = [...BACKEND_FAILURE_CODES, ...BINDING_FAILURE_CODES,
   "timeout", "extra_keys", "malformed_frame", "disconnected", "defect", "interrupted", "unknown"] as const;
 export type ModeldStepOutcome = {
@@ -40,7 +40,7 @@ export function modeldFailureOutcome(error: unknown, phase: "admission" | "provi
   const auth = code === "auth_mismatch" || code === "credential_invalid";
   return {
     outcome: code === "cancelled" ? "cancelled" : "error",
-    phase: diagnostic?.phase ?? (auth ? "auth" : code === "stream_invalid" ? "normalize" : phase),
+    phase: code === "not_admitted" && phase === "admission" ? "admission" : diagnostic?.phase ?? (auth ? "auth" : code === "stream_invalid" ? "normalize" : phase),
     failureCode: code,
     eventCount,
     ...(diagnostic ? { diagnostic } : {}),

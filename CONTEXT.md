@@ -17,7 +17,7 @@ The TypeScript CLI lives in `packages/cli`. Box-local model runtime code, when i
 - layered read-only diagnosis and explicit recovery;
 - opt-in experimental Sandbox, quota, and desktop compatibility adapters.
 
-Node.js 20+ is the published runtime. Bun is development tooling. Source and package checks run on Linux and macOS; host filesystem, process, Job, and desktop capabilities remain Linux-only.
+Node.js 20.17.0+ is the published runtime; the minimum minor version follows the pinned native monitor SQLite dependency. Bun is development tooling. Source and package checks run on Linux and macOS; host filesystem, process, Job, and desktop capabilities remain Linux-only.
 
 ## Compatibility boundary
 

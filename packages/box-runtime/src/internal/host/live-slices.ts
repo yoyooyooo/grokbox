@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { OWNERSHIP_READ_SLICES } from "./ownership-slices.ts";
+import { ALERT_OBSERVATION_SLICES } from "./alert-slices.ts";
 import type { SlicePatch } from "./profile.ts";
 import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
 import { HOST_PROFILE_TITLE_SYMBOL } from "./title-marker.ts";
@@ -175,5 +176,6 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "          sent.push(update.message.content);\n",
     replacement: `          sent.push(update.message.content);\n          try { globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")]?.buffered(); } catch {}\n`,
   },
+  ...ALERT_OBSERVATION_SLICES,
   ...OWNERSHIP_READ_SLICES,
 ];

@@ -68,6 +68,7 @@ import {
 import { runHistorySearch, runHistoryTail, runHistoryThread } from "./commands/history.ts";
 import { runAlerts, runSendOutcome, runRuntimeIncident } from "./commands/outcome.ts";
 import { runGroupProgress } from "./commands/group-progress.ts";
+import { runAlertTrace } from "./commands/alert-trace.ts";
 import { runJobsCancel, runJobsList, runJobsLogs, runJobsShow } from "./commands/jobs.ts";
 import { runInit } from "./commands/init.ts";
 import { runIsRunning } from "./commands/is.ts";
@@ -321,6 +322,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
       await runHistorySearch(deps, args[0] ?? "", options),
     "history tail": async (deps, args, options) => await runHistoryTail(deps, args[0] ?? "", options),
     "alerts list": async (deps, _args, options) => await runAlerts(deps, options),
+    "alerts trace": async (deps, args, options) => await runAlertTrace(deps, args[0] ?? "", options),
     "history outcome": async (deps, args, options) => await runSendOutcome(deps, args[0] ?? "", options),
     "history thread": async (deps, args, options) =>
       await runHistoryThread(deps, args[0] ?? "", options),

@@ -101,6 +101,9 @@ const requiredKernelExports = {
   "./ports": "./src/ports.ts",
   "./status": "./src/status.ts",
   "./monitor": "./src/monitor.ts",
+  // Shared payload-free diagnosis consumed by Host, CLI and monitor; it has no
+  // IO, execution or provider capability and remains under the import fence.
+  "./alerts": "./src/alerts.ts",
   "./testing": "./src/testing.ts",
   "./inference": "./src/inference.ts",
   "./commands": "./src/commands.ts",
@@ -124,6 +127,7 @@ const KERNEL_SUBPATH = {
   "@grokbox/runtime-kernel/ports": "packages/runtime-kernel/src/ports.ts",
   "@grokbox/runtime-kernel/status": "packages/runtime-kernel/src/status.ts",
   "@grokbox/runtime-kernel/monitor": "packages/runtime-kernel/src/monitor.ts",
+  "@grokbox/runtime-kernel/alerts": "packages/runtime-kernel/src/alerts.ts",
   "@grokbox/runtime-kernel/testing": "packages/runtime-kernel/src/testing.ts",
   "@grokbox/runtime-kernel/inference": "packages/runtime-kernel/src/inference.ts",
   "@grokbox/runtime-kernel/commands": "packages/runtime-kernel/src/commands.ts",

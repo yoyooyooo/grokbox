@@ -4,7 +4,8 @@ import {
   OWNERSHIP_ADMISSION_WAIT_MS,
   BackendFailure,
   BindingFailure,
-  CANONICAL_OUTPUT_MAX_BYTES,
+  StreamOutputBudget,
+  annotateStreamFailure,
   PARTIAL_SOCKET_MS,
   REQUEST_WALL_DEADLINE_MS,
   SERVER_ACTIVE_CLIENTS_MAX,
@@ -271,7 +272,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     }
 
     let sequence = 0;
-    let outputBytes = 0;
+    const outputBudget = new StreamOutputBudget();
     const halt = Effect.raceFirst(
       Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
       Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
@@ -282,10 +283,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           Stream.provideService(ModelBackend, compactBackend),
         ),
         (event: InferenceEvent) => Effect.gen(function* () {
-          const encoded = Buffer.byteLength(JSON.stringify(event.type === "backend_finish" ? { ...event, stream: undefined } : event), "utf8");
-          outputBytes += encoded;
-          if (outputBytes > CANONICAL_OUTPUT_MAX_BYTES) {
-            return yield* Effect.fail(new BackendFailure("stream_limit"));
+          if (!outputBudget.add(event)) {
+            return yield* Effect.fail(annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: "wire_event", budget: { layer: "canonical", metric: "output_bytes", limit: outputBudget.limit, measured: outputBudget.used } }));
           }
           if (event.type === "backend_finish") {
             observation = { ...observation, at: new Date().toISOString(), outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete", ...(event.stream ? { stream: event.stream } : {}) };

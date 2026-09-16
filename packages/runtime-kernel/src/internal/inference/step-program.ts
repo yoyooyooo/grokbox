@@ -1,6 +1,7 @@
 import { Clock, Context, Deferred, Effect, Exit, Option, Stream, SynchronizedRef } from "effect";
 import * as Scope from "effect/Scope";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
+import { AUTHORITY_REASONS, annotateStreamFailure, streamFailureDiagnostic, type AuthorityDiagnostic } from "../contract/stream-diagnostic.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
 import { emptyRecoveryLedger } from "../contract/overflow.ts";
 import { AdmissionAuthority, BackendAuth, ConfigurationRead, HostCompact, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
@@ -38,18 +39,21 @@ function asBindingOrBackend(error: unknown): BindingFailure | BackendFailure {
   return new BindingFailure("not_admitted");
 }
 
-function requireAdmitted(evidence: unknown): Effect.Effect<void, BindingFailure> {
-  if (evidence && typeof evidence === "object" && "admitted" in evidence && (evidence as { admitted: unknown }).admitted === true) {
-    return Effect.void;
-  }
-  return Effect.fail(new BindingFailure("not_admitted"));
+function authorityDenied(reason: unknown, checkpoint: AuthorityDiagnostic["checkpoint"], extra: { durationMs?: number; evidenceAgeMs?: number } = {}) {
+  const safe = typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason as AuthorityDiagnostic["reason"] : "unknown";
+  return annotateStreamFailure(new BindingFailure("not_admitted"), { rejectSite: "authority_check", authority: { reason: safe, checkpoint, ...extra } });
 }
-
-function readAuthority(request: RunStepRequest) {
+function readAuthority(request: RunStepRequest, checkpoint: AuthorityDiagnostic["checkpoint"] = "admission") {
   return Effect.gen(function* () {
     const authority = yield* AdmissionAuthority;
-    const evidence = yield* authority.current(request).pipe(Effect.mapError(() => new BindingFailure("not_admitted")));
-    yield* requireAdmitted(evidence);
+    const startedAt = yield* Clock.currentTimeMillis;
+    const result = yield* Effect.result(authority.current(request));
+    const durationMs = Math.max(0, (yield* Clock.currentTimeMillis) - startedAt);
+    if (result._tag === "Failure") return yield* Effect.fail(authorityDenied("authority_unavailable", checkpoint, { durationMs }));
+    const evidence = result.success;
+    if (!evidence || typeof evidence !== "object" || !("admitted" in evidence) || evidence.admitted !== true) {
+      return yield* Effect.fail(authorityDenied(evidence && typeof evidence === "object" && "reason" in evidence ? evidence.reason : "unknown", checkpoint, { durationMs }));
+    }
     const fact = evidence && typeof evidence === "object" && "ownership" in evidence ? evidence.ownership : undefined;
     const now = yield* Clock.currentTimeMillis;
     if (!fact || typeof fact !== "object" || !("scopeId" in fact) || !("serverId" in fact) || !("observedAtMs" in fact)
@@ -57,13 +61,14 @@ function readAuthority(request: RunStepRequest) {
       || typeof fact.serverId !== "string" || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(fact.serverId)
       || typeof fact.observedAtMs !== "number" || !Number.isFinite(fact.observedAtMs)
       || fact.observedAtMs > now || now - fact.observedAtMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
-      return yield* Effect.fail(new BindingFailure("not_admitted"));
+      const evidenceAgeMs = fact && typeof fact === "object" && "observedAtMs" in fact && typeof fact.observedAtMs === "number" && Number.isFinite(fact.observedAtMs) ? Math.max(0, now - fact.observedAtMs) : undefined;
+      return yield* Effect.fail(authorityDenied(evidenceAgeMs !== undefined && evidenceAgeMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS ? "ownership_evidence_stale" : "ownership_evidence_invalid", checkpoint, { durationMs, evidenceAgeMs }));
     }
     const memory = yield* InferenceMemory;
     const state = yield* SynchronizedRef.get(memory.ref);
     const bound = state.bindings.get(bindingStoreKey(request));
     if (state.turns.get(turnKey(request))?.poisoned || (bound && (bound.ownership.scopeId !== fact.scopeId || bound.ownership.serverId !== fact.serverId))) {
-      return yield* Effect.fail(new BindingFailure("not_admitted"));
+      return yield* Effect.fail(authorityDenied(state.turns.get(turnKey(request))?.poisoned ? "turn_revoked" : "ownership_identity_changed", checkpoint, { durationMs }));
     }
     return fact as OwnershipAdmission;
   }).pipe(Effect.tapError(() => Effect.gen(function* () {
@@ -79,13 +84,13 @@ function readAuthority(request: RunStepRequest) {
 
 function dispatchFence(request: RunStepRequest, lease: AuthLease) {
   return Effect.gen(function* () {
-    yield* readAuthority(request);
+    yield* readAuthority(request, "before_dispatch");
     const memory = yield* InferenceMemory;
     const cancelled = (yield* SynchronizedRef.get(memory.ref)).ledger.get(ledgerKey(request))?.status === "cancelled";
     if (cancelled) return yield* Effect.fail(new BindingFailure("cancelled"));
     const auth = yield* BackendAuth;
     yield* auth.verify(lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
-    yield* readAuthority(request);
+    yield* readAuthority(request, "after_auth");
     const after = (yield* SynchronizedRef.get(memory.ref)).ledger.get(ledgerKey(request))?.status === "cancelled";
     if (after) return yield* Effect.fail(new BindingFailure("cancelled"));
   });
@@ -141,7 +146,7 @@ function recoverOverflowStream(
       ledger = emptyRecoveryLedger(identity, request.stepId);
       memory.recoveries.set(key, ledger);
     }
-    yield* readAuthority(request);
+    yield* readAuthority(request, "recovery");
     const recovered = yield* Effect.result(runOverflowRecovery({
       ledger,
       evidence: {
@@ -176,7 +181,7 @@ function recoverOverflowStream(
     yield* dispatchFence(request, lease);
     return Stream.tap(fenceStream(backend.infer({}, prepared, lease), cancelled), event =>
       event.type === "tool_start" || event.type === "tool_complete" || event.type === "backend_finish"
-        ? readAuthority(request).pipe(Effect.asVoid) : Effect.void);
+        ? readAuthority(request, event.type === "backend_finish" ? "finish" : event.type).pipe(Effect.asVoid) : Effect.void);
   }));
 }
 
@@ -196,7 +201,13 @@ function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: Auth
         const counted = Stream.tap(fenceStream(backend.infer({}, prepared, lease), cancelled), (event) => Effect.gen(function* () {
           // Check again before exposing an executable tool or successful completion.
           // This is not per-token polling, nor a distributed ownership lease.
-          if (event.type === "tool_start" || event.type === "tool_complete" || event.type === "backend_finish") yield* readAuthority(request);
+          if (event.type === "tool_start" || event.type === "tool_complete" || event.type === "backend_finish") {
+            yield* readAuthority(request, event.type === "backend_finish" ? "finish" : event.type).pipe(Effect.tapError(error => Effect.sync(() => {
+              // If the gate holds a valid backend terminal, retain its provider
+              // summary rather than misreporting the gate as a provider failure.
+              if (event.type === "backend_finish" && event.stream) annotateStreamFailure(error, { stream: event.stream });
+            })));
+          }
           if (event.type === "text_delta" && event.text.length > 0) released.text += 1;
           if (event.type === "reasoning_delta" && event.text.length > 0) released.reasoning += 1;
           if (event.type === "tool_start") released.tools += 1;

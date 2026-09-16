@@ -60,7 +60,7 @@ external Sandbox adapter / keeper
 
 ## 3. Repository Shape
 
-The published CLI and daemon, Host preload, modeld, CLI runtime, and runtime-kernel execute on Node.js 20+ and must not import `bun:*` or call Bun runtime globals (`Bun.file`, `Bun.serve`, and the like). Bun remains the repository package manager and may run development scripts, tests and TypeScript tooling. Both executable names share one `#!/usr/bin/env node` shim; its pre-bundle gate returns stable `runtime_unsupported`/59 before importing `dist` when the Node major is below 20 or unparseable. An npm-installed external client does not require Bun.
+The published CLI and daemon, Host preload, modeld, CLI runtime, and runtime-kernel execute on Node.js 20.17.0+ (the pinned native monitor SQLite requirement) and must not import `bun:*` or call Bun runtime globals (`Bun.file`, `Bun.serve`, and the like). Bun remains the repository package manager and may run development scripts, tests and TypeScript tooling. Both executable names share one `#!/usr/bin/env node` shim; its pre-bundle gate returns stable `runtime_unsupported`/59 before importing `dist` when the Node version is below 20.17.0 or unparseable. An npm-installed external client does not require Bun.
 
 一个 **发布包** `grokbox`（bin 名 `grokbox`/`gbox`），仓库内两个 unpublished workspace 包。不要为对称性再拆 quota/sandbox/daemon 成独立发布物。
 

@@ -10,6 +10,7 @@ import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts
 import { bindHostSessionHook } from "./internal/host/session-hook.ts";
 import { createRunObserver, HOST_RUN_OBSERVATION_SYMBOL } from "./internal/host/run-observation.ts";
 import { appendHostJournal } from "./internal/host/terminal-journal.node.ts";
+import { createAlertObserver, HOST_ALERT_OBSERVATION_SYMBOL } from "./internal/host/alert-observation.ts";
 import { deferManagedHostResume } from "./internal/host/selection.node.ts";
 import { bindHostCompactHook, isHostManagedRootActive, recordHostManagedStepFailure, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
 import { bindHostOwnershipRead, HOST_OWNERSHIP_READ_SYMBOL } from "./internal/host/ownership-read.ts";
@@ -70,6 +71,16 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RESUME_GATE_SYMBOL)] =
     (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed);
   if (admittedMode === "route") {
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ALERT_OBSERVATION_SYMBOL)] = createAlertObserver({
+      generation: binding?.generationId ?? "unbound", nativeSourceSha256: profile.sourceSha256, preloadSha256,
+      capture: {
+        manager: profile.slices.some(slice => slice.id === "alert-manager-observation"),
+        mainDecision: profile.slices.some(slice => slice.id === "alert-main-decision"),
+        automationDecision: ["alert-automation-decision", "alert-automation-throttle"].every(id => profile.slices.some(slice => slice.id === id)),
+        inputCleanup: profile.slices.some(slice => slice.id === "alert-input-cleanup"),
+      },
+      emit: event => { void appendHostJournal(runRoot, event); },
+    });
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RUN_OBSERVATION_SYMBOL)] = createRunObserver({
       generation: binding?.generationId ?? "unbound", emit: event => { void appendHostJournal(runRoot, event); },
     });

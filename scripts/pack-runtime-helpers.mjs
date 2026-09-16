@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { cpSync, mkdirSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,14 +13,9 @@ for (const name of ["guardian-child.cjs", "injector-hold.cjs", "grokbox-temp-sup
   cpSync(join(helpers, name), join(dist, name));
 }
 
-// Portable SQLite is loaded only by explicit monitor commands. Keep Emscripten's
-// CJS __dirname semantics and avoid parsing its 8MB engine for ordinary CLI work.
-await build({
-  absWorkingDir: root,
-  entryPoints: [join(root, "packages/box-runtime/node_modules/sql.js/dist/sql-asm.js")],
-  bundle: true, platform: "node", target: "node20", format: "cjs",
-  outfile: join(dist, "observation-sqlite.cjs"), logLevel: "warning",
-});
+// The disk-backed monitor loads its declared sqlite3 dependency lazily. Remove
+// the retired whole-image engine from previous builds; there is no dual runtime.
+rmSync(join(dist, "observation-sqlite.cjs"), { force: true });
 
 await build({
   absWorkingDir: root,

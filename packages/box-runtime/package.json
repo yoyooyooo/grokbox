@@ -10,8 +10,9 @@
     "@grokbox/runtime-kernel": "workspace:*",
     "acorn": "8.14.1",
     "classic-level": "3.0.0",
+    "sqlite3": "6.0.1",
     "ai": "catalog:ai-sdk",
-    "effect": "catalog:effect-v4-beta",
-    "sql.js": "1.13.0"
-  }
+    "effect": "catalog:effect-v4-beta"
+  },
+  "devDependencies": { "sql.js": "1.13.0" }
 }

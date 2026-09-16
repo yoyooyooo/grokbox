@@ -31,7 +31,7 @@ export async function runRuntimeMonitor(deps: CliDeps, action: "init"|"run"|"sna
     const abort = () => fallback?.abort();
     if (fallback) { process.on("SIGINT",abort); process.on("SIGTERM",abort); }
     try {
-      await runMonitor({ durableRoot: root, agentIds: raw.agents.split(","), read: runtimeOwnershipReader(deps), signal,
+      await runMonitor({ durableRoot: root, runRoot: deps.env.GROKBOX_RUN_ROOT, agentIds: raw.agents.split(","), read: runtimeOwnershipReader(deps), signal,
         intervalMs: raw.intervalMs ? integer(raw.intervalMs) : undefined, once: raw.once === true,
         publish: receipt => writeSuccess(deps.stdout,receipt) });
     } finally { if (fallback) { process.off("SIGINT",abort); process.off("SIGTERM",abort); } }

@@ -78,7 +78,7 @@ export function readManagedOwnership(input: { agentId: string; read?: OwnershipR
       catch: () => denied("ownership_read_unavailable", "unavailable", input.agentId),
     }).pipe(
       Effect.timeout(`${OWNERSHIP_WAIT_MS} millis`),
-      Effect.mapError(() => denied("ownership_read_unavailable", "unavailable", input.agentId)),
+      Effect.mapError(error => error instanceof BoxRuntimeError ? error : denied(error && typeof error === "object" && "_tag" in error && error._tag === "TimeoutError" ? "ownership_read_timeout" : "ownership_read_unavailable", "unavailable", input.agentId)),
     );
     if (!Number.isSafeInteger(result.gateway.pid) || result.gateway.pid < 1 || !Number.isSafeInteger(result.gateway.startedAt)
       || result.gateway.startedAt < 1 || (input.gatewayPid !== undefined && input.gatewayPid !== result.gateway.pid)) {

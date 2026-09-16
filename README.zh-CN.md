@@ -46,7 +46,7 @@ Daemon 不提供通用 raw RPC 或任意 shell。仅有 Gateway 权限的 Profil
 
 ## 前置条件与平台支持
 
-- 发布版 CLI 运行时需要 Node.js 20+。
+- 发布版 CLI 运行时需要 Node.js 20.17.0+（与原生 monitor SQLite 依赖的最低版本一致）。
 - 源码开发与发布前源码 shim 需要 Bun 1.3.14。
 - 需要一个你拥有或获准使用的 Grok Bot 云电脑。
 - 远程 bootstrap/recovery 需要 Tailscale 与 BatchMode SSH；bootstrap 还需要本机 npm 或 Bun，以便重新打包已安装运行时并传输。

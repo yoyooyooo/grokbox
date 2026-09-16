@@ -22,7 +22,7 @@ async function fixture(beforePublish?: () => void) {
   return {root,store,epoch,close:()=>rm(root,{recursive:true,force:true})};
 }
 
-test("real SQLite image, bounded pure reads and explicit initialization", async () => {
+test("real disk SQLite, bounded pure reads and explicit initialization", async () => {
   const root = await mkdtemp(join(tmpdir(),"gbox-monitor-read-"));
   const store = openMonitorStore(root);
   try {
@@ -106,6 +106,8 @@ test("epoch restart invalidates cursor and late callback; no restored observatio
     await f.store.record(f.epoch,1,sample(BASE+10));
     const cursor=(await f.store.snapshot(BASE+12)).cursor;
     const next=randomUUID();
+    await expect(f.store.begin(next,BASE+20,[ID,OTHER])).rejects.toThrow("monitor_already_running");
+    await f.store.finish(f.epoch,BASE+19);
     await f.store.begin(next,BASE+20,[ID,OTHER]);
     await expect(f.store.events(cursor)).rejects.toThrow("monitor_cursor_invalid");
     await expect(f.store.record(f.epoch,2,sample(BASE+25))).rejects.toThrow("monitor_epoch_changed");
@@ -117,7 +119,7 @@ test("epoch restart invalidates cursor and late callback; no restored observatio
   } finally { await f.close(); }
 });
 
-test("SQLite commit failure publishes nothing and retains the previous complete image", async () => {
+test("SQLite commit failure publishes nothing and retains the previous transaction", async () => {
   let fail=false;
   const f=await fixture(()=>{if(fail)throw new Error("owned_disk_failure_secret");});
   try {

@@ -2,7 +2,7 @@
 
 ## Status / responsibility
 
-**Open · 2026-09-13已有第一条本地纵切：scoped批量采样、真实SQLite镜像、incident/ack/snooze、CLI及Node冷进程读写；未安装现役collector，未关闭完整V28–V30。** 合同唯一入口为[Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation)，关闭V28–V30。本票拥有collector的长期生命周期、观测存储、incident和通知，不接管T37准入、T24配置、T27/J13执行事实或T28部署控制。浏览器与更远期能力归[future](../roadmap/future/README.md)。
+**Open · 2026-09-16候选扩展了原生提醒决策/Tray 生命周期、显式来源关联、共享 trace/诊断、磁盘增量 SQLite、cursor 原子采集、自动维护与进程身份约束的崩溃恢复；未因此安装现役 collector，未关闭完整 V28–V30。** 合同唯一入口为[Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation)，关闭V28–V30。本票拥有collector的长期生命周期、观测存储、incident和通知，不接管T37准入、T24配置、T27/J13执行事实或T28部署控制。浏览器与更远期能力归[future](../roadmap/future/README.md)。
 
 用户结果：没有打开网页时，也能发现归属冲突/变化或失去观察能力；重启后仍可查已有事件、告警处理记录；多个CLI/页面不成倍访问Server。告警不替代准入，不暗中修身份或重放任务。
 
@@ -11,12 +11,12 @@
 当前使用方式、错误与存储合同的维护入口是[持续观测](../maintainers/continuous-observation.md)，不从下面的完整目标推断所有能力已落地。
 
 - Kernel `monitor.ts` 复用既有四类归属规则，提供单一有界policy、稳定scope/来源时间过滤、freshness；不会把schema1/旧/未知scope重新包装成准入证据。
-- `monitor-store.node.ts` 在原定observability路径持久化SQLite，采用固定sql.js asm+短写锁+事务镜像fsync/原子rename，不是原生WAL。schema有观察/事件/incident/管理请求，GET零写；同请求同意图对账、修订冲突、重启epoch及分页已覆盖。
+- `monitor-store.node.ts` 在原 observability 路径采用 schema v2、固定 sqlite3 磁盘增量事务和 rollback journal；不再读写整库 JS 镜像。原始安全事件、cursor、incident 及本地通知决策同事务提交。v1 显式迁移保留备份与管理意图；GET 不迁移/恢复。
 - `monitor.runtime.ts` 属于自己的Effect Scope，批量最多32目标、串行poll、错误退避与正常退出；新的scope不借旧scope确认状态。提交后输出有稳定ID的changes，不调用sendPrompt/provider/reconcile/控制信号。多个只读客户端不追加上游查询。
-- 现有CLI增加 `runtime monitor init/run/snapshot/events/incidents/ack/snooze`；init/run要求显式confirm，普通查询不初始化或采集。SQL引擎独立CJS companion懒加载，Node20运行合同及根包空dependencies不变。
+- CLI 保留 `runtime monitor init/run/snapshot/events/incidents/ack/snooze`，增加 `alerts trace --from journal|monitor`；init/run 要求显式 confirm，查询不初始化或采集。SQLite native addon 是发行依赖并按需加载，Host/CLI 普通路径不加载数据库引擎。安装制品须重新资格化，不能沿用旧空 dependencies 声明。
 - 原协议隔离、source CLI/mock Gateway/真实SQLite与打包Node冷读/ack已验证；原生Server live scoped桥、全量调度/恢复/通知还不能据此签署。Node20与Node22以及安装后tarball的实际检查见readiness。
 
-**尚缺：** admission与背景刷新共用优先调度/事件触发；硬崩溃残留锁的安全恢复；schema迁移、备份/旧库恢复、retention维护；外部通知投递/unknown回执；T40服务owner安装/自启与真实长驻采集。当前限16MiB/50000events后报维护需求，绝不默删。local-only事件出口不等于外部告警已送达。仅正常退出重启的证据不替代crash recovery。
+**剩余资格：** admission 与背景刷新更广义的共享调度；未知旧锁/任意备份恢复；外部通知渠道与客户端接收/渲染回执；T40 服务安装、自启与现役长驻验收。已实现的本地 journal 追赶不会提高 ownership RPC 频率，v2 正常/硬崩溃恢复与 v1 事务迁移有独立测试。取消 16MiB/50000 条累计拒绝门槛，期限/软目标驱动自动维护并披露缺口，保留管理语义。local-only 出口成功不等于远端或 App 到达。
 
 ## 实施边界与复用
 
@@ -90,4 +90,4 @@ T27负责执行事实、T33负责深层诊断与J13 cursor；T41只收集安全�
 | GET/普通ownership/Host tray查询 | 不启动服务、不写DB或控制产品；secret sentinel不泄漏 |
 | 无网页、CLI退出、整机离线 | 服务owner与资源回收正确；本机无法报告自身断网的边界明确 |
 
-下一动作：先在当前真实SQLite/collector上补硬崩溃锁恢复、维护与明确的操作证据，并接T37共享刷新生命周期；T40服务安装/当前scoped桥合格后再验现场监控。不要重复建立已有init/GET/incident夹具，不用清锁/清库假装恢复，不搭React或向test2发模型任务。独立review仍检查权限/事实分层；测试与制品只引用最新readiness窗口。
+下一动作：固定本轮候选及 Node 制品，复验受支持原生 Alert 接缝与 collector 的完整命令链，再按 T40 明确服务安装/运行范围。不要重新建立永久 Alert 库、清未知锁/坏库、把 native emitter 返回当 App 已读，或借通知恢复业务任务。现役 scoped bridge、原生分支覆盖、客户端与外部渠道证据分别记录，不能由本地测试替代。

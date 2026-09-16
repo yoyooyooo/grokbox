@@ -173,7 +173,9 @@ describe("incremental stream contract, scripted producer with provider hard-off"
   });
 
   test.each(["parts", "bytes"])("%s cap stops production visibly and completes every observer", async (limit) => {
-    const f = fixture(limit === "parts" ? { maxParts: 1 } : { maxBytes: 20 });
+    // Semantic UTF-8 output: "first" is 5 bytes; adding "second" reaches 11.
+    // The limit should reject the second payload, not count repeated JSON keys.
+    const f = fixture(limit === "parts" ? { maxParts: 1 } : { maxBytes: 10 });
     const handle = f.session.getExecutor().stream({}, "inv-cap");
     f.script.push({ type: "text-delta", textDelta: "first" }); f.script.push({ type: "text-delta", textDelta: "second" });
     await expect(within(handle.response)).rejects.toMatchObject({ name: "RetriableError", code: "stream_limit" });

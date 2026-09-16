@@ -59,6 +59,7 @@ test("event and incident pagination is bounded and never silently truncates the 
     while(hasMore){const page=await db.events(cursor,1);ids.push(...page.entries.map(e=>e.eventId));cursor=page.cursor;hasMore=page.hasMore;}
     expect(ids).toEqual(all.entries.map(e=>e.eventId));expect(new Set(ids).size).toBe(ids.length);
     expect(await readFile(db.path)).toEqual(before);
+    await db.finish(epoch,BASE+29);
     await db.begin(randomUUID(),BASE+30,[ID]);
     await expect(db.incidentPage(page1.cursor!)).rejects.toThrow("monitor_cursor_invalid");
   } finally {await rm(root,{recursive:true,force:true});}

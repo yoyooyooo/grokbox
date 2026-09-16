@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import type { Server } from "node:net";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { BoxRuntimeError, OWNED_SHUTDOWN_MS } from "@grokbox/runtime-kernel/contract";
+import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS } from "@grokbox/runtime-kernel/contract";
 import { AdmissionAuthority } from "@grokbox/runtime-kernel/ports";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
@@ -26,19 +26,22 @@ export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string
   return Layer.succeed(AdmissionAuthority, {
     current: (request) => Effect.gen(function* () {
       const authority = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
-      if (authority.state !== "committed") return { admitted: false };
+      if (authority.state !== "committed") return { admitted: false, reason: "authority_not_committed" };
       if (!request) return { admitted: true };
       const host = authority.host;
       if (request.hostEpoch.compile !== host.generationId || request.hostEpoch.source !== host.sourceSha
-        || request.hostEpoch.hostIdentity !== host.identitySha) return { admitted: false };
+        || request.hostEpoch.hostIdentity !== host.identitySha) return { admitted: false, reason: "host_identity_mismatch" };
       const observed = yield* readManagedOwnership({ agentId: request.agentId, read: ownershipRead, gatewayPid: host.pid });
       // The native read can span a deployment: never combine two generations.
       const after = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
-      if (after.state !== "committed" || after.host.generationId !== host.generationId || after.host.identitySha !== host.identitySha) return { admitted: false };
+      if (after.state !== "committed" || after.host.generationId !== host.generationId || after.host.identitySha !== host.identitySha) return { admitted: false, reason: "host_generation_changed" };
       return { admitted: true, ownership: { ...observed.evidence,
         scopeId: sha256Text(canonicalJson([observed.evidence.scopeId, observed.gateway.pid, observed.gateway.startedAt])),
       } };
-    }).pipe(Effect.catch(() => Effect.succeed({ admitted: false }))),
+    }).pipe(Effect.catch(error => {
+      const reason = error instanceof BoxRuntimeError ? error.failureCode : error;
+      return Effect.succeed({ admitted: false, reason: typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason : "unknown" });
+    })),
   });
 }
 

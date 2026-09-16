@@ -1,10 +1,10 @@
-import { BackendFailure, annotateStreamFailure, streamFailureDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, BindingFailure, annotateStreamFailure, streamFailureDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 
-export const BACKEND_PHASES = ["prepare", "auth", "sdk", "provider", "normalize"] as const;
+export const BACKEND_PHASES = ["prepare", "auth", "sdk", "provider", "normalize", "authority"] as const;
 export type BackendPhase = (typeof BACKEND_PHASES)[number];
 export const FAILURE_REASONS = [
   "unknown", "validation", "auth", "transport", "http", "sdk_validation", "sdk_no_output", "stream_shape", "output_limit", "content_filter",
-  "provider_resource", "provider_interrupted", "stream_budget",
+  "provider_resource", "provider_interrupted", "stream_budget", "authority_check",
 ] as const;
 export const PROVIDER_CODES = [
   "invalid_request_error", "invalid_api_key", "insufficient_quota", "rate_limit_exceeded",
@@ -76,8 +76,9 @@ export function interruptedProviderFinish(reason: "insufficient_system_resource"
 }
 
 export function backendFailureObservation(error: unknown): BackendObservation | undefined {
+  if (error instanceof BindingFailure && error.code === "not_admitted") return { phase: "authority", reason: "authority_check", ...streamFailureDiagnostic(error) };
   if (!(error instanceof BackendFailure)) return undefined;
   const base = observations.get(error), detail = streamFailureDiagnostic(error);
   if (!base && !detail) return undefined;
-  return { ...(base ?? { phase: "normalize" as const, reason: "stream_shape" as const }), ...detail };
+  return { ...(base ?? { phase: "normalize" as const, reason: error.code === "stream_limit" ? "stream_budget" as const : "stream_shape" as const }), ...detail };
 }

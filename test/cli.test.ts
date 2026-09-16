@@ -256,7 +256,7 @@ describe("registry, help, and runtime", () => {
     expect(await proc.exited).toBe(0);
     expect(stdout).toContain("groups");
     expect(stderr).toBe("");
-    expect(cliPackage.engines).toEqual({ node: ">=20.0.0" });
+    expect(cliPackage.engines).toEqual({ node: ">=20.17.0" });
     expect(cliPackage.bin).toEqual({ grokbox: "bin/grokbox", gbox: "bin/grokbox" });
     assertNoSecrets(stdout + stderr);
   });

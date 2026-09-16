@@ -10,6 +10,7 @@ export const HOST_JOURNAL_FORBIDDEN = /env|token|prompt|authorization|secret|api
 export const ROUTE_MODEL_NOT_ADMITTED_AGENT_MESSAGE = ROUTE_MODEL_NOT_ADMITTED_MESSAGE;
 export const LOCAL_CAPACITY_AGENT_MESSAGE = "The local model runtime could not admit this request because its execution resources were unavailable. No model request was dispatched.";
 export const LEDGER_UNAVAILABLE_AGENT_MESSAGE = "The local execution history could not be read or saved safely. This request was not dispatched to the model; no fallback was used.";
+export const AUTHORITY_AGENT_MESSAGE = "The local runtime could not confirm permission to continue this request. It was stopped without fallback or automatic retry.";
 export const INVALID_STREAM_AGENT_MESSAGE =
   "The model returned an invalid stream. The request was stopped without retry.";
 
@@ -23,7 +24,7 @@ export type HostFailureMapsFrom =
 export type HostFailureCatalogRow = {
   reason: string;
   errorCode: string;
-  stage: "stream-id" | "admit" | "normalize" | "connect" | "provider";
+  stage: "stream-id" | "admit" | "normalize" | "connect" | "provider" | "authority";
   agentMessage: string;
   mapsFrom: HostFailureMapsFrom;
   failureCode?: string;
@@ -113,6 +114,8 @@ export const HOST_FAILURE_CATALOG = [
     agentMessage: "Managed stream ended in a Host rejection.",
     mapsFrom: "hook-reason",
   },
+  { reason: "authority-rejected", errorCode: "not_admitted", stage: "authority", agentMessage: AUTHORITY_AGENT_MESSAGE, mapsFrom: "hook-reason" },
+  { reason: "stream-budget", errorCode: "stream_limit", stage: "normalize", agentMessage: "The model output could not fit the local stream resource budget. No fallback or automatic retry was used.", mapsFrom: "hook-reason" },
   { reason: "local-capacity", errorCode: "capacity", stage: "admit", agentMessage: LOCAL_CAPACITY_AGENT_MESSAGE, mapsFrom: "hook-reason" },
   { reason: "execution-history-unavailable", errorCode: "ledger_unavailable", stage: "admit", agentMessage: LEDGER_UNAVAILABLE_AGENT_MESSAGE, mapsFrom: "hook-reason" },
   {
@@ -148,12 +151,14 @@ export function catalogAgentMessage(reason: string): string | undefined {
 export type TerminalRejectMapping = {
   reason: HostStreamRejectReason;
   errorCode: string;
-  stage: "admit" | "normalize" | "provider";
+  stage: "admit" | "normalize" | "provider" | "authority";
 };
 
 /** Host-visible mapping for a rejected stream terminal. Backend stream_invalid
  * is the same class as Host invalid_stream; do not collapse it to model_error. */
 export function mapTerminalReject(errorCode: string, stage?: string): TerminalRejectMapping {
+  if (errorCode === "not_admitted") return { reason: "authority-rejected", errorCode, stage: "authority" };
+  if (errorCode === "stream_limit") return { reason: "stream-budget", errorCode, stage: "normalize" };
   if (errorCode === "capacity" && stage === "admit") return { reason: "local-capacity", errorCode, stage: "admit" };
   if (errorCode === "ledger_unavailable") return { reason: "execution-history-unavailable", errorCode, stage: "admit" };
   if (errorCode === "invalid_stream" || errorCode === "stream_invalid") {

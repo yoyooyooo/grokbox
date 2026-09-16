@@ -6,6 +6,7 @@ import { HOST_STATE_SHAPES } from "./context-codec.ts";
 import { projectStreamDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 import { observeJournalWrite } from "./journal-health.node.ts";
 import { projectRunObservation } from "./run-observation.ts";
+import { projectAlertEvent } from "@grokbox/runtime-kernel/alerts";
 import {
   boundedClientNonce,
   HOST_FAILURE_CATALOG,
@@ -32,12 +33,13 @@ export const TURN_SEAM_ERROR_CODES = new Set([
   "parallel_tools",
   "invocation_conflict",
   "model_error",
+  "not_admitted",
   "capacity",
   "ledger_unavailable",
   "stream_limit",
   "invalid_stream",
 ]);
-const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect", "provider"]);
+const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect", "provider", "authority"]);
 export const HOST_STREAM_REJECT_REASONS = new Set<string>(HOST_FAILURE_CATALOG.map((row) => row.reason));
 const HOST_SEAM_STAGES = new Set(["hook_enter", "hook_decline", "stream_enter", "connect_attempt", "first_chunk"]);
 const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail", "compact_passthrough"]);
@@ -272,7 +274,7 @@ export function projectHostNormalizedTerminal(input: unknown): Record<string, un
 
 function runLinks(input: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const k of ["dispatchId", "groupId", "groupDispatchId"]) {
+  for (const k of ["dispatchId", "groupId", "groupDispatchId", "failureId"]) {
     const value = boundedString(input[k]); if (value) out[k] = value;
   }
   return out;
@@ -280,6 +282,7 @@ function runLinks(input: Record<string, unknown>): Record<string, string> {
 
 function projectHostEvent(input: unknown): Record<string, unknown> | null {
   if (!isRecord(input) || typeof input.name !== "string" || !journalRoleAllows("host", input.name)) return null;
+  if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as Record<string, unknown> | null;
   if (input.name === "host_run_observation") return projectRunObservation(input);
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);

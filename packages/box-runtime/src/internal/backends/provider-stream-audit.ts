@@ -1,4 +1,4 @@
-import { BackendFailure, CANONICAL_OUTPUT_MAX_BYTES, StreamEvidence, annotateStreamFailure, invalidStream } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, CANONICAL_OUTPUT_MAX_BYTES, ChunkedText, StreamEvidence, annotateStreamFailure, invalidStream, type StreamBudgetDiagnostic } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
 import { interruptedProviderFinish } from "./failure-observation.ts";
 import type { OpenaiPromptApi } from "./openai-prompt-adapter.ts";
@@ -7,20 +7,20 @@ import type { OpenaiPromptApi } from "./openai-prompt-adapter.ts";
 // arguments. Bytes are never rewritten and never enter outward diagnostics.
 export const PROVIDER_EVENT_MAX_BYTES = CANONICAL_OUTPUT_MAX_BYTES;
 export const PROVIDER_WIRE_MAX_BYTES = 16 * 1024 * 1024;
-const MAX_TOOLS = 128, MAX_FRAGMENTS = 65_536;
+const MAX_TOOLS = 128;
 const record = (x: unknown): Record<string, unknown> | undefined => x !== null && typeof x === "object" && !Array.isArray(x) ? x as Record<string, unknown> : undefined;
 const bytes = (s: string) => new TextEncoder().encode(s).length;
-type Tool = { fragments: string[]; final?: string; id?: string; name?: string };
+type Tool = { fragments: ChunkedText; final?: string; id?: string; name?: string };
 export class ProviderStreamAudit {
   private readonly decoder = new TextDecoder("utf-8", { fatal: true });
-  private lineParts: string[] = [];
+  private readonly lineParts = new ChunkedText();
   private lineBytes = 0;
   private skipLF = false;
-  private data: string[] = [];
+  private readonly data = new ChunkedText();
+  private dataLines = 0;
   private eventBytes = 0;
   private wireBytes = 0;
   private argumentBytes = 0;
-  private fragmentCount = 0;
   private done = false;
   private ended = false;
   private failed = false;
@@ -31,10 +31,12 @@ export class ProviderStreamAudit {
   headers(status: number): void { this.evidence.httpStatus(status); this.evidence.first("headersMs"); this.evidence.provider("headers"); }
   instrumented(): void { this.evidence.instrumented(); }
   private site() { return this.api === "chat" ? "provider_chat_wire" as const : "provider_responses_wire" as const; }
-  private limit(): never { throw annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: this.site() }); }
+  private limit(metric: StreamBudgetDiagnostic["metric"], limit: number, measured: number): never {
+    throw annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: this.site(), budget: { layer: "provider", metric, limit, measured } });
+  }
   private tool(key: string): Tool {
     let t = this.tools.get(key);
-    if (!t) { if (this.tools.size >= MAX_TOOLS) this.limit(); t = { fragments: [] }; this.tools.set(key, t); }
+    if (!t) { if (this.tools.size >= MAX_TOOLS) this.limit("tool_count", MAX_TOOLS, this.tools.size + 1); t = { fragments: new ChunkedText() }; this.tools.set(key, t); }
     return t;
   }
   private identity(t: Tool, id: unknown, name: unknown): void {
@@ -49,15 +51,15 @@ export class ProviderStreamAudit {
     if (typeof delta !== "string") throw invalidStream("tool_arguments_invalid", this.site());
     if (!delta) return;
     const t = this.tool(key);
-    this.argumentBytes += bytes(delta); this.fragmentCount++;
-    if (this.argumentBytes > CANONICAL_OUTPUT_MAX_BYTES || this.fragmentCount > MAX_FRAGMENTS) this.limit();
-    t.fragments.push(delta);
+    this.argumentBytes += bytes(delta);
+    if (this.argumentBytes > CANONICAL_OUTPUT_MAX_BYTES) this.limit("output_bytes", CANONICAL_OUTPUT_MAX_BYTES, this.argumentBytes);
+    t.fragments.append(delta);
   }
   private validate(t: Tool, final?: unknown): void {
     if (final !== undefined && typeof final !== "string") throw invalidStream("tool_arguments_invalid", this.site());
-    const raw = t.fragments.join(""), supplied = final as string | undefined ?? t.final;
+    const raw = t.fragments.text(), supplied = final as string | undefined ?? t.final;
     const full = supplied ?? raw;
-    if (bytes(full) > CANONICAL_OUTPUT_MAX_BYTES) this.limit();
+    if (bytes(full) > CANONICAL_OUTPUT_MAX_BYTES) this.limit("output_bytes", CANONICAL_OUTPUT_MAX_BYTES, bytes(full));
     let parsed: unknown;
     try { parsed = JSON.parse(full); } catch { throw invalidStream("tool_arguments_invalid", this.site()); }
     if (t.final !== undefined && supplied !== undefined && canonicalJson(JSON.parse(t.final)) !== canonicalJson(parsed)) throw invalidStream("tool_arguments_mismatch", this.site());
@@ -70,7 +72,7 @@ export class ProviderStreamAudit {
       // Account whole-input-only Responses records too, rather than allowing
       // MAX_TOOLS independent copies of the full per-stream argument budget.
       if (t.final === undefined) this.argumentBytes += bytes(supplied);
-      if (this.argumentBytes > 2 * CANONICAL_OUTPUT_MAX_BYTES) this.limit();
+      if (this.argumentBytes > 2 * CANONICAL_OUTPUT_MAX_BYTES) this.limit("retained_bytes", 2 * CANONICAL_OUTPUT_MAX_BYTES, this.argumentBytes);
       t.final = supplied;
     }
   }
@@ -116,20 +118,21 @@ export class ProviderStreamAudit {
   }
   private line(line: string): void {
     if (!line) {
-      if (this.data.length) { const data = this.data.join("\n"); this.data = []; this.eventBytes = 0; this.frame(data); }
+      if (this.dataLines) { const data = this.data.text(); this.data.clear(); this.dataLines = 0; this.eventBytes = 0; this.frame(data); }
       return;
     }
     if (line.startsWith("data:")) {
       const data = line.slice(line[5] === " " ? 6 : 5); this.eventBytes += bytes(data) + 1;
-      if (this.eventBytes > PROVIDER_EVENT_MAX_BYTES || this.data.length >= MAX_FRAGMENTS) this.limit();
-      this.data.push(data);
+      if (this.eventBytes > PROVIDER_EVENT_MAX_BYTES) this.limit("event_bytes", PROVIDER_EVENT_MAX_BYTES, this.eventBytes);
+      if (this.dataLines++) this.data.append("\n");
+      this.data.append(data);
     }
   }
   private segment(text: string): void {
     if (!text) return;
     this.lineBytes += bytes(text);
-    if (this.lineBytes > PROVIDER_EVENT_MAX_BYTES || this.lineParts.length >= MAX_FRAGMENTS) this.limit();
-    this.lineParts.push(text);
+    if (this.lineBytes > PROVIDER_EVENT_MAX_BYTES) this.limit("event_bytes", PROVIDER_EVENT_MAX_BYTES, this.lineBytes);
+    this.lineParts.append(text);
   }
   private consume(text: string): void {
     // Scan each new code unit once. Re-scanning/re-encoding the accumulated line
@@ -140,7 +143,7 @@ export class ProviderStreamAudit {
       if (this.skipLF) { this.skipLF = false; if (ch === 10) { start = i + 1; continue; } }
       if (ch !== 10 && ch !== 13) continue;
       this.segment(text.slice(start, i));
-      const line = this.lineParts.join(""); this.lineParts = []; this.lineBytes = 0;
+      const line = this.lineParts.text(); this.lineParts.clear(); this.lineBytes = 0;
       this.line(line); this.skipLF = ch === 13; start = i + 1;
     }
     this.segment(text.slice(start));
@@ -149,7 +152,7 @@ export class ProviderStreamAudit {
   push(chunk: Uint8Array): void {
     try {
       this.wireBytes += chunk.byteLength; this.evidence.increment("providerBytes", chunk.byteLength);
-      if (this.wireBytes > PROVIDER_WIRE_MAX_BYTES) this.limit();
+      if (this.wireBytes > PROVIDER_WIRE_MAX_BYTES) this.limit("wire_bytes", PROVIDER_WIRE_MAX_BYTES, this.wireBytes);
       let text: string;
       try { text = this.decoder.decode(chunk, { stream: true }); } catch { throw invalidStream("invalid_event_shape", this.site()); }
       this.consume(text);
@@ -170,7 +173,7 @@ export class ProviderStreamAudit {
     this.evidence.toolValidation("rejected");
     if (error && typeof error === "object") annotateStreamFailure(error, { stream: this.evidence.snapshot() });
   }
-  dispose(): void { this.tools.clear(); this.lineParts = []; this.lineBytes = 0; this.data = []; }
+  dispose(): void { this.tools.clear(); this.lineParts.clear(); this.lineBytes = 0; this.data.clear(); this.dataLines = 0; }
 }
 /** Demand-driven, no tee/background drain; cancellation belongs to this response. */
 export function auditedProviderResponse(response: Response, audit: ProviderStreamAudit): Response {

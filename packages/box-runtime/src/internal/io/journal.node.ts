@@ -19,6 +19,7 @@ import { type ObservationState } from "./observation.node.ts";
 import { readJournalWindow, type JournalWindow } from "./journal-reader.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { projectRunObservation } from "../host/run-observation.ts";
+import { projectAlertEvent, traceAlerts, observationId } from "@grokbox/runtime-kernel/alerts";
 import { projectModeldStepOutcome, type ModeldStepOutcomeEvent } from "./modeld-outcome.node.ts";
 
 export {
@@ -49,6 +50,7 @@ export const EVENT_NAMES = [
   "host_stream_rejected",
   "host_seam_stage",
   "host_run_observation",
+  "host_alert_observation",
   "provider_error_observed",
 ] as const;
 
@@ -86,6 +88,7 @@ const SEAM_EVENT_NAMES = new Set([
   "host_stream_rejected",
   "host_seam_stage",
   "host_run_observation",
+  "host_alert_observation",
   "provider_error_observed",
 ]);
 export const MODEL_STEP_STAGES = new Set([
@@ -422,9 +425,10 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
   return "unprojected";
 }
 
-function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
+export function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
+  if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as RuntimeEvent | null;
   if (input.name === "host_run_observation") return projectRunObservation(input) as RuntimeEvent | null;
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input) as RuntimeEvent | null;
   if (input.name === "host_seam_stage") return projectHostSeamStage(input) as RuntimeEvent | null;
@@ -471,7 +475,7 @@ function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEve
   return out;
 }
 
-export type RuntimeEventSelector = { agentId: string; nonce?: string; stepId?: string; groupId?: never } | { groupId: string; agentId?: never; nonce?: never; stepId?: never };
+export type RuntimeEventSelector = { agentId?: string; nonce?: string; stepId?: string; groupId?: string; trayId?: string; sourceInstanceId?: string };
 export type RetentionObservation = { applied: boolean; discardedRecordsLowerBound: number; discardedPrefix: boolean; latestDiscardedAt: string | null };
 function retentionMarker(value: unknown): RetentionObservation | undefined {
   if (!isRecord(value) || value.name !== "journal_retention" || value.schemaVersion !== 1
@@ -487,6 +491,13 @@ export type EventsObservation = {
   window?: JournalWindow & { matchedEvents: number; returnedEvents: number; earliestAt: string | null; latestAt: string | null; selectorMatched?: boolean; retention?: RetentionObservation };
 };
 function selectRelatedEvents(events: EventsObservation["events"], selector: RuntimeEventSelector): EventsObservation["events"] {
+  if (selector.trayId) {
+    const traced=traceAlerts(events,selector);
+    const selected=traced.traces.flatMap(t=>t.events), ids=new Set(selected.map(e=>e.eventId));
+    const failures=new Set(selected.map(e=>e.failureId).filter(observationId));
+    return events.filter(e=>!("invalid" in e) && (("eventId" in e && ids.has(String(e.eventId)))
+      || ("failureId" in e && failures.has(String(e.failureId)) && selected.some(a=>a.agentId===e.agentId&&a.hostGenerationId===e.hostGenerationId))));
+  }
   // Group events belong to distinct member identities. Filter their explicit
   // group association before the global event-count cap, never by proximity.
   if (typeof selector.groupId === "string") return events.filter(v => !("invalid" in v) && "groupId" in v && v.groupId === selector.groupId);
@@ -495,7 +506,17 @@ function selectRelatedEvents(events: EventsObservation["events"], selector: Runt
   const turns = new Set(seeds.map(v => "turnId" in v ? v.turnId : undefined).filter(v => typeof v === "string" && v.length > 0));
   // Keep conflicting generations too: the outcome projector, not this reader,
   // must diagnose an ambiguous join rather than silently select one generation.
-  return rows.filter(v => seeds.includes(v) || ("turnId" in v && typeof v.turnId === "string" && turns.has(v.turnId)));
+  const execution = rows.filter(v => seeds.includes(v) || ("turnId" in v && typeof v.turnId === "string" && turns.has(v.turnId)));
+  const presentation = traceAlerts(events, { agentId: selector.agentId, ...(selector.stepId ? { stepId: selector.stepId } : {}),
+    ...(selector.nonce ? { clientNonce: selector.nonce } : {}) }).traces.flatMap(trace => trace.events);
+  const alertIds = new Set(presentation.map(event => `${event.sourceInstanceId}:${event.eventId}`));
+  const observerGenerations = new Set(execution.flatMap(event => "hostGenerationId" in event && typeof event.hostGenerationId === "string" ? [event.hostGenerationId] : []));
+  const links = new Set(presentation.filter(event => event.stepEvidence === "direct" && event.stepId && event.agentId)
+    .map(event => JSON.stringify([event.hostGenerationId, event.agentId, event.stepId])));
+  return events.filter(event => !("invalid" in event) && (execution.includes(event)
+    || (event.name === "host_alert_observation" && "kind" in event && (event.kind === "observer_started" || event.kind === "manager_attached") && observerGenerations.has(String(event.hostGenerationId)))
+    || ("eventId" in event && "sourceInstanceId" in event && alertIds.has(`${event.sourceInstanceId}:${event.eventId}`))
+    || ("stepId" in event && links.has(JSON.stringify([event.hostGenerationId, event.agentId, event.stepId])))));
 }
 
 /** Real bounded suffix reads. Targeted queries filter before applying the event

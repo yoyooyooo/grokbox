@@ -7,8 +7,10 @@ export function nodeMajor(version) {
 }
 
 export function supportsNodeRuntime(version) {
-  const major = nodeMajor(version);
-  return major !== null && major >= MINIMUM_NODE_MAJOR;
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(version));
+  if (!match) return false;
+  const major = Number(match[1]), minor = Number(match[2]);
+  return major > MINIMUM_NODE_MAJOR || (major === MINIMUM_NODE_MAJOR && minor >= 17);
 }
 
 export function runtimeUnsupportedEnvelope(version) {
@@ -16,7 +18,7 @@ export function runtimeUnsupportedEnvelope(version) {
     ok: false,
     error: {
       code: "runtime_unsupported",
-      message: `grokbox requires Node.js ${MINIMUM_NODE_MAJOR} or newer.`,
+      message: "grokbox requires Node.js 20.17.0 or newer.",
       retryable: false,
       runtime: {
         nodeMajor: nodeMajor(version),

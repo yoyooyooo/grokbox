@@ -46,14 +46,14 @@
     "automation"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.17.0"
   },
   "publishConfig": {
     "access": "public",
     "provenance": true
   },
   "scripts": {
-    "build": "esbuild packages/cli/src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --external:classic-level --outfile=dist/index.js && bun scripts/pack-runtime-helpers.mjs",
+    "build": "esbuild packages/cli/src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --external:classic-level --external:sqlite3 --outfile=dist/index.js && bun scripts/pack-runtime-helpers.mjs",
     "modeld:run": "node scripts/run-packaged-modeld.mjs --json",
     "grokbox": "bun run packages/cli/src/index.ts",
     "gbox": "bun run packages/cli/src/index.ts",
@@ -74,7 +74,8 @@
     "monitor:sandbox-ssh-activity": "node scripts/monitor-sandbox-ssh-activity.mjs",
     "publish:template": "bun run scripts/publish-grokbox-template.ts"
   },
-  "dependencies": { "classic-level": "3.0.0" },
+  "dependencies": { "classic-level": "3.0.0", "sqlite3": "6.0.1" },
+  "trustedDependencies": ["sqlite3"],
   "devDependencies": {
     "commander": "^14.0.0",
     "@types/bun": "^1.2.21",

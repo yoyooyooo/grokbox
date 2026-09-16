@@ -82,13 +82,15 @@ describe("published Node package", () => {
     expect(MINIMUM_NODE_MAJOR).toBe(20);
     expect(RUNTIME_UNSUPPORTED_EXIT_CODE).toBe(59);
     expect(supportsNodeRuntime("19.9.0")).toBe(false);
-    expect(supportsNodeRuntime("20.0.0")).toBe(true);
+    expect(supportsNodeRuntime("20.0.0")).toBe(false);
+    expect(supportsNodeRuntime("20.16.0")).toBe(false);
+    expect(supportsNodeRuntime("20.17.0")).toBe(true);
     expect(supportsNodeRuntime("invalid")).toBe(false);
     expect(runtimeUnsupportedEnvelope("19.9.0")).toEqual({
       ok: false,
       error: {
         code: "runtime_unsupported",
-        message: "grokbox requires Node.js 20 or newer.",
+        message: "grokbox requires Node.js 20.17.0 or newer.",
         retryable: false,
         runtime: { nodeMajor: 19, minimumNodeMajor: 20 },
       },
@@ -201,7 +203,6 @@ describe("published Node package", () => {
       "dist/guardian-child.cjs",
       "dist/index.js",
       "dist/injector-hold.cjs",
-      "dist/observation-sqlite.cjs",
       "dist/preload.cjs",
       "package.json",
       "skills/core.md",
@@ -232,6 +233,15 @@ describe("published Node package", () => {
           BUN_INSTALL: prefix,
         });
     expect(installed.code, installed.stderr).toBe(0);
+    if (npm) {
+      // Keep installation scripts disabled for arbitrary dependencies; explicitly
+      // build only the pinned native SQLite adapter that this release now uses.
+      // The subsequent cold installed CLI must actually initialize/query it.
+      const native = await run([npm, "rebuild", "sqlite3", "--prefix", prefix, "--no-audit", "--no-fund"], fixture, {
+        PATH: process.env.PATH ?? "", HOME: fixture,
+      });
+      expect(native.code, native.stderr).toBe(0);
+    }
     const binDir = npm ? join(prefix, "node_modules", ".bin") : join(prefix, "bin");
     const grokbox = join(binDir, "grokbox");
     const gbox = join(binDir, "gbox");
@@ -265,10 +275,10 @@ describe("published Node package", () => {
     expect(installedPackage.private).toBeUndefined();
     expect(installedPackage).toMatchObject({
       license: "MIT",
-      engines: { node: ">=20.0.0" },
+      engines: { node: ">=20.17.0" },
       repository: { url: "https://github.com/yoyooyooo/grokbox.git" },
       bin: { grokbox: "bin/grokbox", gbox: "bin/grokbox" },
-      dependencies: {},
+      dependencies: { "classic-level": "3.0.0", "sqlite3": "6.0.1" },
       publishConfig: { access: "public", provenance: true },
     });
     expect(await readFile(join(installedRoot, "LICENSE"), "utf8")).toContain("MIT License");

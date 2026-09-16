@@ -4,8 +4,11 @@ import { inspectOwnership, OWNERSHIP_MAX_TARGETS } from "./internal/contract/own
 export const MONITOR_POLICY = Object.freeze({
   intervalMs: 30_000, minIntervalMs: 10_000, maxIntervalMs: 300_000,
   readTimeoutMs: 10_000, staleAfterMs: 90_000, maxBackoffMs: 300_000, jitterRatio: 0.1,
-  maxTargets: OWNERSHIP_MAX_TARGETS, maxDbBytes: 16 * 1024 * 1024,
-  maxEvents: 50_000, maxPage: 200, maxSnoozeMs: 24 * 60 * 60 * 1000,
+  maxTargets: OWNERSHIP_MAX_TARGETS,
+  // Housekeeping targets, never lifetime admission ceilings. Managed incident
+  // facts and acknowledgements are not deleted merely to reach a row count.
+  evidenceTarget: 50_000, retentionMs: 7 * 24 * 60 * 60 * 1000,
+  maxPage: 200, maxSnoozeMs: 24 * 60 * 60 * 1000,
 });
 export const MONITOR_RULES = ["ownership_conflict", "ownership_changed", "observation_unavailable"] as const;
 export type MonitorRule = typeof MONITOR_RULES[number];
