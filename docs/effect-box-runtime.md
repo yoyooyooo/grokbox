@@ -2,6 +2,10 @@
 
 本标准约束 `packages/runtime-kernel`、`packages/box-runtime` 及其 CLI/console composition roots 的后续改动：**重副作用必须由 Effect 拥有执行、失败、取消和资源生命周期，不只是返回类型换皮。** 依赖安装不代表迁移完成；当前实现以源码和测试为准。产品与权限仍由 [产品合同 §12](product-contract.md#12-box-local-model-runtime)、[运行时设计](box-runtime.md) 和 [架构 §17](architecture.md#17-box-local-model-runtime) 拥有。
 
+## 当前执行核心收口
+
+[Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core) 与 [T43–T50](tickets/README.md#modeld-effect-core) 把本标准落到 modeld 的唯一 service acquisition、typed authority、source/等待者 Scope、按身份状态同步、有界维护和同 STEP 等待。保留已有 Effect 实现与存储/协议不变量，不以 runPromise 数量或新建 Service 数量验收。source、waiter、Fiber、外部操作结算是不同事实；Scope 不是数据库事务或远程取消证明。该变更不升级 catalog pin、不让 Host 导入 Effect，也不改 J13。
+
 ## 强制范围与普通 TS 边界
 
 | 执行面 | 规则 |

@@ -4,7 +4,31 @@
 
 [策略 plan](../roadmap/box-runtime-plan.md) 拥有 Phases 0–4；[单轨重建实施规格](../roadmap/box-runtime-impl-spec.md) 拥有唯一目标树、ports、执行与证明；**当前交付/施工顺序以 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery) 为准**。施工使用同一序列T20–T41；T37–T40承接归属门、身份writer/test2、原生往返和持久发布，T41新增浏览器前的持续观测/SQLite/incident。R2的ME-*只作历史映射，不新增第二套进度账。源码/测试说明实现事实，Ticket 保存范围、缺口与关闭证据；open 不等于完全没有代码。
 
-## Current delivery — 2026-09-12 文档治理基线
+<a id="modeld-effect-core"></a>
+## Current change — modeld execution-core consolidation
+
+[Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) is the sole implementation home for this branch; [ADR](../decisions/2026-09-16-modeld-effect-core.md) records accepted boundaries. This new series consumes existing T24/T25/T26/T37/T40 implementation rather than reopening historical tickets or creating a parallel execution kernel. Original product/native/rollback gates remain in force.
+
+| Milestone | Ticket | Initial state | Exit |
+|---|---|---|---|
+| M0 | [T43 authority/native baseline](T43-modeld-authority-baseline.md) | in progress | source/attribution matrix and executable baseline |
+| M1 | [T44 service lifetime](T44-modeld-service-lifetime.md) | planned | one acquisition program; owned/borrowed/cleanup proof |
+| M1 | [T45 evidence lifetime](T45-modeld-evidence-lifetime.md) | planned | typed evidence, shared source versus waiter, bounded demand/cancellation |
+| M2 | [T46 state and durability](T46-modeld-state-and-durability.md) | planned | identity synchronization, claim-before-effect, bounded maintenance |
+| M2 | [T47 authority state machine](T47-modeld-authority-state-machine.md) | planned | same-STEP bounded wait, actual side-effect fences, one terminal |
+| M3 | [T48 causal observation](T48-modeld-causal-observation.md) | planned | causal wire/Host/CLI/monitor chain, diagnostic independence, packed/privacy |
+| M4 | [T49 qualification/release](T49-modeld-qualification-and-release.md) | planned | separately proven policy/performance/native/review/live gates |
+| Non-main-chain | [T50 review residue](T50-modeld-review-residue.md) | open process | append-only nonblocking re-look concerns; no auto-dispatch |
+
+```text
+T43 → T44 → T45 ──────┐
+        └→ T46 ──────┴→ T47 → T48 → T49
+                                   T50 (residue, not a dependency)
+```
+
+Each ticket's evidence section is the completion source; this table is a route, not a copied test ledger. Planned verifier cases fail until their required suites exist. Offline implementation, independent review, native qualification and live release are distinct. No implicit merge into v2, push or live Host/modeld changes.
+
+## Prior delivery baseline — 2026-09-12 documentation governance
 
 **已定边界：Server归属优先；不改官方App；同Box会话换模型不换harness；test2仅冲突样本。** 查询已存在，执行门/可逆日用/全卸载不能据此算完成。历史计数与现场receipt留在[readiness](../maintainers/t32-live-enable-readiness.md)，本索引不复制会过时的产物和测试数量。
 

@@ -314,6 +314,8 @@ Current implementation remains source reality until each slice lands. This docum
 
 ## 17. Box-local model runtime
 
+**2026-09-16 accepted modeld consolidation:** [ADR](decisions/2026-09-16-modeld-effect-core.md) and the existing [Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core) own the next execution-core change. Keep the native Host loop/tools/delivery, one kernel and one durable execution index. Separate deployment proof, live execution fences and observation. Audit native authority before removing supplemental Server checks; keep strict freshness defaults until a separately qualified policy decision. Effect owns shared source and waiter lifetimes; no second daemon, universal collector or hidden restart/replay. [T43–T50](tickets/README.md#modeld-effect-core) carry scope and proof, not an implementation-complete claim.
+
 ### 2026-09-12 Observation and incident management boundary
 
 **First local slice implemented; full T41 remains open.** [Spec S0.1.4](roadmap/box-runtime-impl-spec.md#continuous-observation) / [T41](tickets/T41-continuous-observation-and-alerting.md) add a scoped long-lived observer before Web UI. It reuses T37's native evidence acquisition and T27/T33 DTOs, not a second admission or controller. Box identity, account/team/backend scope, Bot identity and each source/runtime epoch remain explicit. CLI and future API read one projection and use the existing command programs.

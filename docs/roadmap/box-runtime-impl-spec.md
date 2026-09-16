@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**Current Implementation Spec · accepted target · 2026-09-12 Server归属/Host-only与持续观测路线已治理至T41/V30；当前实施子集以Ticket和readiness为准。实现核对基线 `pre-publication-revision` 上的工作树（不是当前部署版本）。** 本文拥有目标包/模块树、内部端口、执行合同、退场边界和实施证明。[plan](box-runtime-plan.md) 拥有策略、Phases 0–4 与产品出口；[ADR D1–D12](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md) 保留产品/信任边界；[新票据](../tickets/README.md) 承载切片与证据。源码/可执行测试拥有当前实现真相；本文不是已实现或已部署声明。
+**Current Implementation Spec · accepted target。2026-09-16 modeld 执行核心收口由 [S10](#modeld-effect-core) 与 T43–T50 承接；此前 Server归属/Host-only/T41/V30 的未覆盖义务继续有效。源码/测试与各 Ticket 的验证状态说明实际完成范围，规格不冒充部署。** 本文拥有目标包/模块树、内部端口、执行合同、退场边界和实施证明。[plan](box-runtime-plan.md) 拥有策略、Phases 0–4 与产品出口；[ADR D1–D12](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md) 保留产品/信任边界；[新票据](../tickets/README.md) 承载切片与证据。源码/可执行测试拥有当前实现真相；本文不是已实现或已部署声明。
 
 本批次采用 owner 指定的**破坏式、单轨重建**。POC 是研究素材，不是 grokbox 内部兼容面。保留 Host 产品行为，放弃 POC 的内部 API、目录、response-only 路径与旧 wire 兼容承诺。本文取代 plan 中旧内核、旧 wire 或旧 status DTO 的过渡保留口径；不削弱 ADR D1–D12 的安全要求。
 
@@ -708,3 +708,171 @@ T38现场校准另有确认门，保留活反例不等于未实现阻断；T40�
 - **UI proof（T29 deferred MVP，非默认主链）**：仅在显式授权做 console 时才适用。实际浏览器覆盖登录、选择保存、旧 revision、reload/断线/重复确认与 safe rendering；Playwright Chromium 只作 pin 的 dev-only driver，由 Bun 测试驱动，不替换既有 runner。缺 browser 环境就阻塞此证明，不能 skip 后宣称通过；headless reducer/API pass 不能冒充 UI proof。默认离线 mock runtime，访问现役实例另需授权。T20–T28 不得为了本条铺 `console/`。
 
 只把最小可公开 interoperability facts 与自行编写的 fixture 放进 repo。真实凭据、Host dumps、私人源码/完整对话及机器路径证据留在受控外部；公开票据只引用可复核 SHA/计数/结论和明确未证明项。
+
+---
+
+<a id="modeld-effect-core"></a>
+## S10. Modeld 执行核心收口（2026-09-16 accepted target）
+
+本节是本轮**唯一施工规格**，不新增第二份 build bible。范围是 modeld 执行与资源生命周期；策略裁决见 [ADR](../decisions/2026-09-16-modeld-effect-core.md)，责任取证见 [boundary audit](../maintainers/modeld-authority-boundaries.md)。本节细化/替代 S2–S5 中涉及 modeld 的重复启动、粗粒度 authority、共享读取与状态同步机制；未点名的 codec、Host loop、compact、原生持久化和 J13 义务保留。历史已完成票不重开，新工作使用 T43–T50。
+
+### S10.1 交付范围、归因与决策门
+
+目标：一次受管理 STEP 的 claim、资格等待、prepare/auth、唯一推理、输出放行和结算可沿一条程序追踪；短暂取证失败不假称已失权，明确失效不能被缓存复活。Effect 管理长寿命资源、等待与取消，而非增加一套权限/Agent 平台。
+
+| 类别 | 处理规则 | 本轮例子 |
+|---|---|---|
+| 接入必需成本 | 保留不变量，收口实现 | claim-before-dispatch、原选择/凭据固定、Host 协议/工具边界 |
+| 自有策略或实现问题 | 在自有 owner 内修正并退出旧路径 | request-start 年龄策略、first-waiter cancellation、重复 authority 读取、通用 poison |
+| 外部触发 | 记录来源和不确定性，不扩大本地副作用 | slow List、RPC cancellation、Provider rate limit/outage |
+| 已证原生缺陷 | 三路对照与固定版本证据后，在最窄适配边界治理 | 不预设具体缺陷已成立 |
+| 正常原生行为或未归因 | 不伪修，不扩张 modeld | child-only Working、缺 nonce 的 App 发送异常 |
+
+责任来源与严重性是两个维度。跨身份执行、重复副作用、终态复活阻断发布；合法执行误拒、取消/资源不收敛阻断可靠性验收；诊断/展示另有证据门。列表读取不是执行租约，客户端计龄不能证明未声明的服务端缓存一致性。
+
+**D-native：当前唯一执行路径保留补充 Server 证据门。** 已有 `allowed/bound` 是必要本地事实，不是 per-Agent/per-TURN 可撤销执行授权。T43 先审原生覆盖；没有足够证据不得删 Server 门，也不得留下运行时 `native|polling` 双执行模式。未来若证明原生能力充分，另行裁决替换来源，不重写 STEP 程序。
+
+**D-policy：结构重构不默认放宽 5 s。** 初版 canonical policy 保留既有 5 s 年龄、10 s 单次 source 上限、既有 STEP 总期限。15 s 证据/15 s 单次等待/30 s STEP 累计等待只是上一轮候选，不是已批准默认。新策略必须固定、校验、版本化，经 T49 批准矩阵启用；禁止按观测延迟动态扩权、从响应完成重新计龄、隐藏扣除 RTT。持续 9 s 读取在 strict 5 s 下仍应拒绝，不能把此情况标为重构回归或伪造恢复。
+
+**D-deployment：未建立可靠失效协议前保留原有部署证据复核。** 拆出局部职责不等于把 attestation 缓存成永久权限；文件 mtime/watch 不独立授予执行资格。
+
+### S10.2 固定骨架与最终 owner
+
+不新建 package/daemon，不升级数据库/SDK/Effect pin/测试框架。public exports 延用已存在的 `contract`、`ports`、`inference`、`runtime` surface；不引入另一套同义 Promise Port。
+
+```text
+packages/runtime-kernel/src/
+  ports.ts                               # typed AdmissionAuthority；保留 ModelBackend/BackendAuth
+  internal/contract/
+    ownership.ts                         # identity/classification；不拥有网络/数据库
+    authority-policy.ts                  # 唯一策略、预算、恢复/终止原因代数
+    ownership-observation.ts             # source/waiter/证据的安全投影
+  internal/inference/
+    authority-gate.ts                    # 一个资格等待/裁决程序；checkpoint 在这里
+    step-program.ts                      # STEP 编排；不得再内嵌第二 authority 实现
+    step-ledger.ts                       # 纯占位/终态转换
+    route-binding.ts                     # 同一服务的 binding/资源与有界维护
+    execution-history.ts                 # 持久化 claim 合同，唯一事实 writer
+
+packages/box-runtime/src/
+  internal/roots/modeld.runtime.ts        # 唯一服务 acquisition/lifetime，CLI Promise 门面复用
+  internal/modeld/
+    server.node.ts                       # 有界 transport/STEP scope/control-frame/terminal
+    unix-listen.node.ts                  # syscall bridge，资源数量/清理证据
+  internal/io/
+    ownership-admission.node.ts          # native snapshot -> typed evidence 的 adapter
+    ownership-coordinator.node.ts        # 服务拥有的 source op/等待者/刷新；Effect
+    execution-history.node.ts            # 单 DB owner；明确写入原子边界
+    store.node.ts                        # 部署快照；不再承担远程 ownership 策略
+  internal/host/
+    ownership-read.ts                    # 原生认证的单次、有限读取及不可合作操作 guard
+    ownership-slices.ts                  # 固定 Gateway DTO、能力/代匹配；无通用 RPC
+    modeld-client.node.ts                # Host 薄 bridge；不加入业务 retry/Effect
+  preload.ts                             # Host-only finite adapter wiring；Effect/SDK-free
+
+packages/cli/src/
+  runtime-ownership.ts                    # 现有本地认证 Gateway transport 的窄注入
+  ownership.ts                           # 独立只读诊断；不把 modeld 在线设为硬前提
+```
+
+新文件只因独立策略/生命周期/替换压力获得位置。T46 的按身份同步与 claim 方法优先在现有 owner 中实现，不为了对称建立 actor 框架、registry 或万能 state engine。前述骨架是目标，未创建模块不能作为已有能力引用。
+
+| 能力 | 最终 owner | 允许的依赖/消费者 | 禁止 |
+|---|---|---|---|
+| 原生资格与工具实际执行 | 官方 Host | 窄 bridge/已资格接点 | modeld 代写原生 profile、停止 temporal 子任务 |
+| 归属取证调度 | modeld 服务 Scope | borrowed NativeOwnershipSource、执行等待者 | 首等待者拥有共享 RPC、每 token poll |
+| 执行许可与 STEP 生命周期 | runtime-kernel | typed authority、原 binding、cancel | CLI/monitor/SQLite 授权、通用 catch 复活旧 TURN |
+| 模型/凭据 effect | BackendAuth/ModelBackend adapters | 原 pin、统一取消/预算 | SDK tool loop、adapter 私有业务 retry |
+| 执行身份持久化 | ExecutionHistory | kernel claim/settlement | 日志回放授权、写失败回退内存 |
+| 部署证明/修改 | 既有 controller + canonical artifact | modeld 只读适配 | 第二维持器、观察触发重领养 |
+| 观察 | 各事实源 + 既有 journal/monitor | 有限投影 | 观察失败更改已发生的业务结果 |
+
+### S10.3 类型、时钟与一条执行链
+
+`OwnershipEvidence` 是可校验事实，不是许可；`AuthorityPermit` 是内核进程内某检查点的短寿命决定，不接受 caller/JSON/日志/SQLite 反序列化；`AuthorityObservation` 只作观察。Server version/lease 未提供时显式 `not_observed`，本地 observationId 不冒充 Server revision。
+
+`AdmissionAuthority.current` 的 `unknown` 边界收敛为有限的 admitted/refused union。可恢复失败、明确失效、未知结果、调用者取消、实现 defect 不合并。原生未知输入仍由边界 decoder 处理，不因加强类型跳过 runtime 校验。
+
+1. 有界接收 frame，校验协议/Host/service 身份与字段，登记单一 STEP 总期限。
+2. 在原 ledger 中持久 claim；未知写回执拒绝继续，重复只返回已有 identity，不重发。
+3. 读取必要部署/本地 fence；消费合格证据或加入一次有界资格等待。
+4. 同一等待消费 STEP 剩余预算；更新进度但不造模型 token、Bot 消息或延长期限。
+5. 取证成功后重新核对 scope/Host generation/取消/原 binding；失败不发布中间终态。
+6. 固定模型选择与 credential fingerprint，prepare 可以挂起但不能进行模型副作用。
+7. 在真实 dispatch 前核对本地 fence 与仍合格的证据；不能因为 prepare 前过门就跳过。
+8. 仅一次 ModelBackend.infer；provider recovery/compact 仍由既有内核 ledger 按原合同管理。
+9. 在工具材料放行和成功完成边界核对资格。暂缺证时保留有界结果，不重新 infer；硬失效/期限/缓冲上限到达时真实终止。
+10. 同一 STEP 最多一次终态；持久 settlement 与观察各按原 writer 结算。工具材料释放不冒充实际执行/投递。
+11. 释放 STEP 等待者/stream/缓冲；TURN 资源按原 idle policy 服务拥有；没有需求则停止执行取证刷新。
+
+模型已经被调用过时，资格等待恢复不产生第二次模型调用；当次终态已发出或服务代已退出后不自动恢复。暂时 `waiting` 只发生在同一尚未终止的 STEP；不为旧 TURN 提供新握手/新模型捷径。明确失效应对原 binding 保持单调，不被后续 box 观测覆盖。
+
+**时钟：** 进程内预算用可注入单调时钟；ISO 时间只作跨日志关联。跨进程不直接相减 monotonic tick。共享请求由协调器记原始操作起点；Host 返回有界相对耗时/身份，收到时间不刷新 evidence。墙钟跳变、未来时间、未知原始年龄拒绝执行而不产生负年龄。
+
+### S10.4 共享 source operation 与等待者
+
+原始读取是服务/操作 Scope 的子任务，等待者属于各自 STEP/诊断 Scope。每个 source op 有唯一 id、固定 scope/Host generation/目标覆盖/开始时间/截止时间/有限 outcome；每个 waiter 有独立 id/加入时间/截止时间/原因。一个 waiter 取消不取消其他有效需求；后加入者不延长 source 截止时间。
+
+相同合格范围需求合并，目标集合仍有界；不得让不在目标覆盖中的 Bot 借到假证据。同来源实际并发与排队都有硬上限；等待开始副作用的 STEP 优先于提前刷新与纯观察，且有公平性测试。没有等待者/刷新需求则停止；不可合作 source 尚未实际结算时不能丢掉占用并无限启动替代请求。
+
+源失败因果向所有等待者一致传播：`source_deadline`、`source_cancelled`、`source_cancelled_unknown`、`scope_invalidated` 与 `waiter_deadline`、`caller_cancelled` 分开。`rpcCode=1` 只证明取消类别，不自行补出取消者。保留 readId/waiterId/原始年龄/剩余预算/settled-or-unknown。
+
+只有协调器执行只读取证重试。有限次数、剩余预算、抖动/退避、不可恢复错误表由 canonical policy 拥有。Host adapter、CLI、每个 checkpoint 和 SDK 不各开 retry。诊断直读不静默变成执行 fallback。旧 evidence 在硬窗口内且无反证可按策略使用；过期不放行，刷新失败不得续期。
+
+### S10.5 资源/存储/取消合同
+
+一个 modeld 服务程序，Promise facade 仅在宿主边界运行它；不是搜索并删除所有 Promise/runPromise。原生 callback 可有薄桥，但不得拥有隐藏业务循环。Effect pin 保持根 catalog，Host/preload import fence 和 J13 不变。
+
+同一服务保留唯一 ExecutionHistory writer 与数据锁。STEP claim/对应 TURN 元数据有明确原子边界；durable acknowledgement 先于派发。按 TURN/STEP 同步，跨 Bot 的慢 IO 不得无条件持有全局状态更新锁。全局容量/索引变更短而有界，执行外 IO 后提交必须核对身份/revision；不得用“移出锁”制造 TOCTOU。
+
+资源回收移到服务维护路径增量执行；前台只作必要有界压力检查。同一 TURN 的 scope 不被第一 STEP 释放；最后需求释放后不永久保持后台取证。取消/关闭分成 waiter ended、Fiber interrupted、signal sent、source settled、external outcome known/unknown；Scope close 不等于外部事务回滚。
+
+listener → client/STEP 和 service → source op 的父子关系明确。stop 先不接新 work，再有界取消/结算，最后关闭持久存储/listener。缺失 cleanup receipt 是 gap，不是 success。effect 内 defect/interruption 保留；安全日志只做有限投影。
+
+### S10.6 协议、观察与兼容
+
+若 T47 增加 accepted 前的 authority control frame，使用显式下一 wire 版本并更新 Host/modeld/profile 同代矩阵；不偷偷让旧 peer 忽略新执行语义。没有需要的 wire 变化时不得仅为票号盲升版本。
+
+观察至少关联 readId/waiterId/evidenceId/policyId 与既有 Agent/TURN/STEP/Host/service identity；区分 queue/source/shared-wait/backoff/local-fence/storage 时间。来源健康、证据可用、执行等待/拒绝是独立维度。backendAttempts、canonicalEvents、Host tools released、工具实际执行和用户投递仍是独立事实。
+
+事件来自同一状态转换；source cause 不经各层重新猜测。观察失败不改变准入/工具/Provider 结果；claim 存储不是观察日志。metric label 只用有限枚举，IDs 保留在 bounded traces，避免高基数指标与原始凭据/正文泄漏。
+
+modeld 不在线时 CLI 仍能作现有只读诊断；monitor/SQLite 不能 gate 普通执行。执行证据仅可从 live source/当前合格内存对象获取，不可由 SQLite 冷读恢复。
+
+### S10.7 里程碑、Ticket 与退出
+
+| 里程碑 | Tickets | 交付面 | 必须退出 |
+|---|---|---|---|
+| M0 · 责任/骨架冻结 | T43 | native coverage、责任矩阵、source baseline 与可运行 proof 入口 | 仅凭布尔值替代原生授权的假设 |
+| M1 · 唯一服务/取证 owner | T44 → T45 | 服务 acquisition、typed evidence、共享 source/等待者/取消 | 重复启动编排、首等待者拥有 shared RPC |
+| M2 · 执行状态/持久性 | T46 → T47 | 按身份同步、有界回收、等待/门禁/一次终态、必要 wire | 统一 poison、无界前台维护、重复远程策略 |
+| M3 · 观察与制品 | T48 | 各层因果、CLI/monitor、import/pack/privacy、三路对照工具 | 观察推断权限、错代证据、false-green 验收 |
+| M4 · 验证与发布 | T49 | 固定策略、热路径基准、独立 review、受控灰度/回滚 | 旧运行路径和未声明兼容入口 |
+| 非主链 · residue | T50 | 一次 review/fix/re-look 后非阻断遗留 | 不自动派生无限返工/线上动作 |
+
+T43 不要求先取得新的上游能力；当前 gate 保留也可以是合法审查结论。T49 缺少原生/live review 时明确 `not_live_qualified`，不能关闭所有生产门。独立分支是本轮集成线；不自动合回 v2、push、升级真实 Host 或默认模型 spend。局部规格/实现/测试依序提交，线上切换必须满足当前身份/profile、限定对象与明确预算授权。
+
+### S10.8 可执行 Acceptance 与判定边界
+
+T43 建立 `bun run verify:modeld-core -- <case>` 的**有限入口**，调同一生产代码与既有测试；未知 case、空 suite、缺证或仅 stub 返回必须失败。入口在实现前标 planned，不写“测试已通过”。初始 case 为 `baseline`，后续票增加 `lifecycle`、`evidence`、`state`、`authority`、`observation`、`release-offline`。真实资格不是 fake case 的别名。
+
+每个 case 报告版本/固定输入/依赖现实/通过性质与未证明项。fake capabilities 不替换业务程序；原生三路对照在隔离、授权且固定版本环境进行：unpatched official、patched passthrough、patched managed。前三路只生成比较证据，不因某路成功推定其它路径。
+
+| 必需向量 | 验收 oracle |
+|---|---|
+| 5.5/7.75/9 s List | strict policy 拒绝且不续龄；已接受新 policy 下继续但只一次模型 effect |
+| source deadline 与晚加入 waiter | 同一 source cause；waiter 剩余预算真实；不误报权限丢失 |
+| 一等待者取消/所有等待者离开 | 其他需求不受误取消；无需求资源按合同结束 |
+| 不合作 source/慢存储 | 占用仍计数、并发有界；无无限孤儿 RPC/全局无界等待 |
+| scope/Host/service 换代、迟到结果 | 旧证据不能缓存到新代，也不能放行旧请求 |
+| 已观察到 box→temporal→box | 原绑定失效不复活；未观察到的中间态不得声称检测到 |
+| 资格等待后的取消/prepare/auth 改变 | dispatch 前再次 fence；零未授权新增effect |
+| infer 后缺证/工具审批跨窗口 | 不重新 infer；有界缓冲/实际消费边界分别验证 |
+| 重复、写回执未知、崩溃、重启 | durable claim 不丢失到可重发；旧 service/终态拒绝 |
+| 高并发多 Bot | 读取不随 token/工具事件线性放大；按需求合并与公平排队 |
+| journal/SQLite/notify 失败 | 观察 gap，不改变执行权威或伪造正常 |
+| 最后需求完成、服务关闭 | owned waiter/fiber/socket/listener/可释放资源归零；未知外部结果单列 |
+
+性能报告记录 native reads/STEP、取证时间、共享等待、锁等待、存储、event-loop lag、取消延迟和资源峰值；冻结负载与前后两种同现实基线。目标是降低机制数量和依赖放大，不预设未测的 P99/SLA。Node/SDK/Effect/数据库版本保持不变；live raw response、Host dump、机器身份不入公共仓库。
+
+关闭 = 本票代码与旧路径退出 + 正反例 executable proof + 固定提交独立 review。仅有文档、typecheck、旧全库计数或模拟 canary 不算功能完成；仅有功能完成不算当前官方 Host/App/live release-qualified。
