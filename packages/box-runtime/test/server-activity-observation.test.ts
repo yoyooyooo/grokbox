@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { SERVER_ACTIVITY_SHAPED_HOST } from "./server-activity-shaped-host.ts";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,36 +56,8 @@ test("safe projections omit private fields, accessors, invalid numeric facts and
   expect(inspectOwnership({ agentIds: [agentId], snapshot: { activityObservation: { admitted: true } } }).agents[0]?.managedEligibility).toBe("blocked");
 });
 
-// Synthetic shape with only the interoperability seam, not a copied Host bundle.
-const shaped = `
-  const sessions = new Map();
-  const timers = [];
-  const publish = () => {};
-  const settleStale = (agentId, sessionId, session) => {
-    if (sessions.get(sessionId) !== session) return;
-    session.staleTimer = null;
-    session.live = { isRunning: false };
-    publish(agentId);
-  };
-  const armStale = (agentId, sessionId, session, staleInMs) => {
-    if (staleInMs === 123) throw new Error("native-failure");
-    if (!session.live.isRunning) return;
-    if (staleInMs <= 0) { settleStale(agentId, sessionId, session); return; }
-    session.staleTimer = {};
-    timers.push(() => settleStale(agentId, sessionId, session));
-  };
-  const applyLive = (live) => {
-    const sessionId = live.sessionId;
-    const session = { live: { isRunning: live.isRunning || live.hasRunningSubagents }, staleTimer: null };
-    sessions.set(sessionId, session);
-    const ttlMs = live.ttl;
-    const elapsedMs3 = 0;
-    armStale(live.agentId, sessionId, session, ttlMs - elapsedMs3);
-    return session;
-  };
-  const applyClient = (client) => {};
-  return { applyLive, timers, sessions };
-`;
+// The full-profile fixture includes this same executable interoperability seam.
+const shaped = SERVER_ACTIVITY_SHAPED_HOST + "\nreturn createSyntheticServerActivity();\n";
 
 test("applied native-shaped hooks preserve timer ownership, immediate expiry, replacement guards and original exceptions", () => {
   const applied = transformUnchecked(shaped, SERVER_ACTIVITY_OBSERVATION_SLICES);

@@ -42,6 +42,8 @@ describe("L2 Host harness always-emit", () => {
       "alert-input-cleanup",
       "alert-automation-decision",
       "alert-automation-throttle",
+      "server-activity-live-observation",
+      "server-activity-expiry-observation",
       "ownership-read-schema",
       "ownership-read-api",
       "ownership-resume-gate",
