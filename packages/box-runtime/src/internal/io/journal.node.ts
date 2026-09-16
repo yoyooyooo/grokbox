@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { journalRoleAllows, projectSafeReason } from "@grokbox/runtime-kernel/status";
-import { projectModelRecoveryProgress } from "@grokbox/runtime-kernel/contract";
+import { projectModelRecoveryProgress, projectServerActivityEvent } from "@grokbox/runtime-kernel/contract";
 import {
   appendHostStreamRejected,
   appendNdjsonLine,
@@ -55,6 +55,7 @@ export const EVENT_NAMES = [
   "host_stream_rejected",
   "host_seam_stage",
   "host_run_observation",
+  "host_server_activity_observation",
   "host_alert_observation",
   "provider_error_observed",
 ] as const;
@@ -454,6 +455,7 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
 export function projectJournalEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
+  if (input.name === "host_server_activity_observation") return projectServerActivityEvent(input);
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as RuntimeEvent | null;
   if (input.name === "model_recovery_progress") return projectModelRecoveryProgress(input) as RuntimeEvent | null;
   if (input.name === "host_run_observation") return projectRunObservation(input) as RuntimeEvent | null;

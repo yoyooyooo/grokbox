@@ -1,4 +1,5 @@
 import { ADMISSION_WAIT_MS } from "./limits.ts";
+import { projectServerActivitySnapshot } from "./activity-observation.ts";
 import { OWNERSHIP_READ_ERRORS, ownershipReadObservationFromSnapshot, type OwnershipReadObservation } from "./ownership-observation.ts";
 
 // Shared, effect-free ownership facts. Display snapshots are not execution leases.
@@ -67,7 +68,9 @@ export function inspectOwnership(input: { agentIds: string[]; snapshot: unknown;
   const scope = rec(snap.scope);
   const scopeId = typeof scope.id === "string" && /^[a-f0-9]{64}$/.test(scope.id) ? scope.id : null;
   const readObservation = ownershipReadObservationFromSnapshot(snap);
+  const activityObservation = projectServerActivitySnapshot(snap.activityObservation);
   return {
+    ...(activityObservation ? { activityObservation } : {}),
     ...(readObservation ? { readObservation } : {}),
     source: snapshotValid ? snap.source as string : "unavailable",
     observedAt: iso(snap.observedAt), completedAt: iso(snap.completedAt),

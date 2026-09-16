@@ -33,6 +33,14 @@ No-STEP compact / memory still declines to the original session. HostCompact rem
 
 A missing indicator after valid Gateway activity is a consumer/routing/projection investigation, not proof that the whole product is correct. [Composer Working residual](composer-working-status.md) owns the open check; Cmd-Q/Host unload are not automatic fixes for restored routing.
 
+## Server activity diagnostics
+
+Qualified Hosts expose an optional `activityObservation` through `agents ownership <id>` alongside (not as part of) the ownership decision. The bounded witness observes the **existing** native activity/timer owner: raw running and running-subagent flags, default empty session ID, frame timestamps, server stale interval, computed timer delay, actual arm/failure/settlement receipts, and the current native overlay. It neither creates another Watch subscription nor expires, interrupts, or rewrites native activity. The same finite events use `host_server_activity_observation` in the Host journal. Missing hooks, evicted sessions and truncated per-Agent results remain explicit gaps.
+
+`isRunning=true` with `isRunningTurn=false` can be a server-reported child-only state. Empty default session IDs are valid and must not be dropped with truthiness filters. A local Box settlement or an empty local child list does not establish that a temporal Agent has no server-side work. Last frame timestamps, calculated expiry and actual timer receipts must be compared before attributing a continuing projection to local stale-state handling.
+
+A failed optimistic send is not evidence of Bot execution. It can remain in the App send journal without any matching server or Host transcript entry; do not resend or delete it to diagnose the indicator. Reload/restart changing its position proves a difference in reconstructed client projection, not delivery. Native App pending-send state and server child activity must be investigated separately.
+
 ## Evidence
 
 - Pre-bridge diagnose (2026-09-11): machine-local `PRIVATE_EVIDENCE` — mid-turn `isRunningTurn=true`, `currentActivity` absent; not tray. **History**, not the current 8-slice compile.

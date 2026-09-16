@@ -3,6 +3,7 @@ import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
 import { projectAlertEvent } from "@grokbox/runtime-kernel/alerts";
+import { projectServerActivityEvent } from "@grokbox/runtime-kernel/contract";
 import { projectStreamDiagnostic, projectStreamSummary, projectFailureSummary, type FailureSummary } from "@grokbox/runtime-kernel/contract";
 import { noteUnprojectedJournalEvent, startJournalWrite, type JournalWriterRole } from "./journal-health.node.ts";
 import { projectRunObservation } from "./run-observation.ts";
@@ -331,6 +332,7 @@ function runLinks(input: Record<string, unknown>): Record<string, string> {
 
 function projectHostEvent(input: unknown): Record<string, unknown> | null {
   if (!isRecord(input) || typeof input.name !== "string" || !journalRoleAllows("host", input.name)) return null;
+  if (input.name === "host_server_activity_observation") return projectServerActivityEvent(input);
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as Record<string, unknown> | null;
   if (input.name === "host_run_observation") return projectRunObservation(input) as unknown as Record<string, unknown> | null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);

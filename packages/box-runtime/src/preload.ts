@@ -11,6 +11,7 @@ import { bindHostSessionHook } from "./internal/host/session-hook.ts";
 import { createRunObserver, HOST_RUN_OBSERVATION_SYMBOL } from "./internal/host/run-observation.ts";
 import { appendHostJournal } from "./internal/host/terminal-journal.node.ts";
 import { createAlertObserver, HOST_ALERT_OBSERVATION_SYMBOL } from "./internal/host/alert-observation.ts";
+import { createServerActivityObserver, HOST_SERVER_ACTIVITY_SYMBOL } from "./internal/host/server-activity-observation.ts";
 import { deferManagedHostResume } from "./internal/host/selection.node.ts";
 import { bindHostCompactHook, isHostManagedRootActive, recordHostManagedStepFailure, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
 import { bindHostOwnershipRead, HOST_OWNERSHIP_READ_SYMBOL } from "./internal/host/ownership-read.ts";
@@ -72,6 +73,16 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed);
   // Child Node processes may inherit preload configuration. Allocate an Alert
   // observer only when this process actually compiles the qualified target.
+  let activityObserverInstalled = false;
+  const installServerActivityObservation = () => {
+    if (activityObserverInstalled) return;
+    activityObserverInstalled = true;
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_SERVER_ACTIVITY_SYMBOL)] = createServerActivityObserver({
+      generation: binding?.generationId ?? "unbound",
+      instrumented: ["server-activity-live-observation", "server-activity-expiry-observation"].every(id => profile.slices.some(slice => slice.id === id)),
+      emit: event => { void appendHostJournal(runRoot, event); },
+    });
+  };
   let alertObserverInstalled = false;
   const installAlertObservation = () => {
     if (alertObserverInstalled || admittedMode !== "route") return;
@@ -103,7 +114,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     profile,
     argv: process.argv,
     allowLiveHost,
-    onTransforming: installAlertObservation,
+    onTransforming: () => { installAlertObservation(); installServerActivityObservation(); },
     onTransformed: (actual) => {
       if (!markerPath) return;
       const staging = `${markerPath}.${randomUUID()}.tmp`;

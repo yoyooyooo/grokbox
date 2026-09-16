@@ -2,7 +2,7 @@ import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { containsRetiredHarnessWrite } from "./harness-stick.ts";
 
 export const REQUIRED_SLICE_IDS = ["create-session", "agent-id"] as const;
-export const OBSERVATION_SLICE_IDS = ["run-queue-observation", "group-member-observation", "group-buffer-observation", "alert-manager-observation", "alert-main-decision", "alert-input-cleanup", "alert-automation-decision", "alert-automation-throttle"] as const;
+export const OBSERVATION_SLICE_IDS = ["server-activity-live-observation", "server-activity-expiry-observation", "run-queue-observation", "group-member-observation", "group-buffer-observation", "alert-manager-observation", "alert-main-decision", "alert-input-cleanup", "alert-automation-decision", "alert-automation-throttle"] as const;
 export const OPTIONAL_SLICE_IDS = [
   "ownership-read-schema",
   "ownership-read-api",

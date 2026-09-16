@@ -1,6 +1,7 @@
 import type { SlicePatch } from "./profile.ts";
 import { HOST_OWNERSHIP_READ_SYMBOL } from "./ownership-read.ts";
 import { HOST_RESUME_GATE_SYMBOL } from "./profile.ts";
+import { HOST_SERVER_ACTIVITY_SYMBOL } from "./server-activity-observation.ts";
 
 // A narrowly scoped read extension of the existing Gateway. The native client
 // owns authentication. No credential or generic RPC dispatch is exported.
@@ -26,7 +27,7 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
       if (grokboxOwnershipAgentIds === undefined) return result;
       const read = globalThis[Symbol.for("${HOST_OWNERSHIP_READ_SYMBOL}")];
       if (typeof read !== "function") return result;
-      return { ...result, grokboxOwnership: await read({
+      const observed = await read({
         agentIds: grokboxOwnershipAgentIds,
         listServer: async (signal) => {
           const auth = deps.extensions.api("auth");
@@ -56,7 +57,14 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
             machine: await auth.getMachineId()
           };
         }
-      }) };
+      });
+      let activityObservation;
+      try {
+        activityObservation = globalThis[Symbol.for("${HOST_SERVER_ACTIVITY_SYMBOL}")]?.snapshot(
+          grokboxOwnershipAgentIds, agentId => deps.extensions.api("server-agent-proxy").activityOverlayFor(agentId)
+        );
+      } catch {}
+      return { ...result, grokboxOwnership: { ...observed, ...(activityObservation ? { activityObservation } : {}) } };
     },
 `,
   },
