@@ -41,11 +41,9 @@ Qualified Hosts expose an optional `activityObservation` through `agents ownersh
 
 ### Child-only activity and explicit stopping
 
-A fresh server frame with `isRunning=false` and `hasRunningSubagents=true` is not proof of a stuck local timer. Repeated server frames can legitimately renew the native expiry interval even when the roster's last-message timestamp is unchanged. After a Host restart, wait for a real server frame; an absent overlay during reconnection is not evidence that server work stopped.
+Fresh child-only frames can renew native expiry while the parent turn is idle. A parent interrupt, an empty local task list, or an absent overlay during reconnection cannot establish that temporal children stopped.
 
-A parent-run interrupt returning `hadActiveRun=false` means only that no parent run was interrupted. It does not establish that child tasks stopped. Local `getSubagents` / `getAsyncTasks` inspect local runners, not the temporal execution owner's task registry. External worker completion likewise does not retire an independent native child that keeps watching for its result.
-
-When the user explicitly authorizes stopping that Bot's work, use the native execution owner's `CheckSubagent` without an id, then `StopSubagent` for confirmed running children. Background shell/watch cleanup requires exact task identities and verified ownership; do not kill unrelated workers or guess PIDs. A separate, explicit maintenance message may be needed when no operator API exposes that owner's child controls; it is a new authorized operation, not an automatic resend of a failed user message. A maintenance reply is only a report: verify the later server frame has both flags false, the current overlay/roster is idle, and the state remains idle across the relevant expiry window. Do not change harness, clear an overlay, or disable valid activity reporting to force an idle result. App rendering still needs its own evidence.
+The [持续 Working 操作手册](working-state-recovery.md) owns the reusable triage branches, explicit stop scope, native-owner cleanup, maintenance-message template, independent verification and recurrence limits. This map owns the surface meanings; the runbook does not change ownership, add automatic task cancellation, or turn Gateway evidence into App pixel proof.
 
 A failed optimistic send is not evidence of Bot execution. It can remain in the App send journal without any matching server or Host transcript entry; do not resend or delete it to diagnose the indicator. Reload/restart changing its position proves a difference in reconstructed client projection, not delivery. Native App pending-send state and server child activity must be investigated separately.
 

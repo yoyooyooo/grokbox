@@ -4,11 +4,15 @@ Advanced, read-only follow-up when [send](send.md) leaves missing/conflicting ev
 
 ## Correlate the original work
 
+For confirmed box-local execution, correlate modeld evidence:
+
 ```bash
 grokbox history outcome <agent-id> --nonce <clientNonce> --runtime --json
 # Alternative: use the exact model STEP from an error banner.
 grokbox history outcome <agent-id> --step-id <step-id> --runtime --json
 ```
+
+For a confirmed temporal route, query the original nonce with `grokbox history outcome <agent-id> --nonce <clientNonce> --expect-harness temporal --json`, without `--runtime`; local modeld history does not describe server execution.
 
 Choose one selector. A model STEP is not necessarily the first display request-id. `--request-id` looks up the same send, not a new operation. A null request ID can accompany an early failure. Never manufacture a new send to obtain an observation handle.
 
@@ -28,8 +32,16 @@ Native trigger/lineage facts do not authorize a retry. Released tool materials a
 
 ## A Bot remains Working after its parent turn ends
 
-Read `grokbox agents ownership <agent-id> --json`. A qualified Host may return `activityObservation` separately from the ownership decision. Compare the raw session's `isRunning`, `hasRunningSubagents`, server timestamps, TTL and timer receipt with the current overlay. A fresh child-only frame can keep the sidebar active while the current conversation is idle. Local task lists do not enumerate a temporal Bot's server-side children; an external worker ending does not stop a native listener watching it. `hadActiveRun=false` from a parent interrupt is not proof that children stopped.
+First preserve the Agent/session, visible surface, timestamp and original send identity. Read `grokbox agents show <agent-id> --json` and `grokbox agents ownership <agent-id> --json`. A qualified Host may return `activityObservation` separately from the ownership decision. Confirm the loaded Host generation and `instrumented`; a new source commit is not a deployed observer.
 
-Do not fix this by changing harness or forcing running=false. With explicit stop authorization, the Bot's native execution owner must enumerate and stop its own children/background waits. Then verify a later server frame and the roster are idle beyond the relevant TTL; do not treat a maintenance reply or a temporarily absent overlay after restart as proof. A failed/stuck optimistic message is a separate send-journal issue: preserve its nonce and never resend it as a diagnostic shortcut.
+Classify before changing anything: a fresh session frame with `isRunning=false` / `hasRunningSubagents=true` calls for the native child owner; an overdue frame with a still-busy current overlay calls for timer/reconnect investigation; a confirmed idle producer with a spinning App calls for client-state investigation. Missing fields, truncated sessions and an absent overlay during reconnect mean incomplete evidence, not idle. Keep the valid empty default session ID. Compare actual server timestamps/TTL, not roster last-message time or the query timestamp; retained session witnesses are not a current child-task registry.
+
+Local task lists do not enumerate temporal server children. External worker completion does not stop its native listener, and `hadActiveRun=false` is not a child-stop receipt. With **current explicit stop authorization**, have the real native execution owner enumerate (`CheckSubagent` without an id) and stop only confirmed in-scope children (`StopSubagent`, using that runtime's actual schema). These are native tools, not grokbox CLI commands. Clean owned background waits through verified task handles; never bulk-kill by command name or a guessed/stale PID. Report unavailable capabilities and remaining unknowns.
+
+Where no external child-control API exists, a separately authorized maintenance message can ask that owner to clean up without continuing business work or creating new listeners. It is a new model operation with a new recorded nonce, not a resend of the failed message. An unknown send result requires querying the same nonce, not sending again. Do not treat the maintenance reply, `accepted`, or a temporary post-restart idle view as successful cleanup.
+
+Verify a later explicit server idle frame, the current overlay and roster, then take bounded follow-up observations across the relevant TTL. Missing continuous coverage limits the claim to observed times. App rendering needs separate evidence; a failed/stuck optimistic message remains a separate send-journal issue. Do not change harness or force running=false. Reboot/upgrade only to repair a separately established deployment/observation gap, under the [adopt](adopt.md) authorization rules. New legitimate work is not a relapse and does not authorize another stop.
+
+Maintainers with a source checkout: `docs/maintainers/working-state-recovery.md` contains the full runbook, maintenance template and recurrence/prevention limits. It is not shipped in the npm package; the operational boundaries above remain usable without that file.
 
 Stop after the authorized observation budget. Share the redacted state, selectors, gap/rejection codes, and what remains unproved; do not silently replay business work, switch Host, or start a persistent monitor. Host failures route to [troubleshoot](troubleshoot.md); deliberate model-switch acceptance lives in [validation](validation.md).

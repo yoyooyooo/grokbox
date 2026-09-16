@@ -18,6 +18,7 @@ Read the failing check, `error.code`, and `next`. Keep exact commands for execut
 | Daemon `down` | grokbox services are off. `on` is a change, not a status probe. | [services](services.md) |
 | Model use rejects ownership | Inspect ownership/error cause before changing anything. | [ownership](ownership.md) |
 | Send is `failed`, `recorded`, or `unknown` | Query the original nonce; do not resend to check status. | [send](send.md), then [diagnostics](diagnostics.md) for gaps |
+| Bot keeps Working after a reported stop | Separate parent turn, native children, external workers and App state; do not start with restart or another business send. | [diagnostics](diagnostics.md#a-bot-remains-working-after-its-parent-turn-ends) |
 | Title differs from the assignment | Treat it as display evidence, not a silent model rollback. | [label](label.md) |
 
 ## Host interruption and stopping rules

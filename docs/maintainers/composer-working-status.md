@@ -2,13 +2,13 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**Role: open desktop Working diagnosis and acceptance boundary.** Surface ownership stays in [Host / App live projections](host-app-projections.md); execution scope and acceptance are [T36](../tickets/T36-composer-working-activity.md). This page is not authorization to unload Host, clear a circuit/cache, or declare live UI success.
+**Role: open desktop Working diagnosis and acceptance boundary.** Surface ownership stays in [Host / App live projections](host-app-projections.md); execution scope and acceptance are [T36](../tickets/T36-composer-working-activity.md). For persistent sidebar activity, first use the [Working recovery runbook](working-state-recovery.md) to distinguish actual child work from stale/client projection. This page is not authorization to unload Host, clear a circuit/cache, or declare live UI success.
 
 ## Current understanding — 2026-09-12
 
 The current research now reaches the actual App 0.47 renderer, not only Host activity fields. Generic Working/typing comes from `Ibt/Nbt` (`isRunning`, `isComposingMessage`); named activity is optional enrichment. Final visibility also includes pending/failed sends, permission widgets, current-session selection and group state. Thus **missing currentActivity does not prove generic Working must be missing**, and a present field does not prove the indicator is mounted.
 
-The managed `activity-bridge` emits a Host-shaped first-chunk update through the existing sink. This repairs a real producer-side activity gap, but does not prove correct App routing, message streaming, all activity transitions or termination. Do not conclude all remaining behavior is cosmetic after one Gateway thinking field appears.
+The historical managed `activity-bridge` emitted a Host-shaped first-chunk update through a sink. The current slice instead preserves the native run-owned callback without synthesizing thinking or installing a global last-writer sink; see the current source description in [Host / App live projections](host-app-projections.md). The older Gateway receipt does not qualify the current bridge, App routing, message streaming or termination. Do not conclude all remaining behavior is cosmetic after one Gateway thinking field appears.
 
 History and live state have separate streams but shared routing risk: an App row classified temporal can take server `agent-activity`, replacing run/composing/activity fields. Cached temporal restoration can change that classification even while Box profile remains box. See [Transcript harness](transcript-harness-box-vs-server.md); private original-source map, test0 distinction and 7-assertion replay live in grok-bot `private interoperability notes (not distributed)`.
 
@@ -20,7 +20,7 @@ History and live state have separate streams but shared routing risk: an App row
 | Generic current-chat mode is running/composing based | App `Ibt/Nbt`; original-function replay | React mount has additional conditions |
 | Named activity is Host activity or eligible server overlay | Host activity transitions; App `rft/aft/yW` | Not a run completion fact |
 | Per-message streaming is entry-scoped | `message.isStreaming` / `send-message.streaming` | One message stopping does not end the entire run |
-| Managed first chunk can publish thinking activity | Existing bridge/test and prior Gateway receipt | Not exact App pixel proof or full activity lifecycle |
+| Historical managed first chunk published thinking activity | Prior bridge/Gateway receipt | Not the current bridge contract, exact App pixel proof or full activity lifecycle |
 | Temporal overlay can clear a prior Box activity | Original `yW` replay | Does not prove every observed missing spinner came from this branch |
 
 Older machine-local receipts `PRIVATE_EVIDENCE` and `PRIVATE_EVIDENCE` preserve pre-bridge and post-bridge Gateway observations. PIDs REDACTED_PROCESS_ID and their old compile hashes are historical, not current running inventory. Do not use them to qualify the latest preload.
