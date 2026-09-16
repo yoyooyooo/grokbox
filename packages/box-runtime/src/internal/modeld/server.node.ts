@@ -138,11 +138,13 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
   });
 }
 
-function watchDisconnect(socket: Socket, onClose: () => void): () => void {
+function watchDisconnect(socket: Socket, onClose: (kind: "peer_end" | "peer_close" | "socket_error") => void): () => void {
   let fired = false;
-  const fire = () => { if (!fired) { fired = true; onClose(); } };
-  socket.on("end", fire); socket.on("close", fire); socket.on("error", fire);
-  return () => { socket.off("end", fire); socket.off("close", fire); socket.off("error", fire); };
+  const fire = (kind: "peer_end" | "peer_close" | "socket_error") => { if (!fired) { fired = true; onClose(kind); } };
+  const end = () => fire("peer_end"), close = () => fire("peer_close"), error = () => fire("socket_error");
+  socket.on("end", end); socket.on("close", close); socket.on("error", error);
+  if (socket.destroyed) close();
+  return () => { socket.off("end", end); socket.off("close", close); socket.off("error", error); };
 }
 
 function emit(socket: Socket, value: unknown) {
@@ -192,11 +194,13 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 
     const request = parsed.request;
     // One STEP wall deadline, including the now network-backed ownership check.
-    const startedAt = performance.now();
-    const deadlineAt = startedAt + REQUEST_WALL_DEADLINE_MS;
+    const startedTick = performance.now();
+    const startedAt = new Date().toISOString();
+    const deadlineAt = startedTick + REQUEST_WALL_DEADLINE_MS;
     const observeStep = options.observeStep;
-    let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0 };
+    let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0, startedAt };
     let backendAttempts = 0;
+    const attempts: NonNullable<ModeldStepOutcome["attempts"]> = [];
     let readRecovery: (() => ProviderRecoveryState | undefined) | undefined;
     let recoverySequence = 0;
     const withFailureSummary = (value: ModeldStepOutcome): ModeldStepOutcome => {
@@ -219,7 +223,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           ? { ...observation, outcome: interrupted ? "cancelled" as const : "error" as const, phase: "internal" as const, failureCode: exitFailure }
           : observation), cleanup: { ...observation.cleanup, exitFailure } };
       }
-      observation = withFailureSummary({ ...observation, at: observation.at ?? new Date().toISOString(), durationMs: Math.max(0, Math.floor(performance.now() - startedAt)), backendAttempts,
+      observation = withFailureSummary({ ...observation, at: observation.at ?? new Date().toISOString(), startedAt,
+        durationMs: Math.max(0, Math.floor(performance.now() - startedTick)), backendAttempts, attempts,
         ...(readRecovery?.() ? { recovery: readRecovery!() } : {}) });
       return Effect.gen(function* () {
         const execution = yield* inferenceCapacity;
@@ -239,7 +244,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       void Effect.runPromise(Deferred.succeed(late, undefined).pipe(Effect.ignore));
     };
     if (incoming.extra || incoming.overflow) incoming.onLate();
-    const unwatch = watchDisconnect(socket, () => {
+    const unwatch = watchDisconnect(socket, (kind) => {
+      observation.transport = { side: "host_modeld_ipc", close: kind, at: new Date().toISOString() };
       void Effect.runPromise(Deferred.succeed(disconnected, undefined).pipe(Effect.ignore));
     });
     yield* Effect.addFinalizer(() => Effect.sync(unwatch));
@@ -248,7 +254,19 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     const selectedBackend = withOverflowCanary(backend, parsed.request.agentId, options.env ?? process.env);
     const compactBackend: typeof backend = { ...selectedBackend, infer: (...args) => Stream.unwrap(Effect.sync(() => {
       backendAttempts += 1;
-      return selectedBackend.infer(...args);
+      const attempt: NonNullable<ModeldStepOutcome["attempts"]>[number] = { index: backendAttempts - 1 };
+      if (attempts.length < 4) attempts.push(attempt);
+      observation.attempts = attempts;
+      return selectedBackend.infer(...args).pipe(
+        Stream.tap(event => Effect.sync(() => {
+          if (event.type === "backend_finish" && event.stream) attempt.stream = event.stream;
+        })),
+        Stream.tapError(error => Effect.sync(() => {
+          const detected = modeldFailureOutcome(error, "provider", 0);
+          attempt.failureCode = detected.failureCode;
+          attempt.diagnostic = detected.diagnostic;
+        })),
+      );
     })) };
     const admitted = yield* Effect.result(
       runStep(parsed.request).pipe(
@@ -329,7 +347,17 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     );
     const clientDisconnected = yield* Deferred.isDone(disconnected);
     const failure = collected._tag === "Failure" ? modeldFailureOutcome(collected.failure, "provider", sequence) : undefined;
-    observation = withFailureSummary({ ...withTransportOutcome(observation, failure, clientDisconnected), at: observation.at ?? new Date().toISOString() });
+    if (failure && attempts.length > 0 && attempts.length === backendAttempts) {
+      const attempt = attempts[attempts.length - 1]!;
+      attempt.failureCode = failure.failureCode;
+      attempt.diagnostic = failure.diagnostic;
+    }
+    observation = withFailureSummary({
+      ...withTransportOutcome(observation, failure, clientDisconnected),
+      at: observation.at ?? new Date().toISOString(),
+      attempts,
+      ...(failure?.diagnostic?.stream && !observation.stream ? { stream: failure.diagnostic.stream } : {}),
+    });
     if (clientDisconnected) {
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
       return;

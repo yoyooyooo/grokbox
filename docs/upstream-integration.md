@@ -82,6 +82,12 @@ The reviewed memory-extraction and interval-episode sites each obtain a new exec
 
 See [E07 Host admission](maintainers/e07-path-b-host-admission.md) and `e07-host-*.test.ts` for exact-apply, passthrough, cancellation, source/packed proof and remaining native qualification. Host continues to own all Memory policy and writes. No native prompts or consumer implementation are a public dependency.
 
+## Native turn observation fields
+
+The currently inspected Host main-session options already carry optional `requestSource`, subagent flags and `lineage`; observing them does not require another code-injection slice. The supported source labels are `turn`, `agent`, `automation`, `handoff-resume`, `connector`, and `voice-call`; other values remain unknown. Native lineage contains `parentRequestId`, `rootParentRequestId`, and optionally `parentAgentToolCallId`. Only UUID-shaped native request identities and tool-ID presence are projected. They are never relabeled as kernel STEP/TURN identities or used to authorize a retry, and missing lineage is not reconstructed from a display group or adjacent timestamp. Synthetic projection tests live in `turn-observation.test.ts`; these are optional version-qualified observation facts, not proof of every native trigger or native checkpoint transaction.
+
+The native interaction callback owns both its `streamWatchdog.noteUpdate` and `host.emitUpdate` receiver. It must remain run-owned. The managed first-chunk observation no longer injects a synthetic thinking update through a process-global last-listener callback; such a callback can attribute one Agent's work to another Agent's watchdog/UI.
+
 ## Freshness
 
 Revalidate this document and the corresponding tests when discovery shape, Gateway routes or schemas, event framing, credential storage, token scope, or host lifecycle changes. A real read-only observation can invalidate an assumption but cannot replace fake-provider refusal and redaction coverage.

@@ -46,7 +46,12 @@ function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit): typeo
       throw new BackendFailure("envelope_too_large");
     }
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    try { audit.evidence.increment("httpCalls"); return auditedProviderResponse(await fetchImpl(input, init), audit); }
+    try {
+      audit.evidence.increment("httpCalls");
+      // Retain the staged observation name with the same actual-call boundary.
+      audit.evidence.increment("providerFetchCalls");
+      return auditedProviderResponse(await fetchImpl(input, init), audit);
+    }
     catch (error) { throw backendFailureFromUnknown(error, "provider"); }
   };
   return Object.assign(run, { preconnect: fetchImpl.preconnect ?? run }) as typeof fetch;

@@ -99,7 +99,7 @@ export function specializeExecutionFailure(failure: Record<string, unknown>, eve
   const modeld = events.find(event => event.name === "model_step_terminal" && sameExecution(failure, event)
     && ["error", "cancelled"].includes(String(event.outcome)));
   if (modeld?.failureCode === "not_admitted") return { ...failure, reportedCode: failure.errorCode, reportedStage: failure.stage, errorCode: "not_admitted", reason: "authority-rejected", stage: "authority" };
-  if (modeld?.failureCode === "stream_invalid") return { ...failure, errorCode: "invalid_stream", reason: "invalid-stream", stage: "normalize" };
+  if (modeld?.failureCode === "stream_invalid") return { ...failure, reportedCode: failure.errorCode, reportedStage: failure.stage, errorCode: "invalid_stream", reason: "invalid-stream", stage: "normalize" };
   if (modeld?.phase === "admission" && ["capacity", "ledger_unavailable"].includes(String(modeld.failureCode))) {
     return { ...failure, reportedCode: failure.errorCode, reportedStage: failure.stage, errorCode: modeld.failureCode,
       reason: modeld.failureCode === "capacity" ? "local-capacity" : "execution-history-unavailable", stage: "admit" };

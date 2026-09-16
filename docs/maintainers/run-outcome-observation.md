@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-当前用途：生产 grok-4.6 的 CLI 自测试闭环。合同归 [产品合同 §7.3/§7.4](../product-contract.md) 与 [Spec S0.4.1](../roadmap/box-runtime-impl-spec.md)，Host 流合同归 [T26](../tickets/T26-runtime-host-fullstream.md)，发布事实归 [readiness](t32-live-enable-readiness.md)。本页是观测入口/含义，不另定义执行器、重试器或任务数据库。投影实现是 `packages/cli/src/outcome.ts`；`SEND_OUTCOME_STATES` 或 nonce-first join 变更时重审本页。
+当前用途：本机 managed 推理的 STEP 排障、失败归因和有界证据查询。合同归 [产品合同 §7.3/§7.4](../product-contract.md) 与 [Spec S0.4.1](../roadmap/box-runtime-impl-spec.md)，Host 流合同归 [T26](../tickets/T26-runtime-host-fullstream.md)，发布事实归 [readiness](t32-live-enable-readiness.md)。本页是观测入口/含义，不另定义执行器、重试器或任务数据库。投影实现是 `packages/cli/src/outcome.ts`；`SEND_OUTCOME_STATES` 或 nonce-first join 变更时重审本页。
 
 ## v5 失败摘要与受控模型恢复
 
@@ -49,18 +49,20 @@ grokbox send <agent-id> --text '<text>' --json
 grokbox history outcome <agent-id> --nonce <clientNonce> --runtime [--wait-ms 60000] --json
 ```
 
-`--runtime` 把本机 journal 当作失败权威。查询顶层 `ok:true` 只表示查询成功，必须读 `data.state`。若 modeld 是用显式 `GROKBOX_RUN_ROOT` 拉起的（活狗粮是 `$HOME/.grokbox/run`），`history outcome --runtime` 必须用同一个值；根选错、不可读、schema 不识别与窗口缺失是不同缺口，不能只凭 `runtimeGap=invalid` 断言根选错。旧 reader 还会把超过 1 MiB 的整本日志拒读；当前改为有界后缀读取，详见下节。**outcome 无 `accepted` 成功词**；旧 `acceptedObserved` 已改为 `echoObserved`。`data.requestId` 在早期 admit 失败时可为 null，这不表示没发出去。
+`--runtime` 把本机 journal 当作失败权威。查询顶层 `ok:true` 只表示查询成功，必须读 `data.state`、`assessment` 与 `evidence`。若 modeld 是用显式 `GROKBOX_RUN_ROOT` 拉起的（活狗粮是 `$HOME/.grokbox/run`），`history outcome --runtime` 必须用同一个值；以 `evidence.runtimeRoot` 核对实际读取根。根选错、不可读、schema 不识别与窗口缺失是不同缺口，不能只凭 `runtimeGap=invalid` 断言根选错。旧 reader 还会把超过 1 MiB 的整本日志拒读；当前改为有界后缀读取，详见下节。**outcome 无 `accepted` 成功词**；旧 `acceptedObserved` 已改为 `echoObserved`。`data.requestId` 在早期 admit 失败时可为 null，这不表示没发出去。
 
 | `data.state` | 含义 |
 |---|---|
 | `recorded` | 仅有 user echo 或 journal bind，无终态证据。等待中。不是成功。 |
 | `failed` | 命中 durable 拒绝 / 相关 terminal error / 相关 live tray。空 `alerts` 不得改回 `recorded`。 |
 | `progress` | 有 delivery，`--expect-text` 未匹配 |
-| `delivered` | 有同请求 send-message |
+| `delivered` | 有同请求 send-message；显式请求 runtime 时，还要求本次 runtime 读取没有已知缺口。仍不证明 run 完成 |
 | `expected_result_observed` | 精确预期内容出现。`executionCompleted` 仍为 `not_proven` |
 | `unknown` | 证据缺失、冲突、harness 变化或协议未知 |
 
 默认 `--wait-for delivery` 只把 `failed|delivered|expected_result_observed` 当 settled；`recorded` 继续等。`--wait-for execution --runtime` 不因进度 SendToUser 提前结束：目前仅明确失败可提前结算，否则等待至有界 deadline，不制造原生 run-completed 事实。`executionCompleted:"not_proven"` 始终明确：该命令没有另造原生 run-completed 权威。预期内容只能验证业务断言，不能替代工具是否实际运行、模型身份、checkpoint/reload 等独立证据。
+
+已知 runtime 缺口不会抹掉已观察到的 `delivery`，但没有明确失败时，顶层保持 `unknown`，避免在进度回复上提前结束排障。已确定身份且实际看到的失败仍为 `failed`，即使其余窗口不完整；不把 `runtimeGap` 一律覆盖成 unknown。`assessment.delivery/mainRun/auxiliary/evidence` 分开表达投递、主运行、辅助推理和证据质量；工具材料释放数量不是工具执行凭据，`toolExecution/checkpointCommit` 未接通时明确 `not_instrumented`。
 
 Join（与投影器一致，不另造状态机）：echo 按 nonce 或 requestId；journal 按 `clientNonce` 命中或已在种子里的 turnId/stepId；trays 只按种子里的 requestId/stepId 关联，禁止只按 agentId 模糊匹配。身份冲突 → `unknown`；关联 durable 拒绝 / terminal / live tray → `failed`；runtime/告警证据有缺口且没有明确失败 → `unknown`（仍保留真实 delivery）；证据可用时 delivery → `delivered` / `progress` / `expected_result_observed`；仅 echo 或 journal bind → `recorded`；否则 `unknown`。transcript 窗口没有 echo、但 journal 已有该 nonce 的 reject 时，仍是 `failed`。
 
@@ -81,6 +83,9 @@ grokbox history outcome <agent-id> --nonce <clientNonce> \
 
 # 次查找：从已有 requestId 解析到同一 SendAttempt，不是第二主键。
 grokbox history outcome <agent-id> --request-id <id> --runtime --json
+
+# 截图给的是失败 STEP，而不是首个 display request-id；不要混用。
+grokbox history outcome <agent-id> --step-id <step-id> --runtime --json
 ```
 
 `--runtime` 只允许明确本机 local/auto Profile，拒绝 remote/SSH/daemon/gateway Profile，避免用本机日志给远端任务背书。普通 alerts/outcome 通过 typed Gateway 和 daemon 两种实现；daemon 添加 `grok.alerts.read`，旧 daemon 未提供时不能伪造支持。
@@ -89,7 +94,47 @@ grokbox history outcome <agent-id> --request-id <id> --runtime --json
 
 观测等待最多120秒，RPC受剩余预算约束，每次最多5页/1000项，间隔2秒，不在超时后发最后一轮多余请求。匹配失败优先于已发进度；Host明确拒绝优先于其后 modeld 的断连取消。Gateway代变化、nonce关联多个request或未知告警结构保持unknown。无原始body/密钥/操作action进告警投影。事件脱敏保留安全requestId/clientNonce、started/ended身份信息；ended仍不是成功。
 
-## 这次 App 反例及永久修复
+## STEP 事故观测闭环（当前实现）
+
+`--nonce`、`--request-id`、`--step-id` 必须三选一，后者要求 `--runtime`。STEP 查找只沿已写入的 Agent/STEP/TURN 身份扩展；不从同名 Bot、时间邻近、正文或 native parentRequestId 猜关联。该命令仍需要当前 Gateway/roster 来限定目标与 transcript route，不是一个可离线查询已删除 Bot 的档案工具。
+
+### 失败诊断与流摘要
+
+`normalizeCause` 和 `rejectSite` 来自实际拒绝分支，不解析自由错误文本。可区分：未声明工具、SDK invalid tool、工具身份冲突/清洗碰撞、完整参数非法/前后不一致、结束时未闭合工具、缺少或不支持的 finish、坏事件、终态 binding 不匹配、预算超限等。外层 `invalid_stream` 文案可保持稳定，精确诊断通过 kernel → backend → modeld → journal 白名单 → CLI 贯通。
+
+每个 provider attempt 使用独立 `StreamEvidence`：固定类型计数、字节数、相对时间、最近 32 条事件描述。成功只附摘要，失败保留相同有界诊断；不保存事件正文、推理文本、参数内容、工具名称或原始异常。未观测字段保持缺失，不伪造零。真实 HTTP fetch 次数与实际 `attempts` 由 modeld 记录，Host 不再把所有 STEP 硬写为 attempt 0。
+
+Provider SSE 审核在 SDK 丢失信息之前记录受限 finish 原因，并校验完整工具参数。合法 JSON 前缀加非法尾部不能通过，特殊资源/上游中断与用户取消分别分类；不补 JSON、不丢多工具调用、不重试、不合成成功终态。SDK 的内部主动预读也受当前消费需求门控，传输字节/帧/参数有界；已有 Host 串行门仍在完整成功前暂存全部工具材料。
+
+本地 IPC 的 EOF、deadline、caller abort 与 socket/write error 使用 `transport_error / transport` 和 `host_modeld_ipc` 侧别。provider body 错误使用 `provider_http`。先检测到的具体 backend 失败不会被随后连接关闭/清理改写；其后事件放入 `followup/transport`。这不宣称知道远端因果顺序。
+
+### 时间、触发来源与构建身份
+
+`observation.writerId/sequence/eventId` 建立生产者本地顺序；`observedAt` 是采集时刻，`startedAt/detectedAt/durationMs` 是本次工作生命周期。不同进程的 monotonic 值不可直接比较，`runtimeTrace.order` 明确为追加顺序而非跨进程因果顺序。
+
+Host 的现有 `sessionOptions.requestSource/lineage` 被投影为 `nativeTurn`，无需扩大 createSession 接缝。source 仅接受 `turn/agent/automation/handoff-resume/connector/voice-call`；未知值标 unknown。原生 parent/root request UUID 可保留，但绝不重命名为 kernel STEP/TURN；原生工具调用 ID 仅记录存在性，不复制潜在控制字符/正文。缺失字段不以正文推断；后续新 TURN 不是自动认定的重试。
+
+打包构建向 CLI 与 preload 注入同一个公共源码/lock/build-input digest，以及编译器和实际安装的 SDK 版本；源码直跑标 `kind:source`。它是构建输入指纹，不是产物自身 SHA。部署仍需核对真正加载的 CLI/preload 文件摘要、Host profile/source 与 service epoch；重建 dist 不重启服务。
+
+### Reader、retention 与 writer 健康
+
+普通 tail 最多读 1 MiB；精确请求查找最多读 16 MiB，最多返回 4096 条相关事件。只打开 regular、no-follow 描述符并固定读取起始大小；支持 UTF-8 切边、并发末行未完成和轮转/缩短检测。每行最多 64 KiB，扫描最多 65536 行。`runtimeCoverage` 报告字节范围、prefix omission、partial append 和变化情况；未找到是窗口内未找到，不证明不存在。
+
+watchdog 的既有 compact 入口保留近期控制/流事件，并额外优先保留最多 128 个、七天内事故 TURN 的失败核心、hook/STEP 身份与有限上下文；总保留字节上限 8 MiB。年龄、数量或容量外没有永存承诺。读取不 compact，compaction 不触碰执行去重账本。准备/应用 receipt 先后发布，跨文件不是事务；中途失败保留 `prepared` 不确定性。查询命中精简过的旧前缀时显示 `retained_subset`，不能把事故摘要当成完整执行记录。后续新追加、未被精简的请求不继承旧前缀缺口。
+
+writer 健康快照在 `state/journal-health/`，与可能损坏的事件日志分开。记录写入/投影失败、pending/峰值、observer 失败及最近成功时间；无 timer、无隐式修复。快照自身写失败也保留进程内计数，但全盘不可写时不承诺新进程能恢复未落盘计数。读取返回的 writer snapshot 是有时间戳的历史事实，不是当前 PID 存活或准入许可。过多历史 writer 时返回 partial/truncated，不做无界目录扫描。
+
+### 尚不能从本闭环推导的事实
+
+原生工具真实执行、checkpoint/blob/mirror 跨层提交、App replica 显示和未插桩唤醒分支，仍需各自 qualified consumer 证据。失败前释放过工具不能重放整个 TURN；被观察到的 native lineage 不能绕过现有 retry/ownership/STEP fences。原历史事故没有记录的 finish/工具名无法由新补丁回填。
+
+### 本轮验证边界（2026-09-16）
+
+源码/打包相关的 41 个明确选定测试文件：386 pass / 0 fail；包括真实 pinned SDK 合成 SSE、实际临时 Unix modeld/Host 链路、32 条安全摘要、SDK 内部预读背压、工具参数尾部、全批并行拒绝、严格终态/binding、上下文连续性、辅助推理、旧 journal 回归与 owned packed preload。全仓 TypeScript 检查和 Node 语法检查通过。Bun 1.3.14 两次同输入构建的 CLI/preload SHA 完全相同；E09 pin 仅在此验证后更新，不修改原生 Host source pin。
+
+不能据此签全仓或生产绿：`test/incident-observability.test.ts` 的新增大日志/retention/健康/CLI 综合矩阵执行被工具安全检查拦截，只有代码和类型检查，待补跑；原请求的只读现场 STEP 查询也被工具拦截，没有现场查询修复的成功回执。另外两项原生 Host 资格测试仍钉住旧 source SHA，当前安装版本不同，原断言保持不变且未通过；owned fixture/packed 通过不能替代这项资格。没有 deploy、Host/modeld 重启、真实 provider 重放、线上 compact 或策略/任务变更。
+
+## 历史 App 反例及永久修复
 
 Synthetic regression scenario: an earlier progress message is not a final result. A later Host rejection must remain `state:failed` even when live trays have already disappeared. The owned regression fixtures carry the public proof; private transcripts and execution identities are not distributed.
 
@@ -163,19 +208,23 @@ GROKBOX_RUN_ROOT="$HOME/.grokbox/run" grokbox history outcome <agent-id> --step-
 
 ## 日志窗口、保留与写入健康
 
-reader 固定打开一个 inode 的尾部快照，最多 8 MiB、32768 个完整行，每行最多 64 KiB；目标查询先按 Agent/STEP/nonce/TURN 过滤，再应用 4096 事件返回预算。`runtimeWindow` 报告文件/读取字节、offset、前缀遗漏、末尾半行、坏 UTF-8/schema 行、超长行、读中 inode/truncate 变化及保留 watermark。半行和坏行不会使已读到的完整失败消失；缺失/不可用/窗口外不提升为“没有失败”。这不是无限历史检索或永久事故存储承诺。
+reader 固定打开一个 inode 的尾部快照，普通 tail 最多 1 MiB，身份查询最多 16 MiB、65536 个完整行，每行最多 64 KiB；目标查询先按 Agent/STEP/nonce/TURN 过滤，再应用 4096 事件返回预算。该返回预算不限制模型输出的累计事件数。身份查询同时保留明确关联的提醒生命周期和同代观测安装证据；窗口丢前缀且没有 TURN 起始锚点时，不因找到了某条记录就声称完整。`runtimeWindow` 报告文件/读取字节、offset、前缀遗漏、末尾半行、坏 UTF-8/schema 行、超长行、读中 inode/truncate 变化及保留 watermark。半行和坏行不会使已读到的完整失败消失；缺失/不可用/窗口外不提升为“没有失败”。这不是无限历史检索或永久事故存储承诺。
 
-watchdog 的显式 writer 入口负责保留：最近 256 条 control + 256 条 seam，以及近 7 天内最多 128 个、合计 4 MiB 的失败 TURN 证据组。预算优先、不是无条件 7 天 SLA；实际裁剪留下同文件原子 watermark，包含丢弃记录下界与可能受影响的时间范围。读命令绝不做 retention。
+watchdog 的显式 writer 入口负责保留：优先失败核心、相关 STEP 和 nonce/TURN 锚点，再保留周边及近期活动；最多覆盖近 7 天内的 128 个事故，合计 8 MiB。预算优先，不是无条件完整 TURN 或 7 天 SLA。实际裁剪保留旧格式同文件 watermark，同时写入带 inode 身份的 prepared/applied 保留回执；跨文件发布不伪装成原子事务，未完成的回执明确退化。没有新回执的旧 watermark 仍参与缺口判断。读命令绝不做 retention。
 
 `runtime watchdog run` 的回执增加 `observationMaintenance`；同时处理 durable controller root 与**显式** `GROKBOX_RUN_ROOT`。未显式指定 host run root 时不替自定义 durable root 去 compact HOME fallback，回执为 `not_configured`。本命令没有安装 scheduler；持续维护仍由正常 watchdog/部署生命周期调用，不能把一次维护或新源码当作服务已经部署。
 
-Host/modeld 的 journal 写入仍是观察，不改变推理语义。独立的 `state/observability/<observer-id>.json` 安全计数记录 attempted/written/unprojected/writeFailed/timedOut/dropped/pending/peakPending 与最后成功/失败时间。事件写入请求进程内有界（每根最多 64 个 pending）；health 读取最多 32 个 writer 文件并披露截断。文件或旧 PID 不是活性租约，`liveness:not_proven` 不被提升成健康；health 自身也无法写时 reader 应显示 unavailable/not_instrumented，不向同一本坏日志递归报错。任何日志失败都不授权自动重试、回退模型或隐式改配置。
+Host/modeld 的 journal 写入仍是观察，不改变推理语义。角色化健康摘要位于 `state/journal-health/<role>-<pid>-<instance>.json`，分别记录 attempted/written/failed/unprojected/timedOut/dropped/pending/peakPending、观察器和健康摘要失败。实际 append 只计一次，modeld 不被外层包装再次计成 Host；投影拒绝不计成功写入，积压丢弃也不再填零。每根每角色最多 64 个 pending 约束的是并发观测积压，不是累计执行额度。缺少新目录时，只读兼容既有 `state/observability/<observer-id>.json`，来源标为 legacy；旧格式没采集的计数不补猜。新 reader 有界枚举并披露截断。文件或旧 PID 不是活性租约，`liveness:not_proven` 不被提升成健康；health 自身也无法写时 reader 应显示 unavailable/not_instrumented，不向同一本坏日志递归报错。任何日志失败都不授权自动重试、回退模型或隐式改配置。
 
 ## Provider 单次流与工具完整性边界
 
 生产 backend 使用 SDK **公开 provider-v2 `doStream` 单次调用**，而非 `streamText` 自带的工具结果 fan-in。固定依赖中后者在 `ReadableStream.start` 里后台 `pipeTo/enqueue`，仅给下游 Effect Queue 加容量并不能阻止它提前读完整流。现在一条有界、可取消的链直接消费 provider stream，Effect Queue 容量 16 并 await offer，累计 canonical 预算在入队前检查；拒绝不能改为 drop。
 
 原始 SSE 有透明、需求驱动的结构审计（无 tee、正文落盘或重写）。SDK 首次识别合法 JSON 前缀后忽略尾部的情况，由完整参数累计与 finish 校验拦截；Responses 参数 done 与完整 item 也对齐。单帧、传输字节、工具身份和实际保留资源继续有界，但不按累计 Host 事件数或参数/行碎片数拒绝生产流：参数、行和晚读者文本按分配块合并，UTF-8/CRLF 跨 chunk 正确处理。语义输出不重复计算每个 JSON 帧头或同一工具的最终参数副本；frame 数和编码字节仍原样观测。不补 JSON、不删除坏尾部、不把资源不足或 provider aborted 映射成成功。provider finish 字符串只保留安全枚举；未知为 other，不复制自由文本。
+
+Host IPC 的异步解码与 EOF 使用同一串行路径，避免已经到达的 terminal 被 EOF 回调先行丢弃；socket 暂停随消费者需求，而不只是随解码速度。慢读者至多等待一帧已解码数据，不用累计 4096 帧拒绝代替背压。modeld 的 `attempts` 保存有界诊断细节并披露 `attemptsTruncated`；真实请求次数与持久 recovery 身份不因诊断采样被截短，早期 502 后最终成功仍能保留各自证据。
+
+构建身份由源码、workspace/package 元数据、锁文件和构建入口计算，CLI/preload 注入同一纯 kernel 数据合同；不从 Host 引入 process IO，原生 LevelDB/SQLite 依赖仍以发布依赖装载。构建后源码指纹变化则拒绝资格，不把磁盘制品更新等同于进程已经重载。
 
 canonical 成功 terminal 等 SDK stream EOF 后才释放，晚到参数/错误不得藏在一个已发出的成功后面。所有并行调用都传给 Host 的整批门禁，不再静默保留第一个。工具声明、身份、完整参数和 accepted/terminal binding 的防线都保留；Host 才执行工具。用户混合消息仅合并相邻同类块，不把后面的文本搬到工具结果前面。没有这些检测器的旧日志不能回填出历史原始工具名/参数或唯一根因。
 

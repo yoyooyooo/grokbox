@@ -8,7 +8,7 @@ import { buildHostEnvelope, cloneHostExecutorWindow, HostStateCodecError, type H
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
-import { INVALID_STREAM_AGENT_MESSAGE, LEDGER_UNAVAILABLE_AGENT_MESSAGE, AUTHORITY_AGENT_MESSAGE } from "./failure-catalog.ts";
+import { INVALID_STREAM_AGENT_MESSAGE, LEDGER_UNAVAILABLE_AGENT_MESSAGE, AUTHORITY_AGENT_MESSAGE, LOCAL_TRANSPORT_AGENT_MESSAGE } from "./failure-catalog.ts";
 import { StreamOutputBudget, ChunkedText, STREAM_STORAGE_CHARS, type InferenceEvent, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, projectFailureSummary, annotateFailureSummary, failureSummaryOf, presentFailure, type FailureSummary, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
 
@@ -31,7 +31,7 @@ export type HostUsage = {
   promptTokens: number; completionTokens: number; totalTokens: number;
   cacheReadTokens?: number; cacheWriteTokens?: number;
 };
-export type VisibleFailureStage = "admit" | "provider" | "normalize" | "authority";
+export type VisibleFailureStage = "admit" | "provider" | "normalize" | "authority" | "transport";
 export type VisibleFailure = {
   failureId?: string;
   userVisible: true;
@@ -364,12 +364,13 @@ const FAILURE_MESSAGES: Record<string, string> = {
   capacity: "The local model runtime could not accept this work because execution resources were unavailable.",
   ledger_unavailable: LEDGER_UNAVAILABLE_AGENT_MESSAGE,
   invalid_stream: INVALID_STREAM_AGENT_MESSAGE,
+  transport_error: LOCAL_TRANSPORT_AGENT_MESSAGE,
   invocation_conflict: "This invocation was already used with different inputs. It was not dispatched again.",
   not_admitted: AUTHORITY_AGENT_MESSAGE,
   model_error: "The configured model request failed. No fallback model was used.",
   unsupported_version: "The local Host and model runtime use incompatible protocol versions. Update them together. No model request was dispatched.",
 };
-const VISIBLE_STAGES = new Set<VisibleFailureStage>(["admit", "provider", "normalize", "authority"]);
+const VISIBLE_STAGES = new Set<VisibleFailureStage>(["admit", "provider", "normalize", "authority", "transport"]);
 function hostVisibleCode(code: string): string {
   const mapped = code === "stream_invalid" ? "invalid_stream" : code;
   return Object.hasOwn(FAILURE_MESSAGES, mapped) ? mapped : "model_error";
@@ -415,7 +416,10 @@ export class VisibleStreamError extends Error {
     const resolved = hostVisibleCode(code);
     super(message ?? resolved);
     this.code = resolved;
-    this.stage = resolved === "not_admitted" ? (stage === "admit" ? "admit" : "authority") : resolved === "invalid_stream" || resolved === "stream_limit" ? "normalize" : VISIBLE_STAGES.has(stage) ? stage : "provider";
+    this.stage = resolved === "not_admitted" ? (stage === "admit" ? "admit" : "authority")
+      : resolved === "transport_error" ? "transport"
+      : resolved === "invalid_stream" || resolved === "stream_limit" ? "normalize"
+      : VISIBLE_STAGES.has(stage) ? stage : "provider";
   }
 }
 export type SessionTerminal = {

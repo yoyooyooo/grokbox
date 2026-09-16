@@ -20,6 +20,11 @@ export type ModeldStepOutcome = {
   durationMs?: number;
   backendAttempts?: number;
   cleanup?: { clientDisconnected?: boolean; cancellationRequested?: boolean; exitFailure?: "defect" | "interrupted" | "unknown" };
+  attempts?: Array<{ index: number; failureCode?: ModeldStepOutcome["failureCode"]; diagnostic?: BackendObservation; stream?: StreamSummary }>;
+  startedAt?: string;
+  detectedAt?: string;
+  transport?: { side: "host_modeld_ipc"; close: "peer_end" | "peer_close" | "socket_error"; at: string };
+  followup?: { phase: "transport" | "internal"; code: "disconnected" | "defect" | "interrupted" | "unknown" };
 };
 
 /** Keep a concrete detecting failure even if the client disconnects during its

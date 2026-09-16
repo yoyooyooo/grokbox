@@ -1,4 +1,4 @@
-import { BackendFailure, BindingFailure, annotateStreamFailure, streamFailureDiagnostic, FAILURE_FACT_REASONS, PROVIDER_ERROR_CODES, PROVIDER_ERROR_PARAMS, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, BindingFailure, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, FAILURE_FACT_REASONS, PROVIDER_ERROR_CODES, PROVIDER_ERROR_PARAMS, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 
 export const BACKEND_PHASES = ["prepare", "auth", "sdk", "provider", "normalize", "authority"] as const;
 export type BackendPhase = (typeof BACKEND_PHASES)[number];
@@ -24,8 +24,8 @@ function member<T extends string>(value: unknown, choices: readonly T[]): T | un
 }
 
 export function observeBackendFailure(failure: BackendFailure, phase: BackendPhase, raw?: unknown): BackendFailure {
-  const detail = streamFailureDiagnostic(raw);
-  if (detail) annotateStreamFailure(failure, detail);
+  const diagnostic = streamFailureDiagnostic(raw);
+  if (diagnostic) annotateStreamFailure(failure, diagnostic);
   if (observations.has(failure)) return failure;
   let result: BackendObservation = { phase, reason: phase === "prepare" ? "validation" : phase === "auth" ? "auth" : phase === "normalize" ? "stream_shape" : "unknown" };
   try {
@@ -57,6 +57,20 @@ export function incompleteBackendFinish(reason: "length" | "content-filter"): Ba
   const failure = new BackendFailure("provider_error");
   observations.set(failure, Object.freeze({ phase: "sdk", reason: reason === "length" ? "output_limit" : "content_filter" }));
   return failure;
+}
+
+export function projectBackendObservation(value: unknown): BackendObservation | undefined {
+  try {
+    const d = record(value);
+    const phase = member(d?.phase, BACKEND_PHASES), reason = member(d?.reason, FAILURE_REASONS);
+    if (!d || !phase || !reason) return undefined;
+    const out: BackendObservation = { phase, reason, ...projectStreamDiagnostic(d) };
+    if (typeof d.httpStatus === "number" && Number.isInteger(d.httpStatus) && d.httpStatus >= 400 && d.httpStatus <= 599) out.httpStatus = d.httpStatus;
+    const code = member(d.providerCode, PROVIDER_CODES), param = member(d.providerParam, PROVIDER_PARAMS);
+    if (code) out.providerCode = code;
+    if (param) out.providerParam = param;
+    return out;
+  } catch { return undefined; }
 }
 
 export function interruptedProviderFinish(reason: "insufficient_system_resource" | "aborted"): BackendFailure {

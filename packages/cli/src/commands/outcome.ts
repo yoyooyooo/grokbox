@@ -1,5 +1,5 @@
 import type { CliDeps } from "../deps.ts";
-import { openRuntimeStore, observeRuntimeEvents, observeJournalHealth, openMonitorStore } from "@grokbox/box-runtime/runtime";
+import { openRuntimeStore, observeRuntimeEvents, observeJournalHealth, readJournalHealth, openMonitorStore } from "@grokbox/box-runtime/runtime";
 import { CliError, usage } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ioFromOpts } from "../opts.ts";
@@ -124,16 +124,24 @@ export async function runSendOutcome(deps: CliDeps, target: string, raw: { timeo
       selector: { agentId, ...(selectedStep ? { stepId: selectedStep } : typeof lookupNonce === "string" ? { nonce: lookupNonce } : selected ? { stepId: selected } : {}) },
     }) : undefined;
     const writerHealth = runtime ? await observeJournalHealth(runtime.root) : undefined;
+    const health = runtime ? await readJournalHealth(runtime.root) : undefined;
     const projectedAlerts = trays.trays.map(projectAlert);
     const afterRoster = await client.listAgents(timeout());
     gatewayChanged ||= changed(afterRoster.discovery);
     const afterHarness = observeRosterHarness(afterRoster.agents.find(r => isRecord(r) && r.id === agentId));
+    const runtimeGap = runtime ? (runtime.state !== "present" ? runtime.state
+      : (runtime as { lookup?: { matched?: boolean } }).lookup?.matched === false ? "not_found_in_window"
+      : (runtime as { coverage?: { partialLastLine?: boolean } }).coverage?.partialLastLine ? "partial_append"
+      : (runtime as { retention?: { affectsWindow?: boolean } }).retention?.affectsWindow === true ? "retained_subset"
+      : runtime.truncated ? "truncated"
+      : runtime.window?.selectorMatched === false ? "not_in_retained_window" : undefined) : undefined;
     const result = projectSendOutcome({ agentId, nonce, requestId: selected, stepId: selectedStep, entries,
       alerts: projectedAlerts.filter((a): a is AlertObservation => a !== null), truncated, gatewayChanged,
       alertsIncomplete: projectedAlerts.some(a => a === null),
       transcriptRoute: { initial: initialHarness, before: beforeHarness, after: afterHarness, expected: expectedHarness },
       expectedText: raw.expectText, runtimeEvents: runtime?.events,
-      runtimeGap: runtime ? (runtime.state !== "present" ? runtime.state : runtime.truncated ? "truncated" : runtime.window?.selectorMatched === false ? "not_in_retained_window" : undefined) : undefined });
+      runtimeEvidence: runtime ? { root: runtime.root, coverage: (runtime as any).coverage, lookup: (runtime as any).lookup, retention: (runtime as any).retention, readFailure: (runtime as any).readFailure, health } : undefined,
+      runtimeGap });
     Object.assign(result.evidence, { runtimeWindow: runtime?.window ?? null, writerHealth: writerHealth ?? null });
     samples++;
     // There is no native full-run completion receipt yet. Execution waiting

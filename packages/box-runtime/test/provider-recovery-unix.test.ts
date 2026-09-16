@@ -18,6 +18,11 @@ for (const api of ["chat", "responses"] as const) test(`production ${api} 502 re
     const rows = await waitFixtureRows(f, stepId), modeld = rows.find(e=>e.name==="model_step_terminal"&&e.stepId===stepId)!;
     expect(modeld).toMatchObject({ outcome: "ok", backendAttempts: 2, recovery: { phase: "succeeded", stopReason: "success", settlementRecorded: true } });
     expect(modeld.recovery.attempts.map((a: any)=>a.state)).toEqual(["failed", "completed"]);
+    expect(modeld.attemptsTruncated).toBe(false);
+    expect(modeld.attempts).toMatchObject([
+      { index: 0, failureCode: "provider_error", diagnostic: { httpStatus: 502 } },
+      { index: 1, stream: { http: { status: 200 } } },
+    ]);
     const progress = rows.filter(e=>e.name==="model_recovery_progress"); expect(progress.some(e=>e.recovery.phase==="waiting")).toBe(true);
     expect(progress.every(e=>projectControlEvent(e)!==null)).toBe(true);
     const outcome = projectSendOutcome({agentId:f.agentId,stepId,entries:[],alerts:[],truncated:false,runtimeEvents:rows});

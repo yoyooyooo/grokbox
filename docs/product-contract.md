@@ -359,7 +359,7 @@ grokbox history outcome <id-or-name> --nonce <clientNonce> --runtime [--wait-ms 
 
 ### 7.4 History, Memory, Export, Events, Running
 
-`history outcome` 是只读投影，不是第二套生命周期。`data.state` 只准：`unknown`、`recorded`（仅 echo 或 journal bind，等待中）、`failed`（durable 拒绝 / 相关 terminal / 相关 live tray）、`progress`、`delivered`、`expected_result_observed`。**outcome 无 `accepted` 成功词**；旧 `acceptedObserved` 已改为 `echoObserved`。send 回执仍可带 Gateway 的 `accepted:true`（入队）。`--runtime` 以本机 journal 为失败权威；空 trays 不得把 `failed` 改回 `recorded`。`requestId` 在早期 admit 失败时可为 null。`--wait-ms` 只把 `failed|delivered|expected_result_observed` 当 settled；`recorded` 继续等。`executionCompleted` 保持 `not_proven`。`--expect-harness box|temporal` 在每次采样前后核对声明来源；本机 `--runtime` 隐含 box 要求。跨 harness、缺声明或不符时不得用另一账本的相同 entry/预期正文判成功，保持 unknown。前后采样不是原子快照，也不读取 App 的本地缓存；详见 [结果观测](maintainers/run-outcome-observation.md)。
+`history outcome` 是只读投影，不是第二套生命周期。支持 `--step-id <id> --runtime` 直接查询截图中的模型 STEP，与 `--nonce`、`--request-id` 三选一；不把 STEP 冒充首个 display request ID。`assessment` 分开记录交付、主运行、辅助推理与证据质量。显式 runtime 读取有缺口且无已知失败时，保留真实 delivery 但顶层为 unknown；明确关联失败仍为 failed，不因其余日志有 gap 被抹掉。实际读取根/字节窗口、retention 缺口及 writer 健康快照必须可见。`data.state` 只准：`unknown`、`recorded`（仅 echo 或 journal bind，等待中）、`failed`（durable 拒绝 / 相关 terminal / 相关 live tray）、`progress`、`delivered`、`expected_result_observed`。**outcome 无 `accepted` 成功词**；旧 `acceptedObserved` 已改为 `echoObserved`。send 回执仍可带 Gateway 的 `accepted:true`（入队）。`--runtime` 以本机 journal 为失败权威；空 trays 不得把 `failed` 改回 `recorded`。`requestId` 在早期 admit 失败时可为 null。`--wait-ms` 只把 `failed|delivered|expected_result_observed` 当 settled；`recorded` 继续等。`executionCompleted` 保持 `not_proven`。`--expect-harness box|temporal` 在每次采样前后核对声明来源；本机 `--runtime` 隐含 box 要求。跨 harness、缺声明或不符时不得用另一账本的相同 entry/预期正文判成功，保持 unknown。前后采样不是原子快照，也不读取 App 的本地缓存；详见 [结果观测](maintainers/run-outcome-observation.md)。
 
 - `history search` 搜索 transcript 内容，不属于 agent roster 搜索。
 - `history tail` 支持 `--limit` 与 `--before-seq`。
@@ -488,6 +488,8 @@ MVP / 可发布声明的 ordinary main envelope：
 - 支持 text/system/history、tool schema、serial tool call、true streaming、abort；
 - image/attachment：所选模型声明视觉能力则必须送达；未配置视觉能力则在 provider effect 前失败，并尽量以 Bot 可见消息告警（Host 执行 `SendToUser` 或等价），不得静默；
 - parallel/interleaved：默认可请求 `parallel_tool_calls=false` 减少生成并行，但该生成偏好不是 Host 的批次大小上限。production managed seam 使用 `validated-batch`：整步工具 ID、声明名、完整参数及成功终态全部通过后，按首次出现顺序将完整调用批次交给原生 Host；不得仅因多于一个调用报错、丢弃后续调用、拆成多个模型 STEP 或自动重试。任何批次内结构错误或提交前取消保持零工具材料释放。权限/审批、实际并发、执行失败、结果和 checkpoint 仍归 Host；批次放行不等于副作用原子事务或已执行；
+- mixed user content：文本/图片与工具结果按原始顺序分段投影，不能按类型全局重排；目标协议无法安全表示时可见拒绝。
+- 失败观测：`invalid_stream` 可带固定拒绝位置与有界事件摘要；本地 IPC 失败使用 `transport_error/transport`，与 provider HTTP 失败区别。日志、读取、保留、诊断均无执行/重试权限，不抓取正文或暗中回填旧证据。
 - 未补丁/不可用窗口：在已声明父预算内等待或明确拒绝；不把该 managed 用户句改送另一个主模型，不重放未知副作用。官方 Bot 独立保持原行为。
 
 证明按 source / 实际 packed / 原生隔离资格 / live 合成触发 / 真实 provider 分层。旧 response-only S4 描述不再是当前源码事实；当前实现与未证项由原 verifier/Ticket 给出。错误作为错误交给 Host，不产生假 assistant 正文、空成功或假 tool call；工具、Transcript/Memory 的写入仍归 Host。

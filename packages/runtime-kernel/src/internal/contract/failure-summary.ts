@@ -11,8 +11,8 @@ export type FailurePhase = typeof FAILURE_PHASES[number];
 export const PROVIDER_ERROR_CODES = ["invalid_request_error", "invalid_api_key", "insufficient_quota", "rate_limit_exceeded", "model_not_found", "unsupported_parameter", "missing_required_parameter", "invalid_value", "context_length_exceeded", "context_window_exceeded", "prompt_too_long", "request_too_large"] as const;
 export const PROVIDER_ERROR_PARAMS = ["model", "instructions", "input", "messages", "tools", "tool_choice", "parallel_tool_calls", "stream", "temperature", "top_p", "max_tokens", "max_output_tokens", "reasoning", "store"] as const;
 export const FAILURE_FACT_REASONS = ["unknown", "validation", "auth", "transport", "http", "sdk_validation", "sdk_no_output", "stream_shape", "output_limit", "content_filter", "provider_resource", "provider_interrupted", "stream_budget", "authority_check"] as const;
-const CODES = [...BACKEND_FAILURE_CODES, ...BINDING_FAILURE_CODES, "invalid_stream", "model_error", "parallel_tools", "timeout", "unsupported_version", "malformed_frame", "unknown_method", "extra_keys", "busy", "disconnected", "defect", "interrupted", "unknown"] as const;
-export const FAILURE_CATEGORIES = ["upstream_http", "upstream_auth", "upstream_rate_limit", "upstream_quota", "upstream_transport", "upstream_interrupted", "output_limit", "content_filter", "stream_invalid", "stream_budget", "local_capacity", "execution_history", "authority", "wire", "configuration", "cancelled", "unknown"] as const;
+const CODES = [...BACKEND_FAILURE_CODES, ...BINDING_FAILURE_CODES, "invalid_stream", "model_error", "parallel_tools", "timeout", "unsupported_version", "malformed_frame", "unknown_method", "extra_keys", "busy", "disconnected", "transport_error", "defect", "interrupted", "unknown"] as const;
+export const FAILURE_CATEGORIES = ["upstream_http", "upstream_auth", "upstream_rate_limit", "upstream_quota", "upstream_transport", "upstream_interrupted", "output_limit", "content_filter", "stream_invalid", "stream_budget", "local_capacity", "local_transport", "execution_history", "authority", "wire", "configuration", "cancelled", "unknown"] as const;
 export type FailureCategory = typeof FAILURE_CATEGORIES[number];
 export type FailureIdentity = { agentId: string; turnId: string; stepId: string; hostGenerationId: string; serviceEpoch: string; bindingId?: string };
 export type FailureSummary = {
@@ -45,6 +45,7 @@ export function classifyFailure(input: { code: string; phase: FailurePhase; reas
   if (code === "stream_invalid" || code === "invalid_stream" || code === "parallel_tools") return { category: "stream_invalid", origin: "runtime" };
   if (["unsupported_version", "service_epoch_mismatch", "malformed_frame", "extra_keys"].includes(code)) return { category: "wire", origin: "runtime" };
   if (code === "cancelled" || code === "interrupted") return { category: "cancelled", origin: "runtime" };
+  if (code === "transport_error" || code === "disconnected") return { category: "local_transport", origin: "runtime" };
   if (http && http.status >= 400) {
     const category: FailureCategory = providerCode === "insufficient_quota" ? "upstream_quota"
       : providerCode === "rate_limit_exceeded" || http.status === 429 ? "upstream_rate_limit"
@@ -140,6 +141,7 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
       ? `The model output exceeded the local ${summary.diagnostic.budget.layer} ${summary.diagnostic.budget.metric} budget (${summary.diagnostic.budget.measured} observed; ${summary.diagnostic.budget.limit} allowed).`
       : "The model output exceeded a local resource budget and was stopped.",
     local_capacity: "The local model runtime could not admit this work with its currently available resources.",
+    local_transport: "The connection between the local Host and model runtime failed or closed before completion.",
     execution_history: "The local execution history could not be read or saved safely.",
     authority: "The local runtime could not confirm permission to continue this model request.",
     wire: summary.code === "unsupported_version" ? "The local Host and model runtime use incompatible protocol versions. Update them together."

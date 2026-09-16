@@ -13,6 +13,8 @@ export const LEDGER_UNAVAILABLE_AGENT_MESSAGE = "The local execution history cou
 export const AUTHORITY_AGENT_MESSAGE = "The local runtime could not confirm permission to continue this request. It was stopped without fallback or automatic retry.";
 export const INVALID_STREAM_AGENT_MESSAGE =
   "The model returned an invalid stream. The request was stopped without retry.";
+export const LOCAL_TRANSPORT_AGENT_MESSAGE =
+  "The local connection to the model runtime ended before this step completed. This connection failure did not trigger a retry.";
 
 export type HostFailureMapsFrom =
   | "BoxRuntimeError.failureCode"
@@ -24,7 +26,7 @@ export type HostFailureMapsFrom =
 export type HostFailureCatalogRow = {
   reason: string;
   errorCode: string;
-  stage: "stream-id" | "admit" | "normalize" | "connect" | "provider" | "authority";
+  stage: "stream-id" | "admit" | "normalize" | "connect" | "provider" | "authority" | "transport";
   agentMessage: string;
   mapsFrom: HostFailureMapsFrom;
   failureCode?: string;
@@ -119,6 +121,13 @@ export const HOST_FAILURE_CATALOG = [
   { reason: "local-capacity", errorCode: "capacity", stage: "admit", agentMessage: LOCAL_CAPACITY_AGENT_MESSAGE, mapsFrom: "hook-reason" },
   { reason: "execution-history-unavailable", errorCode: "ledger_unavailable", stage: "admit", agentMessage: LEDGER_UNAVAILABLE_AGENT_MESSAGE, mapsFrom: "hook-reason" },
   {
+    reason: "local-transport",
+    errorCode: "transport_error",
+    stage: "transport",
+    agentMessage: LOCAL_TRANSPORT_AGENT_MESSAGE,
+    mapsFrom: "hook-reason",
+  },
+  {
     reason: "invalid-stream",
     errorCode: "invalid_stream",
     stage: "normalize",
@@ -151,7 +160,7 @@ export function catalogAgentMessage(reason: string): string | undefined {
 export type TerminalRejectMapping = {
   reason: HostStreamRejectReason;
   errorCode: string;
-  stage: "admit" | "normalize" | "provider" | "authority";
+  stage: "admit" | "normalize" | "provider" | "authority" | "transport";
 };
 
 /** Host-visible mapping for a rejected stream terminal. Backend stream_invalid
@@ -161,6 +170,7 @@ export function mapTerminalReject(errorCode: string, stage?: string): TerminalRe
   if (errorCode === "stream_limit") return { reason: "stream-budget", errorCode, stage: "normalize" };
   if (errorCode === "capacity" && stage === "admit") return { reason: "local-capacity", errorCode, stage: "admit" };
   if (errorCode === "ledger_unavailable") return { reason: "execution-history-unavailable", errorCode, stage: "admit" };
+  if (errorCode === "transport_error") return { reason: "local-transport", errorCode, stage: "transport" };
   if (errorCode === "invalid_stream" || errorCode === "stream_invalid") {
     return { reason: "invalid-stream", errorCode: "invalid_stream", stage: "normalize" };
   }

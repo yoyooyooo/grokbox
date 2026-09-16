@@ -1,4 +1,6 @@
-import { chmod, mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { journalRoleAllows, projectSafeReason } from "@grokbox/runtime-kernel/status";
 import { projectModelRecoveryProgress } from "@grokbox/runtime-kernel/contract";
@@ -17,7 +19,8 @@ import {
 import { eventsPath } from "./paths.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { type ObservationState } from "./observation.node.ts";
-import { readJournalWindow, type JournalWindow } from "./journal-reader.node.ts";
+import { readJournalWindow, JOURNAL_LOOKUP_READ_BYTES, type JournalCoverage } from "./journal-window.node.ts";
+import { observeJournalRetention, writeJournalRetention, type JournalRetentionObservation, type JournalRetentionReceipt } from "./journal-retention.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { projectRunObservation } from "../host/run-observation.ts";
 import { projectAlertEvent, traceAlerts, observationId } from "@grokbox/runtime-kernel/alerts";
@@ -90,8 +93,6 @@ const SEAM_EVENT_NAMES = new Set([
   "model_recovery_progress",
   "host_stream_rejected",
   "host_seam_stage",
-  "host_run_observation",
-  "host_alert_observation",
   "provider_error_observed",
 ]);
 export const MODEL_STEP_STAGES = new Set([
@@ -351,41 +352,63 @@ function isSeamEventName(name: unknown): boolean {
   return typeof name === "string" && SEAM_EVENT_NAMES.has(name);
 }
 
-export const INCIDENT_RETENTION_MS = 7 * 24 * 60 * 60_000;
-export const INCIDENT_RETENTION_BYTES = 4 * 1024 * 1024;
-export const INCIDENT_RETENTION_GROUPS = 128;
-/** Retain recent activity plus complete bounded failed-TURN evidence groups.
- * Never LRU-evict execution ledger entries: this is observation only. */
-export function selectRetainedEventLines(lines: string[], now = Date.now()): string[] {
-  const parsed = lines.filter(line => line.length > 0).map(line => {
-    let value: Record<string, unknown> | undefined;
-    try { const v = JSON.parse(line); if (isRecord(v)) value = v; } catch { /* keep recent malformed evidence */ }
-    const turn = isSeamEventName(value?.name);
-    const key = value && typeof value.agentId === "string" && typeof value.turnId === "string"
+export const JOURNAL_INCIDENT_RETENTION = 128;
+export const JOURNAL_RETENTION_MAX_BYTES = 8 * 1024 * 1024;
+export const JOURNAL_INCIDENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const INCIDENT_RETENTION_MS = JOURNAL_INCIDENT_MAX_AGE_MS;
+export const INCIDENT_RETENTION_BYTES = JOURNAL_RETENTION_MAX_BYTES;
+export const INCIDENT_RETENTION_GROUPS = JOURNAL_INCIDENT_RETENTION;
+
+function incidentFailure(value: Record<string, unknown>): boolean {
+  return value.name === "host_stream_rejected"
+    || (value.name === "host_normalized_terminal" && (value.terminalClass === "error" || value.terminalClass === "abort"))
+    || (value.name === "model_step_terminal" && (value.outcome === "error" || value.outcome === "cancelled"));
+}
+
+/** Retention is evidence storage, never an execution ledger or permission to
+ * replay. Reserve whole failure cores (including nonce/turn anchors) before
+ * normal traffic; busy sibling Bots cannot evict a recent incident in 256 lines.
+ * All guarantees are bounded by age, incident count, and total bytes. */
+export function selectRetainedEventLines(lines: string[], nowMs = Date.now()): string[] {
+  const parsed = lines.filter(line => line.length > 0).map((line, index) => {
+    let value: Record<string, unknown> = {};
+    try { const raw = JSON.parse(line); if (isRecord(raw)) value = raw; } catch { /* retained as an invalid line, not rewritten */ }
+    const key = typeof value.agentId === "string" && typeof value.turnId === "string"
       ? JSON.stringify([value.agentId, value.turnId]) : undefined;
-    const at = typeof value?.at === "string" ? Date.parse(value.at) : NaN;
-    const failure = value?.name === "host_stream_rejected" ||
-      (value?.name === "model_step_terminal" && ["error", "cancelled", "unknown"].includes(String(value.outcome))) ||
-      (value?.name === "host_normalized_terminal" && ["error", "abort"].includes(String(value.terminalClass)));
-    return { line, value, turn, key, at, failure };
+    return { line, index, value, key, turn: isSeamEventName(value.name), bytes: Buffer.byteLength(line, "utf8") + 1 };
   });
-  const keep = new Set([...parsed.filter(row => !row.turn).slice(-CONTROL_PLANE_EVENT_RETENTION),
-    ...parsed.filter(row => row.turn).slice(-TURN_SEAM_TERMINAL_RETENTION)]);
-  const groups = new Map<string, typeof parsed>();
-  for (const row of parsed) if (row.key) { const group = groups.get(row.key) ?? []; group.push(row); groups.set(row.key, group); }
-  const incidents = [...groups.values()].filter(rows => rows.some(row => row.failure && Number.isFinite(row.at) && row.at <= now && now - row.at <= INCIDENT_RETENTION_MS));
-  incidents.sort((a, b) => Math.max(...b.filter(r => r.failure).map(r => r.at)) - Math.max(...a.filter(r => r.failure).map(r => r.at)));
-  let used = 0, count = 0;
-  for (const rows of incidents) {
-    if (count >= INCIDENT_RETENTION_GROUPS) break;
-    const size = rows.reduce((sum, row) => sum + Buffer.byteLength(row.line) + 1, 0);
-    // Keep a group whole or disclose its absence via bounded-window evidence;
-    // never leave just its success while deleting its known failure.
-    if (used + size > INCIDENT_RETENTION_BYTES) continue;
-    for (const row of rows) keep.add(row);
-    used += size; count++;
+  type Row = (typeof parsed)[number];
+  const priority = new Map<Row, number>();
+  const add = (row: Row, rank: number) => priority.set(row, Math.min(rank, priority.get(row) ?? Infinity));
+  for (const row of parsed.filter(row => !row.turn).slice(-CONTROL_PLANE_EVENT_RETENTION)) add(row, 4);
+  for (const row of parsed.filter(row => row.turn).slice(-TURN_SEAM_TERMINAL_RETENTION)) add(row, 4);
+  const incidents = new Map<string, Set<string>>();
+  for (const row of [...parsed].reverse()) {
+    if (!incidentFailure(row.value)) continue;
+    const at = typeof row.value.at === "string" ? Date.parse(row.value.at) : NaN;
+    if (!Number.isFinite(at) || at < nowMs - JOURNAL_INCIDENT_MAX_AGE_MS || at > nowMs + 60_000) continue;
+    const key = row.key ?? `row:${row.index}`;
+    if (!incidents.has(key) && incidents.size >= JOURNAL_INCIDENT_RETENTION) continue;
+    const steps = incidents.get(key) ?? new Set<string>();
+    if (typeof row.value.stepId === "string") steps.add(row.value.stepId);
+    incidents.set(key, steps);
+    add(row, 0);
   }
-  return parsed.filter(row => keep.has(row)).map(row => row.line);
+  for (const [key, failedSteps] of incidents) {
+    const group = parsed.filter(row => row.key === key);
+    for (const row of group) {
+      if (row.value.name === "host_seam_stage" && row.value.stage === "hook_enter") add(row, 1);
+      if (typeof row.value.stepId === "string" && failedSteps.has(row.value.stepId)) add(row, 1);
+    }
+    for (const row of group.slice(-64)) add(row, 3);
+  }
+  let bytes = 0;
+  const kept = new Set<Row>();
+  for (const [row] of [...priority].sort((a, b) => a[1] - b[1] || b[0].index - a[0].index)) {
+    if (bytes + row.bytes > JOURNAL_RETENTION_MAX_BYTES) continue;
+    bytes += row.bytes; kept.add(row);
+  }
+  return parsed.filter(row => kept.has(row)).map(row => row.line);
 }
 
 export async function appendEvent(root: string, event: RuntimeEvent): Promise<void> {
@@ -428,7 +451,7 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
   return "unprojected";
 }
 
-export function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
+export function projectJournalEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as RuntimeEvent | null;
@@ -479,6 +502,9 @@ export function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerm
   return out;
 }
 
+export const projectControlEvent = projectJournalEvent;
+
+export type JournalLookup = { agentId: string; clientNonce?: string; stepId?: string; turnId?: string };
 export type RuntimeEventSelector = { agentId?: string; nonce?: string; stepId?: string; groupId?: string; trayId?: string; sourceInstanceId?: string };
 export type RetentionObservation = { applied: boolean; discardedRecordsLowerBound: number; discardedPrefix: boolean; latestDiscardedAt: string | null };
 function retentionMarker(value: unknown): RetentionObservation | undefined {
@@ -490,26 +516,53 @@ function retentionMarker(value: unknown): RetentionObservation | undefined {
 }
 export type EventsObservation = {
   state: ObservationState | "partial";
-  events: Array<RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | { invalid: true }>;
+  events: Array<RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | { invalid: true }>;
   truncated: boolean;
-  window?: JournalWindow & { matchedEvents: number; returnedEvents: number; earliestAt: string | null; latestAt: string | null; selectorMatched?: boolean; retention?: RetentionObservation };
+  coverage?: JournalCoverage & { scope: "tail" | "request"; selectedTruncated: boolean; projectedInvalidLines: number };
+  lookup?: { matched: boolean; anchored: boolean; turnIds: string[]; meaning: "explicit-identity-only" };
+  readFailure?: string;
+  retention?: JournalRetentionObservation & { affectsWindow: boolean | null };
+  window?: {
+    fileBytes: number | null; readBytes: number; startOffset: number | null; endOffset: number | null;
+    prefixOmitted: boolean; trailingPartial: boolean; malformedLines: number; oversizedLines: number;
+    changedDuringRead: boolean; linesOmitted: boolean; reason: string;
+    matchedEvents: number; returnedEvents: number; earliestAt: string | null; latestAt: string | null;
+    selectorMatched?: boolean; retention?: RetentionObservation;
+  };
 };
+
+function lookupEvents(events: EventsObservation["events"], query: JournalLookup) {
+  const rows = events.filter((event): event is Exclude<EventsObservation["events"][number], { invalid: true }> => !("invalid" in event))
+    .filter(event => "agentId" in event && event.agentId === query.agentId);
+  const hits = rows.filter(event => (query.clientNonce !== undefined && "clientNonce" in event && event.clientNonce === query.clientNonce)
+    || (query.stepId !== undefined && (("stepId" in event && event.stepId === query.stepId) || ("invocationId" in event && event.invocationId === query.stepId)))
+    || (query.turnId !== undefined && "turnId" in event && event.turnId === query.turnId));
+  const turns = new Set(hits.flatMap(event => "turnId" in event && typeof event.turnId === "string" ? [event.turnId] : []));
+  const selected = rows.filter(event => hits.includes(event) || ("turnId" in event && typeof event.turnId === "string" && turns.has(event.turnId)));
+  const anchored = turns.size > 0 && [...turns].every(turn => selected.some(event => event.name === "host_seam_stage"
+    && "stage" in event && event.stage === "hook_enter" && "turnId" in event && event.turnId === turn));
+  // Identity lookup must retain its presentation/instrumentation closure too.
+  // Observer events intentionally have no Agent id; dropping them makes a
+  // no-Tray failure look uninstrumented even when the exact Host recorded it.
+  const related = query.stepId || query.clientNonce ? selectRelatedEvents(events, {
+    agentId: query.agentId, ...(query.stepId ? { stepId: query.stepId } : {}),
+    ...(query.clientNonce ? { nonce: query.clientNonce } : {}),
+  }) : [];
+  const keep = new Set([...selected, ...related]);
+  return { selected: events.filter(event => keep.has(event)), lookup: { matched: hits.length > 0, anchored, turnIds: [...turns], meaning: "explicit-identity-only" as const } };
+}
 function selectRelatedEvents(events: EventsObservation["events"], selector: RuntimeEventSelector): EventsObservation["events"] {
   if (selector.trayId) {
-    const traced=traceAlerts(events,selector);
-    const selected=traced.traces.flatMap(t=>t.events), ids=new Set(selected.map(e=>e.eventId));
-    const failures=new Set(selected.map(e=>e.failureId).filter(observationId));
-    return events.filter(e=>!("invalid" in e) && (("eventId" in e && ids.has(String(e.eventId)))
-      || ("failureId" in e && failures.has(String(e.failureId)) && selected.some(a=>a.agentId===e.agentId&&a.hostGenerationId===e.hostGenerationId))));
+    const traced = traceAlerts(events, selector);
+    const selected = traced.traces.flatMap(t => t.events), ids = new Set(selected.map(e => e.eventId));
+    const failures = new Set(selected.map(e => e.failureId).filter(observationId));
+    return events.filter(e => !("invalid" in e) && (("eventId" in e && ids.has(String(e.eventId)))
+      || ("failureId" in e && failures.has(String(e.failureId)) && selected.some(a => a.agentId === e.agentId && a.hostGenerationId === e.hostGenerationId))));
   }
-  // Group events belong to distinct member identities. Filter their explicit
-  // group association before the global event-count cap, never by proximity.
   if (typeof selector.groupId === "string") return events.filter(v => !("invalid" in v) && "groupId" in v && v.groupId === selector.groupId);
-  const rows = events.filter((v): v is Exclude<typeof v, { invalid: true }> => !("invalid" in v) && v.agentId === selector.agentId);
+  const rows = events.filter((v): v is Exclude<typeof v, { invalid: true }> => !("invalid" in v) && "agentId" in v && v.agentId === selector.agentId);
   const seeds = rows.filter(v => selector.nonce !== undefined ? "clientNonce" in v && v.clientNonce === selector.nonce : selector.stepId !== undefined && "stepId" in v && v.stepId === selector.stepId);
   const turns = new Set(seeds.map(v => "turnId" in v ? v.turnId : undefined).filter(v => typeof v === "string" && v.length > 0));
-  // Keep conflicting generations too: the outcome projector, not this reader,
-  // must diagnose an ambiguous join rather than silently select one generation.
   const execution = rows.filter(v => seeds.includes(v) || ("turnId" in v && typeof v.turnId === "string" && turns.has(v.turnId)));
   const presentation = traceAlerts(events, { agentId: selector.agentId, ...(selector.stepId ? { stepId: selector.stepId } : {}),
     ...(selector.nonce ? { clientNonce: selector.nonce } : {}) }).traces.flatMap(trace => trace.events);
@@ -522,46 +575,97 @@ function selectRelatedEvents(events: EventsObservation["events"], selector: Runt
     || ("eventId" in event && "sourceInstanceId" in event && alertIds.has(`${event.sourceInstanceId}:${event.eventId}`))
     || ("stepId" in event && links.has(JSON.stringify([event.hostGenerationId, event.agentId, event.stepId])))));
 }
+function asLookup(query?: JournalLookup | RuntimeEventSelector): JournalLookup | undefined {
+  if (!query || typeof (query as JournalLookup).agentId !== "string") return undefined;
+  const nonce = "clientNonce" in query && typeof query.clientNonce === "string" ? query.clientNonce
+    : "nonce" in query && typeof query.nonce === "string" ? query.nonce : undefined;
+  const stepId = typeof query.stepId === "string" ? query.stepId : undefined;
+  const turnId = "turnId" in query && typeof query.turnId === "string" ? query.turnId : undefined;
+  return { agentId: (query as JournalLookup).agentId, ...(nonce ? { clientNonce: nonce } : {}), ...(stepId ? { stepId } : {}), ...(turnId ? { turnId } : {}) };
+}
 
-/** Real bounded suffix reads. Targeted queries filter before applying the event
- * count budget, so another busy Bot cannot evict this STEP from the read view. */
-export async function observeEvents(root: string, limit = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION, selector?: RuntimeEventSelector): Promise<EventsObservation> {
-  if (!Number.isSafeInteger(limit) || limit < 0) return { state: "invalid", events: [], truncated: false };
-  const read = await readJournalWindow(eventsPath(root));
-  if (read.state !== "present" && read.state !== "partial") return { state: read.state, events: [], truncated: false, window: { ...read.window, matchedEvents: 0, returnedEvents: 0, earliestAt: null, latestAt: null } };
+/** Snapshot only. Large journals are read by byte window, not rejected wholesale.
+ * A request lookup scans a bounded larger window and filters by explicit IDs,
+ * never by Bot name, timestamps, nearest STEP, or a guessed parent TURN. */
+export async function observeEvents(root: string, limit = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION, query?: JournalLookup | RuntimeEventSelector): Promise<EventsObservation> {
+  const cap = query ? 4096 : CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION;
+  if (!Number.isSafeInteger(limit) || limit < 0) return { state: "invalid", events: [], truncated: false, readFailure: "invalid_limit" };
+  const read = await readJournalWindow(eventsPath(root), query ? JOURNAL_LOOKUP_READ_BYTES : undefined);
+  if (read.state !== "present") return { state: read.state, events: [], truncated: false, readFailure: read.failure };
+  let marker: RetentionObservation | undefined;
   let malformed = 0;
-  let retention: RetentionObservation | undefined;
-  const all: EventsObservation["events"] = [];
-  for (const line of read.lines) {
+  const projected: EventsObservation["events"] = [];
+  const eventPositions: number[] = [];
+  for (let i = 0; i < read.lines.length; i++) {
+    const line = read.lines[i];
+    const pos = read.positions?.[i] ?? read.coverage?.byteStart ?? 0;
+    if (line === null) continue;
     try {
-      const value = JSON.parse(line), marker = retentionMarker(value);
-      if (marker) { retention = marker; continue; }
-      const projected = projectControlEvent(value);
-      if (projected) { all.push(projected); continue; }
-    } catch { /* bounded bad line */ }
-    malformed++; all.push({ invalid: true });
+      const value = JSON.parse(line);
+      const next = retentionMarker(value);
+      if (next) { marker = next; continue; }
+      const event = projectJournalEvent(value);
+      if (event) { projected.push(event); eventPositions.push(pos); }
+      else { malformed++; projected.push({ invalid: true as const }); eventPositions.push(pos); }
+    } catch { malformed++; projected.push({ invalid: true as const }); eventPositions.push(pos); }
   }
-  const matched = selector ? selectRelatedEvents(all, selector) : all;
-  const bounded = Math.min(limit, selector ? 4096 : CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION);
-  const events = bounded === 0 ? [] : matched.slice(-bounded);
+  const selector = query && ("groupId" in query || "trayId" in query || "nonce" in query) ? query as RuntimeEventSelector : undefined;
+  const lookup = asLookup(query);
+  const found = lookup && !(selector?.groupId || selector?.trayId) ? lookupEvents(projected, lookup) : undefined;
+  const selected = selector?.groupId || selector?.trayId || (selector?.agentId && !lookup) ? selectRelatedEvents(projected, selector ?? {})
+    : found?.selected ?? projected;
+  const bounded = Math.min(limit, cap);
+  const events = bounded === 0 ? [] : selected.slice(-bounded);
+  const selectedTruncated = selected.length > bounded;
+  const invalid = malformed;
+  const coverage = { ...read.coverage!, scope: query ? "request" as const : "tail" as const, selectedTruncated, projectedInvalidLines: invalid };
+  const retained = await observeJournalRetention(root);
+  const positions = new Map(projected.map((event, index) => [event, eventPositions[index] ?? coverage.byteStart]));
+  const affected = retained.state !== "present" ? null
+    : retained.value.targetIdentity !== coverage.fileIdentity ? null
+    : (retained.value.droppedScannedRecords > 0 || retained.value.sourcePrefixOmitted || retained.value.priorCoverageLimited)
+      && events.some(event => (positions.get(event) ?? coverage.byteStart) < retained.value.retainedBytes);
+  const retention = { ...retained, affectsWindow: affected };
+  const uncertainRetention = retained.state === "invalid" || retained.state === "unavailable"
+    || (retained.state === "present" && (retained.value.state === "prepared" || affected === null));
+  const changed = coverage.rotatedDuringRead || coverage.truncatedDuringRead;
   const times = events.flatMap(v => "at" in v && typeof v.at === "string" && Number.isFinite(Date.parse(v.at)) ? [v.at] : []).sort();
-  const retentionMayIntersect = retention !== undefined && (!selector || times.length === 0 || retention.latestDiscardedAt === null
-    || Date.parse(times[0]!) <= Date.parse(retention.latestDiscardedAt));
-  const truncated = read.window.prefixOmitted || read.window.linesOmitted || matched.length > bounded || retentionMayIntersect;
-  return { state: read.state === "partial" || malformed > 0 ? "partial" : "present", events, truncated,
-    window: { ...read.window, malformedLines: read.window.malformedLines + malformed, matchedEvents: matched.length, returnedEvents: events.length,
-      earliestAt: times[0] ?? null, latestAt: times.at(-1) ?? null, ...(retention ? { retention } : {}), ...(selector ? { selectorMatched: matched.length > 0 } : {}) } };
+  const legacyRetentionAffected = retained.state === "missing" && marker !== undefined
+    && (!query || times.length === 0 || marker.latestDiscardedAt === null
+      || Date.parse(times[0]!) <= Date.parse(marker.latestDiscardedAt));
+  const window = {
+    fileBytes: coverage.fileBytes, readBytes: coverage.bytesRead, startOffset: coverage.byteStart, endOffset: coverage.byteEnd,
+    prefixOmitted: coverage.prefixOmitted, trailingPartial: coverage.partialLastLine, malformedLines: coverage.invalidLines + malformed,
+    oversizedLines: 0, changedDuringRead: changed, linesOmitted: coverage.recordLimitHit, reason: changed ? "changed" : "none",
+    matchedEvents: selected.length, returnedEvents: events.length, earliestAt: times[0] ?? null, latestAt: times.at(-1) ?? null,
+    ...(marker ? { retention: marker } : {}), ...(query ? { selectorMatched: selected.length > 0 } : {}),
+  };
+  return {
+    state: changed || uncertainRetention || coverage.partialLastLine || coverage.invalidLines > 0 || invalid > 0 ? "partial" : "present",
+    events,
+    truncated: selectedTruncated || affected === true || legacyRetentionAffected || (found
+      ? !found.lookup.matched || (coverage.prefixOmitted && !found.lookup.anchored)
+      : coverage.prefixOmitted),
+    coverage, retention, window, ...(found ? { lookup: found.lookup } : {}),
+  };
 }
 
 /** Explicit source selection: current Host events are not durable controller history. */
 export async function observeRuntimeEvents(input: {
-  durableRoot: string; runRoot?: string; source: "control" | "host"; limit?: number; selector?: RuntimeEventSelector;
+  durableRoot: string; runRoot?: string; source: "control" | "host"; limit?: number;
+  lookup?: JournalLookup;
+  selector?: { agentId?: string; nonce?: string; stepId?: string; groupId?: string; trayId?: string; sourceInstanceId?: string };
 }): Promise<EventsObservation & { source: "control" | "host"; root: string }> {
   const root = input.source === "host" ? ephemeralRuntimeRoot(input.runRoot) : input.durableRoot;
-  return { ...await observeEvents(root, input.limit ?? (input.selector ? 4096 : undefined), input.selector), source: input.source, root };
+  const lookup = input.lookup ?? (input.selector?.agentId ? {
+    agentId: input.selector.agentId,
+    ...(typeof input.selector.nonce === "string" ? { clientNonce: input.selector.nonce } : {}),
+    ...(typeof input.selector.stepId === "string" ? { stepId: input.selector.stepId } : {}),
+  } : undefined);
+  const query = input.selector?.groupId || input.selector?.trayId ? input.selector : lookup ?? input.selector;
+  return { ...await observeEvents(root, input.limit ?? (query ? 4096 : undefined), query), source: input.source, root };
 }
 
-/** Watchdog-only maintenance entry. Readers/Host/modeld do not call it. */
 export async function maintainObservationJournals(input: { durableRoot: string; runRoot?: string }): Promise<{ roots: Array<{ source: "control" | "host"; root: string; outcome: "maintained" | "unavailable" | "not_configured" }>; installedScheduler: false }> {
   const hostRoot = ephemeralRuntimeRoot(input.runRoot);
   const roots: Array<{ source: "control" | "host"; root: string; outcome: "maintained" | "unavailable" | "not_configured" }> = [];
@@ -576,42 +680,68 @@ export async function maintainObservationJournals(input: { durableRoot: string; 
   return { roots, installedScheduler: false };
 }
 
+
 export async function compactEvents(root: string): Promise<void> {
   const path = eventsPath(root);
   await withEventsLock(root, async () => {
-    const read = await readJournalWindow(path);
+    const read = await readJournalWindow(path, JOURNAL_LOOKUP_READ_BYTES);
     if (read.state === "missing") return;
-    if (read.state !== "present" && read.state !== "partial") throw new Error("journal_unavailable");
-    if (read.window.changedDuringRead) throw new Error("journal_changed");
-    // Preserve the previous watermark in the same atomic file replacement.
+    if (read.state !== "present" || !read.coverage || read.coverage.partialLastLine || read.coverage.invalidLines > 0
+      || read.coverage.rotatedDuringRead || read.coverage.truncatedDuringRead) {
+      throw new Error("journal_compaction_unavailable");
+    }
     let previous: RetentionObservation | undefined;
-    const lines = read.lines.filter(line => { try { const marker = retentionMarker(JSON.parse(line)); if (marker) { previous = marker; return false; } } catch { /* keep bounded malformed evidence */ } return true; });
+    const lines = (read.lines as Array<string | null>).filter((line): line is string => typeof line === "string").filter(line => {
+      try { const marker = retentionMarker(JSON.parse(line)); if (marker) { previous = marker; return false; } } catch { /* keep bounded malformed evidence */ }
+      return true;
+    });
     const kept = selectRetainedEventLines(lines);
-    const keep = new Set(kept);
-    const dropped = lines.filter(line => !keep.has(line));
+    if (!read.coverage.prefixOmitted && kept.length === lines.length && !previous) return;
+    const prior = await observeJournalRetention(root);
+    const dropped = lines.filter(line => !kept.includes(line));
     const timestamps = dropped.flatMap(line => { try { const v = JSON.parse(line); return typeof v.at === "string" && Number.isFinite(Date.parse(v.at)) ? [v.at as string] : []; } catch { return []; } });
     if (previous?.latestDiscardedAt) timestamps.push(previous.latestDiscardedAt);
-    const lostPrefix = read.window.prefixOmitted || read.window.linesOmitted || read.window.trailingPartial || read.window.oversizedLines > 0 || read.window.malformedLines > 0;
+    const lostPrefix = read.coverage.prefixOmitted || read.coverage.recordLimitHit || read.coverage.partialLastLine || read.coverage.invalidLines > 0;
     if (dropped.length || previous || lostPrefix) {
-      const latestDiscardedAt = lostPrefix ? new Date().toISOString() : timestamps.sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? null;
-      kept.unshift(JSON.stringify({ name: "journal_retention", schemaVersion: 1,
+      kept.unshift(JSON.stringify({
+        name: "journal_retention", schemaVersion: 1,
         discardedRecordsLowerBound: Math.min(Number.MAX_SAFE_INTEGER, (previous?.discardedRecordsLowerBound ?? 0) + dropped.length),
-        discardedPrefix: previous?.discardedPrefix === true || lostPrefix, latestDiscardedAt,
+        discardedPrefix: previous?.discardedPrefix === true || lostPrefix,
+        latestDiscardedAt: lostPrefix ? new Date().toISOString() : timestamps.sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? null,
       }));
     }
     const body = kept.length > 0 ? `${kept.join("\n")}\n` : "";
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     await chmod(dirname(path), 0o700);
-    const tmp = `${path}.tmp`;
-    await writeFile(tmp, body, { mode: 0o600 });
-    await chmod(tmp, 0o600);
-    const handle = await open(tmp, "r+");
+    const operationId = randomUUID();
+    const tmp = `${path}.${operationId}.tmp`;
+    let handle;
     try {
+      handle = await open(tmp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+      await handle.writeFile(body, "utf8");
       await handle.sync();
+      const target = await handle.stat();
+      await handle.close(); handle = undefined;
+      const current = await lstat(path);
+      if (`${current.dev}:${current.ino}` !== read.coverage.fileIdentity || current.size !== read.coverage.fileBytes) throw new Error("journal_changed_during_compaction");
+      const receipt: JournalRetentionReceipt = {
+        version: 1, operationId, state: "prepared", at: new Date().toISOString(),
+        sourceIdentity: read.coverage.fileIdentity, targetIdentity: `${target.dev}:${target.ino}`,
+        retainedBytes: Buffer.byteLength(body, "utf8"), retainedRecords: kept.length,
+        droppedScannedRecords: dropped.length, sourcePrefixOmitted: read.coverage.prefixOmitted,
+        priorCoverageLimited: prior.state !== "missing",
+        policy: { maxBytes: JOURNAL_RETENTION_MAX_BYTES, maxIncidents: JOURNAL_INCIDENT_RETENTION, maxAgeMs: JOURNAL_INCIDENT_MAX_AGE_MS },
+      };
+      // Two files are not a transaction. Publish intent first; a crash or second
+      // write failure remains visibly prepared/uncertain rather than complete.
+      await writeJournalRetention(root, receipt);
+      await rename(tmp, path);
+      const directory = await open(dirname(path), constants.O_RDONLY);
+      try { await directory.sync(); } finally { await directory.close(); }
+      await writeJournalRetention(root, { ...receipt, state: "applied" });
     } finally {
-      await handle.close();
+      await handle?.close().catch(() => undefined);
+      await unlink(tmp).catch(() => undefined);
     }
-    await rename(tmp, path);
-    await chmod(path, 0o600);
   });
 }

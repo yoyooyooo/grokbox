@@ -112,8 +112,10 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     startAnchor: "new ForwardingInteractionListener(",
     endAnchor: "            onToolCall: (event, callId, toolCall) => {",
     find: "          (update) => {\n            streamWatchdog.noteUpdate(update);\n            host.emitUpdate(update, updateObservers);\n          },\n",
+    // Qualify the native run-owned callback without replacing it with a global
+    // last-writer sink. A first canonical event is not synthetic thinking.
     replacement:
-      `          ((__grokbox_activity_emit) => {\n            globalThis[Symbol.for("${HOST_ACTIVITY_SYMBOL}")] = __grokbox_activity_emit;\n            return __grokbox_activity_emit;\n          })((update) => {\n            streamWatchdog.noteUpdate(update);\n            host.emitUpdate(update, updateObservers);\n          }),\n`,
+      "          // grokbox: preserve this native run's activity/watchdog owner.\n          (update) => {\n            streamWatchdog.noteUpdate(update);\n            host.emitUpdate(update, updateObservers);\n          },\n",
   },
   // Separate unique replacements: do not relax find-count or copy the Host memory policy.
   {

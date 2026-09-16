@@ -1,12 +1,15 @@
 import { constants as fsConstants } from "node:fs";
-import { chmod, mkdir, open } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
-import { HOST_STATE_SHAPES } from "./context-codec.ts";
-import { projectStreamDiagnostic, projectFailureSummary, type FailureSummary, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
-import { observeJournalWrite } from "./journal-health.node.ts";
-import { projectRunObservation } from "./run-observation.ts";
 import { projectAlertEvent } from "@grokbox/runtime-kernel/alerts";
+import { projectStreamDiagnostic, projectStreamSummary, projectFailureSummary, type FailureSummary } from "@grokbox/runtime-kernel/contract";
+import { noteUnprojectedJournalEvent, startJournalWrite, type JournalWriterRole } from "./journal-health.node.ts";
+import { projectRunObservation } from "./run-observation.ts";
+import { projectRuntimeBuildInfo, type RuntimeBuildInfo } from "@grokbox/runtime-kernel/contract";
+import { projectObservationIdentity, type ObservationIdentity } from "./observation-identity.node.ts";
+import { projectNativeTurnObservation } from "./turn-observation.ts";
+import { HOST_STATE_SHAPES } from "./context-codec.ts";
 import {
   boundedClientNonce,
   HOST_FAILURE_CATALOG,
@@ -33,6 +36,7 @@ export const TURN_SEAM_ERROR_CODES = new Set([
   "parallel_tools",
   "invocation_conflict",
   "model_error",
+  "transport_error",
   "not_admitted",
   "capacity",
   "ledger_unavailable",
@@ -40,7 +44,7 @@ export const TURN_SEAM_ERROR_CODES = new Set([
   "invalid_stream",
   "unsupported_version",
 ]);
-const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect", "provider", "authority"]);
+const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect", "provider", "authority", "transport"]);
 export const HOST_STREAM_REJECT_REASONS = new Set<string>(HOST_FAILURE_CATALOG.map((row) => row.reason));
 const HOST_SEAM_STAGES = new Set(["hook_enter", "hook_decline", "stream_enter", "connect_attempt", "first_chunk"]);
 const HOST_SEAM_RESULTS = new Set(["entered", "ok", "fail", "compact_passthrough"]);
@@ -60,9 +64,14 @@ export type HostStreamRejectedEvent = {
   errorCode: string;
   reason: string;
   stateShape?: string;
-  diagnostic?: StreamDiagnostic;
   failureSummary?: FailureSummary;
   serviceEpoch?: string;
+  diagnostic?: ReturnType<typeof projectStreamDiagnostic>;
+  stream?: ReturnType<typeof projectStreamSummary>;
+  requestKind?: "main" | "memory-extraction" | "episode";
+  parentStepId?: string;
+  observation?: ObservationIdentity;
+  build?: RuntimeBuildInfo;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,40 +115,53 @@ async function ensureLogDir(filePath: string): Promise<void> {
 
 export async function withEventsLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
   const path = lockPath(root);
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   for (let attempt = 0; attempt < 1000; attempt += 1) {
+    let handle;
+    try { handle = await open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600); }
+    catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      await delay(2); continue;
+    }
+    let identity: { dev: number; ino: number } | undefined;
     try {
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-      const handle = await open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
+      identity = await handle.stat();
       await handle.writeFile(`${process.pid}\n`);
       await handle.close();
-      try {
-        return await fn();
-      } finally {
-        const { unlink } = await import("node:fs/promises");
-        await unlink(path).catch(() => undefined);
-      }
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      // Only lock acquisition retries. An EEXIST thrown by fn must not replay it.
+      return await fn();
+    } finally {
+      await handle.close().catch(() => undefined);
+      const current = await lstat(path).catch(() => undefined);
+      if (identity && current?.dev === identity.dev && current.ino === identity.ino) await unlink(path).catch(() => undefined);
     }
-    await delay(2);
   }
-  throw new Error("box-runtime events journal lock timeout");
+  throw Object.assign(new Error("box-runtime events journal lock timeout"), { code: "LOCK_TIMEOUT" });
 }
 
-export async function appendNdjsonLine(root: string, line: string): Promise<void> {
+export async function appendNdjsonLine(root: string, line: string, role: JournalWriterRole = "control"): Promise<void> {
   const path = hostEventsPath(root);
   const payload = line.endsWith("\n") ? line : `${line}\n`;
-  await withEventsLock(root, async () => {
-    await ensureLogDir(path);
-    const handle = await open(path, fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY, 0o600);
-    try {
-      await chmod(path, 0o600);
-      await handle.write(Buffer.from(payload));
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  });
+  const complete = startJournalWrite(root, role);
+  if (!complete.accepted) {
+    await complete();
+    throw Object.assign(new Error("journal observation backlog"), { code: "JOURNAL_BACKPRESSURE" });
+  }
+  try {
+    await withEventsLock(root, async () => {
+      await ensureLogDir(path);
+      const handle = await open(path, fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile()) throw Object.assign(new Error("journal is not regular"), { code: "EIO" });
+        await handle.chmod(0o600);
+        // writeFile handles short writes; the lock protects the entire record.
+        await handle.writeFile(payload, "utf8");
+        await handle.sync();
+      } finally { await handle.close(); }
+    });
+  } catch (error) { await complete(error); throw error; }
+  await complete();
 }
 
 export function projectTurnSeamTerminal(input: unknown): Record<string, unknown> | null {
@@ -177,6 +199,18 @@ export function projectTurnSeamTerminal(input: unknown): Record<string, unknown>
   };
 }
 
+function projectStreamMetadata(input: Record<string, unknown>): {
+  diagnostic?: ReturnType<typeof projectStreamDiagnostic>; stream?: ReturnType<typeof projectStreamSummary>;
+  requestKind?: "main" | "memory-extraction" | "episode"; parentStepId?: string;
+} {
+  const diagnostic = projectStreamDiagnostic(input.diagnostic), stream = projectStreamSummary(input.stream);
+  const parent = boundedString(input.parentStepId);
+  const kind = input.requestKind === "main" || input.requestKind === "memory-extraction" || input.requestKind === "episode" ? input.requestKind : undefined;
+  const qualified = kind === "main" ? parent === null : kind !== undefined && parent !== null && parent !== input.stepId;
+  return { ...(diagnostic ? { diagnostic } : {}), ...(stream ? { stream } : {}),
+    ...(qualified && kind ? { requestKind: kind, ...(parent ? { parentStepId: parent } : {}) } : {}) };
+}
+
 export function projectHostStreamRejected(input: unknown): HostStreamRejectedEvent | null {
   if (!isRecord(input) || input.name !== "host_stream_rejected" || input.schemaVersion !== 2) return null;
   const at = boundedString(input.at);
@@ -204,15 +238,17 @@ export function projectHostStreamRejected(input: unknown): HostStreamRejectedEve
     ...(turnId ? { turnId } : {}),
     ...(stepId ? { stepId } : {}),
     ...(clientNonce ? { clientNonce } : {}),
-    ...runLinks(input),
     stage,
     errorCode,
     reason,
+    ...projectStreamMetadata(input),
+    ...(projectObservationIdentity(input.observation) ? { observation: projectObservationIdentity(input.observation) } : {}),
+    ...(projectRuntimeBuildInfo(input.build) ? { build: projectRuntimeBuildInfo(input.build) } : {}),
     ...(boundedString(input.serviceEpoch) ? { serviceEpoch: boundedString(input.serviceEpoch)! } : {}),
-    ...(projectStreamDiagnostic(input.diagnostic) ? { diagnostic: projectStreamDiagnostic(input.diagnostic) } : {}),
     ...(projectFailureSummary(input.failureSummary) ? { failureSummary: projectFailureSummary(input.failureSummary) } : {}),
     ...(reason === "invalid-state" && (HOST_STATE_SHAPES as readonly unknown[]).includes(input.stateShape)
       ? { stateShape: input.stateShape as string } : {}),
+    ...runLinks(input),
   };
 }
 
@@ -233,6 +269,10 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
   const turnId = boundedString(input.turnId);
   const stepId = boundedString(input.stepId);
   const clientNonce = boundedClientNonce(input.clientNonce);
+  const source = isRecord(input.sourceIdentity) ? input.sourceIdentity : undefined;
+  const sourceIdentity = source && [source.sourceSha256, source.profileSha256, source.transformedSha256]
+    .every(value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value))
+    ? { sourceSha256: source.sourceSha256, profileSha256: source.profileSha256, transformedSha256: source.transformedSha256 } : undefined;
   return {
     name: "host_seam_stage",
     schemaVersion: 1,
@@ -245,6 +285,11 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
     ...(stepId ? { stepId } : {}),
     ...(clientNonce ? { clientNonce } : {}),
     ...(hasAux ? { auxPurpose, parentStepId } : {}),
+    ...(projectObservationIdentity(input.observation) ? { observation: projectObservationIdentity(input.observation) } : {}),
+    ...(stage === "hook_enter" && projectRuntimeBuildInfo(input.build) ? { build: projectRuntimeBuildInfo(input.build) } : {}),
+    ...(stage === "hook_enter" && sourceIdentity ? { sourceIdentity } : {}),
+    ...(stage === "hook_enter" && projectNativeTurnObservation(input.nativeTurn) ? { nativeTurn: projectNativeTurnObservation(input.nativeTurn) } : {}),
+    ...(stage === "hook_enter" && (input.triggerEvidence === "not_instrumented" || (input.triggerEvidence === "client_nonce" && clientNonce)) ? { triggerEvidence: input.triggerEvidence } : {}),
     ...runLinks(input),
   };
 }
@@ -267,11 +312,11 @@ export function projectHostNormalizedTerminal(input: unknown): Record<string, un
     ...(toolCallCount !== null ? { toolCallCount } : {}),
     ...(modelId ? { modelId } : {}),
     ...(projectFailureSummary(input.failureSummary) ? { failureSummary: projectFailureSummary(input.failureSummary) } : {}),
-    ...(projectStreamDiagnostic(input.diagnostic) ? { diagnostic: projectStreamDiagnostic(input.diagnostic) } : {}),
-    ...(boundedString(input.hostGenerationId) ? { hostGenerationId: boundedString(input.hostGenerationId) } : {}),
+    ...(boundedString(input.hostGenerationId) ? { hostGenerationId: boundedString(input.hostGenerationId)! } : {}),
     ...(boundedClientNonce(input.clientNonce) ? { clientNonce: boundedClientNonce(input.clientNonce) } : {}),
-    ...(["main", "memory-extraction", "episode"].includes(String(input.purpose)) ? { purpose: input.purpose } : {}),
-    ...(boundedString(input.parentStepId) ? { parentStepId: boundedString(input.parentStepId) } : {}),
+    ...projectStreamMetadata(input),
+    ...(projectObservationIdentity(input.observation) ? { observation: projectObservationIdentity(input.observation) } : {}),
+    ...(projectRuntimeBuildInfo(input.build) ? { build: projectRuntimeBuildInfo(input.build) } : {}),
     ...runLinks(input),
   };
 }
@@ -287,7 +332,7 @@ function runLinks(input: Record<string, unknown>): Record<string, string> {
 function projectHostEvent(input: unknown): Record<string, unknown> | null {
   if (!isRecord(input) || typeof input.name !== "string" || !journalRoleAllows("host", input.name)) return null;
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as Record<string, unknown> | null;
-  if (input.name === "host_run_observation") return projectRunObservation(input);
+  if (input.name === "host_run_observation") return projectRunObservation(input) as unknown as Record<string, unknown> | null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input);
@@ -297,12 +342,14 @@ function projectHostEvent(input: unknown): Record<string, unknown> | null {
 
 /** Host-only append. Journal write failure never throws to the caller. */
 export async function appendHostJournal(root: string, input: unknown): Promise<HostJournalWriteResult> {
-  return observeJournalWrite(root, async () => {
-    const projected = projectHostEvent(input);
-    if (!projected) return "unprojected";
-    try { await appendNdjsonLine(root, JSON.stringify(projected)); return "written"; }
-    catch { return "write_failed"; }
-  });
+  const projected = projectHostEvent(input);
+  if (!projected) { noteUnprojectedJournalEvent(root, "host"); return "unprojected"; }
+  try {
+    await appendNdjsonLine(root, JSON.stringify(projected), "host");
+    return "written";
+  } catch {
+    return "write_failed";
+  }
 }
 
 export async function appendTurnSeamTerminal(root: string, input: unknown): Promise<HostJournalWriteResult> {

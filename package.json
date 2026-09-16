@@ -53,7 +53,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "esbuild packages/cli/src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --external:classic-level --external:sqlite3 --outfile=dist/index.js && bun scripts/pack-runtime-helpers.mjs",
+    "build": "bun scripts/build.mjs",
     "modeld:run": "node scripts/run-packaged-modeld.mjs --json",
     "grokbox": "bun run packages/cli/src/index.ts",
     "gbox": "bun run packages/cli/src/index.ts",

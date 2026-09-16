@@ -12,7 +12,7 @@ export type StreamRejectSite = typeof STREAM_REJECT_SITES[number];
 export const STREAM_EVENT_TYPES = ["unknown", "data", "done", "eof", "body_error", "stream-start", "response-metadata", "start", "start-step", "finish-step", "text-start", "text-delta", "text-end", "reasoning", "reasoning-start", "reasoning-delta", "reasoning-end", "tool-input-start", "tool-input-delta", "tool-input-end", "tool-call-streaming-start", "tool-call-delta", "tool-call", "tool-error", "tool-result", "finish", "abort", "error", "raw", "source", "file", "text_delta", "reasoning_delta", "tool_start", "tool_delta", "tool_complete", "backend_finish", "accepted", "terminal", "response.completed", "response.failed", "response.incomplete", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.output_item.added", "response.output_item.done"] as const;
 export type StreamEventType = typeof STREAM_EVENT_TYPES[number];
 export const FINISH_REASONS = ["stop", "end-turn", "tool-calls", "tool_calls", "function_call", "length", "max_tokens", "content-filter", "content_filter", "error", "abort", "aborted", "cancelled", "unknown", "insufficient_system_resource", "completed", "incomplete", "failed", "other"] as const;
-export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased", "semanticOutputBytes", "replayRecords", "heldToolRecords", "retainedStorageBytes", "httpCalls"] as const;
+export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "providerFetchCalls", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased", "semanticOutputBytes", "replayRecords", "heldToolRecords", "retainedStorageBytes", "httpCalls"] as const;
 export type StreamCountKey = typeof STREAM_COUNT_KEYS[number];
 export const STREAM_TIME_KEYS = ["headersMs", "providerFirstEventMs", "sdkFirstPartMs", "canonicalFirstEventMs", "hostFirstEventMs", "durationMs"] as const;
 export type StreamTimeKey = typeof STREAM_TIME_KEYS[number];
@@ -47,6 +47,8 @@ export const AUTHORITY_CHECKPOINTS = ["admission", "before_dispatch", "after_aut
 export type AuthorityDiagnostic = { reason: typeof AUTHORITY_REASONS[number]; checkpoint?: typeof AUTHORITY_CHECKPOINTS[number]; durationMs?: number; evidenceAgeMs?: number };
 export type StreamBudgetDiagnostic = { layer: "provider" | "canonical" | "host"; metric: "output_bytes" | "retained_bytes" | "event_count" | "wire_bytes" | "event_bytes" | "tool_count"; limit: number; measured: number };
 export type StreamDiagnostic = {
+  transportSide?: "host_modeld_ipc";
+  transportEvent?: "deadline" | "caller_abort" | "peer_eof" | "socket_error" | "write_error" | "reader_closed";
   failureSummaryStatus?: "direct" | "absent" | "invalid" | "identity_mismatch";
   budget?: StreamBudgetDiagnostic;
   authority?: AuthorityDiagnostic;
@@ -114,6 +116,9 @@ export function projectStreamSummary(value: unknown): StreamSummary | undefined 
 export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | undefined {
   try {
     const out: StreamDiagnostic = {};
+    if (own(value, "transportSide") === "host_modeld_ipc") out.transportSide = "host_modeld_ipc";
+    const transportEvent = member(own(value, "transportEvent"), ["deadline", "caller_abort", "peer_eof", "socket_error", "write_error", "reader_closed"]);
+    if (transportEvent && out.transportSide) out.transportEvent = transportEvent;
     const summaryStatus = member(own(value, "failureSummaryStatus"), ["direct", "absent", "invalid", "identity_mismatch"]);
     if (summaryStatus) out.failureSummaryStatus = summaryStatus;
     const cause = member(own(value, "normalizeCause"), NORMALIZE_CAUSES), site = member(own(value, "rejectSite"), STREAM_REJECT_SITES);

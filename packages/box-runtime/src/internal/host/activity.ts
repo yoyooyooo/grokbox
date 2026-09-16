@@ -7,9 +7,10 @@ export type HostActivityUpdate = {
   text: string;
 };
 
-/** Host UI only. Missing sink or throw must not affect inference. */
-export function emitHostActivity(update: HostActivityUpdate): void {
-  const emit = (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ACTIVITY_SYMBOL)];
+/** Only an explicitly owned callback may be used. A process-global 'last
+ * listener' routes A's update into B's UI/watchdog. Synthetic first-chunk
+ * pulses no longer use this helper; native interaction listeners own activity. */
+export function emitHostActivity(update: HostActivityUpdate, emit?: (update: HostActivityUpdate) => void): void {
   if (typeof emit !== "function") return;
   try {
     emit(update);

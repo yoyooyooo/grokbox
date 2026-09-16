@@ -1,7 +1,7 @@
 import { EnvelopeError, WIRE_VERSION, WireError, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, annotateFailureSummary, projectFailureSummary, failureSummaryMatches, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { qualifyHostRootContract } from "./root-contract.ts";
-import { requestModeld, streamModeld } from "./modeld-client.node.ts";
+import { requestModeld, streamModeld, ModeldTransportError } from "./modeld-client.node.ts";
 import type { HostBinding } from "./host-binding.ts";
 import { finishFromTerminal, reshapeInferenceEvent } from "./stream-codec.ts";
 import { VisibleStreamError, type StreamPart, type StreamRequest } from "./session.ts";
@@ -228,6 +228,9 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       }
       if (!request.abortSignal.aborted && !finished) throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "missing_finish", rejectSite: "host_terminal" });
     } catch (error) {
+      if (error instanceof ModeldTransportError) {
+        throw annotateStreamFailure(new VisibleStreamError("transport", "transport_error"), { ...streamFailureDiagnostic(error), stream: evidence.snapshot() });
+      }
       if (error instanceof WireError || streamFailureDiagnostic(error) || (error instanceof Error && error.message === "extra_keys")) {
         const failure = error instanceof VisibleStreamError ? error : new VisibleStreamError("normalize", "invalid_stream");
         throw annotateStreamFailure(failure, { ...streamFailureDiagnostic(error), stream: evidence.snapshot() });

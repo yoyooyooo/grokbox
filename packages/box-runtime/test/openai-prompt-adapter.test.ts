@@ -296,6 +296,35 @@ describe("openai prompt adapter", () => {
     assertHttpOracle(responses.body, { mixed: false });
   });
 
+  test("mixed result/text/result segments keep their exact order through both HTTP encoders", async () => {
+    const result = (id: string, value: string) => ({ type: "tool-result", toolCallId: id, toolName: "lookup", result: value });
+    const text = (value: string) => ({ type: "text", text: value });
+    for (const content of [
+      [result("c1", "RESULT_A"), text("INSTRUCTION_B")],
+      [text("INSTRUCTION_A"), result("c1", "RESULT_B"), text("INSTRUCTION_C")],
+      [result("c1", "RESULT_A"), text("INSTRUCTION_B"), result("c2", "RESULT_C")],
+    ]) {
+      const messages = [
+        { role: "user", content: "request" },
+        { role: "assistant", content: [
+          { type: "tool-call", toolCallId: "c1", toolName: "lookup", args: {} },
+          ...(content.some(part => "toolCallId" in part && part.toolCallId === "c2") ? [{ type: "tool-call", toolCallId: "c2", toolName: "lookup", args: {} }] : []),
+        ] },
+        { role: "user", content },
+      ];
+      const expected = content.map(part => "text" in part ? part.text : part.result);
+      for (const api of ["chat", "responses"] as const) {
+        const captured = await capture(api, snapshot(messages));
+        expect(captured.http).toBe(1);
+        const body = JSON.stringify(captured.body);
+        const positions = expected.map(value => body.indexOf(value));
+        expect(positions.every(position => position >= 0)).toBe(true);
+        expect(positions).toEqual([...positions].sort((a, b) => a - b));
+        expect(positions.length).toBe(new Set(positions).size);
+      }
+    }
+  });
+
   test("generation options reach Chat and Responses bodies, including tool_choice none", async () => {
     const chatSnap = snapshot(continuationState("user"), { options });
     const chat = await capture("chat", chatSnap);

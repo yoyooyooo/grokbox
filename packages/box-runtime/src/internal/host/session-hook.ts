@@ -1,6 +1,9 @@
 import type { HostBinding } from "./host-binding.ts";
-import { HOST_RUN_OBSERVATION_SYMBOL, type createRunObserver } from "./run-observation.ts";
-import type { StreamDiagnostic, FailureSummary } from "@grokbox/runtime-kernel/contract";
+import type { StreamDiagnostic, StreamSummary, FailureSummary } from "@grokbox/runtime-kernel/contract";
+import { HOST_RUN_OBSERVATION_SYMBOL, createRunObserver } from "./run-observation.ts";
+import { runtimeBuildInfo } from "@grokbox/runtime-kernel/contract";
+import { nextObservationIdentity } from "./observation-identity.node.ts";
+import { observeNativeTurn } from "./turn-observation.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
 import { lookupHostRootContract } from "./root-contract.ts";
 import { captureHostManagedSelection } from "./selection.node.ts";
@@ -21,7 +24,6 @@ import {
 import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.node.ts";
 import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } from "./aux-request.ts";
 import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
-import { emitHostActivity } from "./activity.ts";
 import { noteHostManagedStep } from "./compact.ts";
 import { boundedClientNonce, mapAdmitCatch, mapTerminalReject } from "./failure-catalog.ts";
 
@@ -145,6 +147,13 @@ export function bindHostSessionHook(input: {
       stage: "hook_enter",
       result: "entered",
       ...facts,
+      triggerEvidence: clientNonce ? "client_nonce" : "not_instrumented",
+      observation: nextObservationIdentity("host"), build: runtimeBuildInfo(),
+      nativeTurn: observeNativeTurn(options),
+      ...(input.compile ? { sourceIdentity: {
+        sourceSha256: input.compile.sourceSha256, profileSha256: input.compile.profileSha256,
+        transformedSha256: input.compile.transformedSha256,
+      } } : {}),
     });
     // A real hook entry remains observable even if selection declines or lacks an agent id.
     let captured: ReturnType<typeof captureHostManagedSelection>;
@@ -159,13 +168,15 @@ export function bindHostSessionHook(input: {
         name: "host_stream_rejected", schemaVersion: 2, at: nowIso(),
         mode: "route", ...facts, stage: mapped.stage,
         errorCode: mapped.errorCode, reason: mapped.reason,
+        observation: nextObservationIdentity("host"), build: runtimeBuildInfo(),
       });
       throw error;
     }
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
     const record = captured.record;
-    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string, diagnostic?: StreamDiagnostic, failureId?: string, failureSummary?: FailureSummary) => {
+    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string,
+      detail?: { diagnostic?: StreamDiagnostic; stream?: StreamSummary; requestKind?: string; purpose?: string; parentStepId?: string; serviceEpoch?: string; failureId?: string; failureSummary?: FailureSummary }) => {
       void appendHostStreamRejected(input.runRoot, {
         name: "host_stream_rejected",
         schemaVersion: 2,
@@ -177,9 +188,8 @@ export function bindHostSessionHook(input: {
         reason,
         ...(stateShape ? { stateShape } : {}),
         ...(stepId ? { stepId } : {}),
-        ...(diagnostic ? { diagnostic } : {}),
-        ...(failureId ? { failureId } : {}),
-        ...(failureSummary ? { failureSummary } : {}),
+        ...(detail ?? {}),
+        observation: nextObservationIdentity("host"), build: runtimeBuildInfo(),
       });
     };
     const writeStage = (stage: string, result: string, extra: Record<string, string> = {}) => {
@@ -191,6 +201,7 @@ export function bindHostSessionHook(input: {
         result,
         ...facts,
         ...extra,
+        observation: nextObservationIdentity("host"),
       });
     };
     const reject = (code: string, detail?: HostStreamRejectDetail): StreamHandle => {
@@ -198,7 +209,7 @@ export function bindHostSessionHook(input: {
         ?? (detail?.reason === "missing-step-id" || detail?.reason === "invalid-step-id" ? "stream-id" : "admit");
       const reason = detail?.reason
         ?? (stage === "admit" ? "invalid-state" : undefined);
-      if (reason) writeReject(stage, reason, code);
+      if (reason) writeReject(stage, reason, code, undefined, boundedId(detail?.invocationId));
       return visibleFailureHandle(modelId, code);
     };
     const wrapStream = (session: PromptSession): PromptSession => ({
@@ -255,7 +266,8 @@ export function bindHostSessionHook(input: {
       onConnectAttempt: (result) => writeStage("connect_attempt", result),
       onFirstChunk: (stepId) => {
         writeStage("first_chunk", "ok", { stepId });
-        emitHostActivity({ type: "thinking-delta", text: " " });
+        // This is acceptance evidence, not a fabricated native thinking event.
+        // The Host's run-owned interaction listener updates its own watchdog/UI.
       },
     });
     const session = createStreamingPromptSession({
@@ -267,7 +279,16 @@ export function bindHostSessionHook(input: {
       onTerminal: (terminal) => {
         if (terminal.rejected && terminal.errorCode) {
           const mapped = mapTerminalReject(terminal.errorCode, terminal.stage);
-          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId, terminal.diagnostic, terminal.failureId, terminal.failureSummary);
+          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId, {
+            ...(terminal.diagnostic ? { diagnostic: terminal.diagnostic } : {}),
+            ...(terminal.diagnostic?.stream ? { stream: terminal.diagnostic.stream } : {}),
+            ...(terminal.failureId ? { failureId: terminal.failureId } : {}),
+            ...(terminal.failureSummary ? { failureSummary: terminal.failureSummary } : {}),
+            purpose: terminal.purpose ?? "main",
+            requestKind: terminal.purpose ?? "main",
+            ...(terminal.parentStepId ? { parentStepId: terminal.parentStepId } : {}),
+            ...(runtime.last.stepId === terminal.invocationId && runtime.last.serviceEpoch ? { serviceEpoch: runtime.last.serviceEpoch } : {}),
+          });
         }
         const stepId = terminal.invocationId;
         if (!stepId) return;
@@ -279,14 +300,15 @@ export function bindHostSessionHook(input: {
           toolCallCount: terminal.toolCallCount,
           modelId,
           ...(terminal.errorCode ? { errorCode: terminal.errorCode } : {}),
-          ...(terminal.failureId ? { failureId: terminal.failureId } : {}),
-          hostId: input.binding!.identitySha,
-          hostGenerationId: input.binding!.generationId,
-          ...(clientNonce ? { clientNonce } : {}),
           ...(terminal.diagnostic ? { diagnostic: terminal.diagnostic } : {}),
           ...(terminal.failureSummary ? { failureSummary: terminal.failureSummary } : {}),
           purpose: terminal.purpose ?? "main",
+          requestKind: terminal.purpose ?? "main",
+          ...(terminal.diagnostic?.stream ? { stream: terminal.diagnostic.stream } : {}),
           ...(terminal.parentStepId ? { parentStepId: terminal.parentStepId } : {}),
+          ...facts,
+          observation: nextObservationIdentity("host"), build: runtimeBuildInfo(),
+          hostId: input.binding!.identitySha,
           agentId,
           turnId,
           stepId,
@@ -294,6 +316,8 @@ export function bindHostSessionHook(input: {
             ? {
               serviceEpoch: runtime.last.serviceEpoch,
               binding: runtime.last.bindingId,
+              // The Host sees one STEP, not the kernel's recovery attempt count.
+              // Actual provider attempts are recorded by modeld, never guessed here.
             }
             : {}),
         });

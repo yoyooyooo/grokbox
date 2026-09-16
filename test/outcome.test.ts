@@ -108,7 +108,9 @@ test("first_chunk then normalize stream_invalid is failed with invalid_stream, n
   });
   expect(result.runtimeFailure?.message).toBe(INVALID_STREAM_AGENT_MESSAGE);
   expect(JSON.stringify(result)).not.toContain("unknown_failure");
-  expect(JSON.stringify(result)).not.toContain('"code":"model_error"');
+  expect(result.runtimeFailure?.code).toBe("invalid_stream");
+  // Retain original layer observations; specialization must not rewrite history.
+  expect(result.runtimeFailure?.observations.some(row => row.code === "model_error")).toBe(true);
 });
 
 for (const hostName of ["host_stream_rejected", "host_normalized_terminal"]) {
@@ -163,8 +165,8 @@ for (const hostName of ["host_stream_rejected", "host_normalized_terminal"]) {
         const result = projectSendOutcome({ ...base, runtimeEvents: [
           { ...modeld, [field]: value }, qualifiedHost,
         ] });
-        // Conflicting service epochs already invalidate the whole observation.
-        if (field === "serviceEpoch" && value === "generation-2") {
+        // Both process identities fence the join, not only the service epoch.
+        if (value === "generation-2") {
           expect(result).toMatchObject({ state: "unknown", runtimeFailure: null });
         } else {
           expect(result).toMatchObject({ state: "failed", runtimeFailure: { code: "model_error" } });

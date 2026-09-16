@@ -20,7 +20,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T38 identity alignment](tickets/T38-identity-write-alignment.md): retire implicit harness writes; preserve/block test2 before separately approved native calibration.
 - [T39 native model roundtrip](tickets/T39-native-model-roundtrip.md): same-session official/A/B/official, durable native-state return and original-App journey.
 - [T40 persistent release](tickets/T40-persistent-release-and-rollback.md): normal service lifecycle, scoped production release and distinct unpatched-Host exit, reusing T25/T28.
-- [T41 continuous observation](tickets/T41-continuous-observation-and-alerting.md): first local CLI/collector/SQLite/incident slice implemented; crash recovery, maintenance, shared scheduling and notification delivery remain open. Not an installed service or admission authority.
+- [T41 continuous observation](tickets/T41-continuous-observation-and-alerting.md): local CLI/collector, incremental SQLite transactions, incident/Alert indexing and tested crash/maintenance boundaries are implemented. Persistent installation, current native Host qualification and external/client delivery remain separate gates; observation never grants admission.
 - [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
@@ -30,7 +30,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 ## Maintainers
 
-- [持续观测与本地 incident](maintainers/continuous-observation.md): explicit monitor init/run, pure snapshot/event/incident queries, revision-bound ack/snooze, portable bounded SQLite-image durability and failure/cursor boundaries; local-only, no execution authority or automatic repair.
+- [持续观测与本地 incident](maintainers/continuous-observation.md): explicit monitor init/run, pure snapshot/event/incident queries, revision-bound ack/snooze, incremental disk SQLite transactions, failure/cursor recovery and automatic retention; local-only, no execution authority or automatic business replay.
 
 - [运行结果与 App 警告观测](maintainers/run-outcome-observation.md): 金丝雀路径是 `send` + `history outcome --nonce … --runtime`；outcome 状态为 recorded/failed/progress/delivered/expected_result_observed/unknown，无 accepted 成功词；send 回执 `accepted` 只表示入队。
 

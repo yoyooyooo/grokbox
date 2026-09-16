@@ -8,6 +8,7 @@ export * from "./internal/contract/identity.ts";
 export * from "./internal/contract/events.ts";
 export * from "./internal/contract/stream-diagnostic.ts";
 export * from "./internal/contract/provider-observation.ts";
+export * from "./internal/contract/build-info.ts";
 export * from "./internal/contract/failure-summary.ts";
 export * from "./internal/contract/provider-recovery.ts";
 export * from "./internal/contract/output-budget.ts";

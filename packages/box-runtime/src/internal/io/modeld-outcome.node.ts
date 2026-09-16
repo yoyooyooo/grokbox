@@ -1,9 +1,11 @@
 import { Effect } from "effect";
-import { projectExecutionCapacity, projectStreamDiagnostic, projectStreamSummary, projectFailureSummary, projectProviderRecoveryState, projectModelRecoveryProgress, type ProviderRecoveryState, type ContextSnapshot, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
-import { BACKEND_PHASES, FAILURE_REASONS, PROVIDER_CODES, PROVIDER_PARAMS } from "../backends/failure-observation.ts";
+import { projectExecutionCapacity, projectStreamSummary, projectFailureSummary, projectProviderRecoveryState, projectModelRecoveryProgress, type ProviderRecoveryState, type ContextSnapshot, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
+import { projectBackendObservation } from "../backends/failure-observation.ts";
 import { STEP_FAILURE_CODES, STEP_OUTCOMES, STEP_PHASES, type ModeldStepOutcome } from "../modeld/step-outcome.ts";
 import { appendNdjsonLine } from "../host/terminal-journal.node.ts";
-import { observeJournalWrite } from "../host/journal-health.node.ts";
+import { noteUnprojectedJournalEvent } from "../host/journal-health.node.ts";
+import { nextObservationIdentity, projectObservationIdentity } from "../host/observation-identity.node.ts";
+import { projectRuntimeBuildInfo, runtimeBuildInfo } from "@grokbox/runtime-kernel/contract";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -133,29 +135,54 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
   const maxOutput = boundedInt(v.requestMaxOutputTokens, 8 * 1024 * 1024);
   if (maxOutput !== undefined && maxOutput > 0) out.requestMaxOutputTokens = maxOutput;
   if (member(v.failureCode, STEP_FAILURE_CODES)) out.failureCode = v.failureCode;
-  const d = record(v.diagnostic);
-  if (d && member(d.phase, BACKEND_PHASES) && member(d.reason, FAILURE_REASONS)) {
-    const safe: Record<string, unknown> = { phase: d.phase, reason: d.reason, ...projectStreamDiagnostic(d) };
-    if (typeof d.httpStatus === "number" && Number.isInteger(d.httpStatus) && d.httpStatus >= 400 && d.httpStatus <= 599) safe.httpStatus = d.httpStatus;
-    if (member(d.providerCode, PROVIDER_CODES)) safe.providerCode = d.providerCode;
-    if (member(d.providerParam, PROVIDER_PARAMS)) safe.providerParam = d.providerParam;
-    out.diagnostic = safe;
+  const diagnostic = projectBackendObservation(v.diagnostic);
+  if (diagnostic) out.diagnostic = diagnostic;
+  for (const field of ["startedAt", "detectedAt"] as const) {
+    const at = v[field];
+    if (typeof at === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(at) && Number.isFinite(Date.parse(at))) out[field] = at;
+  }
+  const build = projectRuntimeBuildInfo(v.build), observation = projectObservationIdentity(v.observation);
+  if (build) out.build = build;
+  if (observation) out.observation = observation;
+  const runtime = record(v.runtime);
+  if (runtime && (runtime.name === "node" || runtime.name === "bun") && typeof runtime.version === "string" && /^[0-9][A-Za-z0-9.+-]{0,63}$/.test(runtime.version)) {
+    out.runtime = { name: runtime.name, version: runtime.version };
+  }
+  const transport = record(v.transport);
+  if (transport?.side === "host_modeld_ipc" && member(transport.close, ["peer_end", "peer_close", "socket_error"])
+    && typeof transport.at === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(transport.at) && Number.isFinite(Date.parse(transport.at))) {
+    out.transport = { side: transport.side, close: transport.close, at: transport.at };
+  }
+  const followup = record(v.followup);
+  if (followup && member(followup.phase, ["transport", "internal"]) && member(followup.code, ["disconnected", "defect", "interrupted", "unknown"])) {
+    out.followup = { phase: followup.phase, code: followup.code };
+  }
+  if (Array.isArray(v.attempts)) {
+    const retained = v.attempts.slice(0, 4).flatMap((raw) => {
+      const attempt = record(raw), index = boundedInt(attempt?.index, 3);
+      if (!attempt || index === undefined) return [];
+      const summary = projectStreamSummary(attempt.stream), detail = projectBackendObservation(attempt.diagnostic);
+      return [{ index, ...(member(attempt.failureCode, STEP_FAILURE_CODES) ? { failureCode: attempt.failureCode } : {}),
+        ...(summary ? { stream: summary } : {}), ...(detail ? { diagnostic: detail } : {}) }];
+    });
+    out.attempts = retained;
+    out.attemptsTruncated = v.attempts.length > retained.length || (attempts !== undefined && attempts > retained.length);
   }
   return out;
 }
 
 export function writeModeldRecoveryProgress(root: string, request: RunStepRequest, recovery: ProviderRecoveryState) {
-  return Effect.tryPromise(async () => observeJournalWrite(root, async () => {
+  return Effect.tryPromise(async () => {
     const projected = projectModelRecoveryProgress({ name: "model_recovery_progress", schemaVersion: 1, at: new Date().toISOString(),
       agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
       hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId, recovery });
-    if (!projected) return "unprojected";
-    await appendNdjsonLine(root, JSON.stringify(projected)); return "written";
-  })).pipe(Effect.asVoid);
+    if (!projected) { noteUnprojectedJournalEvent(root, "modeld"); return; }
+    await appendNdjsonLine(root, JSON.stringify(projected), "modeld");
+  }).pipe(Effect.asVoid);
 }
 
 export function writeModeldStepOutcome(root: string, request: RunStepRequest, outcome: ModeldStepOutcome) {
-  return Effect.tryPromise(async () => observeJournalWrite(root, async () => {
+  return Effect.tryPromise(async () => {
     let measures: ReturnType<typeof snapshotWireMeasures> | undefined;
     try {
       measures = snapshotWireMeasures(request.snapshot);
@@ -171,9 +198,10 @@ export function writeModeldStepOutcome(root: string, request: RunStepRequest, ou
       selectionRevision: request.selection.selectionRevision,
       hostGenerationId: request.hostEpoch.compile, agentId: request.agentId,
       turnId: request.turnId, stepId: request.stepId, serviceEpoch: request.serviceEpoch.incarnationId,
+      build: runtimeBuildInfo(), observation: nextObservationIdentity("modeld"),
+      runtime: { name: process.versions.bun ? "bun" : "node", version: process.versions.bun ?? process.versions.node },
     });
-    if (!projected) return "unprojected";
-    await appendNdjsonLine(root, JSON.stringify(projected));
-    return "written";
-  })).pipe(Effect.asVoid);
+    if (!projected) { noteUnprojectedJournalEvent(root, "modeld"); return; }
+    await appendNdjsonLine(root, JSON.stringify(projected), "modeld");
+  }).pipe(Effect.asVoid);
 }

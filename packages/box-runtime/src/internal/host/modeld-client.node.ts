@@ -1,5 +1,7 @@
 import { createConnection } from "node:net";
-import { REQUEST_WALL_DEADLINE_MS } from "@grokbox/runtime-kernel/contract";
+import {
+  REQUEST_WALL_DEADLINE_MS, WireError, annotateStreamFailure, type StreamDiagnostic,
+} from "@grokbox/runtime-kernel/contract";
 import {
   acceptModeldFrame,
   clientSessionFor,
@@ -9,45 +11,44 @@ import {
   type ClientSession,
 } from "../wire/modeld-wire.ts";
 import { modeldSocketPath } from "../wire/modeld-probe.node.ts";
-import {
-  resumeStepFrameForCompactRequest,
-  type CompactInFlight,
-} from "./compact.ts";
+import { resumeStepFrameForCompactRequest, type CompactInFlight } from "./compact.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-
+export type ModeldTransportReason = "deadline" | "caller_abort" | "peer_eof" | "socket_error" | "write_error" | "reader_closed";
+/** Side-qualified local IPC error. No original socket error/path/body is copied. */
+export class ModeldTransportError extends Error {
+  readonly side = "host_modeld_ipc";
+  constructor(readonly reason: ModeldTransportReason) {
+    super(reason === "deadline" ? "timeout" : reason === "peer_eof" ? "incomplete" : reason === "caller_abort" || reason === "reader_closed" ? "aborted" : "transport");
+    this.name = "ModeldTransportError";
+    annotateStreamFailure(this, { transportSide: this.side, transportEvent: reason });
+  }
+}
+class ModeldCompactError extends Error {
+  constructor() { super("compact_rejected"); this.name = "ModeldCompactError"; }
+}
 function inFlightFromBody(body: unknown): CompactInFlight | undefined {
   if (!isRecord(body) || body.method !== "run-step") return undefined;
   if (typeof body.agentId !== "string" || typeof body.turnId !== "string" || typeof body.stepId !== "string") return undefined;
   const selection = isRecord(body.selection) ? body.selection : undefined;
   if (!selection || typeof selection.selectionRevision !== "string") return undefined;
   return {
-    agentId: body.agentId,
-    turnId: body.turnId,
-    stepId: body.stepId,
-    selectionRevision: selection.selectionRevision,
+    agentId: body.agentId, turnId: body.turnId, stepId: body.stepId, selectionRevision: selection.selectionRevision,
     ...(typeof body.bindingId === "string" ? { bindingId: body.bindingId } : {}),
   };
 }
-
 function noteAccepted(inFlight: CompactInFlight | undefined, value: unknown): void {
   if (!inFlight || !isRecord(value)) return;
-  if (value.ok === true && value.kind === "accepted" && typeof value.bindingId === "string") {
-    inFlight.bindingId = value.bindingId;
-  }
+  if (value.ok === true && value.kind === "accepted" && typeof value.bindingId === "string") inFlight.bindingId = value.bindingId;
 }
-
 function serialize(onError: (error: Error) => void): (task: () => Promise<void>) => void {
   let tail = Promise.resolve();
   return (task) => {
-    tail = tail.then(task).catch((error) => {
-      onError(error instanceof Error ? error : new Error("frame"));
-    });
+    tail = tail.then(task).catch(error => onError(error instanceof Error ? error : new ModeldTransportError("socket_error")));
   };
 }
-
 async function applyIncomingFrame(input: {
   session: { current: ClientSession };
   inFlight: CompactInFlight | undefined;
@@ -60,99 +61,27 @@ async function applyIncomingFrame(input: {
   input.session.current = next.session;
   noteAccepted(input.inFlight, input.value);
   if (next.control) {
-    if (next.control.method !== "compact-request") throw new Error("unexpected_compact");
+    if (next.control.method !== "compact-request") throw new ModeldCompactError();
     const resume = await resumeStepFrameForCompactRequest(next.control, input.inFlight, {
-      stopped: input.stopped,
-      deadlineMs: Math.max(0, input.remainingMs()),
+      stopped: input.stopped, deadlineMs: Math.max(0, input.remainingMs()),
     });
-    if (!resume || input.stopped()) throw new Error("compact_rejected");
+    if (!resume || input.stopped()) throw new ModeldCompactError();
     input.write(resume);
     return { done: false };
   }
   return { done: next.done, emit: input.value };
 }
 
-/** Effect-free Host client. Schema/sequence/method SM. EOF without complete session is incomplete. */
+/** Finite collection uses exactly the same validated transport as streaming. */
 export async function requestModeld(runRoot: string, body: unknown, timeoutMs = 2_000): Promise<unknown[]> {
-  return await new Promise((resolve, reject) => {
-    let session: ClientSession;
-    try { session = clientSessionFor(body); }
-    catch (error) {
-      reject(error instanceof Error ? error : new Error("request"));
-      return;
-    }
-    const inFlight = inFlightFromBody(body);
-    const socket = createConnection({ path: modeldSocketPath(runRoot) });
-    const frames: unknown[] = [];
-    let buf = Buffer.alloc(0);
-    let settled = false;
-    let done = false;
-    const deadlineAt = performance.now() + timeoutMs;
-    const timer = setTimeout(() => finish(new Error("timeout")), timeoutMs);
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      socket.destroy();
-      if (error) reject(error);
-      else if (!done) reject(new Error("incomplete"));
-      else resolve(frames);
-    };
-    const enqueue = serialize((error) => finish(error));
-    const sessionRef = { current: session };
-    socket.on("connect", () => {
-      try { socket.write(encodeModeldFrame(body)); }
-      catch (error) { finish(error instanceof Error ? error : new Error("write")); }
-    });
-    socket.on("data", (chunk: Buffer) => {
-      enqueue(async () => {
-        if (settled) return;
-        if (buf.length + chunk.length > MODELD_MAX_FRAME + 4) {
-          finish(new Error("frame"));
-          return;
-        }
-        buf = Buffer.concat([buf, chunk]);
-        while (!settled) {
-          const decoded = decodeModeldFrame(buf);
-          if (decoded == null) break;
-          if ("error" in decoded) {
-            finish(new Error(decoded.error));
-            return;
-          }
-          buf = Buffer.from(decoded.rest);
-          try {
-            const next = await applyIncomingFrame({
-              session: sessionRef,
-              inFlight,
-              value: decoded.value,
-              write: (value) => { socket.write(encodeModeldFrame(value)); },
-              stopped: () => settled,
-              remainingMs: () => deadlineAt - performance.now(),
-            });
-            if (next.emit !== undefined) frames.push(next.emit);
-            if (next.done) {
-              done = true;
-              if (buf.length > 0) {
-                finish(new Error("extra_keys"));
-                return;
-              }
-              finish();
-              return;
-            }
-          } catch (error) {
-            finish(error instanceof Error ? error : new Error("malformed_frame"));
-            return;
-          }
-        }
-      });
-    });
-    socket.on("error", (error) => finish(error));
-    socket.on("end", () => finish());
-    socket.on("close", () => { if (!settled) finish(); });
-  });
+  const frames: unknown[] = [];
+  for await (const frame of streamModeld(runRoot, body, { timeoutMs })) frames.push(frame);
+  return frames;
 }
 
-/** Yield each validated frame as it arrives. Buffer-all mutants cannot satisfy first-chunk-before-terminal. */
+/** Effect-free Host client. Fixed frame/aggregate budgets, no raw socket errors,
+ * no hidden retry. Socket data and EOF are serialized in arrival order; a valid
+ * terminal queued for decoding cannot be discarded by an earlier EOF callback. */
 export function streamModeld(
   runRoot: string,
   body: unknown,
@@ -162,125 +91,122 @@ export function streamModeld(
   return {
     [Symbol.asyncIterator](): AsyncIterator<unknown> {
       let session: ClientSession;
-      try { session = clientSessionFor(body); }
-      catch (error) {
-        const failed = error instanceof Error ? error : new Error("request");
-        return {
-          next: async () => { throw failed; },
-        };
+      try {
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > REQUEST_WALL_DEADLINE_MS) throw new ModeldTransportError("deadline");
+        session = clientSessionFor(body);
+      } catch (error) {
+        const failed = error instanceof Error ? error : new ModeldTransportError("write_error");
+        return { next: async () => { throw failed; } };
       }
       const inFlight = inFlightFromBody(body);
-      const socket = createConnection({ path: modeldSocketPath(runRoot) });
       const pending: unknown[] = [];
-      let waiting: ((result: IteratorResult<unknown>) => void) | undefined;
-      let closed = false;
-      let complete = false;
+      let waiting: { resolve: (result: IteratorResult<unknown>) => void; reject: (error: Error) => void } | undefined;
+      let demand: (() => void) | undefined;
+      const resumeDecoder = () => { const ready = demand; demand = undefined; ready?.(); };
+      let closed = false, complete = false;
       let failure: Error | undefined;
       let buf = Buffer.alloc(0);
+      const socket = createConnection({ path: modeldSocketPath(runRoot) });
       const deadlineAt = performance.now() + timeoutMs;
-      const timer = setTimeout(() => settle(new Error("timeout")), timeoutMs);
+      const sessionRef = { current: session };
+      const timer = setTimeout(() => settle(new ModeldTransportError("deadline")), timeoutMs);
+      const onAbort = () => settle(new ModeldTransportError("caller_abort"));
       const settle = (error?: Error) => {
         if (closed) return;
         closed = true;
         clearTimeout(timer);
         options.signal?.removeEventListener("abort", onAbort);
-        try { socket.destroy(); } catch { /* ignore */ }
-        if (error) failure = error;
-        else if (!complete) failure = new Error("incomplete");
+        try { socket.destroy(); } catch { /* no retry or replacement error */ }
+        buf = Buffer.alloc(0);
+        failure = error ?? (!complete ? new ModeldTransportError("peer_eof") : undefined);
+        // A failure is never delayed behind stale queued tool material/terminal.
+        // Consumers retain whatever they already observed, not an invented rollback.
+        if (failure) pending.length = 0;
+        resumeDecoder();
         if (waiting) {
-          const resume = waiting;
-          waiting = undefined;
-          if (failure) resume({ done: true, value: undefined });
-          else resume({ done: true, value: undefined });
+          const waiter = waiting; waiting = undefined;
+          if (failure) waiter.reject(failure);
+          else waiter.resolve({ done: true, value: undefined });
         }
       };
       const emit = (value: unknown) => {
         if (waiting) {
-          const resume = waiting;
-          waiting = undefined;
-          resume({ done: false, value });
-          return;
-        }
-        pending.push(value);
+          const waiter = waiting; waiting = undefined;
+          waiter.resolve({ done: false, value });
+        } else pending.push(value);
       };
-      const enqueue = serialize((error) => settle(error));
-      const sessionRef = { current: session };
-      const onAbort = () => settle(new Error("aborted"));
-      if (options.signal?.aborted) {
-        settle(new Error("aborted"));
-      } else {
-        options.signal?.addEventListener("abort", onAbort, { once: true });
-        socket.on("connect", () => {
-          try { socket.write(encodeModeldFrame(body)); }
-          catch (error) { settle(error instanceof Error ? error : new Error("write")); }
-        });
-        socket.on("data", (chunk: Buffer) => {
-          enqueue(async () => {
+      const enqueue = serialize(settle);
+      const frameError = (details: StreamDiagnostic, code: "malformed_frame" | "extra_keys" | "capacity" = "malformed_frame") => annotateStreamFailure(new WireError(code), {
+        ...details,
+        ...(sessionRef.current.method === "run-step" ? { wireSequence: sessionRef.current.sequence } : {}),
+      });
+      const write = (value: unknown) => {
+        try { socket.write(encodeModeldFrame(value)); }
+        catch { throw new ModeldTransportError("write_error"); }
+      };
+      // Install handlers even for pre-abort: asynchronous connection errors must
+      // always have an owner, including after destroy().
+      socket.on("error", () => enqueue(async () => { if (!closed) settle(new ModeldTransportError("socket_error")); }));
+      socket.on("end", () => enqueue(async () => { if (!closed) settle(); }));
+      socket.on("close", () => enqueue(async () => { if (!closed) settle(); }));
+      socket.on("connect", () => {
+        if (closed) return;
+        try { write(body); } catch (error) { settle(error as Error); }
+      });
+      socket.on("data", (chunk: Buffer) => {
+        // Read demand owns the pause, not merely decoding speed. At most one
+        // decoded frame waits for a consumer; no cumulative event-count quota.
+        socket.pause();
+        enqueue(async () => {
+          try {
             if (closed) return;
             if (buf.length + chunk.length > MODELD_MAX_FRAME + 4) {
-              settle(new Error("frame"));
-              return;
+              settle(frameError({ normalizeCause: "stream_budget", rejectSite: "wire_event" }, "capacity")); return;
             }
             buf = Buffer.concat([buf, chunk]);
             while (!closed) {
+              if (pending.length > 0) await new Promise<void>(resolve => { demand = resolve; });
+              if (closed) return;
               const decoded = decodeModeldFrame(buf);
               if (decoded == null) break;
               if ("error" in decoded) {
-                settle(new Error(decoded.error));
-                return;
+                settle(frameError({ normalizeCause: decoded.error === "too-large" ? "stream_budget" : "invalid_event_shape", rejectSite: "wire_event" })); return;
               }
               buf = Buffer.from(decoded.rest);
-              try {
-                const next = await applyIncomingFrame({
-                  session: sessionRef,
-                  inFlight,
-                  value: decoded.value,
-                  write: (value) => { socket.write(encodeModeldFrame(value)); },
-                  stopped: () => closed,
-                  remainingMs: () => deadlineAt - performance.now(),
-                });
-                if (next.done) {
-                  complete = true;
-                  if (buf.length > 0) {
-                    settle(new Error("extra_keys"));
-                    return;
-                  }
-                  if (next.emit !== undefined) emit(next.emit);
-                  settle();
-                  return;
+              const next = await applyIncomingFrame({
+                session: sessionRef, inFlight, value: decoded.value, write,
+                stopped: () => closed, remainingMs: () => deadlineAt - performance.now(),
+              });
+              if (closed) return;
+              if (next.done) {
+                if (buf.length > 0) {
+                  settle(frameError({ normalizeCause: "event_after_finish", rejectSite: "wire_terminal" }, "extra_keys")); return;
                 }
+                complete = true;
                 if (next.emit !== undefined) emit(next.emit);
-              } catch (error) {
-                settle(error instanceof Error ? error : new Error("malformed_frame"));
-                return;
+                settle(); return;
               }
+              if (next.emit !== undefined) emit(next.emit);
             }
-          });
+          } finally { if (!closed) socket.resume(); }
         });
-        socket.on("error", (error) => settle(error));
-        socket.on("end", () => settle());
-        socket.on("close", () => { if (!closed) settle(); });
-      }
+      });
+      if (options.signal?.aborted) onAbort();
+      else options.signal?.addEventListener("abort", onAbort, { once: true });
       return {
         next: () => {
-          if (pending.length > 0) return Promise.resolve({ done: false as const, value: pending.shift()! });
-          if (closed) {
-            if (failure) return Promise.reject(failure);
-            return Promise.resolve({ done: true as const, value: undefined });
+          if (pending.length > 0) {
+            const value = pending.shift()!;
+            resumeDecoder();
+            return Promise.resolve({ done: false, value });
           }
-          return new Promise((resolve, reject) => {
-            waiting = (result) => {
-              if (result.done) {
-                if (failure) reject(failure);
-                else resolve(result);
-                return;
-              }
-              resolve(result);
-            };
-          });
+          if (closed) return failure ? Promise.reject(failure) : Promise.resolve({ done: true, value: undefined });
+          if (waiting) return Promise.reject(new ModeldTransportError("reader_closed"));
+          return new Promise((resolve, reject) => { waiting = { resolve, reject }; });
         },
         return: async () => {
-          settle(new Error("aborted"));
+          pending.length = 0;
+          settle(new ModeldTransportError("reader_closed"));
           return { done: true, value: undefined };
         },
       };

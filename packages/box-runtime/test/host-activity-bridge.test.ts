@@ -11,20 +11,16 @@ describe("Host activity bridge", () => {
   });
 
   test("sink throw does not escape", () => {
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ACTIVITY_SYMBOL)] = () => {
-      throw new Error("host ui");
-    };
-    expect(() => emitHostActivity({ type: "thinking-delta", text: " " })).not.toThrow();
+    const owned = () => { throw new Error("host ui"); };
+    expect(() => emitHostActivity({ type: "thinking-delta", text: " " }, owned)).not.toThrow();
     delete (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ACTIVITY_SYMBOL)];
   });
 
   test("emits thinking-delta to the Host sink", () => {
     const seen: unknown[] = [];
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ACTIVITY_SYMBOL)] = (update: unknown) => {
-      seen.push(update);
-    };
-    emitHostActivity({ type: "thinking-delta", text: " " });
-    emitHostActivity({ type: "text-delta", text: "hi" });
+    const owned = (update: unknown) => { seen.push(update); };
+    emitHostActivity({ type: "thinking-delta", text: " " }, owned);
+    emitHostActivity({ type: "text-delta", text: "hi" }, owned);
     expect(seen).toEqual([
       { type: "thinking-delta", text: " " },
       { type: "text-delta", text: "hi" },
@@ -32,11 +28,21 @@ describe("Host activity bridge", () => {
     delete (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ACTIVITY_SYMBOL)];
   });
 
-  test("activity-bridge slice applies on the live-shaped fixture", () => {
+  test("A cannot send synthetic activity to B through the last global callback", () => {
+    const a: unknown[] = [], b: unknown[] = [];
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ACTIVITY_SYMBOL)] = (update: unknown) => b.push(update);
+    emitHostActivity({ type: "thinking-delta", text: " " });
+    emitHostActivity({ type: "text-delta", text: "owned A" }, update => { a.push(update); });
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(0);
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ACTIVITY_SYMBOL)];
+  });
+
+  test("activity-bridge slice preserves the native run-owned listener", () => {
     const applied = transformUnchecked(LIVE_SHAPED_HOST, LIVE_SLICE_PATCHES);
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
-    expect(applied.source).toContain(HOST_ACTIVITY_SYMBOL);
+    expect(applied.source).not.toContain(`Symbol.for("${HOST_ACTIVITY_SYMBOL}")`);
     expect(applied.source).toContain("streamWatchdog.noteUpdate(update)");
     expect(applied.source).toContain("host.emitUpdate(update, updateObservers)");
     const profile = profileFromSource(LIVE_SHAPED_HOST, LIVE_SLICE_PATCHES, "activity-shaped");

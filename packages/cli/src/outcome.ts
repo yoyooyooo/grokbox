@@ -1,4 +1,4 @@
-import { catalogAgentMessage } from "@grokbox/box-runtime/runtime";
+import { catalogAgentMessage, projectJournalEvent, type EventsObservation, type JournalHealthObservation } from "@grokbox/box-runtime/runtime";
 import { classifyAlert, diagnoseExecution, selectExecutionFailure, specializeExecutionFailure as specializeRuntimeFailure, traceAlerts } from "@grokbox/runtime-kernel/alerts";
 import { isRecord } from "./util.ts";
 import { projectStreamDiagnostic, projectProviderRecoveryState, failureSummaryFromObservation } from "@grokbox/runtime-kernel/contract";
@@ -54,6 +54,7 @@ export type OutcomeInput = {
   entries: unknown[]; alerts: AlertObservation[]; truncated: boolean;
   gatewayChanged?: boolean; expectedText?: string; alertsIncomplete?: boolean;
   runtimeEvents?: unknown[]; runtimeGap?: string;
+  runtimeEvidence?: { root?: string; coverage?: EventsObservation["coverage"]; lookup?: EventsObservation["lookup"]; retention?: EventsObservation["retention"]; readFailure?: string; health?: JournalHealthObservation };
   transcriptRoute?: TranscriptRouteObservation;
 };
 
@@ -118,6 +119,8 @@ function projectRuntimeFailure(failure: Record<string, unknown>, runtime: Record
       eventCount: number(modeld.eventCount), relation: "same_step_not_cross_process_causal_order" } } : {}),
     ...(cleanup ? { cleanup: { ...(typeof cleanup.clientDisconnected === "boolean" ? { clientDisconnected: cleanup.clientDisconnected } : {}),
       ...(typeof cleanup.cancellationRequested === "boolean" ? { cancellationRequested: cleanup.cancellationRequested } : {}) } } : {}),
+    observations: runtime.filter(event => sameStep(failure, event) && (event.name === "host_stream_rejected" || event.name === "host_normalized_terminal" || event.name === "model_step_terminal"))
+      .map(event => ({ source: event.name, code: visibleFailureCode(event.errorCode ?? event.failureCode) })),
   };
 }
 
@@ -166,7 +169,13 @@ export function projectSendOutcome(input: OutcomeInput) {
       epochs.add(epoch); turnEpochs.set(turn, epochs);
     }
   }
-  const runtimeGenerationChanged = [...turnEpochs.values()].some(epochs => epochs.size !== 1)
+  const hostGenerations = new Map<string, Set<string>>();
+  for (const event of exact) {
+    const turn = id(event.turnId), generation = id(event.hostGenerationId);
+    if (turn && generation) { const set = hostGenerations.get(turn) ?? new Set<string>(); set.add(generation); hostGenerations.set(turn, set); }
+  }
+  const runtimeGenerationChanged = [...hostGenerations.values()].some(values => values.size > 1)
+    || [...turnEpochs.values()].some(epochs => epochs.size !== 1)
     || agentEvents.some(e => typeof e.turnId === "string" && turnEpochs.has(e.turnId)
       && id(e.serviceEpoch) !== null && !turnEpochs.get(e.turnId)!.has(e.serviceEpoch as string));
   const runtime = agentEvents.filter(e => exact.includes(e) || (typeof e.turnId === "string" && typeof e.serviceEpoch === "string"
@@ -205,15 +214,32 @@ export function projectSendOutcome(input: OutcomeInput) {
   const state: SendOutcomeState = invalid ? "unknown" : alerts.length > 0 || failure ? "failed"
     : evidenceGap ? "unknown" : input.expectedText !== undefined ? (expectedMatched ? "expected_result_observed" : delivery.length ? "progress" : pending ? "recorded" : "unknown")
     : delivery.length > 0 ? "delivered" : pending ? "recorded" : "unknown";
+  const scopeOf = (step: unknown) => {
+    const terminal = runtime.find(event => event.stepId === step && ["main", "memory-extraction", "episode"].includes(String(event.requestKind)));
+    if (terminal) return String(terminal.requestKind);
+    const start = runtime.find(event => event.name === "host_seam_stage" && event.stage === "stream_enter" && event.stepId === step);
+    if (!start) return "unobserved";
+    return start.auxPurpose === "memory-extraction" || start.auxPurpose === "episode" ? start.auxPurpose : "main";
+  };
+  const releasedByStep = new Map<string, number>();
+  for (const event of runtime) {
+    const step = id(event.stepId), count = number(event.toolCallCount);
+    if (step && count !== null && event.name === "host_normalized_terminal") releasedByStep.set(step, count);
+  }
+  const trace = invalid ? [] : runtime.map(projectJournalEvent).filter((event): event is NonNullable<typeof event> => event !== null);
+  const mainFailure = failure && scopeOf(failure.stepId) === "main";
+  const runtimeIncomplete = evidenceGap;
   return {
     agentId: input.agentId, clientNonce, requestId,
     ...(input.stepId ? { selectedStepId: input.stepId } : {}),
+    requestedStepId: input.stepId ?? null,
     state, echoObserved, delivery: invalid ? [] : delivery,
     alerts: invalid ? [] : alerts,
     executionCompleted: "not_proven" as const,
     relatedStepIds: invalid ? [] : [...correlatedIds],
+    relatedTurnIds: invalid ? [] : [...new Set(runtime.map(event => id(event.turnId)).filter((turn): turn is string => turn !== null))],
     expectedMatched: !invalid && expectedMatched,
-    runtimeFailure: !invalid && failure ? projectRuntimeFailure(failure, recentRuntime) : null,
+    runtimeFailure: !invalid && failure ? { ...projectRuntimeFailure(failure, recentRuntime), requestKind: scopeOf(failure.stepId) } : null,
     runtimeRecovery: !invalid && recoveryRecord ? { stepId: recoveryRecord.stepId, observedAt: recoveryRecord.at,
       state: recoveryState(recoveryRecord), currentLiveness: "not_proven", replayAuthorized: false } : null,
     presentation: invalid ? null : traceAlerts(input.runtimeEvents ?? [], { agentId: input.agentId,
@@ -224,16 +250,34 @@ export function projectSendOutcome(input: OutcomeInput) {
       execution: invalid ? "unknown" : failure ? "failure_observed" : alerts.length ? "host_reported_failure" : evidenceGap ? "unknown" : "not_proven",
       executionEvidenceOrigin: invalid ? "ambiguous" : failure ? "runtime_journal" : alerts.length ? "native_tray_report" : "not_observed",
       runtimeEvidence: input.runtimeEvents === undefined ? "not_checked" : input.runtimeGap ? "partial" : "available",
-      // This is a lower bound on observed releases, not physical execution or
-      // a claim of zero when no normalized-terminal evidence was collected.
       toolCallsReleased: invalid || !runtime.some(e => e.name === "host_normalized_terminal" && number(e.toolCallCount) !== null) ? null
         : [...new Map(runtime.filter(e => e.name === "host_normalized_terminal" && id(e.stepId) && number(e.toolCallCount) !== null)
           .map(e => [JSON.stringify([e.hostId, e.agentId, e.turnId, e.stepId, e.serviceEpoch]), number(e.toolCallCount)!])).values()].reduce((n, count) => n + count, 0),
       toolReleaseCoverage: "observed_records_only",
       toolExecution: "not_observed", checkpoint: "not_observed", subsequentTurnLineage: "not_observed",
     },
+    assessment: {
+      delivery: invalid ? "unknown" : delivery.length > 0 ? "observed" : "not_observed",
+      mainRun: invalid || runtimeIncomplete ? (mainFailure && !invalid ? "failure_observed" : "unknown") : mainFailure ? "failure_observed" : "completion_not_proven",
+      auxiliary: failure && ["memory-extraction", "episode"].includes(scopeOf(failure.stepId)) && !invalid ? "failure_observed" : "not_proven",
+      evidence: invalid ? "conflicting" : runtimeIncomplete ? "incomplete" : input.runtimeEvents ? "bounded_observation" : "runtime_not_checked",
+      retry: "not_authorized_by_observation",
+      hostToolMaterialsReleased: invalid || releasedByStep.size === 0 ? null : [...releasedByStep.values()].reduce((sum, count) => sum + count, 0),
+      toolExecution: "not_instrumented", checkpointCommit: "not_instrumented", applicationReplica: "not_observed",
+    },
+    runtimeTrace: { events: trace.slice(-128), truncated: trace.length > 128, order: "append-order-not-causal-order" },
+    turnTriggers: trace.filter(event => event.name === "host_seam_stage" && "stage" in event && event.stage === "hook_enter")
+      .map(event => ({ turnId: "turnId" in event ? event.turnId : null,
+        native: "nativeTurn" in event ? event.nativeTurn : null,
+        meaning: "native-lineage-not-kernel-identity-or-retry-authority" })),
     evidence: { transcript: "Gateway.getAgentTranscriptTail", alerts: "Gateway.getTrays", alertsPersistence: "host-memory", transcriptWindowTruncated: input.truncated,
       runtime: input.runtimeEvents ? "box-local run/log/events.ndjson" : "not_checked", runtimeGap: input.runtimeGap ?? null,
+      runtimeRoot: input.runtimeEvidence?.root ?? null,
+      runtimeCoverage: input.runtimeEvidence?.coverage ?? null,
+      runtimeLookup: input.runtimeEvidence?.lookup ?? null,
+      runtimeRetention: input.runtimeEvidence?.retention ?? null,
+      runtimeReadFailure: input.runtimeEvidence?.readFailure ?? null,
+      journalHealth: input.runtimeEvidence?.health ?? null,
       handoffDelivery: handoffDeliveries.length ? { profile: "box-complete-display-turn-v1", rootEntryId: requests[0]!.id,
         entryIds: handoffDeliveries.map(r => r.id), meaning: "display-association-not-run-lineage" } : null,
       transcriptRoute: route ? {
@@ -253,6 +297,7 @@ export function projectSendOutcome(input: OutcomeInput) {
       ...(ambiguous ? ["nonce_has_multiple_requests"] : []),
       ...(input.alertsIncomplete ? ["unsupported_alert_schema"] : []),
       ...(input.runtimeGap ? ["runtime_evidence_incomplete"] : []),
+      ...(input.runtimeEvents && trace.every(event => !("diagnostic" in event)) ? ["detailed_stream_diagnostics_not_observed"] : []),
       ...(!echoObserved && !input.requestId && !journalBound ? ["nonce_not_in_transcript_window"] : []),
       "dismissed_or_restarted_trays_not_recoverable_from_getTrays",
       "delivery_does_not_prove_run_completion",
