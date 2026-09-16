@@ -434,15 +434,22 @@ test("CLI --runtime joins a nonce-only journal reject while trays stay empty", a
   } finally { gateway.stop(); await rm(dir, { recursive: true, force: true }); }
 });
 
-test("canary skill teaches send then nonce+runtime outcome, not accepted-as-success", async () => {
-  const skill = await readFile(join(import.meta.dir, "../skills/grokbox/SKILL.md"), "utf8");
+test("send topic teaches nonce+runtime outcome while the entry keeps the receipt safety rule", async () => {
+  const entry = await readFile(join(import.meta.dir, "../skills/grokbox/SKILL.md"), "utf8");
+  const skill = await readFile(join(import.meta.dir, "../skills/grokbox/send.md"), "utf8");
+  const diagnostics = await readFile(join(import.meta.dir, "../skills/grokbox/diagnostics.md"), "utf8");
+  expect(entry).toContain("[send](send.md)");
+  expect(entry).toContain("clientNonce");
+  expect(entry).toContain("queued, not a reply");
   expect(skill).toContain("grokbox send <agent>");
   expect(skill).toContain("history outcome <agent> --nonce <clientNonce> --runtime");
   expect(skill).toMatch(/queued, not a reply/);
   expect(skill).toContain("| `recorded` |");
   expect(skill).toContain("| `failed` |");
   expect(skill).toContain("`accepted` token");
-  expect(skill).toContain("GROKBOX_RUN_ROOT");
+  expect(skill).toContain("[diagnostics](diagnostics.md)");
+  expect(diagnostics).toContain("GROKBOX_RUN_ROOT");
+  expect(diagnostics).toContain("evidence.runtimeRoot");
   expect(skill).not.toMatch(/data\.state\s*=\s*accepted/);
 });
 

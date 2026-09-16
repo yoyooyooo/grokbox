@@ -1,31 +1,42 @@
 # Models
 
-Catalog: `/workspace/.grokbox/box-runtime/models.json` (override `GROKBOX_BOX_RUNTIME_ROOT`, never `~/.grokbox/runtime/`).
+Load for per-Bot model selection or catalog configuration: `grokbox skills get grokbox --topic models`.
 
-Each model: `id`, `provider`, `model`, `endpoint`, `apiKeyRef`.
+## Select a model for one Bot
 
-- `openai` / `openai-chat` → Chat Completions
-- `openai-responses` → Responses API
-- `stub/echo` → tests only
-
-`apiKeyRef` is `env:NAME` or `file:/absolute/path`. No literal keys, no `$VAR`.
-
-`alias` is optional, unique, `^[a-z0-9][a-z0-9._-]{0,15}$`. Label `m=` uses **alias if set, else the short `model` field**. Official brain omits `m=`.
-
-Assignments: `assignments.agents[<bot-uuid>] = <model-id>`. Unlisted Bots stay official. Route mode uses per-Bot assignment, not a box-wide default.
+**Operator / template Bot stays on the official brain. Never `models use` yourself.** Use disposable Bots for custom-model experiments, not App New Bot. Ordinary official-Bot work needs no model assignment.
 
 ```bash
 grokbox models list
-grokbox models use <model-id> --for <agent>
+grokbox agents create --name "<test-bot-name>" --harness box
+# Keep the created Bot ID. Do not repeat create if its outcome is unknown.
+grokbox agents ownership <created-agent-id>
+# Continue only when ownership is confirmed_box and the custom channel is ready.
+grokbox models use <model-id> --for <created-agent-id>
+```
+
+`<model-id>` must exist in the catalog. Assignments apply to the next turn; other Bots stay unchanged. `confirmed_box` is eligibility, not a production sign-off. A rejected use does not mutate the assignment; inspect `error.code` / `error.next`. Ownership uncertainty routes to [ownership](ownership.md); Host-channel recovery to [adopt](adopt.md). Do not guess the class from `harness=` or the title.
+
+`models use --for` also paints the selected Bot's title trailer and preserves the user title. `m=` uses its alias, otherwise the short `model` field. A title write failure does not undo the assignment; display is not routing authority. See [label](label.md).
+
+After a requested test send, observe it through [send](send.md). State exactly what was verified: saving an assignment is not proof that a provider replied.
+
+## Return one Bot to official
+
+```bash
 grokbox models reset --for <agent>
 ```
 
-`reset` returns that Bot to official next turn; harness unchanged.
+`reset` returns that Bot to official on the next turn; its harness does not change. It removes `m=` only from an already-showing trailer. This does not restore the whole computer's official Host; that separate operation belongs to [services](services.md).
 
-`models use --for` requires `confirmed_box`. Other ownership classes refuse before writing; `error.next` is the remediation. See [ownership.md](ownership.md).
+## Configure the catalog only when needed
 
-`models use --for` also paints that Bot's App title trailer (`m=`), keeping any user title. Official `reset --for` drops `m=` only if a trailer is already showing. Title is display-only; a failed title write does not undo the assignment.
+Catalog: `/workspace/.grokbox/box-runtime/models.json`, overridden by `GROKBOX_BOX_RUNTIME_ROOT`; never `~/.grokbox/runtime/`. Prefer an existing catalog entry for normal selection.
 
-**Stay-green after a switch (dogfood Bot):** `models use` then one send is not done. Watch with `history outcome --nonce … --runtime` (no success-ish without that proof). Check App title / `agents show` for `m=<alias-or-model>`. Run `agents title sync`, wait at least two minutes, and check `m=` again. Instant green is not enough. Procedure: [SKILL.md](SKILL.md#prove-a-model-switch).
+Each model has `id`, `provider`, `model`, `endpoint`, and `apiKeyRef`. `openai` / `openai-chat` use Chat Completions; `openai-responses` uses Responses API; `stub/echo` is for tests only. `apiKeyRef` is `env:NAME` or `file:/absolute/path`, never a literal key or `$VAR`. Keep secret values out of argv and ordinary logs.
 
-**Operator / template Bot:** stay on the official brain — never `models use` yourself. Create disposable Bots with `grokbox agents create` for custom-model experiments. Host recover when the channel is down: [adopt.md](adopt.md).
+Optional `alias` must be unique and match `^[a-z0-9][a-z0-9._-]{0,15}$`. Assignments are `assignments.agents[<bot-uuid>] = <model-id>`; route selection is per Bot, not a box-wide default. Use the CLI for assignment changes rather than editing this map by hand. Unlisted Bots stay official.
+
+## Deliberate acceptance, not routine setup
+
+**Stay-green after a switch** is a separate validation task: correlated reply evidence, `agents title sync` for the same Bot, then another title read after at least two minutes. Load [validation](validation.md#prove-a-model-switch) with `--topic validation` only when that sustained check is requested. An instant title is not acceptance, and a routine model task is not permission for indefinite monitoring.

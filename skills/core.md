@@ -150,8 +150,11 @@ JSON error object. `is running` returning false is still exit 0.
 
 ## External skill stub
 
-Harness-installed skills should only say:
+Harness-installed grokbox helpers should use the small [template stub](stubs/grokbox.md):
 
 ```text
-Run `grokbox skills get core --full` before first use in this session.
+Run `grokbox skills get grokbox` before first use in this session.
+Then load only the needed `--topic <name>` from that entry.
 ```
+
+This core inventory is an explicit reference, not default template-Bot startup reading.

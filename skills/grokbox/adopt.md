@@ -1,45 +1,38 @@
-# Adopt — Agent Host recover playbook
+# Adopt — Host recovery
 
-Primary operators are Agents. Use **two voices**: people hear friendly outcomes; you run exact CLI / `doctor` / `error.next`. Never say SHA, reviewed, preload, envelope, or source_mismatch to people.
+Advanced playbook for doctor-directed recovery: `grokbox skills get grokbox --topic adopt`. Load when an official computer update, package alignment, or model-use error explicitly points to Host recovery. A healthy official-only setup does not need this procedure.
 
-Load this skill first if you have not: `grokbox skills get grokbox` (or `--full`).
-
-## When to use
-
-Official computer updates, package upgrades, or doctor saying the custom-model channel is off / unknown. Also when `models use --for` (on a **disposable** Bot) points at Host recovery via `error.next`.
-
-**Operator Bot stays on the official brain.** Do not `models use` yourself. Create temp Bots for model tests.
+The operator/template Bot stays on the official brain. Run exact `doctor` / `error.next` commands within the authorized recovery scope; explain the affected capability and outcome plainly. Do not expose credentials or raw runtime material.
 
 ## Decision tree
 
-| Situation | Person hears | You run |
-| --- | --- | --- |
-| Need status | “Checking this computer…” | `grokbox doctor` — then run printed `next` if not `none` |
-| Daemon / services down | “Turning grokbox services on…” | `grokbox on` (often doctor next) |
-| After grokbox package update | “Aligning this computer with the new grokbox…” | `grokbox upgrade --yes` when doctor next says so (e.g. stale / unmanaged cases) |
-| Custom channel off (`host` official) | “Opening the custom-model channel…” | `grokbox host start` |
-| Doctor / error next is observe → write | “Updating this computer for the new system build…” (no jargon) | Follow printed `next` literally. When the live digest is known it already includes `write --sha` plus the full hex; if not, run observe-only and do not invent a SHA placeholder. |
-| Write succeeds | “Almost done — switching the channel on…” | `grokbox host start` |
-| Write rejects on drift | “Still aligning with the new build…” | Follow **write’s** `error.next` exactly (often analyze then `write --sha … --slice-review …`). Analyze may settle `missing_runner`; still use its `envelope.requiredIds` / `next` (write `--sha`, with `--slice-review` when required). Do not invent flags. |
-| `host start` / `stop` refuse (bots running) | Ask if a short pause is OK; only then proceed | `grokbox host start --force` **only** if refuse + pause accepted. Operator Bot counts as running. |
-| `--force` still cannot bypass mismatch | “Need one more alignment step first…” | Do **not** thrash `--force`. Re-read doctor / write `next` and continue the recover path. |
-| **Unrecoverable** (next exhausted, repeated refuse, unknown with no safe next) | “I’m back on the official channel and waiting for a maintainer. I won’t keep forcing switches.” | `grokbox host stop` (cancel patch channel). Stop looping. Wait for maintainer. |
+| Situation | Action |
+| --- | --- |
+| Need status | `grokbox doctor`; read the checks and `next`. |
+| Services are down | Follow the scoped `grokbox on` suggestion; service effects are in [services](services.md). |
+| Installed grokbox package needs alignment | Follow `grokbox upgrade --yes` only for the authorized update. |
+| Custom channel is off and requested | `grokbox host start`. |
+| Next is observe → write | Follow printed `next` literally. A known live digest is supplied as `write --sha` with full hex; otherwise observe first. Never invent a SHA placeholder. |
+| Write rejects on drift | Follow **write's** `error.next`, commonly analyze then `write --sha … --slice-review …`. Use the emitted arguments, not a remembered recipe. |
+| Write succeeds | `grokbox host start`, then doctor to verify the requested channel. |
+| Host switch refuses because Bots are running | Obtain acceptance of that interruption before using the corresponding `--force`. The operator Bot counts. |
+| Force cannot bypass source/profile mismatch | Stop forcing; return to doctor / write next. |
+| No safe next, or repeated failure | Use the failsafe below; stop the recovery loop. |
 
-## Recoverable Host update (happy path)
+## Recoverable Host update
 
-1. `grokbox doctor` → read `next`.
-2. If next is observe → write: run observe, then write with the retained digest from observe (or the exact next string).
-3. If write reject-on-drift: run the **write** response’s `next` (commonly analyze, then `write --sha … --slice-review …`). Analyze still emits rejecting ids and that write `next` when settled is `missing_runner` — do not treat the artifact as empty, and do not skip `--slice-review`.
-4. When write is durable: `grokbox host start`.
-5. Re-run `grokbox doctor`; done when next is `none` (or only unrelated work remains).
+1. Run `grokbox doctor` and retain its exact `next`.
+2. If next is observe → write, run observe and then write with the retained digest or exact next string.
+3. On write reject-on-drift, follow write's next. Analyze may settle `missing_runner` while still emitting `envelope.requiredIds` and the write next. Do not treat that artifact as empty or skip a required `--slice-review`.
+4. Once the profile write is durable, run `grokbox host start`. A profile write alone is not a live Host transition.
+5. Re-run doctor. Finish when the requested channel is confirmed and relevant blockers are gone; unrelated next items are not permission to expand the task.
 
 ## Unrecoverable failsafe
 
-- Prefer `grokbox host stop` so the computer is on the **official** Host.
-- Tell the person you are on the official channel and waiting for a maintainer.
-- Do **not** thrash `--force`, do not invent alternate inject paths, do not `models use` the operator Bot as a workaround.
+Attempt the authorized `grokbox host stop` to restore the official Host. It can still refuse because Bots are running; do not silently escalate to `--force`.
 
-## Related
+After a successful stop, run doctor and verify Host `official` before saying “The computer is back on the official channel; custom-model recovery needs a maintainer.” A stop command being attempted is not rollback proof.
 
-- Short table: [troubleshoot.md](troubleshoot.md)
-- Ownership / who may get models: [ownership.md](ownership.md), [models.md](models.md)
+If stop fails, is blocked, or doctor cannot confirm the state, say that recovery/rollback is blocked or unverified, report the relevant cause, and stop. Do not claim the official channel is restored. Request interruption approval only when that is the specific missing authorization.
+
+Do not thrash `--force`, invent alternative injection paths, change the operator's model, or replay business work. Hand off the redacted error and exact safe next, if one exists. Ownership and model selection remain separate capabilities: [ownership](ownership.md), [models](models.md).

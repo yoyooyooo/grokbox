@@ -179,7 +179,7 @@ grokbox agents title sync
 # 再等至少一轮 daemon title-sync（~120s），再 show；m= 仍须在。
 ```
 
-仍只打金丝雀两条观测命令；send 回执 / 空 alerts / 第一秒 title 不得当成换模成功。运行者文案见 [skill](../../skills/grokbox/SKILL.md#prove-a-model-switch)。禁止打长期金丝雀 `grokbox` Bot。
+仍只打金丝雀两条观测命令；send 回执 / 空 alerts / 第一秒 title 不得当成换模成功。运行者文案见 [按需 validation 专题](../../skills/grokbox/validation.md#prove-a-model-switch)。禁止打长期金丝雀 `grokbox` Bot。
 
 ## STEP 事故查询与结构化诊断（当前实现）
 

@@ -100,7 +100,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["skills", "list"],
     usage: "grokbox skills list [--json|--table]",
-    summary: "List bundled skills that always match this CLI version.",
+    summary: "List version-matched bundled skills and their on-demand topics.",
     arguments: [],
     options: options([], { table: true }),
     stdin: "none",
@@ -241,10 +241,13 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["skills", "get"],
-    usage: "grokbox skills get <name> [--full] [--json]",
-    summary: "Print a bundled skill that always matches this CLI version.",
-    arguments: [{ syntax: "<name>", description: "Skill name: grokbox (product) or core (full CLI)" }],
-    options: options([{ flags: "--full", description: "Include companion docs (grokbox) or the generated command reference (core)" }]),
+    usage: "grokbox skills get <name> [--topic <topic> | --full] [--json]",
+    summary: "Print a small skill entry, one topic, or an explicit full reference, matched to this CLI.",
+    arguments: [{ syntax: "<name>", description: "Skill name: grokbox (operator guide) or core (full CLI)" }],
+    options: options([
+      { flags: "--topic <topic>", description: "Load only one grokbox companion; discover names with skills list. Conflicts with --full" },
+      { flags: "--full", description: "Include all companion docs (grokbox) or the generated command reference (core); not startup reading" },
+    ]),
     stdin: "none",
     table: false,
     timeout: false,
@@ -1820,7 +1823,7 @@ export const START_HERE = `Start here (for Agents):\n  grokbox skills get grokbo
 
 export const EXAMPLES = [
   "grokbox skills get grokbox",
-  "grokbox skills get grokbox --full",
+  "grokbox skills get grokbox --topic models",
   "grokbox skills get core --full",
   "grokbox doctor",
   "grokbox recover",

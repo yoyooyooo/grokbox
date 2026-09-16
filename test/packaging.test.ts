@@ -22,6 +22,7 @@ import {
   supportsNodeRuntime,
 } from "../bin/runtime.js";
 import { resolvePackageRoot } from "../packages/cli/src/deps.ts";
+import { GROKBOX_SKILL_TOPICS } from "../packages/cli/src/skills.ts";
 
 const repoRoot = join(import.meta.dir, "..");
 const bun = Bun.which("bun") ?? process.execPath;
@@ -208,10 +209,16 @@ describe("published Node package", () => {
       "skills/core.md",
       "skills/grokbox/SKILL.md",
       "skills/grokbox/adopt.md",
+      "skills/grokbox/desktop.md",
+      "skills/grokbox/diagnostics.md",
       "skills/grokbox/label.md",
       "skills/grokbox/models.md",
       "skills/grokbox/ownership.md",
+      "skills/grokbox/send.md",
+      "skills/grokbox/services.md",
+      "skills/grokbox/templates.md",
       "skills/grokbox/troubleshoot.md",
+      "skills/grokbox/validation.md",
       "skills/stubs/grokbox.md",
     ]);
 
@@ -258,11 +265,37 @@ describe("published Node package", () => {
     expect(grokboxHelp.stdout).toContain("grokbox skills get grokbox");
     const skill = await run([grokbox, "skills", "get", "grokbox"]);
     expect(skill.code, skill.stderr).toBe(0);
-    expect(skill.stdout).toContain("grokbox host start");
+    expect(Buffer.byteLength(skill.stdout)).toBeLessThanOrEqual(4096);
+    expect(skill.stdout).toContain("--topic models");
     expect(skill.stdout).toContain("history outcome");
-    expect(skill.stdout).toContain("--runtime");
     expect(skill.stdout).toMatch(/queued, not a reply/);
+    expect(skill.stdout).not.toContain("--slice-review");
     expect(skill.stdout).not.toMatch(/data\.state\s*=\s*accepted/);
+
+    // Exercise the installed Node binary outside the checkout; companions must
+    // come from the tarball, without Bun or a repository docs path at runtime.
+    const skillEnv = { PATH: process.env.PATH ?? "", HOME: fixture, GROKBOX_CONFIG_DIR: join(fixture, "skills-config") };
+    const list = await run([gbox, "skills", "list", "--json"], fixture, skillEnv);
+    expect(list.code, list.stderr).toBe(0);
+    const listedSkills = JSON.parse(list.stdout).data.skills as Array<{ name: string; topics: Array<{ name: string }> }>;
+    expect(listedSkills.find((item) => item.name === "grokbox")!.topics.map((topic) => topic.name))
+      .toEqual(GROKBOX_SKILL_TOPICS.map((topic) => topic.name));
+    const fullSkill = await run([grokbox, "skills", "get", "grokbox", "--full", "--json"], fixture, skillEnv);
+    expect(fullSkill.code, fullSkill.stderr).toBe(0);
+    const fullContent = JSON.parse(fullSkill.stdout).data.content as string;
+    for (const topic of GROKBOX_SKILL_TOPICS) {
+      const loaded = await run([gbox, "skills", "get", "grokbox", "--topic", topic.name, "--json"], fixture, skillEnv);
+      expect(loaded.code, loaded.stderr).toBe(0);
+      const expected = `${(await readFile(join(repoRoot, "skills", "grokbox", topic.file), "utf8")).trimEnd()}\n`;
+      expect(JSON.parse(loaded.stdout).data).toEqual({
+        name: "grokbox", topic: topic.name, cliVersion: cliPackage.version, content: expected,
+      });
+      expect(fullContent).toContain(expected.trimEnd());
+    }
+    const invalidTopic = await run([grokbox, "skills", "get", "grokbox", "--topic", "../core"], fixture, skillEnv);
+    expect(invalidTopic.code).toBe(2);
+    expect(invalidTopic.stdout).toBe("");
+    expect(JSON.parse(invalidTopic.stderr).error.code).toBe("invalid_usage");
     expect(grokboxVersion.stdout.trim()).toBe(cliPackage.version);
     expect(gboxVersion.stdout).toBe(grokboxVersion.stdout);
 

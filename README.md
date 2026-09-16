@@ -54,9 +54,12 @@ never gain host filesystem or process authority.
    `grokbox upgrade --yes`. App New Bot is often **temporal** and never uses
    the custom-model channel.
 
-Agents: `grokbox skills get grokbox` (version-matched; do not copy skill files
-into a Bot). Template stub: [`skills/stubs/grokbox.md`](./skills/stubs/grokbox.md).
-Humans: `grokbox skills get core --full` for the full CLI inventory.
+Agents start with `grokbox skills get grokbox`: a small version-matched entry,
+not the whole manual. Load only the capability needed, for example
+`grokbox skills get grokbox --topic models`; `grokbox skills list` discovers topics.
+`--full` is an explicit all-topics reference, not startup reading. Template stub:
+[`skills/stubs/grokbox.md`](./skills/stubs/grokbox.md); do not copy full guides into a Bot.
+`grokbox skills get core --full` remains the complete CLI inventory.
 
 ## Prerequisites and platform support
 

@@ -1,24 +1,33 @@
 # Title trailer
 
-App Label is the `title` field. grokbox may append a display trailer. Trailer presence is the show switch; there is no extra config.
+Load for title display changes: `grokbox skills get grokbox --topic label`. Titles are display-only, not proof of ownership, routing, or execution.
 
-```text
-[<user>][ | owner=box,m=g46[,k=v...]]
-```
-
-- User text first. Fence is ASCII ` | ` (spaces). Parse uses the last fence whose suffix is valid `k=v` pairs.
-- `owner=box|temporal|conflict` from live Server ownership.
-- `m=` is `models.json` `alias`, else the short `model` field. Official brain omits `m=`.
-- Unknown keys stay in the trailer.
+## Change only the requested Bot
 
 ```bash
-grokbox agents title show <bot> [bot...]
-grokbox agents title show --all
-grokbox agents title hide [bot...]          # no names = every Bot
-grokbox agents title hide --all
-grokbox agents title sync [bot...]          # only Bots already showing
+grokbox agents title show <agent>
+grokbox agents title hide <agent>
+grokbox agents title sync <agent>
 ```
 
-`show` without names or `--all` is invalid usage. `show` paints even when Server ownership is unconfirmed: roster harness, existing trailer, `models.json` assignment, user text, or trailer-only `owner=box`. Empty App titles (name-only Bots) are still painted. Remaining skips appear under `--json` as `skips: [{ agent, id, reason }]`. `sync` never paints a hidden Bot; a named hidden target is skipped with `reason: hidden`. `agents update --title` replaces the user segment; a showing Bot keeps a refreshed trailer. Missing token → keep `m=`; confirmed no assignment → clear `m=` (same as `title sync`).
+`show` paints a trailer; `hide` removes it while preserving the user text; `sync` refreshes only an already-showing trailer. A named hidden target is skipped with `reason: hidden`. Re-read `grokbox agents show <agent>` to verify the display.
 
-Hide and show are display only. `models use --for` paints that Bot's trailer (`m=` from alias, else short model id) and keeps the user title. `models reset --for` only refreshes a trailer that is already showing and drops `m=`. Title write failure does not undo the model assignment.
+Use explicit targets by default. `show` without names or `--all` is invalid; `hide` with **no names affects every Bot**. Unscoped `sync` refreshes every showing Bot. Use these wider operations only for an explicitly requested bulk change.
+
+## Read the trailer
+
+App Label is `title`. Trailer presence is the show switch; there is no extra config.
+
+```text
+<user text> | owner=box,m=<alias-or-model>
+```
+
+The fence is ASCII ` | `; parsing uses the last fence followed by valid `k=v` pairs. Unknown keys remain. `owner=box|temporal|conflict` reflects live Server ownership when available; `m=` uses the catalog alias, otherwise the short model field. Official brain omits `m=`.
+
+`show` can also paint when ownership is unconfirmed, using roster harness, existing trailer, assignment, or a display fallback. Empty App titles can be painted. Consequently a visible `owner=box` is **not** `confirmed_box` evidence; use [ownership](ownership.md) before model changes. Skips are reported as `skips: [{ agent, id, reason }]` in JSON.
+
+## Interaction with models and user titles
+
+`models use --for` paints the selected Bot's trailer and preserves its user title. `models reset --for` refreshes only an already-showing trailer and drops `m=`. Title write failure does not undo an assignment. `agents update --title` replaces the user segment while keeping a showing trailer refreshed; missing credentials preserve `m=`, while a confirmed absent assignment clears it.
+
+For the deliberately delayed refresh acceptance check, load [validation](validation.md). A routine title edit does not require that full playbook.

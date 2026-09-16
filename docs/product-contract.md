@@ -105,7 +105,7 @@ grokbox (alias: gbox)
 │
 │  连接
 ├── init [<name>] [--local | --peer] [--bootstrap] [--admit-home-read] [--yes]
-├── skills list | get grokbox [--full] | get core [--full]   # 与当前 CLI 同版本；不要拷进 Bot
+├── skills list | get grokbox [--topic <topic> | --full] | get core [--full]   # 同版本、按需加载
 ├── profile list|show|use|add|update|remove|capabilities
 │
 │  这台电脑上的 grokbox（电源）
@@ -615,14 +615,24 @@ Timeout 只说明调用窗口结束，不证明远端副作用没有发生。所
 
 ## 15. Bundled Skills
 
-CLI 发布物携带与版本匹配的 `core` skill。根 help 首先给出：
+CLI 发布物携带与版本匹配的 `grokbox` 操作指南和 `core` 命令参考。根 help 首先给出：
 
 ```text
 Start here (for Agents):
-  grokbox skills get core --full
+  grokbox skills get grokbox
 ```
 
-命令 registry、help、capability metadata 和 full skill reference 必须同源，不能维护四套漂移文案。
+采用渐进披露，不把运行时维护知识作为所有 template Bot 的启动前提：
+
+- **模板桩 / recipe**：仅保留版本匹配的加载入口、官方大脑与授权底线，不内嵌恢复步骤。recipe 的 skill 正文与 `skills/stubs/grokbox.md` 正文一致；模板导入不等于安装 skill 文件。
+- **默认入口 `skills/grokbox/SKILL.md`**：小型操作循环、通用安全边界和能力导航。默认 `skills get grokbox` 只读此文件，不自动拼接 companion；入口预算为 4096 UTF-8 bytes / 600 words，模板桩正文为 1024 bytes。
+- **按需能力 / 进阶专题**：`skills get grokbox --topic <topic>` 只读取一个已注册 companion。日常能力为 services、send、models、label、desktop、templates；ownership、troubleshoot、adopt、diagnostics、validation 由具体阻塞或验收任务触发。每篇说明触发条件、操作边界、验证与停止条件。
+
+`skills list` 输出 topic 名、层次（`task` / `advanced`）和摘要，不读取正文。`--topic` 与 `--full` 互斥；非法 topic（含文件路径）在读文件前拒绝。topic 名是固定 allowlist，不是任意路径。
+
+`skills get grokbox --full` 显式拼接入口与**全部**已注册 companion，包括 Host 恢复；不是默认阅读路径。`core --full` 保留完整生成命令参考，`core` 不接受 topic。默认输出 Markdown；`--json` 保留 `name` / `cliVersion` / `content`，单主题额外返回 `topic`。
+
+Topic 的发现、选择加载、full 拼接同源于 `packages/cli/src/skills.ts` 的 manifest；命令 registry、help、capability metadata 和 full command reference 同源。新增细节应进入对应专题，不通过放宽入口预算堆回首页。测试约束目录/manifest/导航一致、包内链接可达、模板桩一致和 Node 安装包的按需加载。
 
 ## 16. 验收与失效条件
 

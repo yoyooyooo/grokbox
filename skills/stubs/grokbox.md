@@ -1,23 +1,16 @@
 ---
 name: grokbox
-description: >-
-  grokbox CLI on this Grok Bot computer. Load version-matched instructions from
-  the installed binary; do not copy skill files into this Bot. Two voices: friendly
-  outcomes to people; exact CLI to yourself.
+description: Load the installed grokbox operator entry, then only the capability needed.
 ---
 
 # grokbox
 
-This Bot does not own grokbox instructions. Importing a Grok Bot template does not import skills.
-
-Before any grokbox work, load the skill that matches the installed CLI:
+Before the first grokbox action in a session, load the installed CLI's entry:
 
 ```bash
 grokbox skills get grokbox
-grokbox skills get grokbox --full
-grokbox skills list
 ```
 
-Speak friendly outcomes to people (no internal jargon). Keep exact `doctor` / `error.next` commands for yourself. Full recover playbooks live in the loaded skill (`adopt`, `troubleshoot`).
+Then load only the needed `--topic <name>` from that entry. Reload after a CLI update; do not copy the full guide or recovery procedures into this Bot. Template import does not install grokbox skill files.
 
-`core` is the full command inventory (`grokbox skills get core --full`), not the product track.
+Stay on the official brain; never assign a custom model to yourself. Explain observed outcomes plainly, keep uncertainty explicit, and respect the loaded guide's authorization and secret-handling boundaries. A suggested repair is not permission to interrupt Bots or widen the task.

@@ -1,30 +1,29 @@
 # Troubleshoot
 
-Read `grokbox doctor` `next` and run that command. Speak **two voices**: people hear friendly outcomes; you keep exact CLI / `error.next` to yourself. Deep Host recover: [adopt.md](adopt.md).
+Load after a command failure or an unhealthy doctor check: `grokbox skills get grokbox --topic troubleshoot`. Diagnose first; a suggested repair is not permission for unrelated changes.
 
-| doctor host | Meaning (you) | Person hears | You run |
-| --- | --- | --- | --- |
-| `official` | Custom-model channel off | “Opening the custom-model channel…” | `grokbox host start` |
-| `custom` | Channel on | “Custom channel looks good.” | none for Host |
-| `unknown` | Cannot prove Host; see `hostReason` | “Checking / aligning this computer…” | Retry on the computer, then doctor. Follow printed `next`. Typical: observe → write path, or `grokbox upgrade --yes` for stale / unmanaged cases. Details: [adopt.md](adopt.md) |
+```bash
+grokbox doctor
+```
 
-| doctor daemon | Meaning (you) | Person hears | You run |
-| --- | --- | --- | --- |
-| `down` | Services off | “Turning grokbox services on…” | `grokbox on` |
-| `up` | Title sync can run | — | none for daemon |
+Read the failing check, `error.code`, and `next`. Keep exact commands for execution; tell people what is affected and what remains uncertain. No need to enumerate every internal diagnostic field unless asked.
 
-## Host switch
+## Route to the smallest relevant capability
 
-Host switch kills Host. If bots are running, `host start` / `host stop` / `host restart` refuse and list them; use `--force` only when that interruption is accepted. `--force` does not bypass a live-Host vs reviewed-profile mismatch — follow doctor / write `next` first (see [adopt.md](adopt.md)). The operator bot itself counts as running.
+| Observation | Meaning / safe next step | Read only if needed |
+| --- | --- | --- |
+| Host `official` | Custom channel is off; normal for official-only work. Enable it only for a requested custom-model task. | [services](services.md) |
+| Host `custom` | Channel is present, not proof a model replied. | [send](send.md) |
+| Host `unknown` or source/profile mismatch | Cannot prove channel readiness. Follow the printed recovery next, without guessing flags. | [adopt](adopt.md) |
+| Daemon `down` | grokbox services are off. `on` is a change, not a status probe. | [services](services.md) |
+| Model use rejects ownership | Inspect ownership/error cause before changing anything. | [ownership](ownership.md) |
+| Send is `failed`, `recorded`, or `unknown` | Query the original nonce; do not resend to check status. | [send](send.md), then [diagnostics](diagnostics.md) for gaps |
+| Title differs from the assignment | Treat it as display evidence, not a silent model rollback. | [label](label.md) |
 
-## Unrecoverable
+## Host interruption and stopping rules
 
-If recover next is exhausted or keep failing: `grokbox host stop` (back on official channel). Tell the person you’re on the official channel and waiting for a maintainer. Do **not** thrash `--force`. Full tree: [adopt.md](adopt.md).
+Host start/stop/restart can interrupt active Bots, including the operator. A running-Bot refusal requires accepted interruption before the corresponding `--force`; it never bypasses a source/profile mismatch. Do not loop through force/restart commands.
 
-## Ownership / models
+If safe recovery next is exhausted or repeatedly fails, stop and use the verified rollback procedure in [adopt](adopt.md#unrecoverable-failsafe). Do not tell people the computer is back on the official channel until a successful stop and fresh doctor evidence confirm it. If stop is blocked, report that recovery is blocked and leave the unverified state explicit.
 
-`confirmed_temporal` / `conflict`: leave that Bot; create a new one with grokbox. Official computer updates can drop the custom-model channel — follow doctor next (`upgrade`, observe→write, or `host start`).
-
-`models use --for` failure: read `error.code` + `error.next`. Temporal → create a box Bot. Conflict/unconfirmed → `grokbox agents ownership <id>`. Host/bridge unread (`runtime_ownership_unavailable`) → `grokbox doctor` then follow next (often `host start` or adopt path). Never `host on --yes`.
-
-**Operator Bot:** stay on official brain — do not `models use` yourself. Custom-model experiments only on disposable Bots. See [models.md](models.md).
+Do not switch the operator's brain, edit harness declarations, replay unknown writes, or start a persistent monitor as a workaround. Report the relevant error and what requires maintainer attention.
