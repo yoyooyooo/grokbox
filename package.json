@@ -61,6 +61,8 @@
     "shim:verify": "bun test test/local-shim.test.ts",
     "prepack": "bun run build",
     "test": "bun test",
+    "check:publication": "node scripts/check-publication.mjs",
+    "check:publication:history": "node scripts/check-publication.mjs --history --ref HEAD",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:package": "bun test test/packaging.test.ts",
     "check": "bun run typecheck && bun test && bun run verify:package",

@@ -3,9 +3,10 @@
  * AH-92.5 maintainer observation: early admit deny on the canary path.
  * Not a product command. Mutates models.json only with --confirm, then restores.
  *
- * usage: bun scripts/verify-ah92-admit-observation.mjs [--confirm] [--agent <name-or-id>] [--nonce <uuid>]
+ * usage: bun scripts/verify-ah92-admit-observation.mjs --confirm --agent <name-or-id> --protected-agent-id <uuid> [--nonce <uuid>]
  */
 import { spawnSync } from "node:child_process";
+import { parseArgs } from "node:util";
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -13,20 +14,23 @@ import { isAbsolute, join } from "node:path";
 
 const CATALOG_MESSAGE = "route admits only stub/echo or openai* in this slice.";
 const POISON_ID = "ah92-admit-deny/none";
-const GROKBOX_CANARY_ID = "00000000-0000-4000-8000-000000000121";
-const DEFAULT_AGENT = "model-dogfood";
 const DEFAULT_DURABLE = "/workspace/.grokbox/box-runtime";
 
-const args = process.argv.slice(2);
-const help = args.includes("--help") || args.includes("-h");
-const confirm = args.includes("--confirm");
-const agentFlag = valueAfter(args, "--agent") ?? DEFAULT_AGENT;
-const nonceFlag = valueAfter(args, "--nonce");
-
-function valueAfter(list, flag) {
-  const at = list.indexOf(flag);
-  return at >= 0 ? list[at + 1] : undefined;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let flags;
+try {
+  flags = parseArgs({ options: {
+    help: { type: "boolean", short: "h" }, confirm: { type: "boolean" },
+    agent: { type: "string" }, "protected-agent-id": { type: "string" }, nonce: { type: "string" },
+  }, strict: true, allowPositionals: false }).values;
+} catch {
+  fail(2, "invalid_arguments", { mutation: false });
 }
+const help = flags.help === true;
+const confirm = flags.confirm === true;
+const agentFlag = flags.agent?.trim();
+const protectedAgentId = flags["protected-agent-id"]?.toLowerCase();
+const nonceFlag = flags.nonce;
 
 function fail(code, error, extra = {}) {
   process.stdout.write(`${JSON.stringify({ ok: false, error, ...extra })}\n`);
@@ -36,7 +40,7 @@ function fail(code, error, extra = {}) {
 if (help) {
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    usage: "bun scripts/verify-ah92-admit-observation.mjs --confirm [--agent model-dogfood] [--nonce <uuid>]",
+    usage: "bun scripts/verify-ah92-admit-observation.mjs --confirm --agent <name-or-id> --protected-agent-id <uuid> [--nonce <uuid>]",
     canary: [
       "grokbox send <agent> --text '…' --json",
       "grokbox history outcome <agent> --nonce <clientNonce> --runtime [--wait-ms 60000] --json",
@@ -48,9 +52,16 @@ if (help) {
 
 if (!confirm) {
   fail(2, "confirm_required", {
-    next: "bun scripts/verify-ah92-admit-observation.mjs --confirm",
+    next: "bun scripts/verify-ah92-admit-observation.mjs --confirm --agent <name-or-id> --protected-agent-id <uuid>",
     mutation: false,
   });
+}
+
+if (!agentFlag || agentFlag.startsWith("-")) fail(2, "agent_required", { mutation: false });
+if (!protectedAgentId || !UUID.test(protectedAgentId)) fail(2, "protected_agent_id_required", { mutation: false });
+if (nonceFlag !== undefined && !UUID.test(nonceFlag)) fail(2, "invalid_nonce", { mutation: false });
+if (agentFlag.toLowerCase() === "grokbox" || agentFlag.toLowerCase() === protectedAgentId) {
+  fail(2, "protected_canary_refused", { mutation: false });
 }
 
 const durableRoot = process.env.GROKBOX_BOX_RUNTIME_ROOT && isAbsolute(process.env.GROKBOX_BOX_RUNTIME_ROOT)
@@ -75,7 +86,7 @@ function grokbox(argv, timeoutMs) {
     }
   }
   if (!envelope) {
-    fail(1, "grokbox_json_missing", { argv, status: ran.status, stderr: (ran.stderr ?? "").slice(0, 500) });
+    fail(1, "grokbox_json_missing", { status: ran.status, signal: ran.signal });
   }
   return envelope;
 }
@@ -90,8 +101,9 @@ function writeAtomic(path, bytes, mode = 0o600) {
 
 const originalBytes = readFileSync(modelsPath);
 let restored = false;
+let mutationStarted = false;
 const restore = () => {
-  if (restored) return;
+  if (restored || !mutationStarted) return;
   writeAtomic(modelsPath, originalBytes);
   restored = true;
 };
@@ -109,7 +121,7 @@ try {
   const agent = shown.data?.agent ?? shown.data;
   const agentId = String(agent.id ?? "");
   const agentName = String(agent.name ?? "");
-  if (!agentId || agentId === GROKBOX_CANARY_ID || agentName === "grokbox") {
+  if (!agentId || agentId.toLowerCase() === protectedAgentId || agentName.trim().toLowerCase() === "grokbox") {
     fail(1, "protected_canary_refused", { agentId, agentName });
   }
   if (agent.kind !== "agent") fail(1, "not_an_agent", { agentId });
@@ -130,6 +142,7 @@ try {
   };
   poison.assignments = poison.assignments ?? { main: null, agents: {} };
   poison.assignments.agents = { ...(poison.assignments.agents ?? {}), [agentId]: POISON_ID };
+  mutationStarted = true;
   writeAtomic(modelsPath, Buffer.from(`${JSON.stringify(poison, null, 2)}\n`));
 
   const nonce = nonceFlag ?? randomUUID();

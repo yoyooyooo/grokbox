@@ -149,18 +149,20 @@ Host终态持久投影新增terminalClass/errorCode/toolCallCount/modelId，拒�
 现场 catalog 里的可选模型都是 openai*，`models use` 对未登记 id 会在写入前拒绝（`Unknown model … Add it to models.json first.`）。因此不能再用 `models use <非 openai*>` 复现原始狗粮班。最小负例是：只给一个 box Bot 临时写入非 openai 赋值 `ah92-admit-deny/none`（provider `acme`），然后跑金丝雀两条命令，最后还原 `models.json`。不新增 CLI 面。维护入口：
 
 ```sh
-bun scripts/verify-ah92-admit-observation.mjs --confirm [--agent model-dogfood]
+bun scripts/verify-ah92-admit-observation.mjs --confirm --agent <name-or-id> --protected-agent-id <uuid>
 ```
 
-缺 `--confirm` 不写盘。禁止打长期金丝雀 `grokbox` Bot。默认目标是 `model-dogfood`（`00000000-0000-4000-8000-000000000119`），跑完必须把它付回原先赋值。
+缺 `--confirm`、显式 `--agent` 或有效 `--protected-agent-id` 时，在读取运行配置前拒绝且不写盘。没有默认生产目标，也不发布真实保护对象 ID。运行者必须从受控本机配置取得保护对象 ID；名称为 `grokbox` 或解析后 ID 与保护对象相同的目标一律拒绝。观察后必须恢复原先赋值；未开始变更的拒绝不触发配置重写。
 
-Expected message: `route admits only stub/echo or openai* in this slice.`. Public acceptance assertions: early admit denial remains `failed`, including with a null display request ID or empty alerts; the durable rejection must be nonce-bound and stable across readers. This is a synthetic test recipe, not a published live receipt.
+准入失败的稳定消息为 `route admits only stub/echo or openai* in this slice.`。
+
+Public acceptance assertions: early admit denial remains `failed`, including with a null display request ID or empty alerts; the durable rejection must be nonce-bound and stable across readers. This is a synthetic test recipe, not a published live receipt.
 
 失效条件：Host preload 丢 nonce 绑定、catalog 出现 CLI 可 `models use` 的非 openai 模型、或 outcome 又把空 alerts 当成成功。
 
 ## 换模防回归（AH-97）
 
-立刻绿不够。金丝雀对长期狗粮 Bot（默认 `model-dogfood` / 当前 assigned Pi 模型）按顺序：
+立刻绿不够。以下使用合成示例名称 `model-dogfood`；运行者须显式选择已批准的非保护目标，并按顺序验证：
 
 ```sh
 grokbox models use <model-id> --for model-dogfood

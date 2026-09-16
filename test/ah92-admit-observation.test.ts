@@ -85,3 +85,26 @@ test("AH-92.5 observation docs keep the two-command canary and unofficial-assign
   expect(observation).toContain("不要用 `alerts list --nonce`");
   expect(observation).not.toMatch(/data\.state\s*=\s*accepted/);
 });
+
+
+test("maintainer observation has no implicit live target and refuses before reading runtime files", () => {
+  const protectedId = "00000000-0000-4000-8000-000000000001";
+  const cases: Array<[string[], string]> = [
+    [["--confirm"], "agent_required"],
+    [["--confirm", "--agent", "fixture-agent"], "protected_agent_id_required"],
+    [["--confirm", "--agent", "fixture-agent", "--protected-agent-id", "invalid"], "protected_agent_id_required"],
+    [["--confirm", "--agent", protectedId, "--protected-agent-id", protectedId], "protected_canary_refused"],
+    [["--confirm", "--agent", "GROKBOX", "--protected-agent-id", protectedId], "protected_canary_refused"],
+    [["--confirm", "--agent", "fixture-agent", "--protected-agent-id", protectedId, "--nonce", "bad"], "invalid_nonce"],
+    [["--confirm", "--agent"], "invalid_arguments"],
+  ];
+  for (const [args, error] of cases) {
+    const ran = spawnSync(process.execPath, [script, ...args], {
+      cwd: root, encoding: "utf8", timeout: 10_000,
+      env: { PATH: process.env.PATH, GROKBOX_BOX_RUNTIME_ROOT: "/nonexistent-publication-test-root" },
+    });
+    expect(ran.status).toBe(2);
+    expect(JSON.parse(ran.stdout)).toMatchObject({ ok: false, error, mutation: false });
+    expect(ran.stderr).toBe("");
+  }
+});

@@ -3,8 +3,16 @@ coverage/
 dist/
 artifacts/
 .scratch/
+# Private publication audits and pre-rewrite backups must never be committed.
+.publication-private/
 *.tgz
 .env
 .env.*
 !.env.example
 .DS_Store
+
+# Machine-local runtime state and publication/rewrite material.
+.grokbox/
+.private-audit/
+*.bundle
+*.patch.private

@@ -45,6 +45,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): current candidate/artifact evidence, scoped experience vs stable checkpoints, normal persistent enable vs fault injection, and install/exit gates. Historical GATE permission is not standing global rollout authorization.
 - [E07 Path B Host admission](maintainers/e07-path-b-host-admission.md): D2-approved purpose slices and source/packed admission proofs; full E07/native qualification remains partial.
 - [T29 command/API boundary incubate](maintainers/t29-command-boundary-incubate.md): shared commands/status/ConfigurationWrite inventory; browser still deferred, T41 observation DB allowed under its separate scope, no UI config SoT or speculative CAS.
+- [Publication privacy](maintainers/publication-privacy.md): full-history privacy gates, isolated validation, guarded branch-only publication, and remaining-copy limits.
 - [Release runbook](maintainers/release.md)
 
 Public bugs and proposals use [GitHub Issues](https://github.com/yoyooyooo/grokbox/issues). Security reports follow [`SECURITY.md`](../SECURITY.md). Machine-local execution notes, raw operational evidence, credentials, provider dumps, and private research do not belong in this repository.
