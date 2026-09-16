@@ -2,17 +2,17 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-[策略 plan](../roadmap/box-runtime-plan.md) 拥有 Phases 0–4；[单轨重建实施规格](../roadmap/box-runtime-impl-spec.md) 拥有唯一目标树、ports、执行与证明；**当前交付/施工顺序以 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery) 为准**。施工使用同一序列T20–T41；T37–T40承接归属门、身份writer/test2、原生往返和持久发布，T41新增浏览器前的持续观测/SQLite/incident。R2的ME-*只作历史映射，不新增第二套进度账。源码/测试说明实现事实，Ticket 保存范围、缺口与关闭证据；open 不等于完全没有代码。
+[策略 plan](../roadmap/box-runtime-plan.md) 拥有 Phases 0–4；[单轨重建实施规格](../roadmap/box-runtime-impl-spec.md) 拥有唯一目标树、ports、执行与证明；**当前交付/施工顺序以 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery) 为准**。原交付使用同一序列T20–T41，当前 modeld 执行核心扩展由下方 T43–T50 承接；T37–T40承接归属门、身份writer/test2、原生往返和持久发布，T41新增浏览器前的持续观测/SQLite/incident。R2的ME-*只作历史映射，不新增第二套进度账。源码/测试说明实现事实，Ticket 保存范围、缺口与关闭证据；open 不等于完全没有代码。
 
 <a id="modeld-effect-core"></a>
 ## Current change — modeld execution-core consolidation
 
 [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) is the sole implementation home for this branch; [ADR](../decisions/2026-09-16-modeld-effect-core.md) records accepted boundaries. This new series consumes existing T24/T25/T26/T37/T40 implementation rather than reopening historical tickets or creating a parallel execution kernel. Original product/native/rollback gates remain in force.
 
-| Milestone | Ticket | Initial state | Exit |
+| Milestone | Ticket | Progress (proof details stay in ticket) | Exit |
 |---|---|---|---|
-| M0 | [T43 authority/native baseline](T43-modeld-authority-baseline.md) | in progress | source/attribution matrix and executable baseline |
-| M1 | [T44 service lifetime](T44-modeld-service-lifetime.md) | planned | one acquisition program; owned/borrowed/cleanup proof |
+| M0 | [T43 authority/native baseline](T43-modeld-authority-baseline.md) | offline baseline verified / review pending | source/attribution matrix and executable baseline |
+| M1 | [T44 service lifetime](T44-modeld-service-lifetime.md) | implemented / offline verified / review pending | one acquisition program; owned/borrowed/cleanup proof |
 | M1 | [T45 evidence lifetime](T45-modeld-evidence-lifetime.md) | planned | typed evidence, shared source versus waiter, bounded demand/cancellation |
 | M2 | [T46 state and durability](T46-modeld-state-and-durability.md) | planned | identity synchronization, claim-before-effect, bounded maintenance |
 | M2 | [T47 authority state machine](T47-modeld-authority-state-machine.md) | planned | same-STEP bounded wait, actual side-effect fences, one terminal |

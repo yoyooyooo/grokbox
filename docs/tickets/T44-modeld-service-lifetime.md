@@ -40,4 +40,6 @@ No dependency upgrades, broad HTTP/RPC framework migration, live Host signal, co
 
 Bun 1.3.14 typecheck passed. `verify:modeld-core lifecycle` performs a fresh build before testing and passed 82 tests across 11 suites, including four new two-entrypoint parity tests and actual packaged Node lifecycle/start cases. The initial cold worktree lacked dist; the verifier now builds the current source rather than relying on leftovers. Source failure/defect/interruption, listener loss, repeated stop, competing path and borrowed-owner behavior were exercised.
 
+The complete repository regression then passed 1929 tests, with 5 explicit native-source qualification skips and 0 failures across 248 files. A separate package install/Node-entry check passed all 6 tests. The first full run caught the expected stale preload SHA fixture: build provenance embeds the changed root/package inputs even when the Host behavior is unchanged. The fixture was updated from an actual fresh build and its reject-old/byte-drift negative tests passed; no assertion was weakened.
+
 Independent fixed-tip review remains pending. No live service replacement, dependency upgrade or wire/policy change occurred.

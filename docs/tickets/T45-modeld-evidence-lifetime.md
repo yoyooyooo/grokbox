@@ -20,6 +20,10 @@ One source operation has a fixed original start/deadline/scope/generation/covera
 
 Compatible requests share; uncovered targets cannot borrow evidence. Queue/demand/source concurrency are bounded. Execution demand outranks observation without starvation. Account/team/backend/machine/Host generation changes invalidate incompatible evidence, and late results cannot repopulate the new scope. No live demand means no execution refresh loop.
 
+The current Host snapshot mixes remote registration with local scope/migration/execution facts. Never cache and replay that complete snapshot as a new local witness. The source adapter must expose a finite, version-qualified local-only witness through the existing Host bridge; cache only the remote part, and recheck current native identity/pause/binding plus Host generation before each proposed permit. A peer missing the local witness capability cannot silently receive the optimization. This is a required security vector, not an optional performance detail.
+
+Use the pinned `Clock.monotonicTimeNanos` for elapsed budgets; `Clock.currentTimeNanos` is wall time, despite its name. A shared source operation and a later local witness must retain separate original timestamps and scope identity.
+
 Only one coordinator owns finite read recovery. Classify source deadline, waiter deadline, caller cancellation, scope/generation invalidation, transport cancellation and unknown cancellation origin separately. `rpcCode=1` alone is not a cancellation-owner proof. A diagnostic direct read stays available without modeld and cannot grant execution fallback.
 
 ## Acceptance

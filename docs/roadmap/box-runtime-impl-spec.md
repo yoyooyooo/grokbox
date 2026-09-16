@@ -791,6 +791,8 @@ packages/cli/src/
 
 `OwnershipEvidence` 是可校验事实，不是许可；`AuthorityPermit` 是内核进程内某检查点的短寿命决定，不接受 caller/JSON/日志/SQLite 反序列化；`AuthorityObservation` 只作观察。Server version/lease 未提供时显式 `not_observed`，本地 observationId 不冒充 Server revision。
 
+**缓存边界不可省略：** 原始 Host snapshot 同时包含远端注册与本地 scope/migration/execution。modeld 不得缓存整份 snapshot 后当作新的本地事实反复准入。T45 的 source adapter 必须分开远端 evidence 与当前 native local witness；缓存只复用远端部分，每次候选许可仍读取当前本地身份/暂停/绑定事实，并确认前后 Host 代/scope。需要的 local-only 能力在既有 `ownership-slices.ts` 的有限 DTO 中落地并资格化，不另外暴露通用 native RPC。旧 Host 不支持该能力时明确拒绝优化路径，不用缺字段猜测本地 ready。
+
 `AdmissionAuthority.current` 的 `unknown` 边界收敛为有限的 admitted/refused union。可恢复失败、明确失效、未知结果、调用者取消、实现 defect 不合并。原生未知输入仍由边界 decoder 处理，不因加强类型跳过 runtime 校验。
 
 1. 有界接收 frame，校验协议/Host/service 身份与字段，登记单一 STEP 总期限。
@@ -807,7 +809,7 @@ packages/cli/src/
 
 模型已经被调用过时，资格等待恢复不产生第二次模型调用；当次终态已发出或服务代已退出后不自动恢复。暂时 `waiting` 只发生在同一尚未终止的 STEP；不为旧 TURN 提供新握手/新模型捷径。明确失效应对原 binding 保持单调，不被后续 box 观测覆盖。
 
-**时钟：** 进程内预算用可注入单调时钟；ISO 时间只作跨日志关联。跨进程不直接相减 monotonic tick。共享请求由协调器记原始操作起点；Host 返回有界相对耗时/身份，收到时间不刷新 evidence。墙钟跳变、未来时间、未知原始年龄拒绝执行而不产生负年龄。
+**时钟：** 进程内预算用可注入单调时钟；ISO 时间只作跨日志关联。固定 Effect 版本的 `Clock.monotonicTimeNanos` 才是 elapsed-time 来源；`currentTimeMillis/currentTimeNanos` 都是可跳变墙钟，不得因单位是 nanos 就当成单调。跨进程不直接相减 monotonic tick。共享请求由协调器记原始操作起点；Host 返回有界相对耗时/身份，收到时间不刷新 evidence。墙钟跳变、未来时间、未知原始年龄拒绝执行而不产生负年龄。
 
 ### S10.4 共享 source operation 与等待者
 
