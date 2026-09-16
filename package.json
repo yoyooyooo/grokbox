@@ -66,6 +66,7 @@
     "check:publication:history": "node scripts/check-publication.mjs --history --ref HEAD",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:package": "bun test test/packaging.test.ts",
+    "verify:modeld-core": "bun scripts/verify-modeld-core.mjs",
     "check": "bun run typecheck && bun test && bun run verify:package",
     "release:check": "bun run check",
     "release:precheck": "bun run scripts/release.ts --precheck",

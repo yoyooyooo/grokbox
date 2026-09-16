@@ -1,0 +1,99 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const box = "packages/box-runtime/test/";
+const kernel = "packages/runtime-kernel/test/";
+
+// A finite route to existing production-path tests, not a second implementation
+// or a generic command dispatcher. Unimplemented gates must fail, never pass an
+// empty suite. Add a case only with its ticket's real executable evidence.
+export const MODEL_CORE_CASES = Object.freeze({
+  baseline: [
+    `${kernel}ownership-admission.test.ts`,
+    `${box}ownership-scope-cache.test.ts`,
+    `${box}host-ownership-observation.test.ts`,
+    `${box}ownership-native-pause.test.ts`,
+    `${box}modeld-lifecycle.test.ts`,
+    `${box}architecture.test.ts`,
+  ],
+  lifecycle: null,
+  evidence: null,
+  state: null,
+  authority: null,
+  observation: null,
+  "release-offline": null,
+});
+
+export function resolveCoreCase(args) {
+  const values = args[0] === "--" ? args.slice(1) : args;
+  if (values.length !== 1 || !Object.hasOwn(MODEL_CORE_CASES, values[0])) {
+    throw new Error(`Expected exactly one case: ${Object.keys(MODEL_CORE_CASES).join(", ")}`);
+  }
+  const name = values[0];
+  const files = MODEL_CORE_CASES[name];
+  if (!Array.isArray(files) || files.length === 0) throw new Error(`Proof case is not implemented: ${name}`);
+  return { name, files: [...new Set(files)] };
+}
+
+export function isolatedProofEnvironment(env, home) {
+  const isolated = Object.fromEntries(Object.entries(env).filter(([key]) =>
+    !/^(GROKBOX_|PI_|CURSOR_|ANTHROPIC_|OPENAI_|MINIMAX_|AWS_|AZURE_|GOOGLE_)/i.test(key)
+      && !/(TOKEN|SECRET|API_KEY|PASSWORD|KEYCHAIN)/i.test(key)));
+  return { ...isolated, HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
+    GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_ALLOW_NATIVE: "0" };
+}
+
+export function assertProofSuites(directory, files) {
+  if (!Array.isArray(files) || files.length === 0) throw new Error("Empty required proof suite");
+  for (const file of files) {
+    if (typeof file !== "string" || !file.endsWith(".test.ts") || !statSync(join(directory, file)).isFile()) {
+      throw new Error(`Missing required proof suite: ${file}`);
+    }
+  }
+}
+
+export function proofProcessSucceeded(result) {
+  return !result.error && result.status === 0 && !result.signal;
+}
+
+export function runCoreProof(args) {
+  const selected = resolveCoreCase(args);
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const expected = String(pkg.packageManager).replace(/^bun@/, "");
+  if (process.versions.bun !== expected) throw new Error(`Proof requires declared Bun ${expected}; observed ${process.versions.bun ?? "Node"}`);
+  assertProofSuites(root, selected.files);
+  const home = mkdtempSync(join(tmpdir(), "grokbox-modeld-proof-"));
+  const reality = {
+    case: selected.name, bun: process.versions.bun,
+    effect: pkg.workspaces.catalogs["effect-v4-beta"].effect,
+    dependencyReality: "production programs with synthetic capabilities and fixture-owned local resources",
+    nativeQualification: "not-proven", independentReview: "pending", liveRelease: "not-run",
+  };
+  try {
+    console.log(JSON.stringify({ ...reality, suites: selected.files, stage: "start" }));
+    const result = spawnSync(process.execPath, ["test", "--timeout", "30000", ...selected.files], {
+      cwd: root, env: isolatedProofEnvironment(process.env, home), stdio: "inherit", timeout: 180_000,
+    });
+    if (!proofProcessSucceeded(result)) {
+      console.error(JSON.stringify({ ...reality, stage: "failed", status: result.status, signal: result.signal ?? null,
+        reason: result.error ? "test-process-unavailable-or-timeout" : "test-failure" }));
+      return 1;
+    }
+    console.log(JSON.stringify({ ...reality, stage: "passed-offline" }));
+    return 0;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { process.exitCode = runCoreProof(process.argv.slice(2)); }
+  catch (error) {
+    console.error(error instanceof Error ? error.message : "Invalid modeld proof invocation");
+    process.exitCode = 2;
+  }
+}

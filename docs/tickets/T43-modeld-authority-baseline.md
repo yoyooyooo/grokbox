@@ -1,6 +1,6 @@
 # T43 — Authority responsibility audit and executable baseline
 
-Status: in progress. Milestone M0. Depends on: accepted [ADR](../decisions/2026-09-16-modeld-effect-core.md). Spec: [S10.1–S10.3, S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: offline baseline verified; independent review pending. Milestone M0. Depends on: accepted [ADR](../decisions/2026-09-16-modeld-effect-core.md). Spec: [S10.1–S10.3, S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -38,4 +38,6 @@ Full live three-route comparison, new provider qualification, patch update autom
 
 ## Exit evidence
 
-Pending: baseline commands, commit and independent review. Documentation is accepted target/source audit only until executable exits are recorded.
+Executed on the new integration branch with Bun 1.3.14 and Effect 4.0.0-beta.107: typecheck passed; verifier regressions 6 passed / 0 failed; the `baseline` case ran 66 tests across 6 existing production-path suites, all passed. The publication scan passed. The runner rejects unknown/pending/empty/missing cases, wrong runtime and nonzero/unknown child exit, and isolates HOME plus credential/live-test environment.
+
+The native coverage decision remains conservative: no per-Agent/per-TURN native lease has been proven, so supplemental Server checks are retained. No throughput benchmark, native three-route run, independent review or live release was performed. This status does not close T37/T39/T40 or T49.
