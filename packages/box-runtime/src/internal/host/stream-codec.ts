@@ -51,15 +51,15 @@ export function reshapeInferenceEvents(events: InferenceEvent[]): StreamPart[] {
 export function usageFromTerminal(value: unknown): HostUsage | undefined {
   if (!isRecord(value)) return undefined;
   const usage = isRecord(value.usage) ? value.usage : value;
-  const prompt = Number(usage.promptTokens ?? usage.prompt_tokens);
-  const completion = Number(usage.completionTokens ?? usage.completion_tokens);
-  if (!Number.isFinite(prompt) || !Number.isFinite(completion) || prompt < 0 || completion < 0) return undefined;
-  const cacheRead = Number(usage.cacheReadTokens ?? usage.cache_read_tokens);
-  const cacheWrite = Number(usage.cacheWriteTokens ?? usage.cache_write_tokens);
+  const prompt = usage.promptTokens ?? usage.prompt_tokens;
+  const completion = usage.completionTokens ?? usage.completion_tokens;
+  if (typeof prompt !== "number" || typeof completion !== "number" || !Number.isSafeInteger(prompt) || !Number.isSafeInteger(completion) || prompt < 0 || completion < 0) return undefined;
+  const cacheRead = usage.cacheReadTokens ?? usage.cache_read_tokens;
+  const cacheWrite = usage.cacheWriteTokens ?? usage.cache_write_tokens;
   return {
     promptTokens: prompt, completionTokens: completion, totalTokens: prompt + completion,
-    ...(Number.isFinite(cacheRead) && cacheRead >= 0 ? { cacheReadTokens: cacheRead } : {}),
-    ...(Number.isFinite(cacheWrite) && cacheWrite >= 0 ? { cacheWriteTokens: cacheWrite } : {}),
+    ...(typeof cacheRead === "number" && Number.isSafeInteger(cacheRead) && cacheRead >= 0 ? { cacheReadTokens: cacheRead } : {}),
+    ...(typeof cacheWrite === "number" && Number.isSafeInteger(cacheWrite) && cacheWrite >= 0 ? { cacheWriteTokens: cacheWrite } : {}),
   };
 }
 
@@ -67,7 +67,8 @@ export function finishFromTerminal(value: unknown): { reason: FinishReason; usag
   if (!isRecord(value) || value.kind !== "terminal") return undefined;
   if (value.outcome === "ok") {
     const finish = value.finishReason;
-    const reason: FinishReason = finish === "abort" || finish === "error" ? finish : "stop";
+    if (finish !== "stop" && finish !== "abort" && finish !== "error") return undefined;
+    const reason: FinishReason = finish;
     const usage = usageFromTerminal(value.usage);
     return { reason, ...(usage ? { usage } : {}) };
   }

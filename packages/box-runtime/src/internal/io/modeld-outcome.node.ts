@@ -1,8 +1,9 @@
 import { Effect } from "effect";
-import type { ContextSnapshot, RunStepRequest } from "@grokbox/runtime-kernel/contract";
+import { projectExecutionCapacity, projectStreamDiagnostic, projectStreamSummary, type ContextSnapshot, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
 import { BACKEND_PHASES, FAILURE_REASONS, PROVIDER_CODES, PROVIDER_PARAMS } from "../backends/failure-observation.ts";
 import { STEP_FAILURE_CODES, STEP_OUTCOMES, STEP_PHASES, type ModeldStepOutcome } from "../modeld/step-outcome.ts";
 import { appendNdjsonLine } from "../host/terminal-journal.node.ts";
+import { observeJournalWrite } from "../host/journal-health.node.ts";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -94,6 +95,24 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
     serviceEpoch: v.serviceEpoch, outcome: v.outcome, phase: v.phase, eventCount: v.eventCount,
   };
   if (id(v.bindingId)) out.bindingId = v.bindingId;
+  if (id(v.modelId)) out.modelId = v.modelId;
+  for (const key of ["snapshotDigest", "selectionRevision"] as const) if (typeof v[key] === "string" && /^[a-f0-9]{64}$/.test(v[key])) out[key] = v[key];
+  if (typeof v.recordedAt === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.recordedAt) && Number.isFinite(Date.parse(v.recordedAt))) out.recordedAt = v.recordedAt;
+  const durationMs = boundedInt(v.durationMs, 24 * 60 * 60_000);
+  if (durationMs !== undefined) out.durationMs = durationMs;
+  const attempts = boundedInt(v.backendAttempts, 65_536);
+  if (attempts !== undefined) out.backendAttempts = attempts;
+  const stream = projectStreamSummary(v.stream);
+  if (stream) out.stream = stream;
+  const execution = projectExecutionCapacity(v.execution);
+  if (execution) out.execution = execution;
+  const cleanup = record(v.cleanup);
+  if (cleanup) {
+    const safe: Record<string, unknown> = {};
+    for (const key of ["clientDisconnected", "cancellationRequested"] as const) if (typeof cleanup[key] === "boolean") safe[key] = cleanup[key];
+    if (member(cleanup.exitFailure, ["defect", "interrupted", "unknown"])) safe.exitFailure = cleanup.exitFailure;
+    if (Object.keys(safe).length) out.cleanup = safe;
+  }
   const snapshotBytes = boundedInt(v.snapshotBytes, SNAPSHOT_BYTES_MAX);
   const messageChars = boundedInt(v.messageChars, SNAPSHOT_BYTES_MAX);
   const messageCount = boundedInt(v.messageCount, MESSAGE_COUNT_MAX);
@@ -110,7 +129,7 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
   if (member(v.failureCode, STEP_FAILURE_CODES)) out.failureCode = v.failureCode;
   const d = record(v.diagnostic);
   if (d && member(d.phase, BACKEND_PHASES) && member(d.reason, FAILURE_REASONS)) {
-    const safe: Record<string, unknown> = { phase: d.phase, reason: d.reason };
+    const safe: Record<string, unknown> = { phase: d.phase, reason: d.reason, ...projectStreamDiagnostic(d) };
     if (typeof d.httpStatus === "number" && Number.isInteger(d.httpStatus) && d.httpStatus >= 400 && d.httpStatus <= 599) safe.httpStatus = d.httpStatus;
     if (member(d.providerCode, PROVIDER_CODES)) safe.providerCode = d.providerCode;
     if (member(d.providerParam, PROVIDER_PARAMS)) safe.providerParam = d.providerParam;
@@ -120,20 +139,25 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
 }
 
 export function writeModeldStepOutcome(root: string, request: RunStepRequest, outcome: ModeldStepOutcome) {
-  return Effect.tryPromise(async () => {
+  return Effect.tryPromise(async () => observeJournalWrite(root, async () => {
     let measures: ReturnType<typeof snapshotWireMeasures> | undefined;
     try {
       measures = snapshotWireMeasures(request.snapshot);
     } catch {
       measures = undefined;
     }
-    const at = new Date().toISOString().replace(/(\.\d{3})\d*Z$/, "$1Z");
+    const recordedAt = new Date().toISOString();
+    const at = outcome.at ?? recordedAt;
     const projected = projectModeldStepOutcome({
       ...outcome, ...(measures ?? {}),
-      name: "model_step_terminal", schemaVersion: 3, at,
+      name: "model_step_terminal", schemaVersion: 3, at, recordedAt,
+      modelId: request.selection.modelId, snapshotDigest: request.snapshot.snapshotDigest,
+      selectionRevision: request.selection.selectionRevision,
       hostGenerationId: request.hostEpoch.compile, agentId: request.agentId,
       turnId: request.turnId, stepId: request.stepId, serviceEpoch: request.serviceEpoch.incarnationId,
     });
-    if (projected) await appendNdjsonLine(root, JSON.stringify(projected));
-  }).pipe(Effect.asVoid);
+    if (!projected) return "unprojected";
+    await appendNdjsonLine(root, JSON.stringify(projected));
+    return "written";
+  })).pipe(Effect.asVoid);
 }

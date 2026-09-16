@@ -1,4 +1,4 @@
-import { EnvelopeError, WIRE_VERSION, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
+import { EnvelopeError, WIRE_VERSION, WireError, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { qualifyHostRootContract } from "./root-contract.ts";
 import { requestModeld, streamModeld } from "./modeld-client.node.ts";
@@ -136,6 +136,8 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
     seen.set(stepId, snapshot.snapshotDigest);
     last.stepId = stepId;
     const names = declared(request.envelope);
+    const evidence = new StreamEvidence();
+    evidence.setCount("declaredTools", names.size);
     const body: Record<string, unknown> = {
       version: WIRE_VERSION,
       method: "run-step",
@@ -162,21 +164,26 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       stepId,
     };
     let finished = false;
+    let admitted = false;
     let observedChunk = false;
     try {
       for await (const frame of streamModeld(input.runRoot, body, { signal: request.abortSignal })) {
         if (!isRecord(frame)) continue;
         if (frame.ok === true && frame.kind === "accepted" && typeof frame.bindingId === "string") {
+          admitted = true;
           last.bindingId = frame.bindingId;
           continue;
         }
         if (frame.kind === "event") {
+          evidence.note("wire", isRecord(frame.event) ? frame.event.type : "unknown");
+          evidence.increment("hostEvents");
+          const wireSequence = typeof frame.sequence === "number" ? frame.sequence : undefined;
           const reshaped = reshapeInferenceEvent(frame.event);
-          if (reshaped.kind === "invalid") throw new VisibleStreamError("normalize", "invalid_stream");
+          if (reshaped.kind === "invalid") throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "invalid_event_shape", rejectSite: "host_event", wireSequence });
           if (reshaped.kind === "ignore") continue;
           const part = reshaped.part;
           if ((part.type === "tool-call" || part.type === "tool-call-delta" || part.type === "tool-call-streaming-start") && !names.has(part.toolName)) {
-            throw new VisibleStreamError("normalize", "invalid_stream");
+            throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "undeclared_tool", rejectSite: "host_tool", declaredToolMatch: false, wireSequence });
           }
           const hasContent = (part.type !== "text-delta" && part.type !== "reasoning") || part.textDelta.length > 0;
           if (!observedChunk && hasContent) {
@@ -188,22 +195,24 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
         }
         if (frame.kind === "terminal") {
           const mapped = finishFromTerminal(frame);
-          if (!mapped || mapped.reason === "error") {
-            throw new VisibleStreamError("provider", typeof frame.code === "string" ? frame.code : "model_error");
+          if (!mapped) throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "invalid_terminal", rejectSite: "host_terminal" });
+          if (mapped.reason === "error") {
+            throw annotateStreamFailure(new VisibleStreamError("provider", typeof frame.code === "string" ? frame.code : "model_error"), { rejectSite: "host_terminal" });
           }
           finished = true;
           yield { type: "finish", reason: mapped.reason, finishReason: mapped.reason, ...(mapped.usage ? { usage: mapped.usage } : {}) };
           return;
         }
         if (frame.ok === false && isRecord(frame.error) && typeof frame.error.code === "string") {
-          const stage = frame.error.code === "not_admitted" || frame.error.code === "invalid_envelope" ? "admit" : "provider";
+          const stage = admitted ? "provider" : "admit";
           throw new VisibleStreamError(stage, frame.error.code);
         }
       }
-      if (!request.abortSignal.aborted && !finished) throw new VisibleStreamError("normalize", "invalid_stream");
+      if (!request.abortSignal.aborted && !finished) throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "missing_finish", rejectSite: "host_terminal" });
     } catch (error) {
-      if (error instanceof Error && error.message === "extra_keys") {
-        throw new VisibleStreamError("normalize", "invalid_stream");
+      if (error instanceof WireError || streamFailureDiagnostic(error) || (error instanceof Error && error.message === "extra_keys")) {
+        const failure = error instanceof VisibleStreamError ? error : new VisibleStreamError("normalize", "invalid_stream");
+        throw annotateStreamFailure(failure, { ...streamFailureDiagnostic(error), stream: evidence.snapshot() });
       }
       throw error;
     } finally {

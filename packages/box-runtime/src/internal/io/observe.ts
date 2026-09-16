@@ -45,7 +45,8 @@ type LiveStatusDraft = {
   bundles: { state: EvidenceState; head: string | null; retained: number | null; liveRetained: boolean | null; lastMatchedSha: string | null };
   watchdog: { required: boolean; state: "stopped" | "running" | "degraded" | "unknown" };
   modeld: { required: boolean; state: "stopped" | "running" | "unknown";
-    scope?: ModeldServiceObservation["scope"]; serviceEpoch?: string | null; observedAt?: string };
+    scope?: ModeldServiceObservation["scope"]; serviceEpoch?: string | null; observedAt?: string;
+    execution?: ModeldServiceObservation["execution"]; executionGap?: ModeldServiceObservation["executionGap"] };
   models: { main: string | null; agents: Record<string, string>; assignmentState: "valid" | "invalid" | "unknown" };
   window: { durationMs: number | null; affectedInvocations: "unknown" };
   evidence: Record<"desired" | "models" | "source" | "processes" | "gateway" | "attestation" | "profile" | "events", EvidenceState>;
@@ -187,7 +188,9 @@ function facetsFromDraft(status: LiveStatusDraft, events: { state: EvidenceState
       observedAt: status.modeld.observedAt ?? null,
       gap: status.modeld.state === "unknown" ? (status.modeld.scope === "unavailable" ? "unavailable" : "missing") : null,
       value: { required: status.modeld.required, ready: status.modeld.state === "running",
-        ...(status.modeld.scope !== undefined ? { scope: status.modeld.scope, serviceEpoch: status.modeld.serviceEpoch ?? null } : {}) },
+        ...(status.modeld.scope !== undefined ? { scope: status.modeld.scope, serviceEpoch: status.modeld.serviceEpoch ?? null } : {}),
+        ...(status.modeld.execution ? { execution: status.modeld.execution } : {}),
+        ...(status.modeld.executionGap ? { executionGap: status.modeld.executionGap } : {}) },
     },
     controllerLiveness: { source: "controller", observedAt: null, gap: "missing", value: null },
     bridgeHost: {
@@ -294,7 +297,9 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
       const observed = await liveStatusAdapter.modeldService(input.root, runRoot);
       status.modeld = { required: status.modeld.required,
         state: observed.ready === null ? "unknown" : observed.ready ? "running" : "stopped",
-        scope: observed.scope, serviceEpoch: observed.serviceEpoch, observedAt: observed.observedAt };
+        scope: observed.scope, serviceEpoch: observed.serviceEpoch, observedAt: observed.observedAt,
+        ...(observed.execution ? { execution: observed.execution } : {}),
+        ...(observed.executionGap ? { executionGap: observed.executionGap } : {}) };
     }
   } catch { status.modeld.state = "unknown"; status.modeld.scope = "unavailable"; }
 

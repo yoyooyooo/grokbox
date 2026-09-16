@@ -68,7 +68,7 @@ test("real CLI use admits ownership; explicit reset only removes intent and pres
       } else {
         expect(data.data.title?.from).toContain("m=owned");
         expect(data.data.title?.written).toBe(true);
-        expect(data.data.title?.to.includes("m=") ?? false).toBe(false);
+        expect(data.data.title?.to?.includes("m=") ?? false).toBe(false);
       }
       expect((await f.load()).assignments.agents[B]).toBe("stub/echo");
       expect((await f.load()).assignments.agents[A]).toBe(args[0] === "reset" ? undefined : "openai/owned");

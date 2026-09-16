@@ -8,6 +8,8 @@ import {
 export const HOST_JOURNAL_FORBIDDEN = /env|token|prompt|authorization|secret|apiKey/i;
 
 export const ROUTE_MODEL_NOT_ADMITTED_AGENT_MESSAGE = ROUTE_MODEL_NOT_ADMITTED_MESSAGE;
+export const LOCAL_CAPACITY_AGENT_MESSAGE = "The local model runtime could not admit this request because its execution resources were unavailable. No model request was dispatched.";
+export const LEDGER_UNAVAILABLE_AGENT_MESSAGE = "The local execution history could not be read or saved safely. This request was not dispatched to the model; no fallback was used.";
 export const INVALID_STREAM_AGENT_MESSAGE =
   "The model returned an invalid stream. The request was stopped without retry.";
 
@@ -111,6 +113,8 @@ export const HOST_FAILURE_CATALOG = [
     agentMessage: "Managed stream ended in a Host rejection.",
     mapsFrom: "hook-reason",
   },
+  { reason: "local-capacity", errorCode: "capacity", stage: "admit", agentMessage: LOCAL_CAPACITY_AGENT_MESSAGE, mapsFrom: "hook-reason" },
+  { reason: "execution-history-unavailable", errorCode: "ledger_unavailable", stage: "admit", agentMessage: LEDGER_UNAVAILABLE_AGENT_MESSAGE, mapsFrom: "hook-reason" },
   {
     reason: "invalid-stream",
     errorCode: "invalid_stream",
@@ -150,6 +154,8 @@ export type TerminalRejectMapping = {
 /** Host-visible mapping for a rejected stream terminal. Backend stream_invalid
  * is the same class as Host invalid_stream; do not collapse it to model_error. */
 export function mapTerminalReject(errorCode: string, stage?: string): TerminalRejectMapping {
+  if (errorCode === "capacity" && stage === "admit") return { reason: "local-capacity", errorCode, stage: "admit" };
+  if (errorCode === "ledger_unavailable") return { reason: "execution-history-unavailable", errorCode, stage: "admit" };
   if (errorCode === "invalid_stream" || errorCode === "stream_invalid") {
     return { reason: "invalid-stream", errorCode: "invalid_stream", stage: "normalize" };
   }

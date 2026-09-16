@@ -145,7 +145,7 @@ describe("modeld route admit after Host capture", () => {
     let observed: ModeldStepOutcome | undefined;
     let http = 0;
     let sawBearer = false;
-    const fetchImpl = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = Object.assign(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       http += 1;
       const header = init && typeof init === "object" && "headers" in init ? init.headers : undefined;
       const authorization = header instanceof Headers ? header.get("authorization")

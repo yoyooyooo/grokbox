@@ -3,6 +3,9 @@ import { chmod, mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
 import { HOST_STATE_SHAPES } from "./context-codec.ts";
+import { projectStreamDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { observeJournalWrite } from "./journal-health.node.ts";
+import { projectRunObservation } from "./run-observation.ts";
 import {
   boundedClientNonce,
   HOST_FAILURE_CATALOG,
@@ -29,6 +32,8 @@ export const TURN_SEAM_ERROR_CODES = new Set([
   "parallel_tools",
   "invocation_conflict",
   "model_error",
+  "capacity",
+  "ledger_unavailable",
   "stream_limit",
   "invalid_stream",
 ]);
@@ -52,6 +57,8 @@ export type HostStreamRejectedEvent = {
   errorCode: string;
   reason: string;
   stateShape?: string;
+  diagnostic?: StreamDiagnostic;
+  serviceEpoch?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -193,9 +200,12 @@ export function projectHostStreamRejected(input: unknown): HostStreamRejectedEve
     ...(turnId ? { turnId } : {}),
     ...(stepId ? { stepId } : {}),
     ...(clientNonce ? { clientNonce } : {}),
+    ...runLinks(input),
     stage,
     errorCode,
     reason,
+    ...(boundedString(input.serviceEpoch) ? { serviceEpoch: boundedString(input.serviceEpoch)! } : {}),
+    ...(projectStreamDiagnostic(input.diagnostic) ? { diagnostic: projectStreamDiagnostic(input.diagnostic) } : {}),
     ...(reason === "invalid-state" && (HOST_STATE_SHAPES as readonly unknown[]).includes(input.stateShape)
       ? { stateShape: input.stateShape as string } : {}),
   };
@@ -230,6 +240,7 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
     ...(stepId ? { stepId } : {}),
     ...(clientNonce ? { clientNonce } : {}),
     ...(hasAux ? { auxPurpose, parentStepId } : {}),
+    ...runLinks(input),
   };
 }
 
@@ -250,11 +261,26 @@ export function projectHostNormalizedTerminal(input: unknown): Record<string, un
     ...(errorCode ? { errorCode } : {}),
     ...(toolCallCount !== null ? { toolCallCount } : {}),
     ...(modelId ? { modelId } : {}),
+    ...(projectStreamDiagnostic(input.diagnostic) ? { diagnostic: projectStreamDiagnostic(input.diagnostic) } : {}),
+    ...(boundedString(input.hostGenerationId) ? { hostGenerationId: boundedString(input.hostGenerationId) } : {}),
+    ...(boundedClientNonce(input.clientNonce) ? { clientNonce: boundedClientNonce(input.clientNonce) } : {}),
+    ...(["main", "memory-extraction", "episode"].includes(String(input.purpose)) ? { purpose: input.purpose } : {}),
+    ...(boundedString(input.parentStepId) ? { parentStepId: boundedString(input.parentStepId) } : {}),
+    ...runLinks(input),
   };
+}
+
+function runLinks(input: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of ["dispatchId", "groupId", "groupDispatchId"]) {
+    const value = boundedString(input[k]); if (value) out[k] = value;
+  }
+  return out;
 }
 
 function projectHostEvent(input: unknown): Record<string, unknown> | null {
   if (!isRecord(input) || typeof input.name !== "string" || !journalRoleAllows("host", input.name)) return null;
+  if (input.name === "host_run_observation") return projectRunObservation(input);
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input);
   if (input.name === "host_stream_rejected") return projectHostStreamRejected(input);
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input);
@@ -264,14 +290,12 @@ function projectHostEvent(input: unknown): Record<string, unknown> | null {
 
 /** Host-only append. Journal write failure never throws to the caller. */
 export async function appendHostJournal(root: string, input: unknown): Promise<HostJournalWriteResult> {
-  const projected = projectHostEvent(input);
-  if (!projected) return "unprojected";
-  try {
-    await appendNdjsonLine(root, JSON.stringify(projected));
-    return "written";
-  } catch {
-    return "write_failed";
-  }
+  return observeJournalWrite(root, async () => {
+    const projected = projectHostEvent(input);
+    if (!projected) return "unprojected";
+    try { await appendNdjsonLine(root, JSON.stringify(projected)); return "written"; }
+    catch { return "write_failed"; }
+  });
 }
 
 export async function appendTurnSeamTerminal(root: string, input: unknown): Promise<HostJournalWriteResult> {

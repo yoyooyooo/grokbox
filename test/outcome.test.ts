@@ -249,7 +249,9 @@ test("a historical Host terminal without class is not proof of success", () => {
 test("nonce ambiguity and a Gateway restart cannot join observations into success", () => {
   expect(projectSendOutcome({ ...base, entries: [user, progress, { ...user, requestId: "different" }] }).state).toBe("unknown");
   expect(projectSendOutcome({ ...base, entries: [user, progress], gatewayChanged: true })).toMatchObject({ state: "unknown", delivery: [] });
-  expect(projectSendOutcome({ ...base, entries: [user, progress], alertsIncomplete: true })).toMatchObject({ state: "unknown", delivery: [] });
+  const incomplete = projectSendOutcome({ ...base, entries: [user, progress], alertsIncomplete: true });
+  expect(incomplete).toMatchObject({ state: "unknown", observations: { delivery: "observed", execution: "unknown" } });
+  expect(incomplete.delivery).toHaveLength(1);
 });
 
 test("missing or streaming messages cannot satisfy the final marker", () => {

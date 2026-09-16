@@ -5,6 +5,7 @@
  * openai-prompt-adapter, or compact algorithms to generate expected values.
  */
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -403,22 +404,54 @@ export function extractHttpStringBlob(body: unknown): string {
   return JSON.stringify(body ?? null);
 }
 
-function indexOfEncoded(blob: string, expected: string, pos: number): number {
-  const escaped = JSON.stringify(expected).slice(1, -1);
-  const raw = blob.indexOf(expected, pos);
-  const enc = blob.indexOf(escaped, pos);
-  const hits = [raw, enc].filter((index) => index >= 0);
-  return hits.length > 0 ? Math.min(...hits) : -1;
-}
-
+/** Decode native protocol items independently. The earlier substring oracle
+ * expected JSON-in-text tool history even though production sends native calls;
+ * it failed on the unchanged baseline. Exact structural comparison kills
+ * missing/reordered/duplicated calls and results, not just missing sentinels. */
 export function assertIndependentGoldenInHttp(body: unknown, window: HostWindowMessage[], root = CONTINUITY_ROOT): void {
-  const blob = extractHttpStringBlob(body);
-  if (!blob.includes(root)) throw new Error("independent-golden: missing Host root");
-  let pos = 0;
-  for (const expected of independentProviderTexts(window)) {
-    const next = indexOfEncoded(blob, expected, pos);
-    if (next < 0) throw new Error(`independent-golden: missing ordered content at ${pos}`);
-    pos = next + 1;
+  if (!isRecord(body)) throw new Error("independent-golden: missing HTTP body");
+  const expected: unknown[] = [], actual: unknown[] = [], roots: string[] = [];
+  const text = (out: unknown[], role: unknown, value: unknown) => {
+    if (typeof value === "string" && value.length) out.push({ kind: "text", role, text: value });
+  };
+  for (const message of window) {
+    if (message.role === "system") continue;
+    if (typeof message.content === "string") { text(expected, message.role, message.content); continue; }
+    if (!Array.isArray(message.content)) throw Error("independent-golden: unsupported Host content");
+    for (const part of message.content) {
+      if (!isRecord(part)) throw Error("independent-golden: unsupported Host part");
+      if (part.type === "text" || part.type === "reasoning") text(expected, message.role, part.text);
+      else if (part.type === "tool-call") expected.push({ kind: "call", id: part.toolCallId, name: part.toolName, args: part.args });
+      else if (part.type === "tool-result") expected.push({ kind: "result", id: part.toolCallId, result: part.result });
+      else throw Error("independent-golden: unqualified Host part");
+    }
+  }
+  const decode = (value: unknown) => { if (typeof value !== "string") throw Error("independent-golden: non-string wire JSON"); return JSON.parse(value); };
+  if (typeof body.instructions === "string") roots.push(body.instructions);
+  const messages = Array.isArray(body.messages) ? body.messages : Array.isArray(body.input) ? body.input : [];
+  for (const item of messages) {
+    if (!isRecord(item)) throw Error("independent-golden: malformed wire item");
+    if (item.role === "system") {
+      if (typeof item.content === "string") roots.push(item.content);
+      else if (Array.isArray(item.content)) roots.push(item.content.map(p => isRecord(p) && typeof p.text === "string" ? p.text : "").join(""));
+      continue;
+    }
+    if (item.type === "function_call") { actual.push({ kind: "call", id: item.call_id, name: item.name, args: decode(item.arguments) }); continue; }
+    if (item.type === "function_call_output" || item.role === "tool") { actual.push({ kind: "result", id: item.call_id ?? item.tool_call_id, result: decode(item.output ?? item.content) }); continue; }
+    if (typeof item.content === "string") text(actual, item.role, item.content);
+    else if (Array.isArray(item.content)) for (const part of item.content) {
+      if (!isRecord(part) || typeof part.text !== "string") throw Error("independent-golden: unqualified wire content");
+      text(actual, item.role, part.text);
+    }
+    if (Array.isArray(item.tool_calls)) for (const call of item.tool_calls) {
+      if (!isRecord(call) || !isRecord(call.function)) throw Error("independent-golden: malformed wire call");
+      actual.push({ kind: "call", id: call.id, name: call.function.name, args: decode(call.function.arguments) });
+    }
+  }
+  if (!isDeepStrictEqual(roots, [root])) throw Error("independent-golden: Host root must occur exactly once");
+  if (!isDeepStrictEqual(actual, expected)) {
+    const first = Math.max(0, expected.findIndex((part, i) => !isDeepStrictEqual(part, actual[i])));
+    throw Error(`independent-golden: ordered native content differs at ${first}; expected=${expected.length}, observed=${actual.length}`);
   }
 }
 

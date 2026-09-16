@@ -124,13 +124,25 @@ Deactivate / 官方替换等待（`waitOfficialReplacement`）：仅 census 到�
 
 - `/workspace/.grokbox/box-runtime/models.json`；持久化的 `apiKeyRef` / `credentials[provider]` 为 `env:<NAME>` 或 `file:/absolute/path`（`file:` 也放长效树下的 `secrets/`，不进 git）。`env:` 必须是已解析的 bearer（例如 `GROKBOX_SUB2API_KEY`）；trim 后以 `!/` 开头的 pi command-form apiKey 会 `credential_invalid`，modeld 不会执行该命令。`externalCatalog` 含 `pi` 时，适配记录可使用非持久的 `pi-provider:<name>`，pin 时从同一 Pi `models.json` 候选路径读取该 provider 的 string `apiKey`；显式 `credentials[provider]` 覆盖自动复用。不得把 Pi apiKey 明文写入 grokbox `models.json`，也不得执行 `!/` command-form。
 - **Selective route：** `assignments.agents.<id>` 是唯一的 managed opt-in。未列出的 Bot 走官方 Host session。`assignments.main` 可选（catalog/披露用），**不是** 未覆盖 Bot 的回退。键用稳定 agent id；CLI `--for` 写 agents 覆盖。Debug canary 是 grokbox test0 `00000000-0000-4000-8000-000000000114`；grokbox test1 未 opt-in 则官方。其它 Bot 官方。省略 `--for` 的 `models use` 仍写 `main`，不把其它 Bot 拉进 modeld。其它 Host 调用面（summary/computer/…）仍是覆盖地图，不是 SlotRegistry。本 slice 的 **route activate** 承认已出现的赋值是 `stub/echo` **或** openai*（`openAiAccepts`：provider `openai`/`openai-chat`/`openai-responses`、http(s) `endpoint` 作 baseURL、非空 `apiKeyRef`）。允许 agents-only、`main=null`。其它 provider / 缺 key / 非 http endpoint fail-closed。T11：预 dispatch 本地失败回官方；wrap 之后可见 `stage=admit|provider|normalize` 错误，出门后不静默回官方。
-- turn 钉住该 Bot 的 immutable resolved-config **和 credential fingerprint**，直到 terminal 或 idle TTL；不在 turn 内 refresh/换账户。改 Jerry 不影响 Tom 正在跑的回合。
-- modeld 有 generation-scoped 内存 registry（id → fingerprint + state + terminal）。`status` 不对账续传正文。disconnect → abort + unknown。duplicate submit 不重新 dispatch。
+- TURN 钉住该 Bot 的 immutable resolved-config **和 credential fingerprint**。空闲只改变资源驻留，不改变模型、账户或继续执行的资格；冷恢复重新取得同一 fingerprint 的凭据能力，并重新核对 authority。改 Jerry 不影响 Tom 正在跑的回合。
+- 当前 modeld 使用 service-epoch-scoped 的精确磁盘执行身份索引和只保留活跃工作的内存状态。STEP 在 provider 执行前持久占位，结束后回收热记录；重复身份仍由索引拒绝，不能把缓存未命中当作可重跑。`status` 不续传正文，观察日志不拥有去重权威。
 - 体验不降级：优先让 Host 既有 retry/checkpoint 工作。不另建第二套消息队列。
 - MVP envelope 见产品合同 §12：文本、工具、视觉（模型声明才送；否则可见告警）、并行不得丢 id。
 - 可见告警最终由 Host 写入 Transcript（`SendToUser` 或等价），runtime 不私写产品库。
 
-### 当前 Unix admission / pin 合流（S5）
+### 连续执行与生命周期（2026-09-16）
+
+`LEDGER_ENTRIES_MAX=1024` 的进程累计额度已被取消，不是调高阈值。唯一 kernel 继续拥有 claim、duplicate/conflict、cancel 和 binding；`ExecutionHistory` 只是它的持久能力，由 modeld root 的 `classic-level` 适配器实现，Host/CLI 不导入数据库实现。STEP claim 使用同步持久写完成后才准许 provider；无法证明 claim 的存储失败是 `ledger_unavailable`，不得回落内存或重发。
+
+同一服务代的已占位身份保留到服务代退休；这部分是小型摘要索引，不保存消息、工具参数、响应或 AuthLease。LevelDB 的块缓存与增量压缩不构成累计请求额度。新服务代必须先取得独占数据库锁、退休旧代索引、持久发布新 epoch，再启动 listener；旧 epoch 的请求仍拒绝。跨重启恢复旧 TURN/自动改 epoch 不在此许可内。
+
+非活跃 TURN 的 pin/资源在软缓存压力或空闲维护时冷存储并释放，继续时核对原 binding、选择 revision、ownership 和 credential fingerprint。维护失败保留原资源 owner，并留下 cleanup 健康证据；不得阻塞一个仍能成功提交自己 claim 的无关请求。并发、请求字节、取消和物理存储故障仍有独立保护，不能为了静默而隐瞒已发生的失败或无限保留资源。
+
+`runtime modeld status` 将 liveness 与 admission 分开，公布 `lifetimeStepLimit:null`、活跃/热记录、冷热资源、回收计数和存储健康；旧服务未插桩应显示 `not_observed`，不能从能回答 health 推断可接新工作。
+
+### 历史 Unix admission / pin 合流（S5）
+
+本节以下的旧文件名和数字记录早期 substrate；当前执行、资源与协议以以上生命周期段和 Current Implementation Spec 为准。
 
 `Host seam → modeld.sock → createModeld → admitted driver` 是一条路径。`modeld-ipc.ts` 只负责有界协议/连接，删去独立 stub registry；`modeld.ts` 独占 admission、pin、重复/取消/过期及 effect，fake 测试替换同一内核的 ports/driver，不另造 offline admission。CLI/Unix 默认 driver 是 **composite**：`stub/echo` ∪ openai*（`modeld-default.ts`）；带 fake driver 的 Unix 测试不构成 route 的 provider allowlist。
 
@@ -138,7 +150,7 @@ Deactivate / 官方替换等待（`waitOfficialReplacement`）：仅 census 到�
 - `modeld-store.ts` 在服务内以有界 no-follow regular-file reader 读取 desired、canonical attestation 和 operation journal，双读不一致只等待、不 admit。route 必须具有 S2 compile receipt；transient-adopt 还要求同 operation/compile/稳定身份的 `attested` journal，临时 supervisor 已释放。legacy/坏/uncertain 证据不被 health 成功替代；正常未签完可在预算内等待。不存在“把 committed 布尔设成 true”或使用 caller 自报身份作为权威的路径。
 - effect 前先比对 binding，再解析该 Bot 的 `assignments.agents[id] ?? main`；配置快照含 model/provider/endpoint/apiKeyRef/capabilities/dataTypes，深冻结后才允许 fingerprint await。credential hook 前及 driver effect 前重新核对 canonical authority。stub 完全不调用 credential hook；fingerprint 只交回 64 字符十六进制，secret 永不进入 pin/IPC/parts。T5a：`modeld-credentials.ts` 是唯一 C1 实现（Effect 拥有 env/file/`pi-provider:` 读取与取消；`file:` 为 no-follow 常规文件、4 KiB 上限、UTF-8 + 一次 `trim()`；`pi-provider:` 重读 Pi catalog 的 string `apiKey`，不执行 command-form）。`createDefaultCredentialFingerprint` 与 OpenAI `resolveApiKey` 只是同一 Effect 的 Promise 门面；resolve **重读**，不把 secret 缓存在 pin。Host/preload/seam 仍 Effect-free。
 - PatchProfile 注入的 `sessionOptions.invocationId` 是 TURN。Host `stream` 的 invocationId 是 STEP。seam 按 `(hostGenerationId, STEP)` 占槽，向 modeld submit 分传 `turnId=TURN`、`invocationId=STEP`，不另发明 Host id。省略或非法 STEP 显式拒绝，不回退 TURN。内核按 generation + Bot + turn 共享正在使用的 pin，最后一个使用者 terminal/取消/过期后释放。重复 invocation 用完整 binding/ids/envelope hash 校验，在配置变化后也不重新选模型/dispatch；改变 payload 明确 conflict。终态结果只保留到 TTL，过期变成 refusal tombstone，不以缓存丢失为由再 dispatch。
-- 默认 admission 预算 **500 ms**，工作/终态保留 TTL **30 s**，ledger 上限 **1024**。过期释放 pin/response，但 bounded tombstone 留到 canonical Host generation 替换或服务重启；同代满额明确 `capacity`，不驱逐旧 id 后偷偷重跑。观察到新 canonical generation 时取消旧工作、清除旧 pins/ledger，旧 Host 不能借新代继续调用。
+- 早期 S5 曾使用固定的工作 TTL 和累计 ledger 配额；该配额不再是当前合同。现行 STEP 占位/冷热回收/服务代退休见上面的连续执行段，不因工作总数增加而拒绝新请求，也不通过驱逐身份后重跑来释放配额。
 - v2 health 只证明服务/协议 readiness，返回独立 `serverGeneration`；submit 不再接受 caller 指定 modelId 或旧 ids-only 请求。每个新 invocation 握手一次，已用 invocation 保留原 fence；服务重启后旧包拒绝，新 invocation 可新握手。disconnect、客户端掉线、取消/timeout 后标 unknown 并 abort，迟到 port/driver 完成不产生新 effect/成功；不盲目重试、不静默回官方。内存 ledger 不提供跨重启续传或跨客户端强制重握的 exactly-once 保证。
 - Unix frame 仍 **16 KiB**、一连接一请求、最多 **64** 活跃客户端；idle/partial client **1 s** 超时。完整请求收下后取消该 idle timer，由内核 TTL（默认 30 s）约束 in-flight complete。Host seam submit 等待同一 30 s 界。stop 先取消内核、destroy 所有活跃 socket，再等 server close，不等待卡住的 driver。可连接但不答 health/旧协议的 socket 仍视为竞争 owner；普通文件不当 stale socket 删除。stop 的 bound 不等于外部 driver 一定配合物理取消，更不是 live Host 的恢复 SLA。
 

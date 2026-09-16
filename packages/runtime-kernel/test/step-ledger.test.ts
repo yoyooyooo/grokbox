@@ -69,14 +69,14 @@ function req(extra: Partial<RunStepRequest> = {}): RunStepRequest {
 function graph(input: {
   counts?: ReturnType<typeof createCountedSeams>;
   beforeRead?: Effect.Effect<void>;
-  ledgerMax?: number;
+  hotTurnsTarget?: number;
 } = {}) {
   const counts = input.counts ?? createCountedSeams();
   return fakeBackendAuthLayer("secret", counts).pipe(
     Layer.merge(fakeModelBackendLayer(EVENTS, counts)),
     Layer.merge(fakeConfigurationReadLayer({ models: file, beforeRead: input.beforeRead })),
     Layer.merge(fakeAdmissionAuthorityLayer(() => ({ admitted: true }), counts)),
-    Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1", ledgerMax: input.ledgerMax })),
+    Layer.merge(inferenceMemoryLayer({ serviceEpoch: "svc-1", hotTurnsTarget: input.hotTurnsTarget })),
   );
 }
 
@@ -153,22 +153,22 @@ describe("step ledger", () => {
     expect(outcome.o.kind).toBe("live");
   }, 8_000);
 
-  test("capacity does not LRU-evict old ids", async () => {
+  test("a tiny resource cache never limits lifetime steps or evicts duplicate evidence", async () => {
     const counts = createCountedSeams();
-    const layer = graph({ counts, ledgerMax: 2 });
+    const layer = graph({ counts, hotTurnsTarget: 1 });
     const one = req({ stepId: "s1" });
     const two = req({ turnId: "turn-2", stepId: "s1" });
     const three = req({ turnId: "turn-3", stepId: "s1" });
     const result = await run(Effect.scoped(Effect.gen(function* () {
       yield* collect(one);
       yield* collect(two);
-      const full = yield* Effect.result(runStep(three));
+      const full = yield* Effect.result(collect(three));
       const again = yield* collect(one);
       return { full, again };
     }).pipe(Effect.provide(layer))));
-    expect(result.full).toMatchObject({ _tag: "Failure", failure: { code: "capacity" } });
+    expect(result.full).toMatchObject({ _tag: "Success", success: { kind: "live" } });
     expect(result.again.kind).toBe("duplicate");
-    expect(counts.network).toBe(2);
+    expect(counts.network).toBe(3);
   });
 
   test("BindingFailure codes stay explicit", () => {
@@ -223,9 +223,9 @@ describe("step ledger", () => {
     expect(lateCounts.network).toBe(2);
   });
 
-  test("unknown cancel is bounded; wrong ServiceEpoch is rejected", async () => {
+  test("unknown cancel is archived without consuming active capacity; wrong ServiceEpoch is rejected", async () => {
     const counts = createCountedSeams();
-    const layer = graph({ counts, ledgerMax: 2 });
+    const layer = graph({ counts, hotTurnsTarget: 1 });
     await expect(run(Effect.scoped(Effect.gen(function* () {
       yield* collect(req({ stepId: "keep-1" }));
       yield* collect(req({ turnId: "turn-2", stepId: "keep-2" }));
@@ -238,7 +238,7 @@ describe("step ledger", () => {
           stepId: `ghost-${i}`,
         });
       }
-    }).pipe(Effect.provide(layer))))).rejects.toMatchObject({ code: "capacity" });
+    }).pipe(Effect.provide(layer))))).resolves.toBeUndefined();
 
     await expect(run(Effect.scoped(
       cancelStep({

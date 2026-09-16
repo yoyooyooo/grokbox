@@ -1,4 +1,6 @@
 import type { HostBinding } from "./host-binding.ts";
+import { HOST_RUN_OBSERVATION_SYMBOL, type createRunObserver } from "./run-observation.ts";
+import type { StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 import type { CompileReceipt } from "./compile-receipt.ts";
 import { lookupHostRootContract } from "./root-contract.ts";
 import { captureHostManagedSelection } from "./selection.node.ts";
@@ -125,7 +127,11 @@ export function bindHostSessionHook(input: {
     const bridgeDigest = input.compile?.transformedSha256 ?? boundedId(options.bridgeDigest);
     const onRequestId = typeof args.onRequestId === "function" ? args.onRequestId : undefined;
     const generationId = input.binding?.generationId;
+    const runObserver = (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RUN_OBSERVATION_SYMBOL)] as ReturnType<typeof createRunObserver> | undefined;
+    const runContext = runObserver?.current();
     const facts = {
+      ...(runContext && runContext.agentId === agentId ? { dispatchId: runContext.dispatchId,
+        ...(runContext.groupId ? { groupId: runContext.groupId, groupDispatchId: runContext.groupDispatchId } : {}) } : {}),
       ...(generationId ? { hostGenerationId: generationId } : {}),
       ...(agentId ? { agentId } : {}),
       ...(turnId ? { turnId } : {}),
@@ -158,7 +164,7 @@ export function bindHostSessionHook(input: {
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
     const record = captured.record;
-    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string) => {
+    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string, diagnostic?: StreamDiagnostic) => {
       void appendHostStreamRejected(input.runRoot, {
         name: "host_stream_rejected",
         schemaVersion: 2,
@@ -170,6 +176,7 @@ export function bindHostSessionHook(input: {
         reason,
         ...(stateShape ? { stateShape } : {}),
         ...(stepId ? { stepId } : {}),
+        ...(diagnostic ? { diagnostic } : {}),
       });
     };
     const writeStage = (stage: string, result: string, extra: Record<string, string> = {}) => {
@@ -257,7 +264,7 @@ export function bindHostSessionHook(input: {
       onTerminal: (terminal) => {
         if (terminal.rejected && terminal.errorCode) {
           const mapped = mapTerminalReject(terminal.errorCode, terminal.stage);
-          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId);
+          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId, terminal.diagnostic);
         }
         const stepId = terminal.invocationId;
         if (!stepId) return;
@@ -270,6 +277,11 @@ export function bindHostSessionHook(input: {
           modelId,
           ...(terminal.errorCode ? { errorCode: terminal.errorCode } : {}),
           hostId: input.binding!.identitySha,
+          hostGenerationId: input.binding!.generationId,
+          ...(clientNonce ? { clientNonce } : {}),
+          ...(terminal.diagnostic ? { diagnostic: terminal.diagnostic } : {}),
+          purpose: terminal.purpose ?? "main",
+          ...(terminal.parentStepId ? { parentStepId: terminal.parentStepId } : {}),
           agentId,
           turnId,
           stepId,
@@ -277,7 +289,6 @@ export function bindHostSessionHook(input: {
             ? {
               serviceEpoch: runtime.last.serviceEpoch,
               binding: runtime.last.bindingId,
-              attempt: "0",
             }
             : {}),
         });

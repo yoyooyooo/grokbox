@@ -54,13 +54,8 @@ export function occupy(state: InferenceState, request: RunStepRequest, now: numb
   const turn = next.turns.get(tKey);
 
   if (turn?.poisoned) return { ok: false, error: new BindingFailure("cancelled") };
-  if (turn?.expired || (turn && now - turn.lastActivityMs > next.idleTtlMs)) {
-    if (turn) {
-      turn.expired = true;
-      next.turns.set(tKey, turn);
-    }
-    return { ok: false, error: new BindingFailure("turn_expired") };
-  }
+  // Idle time changes cache residency, not the lifetime of a Host tool or approval.
+  if (turn?.expired) return { ok: false, error: new BindingFailure("turn_expired") };
   if (turn && turn.serviceEpoch !== request.serviceEpoch.incarnationId) {
     return { ok: false, error: new BindingFailure("service_epoch_mismatch") };
   }
@@ -82,10 +77,6 @@ export function occupy(state: InferenceState, request: RunStepRequest, now: numb
   const activeStep = next.turnActive.get(tKey);
   if (activeStep && activeStep !== request.stepId) {
     return { ok: false, error: new BindingFailure("turn_busy") };
-  }
-
-  if (next.ledger.size >= next.ledgerMax) {
-    return { ok: false, error: new BindingFailure("capacity") };
   }
 
   const record: LedgerRecord = {
@@ -142,9 +133,6 @@ export function applyCancel(
     const turn = next.turns.get(tKey);
     if (turn && !turn.bindingId) next.turns.set(tKey, { ...turn, poisoned: true });
     return { ok: true, interrupt: true, state: next };
-  }
-  if (next.ledger.size >= next.ledgerMax) {
-    return { ok: false, error: new BindingFailure("capacity") };
   }
   next.ledger.set(lKey, {
     snapshotDigest: "",

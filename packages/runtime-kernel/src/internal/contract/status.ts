@@ -52,6 +52,8 @@ export const INFERENCE_CORRELATION_KEYS = [
 
 export type HostDeliveryKind = "not_observed" | "host_terminal" | "host_rejected" | "model_terminal";
 
+import type { ExecutionCapacity } from "./execution-status.ts";
+export type ModeldExecutionEvidence = { execution?: ExecutionCapacity; executionGap?: "not_instrumented" | "generation_changed" };
 export type ModeldServiceScope = "matched" | "mismatch" | "unavailable" | "not_observed";
 
 export type StatusEvidence = {
@@ -61,7 +63,7 @@ export type StatusEvidence = {
   attestation: Observed<{ coverage: "attested"; mode: "identity" | "route" } | null>;
   coordinator: Observed<{ circuit: "open" | "closed"; circuitReason: string | null } | null>;
   operationJournal: Observed<{ pending: boolean; phase: string | null } | null>;
-  modeld: Observed<{ required: boolean; ready: boolean; scope?: ModeldServiceScope; serviceEpoch?: string | null } | null>;
+  modeld: Observed<({ required: boolean; ready: boolean; scope?: ModeldServiceScope; serviceEpoch?: string | null } & ModeldExecutionEvidence) | null>;
   controllerLiveness: Observed<{ alive: boolean } | null>;
   bridgeHost: Observed<{
     actual: BridgeActual;
@@ -92,7 +94,7 @@ export type RuntimeStatusFacets = {
       coverage: BridgeCoverage;
       reason: string | null;
     }>;
-    modeld: StatusFacet<{ required: boolean; ready: boolean | null; scope?: ModeldServiceScope; serviceEpoch?: string | null }>;
+    modeld: StatusFacet<{ required: boolean; ready: boolean | null; scope?: ModeldServiceScope; serviceEpoch?: string | null } & ModeldExecutionEvidence>;
     controller: StatusFacet<{ liveness: "unknown" | "alive" | "stopped" }>;
     mutation: StatusFacet<{ inhibited: boolean; allowed: boolean; reason: string | null }>;
     recovery: StatusFacet<{ state: "clear" | "recovery-required" | "unknown"; pending: boolean | null }>;
@@ -107,7 +109,7 @@ export type RuntimeStatusFacets = {
 export type JournalWriterRole = "host" | "modeld" | "control" | "watchdog";
 
 export const JOURNAL_EVENT_ALLOWLIST = {
-  host: ["host_stream_rejected", "host_normalized_terminal", "turn_seam_terminal", "host_seam_stage"],
+  host: ["host_stream_rejected", "host_normalized_terminal", "turn_seam_terminal", "host_seam_stage", "host_run_observation"],
   modeld: ["model_step_terminal", "provider_error_observed"],
   control: [
     "disk_sha_observed",

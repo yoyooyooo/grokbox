@@ -33,7 +33,7 @@ export function shaPrefix(sha: string | null): string | undefined {
 export function overlaySourceMatch<T extends { host: "official" | "custom" | "unknown"; hostReason: string | null }>(
   classified: T,
   match: SourceMatch,
-): T {
+): Omit<T, "host" | "hostReason"> & { host: "official" | "custom" | "unknown"; hostReason: string | null } {
   if (match !== "mismatch") return classified;
   return { ...classified, host: "unknown", hostReason: "source_mismatch" };
 }

@@ -7,7 +7,8 @@ import { buildHostEnvelope, cloneHostExecutorWindow, HostStateCodecError, type H
 import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
-import { INVALID_STREAM_AGENT_MESSAGE } from "./failure-catalog.ts";
+import { INVALID_STREAM_AGENT_MESSAGE, LEDGER_UNAVAILABLE_AGENT_MESSAGE } from "./failure-catalog.ts";
+import { StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
 
 export type FinishReason = "stop" | "error" | "abort";
@@ -38,11 +39,13 @@ export type VisibleFailure = {
   agentId?: string;
   invocationId?: string;
   stage?: VisibleFailureStage;
+  diagnostic?: StreamDiagnostic;
 };
 export type VisibleFailureContext = {
   agentId?: string;
   invocationId?: string;
   stage?: VisibleFailureStage;
+  diagnostic?: StreamDiagnostic;
 };
 export type HostResponse = { modelId: string; messages: SessionMessage[]; finishReason?: HostFinishReason; error?: VisibleFailure };
 export type StreamHandle = { fullStream: AsyncIterable<StreamPart>; response: Promise<HostResponse>; usage: Promise<HostUsage> };
@@ -164,6 +167,7 @@ export function normalizeHostResponse(value: unknown): HostResponse {
 export function hostVisibleStreamError(failure: VisibleFailure): Error {
   const err = new Error(failure.message);
   managedFailures.add(err);
+  if (failure.diagnostic) annotateStreamFailure(err, failure.diagnostic);
   err.name = "RetriableError";
   Object.defineProperty(err, "kind", { value: "RetriableError", enumerable: true });
   Object.assign(err, {
@@ -341,6 +345,8 @@ const FAILURE_MESSAGES: Record<string, string> = {
   unsupported_options: "The model request contains unsupported options. No model request was sent.",
   envelope_too_large: "The model request exceeds the supported envelope limit. No model request was sent.",
   stream_limit: "The model stream exceeded its safety limit and was stopped.",
+  capacity: "The local model runtime could not accept this work because execution resources were unavailable.",
+  ledger_unavailable: LEDGER_UNAVAILABLE_AGENT_MESSAGE,
   invalid_stream: INVALID_STREAM_AGENT_MESSAGE,
   invocation_conflict: "This invocation was already used with different inputs. It was not dispatched again.",
   model_error: "The configured model request failed. No fallback model was used.",
@@ -357,7 +363,8 @@ function visibleContext(ctx?: VisibleFailureContext): VisibleFailureContext {
   const agentId = boundedVisible(ctx?.agentId);
   const invocationId = boundedVisible(ctx?.invocationId);
   const stage = ctx?.stage && VISIBLE_STAGES.has(ctx.stage) ? ctx.stage : undefined;
-  return { ...(agentId ? { agentId } : {}), ...(invocationId ? { invocationId } : {}), ...(stage ? { stage } : {}) };
+  return { ...(agentId ? { agentId } : {}), ...(invocationId ? { invocationId } : {}), ...(stage ? { stage } : {}),
+    ...(projectStreamDiagnostic(ctx?.diagnostic) ? { diagnostic: projectStreamDiagnostic(ctx?.diagnostic) } : {}) };
 }
 function failure(code: string, ids?: string[], ctx?: VisibleFailureContext): VisibleFailure {
   const resolved = hostVisibleCode(code);
@@ -388,6 +395,9 @@ export class VisibleStreamError extends Error {
 }
 export type SessionTerminal = {
   terminalClass: FinishReason; toolCallCount: number; rejected?: boolean; errorCode?: string; stage?: VisibleFailureStage; invocationId?: string;
+  diagnostic?: StreamDiagnostic;
+  purpose?: "main" | "memory-extraction" | "episode";
+  parentStepId?: string;
 };
 function notify(onTerminal: ((terminal: SessionTerminal) => void) | undefined, terminal: SessionTerminal) {
   try { onTerminal?.(terminal); } catch { /* Evidence is not the Host loop. */ }
@@ -452,6 +462,8 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       return visibleFailureHandle(config.modelId, "unsupported_image", undefined, config.onTerminal, streamCtx(stageFor("unsupported_image")));
     }
     const replay = replayStream<StreamPart>();
+    const evidence = new StreamEvidence();
+    evidence.setCount("declaredTools", envelope.tools.length);
     const controller = new AbortController();
     let complete = false;
     let resolveResponse!: (value: HostResponse) => void;
@@ -489,7 +501,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
         const delivered = content.filter((part): part is SessionTextContentPart => part.type === "text").map((part) => part.text).join("");
         if (!delivered.trim()) {
           reason = "error";
-          error = failure("invalid_stream", undefined, streamCtx("normalize"));
+          error = failure("invalid_stream", undefined, { ...streamCtx("normalize"), diagnostic: { normalizeCause: "empty_output", rejectSite: "host_terminal", stream: evidence.snapshot() } });
         } else if (declaredTools.has("SendToUser")) {
           const call: ToolCall = {
             type: "tool-call",
@@ -514,6 +526,9 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       notify(config.onTerminal, {
         terminalClass: reason,
         toolCallCount: toolCalls.length,
+        purpose: request.aux?.purpose ?? "main",
+        ...(request.aux ? { parentStepId: request.aux.parent.stepId } : {}),
+        diagnostic: error?.diagnostic ?? { stream: { ...evidence.snapshot(), counts: { ...evidence.snapshot().counts, hostToolsReleased: toolCalls.length }, tail: [] } },
         ...(typeof request.invocationId === "string" ? { invocationId: request.invocationId } : {}),
         ...(error ? { errorCode: error.code, ...(error.stage ? { stage: error.stage } : {}), rejected: true } : {}),
       });
@@ -539,20 +554,30 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       try { void Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* producer cleanup is best effort */ }
     };
     const abort = () => finish("abort");
-    const failStream = (code: string, stage?: VisibleFailureStage) => finish("error", failure(code, [...new Set([...calls.keys(), ...pending.keys()])],
-      streamCtx(stage ?? stageFor(code))));
+    const failStream = (code: string, stage?: VisibleFailureStage, detail?: StreamDiagnostic) => {
+      evidence.setCount("openTools", pending.size); evidence.setCount("toolsCompleted", calls.size);
+      evidence.setCount("hostToolsReleased", content.filter(p => p.type === "tool-call").length);
+      const defaults: StreamDiagnostic = detail !== undefined ? {} : code === "invalid_stream" ? { normalizeCause: "invalid_event_shape", rejectSite: "host_event" }
+        : code === "parallel_tools" ? { normalizeCause: "parallel_tools", rejectSite: "host_tool" }
+        : code === "stream_limit" ? { normalizeCause: "stream_budget", rejectSite: "stream_budget" } : {};
+      finish("error", failure(code, [...new Set([...calls.keys(), ...pending.keys()])], {
+        ...streamCtx(stage ?? stageFor(code)), diagnostic: { ...defaults, ...detail, stream: evidence.snapshot() },
+      }));
+    };
     const validId = (value: unknown): value is string =>
       typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x09\x0b\x0c\x0e-\x1f]/.test(value);
     const accept = (raw: StreamPart) => {
       if (complete) return;
       const part = cloneJson(raw) as unknown as StreamPart;
+      evidence.note("host", part.type); evidence.increment("hostEvents"); evidence.first("hostFirstEventMs");
       if (++parts > partLimit) return failStream("stream_limit");
-      bytes += Buffer.byteLength(JSON.stringify(part));
+      const partBytes = Buffer.byteLength(JSON.stringify(part)); bytes += partBytes; evidence.increment("hostBytes", partBytes);
       if (bytes > byteLimit) return failStream("stream_limit");
       if (part.type === "finish") {
-        if (!["stop", "error", "abort"].includes(part.reason) || pending.size) return failStream("invalid_stream");
+        if (!["stop", "error", "abort"].includes(part.reason)) return failStream("invalid_stream", "normalize", { normalizeCause: "invalid_terminal", rejectSite: "host_terminal" });
+        if (pending.size) return failStream("invalid_stream", "normalize", { normalizeCause: "open_tools_at_finish", rejectSite: "host_terminal" });
         if (part.reason === "stop" && !measuredHostUsage(part.usage) && !measuredHostUsage(config.usage)) {
-          return failStream("model_error", "provider");
+          return failStream("model_error", "provider", { normalizeCause: "invalid_usage", rejectSite: "host_terminal" });
         }
         finish(part.reason, part.reason === "error" ? failure("model_error", undefined, streamCtx(stageFor("model_error"))) : undefined, part.usage); return;
       }
@@ -569,10 +594,11 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
         replay.push({ type: part.type, textDelta: part.textDelta, text: part.textDelta } as StreamPart); return;
       }
       if (part.type !== "tool-call" && part.type !== "tool-call-delta" && part.type !== "tool-call-streaming-start") return failStream("invalid_stream");
-      if (!validId(part.toolCallId) || !validId(part.toolName) || !declaredTools.has(part.toolName)) return failStream("invalid_stream");
+      if (!validId(part.toolCallId) || !validId(part.toolName)) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" });
+      if (!declaredTools.has(part.toolName)) return failStream("invalid_stream", "normalize", { normalizeCause: "undeclared_tool", rejectSite: "host_tool", declaredToolMatch: false });
       if (part.type !== "tool-call") {
         const current = pending.get(part.toolCallId);
-        if (calls.has(part.toolCallId) || (current && (part.type === "tool-call-streaming-start" || current.name !== part.toolName))) return failStream("invalid_stream");
+        if (calls.has(part.toolCallId) || (current && (part.type === "tool-call-streaming-start" || current.name !== part.toolName))) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" });
         if (part.type === "tool-call-delta" && typeof part.argsTextDelta !== "string") return failStream("invalid_stream");
         pending.set(part.toolCallId, { name: part.toolName, text: (current?.text ?? "") + (part.type === "tool-call-delta" ? part.argsTextDelta : "") });
         // Native Host consumers may execute incrementally from argument deltas.
@@ -587,10 +613,15 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       }
       const call: ToolCall = { type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: cloneJson(part.args) };
       const assembling = pending.get(call.toolCallId);
-      if (assembling && (assembling.name !== call.toolName || (assembling.text && !isDeepStrictEqual(JSON.parse(assembling.text), call.args)))) return failStream("invalid_stream");
+      if (assembling?.name && assembling.name !== call.toolName) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" });
+      if (assembling?.text) {
+        let decoded: unknown;
+        try { decoded = JSON.parse(assembling.text); } catch { return failStream("invalid_stream", "normalize", { normalizeCause: "tool_arguments_invalid", rejectSite: "host_tool" }); }
+        if (!isDeepStrictEqual(decoded, call.args)) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_arguments_mismatch", rejectSite: "host_tool" });
+      }
       pending.delete(call.toolCallId);
       const prior = calls.get(call.toolCallId);
-      if (prior) { if (!isDeepStrictEqual(prior, call)) failStream("invalid_stream"); return; }
+      if (prior) { if (!isDeepStrictEqual(prior, call)) failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" }); return; }
       calls.set(call.toolCallId, call);
       if (serial && calls.size > 1) return failStream("parallel_tools", "normalize");
       if (serial) { held.push(call); heldToolParts.push(call); }
@@ -608,12 +639,12 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
           while (!complete) {
             const next = await iterator.next();
             if (complete) break;
-            if (next.done) { failStream("invalid_stream"); break; }
+            if (next.done) { failStream("invalid_stream", "normalize", { normalizeCause: "missing_finish", rejectSite: "host_terminal" }); break; }
             try { accept(next.value); } catch { failStream("invalid_stream"); }
           }
         } catch (error) {
           if (!complete) {
-            if (error instanceof VisibleStreamError) failStream(error.code, error.stage);
+            if (error instanceof VisibleStreamError) failStream(error.code, error.stage, streamFailureDiagnostic(error));
             else failStream("model_error");
           }
         }

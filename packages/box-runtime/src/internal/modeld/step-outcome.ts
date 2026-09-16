@@ -1,4 +1,4 @@
-import { BackendFailure, BindingFailure, WireError, BACKEND_FAILURE_CODES, BINDING_FAILURE_CODES } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, BindingFailure, WireError, BACKEND_FAILURE_CODES, BINDING_FAILURE_CODES, type StreamSummary, type ExecutionCapacity } from "@grokbox/runtime-kernel/contract";
 import { backendFailureObservation, type BackendObservation } from "../backends/failure-observation.ts";
 
 export const STEP_OUTCOMES = ["ok", "error", "duplicate", "cancelled", "unknown"] as const;
@@ -12,7 +12,25 @@ export type ModeldStepOutcome = {
   eventCount: number;
   bindingId?: string;
   diagnostic?: BackendObservation;
+  stream?: StreamSummary;
+  execution?: ExecutionCapacity;
+  at?: string;
+  durationMs?: number;
+  backendAttempts?: number;
+  cleanup?: { clientDisconnected?: boolean; cancellationRequested?: boolean; exitFailure?: "defect" | "interrupted" | "unknown" };
 };
+
+/** Keep a concrete detecting failure even if the client disconnects during its
+ * propagation. Local transport cleanup is a separate fact, not a causal guess. */
+export function withTransportOutcome(previous: ModeldStepOutcome, failure: ModeldStepOutcome | undefined, disconnected: boolean): ModeldStepOutcome {
+  const specific = failure && failure.failureCode !== "cancelled" && failure.failureCode !== "unknown";
+  const primary = specific ? failure : previous;
+  const resolved: ModeldStepOutcome = disconnected && !specific && primary.phase !== "complete" && primary.outcome !== "error"
+    ? { ...primary, outcome: "cancelled", phase: "transport", failureCode: "disconnected" }
+    : failure && !disconnected ? failure : primary;
+  return { ...resolved, bindingId: previous.bindingId ?? resolved.bindingId,
+    cleanup: { ...previous.cleanup, clientDisconnected: disconnected, cancellationRequested: disconnected || failure !== undefined } };
+}
 
 export function modeldFailureOutcome(error: unknown, phase: "admission" | "provider", eventCount: number): ModeldStepOutcome {
   const diagnostic = backendFailureObservation(error);

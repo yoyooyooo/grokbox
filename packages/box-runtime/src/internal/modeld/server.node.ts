@@ -13,12 +13,12 @@ import {
   type InferenceEvent,
   type RunStepRequest,
 } from "@grokbox/runtime-kernel/contract";
-import { cancelStep, runStep } from "@grokbox/runtime-kernel/inference";
+import { cancelStep, runStep, inferenceCapacity } from "@grokbox/runtime-kernel/inference";
 import { HostCompact, ModelBackend } from "@grokbox/runtime-kernel/ports";
 import { withOverflowCanary } from "../backends/overflow-canary.ts";
 import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseModeldRequest } from "../wire/modeld-wire.ts";
 import { acquireUnixListener, trackSocket, type ListenHooks, type ResourceCounts } from "./unix-listen.node.ts";
-import { modeldFailureOutcome, type ModeldStepOutcome } from "./step-outcome.ts";
+import { modeldFailureOutcome, withTransportOutcome, type ModeldStepOutcome } from "./step-outcome.ts";
 
 function errorFrame(code: string): unknown {
   return { ok: false, version: WIRE_VERSION, error: { code } };
@@ -57,16 +57,18 @@ export function writeFrame(socket: Socket, value: unknown): Effect.Effect<void, 
       socket.off("drain", onDrain);
       socket.off("error", onFail);
       socket.off("close", onFail);
+      signal.removeEventListener("abort", onAbort);
       if (error) resume(Effect.fail(error));
       else resume(Effect.void);
     };
     const onDrain = () => finish();
     const onFail = () => finish(new Error("disconnected"));
+    const onAbort = () => finish(new Error("aborted"));
     if (signal.aborted) {
       finish(new Error("aborted"));
       return;
     }
-    signal.addEventListener("abort", () => finish(new Error("aborted")), { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
     try {
       const ok = socket.write(buf);
       if (ok) finish();
@@ -108,6 +110,7 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
       settled = true;
       clearTimeout(timer);
       socket.off("data", check);
+      signal.removeEventListener("abort", onAbort);
       if (error) resume(Effect.fail(error));
       else resume(Effect.succeed(value!));
     };
@@ -121,21 +124,22 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
       if (decoded instanceof Error) finish(decoded);
       else finish(undefined, decoded);
     };
+    const onAbort = () => finish(new Error("aborted"));
     if (signal.aborted) {
       finish(new Error("aborted"));
       return;
     }
-    signal.addEventListener("abort", () => finish(new Error("aborted")), { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
     socket.on("data", check);
     check();
   });
 }
 
-function watchDisconnect(socket: Socket, onClose: () => void): void {
-  const fire = () => onClose();
-  socket.on("end", fire);
-  socket.on("close", fire);
-  socket.on("error", fire);
+function watchDisconnect(socket: Socket, onClose: () => void): () => void {
+  let fired = false;
+  const fire = () => { if (!fired) { fired = true; onClose(); } };
+  socket.on("end", fire); socket.on("close", fire); socket.on("error", fire);
+  return () => { socket.off("end", fire); socket.off("close", fire); socket.off("error", fire); };
 }
 
 function emit(socket: Socket, value: unknown) {
@@ -168,6 +172,11 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
         serverGeneration: generation, rootId: options.rootId ?? null });
       return;
     }
+    if (parsed.method === "execution-status") {
+      const execution = yield* inferenceCapacity;
+      yield* emit(socket, { ok: true, method: "execution-status", version: WIRE_VERSION, serverGeneration: generation, execution });
+      return;
+    }
     if (parsed.method === "cancel-step") {
       const result = yield* Effect.result(cancelStep(parsed.request));
       if (result._tag === "Failure") {
@@ -180,19 +189,32 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 
     const request = parsed.request;
     // One STEP wall deadline, including the now network-backed ownership check.
-    const deadlineAt = performance.now() + REQUEST_WALL_DEADLINE_MS;
+    const startedAt = performance.now();
+    const deadlineAt = startedAt + REQUEST_WALL_DEADLINE_MS;
     const observeStep = options.observeStep;
     let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0 };
+    let backendAttempts = 0;
     yield* Effect.addFinalizer((exit) => {
       if (!observeStep) return Effect.void;
       if (exit._tag === "Failure") {
         const defect = Cause.hasDies(exit.cause);
         const interrupted = Cause.hasInterruptsOnly(exit.cause);
-        observation = { ...observation, outcome: interrupted ? "cancelled" : "error", phase: "internal",
-          failureCode: defect ? "defect" : interrupted ? "interrupted" : "unknown" };
+        const exitFailure = defect ? "defect" : interrupted ? "interrupted" : "unknown";
+        observation = { ...(observation.outcome === "unknown"
+          ? { ...observation, outcome: interrupted ? "cancelled" as const : "error" as const, phase: "internal" as const, failureCode: exitFailure }
+          : observation), cleanup: { ...observation.cleanup, exitFailure } };
       }
-      return Effect.suspend(() => observeStep(request, observation)).pipe(
-        Effect.interruptible, Effect.timeout("100 millis"), Effect.catchCause(() => Effect.void),
+      observation = { ...observation, at: observation.at ?? new Date().toISOString(), durationMs: Math.max(0, Math.floor(performance.now() - startedAt)), backendAttempts };
+      return Effect.gen(function* () {
+        const execution = yield* inferenceCapacity;
+        yield* observeStep(request, { ...observation, execution });
+      }).pipe(
+        Effect.interruptible, Effect.timeout("100 millis"), Effect.catchCause(cause => Effect.sync(() => {
+          const error = Cause.squash(cause);
+          if (error && typeof error === "object" && "_tag" in error && error._tag === "TimeoutError") {
+            try { options.onObservationTimeout?.(); } catch { /* telemetry never changes inference */ }
+          }
+        })),
       );
     });
     const disconnected = yield* Deferred.make<void>();
@@ -201,12 +223,17 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       void Effect.runPromise(Deferred.succeed(late, undefined).pipe(Effect.ignore));
     };
     if (incoming.extra || incoming.overflow) incoming.onLate();
-    watchDisconnect(socket, () => {
+    const unwatch = watchDisconnect(socket, () => {
       void Effect.runPromise(Deferred.succeed(disconnected, undefined).pipe(Effect.ignore));
     });
+    yield* Effect.addFinalizer(() => Effect.sync(unwatch));
 
     const backend = yield* ModelBackend;
-    const compactBackend = withOverflowCanary(backend, parsed.request.agentId, options.env ?? process.env);
+    const selectedBackend = withOverflowCanary(backend, parsed.request.agentId, options.env ?? process.env);
+    const compactBackend: typeof backend = { ...selectedBackend, infer: (...args) => Stream.unwrap(Effect.sync(() => {
+      backendAttempts += 1;
+      return selectedBackend.infer(...args);
+    })) };
     const admitted = yield* Effect.result(
       runStep(parsed.request).pipe(
         Effect.timeout(`${OWNERSHIP_ADMISSION_WAIT_MS} millis`),
@@ -255,13 +282,13 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           Stream.provideService(ModelBackend, compactBackend),
         ),
         (event: InferenceEvent) => Effect.gen(function* () {
-          const encoded = Buffer.byteLength(JSON.stringify(event), "utf8");
+          const encoded = Buffer.byteLength(JSON.stringify(event.type === "backend_finish" ? { ...event, stream: undefined } : event), "utf8");
           outputBytes += encoded;
           if (outputBytes > CANONICAL_OUTPUT_MAX_BYTES) {
-            return yield* Effect.fail(new BindingFailure("capacity"));
+            return yield* Effect.fail(new BackendFailure("stream_limit"));
           }
           if (event.type === "backend_finish") {
-            observation = { ...observation, outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete" };
+            observation = { ...observation, at: new Date().toISOString(), outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete", ...(event.stream ? { stream: event.stream } : {}) };
             yield* emit(socket, {
               kind: "terminal",
               outcome: "ok",
@@ -271,19 +298,22 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
             });
             return;
           }
-          yield* emit(socket, { kind: "event", sequence, event });
+          // Count an event only after the socket write accepted it. This is not
+          // proof that Host accepted it or executed a tool.
+          yield* writeFrame(socket, { kind: "event", sequence, event });
           sequence += 1;
           observation.eventCount = sequence;
         }),
       ).pipe(Effect.timeout(`${Math.max(0, Math.floor(deadlineAt - performance.now()))} millis`)),
     );
-    if (yield* Deferred.isDone(disconnected)) {
-      if (observation.phase !== "complete") observation = { ...observation, outcome: "cancelled", phase: "transport", failureCode: "disconnected" };
+    const clientDisconnected = yield* Deferred.isDone(disconnected);
+    const failure = collected._tag === "Failure" ? modeldFailureOutcome(collected.failure, "provider", sequence) : undefined;
+    observation = { ...withTransportOutcome(observation, failure, clientDisconnected), at: observation.at ?? new Date().toISOString() };
+    if (clientDisconnected) {
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
       return;
     }
     if (collected._tag === "Failure") {
-      observation = { ...modeldFailureOutcome(collected.failure, "provider", sequence), bindingId: step.bindingId };
       yield* emit(socket, { kind: "terminal", outcome: "error", code: mapFail(collected.failure) });
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
     }
@@ -294,6 +324,7 @@ export type ServeOptions = {
   /** Diagnostic scope only; never grants STEP admission or replaces attestation. */
   rootId?: string;
   observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
+  onObservationTimeout?: () => void;
   compactForIncoming?: (incoming: Incoming) => Layer.Layer<HostCompact>;
   env?: NodeJS.Dict<string>;
   path: string;

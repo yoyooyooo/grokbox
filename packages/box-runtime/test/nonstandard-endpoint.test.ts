@@ -1,59 +1,39 @@
 import { describe, expect, test } from "bun:test";
-import { BackendFailure } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, streamFailureDiagnostic, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
 import { drainSdkStream } from "../src/internal/backends/openai-events.ts";
-import {
-  admitNonstandardOpenaiEvent,
-  createNonstandardOpenaiStreamState,
-  repairOpenaiToolCallId,
-} from "../src/internal/backends/nonstandard-endpoint.ts";
+import { admitNonstandardOpenaiEvent, createNonstandardOpenaiStreamState, repairOpenaiToolCallId } from "../src/internal/backends/nonstandard-endpoint.ts";
 
 describe("nonstandard OpenAI wire", () => {
-  test("strips C0 controls including LF from call_id", () => {
+  test("existing control cleanup preserves a non-empty bounded id", () => {
     expect(repairOpenaiToolCallId("call_\nowned")).toBe("call_owned");
     expect(repairOpenaiToolCallId("ok-id_1")).toBe("ok-id_1");
-  });
-
-  test("empty or oversized ids after repair fail closed", () => {
     expect(() => repairOpenaiToolCallId("\n\n")).toThrow(BackendFailure);
     expect(() => repairOpenaiToolCallId("x".repeat(129))).toThrow(BackendFailure);
   });
-
-  test("keeps the first tool and drops later parallel ids", () => {
+  test("all distinct calls survive to the Host all-or-nothing release gate", () => {
     const state = createNonstandardOpenaiStreamState();
-    const first = admitNonstandardOpenaiEvent(
-      { type: "tool_start", toolCallId: "one\n", toolName: "lookup" },
-      state,
-    );
-    const extra = admitNonstandardOpenaiEvent(
-      { type: "tool_start", toolCallId: "two\n", toolName: "notify" },
-      state,
-    );
-    const again = admitNonstandardOpenaiEvent(
-      { type: "tool_complete", toolCallId: "one\n", toolName: "lookup", args: { q: "x" } },
-      state,
-    );
-    expect(first).toMatchObject({ type: "tool_start", toolCallId: "one", toolName: "lookup" });
-    expect(extra).toBe("drop");
-    expect(again).toMatchObject({ type: "tool_complete", toolCallId: "one" });
+    expect(admitNonstandardOpenaiEvent({ type: "tool_start", toolCallId: "one\n", toolName: "lookup" }, state)).toMatchObject({ toolCallId: "one" });
+    expect(admitNonstandardOpenaiEvent({ type: "tool_start", toolCallId: "two\n", toolName: "notify" }, state)).toMatchObject({ toolCallId: "two" });
+    expect(admitNonstandardOpenaiEvent({ type: "tool_complete", toolCallId: "one\n", toolName: "lookup", args: { q: "x" } }, state)).toMatchObject({ toolCallId: "one" });
   });
-});
-
-describe("nonstandard OpenAI stream into Host-shaped events", () => {
-  test("LF ids and a second function_call do not reach Host as parallel tools", async () => {
-    const events: Array<{ type: string; toolCallId?: string; toolName?: string }> = [];
+  test("normalization collisions cannot fuse two provider calls", () => {
+    const state = createNonstandardOpenaiStreamState();
+    admitNonstandardOpenaiEvent({ type: "tool_start", toolCallId: "a\n1", toolName: "lookup" }, state);
+    try { admitNonstandardOpenaiEvent({ type: "tool_start", toolCallId: "a1", toolName: "lookup" }, state); throw Error("should reject"); }
+    catch (error) { expect(streamFailureDiagnostic(error)).toMatchObject({ normalizeCause: "tool_id_collision" }); }
+  });
+  test("two complete tool calls are forwarded, never silently truncated to one", async () => {
+    const events: InferenceEvent[] = [];
     await drainSdkStream((async function* () {
       yield { type: "tool-call-streaming-start", toolCallId: "a\n1", toolName: "lookup" };
       yield { type: "tool-call", toolCallId: "a\n1", toolName: "lookup", args: { q: "ping" } };
       yield { type: "tool-call-streaming-start", toolCallId: "b\n2", toolName: "notify" };
       yield { type: "tool-call", toolCallId: "b\n2", toolName: "notify", args: { text: "pong" } };
       yield { type: "finish", finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 } };
-    })(), (event) => {
-      events.push(event);
-    });
-    const tools = events.filter((event) => event.type === "tool_start" || event.type === "tool_complete");
-    expect(tools).toEqual([
-      { type: "tool_start", toolCallId: "a1", toolName: "lookup" },
+    })(), event => { events.push(event); });
+    expect(events.filter(e => e.type === "tool_complete")).toEqual([
       { type: "tool_complete", toolCallId: "a1", toolName: "lookup", args: { q: "ping" } },
+      { type: "tool_complete", toolCallId: "b2", toolName: "notify", args: { text: "pong" } },
     ]);
     expect(events.at(-1)).toMatchObject({ type: "backend_finish", finishReason: "stop" });
   });

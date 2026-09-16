@@ -386,4 +386,6 @@ H3 topology:
 
 `packages/box-runtime` is an unpublished workspace package. Do not publish it separately until an independently installed consumer exists. Offline transform and PromptSession contract tests are required before any live Host inject. An adopted-topology offline fixture must keep the final Host PPID different from the new supervisor; that fixture is not a live inject.
 
-Credential rotation mid-turn is forbidden: pin credential fingerprint with the resolved config until turn terminal or idle TTL.
+Credential rotation mid-turn is forbidden: pin the credential fingerprint with the resolved config. Idle cache cooling releases an AuthLease but keeps immutable binding metadata in the service-epoch execution index; reactivation must recheck the original fingerprint, ownership, model and selection revision. Idle time is not a TURN-expiry deadline.
+
+The kernel remains the sole execution-identity writer. Its `ExecutionHistory` capability is backed by `io/execution-history.node.ts` (`classic-level`, one exclusive database owner) in the production modeld root. Claim persistence precedes provider dispatch; hot STEP records retire after settlement without deleting the exact durable duplicate/conflict evidence. A fresh service incarnation retires the old index before publishing its listener, while old-epoch requests remain fenced. This replaces the early process-lifetime 1,024-entry quota; database cache/compaction thresholds never constitute request-count quotas. Observation journals and group-progress queries cannot authorize execution or replay.

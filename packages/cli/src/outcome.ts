@@ -1,5 +1,6 @@
 import { catalogAgentMessage, INVALID_STREAM_AGENT_MESSAGE } from "@grokbox/box-runtime/runtime";
 import { isRecord } from "./util.ts";
+import { projectStreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 import type { TranscriptRouteObservation } from "./transcript-route.ts";
 
 /** CLI `history outcome` states. `accepted` is not a member: echo/bind is `recorded`. */
@@ -60,7 +61,7 @@ export function projectAlert(value: unknown): AlertObservation | null {
 }
 
 export type OutcomeInput = {
-  agentId: string; nonce?: string; requestId?: string;
+  agentId: string; nonce?: string; requestId?: string; stepId?: string;
   entries: unknown[]; alerts: AlertObservation[]; truncated: boolean;
   gatewayChanged?: boolean; expectedText?: string; alertsIncomplete?: boolean;
   runtimeEvents?: unknown[]; runtimeGap?: string;
@@ -117,15 +118,32 @@ function specializeRuntimeFailure(failure: Record<string, unknown>, recentRuntim
   return { ...failure, errorCode: "invalid_stream", reason: "invalid-stream", stage: "normalize" };
 }
 
-function projectRuntimeFailure(failure: Record<string, unknown>) {
+function sameStep(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  return ["agentId", "turnId", "stepId"].every(k => id(a[k]) !== null && a[k] === b[k])
+    && ["hostGenerationId", "serviceEpoch"].every(k => a[k] === undefined || (id(a[k]) !== null && a[k] === b[k]));
+}
+function projectRuntimeFailure(failure: Record<string, unknown>, runtime: Record<string, unknown>[] = []) {
   const reason = typeof failure.reason === "string" ? failure.reason : undefined;
   const message = reason ? catalogAgentMessage(reason) : undefined;
-  const stage = typeof failure.stage === "string" ? failure.stage : undefined;
+  const stage = typeof failure.stage === "string" ? failure.stage : typeof failure.phase === "string" ? failure.phase : undefined;
+  const modeld = failure.name === "model_step_terminal" ? failure : runtime.find(e => e.name === "model_step_terminal" && sameStep(failure, e));
+  const hostDetail = projectStreamDiagnostic(failure.diagnostic), backendDetail = projectStreamDiagnostic(modeld?.diagnostic);
+  const diagnostic = hostDetail?.normalizeCause ? hostDetail : backendDetail ?? hostDetail;
+  const purposeRow = runtime.find(e => sameStep(failure, e) && (e.purpose === "main" || e.purpose === "memory-extraction" || e.purpose === "episode" || e.auxPurpose === "memory-extraction" || e.auxPurpose === "episode"));
+  const purpose = purposeRow?.purpose ?? purposeRow?.auxPurpose ?? "not_observed";
+  const cleanup = isRecord(modeld?.cleanup) ? modeld.cleanup : undefined;
   return {
     source: failure.name, at: failure.at, stepId: failure.stepId ?? null, turnId: failure.turnId ?? null,
     code: visibleFailureCode(failure.errorCode ?? failure.failureCode),
     outcome: failure.terminalClass ?? failure.outcome ?? "error",
-    ...(reason && message ? { reason, stage: stage ?? null, message } : {}),
+    stage: stage ?? null, message: message ?? null,
+    ...(reason && message ? { reason } : {}),
+    purpose,
+    ...(diagnostic ? { diagnostic } : {}),
+    ...(modeld ? { backend: { outcome: enumLabel(modeld.outcome), phase: enumLabel(modeld.phase), failureCode: enumLabel(modeld.failureCode),
+      eventCount: number(modeld.eventCount), relation: "same_step_not_cross_process_causal_order" } } : {}),
+    ...(cleanup ? { cleanup: { ...(typeof cleanup.clientDisconnected === "boolean" ? { clientDisconnected: cleanup.clientDisconnected } : {}),
+      ...(typeof cleanup.cancellationRequested === "boolean" ? { cancellationRequested: cleanup.cancellationRequested } : {}) } } : {}),
   };
 }
 
@@ -135,19 +153,23 @@ function projectRuntimeFailure(failure: Record<string, unknown>) {
  * echo or journal bind only — not a successful reply. */
 export function projectSendOutcome(input: OutcomeInput) {
   const records = input.entries.filter(isRecord);
-  const requests = input.nonce
-    ? records.filter(r => r.kind === "message" && r.role === "user" && r.clientNonce === input.nonce)
-    : records.filter(r => r.kind === "message" && r.role === "user" && r.requestId === input.requestId);
+  const agentEvents = (input.runtimeEvents ?? []).filter(isRecord).filter(e => e.agentId === input.agentId);
+  const selectedSteps = input.stepId ? agentEvents.filter(e => e.stepId === input.stepId) : [];
+  const selectedTurns = new Set(selectedSteps.map(e => id(e.turnId)).filter((v): v is string => v !== null));
+  const selectedNonces = [...new Set(agentEvents.filter(e => typeof e.turnId === "string" && selectedTurns.has(e.turnId)).map(e => id(e.clientNonce)).filter((v): v is string => v !== null))];
+  const lookupNonce = input.nonce ?? (selectedNonces.length === 1 ? selectedNonces[0] : undefined);
+  const requests = records.filter(r => r.kind === "message" && r.role === "user" && (lookupNonce !== undefined
+    ? r.clientNonce === lookupNonce : input.requestId !== undefined && r.requestId === input.requestId));
   const requestIds = [...new Set(requests.map(r => id(r.requestId)).filter((v): v is string => v !== null))];
   const echoNonces = [...new Set(requests.map(r => id(r.clientNonce)).filter((v): v is string => v !== null))];
-  const ambiguous = requestIds.length > 1;
+  const ambiguous = requestIds.length > 1 || selectedNonces.length > 1;
   const requestId = input.requestId ?? (requestIds.length === 1 ? requestIds[0]! : null);
-  const clientNonce = input.nonce ?? (echoNonces.length === 1 ? echoNonces[0]! : null);
+  const clientNonce = lookupNonce ?? (echoNonces.length === 1 ? echoNonces[0]! : null);
   const echoObserved = requests.length > 0;
   const handoffDeliveries = boxHandoffDelivery(input, records, requests);
   const seedIds = new Set<string>(requestId === null ? [] : [requestId]);
+  if (input.stepId) seedIds.add(input.stepId);
   for (const delivery of handoffDeliveries) seedIds.add(delivery.requestId as string);
-  const agentEvents = (input.runtimeEvents ?? []).filter(isRecord).filter(e => e.agentId === input.agentId);
   const nonceHits = clientNonce === null ? [] : agentEvents.filter(e => e.clientNonce === clientNonce);
   const nonceTurnIds = new Set<string>();
   for (const event of nonceHits) {
@@ -156,7 +178,7 @@ export function projectSendOutcome(input: OutcomeInput) {
     const turn = id(event.turnId);
     if (turn) nonceTurnIds.add(turn);
   }
-  const journalBound = nonceHits.length > 0;
+  const journalBound = nonceHits.length > 0 || selectedSteps.length > 0;
   const exact = agentEvents.filter(e => (clientNonce !== null && e.clientNonce === clientNonce)
     || [e.stepId, e.turnId, e.invocationId].some(value => typeof value === "string" && seedIds.has(value))
     || (typeof e.turnId === "string" && nonceTurnIds.has(e.turnId)));
@@ -190,29 +212,44 @@ export function projectSendOutcome(input: OutcomeInput) {
   }));
   // Host rejection is the cause; a later modeld disconnect is often its consequence.
   const recentRuntime = [...runtime].reverse();
-  const rawFailure = recentRuntime.find(e => e.name === "host_stream_rejected")
-    ?? recentRuntime.find(e => e.name === "host_normalized_terminal" && (e.terminalClass === "error" || e.terminalClass === "abort"))
-    ?? recentRuntime.find(e => e.name === "model_step_terminal" && (e.outcome === "error" || e.outcome === "cancelled"));
+  const candidates = input.stepId ? recentRuntime.filter(e => e.stepId === input.stepId) : recentRuntime;
+  const rawFailure = candidates.find(e => e.name === "host_stream_rejected")
+    ?? candidates.find(e => e.name === "host_normalized_terminal" && (e.terminalClass === "error" || e.terminalClass === "abort"))
+    ?? candidates.find(e => e.name === "model_step_terminal" && (e.outcome === "error" || e.outcome === "cancelled"));
   const failure = rawFailure ? specializeRuntimeFailure(rawFailure, recentRuntime) : undefined;
   const route = input.transcriptRoute;
   const harnessChanged = route !== undefined && (route.initial !== route.before || route.before !== route.after);
   const harnessUnavailable = route !== undefined && [route.initial, route.before, route.after].includes("unknown");
   const harnessMismatch = route?.expected !== undefined && (route.before !== route.expected || route.after !== route.expected);
   const routeInvalid = harnessChanged || harnessUnavailable || harnessMismatch;
-  const invalid = input.gatewayChanged || ambiguous || input.alertsIncomplete || runtimeGenerationChanged || routeInvalid;
+  const invalid = input.gatewayChanged || ambiguous || runtimeGenerationChanged || routeInvalid;
+  const evidenceGap = input.runtimeGap !== undefined || input.alertsIncomplete === true;
   const expectedMatched = input.expectedText !== undefined && delivery.some(d => d.content === input.expectedText);
   const pending = echoObserved || journalBound;
   const state: SendOutcomeState = invalid ? "unknown" : alerts.length > 0 || failure ? "failed"
-    : input.expectedText !== undefined ? (expectedMatched ? "expected_result_observed" : delivery.length ? "progress" : pending ? "recorded" : "unknown")
+    : evidenceGap ? "unknown" : input.expectedText !== undefined ? (expectedMatched ? "expected_result_observed" : delivery.length ? "progress" : pending ? "recorded" : "unknown")
     : delivery.length > 0 ? "delivered" : pending ? "recorded" : "unknown";
   return {
     agentId: input.agentId, clientNonce, requestId,
+    ...(input.stepId ? { selectedStepId: input.stepId } : {}),
     state, echoObserved, delivery: invalid ? [] : delivery,
     alerts: invalid ? [] : alerts,
     executionCompleted: "not_proven" as const,
     relatedStepIds: invalid ? [] : [...correlatedIds],
     expectedMatched: !invalid && expectedMatched,
-    runtimeFailure: !invalid && failure ? projectRuntimeFailure(failure) : null,
+    runtimeFailure: !invalid && failure ? projectRuntimeFailure(failure, recentRuntime) : null,
+    observations: {
+      delivery: invalid ? "unknown" : delivery.length ? "observed" : "not_observed",
+      execution: invalid ? "unknown" : failure || alerts.length ? "failure_observed" : evidenceGap ? "unknown" : "not_proven",
+      runtimeEvidence: input.runtimeEvents === undefined ? "not_checked" : input.runtimeGap ? "partial" : "available",
+      // This is a lower bound on observed releases, not physical execution or
+      // a claim of zero when no normalized-terminal evidence was collected.
+      toolCallsReleased: invalid || !runtime.some(e => e.name === "host_normalized_terminal" && number(e.toolCallCount) !== null) ? null
+        : [...new Map(runtime.filter(e => e.name === "host_normalized_terminal" && id(e.stepId) && number(e.toolCallCount) !== null)
+          .map(e => [JSON.stringify([e.hostId, e.agentId, e.turnId, e.stepId, e.serviceEpoch]), number(e.toolCallCount)!])).values()].reduce((n, count) => n + count, 0),
+      toolReleaseCoverage: "observed_records_only",
+      toolExecution: "not_observed", checkpoint: "not_observed", subsequentTurnLineage: "not_observed",
+    },
     evidence: { transcript: "Gateway.getAgentTranscriptTail", alerts: "Gateway.getTrays", alertsPersistence: "host-memory", transcriptWindowTruncated: input.truncated,
       runtime: input.runtimeEvents ? "box-local run/log/events.ndjson" : "not_checked", runtimeGap: input.runtimeGap ?? null,
       handoffDelivery: handoffDeliveries.length ? { profile: "box-complete-display-turn-v1", rootEntryId: requests[0]!.id,
@@ -233,6 +270,7 @@ export function projectSendOutcome(input: OutcomeInput) {
       ...(runtimeGenerationChanged ? ["runtime_generation_changed"] : []),
       ...(ambiguous ? ["nonce_has_multiple_requests"] : []),
       ...(input.alertsIncomplete ? ["unsupported_alert_schema"] : []),
+      ...(input.runtimeGap ? ["runtime_evidence_incomplete"] : []),
       ...(!echoObserved && !input.requestId && !journalBound ? ["nonce_not_in_transcript_window"] : []),
       "dismissed_or_restarted_trays_not_recoverable_from_getTrays",
       "delivery_does_not_prove_run_completion",

@@ -41,6 +41,21 @@ async function withRoot() {
   return boxRuntimeRoot;
 }
 
+async function useSyntheticAcme(boxRuntimeRoot: string) {
+  const fakeFetch = Object.assign(async (url: Parameters<typeof fetch>[0]) => {
+    expect(String(url)).toBe("https://api.acme.test/v1/models");
+    return new Response(JSON.stringify({ data: [{ id: "fast" }] }), { headers: { "content-type": "application/json" } });
+  }, { preconnect: async () => undefined }) as typeof fetch;
+  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(fakeFetch);
+  try {
+    const result = await captureCli(["runtime", "models", "use", "acme/fast"], {
+      discoveryPath: "/dev/null", boxRuntimeRoot, env: { ACME_KEY: "synthetic-fixture-only" },
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    return result;
+  } finally { fetchSpy.mockRestore(); }
+}
+
 function data(stdout: string): Record<string, unknown> {
   return (parseJson(stdout) as { data: Record<string, unknown> }).data;
 }
@@ -506,10 +521,7 @@ describe("box-local runtime CLI", () => {
 
   test("default models use discloses endpoint; per-Bot use requires a scoped ownership reader", async () => {
     const boxRuntimeRoot = await withRoot();
-    const used = await captureCli(["runtime", "models", "use", "acme/fast"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
+    const used = await useSyntheticAcme(boxRuntimeRoot);
     expect(used.code, used.stderr).toBe(0);
     expect(data(used.stdout)).toMatchObject({
       endpoint: "https://api.acme.test/v1",
@@ -727,10 +739,7 @@ describe("box-local runtime CLI", () => {
 
   test("activate --mode route refuses a non-stub assignment", async () => {
     const boxRuntimeRoot = await withRoot();
-    const use = await captureCli(["runtime", "models", "use", "acme/fast"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
+    const use = await useSyntheticAcme(boxRuntimeRoot);
     expect(use.code, use.stderr).toBe(0);
     const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
       discoveryPath: "/dev/null",

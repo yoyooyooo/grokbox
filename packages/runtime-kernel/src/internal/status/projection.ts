@@ -1,3 +1,4 @@
+import { projectExecutionCapacity } from "../contract/execution-status.ts";
 import {
   INFERENCE_CORRELATION_KEYS,
   STATUS_SCHEMA_VERSION,
@@ -135,6 +136,8 @@ export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFac
         required: modeldRequired,
         ready: modeldKnown ? modeldReady : null,
         ...(serviceScope !== undefined ? { scope: scopeValid ? serviceScope : "unavailable" as const, serviceEpoch } : {}),
+        ...(scopeValid && projectExecutionCapacity(evidence.modeld.value?.execution) ? { execution: projectExecutionCapacity(evidence.modeld.value?.execution) } : {}),
+        ...(evidence.modeld.value?.executionGap ? { executionGap: evidence.modeld.value.executionGap } : {}),
       }, scopeValid ? evidence.modeld.gap : "invalid"),
       controller: facet(evidence.controllerLiveness, { liveness }),
       mutation: facet(evidence.coordinator, {

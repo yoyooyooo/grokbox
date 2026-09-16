@@ -12,6 +12,8 @@ import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { modeldStorePorts } from "../io/store.node.ts";
 import { readManagedOwnership, type OwnershipReader } from "../io/ownership-admission.node.ts";
 import { writeModeldStepOutcome } from "../io/modeld-outcome.node.ts";
+import { openExecutionHistory } from "../io/execution-history.node.ts";
+import { noteJournalObservationTimeout } from "../host/journal-health.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
 import { probeModeldHealth, probeModeldIdentity, modeldRootId, modeldSocketPath } from "../wire/modeld-probe.node.ts";
 import { serveModeld } from "../modeld/server.node.ts";
@@ -97,7 +99,9 @@ export function modeldRootLayer(options: {
     Layer.merge(liveAdmissionAuthorityLayer(options.durableRoot, options.runRoot, options.ownershipRead)),
     Layer.merge(auth.layer),
     Layer.merge(backend),
-    Layer.merge(inferenceMemoryLayer({ serviceEpoch: options.serviceEpoch })),
+    Layer.merge(Layer.unwrap(openExecutionHistory(options.runRoot, options.serviceEpoch).pipe(
+      Effect.map(history => inferenceMemoryLayer({ serviceEpoch: options.serviceEpoch, history })),
+    ))),
   );
 }
 
@@ -153,6 +157,7 @@ export function ensureModeld(options: ModeldRootOptions) {
         generation,
         rootId: modeldRootId(options.durableRoot, options.runRoot),
         observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
+        onObservationTimeout: () => noteJournalObservationTimeout(options.runRoot),
         counts: options.counts,
         hooks: options.hooks,
         maxClients: options.maxClients,
@@ -207,6 +212,7 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
         generation,
         rootId: modeldRootId(options.durableRoot, options.runRoot),
         observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
+        onObservationTimeout: () => noteJournalObservationTimeout(options.runRoot),
         counts: options.counts,
         hooks,
         maxClients: options.maxClients,

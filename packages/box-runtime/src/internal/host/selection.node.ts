@@ -5,7 +5,7 @@ import {
   resolveModelsWithPi,
   type CapturedSelection, type ModelRecord, type ModelsFile,
 } from "@grokbox/runtime-kernel/selection";
-import { readBoundedJsonSync } from "../io/bounded-json.node.ts";
+import { readBoundedJsonSync } from "./bounded-json.node.ts";
 
 /** Bounded no-follow nonblocking regular-file read for preload/hook. Never mkdir or repair. */
 export function loadModelsFileSync(root: string): ModelsFile | null {

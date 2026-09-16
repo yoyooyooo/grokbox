@@ -414,7 +414,9 @@ describe("append-only host journal and watchdog compaction", () => {
     }
     await compactEvents(dir);
     rows = parsed(await linesOf(dir));
-    const control = rows.filter((row) => row.name !== "turn_seam_terminal");
+    const control = rows.filter((row) => row.name !== "turn_seam_terminal" && row.name !== "journal_retention");
+    expect(rows.filter(row => row.name === "journal_retention")).toHaveLength(1);
+    expect(rows.find(row => row.name === "journal_retention")).toMatchObject({ schemaVersion: 1, discardedPrefix: false });
     const keptTurns = rows.filter((row) => row.name === "turn_seam_terminal");
     expect(control).toHaveLength(CONTROL_PLANE_EVENT_RETENTION);
     expect(control.some((row) => row.name === "inject_phase")).toBe(false);

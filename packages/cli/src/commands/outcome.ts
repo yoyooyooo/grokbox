@@ -1,5 +1,5 @@
 import type { CliDeps } from "../deps.ts";
-import { openRuntimeStore, observeRuntimeEvents } from "@grokbox/box-runtime/runtime";
+import { openRuntimeStore, observeRuntimeEvents, observeJournalHealth } from "@grokbox/box-runtime/runtime";
 import { CliError, usage } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ioFromOpts } from "../opts.ts";
@@ -12,6 +12,27 @@ import { observeRosterHarness } from "../transcript-route.ts";
 function requestId(value: string | undefined): string | undefined {
   if (value !== undefined && (!/^[A-Za-z0-9_.:-]{1,128}$/.test(value))) throw usage("Invalid --request-id.");
   return value;
+}
+
+/** Incident diagnosis does not depend on a live Gateway, current Bot name, tray
+ * or transcript route. Exact IDs only; no execution or recovery side effects. */
+export async function runRuntimeIncident(deps: CliDeps, step: string, raw: { agent?: string }) {
+  const selectedStep = requestId(step);
+  const agentId = requestId(raw.agent);
+  if (!selectedStep || !agentId) throw usage("runtime incident requires <step-id> and --agent <id>.");
+  if (deps.sshHost || deps.daemonServerUrl || deps.gatewayServerUrl || (deps.transport !== "local" && deps.transport !== "auto")) {
+    throw new CliError("runtime_local_only", "Incident evidence requires a box-local Profile.");
+  }
+  const durableRoot = openRuntimeStore(deps.boxRuntimeRoot, deps.env).root;
+  const read = await observeRuntimeEvents({ durableRoot, runRoot: deps.env.GROKBOX_RUN_ROOT, source: "host", selector: { agentId, stepId: selectedStep } });
+  const writerHealth = await observeJournalHealth(read.root);
+  const gap = read.state !== "present" ? read.state : read.truncated ? "truncated" : read.window?.selectorMatched === false ? "not_in_retained_window" : undefined;
+  const result = projectSendOutcome({ agentId, stepId: selectedStep, entries: [], alerts: [], truncated: false, runtimeEvents: read.events, runtimeGap: gap });
+  writeSuccess(deps.stdout, { ...result, evidence: { ...result.evidence,
+    transcript: "not_checked", alerts: "not_checked", runtimeRoot: read.root, runtimeWindow: read.window ?? null, writerHealth },
+    events: read.events, queryMode: "offline_step", replayAuthorized: false,
+    limits: "A bounded evidence window is not an execution ledger. Missing events, historical fields and native checkpoint/trigger linkage remain unobserved; no work is retried.",
+  });
 }
 
 export async function runAlerts(deps: CliDeps, raw: { timeoutMs?: string; agent?: string; requestId?: string }) {
@@ -29,9 +50,12 @@ export async function runAlerts(deps: CliDeps, raw: { timeoutMs?: string; agent?
   }, gatewayMeta(discovery));
 }
 
-export async function runSendOutcome(deps: CliDeps, target: string, raw: { timeoutMs?: string; nonce?: string; requestId?: string; waitMs?: string; expectText?: string; expectHarness?: string; runtime?: boolean }) {
+export async function runSendOutcome(deps: CliDeps, target: string, raw: { timeoutMs?: string; nonce?: string; requestId?: string; stepId?: string; waitMs?: string; waitFor?: string; expectText?: string; expectHarness?: string; runtime?: boolean }) {
   const io = ioFromOpts(raw);
-  if (Boolean(raw.nonce) === Boolean(raw.requestId)) throw usage("Specify exactly one of --nonce or --request-id.");
+  if ([raw.nonce, raw.requestId, raw.stepId].filter(Boolean).length !== 1) throw usage("Specify exactly one of --nonce, --request-id or --step-id.");
+  if (raw.stepId !== undefined && !raw.runtime) throw usage("--step-id requires --runtime; a STEP is not a transcript request ID.");
+  if (raw.waitFor !== undefined && raw.waitFor !== "delivery" && raw.waitFor !== "execution") throw usage("--wait-for must be delivery or execution.");
+  if (raw.waitFor === "execution" && !raw.runtime) throw usage("--wait-for execution requires --runtime.");
   if (raw.expectHarness !== undefined && raw.expectHarness !== "box" && raw.expectHarness !== "temporal") {
     throw usage("--expect-harness must be box or temporal.");
   }
@@ -39,6 +63,7 @@ export async function runSendOutcome(deps: CliDeps, target: string, raw: { timeo
   const expectedHarness = raw.expectHarness ?? (raw.runtime ? "box" : undefined);
   const nonce = raw.nonce ? assertUuidV4(raw.nonce, "--nonce") : undefined;
   const selected = requestId(raw.requestId);
+  const selectedStep = requestId(raw.stepId);
   const waitMs = parseInteger(raw.waitMs, { name: "--wait-ms", min: 0, max: 120000, defaultValue: 0 });
   if (raw.expectText !== undefined && (raw.expectText.length === 0 || raw.expectText.length > 4096)) throw usage("--expect-text must contain 1..4096 characters.");
   // This is an explicitly requested local evidence join, not a runtime mutation.
@@ -82,19 +107,26 @@ export async function runSendOutcome(deps: CliDeps, target: string, raw: { timeo
     }
     const trays = await client.getTrays(timeout());
     gatewayChanged ||= changed(trays.discovery);
-    const runtime = runtimeRoot ? await observeRuntimeEvents({ durableRoot: runtimeRoot, runRoot: deps.env.GROKBOX_RUN_ROOT, source: "host" }) : undefined;
+    const lookupNonce = nonce ?? entries.filter(isRecord).find(e => e.kind === "message" && e.role === "user" && selected !== undefined && e.requestId === selected)?.clientNonce;
+    const runtime = runtimeRoot ? await observeRuntimeEvents({ durableRoot: runtimeRoot, runRoot: deps.env.GROKBOX_RUN_ROOT, source: "host",
+      selector: { agentId, ...(selectedStep ? { stepId: selectedStep } : typeof lookupNonce === "string" ? { nonce: lookupNonce } : selected ? { stepId: selected } : {}) },
+    }) : undefined;
+    const writerHealth = runtime ? await observeJournalHealth(runtime.root) : undefined;
     const projectedAlerts = trays.trays.map(projectAlert);
     const afterRoster = await client.listAgents(timeout());
     gatewayChanged ||= changed(afterRoster.discovery);
     const afterHarness = observeRosterHarness(afterRoster.agents.find(r => isRecord(r) && r.id === agentId));
-    const result = projectSendOutcome({ agentId, nonce, requestId: selected, entries,
+    const result = projectSendOutcome({ agentId, nonce, requestId: selected, stepId: selectedStep, entries,
       alerts: projectedAlerts.filter((a): a is AlertObservation => a !== null), truncated, gatewayChanged,
       alertsIncomplete: projectedAlerts.some(a => a === null),
       transcriptRoute: { initial: initialHarness, before: beforeHarness, after: afterHarness, expected: expectedHarness },
       expectedText: raw.expectText, runtimeEvents: runtime?.events,
-      runtimeGap: runtime ? (runtime.state !== "present" ? runtime.state : runtime.truncated ? "truncated" : undefined) : undefined });
+      runtimeGap: runtime ? (runtime.state !== "present" ? runtime.state : runtime.truncated ? "truncated" : runtime.window?.selectorMatched === false ? "not_in_retained_window" : undefined) : undefined });
+    Object.assign(result.evidence, { runtimeWindow: runtime?.window ?? null, writerHealth: writerHealth ?? null });
     samples++;
-    const settled = SETTLED_SEND_OUTCOME_STATES.has(result.state);
+    // There is no native full-run completion receipt yet. Execution waiting
+    // settles on an observed failure, never on a progress SendToUser.
+    const settled = raw.waitFor === "execution" ? result.state === "failed" : SETTLED_SEND_OUTCOME_STATES.has(result.state);
     if (!waitMs || settled || gatewayChanged || result.evidence.transcriptRoute?.usable === false || performance.now() >= deadline) {
       writeSuccess(deps.stdout, { ...result, samples, waitExpired: waitMs > 0 && !settled && performance.now() >= deadline,
         elapsedMs: Math.round(performance.now() - started) }, gatewayMeta(afterRoster.discovery));

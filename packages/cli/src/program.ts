@@ -66,7 +66,8 @@ import {
   runGroupsUpdate,
 } from "./commands/groups.ts";
 import { runHistorySearch, runHistoryTail, runHistoryThread } from "./commands/history.ts";
-import { runAlerts, runSendOutcome } from "./commands/outcome.ts";
+import { runAlerts, runSendOutcome, runRuntimeIncident } from "./commands/outcome.ts";
+import { runGroupProgress } from "./commands/group-progress.ts";
 import { runJobsCancel, runJobsList, runJobsLogs, runJobsShow } from "./commands/jobs.ts";
 import { runInit } from "./commands/init.ts";
 import { runIsRunning } from "./commands/is.ts";
@@ -100,6 +101,8 @@ import {
   runRuntimeDeactivate,
   runRuntimeLog,
   runRuntimeModeld,
+  runRuntimeModeldStatus,
+  runRuntimeModeldReplace,
   runRuntimeModelsCheck,
   runRuntimeModelsList,
   runRuntimeModelsReset,
@@ -121,9 +124,14 @@ import {
 import { runSkillsGet, runSkillsList } from "./skills.ts";
 
 type CliOptions = ProfileOptions & {
+  agent?: string;
+  requestId?: string;
+  stepId?: string;
+  waitFor?: string;
   agents?: string;
   after?: string;
   expectedRevision?: string;
+  expectEpoch?: string;
   untilMs?: string;
   profile?: string;
   timeoutMs?: string;
@@ -347,6 +355,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime activate": async (deps, _args, options) => await runRuntimeActivate(deps, options.mode),
     "runtime deactivate": async (deps) => await runRuntimeDeactivate(deps),
     "runtime log": async (deps, _args, options) => await runRuntimeLog(deps, options.follow, options.source),
+    "runtime incident": async (deps, args, options) => await runRuntimeIncident(deps, args[0] ?? "", options),
+    "runtime group-progress": async (deps, args) => await runGroupProgress(deps, args[0] ?? ""),
     "runtime contracts": async (deps) => await runRuntimeContracts(deps),
     "runtime models check": async (deps) => await runRuntimeModelsCheck(deps),
     "runtime models list": async (deps) => await runRuntimeModelsList(deps),
@@ -375,6 +385,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),
     "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),
     "runtime modeld run": async (deps) => await runRuntimeModeld(deps),
+    "runtime modeld status": async (deps) => await runRuntimeModeldStatus(deps),
+    "runtime modeld replace": async (deps, _args, options) => await runRuntimeModeldReplace(deps, options),
   };
 }
 

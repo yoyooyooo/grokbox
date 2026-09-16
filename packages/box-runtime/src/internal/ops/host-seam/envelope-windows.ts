@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
 import {
   OPTIONAL_SLICE_IDS,
+  OBSERVATION_SLICE_IDS,
   REQUIRED_SLICE_IDS,
   type PatchProfile,
   type SliceId,
@@ -19,7 +20,10 @@ import { retainedGenerationDir } from "../../io/paths.ts";
 import type { HostBundlesObservation } from "../../io/provenance.node.ts";
 
 /** 19 reviewed envelope slices. Parallel to the 4-name CONTRACT_SLICE_NAMES lock. */
-export const ENVELOPE_SLICE_IDS = [...REQUIRED_SLICE_IDS, ...OPTIONAL_SLICE_IDS] as const satisfies readonly SliceId[];
+// The existing execution-envelope golden remains a 19-slice contract. Pure
+// scheduling observers have independent exact source/transform profile checks;
+// adding one must not invalidate every historical execution golden.
+export const ENVELOPE_SLICE_IDS = [...REQUIRED_SLICE_IDS, ...OPTIONAL_SLICE_IDS.filter(id => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(id))] as const satisfies readonly SliceId[];
 export const ENVELOPE_SLICE_COUNT = ENVELOPE_SLICE_IDS.length;
 export const ENVELOPE_WINDOWS_FILE = "envelope-windows.json";
 
@@ -119,11 +123,11 @@ function parseWindowSlice(value: unknown): EnvelopeWindowSlice | null {
 
 /** True for a complete 19-slice reviewed envelope recipe. SHA pin is not required. 2-slice recipes do not qualify. */
 export function envelopeProfileShape(profile: PatchProfile | undefined): profile is PatchProfile {
-  if (!profile || !Array.isArray(profile.slices) || profile.slices.length !== ENVELOPE_SLICE_COUNT) {
-    return false;
-  }
+  if (!profile || !Array.isArray(profile.slices)) return false;
+  const core = profile.slices.filter(s => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(s.id));
+  if (core.length !== ENVELOPE_SLICE_COUNT) return false;
   const ids = new Set<string>();
-  for (const slice of profile.slices) {
+  for (const slice of core) {
     if (!slice || !isSliceId(slice.id) || ids.has(slice.id)) return false;
     if (typeof slice.startAnchor !== "string" || slice.startAnchor.length === 0) return false;
     if (typeof slice.endAnchor !== "string" || slice.endAnchor.length === 0) return false;
@@ -216,11 +220,12 @@ function measureOne(source: string, slice: SlicePatch): EnvelopeWindowSlice {
  * not sequential transform, not `extractContractSlices` first-hit.
  */
 export function measureEnvelopeWindows(source: string, profile: PatchProfile): EnvelopeWindows {
-  if (profile.slices.length !== ENVELOPE_SLICE_COUNT || !SHA.test(sha256Text(source))) {
+  const core = profile.slices.filter(s => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(s.id));
+  if (core.length !== ENVELOPE_SLICE_COUNT || !SHA.test(sha256Text(source))) {
     throw new Error("envelope measure requires 19 unique reviewed slices and UTF-8 source");
   }
   const ids = new Set<string>();
-  const slices = profile.slices.map((slice) => {
+  const slices = core.map((slice) => {
     if (ids.has(slice.id)) throw new Error(`duplicate envelope slice id ${slice.id}`);
     ids.add(slice.id);
     return measureOne(source, slice);

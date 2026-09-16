@@ -1,5 +1,6 @@
 import type { JsonValue } from "./context.ts";
 import type { OverflowEvidence } from "./overflow.ts";
+import { annotateStreamFailure, type NormalizeCause, type StreamRejectSite, type StreamSummary } from "./stream-diagnostic.ts";
 
 export type InferenceEventName =
   | "text_delta"
@@ -22,7 +23,7 @@ export type InferenceEvent =
   | { type: "tool_start"; toolCallId: string; toolName: string }
   | { type: "tool_delta"; toolCallId: string; toolName: string; argsTextDelta: string }
   | { type: "tool_complete"; toolCallId: string; toolName: string; args: JsonValue }
-  | { type: "backend_finish"; finishReason: "stop" | "error" | "abort"; usage?: InferenceUsage };
+  | { type: "backend_finish"; finishReason: "stop" | "error" | "abort"; usage?: InferenceUsage; stream?: StreamSummary };
 
 export type BackendFailureCode =
   | "unknown_backend_kind"
@@ -31,6 +32,7 @@ export type BackendFailureCode =
   | "provider_error"
   | "overflow_candidate"
   | "stream_invalid"
+  | "stream_limit"
   | "envelope_too_large"
   | "unsupported_content"
   | "unsupported_options"
@@ -43,6 +45,7 @@ export const BACKEND_FAILURE_CODES: readonly BackendFailureCode[] = [
   "provider_error",
   "overflow_candidate",
   "stream_invalid",
+  "stream_limit",
   "envelope_too_large",
   "unsupported_content",
   "unsupported_options",
@@ -74,45 +77,51 @@ export function emptyStreamValidation(): StreamValidationState {
   return { tools: new Map(), open: new Set(), finished: false, sawUsage: false };
 }
 
-function failStream(): never {
-  throw new BackendFailure("stream_invalid");
+export function invalidStream(cause: NormalizeCause, site: StreamRejectSite): BackendFailure {
+  return annotateStreamFailure(new BackendFailure("stream_invalid"), { normalizeCause: cause, rejectSite: site });
+}
+function failStream(cause: NormalizeCause, site: StreamRejectSite = "canonical_event"): never {
+  throw invalidStream(cause, site);
 }
 
 /** Canonical stream validator. No Host finish.response. Conflicting auth+overflow stays unconfirmed. */
 export function applyInferenceEvent(state: StreamValidationState, event: InferenceEvent): StreamValidationState {
-  if (state.finished) failStream();
+  if (state.finished) failStream("event_after_finish");
   if (event.type === "text_delta" || event.type === "reasoning_delta") {
-    if (typeof event.text !== "string") failStream();
+    if (typeof event.text !== "string") failStream("invalid_event_shape");
     return state;
   }
   if (event.type === "tool_start") {
-    if (!event.toolCallId || !event.toolName) failStream();
+    if (typeof event.toolCallId !== "string" || !event.toolCallId || typeof event.toolName !== "string" || !event.toolName) failStream("invalid_event_shape");
     const existing = state.tools.get(event.toolCallId);
-    if (existing && existing !== event.toolName) failStream();
+    if (existing && existing !== event.toolName) failStream("tool_identity_conflict");
     state.tools.set(event.toolCallId, event.toolName);
     state.open.add(event.toolCallId);
     return state;
   }
   if (event.type === "tool_delta" || event.type === "tool_complete") {
     const named = state.tools.get(event.toolCallId);
-    if (!named || named !== event.toolName) failStream();
+    if (!named || named !== event.toolName) failStream("tool_identity_conflict");
+    if (event.type === "tool_delta" && typeof event.argsTextDelta !== "string") failStream("invalid_event_shape");
     if (event.type === "tool_complete") {
-      if (event.args === undefined) failStream();
+      if (event.args === undefined) failStream("tool_arguments_invalid");
       state.open.delete(event.toolCallId);
     }
     return state;
   }
   if (event.type === "backend_finish") {
-    if (event.finishReason !== "stop" && event.finishReason !== "error" && event.finishReason !== "abort") failStream();
+    if (event.finishReason !== "stop" && event.finishReason !== "error" && event.finishReason !== "abort") failStream("unsupported_finish_reason", "canonical_finish");
+    if (event.finishReason === "stop" && state.open.size > 0) failStream("open_tools_at_finish", "canonical_finish");
     state.finished = true;
     state.sawUsage = event.usage !== undefined;
     return state;
   }
-  failStream();
+  failStream("invalid_event_shape");
 }
 
 export function finishInferenceStream(state: StreamValidationState): void {
-  if (!state.finished || state.open.size > 0) failStream();
+  if (!state.finished) failStream("missing_finish", "canonical_finish");
+  if (state.open.size > 0) failStream("open_tools_at_finish", "canonical_finish");
 }
 
 export function classifyProviderFailure(input: {

@@ -12,6 +12,7 @@ export const ADMISSION_WAIT_MS = 500;
 export const PARTIAL_SOCKET_MS = 1_000;
 /** Non-renewable STEP wall budget; shared by Host/client/modeld and recovery. */
 export const REQUEST_WALL_DEADLINE_MS = 180_000;
-export const TURN_IDLE_MS = 5 * 60_000;
-export const LEDGER_ENTRIES_MAX = 1024;
+/** Cache housekeeping only: an idle TURN is cold-stored, never expired by age.
+ * Eviction must not revoke its binding or authorize replay of a completed STEP. */
+export const TURN_RESOURCE_IDLE_MS = 5 * 60_000;
 export const OWNED_SHUTDOWN_MS = 2_000;

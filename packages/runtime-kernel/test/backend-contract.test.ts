@@ -94,7 +94,8 @@ describe("backend contract", () => {
 
     const incomplete = emptyStreamValidation();
     applyInferenceEvent(incomplete, { type: "tool_start", toolCallId: "c1", toolName: "lookup" });
-    applyInferenceEvent(incomplete, finish);
+    // Success must be rejected before it can be emitted with an open tool.
+    expect(() => applyInferenceEvent(incomplete, finish)).toThrow(BackendFailure);
     expect(() => finishInferenceStream(incomplete)).toThrow(BackendFailure);
 
     const mixed = classifyProviderFailure({ auth: true, overflow: true });

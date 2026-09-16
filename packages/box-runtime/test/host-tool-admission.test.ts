@@ -33,7 +33,9 @@ test("provider violating serial contract cannot release either completed tool", 
   for await (const part of handle.fullStream) parts.push(part);
   await expect(handle.response).rejects.toMatchObject({ code: "parallel_tools" });
   expect(parts.filter(p => p.type === "tool-call")).toHaveLength(0);
-  expect(terminal).toEqual([{ terminalClass: "error", toolCallCount: 0, invocationId: "step", rejected: true, errorCode: "parallel_tools", stage: "normalize" }]);
+  expect(terminal).toHaveLength(1);
+  expect(terminal).toMatchObject([{ terminalClass: "error", toolCallCount: 0, invocationId: "step", rejected: true, errorCode: "parallel_tools", stage: "normalize",
+    diagnostic: { normalizeCause: "parallel_tools", rejectSite: "host_tool", stream: { counts: { hostToolsReleased: 0 } } } }]);
 });
 
 test("Host terminal projection persists actual failure instead of masking it as a normal terminal", () => {

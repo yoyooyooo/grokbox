@@ -254,5 +254,21 @@ function displayFailure(error41) {
   }
   return true;
 }
-module.exports = { api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction, blankRoster, buildSummary, rosterOwner, sessionStoreOwner, mayRetry, RetriableError };
+// Owned group fixture: only public interoperability anchors match the Host.
+class SyntheticGroupScheduler {
+  enqueueExclusiveRun(agentId, task, options2) {
+    const scheduler = { enqueue: (_agent, fn) => fn() };
+    return scheduler.enqueue(agentId, task, options2);
+  }
+  async runLocalRoomMemberTurn(args) {
+    const sent = [];
+    const update = { message: { content: "synthetic-reply" } };
+    return this.enqueueExclusiveRun(args.member.id, async () => {
+          sent.push(update.message.content);
+      return sent;
+    }, { source: "group-member" });
+  }
+  async runTemporalGroupMemberTurn() { return []; }
+}
+module.exports = { SyntheticGroupScheduler, api, runTurn, compactOwner, attachListener, runTurnMemory, runMemoryExtraction, blankRoster, buildSummary, rosterOwner, sessionStoreOwner, mayRetry, RetriableError };
 `;

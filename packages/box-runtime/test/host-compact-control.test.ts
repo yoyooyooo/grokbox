@@ -174,7 +174,7 @@ async function acceptedThenCompact(
   const resume = await readOne(socket, buf);
   seen.resumes.push(resume);
   socket.write(encodeModeldFrame({
-    kind: "terminal", outcome: "ok", bindingId: TUPLE.bindingId, version: WIRE_VERSION,
+    kind: "terminal", outcome: "ok", bindingId: TUPLE.bindingId, finishReason: "stop", version: WIRE_VERSION,
   }));
 }
 

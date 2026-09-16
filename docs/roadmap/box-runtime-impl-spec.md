@@ -439,12 +439,12 @@ Host queue/root/compact
 
 状态只有 `reserved → admitted → running → terminal`，另有吸收态 `unknown/refused`；实际模型 attempt outcome 与 Host-delivery evidence 分开。每条状态判断使用结构化 tag/code，不从 error.message 分类。
 
-ledger 只保留摘要/身份/有界 outcome，不保留完整 snapshot、PreparedCall、SDK stream 或 output。STEP 结束释放这些 payload；auth/config 仅由 TURN scope 持有。Host client 的 TURN 表只保留薄 binding/拒绝事实，不全局持有所有 session/response/replay；handle 自身的有界 reader 缓存由 Host 持有引用的生命周期管理。
+ledger 只保留摘要/身份/有界 outcome，不保留完整 snapshot、PreparedCall、SDK stream 或 output。STEP 结束释放这些 payload 与热 ledger 记录，精确身份摘要由 `ExecutionHistory` 保留。生产 root 使用独占锁的 LevelDB adapter，不能在 IO 失败后回退内存测试实现；每次新 service incarnation 在监听前退休旧代索引。运行期 auth lease 仅由 TURN scope 持有，冷存储不含 lease 或密钥，资源重获必须验证原 fingerprint。Host client 的 TURN 表只保留薄 binding/拒绝事实，不全局持有所有 session/response/replay；handle 自身的有界 reader 缓存由 Host 持有引用的生命周期管理。
 
 - 相同 key + 相同 snapshot/selection：新 submit 返回 bounded `duplicate`/原 outcome metadata，**不返回可执行工具或完整流重放**。同 key 改 payload 为 conflict；缺 STEP 不能用 TURN、lastHandle 或最近请求补齐。
 - 同一个已返回的 Host handle 支持多 reader 游标；另一次 `stream()` 不获取该 handle 的 executable replay。多个 reader 不代表多个 Agent/tool executor。
 - client EOF/abort、request timeout、stop：先记确定的拒绝或 unknown，再取消 owned work。后到 success/tool chunks 丢弃；不能从 EOF 合成 finish-success。
-- TURN idle expiry 保留拒绝证据，后续 STEP 返回 `turn_expired`，不删除 pin 后新绑。service restart 后旧 TURN 携旧 ServiceEpoch 被拒绝；Host leaf 不重握旧 TURN。新 TURN 才可以选择新服务代。
+- TURN 空闲只触发冷存储和凭据资源释放，不再自动 expiry。后续 STEP 恢复原 binding、resolved model、selectionRevision、ownership 与 credential fingerprint，不能因为 cache miss 新绑或换模型；显式已失效/poisoned 身份仍拒绝。service restart 后旧 TURN 携旧 ServiceEpoch 被拒绝；Host leaf 不重握旧 TURN。新 TURN 才可以选择新服务代。
 - 有界 tombstones 保留到已证明 Host epoch 退场；满额显式 capacity，不 LRU 驱逐再重投。没有可靠 turn-close 就不发明它；持续运行超过限额须有单独退休/soak 证明，不阻塞最初 binding 切片。
 
 <a id="wire"></a>
@@ -468,7 +468,7 @@ run-step 请求携 HostEpoch/agent/TURN/STEP、expected ServiceEpoch/Selection�
 | server active clients / active STEP | 各最多 64；同 TURN 一次；超额 busy/capacity |
 | 单进程 retained payload 总预算 | 128 MiB，所有 incoming/request/queued-output 缓存按实际 bytes 计入；分配/增长前预留，耗尽拒绝新 work，不能靠每连接各自有界隐藏总量 |
 | admission wait / partial socket / request wall deadline | 当前Server-backed准入为10.5 s（ownership读10 s + 原local预算0.5 s，作为一次复合上限）；partial socket仍1 s；STEP总期限仍180 s，modeld流只用扣除准入后的余量，不再另开完整180 s；证据5 s年龄与2 s缓存独立判定，慢RPC不更新证据起点 |
-| TURN idle / ledger entries | 5 min / 1024；expiry 拒绝续步，满额拒绝；测试用小值 + TestClock |
+| TURN cache / execution history | 无累计 STEP 配额；空闲 5 min 是资源冷存储条件，不是续步期限。热 TURN 软目标按活跃容量设置；精确去重摘要落磁盘，claim 持久后才 dispatch。测试包含小缓存、长期 STEP、冷恢复及存储失败 |
 | owned shutdown | 默认 2 s cleanup budget；超时关闭本地 transport、记录 unknown/cleanup gap，不等待外部模型永远结束 |
 
 这些是安全资源预算，不是 model context window/token 准确值或 SLA；不得以它们造 `overflow_confirmed`。snapshot/codec 预检在 auth 前；SDK 最终 HTTP body 的实际 bytes 再在 transport egress 前核对，超限零 provider request，不谎称此时凭据尚未读取。模型 token 限额无可信来源时为 unknown，不按名字猜测。buffer/queue 的各份内存都计量，不能另留无界 terminal.parts、全量 pending chunks 或隐藏 replay。

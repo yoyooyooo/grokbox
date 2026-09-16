@@ -3,7 +3,7 @@ import { lstatSync } from "node:fs";
 import type { ModeldServiceScope } from "@grokbox/runtime-kernel/status";
 import { join, resolve as resolvePath } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
+import { WIRE_VERSION, projectExecutionCapacity, type ExecutionCapacity } from "@grokbox/runtime-kernel/contract";
 import { acceptModeldFrame, decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME } from "./modeld-wire.ts";
 
 export function modeldSocketPath(runRoot: string): string {
@@ -21,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Finite read-only probe. Does not create, unlink or repair a socket. */
-async function probe(runRoot: string, method: "health" | "service-info", timeoutMs: number): Promise<Record<string, unknown> | null> {
+async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number): Promise<Record<string, unknown> | null> {
   return await new Promise((resolve) => {
     const socket = createConnection({ path: modeldSocketPath(runRoot) });
     let buf: Buffer = Buffer.alloc(0);
@@ -66,11 +66,19 @@ export async function probeModeldIdentity(runRoot: string, timeoutMs = 200): Pro
   return { rootId: result.rootId, generation: result.serverGeneration };
 }
 
+export async function probeModeldExecution(runRoot: string, timeoutMs = 500): Promise<{ generation: string; execution: ExecutionCapacity } | null> {
+  const response = await probe(runRoot, "execution-status", timeoutMs);
+  const execution = projectExecutionCapacity(response?.execution);
+  return response && typeof response.serverGeneration === "string" && execution ? { generation: response.serverGeneration, execution } : null;
+}
+
 export type ModeldServiceObservation = {
   ready: boolean | null;
   scope: ModeldServiceScope;
   serviceEpoch: string | null;
   observedAt: string;
+  execution?: ExecutionCapacity;
+  executionGap?: "not_instrumented" | "generation_changed";
 };
 
 /** Readiness for this installation, not for an arbitrary responding socket.
@@ -81,7 +89,10 @@ export async function observeModeldService(durableRoot: string, runRoot: string)
   const identity = await probeModeldIdentity(runRoot);
   if (identity) {
     const matched = identity.rootId === modeldRootId(durableRoot, runRoot);
-    return { ready: matched, scope: matched ? "matched" : "mismatch", serviceEpoch: identity.generation, observedAt };
+    const status = matched ? await probeModeldExecution(runRoot) : null;
+    const valid = status?.generation === identity.generation;
+    return { ready: matched, scope: matched ? "matched" : "mismatch", serviceEpoch: identity.generation, observedAt,
+      ...(status && valid ? { execution: status.execution } : { executionGap: status ? "generation_changed" as const : "not_instrumented" as const }) };
   }
   let absent = false;
   try { lstatSync(modeldSocketPath(runRoot)); }

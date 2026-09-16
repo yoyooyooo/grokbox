@@ -1,21 +1,21 @@
-import { jsonSchema, streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import aiPackage from "ai/package.json";
+import providerPackage from "@ai-sdk/openai/package.json";
 import { Cause, Effect, Layer, Queue, Stream } from "effect";
 import {
   BackendFailure,
   EnvelopeError,
   ENCODED_PROVIDER_REQUEST_MAX_BYTES,
-  applyInferenceEvent,
-  emptyStreamValidation,
-  finishInferenceStream,
+  StreamEvidence,
+  annotateStreamFailure,
   type ContextSnapshot,
   type InferenceEvent,
 } from "@grokbox/runtime-kernel/contract";
 import { ModelBackend, type AuthLease, type PreparedCall } from "@grokbox/runtime-kernel/ports";
 import { backendKindForModel, type ModelRecord } from "@grokbox/runtime-kernel/selection";
-import { encodeOpenaiPrompt, toSdkMessages, type OpenaiPromptApi } from "./openai-prompt-adapter.ts";
-import { mapSdkStreamForHost } from "./openai-events.ts";
-import { createNonstandardOpenaiStreamState } from "./nonstandard-endpoint.ts";
+import { encodeOpenaiPrompt, toProviderPrompt, type OpenaiPromptApi } from "./openai-prompt-adapter.ts";
+import { createSdkStreamNormalizer } from "./openai-events.ts";
+import { ProviderStreamAudit, auditedProviderResponse } from "./provider-stream-audit.ts";
 import { backendFailureFromUnknown } from "./provider-error.ts";
 import { observeBackendFailure } from "./failure-observation.ts";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
@@ -38,13 +38,14 @@ function bodyBytes(init?: RequestInit): number {
   return 0;
 }
 
-function guardEgress(fetchImpl: typeof fetch): typeof fetch {
+function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit): typeof fetch {
   const run = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
+    audit.evidence.setCount("requestBytes", bodyBytes(init));
     if (bodyBytes(init) > ENCODED_PROVIDER_REQUEST_MAX_BYTES) {
       throw new BackendFailure("envelope_too_large");
     }
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    try { return await fetchImpl(input, init); }
+    try { return auditedProviderResponse(await fetchImpl(input, init), audit); }
     catch (error) { throw backendFailureFromUnknown(error, "provider"); }
   };
   return Object.assign(run, { preconnect: fetchImpl.preconnect ?? run }) as typeof fetch;
@@ -76,16 +77,7 @@ export function nextSdkStreamPart<T>(iterator: AsyncIterator<T>, signal: AbortSi
   });
 }
 
-function isAbortError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "name" in error && (error as { name: string }).name === "AbortError");
-}
-
-function failQueue(queue: Queue.Enqueue<InferenceEvent, BackendFailure>, error: unknown): void {
-  Queue.failCauseUnsafe(queue, Cause.fail(backendFailureFromUnknown(error)));
-}
-
 export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAuth): Layer.Layer<ModelBackend> {
-  const guarded = guardEgress(fetchImpl);
   return Layer.succeed(ModelBackend, {
     prepare: (selection: unknown, snapshot: unknown) => Effect.try({
       try: () => {
@@ -113,86 +105,69 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         return Stream.fail(new BackendFailure("invalid_prepared_call"));
       }
       let started = false;
-      return Stream.callback<InferenceEvent, BackendFailure>((queue) =>
-        Effect.callback<void, BackendFailure>((resume, signal) => {
-          const settle = (effect: Effect.Effect<void, BackendFailure>) => resume(effect);
-          if (started) {
-            Queue.endUnsafe(queue);
-            settle(Effect.void);
-            return;
-          }
-          started = true;
-          const ac = new AbortController();
-          const stop = () => {
-            signal.removeEventListener("abort", stop);
-            if (!ac.signal.aborted) ac.abort();
-          };
-          signal.addEventListener("abort", stop, { once: true });
-          void (async () => {
-            let sdkError: unknown;
-            const iterator = (() => {
-              try {
-                let secret: string;
-                try { secret = unseal(lease); }
-                catch (error) { throw observeBackendFailure(new BackendFailure("auth_mismatch"), "auth", error); }
-                const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guarded });
-                const model = payload.api === "responses" ? openai.responses(payload.model) : openai.chat(payload.model);
-                const tools = Object.fromEntries(payload.tools.map((tool) => [
-                  tool.name,
-                  { description: tool.description, inputSchema: jsonSchema(tool.inputSchema) },
-                ]));
-                const result = streamText({
-                  model,
-                  system: payload.prompt.system,
-                  messages: toSdkMessages(payload.prompt.messages) as never,
-                  ...(payload.tools.length > 0 ? { tools } : {}),
-                  maxRetries: 0,
-                  // Default SDK logger includes bodies. Capture onError so an unfinished
-                  // fullStream cannot hide the provider failure as stream_invalid.
-                  onError: ({ error }) => { sdkError = error; },
-                  abortSignal: ac.signal,
-                  ...payload.settings,
-                });
-                return result.fullStream[Symbol.asyncIterator]();
-              } catch (error) {
-                failQueue(queue, error);
-                settle(Effect.void);
-                return null;
-              }
-            })();
-            if (!iterator) { stop(); return; }
-            const names = new Map<string, string>();
-            const state = emptyStreamValidation();
-            const nonstandard = createNonstandardOpenaiStreamState();
-            try {
-              while (!ac.signal.aborted) {
-                const step = await nextSdkStreamPart(iterator, ac.signal);
-                if (step.done) break;
-                const mapped = mapSdkStreamForHost(step.value, names, nonstandard);
-                if (mapped === "skip" || mapped === "drop") continue;
-                applyInferenceEvent(state, mapped);
-                if (mapped.type === "backend_finish" && state.open.size > 0) throw new BackendFailure("stream_invalid");
-                Queue.offerUnsafe(queue, mapped);
-              }
-              if (ac.signal.aborted) Queue.endUnsafe(queue);
-              else if (!state.finished && sdkError) throw sdkError;
-              else {
-                finishInferenceStream(state);
-                Queue.endUnsafe(queue);
-              }
-              settle(Effect.void);
-            } catch (error) {
-              if (ac.signal.aborted || isAbortError(error)) Queue.endUnsafe(queue);
-              else failQueue(queue, error);
-              settle(Effect.void);
-            } finally {
-              stop();
-              try { await iterator.return?.(); } catch { /* ignore */ }
+      return Stream.callback<InferenceEvent, BackendFailure>((queue) => Effect.suspend(() => {
+        if (started) return Queue.end(queue);
+        started = true;
+        const ac = new AbortController(), evidence = new StreamEvidence();
+        evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: 1, pipeline: "provider_v2_single_call" });
+        evidence.setCount("declaredTools", payload.tools.length);
+        const audit = new ProviderStreamAudit(payload.api, evidence);
+        const normalizer = createSdkStreamNormalizer({ declaredTools: new Set(payload.tools.map(t => t.name)), evidence });
+        let iterator: AsyncIterator<unknown> | undefined;
+        let queuePeak = 0;
+        const safeFailure = (error: unknown) => {
+          // provider-utils wraps body failures in APICallError. Keep the local
+          // wire validator's exact first failure, not its lossy SDK wrapper.
+          const detected = audit.failure() ?? error;
+          if (detected && typeof detected === "object") annotateStreamFailure(detected, { stream: evidence.snapshot() });
+          return backendFailureFromUnknown(detected, evidence.snapshot().providerObservation === "body_error" ? "provider" : "sdk");
+        };
+        const producer = Effect.gen(function* () {
+          yield* Effect.addFinalizer(() => Effect.sync(() => {
+            ac.abort(); audit.cancelled(); audit.dispose();
+            // Abort first. A non-cooperative iterator.return must not hold Scope
+            // shutdown hostage; late rejection is consumed, never retried.
+            try { void Promise.resolve(iterator?.return?.()).catch(() => undefined); } catch { /* cleanup only */ }
+          }));
+          iterator = yield* Effect.tryPromise({
+            try: async () => {
+              let secret: string;
+              try { secret = unseal(lease); }
+              catch (error) { throw observeBackendFailure(new BackendFailure("auth_mismatch"), "auth", error); }
+              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit) });
+              const model = payload.api === "responses" ? openai.responses(payload.model) : openai.chat(payload.model);
+              const { toolChoice, ...settings } = payload.settings;
+              const tools = payload.tools.map(tool => ({ type: "function" as const, name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));
+              const result = await model.doStream({
+                prompt: toProviderPrompt(payload.prompt), ...(tools.length ? { tools: tools as never } : {}),
+                ...settings, abortSignal: ac.signal,
+                ...(toolChoice ? { toolChoice: typeof toolChoice === "string" ? { type: toolChoice } : toolChoice } : {}),
+              });
+              return result.stream[Symbol.asyncIterator]();
+            }, catch: safeFailure,
+          });
+          for (;;) {
+            const part = yield* Effect.tryPromise({
+              try: signal => nextSdkStreamPart(iterator!, signal), catch: safeFailure,
+            });
+            if (part.done) break;
+            const event = yield* Effect.try({ try: () => normalizer.next(part.value), catch: safeFailure });
+            if (event) {
+              // Await the bounded offer. Merely adding bufferSize to offerUnsafe
+              // would silently drop parts when full.
+              if (!(yield* Queue.offer(queue, event))) return;
+              queuePeak = Math.max(queuePeak, yield* Queue.size(queue));
+              evidence.setCount("queuePeak", queuePeak);
             }
-          })();
-          return Effect.sync(stop);
-        }),
-      );
+          }
+          const terminal = yield* Effect.try({ try: () => normalizer.finish(), catch: safeFailure });
+          yield* Queue.offer(queue, terminal);
+          yield* Queue.end(queue);
+        });
+        return producer.pipe(Effect.catchCause(cause => Cause.hasInterruptsOnly(cause)
+          ? Queue.end(queue)
+          : Queue.fail(queue, safeFailure(Cause.squash(cause)))));
+      }), { bufferSize: 16, strategy: "suspend" });
     },
   });
 }

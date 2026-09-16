@@ -86,7 +86,7 @@ function graph(input: {
   verifyOk?: () => boolean;
   failAfterFirst?: boolean;
   clock?: boolean;
-  memory?: { serviceEpoch?: string; idleTtlMs?: number; ledgerMax?: number };
+  memory?: { serviceEpoch?: string; resourceIdleMs?: number; hotTurnsTarget?: number };
   events?: InferenceEvent[];
 }) {
   const counts = input.counts ?? createCountedSeams();
@@ -206,15 +206,15 @@ describe("route binding", () => {
     expect(saveCounts.credential).toBe(1);
   });
 
-  test("idle expiry uses TestClock; restart rejects old ServiceEpoch", async () => {
+  test("idle resources cool without expiring a TURN; restart still fences the old ServiceEpoch", async () => {
     const file = models({ "agent-a": STUB_ECHO_MODEL_ID });
-    const layer = graph({ file: () => file, clock: true, memory: { idleTtlMs: 1_000 } });
+    const layer = graph({ file: () => file, clock: true, memory: { resourceIdleMs: 1_000 } });
     await expect(run(Effect.scoped(Effect.gen(function* () {
       const first = yield* collect(request(file));
       if (first.kind !== "live") throw new Error("expected live");
       yield* TestClock.adjust("2 seconds");
       return yield* collect({ ...request(file, { stepId: "step-2" }), bindingId: first.bindingId });
-    }).pipe(Effect.provide(layer))))).rejects.toMatchObject({ code: "turn_expired" });
+    }).pipe(Effect.provide(layer))))).resolves.toMatchObject({ kind: "live" });
 
     const restarted = graph({ file: () => file, memory: { serviceEpoch: "svc-2" } });
     await expect(run(Effect.scoped(

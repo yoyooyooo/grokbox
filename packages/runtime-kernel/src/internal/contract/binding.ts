@@ -9,6 +9,7 @@ export type BindingFailureCode =
   | "step_missing"
   | "step_invalid"
   | "capacity"
+  | "ledger_unavailable"
   | "turn_expired"
   | "service_epoch_mismatch"
   | "binding_mismatch"
@@ -24,6 +25,7 @@ export const BINDING_FAILURE_CODES: readonly BindingFailureCode[] = [
   "step_missing",
   "step_invalid",
   "capacity",
+  "ledger_unavailable",
   "turn_expired",
   "service_epoch_mismatch",
   "binding_mismatch",

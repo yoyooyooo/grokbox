@@ -3,6 +3,7 @@ import { OWNERSHIP_READ_SLICES } from "./ownership-slices.ts";
 import type { SlicePatch } from "./profile.ts";
 import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
 import { HOST_PROFILE_TITLE_SYMBOL } from "./title-marker.ts";
+import { HOST_RUN_OBSERVATION_SYMBOL } from "./run-observation.ts";
 
 export const LIVE_HOST_BUNDLE = "/home/box/sand-host/host-main.cjs";
 
@@ -152,6 +153,27 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {}\n",
     replacement:
       "    harness: readSandProfileHarness(profilePath) ?? undefined\n",
+  },
+  {
+    id: "run-queue-observation",
+    startAnchor: "  enqueueExclusiveRun(agentId, task, options2) {\n",
+    endAnchor: "return scheduler.enqueue(agentId, task, options2);",
+    find: "  enqueueExclusiveRun(agentId, task, options2) {\n",
+    replacement: `  enqueueExclusiveRun(agentId, task, options2) {\n    const __grokbox_run = globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")];\n    if (__grokbox_run) { try { const observed = __grokbox_run.queue(agentId, task, options2); task = observed.task; options2 = observed.options; } catch {} }\n`,
+  },
+  {
+    id: "group-member-observation",
+    startAnchor: "  async runLocalRoomMemberTurn(args) {\n",
+    endAnchor: "  async runTemporalGroupMemberTurn(",
+    find: "  async runLocalRoomMemberTurn(args) {\n",
+    replacement: `  async runLocalRoomMemberTurn(args) {\n    const __grokbox_run = globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")];\n    if (__grokbox_run) { const observed = __grokbox_run.group(this, args); if (observed !== undefined) return observed; }\n`,
+  },
+  {
+    id: "group-buffer-observation",
+    startAnchor: "  async runLocalRoomMemberTurn(args) {\n",
+    endAnchor: "  async runTemporalGroupMemberTurn(",
+    find: "          sent.push(update.message.content);\n",
+    replacement: `          sent.push(update.message.content);\n          try { globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")]?.buffered(); } catch {}\n`,
   },
   ...OWNERSHIP_READ_SLICES,
 ];

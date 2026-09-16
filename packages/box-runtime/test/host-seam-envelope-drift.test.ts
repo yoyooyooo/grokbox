@@ -100,6 +100,7 @@ describe("parallel envelopeDrift observation", () => {
   test("legacy driftedSlices lock still rejects envelope slice names", () => {
     expect(CONTRACT_SLICE_NAMES).toEqual(["create-session", "session-options", "agent-id", "prompt-session"]);
     expect(ENVELOPE_SLICE_COUNT).toBe(19);
+    expect(ENVELOPE_SLICE_IDS).not.toContain("run-queue-observation");
     expect(ENVELOPE_SLICE_IDS).toContain("compact-register");
     expect(ENVELOPE_SLICE_IDS).toContain("managed-step-error-scope");
     expect(CONTRACT_SLICE_NAMES as readonly string[]).not.toContain("compact-register");

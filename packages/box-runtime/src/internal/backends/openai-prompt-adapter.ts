@@ -143,6 +143,24 @@ export function toSdkMessages(messages: OpenaiPromptMessage[]) {
   });
 }
 
+type ProviderPrompt = Parameters<ReturnType<ReturnType<typeof createOpenAI>["chat"]>["doStream"]>[0]["prompt"];
+/** Pure projection to the SDK's public provider-v2 single-call protocol. Avoid
+ * streamText's internal tool-result fan-in (an eager, unbounded second loop).
+ * Host remains the only owner of tool execution and subsequent model STEPs. */
+export function toProviderPrompt(prompt: OpenaiPrompt): ProviderPrompt {
+  const messages = toSdkMessages(prompt.messages).map(message => ({ ...message,
+    content: typeof message.content === "string" ? [{ type: "text", text: message.content }]
+      : message.content.map(part => {
+        if (part.type !== "image") return part;
+        const value = part.image;
+        const asUrl = /^(https?:|data:)/i.test(value) ? new URL(value) : undefined;
+        const dataMime = /^data:([^;,]+)/i.exec(value)?.[1];
+        return { type: "file", data: asUrl ?? value, mediaType: part.mediaType ?? dataMime ?? "image/*" };
+      }),
+  }));
+  return [...(prompt.system !== undefined ? [{ role: "system", content: prompt.system }] : []), ...messages] as ProviderPrompt;
+}
+
 export function generationSettings(options: GenerationOptions, api: OpenaiPromptApi): {
   temperature?: number;
   topP?: number;
@@ -179,13 +197,25 @@ export function encodeOpenaiPrompt(snapshot: ContextSnapshot): OpenaiPrompt {
   for (const message of snapshot.messages) {
     if (message.role === "system") throw new EnvelopeError("invalid_envelope");
     if (message.role === "user") {
-      const split = splitUser(message);
-      if (split.user.length === 0 && split.results.length === 0) {
-        messages.push({ role: "user", content: "" });
+      if (typeof message.content === "string" || message.content.length === 0) {
+        messages.push({ role: "user", content: typeof message.content === "string" ? message.content : "" });
         continue;
       }
-      pushUser(messages, split.user);
-      pushToolResults(messages, split.results);
+      // Preserve ordering across user text/images and tool results. Group only
+      // adjacent same-role blocks; partitioning the entire message by type moves
+      // fresh instructions before results the Host placed first.
+      let run: PromptContentPart[] = [];
+      let resultRun = message.content[0]!.type === "tool-result";
+      const flush = () => {
+        const split = splitUser({ ...message, content: run });
+        pushUser(messages, split.user); pushToolResults(messages, split.results); run = [];
+      };
+      for (const part of message.content) {
+        const isResult = part.type === "tool-result";
+        if (isResult !== resultRun && run.length) flush();
+        resultRun = isResult; run.push(part);
+      }
+      flush();
       continue;
     }
     if (message.role === "assistant") {

@@ -1,4 +1,4 @@
-import { Clock, Context, Deferred, Effect, Option, Stream, SynchronizedRef } from "effect";
+import { Clock, Context, Deferred, Effect, Exit, Option, Stream, SynchronizedRef } from "effect";
 import * as Scope from "effect/Scope";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
@@ -8,13 +8,17 @@ import { runOverflowRecovery } from "./overflow-recovery.ts";
 import { STUB_ECHO_MODEL_ID, captureManagedSelection, modelForAgent, qualifiedContextWindowTokens } from "../../selection.ts";
 import {
   InferenceMemory,
+  coldTurn,
+  coolInactiveTurns,
   bindingStoreKey,
   ledgerKey,
   makeBindingId,
   turnKey,
   type RouteBindingRecord,
+  type InferenceMemoryValue,
+  type LedgerStatus,
 } from "./route-binding.ts";
-import { applyCancel, occupy, releaseOccupancy, type OccupyResult } from "./step-ledger.ts";
+import { applyCancel, assertStepIdentity, occupy, releaseOccupancy, type OccupyResult } from "./step-ledger.ts";
 import type { InferenceState } from "./route-binding.ts";
 import { contextSnapshotBody, parseContextSnapshot } from "../contract/snapshot.ts";
 import { computeSnapshotDigest } from "../../hash.ts";
@@ -212,37 +216,93 @@ function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: Auth
   );
 }
 
+/** Atomic admission: persist the identity before any auth/provider effect. A
+ * timeout after the write but before its acknowledgement absorbs this STEP; it
+ * cannot turn an uncertain submission into permission to run it a second time. */
+function reserveStep(memory: InferenceMemoryValue, request: RunStepRequest, now: number) {
+  return SynchronizedRef.modifyEffect(memory.ref, state => Effect.gen(function* () {
+    const invalid = assertStepIdentity(request);
+    if (invalid) return [{ ok: false, error: invalid } as OccupyResult, state] as const;
+    if (request.serviceEpoch.incarnationId !== state.serviceEpoch) return [{ ok: false, error: new BindingFailure("service_epoch_mismatch") } as OccupyResult, state] as const;
+    const key = ledgerKey(request), tk = turnKey(request);
+    const archivedStep = state.ledger.has(key) ? undefined : yield* memory.history.getStep(key);
+    const archivedTurn = state.bindings.has(tk) ? undefined : yield* memory.history.getTurn(tk);
+    const working: InferenceState = { ...state, ledger: new Map(state.ledger), turns: new Map(state.turns) };
+    if (archivedStep) working.ledger.set(key, archivedStep);
+    if (archivedTurn && !working.turns.has(tk)) working.turns.set(tk, { ...archivedTurn.turn });
+    const result = occupy(working, request, now);
+    if (!result.ok) return [result, state] as const;
+    if (result.kind === "duplicate") {
+      memory.counters.duplicate++;
+      return [{ ...result, state }, state] as const;
+    }
+    yield* memory.history.putStep(key, result.state.ledger.get(key)!);
+    const turn = coldTurn(result.state, tk)!;
+    yield* memory.history.putTurn(tk, archivedTurn?.binding ? { ...turn, binding: archivedTurn.binding } : turn);
+    memory.counters.accepted++;
+    return [result, result.state] as const;
+  }));
+}
+
+/** Historical records leave RAM after settlement. Their durable identity claim
+ * remains even if writing the descriptive final status fails. Such a failure
+ * degrades storage health, never rolls back a tool or permits a replay. */
+function settleStep(memory: InferenceMemoryValue, request: RunStepRequest, status: LedgerStatus) {
+  return SynchronizedRef.updateEffect(memory.ref, state => Effect.gen(function* () {
+    const key = ledgerKey(request), tk = turnKey(request), entry = state.ledger.get(key);
+    if (!entry) return state;
+    const next = releaseOccupancy(state, request, status);
+    const settled = next.ledger.get(key)!;
+    yield* memory.history.putStep(key, settled).pipe(Effect.catch(() => Effect.sync(() => { memory.counters.cleanupFailures++; })));
+    const turn = coldTurn(next, tk);
+    if (turn) {
+      // A failed cold read is not proof that the old binding is absent. Keep
+      // the original durable record rather than overwriting it with a cache
+      // miss during cleanup. That would revoke a valid long-running TURN (or
+      // let it silently select a new model on a later unbound request).
+      yield* Effect.gen(function* () {
+        const previous = turn.binding ? undefined : yield* memory.history.getTurn(tk);
+        const merged = turn.binding || !previous?.binding ? turn : { ...turn, binding: previous.binding };
+        if (merged.turn.bindingId && !merged.binding) return yield* Effect.fail(new BindingFailure("ledger_unavailable"));
+        yield* memory.history.putTurn(tk, merged);
+      }).pipe(Effect.catch(() => Effect.sync(() => { memory.counters.cleanupFailures++; })));
+    }
+    next.ledger.delete(key);
+    memory.counters.reclaimedSteps++;
+    if (status === "terminal") memory.counters.completed++;
+    return next;
+  }));
+}
+
 export function runStep(request: RunStepRequest) {
   return Effect.gen(function* () {
     const memory = yield* InferenceMemory;
     const now = yield* Clock.currentTimeMillis;
-    const occupied = yield* SynchronizedRef.modify(memory.ref, (state): readonly [OccupyResult, InferenceState] => {
-      const result = occupy(state, request, now);
-      if (!result.ok) return [result, state];
-      if (result.kind === "duplicate") return [result, state];
-      return [result, result.state];
-    });
-    if (!occupied.ok) return yield* Effect.fail(occupied.error);
-    if (occupied.kind === "duplicate") {
-      return { kind: "duplicate", bindingId: occupied.bindingId, snapshotDigest: occupied.snapshotDigest };
-    }
-
-    const release = (status: "rejected" | "terminal" | "cancelled") =>
-      SynchronizedRef.update(memory.ref, (state) => releaseOccupancy(state, request, status));
-
-    yield* Effect.addFinalizer(() => Effect.gen(function* () {
+    // Cache maintenance has no authority to reject unrelated work. Failed
+    // cooling retains the hot owner; the actual identity claim below still
+    // must commit successfully before this request may dispatch.
+    yield* coolInactiveTurns(memory, now).pipe(Effect.catch(() => Effect.sync(() => { memory.counters.cleanupFailures++; })));
+    const release = (status: "rejected" | "terminal" | "cancelled") => settleStep(memory, request, status);
+    // Acquisition and finalizer registration are one interrupt-safe boundary.
+    // It must not be possible to commit an active slot and cancel before its owner exists.
+    const occupied = yield* Effect.acquireRelease(reserveStep(memory, request, now), result =>
+      !result.ok || result.kind === "duplicate" ? Effect.void : Effect.gen(function* () {
       yield* haltProducer(memory.cancels, ledgerKey(request));
-      yield* SynchronizedRef.update(memory.ref, (state) => {
+      yield* SynchronizedRef.update(memory.ref, state => {
         const entry = state.ledger.get(ledgerKey(request));
-        if (entry?.status !== "active") return state;
-        const turn = state.turns.get(turnKey(request));
-        if (turn && !turn.bindingId) {
-          const cancelled = applyCancel(state, request);
-          return cancelled.ok ? cancelled.state : releaseOccupancy(state, request, "cancelled");
+        if (entry?.status === "active") {
+          const turn = state.turns.get(turnKey(request));
+          if (turn && !turn.bindingId) turn.poisoned = true;
         }
-        return releaseOccupancy(state, request, "rejected");
+        return state;
       });
+      yield* release("rejected");
+      memory.recoveries.delete(ledgerKey(request));
+      const at = yield* Clock.currentTimeMillis;
+      yield* coolInactiveTurns(memory, at).pipe(Effect.catch(() => Effect.sync(() => { memory.counters.cleanupFailures++; })));
     }));
+    if (!occupied.ok) return yield* Effect.fail(occupied.error);
+    if (occupied.kind === "duplicate") return { kind: "duplicate" as const, bindingId: occupied.bindingId, snapshotDigest: occupied.snapshotDigest };
 
     return yield* admitLive(request, now).pipe(
       Effect.matchEffect({
@@ -262,7 +322,9 @@ function admitLive(request: RunStepRequest, now: number) {
     const memory = yield* InferenceMemory;
     const backend = yield* ModelBackend;
     const storeKey = bindingStoreKey(request);
-    const existing = (yield* SynchronizedRef.get(memory.ref)).bindings.get(storeKey);
+    const cached = (yield* SynchronizedRef.get(memory.ref)).bindings.get(storeKey);
+    const archived = cached ? undefined : yield* memory.history.getTurn(storeKey);
+    const existing = cached ?? archived?.binding;
 
     let bindingId: string;
     let lease: AuthLease;
@@ -284,7 +346,35 @@ function admitLive(request: RunStepRequest, now: number) {
       }
       prepared = yield* backend.prepare(existing.model, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
       bindingId = existing.bindingId;
-      lease = existing.lease;
+      if (cached) lease = cached.lease;
+      else {
+        // Resource reacquisition is NOT credential rotation or model selection.
+        // Verify the original immutable fingerprint and ownership before use.
+        if (existing.ownership.scopeId !== ownership.scopeId || existing.ownership.serverId !== ownership.serverId) {
+          // Match the hot-binding authority fence: a revoked TURN stays
+          // poisoned even if ownership later changes back. Cache residency
+          // must never weaken the authorization lifetime.
+          yield* SynchronizedRef.update(memory.ref, current => {
+            const turn = current.turns.get(turnKey(request));
+            if (turn) turn.poisoned = true;
+            return current;
+          });
+          return yield* Effect.fail(new BindingFailure("not_admitted"));
+        }
+        const pinned = yield* pinOnTurn(request, existing.model.apiKeyRef);
+        if (pinned.fingerprint !== existing.fingerprint) {
+          const rejectedScope = memory.turnScopes.get(storeKey);
+          memory.turnScopes.delete(storeKey);
+          if (rejectedScope) yield* Scope.close(rejectedScope, Exit.void);
+          return yield* Effect.fail(new BindingFailure("auth_mismatch"));
+        }
+        lease = pinned.lease;
+        memory.counters.coldRestores++;
+        yield* SynchronizedRef.update(memory.ref, current => {
+          current.bindings.set(storeKey, { ...existing, lease, lastActivityMs: now });
+          return current;
+        });
+      }
       yield* SynchronizedRef.update(memory.ref, (current) => {
         const bound = current.bindings.get(storeKey);
         if (bound) bound.lastActivityMs = now;
@@ -351,6 +441,15 @@ function admitLive(request: RunStepRequest, now: number) {
         return current;
       });
     }
+    // Binding acknowledgement is published only after its durable metadata is
+    // available; the initial claimed identity already prevents re-execution.
+    yield* SynchronizedRef.updateEffect(memory.ref, current => Effect.gen(function* () {
+      const entry = current.ledger.get(ledgerKey(request));
+      if (entry) yield* memory.history.putStep(ledgerKey(request), entry);
+      const turn = coldTurn(current, storeKey);
+      if (turn) yield* memory.history.putTurn(storeKey, turn);
+      return current;
+    }));
     const key = ledgerKey(request);
     const halt = yield* Deferred.make<void>();
     const done = yield* Deferred.make<void>();
@@ -382,11 +481,18 @@ export function cancelStep(request: CancelStepRequest): Effect.Effect<void, Bind
     yield* haltProducer(memory.cancels, key);
     const done = memory.quiesce.get(key);
     if (done && memory.started.has(key)) yield* Deferred.await(done);
-    const applied = yield* SynchronizedRef.modify(memory.ref, (state): readonly [ReturnType<typeof applyCancel>, InferenceState] => {
-      const result = applyCancel(state, request);
-      if (!result.ok) return [result, state];
-      return [result, result.state];
-    });
+    const applied = yield* SynchronizedRef.modifyEffect(memory.ref, (state): Effect.Effect<readonly [ReturnType<typeof applyCancel>, InferenceState], BindingFailure> => Effect.gen(function* () {
+      const active = state.ledger.has(key);
+      const archived = active ? undefined : yield* memory.history.getStep(key);
+      const working = { ...state, ledger: new Map(state.ledger) };
+      if (archived) working.ledger.set(key, archived);
+      const result = applyCancel(working, request);
+      if (!result.ok) return [result, state] as const;
+      const entry = result.state.ledger.get(key);
+      if (entry) yield* memory.history.putStep(key, entry);
+      if (!active) result.state.ledger.delete(key);
+      return [result, result.state] as const;
+    }));
     if (!applied.ok) return yield* Effect.fail(applied.error);
   });
 }

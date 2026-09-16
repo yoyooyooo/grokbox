@@ -114,7 +114,7 @@ describe("modeld v4 wire", () => {
     expect(start.done).toBe(false);
     expect(start.control).toBeUndefined();
     const terminal = acceptModeldFrame(start.session, {
-      kind: "terminal", outcome: "ok", bindingId: "b", version: WIRE_VERSION,
+      kind: "terminal", outcome: "ok", bindingId: "b", finishReason: "stop", version: WIRE_VERSION,
     });
     expect(terminal.done).toBe(true);
     expect(terminal.control).toBeUndefined();

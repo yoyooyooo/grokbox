@@ -280,7 +280,7 @@ describe("read-only contracts and logs", () => {
     await fs.mkdir(dirname(eventsPath(f.root)), { recursive: true });
     await fs.writeFile(eventsPath(f.root), "x".repeat(1024 * 1024 + 1));
     const before = await snapshotTree(f.root);
-    expect(await observeEvents(f.root)).toMatchObject({ state: "invalid", events: [] });
+    expect(await observeEvents(f.root)).toMatchObject({ state: "partial", events: [], window: { trailingPartial: true, fileBytes: 1024 * 1024 + 1 } });
     expect(await snapshotTree(f.root)).toEqual(before);
   });
 
@@ -293,7 +293,8 @@ describe("read-only contracts and logs", () => {
     const before = await snapshotTree(f.root);
     const result = await observeEvents(f.root);
     expect(result.state).toBe("partial");
-    expect(result.events).toEqual([{ name: "circuit_open", at: AT, reason: "mutation_budget", counts: { host: 1 } }, { invalid: true }, { invalid: true }]);
+    expect(result.events).toEqual([{ name: "circuit_open", at: AT, reason: "mutation_budget", counts: { host: 1 } }, { invalid: true }]);
+    expect(result.window?.trailingPartial).toBe(true);
     expect(await readEvents(f.root)).toEqual(result.events);
     expect((await observeEvents(f.root, 1)).truncated).toBe(true);
     expect(JSON.stringify(result)).not.toContain("private-");

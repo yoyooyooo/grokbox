@@ -31,12 +31,16 @@ export {
 export {
   observeEvents,
   observeRuntimeEvents,
+  maintainObservationJournals,
   HOST_STREAM_REJECT_REASONS,
   TURN_SEAM_ERROR_CODES,
   projectHostSeamStage,
   projectHostStreamRejected,
   type HostStreamRejectedEvent,
 } from "./internal/io/journal.node.ts";
+export { replaceModeld } from "./internal/roots/modeld-replace.node.ts";
+export { observeModeldService, probeModeldExecution } from "./internal/wire/modeld-probe.node.ts";
+export { observeJournalHealth } from "./internal/host/journal-health.node.ts";
 export {
   HOST_FAILURE_CATALOG,
   INVALID_STREAM_AGENT_MESSAGE,

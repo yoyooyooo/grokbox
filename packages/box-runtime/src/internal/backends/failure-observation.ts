@@ -1,9 +1,10 @@
-import { BackendFailure } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, annotateStreamFailure, streamFailureDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 
 export const BACKEND_PHASES = ["prepare", "auth", "sdk", "provider", "normalize"] as const;
 export type BackendPhase = (typeof BACKEND_PHASES)[number];
 export const FAILURE_REASONS = [
   "unknown", "validation", "auth", "transport", "http", "sdk_validation", "sdk_no_output", "stream_shape", "output_limit", "content_filter",
+  "provider_resource", "provider_interrupted", "stream_budget",
 ] as const;
 export const PROVIDER_CODES = [
   "invalid_request_error", "invalid_api_key", "insufficient_quota", "rate_limit_exceeded",
@@ -14,7 +15,7 @@ export const PROVIDER_PARAMS = [
   "model", "instructions", "input", "messages", "tools", "tool_choice", "parallel_tool_calls", "stream",
   "temperature", "top_p", "max_tokens", "max_output_tokens", "reasoning", "store",
 ] as const;
-export type BackendObservation = {
+export type BackendObservation = StreamDiagnostic & {
   phase: BackendPhase;
   reason: (typeof FAILURE_REASONS)[number];
   httpStatus?: number;
@@ -33,6 +34,8 @@ function member<T extends string>(value: unknown, choices: readonly T[]): T | un
 }
 
 export function observeBackendFailure(failure: BackendFailure, phase: BackendPhase, raw?: unknown): BackendFailure {
+  const detail = streamFailureDiagnostic(raw);
+  if (detail) annotateStreamFailure(failure, detail);
   if (observations.has(failure)) return failure;
   let result: BackendObservation = { phase, reason: phase === "prepare" ? "validation" : phase === "auth" ? "auth" : phase === "normalize" ? "stream_shape" : "unknown" };
   try {
@@ -54,6 +57,7 @@ export function observeBackendFailure(failure: BackendFailure, phase: BackendPha
     if (code) result.providerCode = code;
     if (param) result.providerParam = param;
   } catch { /* Malformed diagnostic fields cannot change inference semantics. */ }
+  if (failure.code === "stream_limit") result = { phase: "normalize", reason: "stream_budget" };
   observations.set(failure, Object.freeze(result));
   return failure;
 }
@@ -65,6 +69,15 @@ export function incompleteBackendFinish(reason: "length" | "content-filter"): Ba
   return failure;
 }
 
+export function interruptedProviderFinish(reason: "insufficient_system_resource" | "aborted"): BackendFailure {
+  const failure = new BackendFailure("provider_error");
+  observations.set(failure, Object.freeze({ phase: "provider", reason: reason === "aborted" ? "provider_interrupted" : "provider_resource" }));
+  return failure;
+}
+
 export function backendFailureObservation(error: unknown): BackendObservation | undefined {
-  return error instanceof BackendFailure ? observations.get(error) : undefined;
+  if (!(error instanceof BackendFailure)) return undefined;
+  const base = observations.get(error), detail = streamFailureDiagnostic(error);
+  if (!base && !detail) return undefined;
+  return { ...(base ?? { phase: "normalize" as const, reason: "stream_shape" as const }), ...detail };
 }

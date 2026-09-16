@@ -14,8 +14,11 @@ import {
   saveRuntimeDesired,
   parseModelId,
   projectLiveStatus,
+  observeModeldService,
+  replaceModeld,
   readContracts,
   observeRuntimeEvents,
+  maintainObservationJournals,
   reviewedProfilePath,
   controllerOperationId,
   diskPreloadSha256,
@@ -51,7 +54,7 @@ import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { LIVE_HOST_BUNDLE_PATH } from "../host-source.ts";
 import { GatewayClient } from "../gateway.ts";
-import { asString } from "../util.ts";
+import { asString, isRecord } from "../util.ts";
 import { findRosterRow } from "./roster.ts";
 import { writeSuccess } from "../output.ts";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
@@ -337,16 +340,38 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
 export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
   try {
     const runtime = store(deps);
+    // Log maintenance belongs to this explicit writer command, not status,
+    // incident queries, Host inference or modeld. Include the actual run root.
+    const observationMaintenance = await maintainObservationJournals({ durableRoot: runtime.root, runRoot: deps.env.GROKBOX_RUN_ROOT });
     const receipt = await startControlOperation({
       intent: "reconcile",
       confirmed: false,
       operationId: controllerOperationId("reconcile", runtime.root),
       boxRoot: runtime.root,
     });
-    writeSuccess(deps.stdout, receipt);
+    writeSuccess(deps.stdout, { ...receipt, observationMaintenance });
   } catch (error) {
     rethrow(error);
   }
+}
+
+export async function runRuntimeModeldReplace(deps: CliDeps, raw: { confirm?: boolean; expectEpoch?: string }): Promise<void> {
+  const runtime = store(deps);
+  if (!raw.confirm || !raw.expectEpoch || !/^[a-f0-9-]{36}$/i.test(raw.expectEpoch)) throw new CliError("invalid_usage", "replace requires --confirm and --expect-epoch from modeld status");
+  const roster = await new GatewayClient(deps).listAgents(10_000);
+  const busy = roster.agents.filter(isRecord).some(a => a.harness === "box" && (a.isRunning === true || a.isRunningTurn === true));
+  if (busy) throw new CliError("invalid_usage", "Managed Bots are running. Wait for them to settle before replacing modeld.");
+  const entry = resolve(process.argv[1] ?? "");
+  writeSuccess(deps.stdout, await replaceModeld({ durableRoot: runtime.root, runRoot: runtimeRunRoot(deps), expectedEpoch: raw.expectEpoch,
+    confirmed: true, noManagedBotsRunning: true, entry, env: { ...process.env, ...deps.env } }));
+}
+
+export async function runRuntimeModeldStatus(deps: CliDeps): Promise<void> {
+  const runtime = store(deps);
+  const observed = await observeModeldService(runtime.root, runtimeRunRoot(deps));
+  writeSuccess(deps.stdout, { ...observed, liveness: observed.ready === true ? "reachable" : observed.ready === false ? "unavailable" : "unknown",
+    admission: observed.execution ? observed.execution.accepting ? "ready" : "blocked" : "not_observed",
+    limits: "Read-only snapshot. Readiness is not a promise about provider availability, physical storage, or future admission." });
 }
 
 export async function runRuntimeModeld(deps: CliDeps): Promise<void> {

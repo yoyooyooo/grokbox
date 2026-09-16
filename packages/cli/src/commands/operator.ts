@@ -36,13 +36,14 @@ export type OperatorReport = {
   screenIdle: boolean;
   host: OperatorHost;
   hostReason: string | null;
+  modeldAdmission?: "ready" | "blocked" | "not_instrumented";
   next: string;
   liveShaPrefix?: string;
   profileShaPrefix?: string;
   liveSourceSha?: string;
 };
 
-type HostClass = { host: OperatorHost; hostReason: string | null };
+type HostClass = { host: OperatorHost; hostReason: string | null; modeldAdmission?: "ready" | "blocked" | "not_instrumented" };
 type SourceFacts = { liveSha?: string; liveShaPrefix?: string; profileShaPrefix?: string };
 
 export const hostSwitchPorts = {
@@ -61,7 +62,10 @@ async function classifyLiveHost(deps: CliDeps): Promise<HostClass> {
       root: runtime.root,
       ...(deps.env.GROKBOX_RUN_ROOT ? { ephemeralRoot: deps.env.GROKBOX_RUN_ROOT } : {}),
     });
-    return classifyOperatorHost(status);
+    const modeld = status.facets.modeld.value;
+    return { ...classifyOperatorHost(status), ...(modeld?.required ? {
+      modeldAdmission: modeld.execution ? modeld.execution.accepting ? "ready" as const : "blocked" as const : "not_instrumented" as const,
+    } : {}) };
   } catch {
     return { host: "unknown", hostReason: "observation_unavailable" };
   }
@@ -115,6 +119,7 @@ export function operatorNext(input: {
   host: OperatorHost;
   hostReason: string | null;
   liveSha?: string | null;
+  modeldAdmission?: "ready" | "blocked" | "not_instrumented";
 }): string {
   if (input.hostReason === "source_mismatch") return profileWriteNext(input.liveSha);
   if (input.host === "unknown" && (input.hostReason === "stale_attestation" || input.hostReason === "unmanaged_preload")) {
@@ -122,6 +127,7 @@ export function operatorNext(input: {
   }
   if (input.daemon === "down") return "grokbox on";
   if (input.host === "official") return HOST_START;
+  if (input.modeldAdmission === "blocked" || input.modeldAdmission === "not_instrumented") return "grokbox runtime modeld status";
   return "none";
 }
 
@@ -166,11 +172,13 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
     screenIdle: daemon === "up" && pruneEnabled,
     host: classified.host,
     hostReason: classified.hostReason,
+    ...(classified.modeldAdmission ? { modeldAdmission: classified.modeldAdmission } : {}),
     next: operatorNext({
       daemon,
       host: classified.host,
       hostReason: classified.hostReason,
       liveSha: classified.liveSha,
+      modeldAdmission: classified.modeldAdmission,
     }),
     ...(classified.liveShaPrefix ? { liveShaPrefix: classified.liveShaPrefix } : {}),
     ...(classified.profileShaPrefix ? { profileShaPrefix: classified.profileShaPrefix } : {}),

@@ -15,8 +15,10 @@ import {
 } from "../host/terminal-journal.node.ts";
 import { eventsPath } from "./paths.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
-import { observeText, type ObservationState } from "./observation.node.ts";
+import { type ObservationState } from "./observation.node.ts";
+import { readJournalWindow, type JournalWindow } from "./journal-reader.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
+import { projectRunObservation } from "../host/run-observation.ts";
 import { projectModeldStepOutcome, type ModeldStepOutcomeEvent } from "./modeld-outcome.node.ts";
 
 export {
@@ -46,6 +48,7 @@ export const EVENT_NAMES = [
   "model_step_terminal",
   "host_stream_rejected",
   "host_seam_stage",
+  "host_run_observation",
   "provider_error_observed",
 ] as const;
 
@@ -82,6 +85,7 @@ const SEAM_EVENT_NAMES = new Set([
   "model_step_terminal",
   "host_stream_rejected",
   "host_seam_stage",
+  "host_run_observation",
   "provider_error_observed",
 ]);
 export const MODEL_STEP_STAGES = new Set([
@@ -341,26 +345,41 @@ function isSeamEventName(name: unknown): boolean {
   return typeof name === "string" && SEAM_EVENT_NAMES.has(name);
 }
 
-export function selectRetainedEventLines(lines: string[]): string[] {
-  const parsed = lines
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      let turn = false;
-      try {
-        const value = JSON.parse(line) as { name?: unknown };
-        turn = isSeamEventName(value.name);
-      } catch {
-        turn = false;
-      }
-      return { line, turn };
-    });
-  const control = parsed.filter((row) => !row.turn);
-  const turns = parsed.filter((row) => row.turn);
-  const keep = new Set([
-    ...control.slice(-CONTROL_PLANE_EVENT_RETENTION),
-    ...turns.slice(-TURN_SEAM_TERMINAL_RETENTION),
-  ]);
-  return parsed.filter((row) => keep.has(row)).map((row) => row.line);
+export const INCIDENT_RETENTION_MS = 7 * 24 * 60 * 60_000;
+export const INCIDENT_RETENTION_BYTES = 4 * 1024 * 1024;
+export const INCIDENT_RETENTION_GROUPS = 128;
+/** Retain recent activity plus complete bounded failed-TURN evidence groups.
+ * Never LRU-evict execution ledger entries: this is observation only. */
+export function selectRetainedEventLines(lines: string[], now = Date.now()): string[] {
+  const parsed = lines.filter(line => line.length > 0).map(line => {
+    let value: Record<string, unknown> | undefined;
+    try { const v = JSON.parse(line); if (isRecord(v)) value = v; } catch { /* keep recent malformed evidence */ }
+    const turn = isSeamEventName(value?.name);
+    const key = value && typeof value.agentId === "string" && typeof value.turnId === "string"
+      ? JSON.stringify([value.agentId, value.turnId]) : undefined;
+    const at = typeof value?.at === "string" ? Date.parse(value.at) : NaN;
+    const failure = value?.name === "host_stream_rejected" ||
+      (value?.name === "model_step_terminal" && ["error", "cancelled", "unknown"].includes(String(value.outcome))) ||
+      (value?.name === "host_normalized_terminal" && ["error", "abort"].includes(String(value.terminalClass)));
+    return { line, value, turn, key, at, failure };
+  });
+  const keep = new Set([...parsed.filter(row => !row.turn).slice(-CONTROL_PLANE_EVENT_RETENTION),
+    ...parsed.filter(row => row.turn).slice(-TURN_SEAM_TERMINAL_RETENTION)]);
+  const groups = new Map<string, typeof parsed>();
+  for (const row of parsed) if (row.key) { const group = groups.get(row.key) ?? []; group.push(row); groups.set(row.key, group); }
+  const incidents = [...groups.values()].filter(rows => rows.some(row => row.failure && Number.isFinite(row.at) && row.at <= now && now - row.at <= INCIDENT_RETENTION_MS));
+  incidents.sort((a, b) => Math.max(...b.filter(r => r.failure).map(r => r.at)) - Math.max(...a.filter(r => r.failure).map(r => r.at)));
+  let used = 0, count = 0;
+  for (const rows of incidents) {
+    if (count >= INCIDENT_RETENTION_GROUPS) break;
+    const size = rows.reduce((sum, row) => sum + Buffer.byteLength(row.line) + 1, 0);
+    // Keep a group whole or disclose its absence via bounded-window evidence;
+    // never leave just its success while deleting its known failure.
+    if (used + size > INCIDENT_RETENTION_BYTES) continue;
+    for (const row of rows) keep.add(row);
+    used += size; count++;
+  }
+  return parsed.filter(row => keep.has(row)).map(row => row.line);
 }
 
 export async function appendEvent(root: string, event: RuntimeEvent): Promise<void> {
@@ -406,6 +425,7 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
 function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
+  if (input.name === "host_run_observation") return projectRunObservation(input) as RuntimeEvent | null;
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input) as RuntimeEvent | null;
   if (input.name === "host_seam_stage") return projectHostSeamStage(input) as RuntimeEvent | null;
   if (input.name === "model_step_terminal") return projectModelStepTerminal(input);
@@ -451,47 +471,109 @@ function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEve
   return out;
 }
 
+export type RuntimeEventSelector = { agentId: string; nonce?: string; stepId?: string; groupId?: never } | { groupId: string; agentId?: never; nonce?: never; stepId?: never };
+export type RetentionObservation = { applied: boolean; discardedRecordsLowerBound: number; discardedPrefix: boolean; latestDiscardedAt: string | null };
+function retentionMarker(value: unknown): RetentionObservation | undefined {
+  if (!isRecord(value) || value.name !== "journal_retention" || value.schemaVersion !== 1
+    || !Number.isSafeInteger(value.discardedRecordsLowerBound) || Number(value.discardedRecordsLowerBound) < 0
+    || typeof value.discardedPrefix !== "boolean") return undefined;
+  const at = typeof value.latestDiscardedAt === "string" && Number.isFinite(Date.parse(value.latestDiscardedAt)) ? value.latestDiscardedAt : null;
+  return { applied: true, discardedRecordsLowerBound: Number(value.discardedRecordsLowerBound), discardedPrefix: value.discardedPrefix, latestDiscardedAt: at };
+}
 export type EventsObservation = {
   state: ObservationState | "partial";
-  events: Array<RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | HostStreamRejectedEvent | { invalid: true }>;
+  events: Array<RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | { invalid: true }>;
   truncated: boolean;
+  window?: JournalWindow & { matchedEvents: number; returnedEvents: number; earliestAt: string | null; latestAt: string | null; selectorMatched?: boolean; retention?: RetentionObservation };
 };
+function selectRelatedEvents(events: EventsObservation["events"], selector: RuntimeEventSelector): EventsObservation["events"] {
+  // Group events belong to distinct member identities. Filter their explicit
+  // group association before the global event-count cap, never by proximity.
+  if (typeof selector.groupId === "string") return events.filter(v => !("invalid" in v) && "groupId" in v && v.groupId === selector.groupId);
+  const rows = events.filter((v): v is Exclude<typeof v, { invalid: true }> => !("invalid" in v) && v.agentId === selector.agentId);
+  const seeds = rows.filter(v => selector.nonce !== undefined ? "clientNonce" in v && v.clientNonce === selector.nonce : selector.stepId !== undefined && "stepId" in v && v.stepId === selector.stepId);
+  const turns = new Set(seeds.map(v => "turnId" in v ? v.turnId : undefined).filter(v => typeof v === "string" && v.length > 0));
+  // Keep conflicting generations too: the outcome projector, not this reader,
+  // must diagnose an ambiguous join rather than silently select one generation.
+  return rows.filter(v => seeds.includes(v) || ("turnId" in v && typeof v.turnId === "string" && turns.has(v.turnId)));
+}
 
-/** Snapshot only: bounded reads and schema projection, without event locks/compaction/repair. */
-export async function observeEvents(root: string, limit = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION): Promise<EventsObservation> {
-  const cap = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION;
+/** Real bounded suffix reads. Targeted queries filter before applying the event
+ * count budget, so another busy Bot cannot evict this STEP from the read view. */
+export async function observeEvents(root: string, limit = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION, selector?: RuntimeEventSelector): Promise<EventsObservation> {
   if (!Number.isSafeInteger(limit) || limit < 0) return { state: "invalid", events: [], truncated: false };
-  const text = await observeText(eventsPath(root), 1024 * 1024);
-  if (text.state !== "present") return { state: text.state, events: [], truncated: false };
-  const lines = text.value.split("\n").filter((line) => line.length > 0);
-  const bounded = Math.min(limit, cap);
-  const tail = bounded === 0 ? [] : lines.slice(-bounded);
-  const events = tail.map((line) => {
-    try { return projectControlEvent(JSON.parse(line)) ?? { invalid: true as const }; }
-    catch { return { invalid: true as const }; }
-  });
-  return { state: events.some((event) => "invalid" in event) ? "partial" : "present", events, truncated: lines.length > bounded };
+  const read = await readJournalWindow(eventsPath(root));
+  if (read.state !== "present" && read.state !== "partial") return { state: read.state, events: [], truncated: false, window: { ...read.window, matchedEvents: 0, returnedEvents: 0, earliestAt: null, latestAt: null } };
+  let malformed = 0;
+  let retention: RetentionObservation | undefined;
+  const all: EventsObservation["events"] = [];
+  for (const line of read.lines) {
+    try {
+      const value = JSON.parse(line), marker = retentionMarker(value);
+      if (marker) { retention = marker; continue; }
+      const projected = projectControlEvent(value);
+      if (projected) { all.push(projected); continue; }
+    } catch { /* bounded bad line */ }
+    malformed++; all.push({ invalid: true });
+  }
+  const matched = selector ? selectRelatedEvents(all, selector) : all;
+  const bounded = Math.min(limit, selector ? 4096 : CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION);
+  const events = bounded === 0 ? [] : matched.slice(-bounded);
+  const times = events.flatMap(v => "at" in v && typeof v.at === "string" && Number.isFinite(Date.parse(v.at)) ? [v.at] : []).sort();
+  const retentionMayIntersect = retention !== undefined && (!selector || times.length === 0 || retention.latestDiscardedAt === null
+    || Date.parse(times[0]!) <= Date.parse(retention.latestDiscardedAt));
+  const truncated = read.window.prefixOmitted || read.window.linesOmitted || matched.length > bounded || retentionMayIntersect;
+  return { state: read.state === "partial" || malformed > 0 ? "partial" : "present", events, truncated,
+    window: { ...read.window, malformedLines: read.window.malformedLines + malformed, matchedEvents: matched.length, returnedEvents: events.length,
+      earliestAt: times[0] ?? null, latestAt: times.at(-1) ?? null, ...(retention ? { retention } : {}), ...(selector ? { selectorMatched: matched.length > 0 } : {}) } };
 }
 
 /** Explicit source selection: current Host events are not durable controller history. */
 export async function observeRuntimeEvents(input: {
-  durableRoot: string; runRoot?: string; source: "control" | "host"; limit?: number;
+  durableRoot: string; runRoot?: string; source: "control" | "host"; limit?: number; selector?: RuntimeEventSelector;
 }): Promise<EventsObservation & { source: "control" | "host"; root: string }> {
   const root = input.source === "host" ? ephemeralRuntimeRoot(input.runRoot) : input.durableRoot;
-  return { ...await observeEvents(root, input.limit), source: input.source, root };
+  return { ...await observeEvents(root, input.limit ?? (input.selector ? 4096 : undefined), input.selector), source: input.source, root };
+}
+
+/** Watchdog-only maintenance entry. Readers/Host/modeld do not call it. */
+export async function maintainObservationJournals(input: { durableRoot: string; runRoot?: string }): Promise<{ roots: Array<{ source: "control" | "host"; root: string; outcome: "maintained" | "unavailable" | "not_configured" }>; installedScheduler: false }> {
+  const hostRoot = ephemeralRuntimeRoot(input.runRoot);
+  const roots: Array<{ source: "control" | "host"; root: string; outcome: "maintained" | "unavailable" | "not_configured" }> = [];
+  for (const [source, root] of [["control", input.durableRoot], ["host", hostRoot]] as const) {
+    if (roots.some(r => r.root === root)) continue;
+    // Never compact an implicit HOME fallback on behalf of an isolated/custom
+    // durable root. Mutating host-journal maintenance requires the explicit root.
+    if (source === "host" && !input.runRoot) { roots.push({ source, root, outcome: "not_configured" }); continue; }
+    try { await compactEvents(root); roots.push({ source, root, outcome: "maintained" }); }
+    catch { roots.push({ source, root, outcome: "unavailable" }); }
+  }
+  return { roots, installedScheduler: false };
 }
 
 export async function compactEvents(root: string): Promise<void> {
   const path = eventsPath(root);
   await withEventsLock(root, async () => {
-    let text = "";
-    try {
-      text = await readFile(path, "utf8");
-    } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
-      throw error;
+    const read = await readJournalWindow(path);
+    if (read.state === "missing") return;
+    if (read.state !== "present" && read.state !== "partial") throw new Error("journal_unavailable");
+    if (read.window.changedDuringRead) throw new Error("journal_changed");
+    // Preserve the previous watermark in the same atomic file replacement.
+    let previous: RetentionObservation | undefined;
+    const lines = read.lines.filter(line => { try { const marker = retentionMarker(JSON.parse(line)); if (marker) { previous = marker; return false; } } catch { /* keep bounded malformed evidence */ } return true; });
+    const kept = selectRetainedEventLines(lines);
+    const keep = new Set(kept);
+    const dropped = lines.filter(line => !keep.has(line));
+    const timestamps = dropped.flatMap(line => { try { const v = JSON.parse(line); return typeof v.at === "string" && Number.isFinite(Date.parse(v.at)) ? [v.at as string] : []; } catch { return []; } });
+    if (previous?.latestDiscardedAt) timestamps.push(previous.latestDiscardedAt);
+    const lostPrefix = read.window.prefixOmitted || read.window.linesOmitted || read.window.trailingPartial || read.window.oversizedLines > 0 || read.window.malformedLines > 0;
+    if (dropped.length || previous || lostPrefix) {
+      const latestDiscardedAt = lostPrefix ? new Date().toISOString() : timestamps.sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? null;
+      kept.unshift(JSON.stringify({ name: "journal_retention", schemaVersion: 1,
+        discardedRecordsLowerBound: Math.min(Number.MAX_SAFE_INTEGER, (previous?.discardedRecordsLowerBound ?? 0) + dropped.length),
+        discardedPrefix: previous?.discardedPrefix === true || lostPrefix, latestDiscardedAt,
+      }));
     }
-    const kept = selectRetainedEventLines(text.split("\n"));
     const body = kept.length > 0 ? `${kept.join("\n")}\n` : "";
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     await chmod(dirname(path), 0o700);
