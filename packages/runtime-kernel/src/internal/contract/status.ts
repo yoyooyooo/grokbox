@@ -110,7 +110,7 @@ export type JournalWriterRole = "host" | "modeld" | "control" | "watchdog";
 
 export const JOURNAL_EVENT_ALLOWLIST = {
   host: ["host_stream_rejected", "host_normalized_terminal", "turn_seam_terminal", "host_seam_stage", "host_run_observation", "host_alert_observation"],
-  modeld: ["model_step_terminal", "provider_error_observed"],
+  modeld: ["model_step_terminal", "provider_error_observed", "model_recovery_progress"],
   control: [
     "disk_sha_observed",
     "contracts_snapshot",

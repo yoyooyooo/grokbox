@@ -70,8 +70,14 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_PROFILE_TITLE_SYMBOL)] = bindHostProfileTitle({ durableRoot });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RESUME_GATE_SYMBOL)] =
     (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed);
-  if (admittedMode === "route") {
+  // Child Node processes may inherit preload configuration. Allocate an Alert
+  // observer only when this process actually compiles the qualified target.
+  let alertObserverInstalled = false;
+  const installAlertObservation = () => {
+    if (alertObserverInstalled || admittedMode !== "route") return;
+    alertObserverInstalled = true;
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ALERT_OBSERVATION_SYMBOL)] = createAlertObserver({
+      observerRole: "host_target",
       generation: binding?.generationId ?? "unbound", nativeSourceSha256: profile.sourceSha256, preloadSha256,
       capture: {
         manager: profile.slices.some(slice => slice.id === "alert-manager-observation"),
@@ -81,6 +87,8 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       },
       emit: event => { void appendHostJournal(runRoot, event); },
     });
+  };
+  if (admittedMode === "route") {
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RUN_OBSERVATION_SYMBOL)] = createRunObserver({
       generation: binding?.generationId ?? "unbound", emit: event => { void appendHostJournal(runRoot, event); },
     });
@@ -95,6 +103,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     profile,
     argv: process.argv,
     allowLiveHost,
+    onTransforming: installAlertObservation,
     onTransformed: (actual) => {
       if (!markerPath) return;
       const staging = `${markerPath}.${randomUUID()}.tmp`;

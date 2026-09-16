@@ -165,7 +165,7 @@ async function acceptedThenCompact(
     ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: TUPLE.bindingId,
   }));
   socket.write(encodeModeldFrame({
-    version: 4,
+    version: WIRE_VERSION,
     method: "compact-request",
     ...control(compactOverrides),
     deadlineMs: 5_000,

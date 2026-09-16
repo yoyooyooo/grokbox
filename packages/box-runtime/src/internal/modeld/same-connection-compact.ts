@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import { HostCompact } from "@grokbox/runtime-kernel/ports";
-import { REQUEST_WALL_DEADLINE_MS, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
+import { WIRE_VERSION, REQUEST_WALL_DEADLINE_MS, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
 import { parseV4ControlFrame } from "../wire/modeld-wire.ts";
 import { readOneFrame, writeFrame, type Incoming } from "./server.node.ts";
 
@@ -45,7 +45,7 @@ export function sameConnectionHostCompactLayer(incoming: Incoming, options: {
       consumed = true;
       const resumeDeadline = performance.now() + budgetMs;
       const frame = {
-        version: 4,
+        version: WIRE_VERSION,
         method: "compact-request",
         agentId: input.tuple.agentId,
         turnId: input.tuple.turnId,

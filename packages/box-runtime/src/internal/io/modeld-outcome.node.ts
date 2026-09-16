@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { projectExecutionCapacity, projectStreamDiagnostic, projectStreamSummary, type ContextSnapshot, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
+import { projectExecutionCapacity, projectStreamDiagnostic, projectStreamSummary, projectFailureSummary, projectProviderRecoveryState, projectModelRecoveryProgress, type ProviderRecoveryState, type ContextSnapshot, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
 import { BACKEND_PHASES, FAILURE_REASONS, PROVIDER_CODES, PROVIDER_PARAMS } from "../backends/failure-observation.ts";
 import { STEP_FAILURE_CODES, STEP_OUTCOMES, STEP_PHASES, type ModeldStepOutcome } from "../modeld/step-outcome.ts";
 import { appendNdjsonLine } from "../host/terminal-journal.node.ts";
@@ -88,7 +88,7 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
       !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.at) || !Number.isFinite(Date.parse(v.at)) ||
       ![v.hostGenerationId, v.agentId, v.turnId, v.stepId, v.serviceEpoch].every(id) ||
       !member(v.outcome, STEP_OUTCOMES) || !member(v.phase, STEP_PHASES) ||
-      typeof v.eventCount !== "number" || !Number.isSafeInteger(v.eventCount) || v.eventCount < 0 || v.eventCount > 65_536) return null;
+      typeof v.eventCount !== "number" || !Number.isSafeInteger(v.eventCount) || v.eventCount < 0 || v.eventCount > 1_073_741_824) return null;
   const out: ModeldStepOutcomeEvent = {
     name: "model_step_terminal", schemaVersion: 3, at: v.at,
     hostGenerationId: v.hostGenerationId, agentId: v.agentId, turnId: v.turnId, stepId: v.stepId,
@@ -102,6 +102,12 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
   if (durationMs !== undefined) out.durationMs = durationMs;
   const attempts = boundedInt(v.backendAttempts, 65_536);
   if (attempts !== undefined) out.backendAttempts = attempts;
+  const failureSummary = projectFailureSummary(v.failureSummary);
+  if (failureSummary) out.failureSummary = failureSummary;
+  const recovery = projectProviderRecoveryState(v.recovery);
+  // Failed summaries already carry the same attempt history. Do not duplicate
+  // it and exceed the journal's per-line window for a large configured budget.
+  if (recovery && !failureSummary?.recovery) out.recovery = recovery;
   const stream = projectStreamSummary(v.stream);
   if (stream) out.stream = stream;
   const execution = projectExecutionCapacity(v.execution);
@@ -136,6 +142,16 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
     out.diagnostic = safe;
   }
   return out;
+}
+
+export function writeModeldRecoveryProgress(root: string, request: RunStepRequest, recovery: ProviderRecoveryState) {
+  return Effect.tryPromise(async () => observeJournalWrite(root, async () => {
+    const projected = projectModelRecoveryProgress({ name: "model_recovery_progress", schemaVersion: 1, at: new Date().toISOString(),
+      agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
+      hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId, recovery });
+    if (!projected) return "unprojected";
+    await appendNdjsonLine(root, JSON.stringify(projected)); return "written";
+  })).pipe(Effect.asVoid);
 }
 
 export function writeModeldStepOutcome(root: string, request: RunStepRequest, outcome: ModeldStepOutcome) {

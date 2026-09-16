@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { linuxProcessPort } from "../process/linux.node.ts";
 import { signalIfMatch, stableIdentitiesMatch } from "../process/process-port.ts";
-import { modeldRootId, modeldSocketPath, probeModeldIdentity, probeModeldExecution } from "../wire/modeld-probe.node.ts";
+import { modeldRootId, modeldSocketPath, probeModeldIdentity, probeModeldExecution, probeModeldReplacement } from "../wire/modeld-probe.node.ts";
 
 const refuse = (message: string) => new BoxRuntimeError("invalid_usage", message);
 async function socketOwners(path: string): Promise<Set<number>> {
@@ -32,10 +32,9 @@ export async function replaceModeld(input: {
 }) {
   return Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     if (!input.confirmed || !input.noManagedBotsRunning || !isAbsolute(input.entry) || !input.entry.endsWith("/dist/index.js")) return yield* Effect.fail(refuse("modeld replacement requires confirmation, a packed entry and idle managed Bots"));
-    const previous = yield* Effect.promise(() => probeModeldIdentity(input.runRoot, 1000));
+    const previous = yield* Effect.promise(() => probeModeldReplacement(input.runRoot, 1000));
     if (!previous || previous.generation !== input.expectedEpoch || previous.rootId !== modeldRootId(input.durableRoot, input.runRoot)) return yield* Effect.fail(refuse("modeld replacement identity changed or root mismatched"));
-    const activity = yield* Effect.promise(() => probeModeldExecution(input.runRoot, 1000));
-    if (activity && (activity.generation !== previous.generation || activity.execution.activeSteps > 0)) return yield* Effect.fail(refuse("modeld still has active work"));
+    if (previous.execution.activeSteps > 0) return yield* Effect.fail(refuse("modeld still has active work"));
     const port = linuxProcessPort();
     const owners = yield* Effect.tryPromise({ try: () => socketOwners(modeldSocketPath(input.runRoot)), catch: () => refuse("modeld socket owner unavailable") });
     const candidates = [...owners].map(pid => port.inspect(pid)).filter(p => p && p.uid === process.getuid?.()
@@ -43,15 +42,16 @@ export async function replaceModeld(input: {
     if (candidates.length !== 1 || !candidates[0]) return yield* Effect.fail(refuse("modeld does not have one verified process owner"));
     const target = candidates[0];
     if (!/\/node(?:js)?$/.test(target.exe)) return yield* Effect.fail(refuse("replacement requires a verified Node modeld process"));
-    const again = yield* Effect.promise(() => probeModeldIdentity(input.runRoot, 1000));
-    if (again?.generation !== input.expectedEpoch || again.rootId !== previous.rootId) return yield* Effect.fail(refuse("modeld changed before replacement"));
+    const again = yield* Effect.promise(() => probeModeldReplacement(input.runRoot, 1000));
+    if (again?.generation !== input.expectedEpoch || again.rootId !== previous.rootId || again.wireVersion !== previous.wireVersion
+      || again.execution.activeSteps > 0) return yield* Effect.fail(refuse("modeld changed before replacement"));
     const signaled = yield* Effect.sync(() => signalIfMatch(port, target, "SIGTERM"));
     if (!signaled.ok) return yield* Effect.fail(refuse("modeld process identity changed before signal"));
     yield* Effect.gen(function* () {
       while (stableIdentitiesMatch(target, port.inspect(target.pid))) yield* Effect.sleep("50 millis");
     }).pipe(Effect.timeout("10 seconds"));
     // The prior process must remove its own socket during normal Scope cleanup.
-    if ((yield* Effect.promise(() => probeModeldIdentity(input.runRoot, 500))) !== null) return yield* Effect.fail(refuse("a different modeld took ownership; replacement not started"));
+    if ((yield* Effect.promise(() => probeModeldReplacement(input.runRoot, 500))) !== null) return yield* Effect.fail(refuse("a different modeld took ownership; replacement not started"));
     const logDir = join(input.runRoot, "log");
     yield* Effect.promise(() => mkdir(logDir, { recursive: true, mode: 0o700 }));
     const log = yield* Effect.acquireRelease(Effect.promise(() => open(join(logDir, "modeld-process.log"), "a", 0o600)), handle => Effect.promise(() => handle.close()));
@@ -77,7 +77,7 @@ export async function replaceModeld(input: {
     const newOwners = yield* Effect.promise(() => socketOwners(modeldSocketPath(input.runRoot)));
     if (!child.pid || newOwners.size !== 1 || !newOwners.has(child.pid)) return yield* Effect.fail(refuse("replacement socket is not owned by the launched process"));
     published = true;
-    return { replaced: true, previousEpoch: previous.generation, serviceEpoch: ready.generation, previousPid: target.pid,
+    return { replaced: true, previousEpoch: previous.generation, previousWireVersion: previous.wireVersion, serviceEpoch: ready.generation, previousPid: target.pid,
       pid: child.pid, execution: ready.execution, liveEntry: input.entry, hostRestarted: false, oldRequestsReplayed: false };
   })));
 }

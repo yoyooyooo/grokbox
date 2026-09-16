@@ -20,7 +20,7 @@ import { createLiveBackendAuth, liveBackendAuthLayer } from "../src/internal/io/
 import { writeAttestation } from "../src/internal/io/authority.node.ts";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { fakeConfigurationReadLayer } from "@grokbox/runtime-kernel/testing";
-import { contextSnapshotBody } from "@grokbox/runtime-kernel/contract";
+import { contextSnapshotBody, WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
 import { computeSelectionRevision, parseModelsFile, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { decodeModeldFrame, encodeModeldFrame } from "../src/internal/wire/modeld-wire.ts";
@@ -121,8 +121,8 @@ describe("modeld lifecycle", () => {
     const started = await startModeldProcess({ durableRoot: durable, runRoot, env: {}, counts });
     expect(started.ensure.kind).toBe("owned");
     expect(await probeModeldHealth(runRoot, 500)).toBe(true);
-    const health = await requestModeld(runRoot, { version: 4, method: "health" });
-    expect(health[0]).toMatchObject({ ok: true, method: "health", version: 4 });
+    const health = await requestModeld(runRoot, { version: WIRE_VERSION, method: "health" });
+    expect(health[0]).toMatchObject({ ok: true, method: "health", version: WIRE_VERSION });
     const v2 = await requestModeld(runRoot, { version: 2, method: "health" });
     expect(v2[0]).toMatchObject({ ok: false, error: { code: "unsupported_version" } });
     const borrowed = await startModeldProcess({ durableRoot: durable, runRoot, env: {} });
@@ -177,7 +177,7 @@ describe("modeld lifecycle", () => {
     const fakeDir = await mkdtemp(join(tmpdir(), "grokbox-t25-eof-"));
     const fakePath = join(fakeDir, "modeld.sock");
     const fake = createServer((socket) => {
-      socket.write(encodeModeldFrame({ ok: true, method: "run-step", kind: "accepted", version: 4, bindingId: "x" }));
+      socket.write(encodeModeldFrame({ ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: "x" }));
       socket.end();
     });
     await new Promise<void>((resolve) => fake.listen(fakePath, resolve));
@@ -200,7 +200,7 @@ describe("modeld lifecycle", () => {
     await new Promise<void>((resolve, reject) => {
       sock.on("connect", () => {
         sock.write(Buffer.concat([
-          encodeModeldFrame({ version: 4, method: "health" }),
+          encodeModeldFrame({ version: WIRE_VERSION, method: "health" }),
           encodeModeldFrame({ version: 2, method: "health" }),
         ]));
       });
@@ -239,7 +239,7 @@ describe("modeld lifecycle", () => {
     };
     const echoRev = computeSelectionRevision({ agentId: "a", model: STUB_ECHO_MODEL });
     const step = (generation: string, turnId: string) => ({
-      version: 4,
+      version: WIRE_VERSION,
       method: "run-step",
       hostEpoch,
       serviceEpoch: { incarnationId: generation },
@@ -333,7 +333,7 @@ describe("modeld lifecycle", () => {
       ));
       await new Promise((resolve) => setTimeout(resolve, 40));
       const streamed = await requestModeld(sdkDir, {
-        version: 4,
+        version: WIRE_VERSION,
         method: "run-step",
         hostEpoch,
         serviceEpoch: { incarnationId: sdkGen },
@@ -484,7 +484,7 @@ describe("modeld lifecycle", () => {
     await new Promise<void>((resolve, reject) => {
       sock.on("connect", () => {
         sock.write(encodeModeldFrame({
-          version: 4,
+          version: WIRE_VERSION,
           method: "run-step",
           hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },
           serviceEpoch: { incarnationId: generation },

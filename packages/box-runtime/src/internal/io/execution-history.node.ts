@@ -1,8 +1,8 @@
 import { chmod, lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { BindingFailure } from "@grokbox/runtime-kernel/contract";
-import { sha256Text } from "@grokbox/runtime-kernel/hash";
+import { BindingFailure, projectProviderRecoveryState } from "@grokbox/runtime-kernel/contract";
+import { sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
 import type { ColdTurn, ExecutionHistory, ExecutionHistoryHealth, LedgerRecord } from "@grokbox/runtime-kernel/inference";
 import type { ClassicLevel } from "classic-level";
 
@@ -15,7 +15,11 @@ function stepRecord(value: unknown): LedgerRecord | undefined {
   if (!digest(v.snapshotDigest) || !digest(v.selectionRevision)
     || !["active", "terminal", "rejected", "cancelled"].includes(String(v.status))
     || (v.bindingId !== undefined && !digest(v.bindingId))
-    || Object.keys(v).some(k => !["snapshotDigest", "selectionRevision", "bindingId", "status"].includes(k))) throw fail();
+    || Object.keys(v).some(k => !["snapshotDigest", "selectionRevision", "bindingId", "status", "recovery"].includes(k))) throw fail();
+  if (v.recovery !== undefined) {
+    const checked = projectProviderRecoveryState(v.recovery);
+    if (!checked || canonicalJson(checked) !== canonicalJson(v.recovery)) throw fail();
+  }
   return v as LedgerRecord;
 }
 function turnRecord(value: unknown): ColdTurn | undefined {

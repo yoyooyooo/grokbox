@@ -1,4 +1,4 @@
-import { BackendFailure, BindingFailure, WireError, BACKEND_FAILURE_CODES, BINDING_FAILURE_CODES, type StreamSummary, type ExecutionCapacity } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, BindingFailure, WireError, BACKEND_FAILURE_CODES, BINDING_FAILURE_CODES, failureSummaryFromObservation, failureSummaryOf, providerRecoveryOf, type ProviderRecoveryState, type FailureSummary, type StreamSummary, type ExecutionCapacity } from "@grokbox/runtime-kernel/contract";
 import { backendFailureObservation, type BackendObservation } from "../backends/failure-observation.ts";
 
 export const STEP_OUTCOMES = ["ok", "error", "duplicate", "cancelled", "unknown"] as const;
@@ -12,6 +12,8 @@ export type ModeldStepOutcome = {
   eventCount: number;
   bindingId?: string;
   diagnostic?: BackendObservation;
+  failureSummary?: FailureSummary;
+  recovery?: ProviderRecoveryState;
   stream?: StreamSummary;
   execution?: ExecutionCapacity;
   at?: string;
@@ -38,11 +40,14 @@ export function modeldFailureOutcome(error: unknown, phase: "admission" | "provi
   const code = known && (STEP_FAILURE_CODES as readonly string[]).includes(error.code) ? error.code as ModeldStepOutcome["failureCode"]
     : error && typeof error === "object" && "_tag" in error && error._tag === "TimeoutError" ? "timeout" : "unknown";
   const auth = code === "auth_mismatch" || code === "credential_invalid";
-  return {
+  const outcome: ModeldStepOutcome = {
     outcome: code === "cancelled" ? "cancelled" : "error",
     phase: code === "not_admitted" && phase === "admission" ? "admission" : diagnostic?.phase ?? (auth ? "auth" : code === "stream_invalid" ? "normalize" : phase),
     failureCode: code,
     eventCount,
     ...(diagnostic ? { diagnostic } : {}),
   };
+  const summary = failureSummaryOf(error) ?? failureSummaryFromObservation(outcome);
+  const recovery = providerRecoveryOf(error);
+  return { ...outcome, ...(summary ? { phase: phase === "admission" ? outcome.phase : summary.phase, failureSummary: summary } : {}), ...(recovery ? { recovery } : {}) };
 }

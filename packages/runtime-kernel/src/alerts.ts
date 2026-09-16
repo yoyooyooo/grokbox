@@ -1,10 +1,11 @@
 /** Payload-free observations. A Tray, an execution failure and acknowledgement
  * are different facts. This module has no IO, execution or notification power. */
 import { projectStreamDiagnostic } from "./internal/contract/stream-diagnostic.ts";
+import { failureSummaryFromObservation, projectFailureSummary, presentFailure, FAILURE_CATEGORIES, type FailureCategory } from "./internal/contract/failure-summary.ts";
 export { chooseNotification, projectNotification, NOTIFICATION_POLICY_VERSION } from "./notification-policy.ts";
 export const ALERT_SCHEMA = 1;
 export const ALERT_DIAGNOSIS_VERSION = "alert-chain-v1";
-export const ALERT_CODES = ["parallel_tools", "invalid_stream", "model_error", "capacity", "ledger_unavailable", "invalid_envelope", "unsupported_image", "stream_limit", "not_admitted", "auth_mismatch", "provider_error", "cancelled"] as const;
+export const ALERT_CODES = ["parallel_tools", "invalid_stream", "model_error", "capacity", "ledger_unavailable", "invalid_envelope", "unsupported_image", "stream_limit", "not_admitted", "auth_mismatch", "provider_error", "cancelled", "unsupported_version"] as const;
 export type AlertCode = typeof ALERT_CODES[number];
 export const ALERT_REMOVALS = ["explicit_dismiss", "clear_all", "agent_clear", "new_input_cleanup", "evicted", "unknown"] as const;
 export const ALERT_DECISIONS = ["emit", "merge", "suppress", "defer", "not_applicable"] as const;
@@ -16,6 +17,10 @@ export type AlertObservationEvent = {
   kind: "observer_started" | "manager_attached" | "decision" | "tray_created" | "tray_updated" | "tray_removed" | "channel_published" | "tray_snapshot";
   agentId?: string; trayId?: string; trayRevision?: number; count?: number;
   nativeRequestId?: string; stepId?: string; turnId?: string; clientNonce?: string; failureId?: string; decisionId?: string;
+  observerRole?: "host_target" | "test";
+  failureCategory?: FailureCategory;
+  httpStatus?: number;
+  presentationVersion?: "failure-facts-v1";
   classification?: AlertCode; classificationEvidence?: "direct" | "legacy_text_derived" | "unclassified";
   stepEvidence?: "direct" | "legacy_text_derived";
   decision?: typeof ALERT_DECISIONS[number]; reason?: typeof ALERT_REASONS[number];
@@ -56,6 +61,10 @@ export function projectAlertEvent(v: unknown): AlertObservationEvent | null {
     for (const key of ["count","trayRevision"]) { const n=own(v,key);if(uint(n))out[key]=n; }
     const classification=safeAlertCode(own(v,"classification")), classificationEvidence=member(own(v,"classificationEvidence"),["direct","legacy_text_derived","unclassified"]);
     if(classification)out.classification=classification;if(classificationEvidence)out.classificationEvidence=classificationEvidence;
+    const role = member(own(v,"observerRole"), ["host_target", "test"]); if (role) out.observerRole = role;
+    const category = member(own(v,"failureCategory"), FAILURE_CATEGORIES); if (category) out.failureCategory = category;
+    const httpStatus = own(v,"httpStatus"); if (uint(httpStatus) && httpStatus >= 100 && httpStatus <= 599) out.httpStatus = httpStatus;
+    if (own(v,"presentationVersion") === "failure-facts-v1") out.presentationVersion = "failure-facts-v1";
     const stepEvidence=member(own(v,"stepEvidence"),["direct","legacy_text_derived"]);if(stepEvidence)out.stepEvidence=stepEvidence;
     const decision=member(own(v,"decision"),ALERT_DECISIONS), reason=member(own(v,"reason"),ALERT_REASONS), removal=member(own(v,"removalReason"),ALERT_REMOVALS);
     if(decision)out.decision=decision;if(reason)out.reason=reason;if(removal)out.removalReason=removal;
@@ -108,11 +117,14 @@ export function diagnoseExecution(events: readonly Record<string, unknown>[], se
   const backend=rows.find(e=>e.name==="model_step_terminal" && (!failure || sameExecution(failure,e)));
   const hostDetail=projectStreamDiagnostic(failure?.diagnostic),backendDetail=projectStreamDiagnostic(backend?.diagnostic);
   const diagnostic=hostDetail?.normalizeCause?hostDetail:backendDetail??hostDetail;
+  const failureSummary = hostDetail?.normalizeCause ? failureSummaryFromObservation(failure)
+    : failureSummaryFromObservation(backend) ?? failureSummaryFromObservation(failure);
   return { state:failure ? "failure_observed" : "not_proven", classifierVersion:ALERT_DIAGNOSIS_VERSION,
     ...(failure ? { code:safeAlertCode(failure.errorCode ?? failure.failureCode) ?? "other", source:failure.name,
-      stage:failure.stage ?? failure.phase ?? null, ...(diagnostic?{diagnostic}:{}), backend:backend ? { outcome:backend.outcome, phase:backend.phase, failureCode:backend.failureCode ?? null }:null } : {}) };
+      stage:failure.stage ?? failure.phase ?? null, ...(diagnostic?{diagnostic}:{}),
+      ...(failureSummary ? { failureSummary, category: failureSummary.category, presentation: presentFailure(failureSummary) } : {}), backend:backend ? { outcome:backend.outcome, phase:backend.phase, failureCode:backend.failureCode ?? null }:null } : {}) };
 }
-export type AlertTraceSelector = { trayId?: string; agentId?: string; stepId?: string; clientNonce?: string; sourceInstanceId?: string; hostGenerationId?: string };
+export type AlertTraceSelector = { trayId?: string; agentId?: string; stepId?: string; clientNonce?: string; sourceInstanceId?: string; hostGenerationId?: string; includeUnrelatedObservers?: boolean };
 /** Only explicit links can connect an execution and presentation. No time/name
  * heuristic. Ambiguous instances remain separate; this does not create alerts. */
 export function traceAlerts(raw: readonly unknown[], selector: AlertTraceSelector, coverage: { complete: boolean; source?: string; conflictingSources?: readonly string[] } = {complete:false}) {
@@ -152,13 +164,26 @@ export function traceAlerts(raw: readonly unknown[], selector: AlertTraceSelecto
   const generations=new Set([...linked.map(e=>e.hostGenerationId),...records.filter(e=>e.agentId===selector.agentId&&(!selector.stepId||e.stepId===selector.stepId)).map(e=>e.hostGenerationId).filter(observationId)]);
   const observers=new Map<string,AlertObservationEvent[]>();
   for(const event of events)if(generations.has(event.hostGenerationId)){const list=observers.get(event.sourceInstanceId)??[];list.push(event);observers.set(event.sourceInstanceId,list);}
-  const instrumentation=[...observers].map(([sourceInstanceId,items])=>{
+  const allObservers = [...observers];
+  const relatedSources = new Set(linked.map(e => e.sourceInstanceId));
+  let relevantObservers = selector.includeUnrelatedObservers ? allObservers : allObservers.filter(([id, items]) =>
+    relatedSources.has(id) || (!relatedSources.size && items.some(e => e.kind === "manager_attached")));
+  if (!selector.includeUnrelatedObservers && relevantObservers.length === 0) {
+    // Keep one real coverage witness per generation when no manager attached.
+    // This is a coverage sample, not a fabricated execution/Tray relationship.
+    const sampled = new Map<string, typeof allObservers[number]>();
+    for (const row of allObservers) { const generation = row[1][0]?.hostGenerationId; if (generation) sampled.set(generation,row); }
+    relevantObservers = [...sampled.values()];
+  }
+  const instrumentation=relevantObservers.map(([sourceInstanceId,items])=>{
     const latest=[...items].sort((a,b)=>b.sourceSequence-a.sourceSequence)[0]!;
-    return {sourceInstanceId,hostGenerationId:latest.hostGenerationId,capture:latest.capture??null,
+    return {sourceInstanceId,hostGenerationId:latest.hostGenerationId,observerRole:latest.observerRole??"not_observed",capture:latest.capture??null,
       managerAttached:items.some(e=>e.kind==="manager_attached")?"observed":"not_observed",nativeSourceSha256:latest.nativeSourceSha256??null,
       preloadSha256:latest.preloadSha256??null,currentLiveness:"not_proven"};
   });
-  return {classifierVersion:ALERT_DIAGNOSIS_VERSION, query:selector, traces, instrumentation, ambiguous:!!selector.trayId&&traces.length>1,
+  return {classifierVersion:ALERT_DIAGNOSIS_VERSION, query:selector, traces, instrumentation,
+    observerCoverage: { total: allObservers.length, shown: relevantObservers.length,
+      omittedUnrelated: allObservers.length - relevantObservers.length, scope: selector.includeUnrelatedObservers ? "all_same_generation" : "linked_or_attached" }, ambiguous:!!selector.trayId&&traces.length>1,
     evidence:{source:coverage.source??"journal", completeness:coverage.complete?"complete_read_window":"partial_read_window", matchingEvents:linked.length,
       matching:linked.length?"observed":"not_observed_in_window", lifecycleCompleteness:"not_proven", currentLiveness:"not_proven"}, replayAuthorized:false};
 }

@@ -5,6 +5,12 @@ const frame = value => { const bytes = Buffer.from(JSON.stringify(value)); const
 const server = createServer(socket => { let buffer = Buffer.alloc(0); socket.on('data', data => {
   buffer = Buffer.concat([buffer, data]); if (buffer.length < 4 || buffer.length < 4 + buffer.readUInt32BE()) return;
   const req = JSON.parse(buffer.subarray(4, 4 + buffer.readUInt32BE()).toString());
+  if (req.version !== 4) { socket.end(frame({ ok: false, version: 4, error: { code: 'unsupported_version' } })); return; }
+  if (req.method === 'execution-status') { socket.end(frame({ ok: true, method: req.method, version: 4, serverGeneration: generation, execution: {
+    version: 1, accepting: true, lifetimeStepLimit: null, activeSteps: 0, hotStepRecords: 0, hotTurns: 0, pinnedTurns: 0,
+    history: { kind: 'leveldb', available: true, reads: 0, writes: 0, failures: 0, lastError: null },
+    counters: { accepted: 0, duplicate: 0, completed: 0, reclaimedSteps: 0, coldRestores: 0, coldStores: 0, cleanupFailures: 0 }
+  } })); return; }
   if (req.method === 'service-info') socket.end(frame({ ok: true, method: req.method, version: 4, serverGeneration: generation, rootId }));
   else if (req.method === 'health') socket.end(frame({ ok: true, method: req.method, version: 4, serverGeneration: generation }));
   else socket.end(frame({ ok: false, version: 4, error: { code: 'unknown_method' } }));

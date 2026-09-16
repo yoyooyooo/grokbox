@@ -6,7 +6,7 @@ import { readFailureLink, type FailureLink } from "./alert-provenance.ts";
 export const HOST_ALERT_OBSERVATION_SYMBOL = "grokbox.host.alert-observation.v1";
 type Context = { decisionId: string; link?: FailureLink; agentId?: string; clientNonce?: string };
 type Fact = Omit<AlertObservationEvent, "name" | "schemaVersion" | "eventId" | "sourceInstanceId" | "sourceSequence" | "hostGenerationId" | "at" | "observedAt">;
-type SafeTray = Pick<AlertObservationEvent, "trayId" | "agentId" | "nativeRequestId" | "count" | "classification" | "classificationEvidence" | "stepId" | "stepEvidence" | "failureId" | "decisionId" | "clientNonce">;
+type SafeTray = Pick<AlertObservationEvent, "trayId" | "agentId" | "nativeRequestId" | "count" | "classification" | "classificationEvidence" | "stepId" | "stepEvidence" | "failureId" | "decisionId" | "clientNonce" | "failureCategory" | "httpStatus" | "presentationVersion">;
 type State = { revisions: Map<string, number>; live: Map<string, SafeTray> };
 
 /** Observe the native manager; do not become a second manager. Metadata follows
@@ -20,6 +20,7 @@ export function createAlertObserver(input: {
   nativeSourceSha256?: string;
   preloadSha256?: string;
   capture?: AlertObservationEvent["capture"];
+  observerRole?: AlertObservationEvent["observerRole"];
 }) {
   const sourceInstanceId = input.sourceInstanceId ?? randomUUID(), now = input.now ?? Date.now;
   let sourceSequence = 0, closed = false;
@@ -37,7 +38,7 @@ export function createAlertObserver(input: {
       const at = new Date(now()).toISOString();
       const event = projectAlertEvent({ ...fact, name: "host_alert_observation", schemaVersion: 1,
         eventId: randomUUID(), sourceInstanceId, sourceSequence: sourceSequence++, hostGenerationId: input.generation,
-        nativeSourceSha256: input.nativeSourceSha256, preloadSha256: input.preloadSha256, capture: input.capture, at, observedAt: at });
+        nativeSourceSha256: input.nativeSourceSha256, preloadSha256: input.preloadSha256, capture: input.capture, observerRole: input.observerRole, at, observedAt: at });
       if (event) { input.emit(event); return event; }
     } catch { /* Writer health/sequence gaps expose loss, never alter native execution. */ }
   };
@@ -56,6 +57,7 @@ export function createAlertObserver(input: {
       ...(link?.stepId ? { stepId: link.stepId, stepEvidence: "direct" as const }
         : classification.stepId ? { stepId: classification.stepId, stepEvidence: classification.stepEvidence } : {}),
       ...(link ? { failureId: link.failureId } : {}),
+      ...(link?.summary ? { failureCategory: link.summary.category, ...(link.summary.http ? { httpStatus: link.summary.http.status } : {}), presentationVersion: "failure-facts-v1" as const } : {}),
       ...(context ? { decisionId: context.decisionId, ...(context.clientNonce ? { clientNonce: context.clientNonce } : {}) } : {}) };
   };
   const published = (references: readonly AlertObservationEvent[]) => {
@@ -138,6 +140,7 @@ export function createAlertObserver(input: {
         emit({ kind: "decision", decisionId: context.decisionId, decision: shouldEmit ? "emit" : "suppress",
           reason: shouldEmit ? "native_error" : "stale_run", ruleVersion: "native-host-v1", decisionBasis: "native_branch",
           ...(context.agentId ? { agentId: context.agentId } : {}), ...(context.clientNonce ? { clientNonce: context.clientNonce } : {}),
+          ...(link?.summary ? { failureCategory: link.summary.category, ...(link.summary.http ? { httpStatus: link.summary.http.status } : {}), presentationVersion: "failure-facts-v1" as const } : {}),
           ...(link ? { failureId: link.failureId, ...(link.stepId ? { stepId: link.stepId, stepEvidence: "direct" as const } : {}),
             ...(link.code ? { classification: link.code, classificationEvidence: "direct" as const } : {}) } : {}) });
       } catch { return task(); }

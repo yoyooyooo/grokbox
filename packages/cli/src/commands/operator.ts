@@ -64,7 +64,8 @@ async function classifyLiveHost(deps: CliDeps): Promise<HostClass> {
     });
     const modeld = status.facets.modeld.value;
     return { ...classifyOperatorHost(status), ...(modeld?.required ? {
-      modeldAdmission: modeld.execution ? modeld.execution.accepting ? "ready" as const : "blocked" as const : "not_instrumented" as const,
+      modeldAdmission: modeld.ready !== true ? "blocked" as const
+        : modeld.execution ? modeld.execution.accepting ? "ready" as const : "blocked" as const : "not_instrumented" as const,
     } : {}) };
   } catch {
     return { host: "unknown", hostReason: "observation_unavailable" };

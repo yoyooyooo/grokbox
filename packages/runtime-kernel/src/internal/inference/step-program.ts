@@ -4,7 +4,7 @@ import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
 import { AUTHORITY_REASONS, annotateStreamFailure, streamFailureDiagnostic, type AuthorityDiagnostic } from "../contract/stream-diagnostic.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
 import { emptyRecoveryLedger } from "../contract/overflow.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, HostCompact, ModelBackend, type AuthLease, type PreparedCall } from "../../ports.ts";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, HostCompact, ModelBackend, RuntimeEvents, type AuthLease, type PreparedCall } from "../../ports.ts";
 import { runOverflowRecovery } from "./overflow-recovery.ts";
 import { STUB_ECHO_MODEL_ID, captureManagedSelection, modelForAgent, qualifiedContextWindowTokens } from "../../selection.ts";
 import {
@@ -25,11 +25,14 @@ import { contextSnapshotBody, parseContextSnapshot } from "../contract/snapshot.
 import { computeSnapshotDigest } from "../../hash.ts";
 import { fenceStream } from "./stream-state.ts";
 import { OWNERSHIP_EVIDENCE_MAX_AGE_MS, type OwnershipAdmission } from "../contract/ownership.ts";
+import { withProviderRecovery, type RecoveryProgress } from "./provider-recovery.ts";
+import type { ProviderRecoveryState } from "../contract/provider-recovery.ts";
 
 export type LiveStep = {
   kind: "live";
   bindingId: string;
   stream: Stream.Stream<InferenceEvent, BindingFailure | BackendFailure>;
+  recovery?: () => ProviderRecoveryState | undefined;
 };
 
 export type AdmittedStep = DuplicateStep | LiveStep;
@@ -185,7 +188,7 @@ function recoverOverflowStream(
   }));
 }
 
-function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: AuthLease, halt: Deferred.Deferred<void>) {
+function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: AuthLease, halt: Deferred.Deferred<void>, progress: RecoveryProgress) {
   const key = ledgerKey(request);
   return Stream.ensuring(
     Stream.interruptWhen(
@@ -198,7 +201,7 @@ function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: Auth
           Effect.map((current) => current.ledger.get(key)?.status === "cancelled"),
         );
         const released = { text: 0, reasoning: 0, tools: 0 };
-        const counted = Stream.tap(fenceStream(backend.infer({}, prepared, lease), cancelled), (event) => Effect.gen(function* () {
+        const attemptStream = (attemptId?: string, ordinal?: number) => Stream.tap(fenceStream(backend.infer({ attemptId, ordinal }, prepared, lease), cancelled), (event) => Effect.gen(function* () {
           // Check again before exposing an executable tool or successful completion.
           // This is not per-token polling, nor a distributed ownership lease.
           if (event.type === "tool_start" || event.type === "tool_complete" || event.type === "backend_finish") {
@@ -212,6 +215,34 @@ function ownedInfer(request: RunStepRequest, prepared: PreparedCall, lease: Auth
           if (event.type === "reasoning_delta" && event.text.length > 0) released.reasoning += 1;
           if (event.type === "tool_start") released.tools += 1;
         }));
+        const context = yield* Effect.context<never>();
+        const observer = Context.getOption(context as Context.Context<RuntimeEvents>, RuntimeEvents);
+        const counted = memory.providerRecovery.mode === "off" ? attemptStream() : withProviderRecovery({
+          policy: memory.providerRecovery, identity: `${request.serviceEpoch.incarnationId}:${key}`, snapshotDigest: request.snapshot.snapshotDigest,
+          progress, stream: (attemptId, ordinal) => attemptStream(attemptId, ordinal),
+          persist: next => SynchronizedRef.updateEffect(memory.ref, state => Effect.gen(function* () {
+            const entry = state.ledger.get(key);
+            if (!entry || entry.status !== "active") return yield* Effect.fail(new BindingFailure("cancelled"));
+            const safe = { ...entry, recovery: structuredClone(next) };
+            yield* memory.history.putStep(key, safe);
+            const ledger = new Map(state.ledger); ledger.set(key, safe);
+            return { ...state, ledger };
+          })),
+          beforeAttempt: ordinal => Effect.gen(function* () {
+            if (ordinal > 1) {
+              const config = yield* ConfigurationRead;
+              const snapshot = yield* config.snapshot();
+              const selection = yield* Effect.try({ try: () => captureManagedSelection(snapshot.models, request.agentId), catch: asBindingOrBackend });
+              if (selection.kind !== "managed" || selection.modelId !== request.selection.modelId || selection.selectionRevision !== request.selection.selectionRevision) {
+                return yield* Effect.fail(new BindingFailure("selection_mismatch"));
+              }
+            }
+            yield* dispatchFence(request, lease);
+          }),
+          changed: state => Option.isSome(observer) ? observer.value.append({ name: "model_recovery_progress", schemaVersion: 1,
+            agentId: request.agentId, turnId: request.turnId, stepId: request.stepId, hostGenerationId: request.hostEpoch.compile,
+            serviceEpoch: request.serviceEpoch.incarnationId, recovery: state }) : Effect.void,
+        });
         return counted.pipe(Stream.catchIf(
           (error): error is BackendFailure => error instanceof BackendFailure,
           (error) => recoverOverflowStream(request, lease, error, released, cancelled),
@@ -309,6 +340,9 @@ export function runStep(request: RunStepRequest) {
       });
       yield* release("rejected");
       memory.recoveries.delete(ledgerKey(request));
+      // A client can leave after admission, before the stream is consumed.
+      // The outer STEP owner must clean progress even when the stream finalizer never ran.
+      memory.recoveryProgress.delete(ledgerKey(request));
       const at = yield* Clock.currentTimeMillis;
       yield* coolInactiveTurns(memory, at).pipe(Effect.catch(() => Effect.sync(() => { memory.counters.cleanupFailures++; })));
     }));
@@ -466,15 +500,19 @@ function admitLive(request: RunStepRequest, now: number) {
     const done = yield* Deferred.make<void>();
     memory.cancels.set(key, halt);
     memory.quiesce.set(key, done);
+    const progress: RecoveryProgress = {};
+    if (memory.providerRecovery.mode !== "off") memory.recoveryProgress.set(key, progress);
     return {
       kind: "live" as const,
       bindingId,
+      recovery: () => progress.current ? structuredClone(progress.current) : undefined,
       stream: Stream.ensuring(
-        ownedInfer(request, prepared, lease, halt),
+        ownedInfer(request, prepared, lease, halt, progress),
         Effect.sync(() => {
           memory.cancels.delete(key);
           memory.quiesce.delete(key);
           memory.started.delete(key);
+          memory.recoveryProgress.delete(key);
         }),
       ),
     };

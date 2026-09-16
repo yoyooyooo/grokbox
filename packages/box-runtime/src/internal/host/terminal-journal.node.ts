@@ -3,7 +3,7 @@ import { chmod, mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
 import { HOST_STATE_SHAPES } from "./context-codec.ts";
-import { projectStreamDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { projectStreamDiagnostic, projectFailureSummary, type FailureSummary, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 import { observeJournalWrite } from "./journal-health.node.ts";
 import { projectRunObservation } from "./run-observation.ts";
 import { projectAlertEvent } from "@grokbox/runtime-kernel/alerts";
@@ -38,6 +38,7 @@ export const TURN_SEAM_ERROR_CODES = new Set([
   "ledger_unavailable",
   "stream_limit",
   "invalid_stream",
+  "unsupported_version",
 ]);
 const HOST_STREAM_REJECT_STAGES = new Set(["stream-id", "admit", "normalize", "connect", "provider", "authority"]);
 export const HOST_STREAM_REJECT_REASONS = new Set<string>(HOST_FAILURE_CATALOG.map((row) => row.reason));
@@ -60,6 +61,7 @@ export type HostStreamRejectedEvent = {
   reason: string;
   stateShape?: string;
   diagnostic?: StreamDiagnostic;
+  failureSummary?: FailureSummary;
   serviceEpoch?: string;
 };
 
@@ -208,6 +210,7 @@ export function projectHostStreamRejected(input: unknown): HostStreamRejectedEve
     reason,
     ...(boundedString(input.serviceEpoch) ? { serviceEpoch: boundedString(input.serviceEpoch)! } : {}),
     ...(projectStreamDiagnostic(input.diagnostic) ? { diagnostic: projectStreamDiagnostic(input.diagnostic) } : {}),
+    ...(projectFailureSummary(input.failureSummary) ? { failureSummary: projectFailureSummary(input.failureSummary) } : {}),
     ...(reason === "invalid-state" && (HOST_STATE_SHAPES as readonly unknown[]).includes(input.stateShape)
       ? { stateShape: input.stateShape as string } : {}),
   };
@@ -263,6 +266,7 @@ export function projectHostNormalizedTerminal(input: unknown): Record<string, un
     ...(errorCode ? { errorCode } : {}),
     ...(toolCallCount !== null ? { toolCallCount } : {}),
     ...(modelId ? { modelId } : {}),
+    ...(projectFailureSummary(input.failureSummary) ? { failureSummary: projectFailureSummary(input.failureSummary) } : {}),
     ...(projectStreamDiagnostic(input.diagnostic) ? { diagnostic: projectStreamDiagnostic(input.diagnostic) } : {}),
     ...(boundedString(input.hostGenerationId) ? { hostGenerationId: boundedString(input.hostGenerationId) } : {}),
     ...(boundedClientNonce(input.clientNonce) ? { clientNonce: boundedClientNonce(input.clientNonce) } : {}),

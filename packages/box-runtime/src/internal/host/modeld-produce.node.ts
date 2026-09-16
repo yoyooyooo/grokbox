@@ -1,4 +1,4 @@
-import { EnvelopeError, WIRE_VERSION, WireError, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
+import { EnvelopeError, WIRE_VERSION, WireError, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, annotateFailureSummary, projectFailureSummary, failureSummaryMatches, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { qualifyHostRootContract } from "./root-contract.ts";
 import { requestModeld, streamModeld } from "./modeld-client.node.ts";
@@ -21,7 +21,7 @@ export function hostEpochFromFacts(input: {
     profile: input.profileId,
     hostIdentity: input.binding.identitySha,
     bridgeDigest: input.bridgeDigest,
-    wireVersion: "v4",
+    wireVersion: `v${WIRE_VERSION}`,
   };
 }
 
@@ -94,6 +94,9 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       try {
         const health = await requestModeld(input.runRoot, { version: WIRE_VERSION, method: "health" });
         const frame = health[0];
+        if (isRecord(frame) && frame.ok === false && isRecord(frame.error) && typeof frame.error.code === "string") {
+          throw new VisibleStreamError("admit", frame.error.code);
+        }
         if (!isRecord(frame) || typeof frame.serverGeneration !== "string") {
           input.onConnectAttempt?.("fail");
           throw new VisibleStreamError("admit", "model_error");
@@ -102,6 +105,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
         last.serviceEpoch = frame.serverGeneration;
       } catch (error) {
         if (error instanceof VisibleStreamError) throw error;
+        if (error instanceof WireError && error.code === "unsupported_version") throw new VisibleStreamError("admit", "unsupported_version");
         input.onConnectAttempt?.("fail");
         throw new VisibleStreamError("admit", "model_error");
       }
@@ -166,6 +170,20 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
     let finished = false;
     let admitted = false;
     let observedChunk = false;
+    const rejected = (code: string, raw: unknown, fallbackStage: "admit" | "provider") => {
+      const summary = projectFailureSummary(raw);
+      const valid = summary && failureSummaryMatches(summary, { agentId: input.agentId, turnId: input.turnId, stepId,
+        hostGenerationId: hostEpoch.compile, serviceEpoch: last.serviceEpoch,
+        ...(admitted ? { bindingId: last.bindingId } : {}) }, code);
+      const phase = valid ? summary.phase : undefined;
+      const stage = phase === "admission" || phase === "prepare" || phase === "auth" ? "admit"
+        : phase === "authority" ? "authority" : phase === "normalize" ? "normalize" : fallbackStage;
+      const error = new VisibleStreamError(stage, code);
+      annotateStreamFailure(error, { rejectSite: "host_terminal", ...(valid ? summary.diagnostic : {}),
+        failureSummaryStatus: raw === undefined ? "absent" : !summary ? "invalid" : valid ? "direct" : "identity_mismatch" });
+      if (valid) annotateFailureSummary(error, summary);
+      return error;
+    };
     try {
       for await (const frame of streamModeld(input.runRoot, body, { signal: request.abortSignal })) {
         if (!isRecord(frame)) continue;
@@ -197,7 +215,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
           const mapped = finishFromTerminal(frame);
           if (!mapped) throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "invalid_terminal", rejectSite: "host_terminal" });
           if (mapped.reason === "error") {
-            throw annotateStreamFailure(new VisibleStreamError("provider", typeof frame.code === "string" ? frame.code : "model_error"), { rejectSite: "host_terminal" });
+            throw rejected(typeof frame.code === "string" ? frame.code : "model_error", frame.failure, "provider");
           }
           finished = true;
           yield { type: "finish", reason: mapped.reason, finishReason: mapped.reason, ...(mapped.usage ? { usage: mapped.usage } : {}) };
@@ -205,7 +223,7 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
         }
         if (frame.ok === false && isRecord(frame.error) && typeof frame.error.code === "string") {
           const stage = admitted ? "provider" : "admit";
-          throw new VisibleStreamError(stage, frame.error.code);
+          throw rejected(frame.error.code, frame.error.failure, stage);
         }
       }
       if (!request.abortSignal.aborted && !finished) throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "missing_finish", rejectSite: "host_terminal" });

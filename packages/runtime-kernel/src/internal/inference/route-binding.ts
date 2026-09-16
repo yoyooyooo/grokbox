@@ -9,6 +9,8 @@ import type { ModelRecord } from "../../selection.ts";
 import type { RunStepRequest } from "../contract/binding.ts";
 import type { RecoveryLedger } from "../contract/overflow.ts";
 import type { OwnershipAdmission } from "../contract/ownership.ts";
+import { NO_PROVIDER_RECOVERY, projectProviderRecoveryPolicy, type ProviderRecoveryPolicy, type ProviderRecoveryState } from "../contract/provider-recovery.ts";
+import type { RecoveryProgress } from "./provider-recovery.ts";
 
 export type LedgerStatus = "active" | "terminal" | "rejected" | "cancelled";
 
@@ -17,6 +19,7 @@ export type LedgerRecord = {
   selectionRevision: string;
   bindingId?: string;
   status: LedgerStatus;
+  recovery?: ProviderRecoveryState;
 };
 
 export type RouteBindingRecord = {
@@ -59,6 +62,7 @@ export type InferenceMemoryOptions = {
   resourceIdleMs?: number;
   /** Production must supply the durable exact-match index. */
   history?: ExecutionHistory;
+  providerRecovery?: ProviderRecoveryPolicy;
 };
 
 export function emptyInferenceState(options: InferenceMemoryOptions = {}): InferenceState {
@@ -119,6 +123,8 @@ export function cloneState(state: InferenceState): InferenceState {
 export type InferenceCounters = { accepted: number; duplicate: number; completed: number; reclaimedSteps: number; coldRestores: number; coldStores: number; cleanupFailures: number };
 export type InferenceMemoryValue = {
   readonly history: ExecutionHistory;
+  readonly providerRecovery: ProviderRecoveryPolicy;
+  readonly recoveryProgress: Map<string, RecoveryProgress>;
   readonly counters: InferenceCounters;
   readonly ref: SynchronizedRef.SynchronizedRef<InferenceState>;
   readonly cancels: Map<string, Deferred.Deferred<void>>;
@@ -186,13 +192,17 @@ export const inferenceCapacity = Effect.gen(function* () {
   return { version: 1 as const, accepting: store.available, lifetimeStepLimit: null,
     activeSteps: state.turnActive.size, hotStepRecords: state.ledger.size,
     hotTurns: state.turns.size, pinnedTurns: memory.turnScopes.size, pendingScopeReleases: memory.retiringScopes.size,
-    history: store, counters: { ...memory.counters } };
+    history: store, counters: { ...memory.counters },
+    providerRecovery: { policy: { ...memory.providerRecovery }, active: memory.recoveryProgress.size,
+      waiting: [...memory.recoveryProgress.values()].filter(p => p.current?.phase === "waiting").length } };
 });
 
 export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
   return Layer.effect(InferenceMemory, Effect.gen(function* () {
     const memory: InferenceMemoryValue = {
       history: options.history ?? memoryExecutionHistory(),
+      providerRecovery: projectProviderRecoveryPolicy(options.providerRecovery ?? NO_PROVIDER_RECOVERY) ?? NO_PROVIDER_RECOVERY,
+      recoveryProgress: new Map(),
       counters: { accepted: 0, duplicate: 0, completed: 0, reclaimedSteps: 0, coldRestores: 0, coldStores: 0, cleanupFailures: 0 },
       ref: SynchronizedRef.makeUnsafe(emptyInferenceState(options)),
       cancels: new Map<string, Deferred.Deferred<void>>(),

@@ -105,5 +105,5 @@ test("raw SSE audit keeps a long one-byte-fragmented event in bounded storage ch
  const frame='data: '+JSON.stringify({choices:[{delta:{content:"x".repeat(70000)},finish_reason:null}]})+'\n\n';
  for(const byte of new TextEncoder().encode(frame))audit.push(Uint8Array.of(byte));
  audit.push(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{},finish_reason:"stop"}]})+'\n\ndata: [DONE]\n\n'));audit.eof();
- expect(audit.evidence.snapshot()).toMatchObject({providerDoneObserved:true,providerFinishObserved:true,wireToolValidation:"validated"});
+ expect(audit.evidence.snapshot()).toMatchObject({providerDoneObserved:true,providerFinishObserved:true,wireToolValidation:"not_applicable",terminalAudit:{boundary:"eof",terminal:"valid",tools:0,invalidJson:0}});
 });

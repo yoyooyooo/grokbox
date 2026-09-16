@@ -1,3 +1,4 @@
+import { projectProviderRecoveryPolicy, type ProviderRecoveryPolicy } from "./provider-recovery.ts";
 /** Read-only execution-resource evidence; never an admission token. */
 export type ExecutionCapacity = {
   version: 1;
@@ -8,6 +9,7 @@ export type ExecutionCapacity = {
   hotTurns: number;
   pinnedTurns: number;
   pendingScopeReleases?: number;
+  providerRecovery?: { policy: ProviderRecoveryPolicy; active: number; waiting: number };
   history: { kind: "leveldb" | "memory-test"; available: boolean; reads: number; writes: number; failures: number; lastError: "storage_unavailable" | null };
   counters: { accepted: number; duplicate: number; completed: number; reclaimedSteps: number; coldRestores: number; coldStores: number; cleanupFailures: number };
 };
@@ -33,6 +35,11 @@ export function projectExecutionCapacity(value: unknown): ExecutionCapacity | un
   if ((h.kind !== "leveldb" && h.kind !== "memory-test") || typeof h.available !== "boolean"
     || !number(h.reads) || !number(h.writes) || !number(h.failures)
     || (h.lastError !== null && h.lastError !== "storage_unavailable") || value.accepting !== h.available) return undefined;
+  const rawRecovery = object(value.providerRecovery) ? value.providerRecovery : undefined;
+  const policy = projectProviderRecoveryPolicy(rawRecovery?.policy);
+  const recovery = policy && number(rawRecovery?.active) && number(rawRecovery?.waiting) && rawRecovery!.waiting <= rawRecovery!.active
+    ? { policy, active: Number(rawRecovery!.active), waiting: Number(rawRecovery!.waiting) } : undefined;
   return { version: 1, accepting: value.accepting, lifetimeStepLimit: null, ...scalar,
+    ...(recovery ? { providerRecovery: recovery } : {}),
     history: { kind: h.kind, available: h.available, reads: h.reads, writes: h.writes, failures: h.failures, lastError: h.lastError }, counters } as ExecutionCapacity;
 }

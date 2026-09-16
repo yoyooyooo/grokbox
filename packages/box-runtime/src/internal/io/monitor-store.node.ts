@@ -12,6 +12,7 @@ import { MonitorSqlite, openMonitorSqlite, privateMonitorDirectory, type SqlRow 
 import { projectControlEvent } from "./journal.node.ts";
 import { recordSourceSequence } from "./monitor-source-sequence.node.ts";
 import { indexExecutionOccurrence, retainedDiagnosis } from "./monitor-occurrence.node.ts";
+import { indexProviderRouteCondition, projectProviderRouteDiagnosis } from "./monitor-provider-route.node.ts";
 const VERSION=2;
 const error=(message:string)=>new BoxRuntimeError("invalid_usage",message);
 const number=(v:unknown):number=>{if(typeof v!=="number"||!Number.isSafeInteger(v)||v<0)throw error("monitor_store_invalid");return v;};
@@ -20,7 +21,7 @@ const scope=(v:unknown):string=>{if(!monitorScope(v))throw error("monitor_store_
 const nullableTime=(v:unknown)=>v===null?null:number(v);
 const harness=(v:unknown):"box"|"temporal"|null=>{if(v!==null&&v!=="box"&&v!=="temporal")throw error("monitor_store_invalid");return v;};
 const missing=(e:unknown)=>e!==null&&typeof e==="object"&&"code"in e&&e.code==="ENOENT";
-const RUNTIME_RULES=["execution_failure","pre_step_failure","shared_runtime_failure"] as const;
+const RUNTIME_RULES=["execution_failure","pre_step_failure","shared_runtime_failure","upstream_route_failure"] as const;
 const rule=(v:unknown)=>{if(![...MONITOR_RULES,...RUNTIME_RULES].includes(v as never))throw error("monitor_store_invalid");return v as MonitorRule|typeof RUNTIME_RULES[number];};
 const SCHEMA=`
 PRAGMA user_version=2;
@@ -84,7 +85,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   else if(row){await db.run("UPDATE incidents SET status='resolved',resolved_at=?,last_seen=?,revision=revision+1 WHERE id=?",[at,at,uuid(row.id)]);await event(db,epoch,"incident_resolved",sid,agentId,at,uuid(row.id));}
  }
  function getIncident(row:Row){if(!["open","resolved","recorded"].includes(String(row.status)))throw error("monitor_store_invalid");
-  return {id:uuid(row.id),scopeId:scope(row.scope),agentId:row.agent_id===null?null:uuid(row.agent_id),rule:rule(row.rule),status:String(row.status),category:String(row.category??"condition"),parentIncidentId:monitorUuid(row.parent_id)?row.parent_id:null,diagnosis:retainedDiagnosis(row.summary_json),
+  return {id:uuid(row.id),scopeId:scope(row.scope),agentId:row.agent_id===null?null:uuid(row.agent_id),rule:rule(row.rule),status:String(row.status),category:String(row.category??"condition"),parentIncidentId:monitorUuid(row.parent_id)?row.parent_id:null,diagnosis:row.rule==="upstream_route_failure" && typeof row.summary_json==="string" ? projectProviderRouteDiagnosis(JSON.parse(row.summary_json)) : retainedDiagnosis(row.summary_json),
    firstSeenAtMs:number(row.first_seen),lastSeenAtMs:number(row.last_seen),resolvedAtMs:nullableTime(row.resolved_at),revision:number(row.revision),acknowledged:number(row.acknowledged)===1,snoozeUntilMs:nullableTime(row.snooze_until)};
  }
  function getEvent(row:Row){const allowed=["collector_started","observation_gap","collector_stopped","scope_changed","ownership_changed","incident_opened","incident_resolved","incident_ack","incident_snooze","execution_failure_observed","source_conflict","notification_decided","notification_exported","notification_export_unknown"];
@@ -234,6 +235,9 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
      await db.run("INSERT INTO evidence(ref,digest,source_key,source_seq,at_ms,agent_id,step_id,host_generation,tray_id,failure_id,decision_id,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",[ref,hash,source,Number.isSafeInteger(value.sourceSequence)?Number(value.sourceSequence):null,at,field("agentId"),field("stepId"),field("hostGenerationId"),field("trayId"),field("failureId"),field("decisionId"),payload]);inserted++;
      if(Number.isSafeInteger(value.sourceSequence))await recordSourceSequence(db,source,Number(value.sourceSequence),at);
      await indexExecutionOccurrence(db,{rootId,epoch:input.epoch,value,ref,at,
+       opened:(id,agent)=>event(db,input.epoch,"execution_failure_observed",rootId,agent,at,id),
+       recovered:id=>event(db,input.epoch,"incident_resolved",rootId,null,at,id)});
+     await indexProviderRouteCondition(db,{rootId,value,ref,
        opened:(id,agent)=>event(db,input.epoch,"execution_failure_observed",rootId,agent,at,id),
        recovered:id=>event(db,input.epoch,"incident_resolved",rootId,null,at,id)});
     }

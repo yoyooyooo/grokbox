@@ -3,13 +3,14 @@ import { WIRE_VERSION, WireError, contextSnapshotBody } from "@grokbox/runtime-k
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
 import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseModeldRequest, parseV3Request, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
 
-describe("modeld v4 wire", () => {
-  test("round-trips health and rejects v3/v2, extra keys, malformed utf-8", () => {
+describe("modeld v5 wire", () => {
+  test("round-trips health and rejects v4/v3/v2, extra keys, malformed utf-8", () => {
     const encoded = encodeModeldFrame({ version: WIRE_VERSION, method: "health" });
     const decoded = decodeModeldFrame(encoded);
     expect(decoded && "value" in decoded ? parseModeldRequest(decoded.value) : undefined).toEqual({ method: "health" });
     expect(() => parseModeldRequest({ version: 2, method: "health" })).toThrow(WireError);
     expect(() => parseModeldRequest({ version: 3, method: "health" })).toThrow(WireError);
+    expect(() => parseModeldRequest({ version: 4, method: "health" })).toThrow(WireError);
     expect(() => parseV3Request({ version: 3, method: "health" })).toThrow(WireError);
     expect(() => parseModeldRequest({ version: WIRE_VERSION, method: "health", extra: true })).toThrow(WireError);
     const bad = Buffer.from(encoded);
@@ -29,7 +30,7 @@ describe("modeld v4 wire", () => {
     const base = {
       version: WIRE_VERSION,
       method: "run-step",
-      hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v4" },
+      hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: `v${WIRE_VERSION}` },
       serviceEpoch: { incarnationId: "svc" },
       agentId: "a",
       turnId: "t",
@@ -54,10 +55,10 @@ describe("modeld v4 wire", () => {
     expect(() => acceptModeldFrame(session, { kind: "terminal", outcome: "ok", version: 2, garbage: true })).toThrow(WireError);
   });
 
-  test("compact-request and resume-step are first-class v4 control frames", () => {
-    expect(() => parseModeldRequest({ version: 4, method: "compact-request" })).toThrow(WireError);
+  test("compact-request and resume-step are current-version control frames", () => {
+    expect(() => parseModeldRequest({ version: WIRE_VERSION, method: "compact-request" })).toThrow(WireError);
     const compact = parseV4ControlFrame({
-      version: 4,
+      version: WIRE_VERSION,
       method: "compact-request",
       agentId: "a",
       turnId: "t",
@@ -79,7 +80,7 @@ describe("modeld v4 wire", () => {
     });
     const snapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
     const resume = parseV4ControlFrame({
-      version: 4,
+      version: WIRE_VERSION,
       method: "resume-step",
       agentId: "a",
       turnId: "t",
@@ -90,9 +91,9 @@ describe("modeld v4 wire", () => {
       snapshot,
     });
     expect(resume.method).toBe("resume-step");
-    expect(() => parseV4ControlFrame({ version: 4, method: "run-step" })).toThrow(WireError);
+    expect(() => parseV4ControlFrame({ version: WIRE_VERSION, method: "run-step" })).toThrow(WireError);
     const events = acceptModeldFrame({ method: "run-step", phase: "events", sequence: 0 }, {
-      version: 4,
+      version: WIRE_VERSION,
       method: "compact-request",
       agentId: "a",
       turnId: "t",
@@ -107,7 +108,7 @@ describe("modeld v4 wire", () => {
     expect(events.session).toEqual({ method: "run-step", phase: "events", sequence: 0 });
   });
 
-  test("events-phase v4 terminal is not parsed as compact-request", () => {
+  test("events-phase terminal is not parsed as compact-request", () => {
     const start = acceptModeldFrame({ method: "run-step", phase: "start", sequence: 0 }, {
       ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: "b",
     });

@@ -4,14 +4,14 @@ import { homedir } from "node:os";
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import type { Server } from "node:net";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS } from "@grokbox/runtime-kernel/contract";
+import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS, providerRecoveryFromEnv } from "@grokbox/runtime-kernel/contract";
 import { AdmissionAuthority } from "@grokbox/runtime-kernel/ports";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
 import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { modeldStorePorts } from "../io/store.node.ts";
 import { readManagedOwnership, type OwnershipReader } from "../io/ownership-admission.node.ts";
-import { writeModeldStepOutcome } from "../io/modeld-outcome.node.ts";
+import { writeModeldStepOutcome, writeModeldRecoveryProgress } from "../io/modeld-outcome.node.ts";
 import { openExecutionHistory } from "../io/execution-history.node.ts";
 import { noteJournalObservationTimeout } from "../host/journal-health.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
@@ -103,7 +103,8 @@ export function modeldRootLayer(options: {
     Layer.merge(auth.layer),
     Layer.merge(backend),
     Layer.merge(Layer.unwrap(openExecutionHistory(options.runRoot, options.serviceEpoch).pipe(
-      Effect.map(history => inferenceMemoryLayer({ serviceEpoch: options.serviceEpoch, history })),
+      Effect.map(history => inferenceMemoryLayer({ serviceEpoch: options.serviceEpoch, history,
+        providerRecovery: providerRecoveryFromEnv(options.env ?? process.env) })),
     ))),
   );
 }
@@ -160,6 +161,7 @@ export function ensureModeld(options: ModeldRootOptions) {
         generation,
         rootId: modeldRootId(options.durableRoot, options.runRoot),
         observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
+        observeRecovery: (request, recovery) => writeModeldRecoveryProgress(options.runRoot, request, recovery),
         onObservationTimeout: () => noteJournalObservationTimeout(options.runRoot),
         counts: options.counts,
         hooks: options.hooks,
@@ -215,6 +217,7 @@ export async function startModeldProcess(options: ModeldRootOptions): Promise<St
         generation,
         rootId: modeldRootId(options.durableRoot, options.runRoot),
         observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
+        observeRecovery: (request, recovery) => writeModeldRecoveryProgress(options.runRoot, request, recovery),
         onObservationTimeout: () => noteJournalObservationTimeout(options.runRoot),
         counts: options.counts,
         hooks,

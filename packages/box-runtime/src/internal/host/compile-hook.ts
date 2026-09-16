@@ -45,6 +45,9 @@ export function installCompileHook(input: {
   profile: PatchProfile;
   argv?: readonly string[];
   allowLiveHost?: boolean;
+  /** Observation bootstrap only, after exact target/profile validation and
+   * before native constructors run. It cannot prevent native compilation. */
+  onTransforming?: () => void;
   onTransformed?: (actual: { sourceSha256: string; transformedSha256: string }) => void;
 }): { restore: () => void; applied: () => boolean; refused?: CompileTransform["refused"] } {
   if (!shouldTransformArgv(input.argv ?? process.argv)) {
@@ -69,6 +72,7 @@ export function installCompileHook(input: {
     });
     if (sameFile(filename, input.targetPath)) {
       proto._compile = original;
+      if (next.transformed) { try { input.onTransforming?.(); } catch { /* observation is not compilation authority */ } }
       const compiled = original.call(this, next.content, filename);
       applied = next.transformed;
       if (next.transformed) input.onTransformed?.({ sourceSha256: next.sourceSha256!, transformedSha256: next.transformedSha256! });

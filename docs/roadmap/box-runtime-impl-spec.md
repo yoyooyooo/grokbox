@@ -110,7 +110,7 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 
 ### S0.2 最小完整控制边界与用途
 
-复用现有 `runtime-kernel` 的 STEP program/ledger、binding、auth 和 v4 同连接，不增加第二 orchestrator、Context Store、Memory writer 或 provider loop。Host 侧的 **Managed STEP Scope** 是 T35 的生命周期边界，不强制新类、包或服务：在 provider 开始前取得真实有效 root/ctx/身份、协调本 root 的摘要入口，退出时释放并使旧能力失效。Host 保留摘要策略、root/归档/checkpoint、工具、Memory、SendToUser 的实际 writer。
+复用现有 `runtime-kernel` 的 STEP program/ledger、binding、auth 和当前 v5 同连接，不增加第二 orchestrator、Context Store、Memory writer 或 provider loop。Host 侧的 **Managed STEP Scope** 是 T35 的生命周期边界，不强制新类、包或服务：在 provider 开始前取得真实有效 root/ctx/身份、协调本 root 的摘要入口，退出时释放并使旧能力失效。Host 保留摘要策略、root/归档/checkpoint、工具、Memory、SendToUser 的实际 writer。
 
 | 用途 | 本阶段模型/owner |
 |---|---|
@@ -450,7 +450,9 @@ ledger 只保留摘要/身份/有界 outcome，不保留完整 snapshot、Prepar
 <a id="wire"></a>
 ### S4.2 Phase 1 v3 wire 与初始资源预算
 
-**Phase 1 只接受 v3**；请求包含 version，有限类型为 health、run-step、cancel-step。T32 将同一当前 wire 一次性升级至 v4，以支持当前 STEP-scoped HostCompact 能力的同连接 recovery 往返；不维护 v3/v4 并行 server。旧版本明确拒绝，无 feature negotiation 降级、旧 complete codec 或兼容 server。健康探测不读取模型凭据、不验证 activation，也不因旧协议不响应就删除其 socket。
+**当前收口为 v5（2026-09-16）**：错误帧增加纯 kernel `FailureSummary`，另有有序恢复进度控制帧；成功/工具事件仍严格校验。v4 只用于显式运维替换的有限只读身份/容量核验，不能被新 Host 用来执行 STEP。Host/modeld/profile-bound caller 成套切换；同代错误摘要必须匹配 Agent/TURN/STEP/service/Host/binding，摘要缺失或损坏仅降低诊断、不改写原失败。`provider-recovery` 是原 kernel STEP 的可选执行程序，不在 SDK/backend、monitor 或另一个 Runtime 中重试：显式许可且未发布有意义输出/工具材料的429（非额度）/502/503/504，按本 STEP 额外请求与时间预算恢复；同 snapshot/选择/凭据/ownership 复核、独立持久 attempt 声明及结算、可取消等待、一次终态放行。持久错误、流结构错误及已有输出不会授权重放；服务重启不复活旧请求。配置和观测语义见维护文档。
+
+以下为阶段谱系，不是当前同时接受多个协议的声明。**Phase 1 只接受 v3**；请求包含 version，有限类型为 health、run-step、cancel-step。T32 将同一当前 wire 一次性升级至 v4，以支持当前 STEP-scoped HostCompact 能力的同连接 recovery 往返；不维护 v3/v4 并行 server。旧版本明确拒绝，无 feature negotiation 降级、旧 complete codec 或兼容 server。健康探测不读取模型凭据、不验证 activation，也不因旧协议不响应就删除其 socket。
 
 **T40当前v4服务复用补充（2026-09-13）：** 新增显式只读`service-info`，请求只含method/version，返回serverGeneration和rootId（durableRoot+runRoot规范化路径摘要，未知为null）。普通health响应不增加字段，保持旧调用语义。ensure/start在borrow前必须匹配rootId；不匹配或旧服务不支持时拒绝，不终止原服务、不重写配置或删socket。此声明只解决连接到错误配置根的问题，不是操作系统进程身份证明、所有权租约或生产准入。别名/目录重定位和重启仍需重新查证，不宣称瞬时无竞态。
 

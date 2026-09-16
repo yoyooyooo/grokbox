@@ -7,7 +7,7 @@ import {
   EnvelopeError,
   ENCODED_PROVIDER_REQUEST_MAX_BYTES,
   StreamEvidence,
-  annotateStreamFailure,
+  annotateStreamFailure, annotateFailureSummary, failureSummaryFromObservation,
   type ContextSnapshot,
   type InferenceEvent,
 } from "@grokbox/runtime-kernel/contract";
@@ -17,7 +17,8 @@ import { encodeOpenaiPrompt, toProviderPrompt, type OpenaiPromptApi } from "./op
 import { createSdkStreamNormalizer } from "./openai-events.ts";
 import { ProviderStreamAudit, auditedProviderResponse } from "./provider-stream-audit.ts";
 import { backendFailureFromUnknown } from "./provider-error.ts";
-import { observeBackendFailure } from "./failure-observation.ts";
+import { observeBackendFailure, backendFailureObservation } from "./failure-observation.ts";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
 
 export type UnsealAuth = (lease: AuthLease) => string;
@@ -45,7 +46,7 @@ function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit): typeo
       throw new BackendFailure("envelope_too_large");
     }
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    try { return auditedProviderResponse(await fetchImpl(input, init), audit); }
+    try { audit.evidence.increment("httpCalls"); return auditedProviderResponse(await fetchImpl(input, init), audit); }
     catch (error) { throw backendFailureFromUnknown(error, "provider"); }
   };
   return Object.assign(run, { preconnect: fetchImpl.preconnect ?? run }) as typeof fetch;
@@ -94,6 +95,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
           model: record.model,
           endpoint: record.endpoint,
           api,
+          routeId: sha256Text(canonicalJson(["provider-route-v1", record.endpoint, api, record.model, record.apiKeyRef])),
           ...frozen,
         });
       },
@@ -111,6 +113,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         const ac = new AbortController(), evidence = new StreamEvidence();
         evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: 1, pipeline: "provider_v2_single_call" });
         evidence.setCount("declaredTools", payload.tools.length);
+        if (payload.routeId) evidence.providerRoute({ id: payload.routeId, api: payload.api });
         const audit = new ProviderStreamAudit(payload.api, evidence);
         const normalizer = createSdkStreamNormalizer({ declaredTools: new Set(payload.tools.map(t => t.name)), evidence });
         let iterator: AsyncIterator<unknown> | undefined;
@@ -118,9 +121,13 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         const safeFailure = (error: unknown) => {
           // provider-utils wraps body failures in APICallError. Keep the local
           // wire validator's exact first failure, not its lossy SDK wrapper.
+          audit.settleFailure();
           const detected = audit.failure() ?? error;
           if (detected && typeof detected === "object") annotateStreamFailure(detected, { stream: evidence.snapshot() });
-          return backendFailureFromUnknown(detected, evidence.snapshot().providerObservation === "body_error" ? "provider" : "sdk");
+          const failure = backendFailureFromUnknown(detected, evidence.snapshot().providerObservation === "body_error" ? "provider" : "sdk");
+          const diagnostic = backendFailureObservation(failure);
+          return annotateFailureSummary(failure, failureSummaryFromObservation({ failureCode: failure.code,
+            phase: diagnostic?.phase ?? "provider", diagnostic }));
         };
         const producer = Effect.gen(function* () {
           yield* Effect.addFinalizer(() => Effect.sync(() => {

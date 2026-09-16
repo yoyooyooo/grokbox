@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,11 +10,11 @@ import { startModeldProcess } from "../src/internal/roots/modeld.runtime.ts";
 import { probeModeldHealth, probeModeldIdentity } from "../src/internal/wire/modeld-probe.node.ts";
 
 const generation = randomUUID();
-const valid = { ok: true, method: "service-info", version: 4, serverGeneration: generation, rootId: "a".repeat(64) };
+const valid = { ok: true, method: "service-info", version: WIRE_VERSION, serverGeneration: generation, rootId: "a".repeat(64) };
 
 test("service-info is an explicit finite query, never an extension of ordinary health", () => {
-  expect(parseModeldRequest({ version: 4, method: "service-info" })).toEqual({ method: "service-info" });
-  expect(() => parseModeldRequest({ version: 4, method: "service-info", rootId: valid.rootId })).toThrow();
+  expect(parseModeldRequest({ version: WIRE_VERSION, method: "service-info" })).toEqual({ method: "service-info" });
+  expect(() => parseModeldRequest({ version: WIRE_VERSION, method: "service-info", rootId: valid.rootId })).toThrow();
   expect(acceptModeldFrame({ method: "service-info" }, valid).done).toBe(true);
   expect(acceptModeldFrame({ method: "service-info" }, { ...valid, rootId: null }).done).toBe(true);
   expect(() => acceptModeldFrame({ method: "health" }, valid)).toThrow();
@@ -40,9 +41,9 @@ for (const scenario of ["legacy", "missing-root", "extra-frame", "malformed-root
       socket.once("data", bytes => {
         const request = JSON.parse(Buffer.from(bytes).subarray(4).toString("utf8"));
         if (request.method === "health") {
-          socket.end(encodeModeldFrame({ ok: true, method: "health", version: 4, serverGeneration: generation }));
+          socket.end(encodeModeldFrame({ ok: true, method: "health", version: WIRE_VERSION, serverGeneration: generation }));
         } else if (scenario === "legacy") {
-          socket.end(encodeModeldFrame({ ok: false, version: 4, error: { code: "unknown_method" } }));
+          socket.end(encodeModeldFrame({ ok: false, version: WIRE_VERSION, error: { code: "unknown_method" } }));
         } else {
           const frame = encodeModeldFrame({ ...valid, rootId: scenario === "missing-root" ? null : scenario === "malformed-root" ? "wrong" : valid.rootId });
           socket.end(scenario === "extra-frame" ? Buffer.concat([frame, frame]) : frame);

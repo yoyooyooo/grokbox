@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { replaceModeld } from "../src/internal/roots/modeld-replace.node.ts";
-import { modeldRootId, probeModeldIdentity, probeModeldExecution } from "../src/internal/wire/modeld-probe.node.ts";
+import { modeldRootId, probeModeldIdentity, probeModeldExecution, probeModeldReplacement } from "../src/internal/wire/modeld-probe.node.ts";
 
 const node = "/usr/bin/node";
 test("packed Node replaces only an exact old socket owner and exposes disk-backed admission", async () => {
@@ -21,11 +21,13 @@ test("packed Node replaces only an exact old socket owner and exposes disk-backe
     const input = { durableRoot: durable, runRoot: run, expectedEpoch: epoch, entry: resolve("dist/index.js"),
       noManagedBotsRunning: true, confirmed: true, env: { ...process.env, HOME: root, GROKBOX_ALLOW_LIVE_HOST: "", GROKBOX_PATCH_PROFILE: "", NODE_OPTIONS: "" } };
     await expect(replaceModeld({ ...input, expectedEpoch: randomUUID() })).rejects.toThrow("identity");
-    expect((await probeModeldIdentity(run, 1000))?.generation).toBe(epoch);
+    expect(await probeModeldIdentity(run, 1000)).toBeNull(); // v4 cannot qualify v5 execution.
+    expect(await probeModeldReplacement(run, 1000)).toMatchObject({ generation: epoch, wireVersion: 4 });
     await expect(replaceModeld({ ...input, confirmed: false })).rejects.toThrow("confirmation");
     const result = await replaceModeld(input);
     replacementPid = result.pid;
     expect(result.replaced).toBe(true);
+    expect(result.previousWireVersion).toBe(4);
     expect(result.serviceEpoch).not.toBe(epoch);
     expect(result.execution).toMatchObject({ accepting: true, lifetimeStepLimit: null, history: { kind: "leveldb" } });
     expect(result.oldRequestsReplayed).toBe(false);

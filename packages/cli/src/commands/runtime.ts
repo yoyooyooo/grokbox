@@ -369,8 +369,9 @@ export async function runRuntimeModeldReplace(deps: CliDeps, raw: { confirm?: bo
 export async function runRuntimeModeldStatus(deps: CliDeps): Promise<void> {
   const runtime = store(deps);
   const observed = await observeModeldService(runtime.root, runtimeRunRoot(deps));
-  writeSuccess(deps.stdout, { ...observed, liveness: observed.ready === true ? "reachable" : observed.ready === false ? "unavailable" : "unknown",
-    admission: observed.execution ? observed.execution.accepting ? "ready" : "blocked" : "not_observed",
+  writeSuccess(deps.stdout, { ...observed, liveness: observed.serviceEpoch !== null ? "reachable" : observed.ready === false ? "unavailable" : "unknown",
+    admission: observed.protocolCompatible === false ? "protocol_mismatch" : observed.ready !== true ? "not_observed"
+      : observed.execution ? observed.execution.accepting ? "ready" : "blocked" : "not_observed",
     limits: "Read-only snapshot. Readiness is not a promise about provider availability, physical storage, or future admission." });
 }
 

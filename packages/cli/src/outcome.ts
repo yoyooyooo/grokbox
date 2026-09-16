@@ -1,7 +1,7 @@
 import { catalogAgentMessage } from "@grokbox/box-runtime/runtime";
-import { classifyAlert, selectExecutionFailure, specializeExecutionFailure as specializeRuntimeFailure, traceAlerts } from "@grokbox/runtime-kernel/alerts";
+import { classifyAlert, diagnoseExecution, selectExecutionFailure, specializeExecutionFailure as specializeRuntimeFailure, traceAlerts } from "@grokbox/runtime-kernel/alerts";
 import { isRecord } from "./util.ts";
-import { projectStreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { projectStreamDiagnostic, projectProviderRecoveryState, failureSummaryFromObservation } from "@grokbox/runtime-kernel/contract";
 import type { TranscriptRouteObservation } from "./transcript-route.ts";
 
 /** CLI `history outcome` states. `accepted` is not a member: echo/bind is `recorded`. */
@@ -101,6 +101,8 @@ function projectRuntimeFailure(failure: Record<string, unknown>, runtime: Record
   const purposeRow = runtime.find(e => sameStep(failure, e) && (e.purpose === "main" || e.purpose === "memory-extraction" || e.purpose === "episode" || e.auxPurpose === "memory-extraction" || e.auxPurpose === "episode"));
   const purpose = purposeRow?.purpose ?? purposeRow?.auxPurpose ?? "not_observed";
   const cleanup = isRecord(modeld?.cleanup) ? modeld.cleanup : undefined;
+  const diagnosis = diagnoseExecution(runtime, { agentId: String(failure.agentId ?? ""), stepId: String(failure.stepId ?? ""),
+    ...(typeof failure.hostGenerationId === "string" ? { hostGenerationId: failure.hostGenerationId } : {}) });
   return {
     source: failure.name, at: failure.at, stepId: failure.stepId ?? null, turnId: failure.turnId ?? null,
     code: visibleFailureCode(failure.errorCode ?? failure.failureCode),
@@ -110,6 +112,8 @@ function projectRuntimeFailure(failure: Record<string, unknown>, runtime: Record
     ...(reason && message ? { reason } : {}),
     purpose,
     ...(diagnostic ? { diagnostic } : {}),
+    ...("failureSummary" in diagnosis && diagnosis.failureSummary ? { failureSummary: diagnosis.failureSummary,
+      category: diagnosis.category, presentation: diagnosis.presentation } : {}),
     ...(modeld ? { backend: { outcome: enumLabel(modeld.outcome), phase: enumLabel(modeld.phase), failureCode: enumLabel(modeld.failureCode),
       eventCount: number(modeld.eventCount), relation: "same_step_not_cross_process_causal_order" } } : {}),
     ...(cleanup ? { cleanup: { ...(typeof cleanup.clientDisconnected === "boolean" ? { clientDisconnected: cleanup.clientDisconnected } : {}),
@@ -185,6 +189,10 @@ export function projectSendOutcome(input: OutcomeInput) {
   const candidates = input.stepId ? recentRuntime.filter(e => e.stepId === input.stepId) : recentRuntime;
   const rawFailure = selectExecutionFailure([...candidates].reverse());
   const failure = rawFailure ? specializeRuntimeFailure(rawFailure, recentRuntime) : undefined;
+  const recoveryState = (e: Record<string, unknown>) => projectProviderRecoveryState(e.recovery)
+    ?? projectProviderRecoveryState(failureSummaryFromObservation(e)?.recovery);
+  const recoveryRecord = candidates.find(e => e.name === "model_step_terminal" && recoveryState(e))
+    ?? candidates.find(e => e.name === "model_recovery_progress" && recoveryState(e));
   const route = input.transcriptRoute;
   const harnessChanged = route !== undefined && (route.initial !== route.before || route.before !== route.after);
   const harnessUnavailable = route !== undefined && [route.initial, route.before, route.after].includes("unknown");
@@ -206,6 +214,8 @@ export function projectSendOutcome(input: OutcomeInput) {
     relatedStepIds: invalid ? [] : [...correlatedIds],
     expectedMatched: !invalid && expectedMatched,
     runtimeFailure: !invalid && failure ? projectRuntimeFailure(failure, recentRuntime) : null,
+    runtimeRecovery: !invalid && recoveryRecord ? { stepId: recoveryRecord.stepId, observedAt: recoveryRecord.at,
+      state: recoveryState(recoveryRecord), currentLiveness: "not_proven", replayAuthorized: false } : null,
     presentation: invalid ? null : traceAlerts(input.runtimeEvents ?? [], { agentId: input.agentId,
       ...(input.stepId ? { stepId: input.stepId } : clientNonce ? { clientNonce } : {}) },
       { complete: !input.runtimeGap && input.runtimeEvents !== undefined, source: "runtime_journal" }),

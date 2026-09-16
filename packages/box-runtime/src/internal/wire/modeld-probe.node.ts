@@ -21,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Finite read-only probe. Does not create, unlink or repair a socket. */
-async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number): Promise<Record<string, unknown> | null> {
+async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number, version: 4 | typeof WIRE_VERSION = WIRE_VERSION): Promise<Record<string, unknown> | null> {
   return await new Promise((resolve) => {
     const socket = createConnection({ path: modeldSocketPath(runRoot) });
     let buf: Buffer = Buffer.alloc(0);
@@ -35,7 +35,7 @@ async function probe(runRoot: string, method: "health" | "service-info" | "execu
       resolve(value);
     };
     socket.on("connect", () => {
-      try { socket.write(encodeModeldFrame({ method, version: WIRE_VERSION })); }
+      try { socket.write(encodeModeldFrame({ method, version })); }
       catch { finish(null); }
     });
     socket.on("data", (chunk: Buffer) => {
@@ -45,8 +45,11 @@ async function probe(runRoot: string, method: "health" | "service-info" | "execu
       if (decoded === null) return;
       if ("error" in decoded || decoded.rest.length !== 0) { finish(null); return; }
       try {
-        acceptModeldFrame({ method }, decoded.value);
-        finish(isRecord(decoded.value) && decoded.value.ok === true ? decoded.value : null);
+        if (!isRecord(decoded.value) || decoded.value.version !== version) { finish(null); return; }
+        // Only these finite read-only methods share an unchanged v4/v5 shape.
+        // This normalization is NOT available to run-step or Host execution.
+        acceptModeldFrame({ method }, { ...decoded.value, version: WIRE_VERSION });
+        finish(decoded.value.ok === true ? decoded.value : null);
       } catch { finish(null); }
     });
     socket.on("error", () => finish(null));
@@ -72,6 +75,20 @@ export async function probeModeldExecution(runRoot: string, timeoutMs = 500): Pr
   return response && typeof response.serverGeneration === "string" && execution ? { generation: response.serverGeneration, execution } : null;
 }
 
+/** Operator-only transition probe. A verified legacy identity is enough to
+ * inspect/replace a service, never enough to call it with a managed STEP. */
+export async function probeModeldReplacement(runRoot: string, timeoutMs = 500) {
+  for (const version of [WIRE_VERSION, 4] as const) {
+    const identity = await probe(runRoot, "service-info", timeoutMs, version);
+    if (!identity || typeof identity.rootId !== "string" || typeof identity.serverGeneration !== "string") continue;
+    const activity = await probe(runRoot, "execution-status", timeoutMs, version);
+    const execution = projectExecutionCapacity(activity?.execution);
+    if (!execution || activity?.serverGeneration !== identity.serverGeneration) return null;
+    return { rootId: identity.rootId, generation: identity.serverGeneration, wireVersion: version, execution };
+  }
+  return null;
+}
+
 export type ModeldServiceObservation = {
   ready: boolean | null;
   scope: ModeldServiceScope;
@@ -79,6 +96,9 @@ export type ModeldServiceObservation = {
   observedAt: string;
   execution?: ExecutionCapacity;
   executionGap?: "not_instrumented" | "generation_changed";
+  wireVersion?: number;
+  expectedWireVersion?: number;
+  protocolCompatible?: boolean;
 };
 
 /** Readiness for this installation, not for an arbitrary responding socket.
@@ -93,6 +113,12 @@ export async function observeModeldService(durableRoot: string, runRoot: string)
     const valid = status?.generation === identity.generation;
     return { ready: matched, scope: matched ? "matched" : "mismatch", serviceEpoch: identity.generation, observedAt,
       ...(status && valid ? { execution: status.execution } : { executionGap: status ? "generation_changed" as const : "not_instrumented" as const }) };
+  }
+  const legacy = await probeModeldReplacement(runRoot, 200);
+  if (legacy && legacy.wireVersion !== WIRE_VERSION) {
+    const matched = legacy.rootId === modeldRootId(durableRoot, runRoot);
+    return { ready: false, scope: matched ? "matched" : "mismatch", serviceEpoch: legacy.generation, observedAt,
+      execution: legacy.execution, wireVersion: legacy.wireVersion, expectedWireVersion: WIRE_VERSION, protocolCompatible: false };
   }
   let absent = false;
   try { lstatSync(modeldSocketPath(runRoot)); }

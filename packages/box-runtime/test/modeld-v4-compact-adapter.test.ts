@@ -69,7 +69,7 @@ function stepBody(generation: string) {
   return {
     version: WIRE_VERSION,
     method: "run-step",
-    hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v4" },
+    hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: `v${WIRE_VERSION}` },
     serviceEpoch: { incarnationId: generation },
     agentId: "a",
     turnId: "t-v4",
@@ -159,7 +159,7 @@ describe("same-connection v4 HostCompact adapter", () => {
       expect(control.method).toBe("compact-request");
       if (control.method !== "compact-request") throw new Error("compact");
       return {
-        version: 4,
+        version: WIRE_VERSION,
         method: "resume-step",
         agentId: control.agentId,
         turnId: control.turnId,
@@ -200,7 +200,7 @@ describe("same-connection v4 HostCompact adapter", () => {
     const frames = await drive(path, stepBody(generation), (control) => {
       if (control.method !== "compact-request") throw new Error("compact");
       return {
-        version: 4,
+        version: WIRE_VERSION,
         method: "resume-step",
         agentId: control.agentId,
         turnId: control.turnId,
@@ -322,7 +322,7 @@ describe("same-connection v4 HostCompact adapter", () => {
         if (control.method !== "compact-request") throw new Error("compact");
         expect(control.deadlineMs).toBeGreaterThan(5_000);
         expect(control.deadlineMs).toBeLessThanOrEqual(REQUEST_WALL_DEADLINE_MS - COMPACT_RESUME_RESERVE_MS);
-        return { ...control, version: 4, method: "resume-step", deadlineMs: undefined, snapshot: snapshot("compacted") };
+        return { ...control, version: WIRE_VERSION, method: "resume-step", deadlineMs: undefined, snapshot: snapshot("compacted") };
       }, 5_100);
       expect(counts.network).toBe(2);
       expect(frames.filter((f) => f && typeof f === "object" && (f as { kind?: string }).kind === "terminal")).toHaveLength(1);

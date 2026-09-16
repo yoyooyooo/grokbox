@@ -1,4 +1,5 @@
-export const WIRE_VERSION = 4 as const;
+/** v5 adds bounded structured failure facts. v4 peers must be upgraded together. */
+export const WIRE_VERSION = 5 as const;
 
 export type WireMethod = "health" | "run-step" | "cancel-step" | "compact-request" | "resume-step";
 

@@ -8,6 +8,8 @@ export type PreparedPayload = {
   model: string;
   endpoint: string;
   api: OpenaiPromptApi;
+  /** Hash of the route namespace, never the credential value or raw endpoint. */
+  routeId?: string;
   tools: ToolDefinition[];
   options: GenerationOptions;
   settings: ReturnType<typeof generationSettings>;

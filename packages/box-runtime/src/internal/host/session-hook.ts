@@ -1,6 +1,6 @@
 import type { HostBinding } from "./host-binding.ts";
 import { HOST_RUN_OBSERVATION_SYMBOL, type createRunObserver } from "./run-observation.ts";
-import type { StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import type { StreamDiagnostic, FailureSummary } from "@grokbox/runtime-kernel/contract";
 import type { CompileReceipt } from "./compile-receipt.ts";
 import { lookupHostRootContract } from "./root-contract.ts";
 import { captureHostManagedSelection } from "./selection.node.ts";
@@ -165,7 +165,7 @@ export function bindHostSessionHook(input: {
     if (captured.kind === "official") return args.originalSession;
     const modelId = captured.modelId;
     const record = captured.record;
-    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string, diagnostic?: StreamDiagnostic, failureId?: string) => {
+    const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string, diagnostic?: StreamDiagnostic, failureId?: string, failureSummary?: FailureSummary) => {
       void appendHostStreamRejected(input.runRoot, {
         name: "host_stream_rejected",
         schemaVersion: 2,
@@ -179,6 +179,7 @@ export function bindHostSessionHook(input: {
         ...(stepId ? { stepId } : {}),
         ...(diagnostic ? { diagnostic } : {}),
         ...(failureId ? { failureId } : {}),
+        ...(failureSummary ? { failureSummary } : {}),
       });
     };
     const writeStage = (stage: string, result: string, extra: Record<string, string> = {}) => {
@@ -266,7 +267,7 @@ export function bindHostSessionHook(input: {
       onTerminal: (terminal) => {
         if (terminal.rejected && terminal.errorCode) {
           const mapped = mapTerminalReject(terminal.errorCode, terminal.stage);
-          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId, terminal.diagnostic, terminal.failureId);
+          writeReject(mapped.stage, mapped.reason, mapped.errorCode, undefined, terminal.invocationId, terminal.diagnostic, terminal.failureId, terminal.failureSummary);
         }
         const stepId = terminal.invocationId;
         if (!stepId) return;
@@ -283,6 +284,7 @@ export function bindHostSessionHook(input: {
           hostGenerationId: input.binding!.generationId,
           ...(clientNonce ? { clientNonce } : {}),
           ...(terminal.diagnostic ? { diagnostic: terminal.diagnostic } : {}),
+          ...(terminal.failureSummary ? { failureSummary: terminal.failureSummary } : {}),
           purpose: terminal.purpose ?? "main",
           ...(terminal.parentStepId ? { parentStepId: terminal.parentStepId } : {}),
           agentId,

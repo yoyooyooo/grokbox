@@ -1,6 +1,7 @@
 import { chmod, mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { journalRoleAllows, projectSafeReason } from "@grokbox/runtime-kernel/status";
+import { projectModelRecoveryProgress } from "@grokbox/runtime-kernel/contract";
 import {
   appendHostStreamRejected,
   appendNdjsonLine,
@@ -47,6 +48,7 @@ export const EVENT_NAMES = [
   "host_normalized_terminal",
   // TODO(owner): names follow the MINI-1918 v2 review proposal; not a dated owner adjudication.
   "model_step_terminal",
+  "model_recovery_progress",
   "host_stream_rejected",
   "host_seam_stage",
   "host_run_observation",
@@ -85,6 +87,7 @@ const SEAM_EVENT_NAMES = new Set([
   "turn_seam_terminal",
   "host_normalized_terminal",
   "model_step_terminal",
+  "model_recovery_progress",
   "host_stream_rejected",
   "host_seam_stage",
   "host_run_observation",
@@ -429,6 +432,7 @@ export function projectControlEvent(input: unknown): RuntimeEvent | TurnSeamTerm
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as RuntimeEvent | null;
+  if (input.name === "model_recovery_progress") return projectModelRecoveryProgress(input) as RuntimeEvent | null;
   if (input.name === "host_run_observation") return projectRunObservation(input) as RuntimeEvent | null;
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input) as RuntimeEvent | null;
   if (input.name === "host_seam_stage") return projectHostSeamStage(input) as RuntimeEvent | null;

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
 import { mkdtemp, rm } from "node:fs/promises";
 import { requestModeld } from "../src/internal/host/modeld-client.node.ts";
 import { modeldRootId } from "../src/internal/wire/modeld-probe.node.ts";
@@ -20,10 +21,10 @@ test("a healthy socket for another durable root is not a borrowable modeld", asy
     catch (caught) { error = caught; }
     expect(error).toMatchObject({ message: "modeld_root_mismatch" });
     expect(await probeModeldHealth(runRoot, 500)).toBe(true);
-    const health = await requestModeld(runRoot, { method: "health", version: 4 });
+    const health = await requestModeld(runRoot, { method: "health", version: WIRE_VERSION });
     expect(Object.keys(health[0] as object).sort()).toEqual(["method", "ok", "serverGeneration", "version"]);
-    const info = await requestModeld(runRoot, { method: "service-info", version: 4 });
-    expect(info).toEqual([{ ok: true, method: "service-info", version: 4,
+    const info = await requestModeld(runRoot, { method: "service-info", version: WIRE_VERSION });
+    expect(info).toEqual([{ ok: true, method: "service-info", version: WIRE_VERSION,
       serverGeneration: owner.ensure.kind === "owned" ? owner.ensure.generation : "unexpected",
       rootId: modeldRootId(join(root, "first"), runRoot) }]);
     expect(JSON.stringify(info)).not.toContain(root);

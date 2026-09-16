@@ -1,4 +1,4 @@
-import { REQUEST_WALL_DEADLINE_MS, type ContextSnapshot, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
+import { WIRE_VERSION, REQUEST_WALL_DEADLINE_MS, type ContextSnapshot, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
 import { HOST_COMPACT_SYMBOL } from "./profile.ts";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { HOST_ROOT_CONTRACTS } from "./root-contract.ts";
@@ -235,7 +235,7 @@ export type CompactControlIdentity = {
 };
 
 export type ResumeStepFrame = CompactControlIdentity & {
-  version: 4;
+  version: typeof WIRE_VERSION;
   method: "resume-step";
   snapshot: ContextSnapshot;
 };
@@ -273,7 +273,7 @@ export async function resumeStepFrameForCompactRequest(
   });
   if (result.kind !== "snapshot") return undefined;
   return {
-    version: 4,
+    version: WIRE_VERSION,
     method: "resume-step",
     agentId: control.agentId,
     turnId: control.turnId,

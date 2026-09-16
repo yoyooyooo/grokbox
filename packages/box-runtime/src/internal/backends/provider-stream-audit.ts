@@ -1,4 +1,4 @@
-import { BackendFailure, CANONICAL_OUTPUT_MAX_BYTES, ChunkedText, StreamEvidence, annotateStreamFailure, invalidStream, type StreamBudgetDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, CANONICAL_OUTPUT_MAX_BYTES, ChunkedText, StreamEvidence, annotateStreamFailure, invalidStream, finishAuditState, parseRetryAfter, projectProviderHttp, PROVIDER_REQUEST_ID_HEADERS, type ToolTerminalAudit, type StreamBudgetDiagnostic } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
 import { interruptedProviderFinish } from "./failure-observation.ts";
 import type { OpenaiPromptApi } from "./openai-prompt-adapter.ts";
@@ -10,7 +10,7 @@ export const PROVIDER_WIRE_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_TOOLS = 128;
 const record = (x: unknown): Record<string, unknown> | undefined => x !== null && typeof x === "object" && !Array.isArray(x) ? x as Record<string, unknown> : undefined;
 const bytes = (s: string) => new TextEncoder().encode(s).length;
-type Tool = { fragments: ChunkedText; final?: string; id?: string; name?: string };
+type Tool = { fragments: ChunkedText; final?: string; id?: string; name?: string; invalid?: boolean; mismatch?: boolean };
 export class ProviderStreamAudit {
   private readonly decoder = new TextDecoder("utf-8", { fatal: true });
   private readonly lineParts = new ChunkedText();
@@ -25,11 +25,53 @@ export class ProviderStreamAudit {
   private ended = false;
   private failed = false;
   private violation?: BackendFailure;
+  private instrumentedReader = false;
+  private disposed = false;
+  private lastAuditBoundary?: ToolTerminalAudit["boundary"];
   failure(): BackendFailure | undefined { return this.violation; }
+  settleFailure(): void {
+    if (!this.ended && !this.failed) { this.failed = true; this.settleAudit("rejected"); }
+  }
   private readonly tools = new Map<string, Tool>();
   constructor(private readonly api: OpenaiPromptApi, readonly evidence: StreamEvidence) { evidence.providerStarted(); }
-  headers(status: number): void { this.evidence.httpStatus(status); this.evidence.first("headersMs"); this.evidence.provider("headers"); }
-  instrumented(): void { this.evidence.instrumented(); }
+  headers(status: number, headers?: Headers): void {
+    this.evidence.httpStatus(status); this.evidence.first("headersMs"); this.evidence.provider("headers");
+    let requestId: { header: typeof PROVIDER_REQUEST_ID_HEADERS[number]; value: string } | undefined;
+    for (const header of PROVIDER_REQUEST_ID_HEADERS) {
+      const value = headers?.get(header);
+      if (value && /^[A-Za-z0-9_.:-]{1,128}$/.test(value)) { requestId = { header, value }; break; }
+    }
+    const http = projectProviderHttp({ status, ...(requestId ? { requestId } : {}),
+      ...(headers ? { retryAfter: parseRetryAfter(headers.get("retry-after"), Date.now()) } : {}) });
+    if (http) this.evidence.providerHttp(http);
+  }
+  instrumented(): void { this.instrumentedReader = true; this.evidence.instrumented(); }
+  /** Settle independently from the first failure. Never repair parameters or
+   * manufacture a successful terminal, and never throw over the original error. */
+  private settleAudit(boundary: ToolTerminalAudit["boundary"]): void {
+    if (!this.instrumentedReader || this.disposed || this.lastAuditBoundary === boundary
+      || (this.lastAuditBoundary !== undefined && this.lastAuditBoundary !== "done")) return;
+    this.lastAuditBoundary = boundary;
+    const result: ToolTerminalAudit = { version: 1, boundary,
+      terminal: finishAuditState(this.evidence.snapshot().finishAudit), tools: this.tools.size,
+      parseable: 0, invalidJson: 0, missingArguments: 0, mismatched: 0,
+      residualSse: this.lineParts.chars > 0 || this.dataLines > 0 };
+    for (const tool of this.tools.values()) {
+      const raw = tool.fragments.text(), final = tool.final;
+      // A rejected done/item value might never become the retained final value.
+      // Preserve that independent verdict without keeping the rejected payload.
+      if (tool.invalid) { result.invalidJson++; continue; }
+      if (!raw && final === undefined) { result.missingArguments++; continue; }
+      try {
+        const parsed = JSON.parse(final ?? raw);
+        if (tool.mismatch || (raw && final !== undefined && canonicalJson(JSON.parse(raw)) !== canonicalJson(parsed))) result.mismatched++;
+        result.parseable++;
+      } catch { result.invalidJson++; }
+    }
+    this.evidence.terminalAudit(result);
+    this.evidence.toolValidation(result.invalidJson || result.mismatched ? "rejected"
+      : result.missingArguments ? "incomplete" : result.tools ? "validated" : "not_applicable");
+  }
   private site() { return this.api === "chat" ? "provider_chat_wire" as const : "provider_responses_wire" as const; }
   private limit(metric: StreamBudgetDiagnostic["metric"], limit: number, measured: number): never {
     throw annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: this.site(), budget: { layer: "provider", metric, limit, measured } });
@@ -55,18 +97,22 @@ export class ProviderStreamAudit {
     if (this.argumentBytes > CANONICAL_OUTPUT_MAX_BYTES) this.limit("output_bytes", CANONICAL_OUTPUT_MAX_BYTES, this.argumentBytes);
     t.fragments.append(delta);
   }
+  private rejectArguments(t: Tool, cause: "tool_arguments_invalid" | "tool_arguments_mismatch"): never {
+    if (cause === "tool_arguments_invalid") t.invalid = true; else t.mismatch = true;
+    throw invalidStream(cause, this.site());
+  }
   private validate(t: Tool, final?: unknown): void {
-    if (final !== undefined && typeof final !== "string") throw invalidStream("tool_arguments_invalid", this.site());
+    if (final !== undefined && typeof final !== "string") this.rejectArguments(t, "tool_arguments_invalid");
     const raw = t.fragments.text(), supplied = final as string | undefined ?? t.final;
     const full = supplied ?? raw;
     if (bytes(full) > CANONICAL_OUTPUT_MAX_BYTES) this.limit("output_bytes", CANONICAL_OUTPUT_MAX_BYTES, bytes(full));
     let parsed: unknown;
-    try { parsed = JSON.parse(full); } catch { throw invalidStream("tool_arguments_invalid", this.site()); }
-    if (t.final !== undefined && supplied !== undefined && canonicalJson(JSON.parse(t.final)) !== canonicalJson(parsed)) throw invalidStream("tool_arguments_mismatch", this.site());
+    try { parsed = JSON.parse(full); } catch { this.rejectArguments(t, "tool_arguments_invalid"); }
+    if (t.final !== undefined && supplied !== undefined && canonicalJson(JSON.parse(t.final)) !== canonicalJson(parsed)) this.rejectArguments(t, "tool_arguments_mismatch");
     if (raw && supplied !== undefined) {
       let accumulated: unknown;
-      try { accumulated = JSON.parse(raw); } catch { throw invalidStream("tool_arguments_invalid", this.site()); }
-      if (canonicalJson(accumulated) !== canonicalJson(parsed)) throw invalidStream("tool_arguments_mismatch", this.site());
+      try { accumulated = JSON.parse(raw); } catch { this.rejectArguments(t, "tool_arguments_invalid"); }
+      if (canonicalJson(accumulated) !== canonicalJson(parsed)) this.rejectArguments(t, "tool_arguments_mismatch");
     }
     if (supplied !== undefined) {
       // Account whole-input-only Responses records too, rather than allowing
@@ -78,6 +124,7 @@ export class ProviderStreamAudit {
   }
   private finish(reason: unknown): void {
     this.evidence.providerFinish(reason);
+    if (this.evidence.snapshot().finishAudit?.conflict) throw invalidStream("conflicting_finish_reason", this.site());
     if (reason === "insufficient_system_resource" || reason === "aborted") throw interruptedProviderFinish(reason);
     if (reason === "stop" || reason === "tool_calls" || reason === "function_call" || reason === "completed") {
       for (const t of this.tools.values()) this.validate(t);
@@ -86,7 +133,7 @@ export class ProviderStreamAudit {
   }
   private frame(text: string): void {
     if (this.done) throw invalidStream("event_after_finish", this.site());
-    if (text === "[DONE]") { this.done = true; this.evidence.providerDone(); this.evidence.note("provider", "done"); return; }
+    if (text === "[DONE]") { this.done = true; this.evidence.providerDone(); this.evidence.note("provider", "done"); this.settleAudit("done"); return; }
     let v: Record<string, unknown> | undefined;
     try { v = record(JSON.parse(text)); } catch { throw invalidStream("invalid_event_shape", this.site()); }
     if (!v) throw invalidStream("invalid_event_shape", this.site());
@@ -102,7 +149,10 @@ export class ProviderStreamAudit {
         const key = String(call.index), t = this.tool(key);
         this.identity(t, call.id, fn?.name); this.append(key, fn?.arguments);
       }
-      if (c?.finish_reason !== undefined && c.finish_reason !== null) this.finish(c.finish_reason);
+      if (c) {
+        this.evidence.finishField(c.finish_reason, Object.hasOwn(c, "finish_reason"), (this.evidence.snapshot().counts.providerEvents ?? 1) - 1);
+        if (c.finish_reason !== undefined && c.finish_reason !== null) this.finish(c.finish_reason);
+      }
       return;
     }
     const itemId = typeof v.item_id === "string" ? v.item_id : undefined;
@@ -113,8 +163,11 @@ export class ProviderStreamAudit {
       const t = this.tool(item.id); this.identity(t, item.call_id, item.name);
       if (v.type === "response.output_item.done") this.validate(t, item.arguments);
     }
-    if (v.type === "response.completed") this.finish("completed");
-    if (v.type === "response.failed" || v.type === "response.incomplete") this.evidence.providerFinish(v.type === "response.failed" ? "failed" : "incomplete");
+    if (v.type === "response.completed" || v.type === "response.failed" || v.type === "response.incomplete") {
+      const reason = v.type.slice("response.".length);
+      this.evidence.finishField(reason, true, (this.evidence.snapshot().counts.providerEvents ?? 1) - 1);
+      if (reason === "completed") this.finish(reason); else this.evidence.providerFinish(reason);
+    }
   }
   private line(line: string): void {
     if (!line) {
@@ -162,22 +215,22 @@ export class ProviderStreamAudit {
     try {
       let text: string;
       try { text = this.decoder.decode(); } catch { throw invalidStream("invalid_event_shape", this.site()); }
-      this.consume(text); this.ended = true; this.evidence.provider("eof"); this.evidence.note("provider", "eof");
+      this.consume(text); this.ended = true; this.evidence.provider("eof"); this.evidence.note("provider", "eof"); this.settleAudit("eof");
     } catch (error) { this.rejected(error); throw error; }
   }
-  bodyError(): void { this.failed = true; this.evidence.provider("body_error"); this.evidence.note("provider", "body_error"); }
-  cancelled(): void { if (!this.ended && !this.failed && !this.done) this.evidence.provider("cancelled"); }
+  bodyError(): void { this.failed = true; this.evidence.provider("body_error"); this.evidence.note("provider", "body_error"); this.settleAudit("body_error"); }
+  cancelled(): void { if (!this.ended && !this.failed) { if (!this.done) this.evidence.provider("cancelled"); this.settleAudit("cancelled"); } }
   private rejected(error: unknown): void {
     this.failed = true;
     if (error instanceof BackendFailure && this.violation === undefined) this.violation = error;
-    this.evidence.toolValidation("rejected");
+    this.settleAudit("rejected");
     if (error && typeof error === "object") annotateStreamFailure(error, { stream: this.evidence.snapshot() });
   }
-  dispose(): void { this.tools.clear(); this.lineParts.clear(); this.lineBytes = 0; this.data.clear(); this.dataLines = 0; }
+  dispose(): void { this.disposed = true; this.tools.clear(); this.lineParts.clear(); this.lineBytes = 0; this.data.clear(); this.dataLines = 0; }
 }
 /** Demand-driven, no tee/background drain; cancellation belongs to this response. */
 export function auditedProviderResponse(response: Response, audit: ProviderStreamAudit): Response {
-  audit.headers(response.status);
+  audit.headers(response.status, response.headers);
   if (!response.ok || !response.body || !response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) return response;
   audit.instrumented();
   const reader = response.body.getReader(); let closed = false;

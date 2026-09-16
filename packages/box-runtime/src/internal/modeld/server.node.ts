@@ -1,4 +1,5 @@
 import type { Socket } from "node:net";
+import { randomUUID } from "node:crypto";
 import { Cause, Deferred, Effect, Layer, Queue, Stream } from "effect";
 import {
   OWNERSHIP_ADMISSION_WAIT_MS,
@@ -10,19 +11,20 @@ import {
   REQUEST_WALL_DEADLINE_MS,
   SERVER_ACTIVE_CLIENTS_MAX,
   WIRE_VERSION,
+  projectFailureSummary, failureSummaryFromObservation, projectProviderRecoveryState, type ProviderRecoveryState, type FailureSummary,
   WireError,
   type InferenceEvent,
   type RunStepRequest,
 } from "@grokbox/runtime-kernel/contract";
 import { cancelStep, runStep, inferenceCapacity } from "@grokbox/runtime-kernel/inference";
-import { HostCompact, ModelBackend } from "@grokbox/runtime-kernel/ports";
+import { HostCompact, ModelBackend, RuntimeEvents } from "@grokbox/runtime-kernel/ports";
 import { withOverflowCanary } from "../backends/overflow-canary.ts";
 import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseModeldRequest } from "../wire/modeld-wire.ts";
 import { acquireUnixListener, trackSocket, type ListenHooks, type ResourceCounts } from "./unix-listen.node.ts";
 import { modeldFailureOutcome, withTransportOutcome, type ModeldStepOutcome } from "./step-outcome.ts";
 
-function errorFrame(code: string): unknown {
-  return { ok: false, version: WIRE_VERSION, error: { code } };
+function errorFrame(code: string, failure?: FailureSummary): unknown {
+  return { ok: false, version: WIRE_VERSION, error: { code, ...(failure ? { failure } : {}) } };
 }
 
 function mapFail(error: unknown): string {
@@ -195,6 +197,18 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     const observeStep = options.observeStep;
     let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0 };
     let backendAttempts = 0;
+    let readRecovery: (() => ProviderRecoveryState | undefined) | undefined;
+    let recoverySequence = 0;
+    const withFailureSummary = (value: ModeldStepOutcome): ModeldStepOutcome => {
+      if (!value.failureCode) return value;
+      const base = value.failureSummary ?? failureSummaryFromObservation(value);
+      const summary = base && projectFailureSummary({ ...base, failureId: base.failureId ?? randomUUID(),
+        identity: { agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
+          hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId,
+          ...(value.bindingId ? { bindingId: value.bindingId } : {}) },
+        progress: { canonicalEvents: value.eventCount, backendAttempts }, recovery: readRecovery?.() ?? value.recovery });
+      return { ...value, ...(summary ? { failureSummary: summary } : {}) };
+    };
     yield* Effect.addFinalizer((exit) => {
       if (!observeStep) return Effect.void;
       if (exit._tag === "Failure") {
@@ -205,7 +219,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           ? { ...observation, outcome: interrupted ? "cancelled" as const : "error" as const, phase: "internal" as const, failureCode: exitFailure }
           : observation), cleanup: { ...observation.cleanup, exitFailure } };
       }
-      observation = { ...observation, at: observation.at ?? new Date().toISOString(), durationMs: Math.max(0, Math.floor(performance.now() - startedAt)), backendAttempts };
+      observation = withFailureSummary({ ...observation, at: observation.at ?? new Date().toISOString(), durationMs: Math.max(0, Math.floor(performance.now() - startedAt)), backendAttempts,
+        ...(readRecovery?.() ? { recovery: readRecovery!() } : {}) });
       return Effect.gen(function* () {
         const execution = yield* inferenceCapacity;
         yield* observeStep(request, { ...observation, execution });
@@ -242,8 +257,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       ),
     );
     if (admitted._tag === "Failure") {
-      observation = modeldFailureOutcome(admitted.failure, "admission", 0);
-      yield* emit(socket, errorFrame(mapFail(admitted.failure)));
+      observation = withFailureSummary(modeldFailureOutcome(admitted.failure, "admission", 0));
+      yield* emit(socket, errorFrame(mapFail(admitted.failure), observation.failureSummary));
       return;
     }
     if (yield* Deferred.isDone(disconnected)) {
@@ -258,6 +273,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       return;
     }
     const step = admitted.success;
+    if ("recovery" in step && typeof step.recovery === "function") readRecovery = step.recovery;
     observation = { ...observation, phase: "provider", bindingId: step.bindingId };
     yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: step.bindingId });
     if (!("stream" in step)) {
@@ -281,6 +297,12 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       Stream.runForEach(
         Stream.interruptWhen(step.stream, halt).pipe(
           Stream.provideService(ModelBackend, compactBackend),
+          Stream.provideService(RuntimeEvents, { append: value => Effect.gen(function* () {
+            const recovery = value && typeof value === "object" && "recovery" in value ? projectProviderRecoveryState(value.recovery) : undefined;
+            if (!recovery) return;
+            yield* emit(socket, { kind: "recovery", version: WIRE_VERSION, sequence: recoverySequence++, recovery });
+            if (options.observeRecovery) yield* options.observeRecovery(request, recovery).pipe(Effect.timeout("100 millis"), Effect.catchCause(() => Effect.void));
+          }) }),
         ),
         (event: InferenceEvent) => Effect.gen(function* () {
           if (!outputBudget.add(event)) {
@@ -307,13 +329,14 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     );
     const clientDisconnected = yield* Deferred.isDone(disconnected);
     const failure = collected._tag === "Failure" ? modeldFailureOutcome(collected.failure, "provider", sequence) : undefined;
-    observation = { ...withTransportOutcome(observation, failure, clientDisconnected), at: observation.at ?? new Date().toISOString() };
+    observation = withFailureSummary({ ...withTransportOutcome(observation, failure, clientDisconnected), at: observation.at ?? new Date().toISOString() });
     if (clientDisconnected) {
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
       return;
     }
     if (collected._tag === "Failure") {
-      yield* emit(socket, { kind: "terminal", outcome: "error", code: mapFail(collected.failure) });
+      yield* emit(socket, { kind: "terminal", outcome: "error", version: WIRE_VERSION, code: mapFail(collected.failure),
+        ...(observation.failureSummary ? { failure: observation.failureSummary } : {}) });
       yield* cancelStep(parsed.request).pipe(Effect.ignore);
     }
   });
@@ -323,6 +346,7 @@ export type ServeOptions = {
   /** Diagnostic scope only; never grants STEP admission or replaces attestation. */
   rootId?: string;
   observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
+  observeRecovery?: (request: RunStepRequest, state: ProviderRecoveryState) => Effect.Effect<void, unknown>;
   onObservationTimeout?: () => void;
   compactForIncoming?: (incoming: Incoming) => Layer.Layer<HostCompact>;
   env?: NodeJS.Dict<string>;

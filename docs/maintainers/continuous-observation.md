@@ -10,6 +10,14 @@
 - 现有 `observability/observations.sqlite` 保存索引、incident、ack/snooze、采集 cursor 及本地通知管理事实。没有 `alerts.db`，也不使用 modeld 执行去重库来保存 UI 状态。
 - 执行失败、原生 Tray 变化、通知管理、App 呈现是不同事实。Dismiss 不等于 ack，ack 不等于修复，snooze 不改变准入，服务恢复不将旧失败 STEP 改写为成功。
 
+## Provider 路由条件与 observer 范围
+
+`upstream_route_failure` 是现有 monitor 的通知条件，不是新的执行闸门。按该观测库作用域内的实际路由摘要区分 endpoint/API/模型/凭据引用命名空间，不用同名模型合并不同通道。`provider-route-v1` 在五分钟窗口内至少两份不同执行的 HTTP 5xx 失败证据后建立条件；每个失败 STEP 仍单独保留并关联父条件。两个晚于最后失败的完整成功 STEP 才构成恢复正证据，单次 HTTP 200、日志过期、红框关闭都不构成恢复。失败源窗口过期不使 open 条件自动恢复；迟到记录归属它已知的原周期，不能污染新周期。新周期不继承旧 ack。
+
+样本最多保留 512 份用于规则判断，这是通知的有界证据窗口，不是模型请求额度；查询披露 `bounded_route_window`。恢复中已成功的逻辑 STEP 不会被父 incident 改成失败；具体 attempt 的失败、等待和 request ID 可从 `runtimeRecovery`/`model_recovery_progress` 查看。monitor 绝不根据父条件修改模型准入、强制排队、触发恢复、切模型或 dismiss 原生 Tray。
+
+原生 Alert observer 延后到精确目标 Host compile 通过时才初始化，继承 NODE_OPTIONS 的无关子进程不会仅因 require preload 就伪造 observer_started。默认 `alerts trace` 只展示直接关联/已挂接的来源；都不存在时，保留每个 Host generation 的一个真实覆盖样本，并报告总数/省略数，不能凭样本冒称所有采集点已安装。`--include-unrelated-observers` 显式展开同代完整来源。来源列表不授予执行身份或当前活性。
+
 ## 命令
 
 ```bash

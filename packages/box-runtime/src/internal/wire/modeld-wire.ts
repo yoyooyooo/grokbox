@@ -12,6 +12,7 @@ import {
   parseContextSnapshot,
   annotateStreamFailure,
   projectExecutionCapacity,
+  projectProviderRecoveryState,
 } from "@grokbox/runtime-kernel/contract";
 
 export const MODELD_MAX_FRAME = WIRE_FRAME_MAX_BYTES;
@@ -147,7 +148,7 @@ export type ClientSession =
   | { method: "service-info" }
   | { method: "execution-status" }
   | { method: "cancel-step" }
-  | { method: "run-step"; phase: "start" | "events"; sequence: number; bindingId?: string; expectedBindingId?: string };
+  | { method: "run-step"; phase: "start" | "events"; sequence: number; recoverySequence?: number; bindingId?: string; expectedBindingId?: string };
 
 export function clientSessionFor(body: unknown): ClientSession {
   if (!isRecord(body) || typeof body.method !== "string") throw new WireError("malformed_frame");
@@ -176,12 +177,14 @@ function isWireInferenceEvent(value: unknown): boolean {
   return false;
 }
 
-/** Strict v4 response. A success must match the admitted binding and an explicit finish. */
+/** Strict v5 response. Error summaries are diagnostic only; successful output
+ * still requires the admitted binding and an explicit valid finish. */
 export function acceptModeldFrame(session: ClientSession, value: unknown): { session: ClientSession; done: boolean; control?: ParsedV4Control } {
   if (!isRecord(value)) throw new WireError("malformed_frame");
   if (value.ok === false) {
     if (!exactKeys(value, ["ok", "version", "error"])) throw new WireError("extra_keys");
-    if (value.version !== WIRE_VERSION || !isRecord(value.error) || !exactKeys(value.error, ["code"]) || typeof value.error.code !== "string") {
+    if (value.version !== WIRE_VERSION) throw new WireError("unsupported_version");
+    if (!isRecord(value.error) || !exactKeys(value.error, ["code"], ["failure"]) || typeof value.error.code !== "string") {
       throw new WireError("malformed_frame");
     }
     return { session, done: true };
@@ -227,6 +230,11 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
     if (value.sequence !== session.sequence || !isWireInferenceEvent(value.event)) throw annotateStreamFailure(new WireError("malformed_frame"), { normalizeCause: "invalid_event_shape", rejectSite: "wire_event", wireSequence: session.sequence });
     return { session: { ...session, sequence: session.sequence + 1 }, done: false };
   }
+  if (value.kind === "recovery") {
+    if (!exactKeys(value,["kind","version","sequence","recovery"]) || value.version !== WIRE_VERSION
+      || value.sequence !== (session.recoverySequence ?? 0) || !projectProviderRecoveryState(value.recovery)) throw new WireError("malformed_frame");
+    return { session: { ...session, recoverySequence: (session.recoverySequence ?? 0) + 1 }, done: false };
+  }
   if (value.kind === "terminal") {
     if (Object.hasOwn(value, "version") && value.version !== WIRE_VERSION) throw new WireError("unsupported_version");
     if (value.outcome === "ok") {
@@ -235,7 +243,7 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
       if (!["stop", "error", "abort"].includes(String(value.finishReason))) throw annotateStreamFailure(new WireError("malformed_frame"), { normalizeCause: "unsupported_finish_reason", rejectSite: "wire_terminal" });
       if (value.usage !== undefined && !validWireUsage(value.usage)) throw annotateStreamFailure(new WireError("malformed_frame"), { normalizeCause: "invalid_usage", rejectSite: "wire_terminal" });
     } else if (value.outcome === "error") {
-      if (!exactKeys(value, ["kind", "outcome", "code"], ["version"])) throw new WireError("extra_keys");
+      if (!exactKeys(value, ["kind", "outcome", "code"], ["version", "failure"])) throw new WireError("extra_keys");
       if (typeof value.code !== "string") throw new WireError("malformed_frame");
     } else if (value.outcome === "duplicate") {
       if (!exactKeys(value, ["kind", "outcome", "snapshotDigest", "bindingId"], ["version"])) throw new WireError("extra_keys");
@@ -256,10 +264,10 @@ export type ParsedV4Control =
   | { method: "compact-request"; agentId: string; turnId: string; stepId: string; bindingId: string; selectionRevision: string; recoveryNonce: string; deadlineMs: number }
   | { method: "resume-step"; agentId: string; turnId: string; stepId: string; bindingId: string; selectionRevision: string; recoveryNonce: string; snapshot: ReturnType<typeof parseContextSnapshot> };
 
-/** v4 compact-request / resume-step. Initial connection still uses parseModeldRequest. */
+/** Current-version compact controls. Initial connection uses parseModeldRequest. */
 export function parseV4ControlFrame(value: unknown): ParsedV4Control {
   const version = parseWireVersion(value);
-  if (version !== 4) throw new WireError("unsupported_version");
+  if (version !== WIRE_VERSION) throw new WireError("unsupported_version");
   if (!isRecord(value) || typeof value.method !== "string") throw new WireError("malformed_frame");
   if (value.method === "compact-request") {
     if (!exactKeys(value, ["version", "method", "agentId", "turnId", "stepId", "bindingId", "selectionRevision", "recoveryNonce", "deadlineMs"])) {

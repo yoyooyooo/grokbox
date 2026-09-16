@@ -1,20 +1,10 @@
-import { BackendFailure, BindingFailure, annotateStreamFailure, streamFailureDiagnostic, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, BindingFailure, annotateStreamFailure, streamFailureDiagnostic, FAILURE_FACT_REASONS, PROVIDER_ERROR_CODES, PROVIDER_ERROR_PARAMS, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 
 export const BACKEND_PHASES = ["prepare", "auth", "sdk", "provider", "normalize", "authority"] as const;
 export type BackendPhase = (typeof BACKEND_PHASES)[number];
-export const FAILURE_REASONS = [
-  "unknown", "validation", "auth", "transport", "http", "sdk_validation", "sdk_no_output", "stream_shape", "output_limit", "content_filter",
-  "provider_resource", "provider_interrupted", "stream_budget", "authority_check",
-] as const;
-export const PROVIDER_CODES = [
-  "invalid_request_error", "invalid_api_key", "insufficient_quota", "rate_limit_exceeded",
-  "model_not_found", "unsupported_parameter", "missing_required_parameter", "invalid_value",
-  "context_length_exceeded", "context_window_exceeded", "prompt_too_long", "request_too_large",
-] as const;
-export const PROVIDER_PARAMS = [
-  "model", "instructions", "input", "messages", "tools", "tool_choice", "parallel_tool_calls", "stream",
-  "temperature", "top_p", "max_tokens", "max_output_tokens", "reasoning", "store",
-] as const;
+export const FAILURE_REASONS = FAILURE_FACT_REASONS;
+export const PROVIDER_CODES = PROVIDER_ERROR_CODES;
+export const PROVIDER_PARAMS = PROVIDER_ERROR_PARAMS;
 export type BackendObservation = StreamDiagnostic & {
   phase: BackendPhase;
   reason: (typeof FAILURE_REASONS)[number];

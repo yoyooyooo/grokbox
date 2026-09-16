@@ -835,7 +835,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     path: ["alerts", "trace"], usage: "grokbox alerts trace <tray-id> [--from journal|monitor] [--source-instance <id>]",
     summary: "Trace native alert decisions and lifecycle; never infer App rendering or mutate alerts.",
     arguments: [{ syntax: "<tray-id>", description: "Exact native Tray ID" }],
-    options: options([{flags:"--agent <id>",description:"Exact Agent identity"},{flags:"--source-instance <id>",description:"Disambiguate Host observer instances"},{flags:"--from <source>",description:"journal (default) or existing monitor index"}]),
+    options: options([{flags:"--agent <id>",description:"Exact Agent identity"},{flags:"--source-instance <id>",description:"Disambiguate Host observer instances"},{flags:"--from <source>",description:"journal (default) or existing monitor index"},{flags:"--include-unrelated-observers",description:"Include all observed instances in the same Host generation, not only linked/attached instances"}]),
     stdin:"none",table:false,timeout:false,destructive:false,gateway:false,streaming:false,localOnly:true,
   },
   {

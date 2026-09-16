@@ -100,7 +100,18 @@ export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet
       if (r.type === "finish") evidence.sdkFinish(r.finishReason);
       if (r.invalid === true) evidence.invalidTool();
       try {
-        if (r.type === "finish" && r.finishReason === "unknown" && evidence.snapshot().providerFinishObserved === false) throw invalidStream("missing_finish", "sdk_finish");
+        if (r.type === "finish") {
+          const summary = evidence.snapshot(), audit = summary.finishAudit;
+          // The SDK keeps only the last finish reason. A later recognized value
+          // must not erase an earlier unsupported or contradictory raw terminal.
+          if (audit?.conflict) throw invalidStream("conflicting_finish_reason", "sdk_finish");
+          if ((audit?.fields.unknown ?? 0) || (audit?.fields.invalid_type ?? 0)) throw invalidStream("unsupported_finish_reason", "sdk_finish");
+          // Preserve legacy fields' meaning; blank placeholders are not an
+          // affirmative terminal and cannot authorize completion.
+          if (r.finishReason === "unknown" && (audit ? !audit.lastTerminal : summary.providerFinishObserved === false)) {
+            throw invalidStream("missing_finish", "sdk_finish");
+          }
+        }
         const event = mapSdkStreamForHost(part, names, nonstandard);
         if (event === "skip") { evidence.increment("eventsSkipped"); return undefined; }
         if ((event.type === "tool_start" || event.type === "tool_delta" || event.type === "tool_complete") && options.declaredTools && !options.declaredTools.has(event.toolName)) {
