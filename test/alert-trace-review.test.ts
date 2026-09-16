@@ -1,6 +1,7 @@
+import { ensurePackedCli } from "./packed-cli-fixture.ts";
 import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -46,7 +47,7 @@ test("installed-shape Node CLI traces the same lifecycle from journal and materi
     const before=await readFile(store.path),beforeNames=await readdir(join(f.durable,"observability"));
     const reports:unknown[]=[];
     for(const source of ["journal","monitor"]){
-      const child=spawn("node",[resolve("dist/index.js"),"alerts","trace","tray","--agent",AGENT,"--from",source,"--json"],{cwd:f.root,env:{PATH:process.env.PATH,HOME:f.root,GROKBOX_CONFIG_DIR:join(f.root,"config"),GROKBOX_RUN_ROOT:f.run,GROKBOX_BOX_RUNTIME_ROOT:f.durable},stdio:["ignore","pipe","pipe"]});
+      const child=spawn("node",[ensurePackedCli(),"alerts","trace","tray","--agent",AGENT,"--from",source,"--json"],{cwd:f.root,env:{PATH:process.env.PATH,HOME:f.root,GROKBOX_CONFIG_DIR:join(f.root,"config"),GROKBOX_RUN_ROOT:f.run,GROKBOX_BOX_RUNTIME_ROOT:f.durable},stdio:["ignore","pipe","pipe"]});
       let stdout="",stderr="";child.stdout.on("data",d=>stdout+=d);child.stderr.on("data",d=>stderr+=d);
       const status=await new Promise<number|null>((yes,no)=>{child.once("exit",yes);child.once("error",no);});expect(status,stderr).toBe(0);reports.push(JSON.parse(stdout).data.traces);
     }

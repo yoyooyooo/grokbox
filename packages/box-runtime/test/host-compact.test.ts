@@ -1,5 +1,5 @@
+import { nativeHostQualificationEnabled } from "./native-host-qualification.ts";
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createContext, runInContext, Script } from "node:vm";
 import { emptyRecoveryLedger } from "@grokbox/runtime-kernel/contract";
@@ -489,7 +489,7 @@ describe("D2 Host compact registration", () => {
   });
 });
 
-const describeLive = existsSync(LIVE_HOST_BUNDLE) ? describe : describe.skip;
+const describeLive = nativeHostQualificationEnabled() ? describe : describe.skip;
 
 describeLive("D2 live Host compact anchors", () => {
   test("SHA-matched Host accepts unique compact-register without writing the live file", async () => {

@@ -1,3 +1,4 @@
+import { nativeHostQualificationEnabled } from "./native-host-qualification.ts";
 import { describe, expect, test } from "bun:test";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,6 +18,7 @@ import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 const LIVE_HOST = "/home/box/sand-host/host-main.cjs";
 
 async function liveSnapshot(): Promise<{ digest: string | null; pids: string[] }> {
+  if (!nativeHostQualificationEnabled()) return { digest: null, pids: [] };
   let digest: string | null = null;
   try {
     digest = sha256Bytes(await readFile(LIVE_HOST));
@@ -99,7 +101,7 @@ describe("offline Host transform", () => {
     expect(shouldTransformArgv(["node", "/home/box/sand-host/other.cjs"])).toBe(false);
   });
 
-  test("live Host file and PIDs are unchanged; copy receives slices", async () => {
+  test("owned copy receives slices; optional native observation remains unchanged", async () => {
     const before = await liveSnapshot();
     const dir = join(tmpdir(), `grokbox-host-copy-${process.pid}`);
     await mkdir(dir, { recursive: true });

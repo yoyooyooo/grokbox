@@ -1,5 +1,6 @@
+import { nativeHostQualificationEnabled } from "./native-host-qualification.ts";
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { Script } from "node:vm";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 import { transformUnchecked } from "../src/internal/host/profile.ts";
@@ -68,7 +69,7 @@ describe("L2 Host harness always-emit", () => {
     });
   });
 
-  const describeLive = existsSync(LIVE_HOST_BUNDLE) ? describe : describe.skip;
+  const describeLive = nativeHostQualificationEnabled() ? describe : describe.skip;
   describeLive("local-real Host bundle copy", () => {
     test("approved slices replace omit-box on a read-only live copy", () => {
       const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");

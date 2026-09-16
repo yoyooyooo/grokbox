@@ -1,6 +1,6 @@
+import { nativeHostQualificationEnabled } from "./native-host-qualification.ts";
 import { describe, expect, test } from "bun:test";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { Script } from "node:vm";
 import { join } from "node:path";
@@ -30,7 +30,7 @@ async function liveSnapshot(): Promise<{ digest: string | null; pids: string[] }
   return { digest, pids: pids.filter(Boolean) };
 }
 
-const describeLive = existsSync(LIVE_HOST_BUNDLE) ? describe : describe.skip;
+const describeLive = nativeHostQualificationEnabled() ? describe : describe.skip;
 
 describeLive("live Host bundle copy H1", () => {
   test("unique approved-slice transform on a tmp copy; live file and PIDs unchanged", async () => {
@@ -95,7 +95,7 @@ describeLive("live Host bundle copy H1", () => {
     if (!before.digest) return;
     expect(sha256Bytes(await readFile(LIVE_HOST_BUNDLE))).toBe(before.digest);
     expect(await readFile(copyPath, "utf8")).toBe(source);
-  });
+  }, 30_000);
 
   test("CP26 clientNonce is in the same runTurn scope as mainSessionOptions", async () => {
     const source = await readFile(LIVE_HOST_BUNDLE, "utf8");

@@ -1,6 +1,6 @@
+import { ensurePackedCli } from "./packed-cli-fixture.ts";
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -129,7 +129,7 @@ test("actual packed Node reset removes an override with no Gateway/discovery or 
   const f = await fixture("failure");
   try {
     const before = await f.load();
-    const cli = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+    const cli = ensurePackedCli();
     const result = spawnSync("node", [cli, "runtime", "models", "reset", "--for", A, "--json"], {
       env: { PATH: process.env.PATH, HOME: f.deps.configDir, GROKBOX_BOX_RUNTIME_ROOT: f.deps.boxRuntimeRoot, GROKBOX_RUN_ROOT: join(f.deps.configDir, "no-gateway") },
       encoding: "utf8", timeout: 10_000,

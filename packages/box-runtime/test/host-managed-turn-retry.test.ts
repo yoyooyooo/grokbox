@@ -1,6 +1,7 @@
+import { nativeHostQualificationEnabled } from "./native-host-qualification.ts";
 import { expect, test } from "bun:test";
 import { createContext, runInContext } from "node:vm";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import { hostVisibleStreamError, InvalidHostStateError, isHostManagedFailure } from "../src/internal/host/session.ts";
@@ -49,7 +50,7 @@ test("managed terminal blocks outer automation retry before a new TURN or checkp
   expect(automationCalls).toBe(0);
 });
 
-test.skipIf(!existsSync(LIVE_HOST_BUNDLE))("exact native outer retry loop keeps managed terminal at one attempt and official retries intact", async () => {
+test.skipIf(!nativeHostQualificationEnabled())("exact native outer retry loop keeps managed terminal at one attempt and official retries intact", async () => {
   const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");
   expect(createHash("sha256").update(source).digest("hex")).toBe("307de3990394efc6b9a868537bab8504fceec3cc898cdd2ad91de68830f2f8dd");
   const parsed = ts.createSourceFile("qualified-host.cjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);

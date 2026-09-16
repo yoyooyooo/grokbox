@@ -40,3 +40,9 @@ A dry run does not update the remote. Actual publication needs explicit authoriz
 Rewriting one branch does not clean other branches, tags, pull-request refs, forks, clones, server caches, local reflogs, or private backups. Do not merge an old branch into the sanitized branch: that can reintroduce the original history. Rebase or selectively reapply reviewed changes onto the clean history instead.
 
 Rotate or revoke an exposed live credential; rewriting Git does not revoke it. Coordinate any wider repository purge and provider-side cached-reference removal separately. Do not delete other worktrees or run shared-object garbage collection as part of a branch-scoped operation.
+
+## Public tests versus native qualification
+
+Ordinary tests use synthetic/owned fixtures. The presence of a native Host on a developer's machine does not silently opt the test run into private source inspection. Run `bun run test:native-host` only for an explicitly authorized read-only native qualification: it requires the installed bundle and retains every original source-SHA and semantic assertion. A missing or changed native source is a qualification failure, not a reason to replace an expected hash. Public test success and skipped native tests never establish deployment readiness.
+
+Packed CLI tests build their own current source instead of relying on a pre-existing developer dist. A checked-in packed artifact pin must be refreshed only after reproducible builds of the exact reviewed source; preserve the negative drift checks. Run build/package tests in an isolated snapshot rather than overwriting artifacts that running services might use.

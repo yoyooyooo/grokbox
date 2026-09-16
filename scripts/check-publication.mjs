@@ -73,6 +73,7 @@ try {
       return space < 0 ? [line, "@object"] : [line.slice(0, space), line.slice(space + 1)];
     });
     const paths = new Set(git(["log", "--format=", "--name-only", "-z", head]).toString().split("\0").map((s) => s.replace(/^\n+/, "")).filter(Boolean));
+    for (const [, path] of entries) if (path !== "@object") paths.add(path);
     for (const path of paths) checkPath(path);
     const data = git(["cat-file", "--batch"], Buffer.from(entries.map(([oid]) => oid).join("\n") + "\n"));
     let offset = 0;
