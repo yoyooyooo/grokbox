@@ -54,6 +54,13 @@ export type HostDeliveryKind = "not_observed" | "host_terminal" | "host_rejected
 
 import type { ExecutionCapacity } from "./execution-status.ts";
 export type ModeldExecutionEvidence = { execution?: ExecutionCapacity; executionGap?: "not_instrumented" | "generation_changed" };
+export type ModeldProtocolEvidence = { wireVersion?: number; expectedWireVersion?: number; protocolCompatible?: boolean };
+export type ModeldAvailabilityEvidence = ModeldProtocolEvidence & {
+  liveness?: "reachable" | "unavailable" | "unknown";
+  admission?: "ready" | "blocked" | "protocol_mismatch" | "scope_mismatch" | "generation_changed" | "not_observed";
+  protocolComparison?: "observer_to_modeld";
+  hostProtocolCompatibility?: "not_observed";
+};
 export type ModeldServiceScope = "matched" | "mismatch" | "unavailable" | "not_observed";
 
 export type StatusEvidence = {
@@ -63,7 +70,7 @@ export type StatusEvidence = {
   attestation: Observed<{ coverage: "attested"; mode: "identity" | "route" } | null>;
   coordinator: Observed<{ circuit: "open" | "closed"; circuitReason: string | null } | null>;
   operationJournal: Observed<{ pending: boolean; phase: string | null } | null>;
-  modeld: Observed<({ required: boolean; ready: boolean; scope?: ModeldServiceScope; serviceEpoch?: string | null } & ModeldExecutionEvidence) | null>;
+  modeld: Observed<({ required: boolean; ready: boolean; scope?: ModeldServiceScope; serviceEpoch?: string | null } & ModeldExecutionEvidence & ModeldAvailabilityEvidence) | null>;
   controllerLiveness: Observed<{ alive: boolean } | null>;
   bridgeHost: Observed<{
     actual: BridgeActual;
@@ -94,7 +101,7 @@ export type RuntimeStatusFacets = {
       coverage: BridgeCoverage;
       reason: string | null;
     }>;
-    modeld: StatusFacet<{ required: boolean; ready: boolean | null; scope?: ModeldServiceScope; serviceEpoch?: string | null } & ModeldExecutionEvidence>;
+    modeld: StatusFacet<{ required: boolean; ready: boolean | null; scope?: ModeldServiceScope; serviceEpoch?: string | null } & ModeldExecutionEvidence & ModeldAvailabilityEvidence>;
     controller: StatusFacet<{ liveness: "unknown" | "alive" | "stopped" }>;
     mutation: StatusFacet<{ inhibited: boolean; allowed: boolean; reason: string | null }>;
     recovery: StatusFacet<{ state: "clear" | "recovery-required" | "unknown"; pending: boolean | null }>;

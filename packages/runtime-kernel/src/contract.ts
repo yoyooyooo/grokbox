@@ -21,4 +21,5 @@ export * from "./internal/contract/binding.ts";
 export * from "./internal/contract/wire.ts";
 export * from "./internal/contract/overflow.ts";
 export * from "./internal/contract/ownership.ts";
+export * from "./internal/contract/ownership-observation.ts";
 export * from "./internal/contract/title-marker.ts";

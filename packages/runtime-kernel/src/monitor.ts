@@ -1,4 +1,6 @@
 import { inspectOwnership, OWNERSHIP_MAX_TARGETS } from "./internal/contract/ownership.ts";
+import { projectOwnershipReadObservation, type OwnershipReadObservation } from "./internal/contract/ownership-observation.ts";
+import { observationOwn as own } from "./internal/contract/provider-observation.ts";
 
 /** Observation policy is independent of the execution admission's 5s maximum age. */
 export const MONITOR_POLICY = Object.freeze({
@@ -25,7 +27,23 @@ export type MonitorSample = {
   startedAtMs: number; completedAtMs: number; serverObservedAtMs: number | null;
   failure: "read_unavailable" | "scope_unavailable" | "invalid_observation" | null;
   agents: MonitorAgent[];
+  readObservation?: OwnershipReadObservation;
 };
+export type MonitorOwnershipDiagnosis = {
+  version: 1; source: "monitor_ownership_read"; observedAtMs: number;
+  failure: NonNullable<MonitorSample["failure"]>; readObservation?: OwnershipReadObservation;
+};
+/** Collector failures are observation failures, not failed model STEPs. */
+export function projectMonitorOwnershipDiagnosis(value: unknown): MonitorOwnershipDiagnosis | undefined {
+  try {
+    const observedAtMs = own(value, "observedAtMs"), failure = own(value, "failure");
+    if (own(value, "version") !== 1 || own(value, "source") !== "monitor_ownership_read" || typeof observedAtMs !== "number" || !time(observedAtMs)
+      || typeof failure !== "string" || !["read_unavailable", "scope_unavailable", "invalid_observation"].includes(failure)) return undefined;
+    const readObservation = projectOwnershipReadObservation(own(value, "readObservation"));
+    return { version: 1, source: "monitor_ownership_read", observedAtMs, failure: failure as MonitorOwnershipDiagnosis["failure"],
+      ...(readObservation ? { readObservation } : {}) };
+  } catch { return undefined; }
+}
 export function monitorUuid(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 }
@@ -67,6 +85,10 @@ export function makeMonitorSample(input: {
   const gateway = input.response.gateway;
   if (!Number.isSafeInteger(gateway.pid) || gateway.pid < 1 || !time(gateway.startedAt)) return result;
   const projected = inspectOwnership({ agentIds: ids, snapshot: input.response.snapshot });
+  if (projected.readObservation) result.readObservation = projected.readObservation;
+  // A failed native read also marks its scope unstable. Preserve the first
+  // failure instead of mislabelling it as an independent scope failure.
+  if (projected.serverRead.state !== "observed") return { ...result, failure: "read_unavailable" };
   if (!projected.scope?.stable || !monitorScope(projected.scope.id)) return { ...result, failure: "scope_unavailable" };
   const observed = Date.parse(projected.serverObservedAt ?? "");
   if (!Number.isFinite(observed) || observed > input.completedAtMs || observed < input.startedAtMs - MONITOR_POLICY.readTimeoutMs

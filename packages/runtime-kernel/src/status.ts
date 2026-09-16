@@ -12,10 +12,13 @@ export {
   type JournalWriterRole,
   type HostDeliveryKind,
   type ModeldServiceScope,
+  type ModeldProtocolEvidence,
+  type ModeldAvailabilityEvidence,
 } from "./internal/contract/status.ts";
 
 export {
   projectRuntimeStatus,
+  projectModeldAvailability,
   correlateInferenceTuple,
   copyInferenceTuple,
   copyInferenceTupleOrReject,

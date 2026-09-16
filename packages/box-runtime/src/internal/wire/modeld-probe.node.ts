@@ -111,14 +111,21 @@ export async function observeModeldService(durableRoot: string, runRoot: string)
     const matched = identity.rootId === modeldRootId(durableRoot, runRoot);
     const status = matched ? await probeModeldExecution(runRoot) : null;
     const valid = status?.generation === identity.generation;
-    return { ready: matched, scope: matched ? "matched" : "mismatch", serviceEpoch: identity.generation, observedAt,
+    return { ready: matched && (!status || valid), scope: matched ? "matched" : "mismatch", serviceEpoch: identity.generation, observedAt,
+      wireVersion: WIRE_VERSION, expectedWireVersion: WIRE_VERSION, protocolCompatible: true,
       ...(status && valid ? { execution: status.execution } : { executionGap: status ? "generation_changed" as const : "not_instrumented" as const }) };
   }
-  const legacy = await probeModeldReplacement(runRoot, 200);
-  if (legacy && legacy.wireVersion !== WIRE_VERSION) {
+  // Observation must not depend on the stricter replacement gate. A legacy
+  // service with no execution-status still has an observable protocol identity.
+  const legacy = await probe(runRoot, "service-info", 200, 4);
+  if (legacy && typeof legacy.rootId === "string" && typeof legacy.serverGeneration === "string") {
     const matched = legacy.rootId === modeldRootId(durableRoot, runRoot);
-    return { ready: false, scope: matched ? "matched" : "mismatch", serviceEpoch: legacy.generation, observedAt,
-      execution: legacy.execution, wireVersion: legacy.wireVersion, expectedWireVersion: WIRE_VERSION, protocolCompatible: false };
+    const activity = matched ? await probe(runRoot, "execution-status", 200, 4) : null;
+    const execution = projectExecutionCapacity(activity?.execution);
+    const sameGeneration = activity?.serverGeneration === legacy.serverGeneration;
+    return { ready: false, scope: matched ? "matched" : "mismatch", serviceEpoch: legacy.serverGeneration, observedAt,
+      ...(execution && sameGeneration ? { execution } : { executionGap: activity && !sameGeneration ? "generation_changed" as const : "not_instrumented" as const }),
+      wireVersion: 4, expectedWireVersion: WIRE_VERSION, protocolCompatible: false };
   }
   let absent = false;
   try { lstatSync(modeldSocketPath(runRoot)); }
@@ -126,5 +133,5 @@ export async function observeModeldService(durableRoot: string, runRoot: string)
     // Access errors and invalid parent paths are not proof of absence.
     absent = error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT";
   }
-  return { ready: absent ? false : null, scope: absent ? "not_observed" : "unavailable", serviceEpoch: null, observedAt };
+  return { ready: absent ? false : null, scope: absent ? "not_observed" : "unavailable", serviceEpoch: null, observedAt, expectedWireVersion: WIRE_VERSION };
 }

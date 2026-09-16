@@ -1,7 +1,8 @@
 import { Clock, Context, Deferred, Effect, Exit, Option, Stream, SynchronizedRef } from "effect";
 import * as Scope from "effect/Scope";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
-import { AUTHORITY_REASONS, annotateStreamFailure, streamFailureDiagnostic, type AuthorityDiagnostic } from "../contract/stream-diagnostic.ts";
+import { AUTHORITY_REASONS, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, type AuthorityDiagnostic } from "../contract/stream-diagnostic.ts";
+import { observationOwn } from "../contract/provider-observation.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
 import { emptyRecoveryLedger } from "../contract/overflow.ts";
 import { AdmissionAuthority, BackendAuth, ConfigurationRead, HostCompact, ModelBackend, RuntimeEvents, type AuthLease, type PreparedCall } from "../../ports.ts";
@@ -42,9 +43,11 @@ function asBindingOrBackend(error: unknown): BindingFailure | BackendFailure {
   return new BindingFailure("not_admitted");
 }
 
-function authorityDenied(reason: unknown, checkpoint: AuthorityDiagnostic["checkpoint"], extra: { durationMs?: number; evidenceAgeMs?: number } = {}) {
+function authorityDenied(reason: unknown, checkpoint: AuthorityDiagnostic["checkpoint"], extra: Partial<AuthorityDiagnostic> = {}) {
   const safe = typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason as AuthorityDiagnostic["reason"] : "unknown";
-  return annotateStreamFailure(new BindingFailure("not_admitted"), { rejectSite: "authority_check", authority: { reason: safe, checkpoint, ...extra } });
+  // The STEP owns its checkpoint and elapsed time; the reader only contributes
+  // finite diagnostic facts. Neither observation can grant admission.
+  return annotateStreamFailure(new BindingFailure("not_admitted"), { rejectSite: "authority_check", authority: { ...extra, reason: safe, checkpoint } });
 }
 function readAuthority(request: RunStepRequest, checkpoint: AuthorityDiagnostic["checkpoint"] = "admission") {
   return Effect.gen(function* () {
@@ -52,10 +55,13 @@ function readAuthority(request: RunStepRequest, checkpoint: AuthorityDiagnostic[
     const startedAt = yield* Clock.currentTimeMillis;
     const result = yield* Effect.result(authority.current(request));
     const durationMs = Math.max(0, (yield* Clock.currentTimeMillis) - startedAt);
-    if (result._tag === "Failure") return yield* Effect.fail(authorityDenied("authority_unavailable", checkpoint, { durationMs }));
+    if (result._tag === "Failure") return yield* Effect.fail(authorityDenied("authority_unavailable", checkpoint, {
+      ...streamFailureDiagnostic(result.failure)?.authority, durationMs,
+    }));
     const evidence = result.success;
     if (!evidence || typeof evidence !== "object" || !("admitted" in evidence) || evidence.admitted !== true) {
-      return yield* Effect.fail(authorityDenied(evidence && typeof evidence === "object" && "reason" in evidence ? evidence.reason : "unknown", checkpoint, { durationMs }));
+      const detail = projectStreamDiagnostic(observationOwn(evidence, "diagnostic"))?.authority;
+      return yield* Effect.fail(authorityDenied(observationOwn(evidence, "reason"), checkpoint, { ...detail, durationMs }));
     }
     const fact = evidence && typeof evidence === "object" && "ownership" in evidence ? evidence.ownership : undefined;
     const now = yield* Clock.currentTimeMillis;

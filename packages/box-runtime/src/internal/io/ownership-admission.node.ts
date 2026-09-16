@@ -3,6 +3,10 @@ import {
   BoxRuntimeError,
   decideManagedOwnership,
   OWNERSHIP_WAIT_MS,
+  AUTHORITY_REASONS,
+  annotateStreamFailure,
+  type AuthorityDiagnostic,
+  type OwnershipReadObservation,
   type BoxRuntimeErrorCode,
   type OwnershipRefusalClass,
 } from "@grokbox/runtime-kernel/contract";
@@ -56,17 +60,17 @@ export function presentOwnershipRefusal(input: {
   };
 }
 
-export function ownershipUseError(reason: string, cls: OwnershipRefusalClass, agentId?: string) {
+export function ownershipUseError(reason: string, cls: OwnershipRefusalClass, agentId?: string, ownershipRead?: OwnershipReadObservation) {
   const presented = presentOwnershipRefusal({ reason, class: cls, agentId });
-  return new BoxRuntimeError(presented.code, presented.message, {
+  const safeReason = (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason as AuthorityDiagnostic["reason"] : "unknown";
+  return annotateStreamFailure(new BoxRuntimeError(presented.code, presented.message, {
     userVisible: true,
     next: presented.next,
     failureCode: presented.failureCode,
-  });
+  }), { rejectSite: "authority_check", authority: { reason: safeReason, waitBudgetMs: OWNERSHIP_WAIT_MS, ...(ownershipRead ? { ownershipRead } : {}) } });
 }
 
-const denied = (reason: string, cls: OwnershipRefusalClass, agentId?: string) =>
-  ownershipUseError(reason, cls, agentId);
+const denied = ownershipUseError;
 
 export function readManagedOwnership(input: { agentId: string; read?: OwnershipReader; gatewayPid?: number }) {
   return Effect.gen(function* () {
@@ -85,7 +89,7 @@ export function readManagedOwnership(input: { agentId: string; read?: OwnershipR
       return yield* Effect.fail(denied("ownership_gateway_mismatch", "unavailable", input.agentId));
     }
     const decision = decideManagedOwnership({ agentId: input.agentId, snapshot: result.snapshot, nowMs: yield* Clock.currentTimeMillis });
-    if (!decision.ok) return yield* Effect.fail(denied(decision.reason, decision.class, input.agentId));
+    if (!decision.ok) return yield* Effect.fail(denied(decision.reason, decision.class, input.agentId, decision.ownershipRead));
     return { evidence: decision.evidence, gateway: result.gateway };
   });
 }

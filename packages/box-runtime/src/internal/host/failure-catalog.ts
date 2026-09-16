@@ -10,7 +10,7 @@ export const HOST_JOURNAL_FORBIDDEN = /env|token|prompt|authorization|secret|api
 export const ROUTE_MODEL_NOT_ADMITTED_AGENT_MESSAGE = ROUTE_MODEL_NOT_ADMITTED_MESSAGE;
 export const LOCAL_CAPACITY_AGENT_MESSAGE = "The local model runtime could not admit this request because its execution resources were unavailable. No model request was dispatched.";
 export const LEDGER_UNAVAILABLE_AGENT_MESSAGE = "The local execution history could not be read or saved safely. This request was not dispatched to the model; no fallback was used.";
-export const AUTHORITY_AGENT_MESSAGE = "The local runtime could not confirm permission to continue this request. It was stopped without fallback or automatic retry.";
+export const AUTHORITY_AGENT_MESSAGE = "The local runtime could not verify this Bot's execution eligibility. This does not establish that the account lacks permission. It was stopped without fallback or automatic retry.";
 export const INVALID_STREAM_AGENT_MESSAGE =
   "The model returned an invalid stream. The request was stopped without retry.";
 export const LOCAL_TRANSPORT_AGENT_MESSAGE =

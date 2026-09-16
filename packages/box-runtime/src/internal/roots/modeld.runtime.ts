@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import type { Server } from "node:net";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS, providerRecoveryFromEnv } from "@grokbox/runtime-kernel/contract";
+import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS, providerRecoveryFromEnv, streamFailureDiagnostic } from "@grokbox/runtime-kernel/contract";
 import { AdmissionAuthority } from "@grokbox/runtime-kernel/ports";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
@@ -40,7 +40,9 @@ export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string
       } };
     }).pipe(Effect.catch(error => {
       const reason = error instanceof BoxRuntimeError ? error.failureCode : error;
-      return Effect.succeed({ admitted: false, reason: typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason : "unknown" });
+      const diagnostic = streamFailureDiagnostic(error);
+      return Effect.succeed({ admitted: false, reason: typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason : "unknown",
+        ...(diagnostic ? { diagnostic } : {}) });
     })),
   });
 }

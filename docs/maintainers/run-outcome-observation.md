@@ -6,7 +6,7 @@
 
 ## v5 失败摘要与受控模型恢复
 
-当前 Host/modeld 使用 wire v5。`FailureSummary` 由 kernel 的同一纯合同分类，保留安全 HTTP 状态/请求 ID/Retry-After、资格/规范化/预算事实及执行身份。正常摘要由 modeld 直接传给 Host；Host 增补其实际观察到的输出和工具释放，不反查 journal 生成错误，不复制 provider 原始 message/body/headers。错误摘要缺失、版本未知、身份不符时保留原错误码并记录 `failureSummaryStatus`，不将诊断损坏当成新的 `invalid_stream`。严格成功终态、工具和 binding 检查不放宽。
+当前源码实现的 Host/modeld 使用 wire v5；这不证明已驻留进程已升级。`FailureSummary` 由 kernel 的同一纯合同分类，保留安全 HTTP 状态/请求 ID/Retry-After、资格/规范化/预算事实及执行身份。正常摘要由 modeld 直接传给 Host；Host 增补其实际观察到的输出和工具释放，不反查 journal 生成错误，不复制 provider 原始 message/body/headers。错误摘要缺失、版本未知、身份不符时保留原错误码并记录 `failureSummaryStatus`，不将诊断损坏当成新的 `invalid_stream`。严格成功终态、工具和 binding 检查不放宽。
 
 结束审计分开记录 `finishAudit` 与 `terminalAudit`。字段缺失、null、空串、空白、已知结束枚举、未知非空值和错误类型不混同；未知字符串只保留长度/摘要。首次/末次有效终态、首次/末次不支持值与冲突均有记录；后来的 stop 不能洗掉先前异常。旧 `providerFinishObserved` 的语义不变，历史记录不能倒推新字段。DONE/EOF/取消/异常退出独立结算工具参数的可解析性、缺失和最终对象一致性；主失败不被二次审计覆盖。无工具为 `not_applicable`，无有效 finish 的合法参数也不等于可执行调用。
 
@@ -27,6 +27,8 @@ GROKBOX_MODELD_RECOVERY_MAX_DELAY_MS=10000
 `model_recovery_progress` 记录 running/waiting/succeeded/stopped/cancelled 及策略、attempt 身份、HTTP 状态和最近的安全上游关联信息；`runtimeRecovery` 按实际 STEP 展示最后观察，不冒充当前存活租约。失败终态复用摘要里的恢复历史，避免同一事件重复放大。恢复等待可取消，不调用工具，不创建新的 TURN，不绕过 ownership/auth/configuration；异步复核之后必须重新检查恢复期限。成功 terminal 在 attempt 持久结算完成后才交给 Host，只有一个批次可以放行。
 
 升级先确认旧服务身份、空闲状态和制品，再用显式 replace/Host 恢复流程成套切换。`runtime modeld status` 可以报告旧 v4 服务的有限读取结果和 `protocolCompatible:false`，但生产 Host 不借此调用旧服务；`replace --expect-epoch ... --confirm` 的兼容读取也不拥有自动重试权。不能把发布 v5 变成“混用 v4/v5 时放开 extra_keys”，也不能删除去重库来迁移。旧数据读取、源码构建、原生 profile 资格和实际部署分别验收。
+
+`runtime status` 的 modeld facet 与 `runtime modeld status` 共用可用性投影，保留 `wireVersion`、`expectedWireVersion`、`protocolCompatible`、liveness、admission 和 executionGap。`protocolComparison=observer_to_modeld` 明确比较的是本次 CLI/观察器与 modeld，不是已经加载的 Host；缺少该 Host 的直接证据时 `hostProtocolCompatibility=not_observed`。旧服务即使没有 execution-status，也可凭其合格 service-info 报告协议不匹配，执行能力另报 not_instrumented；这不满足 replace 的更严格身份/空闲门槛。两次读取跨 service generation 时不拼接旧身份与新执行计数，不显示 ready；scope_mismatch、protocol_mismatch、generation_changed 和单纯未观测分别保留。所有读取均不重启、不替换、不发起 STEP。
 
 ## 三类证据不能互相替代
 
@@ -205,6 +207,16 @@ GROKBOX_RUN_ROOT="$HOME/.grokbox/run" grokbox history outcome <agent-id> --step-
 `diagnostic.budget` 记录实际拒绝层 `layer`、指标 `metric`、配置的 `limit` 与触发时 `measured`。语义输出、表示存储估算、原始传输字节、单帧字节和工具数是不同预算，不得只称作 stream safety limit。生产不设 4096 个累计事件门槛；显式调用方自设 maxParts 仍会披露 event_count。Replay 和暂存参数按块保留，每位 reader 的字符游标独立；原始分片大小与重放分片大小可以不同，拼接后的有序文本、工具 ID、参数和结果关联必须一致。整批释放前再预留 replay 表示空间，不能发生容量失败却已经放行半批工具。
 
 `not_admitted` 在流中出现表示本地执行资格复核失败，不应被显示成 provider API 故障。`diagnostic.authority` 保存固定原因、实际 checkpoint（admission/before_dispatch/after_auth/tool_start/tool_complete/finish/recovery）与查询耗时；有依据时才保存 evidenceAgeMs。初始拒绝的顶层 phase 仍是 admission，运行中拒绝为 authority。Host/CLI 使用 authority-rejected，不声称已调用模型的请求从未发出。旧 model_error/provider 可按明确同 STEP 的 modeld not_admitted 细化，同时 `reported` 保留原始 Host 分类。没有记录的历史原因不回填。
+
+### 归属读取失败的子诊断
+
+`server_read_unavailable` 表示未取得可用的服务端归属观测，不表示已经证明账号没有权限，也不是模型 Provider 的鉴权失败。`diagnostic.authority.ownershipRead` 是可选的、version=1 的白名单观察：固定 source、state，以及原生读取返回的 `errorCode`（timeout / authorization_unavailable / unsupported_rpc / server_read_failed / invalid_response / busy / invalid_request / scope_unavailable / scope_changed）。可用时另记有限 RPC code（1–16），不记录异常 message、Cause、响应、URL、账户/机器/scope 标识或凭据。
+
+`authority.checkpoint` 是 STEP 的检查点；嵌套 `ownershipRead.phase` 是原生 reader 的 input / scope_before / server / scope_after / complete，两者不是同一层。`serverRead` 区分未发起、实际 request、共享 pending read 与 cache。`authority.durationMs` 是整个资格检查耗时，`waitBudgetMs` 是外层读取预算；嵌套 durationMs/deadlineMs/serverWaitMs/serverEvidenceAgeMs 分别是原生读总耗时、预算、服务端等待和原始证据年龄。命中缓存或晚到响应不重置证据年龄。外层 Gateway/Effect 等待超时但未收到 native 结果时，只记录 `ownership_read_timeout` 与外层预算，不伪造 native timeout/RPC code。
+
+这组事实通过同一 `FailureSummary` 从真实 admission/stream guard 传到 v5 Unix、Host 错误、三个终态日志、离线 incident、提醒关联及 monitor 的持久化执行证据。只有明确记录 `backendAttempts=0` 才提示“本 STEP 未发起模型请求”；没有 attempts 或仅有零输出不能得出该结论。流中 tool_start 等检查失败仍保留已发起模型的事实。工具释放、真实工具执行及 App 已渲染继续是独立观察。
+
+旧 Host 的快照若已有有限子码/时间，可保留这些原始字段；旧 journal 只剩 `server_read_unavailable` 时不回填“超时”，不猜 HTTP/RPC 细节。可见提示明确指出底层读错误未记录。新增字段不要求为兼容观测放宽执行协议。
 
 这些诊断不放松 ownership 新鲜度、scope、Host generation、撤销和取消的防线，不延长陈旧授权，不自动重发整个 STEP 或 TURN。
 

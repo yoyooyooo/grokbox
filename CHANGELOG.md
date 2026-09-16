@@ -8,6 +8,9 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Preserve finite native ownership-read subcodes, checkpoints, timings and budgets through admission, v5 failure summaries, Host errors, journals, incident/alert queries and monitor conditions. Distinguish unavailable evidence from proven access denial; never infer missing historical causes or replay work.
+- Keep aggregate and standalone modeld status consistent about observer/service protocol drift, uninstrumented execution, scope mismatches and generation changes. A diagnostic legacy probe does not authorize execution or replacement, and does not claim the loaded Host's protocol is known.
+
 - CLI/daemon title sync preserves `m=` when models.json is missing or the assigned record cannot be resolved; only a confirmed empty assignment clears it. Host profile writes keep the same contract, including a non-UUID agentId.
 - Teach the canary send watch as `send` then `history outcome --nonce … --runtime`.
   Outcome `data.state` has no `accepted` token; send receipt `accepted` means queued only.

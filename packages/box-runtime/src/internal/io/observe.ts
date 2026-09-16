@@ -46,7 +46,8 @@ type LiveStatusDraft = {
   watchdog: { required: boolean; state: "stopped" | "running" | "degraded" | "unknown" };
   modeld: { required: boolean; state: "stopped" | "running" | "unknown";
     scope?: ModeldServiceObservation["scope"]; serviceEpoch?: string | null; observedAt?: string;
-    execution?: ModeldServiceObservation["execution"]; executionGap?: ModeldServiceObservation["executionGap"] };
+    execution?: ModeldServiceObservation["execution"]; executionGap?: ModeldServiceObservation["executionGap"];
+    wireVersion?: number; expectedWireVersion?: number; protocolCompatible?: boolean };
   models: { main: string | null; agents: Record<string, string>; assignmentState: "valid" | "invalid" | "unknown" };
   window: { durationMs: number | null; affectedInvocations: "unknown" };
   evidence: Record<"desired" | "models" | "source" | "processes" | "gateway" | "attestation" | "profile" | "events", EvidenceState>;
@@ -190,7 +191,10 @@ function facetsFromDraft(status: LiveStatusDraft, events: { state: EvidenceState
       value: { required: status.modeld.required, ready: status.modeld.state === "running",
         ...(status.modeld.scope !== undefined ? { scope: status.modeld.scope, serviceEpoch: status.modeld.serviceEpoch ?? null } : {}),
         ...(status.modeld.execution ? { execution: status.modeld.execution } : {}),
-        ...(status.modeld.executionGap ? { executionGap: status.modeld.executionGap } : {}) },
+        ...(status.modeld.executionGap ? { executionGap: status.modeld.executionGap } : {}),
+        ...(status.modeld.wireVersion !== undefined ? { wireVersion: status.modeld.wireVersion } : {}),
+        ...(status.modeld.expectedWireVersion !== undefined ? { expectedWireVersion: status.modeld.expectedWireVersion } : {}),
+        ...(status.modeld.protocolCompatible !== undefined ? { protocolCompatible: status.modeld.protocolCompatible } : {}) },
     },
     controllerLiveness: { source: "controller", observedAt: null, gap: "missing", value: null },
     bridgeHost: {
@@ -299,7 +303,10 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
         state: observed.ready === null ? "unknown" : observed.ready ? "running" : "stopped",
         scope: observed.scope, serviceEpoch: observed.serviceEpoch, observedAt: observed.observedAt,
         ...(observed.execution ? { execution: observed.execution } : {}),
-        ...(observed.executionGap ? { executionGap: observed.executionGap } : {}) };
+        ...(observed.executionGap ? { executionGap: observed.executionGap } : {}),
+        ...(observed.wireVersion !== undefined ? { wireVersion: observed.wireVersion } : {}),
+        ...(observed.expectedWireVersion !== undefined ? { expectedWireVersion: observed.expectedWireVersion } : {}),
+        ...(observed.protocolCompatible !== undefined ? { protocolCompatible: observed.protocolCompatible } : {}) };
     }
   } catch { status.modeld.state = "unknown"; status.modeld.scope = "unavailable"; }
 

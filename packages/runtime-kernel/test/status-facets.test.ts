@@ -127,7 +127,8 @@ describe("status facets projector", () => {
         reason: null,
       }),
     }));
-    expect(status.facets.modeld.value).toEqual({ required: true, ready: true });
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: true,
+      liveness: "unknown", admission: "not_observed", protocolComparison: "observer_to_modeld", hostProtocolCompatibility: "not_observed" });
     expect(status.facets.controller.value?.liveness).toBe("unknown");
     expect(status.facets.bridge.value?.coverage).not.toBe("attested");
     expect(status.facets.hostDelivery.value?.kind).toBe("not_observed");

@@ -1,4 +1,5 @@
 import { projectExecutionCapacity } from "../contract/execution-status.ts";
+import { observationOwn as own } from "../contract/provider-observation.ts";
 import {
   INFERENCE_CORRELATION_KEYS,
   STATUS_SCHEMA_VERSION,
@@ -7,6 +8,7 @@ import {
   type Observed,
   type RuntimeStatusFacets,
   type StatusEvidence,
+  type ModeldAvailabilityEvidence,
 } from "../contract/status.ts";
 
 export type CompleteInferenceCorrelation = { [K in (typeof INFERENCE_CORRELATION_KEYS)[number]]: string };
@@ -70,6 +72,27 @@ function facet<T>(source: Observed<unknown>, value: T, gap: Observed<unknown>["g
   return { source: source.source, observedAt: source.observedAt, gap, value };
 }
 
+/** Same bounded interpretation for standalone CLI status and aggregate facets.
+ * The comparison is with the querying observer, not proof of a loaded Host's
+ * protocol, nor permission to dispatch or replace a running component. */
+export function projectModeldAvailability(value: unknown): ModeldAvailabilityEvidence {
+  const version = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0 && v <= 65535 ? v : undefined;
+  const wireVersion = version(own(value, "wireVersion")), expectedWireVersion = version(own(value, "expectedWireVersion"));
+  const protocolCompatible = wireVersion !== undefined && expectedWireVersion !== undefined ? wireVersion === expectedWireVersion : undefined;
+  const epoch = own(value, "serviceEpoch"), scope = own(value, "scope"), ready = own(value, "ready");
+  const reached = typeof epoch === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(epoch);
+  const execution = projectExecutionCapacity(own(value, "execution"));
+  return {
+    ...(wireVersion !== undefined ? { wireVersion } : {}), ...(expectedWireVersion !== undefined ? { expectedWireVersion } : {}),
+    ...(protocolCompatible !== undefined ? { protocolCompatible } : {}),
+    protocolComparison: "observer_to_modeld", hostProtocolCompatibility: "not_observed",
+    liveness: reached ? "reachable" : ready === false && scope === "not_observed" ? "unavailable" : "unknown",
+    admission: protocolCompatible === false ? "protocol_mismatch" : scope === "mismatch" ? "scope_mismatch"
+      : own(value, "executionGap") === "generation_changed" ? "generation_changed"
+      : ready !== true || protocolCompatible !== true || !reached || scope !== "matched" || !execution ? "not_observed" : execution.accepting ? "ready" : "blocked",
+  };
+}
+
 /** Unique status projector. Never aggregates to watchdog.state=degraded or closes a stored circuit. */
 export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFacets {
   const circuitValue = evidence.coordinator.gap === null && evidence.coordinator.value
@@ -86,7 +109,10 @@ export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFac
 
   const serviceScope = evidence.modeld.value?.scope;
   const scopeValid = serviceScope === undefined || ["matched", "mismatch", "unavailable", "not_observed"].includes(serviceScope);
+  const availability = projectModeldAvailability(evidence.modeld.gap === null ? evidence.modeld.value
+    : { expectedWireVersion: evidence.modeld.value?.expectedWireVersion });
   const modeldReady = evidence.modeld.gap === null && evidence.modeld.value?.ready === true
+    && availability.protocolCompatible !== false && evidence.modeld.value?.executionGap !== "generation_changed"
     && (serviceScope === undefined || serviceScope === "matched");
   const modeldRequired = evidence.modeld.value?.required === true;
   const modeldKnown = evidence.modeld.gap === null && evidence.modeld.value !== null && scopeValid && serviceScope !== "unavailable";
@@ -135,6 +161,7 @@ export function projectRuntimeStatus(evidence: StatusEvidence): RuntimeStatusFac
       modeld: facet(evidence.modeld, {
         required: modeldRequired,
         ready: modeldKnown ? modeldReady : null,
+        ...availability,
         ...(serviceScope !== undefined ? { scope: scopeValid ? serviceScope : "unavailable" as const, serviceEpoch } : {}),
         ...(scopeValid && projectExecutionCapacity(evidence.modeld.value?.execution) ? { execution: projectExecutionCapacity(evidence.modeld.value?.execution) } : {}),
         ...(evidence.modeld.value?.executionGap ? { executionGap: evidence.modeld.value.executionGap } : {}),

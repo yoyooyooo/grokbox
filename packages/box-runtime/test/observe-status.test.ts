@@ -357,6 +357,7 @@ describe("projectLiveStatus observation bounds", () => {
 });
 
 describe("projectLiveStatus route×modeld readiness", () => {
+  const unqualified = { liveness: "unknown", admission: "not_observed", protocolComparison: "observer_to_modeld", hostProtocolCompatibility: "not_observed" } as const;
   test("desired=route + route att agrees + modeld stopped → window-open, not attested", async () => {
     const { wrapper, supervisor, host } = officialChain();
     const status = await statusFor({
@@ -370,7 +371,7 @@ describe("projectLiveStatus route×modeld readiness", () => {
     expect(status.facets.bridge.value?.reason).toBeNull();
     expect(status.facets.bridge.value?.coverage).toBe("window-open");
     expect(status.facets.bridge.value?.desired).toBe("route");
-    expect(status.facets.modeld.value).toEqual({ required: true, ready: false });
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: false, ...unqualified });
   });
 
   test("desired=route + route att agrees + modeld up → attested / route-ready", async () => {
@@ -386,7 +387,7 @@ describe("projectLiveStatus route×modeld readiness", () => {
     expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
     expect(status.facets.bridge.value?.reason).toBeNull();
     expect(status.facets.bridge.value?.coverage).toBe("attested");
-    expect(status.facets.modeld.value).toEqual({ required: true, ready: true });
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: true, ...unqualified });
     expect(status.facets.bridge.value?.coverage).toBe("attested");
   });
 
@@ -403,7 +404,7 @@ describe("projectLiveStatus route×modeld readiness", () => {
     expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
     expect(status.facets.bridge.value?.reason).toBeNull();
     expect(status.facets.bridge.value?.coverage).toBe("window-open");
-    expect(status.facets.modeld.value).toEqual({ required: true, ready: true });
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: true, ...unqualified });
   });
 
   test("desired=route + profile mismatch + modeld up → window-open", async () => {
@@ -419,7 +420,7 @@ describe("projectLiveStatus route×modeld readiness", () => {
     expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
     expect(status.facets.bridge.value?.reason).toBeNull();
     expect(status.facets.bridge.value?.coverage).toBe("window-open");
-    expect(status.facets.modeld.value).toEqual({ required: true, ready: true });
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: true, ...unqualified });
   });
 
   test("desired=identity keeps attested without modeld; modeld.required=false", async () => {
@@ -432,7 +433,7 @@ describe("projectLiveStatus route×modeld readiness", () => {
     });
     expect(status.facets.bridge.value?.origin).toBe("grokbox-attested");
     expect(status.facets.bridge.value?.coverage).toBe("attested");
-    expect(status.facets.modeld.value).toEqual({ required: false, ready: false });
+    expect(status.facets.modeld.value).toEqual({ required: false, ready: false, ...unqualified });
   });
 
   test("official desired=route projects modeld required/stopped and window-open", async () => {
@@ -440,7 +441,7 @@ describe("projectLiveStatus route×modeld readiness", () => {
     const status = await statusFor({ mode: "route", list: [wrapper, supervisor, host] });
     expect(status.facets.bridge.value?.origin).toBe("official");
     expect(status.facets.bridge.value?.coverage).toBe("window-open");
-    expect(status.facets.modeld.value).toEqual({ required: true, ready: false });
+    expect(status.facets.modeld.value).toEqual({ required: true, ready: false, ...unqualified });
   });
 });
 

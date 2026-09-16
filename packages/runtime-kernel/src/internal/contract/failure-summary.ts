@@ -122,6 +122,35 @@ export function annotateFailureSummary<T extends object>(error: T, value: unknow
 export function failureSummaryOf(error: unknown): FailureSummary | undefined {
   return error !== null && typeof error === "object" ? projectFailureSummary(summaries.get(error)) : undefined;
 }
+function authorityFailureMessage(detail: StreamDiagnostic["authority"]): string {
+  const read = detail?.ownershipRead;
+  if (detail?.reason === "server_read_unavailable") {
+    const messages: Record<string, string> = {
+      timeout: "The Host timed out while reading this Bot's server ownership.",
+      authorization_unavailable: "The Host could not authenticate or access the server ownership service.",
+      unsupported_rpc: "The server does not support the Host's ownership-read RPC.",
+      invalid_response: "The Host received an invalid server ownership response.",
+      server_read_failed: "The Host could not complete the server ownership read.",
+      busy: "The Host ownership reader is still occupied by an earlier read.",
+      invalid_request: "The Host rejected an invalid ownership-read request.",
+      scope_unavailable: "The Host could not establish the identity scope for the ownership read.",
+      scope_changed: "The Host identity scope changed during the ownership read.",
+    };
+    return read?.state === "unavailable" && read.errorCode ? messages[read.errorCode]!
+      : "The local runtime could not obtain a usable server ownership observation for this Bot. The underlying read error was not recorded.";
+  }
+  if (detail?.reason === "ownership_read_timeout") return "The local runtime timed out waiting for the Host/Gateway ownership read.";
+  if (["ownership_reader_unavailable", "ownership_read_unavailable", "ownership_bridge_unavailable", "ownership_gateway_mismatch"].includes(detail?.reason ?? "")) {
+    return "The local runtime could not obtain ownership evidence through the current Host/Gateway channel.";
+  }
+  if (["harness_mismatch", "server_id_mismatch", "ownership_identity_changed"].includes(detail?.reason ?? "")) return "The Bot's server and local execution identities disagree or changed during this request.";
+  if (detail?.reason === "confirmed_temporal") return "This Bot uses the server-side agent loop; this Box-local model runtime cannot execute it.";
+  if (detail?.reason === "ownership_evidence_stale") return "The Bot ownership evidence was too old to authorize this STEP.";
+  if (detail?.reason === "native_execution_not_ready") return "The native Host was not ready to authorize local execution.";
+  if (detail?.reason === "turn_revoked") return "This TURN no longer has valid execution authority and cannot be revived by replaying it.";
+  if (["host_identity_mismatch", "host_generation_changed", "authority_not_committed"].includes(detail?.reason ?? "")) return "The local Host generation or committed runtime authority could not be verified.";
+  return "The local runtime could not verify this Bot's execution eligibility. This does not establish that the account lacks permission.";
+}
 export function presentFailure(summary: FailureSummary, host: { receivedOutput?: boolean; toolsReleased?: number } = {}) {
   const status = summary.http?.status;
   const text: Record<FailureCategory, string> = {
@@ -143,7 +172,7 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
     local_capacity: "The local model runtime could not admit this work with its currently available resources.",
     local_transport: "The connection between the local Host and model runtime failed or closed before completion.",
     execution_history: "The local execution history could not be read or saved safely.",
-    authority: "The local runtime could not confirm permission to continue this model request.",
+    authority: authorityFailureMessage(summary.diagnostic?.authority),
     wire: summary.code === "unsupported_version" ? "The local Host and model runtime use incompatible protocol versions. Update them together."
       : "The local Host and model runtime could not validate their execution protocol.",
     configuration: "The local model configuration or request could not be admitted safely.",
@@ -151,6 +180,10 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
     unknown: "The model request failed; the available evidence does not identify a more specific cause.",
   };
   const bits = [text[summary.category]];
+  const authority = summary.category === "authority" ? summary.diagnostic?.authority : undefined;
+  if (authority?.ownershipRead?.errorCode) bits.push(`Ownership-read detail: ${authority.ownershipRead.errorCode}${authority.ownershipRead.phase ? ` (phase=${authority.ownershipRead.phase})` : ""}.`);
+  if (authority?.checkpoint) bits.push(`Authority checkpoint: ${authority.checkpoint}${authority.durationMs !== undefined ? ` (${authority.durationMs} ms)` : ""}.`);
+  if (summary.progress?.backendAttempts === 0) bits.push("No model request was dispatched by this STEP.");
   if (host.receivedOutput === false) bits.push("No model output was received by this STEP.");
   else if (host.receivedOutput === true && summary.category === "upstream_transport") bits.push("Some output was received before the interruption.");
   if (host.toolsReleased === 0) bits.push("No tools were released by this STEP.");

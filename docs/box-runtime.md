@@ -138,7 +138,7 @@ Deactivate / 官方替换等待（`waitOfficialReplacement`）：仅 census 到�
 
 非活跃 TURN 的 pin/资源在软缓存压力或空闲维护时冷存储并释放，继续时核对原 binding、选择 revision、ownership 和 credential fingerprint。维护失败保留原资源 owner，并留下 cleanup 健康证据；不得阻塞一个仍能成功提交自己 claim 的无关请求。并发、请求字节、取消和物理存储故障仍有独立保护，不能为了静默而隐瞒已发生的失败或无限保留资源。
 
-`runtime modeld status` 将 liveness 与 admission 分开，公布 `lifetimeStepLimit:null`、活跃/热记录、冷热资源、回收计数和存储健康；旧服务未插桩应显示 `not_observed`，不能从能回答 health 推断可接新工作。
+`runtime modeld status` 将 liveness 与 admission 分开，公布 `lifetimeStepLimit:null`、活跃/热记录、冷热资源、回收计数和存储健康；旧服务未插桩应显示 `not_observed`，不能从能回答 health 推断可接新工作。聚合 `runtime status` 保留同一协议版本/不匹配、scope、generation 和执行观测缺口；版本比较明确为 observer_to_modeld，不由 CLI 版本推定已加载 Host 的兼容性。归属读取的有限子错误码、原生阶段、读取路径与预算贯通诊断，但不授予或延长执行资格，见[运行结果观察](maintainers/run-outcome-observation.md#归属读取失败的子诊断)。
 
 ### 历史 Unix admission / pin 合流（S5）
 

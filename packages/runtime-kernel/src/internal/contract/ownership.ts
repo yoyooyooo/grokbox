@@ -1,4 +1,5 @@
 import { ADMISSION_WAIT_MS } from "./limits.ts";
+import { OWNERSHIP_READ_ERRORS, ownershipReadObservationFromSnapshot, type OwnershipReadObservation } from "./ownership-observation.ts";
 
 // Shared, effect-free ownership facts. Display snapshots are not execution leases.
 export type OwnershipState = "confirmed_box" | "confirmed_temporal" | "conflict" | "unconfirmed";
@@ -49,7 +50,7 @@ export function inspectOwnership(input: { agentIds: string[]; snapshot: unknown;
   const snapshotValid = (snap.schemaVersion === 1 || snap.schemaVersion === 2 || snap.schemaVersion === 3) && (snap.state === "observed" || snap.state === "unavailable")
     && snap.source === "Host.official-client/ListGrokBotAgents" && Array.isArray(snap.agents)
     && snap.agents.length <= OWNERSHIP_MAX_TARGETS && iso(snap.observedAt) !== null && iso(snap.completedAt) !== null;
-  const errors = ["timeout", "authorization_unavailable", "unsupported_rpc", "server_read_failed", "invalid_response", "busy", "invalid_request", "scope_unavailable", "scope_changed"];
+  const errors = OWNERSHIP_READ_ERRORS;
   const errorCode = snapshotValid ? inList(snap.errorCode, errors) ? snap.errorCode as string : null
     : inList(snap.state, errors) ? snap.state as string : "ownership_bridge_unavailable";
   const rows: unknown[] = snapshotValid ? snap.agents as unknown[] : [];
@@ -65,7 +66,9 @@ export function inspectOwnership(input: { agentIds: string[]; snapshot: unknown;
     : executionBefore.allowed === true && executionAfter.allowed === true && executionBefore.bound === true && executionAfter.bound === true ? "ready" : "unknown";
   const scope = rec(snap.scope);
   const scopeId = typeof scope.id === "string" && /^[a-f0-9]{64}$/.test(scope.id) ? scope.id : null;
+  const readObservation = ownershipReadObservationFromSnapshot(snap);
   return {
+    ...(readObservation ? { readObservation } : {}),
     source: snapshotValid ? snap.source as string : "unavailable",
     observedAt: iso(snap.observedAt), completedAt: iso(snap.completedAt),
     serverRead: { state: snapshotValid ? snap.state as string : "unavailable", errorCode },
@@ -125,7 +128,7 @@ export function inspectOwnership(input: { agentIds: string[]; snapshot: unknown;
 export type OwnershipAdmission = { scopeId: string; serverId: string; observedAtMs: number };
 export type OwnershipDecision =
   | { ok: true; evidence: OwnershipAdmission }
-  | { ok: false; reason: string; class: OwnershipRefusalClass };
+  | { ok: false; reason: string; class: OwnershipRefusalClass; ownershipRead?: OwnershipReadObservation };
 
 const UNAVAILABLE_REASONS = new Set([
   "ownership_reader_unavailable",
@@ -145,8 +148,8 @@ export function classifyManagedOwnershipRefusal(reason: string, state?: Ownershi
   return "unconfirmed";
 }
 
-function refuse(reason: string, state?: OwnershipState): OwnershipDecision {
-  return { ok: false, reason, class: classifyManagedOwnershipRefusal(reason, state) };
+function refuse(reason: string, state?: OwnershipState, ownershipRead?: OwnershipReadObservation): OwnershipDecision {
+  return { ok: false, reason, class: classifyManagedOwnershipRefusal(reason, state), ...(ownershipRead ? { ownershipRead } : {}) };
 }
 
 export function decideManagedOwnership(input: { agentId: string; snapshot: unknown; nowMs: number; gatewayChanged?: boolean }): OwnershipDecision {
@@ -155,14 +158,14 @@ export function decideManagedOwnership(input: { agentId: string; snapshot: unkno
   const row = fact.agents[0];
   if (!row || row.managedEligibility !== "ownership_only") {
     const reason = row?.state === "confirmed_temporal" ? "confirmed_temporal" : row?.reasons[0] ?? "ownership_unconfirmed";
-    return refuse(reason, row?.state);
+    return refuse(reason, row?.state, fact.readObservation);
   }
   // Older schemas remain inspectable; an inactive migration window alone is
   // not permission to run during native startup/recovery/recreation pauses.
-  if (fact.localExecution !== "ready") return refuse("native_execution_not_ready", row.state);
-  if (!fact.scope?.id || !fact.scope.stable) return refuse("ownership_scope_unconfirmed", row.state);
+  if (fact.localExecution !== "ready") return refuse("native_execution_not_ready", row.state, fact.readObservation);
+  if (!fact.scope?.id || !fact.scope.stable) return refuse("ownership_scope_unconfirmed", row.state, fact.readObservation);
   const times = [fact.observedAt, fact.completedAt, fact.serverObservedAt].map(value => value ? Date.parse(value) : NaN);
   if (times.some(time => !Number.isFinite(time) || time > input.nowMs || input.nowMs - time > OWNERSHIP_EVIDENCE_MAX_AGE_MS)
-    || times[0]! > times[1]!) return refuse("ownership_evidence_stale", row.state);
+    || times[0]! > times[1]!) return refuse("ownership_evidence_stale", row.state, fact.readObservation);
   return { ok: true, evidence: { scopeId: fact.scope.id, serverId: row.server!.serverId!, observedAtMs: times[2]! } };
 }

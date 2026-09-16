@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
-import { MONITOR_POLICY, MONITOR_RULES, confirmedObservation, monitorFreshness, monitorScope, monitorTargets, monitorUuid, type MonitorRule, type MonitorSample } from "@grokbox/runtime-kernel/monitor";
+import { MONITOR_POLICY, MONITOR_RULES, confirmedObservation, projectMonitorOwnershipDiagnosis, monitorFreshness, monitorScope, monitorTargets, monitorUuid, type MonitorRule, type MonitorSample } from "@grokbox/runtime-kernel/monitor";
 import { traceAlerts, observationId, projectAlertEvent, projectNotification, chooseNotification, type AlertTraceSelector } from "@grokbox/runtime-kernel/alerts";
 import type { LockHandle } from "./op-lock.ts";
 import { acquireMonitorMigrationLock, monitorProcessIdentity as processStart } from "./monitor-owner.node.ts";
@@ -85,7 +85,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   else if(row){await db.run("UPDATE incidents SET status='resolved',resolved_at=?,last_seen=?,revision=revision+1 WHERE id=?",[at,at,uuid(row.id)]);await event(db,epoch,"incident_resolved",sid,agentId,at,uuid(row.id));}
  }
  function getIncident(row:Row){if(!["open","resolved","recorded"].includes(String(row.status)))throw error("monitor_store_invalid");
-  return {id:uuid(row.id),scopeId:scope(row.scope),agentId:row.agent_id===null?null:uuid(row.agent_id),rule:rule(row.rule),status:String(row.status),category:String(row.category??"condition"),parentIncidentId:monitorUuid(row.parent_id)?row.parent_id:null,diagnosis:row.rule==="upstream_route_failure" && typeof row.summary_json==="string" ? projectProviderRouteDiagnosis(JSON.parse(row.summary_json)) : retainedDiagnosis(row.summary_json),
+  return {id:uuid(row.id),scopeId:scope(row.scope),agentId:row.agent_id===null?null:uuid(row.agent_id),rule:rule(row.rule),status:String(row.status),category:String(row.category??"condition"),parentIncidentId:monitorUuid(row.parent_id)?row.parent_id:null,diagnosis:row.rule==="upstream_route_failure" && typeof row.summary_json==="string" ? projectProviderRouteDiagnosis(JSON.parse(row.summary_json)) : row.rule==="observation_unavailable" && typeof row.summary_json==="string" ? projectMonitorOwnershipDiagnosis(JSON.parse(row.summary_json)) : retainedDiagnosis(row.summary_json),
    firstSeenAtMs:number(row.first_seen),lastSeenAtMs:number(row.last_seen),resolvedAtMs:nullableTime(row.resolved_at),revision:number(row.revision),acknowledged:number(row.acknowledged)===1,snoozeUntilMs:nullableTime(row.snooze_until)};
  }
  function getEvent(row:Row){const allowed=["collector_started","observation_gap","collector_stopped","scope_changed","ownership_changed","incident_opened","incident_resolved","incident_ack","incident_snooze","execution_failure_observed","source_conflict","notification_decided","notification_exported","notification_export_unknown"];
@@ -168,7 +168,16 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
    return mutate(async db=>{const current=await meta(db),digest=sha256Text(canonicalJson(sample));if(current.epoch!==epoch||current.running!==1)throw error("monitor_epoch_changed");
     if(sampleNumber===current.last_number&&sample.sampleId===current.last_sample_id&&digest===current.last_digest)return {duplicate:true,sampleNumber,events:[] as ReturnType<typeof getEvent>[],notifications:[]};
     const previousSeq=await lastSequence(db);if(sampleNumber!==number(current.last_number)+1||sample.completedAtMs<number(current.heartbeat))throw error("monitor_stale_sample");const at=number(sample.completedAtMs);
-    if(sample.failure||!sample.scopeId){await incident(db,epoch,rootId,null,"observation_unavailable",true,at);await db.run("UPDATE observations SET latest_success=0,last_attempt=? WHERE scope IS ?",[at,current.current_scope as string|null]);}
+    if(sample.failure||!sample.scopeId){
+     await incident(db,epoch,rootId,null,"observation_unavailable",true,at);
+     const diagnosis=projectMonitorOwnershipDiagnosis({version:1,source:"monitor_ownership_read",observedAtMs:at,
+      failure:sample.failure??"scope_unavailable",readObservation:sample.readObservation});
+     // Reuse this condition's bounded summary, in the existing sample transaction.
+     // A newer uninstrumented failure must not inherit an earlier read's subcode.
+     await db.run("UPDATE incidents SET summary_json=? WHERE scope=? AND agent_id IS NULL AND rule='observation_unavailable' AND status='open' AND occurrence_key=''",
+      [diagnosis?canonicalJson(diagnosis):null,rootId]);
+     await db.run("UPDATE observations SET latest_success=0,last_attempt=? WHERE scope IS ?",[at,current.current_scope as string|null]);
+    }
     else{const expectedIds=(await db.all("SELECT agent_id FROM watched ORDER BY agent_id")).map(r=>uuid(r.agent_id));if(canonicalJson(sample.agents.map(r=>r.agentId).sort())!==canonicalJson(expectedIds))throw error("monitor_incomplete_sample");
      const sid=scope(sample.scopeId),serverAt=number(sample.serverObservedAtMs);if(serverAt>at||serverAt<sample.startedAtMs-MONITOR_POLICY.readTimeoutMs||at-serverAt>MONITOR_POLICY.readTimeoutMs||!sample.gatewayEpoch||!/^\d+:\d+$/.test(sample.gatewayEpoch))throw error("monitor_invalid_sample");
      if(current.current_scope!==null&&current.current_scope!==sid)await event(db,epoch,"scope_changed",sid,null,at);await db.run("UPDATE meta SET current_scope=?,gateway_epoch=? WHERE singleton=1",[sid,sample.gatewayEpoch]);await incident(db,epoch,rootId,null,"observation_unavailable",false,at);

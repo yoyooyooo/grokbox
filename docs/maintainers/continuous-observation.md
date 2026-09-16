@@ -77,7 +77,7 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 
 持久 incident 分为：
 
-- `ownership_*` / `observation_unavailable`：既有持续条件。
+- `ownership_*` / `observation_unavailable`：既有持续条件。归属采样失败的 condition diagnosis 可保存 `source=monitor_ownership_read`、采样结束时间、有限 failure 与 `readObservation`（原生子错误码、读取阶段、耗时/预算及有限 RPC code）。先保留实际读取失败，不因该失败连带 scope 不稳定而改写成另一种根因。摘要在同一采样事务内更新，冷读仍可查；下一次未插桩失败不继承上一次子码，恢复后保留最后失败的原时间，不把它当成当前仍故障。旧 condition 无摘要则保持缺失。监控读取失败不是模型 STEP 失败，也不是取消权限的证据；不新增采样频率、通知通道或执行权限。
 - `execution_failure`：具体 STEP 的历史发生记录，状态 `recorded`，不是等待被改写成成功的运行。
 - `pre_step_failure`：有原生 operation/dispatch/事件引用但尚无 STEP 的明确拒绝；不编造 STEP。
 - `shared_runtime_failure`：由同 service epoch 的结构化 admission/capacity 或 ledger_unavailable 证据建立的共享条件。每个失败请求仍保留子记录。后续同服务、更晚、明确成功且存储可用的执行可以结束这个条件周期；旧失败不被解决。再次发生创建新周期，不继承旧周期 ack。
