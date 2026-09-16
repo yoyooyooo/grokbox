@@ -26,4 +26,10 @@ Read `assessment` and `evidence` alongside state. A known runtime gap prevents a
 
 Native trigger/lineage facts do not authorize a retry. Released tool materials are not proof of tool execution or checkpoint commit. Timestamped writer-health snapshots are not current process-liveness proof. A sidebar spinner, current-session Working indicator, and per-message streaming do not establish the same scope of activity.
 
+## A Bot remains Working after its parent turn ends
+
+Read `grokbox agents ownership <agent-id> --json`. A qualified Host may return `activityObservation` separately from the ownership decision. Compare the raw session's `isRunning`, `hasRunningSubagents`, server timestamps, TTL and timer receipt with the current overlay. A fresh child-only frame can keep the sidebar active while the current conversation is idle. Local task lists do not enumerate a temporal Bot's server-side children; an external worker ending does not stop a native listener watching it. `hadActiveRun=false` from a parent interrupt is not proof that children stopped.
+
+Do not fix this by changing harness or forcing running=false. With explicit stop authorization, the Bot's native execution owner must enumerate and stop its own children/background waits. Then verify a later server frame and the roster are idle beyond the relevant TTL; do not treat a maintenance reply or a temporarily absent overlay after restart as proof. A failed/stuck optimistic message is a separate send-journal issue: preserve its nonce and never resend it as a diagnostic shortcut.
+
 Stop after the authorized observation budget. Share the redacted state, selectors, gap/rejection codes, and what remains unproved; do not silently replay business work, switch Host, or start a persistent monitor. Host failures route to [troubleshoot](troubleshoot.md); deliberate model-switch acceptance lives in [validation](validation.md).

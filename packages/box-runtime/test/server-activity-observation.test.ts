@@ -80,6 +80,34 @@ test("applied native-shaped hooks preserve timer ownership, immediate expiry, re
   expect(unaffected.applyLive({ ...live(), ttl: 90000 }).live.isRunning).toBe(true);
 });
 
+test("fresh child-only frames renew observation until explicit native idle, without clearing another session", () => {
+  const applied = transformUnchecked(shaped, SERVER_ACTIVITY_OBSERVATION_SLICES);
+  if (!applied.ok) throw Error(applied.code);
+  let now = base;
+  const observer = createServerActivityObserver({ generation: "g", instrumented: true, now: () => now });
+  const owner = new Function("globalThis", applied.source)({ [Symbol.for(HOST_SERVER_ACTIVITY_SYMBOL)]: observer });
+  const view = () => ({ live: { isRunning: owner.sessions.get("")?.live.isRunning } });
+  const inspect = () => observer.snapshot([agentId], view)!.agents[0]!;
+  owner.applyLive({ ...live(), ttl: 90000 });
+  now += 15000;
+  owner.applyLive({ ...live({ updatedAtMs: BigInt(now) }), ttl: 90000 });
+  expect(inspect()).toMatchObject({ projection: { isRunning: true }, sessions: [
+    { sessionId: "", serverUpdatedAtMs: now, isRunning: false, hasRunningSubagents: true, timer: "armed" },
+  ] });
+  owner.applyLive({ ...live({ sessionId: "other-session", isRunning: true, hasRunningSubagents: false }), ttl: 90000 });
+  owner.applyLive({ ...live({ isRunning: true, hasRunningSubagents: false }), ttl: 90000 });
+  expect(inspect().projection.isRunning).toBe(true);
+  owner.applyLive({ ...live({ isRunning: false, hasRunningSubagents: false }), ttl: 90000 });
+  now += 91000;
+  const result = inspect();
+  expect(result.projection.isRunning).toBe(false);
+  expect(result.sessions.find(s => s.sessionId === "")).toMatchObject({
+    isRunning: false, hasRunningSubagents: false, timer: "not_required",
+  });
+  expect(result.sessions.find(s => s.sessionId === "other-session")?.timer).toBe("armed");
+  expect(owner.sessions.get("other-session").live.isRunning).toBe(true);
+});
+
 test("the same safe activity event survives actual journal write and read projection", async () => {
   const root = await mkdtemp(join(tmpdir(), "activity-observation-"));
   let recorded: Record<string, unknown> | undefined;
