@@ -10,7 +10,7 @@ let config;
 let nativeReads = 0;
 let officialEffects = 0;
 let executionReads = 0;
-const readOwnership = factory.bindHostOwnershipRead({ cacheMs: 2000 });
+const readOwnership = factory.bindHostOwnershipRead();
 const original = { getExecutor() { officialEffects++; throw new Error('official_execution_forbidden'); } };
 process.on('message', async message => {
   if (!message || typeof message !== 'object' || typeof message.id !== 'number') return;
@@ -19,9 +19,10 @@ process.on('message', async message => {
     if (message.method === 'init') {
       config = message.input;
       value = { ready: true, pid: process.pid };
-    } else if (message.method === 'ownership' && config) {
+    } else if ((message.method === 'ownership' || message.method === 'ownership-local') && config) {
+      const localOnly = message.method === 'ownership-local';
       const snapshot = await readOwnership({
-        agentIds: message.input,
+        agentIds: message.input, localOnly,
         readScope: () => ({ backend: 'https://owned.invalid', account: 'a'.repeat(64), team: null, machine: 'owned-machine' }),
         readWindow: () => ({ kind: 'inactive' }),
         readExecution: () => {
@@ -35,7 +36,7 @@ process.on('message', async message => {
           return { agents: [{ agentId: config.agentId, id: 'owned-server-row', harness: config.serverHarness, viewerIsOwner: true }] };
         },
       });
-      if (config.legacyEvidence) snapshot.schemaVersion = 2;
+      if (config.legacyEvidence && !localOnly) snapshot.schemaVersion = 2;
       value = { snapshot, gateway: { pid: process.pid, startedAt: 1 } };
     } else if (message.method === 'run' && config) {
       const hook = factory.bindHostSessionHook({ mode: 'route', durableRoot: config.durableRoot,

@@ -1,5 +1,5 @@
 import { addFinishField, observeFinishField, projectFinishAudit, projectToolTerminalAudit, projectProviderHttp, projectProviderRoute, type FinishAudit, type ToolTerminalAudit, type ProviderHttpObservation, type ProviderRouteObservation } from "./provider-observation.ts";
-import { projectOwnershipReadObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
+import { projectOwnershipReadObservation, projectOwnershipWaitObservation, type OwnershipWaitObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
 import { projectToolIdentityAudit, type ToolIdentityAudit } from "./tool-identity-observation.ts";
 import { projectSdkValidation, type SdkValidationObservation } from "./sdk-validation-observation.ts";
 /** Payload-free, request-local evidence shared by modeld and the SDK/Effect-free Host. */
@@ -55,6 +55,7 @@ export type AuthorityDiagnostic = {
   evidenceAgeMs?: number;
   waitBudgetMs?: number;
   ownershipRead?: OwnershipReadObservation;
+  ownershipWait?: OwnershipWaitObservation;
 };
 export type StreamBudgetDiagnostic = { layer: "provider" | "canonical" | "host"; metric: "output_bytes" | "retained_bytes" | "event_count" | "wire_bytes" | "event_bytes" | "tool_count"; limit: number; measured: number };
 export type StreamDiagnostic = {
@@ -157,9 +158,10 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
       const durationMs = count(own(authority, "durationMs")), evidenceAgeMs = count(own(authority, "evidenceAgeMs"));
       const waitBudgetMs = count(own(authority, "waitBudgetMs"));
       const ownershipRead = projectOwnershipReadObservation(own(authority, "ownershipRead"));
+      const ownershipWait = projectOwnershipWaitObservation(own(authority, "ownershipWait"));
       out.authority = { reason, ...(checkpoint ? { checkpoint } : {}), ...(durationMs !== undefined ? { durationMs } : {}),
         ...(evidenceAgeMs !== undefined ? { evidenceAgeMs } : {}), ...(waitBudgetMs !== undefined ? { waitBudgetMs } : {}),
-        ...(ownershipRead ? { ownershipRead } : {}) };
+        ...(ownershipRead ? { ownershipRead } : {}), ...(ownershipWait ? { ownershipWait } : {}) };
     }
     return Object.keys(out).length ? out : undefined;
   } catch { return undefined; }

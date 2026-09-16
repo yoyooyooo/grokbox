@@ -87,8 +87,10 @@ for (const condition of ["missing", "denied", "expired", "scope-change", "row-ch
     const counts = createCountedSeams();
     let afterPin = false;
     const authority = Layer.succeed(AdmissionAuthority, { current: () => Effect.gen(function* () {
-      if (condition === "missing") return { admitted: true };
-      return { admitted: condition !== "denied", ownership: {
+      // Deliberately violate the trusted port to retain the production decoder's negative proof.
+      if (condition === "missing") return { admitted: true } as import("../src/internal/contract/authority-policy.ts").AdmissionAuthorityResult;
+      if (condition === "denied") return { admitted: false, reason: "ownership_unconfirmed" } as const;
+      return { admitted: true as const, ownership: {
         scopeId: condition === "scope-change" && afterPin ? "b".repeat(64) : "a".repeat(64),
         serverId: condition === "row-change" && afterPin ? "s2" : "s1",
         observedAtMs: condition === "expired" ? 0 : yield* Clock.currentTimeMillis,
@@ -111,9 +113,9 @@ for (const revoke of ["ownership", "credential"] as const) {
     const counts = createCountedSeams();
     const compactCounts = { invocations: 0 };
     let allowed = true, credentialValid = true;
-    const authority = Layer.succeed(AdmissionAuthority, { current: () => Effect.map(Clock.currentTimeMillis, observedAtMs => ({
-      admitted: allowed, ownership: { scopeId: "a".repeat(64), serverId: "s1", observedAtMs },
-    })) });
+    const authority = Layer.succeed(AdmissionAuthority, { current: () => Effect.map(Clock.currentTimeMillis, observedAtMs => allowed
+      ? { admitted: true as const, ownership: { scopeId: "a".repeat(64), serverId: "s1", observedAtMs } }
+      : { admitted: false as const, reason: "ownership_identity_changed" as const }) });
     const backend = Layer.succeed(ModelBackend, {
       prepare: () => Effect.sync(() => {
         counts.prepare++;

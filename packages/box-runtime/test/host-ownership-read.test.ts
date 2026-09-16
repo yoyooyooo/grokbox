@@ -129,4 +129,12 @@ test("actual applied Gateway wrapper leaves ordinary status unchanged and borrow
   expect(result.grokboxOwnership.scope.id).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(result)).not.toContain("owned-machine");
   expect(JSON.stringify(result)).not.toContain("PRIVATE_SENTINEL");
+  const local = await api.getHostStatus({ grokboxOwnershipAgentIds: [A], grokboxOwnershipLocalOnly: true });
+  expect(local.grokboxOwnership).toMatchObject({ schemaVersion: 1, source: "Host.native-local-ownership", state: "observed",
+    localExecution: { before: { allowed: true, bound: true }, after: { allowed: true, bound: true } } });
+  expect(nativeReads).toBe(1);
+  expect(credentialReads).toBe(1);
+  expect(machineReads).toBe(4);
+  expect(local.grokboxOwnership.agents[0].server).toBeNull();
+  expect(JSON.stringify(local)).not.toContain("PRIVATE_SENTINEL");
 });

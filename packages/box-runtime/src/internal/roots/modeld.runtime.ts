@@ -4,13 +4,14 @@ import { homedir } from "node:os";
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import type { Server } from "node:net";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS, providerRecoveryFromEnv, streamFailureDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS, providerRecoveryFromEnv, streamFailureDiagnostic, type AdmissionAuthorityResult, type AuthorityDiagnostic } from "@grokbox/runtime-kernel/contract";
 import { AdmissionAuthority } from "@grokbox/runtime-kernel/ports";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
 import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { modeldStorePorts } from "../io/store.node.ts";
-import { readManagedOwnership, type OwnershipReader } from "../io/ownership-admission.node.ts";
+import { type OwnershipReader } from "../io/ownership-admission.node.ts";
+import { makeOwnershipCoordinator } from "../io/ownership-coordinator.node.ts";
 import { writeModeldStepOutcome, writeModeldRecoveryProgress } from "../io/modeld-outcome.node.ts";
 import { openExecutionHistory } from "../io/execution-history.node.ts";
 import { noteJournalObservationTimeout } from "../host/journal-health.node.ts";
@@ -23,28 +24,30 @@ import type { ListenHooks, ReleaseStatus, ResourceCounts } from "../modeld/unix-
 /** Fail-closed: only store `committed` route+attestation+host is admitted. */
 export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string, ownershipRead?: OwnershipReader): Layer.Layer<AdmissionAuthority> {
   const ports = modeldStorePorts(durableRoot, runRoot);
-  return Layer.succeed(AdmissionAuthority, {
-    current: (request) => Effect.gen(function* () {
+  return Layer.effect(AdmissionAuthority, Effect.gen(function* () {
+    const coordinator = yield* makeOwnershipCoordinator(ownershipRead);
+    return {
+    current: (request): Effect.Effect<AdmissionAuthorityResult> => Effect.gen(function* () {
       const authority = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
-      if (authority.state !== "committed") return { admitted: false, reason: "authority_not_committed" };
-      if (!request) return { admitted: true };
+      if (authority.state !== "committed") return { admitted: false, reason: "authority_not_committed" } as const;
       const host = authority.host;
       if (request.hostEpoch.compile !== host.generationId || request.hostEpoch.source !== host.sourceSha
-        || request.hostEpoch.hostIdentity !== host.identitySha) return { admitted: false, reason: "host_identity_mismatch" };
-      const observed = yield* readManagedOwnership({ agentId: request.agentId, read: ownershipRead, gatewayPid: host.pid });
+        || request.hostEpoch.hostIdentity !== host.identitySha) return { admitted: false, reason: "host_identity_mismatch" } as const;
+      const observed = yield* coordinator.current({ agentId: request.agentId, gatewayPid: host.pid, hostGeneration: host.generationId });
       // The native read can span a deployment: never combine two generations.
       const after = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
-      if (after.state !== "committed" || after.host.generationId !== host.generationId || after.host.identitySha !== host.identitySha) return { admitted: false, reason: "host_generation_changed" };
-      return { admitted: true, ownership: { ...observed.evidence,
+      if (after.state !== "committed" || after.host.generationId !== host.generationId || after.host.identitySha !== host.identitySha) return { admitted: false, reason: "host_generation_changed" } as const;
+      return { admitted: true as const, ownership: { ...observed.evidence,
         scopeId: sha256Text(canonicalJson([observed.evidence.scopeId, observed.gateway.pid, observed.gateway.startedAt])),
       } };
     }).pipe(Effect.catch(error => {
       const reason = error instanceof BoxRuntimeError ? error.failureCode : error;
       const diagnostic = streamFailureDiagnostic(error);
-      return Effect.succeed({ admitted: false, reason: typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason : "unknown",
+      return Effect.succeed({ admitted: false as const, reason: typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason as AuthorityDiagnostic["reason"] : "unknown" as const,
         ...(diagnostic ? { diagnostic } : {}) });
     })),
-  });
+    };
+  }));
 }
 
 export function admitAllAuthorityLayer(): Layer.Layer<AdmissionAuthority> {

@@ -2,7 +2,9 @@ import { Clock, Effect } from "effect";
 import {
   BoxRuntimeError,
   decideManagedOwnership,
+  remoteOwnershipEvidence,
   OWNERSHIP_WAIT_MS,
+  OWNERSHIP_EVIDENCE_MAX_AGE_MS,
   AUTHORITY_REASONS,
   annotateStreamFailure,
   type AuthorityDiagnostic,
@@ -13,10 +15,16 @@ import {
 
 /** Borrowed narrow Gateway capability. The CLI root supplies the existing client;
  * no CLI import, native credential export or evidence trusted from run-step JSON. */
-export type OwnershipReader = (agentIds: string[], signal: AbortSignal) => Promise<{
+export type OwnershipReadReply = {
   snapshot: unknown;
   gateway: { pid: number; startedAt: number };
-}>;
+};
+export type OwnershipReader = ((agentIds: string[], signal: AbortSignal) => Promise<OwnershipReadReply>) & {
+  /** Optional native capability, never a substitute for the Server source.
+   * Without it the reader can still inspect/admit a fresh full snapshot, but
+   * the coordinator must not cache its local execution facts. */
+  local?: (agentIds: string[], signal: AbortSignal) => Promise<OwnershipReadReply>;
+};
 
 const HOST_UNAVAILABLE_NEXT = "grokbox doctor then grokbox host start";
 
@@ -77,6 +85,7 @@ export function readManagedOwnership(input: { agentId: string; read?: OwnershipR
     if (!input.read) {
       return yield* Effect.fail(denied("ownership_reader_unavailable", "unavailable", input.agentId));
     }
+    const startedTick = yield* Clock.monotonicTimeNanos;
     const result = yield* Effect.tryPromise({
       try: signal => input.read!([input.agentId], signal),
       catch: () => denied("ownership_read_unavailable", "unavailable", input.agentId),
@@ -88,8 +97,21 @@ export function readManagedOwnership(input: { agentId: string; read?: OwnershipR
       || result.gateway.startedAt < 1 || (input.gatewayPid !== undefined && input.gatewayPid !== result.gateway.pid)) {
       return yield* Effect.fail(denied("ownership_gateway_mismatch", "unavailable", input.agentId));
     }
+    const completedTick = yield* Clock.monotonicTimeNanos;
+    if (completedTick < startedTick) return yield* Effect.fail(denied("ownership_clock_unavailable", "unavailable", input.agentId));
+    // The coordinator and direct managed-selection path share this same
+    // conservative elapsed bound. A wall-clock correction cannot make a slow
+    // response fresh; diagnostics themselves are never used as permission.
+    const readAgeMs = Math.ceil(Number(completedTick - startedTick) / 1_000_000);
+    if (!Number.isSafeInteger(readAgeMs)) return yield* Effect.fail(denied("ownership_clock_unavailable", "unavailable", input.agentId));
+    const remote = remoteOwnershipEvidence(input.agentId, result.snapshot);
     const decision = decideManagedOwnership({ agentId: input.agentId, snapshot: result.snapshot, nowMs: yield* Clock.currentTimeMillis });
     if (!decision.ok) return yield* Effect.fail(denied(decision.reason, decision.class, input.agentId, decision.ownershipRead));
-    return { evidence: decision.evidence, gateway: result.gateway };
+    // Explicit conflict/revocation above wins over elapsed-time classification.
+    if (readAgeMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
+      return yield* Effect.fail(denied("ownership_evidence_stale", "unconfirmed", input.agentId, remote.readObservation));
+    }
+    return { evidence: decision.evidence, gateway: result.gateway,
+      remote };
   });
 }

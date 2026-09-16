@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { decideManagedOwnership, inspectOwnership } from "@grokbox/runtime-kernel/contract";
+import { decideManagedOwnership, inspectOwnership, inspectNativeOwnershipLocal } from "@grokbox/runtime-kernel/contract";
 import { bindHostOwnershipRead } from "../src/internal/host/ownership-read.ts";
 import { ownedOwnershipSnapshot } from "./ownership-fixture.ts";
 
@@ -48,14 +48,16 @@ test("native pause during List cannot be hidden by an inactive migration window"
   expect(result).toMatchObject({ localExecution: { before: { allowed: true }, after: { allowed: false } } });
 });
 
-test("Server cache hit always rereads native local-work state", async () => {
+test("local-only native witness observes pause without another registration read", async () => {
   let allowed = true, serverReads = 0, executionReads = 0;
-  const read = bindHostOwnershipRead({ now: () => at, cacheMs: 2000 });
+  const read = bindHostOwnershipRead({ now: () => at });
   const ports = { ...baseline, readExecution: () => { executionReads++; return { allowed, bound: true }; },
     listServer: async () => { serverReads++; return baseline.listServer(); } };
   expect(decideManagedOwnership({ agentId: A, snapshot: await read(ports), nowMs: at }).ok).toBe(true);
   allowed = false;
-  expect(decideManagedOwnership({ agentId: A, snapshot: await read(ports), nowMs: at }).ok).toBe(false);
+  const witness = await read({ ...ports, localOnly: true });
+  expect(inspectNativeOwnershipLocal({ agentId: A, snapshot: witness, nowMs: at })).toMatchObject({ valid: true, ready: false });
+  expect(decideManagedOwnership({ agentId: A, snapshot: witness, nowMs: at }).ok).toBe(false);
   expect(serverReads).toBe(1);
   expect(executionReads).toBe(4);
 });

@@ -128,6 +128,10 @@ for (const scenario of ["confirmed-box", "server-temporal", "legacy-evidence", "
         if (signal.aborted) return Promise.reject(new Error("owned-cancelled"));
         return client.call("ownership", ids);
       };
+      ownershipRead.local = (ids, signal) => {
+        if (signal.aborted) return Promise.reject(new Error("owned-cancelled"));
+        return client.call("ownership-local", ids);
+      };
       service = await startModeldProcess({ durableRoot, runRoot, env: { OWNED_KEY: "owned-fixture-key" }, fetch: fetchImpl, ownershipRead });
       if (scenario === "confirmed-box") {
         const result = await client.call<{ finishReason: string; modelId: string; messages: unknown[] }>("run");
@@ -144,7 +148,7 @@ for (const scenario of ["confirmed-box", "server-temporal", "legacy-evidence", "
         outcome: scenario === "confirmed-box" ? "ok" : "error" });
       if (scenario !== "confirmed-box") expect(rows[0]).toMatchObject({ phase: "admission", eventCount: 0, failureCode: "not_admitted" });
       const counts = await client.call<{ nativeReads: number; officialEffects: number; executionReads: number }>("counts");
-      expect(counts).toMatchObject({ nativeReads: 1, officialEffects: 0 });
+      expect(counts).toMatchObject({ nativeReads: scenario.startsWith("native-") ? 0 : 1, officialEffects: 0 });
       expect(counts.executionReads).toBeGreaterThanOrEqual(2);
       expect(JSON.stringify(rows)).not.toContain("PRIVATE_NATIVE_STATE");
     } finally {

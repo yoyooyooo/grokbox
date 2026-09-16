@@ -497,20 +497,22 @@ export class GatewayClient {
     return await this.rpc("getAgentThread", { id: body.id, rootId: body.rootId }, { timeoutMs });
   }
 
-  async getAgentOwnership(agentIds: string[], timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
+  async getAgentOwnership(agentIds: string[], timeoutMs: number, localOnly = false): Promise<{ result: unknown; discovery: Discovery }> {
     if (agentIds.length < 1 || agentIds.length > 32 || new Set(agentIds).size !== agentIds.length
       || agentIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
       throw new CliError("invalid_usage", "Ownership requires 1 to 32 distinct Agent UUIDs.");
     }
     const daemon = await this.daemonFor("grok.roster.read", timeoutMs);
     if (daemon) {
+      if (localOnly) throw new CliError("invalid_usage", "Native local ownership witnesses require the local Host transport.");
       const response = await daemon.call("getAgentOwnership", { agentIds, timeoutMs });
       if (!response.gateway) throw new CliError("gateway_internal", "Ownership read lacks Gateway generation.");
       const discovery = this.discoveryFromDaemon(response.gateway);
       this.lastDiscovery = discovery;
       return { result: response.result, discovery };
     }
-    const response = await this.rpc("getHostStatus", { grokboxOwnershipAgentIds: agentIds }, { timeoutMs });
+    const response = await this.rpc("getHostStatus", { grokboxOwnershipAgentIds: agentIds,
+      ...(localOnly ? { grokboxOwnershipLocalOnly: true } : {}) }, { timeoutMs });
     return { result: isRecord(response.result) ? response.result.grokboxOwnership ?? null : null, discovery: response.discovery };
   }
 

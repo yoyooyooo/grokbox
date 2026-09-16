@@ -12,6 +12,7 @@ export const OWNERSHIP_WAIT_MS = 10_000;
 // cannot wrap the entire RPC. This is one bounded combined admission budget.
 export const OWNERSHIP_ADMISSION_WAIT_MS = OWNERSHIP_WAIT_MS + ADMISSION_WAIT_MS;
 export const OWNERSHIP_MAX_TARGETS = 32;
+export const OWNERSHIP_LOCAL_SOURCE = "Host.native-local-ownership" as const;
 
 export function chunkOwnershipTargets(ids: readonly string[]): string[][] {
   const unique: string[] = [];
@@ -125,6 +126,74 @@ export function inspectOwnership(input: { agentIds: string[]; snapshot: unknown;
       };
     }),
   };
+}
+
+/** Cache only registration facts. The local execution/window/identity fields in
+ * the original snapshot deliberately do not survive this projection. */
+export function remoteOwnershipEvidence(agentId: string, snapshot: unknown) {
+  const fact = inspectOwnership({ agentIds: [agentId], snapshot });
+  return {
+    source: fact.source, observedAt: fact.observedAt, completedAt: fact.completedAt,
+    serverObservedAt: fact.serverObservedAt, scope: fact.scope,
+    state: fact.serverRead.state, errorCode: fact.serverRead.errorCode,
+    readObservation: fact.readObservation,
+    agents: fact.agents.map(row => ({ agentId: row.agentId, server: row.server, serverEvidence: row.serverEvidence })),
+  };
+}
+export type RemoteOwnershipEvidence = ReturnType<typeof remoteOwnershipEvidence>;
+
+/** Native-local witness is a capability-limited observation, never permission.
+ * Old peers returning a registration snapshot for a local-only request fail
+ * validation rather than being mistaken for a refreshed local execution state. */
+export function inspectNativeOwnershipLocal(input: { agentId: string; snapshot: unknown; nowMs: number }) {
+  const value = rec(input.snapshot);
+  const scope = rec(value.scope);
+  const scopeId = typeof scope.id === "string" && /^[a-f0-9]{64}$/.test(scope.id) ? scope.id : null;
+  const observedAt = iso(value.observedAt), completedAt = iso(value.completedAt);
+  const times = [observedAt, completedAt].map(time => time ? Date.parse(time) : NaN);
+  const rows = Array.isArray(value.agents) ? value.agents : [];
+  const matches = rows.filter(row => rec(row).agentId === input.agentId);
+  const row = matches.length === 1 ? rec(matches[0]) : {};
+  const raw = rec(row.local);
+  const before = { harness: harness(raw.before), serverId: safeId(rec(raw.before).serverId) };
+  const after = { harness: harness(raw.after), serverId: safeId(rec(raw.after).serverId) };
+  const stable = raw.stable === true && before.harness === after.harness && before.serverId === after.serverId;
+  const execution = rec(value.localExecution);
+  const executionBefore = rec(execution.before), executionAfter = rec(execution.after);
+  const window = rec(value.localMigrationWindow);
+  const valid = value.schemaVersion === 1 && value.source === OWNERSHIP_LOCAL_SOURCE && value.state === "observed"
+    && scope.stable === true && scopeId !== null && rows.length <= OWNERSHIP_MAX_TARGETS && matches.length === 1
+    && Number.isFinite(input.nowMs) && input.nowMs >= 0
+    && times.every(time => Number.isFinite(time) && time <= input.nowMs && input.nowMs - time <= OWNERSHIP_EVIDENCE_MAX_AGE_MS)
+    && times[0]! <= times[1]!;
+  return {
+    valid, scopeId, observedAt, completedAt,
+    ready: valid && stable && before.serverId !== null && before.harness !== "unknown"
+      && executionBefore.allowed === true && executionAfter.allowed === true
+      && executionBefore.bound === true && executionAfter.bound === true
+      && rec(window.before).kind === "inactive" && rec(window.after).kind === "inactive",
+    local: { before, after, stable },
+    localExecution: { before: { allowed: executionBefore.allowed === true, bound: executionBefore.bound === true },
+      after: { allowed: executionAfter.allowed === true, bound: executionAfter.bound === true } },
+    localMigrationWindow: { before: { kind: rec(window.before).kind === "inactive" ? "inactive" : "unknown" },
+      after: { kind: rec(window.after).kind === "inactive" ? "inactive" : "unknown" } },
+  };
+}
+
+export function decideOwnershipWithLocal(input: {
+  agentId: string; remote: RemoteOwnershipEvidence; localSnapshot: unknown; nowMs: number;
+}): OwnershipDecision {
+  const local = inspectNativeOwnershipLocal({ agentId: input.agentId, snapshot: input.localSnapshot, nowMs: input.nowMs });
+  if (!local.valid) return refuse("ownership_bridge_unavailable", undefined, input.remote.readObservation);
+  if (!local.ready) return refuse("native_execution_not_ready", undefined, input.remote.readObservation);
+  if (input.remote.scope?.id !== local.scopeId) return refuse("ownership_identity_changed", undefined, input.remote.readObservation);
+  return decideManagedOwnership({ agentId: input.agentId, nowMs: input.nowMs, snapshot: {
+    ...input.remote, schemaVersion: 3,
+    // Keep the remote request's original beginning, not the local reread time.
+    completedAt: local.completedAt,
+    localMigrationWindow: local.localMigrationWindow, localExecution: local.localExecution,
+    agents: input.remote.agents.map(row => ({ ...row, local: local.local })),
+  } });
 }
 
 /** An opaque evidence identity, not permission and never accepted from a run-step body. */

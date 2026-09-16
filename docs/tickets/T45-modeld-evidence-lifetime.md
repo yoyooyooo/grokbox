@@ -1,6 +1,6 @@
 # T45 — Typed evidence and service-owned shared source lifetime
 
-Status: planned. Milestone M1. Depends on: [T43](T43-modeld-authority-baseline.md), [T44](T44-modeld-service-lifetime.md). Spec: [S10.2–S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: evidence/lifetime foundation implemented; offline verified; independent review pending. Milestone M1. Depends on: [T43](T43-modeld-authority-baseline.md), [T44](T44-modeld-service-lifetime.md). Spec: [S10.2–S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -43,4 +43,10 @@ No response-time freshness renewal, adaptive authority widening, silent service 
 
 ## Exit evidence
 
-Pending: typed contract, production wiring, cancellation/freshness proof and fixed-tip review. Exposing a new DTO without changing lifetime ownership does not complete the ticket.
+Implemented in the production modeld Layer: a service-scoped coordinator with per-request waiters, bounded source slots and fair eligible-capacity queue; independent source/waiter deadlines; remote-only cache with fresh native local witnesses before/after every use; typed trusted admission results; safe per-waiter/source correlation. The existing native bridge now accepts a distinct local-only capability, shares only in-flight native work, and does not keep a completed registration cache. It tracks uncooperative native work until actual settlement and preserves cancellation origin. Both source and local-witness transport promises are physically bounded after interruption.
+
+The isolated `evidence` proof initially passed 120 tests across 12 suites with a fresh build, including actual packed Node/preload -> production modeld Unix -> fake provider. A complete repository run passed 1956 tests / 5 explicit native qualification skips / 0 failures across 251 files before the final additional local-witness resource tests; the final rerun is recorded below when executed. The strict 5.5/7.75/9-second vectors still reject without renewing evidence. No larger policy or native/live qualification is claimed.
+
+Remaining integration is explicit: T47 must supply the single STEP's remaining budget and bounded pre-terminal read-recovery policy to this owner; this commit does not enable automatic read retries, change broad TURN failure transitions or emit a new pre-accepted wire frame. Cross-TURN durable invalidation and state synchronization remain T46/T47. Priority classes for monitor/refresh are not invented: only active execution readers use this pool, while direct CLI/monitor inspection retains its independent bounded native path. There is no autonomous refresh loop. T48 owns the remaining public status/progress projection.
+
+Independent fixed-tip review and the final native consumer/release gates remain pending. This is an implemented evidence-resource foundation, not a completed AH-106 end-to-end recovery or production-release claim.

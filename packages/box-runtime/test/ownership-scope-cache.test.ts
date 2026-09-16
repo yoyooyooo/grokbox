@@ -10,11 +10,11 @@ const readLocal = () => ({ serverId: "owned-server", harness: "box" });
 const readWindow = () => ({ kind: "inactive" });
 const readExecution = () => ({ allowed: true, bound: true });
 
-test("single-flight scoped Server cache still rereads local identity and window on each call", async () => {
+test("native single-flight shares only pending Server work and rereads local identity on each view", async () => {
   let at = 10000, reads = 0, harness = "box";
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
-  const read = bindHostOwnershipRead({ cacheMs: 2000, now: () => at });
+  const read = bindHostOwnershipRead({ now: () => at });
   const ports = { agentIds: [A], readScope: () => scope, readWindow, readExecution,
     readLocal: () => ({ serverId: "owned-server", harness }),
     listServer: async () => { reads++; await held; return { agents: [row(A), row(B)] }; } };
@@ -28,16 +28,16 @@ test("single-flight scoped Server cache still rereads local identity and window 
   at += 1000;
   harness = "temporal";
   const conflict = await read(ports);
-  expect(reads).toBe(1);
+  expect(reads).toBe(2); // Completed evidence caching moved to the Effect coordinator.
   expect(decideManagedOwnership({ agentId: A, snapshot: conflict, nowMs: at })).toMatchObject({ ok: false, reason: "harness_mismatch" });
   at += 1001;
   await read(ports);
-  expect(reads).toBe(2);
+  expect(reads).toBe(3);
 });
 
 test("a slow native List does not renew old evidence freshness at response completion", async () => {
   let at = 10_000, reads = 0;
-  const read = bindHostOwnershipRead({ cacheMs: 2000, now: () => at });
+  const read = bindHostOwnershipRead({ now: () => at });
   const ports = { agentIds: [A], readScope: () => scope, readLocal, readWindow, readExecution,
     listServer: async () => {
       reads++;
@@ -52,10 +52,10 @@ test("a slow native List does not renew old evidence freshness at response compl
   expect(decideManagedOwnership({ agentId: A, snapshot: refreshed, nowMs: at }).ok).toBe(true);
 });
 
-test("account/team/backend/machine changes cannot reuse the prior Server cache", async () => {
+test("account/team/backend/machine changes have distinct native scope observations", async () => {
   let current: Record<string, unknown> = scope;
   let reads = 0;
-  const read = bindHostOwnershipRead({ cacheMs: 2000 });
+  const read = bindHostOwnershipRead();
   const ports = { agentIds: [A], readScope: () => current, readLocal, readWindow, readExecution,
     listServer: async () => { reads++; return { agents: [row(A)] }; } };
   let previous: string | null | undefined;
@@ -73,7 +73,7 @@ test("account/team/backend/machine changes cannot reuse the prior Server cache",
 
 test("scope change while native List is in progress refuses the entire evidence", async () => {
   let account = "a".repeat(64);
-  const result = await bindHostOwnershipRead({ cacheMs: 2000 })({ agentIds: [A], readLocal, readWindow, readExecution,
+  const result = await bindHostOwnershipRead()({ agentIds: [A], readLocal, readWindow, readExecution,
     readScope: () => ({ ...scope, account }),
     listServer: async () => { account = "b".repeat(64); return { agents: [row(A)] }; } });
   expect(result).toMatchObject({ state: "unavailable", errorCode: "scope_changed", scope: { stable: false } });
@@ -84,7 +84,7 @@ test("timeout of an uncooperative native reader does not create an unbounded bac
   let calls = 0;
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
-  const read = bindHostOwnershipRead({ cacheMs: 2000, timeoutMs: 10 });
+  const read = bindHostOwnershipRead({ timeoutMs: 10 });
   const ports = { agentIds: [A], readLocal, readWindow, readExecution, readScope: () => scope,
     listServer: async () => { calls++; await held; return { agents: [row(A)] }; } };
   try {

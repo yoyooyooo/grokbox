@@ -163,6 +163,8 @@ export function fakeConfigurationReadLayer(input: {
   });
 }
 
+// Fault injection deliberately permits malformed evidence so production
+// validation is tested despite the stronger trusted port return type.
 export function fakeAdmissionAuthorityLayer(
   evidence: () => unknown = () => ({ admitted: true }),
   counts?: CountedSeams,
@@ -176,9 +178,10 @@ export function fakeAdmissionAuthorityLayer(
       const result = evidence();
       // Explicit test authority includes synthetic ownership; production never
       // derives ownership from admitted=true. Override ownership in fault tests.
-      return result && typeof result === "object" && "admitted" in result && result.admitted === true && !("ownership" in result)
+      const injected = result && typeof result === "object" && "admitted" in result && result.admitted === true && !("ownership" in result)
         ? { ...result, ownership: { scopeId: "a".repeat(64), serverId: "owned-server-agent", observedAtMs: yield* Clock.currentTimeMillis } }
         : result;
+      return injected as import("../contract/authority-policy.ts").AdmissionAuthorityResult;
     }),
   });
 }

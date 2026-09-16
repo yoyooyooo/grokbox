@@ -11,14 +11,14 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
     startAnchor: "var hostStatusArgs = rpcObject({",
     endAnchor: "var localToolPermissionResolution =",
     find: "  includeManagedCapabilities: rpcOptional(rpcBoolean())\n",
-    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString()))\n",
+    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString())),\n  grokboxOwnershipLocalOnly: rpcOptional(rpcBoolean())\n",
   },
   {
     id: "ownership-read-api",
     startAnchor: "    getHostStatus: async ({ includeManagedCapabilities }) => ({",
     endAnchor: "    setBoxMigrating: async (args) => {",
     find: "    getHostStatus: async ({ includeManagedCapabilities }) => ({\n      ...deps.extensions.api(\"host-upgrade\").getVersionState(),\n      isBusy: deps.getHealth().isBusy,\n      capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES\n    }),\n",
-    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds }) => {
+    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds, grokboxOwnershipLocalOnly }) => {
       const result = {
         ...deps.extensions.api("host-upgrade").getVersionState(),
         isBusy: deps.getHealth().isBusy,
@@ -29,6 +29,7 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
       if (typeof read !== "function") return result;
       const observed = await read({
         agentIds: grokboxOwnershipAgentIds,
+        localOnly: grokboxOwnershipLocalOnly === true,
         listServer: async (signal) => {
           const auth = deps.extensions.api("auth");
           const client = createSandCursorBackendClient(GrokBotService, {

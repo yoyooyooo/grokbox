@@ -13,7 +13,7 @@
 |---|---|---|---|
 | M0 | [T43 authority/native baseline](T43-modeld-authority-baseline.md) | offline baseline verified / review pending | source/attribution matrix and executable baseline |
 | M1 | [T44 service lifetime](T44-modeld-service-lifetime.md) | implemented / offline verified / review pending | one acquisition program; owned/borrowed/cleanup proof |
-| M1 | [T45 evidence lifetime](T45-modeld-evidence-lifetime.md) | planned | typed evidence, shared source versus waiter, bounded demand/cancellation |
+| M1 | [T45 evidence lifetime](T45-modeld-evidence-lifetime.md) | foundation implemented / offline verified / recovery integration pending | typed evidence, shared source versus waiter, bounded demand/cancellation |
 | M2 | [T46 state and durability](T46-modeld-state-and-durability.md) | planned | identity synchronization, claim-before-effect, bounded maintenance |
 | M2 | [T47 authority state machine](T47-modeld-authority-state-machine.md) | planned | same-STEP bounded wait, actual side-effect fences, one terminal |
 | M3 | [T48 causal observation](T48-modeld-causal-observation.md) | planned | causal wire/Host/CLI/monitor chain, diagnostic independence, packed/privacy |

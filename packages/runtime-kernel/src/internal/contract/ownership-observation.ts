@@ -1,7 +1,7 @@
 /** Finite observations of the native ownership reader. These fields explain a
  * read; they are never ownership evidence, an execution lease, or retry policy. */
 export const OWNERSHIP_READ_SOURCE = "Host.official-client/ListGrokBotAgents" as const;
-export const OWNERSHIP_READ_ERRORS = ["timeout", "authorization_unavailable", "unsupported_rpc", "server_read_failed", "invalid_response", "busy", "invalid_request", "scope_unavailable", "scope_changed"] as const;
+export const OWNERSHIP_READ_ERRORS = ["timeout", "authorization_unavailable", "unsupported_rpc", "server_read_failed", "invalid_response", "busy", "invalid_request", "scope_unavailable", "scope_changed", "source_cancelled", "clock_unavailable"] as const;
 export const OWNERSHIP_READ_PHASES = ["input", "scope_before", "server", "scope_after", "complete"] as const;
 export type OwnershipReadObservation = {
   version: 1;
@@ -15,7 +15,43 @@ export type OwnershipReadObservation = {
   serverWaitMs?: number;
   serverEvidenceAgeMs?: number;
   rpcCode?: number;
+  sourceReadId?: string;
+  cancellationOrigin?: "waiter_deadline" | "source_deadline" | "no_waiters" | "transport_unknown";
 };
+export type OwnershipWaitObservation = {
+  version: 1;
+  policyId: "strict-observation-v1";
+  waiterId: string;
+  sourceOperationId?: string;
+  state: "local_witness" | "queued" | "shared" | "source" | "cached" | "validating";
+  outcome: "source_deadline" | "waiter_deadline" | "source_failure" | "local_refusal" | "resource_limit";
+  durationMs: number;
+  waitBudgetMs: number;
+  sourceBudgetMs?: number;
+  sourceAgeMs?: number;
+  sourceSettlement?: "pending" | "settled";
+};
+
+export function projectOwnershipWaitObservation(value: unknown): OwnershipWaitObservation | undefined {
+  try {
+    const id = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
+    const waiterId = own(value, "waiterId"), sourceOperationId = own(value, "sourceOperationId");
+    const state = member(own(value, "state"), ["local_witness", "queued", "shared", "source", "cached", "validating"]);
+    const outcome = member(own(value, "outcome"), ["source_deadline", "waiter_deadline", "source_failure", "local_refusal", "resource_limit"]);
+    const durationMs = own(value, "durationMs"), waitBudgetMs = own(value, "waitBudgetMs");
+    if (own(value, "version") !== 1 || own(value, "policyId") !== "strict-observation-v1"
+      || !id(waiterId) || !state || !outcome || !millis(durationMs) || !millis(waitBudgetMs)) return undefined;
+    const result: OwnershipWaitObservation = { version: 1, policyId: "strict-observation-v1", waiterId, state, outcome, durationMs, waitBudgetMs };
+    if (id(sourceOperationId)) result.sourceOperationId = sourceOperationId;
+    for (const key of ["sourceBudgetMs", "sourceAgeMs"] as const) {
+      const n = own(value, key); if (millis(n)) result[key] = n;
+    }
+    const settlement = member(own(value, "sourceSettlement"), ["pending", "settled"]);
+    if (settlement) result.sourceSettlement = settlement;
+    return result;
+  } catch { return undefined; }
+}
+
 const own = (value: unknown, key: string): unknown => {
   if (value === null || typeof value !== "object") return undefined;
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -42,6 +78,10 @@ export function projectOwnershipReadObservation(value: unknown): OwnershipReadOb
     for (const key of ["durationMs", "deadlineMs", "serverWaitMs", "serverEvidenceAgeMs"] as const) {
       const n = own(value, key); if (millis(n)) out[key] = n;
     }
+    const sourceReadId = own(value, "sourceReadId");
+    if (typeof sourceReadId === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(sourceReadId)) out.sourceReadId = sourceReadId;
+    const cancellationOrigin = member(own(value, "cancellationOrigin"), ["waiter_deadline", "source_deadline", "no_waiters", "transport_unknown"]);
+    if (state === "unavailable" && cancellationOrigin) out.cancellationOrigin = cancellationOrigin;
     const rpcCode = own(value, "rpcCode");
     if (state === "unavailable" && typeof rpcCode === "number" && Number.isInteger(rpcCode) && rpcCode >= 1 && rpcCode <= 16) out.rpcCode = rpcCode;
     return out;
