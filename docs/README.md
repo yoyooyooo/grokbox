@@ -17,7 +17,8 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [Quota](quota.md): implemented explicit source, normalized output, and failure boundary.
 - [Box-local model runtime](box-runtime.md): accepted createSession seam, inject/watchdog/guardian, modeld, window semantics, and evidence ladder. Not an implementation-complete claim. Product obligations are in the [product contract](product-contract.md) §12.
 - [Box-runtime strategy plan](roadmap/box-runtime-plan.md): Phases 0–4, product exits and scope.
-- [默认本地上下文维护 Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance)：旧失败会话下一条输入先compact、独立本地窗口、默认auto、有界摘要与Host持久root；[CTX-01–CTX-04](tickets/README.md#context-maintenance)为待实现票，[ADR](decisions/2026-09-17-local-context-maintenance.md)固定范围，[Pi 0.85.1对照](maintainers/pi-compaction-reference.md)固定参考来源和必须补强的边界。规划已收口，不代表新字段/命令/运行能力已交付。
+- [默认本地上下文维护 Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance)：旧失败会话下一条输入先compact、本地窗口、默认auto与Host持久root；[CTX-00–CTX-04](tickets/README.md#context-maintenance)先验证Pi公共组件复用/最小补丁/受控提取，再接入执行。[ADR](decisions/2026-09-17-local-context-maintenance.md)固定所有权，[Pi core 0.85.1证据](maintainers/pi-compaction-reference.md#core-package-reuse)区分公共API、内部回调和策略差异。新字段/命令/运行依赖仍未交付。
+- [PI-AI-01 模型适配资格](tickets/PI-AI-01-model-backend-qualification.md)：独立评估进程内pi-ai实现ModelBackend，不是T30 RPC、不阻塞compact、不默认替换AI SDK或改变Node基线。
 - [Managed Compact evolution](reports/2026-09-12-managed-compact-evolution.md): historical reasons and rejected alternatives; not a current plan or permission. Old brief/path links now route here.
 - [Box-runtime Current Implementation Spec](roadmap/box-runtime-impl-spec.md): **S0 owns Server-authoritative, Host-only stable delivery and V01–V30**; [S9.1.1](roadmap/box-runtime-impl-spec.md#ownership-release-proof) lists planned proof cases, not existing commands. [Tickets](tickets/README.md) route T37→T38→T24→T39→T40 alongside existing stream/compact/Working mechanisms. No parallel ME spec or implementation-complete claim.
 - [Modeld execution-core Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core): one Effect service/STEP program, source-versus-waiter lifetime, durable identity and bounded authority waiting. [T43–T50](tickets/README.md#modeld-effect-core) own implementation exits; [ADR](decisions/2026-09-16-modeld-effect-core.md) and [boundary audit](maintainers/modeld-authority-boundaries.md) distinguish necessary integration, self-introduced problems and unproven native coverage. No default freshness relaxation or automatic live deployment.
@@ -78,7 +79,7 @@ The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normaliza
 
 统一配置 schema/根、bootstrap、支持 writer 版本、consumer revision、client/target scope 或模型新字段变化时，按 [配置重建失效条件](roadmap/configuration-rebuild-spec.md) 复核；不要用旧 parser 丢弃新字段或按新文件存在自动选择 SoT。
 
-本地窗口默认/计量、摘要预算、Host输入安全点/root接受/队列、SDK编码、Pi参考或部署版本变化时，按[S12/CTX](roadmap/box-runtime-impl-spec.md#context-maintenance)重验；普通功能gate退场与故障注入隔离分别取证，旧T32成功不签新的默认主动能力。
+本地窗口/计量/摘要预算、Host安全点/root/队列、SDK编码、Pi包/exports/传递依赖/补丁/提取、Node基线或部署版本变化时，按[S12/CTX-R与CTX-A](roadmap/box-runtime-impl-spec.md#context-maintenance)重验；普通功能gate退场与注入隔离分别取证，旧T32成功或库能import均不签新的默认主动能力。
 
 Template ops 的原生 routine/模板克隆/Payload/认证、目标模型/数据同意/路由/备用、preset 默认与成本、issue 用户确认来源/仓库/可见性/模板/grant、工具权限或安装绑定变化时，复核 [专项资格与失效条件](roadmap/template-ops-automation-spec.md#baseline)；模板发布和配对不等于维护授权。
 

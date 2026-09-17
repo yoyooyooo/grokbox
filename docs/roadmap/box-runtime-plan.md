@@ -268,7 +268,7 @@ prepare 与 apply 分开。CLI 沿用 `runtime re-adopt --confirm`；WebUI 的�
 
 ## Phase 4：本地上下文维护、溢出兜底与深层诊断
 
-**2026-09-17当前目标：** [Spec S12](box-runtime-impl-spec.md#context-maintenance)/[CTX-01–CTX-04](../tickets/README.md#context-maintenance)拥有默认主动compact。旧失败长会话的下一条普通输入必须先按本地工作预算检查/维护，再处理该消息一次；不等待真实上游拒绝、成功usage或新建会话。Host仍拥有材料/root/checkpoint，kernel拥有统一维护程序；先交付有界安全点阻塞维护，后台预生成不是前置。源码与新配置/命令仍待实现，规划不等于上线。
+**2026-09-17当前目标：** [Spec S12](box-runtime-impl-spec.md#context-maintenance)/[CTX-00–CTX-04](../tickets/README.md#context-maintenance)拥有默认主动compact；M0先验证真实Pi core公共组件、必要最小补丁/受控提取，不是只借鉴后从头写算法。旧失败长会话的下一条普通输入必须先按本地工作预算检查/维护，再处理该消息一次；不等待真实上游拒绝、成功usage或新建会话。Host仍拥有材料/root/checkpoint，kernel拥有统一维护程序；先交付有界安全点阻塞维护，后台预生成不是前置。源码与新配置/命令仍待实现，规划不等于上线。
 
 ### 4.1 T14b / T32：保留一次受控失败恢复
 
@@ -314,7 +314,8 @@ Host维护不可用、取消、候选无改善/不符合预算、或一次retry�
 | T13 最小 facets、统一 Controller 与整合出口 | T27（尽早）/ T28 | 1 |
 | T15 共同用例、第二 writer CAS；浏览器 MVP deferred | T29 | 2 deferred |
 | T16 pi/Cursor 独立资格与 adapter | T30 / T31 | 3 |
-| 本地窗口/默认主动维护、旧会话下一消息 | CTX-01–CTX-04，Spec S12 | 4 当前规划 |
+| Pi组件复用资格、本地窗口/主动维护、旧会话下一消息 | CTX-00–CTX-04，Spec S12 | 4 当前规划 |
+| 进程内pi-ai替换模型传输的离线资格 | PI-AI-01，Spec S6.2.1；不是T30 RPC或CTX前置 | 独立候选 |
 | T14b confirmed-overflow 兜底、T13 深层证据 | T32 / T33（Host安全基础T35） | 4 |
 
 T10–T12 与 A1/A2/A4 的产品性质全程回归；已完成 POC ticket 不是保留旧实现的理由。

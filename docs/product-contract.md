@@ -520,7 +520,9 @@ Host继续拥有真实root、archive、carrier、工具关联、Memory、checkpo
 
 维护期间应通过已有Host活动表达正在压缩及结束/失败，不修改原版App、不造thinking或长期假Working。摘要不可用、固定输入过大、无改善、取消/换代或提交unknown时给明确原因，保留材料与新输入的实际状态，不循环发已知超预算请求。预算独立不等于未知tokenizer/隐藏上游限制不存在，有损摘要不保证逐字召回；T32的零放行/同STEP一次溢出恢复保留兜底，普通400/鉴权/限流等不因这个合同得到重放权。
 
-决策理由见 [本地上下文维护ADR](decisions/2026-09-17-local-context-maintenance.md)，实施与证明归 [CTX-01–CTX-04](tickets/README.md#context-maintenance)。只有所声明范围的代码、离线/制品/原生资格、独立review及对应live门全部满足，才可声称该行为已交付；本次规划不授权部署、花费或修改任何现有会话。
+工程路线优先实际复用Pi core的算法/摘要组件，由[CTX-00](tickets/CTX-00-pi-compaction-reuse.md)验证公开API、最小策略差异、依赖/Node/许可及单请求边界；必要时小补丁或受控提取，不能直接按自研全部算法施工。Pi的候选返回不等于Host root已经合格持久化，工具结果摘要截断、空/length终态和输出预算仍遵守本产品要求。Pi Agent/会话store不接管原生Host；pi-ai替换模型传输是独立资格，不是这次用户体验的前置。
+
+决策理由见[本地上下文维护ADR](decisions/2026-09-17-local-context-maintenance.md)，实施与证明归[CTX-00–CTX-04](tickets/README.md#context-maintenance)。只有所声明范围的代码、离线/制品/原生资格、独立review及对应live门全部满足，才可声称该行为已交付；本次规划不授权部署、花费或修改任何现有会话。
 
 ## 13. 输出与错误
 

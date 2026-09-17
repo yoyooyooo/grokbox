@@ -8,13 +8,13 @@ Status: **Planned / Spec-only** · M1。2026-09-17规划基线 `7994b92`；本�
 
 ## Depends on / starting point
 
-消费已合入的统一配置T57–T60、models schema2/reasoning S11与S10执行核心，不要求这些历史票重新全部Done。开工先固定当时v2提交/配置schema/wire，核对与本基线差额；模型目录、credential引用和其他领域必须保留。后续CTX-02消费本票的纯合同和捕获策略。
+消费[CTX-00复用决定](CTX-00-pi-compaction-reuse.md)及已合入的统一配置T57–T60、models schema2/reasoning S11与S10执行核心，不要求历史票重新全部Done。配置/预算反例可在M0并行准备，但估算/切点集成不绕过复用资格先行整套重写。开工固定当时v2提交/schema/wire及选定Pi算法版本；模型目录、credential和其他领域保留，CTX-02消费本票纯合同/捕获策略。
 
 ## Module / change set
 
 - 新增 `runtime-kernel/src/internal/config/context-policy.ts` 与 `internal/contract/context-maintenance.ts`，经现有 `config.ts/contract.ts` 导出纯数据/规则；按S12精确锁定解析、合并、窗口/输出预留、headroom、typed错误和版本。
 - 扩展同一配置schema/path/revision/runtime与现有 `config-store/config-migrate/config-application`；config2→3显式升级，普通reader/writer拒绝不支持版本，不另建compaction文件。models保持v2字节与领域writer，不以config写模型。
-- 新 `box-runtime/internal/backends/context-meter.ts` 拥有provider投影计量；`host/context-budget.ts` 为有界本地根遍历/最小预算DTO消费者。共享纯规则，Host不导入完整配置、SDK或Effect。
+- `box-runtime/internal/backends/context-meter.ts` 消费CTX-00选定Pi算法adapter的估算候选并补实际provider编码/coverage/余量检查，不新写平行的Pi估算器。`host/context-budget.ts`仍为有界本地根遍历/最小DTO消费者，Host不导入Pi、完整配置、SDK或Effect。纯本地预算公式属于kernel，与可替换库算法分开。
 - 修改现有 `ConfigurationRead` 和binding捕获最小policy/contextPolicyRevision，保留selectionRevision的S11含义。schema/模型跨文件捕获有限复核，配置保存不冒充运行采用。
 - 在现有 `scripts/verify-runtime-rebuild.mjs` 注册 `context-policy` 有限case。测试放 `runtime-kernel/test/context-policy.test.ts`，计量/CLI/迁移反例沿现有config和backend测试家族；不提前打印其余CTX case通过。
 
@@ -27,11 +27,11 @@ Status: **Planned / Spec-only** · M1。2026-09-17规划基线 `7994b92`；本�
 3. 有效usage+尾部估算、全部无usage、error/aborted/零值、Unicode/代码/tools/schema/reasoning/图片支持或缺口；cache与reasoning不重复计数。旧root/旧模型/旧编码usage不得回填新root，估算不标exact。
 4. schema2→3 preview/apply/recover与旧writer拒绝；alias安全、重复操作、CAS冲突、取消/结果丢失、未知字段/版本和跨client/target作用域。普通读不写文件、不ack；升级不重启、发送、改模型或secret。
 5. 同Bot相关策略进入contextPolicyRevision且冻结于TURN；另一Bot/client/desktop/ops修改不失效；config提交、configured-next-turn与实际captured/application分开。当前TURN仍旧策略、下一TURN新策略的跨接证明交CTX-02/04。
-6. Pi行为使用独立合成golden，不调用全局安装包或下载main。实际SDK投影用本地mock；本票必须保留无网络、零root写/工具/模型effect的反例。
+6. Pi行为使用独立合成golden，实际被采纳算法来自项目锁定包或可复现提取，不调用全局安装包或下载main，也不以mock替代被测算法。复验CTX-R02/R05/R06相关结果；S12的估算/输出/未知usage策略优先于库默认值，不能把相同字段的不同语义相加。实际SDK投影用本地mock；保留无网络、零root写/工具/模型effect反例。
 
 ## Forbidden / non-goals
 
-不以修改模型contextWindowTokens冒充本地策略；不使用第三配置/环境覆盖、按名字猜tokenizer、usage缺失填0、provider fetch后才记预算、provider adapter裁剪或反写Host state。不引入Pi Agent loop/backend、新配置writer或完整tokenizer服务框架。新命令/Host维护、摘要生成和live不由本票签署。
+不以修改模型contextWindowTokens冒充本地策略；不使用第三配置/环境覆盖、按名字猜tokenizer、usage缺失填0、provider fetch后才记预算、provider adapter裁剪或反写Host state。不引入Pi Agent loop或替换Provider传输、新配置writer或完整tokenizer服务框架。允许CTX-00批准的实际core算法依赖；Pi类型/配置/Session不进入kernel、Host或canonical模型。新命令/Host维护、摘要生成和live不由本票签署。
 
 ## Exit / evidence
 

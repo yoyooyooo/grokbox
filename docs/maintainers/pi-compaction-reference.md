@@ -1,6 +1,6 @@
 # Pi compact 实现参考与 grokbox 差异
 
-**参考审查：2026-09-17；不是运行手册或功能完成证明。** 当前产品决策归 [ADR](../decisions/2026-09-17-local-context-maintenance.md)，实现合同归 [Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)。不要直接修改生产参数或运行 Pi 来代替 grokbox 的 Host 状态维护。
+**参考与包复用审查：2026-09-17；不是运行手册、最新版本声明或集成完成证明。** 当前[ADR](../decisions/2026-09-17-local-context-maintenance.md)接受实际复用优先，[Spec S12.0](../roadmap/box-runtime-impl-spec.md#pi-compaction-reuse)/[CTX-00](../tickets/CTX-00-pi-compaction-reuse.md)拥有资格与选择。本页区分coding-agent的用户行为参考和agent-core的真实库接口；不能因它们同版就混用存储/返回类型，也不能实例化Pi Agent代替Host会话维护。
 
 ## 固定参考，而非浮动 main
 
@@ -14,7 +14,34 @@
 
 公开源码：[`agent-session.ts`](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/agent-session.ts)、[`compaction.ts`](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/compaction/compaction.ts)、[`session-manager.ts`](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/src/core/session-manager.ts)、[compaction 文档](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/coding-agent/docs/compaction.md)。版本升级须重读，不以这里的行号或浮动分支给新版本背书。
 
-## 行为对应表
+<a id="core-package-reuse"></a>
+## Agent-core 0.85.1：可复用的库表面
+
+在v2 `02a6d81`之后的复用调查中，直接核对 `@earendil-works/pi-agent-core@0.85.1` 与 `@earendil-works/pi-ai@0.85.1` 发布包的package.json、实际JS和声明；不以之前coding-agent路径代替core证据。本轮在线固定源码读取未成功，以下接口事实由实际安装包字节支持，未重新声称这些字节与Git tag构建一一等价。包来源/registry integrity在CTX-00的锁定依赖资格中仍须补证；本地SHA只是已读文件身份，不是供应链来源证明。
+
+| core包相对文件 | 已核对SHA-256 | 内容 |
+|---|---|---|
+| `dist/index.js` | `4a551a8b128525e90f3da827f5c459a6f6ba39796c63b2ba73d0f0bfb7be9e72` | 根入口公开导出，第7行compact函数集合 |
+| `dist/harness/compaction/compaction.js` | `fcaeb2e25d5cedca80e3487f8ec02014b0e780b68e67c33d579af7b80cc91dd7` | prepare/compact/caller-owned请求/默认重试包装 |
+| `dist/harness/compaction/compaction.d.ts` | `e7636d4d807ffe8bd23c0248a26b8e0179d17a332eeb04ea6a8b76a8b2885609` | Entry/retainedTail/Models/SummaryRequest类型 |
+| `dist/harness/compaction/utils.js` | `ab85613e2d299087a9882378da7d62adf77aa19130d16e502bbef45d82fc10b6` | 摘要材料序列化，第62行2000字符工具结果限制 |
+
+公开定位使用同一[官方仓库](https://github.com/earendil-works/pi)的[agent package](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/agent/package.json)、[agent入口](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/agent/src/index.ts)、[core compact](https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/packages/agent/src/harness/compaction/compaction.ts)。链接是来源导航，不替代上述发布包核对或未来安装integrity验证。
+
+| 已核对事实 | 影响 / 尚不能声称 |
+|---|---|
+| 根入口公开shouldCompact、estimateContextTokens、estimateTokens、findCutPoint、prepareCompaction、compact、generateSummaryWithUsage、serializeConversation | 可以从公共包起步；不能再把“compact必须搬CLI”作为前提 |
+| `compactWithRequest`与`generateSummaryWithRequest`在内部JS/声明中存在，根入口未导出；package exports无compaction子路径 | 有caller-owned请求设计，但需公共Models桥/最小导出补丁资格；不能把deep import当公共接口 |
+| core `prepareCompaction`返回Result；结果包含retainedTail，既有compaction记录也消费retainedTail | 先前coding-agent的firstKeptEntryId描述不是core API；映射回Host源引用，不直接持久化任何一种Pi格式 |
+| `compact()`经过Models及completeSimpleWithRetries，内部caller-owned版本逐次调用request | 需要关闭库内重试并实测每个请求归属；单个compact可能产生history/prefix多个摘要请求 |
+| serializer将每条工具结果截到2000字符并加提示 | 这是摘要输入的截断，不是删除磁盘历史；不满足S12材料覆盖时须在回调前解决，不能回调里补已丢内容 |
+| 摘要生成对aborted/error返回错误，但contentText为空或length终态可能仍形成ok结果 | 我们必须独立验证非空、完整终态、预算/结构，不把库ok等同于可提交root |
+| core和ai包均为ESM、声明Node>=22.19.0且带其他依赖 | 不自动符合grokbox当前Node>=20.17.0；只在Node22探针通过不是发行兼容证据 |
+| pi-ai提供Provider/Models与可选fetch接口，Provider拥有auth/stream行为 | 可作为独立ModelBackend候选；具体Provider能否注入、取消/重试和凭据隔离仍须逐项验证 |
+
+先前无网络公共导入/prepare探针只证明八个导出可调用、输入未突变及工具尾sentinel会被默认serializer省略；没有创建Pi Agent/会话，也没有通过真实摘要桥、Node20打包或Host端到端。CTX-00必须在项目隔离夹具中把这些检查重做成可复现向量，不能用这段调查记录直接标Done。
+
+## Coding-agent 0.85.1：用户行为对应表
 
 | Pi 0.85.1 中检查到的机制 | grokbox 采用 / 调整 | 证明入口 |
 |---|---|---|
@@ -40,7 +67,7 @@
 
 **依赖与取消。** grokbox 的 Host/modeld 是两个进程，root 会被下一 STEP 复用；需要真实 root owner、generation/revision fence、摘要 source 与等待者寿命、有限请求/期限和 crash 对账。不能直接复制进程内布尔值或数组替换来承担这些职责。
 
-**摘要路径和持久化。** 专用摘要请求拥有可信 purpose、独立身份和预算、无业务工具；Host 决定分区/摘要格式并写 root。长期历史分段/合并不是新的 Agent loop；不能以 provider backend 自己的 auto-compact 掩盖 Host 中仍然很大的窗口。
+**摘要路径和持久化。** 专用摘要请求拥有可信purpose、独立身份和预算、无业务工具；Host提供权威材料/合法分区和接受格式，Pi算法可生成合资格候选，不要求Host再总结一次。原始Host消息/metadata按源引用保留，Pi视图只读且短寿命；长期分段/合并不是新Agent loop，也不能以provider auto-compact掩盖Host仍过大的root。
 
 ## 当前 grokbox 复用与真实差额
 
@@ -60,6 +87,8 @@
 
 ## 参考与测试的边界
 
-后续 CTX-01 建立少量可审的合成向量：128000/16384 阈值相等与 +1、500K→128K、错误后有效 usage+增量、完全无 usage、安全切点与旧 compact 边界。向量独立给出 expected，引用参考版本，但 CI 不执行全局 Pi、不下载源码、不依赖它的会话/配置。复制或改编 MIT 代码时保留必需许可/归属；优先实现最小纯合同，不引入完整 Pi SDK/agent loop。
+CTX-00先实现CTX-R01–R07复用资格，CTX-01–04消费真实选定算法并覆盖128000/16384、500K→128K、无usage/错误、源引用安全切点、工具第2000字符后事实、空/length摘要、取消迟到和持久重建。expected由独立golden给出，不能调用被测Pi函数自己生成正确答案。包依赖经项目锁文件与正常安装准备后可进入公共构建/测试；不依赖全局Pi、用户会话/配置、运行时下载或外网provider。需要patch/提取时保留许可原文/归属与精确差异，CTX-00明确单一选择；不是默认从头重写，也不引入Pi Agent/SessionManager。
 
-Pi 参考版本、meter、Host 编码/root 接缝、provider 输出语义、配置默认值或选择 pin 变化，都会使相关对照与 CTX 证明需要重验。源码比较、纯函数测试、完整 grokbox 离线链、原生资格及 live 结果是不同证据等级。
+进程内pi-ai替换AI SDK的资格由[PI-AI-01](../tickets/PI-AI-01-model-backend-qualification.md)独立承担，采用core算法不等于启用pi-ai的真实Provider传输；该票不阻塞CTX，不替代T30的RPC资格。
+
+Pi包版本/exports/锁定闭包、源码补丁/提取、Node基线、serializer、meter、Host编码/root接缝、provider输出语义、配置默认值或选择pin变化，都会使相关CTX-R/CTX-A对照证明需要重验。源码比较、纯函数测试、完整 grokbox 离线链、原生资格及 live 结果是不同证据等级。

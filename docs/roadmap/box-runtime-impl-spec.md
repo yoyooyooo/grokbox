@@ -572,6 +572,17 @@ pi RPC、Cursor SDK 各自独立 qualification；在证明前只有票据/测试
 复用同一 ModelBackend/BackendAuth/STEP 程序。无隐藏 root/history/Memory、tools execution、auto-compact、retry/failover、仓库修改或后台 Agent loop。native session 是 backend 私有 scoped resource，不是 Host TURN；默认不跨 Bot/turn 复用有状态 session。通过共同事件/取消/auth/usage conformance 后才接有限配置选项。不可阻塞其它 backend 或 T32。
 
 <a id="recovery-diagnostics"></a>
+<a id="pi-ai-qualification"></a>
+### S6.2.1 进程内 pi-ai 资格（独立规划，不是CTX前置）
+
+[PI-AI-01](../tickets/PI-AI-01-model-backend-qualification.md)评估直接库 `@earendil-works/pi-ai` 能否实现现有ModelBackend，减少provider适配维护；不是T30的Pi Agent RPC，也不要求把Agent/Session搬入Host。当前生产仍是AI SDK；本节不宣布替换获准或多backend同时真实运行。CTX使用core算法可以保留AI SDK传输；core依赖中出现pi-ai代码也不表示其Provider执行路径已被采纳。
+
+候选实现唯一位置 `box-runtime/src/internal/backends/pi-ai.ts`，资格数据使用现有backends共同合同，不向kernel/Host/CLI导出Pi类型。复用现有BackendAuth提供冻结credential，限制Provider注册/数据，禁用ambient认证/用户Pi目录/自动目录刷新/OAuth副作用和库内额外retry；任何真实请求都经过同一预算/审计/取消边界。必须核对具体Provider是否支持fetch注入，未知不能靠通用接口声明推断。不得为了支持Pi更改endpoint/API/wire model、静默clamp reasoning档位、丢工具或改usage会计。
+
+离线比较按同一合成Chat/Responses输入分别运行两个adapter，独立记录实际HTTP/body/stream/events/终态和真实调用次数；对照不是生产shadow双发。覆盖当前qualified dialect（含MiniMax）、thinking/effort/工具配对、usage/cache/reasoning、畸形流/空输出、错误分类、字节/token门、未知响应和取消迟到。现有pre-output/overflow恢复由kernel唯一拥有，candidate不因替库扩大副作用。Node/ESM/依赖与真实制品门同S12.0，升级最低运行版本必须明确决策。
+
+资格出口为source-bound adopt/propose-changes/reject或blocked报告：说明节省/新增的维护差异与未证项。`pi-ai-backend` verifier及 `backend-pi-ai-conformance.test.ts` 均待实现。即使离线通过，默认切换、模型范围和移除AI SDK必须另行批准并修改同一registry/部署门；未决定时保留现有生产，不自动在失败时切回/切出candidate。只有最终批准的live Provider/Host/App采用进入对应LIVE条目，源码/打包/无网络资格不能移为live-only。
+
 ### S6.3 T32/T33 recovery / diagnostics
 
 本节限制的是**失败后额外模型请求**，不是所有compact的触发条件。默认本地preflight、旧会话下一消息、空闲手动与目标预算的当前新增施工归[S12](#context-maintenance)；T32复用它的Host维护能力而不另建摘要器。
@@ -922,9 +933,40 @@ Owner：[实现票](../tickets/FEAT-model-reasoning-policy.md)；决策依据为
 <a id="context-maintenance"></a>
 ## S12. 默认本地上下文维护（2026-09-17 accepted target）
 
-**状态：Planned / Spec-only。** 本节是 CTX-01–CTX-04 的唯一实施规格；[ADR](../decisions/2026-09-17-local-context-maintenance.md)拥有决策理由，[Pi 对照](../maintainers/pi-compaction-reference.md)拥有固定参考事实。读取基线 `7994b92` 已含 config v2、models v2、reasoning/wire v7；当前源码尚无本节完整 preflight、配置、手动命令或统一维护程序。下列新模块/DTO/命令/测试都是待实现目标，不是运行回执。
+**状态：Planned / Spec-only。** 本节是 CTX-00–CTX-04 的唯一实施规格；[ADR](../decisions/2026-09-17-local-context-maintenance.md)拥有决策理由，[Pi对照](../maintainers/pi-compaction-reference.md)拥有发布包事实。本次复用优先修订基于v2 `02a6d81`，在独立分支完善；其配置/模型底座仍为config v2、models v2、reasoning/wire v7。当前源码尚无本节完整preflight、配置、手动命令或统一维护程序，也没有采纳Pi为项目运行依赖。以下新模块/DTO/命令/测试均是待实现目标，不是运行回执。
 
 本节取代本 Spec 中“managed compact 只由失败触发”“HostCompact 仅供 active STEP”“proactive 一律后移”的适用范围；保留 T32 的失败恢复安全边界、T35 的原生寿命、S10 的 Effect/authority、S11 的 reasoning 和 F/E 的状态保真。普通 provider retry、观察日志 compactor、ops 维护 Host 与本节的会话 compact 是不同能力。
+
+<a id="pi-compaction-reuse"></a>
+### S12.0 复用优先、选型门与独立模型层
+
+**先证明可复用边界，再实施；不是先把compact自研一遍。** [CTX-00](../tickets/CTX-00-pi-compaction-reuse.md)是新增M0，固定发布包/导出/依赖与可复现资格。优先级为：公共包API直接复用 → 最小公开接口/策略补丁 → 带来源与更新边界的受控代码提取 → 有具体否定证据的局部重写。顺序按函数/责任评估：某个serializer不符合要求，不否定全部估算/切点；某个函数可导入，也不证明完整集成可用。CTX-00必须形成选择/差异表并保留失败证据，不能只写“研究完成”。
+
+候选包为 `@earendil-works/pi-agent-core@0.85.1`。已检查到公共估算/切点/prepare/compact函数；内部caller-owned `compactWithRequest`/`generateSummaryWithRequest`存在但未从根公开，也无专用compaction子路径。core使用retainedTail，coding-agent同期实现仍使用firstKeptEntryId，不能混成同一接口。确切发布包哈希、engine与导出/行为证据只在[参考页](../maintainers/pi-compaction-reference.md#core-package-reuse)维护。本节不以tag/main或源码内export代替npm公共入口，更新候选版本必须重做差异资格。
+
+**冻结采纳范围。** 首先复用compact算法；现有AI SDK仍承担ModelBackend实际传输。Pi Agent/agentLoop/AgentHarness/SessionManager、工具执行/插件/配置加载和持久会话库不实例化；不通过Pi CLI/RPC运行整个Agent再截取最终文本。Pi提供候选算法与摘要模板，Host提供权威材料并验证合法分区/接受格式，kernel决定何时维护及请求/权限/资源预算。
+
+| 能力 | 复用与适配边界 | 不得顺带接管 |
+|---|---|---|
+| shouldCompact / estimateContextTokens / estimateTokens | 优先用core结果作候选/观测，经S12.2输出预留和S12.3coverage/不确定性归一化 | 上游声明容量、本地policy、未知usage、缓存/输出计数的权威 |
+| findCutPoint / prepareCompaction | Host只读有界投影→Pi计划→源引用回映射与独立结构检查；复用安全切点/更新摘要逻辑 | 创建Pi session存历史，直接将retainedTail替换Host root |
+| compact / 摘要生成 | 公共Models/Provider薄桥优先验证；每次请求必须经过caller-owned Effect/ModelBackend，必要时采用最小公开接口补丁 | 第二套凭据发现、隐藏重试/failover、主STEP身份/工具执行 |
+| serialization / prompt / 输出边界 | 先量化上游行为；截断发生在请求回调前时必须在序列化之前替换策略/分段，保留覆盖及许可来源 | 静默丢工具尾、空/length摘要假成功、将上游reserve公式冒充S12预算 |
+| pi-ai Provider实现 | [PI-AI-01](../tickets/PI-AI-01-model-backend-qualification.md)独立评估，不是CTX前置或默认替换 | T30 RPC、Agent loop、新model registry/credential store、shadow双真实请求 |
+
+**一份源事实，临时算法视图。** 每个Pi投影项绑定operation/rootRevision及不透明sourceRef，映射由受限Host能力提供；保留/摘要区间必须映射到合法原始消息/组。投影排除Host私有控制metadata，原始metadata仍由Host保管；Pi返回的对象/时间/虚拟ID不得成为原生写入事实。未知内容形状明确不支持，不能靠缺字段补空通过。巨大root在Host先有界计量/分区，Pi只接收预算内材料；不要为调用需要数组的函数无界物化整份历史或跨IPC上限搬运。跨分段的全局保留/覆盖检查由kernel计划和Host合法组合同共同约束，不把每段各自通过当全局覆盖。
+
+**一个实际请求owner。** 公共compact()的Models桥只能使用适配器拥有的受限Provider/请求接口；不能用`as unknown as Models`配大量假方法或默认credential来签生产。更适合的caller-owned request API未公开时，通过可审小补丁/正式上游导出或受控提取消费，不依赖内部绝对路径。请求回调将signal/operation/捕获选择/预算传回现有执行根，每个单请求可计数/取消/拒绝；禁止每回调新建Runtime，禁止无owner的Promise任务。若存在库内retry必须显式关闭并用失败探针证明实际调用次数；一个compact内部合法的history/prefix等多请求全部计入维护预算，而非谎称永远只有一个HTTP。
+
+库Promise返回后仍须检查已取消/换代，late result不能被接受；错误/空白/length/未知finish不能因库Result.ok进入root。只拿到摘要文本或返回值不代表其输入覆盖、目标预算和checkpoint都合格。用于Host接受的摘要格式由同一版本化适配策略资格化，复用Pi文本不要求Host额外再生成第二摘要。
+
+**依赖、运行基线与提取纪律。** 直接依赖只在box-runtime/modeld算法adapter，包版本和传递闭包进入现有锁文件、制品清单和许可；`runtime-kernel`、Host/preload、CLI导入路径不暴露Pi运行时/类型。构建安装可使用声明锁定依赖；测试/运行不得下载或借全局Pi、用户HOME/Pi配置/真实凭据。运行时动态import或tree-shaking不被预先视为无副作用/无体积，须测真实Node制品、import-time网络/写入/子进程、模块图和冷启动。
+
+0.85.1声明Node>=22.19.0，而本基线grokbox仍承诺>=20.17.0。CTX-00必须先报告受支持运行矩阵：维持现合同并选择合资格提取/模块，或提出明确Node升级决策；本次方向批准不自动提高最低版本。仅Node22开发机import成功、Bun能bundle、忽略engines都不能签Node20支持。无需为复用新增package家族；最小补丁复用仓库既有patch机制，尚无机制时先在CTX-00决定可复现形式；公开发布fork/PR需另获授权。
+
+需要受控提取时，唯一位置为box-runtime的 `internal/context/vendor/pi-compaction/`（只有选型后才创建）；记录上游package/version/source hash、原文件/函数、许可证原文与归属、精确补丁及保留/剔除依赖、差异向量和升级流程。提取代码不在别处再复制，不能把有来源代码改名后当独立自研。生产composition最终只选择一个确定的算法adapter，不用direct/patch/vendor自愈fallback或长期双跑；升级比较仅用合成无外网输入。
+
+复用取舍须以适配器/补丁规模、维护函数与后续升级面、所需Node变化、制品增量/加载成本和失败向量解释收益；不预承诺零改动、固定体积或“库都替我们处理”。[CTX-00](../tickets/CTX-00-pi-compaction-reuse.md)的源码/打包/可执行证明与review不是LIVE项，也不等待真实provider拒绝；公共API尝试结束后必须给出边界选择或精确决策阻断，不无限等待上游合并。
 
 ### S12.1 首要用户合同与支持范围
 
@@ -999,7 +1041,7 @@ keepRecent 是合法完整交互组的预算，不是按 token 拦腰裁剪；�
 
 ### S12.4 最小代码骨架、ports 与归属
 
-以下是目标树，不提前创建空模块。函数/helper 不需各自成为 Service；无新 package、配置副本、全局任务注册器或通用工作流框架。
+以下是目标树，不提前创建空模块。函数/helper不需各自成为Service；无新自有workspace/发布包、配置副本、全局任务注册器或通用工作流框架。CTX-00批准的第三方依赖纳入既有box-runtime与锁文件，不把“无新自有包”误读为禁止真正复用库。
 
 ```text
 packages/runtime-kernel/src/
@@ -1013,7 +1055,9 @@ packages/box-runtime/src/internal/
   host/compact.ts                                          # 改：同root准备/验证/接受/回执
   host/{live-slices,session,modeld-client.node,profile}.ts   # 改：safe point/同代协议
   host/{aux-request,aux-purpose,auxiliary,session-hook}.ts  # 改：可信摘要purpose，不借memory资格
-  backends/context-meter.ts                                # 新：adapter编码计量；无root写入
+  context/pi-compaction.ts                                 # 新：唯一Pi算法adapter；无root/credential写权
+  context/pi-projection.ts                                 # 新：只读视图、sourceRef与结果回映射
+  backends/context-meter.ts                                # 新：复用估算候选+最终编码计量；无root写入
   backends/{ai-sdk,prepared}.ts                            # 改：冻结/最终出站核对
   modeld/{server.node,same-connection-compact}.ts           # 改：同一有界传输，不保留旧双轨
   io/{configuration.node,config-application.node,execution-history.node}.ts
@@ -1028,11 +1072,14 @@ packages/cli/src/
 | 合同 / 消费者 | owner / 限定能力 | 禁止 |
 |---|---|---|
 | `ContextBudget` / `ContextMeasure` | 纯合同，由 ConfigurationRead 和 adapter 派生；Host只拿当前会话最小DTO | DTO包含凭据/ops授权或通过消息正文注入策略 |
-| `ContextMaintenance` 业务程序 | kernel Effect：inspect→claim→prepare→summary→validate→commit→readback；普通/手动/overflow共用 | CLI/backend/monitor另开摘要或重试程序 |
+| `ContextMaintenance` 业务程序 | kernel Effect：inspect→claim→prepare→summary→validate→commit→readback；普通/手动/overflow共用，消费下行算法port而不重写Pi全部算法 | CLI/backend/monitor另开摘要或重试程序 |
+| `ContextCompactionAlgorithm`（新增一个替换边界） | kernel ports.ts定义grokbox纯DTO输入/候选及Effect请求边界；box-runtime/context/pi-compaction.ts实现measure/plan/generate，返回sourceRef和覆盖信息 | Pi类型/Models/Entry泄漏到kernel或wire；算法访问Host root、凭据store、Pi Session |
 | 演进既有 `HostCompact` port | Host负责 inspect/prepare/accept/readback；modeld只持限定root capability；旧单次request桥退场 | 通用执行JS/RPC、任意路径读写、第二历史store |
 | `ContextMaintenanceIdentity` | installation/scope、Agent/session/root、Host generation、operationId；可关联真实parent TURN/STEP/nonce | 空闲手动维护伪造STEP，跨root借用slot |
 | 摘要推理 | 现有 ModelBackend/BackendAuth，可信 `conversation-compaction` purpose、独立requestId、无业务tools | 使用pending主STEP身份、递归auto-compact或隐藏切provider |
 | 维护claim/结果索引 | 现有ExecutionHistory的独立typed维护记录；Host checkpoint存真正root提交事实 | modeld储存可回放历史/凭据；journal推导许可或代替root提交 |
+
+`ContextCompactionAlgorithm`是外部算法及其请求回调的一个有理由的替换边界，不给每个纯函数新建Service。measure/plan只处理有界只读材料；generate只能调用kernel本次操作提供的单请求能力，适配器不自行解析凭据或创建Runtime。HostCompact保留真实材料/合法分区/accept/readback，不能被算法port替代。Host本地预算只使用已有纯规则和安全估算，不为复用将整个Pi包导入preload；最终更完整估算由modeld侧adapter提供。提取的vendor目录只有CTX-00明确选中后才纳入，不同时建设三份实现。
 
 模型/普通配置 writer 与 Host import fence 不变。扩展 config schema3 的纯数据和精确有界 DTO，不把 config 整文档暴露给 Host。Host叶保持普通TS同步handle/有界IPC；modeld沿用单一Effect根，source和等待者分Scope，不逐helper runPromise。Root版本锁/队列归原生执行owner，modeld运行表只协调本维护操作，不授权绕开Host写入。
 
@@ -1044,7 +1091,7 @@ packages/cli/src/
 2. 在原生安全点取得root维护能力与版本；检查固定材料和预算。manual低用量/没有可压缩旧材料可返回unchanged，不强制花费。auto不需要维护时直接放行一次已计量快照。
 3. 持久声明维护operation及输入摘要身份，复用已有ExecutionHistory，不存正文。相同operation相同输入只查询/加入现有操作；不同输入冲突。另一个新输入不能把旧失败业务STEP重新排入队列。
 4. 同root只有一个摘要接受owner；并发维护等待同一source并保持各自取消/输入。不同root独立。已有候选完成且前缀/版本相符则可复用；独立pending在剩余预算内等待；依赖暂停STEP的self/未知工作不得盲等，由原owner取消并确认收口，不能抹Promise。外部source未确认停止时不竞争写。
-5. Host从当前root准备候选材料及合法保留边界，记录sourceRootRevision；大历史有界分区。暂不修改活跃root。摘要请求使用独立执行槽：保留主STEP逻辑claim但释放其已静止producer/资源，不占持久锁等待网络；避免所有主请求占槽等待摘要的环。
+5. Host从当前root提供权威材料、合法分区约束和sourceRootRevision；大历史先有界分区。算法adapter只读投影到Pi执行候选估算/切点/准备，源引用映射回Host并校验保留边界，暂不修改活跃root。摘要请求使用独立执行槽：保留主STEP逻辑claim但释放其已静止producer/资源，不占持久锁等待网络；避免所有主请求占槽等待摘要的环。
 6. 独立请求完成后，由同一最终编码规则验证候选、目标预算、工具配对、metadata、固定材料和新的输入预留。迟到/取消/换代/换root/ownership撤销在实际Host accept前再次校验。普通偏好更新不撤销已捕获运行，正式归属失效必须停止。
 7. Host按sourceRootRevision及operationId接受合法候选并走原生archive/carrier/checkpoint。旧root不被空/半份候选覆盖。提交是原生版本化root发布边界，不是Effect Scope或两个文件的假事务；先写的archive孤儿可由原生GC处理，不主动删用户历史。
 8. 从同一Host持久事实读回新root/边界/operation关联，重新计量再允许主请求。root已提交但回执丢失时先读回对账：确认提交则重读，不再生成第二摘要；未知则commit_unknown，不自动重放业务。重启仅恢复已提交root，不复活旧service的STEP/维护效果。
@@ -1055,7 +1102,7 @@ packages/cli/src/
 
 ### S12.6 摘要、巨型材料与失败恢复
 
-第一版摘要默认使用当前捕获模型与effort的独立请求；tools为空，消息中伪造purpose无效。请求/credential/response只经过已有backend；Host准备摘要指令和材料，接收结果并写root。原生未opt-in会话的摘要路径不改，managed不得因为摘要失败隐式转到原生external模型。以后增加明确另一摘要模型时，沿model领域添加显式选择与成本/数据同意，不能通过此策略映射暗换通道。
+第一版摘要默认使用当前捕获模型与effort的独立请求；tools为空，消息中伪造purpose无效。Host提供权威材料和原生接受格式，Pi算法adapter复用已资格化的摘要准备/更新逻辑及必要策略差异；不由Host另跑第二个生成器。每个摘要请求/credential/response仍只经过已有Effect/ModelBackend，Host验证并接受结果后写root。原生未opt-in会话的摘要路径不改，managed不得因为摘要失败隐式转到原生external模型。以后增加明确另一摘要模型时，沿model领域添加显式选择与成本/数据同意，不能通过此策略映射暗换通道。
 
 摘要输入受自己的有效W/H/O、编码字节及父预算约束，不把已经超长的全历史原样发给摘要模型。分区按完整已结束user/assistant/tool交互组，可在一个长TURN内的已完成工具组之间切分；不能留下孤立结果、丢尚未完成的调用或拆控制metadata。Host提供分区/归档能力，kernel以有限段数执行摘要和必要的合并；每段输入/输出、合并和纠正都计入同一operation的请求/费用上限。复用前一摘要并更新，而非永久叠加摘要全文。
 
@@ -1084,7 +1131,7 @@ grokbox agents compact <agent> [--session <id>] --operation-id <uuid> --confirm 
 
 ### S12.8 证明矩阵与可执行出口
 
-全部新case/命令仍planned。CTX-01在现有 `scripts/verify-runtime-rebuild.mjs` 注册有限case：`context-policy`、`context-owner`、`context-summary`、`context-maintenance`；最后一个只在所有必需子case实际执行时通过。未知case、缺文件、零测试、skip或仅stub返回必须非零。公共默认无外网/真实credentials/生产路径/Pi依赖；同一生产程序、真实SDK、本地HTTP/Unix/临时持久store，不允许Fake替代业务流程。
+全部新case/命令仍planned。CTX-00先在现有 `scripts/verify-runtime-rebuild.mjs` 注册 `context-reuse`，CTX-01–04依次注册 `context-policy`、`context-owner`、`context-summary`、`context-maintenance`；最后一个只有实际复验reuse与其余必需子case后通过。未知case、缺文件/依赖、零测试、skip或仅stub返回必须非零。公共测试在锁定依赖准备后离线执行，不使用全局Pi/用户Pi配置/真实credentials/生产路径；实际被采纳Pi算法不能被Fake替代，只替外部Provider/Host能力，同一生产程序、真实SDK、本地HTTP/Unix/临时持久store贯通。
 
 | 向量 | 必过oracle | 主票 |
 |---|---|---|
@@ -1107,21 +1154,34 @@ grokbox agents compact <agent> [--session <id>] --operation-id <uuid> --confirm 
 
 测试夹具自行构造多语言文本、代码、tool配对、schema和早/中/晚事实标记；expected不调用被测估算/切点函数生成。Fake摘要必须从实际收到的材料推导受限结果，缺材料即失败，不硬编码最终答案。bounded stress覆盖至少10次连续维护、并发取消和重启，断言资源/内存记录受既有上限约束；不能靠固定消息数或巨型pad制造一条绿canary。
 
-目标测试归 `runtime-kernel/test/context-policy.test.ts`、`context-maintenance.test.ts` 与 `box-runtime/test/context-maintenance-{host,summary,pipeline,packed}.test.ts`；复用现有 overflow、Host compact、continuity、reasoning、config tests。原生隔离消费者资格单独保留，不转成live-only缺口；只有实际加载/真实provider/App/平台重启的剩余证明才进入LIVE。
+复用资格另用CTX-R编号，不重编号或缩减CTX-A01–A16：
+
+| 向量 | 必过oracle / 会拒绝的坏实现 | 主票 |
+|---|---|---|
+| CTX-R01 发布包与公共入口 | 项目锁定包/哈希、runtime实际exports和类型一致；不能把内部export/全局Pi路径冒充公共可用 | CTX-00 |
+| CTX-R02 投影与源事实 | real Pi算法处理只读材料、unknown形状拒绝、sourceRef完整回映射；不突变输入/原root、不丢工具metadata、不物化无界历史 | CTX-00/02 |
+| CTX-R03 请求owner | 真实Pi摘要组件→有类型桥→现有Effect/ModelBackend→mock HTTP；库内retry关闭，分支/取消/迟到的实际调用有界且无default auth | CTX-00/03 |
+| CTX-R04 序列化与完成语义 | 工具结果第2000字符后的sentinel必须按分段/归档政策被覆盖或明确拒绝；回调前截断、空/length/未知终态不能签成功 | CTX-00/03 |
+| CTX-R05 独立预算复核 | Pi默认estimate/summary output与S12不同可被识别；system/tools/新输入/图片/输出预算实际发送门生效，不调用被测函数构造expected | CTX-00/01/03 |
+| CTX-R06 发布与import fence | 实际Node20合同/候选Node22矩阵、ESM/制品/module graph/冷启动统计；preload/kernel无Pi，无隐式网络/写入/子进程/全局session加载 | CTX-00/04 |
+| CTX-R07 选型与更新 | 每函数复用/差异表、锁定依赖或可复现最小patch/vendor、许可归属、单一composition、升级差异负例；无盲重写/浮动main/双真实推理 | CTX-00/04 |
+
+新增复用测试归 `box-runtime/test/context-reuse.test.ts`、`context-reuse-packed.test.ts`，生产算法adapter使用真实选定实现；公共对照输入可进入 `test/fixtures/context-reuse/`，不复制私有Host或全局Pi会话。其余目标测试归 `runtime-kernel/test/context-policy.test.ts`、`context-maintenance.test.ts` 与 `box-runtime/test/context-maintenance-{host,summary,pipeline,packed}.test.ts`；复用既有overflow/compact/continuity/reasoning/config。原生隔离消费者资格单独保留，不转成live-only缺口；只有实际加载/真实provider/App/平台重启的剩余证明才进入LIVE。
 
 ### S12.9 票据、退场与失效条件
 
 | 阶段 | 票据 | 出口 |
 |---|---|---|
-| M1 合同/配置/计量 | [CTX-01](../tickets/CTX-01-context-policy-and-meter.md) | schema3目标、按域pin、Pi参考向量、三门共享规则、有限verifier |
+| M0 复用资格与选型 | [CTX-00](../tickets/CTX-00-pi-compaction-reuse.md) | 公共API/请求桥/序列化差异、Node/制品/许可、CTX-R01–R07与单一实现决定 |
+| M1 合同/配置/计量 | [CTX-01](../tickets/CTX-01-context-policy-and-meter.md) | schema3、按域pin、消费合资格Pi估算/纯规则而非另造算法、三门校验 |
 | M2 原生维护owner | [CTX-02](../tickets/CTX-02-host-context-maintenance.md) | 独立operation、真实safe point、pending/并发/取消、prepare/accept/checkpoint回读 |
-| M3 有界摘要与恢复 | [CTX-03](../tickets/CTX-03-bounded-summary-and-recovery.md) | 独立purpose与同模型子请求、有界分段、巨型材料、T32合流不增工具效果 |
+| M3 有界摘要与恢复 | [CTX-03](../tickets/CTX-03-bounded-summary-and-recovery.md) | Pi组件与必要策略差异、独立同模型请求/分段预算、巨型材料、T32合流不增工具效果 |
 | M4 用户入口/整合证明 | [CTX-04](../tickets/CTX-04-context-entrypoints-and-proof.md) | 旧会话下一消息必过、命令/观察/App合同、packed/独立review/分层live |
 
-依赖为 CTX-01→CTX-02→CTX-03→CTX-04；CTX-02 可先用同合同的无网络摘要替身验证owner，不能据此宣布功能可用；入口测试可提前变红。T32/T35保持原有范围与未证项，不再是另一条新施工队列；CTX-04消费其安全回归及F/E，不能要求全部历史票重新Done才开工。参考Pi不依赖T30 backend落地。
+主链为 **CTX-00→CTX-01→CTX-02→CTX-03→CTX-04**；纯产品预算/配置反例与旧会话入口红测可在M0并行准备，但未完成reuse决定不默认开写整套自研compact。CTX-02可先用同合同无网络摘要替身验证owner，不据此签真实算法/完整能力；CTX-03必须消费CTX-00选定的真实算法实现。T32/T35保持原有范围与未证项，CTX-04消费既有安全回归及F/E，不要求全部历史票重新Done。PI-AI-01是独立非阻断资格分支，与T30 RPC不同，不成为CTX验收前置。
 
 协议需要维护identity/policy/目标预算/purpose，必须在当前wire上显式升版（本基线v7，目标下一版；集成前重新确认并行版本），与CLI/preload/Host/modeld/profile成套资格；不得让旧peer忽略新字段继续执行。config2→3走既有单writer迁移扩展，不重新搬根/改models字节/派生模型；new schema的普通writer不能留旧fallback。正常功能env开关、permanent pending拒绝、失败后才知道预算的唯一路径退场；仍保留明确不合资格和超限拒绝，不能“永不报错”式吞失败。
 
 文档/规划提交、代码/离线Done、review、原生资格、live发布五层分开。每票保留source commit、实际case、未证项；本次无代码实现提交。CTX-04的live-only条目可先预登记但必须blocked且实现commit=not-recorded，未做代码/测试/review不能搬成live工作。后续固定v2集成候选，先查归属、未完成工作、配置保护和成套版本，再按明确对象/时间/请求费用/回滚授权切换；不复用旧事故STEP做探针。
 
-meter/默认预算、config模型覆盖、generation/output含义、Host safe point/root/摘要/队列/工具引用、wire/SDK/dialect、persistence、Pi参考或部署制品变化，相关向量/接点/review失效并重验。历史回执不自动签新构建；本地估算和有损摘要不承诺任意真实端点或完整语义召回，必须证明的是可压缩普通长历史有有界推进路径且失败不损坏/重放用户工作。
+meter/默认预算、config模型覆盖、generation/output含义、Host safe point/root/摘要/队列/工具引用、wire/SDK/dialect、persistence、Pi package/exports/传递依赖/serializer/补丁/提取版本/Node最低版本或部署制品变化，相关CTX-R/CTX-A向量、接点及review失效并重验。历史回执不自动签新构建；本地估算和有损摘要不承诺任意真实端点或完整语义召回，必须证明的是可压缩普通长历史有有界推进路径且失败不损坏/重放用户工作。
