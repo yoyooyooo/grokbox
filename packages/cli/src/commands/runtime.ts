@@ -23,6 +23,7 @@ import {
   maintainObservationJournals,
   reviewedProfilePath,
   controllerOperationId,
+  observeControllerHostGeneration,
   diskPreloadSha256,
   reviewedProfileSha256,
   startRuntimeCommand,
@@ -271,6 +272,7 @@ export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | un
 }
 
 export const hostControlPorts = {
+  generation: observeControllerHostGeneration,
   apply: startControlOperation,
   stopPatched: stopLivePatchedHost,
 };
@@ -300,6 +302,12 @@ async function writeDesiredDisabled(deps: CliDeps): Promise<unknown> {
 
 export async function applyHostEnable(deps: CliDeps): Promise<unknown> {
   const runtime = store(deps);
+  const hostGeneration = hostControlPorts.generation();
+  if (!hostGeneration) {
+    throw new CliError("host_mismatch", "Host generation could not be established. Next: grokbox doctor", {
+      next: "grokbox doctor", hostReason: "host_generation_unproven",
+    });
+  }
   await ensureHostStartDesired(deps);
   const preloadSha256 = diskPreloadSha256();
   const profileSha256 = reviewedProfileSha256(runtime.root);
@@ -307,6 +315,7 @@ export async function applyHostEnable(deps: CliDeps): Promise<unknown> {
     intent: "apply",
     confirmed: true,
     operationId: controllerOperationId("apply", runtime.root, {
+      hostGeneration,
       ...(preloadSha256 ? { preloadSha256 } : {}),
       ...(profileSha256 ? { profileSha256 } : {}),
     }),

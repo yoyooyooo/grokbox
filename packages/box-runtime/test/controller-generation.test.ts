@@ -3,6 +3,7 @@ import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts"
 import { profileFromSource } from "../src/internal/host/profile.ts";
 import {
   controllerOperationId,
+  observeControllerHostGeneration,
   observedAdoptCommitEligible,
   observedAdoptGenerationMatches,
   uniqueObservedAdoptIdentities,
@@ -60,6 +61,67 @@ const ident = (
     : role === "supervisor"
       ? ["/exec-daemon/node", "/usr/local/bin/sand-supervisor.mjs"]
       : ["bash", "/usr/local/bin/supervise-sand-supervisor"],
+});
+
+describe("controller operation Host lifetime", () => {
+  test("same process lifetime reuses the key; PID reuse and a later stop/start do not", () => {
+    const wrapper = ident(11, 1, "wrapper");
+    const supervisor = ident(12, 11, "supervisor");
+    const current = ident(13, 12, "host");
+    let rows = [wrapper, supervisor, current];
+    let gatewayPid = current.pid;
+    const live = {
+      processes: {
+        list: () => rows,
+        inspect: (pid: number) => rows.find((row) => row.pid === pid) ?? null,
+        signal: () => { throw new Error("read-only observation cannot signal"); },
+      },
+      classify: (row: ProcessIdentity) => row.pid === 11 ? "wrapper" as const : row.pid === 12 ? "supervisor" as const : "host" as const,
+      gatewayPid: () => gatewayPid,
+      hostBundlePath: "/tmp/host-main.cjs",
+      readHostSha: () => null,
+    };
+    const first = observeControllerHostGeneration(live);
+    expect(first).toMatch(/^[a-f0-9]{64}$/);
+    expect(observeControllerHostGeneration(live)).toBe(first);
+    const key = controllerOperationId("apply", "/owned/box", { preloadSha256, hostGeneration: first! });
+    rows = [wrapper, supervisor, { ...current, start: current.start + 1 }];
+    const reusedPid = observeControllerHostGeneration(live);
+    expect(reusedPid).not.toBe(first);
+    expect(controllerOperationId("apply", "/owned/box", { preloadSha256, hostGeneration: reusedPid! })).not.toBe(key);
+    rows = [wrapper, supervisor, { ...current, pid: 14, start: current.start + 2 }];
+    gatewayPid = 14;
+    expect(observeControllerHostGeneration(live)).not.toBe(first);
+    gatewayPid = 13;
+    expect(observeControllerHostGeneration(live)).toBeNull();
+    gatewayPid = 14;
+    rows.push({ ...current, pid: 15 });
+    expect(observeControllerHostGeneration(live)).toBeNull();
+    rows = [wrapper, supervisor];
+    expect(observeControllerHostGeneration(live)).toBeNull();
+  });
+
+  test("unstable process inspection or discovery never mints a key", () => {
+    const supervisor = ident(12, 11, "supervisor");
+    const current = ident(13, 12, "host");
+    const live = {
+      processes: {
+        list: () => [supervisor, current],
+        inspect: (pid: number) => pid === 12 ? supervisor : { ...current, start: current.start + 1 },
+        signal: () => { throw new Error("must not signal"); },
+      },
+      classify: (row: ProcessIdentity) => row.pid === 12 ? "supervisor" as const : "host" as const,
+      gatewayPid: () => 13,
+      hostBundlePath: "/tmp/host-main.cjs",
+      readHostSha: () => null,
+    };
+    expect(observeControllerHostGeneration(live)).toBeNull();
+    let discoveryReads = 0;
+    expect(observeControllerHostGeneration({ ...live,
+      processes: { ...live.processes, inspect: (pid: number) => pid === 12 ? supervisor : current },
+      gatewayPid: () => ++discoveryReads === 1 ? 13 : 14,
+    })).toBeNull();
+  });
 });
 
 describe("observed adopt commit eligibility", () => {

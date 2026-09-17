@@ -412,12 +412,20 @@ async function runHostLifecycle(
     const enable = admitEnableReceipt(await hostSwitchPorts.enable(deps), pre);
     receipt = { disable, enable };
   }
-  const post = await inspectHostClass(deps, true);
-  if (command === "stop" && post.host === "custom") {
+  const post = await inspectHostClass(deps, command !== "stop");
+  const expected = command === "stop" ? "official" : "custom";
+  if (post.host !== expected) {
     throw new CliError(
       "host_mismatch",
-      "Host stop did not reach official coverage (still custom). Next: grokbox doctor",
-      { next: "grokbox doctor", hostReason: post.hostReason ?? "still_custom" },
+      `Host ${command} did not reach ${expected} coverage (${post.host}). Next: grokbox doctor`,
+      {
+        next: "grokbox doctor", hostReason: post.hostReason ?? `still_${post.host}`,
+        ...(typeof rec(command === "restart" ? rec(receipt).enable : receipt).operationId === "string"
+          ? { context: {
+            operationId: rec(command === "restart" ? rec(receipt).enable : receipt).operationId as string,
+            phase: `host-${command}-postcondition`,
+          } } : {}),
+      },
     );
   }
   writeSuccess(deps.stdout, lifecyclePayload({

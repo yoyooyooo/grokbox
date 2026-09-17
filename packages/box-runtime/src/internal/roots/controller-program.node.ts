@@ -68,13 +68,14 @@ export function reviewedProfileSha256(boxRoot: string): string | null {
 export function controllerOperationId(
   intent: "apply" | "reconcile",
   boxRoot: string,
-  generation?: { preloadSha256?: string; profileSha256?: string },
+  generation?: { preloadSha256?: string; profileSha256?: string; hostGeneration?: string },
 ): string {
   return sha256Text(canonicalJson({
     intent,
     boxRoot,
     ...(generation?.preloadSha256 ? { preloadSha256: generation.preloadSha256 } : {}),
     ...(generation?.profileSha256 ? { profileSha256: generation.profileSha256 } : {}),
+    ...(generation?.hostGeneration ? { hostGeneration: generation.hostGeneration } : {}),
   }));
 }
 
@@ -175,6 +176,28 @@ export function defaultLiveAdmissionPorts(): LiveAdmissionPorts {
       }
     },
   };
+}
+
+/** Stable deduplication scope for one observed Host lifetime, not execution authority.
+ * A completed apply from before an explicit stop must not absorb a later start
+ * of the same artifacts. Unknown/changing identity must not mint a fresh key.
+ * The controller still owns its existing lease, preflight and mutation fences. */
+export function observeControllerHostGeneration(live: LiveAdmissionPorts = defaultLiveAdmissionPorts()): string | null {
+  try {
+    const gatewayPid = live.gatewayPid();
+    const identities = uniqueObservedAdoptIdentities(live.processes, live.classify);
+    if (!identities || gatewayPid !== identities.host.pid) return null;
+    const { host, supervisor } = identities;
+    if (!isDeepStrictEqual(live.processes.inspect(host.pid), host)
+      || !isDeepStrictEqual(live.processes.inspect(supervisor.pid), supervisor)
+      || live.gatewayPid() !== gatewayPid) return null;
+    return sha256Text(canonicalJson({
+      host: { pid: host.pid, uid: host.uid, start: host.start },
+      supervisor: { pid: supervisor.pid, uid: supervisor.uid, start: supervisor.start },
+    }));
+  } catch {
+    return null;
+  }
 }
 
 /** Re-acquire an unknown operation only when the live census is a unique official chain. */
