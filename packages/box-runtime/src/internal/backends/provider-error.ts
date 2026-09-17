@@ -1,4 +1,5 @@
-import { BackendFailure, classifyProviderFailure, isConfirmedOverflow, type OverflowEvidence } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, classifyProviderFailure, isConfirmedOverflow, invalidStream, annotateStreamFailure, type OverflowEvidence } from "@grokbox/runtime-kernel/contract";
+import { sdkValidationObservation } from "./sdk-validation.ts";
 import { observeBackendFailure, type BackendPhase } from "./failure-observation.ts";
 
 const OVERFLOW = /context_length|context_window|prompt_too_long|request_too_large/i;
@@ -168,6 +169,8 @@ export function backendFailureFromUnknown(error: unknown, phase: BackendPhase = 
   if (error instanceof BackendFailure && error.code !== "overflow_candidate") {
     return observeBackendFailure(error, error.code === "stream_invalid" ? "normalize" : phase, error);
   }
+  const sdkValidation = sdkValidationObservation(error);
+  if (sdkValidation) return annotateStreamFailure(invalidStream(sdkValidation.kind === "schema" ? "sdk_schema_mismatch" : "invalid_event_shape", "sdk_part"), { sdkValidation });
   const text = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const inspected = inspectStructuredProviderError(error);
   const auth = AUTH.test(text) || inspected.auth;

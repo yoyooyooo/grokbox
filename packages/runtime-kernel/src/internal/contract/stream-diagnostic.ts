@@ -1,11 +1,12 @@
 import { addFinishField, observeFinishField, projectFinishAudit, projectToolTerminalAudit, projectProviderHttp, projectProviderRoute, type FinishAudit, type ToolTerminalAudit, type ProviderHttpObservation, type ProviderRouteObservation } from "./provider-observation.ts";
 import { projectOwnershipReadObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
 import { projectToolIdentityAudit, type ToolIdentityAudit } from "./tool-identity-observation.ts";
+import { projectSdkValidation, type SdkValidationObservation } from "./sdk-validation-observation.ts";
 /** Payload-free, request-local evidence shared by modeld and the SDK/Effect-free Host. */
 export const NORMALIZE_CAUSES = [
   "missing_finish", "unsupported_finish_reason", "open_tools_at_finish", "tool_arguments_invalid",
   "tool_arguments_mismatch", "tool_identity_conflict", "tool_id_collision", "undeclared_tool", "tool_declaration_mismatch",
-  "parallel_tools", "sdk_invalid_tool", "unsupported_sdk_part", "invalid_event_shape",
+  "parallel_tools", "sdk_invalid_tool", "sdk_schema_mismatch", "unsupported_sdk_part", "invalid_event_shape",
   "event_after_finish", "conflicting_finish_reason", "empty_output", "invalid_usage", "invalid_terminal", "terminal_binding_mismatch", "stream_budget",
 ] as const;
 export type NormalizeCause = typeof NORMALIZE_CAUSES[number];
@@ -66,6 +67,7 @@ export type StreamDiagnostic = {
   rejectSite?: StreamRejectSite;
   eventType?: StreamEventType;
   declaredToolMatch?: boolean;
+  sdkValidation?: SdkValidationObservation;
   wireSequence?: number;
   stream?: StreamSummary;
 };
@@ -140,6 +142,8 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
     if (site) out.rejectSite = site;
     if (type) out.eventType = type;
     if (typeof match === "boolean") out.declaredToolMatch = match;
+    const sdkValidation = projectSdkValidation(own(value, "sdkValidation"));
+    if (sdkValidation) out.sdkValidation = sdkValidation;
     if (seq !== undefined) out.wireSequence = seq;
     if (stream) out.stream = stream;
     const budget = own(value, "budget"), layer = member(own(budget, "layer"), ["provider", "canonical", "host"]);

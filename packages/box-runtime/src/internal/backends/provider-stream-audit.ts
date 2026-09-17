@@ -83,7 +83,9 @@ export class ProviderStreamAudit {
     return t;
   }
   private identity(t: Tool, id: unknown, name: unknown): void {
-    if (name !== undefined) this.toolIdentity?.provider(id ?? t.id, name);
+    // Empty continuation slots carry no new identity. Do not turn a valid
+    // ongoing call into a diagnostic mismatch, or lose its id to an empty slot.
+    if (name !== undefined && (name !== "" || t.name === undefined)) this.toolIdentity?.provider(typeof id === "string" && id ? id : t.id, name);
     for (const [key, value] of [["id", id], ["name", name]] as const) {
       if (value === undefined || value === "") continue;
       if (typeof value !== "string" || value.length > 1024 || (t[key] !== undefined && t[key] !== value)) throw invalidStream("tool_identity_conflict", this.site());
