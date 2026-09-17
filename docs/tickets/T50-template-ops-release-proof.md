@@ -63,4 +63,6 @@ node scripts/check-publication.mjs
 
 ## Done evidence / Next
 
+原生验收已按场景预登记到 [LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines)、[LIVE-OPS-RECEIVERS](LIVE-integration-validation.md#live-ops-receivers)、[LIVE-OPS-OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime)、[LIVE-OPS-ISSUE-PUBLISHING](LIVE-integration-validation.md#live-ops-issue-publishing) 和 [LIVE-OPS-MAINTENANCE](LIVE-integration-validation.md#live-ops-maintenance)。这些条目均 blocked：来源实现、离线/制品证明和独立复审仍在各功能票，预登记不等于只剩 live，也不授权测试 Bot、费用、重启或对外发布。
+
 在现有 readiness 记录固定构建、各 lane 的 source/packed/native 证据、目标安装范围、开启的动作类、成本与退路、not_proven 项。最终可以只批准 user 基础通知/确认后支持；诊断和自动维护各自保留 not_proven，不强迫同时上线。自动化失效时用户仍能按既有 doctor/Host 显式流程操作。

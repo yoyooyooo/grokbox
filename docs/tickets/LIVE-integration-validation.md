@@ -60,26 +60,103 @@ Status: awaiting-integration
 ## 当前已登记：统一配置
 
 <a id="live-config-cutover"></a>
-### LIVE-CONFIG-CUTOVER — 实际配置迁移、服务采用与 home 恢复
+### LIVE-CONFIG-CUTOVER — 实际配置迁移与入口切换
 Status: awaiting-integration — configuration source/packed lane verified; independent code review remains in T60
 
 来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，最终 rebase 基线 v2 `6f2fcd1`，实现提交 `80fe393`（初始实现 `dbc43f5` 的 rebase 映射）；[配置收口回执](../reports/2026-09-17-unified-configuration-closeout.md)保存 source/packed 验证与未放行项。当前 v2 映射/candidate 为 `not-recorded`，集成窗口须重新固定制品。不得把含配置代码的 feature 分支直接指给现役 CLI/服务来代替集成。
 
 离线已证明：严格 v2、真实临时文件/锁与死亡 owner 恢复、迁移各阶段中断、模型原字节/secret ref 保持、bootstrap 回退不得覆盖后来编辑、alias 保全恢复、prepared/ABA 不重放、desktop 精确应用收据、source/packed CLI 和 Host 选模依赖隔离。独立代码复审尚待，属于 T60 非 live 阻断；本条不代替它。
 
-必须 live 的原因：当前服务的实际读路径、旧 writer 是否确已停止、source-backed shim 的切换、平台 Reset 的 home/durable 行为及既有凭据仍可用，不能从临时目录推导。当前环境/对象/停止权限/窗口均 `not-selected`，不执行 Bot、模型、Webhook 或 GitHub 探针。
+必须 live 的原因：现役配置来源、旧 writer 是否确已停止、source-backed shim 的实际采用及既有凭据仍可用，不能从临时目录推导。消费者的持续采用/重启另由 [LIVE-CONFIG-CONSUMERS](#live-config-consumers) 取证，平台 Reset/home 重建另由 [LIVE-CONFIG-HOME-RESET](#live-config-home-reset) 取证；本条成功不代替它们。当前环境/对象/停止权限/窗口均 `not-selected`，不执行 Bot、模型、Webhook 或 GitHub 探针。
 
 步骤/oracle：
 
-1. 固定 v2 候选与新旧 Node 制品；先核对本机 CLI 是源码 shim 还是安装包，并保留可以操作旧服务的固定制品。source shim 跟随工作区变化时，合入与迁移必须同一受控窗口安排，不能先让日常 CLI 因旧配置失效而失去恢复入口。
+1. 固定 v2 候选与新旧 Node 制品；先核对本机 CLI 是源码 shim 还是安装包。源码 shim 跟随 v2 时，Git 快进就会使下一次 CLI 调用读取新代码，但既有进程不会因此自动切换；不得把“未修改 shim 文件”说成“日常 CLI 行为不变”。只获准源码集成而未获准 live 迁移时，明确披露旧配置可能触发 config_migration_required，保留旧提交与恢复路径，并确认新制品的 config path/validate/migrate 不依赖普通 Profile 初始化。生产迁移窗口内再保全可以操作旧服务的固定制品，不因合入而隐式停写/重启/迁移。
 2. 保全当前配置、布局和 secret 引用证据，在明确授权下停止会写历史格式的 daemon/bootstrap/相关运行时角色。未能证实停写则阻断；不因为锁旧就删，不擅自停止用户 Bot 或 Host。
 3. 用新制品 preview exact source/root/conflict plan，再批准 apply；检查 config/model canonical、home 别名、安装安全状态和旧文件退役。models 与 credentials 不被规范化重写，旧 explicit off/预算不被升级默认值覆盖。
 4. 按批准范围启动新消费者，核对它实际采用的 domain revision、PID/start、模型路径与 Host/modeld 运行事实。配置 committed 与消费者 applied、Host loading 分别记录；不得因保存成功声称服务恢复。
-5. home 别名恢复与平台 Reset 独立资格化。只有实际平台策略和回读证据支持时才声明对应持久性；未执行真实 Reset 就保留该向量 not_proven，不能为了补证清理用户 home。
+5. 记录迁移完成时的初始配置/模型/secret 引用与消费者快照，把后续持续采用/重启交给 CONSUMERS，把真实平台重置交给 HOME-RESET；没有执行相应流程就保留其 not_proven，不能为了补证清理用户 home。
 
 停止/恢复：新旧 writer 并存、配置/别名冲突、source 变更、未知提交、模型或 secret 引用不一致即停止。按 migration/bootstrap 的精确 before/after 版本恢复，保留后续用户编辑及所有 unknown 回执；不重放用户消息、不自动回滚官方 Host。恢复后重新检查真实消费者，未验证则报告 blocked，不靠 doctor 单项绿代替全部结果。
 
 回执：本条未运行。预算/授权、实际 source/artifact/installation/process identities 和各 oracle 结果在窗口后回填；原始私密配置与令牌不进入仓库。
+
+<a id="live-config-consumers"></a>
+### LIVE-CONFIG-CONSUMERS — 现役消费者采用、重启与模型路径
+Status: awaiting-integration — configuration implemented; T60 review and an authorized consumer window remain prerequisites
+
+- 来源与依赖：[T58](T58-config-command-single-writer.md)、[T60](T60-config-ops-integration-proof.md)、[配置指南](../configuration.md)，实现 `80fe393`，分支 `feat/template-ops-automation`，基线 `6f2fcd1`；依赖 CUTOVER 已通过。actual live candidate/loaded identities 为 `not-selected`/`not-recorded`，独立复审仍归 T60。
+- 必须 live 的原因：临时 daemon 测试不能证明当前服务采用了哪个配置根、revision 和制品；模型文件原字节不变也不能证明现役 Host/provider 仍能读取同一凭据。
+- 环境与动作：固定安装与一个经批准的测试对象。先只读核对 source/packed CLI、daemon PID/start、domain revision、Host/modeld 实际身份、canonical 与别名，正常业务 Bot 不改模型。需要配置变更、服务重启或 provider 请求时另固定具体字段、对象和预算。
+- 步骤/oracle：用不会扩大权限或回收范围的明确测试变更验证 committed 与真实 applied；无消费者回执时保持 pending，重启策略保持 restart-required，不隐式启动消费者。按授权正常重启 daemon/modeld 后，证明读取的仍是新根，无旧 writer 重新创建历史配置。client/desktop 的无关修改不能改变实际模型分配/当前 TURN 捕获；经批准的新测试请求需分别证明凭据解析、实际模型、最终投递，不靠 health 或文件存在自证。
+- 预算与授权：配置字段、目标、每种重启次数、请求/token/费用、等待上限和原状态均 `not-selected`。没有模型额度时可先验证文件/进程路径，provider 与用户交付向量保留未证。
+- 停止/恢复：错根、旧 writer 复活、错误应用回执、模型/凭据变化或未知操作即停止；恢复本次字段时先核对版本，不覆盖后来的用户编辑，不重放旧消息或全局解除 circuit。
+- 回执：`not-run`；保存实际 consumer/version/domain revision 与有限测试结果。配置、进程、provider 和 App 证据分别记录，不能用一次 restart 关闭所有向量。
+
+<a id="live-config-home-reset"></a>
+### LIVE-CONFIG-HOME-RESET — 平台 Reset 后的 durable、别名和凭据
+Status: awaiting-integration — platform/reset proof requires a separately authorized disposable Box
+
+- 来源与依赖：[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，实现 `80fe393`；依赖 CUTOVER 和 CONSUMERS 的相关基本路径。实际候选、平台版本、测试 Box 与 reset 授权均 `not-selected`。
+- 必须 live 的原因：平台 Reset 究竟保留哪些挂载、如何重建 home、何时运行 bootstrap，以及客户端 home secret 是否存续，不能由本机临时目录模拟来证明。
+- 环境与动作：只在明确授权、可丢弃且不承担用户任务的 Box 执行真实平台重置；禁止以删除生产 home 代替。预先记录不含密钥原值的配置/模型摘要、secret ref 可用性、别名和启动 owner。
+- 步骤/oracle：Reset 前后对比 durable config/models/secrets、home config/models 别名与 installation identity；bootstrap 幂等修复缺失别名而不覆盖 detached 编辑器内容，不重新生成第三配置或放大权限。确认旧 off/预算保持；恢复后的 grant/绑定需按来源合同复核，不因备份复活。模型 secret 与客户端连接 secret 分开验证，任一丢失明确报缺失而非默回官方模型。
+- 预算/停止/恢复：一次 reset 的对象、平台调用权限、备份与回收计划须先固定；保留性或身份不符合预期即停止部署推广，恢复仅限本测试对象。不将容器重启或 daemon 重启当作平台 Reset。没有安全 reset 条件时本条保持 blocked。
+- 回执：`not-run`；平台/实际挂载事实、bootstrap 日志的安全摘要、前后 digest 和凭据可用性结果按向量记录，无重置就无持久性成功声明。
+
+## 预登记：运维闭环后续原生验收
+
+以下只预登记明确需要原生/外部系统的最终 oracle，**不是把未实现代码移交为 live 待办**。来源为已提交的 [运维 Spec](../roadmap/template-ops-automation-spec.md) 与逐票合同，规划基线 `52e76eb`、配置实现 `80fe393`；各功能的执行实现提交仍 `not-recorded`。T43–T56 的实现、离线/打包验证和独立复审继续在来源票完成；未满足之前均 blocked。本次 Git 合入也不会将这些状态改为 ready。
+
+<a id="live-ops-routines"></a>
+### LIVE-OPS-ROUTINES — Agent/Routine 原生 CRUD、Payload 与模板隔离
+Status: blocked — T43/T46/T53 implementation and offline qualification required before native execution
+
+来源：[T43](T43-native-webhook-contract.md)、[T46](T46-template-ops-pairing.md)、[T53](T53-agent-routines-cli.md)、[Spec §10.2](../roadmap/template-ops-automation-spec.md#routine-e2e)。待实施提交/实际 candidate/窗口 `not-recorded`/`not-selected`。
+
+原生步骤：经发布 Node CLI 创建一次性 Bot → 创建 disabled Webhook Routine → 读回并显式 enable → 真实 HTTP POST 合成 probeId → 关联原生 run/收到的 Payload/用户报告 → 更新同一 Routine 并再次 POST → disable 与安全清理。另验证两个模板导入实例的 endpoint/secret/绑定不互相继承。认证、Payload 编码/大小、原生响应层级与禁用语义分别取证；不得用 sendPrompt 或 mock handler 冒充 Webhook。
+
+预算与停止：另行批准测试 Bot 数、每个 probe 请求/模型费用与清理范围；超时先对账，不重复创建对象。发现错对象、secret 泄漏、跨实例触发即停止。disable 不等于取消在途任务，只有本次回合及子任务退出才删除本次确实拥有的 Routine/Bot；清理失败保留 cleanup_required。回执 `not-run`，无公开 secret/真实对象标识。
+
+<a id="live-ops-receivers"></a>
+### LIVE-OPS-RECEIVERS — custom 选模、多 Bot 分流与有界交接
+Status: blocked — T45/T47/T54/T55 implementation and receiver qualification required
+
+来源：[T45](T45-template-webhook-delivery.md)、[T47](T47-bounded-ops-diagnosis.md)、[T54](T54-ops-targets-and-routing.md)、[T55](T55-custom-receiver-delivery.md)，依赖 ROUTINES；实施提交与 live candidate 尚未记录。
+
+原生 oracle：使用批准的低成本/分析 Bot 与可选备用，核对 Webhook 回合真实捕获的模型、供应商、工具权限和数据同意；普通聊天 custom 成功不能替代。验证单目标默认、按 intent 分流、一层 needs-analysis 交接、可选集中报告和配置更换需重绑。ACK 丢失/已接受无回复不能自动广播备用；重复、备用和集中报告均计入同安装/同 Bot 总预算。最小提醒不得触发深诊断，模型配置不因通知失败被修改。
+
+预算/退路：提前固定各 Bot/模型、消息与 token/费用总额、备用数据去向；身份或原生选模无法关联即停止该 lane，保留 not_proven。不得故障注入生产 provider 或强修接收者。取消/撤销只按已授权本次工作处理，不取消 Bot 的无关业务。回执 `not-run`；没有原生工具隔离证据就不能宣称安全自动诊断。
+
+<a id="live-ops-observer-lifetime"></a>
+### LIVE-OPS-OBSERVER-LIFETIME — 持续观察、无人值守提醒与服务故障
+Status: blocked — T44/T45/T46/T50 implementation and installation qualification required
+
+来源：[T44](T44-host-ops-continuous-sensing.md)、[T45](T45-template-webhook-delivery.md)、[T46](T46-template-ops-pairing.md)、[T50](T50-template-ops-release-proof.md)，依赖 CONSUMERS/ROUTINES。实际实现提交、服务宿主、候选及窗口尚未选定。
+
+原生 oracle：使用该平台支持的真实服务 owner，关闭网页并结束启动 Bot 回合后，observer 仍持续采样；无变化零模型唤醒，确证用户影响且不可安全自修才一次短提醒。验证 restart/断网/endpoint 撤销/观察库不可用后的 source cursor、欠账、去重、预算与 degraded 状态，不因观察失败阻断现有推理或自动清 Host circuit。真实 native 用户交付与本地 outbox/HTTP accepted 分开确认。
+
+预算/退路：采样窗口、允许停止的 grokbox 自有服务、请求/费用、离线演练与恢复计划均须另行批准。不得改变官方 supervisor 或令生产 Box 故障来证明监测。整个 Box 离线无独立外部观察者时不承诺自我告警；恢复后对账也不等于实时送达。回执 `not-run`；本条不拥有未实现的服务生命周期代码。
+
+<a id="live-ops-issue-publishing"></a>
+### LIVE-OPS-ISSUE-PUBLISHING — 原生用户确认与 GitHub 真实提交
+Status: blocked — T52/T56 implementation, trusted consent and an authorized test repository required
+
+来源：[T52](T52-consented-support-issues.md)、[T56](T56-scripted-issue-publishing.md)、[Spec §5.2](../roadmap/template-ops-automation-spec.md#issue-automation)。默认提醒/草稿无需 GitHub 凭据；Fake Publisher 的无授权零写、脱敏、重复/unknown 等测试仍归来源票，实际实施提交/候选 `not-recorded`。
+
+外部 oracle：核实原生用户回复可与自动事件可靠区分；对已经展示的 exact 仓库/作者/可见性/标题/正文确认后，由发布 Node CLI 提交并读回实际 issue ID/正文。限定 public-summary grant 单独验证有效期/事件类/额度与撤销，不能借逐份确认的结果关闭。跨 Bot 重复确认仍对应一个 submission。仅在安全代理或专用测试环境允许注入 ACK 丢失时验证真实创建未知后的对账，不盲重发 POST。
+
+预算/退路：指定专用测试仓库、可公开的合成摘要、作者、最多 issue 数、可执行的清理动作；**本次 AH-99/AH-100 人工关闭不构成本功能的发布资格**。无批准仓库时只做本地/Fake，生产项目不被测试写入。真实 issue 关闭/删除或追加评论也须在清理授权范围内。安全分类/正文/目标不符即停止，保留 unknown 与已知引用；回执 `not-run`。
+
+<a id="live-ops-maintenance"></a>
+### LIVE-OPS-MAINTENANCE — 真实安全屏障、Bot 交接和退出补丁
+Status: blocked — T47/T48/T49/T50 implementation, independent review and explicit mutation window required
+
+来源：[T47](T47-bounded-ops-diagnosis.md)、[T48](T48-low-risk-host-qualification.md)、[T49](T49-policy-host-maintenance.md)、[T50](T50-template-ops-release-proof.md)，依赖配置/原生接点和接收者相关 lane。实际执行提交、维护 grant、制品、停止权限及候选 `not-recorded`/`not-selected`。
+
+原生 oracle：先证明当前平台存在经资格化的暂停/排空或等效 admission fence；Bot 持久交接后先终结本回合及相关子任务，唯一 controller 才执行已预授权、已资格化计划。busy、待审批、新任务撞屏障、授权撤销或原生换代应延后/拒绝，不忽略提出者。一次同代对齐与一次安全退出分别验证真实 loaded tuple/未注入官方路径/后续新回合，不在同 STEP 换供应商或重放工具。退出未知保持 rollback_unverified，不从命令退出码推断成功。
+
+预算/停止/恢复：固定单动作类、测试 Bot、最多变更/重启/请求、旧制品与恢复策略；只执行用户批准的窗口，不因为“合入 v2”获得升级权限。无安全屏障就是来源功能阻断，不以多次 idle 采样替代。越权、重复动作、未知进程所有权立即停止，按准确 operation/guardian 对账，不无限 patch/rollback。回执 `not-run`。
 
 ## 当前已登记：modeld Effect core
 

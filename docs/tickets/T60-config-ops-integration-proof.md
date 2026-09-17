@@ -30,7 +30,7 @@ node scripts/check-publication.mjs
 ## Remaining work and release gates
 
 - 独立代码复审仍待；这是非 live 发布门，不藏入 native 待办。
-- 生产配置迁移、source-backed CLI 切换、实际旧 writer 退出和当前消费者恢复，进入 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)。平台 Reset/home 别名重建与 credential 存续同条分开取证。
+- 生产迁移、source-backed CLI 采用和实际旧 writer 退出归 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)；现役消费者/domain revision/重启与真实模型凭据归 [LIVE-CONFIG-CONSUMERS](LIVE-integration-validation.md#live-config-consumers)；平台 Reset、home 别名重建与 credential 存续归 [LIVE-CONFIG-HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)。三条分别取证，不能用一次迁移或重启全部关闭。
 - 远端 config 写 capability 未交付，当前明确拒绝而非写错机器。
 - T43–T56 的 native Webhook、真实配对、grant、通知 worker、诊断/维护和 issue 发布仍依各来源票；配置规则不是这些功能的实现证明。
 
