@@ -266,13 +266,15 @@ prepare 与 apply 分开。CLI 沿用 `runtime re-adopt --confirm`；WebUI 的�
 
 **出口**：每个准入 adapter 经同一 production kernel 的 Fake/Live graph 通过合同、状态隔离、取消/资源关闭与零工具执行证明；CLI/WebUI 不出现 backend 私有状态或第二配置规则。transport/SDK 验证不隐式获得 live spend 权限；一个候选受阻不阻塞其余主链。
 
-## Phase 4：已确认 overflow 的 Host compact 与深层诊断
+## Phase 4：本地上下文维护、溢出兜底与深层诊断
 
-### 4.1 实现 T14b 的一次受控恢复
+**2026-09-17当前目标：** [Spec S12](box-runtime-impl-spec.md#context-maintenance)/[CTX-01–CTX-04](../tickets/README.md#context-maintenance)拥有默认主动compact。旧失败长会话的下一条普通输入必须先按本地工作预算检查/维护，再处理该消息一次；不等待真实上游拒绝、成功usage或新建会话。Host仍拥有材料/root/checkpoint，kernel拥有统一维护程序；先交付有界安全点阻塞维护，后台预生成不是前置。源码与新配置/命令仍待实现，规划不等于上线。
+
+### 4.1 T14b / T32：保留一次受控失败恢复
 
 本阶段依赖 Phase 1 的 binding/lifecycle/error 合同、已验证 Host compact seam，以及另行授权获取的 provider-specific 样本。**不依赖完成所有 T16 backend 或完整 WebUI。**
 
-`overflowCandidate` 只用于观察，不能直接授权 retry。由当前 attempt 的 typed backend outcome、有限分类、完整关联及非冲突证据确认 **context overflow**。auth、429、generic 400/500、HTTP payload too-large、timeout/断线/unknown 均不触发 compact；不能从普通 `model_error` 或 durable 日志行重建恢复命令。
+`overflowCandidate` 只用于观察，不能直接授权 retry。由当前 attempt 的 typed backend outcome、有限分类、完整关联及非冲突证据确认 **context overflow**。auth、429、generic 400/500、HTTP payload too-large、timeout/断线/unknown 均不授予失败恢复compact/重试；不能从普通 `model_error` 或 durable 日志行重建恢复命令。新的普通输入仍可因独立本地预算证据触发S12主动维护，不能把“错误不授权恢复”误读为“失败会话永远不能compact”。
 
 执行唯一恢复链：
 
@@ -287,7 +289,7 @@ prepare 与 apply 分开。CLI 沿用 `runtime re-adopt --confirm`；WebUI 的�
 
 无法证明没有已放行副作用时禁止自动恢复。使用本机 attempt identity 保留原 Host TURN/STEP 关联、更新 snapshot hash，并在同一 ledger 限制一次预算；不新造 Host invocationId、不清旧记录绕过去重。重复 compact completion/重连不再 dispatch。
 
-Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry 后失败时立即结束；不循环、不用 grokbox summarizer 补位，长期事实仍由 Host Memory 蒸馏。用户错误保持固定可见白名单。样本不足或 seam 未证明时维持 open/unavailable；需要额外 patch 时遵守收益/耦合审查与精确批准，不以恢复需求绕过 gate。见 [ADR D11](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d11--confirmed-overflow-host-recovery)。
+Host维护不可用、取消、候选无改善/不符合预算、或一次retry后失败时明确结束，不循环重发业务。摘要与合法root接受使用S12同一有界维护程序，不另建provider侧历史或备用summarizer；长期Memory仍归Host。用户错误保持固定可见白名单。样本不足或 seam 未证明时维持 open/unavailable；需要额外 patch 时遵守收益/耦合审查与精确批准，不以恢复需求绕过 gate。见 [ADR D11](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d11--confirmed-overflow-host-recovery)。
 
 ### 4.2 完成 T13 深层诊断
 
@@ -297,7 +299,7 @@ Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry
 
 兼容性持续观察与 mutation 分开：检测 Host/bridge/launch 合同变化，产出 changed/missing/unproven 事实；重新验证和显式批准后才能采用，不把现有含 TERM 的 helper 直接放进 timer。后续获授权的 adopted Host 验证同时覆盖 managed canary、未覆盖 Bot、create-bot/privacy 与官方 renewal。
 
-**出口**：confirmed overflow → Host compact → 新 snapshot → 一次 retry 有离线闭环；所有其它错误零 compact；重复/取消/无改善均有停止证明。T13 不清 circuit、不隐藏 pending/unknown，不把采样、缓存或模型终态升级为 Host delivery 权威。
+**出口**：S12本地窗口与旧会话下一输入的CTX矩阵必须通过，即使Fake provider从不报overflow也先主动维护；另保留confirmed overflow → 同一Host维护 → 新snapshot → 一次retry的离线闭环，其它错误本身不授予恢复。重复/取消/无改善均有停止证明。T13 不清 circuit、不隐藏 pending/unknown，不把采样、缓存或模型终态升级为 Host delivery 权威。
 
 ## 票据与实施对应
 
@@ -312,7 +314,8 @@ Host compact 不可用、取消、snapshot 无变化/仍超限、或一次 retry
 | T13 最小 facets、统一 Controller 与整合出口 | T27（尽早）/ T28 | 1 |
 | T15 共同用例、第二 writer CAS；浏览器 MVP deferred | T29 | 2 deferred |
 | T16 pi/Cursor 独立资格与 adapter | T30 / T31 | 3 |
-| T14b confirmed-overflow 恢复、T13 深层证据 | T32 / T33 | 4 |
+| 本地窗口/默认主动维护、旧会话下一消息 | CTX-01–CTX-04，Spec S12 | 4 当前规划 |
+| T14b confirmed-overflow 兜底、T13 深层证据 | T32 / T33（Host安全基础T35） | 4 |
 
 T10–T12 与 A1/A2/A4 的产品性质全程回归；已完成 POC ticket 不是保留旧实现的理由。
 

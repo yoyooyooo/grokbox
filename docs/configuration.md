@@ -123,6 +123,14 @@ The preview binds the installation, physical files and current aliases. Apply re
 
 `grokbox models list/check/use/reset/persist-key` is the public model family. `use` and `reset` require exactly one of `--for <agent>` or `--default`. The explicit default changes no Bot assignment; ordinary routing still uses only per-Bot opt-in. `check` is schema-only and `persist-key` needs a separately confirmed credential operation. General `config` commands cannot rewrite model records or assignments.
 
+## Planned extension: local context maintenance (not yet supported)
+
+The accepted [context maintenance Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance) adds `runtime.context` for local working-window and automatic-compaction policy. **These fields are not accepted by the current schema v2 implementation.** CTX-01 targets an explicit config v2→v3 migration through the existing writer/alias/recovery path; models remain schema v2 with their existing catalog, credentials and reasoning assignments. Do not paste the planned fields into a current installation or turn on the old HostCompact environment gate as a substitute.
+
+Policy belongs to `config.json`, not a third file or a fabricated model capability. Model declarations continue to describe the endpoint; explicit local limits can be smaller. S12 alone defines defaults, per-model/per-Bot policy overrides, output reserve, measurement, dependency revisions and next-TURN application. A policy override does not opt a Bot into managed inference. Unrelated client/desktop/ops edits and model credential bytes remain isolated.
+
+The intended user experience is automatic maintenance on the next ordinary input to an already-stuck long session, before the main model request, without clearing history or replaying the old failed STEP. Saving policy is not proof that the current Host/modeld supports or has adopted it; consumers must separately report configured/captured/capability/application. The [CTX tickets](tickets/README.md#context-maintenance) own implementation and proof; current commands above retain their existing behavior until that work is delivered.
+
 ## Evidence and boundaries
 
 Run `bun scripts/verify-runtime-rebuild.mjs config-unification` with the package-manager version declared in package.json. It typechecks, builds, tests source CLI and packaged Node, exercises real temporary files/locks, process-death and interrupted migration, alias preservation, desktop application and dependency isolation, then checks the preload import fence. Current evidence is recorded in [T57–T60](tickets/README.md#configuration-rebuild). Full repository tests do not prove a production Box reset, installed startup hook or native Webhook/Host cutover. Those gates use the shared [LIVE integration backlog](tickets/LIVE-integration-validation.md).

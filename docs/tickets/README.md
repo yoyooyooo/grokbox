@@ -36,6 +36,22 @@ Each ticket's evidence section is the completion source; this table is a route, 
 
 [AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md) owns the post-core same-STEP evidence reuse, finite expiry/budget explanations and shared CLI/STEP guidance. It retains the five-second original-age limit and explicit observation-frequency tradeoff under policy v2. Its `verify:modeld-core availability` suite is included in `release-offline`. The feature is now linearly integrated and reverified in v2; the [integration receipt](AUTH-ownership-evidence-availability.md#v2-integration-receipt) records unchanged commit mappings and proof boundaries. Code-review obligations remain non-live, and feature-scoped native/tool/App acceptance remains blocked in LIVE. The ticket, not this index, owns source-bound test counts and remaining gates.
 
+<a id="context-maintenance"></a>
+## Current planning — 默认本地上下文维护（CTX-01–CTX-04）
+
+**Planned / Spec-only，尚未实现。** [主Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)是唯一实施合同，[ADR](../decisions/2026-09-17-local-context-maintenance.md)固定默认自动与Host写入边界，[Pi参考](../maintainers/pi-compaction-reference.md)固定0.85.1行为和差异。首要出口是已有失败长会话的下一条普通输入：先按本地128K检查/compact，再处理这条新消息一次，无需新Bot/手动清理/再撞provider。功能编号不占用并行T序列。
+
+| Milestone | Ticket | Start / exit |
+|---|---|---|
+| M1 | [CTX-01 本地策略与计量](CTX-01-context-policy-and-meter.md) | 复用统一配置/模型选择；目标config3、独立窗口、usage估算、策略pin与纯/配置证明 |
+| M2 | [CTX-02 Host维护owner](CTX-02-host-context-maintenance.md) | CTX-01；安全点/operation、pending并发、候选验证/接受、取消与checkpoint回读 |
+| M3 | [CTX-03 有界摘要与恢复](CTX-03-bounded-summary-and-recovery.md) | CTX-02；同模型独立摘要、分段/工具安全、费用预算及T32窄恢复合流 |
+| M4 | [CTX-04 入口与完整证明](CTX-04-context-entrypoints-and-proof.md) | CTX-01–03；CTX-A01–A15、Node制品/CLI、旧gate退场、独立review与分层原生/live门 |
+
+T32保留既有零放行/一次额外主请求合同，T35保留原生寿命与旧未证范围；新实现差额由本系列承接，不再平行排一份compact施工队列。模型仍schema2/独立writer，config3是本功能目标而非当前可写字段；新wire实施前按当时集成基线确定。T30 Pi backend、完整WebUI、后台预生成和更多摘要模型不是前置。
+
+本轮只更新文档。新case/命令/source commit均待实现，缺代码/离线测试/review留在来源票；实际加载/原生用户入口/重启的最终门可以预登记LIVE为blocked，登记不表示只剩live或已获执行授权。后续旧会话实际成功也不能由新建短会话的回复代替。
+
 ## Prior delivery baseline — 2026-09-12 documentation governance
 
 **已定边界：Server归属优先；不改官方App；同Box会话换模型不换harness；test2仅冲突样本。** 查询已存在，执行门/可逆日用/全卸载不能据此算完成。历史计数与现场receipt留在[readiness](../maintainers/t32-live-enable-readiness.md)，本索引不复制会过时的产物和测试数量。

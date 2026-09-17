@@ -179,6 +179,12 @@ cli/src/
 kernel 只拥有纯规则和 Effect 用例；Node IO 由真实 root 装配。Host 的薄 desired/模型解析保持无 Effect/SDK。Fake 替换 ports 而非复制业务。迁移/安装/修复的 lease、关闭与异常事实由当前 Effect root 拥有，不另建 daemon reconciler。
 
 <a id="acceptance"></a>
+## 后续已接受扩展：本地上下文维护
+
+当前本Spec的config v2实现不包含runtime.context。[主运行时Spec S12](box-runtime-impl-spec.md#context-maintenance)与[CTX-01](../tickets/CTX-01-context-policy-and-meter.md)拥有目标config schema3的新增本地窗口/compaction偏好，扩展既有显式迁移、canonical writer、alias、安全范围和consumer application程序，不建立另一套配置底座。字段/默认/覆盖/预算公式只在S12定义，本页不复制。
+
+models schema2、凭据与reasoning assignment仍由模型领域拥有；普通context配置不改它们。本Bot的解析策略按独立contextPolicyRevision捕获，当前TURN不热换；client/desktop/ops或其他Bot编辑不失效本Bot。未来Host只从有界modeld协议取得已捕获最小预算DTO，不导入config/ops reader、Effect或SDK；这是对前述Host只读models的窄能力扩展，不允许传递整份配置。配置升级不能冒充能力上线或现场迁移授权，旧v2不以忽略未知字段继续写schema3。
+
 ## 9. 可执行验证与余项
 
 ```bash

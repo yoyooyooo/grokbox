@@ -320,6 +320,14 @@ Current implementation remains source reality until each slice lands. This docum
 
 **2026-09-16 accepted modeld consolidation:** [ADR](decisions/2026-09-16-modeld-effect-core.md) and the existing [Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core) own the next execution-core change. Keep the native Host loop/tools/delivery, one kernel and one durable execution index. Separate deployment proof, live execution fences and observation. Audit native authority before removing supplemental Server checks; keep strict freshness defaults until a separately qualified policy decision. Effect owns shared source and waiter lifetimes; no second daemon, universal collector or hidden restart/replay. [T43–T50](tickets/README.md#modeld-effect-core) carry scope and proof, not an implementation-complete claim.
 
+### 2026-09-17 Local context maintenance boundary（目标，尚未实现）
+
+[Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance)与[ADR](decisions/2026-09-17-local-context-maintenance.md)扩展本节上下文职责：kernel拥有本地工作预算、按root的一次维护程序与摘要请求寿命；Host拥有材料分区、输入队列、候选接受、archive/carrier/root/checkpoint。主动、手动、硬预算与T32失败恢复共用该程序，后者仍受零放行/一次额外主请求约束。不是另一个Agent loop、历史store或Host部署控制器。
+
+Host在有资格的原生安全点通过有界modeld协议取得最小捕获策略并在IPC前计量；不导入统一配置reader、ops、SDK或Effect。modeld的prepare及最终HTTP门复核同一budget/编码；adapter不compact或改写历史。手动无STEP维护以独立operation/root能力授权，可信conversation-compaction子请求使用同一ModelBackend/BackendAuth和捕获模型，不能借memory purpose或伪造业务STEP。
+
+候选先预算/结构验证再由Host版本化接受并checkpoint，回执丢失按真实root对账；ExecutionHistory只记录维护身份/阶段和提交引用，不存第二份可回放正文。Effect负责source/waiter、期限、取消和资源，但不是原生事务或远端取消证明。默认auto及schema3是新目标，当前配置/运行事实不因此改变；[CTX-01–CTX-04](tickets/README.md#context-maintenance)分别完成离线/制品/原生资格，live采用仍独立确认。
+
 ### 2026-09-17 Template ops boundary（目标，尚未实现）
 
 [Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T56 的最小增量骨架：HSO 拥有来源/资格，T41 原 SQLite 管理 incident/work/route decision/delivery/claim/报告及独立 support draft/consent/submission 域，T57–T60 的 ConfigChange 管理 config.ops 的 preset/显式叶/targets/routing；真实 bindings 与分开的 maintenanceGrants/issueGrants 在机器状态由受信程序管理，已有 controller store 管理 plan/动作。support consent 仅受信 support 用例可写，collector/维护 grant 不授予公开发布权。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。

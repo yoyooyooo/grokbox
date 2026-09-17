@@ -1,9 +1,15 @@
 # T32 — Confirmed overflow / Host compact / one recovery attempt
 
+## Current integration — 2026-09-17
+
+本票保留已有confirmed-overflow分类、零放行、同STEP一次额外主请求和历史未证范围；**它不再拥有全部compact触发的产品定义**。[Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)将默认本地窗口/旧会话下一消息/手动维护纳入当前目标，[CTX-03](CTX-03-bounded-summary-and-recovery.md)消费本票恢复规则并接到同一维护程序，CTX-01/02/04分别完成策略、Host owner和完整用户入口。新工作均planned，不是已开启运行能力。
+
+旧exact-1环境gate是当前实现事实，不是长期正常配置合同；CTX-04交付时由schema3策略与能力资格替代，故障注入仍off。当前桥默认关闭不等于Host全部原生compact关闭；不应仅开旧gate或重启就宣称旧长会话可持续恢复。下方历史回执保持原版本含义，新施工的目标预算/有界摘要/持久readback由S12与CTX票拥有，不重复建立第二恢复器。
+
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
 ## Status
-**Partial · Phase 4 · active stable-delivery track (2026-09-12).** 恢复内核、classifier、v4 同连接和默认关闭已存在；真实首请求恢复与稳定日用尚未关闭。以 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery) 为当前交付合同，不重做现有 GATE/env，不从历史分支文档推导新 live 权限。
+**Partial · failure-recovery substrate.** 恢复内核、classifier、同连接桥和历史默认关闭已存在；真实首请求恢复与稳定日用未由本票关闭。当前新增工作按上方S12/CTX映射推进，不重做已有安全证明、不从历史分支文档推导新live权限。
 
 ## Goal / ownership
 用户在真实 Grok Bot 换用更小窗口模型后，合格 overflow 能经 Host 原 compact 取得有效新窗口，回到原 managed 模型并继续日用。kernel `step-program` / `overflow-recovery` / ledger 是 attempt、恢复预算、逻辑终态唯一 owner；[T35](T35-host-compact-wait-point.md) 拥有 Host scope/摘要调度/接受 fence/外层 retry 控制；Host 保留摘要策略与 root、工具、Memory、checkpoint 的实际 writer。

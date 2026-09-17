@@ -19,7 +19,7 @@
 
 - **体验检查点**：已有安全普通窗口、续聊和基础工具可先验证；未合格恢复保持关闭，不称长会话稳定。
 - **稳定日用检查点**：两个 managed Bot 的不同选择、未配置 Bot 负对照、普通/工具多 TURN、首请求 overflow 恢复、恢复后续聊、实际会经过的 Memory/episode、checkpoint 后新进程恢复，以及正常配置持续生效/安装/停用退路。日常链路不能静默关闭以缩小验收。
-- **后续扩展**：更多 provider/Host ABI、非当前旅程必需的 proactive 泛化、完整工具/存储 writer 接管。任何晋升关键路径的工作必须指出当前用户场景和首个失败状态。
+- **当前新增必需能力**：[S12 默认本地上下文维护](#context-maintenance)覆盖旧失败会话下一条输入、首请求/工具后预算、手动及有界摘要；不再将基本proactive后移。更多provider/Host ABI、后台预生成优化、完整工具/存储writer接管仍属后续扩展，不能作为本轮旧会话恢复的前置。
 
 必须保持：Bot 选择隔离；managed 主模型不因错误隐式回官方；历史执行身份/选择不可改写；Host 窗口、metadata 和工具关联零隐式裁剪；恢复不重复工具/终态；其它 Bot 与原生功能不退化；新旧 writer 不竞争同一事实；CLI 配置成功/单次 pong 不等于用户可用。
 
@@ -131,7 +131,7 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 | 用途 | 本阶段模型/owner |
 |---|---|
 | main attempt0 / attempt1 | 当前 Bot 的同一受理 TURN/STEP/binding/selection/ServiceEpoch；至多两次 managed attempt |
-| dedicated compact summary | Host 专用 external；不回到等待中的 managed STEP；不是主模型 fallback |
+| dedicated compact summary | 当前接线为Host专用external；S12目标为Host材料/接受 + 捕获模型的独立conversation-compaction请求，不回到等待中的managed STEP，不作主模型fallback |
 | memory-extraction / episode | 已接受 F5 purpose、独立 aux id/生命周期、来源 TURN 捕获选择；Host 写 Memory |
 | tools / native subagent | 原 Host 工具与子代理选择语义；不声称所有子代理已换模 |
 | 未 opt-in Bot | 原生官方路径；不消费 managed recovery 能力 |
@@ -144,7 +144,7 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 
 1. **先就绪后启动**：STEP 身份、root、ctx、disposer 均已初始化，slot 真实可用才启动 provider；late-register 或占位 slot 不能合格。
 2. **同 root 摘要协调**：managed 执行/恢复期间不允许 approaching-limit、responseSummaryLaunch 等旧自动入口并发接受同 root。已有独立可完成的 external summary 可在启动前有界收口并重取窗；self/未知依赖不盲等、不删除 Promise。官方分支原行为不变。常见路径永远 blocked 不是完成。
-3. **唯一预算 owner**：kernel 只在已确认 structured overflow、attempt0 静止且未放行正文/思考/工具时借 Host compact 一次；Host 外层不得增发推理 retry，不换 STEP 绕 ledger。
+3. **唯一失败恢复预算 owner**：kernel 只在已确认 structured overflow、attempt0 静止且未放行正文/思考/工具时取得一次额外主请求资格；Host 外层不得增发推理 retry，不换 STEP 绕 ledger。S12的发送前/手动维护不需要provider错误，使用独立维护operation并复用同一Host接受能力，不消耗或扩大该失败重试预算。
 4. **统一期限**：当前 grok-4.6 生产候选的单 STEP 硬上限为 180 秒，Host/client/modeld 使用同一 canonical 常量，不由各层再续一个完整周期；admission/partial socket 的短期限不变。父执行剩余预算覆盖摘要、snapshot 校验、attempt1 与结算预留。传递剩余预算后接收侧建立本地期限，发送方仍判最终到期；不能比较跨进程 monotonic 原点，不能靠进度无限续租。固定 5 秒或单纯调大等待不构成修复。
 5. **root 接受 fence**：摘要开始前取消可证零 invocation；开始后不得假称零 effect。root 接受前检查其 owner/身份/期限；旧授权不能提交到新活 root。root 已改就如实记录，断连不叫回滚；未能确认的 native 工作隔离到受影响 root，不能全局堵住其它 Bot。`Promise.race`/禁发 resume 不是 commit fence。
 6. **合法新窗口**：从同一 active root 回读、保留 carrier/metadata/system/tail/tool 关联，验证 snapshot 与目标预算。字符串返回、消息数下降或 digest 变化不单独证明改善。只允许原 binding 的一次 attempt1 与一个逻辑 terminal。
@@ -216,7 +216,7 @@ owner 允许实施、阶段提交、必要旁支回收和安全清理；不是�
 1. **只有一棵目标树、一套业务程序、一份当前 wire 合同。** 禁止 `legacy/`、`vNext/`、平行 kernel、旧路径转导新路径的 re-export shim、`old || new`、`effectMode` 和长寿命 migration flag。
 2. T20 先做实体切割：转移仍成立的纯规则/控制机制，移除旧推理执行链及调用入口。旧测试先提取 expected vectors/oracles 到新 owner 的合成 fixtures 并指定后续激活票据，不继续 import 退场 API；未激活向量不可计作通过。尚未接好的推理/控制能力在 composition boundary 显式 `runtime_not_ready`，不能借 POC 兜底或返回 fake success。T26 必须消除推理占位，T28 必须消除控制占位；占位不是可发布功能，也不是保留旧内核的 feature flag。
 3. 中间提交可以是**可编译、能力未齐**的单轨版本；不得部署到现役 Host。每票只声明实际证明的能力。删除测试或跳过断言不算恢复能力。逐票从相同目标路径装配，不创建一个完成后再搬家的新实现目录。
-4. **Grok Bot Host** 指上游进程，继续拥有 root/上下文选择、compact 策略、session/store、Agent loop、工具、Memory/Transcript、SendToUser、官方 renewal 与 Gateway publication 的实际 writer；managed STEP 的准入、attempt/recovery 预算归 kernel，Host 摘要调度/接受按 S0.2–S0.3 受控委托。**grokbox root** 指自己的 CLI/modeld/console 执行根，两者不得混称。
+4. **Grok Bot Host** 指上游进程，继续拥有 root/合法上下文分区、compact 材料与接受、session/store、Agent loop、工具、Memory/Transcript、SendToUser、官方 renewal 与 Gateway publication 的实际 writer；managed STEP 的准入、attempt/recovery及S12本地工作预算归kernel，Host摘要调度/接受按S0.2–S0.3与S12受控委托。**grokbox root** 指自己的 CLI/modeld/console 执行根，两者不得混称。
 5. Host leaf 做双向归一化，保持 Effect-free、SDK-free。默认两处薄 patch；新增 patch 须按 ADR D2 有版本/收益/耦合/失效证据并获精确批准。没有所需 root/compact 事实就拒绝受影响能力，不编造接口。
 6. 持久根仍为 `/workspace/.grokbox/box-runtime/`，live root 仍为 `~/.grokbox/run/`，CLI 安装仍为 `~/.grokbox/runtime/`。不迁走 Host store，不 prepend `store.db`；live 的 `GROKBOX_LIVE_PROMPT_*_CAP` unset。长期事实留给 Host Memory 蒸馏。
 7. 本轮已进入实施。源码退场及旁支清理先核对语义与 dirty/untracked，保全可恢复引用/快照；不使用 reset/clean 强制抹除 WIP，不在源码树留 `old/` 墓地。主仓库 Git 数据、现役 fd/服务及用户数据不因 housekeeping 被删除。
@@ -409,7 +409,7 @@ test/packaging.test.ts                # 既有 Node20 发布验证位置
 | `commands` | `kernel/commands.ts`：models/use/reset、desired、prepare、preview/confirmed apply/reconcile | CLI/API 不重新组合这些业务步骤 |
 | `status` | `kernel/status.ts`：ObservationRead → 六 facets；任何环境同一 projector | 没证据不能“最近一次成功=现在健康” |
 | `HostSeamCodec` | `host/context-codec.ts` + `host/stream-codec.ts` 的普通 TS 函数，session 是唯一调用面 | kernel 不认识 PromptSession 私有字段；不是第二个 ModelBackend |
-| `HostCompact`（T32） | `ports.ts` 定义请求新 Host snapshot 的 Effect capability；v4 server 的**当前 STEP/连接** adapter 发 compact-request/等 resume-step，Host 侧由 `host/compact.ts` 调用批准 delegate | 仅 overflow-recovery 消费；不在进程全局、CLI/API 或 backend 暴露，不成为第二 compact executor |
+| `HostCompact`（T32既有；S12演进） | `ports.ts` 定义Host维护capability，已有当前STEP同连接snapshot恢复；S12扩展为root/operation限定的inspect/prepare/accept/readback，Host实际writer不变 | 仅kernel统一维护程序消费；CLI只提交具名维护用例，backend/monitor无root写权，不暴露通用RPC或保留第二compact executor |
 
 Auth lease 只在同进程受信任适配边界使用，backend 的 unseal 能力由 root 装配，不用全局 secret registry。验证与 SDK 使用同一已 pin 身份；读取发生变化就拒绝，不拿新的值继续旧 TURN。新 backend 的 auth 差异封装在同一能力后，不强塞 HTTP key 假设。
 
@@ -573,6 +573,8 @@ pi RPC、Cursor SDK 各自独立 qualification；在证明前只有票据/测试
 
 <a id="recovery-diagnostics"></a>
 ### S6.3 T32/T33 recovery / diagnostics
+
+本节限制的是**失败后额外模型请求**，不是所有compact的触发条件。默认本地preflight、旧会话下一消息、空闲手动与目标预算的当前新增施工归[S12](#context-maintenance)；T32复用它的Host维护能力而不另建摘要器。
 
 T32 仅在 typed 当前 attempt outcome + 合格 provider-specific 非冲突证据确认 context overflow，且原 attempt 已 terminal、**没有已释放 executable tools/用户可见内容**时请求 Host 自有 compact。attempt 结束不等于 Host STEP 已结束：先将失败保留在 kernel 内，不能先发 error bubble/STEP terminal 再恢复。
 
@@ -916,3 +918,210 @@ Owner：[实现票](../tickets/FEAT-model-reasoning-policy.md)；决策依据为
 - R04：SDK 设置合并不覆盖 parallelToolCalls；实际 HTTP 前核对 wire model、协议字段和 effort；缺失由专用映射补入、冲突拒绝。预算、工具、取消、Provider recovery 边界不改变。
 - R05：configured/captured/emitted/provider-reported 分层，Provider tier 缺证时 unknown。warnings 有界去私密，reasoningTokens 为可选 output 子集；标题 e 与模型 m 分离。
 - R06：wire v7 同套执行，旧 v4/v5/v6 仅有限只读诊断；Host import fence 与 prompt envelope 保持。离线含真实 SDK 编码、真实隔离 Unix/磁盘、打包；Provider/native/App/切换证明分别进入 LIVE，源码/review 缺口仍留来源票。
+
+<a id="context-maintenance"></a>
+## S12. 默认本地上下文维护（2026-09-17 accepted target）
+
+**状态：Planned / Spec-only。** 本节是 CTX-01–CTX-04 的唯一实施规格；[ADR](../decisions/2026-09-17-local-context-maintenance.md)拥有决策理由，[Pi 对照](../maintainers/pi-compaction-reference.md)拥有固定参考事实。读取基线 `7994b92` 已含 config v2、models v2、reasoning/wire v7；当前源码尚无本节完整 preflight、配置、手动命令或统一维护程序。下列新模块/DTO/命令/测试都是待实现目标，不是运行回执。
+
+本节取代本 Spec 中“managed compact 只由失败触发”“HostCompact 仅供 active STEP”“proactive 一律后移”的适用范围；保留 T32 的失败恢复安全边界、T35 的原生寿命、S10 的 Effect/authority、S11 的 reasoning 和 F/E 的状态保真。普通 provider retry、观察日志 compactor、ops 维护 Host 与本节的会话 compact 是不同能力。
+
+### S12.1 首要用户合同与支持范围
+
+**CTX-A01 是交付阻断项：** 已存在的长会话，最后一次模型请求失败/中止/无有效 usage；正常部署新能力并配置本地 128K 后，用户只发一条普通新消息，系统先维护旧上下文，再处理这条消息一次。不得要求新 Bot、清历史、手动 compact、成功回复一次或再次撞上游。不为历史失败 STEP 重发模型、工具或 SendToUser。
+
+默认 `auto` 针对已有 managed assignment 且 Server/Host 归属一致、原生维护接缝合资格的 Box 会话；不自动给未 opt-in Bot 选模型，不接管 temporal，不修改官方 App。每个新输入/restore/模型切换/工具结果之后都检查实际下一请求。没有 assistant、旧错误分类不明确、usage 缺失，都不能跳过本地预算。
+
+新输入先由原生接收/队列 owner 持有原始内容、nonce/顺序/附件引用与处理状态，再为它预留空间。压缩期间保留，不作为摘要中可丢失的旧材料；成功后按原输入身份继续，不创建第二 send。已经终态失败的旧消息不是自动重放队列。失败/取消如实记录新消息未执行/部分执行/未知，不能伪称已消费或要求常态成功路径再次输入。
+
+自动维护不是定时唤醒；默认无空闲后台扫描或模型花费。`manual` 关闭主动压缩，但硬预算始终有效。用户新输入或显式维护才可重新评估先前的可恢复失败；没有新意图/新状态时不循环重新启动摘要。跨崩溃的未知执行先按原生事实对账，不借这条“下一消息可恢复”合同承诺重放安全。
+
+### S12.2 配置、预算及生效
+
+配置唯一落在 canonical `config.json` 的 `runtime.context`；Box 人读入口沿用 `~/.grokbox/config.json` 的受管别名。`models.json` 继续保存 catalog、模型声明容量、credential 和 reasoning assignment，不写用户的本地窗口。Pi 目录的 1M 声明不得覆盖显式本地 128K。
+
+**目标配置升级至 schemaVersion 3**，使用现有迁移/单 writer/alias/application 机制；models schema v2 保持不变。新普通 reader/writer 不忽略未知版本或字段，旧 v2 只由显式升级程序消费并无损保留既有领域。不能把下例交给尚未升级的 v2 CLI。配置升级不重启服务、不选模型、不生成摘要。
+
+以下为目标片段，完整文档仍须保留 client 等必需字段：
+
+```json
+{
+  "schemaVersion": 3,
+  "runtime": {
+    "context": {
+      "windowTokens": 128000,
+      "compaction": {
+        "mode": "auto",
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
+      "models": {},
+      "agents": {}
+    }
+  }
+}
+```
+
+`models` 用精确 catalog ID，`agents` 用规范 Agent UUID；每项仅允许 `windowTokens` 和同形 `compaction` 的部分覆盖，不含模型选择/凭据。按 **内置默认 → runtime.context 公共叶 → 当前模型覆盖 → 当前 Bot 覆盖** 合并，缺字段继承，unset 删除覆盖；无任意表达式/环境变量覆盖。初版 window 默认 128000，mode=auto，reserve=16384，keepRecent=20000。`windowTokens` 1024–16777216；reserve 为正且小于生效窗口，keepRecent 非负且须容纳摘要/固定材料；所有数值 safe integer。解析还保留现有文件大小、map 数量及安全键约束，最多 128 个模型覆盖/1024 个 Bot 覆盖。不存在的引用配置可保存为 pending，但不产生执行授权；读取实际目标时明确 unresolved。
+
+高级 `compaction.limits` 允许显式覆写 `maxSummaryRequests`（默认16，1–64）、`maxSummaryInputTokens`（默认2000000，1–16777216）、`timeoutMs`（默认120000，1000–120000）。父运行剩余期限永远取更小值；这些上限是维护预算而非吞吐/模型能力保证，变大时沿用统一配置的费用确认规则。第一版不暴露 triggerRatio/targetRatio、自定义 prompt 或自动备用 provider；另选摘要模型不是本交付的前置，当前维护使用捕获的主模型/effort 的独立请求。
+
+**计量变量与边界固定如下。** `C` 为模型/端点声明容量，`I` 为 adapter 明确知道的独立输入上限，两者未知不填0。`W=min(windowTokens,C)`（C未知只用本地窗口）；这不把声明值升级为实际验证。`O` 为本次最终编码实际允许的输出预算，reasoning 的归属按 adapter 合同；不是目录的最大输出能力。未显式给输出上限时，选用 reserve 作为有披露的请求默认并在最终 HTTP 中落实；无法施加/确认的 adapter 拒绝资格，不以未知输出0放行。显式输出大于 reserve 不暗中裁小。
+
+```text
+R = max(reserveTokens, O)
+H = min(W - R, I)                  # I 未知时不参与 min；H 是输入硬预算
+U = 当前完整待发输入的计量值 + 估算方法的保守余量
+自动阈值：U > H                    # 等于 H 不触发；最终字节/能力门仍检查
+preferredTarget = floor(0.60 * H)
+resumeThreshold = floor(0.90 * H)  # 自动维护后必须回到此线以内，留下迟滞空间
+```
+
+拒绝 H<=0 或固定输入自身无法容纳的组合。128000/16384 且 O<=16384、无更小 I、精确 meter 的阈值是111616；111616不触发，111617触发。估算余量来自 meter 版本，不能为迎合阈值伪造真实 usage。preferredTarget 指导候选大小，不是第二个成功口径；候选未达到 preferredTarget 但 <=resumeThreshold、确有改善且所有结构/持久门通过时，可报告 `targetMet:false, headroomMet:true` 后继续；超过 resumeThreshold 不以“压过一次”放行。固定材料使目标不可达时报告 `context_target_unreachable`，不暗减 system/新输入。
+
+keepRecent 是合法完整交互组的预算，不是按 token 拦腰裁剪；优先在目标内保留尽可能新的完整组。自动缩小到更早合法切点只能处理已完成旧组且须披露 effectiveKeepRecent；当前新输入和未闭合工具组不得删。摘要子请求先按其有效窗口 `Ws` 固定输出上限 `Os=min(8192,floor(Ws/8))`，再计算自己的 `Hs=min(Ws-max(reserveTokens,Os),Is)`（Is未知时不参与）；不从含Os的Hs反推Os，避免循环定义。规划前还须扣除摘要指令、受保护固定材料与合并材料；Os/Hs必须为正，每次实际摘要HTTP都复核同一预算。
+
+`contextPolicyRevision` 只散列本 Bot 的解析后策略及策略算法版本；模型的 `selectionRevision` 保持 S11 含义。binding/维护操作同时冻结两者，普通 client/desktop/ops 或另一 Bot 的修改不使本 Bot 失效。跨 config/models 的读取是明确捕获的两个版本，读后复核变化并有限重试，不宣称两个文件是原子事务。当前 TURN（含工具下一 STEP、已启动维护和失败恢复）继续原策略；下一 TURN 捕获新策略。新输入为新 TURN 时先采用新预算。空闲手动操作捕获当时策略；对活跃会话只在原生安全点使用该运行捕获值，不用手动命令热换在途选择。
+
+`config get --effective` 仍为请求偏好；维护状态分别显示 configured-next-turn/captured/policyRevision/capability。配置保存与 consumer applied 分开，Host 只通过有界 modeld 协议取得最小预算 DTO，不导入 config/ops reader、Effect 或 SDK。schema3升级预览披露默认自动摘要与最大费用边界；生产切换单独确认。`GROKBOX_MODELD_HOST_COMPACT` 的普通功能分支/启动传递/旧测试在 CTX-04 退场，旧变量不能隐藏关闭新策略；注入变量保持测试用途且默认off。
+
+### S12.3 计量和三道发送前门
+
+纯规则代码可以共享，**计量不是模型账单**。值必须带 `method=tokenizer|usage-plus-estimate|estimate`、meter/adapter版本、rootRevision、encoding/selectionRevision、uncertainty allowance、组件统计和 coverage。未知真实 usage 保留 unknown；估算可用于主动维护，但不是任意上游 tokenizer 的严格保证。
+
+优先使用合资格本地 tokenizer；其次使用同模型、同编码、同 root lineage 最近有效输入/输出基线并估算新增材料；无基线估算全部。错误/中止/全零 usage 不覆盖有效基线；旧 compact 前的 usage、切模型、system/tools/注入前缀改变则失效并重算，不能仅按 timestamp 推断版本。provider cache read/write 按 adapter 语义计一次，reasoningTokens 是 output 子集。统计包含 system、tools/schema、pins/Memory、所有实际重放正文/reasoning、工具参数/结果、附件/图片及协议额外材料，不能从 UI 历史长度计算。
+
+1. **Host preflight**：新输入/恢复 root/当前工具结果已知、真实会话/STEP安全点建立后，先取得冻结预算并对 Host 实际窗口有界遍历；在大 JSON、CCS 或 IPC 上限之前维护。未完成 root 解码/能力覆盖时返回 typed 缺口；不能把未知补0、删消息来过 IPC。长历史材料通过 Host owner 的有界合法分区提供，禁止一次巨型序列化绕过限制。
+2. **modeld prepare**：消费 Host 当前 snapshot 与捕获预算，按将使用的 prompt/dialect 复核。本地超限产生 `context_budget_exceeded`、`providerStarted:false`，回到同一维护操作；不伪造 overflow HTTP400、不消耗失败后额外主请求预算。
+3. **实际 egress**：SDK/dialect/reasoning 投影之后、真实 fetch 之前检查最后的编码、输出上限、工具和字节预算。变化则停止这次发送并回交唯一预算 owner；fetch 不直接 compact、不改 root、不启动第二 Agent loop。HTTP/effect 计数只在真实边界增加。
+
+同 root/同输入版本的 preflight 不因重复回调无限运行；预备检查最多接收一次合格替换窗口，再次不合格即明确失败。失败后新用户输入可以开启新维护 operation，不继承旧失败 STEP 的 exhaustion。发生未知 provider effect 时不能以 preflight 身份重试。
+
+### S12.4 最小代码骨架、ports 与归属
+
+以下是目标树，不提前创建空模块。函数/helper 不需各自成为 Service；无新 package、配置副本、全局任务注册器或通用工作流框架。
+
+```text
+packages/runtime-kernel/src/
+  contract.ts / config.ts / ports.ts / inference.ts       # 沿用批准的公开入口
+  internal/config/context-policy.ts                       # 新：纯解析/覆盖/预算/revision
+  internal/contract/context-maintenance.ts                 # 新：安全 DTO、错误、版本化限制
+  internal/inference/context-maintenance.ts                # 新：唯一 Effect 维护程序与按root寿命
+  internal/inference/{step-program,overflow-recovery}.ts   # 修改：接入，不复制执行器
+packages/box-runtime/src/internal/
+  host/context-budget.ts                                  # 新：纯有界root计量/预算薄桥
+  host/compact.ts                                          # 改：同root准备/验证/接受/回执
+  host/{live-slices,session,modeld-client.node,profile}.ts   # 改：safe point/同代协议
+  host/{aux-request,aux-purpose,auxiliary,session-hook}.ts  # 改：可信摘要purpose，不借memory资格
+  backends/context-meter.ts                                # 新：adapter编码计量；无root写入
+  backends/{ai-sdk,prepared}.ts                            # 改：冻结/最终出站核对
+  modeld/{server.node,same-connection-compact}.ts           # 改：同一有界传输，不保留旧双轨
+  io/{configuration.node,config-application.node,execution-history.node}.ts
+  roots/{modeld.runtime,command.runtime}.ts                # 已有执行根装配能力/Scope
+packages/cli/src/
+  commands/agents.ts                                      # 既有Agent命令owner接薄路由
+  registry.ts / config-registry.ts                         # 参数/schema/帮助/作用域
+```
+
+现有辅助用途由 Host `aux-request/aux-purpose/auxiliary/session-hook` 接入；目前仅 memory-extraction/episode，不能通过泛化无STEP许可冒充摘要资格。新增摘要purpose的执行由同一kernel维护程序调用既有backend/auth，Host辅助层只做可信身份/参数适配。禁止虚构已存在的kernel辅助执行器，或在Host另建带SDK的摘要运行根。
+
+| 合同 / 消费者 | owner / 限定能力 | 禁止 |
+|---|---|---|
+| `ContextBudget` / `ContextMeasure` | 纯合同，由 ConfigurationRead 和 adapter 派生；Host只拿当前会话最小DTO | DTO包含凭据/ops授权或通过消息正文注入策略 |
+| `ContextMaintenance` 业务程序 | kernel Effect：inspect→claim→prepare→summary→validate→commit→readback；普通/手动/overflow共用 | CLI/backend/monitor另开摘要或重试程序 |
+| 演进既有 `HostCompact` port | Host负责 inspect/prepare/accept/readback；modeld只持限定root capability；旧单次request桥退场 | 通用执行JS/RPC、任意路径读写、第二历史store |
+| `ContextMaintenanceIdentity` | installation/scope、Agent/session/root、Host generation、operationId；可关联真实parent TURN/STEP/nonce | 空闲手动维护伪造STEP，跨root借用slot |
+| 摘要推理 | 现有 ModelBackend/BackendAuth，可信 `conversation-compaction` purpose、独立requestId、无业务tools | 使用pending主STEP身份、递归auto-compact或隐藏切provider |
+| 维护claim/结果索引 | 现有ExecutionHistory的独立typed维护记录；Host checkpoint存真正root提交事实 | modeld储存可回放历史/凭据；journal推导许可或代替root提交 |
+
+模型/普通配置 writer 与 Host import fence 不变。扩展 config schema3 的纯数据和精确有界 DTO，不把 config 整文档暴露给 Host。Host叶保持普通TS同步handle/有界IPC；modeld沿用单一Effect根，source和等待者分Scope，不逐helper runPromise。Root版本锁/队列归原生执行owner，modeld运行表只协调本维护操作，不授权绕开Host写入。
+
+### S12.5 操作顺序、并发、取消与持久化
+
+状态只描述实际阶段：`checking → waiting-safe-point → preparing → summarizing → validating → committing → committed`；另有 `unchanged / blocked / cancelled / failed / commit_unknown`。`summarizing`不能表示root已保存，`committed`不能表示新用户问题已回答。
+
+1. 原生接收当前消息并固定身份；解析真实session（空字符串是合法默认session），读取Host代/Server归属及当前root lineage。冻结模型/effort、contextPolicyRevision、输入引用、期限与摘要预算。所有权不足不得发生摘要或root写入。
+2. 在原生安全点取得root维护能力与版本；检查固定材料和预算。manual低用量/没有可压缩旧材料可返回unchanged，不强制花费。auto不需要维护时直接放行一次已计量快照。
+3. 持久声明维护operation及输入摘要身份，复用已有ExecutionHistory，不存正文。相同operation相同输入只查询/加入现有操作；不同输入冲突。另一个新输入不能把旧失败业务STEP重新排入队列。
+4. 同root只有一个摘要接受owner；并发维护等待同一source并保持各自取消/输入。不同root独立。已有候选完成且前缀/版本相符则可复用；独立pending在剩余预算内等待；依赖暂停STEP的self/未知工作不得盲等，由原owner取消并确认收口，不能抹Promise。外部source未确认停止时不竞争写。
+5. Host从当前root准备候选材料及合法保留边界，记录sourceRootRevision；大历史有界分区。暂不修改活跃root。摘要请求使用独立执行槽：保留主STEP逻辑claim但释放其已静止producer/资源，不占持久锁等待网络；避免所有主请求占槽等待摘要的环。
+6. 独立请求完成后，由同一最终编码规则验证候选、目标预算、工具配对、metadata、固定材料和新的输入预留。迟到/取消/换代/换root/ownership撤销在实际Host accept前再次校验。普通偏好更新不撤销已捕获运行，正式归属失效必须停止。
+7. Host按sourceRootRevision及operationId接受合法候选并走原生archive/carrier/checkpoint。旧root不被空/半份候选覆盖。提交是原生版本化root发布边界，不是Effect Scope或两个文件的假事务；先写的archive孤儿可由原生GC处理，不主动删用户历史。
+8. 从同一Host持久事实读回新root/边界/operation关联，重新计量再允许主请求。root已提交但回执丢失时先读回对账：确认提交则重读，不再生成第二摘要；未知则commit_unknown，不自动重放业务。重启仅恢复已提交root，不复活旧service的STEP/维护效果。
+
+冻结操作总期限，不因阶段、重连、heartbeat或新的waiter续期。维护最多使用 `min(compaction.timeoutMs, parent剩余期限 - 继续主请求/结算保留)`；自动/overflow为后续主请求至少保留30000ms及结算5000ms，无足够预算就失败。空闲手动操作没有模型回复预留，但同样有明确总期限；原生父期限更小则从其限制。已有主STEP入口180s合同不改成无限；多段摘要可能预算不足，报告实际已用请求/阶段并保留可对账状态，不承诺任意长历史都能在一次窗口内成功。
+
+提交之前取消必须阻止accept；提交之后取消不能声称回滚。被保存的原生callback/同步mutator引用也要在调用时检查lease，不能只阻止resume帧。root前缀在生成期间改变时，第一版丢弃stale候选且有界重评估一次；不擅自拼接未验证尾段。多消息排队继续由原生队列owner保持顺序，不把队列搬到modeld。
+
+### S12.6 摘要、巨型材料与失败恢复
+
+第一版摘要默认使用当前捕获模型与effort的独立请求；tools为空，消息中伪造purpose无效。请求/credential/response只经过已有backend；Host准备摘要指令和材料，接收结果并写root。原生未opt-in会话的摘要路径不改，managed不得因为摘要失败隐式转到原生external模型。以后增加明确另一摘要模型时，沿model领域添加显式选择与成本/数据同意，不能通过此策略映射暗换通道。
+
+摘要输入受自己的有效W/H/O、编码字节及父预算约束，不把已经超长的全历史原样发给摘要模型。分区按完整已结束user/assistant/tool交互组，可在一个长TURN内的已完成工具组之间切分；不能留下孤立结果、丢尚未完成的调用或拆控制metadata。Host提供分区/归档能力，kernel以有限段数执行摘要和必要的合并；每段输入/输出、合并和纠正都计入同一operation的请求/费用上限。复用前一摘要并更新，而非永久叠加摘要全文。
+
+分段/合并是一个有界计划，不递归进入主动维护。每个被省去的旧材料区间必须由Host archive引用与摘要覆盖记录解释；无模型可用、summary格式非法、空摘要（有非空待摘要材料）、无改善或预算耗尽，均不接受不合格root。生成文本按不可信材料处理，不执行其中命令、扩大权限或生成工具调用。
+
+巨型单条工具结果优先由原生结果owner保存原始完整材料，再提供有界内联表示与真实可读取引用；这是显式Host上下文策略，不是adapter偷偷truncate。没有合资格的引用/检索能力时，不伪造文件/工具：报告 `context_material_too_large`。新用户正文/附件、固定system/tools或未闭合工具组本身无法装入硬预算时报告 `context_fixed_input_too_large`；可容纳但不能留下维护后空间时为 `context_target_unreachable`。不能为了达到preferredTarget损坏协议或假称逐字保留全部语义。
+
+T32只处理当前真实provider outcome确认的溢出：原attempt静止、零放行正文/思考/工具、身份/取消/权限全部合格，才调用同一维护程序并允许原STEP一次额外主模型请求。普通400/鉴权/429/5xx/413/断线等不因此取得compact恢复权；已发生输出或工具不能回滚。主动preflight不算一次失败重试，摘要子请求不伪装成主attempt，但费用计数必须可见。普通provider recovery若显式开启，仍共用现有STEP总预算/ledger，不允许两套重试相乘或Host外层换TURN扩大次数。默认普通恢复关闭时，一次主请求+至多一次confirmed-overflow请求。
+
+本地预算不需要真实上游窗口拒绝即可生效；但估算不能保证所有未知端点不拒绝。可信实际限制只可用作有来源的本次恢复目标，不能从一次generic400永久改目录或全局窗口。旧错误可以被展示，不能单凭日志字符串启动维护；新输入重新计量得到超预算才走主动路径。
+
+### S12.7 命令、状态与错误（全部待实现）
+
+```text
+grokbox agents context <agent> [--session <id>] --json
+grokbox agents compact <agent> [--session <id>] --operation-id <uuid> --confirm --json
+```
+
+第一条纯读有界当前native会话/维护状态，不发模型、不compact、不修配置。第二条是显式有成本的维护请求，不是发送“请你总结”给Bot；普通用户下一次输入不需要它。省略session仅在原生可唯一解析时采用，否则明确ambiguous；空session合法，不把所有session合并。缺目标能力时返回unavailable，不用generic exec/RPC、改变harness或在本机执行远端操作。参数/transport沿现有Agent命令作用域；未来remote目标必须有受支持有限能力，不能由一次本地文件写入假装生效。
+
+状态至少区分：configured与captured窗口/策略、declared与effective容量、meter/不确定性、组件用量、阈值/目标/headroom、capability ready/unqualified/unavailable、operation/rootRevision/parent关联、阶段/等待原因、摘要与主请求计数、before/after、root accepted/persisted、当前输入处理状态。只显示安全身份与统计，不在普通日志输出摘要、材料、prompt或secret。未知字段保持unknown，不拿上一operation成功代替当前ready。
+
+固定失败原因：`context_budget_exceeded`、`context_fixed_input_too_large`、`context_material_too_large`、`context_target_unreachable`、`summary_unavailable`、`summary_invalid`、`no_improvement`、`stale_root`、`maintenance_budget_exhausted`、`deadline_exceeded`、`capability_unqualified`、`commit_unknown`；取消/ownership/model auth保留原有精确分类。每项保留发生阶段、是否已提交root/主provider是否开始以及可执行下一步。新原因通过现有安全FailureSummary/registry/CLI/outcome链贯通，不混成“上游HTTP400”，也不写入模型正文或Memory。
+
+原版App通过已有Host运行事件表达“正在压缩上下文”及结束/失败，显示合同由T36消费；不得直接patch App、制造thinking token或永远Working。无法表达独立活动时诚实记录能力缺口，不能用只读CLI绿代替App验收。失败与状态只读不自动触发ops通知、模型诊断、issue或Host重启。
+
+### S12.8 证明矩阵与可执行出口
+
+全部新case/命令仍planned。CTX-01在现有 `scripts/verify-runtime-rebuild.mjs` 注册有限case：`context-policy`、`context-owner`、`context-summary`、`context-maintenance`；最后一个只在所有必需子case实际执行时通过。未知case、缺文件、零测试、skip或仅stub返回必须非零。公共默认无外网/真实credentials/生产路径/Pi依赖；同一生产程序、真实SDK、本地HTTP/Unix/临时持久store，不允许Fake替代业务流程。
+
+| 向量 | 必过oracle | 主票 |
+|---|---|---|
+| CTX-A01 旧失败会话下一消息 | 长历史+最后error/aborted/零usage；新版本首次加载、128K、一条新消息；第一主HTTP已压缩，旧STEP仍失败、工具不重做、新输入一次 | CTX-04 |
+| CTX-A02 本地500K→128K | Fake provider始终接受500K且不报overflow；本地越线仍compact；threshold相等/+1及手动模式硬上限 | CTX-01/04 |
+| CTX-A03 无assistant/无usage | 初始导入、连续错误、有效usage+新增输入、全零/缺失字段；没有成功前置、unknown不填0 | CTX-01/04 |
+| CTX-A04 单次输入/工具跃增 | system/tools/新消息/附件/工具结果push过线；IPC前/prepare/最终SDK三门，未压缩巨体未发送 | CTX-02/04 |
+| CTX-A05 预算与配置 | 非法/小window/输出>reserve/未知capacity与明确local；schema/alias/CAS/迁移/旧writer拒绝；普通config不改models | CTX-01 |
+| CTX-A06 版本失效 | compact前usage不重触发；同TURN旧策略、新TURN新策略；另一Bot/client/ops变更不失效 | CTX-01/02 |
+| CTX-A07 小模型切换 | 同会话大→小首次请求先维护；不复用旧模型usage/错误、不换harness/历史、不隐藏effort变化 | CTX-02/04 |
+| CTX-A08 安全分区 | 多工具/同TURN长循环、未完成调用、metadata和carrier保真；已执行工具ID/结果关联不变 | CTX-02/03 |
+| CTX-A09 摘要也超预算 | 有界分段+合并、巨型单结果、summary膨胀/空输出；每个实际摘要HTTP合格且总次数/费用有界 | CTX-03 |
+| CTX-A10 并发与资源 | 同root共享维护、多个root独立、已有pending/self等待环、全部主槽占用；首waiter取消不杀他人source，无死锁 | CTX-02/03 |
+| CTX-A11 迟到与失败 | prepare/生成/accept前后取消、换代/撤权/root改变；保留旧root或真实已提交结果，未知不报回滚 | CTX-02 |
+| CTX-A12 真持久续聊 | 多次compact→checkpoint→退出owned进程→新进程readback；旧历史不复活、sentinel从实际摘要/保留区进入请求 | CTX-02/04 |
+| CTX-A13 窄失败恢复 | 本地估算漏掉的confirmed overflow一次恢复；无独立本地预算理由的普通400/401/429/413/5xx/断流/已输出负对照不得compact重放；唯一terminal | CTX-03/04 |
+| CTX-A14 手动/排队/重连 | 明确session/operation与确认，空闲无伪STEP；同操作重复/输出丢失先对账；新消息/取消/旧失败不串线 | CTX-02/04 |
+| CTX-A15 source/packed/退旧 | 真实Node制品同链、旧gate退出、config3+当前新wire拒绝旧执行、import fence/privacy；旧制品不得冒绿 | CTX-04 |
+| CTX-A16 原生用户旅程 | 固定Host/profile/制品、真实root/摘要/工具/App状态与重启；只在授权范围，证据分层，不以synthetic通过替代 | CTX-04 / LIVE |
+
+测试夹具自行构造多语言文本、代码、tool配对、schema和早/中/晚事实标记；expected不调用被测估算/切点函数生成。Fake摘要必须从实际收到的材料推导受限结果，缺材料即失败，不硬编码最终答案。bounded stress覆盖至少10次连续维护、并发取消和重启，断言资源/内存记录受既有上限约束；不能靠固定消息数或巨型pad制造一条绿canary。
+
+目标测试归 `runtime-kernel/test/context-policy.test.ts`、`context-maintenance.test.ts` 与 `box-runtime/test/context-maintenance-{host,summary,pipeline,packed}.test.ts`；复用现有 overflow、Host compact、continuity、reasoning、config tests。原生隔离消费者资格单独保留，不转成live-only缺口；只有实际加载/真实provider/App/平台重启的剩余证明才进入LIVE。
+
+### S12.9 票据、退场与失效条件
+
+| 阶段 | 票据 | 出口 |
+|---|---|---|
+| M1 合同/配置/计量 | [CTX-01](../tickets/CTX-01-context-policy-and-meter.md) | schema3目标、按域pin、Pi参考向量、三门共享规则、有限verifier |
+| M2 原生维护owner | [CTX-02](../tickets/CTX-02-host-context-maintenance.md) | 独立operation、真实safe point、pending/并发/取消、prepare/accept/checkpoint回读 |
+| M3 有界摘要与恢复 | [CTX-03](../tickets/CTX-03-bounded-summary-and-recovery.md) | 独立purpose与同模型子请求、有界分段、巨型材料、T32合流不增工具效果 |
+| M4 用户入口/整合证明 | [CTX-04](../tickets/CTX-04-context-entrypoints-and-proof.md) | 旧会话下一消息必过、命令/观察/App合同、packed/独立review/分层live |
+
+依赖为 CTX-01→CTX-02→CTX-03→CTX-04；CTX-02 可先用同合同的无网络摘要替身验证owner，不能据此宣布功能可用；入口测试可提前变红。T32/T35保持原有范围与未证项，不再是另一条新施工队列；CTX-04消费其安全回归及F/E，不能要求全部历史票重新Done才开工。参考Pi不依赖T30 backend落地。
+
+协议需要维护identity/policy/目标预算/purpose，必须在当前wire上显式升版（本基线v7，目标下一版；集成前重新确认并行版本），与CLI/preload/Host/modeld/profile成套资格；不得让旧peer忽略新字段继续执行。config2→3走既有单writer迁移扩展，不重新搬根/改models字节/派生模型；new schema的普通writer不能留旧fallback。正常功能env开关、permanent pending拒绝、失败后才知道预算的唯一路径退场；仍保留明确不合资格和超限拒绝，不能“永不报错”式吞失败。
+
+文档/规划提交、代码/离线Done、review、原生资格、live发布五层分开。每票保留source commit、实际case、未证项；本次无代码实现提交。CTX-04的live-only条目可先预登记但必须blocked且实现commit=not-recorded，未做代码/测试/review不能搬成live工作。后续固定v2集成候选，先查归属、未完成工作、配置保护和成套版本，再按明确对象/时间/请求费用/回滚授权切换；不复用旧事故STEP做探针。
+
+meter/默认预算、config模型覆盖、generation/output含义、Host safe point/root/摘要/队列/工具引用、wire/SDK/dialect、persistence、Pi参考或部署制品变化，相关向量/接点/review失效并重验。历史回执不自动签新构建；本地估算和有损摘要不承诺任意真实端点或完整语义召回，必须证明的是可压缩普通长历史有有界推进路径且失败不损坏/重放用户工作。

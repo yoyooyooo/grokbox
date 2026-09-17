@@ -52,6 +52,8 @@ modeld 另写 `model_step_terminal` schemaVersion=3：保留同一 Host generati
 
 接缝须双向归一化：Host → Provider 保留 Host-selected 上下文（含 user-contained tool-result），不静默删减；Provider → Host 重整为原 PromptSession/session/`fullStream`，由 Host 继续维护会话/store、工具执行与 SendToUser。支持 streaming 的 Provider 在实施方案 Phase 1 接通 Host consumer；必要 codec 抽象保留，不以单个最终文本替代原合同。见 [ADR D1](decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d1--bidirectional-normalization)。
 
+**2026-09-17 accepted target，未实现：** [本地上下文维护](roadmap/box-runtime-impl-spec.md#context-maintenance)要求受支持managed会话默认按本地工作窗口主动compact，已有失败长会话的下一条普通输入先维护再处理，不等待provider溢出。Host仍拥有合法材料分区/root/archive/checkpoint；kernel预算通过有界接缝要求维护，不是在provider adapter丢弃历史。手动/主动/硬预算/确认溢出共用维护能力，正常配置取代旧环境gate；范围、状态及证明见[CTX系列](tickets/README.md#context-maintenance)。本地窗口不是隐式截断CAP，也不是已验证的上游最大容量。
+
 protobuf sidecar 与全 backend MITM 不是 P1 路径；未被证伪，失败后再决策，不双轨。
 
 ### 当前离线 envelope / stream 合同

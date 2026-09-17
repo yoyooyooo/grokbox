@@ -1,5 +1,11 @@
 # T35 — Managed STEP scope / HostCompact wait-point
 
+## Current integration — 2026-09-17
+
+本票保留provider前有效slot、root/callback fence、pending协调和native外层retry的既有实现/未证范围。[Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)接受默认本地维护和旧失败会话下一消息恢复；[CTX-02](CTX-02-host-context-maintenance.md)承接新的root/operation能力、空闲手动安全点、候选先验证后accept/checkpoint、已有pending有界收口，CTX-03/04接摘要与用户旅程。不能仅保留抑制后台摘要的patch而无替代推进机制。
+
+新系列是planned，不表示原生接点已资格化；T35旧证明可复用但不能替新safe point/持久化/独立review签字。基础proactive已是当前产品义务，不再按本票早期非目标后移；后台预生成优化与更多ABI仍不作前置。实施范围与新增proof只写CTX票，不在本票再开第二施工队列。
+
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
 ## Status

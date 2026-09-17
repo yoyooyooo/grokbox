@@ -14,6 +14,10 @@
 
 T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修改。持续观测、安全准入、真实App/Working与原生状态往返不能被“UI以后做”一并延期。
 
+## 当前新增规划：默认本地上下文维护
+
+[主Spec S12](box-runtime-impl-spec.md#context-maintenance) / [CTX-01–CTX-04](../tickets/README.md#context-maintenance)固定旧失败会话下一条普通输入自动维护、本地工作窗口、预算计量、Host root安全点、有界摘要与持久续聊。采用[Pi固定参考](../maintainers/pi-compaction-reference.md)的成熟行为，不引入Pi Agent loop或第二会话store。新实现仍planned；T32/T35作为已有恢复/寿命基础被复用，基础proactive不再后移，后台预生成/更多模型可后续优化。
+
 ## 新专项施工：Template Bot 运维闭环
 
 [Template Ops Spec](template-ops-automation-spec.md) / [T43–T56](../tickets/README.md#template-ops-automation)按 Spec-first 推进；2026-09-17 补充 user 默认轻量监测/短提醒、maintainer 手动配置、用户预览确认后 issue、通用 Agent/Routine CLI 与真实 HTTP E2E。基础支持可先上线，深诊断与低风险维护各自 opt-in/验收。不是已实现/已部署声明；HSO/T41/唯一 controller 各守事实 owner。[初始决策](../decisions/2026-09-16-template-ops-automation.md)限定维护授权，[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)限定默认/公开发布，[维护手册](../maintainers/template-ops-automation.md)拥有配置/操作解释。
@@ -22,7 +26,7 @@ T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修�
 
 ## 配置底座同轮收口：AH-99 / AH-100
 
-[统一配置重建 Spec](configuration-rebuild-spec.md) / [T57–T60](../tickets/README.md#configuration-rebuild)以破坏重建方式统一人读 config/models、client/Box 作用域、schema/writer 与迁移。ops 偏好不先落第三文件，公开命令收为 config/models/ops；真实配对与权限仍是机器状态。T51/T54 的纯规则、T43/T53 的原生任务可并行，production config 接线依统一底座。[决策](../decisions/2026-09-17-unified-configuration-rebuild.md)记录对旧冻结评论的取舍。本轮未实现或关闭 Linear。
+[统一配置重建 Spec](configuration-rebuild-spec.md) / [T57–T60](../tickets/README.md#configuration-rebuild)以破坏重建方式统一人读 config/models、client/Box 作用域、schema/writer 与迁移。ops 偏好不先落第三文件，公开命令收为 config/models/ops；真实配对与权限仍是机器状态。T51/T54 的纯规则、T43/T53 的原生任务可并行，production config 接线依统一底座。[决策](../decisions/2026-09-17-unified-configuration-rebuild.md)记录对旧冻结评论的取舍。配置底座现已实现，当前命令与证明见[配置指南](../configuration.md)及T57–T60；ops业务仍planned。CTX的schema3扩展另在主Spec S12规划，不把它当作当前schema2已支持。
 
 ## Future：以后做的能力
 

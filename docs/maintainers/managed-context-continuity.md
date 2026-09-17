@@ -8,6 +8,14 @@ Owner 已选择 **B：修正可复发机制并以新 e2e 关闭** 为主。A（t
 
 依据：[D1 双向保真 / D3 Host context与Memory所有权](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md)、`PRIVATE_EVIDENCE`（R1）、`PRIVATE_EVIDENCE`（R2）及主链地图。R1优先于早期amnesia census的冲突判断。原收据/证据保留，本页不搬运私有会话或原生Host源码。
 
+## 当前增量：默认本地维护（2026-09-17，规划）
+
+[S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)/[CTX系列](../tickets/README.md#context-maintenance)将已有失败长会话下一条普通输入、发送前预算、手动与有界摘要提升为当前必需能力。F1/F2的root/metadata保真、F4错误不作正文及F/E持久续聊仍是共享安全合同，不建立第二历史writer或截断CAP。T32的失败恢复是兜底，不再代表所有compact触发。
+
+F3的**上游声明容量**与S12的**本地工作窗口/估算用量**须分开：已知更小声明约束本地预算；未知上游容量不阻止明确本地预算，亦不因此取得已验证容量资格。usage未知仍unknown，但可以用带来源/余量的本地估算决定维护，不能按0或永久拒绝检查。新策略/purpose/Host安全点与旧原生S/P行为的差异由CTX单独验证；本页旧E05数值仍是原生合同用例，不作为新策略的另一套默认。
+
+基本主动维护不再后移，只有后台预生成/更多ABI等优化后移。新能力未实现或未加载时不能用本规划描述现场；历史缺陷/回执在下方保持原时间范围，最新实现以源码和来源票证据为准。
+
 ## 当前施工与新增往返门（2026-09-12）
 
 本页F/E保持数据安全的唯一合同；新增[T39](../tickets/T39-native-model-roundtrip.md)承接官方→A→B→官方→A、custom checkpoint的原生回程与原版App完整旅程，不另定义F/E。T24提供可逆选择，T26提供原生双向流，T32/T35提供合格压缩/恢复；T37/T38先保证归属与writer不会制造分支。
@@ -145,4 +153,4 @@ verifier先明确reality与范围，逐案输出assertion/failure/mutant结果�
 4. **F5窄接口gate → E07/E10**：明确purpose/aux identity/生命周期与D2批准后落地；没批/没证则该片blocked，前几片可继续，但**不能标整个B关闭**。
 5. 完整E01–E11、source/artifact和所声称的native资格均给出实际收据；任何剩余M1–M6未闭合或关键case未执行，输出partial/notQualified。测试与源证明是版本/边界受限的，不把有限测试提升为任意未来代码的绝对保证。
 
-**当前下一步：复用已有F1/F2/F3/F5与已恢复的制品证明；按T37/T38准入条件推进T39的原生回程，补日用必需E07/E10/E11。** 当前E09是否通过按本次verifier输出，不按本文更早的红/绿快照；任何新产物仍须重验。 更广 proactive/更多模型后移，但当前旅程依赖的 usage/Memory/reload 不能删出稳定门。不重开历史 A；live 依 Spec S0/S9 和 readiness 的明确窗口。 F3的真实容量值与F5额外接缝批准是明示的局部gate。部署/Host刷新只有在已完成所需offline资格、写出确切blocker并另获owner「继续」后考虑；本页不是该授权。
+**当前下一步：复用已有F1/F2/F3/F5与已恢复的制品证明；按T37/T38准入条件推进T39的原生回程，补日用必需E07/E10/E11。** 当前E09是否通过按本次verifier输出，不按本文更早的红/绿快照；任何新产物仍须重验。 更多模型/后台预生成优化可后移；基础proactive已按2026-09-17 S12进入当前CTX主线，usage/Memory/reload不能删出稳定门。不重开历史 A；live 依 Spec S0/S9 和 readiness 的明确窗口。 F3的真实容量值与F5额外接缝批准是明示的局部gate。部署/Host刷新只有在已完成所需offline资格、写出确切blocker并另获owner「继续」后考虑；本页不是该授权。
