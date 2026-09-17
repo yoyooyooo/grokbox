@@ -1,4 +1,4 @@
-import { nativeHostQualificationEnabled } from "./native-host-qualification.ts";
+import { nativeHostQualificationEnabled, QUALIFIED_NATIVE_HOST_SHA } from "./native-host-qualification.ts";
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { createContext, runInContext, Script } from "node:vm";
@@ -19,7 +19,7 @@ import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 // Current source was requalified with AST-selected native summary/state mutators,
 // synchronous root acceptance, stop/root-replacement negatives and the new agent-id anchor.
 // Evidence home: docs/tickets/T32-host-compact-seam.md (2026-09-12 current qualification).
-const LIVE_SHA = "307de3990394efc6b9a868537bab8504fceec3cc898cdd2ad91de68830f2f8dd";
+const LIVE_SHA = QUALIFIED_NATIVE_HOST_SHA;
 const TUPLE = {
   agentId: "agent-a",
   turnId: "turn-1",

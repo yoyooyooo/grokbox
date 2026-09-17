@@ -1,4 +1,4 @@
-import { nativeHostQualificationEnabled } from "./native-host-qualification.ts";
+import { nativeHostQualificationEnabled, QUALIFIED_NATIVE_HOST_SHA } from "./native-host-qualification.ts";
 import { expect, test } from "bun:test";
 import { createContext, runInContext } from "node:vm";
 import { readFileSync } from "node:fs";
@@ -52,7 +52,7 @@ test("managed terminal blocks outer automation retry before a new TURN or checkp
 
 test.skipIf(!nativeHostQualificationEnabled())("exact native outer retry loop keeps managed terminal at one attempt and official retries intact", async () => {
   const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");
-  expect(createHash("sha256").update(source).digest("hex")).toBe("307de3990394efc6b9a868537bab8504fceec3cc898cdd2ad91de68830f2f8dd");
+  expect(createHash("sha256").update(source).digest("hex")).toBe(QUALIFIED_NATIVE_HOST_SHA);
   const parsed = ts.createSourceFile("qualified-host.cjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const wanted = new Set(["shouldRetryTurnAttempt", "runWithTransientRetry"]);
   const selected = new Map<string, string>();
