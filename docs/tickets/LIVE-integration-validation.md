@@ -63,7 +63,7 @@ Status: awaiting-integration
 ### LIVE-CONFIG-CUTOVER — 实际配置迁移、服务采用与 home 恢复
 Status: awaiting-integration — configuration source/packed lane verified; independent code review remains in T60
 
-来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，rebase 基线 v2 `f8c82c0`。来源提交与固定制品按集成窗口记录，当前 v2 映射/candidate 为 `not-recorded`。不得把含配置代码的 feature 分支直接指给现役 CLI/服务来代替集成。
+来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，rebase 基线 v2 `f8c82c0`，实现提交 `dbc43f5`；[配置收口回执](../reports/2026-09-17-unified-configuration-closeout.md)保存 source/packed 验证与未放行项。当前 v2 映射/candidate 为 `not-recorded`，集成窗口须重新固定制品。不得把含配置代码的 feature 分支直接指给现役 CLI/服务来代替集成。
 
 离线已证明：严格 v2、真实临时文件/锁与死亡 owner 恢复、迁移各阶段中断、模型原字节/secret ref 保持、bootstrap 回退不得覆盖后来编辑、alias 保全恢复、prepared/ABA 不重放、desktop 精确应用收据、source/packed CLI 和 Host 选模依赖隔离。独立代码复审尚待，属于 T60 非 live 阻断；本条不代替它。
 
