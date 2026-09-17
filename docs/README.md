@@ -6,7 +6,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 ## Current homes
 
-- [Configuration](configuration.md): current config v2, two human entry points, nested CLI edits, scope, migration, bootstrap recovery and consumer application receipts.
+- [Configuration](configuration.md): current source config v3, two human entry points, local context policy, nested edits, scope, successive migration/recovery and consumer receipts. Existing v2 deployments require explicit migration and matching runtime adoption.
 
 - [Agent 操作入口](../skills/grokbox/SKILL.md)：默认只读小入口，以 `grokbox skills get grokbox --topic <name>` 按能力展开；Host 恢复、运行时诊断与 canary 验收不进入模板启动正文。[分层与维护约束](product-contract.md#15-bundled-skills)由入口预算、主题清单、链接和安装包测试保护。
 - [Product contract](product-contract.md): commands, Profiles, capabilities, output, and security boundaries.
@@ -17,7 +17,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [Quota](quota.md): implemented explicit source, normalized output, and failure boundary.
 - [Box-local model runtime](box-runtime.md): accepted createSession seam, inject/watchdog/guardian, modeld, window semantics, and evidence ladder. Not an implementation-complete claim. Product obligations are in the [product contract](product-contract.md) §12.
 - [Box-runtime strategy plan](roadmap/box-runtime-plan.md): Phases 0–4, product exits and scope.
-- [默认本地上下文维护 Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance)：旧失败会话下一条输入先compact、本地窗口、默认auto与Host持久root；[CTX-00–CTX-04](tickets/README.md#context-maintenance)先验证Pi公共组件复用/最小补丁/受控提取，再接入执行。[ADR](decisions/2026-09-17-local-context-maintenance.md)固定所有权，[Pi core 0.85.1证据](maintainers/pi-compaction-reference.md#core-package-reuse)区分公共API、内部回调和策略差异。新字段/命令/运行依赖仍未交付。
+- [默认本地上下文维护 Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance)：旧失败会话下一条输入先compact、本地128K与Host持久root；[CTX-00–CTX-04](tickets/README.md#context-maintenance)已实现Pi受控提取、config3/wire8、原生维护和操作入口。[Pi来源](maintainers/pi-compaction-reference.md#core-package-reuse)与[离线报告](reports/2026-09-17-context-maintenance-offline.md)区分实际Node/SDK/原生隔离证明、支持限制和独立review缺口；源码通过不等于现役会话已恢复，当前部署只看LIVE。
 - [PI-AI-01 模型适配资格](tickets/PI-AI-01-model-backend-qualification.md)：独立评估进程内pi-ai实现ModelBackend，不是T30 RPC、不阻塞compact、不默认替换AI SDK或改变Node基线。
 - [Managed Compact evolution](reports/2026-09-12-managed-compact-evolution.md): historical reasons and rejected alternatives; not a current plan or permission. Old brief/path links now route here.
 - [Box-runtime Current Implementation Spec](roadmap/box-runtime-impl-spec.md): **S0 owns Server-authoritative, Host-only stable delivery and V01–V30**; [S9.1.1](roadmap/box-runtime-impl-spec.md#ownership-release-proof) lists planned proof cases, not existing commands. [Tickets](tickets/README.md) route T37→T38→T24→T39→T40 alongside existing stream/compact/Working mechanisms. No parallel ME spec or implementation-complete claim.

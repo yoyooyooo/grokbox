@@ -2,7 +2,7 @@
 
 **长期保持 open；逐项验收，不整票关闭。** 本页唯一维护各维度的现场验证进度、剩余缺口、阻断、下一步和证据入口。只看本页即可判断还缺什么；执行时再打开对应合同、操作手册或历史回执。
 
-整理基线：`6c94b8b`。最近现场证据为 **2026-09-17 的 W17 窗口**；本次仅整理文档，没有重新探测、部署或发模型请求。表中“已证”只对所列制品、对象和窗口成立，不是实时健康声明。
+默认集成线：**`feat/box-runtime-v2`**。索引整理基线为 `6c94b8b`，最近完成的现场证据仍为 **2026-09-17 的 W17 窗口**。CTX 后续源码/离线资格已推进，但尚未执行新的现场切换；其具体前置与剩余门见 CTX 三行。表中“已证”只对所列制品、对象和窗口成立，不是实时健康声明。
 
 ## 阅读与维护边界
 
@@ -55,9 +55,9 @@
 | <a id="live-runtime-persistence"></a>**LIVE-RUNTIME-PERSISTENCE**<br>安装、自启与长期服务 owner | **进程级重启已证；持久安装未证。** W17 Host/modeld/daemon 换代、配置/所选凭据与新请求正常；detach/父 PID 不是自启证据。 | 支持的持久服务 owner、干净启动/父 shell 退出、安装幂等、官方 Host 自行重建后的补丁采用、开机/环境重建恢复及单实例；正常配置不依赖临时环境变量或故障注入。 | `blocked`：安装/boot-hook 实现与目标平台资格仍归 [T40](T40-persistent-release-and-rollback.md)，不是再做一次 restart 就能关闭。真实高影响重建另开窗口；平台 Reset 另记 CONFIG-HOME-RESET。 |
 | <a id="live-monitor-persistence"></a>**LIVE-MONITOR-PERSISTENCE**<br>现有本地 collector / SQLite / incident | **现役 collector 未安装验收。** W17 的 daemon/desktop applied 不替代 monitor 长驻。本地/source/packed 测试保留原范围。 | 无网页/CLI 退出仍采集、与准入共享读取有界；真实 scope/代/失联 gap；重启保留 incident/ack/snooze/cursor；受控 DB 异常不影响执行；local-only 与实际通知接收分开。 | `blocked`：先由 [T41](T41-continuous-observation-and-alerting.md)/[T40](T40-persistent-release-and-rollback.md)关闭调度/安装前置，明确服务 owner、测试存储与窗口。不要等待未来 Webhook 运维全部实现，也不把未来外部离线监控拖进本项。[观测手册](../maintainers/continuous-observation.md) |
 
-### 预登记：实现前置尚未完成
+### 待现场资格：区分已实现 CTX 与尚未实现的运维
 
-以下八条均无现场回执，implementation commit/实际候选仍 `not-recorded`；来源实现、离线/打包与独立 review 未齐，**不是“现在只差 live”**。先完成各来源票并集成固定 v2 候选，再安排最后现场判据。
+以下八条均无新的现场回执。五条 Template Ops 的实现仍未记录；CTX 已有功能提交 `883e224` 与读回修复 `269f1e2`，源码/Node 制品及原生隔离资格见[离线收口报告](../reports/2026-09-17-context-maintenance-offline.md)。独立 reviewer 本次返回 503，尚无复审结论，**不能把 review 缺口改称只差 live**。用户已授权本功能完成前置后 rebase v2、成套切换及 modeld 重启；此授权不代替前置通过、逐对象预算或原版 App 证据。
 
 | 维度 / 稳定 ID | 当前现场进度 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
 |---|---|---|---|
@@ -66,9 +66,9 @@
 | <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>无人值守运维提醒 | 未运行；`blocked`。 | 启动 Bot 回合与网页结束后持续感知；无变化零唤醒、需处理才一次提醒；重启/断网/endpoint 撤销/存储故障后的 cursor、欠账、去重、预算和 degraded；真实投递不等于 outbox accepted。 | [T44](T44-host-ops-continuous-sensing.md)/[T45](T45-template-webhook-delivery.md)/[T46](T46-template-ops-pairing.md)/[T50](T50-template-ops-release-proof.md) 实现与安装前置，依赖 CONSUMERS/ROUTINES。本地 collector 验收另见 MONITOR-PERSISTENCE。 |
 | <a id="live-ops-issue-publishing"></a>**LIVE-OPS-ISSUE-PUBLISHING**<br>受信同意与真实 GitHub 提交 | 未运行；`blocked`。 | 原生用户确认区别于自动事件；exact 内容/仓库/作者同意→提交并读回；有限 grant 有效期/额度/撤销、跨 Bot 去重、ACK unknown 对账；仅批准范围清理。 | [T52](T52-consented-support-issues.md)/[T56](T56-scripted-issue-publishing.md) 实现前置；另缺专用仓库与公开合成内容授权。人工关闭历史 issue 不算此功能资格。 |
 | <a id="live-ops-maintenance"></a>**LIVE-OPS-MAINTENANCE**<br>自动维护屏障与交接 | 未运行；`blocked`。 | 原生 admission fence/排空、提出者及子任务终结后唯一 controller 执行；busy/审批/新任务/撤销/换代拒绝；一次对齐/安全退出及未知退路。 | [T47](T47-bounded-ops-diagnosis.md)/[T48](T48-low-risk-host-qualification.md)/[T49](T49-policy-host-maintenance.md)/[T50](T50-template-ops-release-proof.md) 实现与 review 前置。W17 人工 force 不证明自动维护屏障；idle 采样不替代 fence。 |
-| <a id="live-ctx-adoption"></a>**LIVE-CTX-ADOPTION**<br>默认本地维护策略真正加载 | 未运行；`blocked`。 | 实际 policy/config/wire/root capability 采用；configured-next-turn/captured/selection revision、有效本地窗口；默认 auto 不靠旧 gate，注入 off，其他 Bot/official 未误 opt-in。 | [CTX-00](CTX-00-pi-compaction-reuse.md) Pi实际复用资格、[CTX-01](CTX-01-context-policy-and-meter.md)/[CTX-02](CTX-02-host-context-maintenance.md)/[CTX-04](CTX-04-context-entrypoints-and-proof.md) 实现/原生隔离/review 前置；规划 `15a0594` 及复用文档不是功能代码。按最终实现确认版本，不能照抄历史 wire v7。 |
-| <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>已失败长会话下一条普通输入 | 未运行；`blocked`。 | 原 App 新输入保持 nonce/文本/附件；主请求前必要维护、受限独立摘要、Host accept/checkpoint；新输入处理一次、旧失败/工具不重放；再一条短输入不无谓重复 compact，活动与交付真实。 | 依赖 ADOPTION 和 [CTX-04](CTX-04-context-entrypoints-and-proof.md) 离线/制品前置。另选已失败长会话并批准数据/暂停/费用；短 Bot、手动 compact 或巨型 pad 不替代该旅程。 |
-| <a id="live-ctx-durability"></a>**LIVE-CTX-DURABILITY**<br>新维护 checkpoint 的重启与退路 | 未运行；`blocked`。 | 已提交 compact 原生 root 经真实新 Host 读回、archive 可追溯；取消/迟到/ACK 丢失分别记录未提交/已提交/unknown，不重复摘要或丢输入；工具/Memory/App 与官方退路。 | 依赖 NEXT-INPUT、[CTX-02](CTX-02-host-context-maintenance.md)/[CTX-04](CTX-04-context-entrypoints-and-proof.md) 持久/故障证明及单独重启窗口。缺安全注入点只阻断该向量，普通 restart 不证明新能力。 |
+| <a id="live-ctx-adoption"></a>**LIVE-CTX-ADOPTION**<br>默认本地维护策略真正加载 | **尚未切换；`blocked`。** 已实现 config v3 / wire v8 / 默认本地 128K；Node20 制品、真实 SDK/Unix 与固定原生方法隔离测试已执行，不是加载证据。 | 现役 config2→3 迁移、旧制品退路、实际 Host/modeld/policy/root capability 同代；configured/captured、默认 auto/注入 off、其他 Bot/official 不变。 | [CTX-00](CTX-00-pi-compaction-reuse.md)–[CTX-04](CTX-04-context-entrypoints-and-proof.md) 已有实现；[离线报告](../reports/2026-09-17-context-maintenance-offline.md)保留实际证明和 reviewer 503。先取得固定提交独立 review、映射当时 v2 并完成受影响回归，再按已授权范围和[窗口流程](../maintainers/release.md#live-window-procedure)操作。不得以旧 gate 或 W17 wire7 回执代替新能力。 |
+| <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>已失败长会话下一条普通输入 | **真实用户旅程未运行；`blocked`。** 合成旧失败 root、单条新输入、主 HTTP 前维护、十轮压缩与新进程续聊已在实际制品/本地 HTTP 链通过。 | 原 App 新输入的 nonce/文本/附件、真实已失败长会话上的有限摘要与 native accept/checkpoint；旧 STEP/工具不重放，后一条短输入不无谓 compact，活动/交付真实。 | 依赖 [ADOPTION](#live-ctx-adoption) 及 [CTX-04](CTX-04-context-entrypoints-and-proof.md) 固定 review。使用已授权故障排查对象时先确认当前 session/归属/安全窗口，固定新输入与模型预算；不重发历史失败 STEP。没有原版 App 操作/观察接口时保留该子项 not-observed，CLI 发送不能冒充 App 通过。 |
+| <a id="live-ctx-durability"></a>**LIVE-CTX-DURABILITY**<br>新维护 checkpoint 的重启与退路 | **真实服务重启未运行；`blocked`。** 已有受控原生方法/临时持久 root 的新进程回读、取消和错 source/material revision 的 commit_unknown 反例。 | 实际原生 archive/carrier/checkpoint 由新 Host 读回；ACK 丢失与取消的实际提交状态对账、后续工具/Memory/App 及官方退路，不能把临时 store 说成完整原生存储事务。 | 依赖 [NEXT-INPUT](#live-ctx-next-input) 与 [CTX-02](CTX-02-host-context-maintenance.md)/[CTX-04](CTX-04-context-entrypoints-and-proof.md)。重启已获本功能范围授权，仍先满足 review/集成与当前在途对象保护；故障注入无安全点仅阻断对应向量。保持所有 unknown 和用户新编辑，不为回退删 ledger/历史。 |
 
 ## 现场之外的共同阻断
 
@@ -78,7 +78,7 @@
 |---|---|---|
 | 独立固定提交 review；reviewer 503 不算报告 | [T49 modeld](T49-modeld-qualification-and-release.md)、[T60 config](T60-config-ops-integration-proof.md)、[AUTH](AUTH-ownership-evidence-availability.md)、[reasoning](FEAT-model-reasoning-policy.md)、[Host reapply 修复](FIX-host-lifecycle-reapply.md) | 现场子项已证也不能自动签整体验收；复审引发相关改动再标 needs-revalidation |
 | 原生隔离消费者、完整源码/packed proof 或安装代码未齐 | [T32](T32-runtime-confirmed-compact.md)、[T35](T35-host-compact-wait-point.md)、[T38](T38-identity-write-alignment.md)、[T39](T39-native-model-roundtrip.md)、[T40](T40-persistent-release-and-rollback.md)、[T41](T41-continuous-observation-and-alerting.md) | 先补来源前置，再执行对应已索引的现场部分；不把缺代码改名为缺环境 |
-| 尚未实现的 Template Ops / CTX | [运维 Spec](../roadmap/template-ops-automation-spec.md)、[CTX Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)；CTX-00先验证真实Pi组件、材料覆盖/请求边界/Node/制品，PI-AI-01传输研究独立非阻断 | 八条保持预登记，重启旧实现不改变进度 |
+| Template Ops 实现与 CTX 复审/集成前置 | [运维 Spec](../roadmap/template-ops-automation-spec.md)仍有待实现功能；[CTX Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)已有 Pi 受控提取、调用边界和原生接线，[CTX-04](CTX-04-context-entrypoints-and-proof.md)记录未完成独立 review。PI-AI-01 独立非阻断 | 分别按来源票完成；CTX 不再被记为只有规划，也不能因离线通过而自动通过 live。重启旧实现不改变新功能进度 |
 | npm 发布、历史隐私扫描等非现场发布门 | [release runbook](../maintainers/release.md)、[隐私门](../maintainers/publication-privacy.md) | 单独满足，不用 live 通过数抵消，也不放入现场缺口计数 |
 
 ## 后续窗口怎么选

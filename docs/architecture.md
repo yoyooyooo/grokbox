@@ -320,15 +320,15 @@ Current implementation remains source reality until each slice lands. This docum
 
 **2026-09-16 accepted modeld consolidation:** [ADR](decisions/2026-09-16-modeld-effect-core.md) and the existing [Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core) own the next execution-core change. Keep the native Host loop/tools/delivery, one kernel and one durable execution index. Separate deployment proof, live execution fences and observation. Audit native authority before removing supplemental Server checks; keep strict freshness defaults until a separately qualified policy decision. Effect owns shared source and waiter lifetimes; no second daemon, universal collector or hidden restart/replay. [T43–T50](tickets/README.md#modeld-effect-core) carry scope and proof, not an implementation-complete claim.
 
-### 2026-09-17 Local context maintenance boundary（目标，尚未实现）
+### 2026-09-17 Local context maintenance boundary（源码已实现，发布分层取证）
 
 [Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance)与[ADR](decisions/2026-09-17-local-context-maintenance.md)扩展本节上下文职责：kernel拥有本地工作预算、按root的一次维护程序与摘要请求寿命；Host拥有材料分区、输入队列、候选接受、archive/carrier/root/checkpoint。主动、手动、硬预算与T32失败恢复共用该程序，后者仍受零放行/一次额外主请求约束。不是另一个Agent loop、历史store或Host部署控制器。
 
 Host在有资格的原生安全点通过有界modeld协议取得最小捕获策略并在IPC前计量；不导入统一配置reader、ops、SDK或Effect。modeld的prepare及最终HTTP门复核同一budget/编码；adapter不compact或改写历史。手动无STEP维护以独立operation/root能力授权，可信conversation-compaction子请求使用同一ModelBackend/BackendAuth和捕获模型，不能借memory purpose或伪造业务STEP。
 
-候选先预算/结构验证再由Host版本化接受并checkpoint，回执丢失按真实root对账；ExecutionHistory只记录维护身份/阶段和提交引用，不存第二份可回放正文。Effect负责source/waiter、期限、取消和资源，但不是原生事务或远端取消证明。默认auto及schema3是新目标，当前配置/运行事实不因此改变；[CTX-00–CTX-04](tickets/README.md#context-maintenance)分别完成复用资格、离线/制品/原生证明，live采用仍独立确认。
+候选先预算/结构验证再由Host版本化接受并checkpoint，回执丢失按真实root对账；ExecutionHistory只记录维护身份/阶段和提交引用，不存第二份可回放正文。Effect负责source/waiter、期限、取消和资源，但不是原生事务或远端取消证明。当前源码已支持默认auto/schema3/wire8，原部署不会因代码提交自动升级；[CTX-00–CTX-04](tickets/README.md#context-maintenance)记录实现及离线/Node/原生隔离证明，[固定报告](reports/2026-09-17-context-maintenance-offline.md)保留证明边界与独立review缺口。实际采用只认LIVE当前索引，不从临时存储或fixture推断现役原生事务。
 
-**复用边界：** S12.0固定一个 `ContextCompactionAlgorithm` port，kernel只见grokbox只读材料/sourceRef/候选和受限请求能力；box-runtime `internal/context/pi-compaction.ts` 封装实际Pi core算法，`pi-projection.ts`负责有界投影/映射。Host保有原始对象/metadata，Pi的retainedTail/Entry只作临时视图，不持久化为第二会话。直接依赖→最小接口/策略补丁→受控提取→有证据局部重写由CTX-00决定，不因Effect风格不同重写全部，也不因库存在就导入Host/preload或kernel。
+**复用边界：** S12.0固定一个 `ContextCompactionAlgorithm` port，kernel只见grokbox只读材料/sourceRef/候选和受限请求能力；box-runtime `internal/context/pi-compaction.ts` 封装实际Pi core算法，`pi-projection.ts`负责有界投影/映射。Host保有原始对象/metadata，Pi的retainedTail/Entry只作临时视图，不持久化为第二会话。CTX-00已依据公共API/Node/serializer证据选择受控纯代码提取，来源/许可/差异就在vendor中；后续升级仍按直接依赖→最小补丁→提取→有证据局部重写审查，不因Effect风格重写全部，不向Host/preload或kernel导入Pi运行时。维护捕获的credential指纹与原TURN绑定共享，终态/撤销或scope改变仍由原执行域阻断，不借context请求创建第二授权事实。
 
 摘要算法提出的每个请求仍由唯一Effect/ModelBackend/BackendAuth运行，公共Models桥或受控callback不能开启隐式认证/重试/目录刷新或新Runtime；只有实际Provider是测试替身，算法不能被mock掉冒充集成。当前AI SDK继续供给模型传输；[PI-AI-01](tickets/PI-AI-01-model-backend-qualification.md)另评估进程内pi-ai Provider，并非T30 RPC。新的Node最低版本/完整AgentHarness/SessionManager/模型store不在本轮默许范围，打包与许可差异显式审查。
 

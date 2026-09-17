@@ -1,6 +1,6 @@
 # 默认本地上下文维护，而非等待上游溢出
 
-日期：2026-09-17。状态：**accepted target / documentation-only**。本次固定产品与实施规划，没有实现新配置/命令、启用能力或批准现役 Host/modeld 切换。
+日期：2026-09-17。状态：**accepted；默认Box会话主链已有源码实现，独立review与现场资格分层取证**。本页固定决策，不维护当前运行状态；实现、采纳选择和证明见[CTX来源票](../tickets/README.md#context-maintenance)及[固定离线报告](../reports/2026-09-17-context-maintenance-offline.md)，实际部署进度只在LIVE。初始文档规划与后续执行授权不能混为一次操作回执。
 
 ## 问题与决策
 
@@ -50,4 +50,4 @@ Pi提供算法候选，Host仍决定合法材料/分区并拥有最终写入；�
 
 产品义务归 [产品合同 §12.2](../product-contract.md#context-maintenance-product)，模块与全部算法/预算/错误/验收唯一归 [主 Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)。[CTX-00–CTX-04](../tickets/README.md#context-maintenance) 保存复用选型、施工范围与证据，不重复定义公式；PI-AI-01是独立非阻断资格分支。T32 保留失败恢复次数/零放行合同，T35 保留原生生命周期与原有未证门，两者的新实现差额由 CTX 系列接收，不重做已过子集。
 
-源码、离线证明、独立 review、原生隔离资格、live 采用分开。新功能全部仍为 planned；仅真正依赖现役系统的最后验收预登记到 LIVE，代码/测试/review 不转成 live-only 余项。实现、集成及 live 切换时按 S12 的版本失效条件重验。摘要是有损表述，不承诺逐字记忆或不可用摘要服务下必定成功；承诺可压缩普通历史有有界推进路径，失败清晰、原始材料不被暗删。
+源码、离线证明、独立review、原生隔离资格与live采用分开。当前已有主链实现、受控Pi提取和可执行source/packed证明；独立review请求503无报告仍是来源票的前置，不改称live-only。实际加载、真实用户旅程和原生重启的最后验收只在LIVE维护，不从隔离方法通过推定现役通过。实现、集成及 live 切换时按 S12 的版本失效条件重验。摘要是有损表述，不承诺逐字记忆或不可用摘要服务下必定成功；承诺可压缩普通历史有有界推进路径，失败清晰、原始材料不被暗删。

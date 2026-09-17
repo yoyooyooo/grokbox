@@ -1,45 +1,41 @@
 # CTX-04 — 旧会话下一消息恢复、操作入口与整体验收
 
-Status: **Planned / Spec-only** · M4。2026-09-17规划基线 `7994b92`；新功能implementation commit、offline proof、review均 **not-recorded**，不是仅剩live的收尾票。
+Status: **Implemented / combined offline and native-isolated qualification recorded / independent review pending**。源提交 `883e224`、`269f1e2`，升级/授权一致性修复 `358c057`、`f4b3a18`。源码不再是Spec-only；尚未据此宣布用户现役会话已恢复或正式发布。
 
 ## Goal / release blocker
 
-**CTX-A01不可替换：** 一份已有过长历史、最近以error/aborted/无有效usage结束的会话，在新能力正常部署并生效本地128K后，用户只输入一条普通消息；系统发送主模型请求之前已完成必要compact，保留/处理新输入一次，旧失败STEP不复活、旧工具不重做。新建短会话、手工compact、先制造上游400或一条摘要回复，都不满足这个出口。
+**CTX-A01不可替换：** 已有过长历史，最近以error/aborted/无有效usage结束，正常部署新能力与本地128K策略后，一条普通新输入在首次主HTTP之前触发必要compact，并完整处理一次；旧失败STEP仍失败、已执行工具不重做。不用新建短会话、手动摘要或制造上游400替代。
 
-全部产品/命令/状态/算法/证明合同唯一归 [Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)。本票只组织接线、验收、退旧和证据，不复制另一套阈值。
+唯一产品/算法/状态/证明合同在 [Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)。本票组织CTX-00–03的实际集成、命令与验证，不创建第二预算或另一套现场进度表。PI-AI-01传输研究不阻塞当前AI SDK路线。
 
-## Depends on / integration
+## Actual entrypoints and retirement
 
-依赖CTX-00真实算法采纳/发行资格、CTX-01配置/计量、CTX-02原生owner及CTX-03有界摘要；消费现有T32/T35、continuity F/E、S10/S11与config-unification证明。PI-AI-01不是前置，不因其尚未采纳而延后compact。尽早将旧会话入口反例写红，不等待全部实现才发现safe point接错。固定集成源码、schema、wire、profile和构建，不用移动的worktree签字；不同历史票的绿色计数不拼成新候选资格。
+CLI `agents context <agent> [--session <id>] --json`纯读configured预算、历史维护回执和当前有限native capability，历史成功不能当当前root已观察。`agents compact <agent> [--session <id>] --operation-id <id> --confirm --json`只在真实已加载默认Box session空闲安全点执行原生summarize动作，不发送“请总结”业务prompt或伪造STEP；named/server/subagent不隐式映射，busy/无shell明确拒绝。
 
-## Module / change set
+Host输入/restore/工具后与modeld准备/实际出站均检查本地预算，新候选保持原输入sourceRef/nonce/元数据。可信维护消息为wire8，config升级至schema3而models保留schema2。正常auto由配置与能力资格决定，旧 `GROKBOX_MODELD_HOST_COMPACT` gate已从正常路径退出；注入仍off。源码日志/命令使用安全结构化错误及统计，不写摘要正文/原历史/credential，错误不进入有效Memory。
 
-- CLI `commands/agents.ts`、`registry.ts`、`config-registry.ts`：实现S12的context只读与显式compact操作，沿既有Agent目标/作用域/确认/operation合同。没有远端有限capability时明确拒绝，不以generic exec补洞。
-- Host真实新输入、恢复root、工具后、维护事件/错误和modeld预算回执接线；原版App沿已有Host活动更新表示维护。状态/FailureSummary/outcome/journal只用安全字段，不记录prompt/摘要或把错误放进Memory。
-- schema2→3、当前下一wire、CLI/preload/Host/modeld成套资格；保留models schema2及effort。删除正常功能 `GROKBOX_MODELD_HOST_COMPACT` 环境门、其启动传递和默认off测试，改用auto/manual+capability；故障注入仍off，删除旧门不等于放宽authority或重试条件。
-- 目标 `box-runtime/test/context-maintenance-{pipeline,packed}.test.ts` 与既有CLI/config/Node/import/privacy tests；最后注册 `context-maintenance` 汇总case，只在本票完整公共矩阵实际执行后通过。
-- 更新配置指南/skills必要入口、维护状态说明和T32/T35实施事实，不能保留两个“当前怎么开启”口径。本轮这些新增命令/字段仍planned，实施时再升级为当前指南。
+用户消息进入实际Host之前，配置写入与模型选择仍在原domain writer。迁移后续版本保留旧retired manifest/备份，不能以删除旧回执开新迁移；preflight与首次主请求、后续维护共享原TURN的credential/policy/lifecycle，不能在维护时绕过取消或热换key。
 
-## Acceptance — complete public matrix
+## Executable acceptance
 
-实现后 `bun scripts/verify-runtime-rebuild.mjs context-maintenance` 先复验 `context-reuse` 的CTX-R01–R07，再执行S12.8的CTX-A01–A15；真实选定Pi算法/最小差异必须在source与packed同链运行，不以替身绕过。必须有真实SDK/local HTTP、Unix、临时磁盘、独立新进程及实际Node入口；Fake只替外部能力，不替业务程序或被测Pi算法。
+```bash
+bun scripts/verify-runtime-rebuild.mjs context-maintenance
+bun scripts/verify-runtime-rebuild.mjs context-policy
+GROKBOX_TEST_NATIVE_HOST=1 bun scripts/verify-runtime-rebuild.mjs context-native
+```
 
-首要旅程：从合成旧root启动，包含合法历史工具组、早/中/晚事实、最近失败消息且无新usage；本地128K、Fake provider总接受500K。发一条带唯一nonce的新输入，断言首次主HTTP未收到旧过大窗口、摘要请求被独立计数、当前输入完整且仅一次、旧工具结果关联仍在、旧失败仍为失败。随后正常续聊不因陈旧usage重复压缩，再经历至少10次维护与进程退出/重开；每次只从持久root恢复，不能以测试RAM伪造。
+公共组合case运行真实Pi衍生算法、kernel/SDK/Unix/本地HTTP、临时持久store、Node打包入口；expected来自独立事实断言。核心用例为Fake provider始终接受500K，长失败root收到单条新输入，本地128K仍先compact；工具尾部/早期事实/当前消息保持，重复维护不新增推理。连续至少10次维护后退出owned进程，由新进程读回当前root继续，不借旧RAM。新key在preflight后变更时首次主HTTP拒绝，原输入及已提交checkpoint不受损。
 
-还必须完成：无assistant首输入/无usage；新消息及工具跃增；policy/模型切换/其他Bot隔离；manual与session歧义/合法空session；并发取消/pending摘要；巨型材料/无改善；未提交/已提交/unknown故障；确认溢出窄恢复和所有负对照；正常功能env退场、old schema/wire拒绝、import fence、敏感sentinel不出日志。不能以只看最终答对或HTTP200替代结构、次数、root和输入状态证明。
+取消/迟到/pending/错source或material版本、空/缺finish/工具输出、预算耗尽、旧STEP/关闭TURN、同operation重复/unknown、schema迁移/别名/模型原字节、官方对照和import fence分别验证。实际suite、计数、Node20/Node22区别及初次全库失败归[固定离线报告](../reports/2026-09-17-context-maintenance-offline.md)。原生隔离方法需要固定合法source，只签实际执行的slice/consumer范围；外围blob/状态替身不变成全原生事务证明。
 
-测试入口未知case、缺文件、zero/skip或缺制品均非零；摘要Fake必须从实际输入提取事实，坏变体包括跳过preflight、usage清零、静默slice、提交前漏fence、未持久化、新输入丢失、旧STEP重发、永远blocked以及使用旧dist。固定Pi参考向量是独立oracle，实际算法依赖/patch或提取由CTX-00唯一清单定位，不借全局安装或测试时下载。必须复验公共入口、回调前材料覆盖、空/length终态、库内重试、Node/ESM/制品和Host/kernel无Pi泄漏；直接导入成功不等于这些门通过。
+## Review and actual remaining gate
 
-## Native / live gates
+两次要求固定提交、只读、P0/P1边界的Astra review均返回provider503，无审查报告。独立review是本票未完成的非live前置，不改称live待办，不用实现者自审替代，也不为了推进修改报告为通过。新source更改须对最终固定候选复核，旧报告不签新构建。
 
-CTX-00的包来源/公共API/Node/许可/patch/请求桥与发行资格、原生隔离consumer及独立review都留在来源票，不能因需要真实库或原生复制品就统称live。最终oracle已按规划提交 `15a0594` 预登记为 [ADOPTION](LIVE-integration-validation.md#live-ctx-adoption)、[NEXT-INPUT](LIVE-integration-validation.md#live-ctx-next-input)、[DURABILITY](LIVE-integration-validation.md#live-ctx-durability)，分别证明现役能力、已有失败会话普通输入和原生重启。三条的当前已验/未验、阻断与下一步只在 LIVE 更新；implementation commit 与离线资格继续由本票维护。进入窗口前逐条补固定实现source→v2映射、制品、对象、预算与停止条件，不把预登记当功能实现。
+当前已验/未验、阻断和下一动作只更新 [ADOPTION](LIVE-integration-validation.md#live-ctx-adoption)、[NEXT-INPUT](LIVE-integration-validation.md#live-ctx-next-input)、[DURABILITY](LIVE-integration-validation.md#live-ctx-durability)。用户已授权本功能完成前置后rebase v2及Host/modeld切换/重启；仍先固定集成候选、匹配制品、原配置/回退、在途对象保护和逐请求费用预算。没有原版App接口时该子项not-observed，CLI投递不能替代App输入/详情/Working通过。
 
-上线前保护原配置和原生状态，核对所属Server/Host、旧writer已退出、所有参与组件的实际版本/能力。schema3或新wire发布不等于Host已经采用；默认auto只属于已正常启用的受支持managed运行范围，不借配置迁移给别的Bot选模型。无本次明确授权，不切换Host/modeld，不发用户业务消息，不制造大prompt消耗。
+完整native archive/checkpoint跨真实重启、未知结果对账和业务会话继续不从临时store或一次restart推导。动作仅限批准范围，未知副作用先保全/对账，不删除ledger、重发旧失败STEP或回滚用户新历史；平台Reset和npm发布不在本次授权里。
 
-原会话实际受影响样本可在明确授权窗口作最终验证；不能拿历史失败STEP重放，必须用新的普通输入。日志只记录安全统计和身份，私有正文、token、原始provider错误和真实事故证据不进公共Git。
+## Exit / claim boundary
 
-## Non-goals / evidence receipt
-
-不重建完整Pi客户端、App、Host Agent loop/Memory/store，不用后台预生成或另选摘要模型延后基本恢复；不承诺不可压缩单条输入、模型服务不可用或未知持久状态下仍成功回答。
-
-关闭回执必须分开列出：实现source commits、选定Pi包/依赖或patch/提取清单及差异、实际CTX-R/CTX-A cases/断言/坏变体、Node基线与packed摘要、独立review及范围、原生隔离资格/缺口、live各条结果和保留未完成项。代码和离线可单独完成；发布只有所声明范围的全部门满足才可签。文档规划、一次成功重启或本票索引存在均不构成能力已启用。
+代码、公开/打包/原生隔离证明、独立review、合入v2与真实采用分层关闭。原版Host工具循环、Memory、原始会话与archive不由Pi接管；不承诺不可压缩单条输入或摘要服务不可用时仍生成答案。常态已支持的长历史应进入有界维护而非无限发已知超预算请求，失败须准确呈现且不破坏/重放工作。

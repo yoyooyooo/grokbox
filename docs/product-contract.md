@@ -508,7 +508,7 @@ Bot 只解释/诊断/提交候选，唯一 controller 实际执行；Webhook HTT
 默认仅一个命名目标，已启用通知都流向它；高级 routing 关闭不等于关闭告警。按 intent/source/severity/audience 的有限首匹配规则可分流到廉价/分析 Bot，但不能自动提高诊断权限或改供应商。custom 接收者的依赖、数据同意、备用和总费用均显式检查，unknown 不广播；集中 reportTarget 是可选且有成本的后续交付。配置唯一写入和 requested/effective/阻断原因归 [Spec §6.2–6.5](roadmap/template-ops-automation-spec.md#configuration)，模型分配继续归既有 owner，不得用默认值隐藏收费或执行权限。
 
 <a id="context-maintenance-product"></a>
-### 12.2 默认本地上下文维护（2026-09-17 accepted target，尚未实现）
+### 12.2 默认本地上下文维护（2026-09-17 accepted contract；源码主链已实现）
 
 受支持的managed Box会话默认自动按**本地工作窗口**维护，不必等待真实provider超限。上游声明500K而用户设置128K时，以本地128K及输出预留决定阈值；模型能力、工作预算与实际/估算用量分别呈现。普通输入、restore/切模型和工具结果加入后的下一主请求都先检查，无assistant/无有效usage/上次失败不能跳过或按0处理。
 
@@ -516,13 +516,13 @@ Bot 只解释/诊断/提交候选，唯一 controller 实际执行；Webhook HTT
 
 Host继续拥有真实root、archive、carrier、工具关联、Memory、checkpoint与输入队列；kernel拥有本地预算及唯一维护程序。自动、手动、硬预算和confirmed-overflow使用同一维护能力；手动操作有独立operation身份，不伪造业务STEP。摘要使用捕获模型的独立、无业务工具、有界推理请求，默认不暗换原生external/provider。大历史按合法边界有界分段/合并；不能在adapter中静默截断、伪造引用或从展示历史拼第二份prompt。
 
-自动维护默认auto；manual关闭主动摘要但不绕过硬预算。正常配置进入canonical config.runtime.context，不增加第三个配置文件；目标schema3、字段/默认/覆盖与版本生效只由 [Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance) 定义。当前schema2不接受这些字段。普通功能环境gate在实现交付时退场，故障注入仍off；配置已保存、策略已捕获、原生能力合资格与现场部署分别取证。模型分配/effort及models schema2保持原领域合同，未opt-in或temporal不因配置被接管。
+自动维护默认auto；manual关闭主动摘要但不绕过硬预算。正常配置进入canonical config.runtime.context，不增加第三个配置文件；当前源码schema3及wire8、字段/默认/覆盖与版本生效只由 [Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance) 定义。仍运行schema2的安装须显式迁移并采用匹配制品；已完成的旧迁移回执/备份保留，unfinished不被覆盖。普通功能环境gate已从源码退场，故障注入仍off；配置已保存、策略已捕获、原生能力合资格与现场部署分别取证。模型分配/effort及models schema2保持原领域合同，未opt-in或temporal不因配置被接管。
 
 维护期间应通过已有Host活动表达正在压缩及结束/失败，不修改原版App、不造thinking或长期假Working。摘要不可用、固定输入过大、无改善、取消/换代或提交unknown时给明确原因，保留材料与新输入的实际状态，不循环发已知超预算请求。预算独立不等于未知tokenizer/隐藏上游限制不存在，有损摘要不保证逐字召回；T32的零放行/同STEP一次溢出恢复保留兜底，普通400/鉴权/限流等不因这个合同得到重放权。
 
 工程路线优先实际复用Pi core的算法/摘要组件，由[CTX-00](tickets/CTX-00-pi-compaction-reuse.md)验证公开API、最小策略差异、依赖/Node/许可及单请求边界；必要时小补丁或受控提取，不能直接按自研全部算法施工。Pi的候选返回不等于Host root已经合格持久化，工具结果摘要截断、空/length终态和输出预算仍遵守本产品要求。Pi Agent/会话store不接管原生Host；pi-ai替换模型传输是独立资格，不是这次用户体验的前置。
 
-决策理由见[本地上下文维护ADR](decisions/2026-09-17-local-context-maintenance.md)，实施与证明归[CTX-00–CTX-04](tickets/README.md#context-maintenance)。只有所声明范围的代码、离线/制品/原生资格、独立review及对应live门全部满足，才可声称该行为已交付；本次规划不授权部署、花费或修改任何现有会话。
+决策理由见[本地上下文维护ADR](decisions/2026-09-17-local-context-maintenance.md)，实施与证明归[CTX-00–CTX-04](tickets/README.md#context-maintenance)。只有所声明范围的代码、离线/制品/原生资格、独立review及对应live门全部满足，才可声称该行为已交付；实现/Node与原生隔离证明见[固定报告](reports/2026-09-17-context-maintenance-offline.md)，独立review与现役采用仍分别取证；源码状态本身不授权部署、花费或改现有会话。新授权按LIVE窗口流程执行，不推定未选对象或原版App已经通过。
 
 ## 13. 输出与错误
 

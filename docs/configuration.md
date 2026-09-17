@@ -6,7 +6,7 @@
 
 | Entry | Contents | Physical storage |
 |---|---|---|
-| `~/.grokbox/config.json` | Client Profiles, daemon policy, desktop preferences, runtime desired mode and ops preferences | On a Box: the installed durable root's `config.json`; on a client: the local file |
+| `~/.grokbox/config.json` | Client Profiles, daemon policy, desktop preferences, runtime desired mode/local context policy and ops preferences | On a Box: the installed durable root's `config.json`; on a client: the local file |
 | `~/.grokbox/models.json` | Model catalog, credential references and per-Bot assignments | On a Box: the existing durable root's `models.json`; a client does not synthesize this file |
 
 On a Box, the home entries are managed aliases. The default durable root is `/workspace/.grokbox/box-runtime`; the installed layout and explicit root selection must agree. The CLI writes beside the physical file, not on top of its alias. A detached alias or a different installed root is a conflict, not an instruction to merge files.
@@ -23,7 +23,7 @@ The CLI install tree `~/.grokbox/runtime/` is not configuration. Runtime sockets
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "client": {
     "currentProfile": "default",
     "profiles": { "default": { "transport": "auto" } }
@@ -102,7 +102,7 @@ Review the returned digest, source fingerprints, planned destination, conflicts 
 
 Models already at the physical root retain their exact bytes and secret references. The migrator validates the current schema without normalizing away provider-specific fields. Bootstrap-stage configuration is not automatically preferred over actual installed state. Backups are protected and old intent files are retired only after the new publication reaches its recorded activation phase.
 
-The migration phase is durable: prepared, publishing, published, activated, retired. Use `config migrate --status` to inspect and `--recover --confirm` to resume a recorded plan. A user edit after partial publication is a conflict rather than something recovery may overwrite. Restoring an old backup must not revive authorization or signal a Host.
+The migration phase is durable: prepared, publishing, published, activated, retired. Use `config migrate --status` to inspect and `--recover --confirm` to resume a recorded plan. A user edit after partial publication is a conflict rather than something recovery may overwrite. A later schema migration can follow a retired migration: preview binds the predecessor's fingerprint, and apply preserves its immutable manifest and backups under its original operation directory before publishing the next manifest. An unfinished, changed or conflicting predecessor blocks the new migration. Do not delete the previous receipt to force an upgrade. Restoring an old backup must not revive authorization or signal a Host.
 
 `config recover` reports the commit lease. Explicit confirmed recovery can reclaim a proven-dead PID/start owner; it never removes an unknown lock because it is old. After a crash, `--operation-id <id>` also reconciles the prepared/committed operation record. Do not delete leases manually.
 
@@ -123,13 +123,33 @@ The preview binds the installation, physical files and current aliases. Apply re
 
 `grokbox models list/check/use/reset/persist-key` is the public model family. `use` and `reset` require exactly one of `--for <agent>` or `--default`. The explicit default changes no Bot assignment; ordinary routing still uses only per-Bot opt-in. `check` is schema-only and `persist-key` needs a separately confirmed credential operation. General `config` commands cannot rewrite model records or assignments.
 
-## Planned extension: local context maintenance (not yet supported)
+## Local context maintenance
 
-The accepted [context maintenance Spec S12](roadmap/box-runtime-impl-spec.md#context-maintenance) adds `runtime.context` for local working-window and automatic-compaction policy. **These fields are not accepted by the current schema v2 implementation.** CTX-01 targets an explicit config v2→v3 migration through the existing writer/alias/recovery path; models remain schema v2 with their existing catalog, credentials and reasoning assignments. Do not paste the planned fields into a current installation or turn on the old HostCompact environment gate as a substitute.
+Schema v3 implements `runtime.context` for local working-window and automatic-compaction policy. **An existing schema v2 installation needs explicit migration and matching wire-v8 Host/modeld artifacts before this feature can be used.** Migration is not deployment and does not itself start a summary. Models remain schema v2 with their catalog, credentials and reasoning assignments. The old HostCompact environment gate is not a normal enablement step; fault injection remains separate and disabled.
 
-Policy belongs to `config.json`, not a third file or a fabricated model capability. Model declarations continue to describe the endpoint; explicit local limits can be smaller. S12 alone defines defaults, per-model/per-Bot policy overrides, output reserve, measurement, dependency revisions and next-TURN application. A policy override does not opt a Bot into managed inference. Unrelated client/desktop/ops edits and model credential bytes remain isolated.
+Default policy is auto, local window 128000, reserve 16384, and recent-message retention budget 20000. Policy belongs to `config.json`, not a third file or a fabricated model capacity. Inheritance is common policy → exact model override → Bot override; an override does not opt a Bot into managed inference. Use JSON Pointer paths for model IDs containing dots/slashes. All context changes require explicit confirmation because they can affect model cost.
 
-The intended user experience is automatic maintenance on the next ordinary input to an already-stuck long session, before the main model request, without clearing history or replaying the old failed STEP. Saving policy is not proof that the current Host/modeld supports or has adopted it; consumers must separately report configured/captured/capability/application. The [CTX tickets](tickets/README.md#context-maintenance) own implementation and proof; current commands above retain their existing behavior until that work is delivered.
+```bash
+grokbox config schema runtime.context
+grokbox config get runtime.context
+grokbox config set runtime.context.windowTokens 128000 --confirm
+grokbox config set runtime.context.compaction.mode --string auto --confirm
+grokbox agents context <agent> --json
+```
+
+An omitted policy still has defaults even when a raw `config get` path is absent. `agents context` reports configured policy/budget and the last maintenance receipt; `currentNativeRoot: not-observed` is not a live root measurement. Captured policy and safe credential identity remain fixed for the TURN, including tools and summaries; the next TURN uses changed preferences. A credential rotated after preflight cannot silently become the first main request's credential. Unrelated client/desktop/ops or another Bot's settings do not change this Bot's resolved policy revision.
+
+The [S12 budget contract](roadmap/box-runtime-impl-spec.md#context-maintenance) defines output reserve, safety margin, smaller declared limits and post-compaction headroom. The current meter is an explicitly reported complete-envelope estimate, not an exact tokenizer or provider bill. A failed/zero-usage response does not suppress checking. An oversized new message or fixed system/tool material can still be refused rather than silently truncated. Manual mode disables proactive summarization, not the hard local budget.
+
+The next ordinary input to a long failed session is checked before the main model request; qualified maintenance preserves that input and never replays the old failed STEP or executed tools. Explicit manual maintenance is available for an idle **loaded default Box session**:
+
+```bash
+grokbox agents compact <agent> --session '' --operation-id <stable-id> --confirm --json
+```
+
+It uses the native summarize action, not a hidden user prompt or fake model STEP. Busy, unloaded, named/server/subagent or unqualified native sessions refuse instead of being silently mapped or woken. A lost checkpoint acknowledgement remains `commit_unknown`; inspect the operation rather than deleting its record or reusing a new ID to replay it. Original history and actual committed state remain owned by the Host.
+
+The [CTX tickets](tickets/README.md#context-maintenance) and [offline report](reports/2026-09-17-context-maintenance-offline.md) describe implemented/source/packed/native-isolated scope and the pending independent review. Actual loaded adoption, original App input/Working and real native restart proof remain in [LIVE](tickets/LIVE-integration-validation.md#live-ctx-adoption); a green local build does not prove the current deployment.
 
 ## Evidence and boundaries
 
@@ -139,6 +159,6 @@ The implementation contract and owner/import rules are in [Configuration rebuild
 
 ## Model reasoning schema and general config migration
 
-`config.json` uses `schemaVersion: 2`; `models.json` independently uses `version: 2` with `{ modelId, reasoning?: { effort } }` assignments. New bootstrap and a general config migration without an existing model file initialize an empty model v2 document. General `config migrate` preserves existing model bytes in place, including v2 policies/capabilities; it never normalizes that domain as a side effect. `models migrate --confirm` is the explicit model-schema operation and does not migrate general config, relocate files or grant execution. Protect configuration and coordinate loaded CLI/preload/Host/modeld wire v7 before using the new schema on an existing deployment. See the [reasoning ADR](decisions/2026-09-17-model-reasoning-policy.md).
+Current source uses `config.json` `schemaVersion: 3`; `models.json` independently uses `version: 2` with `{ modelId, reasoning?: { effort } }` assignments. New bootstrap and a general config migration without an existing model file initialize an empty model v2 document. General `config migrate` preserves existing model bytes in place, including v2 policies/capabilities; it never normalizes that domain as a side effect. `models migrate --confirm` is the explicit model-schema operation and does not migrate general config, relocate files or grant execution. Protect configuration and coordinate matching loaded CLI/preload/Host/modeld artifacts before using new schemas on an existing deployment: reasoning originally introduced wire v7, while context maintenance now requires wire v8. Historical v7 acceptance is not proof of v8 adoption. See the [reasoning ADR](decisions/2026-09-17-model-reasoning-policy.md).
 
 Client/desktop/general config edits do not rewrite models or change the selected reasoning revision. Effort updates through `models use` do not write general config or invalidate its unrelated domain revisions. Both rules are integration-tested on the unified canonical readers/writers.

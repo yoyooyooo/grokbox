@@ -2,6 +2,8 @@
 
 **当前现场已验/未验、阻断与下一步只看 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)。** 本目录报告固定在各自窗口结束时，不随后续推进维护当前状态；报告中的未验清单只说明当时缺口。
 
+- [2026-09-17 本地上下文维护离线收口](2026-09-17-context-maintenance-offline.md)：Pi受控复用、config3/wire8、旧失败会话输入前维护、Node20十轮/新进程、连续迁移与TURN凭据/生命周期修复；区分源码/原生隔离和独立review503，不冒充现场已部署。
+
 - [2026-09-17 现役集成窗口](2026-09-17-live-integration-window.md)：统一配置真实迁移、v7 成套加载、12 条有界 canary、改档/工具/重启与 stock 回程；记录现场发现的 Host 重复 apply 缺陷及修复、最终验证、清理和仍未证明的范围。不是全部 LIVE 或独立复审通过。
 
 - [2026-09-17 Modeld 线性合入 v2](2026-09-17-modeld-v2-integration.md)：记录原提交到变基提交的完整映射、保留既有 MiniMax/投递修复的冲突处理、组合树验证及 LIVE 状态更新；源码集成不代表复审或 live 发布通过。

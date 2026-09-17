@@ -83,7 +83,7 @@
 | `kernel/internal/selection/models.ts`、`host/session.ts` | 模型容量、selection pin、Host extendedUsage | 本地工作窗口不冒充模型能力；有效策略与模型选择独立按域计算 |
 | `box-runtime/internal/backends/ai-sdk.ts` | 已有最终请求字节与工具声明门 | 增加预算复核，不能在 fetch 中直接改写历史或发 compact |
 
-路径以 `packages/runtime-kernel/src` / `packages/box-runtime/src` 为根。源码/协议已有不代表新 CTX 能力存在。完整当前配置只看 [配置指南](../configuration.md)；这里的新增测试编号和模块差额属于待实现 S12。
+路径以 `packages/runtime-kernel/src` / `packages/box-runtime/src` 为根。上表是原调查基线的差额，不代表后续实现仍缺失：当前CTX已选择受控Pi纯代码提取，实际来源/差异/许可在 `internal/context/vendor/pi-compaction/PROVENANCE.md`，实现与证明见[CTX-00](../tickets/CTX-00-pi-compaction-reuse.md)及[离线报告](../reports/2026-09-17-context-maintenance-offline.md)。完整当前配置只看[配置指南](../configuration.md)。原始包证据不替新构建或现场能力签字。
 
 ## 参考与测试的边界
 

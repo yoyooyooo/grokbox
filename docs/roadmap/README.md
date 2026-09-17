@@ -14,9 +14,9 @@
 
 T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修改。持续观测、安全准入、真实App/Working与原生状态往返不能被“UI以后做”一并延期。
 
-## 当前新增规划：默认本地上下文维护
+## 当前已实现主链：默认本地上下文维护
 
-[主Spec S12](box-runtime-impl-spec.md#context-maintenance) / [CTX-00–CTX-04](../tickets/README.md#context-maintenance)固定旧失败会话下一条普通输入自动维护、本地预算、Host安全点及持久续聊。先通过[CTX-00](../tickets/CTX-00-pi-compaction-reuse.md)验证实际Pi core公共组件→最小补丁→受控提取，局部重写最后考虑；不是只参考思想再自研。入口/序列化/请求/Node证据归[Pi参考](../maintainers/pi-compaction-reference.md#core-package-reuse)，不引入Agent loop或第二会话store。T32/T35安全基础复用，新实现仍planned。
+[主Spec S12](box-runtime-impl-spec.md#context-maintenance) / [CTX-00–CTX-04](../tickets/README.md#context-maintenance)固定旧失败会话下一条普通输入自动维护、本地预算、Host安全点及持久续聊。先通过[CTX-00](../tickets/CTX-00-pi-compaction-reuse.md)验证实际Pi core公共组件→最小补丁→受控提取，局部重写最后考虑；不是只参考思想再自研。入口/序列化/请求/Node证据归[Pi参考](../maintainers/pi-compaction-reference.md#core-package-reuse)，不引入Agent loop或第二会话store。T32/T35安全基础复用；当前已选择受控Pi提取并实现默认Box主链、config3/wire8及操作入口。实际source/Node制品/原生隔离和未完成独立review见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)，现役加载/新输入/重启进度只在LIVE。
 
 [PI-AI-01](../tickets/PI-AI-01-model-backend-qualification.md)独立评估pi-ai替换ModelBackend后的传输实现，不等于T30的RPC也不阻塞CTX。未经采纳决定，生产仍使用AI SDK；Node最低版本/Provider通道/credential不随规划静默改变。
 

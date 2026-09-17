@@ -1,38 +1,32 @@
 # CTX-01 — 本地工作窗口、配置与计量
 
-Status: **Planned / Spec-only** · M1。2026-09-17规划基线 `7994b92`；本票无实现提交、无新case执行或运行配置修改。
+Status: **Implemented / source and packed proof recorded / independent review pending**。主要实现 `883e224`；连续迁移修复 `358c057`、TURN policy/auth一致性修复 `f4b3a18`。现场采用另归LIVE，保存配置不等于现役进程已读取。
 
 ## Goal / authority
 
-使128K本地预算独立于500K/1M目录声明，失败/无usage的旧会话也能测量。唯一算法、字段、默认、覆盖、schema3与生效合同为 [Spec S12.2–S12.3](../roadmap/box-runtime-impl-spec.md#context-maintenance)，决策见 [ADR](../decisions/2026-09-17-local-context-maintenance.md)。[Pi对照](../maintainers/pi-compaction-reference.md)给出固定参考和适配差异，不是CI依赖。本票不改Host root。
+128K本地工作预算独立于500K/1M模型声明；初始/失败/无usage会话也能检查。配置、默认、覆盖、schema3、生效和预算公式由 [Spec S12.2–S12.3](../roadmap/box-runtime-impl-spec.md#context-maintenance)唯一拥有；[CTX-00](CTX-00-pi-compaction-reuse.md)记录实际Pi复用决定。本票不修改原生历史。
 
-## Depends on / starting point
+## Actual implementation
 
-消费[CTX-00复用决定](CTX-00-pi-compaction-reuse.md)及已合入的统一配置T57–T60、models schema2/reasoning S11与S10执行核心，不要求历史票重新全部Done。配置/预算反例可在M0并行准备，但估算/切点集成不绕过复用资格先行整套重写。开工固定当时v2提交/schema/wire及选定Pi算法版本；模型目录、credential和其他领域保留，CTX-02消费本票纯合同/捕获策略。
+`runtime-kernel/internal/config/context-policy.ts` 负责纯验证/覆盖/预算/revision，`internal/contract/context-maintenance.ts` 提供有界DTO及完整输入估算。config schema3、显式v2迁移、统一writer/alias/application、CLI schema/validate/get/set均已接通，models维持独立schema2及原字节。
 
-## Module / change set
+`context-selection.ts` 在原TURN锁及ExecutionHistory内捕获模型/策略与安全credential fingerprint，首次main与后续maintenance必须一致。已存在main binding的policy不会被新全局值替代，关闭/撤销TURN与已终态parent STEP不能被缓存选择复活；scope变化撤销仍写原TURN域，不另建authority库。普通client/ops/其他Bot编辑不改变本Bot有效policy revision。
 
-- 新增 `runtime-kernel/src/internal/config/context-policy.ts` 与 `internal/contract/context-maintenance.ts`，经现有 `config.ts/contract.ts` 导出纯数据/规则；按S12精确锁定解析、合并、窗口/输出预留、headroom、typed错误和版本。
-- 扩展同一配置schema/path/revision/runtime与现有 `config-store/config-migrate/config-application`；config2→3显式升级，普通reader/writer拒绝不支持版本，不另建compaction文件。models保持v2字节与领域writer，不以config写模型。
-- `box-runtime/internal/backends/context-meter.ts` 消费CTX-00选定Pi算法adapter的估算候选并补实际provider编码/coverage/余量检查，不新写平行的Pi估算器。`host/context-budget.ts`仍为有界本地根遍历/最小DTO消费者，Host不导入Pi、完整配置、SDK或Effect。纯本地预算公式属于kernel，与可替换库算法分开。
-- 修改现有 `ConfigurationRead` 和binding捕获最小policy/contextPolicyRevision，保留selectionRevision的S11含义。schema/模型跨文件捕获有限复核，配置保存不冒充运行采用。
-- 在现有 `scripts/verify-runtime-rebuild.mjs` 注册 `context-policy` 有限case。测试放 `runtime-kernel/test/context-policy.test.ts`，计量/CLI/迁移反例沿现有config和backend测试家族；不提前打印其余CTX case通过。
+`context-budget.ts` 与 `backends/context-meter.ts` 在prepare/最终SDK请求检查预算及实际输出；Host前置遍历不导入Pi/SDK/Effect。生产meter明确是unicode-envelope估算及保守余量，包含system/tools/消息/附件开销，不伪造provider usage或零成本。Pi估算是参考/候选，不承诺跨tokenizer精确上界；未知上游容量仍可执行显式本地预算。
 
-## Acceptance — executable targets, not existing commands
+连续schema迁移可以在前次retired之后开始，旧manifest和备份保留，preview绑定其指纹；unfinished、改变指纹、归档冲突或active writer均拒绝。迁移不启动服务、不发摘要、不给其他Bot选模型、不重写credential/models。
 
-实现后运行 `bun scripts/verify-runtime-rebuild.mjs context-policy`；该入口此前不存在时必须非零，不能拿本票文档当执行结果。必须覆盖CTX-A02/A03/A05/A06的本票子集：
+## Acceptance / evidence
 
-1. 精确meter下128000窗口/16384预留：111616不触发、111617触发；同一输入500K本地窗口不触发、128K触发。模型声明比本地小取较小；声明未知但显式本地仍可工作且reported unknown；不能伪造上游容量。
-2. O>reserve按实际O扣预算；未显式O落实可验证请求默认；极小W、无输入空间、超大固定内容、safe integer/map/file上限、非法覆盖与引用分别拒绝。summary预算无循环定义。阈值与压缩后目标/headroom清晰分离。
-3. 有效usage+尾部估算、全部无usage、error/aborted/零值、Unicode/代码/tools/schema/reasoning/图片支持或缺口；cache与reasoning不重复计数。旧root/旧模型/旧编码usage不得回填新root，估算不标exact。
-4. schema2→3 preview/apply/recover与旧writer拒绝；alias安全、重复操作、CAS冲突、取消/结果丢失、未知字段/版本和跨client/target作用域。普通读不写文件、不ack；升级不重启、发送、改模型或secret。
-5. 同Bot相关策略进入contextPolicyRevision且冻结于TURN；另一Bot/client/desktop/ops修改不失效；config提交、configured-next-turn与实际captured/application分开。当前TURN仍旧策略、下一TURN新策略的跨接证明交CTX-02/04。
-6. Pi行为使用独立合成golden，实际被采纳算法来自项目锁定包或可复现提取，不调用全局安装包或下载main，也不以mock替代被测算法。复验CTX-R02/R05/R06相关结果；S12的估算/输出/未知usage策略优先于库默认值，不能把相同字段的不同语义相加。实际SDK投影用本地mock；保留无网络、零root写/工具/模型effect反例。
+```bash
+bun scripts/verify-runtime-rebuild.mjs context-policy
+bun scripts/verify-runtime-rebuild.mjs config-unification
+```
 
-## Forbidden / non-goals
+这些case均有真实测试映射；unknown/缺输入/zero/skip不作通过。实际政策/配置证明包括128000/16384的严格边界、500K与128K对照、输出大于预留、invalid/小窗口/无容量声明、无assistant/无usage与Unicode/tools、model→Bot覆盖、schema2拒绝及显式迁移、alias/CAS/作用域、current-vs-next-TURN和credential轮换拒绝。组合Node制品和具体运行计数见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)。
 
-不以修改模型contextWindowTokens冒充本地策略；不使用第三配置/环境覆盖、按名字猜tokenizer、usage缺失填0、provider fetch后才记预算、provider adapter裁剪或反写Host state。不引入Pi Agent loop或替换Provider传输、新配置writer或完整tokenizer服务框架。允许CTX-00批准的实际core算法依赖；Pi类型/配置/Session不进入kernel、Host或canonical模型。新命令/Host维护、摘要生成和live不由本票签署。
+source tests在 `runtime-kernel/test/context-policy.test.ts`、`context-selection.test.ts`、`unified-config.test.ts`、`box-runtime/test/config-migration.test.ts` 和既有config CLI/packed家族。预算策略扩展不另建配置writer或第三文件。
 
-## Exit / evidence
+## Remaining / non-goals
 
-本票Done需实现与旧入口处理、所有要求的离线/source/packed配置计量子集及固定提交独立review。记录source commit、meter版本、实际case/断言、负例和未证边界；不能用纯meter绿声明CTX-A01旧会话已恢复。当前实现/离线/review均 **not-recorded**，不把这些工作移入LIVE。
+固定提交独立review尚无返回报告；原生consumer adopted/captured状态、实际迁移与已授权重启需要[LIVE-CTX-ADOPTION](LIVE-integration-validation.md#live-ctx-adoption)取证。未知provider token开销不说已精确预测，不通过改目录容量、静默truncate或新tokenizer服务掩盖。当前没有因这些源码改动自动修改生产config或加载新Host/modeld。
