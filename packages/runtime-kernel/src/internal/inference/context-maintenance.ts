@@ -116,7 +116,8 @@ function executeContextMaintenance(input: ContextMaintenanceExecution, history: 
         && committed.rootRevision === prior.receipt.rootRevision) {
         const material = yield* Effect.try({ try: () => parseContextMaterial(committed.material), catch: storageError });
         const after = measureContext(material);
-        if (after.tokens > prior.receipt.budget.resumeThresholdTokens) return yield* Effect.fail(storageError());
+        if (material.rootId !== request.rootId || material.rootRevision !== committed.rootRevision
+          || after.tokens > prior.receipt.budget.resumeThresholdTokens) return yield* Effect.fail(storageError());
         const recovered = { ...prior.receipt, after, persisted: true };
         yield* put({ ...prior, state: "committed", receipt: recovered, failure: undefined });
         return recovered;
@@ -206,7 +207,10 @@ function executeContextMaintenance(input: ContextMaintenanceExecution, history: 
         || committed.sourceRootRevision !== request.rootRevision || committed.rootRevision !== checked.rootRevision) return yield* Effect.fail(new ContextFailure("commit_unknown"));
       const readback = yield* owner.readCommit(request);
       if (!readback || readback.outcome !== "committed" || !readback.persisted || !readback.material
-        || readback.rootRevision !== committed.rootRevision || readback.operationId !== request.operationId) return yield* Effect.fail(new ContextFailure("commit_unknown"));
+        || readback.rootRevision !== committed.rootRevision || readback.operationId !== request.operationId
+        || readback.sourceRootRevision !== request.rootRevision || readback.material.rootRevision !== readback.rootRevision) {
+        return yield* Effect.fail(new ContextFailure("commit_unknown"));
+      }
       const restored = yield* Effect.try({ try: () => validateContextReplacement(material, candidate, readback.material!), catch: () => new ContextFailure("commit_unknown") });
       const result = receipt(measureContext(restored), readback.rootRevision, "committed", record.summaryRequests, record.summaryInputTokens);
       record = { ...record, state: "committed", receipt: result }; yield* put(record);
