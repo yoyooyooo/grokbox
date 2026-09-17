@@ -30,7 +30,7 @@ GROKBOX_TEST_NATIVE_HOST=1 bun scripts/verify-runtime-rebuild.mjs context-native
 
 ## Review and actual remaining gate
 
-两次要求固定提交、只读、P0/P1边界的Astra review均返回provider503，无审查报告。独立review是本票未完成的非live前置，不改称live待办，不用实现者自审替代，也不为了推进修改报告为通过。新source更改须对最终固定候选复核，旧报告不签新构建。
+要求固定提交、只读、P0/P1边界的Astra review在三个阶段均返回provider503，最终干净候选 `804c994` 也没有审查报告。独立review是本票未完成的非live前置，不改称live待办，不用实现者自审替代，也不为了推进修改报告为通过。新source更改须对最终固定候选复核，旧报告不签新构建。
 
 当前已验/未验、阻断和下一动作只更新 [ADOPTION](LIVE-integration-validation.md#live-ctx-adoption)、[NEXT-INPUT](LIVE-integration-validation.md#live-ctx-next-input)、[DURABILITY](LIVE-integration-validation.md#live-ctx-durability)。用户已授权本功能完成前置后rebase v2及Host/modeld切换/重启；仍先固定集成候选、匹配制品、原配置/回退、在途对象保护和逐请求费用预算。没有原版App接口时该子项not-observed，CLI投递不能替代App输入/详情/Working通过。
 

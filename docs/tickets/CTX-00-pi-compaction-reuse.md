@@ -35,6 +35,6 @@ bun scripts/verify-runtime-rebuild.mjs context-reuse
 
 ## Remaining / exit
 
-采纳和source/packed证明已经存在；**固定提交独立review未完成**，两次Astra只读请求均503而无报告。此项不是LIVE任务。后续Pi来源/模板/serializer/Node/制品改变须重跑相关R/A向量；不能因选择受控提取就免除升级差异审查。
+采纳和source/packed证明已经存在；**固定提交独立review未完成**，Astra只读请求在最终固定候选仍503且无报告，详见离线报告。此项不是LIVE任务。后续Pi来源/模板/serializer/Node/制品改变须重跑相关R/A向量；不能因选择受控提取就免除升级差异审查。
 
 完整旧会话下一输入与原生存储/App发布由CTX-04及LIVE对应门关闭，本票不把算法通过提升为已部署。PI-AI-01仍独立非阻断；这里没有替换AI SDK、发布fork/PR或接入Pi SessionManager。

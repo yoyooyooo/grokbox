@@ -933,7 +933,7 @@ Owner：[实现票](../tickets/FEAT-model-reasoning-policy.md)；决策依据为
 <a id="context-maintenance"></a>
 ## S12. 默认本地上下文维护（2026-09-17 accepted target）
 
-**状态：已实现默认Box会话主链，离线/Node制品及固定原生隔离证明已记录，独立review与实际采用未闭合。** 本节仍是CTX-00–04唯一实施合同；[ADR](../decisions/2026-09-17-local-context-maintenance.md)拥有决策，[Pi对照](../maintainers/pi-compaction-reference.md)拥有来源事实。实现 `883e224`，读回修复 `269f1e2`，连续配置迁移 `358c057`，TURN凭据/生命周期一致性 `f4b3a18`。当前源码config3/models2/wire8，保留Node>=20.17.0并选择受控Pi纯代码提取，不实例化Pi Agent运行时。[离线报告](../reports/2026-09-17-context-maintenance-offline.md)区分实际证明范围和两次review503；现场状态只在[LIVE](../tickets/LIVE-integration-validation.md#live-ctx-adoption)。
+**状态：已实现默认Box会话主链，离线/Node制品及固定原生隔离证明已记录，独立review与实际采用未闭合。** 本节仍是CTX-00–04唯一实施合同；[ADR](../decisions/2026-09-17-local-context-maintenance.md)拥有决策，[Pi对照](../maintainers/pi-compaction-reference.md)拥有来源事实。实现 `883e224`，读回修复 `269f1e2`，连续配置迁移 `358c057`，TURN凭据/生命周期一致性 `f4b3a18`。当前源码config3/models2/wire8，保留Node>=20.17.0并选择受控Pi纯代码提取，不实例化Pi Agent运行时。[离线报告](../reports/2026-09-17-context-maintenance-offline.md)区分实际证明范围和独立review通道503；现场状态只在[LIVE](../tickets/LIVE-integration-validation.md#live-ctx-adoption)。
 
 当前支持范围必须明确：生产预算meter是完整unicode-envelope估算及余量，不是已接通所有tokenizer/usage校准；图片原样保留。手动入口仅已加载默认Box session，named/server/subagent无资格时拒绝。可独立结束的pending摘要由原owner取消并等待；同STEP自依赖摘要有界busy，不宣称泛化死锁恢复已完成。原生方法隔离的blob/存储外围仍是替身，不能签完整现役checkpoint事务或App输入/显示。下文更广适用性与完整验收仍是合同，测试未覆盖的组合不因更新状态被豁免。
 

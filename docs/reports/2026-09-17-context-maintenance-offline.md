@@ -58,9 +58,11 @@ config.runtime.context 默认 auto、本地窗口128000、reserve16384、keepRec
 
 所有失败注入使用合成身份/临时目录/loopback HTTP。没有把生产Bot历史复制到Git，没有拿真实上游超限作为自动compact的触发前提。测试结果不能跨后续源码变更自动继承；最终组合回归及pin已在上表记录；不能将初次两项失败隐藏成从未发生。
 
+提交测试pin与文档后，干净候选 `804c99423a89908669dc87f75d2fdd6009c2497e` 再次执行完整 `context-maintenance`，`worktreeDirty=false`、42+11测试及typecheck/build/import fence全过，source指纹仍为上述 `7af8ac…28479`。执行 `git rebase feat/box-runtime-v2` 返回up-to-date，v2基线为 `6596a1572bc64516c93f0c9149931723a0a7db83`；没有借rebase隐含合回或切换live。此后的报告/索引回执为文档更改，不签新的运行代码。
+
 ## 5. 独立 review 与明确未证范围
 
-两次限定只读的 `sub2api-codex/gpt-6-astra` / max review，分别针对 `269f1e2` 与 `f4b3a18`，均立即返回 provider HTTP503，进程退出1，**没有审查报告或独立认可**。本报告里的分析是实现者审查，不冒充独立review。该缺口留在CTX来源票，不改名为live-only，也不重复无限启动review花费。
+三次限定只读的 `sub2api-codex/gpt-6-astra` / max review，分别针对 `269f1e2`、`f4b3a18` 与最终干净候选 `804c994`，均立即返回provider HTTP503，进程退出1，**没有审查报告或独立认可**。最后一次在全部源码/制品回归及rebase核对后尝试；仍无结果，停止重复请求，不将不可用通道说成review通过。本报告里的分析是实现者审查，不冒充独立review。该缺口留在CTX来源票，不改名为live-only，也不重复无限启动review花费。
 
 原生隔离资格不等于现役已加载，更不等于全部native storage是事务：真实 archive/carrier/checkpoint与重启、App输入/活动/交付须单独取证。未知checkpoint不会说成已回滚。手动入口当前仅已加载默认Box session；named/server/subagent不自动映射。预先存在的同STEP自依赖摘要是有界拒绝，不盲等或抹Promise；可独立结束的pending通过原owner取消并等待。缺合资格的resource/self-document/preCompact-hook链时拒绝，不能用缺口扩大Host patch权力。图片当前完整保留，不宣称提供图片摘要模型。
 
