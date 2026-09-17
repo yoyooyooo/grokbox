@@ -29,6 +29,8 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 - [Bot 运维闭环 Spec](roadmap/template-ops-automation-spec.md)：T43–T56，默认单接收者、允许用户指定 custom Bot、可选按意图/来源/严重度分流；user 小提醒、maintainer 配置、Routine CLI 与授权后内置 issue 提交。仅 Spec，不代表已启用；[初始决策](decisions/2026-09-16-template-ops-automation.md)限定维护预授权，[分层决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)保留低成本默认，[多目标/发布决策](decisions/2026-09-17-ops-routing-and-authorized-issues.md)扩充命名目标/故障成本/有限 issue grant，[操作手册](maintainers/template-ops-automation.md)给出单目标到高级配置与支持流程。
 
+- [统一配置与命令面重建 Spec](roadmap/configuration-rebuild-spec.md)：AH-99/AH-100 + T57–T60 的两文件入口、config v2、canonical durable/alias、单一 writer、作用域与迁移合同。取代 ops-policy 第三配置与旧通用命令草案；运维业务仍归 Template Ops Spec。[设计取舍](decisions/2026-09-17-unified-configuration-rebuild.md)。仅 Spec，未迁移/未关闭 Linear。
+
 ## Cross-worktree live acceptance
 
 [`LIVE` integration validation backlog](tickets/LIVE-integration-validation.md) is the long-lived scheduling/receipt home for acceptance that actually needs native Host, loaded Host/modeld, a real Provider, the original App or restart/rollback. Finish code, offline proof and code review in feature worktrees; register live-only entries with source commits and dependencies, then normally validate a fixed combined `feat/box-runtime-v2` artifact in one approved window. The queue records integration mappings, budgets, stop/rollback conditions and per-entry results. It neither authorizes cutover nor turns unresolved code/review into live-only residue; completed entries are invalidated explicitly when relevant artifacts change.
@@ -68,6 +70,8 @@ Current behavior is owned by source and executable tests. Product and architectu
 The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normalization-and-roadmap.md) records binding normalization, patch-surface and execution-scope decisions. They are incorporated into the [strategy plan](roadmap/box-runtime-plan.md) and [implementation spec](roadmap/box-runtime-impl-spec.md); the ADR is not a second roadmap. The spec records this rebuild's explicit single-track policy without turning earlier POC implementation details into compatibility obligations.
 
 ## Freshness
+
+统一配置 schema/根、bootstrap、支持 writer 版本、consumer revision、client/target scope 或模型新字段变化时，按 [配置重建失效条件](roadmap/configuration-rebuild-spec.md) 复核；不要用旧 parser 丢弃新字段或按新文件存在自动选择 SoT。
 
 Template ops 的原生 routine/模板克隆/Payload/认证、目标模型/数据同意/路由/备用、preset 默认与成本、issue 用户确认来源/仓库/可见性/模板/grant、工具权限或安装绑定变化时，复核 [专项资格与失效条件](roadmap/template-ops-automation-spec.md#baseline)；模板发布和配对不等于维护授权。
 

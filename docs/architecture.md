@@ -109,6 +109,10 @@ Commander parser/help and bundled skill reference derive from this registry. Uns
 
 ## 5. Profile Resolution
 
+**2026-09-17 配置重建目标，未实现：** AH-99/AH-100 以 [统一配置 Spec](roadmap/configuration-rebuild-spec.md) / T57–T60 为唯一布局/shape/writer 合同。下面既有 Profile 文件解析是现行实现，不构成保留旧文件树的义务。目标将 Profiles 嵌入 config.client，与 daemon/desktop/runtime/ops 意图共享 canonical config；Box durable 实体 + home 别名，models 物理路径与领域 schema 保持。
+
+统一 ConfigChange 由 kernel 定义、box-runtime 装配 Effect IO、CLI/daemon/bootstrap 同用；不存在 config-only 锁或第二 ops-policy writer。domain dependency revision 与全文件 CAS 分离；Host 仍仅有界读 models，不因统一配置导入 ops/SQLite/Effect。binding/grant/floor/pin 等机器状态由独立受信 owner 管理，generic JSON set 没有权限。迁移与消费者 applied 回执必须验证，不能以 rename/Scope 代替事务恢复。
+
 The config adapter owns path expansion, permissions, schema validation, secret redaction and precedence. Application use cases receive a resolved immutable Profile, not raw JSON.
 
 The top-level `init [<name>]` use case owns first-run orchestration. It composes local environment inspection, a narrow `TailnetDiscoveryPort`, target selection, shared daemon credential bootstrap, atomic Profile persistence and staged doctor. Discovery DTOs never leak into ordinary command use cases, and discovery alone never grants trust. The optional positional name is the Profile being created or updated; global `--profile` only selects an existing Profile and is invalid for `init`.
@@ -318,7 +322,7 @@ Current implementation remains source reality until each slice lands. This docum
 
 ### 2026-09-17 Template ops boundary（目标，尚未实现）
 
-[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T56 的最小增量骨架：HSO 拥有来源/资格，T41 原 SQLite 管理 incident/work/route decision/delivery/claim/报告及独立 support draft/consent/submission 域，ConfigurationWrite 管理 preset/overrides/targets/routing/private bindings 与分开的 maintenanceGrants/issueGrants，已有 controller store 管理 plan/动作。support consent 仅受信 support 用例可写，collector/维护 grant 不授予公开发布权。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
+[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T56 的最小增量骨架：HSO 拥有来源/资格，T41 原 SQLite 管理 incident/work/route decision/delivery/claim/报告及独立 support draft/consent/submission 域，T57–T60 的 ConfigChange 管理 config.ops 的 preset/显式叶/targets/routing；真实 bindings 与分开的 maintenanceGrants/issueGrants 在机器状态由受信程序管理，已有 controller store 管理 plan/动作。support consent 仅受信 support 用例可写，collector/维护 grant 不授予公开发布权。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
 
 内置模板 Bot 默认官方模型；T54/T55 允许任意获授权的 custom 接收 Bot，模型仍由既有 selection/原生设置拥有，不在 ops 建第二目录。user 默认单目标 brief-notice 只报告/询问，不进入深诊断。T51 的 preset 是偏好而非安全角色，requested/effective/valueSource/blockedReason 分列，旧 off 与成本预算保留。合法 Webhook 才按需加载对应能力；不常驻采样、不拥有原始 signals、不从 Payload 获得授权。`monitor.runtime.ts` 组合只读采样与通知子 Scope；计划中的 `ops.runtime.ts` 是独立 Bot/modeld 的受限维护调度，只调用唯一 controller。Bot 持久交接后结束，维护在已资格化安全屏障内推进，结果由原 controller 保存后再通知。
 

@@ -117,6 +117,13 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 
 [新决策](../decisions/2026-09-16-template-ops-automation.md)仅对指定低风险动作类接受作用域/证据/时效绑定的可撤销预授权，包含满足审核等价规则的新 SHA 派生；不放宽 exact SHA/唯一性、Server gate、语义审核、权限隔离或安全排空。其它未知/越界变化继续人工审核。通知成功不等于维护或用户交付成功，模板导入不继承活 endpoint/secret/grant。[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)只修订默认/支持/配置和通用 Routine 目标；[多目标/授权发布决策](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)进一步由 T54–T56 定义 default 单目标、可选确定性多 Bot 分流、custom 依赖/模型数据同意/总成本，以及内置 REST 支持流水线与有限 create-only issue grant。模板官方只是默认，不限制其他 Bot；路由不改模型、不复制控制或发布权限。issue 默认仍 exact 确认，预授权另签作用域/模板/期限/额度，unknown 不重发。全部实现前既有 reconcile/live 边界不变；基础 user 支持不等待高级诊断/维护。
 
+<a id="configuration-rebuild"></a>
+### S0.1.6 AH-99/AH-100 配置底座收口（2026-09-17 Spec-only）
+
+[统一配置重建 Spec](configuration-rebuild-spec.md) / [T57–T60](../tickets/README.md#configuration-rebuild) 是本轮配置根、文件形状、通用命令、writer/迁移的唯一专项合同；运维 T43–T56 只拥有业务规则。对外两份日常文档 config.json/models.json，Box 实体留 durable，client Profiles/daemon/desktop/runtime desired/ops 意图聚合；机器 binding/grant/安装安全状态不进普通配置。删除尚未实施的 ops-policy 第三文件与 runtime ops config 目标。
+
+公开 config/models/ops 主线、同一 ConfigChange/CAS 与按域 dependency revision；Host 保留 canonical models 的 no-follow/selectionRevision，不读大 config 或 ops/Effect/SQLite。当前 v2 新增 chatDialect 等模型字段必须保全，不为统一配置重做 provider schema。迁移先 fence 旧 writer、固定计划、阶段恢复与 consumer 读回，新文件存在不自动胜出，保存不等于已应用。AH-101 行为独立，实际迁移/服务中断仍须授权。本轮仅建立设计/Tickets，不修改 Linear 状态或宣称旧文件已退役。
+
 ### S0.2 最小完整控制边界与用途
 
 复用现有 `runtime-kernel` 的 STEP program/ledger、binding、auth 和当前 v5 同连接，不增加第二 orchestrator、Context Store、Memory writer 或 provider loop。Host 侧的 **Managed STEP Scope** 是 T35 的生命周期边界，不强制新类、包或服务：在 provider 开始前取得真实有效 root/ctx/身份、协调本 root 的摘要入口，退出时释放并使旧能力失效。Host 保留摘要策略、root/归档/checkpoint、工具、Memory、SendToUser 的实际 writer。

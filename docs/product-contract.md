@@ -197,6 +197,8 @@ Profile、timeout 和输出 flags 可放在顶层命令前。未知 flag 在本�
 
 ### 5.1 文件布局
 
+**现行 v1 与重建目标分开：** 下列既有文件/字段描述当前实现；AH-99/AH-100 的破坏式目标以本节 §5.5 和 [统一配置 Spec](roadmap/configuration-rebuild-spec.md) 为准，尚未迁移。不能从本次文档修订推断当前 CLI 已接受新形状。
+
 ```text
 ~/.grokbox/
 ├── config.json
@@ -287,6 +289,16 @@ CLI 不从 daemon 静默降级到直接文件写入；不从失败的远程 RPC 
 6. 手工 Gateway credential 是最后维护 fallback，只能通过 no-echo secret 输入落入 `file:`/`keychain:` reference；单独复制 `gateway.json` token 仍可能缺 endpoint、routing headers 和 rotation。
 
 App descriptor 或 secret reference 的 absent、locked/denied、malformed、unsupported、ambiguous、incomplete、stale 与 unauthorized 状态都必须可诊断且不输出 secret。后置的多客户端身份、通用 credential plugin 和 App 私有 Cursor token 发现见 [Roadmap](roadmap/README.md)。
+
+### 5.5 统一配置重建（2026-09-17，T57–T60 目标）
+
+日常逻辑入口仅 `~/.grokbox/config.json` 与 `~/.grokbox/models.json`；Box 实体为既有 durableRoot 下 config.json（新）与 models.json（不搬），home 为受管别名。client-only 保持自己的 config，远程 Profile 不自动改变配置写入对象。新 config v2 聚合 client.currentProfile/profiles、daemon、desktop.idleReclaim/keepAgentIds、runtime.desiredMode、ops 稀疏显式偏好；不再 Profile 独立文件树、desired 意图文件或 ops-policy 第三配置。
+
+实际 binding/grant、floor/可执行文件 pin/credential verifier、observations/attestation/源档案是机器状态，不是通用 set 可写内容。models 继续独立版本和既有逐 Bot/credential/最新 v2 字段，不为了格式统一重造 provider schema。路径、schema、权限、revision 和一次性迁移唯一归 [配置 Spec](roadmap/configuration-rebuild-spec.md)，T57–T60 共同构成 AH-99/AH-100 验收；AH-101 的闲时行为不顺带改。
+
+公开主线增加 `grokbox config get/set/unset/apply/validate/schema/path/export/preset/migrate`，运维业务改 `grokbox ops`，模型归 `grokbox models`；profile/desktop 便利命令调用同一 ConfigChange，而非各自写整树。父对象 set 也不能夹带授权/floor，数组只替换并确认，坏值原文件不变，跨 writer 锁+CAS+readback 防丢更新。保存成功但 RPC/consumer 未应用必须报告 committed/pending；不把它说成未保存，也不偷偷重启。修改 desktop/client 不撤销无关 target/grant/模型 TURN。
+
+迁移必须有 exact 预览、旧 writer fence、backup/阶段恢复与消费者读回；不双写、不按新文件存在就覆盖旧值，不向 symlink 别名 rename。只安装新 CLI 不自动搬生产配置，未获授权不停止 Bot 或改 Host。公开帮助/安装技能在实现完成时才改为可执行新命令。
 
 ## 6. Capability 路由
 
@@ -519,6 +531,8 @@ Bot 只解释/诊断/提交候选，唯一 controller 实际执行；Webhook HTT
 默认仅一个命名目标，已启用通知都流向它；高级 routing 关闭不等于关闭告警。按 intent/source/severity/audience 的有限首匹配规则可分流到廉价/分析 Bot，但不能自动提高诊断权限或改供应商。custom 接收者的依赖、数据同意、备用和总费用均显式检查，unknown 不广播；集中 reportTarget 是可选且有成本的后续交付。配置唯一写入和 requested/effective/阻断原因归 [Spec §6.2–6.5](roadmap/template-ops-automation-spec.md#configuration)，模型分配继续归既有 owner，不得用默认值隐藏收费或执行权限。
 
 ## 13. 输出与错误
+
+**T57–T60 新配置入口目标（未实现）：** config_invalid、config_path_invalid、config_conflict、config_scope_required/unavailable、config_layout_conflict、config_migration_required、config_apply_pending、config_commit_unknown 按 [配置 Spec §6](roadmap/configuration-rebuild-spec.md#writer) 统一；其中 apply_pending/commit_unknown 携带实际已发生的 commit 与 operationId，不用笼统 profile_invalid 或空失败掩盖。现有领域错误在旧入口仍按下文实现。
 
 除 Markdown 内容和 streaming 命令外，成功 stdout 是一个 JSON object：
 

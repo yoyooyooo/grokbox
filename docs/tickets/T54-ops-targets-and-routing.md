@@ -6,9 +6,11 @@
 
 ## Depends-on / Modules
 
+配置物理布局与通用命令改由 [配置 Spec/T57–T60](../roadmap/configuration-rebuild-spec.md) 提供；本票仍拥有目标与匹配语义，不另建 ops-policy 文件。路由纯规则可以先行。
+
 依 T51 配置/CAS 与 T43/T53 的 native identity/Routine port 合同，可用 Fake 并行完成规则；不等 T47 深诊断或 T49 维护。交付给 T45/T46/T55 的 binding/RouteDecision 是同一类型，不留模板专用第二分支。
 
-kernel `internal/ops/routing.ts`、`policy.ts`、`notification.ts`、`ops.ts`；box-runtime `internal/io/ops-policy.node.ts`、既有 ConfigurationWrite；CLI `commands/ops.ts` 与 T53 native adapter。模型目录/分配只读引用，既有 models writer 不迁移。
+kernel `internal/ops/routing.ts`、`policy.ts`、`notification.ts`、`ops.ts`；box-runtime `internal/io/config-store.node.ts`（偏好）与 `ops-bindings.node.ts`（配对）、统一 ConfigChange；CLI `commands/ops.ts` 与 T53 native adapter。模型目录/分配只读引用，既有 models writer 不迁移。
 
 ## Work
 
@@ -18,7 +20,7 @@ kernel `internal/ops/routing.ts`、`policy.ts`、`notification.ts`、`ops.ts`；
 
 固定 RouteDecision 的 work/episode/revision/intent/audience、policyRevision/target/binding、模型证据、dataPolicy/reportTarget/预算；升级不原地改旧决策。只读 config effective/routes validate/explain/test 不查上游、不发 HTTP、不写 incident。targets verify 是明确只读 native 操作，真实 POST 保持 T53 invoke 的独立权限。
 
-配置保存一个 ops-policy.json，export 仅逻辑 alias/偏好；import 后未配对 blocked。禁用/移除引用/rebind CAS、旧原型 singular→default 显式迁移、off/预算/overrides 保持。模型变化默认 require-rebind，不能让路由创建第二个 modelId 真相源。
+偏好保存于 config.json.ops.targets/routing，允许声明 desired agentId/routineKey，但真正配对必须依机器 binding 收据；export 仅可移植 alias/偏好，import 后未配对 blocked。禁用/移除引用/rebind 用各 owner 的 CAS；旧原型由 T59 迁移，off/预算/显式覆盖保持。config 文档 revision 与 target policy digest 分开，改 desktop/client 不使全部 target 失效。模型变化默认 require-rebind，不能让路由创建第二个 modelId 真相源。
 
 ## Executable acceptance
 

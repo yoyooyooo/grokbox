@@ -8,7 +8,7 @@
 
 依 T43 原生 routine/clone 能力、T45 delivery/claim、T51 默认配置和 T53 通用 Agent/Routine apply 合同；Fake 接线可提前，不依赖 T47/T49 自动诊断/维护完成。
 
-`packages/cli/src/template-recipe.ts`、`gateway-automation.ts`、`commands/template.ts`、`commands/ops.ts`、`skills.ts`；`scripts/templates/grokbox.recipe.json`、`skills/grokbox/SKILL.md` 与实现时新增的 `skills/grokbox/ops.md`。配置通过 `ops-policy.node.ts` 接回 ConfigurationWrite，不能直接改 JSON/产品 SQLite。
+`packages/cli/src/template-recipe.ts`、`gateway-automation.ts`、`commands/template.ts`、`commands/ops.ts`、`skills.ts`；`scripts/templates/grokbox.recipe.json`、`skills/grokbox/SKILL.md` 与实现时新增的 `skills/grokbox/ops.md`。按 [统一配置 Spec/T57–T60](../roadmap/configuration-rebuild-spec.md)，偏好通过 ConfigChange 写 config.ops，实际配对通过 ops-bindings.node.ts 写机器状态；不再创建 ops-policy.json，不能直接改 JSON/产品 SQLite。模板与普通 CLI 都使用顶级 config/ops 公共入口。
 
 ## Work
 

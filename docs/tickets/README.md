@@ -138,6 +138,20 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 
 这些票是具体能力依赖，不要求 T40/T41 整票先 Done；也不反向阻塞主线的准入/正常推理。先冻结 T43/T51/T54 的原生/配置/目标合同并做 T53 通用 CLI，以 default 目标交付 user 监测→Webhook→短提醒和 T52/T56 授权后内置提交；基础支持不等 T47/T48/T49 或全部高级分流。T55、T56 有限 grant、诊断和维护分别启用并验收，不把新增 Bot 误当新增权限/额度。各票中的新测试路径和 verifier 是待实现验收目标，不是已存在命令。真实部署、模型成本与原生变更仍需相应范围授权。
 
+<a id="configuration-rebuild"></a>
+## 统一配置与命令面 — T57–T60（AH-99 / AH-100，Spec-only）
+
+[统一配置 Spec](../roadmap/configuration-rebuild-spec.md)拥有人读两文件、Box/client/remote scope、shape、writer、公开命令与迁移；[决策](../decisions/2026-09-17-unified-configuration-rebuild.md)解释相对两票旧冻结方案的取舍。两票读取时仍 Triage，本轮没有修改 Linear 状态或宣布实现完成。
+
+| Ticket | 映射 | 交付 |
+|---|---|---|
+| [T57 schema/布局](T57-unified-config-schema-layout.md) | AH-99 | config v2 聚合 Profiles/daemon/desktop/runtime/ops；models 独立无损；偏好与授权/机器状态分离 |
+| [T58 命令/唯一 writer](T58-config-command-single-writer.md) | AH-100 + AH-99 写入面 | 顶级 config、路径/schema/权限、锁/CAS、全领域 writer、saved/applied 与 scope |
+| [T59 迁移/退旧](T59-config-migration-cutover.md) | AH-99 | 显式计划/旧 writer fence、partial 恢复、别名/冲突、bootstrap 和新版 consumer |
+| [T60 集成验收](T60-config-ops-integration-proof.md) | 两票整体/T43–T56 | ops/models 命令归并、最新 v2 模型字段、按域失效、skills/Node package/真实运行资格 |
+
+T57 → T58/T59 → T60。T51/T54 仍可先做纯业务规则，但持久接线使用 config.ops，**不先交第三个 ops-policy.json 再搬一次**；T43/T53 原生 Routine 不被配置大票阻塞。现有模型 provider/Hot path 保持，集成先核 v2 新增 chatDialect。AH-101 的 floor/minIdle 等行为另议，本轮只统一 writer，不顺手改策略。目录中旧 T43–T56 的命令示例以新配置 Spec 的顶级 config/models/ops 前缀为最终公开面，低级 runtime profile 诊断不全部改名。
+
 ## Historical delivery and product-scope trackers
 
 以下 done/partial 历史保持原意义，不意味着重建已通过同样证明，也不要求保留 POC 的内部代码。旧 open 票为产品范围入口，执行已转给新票据。

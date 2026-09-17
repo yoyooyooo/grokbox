@@ -1,6 +1,6 @@
 # Template Bot 运维告警与自动化维护手册
 
-**2026-09-17 · 整合多 Bot/custom 分流、配置与授权后 CLI issue，尚未实现/安装或启用。** 本页拥有安装、值守、故障处理与验收的操作解释；动作资格、DTO、权限、预算与目标骨架只在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 定义。本手册不把计划中的 `runtime ops` 命令写成当前可执行能力。[T43–T56](../tickets/README.md#template-ops-automation) 拥有实现退出。
+**2026-09-17 · 整合多 Bot/custom 分流、配置与授权后 CLI issue，尚未实现/安装或启用。** 本页拥有安装、值守、故障处理与验收的操作解释；动作资格、DTO、权限、预算与目标骨架只在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 定义。本手册不把计划中的 `ops` 命令写成当前可执行能力；AH-99/AH-100 的 [统一配置 Spec](../roadmap/configuration-rebuild-spec.md) 已将偏好收到 config.ops、命令统一为顶级 config/models/ops，T57–T60 未实施前不能直接运行。[T43–T56](../tickets/README.md#template-ops-automation) 拥有实现退出。
 
 ## 1. 当前就能做的只读检查
 
@@ -28,7 +28,7 @@ monitor 未初始化或没有采样时保留 missing/stale，不因此创建空�
 
 实际能力显示 requested/effective 与阻断原因，例如未配对、缺原生资格、没有 grant；不能把「配置里开了」说成已运行。验证 heartbeat、无变化不唤醒、断线恢复和退出；自动维护需独立角色，Bot 不负责长驻。
 
-配对/密钥轮换/卸载通过将来的 `runtime ops bind/unbind/policy` 入口完成。Secret 不出现在 argv/模板/普通输出；配对变化使旧 binding revision 失效。克隆、备份恢复或账号切换重新核对，不能复用发布者的活 Webhook、Bot ID 或 grant。
+配对/密钥轮换/卸载通过将来的 `ops bind/unbind/policy` 入口完成；实际配对/grant 保存为受信机器状态，普通 config 不签权限。Secret 不出现在 argv/模板/普通输出；配对变化使旧 binding revision 失效。克隆、备份恢复或账号切换重新核对，不能复用发布者的活 Webhook、Bot ID 或 grant。
 
 ## 3. 三条用户可感知路径
 
@@ -103,15 +103,21 @@ Webhook 唤醒本身可能消耗原生 token，不能称零成本；节约来自
 默认只需正常启用服务并完成一次 default 接收目标配对；想关闭通知或多看维护者信息时，再改少量配置。唯一配置与解析/升级规则归 [Spec §6.2](../roadmap/template-ops-automation-spec.md#configuration)。示例为计划命令，不是本轮已经添加：
 
 ```text
-grokbox runtime ops config show --effective
-grokbox runtime ops config preset maintainer --preview
-grokbox runtime ops config preset maintainer --expect-revision <revision> --confirm
-grokbox runtime ops config set monitor.deepReplay true --expect-revision <revision> --confirm
-grokbox runtime ops config set diagnostics.mode on-request --expect-revision <revision> --confirm
-grokbox runtime ops config apply --file <preferences.json> --expect-revision <revision> --confirm
+grokbox config get ops --effective
+grokbox config preset ops maintainer --preview
+grokbox config preset ops maintainer --expect-revision <revision> --confirm
+grokbox config set ops.monitor.deepReplay true --expect-revision <revision> --confirm
+grokbox config set ops.diagnostics.mode --string on-request --expect-revision <revision> --confirm
+grokbox config apply --file <config-v2.json> --expect-revision <revision> --confirm
 ```
 
 preset 只是版本化偏好，显式覆盖默认保留；预览会指出哪些覆盖仍有效。export 不含 binding/secret/grant/consent。maintenance.mode=low-risk 没有 grant 仍不执行；support.submit 默认 confirm-each；preauthorized-summary 必须单独建立有限发布 grant，不能切 maintainer 后变自动提交。不要直接编辑配置文件或用环境变量绕过安全写入。`enabled=false` 关闭本专项新自动活动，`monitor.enabled=false` 仅停观察，二者都不取消已运行用户任务；旧 off 在升级后保持，不悄悄迁成开。
+
+### 配置底座与迁移（目标）
+
+人读只认 ~/.grokbox/config.json 与 models.json；Box 的真实文件在 durable root，命令由安装描述找 canonical，不能向 symlink 入口 rename。偏好写 config.ops，显式叶覆盖 preset，不再 overrides 包装；实际 binding/grant 分别在受信机器状态，模型选择仍由 models 拥有。portable export 不带身份/secret/grant，不能当完整可恢复备份。
+
+改 desktop/client 不应让通知配对或 issue grant 全部失效；stored configRevision 与业务依赖 digest 分开。保存成功但 daemon 未读取时显示 committed/pending，不能说没保存。远程 Profile 下 Box 设置必须明确作用域，无目标 capability 不得写本机 home。迁移用 config migrate 的显式预览/计划与恢复，不把 upgrade 当自动搬家；旧 writer 不停止/未换代或新旧冲突未裁决时禁止继续。详细规则只在 [配置 Spec](../roadmap/configuration-rebuild-spec.md) 维护。
 
 ## 8. Routine CLI 与 E2E（目标）
 
@@ -130,12 +136,12 @@ preset 只是版本化偏好，显式覆盖默认保留；预览会指出哪些�
 计划操作如下，不是当前可运行的新命令：
 
 ```text
-grokbox runtime ops targets bind default --agent <agent-id> --routine <routine-id> --confirm
-grokbox runtime ops targets bind analysis --agent <analysis-id> --routine <routine-id> --confirm
-grokbox runtime ops config apply --file <routing-preferences.json> --expect-revision <revision> --confirm
-grokbox runtime ops routes explain --incident <id> --intent brief-notice
-grokbox runtime ops routes test --from <synthetic-cases.json>
-grokbox runtime ops targets verify analysis
+grokbox ops targets bind default --agent <agent-id> --routine <routine-id> --confirm
+grokbox ops targets bind analysis --agent <analysis-id> --routine <routine-id> --confirm
+grokbox config apply --file <config-v2.json> --expect-revision <revision> --confirm
+grokbox ops routes explain --incident <id> --intent brief-notice
+grokbox ops routes test --from <synthetic-cases.json>
+grokbox ops targets verify analysis
 ```
 
 explain/test 仅计算已有事实、不发请求；verify 是显式只读健康核验，真正 POST 用 T53 invoke。新增目标并不增加安装总额度；重试、升级、备用、集中报告都计数。custom 接收 Bot 依赖故障 modeld 时，不重启 Host 来“修通知”；只在确定未发送/未接收时用预先同意的备用，ACK 丢失不广播。官方备用仍可能共用故障 Host，整个 Box 离线没有无条件保证。
@@ -147,11 +153,11 @@ explain/test 仅计算已有事实、不发请求；verify 是显式只读健康
 默认 prepare → preview → exact consent → submit → reconcile/status。用户只需审核一次未变化的具体内容，程序处理提交/错误/回执，不让用户抄日志或模型拼 curl。本包默认 support 目标 yoyooyooo/grokbox 来自 package.json，实际发表前还要核验 repo ID、公开性、Issues 可用及作者身份；当前目录的 remote 不能随手改变目标。
 
 ```text
-grokbox runtime ops issue prepare --incident <id> --json
-grokbox runtime ops issue preview <draft-id> --json
-grokbox runtime ops issue submit <draft-id> --expect-digest <sha> --confirm --json
-grokbox runtime ops issue status <submission-id> --json
-grokbox runtime ops issue reconcile <submission-id> --json
+grokbox ops issue prepare --incident <id> --json
+grokbox ops issue preview <draft-id> --json
+grokbox ops issue submit <draft-id> --expect-digest <sha> --confirm --json
+grokbox ops issue status <submission-id> --json
+grokbox ops issue reconcile <submission-id> --json
 ```
 
 这是待实现入口，默认内置 Node REST，不依赖安装 gh；GitHub token 只由受限 publisher 消费，不交给告警 Bot。缺认证/离线仍可本地 prepare/export。提交 unknown 时先对账，不能让另一个 Bot 或 gh 再发一次，搜索不到也不能假定未创建。

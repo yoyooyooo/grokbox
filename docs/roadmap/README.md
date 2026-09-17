@@ -20,6 +20,10 @@ T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修�
 
 [同日多目标/授权发布修订](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)由 T54–T56 落地：默认单命名目标、用户自建 custom Bot、按处理意图等有限规则分流；明确模型/数据/故障域/总成本，内置 Node REST 提 issue 并单独支持有限摘要 grant。模板不是唯一接收者，维护者预设不默认开发布/诊断/维护。专项路径不变，不复制第二份总 Spec。
 
+## 配置底座同轮收口：AH-99 / AH-100
+
+[统一配置重建 Spec](configuration-rebuild-spec.md) / [T57–T60](../tickets/README.md#configuration-rebuild)以破坏重建方式统一人读 config/models、client/Box 作用域、schema/writer 与迁移。ops 偏好不先落第三文件，公开命令收为 config/models/ops；真实配对与权限仍是机器状态。T51/T54 的纯规则、T43/T53 的原生任务可并行，production config 接线依统一底座。[决策](../decisions/2026-09-17-unified-configuration-rebuild.md)记录对旧冻结评论的取舍。本轮未实现或关闭 Linear。
+
 ## Future：以后做的能力
 
 [future/README.md](future/README.md)是未排期范围的唯一目录，按能力命名，不按阶段/date/final-v2复制方案。包含：

@@ -6,9 +6,11 @@
 
 ## Depends-on / Modules
 
+**AH-99/AH-100 集成：** [配置 Spec](../roadmap/configuration-rebuild-spec.md) / T57–T60 拥有通用文件/schema/writer/迁移，本票只拥有 ops 默认与能力规则；纯规则可先行，持久接线依该底座，不先落第三份配置。
+
 纯规则/配置可与 T43 并行，原生支持作为 effective 的能力输入，不等待 T48/T49。复用 ConfigurationWrite 和 T41，不能在模板里另写一套默认值。
 
-kernel `internal/ops/policy.ts`、`ops.ts`、已有 configuration command；box-runtime `internal/io/ops-policy.node.ts`、`monitor-store.node.ts`；CLI `commands/ops.ts`；T46/T50 消费预设与安装规则，维护手册解释，不复制可执行常量。
+kernel `internal/ops/policy.ts`、`ops.ts`、统一 ConfigChange；box-runtime `internal/io/config-store.node.ts`、独立 ops-bindings/ops-grants 与 `monitor-store.node.ts`；CLI `commands/config.ts` 和领域 `commands/ops.ts`；T46/T50 消费预设与安装规则，维护手册解释，不复制可执行常量。
 
 ## Work
 
@@ -16,7 +18,7 @@ kernel `internal/ops/policy.ts`、`ops.ts`、已有 configuration command；box-
 
 正常启用服务的新安装使用 user 基线；仅安装 CLI/GET/import 不启服务/活 Webhook。未配对显示 blocked-unpaired，旧安装 off/预算/覆盖在升级中保留。维护者 preset 不自动开启原生推理、主动探针、维护 grant 或公开 issue；通知对象不因 preset 改为发布者账号。
 
-同一 ops-policy.json 的 preset/presetRevision/overrides、targets/routing/private bindings、maintenanceGrants/issueGrants 用唯一 schema/CAS writer（目标与路由形状由 T54 冻结）；导出只含可移植偏好。实现 config show/preset/set/apply/export/upgrade 的 preview、expected revision 与读回，preset 切换保留显式 overrides，reset 需确认且不生成 grant。environment/临时 flags 不可越过授权或扩大预算。
+偏好写 config.json.ops：preset/presetRevision、实际出现的显式叶、targets/routing，不存 overrides 包装。通用 get/set/apply/preset 复用 T58，不能在 ops 下再造 config 命令。真实配对和 maintenance/issue grants 归机器状态，普通 config 无写许可；便携导出排除身份/secret。preset 切换保留显式覆盖，reset 需确认且不生成 grant，文件迁移由 T59 负责。environment/临时 flags 不可越过授权或扩大预算。
 
 effective 与 requested 分开，返回 valueSource/blockedReason；unknown/无 capability/过期 binding/预算/坏配置均不伪装开启或写回 desired。user 自动首醒上限和 critical 配额按 Spec 唯一 policy 实现，抑制有记录；native 不提供 token 硬门时保留 not_proven。用户确认前的准备/提醒逻辑无 GitHub 网络。
 
@@ -31,7 +33,7 @@ effective 与 requested 分开，返回 valueSource/blockedReason；unknown/无 
 本票创建并运行：
 
 ```bash
-bun test packages/runtime-kernel/test/ops-presets.test.ts test/ops-config-cli.test.ts packages/box-runtime/test/ops-policy-migration.test.ts
+bun test packages/runtime-kernel/test/ops-presets.test.ts test/ops-config-cli.test.ts packages/box-runtime/test/config-ops-migration.test.ts
 bun run typecheck
 ```
 
