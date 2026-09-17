@@ -79,11 +79,23 @@ test("live-only acceptance has one discoverable cross-worktree home rather than 
   }
   const anchors = [...text.matchAll(/<a id="(live-modeld-[a-z-]+)"><\/a>/g)].map(match => match[1]);
   expect(anchors).toHaveLength(6); expect(new Set(anchors).size).toBe(6);
-  for (const id of anchors) expect(text).toContain(`](#${id})`);
+  // The current LIVE home is a per-dimension table, not the former sections
+  // plus a duplicated navigation list. Every stable anchor must retain a real
+  // row with evidence, an explicit gap, a next action and its source links.
+  for (const id of anchors) {
+    const rows = text.split("\n").filter(line => line.startsWith("| ") && line.includes(`<a id="${id}"></a>`));
+    expect(rows).toHaveLength(1);
+    const cells = rows[0]!.split("|").slice(1, -1).map(cell => cell.trim());
+    expect(cells).toHaveLength(4);
+    expect(cells.every(cell => cell.length > 0)).toBe(true);
+    expect(cells[0]).toContain(id.toUpperCase());
+    expect(cells[3]).toMatch(/\]\([^)]*\.md(?:#[^)]*)?\)/);
+    expect(cells[3]).toMatch(/`(?:awaiting-integration|ready|running|passed|failed|blocked|needs-revalidation|superseded)`/);
+  }
   expect(text).toContain("awaiting-integration");
   expect(text).toContain("needs-revalidation");
   expect(text).toContain("feat/box-runtime-v2");
-  expect(text).toContain("review blocker");
+  expect(text).toContain("不把未实现代码或 review 改称 live 待办");
 });
 
 test("modeld specification has one owning section and all implementation tickets route to it", () => {
