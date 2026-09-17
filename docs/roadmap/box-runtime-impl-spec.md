@@ -716,6 +716,8 @@ T38现场校准另有确认门，保留活反例不等于未实现阻断；T40�
 
 本节是本轮**唯一施工规格**，不新增第二份 build bible。范围是 modeld 执行与资源生命周期；策略裁决见 [ADR](../decisions/2026-09-16-modeld-effect-core.md)，责任取证见 [boundary audit](../maintainers/modeld-authority-boundaries.md)。本节细化/替代 S2–S5 中涉及 modeld 的重复启动、粗粒度 authority、共享读取与状态同步机制；未点名的 codec、Host loop、compact、原生持久化和 J13 义务保留。历史已完成票不重开，新工作使用 T43–T50。
 
+**实现与证明路由：** 当前执行核心已接入生产程序、v6 控制协议与有界观察；固定候选的聚合测试、完整回归、基线对照和未签门见 [离线验证报告](../reports/2026-09-17-modeld-effect-core-offline.md)。该报告不是原生/live 放行，最终类型检查与外层超时交互仍有明确缺口。T43–T49 的实现与资格状态分别记录，不将测试通过写成所有票据 Done。
+
 ### S10.1 交付范围、归因与决策门
 
 目标：一次受管理 STEP 的 claim、资格等待、prepare/auth、唯一推理、输出放行和结算可沿一条程序追踪；短暂取证失败不假称已失权，明确失效不能被缓存复活。Effect 管理长寿命资源、等待与取消，而非增加一套权限/Agent 平台。

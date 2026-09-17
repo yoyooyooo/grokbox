@@ -1,6 +1,6 @@
 # T49 — Policy, hot-path qualification and controlled release
 
-Status: offline implementation/qualification harness implemented; final candidate checks in progress; independent/native/live gates not signed. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: fixed-candidate offline aggregate/full suite and benchmark executed; final typing/timeout integration, independent/native/live gates remain open. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -54,4 +54,4 @@ Implemented: all finite `verify:modeld-core` cases route to executable productio
 
 G3 remains the strict five-second policy. Slow first observations are discarded; success in these vectors requires a distinct fresh read within the unchanged finite budget. Persistently slow reads still refuse, as tested. No fifteen-second policy is enabled.
 
-Final fixed-source results belong in the qualification report linked from the Spec. G2 (actual native triptych and final tool consumer), G5 (independent fixed-tip review) and G6 (authorized live cutover) remain required and unsatisfied until their own receipts exist. Code/test completion must not mark these gates done or move them to T50 as optional residue.
+The [fixed-candidate offline report](../reports/2026-09-17-modeld-effect-core-offline.md) records source commit/digest, 416-test release aggregate, 1997-pass full suite with five explicit native skips, the clean baseline comparison and exact remaining claim limits. The final-tree typecheck did not execute and the outer/inner full-budget timeout interaction is not signed; G0 therefore remains partially verified, not complete. G2 (actual native triptych and final tool consumer), G5 (independent fixed-tip review) and G6 (authorized live cutover) remain required and unsatisfied until their own receipts exist. Code/test completion must not mark these gates done or move them to T50 as optional residue.
