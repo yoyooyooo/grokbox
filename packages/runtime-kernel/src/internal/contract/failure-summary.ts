@@ -162,7 +162,10 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
     upstream_interrupted: "The upstream model endpoint ended generation without completing the requested output.",
     output_limit: "The upstream model output reached its generation limit before completion.",
     content_filter: "The upstream model endpoint stopped generation under its content policy.",
-    stream_invalid: summary.diagnostic?.normalizeCause === "missing_finish" ? "The model stream ended without a valid completion reason."
+    stream_invalid: summary.diagnostic?.normalizeCause === "undeclared_tool" ? "The model returned a tool name that was not declared for this STEP."
+      : summary.diagnostic?.normalizeCause === "tool_declaration_mismatch" ? "The encoded provider tool declarations did not match this STEP; the request was stopped before dispatch."
+      : summary.diagnostic?.normalizeCause === "tool_identity_conflict" ? "The model stream changed a tool identity before completion."
+      : summary.diagnostic?.normalizeCause === "missing_finish" ? "The model stream ended without a valid completion reason."
       : summary.diagnostic?.normalizeCause === "unsupported_finish_reason" ? "The model stream ended with an unsupported completion reason."
       : summary.diagnostic?.normalizeCause?.startsWith("tool_arguments") || summary.diagnostic?.normalizeCause === "open_tools_at_finish" ? "The model stream did not provide a valid, complete tool call."
       : "The model output failed stream-integrity validation.",
@@ -186,7 +189,10 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
   if (summary.progress?.backendAttempts === 0) bits.push("No model request was dispatched by this STEP.");
   if (host.receivedOutput === false) bits.push("No model output was received by this STEP.");
   else if (host.receivedOutput === true && summary.category === "upstream_transport") bits.push("Some output was received before the interruption.");
-  if (host.toolsReleased === 0) bits.push("No tools were released by this STEP.");
+  if (host.toolsReleased === 0) {
+    bits.push("No tools were released by this STEP.");
+    if (summary.diagnostic?.normalizeCause === "undeclared_tool") bits.push("Earlier STEPs may already have changed state; reconcile before replaying the task.");
+  }
   else if (host.toolsReleased !== undefined && host.toolsReleased > 0) bits.push("Tools had already been released; do not replay the whole task automatically.");
   if (summary.progress?.backendAttempts === 1) bits.push("No automatic retry was made.");
   else if (summary.progress && summary.progress.backendAttempts > 1) bits.push(`${summary.progress.backendAttempts} model attempts were made.`);

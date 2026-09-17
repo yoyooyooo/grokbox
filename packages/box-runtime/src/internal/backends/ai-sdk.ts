@@ -7,7 +7,7 @@ import {
   EnvelopeError,
   ENCODED_PROVIDER_REQUEST_MAX_BYTES,
   StreamEvidence,
-  annotateStreamFailure, annotateFailureSummary, failureSummaryFromObservation,
+  annotateStreamFailure, annotateFailureSummary, failureSummaryFromObservation, invalidStream,
   type ContextSnapshot,
   type InferenceEvent,
 } from "@grokbox/runtime-kernel/contract";
@@ -20,6 +20,7 @@ import { backendFailureFromUnknown } from "./provider-error.ts";
 import { observeBackendFailure, backendFailureObservation } from "./failure-observation.ts";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
+import { ToolIdentityObserver } from "./tool-identity-audit.ts";
 
 export type UnsealAuth = (lease: AuthLease) => string;
 
@@ -39,11 +40,14 @@ function bodyBytes(init?: RequestInit): number {
   return 0;
 }
 
-function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit): typeof fetch {
+function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi): typeof fetch {
   const run = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     audit.evidence.setCount("requestBytes", bodyBytes(init));
     if (bodyBytes(init) > ENCODED_PROVIDER_REQUEST_MAX_BYTES) {
       throw new BackendFailure("envelope_too_large");
+    }
+    if (typeof init?.body !== "string" || !identity.request(init.body, api)) {
+      throw invalidStream("tool_declaration_mismatch", "provider_request");
     }
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     try {
@@ -119,8 +123,9 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: 1, pipeline: "provider_v2_single_call" });
         evidence.setCount("declaredTools", payload.tools.length);
         if (payload.routeId) evidence.providerRoute({ id: payload.routeId, api: payload.api });
-        const audit = new ProviderStreamAudit(payload.api, evidence);
-        const normalizer = createSdkStreamNormalizer({ declaredTools: new Set(payload.tools.map(t => t.name)), evidence });
+        const identity = new ToolIdentityObserver(payload.tools.map(t => t.name), evidence);
+        const audit = new ProviderStreamAudit(payload.api, evidence, identity);
+        const normalizer = createSdkStreamNormalizer({ declaredTools: new Set(payload.tools.map(t => t.name)), evidence, toolIdentity: identity });
         let iterator: AsyncIterator<unknown> | undefined;
         let queuePeak = 0;
         const safeFailure = (error: unknown) => {
@@ -136,7 +141,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         };
         const producer = Effect.gen(function* () {
           yield* Effect.addFinalizer(() => Effect.sync(() => {
-            ac.abort(); audit.cancelled(); audit.dispose();
+            ac.abort(); audit.cancelled(); audit.dispose(); identity.dispose();
             // Abort first. A non-cooperative iterator.return must not hold Scope
             // shutdown hostage; late rejection is consumed, never retried.
             try { void Promise.resolve(iterator?.return?.()).catch(() => undefined); } catch { /* cleanup only */ }
@@ -146,7 +151,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
               let secret: string;
               try { secret = unseal(lease); }
               catch (error) { throw observeBackendFailure(new BackendFailure("auth_mismatch"), "auth", error); }
-              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit) });
+              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit, identity, payload.api) });
               const model = payload.api === "responses" ? openai.responses(payload.model) : openai.chat(payload.model);
               const { toolChoice, ...settings } = payload.settings;
               const tools = payload.tools.map(tool => ({ type: "function" as const, name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));

@@ -6,6 +6,7 @@ import {
 import { backendFailureFromUnknown } from "./provider-error.ts";
 import { incompleteBackendFinish } from "./failure-observation.ts";
 import { admitNonstandardOpenaiEvent, createNonstandardOpenaiStreamState } from "./nonstandard-endpoint.ts";
+import type { ToolIdentityObserver } from "./tool-identity-audit.ts";
 
 type ToolNames = Map<string, string>;
 function toolName(tools: ToolNames, id: string, incoming?: string): string {
@@ -83,7 +84,7 @@ export function mapSdkStreamForHost(part: unknown, tools: ToolNames, nonstandard
 }
 /** Both production and conformance use this state machine. A terminal is held
  * until EOF, so late SDK/transport failures cannot hide behind a released success. */
-export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet<string>; evidence?: StreamEvidence } = {}) {
+export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet<string>; evidence?: StreamEvidence; toolIdentity?: ToolIdentityObserver } = {}) {
   const names = new Map<string, string>(), state = emptyStreamValidation();
   const nonstandard = createNonstandardOpenaiStreamState(), evidence = options.evidence ?? new StreamEvidence();
   let terminal: Extract<InferenceEvent, { type: "backend_finish" }> | undefined;
@@ -99,6 +100,9 @@ export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet
       evidence.increment("sdkParts"); evidence.first("sdkFirstPartMs"); evidence.note("sdk", r.type);
       if (r.type === "finish") evidence.sdkFinish(r.finishReason);
       if (r.invalid === true) evidence.invalidTool();
+      if (r.type === "tool-input-start" || r.type === "tool-call-streaming-start" || r.type === "tool-call") {
+        options.toolIdentity?.sdk(r.id ?? r.toolCallId, r.toolName ?? r.name);
+      }
       try {
         if (r.type === "finish") {
           const summary = evidence.snapshot(), audit = summary.finishAudit;

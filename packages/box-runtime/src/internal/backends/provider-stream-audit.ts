@@ -2,6 +2,7 @@ import { BackendFailure, CANONICAL_OUTPUT_MAX_BYTES, ChunkedText, StreamEvidence
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
 import { interruptedProviderFinish } from "./failure-observation.ts";
 import type { OpenaiPromptApi } from "./openai-prompt-adapter.ts";
+import type { ToolIdentityObserver } from "./tool-identity-audit.ts";
 
 // Validation before the SDK can discard raw finish reasons or trailing tool
 // arguments. Bytes are never rewritten and never enter outward diagnostics.
@@ -33,7 +34,7 @@ export class ProviderStreamAudit {
     if (!this.ended && !this.failed) { this.failed = true; this.settleAudit("rejected"); }
   }
   private readonly tools = new Map<string, Tool>();
-  constructor(private readonly api: OpenaiPromptApi, readonly evidence: StreamEvidence) { evidence.providerStarted(); }
+  constructor(private readonly api: OpenaiPromptApi, readonly evidence: StreamEvidence, private readonly toolIdentity?: ToolIdentityObserver) { evidence.providerStarted(); }
   headers(status: number, headers?: Headers): void {
     this.evidence.httpStatus(status); this.evidence.first("headersMs"); this.evidence.provider("headers");
     let requestId: { header: typeof PROVIDER_REQUEST_ID_HEADERS[number]; value: string } | undefined;
@@ -82,6 +83,7 @@ export class ProviderStreamAudit {
     return t;
   }
   private identity(t: Tool, id: unknown, name: unknown): void {
+    if (name !== undefined) this.toolIdentity?.provider(id ?? t.id, name);
     for (const [key, value] of [["id", id], ["name", name]] as const) {
       if (value === undefined || value === "") continue;
       if (typeof value !== "string" || value.length > 1024 || (t[key] !== undefined && t[key] !== value)) throw invalidStream("tool_identity_conflict", this.site());

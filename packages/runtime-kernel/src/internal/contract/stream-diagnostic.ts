@@ -1,14 +1,15 @@
 import { addFinishField, observeFinishField, projectFinishAudit, projectToolTerminalAudit, projectProviderHttp, projectProviderRoute, type FinishAudit, type ToolTerminalAudit, type ProviderHttpObservation, type ProviderRouteObservation } from "./provider-observation.ts";
 import { projectOwnershipReadObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
+import { projectToolIdentityAudit, type ToolIdentityAudit } from "./tool-identity-observation.ts";
 /** Payload-free, request-local evidence shared by modeld and the SDK/Effect-free Host. */
 export const NORMALIZE_CAUSES = [
   "missing_finish", "unsupported_finish_reason", "open_tools_at_finish", "tool_arguments_invalid",
-  "tool_arguments_mismatch", "tool_identity_conflict", "tool_id_collision", "undeclared_tool",
+  "tool_arguments_mismatch", "tool_identity_conflict", "tool_id_collision", "undeclared_tool", "tool_declaration_mismatch",
   "parallel_tools", "sdk_invalid_tool", "unsupported_sdk_part", "invalid_event_shape",
   "event_after_finish", "conflicting_finish_reason", "empty_output", "invalid_usage", "invalid_terminal", "terminal_binding_mismatch", "stream_budget",
 ] as const;
 export type NormalizeCause = typeof NORMALIZE_CAUSES[number];
-export const STREAM_REJECT_SITES = ["provider_chat_wire", "provider_responses_wire", "sdk_part", "sdk_tool", "sdk_finish", "canonical_event", "canonical_finish", "host_event", "host_tool", "host_terminal", "wire_event", "wire_terminal", "stream_budget", "authority_check"] as const;
+export const STREAM_REJECT_SITES = ["provider_request", "provider_chat_wire", "provider_responses_wire", "sdk_part", "sdk_tool", "sdk_finish", "canonical_event", "canonical_finish", "host_event", "host_tool", "host_terminal", "wire_event", "wire_terminal", "stream_budget", "authority_check"] as const;
 export type StreamRejectSite = typeof STREAM_REJECT_SITES[number];
 export const STREAM_EVENT_TYPES = ["unknown", "data", "done", "eof", "body_error", "stream-start", "response-metadata", "start", "start-step", "finish-step", "text-start", "text-delta", "text-end", "reasoning", "reasoning-start", "reasoning-delta", "reasoning-end", "tool-input-start", "tool-input-delta", "tool-input-end", "tool-call-streaming-start", "tool-call-delta", "tool-call", "tool-error", "tool-result", "finish", "abort", "error", "raw", "source", "file", "text_delta", "reasoning_delta", "tool_start", "tool_delta", "tool_complete", "backend_finish", "accepted", "terminal", "response.completed", "response.failed", "response.incomplete", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.output_item.added", "response.output_item.done"] as const;
 export type StreamEventType = typeof STREAM_EVENT_TYPES[number];
@@ -39,6 +40,7 @@ export type StreamSummary = {
   wireToolValidation?: "not_instrumented" | "pending" | "validated" | "rejected" | "incomplete" | "not_applicable";
   finishAudit?: FinishAudit;
   terminalAudit?: ToolTerminalAudit;
+  toolIdentity?: ToolIdentityAudit;
   http?: ProviderHttpObservation;
   route?: ProviderRouteObservation;
   engine?: { api: "chat" | "responses"; aiVersion: string; providerVersion: string; adapterRevision: 1; pipeline?: "provider_v2_single_call" };
@@ -110,6 +112,8 @@ export function projectStreamSummary(value: unknown): StreamSummary | undefined 
     const http = projectProviderHttp(own(value, "http")), route = projectProviderRoute(own(value, "route"));
     if (finishAudit) out.finishAudit = finishAudit;
     if (terminalAudit) out.terminalAudit = terminalAudit;
+    const toolIdentity = projectToolIdentityAudit(own(value, "toolIdentity"));
+    if (toolIdentity) out.toolIdentity = toolIdentity;
     if (http) out.http = http;
     if (route) out.route = route;
     const engine = own(value, "engine"), api = member(own(engine, "api"), ["chat", "responses"]);
@@ -187,6 +191,7 @@ export class StreamEvidence {
     this.value.finishAudit = addFinishField(this.value.finishAudit, observeFinishField(reason, present, sequence));
   }
   terminalAudit(audit: ToolTerminalAudit): void { this.value.terminalAudit = projectToolTerminalAudit(audit); }
+  toolIdentity(audit: ToolIdentityAudit): void { this.value.toolIdentity = projectToolIdentityAudit(audit); }
   providerHttp(http: ProviderHttpObservation): void { this.value.http = projectProviderHttp(http); }
   providerRoute(route: ProviderRouteObservation): void { this.value.route = projectProviderRoute(route); }
   sdkFinish(reason: unknown): void { this.value.sdkFinishReason = observedFinishReason(reason); }
