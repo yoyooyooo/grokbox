@@ -26,6 +26,10 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
+## Cross-worktree live acceptance
+
+[`LIVE` integration validation backlog](tickets/LIVE-integration-validation.md) is the long-lived scheduling/receipt home for acceptance that actually needs native Host, loaded Host/modeld, a real Provider, the original App or restart/rollback. Finish code, offline proof and code review in feature worktrees; register live-only entries with source commits and dependencies, then normally validate a fixed combined `feat/box-runtime-v2` artifact in one approved window. The queue records integration mappings, budgets, stop/rollback conditions and per-entry results. It neither authorizes cutover nor turns unresolved code/review into live-only residue; completed entries are invalidated explicitly when relevant artifacts change.
+
 ## Roadmap
 
 [Roadmap](roadmap/README.md) distinguishes current Spec/Tickets, the specialized HSO contract, [future product/extensions](roadmap/future/README.md) and [historical reports](reports/README.md). Web UI is accepted but not scheduled; its page/interaction contract lives in [future/webui-console](roadmap/future/webui-console.md). T41 monitoring/storage arrives before pages. Future presence is not permission or an implementation claim; old filenames retained as short redirects do not own content.

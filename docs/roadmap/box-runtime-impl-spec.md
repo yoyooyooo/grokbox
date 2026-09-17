@@ -856,7 +856,7 @@ modeld 不在线时 CLI 仍能作现有只读诊断；monitor/SQLite 不能 gate
 | M4 · 验证与发布 | T49 | 固定策略、热路径基准、独立 review、受控灰度/回滚 | 旧运行路径和未声明兼容入口 |
 | 非主链 · residue | T50 | 一次 review/fix/re-look 后非阻断遗留 | 不自动派生无限返工/线上动作 |
 
-T43 不要求先取得新的上游能力；当前 gate 保留也可以是合法审查结论。T49 缺少原生/live review 时明确 `not_live_qualified`，不能关闭所有生产门。独立分支是本轮集成线；不自动合回 v2、push、升级真实 Host 或默认模型 spend。局部规格/实现/测试依序提交，线上切换必须满足当前身份/profile、限定对象与明确预算授权。
+T43 不要求先取得新的上游能力；当前 gate 保留也可以是合法审查结论。T49 缺少原生/live review 时明确 `not_live_qualified`，不能关闭所有生产门。独立分支承接本轮代码/离线验证，不自动合回 v2、push、升级真实 Host 或默认模型 spend。局部规格/实现/测试依序提交；跨 worktree 的 live-only 条目、集成提交映射及回执统一放在 [LIVE 长期验收票](../tickets/LIVE-integration-validation.md)。默认先合入 v2、固定共同制品再集中切换，线上切换仍须满足当前身份/profile、限定对象与明确预算授权。源码/测试/独立代码复审尾项不得移入 LIVE，登记也不使任何生产门变绿。
 
 ### S10.8 可执行 Acceptance 与判定边界
 

@@ -12,6 +12,8 @@ Append dated sections after a milestone's review -> fix -> one re-look. Each ent
 
 Do not auto-dispatch the accumulator to the implementer, auto-close it, trigger notifications, create goals, run model requests or restart services. The owner chooses a later triage. Absence of an independent reviewer is `review_pending`, not `review_passed` and not a residue-based release waiver.
 
+Native/live-only acceptance across worktrees is scheduled in [`LIVE`](LIVE-integration-validation.md), not accumulated as optional T50 residue. The source ticket continues to own required acceptance; the live ticket owns integration mappings, windows and per-artifact receipts. Neither ticket can waive a missing independent code review.
+
 ## Entry format
 
 ```text

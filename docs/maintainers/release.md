@@ -48,6 +48,10 @@ npm trust list grokbox
 This readback confirms npm configuration visibility; only an authorized real
 release proves the OIDC exchange end to end.
 
+## Cross-worktree native/live acceptance
+
+Before changing a running Host/modeld, consult the continuing [`LIVE` integration validation ticket](../tickets/LIVE-integration-validation.md). Feature worktrees finish code, offline proof and review first; live-only items retain source commits and are normally tested together after mapping to a fixed `feat/box-runtime-v2` integration candidate. Build/preflight can run without switching the active shim, profile or processes. Each live item needs its own approved target/budget, actual artifact identities, oracle and rollback receipt; a successful restart or package publication is not blanket acceptance. This queue does not change the npm release/tag authority described above.
+
 ## Candidate gate
 
 ```bash

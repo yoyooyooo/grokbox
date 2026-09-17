@@ -70,6 +70,22 @@ test("unknown modeld proof case exits nonzero without running or declaring a pas
   expect(result.stdout).not.toContain("passed-offline");
 });
 
+test("live-only acceptance has one discoverable cross-worktree home rather than a code-review waiver", () => {
+  const file = "docs/tickets/LIVE-integration-validation.md";
+  const text = readFileSync(resolve(root, file), "utf8");
+  for (const router of ["AGENTS.md", "docs/README.md", "docs/tickets/README.md", "docs/maintainers/release.md",
+    "docs/tickets/T49-modeld-qualification-and-release.md", "docs/tickets/T50-modeld-review-residue.md"]) {
+    expect(readFileSync(resolve(root, router), "utf8")).toContain("LIVE-integration-validation.md");
+  }
+  const anchors = [...text.matchAll(/<a id="(live-modeld-[a-z-]+)"><\/a>/g)].map(match => match[1]);
+  expect(anchors).toHaveLength(6); expect(new Set(anchors).size).toBe(6);
+  for (const id of anchors) expect(text).toContain(`](#${id})`);
+  expect(text).toContain("awaiting-integration");
+  expect(text).toContain("needs-revalidation");
+  expect(text).toContain("feat/box-runtime-v2");
+  expect(text).toContain("review blocker");
+});
+
 test("modeld specification has one owning section and all implementation tickets route to it", () => {
   const spec = readFileSync(resolve(root, "docs/roadmap/box-runtime-impl-spec.md"), "utf8");
   expect(spec.match(/<a id="modeld-effect-core"><\/a>/g)?.length).toBe(1);

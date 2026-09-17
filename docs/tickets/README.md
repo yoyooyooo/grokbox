@@ -4,6 +4,10 @@
 
 [策略 plan](../roadmap/box-runtime-plan.md) 拥有 Phases 0–4；[单轨重建实施规格](../roadmap/box-runtime-impl-spec.md) 拥有唯一目标树、ports、执行与证明；**当前交付/施工顺序以 [Spec S0](../roadmap/box-runtime-impl-spec.md#stable-delivery) 为准**。原交付使用同一序列T20–T41，当前 modeld 执行核心扩展由下方 T43–T50 承接；T37–T40承接归属门、身份writer/test2、原生往返和持久发布，T41新增浏览器前的持续观测/SQLite/incident。R2的ME-*只作历史映射，不新增第二套进度账。源码/测试说明实现事实，Ticket 保存范围、缺口与关闭证据；open 不等于完全没有代码。
 
+## Cross-worktree live acceptance — continuing ticket
+
+[`LIVE — integration validation backlog`](LIVE-integration-validation.md) collects only native/live-dependent acceptance across feature worktrees. Use feature-scoped entry IDs rather than another shared T-number; register source commit/range and dependencies, map them to a fixed v2 integration commit, and validate matching Host/profile/preload/modeld artifacts together in an approved window. Code, offline regressions and independent code review remain in their source tickets. `passed` is per entry and artifact; this continuing ticket is not closed by one deployment. The first registered entries cover the modeld core's native coverage, cutover, authority, tool-consumer, Provider/App and restart/rollback gates; no live action has run merely by creating the entries.
+
 <a id="modeld-effect-core"></a>
 ## Current change — modeld execution-core consolidation
 

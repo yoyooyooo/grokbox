@@ -35,6 +35,8 @@ Fault-inject source cancellation, waiter timeout, generation rollover, unreturne
 
 Assert malformed or absent diagnostics cannot grant authority or change the original terminal. Verify no modeld dependency for explicit direct ownership diagnosis. Packed Node uses the built graph, Host/preload contains neither Effect nor provider SDK, and no test-only source capability enters the published bundle. Structured privacy tests use sentinel secrets.
 
+Native/App-dependent observation acceptance is scheduled in [LIVE-MODELD-APP](LIVE-integration-validation.md#live-modeld-app) and actual tool-consumer evidence in [LIVE-MODELD-TOOLS](LIVE-integration-validation.md#live-modeld-tools). These entries remain unrun until an approved fixed v2 artifact/window exists; they do not carry code, offline test or review blockers out of this ticket.
+
 ## Forbidden / non-goals
 
 No observer repair, new database/version for symmetry, transport-error guessing, fabricated native pixel proof, full App patch, generic collector manager or migration of J13 Host journal ownership. Do not move mandatory ledger persistence into an optional logging queue.
