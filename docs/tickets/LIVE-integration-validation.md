@@ -61,7 +61,9 @@ Status: awaiting-integration
 
 以下条目只登记本轮实际未取到的原生/live 证据；并不表示其他并行功能没有 live 需求。共同来源是 [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)、[T47](T47-modeld-authority-state-machine.md)、[T48](T48-modeld-causal-observation.md)、[T49](T49-modeld-qualification-and-release.md)。Source branch `feat/modeld-effect-core`，核心候选 `6d0e914`，deadline 收口 `743daea`；后续复审修复由 T49 的当前候选记录追加。
 
-**共同集成状态：** source → v2 映射、固定 integrated candidate、实际加载 artifact/native identities 均 `not-recorded`。**共同授权状态：** live 目标、请求/费用上限、窗口与变更许可均 `not-selected`。因此所有条目仍为 `awaiting-integration`，没有运行或通过回执。T49 的非 live 复审门独立保留，不转移到此票。当前已完成的离线事实见 [固定候选报告](../reports/2026-09-17-modeld-effect-core-offline.md) 及其后续回执；五秒策略未放宽。
+**共同集成状态（2026-09-17）：** 已按用户明确指令线性合入 v2：原分支 `967b409` 的十一项提交变基到 v2 `36e6dc5`，再将 v2 快进到 `b57574844428219ead9b9ee18dce90ad3c8535fc`。核心/期限提交映射为 `6d0e914 → ce942f2`、`743daea → e6c5bf5`；全部映射、组合树验证和测试制品摘要见 [v2 集成回执](../reports/2026-09-17-modeld-v2-integration.md)。该组合树已重新通过类型检查、全库与制品离线验证，不沿用旧分支的测试计数。
+
+**共同阻断与授权状态：** T49 G5 仍为 `review_pending`，其非 live 代码复审义务留在来源票，不因本次合入而豁免。live 目标、请求/费用上限、窗口与变更许可均 `not-selected`；实际加载 artifact/native identities 仍 `not-recorded`。因此六条进入 `blocked`（集成已完成，复审/原生窗口未满足），没有任何 live 运行或通过回执。下次部署必须固定当时的 v2 提交并核对是否仍覆盖本回执；五秒策略未放宽。
 
 | 条目 | 所需现实 | 依赖 |
 |---|---|---|
@@ -74,7 +76,7 @@ Status: awaiting-integration
 
 <a id="live-modeld-native"></a>
 ### LIVE-MODELD-NATIVE — 原生接点与三路对照
-Status: awaiting-integration
+Status: blocked — mapped to v2; T49 review and authorized native window pending
 
 来源：T43/T45/T49，当前 [原生覆盖审查](../maintainers/modeld-authority-boundaries.md)。必须读取/运行固定原生版本；合成的 `allowed/bound` 或 source-shaped fixture 不能证明原生 per-Agent/per-TURN 授权覆盖。优先在隔离原生环境比较未补丁官方路径、补丁官方 passthrough、补丁 managed 路径；不为对照反复抢占现役环境。
 
@@ -84,7 +86,7 @@ Status: awaiting-integration
 
 <a id="live-modeld-cutover"></a>
 ### LIVE-MODELD-CUTOVER — 成套加载与版本身份
-Status: awaiting-integration
+Status: blocked — mapped to v2; T49 review and authorized native window pending
 
 来源：T44/T49、[T40](T40-persistent-release-and-rollback.md)。磁盘构建通过不足以证明进程已加载。依赖 NATIVE 后，从固定 v2 候选排空并切换 Host/profile/preload/modeld，读取实际加载的 generation、源码/制品摘要和协议。
 
@@ -94,7 +96,7 @@ Oracle：新协议一致、`doctor`/运行状态无阻断，旧 peer 只有有�
 
 <a id="live-modeld-authority"></a>
 ### LIVE-MODELD-AUTHORITY — 原生取证恢复与取消
-Status: awaiting-integration
+Status: blocked — mapped to v2; T49 review and authorized native window pending
 
 来源：T45/T47/T49。离线已证明慢首次读取后重新获取新鲜证据、共享等待者取消、总期限与同 STEP 不重推理；这里补实际 Gateway/native source 的生命周期证据。依赖 CUTOVER。
 
@@ -104,7 +106,7 @@ Status: awaiting-integration
 
 <a id="live-modeld-tools"></a>
 ### LIVE-MODELD-TOOLS — 审批等待后的实际工具消费
-Status: awaiting-integration
+Status: blocked — mapped to v2; T49 review and authorized native window pending
 
 来源：T47/T49、[Host 主链](../maintainers/host-inbound-agent-loop.md)。modeld 的材料放行并不证明原生工具执行，尤其不能代替长审批等待后的最后一道原生门。依赖 AUTHORITY。
 
@@ -114,7 +116,7 @@ Status: awaiting-integration
 
 <a id="live-modeld-app"></a>
 ### LIVE-MODELD-APP — 真实模型与原版 App 状态
-Status: awaiting-integration
+Status: blocked — mapped to v2; T49 review and authorized native window pending
 
 来源：T48/T49、[观测 runbook](../maintainers/run-outcome-observation.md)、[Working 语义](../maintainers/composer-working-status.md)。真实 Provider 的终态、App 消息发送确认、当前 session 与侧栏聚合状态各有独立 owner。依赖 CUTOVER，含工具情况依赖 TOOLS。
 
@@ -124,7 +126,7 @@ Status: awaiting-integration
 
 <a id="live-modeld-restart"></a>
 ### LIVE-MODELD-RESTART — 旧代隔离与恢复退路
-Status: awaiting-integration
+Status: blocked — mapped to v2; T49 review and authorized native window pending
 
 来源：T44/T46/T49、[官方回退验收](../maintainers/official-rollback-acceptance.md)。离线临时进程/LevelDB 已证明所有权与防重放；现役的 supervisor、已加载 Host、配置和 App 恢复需要组合回执。依赖同窗口基本路径通过。
 
@@ -134,4 +136,4 @@ Status: awaiting-integration
 
 ## 已完成回执
 
-暂无。本票创建不执行 live，尚未选择任何集成制品或 live 窗口。后续逐条追加带固定候选、时间、结果、证据范围和失效条件的回执；不要把此行改成“一次重启全部通过”。
+暂无 **live 验收**回执。v2 源码集成与组合树离线回执已记录在上方，但没有选择/加载 live 制品或执行 live 窗口。后续逐条追加带固定候选、时间、结果、证据范围和失效条件的回执；源码合入、构建成功或一次重启不能变成“全部 live 通过”。

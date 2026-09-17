@@ -1,6 +1,6 @@
 # T49 — Policy, hot-path qualification and controlled release
 
-Status: code/deadline/type and final-candidate offline gates verified; independent review externally blocked (`review_pending`); native/live acceptance queued for the v2 integration artifact. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: linearly integrated into v2 and combined-candidate offline gates verified; independent review externally blocked (`review_pending`); native/live acceptance not run. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -27,7 +27,7 @@ Prove the new single execution path reduces avoidable coordination without weake
 
 **G5 independent review:** one review, fix, one re-look per milestone per project process. Fixed-tip P0/P1 regressions block. No self-signed production acceptance or model-name build dependency. Honest nonblocking residuals go to T50; failed mandatory gates do not.
 
-**G6 live:** explicit target(s), exact artifacts, source/profile preflight, provider request/cost limit and stop conditions. Drain/stop new managed work, terminate old service generation without replay, switch Host/preload/modeld together, then bounded canary. Restore prior artifact/policy on failure; never replay failed messages or copy live permits across generations. Original v2 and other Bots remain untouched until a separately authorized integration/release action. Cross-worktree scheduling/receipts are owned by [LIVE-MODELD-CUTOVER](LIVE-integration-validation.md#live-modeld-cutover), [APP](LIVE-integration-validation.md#live-modeld-app) and [RESTART](LIVE-integration-validation.md#live-modeld-restart). Default execution is from a fixed combined v2 candidate, not this unmerged worktree.
+**G6 live:** explicit target(s), exact artifacts, source/profile preflight, provider request/cost limit and stop conditions. Drain/stop new managed work, terminate old service generation without replay, switch Host/preload/modeld together, then bounded canary. Restore prior artifact/policy on failure; never replay failed messages or copy live permits across generations. Original v2 and other Bots remain untouched until a separately authorized integration/release action. Cross-worktree scheduling/receipts are owned by [LIVE-MODELD-CUTOVER](LIVE-integration-validation.md#live-modeld-cutover), [APP](LIVE-integration-validation.md#live-modeld-app) and [RESTART](LIVE-integration-validation.md#live-modeld-restart). Default execution is from a fixed combined v2 candidate, not an unmerged feature worktree. This branch's source was explicitly authorized and linearly integrated on 2026-09-17; that action does not grant live release or waive G5.
 
 ## Acceptance
 
@@ -47,6 +47,8 @@ The commands above close only G0/G1 and those G4 scenarios actually executed. G2
 No dependency sweep, generic performance platform, automatic repair/monitoring, old/new dual execution mode, policy changes disguised as observability, reassignment of user's production Bot, or silently skipped mandatory proof. No long-lived canary/listener left after a bounded run.
 
 ## Exit evidence
+
+**Current integration receipt (2026-09-17):** under the user's explicit linear-integration instruction, eleven feature commits were rebased onto existing v2 `36e6dc5`, preserving its MiniMax/provider/delivery fixes, and v2 was fast-forwarded to `b57574844428219ead9b9ee18dce90ad3c8535fc`. [The integration report](../reports/2026-09-17-modeld-v2-integration.md) maps all original commits to their rebased counterparts and records actual conflict handling and the combined tree's typecheck, 66 targeted tests, 2054-pass full suite with six native skips, and 424-pass rebuilt offline release aggregate. No merge commit, remote push or live cutover occurred. G5 remains explicitly pending. Historical reports below retain the hashes of the trees they actually tested; they do not replace this combined-candidate verification.
 
 Implemented: all finite `verify:modeld-core` cases route to executable production-path suites. `release-offline` aggregates lifecycle/evidence/state/authority/observation, packed Node replacement, import/provenance and package/privacy checks. The runner records exact source revision/digest, installed SDK/compiler pins and explicit native/review/live claim limits; source changes during proof fail the run.
 
