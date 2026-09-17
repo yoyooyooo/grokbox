@@ -27,7 +27,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
-- [Template Bot 运维闭环 Spec](roadmap/template-ops-automation-spec.md)：2026-09-16 新增专项施工合同，T43–T50；持续采样 → 原生 Webhook/Payload → 官方模板 Bot 有界诊断/主动告警 → 有限预授权静默维护。仅 Spec，不代表现役启用；[决策](decisions/2026-09-16-template-ops-automation.md)明确 HSO 人工 gate 的狭窄预授权扩展，[操作手册](maintainers/template-ops-automation.md)区分当前命令与目标能力。
+- [Template Bot 运维闭环 Spec](roadmap/template-ops-automation-spec.md)：T43–T53，2026-09-17 补充 user 默认小提醒、maintainer 手动配置、用户确认后 issue 及 Agent/Routine 创建更新与真实 Webhook E2E。仅 Spec，不代表现役启用；[初始决策](decisions/2026-09-16-template-ops-automation.md)限定维护预授权，[补充决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)区分预设/成本/发布权限，[操作手册](maintainers/template-ops-automation.md)含配置与支持流程。
 
 ## Cross-worktree live acceptance
 
@@ -69,7 +69,7 @@ The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normaliza
 
 ## Freshness
 
-Template ops 的原生 routine/模板克隆/Payload/认证、工具权限、安装绑定或预授权范围变化时，复核 [专项资格与失效条件](roadmap/template-ops-automation-spec.md#baseline)；模板发布和配对不等于维护授权。
+Template ops 的原生 routine/模板克隆/Payload/认证、preset 默认与成本、issue 用户确认来源/目标、工具权限、安装绑定或预授权范围变化时，复核 [专项资格与失效条件](roadmap/template-ops-automation-spec.md#baseline)；模板发布和配对不等于维护授权。
 
 Review the relevant current homes when any of these change:
 

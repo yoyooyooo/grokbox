@@ -334,6 +334,12 @@ App Label (`title`) is display-only. User text is optional; grokbox may append `
 
 `agents ownership <targets...>` is a read-only Host-backed inspection of official Server registrations, not a harness setter. It accepts 1–32 named/public-UUID targets, makes one native Server List call, and compares finite Server identity/harness fields with local before/after observations. Server credentials stay inside the Host; the explicit getHostStatus extension does not run on ordinary status calls. Unknown bridge/auth/identity, duplicates, unstable local evidence or Gateway changes must not produce a confirmed result. Classes are confirmed_box / confirmed_temporal / conflict / unconfirmed; App route and migration observations are separate facets. When the Host channel is official, the projection adds blocker `host_channel_not_enabled` and `next` is `grokbox host start` (aligned with `doctor.next`), not identity-lost wording. When live Host SHA does not match the reviewed profile, the projection adds blocker `host_source_mismatch` and `next` is a copy-paste `grokbox runtime profile observe --from /home/box/sand-host/host-main.cjs then grokbox runtime profile write --sha` plus the full 64-hex live digest (never a placeholder). If the live digest is not yet known, `next` is observe-only. confirmed_box is not production approval, ownership inspection never reconciles/migrates/repairs, and the command does not yet automatically guard send/models-use. Implemented across direct Gateway and daemon transports; [harness current home](maintainers/transcript-harness-box-vs-server.md#read-only-ownership-inspection-contract) owns details.
 
+### 7.1.1 Agent Routine 管理（2026-09-17 目标，当前未实现）
+
+[T53](tickets/T53-agent-routines-cli.md) / [专项 Spec §10.1](roadmap/template-ops-automation-spec.md#agent-routines)新增通用原生 Routine 管理，并让 `agents create/update --routines-from` 复用同一 apply 用例；不要求开启 ops。现有 create/update 仍仅支持 profile/settings，template routines 类型及 export automations 备份不能冒充 CRUD。
+
+新 Routine 默认 disabled，Webhook 是事件 trigger，不隐式附带 cron。创建 Agent 后任务部分失败保留 exact ID/nonce 与恢复阶段，不自动删掉重建；省略的已有任务不删。真实 HTTP invoke 必须明确确认唤醒/费用，不能用 sendPrompt 或文件写入替代测试。原生无 CAS/幂等时披露限制，不以本地锁宣称跨 App 排他；模板配对、CLI 与 E2E 共用同一程序，原生任务仍是权威。
+
 ### 7.2 Groups
 
 Group 是 roster 中 `isGroup=true` 的产品对象，不是 CLI 自建文件格式。正常 writer 是 Gateway。成员命令拒绝 nested group、重复成员和超过 Gateway 当前限制的集合；Gateway 拒绝仍是最终事实。
@@ -500,13 +506,15 @@ MVP / 可发布声明的 ordinary main envelope：
 
 **发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。最终批准使用readiness现有记录，不由某个绿色测试或ownership结果直接生成。
 
-### 12.1 Template Bot 主动运维（2026-09-16 接受方向，尚未实现）
+### 12.1 Template Bot 主动运维（2026-09-17 补充分层/支持，尚未实现）
 
-在已配对的单安装范围内，监测发现不能安全静默处理的问题时，可通过原生 Webhook/Payload 唤醒官方模型的 grokbox template bot，进行有限只读排障并主动报告；低风险静默维护需要用户另行预授权、完整组合资格和实时安全边界。配对默认不授权维护，模板不包含发布者的活 endpoint/secret/grant，Bot 不给自己切 custom model。
+正常启用服务的新安装采用 user 预设，默认轻量无模型观察；完成独立模板配对与成本告知后，只对已确认用户影响且不可安全自修的事件做一次简短提醒，询问是否准备脱敏 issue 草稿后结束，不默认深诊断。maintainer 是手动选择的观察偏好，不是超级权限；自动诊断、主动探针和低风险维护分别开启，维护仍需独立 grant。单纯安装 CLI/import/GET 不启服务或花费，旧 off/预算在升级时保留。模板不含发布者活 endpoint/secret/grant，Bot 保持官方模型。
 
-[专项 Spec](roadmap/template-ops-automation-spec.md)拥有 T43–T50 的详细合同；[决策](decisions/2026-09-16-template-ops-automation.md)明确对 HSO 逐次人工 gate 的狭窄扩展：限定已审核动作类可使用有时效/作用域的预授权，新 SHA 只有满足已审核等价规则才可自动派生 profile。未知依赖或修改语义仍需人工审核；runtime 精确应用与 Server 权威不变。现有 CLI 行为不因此获得自动执行权。
+[专项 Spec](roadmap/template-ops-automation-spec.md)拥有 T43–T53 的详细合同；[补充决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)及 T51–T53 拥有分层配置、确认后 issue、通用 Routine 的新增范围；[初始决策](decisions/2026-09-16-template-ops-automation.md)明确对 HSO 逐次人工 gate 的狭窄扩展：限定已审核动作类可使用有时效/作用域的预授权，新 SHA 只有满足已审核等价规则才可自动派生 profile。未知依赖或修改语义仍需人工审核；runtime 精确应用与 Server 权威不变。现有 CLI 行为不因此获得自动执行权。
 
 Bot 只解释/诊断/提交候选，唯一 controller 实际执行；Webhook HTTP 接收、Bot 领取、诊断、维护验证、报告交付和用户已读各自有证据。Bot 需先持久交接并结束回合再维护其所在 Host；整个 Box/原生服务离线的自我告警能力不作无条件承诺。撤销自动化不等于回滚已发生效果，自动退出补丁也不授权同 STEP 换供应商或重做工具。
+
+支持流程独立于维护：同意整理仅允许本地草稿；展示 exact 目标仓库/可见性/标题/正文/附件/作者后确认，才可创建 issue。无回应不追问，默认无附件/无原始现场外发；安全信息按 SECURITY.md 私密处理。maintainer preset、维护 grant 或 Payload 不批准公开，提交 unknown 先对账不盲重发，后续评论另需确认。配置唯一写入和 requested/effective/阻断原因归 [Spec §6.2](roadmap/template-ops-automation-spec.md#configuration)，不得用默认值隐藏收费或执行权限。
 
 ## 13. 输出与错误
 

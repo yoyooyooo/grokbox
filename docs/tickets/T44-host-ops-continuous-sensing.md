@@ -6,7 +6,7 @@
 
 ## Depends-on / Modules
 
-依 T43 的事件/scope 合同，可先用 Fake；复用 T41 已实现 collector/store 和 HSO observe/retain，不等待 T41/T40 整票关闭。
+依 T43 的事件/scope 与 T51 的 preset/预算合同，可先用 Fake；复用 T41 已实现 collector/store 和 HSO observe/retain，不等待 T41/T40 整票关闭。
 
 `packages/box-runtime/src/internal/ops/host-seam/watch.ts`、`observe.ts`、`upgrade-sense.ts`、`seam-status.ts`、`internal/roots/monitor.runtime.ts`、`internal/io/monitor-store.node.ts`；纯分类在 kernel ops/monitor 现有 owner。profile watch 与 monitor 调用同一 provenance writer/lease，不抢占或复制源码库。
 
@@ -17,6 +17,14 @@
 HSO receipt 固定后，T41 按稳定 source receipt ID 索引并提交 incident/outbox 意图；跨存储中断后幂等补齐，不虚构原子性。不要让 controller operation 去重吞掉后续采样。
 
 分别分类：源码不匹配、加载漂移、完整资格过期、无资格的新 source、模型分配无效、observer gap、历史 circuit 原因。统一 status/doctor 使用同一事实定义；不从窗口名或单个 green 推断全部切片/语义安全。
+
+## 2026-09-17 补充：默认用户与维护者分流
+
+按 [T51](T51-ops-capability-presets.md) 的 effective 配置运行轻量/深观测；user 默认只对 confirmed user impact 且 safe remedy unavailable/blocked/failed 输出可提醒的 incident。source-only 更新、位置变化、maintainer-only debug 可记本地但不唤醒普通用户。用户上报与源码异常只能在有同源关联时关联，unknown 保留 unknown，不自动诊断根因。
+
+无合法安全修复路径可由规则判断，不先发动模型/尝试变更来证明不能自修；T52 据此询问是否准备 issue。GET、未启服务/未配对、显式 off 与坏配置的 requested/effective/gap 要诚实显示。深 replay 不因 user 开启基础观察而自动运行。
+
+追加 FakeClock/端到端 oracle：无用户影响连续多个 source 事件的 Bot 唤醒/模型调用/GitHub 写入均为 0；有影响首次输出一次 brief 事件，重复周期合并；maintainer preset 不改变普通用户接收范围或自动修复权。
 
 ## Executable acceptance
 

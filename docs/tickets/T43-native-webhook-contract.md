@@ -18,6 +18,14 @@
 
 定义 grokbox v1 envelope、错误类别、固定目标 NotificationTransport、原生 capability 版本与失效条件。任何 raw payload 都只能成为受限候选；no arbitrary URL/command，低级错误正文不回显。
 
+## 2026-09-17 补充：通用 Routine 与低成本首醒
+
+本票提供原生事实，新增 [T53](T53-agent-routines-cli.md)拥有通用 Agent/Routine 命令实现；不要将全部 CRUD 塞入模板 bootstrap。明确 routine 正文、automation 配置、trigger/schedule、原生 ID/修订是否不同对象；检查原生 CAS/幂等和禁用后在途任务/endpoint 的实际语义。不能从文件导出存在推断 CRUD 可用。
+
+能力表补充：最小 brief-notice 是否仍触发模型、能否设置/证明工具与推理预算、原生用户回复与自动事件能否区分、POST→run→report 是否存在可靠关联。缺 token 硬门/确认来源时显式 not_proven，不假设 webhook 免费或由模型自己证明用户同意。Webhook trigger 不带 cron；只有另获资格的 schedule 类型可写。
+
+新增 acceptance：原生无 CAS 不得给出 protected=true；错 trigger/未知 schema 拒绝写；用户确认文本来自 Payload 时不得生成 support consent；真实 HTTP 与内部调用不能混作一种证明。原生费用、受信用户确认和精确 run 关联的资格供 T45/T52/T53 消费。
+
 ## Executable acceptance
 
 实现时新增 `test/native-webhook-contract.test.ts` 和 `packages/runtime-kernel/test/ops-notification-contract.test.ts`，执行：

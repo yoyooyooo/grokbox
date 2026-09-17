@@ -2,6 +2,8 @@
 
 **状态：接受用户补充后的设计方向；实现与本机部署未授权于本文件。** 施工细节唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，本页只保存决策及其对既有规则的精确修订。总运行时仍归 [主 Spec](../roadmap/box-runtime-impl-spec.md)。
 
+**2026-09-17 后续裁决：** [默认能力/支持/Routine 决策](2026-09-17-ops-defaults-support-and-routines.md)补充 D8–D12；当前默认为正常服务启用后 user 轻量观察、配对后最小提示，不是默认模型排障。T51–T53 扩展配置、用户确认后 issue 与通用 Routine CLI。本页保留初始设计，不再作为默认值的唯一说明；有限维护授权和单 controller 边界不变。
+
 ## 问题与用户结果
 
 仅能发现 Host/profile 变化但必须用户自己查看 CLI，不足以满足日常使用。用户接受：不能静默处理时由 grokbox template bot 主动告警；该 Bot 可以通过带 Payload 的原生 Webhook 定时任务被唤醒，自动做有限排障后报告，也可参与极低风险、高确定性的静默维护。后台持续采样不应变成一个永远 Working 的 Bot 任务。

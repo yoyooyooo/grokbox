@@ -316,13 +316,15 @@ Current implementation remains source reality until each slice lands. This docum
 
 **2026-09-16 accepted modeld consolidation:** [ADR](decisions/2026-09-16-modeld-effect-core.md) and the existing [Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core) own the next execution-core change. Keep the native Host loop/tools/delivery, one kernel and one durable execution index. Separate deployment proof, live execution fences and observation. Audit native authority before removing supplemental Server checks; keep strict freshness defaults until a separately qualified policy decision. Effect owns shared source and waiter lifetimes; no second daemon, universal collector or hidden restart/replay. [T43–T50](tickets/README.md#modeld-effect-core) carry scope and proof, not an implementation-complete claim.
 
-### 2026-09-16 Template ops boundary（目标，尚未实现）
+### 2026-09-17 Template ops boundary（目标，尚未实现）
 
-[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T50 的最小增量骨架：HSO 继续拥有来源/资格证据，T41 原 SQLite 管理 incident/outbox/claim/报告，ConfigurationWrite 管理本安装 binding/grant，已有 controller operation store 管理 plan/实际动作。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
+[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T53 的最小增量骨架：HSO 拥有来源/资格，T41 原 SQLite 管理 incident/outbox/claim/报告及独立 support draft/consent 域，ConfigurationWrite 管理 preset/overrides/binding/grant，已有 controller store 管理 plan/动作。support consent 仅受信 support 用例可写，collector/维护 grant 不授予公开发布权。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
 
-模板 Bot 使用官方模型，按合法原生 Webhook/Payload 触发加载 ops 进阶能力；不常驻采样、不拥有原始 signals、不从 Payload 获得授权。`monitor.runtime.ts` 组合只读采样与通知子 Scope；计划中的 `ops.runtime.ts` 是独立 Bot/modeld 的受限维护调度，只调用唯一 controller。Bot 持久交接后结束，维护在已资格化安全屏障内推进，结果由原 controller 保存后再通知。
+模板 Bot 使用官方模型；user 默认 brief-notice 只报告/询问，不进入深诊断。T51 的 preset 是偏好而非安全角色，requested/effective/valueSource/blockedReason 分列，旧 off 与成本预算保留。合法 Webhook 才按需加载对应能力；不常驻采样、不拥有原始 signals、不从 Payload 获得授权。`monitor.runtime.ts` 组合只读采样与通知子 Scope；计划中的 `ops.runtime.ts` 是独立 Bot/modeld 的受限维护调度，只调用唯一 controller。Bot 持久交接后结束，维护在已资格化安全屏障内推进，结果由原 controller 保存后再通知。
 
 普通纯规则保持 TS，重 IO/lease/退避/期限/取消按现有 Effect pin 与 Scope 标准；Host/preload 仍不导入 Effect/SQLite/Webhook/ops policy。上游 routine、模板克隆、Payload 和工具权限必须单独资格化。单 UID 的任意 shell 不构成硬隔离，无法证明 Bot 工具边界时只做固定只读报告；不能让 prompt 文字替代权限设计。
+
+T53 的通用 AgentRoutines port / command 由 CLI 的 native adapter 装配；agents create/update、独立 routines apply、模板配对和 E2E 复用同一程序，不要求 ops/SQLite 启用。原生 Routine/trigger 是权威，本地仅保留 scoped provision 回执，不新增 scheduler。IssuePublisher 只被 exact-content consent 后的 support command 消费，普通通知器/控制器没有该权力；无 credential 时只输出本地已审核稿，不绕过确认。
 
 ### 2026-09-12 Observation and incident management boundary
 

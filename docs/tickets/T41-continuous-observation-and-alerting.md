@@ -8,9 +8,11 @@
 
 ## 2026-09-16 Template Bot 出口扩展（未实现）
 
-[T43–T50](README.md#template-ops-automation)在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 下扩展本票的一个固定通知出口：用户显式配对的原生 Webhook 可唤醒官方 grokbox template bot，由独立 Bot 回合做有界诊断/报告。它有原生推理成本，不能沿用“所有通知绝不触发模型”的无条件表述；collector 仍不直接调用 provider/sendPrompt，重试仍仅投递同一通知，不借此重做诊断工具或维护。
+[T43–T53](README.md#template-ops-automation)在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 下扩展本票的一个固定通知出口：用户显式配对的原生 Webhook 可唤醒官方 grokbox template bot，由独立 Bot 回合做有界诊断/报告。它有原生推理成本，不能沿用“所有通知绝不触发模型”的无条件表述；collector 仍不直接调用 provider/sendPrompt，重试仍仅投递同一通知，不借此重做诊断工具或维护。
 
 本票仍唯一拥有观察/incident/交付管理与原 SQLite。后续 binding/grant 归 ConfigurationWrite，plan/实际变更归唯一 controller；通知 outbox 或 Bot 结论不授予任何执行权限。一般第三方外发保持默认禁止；新出口只对显式绑定目标开放。现有 `local_only` 与未完成 native/持久安装资格在实现前不改写。
+
+**2026-09-17 补充（未实现）：** T51 为正常服务启用的新安装提供 user 默认轻量观察与配对后的 brief-notice，maintainer 更多观察单独开启；默认不发动模型深诊断。T52 在现有 SQL 的 support 域管理草稿/受信 consent/submission，普通 collector 不能签同意，issue 不是自动通知副作用。T53 通用 Routine CLI 不依赖此数据库；模板/测试复用它。旧 off/预算保留，预设不授予维护/公开发布权；细节只在专项 Spec §5.1/6.1/6.2/10.1 维护。
 
 ## 当前实现与证据范围
 

@@ -6,19 +6,27 @@
 
 ## Depends-on / Modules
 
-依 T43 原生 routine/clone 能力结论与 T45 binding/claim 合同；Fake 接线可提前，不依赖 T49 自动维护完成。
+依 T43 原生 routine/clone 能力、T45 delivery/claim、T51 默认配置和 T53 通用 Agent/Routine apply 合同；Fake 接线可提前，不依赖 T47/T49 自动诊断/维护完成。
 
 `packages/cli/src/template-recipe.ts`、`gateway-automation.ts`、`commands/template.ts`、`commands/ops.ts`、`skills.ts`；`scripts/templates/grokbox.recipe.json`、`skills/grokbox/SKILL.md` 与实现时新增的 `skills/grokbox/ops.md`。配置通过 `ops-policy.node.ts` 接回 ConfigurationWrite，不能直接改 JSON/产品 SQLite。
 
 ## Work
 
-先实现 `off → paired-notify/diagnose` 的显式绑定，核对安装、账号/team/backend scope、精确 Bot ID、routine revision 与本地 secret ref。status 不输出秘密 URL；bind/rebind/unbind/rotate 都有 expected revision、读回与 unknown 恢复，不自动领用名字相同的 Bot。
+先实现 user 默认偏好的 `unpaired → paired-brief-notice` 显式绑定，核对安装、账号/team/backend scope、精确 Bot ID、routine revision 与本地 secret ref；诊断与维护另启。配对时告知首次提醒可能有原生推理费用，无回应不持续唤醒。status 分开 requested/effective/blockedReason，不输出秘密 URL；bind/rebind/unbind/rotate 都有 expected revision、读回与 unknown 恢复，不自动领用名字相同的 Bot。
 
-优先以原生支持的禁用 routine 蓝图分发，导入后生成新 endpoint/secret 再激活；若 T43 证明原生 recipe 无法安全禁用/隔离，则使用模板自带 bootstrap 在配对后创建任务，不能伪造 routines 字段已经完成。所有写入都走已资格化原生接口。
+优先以原生支持的禁用 routine 蓝图分发，导入后生成新 endpoint/secret 再激活；若 T43 证明原生 recipe 无法安全禁用/隔离，则使用模板自带 bootstrap 在配对后创建任务，不能伪造 routines 字段已经完成。所有写入复用 T53 唯一 Routine apply/enable/disable 程序走已资格化原生接口，不另造模板专用 CRUD。
 
 新模板、复制、重装、恢复备份不得继承旧 installId/endpoint/grant/投递记录；轮换后旧 bindingRevision 拒绝执行，卸载只删/禁用本安装创建且身份匹配的任务。原生动作结果未知时保留 pending，不重复创建无限任务。
 
 Bot 继续官方模型。只在合法 ops wakeup 加载已安装版本 `--topic ops`；入口保持现有小预算，旧版 CLI 明确 unsupported，不把整份 Spec 塞进 prompt。证明 native tools allowlist/执行身份边界；无法限制自动唤醒的任意 shell 时禁用智能维护入口，只允许固定只读报告。
+
+## 2026-09-17 补充：默认提示与通用 CLI
+
+新增 [T51](T51-ops-capability-presets.md) 的 user/maintainer 配置入口指引和 [T52](T52-consented-support-issues.md) 的 issue 问询分支：默认通知只简述异常、询问是否准备脱敏稿后结束。用户答应准备不等于提交；实际提交须 exact 预览与受信确认。模板 skill 不能把「维护者模式」解释为自动提单/诊断/维护。
+
+T53 create/update --routines-from 与模板配对必须共用声明 schema/managed key/disabled 默认，Webhook 不附带周期 schedule。升级/克隆不带旧 token/绑定/授权/issue consent；用户先前 off 和显式覆盖保持。默认小提示不依赖运行整份运维 Spec，也不自动探索源码/消耗模型排障。
+
+追加测试：正常配对后 user 默认 brief 生效、未配对 blocked、普通 source 更新不唤醒、maintainer preset 不扩大 grant、用户拒绝/不回复不重复提醒、模板与直接 CLI 的 Routine read-back 一致。
 
 ## Executable acceptance
 

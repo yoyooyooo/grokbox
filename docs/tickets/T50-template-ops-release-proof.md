@@ -6,7 +6,7 @@
 
 ## Depends-on / Modules
 
-观察/通知 lane 依 T43–T47 的具体能力；自动维护 lane 另依 T48/T49。复用 T40 安装/owner 与 T41 monitor，不要求整票循环 Done。未过 native gate 的能力不能进入 productionAccepted。
+user 基础通知/支持 lane 依 T43–T46 与 T51–T53；自动诊断另依 T47，自动维护另依 T48/T49。基础支持不等待诊断/维护完成。复用 T40 安装/owner 与 T41 monitor，不要求整票循环 Done；未过 native gate 的能力不能进入 productionAccepted。
 
 `packages/box-runtime/src/internal/roots/monitor.runtime.ts`、`ops.runtime.ts`、既有 T40 service lifecycle、CLI installer/ops status、`scripts/verify-runtime-rebuild.mjs` 的待新增 `template-ops` verifier；test source/packed/disposable fixtures 与 `docs/maintainers/t32-live-enable-readiness.md` 现有签署入口。不要新建第二 release 账本。
 
@@ -14,11 +14,21 @@
 
 显式安装两个权限不同的角色：observer+notification、只调用唯一 controller 的维护调度。collector 无原始 signal 权限；Bot 不作为 daemon owner；不假设 systemd 或改官方 supervisor。证明 supported supervisor/startup hook 的实际持久性，不以 nohup/前台打印 ready 当自启完成。
 
-安装模式 off/notify/diagnose/maintain-low-risk 分开，最后一种必须额外 grant。status 暴露 binding、collector heartbeat/freshness、delivery、diagnosis、qualification/policy/action 与缺口；未配 native 回执/工具边界时明确降级。不向用户展示一个不含范围的「已保护」。
+采用 T51 的 user/maintainer preset + 独立能力开关；正常启用服务的新安装默认轻量采样，配对后生效 brief-notice，旧安装 off 保持。诊断、canary、低风险维护分别 opt-in，维护另需 grant，issue 逐份确认。status 展示 requested/effective/valueSource/blockedReason 及 binding、collector、delivery、diagnosis、support、qualification/policy/action；不向用户展示一个不含范围的「已保护」。
 
 复用原 controller 结果恢复和 T41 outbox；备份恢复、clone、账号切换、endpoint rotation 后不复活旧 grant 或重复操作。卸载/禁用只停止本安装拥有的进程/任务、撤销未来资格，保留未决 operation 与重要 incident；in-flight 先结算事实，不能简单删队列假装取消。
 
 维护手册加入实际已落地命令和用户告警示例，更新 template skill/包版本和所有 Current Home 的状态。纯文档或 offline 路线不得标 live accepted。
+
+## 2026-09-17 补充：三条独立上线 lane
+
+按 [Spec §10.2](../roadmap/template-ops-automation-spec.md#routine-e2e) 经实际发布 CLI 完整验证 T53：创建一次性 Bot + disabled Webhook Routine、读回/enable、invoke 发真实 HTTP、关联 native run/报告、更新同一 Routine 再次 POST、disable 与安全清理。同时验证 create/update --routines-from 组合入口与独立 apply 不产生第二套结果；不能只用 sendPrompt 测试唤醒或只测第一版 Routine。
+
+user lane 验证：默认无模型采样、无影响 source 变更不提醒、有影响且不可自修首次短提示/issue 询问、无回应/拒绝不追问；同意整理后本地安全草稿、exact 预览确认后 Fake IssuePublisher 仅一次，unknown 不重发。不启动 T47 或 T49，也不需要 GitHub 凭据才能提醒/准备草稿。真实 issue 测试必须另指定测试仓库并取得具体同意。
+
+maintainer lane 验证：额外本地观察按配置生效，但不自动给普通用户发 debug 或打开模型/维护/公开上报；配置升级/克隆/坏文件/恢复不新增花费或权限。diagnose/maintain lane 分别启用和验收，不能由 preset 一次开全。
+
+追加 packed 测试目标 `test/agent-routines-packed.test.ts`、`test/ops-config-cli.test.ts`、`test/ops-issue-cli.test.ts`（T51–T53 提供）；template-ops verifier 纳入这些真实入口，并给每条 lane 输出支持范围。当前本票和新测试仍是目标，不是已执行清单。
 
 ## Executable acceptance
 
@@ -43,4 +53,4 @@ node scripts/check-publication.mjs
 
 ## Done evidence / Next
 
-在现有 readiness 记录固定构建、各 lane 的 source/packed/native 证据、目标安装范围、开启的动作类、成本与退路、not_proven 项。最终可以只批准 notify/diagnose，不强迫自动维护同时上线。自动化失效时用户仍能按既有 doctor/Host 显式流程操作。
+在现有 readiness 记录固定构建、各 lane 的 source/packed/native 证据、目标安装范围、开启的动作类、成本与退路、not_proven 项。最终可以只批准 user 基础通知/确认后支持；诊断和自动维护各自保留 not_proven，不强迫同时上线。自动化失效时用户仍能按既有 doctor/Host 显式流程操作。

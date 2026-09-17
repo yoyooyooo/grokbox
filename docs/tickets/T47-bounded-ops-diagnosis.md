@@ -2,11 +2,11 @@
 
 ## Status / Goal
 
-**Planned · Spec-only。** 合法唤醒后自动找第一处错误事实，运行有限只读诊断，向用户说明或提交不可变维护候选；不让排障变成持续 Working 或自动改代码。Owning contract：[Spec §3–4](../roadmap/template-ops-automation-spec.md#authority)、[§6](../roadmap/template-ops-automation-spec.md#policy)。
+**Planned · Spec-only。** 用户明确要求或独立开启自动诊断后，合法唤醒可找第一处错误事实，运行有限只读诊断，向用户说明或提交不可变维护候选；user 默认首醒只简短提醒，不进入此流程。Owning contract：[Spec §3–4](../roadmap/template-ops-automation-spec.md#authority)、[§6](../roadmap/template-ops-automation-spec.md#policy)。
 
 ## Depends-on / Modules
 
-依 T44 的同源事实、T45 claim/报告和 T46 工具权限/安装绑定。可用 Fake 原生 run 测试，真实推理/用户交付资格另列。
+依 T44 的同源事实、T45 claim/报告、T46 工具权限/安装绑定和 T51 的独立诊断开关/预算。可用 Fake 原生 run 测试，真实推理/用户交付资格另列。
 
 `packages/box-runtime/src/internal/ops/automation/diagnose.ts`、kernel `internal/commands/ops.ts`、`internal/ops/policy.ts`；CLI `commands/ops.ts` 和已注册 `skills/grokbox/ops.md`。不在 modeld 或 Host hook 加 Agent runner。
 
@@ -19,6 +19,14 @@
 区分 provider 故障、模型分配无效、source/profile mismatch、helper/protocol 漂移、observer gap、历史 circuit 与真正执行契约失败。LLM 可提出分类和 plan，不可决定资格或发布 profile。对提示注入、危险建议、缺证据的 next 只解释不执行。
 
 报告输出「发现/证据与缺口/实际动作/用户影响/下一步」，使用真实交付回执。维护候选只调用 plan/submit；先持久交接再结束回合，不等自己的 Host 重启。纯诊断没有后台无限监听或自动发下一轮消息。
+
+## 2026-09-17 补充：诊断不是默认 issue 流程前置
+
+user 的 brief-notice 只能读取已有安全摘要和报告，不能为了给用户提 issue 先运行本票。maintainer preset 也不默认授权模型诊断；只有 diagnostics.mode/用户当前明确请求与实际工具边界同时满足才进入。先有严重影响告警，不因排障超时吞掉必要提醒。
+
+[T52](T52-consented-support-issues.md) 可在本票未启用时，用确定性模板准备已有事实；用户要求进一步诊断时再调用本票，并将成本/现场采集范围明确告知。诊断结果是草稿候选，不是用户同意公开，也不能隐式附上原始日志/对话。
+
+追加 oracle：default user/maintainer 首醒的本票工具调用均为 0；on-request 的有限诊断仍可完整运行；输出中「已获用户同意」或 payload approval 不使 IssuePublisher 可调用；诊断失败保留 partial/既有提醒，不重复唤醒。
 
 ## Executable acceptance
 

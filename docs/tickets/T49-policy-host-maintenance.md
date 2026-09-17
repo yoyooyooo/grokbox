@@ -6,7 +6,7 @@
 
 ## Depends-on / Modules
 
-依 T48 的限定资格与 T47 的 plan/handoff 合同；复用 T28 operation/lease/guardian 和 T40 当前生命周期。T43/T44 的原生安全能力与当前事实是执行门，不要求其它整票全部 Done。
+依 T48 的限定资格、T47 的 plan/handoff 合同和 T51 的独立 maintenance grant/config；复用 T28 operation/lease/guardian 和 T40 当前生命周期。T43/T44 的原生安全能力与当前事实是执行门，不要求其它整票全部 Done。
 
 kernel `internal/commands/controller-operation.ts`、`internal/commands/ops.ts`、`ports.ts`；box-runtime `internal/roots/controller-program.node.ts`、新增 `ops.runtime.ts`、现有 process/adopt/official rollback 能力；CLI `commands/operator.ts`、`runtime.ts`、`ops.ts`。原 Host 退出流程也归并同一控制准入，不保留自动化私有 signal 路径。
 
@@ -21,6 +21,14 @@ Bot submit 的回执只证明持久 handoff；Bot 随后结束。独立维护 Sc
 按原 controller 做精确 PID+start/拓扑/source/profile/policy 复核、guardian、一次 attempt、进度前缀、读回与恢复。new source/ABA/撤销会 supersede 计划。区分 verified/partial/unknown/rollback_unverified；取消后不自动再次 signal。退出回到当前官方安装的未注入 Host，不执行 corpus 或回滚官方版本，不在同 STEP 偷换供应商。
 
 运行时维护完成不依赖 T41 SQLite 存活；原 controller 保存权威结果，通知恢复后通过 stable operation ref 补索引。观测 DB 坏时不产生新自动计划，但不使已经发生的动作丢失结果或无限等待通知。
+
+## 2026-09-17 补充：preset 不授权，失败不自动提单
+
+user 和 maintainer 都默认 maintenance off；切 preset、打开 deepReplay、配对模板、收到 issue 确认都不能建立维护 grant。maintenance mode 已设但无 grant 时明确 blocked-no-grant，不能修改 desired 回避解释。T51 的 config revision/权限撤销须在计划准入与执行前检查。
+
+无法执行/退出受阻的真实收据只作为 T52 的用户影响与支持候选证据，不调用 IssuePublisher，不在 controller 里组织上传材料。用户只同意公开草稿时，不允许自动重试维护；反过来同意维护也不允许公开现场。已有 operation unknown 先对账，不借切 preset 或重新创建 issue 来复活计划。
+
+追加测试：maintainer 切换、支持确认、无 grant mode=low-risk、用户拒绝 issue 后计划/配置不被改写；controller→incident→支持询问只产生候选，不发生 GitHub 写入或新的 Host attempt。
 
 ## Executable acceptance
 
