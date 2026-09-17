@@ -2,6 +2,10 @@
 
 **当前现场已验/未验、阻断与下一步只看 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)。** 本目录报告固定在各自窗口结束时，不随后续推进维护当前状态；报告中的未验清单只说明当时缺口。
 
+- [2026-09-17 CTX v8 现场窗口](2026-09-17-context-v8-live-window.md)：config3/wire8成套采用、真实503/备用200、测试Bot选择及清理、modeld replacement；保留真实消息入口和原版App未证范围。
+
+- [2026-09-17 CTX 503与控制链补充证据](2026-09-17-context-provider-failure-evidence.md)：显式下一TURN备用、profile recipe修复、manual控制六分支、checkpoint未知/迟到清理与队列阻断修复；不以端点200冒充原生会话通过。
+
 - [2026-09-17 本地上下文维护离线收口](2026-09-17-context-maintenance-offline.md)：Pi受控复用、config3/wire8、旧失败会话输入前维护、Node20十轮/新进程、连续迁移与TURN凭据/生命周期修复；区分源码/原生隔离和独立review503，不冒充现场已部署。
 
 - [2026-09-17 现役集成窗口](2026-09-17-live-integration-window.md)：统一配置真实迁移、v7 成套加载、12 条有界 canary、改档/工具/重启与 stock 回程；记录现场发现的 Host 重复 apply 缺陷及修复、最终验证、清理和仍未证明的范围。不是全部 LIVE 或独立复审通过。

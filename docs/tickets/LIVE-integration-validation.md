@@ -2,7 +2,7 @@
 
 **长期保持 open；逐项验收，不整票关闭。** 本页唯一维护各维度的现场验证进度、剩余缺口、阻断、下一步和证据入口。只看本页即可判断还缺什么；执行时再打开对应合同、操作手册或历史回执。
 
-默认集成线：**`feat/box-runtime-v2`**。索引整理基线为 `6c94b8b`，最近完成的现场证据仍为 **2026-09-17 的 W17 窗口**。CTX 后续源码/离线资格已推进，但尚未执行新的现场切换；其具体前置与剩余门见 CTX 三行。表中“已证”只对所列制品、对象和窗口成立，不是实时健康声明。
+默认集成线：**`feat/box-runtime-v2`**。最近现场增量为 **2026-09-17 UTC 的 CTX-V8 窗口**：已实际完成config3/wire8/custom Host采用与一次modeld replacement；端点503和显式备用200、Bot选择保存与真实消息执行分别取证。原Bot消息与compact/checkpoint验收仍因工具拦截缺证，不能把ready等同于全部通过。[新窗口回执](#window-context-v8-20260917)与[W17历史](#window-20260917)分开；表中已证仅对指定制品/对象/窗口成立，不是实时健康保证。
 
 ## 阅读与维护边界
 
@@ -55,9 +55,9 @@
 | <a id="live-runtime-persistence"></a>**LIVE-RUNTIME-PERSISTENCE**<br>安装、自启与长期服务 owner | **进程级重启已证；持久安装未证。** W17 Host/modeld/daemon 换代、配置/所选凭据与新请求正常；detach/父 PID 不是自启证据。 | 支持的持久服务 owner、干净启动/父 shell 退出、安装幂等、官方 Host 自行重建后的补丁采用、开机/环境重建恢复及单实例；正常配置不依赖临时环境变量或故障注入。 | `blocked`：安装/boot-hook 实现与目标平台资格仍归 [T40](T40-persistent-release-and-rollback.md)，不是再做一次 restart 就能关闭。真实高影响重建另开窗口；平台 Reset 另记 CONFIG-HOME-RESET。 |
 | <a id="live-monitor-persistence"></a>**LIVE-MONITOR-PERSISTENCE**<br>现有本地 collector / SQLite / incident | **现役 collector 未安装验收。** W17 的 daemon/desktop applied 不替代 monitor 长驻。本地/source/packed 测试保留原范围。 | 无网页/CLI 退出仍采集、与准入共享读取有界；真实 scope/代/失联 gap；重启保留 incident/ack/snooze/cursor；受控 DB 异常不影响执行；local-only 与实际通知接收分开。 | `blocked`：先由 [T41](T41-continuous-observation-and-alerting.md)/[T40](T40-persistent-release-and-rollback.md)关闭调度/安装前置，明确服务 owner、测试存储与窗口。不要等待未来 Webhook 运维全部实现，也不把未来外部离线监控拖进本项。[观测手册](../maintainers/continuous-observation.md) |
 
-### 待现场资格：区分已实现 CTX 与尚未实现的运维
+### 待闭合资格：CTX已有现场子项，运维仍按来源前置推进
 
-以下八条均无新的现场回执。五条 Template Ops 的实现仍未记录；CTX 已有功能提交 `883e224` 与读回修复 `269f1e2`，源码/Node 制品及原生隔离资格见[离线收口报告](../reports/2026-09-17-context-maintenance-offline.md)。独立reviewer针对三个固定阶段均返回503；最终干净候选为 `804c994`，完整组合验收已再次通过，仍无独立复审结论，**不能把review缺口改称只差live**。用户已授权本功能完成前置后 rebase v2、成套切换及 modeld 重启；此授权不代替前置通过、逐对象预算或原版 App 证据。
+五条Template Ops仍无本表范围内的新现场回执。CTX的源码、打包和原生隔离证明见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)，本轮新增的成套采用、真实503/备用端点与modeld换代见[CTX-V8回执](../reports/2026-09-17-context-v8-live-window.md)。用户已明确接受503与备用模型的有限测试窗口；这不把Astra的503或备用review超时改成独立审核通过，亦不签正式发布。实际Bot消息被工具安全检查拦截，现有阻断已不只是review通道不可用。
 
 | 维度 / 稳定 ID | 当前现场进度 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
 |---|---|---|---|
@@ -66,9 +66,9 @@
 | <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>无人值守运维提醒 | 未运行；`blocked`。 | 启动 Bot 回合与网页结束后持续感知；无变化零唤醒、需处理才一次提醒；重启/断网/endpoint 撤销/存储故障后的 cursor、欠账、去重、预算和 degraded；真实投递不等于 outbox accepted。 | [T44](T44-host-ops-continuous-sensing.md)/[T45](T45-template-webhook-delivery.md)/[T46](T46-template-ops-pairing.md)/[T50](T50-template-ops-release-proof.md) 实现与安装前置，依赖 CONSUMERS/ROUTINES。本地 collector 验收另见 MONITOR-PERSISTENCE。 |
 | <a id="live-ops-issue-publishing"></a>**LIVE-OPS-ISSUE-PUBLISHING**<br>受信同意与真实 GitHub 提交 | 未运行；`blocked`。 | 原生用户确认区别于自动事件；exact 内容/仓库/作者同意→提交并读回；有限 grant 有效期/额度/撤销、跨 Bot 去重、ACK unknown 对账；仅批准范围清理。 | [T52](T52-consented-support-issues.md)/[T56](T56-scripted-issue-publishing.md) 实现前置；另缺专用仓库与公开合成内容授权。人工关闭历史 issue 不算此功能资格。 |
 | <a id="live-ops-maintenance"></a>**LIVE-OPS-MAINTENANCE**<br>自动维护屏障与交接 | 未运行；`blocked`。 | 原生 admission fence/排空、提出者及子任务终结后唯一 controller 执行；busy/审批/新任务/撤销/换代拒绝；一次对齐/安全退出及未知退路。 | [T47](T47-bounded-ops-diagnosis.md)/[T48](T48-low-risk-host-qualification.md)/[T49](T49-policy-host-maintenance.md)/[T50](T50-template-ops-release-proof.md) 实现与 review 前置。W17 人工 force 不证明自动维护屏障；idle 采样不替代 fence。 |
-| <a id="live-ctx-adoption"></a>**LIVE-CTX-ADOPTION**<br>默认本地维护策略真正加载 | **尚未切换；`blocked`。** 最终候选 `804c994` 已核对基于 v2 `6596a15`，rebase为up-to-date。本轮只读查询现役modeld为wire7/expected7/ready=true，明确不是新wire8采用。源码config3/默认128K的Node20制品、真实SDK/Unix和固定原生方法隔离已证。 | 现役 config2→3 迁移、旧制品退路、实际 Host/modeld/policy/root capability 同代；configured/captured、默认 auto/注入 off、其他 Bot/official 不变。 | [CTX-00](CTX-00-pi-compaction-reuse.md)–[CTX-04](CTX-04-context-entrypoints-and-proof.md) 已有实现；[离线报告](../reports/2026-09-17-context-maintenance-offline.md)保留实际证明和 reviewer 503。受影响全库回归2243通过/7跳过/0失败已记录；当前唯一部署前置阻断为最终固定提交独立review通道503。复审可用后重新确认集成v2与制品未漂移，再按已授权范围和[窗口流程](../maintainers/release.md#live-window-procedure)操作。不得以旧 gate 或 W17 wire7 回执代替新能力。 |
-| <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>已失败长会话下一条普通输入 | **真实用户旅程未运行；`blocked`。** 合成旧失败 root、单条新输入、主 HTTP 前维护、十轮压缩与新进程续聊已在实际制品/本地 HTTP 链通过。 | 原 App 新输入的 nonce/文本/附件、真实已失败长会话上的有限摘要与 native accept/checkpoint；旧 STEP/工具不重放，后一条短输入不无谓 compact，活动/交付真实。 | 依赖 [ADOPTION](#live-ctx-adoption) 及 [CTX-04](CTX-04-context-entrypoints-and-proof.md) 固定 review。使用已授权故障排查对象时先确认当前 session/归属/安全窗口，固定新输入与模型预算；不重发历史失败 STEP。没有原版 App 操作/观察接口时保留该子项 not-observed，CLI 发送不能冒充 App 通过。 |
-| <a id="live-ctx-durability"></a>**LIVE-CTX-DURABILITY**<br>新维护 checkpoint 的重启与退路 | **真实服务重启未运行；`blocked`。** 已有受控原生方法/临时持久 root 的新进程回读、取消和错 source/material revision 的 commit_unknown 反例。 | 实际原生 archive/carrier/checkpoint 由新 Host 读回；ACK 丢失与取消的实际提交状态对账、后续工具/Memory/App 及官方退路，不能把临时 store 说成完整原生存储事务。 | 依赖 [NEXT-INPUT](#live-ctx-next-input) 与 [CTX-02](CTX-02-host-context-maintenance.md)/[CTX-04](CTX-04-context-entrypoints-and-proof.md)。重启已获本功能范围授权，仍先满足 review/集成与当前在途对象保护；故障注入无安全点仅阻断对应向量。保持所有 unknown 和用户新编辑，不为回退删 ledger/历史。 |
+| <a id="live-ctx-adoption"></a>**LIVE-CTX-ADOPTION**<br>默认本地维护策略真正加载 | **成套采用与modeld换代子项已证；新修复待采用。** CTX-V8使用已合入v2的 `6fb4b48`：config2→3到retired、前次manifest/模型字节保留、精确profile、custom Host和wire8/expected8 ready；普通retry off；原desktop偏好恢复，测试Bot清理后models回到原始字节。 | 真正主请求对本地策略的captured使用、运行中的root维护调用、原版App以及完整独立review；CLI↔modeld兼容不自动证明每个Host执行路径或native存储事务。 | `blocked`：加载本身不再待做，不为消除状态重复迁移/重启。真实send与context查询被工具安全检查拦截，后续原故障Bot只读核对仍受阻；补丁5f2afdb修正未知checkpoint/取消清理与排队输入，已有64+11项组合证明和2256/0全库，实际采用需重新核对。后续使用正常可用的已授权消息/状态入口，保留review缺口。[CTX-04](CTX-04-context-entrypoints-and-proof.md) · [CTX-V8 §5–7](../reports/2026-09-17-context-v8-live-window.md#5-实际迁移与成套加载) |
+| <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>已失败长会话下一条普通输入 | **真实旅程未闭合；非部署问题。** CTX-V8测试Bot创建confirmed_box，主模型和Grok/high的下一TURN配置均保存/读回，但send被工具拦截、无accepted回执，outcome为unknown/无echo。新增真实SDK/Unix离线用例已证明摘要503与主请求503后显式换模型的新消息能继续，旧失败回执保留、无隐藏切换。 | 原业务长会话的新输入、真正native compact/checkpoint及随后主请求、原App输入/活动/Working/交付；端点200、配置保存或离线fixture不能代替。 | `blocked`：等待正常可用且获授权的消息执行/原App观察入口，不绕过工具拦截，不复用本次nonce或重放旧事故STEP。测试Bot已删除；后续固定新窗口/对象及费用。独立review仍单列。[CTX-04](CTX-04-context-entrypoints-and-proof.md) · [CTX-V8 §4/6](../reports/2026-09-17-context-v8-live-window.md#6-备用选择发送拦截与资源清理) |
+| <a id="live-ctx-durability"></a>**LIVE-CTX-DURABILITY**<br>新维护 checkpoint 的重启与退路 | **真实v8 modeld replacement已证，native compact checkpoint未证。** CTX-V8用正式expect-epoch/confirm命令换代，新服务ready/active0、旧请求不重放、Host未被该replacement重启。原有十轮/新进程临时store和原生方法隔离证明保持各自范围。 | 先有一次真实成功compact，才能验证其archive/carrier/checkpoint被新Host读回；还缺实际ACK丢失/取消提交对账、后续工具/Memory/App与官方退路。新修复5f2afdb已有真实manual facade/Unix/SDK六分支和实际checkpoint清理等待，仍不能充当现役原生存储故障回执。 | `blocked`：依赖[NEXT-INPUT](#live-ctx-next-input)的消息入口与真实compact，不是再任意重启一次即可关闭。保留原schema退路和全部unknown，不删ledger/原历史。[CTX-02](CTX-02-host-context-maintenance.md) · [CTX-04](CTX-04-context-entrypoints-and-proof.md) · [CTX-V8 §7](../reports/2026-09-17-context-v8-live-window.md#7-真实modeld重启与证明上限) |
 
 ## 现场之外的共同阻断
 
@@ -87,8 +87,15 @@
 
 执行前依 [共用窗口流程](../maintainers/release.md#live-window-procedure)固定候选、源码映射、实际制品、对象/预算、停止与回滚。不从本索引、历史“继续”、合分支或构建结果推导新授权；不为验收切未合入分支，不重放旧消息，不更改官方归属或清账本制造成功。
 
+<a id="window-context-v8-20260917"></a>
+## CTX-V8 增量窗口 · 2026-09-17 UTC
+
+固定runtime `6fb4b48`，profile/制品、显式config3迁移、custom Host/wire8采用、一次正式v8 modeld replacement、真实端点503与备用200、单测试Bot配置及清理见[日期回执](../reports/2026-09-17-context-v8-live-window.md)。新增测试 `b77ceb0` 和测试稳定性 `3ec15c3` 不改变该已加载runtime；后续文档/测试提交不要求无意义重启。模型和config非schema字段最终恢复原值；旧Bot未改、未重放。
+
+本窗口没有accepted的真实Bot消息，send/context工具被安全检查拦截；后端直接端点调用不算原生Host旅程。[补充失败/控制链证据](../reports/2026-09-17-context-provider-failure-evidence.md)保存后续5f2afdb修复、真实manual边界测试、所有工具阻断及全库结果；新源码不倒写为本窗口已经加载。review 503/备用review timeout仍未闭合。原App与native checkpoint/restart范围保持not-observed，不能把部分现场子项写成整条passed。现役状态不保证持续不变，下一窗口先重新读取身份。
+
 <a id="window-20260917"></a>
-## 窗口与证据索引
+## W17 历史窗口与证据索引
 
 | 窗口 | 固定范围 | 已记录结果与详情 |
 |---|---|---|

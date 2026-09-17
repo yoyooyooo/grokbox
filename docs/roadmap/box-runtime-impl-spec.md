@@ -1121,6 +1121,8 @@ T32只处理当前真实provider outcome确认的溢出：原attempt静止、零
 
 本地预算不需要真实上游窗口拒绝即可生效；但估算不能保证所有未知端点不拒绝。可信实际限制只可用作有来源的本次恢复目标，不能从一次generic400永久改目录或全局窗口。旧错误可以被展示，不能单凭日志字符串启动维护；新输入重新计量得到超预算才走主动路径。
 
+**补充实施边界（5f2afdb）：** 原生clear/append开始后、即便append未返回也进入publication-started；随后checkpoint失败或socket取消必须传播commit_unknown，不能被外层归为材料无效或安全的写入前取消。owner清理同时等待真实checkpoint与摘要source；有界未收口为native_cleanup_unknown。手动操作的这些不确定结果在当前shell留下阻断，已排队和后来的用户run、换operationId的新compact均不得自动越过；只读状态显示blocked/nativeBlockReason，不能通过status清除。已知未写入的summary503/早期取消与此区别，允许新用户意图按普通流程重新检查。
+
 ### S12.7 命令、状态与错误（默认Box会话入口已实现）
 
 ```text
@@ -1173,7 +1175,7 @@ grokbox agents compact <agent> [--session <id>] --operation-id <uuid> --confirm 
 | CTX-R06 发布与import fence | 实际Node20合同/候选Node22矩阵、ESM/制品/module graph/冷启动统计；preload/kernel无Pi，无隐式网络/写入/子进程/全局session加载 | CTX-00/04 |
 | CTX-R07 选型与更新 | 每函数复用/差异表、锁定依赖或可复现最小patch/vendor、许可归属、单一composition、升级差异负例；无盲重写/浮动main/双真实推理 | CTX-00/04 |
 
-实际测试为 `runtime-kernel/test/context-{policy,selection}.test.ts`、`box-runtime/test/context-reuse.test.ts`、`context-maintenance-{host,summary,boundaries,lifetime,packed}.test.ts`、`context-native-qualification.test.ts`、`test/context-commands.test.ts` 及既有config/overflow/stream回归。复用与pipeline打包证明在同一个maintenance-packed suite，不虚构不存在的context-reuse-packed文件。公共夹具自行构造，私有原生片段只在显式维护者隔离测试读取；缺材料不标skip通过。原生隔离与review缺口留来源票，实际加载/provider/App/真实重启的剩余证明才进入LIVE。
+实际测试为 `runtime-kernel/test/context-{policy,selection}.test.ts`、`box-runtime/test/context-reuse.test.ts`、`context-maintenance-{host,summary,provider-switch,boundaries,lifetime,control,packed}.test.ts`、`context-native-qualification.test.ts`、`test/context-commands.test.ts` 及既有config/overflow/stream回归。复用与pipeline打包证明在同一个maintenance-packed suite，不虚构不存在的context-reuse-packed文件。公共夹具自行构造，私有原生片段只在显式维护者隔离测试读取；缺材料不标skip通过。原生隔离与review缺口留来源票，实际加载/provider/App/真实重启的剩余证明才进入LIVE。
 
 ### S12.9 票据、退场与失效条件
 

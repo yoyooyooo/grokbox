@@ -1,6 +1,6 @@
 # CTX-02 — Host 安全点与唯一上下文维护程序
 
-Status: **Implemented / offline and pinned native-isolated proof recorded / independent review pending**。主要实现 `883e224`，提交读回修复 `269f1e2`，TURN授权一致性修复 `f4b3a18`。没有把隔离原生方法验证称为已加载或完整原生存储事务。
+Status: **Implemented / offline and pinned native-isolated proof recorded / independent review pending**。主要实现 `883e224`，提交读回修复 `269f1e2`，TURN授权一致性修复 `f4b3a18`，手动入口的不确定提交/取消与队列阻断修复 `5f2afdb`。没有把隔离原生方法验证称为已加载或完整原生存储事务。
 
 ## Goal / authority
 
@@ -8,7 +8,7 @@ Status: **Implemented / offline and pinned native-isolated proof recorded / inde
 
 ## Actual modules / ownership
 
-- kernel `context-maintenance.ts` 执行inspect/plan/summary/validate/commit/readback；同root、同操作waiter共享source并有独立取消，最后waiter取消才中断source。当前不同operation占用同root时有界busy，不同时建立两个writer。
+- kernel `context-maintenance.ts` 执行inspect/plan/summary/validate/commit/readback；同root、同操作waiter共享source并有独立取消，最后waiter取消才中断source。当前不同operation占用同root时有界busy，不同时建立两个writer。`5f2afdb`补实际manual facade→Unix→SDK六种分支：成功/503、checkpoint和append不确定、发布前后取消。发布已开始的失败不误报材料无效，owner等待真实checkpoint；不确定root阻断当前与后续排队输入、换operationId也不能越过，状态明确blocked/nativeBlockReason。
 - Host `context-maintenance.ts` 是Effect/Pi-free原生facade，`context-client.node.ts`/`context-control.node.ts`借真实native执行及空闲summarize动作，`context-slices.ts`/`live-slices.ts`负责exact-source安全点。手动入口当前限定已加载默认Box session，WeakMap可信标记不来自用户正文；不伪造业务STEP。
 - modeld `context-maintenance.node.ts`与`wire/context-wire.ts`提供wire8有限协议、分页材料和逐消息seq/大小/身份校验，无generic eval/RPC。
 - ExecutionHistory记录操作/阶段与提交引用；主STEP/绑定仍在原域，maintenance记录跨服务重启保留以防未知摘要重发。Host持久root是提交事实，维护索引不保存第二份完整历史。
@@ -24,7 +24,7 @@ bun scripts/verify-runtime-rebuild.mjs context-owner
 GROKBOX_TEST_NATIVE_HOST=1 bun scripts/verify-runtime-rebuild.mjs context-native
 ```
 
-公共owner与实际Unix链分别在 `context-maintenance-{host,boundaries,lifetime}.test.ts`、kernel `context-selection.test.ts`及CLI命令测试。私有原生源码仅在维护者显式选择的隔离VM资格中读取，公共CI/fixture不包含私有实现。native方法测试使用固定SHA，外围blob/telemetry/privacy能力仍被隔离；版本变动需重验。
+公共owner与实际Unix链分别在 `context-maintenance-{host,boundaries,lifetime,control}.test.ts`、kernel `context-selection.test.ts`及CLI命令测试。私有原生源码仅在维护者显式选择的隔离VM资格中读取，公共CI/fixture不包含私有实现。native方法测试使用固定SHA，外围blob/telemetry/privacy能力仍被隔离；版本变动需重验。
 
 [离线报告](../reports/2026-09-17-context-maintenance-offline.md)记录实际pipeline、取消/已有pending/错root、十轮/新进程、key轮换及native-isolated执行结果。合成Host方法与真实原生隔离结果分别标注，没有用mock最终成功代替实际调用链。
 
