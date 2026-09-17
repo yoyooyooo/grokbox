@@ -22,7 +22,7 @@ const A = "00000000-0000-4000-8000-000000000001", M = "owned/context-model";
 const h = (c: string) => c.repeat(64);
 import { ownedNativeSummary } from "./context-native-fixture.ts";
 
-test("native-method facade + real Host client + Unix/kernel/SDK: the next ordinary input compacts before main HTTP", async () => {
+for (const rotateAfterPreflight of [false, true]) test(`native-method facade + real Host client + Unix/kernel/SDK: next-input preflight, credential rotation=${rotateAfterPreflight}`, async () => {
   const dir = await mkdtemp(join(tmpdir(), "gbox-context-host-"));
   const durableRoot = join(dir, "durable"), runRoot = join(dir, "run"); await mkdir(durableRoot);
   const requests: any[] = [];
@@ -42,7 +42,8 @@ test("native-method facade + real Host client + Unix/kernel/SDK: the next ordina
     apiKeyRef: "env:OWNED_KEY", contextWindowTokens: 500000, capabilities: { tools: true, vision: false, images: false }, dataTypes: ["text", "tools"] } },
     assignments: { main: null, agents: { [A]: { modelId: M } } } });
   await writeFile(join(durableRoot, "models.json"), JSON.stringify(models));
-  const epoch = randomUUID(), auth = createLiveBackendAuth({ OWNED_KEY: "not-a-real-credential" });
+  const environment = { OWNED_KEY: "not-a-real-credential" };
+  const epoch = randomUUID(), auth = createLiveBackendAuth(environment);
   const layers = fakeConfigurationReadLayer({ models: () => models, desired: { version: 1, mode: "route" } }).pipe(Layer.merge(admitAllAuthorityLayer()),
     Layer.merge(auth.layer), Layer.merge(dispatchingModelBackendLayer(fetch, auth.unseal)), Layer.merge(piCompactionAlgorithmLayer), Layer.merge(inferenceMemoryLayer({ serviceEpoch: epoch })));
   const ready = await Effect.runPromise(Deferred.make<void>());
@@ -82,7 +83,17 @@ test("native-method facade + real Host client + Unix/kernel/SDK: the next ordina
     expect(JSON.stringify(persisted)).toContain("DURABLE=NATIVE_CARRIER");
     expect(JSON.stringify(persisted)).toContain("FACT_0=value0");
     expect(root.getMessages().at(-1)).toEqual(oldMessages.at(-1));
+    if (rotateAfterPreflight) environment.OWNED_KEY = "rotated-synthetic-credential";
     const result = executor.stream({ signal: abort.signal }, stepId, [], { maxTokens: 512 });
+    if (rotateAfterPreflight) {
+      const response = result.response.catch(error => error);
+      await expect((async () => { for await (const _ of result.fullStream) { /* must refuse before another HTTP */ } })()).rejects.toBeDefined();
+      expect(await response).toBeInstanceOf(Error);
+      expect(requests).toHaveLength(summaryCalls);
+      expect(checkpoints).toBe(1);
+      expect(root.getMessages().at(-1)).toEqual(oldMessages.at(-1));
+      return;
+    }
     for await (const _ of result.fullStream) { /* consume the real Host stream */ }
     const response = await result.response;
     expect(response.error).toBeUndefined();

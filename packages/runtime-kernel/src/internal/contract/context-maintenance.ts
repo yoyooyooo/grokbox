@@ -16,7 +16,7 @@ export const CONTEXT_FAILURE_CODES = [
   "context_material_too_large", "context_material_invalid", "context_target_unreachable",
   "summary_unavailable", "summary_invalid", "no_improvement", "stale_root",
   "maintenance_budget_exhausted", "deadline_exceeded", "capability_unqualified",
-  "commit_unknown", "maintenance_conflict", "maintenance_busy", "native_cleanup_unknown", "cancelled", "not_admitted",
+  "commit_unknown", "maintenance_conflict", "maintenance_busy", "native_cleanup_unknown", "cancelled", "not_admitted", "auth_mismatch",
 ] as const;
 export type ContextFailureCode = typeof CONTEXT_FAILURE_CODES[number];
 export class ContextFailure extends Error {
@@ -39,6 +39,7 @@ export function contextFailureMessage(code: ContextFailureCode): string {
     deadline_exceeded: "Context maintenance exhausted the current operation deadline. No additional model attempt was started.",
     capability_unqualified: "The loaded Host/modeld does not provide a qualified context maintenance capability.",
     cancelled: "Context maintenance was cancelled. Inspect the operation to distinguish an uncommitted candidate from an already-persisted root.",
+    auth_mismatch: "The model credential no longer matches the captured TURN. No new summary request was authorized with the changed credential.",
   };
   return messages[code] ?? "Context maintenance could not safely continue. Inspect the operation and current session state.";
 }
@@ -113,6 +114,8 @@ export type ContextSelectionCapture = {
   selection: SelectionIdentity;
   model: ResolvedModelSelection;
   policy: CapturedContextPolicy;
+  /** Credential identity only, never a secret or a lease; shared with main admission. */
+  authFingerprint?: string;
 };
 export type ContextMaintenanceReason = "preflight" | "manual" | "overflow";
 export type ContextMaintenanceRequest = ContextMaintenanceIdentity & {

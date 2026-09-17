@@ -1,5 +1,5 @@
 import { Clock, Context, Effect, Option, SynchronizedRef } from "effect";
-import { AdmissionAuthority, BackendAuth, ContextCompactionAlgorithm, HostCompact, ModelBackend } from "@grokbox/runtime-kernel/ports";
+import { AdmissionAuthority, BackendAuth, ConfigurationRead, ContextCompactionAlgorithm, HostCompact, ModelBackend } from "@grokbox/runtime-kernel/ports";
 import { captureContextSelection, InferenceMemory, type ContextMaintenanceExecution } from "@grokbox/runtime-kernel/inference";
 import { ContextFailure, contextFailure, CONTEXT_MATERIAL_MAX_BYTES, WIRE_VERSION, OWNERSHIP_EVIDENCE_MAX_AGE_MS,
   type ContextMaintenanceRequest, type ContextMaintenanceReceipt, type ContextMaterial, type ContextCommitReceipt,
@@ -66,6 +66,7 @@ export function handleContextMaintenance(incoming: Incoming, raw: unknown, gener
     const started = now.monotonicTimeNanosUnsafe();
     const remaining = () => request.deadlineMs - Number(now.monotonicTimeNanosUnsafe() - started) / 1000000;
     const memory = yield* InferenceMemory;
+    const configuration = yield* ConfigurationRead;
     const authority = yield* AdmissionAuthority;
     if (request.serviceEpoch.incarnationId !== generation || !authority.currentContext) return yield* Effect.fail(new ContextFailure("not_admitted"));
     const ctx = yield* Effect.context<never>();
@@ -87,6 +88,10 @@ export function handleContextMaintenance(incoming: Incoming, raw: unknown, gener
       const scope = canonicalJson([result.ownership.scopeId, result.ownership.serverId]);
       if (admittedScope !== undefined && admittedScope !== scope) return yield* Effect.fail(new ContextFailure("not_admitted"));
       admittedScope = scope;
+      // The native ownership read cannot resurrect a cancelled/revoked parent
+      // or rotate the already-bound TURN's authority behind main admission.
+      yield* captureContextSelection(request, { ownership: result.ownership }).pipe(
+        Effect.provideService(ConfigurationRead, configuration), Effect.provideService(InferenceMemory, memory));
     });
     yield* authorize;
     const capture = yield* captureContextSelection(request);
@@ -117,9 +122,10 @@ export function handleContextMaintenance(incoming: Incoming, raw: unknown, gener
       },
     };
     const auth = yield* BackendAuth;
-    const pinned = yield* auth.pin({ apiKeyRef: capture.model.apiKeyRef }).pipe(Effect.mapError(() => new ContextFailure("not_admitted")));
+    const pinned = yield* auth.pin({ apiKeyRef: capture.model.apiKeyRef }).pipe(Effect.mapError(() => new ContextFailure("auth_mismatch")));
+    const secured = yield* captureContextSelection(request, { authFingerprint: pinned.fingerprint });
     const outcome = yield* Effect.result(runner.run({ request: { ...request, deadlineMs: Math.max(1, Math.floor(remaining())) },
-      model: capture.model, policy: capture.policy, lease: pinned.lease, ...(overflow ? { overflow } : {}) }).pipe(
+      model: secured.model, policy: secured.policy, lease: pinned.lease, ...(overflow ? { overflow } : {}) }).pipe(
       Effect.provideService(HostCompact, host), Effect.provideService(ContextCompactionAlgorithm, algorithm.value)));
     if (observe) yield* observe(request, outcome._tag === "Success" ? { receipt: outcome.success } : { failure: outcome.failure.code }).pipe(Effect.timeout("100 millis"), Effect.ignore);
     if (outcome._tag === "Failure") return yield* Effect.fail(outcome.failure);

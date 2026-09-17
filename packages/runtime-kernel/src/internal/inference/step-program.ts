@@ -446,6 +446,14 @@ function admitLive(request: RunStepRequest, now: number) {
       });
       prepared = yield* backend.prepare(resolved, effectiveSnapshot).pipe(Effect.mapError(asBindingOrBackend));
       const pinned = yield* pinOnTurn(request, resolved.apiKeyRef);
+      if (contextCapture?.authFingerprint !== undefined && contextCapture.authFingerprint !== pinned.fingerprint) {
+        // Preflight may have summarized with this TURN before its first main
+        // request. A rotated key cannot silently become the main binding.
+        const rejectedScope = memory.turnScopes.get(storeKey);
+        memory.turnScopes.delete(storeKey);
+        if (rejectedScope) yield* Scope.close(rejectedScope, Exit.void);
+        return yield* Effect.fail(new BindingFailure("auth_mismatch"));
+      }
       bindingId = makeBindingId({
         hostEpoch: request.hostEpoch,
         agentId: request.agentId,

@@ -48,13 +48,15 @@ function contextSelectionRecord(value: unknown): ContextSelectionCapture | undef
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const v = value as ContextSelectionCapture;
-  if (v.version !== 1 || Object.keys(v).some(k => !["version", "hostEpoch", "serviceEpoch", "agentId", "turnId", "selection", "model", "policy"].includes(k))
+  if (v.version !== 1 || Object.keys(v).some(k => !["version", "hostEpoch", "serviceEpoch", "agentId", "turnId", "selection", "model", "policy", "authFingerprint"].includes(k))
     || typeof v.agentId !== "string" || typeof v.turnId !== "string" || !v.selection || !v.policy || !v.hostEpoch || !v.serviceEpoch) throw fail();
   try {
     const model = parseResolvedModelSelection(v.model);
     const policy = captureContextPolicy({ windowTokens: v.policy.windowTokens, compaction: v.policy.compaction }, model.id, v.agentId);
     if (canonicalJson(policy) !== canonicalJson(v.policy) || v.selection.agentId !== v.agentId || v.selection.modelId !== model.id
       || computeSelectionRevision({ agentId: v.agentId, model }) !== v.selection.selectionRevision) throw fail();
+    if (v.authFingerprint !== undefined && (typeof v.authFingerprint !== "string" || !v.authFingerprint
+      || v.authFingerprint.length > 256 || /[\x00-\x1f]/.test(v.authFingerprint))) throw fail();
     if (JSON.stringify(v).length > 65536) throw fail();
     return { ...v, model, policy };
   } catch { throw fail(); }

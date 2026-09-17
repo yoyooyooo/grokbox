@@ -13,7 +13,7 @@ if (!kase || process.argv.length !== 3) {
 }
 
 const CONTEXT_TESTS = [
-  "packages/runtime-kernel/test/context-policy.test.ts", "packages/box-runtime/test/context-reuse.test.ts",
+  "packages/runtime-kernel/test/context-policy.test.ts", "packages/runtime-kernel/test/context-selection.test.ts", "packages/box-runtime/test/context-reuse.test.ts",
   "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-host.test.ts",
   "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts",
   "test/context-commands.test.ts",
@@ -26,10 +26,10 @@ const CASES = {
   ],
   "context-policy": [
     ["bun", "run", "typecheck"],
-    ["bun", "test", "packages/runtime-kernel/test/context-policy.test.ts", "packages/runtime-kernel/test/unified-config.test.ts", "packages/box-runtime/test/config-migration.test.ts", "test/config-cli.test.ts"],
+    ["bun", "test", "packages/runtime-kernel/test/context-policy.test.ts", "packages/runtime-kernel/test/context-selection.test.ts", "packages/runtime-kernel/test/unified-config.test.ts", "packages/box-runtime/test/config-migration.test.ts", "test/config-cli.test.ts"],
   ],
   "context-owner": [
-    ["bun", "test", "packages/box-runtime/test/context-maintenance-host.test.ts", "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "test/context-commands.test.ts"],
+    ["bun", "test", "packages/runtime-kernel/test/context-selection.test.ts", "packages/box-runtime/test/context-maintenance-host.test.ts", "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "test/context-commands.test.ts"],
   ],
   "context-summary": [
     ["bun", "test", "packages/box-runtime/test/context-reuse.test.ts", "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "packages/runtime-kernel/test/overflow-recovery.test.ts"],
