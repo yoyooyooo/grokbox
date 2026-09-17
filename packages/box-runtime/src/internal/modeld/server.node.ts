@@ -11,7 +11,7 @@ import {
   REQUEST_WALL_DEADLINE_MS,
   SERVER_ACTIVE_CLIENTS_MAX,
   WIRE_VERSION,
-  projectFailureSummary, failureSummaryFromObservation, projectProviderRecoveryState, type ProviderRecoveryState, type FailureSummary,
+  projectFailureSummary, failureSummaryFromObservation, projectProviderRecoveryState, projectAuthorityProgress, type AuthorityProgress, type ProviderRecoveryState, type FailureSummary,
   WireError,
   type InferenceEvent,
   type RunStepRequest,
@@ -152,7 +152,8 @@ function emit(socket: Socket, value: unknown) {
   return writeFrame(socket, value).pipe(Effect.ignore);
 }
 
-function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer, options: ServeOptions) {
+function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer, options: ServeOptions,
+  enqueueAuthority: (request: RunStepRequest, state: AuthorityProgress, gap: () => void) => void) {
   const socket = incoming.socket;
   return Effect.gen(function* () {
     incoming.consumed = true;
@@ -202,7 +203,9 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     let backendAttempts = 0;
     const attempts: NonNullable<ModeldStepOutcome["attempts"]> = [];
     let readRecovery: (() => ProviderRecoveryState | undefined) | undefined;
-    let recoverySequence = 0;
+    let recoverySequence = 0, authoritySequence = 0;
+    let lastAuthority: AuthorityProgress | undefined;
+    let authorityObservationGaps = 0;
     const withFailureSummary = (value: ModeldStepOutcome): ModeldStepOutcome => {
       if (!value.failureCode) return value;
       const base = value.failureSummary ?? failureSummaryFromObservation(value);
@@ -225,6 +228,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       }
       observation = withFailureSummary({ ...observation, at: observation.at ?? new Date().toISOString(), startedAt,
         durationMs: Math.max(0, Math.floor(performance.now() - startedTick)), backendAttempts, attempts,
+        ...(lastAuthority ? { authority: lastAuthority } : {}),
+        ...(authorityObservationGaps ? { authorityObservationGaps } : {}),
         ...(readRecovery?.() ? { recovery: readRecovery!() } : {}) });
       return Effect.gen(function* () {
         const execution = yield* inferenceCapacity;
@@ -268,10 +273,35 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
         })),
       );
     })) };
+    const runtimeEvents: typeof RuntimeEvents.Service = { append: value => Effect.gen(function* () {
+      const v = value && typeof value === "object" ? value as Record<string, unknown> : {};
+      const authority = projectAuthorityProgress(v.authority);
+      if (authority) {
+        lastAuthority = authority;
+        // Bounded control traffic; suppression never extends a deadline or
+        // drops a model/tool event. Final outcome retains the latest phase.
+        if (authoritySequence < 256) {
+          yield* emit(socket, { kind: "authority", version: WIRE_VERSION, sequence: authoritySequence++, authority });
+          // Journal I/O has a separate bounded service worker. A slow or broken
+          // observer must not consume the STEP's authority waiting allowance.
+          enqueueAuthority(request, authority, () => { authorityObservationGaps++; });
+        }
+        return;
+      }
+      const recovery = projectProviderRecoveryState(v.recovery);
+      if (!recovery) return;
+      yield* emit(socket, { kind: "recovery", version: WIRE_VERSION, sequence: recoverySequence++, recovery });
+      if (options.observeRecovery) yield* options.observeRecovery(request, recovery).pipe(Effect.timeout("100 millis"), Effect.catchCause(() => Effect.void));
+    }) };
+    const transportHalt = Effect.raceFirst(
+      Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
+      Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
+    );
     const admitted = yield* Effect.result(
-      runStep(parsed.request).pipe(
-        Effect.timeout(`${OWNERSHIP_ADMISSION_WAIT_MS} millis`),
+      Effect.raceFirst(runStep(parsed.request), transportHalt).pipe(
+        Effect.timeout(`${Math.min(OWNERSHIP_ADMISSION_WAIT_MS, Math.max(0, deadlineAt - performance.now()))} millis`),
         Effect.provideService(ModelBackend, compactBackend),
+        Effect.provideService(RuntimeEvents, runtimeEvents),
       ),
     );
     if (admitted._tag === "Failure") {
@@ -293,6 +323,13 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     const step = admitted.success;
     if ("recovery" in step && typeof step.recovery === "function") readRecovery = step.recovery;
     observation = { ...observation, phase: "provider", bindingId: step.bindingId };
+    if (!("stream" in step) && !step.bindingId) {
+      // A claim waiting for authority has no acknowledged binding yet. Do not
+      // issue an invalid accepted frame, nor dispatch the duplicate request.
+      observation = { ...observation, outcome: "duplicate", phase: "admission" };
+      yield* emit(socket, errorFrame("binding_missing"));
+      return;
+    }
     yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: step.bindingId });
     if (!("stream" in step)) {
       observation = { ...observation, outcome: "duplicate", phase: "complete" };
@@ -315,12 +352,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       Stream.runForEach(
         Stream.interruptWhen(step.stream, halt).pipe(
           Stream.provideService(ModelBackend, compactBackend),
-          Stream.provideService(RuntimeEvents, { append: value => Effect.gen(function* () {
-            const recovery = value && typeof value === "object" && "recovery" in value ? projectProviderRecoveryState(value.recovery) : undefined;
-            if (!recovery) return;
-            yield* emit(socket, { kind: "recovery", version: WIRE_VERSION, sequence: recoverySequence++, recovery });
-            if (options.observeRecovery) yield* options.observeRecovery(request, recovery).pipe(Effect.timeout("100 millis"), Effect.catchCause(() => Effect.void));
-          }) }),
+          Stream.provideService(RuntimeEvents, runtimeEvents),
         ),
         (event: InferenceEvent) => Effect.gen(function* () {
           if (!outputBudget.add(event)) {
@@ -375,6 +407,8 @@ export type ServeOptions = {
   rootId?: string;
   observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
   observeRecovery?: (request: RunStepRequest, state: ProviderRecoveryState) => Effect.Effect<void, unknown>;
+  observeAuthority?: (request: Pick<RunStepRequest, "agentId" | "turnId" | "stepId" | "hostEpoch" | "serviceEpoch">,
+    state: AuthorityProgress, observedAt?: string) => Effect.Effect<void, unknown>;
   onObservationTimeout?: () => void;
   compactForIncoming?: (incoming: Incoming) => Layer.Layer<HostCompact>;
   env?: NodeJS.Dict<string>;
@@ -392,6 +426,33 @@ export function serveModeld(options: ServeOptions) {
     const live = new Set<Socket>();
     const incoming = yield* Queue.bounded<Incoming>(maxClients);
     const hooks = options.hooks ?? {};
+    type AuthorityJob = { request: Parameters<NonNullable<ServeOptions["observeAuthority"]>>[0]; state: AuthorityProgress; at: string; gap: () => void };
+    const authorityJobs = yield* Queue.bounded<AuthorityJob>(64);
+    const pendingAuthority = new Set<AuthorityJob>();
+    const enqueueAuthority = (request: RunStepRequest, state: AuthorityProgress, onGap: () => void) => {
+      if (!options.observeAuthority) return;
+      let noted = false;
+      // Retain only identities, never the potentially large prompt snapshot.
+      const identity = { agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
+        hostEpoch: { ...request.hostEpoch }, serviceEpoch: { ...request.serviceEpoch } };
+      const job = { request: identity, state, at: new Date().toISOString(), gap: () => { if (!noted) { noted = true; onGap(); } } };
+      if (Queue.offerUnsafe(authorityJobs, job)) pendingAuthority.add(job);
+      else job.gap();
+    };
+    if (options.observeAuthority) yield* Effect.forkScoped(Effect.forever(Effect.gen(function* () {
+      const job = yield* Queue.take(authorityJobs);
+      yield* options.observeAuthority!(job.request, job.state, job.at).pipe(
+        Effect.timeout("50 millis"),
+        Effect.onExit(exit => Effect.sync(() => {
+          if (exit._tag === "Failure") job.gap();
+          pendingAuthority.delete(job);
+        })), Effect.catchCause(() => Effect.void),
+      );
+    })));
+    yield* Effect.addFinalizer(() => Effect.sync(() => {
+      for (const job of pendingAuthority) job.gap();
+      pendingAuthority.clear();
+    }));
     const listener = yield* acquireUnixListener(options.path, options.counts, {
       ...hooks,
       afterListen: undefined,
@@ -448,7 +509,7 @@ export function serveModeld(options: ServeOptions) {
       yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
         const socket = yield* trackSocket(raw.socket, options.counts, capacity);
         const frame = yield* readOneFrame(raw);
-        const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options);
+        const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options, enqueueAuthority);
         yield* options.compactForIncoming
           ? handled.pipe(Effect.provide(options.compactForIncoming(raw)))
           : handled;

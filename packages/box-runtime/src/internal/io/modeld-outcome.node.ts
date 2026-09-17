@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { projectExecutionCapacity, projectStreamSummary, projectFailureSummary, projectProviderRecoveryState, projectModelRecoveryProgress, type ProviderRecoveryState, type ContextSnapshot, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
+import { projectExecutionCapacity, projectStreamSummary, projectFailureSummary, projectProviderRecoveryState, projectModelRecoveryProgress, projectAuthorityProgress, projectModelAuthorityProgress, type AuthorityProgress, type ProviderRecoveryState, type ContextSnapshot, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
 import { projectBackendObservation } from "../backends/failure-observation.ts";
 import { STEP_FAILURE_CODES, STEP_OUTCOMES, STEP_PHASES, type ModeldStepOutcome } from "../modeld/step-outcome.ts";
 import { appendNdjsonLine } from "../host/terminal-journal.node.ts";
@@ -106,6 +106,10 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
   if (attempts !== undefined) out.backendAttempts = attempts;
   const failureSummary = projectFailureSummary(v.failureSummary);
   if (failureSummary) out.failureSummary = failureSummary;
+  const authority = projectAuthorityProgress(v.authority);
+  if (authority) out.authority = authority;
+  const authorityGaps = boundedInt(v.authorityObservationGaps, 256);
+  if (authorityGaps !== undefined) out.authorityObservationGaps = authorityGaps;
   const recovery = projectProviderRecoveryState(v.recovery);
   // Failed summaries already carry the same attempt history. Do not duplicate
   // it and exceed the journal's per-line window for a large configured budget.
@@ -169,6 +173,18 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
     out.attemptsTruncated = v.attempts.length > retained.length || (attempts !== undefined && attempts > retained.length);
   }
   return out;
+}
+
+export function writeModeldAuthorityProgress(root: string,
+  request: Pick<RunStepRequest, "agentId" | "turnId" | "stepId" | "hostEpoch" | "serviceEpoch">,
+  authority: AuthorityProgress, observedAt = new Date().toISOString()) {
+  return Effect.tryPromise(async () => {
+    const projected = projectModelAuthorityProgress({ name: "model_authority_progress", schemaVersion: 1, at: observedAt,
+      agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
+      hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId, authority });
+    if (!projected) { noteUnprojectedJournalEvent(root, "modeld"); return; }
+    await appendNdjsonLine(root, JSON.stringify(projected), "modeld");
+  }).pipe(Effect.asVoid);
 }
 
 export function writeModeldRecoveryProgress(root: string, request: RunStepRequest, recovery: ProviderRecoveryState) {

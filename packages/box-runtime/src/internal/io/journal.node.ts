@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { journalRoleAllows, projectSafeReason } from "@grokbox/runtime-kernel/status";
-import { projectModelRecoveryProgress, projectServerActivityEvent } from "@grokbox/runtime-kernel/contract";
+import { projectModelRecoveryProgress, projectModelAuthorityProgress, projectServerActivityEvent } from "@grokbox/runtime-kernel/contract";
 import {
   appendHostStreamRejected,
   appendNdjsonLine,
@@ -52,6 +52,7 @@ export const EVENT_NAMES = [
   // TODO(owner): names follow the MINI-1918 v2 review proposal; not a dated owner adjudication.
   "model_step_terminal",
   "model_recovery_progress",
+  "model_authority_progress",
   "host_stream_rejected",
   "host_seam_stage",
   "host_run_observation",
@@ -92,6 +93,7 @@ const SEAM_EVENT_NAMES = new Set([
   "host_normalized_terminal",
   "model_step_terminal",
   "model_recovery_progress",
+  "model_authority_progress",
   "host_stream_rejected",
   "host_seam_stage",
   "provider_error_observed",
@@ -458,6 +460,7 @@ export function projectJournalEvent(input: unknown): RuntimeEvent | TurnSeamTerm
   if (input.name === "host_server_activity_observation") return projectServerActivityEvent(input);
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as RuntimeEvent | null;
   if (input.name === "model_recovery_progress") return projectModelRecoveryProgress(input) as RuntimeEvent | null;
+  if (input.name === "model_authority_progress") return projectModelAuthorityProgress(input) as RuntimeEvent | null;
   if (input.name === "host_run_observation") return projectRunObservation(input) as RuntimeEvent | null;
   if (input.name === "host_normalized_terminal") return projectHostNormalizedTerminal(input) as RuntimeEvent | null;
   if (input.name === "host_seam_stage") return projectHostSeamStage(input) as RuntimeEvent | null;

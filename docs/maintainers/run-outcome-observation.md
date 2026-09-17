@@ -4,9 +4,9 @@
 
 当前用途：本机 managed 推理的 STEP 排障、失败归因和有界证据查询。合同归 [产品合同 §7.3/§7.4](../product-contract.md) 与 [Spec S0.4.1](../roadmap/box-runtime-impl-spec.md)，Host 流合同归 [T26](../tickets/T26-runtime-host-fullstream.md)，发布事实归 [readiness](t32-live-enable-readiness.md)。本页是观测入口/含义，不另定义执行器、重试器或任务数据库。投影实现是 `packages/cli/src/outcome.ts`；`SEND_OUTCOME_STATES` 或 nonce-first join 变更时重审本页。
 
-## v5 失败摘要与受控模型恢复
+## v6 资格等待、失败摘要与受控模型恢复
 
-当前源码实现的 Host/modeld 使用 wire v5；这不证明已驻留进程已升级。`FailureSummary` 由 kernel 的同一纯合同分类，保留安全 HTTP 状态/请求 ID/Retry-After、资格/规范化/预算事实及执行身份。正常摘要由 modeld 直接传给 Host；Host 增补其实际观察到的输出和工具释放，不反查 journal 生成错误，不复制 provider 原始 message/body/headers。错误摘要缺失、版本未知、身份不符时保留原错误码并记录 `failureSummaryStatus`，不将诊断损坏当成新的 `invalid_stream`。严格成功终态、工具和 binding 检查不放宽。
+当前源码实现的 Host/modeld 使用 wire v6；这不证明已驻留进程已升级。`FailureSummary` 由 kernel 的同一纯合同分类，保留安全 HTTP 状态/请求 ID/Retry-After、资格/规范化/预算事实及执行身份。正常摘要由 modeld 直接传给 Host；Host 增补其实际观察到的输出和工具释放，不反查 journal 生成错误，不复制 provider 原始 message/body/headers。错误摘要缺失、版本未知、身份不符时保留原错误码并记录 `failureSummaryStatus`，不将诊断损坏当成新的 `invalid_stream`。严格成功终态、工具和 binding 检查不放宽。
 
 结束审计分开记录 `finishAudit` 与 `terminalAudit`。字段缺失、null、空串、空白、已知结束枚举、未知非空值和错误类型不混同；未知字符串只保留长度/摘要。首次/末次有效终态、首次/末次不支持值与冲突均有记录；后来的 stop 不能洗掉先前异常。旧 `providerFinishObserved` 的语义不变，历史记录不能倒推新字段。DONE/EOF/取消/异常退出独立结算工具参数的可解析性、缺失和最终对象一致性；主失败不被二次审计覆盖。无工具为 `not_applicable`，无有效 finish 的合法参数也不等于可执行调用。
 
@@ -26,9 +26,19 @@ GROKBOX_MODELD_RECOVERY_MAX_DELAY_MS=10000
 
 `model_recovery_progress` 记录 running/waiting/succeeded/stopped/cancelled 及策略、attempt 身份、HTTP 状态和最近的安全上游关联信息；`runtimeRecovery` 按实际 STEP 展示最后观察，不冒充当前存活租约。失败终态复用摘要里的恢复历史，避免同一事件重复放大。恢复等待可取消，不调用工具，不创建新的 TURN，不绕过 ownership/auth/configuration；异步复核之后必须重新检查恢复期限。成功 terminal 在 attempt 持久结算完成后才交给 Host，只有一个批次可以放行。
 
-升级先确认旧服务身份、空闲状态和制品，再用显式 replace/Host 恢复流程成套切换。`runtime modeld status` 可以报告旧 v4 服务的有限读取结果和 `protocolCompatible:false`，但生产 Host 不借此调用旧服务；`replace --expect-epoch ... --confirm` 的兼容读取也不拥有自动重试权。不能把发布 v5 变成“混用 v4/v5 时放开 extra_keys”，也不能删除去重库来迁移。旧数据读取、源码构建、原生 profile 资格和实际部署分别验收。
+升级先确认旧服务身份、空闲状态和制品，再用显式 replace/Host 恢复流程成套切换。`runtime modeld status` 可以报告旧 v4/v5 服务的有限读取结果和 `protocolCompatible:false`，但生产 Host 不借此调用旧服务；`replace --expect-epoch ... --confirm` 的兼容读取也不拥有自动重试权。不能把发布 v6 变成“混用旧协议时放开 extra_keys”，也不能删除去重库来迁移。旧数据读取、源码构建、原生 profile 资格和实际部署分别验收。
 
 `runtime status` 的 modeld facet 与 `runtime modeld status` 共用可用性投影，保留 `wireVersion`、`expectedWireVersion`、`protocolCompatible`、liveness、admission 和 executionGap。`protocolComparison=observer_to_modeld` 明确比较的是本次 CLI/观察器与 modeld，不是已经加载的 Host；缺少该 Host 的直接证据时 `hostProtocolCompatibility=not_observed`。旧服务即使没有 execution-status，也可凭其合格 service-info 报告协议不匹配，执行能力另报 not_instrumented；这不满足 replace 的更严格身份/空闲门槛。两次读取跨 service generation 时不拼接旧身份与新执行计数，不显示 ready；scope_mismatch、protocol_mismatch、generation_changed 和单纯未观测分别保留。所有读取均不重启、不替换、不发起 STEP。
+
+### 资格等待不是模型重试，也不是已失去所有权
+
+同一已持久登记、尚未终止的 STEP，可以在有限预算内重取服务端归属证据。`model_authority_progress` 的 `waiting/authorized/denied/cancelled` 属于控制信息，不是模型 token、Bot 回复或新的执行授权。`runtimeAuthority` 由 `history outcome --runtime` 按实际 STEP 关联，保留 `observedAt`、`currentLiveness:not_proven` 和 `replayAuthorized:false`。它表示最后观察，不保证 Bot 当前还在等；查询不会重发用户消息、创建新 STEP、调用模型或修复现场。
+
+`readRecovery` 区分第一次读取的原因/耗时、最后子码、读取尝试数与退避；`ownershipWait` 区分源操作和本等待者，分别记录排队、源等待、本地状态核验和原始证据年龄。缺失字段不补成零。更新后的源码仍采用固定五秒证据窗口；迟到响应不能在完成时重新计龄，恢复成功必须取得另一份合格证据。工具实际执行、材料释放、模型请求数与投递继续分开记录。
+
+进度日志通过有界服务队列异步写入，因此其到达顺序不必早于模型终态。最终 `model_step_terminal.authority` 是该终态记录时的快照，不应因为某一条进度尚未落盘就判定状态没有转换。`authorityObservationGaps` 只记录终态采样时已知的该类缺口；终态之后发生的观察失败不能被倒填成已记录事实。既有 writer-health 仍用于查询物理日志写入状态，且不成为执行依赖。
+
+`runtime modeld status` 的执行投影可提供 `authority.active/waiting/readRetries` 及累计锁等待/存储时间。计数只描述该次服务观察，不是每个 Bot 的完整运行任务列表；累计时间不能直接当作单请求 P95。没有新 wire 的旧服务只提供受支持的只读诊断，不借此取得新执行兼容性。实现与验证边界见 [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) 和 [T49](../tickets/T49-modeld-qualification-and-release.md)。
 
 ## 三类证据不能互相替代
 

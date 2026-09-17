@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildProvenance } from "./build-provenance.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const box = "packages/box-runtime/test/";
@@ -11,7 +12,7 @@ const kernel = "packages/runtime-kernel/test/";
 // A finite route to existing production-path tests, not a second implementation
 // or a generic command dispatcher. Unimplemented gates must fail, never pass an
 // empty suite. Add a case only with its ticket's real executable evidence.
-export const MODEL_CORE_CASES = Object.freeze({
+const MODEL_CORE_SUITES = {
   baseline: [
     `${kernel}ownership-admission.test.ts`,
     `${box}ownership-scope-cache.test.ts`,
@@ -54,9 +55,37 @@ export const MODEL_CORE_CASES = Object.freeze({
     `${box}execution-lifetime.test.ts`,
     `${box}execution-history-storage-review.test.ts`,
   ],
-  authority: null,
-  observation: null,
-  "release-offline": null,
+  authority: [
+    `${kernel}authority-gate.test.ts`,
+    `${kernel}ownership-admission.test.ts`,
+    `${kernel}route-binding.test.ts`,
+    `${kernel}step-ledger.test.ts`,
+    `${kernel}overflow-recovery.test.ts`,
+    `${box}authority-wait-unix.test.ts`,
+    `${box}authority-wire.test.ts`,
+    `${box}ownership-coordinator.test.ts`,
+    `${box}ownership-observation-unix.test.ts`,
+    `${box}ownership-packed-client.test.ts`,
+    `${box}provider-recovery-unix.test.ts`,
+  ],
+  observation: [
+    `${kernel}authority-policy.test.ts`,
+    `${box}authority-observation.test.ts`,
+    `${box}authority-wire.test.ts`,
+    `${box}modeld-outcome.test.ts`,
+    `${box}monitor-ownership-diagnostic.test.ts`,
+    `${box}ownership-observation-unix.test.ts`,
+    "test/outcome.test.ts",
+    "test/runtime-protocol-observation.test.ts",
+    "test/modeld-core-verifier.test.ts",
+  ],
+};
+export const MODEL_CORE_CASES = Object.freeze({
+  ...MODEL_CORE_SUITES,
+  "release-offline": [...new Set(Object.values(MODEL_CORE_SUITES).flat()),
+    `${box}modeld-replace.test.ts`, `${box}t32-live-enable-readiness.test.ts`,
+    `${box}context-continuity-artifact.test.ts`, "test/packaging.test.ts", "test/publication-privacy.test.ts",
+    "test/modeld-core-benchmark.test.ts"],
 });
 
 export function resolveCoreCase(args) {
@@ -73,7 +102,8 @@ export function resolveCoreCase(args) {
 export function isolatedProofEnvironment(env, home) {
   const isolated = Object.fromEntries(Object.entries(env).filter(([key]) =>
     !/^(GROKBOX_|PI_|CURSOR_|ANTHROPIC_|OPENAI_|MINIMAX_|AWS_|AZURE_|GOOGLE_)/i.test(key)
-      && !/(TOKEN|SECRET|API_KEY|PASSWORD|KEYCHAIN)/i.test(key)));
+      && !/(TOKEN|SECRET|API_KEY|PASSWORD|KEYCHAIN)/i.test(key)
+      && !/^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|LD_PRELOAD|DYLD_INSERT_LIBRARIES|BUN_RUNTIME_TRANSPILER_CACHE_PATH)$/.test(key)));
   return { ...isolated, HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
     GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_ALLOW_NATIVE: "0" };
 }
@@ -97,9 +127,13 @@ export function runCoreProof(args) {
   const expected = String(pkg.packageManager).replace(/^bun@/, "");
   if (process.versions.bun !== expected) throw new Error(`Proof requires declared Bun ${expected}; observed ${process.versions.bun ?? "Node"}`);
   assertProofSuites(root, selected.files);
+  const identity = buildProvenance(root);
+  const revision = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+  if (!proofProcessSucceeded(revision)) throw new Error("Proof source revision unavailable");
   const home = mkdtempSync(join(tmpdir(), "grokbox-modeld-proof-"));
   const reality = {
-    case: selected.name, bun: process.versions.bun,
+    case: selected.name, bun: process.versions.bun, sourceCommit: revision.stdout.trim(),
+    sourceDigest: identity.sourceDigest, compilerVersion: identity.compilerVersion, sdkVersions: identity.sdkVersions,
     effect: pkg.workspaces.catalogs["effect-v4-beta"].effect,
     dependencyReality: "production programs with synthetic capabilities and fixture-owned local resources",
     nativeQualification: "not-proven", independentReview: "pending", liveRelease: "not-run",
@@ -122,6 +156,10 @@ export function runCoreProof(args) {
     if (!proofProcessSucceeded(result)) {
       console.error(JSON.stringify({ ...reality, stage: "failed", status: result.status, signal: result.signal ?? null,
         reason: result.error ? "test-process-unavailable-or-timeout" : "test-failure" }));
+      return 1;
+    }
+    if (buildProvenance(root).sourceDigest !== identity.sourceDigest) {
+      console.error(JSON.stringify({ ...reality, stage: "failed", reason: "source-changed-during-proof" }));
       return 1;
     }
     console.log(JSON.stringify({ ...reality, stage: "passed-offline" }));

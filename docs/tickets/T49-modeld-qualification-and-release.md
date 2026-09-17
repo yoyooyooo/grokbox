@@ -1,6 +1,6 @@
 # T49 — Policy, hot-path qualification and controlled release
 
-Status: planned; live qualification not started. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: offline implementation/qualification harness implemented; final candidate checks in progress; independent/native/live gates not signed. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -48,4 +48,10 @@ No dependency sweep, generic performance platform, automatic repair/monitoring, 
 
 ## Exit evidence
 
-Pending for each gate separately. Implementation complete, offline-qualified, independently-reviewed, native-qualified and live-released must be reported as distinct states. A release blocker is not closed by creating a residue item.
+Implemented: all finite `verify:modeld-core` cases route to executable production-path suites. `release-offline` aggregates lifecycle/evidence/state/authority/observation, packed Node replacement, import/provenance and package/privacy checks. The runner records exact source revision/digest, installed SDK/compiler pins and explicit native/review/live claim limits; source changes during proof fail the run.
+
+`benchmark:modeld-core -- --baseline-root <clean-checkout>` compares the same production source/Unix/LevelDB workload in separate isolated processes, not a duplicated legacy simulator. It checks four sequential STEPs at one versus 2,048 output fragments, first-read delays of 5.5/7.75/9 seconds with a fast second read, and cancellation during initial source waiting. Both source trees are checked for drift; mismatched workloads, duplicate model calls, missing terminal/cleanup or a failed candidate do not yield a passing comparison. Per-case timings, native/full/local read counts, recorded queue/source/local-witness waits, lock/storage totals, event-loop observations and cancellation settlement are returned without private machine roots. Native server processing time and a production SLA remain unobserved.
+
+G3 remains the strict five-second policy. Slow first observations are discarded; success in these vectors requires a distinct fresh read within the unchanged finite budget. Persistently slow reads still refuse, as tested. No fifteen-second policy is enabled.
+
+Final fixed-source results belong in the qualification report linked from the Spec. G2 (actual native triptych and final tool consumer), G5 (independent fixed-tip review) and G6 (authorized live cutover) remain required and unsatisfied until their own receipts exist. Code/test completion must not mark these gates done or move them to T50 as optional residue.

@@ -53,7 +53,7 @@ export function occupy(state: InferenceState, request: RunStepRequest, now: numb
   const lKey = ledgerKey(request);
   const turn = next.turns.get(tKey);
 
-  if (turn?.poisoned) return { ok: false, error: new BindingFailure("cancelled") };
+  if (turn && turn.lifecycle !== "open") return { ok: false, error: new BindingFailure("cancelled") };
   // Idle time changes cache residency, not the lifetime of a Host tool or approval.
   if (turn?.expired) return { ok: false, error: new BindingFailure("turn_expired") };
   if (turn && turn.serviceEpoch !== request.serviceEpoch.incarnationId) {
@@ -90,7 +90,7 @@ export function occupy(state: InferenceState, request: RunStepRequest, now: numb
   next.turns.set(tKey, {
     serviceEpoch: request.serviceEpoch.incarnationId,
     bindingId: turn?.bindingId,
-    poisoned: false,
+    lifecycle: "open",
     expired: false,
     lastActivityMs: now,
   });
@@ -131,7 +131,7 @@ export function applyCancel(
     next.ledger.set(lKey, { ...entry, status: "cancelled" });
     if (next.turnActive.get(tKey) === request.stepId) next.turnActive.delete(tKey);
     const turn = next.turns.get(tKey);
-    if (turn && !turn.bindingId) next.turns.set(tKey, { ...turn, poisoned: true });
+    if (turn && !turn.bindingId) next.turns.set(tKey, { ...turn, lifecycle: "closed" });
     return { ok: true, interrupt: true, state: next };
   }
   next.ledger.set(lKey, {

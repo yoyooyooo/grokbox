@@ -13,6 +13,7 @@ import {
   annotateStreamFailure,
   projectExecutionCapacity,
   projectProviderRecoveryState,
+  projectAuthorityProgress,
 } from "@grokbox/runtime-kernel/contract";
 
 export const MODELD_MAX_FRAME = WIRE_FRAME_MAX_BYTES;
@@ -148,7 +149,7 @@ export type ClientSession =
   | { method: "service-info" }
   | { method: "execution-status" }
   | { method: "cancel-step" }
-  | { method: "run-step"; phase: "start" | "events"; sequence: number; recoverySequence?: number; bindingId?: string; expectedBindingId?: string };
+  | { method: "run-step"; phase: "start" | "events"; sequence: number; recoverySequence?: number; authoritySequence?: number; bindingId?: string; expectedBindingId?: string };
 
 export function clientSessionFor(body: unknown): ClientSession {
   if (!isRecord(body) || typeof body.method !== "string") throw new WireError("malformed_frame");
@@ -177,7 +178,7 @@ function isWireInferenceEvent(value: unknown): boolean {
   return false;
 }
 
-/** Strict v5 response. Error summaries are diagnostic only; successful output
+/** Strict v6 response. Error summaries are diagnostic only; successful output
  * still requires the admitted binding and an explicit valid finish. */
 export function acceptModeldFrame(session: ClientSession, value: unknown): { session: ClientSession; done: boolean; control?: ParsedV4Control } {
   if (!isRecord(value)) throw new WireError("malformed_frame");
@@ -215,6 +216,12 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
     if (value.ok !== true || value.method !== "cancel-step" || value.version !== WIRE_VERSION) throw new WireError("malformed_frame");
     return { session, done: true };
   }
+  if (value.kind === "authority") {
+    if (!exactKeys(value, ["kind", "version", "sequence", "authority"]) || value.version !== WIRE_VERSION
+      || value.sequence !== (session.authoritySequence ?? 0) || (session.authoritySequence ?? 0) >= 256
+      || !projectAuthorityProgress(value.authority)) throw new WireError("malformed_frame");
+    return { session: { ...session, authoritySequence: (session.authoritySequence ?? 0) + 1 }, done: false };
+  }
   if (session.phase === "start") {
     if (!exactKeys(value, ["ok", "method", "kind", "version", "bindingId"])) throw new WireError("extra_keys");
     if (value.ok !== true || value.method !== "run-step" || value.kind !== "accepted" || value.version !== WIRE_VERSION || typeof value.bindingId !== "string") {
@@ -223,7 +230,7 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
     if (!value.bindingId || value.bindingId.length > 128 || (session.expectedBindingId !== undefined && value.bindingId !== session.expectedBindingId)) {
       throw annotateStreamFailure(new WireError("malformed_frame"), { normalizeCause: "terminal_binding_mismatch", rejectSite: "wire_terminal" });
     }
-    return { session: { method: "run-step", phase: "events", sequence: 0, bindingId: value.bindingId }, done: false };
+    return { session: { ...session, phase: "events", sequence: 0, bindingId: value.bindingId }, done: false };
   }
   if (value.kind === "event") {
     if (!exactKeys(value, ["kind", "sequence", "event"])) throw new WireError("extra_keys");

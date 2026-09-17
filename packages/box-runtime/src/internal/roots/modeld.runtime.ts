@@ -12,7 +12,7 @@ import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { modeldStorePorts } from "../io/store.node.ts";
 import { type OwnershipReader } from "../io/ownership-admission.node.ts";
 import { makeOwnershipCoordinator } from "../io/ownership-coordinator.node.ts";
-import { writeModeldStepOutcome, writeModeldRecoveryProgress } from "../io/modeld-outcome.node.ts";
+import { writeModeldStepOutcome, writeModeldRecoveryProgress, writeModeldAuthorityProgress } from "../io/modeld-outcome.node.ts";
 import { openExecutionHistory } from "../io/execution-history.node.ts";
 import { noteJournalObservationTimeout } from "../host/journal-health.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
@@ -27,19 +27,21 @@ export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string
   return Layer.effect(AdmissionAuthority, Effect.gen(function* () {
     const coordinator = yield* makeOwnershipCoordinator(ownershipRead);
     return {
-    current: (request): Effect.Effect<AdmissionAuthorityResult> => Effect.gen(function* () {
+    current: (request, control): Effect.Effect<AdmissionAuthorityResult> => Effect.gen(function* () {
       const authority = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
       if (authority.state !== "committed") return { admitted: false, reason: "authority_not_committed" } as const;
       const host = authority.host;
       if (request.hostEpoch.compile !== host.generationId || request.hostEpoch.source !== host.sourceSha
         || request.hostEpoch.hostIdentity !== host.identitySha) return { admitted: false, reason: "host_identity_mismatch" } as const;
-      const observed = yield* coordinator.current({ agentId: request.agentId, gatewayPid: host.pid, hostGeneration: host.generationId });
+      const observed = yield* coordinator.current({ agentId: request.agentId, gatewayPid: host.pid, hostGeneration: host.generationId }, control);
       // The native read can span a deployment: never combine two generations.
       const after = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
       if (after.state !== "committed" || after.host.generationId !== host.generationId || after.host.identitySha !== host.identitySha) return { admitted: false, reason: "host_generation_changed" } as const;
       return { admitted: true as const, ownership: { ...observed.evidence,
         scopeId: sha256Text(canonicalJson([observed.evidence.scopeId, observed.gateway.pid, observed.gateway.startedAt])),
-      } };
+      }, evidenceId: observed.evidenceId,
+        diagnostic: { authority: { reason: "unknown" as const, ownershipRead: observed.remote.readObservation,
+          ownershipWait: observed.observation, readRecovery: observed.recovery } } };
     }).pipe(Effect.catch(error => {
       const reason = error instanceof BoxRuntimeError ? error.failureCode : error;
       const diagnostic = streamFailureDiagnostic(error);
@@ -178,6 +180,7 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
         rootId: modeldRootId(options.durableRoot, options.runRoot),
         observeStep: (request, outcome) => writeModeldStepOutcome(options.runRoot, request, outcome),
         observeRecovery: (request, recovery) => writeModeldRecoveryProgress(options.runRoot, request, recovery),
+        observeAuthority: (request, authority, observedAt) => writeModeldAuthorityProgress(options.runRoot, request, authority, observedAt),
         onObservationTimeout: () => noteJournalObservationTimeout(options.runRoot, "modeld"),
         counts: options.counts,
         hooks: options.hooks,

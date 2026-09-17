@@ -24,12 +24,15 @@ export type OwnershipWaitObservation = {
   waiterId: string;
   sourceOperationId?: string;
   state: "local_witness" | "queued" | "shared" | "source" | "cached" | "validating";
-  outcome: "source_deadline" | "waiter_deadline" | "source_failure" | "local_refusal" | "resource_limit";
+  outcome: "observed" | "source_deadline" | "waiter_deadline" | "source_failure" | "local_refusal" | "resource_limit";
   durationMs: number;
   waitBudgetMs: number;
   sourceBudgetMs?: number;
   sourceAgeMs?: number;
   sourceSettlement?: "pending" | "settled";
+  queueMs?: number;
+  sourceWaitMs?: number;
+  localWitnessMs?: number;
 };
 
 export function projectOwnershipWaitObservation(value: unknown): OwnershipWaitObservation | undefined {
@@ -37,17 +40,40 @@ export function projectOwnershipWaitObservation(value: unknown): OwnershipWaitOb
     const id = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
     const waiterId = own(value, "waiterId"), sourceOperationId = own(value, "sourceOperationId");
     const state = member(own(value, "state"), ["local_witness", "queued", "shared", "source", "cached", "validating"]);
-    const outcome = member(own(value, "outcome"), ["source_deadline", "waiter_deadline", "source_failure", "local_refusal", "resource_limit"]);
+    const outcome = member(own(value, "outcome"), ["observed", "source_deadline", "waiter_deadline", "source_failure", "local_refusal", "resource_limit"]);
     const durationMs = own(value, "durationMs"), waitBudgetMs = own(value, "waitBudgetMs");
     if (own(value, "version") !== 1 || own(value, "policyId") !== "strict-observation-v1"
       || !id(waiterId) || !state || !outcome || !millis(durationMs) || !millis(waitBudgetMs)) return undefined;
     const result: OwnershipWaitObservation = { version: 1, policyId: "strict-observation-v1", waiterId, state, outcome, durationMs, waitBudgetMs };
     if (id(sourceOperationId)) result.sourceOperationId = sourceOperationId;
-    for (const key of ["sourceBudgetMs", "sourceAgeMs"] as const) {
+    for (const key of ["sourceBudgetMs", "sourceAgeMs", "queueMs", "sourceWaitMs", "localWitnessMs"] as const) {
       const n = own(value, key); if (millis(n)) result[key] = n;
     }
     const settlement = member(own(value, "sourceSettlement"), ["pending", "settled"]);
     if (settlement) result.sourceSettlement = settlement;
+    return result;
+  } catch { return undefined; }
+}
+
+export type OwnershipRecoveryObservation = {
+  version: 1; attempts: number; backoffMs: number;
+  firstReadCode?: typeof OWNERSHIP_READ_ERRORS[number];
+  firstReadReason?: "ownership_evidence_stale" | "ownership_read_timeout" | "ownership_read_unavailable" | "server_read_unavailable";
+  firstReadDurationMs?: number;
+  lastReadCode?: typeof OWNERSHIP_READ_ERRORS[number];
+};
+export function projectOwnershipRecoveryObservation(value: unknown): OwnershipRecoveryObservation | undefined {
+  try {
+    const attempts = own(value, "attempts"), backoffMs = own(value, "backoffMs");
+    if (own(value, "version") !== 1 || !Number.isInteger(attempts) || (attempts as number) < 1 || (attempts as number) > 2 || !millis(backoffMs)) return undefined;
+    const result: OwnershipRecoveryObservation = { version: 1, attempts: attempts as number, backoffMs };
+    const reason = member(own(value, "firstReadReason"), ["ownership_evidence_stale", "ownership_read_timeout", "ownership_read_unavailable", "server_read_unavailable"] as const);
+    if (reason) result.firstReadReason = reason;
+    const duration = own(value, "firstReadDurationMs");
+    if (millis(duration)) result.firstReadDurationMs = duration;
+    for (const key of ["firstReadCode", "lastReadCode"] as const) {
+      const code = member(own(value, key), OWNERSHIP_READ_ERRORS); if (code) result[key] = code;
+    }
     return result;
   } catch { return undefined; }
 }

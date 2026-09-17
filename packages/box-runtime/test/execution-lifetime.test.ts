@@ -82,7 +82,16 @@ describe("continuous modeld execution with exact disk deduplication", () => {
         if (result.kind !== "live") throw new Error("new TURN did not run");
         if (i === 0) firstBinding = result.bindingId;
       }
-      const snapshot = yield* inferenceCapacity;
+      // Foreground settlement signals the service-owned maintenance worker;
+      // it no longer waits for an unrelated cold write. Require bounded real
+      // convergence, not eager foreground eviction or a relaxed cache target.
+      const snapshot = yield* Effect.gen(function* () {
+        for (;;) {
+          const current = yield* inferenceCapacity;
+          if (current.hotTurns <= 3 && current.pinnedTurns <= 3 && current.pendingScopeReleases === 0) return current;
+          yield* Effect.sleep("5 millis");
+        }
+      }).pipe(Effect.timeout("2 seconds"));
       expect(snapshot.hotTurns).toBeLessThanOrEqual(3); expect(snapshot.pinnedTurns).toBeLessThanOrEqual(3);
       expect(snapshot.hotStepRecords).toBe(0); expect(counts.leasesAlive).toBeLessThanOrEqual(3);
       expect((yield* collect(request("step-1"))).kind).toBe("duplicate");

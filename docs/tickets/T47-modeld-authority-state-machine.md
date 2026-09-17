@@ -1,6 +1,6 @@
 # T47 — Bounded authority waiting in the single STEP program
 
-Status: planned. Milestone M2. Depends on: [T45](T45-modeld-evidence-lifetime.md), [T46](T46-modeld-state-and-durability.md). Spec: [S10.3–S10.6](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: core implementation and offline chains verified; outer-timeout integration review and final qualification remain open in T49. Milestone M2. Depends on: [T45](T45-modeld-evidence-lifetime.md), [T46](T46-modeld-state-and-durability.md). Spec: [S10.3–S10.6](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -39,4 +39,12 @@ No clearing poison to replay a failed request, new user message, new STEP hidden
 
 ## Exit evidence
 
-Pending: production state-machine replacement, old path removal, single-effect/terminal proof and fixed-tip review. A standalone state reducer not used by production is not completion.
+Production `runStep` uses the single `authority-gate.ts` program and registers its cancel/budget owners at durable claim time. The coordinator alone retries eligible reads (at most two attempts per check, with a cumulative per-STEP retry and waiting allowance); the gate does not invoke inference. `open/revoked/closed` replaces generic poison. Exhausted transient observations close the STEP/TURN without claiming observed revocation; explicitly observed identity changes revoke it. Neither closed state is replayable.
+
+The process-local permit is frozen and registered to its exact live STEP, service incarnation and memory owner. A copied DTO, a settled STEP, another runtime or an expired permit cannot authorize use. Dispatch verifies credentials again after a potentially slow ownership wait, then validates that same permit locally instead of alternating remote/auth reads without a bound.
+
+Wire v6 carries finite ordered authority control frames before or after binding acknowledgement. Controls cannot replace accepted/terminal, create a model token, renew deadlines or grant execution. V3–V5 execution is rejected; V4/V5 identity probes remain explicitly read-only. A duplicate claim still awaiting its binding receives a refusal rather than an invalid empty-binding accepted frame.
+
+Executable proofs are `authority-gate.test.ts`, `authority-wait-unix.test.ts`, `authority-wire.test.ts`, the coordinator delay/cancellation tests and existing binding/compact/recovery suites. They cover pre-dispatch and post-inference recovery with one provider effect, cumulative deadlines, immediate admission cancellation, exact duplicate absorption, credential rotation, permit expiry, old-peer refusal and one terminal. Final aggregate results and remaining native tool-consumption/live boundaries are recorded in T49; synthetic Unix tests do not qualify the original App or an actual Server lease.
+
+Remaining integration boundary: `server.node.ts` still retains the pre-existing outer admission cap in addition to the kernel's cumulative authority allowance. Both remain finite and fail closed, but a full-budget race may report the outer timeout rather than the more specific gate/source outcome. This is not treated as a proved causal-timeout closure or silently removed; T49 must qualify that boundary before signing the complete execution-core release.

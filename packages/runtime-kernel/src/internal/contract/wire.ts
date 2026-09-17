@@ -1,5 +1,6 @@
-/** v5 adds bounded structured failure facts. v4 peers must be upgraded together. */
-export const WIRE_VERSION = 5 as const;
+/** v6 adds pre-admission authority progress and shared STEP waiting semantics.
+ * Host/profile/modeld must be upgraded together; old peers cannot execute. */
+export const WIRE_VERSION = 6 as const;
 
 export type WireMethod = "health" | "run-step" | "cancel-step" | "compact-request" | "resume-step";
 

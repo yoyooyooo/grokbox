@@ -1,5 +1,5 @@
 import { addFinishField, observeFinishField, projectFinishAudit, projectToolTerminalAudit, projectProviderHttp, projectProviderRoute, type FinishAudit, type ToolTerminalAudit, type ProviderHttpObservation, type ProviderRouteObservation } from "./provider-observation.ts";
-import { projectOwnershipReadObservation, projectOwnershipWaitObservation, type OwnershipWaitObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
+import { projectOwnershipReadObservation, projectOwnershipWaitObservation, projectOwnershipRecoveryObservation, type OwnershipRecoveryObservation, type OwnershipWaitObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
 import { projectToolIdentityAudit, type ToolIdentityAudit } from "./tool-identity-observation.ts";
 import { projectSdkValidation, type SdkValidationObservation } from "./sdk-validation-observation.ts";
 /** Payload-free, request-local evidence shared by modeld and the SDK/Effect-free Host. */
@@ -46,7 +46,7 @@ export type StreamSummary = {
   route?: ProviderRouteObservation;
   engine?: { api: "chat" | "responses"; aiVersion: string; providerVersion: string; adapterRevision: 1 | 2; chatDialect?: "standard" | "minimax-inline-v1"; pipeline?: "provider_v2_single_call" };
 };
-export const AUTHORITY_REASONS = ["unknown", "authority_unavailable", "authority_not_committed", "host_identity_mismatch", "host_generation_changed", "ownership_reader_unavailable", "ownership_read_unavailable", "ownership_read_timeout", "ownership_gateway_mismatch", "ownership_bridge_unavailable", "server_read_unavailable", "ownership_clock_unavailable", "native_execution_not_ready", "harness_mismatch", "server_id_mismatch", "confirmed_temporal", "ownership_unconfirmed", "ownership_scope_unconfirmed", "ownership_evidence_stale", "ownership_evidence_invalid", "turn_revoked", "ownership_identity_changed"] as const;
+export const AUTHORITY_REASONS = ["unknown", "authority_unavailable", "authority_not_committed", "host_identity_mismatch", "host_generation_changed", "ownership_reader_unavailable", "ownership_read_unavailable", "ownership_read_timeout", "ownership_gateway_mismatch", "ownership_bridge_unavailable", "server_read_unavailable", "ownership_clock_unavailable", "native_execution_not_ready", "harness_mismatch", "server_id_mismatch", "confirmed_temporal", "ownership_unconfirmed", "ownership_scope_unconfirmed", "ownership_evidence_stale", "ownership_evidence_invalid", "turn_revoked", "turn_closed", "ownership_identity_changed"] as const;
 export const AUTHORITY_CHECKPOINTS = ["admission", "before_dispatch", "after_auth", "tool_start", "tool_complete", "finish", "recovery"] as const;
 export type AuthorityDiagnostic = {
   reason: typeof AUTHORITY_REASONS[number];
@@ -56,6 +56,7 @@ export type AuthorityDiagnostic = {
   waitBudgetMs?: number;
   ownershipRead?: OwnershipReadObservation;
   ownershipWait?: OwnershipWaitObservation;
+  readRecovery?: OwnershipRecoveryObservation;
 };
 export type StreamBudgetDiagnostic = { layer: "provider" | "canonical" | "host"; metric: "output_bytes" | "retained_bytes" | "event_count" | "wire_bytes" | "event_bytes" | "tool_count"; limit: number; measured: number };
 export type StreamDiagnostic = {
@@ -159,9 +160,10 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
       const waitBudgetMs = count(own(authority, "waitBudgetMs"));
       const ownershipRead = projectOwnershipReadObservation(own(authority, "ownershipRead"));
       const ownershipWait = projectOwnershipWaitObservation(own(authority, "ownershipWait"));
+      const readRecovery = projectOwnershipRecoveryObservation(own(authority, "readRecovery"));
       out.authority = { reason, ...(checkpoint ? { checkpoint } : {}), ...(durationMs !== undefined ? { durationMs } : {}),
         ...(evidenceAgeMs !== undefined ? { evidenceAgeMs } : {}), ...(waitBudgetMs !== undefined ? { waitBudgetMs } : {}),
-        ...(ownershipRead ? { ownershipRead } : {}), ...(ownershipWait ? { ownershipWait } : {}) };
+        ...(ownershipRead ? { ownershipRead } : {}), ...(ownershipWait ? { ownershipWait } : {}), ...(readRecovery ? { readRecovery } : {}) };
     }
     return Object.keys(out).length ? out : undefined;
   } catch { return undefined; }

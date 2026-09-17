@@ -135,8 +135,10 @@ function authorityFailureMessage(detail: StreamDiagnostic["authority"]): string 
       invalid_request: "The Host rejected an invalid ownership-read request.",
       scope_unavailable: "The Host could not establish the identity scope for the ownership read.",
       scope_changed: "The Host identity scope changed during the ownership read.",
+      source_cancelled: "The ownership source read was cancelled. The available evidence does not identify the cancelling actor.",
+      clock_unavailable: "The ownership read could not establish a valid elapsed-time observation.",
     };
-    return read?.state === "unavailable" && read.errorCode ? messages[read.errorCode]!
+    return read?.state === "unavailable" && read.errorCode ? messages[read.errorCode] ?? "The Host could not obtain usable ownership evidence."
       : "The local runtime could not obtain a usable server ownership observation for this Bot. The underlying read error was not recorded.";
   }
   if (detail?.reason === "ownership_read_timeout") return "The local runtime timed out waiting for the Host/Gateway ownership read.";
@@ -147,6 +149,7 @@ function authorityFailureMessage(detail: StreamDiagnostic["authority"]): string 
   if (detail?.reason === "confirmed_temporal") return "This Bot uses the server-side agent loop; this Box-local model runtime cannot execute it.";
   if (detail?.reason === "ownership_evidence_stale") return "The Bot ownership evidence was too old to authorize this STEP.";
   if (detail?.reason === "native_execution_not_ready") return "The native Host was not ready to authorize local execution.";
+  if (detail?.reason === "turn_closed") return "This TURN has already closed after a failed eligibility check and cannot be replayed. This is not proof that Bot ownership changed.";
   if (detail?.reason === "turn_revoked") return "This TURN no longer has valid execution authority and cannot be revived by replaying it.";
   if (["host_identity_mismatch", "host_generation_changed", "authority_not_committed"].includes(detail?.reason ?? "")) return "The local Host generation or committed runtime authority could not be verified.";
   return "The local runtime could not verify this Bot's execution eligibility. This does not establish that the account lacks permission.";
@@ -188,6 +191,7 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
   const bits = [text[summary.category]];
   const authority = summary.category === "authority" ? summary.diagnostic?.authority : undefined;
   if (authority?.ownershipRead?.errorCode) bits.push(`Ownership-read detail: ${authority.ownershipRead.errorCode}${authority.ownershipRead.phase ? ` (phase=${authority.ownershipRead.phase})` : ""}.`);
+  if (authority?.readRecovery && authority.readRecovery.attempts > 1) bits.push(`${authority.readRecovery.attempts} bounded ownership-read attempts were made within this STEP; no model request was replayed by that recovery.`);
   if (authority?.checkpoint) bits.push(`Authority checkpoint: ${authority.checkpoint}${authority.durationMs !== undefined ? ` (${authority.durationMs} ms)` : ""}.`);
   if (summary.progress?.backendAttempts === 0) bits.push("No model request was dispatched by this STEP.");
   if (host.receivedOutput === false) bits.push("No model output was received by this STEP.");

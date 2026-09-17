@@ -101,7 +101,7 @@ describe("modeld route admit after Host capture", () => {
         selection: { agentId: "a", modelId: "sub2api-xai/grok-4.6", selectionRevision: "a".repeat(64) },
         snapshot: snapshot(),
       }, 4_000);
-      expect(frames[0]).toMatchObject({ ok: false, error: { code: "not_admitted" } });
+      expect(frames.at(-1)).toMatchObject({ ok: false, error: { code: "not_admitted" } });
       const outcome = await waitForOutcome(() => observed);
       expect(outcome).toMatchObject({ outcome: "error", phase: "admission", failureCode: "not_admitted", eventCount: 0 });
     } finally {

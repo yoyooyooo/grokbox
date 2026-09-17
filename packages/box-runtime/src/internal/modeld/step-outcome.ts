@@ -1,4 +1,4 @@
-import { BackendFailure, BindingFailure, WireError, BACKEND_FAILURE_CODES, BINDING_FAILURE_CODES, failureSummaryFromObservation, failureSummaryOf, providerRecoveryOf, type ProviderRecoveryState, type FailureSummary, type StreamSummary, type ExecutionCapacity } from "@grokbox/runtime-kernel/contract";
+import { BackendFailure, BindingFailure, WireError, BACKEND_FAILURE_CODES, BINDING_FAILURE_CODES, failureSummaryFromObservation, failureSummaryOf, providerRecoveryOf, type AuthorityProgress, type ProviderRecoveryState, type FailureSummary, type StreamSummary, type ExecutionCapacity } from "@grokbox/runtime-kernel/contract";
 import { backendFailureObservation, type BackendObservation } from "../backends/failure-observation.ts";
 
 export const STEP_OUTCOMES = ["ok", "error", "duplicate", "cancelled", "unknown"] as const;
@@ -14,6 +14,8 @@ export type ModeldStepOutcome = {
   diagnostic?: BackendObservation;
   failureSummary?: FailureSummary;
   recovery?: ProviderRecoveryState;
+  authority?: AuthorityProgress;
+  authorityObservationGaps?: number;
   stream?: StreamSummary;
   execution?: ExecutionCapacity;
   at?: string;

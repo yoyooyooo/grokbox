@@ -1,6 +1,6 @@
 # T48 — Causal observation, diagnostic independence and artifact proof
 
-Status: planned. Milestone M3. Depends on: [T45](T45-modeld-evidence-lifetime.md), [T47](T47-modeld-authority-state-machine.md). Spec: [S10.6, S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: implemented; final offline aggregation and fixed-tip independent review tracked by T49. Milestone M3. Depends on: [T45](T45-modeld-evidence-lifetime.md), [T47](T47-modeld-authority-state-machine.md). Spec: [S10.6, S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -41,4 +41,10 @@ No observer repair, new database/version for symmetry, transport-error guessing,
 
 ## Exit evidence
 
-Pending: end-to-end causal proof, packed/import/privacy evidence and fixed-tip review. Existing old test counts do not qualify changed wire/native slices.
+The v6 authority progress contract is connected to the production gate, Unix transport, final STEP snapshot and existing append-only journal. Source and waiter IDs, first recovery cause/duration, original evidence age, bounded backoff and separate queue/source/local-witness durations are safely projected. `execution-status` exposes aggregate active/waiting authority contexts and read-retry counts; it does not turn source liveness or cached evidence into permission.
+
+A service-owned, bounded authority-observation queue keeps journal waiting off the execution path, retains identities rather than prompt snapshots, and records dropped/timed-out observation gaps without synthesizing a business failure. The existing journal writer still owns physical backpressure and pending writes; a timed-out observer is not proof that its filesystem operation stopped. Host journal ownership/J13 is unchanged.
+
+`history outcome` projects `runtimeAuthority` with observed time, exact STEP correlation, `currentLiveness:not_proven` and `replayAuthorized:false`. Final outcome snapshots are authoritative about their own detection point; separate asynchronous progress appends may arrive later. Existing monitor storage retains the projected evidence without a database migration or an authorization role.
+
+`authority-observation.test.ts` exercises actual production Unix -> Host -> journal -> real SQLite -> cold read -> CLI projection for source cancellation. It also holds the observer clock while sixteen real fixture STEPs finish, proving the observer does not consume execution waiting time. Wire tests cover malformed controls, independent sequences, old-peer refusal, pre-accepted EOF and read-only v5 identity observation. Final aggregate/build/privacy results and independent/native gates remain T49.

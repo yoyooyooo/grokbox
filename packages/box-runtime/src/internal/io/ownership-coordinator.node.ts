@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { Clock, Deferred, Effect, Fiber } from "effect";
+import { Clock, Deferred, Effect, Fiber, Random } from "effect";
+import type { AuthorityReadControl } from "@grokbox/runtime-kernel/ports";
 import {
   BoxRuntimeError, STRICT_AUTHORITY_POLICY, decideOwnershipWithLocal, inspectNativeOwnershipLocal,
-  annotateStreamFailure, streamFailureDiagnostic,
-  type OwnershipAdmission, type RemoteOwnershipEvidence, type OwnershipWaitObservation,
+  annotateStreamFailure, streamFailureDiagnostic, authorityReadCanRecover, projectOwnershipRecoveryObservation,
+  type OwnershipAdmission, type RemoteOwnershipEvidence, type OwnershipWaitObservation, type OwnershipRecoveryObservation,
 } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
 import { ownershipUseError, readManagedOwnership, type OwnershipReader, type OwnershipReadReply } from "./ownership-admission.node.ts";
 
-type Source = { evidence: OwnershipAdmission; gateway: OwnershipReadReply["gateway"]; remote: RemoteOwnershipEvidence };
-type ReadInput = { agentId: string; gatewayPid?: number; hostGeneration: string };
+type Source = { evidence: OwnershipAdmission; gateway: OwnershipReadReply["gateway"]; remote: RemoteOwnershipEvidence;
+  evidenceId?: string; observation?: OwnershipWaitObservation; recovery?: OwnershipRecoveryObservation };
+type ReadInput = { agentId: string; gatewayPid?: number; hostGeneration: string; waitBudgetMs?: number };
 type Entry = {
   key: string; operationId: string; agentId: string; hostKey: string;
   createdTick: bigint; receivedTick?: bigint; ageAtReceiptMs: number;
@@ -18,7 +20,8 @@ type Entry = {
   retiredReason?: "ownership_identity_changed" | "native_execution_not_ready";
   failure?: BoxRuntimeError;
 };
-type Waiter = { id: number; observationId: string; startedTick: bigint; entry?: Entry; state: OwnershipWaitObservation["state"] };
+type Waiter = { id: number; observationId: string; startedTick: bigint; entry?: Entry; state: OwnershipWaitObservation["state"];
+  queueStarted?: bigint; queueMs: number; sourceWaitMs: number; localWitnessMs: number };
 type Options = { sourceWaitMs?: number; waiterWaitMs?: number; cacheMs?: number; maxEntries?: number; maxWaiters?: number };
 const elapsed = (now: bigint, then: bigint) => Math.max(0, Number(now - then) / 1_000_000);
 const bounded = (value: number | undefined, fallback: number, allowZero = false) => {
@@ -54,7 +57,12 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
     };
     const retireHost = (hostKey: string, reason: Entry["retiredReason"] = "ownership_identity_changed", agentId?: string) => {
       for (const entry of entries.values()) if (entry.hostKey === hostKey && (agentId === undefined || entry.agentId === agentId)) {
-        entry.retired = true; entry.retiredReason = reason; entry.value = undefined; releaseRetired(entry);
+        entry.retired = true; entry.retiredReason = reason; entry.value = undefined;
+        // Observed invalidation wakes every subscriber immediately. They must
+        // not wait for a now-useless native response; physical occupancy remains
+        // tracked until the underlying Promise actually settles.
+        Deferred.doneUnsafe(entry.done, Effect.fail(ownershipUseError(reason, "unavailable", entry.agentId)));
+        releaseRetired(entry);
       }
     };
     yield* Effect.addFinalizer(() => Effect.sync(() => {
@@ -102,6 +110,7 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
       const wait = () => {
         const wake = Deferred.makeUnsafe<void>();
         waiter.state = "queued";
+        waiter.queueStarted ??= now;
         queued.set(waiter.id, { key, wake });
         return { kind: "waiting" as const, wake };
       };
@@ -178,6 +187,9 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
         entry.waiters++; waiter.entry = entry;
         queued.delete(waiter.id);
       }
+      if (waiter.queueStarted !== undefined) {
+        waiter.queueMs += elapsed(now, waiter.queueStarted); waiter.queueStarted = undefined;
+      }
       notify();
       return { kind: "acquired" as const, entry };
     }).pipe(Effect.uninterruptible);
@@ -185,7 +197,7 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
       if (closed || waiters >= maxWaiters) return yield* Effect.fail(busy(input.agentId));
       waiters++;
       return { id: nextWaiter++, observationId: randomUUID(), startedTick: yield* Clock.monotonicTimeNanos,
-        state: "local_witness" } as Waiter;
+        state: "local_witness", queueMs: 0, sourceWaitMs: 0, localWitnessMs: 0 } as Waiter;
     });
     const release = (waiter: Waiter) => Effect.gen(function* () {
       queued.delete(waiter.id); waiters--;
@@ -201,7 +213,9 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
       notify();
     });
 
-    const current = (input: ReadInput): Effect.Effect<Source, BoxRuntimeError> => Effect.suspend(() => {
+    const readOnce = (input: ReadInput): Effect.Effect<Source, BoxRuntimeError> => Effect.suspend(() => {
+      const budget = Math.min(waiterWaitMs, input.waitBudgetMs ?? waiterWaitMs);
+      if (!Number.isFinite(budget) || budget <= 0) return Effect.fail(ownershipUseError("ownership_read_timeout", "unavailable", input.agentId));
       if (closed) return Effect.fail(ownershipUseError("ownership_reader_unavailable", "unavailable", input.agentId));
       // Capability-limited injected readers retain the existing fresh full-read
       // path. A production reader advertises local(); a missing/old peer result
@@ -211,18 +225,27 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
       return Effect.scoped(Effect.gen(function* () {
         const waiter = yield* Effect.acquireRelease(reserveWaiter(input), release);
         observedWaiter = waiter;
-        const before = yield* localRead(input);
+        const local = () => Effect.gen(function* () {
+          const tick = yield* Clock.monotonicTimeNanos;
+          return yield* localRead(input).pipe(Effect.ensuring(Effect.gen(function* () {
+            waiter.localWitnessMs += elapsed(yield* Clock.monotonicTimeNanos, tick);
+          })));
+        });
+        const before = yield* local();
         let entry: Entry;
         while (true) {
           const result = yield* acquire(input, before, waiter);
           if (result.kind === "acquired") { entry = result.entry; break; }
           yield* Deferred.await(result.wake);
         }
-        const value = yield* Deferred.await(entry.done);
+        const sourceWaitStarted = yield* Clock.monotonicTimeNanos;
+        const value = yield* Deferred.await(entry.done).pipe(Effect.ensuring(Effect.gen(function* () {
+          waiter.sourceWaitMs += elapsed(yield* Clock.monotonicTimeNanos, sourceWaitStarted);
+        })));
         if (entry.retired) return yield* Effect.fail(entry.retiredReason
           ? ownershipUseError(entry.retiredReason, "unavailable", input.agentId) : busy(input.agentId));
         waiter.state = "validating";
-        const after = yield* localRead(input);
+        const after = yield* local();
         if (!sameGateway(before.result.gateway, after.result.gateway) || !sameGateway(value.gateway, after.result.gateway)) {
           entry.retired = true;
           return yield* Effect.fail(ownershipUseError("ownership_gateway_mismatch", "unavailable", input.agentId));
@@ -243,9 +266,15 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
           entry.retired = true;
           return yield* Effect.fail(ownershipUseError(decision.reason, decision.class, input.agentId, decision.ownershipRead));
         }
-        return { ...value, gateway: after.result.gateway, evidence: decision.evidence };
+        return { ...value, gateway: after.result.gateway, evidence: decision.evidence, evidenceId: entry.operationId,
+          observation: { version: 1 as const, policyId: STRICT_AUTHORITY_POLICY.id, waiterId: waiter.observationId,
+            sourceOperationId: entry.operationId, state: waiter.state, outcome: "observed" as const,
+            durationMs: Math.ceil(elapsed(tick, waiter.startedTick)), waitBudgetMs: Math.floor(budget),
+            queueMs: Math.ceil(waiter.queueMs), sourceWaitMs: Math.ceil(waiter.sourceWaitMs), localWitnessMs: Math.ceil(waiter.localWitnessMs),
+            sourceBudgetMs: sourceWaitMs, sourceAgeMs: Math.ceil(entry.ageAtReceiptMs + elapsed(tick, entry.receivedTick)),
+            sourceSettlement: entry.physicalPending ? "pending" as const : "settled" as const } };
       })).pipe(
-        Effect.timeout(`${waiterWaitMs} millis`),
+        Effect.timeout(`${budget} millis`),
         Effect.catch(error => Effect.gen(function* () {
           const actual = error instanceof BoxRuntimeError ? error : ownershipUseError("ownership_read_timeout", "unavailable", input.agentId);
           const waiter = observedWaiter;
@@ -260,14 +289,63 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
           // error, which may be delivered to another waiter at another time.
           const copy = new BoxRuntimeError(actual.code, actual.message, actual);
           return yield* Effect.fail(annotateStreamFailure(copy, { ...prior, rejectSite: "authority_check",
-            authority: { ...prior?.authority, reason: prior?.authority?.reason ?? "ownership_read_unavailable", waitBudgetMs: waiterWaitMs,
+            authority: { ...prior?.authority, reason: prior?.authority?.reason ?? "ownership_read_unavailable", waitBudgetMs: Math.floor(budget),
               ownershipWait: { version: 1, policyId: STRICT_AUTHORITY_POLICY.id, waiterId: waiter.observationId,
-                state: waiter.state, outcome, durationMs: Math.ceil(elapsed(tick, waiter.startedTick)), waitBudgetMs: waiterWaitMs,
+                state: waiter.state, outcome, durationMs: Math.ceil(elapsed(tick, waiter.startedTick)), waitBudgetMs: Math.floor(budget),
+                queueMs: Math.ceil(waiter.queueMs + (waiter.queueStarted === undefined ? 0 : elapsed(tick, waiter.queueStarted))),
+                sourceWaitMs: Math.ceil(waiter.sourceWaitMs), localWitnessMs: Math.ceil(waiter.localWitnessMs),
                 ...(entry ? { sourceOperationId: entry.operationId, sourceBudgetMs: sourceWaitMs,
                   sourceAgeMs: Math.ceil(elapsed(tick, entry.createdTick)), sourceSettlement: entry.physicalPending ? "pending" : "settled" } : {}) } },
           }));
         })),
       );
+    });
+    // A single retry owner. Every retry repeats only source acquisition and
+    // local validation; it cannot create a STEP or a provider effect. Without
+    // STEP-owned control, explicit diagnostic calls remain one-shot.
+    const current = (input: ReadInput, control?: AuthorityReadControl): Effect.Effect<Source, BoxRuntimeError> => Effect.gen(function* () {
+      if (!control) return yield* readOnce(input);
+      const started = yield* Clock.monotonicTimeNanos;
+      const budget = Math.min(waiterWaitMs, control.waitBudgetMs);
+      let attempt = 0, backoffMs = 0;
+      let firstFailure: BoxRuntimeError | undefined;
+      let firstReadCode: OwnershipRecoveryObservation["firstReadCode"];
+      let firstReadReason: OwnershipRecoveryObservation["firstReadReason"], firstReadDurationMs: number | undefined;
+      while (true) {
+        const remaining = budget - elapsed(yield* Clock.monotonicTimeNanos, started);
+        const result = yield* Effect.result(readOnce({ ...input, waitBudgetMs: remaining }));
+        attempt++;
+        if (result._tag === "Success") return { ...result.success,
+          recovery: { version: 1, attempts: attempt, backoffMs: Math.ceil(backoffMs), firstReadCode, firstReadReason, firstReadDurationMs } };
+        const failure = result.failure;
+        const detail = streamFailureDiagnostic(failure)?.authority;
+        if (!firstFailure) {
+          firstFailure = failure; firstReadCode = detail?.ownershipRead?.errorCode;
+          firstReadReason = projectOwnershipRecoveryObservation({ version: 1, attempts: 1, backoffMs: 0,
+            firstReadReason: failure.failureCode })?.firstReadReason;
+          firstReadDurationMs = Math.ceil(elapsed(yield* Clock.monotonicTimeNanos, started));
+        }
+        // Busy after a timed-out source is not a new server failure. Retain
+        // the detecting failure and separately record the blocked refresh.
+        const actual = detail?.ownershipRead?.errorCode === "busy" ? firstFailure : failure;
+        const finish = () => {
+          const prior = streamFailureDiagnostic(actual);
+          return Effect.fail(annotateStreamFailure(new BoxRuntimeError(actual.code, actual.message, actual), {
+            ...prior, authority: { ...prior?.authority, reason: prior?.authority?.reason ?? "ownership_read_unavailable",
+              readRecovery: { version: 1, attempts: attempt, backoffMs: Math.ceil(backoffMs), firstReadCode, firstReadReason, firstReadDurationMs,
+                lastReadCode: detail?.ownershipRead?.errorCode } },
+          }));
+        };
+        if (attempt >= STRICT_AUTHORITY_POLICY.maxReadAttempts
+          || !authorityReadCanRecover(failure.failureCode ?? "", detail?.ownershipRead)
+          || remaining <= 0) return yield* finish();
+        const delay = STRICT_AUTHORITY_POLICY.retryDelayMs + (yield* Random.nextIntBetween(0, STRICT_AUTHORITY_POLICY.retryDelayMs));
+        if (budget - elapsed(yield* Clock.monotonicTimeNanos, started) <= delay
+          || !(yield* control.takeRetry())) return yield* finish();
+        const sleepStart = yield* Clock.monotonicTimeNanos;
+        yield* Effect.sleep(`${delay} millis`);
+        backoffMs += elapsed(yield* Clock.monotonicTimeNanos, sleepStart);
+      }
     });
     return {
       current,

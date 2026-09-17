@@ -25,8 +25,14 @@ export class ConfigurationWrite extends Context.Service<ConfigurationWrite, {
   readonly saveDesired: (file: DesiredFile) => Effect.Effect<{ configRevision: string }, unknown>;
 }>()("grokbox/ConfigurationWrite") {}
 
+/** Process-local controls from the STEP owner, never decoded from caller JSON.
+ * Only the source coordinator consumes retries; the gate owns the total budget. */
+export type AuthorityReadControl = {
+  readonly waitBudgetMs: number;
+  readonly takeRetry: () => Effect.Effect<boolean>;
+};
 export class AdmissionAuthority extends Context.Service<AdmissionAuthority, {
-  readonly current: (request: RunStepRequest) => Effect.Effect<AdmissionAuthorityResult, unknown>;
+  readonly current: (request: RunStepRequest, control?: AuthorityReadControl) => Effect.Effect<AdmissionAuthorityResult, unknown>;
 }>()("grokbox/AdmissionAuthority") {}
 
 export class BackendAuth extends Context.Service<BackendAuth, {

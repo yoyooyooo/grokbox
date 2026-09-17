@@ -17,6 +17,8 @@ export type ExecutionHistoryHealth = {
   writes: number;
   failures: number;
   lastError: "storage_unavailable" | null;
+  /** Cumulative adapter I/O elapsed time, not a disk-latency estimate. */
+  ioTiming?: { readMs: number; writeMs: number };
 };
 export type ExecutionHistory = {
   getStep(key: string): Effect.Effect<LedgerRecord | undefined, BindingFailure>;

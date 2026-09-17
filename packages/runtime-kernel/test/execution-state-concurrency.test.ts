@@ -67,6 +67,29 @@ test("a blocked Bot claim does not hold the global state lock or prevent another
   }).pipe(Effect.ensuring(Deferred.succeed(blocked.release, undefined)), Effect.provide(graph(blocked.history, counts)))));
 });
 
+test("pressure maintenance with blocked cold storage never becomes a foreground wait for another Bot", async () => {
+  const backing = memoryExecutionHistory(), counts = createCountedSeams();
+  const entered = Deferred.makeUnsafe<void>(), release = Deferred.makeUnsafe<void>();
+  const old = request("old"); let injecting = false;
+  const history: ExecutionHistory = { ...backing, putTurn: (key, value) => Effect.gen(function* () {
+    if (injecting && key === turnKey(old)) {
+      yield* Deferred.succeed(entered, undefined);
+      yield* Deferred.await(release).pipe(Effect.timeout("2 seconds"), Effect.mapError(() => new BindingFailure("ledger_unavailable")));
+    }
+    yield* backing.putTurn(key, value);
+  }) };
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    yield* collect(old); injecting = true;
+    const second = yield* Effect.forkChild(collect(request("second", "b")));
+    yield* Deferred.await(entered);
+    const third = yield* Effect.forkChild(collect(request("third", "b")));
+    yield* until(Effect.sync(() => counts.network === 3));
+    expect((yield* Fiber.join(third)).kind).toBe("live");
+    expect((yield* Fiber.join(second)).kind).toBe("live");
+    yield* Deferred.succeed(release, undefined);
+  }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)), Effect.provide(graph(history, counts, 1)))));
+});
+
 test("same-STEP contenders serialize by identity and cannot publish two claims or dispatch twice", async () => {
   const req = request("same"), counts = createCountedSeams();
   const blocked = slowClaim(memoryExecutionHistory(), req);
@@ -115,13 +138,13 @@ test("a writer bypassing the identity owner during I/O is rejected instead of be
     const memory = yield* InferenceMemory;
     yield* SynchronizedRef.update(memory.ref, state => {
       const turns = new Map(state.turns);
-      turns.set(turnKey(req), { serviceEpoch: "identity-fixture", poisoned: true, expired: false, lastActivityMs: 0 });
+      turns.set(turnKey(req), { serviceEpoch: "identity-fixture", lifecycle: "revoked", expired: false, lastActivityMs: 0 });
       return { ...state, turns };
     });
     yield* Deferred.succeed(blocked.release, undefined);
     const result = yield* Fiber.join(worker);
     expect(result).toMatchObject({ _tag: "Failure", failure: { code: "ledger_unavailable" } });
-    expect((yield* SynchronizedRef.get(memory.ref)).turns.get(turnKey(req))?.poisoned).toBe(true);
+    expect((yield* SynchronizedRef.get(memory.ref)).turns.get(turnKey(req))?.lifecycle).toBe("revoked");
     expect((yield* backing.getStep(ledgerKey(req)))?.status).toBe("active");
     expect(counts.network).toBe(0);
   }).pipe(Effect.ensuring(Deferred.succeed(blocked.release, undefined)), Effect.provide(graph(blocked.history, counts)))));

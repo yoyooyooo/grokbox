@@ -21,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Finite read-only probe. Does not create, unlink or repair a socket. */
-async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number, version: 4 | typeof WIRE_VERSION = WIRE_VERSION): Promise<Record<string, unknown> | null> {
+async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number, version: 4 | 5 | typeof WIRE_VERSION = WIRE_VERSION): Promise<Record<string, unknown> | null> {
   return await new Promise((resolve) => {
     const socket = createConnection({ path: modeldSocketPath(runRoot) });
     let buf: Buffer = Buffer.alloc(0);
@@ -46,7 +46,7 @@ async function probe(runRoot: string, method: "health" | "service-info" | "execu
       if ("error" in decoded || decoded.rest.length !== 0) { finish(null); return; }
       try {
         if (!isRecord(decoded.value) || decoded.value.version !== version) { finish(null); return; }
-        // Only these finite read-only methods share an unchanged v4/v5 shape.
+        // Only these finite read-only methods share an unchanged v4/v5/v6 shape.
         // This normalization is NOT available to run-step or Host execution.
         acceptModeldFrame({ method }, { ...decoded.value, version: WIRE_VERSION });
         finish(decoded.value.ok === true ? decoded.value : null);
@@ -78,7 +78,7 @@ export async function probeModeldExecution(runRoot: string, timeoutMs = 500): Pr
 /** Operator-only transition probe. A verified legacy identity is enough to
  * inspect/replace a service, never enough to call it with a managed STEP. */
 export async function probeModeldReplacement(runRoot: string, timeoutMs = 500) {
-  for (const version of [WIRE_VERSION, 4] as const) {
+  for (const version of [WIRE_VERSION, 5, 4] as const) {
     const identity = await probe(runRoot, "service-info", timeoutMs, version);
     if (!identity || typeof identity.rootId !== "string" || typeof identity.serverGeneration !== "string") continue;
     const activity = await probe(runRoot, "execution-status", timeoutMs, version);
@@ -117,15 +117,17 @@ export async function observeModeldService(durableRoot: string, runRoot: string)
   }
   // Observation must not depend on the stricter replacement gate. A legacy
   // service with no execution-status still has an observable protocol identity.
-  const legacy = await probe(runRoot, "service-info", 200, 4);
+  for (const version of [5, 4] as const) {
+  const legacy = await probe(runRoot, "service-info", 200, version);
   if (legacy && typeof legacy.rootId === "string" && typeof legacy.serverGeneration === "string") {
     const matched = legacy.rootId === modeldRootId(durableRoot, runRoot);
-    const activity = matched ? await probe(runRoot, "execution-status", 200, 4) : null;
+    const activity = matched ? await probe(runRoot, "execution-status", 200, version) : null;
     const execution = projectExecutionCapacity(activity?.execution);
     const sameGeneration = activity?.serverGeneration === legacy.serverGeneration;
     return { ready: false, scope: matched ? "matched" : "mismatch", serviceEpoch: legacy.serverGeneration, observedAt,
       ...(execution && sameGeneration ? { execution } : { executionGap: activity && !sameGeneration ? "generation_changed" as const : "not_instrumented" as const }),
-      wireVersion: 4, expectedWireVersion: WIRE_VERSION, protocolCompatible: false };
+      wireVersion: version, expectedWireVersion: WIRE_VERSION, protocolCompatible: false };
+  }
   }
   let absent = false;
   try { lstatSync(modeldSocketPath(runRoot)); }

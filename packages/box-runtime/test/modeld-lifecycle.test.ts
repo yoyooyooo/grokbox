@@ -264,7 +264,7 @@ describe("modeld lifecycle", () => {
     const disabled = await startModeldProcess({ durableRoot: disabledDur, runRoot: disabledRun, env: {}, fetch: deny });
     if (disabled.ensure.kind !== "owned") throw new Error("owned");
     const denied = await requestModeld(disabledRun, step(disabled.ensure.generation, "t-disabled"));
-    expect(denied[0]).toMatchObject({ ok: false, error: { code: "not_admitted" } });
+    expect(denied.at(-1)).toMatchObject({ ok: false, error: { code: "not_admitted" } });
     expect(http).toBe(0);
     await disabled.stop();
 
@@ -276,7 +276,7 @@ describe("modeld lifecycle", () => {
     const routed = await startModeldProcess({ durableRoot: routeDur, runRoot: routeRun, env: {}, fetch: deny });
     if (routed.ensure.kind !== "owned") throw new Error("owned");
     const unattested = await requestModeld(routeRun, step(routed.ensure.generation, "t-route"));
-    expect(unattested[0]).toMatchObject({ ok: false, error: { code: "not_admitted" } });
+    expect(unattested.at(-1)).toMatchObject({ ok: false, error: { code: "not_admitted" } });
     expect(http).toBe(0);
     await routed.stop();
 

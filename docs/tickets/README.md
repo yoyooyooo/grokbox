@@ -13,11 +13,11 @@
 |---|---|---|---|
 | M0 | [T43 authority/native baseline](T43-modeld-authority-baseline.md) | offline baseline verified / review pending | source/attribution matrix and executable baseline |
 | M1 | [T44 service lifetime](T44-modeld-service-lifetime.md) | implemented / offline verified / review pending | one acquisition program; owned/borrowed/cleanup proof |
-| M1 | [T45 evidence lifetime](T45-modeld-evidence-lifetime.md) | foundation implemented / offline verified / recovery integration pending | typed evidence, shared source versus waiter, bounded demand/cancellation |
-| M2 | [T46 state and durability](T46-modeld-state-and-durability.md) | planned | identity synchronization, claim-before-effect, bounded maintenance |
-| M2 | [T47 authority state machine](T47-modeld-authority-state-machine.md) | planned | same-STEP bounded wait, actual side-effect fences, one terminal |
-| M3 | [T48 causal observation](T48-modeld-causal-observation.md) | planned | causal wire/Host/CLI/monitor chain, diagnostic independence, packed/privacy |
-| M4 | [T49 qualification/release](T49-modeld-qualification-and-release.md) | planned | separately proven policy/performance/native/review/live gates |
+| M1 | [T45 evidence lifetime](T45-modeld-evidence-lifetime.md) | implemented / recovery integrated / independent review pending | typed evidence, shared source versus waiter, bounded demand/cancellation |
+| M2 | [T46 state and durability](T46-modeld-state-and-durability.md) | implemented / offline verified / review pending | identity synchronization, claim-before-effect, bounded maintenance |
+| M2 | [T47 authority state machine](T47-modeld-authority-state-machine.md) | implemented / v6 offline chain verified / review pending | same-STEP bounded wait, actual side-effect fences, one terminal |
+| M3 | [T48 causal observation](T48-modeld-causal-observation.md) | implemented / Unix-journal-SQLite-CLI proof verified | causal wire/Host/CLI/monitor chain, diagnostic independence, packed/privacy |
+| M4 | [T49 qualification/release](T49-modeld-qualification-and-release.md) | offline aggregate/full tests passed; review/native/live not signed | separately proven policy/performance/native/review/live gates |
 | Non-main-chain | [T50 review residue](T50-modeld-review-residue.md) | open process | append-only nonblocking re-look concerns; no auto-dispatch |
 
 ```text
@@ -26,7 +26,7 @@ T43 → T44 → T45 ──────┐
                                    T50 (residue, not a dependency)
 ```
 
-Each ticket's evidence section is the completion source; this table is a route, not a copied test ledger. Planned verifier cases fail until their required suites exist. Offline implementation, independent review, native qualification and live release are distinct. No implicit merge into v2, push or live Host/modeld changes.
+Each ticket's evidence section is the completion source; this table is a route, not a copied test ledger. All seven scoped verifier cases now route to executable suites; unknown or missing cases still fail. Offline implementation, independent review, native qualification and live release are distinct. No implicit merge into v2, push or live Host/modeld changes.
 
 ## Prior delivery baseline — 2026-09-12 documentation governance
 

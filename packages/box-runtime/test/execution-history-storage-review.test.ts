@@ -18,7 +18,7 @@ test("identity publication validates both rows before one durable atomic batch",
   try {
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const store = yield* openExecutionHistory(dir, "batch-epoch");
-      const turn = { version: 1 as const, turn: { serviceEpoch: "batch-epoch", poisoned: false, expired: false, lastActivityMs: 1000 } };
+      const turn = { version: 1 as const, turn: { serviceEpoch: "batch-epoch", lifecycle: "open" as const, expired: false, lastActivityMs: 1000 } };
       const malformed = { ...turn, version: 2 } as unknown as typeof turn;
       const refused = yield* Effect.result(store.putIdentity({ stepKey: "step", step: record, turnKey: "turn", turn: malformed }));
       expect(refused._tag).toBe("Failure");

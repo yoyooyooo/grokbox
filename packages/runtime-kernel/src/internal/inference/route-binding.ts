@@ -11,6 +11,8 @@ import type { RecoveryLedger } from "../contract/overflow.ts";
 import type { OwnershipAdmission } from "../contract/ownership.ts";
 import { NO_PROVIDER_RECOVERY, projectProviderRecoveryPolicy, type ProviderRecoveryPolicy, type ProviderRecoveryState } from "../contract/provider-recovery.ts";
 import type { RecoveryProgress } from "./provider-recovery.ts";
+import type { AuthorityProgress } from "../contract/authority-progress.ts";
+import { STRICT_AUTHORITY_POLICY } from "../contract/authority-policy.ts";
 
 export type LedgerStatus = "active" | "terminal" | "rejected" | "cancelled";
 
@@ -39,7 +41,7 @@ export type RouteBindingRecord = {
 export type TurnRecord = {
   serviceEpoch: string;
   bindingId?: string;
-  poisoned: boolean;
+  lifecycle: "open" | "revoked" | "closed";
   expired: boolean;
   lastActivityMs: number;
 };
@@ -125,11 +127,14 @@ export type InferenceMemoryValue = {
   readonly history: ExecutionHistory;
   readonly providerRecovery: ProviderRecoveryPolicy;
   readonly recoveryProgress: Map<string, RecoveryProgress>;
+  readonly authoritySteps: Map<string, { startedTick: bigint; spentMs: number; retries: number; check: number; progress?: AuthorityProgress }>;
   readonly counters: InferenceCounters;
   readonly ref: SynchronizedRef.SynchronizedRef<InferenceState>;
   readonly stateLocks: Map<string, { semaphore: Semaphore.Semaphore; users: number }>;
   /** Advisory inactive-key queue, never an authority or durable identity index. */
   readonly coolingQueue: Set<string>;
+  readonly maintenance: { wake: Deferred.Deferred<void>; active: boolean };
+  readonly timing: { identityLockWaitMs: number; identityWorkMs: number };
   readonly cancels: Map<string, Deferred.Deferred<void>>;
   readonly quiesce: Map<string, Deferred.Deferred<void>>;
   readonly started: Set<string>;
@@ -161,7 +166,11 @@ export function modifyExecutionState<A, E, R>(memory: InferenceMemoryValue, iden
       entry.users--;
       if (entry.users === 0 && memory.stateLocks.get(key) === entry) memory.stateLocks.delete(key);
     }));
+    const queuedAt = yield* Clock.monotonicTimeNanos;
+    let acquiredAt: bigint | undefined;
     return yield* lock.semaphore.withPermit(Effect.gen(function* () {
+      acquiredAt = yield* Clock.monotonicTimeNanos;
+      memory.timing.identityLockWaitMs += Math.max(0, Number(acquiredAt - queuedAt) / 1_000_000);
       const before = yield* SynchronizedRef.get(memory.ref);
       const binding = before.bindings.get(key), turn = before.turns.get(key), active = before.turnActive.get(key);
       const ledger = step ? before.ledger.get(step) : undefined;
@@ -207,7 +216,9 @@ export function modifyExecutionState<A, E, R>(memory: InferenceMemoryValue, iden
       if (onCommitted) yield* Effect.sync(() => onCommitted(result));
       }));
       return result;
-    }));
+    }).pipe(Effect.ensuring(Effect.gen(function* () {
+      if (acquiredAt !== undefined) memory.timing.identityWorkMs += Math.max(0, Number((yield* Clock.monotonicTimeNanos) - acquiredAt) / 1_000_000);
+    }))));
   }));
 }
 
@@ -277,7 +288,10 @@ export function coolInactiveTurns(memory: InferenceMemoryValue, now: number, for
 export function coolUnderPressure(memory: InferenceMemoryValue, now: number) {
   return Effect.gen(function* () {
     const state = yield* SynchronizedRef.get(memory.ref);
-    if (state.turns.size > state.hotTurnsTarget) yield* coolInactiveTurns(memory, now, false, 1);
+    // Pressure is a coalesced signal, not an obligation for this unrelated
+    // request to wait for cold-storage I/O or another TURN's finalizer.
+    if (state.turns.size > state.hotTurnsTarget) yield* Deferred.succeed(memory.maintenance.wake, undefined);
+    void now;
   });
 }
 
@@ -289,6 +303,11 @@ export const inferenceCapacity = Effect.gen(function* () {
     activeSteps: state.turnActive.size, hotStepRecords: state.ledger.size,
     hotTurns: state.turns.size, pinnedTurns: memory.turnScopes.size, pendingScopeReleases: memory.retiringScopes.size,
     history: store, counters: { ...memory.counters },
+    authority: { policyId: STRICT_AUTHORITY_POLICY.id, active: memory.authoritySteps.size,
+      waiting: [...memory.authoritySteps.values()].filter(step => step.progress?.phase === "waiting").length,
+      readRetries: [...memory.authoritySteps.values()].reduce((sum, step) => sum + step.retries, 0) },
+    timing: { identityLockWaitMs: memory.timing.identityLockWaitMs, identityWorkMs: memory.timing.identityWorkMs,
+      ...(store.ioTiming ? { storageReadMs: store.ioTiming.readMs, storageWriteMs: store.ioTiming.writeMs } : {}) },
     providerRecovery: { policy: { ...memory.providerRecovery }, active: memory.recoveryProgress.size,
       waiting: [...memory.recoveryProgress.values()].filter(p => p.current?.phase === "waiting").length } };
 });
@@ -299,10 +318,13 @@ export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
       history: options.history ?? memoryExecutionHistory(),
       providerRecovery: projectProviderRecoveryPolicy(options.providerRecovery ?? NO_PROVIDER_RECOVERY) ?? NO_PROVIDER_RECOVERY,
       recoveryProgress: new Map(),
+      authoritySteps: new Map(),
       counters: { accepted: 0, duplicate: 0, completed: 0, reclaimedSteps: 0, coldRestores: 0, coldStores: 0, cleanupFailures: 0 },
       ref: SynchronizedRef.makeUnsafe(emptyInferenceState(options)),
       stateLocks: new Map(),
       coolingQueue: new Set(),
+      maintenance: { wake: Deferred.makeUnsafe<void>(), active: false },
+      timing: { identityLockWaitMs: 0, identityWorkMs: 0 },
       cancels: new Map<string, Deferred.Deferred<void>>(),
       quiesce: new Map<string, Deferred.Deferred<void>>(),
       started: new Set<string>(),
@@ -325,9 +347,23 @@ export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
     // Future input also performs pressure-based cooling, so maintenance cadence
     // is not an execution timeout and never makes a long tool expire.
     const maintain = Effect.gen(function* () {
-      yield* Effect.sleep("1 minute");
+      const wake = memory.maintenance.wake;
+      yield* Effect.raceFirst(Deferred.await(wake), Effect.sleep("1 minute"));
+      if (memory.maintenance.wake === wake) memory.maintenance.wake = Deferred.makeUnsafe<void>();
+      memory.maintenance.active = true;
+      let failed = false;
       const now = yield* Clock.currentTimeMillis;
-      yield* coolInactiveTurns(memory, now).pipe(Effect.catchCause(() => Effect.sync(() => { memory.counters.cleanupFailures++; })));
+      yield* coolInactiveTurns(memory, now).pipe(
+        Effect.catchCause(() => Effect.sync(() => { failed = true; memory.counters.cleanupFailures++; })),
+        Effect.ensuring(Effect.sync(() => { memory.maintenance.active = false; })),
+      );
+      const state = yield* SynchronizedRef.get(memory.ref);
+      // A finite successful batch can yield to other work, then continue pressure
+      // relief. Failure waits for new demand or the normal maintenance interval.
+      if (!failed && memory.coolingQueue.size > 0 && state.turns.size > state.hotTurnsTarget) {
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(memory.maintenance.wake, undefined);
+      }
     });
     yield* Effect.forkScoped(Effect.forever(maintain));
     return memory;

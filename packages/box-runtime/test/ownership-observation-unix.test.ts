@@ -43,7 +43,7 @@ for (const scenario of failureCases) test(`native ownership ${scenario.name} -> 
     const stepId = randomUUID();
     const handle = f.session.getExecutor([{ role: "system", content: "owned root" }, { role: "user", content: "synthetic request" }]).stream({}, stepId, [syntheticTool]);
     const error = await handle.response.catch(e => e);
-    expect(providerCalls).toBe(0); expect(serverCalls).toBe(1);
+    expect(providerCalls).toBe(0); expect(serverCalls).toBe(scenario.name === "rpc-failure" ? 2 : 1);
     const expected = { reason: "server_read_unavailable", checkpoint: "admission", waitBudgetMs: 10000,
       ownershipRead: { state: "unavailable", errorCode: scenario.errorCode, phase: "server", serverRead: "request", deadlineMs: 20 } };
     expect(streamFailureDiagnostic(error)?.authority).toMatchObject(expected);

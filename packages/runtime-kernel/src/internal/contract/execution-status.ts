@@ -9,7 +9,10 @@ export type ExecutionCapacity = {
   hotTurns: number;
   pinnedTurns: number;
   pendingScopeReleases?: number;
+  /** Cumulative service counters, not a per-STEP latency distribution. */
+  timing?: { identityLockWaitMs: number; identityWorkMs: number; storageReadMs?: number; storageWriteMs?: number };
   providerRecovery?: { policy: ProviderRecoveryPolicy; active: number; waiting: number };
+  authority?: { policyId: "strict-observation-v1"; active: number; waiting: number; readRetries: number };
   history: { kind: "leveldb" | "memory-test"; available: boolean; reads: number; writes: number; failures: number; lastError: "storage_unavailable" | null };
   counters: { accepted: number; duplicate: number; completed: number; reclaimedSteps: number; coldRestores: number; coldStores: number; cleanupFailures: number };
 };
@@ -39,7 +42,19 @@ export function projectExecutionCapacity(value: unknown): ExecutionCapacity | un
   const policy = projectProviderRecoveryPolicy(rawRecovery?.policy);
   const recovery = policy && number(rawRecovery?.active) && number(rawRecovery?.waiting) && rawRecovery!.waiting <= rawRecovery!.active
     ? { policy, active: Number(rawRecovery!.active), waiting: Number(rawRecovery!.waiting) } : undefined;
+  const rawAuthority = object(value.authority) ? value.authority : undefined;
+  const authority = rawAuthority?.policyId === "strict-observation-v1" && number(rawAuthority.active)
+    && number(rawAuthority.waiting) && rawAuthority.waiting <= rawAuthority.active && number(rawAuthority.readRetries)
+    && rawAuthority.readRetries <= rawAuthority.active * 2
+    ? { policyId: "strict-observation-v1" as const, active: rawAuthority.active, waiting: rawAuthority.waiting, readRetries: rawAuthority.readRetries } : undefined;
+  const millis = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER;
+  const rawTiming = object(value.timing) ? value.timing : undefined;
+  const timing = rawTiming && millis(rawTiming.identityLockWaitMs) && millis(rawTiming.identityWorkMs)
+    ? { identityLockWaitMs: rawTiming.identityLockWaitMs, identityWorkMs: rawTiming.identityWorkMs,
+      ...(millis(rawTiming.storageReadMs) ? { storageReadMs: rawTiming.storageReadMs } : {}),
+      ...(millis(rawTiming.storageWriteMs) ? { storageWriteMs: rawTiming.storageWriteMs } : {}) } : undefined;
   return { version: 1, accepting: value.accepting, lifetimeStepLimit: null, ...scalar,
+    ...(timing ? { timing } : {}), ...(authority ? { authority } : {}),
     ...(recovery ? { providerRecovery: recovery } : {}),
     history: { kind: h.kind, available: h.available, reads: h.reads, writes: h.writes, failures: h.failures, lastError: h.lastError }, counters } as ExecutionCapacity;
 }

@@ -74,6 +74,57 @@ const fixture = Effect.gen(function* () {
   return { state, calls, signals, hold, reader };
 });
 
+for (const delay of [5500, 7750, 9000]) test(`bounded recovery replaces a stale ${delay}ms read with a distinct fresh read without widening policy`, async () => {
+  await run(Effect.gen(function* () {
+    const f = yield* fixture, release = f.hold(), service = yield* makeOwnershipCoordinator(f.reader);
+    let retries = 0;
+    const worker = yield* Effect.forkChild(Effect.result(service.current(input(), {
+      waitBudgetMs: 10000, takeRetry: () => Effect.sync(() => { retries++; return true; }),
+    })));
+    yield* flushUntil(() => f.calls.length === 1);
+    yield* TestClock.adjust(`${delay} millis`); release();
+    yield* flushUntil(() => retries === 1);
+    yield* TestClock.adjust("250 millis");
+    const result = yield* Fiber.join(worker);
+    expect(result._tag).toBe("Success");
+    if (result._tag === "Success") {
+      expect(result.success.evidence.observedAtMs).toBeGreaterThanOrEqual(delay);
+      expect(result.success.recovery).toMatchObject({ attempts: 2 });
+    }
+    expect(f.calls.length).toBe(2); expect(retries).toBe(1);
+    expect(service.snapshot().activeWaiters).toBe(0);
+  }));
+});
+
+test("observed scope invalidation wakes an in-flight waiter without awaiting its uncooperative source", async () => {
+  await run(Effect.gen(function* () {
+    const f = yield* fixture; f.state.cooperative = false;
+    const release = f.hold(A), service = yield* makeOwnershipCoordinator(f.reader);
+    const worker = yield* Effect.forkChild(Effect.result(service.current(input(A))));
+    yield* flushUntil(() => f.calls.length === 1);
+    f.state.scope = "b".repeat(64);
+    yield* service.current(input(B));
+    // No release and no TestClock advance: only the actual invalidation can
+    // wake this waiter. Its still-running physical call remains accounted for.
+    const result = yield* Fiber.join(worker);
+    expect(result._tag).toBe("Failure");
+    if (result._tag === "Failure") expect(result.failure.failureCode).toBe("ownership_identity_changed");
+    expect(f.signals[0]?.aborted).toBe(true);
+    expect(service.snapshot().unsettledSources).toBe(1);
+    release();
+    yield* flushUntil(() => service.snapshot().unsettledSources === 0);
+  }));
+});
+
+test("an exhausted STEP retry allowance cannot create another source read", async () => {
+  await run(Effect.gen(function* () {
+    const f = yield* fixture; f.state.failSource = true;
+    const service = yield* makeOwnershipCoordinator(f.reader);
+    const result = yield* Effect.result(service.current(input(), { waitBudgetMs: 10000, takeRetry: () => Effect.succeed(false) }));
+    expect(result._tag).toBe("Failure"); expect(f.calls.length).toBe(1);
+  }));
+});
+
 test("coordinator reuses remote facts but refreshes native local facts and never renews source age", async () => {
   await run(Effect.gen(function* () {
     const f = yield* fixture, service = yield* makeOwnershipCoordinator(f.reader);

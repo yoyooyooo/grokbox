@@ -27,7 +27,7 @@ function turnRecord(value: unknown): ColdTurn | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const v = value as ColdTurn;
   if (v.version !== 1 || !v.turn || typeof v.turn.serviceEpoch !== "string"
-    || typeof v.turn.poisoned !== "boolean" || typeof v.turn.expired !== "boolean"
+    || !["open", "revoked", "closed"].includes(v.turn.lifecycle) || typeof v.turn.expired !== "boolean"
     || !Number.isFinite(v.turn.lastActivityMs)) throw fail();
   if (v.binding && (!digest(v.binding.bindingId) || !v.binding.model || !v.binding.selection
     || !v.binding.ownership || typeof v.binding.fingerprint !== "string" || "lease" in v.binding)) throw fail();
@@ -80,13 +80,19 @@ function historyAdapter(db: ClassicLevel<string, unknown>): ExecutionHistory {
   // commit a new identity claim (for example after ENOSPC). Recover each side
   // only on an actually successful operation on that side.
   const failed = { read: false, write: false };
+  const ioTiming = { readMs: 0, writeMs: 0 };
   const io = <T>(side: "read" | "write", operation: () => Promise<T>) => Effect.tryPromise({
     try: async () => {
-      const result = await operation();
-      failed[side] = false;
-      state.available = !failed.read && !failed.write;
-      state.lastError = state.available ? null : "storage_unavailable";
-      return result;
+      const started = performance.now();
+      try {
+        const result = await operation();
+        failed[side] = false;
+        state.available = !failed.read && !failed.write;
+        state.lastError = state.available ? null : "storage_unavailable";
+        return result;
+      } finally {
+        ioTiming[side === "read" ? "readMs" : "writeMs"] += Math.max(0, performance.now() - started);
+      }
     },
     catch: () => { failed[side] = true; state.available = false; state.failures++; state.lastError = "storage_unavailable"; return fail(); },
   });
@@ -112,6 +118,6 @@ function historyAdapter(db: ClassicLevel<string, unknown>): ExecutionHistory {
       ], { sync: true });
       state.writes += 2;
     }),
-    health: () => ({ ...state }),
+    health: () => ({ ...state, ioTiming: { ...ioTiming } }),
   };
 }

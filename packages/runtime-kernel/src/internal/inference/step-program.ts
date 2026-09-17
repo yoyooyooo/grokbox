@@ -1,11 +1,11 @@
 import { Clock, Context, Deferred, Effect, Exit, Option, Stream, SynchronizedRef } from "effect";
 import * as Scope from "effect/Scope";
 import { BackendFailure, type InferenceEvent } from "../contract/events.ts";
-import { AUTHORITY_REASONS, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, type AuthorityDiagnostic } from "../contract/stream-diagnostic.ts";
-import { observationOwn } from "../contract/provider-observation.ts";
+import { annotateStreamFailure } from "../contract/stream-diagnostic.ts";
+import { readAuthority, validateAuthorityPermit } from "./authority-gate.ts";
 import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunStepRequest } from "../contract/binding.ts";
 import { emptyRecoveryLedger } from "../contract/overflow.ts";
-import { AdmissionAuthority, BackendAuth, ConfigurationRead, HostCompact, ModelBackend, RuntimeEvents, type AuthLease, type PreparedCall } from "../../ports.ts";
+import { BackendAuth, ConfigurationRead, HostCompact, ModelBackend, RuntimeEvents, type AuthLease, type PreparedCall } from "../../ports.ts";
 import { runOverflowRecovery } from "./overflow-recovery.ts";
 import { STUB_ECHO_MODEL_ID, captureManagedSelection, modelForAgent, qualifiedContextWindowTokens } from "../../selection.ts";
 import {
@@ -26,7 +26,6 @@ import type { InferenceState } from "./route-binding.ts";
 import { contextSnapshotBody, parseContextSnapshot } from "../contract/snapshot.ts";
 import { computeSnapshotDigest } from "../../hash.ts";
 import { fenceStream } from "./stream-state.ts";
-import { OWNERSHIP_EVIDENCE_MAX_AGE_MS, type OwnershipAdmission } from "../contract/ownership.ts";
 import { withProviderRecovery, type RecoveryProgress } from "./provider-recovery.ts";
 import type { ProviderRecoveryState } from "../contract/provider-recovery.ts";
 
@@ -44,57 +43,6 @@ function asBindingOrBackend(error: unknown): BindingFailure | BackendFailure {
   return new BindingFailure("not_admitted");
 }
 
-function authorityDenied(reason: unknown, checkpoint: AuthorityDiagnostic["checkpoint"], extra: Partial<AuthorityDiagnostic> = {}) {
-  const safe = typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason as AuthorityDiagnostic["reason"] : "unknown";
-  // The STEP owns its checkpoint and elapsed time; the reader only contributes
-  // finite diagnostic facts. Neither observation can grant admission.
-  return annotateStreamFailure(new BindingFailure("not_admitted"), { rejectSite: "authority_check", authority: { ...extra, reason: safe, checkpoint } });
-}
-function readAuthority(request: RunStepRequest, checkpoint: AuthorityDiagnostic["checkpoint"] = "admission") {
-  return Effect.gen(function* () {
-    const authority = yield* AdmissionAuthority;
-    const startedAt = yield* Clock.currentTimeMillis;
-    const result = yield* Effect.result(authority.current(request));
-    const durationMs = Math.max(0, (yield* Clock.currentTimeMillis) - startedAt);
-    if (result._tag === "Failure") return yield* Effect.fail(authorityDenied("authority_unavailable", checkpoint, {
-      ...streamFailureDiagnostic(result.failure)?.authority, durationMs,
-    }));
-    const evidence = result.success;
-    if (!evidence || typeof evidence !== "object" || !("admitted" in evidence) || evidence.admitted !== true) {
-      const detail = projectStreamDiagnostic(observationOwn(evidence, "diagnostic"))?.authority;
-      return yield* Effect.fail(authorityDenied(observationOwn(evidence, "reason"), checkpoint, { ...detail, durationMs }));
-    }
-    const fact = evidence && typeof evidence === "object" && "ownership" in evidence ? evidence.ownership : undefined;
-    const now = yield* Clock.currentTimeMillis;
-    if (!fact || typeof fact !== "object" || !("scopeId" in fact) || !("serverId" in fact) || !("observedAtMs" in fact)
-      || typeof fact.scopeId !== "string" || !/^[a-f0-9]{64}$/.test(fact.scopeId)
-      || typeof fact.serverId !== "string" || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(fact.serverId)
-      || typeof fact.observedAtMs !== "number" || !Number.isFinite(fact.observedAtMs)
-      || fact.observedAtMs > now || now - fact.observedAtMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
-      const evidenceAgeMs = fact && typeof fact === "object" && "observedAtMs" in fact && typeof fact.observedAtMs === "number" && Number.isFinite(fact.observedAtMs) ? Math.max(0, now - fact.observedAtMs) : undefined;
-      return yield* Effect.fail(authorityDenied(evidenceAgeMs !== undefined && evidenceAgeMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS ? "ownership_evidence_stale" : "ownership_evidence_invalid", checkpoint, { durationMs, evidenceAgeMs }));
-    }
-    const memory = yield* InferenceMemory;
-    const state = yield* SynchronizedRef.get(memory.ref);
-    if (state.cancelled.has(ledgerKey(request)) || state.ledger.get(ledgerKey(request))?.status === "cancelled") {
-      return yield* Effect.fail(new BindingFailure("cancelled"));
-    }
-    const bound = state.bindings.get(bindingStoreKey(request));
-    if (state.turns.get(turnKey(request))?.poisoned || (bound && (bound.ownership.scopeId !== fact.scopeId || bound.ownership.serverId !== fact.serverId))) {
-      return yield* Effect.fail(authorityDenied(state.turns.get(turnKey(request))?.poisoned ? "turn_revoked" : "ownership_identity_changed", checkpoint, { durationMs }));
-    }
-    return fact as OwnershipAdmission;
-  }).pipe(Effect.tapError(() => Effect.gen(function* () {
-    // Revoked/unknown authority never comes back by reusing the same old TURN.
-    const memory = yield* InferenceMemory;
-    yield* updateExecutionStateSync(memory, request, state => {
-      const turn = state.turns.get(turnKey(request));
-      if (turn) turn.poisoned = true;
-      return state;
-    });
-  })));
-}
-
 function dispatchFence(request: RunStepRequest, lease: AuthLease) {
   return Effect.gen(function* () {
     yield* readAuthority(request, "before_dispatch");
@@ -104,7 +52,12 @@ function dispatchFence(request: RunStepRequest, lease: AuthLease) {
     if (cancelled) return yield* Effect.fail(new BindingFailure("cancelled"));
     const auth = yield* BackendAuth;
     yield* auth.verify(lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
-    yield* readAuthority(request, "after_auth");
+    const permit = yield* readAuthority(request, "after_auth");
+    // A slow authority refresh can span credential rotation. Verify again,
+    // then check the same permit locally rather than starting an infinite
+    // auth/remote-read alternation. Expiration still refuses dispatch.
+    yield* auth.verify(lease).pipe(Effect.mapError(() => new BindingFailure("auth_mismatch")));
+    yield* validateAuthorityPermit(request, permit);
     const afterAuth = yield* SynchronizedRef.get(memory.ref);
     const after = afterAuth.cancelled.has(ledgerKey(request)) || afterAuth.ledger.get(ledgerKey(request))?.status === "cancelled";
     if (after) return yield* Effect.fail(new BindingFailure("cancelled"));
@@ -332,6 +285,7 @@ export function runStep(request: RunStepRequest) {
   return Effect.gen(function* () {
     const memory = yield* InferenceMemory;
     const now = yield* Clock.currentTimeMillis;
+    const startedTick = yield* Clock.monotonicTimeNanos;
     // Cache maintenance has no authority to reject unrelated work. Failed
     // cooling retains the hot owner; the actual identity claim below still
     // must commit successfully before this request may dispatch.
@@ -341,14 +295,20 @@ export function runStep(request: RunStepRequest) {
     );
     // Acquisition and finalizer registration are one interrupt-safe boundary.
     // It must not be possible to commit an active slot and cancel before its owner exists.
-    const occupied = yield* Effect.acquireRelease(reserveStep(memory, request, now), result =>
+    const occupied = yield* Effect.acquireRelease(reserveStep(memory, request, now).pipe(Effect.tap(result => Effect.gen(function* () {
+      if (!result.ok || result.kind === "duplicate") return;
+      const key = ledgerKey(request);
+      memory.authoritySteps.set(key, { startedTick, spentMs: 0, retries: 0, check: 0 });
+      memory.cancels.set(key, yield* Deferred.make<void>());
+      memory.quiesce.set(key, yield* Deferred.make<void>());
+    }))), result =>
       !result.ok || result.kind === "duplicate" ? Effect.void : Effect.gen(function* () {
       yield* haltProducer(memory.cancels, ledgerKey(request));
       yield* updateExecutionStateSync(memory, request, state => {
         const entry = state.ledger.get(ledgerKey(request));
         if (entry?.status === "active") {
           const turn = state.turns.get(turnKey(request));
-          if (turn && !turn.bindingId) turn.poisoned = true;
+          if (turn && !turn.bindingId && turn.lifecycle === "open") turn.lifecycle = "closed";
         }
         return state;
       });
@@ -357,6 +317,10 @@ export function runStep(request: RunStepRequest) {
       // A client can leave after admission, before the stream is consumed.
       // The outer STEP owner must clean progress even when the stream finalizer never ran.
       memory.recoveryProgress.delete(ledgerKey(request));
+      memory.authoritySteps.delete(ledgerKey(request));
+      memory.cancels.delete(ledgerKey(request));
+      memory.quiesce.delete(ledgerKey(request));
+      memory.started.delete(ledgerKey(request));
       const at = yield* Clock.currentTimeMillis;
       yield* coolUnderPressure(memory, at).pipe(Effect.catch(() => Effect.sync(() => { memory.counters.cleanupFailures++; })));
     }).pipe(Effect.catch(() => Effect.sync(() => { memory.counters.cleanupFailures++; }))));
@@ -411,11 +375,11 @@ function admitLive(request: RunStepRequest, now: number) {
         // Verify the original immutable fingerprint and ownership before use.
         if (existing.ownership.scopeId !== ownership.scopeId || existing.ownership.serverId !== ownership.serverId) {
           // Match the hot-binding authority fence: a revoked TURN stays
-          // poisoned even if ownership later changes back. Cache residency
+          // revoked even if ownership later changes back. Cache residency
           // must never weaken the authorization lifetime.
           yield* updateExecutionStateSync(memory, request, current => {
             const turn = current.turns.get(turnKey(request));
-            if (turn) turn.poisoned = true;
+            if (turn) turn.lifecycle = "revoked";
             return current;
           });
           return yield* Effect.fail(new BindingFailure("not_admitted"));
@@ -510,10 +474,8 @@ function admitLive(request: RunStepRequest, now: number) {
       return current;
     }));
     const key = ledgerKey(request);
-    const halt = yield* Deferred.make<void>();
-    const done = yield* Deferred.make<void>();
-    memory.cancels.set(key, halt);
-    memory.quiesce.set(key, done);
+    const halt = memory.cancels.get(key);
+    if (!halt || !memory.quiesce.has(key)) return yield* Effect.fail(new BindingFailure("cancelled"));
     const progress: RecoveryProgress = {};
     if (memory.providerRecovery.mode !== "off") memory.recoveryProgress.set(key, progress);
     return {
