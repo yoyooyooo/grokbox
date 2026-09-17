@@ -1,6 +1,6 @@
 # AUTH — Ownership evidence availability follow-up
 
-Status: implemented; scoped offline and native-source-copy qualification passed; final aggregate/full-suite verification and independent fixed-tip review pending. Source baseline `f8c82c0`. Branch `feat/ownership-evidence-availability`. Depends on T45/T47/T48; release and independent review gates remain T49. Specification: [S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core). This ticket follows the completed core slices without reopening their historical receipts.
+Status: implemented and fixed-source offline/full-suite verified; partial native-source-copy qualification passed; independent fixed-tip review pending; actual native/tool/App acceptance not run. Source baseline `f8c82c0`. Branch `feat/ownership-evidence-availability`. Depends on T45/T47/T48; release and independent review gates remain T49. Specification: [S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core). This ticket follows the completed core slices without reopening their historical receipts.
 
 ## Goal and policy decision
 
@@ -29,7 +29,7 @@ This is an explicit observation-frequency tradeoff, not merely a performance ref
 
 ## Live-only acceptance
 
-Register feature-scoped entries in [LIVE integration validation](LIVE-integration-validation.md), linked to the committed implementation. Required: fixed-artifact Host/Gateway source sharing and cancellation, native pause/identity invalidation, long-approval final tool consumption, original App warning/wait/terminal projection, and loaded artifact/policy compatibility. Default validation uses a fixed integrated v2 candidate in an authorized window, not this unmerged worktree. No model spend, restart, adopt or automatic message replay is authorized by this ticket.
+Registered entries are [LIVE-AUTH-AVAILABILITY-NATIVE](LIVE-integration-validation.md#live-auth-availability-native), [TOOLS](LIVE-integration-validation.md#live-auth-availability-tools) and [APP](LIVE-integration-validation.md#live-auth-availability-app), each linked to implementation commit `90346bb`. Required: fixed-artifact Host/Gateway source sharing and cancellation, native pause/identity invalidation, long-approval final tool consumption, original App warning/wait/terminal projection, and loaded artifact/policy compatibility. Default validation uses a fixed integrated v2 candidate in an authorized window, not this unmerged worktree. No model spend, restart, adopt or automatic message replay is authorized by this ticket.
 
 ## Non-live blockers and proof limits
 
@@ -43,4 +43,26 @@ The first release-offline run found one stale preload digest expectation (471 pa
 
 Implementation audit checked owner scope, original-age preservation, local/deployment revalidation, invalidation during the final local witness, bounded payload retention, error projection and call/terminal accounting. This is the implementer's audit, not an independent review receipt. Independent fixed-tip review remains a non-live requirement in this ticket/T49; no new external reviewer invocation or review pass is claimed.
 
-No live execution, restart, adopt, model spend, source merge or release is claimed. Final source-bound command receipts and LIVE registration follow in a separate documentation commit.
+No live execution, restart, adopt, model spend, source merge or release is claimed.
+
+### Fixed-source final receipt — 2026-09-17
+
+Implementation: `90346bb2bd72b44b345eb4752d730c7922d8e809`; branch `feat/ownership-evidence-availability`, parent v2 `f8c82c0`. Source digest `a6eb9fb9ab63052fa22504639c6c529b3301d26c383b817178063bd44496dceb`; rebuilt preload SHA-256 `c00484cf80649b95e920efea862cb744f800b8151942a8d2f050705eea2e6f4d`. Documentation-only receipts do not change these source/artifact digests. Runtime/toolchain pins remain unchanged.
+
+| Executed command (pinned Bun 1.3.14) | Observed result | Claim boundary |
+|---|---|---|
+| `bun run typecheck` | passed | Current TypeScript source |
+| `bun scripts/verify-modeld-core.mjs availability` | 146 passed, 0 failed, 10 files, 1113 assertions | Rebuilt production-path availability, presentation, actual CLI and fixture Unix/Host/SQLite chain |
+| `bun scripts/verify-modeld-core.mjs release-offline` | 514 passed, 0 failed, 53 files, 3097 assertions | Rebuilt lifecycle/evidence/state/authority/availability/observation/package/privacy aggregate |
+| `GROKBOX_TEST_NATIVE_HOST=0 GROKBOX_TEST_ALLOW_NATIVE=0 bun test --timeout 30000` | final run: 2088 passed, 6 explicit native skips, 0 failed, 267 files, 17257 assertions | Whole-repository offline regression; skips are not passes |
+| `bun run test:native-host` | 28 passed, 0 failed, 6 files, 209 assertions | Separately opted-in fixed native-source copies/snippets; includes the six cases skipped by ordinary full tests; no running feature/Server/App qualification |
+| `bun test --rerun-each 100 --bail 1 -t 'production root ownership' packages/box-runtime/test/modeld-outcome.test.ts` | 400 passed, 0 failed, 1600 assertions | Bounded repetition of the four refusal paths; not proof of a production failure's root cause |
+| `bun run check:publication` and `git diff --check` | passed; publication findings empty | Working-tree publication and whitespace checks, not remote publication |
+
+These suites overlap; counts are not added as unique tests. The availability test deliberately omitting the new owner capability reproduces cumulative-budget exhaustion under persistent three-second reads, while the current STEP-owned capability completes 2.5/3/4-second vectors with one source read and one model call. Expired evidence, new STEP identity, local invalidation, scope changes and permit expiry remain refused or refreshed within the original limits.
+
+### Non-live review residue — do not move to LIVE
+
+A full-suite run on `90346bb` reported one failure in `modeld STEP outcome > production root ownership wrong-gateway refuses a real Host/Unix STEP before provider` (2087 passed, six skips, one failure). The retained console tail identifies the test but not its failed assertion. The unchanged suite then passed individually (11 tests), all four refusal paths passed 100 repetitions each, and a fresh whole-repository run passed as recorded above. No production or test code was changed between those runs. The failure is not reproduced and its cause remains unknown; it is not claimed fixed or attributed to asynchronous logs. Include this evidence limit in fixed-tip independent review. Any recurrence requires retaining the full assertion/stack and fixing the source/test owner before release; live validation cannot resolve or waive this code/test concern.
+
+Independent review remains `review_pending`; the implementer's audit and passing reruns do not sign that gate. LIVE entries remain `awaiting-integration`, with v2 mapping, target, budget and authorized window unselected.

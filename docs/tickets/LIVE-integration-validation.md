@@ -134,6 +134,48 @@ Status: blocked — mapped to v2; T49 review and authorized native window pendin
 
 预算/回滚：重启范围、次数、排空时限、旧制品及配置恢复目标预先固定。无法确定旧 owner 已退出、数据库独占、旧请求状态或实际加载版本时停止，保持明确的失败/未知回执；不删执行账本来解锁，不复制旧许可到新代。
 
+## 当前已登记：ownership evidence availability
+
+来源：[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md)、[Spec S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。Source branch `feat/ownership-evidence-availability`，固定实现提交 `90346bb2bd72b44b345eb4752d730c7922d8e809`，基于v2 `f8c82c0`。Source digest `a6eb9fb9ab63052fa22504639c6c529b3301d26c383b817178063bd44496dceb`；preload digest `c00484cf80649b95e920efea862cb744f800b8151942a8d2f050705eea2e6f4d`。当前策略为`strict-observation-v2`，执行wire仍为v6；未知旧组件组合不因wire编号相同自动取得资格。
+
+共同状态：v2实际集成映射、共同候选、目标、窗口、请求/费用上限与切换授权均`not-selected`/`not-recorded`。实现提交已在独立worktree完成全库与重建release-offline验证，固定原生源码的复制品/隔离片段测试也已运行；这些均不证明实际加载或原版App/最终工具消费者。独立固定提交复审及一次未复现的全库测试异常仍在AUTH/T49中记录，不搬成live-only残留。下列三条均未执行，没有live通过回执；默认等待映射到固定集成v2制品后再进入授权窗口。
+
+<a id="live-auth-availability-native"></a>
+### LIVE-AUTH-AVAILABILITY-NATIVE — 已加载策略、真实取证与失效
+Status: awaiting-integration
+
+- 来源与依赖：AUTH实现提交`90346bb`；依赖本次固定候选上的`LIVE-MODELD-NATIVE`、`LIVE-MODELD-CUTOVER`语义资格。v2 source→integrated映射及candidate identity为`not-recorded`。
+- 必须live的原因：已测试的native源码锚点、隔离retry/compact片段和模拟List不能证明实际Gateway读取生命周期、当前scope/native暂停状态或正在运行的Host/modeld加载了v2策略。
+- 环境与动作：优先使用隔离原生环境；现役只在批准的单个测试Bot与成套制品上操作。先读实际loaded Host/profile/preload/modeld身份、wire与policy，核对非目标Bot和官方passthrough不受影响。
+- 步骤与oracle：在安全、批准的延迟注入点验证2.5–4 s读取跨多个检查点时同STEP复用；新STEP不继承超过2 s的跨STEP缓存，原始证据不超过5 s。首次慢读可在原10 s累计预算内取得另一份新鲜证据；持续超龄仍拒绝。检查本地pause/unbound、scope/Host代变化和共享等待者取消，已观察失效不能被稍后ready结果复活；不合作source仍保留占用至实际结算。关联operation/waiter/STEP与模型实际调用数，不用标题证明授权。
+- 预算与授权：目标、最多请求/费用/总等待、允许的暂停/取消及恢复动作均`not-selected`，没有授权不得运行。不为复现改整机网络或业务Bot归属；缺安全注入点则该向量`blocked`。
+- 停止与回滚：身份不明、原始年龄续期、越权或重复模型调用、资源无法有界收敛即停止；按窗口预选的已验证制品与测试对象原状态回退，不复制旧permit/service epoch或重放旧消息。
+- 回执：`not-run`；须记录实际native/artifact/wire/policy、测试输入、逐向量结果、source真实停止/未知结算与回滚检查。磁盘构建摘要不代替loaded身份。
+
+<a id="live-auth-availability-tools"></a>
+### LIVE-AUTH-AVAILABILITY-TOOLS — 长审批后的原生工具执行门
+Status: awaiting-integration
+
+- 来源与依赖：AUTH实现提交`90346bb`；依赖上条NATIVE及`LIVE-MODELD-TOOLS`的当前候选资格。v2映射`not-recorded`。
+- 必须live的原因：离线已验证模型只调用一次、工具材料检查点、等待/过期/失效与终态；modeld释放材料不等于原生消费者在审批后重新检查了权限。
+- 环境与动作：指定批准的无破坏性测试工具、临时标记和审批操作者；分别验证正常消费、审批跨5 s证据窗口，以及审批中暂停/取消/换代。不得用真实业务工具代替。
+- 步骤与oracle：分别记录模型调用、材料释放、审批、最后执行门、实际标记写入、结果入库与投递。有效上下文只执行一次；失效上下文不再新增工具副作用；同一STEP或已关闭TURN不能被重放。原生per-Agent/per-TURN覆盖不足仍作为阻断，不能用allowed/bound两布尔值或缓存快照签署通过。
+- 预算与授权：工具、路径、次数、等待上限、审批人和变更许可均`not-selected`；不自动调用。
+- 停止与回滚：任何失效后执行、重复副作用或无法关联消费者身份即停止并回来源修复票；仅清理本次批准的临时标记，外部结果未知不得宣称回滚成功。
+- 回执：`not-run`；缺哪一段消费者证据就保留哪一段，不能仅凭模型响应或材料释放成功关闭本条。
+
+<a id="live-auth-availability-app"></a>
+### LIVE-AUTH-AVAILABILITY-APP — 原版App的等待、拒绝与下一步提示
+Status: awaiting-integration
+
+- 来源与依赖：AUTH实现提交`90346bb`；依赖NATIVE，涉及实际工具的展示同时依赖TOOLS；v2映射`not-recorded`。
+- 必须live的原因：新字段已通过真实fixture Unix/Host/journal/SQLite冷读/CLI投影验证；原版App实际渲染、消息确认及真实Provider调用/费用仍属不同事实源。
+- 环境与动作：批准的单个Bot、模型和新nonce测试消息，核对当前session/STEP，不自动发送或删除历史失败消息。
+- 步骤与oracle：等待不显示为已完成或模型正文；stale/read_elapsed、后续过期、permit过期、预算耗尽、真正temporal与访问拒绝可按有记录的原因区分，未知历史原因不补猜。stale不声称归属已变，访问拒绝不误指向模型Provider，建议不默认重启Host或刷新title。已发起模型/已释放工具的事实保持准确，终态只有一次；完成、投递与侧栏子任务Working各自核对。
+- 预算与授权：模型、请求数、token/费用、最大等待及允许动作均`not-selected`；不得为了验证提示无限重试或升级App/清缓存。
+- 停止与回滚：发生错误身份关联、控制帧冒充模型输出、误导性的零调用/自动重放提示或越出预算即停止；保存脱敏回执，按NATIVE窗口的既定制品退路恢复，不重播旧任务。
+- 回执：`not-run`；记录实际artifact/native/policy、发送确认、对应STEP、Provider与Host终态及App观察范围。原始截图/日志和私密身份只保留受控引用，不进入公开仓库。
+
 ## 已完成回执
 
 暂无 **live 验收**回执。v2 源码集成与组合树离线回执已记录在上方，但没有选择/加载 live 制品或执行 live 窗口。后续逐条追加带固定候选、时间、结果、证据范围和失效条件的回执；源码合入、构建成功或一次重启不能变成“全部 live 通过”。
