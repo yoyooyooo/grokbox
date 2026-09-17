@@ -26,6 +26,10 @@
 
 新增 acceptance：原生无 CAS 不得给出 protected=true；错 trigger/未知 schema 拒绝写；用户确认文本来自 Payload 时不得生成 support consent；真实 HTTP 与内部调用不能混作一种证明。原生费用、受信用户确认和精确 run 关联的资格供 T45/T52/T53 消费。
 
+## 多接收者资格补充
+
+T54/T55 接收目标可为用户自建官方/custom Bot。原生接口合同须分清普通聊天与 Webhook automation 的 session/选模来源，公开安全的 actual-captured 模型证据或明确 not_proven；不能以 roster/assignment/普通聊天回执声称 Routine 已采用同一模型。基础官方合成 probe 与 custom lane 分开授权，不为证明接收者功能修改 Host 或模型。
+
 ## Executable acceptance
 
 实现时新增 `test/native-webhook-contract.test.ts` 和 `packages/runtime-kernel/test/ops-notification-contract.test.ts`，执行：

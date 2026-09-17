@@ -20,6 +20,14 @@ kernel `internal/ops/support.ts`、`internal/commands/support-issue.ts`、`ports
 
 同库 support 用例唯一写 draft/consent/submission，普通 collector 不可签 consent。网络事务外使用稳定 submissionId；重复确认/发送超时保留 unknown 并先按已知 issue 或安全 report ref 查证，不盲重发。认证缺失可导出本地审核 Markdown，不代登录。成功后返回实际 issue 引用，不能声称故障已修好。后续更新/评论/附件仍逐批确认；安全漏洞走私密报告提示，不开公开 issue。
 
+## 多 Bot 与 CLI 发布补充
+
+本票继续拥有**默认 confirm-each 用户旅程、草稿与受信 consent**；[T56](T56-scripted-issue-publishing.md)实现同一个 IssuePublisher 的内置 REST 与结果恢复，并新增独立、限定模板的发布 grant。不是两个发布程序：共享 support.ts/support-issue.ts 和原库状态。允许同一 exact draft 已批准后一次完成，不重复问用户；本票默认路径不能因新 mode 而自动公开。
+
+[T54/T55](T54-ops-targets-and-routing.md)的接收者不限模板或官方模型；目标/路由变化不改变草稿/incident/submission 身份。多个 Bot 提出同一报告或转述同意，必须以真实用户/principal 与同一内容/仓库/作者验证、短事务去重；模型/provider/Webhook 凭据不用于 GitHub。
+
+新增测试：跨 Bot 重复确认仅一次发布；路由变化不扩大内容/目标授权；无回复不唤醒高级 Bot；有限 grant 只能经 T56 分支、不能伪造 exact consent。共享测试/文件修改按一个 writer 顺序集成，T56 不重做 T52 的默认旅程。
+
 ## Executable acceptance
 
 本票新增并运行：
@@ -37,7 +45,7 @@ packed CLI 证明同一用例/脱敏与回执；native 用户回复/报告关联
 
 ## Forbidden / Non-goals
 
-不自动创建/更新 issue，不静默上传附件或 telemetry，不查询全盘凑背景，不把敏感内容塞预填 URL，不无限催用户，不用 GitHub token 当 Webhook/provider 凭据，不建泛化客服系统。
+默认无 exact consent 不创建 issue；T56 的有限 grant 仅在独立启用/资格化后允许 create，不覆盖更新/附件。禁止静默上传附件或 telemetry，不查询全盘凑背景，不把敏感内容塞预填 URL，不无限催用户，不用 GitHub token 当 Webhook/provider 凭据，不建泛化客服系统。
 
 ## Done evidence / Next
 

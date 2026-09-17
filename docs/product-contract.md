@@ -506,15 +506,17 @@ MVP / 可发布声明的 ordinary main envelope：
 
 **发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。最终批准使用readiness现有记录，不由某个绿色测试或ownership结果直接生成。
 
-### 12.1 Template Bot 主动运维（2026-09-17 补充分层/支持，尚未实现）
+### 12.1 Bot 主动运维（2026-09-17 分层/多目标/支持整合，尚未实现）
 
-正常启用服务的新安装采用 user 预设，默认轻量无模型观察；完成独立模板配对与成本告知后，只对已确认用户影响且不可安全自修的事件做一次简短提醒，询问是否准备脱敏 issue 草稿后结束，不默认深诊断。maintainer 是手动选择的观察偏好，不是超级权限；自动诊断、主动探针和低风险维护分别开启，维护仍需独立 grant。单纯安装 CLI/import/GET 不启服务或花费，旧 off/预算在升级时保留。模板不含发布者活 endpoint/secret/grant，Bot 保持官方模型。
+正常启用服务的新安装采用 user 预设，默认轻量无模型观察；完成独立接收目标配对与成本告知后，只对已确认用户影响且不可安全自修的事件做一次简短提醒，询问是否准备脱敏 issue 草稿后结束，不默认深诊断。maintainer 是手动选择的观察偏好，不是超级权限；自动诊断、主动探针和低风险维护分别开启，维护仍需独立 grant。单纯安装 CLI/import/GET 不启服务或花费，旧 off/预算在升级时保留。模板不含发布者活 endpoint/secret/grant；内置模板保持默认官方模型，但用户可指定自己创建/获授权的 custom Bot 接收通知，路由不代用户改模型。
 
-[专项 Spec](roadmap/template-ops-automation-spec.md)拥有 T43–T53 的详细合同；[补充决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)及 T51–T53 拥有分层配置、确认后 issue、通用 Routine 的新增范围；[初始决策](decisions/2026-09-16-template-ops-automation.md)明确对 HSO 逐次人工 gate 的狭窄扩展：限定已审核动作类可使用有时效/作用域的预授权，新 SHA 只有满足已审核等价规则才可自动派生 profile。未知依赖或修改语义仍需人工审核；runtime 精确应用与 Server 权威不变。现有 CLI 行为不因此获得自动执行权。
+[专项 Spec](roadmap/template-ops-automation-spec.md)拥有 T43–T56 的详细合同；[多目标/授权发布决策](decisions/2026-09-17-ops-routing-and-authorized-issues.md)及 T54–T56 扩充命名目标、确定性分流、custom 故障/成本边界和 CLI 内置发布；[补充决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)及 T51–T53 拥有分层配置、确认后 issue、通用 Routine 的新增范围；[初始决策](decisions/2026-09-16-template-ops-automation.md)明确对 HSO 逐次人工 gate 的狭窄扩展：限定已审核动作类可使用有时效/作用域的预授权，新 SHA 只有满足已审核等价规则才可自动派生 profile。未知依赖或修改语义仍需人工审核；runtime 精确应用与 Server 权威不变。现有 CLI 行为不因此获得自动执行权。
 
 Bot 只解释/诊断/提交候选，唯一 controller 实际执行；Webhook HTTP 接收、Bot 领取、诊断、维护验证、报告交付和用户已读各自有证据。Bot 需先持久交接并结束回合再维护其所在 Host；整个 Box/原生服务离线的自我告警能力不作无条件承诺。撤销自动化不等于回滚已发生效果，自动退出补丁也不授权同 STEP 换供应商或重做工具。
 
-支持流程独立于维护：同意整理仅允许本地草稿；展示 exact 目标仓库/可见性/标题/正文/附件/作者后确认，才可创建 issue。无回应不追问，默认无附件/无原始现场外发；安全信息按 SECURITY.md 私密处理。maintainer preset、维护 grant 或 Payload 不批准公开，提交 unknown 先对账不盲重发，后续评论另需确认。配置唯一写入和 requested/effective/阻断原因归 [Spec §6.2](roadmap/template-ops-automation-spec.md#configuration)，不得用默认值隐藏收费或执行权限。
+支持流程独立于维护，默认 confirm-each：同意整理仅允许本地草稿；展示 exact 目标仓库/可见性/标题/正文/附件/作者后确认，才可创建 issue。无回应不追问，默认无附件/无原始现场外发；安全信息按 SECURITY.md 私密处理。maintainer preset、维护 grant 或 Payload 不批准公开，提交 unknown 先对账不盲重发，后续评论另需确认。用户另可按 [Spec §5.2](roadmap/template-ops-automation-spec.md#issue-automation) 显式授予固定仓库/作者/事件类/脱敏模板、create-only、有期限/额度的发布 grant；不包含模型自由正文、附件、评论或维护权限。获准后由 CLI 同一 support/内置 REST 程序完成，不再让用户抄日志或重复批准；多 Bot 不产生重复 submission。
+
+默认仅一个命名目标，已启用通知都流向它；高级 routing 关闭不等于关闭告警。按 intent/source/severity/audience 的有限首匹配规则可分流到廉价/分析 Bot，但不能自动提高诊断权限或改供应商。custom 接收者的依赖、数据同意、备用和总费用均显式检查，unknown 不广播；集中 reportTarget 是可选且有成本的后续交付。配置唯一写入和 requested/effective/阻断原因归 [Spec §6.2–6.5](roadmap/template-ops-automation-spec.md#configuration)，模型分配继续归既有 owner，不得用默认值隐藏收费或执行权限。
 
 ## 13. 输出与错误
 

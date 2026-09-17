@@ -22,6 +22,14 @@ kernel `routines.ts`、`internal/commands/agent-routines.ts`、`ports.ts` 的 Ag
 
 原生 Agent/Routine 配置不复制到本地 scheduler；本地只留本次 operation、managed key/native ID 与 unknown 恢复所需回执。T46 模板配对用同一 apply/enable，T50 E2E 经实际 CLI 调用。
 
+## 任意接收 Bot 与路由配对补充
+
+[T54](T54-ops-targets-and-routing.md) 与模板配对消费本票唯一 native Routine 程序；本票不要求接收者来自 grokbox 模板/采用官方模型。通用 create/update 不隐式选模，custom Bot 由用户通过既有 models/原生 owner 单独配置，并按当前 Server 准入验证。
+
+T55 的真实 E2E 增加至少两个不同模型目标及可选官方备用：各自 Routine read-back/启用、真实 POST、关联实际运行/捕获模型、更新后第二次 POST、禁用/cleanup。默认官方通用 lane 保持不变，custom lane 另有模型费用/权限资格；不能用 Bot 自报“我是模型 X”作证。绑定多个 alias 不复制同一任务或泄漏 endpoint secret。
+
+仅路由 explain/test 不得调用本票 invoke；真实 probe 是独立显式动作。Routine endpoint/revision 变化必须使关联 target binding 失效并复核，不将旧 URL 继续留给投递器。
+
 ## Executable acceptance
 
 创建并执行以下目标文件：

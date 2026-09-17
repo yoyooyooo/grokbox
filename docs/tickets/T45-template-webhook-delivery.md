@@ -26,6 +26,14 @@ user preset 默认只投递 `brief-notice`，Bot 首醒不自动进入 T47 深�
 
 追加回归：初始提醒走短路径、default no deep tools/IssuePublisher；重复 POST/乱序/重启/拒绝决定/预算耗尽不突破 user 配额；伪造 userApproved 字段只能拒绝，不能产 consent。用户主动要求诊断和自动唤醒分别计数，不靠分类技巧绕过预算。
 
+## 命名目标接线补充
+
+本票 outbox/传输不再限定一个官方模板 Bot。消费 [T54](T54-ops-targets-and-routing.md) 生成的不可变 RouteDecision；template-notify 文件名可保留，但不据名称限制接收者或新建 custom sender。默认目标也走同一程序。
+
+workId 固定 incident occurrence + 阶段，deliveryId 固定所选目标/绑定的尝试；多目标去重/预算、发送前健康、unknown 不广播、cross-Bot claim 和有限升级由 [T55](T55-custom-receiver-delivery.md) 关闭。通知不持有 GitHub token/发布权，issue 写入交 T52/T56 的同一 support 程序。
+
+追加基线回归：冻结目标不被 Payload/当前规则改写；明确未送出可用已授权备用，未知结果不可切目标盲重投；多个 alias/重试不突破全局额度；自定义模型名称不被当作接收资格。
+
 ## Executable acceptance
 
 本票创建下列测试后运行：

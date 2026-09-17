@@ -28,6 +28,14 @@ user 的 brief-notice 只能读取已有安全摘要和报告，不能为了给�
 
 追加 oracle：default user/maintainer 首醒的本票工具调用均为 0；on-request 的有限诊断仍可完整运行；输出中「已获用户同意」或 payload approval 不使 IssuePublisher 可调用；诊断失败保留 partial/既有提醒，不重复唤醒。
 
+## 分流与升级补充
+
+诊断接收者不限官方模板：由 [T54](T54-ops-targets-and-routing.md) 选择已配对目标，模型继续归现有 selection/原生 owner。高级 Bot 的成本/能力偏好不提高 tool、Host 或 GitHub 权限；目标不具备资格时 blocked，不从下一规则猜替代。
+
+廉价 Bot 的 needs-analysis 是有限候选，由 [T55](T55-custom-receiver-delivery.md) 在独立诊断开关/数据/费用同意下最多升级一层；默认 user 不进入该分支。只传安全摘要与证据引用，禁止 Bot 直接互发长 transcript、相互重试。结构化诊断结果与集中 reportTarget 的用户交付分开，额外报告唤醒计入预算。
+
+追加测试：模型自称高置信度不能升级权限；诊断开关 off 不调用 analysis；A→B→A 拒绝；旧目标的迟到结果不改当前阶段；多个 Bot 产生同 issue/维护候选保留唯一业务身份。T56 的 issue POST 不由诊断 Bot 拼 shell 执行。
+
 ## Executable acceptance
 
 创建并执行：

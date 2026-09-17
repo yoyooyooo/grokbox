@@ -1,6 +1,6 @@
 # Template Bot 运维告警与自动化维护手册
 
-**2026-09-17 · 补充分层配置、确认后 issue 与 Routine CLI，尚未实现/安装或启用。** 本页拥有安装、值守、故障处理与验收的操作解释；动作资格、DTO、权限、预算与目标骨架只在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 定义。本手册不把计划中的 `runtime ops` 命令写成当前可执行能力。[T43–T53](../tickets/README.md#template-ops-automation) 拥有实现退出。
+**2026-09-17 · 整合多 Bot/custom 分流、配置与授权后 CLI issue，尚未实现/安装或启用。** 本页拥有安装、值守、故障处理与验收的操作解释；动作资格、DTO、权限、预算与目标骨架只在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 定义。本手册不把计划中的 `runtime ops` 命令写成当前可执行能力。[T43–T56](../tickets/README.md#template-ops-automation) 拥有实现退出。
 
 ## 1. 当前就能做的只读检查
 
@@ -22,7 +22,7 @@ monitor 未初始化或没有采样时保留 missing/stale，不因此创建空�
 
 下面是目标流程；T46/T50 未关闭前不运行虚构命令，也不手工编辑原生产品状态。
 
-导入 grokbox template bot，保持其官方模型。先读取本安装支持的 native automation 能力表。模板应只包含无密钥、未激活的 Webhook 蓝图；上游不支持安全导入时，由 bootstrap 在配对后通过原生接口创建。确认安装/账号作用域、精确 Bot 与 routine，安全保存 endpoint secret ref，再发送无害合成测试事件，核对原生 run 与用户报告。
+可以导入默认官方模型的 grokbox template bot，也可以选择自己已创建/配置 custom 模型的 Bot 作为命名目标 default；接收者不限模板，绑定不自动修改模型。先读取本安装支持的 native automation 能力表。模板应只包含无密钥、未激活的 Webhook 蓝图；上游不支持安全导入时，由 bootstrap 在配对后通过原生接口创建。确认安装/账号作用域、精确 Bot 与 routine，安全保存 endpoint secret ref，再发送无害合成测试事件，核对原生 run 与用户报告。
 
 正常启用服务的新安装默认 user：轻量观察，配对及成本告知后只对已确认用户影响且不可安全自修的异常做 brief-notice；不默认模型排障。维护者显式选 maintainer 可多看本地来源/契约细节，但 auto-diagnose、canary、维护分别启用。旧安装 off/显式覆盖保留，单纯安装 CLI/import/GET 不启服务或收费。导入、配对、测试成功均不产生维护 grant 或 issue 发布许可。
 
@@ -94,13 +94,13 @@ Webhook 唤醒本身可能消耗原生 token，不能称零成本；节约来自
 
 ## 6. 交付与上线检查
 
-按 T43/T51 合同配置 → T53 通用 Agent/Routine CLI → T44/T45 只读纵切 → T46/T52 默认提醒与确认后支持推进；T47 诊断和 T48/T49 维护各自可后交付，由 T50 分 lane 验收。Offline、source CLI、packed Node 和 native 实测分别记录；只验证哪条 lane，就只批准哪条 lane。
+先冻结 T43/T51/T54 的 native/配置/命名目标合同，以 T53 通用 Routine + T44/T45/T46 的 default 目标完成只读纵切；T52/T56 并行完成授权后内置提交，T55 增量接入 custom/分流/备用；T47 诊断和 T48/T49 维护各自可后交付，由 T50 分 lane 验收。Offline、source CLI、packed Node 和 native 实测分别记录；只验证哪条 lane，就只批准哪条 lane。
 
 当前可运行的回归仍以仓库已有测试为准；各新票列出的测试文件和 `template-ops` verifier 是待创建交付物，不是本次已运行清单。本专项的实际生产签署复用现有 [readiness](t32-live-enable-readiness.md)，不建立另一份绿色总表。
 
 ## 7. 配置怎么用（目标，当前命令尚不存在）
 
-默认只需正常启用服务并完成一次模板配对；想关闭通知或多看维护者信息时，再改少量配置。唯一配置与解析/升级规则归 [Spec §6.2](../roadmap/template-ops-automation-spec.md#configuration)。示例为计划命令，不是本轮已经添加：
+默认只需正常启用服务并完成一次 default 接收目标配对；想关闭通知或多看维护者信息时，再改少量配置。唯一配置与解析/升级规则归 [Spec §6.2](../roadmap/template-ops-automation-spec.md#configuration)。示例为计划命令，不是本轮已经添加：
 
 ```text
 grokbox runtime ops config show --effective
@@ -111,7 +111,7 @@ grokbox runtime ops config set diagnostics.mode on-request --expect-revision <re
 grokbox runtime ops config apply --file <preferences.json> --expect-revision <revision> --confirm
 ```
 
-preset 只是版本化偏好，显式覆盖默认保留；预览会指出哪些覆盖仍有效。export 不含 binding/secret/grant/consent。maintenance.mode=low-risk 没有 grant 仍不执行；support.submit 固定 confirm-each，不能切 maintainer 后变自动提交。不要直接编辑配置文件或用环境变量绕过安全写入。`enabled=false` 关闭本专项新自动活动，`monitor.enabled=false` 仅停观察，二者都不取消已运行用户任务；旧 off 在升级后保持，不悄悄迁成开。
+preset 只是版本化偏好，显式覆盖默认保留；预览会指出哪些覆盖仍有效。export 不含 binding/secret/grant/consent。maintenance.mode=low-risk 没有 grant 仍不执行；support.submit 默认 confirm-each；preauthorized-summary 必须单独建立有限发布 grant，不能切 maintainer 后变自动提交。不要直接编辑配置文件或用环境变量绕过安全写入。`enabled=false` 关闭本专项新自动活动，`monitor.enabled=false` 仅停观察，二者都不取消已运行用户任务；旧 off 在升级后保持，不悄悄迁成开。
 
 ## 8. Routine CLI 与 E2E（目标）
 
@@ -119,6 +119,45 @@ preset 只是版本化偏好，显式覆盖默认保留；预览会指出哪些�
 
 完整链：能力预检 → 创建本次测试 Bot/disabled Webhook Routine → 读回/enable → invoke 真实 HTTP POST 合成 probeId → 原生 run/报告 → 更新同一 Routine 后第二次 POST → disable → 核对无新触发 → 所有本次任务结束后清理。本链与公开接口/schema 在 [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines) 维护。
 
-测试保留官方模型，Bot/请求数量/费用/清理范围需独立批准；不顺便测试 Host 升级或向生产仓库提 issue。超时不重复创建，禁用不等于取消在途任务，清理只动本次明确拥有对象，失败保留 cleanup_required 与恢复回执。HTTP accepted、Bot echo、App 已读的证明层级分开。
+通用基线测试保留官方模型；T55 另用明确批准的 disposable custom 接收者验证选模与路由。Bot/请求数量/费用/清理范围需独立批准；不顺便测试 Host 升级或向生产仓库提 issue。超时不重复创建，禁用不等于取消在途任务，清理只动本次明确拥有对象，失败保留 cleanup_required 与恢复回执。HTTP accepted、Bot echo、App 已读的证明层级分开。
 
-本手册在 native Payload/模板导入/认证、用户确认来源、preset/issue API、工具权限、source/组件、policy 和生命周期变化时复核。长期目标是尽量无打扰，而不是以静默隐藏失败或把同一个故障无限交给 Bot 排障。
+## 9. 从单 Bot 到多 Bot（目标）
+
+最简单只配 default，关闭高级 routing 仍将已获准通知送往 default；不要为省配置自动找一个名字叫 grokbox 的 Bot。使用便宜模型时先通过已有模型管理配好这个 Bot，再绑定它；ops 配置只引用目标，不再存模型 ID/API key。完整 [单目标/高级 JSON](../roadmap/template-ops-automation-spec.md#bot-routing) 和 [存储位置](../roadmap/template-ops-automation-spec.md#configuration-operations) 在 Spec 维护。
+
+进阶为 cheap 处理简短通知、analysis 处理已经获准的诊断，必要时另配 official-backup。severity 高不自动选高级模型；intents 区分通知和分析，规则只决定选哪个接收者。普通用户的影响门、诊断开关、费用与数据同意仍在规则之前/之后独立生效。
+
+计划操作如下，不是当前可运行的新命令：
+
+```text
+grokbox runtime ops targets bind default --agent <agent-id> --routine <routine-id> --confirm
+grokbox runtime ops targets bind analysis --agent <analysis-id> --routine <routine-id> --confirm
+grokbox runtime ops config apply --file <routing-preferences.json> --expect-revision <revision> --confirm
+grokbox runtime ops routes explain --incident <id> --intent brief-notice
+grokbox runtime ops routes test --from <synthetic-cases.json>
+grokbox runtime ops targets verify analysis
+```
+
+explain/test 仅计算已有事实、不发请求；verify 是显式只读健康核验，真正 POST 用 T53 invoke。新增目标并不增加安装总额度；重试、升级、备用、集中报告都计数。custom 接收 Bot 依赖故障 modeld 时，不重启 Host 来“修通知”；只在确定未发送/未接收时用预先同意的备用，ACK 丢失不广播。官方备用仍可能共用故障 Host，整个 Box 离线没有无条件保证。
+
+默认报告在处理 Bot，会话不强行转回模板；要统一出口可显式配置 reportTarget，但额外唤醒计费。便宜 Bot 建议升级须由本地规则批准，最多一层，不互发 transcript 或无限讨论。换模型/供应商默认需重新核对绑定同意；target disable 不取消其用户任务，unbind 不自动删它的 Routine。
+
+## 10. 用户允许后，CLI 把 issue 流程做完（目标）
+
+默认 prepare → preview → exact consent → submit → reconcile/status。用户只需审核一次未变化的具体内容，程序处理提交/错误/回执，不让用户抄日志或模型拼 curl。本包默认 support 目标 yoyooyooo/grokbox 来自 package.json，实际发表前还要核验 repo ID、公开性、Issues 可用及作者身份；当前目录的 remote 不能随手改变目标。
+
+```text
+grokbox runtime ops issue prepare --incident <id> --json
+grokbox runtime ops issue preview <draft-id> --json
+grokbox runtime ops issue submit <draft-id> --expect-digest <sha> --confirm --json
+grokbox runtime ops issue status <submission-id> --json
+grokbox runtime ops issue reconcile <submission-id> --json
+```
+
+这是待实现入口，默认内置 Node REST，不依赖安装 gh；GitHub token 只由受限 publisher 消费，不交给告警 Bot。缺认证/离线仍可本地 prepare/export。提交 unknown 时先对账，不能让另一个 Bot 或 gh 再发一次，搜索不到也不能假定未创建。
+
+维护者/用户确有需要时可单独 preview/create 有限 issue grant，设置 `support.submit=preauthorized-summary`。它只覆盖固定仓库/作者/事件类/脱敏模板的确定性摘要 create，含到期和额度；不包括模型自由文本、附件、评论、更新/关闭，不随 maintainer/维护授权开启。获准范围可无额外模型自动准备/发表，越界回到普通草稿；历史 backlog 不自动批量提交。详细合同与额度只在 [Spec §5.2](../roadmap/template-ops-automation-spec.md#issue-automation)。
+
+关闭/撤销阻止尚未发送的发布，已公开内容不能由删除本地稿件撤回；unknown 继续只读对账。实际漏洞/敏感报告走 SECURITY.md，不用自动模式公开。多 Bot 提到同一问题仍是同一 support submission，不按 Bot 数建重复 issue。
+
+本手册在 native Payload/模板导入/认证、目标模型/路由/备用、用户确认来源、preset/issue API/发布 grant、工具权限、source/组件、policy 和生命周期变化时复核。长期目标是尽量无打扰，而不是以静默隐藏失败或把同一个故障无限交给 Bot 排障。

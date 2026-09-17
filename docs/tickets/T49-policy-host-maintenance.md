@@ -30,6 +30,14 @@ user 和 maintainer 都默认 maintenance off；切 preset、打开 deepReplay�
 
 追加测试：maintainer 切换、支持确认、无 grant mode=low-risk、用户拒绝 issue 后计划/配置不被改写；controller→incident→支持询问只产生候选，不发生 GitHub 写入或新的 Host attempt。
 
+## 多接收者的控制边界补充
+
+[T54/T55](T55-custom-receiver-delivery.md) 可有多个不同模型 Bot 提出同一个 incident 的维护候选；plan/operation 身份不随 target/route/delivery 变化而重建。controller 对授权、当前证据和已发生前缀仍唯一串行判定，昂贵模型不等于可信批准者。
+
+所有参与本次交接的真实回合/原生子任务都应结束，不能只排除 default 模板 Bot 或只检查最初提出者。custom 接收路径故障本身不授权重启 Host，备用切换不修改 grant 或未知 operation。T56 的 issue 发布 grant 与维护 grant 必须互不替代。
+
+追加回归：两个 Bot 重复/相反 proposal 不双重 signal；换路由不重放 unknown；receiver model/身份改变不能借旧 grant；报告目标尚忙不反向制造无穷维护等待或取消用户任务。
+
 ## Executable acceptance
 
 新增并执行以下目标文件，必须使用 Fake ports 或本测试创建的 disposable 进程：

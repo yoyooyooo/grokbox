@@ -16,7 +16,9 @@ T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修�
 
 ## 新专项施工：Template Bot 运维闭环
 
-[Template Ops Spec](template-ops-automation-spec.md) / [T43–T53](../tickets/README.md#template-ops-automation)按 Spec-first 推进；2026-09-17 补充 user 默认轻量监测/短提醒、maintainer 手动配置、用户预览确认后 issue、通用 Agent/Routine CLI 与真实 HTTP E2E。基础支持可先上线，深诊断与低风险维护各自 opt-in/验收。不是已实现/已部署声明；HSO/T41/唯一 controller 各守事实 owner。[初始决策](../decisions/2026-09-16-template-ops-automation.md)限定维护授权，[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)限定默认/公开发布，[维护手册](../maintainers/template-ops-automation.md)拥有配置/操作解释。
+[Template Ops Spec](template-ops-automation-spec.md) / [T43–T56](../tickets/README.md#template-ops-automation)按 Spec-first 推进；2026-09-17 补充 user 默认轻量监测/短提醒、maintainer 手动配置、用户预览确认后 issue、通用 Agent/Routine CLI 与真实 HTTP E2E。基础支持可先上线，深诊断与低风险维护各自 opt-in/验收。不是已实现/已部署声明；HSO/T41/唯一 controller 各守事实 owner。[初始决策](../decisions/2026-09-16-template-ops-automation.md)限定维护授权，[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)限定默认/公开发布，[维护手册](../maintainers/template-ops-automation.md)拥有配置/操作解释。
+
+[同日多目标/授权发布修订](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)由 T54–T56 落地：默认单命名目标、用户自建 custom Bot、按处理意图等有限规则分流；明确模型/数据/故障域/总成本，内置 Node REST 提 issue 并单独支持有限摘要 grant。模板不是唯一接收者，维护者预设不默认开发布/诊断/维护。专项路径不变，不复制第二份总 Spec。
 
 ## Future：以后做的能力
 

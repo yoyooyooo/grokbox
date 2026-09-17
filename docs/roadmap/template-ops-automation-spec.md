@@ -1,19 +1,19 @@
 # Template Bot 运维闭环实施规格
 
-**状态：2026-09-17 补充能力分层、确认后 issue 与 Agent/Routine 管理；T43–T53 尚未实现或部署。** 本文拥有「持续监测 → 原生 Webhook 唤醒 grokbox template bot → 有界诊断/主动告警 → 受限静默维护」的专项合同。总运行时树、Server 准入和原生会话语义仍归 [主 Spec](box-runtime-impl-spec.md)；来源识别归 [HSO](host-seam-ops-recognition.md)，观察/incident 归 [T41](../tickets/T41-continuous-observation-and-alerting.md)，唯一 Host 控制与持久服务归 T28/T40。本文不是另一套 modeld、Agent loop 或 Host updater。
+**状态：2026-09-17 整合多 Bot/自定义模型分流、分层配置与授权后 CLI issue 自动化；T43–T56 尚未实现或部署。** 本文拥有「持续监测 → 原生 Webhook 唤醒 grokbox template bot → 有界诊断/主动告警 → 受限静默维护」的专项合同。总运行时树、Server 准入和原生会话语义仍归 [主 Spec](box-runtime-impl-spec.md)；来源识别归 [HSO](host-seam-ops-recognition.md)，观察/incident 归 [T41](../tickets/T41-continuous-observation-and-alerting.md)，唯一 Host 控制与持久服务归 T28/T40。本文不是另一套 modeld、Agent loop 或 Host updater。
 
-[初始决策](../decisions/2026-09-16-template-ops-automation.md) · [默认层与支持流程补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md) · [Tickets](../tickets/README.md#template-ops-automation) · [操作与故障手册](../maintainers/template-ops-automation.md)
+[初始决策](../decisions/2026-09-16-template-ops-automation.md) · [默认层与支持流程补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md) · [多目标与发布授权决策](../decisions/2026-09-17-ops-routing-and-authorized-issues.md) · [Tickets](../tickets/README.md#template-ops-automation) · [操作与故障手册](../maintainers/template-ops-automation.md)
 
 <a id="scope"></a>
 ## 1. 用户结果、范围与实施授权
 
-用户可以只使用自己的 grokbox template bot，而不必盯 CLI 或打开网页。普通用户默认获得轻量本地监测，以及「已确认用户影响、无法安全自修」时的一次简短提醒和是否准备 issue 的询问；不先发动模型排障。维护者可手动打开更深的观察/离线分析；自动模型诊断、主动探针和实际维护分别选择、分别计费/授权。高成本排障只在用户要求或独立启用的诊断策略下进行。静默不等于无记录，默认开启不等于公开上报或给 Bot 无条件维护权。
+用户默认只配一个接收 Bot，所有已启用、满足影响门的通知都流向它；既可选择 grokbox template bot，也可选择自己创建并配置自定义模型的 Bot。进阶用户可按处理意图、来源、严重度和受众分流，不必盯 CLI 或打开网页。普通用户默认获得轻量本地监测，以及「已确认用户影响、无法安全自修」时的一次简短提醒和是否准备 issue 的询问；不先发动模型排障。维护者可手动打开更深的观察/离线分析；自动模型诊断、主动探针和实际维护分别选择、分别计费/授权。高成本排障只在用户要求或独立启用的诊断策略下进行。静默不等于无记录，默认开启不等于公开上报或给 Bot 无条件维护权。
 
 本次交付仅为 Spec、Tickets 与文档。没有创建真实 Webhook/routine、发送消息、安装常驻进程、下载升级、改现役 profile、发模型请求或授予部署范围内的自动执行权。实现时也必须将「功能代码存在」「本安装已配对」「用户已授权」「当前组合已资格化」「实际动作已验证」分别表示。
 
-v1 首个纵切是单安装的 Host/source/profile/preload/modeld 协议变化和监测失联；已有 T41 incident 可共用同一 Bot 通知出口。用封闭的 source adapter 注册表容纳以后更多监控来源，不先建多租户事件平台、跨盒控制中心、任意公网 webhook ingress、第二定时调度器或通用远程 shell。原生 Webhook routine 是唤醒入口，不是本地高频采样定时器。
+v1 首个纵切是单安装的 Host/source/profile/preload/modeld 协议变化和监测失联；已有 T41 incident 共用同一通知程序，目标由 default 或显式路由决定。用封闭的 source adapter 注册表容纳以后更多监控来源，不先建多租户事件平台、跨盒控制中心、任意公网 webhook ingress、第二定时调度器或通用远程 shell。原生 Webhook routine 是唤醒入口，不是本地高频采样定时器。
 
-模板 Bot 保持官方模型，不给自己分配 custom model。它仍可能与被维护 Host 共用故障域，因此不是唯一安全控制器，也不能承诺在整个 Box/官方服务离线时主动通知成功。
+内置 grokbox template bot 继续默认官方模型，不在处理告警时自行切换自己的模型；这只是模板默认，不再限制通知接收者。任何有权管理本安装的用户都可绑定自己拥有/获授权的官方或 custom Bot。模型分配仍由现有模型配置/原生设置拥有，路由不改模型、不放宽 Server 准入。custom 接收者可能依赖故障中的 Host/modeld/provider；官方备用也可能共用 Host/Box，故障域与降级边界见 §6.4。
 
 <a id="baseline"></a>
 ## 2. 已核实的仓库基线与待验证上游能力
@@ -48,10 +48,10 @@ T43 的 live 证据只能来自另获批准的一次性测试 Bot/任务与无�
 | 用户/安装策略 | 绑定安装、账号作用域、精确 Bot 和动作类；批准/撤销预算 | 模板导入和名字相同不是自动授权 |
 | 本地 collector / HSO | 采样、换代证据、留存与失效通知 | 不收 provider secret、不发 Host 信号、不自动 approve profile |
 | T41 observation writer | observed transitions、incident、通知 outbox/inbox 与交付状态 | 不写 activation、grant、模型配置或 controller 结果 |
-| grokbox template bot | 从本地证据复核、选择有界诊断、提出 plan、解释/报告 | Payload/模型评分/自然语言「已批准」不是许可；不直接 signal、清 circuit、改产品数据库 |
+| 已配对接收 Bot（模板或用户指定） | 从本地证据复核、选择获准的有界诊断、提出 plan、解释/报告 | Payload/模型评分/自然语言「已批准」不是许可；不直接 signal、清 circuit、改产品数据库 |
 | Policy/qualification 程序 | 确定性规则、证据完整性、预授权与时效交集 | 不依靠 LLM confidence 阈值授予权力 |
 | 唯一 controller | 复核、串行执行、退出/恢复、读回与 operation 结果 | 不从通知已读或诊断成功推断变更已完成 |
-| 原生 Webhook/官方 Bot 运行时 | 接收唤醒并执行受控任务、通过原生用户交付路径报告 | HTTP 接收不是运行完成；Bot 文字不是执行收据 |
+| 原生 Webhook/Bot 运行时 | 接收唤醒并执行受控任务、通过原生用户交付路径报告 | HTTP 接收不是运行完成；Bot 文字不是执行收据 |
 
 同一 UID 的恶意进程或拥有任意 shell 的 Agent 不在本地 hash/文件权限可以隔离的威胁模型内。Prompt 中写「只读」不是安全沙箱。自动 Webhook 诊断必须验证原生工具 allowlist/权限隔离或使用只暴露有限 typed 工具的执行面；无法证明时，降级为固定只读报告，不向该 Bot 暴露维护 capability。人工日常使用官方 Bot 的权限不自动借给不可信 Payload。
 
@@ -63,7 +63,7 @@ Payload、上游状态文本、日志片段和 LLM 结论都是数据，不是�
 1. T41 的已授权长期 Scope 组合 HSO collector：目录事件只标 dirty；周期 backstop、重启、PID/作用域变化触发完整只读对账。区分 advertised / staged / installed / loaded；不调用官方更新 RPC 来探测。
 2. HSO 固定源字节、完整性与安装 episode，写其原有 provenance。T41 用来源 cursor/receipt 引用提交 incident 与待通知 outbox；跨两个 store 不假装原子，按稳定 receipt ID 重读/幂等索引，崩溃可补齐。
 3. 本地纯规则先合并/分级：无变化不唤醒；重复同 incident 更新 lastSeen。user preset 只对有明确用户影响且安全处置不可用/失败的 incident 发送一次 brief-notice；纯 Host 更新提示、正常位移与 maintainer-only 事件留在本地。不能为了判定「不可自修」先试一次修复或调用模型。已预授权、已资格化维护仍可走无模型程序；诊断/探针另看各自开关。
-4. 投递器从已提交 outbox 领取有租期的记录，只向本安装固定的原生 Webhook 目标投递 allowlisted envelope。网络不占 SQLite 写事务；超时先记 unknown，不把它等同于未唤醒。
+4. 纯路由先按 §6.3 为已提交工作生成不可变 route decision；投递器只向选中的已配对目标发送 allowlisted envelope。默认单目标不要求规则；高级规则也不隐式广播。目标、模型/数据同意、预算和健康复核在发送前完成，失败语义见 §6.4。网络不占 SQLite 写事务；超时先记 unknown，不把它等同于未唤醒。
 5. Bot 被原生任务唤醒；只使用不可猜的 delivery reference 调用受控 `claim`。本地检查真实记录、安装/账号/精确 Bot/routine/bindingRevision、过期、schema、去重与预算，再返回安全 evidence summary。Webhook 文本不具有执行授权。
 6. Bot 先检查通知 intent 与有效配置。`brief-notice` 仅领取安全摘要并通过原生用户交付说明问题、询问是否准备 issue；随后结束，不进入诊断循环。`diagnose-or-report` 才在独立开启或用户明确要求时调用有限只读 playbook，每次重查 lease/scope/预算。输出 diagnosis 或计划候选；不是任意自动改代码。issue 的准备/预览/提交走 §5.1 的独立同意流程，不把维护 grant 借给公开上报。
 7. 需要维护时，policy 程序取当前 grant、qualification 和 evidence，生成不可变 plan；Bot 只提交候选，不能自己传 `confirmed:true`。grant 的动作类、目标、时效与预算必须覆盖整个 plan。
@@ -82,7 +82,10 @@ Payload、上游状态文本、日志片段和 LLM 结论都是数据，不是�
 {
   "schemaVersion": 1,
   "kind": "grokbox.ops.notification",
+  "workId": "work_example",
   "deliveryId": "delivery_example",
+  "routeDecisionId": "route_example",
+  "targetId": "default",
   "installationId": "installation_example",
   "bindingRevision": 1,
   "incidentId": "incident_example",
@@ -111,7 +114,7 @@ action: proposed → approved → waiting-safe-boundary → running → verified
 
 `accepted` 只能表示资格化 adapter 所证明的接收层级；没有原生 receipt 时不填 queued/run。`reported` 需要与该 delivery/报告相关联的原生 SendToUser/交付证据；无客户端显示/已读能力时明示 not_observed，不声称用户看到了。人工 ack/snooze 不是投递 ACK，也不解决故障。
 
-同一 incident/发生周期/通知阶段使用稳定 deliveryId；重试不制造新任务身份。Bot claim 事务去重并带租期；崩溃后复领先对账诊断/报告/控制阶段，不重放未知动作。native endpoint 无幂等时，重复唤醒和额外推理仍可能发生；只能使本地处置幂等，不能承诺 exactly-once inference。unknown 默认先查可用原生状态；无查询与无幂等时按明确的「允许重复告警」策略有限重试，绝不借重试重新执行维护。
+同一 incident/发生周期/处理阶段使用稳定 workId；同一目标/绑定的重试复用 deliveryId。队列中未尝试的通知到期可依据仍活跃 incident 的新鲜事实重新规划一次，并受原发生周期提醒标记/总预算限制；不得用续期产生无限工作。已尝试的 expired/unknown 先对账，不能重新生成 ID 掩盖不确定性。显式备用或升级会生成关联同 workId 的新 deliveryId/路由决策，不变成新的维护/issue 身份；交接与去重见 §6.4。Bot claim 事务去重并带租期；崩溃后复领先对账诊断/报告/控制阶段，不重放未知动作。native endpoint 无幂等时，重复唤醒和额外推理仍可能发生；只能使本地处置幂等，不能承诺 exactly-once inference。unknown 默认先查可用原生状态；无查询与无幂等时按明确的「允许重复告警」策略有限重试，绝不借重试重新执行维护。
 
 <a id="support-issue"></a>
 ### 5.1 默认用户提醒与确认后 issue
@@ -124,13 +127,73 @@ issue 是独立的对外发布副作用，不是通知的一部分，不是维�
 
 默认只携带 allowlisted 结构化摘要，不携带 prompt/transcript/Memory、Host 私有源、工具正文、provider response、credential、Webhook URL、私有路径/地址、账号/team/Bot 的真实标识。标识使用草稿内局部别名；只有必须且明确审核的安全摘要才对外。额外附件逐项选择/脱敏/预览，不自动附上全部日志，也不将原文放到 URL query 或剪贴板。静态脱敏通过不等于用户已经同意公开。
 
-准备完成后必须展示 exact `repository + visibility + title + body + attachment inventory + author identity`。提交许可绑定这些内容的 digest、draft revision、incident evidence snapshot、受信用户确认事件、作用域与到期（默认 24h）；目标仓库、可见性、正文、附件或作者变化都需新确认，正式发送前复核当前目标/作者与已批准内容。用户仅回答「整理一下」只允许本地准备；只有对已经展示的具体草稿确认创建才可提交。维护 grant、preset=maintainer、Webhook 中的 approve 字段、模型生成的「用户同意」均不是 issue 许可。原生渠道若不能可靠区分用户回复与自动事件，就退回受信 CLI/原生确认界面，不由 Bot 自证同意。
+默认 `confirm-each` 下，准备完成后必须展示 exact `repository + visibility + title + body + attachment inventory + author identity`。提交许可绑定这些内容的 digest、draft revision、incident evidence snapshot、受信用户确认事件、作用域与到期（默认 24h）；目标仓库、可见性、正文、附件或作者变化都需新确认，正式发送前复核当前目标/作者与已批准内容。用户仅回答「整理一下」只允许本地准备；只有对已经展示的具体草稿确认创建才可提交。维护 grant、preset=maintainer、Webhook 中的 approve 字段、模型生成的「用户同意」均不是 issue 许可。原生渠道若不能可靠区分用户回复与自动事件，就退回受信 CLI/原生确认界面，不由 Bot 自证同意。
 
 状态分开保存：`offered → declined|drafting → preview-ready → awaiting-consent → approved → submitting → created|unknown|failed|expired`。稿件更新使旧 consent 失效；issue 已创建不等于故障已恢复。同一稿件重复确认只对账同一个 submissionId；超时/取消后保留 unknown，优先依已知 issue number 或安全随机 report reference 查证，没有证据不自动第二次 POST。实际 GitHub API/权限/限流由独立 adapter 核实，不声称 exactly-once。认证缺失时提供**本地已审核 Markdown**和手动提交指引，不代用户登录，不假称已创建。
 
-默认目标可推荐本项目仓库，但正式目标从版本化配置读取并在预览中确认；事件/Payload/日志不能重定向目标。GitHub 权限与 Webhook/provider 凭据严格分开，只申请目标仓库所需权限。安全漏洞、凭据泄漏或不适合公开的信息先按 `SECURITY.md` 转私密报告提示；公共 issue 提交流程不得绕过这道分类。创建后的评论/更新也是对外发布，每批新增内容另需预览与确认；本轮不建立自动追更、自动附件上传或泛化客服系统。
+默认目标可推荐本项目仓库，但正式目标从版本化配置读取并在预览中确认；事件/Payload/日志不能重定向目标。GitHub 权限与 Webhook/provider 凭据严格分开，只申请目标仓库所需权限。安全漏洞、凭据泄漏或不适合公开的信息先按 `SECURITY.md` 转私密报告提示；公共 issue 提交流程不得绕过这道分类。创建后的评论/更新也是对外发布，默认每批新增内容另需预览与确认；§5.2 的有限发布 grant 只允许确定模板的 create，不覆盖评论、更新、附件或泛化客服。
 
 支持草稿、consent 与投递回执属于 T41 原 SQLite 的独立 support 管理域，只有 support 用例可写；共享数据库不赋予普通 collector 修改 consent 的能力。网络提交在事务外，稳定 requestId 关联事务事实；approved/unknown 记录受保留保护，备份恢复不自动恢复可执行 consent。敏感临时材料不入公共仓库，草稿按本地支持保留策略清理并明确可用期。
+
+<a id="issue-automation"></a>
+### 5.2 授权后的脚本化支持与 GitHub 发布（T56）
+
+用户允许后应由 grokbox CLI 完成材料收集、有限脱敏、生成稿件、核验授权、提交和结果对账，不要求用户重新复制日志、安装临时脚本或自己操作网页。默认仍按 §5.1 的 exact draft 逐份确认；**已对完整稿件批准一次，就不为同一未改变的动作重复询问**。读取确认须有受信用户来源，Bot 的提示文本、Webhook intent 和 `--yes` 本身不是用户身份。
+
+在此默认之外，接受**独立显式开启的有限 issue 发布 grant**，供确实希望自动上报的用户/维护者使用。`overrides.support.submit` 枚举 `off | confirm-each | preauthorized-summary`：第三种仅为 requested mode；没有 matching grant 仍 blocked-no-issue-grant，回到一次简短询问或本地待处理。它既不是 maintainer preset 默认，也不是本次文档操作已对任何安装授予的真实权限。
+
+发布 grant 必须冻结：installation/scope、GitHub hostname/不可变 repository ID/owner-repo/可见性、实际作者身份、允许 incident rule IDs、`operations=[create]`、固定 public-summary 模板与脱敏规则 digest、可发布字段、有效期、单周期/每日/总量上限、禁止附件/评论/正文重写/自动关闭。v1 建议初值有效 7 天、最多 2 次/滚动 24h 且总量 10 次，每 occurrence 最多一次；用户在授权预览中可缩小范围，不能无期限无预算启用。用户确认的是这一类被明确界定的发布动作，不是任意模型将来写的内容。
+
+`preauthorized-summary` 只允许**确定性模板填充受限结构化字段**：已验证的公开 build/version、平台类别、固定错误码/阶段/契约分类、计数、已采取保护的枚举与安全重现占位。未知字串、用户自由描述、Bot 自由生成结论、原始源码/日志/调用结果、任意 Markdown 链接与附件均不入自动发布类；缺必要公开字段或怀疑安全事件即人工草稿。重现未知明确写 unknown，不创造步骤。改模板/脱敏规则/目标或作者必须重新确认 grant；不得通过升级模板来逐渐扩大公开内容。
+
+有效 grant 覆盖的事件可自动本地准备和提交这个有限摘要，不再先问是否整理；超出范围仍用 §5.1。全局 enabled=false、support.submit=off、用户对当前周期的明确拒绝、事件失效或安全分类阻断优先于 grant，不能用新 mode 复活此前拒绝。历史 backlog 不因新 grant 一次性扫描上报，默认仅处理 grant 生效后新发生周期；要补报历史则单独 preview/选择。issue 已创建后发一个可配置的简短回执/放时间线；使用哪一个 Bot 报告不改变发布者或权限，也不额外调用模型来完成 POST。
+
+**仓库选择有明确默认，绝不跟当前 shell 的 remote 漂移。** 本仓库 `package.json.repository`、`bugs.url` 与 `.github/ISSUE_TEMPLATE/bug_report.yml` 均指向 `github.com/yoyooyooo/grokbox`，将它作为已安装包内置 support 目标。安装时显式 `support.repository` 可覆盖，但批准前须只读核对 repo ID/可见性/Issues 启用状态/作者权限；远端不可验证则 blocked，不能声称凭包元数据已核实实时公开状态。开发工作区 remote 只供 `issue target inspect --from-remote` 生成待审候选，解析 HTTPS/SSH 时只保留 host+owner/repo，不输出 userinfo/token；不执行 remote、不将通知指向用户恰好正在工作的任意项目。fork/更名/仓库转移/可见性改变不继承原批准，需重新核对并确认。
+
+grant-request 文件只表达用户请求，**不是可执行 grant**；示例为目标 schema：
+
+```json
+{
+  "schemaVersion": 1,
+  "repository": "yoyooyooo/grokbox",
+  "incidentRules": ["host-contract-incompatible"],
+  "reportProfile": "public-summary-v1",
+  "operations": ["create"],
+  "durationHours": 168,
+  "limits": { "maxPer24Hours": 2, "maxTotal": 10 },
+  "attachments": "none"
+}
+```
+
+rule ID/reportProfile 必须存在于已资格化的版本化注册表；preview 解析当前安装/scope、repo ID/可见性、作者、模板/脱敏 digest 与绝对到期，生成 protected grant preview。create 必须校验该 preview digest、当前配置 revision 并实时重核，变化就拒绝要求重新确认。只有成功读回 grant 后 `support.submit=preauthorized-summary` 才可能生效；普通 config apply/import 不能自己带入 grant。示例的字段/额度不是已经给任何安装签署的许可。
+
+**实现选定内置 Node REST adapter**，收口在 `issue-publisher.node.ts`，kernel `support-issue.ts` 是唯一发布/重试/对账程序；不是让模型生成 `curl` 或从 stdout 解析任意 shell。凭据经既有 secret resolver/用户显式选择的身份获得，GitHub 授权与 provider/Webhook 完全分开；普通通知/接收 Bot 不得到 token。无网络/无认证仍能 prepare/preview/export。本路径不依赖安装 `gh`，用户已拥有的 GitHub CLI 可作为显式手动提交指引而非自动第二 writer；未知 REST 提交不能再回退 gh 以重试。
+
+截至本次核对的官方 [Issues REST](https://docs.github.com/en/rest/issues/issues#create-an-issue) 支持 create/get/update，create 返回 201，fine-grained 路径要求 Issues write；这不要求给程序代码 push/admin 权限。实际用户是否有目标资格要另查，不因“公开仓库”推断匿名可创建。适配器锁定经验证的 API version，严格固定 API host/仓库/路径、禁用跨主机重定向，JSON 正文在内存/受保护文件传递，不放 argv/URL query。普通用户不一定能设置 labels/assignee，默认只发已批准 title/body；标签等元数据只有权限及同意均明确才发送，不能为贴标签扩大 GitHub 权限。
+
+程序主链：安全本地 evidence snapshot → deterministic draft/可选用户补充 → preview + content digest → exact consent 或 grant 每项校验 → 短事务预留 submissionId/额度 → 事务外一次 POST → 保存 issue number/URL/author/target/read-back → 报告结果。预留和发布由独立 support writer 执行；受控 publisher worker 只消费 approved 作业，不拥有 collector 或 Host 控制权限，可由现有服务宿主用独立受限 Scope 装配，不新建常驻 Agent。
+
+去重独立于路由/Bot/notification：本地以 installation/scope + repo ID + incident occurrence + report schema/目的建立稳定 report/submission 身份，多个 Bot 同时提单、重复用户确认只命中同一短事务与发布记录。正文放无敏感信息的随机 report reference 供恢复查询；不能把 Bot/用户/机器身份的 hash 当匿名标识直接公开。近似标题/LLM 相似度最多提示相关 issue，不自动合并、评论别人 issue 或泄露现场去搜索。默认无网络去重搜索；获准提交后的 unknown 对账可在已批准仓库内做有限查询。
+
+遵守 [REST best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api) 的限流和串行变更建议，区分 401/403 权限、429/Retry-After、410 禁用 Issues、422 验证/反滥用与传输未知。收到限流不自行加速/换账号。timeout、取消、5xx、201 回执无法持久化先记 unknown；未知结果不能自动第二次 POST。读取已知 number 或 report reference 可结算；搜索不到不等于未创建（可能延迟/不完整）。用户检查后确要重新尝试需新的显式重试许可并承认重复风险，预授权 grant 本身不允许重放 unknown。公共 issue 无临时回滚承诺，删除本地稿件不能撤销已披露内容。
+
+目标命令（待实现，所有 entry 调同一程序）：
+
+```text
+grokbox runtime ops issue prepare --incident <id> --json
+grokbox runtime ops issue preview <draft-id> --json
+grokbox runtime ops issue submit <draft-id> --expect-digest <sha> --confirm --json
+grokbox runtime ops issue submit <draft-id> --grant <grant-id> --json
+grokbox runtime ops issue reconcile <submission-id> --json
+grokbox runtime ops issue status <submission-id> --json
+grokbox runtime ops issue export <draft-id> --out <approved-local-path>
+grokbox runtime ops issue target inspect
+grokbox runtime ops issue grant preview --from <file>
+grokbox runtime ops issue grant create --from <file> --expect-preview-digest <sha> --expect-revision <revision> --confirm
+grokbox runtime ops issue grant revoke <grant-id> --confirm
+```
+
+无交互场景缺许可返回 `approval-required` 与 exact draft 引用，不能挂起无限等待或默认 yes。撤销 grant 立即阻止未发送作业，已发生/unknown 继续只读对账；恢复 backup/账号切换重新确认，旧 consent/grant 不自动复活。支持结果是 created/blocked/unknown 等真实状态，不把可疑的 Bot 回答当发布回执。grant 是程序级策略，不以同 UID 文件/任意 shell 冒充恶意进程隔离。
 
 <a id="policy"></a>
 ## 6. 自动化等级与低风险资格
@@ -139,7 +202,7 @@ critical、保护受阻或需要用户决定的事件，Bot 可运行时先报�
 
 2026-09-17 修订上一版笼统的「安装默认为 off」：正常启用 grokbox 服务的新安装采用 `user` preset，默认启用已验证的轻量本地观察，并在模板配对及通知成本告知完成后生效最小提醒；仅安装 CLI、只读查询或导入模板不会暗装服务、创建活 endpoint 或花 token。未配对显示 requested/effective/blocked-unpaired，不能伪称已保护；明确 off/旧安装选择在升级时保留，不能借新默认值唤醒用户。详细默认矩阵与配置归 §6.1–6.2。
 
-`notify`、`diagnose`、`maintain-low-risk` 是独立能力，不是从 user 角色升到 maintainer 就连带授予的权限等级。维护 grant 仍包含 installation/scope/bot、动作类、revision、有效期与预算，必须通过受信用户入口建立。模板与 preset 都不能预装有效 grant；issue 提交同意另行绑定 exact draft，不包含在维护 grant 内。
+`notify`、`diagnose`、`maintain-low-risk` 是独立能力，不是从 user 角色升到 maintainer 就连带授予的权限等级。维护 grant 仍包含 installation/scope/bot、动作类、revision、有效期与预算，必须通过受信用户入口建立。模板与 preset 都不能预装有效 grant；issue 发布默认使用 exact draft consent，也可按 §5.2 单独启用有限发布 grant；两者均不包含在维护 grant 内。
 
 | 等级 | 可做的事 | 不可越过的门 |
 |---|---|---|
@@ -164,7 +227,7 @@ Profile 发布保持唯一 writer、固定源、全 ordered apply 与 transforme
 <a id="capability-tiers"></a>
 ### 6.1 默认 user 与手动 maintainer 能力矩阵
 
-这不是 RBAC 角色表。preset 仅选择观察/呈现/成本默认值，既不改变真实身份，也不授予 issue/Host/provider 权限。能力、接收对象与授权三轴分开；普通用户的通知阈值不会因为维护者想看更多日志而下降。v1 每安装一个明确模板 Bot 绑定，不默认把用户现场推到发布者或维护者账号。
+这不是 RBAC 角色表。preset 仅选择观察/呈现/成本默认值，既不改变真实身份，也不授予 issue/Host/provider 权限。能力、接收对象与授权三轴分开；普通用户的通知阈值不会因为维护者想看更多日志而下降。v1 默认一个命名目标 `default`，允许显式增加多个已配对目标及有限路由；不默认把用户现场推到发布者或维护者账号。接收者成本偏好不改变其权限。
 
 | 能力 | user（正常服务启用后的默认） | maintainer（明确选择） | 额外条件 |
 |---|---|---|---|
@@ -176,7 +239,7 @@ Profile 发布保持唯一 writer、固定源、全 ordered apply 与 transforme
 | 主动模型/canary 探针 | 关 | 关，单独开 | 指定测试对象、凭据/花费/影响授权 |
 | 低风险 Host 维护 | 关 | 仍默认关 | 独立 grant + 当前完整资格 + 安全屏障 |
 | issue 草稿准备 | 先询问再本地准备 | 同左，可手动请求 | 不需 GitHub 凭据；只用安全摘要 |
-| issue 创建/评论/公开附件 | 逐份预览确认，不支持自动默认 | 同左，不能随 preset 开启 | exact draft consent + 发布者身份与目标 |
+| issue 创建/评论/公开附件 | 创建默认逐份确认；评论/附件另确认 | 可独立授权有限模板的自动 create，不随 preset 开启 | §5.2 发布 grant 或 exact consent；不能借维护/路由权限 |
 
 正常采样 0 模型调用；首次简短 Webhook 提醒可能触发一次原生 Bot 推理，不宣称零 token。默认首醒工具仅有合法 claim/安全摘要与用户交付，不调 deep diagnostics、不探索仓库、不连续推理修复。内部确定性分类/草稿模板不另调用小模型。初始普通通知预算为每安装 24h 最多 2 次自动 Bot 唤醒、每发生周期一次；critical 有单独最多 1 次/24h 的保留配额并在配对时告知。无上游幂等/调用额度控制时，记录 `nativeCostBound=not_proven`，本地请求上限不冒充实际原生 token 上限。
 
@@ -185,9 +248,9 @@ Profile 发布保持唯一 writer、固定源、全 ordered apply 与 transforme
 <a id="configuration"></a>
 ### 6.2 配置：一个文件、命名预设、少量覆盖、独立授权
 
-沿用 `${durableRoot}/ops-policy.json`，不再增加 settings.json 或独立维护者数据库。该文件的逻辑区为 `enabled/preset/presetRevision/overrides`、安装私有的 `binding`、独立 `maintenanceGrants`；issue 一次性 consent 在 support 域，不在配置里设置万能 `autoSubmit=true`。所有写入通过 ConfigurationWrite 扩展做 schema/expected revision/安全输入/读回，普通查询不初始化文件、迁移或启动服务。
+沿用 `${durableRoot}/ops-policy.json`，不再增加 settings.json 或独立维护者数据库。该文件的逻辑区为 `enabled/preset/presetRevision/overrides`、`targets/routing`、安装私有的 `bindings`、独立 `maintenanceGrants/issueGrants`。一次性 issue consent 在 support 域；设置提交 mode 不自动签发 grant，不提供万能 `autoSubmit=true`。所有写入通过 ConfigurationWrite 扩展做 schema/expected revision/安全输入/读回，普通查询不初始化文件、迁移或启动服务。
 
-以下是**计划配置的可移植用户部分**（不是当前 CLI 已识别格式；导入时必须 schema 校验）。preset 未覆盖项按其固定版本解析；binding 和 grant 只由本安装命令建立，示例不包含它们。
+以下是**计划配置的可移植用户部分**（不是当前 CLI 已识别格式；导入时必须 schema 校验）。preset 未覆盖项按其固定版本解析；实际 bindings 和 grant 只由本安装受信命令建立，示例不包含它们。§6.3 给单目标与进阶路由的完整偏好配置；下例沿用其命名目标 default。
 
 ```json
 {
@@ -195,11 +258,13 @@ Profile 发布保持唯一 writer、固定源、全 ordered apply 与 transforme
   "enabled": true,
   "preset": "user",
   "presetRevision": 1,
+  "targets": { "default": { "enabled": true } },
+  "routing": { "enabled": false, "defaultTarget": "default", "rules": [] },
   "overrides": {
     "monitor": { "enabled": true, "deepReplay": false, "upstreamAdvisory": false },
     "notifications": {
       "mode": "actionable-user",
-      "channel": "template-bot",
+      "channel": "bot-webhook",
       "maxAutomaticWakeupsPerDay": 2,
       "criticalReservePerDay": 1
     },
@@ -223,6 +288,108 @@ Profile 发布保持唯一 writer、固定源、全 ordered apply 与 transforme
 开启某能力时 preview 说明本地 IO、可能的模型调用/对外发送与影响；上调自动唤醒、启用 auto-diagnose 或 canary 均需明确确认。`maintenance.mode=low-risk` 没有 grant 时显示 blocked-no-grant；maintainer preset 不能隐式设置它。秘密通过现有 env/file/keychain secret refs 或安全交互写入，禁止 endpoint/token 在 argv、环境 dump、JSON export 或普通错误里出现。
 
 升级保持已有 off/overrides/bindingRevision 和预算，不自动把 presetRevision 从 1 变为更激进的新版本；新默认值通过 `config upgrade --preview` 后显式采用。缺失配置只返回默认计划，不在 GET 写入。已有配置损坏则自动外发/新维护 fail closed，保留最后已知状态与明确 gap；不能重建默认文件来复活通知或权限。CLI/模板、配置与实际服务版本不匹配时显示 unsupported，不要求把 Host/provider 一起升级。
+
+<a id="bot-routing"></a>
+### 6.3 命名目标与渐进式分流（T54）
+
+**一个目标是正式完整用法，不是简化版第二路径。** `routing.enabled=false` 表示关闭高级规则、将所有已获准的工作送到 `defaultTarget`，不是关闭告警；关闭告警用 `overrides.notifications.mode=off`。没有额外规则就无须学习匹配 DSL。默认目标不存在/禁用/未配对时报告 blocked，不从 Bot 名字或模型目录猜一个替代者。
+
+最小可移植偏好示例（尚未实现；配对后的真实绑定不在此 export 中）：
+
+```json
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "preset": "user",
+  "presetRevision": 1,
+  "targets": { "default": { "enabled": true } },
+  "routing": { "enabled": false, "defaultTarget": "default", "rules": [] }
+}
+```
+
+用户在受信命令中执行一次 `runtime ops targets bind default --agent <agent-id> --routine <routine-id> --confirm`，对该 Bot 的身份、实际选模/数据去向、native Webhook 和允许任务做配对；简单 `runtime ops bind` 始终适配同一个 default target 程序。可以绑定已有任何获授权 Bot，不要求它来自官方模板；创建新 Bot/Routine 与配置模型均走已有 owners/T53，绑定绝不偷偷修改 Bot persona、其它 Routine 或模型。
+
+目标的偏好字段为 `enabled/allowedIntents/dataPolicy/maxAutomaticWakeupsPerDay/modelChangePolicy`，其精确实例在 `bindings[targetId]`：installation/scope、agentId、routineId/revision、endpoint secretRef、bindingRevision、已同意的模型/供应商及工具能力指纹。未填写的 allowedIntents 默认 brief-notice/diagnose-or-report/maintainer-digest；后两者仍受全局诊断 on-request/聚合开关门，不因此自动产生工作；dataPolicy 默认 safe-summary，自动/手动深入诊断需显式同意 diagnostic-summary。多个 alias 不能通过指向同一个 Bot 绕过配额；按 installation + exact agentId + routineId 规范化执行 owner 和预算。
+
+**不在 ops-policy.json 放 modelId、模型 API key 或另一份模型目录。** custom 模型由现有 `${durableRoot}/models.json` 的逐 Bot 分配与原生有效选择拥有；通过既有 `runtime models use <model> --for <agent>` 或用户明确操作原生设置来选择。路由只选 Bot，显示 configured/observed-effective/captured model identity 的差别；assignment 保存不是新 TURN 已采用的证明。别名 cheap/analysis 是用户命名，不保证实时价格或智能水平，系统不联网排名「最便宜模型」。
+
+高级声明示例中的 budget 是用户显式选择的数字，配置生效前需 preview/确认；即使低层预算较高，仍不得绕过全安装上限：
+
+```json
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "preset": "maintainer",
+  "presetRevision": 1,
+  "overrides": {
+    "notifications": { "mode": "actionable-user", "channel": "bot-webhook", "maxAutomaticWakeupsPerDay": 6, "criticalReservePerDay": 1 },
+    "diagnostics": { "mode": "automatic-bounded" },
+    "maintenance": { "mode": "off" }
+  },
+  "targets": {
+    "cheap": { "enabled": true, "allowedIntents": ["brief-notice", "maintainer-digest"], "dataPolicy": "safe-summary", "maxAutomaticWakeupsPerDay": 4, "modelChangePolicy": "require-rebind" },
+    "analysis": { "enabled": true, "allowedIntents": ["diagnose-or-report"], "dataPolicy": "diagnostic-summary", "maxAutomaticWakeupsPerDay": 2, "modelChangePolicy": "require-rebind" },
+    "official-backup": { "enabled": true, "allowedIntents": ["brief-notice"], "dataPolicy": "safe-summary", "maxAutomaticWakeupsPerDay": 1, "modelChangePolicy": "require-rebind" }
+  },
+  "routing": {
+    "enabled": true,
+    "defaultTarget": "cheap",
+    "rules": [
+      { "id": "diagnostics", "enabled": true, "when": { "intents": ["diagnose-or-report"] }, "action": { "type": "deliver", "target": "analysis" } },
+      { "id": "critical-notice", "enabled": true, "when": { "intents": ["brief-notice"], "severities": ["critical"] }, "action": { "type": "deliver", "target": "cheap", "fallbackTargets": ["official-backup"] } }
+    ]
+  }
+}
+```
+
+所有 binding 均要另行建立；示例不会复制真实身份/secret。`automatic-bounded` 开关需 T47 工具与成本资格，不因路由 analysis 存在就开启。一般 warning/notice 使用 cheap；严重但只需一句话告知的问题仍可使用 cheap。是否诊断、严重程度、数据级别和维护风险是四个独立维度，severity 高不能自行提升工具权限。maintainer-digest 只有另开有限聚合策略后才产生，不能由规则自动生成定时模型任务。
+
+匹配语义锁定为**有序首条命中**：先做全局 enabled/preset/用户影响/功能开关检查，再对有限枚举字段求 AND（同字段数组为 OR）；支持 `intents/sourceKinds/severities/audiences/incidentRules`，只有来源 adapter 与纯规则确认的字段可以参与，Payload 或 LLM 不可改 severity/受众来选昂贵 Bot。未知字段/重复 rule id/引用不存在 target/空数组/无效枚举拒绝；省略字段表示不限制，缺失事实不匹配明确条件。首条命中后检查该目标能力，不因不满足便悄悄试下一条规则；无命中走 defaultTarget，default 不满足也 blocked。`action.type=suppress` 是显式本地记录，不是换路由/自动回退；隐藏用户严重事件须在 preview 中突出并确认。
+
+每工作阶段只产生一个 primary 目标；v1 不支持广播、任意表达式、动态模型选择或跨账号传递。最多 8 个目标、32 条规则，每条最多 2 个显式备用；备用不能相同、形成环或引用已知不兼容任务的目标。多个来源扩展用固定 adapter 注册，不允许任意远程 payload 直接提交查询表达式。
+
+`routes validate` 检查类型/引用/明显遮蔽；`routes explain --incident <id> --intent <intent>` 只读取现有事实并输出影响门、规则路径、选中目标、模型观察、预算、blockedReason；不得创建 incident/原生查询/模型请求。`routes test --from <synthetic-cases>` 离线回放规则；`targets verify` 才显式进行只读 native 健康核验，真实 POST 永远走单独授权的 T53 invoke。
+
+<a id="receiver-resilience"></a>
+### 6.4 custom 接收者、升级交接与故障隔离（T55）
+
+目标资格分开 `identity/routine/ownership/model-selection/tool-scope/data-consent/availability`。**必须单独证明 Webhook Routine 实际走哪个 session/选模路径**；普通聊天已使用 custom model 不证明 automation 回合也会采用。T43/T55 在原生唤醒、模型捕获与工具返回处核对；只有配置记录而无该路径证据时标 webhook-model-unqualified，不假装已经节省费用。custom 接收者必须有当前 Server 准入与对应 Host/modeld/provider 路径的资格；不能为使告警可达先自动开启 Host 或改 harness。官方目标不以「未打自定义补丁」判故障。配置模型/供应商/endpoint 的身份发生变化时，默认 `modelChangePolicy=require-rebind`；这会阻止新自动投递，不改变用户模型，也不在同 TURN 换供应商。上游同名模型的不可观测变化不能假称已被 pin，证据标为不足。
+
+发送前使用有时效的只读目标证据，不用每个事件发一次有成本 probe。custom 目标明确依赖本次故障组件时标 `dependency-unavailable`，优先使用事先配对、允许相同 intent 和数据级别的备用；官方备用仍可能依赖相同 Host/Box，不能称跨故障域高可用。数据对另外一个模型供应商的披露必须在配对/备用预览时同意，脱敏并不代替这种同意。没有合格备用时保留 pending/undeliverable 和本地故障，不强修接收者或扩大权限。
+
+RouteDecision 持久固定 workId、incident/episode/revision、intent/audience、policyRevision、选中 rule/target/bindingRevision、实际已观察模型指纹、最大可读 dataPolicy、reportTarget 与预算扣留。新鲜度复核可以否决旧决策，不能原地改其目标。未发送的旧决策可 supersede 并关联新决策；已发送/claimed 的工作继续按被批准的快照对账或显式撤销，配置变更不把未知旧工作当成未执行。
+
+备用仅在**发送前已证明不可用、明确未接收，或已确定原尝试未开始处理**时推进；HTTP timeout/ACK 丢失/已接受但没回话均为 unknown，不默认扇出备用。每次实际请求与可能产生的模型运行都计入安装/目标/同 work 总预算。target circuit 只限制该目标的通知，不等于 Host mutation circuit，更不能自动清后者。
+
+廉价 Bot 可以返回有限的 `needs-analysis` 候选，但不能直接发给另一个 Bot 或将全部上下文转发。由本地程序核对启用的诊断策略、原因、数据与预算；未开则询问用户，已开且资格满足才创建同 incident 下新的诊断 work。升级深度默认最多 1，禁止 A→B→A/互相提醒；允许新的人工请求另开范围，但不将自动循环伪装成人工。只交接安全 summary + evidence refs，不发对话历史。维护 proposal/issue submission 的唯一身份独立于 work/target，多个 Bot 的结果不能重复执行同一动作。
+
+`reportTarget` 默认等于该工作接收者，用户在该 Bot 中看到报告；高级场景可给 routing 设置一个已配对的固定 `reportTarget` 用于集中对用户告知。分析目标先只存结构化结果，报告目标再领取限定摘要，不复制完整诊断数据。后续报告是一项新的有预算通知，不算免费；不能因为 reportTarget 不可用就未经同意改为另一会话。issue 许可记录真实受信用户/principal，不以哪个 Bot 转述的「同意」为依据。诊断可能已经完成但用户报告未知，二者独立保存。
+
+租期/claim 绑定 work + exact target + native caller identity；只传 `--agent-id` 不能自证调用方。无可验证原生身份或同 UID 任意 shell 情况，安全承诺只限合作执行与 CLI policy，不宣称 OS 隔离；自动诊断需真实能力边界，否则仅可消费已脱敏固定摘要与报告。旧 target 的迟到结果不替换新阶段结果；认领不意味着允许读所有 incidents。
+
+安装级每天 2+1 的 user 默认额度不因增加 Bot 而放大。目标/incident/阶段/原生实例预算与全局额度取最小值；重试、fallback、升级、集中报告均计数；同原生 Bot 多 alias 共用计数。并发 v1 每安装 1 个自动 Bot 工作，诊断仍 120s 上限；critical 可在下个调度点优先，但不取消用户/其它 Bot 的已运行任务。预算不足优先保留简短告警、推迟诊断；已耗尽不能借切目标、换 eventId 或伪造 severity 逃逸。
+
+<a id="configuration-operations"></a>
+### 6.5 配置位置、操作与变更生命期
+
+本机默认根使用 `${durableRoot}`（当前默认 `/workspace/.grokbox/box-runtime`），本专项唯一配置为 `ops-policy.json`；不放 repo/.env、template Memory、单 Bot 的 prompt 或原生产品数据库。root 仍服从 CLI 既有显式作用域，不从 Payload/path 推导。不引入更多配置搜索优先级。
+
+| 内容 | 放置与写入者 |
+|---|---|
+| enabled、preset、overrides、target 偏好、routing、support 仓库偏好 | ops-policy.json；ConfigurationWrite + schema/expectedRevision/CAS |
+| bindings[targetId] 的精确身份、secretRef、模型/数据/工具同意指纹 | 同文件的 private 区，由 targets bind/rebind 写；不随普通 export/模板复制 |
+| maintenanceGrants 与 issueGrants | 同文件的两个独立权限区，受信 grant 命令写；config set 不能造 approval |
+| provider 模型与逐 Bot 分配 | 既有 models.json/原生选模 owner；不在 routing 再存 modelId |
+| GitHub/原生 endpoint 的 secret | 既有 secret provider/file/env/keychain 支持面；配置只引用，read/show 永不返回原值 |
+| work/路由决策/预算/通知/issue consent 与回执 | 既有 observations.sqlite；逻辑域限定 writer，不为每 Bot 新建 DB |
+
+`config export` 输出可移植偏好（含逻辑 target alias，不含 Bot/endpoint/model 指纹或 grant）；在另一个安装 import 后所有别名未配对，显示 blocked，必须受信重绑。完整私有 backup 也不能自动复活授权/旧 claim。schemaVersion 1 是尚未发行的目标合同，本次扩充不是宣称已存在生产迁移；若旧原型 singular binding 已落盘，须显式迁移为 bindings.default，保留 off/预算，不能静默创建新目标。
+
+首次使用：创建/选择 Bot → 用既有 owner 配好所需模型（可维持官方）→ T53 配置独立 Webhook Routine → `targets bind default` 预览 scope/数据/成本 → 明确启用通知。进阶增加 cheap/analysis 等别名，再以 `config apply --file … --expect-revision … --confirm` 原子提交 target 偏好/路由；bind 仍是另外的受信原生操作，不在 config apply 中隐式创建 Bot/Routine。
+
+配置更新的影响须预览：新增供应商/扩大 dataPolicy/增加预算/改 reportTarget/增备用都需明确确认；规则开关不放开 diagnostics 或 maintenance grant。禁用 target 立即阻止未发请求，撤销其未用 claim，保留未知在途结果；不 cancel Bot 的用户回合。删除被路由引用的 target 默认拒绝，用户先一次配置变更移除引用或显式保留 blocked。重绑更换 bindingRevision，使旧 endpoint 不再被新工作使用；disable/unbind 不自动删用户原生 Routine，清理用 T53 exact ID。
+
+排障输出以 `targets show`、`config show --effective`、`routes explain`、`issue status` 展示 requested/effective/配置来源/预算/阻断层；不能用选中 expensive Bot 证明动作安全，不能用 config 保存成功证明 Webhook 可达。未来 UI 直接消费这些同源程序，不另建路由规则引擎。
 
 <a id="execution"></a>
 ## 7. 安全执行、交接与退出
@@ -248,8 +415,8 @@ Profile 发布保持唯一 writer、固定源、全 ordered apply 与 transforme
 |---|---|
 | 源码、profile 副本、机械 replay/qualification 派生证据 | HSO 受保护 provenance 根；资格引用证据，不复制私有源到 git/通知 |
 | preset、overrides、配对绑定与 grant | `${durableRoot}/ops-policy.json`，通过 ConfigurationWrite 扩展的唯一校验/CAS writer；只存 secret refs，不存 URL secret 明文 |
-| incident、通知 outbox、claim、诊断/报告状态 | T41 同一个 observations.sqlite 的扩展事务与迁移；不另开 webhook.db |
-| issue 草稿、exact-content consent、submission/unknown | 同一 SQLite 的 support 管理域，独立受信 support 用例写入；collector/维护 grant 不能签字 |
+| incident、work/route decision/delivery、目标预算、claim/升级/诊断/报告状态 | T41 同一个 observations.sqlite 的扩展事务与迁移；不另开 webhook.db/router.db |
+| issue 草稿、exact-content consent、发布 grant 用量与 submission/unknown | 同一 SQLite 的 support 管理域，独立受信 support 用例写入；collector/维护 grant 不能签字；grant 本体归 ConfigurationWrite |
 | 原生 Agent/Routine 配置与调度状态 | 原生接口是唯一权威；本地只存 scoped operation/provision 回执与 managed key→native ID 关联，不复制 scheduler/原生任务库 |
 | 不可变 plan、operation/进度/恢复 | 现有 controller operation store 的扩展；不是把激活权交给 observation DB |
 | 命令/Host/modeld 事实 | 原有 writer 不迁移；T41 只索引结果，保持 J13 与独立 guardian |
@@ -286,22 +453,23 @@ packages/runtime-kernel/src/
   internal/ops/
     policy.ts                         # grants、预算、动作准入；唯一 policy 常量
     notification.ts                   # envelope/交付/claim 状态规则
+    routing.ts                        # 命名目标、顺序匹配、冻结决策、备用/升级的纯规则
     qualification.ts                  # 组合身份、覆盖与失效/等价规则
     support.ts                        # 草稿/脱敏 allowlist/同意与发布状态；不含原始日志
   internal/commands/
     ops.ts                            # claim/diagnose-plan/submit 用例；不拥有原始 signals
-    support-issue.ts                   # 受信用户确认后唯一 issue 发布程序
+    support-issue.ts                   # exact consent / 有限发布 grant 的同一个发布与对账程序
     agent-routines.ts                 # CRUD/apply/provision 用例；原生任务是权威
     controller-operation.ts           # 扩展授权 provenance、统一 busy/drain、实际唯一 mutation
 packages/box-runtime/src/internal/
   ops/host-seam/watch.ts               # 复用 observe writer 的长期 sensing/重同步
   ops/automation/
-    notify.ts                         # outbox 驱动与投递 Effect 程序
+    notify.ts                         # outbox/目标健康/预算/交接与投递；不成为新 Agent loop
     diagnose.ts                       # 有界只读工具执行；不运行任意 shell
     qualify.ts                        # 调现有 replay/profile 规则，不执行留存 Host
   io/
     ops-policy.node.ts                # 经 ConfigurationWrite 的 binding/grant IO
-    template-notify.node.ts            # 固定目标 HTTP adapter、secret refs、网络安全
+    template-notify.node.ts            # 消费冻结的已绑定目标；文件名保留，不再限制模板 Bot
     issue-publisher.node.ts            # 已确认仓库/作者的 GitHub adapter，不由 collector 调用
     monitor-store.node.ts             # 原库迁移：outbox/inbox/诊断，不新增 DB owner
   roots/
@@ -320,23 +488,27 @@ skills/grokbox/ops.md                 # 实现后才进入安装包，按需加�
 scripts/templates/grokbox.recipe.json # 实现后加入无绑定、无 secret 的 routine blueprint
 ```
 
-NotificationTransport 的 canonical 合同描述固定已绑定目标的投递/可用回执，不接任意 URL；OpsEvidenceRead 只返回 allowlisted 快照；OpsState 通过既有 store 提供 claim/交付/support 事务但不赋予所有调用方全部写能力。IssuePublisher 仅支持已确认 draft 对固定目标创建与按引用对账；没有任意 HTTP/附件上传 capability。AgentRoutines 是通用原生任务的有限 port，native read/apply/enable/disable 与真实 webhook POST 的权限明确区分；shared command 不依赖 ops/维护 grant。controller 仍消费 ControlResources，不另定义第二个 Promise/Effect 控制接口。native routine 由 CLI 宿主装配，box-runtime/kernel 绝不 import CLI。
+NotificationTransport 的 canonical 合同描述固定已绑定目标的投递/可用回执，不接任意 URL；OpsEvidenceRead 只返回 allowlisted 快照；OpsState 通过既有 store 提供 claim/交付/support 事务但不赋予所有调用方全部写能力。IssuePublisher 消费 exact-consented 或 bounded-grant-validated 的不可变 draft，对固定仓库创建与按引用对账；CLI 内置 REST 实现，不依赖通知 Bot 拥有 GitHub token，也没有任意 HTTP/附件上传 capability。AgentRoutines 是通用原生任务的有限 port，native read/apply/enable/disable 与真实 webhook POST 的权限明确区分；shared command 不依赖 ops/维护 grant。controller 仍消费 ControlResources，不另定义第二个 Promise/Effect 控制接口。native routine 由 CLI 宿主装配，box-runtime/kernel 绝不 import CLI。
 
 长期观测与受限维护是两个权限不同的进程角色，可以同一包发布，但 collector 无 signals。`ops.runtime.ts` 不是第二个 reconciler：它不实现注入/停止流程，只领取已批准计划并调用已有 controller。T40 负责真实安装、自启/停止；不假设 systemd 存在，不修改官方 supervisor，不让 Bot 自己 nohup 一个 loop。
 
 <a id="surface"></a>
 ## 10. 用户与 Bot 的目标命令面
 
-以下为 **T43–T53 计划新增，当前不可直接运行**。具体 JSON/schema/错误码由同一 kernel 程序导出；不存在通用 `exec` 参数。
+以下为 **T43–T56 计划新增，当前不可直接运行**。具体 JSON/schema/错误码由同一 kernel 程序导出；不存在通用 `exec` 参数。
 
 ```text
 runtime ops status                     # 只读：binding/collector/delivery/diagnosis/policy/action 六面
-runtime ops bind / unbind               # 精确 Bot+scope，secret 安全输入，显式确认/CAS
+runtime ops bind / unbind               # 简单用户的 default 目标适配，复用 targets 同一程序
+runtime ops targets list / show / bind / disable / unbind / verify
+runtime ops routes validate / explain / test
+                                       # targets 为命名目标；explain/test 只算路由，不发 Webhook
 runtime ops config show / preset / set / apply / export / upgrade
                                        # 配置只读/preview/CAS；preset 不签 grant
 runtime ops policy show / set / revoke  # 独立维护授权；不存 issue 万能许可
-runtime ops issue prepare / preview / submit / status
-                                       # 本地草稿 → exact 内容确认 → 发布对账；不是自动提单
+runtime ops issue prepare / preview / submit / reconcile / status / export
+runtime ops issue grant preview / create / revoke
+                                       # 内置程序完成脱敏/确认/提交/对账；模式与权限见 §5.2
 runtime ops claim <delivery-id>         # 受控 Bot 工具，真实记录/作用域/租期检查
 runtime ops diagnose <delivery-id>      # 有限只读 playbook，不接受任意 shell/URL
 runtime ops plan <delivery-id>          # 不可变候选；尚无执行权
@@ -400,7 +572,7 @@ routine 引用绑定精确 Agent、managed key、原生 ID、作用域和 revisi
 
 create --routines-from 与先创建后 apply 两种入口都要测；update --routines-from 复用相同程序，并验证 Agent 名称/模型/归属/其它 Routine 不被改写。routine 创建成功不等于已暴露/可请求，HTTP accepted 不等于 Bot 已运行，Bot echo 不等于 App 已读；每层独立证据。普通监控预设关闭了哪些能力，也要验证不会影响专门授权的 test invoke。
 
-默认自动测试用 Fake native、临时真实 HTTP/SQLite 与 disposable 进程；原生 lane 须显式授权测试 Box/Bot、请求次数、费用和清理范围。原生测试不得自动启用 Host 维护或向公共仓库创建 issue；支持流程的提交默认用 Fake IssuePublisher，真实 issue 仅在单独指定的测试仓库与 exact draft 同意下验证。
+默认自动测试用 Fake native、临时真实 HTTP/SQLite 与 disposable 进程；原生 lane 须显式授权测试 Box/Bot、请求次数、费用和清理范围。T55 另加两种不同模型的 disposable 接收 Bot 与可选官方备用，实际验证所捕获选模、模型更换需重绑、按 intent 分流、ACK 丢失不广播及总额度不随 Bot 数放大；通用 T53 的默认官方测试 lane 保持独立。原生测试不得自动启用 Host 维护或向公共仓库创建 issue；支持流程的提交默认用 Fake IssuePublisher，真实 issue 仅在单独指定的测试仓库与 exact draft 同意下验证。
 
 setup/trigger/update/teardown 均有回执。超时先查本次资源/运行，不盲目再创建 Bot/Routine/发送同消息；禁用不意味着已经取消运行中的任务。只在本测试回合及子任务已经结束、所有权明确时删除；失败保留可定位的 cleanup_required，不全局 kill、按名字批量删或删除用户生产 Bot。取消/硬崩后凭 scoped provision receipt 续做清理，而不是假设 finally 一定执行。
 
@@ -411,11 +583,14 @@ setup/trigger/update/teardown 均有回执。超时先查本次资源/运行，�
 |---|---|---|
 | 合同与上游验证 | T43 | 原生 Webhook/任务与 trigger 映射、版本化 adapter；为 T53 提供 CRUD/修订/关联事实 |
 | 默认与可选配置 | T51 | user/maintainer preset、requested/effective、独立成本/权限开关与升级保留 |
+| 命名目标与路由 | T54 | 单目标默认、多 Bot 明确分流、private bindings、离线路由解释 |
+| 接收者与交接 | T55 | custom 模型/依赖资格、固定决策、预算/备用/一层分析升级/集中报告 |
+| CLI 发布自动化 | T56 | 内置 REST、exact consent 一次完成及可选有限摘要 grant、唯一 submission |
 | 通用原生任务 CLI | T53 | Agent create/update + 同一 Routine apply、真实 Webhook invoke/outcome、重入/清理 |
 | 连续事实 | T44 | HSO → T41 采样/失效/incident，只读权限闭合 |
-| 可靠唤醒 | T45 | 固定目标通知 outbox → Native Webhook → claim/报告回执；unknown/重复不放大动作 |
+| 可靠唤醒 | T45 | T54 冻结目标的 outbox → Native Webhook → claim/报告回执；T55 闭合 custom/交接 |
 | 可分发模板 | T46 | 复用 T53 的禁用蓝图/配对，T51 默认提醒与克隆隔离；不依赖自动诊断开启 |
-| 用户支持闭环 | T52 | 简短通知→用户选择准备→脱敏预览→exact consent→创建/unknown 对账；无自动提交 |
+| 用户支持闭环 | T52 | 默认简短通知→脱敏稿→exact consent；T56 内置提交/对账，并独立开放有限发布 grant |
 | 自动排障 | T47 | 受限工具、有限诊断、报告/候选分流，无运行中维护 |
 | 低风险证明 | T48 | 全切片/依赖覆盖、等价规则、预授权 profile 发布、stale 拒绝 |
 | 唯一受限执行 | T49 | 同 controller 的统一 drain、持久 handoff、policy apply/退出、恢复和验证 |
@@ -423,16 +598,18 @@ setup/trigger/update/teardown 均有回执。超时先查本次资源/运行，�
 
 依赖：T43 与 T51 的纯合同/配置规则可并行；T53 仅依 T43 的原生合同，不依赖 ops 上线。T44/T45 依 T43/T51，允许 Fake 来源先做；T46 依 T43/T45/T51/T53。T52 可在 T44/T45/T51 后用 Fake Bot/support port 实施，普通用户通知→草稿→确认不依赖 T47 深诊断或 T48/T49 自动维护。T47 依 T44–T46 与 T51，T48 在 T43/T44/T51 后离线并行；T49 依 T48、T47 handoff 和 T51 grant，并复用 T28/T40。
 
-T50 分开验收：user 基础支持依 T43–T46/T51–T53，自动诊断另加 T47，自动维护另加 T48/T49。任何票不要求 T40/T41 整票先 Done；各分支只消费已实现的具体能力，不循环等待。T51–T53 为本次新票，不重写历史 T43–T50 的关闭状态。
+新增依赖：T54 只依 T51 配置与 T43/T53 的原生 port 合同，可与 T45 实现并行；T55 依 T54/T45/T53，将 T47 当可选升级消费者，不阻塞单目标 brief。T56 依 T52/T51 和包内 support 目标，不依赖多 Bot 或自动诊断。目标/路由 schema 必须先冻结，不能先做一个模板专用 sender 再保留它作第二路径。
+
+T50 分 lane 验收：user 基础支持为 T43–T46/T51–T54 的单目标加 T56 confirm-each；custom/多目标加 T55，诊断加 T47，维护加 T48/T49；有限发布 grant 是 T56 的独立 opt-in lane。默认 user 不等待所有高级 lane。任何票不要求 T40/T41 整票先 Done；新 T54–T56 不重写历史票的关闭状态。
 
 测试目标由各票定义，默认 Fake upstream/clock/通知与 disposable 本地进程；公共 CI 不执行私有 Host 或真实模型。新增 `verify-runtime-rebuild` 的 `template-ops` 组只在有对应测试后注册，必须区分 offline/source/packed/native。上线需独立复核以下反例：错 scope/克隆 token、重复乱序/ACK 丢失、Bot 崩溃后复领、锚点不变但语义坏、helper-only 变化、A→B→A、maintenance Bot 自占 busy、新任务撞上 drain、取消后的未知 signal、退出失败、通知成本耗尽、observer/DB/Box 离线。
 
-先交付通用 Agent/Routine 的 create/apply/invoke/update/disable CLI 闭环，以及 user 模式 monitor→Webhook→简短提醒→本地草稿→确认后对外 issue 的支持纵切，再开放深诊断和单动作类维护；不能用全仓测试绿代替 native endpoint/任务/SendToUser/进程切换证明。每次验收声明固定构建、已启用动作类、安装范围、证据缺口与撤销路径；不在公共文档存现场 secret、真实 Bot 标识或原生私有源码。
+先冻结 T51/T54 的单一配置与 target schema，交付 T53 通用 Agent/Routine 与 default target 纵切；同步推进 T52/T56 的内置授权提交，再逐类开放 custom/多目标/诊断/发布 grant 与维护。不能用全仓测试绿代替 native endpoint/任务/SendToUser/进程切换证明。每次验收声明固定构建、已启用动作类、安装范围、证据缺口与撤销路径；不在公共文档存现场 secret、真实 Bot 标识或原生私有源码。
 
 ## 12. 参考与失效条件
 
 Node 对 fs.watch 的 inode/rename 限制支持「事件 + backstop」的设计，不证明上游发布原子性：[Node fs caveats](https://nodejs.org/api/fs.html#caveats)。Webhook 的认证、及时接收后处理、delivery ID 等通用工程参考：[GitHub webhook best practices](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks) 与 [signature validation](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)。这些不是 Grok Bot 的协议文档；不照搬其 header、超时或自动重投语义。
 
-GitHub 创建/更新 issue 的公开接口、权限与结果语义以 [GitHub Issues REST](https://docs.github.com/en/rest/issues/issues) 为准；安全信息的私密报告参考 [GitHub private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately) 与本仓库 SECURITY.md。确认对外发布与未知结果对账是本产品约束，不假设 GitHub 提供原生幂等写入。
+GitHub 创建/更新 issue 的公开接口、权限与结果语义以 [GitHub Issues REST](https://docs.github.com/en/rest/issues/issues) 为准；内置 publisher 默认无需 gh，显式手动路径可参考 [gh issue create](https://cli.github.com/manual/gh_issue_create) 的 body-file/repo 参数，但未知自动提交不得切换工具重复尝试。安全信息的私密报告参考 [GitHub private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately) 与本仓库 SECURITY.md。确认对外发布与未知结果对账是本产品约束，不假设 GitHub 提供原生幂等写入。
 
-原生 routine/模板复制行为、Payload 投影/认证、Host/component/recipe、modeld wire、工具权限、存储 schema、preset 默认/成本、issue 目标或用户 scope/授权改变时，复核本 Spec 对应资格而不是复用旧绿灯。实现事实继续由 source/tests 与限定 live 收据拥有；本页只拥有此专项的施工合同。
+原生 routine/模板复制行为、Payload 投影/认证、Host/component/recipe、modeld wire、工具权限、存储 schema、preset 默认/成本、目标模型/路由/备用、issue 目标/公开性/模板/授权或用户 scope 改变时，复核本 Spec 对应资格而不是复用旧绿灯。实现事实继续由 source/tests 与限定 live 收据拥有；本页只拥有此专项的施工合同。

@@ -318,13 +318,15 @@ Current implementation remains source reality until each slice lands. This docum
 
 ### 2026-09-17 Template ops boundary（目标，尚未实现）
 
-[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T53 的最小增量骨架：HSO 拥有来源/资格，T41 原 SQLite 管理 incident/outbox/claim/报告及独立 support draft/consent 域，ConfigurationWrite 管理 preset/overrides/binding/grant，已有 controller store 管理 plan/动作。support consent 仅受信 support 用例可写，collector/维护 grant 不授予公开发布权。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
+[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T56 的最小增量骨架：HSO 拥有来源/资格，T41 原 SQLite 管理 incident/work/route decision/delivery/claim/报告及独立 support draft/consent/submission 域，ConfigurationWrite 管理 preset/overrides/targets/routing/private bindings 与分开的 maintenanceGrants/issueGrants，已有 controller store 管理 plan/动作。support consent 仅受信 support 用例可写，collector/维护 grant 不授予公开发布权。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
 
-模板 Bot 使用官方模型；user 默认 brief-notice 只报告/询问，不进入深诊断。T51 的 preset 是偏好而非安全角色，requested/effective/valueSource/blockedReason 分列，旧 off 与成本预算保留。合法 Webhook 才按需加载对应能力；不常驻采样、不拥有原始 signals、不从 Payload 获得授权。`monitor.runtime.ts` 组合只读采样与通知子 Scope；计划中的 `ops.runtime.ts` 是独立 Bot/modeld 的受限维护调度，只调用唯一 controller。Bot 持久交接后结束，维护在已资格化安全屏障内推进，结果由原 controller 保存后再通知。
+内置模板 Bot 默认官方模型；T54/T55 允许任意获授权的 custom 接收 Bot，模型仍由既有 selection/原生设置拥有，不在 ops 建第二目录。user 默认单目标 brief-notice 只报告/询问，不进入深诊断。T51 的 preset 是偏好而非安全角色，requested/effective/valueSource/blockedReason 分列，旧 off 与成本预算保留。合法 Webhook 才按需加载对应能力；不常驻采样、不拥有原始 signals、不从 Payload 获得授权。`monitor.runtime.ts` 组合只读采样与通知子 Scope；计划中的 `ops.runtime.ts` 是独立 Bot/modeld 的受限维护调度，只调用唯一 controller。Bot 持久交接后结束，维护在已资格化安全屏障内推进，结果由原 controller 保存后再通知。
 
 普通纯规则保持 TS，重 IO/lease/退避/期限/取消按现有 Effect pin 与 Scope 标准；Host/preload 仍不导入 Effect/SQLite/Webhook/ops policy。上游 routine、模板克隆、Payload 和工具权限必须单独资格化。单 UID 的任意 shell 不构成硬隔离，无法证明 Bot 工具边界时只做固定只读报告；不能让 prompt 文字替代权限设计。
 
-T53 的通用 AgentRoutines port / command 由 CLI 的 native adapter 装配；agents create/update、独立 routines apply、模板配对和 E2E 复用同一程序，不要求 ops/SQLite 启用。原生 Routine/trigger 是权威，本地仅保留 scoped provision 回执，不新增 scheduler。IssuePublisher 只被 exact-content consent 后的 support command 消费，普通通知器/控制器没有该权力；无 credential 时只输出本地已审核稿，不绕过确认。
+T53 的通用 AgentRoutines port / command 由 CLI 的 native adapter 装配；agents create/update、独立 routines apply、模板配对和 E2E 复用同一程序，不要求 ops/SQLite 启用。原生 Routine/trigger 是权威，本地仅保留 scoped provision 回执，不新增 scheduler。IssuePublisher 只被 exact-content consent 或 T56 有限 public-summary grant 校验后的同一个 support command 消费，内置 Node REST adapter 固定仓库/作者并持久对账；普通通知器/控制器没有该权力。独立受限 publisher Scope 只领取 approved 支持作业，不新建 Agent loop。无 credential 时仍可本地 draft/export，不绕过授权。
+
+T54 routing.ts 为唯一纯规则 owner，T55 通知程序消费冻结决策，不再自己猜目标。默认规则关闭等于全流向 default；可选按 intent/source/severity/audience 首匹配，最多一个 primary，显式备用只在已证明未执行时使用。模型/data change 失效、同原生 Bot 预算、跨 Bot 一层诊断交接与集中报告都是同 outbox/claim 程序的状态，不另造 router.db/服务/模型调度平台。多接收者不能复制 controller operation 或 issue submission 身份。
 
 ### 2026-09-12 Observation and incident management boundary
 

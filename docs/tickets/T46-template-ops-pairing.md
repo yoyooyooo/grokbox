@@ -18,7 +18,7 @@
 
 新模板、复制、重装、恢复备份不得继承旧 installId/endpoint/grant/投递记录；轮换后旧 bindingRevision 拒绝执行，卸载只删/禁用本安装创建且身份匹配的任务。原生动作结果未知时保留 pending，不重复创建无限任务。
 
-Bot 继续官方模型。只在合法 ops wakeup 加载已安装版本 `--topic ops`；入口保持现有小预算，旧版 CLI 明确 unsupported，不把整份 Spec 塞进 prompt。证明 native tools allowlist/执行身份边界；无法限制自动唤醒的任意 shell 时禁用智能维护入口，只允许固定只读报告。
+内置模板 Bot 继续默认官方模型；用户另外指定的接收 Bot 可以是 custom，不因本票模板默认而拒绝。只在合法 ops wakeup 加载已安装版本 `--topic ops`；入口保持现有小预算，旧版 CLI 明确 unsupported，不把整份 Spec 塞进 prompt。证明 native tools allowlist/执行身份边界；无法限制自动唤醒的任意 shell 时禁用智能维护入口，只允许固定只读报告。
 
 ## 2026-09-17 补充：默认提示与通用 CLI
 
@@ -27,6 +27,14 @@ Bot 继续官方模型。只在合法 ops wakeup 加载已安装版本 `--topic 
 T53 create/update --routines-from 与模板配对必须共用声明 schema/managed key/disabled 默认，Webhook 不附带周期 schedule。升级/克隆不带旧 token/绑定/授权/issue consent；用户先前 off 和显式覆盖保持。默认小提示不依赖运行整份运维 Spec，也不自动探索源码/消耗模型排障。
 
 追加测试：正常配对后 user 默认 brief 生效、未配对 blocked、普通 source 更新不唤醒、maintainer preset 不扩大 grant、用户拒绝/不回复不重复提醒、模板与直接 CLI 的 Routine read-back 一致。
+
+## 可配置接收者补充
+
+配对改为 [T54](T54-ops-targets-and-routing.md) 的命名 bindings；template import 只提供 default 的便利蓝图，不占有所有通知。`targets bind` 可使用任意当前获授权的现有 Agent/Routine，先核对模型/数据/工具能力；不得重写用户 Bot persona、其它 Routine、模型或身份。默认 API/配置与高级多目标共用一个原生程序。
+
+generic ops topic 可由模板和自建接收 Bot 的原生 Routine 按需加载；模板「不自行切换自己的模型」约束保留，不禁止用户显式创建已配好 custom model 的接收者。clone/export 只带别名/偏好，重绑模型变更与备用数据同意见 T54/T55。
+
+追加测试：非模板 custom Bot 可配对、官方模板默认不变、便宜/分析两个目标独立 endpoint、同 Bot 多 alias 不能扩大预算、model/data change 未重新确认时新自动投递受阻、绑定不修改现有用户配置。
 
 ## Executable acceptance
 

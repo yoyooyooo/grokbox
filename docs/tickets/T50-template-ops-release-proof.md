@@ -30,6 +30,16 @@ maintainer lane 验证：额外本地观察按配置生效，但不自动给普�
 
 追加 packed 测试目标 `test/agent-routines-packed.test.ts`、`test/ops-config-cli.test.ts`、`test/ops-issue-cli.test.ts`（T51–T53 提供）；template-ops verifier 纳入这些真实入口，并给每条 lane 输出支持范围。当前本票和新测试仍是目标，不是已执行清单。
 
+## 本轮多目标与授权发布 lane
+
+依 [T54](T54-ops-targets-and-routing.md) 冻结单目标/高级配置，默认 user 只绑定一个任意获授权 Bot；[T55](T55-custom-receiver-delivery.md) 另验 custom 模型/依赖资格、廉价 brief 与高级 analysis 分流、显式备用、集中报告、总额度和一层交接。用户模式不等待全部高级 lane，但不能保留第二个模板专用发送器。
+
+[T56](T56-scripted-issue-publishing.md) 的 confirm-each：用户审核一次 exact draft 后 CLI 内置 REST 完成提交/对账；preauthorized-summary 则独立验收有限 grant、字段模板/仓库/作者/预算/撤销，默认仍关闭。真实 GitHub 只用另获授权的测试仓库与合成材料；普通 CI 使用 Fake/本地 stub，不给生产公共仓库制造测试 issue。
+
+追加测试族由新票交付后纳入 template-ops verifier：ops-routing/targets CLI、custom-notification-receiver/cross-bot-handoff、github-issue-publisher/issue-publishing-grant。验收先以实际 Node CLI 创建/配置不同模型测试 Bot 与 Webhook Routine，验证真实 POST 而非 sendPrompt；capture model、数据去向/权限证据缺失保留 not_proven。
+
+故障 oracle：modeld 不可用不得为通知重启 Host；unknown POST 不备用广播；同 Bot 多 alias 不翻倍成本；跨 Bot 同 report/plan 不重复执行；禁用或重绑后旧 claim 无新权限；issue 201 结果丢失不经 gh 重试；旧 private backup 不复活 binding/grant。普通/高级 Bot 角色不等于可信程度或操作批准权。
+
 ## Executable acceptance
 
 实现时添加 `test/template-ops-packed.test.ts`、`packages/box-runtime/test/template-ops-lifetime.test.ts`，注册 `template-ops` 验证组后运行：

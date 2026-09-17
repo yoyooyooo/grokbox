@@ -115,25 +115,28 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 原重建依赖链 **T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28** 不要求重做已有实现；当前主链见 Spec S0.5。T22 不 gate 保真/内核。T27 尽早。Phase 1 出口停在 T28；T29 不自动开工。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。里程碑「审→修→复看→交 grok」之后的异步终审残留只进 [T34](T34-astra-milestone-residue.md)，不交 grok。
 
 <a id="template-ops-automation"></a>
-## Template Bot 运维闭环 — T43–T53（2026-09-17 补充分层/支持/Routine）
+## Template Bot 运维闭环 — T43–T56（2026-09-17 多目标/授权支持整合）
 
-专项合同唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，总运行时仍归 [主 Spec S0.1.5](../roadmap/box-runtime-impl-spec.md#template-ops-automation)。[初始决策](../decisions/2026-09-16-template-ops-automation.md)接受主动运维；[9月17日补充](../decisions/2026-09-17-ops-defaults-support-and-routines.md)固定 user 默认小提示、maintainer 手动配置、确认后 issue 和通用 Agent/Routine CLI。[维护手册](../maintainers/template-ops-automation.md)区分当前与目标。全部新票仍为 Planned / Spec-only，不代表已部署。
+专项合同唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，总运行时仍归 [主 Spec S0.1.5](../roadmap/box-runtime-impl-spec.md#template-ops-automation)。[初始决策](../decisions/2026-09-16-template-ops-automation.md)接受主动运维；[9月17日补充](../decisions/2026-09-17-ops-defaults-support-and-routines.md)固定 user 默认小提示、maintainer 手动配置、确认后 issue 和通用 Agent/Routine CLI。[多目标/授权发布决策](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)进一步允许用户自建 custom 接收 Bot、默认单目标/可选分流，以及 CLI 内置发布和独立有限 issue grant。[维护手册](../maintainers/template-ops-automation.md)区分当前与目标。全部新票仍为 Planned / Spec-only，不代表已部署。
 
 | Ticket | 范围 | 依赖 / 独立退出 |
 |---|---|---|
 | [T43 原生 Webhook 合同](T43-native-webhook-contract.md) | Payload、认证、routine/clone、receipt、adapter | 先冻结合同/Fake，native 无权限则保留 not_proven |
 | [T44 持续感知](T44-host-ops-continuous-sensing.md) | HSO → T41 source/loaded/component/用户影响事实 | T43/T51；无信号的独立观察纵切 |
-| [T45 可靠投递](T45-template-webhook-delivery.md) | outbox、Webhook、brief/diagnose 分流及交付对账 | T43/T51；与 T44 并行，不先等真实来源 |
-| [T46 模板配对](T46-template-ops-pairing.md) | 无密钥蓝图、user 提醒、通用 Routine apply、撤销 | T43/T45/T51/T53；不依赖深诊断/维护上线 |
+| [T45 可靠投递](T45-template-webhook-delivery.md) | 消费冻结目标的 outbox/Webhook/claim；T55 扩展 custom/交接 | T43/T51/T54 合同；与 T44 并行，不另造模板 sender |
+| [T46 模板配对](T46-template-ops-pairing.md) | 模板默认便利与任意获授权 Bot 的命名配对共用 T53 | T43/T45/T51/T53/T54 合同；不依赖深诊断/维护上线 |
 | [T47 有界诊断](T47-bounded-ops-diagnosis.md) | 独立 opt-in/用户请求的排障、plan/handoff | T44–T46/T51；不是默认提醒或 issue 前置 |
 | [T48 低风险资格](T48-low-risk-host-qualification.md) | 全切片/依赖覆盖、等价派生、唯一 publisher/CAS | T43/T44/T51；分析不授权发布，不需要模型批准 |
 | [T49 受限维护](T49-policy-host-maintenance.md) | 唯一 controller、统一 drain、交接/执行/退出 | T48/T47 handoff/T51 grant；复用 T28/T40 |
 | [T50 持久验收](T50-template-ops-release-proof.md) | CLI 原生用户旅程、分 lane 安装/故障/退场 | user 支持先验；diagnose/maintain 分别增量签署 |
 | [T51 分层与配置](T51-ops-capability-presets.md) | 版本化 user/maintainer preset、覆盖、预算、effective/CAS | 纯规则可与 T43 并行，不等待维护 |
-| [T52 确认后支持上报](T52-consented-support-issues.md) | 短提醒、脱敏稿、exact 用户确认、issue/unknown | T44/T45/T51；不依赖深诊断或自动维护 |
+| [T52 确认后支持上报](T52-consented-support-issues.md) | 默认短提醒/草稿/受信 consent，发布与 T56 共用程序 | T44/T45/T51；不依赖深诊断或自动维护 |
 | [T53 Agent/Routine CLI](T53-agent-routines-cli.md) | create/update 组合、同一 apply、真实 POST/outcome/清理 | 只依 T43 原生合同，通用能力不要求 ops 开启 |
+| [T54 目标与路由](T54-ops-targets-and-routing.md) | default 单目标、用户指定/custom Bot、有限规则与解释、bindings | T51/T43/T53 合同；配置先冻结，纯规则可并行 |
+| [T55 接收者与交接](T55-custom-receiver-delivery.md) | custom 资格/故障域、总成本/备用/升级、集中报告 | T54/T45/T53；T47 为可选诊断消费者 |
+| [T56 脚本化 issue](T56-scripted-issue-publishing.md) | 内置 REST、exact consent 一次完成、有限摘要 grant 与对账 | T52/T51；不依赖多 Bot/模型诊断/维护 |
 
-这些票是具体能力依赖，不要求 T40/T41 整票先 Done；也不反向阻塞主线的准入/正常推理。先做 T43/T51 并行合同与 T53 通用 CLI，再交付 user 监测→Webhook→短提醒→用户确认后支持闭环；基础支持不等 T47/T48/T49。随后单独开启诊断和单个已资格化维护动作类。各票中的新测试路径和 verifier 是待实现验收目标，不是已存在命令。真实部署、模型成本与原生变更仍需相应范围授权。
+这些票是具体能力依赖，不要求 T40/T41 整票先 Done；也不反向阻塞主线的准入/正常推理。先冻结 T43/T51/T54 的原生/配置/目标合同并做 T53 通用 CLI，以 default 目标交付 user 监测→Webhook→短提醒和 T52/T56 授权后内置提交；基础支持不等 T47/T48/T49 或全部高级分流。T55、T56 有限 grant、诊断和维护分别启用并验收，不把新增 Bot 误当新增权限/额度。各票中的新测试路径和 verifier 是待实现验收目标，不是已存在命令。真实部署、模型成本与原生变更仍需相应范围授权。
 
 ## Historical delivery and product-scope trackers
 

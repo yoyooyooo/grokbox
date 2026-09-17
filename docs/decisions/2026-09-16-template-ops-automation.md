@@ -4,6 +4,8 @@
 
 **2026-09-17 后续裁决：** [默认能力/支持/Routine 决策](2026-09-17-ops-defaults-support-and-routines.md)补充 D8–D12；当前默认为正常服务启用后 user 轻量观察、配对后最小提示，不是默认模型排障。T51–T53 扩展配置、用户确认后 issue 与通用 Routine CLI。本页保留初始设计，不再作为默认值的唯一说明；有限维护授权和单 controller 边界不变。
 
+**后续范围更新：** [2026-09-17 多目标/授权发布](2026-09-17-ops-routing-and-authorized-issues.md)将本页官方模板定位为默认便利而非唯一接收者；允许获授权 custom Bot 与命名分流，发布权由 exact consent 或独立有限摘要 grant 决定。精确 runtime/控制边界不变，具体以专项 Spec 为准。
+
 ## 问题与用户结果
 
 仅能发现 Host/profile 变化但必须用户自己查看 CLI，不足以满足日常使用。用户接受：不能静默处理时由 grokbox template bot 主动告警；该 Bot 可以通过带 Payload 的原生 Webhook 定时任务被唤醒，自动做有限排障后报告，也可参与极低风险、高确定性的静默维护。后台持续采样不应变成一个永远 Working 的 Bot 任务。

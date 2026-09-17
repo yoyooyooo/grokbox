@@ -2,6 +2,8 @@
 
 **状态：用户补充后的接受方向，Spec/Tickets 更新，不是功能已实现或现役已启用。** 细节唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)。本页补充 [2026-09-16 决策](2026-09-16-template-ops-automation.md)，仅修订默认能力与支持/配置/通用 Routine 边界；精确补丁资格、独立 grant、唯一 controller、Bot 先结束再维护自己的 Host 等规则不变。
 
+**同日后续修订：** [多目标与授权发布决策](2026-09-17-ops-routing-and-authorized-issues.md)取消「只能单个官方模板接收」限制，默认 user 小能力保持；D10 继续拥有默认 exact-consent 路径，另增仅限固定公共摘要、独立明确授权的 issue grant。D11 的 singular binding 扩为命名 targets/routing/private bindings，模型仍归原 owner。新细节只在专项 Spec §5.2、§6.3–6.5 维护，不从旧语句排除新范围。
+
 ## D8 — 默认小能力，维护者手动扩展
 
 新安装在正常启用 grokbox 服务后默认提供轻量本地采样；模板完成独立配对、通知能力和成本告知后，默认只对已确认的用户影响且无法安全自修的事件发一次简短提醒，并询问是否整理 issue。正常 source 更新、无影响位移、深 replay、维护者调试不打扰普通用户。不需要先试一次修复或发动模型才能判定「没有合法自修路径」。

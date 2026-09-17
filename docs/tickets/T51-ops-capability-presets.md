@@ -16,9 +16,15 @@ kernel `internal/ops/policy.ts`、`ops.ts`、已有 configuration command；box-
 
 正常启用服务的新安装使用 user 基线；仅安装 CLI/GET/import 不启服务/活 Webhook。未配对显示 blocked-unpaired，旧安装 off/预算/覆盖在升级中保留。维护者 preset 不自动开启原生推理、主动探针、维护 grant 或公开 issue；通知对象不因 preset 改为发布者账号。
 
-同一 ops-policy.json 的 preset/presetRevision/overrides、binding 与 grants 用唯一 schema/CAS writer；导出只含可移植偏好。实现 config show/preset/set/apply/export/upgrade 的 preview、expected revision 与读回，preset 切换保留显式 overrides，reset 需确认且不生成 grant。environment/临时 flags 不可越过授权或扩大预算。
+同一 ops-policy.json 的 preset/presetRevision/overrides、targets/routing/private bindings、maintenanceGrants/issueGrants 用唯一 schema/CAS writer（目标与路由形状由 T54 冻结）；导出只含可移植偏好。实现 config show/preset/set/apply/export/upgrade 的 preview、expected revision 与读回，preset 切换保留显式 overrides，reset 需确认且不生成 grant。environment/临时 flags 不可越过授权或扩大预算。
 
 effective 与 requested 分开，返回 valueSource/blockedReason；unknown/无 capability/过期 binding/预算/坏配置均不伪装开启或写回 desired。user 自动首醒上限和 critical 配额按 Spec 唯一 policy 实现，抑制有记录；native 不提供 token 硬门时保留 not_proven。用户确认前的准备/提醒逻辑无 GitHub 网络。
+
+## 多目标与发布授权补充
+
+[T54](T54-ops-targets-and-routing.md)定义 default target 和可选规则，关闭 routing 只停高级匹配、不关闭告警；单目标也是同一 schema。T55 的安装级/真实原生 Bot/工作额度取交集，alias 不能翻倍。通知模型继续归既有 models/原生 owner，配置这里不得新增 modelId 真相源。
+
+[T56](T56-scripted-issue-publishing.md)给 support.submit 增加 off/confirm-each/preauthorized-summary，最后一个没有有效独立 issue grant 仍 blocked。maintainer、自动诊断、maintenance grant 都不自动赋予发布权。schema/preview/export 保持 secret 与权限私有区边界；纯 config apply 不隐式创建 Bot/Routine。新增 mode 和 target 配置示例纳入 roundtrip 测试。
 
 ## Executable acceptance
 
@@ -35,7 +41,7 @@ FakeClock 验证无变化/无用户影响/同周期/拒绝或不回复/预算耗
 
 ## Forbidden / Non-goals
 
-不创造超级 maintainer 角色，不按用户名/环境检测隐式开 debug，不开启真实服务或真实 token 消费，不把 autoSubmit=true 写入配置，不自动提单/附件，不为配置升级 modeld/依赖。
+不创造超级 maintainer 角色，不按用户名/环境检测隐式开 debug，不开启真实服务或真实 token 消费，不把无范围 autoSubmit=true 写入配置，不因 preset 自动签发提单/附件权限，不为配置升级 modeld/依赖。
 
 ## Done evidence / Next
 

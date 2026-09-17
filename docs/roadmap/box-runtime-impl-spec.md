@@ -109,13 +109,13 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 **依赖**：T37先完成共享事实与真实门；T41可与T38/T24/T39并行，复用T25/T40长期服务安装能力。T40签持续生产时验证T41单盒最低监控闭环，T37开发和普通推理不依赖DB，T41不等待T40整票放行。T29仅在前端排期后消费；共用ConfigurationWrite的revision/冲突合同现在明确，真正第二写入入口落地时实现，不造UI-only writer。没有T41或没有外部通知渠道的运行应如实说明监控范围，不把future能力列入已完成。
 
 <a id="template-ops-automation"></a>
-### S0.1.5 Template Bot 告警与受限自动维护（2026-09-17 分层/支持补充）
+### S0.1.5 Bot 告警与受限自动维护（2026-09-17 多目标/授权支持整合）
 
-用户接受由 grokbox template bot 的原生 Webhook/Payload 入口主动告警、有界只读排障及有限预授权静默维护；9月17日新增默认 user 最小提醒、maintainer 手动观测配置、确认后 issue 和 Agent/Routine CLI。专项施工合同唯一归 [Template Ops Spec](template-ops-automation-spec.md)，[T43–T53](../tickets/README.md#template-ops-automation)是新任务；本主 Spec 继续拥有总运行时树、Server/Host/session 与唯一 controller。不是重建 modeld 或新增 Agent loop，也不是现役已开启声明。
+用户接受由 grokbox template bot 的原生 Webhook/Payload 入口主动告警、有界只读排障及有限预授权静默维护；9月17日新增默认 user 最小提醒、maintainer 手动观测配置、确认后 issue 和 Agent/Routine CLI。专项施工合同唯一归 [Template Ops Spec](template-ops-automation-spec.md)，[T43–T56](../tickets/README.md#template-ops-automation)是专项任务；本主 Spec 继续拥有总运行时树、Server/Host/session 与唯一 controller。不是重建 modeld 或新增 Agent loop，也不是现役已开启声明。
 
-本地 collector 无模型、无 Host mutation；T41 只管观察/incident/通知交付。官方模板 Bot 按需解释与提候选，Payload 和模型 confidence 无执行权；ConfigurationWrite 管理配对/预授权，既有 controller 管理不可变计划和实际变更。Bot 提交后结束回合，独立维护角色等待真正安全边界，不能边等自己重启边占 busy。具体布局、ports、预算和 native 资格只在专项 Spec 维护。T51 的 user/maintainer preset 不授予安全权限；正常服务开启的新安装默认轻量观察、配对后 brief 提醒，深诊断/探针/维护独立 opt-in，旧 off 保留。T52 支持整理/预览/提交各有同意边界，不默认公开现场；T53 打通通用 Agent create/update 的 Routine apply 与真实 HTTP E2E，不需要 ops 开启。
+本地 collector 无模型、无 Host mutation；T41 只管观察/incident/通知交付。模板或用户指定的官方/custom 接收 Bot 按需解释与提候选，Payload 和模型 confidence 无执行权；ConfigurationWrite 管理配对/预授权，既有 controller 管理不可变计划和实际变更。Bot 提交后结束回合，独立维护角色等待真正安全边界，不能边等自己重启边占 busy。具体布局、ports、预算和 native 资格只在专项 Spec 维护。T51 的 user/maintainer preset 不授予安全权限；正常服务开启的新安装默认轻量观察、配对后 brief 提醒，深诊断/探针/维护独立 opt-in，旧 off 保留。T52 支持整理/预览/提交各有同意边界，不默认公开现场；T53 打通通用 Agent create/update 的 Routine apply 与真实 HTTP E2E，不需要 ops 开启。
 
-[新决策](../decisions/2026-09-16-template-ops-automation.md)仅对指定低风险动作类接受作用域/证据/时效绑定的可撤销预授权，包含满足审核等价规则的新 SHA 派生；不放宽 exact SHA/唯一性、Server gate、语义审核、权限隔离或安全排空。其它未知/越界变化继续人工审核。通知成功不等于维护或用户交付成功，模板导入不继承活 endpoint/secret/grant。[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)只修订默认/支持/配置和通用 Routine 目标；T43–T53 实现前既有无确认 reconcile 和显式 live 边界不变。基础 user 支持闭环不等待自动诊断/维护完成。
+[新决策](../decisions/2026-09-16-template-ops-automation.md)仅对指定低风险动作类接受作用域/证据/时效绑定的可撤销预授权，包含满足审核等价规则的新 SHA 派生；不放宽 exact SHA/唯一性、Server gate、语义审核、权限隔离或安全排空。其它未知/越界变化继续人工审核。通知成功不等于维护或用户交付成功，模板导入不继承活 endpoint/secret/grant。[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)只修订默认/支持/配置和通用 Routine 目标；[多目标/授权发布决策](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)进一步由 T54–T56 定义 default 单目标、可选确定性多 Bot 分流、custom 依赖/模型数据同意/总成本，以及内置 REST 支持流水线与有限 create-only issue grant。模板官方只是默认，不限制其他 Bot；路由不改模型、不复制控制或发布权限。issue 默认仍 exact 确认，预授权另签作用域/模板/期限/额度，unknown 不重发。全部实现前既有 reconcile/live 边界不变；基础 user 支持不等待高级诊断/维护。
 
 ### S0.2 最小完整控制边界与用途
 
