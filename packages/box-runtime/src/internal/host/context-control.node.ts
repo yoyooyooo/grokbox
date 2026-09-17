@@ -14,7 +14,8 @@ function invoke(target: Native, name: string): unknown {
   return Reflect.apply(method, target, []);
 }
 type Shell = { host: Native; agentId: string; sessionId: string; run: (prompt: string, options?: Native) => Promise<unknown>;
-  busy: () => boolean; interrupt: (reason: string) => unknown; normalRuns: number; manual?: Job };
+  busy: () => boolean; interrupt: (reason: string) => unknown; normalRuns: number; manual?: Job;
+  maintenanceBlock?: "commit_unknown" | "native_cleanup_unknown" };
 type Job = { operationId: string; shell: Shell; options: Native; promise: Promise<unknown>; receipt?: ContextMaintenanceReceipt };
 
 /** One finite native operation facade. The existing runner still creates the
@@ -55,7 +56,14 @@ export function createHostContextControl(options: HostContextClientOptions & { d
       const owner = shell;
       // A genuine new user run waits for maintenance; it is not consumed by it.
       // Normal native runs retain their existing supersession semantics.
-      if (owner?.manual) await owner.manual.promise.catch(() => undefined);
+      if (owner?.manual) await owner.manual.promise.catch(error => {
+        const failure = contextFailure(error, "commit_unknown");
+        // A safely failed summary can be followed by a new user intent. An
+        // uncertain native write/cleanup cannot: do not automatically consume
+        // queued input against a partially replaced or still-owned root.
+        if (failure.code === "commit_unknown" || failure.code === "native_cleanup_unknown") throw failure;
+      });
+      if (owner?.maintenanceBlock) throw new ContextFailure(owner.maintenanceBlock);
       if (owner) owner.normalRuns++;
       try { return await Reflect.apply(run, undefined, [prompt, args]); }
       finally { if (owner) owner.normalRuns--; }
@@ -96,7 +104,8 @@ export function createHostContextControl(options: HostContextClientOptions & { d
       const shell = shells.get(shellKey(agentId, sessionId))?.deref();
       const report = await status(agentId, sessionId, typeof raw.operationId === "string" ? raw.operationId : undefined);
       if (raw.action === "status") return { ok: true, data: { ...report,
-        nativeCapability: shell && isCurrent(shell) ? shell.busy() || shell.normalRuns > 0 || shell.manual ? "busy" : "ready" : "unavailable",
+        nativeCapability: shell && isCurrent(shell) ? shell.maintenanceBlock ? "blocked" : shell.busy() || shell.normalRuns > 0 || shell.manual ? "busy" : "ready" : "unavailable",
+        nativeBlockReason: shell && isCurrent(shell) ? shell.maintenanceBlock ?? null : null,
         capabilityScope: "loaded-default-box-session" } };
       if (options.mode !== "route" || raw.confirm !== true || typeof raw.operationId !== "string" || !readOwnership) throw new ContextFailure("not_admitted");
       const selected = captureHostManagedSelection(options.durableRoot, agentId);
@@ -115,6 +124,7 @@ export function createHostContextControl(options: HostContextClientOptions & { d
         throw new ContextFailure("commit_unknown");
       }
       if (!shell || !isCurrent(shell)) throw new ContextFailure("capability_unqualified");
+      if (shell.maintenanceBlock) throw new ContextFailure(shell.maintenanceBlock);
       if (shell.manual || shell.normalRuns > 0 || shell.busy()) throw new ContextFailure("maintenance_busy");
       const state = invoke(shell.host, "getConversationState");
       if (!record(state) || !Array.isArray(state.rootPromptMessagesJson) || !Array.isArray(state.pendingToolCalls)
@@ -131,6 +141,15 @@ export function createHostContextControl(options: HostContextClientOptions & { d
           await shell.run("", runOptions);
           if (!job.receipt) throw new ContextFailure("commit_unknown");
           return { ok: true, data: { operationId: job.operationId, receipt: job.receipt, duplicate: false } };
+        } catch (error) {
+          const failure = contextFailure(error, "commit_unknown");
+          if (isCurrent(shell) && (failure.code === "commit_unknown" || failure.code === "native_cleanup_unknown")) {
+            // Dropping job.manual is not proof that this mutable root is usable.
+            // Retain a local safety block until the native owner is reloaded or
+            // independently reconciled; changing the operation ID cannot clear it.
+            shell.maintenanceBlock = failure.code;
+          }
+          throw failure;
         } finally { clearTimeout(timer); flags.delete(runOptions); if (shell.manual === job) shell.manual = undefined; }
       });
       return await job.promise;

@@ -100,6 +100,12 @@ export async function maintainHostContext(runRoot: string, request: ContextMaint
       }
     }
     throw new ContextFailure(controller.signal.aborted ? "cancelled" : "commit_unknown");
+  } catch (error) {
+    // Socket abort can win the race with native commit/checkpoint completion.
+    // Once the native writer began, do not report it as a safely cancelled
+    // pre-write operation or let its waiting user run consume a partial root.
+    if (owner.hasPublicationStarted()) throw new ContextFailure("commit_unknown");
+    throw error;
   } finally {
     clearTimeout(timer); signal?.removeEventListener("abort", abort);
     socket.off("close", disconnected); socket.off("end", disconnected);

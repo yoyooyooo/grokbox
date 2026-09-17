@@ -6,7 +6,7 @@ import { createNativeContextOwner } from "../src/internal/host/context-maintenan
 import { planPiCompaction } from "../src/internal/context/pi-projection.ts";
 import { ownedNativeSummary } from "./context-native-fixture.ts";
 
-function fixture(options: { checkpointFails?: boolean; beforeAccept?: () => Promise<void> } = {}) {
+function fixture(options: { checkpointFails?: boolean; appendFails?: boolean; beforeAccept?: () => Promise<void>; checkpointWait?: () => Promise<void> } = {}) {
   let live = true, checkpoints = 0;
   let messages: any[] = [
     { role: "system", content: "Retain system policy", providerOptions: { privateControl: { sentinel: "SYSTEM" } } },
@@ -20,12 +20,15 @@ function fixture(options: { checkpointFails?: boolean; beforeAccept?: () => Prom
   const original = structuredClone(messages), native = ownedNativeSummary({ beforeAccept: options.beforeAccept });
   native.state.lastStepInvocationId = "step";
   const controller = new AbortController();
-  const root = { getMessages: () => structuredClone(messages), clearMessages: () => { messages = []; }, appendMessages: (next: any[]) => { messages.push(...next); } };
+  let clears = 0, appends = 0;
+  const root = { getMessages: () => structuredClone(messages), clearMessages: () => { clears++; messages = []; }, appendMessages: (next: any[]) => {
+    appends++; if (options.appendFails) throw Error("PRIVATE_PARTIAL_NATIVE_WRITE"); messages.push(...next);
+  } };
   const owner = createNativeContextOwner({ ...native, stateHandler: native.state, rootPromptExecutor: root,
     ctx: { signal: controller.signal }, config: {}, interactionListener: {}, requestContext: {}, resourceAccessor: {},
     invocationId: "step", turnId: "turn", agentId: "agent", sessionId: "", modelId: "owned/model",
     normalize: rows => rows, fixedMessages: () => root.getMessages().slice(0, 2), tools: () => [], valid: () => live,
-    checkpoint: async () => { if (options.checkpointFails) throw new Error("checkpoint_failed"); checkpoints++; },
+    checkpoint: async () => { await options.checkpointWait?.(); if (options.checkpointFails) throw new Error("checkpoint_failed"); checkpoints++; },
   });
   const material = owner.inspect();
   const policy = captureContextPolicy({ windowTokens: 32000, compaction: { reserveTokens: 4096, keepRecentTokens: 500 } }, "owned/model", "agent");
@@ -34,7 +37,7 @@ function fixture(options: { checkpointFails?: boolean; beforeAccept?: () => Prom
   const candidate: ContextCandidate = { operationId: "owned-operation", sourceRootRevision: material.rootRevision,
     summary: "Earlier work completed. TOOL_TAIL=present", summarizedRefs: plan.summarizedRefs, retainedRefs: plan.retainedRefs, budget };
   return { owner, native, original, material, candidate, root, controller,
-    current: () => messages, checkpoints: () => checkpoints, revoke: () => { live = false; } };
+    current: () => messages, checkpoints: () => checkpoints, writes: () => ({ clears, appends }), revoke: () => { live = false; } };
 }
 
 test("native fixed material survives cloning reads; preview does not mutate or checkpoint", async () => {
@@ -81,9 +84,51 @@ test("lost checkpoint ack is not described as a rollback of the published root",
   const f = fixture({ checkpointFails: true });
   try {
     await f.owner.preview(f.candidate);
-    await expect(f.owner.commit(f.candidate)).rejects.toThrow("checkpoint_failed");
+    await expect(f.owner.commit(f.candidate)).rejects.toMatchObject({ code: "commit_unknown" });
     expect(f.current()).not.toEqual(f.original);
     expect(f.owner.readCommit()).toMatchObject({ outcome: "commit_unknown", persisted: false });
+    expect(f.checkpoints()).toBe(0);
+  } finally { await f.owner.close(); }
+});
+
+test("owner cleanup waits for the real checkpoint after cancellation, rather than only waiting for summary generation", async () => {
+  let enter!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { enter = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const f = fixture({ checkpointWait: async () => { enter(); await held; } });
+  let closing: Promise<void> | undefined;
+  try {
+    await f.owner.preview(f.candidate);
+    const committing = f.owner.commit(f.candidate).then(value => value, error => error);
+    await started;
+    expect(f.owner.hasPublicationStarted()).toBe(true);
+    f.owner.cancel();
+    let settled = false;
+    closing = f.owner.close().then(() => { settled = true; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(settled).toBe(false);
+    expect(f.checkpoints()).toBe(0);
+    release();
+    expect(await committing).toMatchObject({ code: "commit_unknown" });
+    await closing;
+    expect(settled).toBe(true);
+    expect(f.checkpoints()).toBe(1);
+    expect(f.current()).not.toEqual(f.original);
+  } finally { release(); await closing; await f.owner.close(); }
+});
+
+test("partial native replacement is commit_unknown even if append never returns; no fake rollback or second write", async () => {
+  const f = fixture({ appendFails: true });
+  try {
+    await f.owner.preview(f.candidate);
+    const error = await f.owner.commit(f.candidate).then(() => undefined, error => error);
+    expect(error).toMatchObject({ code: "commit_unknown" });
+    expect(String(error)).not.toContain("PRIVATE_PARTIAL_NATIVE_WRITE");
+    expect(f.current()).toEqual([]); // The original native clear really occurred.
+    expect(f.writes()).toEqual({ clears: 1, appends: 1 });
+    expect(f.owner.readCommit()).toBeUndefined();
+    expect(await f.owner.commit(f.candidate)).toMatchObject({ outcome: "commit_unknown", persisted: false });
+    expect(f.writes()).toEqual({ clears: 1, appends: 1 });
     expect(f.checkpoints()).toBe(0);
   } finally { await f.owner.close(); }
 });

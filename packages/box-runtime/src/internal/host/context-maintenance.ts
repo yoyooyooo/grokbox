@@ -36,11 +36,12 @@ function deferred<A>() {
 export function createNativeContextOwner(capture: NativeContextCapture) {
   const root = capture.rootPromptExecutor;
   const rootId = sha256Text(canonicalJson([capture.agentId, capture.sessionId]));
-  let closed = false, committing = false, published = false, persisted = false, activityStarted = false;
+  let closed = false, committing = false, publicationStarted = false, published = false, persisted = false, activityStarted = false;
   let originalRaw: unknown[] | undefined, original: ContextMaterial | undefined;
   let proposed: ContextMaterial | undefined, proposedRaw: unknown[] | undefined;
   let operation: string | undefined, candidateFingerprint: string | undefined;
   let nativeWork: Promise<unknown> | undefined;
+  let checkpointWork: Promise<unknown> | undefined;
   let pendingReady: ReturnType<typeof deferred<ContextMaterial>> | undefined;
   const child = typeof capture.ctx.withCancel === "function" ? invoke(capture.ctx, "withCancel") : undefined;
   const nativeCtx = Array.isArray(child) && object(child[0]) ? child[0] : capture.ctx;
@@ -207,6 +208,9 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
           if (!committing || !Array.isArray(messages)) throw new ContextFailure("not_admitted");
           if (!published) {
             if (!clearRequested || !proposed || rootRevision(messages) !== proposed.rootRevision) throw new ContextFailure("stale_root");
+            // Native mutations are not a transaction. From the first call on,
+            // an exception may follow a partial write even before append returns.
+            publicationStarted = true;
             invoke(target, "clearMessages"); invoke(target, "appendMessages", messages); published = true;
           } else if (messages.length !== 0) throw new ContextFailure("stale_root");
         };
@@ -246,11 +250,20 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
     if (!proposed || operation !== candidate.operationId || candidateFingerprint !== sha256Text(canonicalJson(candidate)) || !release || !nativeWork) throw new ContextFailure("not_admitted");
     if (!committing) {
       checkCandidate(candidate); committing = true; release.resolve();
-      await nativeWork; assertLive();
-      if (!published || rootRevision(rawMessages()) !== proposed.rootRevision) throw new ContextFailure("commit_unknown");
-      await capture.checkpoint(); assertLive();
-      if (rootRevision(rawMessages()) !== proposed.rootRevision) throw new ContextFailure("commit_unknown");
-      persisted = true;
+      try {
+        await nativeWork; assertLive();
+        if (!published || rootRevision(rawMessages()) !== proposed.rootRevision) throw new ContextFailure("commit_unknown");
+        checkpointWork = Promise.resolve().then(() => { assertLive(); return capture.checkpoint(); });
+        await checkpointWork; assertLive();
+        if (rootRevision(rawMessages()) !== proposed.rootRevision) throw new ContextFailure("commit_unknown");
+        persisted = true;
+      } catch (error) {
+        // Preserve publication uncertainty across the Host/client/wire facade.
+        // A raw checkpoint or append error must not become invalid input, nor
+        // imply the old root survived or that this operation can be replayed.
+        if (publicationStarted) throw new ContextFailure("commit_unknown");
+        throw error;
+      }
     }
     return { operationId: operation!, sourceRootRevision: original!.rootRevision, rootRevision: proposed.rootRevision,
       outcome: persisted ? "committed" : "commit_unknown", persisted, material: proposed };
@@ -284,10 +297,13 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
         new Promise<void>(resolve => { timer = setTimeout(resolve, 1000); })]); }
       finally { if (timer) clearTimeout(timer); }
     }
-    if (nativeWork) {
+    const pending = [nativeWork, checkpointWork].filter((work): work is Promise<unknown> => work !== undefined);
+    if (pending.length) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await Promise.race([nativeWork.catch(() => undefined), new Promise<never>((_resolve, reject) => {
+        // The checkpoint can outlive an aborted socket. Settling only the
+        // summarizer would release the native owner while its write is pending.
+        await Promise.race([Promise.allSettled(pending), new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => reject(new ContextFailure("native_cleanup_unknown")), 5000);
         })]);
       } finally { if (timer) clearTimeout(timer); }
@@ -296,5 +312,7 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
       invoke(capture.stateHandler, "clearBackgroundSummarizationState");
     }
   };
-  return { rootId, inspect, preview, commit, readCommit, startActivity, authorize: () => { assertLive(); return true; }, cancel, close };
+  return { rootId, inspect, preview, commit, readCommit, startActivity,
+    hasPublicationStarted: () => publicationStarted,
+    authorize: () => { assertLive(); return true; }, cancel, close };
 }
