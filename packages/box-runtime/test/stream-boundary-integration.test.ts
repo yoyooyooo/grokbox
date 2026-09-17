@@ -17,7 +17,6 @@ import { probeModeldHealth } from "../src/internal/wire/modeld-probe.node.ts";
 
 const model = { id: "openai/owned", provider: "openai-chat", model: "owned", endpoint: "https://offline.invalid/v1",
   apiKeyRef: "env:OWNED", capabilities: { tools: true }, contextWindowTokens: 200_000 };
-const config = parseModelsFile({ version: 1, models: { [model.id]: model }, assignments: { agents: { "owned-agent": model.id }, main: null } });
 const tools = [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } }];
 const chunk = (delta: unknown, finish_reason: string | null = null) => ({ id: "owned", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason }] });
 const encode = (value: unknown) => new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`);
@@ -25,15 +24,23 @@ const tool = (name: string) => chunk({ tool_calls: [{ index: 0, id: "owned-call"
 const arg = (arguments_: string) => chunk({ tool_calls: [{ index: 0, function: { arguments: arguments_ } }] });
 const stop = (reason = "stop") => ({ ...chunk({}, reason), usage: { prompt_tokens: 3, completion_tokens: 1 } });
 
-async function scenario(kind: "undeclared" | "open-tool" | "missing-finish" | "valid") {
+async function scenario(kind: "undeclared" | "open-tool" | "missing-finish" | "valid" | "minimax-valid" | "minimax-unknown-second" | "minimax-open-think") {
+  const selected = { ...model, ...(kind.startsWith("minimax-") ? { chatDialect: "minimax-inline-v1" } : {}) };
+  const config = parseModelsFile({ version: 1, models: { [model.id]: selected }, assignments: { agents: { "owned-agent": model.id }, main: null } });
   const root = await mkdtemp(join(tmpdir(), "grokbox-stream-boundary-"));
   const generation = randomUUID();
   let http = 0, firstChunk = 0;
   let terminal: SessionTerminal | undefined;
   const observed: ModeldStepOutcome[] = [];
+  const minimaxPrefix = [chunk({ content: "<think>synthetic reasoning</think>progress" }, ""), tool("lookup"),
+    chunk({ tool_calls: [{ index: 0, type: "", id: "", function: { name: "", arguments: '{"q":"ok"}' } }] }, "")];
   const frames = kind === "undeclared" ? [tool("unknown_tool"), arg('{"q":"x"}'), stop("tool_calls")]
     : kind === "open-tool" ? [tool("lookup"), arg('{"q":"'), stop("tool_calls")]
     : kind === "missing-finish" ? [chunk({ content: "partial" })]
+    : kind === "minimax-valid" ? [...minimaxPrefix, stop("tool_calls"), chunk({}, "")]
+    : kind === "minimax-unknown-second" ? [...minimaxPrefix,
+      chunk({ tool_calls: [{ index: 1, type: "function", id: "second", function: { name: "unknown_tool", arguments: "{}" } }] }), stop("tool_calls")]
+    : kind === "minimax-open-think" ? [chunk({ content: "<think>unfinished reasoning" }), tool("lookup"), arg("{}"), stop("tool_calls")]
     : [tool("lookup"), arg('{"q":"ok"}'), stop("tool_calls")];
   const fetch = Object.assign(async () => {
     http++;
@@ -87,6 +94,31 @@ describe("real SDK -> modeld -> Unix -> Host failure cause", () => {
       expect(result.outcome?.stream?.counts.providerFetchCalls).toBe(1);
       expect(result.parts.some(part => part.type === "tool-call")).toBe(false);
       if (kind === "undeclared") expect(result.firstChunk).toBe(0);
+    });
+  }
+  test("MiniMax dialect and identity witnesses survive the real SDK/Unix/Host path", async () => {
+    const result = await scenario("minimax-valid");
+    expect(result.error).toBeUndefined();
+    expect(result.http).toBe(1);
+    expect(result.terminal).toMatchObject({ terminalClass: "stop", toolCallCount: 1 });
+    expect(result.outcome).toMatchObject({ outcome: "ok", stream: {
+      counts: { normalizedEmptyToolTypes: 1 }, engine: { chatDialect: "minimax-inline-v1" },
+      toolIdentity: { sent: { matchesDeclared: true } },
+    } });
+    expect(result.outcome?.stream?.toolIdentity?.firstMismatch).toBeUndefined();
+    expect(result.parts.filter(part => part.type === "tool-call")).toHaveLength(1);
+    expect(result.parts.filter(part => part.type === "text-delta").map(part => part.textDelta).join("")).toBe("progress");
+  });
+  for (const [kind, cause] of [["minimax-unknown-second", "undeclared_tool"], ["minimax-open-think", "unterminated_reasoning"]] as const) {
+    test(`${kind} releases no tools from the rejected batch and never retries`, async () => {
+      const result = await scenario(kind);
+      expect(result.http).toBe(1);
+      expect(result.error).toMatchObject({ code: "invalid_stream", stage: "normalize" });
+      expect(result.terminal).toMatchObject({ terminalClass: "error", toolCallCount: 0 });
+      expect(result.outcome).toMatchObject({ outcome: "error", diagnostic: { normalizeCause: cause } });
+      expect(result.parts.some(part => part.type === "tool-call")).toBe(false);
+      expect(result.outcome?.attempts).toHaveLength(1);
+      if (kind === "minimax-unknown-second") expect(result.outcome?.stream?.toolIdentity?.firstMismatch?.relation).toBe("unmatched");
     });
   }
   test("complete declared tool still succeeds and reports one measured provider attempt", async () => {

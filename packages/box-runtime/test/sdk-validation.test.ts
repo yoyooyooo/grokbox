@@ -29,4 +29,6 @@ test("validation projector rejects arbitrary paths and never reads accessor valu
   expect(invoked).toBe(0);
   expect(sdkValidationObservation({ name: "AI_TypeValidationError", get cause() { invoked++; throw Error("secret"); } })).toEqual({ kind: "schema", issues: [] });
   expect(invoked).toBe(0);
+  const proxy = new Proxy({}, { getOwnPropertyDescriptor() { throw Error("private trap"); } });
+  expect(sdkValidationObservation(proxy)).toBeUndefined();
 });

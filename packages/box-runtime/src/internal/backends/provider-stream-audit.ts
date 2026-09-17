@@ -197,7 +197,10 @@ export class ProviderStreamAudit {
       if (this.dataLines) {
         const data = this.data.text(); this.data.clear(); this.dataLines = 0; this.eventBytes = 0;
         const sdkData = this.frame(data);
-        if (this.rewritesFrames) this.sdkFrames.push(`data: ${sdkData}\n\n`);
+        // SSE joins multiple data fields with LF. Re-prefix every line when
+        // reframing an unchanged, pretty-printed JSON event; otherwise only
+        // its first line reaches the SDK and a valid event becomes bad JSON.
+        if (this.rewritesFrames) this.sdkFrames.push(sdkData.split("\n").map(line => `data: ${line}`).join("\n") + "\n\n");
       }
       return;
     }

@@ -3,6 +3,9 @@ import { dataProperty as own, sdkPath, type SdkValidationObservation } from "@gr
 /** Traverse a bounded Zod issue tree, not an Error message or stack. Union
  * alternatives may explain different schema branches; retain the literal path. */
 export function sdkValidationObservation(error: unknown): SdkValidationObservation | undefined {
+  try { return inspect(error); } catch { return undefined; }
+}
+function inspect(error: unknown): SdkValidationObservation | undefined {
   const name = own(error, "name");
   if (name !== "AI_TypeValidationError" && name !== "AI_JSONParseError") return undefined;
   const out: SdkValidationObservation = { kind: name === "AI_JSONParseError" ? "json" : "schema", issues: [] };

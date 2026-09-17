@@ -7,7 +7,7 @@ export type ChatDialect = "standard" | "minimax-inline-v1";
 export function chatDialect(record: Pick<ModelRecord, "endpoint" | "provider" | "chatDialect">): ChatDialect {
   if (record.chatDialect !== undefined) {
     if (record.chatDialect !== "standard" && record.chatDialect !== "minimax-inline-v1") throw new EnvelopeError("unsupported_options");
-    if (record.provider === "openai-responses" && record.chatDialect !== "standard") throw new EnvelopeError("unsupported_options");
+    if (record.provider !== "openai" && record.provider !== "openai-chat") throw new EnvelopeError("unsupported_options");
     return record.chatDialect;
   }
   if (record.provider !== "openai" && record.provider !== "openai-chat") return "standard";

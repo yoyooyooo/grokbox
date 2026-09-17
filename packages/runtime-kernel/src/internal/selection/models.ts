@@ -150,6 +150,7 @@ export function qualifiedContextWindowTokens(record: ModelRecord, adapterWindow?
 function parseModel(id: string, value: unknown): ModelRecord {
   if (!isRecord(value)) throw new BoxRuntimeError("invalid_usage", `Model '${id}' is invalid.`);
   if (id === STUB_ECHO_MODEL_ID) {
+    if (value.chatDialect !== undefined) throw new BoxRuntimeError("invalid_usage", "chatDialect requires Chat Completions.");
     if (typeof value.apiKeyRef === "string" && value.apiKeyRef.length > 0) {
       throw new BoxRuntimeError("credential_invalid", "stub/echo forbids credential references.");
     }

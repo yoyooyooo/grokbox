@@ -43,6 +43,12 @@ function bodyBytes(init?: RequestInit): number {
 
 function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect): typeof fetch {
   const run = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
+    // Bound raw SDK encoding before any dialect JSON parse, then recheck the
+    // final body below. Neither form may bypass the egress request budget.
+    if (bodyBytes(init) > ENCODED_PROVIDER_REQUEST_MAX_BYTES) {
+      audit.evidence.setCount("requestBytes", bodyBytes(init));
+      throw new BackendFailure("envelope_too_large");
+    }
     init = encodeDialectRequest(init, dialect);
     audit.evidence.setCount("requestBytes", bodyBytes(init));
     if (bodyBytes(init) > ENCODED_PROVIDER_REQUEST_MAX_BYTES) {

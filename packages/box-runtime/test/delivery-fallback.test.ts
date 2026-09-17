@@ -26,9 +26,25 @@ for (const endTurn of [false, true]) test(`final text fallback preserves reasoni
 });
 test("end_turn is granted only by the compatible text schema, not another union alternative", () => {
   expect(declaredTextEndTurn(tool(true))).toBe(true); expect(declaredTextEndTurn(tool(false))).toBe(false);
+  expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { type: "object", properties: { type: { const: "text" }, end_turn: { type: "boolean", const: false } } } })).toBe(false);
+  expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { type: "object", properties: { type: { const: "text" }, end_turn: { type: "boolean", enum: [false] } } } })).toBe(false);
   expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { type: "object", oneOf: [
     { type: "object", properties: { type: { const: "text" }, content: { type: "string" } } },
     { type: "object", properties: { type: { const: "widget" }, end_turn: { type: "boolean" } } },
   ] } })).toBe(false);
   expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { type: "object", anyOf: [tool(true).inputSchema] } })).toBe(true);
+});
+test("end_turn inference fails closed for conditional, referenced and ambiguous schemas", () => {
+  const constraints: ToolDefinition["inputSchema"][] = [{ not: {} }, { allOf: [] }, { if: {} }, { $ref: "#/$defs/restricted" }, { dependentSchemas: { end_turn: false } }];
+  for (const constraint of constraints) {
+    expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { ...tool(true).inputSchema, ...constraint } })).toBe(false);
+  }
+  const endTurnSchemas: ToolDefinition["inputSchema"][] = [{ type: "boolean", if: { const: true }, then: false }, { type: "boolean", $ref: "#/$defs/falseOnly" }];
+  for (const endTurn of endTurnSchemas) {
+    expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { type: "object", properties: { type: { const: "text" }, end_turn: endTurn } } })).toBe(false);
+  }
+  expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { oneOf: [tool(true).inputSchema, tool(true).inputSchema] } })).toBe(false);
+  expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { oneOf: [tool(true).inputSchema, { type: "object" }] } })).toBe(false);
+  expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { type: "object", properties: { type: { type: "number" }, end_turn: { type: "boolean" } } } })).toBe(false);
+  expect(declaredTextEndTurn({ name: "SendToUser", inputSchema: { oneOf: [tool(true).inputSchema, { type: "object", properties: { type: { const: "widget" } } }] } })).toBe(true);
 });

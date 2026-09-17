@@ -18,9 +18,10 @@ function snapshot(messages: PromptMessage[] = [{ role: "user", content: "fixture
     tools: [{ name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } }], options: {} });
   return { ...body, snapshotDigest: computeSnapshotDigest(body) };
 }
-async function run(frames: unknown[], options: { standard?: boolean; bytewise?: boolean; messages?: PromptMessage[] } = {}) {
+async function run(frames: unknown[], options: { standard?: boolean; bytewise?: boolean; multiline?: boolean; messages?: PromptMessage[] } = {}) {
   let requests = 0, body: Record<string, unknown> = {};
-  const bytes = new TextEncoder().encode(frames.map(f => `data: ${JSON.stringify(f)}\r\n\r\n`).join("") + "data: [DONE]\r\n\r\n");
+  const bytes = new TextEncoder().encode(frames.map(f => JSON.stringify(f, null, options.multiline ? 2 : undefined)
+    .split("\n").map(line => `data: ${line}`).join("\r\n") + "\r\n\r\n").join("") + "data: [DONE]\r\n\r\n");
   const fake = Object.assign(async (_input: unknown, init?: RequestInit) => {
     requests++; body = JSON.parse(String(init?.body)); let offset = 0;
     return new Response(new ReadableStream<Uint8Array>({ pull(controller) {
@@ -51,6 +52,16 @@ test("MiniMax continuation placeholders pass through the production backend with
   expect(finish?.type === "backend_finish" && finish.stream?.toolIdentity?.firstMismatch).toBeUndefined();
 });
 
+test("MiniMax reframing preserves multiline SSE data, including unchanged frames and bytewise UTF-8", async () => {
+  const r = await run([chunk({ content: "<think>合成思考</think>Answer" }, null), start(), continuation('{"q":"汉字"}'), end()], { multiline: true, bytewise: true });
+  expect(r.failure).toBeUndefined();
+  expect(r.events.filter(e => e.type === "text_delta").map(e => e.text).join("")).toBe("Answer");
+  expect(r.events.filter(e => e.type === "reasoning_delta").map(e => e.text).join("")).toBe("<think>合成思考</think>");
+  expect(r.events.find(e => e.type === "tool_complete")).toMatchObject({ toolName: "lookup", args: { q: "汉字" } });
+  expect(r.events.filter(e => e.type === "backend_finish")).toHaveLength(1);
+  expect(r.requests).toBe(1);
+});
+
 test("standard Chat never silently adopts MiniMax semantics", async () => {
   const r = await run([start(), continuation('{"q":"x"}'), end()], { standard: true });
   expect(r.diagnostic).toMatchObject({ normalizeCause: "sdk_schema_mismatch", sdkValidation: { kind: "schema" } });
@@ -63,6 +74,10 @@ for (const [label, frames, cause] of [
   ["nonempty invalid type", [start(), continuation('{"q":"x"}', "custom"), end()], "sdk_schema_mismatch"],
   ["incomplete arguments", [start(), continuation('{"q":"x'), end()], "tool_arguments_invalid"],
   ["missing real finish", [chunk({ content: "partial" }), chunk({})], "missing_finish"],
+  ["trailing arguments after parseable prefix", [start(), continuation('{"q":"x"}'), continuation("garbage"), end()], "tool_arguments_invalid"],
+  ["changed name", [start(), chunk({ tool_calls: [{ index: 0, function: { name: "other", arguments: "{}" } }] }), end()], "tool_identity_conflict"],
+  ["conflicting finish", [chunk({ content: "answer" }, "stop"), end()], "conflicting_finish_reason"],
+  ["unknown finish", [chunk({ content: "answer" }, "new_reason")], "unsupported_finish_reason"],
   ["unsupported split state", [chunk({ reasoning_details: [{ text: "hidden" }] }), chunk({ content: "answer" }, "stop")], "unsupported_provider_state"],
   ["unterminated reasoning", [chunk({ content: "<think>hidden" }), chunk({}, "stop")], "unterminated_reasoning"],
 ] as const) {
@@ -102,4 +117,5 @@ test("dialect selection is origin-qualified, configurable, and binding-revision 
   expect(computeSelectionRevision({ agentId: "fixture", model: record })).not.toBe(computeSelectionRevision({ agentId: "fixture", model: { ...record, chatDialect: "standard" } }));
   expect(() => parseModelsFile({ version: 1, models: { [record.id]: { ...record, chatDialect: "unknown" } } })).toThrow();
   expect(() => parseModelsFile({ version: 1, models: { [record.id]: { ...record, provider: "openai-responses" } } })).toThrow();
+  expect(() => parseModelsFile({ version: 1, models: { "stub/echo": { chatDialect: "minimax-inline-v1" } } })).toThrow();
 });
