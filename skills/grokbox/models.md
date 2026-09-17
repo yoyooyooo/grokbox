@@ -15,7 +15,7 @@ grokbox agents ownership <created-agent-id>
 grokbox models use <model-id> --for <created-agent-id>
 ```
 
-`<model-id>` must exist in the catalog. Assignments apply to the next turn; other Bots stay unchanged. `confirmed_box` is eligibility, not a production sign-off. A rejected use does not mutate the assignment; inspect `error.code` / `error.next`. Ownership uncertainty routes to [ownership](ownership.md); Host-channel recovery to [adopt](adopt.md). Do not guess the class from `harness=` or the title.
+`<model-id>` must exist in the catalog. Assignments apply to the next turn; other Bots stay unchanged. `models use/reset` require exactly one of `--for <agent>` or `--default`; the explicit default is not a routing fallback. Use only the top-level `models` commands. `confirmed_box` is eligibility, not a production sign-off. A rejected use does not mutate the assignment; inspect `error.code` / `error.next`. Ownership uncertainty routes to [ownership](ownership.md); Host-channel recovery to [adopt](adopt.md). Do not guess the class from `harness=` or the title.
 
 `models use --for` also paints the selected Bot's title trailer and preserves the user title. `m=` uses its alias, otherwise the short `model` field. A title write failure does not undo the assignment; display is not routing authority. See [label](label.md).
 

@@ -206,11 +206,16 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
   security = { ...security, schemaVersion: 1, role: "box", root: options.root, installationId: installationId ?? "unassigned-at-preview" };
   if (options.role === "box") validateInstallationState({ ...security, installationId: installationId ?? "00000000-0000-4000-8000-000000000000" }, options.root);
   const blockedWriters = await (ports.writers ?? inspectConfigurationWriters)(options);
-  const descriptor = { options, sources: sources.map(({ key, path, sha256, retire }) => ({ key, path, sha256, retire })), candidate, security: options.role === "box" ? security : null, opsRevalidation };
+  const modelDocument = models ?? { version: 2, models: {}, assignments: { main: null, agents: {} } };
+  // A preview also binds generated model bytes: a schema upgrade cannot reuse
+  // the old empty-seed plan digest while publishing a different document.
+  const descriptor = { options, sources: sources.map(({ key, path, sha256, retire }) => ({ key, path, sha256, retire })), candidate,
+    modelInitialization: models === undefined && options.role === "box" ? modelDocument : null,
+    security: options.role === "box" ? security : null, opsRevalidation };
   return {
     schemaVersion: 1, options, planDigest: sha256Text(canonicalJson(descriptor)), sources, candidate,
     ...(options.role === "box" ? { installation: security as InstallationState } : {}),
-    models: models ?? { version: 1, models: {}, assignments: { main: null, agents: {} } },
+    models: modelDocument,
     modelsExist: models !== undefined, conflicts: [...new Set(conflicts)], blockedWriters,
     canApply: conflicts.length === 0 && blockedWriters.length === 0, opsRevalidation,
   };

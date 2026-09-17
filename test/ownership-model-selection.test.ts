@@ -46,7 +46,7 @@ async function fixture(mode: "box" | "temporal" | "confirmed-temporal" | "old" |
   await writeFile(join(boxRuntimeRoot, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({ version: 1,
     models: { "openai/owned": { id: "openai/owned", provider: "openai", model: "owned", endpoint: `http://127.0.0.1:${gateway.port}/v1`, apiKeyRef: "env:OWNED", contextWindowTokens: 200000,
-      capabilities: { tools: true, images: false, vision: false }, dataTypes: ["text", "tools"] } },
+      capabilities: { tools: true, images: false, vision: false, reasoning: { efforts: ["high", "xhigh"] } }, dataTypes: ["text", "tools"] } },
     assignments: { main: null, agents: { [A]: "stub/echo", [B]: "stub/echo" } },
   }));
   const deps = { configDir: root, discoveryPath, boxRuntimeRoot, env: { OWNED: "owned-test-key" }, transport: "local" as const, daemonSocket: join(root, "unused.sock") };
@@ -160,3 +160,23 @@ for (const mode of ["box", "temporal", "old", "failure", "wrong-id"] as const) {
     } finally { await f.close(); }
   });
 }
+
+test("top-level model effort works with explicit target selection and clears independently of model identity", async () => {
+  const f = await fixture();
+  try {
+    for (const effort of ["xhigh", "default"] as const) {
+      const selected = await captureCli(["models", "use", "openai/owned", "--for", A, "--effort", effort], f.deps);
+      expect(selected.code, selected.stderr).toBe(0);
+      const data = (parseJson(selected.stdout) as any).data;
+      expect(data.reasoning).toMatchObject({ requested: effort, providerReported: "unknown" });
+      expect(data.title.to).toContain("m=owned");
+      expect(data.title.to.includes("e=xhigh")).toBe(effort === "xhigh");
+      expect((await f.load()).assignments.agents[A]).toEqual({ modelId: "openai/owned", ...(effort === "xhigh" ? { reasoning: { effort } } : {}) });
+      expect((await f.load()).assignments.agents[B]).toEqual({ modelId: "stub/echo" });
+    }
+    const selected = await captureCli(["models", "use", "openai/owned", "--default", "--effort", "high"], f.deps);
+    expect(selected.code, selected.stderr).toBe(0);
+    expect((await f.load()).assignments.main).toEqual({ modelId: "openai/owned", reasoning: { effort: "high" } });
+    expect((await f.load()).assignments.agents[A]).toEqual({ modelId: "openai/owned" });
+  } finally { await f.close(); }
+});

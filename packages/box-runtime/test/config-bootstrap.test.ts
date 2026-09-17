@@ -26,6 +26,7 @@ describe("canonical bootstrap installation and recovery", () => {
     expect(layout.root).toBe(input.root);
     expect(await readlink(join(input.configDir, "config.json"))).toBe(join(input.root, "config.json"));
     const models = await readFile(join(input.root, "models.json"), "utf8");
+    expect(JSON.parse(models)).toEqual({ version: 2, models: {}, assignments: { main: null, agents: {} } });
     const before = await readFile(join(input.root, "config.json"), "utf8");
     expect(before).not.toContain(resources.security.daemon.tokenSha256);
     expect((await installConfigurationResources(input, resources)).repeated).toBe(true);

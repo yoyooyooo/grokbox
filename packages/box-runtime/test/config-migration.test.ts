@@ -93,3 +93,31 @@ describe("one-way canonical migration", () => {
     expect((await openConfigStore({ ...rootConfigLayout(root), role: "client" }).read()).document.schemaVersion).toBe(2);
   });
 });
+
+for (const interruptedAt of [undefined, "published"] as const) test(`general migration preserves reasoning schema v2 bytes, interruption=${interruptedAt ?? "none"}`, async () => {
+  const { home, root, options } = await fixture();
+  const model = { provider: "openai-responses", model: "example", endpoint: "https://example.invalid/v1", apiKeyRef: "env:SYNTHETIC_KEY",
+    contextWindowTokens: 200000, capabilities: { reasoning: { efforts: ["high", "xhigh"] } } };
+  const models = { version: 2, models: { "example/model": model }, assignments: { main: null,
+    agents: { "00000000-0000-4000-8000-000000000321": { modelId: "example/model", reasoning: { effort: "xhigh" } } } } };
+  const modelBytes = ` ${JSON.stringify(models)}\n`;
+  await writeFile(join(root, "models.json"), modelBytes, { mode: 0o600 });
+  const plan = await planConfigurationMigration(options, quiet);
+  expect(plan.canApply).toBe(true);
+  if (interruptedAt) {
+    await expect(applyConfigurationMigration(options, plan.planDigest, { ...quiet,
+      checkpoint: async phase => { if (phase === interruptedAt) throw new Error("fixture interruption"); },
+    })).rejects.toThrow("fixture interruption");
+    expect((await recoverConfigurationMigration(root, quiet)).phase).toBe("retired");
+  } else expect((await applyConfigurationMigration(options, plan.planDigest, quiet)).phase).toBe("retired");
+  expect(await readFile(join(root, "models.json"), "utf8")).toBe(modelBytes);
+  expect(await readlink(join(home, "models.json"))).toBe(join(root, "models.json"));
+});
+
+test("general migration creates model v2 only when no model file exists", async () => {
+  const { root, options } = await fixture();
+  await (await import("node:fs/promises")).unlink(join(root, "models.json"));
+  const plan = await planConfigurationMigration(options, quiet);
+  expect((await applyConfigurationMigration(options, plan.planDigest, quiet)).models).toBe("initialized");
+  expect(JSON.parse(await readFile(join(root, "models.json"), "utf8"))).toEqual({ version: 2, models: {}, assignments: { main: null, agents: {} } });
+});

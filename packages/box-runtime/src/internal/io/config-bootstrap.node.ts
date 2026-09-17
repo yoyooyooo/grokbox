@@ -151,7 +151,7 @@ export async function installConfigurationResources(raw: BootstrapInstallation, 
     await publishConfigFile(join(input.root, "state", "installation.json"), security);
     // Existing models are never normalized or rewritten by bootstrap.
     if (await readConfigFile(join(input.root, "models.json"), true) === undefined) {
-      try { await publishConfigFile(join(input.root, "models.json"), { version: 1, models: {}, assignments: { main: null, agents: {} } }, undefined, true); }
+      try { await publishConfigFile(join(input.root, "models.json"), { version: 2, models: {}, assignments: { main: null, agents: {} } }, undefined, true); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
     }
     await publishLayoutAliases(input.configDir, input.root, security.installationId);

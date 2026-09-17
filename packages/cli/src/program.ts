@@ -234,7 +234,6 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   host: "Custom-model Host channel",
   is: "Read state projections",
   runtime: "Box-local model runtime",
-  "runtime models": "Box-local model catalog and assignments",
   "runtime monitor": "Local observation history and incidents, not execution authority",
   "runtime profile": "Offline reviewed PatchProfile authoring",
   "runtime watchdog": "Box-local desired-state Host coordinator",

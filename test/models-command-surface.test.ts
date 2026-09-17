@@ -15,7 +15,7 @@ async function fixture() {
 describe("one public model command family", () => {
   test("model checks and credential persistence are top-level with no runtime model aliases", async () => {
     const paths = LEAF_COMMANDS.map((leaf) => leaf.path.join(" "));
-    for (const leaf of ["check", "list", "use", "reset", "persist-key"]) expect(paths).toContain(`models ${leaf}`);
+    for (const leaf of ["check", "list", "use", "reset", "persist-key", "show", "migrate"]) expect(paths).toContain(`models ${leaf}`);
     expect(paths.some((path) => path.startsWith("runtime models "))).toBe(false);
     const f = await fixture();
     const checked = await captureCli(["models", "check"], f.deps);
@@ -34,7 +34,7 @@ describe("one public model command family", () => {
     }
     const chosen = await captureCli(["models", "use", "stub/echo", "--default"], f.deps);
     expect(chosen.code, chosen.stderr).toBe(0);
-    expect(JSON.parse(await readFile(join(f.root, "models.json"), "utf8")).assignments).toEqual({ main: "stub/echo", agents: {} });
+    expect(JSON.parse(await readFile(join(f.root, "models.json"), "utf8")).assignments).toEqual({ main: { modelId: "stub/echo" }, agents: {} });
     const reset = await captureCli(["models", "reset", "--default"], f.deps);
     expect(reset.code, reset.stderr).toBe(0);
     expect(JSON.parse(await readFile(join(f.root, "models.json"), "utf8")).assignments).toEqual({ main: null, agents: {} });
