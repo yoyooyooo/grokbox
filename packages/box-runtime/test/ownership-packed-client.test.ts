@@ -112,7 +112,7 @@ for (const scenario of ["confirmed-box", "server-temporal", "legacy-evidence", "
       const identity = { pid, start: 1, uid: 1, ppid: 1, exe: "/owned/node", cmdline: ["owned-node"], ancestry: [1] };
       const binding = bindCompiledHost(identity, "owned-op", compile);
       await mkdir(join(durableRoot, "state"), { recursive: true });
-      await writeFile(join(durableRoot, "state/desired.json"), JSON.stringify({ version: 1, mode: "route" }));
+      await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
       await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 1,
         models: { "openai/owned-model": { provider: "openai", model: "owned-model", endpoint: "https://owned.invalid/v1",
           apiKeyRef: "env:OWNED_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } },

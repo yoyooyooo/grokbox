@@ -17,13 +17,13 @@ export async function providerRuntimeFixture(fetch: typeof globalThis.fetch, opt
 } = {}) {
   const parent = await mkdtemp(join(tmpdir(), "provider-contract-"));
   const durableRoot = join(parent, "d"), runRoot = join(parent, "r"), agentId = randomUUID();
-  await mkdir(join(durableRoot, "state"), { recursive: true }); await mkdir(runRoot);
+  await mkdir(join(durableRoot, "state"), { recursive: true, mode: 0o700 }); await mkdir(runRoot);
   const sha = "a".repeat(64), compile = { profileId: "fixture", profileSha256: sha, sourceSha256: sha, transformedSha256: sha };
   const identity = { pid: process.pid, start: 1, uid: 1, ppid: 1, exe: "/fixture/node", cmdline: ["node"], ancestry: [1] };
   const binding = bindCompiledHost(identity, "owned-operation", compile);
   const modelId = "openai/fixture";
   const catalog = { version: 1, models: { [modelId]: { provider: options.api === "responses" ? "openai-responses" : "openai-chat", model: "fixture", endpoint: "https://fixture.invalid/v1", apiKeyRef: "env:FIXTURE_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } }, assignments: { main: null, agents: { [agentId]: modelId } } };
-  await writeFile(join(durableRoot, "state/desired.json"), JSON.stringify({ version: 1, mode: "route" }));
+  await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
   await writeFile(join(durableRoot, "models.json"), JSON.stringify(catalog));
   await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha, pid: process.pid, start: 1, identity,
     at: new Date().toISOString(), profileId: "fixture", transformedSha: sha, operationId: "owned-operation", launchMode: "direct-launch", compile });

@@ -19,7 +19,10 @@ import {
   type ModelsFile,
 } from "@grokbox/runtime-kernel/selection";
 import { readBoundedJson as readExternalCatalogJson } from "./bounded-json.node.ts";
-import { desiredPath, modelsPath, resolveDurableRoot } from "./paths.ts";
+import { modelsPath, resolveDurableRoot } from "./paths.ts";
+import { runtimeDesiredFromConfig, ConfigError } from "@grokbox/runtime-kernel/config";
+import { rootConfigLayout, readConfigFile } from "./config-layout.node.ts";
+import { openConfigStore, commitConfigChange } from "./config-store.node.ts";
 
 async function readJson(path: string): Promise<unknown> {
   try {
@@ -65,7 +68,7 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
   return {
     root,
     loadModels: async () => resolveStoreModels(parseModelsFile(await readJson(modelsPath(root))), env),
-    loadDesired: async () => parseDesiredFile(await readJson(desiredPath(root))),
+    loadDesired: async () => loadRuntimeDesired(root),
     saveModels: async (file, expectedRevision) => {
       // One short cooperative commit boundary; no Server request while locked.
       // A stale writer is refused, never silently merged or retried.
@@ -86,8 +89,25 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
         }
       } finally { await held.lock.release(); }
     },
-    saveDesired: async (file) => await writeJsonAtomic(desiredPath(root), file),
+    saveDesired: async (file) => {
+      const desired = parseDesiredFile(file);
+      await commitConfigChange(openConfigStore(rootConfigLayout(root)), {
+        operationId: randomUUID(), scope: "box", kind: "set", path: "runtime.desiredMode", value: desired.mode, confirm: true,
+      });
+    },
   };
+}
+
+export async function loadRuntimeDesired(root: string): Promise<DesiredFile> {
+  const migration = await readConfigFile(join(root, "state", "config-migration.json"), true);
+  if (migration && (!(typeof migration === "object") || !["activated", "retired"].includes(String((migration as { phase?: unknown }).phase)))) {
+    throw new ConfigError("config_migration_required", "Runtime configuration migration is not activated.");
+  }
+  const raw = await readConfigFile(join(root, "config.json"), true);
+  if (raw === undefined && await readConfigFile(join(root, "state", "desired.json"), true) !== undefined) {
+    throw new ConfigError("config_migration_required", "Legacy runtime desired state requires explicit migration.");
+  }
+  return runtimeDesiredFromConfig(raw);
 }
 
 export function secretsDir(root: string): string {
@@ -139,14 +159,14 @@ export function configurationReadLayer(store: RuntimeStore): Layer.Layer<Configu
   return Layer.succeed(ConfigurationRead, {
     snapshot: () => Effect.gen(function* () {
       const modelsRaw = yield* readBoundedJson(modelsPath(store.root));
-      const desiredRaw = yield* readBoundedJson(desiredPath(store.root), true);
+      const desired = yield* Effect.tryPromise({ try: () => loadRuntimeDesired(store.root), catch: (error) => error });
       const models = yield* Effect.tryPromise({
         try: () => resolveStoreModels(parseModelsFile(modelsRaw)),
         catch: (error) => error instanceof BoxRuntimeError ? error : new BoxRuntimeError("invalid_usage", "Model configuration is unavailable."),
       });
       return {
         models,
-        desired: parseDesiredFile(desiredRaw),
+        desired,
       };
     }),
   });

@@ -25,14 +25,17 @@
         "ai": "catalog:ai-sdk",
         "classic-level": "3.0.0",
         "effect": "catalog:effect-v4-beta",
-        "sql.js": "1.13.0",
         "sqlite3": "6.0.1",
+      },
+      "devDependencies": {
+        "sql.js": "1.13.0",
       },
     },
     "packages/cli": {
       "name": "@grokbox/cli",
       "dependencies": {
         "@grokbox/box-runtime": "workspace:*",
+        "@grokbox/runtime-kernel": "workspace:*",
       },
     },
     "packages/runtime-kernel": {

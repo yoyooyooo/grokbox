@@ -209,6 +209,7 @@ describe("published Node package", () => {
       "skills/core.md",
       "skills/grokbox/SKILL.md",
       "skills/grokbox/adopt.md",
+      "skills/grokbox/config.md",
       "skills/grokbox/desktop.md",
       "skills/grokbox/diagnostics.md",
       "skills/grokbox/label.md",

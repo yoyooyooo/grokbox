@@ -50,6 +50,7 @@ grokbox skills get grokbox --topic models
 
 | Trigger | Topic |
 | --- | --- |
+| Inspect or change configuration, or migrate an old installation | [config](config.md) |
 | Custom-model ownership is blocked or unclear | [ownership](ownership.md) |
 | A command fails or doctor reports a problem | [troubleshoot](troubleshoot.md) |
 | Doctor explicitly requires Host recovery | [adopt](adopt.md) |

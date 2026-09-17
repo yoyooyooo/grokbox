@@ -1,8 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { observeAttestation } from "./authority.node.ts";
 import { bindCompiledHost, stableIdentitySha, type HostBinding } from "../host/host-binding.ts";
-import { desiredPath } from "./paths.ts";
-import { parseDesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { runtimeConfigPath } from "./paths.ts";
+import { runtimeDesiredFromConfig } from "@grokbox/runtime-kernel/config";
+import type { ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { openRuntimeStore } from "./configuration.node.ts";
 import { observeJson } from "./observation.node.ts";
 import { adoptOpStatePath, parseAdoptOpState } from "../process/transient-adopt.ts";
@@ -19,7 +20,7 @@ export type ModeldPorts = {
 /** File adapter only. The Host hook never constructs these ports or opens config/attestation files. */
 export function modeldStorePorts(durableRoot: string, runRoot: string): ModeldPorts {
   const snapshot = async () => ({
-    desired: await observeJson(desiredPath(durableRoot), parseDesiredFile),
+    desired: await observeJson(runtimeConfigPath(durableRoot), runtimeDesiredFromConfig),
     attestation: await observeAttestation(runRoot),
     journal: await observeJson(adoptOpStatePath(runRoot), parseAdoptOpState),
   });

@@ -16,7 +16,7 @@ for (const mode of ["observe", "identity", "route"] as const) {
     const dir = await mkdtemp(join(tmpdir(), "gbox-start-packed-"));
     const root = join(dir, "durable"), run = join(dir, "run");
     const children: Child[] = [];
-    await mkdir(root, { recursive: true });
+    await mkdir(root, { recursive: true, mode: 0o700 });
     const modelBytes = JSON.stringify(models);
     await writeFile(join(root, "models.json"), modelBytes);
     try {
@@ -45,7 +45,7 @@ for (const mode of ["observe", "identity", "route"] as const) {
       expect(await probeModeldIdentity(run, 500)).toEqual(firstIdentity);
       expect(await closePackedRuntime(owner)).toEqual({ code: 0, signal: null });
       expect(existsSync(join(run, "modeld.sock"))).toBe(false);
-      expect(JSON.parse(await readFile(join(root, "state/desired.json"), "utf8"))).toEqual({ version: 1, mode });
+      expect(JSON.parse(await readFile(join(root, "config.json"), "utf8")).runtime.desiredMode).toBe(mode);
       const restarted = launchPackedRuntime(dir, ["start", "--mode", mode]); children.push(restarted);
       const after = await processDeadline(restarted.ready);
       expect(after.data.configRevision).toBe(initial.data.configRevision);
@@ -68,9 +68,9 @@ for (const condition of ["missing", "malformed", "symlink", "unknown-model"] as 
   test(`packed route rejects ${condition} config without saving intent or starting a service`, async () => {
     const dir = await mkdtemp(join(tmpdir(), "gbox-start-packed-invalid-"));
     const root = join(dir, "durable");
-    await mkdir(join(root, "state"), { recursive: true });
-    const desired = JSON.stringify({ version: 1, mode: "disabled" });
-    await writeFile(join(root, "state/desired.json"), desired);
+    await mkdir(join(root, "state"), { recursive: true, mode: 0o700 });
+    const desired = JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "disabled" } });
+    await writeFile(join(root, "config.json"), desired, { mode: 0o600 });
     if (condition === "malformed") await writeFile(join(root, "models.json"), "{");
     if (condition === "symlink") {
       await writeFile(join(dir, "other.json"), JSON.stringify(models));
@@ -83,7 +83,7 @@ for (const condition of ["missing", "malformed", "symlink", "unknown-model"] as 
       expect(await processDeadline(child.exit)).toEqual({ code: 2, signal: null });
       expect(child.output().stdout).toBe("");
       expect(JSON.parse(child.output().stderr)).toMatchObject({ error: { code: "invalid_usage" } });
-      expect(await readFile(join(root, "state/desired.json"), "utf8")).toBe(desired);
+      expect(await readFile(join(root, "config.json"), "utf8")).toBe(desired);
       expect(existsSync(join(dir, "run/modeld.sock"))).toBe(false);
     } finally { await closePackedRuntime(child); await rm(dir, { recursive: true, force: true }); }
   }, 8000);

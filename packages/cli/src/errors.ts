@@ -71,6 +71,15 @@ export const EXIT_CODES = {
   host_switch_blocked: 71,
   host_mismatch: 72,
   host_source_mismatch: 72,
+  config_invalid: 73,
+  config_path_invalid: 74,
+  config_conflict: 75,
+  config_scope_required: 76,
+  config_scope_unavailable: 77,
+  config_layout_conflict: 78,
+  config_migration_required: 79,
+  config_apply_pending: 80,
+  config_commit_unknown: 81,
 } as const;
 
 export type ErrorCode = Exclude<keyof typeof EXIT_CODES, "ok">;
@@ -88,7 +97,8 @@ export type ErrorBody = {
   profileShaPrefix?: string;
   context?:
     | { clientNonce: string; target: { id: string; kind: "agent" | "group" } }
-    | { operationId: string; object?: { id: string; kind: "agent" | "group" }; phase?: string };
+    | { operationId: string; object?: { id: string; kind: "agent" | "group" }; phase?: string;
+        commit?: "committed" | "unchanged"; configRevision?: string; application?: "pending" | "restart-required" };
 };
 
 const RETRYABLE: Record<ErrorCode, boolean> = {
@@ -163,6 +173,15 @@ const RETRYABLE: Record<ErrorCode, boolean> = {
   host_switch_blocked: false,
   host_mismatch: false,
   host_source_mismatch: false,
+  config_invalid: false,
+  config_path_invalid: false,
+  config_conflict: false,
+  config_scope_required: false,
+  config_scope_unavailable: false,
+  config_layout_conflict: false,
+  config_migration_required: false,
+  config_apply_pending: false,
+  config_commit_unknown: false,
 };
 
 export class CliError extends Error {

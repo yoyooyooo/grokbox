@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@grokbox/box-runtime": "workspace:*"
+    "@grokbox/box-runtime": "workspace:*",
+    "@grokbox/runtime-kernel": "workspace:*"
   }
 }

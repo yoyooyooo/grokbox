@@ -7,7 +7,7 @@ import { runManualReadopt, runWatchdogTick, WATCHDOG_OPERATION_ID } from "../src
 import { observeEvents } from "../src/internal/io/journal.node.ts";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { projectLiveStatus, readContracts, readEvents } from "../src/internal/io/observe.ts";
-import { coordinatorStatePath, desiredPath, eventsPath, modelsPath, reviewedProfilePath } from "../src/internal/io/paths.ts";
+import { coordinatorStatePath, runtimeConfigPath as desiredPath, eventsPath, modelsPath, reviewedProfilePath } from "../src/internal/io/paths.ts";
 import { adoptOpStatePath, writeAdoptOpState } from "../src/internal/process/transient-adopt.ts";
 import { SHA, SOURCE, reviewed } from "./admission-fixture.ts";
 import { receiptFixture } from "./receipt-fixture.ts";
@@ -17,7 +17,7 @@ const AT = "2026-01-01T00:00:00.000Z";
 
 async function configuredFixture(adopt = true) {
   const f = await receiptFixture("route", adopt);
-  await fs.mkdir(dirname(desiredPath(f.root)), { recursive: true });
+  await fs.mkdir(dirname(coordinatorStatePath(f.root)), { recursive: true, mode: 0o700 });
   if (adopt) {
     await writeAttestation(f.ephemeralRoot, {
       mode: "route",
@@ -44,7 +44,7 @@ async function configuredFixture(adopt = true) {
       host: f.host,
     });
   }
-  await fs.writeFile(desiredPath(f.root), JSON.stringify(f.input.desired));
+  await fs.writeFile(desiredPath(f.root), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: f.input.desired.mode } }));
   await fs.writeFile(modelsPath(f.root), JSON.stringify(f.input.models));
   const status = () => projectLiveStatus({ root: f.root, ephemeralRoot: f.ephemeralRoot,
     processes: f.tree, classify: f.input.classify, diskSha: SHA, gatewayPid: f.gateway.pid,
@@ -55,7 +55,7 @@ async function configuredFixture(adopt = true) {
 describe("desired/actual observation closed loop", () => {
   test("disabled request is pending while the owned patched Host survives, including confirmed manual", async () => {
     const f = await configuredFixture();
-    await fs.writeFile(desiredPath(f.root), JSON.stringify({ version: 1, mode: "disabled" }));
+    await fs.writeFile(desiredPath(f.root), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "disabled" } }));
     const signals = [...f.tree.signals];
     const before = await snapshotTree(f.root);
     const observed = await f.status();

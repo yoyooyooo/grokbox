@@ -6,7 +6,7 @@
 
 ## Depends-on / Modules
 
-**统一配置收口：** [配置 Spec/T57–T60](../roadmap/configuration-rebuild-spec.md) 下，support 偏好读 config.ops.support，发布 grant 读受信机器状态，不再同存 ops-policy.json。CLI 前缀统一为 grokbox ops issue；普通 config apply 不签 grant，desktop/client 的无关修改不失效发布许可。
+**统一配置收口：** [配置 Spec/T57–T60](../roadmap/configuration-rebuild-spec.md) 下，support 偏好读 config.ops.support，发布 grant 只读受信机器状态，不属于用户偏好。CLI 前缀统一为 grokbox ops issue；普通 config apply 不签 grant，desktop/client 的无关修改不失效发布许可。
 
 依 T52 草稿/consent、T51 ConfigurationWrite、现有包 repository/bugs、bug_report.yml/SECURITY.md；不依 T47 模型诊断、T49 Host 维护或 T54 多目标。T54/T55 只决定报告接收者，不成为发布 authority。
 

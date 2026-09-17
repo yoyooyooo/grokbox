@@ -24,7 +24,7 @@
 
 ## D11 — 自然配置，不增第二套权威
 
-仍使用 ops-policy.json 的唯一 ConfigurationWrite writer：版本化 preset + 少量显式覆盖，binding 与维护 grant 是安装私有部分，support consent 不混成 config 布尔开关。requested/effective/来源/阻断原因分别展示；升版本、换 preset、恢复备份不默默授予权限或增加 token 消耗。
+偏好存入统一 config.ops，由唯一 ConfigurationWrite 程序处理版本化 preset 和显式叶覆盖。实际 binding、维护与 issue grant 存在各自受信机器状态；support consent 不是配置布尔值。requested/effective/来源/阻断原因分别展示，升版本、换 preset 和恢复备份不能授予权限或增加 token 消耗。
 
 普通配置入口可以看预览后应用 preset，进阶可做 leaf override 或声明式 apply；可移植导出不含 endpoint、secret、身份、grant、consent。关闭自动能力不等于撤回当前补丁或取消正在运行的用户任务。
 

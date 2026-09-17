@@ -2,39 +2,32 @@
 
 ## Status / Goal
 
-**Planned · 2026-09-17 Spec-only。** AH-100 不再只包装 desktop JSON；实现统一路径化命令与全入口安全提交。唯一合同：[配置 Spec §5](../roadmap/configuration-rebuild-spec.md#cli)、[§6](../roadmap/configuration-rebuild-spec.md#writer)。
+**Implemented · source and packaged CLI verified。** AH-100 的路径化配置入口、共同提交程序与消费者应用事实已落地。合同归 [配置 Spec §5–6](../roadmap/configuration-rebuild-spec.md#commands)。目标端远程配置写 capability 不在当前支持范围；请求明确拒绝而非误写本机。
 
-## Depends-on / Modules
+## Implementation
 
-依 T57 的 schema/layout/权限与 revision。kernel `internal/commands/config.ts` 和既有 ConfigurationWrite；box-runtime `config-store.node.ts` / `configuration-write.node.ts`；CLI `commands/config.ts` / `registry.ts`，profile/init、desktop、operator 同片收口旧 writer。T59 迁移程序调用本提交层，不再复制。
+kernel `internal/commands/config.ts` 的 ConfigChange 程序与 `ConfigurationWrite.changeConfig`；box-runtime `config-store.node.ts`、`config-lock.node.ts`、`config-application.node.ts`；CLI `config-registry.ts`、`commands/config.ts`。Profile、desktop keep、operator、runtime desired 与 bootstrap 使用同一 canonical writer。
 
-## Work
+已实现 get/set/unset/apply/validate/schema/path/export/preset/recover，以及迁移、bootstrap 和别名恢复入口。config 命令绕过普通 Profile 初始化，使坏配置下的 schema/path/validate/migrate 保持可用。JSON 与 string/value-file 显式二选一；路径统一支持 dotted/JSON Pointer；数组必须完整替换、revision 和确认，领域 keep 使用锁内最新集合。
 
-实现 get/set/unset/apply/validate/schema/path/export/preset：positional dotted 或 RFC6901，严格 JSON/显式 string/value-file，未知路径/类型/权限拒绝。数组 replace+确认+期望版本，无 append/索引写；父对象替换逐后代检查，不接受 floor/grant/模型字段。无 path get 脱敏，portable export 不含身份/secret/授权。
+提交与应用分开：配置写锁中重读、CAS、prepared、持久发布、读回和 committed；网络不占锁。desktop 真实采用本域快照后发布精确 PID/start 的 ack。普通 get 不代签；等待超时仍报告已保存，不能撤回文件或重启服务。
 
-唯一 ConfigChange：锁内重读、expectedRevision、schema/引用/扩权检查、canonical 同目录 staging/fsync/rename/readback，明确 unknown commit 与 operationId。所有 profile/daemon keep/on-off/runtime desired/ops config 写者用此程序；不要在 daemon 旧内存副本上拼整树回写。不持锁等网络，不自动重试 stale 变更。
+## Regression fixes
 
-client.* 本机；远程 Profile 下 Box 意图不猜目标。local 写须 Box 资格，target 必须显式且有新版 config capability，无 capability 时拒绝、不写本机 home。models 仍 local-only，Generic config 不做 provider 设置后门。
-
-回执分 committed/applied/pending/restart-required。RPC 是 invalidation hint，消费者重读 canonical；set 已保存而 reload 失败如实 pending。--wait-applied 超时保留已提交事实，不回滚或报「什么都没改」。hot reload 下个 tick 用相关 revision；不可热更不得悄悄重启。
+- 不确定 prepared 操作不能基于后来配置重新执行，即使 A→B→A 回到相同 content hash；只允许核对原 after-state，否则保留 unknown。
+- 删除 off 覆盖导致默认开启、启用摘要或恢复 target 时同样检查收费/权限确认；不能通过 unset 绕过 set 的门。
+- 所有父对象/全文修改都校验子字段，不能夹入 floor、verifier、grant 或模型目录。
+- selected remote Profile 的 Box 写入必须明确作用域；target capability 缺失不会回退本机。
 
 ## Executable acceptance
 
-创建并执行：
-
 ```bash
-bun test test/config-cli.test.ts packages/box-runtime/test/config-concurrent-writers.test.ts test/config-scope.test.ts test/config-application-receipt.test.ts
-bun run typecheck
+bun test test/config-cli.test.ts test/config-application-receipt.test.ts packages/box-runtime/test/config-lock.test.ts packages/box-runtime/test/unified-config-store.test.ts test/desktop.test.ts test/profile.test.ts test/operator.test.ts
+bun test test/config-packed.test.ts
 ```
 
-目标测试覆盖同时 config set、desktop keep、profile use、ops 改预算不丢键；数组替换与 add 可见 conflict；unknown path/类型/parent-object 夹带 floor 或 grant 后原文件字节不变；remote current profile 不写错机器；原生/remote permission 不够零写；GET 零初始化/网络副作用。
+实际用例覆盖 source/Node packed、并发 CAS、跨入口 keep 操作、锁 owner 退出和未知锁保全、prepared/commit 恢复、精确消费者 ack、等待超时、参数/错误码/脱敏、Profile 便利入口与 bootstrap 共享写入。
 
-测试 rename 后读回失败/进程取消、通知丢失、daemon 未运行、旧内存 refresh、restart-required 和 --wait-applied；commit 已发生不能被变成无副作用失败。必须经真实 CLI 与 Fake capability/临时 FS 验证，不只单测 reducer。
+## Boundaries / Remaining proof
 
-## Forbidden / Non-goals
-
-无通用文件编辑器、跨 models/config 原子事务、长期多 writer 兼容、config set 解锁维护权。不改变 AH-101 闲时下限，不在测试操作真实 daemon/Host，未批准不启动远端配置写入。
-
-## Done evidence
-
-提交同一程序的调用地图、旧 writer 删除/拒绝证明、CLI/并发/取消/生效回执测试。T59 再验真实迁移，T60 再验整个公开命令和下游整合；不把 AH-100 的原子写要求降低为最终 JSON 能 parse。
+第三方代码复审和生产切换尚未完成。没有远程配置写功能时输出 `config_scope_unavailable`；没有运行消费者时返回 pending/restart-required。ops 配置不会创建原生 Webhook 或签发维护/issue grant。上述执行能力分别由其来源票关闭，不用一个 config 命令的成功掩盖。

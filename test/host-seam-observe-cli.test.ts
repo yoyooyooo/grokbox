@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import * as credentials from "../packages/box-runtime/src/internal/io/credentials.node.ts";
-import { coordinatorStatePath, desiredPath, hostBundlesDir } from "../packages/box-runtime/src/internal/io/paths.ts";
+import { coordinatorStatePath, runtimeConfigPath as desiredPath, hostBundlesDir } from "../packages/box-runtime/src/internal/io/paths.ts";
 import { liveStatusAdapter } from "../packages/box-runtime/src/internal/io/observe.ts";
 import { liveH3AdoptAdapter } from "../packages/box-runtime/src/internal/process/live-readopt.ts";
 import { snapshotTree } from "../packages/box-runtime/test/observation-fixture.ts";

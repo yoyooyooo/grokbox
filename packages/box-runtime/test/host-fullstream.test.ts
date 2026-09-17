@@ -183,8 +183,8 @@ describe("host fullStream unix", () => {
       models: { [openaiModel.id]: openaiModel },
       assignments: { main: null, agents: { "agent-tom": openaiModel.id } },
     })}\n`);
-    await mkdir(join(durable, "state"), { recursive: true });
-    await writeFile(join(durable, "state", "desired.json"), `${JSON.stringify({ version: 1, mode: "route" })}\n`);
+    await mkdir(join(durable, "state"), { recursive: true, mode: 0o700 });
+    await writeFile(join(durable, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
     const sha = HEX("e");
     await writeAttestation(runRoot, {
       mode: "route",
@@ -375,8 +375,8 @@ describe("host fullStream unix", () => {
     await writeFile(join(durable, "models.json"), `${JSON.stringify({
       version: 1, models: {}, assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
     })}\n`);
-    await mkdir(join(durable, "state"), { recursive: true });
-    await writeFile(join(durable, "state", "desired.json"), `${JSON.stringify({ version: 1, mode: "route" })}\n`);
+    await mkdir(join(durable, "state"), { recursive: true, mode: 0o700 });
+    await writeFile(join(durable, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
     const sha = HEX("e");
     await writeAttestation(runRoot, {
       mode: "route",

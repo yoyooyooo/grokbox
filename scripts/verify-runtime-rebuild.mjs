@@ -42,6 +42,13 @@ const CASES = {
   lifecycle: [
     ["bun", "test", "packages/box-runtime/test/modeld-lifecycle.test.ts", "packages/box-runtime/test/modeld-wire.test.ts", "packages/box-runtime/test/modeld-outcome.test.ts"],
   ],
+  "config-unification": [
+    ["bun", "run", "typecheck"],
+    ["bun", "run", "build"],
+    ["bun", "test", "packages/runtime-kernel/test/unified-config.test.ts", "packages/box-runtime/test/unified-config-store.test.ts", "packages/box-runtime/test/config-lock.test.ts", "packages/box-runtime/test/config-migration.test.ts", "packages/box-runtime/test/config-bootstrap.test.ts", "packages/box-runtime/test/config-aliases.test.ts"],
+    ["bun", "test", "test/config-cli.test.ts", "test/config-application-receipt.test.ts", "test/config-domain-invalidation.test.ts", "test/config-packed.test.ts", "test/profile.test.ts", "test/operator.test.ts", "test/desktop.test.ts", "test/skills.test.ts", "test/models-command-surface.test.ts", "test/ownership-model-selection.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+  ],
   "observation-monitor": [
     ["bun", "run", "typecheck"],
     ["bun", "run", "build"],
@@ -143,6 +150,7 @@ for (const argv of mapped) {
 
 const SUPPORTS = {
   all: ["typecheck", "repository-regression-suite"],
+  "config-unification": ["strict-v2-schema-and-paths", "shared-cas-domain-writer", "client-box-scope-isolation", "consumer-specific-application-receipts", "operation-crash-reconciliation", "one-way-migration-recovery", "bootstrap-rollback-preserves-later-edits", "alias-repair-preserves-detached-files", "models-and-domain-revision-isolation", "source-and-packed-node-cli", "preload-import-fence"],
   layout: ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
   codec: ["host-context-snapshot", "openai-prompt-http-oracle"],
   status: ["status-facets", "host-journal-roles", "readonly-status-ports"],
@@ -163,6 +171,7 @@ const SUPPORTS = {
 };
 const REALITY = {
   all: "repository-tests-owned-fixtures-local-processes-sdk-mocks-and-native-source-pins",
+  "config-unification": "source-and-packed-node-cli-real-temporary-files-disposable-processes-fake-gateway-no-live-config-or-native-host-mutation",
   layout: "offline-layout",
   codec: "offline-sdk-mock-fetch",
   status: "offline-status-facets",
@@ -182,6 +191,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "config-unification": ["production-config-migration", "platform-Reset-and-home-restoration", "remote-config-write-capability", "native-webhook-ops-workers", "independent-code-review", "live-deployment"],
   "observation-monitor": ["live-scoped-native-bridge", "cross-admission-priority-refresh", "abrupt-crash-lock-recovery", "schema-migration-backup-retention", "external-notification-delivery", "service-install-autostart", "full-T41-production-acceptance", "live-deployment"],
   "runtime-start": ["supported-service-manager-install-autostart", "persistent-credential-inference", "native-model-roundtrip", "test2-state-preservation", "live-deployment", "production-release"],
   "service-lifecycle": ["runtime-start-facade", "supported-service-manager-install-autostart", "whole-machine-recreate", "persistent-model-credential-inference", "native-model-roundtrip", "ownership-native-pause", "full-unpatched-host-rollback", "live-deployment", "production-release"],

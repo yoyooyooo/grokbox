@@ -43,7 +43,7 @@ const validProfile = {
 async function writeFacts(boxRoot: string, profile: unknown = validProfile) {
   await mkdir(join(boxRoot, "state"), { recursive: true });
   await mkdir(join(boxRoot, "profiles"), { recursive: true });
-  await writeFile(join(boxRoot, "state", "desired.json"), `${JSON.stringify({ version: 1, mode: "identity" })}\n`);
+  await writeFile(join(boxRoot, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "identity" } }), { mode: 0o600 });
   await writeFile(join(boxRoot, "models.json"), `${JSON.stringify({
     version: 1, models: {}, assignments: { main: null, agents: {} },
   })}\n`);
@@ -79,7 +79,7 @@ describe("controller IO facade", () => {
       expect(kills).toEqual([]);
 
       await mkdir(join(boxRoot, "state"), { recursive: true });
-      await writeFile(join(boxRoot, "state", "desired.json"), `${JSON.stringify({ version: 1, mode: "route" })}\n`);
+      await writeFile(join(boxRoot, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
       expect(inspectControllerFacts(boxRoot).reason).toBe("missing-models");
       await writeFile(join(boxRoot, "models.json"), `${JSON.stringify({
         version: 1, models: {}, assignments: { main: null, agents: {} },

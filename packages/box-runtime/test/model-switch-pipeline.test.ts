@@ -54,7 +54,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
   await mkdir(join(durableRoot, "state"), { recursive: true });
   const model = (provider: string, name: string) => ({ provider, model: name, endpoint: "https://owned.invalid/v1", apiKeyRef: "env:OWNED_KEY",
     capabilities: { vision: false, tools: true, images: false }, dataTypes: ["text", "tools"], contextWindowTokens: 200000 });
-  await writeFile(join(durableRoot, "state/desired.json"), JSON.stringify({ version: 1, mode: "route" }));
+  await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
   await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 1,
     models: { [A]: model("openai", "owned-a"), [B]: model("openai-responses", "owned-b") },
     assignments: { main: null, agents: { [OTHER]: A } } }));

@@ -12,14 +12,15 @@ import {
   type OperationPrefix,
   type OperationRecord,
 } from "@grokbox/runtime-kernel/ports";
-import { parseDesiredFile, parseModelsFile } from "@grokbox/runtime-kernel/selection";
+import { parseModelsFile } from "@grokbox/runtime-kernel/selection";
+import { runtimeDesiredFromConfig, parseConfigJson } from "@grokbox/runtime-kernel/config";
 import { expectedCompileReceipt, compileReceiptAgrees, type CompileReceipt } from "../host/compile-receipt.ts";
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { parseCoordinatorState } from "../io/coordinator-state.ts";
 import { readAttestation, writeAttestation, type CoverageAttestation } from "../io/authority.node.ts";
 import { acquireExclusiveLock } from "../io/op-lock.ts";
-import { coordinatorStatePath, desiredPath, modelsPath, reviewedProfilePath } from "../io/paths.ts";
+import { coordinatorStatePath, runtimeConfigPath, modelsPath, reviewedProfilePath } from "../io/paths.ts";
 import { pinLaunchProfile, parseReviewedProfile, loadDurableReviewedProfile } from "../process/profile.node.ts";
 import { spawnIndependentGuardian } from "../process/guardian-process.ts";
 import { identityLaunchFields } from "../process/h3-identity.ts";
@@ -215,8 +216,8 @@ export function inspectControllerFacts(
   live?: LiveAdmissionPorts | null,
 ): { ok: boolean; reason: string | null; strategy?: "direct" | "transient" } {
   try {
-    if (!existsSync(desiredPath(boxRoot))) return { ok: false, reason: "missing-desired" };
-    const desired = parseDesiredFile(JSON.parse(readFileSync(desiredPath(boxRoot), "utf8")));
+    if (!existsSync(runtimeConfigPath(boxRoot))) return { ok: false, reason: "missing-desired" };
+    const desired = runtimeDesiredFromConfig(parseConfigJson(readFileSync(runtimeConfigPath(boxRoot), "utf8")));
     if (!existsSync(modelsPath(boxRoot))) return { ok: false, reason: "missing-models" };
     parseModelsFile(JSON.parse(readFileSync(modelsPath(boxRoot), "utf8")));
     if (!existsSync(reviewedProfilePath(boxRoot))) return { ok: false, reason: "missing-source" };

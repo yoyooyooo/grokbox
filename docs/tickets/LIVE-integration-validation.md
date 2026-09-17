@@ -57,6 +57,30 @@ Status: awaiting-integration
 
 所有 live 命令沿用来源 runbook 的真实命令面，不在本票创造 `verify --live-all` 或自动发布器。无消息 nonce、scope、profile、停止回执或 App 图像时，明确 `not-observed`；不能用标题、roster、日志最后一条或 Bot 自述拼成成功。
 
+## 当前已登记：统一配置
+
+<a id="live-config-cutover"></a>
+### LIVE-CONFIG-CUTOVER — 实际配置迁移、服务采用与 home 恢复
+Status: awaiting-integration — configuration source/packed lane verified; independent code review remains in T60
+
+来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，rebase 基线 v2 `f8c82c0`。来源提交与固定制品按集成窗口记录，当前 v2 映射/candidate 为 `not-recorded`。不得把含配置代码的 feature 分支直接指给现役 CLI/服务来代替集成。
+
+离线已证明：严格 v2、真实临时文件/锁与死亡 owner 恢复、迁移各阶段中断、模型原字节/secret ref 保持、bootstrap 回退不得覆盖后来编辑、alias 保全恢复、prepared/ABA 不重放、desktop 精确应用收据、source/packed CLI 和 Host 选模依赖隔离。独立代码复审尚待，属于 T60 非 live 阻断；本条不代替它。
+
+必须 live 的原因：当前服务的实际读路径、旧 writer 是否确已停止、source-backed shim 的切换、平台 Reset 的 home/durable 行为及既有凭据仍可用，不能从临时目录推导。当前环境/对象/停止权限/窗口均 `not-selected`，不执行 Bot、模型、Webhook 或 GitHub 探针。
+
+步骤/oracle：
+
+1. 固定 v2 候选与新旧 Node 制品；先核对本机 CLI 是源码 shim 还是安装包，并保留可以操作旧服务的固定制品。source shim 跟随工作区变化时，合入与迁移必须同一受控窗口安排，不能先让日常 CLI 因旧配置失效而失去恢复入口。
+2. 保全当前配置、布局和 secret 引用证据，在明确授权下停止会写历史格式的 daemon/bootstrap/相关运行时角色。未能证实停写则阻断；不因为锁旧就删，不擅自停止用户 Bot 或 Host。
+3. 用新制品 preview exact source/root/conflict plan，再批准 apply；检查 config/model canonical、home 别名、安装安全状态和旧文件退役。models 与 credentials 不被规范化重写，旧 explicit off/预算不被升级默认值覆盖。
+4. 按批准范围启动新消费者，核对它实际采用的 domain revision、PID/start、模型路径与 Host/modeld 运行事实。配置 committed 与消费者 applied、Host loading 分别记录；不得因保存成功声称服务恢复。
+5. home 别名恢复与平台 Reset 独立资格化。只有实际平台策略和回读证据支持时才声明对应持久性；未执行真实 Reset 就保留该向量 not_proven，不能为了补证清理用户 home。
+
+停止/恢复：新旧 writer 并存、配置/别名冲突、source 变更、未知提交、模型或 secret 引用不一致即停止。按 migration/bootstrap 的精确 before/after 版本恢复，保留后续用户编辑及所有 unknown 回执；不重放用户消息、不自动回滚官方 Host。恢复后重新检查真实消费者，未验证则报告 blocked，不靠 doctor 单项绿代替全部结果。
+
+回执：本条未运行。预算/授权、实际 source/artifact/installation/process identities 和各 oracle 结果在窗口后回填；原始私密配置与令牌不进入仓库。
+
 ## 当前已登记：modeld Effect core
 
 以下条目只登记本轮实际未取到的原生/live 证据；并不表示其他并行功能没有 live 需求。共同来源是 [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)、[T47](T47-modeld-authority-state-machine.md)、[T48](T48-modeld-causal-observation.md)、[T49](T49-modeld-qualification-and-release.md)。Source branch `feat/modeld-effect-core`，核心候选 `6d0e914`，deadline 收口 `743daea`；后续复审修复由 T49 的当前候选记录追加。

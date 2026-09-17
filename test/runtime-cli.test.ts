@@ -11,7 +11,7 @@ import * as coordinatorModule from "../packages/box-runtime/src/internal/roots/c
 import { receiptFixture } from "../packages/box-runtime/test/receipt-fixture.ts";
 import { snapshotTree } from "../packages/box-runtime/test/observation-fixture.ts";
 import { liveStatusAdapter } from "../packages/box-runtime/src/internal/io/observe.ts";
-import { desiredPath } from "../packages/box-runtime/src/internal/io/paths.ts";
+import { runtimeConfigPath as desiredPath } from "../packages/box-runtime/src/internal/io/paths.ts";
 import { appendHostJournal } from "../packages/box-runtime/src/internal/host/terminal-journal.node.ts";
 import { snapshotContracts } from "../packages/box-runtime/src/internal/io/contracts.ts";
 import { SHA, SOURCE } from "../packages/box-runtime/test/admission-fixture.ts";
@@ -48,7 +48,7 @@ async function useSyntheticAcme(boxRuntimeRoot: string) {
   }, { preconnect: async () => undefined }) as typeof fetch;
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(fakeFetch);
   try {
-    const result = await captureCli(["runtime", "models", "use", "acme/fast"], {
+    const result = await captureCli(["models", "use", "acme/fast", "--default"], {
       discoveryPath: "/dev/null", boxRuntimeRoot, env: { ACME_KEY: "synthetic-fixture-only" },
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -165,10 +165,11 @@ describe("box-local runtime CLI", () => {
       "runtime deactivate",
       "runtime log",
       "runtime contracts",
-      "runtime models check",
-      "runtime models list",
-      "runtime models use",
-      "runtime models reset",
+      "models check",
+      "models list",
+      "models use",
+      "models reset",
+      "models persist-key",
       "runtime profile analyze",
       "runtime profile observe",
       "runtime profile propose",
@@ -366,7 +367,7 @@ describe("box-local runtime CLI", () => {
       });
       expect(receipt.code, receipt.stderr).toBe(0);
       expect(data(receipt.stdout).reason).not.toBe("desired-disabled");
-      expect(JSON.parse(await readFile(desiredPath(boxRuntimeRoot), "utf8")).mode).toBe("route");
+      expect(JSON.parse(await readFile(desiredPath(boxRuntimeRoot), "utf8")).runtime.desiredMode).toBe("route");
       expect(factory).not.toHaveBeenCalled();
     } finally {
       factory.mockRestore();
@@ -514,7 +515,7 @@ describe("box-local runtime CLI", () => {
 
   test("models check labels schema evidence without claiming provider availability", async () => {
     const boxRuntimeRoot = await withRoot();
-    const checked = await captureCli(["runtime", "models", "check"], { discoveryPath: "/dev/null", boxRuntimeRoot });
+    const checked = await captureCli(["models", "check"], { discoveryPath: "/dev/null", boxRuntimeRoot });
     expect(checked.code).toBe(0);
     expect(data(checked.stdout)).toMatchObject({ ok: true, checked: ["schema"], serviceReadiness: "not_checked" });
   });
@@ -531,7 +532,7 @@ describe("box-local runtime CLI", () => {
       assignment: "main",
     });
 
-    const forBot = await captureCli(["runtime", "models", "use", "acme/fast", "--for", "11111111-1111-4111-8111-111111111111"], {
+    const forBot = await captureCli(["models", "use", "acme/fast", "--for", "11111111-1111-4111-8111-111111111111"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -542,7 +543,7 @@ describe("box-local runtime CLI", () => {
 
   test("per-Bot models use types Host/bridge unavailability with read-only doctor next", async () => {
     const boxRuntimeRoot = await withRoot();
-    const forBot = await captureCli(["runtime", "models", "use", "stub/echo", "--for", "11111111-1111-4111-8111-111111111111"], {
+    const forBot = await captureCli(["models", "use", "stub/echo", "--for", "11111111-1111-4111-8111-111111111111"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -557,7 +558,7 @@ describe("box-local runtime CLI", () => {
 
   test("models reset is refused while route is desired", async () => {
     const boxRuntimeRoot = await withRoot();
-    const use = await captureCli(["runtime", "models", "use", "stub/echo"], {
+    const use = await captureCli(["models", "use", "stub/echo", "--default"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -567,7 +568,7 @@ describe("box-local runtime CLI", () => {
       boxRuntimeRoot,
     });
     expect(activate.code, activate.stderr).toBe(0);
-    const reset = await captureCli(["runtime", "models", "reset"], {
+    const reset = await captureCli(["models", "reset", "--default"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -671,7 +672,7 @@ describe("box-local runtime CLI", () => {
       expect(activate.code, activate.stderr).toBe(0);
       expect(spy).not.toHaveBeenCalled();
 
-      const useStub = await captureCli(["runtime", "models", "use", "stub/echo"], {
+      const useStub = await captureCli(["models", "use", "stub/echo", "--default"], {
         discoveryPath: "/dev/null",
         boxRuntimeRoot,
       });
@@ -713,7 +714,7 @@ describe("box-local runtime CLI", () => {
 
   test("models use refuses a non-stub assignment while route is desired", async () => {
     const boxRuntimeRoot = await withRoot();
-    const useStub = await captureCli(["runtime", "models", "use", "stub/echo"], {
+    const useStub = await captureCli(["models", "use", "stub/echo", "--default"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -723,13 +724,13 @@ describe("box-local runtime CLI", () => {
       boxRuntimeRoot,
     });
     expect(activate.code, activate.stderr).toBe(0);
-    const drifted = await captureCli(["runtime", "models", "use", "acme/fast"], {
+    const drifted = await captureCli(["models", "use", "acme/fast", "--default"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
     expect(drifted.code).toBe(2);
     expect((parseJson(drifted.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
-    const listed = await captureCli(["runtime", "models", "list"], {
+    const listed = await captureCli(["models", "list"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -770,7 +771,7 @@ describe("box-local runtime CLI", () => {
     });
     expect(activate.code, activate.stderr).toBe(0);
     expect(data(activate.stdout)).toMatchObject({ desired: "route", inject: false });
-    const refused = await captureCli(["runtime", "models", "use", "acme/fast"], {
+    const refused = await captureCli(["models", "use", "acme/fast", "--default"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
@@ -795,7 +796,7 @@ describe("box-local runtime CLI", () => {
         assignments: { main: null, agents: {} },
       })}\n`,
     );
-    const check = await captureCli(["runtime", "models", "check"], {
+    const check = await captureCli(["models", "check"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });

@@ -99,7 +99,7 @@ export function ownedMappingProbeCommand(dnsName: string): string {
   const script = [
     "const fs=require('node:fs');",
     "try{",
-    "const c=JSON.parse(fs.readFileSync(process.env.HOME+'/.grokbox/daemon/config.json','utf8'));",
+    "const p=process.env.HOME+'/.grokbox/config.json';const s=fs.statSync(p);if(!s.isFile()||s.size>131072)process.exit(1);const d=JSON.parse(fs.readFileSync(p,'utf8'));if(d.schemaVersion!==2)process.exit(1);const c=d.daemon;",
     `process.exit(c?.serve?.httpsPort===${SERVE_HTTPS_PORT}&&c?.serve?.dnsName===${JSON.stringify(dnsName)}&&c?.serve?.proxyUrl===${JSON.stringify(`http://127.0.0.1:${DAEMON_PORT}`)}?0:1)`,
     "}catch{process.exit(1)}",
   ].join("");
@@ -175,7 +175,7 @@ export function remoteEnsureInstalledDaemonCommand(): string {
   return [
     "set -eu",
     `binary=${JSON.stringify(binary)}`,
-    'config="$HOME/.grokbox/daemon/config.json"',
+    'config="$HOME/.grokbox/config.json"',
     'pidfile="$HOME/.grokbox/daemon/daemon.pid"',
     'test -x "$binary"',
     'test -f "$config"',
@@ -271,10 +271,6 @@ async function packRuntime(deps: CliDeps, destination: string): Promise<string> 
   return join(destination, filename);
 }
 
-export function remoteFilesystemPolicyMergeCommand(): string {
-  return `node -e "const f=require('node:fs');const old=process.env.HOME+'/.grokbox/daemon/config.json';const staged=process.env.HOME+'/.grokbox/bootstrap/daemon-config.json';if(f.existsSync(old)){const prior=JSON.parse(f.readFileSync(old,'utf8'));const next=JSON.parse(f.readFileSync(staged,'utf8'));if(next.process===undefined&&prior.process!==undefined)next.process=prior.process;if(next.desktop===undefined&&prior.desktop!==undefined)next.desktop=prior.desktop;const priorRoots=prior.filesystem?.roots;const additions=next.filesystem?.roots;if(Array.isArray(priorRoots)){if(Array.isArray(additions)){const byName=new Map(additions.map((root)=>[root.name,root]));next.filesystem={roots:[...priorRoots.map((root)=>{const addition=byName.get(root.name);return addition?{...addition,operations:[...new Set([...(Array.isArray(root.operations)?root.operations:[]),...(Array.isArray(addition.operations)?addition.operations:[])])]}:root}),...additions.filter((root)=>!priorRoots.some((priorRoot)=>priorRoot.name===root.name))]};}else{next.filesystem={roots:priorRoots};}}f.writeFileSync(staged,JSON.stringify(next,null,2),{mode:384});}"`;
-}
-
 export function remotePackageIntegrityCommand(packageSha256: string): string {
   if (!/^[0-9a-f]{64}$/.test(packageSha256)) {
     throw new CliError("bootstrap_unavailable", "The local package digest is invalid.");
@@ -290,22 +286,22 @@ export function remotePackageIntegrityCommand(packageSha256: string): string {
 
 export function remoteInstallCommand(rollbackId: string, packageSha256: string): string {
   const binary = "$HOME/.grokbox/runtime/bin/grokbox";
-  const rollback = `$HOME/.grokbox/daemon/config.rollback-${rollbackId}.json`;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(rollbackId)) throw new CliError("bootstrap_unavailable", "Invalid bootstrap operation identity.");
   const integrityCheck = remotePackageIntegrityCommand(packageSha256);
   return [
     "set -eu",
     `binary=${JSON.stringify(binary)}`,
     'mkdir -p "$HOME/.grokbox/runtime" "$HOME/.grokbox/daemon" "$HOME/.grokbox/run"',
     'chmod 700 "$HOME/.grokbox" "$HOME/.grokbox/runtime" "$HOME/.grokbox/daemon" "$HOME/.grokbox/run"',
-    `if [ -f "$HOME/.grokbox/daemon/config.json" ]; then cp "$HOME/.grokbox/daemon/config.json" "${rollback}"; chmod 600 "${rollback}"; fi`,
     integrityCheck,
     'tar -xzf "$HOME/.grokbox/bootstrap/package.tgz" --strip-components=1 -C "$HOME/.grokbox/runtime"',
     'chmod 755 "$HOME/.grokbox/runtime/bin/grokbox"',
-    remoteFilesystemPolicyMergeCommand(),
-    'install -m 600 "$HOME/.grokbox/bootstrap/daemon-config.json" "$HOME/.grokbox/daemon/config.json"',
+    remotePrepareRollbackCommand(rollbackId),
     'pidfile="$HOME/.grokbox/daemon/daemon.pid"',
     `if [ -f "$pidfile" ]; then pid="$(cat "$pidfile" 2>/dev/null || true)"; case "$pid" in *[!0-9]*|"") ;; *) if kill -0 "$pid" 2>/dev/null; then status="$("$binary" daemon status 2>/dev/null || true)"; observed="$(printf "%s" "$status" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s)?.data?.daemonPid;if(Number.isSafeInteger(v))process.stdout.write(String(v))}catch{}})")"; [ "$observed" = "$pid" ] || exit 3; kill "$pid" 2>/dev/null || true; fi ;; esac; fi`,
     'i=0; while [ -S "$HOME/.grokbox/run/daemon.sock" ] && [ "$i" -lt 20 ]; do i=$((i+1)); sleep 0.1; done',
+    '[ ! -S "$HOME/.grokbox/run/daemon.sock" ]',
+    `"$binary" config bootstrap --from "$HOME/.grokbox/bootstrap/resources.json" --operation-id ${rollbackId} --confirm >/dev/null`,
     `nohup ${binary} daemon serve >"$HOME/.grokbox/daemon/daemon.log" 2>&1 </dev/null & daemon_pid=$!; printf "%s\\n" "$daemon_pid" >"$pidfile"`,
     'i=0; while [ ! -S "$HOME/.grokbox/run/daemon.sock" ] && [ "$i" -lt 50 ]; do i=$((i+1)); sleep 0.1; done',
     '[ -S "$HOME/.grokbox/run/daemon.sock" ]',
@@ -313,18 +309,13 @@ export function remoteInstallCommand(rollbackId: string, packageSha256: string):
 }
 
 export function remotePrepareRollbackCommand(rollbackId: string): string {
-  const rollback = `$HOME/.grokbox/daemon/config.rollback-${rollbackId}.json`;
-  return [
-    "set -eu",
-    'mkdir -p "$HOME/.grokbox/daemon"',
-    'chmod 700 "$HOME/.grokbox" "$HOME/.grokbox/daemon"',
-    `if [ -f "$HOME/.grokbox/daemon/config.json" ]; then cp "$HOME/.grokbox/daemon/config.json" "${rollback}"; chmod 600 "${rollback}"; fi`,
-  ].join("; ");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(rollbackId)) throw new CliError("bootstrap_unavailable", "Invalid bootstrap operation identity.");
+  return `"$HOME/.grokbox/runtime/bin/grokbox" config bootstrap --prepare --operation-id ${rollbackId} --confirm >/dev/null`;
 }
 
 export function remoteRollbackCommand(rollbackId: string): string {
   const binary = "$HOME/.grokbox/runtime/bin/grokbox";
-  const rollback = `$HOME/.grokbox/daemon/config.rollback-${rollbackId}.json`;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(rollbackId)) throw new CliError("bootstrap_unavailable", "Invalid bootstrap operation identity.");
   return [
     "set -eu",
     `binary=${JSON.stringify(binary)}`,
@@ -332,7 +323,9 @@ export function remoteRollbackCommand(rollbackId: string): string {
     `if [ -f "$pidfile" ]; then pid="$(cat "$pidfile" 2>/dev/null || true)"; case "$pid" in *[!0-9]*|"") ;; *) if kill -0 "$pid" 2>/dev/null; then status="$("$binary" daemon status 2>/dev/null || true)"; observed="$(printf "%s" "$status" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s)?.data?.daemonPid;if(Number.isSafeInteger(v))process.stdout.write(String(v))}catch{}})")"; [ "$observed" = "$pid" ] || exit 3; kill "$pid" 2>/dev/null || true; fi ;; esac; fi`,
     'i=0; while [ -S "$HOME/.grokbox/run/daemon.sock" ] && [ "$i" -lt 20 ]; do i=$((i+1)); sleep 0.1; done',
     '[ ! -S "$HOME/.grokbox/run/daemon.sock" ]',
-    `if [ -f "${rollback}" ]; then install -m 600 "${rollback}" "$HOME/.grokbox/daemon/config.json"; nohup ${binary} daemon serve >"$HOME/.grokbox/daemon/daemon.log" 2>&1 </dev/null & daemon_pid=$!; printf "%s\\n" "$daemon_pid" >"$pidfile"; i=0; while [ ! -S "$HOME/.grokbox/run/daemon.sock" ] && kill -0 "$daemon_pid" 2>/dev/null && [ "$i" -lt 50 ]; do i=$((i+1)); sleep 0.1; done; kill -0 "$daemon_pid" 2>/dev/null; cmd="$(ps -p "$daemon_pid" -o command= 2>/dev/null || true)"; case "$cmd" in *grokbox*daemon*serve*) ;; *) exit 1 ;; esac; [ "$(cat "$pidfile")" = "$daemon_pid" ]; [ -S "$HOME/.grokbox/run/daemon.sock" ]; ${binary} daemon status >/dev/null; else mv "$HOME/.grokbox/daemon/config.json" "$HOME/.grokbox/daemon/config.failed-${rollbackId}.json" 2>/dev/null || true; fi`,
+    `restore="$("$binary" config bootstrap --recover --operation-id ${rollbackId} --confirm)"`,
+    `restart="$(printf "%s" "$restore" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s).data;if(typeof d.restartPrevious!=='boolean')process.exit(1);process.stdout.write(String(d.restartPrevious))})")"`,
+    `if [ "$restart" = true ]; then nohup ${binary} daemon serve >"$HOME/.grokbox/daemon/daemon.log" 2>&1 </dev/null & daemon_pid=$!; printf "%s\\n" "$daemon_pid" >"$pidfile"; i=0; while [ ! -S "$HOME/.grokbox/run/daemon.sock" ] && kill -0 "$daemon_pid" 2>/dev/null && [ "$i" -lt 50 ]; do i=$((i+1)); sleep 0.1; done; kill -0 "$daemon_pid" 2>/dev/null; cmd="$(ps -p "$daemon_pid" -o command= 2>/dev/null || true)"; case "$cmd" in *grokbox*daemon*serve*) ;; *) exit 1 ;; esac; [ "$(cat "$pidfile")" = "$daemon_pid" ]; [ -S "$HOME/.grokbox/run/daemon.sock" ]; ${binary} daemon status >/dev/null; fi`,
   ].join("; ");
 }
 
@@ -439,7 +432,7 @@ async function bootstrapPeerDaemonOperation(
     await writeProtectedSecret(secretPath, token);
     const packagePath = await packRuntime(deps, temporary);
     const packageSha256 = createHash("sha256").update(await readFile(packagePath)).digest("hex");
-    const configPath = join(temporary, "daemon-config.json");
+    const configPath = join(temporary, "resources.json");
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
     await requireSuccess(
       deps,
@@ -455,7 +448,7 @@ async function bootstrapPeerDaemonOperation(
     );
     await requireSuccess(
       deps,
-      ["scp", ...SSH_OPTIONS, configPath, `${sshHost}:.grokbox/bootstrap/daemon-config.json`],
+      ["scp", ...SSH_OPTIONS, configPath, `${sshHost}:.grokbox/bootstrap/resources.json`],
       "bootstrap_unavailable",
       "Unable to transfer the daemon configuration to the peer.",
     );
@@ -464,12 +457,6 @@ async function bootstrapPeerDaemonOperation(
       sshArgv(sshHost, remotePackageIntegrityCommand(packageSha256)),
       "bootstrap_unavailable",
       "The transferred grokbox runtime package failed SHA-256 verification.",
-    );
-    await requireSuccess(
-      deps,
-      sshArgv(sshHost, remotePrepareRollbackCommand(rollbackId)),
-      "bootstrap_unavailable",
-      "Unable to stage the previous daemon configuration for rollback.",
     );
     daemonMutationAttempted = true;
     await requireSuccess(

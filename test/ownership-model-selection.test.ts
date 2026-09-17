@@ -41,8 +41,8 @@ async function fixture(mode: "box" | "temporal" | "confirmed-temporal" | "old" |
   } });
   const discoveryPath = await writeDiscovery({ port: gateway.port!, pid: 4242, startedAt: 1, token: "owned-command-token" });
   const boxRuntimeRoot = join(root, "runtime");
-  await mkdir(join(boxRuntimeRoot, "state"), { recursive: true });
-  await writeFile(join(boxRuntimeRoot, "state/desired.json"), JSON.stringify({ version: 1, mode: "route" }));
+  await mkdir(join(boxRuntimeRoot, "state"), { recursive: true, mode: 0o700 });
+  await writeFile(join(boxRuntimeRoot, "config.json"), JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({ version: 1,
     models: { "openai/owned": { id: "openai/owned", provider: "openai", model: "owned", endpoint: `http://127.0.0.1:${gateway.port}/v1`, apiKeyRef: "env:OWNED", contextWindowTokens: 200000,
       capabilities: { tools: true, images: false, vision: false }, dataTypes: ["text", "tools"] } },
@@ -57,7 +57,7 @@ test("real CLI use admits ownership; explicit reset only removes intent and pres
   const f = await fixture();
   try {
     for (const args of [["use", "openai/owned"], ["reset"]]) {
-      const ran = await captureCli(["runtime", "models", ...args, "--for", A], f.deps);
+      const ran = await captureCli(["models", ...args, "--for", A], f.deps);
       expect(ran.code, ran.stderr).toBe(0);
       const data = parseJson(ran.stdout) as { data: { title?: { from?: string; to?: string; written?: boolean; m?: string | null } } };
       expect(data).toMatchObject({ data: { selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", blastRadius: "single_bot", ownership: args[0] === "reset" ? "not_required_for_reset" : "confirmed_box" } });
@@ -74,7 +74,7 @@ test("real CLI use admits ownership; explicit reset only removes intent and pres
       expect((await f.load()).assignments.agents[A]).toBe(args[0] === "reset" ? undefined : "openai/owned");
     }
     expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(true);
-    const byName = await captureCli(["runtime", "models", "use", "openai/owned", "--for", "owned"], f.deps);
+    const byName = await captureCli(["models", "use", "openai/owned", "--for", "owned"], f.deps);
     expect(byName.code, byName.stderr).toBe(0);
     expect(f.calls.map(call => call.path).filter((path) => path === "/api/listAgents").length).toBeGreaterThan(0);
   } finally { await f.close(); }
@@ -85,12 +85,12 @@ for (const mode of ["temporal", "old", "failure", "wrong-id"] as const) {
     const f = await fixture(mode);
     try {
       const before = await f.load();
-      const result = await captureCli(["runtime", "models", "reset", "--for", A], f.deps);
+      const result = await captureCli(["models", "reset", "--for", A], f.deps);
       expect(result.code, result.stderr).toBe(0);
       expect(parseJson(result.stdout)).toMatchObject({ data: { ownership: "not_required_for_reset", effectiveUse: "not_observed" } });
       expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(false);
       expect(await f.load()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
-      const use = await captureCli(["runtime", "models", "use", "openai/owned", "--for", A], f.deps);
+      const use = await captureCli(["models", "use", "openai/owned", "--for", A], f.deps);
       expect(use.code).not.toBe(0);
       expect((await f.load()).assignments.agents[A]).toBeUndefined();
       expect(f.calls.some((c) => c.path === "/api/getHostStatus")).toBe(true);
@@ -112,7 +112,7 @@ for (const [mode, expected] of [
     const f = await fixture(mode);
     try {
       const before = await f.load();
-      const use = await captureCli(["runtime", "models", "use", "openai/owned", "--for", A], f.deps);
+      const use = await captureCli(["models", "use", "openai/owned", "--for", A], f.deps);
       expect(use.code).not.toBe(0);
       expect(use.stdout).toBe("");
       const error = (parseJson(use.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
@@ -133,7 +133,7 @@ test("actual packed Node reset removes an override with no Gateway/discovery or 
   try {
     const before = await f.load();
     const cli = ensurePackedCli();
-    const result = spawnSync("node", [cli, "runtime", "models", "reset", "--for", A, "--json"], {
+    const result = spawnSync("node", [cli, "models", "reset", "--for", A, "--json"], {
       env: { PATH: process.env.PATH, HOME: f.deps.configDir, GROKBOX_BOX_RUNTIME_ROOT: f.deps.boxRuntimeRoot, GROKBOX_RUN_ROOT: join(f.deps.configDir, "no-gateway") },
       encoding: "utf8", timeout: 10_000,
     });

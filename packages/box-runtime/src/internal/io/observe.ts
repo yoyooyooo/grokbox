@@ -11,12 +11,13 @@ import { probeModeldHealth, observeModeldService, type ModeldServiceObservation 
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "../process/linux.node.ts";
 import { copyInferenceTuple, projectRuntimeStatus, type ObservationGap, type RuntimeStatusFacets, type StatusEvidence } from "@grokbox/runtime-kernel/status";
-import { parseDesiredFile, parseModelsFile, routeHasNonStubAssignment, routeModelAdmitted, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { runtimeDesiredFromConfig } from "@grokbox/runtime-kernel/config";
+import { parseModelsFile, routeHasNonStubAssignment, routeModelAdmitted, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { boundedText, count, isRecord, observeJson, type Observation, type ObservationState } from "./observation.node.ts";
 import { parseReviewedProfile } from "../process/profile.node.ts";
 import type { PatchProfile } from "../host/profile.ts";
 import { findAdoptedHostState, findUniqueOfficialChain, type RoleClassifier } from "../process/official-chain.ts";
-import { desiredPath, modelsPath, reviewedProfilePath } from "./paths.ts";
+import { runtimeConfigPath, modelsPath, reviewedProfilePath } from "./paths.ts";
 import { countRoles, singleOfficialChain, type ProcessPort } from "../process/process-port.ts";
 import { adoptJournalNeedsRecovery, adoptOpStatePath, parseAdoptOpState } from "../process/transient-adopt.ts";
 
@@ -155,7 +156,7 @@ function facetsFromDraft(status: LiveStatusDraft, events: { state: EvidenceState
     now: new Date().toISOString(),
     durableRoot: status.installation.durableRoot,
     desired: {
-      source: "state/desired.json",
+      source: "config.json/runtime.desiredMode",
       observedAt: null,
       gap: observationGap(status.evidence.desired),
       value: status.activation.desired,
@@ -236,9 +237,9 @@ export function projectStatus(input: { root: string; desired: DesiredFile | null
 }
 
 export async function observeLiveDraft(input: { root: string; desired?: DesiredFile; models?: ModelsFile } & LiveStatusPorts): Promise<LiveStatusDraft> {
-  const desired = input.desired ? { state: "present" as const, value: input.desired } : await observeJson(desiredPath(input.root), parseDesiredFile);
+  const desired = input.desired ? { state: "present" as const, value: input.desired } : await observeJson(runtimeConfigPath(input.root), runtimeDesiredFromConfig);
   const models = input.models ? { state: "present" as const, value: input.models } : await observeJson(modelsPath(input.root), parseModelsFile);
-  const effectiveDesired = desired.state === "present" ? desired.value : desired.state === "missing" ? parseDesiredFile(undefined) : null;
+  const effectiveDesired = desired.state === "present" ? desired.value : desired.state === "missing" ? runtimeDesiredFromConfig(undefined) : null;
   const effectiveModels = models.state === "present" ? models.value : models.state === "missing" ? parseModelsFile(undefined) : null;
   const status = projectStatus({ root: input.root, desired: effectiveDesired, models: effectiveModels });
   status.evidence.desired = input.desired ? "provided" : desired.state;

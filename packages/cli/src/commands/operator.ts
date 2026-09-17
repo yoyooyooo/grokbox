@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { BoxRuntimeError, openRuntimeStore, projectLiveStatus } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
 import { LocalDaemonClient } from "../daemon/client.ts";
-import { readDaemonConfig, writeDaemonConfig } from "../daemon/config.ts";
+import { readDaemonConfig, setDesktopEnabled } from "../daemon/config.ts";
 import { CliError, usage } from "../errors.ts";
 import { GatewayClient } from "../gateway.ts";
 import {
@@ -190,11 +190,7 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
 }
 
 async function persistPruneEnabled(deps: CliDeps, enabled: boolean): Promise<void> {
-  const current = await readDaemonConfig(deps.configDir);
-  await writeDaemonConfig(deps.configDir, {
-    ...current,
-    desktop: { ...(current.desktop ?? {}), pruneEnabled: enabled },
-  });
+  await setDesktopEnabled(deps.configDir, enabled);
 }
 
 async function rpcPruneEnabled(deps: CliDeps, timeoutMs: number, enabled: boolean): Promise<void> {

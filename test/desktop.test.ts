@@ -522,8 +522,9 @@ describe("deleted-bot desktop reap", () => {
 });
 
 describe("desktop manager persist", () => {
-  test("keep add writes 0600 daemon config without client Profile files", async () => {
+  test("keep add writes the 0600 unified document without a daemon config tree", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-desktop-persist-"));
+    await writeDaemonConfig(configDir, { version: 1, desktop: { minIdleMs: 600_000 } });
     const current = world({ nowMs: 2_000_000, transcriptWrittenAtMs: { [AGENT_A]: 0, [AGENT_B]: 0, [AGENT_KEEP]: 0 } });
     const io: DesktopIo = {
       readWorld: async () => current,
@@ -533,16 +534,17 @@ describe("desktop manager persist", () => {
     };
     const manager = await DesktopManager.create(configDir, () => 2_000_000, { minIdleMs: 600_000 }, io);
     await manager.keepAdd(AGENT_A);
-    const configPath = join(configDir, "daemon", "config.json");
+    const configPath = join(configDir, "config.json");
     expect(((await import("node:fs")).statSync(configPath).mode & 0o777)).toBe(0o600);
     const persisted = JSON.parse(await readFile(configPath, "utf8")) as { desktop: { keepAgentIds: string[] } };
     expect(persisted.desktop.keepAgentIds).toEqual([AGENT_A]);
-    await chmod(join(configDir, "daemon"), 0o700);
+    expect(await readFile(join(configDir, "daemon", "config.json")).catch((error: NodeJS.ErrnoException) => error.code)).toBe("ENOENT");
     await manager.close();
   });
 
   test("enabled tick prunes idle forks without a second process", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-desktop-tick-"));
+    await writeDaemonConfig(configDir, { version: 1, desktop: { minIdleMs: 600_000, floorAgentIds: [AGENT_KEEP], pruneEnabled: true } });
     const stopped: number[] = [];
     const current = world({
       nowMs: 2_000_000,
@@ -576,6 +578,7 @@ describe("desktop keep id case canonicalization", () => {
 
   test("keep add with an uppercase raw uuid stores lowercase and protects the seated agent", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-desktop-case-add-"));
+    await writeDaemonConfig(configDir, { version: 1, desktop: { minIdleMs: 600_000 } });
     const stopped: number[] = [];
     const idle = world({ nowMs: 2_000_000, transcriptWrittenAtMs: { [AGENT_A]: 0, [AGENT_B]: 0, [AGENT_KEEP]: 0 } });
     const io: DesktopIo = {
@@ -605,6 +608,7 @@ describe("desktop keep id case canonicalization", () => {
 
   test("keep remove succeeds regardless of supplied hex case", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-desktop-case-remove-"));
+    await writeDaemonConfig(configDir, { version: 1, desktop: { minIdleMs: 600_000 } });
     const idle = world({ nowMs: 2_000_000, transcriptWrittenAtMs: { [AGENT_A]: 0, [AGENT_B]: 0, [AGENT_KEEP]: 0 } });
     const io: DesktopIo = {
       readWorld: async () => idle,

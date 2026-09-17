@@ -109,9 +109,9 @@ Commander parser/help and bundled skill reference derive from this registry. Uns
 
 ## 5. Profile Resolution
 
-**2026-09-17 配置重建目标，未实现：** AH-99/AH-100 以 [统一配置 Spec](roadmap/configuration-rebuild-spec.md) / T57–T60 为唯一布局/shape/writer 合同。下面既有 Profile 文件解析是现行实现，不构成保留旧文件树的义务。目标将 Profiles 嵌入 config.client，与 daemon/desktop/runtime/ops 意图共享 canonical config；Box durable 实体 + home 别名，models 物理路径与领域 schema 保持。
+Profiles live in `config.json.client.profiles`; daemon, desktop, runtime desired and ops preferences share that canonical document. The Box uses a durable physical config/models pair with managed home aliases; the client uses its own config file. Models retain their physical path and domain schema. [Configuration](configuration.md) owns the operating guide; [Configuration Spec](roadmap/configuration-rebuild-spec.md) owns schema, layout, writers and migration.
 
-统一 ConfigChange 由 kernel 定义、box-runtime 装配 Effect IO、CLI/daemon/bootstrap 同用；不存在 config-only 锁或第二 ops-policy writer。domain dependency revision 与全文件 CAS 分离；Host 仍仅有界读 models，不因统一配置导入 ops/SQLite/Effect。binding/grant/floor/pin 等机器状态由独立受信 owner 管理，generic JSON set 没有权限。迁移与消费者 applied 回执必须验证，不能以 rename/Scope 代替事务恢复。
+The kernel owns the shared schema, path grammar and ConfigChange program; box-runtime owns protected IO, writer leases and recovery. CLI, domain commands, daemon preference changes and bootstrap all call that program. Consumer dependency revisions are separate from full-document CAS. Host still reads bounded model snapshots, not ops/SQLite/Effect. Bindings, grants, floor, executable pin and verifier are machine facts with distinct authority, never generic JSON keys. Desktop records adoption only after reading the exact snapshot; queries cannot sign its acknowledgement. Bootstrap/migration are recoverable multi-artifact operations, not a claim that Effect Scope or rename gives cross-file atomicity.
 
 The config adapter owns path expansion, permissions, schema validation, secret redaction and precedence. Application use cases receive a resolved immutable Profile, not raw JSON.
 
@@ -119,7 +119,7 @@ The top-level `init [<name>]` use case owns first-run orchestration. It composes
 
 When an explicitly selected remote peer has no usable daemon endpoint and a local, passwordless SSH, or Cursor Sandbox exec bootstrap adapter is available, TTY init may request confirmation and compose the bootstrap use case. Headless init requires `--bootstrap --yes`; without an adapter it returns `bootstrap_unavailable` and an in-box remediation command. Bootstrap owns grokbox daemon installation/update, loopback listener, shared credential creation/rotation and one exact tailnet-only mapping after the bounded compatibility probe succeeds; it does not install or join Tailscale, alter ACL/tags, enable Funnel, reset Serve, or overwrite another mapping.
 
-`default` is synthesized before optional file overlay. Built-in defaults include:
+The built-in default document is synthesized only when canonical config is absent; a present invalid document is rejected before transport selection. Built-in defaults include:
 
 ```text
 current profile       default
@@ -130,17 +130,17 @@ daemon socket         $XDG_RUNTIME_DIR/grokbox/daemon.sock
 fallback socket       ~/.grokbox/run/daemon.sock
 ```
 
-Sandbox 没有隐式 account secret。Profile 只保存 `sandbox.access_token_ref`，其值使用 `env:`、`file:` 或 `keychain:` v1 reference；原始 Cursor access token 不进入 Profile、argv、日志或 box daemon。Quota 也必须显式声明完整的 `quota:{source:"cursor-web",access_token_ref:<ref>}`；它不借用 Sandbox ref，不把同一 OAuth token 的 quota 成功解释为 wake authority。macOS App descriptor 只提供 Gateway-only session，不推出 Sandbox wake 或 quota authority。
+Sandbox 没有隐式 account secret。Profile 只保存 `sandbox.accessTokenRef`，其值使用 `env:`、`file:` 或 `keychain:` v1 reference；原始 Cursor access token 不进入 Profile、argv、日志或 box daemon。Quota 也必须显式声明完整的 `quota:{source:"cursor-web",accessTokenRef:<ref>}`；它不借用 Sandbox ref，不把同一 OAuth token 的 quota 成功解释为 wake authority。macOS App descriptor 只提供 Gateway-only session，不推出 Sandbox wake 或 quota authority。
 
 Application input adapters never infer payload presence from `stdin.isTTY` alone. For `send` and `fs write`, an explicit `--text` is authoritative and suppresses stdin reads in TTY and headless processes; stdin is consumed only when `--text` is absent. Cross-kind product commands receive one positional `<target>` and an optional expected-kind guard, while kind-specific commands use positional `<agent>` or `<group>` roles.
 
 Transport resolution is capability-aware. A reachable direct Gateway cannot satisfy `host.fs.read`; SSH is never an implicit fallback. Resolution results are observable in response metadata and verbose diagnostics.
 
-Profile writes use temporary file plus atomic rename. Directory/file modes are verified after creation. Error and display projections redact every secret-bearing field.
+Profile writes use the same ConfigChange lock, revision check, schema validation, canonical temporary publication and readback as other preferences. The immutable transport DTO is derived from the stored camelCase fields; it is not a second disk schema or writer. Error/display projections redact secret-bearing fields.
 
 ### Credential references
 
-Profile v1 uses three explicit string reference forms only:
+Connection Profiles use three explicit string reference forms:
 
 ```text
 env:<NAME>
@@ -152,7 +152,7 @@ For `file:` the config adapter opens with no-follow semantics, requires a regula
 
 The config adapter resolves and redacts these references. There is no plugin registry or versioned provider-object framework in v1. Built-in Mac App session discovery may decrypt the observed Grok Bot gateway descriptor for Gateway-only use; it is not a Cursor wake or quota credential. The explicit quota source resolves only its own reference and never reads App-private storage.
 
-Remote bootstrap creates one high-entropy daemon credential, stores only its hash on the box, and writes the external raw value through a secret reference. v1 has no per-client principal registry: credential rotation is the revocation mechanism. Passwordless SSH normally runs the bootstrap helper so Gateway discovery remains inside the daemon. The implemented explicit Gateway-only maintenance path requires `transport=gateway`, `gateway_url`, and either `gateway_token_ref` or `ssh_host`; SSH discovery retrieves only the current token/generation into process memory and reruns after 401. It is never selected as fallback from daemon RPC.
+Remote bootstrap creates one high-entropy daemon credential, stores only its hash on the box, and writes the external raw value through a secret reference. v1 has no per-client principal registry: credential rotation is the revocation mechanism. Passwordless SSH normally runs the bootstrap helper so Gateway discovery remains inside the daemon. The implemented explicit Gateway-only maintenance path requires `transport=gateway`, `gatewayUrl`, and either `gatewayTokenRef` or `sshHost`; SSH discovery retrieves only the current token/generation into process memory and reruns after 401. It is never selected as fallback from daemon RPC.
 
 Deferred multi-client identity and private App credential discovery are routed through [Roadmap](roadmap/README.md).
 
@@ -365,7 +365,8 @@ packages/runtime-kernel/  private contracts/Effect programs (implemented; scope 
 packages/box-runtime/     private Host/adapters/roots target (not a second npm)
 
 /workspace/.grokbox/box-runtime/          durable (survives box reset; not git)
-  models.json  profiles/  contracts/  host-bundles/  log/events.ndjson  secrets/
+  config.json  models.json  profiles/reviewed.json  contracts/  host-bundles/  log/events.ndjson  secrets/
+  state/installation.json  state/config-operations/  state/config-consumers/
 
 ~/.grokbox/run/                           box-runtime live state (not XDG)
   attestation.json  modeld.sock  ops/  state/

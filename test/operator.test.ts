@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
+import { writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
 import { startDaemonHost } from "../packages/cli/src/daemon/host.ts";
 import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
 import {
@@ -49,13 +50,12 @@ function stubHost(host: OperatorHost, hostReason: string | null = null): { host:
 }
 
 async function desiredMode(root: string): Promise<string> {
-  return JSON.parse(await readFile(join(root, "state", "desired.json"), "utf8")).mode as string;
+  return JSON.parse(await readFile(join(root, "config.json"), "utf8")).runtime.desiredMode as string;
 }
 
 async function writeDesired(root: string, mode: "disabled" | "route" | "identity"): Promise<void> {
-  await mkdir(join(root, "state"), { recursive: true });
-  await writeFile(join(root, "state", "desired.json"), `${JSON.stringify({ version: 1, mode })}
-`);
+  await mkdir(join(root, "state"), { recursive: true, mode: 0o700 });
+  await writeFile(join(root, "config.json"), `${JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: mode } })}\n`, { mode: 0o600 });
 }
 
 async function run(argv: string[], extras?: { agents?: unknown[]; boxRuntimeRoot?: string }) {
@@ -916,6 +916,7 @@ test("top-level on starts services without switching Host and annotates host sta
   const deps: Partial<CliDeps> = {
     configDir: dir, discoveryPath, env: {}, transport: "local", stdinIsTTY: false, daemonSocket,
   };
+  await writeDaemonConfig(dir, { version: 1 });
   await writeProfileFile(dir, "default", { version: 1, transport: "local", gateway_discovery: discoveryPath, daemon_socket: daemonSocket });
   const daemon = await startDaemonHost({ ...createProductionDeps(), ...deps, transport: "local" }, daemonSocket);
   try {

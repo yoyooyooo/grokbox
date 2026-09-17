@@ -1,0 +1,5 @@
+export { ConfigError, CONFIG_MAX_BYTES, FORBIDDEN_CONFIG_KEYS, parseConfigJson, configPathTokens, configPointer, getConfigValue, replaceConfigValue, isObject, type ConfigErrorCode, type JsonValue, type JsonObject } from "./internal/config/path.ts";
+export { CONFIG_SCHEMA, OPS_SCHEMA, DAEMON_INTENT_SCHEMA, PROFILE_NAME_PATTERN, TARGET_NAME_PATTERN, OPS_INTENTS, OPS_SEVERITIES, OPS_SOURCE_KINDS, validateConfig, validateDaemonIntent, validateNode, configSchemaAt, defaultConfig, effectiveOps, redactConfig, portableConfig, type UnifiedConfig, type ConnectionProfile, type DaemonIntent, type DesktopIntent, type ProcessPolicy, type FilesystemPolicy, type SchemaNode } from "./internal/config/schema.ts";
+export { configRevision, configurationRevisions, changedConfigPaths } from "./internal/config/revision.ts";
+export { runtimeDesiredFromConfig } from "./internal/config/runtime.ts";
+export { applyConfigChange, configApplication, configChangeFingerprint, runConfigChange, type ConfigChange, type ConfigCommitReceipt } from "./internal/commands/config.ts";

@@ -2,7 +2,7 @@
 
 **状态：接受用户本轮补充，Spec-only；未实际启用或授予任何安装权限。** 本决策在同日 [分层/支持/Routine 决策](2026-09-17-ops-defaults-support-and-routines.md)之后生效，精确修订单模板接收和全部发布逐份确认的限制。唯一实施合同仍为 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，新施工增量为 T54–T56；旧 T43–T53 不因新文件成为 Done。
 
-**后续配置重建衔接：** [统一配置决策](2026-09-17-unified-configuration-rebuild.md) / [配置 Spec](../roadmap/configuration-rebuild-spec.md) 接收 AH-99/AH-100：本页通知/授权业务规则保留，但物理偏好改 config.ops、真实 bindings/grants 移到受信机器状态，命令统一 config/models/ops，不再实施 ops-policy.json 或 runtime ops config。本文旧配置位置描述仅保留决策沿革。
+配置遵循 [统一配置决策](2026-09-17-unified-configuration-rebuild.md) 与 [配置 Spec](../roadmap/configuration-rebuild-spec.md)：偏好位于 config.ops，真实 bindings/grants 由受信机器状态程序维护。config 管配置，models 管模型，ops 管通知与执行用例。
 
 ## D1 — 单目标默认，多目标按需；接收者不限模板
 

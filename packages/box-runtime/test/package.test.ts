@@ -16,7 +16,7 @@ describe("workspace packages", () => {
     expect(rootPackage.dependencies).toEqual({ "classic-level": "3.0.0", "sqlite3": "6.0.1" });
     expect(runtimePackage.dependencies.sqlite3).toBe(rootPackage.dependencies.sqlite3);
     expect(runtimePackage.dependencies["classic-level"]).toBe(rootPackage.dependencies["classic-level"]);
-    expect(cliPackage.dependencies).toEqual({ "@grokbox/box-runtime": "workspace:*" });
+    expect(cliPackage.dependencies).toEqual({ "@grokbox/box-runtime": "workspace:*", "@grokbox/runtime-kernel": "workspace:*" });
     expect(runtimePackage.exports).toEqual({ "./runtime": "./src/runtime.ts" });
   });
 

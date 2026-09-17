@@ -1,8 +1,8 @@
 # Template Bot 运维闭环实施规格
 
-**状态：2026-09-17 整合多 Bot/自定义模型分流、分层配置与授权后 CLI issue 自动化；T43–T56 尚未实现或部署。** 本文拥有「持续监测 → 原生 Webhook 唤醒 grokbox template bot → 有界诊断/主动告警 → 受限静默维护」的专项合同。总运行时树、Server 准入和原生会话语义仍归 [主 Spec](box-runtime-impl-spec.md)；来源识别归 [HSO](host-seam-ops-recognition.md)，观察/incident 归 [T41](../tickets/T41-continuous-observation-and-alerting.md)，唯一 Host 控制与持久服务归 T28/T40。本文不是另一套 modeld、Agent loop 或 Host updater。
+**状态：多 Bot/自定义模型分流、原生 Webhook、诊断与 issue 执行链仍在 T43–T56 施工；统一配置 schema/读写/迁移已由 T57–T60 实现并进行离线验收。** 本文拥有「持续监测 → 原生 Webhook 唤醒 grokbox template bot → 有界诊断/主动告警 → 受限静默维护」的专项合同。总运行时树、Server 准入和原生会话语义仍归 [主 Spec](box-runtime-impl-spec.md)；来源识别归 [HSO](host-seam-ops-recognition.md)，观察/incident 归 [T41](../tickets/T41-continuous-observation-and-alerting.md)，唯一 Host 控制与持久服务归 T28/T40。本文不是另一套 modeld、Agent loop 或 Host updater。
 
-**配置底座修订（2026-09-17，AH-99/AH-100）：** [统一配置重建 Spec](configuration-rebuild-spec.md) / T57–T60 拥有文件、公共命令、writer 与迁移；本专项业务规则继续有效。持久偏好改为 `config.json.ops`，公开运维入口为 `grokbox ops`；普通配置只有顶级 `grokbox config`，不再实现独立 `ops-policy.json` / `runtime ops config`。机器配对/授权移出普通配置，不能把本页早期示例当作已安装能力。
+配置合同唯一归 [统一配置 Spec](configuration-rebuild-spec.md)，当前命令见 [配置指南](../configuration.md)。本专项偏好存 `config.json.ops`，公开配置入口是 `grokbox config`；真实配对/授权属于机器状态。以下 `grokbox ops` 执行命令是运维票的目标，不会因配置保存成功而自动可用。
 
 [初始决策](../decisions/2026-09-16-template-ops-automation.md) · [默认层与支持流程补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md) · [多目标与发布授权决策](../decisions/2026-09-17-ops-routing-and-authorized-issues.md) · [Tickets](../tickets/README.md#template-ops-automation) · [操作与故障手册](../maintainers/template-ops-automation.md)
 
@@ -376,7 +376,7 @@ RouteDecision 持久固定 workId、incident/episode/revision、intent/audience�
 <a id="configuration-operations"></a>
 ### 6.5 配置位置、操作与变更生命期
 
-本机根、client/Box/target scope、两份人读入口与 migration 的唯一规则归 [配置 Spec](configuration-rebuild-spec.md#layout)。本专项偏好是 config.ops，不再创建 ops-policy.json；不放 repo/.env、template Memory 或原生产品数据库。root 不从 Payload/cwd 推导，配置与执行命令都须绑定明确安装。
+本机根、client/Box/target scope、两份人读入口与 migration 的唯一规则归 [配置 Spec](configuration-rebuild-spec.md#layout)。本专项偏好是 config.ops，独立于 template Memory 和原生产品数据库。root 不从 Payload/cwd 推导，配置与执行命令都须绑定明确安装。
 
 | 内容 | 放置与写入者 |
 |---|---|

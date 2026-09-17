@@ -26,8 +26,8 @@ export function modelsPath(root: string): string {
   return join(root, "models.json");
 }
 
-export function desiredPath(root: string): string {
-  return join(root, "state", "desired.json");
+export function runtimeConfigPath(root: string): string {
+  return join(root, "config.json");
 }
 
 export function coordinatorStatePath(root: string): string {

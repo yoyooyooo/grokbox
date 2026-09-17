@@ -19,6 +19,13 @@ export {
   retainedGenerationSourcePath,
 } from "./internal/io/paths.ts";
 export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration.node.ts";
+export { openConfigStore, commitConfigChange, recoverConfigCommit, unifiedConfigurationLayer, type ConfigStore, type ConfigSnapshot } from "./internal/io/config-store.node.ts";
+export { readConfigLayout, rootConfigLayout, readConfigFile, publishConfigFile, publishLayoutAliases, readInstallation, type ConfigLayout, type InstallationState } from "./internal/io/config-layout.node.ts";
+export { planConfigurationMigration, applyConfigurationMigration, recoverConfigurationMigration, configurationMigrationStatus, migrationPreview, type MigrationOptions } from "./internal/io/config-migrate.node.ts";
+export { inspectConfigurationLease } from "./internal/io/config-lock.node.ts";
+export { previewConfigurationAliases, repairConfigurationAliases } from "./internal/io/config-aliases.node.ts";
+export { configApplicationRevisions, createConfigConsumerOwner, publishConfigApplication, releaseConfigApplication, observeConfigApplication, type ConfigConsumerOwner } from "./internal/io/config-application.node.ts";
+export { prepareConfigurationBootstrap, installConfigurationResources, rollbackConfigurationBootstrap, type BootstrapInstallation, type BootstrapIntent } from "./internal/io/config-bootstrap.node.ts";
 export { saveRuntimeModels, saveRuntimeDesired, configurationWriteLayer } from "./internal/io/configuration-write.node.ts";
 export { persistModelCredential } from "./internal/io/persist-model-credential.node.ts";
 export { readManagedOwnership, type OwnershipReader } from "./internal/io/ownership-admission.node.ts";

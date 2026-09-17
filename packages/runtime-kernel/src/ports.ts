@@ -1,6 +1,7 @@
 import { Context, Effect, Stream } from "effect";
 import type { Scope } from "effect/Scope";
 import type { ModelsFile, DesiredFile } from "./selection.ts";
+import type { ConfigChange, ConfigCommitReceipt } from "./internal/commands/config.ts";
 import type { StatusEvidence } from "./internal/contract/status.ts";
 import type { InferenceEvent } from "./internal/contract/events.ts";
 import type { HostCompactRequest, HostCompactResult } from "./internal/contract/overflow.ts";
@@ -21,6 +22,7 @@ export class ConfigurationRead extends Context.Service<ConfigurationRead, {
 }>()("grokbox/ConfigurationRead") {}
 
 export class ConfigurationWrite extends Context.Service<ConfigurationWrite, {
+  readonly changeConfig?: (command: ConfigChange) => Effect.Effect<ConfigCommitReceipt, unknown>;
   readonly saveModels: (file: ModelsFile) => Effect.Effect<{ configRevision: string }, unknown>;
   readonly saveDesired: (file: DesiredFile) => Effect.Effect<{ configRevision: string }, unknown>;
 }>()("grokbox/ConfigurationWrite") {}

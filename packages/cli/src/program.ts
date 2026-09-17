@@ -1,4 +1,7 @@
 import { BoxRuntimeError } from "@grokbox/box-runtime/runtime";
+import { ConfigError } from "@grokbox/runtime-kernel/config";
+import { CONFIG_COMMANDS } from "./config-registry.ts";
+import { runConfigCommand, type ConfigCommandOptions } from "./commands/config.ts";
 import { Command, CommanderError } from "commander";
 import {
   runAgentsCreate,
@@ -124,7 +127,7 @@ import {
 } from "./commands/runtime.ts";
 import { runSkillsGet, runSkillsList } from "./skills.ts";
 
-type CliOptions = ProfileOptions & {
+type CliOptions = ProfileOptions & ConfigCommandOptions & {
   agent?: string;
   requestId?: string;
   stepId?: string;
@@ -186,6 +189,7 @@ type CliOptions = ProfileOptions & {
   intervalMs?: string;
   mode?: string;
   for?: string;
+  default?: boolean;
   from?: string;
   rev?: string;
   visibility?: string;
@@ -208,6 +212,7 @@ type LeafAction = (
 const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   skills: "Version-matched bundled skills (prefer skills get grokbox)",
   profile: "Profile configuration and selection",
+  config: "Unified configuration, validated edits and explicit one-way migration",
   daemon: "Local daemon lifecycle",
   agents: "Non-group Grok Bot agents",
   groups: "Product groups",
@@ -252,6 +257,7 @@ function unexpectedMessage(error: unknown): string {
 
 function actionBindings(): Readonly<Record<string, LeafAction>> {
   return {
+    ...Object.fromEntries(CONFIG_COMMANDS.map((leaf) => [leafKey(leaf.path), async (deps: CliDeps, args: Array<string | undefined>, options: CliOptions) => await runConfigCommand(deps, leaf.path[1]!, args, options)])),
     init: async (deps, args, options) => await runInit(deps, args[0], options),
     "skills list": async (deps, _args, options) => await runSkillsList(deps, options),
     "skills get": async (deps, args, options) => await runSkillsGet(deps, args[0] ?? "", options),
@@ -360,15 +366,17 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime incident": async (deps, args, options) => await runRuntimeIncident(deps, args[0] ?? "", options),
     "runtime group-progress": async (deps, args) => await runGroupProgress(deps, args[0] ?? ""),
     "runtime contracts": async (deps) => await runRuntimeContracts(deps),
-    "runtime models check": async (deps) => await runRuntimeModelsCheck(deps),
-    "runtime models list": async (deps) => await runRuntimeModelsList(deps),
-    "runtime models use": async (deps, args, options) =>
-      await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
-    "runtime models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
+    "models check": async (deps) => await runRuntimeModelsCheck(deps),
     "models list": async (deps) => await runRuntimeModelsList(deps),
-    "models use": async (deps, args, options) => await runRuntimeModelsUse(deps, args[0] ?? "", options.for),
-    "models reset": async (deps, _args, options) => await runRuntimeModelsReset(deps, options.for),
-    "runtime models persist-key": async (deps, args, options) => await runRuntimeModelsPersistKey(deps, args[0] ?? "", options.fromPi, options.confirm),
+    "models use": async (deps, args, options) => {
+      if (Boolean(options.for) === Boolean(options.default)) throw usage("models use requires exactly one of --for <agent> or --default.");
+      await runRuntimeModelsUse(deps, args[0] ?? "", options.for);
+    },
+    "models reset": async (deps, _args, options) => {
+      if (Boolean(options.for) === Boolean(options.default)) throw usage("models reset requires exactly one of --for <agent> or --default.");
+      await runRuntimeModelsReset(deps, options.for);
+    },
+    "models persist-key": async (deps, args, options) => await runRuntimeModelsPersistKey(deps, args[0] ?? "", options.fromPi, options.confirm),
     "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out),
     "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
     "runtime profile propose": async (deps, _args, options) => await runRuntimeProfilePropose(deps, options.from, options.out, options.against),
@@ -541,6 +549,13 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     if (error instanceof CliError) {
       writeFailure(deps.stderr, error);
       return error.exitCode;
+    }
+    if (error instanceof ConfigError) {
+      const mapped = new CliError(error.code, error.message, {
+        ...(typeof error.context?.operationId === "string" ? { context: { operationId: error.context.operationId, phase: "config-commit" } } : {}),
+      });
+      writeFailure(deps.stderr, mapped);
+      return mapped.exitCode;
     }
     if (error instanceof BoxRuntimeError) {
       const mapped = new CliError(error.code, error.message, { next: error.next, failureCode: error.failureCode });

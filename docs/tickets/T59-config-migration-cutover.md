@@ -2,39 +2,31 @@
 
 ## Status / Goal
 
-**Planned · 2026-09-17 Spec-only。** 完成 AH-99 的新装与旧安装收口：只保留新版日常 SoT，迁移可恢复，不丢 models/secrets/用户关闭设置。唯一合同：[配置 Spec §7](../roadmap/configuration-rebuild-spec.md#migration)。
+**Implemented · isolated migration/bootstrap/recovery verified。** 当前程序只读写统一配置；历史文件由明确的迁移命令一次性处理。生产 writer 切换与平台 Reset 尚未执行，登记在 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)。合同归 [配置 Spec §7](../roadmap/configuration-rebuild-spec.md#migration)。
 
-## Depends-on / Modules
+## Implementation
 
-依 T57，复用 T58 的 schema/提交组件并串行修改 shared IO。box-runtime `config-migrate.node.ts` / `config-layout.node.ts` / 现有 configuration reader；CLI bootstrap、init/upgrade、config migrate；旧 profile/daemon 解析器仅供迁移，不继续正式运行路径双读。
+`box-runtime/internal/io/config-migrate.node.ts` 拥有 preview/apply/status/recover；`config-bootstrap.node.ts` 管安装资源 saga；`config-aliases.node.ts` 管 home 别名冲突的显式保全修复。CLI/bootstrap 调这些程序，不再内联脚本合并和覆盖长期配置。
 
-## Work
+迁移固定来源原字节与 digest，验证新字段、role/root、冲突选择和旧 writer；锁内重查后发布 prepared/publishing/published/activated/retired 阶段。Box 的 config/models 入口是受管别名，canonical 在 durable；client-only 不制造模型文件。模型文件验证而不重写，chatDialect、secret refs 与格式均保留。
 
-preview 枚举实际 v1 global、profile 树、daemon/live/bootstrap 种子、desired、models 与可能存在的 ops 原型；固定 source/plan digests，分别列冲突/未知与服务影响。不存在 ops 原型就不创建迁移义务；未知字段不可经旧 parser 静默丢弃。
+普通读者没有历史路径 fallback。切换过程的原文件进入本操作受保护备份/退役目录，部分发布可对账恢复；后续用户编辑使恢复受阻，不能以旧备份覆盖。实际存在的 ops 原型偏好可迁入，原绑定/授权保全且要求重新验证，不复活执行许可。
 
-apply 前验证 legacy writer fence：相关旧 daemon/bootstrap/CLI 确已停写或换到支持新协议的 owner。新锁不能约束老程序；证明不足就 blocked，不默认停生产。models 与 secrets 物理不动，profile/desktop/runtime/ops 意图按映射收敛，安全状态分离；旧 grant 默认 suspended 复核而非晋升许可。
+bootstrap 用稳定 operationId 记录本次 before/after 配置和安全状态，所有偏好经同一 ConfigChange。新装只写 canonical；已有老配置先迁移。回退只允许仍属于本次操作的版本，后来编辑保留为冲突；不更改模型字节或启动服务。
 
-使用受保护 backup 与 migration manifest，prepared→publishing→published→activated→retired，每步幂等和可恢复。多文件 publication 后崩溃报告 partial；不宣称旧文件永远不变、不以新版存在/mtime 自动决定谁赢。新的 layout 未激活时消费者不能按半套配置做新危险动作。
-
-新 owner 确认 canonical 读取/相关 revision、secret 引用、models 无损后才退旧路径；bootstrap 调唯一新根程序，不再复制 daemon-config.json 或内联 node 改 JSON。home alias 只在身份明确后创建，冲突保全不覆盖。upgrade 只提示需要迁移，真正 migrate 必须批准 exact plan 与必要中断范围。
+别名修复能保留不合法 JSON 的编辑器片段，固定预览后恢复链接。未知链接/非 owner/冲突不得静默采用，已完成 repair 也不能覆盖第二次用户编辑。
 
 ## Executable acceptance
 
-创建并执行：
-
 ```bash
-bun test packages/box-runtime/test/config-migration.test.ts packages/box-runtime/test/config-migration-crash.test.ts test/bootstrap-config-v2.test.ts
-bun run typecheck
+bun test packages/box-runtime/test/config-migration.test.ts packages/box-runtime/test/config-bootstrap.test.ts packages/box-runtime/test/config-aliases.test.ts
+bun test test/config-packed.test.ts test/profile.test.ts
 ```
 
-用临时完整旧树/真实子进程验证每个 publication 和 activation 边界硬崩，重复 recover 不丢偏好/重复授权。覆盖空安装/旧安装/混版本 writer/两份配置冲突/home alias 替换/源在预览后变化/不支持 filesystem sync/不可读 secret/旧 bootstrap 重建文件。新装只种 canonical 新意图，旧机器现有 off/预算保留，备份不复活授权。
+覆盖每个迁移阶段中断、active writer 阻断、preview 后 source 变化、canonical/legacy 显式冲突选择、后续编辑、client-only、bootstrap 重入/回退和实际 Node CLI。既有模型 bytes 与 file/env 引用保持；源与 alias 被修改时不自动合并。
 
-models 文件与 secret 引用前后 bytes/digest 保持；v2 chatDialect 与未知新字段不掉失。canonical 模型 no-follow 不因 home alias 放松；client-only 恢复不误生 Box 模式。生产 Reset 和 native/modeld 切换仅独立批准后验证，临时模拟不能证明平台持久性。
+## Remaining proof / Stop conditions
 
-## Forbidden / Non-goals
+Linux 的进程扫描是当前停写预检；无法判定的进程/平台拒绝迁移。它不等于持续监督所有外部 writer，也不证明当前服务已经切换；现役运行须统一安排已知旧 writer 的退出、固定制品、备份与消费者读回。当前没有实际停生产 daemon/modeld/Host 或执行云电脑 Reset。
 
-不自动选择新文件赢，不双写保兼容，不强杀未归属 writer，不改 server harness/原生数据、不搬 retained Host/CLI 制品、不执行 production Reset 或隐式迁移。不用 finally 成功假装硬崩已恢复。
-
-## Done evidence
-
-提交迁移阶段/恢复矩阵、旧 writer 退役检查与 bootstrap 真实路径测试。AH-99 的文档/两文件入口/迁移/消费者 gate 全满足后再请求关闭，不在本票文档创建时改 Linear。
+独立代码复审是非 live 发布阻断，留在本票和 T60；不得转移成“只差 live”。LIVE 条目只有源提交映射、复审和授权满足后才能 ready。禁止为验收删除旧用户数据、重放任务或隐式增加通知费用。

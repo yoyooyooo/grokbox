@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, readdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { CliError } from "../errors.ts";
+import { configurationRevisions } from "@grokbox/runtime-kernel/config";
+import { openConfigStore, readConfigLayout, createConfigConsumerOwner, publishConfigApplication, releaseConfigApplication, type ConfigConsumerOwner } from "@grokbox/box-runtime/runtime";
 import {
   classifyDesktop,
   DEFAULT_MIN_IDLE_MS,
@@ -17,8 +19,8 @@ import {
 } from "../desktop.ts";
 import { isRecord } from "../util.ts";
 import {
-  readDaemonConfig,
-  writeDaemonConfig,
+  changeDesktopKeep,
+  setDesktopEnabled,
   type DaemonDesktopConfig,
 } from "./config.ts";
 
@@ -402,6 +404,10 @@ export class DesktopManager {
   private pruneEnabled: boolean;
   private locked = false;
   private tick: ReturnType<typeof setInterval> | undefined;
+  private tickWork: Promise<unknown> | undefined;
+  private closed = false;
+  private applicationOwner: ConfigConsumerOwner | undefined;
+  private applicationRevision: string | undefined;
   readonly canReap: boolean;
 
   private constructor(
@@ -409,7 +415,7 @@ export class DesktopManager {
     private readonly now: () => number,
     private readonly io: DesktopIo,
     private readonly floorAgentIds: string[],
-    private readonly minIdleMs: number,
+    private minIdleMs: number,
     keepAgentIds: string[],
     pruneEnabled: boolean,
     canReap: boolean,
@@ -447,7 +453,8 @@ export class DesktopManager {
       pinned !== null || io !== undefined,
       tickIntervalMs,
     );
-    if (manager.pruneEnabled) manager.startTick();
+    await manager.refreshPreferences(true);
+    manager.startTick();
     return manager;
   }
 
@@ -456,6 +463,7 @@ export class DesktopManager {
   }
 
   async status(): Promise<DesktopStatusResult> {
+    await this.refreshPreferences();
     const displays = classifyDesktop(await this.io.readWorld(this.now()), this.policy());
     return {
       pruneEnabled: this.pruneEnabled,
@@ -477,9 +485,9 @@ export class DesktopManager {
       throw new CliError("target_not_found", "Desktop keep requires a seated agent id or unambiguous name.");
     }
     const agentId = resolved.toLowerCase();
-    if (!this.keepAgentIds.includes(agentId) && !this.floorAgentIds.includes(agentId)) {
-      this.keepAgentIds = [...this.keepAgentIds, agentId].sort();
-      await this.persist();
+    if (!this.floorAgentIds.includes(agentId)) {
+      await changeDesktopKeep(this.configDir, agentId, "add");
+      await this.refreshPreferences(true);
     }
     return { agentId, kept: true };
   }
@@ -493,12 +501,13 @@ export class DesktopManager {
     if (this.floorAgentIds.includes(agentId)) {
       throw new CliError("invalid_usage", "Daemon-floor desktop keep ids cannot be removed.");
     }
-    this.keepAgentIds = this.keepAgentIds.filter((id) => id !== agentId);
-    await this.persist();
+    await changeDesktopKeep(this.configDir, agentId, "remove", true);
+    await this.refreshPreferences(true);
     return { agentId, kept: false };
   }
 
   async prune(yes: boolean): Promise<DesktopPruneResult> {
+    await this.refreshPreferences();
     if (!yes) {
       const displays = classifyDesktop(await this.io.readWorld(this.now()), this.policy());
       return {
@@ -519,15 +528,17 @@ export class DesktopManager {
   }
 
   async setEnabled(enabled: boolean): Promise<{ pruneEnabled: boolean }> {
-    this.pruneEnabled = enabled;
-    await this.persist();
-    if (enabled) this.startTick();
-    else this.stopTick();
+    await setDesktopEnabled(this.configDir, enabled);
+    await this.refreshPreferences(true);
+    this.startTick();
     return { pruneEnabled: this.pruneEnabled };
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     this.stopTick();
+    await this.tickWork;
+    if (this.applicationOwner) await releaseConfigApplication(this.applicationOwner);
   }
 
   private policy(): DesktopPolicy {
@@ -539,12 +550,14 @@ export class DesktopManager {
     };
   }
 
-  private async pruneLocked(): Promise<DesktopPruneResult> {
-    if (this.locked) {
+  private async pruneLocked(automatic = false): Promise<DesktopPruneResult> {
+    if (this.locked || this.closed) {
       return { dryRun: false, pruneEnabled: this.pruneEnabled, rows: [] };
     }
     this.locked = true;
     try {
+      await this.refreshPreferences(true);
+      if (automatic && (!this.pruneEnabled || !this.canReap || this.closed)) return { dryRun: false, pruneEnabled: false, rows: [] };
       const first = classifyDesktop(await this.io.readWorld(this.now()), this.policy());
       const rows: DesktopPruneRow[] = [];
       for (const row of first) {
@@ -559,6 +572,8 @@ export class DesktopManager {
           });
           continue;
         }
+        await this.refreshPreferences();
+        if (this.closed || (automatic && !this.pruneEnabled)) break;
         const second = classifyDesktop(await this.io.readWorld(this.now()), this.policy())
           .find((entry) => entry.display === row.display && entry.agentId === row.agentId);
         if (!second?.idle) {
@@ -585,10 +600,10 @@ export class DesktopManager {
   }
 
   private startTick(): void {
-    if (this.tick !== undefined) return;
+    if (this.tick !== undefined || this.closed) return;
     this.tick = setInterval(() => {
-      if (!this.pruneEnabled || this.locked || !this.canReap) return;
-      void this.pruneLocked().catch(() => undefined);
+      if (this.locked || this.closed) return;
+      this.tickWork = this.pruneLocked(true).catch(() => { this.pruneEnabled = false; });
     }, this.tickIntervalMs);
     this.tick.unref?.();
   }
@@ -599,18 +614,18 @@ export class DesktopManager {
     this.tick = undefined;
   }
 
-  private async persist(): Promise<void> {
-    const current = await readDaemonConfig(this.configDir);
-    await writeDaemonConfig(this.configDir, {
-      ...current,
-      desktop: {
-        ...(current.desktop ?? {}),
-        keepAgentIds: [...this.keepAgentIds],
-        floorAgentIds: [...this.floorAgentIds],
-        minIdleMs: this.minIdleMs,
-        pruneEnabled: this.pruneEnabled,
-        ...(current.desktop?.stopWindowPath ? { stopWindowPath: current.desktop.stopWindowPath } : {}),
-      },
-    });
+  private async refreshPreferences(recordApplication = false): Promise<void> {
+    const layout = await readConfigLayout(this.configDir);
+    const { document } = await openConfigStore(layout).read();
+    this.keepAgentIds = [...(document.desktop?.keepAgentIds ?? [])];
+    this.minIdleMs = document.desktop?.idleReclaim?.minIdleMs ?? DEFAULT_MIN_IDLE_MS;
+    this.pruneEnabled = document.desktop?.idleReclaim?.enabled === true;
+    if (!recordApplication || this.closed || layout.role !== "box") return;
+    const revision = configurationRevisions(document).desktop;
+    if (revision === this.applicationRevision) return;
+    this.applicationOwner ??= await createConfigConsumerOwner(layout.root, "desktop");
+    if (this.applicationOwner.root !== layout.root) throw new CliError("config_layout_conflict", "Desktop consumer cannot change installation roots.");
+    await publishConfigApplication(this.applicationOwner, document, this.now());
+    this.applicationRevision = revision;
   }
 }

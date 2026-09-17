@@ -6,6 +6,8 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 ## Current homes
 
+- [Configuration](configuration.md): current config v2, two human entry points, nested CLI edits, scope, migration, bootstrap recovery and consumer application receipts.
+
 - [Agent 操作入口](../skills/grokbox/SKILL.md)：默认只读小入口，以 `grokbox skills get grokbox --topic <name>` 按能力展开；Host 恢复、运行时诊断与 canary 验收不进入模板启动正文。[分层与维护约束](product-contract.md#15-bundled-skills)由入口预算、主题清单、链接和安装包测试保护。
 - [Product contract](product-contract.md): commands, Profiles, capabilities, output, and security boundaries.
 - [Architecture](architecture.md): modules, transports, daemon, Sandbox, and verification boundaries.
@@ -29,7 +31,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 - [Bot 运维闭环 Spec](roadmap/template-ops-automation-spec.md)：T43–T56，默认单接收者、允许用户指定 custom Bot、可选按意图/来源/严重度分流；user 小提醒、maintainer 配置、Routine CLI 与授权后内置 issue 提交。仅 Spec，不代表已启用；[初始决策](decisions/2026-09-16-template-ops-automation.md)限定维护预授权，[分层决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)保留低成本默认，[多目标/发布决策](decisions/2026-09-17-ops-routing-and-authorized-issues.md)扩充命名目标/故障成本/有限 issue grant，[操作手册](maintainers/template-ops-automation.md)给出单目标到高级配置与支持流程。
 
-- [统一配置与命令面重建 Spec](roadmap/configuration-rebuild-spec.md)：AH-99/AH-100 + T57–T60 的两文件入口、config v2、canonical durable/alias、单一 writer、作用域与迁移合同。取代 ops-policy 第三配置与旧通用命令草案；运维业务仍归 Template Ops Spec。[设计取舍](decisions/2026-09-17-unified-configuration-rebuild.md)。仅 Spec，未迁移/未关闭 Linear。
+- [统一配置与命令面重建 Spec](roadmap/configuration-rebuild-spec.md)：AH-99/AH-100 + T57–T60 的两文件入口、config v2、canonical durable/alias、单一 writer、作用域与迁移合同。取代 ops-policy 第三配置与旧通用命令草案；运维业务仍归 Template Ops Spec。[设计取舍](decisions/2026-09-17-unified-configuration-rebuild.md)。配置实现与隔离验证见操作指南；现役迁移和 Reset 验收另归 LIVE 队列。
 
 ## Cross-worktree live acceptance
 

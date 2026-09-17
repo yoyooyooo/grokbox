@@ -57,7 +57,7 @@ function tailnetStatus(): string {
   });
 }
 
-describe("Profile v1 storage", () => {
+describe("Profiles in unified config v2",  () => {
   test("default is synthesized and selection precedence is deterministic", async () => {
     const configDir = await makeConfigDir();
     await writeProfileFile(configDir, "remote", { version: 1, gateway_discovery: "/remote/gateway.json" });
@@ -104,16 +104,17 @@ describe("Profile v1 storage", () => {
     ]);
     expect(added.code).toBe(0);
 
-    const profilePath = join(configDir, "profiles", "remote", "config.json");
+    const profilePath = join(configDir, "config.json");
     expect((await stat(configDir)).mode & 0o777).toBe(0o700);
-    expect((await stat(join(configDir, "profiles", "remote"))).mode & 0o777).toBe(0o700);
+    expect(await stat(join(configDir, "profiles")).catch((error: NodeJS.ErrnoException) => error.code)).toBe("ENOENT");
     expect((await stat(profilePath)).mode & 0o777).toBe(0o600);
-    const persisted = JSON.parse(await readFile(profilePath, "utf8"));
-    expect(persisted.version).toBe(1);
-    expect(persisted.daemon_token_ref).toBe("file:/tmp/daemon-token");
+    const document = JSON.parse(await readFile(profilePath, "utf8"));
+    expect(document.schemaVersion).toBe(2);
+    const persisted = document.client.profiles.remote;
+    expect(persisted.daemonTokenRef).toBe("file:/tmp/daemon-token");
     expect(persisted.quota).toEqual({
       source: "cursor-web",
-      access_token_ref: "keychain:grokbox/quota",
+      accessTokenRef: "keychain:grokbox/quota",
     });
     expect(JSON.stringify(persisted)).not.toContain("CURSOR_ACCESS_TOKEN=");
 
@@ -139,7 +140,7 @@ describe("Profile v1 storage", () => {
     const removed = await cli(configDir, ["profile", "remove", "remote"]);
     expect(removed.code).toBe(0);
     const global = JSON.parse(await readFile(join(configDir, "config.json"), "utf8"));
-    expect(global.current_profile).toBe("default");
+    expect(global.client.currentProfile).toBe("default");
   });
 
   test("manual secret fallback consumes non-TTY stdin into a 0600 file without echo", async () => {
@@ -163,10 +164,8 @@ describe("Profile v1 storage", () => {
     expect(result.stderr).not.toContain("manual-secret-value");
     expect(await readFile(secretPath, "utf8")).toBe("manual-secret-value");
     expect((await stat(secretPath)).mode & 0o777).toBe(0o600);
-    const persisted = JSON.parse(
-      await readFile(join(configDir, "profiles", "remote", "config.json"), "utf8"),
-    );
-    expect(persisted.daemon_token_ref).toBe(`file:${secretPath}`);
+    const persisted = JSON.parse(await readFile(join(configDir, "config.json"), "utf8")).client.profiles.remote;
+    expect(persisted.daemonTokenRef).toBe(`file:${secretPath}`);
   });
 
   test("quota secret stdin requires an explicit source and writes one protected reference", async () => {
@@ -188,10 +187,8 @@ describe("Profile v1 storage", () => {
     expect(result.code).toBe(0);
     expect(await readFile(secretPath, "utf8")).toBe("quota-secret");
     expect((await stat(secretPath)).mode & 0o777).toBe(0o600);
-    const persisted = JSON.parse(
-      await readFile(join(configDir, "profiles", "quota", "config.json"), "utf8"),
-    );
-    expect(persisted.quota).toEqual({ source: "cursor-web", access_token_ref: `file:${secretPath}` });
+    const persisted = JSON.parse(await readFile(join(configDir, "config.json"), "utf8")).client.profiles.quota;
+    expect(persisted.quota).toEqual({ source: "cursor-web", accessTokenRef: `file:${secretPath}` });
     expect(result.stdout + result.stderr).not.toContain("quota-secret");
 
     const missingSource = await cli(
@@ -261,17 +258,17 @@ describe("Profile v1 storage", () => {
 
   test("unknown fields and inline tokens fail before any secret read", async () => {
     const configDir = await makeConfigDir();
-    const dir = join(configDir, "profiles", "bad");
-    await mkdir(dir, { recursive: true });
-    await writeFile(
-      join(dir, "config.json"),
-      JSON.stringify({ version: 1, daemon_token: "raw-secret", daemon_token_ref: "file:/missing" }),
-    );
+    await writeFile(join(configDir, "config.json"), JSON.stringify({ schemaVersion: 2, client: {
+      currentProfile: "default", profiles: { default: { transport: "auto" }, bad: { daemon_token: "raw-secret", daemonTokenRef: "file:/missing" } },
+    } }), { mode: 0o600 });
     const result = await cli(configDir, ["profile", "show", "bad"]);
-    expect(result.code).toBe(21);
-    expect(code(result.stderr)).toBe("profile_invalid");
+    expect(result.code).toBe(73);
+    expect(code(result.stderr)).toBe("config_invalid");
     expect(result.stderr).not.toContain("raw-secret");
     expect(result.stderr).not.toContain("/missing");
+    await writeFile(join(configDir, "config.json"), JSON.stringify({ schemaVersion: 2, client: {
+      currentProfile: "default", profiles: { default: { transport: "auto" } },
+    } }), { mode: 0o600 });
 
     const inline = await cli(configDir, ["profile", "add", "inline", "--daemon-token-ref", "secret"]);
     expect(inline.code).toBe(21);
@@ -566,7 +563,7 @@ describe("init discovery boundaries", () => {
       const second = await captureCli(["init", "remote", "--local"], overrides);
       expect(second.code).toBe(0);
       const global = JSON.parse(await readFile(join(configDir, "config.json"), "utf8"));
-      expect(global.current_profile).toBe("remote");
+      expect(global.client.currentProfile).toBe("remote");
     } finally {
       gateway.stop();
     }
@@ -695,12 +692,12 @@ describe("init discovery boundaries", () => {
     expect(authHeader).toStartWith("Bearer gbox_");
     const rawToken = `gbox_${nonce.replaceAll("-", "")}${nonce.replaceAll("-", "")}`;
     expect(JSON.stringify(commands)).not.toContain(rawToken);
-    const persisted = JSON.parse(await readFile(join(configDir, "profiles", "default", "config.json"), "utf8"));
+    const persisted = JSON.parse(await readFile(join(configDir, "config.json"), "utf8")).client.profiles.default;
     expect(persisted.transport).toBe("daemon");
-    expect(persisted.server_url).toContain(":8443");
-    expect(persisted.daemon_token_ref).toStartWith("file:");
+    expect(persisted.serverUrl).toContain(":8443");
+    expect(persisted.daemonTokenRef).toStartWith("file:");
     expect(JSON.stringify(persisted)).not.toContain(rawToken);
-    const secretPath = String(persisted.daemon_token_ref).slice(5);
+    const secretPath = String(persisted.daemonTokenRef).slice(5);
     expect(await readFile(secretPath, "utf8")).toBe(rawToken);
     expect((await stat(secretPath)).mode & 0o777).toBe(0o600);
     expect(commands.some((argv) => argv[0] === "scp")).toBe(true);

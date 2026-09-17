@@ -86,7 +86,7 @@ describe("registry, help, and runtime", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Start here (for Agents):");
     expect(TOP_LEVEL_COMMANDS).toEqual([
-      "init",
+      "config", "init",
       "skills",
       "profile",
       "daemon",

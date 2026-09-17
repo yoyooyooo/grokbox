@@ -58,7 +58,7 @@ grokbox agents list              # 此后使用 remote
 ```text
 --profile <name>
 GROKBOX_PROFILE
-~/.grokbox/config.json 的 current_profile
+~/.grokbox/config.json 的 client.currentProfile
 default
 ```
 
@@ -82,7 +82,7 @@ inspect local Gateway / daemon
   -> derive Self/peer DNS, IPv4 and Serve endpoint
   -> select exactly one target
   -> create or resolve the shared daemon credential when required
-  -> atomically create/update Profile and current_profile
+  -> commit client.profiles and client.currentProfile through ConfigChange
   -> run staged doctor
 ```
 
@@ -197,71 +197,42 @@ Profile、timeout 和输出 flags 可放在顶层命令前。未知 flag 在本�
 
 ### 5.1 文件布局
 
-**现行 v1 与重建目标分开：** 下列既有文件/字段描述当前实现；AH-99/AH-100 的破坏式目标以本节 §5.5 和 [统一配置 Spec](roadmap/configuration-rebuild-spec.md) 为准，尚未迁移。不能从本次文档修订推断当前 CLI 已接受新形状。
+日常人读入口仅 `~/.grokbox/config.json` 与 `~/.grokbox/models.json`。Box 的实际文件位于安装时固定的 durable root；home 入口是受管别名，CLI 在 canonical 文件旁原子发布而不覆盖别名。客户端只管理自身 config，不因为连接远端而创建本机 models 或 Box 数据树。解析位置使用 `grokbox config path [--physical] [--document config|models]`。
 
-```text
-~/.grokbox/
-├── config.json
-└── profiles/
-    └── <name>/config.json
-```
-
-全局配置最小形状：
+统一配置唯一持久 schema 为 v2：
 
 ```json
 {
-  "version": 1,
-  "current_profile": "default"
-}
-```
-
-持久化全局配置同样要求 `version: 1`；未知 version/field 返回 `profile_invalid`。`current_profile` 缺失时回退到 `default`。
-
-`default` 是内置逻辑 Profile，不要求 `profiles/default/config.json` 存在。用户创建同名文件时，只覆盖显式字段，不需要复制默认值。
-
-### 5.2 Profile 字段
-
-```json
-{
-  "version": 1,
-  "transport": "auto",
-  "server_url": "https://grokbox.example-tailnet.ts.net",
-  "daemon_token_ref": "keychain:grokbox/default/daemon",
-  "gateway_url": "https://gateway.example",
-  "gateway_token_ref": "env:GROK_BOT_GATEWAY_TOKEN",
-  "gateway_headers_ref": "file:/path/to/gateway-headers.json",
-  "gateway_discovery": "/home/box/sand-data/gateway.json",
-  "daemon_socket": "/path/to/grokbox/daemon.sock",
-  "ssh_host": "grokbox.example-tailnet.ts.net",
-  "sandbox": {
-    "access_token_ref": "env:CURSOR_ACCESS_TOKEN",
-    "keepalive_interval_ms": 600000
-  },
-  "quota": {
-    "source": "cursor-web",
-    "access_token_ref": "keychain:grokbox/quota"
+  "schemaVersion": 2,
+  "client": {
+    "currentProfile": "default",
+    "profiles": { "default": { "transport": "auto" } }
   }
 }
 ```
 
-持久化 Profile 必须显式包含 `"version": 1`；其他字段可选。内置 `default` 没有文件时由程序合成。v1 对未知 schema version 和未知字段返回 `profile_invalid`，并且在解析任何 secret reference 之前失败。字段语义：
+`default` 是内置逻辑 Profile；没有配置文件时读取合成默认值，不创建文件。完整文档还可有 daemon、desktop、runtime 和 ops 子树。Profiles 不再独立成文件，runtime desired 归 `runtime.desiredMode`。模型目录/分配维持独立 models schema，不在通用 config 中复制。安装绑定、权限授予、daemon verifier、floor 与执行收据是机器状态，不是人改配置。
 
-| Field | Meaning |
+未知字段、重复 JSON 键、错误类型/范围/引用和不支持的 schema 都拒绝，读取不降级到旧配置。旧格式只由显式 `config migrate` 读取；迁移失败或已有冲突不能以默认配置覆盖。操作与恢复见 [配置指南](configuration.md)，实现与性质测试见 [配置 Spec](roadmap/configuration-rebuild-spec.md)。
+
+### 5.2 Profile 字段
+
+每个 Profile 是 `client.profiles.<name>` 的成员；普通字段可选，缺省由连接解析器决定。存在点号的名称通过 JSON Pointer 定位，例如 `/client/profiles/work.v2/transport`。
+
+| 字段 | 含义 |
 | --- | --- |
-| `version` | Profile schema version；v1 固定为 `1` |
-| `transport` | `auto`, `daemon`, `local`, or `gateway` |
-| `server_url` | daemon HTTPS endpoint，通常由已验证的 tailnet endpoint 暴露 |
-| `daemon_token_ref` | v1 单一可轮换 daemon credential 的 secret reference |
-| `gateway_url` | 显式 Gateway 兼容路径，不是默认远程路径 |
-| `gateway_token_ref` | 显式 Gateway Bearer reference；属于高权限、易轮换凭据 |
-| `gateway_headers_ref` | Gateway routing headers JSON reference，例如 AnyRun network token |
-| `gateway_discovery` | box 内 discovery；默认 `/home/box/sand-data/gateway.json` |
-| `daemon_socket` | 本地 daemon socket；默认 XDG runtime 路径，缺失时回退 `~/.grokbox/run/daemon.sock` |
-| `ssh_host` | bootstrap/recovery 与显式 SSH discovery 目标；不参与普通业务 RPC fallback |
-| `sandbox` | `access_token_ref` 与 keeper policy；只接受显式 Cursor account token reference |
-| `quota` | 必须同时声明 `source:"cursor-web"` 与独立 `access_token_ref`；配置存在不等于方法已授权 |
+| `transport` | `auto`, `daemon`, `local`, `gateway` |
+| `serverUrl` / `daemonTokenRef` | 已验证的 daemon endpoint 与独立凭据引用 |
+| `gatewayUrl` / `gatewayTokenRef` / `gatewayHeadersRef` | 显式 Gateway 连接、Bearer 与 routing headers 引用；不是默认远程恢复路径 |
+| `gatewayDiscovery` | Box discovery；缺省 `/home/box/sand-data/gateway.json` |
+| `daemonSocket` | 本地 daemon socket；按已声明的 runtime/config 根解析 |
+| `sshHost` | bootstrap/recovery 和明确 SSH discovery 的目标；不参与普通 RPC 失败后的隐式 fallback |
+| `sandbox.accessTokenRef` / `keepaliveIntervalMs` | 独立 Sandbox 身份与 keeper 策略 |
+| `quota.source` / `accessTokenRef` | source 固定 `cursor-web`，独立 quota 身份；不授予 wake 权限 |
 
-Secret reference v1 只支持 `env:<NAME>`、`file:<absolute-path>` 和 `keychain:<service>/<account>` 三种字符串形状，不提供插件注册机制。Profile 目录必须是 `0700`；`file:` secret 必须是当前 POSIX 用户拥有的 regular file，不能是 symlink，且不得给 group/other 任何权限（通常为 `0600` 或 `0400`）。实现必须在读取时验证这些条件，不只依赖调用者约定；无法验证 POSIX ownership 的平台应改用 `env:` 或 `keychain:`。Profile 本身不接受内联 token。`profile show`、日志、错误和测试 fixture 一律脱敏。
+`profile add/update/use/remove` 是领域便利入口，共用 v2 配置的单一 writer、冲突检查和原子读回，不另写文件。`client.currentProfile` 必须指向存在的 Profile；默认 Profile 不能删除。
+
+Secret reference 接受 `env:<NAME>`、`file:<absolute-path>`、`keychain:<service>/<account>`，不接受内联 token。配置目录受保护；`file:` secret 必须为当前 POSIX 用户拥有、非 symlink、不给 group/other 访问的 regular file。无法验证 ownership 的环境不伪称已验证。`profile show`、`config get`、日志和错误均不输出秘密；portable export 不包含凭据位置或安装身份。
 
 ### 5.3 `auto` transport
 
@@ -270,8 +241,8 @@ Secret reference v1 只支持 `env:<NAME>`、`file:<absolute-path>` 和 `keychai
 ```text
 1. 可用的本地 daemon socket
 2. 可读的本地 Gateway discovery（仅 Gateway 能力）
-3. 已配置的 daemon server_url
-4. 已配置的 explicit gateway_url
+3. 已配置的 daemon serverUrl
+4. 已配置的 explicit gatewayUrl
 5. capability_unavailable
 ```
 
@@ -281,24 +252,24 @@ CLI 不从 daemon 静默降级到直接文件写入；不从失败的远程 RPC 
 
 外部凭据按用途解析，不能把 Cursor 身份、daemon credential 和 Gateway Bearer 当作一种 token：
 
-1. 完整远程路径由 bootstrap 生成一个高熵、可轮换的 daemon credential；外部只保存 `daemon_token_ref`，Gateway Bearer 不离开 box。v1 不建立 per-client principal 或 revocation registry，撤销通过 credential rotation 完成。
+1. 完整远程路径由 bootstrap 生成一个高熵、可轮换的 daemon credential；外部只保存 `daemonTokenRef`，Gateway Bearer 不离开 box。v1 不建立 per-client principal 或 revocation registry，撤销通过 credential rotation 完成。
 2. macOS Grok Bot App session 是内置 Gateway-only 来源：读取 `gateway-descriptor.json`，并使用 Keychain 中 `Grok Bot Safe Storage` 的口令解密临时 Gateway URL、Bearer 和 routing headers。它不授予 Sandbox wake。
-3. `sandbox.access_token_ref` 必须显式解析为 Cursor account access token，供 Sandbox lifecycle 方法使用；Cursor dashboard API key 不等价。v1 不逆向 App 私有账号 secret。
-4. `quota.access_token_ref` 是 quota-only 方法引用；即使它与 Sandbox ref 指向同一个显式 OAuth fixture，CLI 也不据此推出 wake/keeper authority，且不会从缺失或失败的 quota ref 自动改用 Sandbox ref。
+3. `sandbox.accessTokenRef` 必须显式解析为 Cursor account access token，供 Sandbox lifecycle 方法使用；Cursor dashboard API key 不等价。v1 不逆向 App 私有账号 secret。
+4. `quota.accessTokenRef` 是 quota-only 方法引用；即使它与 Sandbox ref 指向同一个显式 OAuth fixture，CLI 也不据此推出 wake/keeper authority，且不会从缺失或失败的 quota ref 自动改用 Sandbox ref。
 5. 显式 Gateway-only Profile 可以使用 SSH discovery，在连接建立和 401/generation drift 后重新读取远端 discovery；secret 只留在进程内或外部 keychain。这不是普通命令失败后的隐式 SSH fallback。
 6. 手工 Gateway credential 是最后维护 fallback，只能通过 no-echo secret 输入落入 `file:`/`keychain:` reference；单独复制 `gateway.json` token 仍可能缺 endpoint、routing headers 和 rotation。
 
 App descriptor 或 secret reference 的 absent、locked/denied、malformed、unsupported、ambiguous、incomplete、stale 与 unauthorized 状态都必须可诊断且不输出 secret。后置的多客户端身份、通用 credential plugin 和 App 私有 Cursor token 发现见 [Roadmap](roadmap/README.md)。
 
-### 5.5 统一配置重建（2026-09-17，T57–T60 目标）
+### 5.5 配置命令、提交与生效
 
-日常逻辑入口仅 `~/.grokbox/config.json` 与 `~/.grokbox/models.json`；Box 实体为既有 durableRoot 下 config.json（新）与 models.json（不搬），home 为受管别名。client-only 保持自己的 config，远程 Profile 不自动改变配置写入对象。新 config v2 聚合 client.currentProfile/profiles、daemon、desktop.idleReclaim/keepAgentIds、runtime.desiredMode、ops 稀疏显式偏好；不再 Profile 独立文件树、desired 意图文件或 ops-policy 第三配置。
+`config get/set/unset/apply/validate/schema/path/export/preset/migrate/recover` 使用同一 schema 与 ConfigChange 提交层；profile/desktop/operator/runtime desired 的领域入口不另写整树。父对象替换仍检查完整后代，不能夹带 floor、grant 或 models；数组只替换并要求明确确认与观察到的 revision。锁内重读、CAS、受保护 staging、fsync/rename/readback 共同防止丢更新。坏值与 stale revision 拒绝且原文件不变。
 
-实际 binding/grant、floor/可执行文件 pin/credential verifier、observations/attestation/源档案是机器状态，不是通用 set 可写内容。models 继续独立版本和既有逐 Bot/credential/最新 v2 字段，不为了格式统一重造 provider schema。路径、schema、权限、revision 和一次性迁移唯一归 [配置 Spec](roadmap/configuration-rebuild-spec.md)，T57–T60 共同构成 AH-99/AH-100 验收；AH-101 的闲时行为不顺带改。
+client 路径属于发起者，Box 路径要求安装作用域。当前远端未提供 configuration capability 时，`--scope target` 明确拒绝；选中远程 Profile（包括环境选择）不能默写本机 Box。`config get --effective` 只解析意图，不证明 monitor/通知/维护已运行。
 
-公开主线增加 `grokbox config get/set/unset/apply/validate/schema/path/export/preset/migrate`，运维业务改 `grokbox ops`，模型归 `grokbox models`；profile/desktop 便利命令调用同一 ConfigChange，而非各自写整树。父对象 set 也不能夹带授权/floor，数组只替换并确认，坏值原文件不变，跨 writer 锁+CAS+readback 防丢更新。保存成功但 RPC/consumer 未应用必须报告 committed/pending；不把它说成未保存，也不偷偷重启。修改 desktop/client 不撤销无关 target/grant/模型 TURN。
+保存回执是 committed/unchanged；应用回执分 not-required、pending、applied、restart-required。桌面消费者在实际采用配置后记录域 revision 与进程身份；查询不替消费者确认。`--wait-applied --timeout-ms <n>` 只等待相同域的真实回执，超时保留已提交 operationId/configRevision；不会重启 daemon 或 Host。模型与依赖域分别计算 revision，desktop/client 变化不失效其它领域的配置资格。
 
-迁移必须有 exact 预览、旧 writer fence、backup/阶段恢复与消费者读回；不双写、不按新文件存在就覆盖旧值，不向 symlink 别名 rename。只安装新 CLI 不自动搬生产配置，未获授权不停止 Bot 或改 Host。公开帮助/安装技能在实现完成时才改为可执行新命令。
+迁移通过 exact 预览、旧 writer fence、受保护备份和阶段恢复进行。bootstrap 调用同一提交程序，原生进程切换仍由自己的生命周期 owner 负责；失败恢复只恢复该次安装的匹配版本，不能覆盖其后用户编辑。安装新 CLI、读取配置和迁移配置不隐含开通监测、模型费用或 Host 维护权限。
 
 ## 6. Capability 路由
 
@@ -493,7 +464,7 @@ Unix modeld 复用唯一 `runtime-kernel` admission / RouteBinding / STEP ledger
 
 默认每 STEP 不自动重试。显式 `GROKBOX_MODELD_PROVIDER_RECOVERY=pre-output-http` 启用 kernel 内的模型请求恢复，接受重复上游推理/费用的可能性：仅在未发布任何非空文本、思考或工具材料时，针对明确 HTTP 429（非额度错误）/502/503/504，在本 STEP 的时间和额外请求预算内等待并再次请求。每次 attempt 独立持久声明，使用同一 snapshot 和 binding，并再次检查 ownership、取消、原凭据指纹及模型选择；检查之后再次核对剩余恢复时间。最终成功只放行一次，持久结算失败不释放成功终态。未知网络结果、流不完整、工具参数错误、已输出的请求不自动恢复；不重发 sendPrompt、不重放整个 TURN 或工具、不切备用模型、不跨重启复活旧请求。进度事件只报告状态，不授予执行权。模型 backend 自身仍是单次调用，monitor 不拥有恢复器。详见[恢复与错误呈现](maintainers/run-outcome-observation.md#v5-失败摘要与受控模型恢复)。
 
-长效根为 `/workspace/.grokbox/box-runtime/`（配置、PatchProfile、合同切片、事件日志；云电脑重置不丢）。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。现有 grokbox Profile 仍在 `~/.grokbox`，本次不搬家。`models.json` 持久化的凭据字段（`credentials` 与本地 `apiKeyRef`）只接受 `env:<NAME>` 与 `file:/absolute/path`；`file:` 放长效树 `secrets/`；literal secret 与 `$VAR` 为 schema error。`externalCatalog` 含 `pi` 时，内存中的适配记录可使用 `pi-provider:<name>` 指向 Pi `models.json` 里该 provider 的 string `apiKey`，不得把该密钥明文写入 grokbox `models.json`，也不得执行 command-form `!/` 键。短效 live state 固定 `~/.grokbox/run/`（含 `attestation.json` 与 `modeld.sock`），不读 `XDG_RUNTIME_DIR`。daemon socket 仍按 §5.2：默认 XDG runtime 路径，缺失时回退 `~/.grokbox/run/daemon.sock`。
+长效根默认 `/workspace/.grokbox/box-runtime/`，保存 canonical config/models、PatchProfile、合同切片和事件日志；人读入口通过安装布局映射到 `~/.grokbox/config.json` 与 `models.json`。Profile 意图已经归 config.client，短效回执和 CLI 安装树不是配置。部署的实际 Reset 持久性单列验收，不从路径名称推断。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。`models.json` 持久化的凭据字段（`credentials` 与本地 `apiKeyRef`）只接受 `env:<NAME>` 与 `file:/absolute/path`；`file:` 放长效树 `secrets/`；literal secret 与 `$VAR` 为 schema error。`externalCatalog` 含 `pi` 时，内存中的适配记录可使用 `pi-provider:<name>` 指向 Pi `models.json` 里该 provider 的 string `apiKey`，不得把该密钥明文写入 grokbox `models.json`，也不得执行 command-form `!/` 键。短效 live state 固定 `~/.grokbox/run/`（含 `attestation.json` 与 `modeld.sock`），不读 `XDG_RUNTIME_DIR`。daemon socket 仍按 §5.2：默认 XDG runtime 路径，缺失时回退 `~/.grokbox/run/daemon.sock`。
 
 `assignments.agents.<id>` 是 route 下唯一的 managed opt-in（稳定 agent id；CLI `--for` 写入该覆盖）。**没有覆盖的 Bot 回官方 Host session。** `assignments.main` 可选，不是未覆盖 Bot 的回退。`activate --mode route` 允许 agents-only（`main` 可为 null）；已出现的赋值须为 `stub/echo` 或 openai*（http(s) endpoint + 非空 `apiKeyRef`，含 `env:` / `file:` / 适配得到的 `pi-provider:`）；其它赋值 fail-closed。`models use` / `activate --mode route` 必须披露：provider/endpoint、数据类型、下个 turn 生效、改的是默认还是某一 Bot。省略 `--for` 的 `use` 写 `main`，不把其它 Bot 拉进 modeld。**目标：route期间`models reset --for <bot>`必须支持仅该Bot下一TURN回原生official，不全局deactivate、不改harness。** 当前源码仍拒绝route reset，是[T24](tickets/T24-runtime-route-binding.md)的待修差额，不继续作为长期限制。合法未opt-in和用户明确official，与损坏/不可读配置导致decline严格区分；配置saved与当前TURN captured分开投影。
 

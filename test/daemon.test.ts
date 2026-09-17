@@ -8,7 +8,6 @@ import { writeProfileFile, writeProtectedSecret } from "../packages/cli/src/conf
 import {
   bootstrapPeerDaemon,
   ownedMappingProbeCommand,
-  remoteFilesystemPolicyMergeCommand,
   remoteInstallCommand,
   remoteEnsureInstalledDaemonCommand,
   remotePackageIntegrityCommand,
@@ -180,70 +179,24 @@ describe("local daemon vertical slice", () => {
     expect(() => remotePackageIntegrityCommand("not-a-digest")).toThrow();
   });
 
-  test("remote bootstrap preserves narrow roots and adds home only on explicit policy admission", async () => {
-    const remoteHome = await mkdtemp(join(tmpdir(), "grokbox-policy-merge-test-"));
-    await mkdir(join(remoteHome, ".grokbox", "daemon"), { recursive: true });
-    await mkdir(join(remoteHome, ".grokbox", "bootstrap"), { recursive: true });
-    const prior = {
-      version: 1,
-      filesystem: {
-        roots: [{ name: "workspace", path: "/workspace/project", operations: ["stat", "read", "write", "upload"] }],
-      },
-    };
-    const staged = {
-      version: 1,
-      filesystem: {
-        roots: [{ name: "home", path: "/home/box", operations: ["stat", "list", "read", "download"] }],
-      },
-    };
-    await writeFile(join(remoteHome, ".grokbox", "daemon", "config.json"), JSON.stringify(prior));
-    const stagedPath = join(remoteHome, ".grokbox", "bootstrap", "daemon-config.json");
-    await writeFile(stagedPath, JSON.stringify(staged));
-    const merge = Bun.spawn(["sh", "-c", remoteFilesystemPolicyMergeCommand()], {
-      env: { ...process.env, HOME: remoteHome },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await merge.exited).toBe(0);
-    expect(JSON.parse(await readFile(stagedPath, "utf8")).filesystem.roots).toEqual([
-      prior.filesystem.roots[0],
-      staged.filesystem.roots[0],
+  test("bootstrap preserves admitted roots through the canonical command, never a shell JSON writer", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-bootstrap-policy-"));
+    const workspace = { name: "workspace", path: "/workspace/project", operations: ["stat", "read", "write", "upload"] as const };
+    await writeDaemonConfig(configDir, { version: 1, filesystem: { roots: [{ ...workspace, operations: [...workspace.operations] }] } });
+    await writeDaemonConfig(configDir, { version: 1, filesystem: { roots: [{ name: "home", path: "/home/box/project", operations: ["stat", "write", "upload"] }] } });
+    await writeDaemonConfig(configDir, { version: 1, filesystem: { roots: [{ name: "home", path: "/home/box", operations: ["stat", "list", "read", "download"] }] } });
+    expect((await readDaemonConfig(configDir)).filesystem?.roots).toEqual([
+      { ...workspace, operations: [...workspace.operations] },
+      { name: "home", path: "/home/box", operations: ["stat", "write", "upload", "list", "read", "download"] },
     ]);
-
-    const priorHome = {
-      ...prior,
-      filesystem: {
-        roots: [
-          prior.filesystem.roots[0],
-          { name: "home", path: "/home/box/project", operations: ["stat", "write", "upload"] },
-        ],
-      },
-    };
-    await writeFile(join(remoteHome, ".grokbox", "daemon", "config.json"), JSON.stringify(priorHome));
-    await writeFile(stagedPath, JSON.stringify(staged));
-    const explicit = Bun.spawn(["sh", "-c", remoteFilesystemPolicyMergeCommand()], {
-      env: { ...process.env, HOME: remoteHome },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await explicit.exited).toBe(0);
-    expect(JSON.parse(await readFile(stagedPath, "utf8")).filesystem.roots).toEqual([
-      prior.filesystem.roots[0],
-      {
-        ...staged.filesystem.roots[0],
-        operations: ["stat", "write", "upload", "list", "read", "download"],
-      },
-    ]);
-
-    await writeFile(join(remoteHome, ".grokbox", "daemon", "config.json"), JSON.stringify(prior));
-    await writeFile(stagedPath, JSON.stringify({ version: 1 }));
-    const preserve = Bun.spawn(["sh", "-c", remoteFilesystemPolicyMergeCommand()], {
-      env: { ...process.env, HOME: remoteHome },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await preserve.exited).toBe(0);
-    expect(JSON.parse(await readFile(stagedPath, "utf8")).filesystem.roots).toEqual(prior.filesystem.roots);
+    const before = await readFile(join(configDir, "config.json"), "utf8");
+    await writeDaemonConfig(configDir, { version: 1 });
+    expect(await readFile(join(configDir, "config.json"), "utf8")).toBe(before);
+    expect(await stat(join(configDir, "daemon", "config.json")).catch(() => null)).toBeNull();
+    const shell = remoteInstallCommand("test", "0".repeat(64));
+    expect(shell).toContain("config bootstrap --from");
+    expect(shell).not.toContain("daemon/config.json");
+    expect(shell).not.toContain("f.writeFileSync(staged");
   });
 
   test("bootstrap rejects a transferred digest mismatch before daemon or Serve mutation", async () => {
@@ -342,7 +295,7 @@ describe("local daemon vertical slice", () => {
     )).rejects.toMatchObject({ code: "tailscale_not_ready" });
     expect(serveConfigured).toBe(false);
     expect(commands.some((argv) => argv.at(-1)?.includes("--https=8443 off"))).toBe(true);
-    expect(commands.some((argv) => argv.at(-1)?.includes("config.rollback-"))).toBe(true);
+    expect(commands.some((argv) => argv.at(-1)?.includes("config bootstrap --recover"))).toBe(true);
     expect(JSON.stringify(commands)).not.toContain("serve reset");
     const secrets = await readdir(join(configDir, "secrets"));
     expect(secrets).toHaveLength(1);
@@ -520,7 +473,7 @@ describe("local daemon vertical slice", () => {
 
     const output = `${doctor.stdout}${doctor.stderr}${missingCredential.stderr}${wrongCredential.stderr}`;
     expect(output).not.toContain(token);
-    expect(await readFile(join(configDir, "profiles", "remote", "config.json"), "utf8")).not.toContain(token);
+    expect(await readFile(join(configDir, "config.json"), "utf8")).not.toContain(token);
     expect(await unauthorizedBeforeBody(port!)).toBe(401);
   });
 
@@ -536,8 +489,11 @@ describe("local daemon vertical slice", () => {
         proxyUrl: "http://127.0.0.1:37134",
       },
     });
-    const path = join(configDir, "daemon", "config.json");
+    const path = join(configDir, "config.json");
     expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect(await readFile(path, "utf8")).not.toContain(tokenSha256);
+    expect((await stat(join(configDir, "state", "installation.json"))).mode & 0o777).toBe(0o600);
+    expect(await readFile(join(configDir, "state", "installation.json"), "utf8")).toContain(tokenSha256);
     expect(await readDaemonConfig(configDir)).toEqual({
       version: 1,
       network: { host: "127.0.0.1", port: 37134, tokenSha256 },

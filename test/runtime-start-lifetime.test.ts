@@ -23,7 +23,7 @@ for (const mode of ["observe", "identity", "route"] as const) {
     const signals = { ...liveMutationAttempts };
     let output = "";
     if (mode === "route") {
-      await mkdir(f.root, { recursive: true });
+      await mkdir(f.root, { recursive: true, mode: 0o700 });
       await writeFile(join(f.root, "models.json"), JSON.stringify(validModels));
     }
     const timeout = setTimeout(() => controller.abort(), 2500);
@@ -39,7 +39,7 @@ for (const mode of ["observe", "identity", "route"] as const) {
         modeld: { kind: "owned", ready: true, path: join(f.run, "modeld.sock") } });
       expect(typeof receipt.configRevision).toBe("string");
       expect(receipt.reconciliation === null).toBe(mode === "observe");
-      expect(JSON.parse(await readFile(join(f.root, "state/desired.json"), "utf8"))).toEqual({ version: 1, mode });
+      expect(JSON.parse(await readFile(join(f.root, "config.json"), "utf8")).runtime.desiredMode).toBe(mode);
       expect(existsSync(join(f.run, "modeld.sock"))).toBe(false);
       expect(liveMutationAttempts).toEqual(signals);
     } finally { clearTimeout(timeout); controller.abort(); await rm(f.dir, { recursive: true, force: true }); }
@@ -68,7 +68,7 @@ test("runtime start cannot activate a different root through an already healthy 
     const result = await captureCli(["runtime", "start", "--mode", "observe"], { ...f.deps, signal: new AbortController().signal });
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("modeld_root_mismatch");
-    expect(existsSync(join(f.root, "state/desired.json"))).toBe(false);
+    expect(existsSync(join(f.root, "config.json"))).toBe(false);
     expect(existsSync(join(f.run, "modeld.sock"))).toBe(true);
   } finally { await owner.stop(); await rm(f.dir, { recursive: true, force: true }); }
 }, 3500);
@@ -77,7 +77,7 @@ for (const issue of ["missing", "malformed", "symlink", "oversize", "unknown-ass
   test(`runtime start route rejects ${issue} configuration before service or desired write`, async () => {
     const f = await fixture();
     try {
-      await mkdir(f.root, { recursive: true });
+      await mkdir(f.root, { recursive: true, mode: 0o700 });
       const file = join(f.root, "models.json");
       if (issue === "malformed") await writeFile(file, "{");
       if (issue === "symlink") {
@@ -91,7 +91,7 @@ for (const issue of ["missing", "malformed", "symlink", "oversize", "unknown-ass
       expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: "invalid_usage" } });
       expect(result.stdout).toBe("");
       expect(existsSync(join(f.run, "modeld.sock"))).toBe(false);
-      expect(existsSync(join(f.root, "state/desired.json"))).toBe(false);
+      expect(existsSync(join(f.root, "config.json"))).toBe(false);
     } finally { await rm(f.dir, { recursive: true, force: true }); }
   });
 }
@@ -117,6 +117,6 @@ test("runtime start output failure releases its service without rolling back sav
     });
     expect(result.code).not.toBe(0);
     expect(existsSync(join(f.run, "modeld.sock"))).toBe(false);
-    expect(JSON.parse(await readFile(join(f.root, "state/desired.json"), "utf8"))).toEqual({ version: 1, mode: "observe" });
+    expect(JSON.parse(await readFile(join(f.root, "config.json"), "utf8")).runtime.desiredMode).toBe("observe");
   } finally { await rm(f.dir, { recursive: true, force: true }); }
 }, 3500);

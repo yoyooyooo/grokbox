@@ -24,7 +24,7 @@ export function launchPackedRuntime(dir: string, command: PackedRuntimeCommand, 
   const exit = new Promise<ChildExit>((resolve, reject) => {
     child.once("error", error => { rejectReady(error); reject(error); });
     child.once("exit", (code, signal) => {
-      if (!readySeen) rejectReady(new Error(`owned Node runtime exited before readiness: ${code}`));
+      if (!readySeen) rejectReady(new Error(`owned Node runtime exited before readiness: ${code}; ${stderr}`));
       resolve({ code, signal });
     });
   });

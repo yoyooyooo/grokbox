@@ -31,7 +31,7 @@ grokbox models reset --for <agent>
 
 ## Configure the catalog only when needed
 
-Catalog: `/workspace/.grokbox/box-runtime/models.json`, overridden by `GROKBOX_BOX_RUNTIME_ROOT`; never `~/.grokbox/runtime/`. Prefer an existing catalog entry for normal selection.
+Human catalog entry: `~/.grokbox/models.json`. On a Box it aliases the installed durable `models.json`; resolve the actual path with `grokbox config path --physical --document models`. The runtime reads the canonical file, never the CLI install tree. `models *` owns model writes; generic `config set` does not edit this document. Prefer an existing catalog entry for normal selection; see [config](config.md) for layout and migration.
 
 Each model has `id`, `provider`, `model`, `endpoint`, and `apiKeyRef`. `openai` / `openai-chat` use Chat Completions; `openai-responses` uses Responses API; `stub/echo` is for tests only. `apiKeyRef` is `env:NAME` or `file:/absolute/path`, never a literal key or `$VAR`. Keep secret values out of argv and ordinary logs.
 

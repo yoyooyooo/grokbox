@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./contract": "./src/contract.ts",
+    "./config": "./src/config.ts",
     "./hash": "./src/hash.ts",
     "./selection": "./src/selection.ts",
     "./ports": "./src/ports.ts",

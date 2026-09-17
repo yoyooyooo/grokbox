@@ -1,3 +1,5 @@
+import { CONFIG_COMMANDS } from "./config-registry.ts";
+
 export const CLI_NAME = "grokbox";
 export const DEFAULT_DISCOVERY_PATH = "/home/box/sand-data/gateway.json";
 export const DEFAULT_AGENT_DATA_ROOT = "/home/box/agent-data";
@@ -77,6 +79,7 @@ function options(
 }
 
 export const LEAF_COMMANDS: readonly LeafCommand[] = [
+  ...CONFIG_COMMANDS,
   {
     path: ["init"],
     usage: "grokbox init [<name>] [--local | --peer <name-or-dns>] [--bootstrap] [--admit-home-read] [--yes]",
@@ -394,18 +397,18 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["models", "use"],
-    usage: "grokbox models use <provider/model> --for <agent>",
-    summary: "Send one confirmed box Bot through a catalog model next turn.",
+    usage: "grokbox models use <provider/model> (--for <agent>|--default)",
+    summary: "Select one confirmed Box Bot's next-turn model, or explicitly change the non-routing default.",
     arguments: [{ syntax: "<provider/model>", description: "Catalog model id" }],
-    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name", required: true }]),
+    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name" }, { flags: "--default", description: "Change the box default only; does not opt any Bot into managed routing" }]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
     path: ["models", "reset"],
-    usage: "grokbox models reset --for <agent>",
-    summary: "Return one Bot to the official model next turn.",
+    usage: "grokbox models reset (--for <agent>|--default)",
+    summary: "Return one Bot to its official next-turn model, or explicitly clear the non-routing default.",
     arguments: [],
-    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name", required: true }]),
+    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name" }, { flags: "--default", description: "Clear the box default only; per-Bot assignments are unchanged" }]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
@@ -1533,8 +1536,8 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     localOnly: true,
   },
   {
-    path: ["runtime", "models", "check"],
-    usage: "grokbox runtime models check",
+    path: ["models", "check"],
+    usage: "grokbox models check",
     summary: "Validate models.json without mutating Host.",
     arguments: [],
     options: options(),
@@ -1548,38 +1551,8 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     localOnly: true,
   },
   {
-    path: ["runtime", "models", "list"],
-    usage: "grokbox runtime models list",
-    summary: "List configured models and assignments.",
-    arguments: [],
-    options: options(),
-    stdin: "none",
-    table: false,
-    timeout: false,
-    destructive: false,
-    gateway: false,
-    streaming: false,
-    profile: false,
-    localOnly: true,
-  },
-  {
-    path: ["runtime", "models", "use"],
-    usage: "grokbox runtime models use <provider/model> [--for <agent>]",
-    summary: "Assign a catalog model as the box default or one bot override.",
-    arguments: [{ syntax: "<provider/model>", description: "Catalog model id" }],
-    options: options([{ flags: "--for <agent>", description: "Route one bot through modeld; omitted bots stay official in route mode" }]),
-    stdin: "none",
-    table: false,
-    timeout: false,
-    destructive: false,
-    gateway: false,
-    streaming: false,
-    profile: false,
-    localOnly: true,
-  },
-  {
-    path: ["runtime", "models", "persist-key"],
-    usage: "grokbox runtime models persist-key <provider/model> --from-pi <provider> --confirm",
+    path: ["models", "persist-key"],
+    usage: "grokbox models persist-key <provider/model> --from-pi <provider> --confirm",
     summary: "Persist one catalog model's Pi API key as a private file reference; no Host restart or assignment change.",
     arguments: [{ syntax: "<provider/model>", description: "Existing runtime catalog model id" }],
     options: options([
@@ -1588,21 +1561,6 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     ]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false,
     streaming: false, profile: false, localOnly: true,
-  },
-  {
-    path: ["runtime", "models", "reset"],
-    usage: "grokbox runtime models reset [--for <agent>]",
-    summary: "Clear the box default or one bot override.",
-    arguments: [],
-    options: options([{ flags: "--for <agent>", description: "Select native official model for one confirmed Box Bot next TURN; no global deactivate" }]),
-    stdin: "none",
-    table: false,
-    timeout: false,
-    destructive: false,
-    gateway: false,
-    streaming: false,
-    profile: false,
-    localOnly: true,
   },
   {
     path: ["runtime", "profile", "analyze"],
