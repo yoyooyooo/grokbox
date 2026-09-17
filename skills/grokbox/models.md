@@ -35,6 +35,8 @@ Catalog: `/workspace/.grokbox/box-runtime/models.json`, overridden by `GROKBOX_B
 
 Each model has `id`, `provider`, `model`, `endpoint`, and `apiKeyRef`. `openai` / `openai-chat` use Chat Completions; `openai-responses` uses Responses API; `stub/echo` is for tests only. `apiKeyRef` is `env:NAME` or `file:/absolute/path`, never a literal key or `$VAR`. Keep secret values out of argv and ordinary logs.
 
+MiniMax's official HTTPS `/v1` Chat endpoints use the qualified `minimax-inline-v1` dialect: inline thinking is preserved across tool turns but kept out of ordinary answer text, and known empty continuation placeholders are normalized without repairing tool names. A proxy must explicitly set `chatDialect: "minimax-inline-v1"` on its model record; `"standard"` opts out. This field is Chat-only. Do not enable `reasoning_split` independently: nonempty split state is rejected rather than silently lost. A saved assignment or endpoint qualification is not a live acceptance result.
+
 Optional `alias` must be unique and match `^[a-z0-9][a-z0-9._-]{0,15}$`. Assignments are `assignments.agents[<bot-uuid>] = <model-id>`; route selection is per Bot, not a box-wide default. Use the CLI for assignment changes rather than editing this map by hand. Unlisted Bots stay official.
 
 ## Deliberate acceptance, not routine setup

@@ -88,6 +88,14 @@ The currently inspected Host main-session options already carry optional `reques
 
 The native interaction callback owns both its `streamWatchdog.noteUpdate` and `host.emitUpdate` receiver. It must remain run-owned. The managed first-chunk observation no longer injects a synthetic thinking update through a process-global last-listener callback; such a callback can attribute one Agent's work to another Agent's watchdog/UI.
 
+## Final text delivery and Chat dialects
+
+The inspected native `SendToUser` contract can offer an optional boolean `end_turn` for final delivery. When offered and a send succeeds, the native owner ends that run without another assistant message. Other Host modes omit the capability. The managed plain-text fallback therefore sets it only when the current STEP's text-tool schema grants the field; it preserves the original ordered text/reasoning history instead of replacing it with the delivery projection. `delivery-fallback.test.ts` covers offered, absent and incompatible-union cases without importing native source. This is not permission to end arbitrary runs or to count a queued send as delivery.
+
+The source-pinned native memory consumer parses completed blank text as zero additions/removals; the episode consumer returns no narrative for blank text. Qualified inference-only auxiliary STEPs preserve that no-op instead of treating it as an empty main reply. `native-auxiliary-noop.test.ts` checks the actual pinned consumers in isolation; `auxiliary-empty-output.test.ts` keeps main, malformed-parent, cancellation and missing-finish paths strict. No model reasoning is substituted for an empty memory result and no memory writer is moved.
+
+MiniMax's documented Chat format supports complete inline `<think>` content or separated reasoning state. The qualified `minimax-inline-v1` adapter requests the former and preserves it across tool turns. The adapter also handles empty `type` slots on already-established function continuations, omitting only those slots after original-frame audit. Unknown names, first-call missing identity, nonempty invalid types, missing completion and incomplete arguments remain failures. `minimax-chat.test.ts` uses synthetic streams; no live provider frame is a fixture. See [Chat compatibility](maintainers/chat-provider-compatibility.md) for configuration, bounded evidence and separate provider/native acceptance gates.
+
 ## Freshness
 
 Revalidate this document and the corresponding tests when discovery shape, Gateway routes or schemas, event framing, credential storage, token scope, or host lifecycle changes. A real read-only observation can invalidate an assumption but cannot replace fake-provider refusal and redaction coverage.

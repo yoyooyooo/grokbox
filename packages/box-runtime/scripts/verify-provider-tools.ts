@@ -2,7 +2,7 @@
  * backend and auth owner, but synthetic in-memory tools only: no Host, Gateway,
  * business replay, filesystem tools, native automations or production writes.
  *
- * bun packages/box-runtime/scripts/verify-provider-tools.ts --live --model <catalog-id> [--batch]
+ * bun packages/box-runtime/scripts/verify-provider-tools.ts --live --model <catalog-id> [--batch] [--long-value]
  */
 import { parseArgs } from "node:util";
 import { randomUUID } from "node:crypto";
@@ -14,7 +14,7 @@ import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
 import { createLiveBackendAuth } from "../src/internal/io/credentials.node.ts";
 import { aiSdkModelBackendLayer } from "../src/internal/backends/ai-sdk.ts";
 
-const { values } = parseArgs({ options: { live: { type: "boolean", default: false }, model: { type: "string" }, batch: { type: "boolean", default: false } }, strict: true });
+const { values } = parseArgs({ options: { live: { type: "boolean", default: false }, model: { type: "string" }, batch: { type: "boolean", default: false }, "long-value": { type: "boolean", default: false } }, strict: true });
 if (!values.live || !values.model) throw new Error("Explicit --live and --model <catalog-id> are required; this probe spends provider quota.");
 const store = openRuntimeStore(undefined, process.env);
 const model = (await store.loadModels()).models[values.model];
@@ -27,9 +27,11 @@ const tools: ToolDefinition[] = [
   { name: "FinishFixture", description: "Complete only after all synthetic records exist. Supply all receipt strings separated by commas.", inputSchema: schema({ receipts: { type: "string" } }) },
 ];
 const messages: PromptMessage[] = [{ role: "user", content: `Use LookupFixture for each key: ${keys.join(", ")}. Record each returned value exactly once using RecordFixture with the returned nonce. Then call FinishFixture with all receipts. Use only the provided tools and exact argument names. Do not guess tool results. ${values.batch ? "You may batch independent calls." : "Complete the stages in order."}` }];
-const expected = new Map(keys.map(key => [key, `fixture-${key}-${nonce.slice(0, 8)}`]));
+const expected = new Map(keys.map(key => [key, values["long-value"]
+  ? Array.from({ length: 48 }, (_, index) => `fixture-${key}-${index.toString().padStart(2, "0")}-${nonce.slice(0, 8)}`).join("|")
+  : `fixture-${key}-${nonce.slice(0, 8)}`]));
 const receipts = new Map<string, string>(), lookedUp = new Set<string>();
-let httpCalls = 0, finished = false, duplicateRecords = 0, assistantHistoryPreserved = true;
+let httpCalls = 0, finished = false, duplicateRecords = 0, rejectedFixtureCalls = 0, assistantHistoryPreserved = true;
 let previousAssistantTexts: string[] = [];
 const fetchImpl = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   httpCalls++;
@@ -61,6 +63,10 @@ const program = Effect.scoped(Effect.gen(function* () {
       return;
     }
     const terminal = events.findLast(e => e.type === "backend_finish");
+    if (terminal?.type !== "backend_finish" || terminal.finishReason !== "stop") {
+      observations.push({ step, outcome: "failed", code: "probe_non_success_terminal", finishReason: terminal?.type === "backend_finish" ? terminal.finishReason : "missing" });
+      return;
+    }
     const calls = events.filter((e): e is Extract<InferenceEvent, { type: "tool_complete" }> => e.type === "tool_complete");
     const text = events.filter((e): e is Extract<InferenceEvent, { type: "text_delta" }> => e.type === "text_delta").map(e => e.text).join("");
     const reasoning = events.filter((e): e is Extract<InferenceEvent, { type: "reasoning_delta" }> => e.type === "reasoning_delta").map(e => e.text).join("");
@@ -90,6 +96,7 @@ const program = Effect.scoped(Effect.gen(function* () {
         finished = receipts.size === keys.length && JSON.stringify(supplied) === JSON.stringify([...receipts.values()].sort());
         result = { ok: finished };
       }
+      if (result.ok === false) rejectedFixtureCalls++;
       results.push({ type: "tool-result", toolCallId: call.toolCallId, toolName: call.toolName, result });
     }
     if (results.length) messages.push({ role: "tool", content: results });
@@ -99,10 +106,10 @@ const program = Effect.scoped(Effect.gen(function* () {
   }
 }).pipe(Effect.provide(graph)));
 const result = await Effect.runPromiseExit(program);
-const pass = Exit.isSuccess(result) && finished && duplicateRecords === 0 && assistantHistoryPreserved;
+const pass = Exit.isSuccess(result) && finished && duplicateRecords === 0 && rejectedFixtureCalls === 0 && assistantHistoryPreserved;
 console.log(JSON.stringify({ pass, dependency: "external-real provider; production backend/auth; synthetic in-memory tools; no native Host", modelId: model.id,
-  scenario: values.batch ? "batch-five" : "sequential", httpCalls, finished, records: receipts.size, expectedRecords: keys.length,
-  duplicateRecords, assistantHistoryPreserved, observations,
+  scenario: values.batch ? "batch-five" : "sequential", longValue: !!values["long-value"], httpCalls, finished, records: receipts.size, expectedRecords: keys.length,
+  duplicateRecords, rejectedFixtureCalls, assistantHistoryPreserved, observations,
   ...(Exit.isFailure(result) ? { error: "probe_failed_before_or_outside_stream" } : {}),
 }, null, 2));
 process.exitCode = pass ? 0 : 1;
