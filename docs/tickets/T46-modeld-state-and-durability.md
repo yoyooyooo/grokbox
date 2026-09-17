@@ -1,6 +1,6 @@
 # T46 — Execution identity synchronization and bounded maintenance
 
-Status: planned. Milestone M2. Depends on: [T44](T44-modeld-service-lifetime.md); consumes T45 types but storage work can be prepared independently. Spec: [S10.3, S10.5](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: implemented / offline verified; fixed-tip independent review pending. Milestone M2. Depends on: [T44](T44-modeld-service-lifetime.md); consumes T45 types but storage work can be prepared independently. Spec: [S10.3, S10.5](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
 ## Goal
 
@@ -38,4 +38,6 @@ No second ledger, new database, distributed actor system, non-durable claim, glo
 
 ## Exit evidence
 
-Pending: production replacement, executable contention/crash/cooling tests and fixed-tip review. Retaining a global lock across all long I/O and merely renaming it does not close this ticket.
+Production uses TURN-keyed mutation ownership and short validated global commits; storage I/O no longer holds the global mutation lock. `ExecutionHistory.putIdentity` publishes STEP and TURN in one synchronous LevelDB batch. Cancellation intent fences dispatch before its own persistence can settle. Maintenance uses an advisory inactive-key queue and finite per-pass work; each committed identity is reported independently, not as a fictitious cross-identity rollback.
+
+Validated with the declared Bun 1.3.14: typecheck and `verify:modeld-core -- state` (39 tests in five suites). Includes blocked A / progressing B, same-STEP competition, cancel-during-write, illegal bypass writer, bounded/partial maintenance, real disk batches, unknown acknowledgements, 12,000 STEPs and 4,096 TURNs. Native release, real ENOSPC and independent review are not implied by these offline tests. Fixed-tip review and final release aggregation remain T49.

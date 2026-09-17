@@ -136,7 +136,7 @@ describe("continuous modeld execution with exact disk deduplication", () => {
 
   test("claim write failure prevents dispatch, with no memory fallback", async () => {
     const base = memoryExecutionHistory(), counts = createCountedSeams();
-    const history: ExecutionHistory = { ...base, putStep: () => Effect.fail(new BindingFailure("ledger_unavailable")) };
+    const history: ExecutionHistory = { ...base, putIdentity: () => Effect.fail(new BindingFailure("ledger_unavailable")) };
     const result = await run(Effect.scoped(Effect.result(collect(request("one"))).pipe(Effect.provide(graph(history, counts)))));
     expect(result).toMatchObject({ _tag: "Failure", failure: { code: "ledger_unavailable" } });
     expect(counts.network).toBe(0); expect(counts.credential).toBe(0);
@@ -147,7 +147,7 @@ describe("continuous modeld execution with exact disk deduplication", () => {
     const claimed = await Effect.runPromise(Deferred.make<void>());
     const finishWrite = await Effect.runPromise(Latch.make(false));
     let held = false;
-    const history: ExecutionHistory = { ...base, putStep: (key, value) => base.putStep(key, value).pipe(Effect.andThen(Effect.gen(function* () {
+    const history: ExecutionHistory = { ...base, putIdentity: input => base.putIdentity(input).pipe(Effect.andThen(Effect.gen(function* () {
       if (!held) { held = true; yield* Deferred.succeed(claimed, undefined); yield* finishWrite.await; }
     }))) };
     await run(Effect.scoped(Effect.gen(function* () {

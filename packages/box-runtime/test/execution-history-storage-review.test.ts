@@ -13,6 +13,25 @@ import { openExecutionHistory } from "../src/internal/io/execution-history.node.
 const record: LedgerRecord = { snapshotDigest: "a".repeat(64), selectionRevision: "b".repeat(64), bindingId: "c".repeat(64), status: "terminal" };
 const root = () => mkdtemp(join(tmpdir(), "execution-store-review-"));
 
+test("identity publication validates both rows before one durable atomic batch", async () => {
+  const dir = await root();
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const store = yield* openExecutionHistory(dir, "batch-epoch");
+      const turn = { version: 1 as const, turn: { serviceEpoch: "batch-epoch", poisoned: false, expired: false, lastActivityMs: 1000 } };
+      const malformed = { ...turn, version: 2 } as unknown as typeof turn;
+      const refused = yield* Effect.result(store.putIdentity({ stepKey: "step", step: record, turnKey: "turn", turn: malformed }));
+      expect(refused._tag).toBe("Failure");
+      expect(yield* store.getStep("step")).toBeUndefined();
+      expect(yield* store.getTurn("turn")).toBeUndefined();
+      yield* store.putIdentity({ stepKey: "step", step: record, turnKey: "turn", turn });
+      expect(yield* store.getStep("step")).toEqual(record);
+      expect(yield* store.getTurn("turn")).toEqual(turn);
+      expect(store.health()).toMatchObject({ available: true, writes: 2 });
+    })));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test("real disk index has exclusive ownership and service incarnation retirement", async () => {
   const dir = await root();
   try {

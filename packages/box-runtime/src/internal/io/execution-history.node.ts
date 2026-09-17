@@ -103,6 +103,15 @@ function historyAdapter(db: ClassicLevel<string, unknown>): ExecutionHistory {
       if (!checked) throw fail();
       await db.put(`t!${sha256Text(key)}`, checked, { sync: true }); state.writes++;
     }),
+    putIdentity: input => io("write", async () => {
+      const step = stepRecord(input.step), turn = turnRecord(input.turn);
+      if (!step || !turn) throw fail();
+      await db.batch<string, unknown>([
+        { type: "put", key: `s!${sha256Text(input.stepKey)}`, value: step },
+        { type: "put", key: `t!${sha256Text(input.turnKey)}`, value: turn },
+      ], { sync: true });
+      state.writes += 2;
+    }),
     health: () => ({ ...state }),
   };
 }

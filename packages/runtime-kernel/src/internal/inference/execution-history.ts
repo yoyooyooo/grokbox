@@ -23,6 +23,9 @@ export type ExecutionHistory = {
   putStep(key: string, value: LedgerRecord): Effect.Effect<void, BindingFailure>;
   getTurn(key: string): Effect.Effect<ColdTurn | undefined, BindingFailure>;
   putTurn(key: string, value: ColdTurn): Effect.Effect<void, BindingFailure>;
+  /** One atomic acknowledged STEP/TURN metadata publication. The Effect Scope
+   * is not the transaction; the storage adapter must supply this guarantee. */
+  putIdentity(input: { stepKey: string; step: LedgerRecord; turnKey: string; turn: ColdTurn }): Effect.Effect<void, BindingFailure>;
   health(): ExecutionHistoryHealth;
 };
 
@@ -41,5 +44,9 @@ export function memoryExecutionHistory(): ExecutionHistory {
     map.set(key, structuredClone(value)); health.writes++;
   });
   return { getStep: key => get(steps, key), putStep: (key, value) => put(steps, key, value),
-    getTurn: key => get(turns, key), putTurn: (key, value) => put(turns, key, value), health: () => ({ ...health }) };
+    getTurn: key => get(turns, key), putTurn: (key, value) => put(turns, key, value),
+    putIdentity: input => Effect.sync(() => {
+      const step = structuredClone(input.step), turn = structuredClone(input.turn);
+      steps.set(input.stepKey, step); turns.set(input.turnKey, turn); health.writes += 2;
+    }), health: () => ({ ...health }) };
 }

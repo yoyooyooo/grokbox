@@ -1,4 +1,4 @@
-import { Clock, Context, Deferred, Effect, Exit, Layer, SynchronizedRef } from "effect";
+import { Clock, Context, Deferred, Effect, Exit, Layer, Semaphore, SynchronizedRef } from "effect";
 import * as Scope from "effect/Scope";
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import { SERVER_ACTIVE_STEPS_MAX, TURN_RESOURCE_IDLE_MS } from "../contract/limits.ts";
@@ -6,7 +6,7 @@ import { memoryExecutionHistory, type ColdTurn, type ExecutionHistory } from "./
 import type { AuthLease } from "../../ports.ts";
 import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "../contract/identity.ts";
 import type { ModelRecord } from "../../selection.ts";
-import type { RunStepRequest } from "../contract/binding.ts";
+import { BindingFailure, type RunStepRequest } from "../contract/binding.ts";
 import type { RecoveryLedger } from "../contract/overflow.ts";
 import type { OwnershipAdmission } from "../contract/ownership.ts";
 import { NO_PROVIDER_RECOVERY, projectProviderRecoveryPolicy, type ProviderRecoveryPolicy, type ProviderRecoveryState } from "../contract/provider-recovery.ts";
@@ -127,6 +127,9 @@ export type InferenceMemoryValue = {
   readonly recoveryProgress: Map<string, RecoveryProgress>;
   readonly counters: InferenceCounters;
   readonly ref: SynchronizedRef.SynchronizedRef<InferenceState>;
+  readonly stateLocks: Map<string, { semaphore: Semaphore.Semaphore; users: number }>;
+  /** Advisory inactive-key queue, never an authority or durable identity index. */
+  readonly coolingQueue: Set<string>;
   readonly cancels: Map<string, Deferred.Deferred<void>>;
   readonly quiesce: Map<string, Deferred.Deferred<void>>;
   readonly started: Set<string>;
@@ -136,6 +139,87 @@ export type InferenceMemoryValue = {
   readonly recoveries: Map<string, RecoveryLedger>;
 };
 export class InferenceMemory extends Context.Service<InferenceMemory, InferenceMemoryValue>()("grokbox/InferenceMemory") {}
+
+type ExecutionIdentity = Pick<RunStepRequest, "hostEpoch" | "agentId" | "turnId" | "stepId">;
+
+/** One identity owns its mutations while storage is awaited. The global ref is
+ * held only to read/commit a small delta, never across external I/O. A view can
+ * mutate only its TURN and requested STEP; unrelated updates cannot be lost by
+ * writing an old whole-state snapshot back after an asynchronous operation. */
+export function modifyExecutionState<A, E, R>(memory: InferenceMemoryValue, identity: ExecutionIdentity | string,
+  operation: (view: InferenceState) => Effect.Effect<readonly [A, InferenceState], E, R>,
+  onCommitted?: (result: A) => void) {
+  const key = typeof identity === "string" ? identity : turnKey(identity);
+  const step = typeof identity === "string" ? undefined : ledgerKey(identity);
+  return Effect.scoped(Effect.gen(function* () {
+    const lock = yield* Effect.acquireRelease(Effect.sync(() => {
+      let entry = memory.stateLocks.get(key);
+      if (!entry) { entry = { semaphore: Semaphore.makeUnsafe(1), users: 0 }; memory.stateLocks.set(key, entry); }
+      entry.users++;
+      return entry;
+    }), entry => Effect.sync(() => {
+      entry.users--;
+      if (entry.users === 0 && memory.stateLocks.get(key) === entry) memory.stateLocks.delete(key);
+    }));
+    return yield* lock.semaphore.withPermit(Effect.gen(function* () {
+      const before = yield* SynchronizedRef.get(memory.ref);
+      const binding = before.bindings.get(key), turn = before.turns.get(key), active = before.turnActive.get(key);
+      const ledger = step ? before.ledger.get(step) : undefined;
+      const cancelledBefore = step !== undefined && before.cancelled.has(step);
+      const view: InferenceState = { ...before,
+        bindings: new Map(binding ? [[key, { ...binding }]] : []),
+        turns: new Map(turn ? [[key, { ...turn }]] : []),
+        turnActive: new Map(active ? [[key, active]] : []),
+        ledger: new Map(step && ledger ? [[step, { ...ledger }]] : []),
+        cancelled: new Set(step && cancelledBefore ? [step] : []),
+      };
+      const [result, next] = yield* operation(view);
+      const validKeys = <T>(map: Map<string, T>, allowed: string | undefined) => [...map.keys()].every(k => k === allowed);
+      if (!validKeys(next.bindings, key) || !validKeys(next.turns, key) || !validKeys(next.turnActive, key)
+        || !validKeys(next.ledger, step) || [...next.cancelled].some(k => k !== step)) {
+        return yield* Effect.fail(new BindingFailure("ledger_unavailable"));
+      }
+      yield* Effect.uninterruptible(Effect.gen(function* () {
+      yield* SynchronizedRef.updateEffect(memory.ref, current => {
+        // This rejects any writer that bypassed the identity owner during I/O.
+        // Cancellation intent is deliberately separate and may arrive at once.
+        if (current.serviceEpoch !== before.serviceEpoch || current.bindings.get(key) !== binding
+          || current.turns.get(key) !== turn || current.turnActive.get(key) !== active
+          || step !== undefined && current.ledger.get(step) !== ledger) {
+          return Effect.fail(new BindingFailure("ledger_unavailable"));
+        }
+        const merged = cloneState(current);
+        const install = <T>(target: Map<string, T>, source: Map<string, T>, k: string) => {
+          if (source.has(k)) target.set(k, source.get(k)!); else target.delete(k);
+        };
+        install(merged.bindings, next.bindings, key); install(merged.turns, next.turns, key);
+        install(merged.turnActive, next.turnActive, key);
+        if (step !== undefined) {
+          install(merged.ledger, next.ledger, step);
+          if (next.cancelled.has(step) !== cancelledBefore) {
+            if (next.cancelled.has(step)) merged.cancelled.add(step); else merged.cancelled.delete(step);
+          }
+        }
+        if (merged.turns.has(key) && !merged.turnActive.has(key)) memory.coolingQueue.add(key);
+        else memory.coolingQueue.delete(key);
+        return Effect.succeed(merged);
+      });
+      if (onCommitted) yield* Effect.sync(() => onCommitted(result));
+      }));
+      return result;
+    }));
+  }));
+}
+
+export function updateExecutionState<E, R>(memory: InferenceMemoryValue, identity: ExecutionIdentity | string,
+  operation: (view: InferenceState) => Effect.Effect<InferenceState, E, R>) {
+  return modifyExecutionState(memory, identity, view => operation(view).pipe(Effect.map(next => [undefined, next] as const)));
+}
+
+export function updateExecutionStateSync(memory: InferenceMemoryValue, identity: ExecutionIdentity | string,
+  operation: (view: InferenceState) => InferenceState) {
+  return updateExecutionState(memory, identity, view => Effect.sync(() => operation(view)));
+}
 
 export function coldTurn(state: InferenceState, key: string): ColdTurn | undefined {
   const turn = state.turns.get(key);
@@ -148,40 +232,52 @@ export function coldTurn(state: InferenceState, key: string): ColdTurn | undefin
 
 /** Evict only inactive resource owners, after a durable cold record exists.
  * The same binding/fingerprint is checked on reactivation. No history is lost. */
-export function coolInactiveTurns(memory: InferenceMemoryValue, now: number, force = false) {
+export function coolInactiveTurns(memory: InferenceMemoryValue, now: number, force = false, limit = 32) {
   return Effect.gen(function* () {
-    const scopes = yield* SynchronizedRef.modifyEffect(memory.ref, state => Effect.gen(function* () {
-      const next = cloneState(state);
-      const detached: Array<{ key: string; scope: Scope.Closeable }> = [];
-      let cooled = 0;
-      const eligible = [...next.turns].filter(([key]) => !next.turnActive.has(key))
-        .sort((a, b) => a[1].lastActivityMs - b[1].lastActivityMs);
-      for (const [key, turn] of eligible) {
-        if (!force && now - turn.lastActivityMs < next.resourceIdleMs && next.turns.size <= next.hotTurnsTarget) continue;
-        const archived = coldTurn(next, key)!;
-        // An inactive rejected/no-binding TURN may already have cold metadata.
-        // Do not overwrite its original binding with a cache miss.
-        const previous = archived.binding ? undefined : yield* memory.history.getTurn(key);
-        yield* memory.history.putTurn(key, archived.binding || !previous?.binding ? archived : { ...archived, binding: previous.binding });
-        next.turns.delete(key); next.bindings.delete(key);
-        const scope = memory.turnScopes.get(key);
-        if (scope) detached.push({ key, scope });
-        cooled++;
-      }
-      // Do not mutate nontransactional resource ownership before the entire
-      // persistence batch succeeds. A later IO failure must leave all hot
-      // bindings attached to their original live scopes.
-      for (const { key, scope } of detached) {
-        memory.retiringScopes.add(scope);
-        memory.turnScopes.delete(key);
-      }
-      memory.counters.coldStores += cooled;
-      return [[...memory.retiringScopes], next] as const;
-    }));
-    for (const scope of scopes) yield* Scope.close(scope, Exit.void).pipe(
+    const budget = Math.max(1, Math.min(32, Math.floor(limit)));
+    const close = (scope: Scope.Closeable) => Scope.close(scope, Exit.void).pipe(
       Effect.tap(() => Effect.sync(() => { memory.retiringScopes.delete(scope); })),
       Effect.catchCause(() => Effect.sync(() => { memory.counters.cleanupFailures++; })),
     );
+    let released = 0;
+    for (const scope of memory.retiringScopes) {
+      if (released++ >= budget) break;
+      yield* close(scope);
+    }
+    // Bounded key selection: no full-map scan/sort on every STEP. The queue is
+    // maintained by committed identity transitions and carries no authority.
+    const keys: string[] = [];
+    for (const key of memory.coolingQueue) { if (keys.length >= budget) break; keys.push(key); }
+    for (const key of keys) {
+      memory.coolingQueue.delete(key);
+      const global = yield* SynchronizedRef.get(memory.ref);
+      const pressure = global.turns.size > global.hotTurnsTarget;
+      const detached = yield* modifyExecutionState(memory, key,
+        (next): Effect.Effect<readonly [Scope.Closeable | null | undefined, InferenceState], BindingFailure> => Effect.gen(function* () {
+          const turn = next.turns.get(key);
+          if (!turn || next.turnActive.has(key)
+            || !force && !pressure && now - turn.lastActivityMs < next.resourceIdleMs) return [undefined, next] as const;
+          const archived = coldTurn(next, key)!;
+          const previous = archived.binding ? undefined : yield* memory.history.getTurn(key);
+          yield* memory.history.putTurn(key, archived.binding || !previous?.binding ? archived : { ...archived, binding: previous.binding });
+          next.turns.delete(key); next.bindings.delete(key);
+          return [memory.turnScopes.get(key) ?? null, next] as const;
+        }), scope => {
+          if (scope === undefined) return;
+          memory.counters.coldStores++;
+          if (scope) { memory.retiringScopes.add(scope); memory.turnScopes.delete(key); }
+        }).pipe(Effect.tapError(() => Effect.sync(() => { memory.coolingQueue.add(key); })));
+      // Every identity is an independent committed maintenance unit. A later
+      // identity's I/O failure cannot undo one already stored and released.
+      if (detached) yield* close(detached);
+    }
+  });
+}
+
+export function coolUnderPressure(memory: InferenceMemoryValue, now: number) {
+  return Effect.gen(function* () {
+    const state = yield* SynchronizedRef.get(memory.ref);
+    if (state.turns.size > state.hotTurnsTarget) yield* coolInactiveTurns(memory, now, false, 1);
   });
 }
 
@@ -205,6 +301,8 @@ export function inferenceMemoryLayer(options: InferenceMemoryOptions = {}) {
       recoveryProgress: new Map(),
       counters: { accepted: 0, duplicate: 0, completed: 0, reclaimedSteps: 0, coldRestores: 0, coldStores: 0, cleanupFailures: 0 },
       ref: SynchronizedRef.makeUnsafe(emptyInferenceState(options)),
+      stateLocks: new Map(),
+      coolingQueue: new Set(),
       cancels: new Map<string, Deferred.Deferred<void>>(),
       quiesce: new Map<string, Deferred.Deferred<void>>(),
       started: new Set<string>(),

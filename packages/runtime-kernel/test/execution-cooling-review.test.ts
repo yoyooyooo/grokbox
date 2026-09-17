@@ -57,13 +57,13 @@ test("cleanup read failure must not erase a cold immutable binding", async () =>
   expect(counts.network).toBe(2);
 });
 
-test("a persisted claim with failed turn metadata cannot dispatch or be retried", async () => {
+test("an atomically persisted identity with an unknown acknowledgement cannot dispatch or be retried", async () => {
   const backing = memoryExecutionHistory(), counts = createCountedSeams();
   let fail = true;
-  const history: ExecutionHistory = { ...backing, putTurn: (key, value) => Effect.suspend(() => {
+  const history: ExecutionHistory = { ...backing, putIdentity: input => backing.putIdentity(input).pipe(Effect.andThen(Effect.suspend(() => {
     if (fail) { fail = false; return Effect.fail(new BindingFailure("ledger_unavailable")); }
-    return backing.putTurn(key, value);
-  }) };
+    return Effect.void;
+  }))) };
   const req = request("uncertain-claim");
   const result = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     const first = yield* Effect.result(collect(req));
@@ -106,7 +106,7 @@ test("failure to cool an inactive TURN cannot become a quota on unrelated work",
   expect(counts.network).toBe(3);
 });
 
-test("a partially failed cooling batch retains every live resource owner", async () => {
+test("partially committed cooling keeps every remaining binding attached to its live owner", async () => {
   const backing = memoryExecutionHistory(), counts = createCountedSeams();
   const one = request("one", "one"), two = request("two", "two");
   let injecting = false, writes = 0;
