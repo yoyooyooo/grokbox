@@ -282,3 +282,39 @@ Status: blocked — mapped to v2; independent review, native qualification and a
 ## 已完成回执
 
 暂无 **live 验收**回执。v2 源码集成与组合树离线回执已记录在上方，但没有选择/加载 live 制品或执行 live 窗口。后续逐条追加带固定候选、时间、结果、证据范围和失效条件的回执；源码合入、构建成功或一次重启不能变成“全部 live 通过”。
+
+## 同通道模型推理设置
+
+共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；source commit `not-recorded`（在来源实现提交形成后补入）。v2 integrated/candidate commit、source digest、实际加载身份均 `not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
+
+<a id="live-reasoning-cutover"></a>
+### LIVE-REASONING-CUTOVER — schema v2 与 wire v7 成套切换及退路
+Status: awaiting-integration
+
+依赖固定 v2 集成映射、来源非 live 出口和适用的 [MODELD CUTOVER](#live-modeld-cutover) 接点资格。必须 live 的原因是磁盘新构建不能证明已经加载的 Host/preload/modeld 同版；旧 schema/制品的恢复还涉及真实服务生命周期。离线已覆盖 v1 只读/v2 保存、取消与 CAS、v6 只读探测/禁止执行、真实隔离 Unix 和磁盘绑定；计数与候选以来源票为准。
+
+环境与动作：批准的 restart/installed-host 窗口，预先保护原 models/desired/profile 与旧制品，不输出凭据；排空旧工作，成套更新 CLI/preload/Host/modeld，再明确执行 schema 保存。原有路径不因此搬家。不在未合入 feature 上抢占全局 shim 或現役服务。
+
+Oracle：逐个记录实际 source/profile/preload/service/wire 身份，新执行均为 v7；旧 peer 可诊断但不能接 managed STEP；旧 service epoch 不复活、历史消息不重发；v1→v2 不改变其他 Bot、wire model 或凭据引用。回退演练恢复匹配旧制品和受保护旧 schema 配置，不能以静默删掉 effort 作为无损降版。实际原生身份或旧配置不可证明时保持 blocked。
+
+预算与授权：对象、最多切换次数、窗口、允许停止/写入及批准回执 `not-selected`。任一身份/协议/配置不匹配、旧 TURN 被重跑或影响非目标 Bot 即停止；恢复已核验备份并复查服务与官方对照，不扩大请求。回执：`not-run`，加载身份/回滚结果 `not-recorded`。
+
+<a id="live-reasoning-provider"></a>
+### LIVE-REASONING-PROVIDER — 原通道档位透传与上游证据
+Status: awaiting-integration
+
+依赖 CUTOVER（或单独批准的非现役真实 Provider 资格环境）。离线已证明 locked SDK 反例、Chat/Responses 最终 HTTP effort、冲突零 fetch、同 channel/model 稳定；不能据此证明真实网关未覆盖/忽略参数。作用域必须是明确批准的 endpoint/API/wire model/credential reference，不自动换另一 Provider 或铸造 wire 变体。
+
+步骤与 oracle：先核对通道能力的权威依据，再在批准对象上比较 default/high/xhigh 的配置、TURN revision、emitted 与 HTTP/Provider 结果，核对 endpoint/key-reference/wire model 不变。收集可审计且脱敏的网关转换或 Provider 明确回报；没有合格回报解码器时 `providerReported:unknown` 是正确结果，不能用 latency、reasoningTokens、标题或自述签署 xhigh 已执行。分别记录“请求成功发出”和“上游档位是否证实”，任何真实不支持应撤销能力声明并回来源票修复，不降档重试。
+
+预算与授权：canary ID、最多请求/费用/等待、工具权限与授权回执均 `not-selected`。达到预算、能力与响应矛盾、参数丢失/冲突或未知副作用即停止。回滚只恢复该 Bot 原 assignment/能力声明，不更改 ownership；不重发旧请求。回执：`not-run`，Provider 资格与实际执行档位 `not-recorded`。
+
+<a id="live-reasoning-host-app"></a>
+### LIVE-REASONING-HOST-APP — 原生会话与 App 的下一 TURN 改档
+Status: awaiting-integration
+
+依赖 CUTOVER 与适用通道的 PROVIDER 请求资格；与原 [MODELD TOOLS](#live-modeld-tools)、[MODELD APP](#live-modeld-app) 共享窗口时仍独立记录。本条必须使用已加载的真实原生 Host 与未修改的 App；source-shaped fixture 和标题字符串测试不证明原生恢复、工具消费者或 UI 展示。
+
+在批准的一个 confirmed_box canary 上执行同 modelId 的 high → xhigh → default → official，另一个 Bot 保持原配置/official 对照。只使用批准的有界任务；需要工具/Memory/compact 的向量不得靠停掉这些原生路径通过。已有 TURN 必须继续原绑定，新 TURN 才改变 effort；实际工具调用、Host normalized terminal、最终交付及 App 标题 `m=/e=` 各自留证。改 effort 不应因为伪造新 modelId 触发不必要的模型切换/上下文清空；default/official 清 e，不破坏用户标题。配置查询不得冒充当前 TURN，tokens 不代表 Provider 档位确认。
+
+预算与授权：对象、TURN/HTTP/费用上限、允许工具和等待时间、原 App 观察及回退许可 `not-selected`。旧 TURN 混档、重放请求、上下文/工具结果丢失、其他 Bot 被改或 Working/交付异常即停止。恢复该 Bot 原 assignment 与标题显示状态，核对 pending 工作是否实际终止，不将重启当全部副作用停止；必要制品回退沿 CUTOVER 预案。回执：`not-run`；实际 native/artifact/wire/selection identities、App 图像与结果均 `not-recorded`。

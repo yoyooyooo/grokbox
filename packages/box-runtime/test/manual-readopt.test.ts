@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { runManualReadopt, runWatchdogTick } from "../src/internal/roots/controller.runtime.ts";
 
 const desired = { version: 1 as const, mode: "identity" as const };
-const models = { version: 1 as const, models: {}, assignments: { main: null, agents: {} } };
+const models = { version: 2 as const, models: {}, assignments: { main: null, agents: {} } };
 
 describe("retired manual re-adopt executor", () => {
   test("unconfirmed calls still require --confirm; confirmed calls are removed", async () => {

@@ -24,6 +24,7 @@ import {
   readOwnershipStates,
   rosterTitleProjection,
   titleSyncModel,
+  titleSyncEffort,
   type TitleAction,
 } from "../title-sync.ts";
 import { composeAgentTitle, labelOwnerFromState, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
@@ -161,7 +162,7 @@ export async function runAgentsUpdate(
   if (hasProfilePatch(raw)) {
     const profile = mergedProfile(row, raw);
     if (raw.title !== undefined && parseAgentTitle(row.title).showing) {
-      const { tokens, assigned } = await loadTitleModelIndex(deps.boxRuntimeRoot, deps.env);
+      const { tokens, assigned, efforts } = await loadTitleModelIndex(deps.boxRuntimeRoot, deps.env);
       let owner: ReturnType<typeof labelOwnerFromState> = "leave";
       try {
         const identity = await readOwnershipStates(client, [id], io.timeoutMs, before.discovery);
@@ -173,6 +174,7 @@ export async function runAgentsUpdate(
         user: raw.title,
         owner,
         m: titleSyncModel(owner, id, tokens, assigned),
+        e: titleSyncEffort(owner, id, efforts, assigned),
       });
       profile.title = composed.title;
     }
@@ -243,7 +245,7 @@ export async function runAgentsTitle(
   } else {
     rows = roster;
   }
-  const { tokens, assigned } = action === "hide"
+  const { tokens, assigned, efforts } = action === "hide"
     ? { tokens: new Map<string, string>() }
     : await loadTitleModelIndex(deps.boxRuntimeRoot, deps.env);
   const applied = await applyAgentTitles(client, io.timeoutMs, {
@@ -252,6 +254,7 @@ export async function runAgentsTitle(
     dryRun: Boolean(raw.dryRun),
     tokens,
     assigned,
+    efforts,
   });
   const written = applied.rows.filter((row) => row.written).length;
   const skippedRows = applied.rows.filter((row) => row.skipped);

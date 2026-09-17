@@ -130,6 +130,12 @@ Deactivate / 官方替换等待（`waitOfficialReplacement`）：仅 census 到�
 - MVP envelope 见产品合同 §12：文本、工具、视觉（模型声明才送；否则可见告警）、并行不得丢 id。
 - 可见告警最终由 Host 写入 Transcript（`SendToUser` 或等价），runtime 不私写产品库。
 
+### 同通道推理设置（schema v2 / wire v7）
+
+`assignments.agents[id]` 的值是 `{ modelId, reasoning?: { effort } }`；不生成派生目录、不改变 endpoint/key/wire model。catalog `capabilities.reasoning` 区分 unknown、false 和明确档位白名单。`use` 不带 effort 即清除旧 override，`none` 不是 default。Host 继续薄读选模身份，modeld 的原 TURN binding 持有冻结 record/policy/revision；改档不热替换现有 TURN，也不把旧 STEP 变成新请求。
+
+backend 合并 SDK 设置并在最终 HTTP 前再次校验/编码 effort，保留大小/工具/取消门。终态含 requested/emitted、unknown Provider 执行档位、有限 SDK warnings 和可选 reasoningTokens（completionTokens 子集）。旧 schema 只读不写，明确保存发出 v2；v7 成套升级与旧配置恢复要求见[决策](decisions/2026-09-17-model-reasoning-policy.md)及[实现票](tickets/FEAT-model-reasoning-policy.md)。本功能不授权部署或真实模型消费。
+
 ### 连续执行与生命周期（2026-09-16）
 
 `LEDGER_ENTRIES_MAX=1024` 的进程累计额度已被取消，不是调高阈值。唯一 kernel 继续拥有 claim、duplicate/conflict、cancel 和 binding；`ExecutionHistory` 只是它的持久能力，由 modeld root 的 `classic-level` 适配器实现，Host/CLI 不导入数据库实现。STEP claim 使用同步持久写完成后才准许 provider；无法证明 claim 的存储失败是 `ledger_unavailable`，不得回落内存或重发。

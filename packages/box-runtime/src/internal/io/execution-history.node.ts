@@ -2,6 +2,7 @@ import { chmod, lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { BindingFailure, projectProviderRecoveryState } from "@grokbox/runtime-kernel/contract";
+import { parseResolvedModelSelection, computeSelectionRevision } from "@grokbox/runtime-kernel/selection";
 import { sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
 import type { ColdTurn, ExecutionHistory, ExecutionHistoryHealth, LedgerRecord } from "@grokbox/runtime-kernel/inference";
 import type { ClassicLevel } from "classic-level";
@@ -31,6 +32,14 @@ function turnRecord(value: unknown): ColdTurn | undefined {
     || !Number.isFinite(v.turn.lastActivityMs)) throw fail();
   if (v.binding && (!digest(v.binding.bindingId) || !v.binding.model || !v.binding.selection
     || !v.binding.ownership || typeof v.binding.fingerprint !== "string" || "lease" in v.binding)) throw fail();
+  if (v.binding) {
+    try {
+      const model = parseResolvedModelSelection(v.binding.model);
+      if (v.binding.selection.agentId !== v.binding.agentId || v.binding.selection.modelId !== model.id
+        || computeSelectionRevision({ agentId: v.binding.agentId, model }) !== v.binding.selection.selectionRevision) throw fail();
+      v.binding.model = model;
+    } catch { throw fail(); }
+  }
   return v;
 }
 

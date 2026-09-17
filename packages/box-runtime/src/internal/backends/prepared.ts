@@ -1,3 +1,4 @@
+import type { ReasoningPolicy } from "@grokbox/runtime-kernel/selection";
 import type { AuthLease, PreparedCall } from "@grokbox/runtime-kernel/ports";
 import { cloneJson, type ContextSnapshot, type GenerationOptions, type ToolDefinition } from "@grokbox/runtime-kernel/contract";
 import { generationSettings, type OpenaiPromptApi, type OpenaiPrompt } from "./openai-prompt-adapter.ts";
@@ -14,6 +15,7 @@ export type PreparedPayload = {
   tools: ToolDefinition[];
   options: GenerationOptions;
   settings: ReturnType<typeof generationSettings>;
+  reasoning?: ReasoningPolicy;
 };
 
 const prepared = new WeakMap<PreparedCall, PreparedPayload>();
@@ -28,14 +30,15 @@ export function readPreparedCall(call: PreparedCall): PreparedPayload | undefine
   return prepared.get(call);
 }
 
-export function freezePreparedSnapshot(snapshot: ContextSnapshot, api: OpenaiPromptApi): {
+export function freezePreparedSnapshot(snapshot: ContextSnapshot, api: OpenaiPromptApi, reasoning?: ReasoningPolicy): {
   tools: ToolDefinition[];
   options: GenerationOptions;
   settings: ReturnType<typeof generationSettings>;
+  reasoning?: ReasoningPolicy;
 } {
   const tools = cloneJson(snapshot.tools) as ToolDefinition[];
   const options = cloneJson(snapshot.options) as GenerationOptions;
-  return { tools, options, settings: generationSettings(options, api) };
+  return { tools, options, settings: generationSettings(options, api, reasoning), ...(reasoning ? { reasoning: Object.freeze({ ...reasoning }) } : {}) };
 }
 
 export function makeAuthLease(): AuthLease {

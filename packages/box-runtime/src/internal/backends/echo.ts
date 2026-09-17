@@ -29,6 +29,7 @@ function mapPrepareError(error: unknown): BackendFailure {
 export const echoModelBackendLayer: Layer.Layer<ModelBackend> = Layer.succeed(ModelBackend, {
   prepare: (_selection: unknown, snapshot: unknown) => Effect.try({
     try: () => {
+      if (_selection && typeof _selection === "object" && "reasoning" in _selection && _selection.reasoning !== undefined) throw new BackendFailure("unsupported_options");
       const snap = snapshot as Parameters<typeof encodeOpenaiPrompt>[0];
       const encoded = encodeOpenaiPrompt(snap);
       const frozen = freezePreparedSnapshot(snap, "chat");

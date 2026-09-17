@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   assertBoxLocal,
   changeRuntimeModel,
+  migrateRuntimeModels,
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
   BoxRuntimeError,
@@ -51,6 +52,7 @@ import {
   type DesiredMode,
   type IdentityOpResult,
 } from "@grokbox/box-runtime/runtime";
+import { captureManagedSelection, parseRequestedEffort } from "@grokbox/runtime-kernel/selection";
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { LIVE_HOST_BUNDLE_PATH } from "../host-source.ts";
@@ -200,12 +202,14 @@ export async function runRuntimeModelsUse(
   deps: CliDeps,
   modelId: string,
   forAgent: string | undefined,
+  effort?: string,
 ): Promise<void> {
   try {
     parseModelId(modelId);
+    parseRequestedEffort(effort);
     const runtime = store(deps);
     const agentId = forAgent === undefined ? undefined : await resolveBotId(deps, forAgent);
-    const selection = await changeRuntimeModel({ store: runtime, modelId, forAgent: agentId,
+    const selection = await changeRuntimeModel({ store: runtime, modelId, forAgent: agentId, effort,
       ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal, env: deps.env });
     writeSuccess(deps.stdout, {
       ...selection,
@@ -216,6 +220,27 @@ export async function runRuntimeModelsUse(
   } catch (error) {
     rethrow(error);
   }
+}
+
+/** Configuration projection only; a selected revision is not a captured live TURN. */
+export async function runRuntimeModelsShow(deps: CliDeps, target: string): Promise<void> {
+  try {
+    if (!target.trim()) throw new CliError("invalid_usage", "models show requires --for <agent>.");
+    const runtime = store(deps);
+    const agentId = await resolveBotId(deps, target);
+    const models = await runtime.loadModels();
+    const selection = captureManagedSelection(models, agentId);
+    writeSuccess(deps.stdout, {
+      scope: "configured_next_turn", agentId,
+      ...(selection.kind === "managed" ? { ...disclosure(models, selection.modelId, agentId), selectionRevision: selection.selectionRevision }
+        : { model: "official", reasoning: null }),
+      currentTurn: "not_observed", effectiveUse: "not_observed",
+    });
+  } catch (error) { rethrow(error); }
+}
+export async function runRuntimeModelsMigrate(deps: CliDeps, confirmed: boolean | undefined): Promise<void> {
+  try { writeSuccess(deps.stdout, await migrateRuntimeModels({ store: store(deps), confirmed: confirmed === true, signal: deps.signal })); }
+  catch (error) { rethrow(error); }
 }
 
 export async function runRuntimeModelsPersistKey(deps: CliDeps, modelId: string, piProvider: string | undefined, confirmed: boolean | undefined): Promise<void> {

@@ -36,8 +36,8 @@ test("route per-Bot official/custom/official selection changes no other assignme
     const result = await changeRuntimeModel({ store: f.store, forAgent: A, modelId, ownershipRead, env, fetch: catalogFetch() });
     expect(result).toMatchObject({ selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", ownership: modelId === undefined ? "not_required_for_reset" : "confirmed_box", blastRadius: "single_bot", takesEffect: "next_user_turn" });
     if (modelId === undefined) expect(f.get().assignments.agents).not.toHaveProperty(A);
-    else expect(f.get().assignments.agents[A]).toBe(modelId);
-    expect(f.get().assignments.agents[B]).toBe("stub/echo");
+    else expect(f.get().assignments.agents[A]?.modelId).toBe(modelId);
+    expect(f.get().assignments.agents[B]?.modelId).toBe("stub/echo");
     expect(await f.store.loadDesired()).toEqual({ version: 1, mode: "route" });
   }
   expect(f.writes()).toBe(3);
@@ -95,7 +95,7 @@ test("explicit reset removes only managed intent even when execution ownership c
     const result = await changeRuntimeModel({ store: f.store, forAgent: A, ownershipRead });
     expect(result).toMatchObject({ ownership: "not_required_for_reset", model: "official", selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed" });
     expect(reads).toBe(0);
-    expect(f.get()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
+    expect(f.get()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: { modelId: "stub/echo" } } } });
     expect(f.writes()).toBe(1);
   }
 });
@@ -105,18 +105,18 @@ test("reset still refuses cancelled or unreadable configuration without any writ
   await expect(changeRuntimeModel({ store: f.store, forAgent: A, signal: AbortSignal.abort() })).rejects.toBeDefined();
   await expect(changeRuntimeModel({ store: { ...f.store, loadModels: async () => { throw Error("owned-unavailable"); } }, forAgent: A })).rejects.toBeDefined();
   expect(f.writes()).toBe(0);
-  expect(f.get().assignments.agents[A]).toBe("stub/echo");
+  expect(f.get().assignments.agents[A]?.modelId).toBe("stub/echo");
 });
 
 test("another writer changing configuration during ownership read is not overwritten", async () => {
   const f = fixture();
   const ownershipRead = async (ids: string[]) => {
-    f.set({ ...f.get(), assignments: { main: "stub/echo", agents: { [B]: "openai/second" } } });
+    f.set({ ...f.get(), assignments: { main: { modelId: "stub/echo" }, agents: { [B]: { modelId: "openai/second" } } } });
     return { snapshot: ownedOwnershipSnapshot(ids), gateway: { pid: 4242, startedAt: 1 } };
   };
   await expect(changeRuntimeModel({ store: f.store, forAgent: A, modelId: "openai/second", ownershipRead, env, fetch: catalogFetch() })).rejects.toMatchObject({ code: "invalid_usage", message: "selection_configuration_changed" });
   expect(f.writes()).toBe(0);
-  expect(f.get().assignments).toEqual({ main: "stub/echo", agents: { [B]: "openai/second" } });
+  expect(f.get().assignments).toEqual({ main: { modelId: "stub/echo" }, agents: { [B]: { modelId: "openai/second" } } });
 });
 
 test("invalid model is refused without even consulting Server; default-only selection does not opt in Bots", async () => {
@@ -140,7 +140,7 @@ test("GET /v1/models failure or missing id refuses before any selection write", 
       store: f.store, forAgent: A, modelId: "openai/second", ownershipRead, env, fetch,
     })).rejects.toMatchObject({ code: "invalid_usage" });
     expect(f.writes()).toBe(0);
-    expect(f.get().assignments.agents[A]).toBe("stub/echo");
+    expect(f.get().assignments.agents[A]?.modelId).toBe("stub/echo");
   }
 });
 
@@ -149,6 +149,6 @@ test("GET /v1/models listing the model allows the assignment write", async () =>
   await changeRuntimeModel({
     store: f.store, forAgent: A, modelId: "openai/second", ownershipRead: ownedOwnershipReader(4242), env, fetch: catalogFetch(["second"]),
   });
-  expect(f.get().assignments.agents[A]).toBe("openai/second");
+  expect(f.get().assignments.agents[A]?.modelId).toBe("openai/second");
   expect(f.writes()).toBe(1);
 });

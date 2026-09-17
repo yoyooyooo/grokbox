@@ -56,8 +56,10 @@ export function usageFromTerminal(value: unknown): HostUsage | undefined {
   if (typeof prompt !== "number" || typeof completion !== "number" || !Number.isSafeInteger(prompt) || !Number.isSafeInteger(completion) || prompt < 0 || completion < 0) return undefined;
   const cacheRead = usage.cacheReadTokens ?? usage.cache_read_tokens;
   const cacheWrite = usage.cacheWriteTokens ?? usage.cache_write_tokens;
+  const reasoning = usage.reasoningTokens;
   return {
     promptTokens: prompt, completionTokens: completion, totalTokens: prompt + completion,
+    ...(typeof reasoning === "number" && Number.isSafeInteger(reasoning) && reasoning >= 0 && reasoning <= completion ? { reasoningTokens: reasoning } : {}),
     ...(typeof cacheRead === "number" && Number.isSafeInteger(cacheRead) && cacheRead >= 0 ? { cacheReadTokens: cacheRead } : {}),
     ...(typeof cacheWrite === "number" && Number.isSafeInteger(cacheWrite) && cacheWrite >= 0 ? { cacheWriteTokens: cacheWrite } : {}),
   };

@@ -13,7 +13,7 @@ import { SOURCE } from "./admission-fixture.ts";
 const input = {
   root: "/tmp/legacy-admission",
   desired: { version: 1 as const, mode: "identity" as const },
-  models: { version: 1 as const, models: {}, assignments: { main: null, agents: {} } },
+  models: { version: 2 as const, models: {}, assignments: { main: null, agents: {} } },
   now: () => 0,
 };
 

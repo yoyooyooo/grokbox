@@ -65,7 +65,7 @@ describe("production SDK stream boundaries and payload-free diagnostics", () => 
       expect(diagnostic).not.toContain("synthetic request");
       expect(diagnostic).not.toContain("synthetic-only");
       expect(out.diagnostic?.stream?.tail.length).toBeLessThanOrEqual(32);
-      expect(out.diagnostic?.stream?.engine).toMatchObject({ aiVersion: "5.0.253", providerVersion: "2.0.125", adapterRevision: 1 });
+      expect(out.diagnostic?.stream?.engine).toMatchObject({ aiVersion: "5.0.253", providerVersion: "2.0.125", adapterRevision: 3 });
     });
   }
   for (const [finish, reason] of [["insufficient_system_resource", "provider_resource"], ["aborted", "provider_interrupted"], ["length", "output_limit"]] as const) {

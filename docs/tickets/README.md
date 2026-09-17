@@ -82,6 +82,10 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 
 本节为当前收口入口，不将 branch 数量作为稳定发布门。2026-09-13本窗口正常Git写入口可用：V2的203文件继承成果已保存私有完整快照，并经固定验证提交为`pre-publication-revision`；早先Git写入受限属于历史，不再作为当前阻塞。主仓库 + 4 个linked worktree尚原样保留；main的15个staged及old-runtime的14项dirty/untracked未覆盖。现役modeld只引用保留的V2路径，Host使用原生路径；其它工作树的保全/清理仍须完成，不据此宣布已删除。
 
+## 同通道模型推理设置
+
+[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md) 拥有本 feature 的代码、离线验证和复审出口，Spec S11/ADR 已归位；原生 Provider/App/成套切换只由 LIVE 对应条目记录。使用功能命名空间，不抢占并行 worktree 的 T 编号。
+
 ## Rebuild ticket allocation / formal closeout
 
 下表保留原票的正式关闭状态，不据已有文件批量改成 Done，也不再声称“全部未实现”。Done 必须满足该票 executable proof 与独立复审；offline Done 不等于 live-qualified。当前实现进度和发布缺口见上表及各 owning ticket。

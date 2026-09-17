@@ -76,6 +76,7 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
       if (!held.ok) throw new BoxRuntimeError("invalid_usage", "model_configuration_busy");
       try {
         const persisted = persistModelsDocument(file);
+        parseModelsFile(persisted);
         if (expectedRevision !== undefined) {
           const current = persistModelsDocument(parseModelsFile(await readJson(modelsPath(root))));
           if (sha256Text(canonicalJson(current)) !== expectedRevision) {

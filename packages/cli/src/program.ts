@@ -109,6 +109,8 @@ import {
   runRuntimeModeldReplace,
   runRuntimeModelsCheck,
   runRuntimeModelsList,
+  runRuntimeModelsShow,
+  runRuntimeModelsMigrate,
   runRuntimeModelsReset,
   runRuntimeModelsUse,
   runRuntimeModelsPersistKey,
@@ -190,6 +192,7 @@ type CliOptions = ProfileOptions & ConfigCommandOptions & {
   mode?: string;
   for?: string;
   default?: boolean;
+  effort?: string;
   from?: string;
   rev?: string;
   visibility?: string;
@@ -370,13 +373,15 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "models list": async (deps) => await runRuntimeModelsList(deps),
     "models use": async (deps, args, options) => {
       if (Boolean(options.for) === Boolean(options.default)) throw usage("models use requires exactly one of --for <agent> or --default.");
-      await runRuntimeModelsUse(deps, args[0] ?? "", options.for);
+      await runRuntimeModelsUse(deps, args[0] ?? "", options.for, options.effort);
     },
     "models reset": async (deps, _args, options) => {
       if (Boolean(options.for) === Boolean(options.default)) throw usage("models reset requires exactly one of --for <agent> or --default.");
       await runRuntimeModelsReset(deps, options.for);
     },
     "models persist-key": async (deps, args, options) => await runRuntimeModelsPersistKey(deps, args[0] ?? "", options.fromPi, options.confirm),
+    "models show": async (deps, _args, options) => await runRuntimeModelsShow(deps, options.for ?? ""),
+    "models migrate": async (deps, _args, options) => await runRuntimeModelsMigrate(deps, options.confirm),
     "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out),
     "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
     "runtime profile propose": async (deps, _args, options) => await runRuntimeProfilePropose(deps, options.from, options.out, options.against),

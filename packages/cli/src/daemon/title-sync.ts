@@ -43,8 +43,8 @@ export class TitleSyncManager {
       const listed = await this.gateway.listAgents(TITLE_SYNC_TIMEOUT_MS);
       const rows = listed.agents.filter(isRecord).filter((row) => row.isGroup !== true && parseAgentTitle(row.title).showing);
       if (rows.length === 0) return;
-      const { tokens, assigned } = await loadTitleModelIndex(this.boxRuntimeRoot, this.env);
-      await applyAgentTitles(this.gateway, TITLE_SYNC_TIMEOUT_MS, { action: "sync", rows, tokens, assigned });
+      const { tokens, assigned, efforts } = await loadTitleModelIndex(this.boxRuntimeRoot, this.env);
+      await applyAgentTitles(this.gateway, TITLE_SYNC_TIMEOUT_MS, { action: "sync", rows, tokens, assigned, efforts });
     } catch {
       /* Next interval retries. A failed Server read must not stop the daemon. */
     } finally {

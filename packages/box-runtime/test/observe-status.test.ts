@@ -14,7 +14,7 @@ import type { DesiredFile, ModelsFile } from "@grokbox/runtime-kernel/selection"
 import type { ProcessIdentity, ProcessPort, SignalName } from "../src/internal/process/process-port.ts";
 import type { PatchProfile } from "../src/internal/host/profile.ts";
 
-const MODELS: ModelsFile = { version: 1, models: {}, assignments: { main: "stub/echo", agents: {} } };
+const MODELS: ModelsFile = { version: 2, models: {}, assignments: { main: { modelId: "stub/echo" }, agents: {} } };
 const SHA = "disk-sha-fixture";
 const DECOY_DIR = join(tmpdir(), "box-runtime-keep-identity-ephemeral");
 const REVIEWED: PatchProfile = {

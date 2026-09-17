@@ -735,7 +735,7 @@ describe("box-local runtime CLI", () => {
       boxRuntimeRoot,
     });
     expect(listed.code, listed.stderr).toBe(0);
-    expect((data(listed.stdout).assignments as { main: string }).main).toBe("stub/echo");
+    expect((data(listed.stdout).assignments as { main: { modelId: string } }).main).toEqual({ modelId: "stub/echo" });
   });
 
   test("activate --mode route refuses a non-stub assignment", async () => {

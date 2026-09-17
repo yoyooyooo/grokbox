@@ -431,7 +431,7 @@ setInterval(() => {}, 1000);
         confirmed: true,
         root: boxRuntimeRoot,
         desired: { version: 1, mode: "identity" },
-        models: { version: 1, models: {}, assignments: { main: null, agents: {} } },
+        models: { version: 2, models: {}, assignments: { main: null, agents: {} } },
         now: () => 0,
         ...wired,
         freshDiskSha: () => "none",

@@ -33,6 +33,8 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 - [统一配置与命令面重建 Spec](roadmap/configuration-rebuild-spec.md)：AH-99/AH-100 + T57–T60 的两文件入口、config v2、canonical durable/alias、单一 writer、作用域与迁移合同。取代 ops-policy 第三配置与旧通用命令草案；运维业务仍归 Template Ops Spec。[设计取舍](decisions/2026-09-17-unified-configuration-rebuild.md)。配置实现与隔离验证见操作指南；现役迁移和 Reset 验收另归 LIVE 队列。
 
+- [同通道模型推理设置](tickets/FEAT-model-reasoning-policy.md)：schema v2 assignment、capability gate、不可变 TURN 选择、最终 HTTP effort 校验与分层证据；[ADR](decisions/2026-09-17-model-reasoning-policy.md)说明版本切换与非目标。
+
 ## Cross-worktree live acceptance
 
 [`LIVE` integration validation backlog](tickets/LIVE-integration-validation.md) is the long-lived scheduling/receipt home for acceptance that actually needs native Host, loaded Host/modeld, a real Provider, the original App or restart/rollback. Finish code, offline proof and code review in feature worktrees; register live-only entries with source commits and dependencies, then normally validate a fixed combined `feat/box-runtime-v2` artifact in one approved window. The queue records integration mappings, budgets, stop/rollback conditions and per-entry results. It neither authorizes cutover nor turns unresolved code/review into live-only residue; completed entries are invalidated explicitly when relevant artifacts change.

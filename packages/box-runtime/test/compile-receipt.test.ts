@@ -7,7 +7,7 @@ describe("retired compile-receipt coordinator path", () => {
       confirmed: true,
       root: "/tmp/legacy-compile",
       desired: { version: 1, mode: "route" },
-      models: { version: 1, models: {}, assignments: { main: "stub/echo", agents: {} } },
+      models: { version: 2, models: {}, assignments: { main: { modelId: "stub/echo" }, agents: {} } },
       now: () => 0,
     })).rejects.toMatchObject({
       code: "invalid_usage",

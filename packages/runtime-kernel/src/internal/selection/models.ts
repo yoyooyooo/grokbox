@@ -1,4 +1,5 @@
 import { BoxRuntimeError } from "../contract/errors.ts";
+import { assertReasoningSupported, parseReasoningCapability, parseReasoningPolicy, type ReasoningCapability, type ReasoningPolicy } from "./reasoning.ts";
 import {
   adaptPiCatalog,
   catalogWantsPi,
@@ -16,6 +17,7 @@ export type ModelCapabilities = {
   vision: boolean;
   tools: boolean;
   images: boolean;
+  reasoning?: ReasoningCapability;
 };
 
 export type ModelRecord = {
@@ -48,12 +50,17 @@ export const STUB_ECHO_MODEL: ModelRecord = {
   dataTypes: ["text"],
 };
 
+/** A catalog identity plus per-Bot policy, never a derived catalog model. */
+export type ModelAssignment = { modelId: string; reasoning?: ReasoningPolicy };
+/** Runtime-only immutable snapshot. reasoning is never a catalog record field. */
+export type ResolvedModelSelection = ModelRecord & { reasoning?: ReasoningPolicy };
+
 export type ModelsFile = {
-  version: 1;
+  version: 2;
   models: Record<string, ModelRecord>;
   assignments: {
-    main: string | null;
-    agents: Record<string, string>;
+    main: ModelAssignment | null;
+    agents: Record<string, ModelAssignment>;
   };
   externalCatalog?: ExternalCatalogEntry[];
   credentials?: Record<string, string>;
@@ -65,7 +72,7 @@ export type DesiredFile = {
 };
 
 const EMPTY_MODELS: ModelsFile = {
-  version: 1,
+  version: 2,
   models: {},
   assignments: { main: null, agents: {} },
 };
@@ -147,9 +154,20 @@ export function qualifiedContextWindowTokens(record: ModelRecord, adapterWindow?
   return undefined;
 }
 
+function exactFields(value: Record<string, unknown>, allowed: readonly string[], where: string): void {
+  if (Object.keys(value).some(key => !allowed.includes(key))) {
+    throw new BoxRuntimeError("invalid_usage", `Unknown field in ${where}; refusing a lossy configuration read/write.`);
+  }
+}
+
 function parseModel(id: string, value: unknown): ModelRecord {
   if (!isRecord(value)) throw new BoxRuntimeError("invalid_usage", `Model '${id}' is invalid.`);
+  exactFields(value, ["id", "provider", "model", "endpoint", "apiKeyRef", "capabilities", "dataTypes", "contextWindowTokens", "contextWindow", "chatDialect", "alias", "catalog"], "model record");
+  if (isRecord(value.capabilities)) exactFields(value.capabilities, ["vision", "tools", "images", "reasoning"], "model capabilities");
   if (id === STUB_ECHO_MODEL_ID) {
+    if (isRecord(value.capabilities) && value.capabilities.reasoning !== undefined && value.capabilities.reasoning !== false) {
+      throw new BoxRuntimeError("invalid_usage", "stub/echo cannot declare reasoning efforts.");
+    }
     if (value.chatDialect !== undefined) throw new BoxRuntimeError("invalid_usage", "chatDialect requires Chat Completions.");
     if (typeof value.apiKeyRef === "string" && value.apiKeyRef.length > 0) {
       throw new BoxRuntimeError("credential_invalid", "stub/echo forbids credential references.");
@@ -178,7 +196,9 @@ function parseModel(id: string, value: unknown): ModelRecord {
   }
   parseApiKeyRef(apiKeyRef);
   const capabilitiesRaw = isRecord(value.capabilities) ? value.capabilities : {};
+  const reasoning = parseReasoningCapability(capabilitiesRaw.reasoning);
   const capabilities: ModelCapabilities = {
+    ...(reasoning !== undefined ? { reasoning } : {}),
     vision: capabilitiesRaw.vision === true,
     tools: capabilitiesRaw.tools !== false,
     images: capabilitiesRaw.images === true || capabilitiesRaw.vision === true,
@@ -212,9 +232,10 @@ function parseModel(id: string, value: unknown): ModelRecord {
 
 export function parseModelsFile(value: unknown): ModelsFile {
   if (value === undefined) return EMPTY_MODELS;
-  if (!isRecord(value) || value.version !== 1) {
-    throw new BoxRuntimeError("invalid_usage", "models.json must be version 1.");
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) {
+    throw new BoxRuntimeError("invalid_usage", "models.json must be version 1 (read-only migration input) or version 2.");
   }
+  exactFields(value, ["version", "models", "assignments", "externalCatalog", "credentials"], "models.json");
   if ((value.models !== undefined && !isRecord(value.models)) ||
     (value.assignments !== undefined && !isRecord(value.assignments)) ||
     (isRecord(value.assignments) && value.assignments.agents !== undefined && !isRecord(value.assignments.agents))) {
@@ -238,24 +259,25 @@ export function parseModelsFile(value: unknown): ModelsFile {
   const externalCatalog = parseExternalCatalog(value.externalCatalog);
   const credentials = parseCatalogCredentials(value.credentials);
   const assignmentsRaw = isRecord(value.assignments) ? value.assignments : {};
-  const main = assignmentsRaw.main === null || assignmentsRaw.main === undefined
-    ? null
-    : typeof assignmentsRaw.main === "string"
-      ? assignmentsRaw.main
-      : (() => {
-          throw new BoxRuntimeError("invalid_usage", "assignments.main must be a model id or null.");
-        })();
-  const agents: Record<string, string> = Object.create(null);
-  if (isRecord(assignmentsRaw.agents)) {
-    for (const [agentId, modelId] of Object.entries(assignmentsRaw.agents)) {
-      if (typeof modelId !== "string") {
-        throw new BoxRuntimeError("invalid_usage", `assignments.agents.${agentId} must be a model id.`);
-      }
-      agents[agentId] = modelId;
+  exactFields(assignmentsRaw, ["main", "agents"], "assignments");
+  const parseAssignment = (entry: unknown): ModelAssignment => {
+    if (value.version === 1) {
+      if (typeof entry !== "string" || !entry.length) throw new BoxRuntimeError("invalid_usage", "Version 1 assignments must be nonempty model ids.");
+      return { modelId: entry };
     }
+    if (!isRecord(entry)) throw new BoxRuntimeError("invalid_usage", "Version 2 assignments must be modelId/reasoning objects.");
+    exactFields(entry, ["modelId", "reasoning"], "model assignment");
+    if (typeof entry.modelId !== "string" || !entry.modelId.length) throw new BoxRuntimeError("invalid_usage", "An assignment requires a nonempty modelId.");
+    const reasoning = parseReasoningPolicy(entry.reasoning);
+    return { modelId: entry.modelId, ...(reasoning ? { reasoning } : {}) };
+  };
+  const main = assignmentsRaw.main === null || assignmentsRaw.main === undefined ? null : parseAssignment(assignmentsRaw.main);
+  const agents: Record<string, ModelAssignment> = Object.create(null);
+  if (isRecord(assignmentsRaw.agents)) {
+    for (const [agentId, assignment] of Object.entries(assignmentsRaw.agents)) agents[agentId] = parseAssignment(assignment);
   }
   return {
-    version: 1,
+    version: 2,
     models,
     assignments: { main, agents },
     ...(externalCatalog.length > 0 ? { externalCatalog } : {}),
@@ -301,7 +323,7 @@ function parseCatalogCredentials(value: unknown): Record<string, string> {
 
 /** Disk document: assignments, catalog pointer, credentials, local models. Strips Pi-adapted records. */
 export function persistModelsDocument(file: ModelsFile): {
-  version: 1;
+  version: 2;
   models: Record<string, ModelRecord>;
   assignments: ModelsFile["assignments"];
   externalCatalog?: ExternalCatalogEntry[];
@@ -314,7 +336,7 @@ export function persistModelsDocument(file: ModelsFile): {
     models[id] = rest;
   }
   return {
-    version: 1,
+    version: 2,
     models,
     assignments: file.assignments,
     ...(file.externalCatalog && file.externalCatalog.length > 0 ? { externalCatalog: file.externalCatalog } : {}),
@@ -362,8 +384,8 @@ const LABEL_TOKEN = /^[A-Za-z0-9._:/-]+$/;
 /** Label `m=` token: alias if set, otherwise the short `model` field when it fits. */
 export function assignedModelTokens(file: ModelsFile, mode: "alias-only" | "alias-or-model" = "alias-or-model"): Map<string, string> {
   const tokens = new Map<string, string>();
-  for (const [agentId, modelId] of Object.entries(file.assignments.agents)) {
-    const record = file.models[modelId];
+  for (const [agentId, assignment] of Object.entries(file.assignments.agents)) {
+    const record = file.models[assignment.modelId];
     if (!record) continue;
     const token = record.alias ?? (mode === "alias-or-model" && LABEL_TOKEN.test(record.model) ? record.model : undefined);
     if (token !== undefined) tokens.set(agentId.toLowerCase(), token);
@@ -407,14 +429,17 @@ export function assignmentTarget(forAgent?: string): { kind: "main" } | { kind: 
   return { kind: "agent", id: forAgent };
 }
 
-export function applyUse(file: ModelsFile, modelId: string, forAgent?: string): ModelsFile {
-  requireModel(file, modelId);
+export function applyUse(file: ModelsFile, modelId: string, forAgent?: string, reasoning?: ReasoningPolicy): ModelsFile {
+  const record = requireModel(file, modelId);
+  const policy = parseReasoningPolicy(reasoning);
+  assertReasoningSupported(record, policy);
+  const assignment: ModelAssignment = { modelId, ...(policy ? { reasoning: policy } : {}) };
   if (forAgent === undefined || forAgent.length === 0) {
-    return { ...file, assignments: { ...file.assignments, main: modelId } };
+    return { ...file, assignments: { ...file.assignments, main: assignment } };
   }
   return {
     ...file,
-    assignments: { ...file.assignments, agents: { ...file.assignments.agents, [forAgent]: modelId } },
+    assignments: { ...file.assignments, agents: { ...file.assignments.agents, [forAgent]: assignment } },
   };
 }
 
@@ -462,8 +487,8 @@ export function backendKindForModel(record: ModelRecord): BackendKind {
 
 function assignedModelIds(file: ModelsFile): string[] {
   const ids: string[] = [];
-  if (file.assignments.main) ids.push(file.assignments.main);
-  ids.push(...Object.values(file.assignments.agents));
+  if (file.assignments.main) ids.push(file.assignments.main.modelId);
+  ids.push(...Object.values(file.assignments.agents).map(assignment => assignment.modelId));
   return ids;
 }
 
@@ -495,13 +520,18 @@ export function assertStubOnlyRouteAssignments(file: ModelsFile): void {
 
 export function assertRouteAssignment(file: ModelsFile): void {
   assertStubOnlyRouteAssignments(file);
-  if (file.assignments.main) requireModel(file, file.assignments.main);
+  if (file.assignments.main) resolveModelSelection(file, file.assignments.main);
+  for (const assignment of Object.values(file.assignments.agents)) resolveModelSelection(file, assignment);
 }
 
 export function disclosure(file: ModelsFile, modelId: string, forAgent?: string) {
   const record = requireModel(file, modelId);
   const target = assignmentTarget(forAgent);
+  const assignment = forAgent ? file.assignments.agents[forAgent] : file.assignments.main;
   return {
+    reasoning: { requested: assignment?.reasoning?.effort ?? "default", providerReported: "unknown" },
+    reasoningCapability: record.capabilities.reasoning ?? "unknown",
+    modelsSchemaVersion: 2,
     model: record.id,
     provider: record.provider,
     endpoint: record.endpoint,
@@ -512,12 +542,27 @@ export function disclosure(file: ModelsFile, modelId: string, forAgent?: string)
   };
 }
 
-export function resolveAssignment(file: ModelsFile, agentId?: string): ModelRecord {
-  const id = agentId && Object.hasOwn(file.assignments.agents, agentId) ? file.assignments.agents[agentId] : file.assignments.main;
-  if (!id) {
-    throw new BoxRuntimeError("invalid_usage", "No assignments.main; modeld pin requires a managed model id.");
-  }
-  return requireModel(file, id);
+/** Detach the whole selected record before TURN admission; later config edits
+ * cannot mutate endpoint, capability whitelist or effort inside this snapshot. */
+export function resolveModelSelection(file: ModelsFile, assignment: ModelAssignment): ResolvedModelSelection {
+  const record = requireModel(file, assignment.modelId);
+  const reasoning = parseReasoningPolicy(assignment.reasoning);
+  assertReasoningSupported(record, reasoning);
+  const resolved: ResolvedModelSelection = structuredClone({ ...record, ...(reasoning ? { reasoning } : {}) });
+  const freeze = (value: unknown): void => {
+    if (value && typeof value === "object" && !Object.isFrozen(value)) {
+      for (const child of Object.values(value)) freeze(child);
+      Object.freeze(value);
+    }
+  };
+  freeze(resolved);
+  return resolved;
+}
+
+export function resolveAssignment(file: ModelsFile, agentId?: string): ResolvedModelSelection {
+  const assignment = agentId && Object.hasOwn(file.assignments.agents, agentId) ? file.assignments.agents[agentId] : file.assignments.main;
+  if (!assignment) throw new BoxRuntimeError("invalid_usage", "No assignments.main; modeld pin requires a managed model id.");
+  return resolveModelSelection(file, assignment);
 }
 
 export type RouteSessionDecision =
@@ -526,9 +571,11 @@ export type RouteSessionDecision =
 
 export function decideRouteSession(file: ModelsFile, agentId?: string): RouteSessionDecision {
   if (!agentId || !Object.hasOwn(file.assignments.agents, agentId)) return { kind: "official" };
-  const id = file.assignments.agents[agentId]!;
+  const assignment = file.assignments.agents[agentId]!;
+  const id = assignment.modelId;
   const record = id === STUB_ECHO_MODEL_ID ? stubFromFile(file) : Object.hasOwn(file.models, id) ? file.models[id] : undefined;
   if (!record || !routeModelAdmitted(record)) routeModelNotAdmitted();
+  assertReasoningSupported(record, assignment.reasoning);
   return { kind: "managed", modelId: record.id, assignment: "agent" };
 }
 
@@ -540,9 +587,23 @@ export function resolveRouteSessionModel(file: ModelsFile, agentId?: string): { 
   return { modelId: decided.modelId, assignment: decided.assignment };
 }
 
-export function modelForAgent(file: ModelsFile, agentId: string): ModelRecord | undefined {
+export function modelForAgent(file: ModelsFile, agentId: string): ResolvedModelSelection | undefined {
   const decided = decideRouteSession(file, agentId);
   if (decided.kind !== "managed") return undefined;
-  if (decided.modelId === STUB_ECHO_MODEL_ID) return stubFromFile(file);
-  return Object.hasOwn(file.models, decided.modelId) ? file.models[decided.modelId] : undefined;
+  return resolveModelSelection(file, file.assignments.agents[agentId]!);
+}
+
+export function assignedReasoningEfforts(file: ModelsFile): Map<string, string> {
+  return new Map(Object.entries(file.assignments.agents).flatMap(([id, selection]) => selection.reasoning ? [[id.toLowerCase(), selection.reasoning.effort]] : []));
+}
+
+/** Revalidate a durable TURN snapshot without consulting today's assignments.
+ * The serialized policy and capability whitelist must survive cold restoration. */
+export function parseResolvedModelSelection(value: unknown): ResolvedModelSelection {
+  if (!isRecord(value) || typeof value.id !== "string") throw new BoxRuntimeError("invalid_usage", "Invalid resolved model snapshot.");
+  const { reasoning, ...raw } = value;
+  const model = parseModel(value.id, raw);
+  if (raw.catalog === "pi") model.catalog = "pi";
+  return resolveModelSelection({ version: 2, models: { [model.id]: model }, assignments: { main: null, agents: {} } },
+    { modelId: model.id, ...(reasoning !== undefined ? { reasoning: parseReasoningPolicy(reasoning) } : {}) });
 }

@@ -25,7 +25,7 @@ test("pre-admission authority controls preserve independent ordering and cannot 
 });
 
 test("old execution versions and malformed authority controls cannot negotiate permission", () => {
-  for (const version of [3, 4, 5]) expect(() => parseModeldRequest({ method: "health", version })).toThrow(WireError);
+  for (const version of [3, 4, 5, 6]) expect(() => parseModeldRequest({ method: "health", version })).toThrow(WireError);
   const session = clientSessionFor({ method: "run-step" });
   for (const bad of [ { ...frame(), version: 5 }, { ...frame(), sequence: 1 },
     frame(0, { ...progress, remainingMs: -1 }), frame(0, { ...progress, retries: 3 }),
@@ -56,18 +56,18 @@ test("EOF following only authority progress is incomplete, never a successful em
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); }
 });
 
-test("v5 identity remains read-only observable but is never ready for v6 execution", async () => {
+for (const version of [5, 6]) test(`v${version} identity stays observable but cannot execute v7`, async () => {
   const root = await mkdtemp(join(tmpdir(), "authority-v5-probe-")), generation = randomUUID();
   const server = createServer(socket => socket.once("data", data => {
     const decoded = decodeModeldFrame(typeof data === "string" ? Buffer.from(data) : data);
     if (!decoded || "error" in decoded) return socket.end();
     const request = decoded.value as { version: number; method: string };
-    if (request.version !== 5 || request.method !== "service-info") return socket.end();
-    socket.end(encodeModeldFrame({ ok: true, method: "service-info", version: 5, serverGeneration: generation, rootId: modeldRootId(root, root) }));
+    if (request.version !== version || request.method !== "service-info") return socket.end();
+    socket.end(encodeModeldFrame({ ok: true, method: "service-info", version, serverGeneration: generation, rootId: modeldRootId(root, root) }));
   }));
   await new Promise<void>(resolve => server.listen(join(root, "modeld.sock"), resolve));
   try {
-    expect(await observeModeldService(root, root)).toMatchObject({ ready: false, wireVersion: 5, expectedWireVersion: 6,
+    expect(await observeModeldService(root, root)).toMatchObject({ ready: false, wireVersion: version, expectedWireVersion: 7,
       protocolCompatible: false, scope: "matched", serviceEpoch: generation });
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); }
 });

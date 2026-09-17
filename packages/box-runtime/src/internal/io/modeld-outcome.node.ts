@@ -116,6 +116,17 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
   if (recovery && !failureSummary?.recovery) out.recovery = recovery;
   const stream = projectStreamSummary(v.stream);
   if (stream) out.stream = stream;
+  const usage = record(v.usage);
+  const promptTokens = boundedInt(usage?.promptTokens, Number.MAX_SAFE_INTEGER);
+  const completionTokens = boundedInt(usage?.completionTokens, Number.MAX_SAFE_INTEGER);
+  if (promptTokens !== undefined && completionTokens !== undefined) {
+    const projected: Record<string, number> = { promptTokens, completionTokens };
+    for (const key of ["cacheReadTokens", "cacheWriteTokens", "reasoningTokens"] as const) {
+      const n = boundedInt(usage?.[key], key === "reasoningTokens" ? completionTokens : Number.MAX_SAFE_INTEGER);
+      if (n !== undefined) projected[key] = n;
+    }
+    out.usage = projected;
+  }
   const execution = projectExecutionCapacity(v.execution);
   if (execution) out.execution = execution;
   const cleanup = record(v.cleanup);

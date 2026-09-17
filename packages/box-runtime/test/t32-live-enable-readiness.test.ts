@@ -72,14 +72,15 @@ describe("T32 live-enable readiness (default-off; opt-in env=1)", () => {
     }
   });
 
-  test("wire is v6; old peers and initial compact-request are rejected", () => {
-    expect(WIRE_VERSION).toBe(6);
+  test("wire is v7; old peers and initial compact-request are rejected", () => {
+    expect(WIRE_VERSION).toBe(7);
     expect(() => parseV3Request({ version: 3, method: "health" })).toThrow(WireError);
     expect(() => parseModeldRequest({ version: 3, method: "health" })).toThrow(WireError);
     expect(() => parseModeldRequest({ version: 4, method: "health" })).toThrow(WireError);
     expect(() => parseModeldRequest({ version: 5, method: "health" })).toThrow(WireError);
-    expect(parseModeldRequest({ version: 6, method: "health" })).toEqual({ method: "health" });
-    expect(() => parseModeldRequest({ version: 6, method: "compact-request" })).toThrow(WireError);
+    expect(() => parseModeldRequest({ version: 6, method: "health" })).toThrow(WireError);
+    expect(parseModeldRequest({ version: WIRE_VERSION, method: "health" })).toEqual({ method: "health" });
+    expect(() => parseModeldRequest({ version: WIRE_VERSION, method: "compact-request" })).toThrow(WireError);
   });
 
   test("packed preload still contains Host compact-request client and D2 register symbol", () => {

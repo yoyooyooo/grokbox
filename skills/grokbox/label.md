@@ -19,15 +19,15 @@ Use explicit targets by default. `show` without names or `--all` is invalid; `hi
 App Label is `title`. Trailer presence is the show switch; there is no extra config.
 
 ```text
-<user text> | owner=box,m=<alias-or-model>
+<user text> | owner=box,m=<alias-or-model>,e=<requested-effort>
 ```
 
-The fence is ASCII ` | `; parsing uses the last fence followed by valid `k=v` pairs. Unknown keys remain. `owner=box|temporal|conflict` reflects live Server ownership when available; `m=` uses the catalog alias, otherwise the short model field. Official brain omits `m=`.
+The fence is ASCII ` | `; parsing uses the last fence followed by valid `k=v` pairs. Unknown keys remain. `owner=box|temporal|conflict` reflects live Server ownership when available; `m=` uses the catalog alias, otherwise the short model field. `e=` is optional and shows an explicit requested effort, not a confirmed Provider tier. Default effort omits `e=`; official brain omits both `m=` and `e=`.
 
 `show` can also paint when ownership is unconfirmed, using roster harness, existing trailer, assignment, or a display fallback. Empty App titles can be painted. Consequently a visible `owner=box` is **not** `confirmed_box` evidence; use [ownership](ownership.md) before model changes. Skips are reported as `skips: [{ agent, id, reason }]` in JSON.
 
 ## Interaction with models and user titles
 
-`models use --for` paints the selected Bot's trailer and preserves its user title. `models reset --for` refreshes only an already-showing trailer and drops `m=`. Title write failure does not undo an assignment. `agents update --title` replaces the user segment while keeping a showing trailer refreshed; missing credentials preserve `m=`, while a confirmed absent assignment clears it.
+`models use --for` paints the selected Bot's trailer and preserves its user title. `models reset --for` refreshes only an already-showing trailer and drops `m=` and `e=`. Title write failure does not undo an assignment. `agents update --title` replaces the user segment while keeping a showing trailer refreshed; missing credentials preserve `m=`, while a confirmed absent assignment clears it.
 
 For the deliberately delayed refresh acceptance check, load [validation](validation.md). A routine title edit does not require that full playbook.

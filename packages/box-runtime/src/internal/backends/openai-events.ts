@@ -24,7 +24,9 @@ function readUsage(raw: unknown): InferenceUsage | undefined {
   if (typeof prompt !== "number" || typeof completion !== "number" || !Number.isSafeInteger(prompt) || !Number.isSafeInteger(completion) || prompt < 0 || completion < 0) return undefined;
   const read = r.cacheReadTokens ?? r.cache_read_tokens ?? r.cachedInputTokens;
   const write = r.cacheWriteTokens ?? r.cache_write_tokens;
+  const reasoning = r.reasoningTokens;
   return { promptTokens: prompt, completionTokens: completion,
+    ...(typeof reasoning === "number" && Number.isSafeInteger(reasoning) && reasoning >= 0 && reasoning <= completion ? { reasoningTokens: reasoning } : {}),
     ...(typeof read === "number" && Number.isSafeInteger(read) && read >= 0 ? { cacheReadTokens: read } : {}),
     ...(typeof write === "number" && Number.isSafeInteger(write) && write >= 0 ? { cacheWriteTokens: write } : {}) };
 }
@@ -99,6 +101,7 @@ export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet
       const r = part && typeof part === "object" ? part as Record<string, unknown> : {};
       evidence.increment("sdkParts"); evidence.first("sdkFirstPartMs"); evidence.note("sdk", r.type);
       if (r.type === "finish") evidence.sdkFinish(r.finishReason);
+      if (r.type === "stream-start") evidence.sdkWarnings(r.warnings);
       if (r.invalid === true) evidence.invalidTool();
       if (r.type === "tool-input-start" || r.type === "tool-call-streaming-start" || r.type === "tool-call") {
         options.toolIdentity?.sdk(r.id ?? r.toolCallId, r.toolName ?? r.name);

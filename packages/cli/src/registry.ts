@@ -397,10 +397,26 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["models", "use"],
-    usage: "grokbox models use <provider/model> (--for <agent>|--default)",
+    usage: "grokbox models use <provider/model> (--for <agent>|--default) [--effort <level>]",
     summary: "Select one confirmed Box Bot's next-turn model, or explicitly change the non-routing default.",
     arguments: [{ syntax: "<provider/model>", description: "Catalog model id" }],
-    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name" }, { flags: "--default", description: "Change the box default only; does not opt any Bot into managed routing" }]),
+    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name" }, { flags: "--default", description: "Change the box default only; does not opt any Bot into managed routing" }, { flags: "--effort <level>", description: "Requested wire effort; omitted/default clears the override; capability-gated" }]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["models", "show"],
+    usage: "grokbox models show --for <agent>",
+    summary: "Show one Bot's configured model, effort and selection revision; not live execution proof.",
+    arguments: [],
+    options: options([{ flags: "--for <agent>", description: "Bot id or unambiguous name", required: true }]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["models", "migrate"],
+    usage: "grokbox models migrate --confirm",
+    summary: "Explicitly save models schema v2 without changing assignments; requires a coordinated runtime upgrade.",
+    arguments: [],
+    options: options([{ flags: "--confirm", description: "Confirm the forward-only schema save" }]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {

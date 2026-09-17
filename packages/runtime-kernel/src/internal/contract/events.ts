@@ -13,6 +13,8 @@ export type InferenceEventName =
 export type InferenceUsage = {
   promptTokens: number;
   completionTokens: number;
+  /** Provider-reported subset of completionTokens; absence is unknown, never zero. */
+  reasoningTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
 };

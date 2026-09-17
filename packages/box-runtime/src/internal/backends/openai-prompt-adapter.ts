@@ -1,3 +1,4 @@
+import type { ReasoningPolicy, ReasoningEffort } from "@grokbox/runtime-kernel/selection";
 import { generateText, jsonSchema } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
@@ -161,14 +162,14 @@ export function toProviderPrompt(prompt: OpenaiPrompt): ProviderPrompt {
   return [...(prompt.system !== undefined ? [{ role: "system", content: prompt.system }] : []), ...messages] as ProviderPrompt;
 }
 
-export function generationSettings(options: GenerationOptions, api: OpenaiPromptApi): {
+export function generationSettings(options: GenerationOptions, api: OpenaiPromptApi, reasoning?: ReasoningPolicy): {
   temperature?: number;
   topP?: number;
   maxOutputTokens?: number;
   seed?: number;
   stopSequences?: string[];
   toolChoice?: GenerationOptions["toolChoice"];
-  providerOptions?: { openai: { parallelToolCalls: boolean } };
+  providerOptions?: { openai: { parallelToolCalls?: boolean; reasoningEffort?: ReasoningEffort } };
 } {
   if (api === "responses" && (options.seed !== undefined || options.stopSequences !== undefined)) {
     throw new EnvelopeError("unsupported_options");
@@ -180,7 +181,10 @@ export function generationSettings(options: GenerationOptions, api: OpenaiPrompt
     ...(options.seed !== undefined ? { seed: options.seed } : {}),
     ...(options.stopSequences !== undefined ? { stopSequences: options.stopSequences } : {}),
     ...(options.toolChoice !== undefined ? { toolChoice: options.toolChoice } : {}),
-    ...(options.parallelToolCalls !== undefined ? { providerOptions: { openai: { parallelToolCalls: options.parallelToolCalls } } } : {}),
+    ...(options.parallelToolCalls !== undefined || reasoning !== undefined ? { providerOptions: { openai: {
+      ...(options.parallelToolCalls !== undefined ? { parallelToolCalls: options.parallelToolCalls } : {}),
+      ...(reasoning ? { reasoningEffort: reasoning.effort } : {}),
+    } } } : {}),
   };
 }
 

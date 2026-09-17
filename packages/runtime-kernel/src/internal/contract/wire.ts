@@ -1,6 +1,7 @@
-/** v6 adds pre-admission authority progress and shared STEP waiting semantics.
+/** v7 carries qualified reasoning evidence and reasoning-token usage.
+ * Retains v6 authority progress and shared STEP waiting semantics.
  * Host/profile/modeld must be upgraded together; old peers cannot execute. */
-export const WIRE_VERSION = 6 as const;
+export const WIRE_VERSION = 7 as const;
 
 export type WireMethod = "health" | "run-step" | "cancel-step" | "compact-request" | "resume-step";
 

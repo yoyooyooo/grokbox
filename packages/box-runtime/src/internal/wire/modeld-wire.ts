@@ -164,8 +164,9 @@ function uuidLike(value: unknown): value is string {
 }
 
 function validWireUsage(value: unknown): boolean {
-  if (!isRecord(value) || !exactKeys(value, ["promptTokens", "completionTokens"], ["cacheReadTokens", "cacheWriteTokens"])) return false;
-  return Object.values(value).every(v => typeof v === "number" && Number.isSafeInteger(v) && v >= 0);
+  if (!isRecord(value) || !exactKeys(value, ["promptTokens", "completionTokens"], ["cacheReadTokens", "cacheWriteTokens", "reasoningTokens"])) return false;
+  return Object.values(value).every(v => typeof v === "number" && Number.isSafeInteger(v) && v >= 0)
+    && (value.reasoningTokens === undefined || Number(value.reasoningTokens) <= Number(value.completionTokens));
 }
 function isWireInferenceEvent(value: unknown): boolean {
   if (!isRecord(value)) return false;

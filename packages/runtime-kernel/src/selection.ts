@@ -3,6 +3,11 @@ export {
   STUB_ECHO_MODEL_ID,
   applyReset,
   applyUse,
+  assignedReasoningEfforts,
+  resolveModelSelection,
+  parseResolvedModelSelection,
+  type ModelAssignment,
+  type ResolvedModelSelection,
   assignedModelAliases,
   assignedModelTokens,
   assertResetAllowed,
@@ -49,3 +54,4 @@ export {
   type PiProviderApiKeyLookup,
 } from "./internal/selection/pi-catalog.ts";
 export { captureManagedSelection, computeSelectionRevision, type CapturedSelection } from "./internal/selection/selection-revision.ts";
+export { REASONING_EFFORTS, isReasoningEffort, parseRequestedEffort, parseReasoningPolicy, parseReasoningCapability, assertReasoningSupported, type ReasoningPolicy, type ReasoningCapability, type ReasoningEffort } from "./internal/selection/reasoning.ts";

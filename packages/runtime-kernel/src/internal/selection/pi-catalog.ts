@@ -1,3 +1,4 @@
+import { piReasoningCapability } from "./reasoning.ts";
 import { BoxRuntimeError } from "../contract/errors.ts";
 import type { ModelCapabilities, ModelRecord } from "./models.ts";
 
@@ -84,7 +85,8 @@ function grokboxId(providerName: string, modelId: string): string {
 function capabilitiesOf(model: Record<string, unknown>): ModelCapabilities {
   const input = Array.isArray(model.input) ? model.input.filter((entry): entry is string => typeof entry === "string") : [];
   const vision = input.includes("image") || input.includes("images");
-  return { vision, tools: true, images: vision };
+  const reasoning = piReasoningCapability(model);
+  return { vision, tools: true, images: vision, ...(reasoning !== undefined ? { reasoning } : {}) };
 }
 
 function apiKeyRefForPiProvider(providerName: string, provider: Record<string, unknown>, credentials: Record<string, string>): string | undefined {

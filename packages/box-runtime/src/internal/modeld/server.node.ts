@@ -362,7 +362,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
             return yield* Effect.fail(annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: "wire_event", budget: { layer: "canonical", metric: "output_bytes", limit: outputBudget.limit, measured: outputBudget.used } }));
           }
           if (event.type === "backend_finish") {
-            observation = { ...observation, at: new Date().toISOString(), outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete", ...(event.stream ? { stream: event.stream } : {}) };
+            observation = { ...observation, at: new Date().toISOString(), outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete", ...(event.stream ? { stream: event.stream } : {}), ...(event.usage ? { usage: event.usage } : {}) };
             yield* emit(socket, {
               kind: "terminal",
               outcome: "ok",

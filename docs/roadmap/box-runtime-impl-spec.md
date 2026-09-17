@@ -904,3 +904,15 @@ T43 建立 `bun run verify:modeld-core -- <case>` 的**有限入口**，调同�
 性能报告记录 native reads/STEP、取证时间、共享等待、锁等待、存储、event-loop lag、取消延迟和资源峰值；冻结负载与前后两种同现实基线。目标是降低机制数量和依赖放大，不预设未测的 P99/SLA。Node/SDK/Effect/数据库版本保持不变；live raw response、Host dump、机器身份不入公共仓库。
 
 关闭 = 本票代码与旧路径退出 + 正反例 executable proof + 固定提交独立 review。仅有文档、typecheck、旧全库计数或模拟 canary 不算功能完成；仅有功能完成不算当前官方 Host/App/live release-qualified。
+
+<a id="model-reasoning-policy"></a>
+## S11. 同通道模型推理设置（2026-09-17）
+
+Owner：[实现票](../tickets/FEAT-model-reasoning-policy.md)；决策依据为[结构化 assignment ADR](../decisions/2026-09-17-model-reasoning-policy.md)，不是外部 issue 评论。复用 S10 的单执行核心，不重新设计 modeld。
+
+- R01：schema v2 assignment `{modelId,reasoning?}`，读 v1 不写、明确保存 v2、拒绝未知字段；不生成目录变体或迁移配置根。迁移/回退需成套制品与保护配置。
+- R02：effort 仅用明确能力白名单；default/omission 清除，none 独立；错误在资格/凭据/HTTP/保存前拒绝。Pi boolean 或数值 budget 不推断 wire 档位。
+- R03：policy/capability 进入 selectionRevision；已绑定 TURN、冷恢复、同 STEP 去重/冲突/重放保留现有身份合同。新 TURN 读取新选择，改变其他 Bot 不影响本 Bot。
+- R04：SDK 设置合并不覆盖 parallelToolCalls；实际 HTTP 前核对 wire model、协议字段和 effort；缺失由专用映射补入、冲突拒绝。预算、工具、取消、Provider recovery 边界不改变。
+- R05：configured/captured/emitted/provider-reported 分层，Provider tier 缺证时 unknown。warnings 有界去私密，reasoningTokens 为可选 output 子集；标题 e 与模型 m 分离。
+- R06：wire v7 同套执行，旧 v4/v5/v6 仅有限只读诊断；Host import fence 与 prompt envelope 保持。离线含真实 SDK 编码、真实隔离 Unix/磁盘、打包；Provider/native/App/切换证明分别进入 LIVE，源码/review 缺口仍留来源票。

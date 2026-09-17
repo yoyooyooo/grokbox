@@ -3,7 +3,7 @@ import { join } from "node:path";
 import {
   captureManagedSelection, computeSelectionRevision, modelForAgent, parseModelsFile,
   resolveModelsWithPi,
-  type CapturedSelection, type ModelRecord, type ModelsFile,
+  type CapturedSelection, type ResolvedModelSelection, type ModelsFile,
 } from "@grokbox/runtime-kernel/selection";
 import { readBoundedJsonSync } from "./bounded-json.node.ts";
 
@@ -32,7 +32,7 @@ export function loadModelsFileSync(root: string): ModelsFile | null {
 
 export type HostManagedCapture =
   | { kind: "official" }
-  | { kind: "managed"; modelId: string; selectionRevision: string; assignment: "agent"; record: ModelRecord };
+  | { kind: "managed"; modelId: string; selectionRevision: string; assignment: "agent"; record: ResolvedModelSelection };
 
 export class HostSelectionUnavailableError extends Error {
   readonly code = "runtime_config_invalid";

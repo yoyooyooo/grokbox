@@ -1,5 +1,5 @@
 import { composeAgentTitle, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
-import { assignedModelTokens, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { assignedModelTokens, assignedReasoningEfforts, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { loadModelsFileSync } from "./selection.node.ts";
 
 export const HOST_PROFILE_TITLE_SYMBOL = "grokbox.box-runtime.profile-title.v1";
@@ -11,9 +11,9 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function assignedModelId(file: ModelsFile, agentId: string): string | undefined {
   const agents = file.assignments.agents;
-  if (Object.hasOwn(agents, agentId)) return agents[agentId];
+  if (Object.hasOwn(agents, agentId)) return agents[agentId]?.modelId;
   for (const [id, modelId] of Object.entries(agents)) {
-    if (id.toLowerCase() === agentId) return modelId;
+    if (id.toLowerCase() === agentId) return modelId.modelId;
   }
   return undefined;
 }
@@ -42,7 +42,9 @@ export function bindHostProfileTitle(options: { durableRoot: string }): (input: 
       const composed = composeAgentTitle(profile.title, {
         type: "sync",
         owner,
-        ...(owner === "box" ? { m: syncBoxTitleModel(file, agentId) } : { m: null }),
+        ...(owner === "box" ? { m: syncBoxTitleModel(file, agentId),
+          e: syncBoxTitleModel(file, agentId) === undefined ? undefined : file ? assignedReasoningEfforts(file).get(agentId) ?? null : undefined }
+          : { m: null, e: null }),
       });
       if (!composed.changed) return undefined;
       return { title: composed.title };

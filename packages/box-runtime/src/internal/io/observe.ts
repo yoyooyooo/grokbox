@@ -88,7 +88,7 @@ const safeToken = (value: unknown): string | null => boundedText(value) && /^[a-
 
 function assignmentState(models: ModelsFile | null): LiveStatusDraft["models"]["assignmentState"] {
   if (!models) return "unknown";
-  return [models.assignments.main, ...Object.values(models.assignments.agents)].filter((id) => id !== null)
+  return [models.assignments.main, ...Object.values(models.assignments.agents)].filter((assignment) => assignment !== null).map(assignment => assignment.modelId)
     .every((id) => id === STUB_ECHO_MODEL_ID || Object.hasOwn(models.models, id)) ? "valid" : "invalid";
 }
 
@@ -229,7 +229,7 @@ export function projectStatus(input: { root: string; desired: DesiredFile | null
     bundles: { state: "not_observed", head: null, retained: null, liveRetained: null, lastMatchedSha: null },
     watchdog: { required: mode === "identity" || mode === "route", state: "unknown" },
     modeld: { required: mode === "route", state: "unknown" },
-    models: { main: input.models?.assignments.main ?? null, agents: { ...input.models?.assignments.agents }, assignmentState: assignmentState(input.models) },
+    models: { main: input.models?.assignments.main?.modelId ?? null, agents: Object.fromEntries(Object.entries(input.models?.assignments.agents ?? {}).map(([id, assignment]) => [id, assignment.modelId])), assignmentState: assignmentState(input.models) },
     window: { durationMs: null, affectedInvocations: "unknown" },
     evidence: { desired: "not_observed", models: "not_observed", source: "not_observed", processes: "not_observed",
       gateway: "not_observed", attestation: "not_observed", profile: "not_observed", events: "not_observed" },
@@ -371,7 +371,7 @@ export async function observeLiveDraft(input: { root: string; desired?: DesiredF
     const requestedPatch = mode === "identity" || mode === "route";
     if (requestedPatch && (ownership || status.host.origin === "official")) status.coverage = "window-open";
     const modeAgrees = mode !== "identity" && mode !== "route" || att?.mode === mode;
-    const routeMainId = effectiveModels?.assignments.main ?? null;
+    const routeMainId = effectiveModels?.assignments.main?.modelId ?? null;
     const routeMain = routeMainId === STUB_ECHO_MODEL_ID ? STUB_ECHO_MODEL
       : routeMainId && effectiveModels && Object.hasOwn(effectiveModels.models, routeMainId) ? effectiveModels.models[routeMainId]! : null;
     const routeReady = mode !== "route" || (effectiveModels && status.models.assignmentState === "valid" &&

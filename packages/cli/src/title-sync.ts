@@ -8,7 +8,7 @@ import {
   type LabelOwner,
   type OwnershipState,
 } from "@grokbox/runtime-kernel/contract";
-import { assignedModelTokens } from "@grokbox/runtime-kernel/selection";
+import { assignedModelTokens, assignedReasoningEfforts } from "@grokbox/runtime-kernel/selection";
 import { openRuntimeStore } from "@grokbox/box-runtime/runtime";
 import type { GatewayClient } from "./gateway.ts";
 import { projectOwnership } from "./ownership.ts";
@@ -107,6 +107,7 @@ export function profileWriteFromRoster(row: Record<string, unknown>, title: stri
 
 export type TitleModelIndex = {
   tokens: Map<string, string>;
+  efforts?: Map<string, string>;
   /** Lowercased agent ids with a models.json assignment. Omitted when the snapshot is unavailable. */
   assigned?: Set<string>;
 };
@@ -126,6 +127,7 @@ export async function loadTitleModelIndex(
     const file = await store.loadModels();
     return {
       tokens: assignedModelTokens(file),
+      efforts: assignedReasoningEfforts(file),
       assigned: new Set(Object.keys(file.assignments.agents).map((id) => id.toLowerCase())),
     };
   } catch {
@@ -155,6 +157,15 @@ export function titleSyncModel(
   return tokens.get(id);
 }
 
+export function titleSyncEffort(owner: LabelOwner | "leave", agentId: string,
+  efforts?: ReadonlyMap<string, string>, assigned?: ReadonlySet<string>): string | null | undefined {
+  if (owner === "leave" || !agentId) return undefined;
+  if (owner !== "box") return null;
+  const id = agentId.toLowerCase();
+  if (assigned !== undefined && !assigned.has(id)) return null;
+  return efforts === undefined ? undefined : efforts.get(id) ?? null;
+}
+
 const MODEL_TITLE_TIMEOUT_MS = 10_000;
 
 /** Command-driven Label paint after a per-Bot model assignment. Display-only: never fail the selection. */
@@ -166,12 +177,13 @@ export async function paintTitleAfterModelAssignment(
     const listed = await client.listAgents(MODEL_TITLE_TIMEOUT_MS);
     const row = listed.agents.filter(isRecord).find((item) => asString(item.id).toLowerCase() === input.agentId.toLowerCase());
     if (!row) return { skipped: "no_roster" };
-    const { tokens, assigned } = await loadTitleModelIndex(input.boxRuntimeRoot, input.env);
+    const { tokens, assigned, efforts } = await loadTitleModelIndex(input.boxRuntimeRoot, input.env);
     const applied = await applyAgentTitles(client, MODEL_TITLE_TIMEOUT_MS, {
       action: input.mode === "custom" ? "show" : "sync",
       rows: [row],
       tokens,
       assigned,
+      efforts,
     });
     const painted = applied.rows[0];
     if (!painted) return { skipped: "no_roster" };
@@ -196,6 +208,7 @@ export async function applyAgentTitles(
     rows: Record<string, unknown>[];
     dryRun?: boolean;
     tokens?: Map<string, string>;
+    efforts?: Map<string, string>;
     assigned?: ReadonlySet<string>;
   },
 ): Promise<{ rows: TitleSyncRow[] }> {
@@ -224,11 +237,12 @@ export async function applyAgentTitles(
     const owner = input.action === "show"
       ? titleShowOwner(row, ownership, token)
       : titlePaintOwner(row, ownership, token);
+    const effort = titleSyncEffort(owner, agentId, input.efforts, input.assigned);
     const composed = input.action === "hide"
       ? composeAgentTitle(from, { type: "hide" })
       : input.action === "show" && owner !== "leave"
-        ? composeAgentTitle(from, { type: "show", owner, m: owner === "box" ? token ?? null : null })
-        : composeAgentTitle(from, { type: "sync", owner, m: titleSyncModel(owner, agentId, tokens, input.assigned) });
+        ? composeAgentTitle(from, { type: "show", owner, m: owner === "box" ? token ?? null : null, e: effort ?? null })
+        : composeAgentTitle(from, { type: "sync", owner, m: titleSyncModel(owner, agentId, tokens, input.assigned), e: effort });
     let written = false;
     if (composed.changed && input.dryRun !== true) {
       await client.updateAgent({ id: agentId, profile: profileWriteFromRoster(row, composed.title) }, timeoutMs);

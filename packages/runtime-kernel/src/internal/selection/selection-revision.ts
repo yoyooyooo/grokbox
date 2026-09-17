@@ -1,12 +1,13 @@
 import { canonicalJson, sha256Text } from "../../hash.ts";
-import { decideRouteSession, modelForAgent, type ModelsFile, type ModelRecord } from "./models.ts";
+import { decideRouteSession, modelForAgent, type ModelsFile, type ResolvedModelSelection } from "./models.ts";
 
 export function computeSelectionRevision(input: {
   agentId: string;
-  model: ModelRecord;
+  model: ResolvedModelSelection;
 }): string {
   return sha256Text(canonicalJson({
     agentId: input.agentId,
+    ...(input.model.reasoning ? { reasoning: input.model.reasoning } : {}),
     apiKeyRef: input.model.apiKeyRef,
     capabilities: input.model.capabilities,
     ...(typeof input.model.contextWindowTokens === "number" ? { contextWindowTokens: input.model.contextWindowTokens } : {}),

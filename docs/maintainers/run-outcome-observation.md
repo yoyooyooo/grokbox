@@ -259,3 +259,9 @@ canonical 成功 terminal 等 SDK stream EOF 后才释放，晚到参数/错误�
 ## 验证与现场边界
 
 2026-09-12本轮 scoped regression **123 pass / 0 fail**（含CLI/事件/管理/运行时合同、12个结果观测测试、5个工具准入/终态测试、持久凭据与原生outer retry回归）。真实只读结果查询也已完成。完整全仓测试调用及候选 profile-write/re-adopt 调用被工具安全检查拦截，未执行；未改路重试部署，没有宣称串行策略修复已在现场加载或真实工具链已验完。具体制品身份与后续待验项以readiness为准。
+
+## 推理档位证据（schema v2 / wire v7）
+
+`models show --for <uuid>` 只报告 configured-next-turn；不能用它说明现有 TURN。`model_step_terminal.selectionRevision` 对应该 TURN 的选择身份；`stream.reasoning.requested` 是绑定设置，`emitted` 表示最终字节通过 guard 后提交给 fetch 的值，default 表示未显式设置。Provider 执行档位没有合格解码证据时为 `providerReported:unknown`，不是自动成功。HTTP/body 失败可能已经 emitted，但不证明上游接受。
+
+`usage.reasoningTokens` 若存在，是 Provider 报告的 completionTokens 子集；不再累加到 total。缺值不填零；时延、更多 tokens、标题或 Bot 自述不能证明 xhigh。有限 `stream.sdkWarnings` 保留 setting/type，不保存 details、prompt 或错误正文；兼容模型的 SDK warning 可与专用最终编码已验证同时存在，要联合 emitted 判读。源合同见[ADR](../decisions/2026-09-17-model-reasoning-policy.md)，真实验收见 LIVE 的 reasoning 条目。

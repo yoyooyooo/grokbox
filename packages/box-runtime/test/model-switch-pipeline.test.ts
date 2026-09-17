@@ -109,7 +109,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
     const checkpoint = root.getState();
     const savedB = await changeRuntimeModel({ store, forAgent: AGENT, modelId: B, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
     expect(savedB).toMatchObject({ currentTurn: "unchanged", effectiveUse: "not_observed", selectionSaved: true });
-    expect((await store.loadModels()).assignments.agents[AGENT]).toBe(B);
+    expect((await store.loadModels()).assignments.agents[AGENT]?.modelId).toBe(B);
     // Configuration changed while A was between tool steps: the admitted TURN stays A.
     const afterTool = await root.stream({}, "a-after-tool", tools, settings).response;
     expect(requests.map(row => row.body.model)).toEqual(["owned-a", "owned-a"]);
@@ -153,7 +153,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
       expect(JSON.stringify(body)).toContain("river");
     }
     expect(toolEffects).toBe(1);
-    expect((await store.loadModels()).assignments.agents[OTHER]).toBe(A);
+    expect((await store.loadModels()).assignments.agents[OTHER]?.modelId).toBe(A);
     expect(await store.loadDesired()).toEqual({ version: 1, mode: "route" });
   } finally {
     await server.stop();

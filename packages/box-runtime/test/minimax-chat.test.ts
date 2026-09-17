@@ -48,7 +48,7 @@ test("MiniMax continuation placeholders pass through the production backend with
   expect(r.events.filter(e => e.type === "text_delta").map(e => e.text).join("")).toBe("Answer");
   expect(r.events.find(e => e.type === "tool_complete")).toMatchObject({ toolName: "lookup", args: { q: "汉字" } });
   const finish = r.events.find(e => e.type === "backend_finish");
-  expect(finish).toMatchObject({ finishReason: "stop", stream: { counts: { normalizedEmptyToolTypes: 1 }, providerFinishReason: "other", sdkFinishReason: "tool-calls", engine: { chatDialect: "minimax-inline-v1", adapterRevision: 2 } } });
+  expect(finish).toMatchObject({ finishReason: "stop", stream: { counts: { normalizedEmptyToolTypes: 1 }, providerFinishReason: "other", sdkFinishReason: "tool-calls", engine: { chatDialect: "minimax-inline-v1", adapterRevision: 4 } } });
   expect(finish?.type === "backend_finish" && finish.stream?.toolIdentity?.firstMismatch).toBeUndefined();
 });
 

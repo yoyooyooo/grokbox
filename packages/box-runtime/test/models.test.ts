@@ -58,7 +58,7 @@ describe("models.json store", () => {
   test("use/reset default vs --for and route refuses reset", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-runtime-"));
     const store = openRuntimeStore(root);
-    await store.saveModels(SAMPLE);
+    await store.saveModels(parseModelsFile(SAMPLE));
     const used = applyUse(await store.loadModels(), "acme/fast");
     expect(disclosure(used, "acme/fast")).toMatchObject({
       endpoint: "https://api.acme.test/v1",
@@ -95,12 +95,12 @@ describe("models.json store", () => {
       },
       assignments: { main: "openai/gpt-4o-mini", agents: {} },
     };
-    assertRouteAssignment(openai);
-    assertRouteAssignment({
+    assertRouteAssignment(parseModelsFile(openai));
+    assertRouteAssignment(parseModelsFile({
       version: 1,
       models: openai.models,
       assignments: { main: null, agents: { "00000000-0000-4000-8000-000000000114": "openai/gpt-4o-mini" } },
-    });
+    }));
     const status = projectStatus({
       root: store.root,
       desired: await store.loadDesired(),
@@ -113,6 +113,6 @@ describe("models.json store", () => {
     await store.saveDesired({ version: 1, mode: "disabled" });
     const reset = applyReset(await store.loadModels(), "agent-tom");
     expect(reset.assignments.agents["agent-tom"]).toBeUndefined();
-    expect(reset.assignments.main).toBe("stub/echo");
+    expect(reset.assignments.main?.modelId).toBe("stub/echo");
   });
 });

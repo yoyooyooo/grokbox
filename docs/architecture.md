@@ -408,3 +408,9 @@ H3 topology:
 Credential rotation mid-turn is forbidden: pin the credential fingerprint with the resolved config. Idle cache cooling releases an AuthLease but keeps immutable binding metadata in the service-epoch execution index; reactivation must recheck the original fingerprint, ownership, model and selection revision. Idle time is not a TURN-expiry deadline.
 
 The kernel remains the sole execution-identity writer. Its `ExecutionHistory` capability is backed by `io/execution-history.node.ts` (`classic-level`, one exclusive database owner) in the production modeld root. Claim persistence precedes provider dispatch; hot STEP records retire after settlement without deleting the exact durable duplicate/conflict evidence. A fresh service incarnation retires the old index before publishing its listener, while old-epoch requests remain fenced. This replaces the early process-lifetime 1,024-entry quota; database cache/compaction thresholds never constitute request-count quotas. Observation journals and group-progress queries cannot authorize execution or replay.
+
+### 同通道 reasoning policy 补充（2026-09-17）
+
+Catalog 的模型身份/能力与 schema v2 的 per-Bot assignment 分离。kernel 的纯 parser/resolver 输出 `ResolvedModelSelection`，policy 与 capability 进入 selectionRevision，deep-frozen snapshot 交给既有 TURN binding；持久绑定恢复再次验证完整选择与 revision。配置发布沿用唯一 Effect command/RuntimeStore/CAS，不建立旁路字段文件或另一套执行根。
+
+box-runtime ModelBackend 在 prepare 验证能力、冻结设置，在既有 guarded fetch 的实际 HTTP 前校验白名单字段与 wire model，修正 SDK 对未识别兼容模型的参数省略而拒绝冲突。SDK 与最终 body 都使用同一 policy，none 不破坏 SDK 的采样语义。routeId 仍表示通道，不掺入档位；模型身份不因改档改变。Host 仍 SDK/Effect-free，prompt envelope 不新增任意 providerOptions。wire v7 保护新增 usage 终态；观察数据不授予执行权。详见[ADR](decisions/2026-09-17-model-reasoning-policy.md)。

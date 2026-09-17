@@ -8,6 +8,9 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- **Breaking runtime configuration/protocol:** models schema v2 uses structured per-Bot assignments and wire v7 preserves reasoning-token usage. Read-only v1 normalization does not write; explicit saves/migration require coordinated CLI/preload/Host/modeld upgrade and a protected rollback configuration. Older peers remain diagnostic-only; no data-root relocation or automatic live cutover.
+- Add capability-gated `models use --effort`, configured-only `models show --for`, and `models migrate --confirm`. Keep the same channel/model identity, freeze policy in TURN selection/revision, validate cold restore and final HTTP effort, preserve bounded SDK warnings and requested/emitted evidence, and show optional `e=` without inventing catalog variants.
+
 - Preserve finite native ownership-read subcodes, checkpoints, timings and budgets through admission, v5 failure summaries, Host errors, journals, incident/alert queries and monitor conditions. Distinguish unavailable evidence from proven access denial; never infer missing historical causes or replay work.
 - Keep aggregate and standalone modeld status consistent about observer/service protocol drift, uninstrumented execution, scope mismatches and generation changes. A diagnostic legacy probe does not authorize execution or replacement, and does not claim the loaded Host's protocol is known.
 

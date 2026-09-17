@@ -30,7 +30,7 @@ export type SessionMessage = {
 };
 export type HostUsage = {
   promptTokens: number; completionTokens: number; totalTokens: number;
-  cacheReadTokens?: number; cacheWriteTokens?: number;
+  cacheReadTokens?: number; cacheWriteTokens?: number; reasoningTokens?: number;
 };
 export type VisibleFailureStage = "admit" | "provider" | "normalize" | "authority" | "transport";
 export type VisibleFailure = {
@@ -133,10 +133,12 @@ export function normalizeHostUsage(usage: unknown): HostUsage {
   const completionTokens = numberOrZero(u.completionTokens ?? u.completion_tokens ?? u.outputTokens ?? u.output_tokens);
   const cacheReadTokens = optionalCacheTokens(u.cacheReadTokens ?? u.cache_read_tokens ?? u.cachedInputTokens);
   const cacheWriteTokens = optionalCacheTokens(u.cacheWriteTokens ?? u.cache_write_tokens);
+  const reasoningTokens = typeof u.reasoningTokens === "number" && Number.isSafeInteger(u.reasoningTokens) && u.reasoningTokens >= 0 && u.reasoningTokens <= completionTokens ? u.reasoningTokens : undefined;
   return {
     promptTokens, completionTokens, totalTokens: numberOrZero(u.totalTokens ?? u.total_tokens) || promptTokens + completionTokens,
     ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
     ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
   };
 }
 function measuredHostUsage(raw: unknown): HostUsage | undefined {

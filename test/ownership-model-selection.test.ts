@@ -1,3 +1,4 @@
+import { parseModelsFile, persistModelsDocument } from "@grokbox/runtime-kernel/selection";
 import { ensurePackedCli } from "./packed-cli-fixture.ts";
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -70,8 +71,8 @@ test("real CLI use admits ownership; explicit reset only removes intent and pres
         expect(data.data.title?.written).toBe(true);
         expect(data.data.title?.to?.includes("m=") ?? false).toBe(false);
       }
-      expect((await f.load()).assignments.agents[B]).toBe("stub/echo");
-      expect((await f.load()).assignments.agents[A]).toBe(args[0] === "reset" ? undefined : "openai/owned");
+      expect((await f.load()).assignments.agents[B]?.modelId).toBe("stub/echo");
+      expect((await f.load()).assignments.agents[A]?.modelId).toBe(args[0] === "reset" ? undefined : "openai/owned");
     }
     expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(true);
     const byName = await captureCli(["models", "use", "openai/owned", "--for", "owned"], f.deps);
@@ -89,7 +90,7 @@ for (const mode of ["temporal", "old", "failure", "wrong-id"] as const) {
       expect(result.code, result.stderr).toBe(0);
       expect(parseJson(result.stdout)).toMatchObject({ data: { ownership: "not_required_for_reset", effectiveUse: "not_observed" } });
       expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(false);
-      expect(await f.load()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
+      expect(await f.load()).toEqual({ ...persistModelsDocument(parseModelsFile(before)), assignments: { main: null, agents: { [B]: { modelId: "stub/echo" } } } });
       const use = await captureCli(["models", "use", "openai/owned", "--for", A], f.deps);
       expect(use.code).not.toBe(0);
       expect((await f.load()).assignments.agents[A]).toBeUndefined();
@@ -140,7 +141,7 @@ test("actual packed Node reset removes an override with no Gateway/discovery or 
     expect(result.status, result.stderr).toBe(0);
     expect(parseJson(result.stdout)).toMatchObject({ data: { selectionSaved: true, ownership: "not_required_for_reset", currentTurn: "unchanged", effectiveUse: "not_observed" } });
     expect(f.calls).toEqual([]);
-    expect(await f.load()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: "stub/echo" } } });
+    expect(await f.load()).toEqual({ ...persistModelsDocument(parseModelsFile(before)), assignments: { main: null, agents: { [B]: { modelId: "stub/echo" } } } });
   } finally { await f.close(); }
 });
 

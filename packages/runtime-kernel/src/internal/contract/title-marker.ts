@@ -1,3 +1,4 @@
+import { isReasoningEffort } from "../selection/reasoning.ts";
 import type { OwnershipState } from "./ownership.ts";
 
 /** App Label keys grokbox writes. Unknown keys are preserved. */
@@ -8,6 +9,7 @@ export type LabelOwner = "box" | "temporal" | "conflict";
 export type LabelFields = {
   owner?: LabelOwner;
   m?: string;
+  e?: string;
   extra: Array<readonly [string, string]>;
 };
 export type ParsedAgentTitle = {
@@ -42,6 +44,7 @@ function parsePairs(raw: string): LabelFields | null {
   const extra: Array<readonly [string, string]> = [];
   let owner: LabelOwner | undefined;
   let m: string | undefined;
+  let e: string | undefined;
   for (const part of raw.split(",")) {
     const matched = PAIR.exec(part.trim());
     if (!matched) return null;
@@ -56,10 +59,11 @@ function parsePairs(raw: string): LabelFields | null {
       m = value;
       continue;
     }
+    if (key === "e") { if (!isReasoningEffort(value)) return null; e = value; continue; }
     extra.push([key, value]);
   }
   if (owner === undefined && m === undefined && extra.length === 0) return null;
-  return { ...(owner !== undefined ? { owner } : {}), ...(m !== undefined ? { m } : {}), extra };
+  return { ...(owner !== undefined ? { owner } : {}), ...(m !== undefined ? { m } : {}), ...(e !== undefined ? { e } : {}), extra };
 }
 
 function migrateLegacy(raw: string): string {
@@ -72,8 +76,9 @@ export function formatAgentLabel(fields: LabelFields): string {
   const parts: string[] = [];
   if (fields.owner !== undefined) parts.push(`${LABEL_OWNER_KEY}=${fields.owner}`);
   if (fields.m !== undefined) parts.push(`${LABEL_MODEL_KEY}=${fields.m}`);
+  if (fields.e !== undefined && isReasoningEffort(fields.e)) parts.push(`e=${fields.e}`);
   for (const [key, value] of fields.extra) {
-    if (!KEY.test(key) || !VALUE.test(value) || key === LABEL_OWNER_KEY || key === LABEL_MODEL_KEY) continue;
+    if (!KEY.test(key) || !VALUE.test(value) || key === LABEL_OWNER_KEY || key === LABEL_MODEL_KEY || key === "e") continue;
     parts.push(`${key}=${value}`);
   }
   return parts.join(",");
@@ -122,6 +127,7 @@ function patchFields(
   base: LabelFields,
   owner: LabelOwner,
   m: string | null | undefined,
+  e: string | null | undefined,
 ): LabelFields {
   const fields: LabelFields = {
     owner,
@@ -131,16 +137,18 @@ function patchFields(
   if (m === null) return fields;
   if (typeof m === "string" && VALUE.test(m)) fields.m = m;
   else if (m === undefined && base.m !== undefined) fields.m = base.m;
+  if (isReasoningEffort(e)) fields.e = e;
+  else if (e === undefined && (m === undefined || m === base.m) && base.e !== undefined) fields.e = base.e;
   return fields;
 }
 
 export function composeAgentTitle(
   current: unknown,
   action:
-    | { type: "show"; owner: LabelOwner; m?: string | null }
+    | { type: "show"; owner: LabelOwner; m?: string | null; e?: string | null }
     | { type: "hide" }
-    | { type: "sync"; owner: LabelOwner | "leave"; m?: string | null }
-    | { type: "set-user"; user: string; owner: LabelOwner | "leave"; m?: string | null },
+    | { type: "sync"; owner: LabelOwner | "leave"; m?: string | null; e?: string | null }
+    | { type: "set-user"; user: string; owner: LabelOwner | "leave"; m?: string | null; e?: string | null },
 ): { title: string; changed: boolean; showing: boolean; skipped?: "unconfirmed" | "hidden" } {
   const parsed = parseAgentTitle(current);
   if (action.type === "hide") {
@@ -150,11 +158,11 @@ export function composeAgentTitle(
   if (action.type === "sync") {
     if (!parsed.showing) return { title: parsed.raw, changed: false, showing: false, skipped: "hidden" };
     if (action.owner === "leave") return { title: parsed.raw, changed: false, showing: true, skipped: "unconfirmed" };
-    const title = formatAgentTitle(parsed.user, patchFields(parsed.fields, action.owner, action.m));
+    const title = formatAgentTitle(parsed.user, patchFields(parsed.fields, action.owner, action.m, action.e));
     return { title, changed: title !== parsed.raw, showing: true };
   }
   if (action.type === "show") {
-    const title = formatAgentTitle(parsed.user, patchFields(parsed.fields, action.owner, action.m));
+    const title = formatAgentTitle(parsed.user, patchFields(parsed.fields, action.owner, action.m, action.e));
     return { title, changed: title !== parsed.raw, showing: true };
   }
   const user = action.user.trim();
@@ -165,6 +173,6 @@ export function composeAgentTitle(
     const title = formatAgentTitle(user, parsed.fields);
     return { title, changed: title !== parsed.raw, showing: true };
   }
-  const title = formatAgentTitle(user, patchFields(parsed.fields, action.owner, action.m));
+  const title = formatAgentTitle(user, patchFields(parsed.fields, action.owner, action.m, action.e));
   return { title, changed: title !== parsed.raw, showing: true };
 }

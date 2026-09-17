@@ -12,7 +12,7 @@ import {
   type InferenceEvent,
 } from "@grokbox/runtime-kernel/contract";
 import { ModelBackend, type AuthLease, type PreparedCall } from "@grokbox/runtime-kernel/ports";
-import { backendKindForModel, type ModelRecord } from "@grokbox/runtime-kernel/selection";
+import { assertReasoningSupported, parseReasoningPolicy, backendKindForModel, type ResolvedModelSelection, type ReasoningPolicy } from "@grokbox/runtime-kernel/selection";
 import { encodeOpenaiPrompt, toProviderPrompt, type OpenaiPromptApi } from "./openai-prompt-adapter.ts";
 import { createSdkStreamNormalizer } from "./openai-events.ts";
 import { ProviderStreamAudit, auditedProviderResponse } from "./provider-stream-audit.ts";
@@ -20,6 +20,7 @@ import { backendFailureFromUnknown } from "./provider-error.ts";
 import { observeBackendFailure, backendFailureObservation } from "./failure-observation.ts";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
+import { encodeReasoningRequest } from "./reasoning-request.ts";
 import { ToolIdentityObserver } from "./tool-identity-audit.ts";
 import { chatDialect, encodeDialectRequest, InlineThinkingParts, type ChatDialect } from "./chat-dialect.ts";
 
@@ -41,7 +42,7 @@ function bodyBytes(init?: RequestInit): number {
   return 0;
 }
 
-function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect): typeof fetch {
+function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect, model: string, reasoning?: ReasoningPolicy): typeof fetch {
   const run = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     // Bound raw SDK encoding before any dialect JSON parse, then recheck the
     // final body below. Neither form may bypass the egress request budget.
@@ -50,6 +51,7 @@ function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identi
       throw new BackendFailure("envelope_too_large");
     }
     init = encodeDialectRequest(init, dialect);
+    init = encodeReasoningRequest(init, api, model, reasoning);
     audit.evidence.setCount("requestBytes", bodyBytes(init));
     if (bodyBytes(init) > ENCODED_PROVIDER_REQUEST_MAX_BYTES) {
       throw new BackendFailure("envelope_too_large");
@@ -59,6 +61,7 @@ function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identi
     }
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     try {
+      audit.evidence.reasoningEmitted(reasoning?.effort ?? "default");
       audit.evidence.increment("httpCalls");
       // Retain the staged observation name with the same actual-call boundary.
       audit.evidence.increment("providerFetchCalls");
@@ -99,14 +102,17 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
   return Layer.succeed(ModelBackend, {
     prepare: (selection: unknown, snapshot: unknown) => Effect.try({
       try: () => {
-        const record = selection as ModelRecord;
+        const record = selection as ResolvedModelSelection;
+        let reasoning: ReasoningPolicy | undefined;
+        try { reasoning = parseReasoningPolicy(record.reasoning); assertReasoningSupported(record, reasoning); }
+        catch { throw new BackendFailure("unsupported_options"); }
         const kind = backendKindForModel(record);
         if (kind === "echo") throw new BackendFailure("unknown_backend_kind");
         const api: OpenaiPromptApi = kind === "openai-responses" ? "responses" : "chat";
         const dialect = chatDialect(record);
         const snap = snapshot as ContextSnapshot;
         const prompt = encodeOpenaiPrompt(snap);
-        const frozen = freezePreparedSnapshot(snap, api);
+        const frozen = freezePreparedSnapshot(snap, api, reasoning);
         return makePreparedCall({
           kind,
           prompt,
@@ -130,8 +136,9 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         started = true;
         const ac = new AbortController(), evidence = new StreamEvidence();
         const dialect = payload.chatDialect ?? "standard";
+        evidence.reasoningRequested(payload.reasoning?.effort ?? "default");
         const thinking = dialect === "minimax-inline-v1" ? new InlineThinkingParts() : undefined;
-        evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: dialect === "standard" ? 1 : 2, chatDialect: dialect, pipeline: "provider_v2_single_call" });
+        evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: dialect === "standard" ? 3 : 4, chatDialect: dialect, pipeline: "provider_v2_single_call" });
         evidence.setCount("declaredTools", payload.tools.length);
         if (payload.routeId) evidence.providerRoute({ id: payload.routeId, api: payload.api });
         const identity = new ToolIdentityObserver(payload.tools.map(t => t.name), evidence);
@@ -162,7 +169,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
               let secret: string;
               try { secret = unseal(lease); }
               catch (error) { throw observeBackendFailure(new BackendFailure("auth_mismatch"), "auth", error); }
-              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit, identity, payload.api, dialect) });
+              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit, identity, payload.api, dialect, payload.model, payload.reasoning) });
               const model = payload.api === "responses" ? openai.responses(payload.model) : openai.chat(payload.model);
               const { toolChoice, ...settings } = payload.settings;
               const tools = payload.tools.map(tool => ({ type: "function" as const, name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));

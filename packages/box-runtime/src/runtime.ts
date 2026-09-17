@@ -29,7 +29,7 @@ export { prepareConfigurationBootstrap, installConfigurationResources, rollbackC
 export { saveRuntimeModels, saveRuntimeDesired, configurationWriteLayer } from "./internal/io/configuration-write.node.ts";
 export { persistModelCredential } from "./internal/io/persist-model-credential.node.ts";
 export { readManagedOwnership, type OwnershipReader } from "./internal/io/ownership-admission.node.ts";
-export { changeRuntimeModel } from "./internal/io/model-selection.node.ts";
+export { changeRuntimeModel, migrateRuntimeModels } from "./internal/io/model-selection.node.ts";
 export {
   projectLiveStatus,
   readContracts,

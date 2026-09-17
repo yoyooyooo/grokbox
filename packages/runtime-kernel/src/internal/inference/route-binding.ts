@@ -5,7 +5,7 @@ import { SERVER_ACTIVE_STEPS_MAX, TURN_RESOURCE_IDLE_MS } from "../contract/limi
 import { memoryExecutionHistory, type ColdTurn, type ExecutionHistory } from "./execution-history.ts";
 import type { AuthLease } from "../../ports.ts";
 import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "../contract/identity.ts";
-import type { ModelRecord } from "../../selection.ts";
+import type { ResolvedModelSelection } from "../../selection.ts";
 import { BindingFailure, type RunStepRequest } from "../contract/binding.ts";
 import type { RecoveryLedger } from "../contract/overflow.ts";
 import type { OwnershipAdmission } from "../contract/ownership.ts";
@@ -31,7 +31,7 @@ export type RouteBindingRecord = {
   agentId: string;
   turnId: string;
   selection: SelectionIdentity;
-  model: ModelRecord;
+  model: ResolvedModelSelection;
   fingerprint: string;
   ownership: OwnershipAdmission;
   lease: AuthLease;

@@ -1,10 +1,11 @@
+import { REASONING_EFFORTS, type ReasoningEffort } from "../selection/reasoning.ts";
 import { addFinishField, observeFinishField, projectFinishAudit, projectToolTerminalAudit, projectProviderHttp, projectProviderRoute, type FinishAudit, type ToolTerminalAudit, type ProviderHttpObservation, type ProviderRouteObservation } from "./provider-observation.ts";
 import { projectOwnershipReadObservation, projectOwnershipWaitObservation, projectOwnershipRecoveryObservation, type OwnershipRecoveryObservation, type OwnershipWaitObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
 import { projectToolIdentityAudit, type ToolIdentityAudit } from "./tool-identity-observation.ts";
 import { projectSdkValidation, type SdkValidationObservation } from "./sdk-validation-observation.ts";
 /** Payload-free, request-local evidence shared by modeld and the SDK/Effect-free Host. */
 export const NORMALIZE_CAUSES = [
-  "missing_finish", "unsupported_finish_reason", "open_tools_at_finish", "tool_arguments_invalid",
+  "reasoning_request_conflict", "missing_finish", "unsupported_finish_reason", "open_tools_at_finish", "tool_arguments_invalid",
   "tool_arguments_mismatch", "tool_identity_conflict", "tool_id_collision", "undeclared_tool", "tool_declaration_mismatch",
   "parallel_tools", "sdk_invalid_tool", "sdk_schema_mismatch", "unsupported_provider_state", "unterminated_reasoning", "unsupported_sdk_part", "invalid_event_shape",
   "event_after_finish", "conflicting_finish_reason", "empty_output", "invalid_usage", "invalid_terminal", "terminal_binding_mismatch", "stream_budget",
@@ -15,7 +16,7 @@ export type StreamRejectSite = typeof STREAM_REJECT_SITES[number];
 export const STREAM_EVENT_TYPES = ["unknown", "data", "done", "eof", "body_error", "stream-start", "response-metadata", "start", "start-step", "finish-step", "text-start", "text-delta", "text-end", "reasoning", "reasoning-start", "reasoning-delta", "reasoning-end", "tool-input-start", "tool-input-delta", "tool-input-end", "tool-call-streaming-start", "tool-call-delta", "tool-call", "tool-error", "tool-result", "finish", "abort", "error", "raw", "source", "file", "text_delta", "reasoning_delta", "tool_start", "tool_delta", "tool_complete", "backend_finish", "accepted", "terminal", "response.completed", "response.failed", "response.incomplete", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.output_item.added", "response.output_item.done"] as const;
 export type StreamEventType = typeof STREAM_EVENT_TYPES[number];
 export const FINISH_REASONS = ["stop", "end-turn", "tool-calls", "tool_calls", "function_call", "length", "max_tokens", "content-filter", "content_filter", "error", "abort", "aborted", "cancelled", "unknown", "insufficient_system_resource", "completed", "incomplete", "failed", "other"] as const;
-export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "providerFetchCalls", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased", "semanticOutputBytes", "replayRecords", "heldToolRecords", "retainedStorageBytes", "httpCalls", "normalizedEmptyToolTypes", "normalizedEmptyFinishReasons", "sdkRawParts", "syntheticDeliveries", "syntheticFinalDeliveries", "auxiliaryEmptyCompletions"] as const;
+export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "providerFetchCalls", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased", "semanticOutputBytes", "replayRecords", "heldToolRecords", "retainedStorageBytes", "httpCalls", "normalizedEmptyToolTypes", "normalizedEmptyFinishReasons", "sdkRawParts", "syntheticDeliveries", "syntheticFinalDeliveries", "auxiliaryEmptyCompletions", "sdkWarnings"] as const;
 export type StreamCountKey = typeof STREAM_COUNT_KEYS[number];
 export const STREAM_TIME_KEYS = ["headersMs", "providerFirstEventMs", "sdkFirstPartMs", "canonicalFirstEventMs", "hostFirstEventMs", "durationMs"] as const;
 export type StreamTimeKey = typeof STREAM_TIME_KEYS[number];
@@ -23,7 +24,10 @@ export const STREAM_TAIL_MAX = 32;
 const MAX_COUNT = 1024 * 1024 * 1024;
 const LAYERS = ["provider", "sdk", "canonical", "host", "wire"] as const;
 type EvidenceLayer = typeof LAYERS[number];
+const SDK_WARNING_SETTINGS = ["reasoningEffort", "temperature", "topP", "maxOutputTokens", "seed", "stopSequences", "parallelToolCalls", "toolChoice", "unknown"] as const;
 export type StreamSummary = {
+  reasoning?: { requested: ReasoningEffort | "default"; emitted?: ReasoningEffort | "default"; providerReported: "unknown" };
+  sdkWarnings?: Array<{ type: "unsupported-setting" | "other"; setting: typeof SDK_WARNING_SETTINGS[number] }>;
   version: 1;
   counts: Partial<Record<StreamCountKey, number>>;
   timings: Partial<Record<StreamTimeKey, number>>;
@@ -44,7 +48,7 @@ export type StreamSummary = {
   toolIdentity?: ToolIdentityAudit;
   http?: ProviderHttpObservation;
   route?: ProviderRouteObservation;
-  engine?: { api: "chat" | "responses"; aiVersion: string; providerVersion: string; adapterRevision: 1 | 2; chatDialect?: "standard" | "minimax-inline-v1"; pipeline?: "provider_v2_single_call" };
+  engine?: { api: "chat" | "responses"; aiVersion: string; providerVersion: string; adapterRevision: 1 | 2 | 3 | 4; chatDialect?: "standard" | "minimax-inline-v1"; pipeline?: "provider_v2_single_call" };
 };
 export const AUTHORITY_REASONS = ["unknown", "authority_unavailable", "authority_not_committed", "host_identity_mismatch", "host_generation_changed", "ownership_reader_unavailable", "ownership_read_unavailable", "ownership_read_timeout", "ownership_gateway_mismatch", "ownership_bridge_unavailable", "server_read_unavailable", "ownership_clock_unavailable", "native_execution_not_ready", "harness_mismatch", "server_id_mismatch", "confirmed_temporal", "ownership_unconfirmed", "ownership_scope_unconfirmed", "ownership_evidence_stale", "ownership_evidence_invalid", "turn_revoked", "turn_closed", "ownership_identity_changed"] as const;
 export const AUTHORITY_CHECKPOINTS = ["admission", "before_dispatch", "after_auth", "tool_start", "tool_complete", "finish", "recovery"] as const;
@@ -90,6 +94,19 @@ function count(value: unknown): number | undefined {
 export function observedStreamType(value: unknown): StreamEventType { return member(value, STREAM_EVENT_TYPES) ?? "unknown"; }
 export function observedFinishReason(value: unknown): typeof FINISH_REASONS[number] { return member(value, FINISH_REASONS) ?? "other"; }
 /** Unknown is omission, never a fabricated zero. No accessors or free-form strings are copied. */
+/** Diagnostic input never gets to execute array-index or field accessors. */
+function projectSdkWarnings(value: unknown): NonNullable<StreamSummary["sdkWarnings"]> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const length = Math.min(count(own(value, "length")) ?? 0, 16);
+  return Array.from({ length }, (_, index) => {
+    const warning = own(value, String(index));
+    return {
+      type: own(warning, "type") === "unsupported-setting" ? "unsupported-setting" : "other",
+      setting: member(own(warning, "setting"), SDK_WARNING_SETTINGS) ?? "unknown",
+    };
+  });
+}
+
 export function projectStreamSummary(value: unknown): StreamSummary | undefined {
   try {
     if (own(value, "version") !== 1) return undefined;
@@ -103,6 +120,12 @@ export function projectStreamSummary(value: unknown): StreamSummary | undefined 
       const sequence = count(own(item, "sequence")), elapsedMs = count(own(item, "elapsedMs")), bytes = count(own(item, "bytes"));
       if (layer && type && sequence !== undefined && elapsedMs !== undefined) out.tail.push({ layer, type, sequence, elapsedMs, ...(bytes !== undefined ? { bytes } : {}) });
     }
+    const reasoning = own(value, "reasoning");
+    const requested = member(own(reasoning, "requested"), [...REASONING_EFFORTS, "default"]);
+    const emitted = member(own(reasoning, "emitted"), [...REASONING_EFFORTS, "default"]);
+    if (requested) out.reasoning = { requested, ...(emitted ? { emitted } : {}), providerReported: "unknown" };
+    const warnings = projectSdkWarnings(own(value, "sdkWarnings"));
+    if (warnings) out.sdkWarnings = warnings;
     const state = member(own(value, "providerObservation"), ["not_started", "headers", "stream", "eof", "body_error", "cancelled"]);
     if (state) out.providerObservation = state;
     for (const k of ["providerFinishReason", "sdkFinishReason"] as const) { const r = member(own(value, k), FINISH_REASONS); if (r) out[k] = r; }
@@ -126,9 +149,9 @@ export function projectStreamSummary(value: unknown): StreamSummary | undefined 
     const engine = own(value, "engine"), api = member(own(engine, "api"), ["chat", "responses"]);
     const aiVersion = own(engine, "aiVersion"), providerVersion = own(engine, "providerVersion");
     if (api && typeof aiVersion === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(aiVersion)
-      && typeof providerVersion === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(providerVersion) && (own(engine, "adapterRevision") === 1 || own(engine, "adapterRevision") === 2)) {
+      && typeof providerVersion === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(providerVersion) && ([1, 2, 3, 4].includes(own(engine, "adapterRevision") as number))) {
       const chatDialect = member(own(engine, "chatDialect"), ["standard", "minimax-inline-v1"]);
-      out.engine = { api, aiVersion, providerVersion, adapterRevision: own(engine, "adapterRevision") as 1 | 2, ...(chatDialect ? { chatDialect } : {}), ...(own(engine, "pipeline") === "provider_v2_single_call" ? { pipeline: "provider_v2_single_call" } : {}) };
+      out.engine = { api, aiVersion, providerVersion, adapterRevision: own(engine, "adapterRevision") as 1 | 2 | 3 | 4, ...(chatDialect ? { chatDialect } : {}), ...(own(engine, "pipeline") === "provider_v2_single_call" ? { pipeline: "provider_v2_single_call" } : {}) };
     }
     return out;
   } catch { return undefined; }
@@ -189,6 +212,14 @@ export class StreamEvidence {
   private readonly sequence: Record<EvidenceLayer, number> = { provider: 0, sdk: 0, canonical: 0, host: 0, wire: 0 };
   private readonly value: StreamSummary = { version: 1, counts: {}, timings: {}, tail: [] };
   constructor(private readonly now: () => number = () => performance.now()) { this.startedAt = now(); }
+  reasoningRequested(effort: ReasoningEffort | "default"): void { this.value.reasoning = { requested: effort, providerReported: "unknown" }; }
+  reasoningEmitted(effort: ReasoningEffort | "default"): void { if (this.value.reasoning) this.value.reasoning.emitted = effort; }
+  sdkWarnings(value: unknown): void {
+    const warnings = projectSdkWarnings(value);
+    if (!warnings) return;
+    this.increment("sdkWarnings", count(own(value, "length")) ?? 0);
+    this.value.sdkWarnings = warnings;
+  }
   engine(value: NonNullable<StreamSummary["engine"]>): void { this.value.engine = { ...value }; }
   setCount(key: StreamCountKey, n: number): void { if (count(n) !== undefined) this.value.counts[key] = n; }
   increment(key: StreamCountKey, amount = 1): void { this.setCount(key, Math.min(MAX_COUNT, (this.value.counts[key] ?? 0) + amount)); }

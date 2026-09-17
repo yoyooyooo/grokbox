@@ -60,7 +60,7 @@ describe("T29 configuration command", () => {
         Effect.provide(fakeConfigurationWriteLayer({ writes })),
       ),
     );
-    expect(snapshot.models.assignments.main).toBe(STUB_ECHO_MODEL_ID);
+    expect(snapshot.models.assignments.main?.modelId).toBe(STUB_ECHO_MODEL_ID);
     expect(writes).toEqual({ models: 0, desired: 0 });
   });
 });
