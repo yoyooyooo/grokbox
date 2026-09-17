@@ -3,9 +3,10 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
-import { LIVE_HOST_BUNDLE } from "../packages/box-runtime/src/internal/host/live-slices.ts";
+import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../packages/box-runtime/src/internal/host/live-slices.ts";
+import { CONTEXT_SLICE_IDS, profileFromSource } from "../packages/box-runtime/src/internal/host/profile.ts";
+import { LIVE_SHAPED_HOST } from "../packages/box-runtime/test/live-shaped-host.ts";
 import { retainHostBundle } from "../packages/box-runtime/src/internal/io/provenance.node.ts";
-import { toyEnvelope } from "../packages/box-runtime/test/envelope-toy-fixture.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
 function data(stdout: string): Record<string, unknown> {
@@ -49,8 +50,11 @@ describe("HSO-3 analyze CLI", () => {
 
   test("missing runner still emits write-gate reject ids and executable write next", async () => {
     const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-hso3-cli-analyze-drift-"));
-    const before = toyEnvelope("");
-    const after = toyEnvelope("settledMessageCount:cli-analyze");
+    // The CLI inspects the current write recipe, not an arbitrary historical
+    // toy recipe. A legacy observation must not hide the added context slices.
+    const legacy = LIVE_SLICE_PATCHES.filter(slice => !(CONTEXT_SLICE_IDS as readonly string[]).includes(slice.id));
+    const before = { source: LIVE_SHAPED_HOST, profile: profileFromSource(LIVE_SHAPED_HOST, legacy, "pre-context") };
+    const after = { source: `${LIVE_SHAPED_HOST}\n// owned next generation\n` };
     const pinSha = sha256Text(before.source);
     const nextSha = sha256Text(after.source);
     await retainHostBundle({
@@ -79,10 +83,10 @@ describe("HSO-3 analyze CLI", () => {
       refusal: string | null;
     };
     expect(envelope.refusal).toBe("envelope_drift");
-    expect(envelope.requiredIds).toEqual(["compact-register", "managed-step-error-scope"]);
+    expect(new Set(envelope.requiredIds)).toEqual(new Set(CONTEXT_SLICE_IDS));
     expect(envelope.sliceReviewRequired).toBe(true);
     expect(body.next).toBe(
-      `grokbox runtime profile write --sha ${nextSha} --slice-review compact-register,managed-step-error-scope`,
+      `grokbox runtime profile write --sha ${nextSha} --slice-review ${envelope.requiredIds.join(",")}`,
     );
     const saved = JSON.parse(await readFile(out, "utf8"));
     expect(saved.settled).toBe("missing_runner");
