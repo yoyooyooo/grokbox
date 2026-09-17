@@ -1,7 +1,7 @@
 # FEAT — 同通道模型推理设置
 
-Status: implementation and executable offline qualification complete; independent review pending; not deployed.
-Source branch: `feat/model-reasoning-policy`, based on v2 `f8c82c0`.
+Status: implementation and executable offline qualification complete; integrated into v2; independent review pending; not deployed.
+Source branch: `feat/model-reasoning-policy`; initial v2 base `f8c82c0`, final rebase base `fa476b1`. Current integration receipt is below.
 Authority: [Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy), [ADR](../decisions/2026-09-17-model-reasoning-policy.md). This ticket does not authorize runtime adoption, live model calls or publication.
 
 ## 实现范围与出口
@@ -26,7 +26,7 @@ Authority: [Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy
 
 只在 [LIVE-REASONING-CUTOVER](LIVE-integration-validation.md#live-reasoning-cutover)、[LIVE-REASONING-PROVIDER](LIVE-integration-validation.md#live-reasoning-provider)、[LIVE-REASONING-HOST-APP](LIVE-integration-validation.md#live-reasoning-host-app) 记录实时状态与回执。必须先映射到固定 v2 集成提交，再单独确认对象、预算、窗口及回退制品。没有经过资格验证的 Provider 回报时，执行档位保持 unknown；tokens/时延不是 xhigh 证明。
 
-## 固定来源与验证回执（2026-09-17）
+## 初始功能分支固定来源与验证回执（2026-09-17，历史）
 
 - Implementation source: `1e9a76a5a8cac784dfba927626d78baa15403ca3`；source tree `144bfbc0f3bfddd9d60c6dafd70762dc4efe49b2`。
 - Build sourceDigest: `017f3e00e8f49497a99ab338ad92605fadba8e82203477e28289afb4cf69a8a0`；packed preload SHA-256: `21c5d29adfdfd91ba9d542448890a42ab147e6696119f204eac9726ee002f0bb`。
@@ -47,3 +47,11 @@ Authority: [Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy
 原生资格命令限定 `GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000` 的 `live-copy`、`host-harness-emit`、`native-auxiliary-noop`、`host-managed-turn-retry`、`host-compact`、`transform` 六个 suite；运行前确认已安装源码与既有 pin 相同。仅作受保护临时副本的变换/语法编译或隔离 VM 中的固定消费者测试，未运行完整 Host、未改原生文件或相关 PID、未调用真实模型，临时源码副本已清理。它不关闭 LIVE 的已加载制品/Provider/App 义务；verifier 的完整 native qualification 仍为 not-proven。
 
 作者自审覆盖：所有 assignment 消费者与原子保存、能力 pre-I/O 拒绝、policy/revision 冷恢复与去重、SDK omission/conflict 的真实编码边界、reasoning usage 子集、诊断字段/数组访问器不执行、标题清除/保留、旧 wire 诊断与 Host import fence。没有另建执行器、静默降档、通道替换、所有权放宽或无界重试。独立 reviewer receipt 仍 `not-recorded`，非 live review gate 尚未签署；本票不宣称生产可发布。
+
+## 当前 v2 集成回执（2026-09-17）
+
+已按本轮指令变基到最新 v2 `fa476b1`，并由 `git merge --ff-only` 快进至 `e82d116`。原实现 `1e9a76a → ac73435`，原回执 `1108011 → 697fe0c`；新装 model v2、迁移 preview 身份及单一命令面交叉修复为 `0f2cd0a`。完整映射、制品摘要、运行命令、实际回执和边界见 [集成报告](../reports/2026-09-17-reasoning-v2-integration.md)。
+
+本轮组合代码全库 2190 pass / 6 默认原生 skip / 0 fail，modeld release-offline 516/0；六个默认跳过的原生源码 case 随独立只读 lane 28/0 覆盖。随后在已合入的 v2 工作区复验配置专项 205/0、reasoning 与制品专项 37/0，sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`。这些是不同、部分重叠的证明范围，不合并为独立测试总数。
+
+独立 reviewer receipt 仍未记录；LIVE 三条已映射到 v2 但均 blocked，不是未实现代码的转移。公开工作树扫描无命中；最新 v2 基线已有的 16 条提交邮箱元数据命中在六个旧提交上，本次未增加也未擅自改写，历史发布门禁不能沿用上方旧基线的 0 findings 回执。没有 push、线上配置迁移、服务重启、现场 Bot 写入或真实模型消费。

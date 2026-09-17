@@ -285,7 +285,7 @@ Status: blocked — mapped to v2; independent review, native qualification and a
 
 ## 同通道模型推理设置
 
-共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；初始 source `1e9a76a` → 最新 v2 `fa476b1` 上的 `ac73435`，原回执 `1108011` → `697fe0c`；配置/命令面组合修复为 `0f2cd0aab6397ba1ea207b012193cb2798786948`。固定代码候选 sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`；实际 v2 快进与合入后复验另记，live candidate/loaded identities 仍 `not-selected`/`not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
+共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；初始 source `1e9a76a` → 最新 v2 `fa476b1` 上的 `ac73435`，原回执 `1108011` → `697fe0c`；配置/命令面组合修复为 `0f2cd0aab6397ba1ea207b012193cb2798786948`。固定代码候选 sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`；实际 v2 已从 `fa476b1` 快进到 `e82d116114de501dd6fb99b01adeea72a0db7757`（0 merge commits）；合入后的 v2 配置专项 205/0、reasoning/制品专项 37/0，详见 [v2 集成回执](../reports/2026-09-17-reasoning-v2-integration.md)。live candidate/loaded identities 仍 `not-selected`/`not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
 
 只读原生资格补充（2026-09-17）：来源树的独立 native-source 运行 **28 pass / 0 fail**，覆盖普通全库默认跳过的 6 个原生源码 case；已安装源码匹配既有资格 pin，源文件与相关 PID 快照未变，受保护临时副本已清理。这不是已加载新 Host/modeld、真实 Provider 或原 App 回合证明，以下三条状态不因此关闭。
 
@@ -293,7 +293,7 @@ Status: blocked — mapped to v2; independent review, native qualification and a
 
 <a id="live-reasoning-cutover"></a>
 ### LIVE-REASONING-CUTOVER — schema v2 与 wire v7 成套切换及退路
-Status: awaiting-integration
+Status: blocked — integrated into v2; independent review and authorized live qualification remain pending
 
 依赖固定 v2 集成映射、来源非 live 出口和适用的 [MODELD CUTOVER](#live-modeld-cutover) 接点资格。必须 live 的原因是磁盘新构建不能证明已经加载的 Host/preload/modeld 同版；旧 schema/制品的恢复还涉及真实服务生命周期。离线已覆盖 v1 只读/v2 保存、取消与 CAS、v6 只读探测/禁止执行、真实隔离 Unix 和磁盘绑定；计数与候选以来源票为准。
 
@@ -307,7 +307,7 @@ Oracle：逐个记录实际 source/profile/preload/service/wire 身份，新执�
 
 <a id="live-reasoning-provider"></a>
 ### LIVE-REASONING-PROVIDER — 原通道档位透传与上游证据
-Status: awaiting-integration
+Status: blocked — integrated into v2; independent review and authorized live qualification remain pending
 
 依赖 CUTOVER（或单独批准的非现役真实 Provider 资格环境）。离线已证明 locked SDK 反例、Chat/Responses 最终 HTTP effort、冲突零 fetch、同 channel/model 稳定；不能据此证明真实网关未覆盖/忽略参数。作用域必须是明确批准的 endpoint/API/wire model/credential reference，不自动换另一 Provider 或铸造 wire 变体。
 
@@ -317,7 +317,7 @@ Status: awaiting-integration
 
 <a id="live-reasoning-host-app"></a>
 ### LIVE-REASONING-HOST-APP — 原生会话与 App 的下一 TURN 改档
-Status: awaiting-integration
+Status: blocked — integrated into v2; independent review and authorized live qualification remain pending
 
 依赖 CUTOVER 与适用通道的 PROVIDER 请求资格；与原 [MODELD TOOLS](#live-modeld-tools)、[MODELD APP](#live-modeld-app) 共享窗口时仍独立记录。本条必须使用已加载的真实原生 Host 与未修改的 App；source-shaped fixture 和标题字符串测试不证明原生恢复、工具消费者或 UI 展示。
 
