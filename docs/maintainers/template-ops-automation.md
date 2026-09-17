@@ -96,7 +96,7 @@ Webhook 唤醒本身可能消耗原生 token，不能称零成本；节约来自
 
 先冻结 T43/T51/T54 的 native/配置/命名目标合同，以 T53 通用 Routine + T44/T45/T46 的 default 目标完成只读纵切；T52/T56 并行完成授权后内置提交，T55 增量接入 custom/分流/备用；T47 诊断和 T48/T49 维护各自可后交付，由 T50 分 lane 验收。Offline、source CLI、packed Node 和 native 实测分别记录；只验证哪条 lane，就只批准哪条 lane。
 
-当前可运行的回归仍以仓库已有测试为准；各新票列出的测试文件和 `template-ops` verifier 是待创建交付物，不是本次已运行清单。本专项的实际生产签署复用现有 [readiness](t32-live-enable-readiness.md)，不建立另一份绿色总表。
+当前可运行的回归仍以仓库已有测试为准；各新票列出的测试文件和 `template-ops` verifier 是待创建交付物，不是本次已运行清单。本专项当前现场进度、未验项与阻断只在 [LIVE 的运维条目](../tickets/LIVE-integration-validation.md#live-ops-routines)维护；本页保留方法与合同，不建立另一份当前验收表。
 
 ## 7. 配置怎么用（目标，当前命令尚不存在）
 

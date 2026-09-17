@@ -34,7 +34,7 @@
 - **V08/V09**：取消在摘要前/中/接受前后、root 更换、generation 失效、断连迟到；旧结果无越权接受或重复 resume，未知副作用不能伪回滚。
 - **V11**：managed terminal 后 native 不追加 inference；official 原错误行为不被改坏。
 - 与 T32 合成 **V05/V07**：同绑定恢复、父预算、唯一终态；source 和实际 packed 都测。
-- exact-SHA 独立 review 和 release profile 原生资格；未满足不可 live。获准 live 检查点见 readiness，不以 overflow_candidate / 消息数下降关闭。
+- exact-SHA 独立 review 和 release profile 原生资格；未满足不可 live。当前 live 检查点与缺口见 [LIVE](LIVE-integration-validation.md#live-context-native-continuity)，不以 overflow_candidate / 消息数下降关闭。
 
 ## Current ownership integration / next
 
@@ -52,13 +52,13 @@ T38移除错误本地harness保护后，原生identity变化必须传播至既�
 
 `host-managed-turn-retry.test.ts`：owned 反例先得到 4 次 TURN，修复后只 1 次；并从 source SHA `307de399…` AST 提取实际 `shouldRetryTurnAttempt`＋`runWithTransientRetry`，验证 managed/保留 cause 的包装失败各 1 次，official 4 次。无真实 Host 启动/网络。新用例已进入原 compact verifier，本轮 Compact **79 pass**。这是 V11 的精确策略/循环子证明，不能提升为真实 App/automation 完整失败链已通过。
 
-既有 pending background 的完整协调、原生全部 callback、真实 overflow→同模型恢复仍未 closed。本轮新 live send 与后续历史读取被工具安全检查拦截，没有新全链结果；独立 Astra review 容量不足。最新制品/源码稳定性、运行代变化与 E09 红项统一见 [readiness 当前生产补齐](../maintainers/t32-live-enable-readiness.md)，不使用下方历史版本/计数签当前发布。
+既有 pending background 的完整协调、原生全部 callback、真实 overflow→同模型恢复仍未 closed。本轮新 live send 与后续历史读取被工具安全检查拦截，没有新全链结果；独立 Astra review 容量不足。该次制品/源码稳定性与 E09 结果留来源回执；后续现场进度只见 [LIVE](LIVE-integration-validation.md#live-context-native-continuity)，不使用下方历史版本/计数签当前发布。
 
 ### 当前增量（grok-4.6 真实验证轮）
 
 当前 Host `307de399…` 已通过直接源码核验、全部精确切片/语法测试及真实 AST 摘要＋同步 state mutator 的成功/取消/root 换代三案，见 [T32 seam 当前资格](T32-host-compact-seam.md)。新版 mainSessionOptions 的 modelId/executorProfile 选择已适配，身份插入不覆盖原生选模。SDK e2e 已补原 tools/options 恢复保真。当前9文件回归62 pass。
 
-已使用新制品真实 profile-write/re-adopt，并将 modeld 切到独立 Pi xai 凭据引用；准确代/哈希/范围/结果归 [readiness](../maintainers/t32-live-enable-readiness.md)。**历史下述“未部署/旧 pin 红/模型不可用”已不代表现在。** 普通 managed 现场曾在旧凭据 SDK 失败后产生新的 TURN 重试，证明目前 managed failure gate 尚未控制完整 native 外层链；V11 不可关闭。新凭据 SDK 已200，但切换后的 Bot 测试被工具检查拦截，未取得新的完整 e2e 结果；gate/injection 仍关。
+已使用新制品真实 profile-write/re-adopt，并将 modeld 切到独立 Pi xai 凭据引用；准确代/哈希/范围/结果留该次回执；当前现场状态由 [LIVE](LIVE-integration-validation.md#live-context-native-continuity)维护。**历史下述“未部署/旧 pin 红/模型不可用”已不代表现在。** 普通 managed 现场曾在旧凭据 SDK 失败后产生新的 TURN 重试，证明目前 managed failure gate 尚未控制完整 native 外层链；V11 不可关闭。新凭据 SDK 已200，但切换后的 Bot 测试被工具检查拦截，未取得新的完整 e2e 结果；gate/injection 仍关。
 
 下一责任：真实 canary 同代证据、外层重试入口、pending background 与正式运行配置。局部 native proxy 资格不证明所有异步回调/别名均已隔离；Astra 复审没有成功返回，不签正式关闭。
 
@@ -71,8 +71,8 @@ T38移除错误本地harness保护后，原生identity变化必须传播至既�
 - 新 `host-compact-pipeline.test.ts` 使用 owned Host 顺序 fixture → 真 `bindHostSessionHook`/client → local-real Unix → production kernel/真实 AI SDK + 显式 mock HTTP；400 structured overflow 触发一次 Host-owned 合成摘要、实际 resume-step、同模型 attempt1 与唯一逻辑 terminal；401 带相同 overflow 字段也只一次 provider effect、无 compact/resume。断言原窗/新窗、metadata、单 run-step 和资源归零。两用例已过，合计 **34 pass / 0 fail**；没有 test client 手工生成 resume。它不是原生 summary、真实外网 provider 或 App delivery 证明。
 - 新用例已接入 `bun scripts/verify-runtime-rebuild.mjs compact`。本轮该入口 **39+34 pass / 1 fail**，失败是原生 source pin：期望 `2ede71e2…`、实际 `307de399…`。未修改/跳过该断言；测试跳过也不允许 compact 门变绿。同步输出 worktreeDirty 与真实依赖/未证项。
 - pinned Bun 1.3.14 两次 pack 相同，preload `b1b31db8e4557d17e35052bf327c3d8a62fcdd7b07a29dfde614e3ce42d13211`；source continuity **61 pass**、packed **35+11 pass**，E09 pass。这里的 packed continuity 不是新 Compact 的完整 packed/native e2e。
-- owner 已明确允许必要 Host 切换/re-adopt 和 CLI send e2e，无需再请求同一授权。指定替代模型 `ccs-sub2api-xai/grok-4.5` 的 Pi 认证检查为 ready，但实际无工具探针返回 **404 model_not_found / 当前 group 无支持账号**；luna 不再用于新测试。实际渠道状态/费用边界归 readiness；不擅换 provider。
-- 标准 profile-observe 已进一步找到真实 recipe 失败：磁盘 Host `307de399…` 的 create-session 唯一，但 agent-id `findInWindowCount=0`，applyCode=find-missing；不是只要改 SHA 即可。profile-propose 生成 2 个未批准/未发布文本候选，仍需接缝资格；本机收据路径/digest 归 readiness。未绕过直接源文件的外根读取限制，没有写原生 Host 文件或发送进程信号。
+- owner 已明确允许必要 Host 切换/re-adopt 和 CLI send e2e，无需再请求同一授权。指定替代模型 `ccs-sub2api-xai/grok-4.5` 的 Pi 认证检查为 ready，但实际无工具探针返回 **404 model_not_found / 当前 group 无支持账号**；luna 不再用于新测试。该次渠道/费用事实留原回执，后续现场范围与预算经 LIVE 关联日期报告；不擅换 provider。
+- 标准 profile-observe 已进一步找到真实 recipe 失败：磁盘 Host `307de399…` 的 create-session 唯一，但 agent-id `findInWindowCount=0`，applyCode=find-missing；不是只要改 SHA 即可。profile-propose 生成 2 个未批准/未发布文本候选，仍需接缝资格；本机原始收据留受保护位置，公开摘要/digest 留日期报告，当前进度从 LIVE 进入。未绕过直接源文件的外根读取限制，没有写原生 Host 文件或发送进程信号。
 - **下一动作**：对 agent-id 新接点做实际语义核对，再资格化当前 Host 的真实启动、同步 mutator/异步回调、摘要接受与 native retry 合同；闭合 remaining background / 正常配置差额后按已有授权部署候选。当前未新做 re-adopt，也没有宣称生产可用。
 
 ## Forbidden / not here

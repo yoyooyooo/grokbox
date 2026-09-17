@@ -15,7 +15,7 @@
 
 **2026-09-12 owner 最新裁决：生产模型锁定 Pi `ccs-sub2api-xai/grok-4.6`。** 复用已经成功的凭据/Responses 协议资格，不再把模型选择、luna 额度或更多 provider 调研作为主线。目标是补齐并验收真正生产会经过的全部链路；遇到运行时障碍应定位首个失败 owner 并修复，不用可绕过的 mock/短会话或简单 pong 降低发布门。允许必要的 Host/modeld 切换与已命名测试 Bot 的有界 CLI e2e；不绕过工具安全拒绝，不以授权代替结果证据。当前施工先执行T37归属准入和T38身份写入收口，再接T24可逆选模、T39原生往返与T40持久发布；T32/T35已实现机制复用，其真实恢复/后台摘要差额仍是长会话门，不用新治理掩盖旧缺证。
 
-尽快让用户在真实 Grok Bot 中按 Bot 独立选择并持续使用自定义模型。权限、上下文安全和不重复副作用不可退让；架构泛化、更多 provider、完整自有 Harness、WebUI 美化不是先决条件。首版限定当前机器、一个已资格化 Host profile/固定制品、已核验模型/endpoint 及批准 Bot；支持模型清单与运行版本由 [readiness](../maintainers/t32-live-enable-readiness.md) 保存，不从模型名字猜容量。
+尽快让用户在真实 Grok Bot 中按 Bot 独立选择并持续使用自定义模型。权限、上下文安全和不重复副作用不可退让；架构泛化、更多 provider、完整自有 Harness、WebUI 美化不是先决条件。首版限定当前机器、一个已资格化 Host profile/固定制品、已核验模型/endpoint 及批准 Bot；现场支持范围、运行版本证据和未验项统一从 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)及其日期报告读取，不从模型名字猜容量。
 
 - **体验检查点**：已有安全普通窗口、续聊和基础工具可先验证；未合格恢复保持关闭，不称长会话稳定。
 - **稳定日用检查点**：两个 managed Bot 的不同选择、未配置 Bot 负对照、普通/工具多 TURN、首请求 overflow 恢复、恢复后续聊、实际会经过的 Memory/episode、checkpoint 后新进程恢复，以及正常配置持续生效/安装/停用退路。日常链路不能静默关闭以缩小验收。
@@ -155,7 +155,7 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 
 | id | 必须验证的场景/反例 | 执行 owner |
 |---|---|---|
-| V01 | A/B 不同模型、C official；实际请求隔离 | T24 / readiness |
+| V01 | A/B 不同模型、C official；实际请求隔离 | T24 / [LIVE 会话往返](../tickets/LIVE-integration-validation.md#live-session-roundtrip) |
 | V02 | 当前 TURN 改下一 TURN 选择；原 TURN/recovery 不换绑定，历史不改 | T24 |
 | V03 | 真实启动顺序的首请求立即 overflow；旧 late-register 必须红 | T35 |
 | V04 | pending external/self/background 交错，同 root 无并发接受且可推进 | T35 |
@@ -166,8 +166,8 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 | V09 | 重复/旧 nonce、错 tuple/generation、断连迟到零重复 | T32 |
 | V10 | executor 隔离、metadata、非法 bind/append/getter、新 snapshot 资格 | 连续性 F1/F2/F3 / T32 |
 | V11 | managed 恢复失败后 Host 不放大 retry；official 负对照 | T35 |
-| V12 | 能力启用范围与故障注入范围分别约束；多 Bot 并发无等待环 | T32 / readiness |
-| V13 | source 与实际 packed 相符，旧 SHA/profile/缺 case 不绿 | 连续性 F6 / readiness |
+| V12 | 能力启用范围与故障注入范围分别约束；多 Bot 并发无等待环 | T32 / [LIVE 原生连续性](../tickets/LIVE-integration-validation.md#live-context-native-continuity) |
+| V13 | source 与实际 packed 相符，旧 SHA/profile/缺 case 不绿 | 连续性 F6 / 来源票的固定制品证明；实际加载另见 LIVE |
 | V14 | owned checkpoint 后退出进程再 restore；不是 RAM/UI 回填 | 连续性 E04/E08 |
 | V15 | Memory/episode 正反向 purpose/父选择/错误不入 Memory | 连续性 F5/E07 |
 | V16 | 原版App真实发送/显示与实际Host模型、工具和交付关联 | T26/T39 |
@@ -181,7 +181,7 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 | V24 | Working/typing/权限/消息streaming同正确session/run/代，结束后不被旧事件复活 | T36，T26/T39协作 |
 | V25 | 日常单Bot回官方与完整未补丁Host退出分别证明；退出后读证不依赖已卸bridge | T40 |
 | V26 | 同原生窗口前缀/编码稳定，cache冷/热不影响正确性；真实usage或未观测诚实投影 | T39 |
-| V27 | 固定候选、独立review、实际支持矩阵与限定Bot放行/停止条件；必需缺证不签生产 | T40 / readiness |
+| V27 | 固定候选、独立review、实际支持矩阵与限定Bot放行/停止条件；必需缺证不签生产 | T40 / [LIVE 唯一索引](../tickets/LIVE-integration-validation.md) |
 | V28 | 独立网页的共享采集/有界刷新、scope/代/freshness变化、旧观察与真实撤销分开；无伪迁移/删除 | T41，复用T37/T27/T33 |
 | V29 | SQLite观察/管理分层，崩溃/损坏/迁移/保留与cursor gap；DB不恢复准入、不写配置/Host状态 | T41 |
 | V30 | incident去重/恢复/ack/snooze、通知有界重试和幂等边界；不执行任务或修复，网页关闭仍监控 | T41 / T40 |
@@ -204,7 +204,7 @@ Owner 明确生产目标为已可用的 grok-4.6；不再围绕 provider smoke �
 
 ### S0.5 输入映射、施工顺序与权限
 
-ME-01 → 本节/票据索引的基线与旁支核对；ME-02 → T24 与连续性 F3；ME-03 → 连续性 F1/F2/F4；ME-04 → T35 与 T32 seam；ME-05 → T32；ME-06/07 → T32 [readiness](../maintainers/t32-live-enable-readiness.md) 的制品/真实放行检查点；ME-08 → 连续性 F3/F5/E04–E11 的日用子集。交接只链接这些 homes，不另记完成态。
+ME-01 → 本节/票据索引的基线与旁支核对；ME-02 → T24 与连续性 F3；ME-03 → 连续性 F1/F2/F4；ME-04 → T35 与 T32 seam；ME-05 → T32；ME-06/07 → T32 来源制品证明与 [LIVE](../tickets/LIVE-integration-validation.md#live-context-native-continuity) 的现场检查点；ME-08 → 连续性 F3/F5/E04–E11 的日用子集。交接只链接这些 homes，不另记完成态。
 
 当前施工与交接以[S0.1.2](#server-authority-rollout)和[Ticket索引](../tickets/README.md)为准：**T37 → T38 → T24选择差额 → T39（合取T26/T32/T35/T36）→ T40生产放行**；T40隔离服务实现可并行，不制造环。新增T37–T40承接不同职责，不是改名重做旧票。此前E09与恢复代码证据复用，不重做已有功能。export已有port则复验不重做；旁支commit不等价于代码差额。固定单一候选与验证输入后再阶段收口，清理前保全dirty/untracked与活跃引用；主仓库Git数据和v2工作树保留。
 
@@ -522,7 +522,7 @@ grokbox process Scope / 唯一 ManagedRuntime（framework callbacks 需要时）
 
 `runtime modeld run`、`runtime start` 的 ensure 与 console 都使用同一 `modeld.runtime.ts`。已有服务是 borrowed，不拥有 stop 权；prepare 若本进程新建服务，CLI 打印 receipt 后持有实际foreground root，直到signal或自身服务终止，不悄悄detach另一daemon。`StartedModeld.finished`在真实Scope清理后结算，listener非预期close/error必须传到命令失败，不能保留一个等待下次用户signal的空服务；正常取消不误报自身释放事件。browser关页只退订，不结束process/已确认operation。
 
-当前`command.runtime.ts`用Effect Scope把route配置预检、root-qualified acquire、唯一配置保存、未确认reconcile、status/output和前台lifetime合成一个命令程序；CLI仅组装signal/root/输出。开始写出的canonical desired不因后续失败自动回滚，取消不能遗留脱离Scope的写入；cleanup_gap不得吞成正常退出。`configRevision`与reconciliation/status分别说明保存和观测，`productionAccepted:false`、不安装自启、不触发adopt仍明确。source CLI/Unix和实际Node制品的start/borrow/orderly-restart现已有有界证明；不把它升级为安装自启、真实凭据推理或当前Host/App上线资格，最新结果归T40/readiness。
+当前`command.runtime.ts`用Effect Scope把route配置预检、root-qualified acquire、唯一配置保存、未确认reconcile、status/output和前台lifetime合成一个命令程序；CLI仅组装signal/root/输出。开始写出的canonical desired不因后续失败自动回滚，取消不能遗留脱离Scope的写入；cleanup_gap不得吞成正常退出。`configRevision`与reconciliation/status分别说明保存和观测，`productionAccepted:false`、不安装自启、不触发adopt仍明确。source CLI/Unix和实际Node制品的start/borrow/orderly-restart现已有有界证明；不把它升级为安装自启、真实凭据推理或当前Host/App上线资格，实现/离线结果归T40，当前现场缺口与回执链接归 [LIVE](../tickets/LIVE-integration-validation.md#live-runtime-persistence)。
 
 <a id="controller"></a>
 ### S5.2 一个 Controller operation program
@@ -681,7 +681,7 @@ T20 增加一次性 `bun scripts/verify-runtime-rebuild.mjs <case>`，有限 cas
 
 沿用同一个`verify-runtime-rebuild.mjs`，不另建runner/模拟产品服务。各case的已实现子集由owning ticket和实际report确认，未知case必须非零退出。既有source/packed continuity和旧全仓结果只复用其原范围，不能提前覆盖新增门。
 
-当前`ownership-admission`、`identity-alignment`已增加source case；另有T24的`model-selection`覆盖owned官方对象/Chat/Responses往返。前两者与选择case均在报告保留原生迁移、writer退场、真实官方/checkpoint/App等未证边界；case通过不自动关闭整票。下面`model-roundtrip`与`service-release`仍是待实现的完整证明面，不以选择fixture改名替代。T39的固定原生消费者/packed状态适配器跨进程研究保留在私有资格资料，不把owned JSON标作原生checkpoint；T40已增加独立`service-lifecycle`子集，启动/退出取消与资源释放通过也不代表完整持久服务已实现。另有`runtime-start`源码CLI/Unix+命令Scope和实际Node制品start→borrow→orderly restart入口；早先真实CLI复验被拦已由后续正常验证推进，准确证据归T40/readiness。此case仍不关闭持久服务owner/安装自启/现场凭据或整机恢复门。
+当前`ownership-admission`、`identity-alignment`已增加source case；另有T24的`model-selection`覆盖owned官方对象/Chat/Responses往返。前两者与选择case均在报告保留原生迁移、writer退场、真实官方/checkpoint/App等未证边界；case通过不自动关闭整票。下面`model-roundtrip`与`service-release`仍是待实现的完整证明面，不以选择fixture改名替代。T39的固定原生消费者/packed状态适配器跨进程研究保留在私有资格资料，不把owned JSON标作原生checkpoint；T40已增加独立`service-lifecycle`子集，启动/退出取消与资源释放通过也不代表完整持久服务已实现。另有`runtime-start`源码CLI/Unix+命令Scope和实际Node制品start→borrow→orderly restart入口；早先真实CLI复验被拦已由后续正常验证推进，准确实现证据归T40，现场证据从 [LIVE](../tickets/LIVE-integration-validation.md#live-runtime-persistence)索引。此case仍不关闭持久服务owner/安装自启/现场凭据或整机恢复门。
 
 | case / 目标证明面 | owner | 必须执行的独立oracle |
 |---|---|---|
@@ -697,7 +697,7 @@ T20 增加一次性 `bun scripts/verify-runtime-rebuild.mjs <case>`，有限 cas
 
 **工具链预检：** runtime-rebuild与continuity verifier都在child build/test之前核对实际Bun与packageManager的精确版本；错配返回toolchain_mismatch且零child，不把默认安装升级后的结果算作已固定候选。候选报告同时保留toolchain与前后source指纹；仅源码不变不能代替工具链一致。
 
-**统一关闭记录**复用owning ticket和readiness，不开第二进度账：记录测试命令/退出码/实际运行case数/关键assert、source与制品身份及前后稳定性、原生Host/App适配版本、实际Bot与TURN/nonce/generation、所用凭据引用而非值、支持范围、未证项、独立review、下一责任。数据缺失、只见accepted、跳过case、界面不可读、工具拦截或版本漂移不能标passed；缺一项必需证据不以别项高通过数抵消。
+**统一关闭记录分工**：owning ticket 维护实现、测试与独立 review；[LIVE](../tickets/LIVE-integration-validation.md)唯一维护现场进度、未验项、阻断与下一责任，日期报告保留当次命令/退出码/case/断言、source/制品稳定性、原生Host/App版本、Bot/TURN/nonce/generation、凭据引用而非值、支持范围与实际影响。其他文档回链，不复制第二份当前现场进度账。数据缺失、只见accepted、跳过case、界面不可读、工具拦截或版本漂移不能标passed；缺一项必需证据不以别项高通过数抵消。
 
 T38现场校准另有确认门，保留活反例不等于未实现阻断；T40可在冲突阻断已证且test2明确隔离时发布其它合格Box对象，但必须诚实记录test2尚未修复。缓存命中率本身不是正确性通过条件，未知cache指标不造0；所有其它日用关键路径不因“可选性能”被删出范围。
 

@@ -464,7 +464,7 @@ Unix modeld 复用唯一 `runtime-kernel` admission / RouteBinding / STEP ledger
 
 **v5 失败与受控恢复合同（2026-09-16）**：Host/modeld 成套升级；v4 仅允许显式替换工具使用有限只读 service-info/execution-status 核验，不能授权 v5 的模型执行。错误终态和初始拒绝都可携带 kernel 的安全 `FailureSummary`，绑定 Agent/TURN/STEP/Host generation/service epoch；未知或损坏的摘要只降低诊断精度，不把已知失败升级为成功或变成新的流结构错误。HTTP、认证、限流、额度、资格、资源预算与流完整性分别呈现；用户看到的提示不依赖实时反查日志。旧日志继续读取且不回填未采集事实。
 
-默认每 STEP 不自动重试。显式 `GROKBOX_MODELD_PROVIDER_RECOVERY=pre-output-http` 启用 kernel 内的模型请求恢复，接受重复上游推理/费用的可能性：仅在未发布任何非空文本、思考或工具材料时，针对明确 HTTP 429（非额度错误）/502/503/504，在本 STEP 的时间和额外请求预算内等待并再次请求。每次 attempt 独立持久声明，使用同一 snapshot 和 binding，并再次检查 ownership、取消、原凭据指纹及模型选择；检查之后再次核对剩余恢复时间。最终成功只放行一次，持久结算失败不释放成功终态。未知网络结果、流不完整、工具参数错误、已输出的请求不自动恢复；不重发 sendPrompt、不重放整个 TURN 或工具、不切备用模型、不跨重启复活旧请求。进度事件只报告状态，不授予执行权。模型 backend 自身仍是单次调用，monitor 不拥有恢复器。详见[恢复与错误呈现](maintainers/run-outcome-observation.md#v5-失败摘要与受控模型恢复)。
+默认每 STEP 不自动重试。显式 `GROKBOX_MODELD_PROVIDER_RECOVERY=pre-output-http` 启用 kernel 内的模型请求恢复，接受重复上游推理/费用的可能性：仅在未发布任何非空文本、思考或工具材料时，针对明确 HTTP 429（非额度错误）/502/503/504，在本 STEP 的时间和额外请求预算内等待并再次请求。每次 attempt 独立持久声明，使用同一 snapshot 和 binding，并再次检查 ownership、取消、原凭据指纹及模型选择；检查之后再次核对剩余恢复时间。最终成功只放行一次，持久结算失败不释放成功终态。未知网络结果、流不完整、工具参数错误、已输出的请求不自动恢复；不重发 sendPrompt、不重放整个 TURN 或工具、不切备用模型、不跨重启复活旧请求。进度事件只报告状态，不授予执行权。模型 backend 自身仍是单次调用，monitor 不拥有恢复器。详见[恢复与错误呈现](maintainers/run-outcome-observation.md#v6-资格等待失败摘要与受控模型恢复)。
 
 长效根默认 `/workspace/.grokbox/box-runtime/`，保存 canonical config/models、PatchProfile、合同切片和事件日志；人读入口通过安装布局映射到 `~/.grokbox/config.json` 与 `models.json`。Profile 意图已经归 config.client，短效回执和 CLI 安装树不是配置。部署的实际 Reset 持久性单列验收，不从路径名称推断。不得占用 CLI 安装目录 `~/.grokbox/runtime/`。`models.json` 持久化的凭据字段（`credentials` 与本地 `apiKeyRef`）只接受 `env:<NAME>` 与 `file:/absolute/path`；`file:` 放长效树 `secrets/`；literal secret 与 `$VAR` 为 schema error。`externalCatalog` 含 `pi` 时，内存中的适配记录可使用 `pi-provider:<name>` 指向 Pi `models.json` 里该 provider 的 string `apiKey`，不得把该密钥明文写入 grokbox `models.json`，也不得执行 command-form `!/` 键。短效 live state 固定 `~/.grokbox/run/`（含 `attestation.json` 与 `modeld.sock`），不读 `XDG_RUNTIME_DIR`。daemon socket 仍按 §5.2：默认 XDG runtime 路径，缺失时回退 `~/.grokbox/run/daemon.sock`。
 
@@ -493,7 +493,7 @@ MVP / 可发布声明的 ordinary main envelope：
 
 `runtime status` 使用同一 status projector 的 installation/circuit 与 bridge、modeld、controller、mutation、recovery、hostDelivery facets；缺来源/错代/陈旧记录保持 unknown/gap，不用历史成功冒充当前 delivery。disabled 但仍 patched 不能显示 rollback-done，desired 写入不等于已卸载。只读命令不 repair/清 circuit/发模型请求；字段与上限由 canonical contract/source tests 验证。稳定版本还须固定 source/packed/Host profile 与运行代、支持模型/Bot、正常持久启用/停用及安全退路；临时 env canary 演示不是可持续配置，故障注入始终不作为正常功能。
 
-**发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。最终批准使用readiness现有记录，不由某个绿色测试或ownership结果直接生成。
+**发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。当前现场支持范围、未验项与验收结论只由 [LIVE 唯一索引](tickets/LIVE-integration-validation.md)及其固定窗口证据承载；独立 review/发布前置仍归来源票，不由某个绿色测试或ownership结果直接生成批准。
 
 ### 12.1 Bot 主动运维（2026-09-17 分层/多目标/支持整合，尚未实现）
 

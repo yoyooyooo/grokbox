@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**Current Home：完整返回未补丁Host的目标与验收；2026-09-12治理，未执行回滚。** [T40](../tickets/T40-persistent-release-and-rollback.md)拥有生命周期/发布闭环，T28提供唯一控制程序；日常逐Bot官方选择归T24，原生会话往返归T39。本文不提供通用signal权限，不修改App/产品SQLite、Server归属或官方迁移hold。
+**Current Home：完整返回未补丁 Host 的目标、操作边界与验收判据。** 当前已验/未验、阻断和下一步只看 [LIVE-MODELD-RESTART](../tickets/LIVE-integration-validation.md#live-modeld-restart)；旧 schema 退路另见 [REASONING-CUTOVER](../tickets/LIVE-integration-validation.md#live-reasoning-cutover)。 [T40](../tickets/T40-persistent-release-and-rollback.md)拥有生命周期/发布闭环，T28提供唯一控制程序；日常逐Bot官方选择归T24，原生会话往返归T39。本文不提供通用signal权限，不修改App/产品SQLite、Server归属或官方迁移hold。
 
 ## 1. 两种“回官方”，不是同一个操作
 
@@ -44,7 +44,7 @@ Stock Host的roster可能省略box；这是wire兼容事实，不应要求卸载
 
 任何identity/源SHA/原生状态不匹配都停止后续危险操作。已经做过的操作按receipt/read-back对账，不重复signal或provider请求。停止或回到已验证配置只使用仍然合法的原生/控制路径，不能恢复Server temporal/local box冲突作为“旧版本回滚”。
 
-T40在readiness登记退出是否实际完成、缺证、影响范围和下一责任；日常回官方通过而完整退出失败时分别显示，不能把两者统一标可回滚。修复后重跑受影响门，不让其它无关测试数量抵消失败。
+T40 的现场退出是否完成、缺证、影响范围和下一责任统一登记在 [LIVE](../tickets/LIVE-integration-validation.md#live-modeld-restart)，固定运行细节留日期报告；日常回官方通过而完整退出失败时分别显示，不能把两者统一标可回滚。修复后重跑受影响门，不让其它无关测试数量抵消失败。
 
 ## 6. 历史收据与Current Homes
 
@@ -58,4 +58,4 @@ T40在readiness登记退出是否实际完成、缺证、影响范围和下一�
 
 ## Freshness / 本轮结果
 
-Host/App版本、加载制品、identity协议、controller入口、原生checkpoint格式或凭据生命周期变化均使相关证据失效。本轮只有文档调整；没有deactivate、重新领养、停止服务、修改Bot或App，也没有取得新的退出验收结果。
+Host/App版本、加载制品、identity协议、controller入口、原生checkpoint格式或凭据生命周期变化时，在 LIVE 对受影响条目标明待重验并保留旧回执。本页只定义判据，不更新当前结果；历史文档治理时未运行的说明不能覆盖之后窗口的事实。

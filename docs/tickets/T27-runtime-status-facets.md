@@ -29,7 +29,7 @@
 
 真实`runtime status`不再把任意健康socket视为当前安装ready。复用T40的service-info/rootId，modeld facet增加可选的`scope`、`serviceEpoch`及实际观察时间；真实adapter输出matched/mismatch/unavailable/not_observed。匹配才ready，已知不匹配为false，旧服务/无法读取身份为null，只有确认路径缺少才按未运行报告；非法父路径/访问错误不是缺少。原始health仍只证响应能力，不变成准入依据。
 
-CLI显式GROKBOX_RUN_ROOT必须传给同一观察器；无显式覆盖时保留原默认/injected adapter，避免新代码绕过测试或embedding选定的runRoot。`runtime-service-status.test.ts`用真实disposable Unix服务覆盖匹配/不同根/旧服务/无效目录/缺失；投影对未知scope和不安全epoch做白名单处理。所有status操作保持只读，不create/repair/clear circuit；T40的packed启动回执也观察对应service generation。schema保持兼容的字段增量，不新建第二状态解释器。最新计数和源码身份归readiness。
+CLI显式GROKBOX_RUN_ROOT必须传给同一观察器；无显式覆盖时保留原默认/injected adapter，避免新代码绕过测试或embedding选定的runRoot。`runtime-service-status.test.ts`用真实disposable Unix服务覆盖匹配/不同根/旧服务/无效目录/缺失；投影对未知scope和不安全epoch做白名单处理。所有status操作保持只读，不create/repair/clear circuit；T40的packed启动回执也观察对应service generation。schema保持兼容的字段增量，不新建第二状态解释器。固定计数和源码身份留来源票/日期回执；当前实际加载与未验项唯一索引到 [LIVE-MODELD-CUTOVER](LIVE-integration-validation.md#live-modeld-cutover)。
 
 ## T41复用边界（2026-09-12）
 

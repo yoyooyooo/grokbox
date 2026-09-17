@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-当前用途：本机 managed 推理的 STEP 排障、失败归因和有界证据查询。合同归 [产品合同 §7.3/§7.4](../product-contract.md) 与 [Spec S0.4.1](../roadmap/box-runtime-impl-spec.md)，Host 流合同归 [T26](../tickets/T26-runtime-host-fullstream.md)，发布事实归 [readiness](t32-live-enable-readiness.md)。本页是观测入口/含义，不另定义执行器、重试器或任务数据库。投影实现是 `packages/cli/src/outcome.ts`；`SEND_OUTCOME_STATES` 或 nonce-first join 变更时重审本页。
+当前用途：本机 managed 推理的 STEP 排障、失败归因和有界证据查询。合同归 [产品合同 §7.3/§7.4](../product-contract.md) 与 [Spec S0.4.1](../roadmap/box-runtime-impl-spec.md)，Host 流合同归 [T26](../tickets/T26-runtime-host-fullstream.md)，当前现场缺口与证据入口归 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md#live-modeld-app)。本页是观测入口/含义，不另定义执行器、重试器或任务数据库。投影实现是 `packages/cli/src/outcome.ts`；`SEND_OUTCOME_STATES` 或 nonce-first join 变更时重审本页。
 
 ## v6 资格等待、失败摘要与受控模型恢复
 
@@ -258,7 +258,7 @@ canonical 成功 terminal 等 SDK stream EOF 后才释放，晚到参数/错误�
 
 ## 验证与现场边界
 
-2026-09-12本轮 scoped regression **123 pass / 0 fail**（含CLI/事件/管理/运行时合同、12个结果观测测试、5个工具准入/终态测试、持久凭据与原生outer retry回归）。真实只读结果查询也已完成。完整全仓测试调用及候选 profile-write/re-adopt 调用被工具安全检查拦截，未执行；未改路重试部署，没有宣称串行策略修复已在现场加载或真实工具链已验完。具体制品身份与后续待验项以readiness为准。
+2026-09-12本轮 scoped regression **123 pass / 0 fail**（含CLI/事件/管理/运行时合同、12个结果观测测试、5个工具准入/终态测试、持久凭据与原生outer retry回归）。真实只读结果查询也已完成。完整全仓测试调用及候选 profile-write/re-adopt 调用被工具安全检查拦截，未执行；未改路重试部署，没有宣称串行策略修复已在现场加载或真实工具链已验完。该历史窗口不维护后续进度；具体制品证据与当前待验项统一从 [LIVE](../tickets/LIVE-integration-validation.md#live-modeld-app)进入。
 
 ## 推理档位证据（schema v2 / wire v7）
 

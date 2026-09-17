@@ -38,7 +38,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 ## Cross-worktree live acceptance
 
-[`LIVE` integration validation backlog](tickets/LIVE-integration-validation.md) is the long-lived scheduling/receipt home for acceptance that actually needs native Host, loaded Host/modeld, a real Provider, the original App or restart/rollback. Finish code, offline proof and code review in feature worktrees; register live-only entries with source commits and dependencies, then normally validate a fixed combined `feat/box-runtime-v2` artifact in one approved window. The queue records integration mappings, budgets, stop/rollback conditions and per-entry results. It neither authorizes cutover nor turns unresolved code/review into live-only residue; completed entries are invalidated explicitly when relevant artifacts change.
+**[LIVE — 现场集成验收唯一索引](tickets/LIVE-integration-validation.md)** 集中回答各维度已经验证什么、还缺什么、被什么阻断以及下一步。当前 live 进度只更新这张表；来源 Spec/Ticket 保留功能合同与实现/离线/review，maintainer 文档保留操作方法，日期 report 保留当次固定制品与原始结论，均回链对应稳定条目。默认验证已合入 `feat/box-runtime-v2` 的固定组合制品；索引不是重启、模型消费或发布授权，部分现场证据不豁免其他门禁。
 
 ## Roadmap
 
@@ -59,7 +59,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [Official Host rollback acceptance](maintainers/official-rollback-acceptance.md): daily per-Bot official selection versus full unpatched-Host exit; native state, identity and original-App evidence, including loss of the inspection bridge. T40 closes implementation/operations; documentation does not execute rollback.
 - [Managed context continuity](maintainers/managed-context-continuity.md): F/E safety and daily-pipeline acceptance; implementation partly exists and must be reused. Verifier supports/notProven distinguish proved source/packed subsets from pending full/native qualification; historical cause remains closed-notProven.
 - [External PromptSession reference](maintainers/grok-bot-setup-session.md): bounded `grok-bot-setup` session-contract evidence; not product or architecture authority.
-- [T32 live-enable readiness](maintainers/t32-live-enable-readiness.md): current candidate/artifact evidence, scoped experience vs stable checkpoints, normal persistent enable vs fault injection, and install/exit gates. Historical GATE permission is not standing global rollout authorization.
+- [T32 旧 readiness 路由](maintainers/t32-live-enable-readiness.md)：只引导到 LIVE 和原有合同，不再承担当前候选、现场进度或发布结果账本；既有 compact 与新 CTX 验收分开登记。
 - [E07 Path B Host admission](maintainers/e07-path-b-host-admission.md): D2-approved purpose slices and source/packed admission proofs; full E07/native qualification remains partial.
 - [T29 command/API boundary incubate](maintainers/t29-command-boundary-incubate.md): shared commands/status/ConfigurationWrite inventory; browser still deferred, T41 observation DB allowed under its separate scope, no UI config SoT or speculative CAS.
 - [Chat provider compatibility](maintainers/chat-provider-compatibility.md): MiniMax inline history, qualified continuation normalization, safe tool/schema witnesses, final delivery behavior, and separate offline/provider/native acceptance gates.

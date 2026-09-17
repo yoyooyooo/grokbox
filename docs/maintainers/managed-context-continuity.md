@@ -153,4 +153,4 @@ verifier先明确reality与范围，逐案输出assertion/failure/mutant结果�
 4. **F5窄接口gate → E07/E10**：明确purpose/aux identity/生命周期与D2批准后落地；没批/没证则该片blocked，前几片可继续，但**不能标整个B关闭**。
 5. 完整E01–E11、source/artifact和所声称的native资格均给出实际收据；任何剩余M1–M6未闭合或关键case未执行，输出partial/notQualified。测试与源证明是版本/边界受限的，不把有限测试提升为任意未来代码的绝对保证。
 
-**当前下一步：复用已有F1/F2/F3/F5与已恢复的制品证明；按T37/T38准入条件推进T39的原生回程，补日用必需E07/E10/E11。** 当前E09是否通过按本次verifier输出，不按本文更早的红/绿快照；任何新产物仍须重验。 更多模型/后台预生成优化可后移；基础proactive已按2026-09-17 S12进入当前CTX主线，usage/Memory/reload不能删出稳定门。不重开历史 A；live 依 Spec S0/S9 和 readiness 的明确窗口。 F3的真实容量值与F5额外接缝批准是明示的局部gate。部署/Host刷新只有在已完成所需offline资格、写出确切blocker并另获owner「继续」后考虑；本页不是该授权。
+**当前下一步：复用已有F1/F2/F3/F5与已恢复的制品证明；按T37/T38准入条件推进T39的原生回程，补日用必需E07/E10/E11。** 当前E09是否通过按本次verifier输出，不按本文更早的红/绿快照；任何新产物仍须重验。 更多模型/后台预生成优化可后移；基础proactive已按2026-09-17 S12进入当前CTX主线，usage/Memory/reload不能删出稳定门。不重开历史 A；当前现场已验/未验与下一步只看 [LIVE-CONTEXT-NATIVE-CONTINUITY](../tickets/LIVE-integration-validation.md#live-context-native-continuity) 和 [LIVE-SESSION-ROUNDTRIP](../tickets/LIVE-integration-validation.md#live-session-roundtrip)，执行仍遵守 Spec S0/S9 的窗口合同。 F3的真实容量值与F5额外接缝批准是明示的局部gate。部署/Host刷新只有在已完成所需offline资格、写出确切blocker并另获owner「继续」后考虑；本页不是该授权。

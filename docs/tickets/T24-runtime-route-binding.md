@@ -15,7 +15,7 @@
 
 `host/session-hook.ts` 对**已捕获 managed Agent 但缺 TURN**的分支不再返回 `originalSession`，改为 `invalid_envelope` 的显式 Host 拒绝。专用原生 summary 没有 managed Agent 身份，继续从 earlier official 分支原样返回；不能混为一个例外。source hook 正/反例与 Host fullstream 回归已过。**15:56 UTC 批次进一步关闭两个隐式回官方分支**：route模式具名Agent的models.json缺失/损坏/不支持schema/超限/目录/symlink均抛固定`runtime_config_invalid`，标记可信本地失败并写有界拒绝原因；不能确认选择时不返回official。没有Agent身份的专用原生session及observe/identity不依赖该文件，合法配置中的未分配Bot仍exact originalSession。新的7个反例先红后绿。
 
-`responses-continuation.test.ts` 真走 Host session/client、Unix/kernel、SDK mock Responses，验证同一 TURN 的 reasoning＋工具结果续聊及下一 TURN 窗口；无第二次 owned tool effect。它是日用合同的一段可执行证明，不替代真实 provider/完整 Memory/reload 或独立 review。生产目标及当前全局缺口见 Spec S0 / readiness。
+`responses-continuation.test.ts` 真走 Host session/client、Unix/kernel、SDK mock Responses，验证同一 TURN 的 reasoning＋工具结果续聊及下一 TURN 窗口；无第二次 owned tool effect。它是日用合同的一段可执行证明，不替代真实 provider/完整 Memory/reload 或独立 review。产品目标归 Spec S0；当前现场已验/未验、阻断和下一步只看 [LIVE-SESSION-ROUNDTRIP](LIVE-integration-validation.md#live-session-roundtrip)及相关 reasoning 条目。
 
 ### Host-only 官方/自定义往返差额（2026-09-12）
 
@@ -23,7 +23,7 @@
 
 **当前工作树已有逐Bot route-mode reset。** CLI use/reset经`changeRuntimeModel`和唯一ConfigurationWrite；use消费T37新鲜归属，`--for`明确目标时reset只撤销managed覆盖，全局/default reset仍受保护。返回selectionSaved/currentTurn/effectiveUse，不把保存当立即生效；其它Bot覆盖不变。配置在Server读取期间变化会拒绝覆盖；最终commit新增协作writer短锁＋expected model revision检查及读回，关闭两条CLI同时读旧文件后覆盖另一Bot的窗口，不新增T29浏览器/CAS数据库。当前已将不可读route配置与明确official选择分开拒绝；它不是继续信任最后一次成功配置的隐藏缓存。
 
-**2026-09-13部署准备发现并修复撤权死锁：** 原reset也调用managed准入，冲突、已迁Temporal或旧桥失联时反而不能撤销managed期望。现在显式reset不请求Server、不授予执行权、不改变身份或在途TURN；输出`ownership:not_required_for_reset`、`effectiveUse:not_observed`，不能将其解释成已确认Box或已执行官方回程。use仍严格fail-closed。不可读配置/取消仍零写入；真实CLI及干净环境的packed Node无Gateway reset纳入同一verifier。固定结果归readiness。
+**2026-09-13部署准备发现并修复撤权死锁：** 原reset也调用managed准入，冲突、已迁Temporal或旧桥失联时反而不能撤销managed期望。现在显式reset不请求Server、不授予执行权、不改变身份或在途TURN；输出`ownership:not_required_for_reset`、`effectiveUse:not_observed`，不能将其解释成已确认Box或已执行官方回程。use仍严格fail-closed。不可读配置/取消仍零写入；真实CLI及干净环境的packed Node无Gateway reset纳入同一verifier。固定结果留来源回执，当前现场状态从 LIVE 唯一索引进入。
 
 完整官方→A→B→官方→A的原生持久状态与真实旅程资格由新增[T39](T39-native-model-roundtrip.md)承接；本票交付可被它调用的选择机制和命令，不另记相同旅程的完成态。当前Responses三步mock和单独passthrough测试不证明回程已完成。
 
@@ -55,7 +55,7 @@ reset的逐Botsource实现与CLI/运行时回归已过；config读取decline、�
 
 `overlayOfficialNoStepStreams`已收敛为`attachManagedAuxStreams`。已选managed session中没有STEP的普通调用，不能靠“没有ID”推断它属于专用摘要；现在由managed validator拒绝，官方executor计数为0。可信memory/episode purpose仍走既有独立aux，专用外部summary在无Agent的session入口保持official。原测试先暴露调用official后假成功，修复后通过；E07目的/工具/取消8项集成回归也过。没有通过删除辅助推理来缩小稳定范围。
 
-这些机制已接现有`model-selection`验证入口，当前45/0；实际packed Host/client与原生消费者的证据等级见T37/readiness。T39真实官方模型回程、原生checkpoint新进程、App与完整Memory仍未关闭。
+这些机制已接现有`model-selection`验证入口，当前45/0；实际packed Host/client与原生消费者的证据等级归T37及固定来源回执；现场结果只在 LIVE 对应条目维护。T39真实官方模型回程、原生checkpoint新进程、App与完整Memory仍未关闭。
 
 ### 本轮选择纵切证明（2026-09-12）
 

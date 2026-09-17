@@ -14,13 +14,13 @@
 - 这补充当前 profile 的局部 native 接受/取消资格，**不证明全部 callback alias、pending-background 收口、完整 native loop 或真实 overflow 恢复**。不能把 guard facade 的证明泛化为任意 Host ABI。
 - SDK pipeline 回归同时抓到 Compact 后原 tools/options 丢失：kernel 现只用 Host 新 messages，保留原已受理 STEP 的 tools/options，并核对 profile/ABI、重算 snapshot digest。正/反向 SDK body 用例已通过。
 
-已执行的真实 profile publication、re-adopt、独立模型凭据切换及尚未闭合的 e2e 统一记在 [readiness](../maintainers/t32-live-enable-readiness.md)。本页不是生产总验收，T32/T35 不因局部 native 资格或模型 smoke 自动 Done。
+已执行的 profile publication、re-adopt、模型切换保留其日期回执；当前现场已验/未验与阻断唯一索引到 [LIVE-CONTEXT-NATIVE-CONTINUITY](LIVE-integration-validation.md#live-context-native-continuity)，不在本页维护另一份 e2e 进度。本页不是生产总验收，T32/T35 不因局部 native 资格或模型 smoke 自动 Done。
 
 ---
 
 ## 历史资格（2026-09-10，不覆盖上述当前增量）
 
-**2026-09-12 当前资格状态：未通过。** 下文保留早期固定版本的诊断与条件性资格，不是最新 Host 的 GO。当前 source-pin 测试期望 `2ede71e2…`，现场实际为 `307de399…`，该红项未放宽。工作树已有注册前移、managed 摘要协调/原生 retry 控制与 delegate 生命周期修复；最新范围和隔离证明见 [T35](T35-host-compact-wait-point.md)，发布/模型可用性见 [readiness](../maintainers/t32-live-enable-readiness.md)。Owner 已允许必要重新领养；仍需针对实际版本验证摘要 mutator、迟到回调及 root 接受合同，不能用旧行号、方法名或 owned fixture 代替。下文的“尚未实现”“不得移动注册”等仅解释旧基线，不再构成当前施工约束。
+**2026-09-12 当前资格状态：未通过。** 下文保留早期固定版本的诊断与条件性资格，不是最新 Host 的 GO。当前 source-pin 测试期望 `2ede71e2…`，现场实际为 `307de399…`，该红项未放宽。工作树已有注册前移、managed 摘要协调/原生 retry 控制与 delegate 生命周期修复；最新范围和隔离证明见 [T35](T35-host-compact-wait-point.md)，当前现场支持范围/模型资格见 [LIVE](LIVE-integration-validation.md#live-context-native-continuity)。Owner 已允许必要重新领养；仍需针对实际版本验证摘要 mutator、迟到回调及 root 接受合同，不能用旧行号、方法名或 owned fixture 代替。下文的“尚未实现”“不得移动注册”等仅解释旧基线，不再构成当前施工约束。
 
 **2026-09-10：conditional GO for offline implementation；不是可直接启用的runtime capability。** 主票：[T32](T32-runtime-confirmed-compact.md)。源码基线 `pre-publication-revision`。H表示 `/home/box/sand-host/host-main.cjs` 的1-based行，SHA256 **`f5cc35b57135ddbb5e32bbfa8e3bdcbdc9d6a88540043059feb8049280df2740`**；换SHA须重资格，不能只沿用名字。
 

@@ -2,6 +2,10 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
+## 现场验收路由
+
+本票拥有完整往返判据与实现/离线/原生隔离证明；当前现场已验范围、未验项、阻断和下一步只看 [LIVE-SESSION-ROUNDTRIP](LIVE-integration-validation.md#live-session-roundtrip)，原版 App 另见 [LIVE-MODELD-APP](LIVE-integration-validation.md#live-modeld-app)。下方带日期的现场片段仅保留当时证据，不维护当前模型目录、部署状态或待验列表；后续窗口通过 LIVE 链接日期报告。
+
 ## 现场官方→managed 首错（2026-09-13）
 
 test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToUser，`history outcome` 为 expected_result_observed（run 仍 not_proven）。随后 `models use grok-4.6 --for test0` 保存成功且 ownership=confirmed_box。下一 TURN 的 managed send 被 Gateway accepted，但 120s 内无 requestId/交付。Host journal：hook_enter 后 admit `unsupported_content` / `stateShape=call-id-control`，约 5s 间隔换新 turnId 共 4 次，modeld 无 STEP。未重放该 nonce。

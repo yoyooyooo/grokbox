@@ -44,6 +44,8 @@ A historical `undeclared_tool` record without identity witnesses proves its reje
 
 ## Regression and live acceptance
 
+This section owns the commands and acceptance contract, not current progress. Current proved scope, missing Provider/native vectors, blockers and next actions are maintained only in [LIVE-PROVIDER-MINIMAX](../tickets/LIVE-integration-validation.md#live-provider-minimax); approval-time execution and original-App evidence also link to [LIVE-MODELD-TOOLS](../tickets/LIVE-integration-validation.md#live-modeld-tools) / [APP](../tickets/LIVE-integration-validation.md#live-modeld-app). Fixed-run receipts belong in dated reports reached from those rows.
+
 Offline gates:
 - `bun run typecheck`
 - `bun test packages/box-runtime/test/minimax-chat.test.ts packages/box-runtime/test/tool-identity-audit.test.ts packages/box-runtime/test/sdk-validation.test.ts packages/box-runtime/test/delivery-fallback.test.ts packages/box-runtime/test/auxiliary-empty-output.test.ts`

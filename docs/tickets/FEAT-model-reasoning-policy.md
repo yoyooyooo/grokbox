@@ -1,12 +1,12 @@
 # FEAT — 同通道模型推理设置
 
-Status: implementation and executable offline qualification complete; integrated and deployed in W17; scoped live effort/TURN/title/history vectors exercised; independent review, Provider-reported effort and full App/rollback qualification pending.
+Status: implementation and executable offline qualification complete; integrated into v2; independent review pending. Current live progress is maintained only in the linked LIVE rows.
 Source branch: `feat/model-reasoning-policy`; initial v2 base `f8c82c0`, final rebase base `fa476b1`. Current integration receipt is below.
 Authority: [Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy), [ADR](../decisions/2026-09-17-model-reasoning-policy.md). This ticket does not authorize runtime adoption, live model calls or publication.
 
-## 当前 live 回执
+## 现场验收路由
 
-用户授权的 [W17 窗口](LIVE-integration-validation.md#window-20260917)已经实际执行 schema/wire 切换、真实 high/xhigh/default 请求、在途 TURN 固定选择、下一 TURN 改档、标题与逐 Bot 官方历史回程。两个上游 503 失败独立保留，成功通道不替它们背书；providerReported 仍 unknown，原版 App/compact/旧 schema 退路与独立复审仍未关闭。下方原始实现和集成回执保留其历史范围，当前 live 状态只由 LIVE 逐条维护。
+当前已验范围、未验项、阻断和下一步只看 [REASONING-CUTOVER](LIVE-integration-validation.md#live-reasoning-cutover)、[PROVIDER](LIVE-integration-validation.md#live-reasoning-provider) 与 [HOST-APP](LIVE-integration-validation.md#live-reasoning-host-app)。这些条目链接对应的日期报告；本票保留实现合同、离线/制品证明和独立 review，不另抄当前现场结果。下方原始实现/集成回执中的未部署等表述只描述其历史时点。
 
 ## 实现范围与出口
 

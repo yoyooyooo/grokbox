@@ -1,10 +1,10 @@
 # 2026-09-17 — v2 live integration window
 
-本报告记录一次用户明确授权的现役维护与有界验收，不是全功能生产发布签字。跨 worktree 条目状态与后续排程仍由 [LIVE 账本](../tickets/LIVE-integration-validation.md#window-20260917)拥有。原始配置、真实 Bot/nonce/进程身份、日志、导出和备份只留在受保护的本机证据中；本报告用 `W17-A`、`W17-B` 和 `C01–C12` 指代，不发布私有路径、账号、端点、凭据或业务文本。
+本报告是 **W17 窗口结束时的固定历史证据**，不是当前进度表或全功能生产发布签字。后续各维度的已验/未验、阻断和下一步只由 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)维护；[W17 窗口入口](../tickets/LIVE-integration-validation.md#window-20260917)回链本报告。原始配置、真实 Bot/nonce/进程身份、日志、导出和备份只留在受保护的本机证据中；本报告用 `W17-A`、`W17-B` 和 `C01–C12` 指代，不发布私有路径、账号、端点、凭据或业务文本。
 
 ## 1. 实际结果
 
-现役已从旧 modeld wire v5 切到 v2 的 **wire v7、models schema v2、统一 config schema v2、strict-observation-v2**。Host、modeld 和 daemon 均实际换代；最后一条 managed canary 的 Host 与 modeld 终态报告相同的修复后 source digest，随后 doctor 返回 `host=custom`、`modeldAdmission=ready`、`next=none`。
+W17 结束时，现役已从旧 modeld wire v5 切到 v2 的 **wire v7、models schema v2、统一 config schema v2、strict-observation-v2**。Host、modeld 和 daemon 均实际换代；最后一条 managed canary 的 Host 与 modeld 终态报告相同的修复后 source digest，随后 doctor 返回 `host=custom`、`modeldAdmission=ready`、`next=none`。
 
 不是仅构建或重启：本轮执行了迁移、真实配置应用、官方 passthrough、MiniMax 主回合/工具/Memory、同通道 effort、在途 TURN 固定选择、逐 Bot 官方回程、modeld 替换、完整 Host 退出尝试、同制品再次启停和清理。官方未补丁路径的完整原生/App 证明、长审批撤权、受控慢取证、平台 Reset 与独立复审仍未完成。
 
@@ -36,6 +36,20 @@
 | build tools / SDK | Bun 1.3.14；esbuild 0.28.2；ai 5.0.253；OpenAI provider 2.0.125；Effect 4.0.0-beta.107 | 相同锁定依赖 |
 
 B 只修复 controller/CLI 生命周期和相应回归，没有修改推理、ownership 策略或 Provider 编码。A 上的 effort、配置应用等回执保留为它实际测试的制品范围；**不能把它们改写成 B 上重新运行过全部向量**。B 另取得同制品再次启停、最终 managed 主回合/Memory、服务换代和完整离线回归。下次相关源代码、原生版本、策略、schema/wire 或部署 tuple 变化时，按条目重新判定覆盖，不照抄这次绿色结果。
+
+### W17 来源与 v2 映射
+
+以下保留原 LIVE 登记中的固定来源，便于追溯，不作为后续当前状态表：
+
+| 功能来源 | 已记录的映射与详细回执 |
+|---|---|
+| 统一配置 `feat/template-ops-automation` | 初始 `dbc43f5` → rebase 实现 `80fe393`，以原哈希随 `efa6557` 进入 v2；[配置集成报告](2026-09-17-config-ops-v2-integration.md)保存完整映射/组合测试，非现场门归 T57–T60 |
+| modeld Effect core `feat/modeld-effect-core` | `6d0e914 → ce942f2`、`743daea → e6c5bf5`，十一项提交映射及 v2 `b575748` 组合证明见 [modeld 集成报告](2026-09-17-modeld-v2-integration.md) |
+| ownership availability `feat/ownership-evidence-availability` | 实现 `90346bb` 与登记 `8760d3a` 原哈希进入 v2；[AUTH 集成回执](../tickets/AUTH-ownership-evidence-availability.md#v2-integration-receipt)保留 source/preload 摘要及当时范围；其历史 wire v6 不替代本窗 v7 身份 |
+| reasoning `feat/model-reasoning-policy` | 初始 `1e9a76a → ac73435`、`1108011 → 697fe0c`，完整映射见 [reasoning 集成报告](2026-09-17-reasoning-v2-integration.md)；组合配置修复 `0f2cd0a`、登记 `e82d116`，W17-A 最终代码候选 `7994b92` |
+| Host lifecycle 修复 | `338cf83 → 338cf83`、`fe05442 → fe05442`，隔离修复完成后 v2 快进至 `dc03066` 再执行 W17-B，见本报告 §6 |
+
+Template Ops 的 `52e76eb`/`efa6557` 与 CTX 的 `15a0594`/`02a6d81` 仅为规划/登记映射，W17 未取得其业务 implementation commit 或执行回执。不得把这些提交和统一配置实现混为一谈。
 
 ## 4. 迁移与消费者
 
@@ -105,7 +119,7 @@ T49/T60/AUTH/reasoning 的独立复审义务仍归来源票。此次修复的固
 
 受保护的旧制品/配置备份、私有回执和两个导出保留供审计。唯一 23 字节合成工具标记也作为审计样本保留；没有扩大 daemon 的只读 filesystem root 权限来清它。正式 Host/modeld/daemon 是本次要求保留的服务，不属于临时测试资源。
 
-继续保持未通过的范围：
+**截至 W17 结束时**尚未通过的范围如下。这是本窗结论，后续推进只更新 LIVE，不修改这份历史清单：
 
 - 独立固定提交 review；Provider 明确档位回报；A 通道的 HTTP 503 资格。
 - 原版 App 的当前会话/侧栏/失败/等待实际视图；stock Host 缺桥期间独立 identity 与 strong run correlation；compact checkpoint 回退及旧 schema 恢复。
@@ -113,4 +127,4 @@ T49/T60/AUTH/reasoning 的独立复审义务仍归来源票。此次修复的固
 - 平台 Reset：没有可丢弃 Box 与单独 reset 窗口，不对生产 home 做破坏性模拟。
 - Template Ops 五条及 CTX 三条：当前仍是实现前置未满足，不运行不存在的功能；本次普通重启不代表默认 128K 主动 compact 已上线。
 
-上述范围在 LIVE 各条逐项回填。本报告不关闭整个长期 backlog；后续只需补对应缺口，而不是把本次已取得的功能事实重新标成 not-run。
+上述范围已回填到 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)；后续剩余项以该索引为准。本报告保留当时的结论，不关闭长期索引，也不把后续完成倒写为 W17 已验证。

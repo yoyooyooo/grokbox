@@ -1,6 +1,6 @@
 # Roadmap：当前施工、未来方向与历史分开
 
-本项目沿用既有位置：本目录中的`box-runtime-impl-spec.md`是已接受的实施规格，`box-runtime-plan.md`是策略背景；不是每份roadmap都代表待办或运行事实。源码/测试说明实现，Ticket记录关闭证据，[readiness](../maintainers/t32-live-enable-readiness.md)唯一记录实际候选与发布结果。
+本项目沿用既有位置：本目录中的`box-runtime-impl-spec.md`是已接受的实施规格，`box-runtime-plan.md`是策略背景；不是每份roadmap都代表待办或运行事实。源码/测试说明实现，Ticket记录实现、离线与review证据；[LIVE 唯一索引](../tickets/LIVE-integration-validation.md)集中记录当前现场已验/未验、阻断、下一步及固定候选/日期报告入口。roadmap不维护另一份现场进度。
 
 ## 现在围绕什么推进
 

@@ -46,7 +46,7 @@ Provider canonical events 真实流回原 Host session/fullStream/response/usage
 - 最新增量：SDK length/content-filter明确失败；纯reasoning/空白/空输出不得以stop成功退出，保留managed failure provenance。`incomplete-response.test.ts` 的5个反例先红后绿，合法tool-only保持成功；已并入现有stream verifier。
 - **2026-09-13 live：** grok-4.6 在 Read 之后用 assistant text 收尾，Host 不渲染普通文本。session 在声明了 `SendToUser` 且无其它 tool-call 时，把非空文本折成 Host 可执行的 `SendToUser`；runtime 不自己写 transcript。aux/无该工具的 STEP 不发明交付。
 - 结果关联不再只认首STEP：实际Agent＋TURN＋serviceEpoch可关联后续工具/发送/失败；错Bot、错TURN、缺epoch不能猜，跨epoch变unknown。正反例见 `test/outcome.test.ts`，日志与命令仍为原owner。
-- 历史1037/0窗口及其部署后续已被新的ownership读取版本推进，旧PID/制品不再在本票充当当前事实；版本、操作、原nonce与最新1069/0等证据只认[readiness](../maintainers/t32-live-enable-readiness.md)。历史随机挑战的受理/未取得完整结果不升级成成功；模型真实两请求合成工具证明也不替代原生Bot/App旅程。本票仍未关闭，本轮文档治理没有新跑这些测试。
+- 历史1037/0窗口及其部署后续已被新的ownership读取版本推进，旧PID/制品不再在本票充当当前事实；版本、操作、原nonce与1069/0等计数保留在各自历史回执；当前现场已验/未验及后续证据只从 [LIVE-MODELD-APP](LIVE-integration-validation.md#live-modeld-app) 和 [LIVE-MODELD-TOOLS](LIVE-integration-validation.md#live-modeld-tools)进入。历史随机挑战的受理/未取得完整结果不升级成成功；模型真实两请求合成工具证明也不替代原生Bot/App旅程。本票仍未关闭，本轮文档治理没有新跑这些测试。
 
 ## Non-goals / out-of-scope
 Host core/session-store重写、compact retry、新backend、自建WebUI或App代码修改、自动re-adopt、正式live SLA。**原版App真实输入/显示的互通资格在本票范围内**，不是上述UI开发非目标；完整旅程由T39汇合。

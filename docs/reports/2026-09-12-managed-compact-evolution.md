@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**历史背景，不是当前Spec、部署回执、worker指令或授权。** 合并原owner briefing、technical path、orchestrator handoff中仍解释设计原因的内容。当前施工从[Spec](../roadmap/box-runtime-impl-spec.md)、[Tickets](../tickets/README.md)进入，运行版本/未证项只看[readiness](../maintainers/t32-live-enable-readiness.md)。本页不保存另一份“当前PID/完成度”。
+**历史背景，不是当前Spec、部署回执、worker指令或授权。** 合并原owner briefing、technical path、orchestrator handoff中仍解释设计原因的内容。当前施工从[Spec](../roadmap/box-runtime-impl-spec.md)、[Tickets](../tickets/README.md)进入，当前运行版本证据、现场未验项与下一步只看 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)。本页不保存另一份“当前PID/完成度”。
 
 ## 原材料与保留依据
 

@@ -2,13 +2,13 @@
 
 ## Status / scope
 
-**Partial · 2026-09-12 工作树已接通真实 kernel/modeld 准入，原生迁移/现场资格仍未关闭。** 已复用ownership读取桥，提取共享纯合同并由模型选择和production STEP程序消费；不再只是CLI预检。最新证据固定在[readiness](../maintainers/t32-live-enable-readiness.md)，未提交/未部署不冒充现役门禁。权威合同：[Spec S0.1.2](../roadmap/box-runtime-impl-spec.md#server-authority-rollout)；本票关闭V20，T24继续拥有模型选择/RouteBinding，T26继续拥有Host流与原生消费者。
+**Partial · 2026-09-12 工作树已接通真实 kernel/modeld 准入，原生迁移/现场资格仍未关闭。** 已复用ownership读取桥，提取共享纯合同并由模型选择和production STEP程序消费；不再只是CLI预检。实现/离线与独立review证据留本票；当前现场证据、未验项和下一步只看 [LIVE-MODELD-AUTHORITY](LIVE-integration-validation.md#live-modeld-authority) 与 [LIVE-OWNERSHIP-ALIGNMENT](LIVE-integration-validation.md#live-ownership-alignment)，历史子项不冒充当前门禁。权威合同：[Spec S0.1.2](../roadmap/box-runtime-impl-spec.md#server-authority-rollout)；本票关闭V20，T24继续拥有模型选择/RouteBinding，T26继续拥有Host流与原生消费者。
 
 用户结果：Server不是box、身份冲突或证据不足时，系统不会因为本地profile写着box就产生新的managed模型/工具/交付副作用；未配置的官方Bot不被无关门禁拖坏。
 
 ## 当前原生资格增量（2026-09-13）
 
-当前Host原路径已可读；用其原生执行注册器、resume-ownership服务、applied-migration屏障、scope helper及完整变换后Gateway property，组合实际packed reader完成隔离资格。已覆盖启动identity未结束但migration inactive、executor未绑定、migration运行/释放、recovery撤权和缓存命中仍重读许可。17-slice完整profile唯一命中并通过全bundle语法检查。原件未执行/改写；RPC/auth schema/identity effect是owned依赖，**不是live schema3、whole-loop或跨Server瞬时租约证明**。精确版本/16断言/制品只记[readiness](../maintainers/t32-live-enable-readiness.md)。
+当前Host原路径已可读；用其原生执行注册器、resume-ownership服务、applied-migration屏障、scope helper及完整变换后Gateway property，组合实际packed reader完成隔离资格。已覆盖启动identity未结束但migration inactive、executor未绑定、migration运行/释放、recovery撤权和缓存命中仍重读许可。17-slice完整profile唯一命中并通过全bundle语法检查。原件未执行/改写；RPC/auth schema/identity effect是owned依赖，**不是live schema3、whole-loop或跨Server瞬时租约证明**。精确版本/16断言/制品保留该次来源回执；当前现场验收只从 LIVE 进入。
 
 当前startup确实调用原生全局identity reconcile；T38的部署影响门因此是实质前置，不只“不要主动调用reconcile”。owner已单独允许满足安全前置后的受控同步窗口，尚未执行。下一步仍是独立审查和受控部署后的真实scoped桥/准入回读，不重做已通过的owned暂停测试。
 
@@ -18,11 +18,11 @@
 
 新`ownership-resume-gate`位于原生ownership/gone/temporal检查之后、markPending/inFlight/runner之前。仅在native许可尚未开放且managed（或配置不可确认）时返回原生`skipped`；marker不消费，原生全局hold不提前释放，官方未opt-in分支保持原样。后续由**现有**resume-ownership recovery处理pending，不新增timer/重试/ledger。原oracle修后hold期间runner/provider/clear均0且marker保留；native释放后其原recovery恰好一次准入/runner/清标记。
 
-这只关闭受检版本的启动等待顺序子问题，不证明原生checkpoint事务、服务跨代旧TURN选择恢复、实际pending work或App。完整profile现需18-slice候选（含该guard）；旧17-slice资格不覆盖新字节。精确pin、回归和Astra复看见readiness。普通新TURN/后续STEP的T37门不接受paused，未削弱撤权合同。
+这只关闭受检版本的启动等待顺序子问题，不证明原生checkpoint事务、服务跨代旧TURN选择恢复、实际pending work或App。完整profile现需18-slice候选（含该guard）；旧17-slice资格不覆盖新字节。精确pin、回归和独立复审留该次来源回执；当前现场结果见 LIVE。普通新TURN/后续STEP的T37门不接受paused，未削弱撤权合同。
 
 ### 首次真实部署发现的异步machine scope差额
 
-受控新Host已实际加载schema3桥，原生allowed/bound均ready；但scope_unavailable。当前原生`getMachineId`转调async `getOrCreateHostMachineId`，即便cache命中也返回Promise；候选readScope漏await。保持共享scope校验严格，仅在Host adapter等待真实值；原Gateway wrapper fixture改为async后先红，修后通过并核对前后两次读取、只输出hash无machine/credential值。额外使用当前原生machine helper重跑隔离资格；完整新制品回归与真实再部署回读归readiness。不把本地声明或health代替这项现场缺证。
+受控新Host已实际加载schema3桥，原生allowed/bound均ready；但scope_unavailable。当前原生`getMachineId`转调async `getOrCreateHostMachineId`，即便cache命中也返回Promise；候选readScope漏await。保持共享scope校验严格，仅在Host adapter等待真实值；原Gateway wrapper fixture改为async后先红，修后通过并核对前后两次读取、只输出hash无machine/credential值。额外使用当前原生machine helper重跑隔离资格；完整新制品回归归来源证明；真实再部署回读通过 LIVE 链接日期报告，不在本票复制当前状态。不把本地声明或health代替这项现场缺证。
 
 ## Reuse / module ownership
 
@@ -106,4 +106,4 @@ production `runStep`在首次准入、dispatch、工具/终态放行和恢复边
 
 packed测试已扩到**7 pass / 0 fail**，新增暂停、未绑定和原生状态不可读三种Node子进程拒绝，真实Unix/source modeld路径检查provider与official executor零调用，并检查安全日志；没有重新构建或部署现场Host。原生读取桥仍只在旧live版本上观察到登记，16:10 UTC实查test0/1仍box一致、test2仍冲突，localExecution未观测。
 
-下一动作：固定单一候选，完成当前原生接点独立资格和test2私有可恢复保全/影响确认，再让T38退场候选进入受控live窗口。最新全仓验证中出现modeld lifecycle并行写入，结果和输入指纹须按readiness处理；不把专项绿或移动源码的全仓计数签成V20。
+下一动作：固定单一候选，完成当前原生接点独立资格和test2私有可恢复保全/影响确认，再让T38退场候选进入受控live窗口。最新全仓验证中出现modeld lifecycle并行写入，结果和输入指纹须在来源回执冻结，当前现场缺口按 LIVE 处理；不把专项绿或移动源码的全仓计数签成V20。

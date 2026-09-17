@@ -1,10 +1,10 @@
 # T49 — Policy, hot-path qualification and controlled release
 
-Status: linearly integrated into v2 and combined-candidate offline gates verified; independent review externally blocked (`review_pending`); W17 deployed and exercised scoped live vectors, with complete native/App/rollback gates still open. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
+Status: linearly integrated into v2 and combined-candidate offline gates verified; independent review externally blocked (`review_pending`); current live disposition is maintained only in the linked LIVE rows. Milestone M4. Depends on: [T43](T43-modeld-authority-baseline.md) through [T48](T48-modeld-causal-observation.md), with their scoped offline exits and fixed-tip review. Spec: [S10.1, S10.7–S10.8](../roadmap/box-runtime-impl-spec.md#modeld-effect-core).
 
-## Current live receipt
+## Live acceptance route
 
-The authorized [W17 window](LIVE-integration-validation.md#window-20260917) now records actual v7 adoption, real Provider/tool/Memory/transcript evidence, idle modeld replacement and the same-artifact Host reapply defect and repair. It does not close G5, long-approval native authority, original App or the full rollback contract. The detailed and historical source receipts below retain the scope of their original runs; do not read their earlier “not run” statements as the current deployment state. Per-entry current live results remain in LIVE rather than a duplicate status table here.
+For current proved scope, missing native/App/rollback evidence, blockers and next actions, read the [LIVE index](LIVE-integration-validation.md#live-modeld-native) and its related MODELD rows. The [window index](LIVE-integration-validation.md#window-20260917) links fixed-run reports. This ticket owns the G0–G6 contracts and source/review gates; dated receipts below retain only their original scope and do not maintain current deployment status.
 
 ## Goal
 

@@ -8,7 +8,7 @@
 
 user 基础通知/支持 lane 依 T43–T46 与 T51–T53；自动诊断另依 T47，自动维护另依 T48/T49。基础支持不等待诊断/维护完成。复用 T40 安装/owner 与 T41 monitor，不要求整票循环 Done；未过 native gate 的能力不能进入 productionAccepted。
 
-`packages/box-runtime/src/internal/roots/monitor.runtime.ts`、`ops.runtime.ts`、既有 T40 service lifecycle、CLI installer/ops status、`scripts/verify-runtime-rebuild.mjs` 的待新增 `template-ops` verifier；test source/packed/disposable fixtures 与 `docs/maintainers/t32-live-enable-readiness.md` 现有签署入口。不要新建第二 release 账本。
+`packages/box-runtime/src/internal/roots/monitor.runtime.ts`、`ops.runtime.ts`、既有 T40 service lifecycle、CLI installer/ops status、`scripts/verify-runtime-rebuild.mjs` 的待新增 `template-ops` verifier；test source/packed/disposable fixtures 与 [LIVE 唯一现场索引](LIVE-integration-validation.md#live-ops-routines)。本票拥有发布判据与实现/离线/review，不维护第二份当前 live 账本。
 
 ## Work
 
@@ -63,6 +63,6 @@ node scripts/check-publication.mjs
 
 ## Done evidence / Next
 
-原生验收已按场景预登记到 [LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines)、[LIVE-OPS-RECEIVERS](LIVE-integration-validation.md#live-ops-receivers)、[LIVE-OPS-OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime)、[LIVE-OPS-ISSUE-PUBLISHING](LIVE-integration-validation.md#live-ops-issue-publishing) 和 [LIVE-OPS-MAINTENANCE](LIVE-integration-validation.md#live-ops-maintenance)。这些条目均 blocked：来源实现、离线/制品证明和独立复审仍在各功能票，预登记不等于只剩 live，也不授权测试 Bot、费用、重启或对外发布。
+原生验收已按场景预登记到 [LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines)、[LIVE-OPS-RECEIVERS](LIVE-integration-validation.md#live-ops-receivers)、[LIVE-OPS-OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime)、[LIVE-OPS-ISSUE-PUBLISHING](LIVE-integration-validation.md#live-ops-issue-publishing) 和 [LIVE-OPS-MAINTENANCE](LIVE-integration-validation.md#live-ops-maintenance)。各条目的当前现场状态和下一步只在 LIVE 更新；来源实现、离线/制品证明和独立复审仍在各功能票，预登记不等于只剩 live，也不授权测试 Bot、费用、重启或对外发布。
 
-在现有 readiness 记录固定构建、各 lane 的 source/packed/native 证据、目标安装范围、开启的动作类、成本与退路、not_proven 项。最终可以只批准 user 基础通知/确认后支持；诊断和自动维护各自保留 not_proven，不强迫同时上线。自动化失效时用户仍能按既有 doctor/Host 显式流程操作。
+在日期报告记录固定构建、各 lane 的 source/packed/native 证据、目标安装范围、开启的动作类、成本与退路；在 LIVE 对应条目唯一更新已验范围、not_proven 项、阻断和下一步。最终可以只批准 user 基础通知/确认后支持；诊断和自动维护各自保留 not_proven，不强迫同时上线。自动化失效时用户仍能按既有 doctor/Host 显式流程操作。

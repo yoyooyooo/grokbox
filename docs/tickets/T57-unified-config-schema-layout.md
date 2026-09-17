@@ -25,6 +25,6 @@ bun run typecheck
 
 ## Boundaries / Remaining proof
 
-没有创建现役数据、安装服务、改 Bot 模型或发 Provider 请求。配置 schema 包含 ops 偏好不表示 T43–T56 workers 已实现。第三方独立复审仍是发布门；平台 Reset 和现役切换进入 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)，不能由这些测试代签。
+上述隔离验收没有创建现役数据、安装服务、改 Bot 模型或发 Provider 请求，不是当前现场状态声明。配置 schema 包含 ops 偏好不表示 T43–T56 workers 已实现。第三方独立复审仍是发布门；当前现场切换看 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)，平台 Reset 独立看 [LIVE-CONFIG-HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)，不能由源码测试代签。
 
 T58/T59/T60 消费同一合同。AH-99 的完整工程验收还包含 writer、迁移与命令整合，不能只凭 schema 文件存在关闭。

@@ -4,9 +4,9 @@
 
 ## Status / responsibility
 
-**Partial / open release closeout · 2026-09-12：前台modeld资源生命周期已补真实缺陷并验证source/Node制品；未执行现场部署或回滚。** 本票拥有V25/V27以及V17/V18的生产操作闭环；T28仍是唯一控制程序/精确进程操作owner，T25拥有modeld资源生命周期，T24拥有日常选模，T39拥有原生会话往返。
+**Partial / open release closeout：本票拥有持久服务/回退合同、实现与离线资格；现场进度不在本票维护。** 本票拥有V25/V27以及V17/V18的生产操作闭环；T28仍是唯一控制程序/精确进程操作owner，T25拥有modeld资源生命周期，T24拥有日常选模，T39拥有原生会话往返。
 
-发布候选/实际版本和放行结果只记在现有[readiness](../maintainers/t32-live-enable-readiness.md)，退出操作合同只记在[rollback acceptance](../maintainers/official-rollback-acceptance.md)。不新建第二release账本或daemon，配置保存/进程ready/单次pong不等于产品可生产。
+当前现场候选、已验/未验、阻断和下一步唯一索引到 [LIVE-RUNTIME-PERSISTENCE](LIVE-integration-validation.md#live-runtime-persistence)、[LIVE-MODELD-RESTART](LIVE-integration-validation.md#live-modeld-restart) 与 [LIVE-MONITOR-PERSISTENCE](LIVE-integration-validation.md#live-monitor-persistence)；固定运行证据留在它们链接的日期报告。退出操作合同仍在 [rollback acceptance](../maintainers/official-rollback-acceptance.md)。下方带日期的回执只说明当时范围，不是另一份当前部署账；配置保存/进程ready/单次pong不等于产品可生产。
 
 ## Dependencies without cycles
 
@@ -48,7 +48,7 @@ T41不等本票整票完成，本票服务实现也不等前端；**最终持续
 
 - 一次验证窗口固定source/未提交内容指纹、锁文件/工具链、实际preload/CLI/modeld、Host/profile与运行代。测试期间变化使受影响证据失效，不把多个候选的通过数相加。
 - 独立review和真实使用试验分开；review必须绑定固定内容身份。没有review或缺必要live证据保持候选，不自签、不开全局生产。
-- 只对具名批准Bot逐一启用。支持模型/协议/窗口/Host/App版本、凭据载入方式、未观测项和退出入口写readiness；若用户要求的完整往返未齐不能改称已稳定。
+- 只对具名批准Bot逐一启用。支持模型/协议/窗口/Host/App版本、凭据载入方式、未观测项和退出入口写 LIVE 对应条目，详细身份写日期报告；若用户要求的完整往返未齐不能改称已稳定。
 - 失败按最早失败owner回票修复，再复验；outcome查询复用原nonce/TURN，不以新send探测旧请求是否完成。先保存证据，停止受影响准入，不隐式转官方或重试副作用。
 - 客户端已确认记录不得被其它来源覆盖；App-only失败不能靠CLI成功放行。test2实际校准可经独立确认后进行，或明确保留；冲突阻断与防再引入仍是必须门。
 
@@ -73,7 +73,7 @@ T41不等本票整票完成，本票服务实现也不等前端；**最终持续
 
 上述8个真实反例先失败后修复通过；永久回归分别在`modeld-start-failure.test.ts`、`runtime-modeld-lifetime.test.ts`。`modeld-packaged-lifecycle.test.ts`实际启动Node `dist/index.js`、读取临时Unix health、第二Node只borrow退出、仅向本测试创建的owner发SIGTERM并验证干净退出；occupied非socket文件不覆盖。未使用真实Host/Server/provider/credentials，没有构造正式attestation来冒充推理ready。
 
-`bun scripts/verify-runtime-rebuild.mjs service-lifecycle`已接同一runner，构建后执行source/Node制品子集并检查输入稳定性。通过支持前台资源/取消/失败合同，**不支持**`runtime start`完整准备入口、服务管理器安装/开机恢复、完整机重建、真实模型持久凭据、T37专项或原生卸载。最新固定输入/结果归[readiness](../maintainers/t32-live-enable-readiness.md)。
+`bun scripts/verify-runtime-rebuild.mjs service-lifecycle`已接同一runner，构建后执行source/Node制品子集并检查输入稳定性。通过支持前台资源/取消/失败合同，**不支持**`runtime start`完整准备入口、服务管理器安装/开机恢复、完整机重建、真实模型持久凭据、T37专项或原生卸载。本源码子片的固定输入/结果归本票及日期报告；对应现场缺口只在 [LIVE-RUNTIME-PERSISTENCE](LIVE-integration-validation.md#live-runtime-persistence)维护。
 
 完整`service-release` case仍计划中，复用T25/T28/packaging/runtime-cli等测试；不将这个局部case改名为整票Done。最低有界场景：
 
@@ -95,7 +95,7 @@ T41不等本票整票完成，本票服务实现也不等前端；**最终持续
 
 补齐了一项真实启动前提：原来的`startModeldProcess/ensureModeld`只凭health成功就borrow，另一个durableRoot共用同一runRoot时会错误成功。新增反例先红后绿；现在用显式、无参数的v4 `service-info`查询核对服务声明的`rootId`（规范化durableRoot+runRoot摘要）后才borrow。匹配不停止原服务；不匹配返回`modeld_root_mismatch`，旧服务/缺失/无效声明返回`modeld_identity_unavailable`，不删socket、不启动竞争实例、不隐式换目录。原有health响应保持原形；rootId仅是部署范围诊断，不是鉴权、进程attestation或Bot归属证据。
 
-新增11项source/protocol边界断言与实际Node制品的跨root拒绝；`service-lifecycle`在同一候选下为37/0。全仓/指纹/工具链及产物身份只由[readiness](../maintainers/t32-live-enable-readiness.md)记录。当前机器默认Bun已与packageManager不一致，verifier现在在运行任何测试/构建前验证实际child Bun版本，错误时零child并返回toolchain_mismatch。
+新增11项source/protocol边界断言与实际Node制品的跨root拒绝；`service-lifecycle`在同一候选下为37/0。全仓/指纹/工具链及产物身份保留在相应固定输入的来源回执；现场候选和结果从 [LIVE](LIVE-integration-validation.md#live-runtime-persistence)进入。当前机器默认Bun已与packageManager不一致，verifier现在在运行任何测试/构建前验证实际child Bun版本，错误时零child并返回toolchain_mismatch。
 
 该历史窗口尝试写入完整`command.runtime.ts`时被工具安全检查拦截，当时保留了占位；最新源码推进见下一节，不能继续把那次写入失败当成当前文件状态。该窗口未修改Server/Host/App或test2。停止超时旧红项经当时固定全仓复验；不能把该全仓结果继承给后续源码。
 
@@ -107,7 +107,7 @@ route启动前复用128KiB/no-follow/regular-file ConfigurationRead检查canonic
 
 取消传入唯一命令signal，Scope在acquire尚未完成时也负责注册其返回资源的cleanup；已经开始的配置原子写在取消后先结算，不留脱离命令的后台写入，不伪造多资源rollback。取消发生在publish前是失败，在ready回执发布后可正常结束前台服务；output/status/reconcile失败仍停止本次owned服务，borrowed永不被停止；cleanup_gap不能吞成正常取消。
 
-原POC `prepareRuntimeStart`和测试已被替换，不保留Boolean health猜borrow的第二路径。此前CLI复验受阻是历史，本批正常直接执行`test/runtime-start-lifetime.test.ts`的12项已通过。新增`runtime-start-packed.test.ts`在真实Node CLI进程中验证observe/identity/route的start→same-root borrow→SIGTERM→新进程启动；配置字节/配置revision保持，service generation改变，不构造Host attestation、不调用模型或adopt。另验证route坏配置不改已有desired、跨root拒绝不停止原服务。统一`runtime-start` verifier现包含typecheck/build及source、Unix、packed、status组合；最新固定指纹、数量与全仓结果仅归[readiness](../maintainers/t32-live-enable-readiness.md)。
+原POC `prepareRuntimeStart`和测试已被替换，不保留Boolean health猜borrow的第二路径。此前CLI复验受阻是历史，本批正常直接执行`test/runtime-start-lifetime.test.ts`的12项已通过。新增`runtime-start-packed.test.ts`在真实Node CLI进程中验证observe/identity/route的start→same-root borrow→SIGTERM→新进程启动；配置字节/配置revision保持，service generation改变，不构造Host attestation、不调用模型或adopt。另验证route坏配置不改已有desired、跨root拒绝不停止原服务。统一`runtime-start` verifier现包含typecheck/build及source、Unix、packed、status组合；固定指纹、数量与全仓结果留来源票/日期报告；本轮之后的现场采用与未验项只由 [LIVE](LIVE-integration-validation.md#live-runtime-persistence)维护。
 
 前轮原生接点检索受阻；本批直接读取当前Host文件被限制在允许根外，未通过其它路径提取其正文，因此没有新增当前原生checkpoint/迁移接点资格。已有可读的私有历史启动研究不被升级为当前支持的boot hook。没有新Server快照、test2保全、profile发布、Host领养、模型请求或App修改。
 

@@ -6,9 +6,9 @@
 
 ## Cross-worktree live acceptance — continuing ticket
 
-[`LIVE — integration validation backlog`](LIVE-integration-validation.md) collects only native/live-dependent acceptance across feature worktrees. Use feature-scoped entry IDs rather than another shared T-number; register source commit/range and dependencies, map them to a fixed v2 integration commit, and validate matching Host/profile/preload/modeld artifacts together in an approved window. Code, offline regressions and independent code review remain in their source tickets. `passed` is per entry and artifact; this continuing ticket is not closed by one deployment. The first registered entries cover the modeld core's native coverage, cutover, authority, tool-consumer, Provider/App and restart/rollback gates; no live action has run merely by creating the entries.
+**[LIVE — 现场集成验收唯一索引](LIVE-integration-validation.md)** 集中维护所有已登记维度的现场进度、具体未验项、阻断、下一步和日期回执链接。本页及各来源票只做路由，不复制当前 live 状态。功能实现、离线/打包资格和独立 review 留在来源票；操作方法留 runbook，固定窗口结果留 report。登记不授权部署，单项通过不关闭长期索引。
 
-The authorized [W17 window](LIVE-integration-validation.md#window-20260917) has now exercised deployed configuration, models, native tools, effort changes and restart/return paths. Its [dated report](../reports/2026-09-17-live-integration-window.md) separates verified vectors, failures and remaining proof. The discovered same-artifact Host stop/start failure is tracked and repaired in [FIX — Host lifecycle reapply](FIX-host-lifecycle-reapply.md); review gates are not waived by this maintenance window.
+[W17 窗口及证据](LIVE-integration-validation.md#window-20260917)和 [Host reapply 修复对应的重启条目](LIVE-integration-validation.md#live-modeld-restart)均从该索引进入；修复实现与离线证明归 [FIX — Host lifecycle reapply](FIX-host-lifecycle-reapply.md)。
 
 <a id="modeld-effect-core"></a>
 ## Current change — modeld execution-core consolidation
@@ -32,7 +32,7 @@ T43 → T44 → T45 ──────┐
                                    T50 (residue, not a dependency)
 ```
 
-Each ticket's evidence section is the completion source; this table is a route, not a copied test ledger. The [v2 integration receipt](../reports/2026-09-17-modeld-v2-integration.md) records the explicitly authorized rebase/fast-forward, source mappings and combined-candidate checks; the earlier [fixed-candidate report](../reports/2026-09-17-modeld-effect-core-offline.md) retains its own historical scope. All scoped verifier cases route to executable suites; unknown or missing cases still fail. Offline implementation, source integration, independent review, native qualification and live release are distinct. Source integration did not push or switch Host/modeld; the continuing [LIVE ticket](LIVE-integration-validation.md) retains the actual pending native/live gates.
+Each ticket owns its implementation/offline/review evidence; current live completion and remaining proof are maintained only in LIVE. This table is a route, not a copied test or live ledger. The [v2 integration receipt](../reports/2026-09-17-modeld-v2-integration.md) records the explicitly authorized rebase/fast-forward, source mappings and combined-candidate checks; the earlier [fixed-candidate report](../reports/2026-09-17-modeld-effect-core-offline.md) retains its own historical scope. All scoped verifier cases route to executable suites; unknown or missing cases still fail. Offline implementation, source integration, independent review, native qualification and live release are distinct. Source integration did not push or switch Host/modeld; the continuing [LIVE ticket](LIVE-integration-validation.md) retains the actual pending native/live gates.
 
 ### Follow-up — ownership evidence availability
 
@@ -56,7 +56,7 @@ T32保留既有零放行/一次额外主请求合同，T35保留原生寿命与�
 
 ## Prior delivery baseline — 2026-09-12 documentation governance
 
-**已定边界：Server归属优先；不改官方App；同Box会话换模型不换harness；test2仅冲突样本。** 查询已存在，执行门/可逆日用/全卸载不能据此算完成。历史计数与现场receipt留在[readiness](../maintainers/t32-live-enable-readiness.md)，本索引不复制会过时的产物和测试数量。
+**已定边界：Server归属优先；不改官方App；同Box会话换模型不换harness；test2仅冲突样本。** 查询已存在，执行门/可逆日用/全卸载不能据此算完成。现场缺口与日期证据统一从 [LIVE](LIVE-integration-validation.md)进入，历史计数留原来源票/报告；本页不复制产物和当前验收表。
 
 | 顺序 / owner | 当前实现基础与真正差额 | 下一责任 / 退出条件 |
 |---|---|---|
@@ -66,7 +66,7 @@ T32保留既有零放行/一次额外主请求合同，T35保留原生寿命与�
 | 4 · [T39 原生往返](T39-native-model-roundtrip.md) | public选择纵切＋固定原生消费者/packed adapter五进程往返隔离资格 | 原生blob/checkpoint writer与当前版本/真实模型/App；owned JSON不签原生持久化 |
 | 合流 · [T26](T26-runtime-host-fullstream.md) / [T32](T32-runtime-confirmed-compact.md) / [T35](T35-host-compact-wait-point.md) | 流/恢复/摘要/错误安全已有子集；不得重做或丢失旧证明 | 分别补原生消费者、真实恢复、pending-background/outer retry；交T39 |
 | 必需 · [T36 Working](T36-composer-working-activity.md) | 原App谓词已理解、producer桥部分已证；完整UI语义未证 | 当前session/run/代一致，失败/取消/迟到/重连不假busy；不是后置美化 |
-| 5 · [T40 持久服务与发布](T40-persistent-release-and-rollback.md) | start实际CLI/Unix与Node制品start→borrow→orderly restart已证；listener丢失结算、T27同数据根status已补，固定全仓见readiness | 继续受支持持久owner/安装自启、T37/T38当前原生资格与保全、T39 checkpoint和现场；不重复修占位，不把前台重启当整机恢复 |
+| 5 · [T40 持久服务与发布](T40-persistent-release-and-rollback.md) | start实际CLI/Unix与Node制品start→borrow→orderly restart已证；listener丢失结算、T27同数据根status已补，固定全仓见来源票/日期报告 | 继续受支持持久owner/安装自启、T37/T38当前原生资格与保全、T39 checkpoint和现场；不重复修占位，不把前台重启当整机恢复 |
 | 并行 · [T41持续观测](T41-continuous-observation-and-alerting.md) | 首片已落地：显式前台批量采集、真实SQLite镜像、事件/incident分页、ack/snooze与冷Node读写 | 补安全crash锁恢复、维护/共享优先调度与通知receipt；T40安装自启/live scoped桥仍待，DB不决定准入 |
 | 延后 · [T29及future](../roadmap/future/README.md)、T30/31/33扩展 | 浏览器、多盒/高级通知、更多backend不是先决条件 | 各未来页有晋升门；不把T41与安全准入一起拖到Web UI |
 | 记录 · [T42 外部Host会话坑](T42-upstream-host-session-lessons.md) | grok-bot-setup 对照：已对齐的 ABI 坑 vs 换 Provider/隐私模式再展开 | 不进 S0 主链；不授权改补丁形态或整盒开关 |
@@ -172,7 +172,7 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 | [T59 迁移/退旧](T59-config-migration-cutover.md) | AH-99 | 显式计划/旧 writer fence、partial 恢复、别名/冲突、bootstrap 和新版 consumer |
 | [T60 集成验收](T60-config-ops-integration-proof.md) | 两票配置工程 | 已注册 config-unification 验收器；顶级 models、schema/领域写入、按域失效、skills 与 Node package；运维 worker/现役切换独立 |
 
-运行 `bun scripts/verify-runtime-rebuild.mjs config-unification` 复验 T57–T60 的配置链。T51/T54 消费 config.ops 的已实现 schema 和提交程序，T43/T53 原生 Routine 独立实施；保存偏好不代表后续执行能力已经启用。模型 parser/secret 路径保持，Host 不读取 ops；floor/minIdle 行为未改变。生产验收按 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)集中安排，复审等非 live 阻断保留在来源票。
+运行 `bun scripts/verify-runtime-rebuild.mjs config-unification` 复验 T57–T60 的配置链。T51/T54 消费 config.ops 的已实现 schema 和提交程序，T43/T53 原生 Routine 独立实施；保存偏好不代表后续执行能力已经启用。模型 parser/secret 路径保持，Host 不读取 ops；floor/minIdle 行为未改变。配置现场验收分别索引到 [CUTOVER](LIVE-integration-validation.md#live-config-cutover)、[CONSUMERS](LIVE-integration-validation.md#live-config-consumers) 和 [HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)，复审等非 live 阻断保留在来源票。
 
 ## Historical delivery and product-scope trackers
 

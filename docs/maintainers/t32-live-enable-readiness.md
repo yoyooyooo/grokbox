@@ -1,23 +1,9 @@
-# T32 live-enable readiness
+# T32 live-enable readiness — 旧入口路由
 
-This public page defines qualification boundaries, not a machine execution diary. Private operational records, deployment identifiers, agent state, and local evidence locations are not distributed.
+**当前现场验收只看 [LIVE — 现场集成验收唯一索引](../tickets/LIVE-integration-validation.md)。** 本文件保留旧链接可达，不再记录当前制品、进度、未验清单或发布签署，也不作为第二份 readiness 账本。
 
-## Current target: local context maintenance
+既有 T32/T35 compact 的现场部分进入 [LIVE-CONTEXT-NATIVE-CONTINUITY](../tickets/LIVE-integration-validation.md#live-context-native-continuity)；新默认本地维护进入 [LIVE-CTX-ADOPTION](../tickets/LIVE-integration-validation.md#live-ctx-adoption)、[NEXT-INPUT](../tickets/LIVE-integration-validation.md#live-ctx-next-input) 与 [DURABILITY](../tickets/LIVE-integration-validation.md#live-ctx-durability)。各条的已证范围、剩余项和前置以索引为准。
 
-[Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance) and [CTX-01–CTX-04](../tickets/README.md#context-maintenance) now own default-auto local budgets, preflight for an already-stuck session's next input, bounded independent summarization and durable continuation. These are planned obligations, not completed or enabled features. Existing T32/T35 code and prior canaries prove only their scoped recovery/lifetime subsets.
+功能合同仍由 [T32](../tickets/T32-runtime-confirmed-compact.md)、[T35](../tickets/T35-host-compact-wait-point.md) 和 [Spec S12 / CTX](../roadmap/box-runtime-impl-spec.md#context-maintenance)拥有；持久安装与退出合同分别见 [T40](../tickets/T40-persistent-release-and-rollback.md) 和 [官方回退判据](official-rollback-acceptance.md)。共用执行方法见 [窗口流程](release.md#live-window-procedure)，固定制品和已发生动作留在索引所链接的日期报告。
 
-A release cannot be qualified merely by setting the old HostCompact environment variable or restarting. It must show the exact new policy/config schema, matched Host/modeld protocol and capability, pre-main-request compaction without a Provider overflow prerequisite, preservation of the new input, original failed STEP/tool identities and checkpoint/readback. The ordinary environment gate retires with the implementation; fault injection remains separate and disabled in normal use. Offline/native-copy gaps stay in CTX; actual runtime/App/restart gates use the shared LIVE backlog.
-
-## Independent release gates
-
-Source tests and typechecking establish only the tested implementation. Packed CLI/preload tests establish only the built artifacts and their owned fixtures. Neither establishes the currently loaded native Host, live provider behavior, original App routing, native checkpoint durability, or a supported persistent service installation.
-
-Native release must independently establish current source/profile compatibility, ownership and identity agreement, preservation of existing agent state, official/custom model roundtrip, native context and checkpoint continuity, and original-App acceptance. Unknown or conflicting evidence remains a blocker.
-
-## Operational boundary
-
-An earlier canary or fault-injection approval is not standing rollout authorization. Do not restart or re-adopt a live Host, signal modeld, rewrite credentials, clear a circuit, migrate an agent, or replay a provider request solely because source tests pass. Use explicit scoped confirmation and the existing lifecycle and recovery contracts.
-
-## Public authority
-
-Current obligations live in the product contract, architecture, runtime implementation spec, T32 and T37–T41 tickets, and the maintainer acceptance pages. This page makes no production-ready or current-deployment claim.
+历史 canary、GATE、重启或“继续”不构成后续窗口授权；源码/打包通过不能替代实际加载、原生消费者或原版 App 的证据。

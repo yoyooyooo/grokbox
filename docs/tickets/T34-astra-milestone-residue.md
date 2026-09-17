@@ -311,7 +311,7 @@ Integration tip `pre-publication-revision` on `feat/box-runtime-v2`. This sectio
 
 | Queue | Tip settlement | Still T34? |
 |---|---|---|
-| T32 live overflow / Sub2API small-W / 4 MiB pads | Owner: HostCompact **default-off**; offline gates enough; live dogfood deferred ([t32-live-enable-readiness](../maintainers/t32-live-enable-readiness.md)) | No — parked, do not re-dig |
+| T32 live overflow / Sub2API small-W / 4 MiB pads | Owner: HostCompact **default-off**; offline gates enough; live dogfood deferred (historical disposition only; current field gaps: [LIVE compact](LIVE-integration-validation.md#live-context-native-continuity)) | No — parked, do not re-dig |
 | E07 Path B grokbox aux request-kind | Landed `pre-publication-revision`; Host purpose seam still D2; E07 `auxiliary_unqualified` | Host D2 only |
 | HSO-4 lexical + Acorn workers | Landed `pre-publication-revision` / `pre-publication-revision`; SlicePatch `pre-publication-revision`; two-slice `pre-publication-revision`; `_compile` mutant `pre-publication-revision` | No — HSO-4 items 1–5 on tip |
 | T29 command/API incubate | Landed `pre-publication-revision`; no console/, no fake CAS | Browser MVP / real second-writer CAS still owner-gated |

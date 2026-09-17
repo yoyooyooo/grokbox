@@ -1,6 +1,6 @@
 # 持续观测、原生警告与本地 incident
 
-本页拥有命令、存储与诊断语义；产品合同见 [Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation)，服务安装/现役 Host 与 App 资格见 [T41](../tickets/T41-continuous-observation-and-alerting.md) 和当前 readiness。本轮实现不等于已安装 collector、已重新领养 Host、已配置外部通知或已证明用户看到警告。
+本页拥有命令、存储与诊断语义；产品合同见 [Spec S0.1.4](../roadmap/box-runtime-impl-spec.md#continuous-observation)，实现/离线/review 见 [T41](../tickets/T41-continuous-observation-and-alerting.md)。当前服务安装/长驻/通知的已验范围、未验项与下一步只看 [LIVE-MONITOR-PERSISTENCE](../tickets/LIVE-integration-validation.md#live-monitor-persistence)及其关联条目。本页不维护当前现场结果；代码存在不等于 collector 已安装或用户已看到警告。
 
 ## 权威分开，投影共用
 

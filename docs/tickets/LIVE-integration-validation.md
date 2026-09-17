@@ -1,421 +1,123 @@
-# LIVE — Cross-worktree integration validation backlog
+# LIVE — 现场集成验收唯一索引
 
-Status: **open, continuing process**. Individual entries close; this ticket remains available for later features. Created 2026-09-17. Default integration line: `feat/box-runtime-v2`.
+**长期保持 open；逐项验收，不整票关闭。** 本页唯一维护各维度的现场验证进度、剩余缺口、阻断、下一步和证据入口。只看本页即可判断还缺什么；执行时再打开对应合同、操作手册或历史回执。
 
-本票是跨 worktree 的 **live-only 验收排程与结果唯一入口**，不是另一份实现 Spec、部署授权或当前线上健康证明。功能语义、代码缺口与验收标准仍归各来源 Ticket/Spec；来源票链接这里的稳定条目，不再复制另一份 live 状态表。npm 发布仍归 [release runbook](../maintainers/release.md)，Host/modeld 的发布合同仍归 [T40](T40-persistent-release-and-rollback.md)。
+整理基线：`6c94b8b`。最近现场证据为 **2026-09-17 的 W17 窗口**；本次仅整理文档，没有重新探测、部署或发模型请求。表中“已证”只对所列制品、对象和窗口成立，不是实时健康声明。
 
-**默认先合入 v2，再选择固定集成提交、构建并成套切换 Host/profile/preload/modeld，集中验证同批兼容条目。未合入的 feature worktree 不为验收而轮流接管现役环境。** 本票只记录计划，不自动合分支、改 shim、切 profile、重启、领养、改 Bot 模型、发送消息或消耗模型额度。
+## 阅读与维护边界
+
+| 信息 | 唯一维护位置 |
+|---|---|
+| 当前各维度已验/未验、阻断、下一步、回执索引 | **本页下方总表**；其他文档回链对应稳定 ID，不复制当前状态表 |
+| 功能语义、成功/失败判据、实现、离线测试、独立 review | 来源 Spec/Ticket；本页只摘录阻断及责任链接，不把未实现代码或 review 改称 live 待办 |
+| 具体命令、前置检查、授权/预算、停止与恢复方法 | 对应 maintainer runbook；共用流程见 [release runbook](../maintainers/release.md#live-window-procedure) |
+| 某次运行的固定制品、源提交映射、逐用例证据、影响和清理 | 日期化 report；本页登记窗口链接，report 不维护后续当前进度 |
+
+**现场进度与验收状态分开。** “部分已证”不等于全部 `passed`；“本条范围内已证、review 阻断”也不等于还要重做迁移。`blocked` 的具体原因在最后一列，不让一个状态词遮住实际缺口。A/B 仅指 [W17-A / W17-B 制品](#window-20260917)，不是 Provider 或模型编号。A 的结果不能写成 B 上重新运行过；涉及 B 的对应能力仍须核对覆盖关系。
+
+## 当前验收总表
+
+覆盖原有 23 个稳定条目，以及本轮从既有 T24–T41/Provider 合同补入的 6 个未闭合维度。原有 ID 与锚点保留；新增行是需求归档，不代表本次执行、重新开启已关闭事故或新增产品范围。未来能力不自动进入本表。
+
+### 配置与成套加载
+
+| 维度 / 稳定 ID | 现场进度与已验证范围 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
+|---|---|---|---|
+| <a id="live-config-cutover"></a>**LIVE-CONFIG-CUTOVER**<br>配置迁移 | **本次迁移范围已证。** A：旧 writer 阻断→停写→精确计划迁移到 retired；canonical/home aliases 正确，general migration 保留 models 原字节；随后独立迁移模型 schema。 | 本次迁移步骤无新增现场缺口；持续采用、其他凭据和平台重置分别见下面两行，不在这里重复验收。 | `blocked`：仅保留 [T60](T60-config-ops-integration-proof.md) 的独立 review 门。先完成复审并判断是否影响原回执；不为消除 blocked 重跑生产迁移。[配置合同](../configuration.md#one-way-migration-and-recovery) · [W17 §4](../reports/2026-09-17-live-integration-window.md#4-迁移与消费者) |
+| <a id="live-config-consumers"></a>**LIVE-CONFIG-CONSUMERS**<br>消费者、重启与模型路径 | **所选消费者范围已证。** A：desktop committed→applied、原值恢复、模型域不变。B：daemon 换代后 PID/start/domain revision 相符；所选 Provider 凭据在新链路可用。 | 未选模型/凭据、其他消费者未作资格证明；不能从 desktop applied 推导 ops worker 已运行。扩大支持范围时才补对应消费者/凭据。 | `blocked`：来源 review 未完成；扩展范围需先固定 consumer、字段、模型和预算，不自动全目录探测。[T58](T58-config-command-single-writer.md) · [T60](T60-config-ops-integration-proof.md) · [W17 §4](../reports/2026-09-17-live-integration-window.md#4-迁移与消费者) |
+| <a id="live-config-home-reset"></a>**LIVE-CONFIG-HOME-RESET**<br>真实平台 Reset | **未运行。** 迁移和普通进程重启不算 Reset。 | durable config/models/secrets、home aliases、installation identity、bootstrap 不覆盖编辑、原 off/预算及模型/客户端凭据分别存续。 | `blocked`：缺可丢弃 Box、平台权限、备份与单独 Reset 授权。禁止删除生产 home 模拟。[T59](T59-config-migration-cutover.md) · [T60](T60-config-ops-integration-proof.md) |
+| <a id="live-modeld-cutover"></a>**LIVE-MODELD-CUTOVER**<br>Host/profile/preload/modeld 加载 | **加载子项已证。** A 从 wire v5 切至 v7；B 最终 Host/modeld 终态同 source digest，doctor custom/ready；源码、磁盘和进程证据分开。 | 完整 NATIVE 前置仍未齐；旧 peer 的只读诊断不能代替真实旧 peer 执行拒绝资格。不能从 CLI↔modeld 相符推导任意 Host 组合都相符。 | `blocked`：依赖 [NATIVE](#live-modeld-native) 与 [T49 review](T49-modeld-qualification-and-release.md)。成套加载本身不需无目的重启；只补缺失前置/受影响组合。[T40](T40-persistent-release-and-rollback.md) · [W17 §3](../reports/2026-09-17-live-integration-window.md#3-两组固定制品与失效边界) |
+| <a id="live-reasoning-cutover"></a>**LIVE-REASONING-CUTOVER**<br>models schema v2 / wire v7 及降级退路 | **部分已证。** A/B schema 与协议协调加载；原 catalog、其他 Bot/main assignment 与凭据引用保持；重启后新请求可用。 | 匹配旧制品与受保护旧 schema 的实际恢复；旧 peer 拒绝新执行的现场组合。不得删除 effort 字段冒充无损降级。 | `blocked`：复审及旧 schema 恢复窗口未齐。与 [RESTART](#live-modeld-restart) 共用一次退路计划，但分别记结果。[reasoning 票](FEAT-model-reasoning-policy.md) · [配置指南](../configuration.md#model-reasoning-schema-and-general-config-migration) · [W17 §6](../reports/2026-09-17-live-integration-window.md#6-重启回退及现场修复) |
+
+### 原生执行、权限、工具与用户入口
+
+| 维度 / 稳定 ID | 现场进度与已验证范围 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
+|---|---|---|---|
+| <a id="live-modeld-native"></a>**LIVE-MODELD-NATIVE**<br>原生接点与三路对照 | **部分已证。** A/B native-source 各 28/0；A patched official / managed 有真实回执；stock 区间有无 preload 启动和不变原生 SHA 观察。native-source 是前置证据，不等于已加载。 | stock 缺桥时的独立身份/强关联；三路 per-Agent/per-TURN 授权覆盖；passthrough 普遍不新增 managed List/Provider/工具副作用；本地失效与旧 Host local-only 能力拒绝。 | `blocked`：缺完整原生对照/观察点与 review。先准备不依赖已卸桥的身份读法，优先隔离原生验证。[边界审查](../maintainers/modeld-authority-boundaries.md) · [T49](T49-modeld-qualification-and-release.md) · [W17 C01/C11](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| <a id="live-modeld-authority"></a>**LIVE-MODELD-AUTHORITY**<br>真实取证恢复与取消 | **部分已证。** A：真实 List、各检查点与重新取证可关联；已观察 STEP 各一次模型调用，五秒原始年龄未放宽。 | 首次慢读后的有界恢复、累计期限、native pause、scope/Host 换代、共享等待者取消、已终止 TURN 不复活，以及不合作 source 的实际结算。 | `blocked`：缺安全的逐对象延迟/失效注入与 review。与 AUTH-NATIVE 共用受控窗口；不改整机网络或业务归属。[T45](T45-modeld-evidence-lifetime.md) · [T47](T47-modeld-authority-state-machine.md) · [W17 §5](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| <a id="live-auth-availability-native"></a>**LIVE-AUTH-AVAILABILITY-NATIVE**<br>同 STEP 复用与 freshness 策略 | **部分已证。** A 真实 source/STEP/cache 区分；A/B 加载 strict-observation-v2；正常路径不更新原始证据年龄。 | 2.5–4 秒慢读跨检查点复用；新 STEP 不借超过 2 秒的 cache；原始年龄不超过 5 秒；慢首次读在原 10 秒累计预算内恢复；持续超龄拒绝、失效/取消不复活。 | `blocked`：与 AUTHORITY 共用注入，但本策略判据单独签；来源 review/历史离线异常留 [AUTH 票](AUTH-ownership-evidence-availability.md)。[策略合同](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) · [W17 §5](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| <a id="live-modeld-tools"></a>**LIVE-MODELD-TOOLS**<br>原生工具实际消费 | **部分已证。** A/C03：真实 shell 写入/读取唯一临时标记，独立文件读回、投递和 Memory 终态一致。 | 正常审批、跨证据窗口的长审批、等待中暂停/取消/换代后的最后执行门；失效后零新增执行、重复 STEP 无第二次副作用，结果入库与投递分层。 | `blocked`：缺审批操作者、受控工具/失效入口及 review。**sleep 不代替审批，材料释放不代替执行。** [T47](T47-modeld-authority-state-machine.md) · [Host 主链](../maintainers/host-inbound-agent-loop.md) · [W17 C03](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| <a id="live-auth-availability-tools"></a>**LIVE-AUTH-AVAILABILITY-TOOLS**<br>长审批后的权限复核 | **部分已证。** 复用 C03 的正常消费证据，不另算一次通过。 | 审批跨 5 秒窗口后重新核对权限；审批中撤权/取消/换代后不执行；同 STEP/关闭 TURN 无重放；模型→材料→审批→执行→入库→投递各段可关联。 | `blocked`：依赖 AUTH-NATIVE 与 TOOLS，缺最后消费门证据。共享一次测试仍按本条判据留证。[AUTH 票](AUTH-ownership-evidence-availability.md) · [权限边界](../maintainers/modeld-authority-boundaries.md) |
+| <a id="live-modeld-app"></a>**LIVE-MODELD-APP**<br>原版 App、发送与 Working | **后端/投递部分已证；App 未观察。** W17 有真实模型/终态/投递和上游错误分类，不是 App 验收。 | 原 App 发出的消息与同 session/run/代关联；详情 echo/副本/发送队列、等待/取消/失败/完成、侧栏子任务、重连与迟到事件；不能把服务端回复当详情已显示。 | `blocked`：缺未修改原版 App 的实际输入与视图证据。纳入 T26/T36/T39 旅程；不重发历史失败气泡、不改 App/清缓存造绿。[T36](T36-composer-working-activity.md) · [App 判据](../maintainers/composer-working-status.md) · [T39](T39-native-model-roundtrip.md) |
+| <a id="live-auth-availability-app"></a>**LIVE-AUTH-AVAILABILITY-APP**<br>权限等待、拒绝与指引 | **App 未观察。** 正常权限进度与上游 503 分类有 W17 后端证据，但不是 stale/拒绝提示的原 App 回执。 | stale/read_elapsed、后续证据/permit 过期、预算耗尽、temporal/访问拒绝的实际提示；控制帧不进模型正文；不误报失权、零调用或建议自动重放。 | `blocked`：依赖受控权限场景和原 App。与 MODELD-APP 共享视图，按错误来源单独核对文案与动作。[AUTH 票](AUTH-ownership-evidence-availability.md) · [观测手册](../maintainers/run-outcome-observation.md) |
+| <a id="live-reasoning-provider"></a>**LIVE-REASONING-PROVIDER**<br>同通道 effort 与上游回报 | **成功与失败并存。** A/C06–C08：一个固定通道 high/xhigh/default 均 HTTP 200、emitted 对应；C04/C05 的另一固定通道均 503，无自动重试/降级。 | Provider 明确执行档位仍 unknown；503 通道的可用性未恢复证明。成功通道不覆盖失败通道；token/耗时/标题不能确认内部档位。 | `blocked`：缺合格 Provider 回报解码/网关转换证据、失败通道资格及 review。后续固定 exact endpoint/API/model/key-reference 与预算；不切通道冒充原通道通过。[reasoning 票](FEAT-model-reasoning-policy.md) · [W17 C04–C08](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| <a id="live-reasoning-host-app"></a>**LIVE-REASONING-HOST-APP**<br>下一 TURN 改档与原生往返 | **Host 子项已证，App/compact 未证。** A/C06–C09：在途改 xhigh 后旧 TURN 仍 high，下一 TURN 才改；default/official 清 e/m，用户标题与历史工具标记保留。 | 原 App 标题/输入/详情/状态；含原生 compact checkpoint 的同 modelId 改档与回官方；不能仅凭配置查询判当前 TURN。A 证据未作为 B 的全量重跑。 | `blocked`：依赖 PROVIDER、App、原生持久状态与 review。与 SESSION-ROUNDTRIP 合并安排长会话，不停掉工具/Memory/compact 规避判据。[reasoning 票](FEAT-model-reasoning-policy.md) · [W17 C06–C09](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| <a id="live-provider-minimax"></a>**LIVE-PROVIDER-MINIMAX**<br>MiniMax 多步工具与原生记录 | **W17 普通链路已证。** A/C02–C03、B/C12 覆盖主回合、工具、inline continuation/空辅助结果、Memory、投递；不把有限 canary 当永久兼容保证。 | 当前候选的 batch/long-value Provider 专项覆盖映射；原生 disabled automation 的创建、真实日程/启用字段、跨重启读回与清理。历史专项回执需先核对，W17 没跑 Routine。 | `blocked`：先按 [Provider 手册](../maintainers/chat-provider-compatibility.md#regression-and-live-acceptance)核对历史回执/候选映射，再安排缺失子项及额度。该原生工具验收不依赖未来 Routine CLI 实现；不启用测试定时任务。[W17 §5](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| <a id="live-session-roundtrip"></a>**LIVE-SESSION-ROUNDTRIP**<br>官方→模型 A→模型 B→官方→A | **部分已证。** W17 有多模型、工具/Memory及同会话标记回官方/重启恢复；不是完整规定序列与原生 checkpoint 资格。 | 固定合格双模型的完整旅程；custom 原生持久 checkpoint 被新进程/官方消费者读回，summary/tool/Memory 保真；小窗口切换、冷/热缓存正确性和原 App 同源。 | `blocked`：来源原生持久消费者/完整 proof 尚有前置，现场模型与窗口未新选。缺代码/隔离资格仍归 [T39](T39-native-model-roundtrip.md)，不能借现场短 Bot 替代。[连续性判据](../maintainers/managed-context-continuity.md) |
+| <a id="live-context-native-continuity"></a>**LIVE-CONTEXT-NATIVE-CONTINUITY**<br>既有 compact、pending 与恢复 | **完整链路未证。** W17 native-source 覆盖部分接点；没有现场 compact/checkpoint 回执。 | 首请求 overflow、已有 pending external/self/background 协调、摘要接受/迟到取消、同绑定一次 resume/attempt1、唯一终态、恢复后工具/Memory/episode/checkpoint；非恢复错误不放大 retry。 | `blocked`：先完成 [T32](T32-runtime-confirmed-compact.md)/[T35](T35-host-compact-wait-point.md) 的实现及原生隔离前置，再跑受控现场。新默认维护另见 CTX 三行；不以大 pad 冲撞 Provider或沿用旧 GATE 授权。[原生 seam](T32-host-compact-seam.md) · [连续性](../maintainers/managed-context-continuity.md) |
+| <a id="live-ownership-alignment"></a>**LIVE-OWNERSHIP-ALIGNMENT**<br>身份 writer 退场与冲突对象 | **新建干净 Bot 子项已证；历史冲突未重验。** W17 两只测试 Bot confirmed_box，不等于旧冲突已修复。 | 普通更新不写 ownership 的现场证据；原生启动同步对既有冲突的影响；冲突对象原生可恢复保全、按单独决定保留/校准及读回，实际迁移后零越权新动作。 | `blocked`：需当前原生资格、可恢复资料及逐对象影响/授权；不按历史 test2 名称自动校准，不把保留样本无限阻塞干净对象。[T37](T37-server-ownership-admission.md) · [T38](T38-identity-write-alignment.md) · [harness 手册](../maintainers/transcript-harness-box-vs-server.md) |
+
+### 重启、回退、持久运行与观测
+
+| 维度 / 稳定 ID | 现场进度与已验证范围 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
+|---|---|---|---|
+| <a id="live-modeld-restart"></a>**LIVE-MODELD-RESTART**<br>代际隔离与完整退路 | **部分已证，发现的 reapply 缺陷已修复并现场复验。** A 正式 idle replace、旧 epoch 拒绝、新请求通过；B 同制品 stop→start→already_started、最终 canary 通过。 | 原版 App/原生 compact checkpoint 的完整退路；stock 缺桥期间独立 identity 与强关联；旧制品/旧 schema 真正恢复；在途/未知副作用结算不能仅靠重启判定。 | `blocked`：缺完整退路与 review；不再把同制品 reapply 列为待修。先固定所需退路和受影响对象。[修复票](FIX-host-lifecycle-reapply.md) · [T40](T40-persistent-release-and-rollback.md) · [回退判据](../maintainers/official-rollback-acceptance.md) · [W17 §6](../reports/2026-09-17-live-integration-window.md#6-重启回退及现场修复) |
+| <a id="live-runtime-persistence"></a>**LIVE-RUNTIME-PERSISTENCE**<br>安装、自启与长期服务 owner | **进程级重启已证；持久安装未证。** W17 Host/modeld/daemon 换代、配置/所选凭据与新请求正常；detach/父 PID 不是自启证据。 | 支持的持久服务 owner、干净启动/父 shell 退出、安装幂等、官方 Host 自行重建后的补丁采用、开机/环境重建恢复及单实例；正常配置不依赖临时环境变量或故障注入。 | `blocked`：安装/boot-hook 实现与目标平台资格仍归 [T40](T40-persistent-release-and-rollback.md)，不是再做一次 restart 就能关闭。真实高影响重建另开窗口；平台 Reset 另记 CONFIG-HOME-RESET。 |
+| <a id="live-monitor-persistence"></a>**LIVE-MONITOR-PERSISTENCE**<br>现有本地 collector / SQLite / incident | **现役 collector 未安装验收。** W17 的 daemon/desktop applied 不替代 monitor 长驻。本地/source/packed 测试保留原范围。 | 无网页/CLI 退出仍采集、与准入共享读取有界；真实 scope/代/失联 gap；重启保留 incident/ack/snooze/cursor；受控 DB 异常不影响执行；local-only 与实际通知接收分开。 | `blocked`：先由 [T41](T41-continuous-observation-and-alerting.md)/[T40](T40-persistent-release-and-rollback.md)关闭调度/安装前置，明确服务 owner、测试存储与窗口。不要等待未来 Webhook 运维全部实现，也不把未来外部离线监控拖进本项。[观测手册](../maintainers/continuous-observation.md) |
+
+### 预登记：实现前置尚未完成
+
+以下八条均无现场回执，implementation commit/实际候选仍 `not-recorded`；来源实现、离线/打包与独立 review 未齐，**不是“现在只差 live”**。先完成各来源票并集成固定 v2 候选，再安排最后现场判据。
+
+| 维度 / 稳定 ID | 当前现场进度 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
+|---|---|---|---|
+| <a id="live-ops-routines"></a>**LIVE-OPS-ROUTINES**<br>原生 Routine / Payload / 模板隔离 | 未运行；`blocked`。 | disabled 创建→读回→enable→真实 POST→原生 run/Payload/报告关联→更新再 POST→disable/清理；认证、大小/编码/禁用语义及双模板 endpoint/secret 不继承。 | [T43](T43-native-webhook-contract.md)/[T46](T46-template-ops-pairing.md)/[T53](T53-agent-routines-cli.md) 实现前置。之后固定 Bot、请求/费用与清理；sendPrompt/mock 不替代 Webhook，unknown 不重复创建。 |
+| <a id="live-ops-receivers"></a>**LIVE-OPS-RECEIVERS**<br>custom 接收者与有限路由 | 未运行；`blocked`。 | Webhook 回合真实模型/供应商/工具/数据同意；单目标、intent 分流、一层交接、备用/集中报告和改配置需重绑；ACK unknown 不广播，总预算不放大。 | [T45](T45-template-webhook-delivery.md)/[T47](T47-bounded-ops-diagnosis.md)/[T54](T54-ops-targets-and-routing.md)/[T55](T55-custom-receiver-delivery.md) 实现前置，依赖 ROUTINES。普通聊天选模成功不算本项。 |
+| <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>无人值守运维提醒 | 未运行；`blocked`。 | 启动 Bot 回合与网页结束后持续感知；无变化零唤醒、需处理才一次提醒；重启/断网/endpoint 撤销/存储故障后的 cursor、欠账、去重、预算和 degraded；真实投递不等于 outbox accepted。 | [T44](T44-host-ops-continuous-sensing.md)/[T45](T45-template-webhook-delivery.md)/[T46](T46-template-ops-pairing.md)/[T50](T50-template-ops-release-proof.md) 实现与安装前置，依赖 CONSUMERS/ROUTINES。本地 collector 验收另见 MONITOR-PERSISTENCE。 |
+| <a id="live-ops-issue-publishing"></a>**LIVE-OPS-ISSUE-PUBLISHING**<br>受信同意与真实 GitHub 提交 | 未运行；`blocked`。 | 原生用户确认区别于自动事件；exact 内容/仓库/作者同意→提交并读回；有限 grant 有效期/额度/撤销、跨 Bot 去重、ACK unknown 对账；仅批准范围清理。 | [T52](T52-consented-support-issues.md)/[T56](T56-scripted-issue-publishing.md) 实现前置；另缺专用仓库与公开合成内容授权。人工关闭历史 issue 不算此功能资格。 |
+| <a id="live-ops-maintenance"></a>**LIVE-OPS-MAINTENANCE**<br>自动维护屏障与交接 | 未运行；`blocked`。 | 原生 admission fence/排空、提出者及子任务终结后唯一 controller 执行；busy/审批/新任务/撤销/换代拒绝；一次对齐/安全退出及未知退路。 | [T47](T47-bounded-ops-diagnosis.md)/[T48](T48-low-risk-host-qualification.md)/[T49](T49-policy-host-maintenance.md)/[T50](T50-template-ops-release-proof.md) 实现与 review 前置。W17 人工 force 不证明自动维护屏障；idle 采样不替代 fence。 |
+| <a id="live-ctx-adoption"></a>**LIVE-CTX-ADOPTION**<br>默认本地维护策略真正加载 | 未运行；`blocked`。 | 实际 policy/config/wire/root capability 采用；configured-next-turn/captured/selection revision、有效本地窗口；默认 auto 不靠旧 gate，注入 off，其他 Bot/official 未误 opt-in。 | [CTX-01](CTX-01-context-policy-and-meter.md)/[CTX-02](CTX-02-host-context-maintenance.md)/[CTX-04](CTX-04-context-entrypoints-and-proof.md) 实现/原生隔离/review 前置；规划 `15a0594` 不是代码。按最终实现确认版本，不能照抄历史 wire v7。 |
+| <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>已失败长会话下一条普通输入 | 未运行；`blocked`。 | 原 App 新输入保持 nonce/文本/附件；主请求前必要维护、受限独立摘要、Host accept/checkpoint；新输入处理一次、旧失败/工具不重放；再一条短输入不无谓重复 compact，活动与交付真实。 | 依赖 ADOPTION 和 [CTX-04](CTX-04-context-entrypoints-and-proof.md) 离线/制品前置。另选已失败长会话并批准数据/暂停/费用；短 Bot、手动 compact 或巨型 pad 不替代该旅程。 |
+| <a id="live-ctx-durability"></a>**LIVE-CTX-DURABILITY**<br>新维护 checkpoint 的重启与退路 | 未运行；`blocked`。 | 已提交 compact 原生 root 经真实新 Host 读回、archive 可追溯；取消/迟到/ACK 丢失分别记录未提交/已提交/unknown，不重复摘要或丢输入；工具/Memory/App 与官方退路。 | 依赖 NEXT-INPUT、[CTX-02](CTX-02-host-context-maintenance.md)/[CTX-04](CTX-04-context-entrypoints-and-proof.md) 持久/故障证明及单独重启窗口。缺安全注入点只阻断该向量，普通 restart 不证明新能力。 |
+
+## 现场之外的共同阻断
+
+下表只路由前置责任，不在本页维护源码任务清单或 review 结果副本。
+
+| 阻断 | 去哪里处理 | 对本索引的影响 |
+|---|---|---|
+| 独立固定提交 review；reviewer 503 不算报告 | [T49 modeld](T49-modeld-qualification-and-release.md)、[T60 config](T60-config-ops-integration-proof.md)、[AUTH](AUTH-ownership-evidence-availability.md)、[reasoning](FEAT-model-reasoning-policy.md)、[Host reapply 修复](FIX-host-lifecycle-reapply.md) | 现场子项已证也不能自动签整体验收；复审引发相关改动再标 needs-revalidation |
+| 原生隔离消费者、完整源码/packed proof 或安装代码未齐 | [T32](T32-runtime-confirmed-compact.md)、[T35](T35-host-compact-wait-point.md)、[T38](T38-identity-write-alignment.md)、[T39](T39-native-model-roundtrip.md)、[T40](T40-persistent-release-and-rollback.md)、[T41](T41-continuous-observation-and-alerting.md) | 先补来源前置，再执行对应已索引的现场部分；不把缺代码改名为缺环境 |
+| 尚未实现的 Template Ops / CTX | [运维 Spec](../roadmap/template-ops-automation-spec.md)、[CTX Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance) | 八条保持预登记，重启旧实现不改变进度 |
+| npm 发布、历史隐私扫描等非现场发布门 | [release runbook](../maintainers/release.md)、[隐私门](../maintainers/publication-privacy.md) | 单独满足，不用 live 通过数抵消，也不放入现场缺口计数 |
+
+## 后续窗口怎么选
+
+先解除对应来源前置，再按所需对象选窗口，不按“所有 blocked 一起重跑”。权限慢源/取消与长审批共享受控对象，但最后工具执行门单独留证；原版 App 可合并普通/权限提示/改档/会话往返；旧 schema/stock/原生 checkpoint 回退共用明确退路；安装/collector/平台 Reset 各需自己的生命周期条件。所有逐项缺口以总表为准。
+
+执行前依 [共用窗口流程](../maintainers/release.md#live-window-procedure)固定候选、源码映射、实际制品、对象/预算、停止与回滚。不从本索引、历史“继续”、合分支或构建结果推导新授权；不为验收切未合入分支，不重放旧消息，不更改官方归属或清账本制造成功。
 
 <a id="window-20260917"></a>
-## 2026-09-17 已执行集成窗口
+## 窗口与证据索引
 
-**本轮已经运行，不再是仅登记。** 用户明确授权现役 Host/modeld 切换及尽可能完成 live 验收。基线 W17-A 为代码候选 `7994b92`（后续 `15a0594`/`02a6d81` 只改文档）；回退演练发现的 Host 重复 apply 缺陷以 `338cf83` 修复、`fe05442` 更新制品 pin，线性集成至 `dc03066` 后运行 W17-B。完整制品身份、逐消息结果、实际影响、预算、回退与清理见 [本轮回执](../reports/2026-09-17-live-integration-window.md)。
+| 窗口 | 固定范围 | 已记录结果与详情 |
+|---|---|---|
+| **W17-A · 2026-09-17** | `7994b92`；`15a0594`/`02a6d81` 仅文档；source digest `82aaf3e4…` | 配置迁移、消费者应用、Provider/工具/Memory、effort/在途 TURN、逐 Bot 官方回程、modeld replace、stock 尝试；C01–C11。[固定身份/映射](../reports/2026-09-17-live-integration-window.md#3-两组固定制品与失效边界) · [逐消息回执](../reports/2026-09-17-live-integration-window.md#5-消息与执行证据) |
+| **W17-B · 2026-09-17** | 修复 `338cf83`、pin `fe05442`，集成 `dc03066`；source digest `f2226ccb…` | 同制品再启停和最终 C12、daemon 换代；[修复与回退事实](../reports/2026-09-17-live-integration-window.md#6-重启回退及现场修复) · [离线/review 回执](../reports/2026-09-17-live-integration-window.md#7-离线复验和复审缺口) |
 
-最终现役为 **config schema v2 / models schema v2 / wire v7 / strict-observation-v2**；Host 与 modeld 的最终 canary 终态同 source digest `f2226ccb9938221054693e94ca27308c62cc25d289c9cf40fec3e1ddc167fc59`，preload 为 `0d31637d0524acaffab59b1d8da75244badedbf61bdeaced0a0ab61a84718ffd`。doctor 为 custom / ready / next=none；daemon 也已换代并取得实际 desktop domain 采用证据。
+W17 结束时记录 config schema v2 / models schema v2 / wire v7 / strict-observation-v2；B 最终 Host/modeld 终态同源码摘要，doctor custom/ready/next=none。这是该时点快照，不是本次文档整理重新确认的现役状态。
 
-共两只一次性 Bot、12 条新消息：9 条关联 expected_result_observed，2 条上游 HTTP 503，1 条 stock 回程读回持久回复但 outcome unknown。关联 modeld 共 19 次 HTTP（17 成功、2 失败）；官方请求/外部 reviewer 不在该计数中，不推算费用。继续阶段只补三条新消息，未重播旧失败请求。测试 Bot 已导出留证、撤销 assignment 并删除，原有 catalog/assignment 逐项保持；唯一 23 字节合成文件与受保护备份/回执保留。Host force 窗口曾列出既存活动 Bot，不能声称业务执行零中断或把重启当 temporal 子任务取消。
+整窗两只测试 Bot、12 条新消息：9 条关联预期结果，2 条上游 503，1 条 stock 持久回复可读但 strong correlation unknown。modeld 关联 19 次 HTTP（17 成功、2 失败），不含官方请求或 reviewer，不推算费用。两个 Bot 已导出、撤销 assignment 并删除；审计标记/备份保留。Host force 曾涉及既存活动对象，不能声称业务零中断。[授权、消耗与影响](../reports/2026-09-17-live-integration-window.md#2-授权边界与实际消耗) · [清理事实](../reports/2026-09-17-live-integration-window.md#8-清理与尚未完成)。
 
-| 已取得的 live 向量 | 尚未取得的独立向量 |
-|---|---|
-| 旧 writer 停写、exact-plan 迁移、canonical/alias、models 字节保全；schema 分开迁移 | 平台 Reset、未选模型的凭据资格、旧 schema 真正恢复 |
-| desktop committed→applied、原值恢复、模型域不变、新 daemon PID/start/domain revision | 独立代码 review；不把配置保存当全部消费者/平台通过 |
-| 实际 v7 Host/modeld 加载、patched official、MiniMax 主回合/原生工具/Memory/投递 | 长审批末端执行门、受控慢 List/撤权/取消、完整原版 App |
-| 同 channel/model 的 high→xhigh→default→official；在途 TURN 仍 high；用户标题与历史标记保留 | Provider 明确档位回报仍 unknown；一条通道 503；compact checkpoint 往返 |
-| modeld 正式 replace、旧 epoch 拒绝；同修复制品 stop→start→already_started；最终 canary | stock 缺桥期间 strong identity/correlation、旧制品/schema 回退与 App |
+## 更新规则与条目模板
 
-来源 review gate 仍 pending，本轮 reviewer 返回 HTTP 503 无报告。因此下面部分条目虽然已有成功的 live 子向量，仍保留 blocked，而不是越过既有 ready/整体验收条件。**旧集成段落的 not-run/not-selected 描述的是预登记时点；当前结果以本节和逐条 W17 回执为准。** 未实现的五条 Template Ops 与三条 CTX 没有运行，不因本次服务升级改变状态。长期票保持 open。
+新增需求直接在总表所属维度下登记；已有 ID 不改名、不复用、不删除锚点。来源票和维护页只回链对应行；日期报告保留原始结果，不随新窗口重写历史。一次窗口由一个维护者更新总表；并行合并保留双方来源/证据，不以整段覆盖丢回执。
 
-## 哪些项目进入本票
-
-只有需要真实原生组件、已加载制品、真实 Provider、原版 App、实际权限/迁移或重启恢复链才能取得证据的部分进入这里。源码检查、复制品转换、类型检查、合成故障注入、离线协议/打包回归、代码 Bug 和独立代码复审仍应在功能 worktree 完成；不能改名为“待 live”藏在这里。
-
-可以先登记待集成条目，但**登记不代表实现、离线验证或复审已通过**。进入 `ready` 前必须解除来源票中的非 live 阻断；外部 reviewer 不可用同样是非 live 的 review blocker。仅有历史成功回执不自动取得新制品的资格。其他 worktree 只负责自己的来源条目，不替未检查的功能声明完成。
-
-## 条目状态与并行编辑
-
-| 状态 | 含义与进入条件 |
-|---|---|
-| `awaiting-integration` | 已登记 live 需求；尚未记录其在 v2 的实际集成映射，或尚未选定共同制品 |
-| `ready` | 来源代码/离线复验/独立复审已满足；源提交已映射到固定 v2 提交；依赖、制品及本轮对象/额度/停止条件已确认 |
-| `running` | 已授权窗口开始，记录实际加载身份与本轮唯一回执关联；失联不能保持虚假的“已完成” |
-| `passed` | 本条全部 oracle 在指定制品/原生版本/策略下有证据；只对该范围成立 |
-| `failed` | 已观察到违反本条 oracle 的结果；保留失败证据，代码修复回来源票或新的修复票 |
-| `blocked` | 缺对象、权限、复审、受控输入或安全窗口，无法完成；缺证不是通过 |
-| `needs-revalidation` | 制品、Host 原生版本、schema/wire、策略或相关接点变化，使旧回执不再覆盖当前候选 |
-| `superseded` | 需求被明确替代/取消，记录替代条目和原因；不是验收成功 |
-
-条目使用语义命名空间，例如 `LIVE-MODELD-AUTHORITY`、`LIVE-<feature>-<case>`，避免多 worktree 抢占全局 T 序号或重复的 `L01`。不要重排/复用已存在的 ID。合并同一条目的并发变更时保留双方来源和回执历史；冲突不采用整段 last-writer-wins。一个窗口由一个集成维护者更新运行状态，feature 作者仍维护其实现票。
-
-## 登记模板
-
-复制以下段落，填入最小但可执行的信息。未定值写 `not-selected` / `not-recorded`，不要补猜：
+每行至少包含：**稳定 ID、现场进度/证据范围、具体未验项、状态与阻断、下一步、来源和回执链接**。没有回执写未运行；只有历史证据写明年份/制品与待重验；出现失败保留失败对象/范围，不以另一通道成功覆盖。不在索引堆命令脚本、原始日志、长 source 映射或过时“当前 PID”。
 
 ```markdown
-<a id="live-feature-case"></a>
-### LIVE-FEATURE-CASE — 要验证的行为
-Status: awaiting-integration
-- 来源：完整 Ticket/Spec 链接、source branch、固定 source commit/range；所需依赖。
-- v2 映射：source → integrated commit（rebase/cherry-pick 时记录实际映射）；candidate commit / source digest；未定则 not-recorded。
-- 必须 live 的原因：具体事实与 owner；哪些离线证据已取得、哪些非 live 阻断还在来源票。
-- 环境与动作：native-isolated / installed-host / provider / app / restart；只读或会修改什么，受影响对象与前置状态。
-- 预算与授权：窗口、目标、最多请求/费用/等待、允许的停止/写入、授权回执；未定时不得运行。
-- 步骤与 oracle：可观察的成功和失败条件，逐层区分模型/工具材料释放/实际工具执行/投递/App。
-- 停止与回滚：具体停止条件、恢复到哪个已验证制品/配置，以及恢复后的检查；不重放旧请求。
-- 回执：时间、实际 artifact/native/wire/policy identities、结果和缺口，最小公开证据链接；原始私密证据只保留不含路径/凭据的引用 ID。
+| <a id="live-feature-case"></a>**LIVE-FEATURE-CASE**<br>维度 | 未运行；或已证的窗口/制品/子项 | 尚缺的具体判据 | `awaiting-integration` / `blocked` 等；阻断、下一步；[来源票](...) · [日期回执](...) |
 ```
 
-“source commit 在 v2 可达”可证明普通合并的包含关系；cherry-pick/rebase 后必须核对实际变更映射，不能只看分支名或旧 SHA。相同 source digest 也不替代原生 Host 版本、加载身份或本轮 canary 回执。
-
-## 一次集成验收窗口
-
-1. **选择与冻结。** 功能分支完成非 live 工作后合入 v2；固定集成提交并复跑受影响的组合测试。逐条核对来源映射、依赖和冲突；不能因一个分支全库通过就给合并后的组合背书。
-2. **构建与预检。** 从同一候选构建并记录 CLI/preload 摘要、profile/source SHA、wire/schema/策略与依赖版本。准备上一份可用制品和配置回滚；离线预检不改现役 shim/profile，也不把磁盘新文件当作已加载。
-3. **授权与成套切换。** 按所选条目确定目标、额度、排空与停止条件。只在该窗口由唯一操作者排空/切换，禁止复制旧 service epoch、内存许可或自动重放失败用户消息。原生版本升级是额外动作，不由“重建补丁”隐含授权。
-4. **按依赖验证。** 先原生接点/官方 passthrough，再 managed 路径、资格/取消、实际工具消费与 App，最后重启和回滚。同一重启可以服务多条兼容需求，但每条单独下结论。需要不同原生版本、配置或破坏性迁移的条目另开窗口，不能一次重启全部打勾。
-5. **回填与失效。** 记录实际而不是计划中的进程代/制品/结果。失败立即停止该范围，不扩大对象或额度；新缺陷回代码票。通过保留原回执，相关制品/原生接点变化时转 `needs-revalidation`，另加新回执。整个列表不会因一次部署成功而关闭。
-
-所有 live 命令沿用来源 runbook 的真实命令面，不在本票创造 `verify --live-all` 或自动发布器。无消息 nonce、scope、profile、停止回执或 App 图像时，明确 `not-observed`；不能用标题、roster、日志最后一条或 Bot 自述拼成成功。
-
-## 当前已登记：统一配置
-
-<a id="live-config-cutover"></a>
-### LIVE-CONFIG-CUTOVER — 实际配置迁移与入口切换
-Status: blocked — W17 physical migration vectors verified; T60 independent review remains a non-live release gate
-
-**W17 回执：** 旧 daemon/modeld writer 已停，exact-plan apply 到 retired，home aliases/canonical 已核对，general migration 前后 models 原字节一致；随后单独迁移 model schema v2。新消费者和部分真实凭据见 CONSUMERS。本条不再是未运行，完整范围见[窗口回执 §4](../reports/2026-09-17-live-integration-window.md#4-迁移与消费者)。
-
-来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，最终 rebase 基线 v2 `6f2fcd1`，实现提交 `80fe393`（初始实现 `dbc43f5` 的 rebase 映射）；[配置收口回执](../reports/2026-09-17-unified-configuration-closeout.md)保存 source/packed 验证与未放行项。2026-09-17 实际集成：v2 从 `6f2fcd1` 快进至 `efa6557`，实现映射 `80fe393 → 80fe393`、live 登记 `efa6557 → efa6557`，零 merge commit。合入后的 v2 已重新通过配置专项 200/0 与制品专项 15/0，详见 [v2 集成回执](../reports/2026-09-17-config-ops-v2-integration.md)。该历史回执只证明离线集成。其后 W17 已选择并加载现役制品，迁移结果见本条 W17 回执；独立复审仍是未满足的来源门禁。
-
-离线已证明：严格 v2、真实临时文件/锁与死亡 owner 恢复、迁移各阶段中断、模型原字节/secret ref 保持、bootstrap 回退不得覆盖后来编辑、alias 保全恢复、prepared/ABA 不重放、desktop 精确应用收据、source/packed CLI 和 Host 选模依赖隔离。独立代码复审尚待，属于 T60 非 live 阻断；本条不代替它。
-
-必须 live 的原因：现役配置来源、旧 writer 是否确已停止、source-backed shim 的实际采用及既有凭据仍可用，不能从临时目录推导。消费者的持续采用/重启另由 [LIVE-CONFIG-CONSUMERS](#live-config-consumers) 取证，平台 Reset/home 重建另由 [LIVE-CONFIG-HOME-RESET](#live-config-home-reset) 取证；本条成功不代替它们。W17 已执行迁移与有界 Bot/模型探针，未执行 Webhook 或 GitHub 探针；后续新增对象、动作和额度须单独固定。
-
-步骤/oracle：
-
-1. 固定 v2 候选与新旧 Node 制品；先核对本机 CLI 是源码 shim 还是安装包。源码 shim 跟随 v2 时，Git 快进就会使下一次 CLI 调用读取新代码，但既有进程不会因此自动切换；不得把“未修改 shim 文件”说成“日常 CLI 行为不变”。只获准源码集成而未获准 live 迁移时，明确披露旧配置可能触发 config_migration_required，保留旧提交与恢复路径，并确认新制品的 config path/validate/migrate 不依赖普通 Profile 初始化。生产迁移窗口内再保全可以操作旧服务的固定制品，不因合入而隐式停写/重启/迁移。
-2. 保全当前配置、布局和 secret 引用证据，在明确授权下停止会写历史格式的 daemon/bootstrap/相关运行时角色。未能证实停写则阻断；不因为锁旧就删，不擅自停止用户 Bot 或 Host。
-3. 用新制品 preview exact source/root/conflict plan，再批准 apply；检查 config/model canonical、home 别名、安装安全状态和旧文件退役。models 与 credentials 不被规范化重写，旧 explicit off/预算不被升级默认值覆盖。
-4. 按批准范围启动新消费者，核对它实际采用的 domain revision、PID/start、模型路径与 Host/modeld 运行事实。配置 committed 与消费者 applied、Host loading 分别记录；不得因保存成功声称服务恢复。
-5. 记录迁移完成时的初始配置/模型/secret 引用与消费者快照，把后续持续采用/重启交给 CONSUMERS，把真实平台重置交给 HOME-RESET；没有执行相应流程就保留其 not_proven，不能为了补证清理用户 home。
-
-停止/恢复：新旧 writer 并存、配置/别名冲突、source 变更、未知提交、模型或 secret 引用不一致即停止。按 migration/bootstrap 的精确 before/after 版本恢复，保留后续用户编辑及所有 unknown 回执；不重放用户消息、不自动回滚官方 Host。恢复后重新检查真实消费者，未验证则报告 blocked，不靠 doctor 单项绿代替全部结果。
-
-回执：已执行 W17，预算/影响与实际身份见本票顶部及窗口报告；原始私密配置与令牌不进入仓库。独立复审仍未签署，不以迁移成功关闭来源 release gate。
-
-<a id="live-config-consumers"></a>
-### LIVE-CONFIG-CONSUMERS — 现役消费者采用、重启与模型路径
-Status: blocked — W17 consumer adoption/restart and selected Provider paths verified; review and untested scope remain
-
-**W17 回执：** minIdleMs 600000→660000→600000 均取得真实 applied，期间 models 字节不变；daemon 再次重启后 PID/start 与恢复的 dependency revision 相符。Host/modeld 新进程读取同 canonical 模型，MiniMax/指定 Responses lane 实际请求有回执。最终旧迁移 writer absent；不据此认证全部凭据、ops worker 或 Reset。见[窗口回执 §4](../reports/2026-09-17-live-integration-window.md#4-迁移与消费者)。
-
-- 来源与依赖：[T58](T58-config-command-single-writer.md)、[T60](T60-config-ops-integration-proof.md)、[配置指南](../configuration.md)，实现 `80fe393`，分支 `feat/template-ops-automation`，基线 `6f2fcd1`；依赖 CUTOVER 已通过。W17 actual live candidate/loaded identities 已记录于窗口报告，独立复审仍归 T60。
-- 必须 live 的原因：临时 daemon 测试不能证明当前服务采用了哪个配置根、revision 和制品；模型文件原字节不变也不能证明现役 Host/provider 仍能读取同一凭据。
-- 环境与动作：固定安装与一个经批准的测试对象。先只读核对 source/packed CLI、daemon PID/start、domain revision、Host/modeld 实际身份、canonical 与别名，正常业务 Bot 不改模型。需要配置变更、服务重启或 provider 请求时另固定具体字段、对象和预算。
-- 步骤/oracle：用不会扩大权限或回收范围的明确测试变更验证 committed 与真实 applied；无消费者回执时保持 pending，重启策略保持 restart-required，不隐式启动消费者。按授权正常重启 daemon/modeld 后，证明读取的仍是新根，无旧 writer 重新创建历史配置。client/desktop 的无关修改不能改变实际模型分配/当前 TURN 捕获；经批准的新测试请求需分别证明凭据解析、实际模型、最终投递，不靠 health 或文件存在自证。
-- 预算与授权：W17 的字段、测试对象、有限动作与实际消耗见窗口报告；本窗口已结束，不构成后续服务操作或模型消费的长期授权。没有额度的后续窗口只做文件/进程读取，Provider/交付保留未证。
-- 停止/恢复：错根、旧 writer 复活、错误应用回执、模型/凭据变化或未知操作即停止；恢复本次字段时先核对版本，不覆盖后来的用户编辑，不重放旧消息或全局解除 circuit。
-- 回执：W17 配置、进程与所选 Provider 向量已记录；原版 App 未观察。每项只覆盖记录的 consumer/version/domain revision，不用一次 restart 关闭全部向量。
-
-<a id="live-config-home-reset"></a>
-### LIVE-CONFIG-HOME-RESET — 平台 Reset 后的 durable、别名和凭据
-Status: blocked — integrated into v2 at efa6557; platform/reset proof requires a separately authorized disposable Box
-
-- 来源与依赖：[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，实现 `80fe393`；依赖 CUTOVER 和 CONSUMERS 的相关基本路径。实际候选、平台版本、测试 Box 与 reset 授权均 `not-selected`。
-- 必须 live 的原因：平台 Reset 究竟保留哪些挂载、如何重建 home、何时运行 bootstrap，以及客户端 home secret 是否存续，不能由本机临时目录模拟来证明。
-- 环境与动作：只在明确授权、可丢弃且不承担用户任务的 Box 执行真实平台重置；禁止以删除生产 home 代替。预先记录不含密钥原值的配置/模型摘要、secret ref 可用性、别名和启动 owner。
-- 步骤/oracle：Reset 前后对比 durable config/models/secrets、home config/models 别名与 installation identity；bootstrap 幂等修复缺失别名而不覆盖 detached 编辑器内容，不重新生成第三配置或放大权限。确认旧 off/预算保持；恢复后的 grant/绑定需按来源合同复核，不因备份复活。模型 secret 与客户端连接 secret 分开验证，任一丢失明确报缺失而非默回官方模型。
-- 预算/停止/恢复：一次 reset 的对象、平台调用权限、备份与回收计划须先固定；保留性或身份不符合预期即停止部署推广，恢复仅限本测试对象。不将容器重启或 daemon 重启当作平台 Reset。没有安全 reset 条件时本条保持 blocked。
-- 回执：`not-run`；平台/实际挂载事实、bootstrap 日志的安全摘要、前后 digest 和凭据可用性结果按向量记录，无重置就无持久性成功声明。
-
-## 预登记：运维闭环后续原生验收
-
-以下只预登记明确需要原生/外部系统的最终 oracle，**不是把未实现代码移交为 live 待办**。来源为已提交的 [运维 Spec](../roadmap/template-ops-automation-spec.md) 与逐票合同，规划基线 `52e76eb`、配置实现 `80fe393`；各功能的执行实现提交仍 `not-recorded`。T43–T56 的实现、离线/打包验证和独立复审继续在来源票完成；未满足之前均 blocked。规划与配置代码已随 `efa6557` 原哈希进入 v2，实际业务实现提交仍未记录；Git 合入不会将这些状态改为 ready。
-
-<a id="live-ops-routines"></a>
-### LIVE-OPS-ROUTINES — Agent/Routine 原生 CRUD、Payload 与模板隔离
-Status: blocked — T43/T46/T53 implementation and offline qualification required before native execution
-
-来源：[T43](T43-native-webhook-contract.md)、[T46](T46-template-ops-pairing.md)、[T53](T53-agent-routines-cli.md)、[Spec §10.2](../roadmap/template-ops-automation-spec.md#routine-e2e)。待实施提交/实际 candidate/窗口 `not-recorded`/`not-selected`。
-
-原生步骤：经发布 Node CLI 创建一次性 Bot → 创建 disabled Webhook Routine → 读回并显式 enable → 真实 HTTP POST 合成 probeId → 关联原生 run/收到的 Payload/用户报告 → 更新同一 Routine 并再次 POST → disable 与安全清理。另验证两个模板导入实例的 endpoint/secret/绑定不互相继承。认证、Payload 编码/大小、原生响应层级与禁用语义分别取证；不得用 sendPrompt 或 mock handler 冒充 Webhook。
-
-预算与停止：另行批准测试 Bot 数、每个 probe 请求/模型费用与清理范围；超时先对账，不重复创建对象。发现错对象、secret 泄漏、跨实例触发即停止。disable 不等于取消在途任务，只有本次回合及子任务退出才删除本次确实拥有的 Routine/Bot；清理失败保留 cleanup_required。回执 `not-run`，无公开 secret/真实对象标识。
-
-<a id="live-ops-receivers"></a>
-### LIVE-OPS-RECEIVERS — custom 选模、多 Bot 分流与有界交接
-Status: blocked — T45/T47/T54/T55 implementation and receiver qualification required
-
-来源：[T45](T45-template-webhook-delivery.md)、[T47](T47-bounded-ops-diagnosis.md)、[T54](T54-ops-targets-and-routing.md)、[T55](T55-custom-receiver-delivery.md)，依赖 ROUTINES；实施提交与 live candidate 尚未记录。
-
-原生 oracle：使用批准的低成本/分析 Bot 与可选备用，核对 Webhook 回合真实捕获的模型、供应商、工具权限和数据同意；普通聊天 custom 成功不能替代。验证单目标默认、按 intent 分流、一层 needs-analysis 交接、可选集中报告和配置更换需重绑。ACK 丢失/已接受无回复不能自动广播备用；重复、备用和集中报告均计入同安装/同 Bot 总预算。最小提醒不得触发深诊断，模型配置不因通知失败被修改。
-
-预算/退路：提前固定各 Bot/模型、消息与 token/费用总额、备用数据去向；身份或原生选模无法关联即停止该 lane，保留 not_proven。不得故障注入生产 provider 或强修接收者。取消/撤销只按已授权本次工作处理，不取消 Bot 的无关业务。回执 `not-run`；没有原生工具隔离证据就不能宣称安全自动诊断。
-
-<a id="live-ops-observer-lifetime"></a>
-### LIVE-OPS-OBSERVER-LIFETIME — 持续观察、无人值守提醒与服务故障
-Status: blocked — T44/T45/T46/T50 implementation and installation qualification required
-
-来源：[T44](T44-host-ops-continuous-sensing.md)、[T45](T45-template-webhook-delivery.md)、[T46](T46-template-ops-pairing.md)、[T50](T50-template-ops-release-proof.md)，依赖 CONSUMERS/ROUTINES。实际实现提交、服务宿主、候选及窗口尚未选定。
-
-原生 oracle：使用该平台支持的真实服务 owner，关闭网页并结束启动 Bot 回合后，observer 仍持续采样；无变化零模型唤醒，确证用户影响且不可安全自修才一次短提醒。验证 restart/断网/endpoint 撤销/观察库不可用后的 source cursor、欠账、去重、预算与 degraded 状态，不因观察失败阻断现有推理或自动清 Host circuit。真实 native 用户交付与本地 outbox/HTTP accepted 分开确认。
-
-预算/退路：采样窗口、允许停止的 grokbox 自有服务、请求/费用、离线演练与恢复计划均须另行批准。不得改变官方 supervisor 或令生产 Box 故障来证明监测。整个 Box 离线无独立外部观察者时不承诺自我告警；恢复后对账也不等于实时送达。回执 `not-run`；本条不拥有未实现的服务生命周期代码。
-
-<a id="live-ops-issue-publishing"></a>
-### LIVE-OPS-ISSUE-PUBLISHING — 原生用户确认与 GitHub 真实提交
-Status: blocked — T52/T56 implementation, trusted consent and an authorized test repository required
-
-来源：[T52](T52-consented-support-issues.md)、[T56](T56-scripted-issue-publishing.md)、[Spec §5.2](../roadmap/template-ops-automation-spec.md#issue-automation)。默认提醒/草稿无需 GitHub 凭据；Fake Publisher 的无授权零写、脱敏、重复/unknown 等测试仍归来源票，实际实施提交/候选 `not-recorded`。
-
-外部 oracle：核实原生用户回复可与自动事件可靠区分；对已经展示的 exact 仓库/作者/可见性/标题/正文确认后，由发布 Node CLI 提交并读回实际 issue ID/正文。限定 public-summary grant 单独验证有效期/事件类/额度与撤销，不能借逐份确认的结果关闭。跨 Bot 重复确认仍对应一个 submission。仅在安全代理或专用测试环境允许注入 ACK 丢失时验证真实创建未知后的对账，不盲重发 POST。
-
-预算/退路：指定专用测试仓库、可公开的合成摘要、作者、最多 issue 数、可执行的清理动作；**本次 AH-99/AH-100 人工关闭不构成本功能的发布资格**。无批准仓库时只做本地/Fake，生产项目不被测试写入。真实 issue 关闭/删除或追加评论也须在清理授权范围内。安全分类/正文/目标不符即停止，保留 unknown 与已知引用；回执 `not-run`。
-
-<a id="live-ops-maintenance"></a>
-### LIVE-OPS-MAINTENANCE — 真实安全屏障、Bot 交接和退出补丁
-Status: blocked — T47/T48/T49/T50 implementation, independent review and explicit mutation window required
-
-来源：[T47](T47-bounded-ops-diagnosis.md)、[T48](T48-low-risk-host-qualification.md)、[T49](T49-policy-host-maintenance.md)、[T50](T50-template-ops-release-proof.md)，依赖配置/原生接点和接收者相关 lane。实际执行提交、维护 grant、制品、停止权限及候选 `not-recorded`/`not-selected`。
-
-原生 oracle：先证明当前平台存在经资格化的暂停/排空或等效 admission fence；Bot 持久交接后先终结本回合及相关子任务，唯一 controller 才执行已预授权、已资格化计划。busy、待审批、新任务撞屏障、授权撤销或原生换代应延后/拒绝，不忽略提出者。一次同代对齐与一次安全退出分别验证真实 loaded tuple/未注入官方路径/后续新回合，不在同 STEP 换供应商或重放工具。退出未知保持 rollback_unverified，不从命令退出码推断成功。
-
-预算/停止/恢复：固定单动作类、测试 Bot、最多变更/重启/请求、旧制品与恢复策略；只执行用户批准的窗口，不因为“合入 v2”获得升级权限。无安全屏障就是来源功能阻断，不以多次 idle 采样替代。越权、重复动作、未知进程所有权立即停止，按准确 operation/guardian 对账，不无限 patch/rollback。回执 `not-run`。
-
-## 当前已登记：modeld Effect core
-
-以下条目只登记本轮实际未取到的原生/live 证据；并不表示其他并行功能没有 live 需求。共同来源是 [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)、[T47](T47-modeld-authority-state-machine.md)、[T48](T48-modeld-causal-observation.md)、[T49](T49-modeld-qualification-and-release.md)。Source branch `feat/modeld-effect-core`，核心候选 `6d0e914`，deadline 收口 `743daea`；后续复审修复由 T49 的当前候选记录追加。
-
-**共同集成状态（2026-09-17）：** 已按用户明确指令线性合入 v2：原分支 `967b409` 的十一项提交变基到 v2 `36e6dc5`，再将 v2 快进到 `b57574844428219ead9b9ee18dce90ad3c8535fc`。核心/期限提交映射为 `6d0e914 → ce942f2`、`743daea → e6c5bf5`；全部映射、组合树验证和测试制品摘要见 [v2 集成回执](../reports/2026-09-17-modeld-v2-integration.md)。该组合树已重新通过类型检查、全库与制品离线验证，不沿用旧分支的测试计数。
-
-**共同阻断与授权状态：** W17 已执行真实部署、取证及有限 canary，实际 artifact/native identities 和逐条结果见顶部窗口与本节回执。T49 G5 仍 `review_pending`，非 live 代码复审义务没有豁免；未覆盖的原生撤权、审批、App 和完整退路仍 blocked。下一窗口重新固定候选、授权和预算，不能把这次权限续用或把部分回执当全量资格；五秒策略未放宽。
-
-| 条目 | 所需现实 | 依赖 |
-|---|---|---|
-| [LIVE-MODELD-NATIVE](#live-modeld-native) | 固定官方 Host，三路隔离对照 | 集成候选与原生测试对象 |
-| [LIVE-MODELD-CUTOVER](#live-modeld-cutover) | 实际加载的 Host/profile/preload/modeld | NATIVE |
-| [LIVE-MODELD-AUTHORITY](#live-modeld-authority) | 原生取证、暂停/失效与取消 | CUTOVER |
-| [LIVE-MODELD-TOOLS](#live-modeld-tools) | 审批后实际工具消费者 | AUTHORITY |
-| [LIVE-MODELD-APP](#live-modeld-app) | 真实 Provider、原版 App 的同会话投影 | CUTOVER；工具展示依赖 TOOLS |
-| [LIVE-MODELD-RESTART](#live-modeld-restart) | 重启、旧代隔离、回滚恢复 | 上述基本路径通过 |
-
-<a id="live-modeld-native"></a>
-### LIVE-MODELD-NATIVE — 原生接点与三路对照
-Status: blocked — W17 native source/passthrough/managed observations obtained; complete stock authority and review pending
-
-**W17 回执：** 两版 native-source 各 28/0；真实 patched official 与 managed 精确投递，原生接点加载有 Host 终态。stock 退出有进程/无 preload/不变原生 SHA 观察，但缺桥期间 harness unknown，持久回复读回仍不能补成完整三路授权证明。暂停/撤权和最终工具 gate 未证。见窗口报告 C01–C12。
-
-来源：T43/T45/T49，当前 [原生覆盖审查](../maintainers/modeld-authority-boundaries.md)。必须读取/运行固定原生版本；合成的 `allowed/bound` 或 source-shaped fixture 不能证明原生 per-Agent/per-TURN 授权覆盖。优先在隔离原生环境比较未补丁官方路径、补丁官方 passthrough、补丁 managed 路径；不为对照反复抢占现役环境。
-
-步骤/oracle：核对 source/profile 接点唯一匹配与 local-only 实际能力；官方 passthrough 不增加 managed List/Provider/工具副作用；managed 只取得白名单身份字段，本地暂停/未绑定/代变化不能被注册缓存盖掉。旧 Host 不具备 local-only 能力时明确拒绝，不拿完整旧快照冒充当前本地事实。缺固定原生输入或消费者观察点则 `blocked`，不把 fixture 代入后签通过。
-
-预算/回滚：对象、原生输入与允许动作在窗口中指定；未经授权不迁移账号/Bot、不升级官方二进制。接点不匹配即停止，清理本次隔离资源，现役保持原状。回执须分别保留三路事实与具体未证明项。
-
-<a id="live-modeld-cutover"></a>
-### LIVE-MODELD-CUTOVER — 成套加载与版本身份
-Status: blocked — W17 loaded v7 tuple and final canary verified; independent review and full NATIVE prerequisites remain
-
-**W17 回执：** 从旧 wire v5 成套切至 v7；最终 B Host/modeld 终态同 source digest，doctor custom/ready，旧 epoch 不作为新执行身份。源码/磁盘/已加载证据已分开记录，不再沿用“尚未选择制品”。完整 NATIVE/独立复审仍未关闭。
-
-来源：T44/T49、[T40](T40-persistent-release-and-rollback.md)。磁盘构建通过不足以证明进程已加载。依赖 NATIVE 后，从固定 v2 候选排空并切换 Host/profile/preload/modeld，读取实际加载的 generation、源码/制品摘要和协议。
-
-Oracle：新协议一致、`doctor`/运行状态无阻断，旧 peer 只有有限只读诊断能力，不能承接 managed STEP；CLI→modeld 比较不冒充 Host 已加载同版。目标外 Bot、账号和配置不被改动。任一代、scope、profile 或执行能力未知即停止扩大验证。
-
-预算/回滚：一次经批准的切换窗口和明确旧制品备份；加载或核验失败恢复该备份并重新核对服务身份。回执列出计划和实际加载结果，不能只记录启动命令退出码。
-
-<a id="live-modeld-authority"></a>
-### LIVE-MODELD-AUTHORITY — 原生取证恢复与取消
-Status: blocked — W17 real ordinary reads/checkpoints observed; controlled slow-source/revocation/cancellation vectors pending
-
-**W17 回执：** 专用 Bot 的真实 Gateway/native List、source/STEP/cache 区分及过期后的新证据均有日志；每 STEP 一次模型调用，无放宽原始五秒年龄。没有合格的 per-Bot 慢源/暂停/取消注入窗口，未改整机网络或业务归属来补证。
-
-来源：T45/T47/T49。离线已证明慢首次读取后重新获取新鲜证据、共享等待者取消、总期限与同 STEP 不重推理；这里补实际 Gateway/native source 的生命周期证据。依赖 CUTOVER。
-
-步骤/oracle：在专用对象上进行一次正常 managed 请求；在经批准的可控延迟/取消环境观察首次取证失败后有界恢复，同 STEP 原身份不变，模型最多按已批准策略调用，资格恢复不增加推理次数。显式 native pause、作用域/Host 代失效应阻断新动作；已终止旧 TURN 不因随后 box 观测复活。对不合作 source 保留实际占用/未知结算，不把 waiter 结束当远端已停止。
-
-预算/回滚：延迟/暂停/身份变更只能作用于批准的测试对象；不能为复现改整机网络或真实业务 Bot 归属。无安全注入点时该向量 `blocked`。达到次数/时间上限、重复模型调用、未知副作用即停止并恢复对象前置状态；不重发历史失败消息。回执关联 source/read/waiter/STEP 与真实停止结果，不猜网络或服务端因果。
-
-<a id="live-modeld-tools"></a>
-### LIVE-MODELD-TOOLS — 审批等待后的实际工具消费
-Status: blocked — W17 ordinary native tool consumption verified; long-approval final execution fence not observed
-
-**W17 回执：** MiniMax 正常原生工具链写入并读取唯一合成标记，独立文件内容与 SendToUser 一致，后续 Memory 正常；另一次有界 shell 与在途 effort 固定得到证明。sleep 6/12 秒不是用户审批等待；没有据此关闭跨五秒审批、取消后不执行或重复 STEP 最终消费者门。
-
-来源：T47/T49、[Host 主链](../maintainers/host-inbound-agent-loop.md)。modeld 的材料放行并不证明原生工具执行，尤其不能代替长审批等待后的最后一道原生门。依赖 AUTHORITY。
-
-步骤/oracle：使用批准的无破坏性测试工具和临时标记，分别验证正常消费、等待跨证据窗口、等待时暂停/取消/换代。已失效上下文不得新增执行；正常情况仅一个实际标记写入，重复 STEP 不产生第二次工具副作用。分别核对模型调用、材料释放、审批、原生消费者执行、结果入库和投递，缺哪段就保留哪段缺口。
-
-预算/回滚：测试工具种类、次数、临时路径与审批操作者预先指定；不使用真实业务工具。任何越界执行立即阻断发布并回来源修复票，不能降低为 UI 遗留。清理仅限本次临时标记；外部副作用未知时不宣称回滚成功。
-
-<a id="live-modeld-app"></a>
-### LIVE-MODELD-APP — 真实模型与原版 App 状态
-Status: blocked — W17 Provider/Host/transcript delivery observed; original App not observed
-
-**W17 回执：** nonce→TURN/STEP→Provider→Host→精确投递已有多条回执；真实 503 正确归类 upstream_http，未自动重试/降级。测试 Bot 的 running 标志最终 false，但未取得原版 App 像素/当前会话/侧栏证据，也没清缓存或删除旧业务消息。
-
-来源：T48/T49、[观测 runbook](../maintainers/run-outcome-observation.md)、[Working 语义](../maintainers/composer-working-status.md)。真实 Provider 的终态、App 消息发送确认、当前 session 与侧栏聚合状态各有独立 owner。依赖 CUTOVER，含工具情况依赖 TOOLS。
-
-步骤/oracle：对指定模型和 Bot 发送新的有 nonce 测试请求，核对模型身份、实际调用数、最终内容和投递；原版 App 中等待/取消/失败/完成与当前会话对应，资格控制帧不变成模型文本。侧栏子任务 Working 与父回合分别核对，不强写 `running=false`。429 等真实上游故障保持其分类，既不能算请求成功，也不能误归为失权。原来的未发送黏底消息不自动重发或删除。
-
-预算/回滚：请求数、Token/费用上限、模型和结果 oracle 在窗口内批准；没有额度不默认执行。观察结束后核对测试任务确已退出；不为改善展示升级 App 或清空缓存。回执包含发送确认、对应 STEP、原生终态与 App 实际观察范围，不能凭截图或 Bot 自述替代服务端证据。
-
-<a id="live-modeld-restart"></a>
-### LIVE-MODELD-RESTART — 旧代隔离与恢复退路
-Status: blocked — W17 replacement and repaired same-artifact reapply verified; full stock/schema/App rollback pending
-
-**W17 回执：** 正式 idle replace 换代、旧 epoch 拒绝、新代启动零重放及新 canary 通过；Host 同制品再启停发现并修复 [重复 apply 缺陷](FIX-host-lifecycle-reapply.md)，B 的 stop→start→already_started 与最终 canary 通过。stock 回复有持久内容但强关联 unknown；旧 v5/schema 恢复、原生 compact checkpoint 与 App 回退仍未验收。
-
-来源：T44/T46/T49、[官方回退验收](../maintainers/official-rollback-acceptance.md)。离线临时进程/LevelDB 已证明所有权与防重放；现役的 supervisor、已加载 Host、配置和 App 恢复需要组合回执。依赖同窗口基本路径通过。
-
-步骤/oracle：按授权计划分别验证正常退出/重启和回滚；旧 service epoch、旧内存许可、已终止 STEP 不被重接续，不因缓存冷启动重新选模型或重复执行。恢复后只以新测试请求验证当前路径；确认先前子任务和源读取的结算/未知状态，没有留下无主监听。回滚到已选定旧制品不等于 full-unpatched exit，后者必须单独按官方回退合同验收。
-
-预算/回滚：重启范围、次数、排空时限、旧制品及配置恢复目标预先固定。无法确定旧 owner 已退出、数据库独占、旧请求状态或实际加载版本时停止，保持明确的失败/未知回执；不删执行账本来解锁，不复制旧许可到新代。
-
-## 当前已登记：ownership evidence availability
-
-来源：[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md)、[Spec S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。Source branch `feat/ownership-evidence-availability`，固定实现提交 `90346bb2bd72b44b345eb4752d730c7922d8e809`，基于v2 `f8c82c0`。Source digest `a6eb9fb9ab63052fa22504639c6c529b3301d26c383b817178063bd44496dceb`；preload digest `c00484cf80649b95e920efea862cb744f800b8151942a8d2f050705eea2e6f4d`。该来源提交的策略为`strict-observation-v2`、wire为v6；W17 实际成套运行已是 wire v7。未知组件组合不因wire编号相同自动取得资格。
-
-共同集成回执（2026-09-17）：按用户明确指令，v2从`f8c82c0abdf2fc16ed54c1d2af559920e6fb8320`快进到`8760d3a09bd36975cf65192585ba0ba3daabc0e5`；实现提交`90346bb`与文档提交`8760d3a`均原哈希保留，无rebase、冲突、squash或merge commit。该v2候选已重新通过类型检查、重建release-offline（514通过）和全库（2088通过、6项原生默认跳过、0失败）；精确映射、源码/制品摘要与证据范围见[AUTH集成回执](AUTH-ownership-evidence-availability.md#v2-integration-receipt)。
-
-共同阻断与授权状态：W17 已有实际加载策略、正常 native 读取/工具/终态回执；受控慢源、撤权/取消、长审批末端工具门及原版 App 仍未证明，以下三条整体保持 blocked。独立固定提交复审及一次未定因的历史全库测试异常仍归 AUTH/T49，不因本轮全库通过而宣称旧异常根因已修复。下一窗口重新固定候选、身份、对象与预算；本次授权不构成长驻测试许可。
-
-<a id="live-auth-availability-native"></a>
-### LIVE-AUTH-AVAILABILITY-NATIVE — 已加载策略、真实取证与失效
-Status: blocked — W17 loaded policy and ordinary native reads verified; controlled expiry/revocation/cancellation and review pending
-
-**W17 回执：** 实际 v7 Host/modeld 已加载 strict-observation-v2，真实请求保留 source/STEP/cache 区分和五秒原始年龄，正常读后工具/完成检查点可关联。未实施可控慢 List、暂停/unbound、共享等待者取消或代变化中的失效注入；这些向量继续 blocked，不能用普通请求成功代替。A/B 制品与身份见[窗口报告](../reports/2026-09-17-live-integration-window.md)。
-
-- 来源与依赖：AUTH实现提交`90346bb`；依赖本次固定候选上的`LIVE-MODELD-NATIVE`、`LIVE-MODELD-CUTOVER`语义资格。v2 source→integrated映射为`90346bb → 90346bb`、`8760d3a → 8760d3a`，历史离线集成tip为`8760d3a`；W17 实际候选/loaded identity 见窗口报告。
-- 必须live的原因：已测试的native源码锚点、隔离retry/compact片段和模拟List不能证明实际Gateway读取生命周期、当前scope/native暂停状态或正在运行的Host/modeld加载了v2策略。
-- 环境与动作：优先使用隔离原生环境；现役只在批准的单个测试Bot与成套制品上操作。先读实际loaded Host/profile/preload/modeld身份、wire与policy，核对非目标Bot和官方passthrough不受影响。
-- 步骤与oracle：在安全、批准的延迟注入点验证2.5–4 s读取跨多个检查点时同STEP复用；新STEP不继承超过2 s的跨STEP缓存，原始证据不超过5 s。首次慢读可在原10 s累计预算内取得另一份新鲜证据；持续超龄仍拒绝。检查本地pause/unbound、scope/Host代变化和共享等待者取消，已观察失效不能被稍后ready结果复活；不合作source仍保留占用至实际结算。关联operation/waiter/STEP与模型实际调用数，不用标题证明授权。
-- 预算与授权：W17 普通取证/模型请求的目标及消耗已记录；受控暂停/取消/慢源向量未运行，下一窗口须单独固定动作。不得为复现改整机网络或业务Bot归属；缺安全注入点则该向量 blocked。
-- 停止与回滚：身份不明、原始年龄续期、越权或重复模型调用、资源无法有界收敛即停止；按窗口预选的已验证制品与测试对象原状态回退，不复制旧permit/service epoch或重放旧消息。
-- 回执：W17 已记录实际 loaded v7/policy 和正常源读取向量；受控故障与未知结算向量 not-run。磁盘摘要不代替 loaded 身份，普通成功不代替撤权/取消证明。
-
-<a id="live-auth-availability-tools"></a>
-### LIVE-AUTH-AVAILABILITY-TOOLS — 长审批后的原生工具执行门
-Status: blocked — W17 ordinary tool consumption observed; long-approval/revocation final native gate not observed
-
-**W17 回执：** C03 有真实工具调用、唯一临时标记独立读回、后续结果投递及 Memory 终态。没有长审批后撤权/取消/换代的最终原生消费门证据，也没有重复 STEP 的 live 副作用测试。sleep 等待不替代审批等待，原有要求不放宽。
-
-- 来源与依赖：AUTH实现提交`90346bb`；依赖上条NATIVE及`LIVE-MODELD-TOOLS`的当前候选资格。实现已按原哈希`90346bb → 90346bb`集成，历史离线tip为`8760d3a`；W17 实际候选/loaded identity 见窗口报告。
-- 必须live的原因：离线已验证模型只调用一次、工具材料检查点、等待/过期/失效与终态；modeld释放材料不等于原生消费者在审批后重新检查了权限。
-- 环境与动作：指定批准的无破坏性测试工具、临时标记和审批操作者；分别验证正常消费、审批跨5 s证据窗口，以及审批中暂停/取消/换代。不得用真实业务工具代替。
-- 步骤与oracle：分别记录模型调用、材料释放、审批、最后执行门、实际标记写入、结果入库与投递。有效上下文只执行一次；失效上下文不再新增工具副作用；同一STEP或已关闭TURN不能被重放。原生per-Agent/per-TURN覆盖不足仍作为阻断，不能用allowed/bound两布尔值或缓存快照签署通过。
-- 预算与授权：W17 的临时工具标记和有限工具回合见报告；长审批操作者/撤权场景未选择，不能追加自动调用。
-- 停止与回滚：任何失效后执行、重复副作用或无法关联消费者身份即停止并回来源修复票；仅清理本次批准的临时标记，外部结果未知不得宣称回滚成功。
-- 回执：W17 正常实际消费有证据；长审批/失效后的最终消费门 not-run，保留该缺口，不凭模型响应或材料释放关闭本条。
-
-<a id="live-auth-availability-app"></a>
-### LIVE-AUTH-AVAILABILITY-APP — 原版App的等待、拒绝与下一步提示
-Status: blocked — W17 Host/CLI failure attribution observed; original App and controlled authority refusal presentation pending
-
-**W17 回执：** C04/C05 真实 HTTP 503 保持 upstream_http 分类、一次调用、无自动重试/降档；正常 authority 控制记录没有变成 canary 回复正文。未取得原版 App 或各类受控 authority 拒绝的显示证据，不从 CLI/title/roster 推定 UI 已验收。
-
-- 来源与依赖：AUTH实现提交`90346bb`；依赖NATIVE，涉及实际工具的展示同时依赖TOOLS；实现已按原哈希`90346bb → 90346bb`集成，历史离线tip为`8760d3a`；W17 候选与实际 Host/modeld 身份见窗口报告，App 实际观察仍缺失。
-- 必须live的原因：新字段已通过真实fixture Unix/Host/journal/SQLite冷读/CLI投影验证；原版App实际渲染、消息确认及真实Provider调用/费用仍属不同事实源。
-- 环境与动作：批准的单个Bot、模型和新nonce测试消息，核对当前session/STEP，不自动发送或删除历史失败消息。
-- 步骤与oracle：等待不显示为已完成或模型正文；stale/read_elapsed、后续过期、permit过期、预算耗尽、真正temporal与访问拒绝可按有记录的原因区分，未知历史原因不补猜。stale不声称归属已变，访问拒绝不误指向模型Provider，建议不默认重启Host或刷新title。已发起模型/已释放工具的事实保持准确，终态只有一次；完成、投递与侧栏子任务Working各自核对。
-- 预算与授权：W17 有限模型/Host/CLI 请求已记录；App 和受控 authority 拒绝场景仍待独立窗口，不得为了验证提示无限重试或升级App/清缓存。
-- 停止与回滚：发生错误身份关联、控制帧冒充模型输出、误导性的零调用/自动重放提示或越出预算即停止；保存脱敏回执，按NATIVE窗口的既定制品退路恢复，不重播旧任务。
-- 回执：W17 Provider/Host/CLI 与发送关联已记录，原版 App not-observed。原始日志和私密身份仅留受控引用，不进入公开仓库；未采集的 App 图像不补造。
-
-## 已执行回执
-
-[W17 集成窗口](#window-20260917)已取得现役迁移、消费者、真实模型/工具/投递、改档、重启与修复回执；[完整报告](../reports/2026-09-17-live-integration-window.md)逐项列明成功、失败、unknown 与清理。正式条目的完整 oracle 和独立复审仍不全，不能把部分已验证向量改写成全部 passed，也不能再把它们记成未运行。后续保留各制品历史，补对应缺口并按失效条件重验。
-
-## 同通道模型推理设置
-
-共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；初始 source `1e9a76a` → 最新 v2 `fa476b1` 上的 `ac73435`，原回执 `1108011` → `697fe0c`；配置/命令面组合修复为 `0f2cd0aab6397ba1ea207b012193cb2798786948`。固定代码候选 sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`；实际 v2 已从 `fa476b1` 快进到 `e82d116114de501dd6fb99b01adeea72a0db7757`（0 merge commits）；合入后的 v2 配置专项 205/0、reasoning/制品专项 37/0，详见 [v2 集成回执](../reports/2026-09-17-reasoning-v2-integration.md)。以上是源代码集成映射；其后 W17 已选定并加载制品，实际身份与高/超高/默认档位测试见以下回执。源码/离线/独立 review gate 在来源票，不因 live 测试豁免。W17 窗口已结束，其许可不延续到后续对象或请求。
-
-只读原生资格补充（2026-09-17）：来源树的独立 native-source 运行 **28 pass / 0 fail**，覆盖普通全库默认跳过的 6 个原生源码 case；已安装源码匹配既有资格 pin，源文件与相关 PID 快照未变，受保护临时副本已清理。这不是已加载新 Host/modeld、真实 Provider 或原 App 回合证明，以下三条状态不因此关闭。
-
-组合树复验补充（2026-09-17）：当前相同构建输入已通过 2190 pass / 6 default native skip / 0 fail 的全库、516/0 的 modeld release-offline，随后在最终变基树完成 read-only native-source 28/0。后一次变基仅接入并行配置文档回执，不改源代码/锁文件/构建输入。普通全库跳过的六个原生源码 case 已在该只读 lane 覆盖，仍不能证明已加载制品/网关/App。独立复审留在来源票；基线已有的历史提交邮箱元数据扫描问题属于发布隐私门禁，不进入 live 验收，也不因本次合并擅自重写既有 v2 历史。
-
-<a id="live-reasoning-cutover"></a>
-### LIVE-REASONING-CUTOVER — schema v2 与 wire v7 成套切换及退路
-Status: blocked — W17 schema/loaded wire cutover verified; matching old-schema rollback and independent review pending
-
-**W17 回执：** general config 与 model schema 分开迁移，旧 writer 已停，最终新 Host/modeld v7 tuple 与实际 canary 一致。目录/既存 assignment/凭据引用保持，测试结束移除测试 assignment。正式 modeld 换代及旧 epoch 拒绝已有证据；没有恢复旧 v5 制品及其匹配 schema 的实际演练，不通过删 effort 冒充无损降级。
-
-依赖固定 v2 集成映射、来源非 live 出口和适用的 [MODELD CUTOVER](#live-modeld-cutover) 接点资格。必须 live 的原因是磁盘新构建不能证明已经加载的 Host/preload/modeld 同版；旧 schema/制品的恢复还涉及真实服务生命周期。离线已覆盖 v1 只读/v2 保存、取消与 CAS、v6 只读探测/禁止执行、真实隔离 Unix 和磁盘绑定；计数与候选以来源票为准。
-
-环境与动作：批准的 restart/installed-host 窗口，预先保护 canonical config/models、profile、安装布局与旧制品，不输出凭据；若尚有旧 general config，先按 [CONFIG CUTOVER](#live-config-cutover) 停止旧 writer 并完成显式迁移，再协调 CLI/preload/Host/modeld 的 v7 加载与模型 schema 保存。`config migrate` 对已有 model v1/v2 原字节不改写，`models migrate --confirm` 只负责模型 schema，不能互相替代；人读别名与 canonical 实体沿统一布局，不另建设置文件。不在未合入 feature 上抢占全局 shim 或現役服务。
-
-源码 CLI 边界：已确认全局开发 shim 跟随 v2；Git 快进后下次命令使用新代码，不代表现役 Host/modeld 已重启。普通模型保存会发出 schema v2，不在旧 Host/modeld 仍运行时把一次成功保存当上线资格。组合验收还须核对 home aliases、canonical 路径以及 client/desktop 编辑与 Bot effort 相互不改写；本地跨域、种子与迁移中断保真已有离线测试，现场实际采用需 [CONFIG CONSUMERS](#live-config-consumers) 与本条共同留证。
-
-Oracle：逐个记录实际 source/profile/preload/service/wire 身份，新执行均为 v7；旧 peer 可诊断但不能接 managed STEP；旧 service epoch 不复活、历史消息不重发；v1→v2 不改变其他 Bot、wire model 或凭据引用。回退演练恢复匹配旧制品和受保护旧 schema 配置，不能以静默删掉 effort 作为无损降版。实际原生身份或旧配置不可证明时保持 blocked。
-
-预算与授权：W17 有限切换及影响见窗口报告；后续窗口另固定对象和允许动作。身份/协议/配置不匹配、旧 TURN 重放或未经批准的影响即停止，不扩大请求。回执：W17 v7/schema 采用与部分重启退路已记录，匹配旧 schema 恢复 not-run。
-
-<a id="live-reasoning-provider"></a>
-### LIVE-REASONING-PROVIDER — 原通道档位透传与上游证据
-Status: blocked — W17 emitted high/xhigh/default and one successful channel observed; providerReported remains unknown and another channel returned 503
-
-**W17 回执：** A 制品 C04/C05 在同一 Responses 通道分别 emitted high/xhigh，但真实 HTTP 503，不视为请求资格通过。独立另选通道的 C06/C07/C08 在不改变该 lane 的 channel/model/credential 下完成 high/xhigh/default，请求均成功。所有 providerReported 仍 unknown；没有 Provider 合格回报，不能签其内部档位已执行。负例无白名单拒绝且模型文件未变；原有 catalog 未改写。
-
-依赖 CUTOVER（或单独批准的非现役真实 Provider 资格环境）。离线已证明 locked SDK 反例、Chat/Responses 最终 HTTP effort、冲突零 fetch、同 channel/model 稳定；不能据此证明真实网关未覆盖/忽略参数。作用域必须是明确批准的 endpoint/API/wire model/credential reference，不自动换另一 Provider 或铸造 wire 变体。
-
-步骤与 oracle：先核对通道能力的权威依据，再在批准对象上比较 default/high/xhigh 的配置、TURN revision、emitted 与 HTTP/Provider 结果，核对 endpoint/key-reference/wire model 不变。收集可审计且脱敏的网关转换或 Provider 明确回报；没有合格回报解码器时 `providerReported:unknown` 是正确结果，不能用 latency、reasoningTokens、标题或自述签署 xhigh 已执行。分别记录“请求成功发出”和“上游档位是否证实”，任何真实不支持应撤销能力声明并回来源票修复，不降档重试。
-
-预算与授权：W17 限定两个一次性对象和有限新消息，实际消耗见窗口报告；503 lane 未继续重试，测试 assignment 已撤销，未改 ownership 或 catalog。回执：emitted 与 HTTP 结果已记录，Provider 内部档位仍 unknown；后续请求须新窗口，不能把其它通道的成功替代该失败 lane。
-
-<a id="live-reasoning-host-app"></a>
-### LIVE-REASONING-HOST-APP — 原生会话与 App 的下一 TURN 改档
-Status: blocked — W17 next-TURN effort isolation, native tool/Memory and title/history continuity observed; App/compact and provider confirmation pending
-
-**W17 回执：** C06 的运行中 TURN 保存同模型 xhigh 后，其后续三个 STEP 仍 requested/emitted high；C07 下一 TURN 才采用 xhigh，C08 default，C09 official。工具、Memory 未关闭，用户标题保持、default 清 e、official 清 m/e；官方回程能取回先前真实工具标记。原版 App、compact checkpoint 与 Provider 明确档位回报没有证明。C06–C09 属于 A 制品历史，不改写为 B 上重新运行过全部向量。
-
-依赖 CUTOVER 与适用通道的 PROVIDER 请求资格；与原 [MODELD TOOLS](#live-modeld-tools)、[MODELD APP](#live-modeld-app) 共享窗口时仍独立记录。本条必须使用已加载的真实原生 Host 与未修改的 App；source-shaped fixture 和标题字符串测试不证明原生恢复、工具消费者或 UI 展示。
-
-在批准的一个 confirmed_box canary 上执行同 modelId 的 high → xhigh → default → official，另一个 Bot 保持原配置/official 对照。只使用批准的有界任务；需要工具/Memory/compact 的向量不得靠停掉这些原生路径通过。已有 TURN 必须继续原绑定，新 TURN 才改变 effort；实际工具调用、Host normalized terminal、最终交付及 App 标题 `m=/e=` 各自留证。改 effort 不应因为伪造新 modelId 触发不必要的模型切换/上下文清空；default/official 清 e，不破坏用户标题。配置查询不得冒充当前 TURN，tokens 不代表 Provider 档位确认。
-
-预算与授权：W17 对象、有限 TURN/HTTP 与工具边界见窗口报告；未观察原版 App，也未执行 compact。回执：在途 TURN 固定/下一 TURN 改档、原生工具/Memory/标题与历史回程已记录；两个测试对象已空闲、导出、撤 assignment 并删除。App/compact/完整旧 schema 退路保持未证，不能将重启当全部副作用停止。
-
-## 预登记：默认本地上下文维护（CTX）
-
-规划来源：[Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)、[CTX-01–CTX-04](README.md#context-maintenance)、[ADR](../decisions/2026-09-17-local-context-maintenance.md)；固定规划提交 `15a0594`，已在 `feat/box-runtime-v2`，读取基线 `7994b92`。**implementation source commit/range = not-recorded**；代码/离线/制品测试/原生隔离消费者资格/独立review均未因规划提交而完成，它们继续留在CTX来源票。下面只登记确实需要现役加载、真实用户入口/Provider或重启的最后oracle，不是“全部只剩live”。
-
-集成候选、实际Host/profile/preload/modeld/config/wire身份、目标对象、窗口、模型费用和动作授权均 `not-selected` / `not-recorded`。规划commit不等于功能代码，必须先补实现source→固定v2候选映射并重验依赖后才可推进。本轮三个条目全部blocked、not-run，没有执行模型、工具、原生状态写入或服务切换。
-
-| Entry | 独立证明 |
+| 验收状态 | 含义 |
 |---|---|
-| [LIVE-CTX-ADOPTION](#live-ctx-adoption) | 现役配置/匹配协议/原生维护能力确已采用，而非仅新源码 |
-| [LIVE-CTX-NEXT-INPUT](#live-ctx-next-input) | 已有失败长会话下一条普通输入先维护、再处理一次的实际Host/App旅程 |
-| [LIVE-CTX-DURABILITY](#live-ctx-durability) | 实际原生checkpoint跨重启、取消/未知结果对账及受限退路 |
+| `awaiting-integration` | 尚未建立 source→固定 v2 候选映射或未选共同制品 |
+| `ready` | 来源代码/离线/独立复审、固定映射、依赖及本轮对象/预算/授权均满足 |
+| `running` | 已授权窗口正在执行，必须能关联本轮身份/回执；失联不是完成 |
+| `passed` | 本条全部判据和必要前置在指定制品/原生版本/策略下满足，不能扩展到其他对象 |
+| `failed` | 观察到违反判据；保留失败证据，代码问题回来源票 |
+| `blocked` | 缺实现前置、review、对象、权限、受控输入或安全窗口；最后一列写明具体阻断 |
+| `needs-revalidation` | 相关制品、原生 Host/App、schema/wire、策略、接点或能力变化使旧覆盖不足；保留旧回执并列出需重验子项 |
+| `superseded` | 需求明确被替代/取消，注明替代 ID/来源决定；不是验收成功 |
 
-<a id="live-ctx-adoption"></a>
-### LIVE-CTX-ADOPTION — 当前运行代真正采用维护策略与能力
-Status: blocked — CTX-01–CTX-04 implementation, offline qualification, independent review and authorized cutover required
-
-来源：CTX-01/02/04，S12.2/4/9。依赖实际所需的 [CONFIG CUTOVER](#live-config-cutover) 与 [CONFIG CONSUMERS](#live-config-consumers) 合格结果；reasoning/模型资格仍按其来源票。新功能目标config3/下一wire必须按当时实现精确确认，不照抄当前历史wire7。旧peer有限只读诊断不等于能够运行新维护操作。
-
-必须live的原因：实际进程是否已采用policy/新purpose、Host safe point是否加载、原生归属/队列与root能力是否属于同代，不能从build或临时目录证明。源码切片独立审查与隔离native-copy资格是前置，未完成时不把本条当替代。
-
-Oracle：记录configured-next-turn/captured/contextPolicyRevision、模型/effort/selectionRevision、声明容量/有效本地窗口、已加载原生维护capability及协议身份；正常auto不依赖旧环境gate，注入保持off。明确未配置/其他Bot及official路径未被opt-in；配置保存与真实采用分别留证。读状态不产生摘要/工具/发送或安装修复。
-
-预算/停止/恢复：对象与允许暂停工作/迁移/切换/回退范围未选择时零动作。批准窗口只操作一个固定集成候选，先保护配置和原生root、确认旧writer/在途工作，再按既有生命周期程序成套采用。发现版本/ownership/alias冲突或无法确认当前状态即停止；不擅开gate、删ledger或将旧schema恢复覆盖后来的用户编辑。回执not-run，采用身份/结果not-recorded。
-
-<a id="live-ctx-next-input"></a>
-### LIVE-CTX-NEXT-INPUT — 已失败旧会话的下一条输入自动恢复
-Status: blocked — ADOPTION and CTX-A01–A15 offline/packed proofs required before an authorized user journey
-
-来源：CTX-04的CTX-A01/A04/A07/A16，依赖 [ADOPTION](#live-ctx-adoption) 与当前选定模型的基础请求资格。使用一个已确认box归属、已有过长历史并最近失败/无新有效usage的批准会话；存在真实受影响会话时须单独取得其业务数据/暂停范围授权，不能默认沿用事故ID。新建短Bot/手工compact成功不能替代这份证明。
-
-必须live的原因：原版App的真实输入接收、当前Host队列/root恢复、摘要与主请求的真实次数、后续工具/交付和活动显示须实际观察。核心本地500K→128K阈值机制已由离线Fake证明；本条不要求制造真实provider窗口超限或用巨型pad冲撞端点。
-
-Oracle：普通输入保留原nonce/文本/附件；按实际采用的128K工作策略，在首次主模型HTTP之前发生必要维护；独立摘要请求有purpose/预算计数，候选满足预算且Host接受/checkpoint可核对。新输入只被处理一次，旧失败STEP仍终态失败，既有工具不重做。原App通过Host事件体现维护与结束，不造thinking或长期Working。再一条短输入验证陈旧usage/error不重触发无谓compact；未知阶段单列，摘要返回或Bot声称“压缩好了”不足以通过。
-
-预算/停止/恢复：预先填写主请求数、摘要请求数/总input、费用、总时间和允许工具白名单；默认验证范围为一个目标会话、至多两条新普通输入，摘要不超过实际配置与本窗口更小上限。任何重复业务/越权数据/无界等待/材料或root异常立即停止后续请求并保留证据；不重发旧失败STEP、不扩大对象或换provider。摘要失败如实记录原消息状态，未验后续继续则保持blocked。回执not-run，窗口/目标/请求预算not-selected。
-
-<a id="live-ctx-durability"></a>
-### LIVE-CTX-DURABILITY — 原生checkpoint重启与取消/退路
-Status: blocked — NEXT-INPUT, persistence/fault offline proofs and an independently authorized restart window required
-
-来源：CTX-02/04的CTX-A11/A12/A14/A16，依赖 [NEXT-INPUT](#live-ctx-next-input)。公共进程重开/真实临时store及原生隔离消费者证明已在来源票完成后，才进入本条；不能将其未实现写成待live。
-
-必须live的原因：当前原生archive/carrier/root/checkpoint是否能被实际新Host进程读回、在途输入/实际副作用怎样对账、原版App和官方回程是否仍可用，不能由owned JSON夹具替代。
-
-Oracle：完成一个已确认持久的compact，在明确允许的空闲窗口按现有Host/modeld生命周期重启一次，新进程只从当前原生提交root继续，旧长窗口不复活、原始archive可追溯；只发新的批准消息，不恢复旧service STEP。取消/迟到/回执丢失向量只在受控原生测试对象和安全注入点运行，分别报告未提交/已提交/commit_unknown，不伪造回滚或重复摘要；缺安全注入点则仅该向量blocked。观察输入队列、工具/Memory/交付及Working真实状态，必要官方选择退路保持同会话合法历史。
-
-预算/停止/恢复：明确一次重启影响的所有Bot/运行、最多新输入/Provider/费用、数据保护和停止许可；未知活动不能当空闲。只恢复匹配制品/schema与被批准的配置范围，不回滚用户新消息/删除root/旧ledger，模型assignment与effort不因降版静默丢失。平台Reset不是本条自动授权。回执not-run，原生持久/重启/退路结果not-recorded。
+完成后只更新受影响行与窗口链接；发现缺陷先停止该范围、回来源修复并重新冻结候选。默认不因 docs-only 变更撤销现场证据，也不把源码 digest 相同当作原生/App/实际加载身份相同。未知、缺证与未实现始终可见，长期索引不因一次部署关闭。

@@ -18,15 +18,17 @@ T52/T56 的支持草稿/consent/submission 仍为原库独立管理域，有限 
 
 ## 当前实现与证据范围
 
+本票只维护实现、离线/打包与review；现场已验/未验、阻断和下一步唯一索引到 [LIVE-MONITOR-PERSISTENCE](LIVE-integration-validation.md#live-monitor-persistence)。未来模板运维提醒另见 [LIVE-OPS-OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime)，不要把两者合成一个现场门。
+
 当前使用方式、错误与存储合同的维护入口是[持续观测](../maintainers/continuous-observation.md)，不从下面的完整目标推断所有能力已落地。
 
 - Kernel `monitor.ts` 复用既有四类归属规则，提供单一有界policy、稳定scope/来源时间过滤、freshness；不会把schema1/旧/未知scope重新包装成准入证据。
 - `monitor-store.node.ts` 在原 observability 路径采用 schema v2、固定 sqlite3 磁盘增量事务和 rollback journal；不再读写整库 JS 镜像。原始安全事件、cursor、incident 及本地通知决策同事务提交。v1 显式迁移保留备份与管理意图；GET 不迁移/恢复。
 - `monitor.runtime.ts` 属于自己的Effect Scope，批量最多32目标、串行poll、错误退避与正常退出；新的scope不借旧scope确认状态。提交后输出有稳定ID的changes，不调用sendPrompt/provider/reconcile/控制信号。多个只读客户端不追加上游查询。
 - CLI 保留 `runtime monitor init/run/snapshot/events/incidents/ack/snooze`，增加 `alerts trace --from journal|monitor`；init/run 要求显式 confirm，查询不初始化或采集。SQLite native addon 是发行依赖并按需加载，Host/CLI 普通路径不加载数据库引擎。安装制品须重新资格化，不能沿用旧空 dependencies 声明。
-- 原协议隔离、source CLI/mock Gateway/真实SQLite与打包Node冷读/ack已验证；原生Server live scoped桥、全量调度/恢复/通知还不能据此签署。Node20与Node22以及安装后tarball的实际检查见readiness。
+- 原协议隔离、source CLI/mock Gateway/真实SQLite与打包Node冷读/ack已验证；原生Server live scoped桥、全量调度/恢复/通知还不能据此签署。Node20与Node22及tarball的固定检查留对应来源回执；当前现场安装结果见 LIVE。
 
-**剩余资格：** admission 与背景刷新更广义的共享调度；未知旧锁/任意备份恢复；外部通知渠道与客户端接收/渲染回执；T40 服务安装、自启与现役长驻验收。已实现的本地 journal 追赶不会提高 ownership RPC 频率，v2 正常/硬崩溃恢复与 v1 事务迁移有独立测试。取消 16MiB/50000 条累计拒绝门槛，期限/软目标驱动自动维护并披露缺口，保留管理语义。local-only 出口成功不等于远端或 App 到达。
+**源码/离线剩余资格：** admission 与背景刷新更广义的共享调度、未知旧锁/任意备份恢复。外部通知/客户端与 T40 安装、自启、长驻的当前现场缺口统一在 [LIVE-MONITOR-PERSISTENCE](LIVE-integration-validation.md#live-monitor-persistence)及其关联条目更新。已实现的本地 journal 追赶不会提高 ownership RPC 频率，v2 正常/硬崩溃恢复与 v1 事务迁移有独立测试。取消 16MiB/50000 条累计拒绝门槛，期限/软目标驱动自动维护并披露缺口，保留管理语义。local-only 出口成功不等于远端或 App 到达。
 
 ## 实施边界与复用
 

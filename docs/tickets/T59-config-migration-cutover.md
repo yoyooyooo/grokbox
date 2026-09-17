@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Implemented · isolated migration/bootstrap/recovery verified。** 当前程序只读写统一配置；历史文件由明确的迁移命令一次性处理。生产 writer 切换与平台 Reset 尚未执行，登记在 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)。合同归 [配置 Spec §7](../roadmap/configuration-rebuild-spec.md#migration)。
+**Implemented · isolated migration/bootstrap/recovery verified。** 当前程序只读写统一配置；历史文件由明确的迁移命令一次性处理。当前生产 writer/迁移进度只看 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)，真实平台 Reset 独立看 [LIVE-CONFIG-HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)；本票不复制当前现场状态。合同归 [配置 Spec §7](../roadmap/configuration-rebuild-spec.md#migration)。
 
 ## Implementation
 
