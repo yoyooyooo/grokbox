@@ -1,6 +1,6 @@
 # FIX — Host stop/start reapply identity and truthful lifecycle receipts
 
-Status: implementation and regression qualification in progress. Discovered by the authorized 2026-09-17 integration window on the v2 code candidate `7994b92`; documentation-only integration tip `02a6d81`.
+Status: repair implemented at `338cf83`, rebuilt preload pin at `fe05442`; scoped offline qualification passed, independent review unavailable; native revalidation pending. Discovered by the authorized 2026-09-17 integration window on the v2 code candidate `7994b92`; documentation-only integration tip `02a6d81`.
 
 ## Observed failure
 
@@ -22,5 +22,9 @@ After start/restart/stop, the operator must observe the requested actual channel
 - Same-lifetime observation is stable; PID reuse, changed process start and a later Host lifetime change the key. Missing/duplicate census, discovery drift and process-inspection drift return no key; observation never signals.
 - Existing source mismatch, running-Bot, lease, unknown operation, prefix persistence and duplicate-operation tests remain required.
 - The actual repeated same-artifact stop/start and next fresh canary are owned by the dated [LIVE window](LIVE-integration-validation.md); source tests cannot close that native oracle.
+
+Qualification receipt (2026-09-17): typecheck passed; control/operator suites 73/0; rebuilt artifact and packaging suites 12/0; read-only pinned native-source lane 28/0. The first repair full-suite run returned 2195 pass / 6 skip / 1 failure: the committed preload pin still described the pre-repair source provenance. The pin was explicitly updated to the repeatable rebuilt artifact (`0d31637d0524acaffab59b1d8da75244badedbf61bdeaced0a0ab61a84718ffd`), without weakening the E09 assertion, and both packing and old-artifact rejection tests passed. A fresh aggregate run remains to be recorded.
+
+A bounded, no-tools/no-extensions/no-session independent reviewer invocation against the fixed source patch returned HTTP 503 without a report. The requested Astra/max reviewer did not execute source tools or live operations; the prescribed Herdr transport was unavailable. This is `review_pending`, not an independent approval or a reason to label all live checks passed.
 
 Independent review remains a separate obligation. Do not treat a reviewer transport failure, implementer inspection or an authorized maintenance repair as broad production release qualification. No source worktree may adopt the live Host before its repair is integrated into v2.
