@@ -285,7 +285,9 @@ Status: blocked — mapped to v2; independent review, native qualification and a
 
 ## 同通道模型推理设置
 
-共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；source commit `not-recorded`（在来源实现提交形成后补入）。v2 integrated/candidate commit、source digest、实际加载身份均 `not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
+共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；source commit `1e9a76a5a8cac784dfba927626d78baa15403ca3`。v2 integrated/candidate commit、source digest、实际加载身份均 `not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
+
+只读原生资格补充（2026-09-17）：来源树的独立 native-source 运行 **28 pass / 0 fail**，覆盖普通全库默认跳过的 6 个原生源码 case；已安装源码匹配既有资格 pin，源文件与相关 PID 快照未变，受保护临时副本已清理。这不是已加载新 Host/modeld、真实 Provider 或原 App 回合证明，以下三条状态不因此关闭。
 
 <a id="live-reasoning-cutover"></a>
 ### LIVE-REASONING-CUTOVER — schema v2 与 wire v7 成套切换及退路

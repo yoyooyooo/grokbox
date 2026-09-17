@@ -1,6 +1,6 @@
 # FEAT — 同通道模型推理设置
 
-Status: implemented; final offline qualification in progress; not deployed.
+Status: implementation and executable offline qualification complete; independent review pending; not deployed.
 Source branch: `feat/model-reasoning-policy`, based on v2 `f8c82c0`.
 Authority: [Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy), [ADR](../decisions/2026-09-17-model-reasoning-policy.md). This ticket does not authorize runtime adoption, live model calls or publication.
 
@@ -20,8 +20,30 @@ Authority: [Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy
 
 ## 非 live 关闭要求
 
-完成 pinned Bun 1.3.14 / 最低 Node 20.17.0 的类型、全库、打包及 Host import fence 复验并在本票记录结果。早期 Bun 1.4.2 定向绿色不是 pinned release gate。代码作者自审不能代替项目所要求的独立复审；独立 reviewer receipt 当前 `not-recorded`，属于本票非 live blocker，不能改名塞进 LIVE。
+下方已记录 pinned Bun 1.3.14 / 最低 Node 20.17.0 的类型、全库、打包及 Host import fence 复验。早期 Bun 1.4.2 定向绿色不作为 pinned release gate。代码作者自审不能代替项目所要求的独立复审；独立 reviewer receipt 当前 `not-recorded`，属于本票非 live blocker，不能改名塞进 LIVE。
 
 ## 需要真实环境的出口
 
 只在 [LIVE-REASONING-CUTOVER](LIVE-integration-validation.md#live-reasoning-cutover)、[LIVE-REASONING-PROVIDER](LIVE-integration-validation.md#live-reasoning-provider)、[LIVE-REASONING-HOST-APP](LIVE-integration-validation.md#live-reasoning-host-app) 记录实时状态与回执。必须先映射到固定 v2 集成提交，再单独确认对象、预算、窗口及回退制品。没有经过资格验证的 Provider 回报时，执行档位保持 unknown；tokens/时延不是 xhigh 证明。
+
+## 固定来源与验证回执（2026-09-17）
+
+- Implementation source: `1e9a76a5a8cac784dfba927626d78baa15403ca3`；source tree `144bfbc0f3bfddd9d60c6dafd70762dc4efe49b2`。
+- Build sourceDigest: `017f3e00e8f49497a99ab338ad92605fadba8e82203477e28289afb4cf69a8a0`；packed preload SHA-256: `21c5d29adfdfd91ba9d542448890a42ab147e6696119f204eac9726ee002f0bb`。
+- Toolchain: Bun `1.3.14`、Node `20.17.0`、esbuild `0.28.2`；AI `5.0.253`、OpenAI provider `2.0.125`、Effect `4.0.0-beta.107`。没有更改依赖 pin。
+
+| 检查 | 回执与范围 |
+|---|---|
+| `bun install --frozen-lockfile` | passed，lock 无变更 |
+| `bun run typecheck` / `bun run build` | passed；source-built preload pin 与源码构建一致 |
+| `bun test` | **2087 pass / 6 skip / 0 fail**，270 个文件，17144 次 expect；包含源码、owned Unix/LevelDB、打包、边界反例及新增 31 个 reasoning 专项测试 |
+| 独立 Node 打包验证 | `reasoning-packed.test.ts` 两项通过；在限定 PATH 下使用最低 Node 20.17.0 执行双 API SDK bundle 与真实 CLI migrate/show，无 Gateway/Provider 凭据 |
+| modeld `release-offline` | **425 pass / 0 fail**，47 个文件；verifier 的 sourceCommit 与上述来源一致，stage=passed-offline |
+| 显式 read-only native-source | **28 pass / 0 fail**，6 个文件、209 次 expect；包括常规全库默认跳过的全部 6 个原生源码 case |
+| Publication/privacy | 工作树及当前来源可达历史扫描 0 findings；仅规范化本 feature 未发布提交的作者/提交者元数据，不修改全局 Git 身份或 v2 历史 |
+
+全库回执绑定上述完全相同的 Git tree；提交匿名化只更改元数据，tree 与 build sourceDigest 未改变。source commit 级 modeld verifier 已在匿名化来源重跑并核对 sourceDigest，不能用源码绿色推断部署。既有少量测试会选择其固定的其他 Node 二进制；新增 reasoning-packed 明确使用本轮限定 PATH 的最低 Node，而非把所有旧测试统称为最低版本运行。
+
+原生资格命令限定 `GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000` 的 `live-copy`、`host-harness-emit`、`native-auxiliary-noop`、`host-managed-turn-retry`、`host-compact`、`transform` 六个 suite；运行前确认已安装源码与既有 pin 相同。仅作受保护临时副本的变换/语法编译或隔离 VM 中的固定消费者测试，未运行完整 Host、未改原生文件或相关 PID、未调用真实模型，临时源码副本已清理。它不关闭 LIVE 的已加载制品/Provider/App 义务；verifier 的完整 native qualification 仍为 not-proven。
+
+作者自审覆盖：所有 assignment 消费者与原子保存、能力 pre-I/O 拒绝、policy/revision 冷恢复与去重、SDK omission/conflict 的真实编码边界、reasoning usage 子集、诊断字段/数组访问器不执行、标题清除/保留、旧 wire 诊断与 Host import fence。没有另建执行器、静默降档、通道替换、所有权放宽或无界重试。独立 reviewer receipt 仍 `not-recorded`，非 live review gate 尚未签署；本票不宣称生产可发布。
