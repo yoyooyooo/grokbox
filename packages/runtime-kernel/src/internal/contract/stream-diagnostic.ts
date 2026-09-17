@@ -6,7 +6,7 @@ import { projectSdkValidation, type SdkValidationObservation } from "./sdk-valid
 export const NORMALIZE_CAUSES = [
   "missing_finish", "unsupported_finish_reason", "open_tools_at_finish", "tool_arguments_invalid",
   "tool_arguments_mismatch", "tool_identity_conflict", "tool_id_collision", "undeclared_tool", "tool_declaration_mismatch",
-  "parallel_tools", "sdk_invalid_tool", "sdk_schema_mismatch", "unsupported_sdk_part", "invalid_event_shape",
+  "parallel_tools", "sdk_invalid_tool", "sdk_schema_mismatch", "unsupported_provider_state", "unterminated_reasoning", "unsupported_sdk_part", "invalid_event_shape",
   "event_after_finish", "conflicting_finish_reason", "empty_output", "invalid_usage", "invalid_terminal", "terminal_binding_mismatch", "stream_budget",
 ] as const;
 export type NormalizeCause = typeof NORMALIZE_CAUSES[number];
@@ -15,7 +15,7 @@ export type StreamRejectSite = typeof STREAM_REJECT_SITES[number];
 export const STREAM_EVENT_TYPES = ["unknown", "data", "done", "eof", "body_error", "stream-start", "response-metadata", "start", "start-step", "finish-step", "text-start", "text-delta", "text-end", "reasoning", "reasoning-start", "reasoning-delta", "reasoning-end", "tool-input-start", "tool-input-delta", "tool-input-end", "tool-call-streaming-start", "tool-call-delta", "tool-call", "tool-error", "tool-result", "finish", "abort", "error", "raw", "source", "file", "text_delta", "reasoning_delta", "tool_start", "tool_delta", "tool_complete", "backend_finish", "accepted", "terminal", "response.completed", "response.failed", "response.incomplete", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.output_item.added", "response.output_item.done"] as const;
 export type StreamEventType = typeof STREAM_EVENT_TYPES[number];
 export const FINISH_REASONS = ["stop", "end-turn", "tool-calls", "tool_calls", "function_call", "length", "max_tokens", "content-filter", "content_filter", "error", "abort", "aborted", "cancelled", "unknown", "insufficient_system_resource", "completed", "incomplete", "failed", "other"] as const;
-export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "providerFetchCalls", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased", "semanticOutputBytes", "replayRecords", "heldToolRecords", "retainedStorageBytes", "httpCalls"] as const;
+export const STREAM_COUNT_KEYS = ["providerEvents", "providerBytes", "sdkParts", "canonicalEvents", "canonicalBytes", "hostEvents", "hostBytes", "textBytes", "reasoningBytes", "toolArgumentBytes", "toolsStarted", "toolsCompleted", "openTools", "requestBytes", "providerFetchCalls", "queuePeak", "eventsSkipped", "eventsDropped", "declaredTools", "hostToolsReleased", "semanticOutputBytes", "replayRecords", "heldToolRecords", "retainedStorageBytes", "httpCalls", "normalizedEmptyToolTypes", "normalizedEmptyFinishReasons", "sdkRawParts"] as const;
 export type StreamCountKey = typeof STREAM_COUNT_KEYS[number];
 export const STREAM_TIME_KEYS = ["headersMs", "providerFirstEventMs", "sdkFirstPartMs", "canonicalFirstEventMs", "hostFirstEventMs", "durationMs"] as const;
 export type StreamTimeKey = typeof STREAM_TIME_KEYS[number];
@@ -44,7 +44,7 @@ export type StreamSummary = {
   toolIdentity?: ToolIdentityAudit;
   http?: ProviderHttpObservation;
   route?: ProviderRouteObservation;
-  engine?: { api: "chat" | "responses"; aiVersion: string; providerVersion: string; adapterRevision: 1; pipeline?: "provider_v2_single_call" };
+  engine?: { api: "chat" | "responses"; aiVersion: string; providerVersion: string; adapterRevision: 1 | 2; chatDialect?: "standard" | "minimax-inline-v1"; pipeline?: "provider_v2_single_call" };
 };
 export const AUTHORITY_REASONS = ["unknown", "authority_unavailable", "authority_not_committed", "host_identity_mismatch", "host_generation_changed", "ownership_reader_unavailable", "ownership_read_unavailable", "ownership_read_timeout", "ownership_gateway_mismatch", "ownership_bridge_unavailable", "server_read_unavailable", "ownership_clock_unavailable", "native_execution_not_ready", "harness_mismatch", "server_id_mismatch", "confirmed_temporal", "ownership_unconfirmed", "ownership_scope_unconfirmed", "ownership_evidence_stale", "ownership_evidence_invalid", "turn_revoked", "ownership_identity_changed"] as const;
 export const AUTHORITY_CHECKPOINTS = ["admission", "before_dispatch", "after_auth", "tool_start", "tool_complete", "finish", "recovery"] as const;
@@ -121,8 +121,9 @@ export function projectStreamSummary(value: unknown): StreamSummary | undefined 
     const engine = own(value, "engine"), api = member(own(engine, "api"), ["chat", "responses"]);
     const aiVersion = own(engine, "aiVersion"), providerVersion = own(engine, "providerVersion");
     if (api && typeof aiVersion === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(aiVersion)
-      && typeof providerVersion === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(providerVersion) && own(engine, "adapterRevision") === 1) {
-      out.engine = { api, aiVersion, providerVersion, adapterRevision: 1, ...(own(engine, "pipeline") === "provider_v2_single_call" ? { pipeline: "provider_v2_single_call" } : {}) };
+      && typeof providerVersion === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(providerVersion) && (own(engine, "adapterRevision") === 1 || own(engine, "adapterRevision") === 2)) {
+      const chatDialect = member(own(engine, "chatDialect"), ["standard", "minimax-inline-v1"]);
+      out.engine = { api, aiVersion, providerVersion, adapterRevision: own(engine, "adapterRevision") as 1 | 2, ...(chatDialect ? { chatDialect } : {}), ...(own(engine, "pipeline") === "provider_v2_single_call" ? { pipeline: "provider_v2_single_call" } : {}) };
     }
     return out;
   } catch { return undefined; }

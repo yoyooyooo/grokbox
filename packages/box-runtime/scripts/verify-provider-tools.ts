@@ -64,9 +64,16 @@ const program = Effect.scoped(Effect.gen(function* () {
     const calls = events.filter((e): e is Extract<InferenceEvent, { type: "tool_complete" }> => e.type === "tool_complete");
     const text = events.filter((e): e is Extract<InferenceEvent, { type: "text_delta" }> => e.type === "text_delta").map(e => e.text).join("");
     const reasoning = events.filter((e): e is Extract<InferenceEvent, { type: "reasoning_delta" }> => e.type === "reasoning_delta").map(e => e.text).join("");
-    const parts: PromptContentPart[] = [...(text ? [{ type: "text" as const, text }] : []), ...(reasoning ? [{ type: "reasoning" as const, text: reasoning }] : []),
-      ...calls.map(c => ({ type: "tool-call" as const, toolCallId: c.toolCallId, toolName: c.toolName, args: c.args }))];
-    messages.push({ role: "assistant", content: parts }); previousAssistantTexts.push(text + reasoning);
+    const parts: PromptContentPart[] = [];
+    for (const event of events) {
+      if (event.type === "text_delta" || event.type === "reasoning_delta") {
+        const type = event.type === "text_delta" ? "text" : "reasoning", last = parts.at(-1);
+        if (last?.type === type) last.text += event.text;
+        else parts.push({ type, text: event.text });
+      } else if (event.type === "tool_complete") parts.push({ type: "tool-call", toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
+    }
+    messages.push({ role: "assistant", content: parts });
+    previousAssistantTexts.push(parts.filter((part): part is Extract<PromptContentPart, { type: "text" | "reasoning" }> => part.type === "text" || part.type === "reasoning").map(part => part.text).join(""));
     const results: PromptContentPart[] = [];
     for (const call of calls) {
       const args = call.args && typeof call.args === "object" && !Array.isArray(call.args) ? call.args : {};
@@ -87,7 +94,7 @@ const program = Effect.scoped(Effect.gen(function* () {
     }
     if (results.length) messages.push({ role: "tool", content: results });
     else messages.push({ role: "user", content: "The fixture has not completed. Follow the tool contract and use the declared tools to finish." });
-    observations.push({ step, outcome: "ok", textBytes: Buffer.byteLength(text), reasoningBytes: Buffer.byteLength(reasoning), inlineThinking: text.includes("<think>"),
+    observations.push({ step, outcome: "ok", textBytes: Buffer.byteLength(text), reasoningBytes: Buffer.byteLength(reasoning), inlineThinking: (text + reasoning).includes("<think>"), thinkingInVisibleText: text.includes("<think>"),
       toolCalls: calls.length, toolNames: calls.map(c => c.toolName), stream: terminal?.type === "backend_finish" ? terminal.stream : undefined });
   }
 }).pipe(Effect.provide(graph)));

@@ -28,6 +28,8 @@ export type ModelRecord = {
   dataTypes: string[];
   /** Qualified context window for this model/endpoint. Not generation maxTokens. */
   contextWindowTokens?: number;
+  /** Explicit Chat protocol dialect; absent uses narrowly qualified endpoint defaults. */
+  chatDialect?: "standard" | "minimax-inline-v1";
   /** Short App Label token for `m=`. Unique among models when set. */
   alias?: string;
   /** Set on records adapted from externalCatalog. Never persisted. */
@@ -188,6 +190,9 @@ function parseModel(id: string, value: unknown): ModelRecord {
         ...(capabilities.vision || capabilities.images ? ["images"] : []),
       ];
   const contextWindowTokens = parseRecordContextWindowTokens(value, id);
+  const chatDialect = value.chatDialect;
+  if (chatDialect !== undefined && (chatDialect !== "standard" && chatDialect !== "minimax-inline-v1")) throw new BoxRuntimeError("invalid_usage", "Unsupported Chat dialect.");
+  if (chatDialect !== undefined && provider !== "openai" && provider !== "openai-chat") throw new BoxRuntimeError("invalid_usage", "chatDialect requires Chat Completions.");
   const aliasRaw = value.alias;
   let alias: string | undefined;
   if (aliasRaw !== undefined) {
@@ -200,6 +205,7 @@ function parseModel(id: string, value: unknown): ModelRecord {
     id, provider, model, endpoint, apiKeyRef, capabilities, dataTypes,
     ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
     ...(alias !== undefined ? { alias } : {}),
+    ...(chatDialect !== undefined ? { chatDialect } : {}),
   };
 }
 

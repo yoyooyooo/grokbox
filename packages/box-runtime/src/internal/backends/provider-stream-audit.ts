@@ -4,14 +4,15 @@ import { interruptedProviderFinish } from "./failure-observation.ts";
 import type { OpenaiPromptApi } from "./openai-prompt-adapter.ts";
 import type { ToolIdentityObserver } from "./tool-identity-audit.ts";
 
-// Validation before the SDK can discard raw finish reasons or trailing tool
-// arguments. Bytes are never rewritten and never enter outward diagnostics.
+// Audit original frames before the SDK can discard raw finish reasons or tool
+// arguments. Only a qualified dialect may omit known empty placeholders after
+// auditing them. Raw content never enters outward diagnostics.
 export const PROVIDER_EVENT_MAX_BYTES = CANONICAL_OUTPUT_MAX_BYTES;
 export const PROVIDER_WIRE_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_TOOLS = 128;
 const record = (x: unknown): Record<string, unknown> | undefined => x !== null && typeof x === "object" && !Array.isArray(x) ? x as Record<string, unknown> : undefined;
 const bytes = (s: string) => new TextEncoder().encode(s).length;
-type Tool = { fragments: ChunkedText; final?: string; id?: string; name?: string; invalid?: boolean; mismatch?: boolean };
+type Tool = { fragments: ChunkedText; final?: string; id?: string; name?: string; invalid?: boolean; mismatch?: boolean; functionDeclared?: boolean };
 export class ProviderStreamAudit {
   private readonly decoder = new TextDecoder("utf-8", { fatal: true });
   private readonly lineParts = new ChunkedText();
@@ -28,13 +29,15 @@ export class ProviderStreamAudit {
   private violation?: BackendFailure;
   private instrumentedReader = false;
   private disposed = false;
+  private readonly sdkFrames: string[] = [];
   private lastAuditBoundary?: ToolTerminalAudit["boundary"];
   failure(): BackendFailure | undefined { return this.violation; }
   settleFailure(): void {
     if (!this.ended && !this.failed) { this.failed = true; this.settleAudit("rejected"); }
   }
   private readonly tools = new Map<string, Tool>();
-  constructor(private readonly api: OpenaiPromptApi, readonly evidence: StreamEvidence, private readonly toolIdentity?: ToolIdentityObserver) { evidence.providerStarted(); }
+  constructor(private readonly api: OpenaiPromptApi, readonly evidence: StreamEvidence, private readonly toolIdentity?: ToolIdentityObserver, private readonly dialect: "standard" | "minimax-inline-v1" = "standard") { evidence.providerStarted(); }
+  get rewritesFrames(): boolean { return this.api === "chat" && this.dialect === "minimax-inline-v1"; }
   headers(status: number, headers?: Headers): void {
     this.evidence.httpStatus(status); this.evidence.first("headersMs"); this.evidence.provider("headers");
     let requestId: { header: typeof PROVIDER_REQUEST_ID_HEADERS[number]; value: string } | undefined;
@@ -135,9 +138,9 @@ export class ProviderStreamAudit {
       this.evidence.toolValidation("validated");
     }
   }
-  private frame(text: string): void {
+  private frame(text: string): string {
     if (this.done) throw invalidStream("event_after_finish", this.site());
-    if (text === "[DONE]") { this.done = true; this.evidence.providerDone(); this.evidence.note("provider", "done"); this.settleAudit("done"); return; }
+    if (text === "[DONE]") { this.done = true; this.evidence.providerDone(); this.evidence.note("provider", "done"); this.settleAudit("done"); return text; }
     let v: Record<string, unknown> | undefined;
     try { v = record(JSON.parse(text)); } catch { throw invalidStream("invalid_event_shape", this.site()); }
     if (!v) throw invalidStream("invalid_event_shape", this.site());
@@ -147,17 +150,32 @@ export class ProviderStreamAudit {
       // The installed SDK consumes choices[0]. Audit exactly that choice rather
       // than fabricating authority over unused choices.
       const c = Array.isArray(v.choices) ? record(v.choices[0]) : undefined, d = record(c?.delta);
+      let rewritten = false;
+      if (this.rewritesFrames && d && ((d.reasoning_content !== undefined && d.reasoning_content !== null && d.reasoning_content !== "")
+        || (d.reasoning_details !== undefined && d.reasoning_details !== null && !(Array.isArray(d.reasoning_details) && d.reasoning_details.length === 0)))) throw invalidStream("unsupported_provider_state", this.site());
       if (Array.isArray(d?.tool_calls)) for (const item of d.tool_calls) {
         const call = record(item), fn = record(call?.function);
         if (!call || typeof call.index !== "number" || !Number.isSafeInteger(call.index) || call.index < 0) throw invalidStream("invalid_event_shape", this.site());
         const key = String(call.index), t = this.tool(key);
+        const establishedFunction = t.functionDeclared === true && !!t.id && !!t.name;
         this.identity(t, call.id, fn?.name); this.append(key, fn?.arguments);
+        if (call.type === "function") t.functionDeclared = true;
+        // Only a continuation of a previously explicit function may omit an
+        // empty type slot. Never supply a type/name/id for a new call.
+        if (this.rewritesFrames && establishedFunction && call.type === "") {
+          delete call.type; rewritten = true; this.evidence.increment("normalizedEmptyToolTypes");
+        }
       }
       if (c) {
         this.evidence.finishField(c.finish_reason, Object.hasOwn(c, "finish_reason"), (this.evidence.snapshot().counts.providerEvents ?? 1) - 1);
         if (c.finish_reason !== undefined && c.finish_reason !== null) this.finish(c.finish_reason);
+        // Empty placeholders are not terminals. Prevent the SDK's last-value
+        // slot from erasing an earlier real finish; the raw audit remains intact.
+        if (this.rewritesFrames && c.finish_reason === "") {
+          delete c.finish_reason; rewritten = true; this.evidence.increment("normalizedEmptyFinishReasons");
+        }
       }
-      return;
+      return rewritten ? JSON.stringify(v) : text;
     }
     const itemId = typeof v.item_id === "string" ? v.item_id : undefined;
     if (v.type === "response.function_call_arguments.delta" && itemId) this.append(itemId, v.delta);
@@ -172,10 +190,15 @@ export class ProviderStreamAudit {
       this.evidence.finishField(reason, true, (this.evidence.snapshot().counts.providerEvents ?? 1) - 1);
       if (reason === "completed") this.finish(reason); else this.evidence.providerFinish(reason);
     }
+    return text;
   }
   private line(line: string): void {
     if (!line) {
-      if (this.dataLines) { const data = this.data.text(); this.data.clear(); this.dataLines = 0; this.eventBytes = 0; this.frame(data); }
+      if (this.dataLines) {
+        const data = this.data.text(); this.data.clear(); this.dataLines = 0; this.eventBytes = 0;
+        const sdkData = this.frame(data);
+        if (this.rewritesFrames) this.sdkFrames.push(`data: ${sdkData}\n\n`);
+      }
       return;
     }
     if (line.startsWith("data:")) {
@@ -206,14 +229,18 @@ export class ProviderStreamAudit {
     this.segment(text.slice(start));
     // SSE dispatch still requires a blank line; EOF does not synthesize one.
   }
-  push(chunk: Uint8Array): void {
+  push(chunk: Uint8Array): Uint8Array | undefined {
     try {
       this.wireBytes += chunk.byteLength; this.evidence.increment("providerBytes", chunk.byteLength);
       if (this.wireBytes > PROVIDER_WIRE_MAX_BYTES) this.limit("wire_bytes", PROVIDER_WIRE_MAX_BYTES, this.wireBytes);
       let text: string;
       try { text = this.decoder.decode(chunk, { stream: true }); } catch { throw invalidStream("invalid_event_shape", this.site()); }
       this.consume(text);
-    } catch (error) { this.rejected(error); throw error; }
+      if (!this.rewritesFrames) return chunk;
+      if (!this.sdkFrames.length) return undefined;
+      const output = new TextEncoder().encode(this.sdkFrames.join("")); this.sdkFrames.length = 0;
+      return output;
+    } catch (error) { this.sdkFrames.length = 0; this.rejected(error); throw error; }
   }
   eof(): void {
     try {
@@ -230,7 +257,7 @@ export class ProviderStreamAudit {
     this.settleAudit("rejected");
     if (error && typeof error === "object") annotateStreamFailure(error, { stream: this.evidence.snapshot() });
   }
-  dispose(): void { this.disposed = true; this.tools.clear(); this.lineParts.clear(); this.lineBytes = 0; this.data.clear(); this.dataLines = 0; }
+  dispose(): void { this.disposed = true; this.sdkFrames.length = 0; this.tools.clear(); this.lineParts.clear(); this.lineBytes = 0; this.data.clear(); this.dataLines = 0; }
 }
 /** Demand-driven, no tee/background drain; cancellation belongs to this response. */
 export function auditedProviderResponse(response: Response, audit: ProviderStreamAudit): Response {
@@ -242,15 +269,22 @@ export function auditedProviderResponse(response: Response, audit: ProviderStrea
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (closed) return;
-      let next: Awaited<ReturnType<typeof reader.read>>;
-      try { next = await reader.read(); } catch (error) { if (!closed) { closed = true; audit.bodyError(); release(); controller.error(error); } return; }
-      if (closed) { release(); return; }
-      try {
-        if (next.done) { audit.eof(); closed = true; release(); controller.close(); return; }
-        audit.push(next.value); controller.enqueue(next.value);
-      } catch (error) { closed = true; void reader.cancel().catch(() => undefined).finally(release); controller.error(error); }
+      for (;;) {
+        let next: Awaited<ReturnType<typeof reader.read>>;
+        try { next = await reader.read(); } catch (error) { if (!closed) { closed = true; audit.bodyError(); release(); controller.error(error); } return; }
+        if (closed) { release(); return; }
+        try {
+          if (next.done) { audit.eof(); closed = true; release(); controller.close(); return; }
+          const bytes = audit.push(next.value);
+          if (bytes) { controller.enqueue(bytes); return; }
+          // A caller demand may need several byte fragments to finish one SSE
+          // frame. No tee, prefetch loop or second event parser is introduced.
+        } catch (error) { closed = true; void reader.cancel().catch(() => undefined).finally(release); controller.error(error); return; }
+      }
     },
     async cancel() { if (closed) return; closed = true; audit.cancelled(); try { await reader.cancel(); } finally { release(); } },
   }, { highWaterMark: 0 });
-  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  const headers = new Headers(response.headers);
+  if (audit.rewritesFrames) { headers.delete("content-length"); headers.delete("content-encoding"); }
+  return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }

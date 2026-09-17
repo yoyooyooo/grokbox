@@ -21,6 +21,7 @@ import { observeBackendFailure, backendFailureObservation } from "./failure-obse
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
 import { ToolIdentityObserver } from "./tool-identity-audit.ts";
+import { chatDialect, encodeDialectRequest, InlineThinkingParts, type ChatDialect } from "./chat-dialect.ts";
 
 export type UnsealAuth = (lease: AuthLease) => string;
 
@@ -40,8 +41,9 @@ function bodyBytes(init?: RequestInit): number {
   return 0;
 }
 
-function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi): typeof fetch {
+function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect): typeof fetch {
   const run = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
+    init = encodeDialectRequest(init, dialect);
     audit.evidence.setCount("requestBytes", bodyBytes(init));
     if (bodyBytes(init) > ENCODED_PROVIDER_REQUEST_MAX_BYTES) {
       throw new BackendFailure("envelope_too_large");
@@ -95,6 +97,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         const kind = backendKindForModel(record);
         if (kind === "echo") throw new BackendFailure("unknown_backend_kind");
         const api: OpenaiPromptApi = kind === "openai-responses" ? "responses" : "chat";
+        const dialect = chatDialect(record);
         const snap = snapshot as ContextSnapshot;
         const prompt = encodeOpenaiPrompt(snap);
         const frozen = freezePreparedSnapshot(snap, api);
@@ -103,8 +106,8 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
           prompt,
           model: record.model,
           endpoint: record.endpoint,
-          api,
-          routeId: sha256Text(canonicalJson(["provider-route-v1", record.endpoint, api, record.model, record.apiKeyRef])),
+          api, chatDialect: dialect,
+          routeId: sha256Text(canonicalJson(["provider-route-v2", record.endpoint, api, record.model, record.apiKeyRef, dialect])),
           ...frozen,
         });
       },
@@ -120,11 +123,13 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         if (started) return Queue.end(queue);
         started = true;
         const ac = new AbortController(), evidence = new StreamEvidence();
-        evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: 1, pipeline: "provider_v2_single_call" });
+        const dialect = payload.chatDialect ?? "standard";
+        const thinking = dialect === "minimax-inline-v1" ? new InlineThinkingParts() : undefined;
+        evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: dialect === "standard" ? 1 : 2, chatDialect: dialect, pipeline: "provider_v2_single_call" });
         evidence.setCount("declaredTools", payload.tools.length);
         if (payload.routeId) evidence.providerRoute({ id: payload.routeId, api: payload.api });
         const identity = new ToolIdentityObserver(payload.tools.map(t => t.name), evidence);
-        const audit = new ProviderStreamAudit(payload.api, evidence, identity);
+        const audit = new ProviderStreamAudit(payload.api, evidence, identity, dialect);
         const normalizer = createSdkStreamNormalizer({ declaredTools: new Set(payload.tools.map(t => t.name)), evidence, toolIdentity: identity });
         let iterator: AsyncIterator<unknown> | undefined;
         let queuePeak = 0;
@@ -151,7 +156,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
               let secret: string;
               try { secret = unseal(lease); }
               catch (error) { throw observeBackendFailure(new BackendFailure("auth_mismatch"), "auth", error); }
-              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit, identity, payload.api) });
+              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit, identity, payload.api, dialect) });
               const model = payload.api === "responses" ? openai.responses(payload.model) : openai.chat(payload.model);
               const { toolChoice, ...settings } = payload.settings;
               const tools = payload.tools.map(tool => ({ type: "function" as const, name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));
@@ -168,13 +173,16 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
               try: signal => nextSdkStreamPart(iterator!, signal), catch: safeFailure,
             });
             if (part.done) break;
-            const event = yield* Effect.try({ try: () => normalizer.next(part.value), catch: safeFailure });
-            if (event) {
-              // Await the bounded offer. Merely adding bufferSize to offerUnsafe
-              // would silently drop parts when full.
-              if (!(yield* Queue.offer(queue, event))) return;
-              queuePeak = Math.max(queuePeak, yield* Queue.size(queue));
-              evidence.setCount("queuePeak", queuePeak);
+            evidence.increment("sdkRawParts");
+            const parts = yield* Effect.try({ try: () => thinking ? thinking.map(part.value) : [part.value], catch: safeFailure });
+            for (const mapped of parts) {
+              const event = yield* Effect.try({ try: () => normalizer.next(mapped), catch: safeFailure });
+              if (event) {
+                // Await each bounded offer, including a split reasoning/text part.
+                if (!(yield* Queue.offer(queue, event))) return;
+                queuePeak = Math.max(queuePeak, yield* Queue.size(queue));
+                evidence.setCount("queuePeak", queuePeak);
+              }
             }
           }
           const terminal = yield* Effect.try({ try: () => normalizer.finish(), catch: safeFailure });

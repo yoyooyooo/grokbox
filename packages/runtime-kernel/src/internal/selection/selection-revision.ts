@@ -11,6 +11,7 @@ export function computeSelectionRevision(input: {
     capabilities: input.model.capabilities,
     ...(typeof input.model.contextWindowTokens === "number" ? { contextWindowTokens: input.model.contextWindowTokens } : {}),
     dataTypes: input.model.dataTypes,
+    ...(input.model.chatDialect !== undefined ? { chatDialect: input.model.chatDialect } : {}),
     endpoint: input.model.endpoint,
     model: input.model.model,
     modelId: input.model.id,

@@ -8,6 +8,7 @@ export type PreparedPayload = {
   model: string;
   endpoint: string;
   api: OpenaiPromptApi;
+  chatDialect?: "standard" | "minimax-inline-v1";
   /** Hash of the route namespace, never the credential value or raw endpoint. */
   routeId?: string;
   tools: ToolDefinition[];
