@@ -13,6 +13,9 @@ import {
   writeReviewedProfileFromCopy,
 } from "../src/internal/process/profile.node.ts";
 import { toyEnvelope } from "./envelope-toy-fixture.ts";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { CONTEXT_SLICE_IDS, profileFromSource } from "../src/internal/host/profile.ts";
+import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 
 const AT = "2026-01-01T00:00:00.000Z";
 
@@ -30,6 +33,28 @@ async function writeHost(root: string, source: string, name = "host.cjs"): Promi
 }
 
 describe("reviewed profile write retained bind + envelope reject-on-drift", () => {
+  test("context recipe upgrade: analyzer and writer agree, exact new slice review works and incomplete/superset reviews refuse", async () => {
+    const { root, destDir } = await rootFixture();
+    const source = LIVE_SHAPED_HOST, sha = sha256Text(source);
+    const legacy = LIVE_SLICE_PATCHES.filter(slice => !(CONTEXT_SLICE_IDS as readonly string[]).includes(slice.id));
+    const before = profileFromSource(source, legacy, "pre-context");
+    await retainHostBundle({ root, source, sourceSha: sha, observedAt: AT, profile: before, matchedProfileId: before.profileId });
+    await writeReviewedProfileFromCopy({ destDir, hostBundle: retainedGenerationSourcePath(root, sha), slices: legacy, profileId: before.profileId });
+    const original = await readFile(join(destDir, "reviewed.json"), "utf8");
+    const inspect = await inspectRetainedWriteEnvelope(root, sha);
+    expect(inspect.refusal).toBe("envelope_drift");
+    expect(new Set(inspect.requiredIds)).toEqual(new Set(CONTEXT_SLICE_IDS));
+    const input = { destDir, hostBundle: retainedGenerationSourcePath(root, sha), lineage: { root, retainedSha: sha } };
+    await expect(writeReviewedProfileFromCopy(input)).rejects.toMatchObject({ refusal: "envelope_drift", details: { requiredIds: inspect.requiredIds } });
+    await expect(writeReviewedProfileFromCopy({ ...input, lineage: { ...input.lineage, sliceReview: inspect.requiredIds.slice(1) } })).rejects.toMatchObject({ refusal: "envelope_drift" });
+    await expect(writeReviewedProfileFromCopy({ ...input, lineage: { ...input.lineage, sliceReview: [...inspect.requiredIds, "create-session"] } })).rejects.toMatchObject({ refusal: "envelope_drift" });
+    expect(await readFile(join(destDir, "reviewed.json"), "utf8")).toBe(original);
+    const written = await writeReviewedProfileFromCopy({ ...input, lineage: { ...input.lineage, sliceReview: inspect.requiredIds } });
+    expect(written.envelope?.sliceReview).toEqual(inspect.requiredIds);
+    expect(written.profile.slices.filter(slice => (CONTEXT_SLICE_IDS as readonly string[]).includes(slice.id))).toHaveLength(CONTEXT_SLICE_IDS.length);
+    expect(await readFile(retainedGenerationSourcePath(root, sha), "utf8")).toBe(source);
+  });
+
   test("without lineage still authors from an arbitrary path (library test helper)", async () => {
     const { destDir } = await rootFixture();
     const { source, profile } = toyEnvelope("");
@@ -243,7 +268,7 @@ describe("reviewed profile write retained bind + envelope reject-on-drift", () =
     await retainHostBundle({
       root, source: after.source, sourceSha: nextSha, observedAt: "2026-01-01T00:00:01.000Z",
     });
-    const inspect = await inspectRetainedWriteEnvelope(root, nextSha);
+    const inspect = await inspectRetainedWriteEnvelope(root, nextSha, after.profile.slices);
     expect(inspect.generationPresent).toBe(true);
     expect(inspect.refusal).toBe("envelope_drift");
     expect(inspect.requiredIds).toEqual(["compact-register", "managed-step-error-scope"]);
@@ -277,7 +302,7 @@ describe("reviewed profile write retained bind + envelope reject-on-drift", () =
     await mkdir(join(root, "profiles"), { recursive: true, mode: 0o700 });
     await writeFile(join(root, "profiles", "reviewed.json"), `${JSON.stringify(before.profile)}\n`);
     expect(await readFile(join(hostBundlesDir(root), "generations", nextSha, ENVELOPE_WINDOWS_FILE), "utf8").then(() => true, () => false)).toBe(false);
-    const inspect = await inspectRetainedWriteEnvelope(root, nextSha);
+    const inspect = await inspectRetainedWriteEnvelope(root, nextSha, after.profile.slices);
     expect(inspect.refusal).toBe("envelope_drift");
     expect(inspect.requiredIds).toEqual(["compact-register", "managed-step-error-scope"]);
     expect(inspect.sliceReviewRequired).toBe(true);

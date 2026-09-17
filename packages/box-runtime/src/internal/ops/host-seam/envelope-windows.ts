@@ -28,7 +28,7 @@ import type { HostBundlesObservation } from "../../io/provenance.node.ts";
 export const ENVELOPE_SLICE_IDS = [...REQUIRED_SLICE_IDS, ...OPTIONAL_SLICE_IDS.filter(id => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(id)
   && !(CONTEXT_SLICE_IDS as readonly string[]).includes(id))] as const satisfies readonly SliceId[];
 export const ENVELOPE_SLICE_COUNT = ENVELOPE_SLICE_IDS.length;
-const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...ENVELOPE_SLICE_IDS, ...CONTEXT_SLICE_IDS];
+export const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...ENVELOPE_SLICE_IDS, ...CONTEXT_SLICE_IDS];
 function completeEnvelopeIds(ids: ReadonlySet<string>): boolean {
   const withContext = CONTEXT_SLICE_IDS.some(id => ids.has(id));
   const expected = withContext ? ALL_ENVELOPE_SLICE_IDS : ENVELOPE_SLICE_IDS;

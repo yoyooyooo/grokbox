@@ -16,7 +16,7 @@ const CONTEXT_TESTS = [
   "packages/runtime-kernel/test/context-policy.test.ts", "packages/runtime-kernel/test/context-selection.test.ts", "packages/box-runtime/test/context-reuse.test.ts",
   "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-host.test.ts",
   "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts",
-  "test/context-commands.test.ts",
+  "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
   "context-reuse": [

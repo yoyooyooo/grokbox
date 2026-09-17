@@ -6,7 +6,7 @@ import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
 import {
-  ENVELOPE_SLICE_IDS,
+  ALL_ENVELOPE_SLICE_IDS,
   admitWriteEnvelope,
   envelopeProfileShape,
   envelopeWindowsFromRecipe,
@@ -37,7 +37,7 @@ export function loadDurableReviewedProfile(root: string): PatchProfile | undefin
 }
 
 const SHA = /^[a-f0-9]{64}$/;
-const ENVELOPE_SLICE_SET = new Set<string>(ENVELOPE_SLICE_IDS);
+const ENVELOPE_SLICE_SET = new Set<string>(ALL_ENVELOPE_SLICE_IDS);
 
 export type ProfileWriteLineage = {
   /** Runtime root for retain dir + current reviewed.json pin. */
@@ -158,25 +158,28 @@ async function retainedGenerationPresent(root: string, sha: string): Promise<boo
 async function loadCandidateEnvelopeWindows(
   root: string,
   candidateSha: string,
-  pin: PatchProfile | undefined,
+  recipe: readonly SlicePatch[],
   generationPresent: boolean,
 ): Promise<EnvelopeWindows | null> {
-  const file = await observeEnvelopeWindowsFile(generationEnvelopePath(root, candidateSha));
-  if (file.state === "present" && file.value.sourceSha === candidateSha) return file.value;
   if (!generationPresent) return null;
   const source = await readHostBundleSource(root, candidateSha);
   if (!source) return null;
-  return envelopeWindowsFromRecipe(source, envelopeProfileShape(pin) ? pin : undefined);
+  // Analyze the same recipe that the next writer will actually apply. A retained
+  // observation made with the old pin is historical evidence, not the candidate
+  // recipe; reusing it hides newly added context slices from the review command.
+  try {
+    return envelopeWindowsFromRecipe(source, profileFromSource(source, authoringSlices(recipe), "write-envelope-candidate"));
+  } catch { return null; }
 }
 
 /** Read-only write-gate compare for analyze. Never authors reviewed.json. */
-export async function inspectRetainedWriteEnvelope(root: string, candidateSha: string): Promise<ProfileWriteInspect> {
+export async function inspectRetainedWriteEnvelope(root: string, candidateSha: string, recipe: readonly SlicePatch[] = LIVE_SLICE_PATCHES): Promise<ProfileWriteInspect> {
   if (typeof root !== "string" || !isAbsolute(root)) invalid("Profile write lineage requires an absolute runtime root.");
   if (!SHA.test(candidateSha)) invalid("--sha must be a 64-character lowercase hex source digest.");
   const resolved = resolve(root);
   const baseline = await loadWriteEnvelopeBaseline(resolved);
   const generationPresent = await retainedGenerationPresent(resolved, candidateSha);
-  const candidate = await loadCandidateEnvelopeWindows(resolved, candidateSha, baseline.pin, generationPresent);
+  const candidate = await loadCandidateEnvelopeWindows(resolved, candidateSha, recipe, generationPresent);
   const admission = admitWriteEnvelope({
     pinSha: baseline.pinSha,
     golden: baseline.golden,
