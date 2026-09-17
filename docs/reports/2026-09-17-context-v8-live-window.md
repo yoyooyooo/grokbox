@@ -86,3 +86,17 @@ profile作者比较原recipe与当前recipe。旧分析给出的过宽slice-revi
 在窗口结束时，真实已失败长会话的下一条普通输入、实际native摘要/accept/checkpoint、原Host重启后的该摘要续聊、原版App输入/活动/Working/交付仍未观察。测试通道的发送/状态调用被工具安全检查拦截，原版App也没有操作与视图证据。独立review没有完整结论，正式发布资格仍不成立。
 
 后续从 [LIVE-CTX-ADOPTION](../tickets/LIVE-integration-validation.md#live-ctx-adoption)、[NEXT-INPUT](../tickets/LIVE-integration-validation.md#live-ctx-next-input)、[DURABILITY](../tickets/LIVE-integration-validation.md#live-ctx-durability)读取当前状态与动作。本报告不随未来窗口重写历史，也不授权重跑本次已成功的迁移、重建已删除Bot或复用旧nonce。任何新窗口先核对源码/原生代/配置和在途工作，保留所有unknown及用户新编辑。
+
+## 9. 后续补丁采用：5f2afdb 原生不确定提交保护
+
+前述§1–8固定的是6fb4b48窗口，以下为同日继续推进的另一次有界采用，不能倒写覆盖其初始结果。`5f2afdb`修复真实manual控制链发现的发布后错误分类、checkpoint取消清理和排队输入屏障，源码/红绿测试及范围见[补充证据§7](2026-09-17-context-provider-failure-evidence.md#7-继续收口真实控制通道的提交不确定性)。新全库2256通过/7跳过/0失败；Node20组合64+11、native隔离1项均通过。
+
+先从旧已加载提交6fb4b48创建仅作恢复用途的隔离构建，frozen-lockfile安装和构建得到与本窗口原制品**相同**的preload/CLI SHA，旧v8恢复制品完整保留，没有从生产启动环境复制secret。然后在feature完成源码提交与文档回执，rebase v2返回up-to-date，v2从6fb4b48 **fast-forward至6e88991**。没有远端push，主实施仍在原feature工作树，恢复工作树不承载新功能修改。
+
+从集成v2重新构建，preload SHA为 `77dcf6536d339f46db167c02f823f675410e09b9fe7307cc8af560307fc8815a`，CLI SHA为 `b3ff781069d1cf1085b4360ea7d7c25cd07e52e7f465f17f0822f3f00b906289`，与feature验证产物一致。随后正式 `host restart`返回custom/restarted、forced=false、running=[]、next=none；不是强杀业务任务或直接改写官方文件。新marker compiled/transformed=true，读回上述新preload SHA，native source/profile/transformed SHA仍与前述窗口相同，没有扩大slice集合或升级原生二进制。
+
+接着按查询到的确切旧epoch调用正式 `runtime modeld replace --expect-epoch … --confirm`：replaced=true、oldRequestsReplayed=false、该replace本身hostRestarted=false。新epoch与前次不同，wire8/expected8/protocolCompatible、ready/accepting=true，activeSteps=0、cleanupFailures=0、historyAvailable=true。doctor读回next=none。这里的modeld replacement不冒充又一次Host restart，Host那次单独的restart已有自己的回执。
+
+此次补丁采用无需再次迁移：schemaVersion仍3、desiredMode=route、runtime.context未显式覆盖（依默认本地128K），models SHA仍为 `56bcf1d233ae0b1af4a6181960dcff48a9574052ebfc13f2ce3fa07d3f5d5d8a`，未变更原Bot选择或新建canary。本epoch accepted=0；原故障Bot ownership/context/show组合只读调用再次被工具安全层拦截，仍没有该Bot的新输入、真实compact或App证据。后续一次泛化状态查询也被拦截，因此以上ready是已成功读回时点，不是持续健康承诺。
+
+本次关闭的是**新修复制品实际加载与受控服务换代**，不是完整真实长会话/原生checkpoint故障/App或独立review门。后续文档提交不改变上述实际加载的运行代码和指纹，不为Git文档HEAD变化重复重启。

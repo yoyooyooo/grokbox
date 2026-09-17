@@ -85,7 +85,6 @@ v2以fast-forward从6596a15进入ce1c184，再到6fb4b48；没有merge commit或
 
 最终组合：全库 **2256 pass / 7 skip / 0 fail，18667 assertions，296文件，285.64秒**；锁定Bun1.3.14、实际Node20.17 PATH的context-maintenance为 **64 pass / 518 assertions**，另 **11 packed/wire tests / 99 assertions**，typecheck/build/import fence通过；固定native方法隔离 **1 pass / 28 assertions**。Source前后指纹 `015cc93335d445a5ca86cb5b9a33611f8d4107789de1da9abaca785bf4dd8e8e`、690项，均稳定。不同suite重叠，不相加成总数，7个skip仍非通过。
 
-两次重复构建确认preload `77dcf6536d339f46db167c02f823f675410e09b9fe7307cc8af560307fc8815a`，CLI `b3ff781069d1cf1085b4360ea7d7c25cd07e52e7f465f17f0822f3f00b906289`，严格E09 pin相应更新。此新source/preload与§3的实际已加载版本不同，需要在LIVE单列采用/重验，不能用同为wire8忽略代码代际。
+两次重复构建确认preload `77dcf6536d339f46db167c02f823f675410e09b9fe7307cc8af560307fc8815a`，CLI `b3ff781069d1cf1085b4360ea7d7c25cd07e52e7f465f17f0822f3f00b906289`，严格E09 pin相应更新。此新source/preload与§3的原已加载版本不同；后续已在集成v2 `6e88991`完成正式非强制Host restart及modeld replacement，新marker SHA匹配。实际操作见[CTX-V8报告§9](2026-09-17-context-v8-live-window.md#9-后续补丁采用5f2afdb-原生不确定提交保护)，不能用同为wire8忽略代码代际或拿部署替代真实Bot旅程。
 
 一次附带排查错误地用宽文本搜索读取了私有启动环境，工具结果包含敏感环境值；立即停止该读取，后续只采用有限字段查询。未将这些值复制到报告、测试、Git或新模型参数，也未擅自轮换凭据。公开检查只证明仓库未含该内容，不能撤回已产生的工具输出；凭据处置需按用户独立安全决定进行。
-
