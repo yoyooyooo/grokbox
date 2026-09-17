@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, writeFile, readFile, readlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { defaultConfig, validateConfig } from "@grokbox/runtime-kernel/config";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { planConfigurationMigration, applyConfigurationMigration, recoverConfigurationMigration, configurationMigrationStatus } from "../src/internal/io/config-migrate.node.ts";
 import { openConfigStore } from "../src/internal/io/config-store.node.ts";
 import { readConfigLayout, publishConfigFile, rootConfigLayout } from "../src/internal/io/config-layout.node.ts";
@@ -112,6 +113,76 @@ for (const interruptedAt of [undefined, "published"] as const) test(`general mig
   } else expect((await applyConfigurationMigration(options, plan.planDigest, quiet)).phase).toBe("retired");
   expect(await readFile(join(root, "models.json"), "utf8")).toBe(modelBytes);
   expect(await readlink(join(home, "models.json"))).toBe(join(root, "models.json"));
+});
+
+/** Reconstruct the old, completed config-v2 manifest shape in an owned fixture.
+ * The old migrator left only the current pointer, not a per-operation manifest. */
+async function completedV2Fixture() {
+  const f = await fixture();
+  const firstPlan = await planConfigurationMigration(f.options, quiet);
+  const first = await applyConfigurationMigration(f.options, firstPlan.planDigest, quiet);
+  const pointer = join(f.root, "state", "config-migration.json");
+  const manifest = JSON.parse(await readFile(pointer, "utf8"));
+  const v2 = { ...JSON.parse(await readFile(join(f.root, "config.json"), "utf8")), schemaVersion: 2 };
+  manifest.candidateDigest = sha256Text(canonicalJson(v2));
+  const directory = join(f.root, "state", "config-migrations", first.operationId);
+  await publishConfigFile(join(f.root, "config.json"), v2);
+  await publishConfigFile(join(directory, "candidate.json"), v2);
+  await unlink(join(directory, "manifest.json"));
+  const predecessorText = `${JSON.stringify(manifest)}\n`;
+  await writeFile(pointer, predecessorText, { mode: 0o600 });
+  return { ...f, directory, pointer, predecessorText, oldOperationId: first.operationId, v2 };
+}
+
+for (const interruption of [undefined, "prepared", "published"] as const) test(`v2 to v3 can follow an already retired migration, interruption=${interruption ?? "none"}`, async () => {
+  const f = await completedV2Fixture();
+  const protectedBackup = await readFile(join(f.directory, "backup-home.json"), "utf8");
+  const plan = await planConfigurationMigration(f.options, quiet);
+  expect(plan.canApply).toBe(true);
+  expect(plan.previousMigration?.operationId).toBe(f.oldOperationId);
+  expect(plan.candidate.schemaVersion).toBe(3);
+  expect(await readFile(join(f.directory, "manifest.json")).catch((error: NodeJS.ErrnoException) => error.code)).toBe("ENOENT");
+  let result;
+  if (interruption) {
+    await expect(applyConfigurationMigration(f.options, plan.planDigest, { ...quiet, checkpoint: async phase => {
+      if (phase === interruption) throw new Error("successor interruption");
+    } })).rejects.toThrow("successor interruption");
+    result = await recoverConfigurationMigration(f.root, quiet);
+  } else result = await applyConfigurationMigration(f.options, plan.planDigest, quiet);
+  expect(result.phase).toBe("retired");
+  expect(result.operationId).not.toBe(f.oldOperationId);
+  expect(await readFile(join(f.directory, "manifest.json"), "utf8")).toBe(f.predecessorText);
+  expect(await readFile(join(f.directory, "backup-home.json"), "utf8")).toBe(protectedBackup);
+  expect(await readFile(join(f.root, "models.json"), "utf8")).toBe(f.modelBytes);
+  expect(await readlink(join(f.home, "config.json"))).toBe(join(f.root, "config.json"));
+  const current = JSON.parse(await readFile(join(f.root, "config.json"), "utf8"));
+  expect(current).toEqual({ ...f.v2, schemaVersion: 3 });
+  expect(await applyConfigurationMigration(f.options, plan.planDigest, quiet)).toEqual(result);
+});
+
+test("successor migration refuses changed predecessor or conflicting archive without replacing configuration", async () => {
+  const f = await completedV2Fixture();
+  const plan = await planConfigurationMigration(f.options, quiet);
+  const changed = JSON.parse(f.predecessorText); changed.planDigest = "a".repeat(64);
+  await publishConfigFile(f.pointer, changed);
+  await expect(applyConfigurationMigration(f.options, plan.planDigest, quiet)).rejects.toThrow("changed");
+  expect(JSON.parse(await readFile(join(f.root, "config.json"), "utf8"))).toEqual(f.v2);
+  await writeFile(f.pointer, f.predecessorText, { mode: 0o600 });
+  await publishConfigFile(join(f.directory, "manifest.json"), changed);
+  await expect(applyConfigurationMigration(f.options, plan.planDigest, quiet)).rejects.toThrow("conflicts");
+  expect(await readFile(f.pointer, "utf8")).toBe(f.predecessorText);
+  expect(JSON.parse(await readFile(join(f.root, "config.json"), "utf8"))).toEqual(f.v2);
+});
+
+test("unfinished predecessor is a recovery requirement, not a new migration", async () => {
+  const f = await completedV2Fixture();
+  const unfinished = JSON.parse(f.predecessorText); unfinished.phase = "published";
+  await publishConfigFile(f.pointer, unfinished);
+  const plan = await planConfigurationMigration(f.options, quiet);
+  expect(plan.canApply).toBe(false);
+  expect(plan.conflicts).toContain("migration-recovery-required");
+  await expect(applyConfigurationMigration(f.options, plan.planDigest, quiet)).rejects.toThrow("blocked");
+  expect(JSON.parse(await readFile(join(f.root, "config.json"), "utf8"))).toEqual(f.v2);
 });
 
 test("general migration creates model v2 only when no model file exists", async () => {

@@ -24,6 +24,7 @@ export type MigrationPlan = {
   models: unknown; modelsExist: boolean;
   conflicts: string[]; blockedWriters: MigrationWriter[]; canApply: boolean;
   opsRevalidation: boolean;
+  previousMigration?: { operationId: string; planDigest: string; sha256: string };
 };
 type Manifest = {
   schemaVersion: 1; operationId: string; phase: "prepared" | "publishing" | "published" | "activated" | "retired";
@@ -102,6 +103,12 @@ export async function inspectConfigurationWriters(options: MigrationOptions): Pr
 export async function planConfigurationMigration(input: MigrationOptions, ports: MigrationPorts = {}): Promise<MigrationPlan> {
   const options = { ...input, configDir: resolve(input.configDir), root: resolve(input.role === "client" ? input.configDir : input.root) };
   const sources: Source[] = []; const conflicts: string[] = [];
+  const previousSource = await readConfigSource(manifestPath(options.root), true);
+  const previous = previousSource ? parseMigrationManifest(previousSource.value, options.root) : undefined;
+  if (previous && previous.phase !== "retired") conflicts.push("migration-recovery-required");
+  const previousMigration = previous && previousSource ? {
+    operationId: previous.operationId, planDigest: previous.planDigest, sha256: previousSource.sha256,
+  } : undefined;
   async function capture(key: string, path: string, retire = false): Promise<unknown | undefined> {
     if (sources.some((source) => source.path === path)) return sources.find((source) => source.path === path)!.value;
     try {
@@ -213,20 +220,24 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
   // the old empty-seed plan digest while publishing a different document.
   const descriptor = { options, sources: sources.map(({ key, path, sha256, retire }) => ({ key, path, sha256, retire })), candidate,
     modelInitialization: models === undefined && options.role === "box" ? modelDocument : null,
-    security: options.role === "box" ? security : null, opsRevalidation };
+    security: options.role === "box" ? security : null, opsRevalidation, previousMigration: previousMigration ?? null };
   return {
     schemaVersion: 1, options, planDigest: sha256Text(canonicalJson(descriptor)), sources, candidate,
     ...(options.role === "box" ? { installation: security as InstallationState } : {}),
     models: modelDocument,
     modelsExist: models !== undefined, conflicts: [...new Set(conflicts)], blockedWriters,
     canApply: conflicts.length === 0 && blockedWriters.length === 0, opsRevalidation,
+    ...(previousMigration ? { previousMigration } : {}),
   };
 }
 export function migrationPreview(plan: MigrationPlan) {
   return { schemaVersion: 1, planDigest: plan.planDigest, role: plan.options.role, canApply: plan.canApply,
     sources: plan.sources.map(({ key, sha256, retire }) => ({ key, sha256, disposition: retire ? "backup-and-retire" : "preserve" })),
     conflicts: plan.conflicts, blockedWriters: plan.blockedWriters, models: plan.modelsExist ? "preserved-in-place" : plan.options.role === "box" ? "initialize-empty" : "not-created",
-    credentials: "existing-reference-locations-preserved", opsAuthorization: plan.opsRevalidation ? "revalidation-required" : "not-created" };
+    credentials: "existing-reference-locations-preserved", opsAuthorization: plan.opsRevalidation ? "revalidation-required" : "not-created",
+    targetSchemaVersion: plan.candidate.schemaVersion,
+    ...(plan.previousMigration ? { previousMigration: { operationId: plan.previousMigration.operationId, disposition: "preserve-completed-receipt" } } : {}),
+    contextMaintenance: { defaultMode: "auto", localWindowTokens: 128000, activation: "matching-runtime-required", modelCallsDuringMigration: 0 } };
 }
 function parseMigrationManifest(value: unknown, root: string): Manifest {
   const fail = () => { throw new ConfigError("config_commit_unknown", "Migration manifest requires manual recovery."); };
@@ -291,6 +302,19 @@ async function retireSource(source: Manifest["sources"][number], manifest: Manif
   await rename(source.path, retired);
 }
 
+/** Retired receipts are immutable history. Replacing the current manifest for a
+ * later schema migration must not erase an earlier completed cutover or backup. */
+async function preserveCompletedMigration(manifest: Manifest, text?: string): Promise<void> {
+  if (manifest.phase !== "retired") throw new ConfigError("config_migration_required", "An unfinished migration must be recovered first.");
+  const path = join(workDir(manifest), "manifest.json");
+  const stored = await readConfigSource(path, true);
+  if (stored) {
+    if (canonicalJson(stored.value) !== canonicalJson(manifest)) throw new ConfigError("config_conflict", "Completed migration receipt conflicts with its preserved history.");
+    return;
+  }
+  await publishConfigFile(path, manifest, text);
+}
+
 async function finishMigration(manifest: Manifest, ports: MigrationPorts) {
   const { root, configDir, role } = manifest.options; const directory = workDir(manifest);
   if (manifest.phase !== "activated" && manifest.phase !== "retired") {
@@ -348,6 +372,7 @@ async function finishMigration(manifest: Manifest, ports: MigrationPorts) {
     for (const source of manifest.sources) if (!["home", "home-models"].includes(source.key)) await retireSource(source, manifest);
     await checkpoint(manifest, "retired", ports);
   }
+  await preserveCompletedMigration(manifest);
   return { operationId: manifest.operationId, phase: manifest.phase, role, configRevision: manifest.candidateDigest,
     models: manifest.modelsExist ? "preserved-in-place" : role === "box" ? "initialized" : "not-created", servicesStarted: false,
     application: "restart-required", credentialRetention: "not-proven", opsAuthorization: manifest.opsRevalidation ? "revalidation-required" : "not-created" };
@@ -369,8 +394,13 @@ export async function applyConfigurationMigration(options: MigrationOptions, pla
       return await acquireMigrationLease(root);
     }),
     () => attempt(async () => {
-      const existing = await readConfigFile(manifestPath(root), true);
-      if (existing !== undefined) throw new ConfigError("config_migration_required", "An existing migration must be inspected or recovered, not overwritten.");
+      const existing = await readConfigSource(manifestPath(root), true);
+      if (existing) {
+        const predecessor = parseMigrationManifest(existing.value, root);
+        if (predecessor.phase !== "retired") throw new ConfigError("config_migration_required", "An existing migration must be recovered, not overwritten.");
+        if (existing.sha256 !== plan.previousMigration?.sha256) throw new ConfigError("config_conflict", "The preceding migration changed after preview.");
+        await preserveCompletedMigration(predecessor, existing.text);
+      } else if (plan.previousMigration) throw new ConfigError("config_conflict", "The preceding migration vanished after preview.");
       const refreshed = await planConfigurationMigration(options, ports);
       if (refreshed.planDigest !== planDigest || !refreshed.canApply) throw new ConfigError("config_conflict", "Migration evidence changed while acquiring the writer fence.");
       const manifest: Manifest = { schemaVersion: 1, operationId: randomUUID(), phase: "prepared", options: plan.options,
