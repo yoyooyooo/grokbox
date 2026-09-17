@@ -566,16 +566,23 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     };
     const finish = (reason: FinishReason, error?: VisibleFailure, rawUsage?: HostUsage) => {
       if (complete) return;
-      // Transport completion is not an answer. Reasoning-only/blank output must
-      // retain managed failure provenance instead of entering native empty-result retries.
+      // Transport completion is not a main answer. The explicitly qualified,
+      // inference-only memory/episode consumers accept complete blank text as
+      // no changes; do not turn that native no-op into a post-delivery failure.
+      // Unqualified/main blank output still retains managed failure provenance.
       // Host display only consumes SendToUser. A managed model that stops with
       // leftover assistant text must be reshaped into that Host tool, not treated
       // as a successful silent turn. Aux STEPs without the tool keep text internal.
       if (reason === "stop" && calls.size === 0 && held.length === 0) {
         const delivered = content.filter((part): part is SessionTextContentPart => part.type === "text").map((part) => part.text).join("");
         if (!delivered.trim()) {
-          reason = "error";
-          error = failure("invalid_stream", undefined, { ...streamCtx("normalize"), diagnostic: { normalizeCause: "empty_output", rejectSite: "host_terminal", stream: evidence.snapshot() } });
+          const aux = grokboxAuxFrom({ grokboxAux: request.aux });
+          if (aux && aux.parent.modelId === config.modelId && envelope.tools.length === 0) {
+            evidence.setCount("auxiliaryEmptyCompletions", 1);
+          } else {
+            reason = "error";
+            error = failure("invalid_stream", undefined, { ...streamCtx("normalize"), diagnostic: { normalizeCause: "empty_output", rejectSite: "host_terminal", stream: evidence.snapshot() } });
+          }
         } else if (declaredTools.has("SendToUser")) {
           const endTurn = declaredTextEndTurn(envelope.tools.find(tool => tool.name === "SendToUser")!);
           const call: ToolCall = {

@@ -12,8 +12,9 @@ export type AuxAdmit =
 
 export type AuxOutcome =
   | { kind: "ok"; purpose: AuxPurpose; auxRequestId: string; text: string }
+  | { kind: "empty"; purpose: AuxPurpose; auxRequestId: string }
   | { kind: "refused"; code: AuxRefuseCode }
-  | { kind: "failed"; purpose: AuxPurpose; auxRequestId: string; code: "auxiliary_failed" | "auxiliary_empty" | "auxiliary_stale" };
+  | { kind: "failed"; purpose: AuxPurpose; auxRequestId: string; code: "auxiliary_failed" | "auxiliary_stale" };
 
 function parentIsLive(parentLive: boolean | (() => boolean)): boolean {
   return typeof parentLive === "function" ? parentLive() : parentLive;
@@ -109,7 +110,9 @@ export async function runAuxiliary(input: {
       return { kind: "failed", purpose: admitted.purpose, auxRequestId: admitted.auxRequestId, code: "auxiliary_failed" };
     }
     const text = assistantText(response);
-    if (!text) return { kind: "failed", purpose: admitted.purpose, auxRequestId: admitted.auxRequestId, code: "auxiliary_empty" };
+    // Native extraction/episode consumers treat completed blank text as no-op.
+    // Keep it distinct from a fact-bearing result and from failed/partial output.
+    if (!text.trim()) return { kind: "empty", purpose: admitted.purpose, auxRequestId: admitted.auxRequestId };
     return { kind: "ok", purpose: admitted.purpose, auxRequestId: admitted.auxRequestId, text };
   } catch {
     return { kind: "failed", purpose: admitted.purpose, auxRequestId: admitted.auxRequestId, code: "auxiliary_failed" };

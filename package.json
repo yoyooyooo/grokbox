@@ -61,7 +61,7 @@
     "shim:verify": "bun test test/local-shim.test.ts",
     "prepack": "bun run build",
     "test": "bun test",
-    "test:native-host": "GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/live-copy.test.ts packages/box-runtime/test/host-harness-emit.test.ts packages/box-runtime/test/host-managed-turn-retry.test.ts packages/box-runtime/test/host-compact.test.ts packages/box-runtime/test/transform.test.ts",
+    "test:native-host": "GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/live-copy.test.ts packages/box-runtime/test/host-harness-emit.test.ts packages/box-runtime/test/host-managed-turn-retry.test.ts packages/box-runtime/test/host-compact.test.ts packages/box-runtime/test/transform.test.ts packages/box-runtime/test/native-auxiliary-noop.test.ts",
     "check:publication": "node scripts/check-publication.mjs",
     "check:publication:history": "node scripts/check-publication.mjs --history --ref HEAD",
     "typecheck": "tsc --noEmit -p tsconfig.json",

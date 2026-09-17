@@ -494,6 +494,8 @@ MVP / 可发布声明的 ordinary main envelope：
 
 证明按 source / 实际 packed / 原生隔离资格 / live 合成触发 / 真实 provider 分层。旧 response-only S4 描述不再是当前源码事实；当前实现与未证项由原 verifier/Ticket 给出。错误作为错误交给 Host，不产生假 assistant 正文、空成功或假 tool call；工具、Transcript/Memory 的写入仍归 Host。
 
+原生 memory-extraction / episode 消费者允许**完整正常结束的空正文**表示无新增记忆／无叙事。仅在可信 purpose、匹配 parent/model、无 tools 的辅助请求上保留这一 no-op，并记录 `auxiliaryEmptyCompletions`；不制造 NONE 文本、不将 reasoning 写入 Memory、不把它当作主回复交付。主请求空输出、未完成流、取消、无资格 purpose 与工具输出仍按原有规则失败。辅助结果的 `empty` 与有正文的 `ok` 分开；诊断应在回复之后继续检查同一回合辅助终态，不能把首个可见回复当成全部步骤成功。
+
 `runtime status` 使用同一 status projector 的 installation/circuit 与 bridge、modeld、controller、mutation、recovery、hostDelivery facets；缺来源/错代/陈旧记录保持 unknown/gap，不用历史成功冒充当前 delivery。disabled 但仍 patched 不能显示 rollback-done，desired 写入不等于已卸载。只读命令不 repair/清 circuit/发模型请求；字段与上限由 canonical contract/source tests 验证。稳定版本还须固定 source/packed/Host profile 与运行代、支持模型/Bot、正常持久启用/停用及安全退路；临时 env canary 演示不是可持续配置，故障注入始终不作为正常功能。
 
 **发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。最终批准使用readiness现有记录，不由某个绿色测试或ownership结果直接生成。
