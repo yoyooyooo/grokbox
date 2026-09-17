@@ -11,7 +11,7 @@ import { ownershipUseError, readManagedOwnership, type OwnershipReader, type Own
 
 type Source = { evidence: OwnershipAdmission; gateway: OwnershipReadReply["gateway"]; remote: RemoteOwnershipEvidence;
   evidenceId?: string; observation?: OwnershipWaitObservation; recovery?: OwnershipRecoveryObservation };
-type ReadInput = { agentId: string; gatewayPid?: number; hostGeneration: string; waitBudgetMs?: number };
+type ReadInput = { agentId: string; gatewayPid?: number; hostGeneration: string; waitBudgetMs?: number; evidenceOwner?: object };
 type Entry = {
   key: string; operationId: string; agentId: string; hostKey: string;
   createdTick: bigint; receivedTick?: bigint; ageAtReceiptMs: number;
@@ -21,7 +21,8 @@ type Entry = {
   failure?: BoxRuntimeError;
 };
 type Waiter = { id: number; observationId: string; startedTick: bigint; entry?: Entry; state: OwnershipWaitObservation["state"];
-  queueStarted?: bigint; queueMs: number; sourceWaitMs: number; localWitnessMs: number };
+  queueStarted?: bigint; queueMs: number; sourceWaitMs: number; localWitnessMs: number;
+  evidenceUse?: OwnershipWaitObservation["evidenceUse"] };
 type Options = { sourceWaitMs?: number; waiterWaitMs?: number; cacheMs?: number; maxEntries?: number; maxWaiters?: number };
 const elapsed = (now: bigint, then: bigint) => Math.max(0, Number(now - then) / 1_000_000);
 const bounded = (value: number | undefined, fallback: number, allowZero = false) => {
@@ -45,6 +46,16 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
     const maxEntries = bounded(options.maxEntries, STRICT_AUTHORITY_POLICY.maxEntries);
     const maxWaiters = bounded(options.maxWaiters, STRICT_AUTHORITY_POLICY.maxWaiters);
     const entries = new Map<string, Entry>();
+    // Only an operation identity is associated with a claimed STEP. No extra
+    // source payload is retained outside the bounded entries map, and a dead
+    // STEP does not acquire a service-owned lifetime through this weak key.
+    const reuseOwners = new WeakMap<object, string>();
+    const canReuse = (entry: Entry, now: bigint, owner?: object) => {
+      const limit = owner && reuseOwners.get(owner) === entry.operationId
+        ? STRICT_AUTHORITY_POLICY.evidenceMaxAgeMs : cacheMs;
+      return !entry.retired && entry.value !== undefined && entry.receivedTick !== undefined && now >= entry.receivedTick
+        && entry.ageAtReceiptMs + elapsed(now, entry.receivedTick) < limit;
+    };
     const observedScopes = new Map<string, string>();
     const queued = new Map<number, { key: string; wake: Deferred.Deferred<void> }>();
     let nextWaiter = 0;
@@ -118,13 +129,11 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
       const key = canonicalJson([local.hostKey, local.witness.scopeId, input.agentId]);
       let entry = entries.get(key);
       if (entry && !entry.logicalPending && !entry.physicalPending && entry.waiters === 0
-        && (entry.retired || !entry.value || entry.receivedTick === undefined
-          || entry.ageAtReceiptMs + elapsed(now, entry.receivedTick) >= cacheMs)) {
+        && !canReuse(entry, now, input.evidenceOwner)) {
         entries.delete(key); entry = undefined;
       }
       if (closed) return yield* Effect.fail(busy(input.agentId));
-      if (entry?.retired || entry && !entry.logicalPending && (!entry.value || entry.receivedTick === undefined
-        || entry.ageAtReceiptMs + elapsed(now, entry.receivedTick) >= cacheMs)) return wait();
+      if (entry?.retired || entry && !entry.logicalPending && !canReuse(entry, now, input.evidenceOwner)) return wait();
       if (!entry) {
         // Fairness applies to requests eligible for a free source slot. A
         // retired, physically stuck operation for A must not block B when a
@@ -132,8 +141,7 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
         const head = [...queued].find(([, slot]) => {
           const held = entries.get(slot.key);
           return !held || held.waiters === 0 && !held.logicalPending && !held.physicalPending
-            && (held.retired || !held.value || held.receivedTick === undefined
-              || held.ageAtReceiptMs + elapsed(now, held.receivedTick) >= cacheMs);
+            && !canReuse(held, now);
         })?.[0];
         if (head !== undefined && head !== waiter.id) return wait();
         // Eviction only discards an unused observation. It cannot discard a
@@ -146,7 +154,7 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
         const fresh: Entry = { key, operationId: randomUUID(), hostKey: local.hostKey, agentId: input.agentId, createdTick: now, ageAtReceiptMs: 0,
           done: Deferred.makeUnsafe<Source, BoxRuntimeError>(), waiters: 0, logicalPending: true, physicalPending: false, retired: false };
         entries.set(key, fresh); entry = fresh; created++;
-        fresh.waiters++; waiter.entry = fresh; waiter.state = "source";
+        fresh.waiters++; waiter.entry = fresh; waiter.state = "source"; waiter.evidenceUse = "source";
         queued.delete(waiter.id);
         const tracked: OwnershipReader = (ids, signal) => {
           fresh.physicalPending = true;
@@ -182,6 +190,8 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
         fresh.fiber = yield* Effect.forkIn(source, scope, { uninterruptible: false });
       } else {
         waiter.state = entry.logicalPending ? "shared" : "cached";
+        waiter.evidenceUse = entry.logicalPending ? "shared"
+          : input.evidenceOwner && reuseOwners.get(input.evidenceOwner) === entry.operationId ? "step" : "cache";
         if (entry.logicalPending) joined++;
         else cacheHits++;
         entry.waiters++; waiter.entry = entry;
@@ -246,6 +256,9 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
           ? ownershipUseError(entry.retiredReason, "unavailable", input.agentId) : busy(input.agentId));
         waiter.state = "validating";
         const after = yield* local();
+        // Local witness acquisition can suspend while another reader observes
+        // invalidation. A later ready witness cannot revive the retired source.
+        if (entry.retired) return yield* Effect.fail(ownershipUseError(entry.retiredReason ?? "ownership_identity_changed", "unconfirmed", input.agentId));
         if (!sameGateway(before.result.gateway, after.result.gateway) || !sameGateway(value.gateway, after.result.gateway)) {
           entry.retired = true;
           return yield* Effect.fail(ownershipUseError("ownership_gateway_mismatch", "unavailable", input.agentId));
@@ -258,7 +271,10 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
         if (entry.receivedTick === undefined || tick < entry.receivedTick
           || entry.ageAtReceiptMs + elapsed(tick, entry.receivedTick) > STRICT_AUTHORITY_POLICY.evidenceMaxAgeMs) {
           entry.retired = true;
-          return yield* Effect.fail(ownershipUseError("ownership_evidence_stale", "unconfirmed", input.agentId));
+          const evidenceAgeMs = entry.receivedTick !== undefined && tick >= entry.receivedTick
+            ? Math.ceil(entry.ageAtReceiptMs + elapsed(tick, entry.receivedTick)) : undefined;
+          return yield* Effect.fail(ownershipUseError("ownership_evidence_stale", "unconfirmed", input.agentId, value.remote.readObservation,
+            evidenceAgeMs === undefined ? undefined : { availabilityCause: "evidence_elapsed", evidenceAgeMs }));
         }
         const decision = decideOwnershipWithLocal({ agentId: input.agentId, remote: value.remote,
           localSnapshot: after.result.snapshot, nowMs: yield* Clock.currentTimeMillis });
@@ -266,9 +282,10 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
           entry.retired = true;
           return yield* Effect.fail(ownershipUseError(decision.reason, decision.class, input.agentId, decision.ownershipRead));
         }
+        if (input.evidenceOwner) reuseOwners.set(input.evidenceOwner, entry.operationId);
         return { ...value, gateway: after.result.gateway, evidence: decision.evidence, evidenceId: entry.operationId,
           observation: { version: 1 as const, policyId: STRICT_AUTHORITY_POLICY.id, waiterId: waiter.observationId,
-            sourceOperationId: entry.operationId, state: waiter.state, outcome: "observed" as const,
+            sourceOperationId: entry.operationId, state: waiter.state, evidenceUse: waiter.evidenceUse, outcome: "observed" as const,
             durationMs: Math.ceil(elapsed(tick, waiter.startedTick)), waitBudgetMs: Math.floor(budget),
             queueMs: Math.ceil(waiter.queueMs), sourceWaitMs: Math.ceil(waiter.sourceWaitMs), localWitnessMs: Math.ceil(waiter.localWitnessMs),
             sourceBudgetMs: sourceWaitMs, sourceAgeMs: Math.ceil(entry.ageAtReceiptMs + elapsed(tick, entry.receivedTick)),
@@ -291,7 +308,7 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
           return yield* Effect.fail(annotateStreamFailure(copy, { ...prior, rejectSite: "authority_check",
             authority: { ...prior?.authority, reason: prior?.authority?.reason ?? "ownership_read_unavailable", waitBudgetMs: Math.floor(budget),
               ownershipWait: { version: 1, policyId: STRICT_AUTHORITY_POLICY.id, waiterId: waiter.observationId,
-                state: waiter.state, outcome, durationMs: Math.ceil(elapsed(tick, waiter.startedTick)), waitBudgetMs: Math.floor(budget),
+                state: waiter.state, evidenceUse: waiter.evidenceUse, outcome, durationMs: Math.ceil(elapsed(tick, waiter.startedTick)), waitBudgetMs: Math.floor(budget),
                 queueMs: Math.ceil(waiter.queueMs + (waiter.queueStarted === undefined ? 0 : elapsed(tick, waiter.queueStarted))),
                 sourceWaitMs: Math.ceil(waiter.sourceWaitMs), localWitnessMs: Math.ceil(waiter.localWitnessMs),
                 ...(entry ? { sourceOperationId: entry.operationId, sourceBudgetMs: sourceWaitMs,
@@ -313,7 +330,7 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
       let firstReadReason: OwnershipRecoveryObservation["firstReadReason"], firstReadDurationMs: number | undefined;
       while (true) {
         const remaining = budget - elapsed(yield* Clock.monotonicTimeNanos, started);
-        const result = yield* Effect.result(readOnce({ ...input, waitBudgetMs: remaining }));
+        const result = yield* Effect.result(readOnce({ ...input, evidenceOwner: control.evidenceOwner, waitBudgetMs: remaining }));
         attempt++;
         if (result._tag === "Success") return { ...result.success,
           recovery: { version: 1, attempts: attempt, backoffMs: Math.ceil(backoffMs), firstReadCode, firstReadReason, firstReadDurationMs } };
@@ -328,10 +345,16 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
         // Busy after a timed-out source is not a new server failure. Retain
         // the detecting failure and separately record the blocked refresh.
         const actual = detail?.ownershipRead?.errorCode === "busy" ? firstFailure : failure;
+        // The coordinator may return its waiter timeout just before the outer
+        // gate timer fires. Preserve that actual boundary while identifying
+        // exhaustion of the STEP-supplied allowance, not a fresh source error.
+        const exhaustedAllowance = failure.failureCode === "ownership_read_timeout" && control.waitBudgetMs <= waiterWaitMs
+          && elapsed(yield* Clock.monotonicTimeNanos, started) >= budget;
         const finish = () => {
           const prior = streamFailureDiagnostic(actual);
           return Effect.fail(annotateStreamFailure(new BoxRuntimeError(actual.code, actual.message, actual), {
             ...prior, authority: { ...prior?.authority, reason: prior?.authority?.reason ?? "ownership_read_unavailable",
+              ...(exhaustedAllowance ? { availabilityCause: "wait_budget" as const } : {}),
               readRecovery: { version: 1, attempts: attempt, backoffMs: Math.ceil(backoffMs), firstReadCode, firstReadReason, firstReadDurationMs,
                 lastReadCode: detail?.ownershipRead?.errorCode } },
           }));

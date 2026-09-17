@@ -74,6 +74,94 @@ const fixture = Effect.gen(function* () {
   return { state, calls, signals, hold, reader };
 });
 
+for (const delay of [2500, 3000, 4000]) test(`same STEP reuses a ${delay}ms observation without renewing its age or another STEP's cache`, async () => {
+  await run(Effect.gen(function* () {
+    const f = yield* fixture, release = f.hold(), service = yield* makeOwnershipCoordinator(f.reader);
+    const control = { evidenceOwner: {}, waitBudgetMs: 10000, takeRetry: () => Effect.succeed(false) };
+    const first = yield* Effect.forkChild(service.current(input(), control));
+    yield* flushUntil(() => f.calls.length === 1);
+    yield* TestClock.adjust(`${delay} millis`); release();
+    const original = yield* Fiber.join(first);
+    for (let n = 0; n < 4; n++) {
+      const reused = yield* service.current(input(), control);
+      expect(reused.evidence.observedAtMs).toBe(original.evidence.observedAtMs);
+      expect(reused.evidenceId).toBe(original.evidenceId);
+      expect(reused.observation).toMatchObject({ evidenceUse: "step", sourceAgeMs: delay, policyId: "strict-observation-v2" });
+    }
+    expect(f.calls.length).toBe(1); expect(f.state.localCalls).toBe(10);
+    // A copied/new owner cannot borrow the older source, even in the same Agent/TURN.
+    const other = yield* service.current(input(), { ...control, evidenceOwner: { ...control.evidenceOwner } });
+    expect(f.calls.length).toBe(2); expect(other.evidenceId).not.toBe(original.evidenceId);
+    expect(service.snapshot()).toMatchObject({ activeWaiters: 0, activeSources: 0, retainedEntries: 1 });
+  }));
+});
+
+test("same-STEP evidence expires from its original start and eviction cannot resurrect it", async () => {
+  await run(Effect.gen(function* () {
+    const f = yield* fixture, service = yield* makeOwnershipCoordinator(f.reader, { maxEntries: 1 });
+    const control = { evidenceOwner: {}, waitBudgetMs: 10000, takeRetry: () => Effect.succeed(false) };
+    const first = yield* service.current(input(), control);
+    yield* TestClock.adjust("4999 millis");
+    const last = yield* service.current(input(), control);
+    expect(last.evidenceId).toBe(first.evidenceId); expect(last.evidence.observedAtMs).toBe(first.evidence.observedAtMs);
+    yield* TestClock.adjust("2 millis");
+    const refreshed = yield* service.current(input(), control);
+    expect(refreshed.evidenceId).not.toBe(first.evidenceId); expect(f.calls.length).toBe(2);
+    yield* service.current(input(B));
+    yield* service.current(input(), control);
+    expect(f.calls).toEqual([A, A, B, A]);
+    expect(service.snapshot().retainedEntries).toBe(1);
+  }));
+});
+
+test("a fresh source expiring during local validation records evidence elapsed, not a slow source", async () => {
+  await run(Effect.gen(function* () {
+    const f = yield* fixture, original = f.reader.local!;
+    let calls = 0, release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    f.reader.local = async (ids, signal) => { if (++calls === 2) await held; return original(ids, signal); };
+    const service = yield* makeOwnershipCoordinator(f.reader);
+    const pending = yield* Effect.forkChild(Effect.result(service.current(input(), {
+      evidenceOwner: {}, waitBudgetMs: 10000, takeRetry: () => Effect.succeed(false),
+    })));
+    yield* flushUntil(() => calls === 2);
+    yield* TestClock.adjust("5100 millis"); release();
+    const result = yield* Fiber.join(pending);
+    expect(result._tag).toBe("Failure");
+    if (result._tag === "Failure") expect(streamFailureDiagnostic(result.failure)?.authority).toMatchObject({
+      reason: "ownership_evidence_stale", availabilityCause: "evidence_elapsed", evidenceAgeMs: 5100,
+    });
+    expect(f.calls.length).toBe(1);
+  }));
+});
+
+test("same-STEP reuse cannot survive invalidation observed during the final local witness", async () => {
+  await run(Effect.gen(function* () {
+    const f = yield* fixture, service = yield* makeOwnershipCoordinator(f.reader);
+    const control = { evidenceOwner: {}, waitBudgetMs: 10000, takeRetry: () => Effect.succeed(false) };
+    yield* service.current(input(), control);
+    yield* TestClock.adjust("3000 millis");
+    const original = f.reader.local!;
+    let localCalls = 0, release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    f.reader.local = async (ids, signal) => {
+      const result = await original(ids, signal);
+      if (++localCalls === 2) await held;
+      return result;
+    };
+    const pending = yield* Effect.forkChild(Effect.result(service.current(input(), control)));
+    yield* flushUntil(() => localCalls === 2);
+    f.state.allowed = false;
+    expect((yield* Effect.result(service.current(input())))._tag).toBe("Failure");
+    f.state.allowed = true; release();
+    const result = yield* Fiber.join(pending);
+    expect(result._tag).toBe("Failure");
+    if (result._tag === "Failure") expect(result.failure.failureCode).toBe("native_execution_not_ready");
+    expect(f.calls.length).toBe(1);
+    expect(service.snapshot()).toMatchObject({ activeWaiters: 0, retainedEntries: 0 });
+  }));
+});
+
 for (const delay of [5500, 7750, 9000]) test(`bounded recovery replaces a stale ${delay}ms read with a distinct fresh read without widening policy`, async () => {
   await run(Effect.gen(function* () {
     const f = yield* fixture, release = f.hold(), service = yield* makeOwnershipCoordinator(f.reader);
@@ -257,7 +345,10 @@ for (const delay of [5500, 7750, 9000]) {
       release();
       const result = yield* Fiber.join(waiter);
       expect(result._tag).toBe("Failure");
-      if (result._tag === "Failure") expect(result.failure.failureCode).toBe("ownership_evidence_stale");
+      if (result._tag === "Failure") {
+        expect(result.failure.failureCode).toBe("ownership_evidence_stale");
+        expect(streamFailureDiagnostic(result.failure)?.authority).toMatchObject({ availabilityCause: "read_elapsed", evidenceAgeMs: delay });
+      }
       expect(f.calls.length).toBe(1);
       expect(service.snapshot().cachedSources).toBe(0);
     }));

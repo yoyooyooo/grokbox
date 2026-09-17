@@ -103,9 +103,9 @@ for (const mode of ["temporal", "old", "failure", "wrong-id"] as const) {
 
 for (const [mode, expected] of [
   ["temporal", { code: "runtime_ownership_conflict", next: `grokbox agents ownership ${A}` }],
-  ["confirmed-temporal", { code: "runtime_ownership_temporal", next: "grokbox agents create --harness box" }],
-  ["old", { code: "runtime_ownership_unavailable", next: "grokbox doctor then grokbox host start" }],
-  ["failure", { code: "runtime_ownership_unavailable", next: "grokbox doctor then grokbox host start" }],
+  ["confirmed-temporal", { code: "runtime_ownership_temporal", next: `grokbox agents ownership ${A}` }],
+  ["old", { code: "runtime_ownership_unavailable", failureCode: "server_read_unavailable", next: `grokbox agents ownership ${A}` }],
+  ["failure", { code: "runtime_ownership_unavailable", next: "grokbox doctor" }],
   ["wrong-id", { code: "runtime_ownership_unconfirmed", next: `grokbox agents ownership ${A}` }],
 ] as const) {
   test(`models use types ${mode} ownership refusal with next`, async () => {
@@ -117,6 +117,9 @@ for (const [mode, expected] of [
       expect(use.stdout).toBe("");
       const error = (parseJson(use.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
       expect(error).toMatchObject(expected);
+      expect(error.next).not.toContain("host start");
+      expect(error.next).not.toContain("title sync");
+      expect(error.next).not.toContain("agents create");
       expect(error.message.length).toBeGreaterThan(20);
       expect(error.message).not.toBe(error.failureCode ?? "");
       expect(error.next).not.toContain("host on");

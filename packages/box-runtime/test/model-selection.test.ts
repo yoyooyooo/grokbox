@@ -45,10 +45,10 @@ test("route per-Bot official/custom/official selection changes no other assignme
 
 const refusal = {
   conflict: { code: "runtime_ownership_conflict", next: `grokbox agents ownership ${A}`, failureCode: "harness_mismatch" },
-  temporal: { code: "runtime_ownership_temporal", next: "grokbox agents create --harness box", failureCode: "confirmed_temporal" },
+  temporal: { code: "runtime_ownership_temporal", next: `grokbox agents ownership ${A}`, failureCode: "confirmed_temporal" },
   unconfirmed: { code: "runtime_ownership_unconfirmed", next: `grokbox agents ownership ${A}` },
-  "missing-reader": { code: "runtime_ownership_unavailable", next: "grokbox doctor then grokbox host start", failureCode: "ownership_reader_unavailable" },
-  "old-bridge": { code: "runtime_ownership_unavailable", next: "grokbox doctor then grokbox host start" },
+  "missing-reader": { code: "runtime_ownership_unavailable", next: "grokbox doctor", failureCode: "ownership_reader_unavailable" },
+  "old-bridge": { code: "runtime_ownership_unavailable", next: "grokbox doctor" },
   stale: { code: "runtime_ownership_unconfirmed", next: `grokbox agents ownership ${A}`, failureCode: "ownership_evidence_stale" },
 } as const;
 

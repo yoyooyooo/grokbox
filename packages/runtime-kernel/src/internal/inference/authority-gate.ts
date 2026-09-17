@@ -52,7 +52,9 @@ export function validateAuthorityPermit(request: RunStepRequest, permit: Authori
         if (held?.lifecycle === "open") held.lifecycle = authorityRefusalIsRevocation(reason!) ? "revoked" : "closed";
         return next;
       });
-      return yield* Effect.fail(denied(reason, checkpoint, { ...(Number.isFinite(age) ? { evidenceAgeMs: Math.ceil(age) } : {}) }));
+      return yield* Effect.fail(denied(reason, checkpoint, {
+        ...(reason === "ownership_evidence_stale" ? { availabilityCause: "permit_elapsed" as const } : {}),
+        ...(Number.isFinite(age) ? { evidenceAgeMs: Math.ceil(age) } : {}) }));
     }
   });
 }
@@ -93,10 +95,11 @@ export function readAuthority(request: RunStepRequest, checkpoint: NonNullable<A
       const state = yield* SynchronizedRef.get(memory.ref);
       const existing = state.turns.get(turnKey(request));
       if (existing && existing.lifecycle !== "open") return yield* Effect.fail(denied(existing.lifecycle === "revoked" ? "turn_revoked" : "turn_closed", checkpoint));
-      if (remaining <= 0) return yield* Effect.fail(denied("ownership_read_timeout", checkpoint, { waitBudgetMs: 0 }));
+      if (remaining <= 0) return yield* Effect.fail(denied("ownership_read_timeout", checkpoint, { availabilityCause: "wait_budget", waitBudgetMs: 0 }));
       yield* publish("waiting");
       const authority = yield* AdmissionAuthority;
       const result = yield* Effect.result(authority.current(request, {
+        evidenceOwner: budget,
         waitBudgetMs: Math.max(0, remaining - elapsed(yield* Clock.monotonicTimeNanos, began)),
         takeRetry: () => Effect.sync(() => {
           if (budget.retries >= STRICT_AUTHORITY_POLICY.maxStepReadRetries) return false;
@@ -121,7 +124,8 @@ export function readAuthority(request: RunStepRequest, checkpoint: NonNullable<A
         || now - observedAtMs > STRICT_AUTHORITY_POLICY.evidenceMaxAgeMs) {
         const age = typeof observedAtMs === "number" && Number.isFinite(observedAtMs) ? Math.max(0, now - observedAtMs) : undefined;
         return yield* Effect.fail(denied(age !== undefined && age > STRICT_AUTHORITY_POLICY.evidenceMaxAgeMs ? "ownership_evidence_stale" : "ownership_evidence_invalid", checkpoint,
-          { ...detail, durationMs, evidenceAgeMs: age }));
+          { ...detail, durationMs, evidenceAgeMs: age,
+            ...(age !== undefined && age > STRICT_AUTHORITY_POLICY.evidenceMaxAgeMs ? { availabilityCause: "evidence_elapsed" as const } : {}) }));
       }
       if (yield* cancelled) return yield* Effect.fail(new BindingFailure("cancelled"));
       const after = yield* SynchronizedRef.get(memory.ref);
@@ -142,7 +146,7 @@ export function readAuthority(request: RunStepRequest, checkpoint: NonNullable<A
     const waiting = halt ? Effect.raceFirst(evaluate, Deferred.await(halt).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled"))))) : evaluate;
     return yield* waiting.pipe(
       Effect.timeout(`${remaining} millis`),
-      Effect.mapError(error => error instanceof BindingFailure ? error : denied("ownership_read_timeout", checkpoint, { waitBudgetMs: Math.floor(remaining) })),
+      Effect.mapError(error => error instanceof BindingFailure ? error : denied("ownership_read_timeout", checkpoint, { availabilityCause: "wait_budget", waitBudgetMs: Math.floor(remaining) })),
       Effect.tapError(error => Effect.gen(function* () {
         const detail = streamFailureDiagnostic(error)?.authority;
         const isCancel = error.code === "cancelled";

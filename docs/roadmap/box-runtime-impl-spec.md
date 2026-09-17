@@ -469,7 +469,7 @@ run-step 请求携 HostEpoch/agent/TURN/STEP、expected ServiceEpoch/Selection�
 | canonical output 与 Host replay | 每 STEP 默认 1 MiB 语义 UTF-8 输出；重复帧头与同工具最终参数不重复收费，不以累计分片数限制生产流。replay 与工具参数按固定存储块合并，另设 8 MiB 表示存储估算保护；块大小为分配目标，不是执行额度。terminal 留独立有界结算空间，预算失败记录 layer/metric/limit/measured，原始事件数和传输字节只作观测 |
 | server active clients / active STEP | 各最多 64；同 TURN 一次；超额 busy/capacity |
 | 单进程 retained payload 总预算 | 128 MiB，所有 incoming/request/queued-output 缓存按实际 bytes 计入；分配/增长前预留，耗尽拒绝新 work，不能靠每连接各自有界隐藏总量 |
-| admission wait / partial socket / request wall deadline | 当前Server-backed准入为10.5 s（ownership读10 s + 原local预算0.5 s，作为一次复合上限）；partial socket仍1 s；STEP总期限仍180 s，modeld流只用扣除准入后的余量，不再另开完整180 s；证据5 s年龄与2 s缓存独立判定，慢RPC不更新证据起点 |
+| admission wait / partial socket / request wall deadline | S10 已移除历史10.5 s复合准入计时器；资格检查共享每STEP累计10 s，partial socket仍1 s，整个STEP共用入口180 s期限，accepted不续期。证据从原始请求开始计龄，最大5 s；跨STEP缓存2 s，同一已认领STEP按S10.4复用仍合格的原始证据，不刷新时间起点 |
 | TURN cache / execution history | 无累计 STEP 配额；空闲 5 min 是资源冷存储条件，不是续步期限。热 TURN 软目标按活跃容量设置；精确去重摘要落磁盘，claim 持久后才 dispatch。测试包含小缓存、长期 STEP、冷恢复及存储失败 |
 | owned shutdown | 默认 2 s cleanup budget；超时关闭本地 transport、记录 unknown/cleanup gap，不等待外部模型永远结束 |
 
@@ -716,7 +716,7 @@ T38现场校准另有确认门，保留活反例不等于未实现阻断；T40�
 
 本节是本轮**唯一施工规格**，不新增第二份 build bible。范围是 modeld 执行与资源生命周期；策略裁决见 [ADR](../decisions/2026-09-16-modeld-effect-core.md)，责任取证见 [boundary audit](../maintainers/modeld-authority-boundaries.md)。本节细化/替代 S2–S5 中涉及 modeld 的重复启动、粗粒度 authority、共享读取与状态同步机制；未点名的 codec、Host loop、compact、原生持久化和 J13 义务保留。历史已完成票不重开，新工作使用 T43–T50。
 
-**实现与证明路由：** 当前执行核心已接入生产程序、v6 控制协议与有界观察；固定候选的聚合测试、完整回归、基线对照和未签门见 [离线验证报告](../reports/2026-09-17-modeld-effect-core-offline.md)。该报告不是原生/live 放行，最终类型检查与外层超时交互仍有明确缺口。T43–T49 的实现与资格状态分别记录，不将测试通过写成所有票据 Done。
+**实现与证明路由：** 当前执行核心已接入生产程序、v6 控制协议与有界观察；原始 [离线验证报告](../reports/2026-09-17-modeld-effect-core-offline.md) 保留历史候选范围，外层超时交互及组合v2复验见 [T49](../tickets/T49-modeld-qualification-and-release.md)。后续证据复用与可用性收口归 [AUTH](../tickets/AUTH-ownership-evidence-availability.md)，不重开历史完成切片。独立复审与原生/live资格仍分别取得，不将测试通过写成所有票据 Done。
 
 ### S10.1 交付范围、归因与决策门
 
@@ -824,6 +824,12 @@ packages/cli/src/
 源失败因果向所有等待者一致传播：`source_deadline`、`source_cancelled`、`source_cancelled_unknown`、`scope_invalidated` 与 `waiter_deadline`、`caller_cancelled` 分开。`rpcCode=1` 只证明取消类别，不自行补出取消者。保留 readId/waiterId/原始年龄/剩余预算/settled-or-unknown。
 
 只有协调器执行只读取证重试。有限次数、剩余预算、抖动/退避、不可恢复错误表由 canonical policy 拥有。Host adapter、CLI、每个 checkpoint 和 SDK 不各开 retry。诊断直读不静默变成执行 fallback。旧 evidence 在硬窗口内且无反证可按策略使用；过期不放行，刷新失败不得续期。
+
+**同一 STEP 的证据复用（AUTH，strict-observation-v2）。** 固定策略保留原始证据最大5 s、跨STEP复用2 s、累计资格等待10 s、单请求入口180 s与原有重试次数。kernel以当前durable claim生命周期内的对象身份，通过进程内`AuthorityReadControl.evidenceOwner`标识同一STEP；该字段不进入wire、配置或journal，也不是许可。协调器在原有有界source池中用弱关联记录该owner最后成功验证的operation ID，没有第二份证据payload缓存。仅该owner可将该source复用到原始5 s以内；新STEP（即使同TURN）、新owner/服务代、不同目标、被淘汰/retired的source不能借用此关系。原始时间不重置，边界到期重新取证并消费剩余预算。
+
+每个检查点仍读取当前本地scope/pause/binding与前后部署证据；取证及本地复核期间观察到的失效都不能被稍后的ready快照撤销。减少2–5 s期间同STEP的远端重读会降低远端注册变化的采样频率，这是显式策略取舍，不是无语义影响的缓存优化；现有5 s客户端证据窗口不变，但它仍不保证Server快照一致性或即时远端撤销。不可据此删除Server门或缓存本地授权。持续超过5 s的来源仍会拒绝，短暂慢读只有在预算内取得另一份新鲜证据才能恢复。
+
+`ownershipWait.evidenceUse=source|shared|cache|step`记录取得路径，`policyId`区分历史v1与当前v2；历史投影只读，不是运行时模式选择。`availabilityCause=read_elapsed|evidence_elapsed|permit_elapsed|wait_budget`由检测点记录读取已超龄、后续复核过期、许可消费前过期或累计等待耗尽。缺字段的历史原因不补猜，解释不能改变错误分类或授予重试。CLI与STEP使用同一个纯`authority-presentation.ts`映射只读的ownership/incident/doctor建议，不能用title sync、启动Host或创建Bot冒充修复。完整离线链路与待验收范围由AUTH的唯一回执维护。
 
 ### S10.5 资源/存储/取消合同
 

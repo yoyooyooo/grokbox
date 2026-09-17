@@ -30,7 +30,11 @@ T43 → T44 → T45 ──────┐
                                    T50 (residue, not a dependency)
 ```
 
-Each ticket's evidence section is the completion source; this table is a route, not a copied test ledger. The [v2 integration receipt](../reports/2026-09-17-modeld-v2-integration.md) records the explicitly authorized rebase/fast-forward, source mappings and combined-candidate checks; the earlier [fixed-candidate report](../reports/2026-09-17-modeld-effect-core-offline.md) retains its own historical scope. All seven scoped verifier cases now route to executable suites; unknown or missing cases still fail. Offline implementation, source integration, independent review, native qualification and live release are distinct. Source integration did not push or switch Host/modeld; the continuing [LIVE ticket](LIVE-integration-validation.md) retains the actual pending native/live gates.
+Each ticket's evidence section is the completion source; this table is a route, not a copied test ledger. The [v2 integration receipt](../reports/2026-09-17-modeld-v2-integration.md) records the explicitly authorized rebase/fast-forward, source mappings and combined-candidate checks; the earlier [fixed-candidate report](../reports/2026-09-17-modeld-effect-core-offline.md) retains its own historical scope. All scoped verifier cases route to executable suites; unknown or missing cases still fail. Offline implementation, source integration, independent review, native qualification and live release are distinct. Source integration did not push or switch Host/modeld; the continuing [LIVE ticket](LIVE-integration-validation.md) retains the actual pending native/live gates.
+
+### Follow-up — ownership evidence availability
+
+[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md) owns the post-core same-STEP evidence reuse, finite expiry/budget explanations and shared CLI/STEP guidance. It retains the five-second original-age limit and explicit observation-frequency tradeoff under policy v2. Its `verify:modeld-core availability` suite is included in `release-offline`; code-review obligations remain non-live, and feature-scoped native/tool/App acceptance is registered in LIVE. The ticket, not this index, owns source-bound test counts and remaining gates.
 
 ## Prior delivery baseline — 2026-09-12 documentation governance
 

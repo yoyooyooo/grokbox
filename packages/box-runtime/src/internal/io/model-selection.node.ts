@@ -53,8 +53,10 @@ export async function changeRuntimeModel(input: {
     // configuration changed while awaiting identity. This is not multi-writer CAS.
     const after = yield* load();
     if (canonicalJson(before) !== canonicalJson(after)) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "selection_configuration_changed"));
-    if (ownership && (yield* Clock.currentTimeMillis) - ownership.evidence.observedAtMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
-      return yield* Effect.fail(ownershipUseError("ownership_evidence_stale", "unconfirmed", input.forAgent));
+    const evidenceAgeMs = ownership ? (yield* Clock.currentTimeMillis) - ownership.evidence.observedAtMs : 0;
+    if (ownership && evidenceAgeMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
+      return yield* Effect.fail(ownershipUseError("ownership_evidence_stale", "unconfirmed", input.forAgent, ownership.remote.readObservation,
+        { availabilityCause: "evidence_elapsed", evidenceAgeMs: Math.ceil(evidenceAgeMs) }));
     }
     const receipt = yield* runConfigurationSave({ boxRoot: input.store.root, kind: "models", file: next }).pipe(Effect.provide(configurationWriteLayer(input.store, sha256Text(canonicalJson(persistModelsDocument(before.models))))));
     if (!receipt.ok) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", receipt.reason));

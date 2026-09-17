@@ -20,7 +20,10 @@ for (const errorCode of OWNERSHIP_READ_ERRORS) test(`ownership ${errorCode} surv
   const summary = projectFailureSummary({ version: 1, code: "not_admitted", phase: "admission", progress: { canonicalEvents: 0, backendAttempts: 0 },
     diagnostic: { authority: { reason: "server_read_unavailable", checkpoint: "admission", durationMs: 9500, waitBudgetMs: 10000, ownershipRead: raw.readObservation } } })!;
   const presented = presentFailure(summary);
-  expect(presented).toMatchObject({ action: "check_ownership", replayAuthorized: false });
+  const action = errorCode === "authorization_unavailable" ? "check_ownership_access"
+    : ["unsupported_rpc", "invalid_request", "invalid_response"].includes(errorCode) ? "align_local_components" : "check_ownership";
+  expect(presented).toMatchObject({ action, replayAuthorized: false,
+    next: action === "align_local_components" ? "grokbox doctor" : "grokbox agents ownership <agent>" });
   expect(presented.message).toContain(`Ownership-read detail: ${errorCode}`);
   expect(presented.message).toContain("Authority checkpoint: admission (9500 ms)");
   expect(presented.message).toContain("No model request was dispatched by this STEP");

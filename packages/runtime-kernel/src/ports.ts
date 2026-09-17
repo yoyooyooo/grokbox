@@ -28,6 +28,9 @@ export class ConfigurationWrite extends Context.Service<ConfigurationWrite, {
 /** Process-local controls from the STEP owner, never decoded from caller JSON.
  * Only the source coordinator consumes retries; the gate owns the total budget. */
 export type AuthorityReadControl = {
+  /** Identity of the currently claimed STEP lifetime. This is neither a permit
+   * nor caller input; copied/new objects cannot borrow another STEP's reuse. */
+  readonly evidenceOwner?: object;
   readonly waitBudgetMs: number;
   readonly takeRetry: () => Effect.Effect<boolean>;
 };

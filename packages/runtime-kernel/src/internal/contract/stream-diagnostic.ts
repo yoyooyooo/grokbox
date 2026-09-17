@@ -48,8 +48,11 @@ export type StreamSummary = {
 };
 export const AUTHORITY_REASONS = ["unknown", "authority_unavailable", "authority_not_committed", "host_identity_mismatch", "host_generation_changed", "ownership_reader_unavailable", "ownership_read_unavailable", "ownership_read_timeout", "ownership_gateway_mismatch", "ownership_bridge_unavailable", "server_read_unavailable", "ownership_clock_unavailable", "native_execution_not_ready", "harness_mismatch", "server_id_mismatch", "confirmed_temporal", "ownership_unconfirmed", "ownership_scope_unconfirmed", "ownership_evidence_stale", "ownership_evidence_invalid", "turn_revoked", "turn_closed", "ownership_identity_changed"] as const;
 export const AUTHORITY_CHECKPOINTS = ["admission", "before_dispatch", "after_auth", "tool_start", "tool_complete", "finish", "recovery"] as const;
+export const AUTHORITY_AVAILABILITY_CAUSES = ["read_elapsed", "evidence_elapsed", "permit_elapsed", "wait_budget"] as const;
 export type AuthorityDiagnostic = {
   reason: typeof AUTHORITY_REASONS[number];
+  /** Detecting-boundary explanation only. It never grants permission or retry. */
+  availabilityCause?: typeof AUTHORITY_AVAILABILITY_CAUSES[number];
   checkpoint?: typeof AUTHORITY_CHECKPOINTS[number];
   durationMs?: number;
   evidenceAgeMs?: number;
@@ -156,12 +159,15 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
     const authority = own(value, "authority"), reason = member(own(authority, "reason"), AUTHORITY_REASONS);
     if (reason) {
       const checkpoint = member(own(authority, "checkpoint"), AUTHORITY_CHECKPOINTS);
+      const cause = member(own(authority, "availabilityCause"), AUTHORITY_AVAILABILITY_CAUSES);
+      const availabilityCause = reason === "ownership_evidence_stale" && cause !== "wait_budget" ? cause
+        : reason === "ownership_read_timeout" && cause === "wait_budget" ? cause : undefined;
       const durationMs = count(own(authority, "durationMs")), evidenceAgeMs = count(own(authority, "evidenceAgeMs"));
       const waitBudgetMs = count(own(authority, "waitBudgetMs"));
       const ownershipRead = projectOwnershipReadObservation(own(authority, "ownershipRead"));
       const ownershipWait = projectOwnershipWaitObservation(own(authority, "ownershipWait"));
       const readRecovery = projectOwnershipRecoveryObservation(own(authority, "readRecovery"));
-      out.authority = { reason, ...(checkpoint ? { checkpoint } : {}), ...(durationMs !== undefined ? { durationMs } : {}),
+      out.authority = { reason, ...(availabilityCause ? { availabilityCause } : {}), ...(checkpoint ? { checkpoint } : {}), ...(durationMs !== undefined ? { durationMs } : {}),
         ...(evidenceAgeMs !== undefined ? { evidenceAgeMs } : {}), ...(waitBudgetMs !== undefined ? { waitBudgetMs } : {}),
         ...(ownershipRead ? { ownershipRead } : {}), ...(ownershipWait ? { ownershipWait } : {}), ...(readRecovery ? { readRecovery } : {}) };
     }

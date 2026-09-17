@@ -220,6 +220,8 @@ GROKBOX_RUN_ROOT="$HOME/.grokbox/run" grokbox history outcome <agent-id> --step-
 
 ### 归属读取失败的子诊断
 
+当前的证据复用、有限过期原因和 CLI/STEP 共用提示，以 [AUTH 后续收口](../tickets/AUTH-ownership-evidence-availability.md) 和 [Spec S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) 为准。`strict-observation-v2` 保持五秒原始年龄；`ownershipWait.evidenceUse` 记录 source/shared/cache/step 路径，`authority.availabilityCause` 区分 read_elapsed、evidence_elapsed、permit_elapsed、wait_budget。缺失历史字段不回填原因。stale 不是 temporal 变更证明，展示刷新和进程重启也不等于证据恢复。当前传输为 v6；下文提到的 v5 是历史观测链路，不是当前执行兼容声明。
+
 `server_read_unavailable` 表示未取得可用的服务端归属观测，不表示已经证明账号没有权限，也不是模型 Provider 的鉴权失败。`diagnostic.authority.ownershipRead` 是可选的、version=1 的白名单观察：固定 source、state，以及原生读取返回的 `errorCode`（timeout / authorization_unavailable / unsupported_rpc / server_read_failed / invalid_response / busy / invalid_request / scope_unavailable / scope_changed）。可用时另记有限 RPC code（1–16），不记录异常 message、Cause、响应、URL、账户/机器/scope 标识或凭据。
 
 `authority.checkpoint` 是 STEP 的检查点；嵌套 `ownershipRead.phase` 是原生 reader 的 input / scope_before / server / scope_after / complete，两者不是同一层。`serverRead` 区分未发起、实际 request、共享 pending read 与 cache。`authority.durationMs` 是整个资格检查耗时，`waitBudgetMs` 是外层读取预算；嵌套 durationMs/deadlineMs/serverWaitMs/serverEvidenceAgeMs 分别是原生读总耗时、预算、服务端等待和原始证据年龄。命中缓存或晚到响应不重置证据年龄。外层 Gateway/Effect 等待超时但未收到 native 结果时，只记录 `ownership_read_timeout` 与外层预算，不伪造 native timeout/RPC code。

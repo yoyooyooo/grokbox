@@ -10,11 +10,12 @@ export type AdmissionAuthorityResult =
   | { admitted: true; ownership: OwnershipAdmission; diagnostic?: StreamDiagnostic; evidenceId?: string }
   | { admitted: false; reason: AuthorityDiagnostic["reason"]; diagnostic?: StreamDiagnostic };
 
-/** One conservative policy. Structural consolidation does not silently enlarge
- * the observation window or turn a client snapshot into a Server lease. */
+/** One fixed policy. v2 permits same-live-STEP reuse within the original five
+ * seconds, but keeps cross-STEP reuse at two seconds. This changes observation
+ * frequency, not source age or the claim that a snapshot is not a Server lease. */
 export const STRICT_AUTHORITY_POLICY = Object.freeze({
-  version: 1 as const,
-  id: "strict-observation-v1" as const,
+  version: 2 as const,
+  id: "strict-observation-v2" as const,
   evidenceMaxAgeMs: OWNERSHIP_EVIDENCE_MAX_AGE_MS,
   cacheMs: OWNERSHIP_SERVER_CACHE_MS,
   sourceWaitMs: OWNERSHIP_WAIT_MS,

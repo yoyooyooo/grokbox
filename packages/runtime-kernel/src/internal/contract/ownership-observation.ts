@@ -18,9 +18,16 @@ export type OwnershipReadObservation = {
   sourceReadId?: string;
   cancellationOrigin?: "waiter_deadline" | "source_deadline" | "no_waiters" | "transport_unknown";
 };
+/** Historical observations remain readable. This union is not an execution
+ * policy selector; only the composition's fixed policy controls execution. */
+export type AuthorityPolicyId = "strict-observation-v1" | "strict-observation-v2";
+export function projectAuthorityPolicyId(value: unknown): AuthorityPolicyId | undefined {
+  return value === "strict-observation-v1" || value === "strict-observation-v2" ? value : undefined;
+}
 export type OwnershipWaitObservation = {
   version: 1;
-  policyId: "strict-observation-v1";
+  policyId: AuthorityPolicyId;
+  evidenceUse?: "source" | "shared" | "cache" | "step";
   waiterId: string;
   sourceOperationId?: string;
   state: "local_witness" | "queued" | "shared" | "source" | "cached" | "validating";
@@ -42,9 +49,12 @@ export function projectOwnershipWaitObservation(value: unknown): OwnershipWaitOb
     const state = member(own(value, "state"), ["local_witness", "queued", "shared", "source", "cached", "validating"]);
     const outcome = member(own(value, "outcome"), ["observed", "source_deadline", "waiter_deadline", "source_failure", "local_refusal", "resource_limit"]);
     const durationMs = own(value, "durationMs"), waitBudgetMs = own(value, "waitBudgetMs");
-    if (own(value, "version") !== 1 || own(value, "policyId") !== "strict-observation-v1"
+    const policyId = projectAuthorityPolicyId(own(value, "policyId"));
+    if (own(value, "version") !== 1 || !policyId
       || !id(waiterId) || !state || !outcome || !millis(durationMs) || !millis(waitBudgetMs)) return undefined;
-    const result: OwnershipWaitObservation = { version: 1, policyId: "strict-observation-v1", waiterId, state, outcome, durationMs, waitBudgetMs };
+    const result: OwnershipWaitObservation = { version: 1, policyId, waiterId, state, outcome, durationMs, waitBudgetMs };
+    const evidenceUse = member(own(value, "evidenceUse"), ["source", "shared", "cache", "step"]);
+    if (evidenceUse) result.evidenceUse = evidenceUse;
     if (id(sourceOperationId)) result.sourceOperationId = sourceOperationId;
     for (const key of ["sourceBudgetMs", "sourceAgeMs", "queueMs", "sourceWaitMs", "localWitnessMs"] as const) {
       const n = own(value, key); if (millis(n)) result[key] = n;

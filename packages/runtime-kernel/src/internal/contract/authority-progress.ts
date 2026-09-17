@@ -1,10 +1,11 @@
 import { AUTHORITY_CHECKPOINTS, AUTHORITY_REASONS, projectStreamDiagnostic, type AuthorityDiagnostic } from "./stream-diagnostic.ts";
 import { observationOwn } from "./provider-observation.ts";
+import { projectAuthorityPolicyId, type AuthorityPolicyId } from "./ownership-observation.ts";
 
 /** Control-plane progress, never a model event, permission, or delivery receipt. */
 export type AuthorityProgress = {
   version: 1;
-  policyId: "strict-observation-v1";
+  policyId: AuthorityPolicyId;
   phase: "waiting" | "authorized" | "denied" | "cancelled";
   checkpoint: typeof AUTHORITY_CHECKPOINTS[number];
   check: number;
@@ -39,12 +40,13 @@ export function projectAuthorityProgress(value: unknown): AuthorityProgress | un
   try {
     const get = (key: string) => observationOwn(value, key);
     const phase = get("phase"), checkpoint = get("checkpoint");
-    if (get("version") !== 1 || get("policyId") !== "strict-observation-v1"
+    const policyId = projectAuthorityPolicyId(get("policyId"));
+    if (get("version") !== 1 || !policyId
       || !member(phase, ["waiting", "authorized", "denied", "cancelled"] as const)
       || !member(checkpoint, AUTHORITY_CHECKPOINTS)) return undefined;
     const check = get("check"), elapsedMs = get("elapsedMs"), cumulativeMs = get("cumulativeMs"), remainingMs = get("remainingMs"), retries = get("retries");
     if (!integer(check) || check < 1 || !integer(elapsedMs) || !integer(cumulativeMs) || !integer(remainingMs) || !integer(retries) || retries > 2) return undefined;
-    const result: AuthorityProgress = { version: 1, policyId: "strict-observation-v1", phase, checkpoint, check, elapsedMs, cumulativeMs, remainingMs, retries };
+    const result: AuthorityProgress = { version: 1, policyId, phase, checkpoint, check, elapsedMs, cumulativeMs, remainingMs, retries };
     const reason = get("reason");
     if (member(reason, AUTHORITY_REASONS)) result.reason = reason;
     const evidenceId = get("evidenceId");

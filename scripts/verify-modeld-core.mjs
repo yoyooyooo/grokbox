@@ -69,6 +69,18 @@ const MODEL_CORE_SUITES = {
     `${box}ownership-packed-client.test.ts`,
     `${box}provider-recovery-unix.test.ts`,
   ],
+  availability: [
+    `${kernel}authority-policy.test.ts`,
+    `${kernel}authority-gate.test.ts`,
+    `${kernel}ownership-observation.test.ts`,
+    `${box}ownership-coordinator.test.ts`,
+    `${box}ownership-availability.test.ts`,
+    `${box}ownership-availability-presentation.test.ts`,
+    `${box}ownership-availability-unix.test.ts`,
+    `${box}model-selection.test.ts`,
+    "test/ownership-model-selection.test.ts",
+    "test/runtime-cli.test.ts",
+  ],
   observation: [
     `${kernel}authority-policy.test.ts`,
     `${box}authority-observation.test.ts`,
@@ -144,7 +156,7 @@ export function runCoreProof(args) {
     const env = isolatedProofEnvironment(process.env, home);
     // Packed tests must consume this source revision, not whichever dist a
     // previous test happened to leave behind in the checkout.
-    if (["lifecycle", "evidence", "authority", "observation", "release-offline"].includes(selected.name)) {
+    if (["lifecycle", "evidence", "authority", "availability", "observation", "release-offline"].includes(selected.name)) {
       const build = spawnSync(process.execPath, ["run", "build"], { cwd: root, env, stdio: "inherit", timeout: 180_000 });
       if (!proofProcessSucceeded(build)) {
         console.error(JSON.stringify({ ...reality, stage: "failed", reason: "required-build-failed" }));

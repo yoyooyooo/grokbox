@@ -7,6 +7,7 @@ import {
   OWNERSHIP_EVIDENCE_MAX_AGE_MS,
   AUTHORITY_REASONS,
   annotateStreamFailure,
+  presentAuthorityFailure,
   type AuthorityDiagnostic,
   type OwnershipReadObservation,
   type BoxRuntimeErrorCode,
@@ -26,56 +27,31 @@ export type OwnershipReader = ((agentIds: string[], signal: AbortSignal) => Prom
   local?: (agentIds: string[], signal: AbortSignal) => Promise<OwnershipReadReply>;
 };
 
-const HOST_UNAVAILABLE_NEXT = "grokbox doctor then grokbox host start";
+type AvailabilityDetail = Pick<AuthorityDiagnostic, "availabilityCause" | "evidenceAgeMs">;
 
 export function presentOwnershipRefusal(input: {
   reason: string;
   class: OwnershipRefusalClass;
   agentId?: string;
+  ownershipRead?: OwnershipReadObservation;
+  availability?: AvailabilityDetail;
 }): { code: BoxRuntimeErrorCode; message: string; next: string; failureCode: string } {
-  const ownershipNext = input.agentId
-    ? `grokbox agents ownership ${input.agentId}`
-    : "grokbox agents ownership <agent>";
-  if (input.class === "temporal") {
-    return {
-      code: "runtime_ownership_temporal",
-      message: "This Bot is temporal (Cursor Server Agent Loop). Custom models only work on confirmed_box Bots created with grokbox, not App New Bot.",
-      next: "grokbox agents create --harness box",
-      failureCode: input.reason,
-    };
-  }
-  if (input.class === "conflict") {
-    return {
-      code: "runtime_ownership_conflict",
-      message: "Server and local identity disagree for this Bot. Do not assign a custom model until ownership is conflict-free.",
-      next: ownershipNext,
-      failureCode: input.reason,
-    };
-  }
-  if (input.class === "unconfirmed") {
-    return {
-      code: "runtime_ownership_unconfirmed",
-      message: "Ownership is unconfirmed for this Bot. Retry a live ownership read; do not guess box.",
-      next: ownershipNext,
-      failureCode: input.reason,
-    };
-  }
+  const safeReason = (AUTHORITY_REASONS as readonly string[]).includes(input.reason) ? input.reason as AuthorityDiagnostic["reason"] : "unknown";
+  const presented = presentAuthorityFailure({ ...input.availability, reason: safeReason, ownershipRead: input.ownershipRead }, { agentId: input.agentId });
   return {
-    code: "runtime_ownership_unavailable",
-    message: "Could not read Bot ownership from Host/Gateway. Custom models need a live Host channel.",
-    next: HOST_UNAVAILABLE_NEXT,
-    failureCode: input.reason,
+    code: input.class === "temporal" ? "runtime_ownership_temporal" : input.class === "conflict" ? "runtime_ownership_conflict"
+      : input.class === "unconfirmed" ? "runtime_ownership_unconfirmed" : "runtime_ownership_unavailable",
+    message: presented.message, next: presented.next, failureCode: input.reason,
   };
 }
 
-export function ownershipUseError(reason: string, cls: OwnershipRefusalClass, agentId?: string, ownershipRead?: OwnershipReadObservation) {
-  const presented = presentOwnershipRefusal({ reason, class: cls, agentId });
+export function ownershipUseError(reason: string, cls: OwnershipRefusalClass, agentId?: string,
+  ownershipRead?: OwnershipReadObservation, availability?: AvailabilityDetail) {
+  const presented = presentOwnershipRefusal({ reason, class: cls, agentId, ownershipRead, availability });
   const safeReason = (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason as AuthorityDiagnostic["reason"] : "unknown";
   return annotateStreamFailure(new BoxRuntimeError(presented.code, presented.message, {
-    userVisible: true,
-    next: presented.next,
-    failureCode: presented.failureCode,
-  }), { rejectSite: "authority_check", authority: { reason: safeReason, waitBudgetMs: OWNERSHIP_WAIT_MS, ...(ownershipRead ? { ownershipRead } : {}) } });
+    userVisible: true, next: presented.next, failureCode: presented.failureCode,
+  }), { rejectSite: "authority_check", authority: { ...availability, reason: safeReason, waitBudgetMs: OWNERSHIP_WAIT_MS, ...(ownershipRead ? { ownershipRead } : {}) } });
 }
 
 const denied = ownershipUseError;
@@ -106,10 +82,15 @@ export function readManagedOwnership(input: { agentId: string; read?: OwnershipR
     if (!Number.isSafeInteger(readAgeMs)) return yield* Effect.fail(denied("ownership_clock_unavailable", "unavailable", input.agentId));
     const remote = remoteOwnershipEvidence(input.agentId, result.snapshot);
     const decision = decideManagedOwnership({ agentId: input.agentId, snapshot: result.snapshot, nowMs: yield* Clock.currentTimeMillis });
-    if (!decision.ok) return yield* Effect.fail(denied(decision.reason, decision.class, input.agentId, decision.ownershipRead));
+    const sourceAgeMs = Math.max(readAgeMs, remote.readObservation?.serverEvidenceAgeMs ?? 0);
+    if (!decision.ok) return yield* Effect.fail(denied(decision.reason, decision.class, input.agentId, decision.ownershipRead,
+      decision.reason === "ownership_evidence_stale" && sourceAgeMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS
+        ? { availabilityCause: "read_elapsed", evidenceAgeMs: Math.ceil(sourceAgeMs) } : undefined));
     // Explicit conflict/revocation above wins over elapsed-time classification.
+    // Observation metadata can explain a refusal, never qualify a slow source.
     if (readAgeMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
-      return yield* Effect.fail(denied("ownership_evidence_stale", "unconfirmed", input.agentId, remote.readObservation));
+      return yield* Effect.fail(denied("ownership_evidence_stale", "unconfirmed", input.agentId, remote.readObservation,
+        { availabilityCause: "read_elapsed", evidenceAgeMs: readAgeMs }));
     }
     return { evidence: decision.evidence, gateway: result.gateway,
       remote };

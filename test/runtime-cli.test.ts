@@ -540,7 +540,7 @@ describe("box-local runtime CLI", () => {
     expect(parseJson(forBot.stderr)).toMatchObject({ error: { code: "runtime_ownership_unavailable" } });
   });
 
-  test("per-Bot models use types Host/bridge unavailability with doctor/host start next", async () => {
+  test("per-Bot models use types Host/bridge unavailability with read-only doctor next", async () => {
     const boxRuntimeRoot = await withRoot();
     const forBot = await captureCli(["runtime", "models", "use", "stub/echo", "--for", "11111111-1111-4111-8111-111111111111"], {
       discoveryPath: "/dev/null",
@@ -549,7 +549,7 @@ describe("box-local runtime CLI", () => {
     expect(forBot.code).not.toBe(0);
     expect(forBot.stdout).toBe("");
     const error = (parseJson(forBot.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
-    expect(error).toMatchObject({ code: "runtime_ownership_unavailable", next: "grokbox doctor then grokbox host start" });
+    expect(error).toMatchObject({ code: "runtime_ownership_unavailable", next: "grokbox doctor" });
     expect(error.message).toContain("Host");
     expect(error.message).not.toBe(error.failureCode ?? "ownership_read_unavailable");
     expect(error.next).not.toContain("host on");
