@@ -2,6 +2,8 @@
 
 Dated evidence, not a replacement for [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) or an authorization to release. Gate ownership remains [T49](../tickets/T49-modeld-qualification-and-release.md). This report does not include private Host code, runtime identities, credentials, production transcripts or machine-local paths.
 
+Later evidence: [deadline/type closeout and cross-worktree live queue](2026-09-17-modeld-effect-core-closeout.md) covers candidate `c6156c4`. The timeout/type gaps listed below describe this historical `6d0e914` run; they are not the current code status. Independent review and native/live qualification still require their own receipts.
+
 ## Candidate and dependency reality
 
 Implementation commit: `6d0e9140f1ec07c311cb754998e1448f34f75371` on `feat/modeld-effect-core`.

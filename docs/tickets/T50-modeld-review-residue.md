@@ -26,4 +26,4 @@ Disposition / next owner:
 
 ## Initial state
 
-No independent review has been performed for this new integration branch. No residual concern is yet claimed resolved or accepted. Public entries must not contain credentials, private native source, transcripts or machine-local evidence paths.
+No independent review result has been obtained for this branch; bounded attempts failed with provider 503 / process timeout, recorded under T49 and its closeout report. They do not create a reviewed residue or a review waiver. No residual concern is yet claimed resolved or accepted. Public entries must not contain credentials, private native source, transcripts or machine-local evidence paths.
