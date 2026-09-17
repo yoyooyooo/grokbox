@@ -15,6 +15,7 @@ if (!kase || process.argv.length !== 3) {
 const CONTEXT_TESTS = [
   "packages/runtime-kernel/test/context-policy.test.ts", "packages/runtime-kernel/test/context-selection.test.ts", "packages/box-runtime/test/context-reuse.test.ts",
   "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-host.test.ts",
+  "packages/box-runtime/test/context-maintenance-provider-switch.test.ts",
   "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts",
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
@@ -32,7 +33,7 @@ const CASES = {
     ["bun", "test", "packages/runtime-kernel/test/context-selection.test.ts", "packages/box-runtime/test/context-maintenance-host.test.ts", "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "test/context-commands.test.ts"],
   ],
   "context-summary": [
-    ["bun", "test", "packages/box-runtime/test/context-reuse.test.ts", "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "packages/runtime-kernel/test/overflow-recovery.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/context-reuse.test.ts", "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-provider-switch.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "packages/runtime-kernel/test/overflow-recovery.test.ts"],
   ],
   "context-maintenance": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
