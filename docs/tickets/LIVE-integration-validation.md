@@ -61,9 +61,9 @@ Status: awaiting-integration
 
 <a id="live-config-cutover"></a>
 ### LIVE-CONFIG-CUTOVER — 实际配置迁移与入口切换
-Status: awaiting-integration — configuration source/packed lane verified; independent code review remains in T60
+Status: blocked — integrated into v2; independent review and an authorized live cutover remain pending
 
-来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，最终 rebase 基线 v2 `6f2fcd1`，实现提交 `80fe393`（初始实现 `dbc43f5` 的 rebase 映射）；[配置收口回执](../reports/2026-09-17-unified-configuration-closeout.md)保存 source/packed 验证与未放行项。当前 v2 映射/candidate 为 `not-recorded`，集成窗口须重新固定制品。不得把含配置代码的 feature 分支直接指给现役 CLI/服务来代替集成。
+来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，最终 rebase 基线 v2 `6f2fcd1`，实现提交 `80fe393`（初始实现 `dbc43f5` 的 rebase 映射）；[配置收口回执](../reports/2026-09-17-unified-configuration-closeout.md)保存 source/packed 验证与未放行项。2026-09-17 实际集成：v2 从 `6f2fcd1` 快进至 `efa6557`，实现映射 `80fe393 → 80fe393`、live 登记 `efa6557 → efa6557`，零 merge commit。合入后的 v2 已重新通过配置专项 200/0 与制品专项 15/0，详见 [v2 集成回执](../reports/2026-09-17-config-ops-v2-integration.md)。这是离线集成候选；实际 live candidate/loaded identity 仍 `not-selected`/`not-recorded`，独立复审和授权窗口未满足，不能转 ready。
 
 离线已证明：严格 v2、真实临时文件/锁与死亡 owner 恢复、迁移各阶段中断、模型原字节/secret ref 保持、bootstrap 回退不得覆盖后来编辑、alias 保全恢复、prepared/ABA 不重放、desktop 精确应用收据、source/packed CLI 和 Host 选模依赖隔离。独立代码复审尚待，属于 T60 非 live 阻断；本条不代替它。
 
@@ -83,7 +83,7 @@ Status: awaiting-integration — configuration source/packed lane verified; inde
 
 <a id="live-config-consumers"></a>
 ### LIVE-CONFIG-CONSUMERS — 现役消费者采用、重启与模型路径
-Status: awaiting-integration — configuration implemented; T60 review and an authorized consumer window remain prerequisites
+Status: blocked — integrated into v2 at efa6557; T60 review, CUTOVER and an authorized consumer window remain prerequisites
 
 - 来源与依赖：[T58](T58-config-command-single-writer.md)、[T60](T60-config-ops-integration-proof.md)、[配置指南](../configuration.md)，实现 `80fe393`，分支 `feat/template-ops-automation`，基线 `6f2fcd1`；依赖 CUTOVER 已通过。actual live candidate/loaded identities 为 `not-selected`/`not-recorded`，独立复审仍归 T60。
 - 必须 live 的原因：临时 daemon 测试不能证明当前服务采用了哪个配置根、revision 和制品；模型文件原字节不变也不能证明现役 Host/provider 仍能读取同一凭据。
@@ -95,7 +95,7 @@ Status: awaiting-integration — configuration implemented; T60 review and an au
 
 <a id="live-config-home-reset"></a>
 ### LIVE-CONFIG-HOME-RESET — 平台 Reset 后的 durable、别名和凭据
-Status: awaiting-integration — platform/reset proof requires a separately authorized disposable Box
+Status: blocked — integrated into v2 at efa6557; platform/reset proof requires a separately authorized disposable Box
 
 - 来源与依赖：[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，实现 `80fe393`；依赖 CUTOVER 和 CONSUMERS 的相关基本路径。实际候选、平台版本、测试 Box 与 reset 授权均 `not-selected`。
 - 必须 live 的原因：平台 Reset 究竟保留哪些挂载、如何重建 home、何时运行 bootstrap，以及客户端 home secret 是否存续，不能由本机临时目录模拟来证明。
@@ -106,7 +106,7 @@ Status: awaiting-integration — platform/reset proof requires a separately auth
 
 ## 预登记：运维闭环后续原生验收
 
-以下只预登记明确需要原生/外部系统的最终 oracle，**不是把未实现代码移交为 live 待办**。来源为已提交的 [运维 Spec](../roadmap/template-ops-automation-spec.md) 与逐票合同，规划基线 `52e76eb`、配置实现 `80fe393`；各功能的执行实现提交仍 `not-recorded`。T43–T56 的实现、离线/打包验证和独立复审继续在来源票完成；未满足之前均 blocked。本次 Git 合入也不会将这些状态改为 ready。
+以下只预登记明确需要原生/外部系统的最终 oracle，**不是把未实现代码移交为 live 待办**。来源为已提交的 [运维 Spec](../roadmap/template-ops-automation-spec.md) 与逐票合同，规划基线 `52e76eb`、配置实现 `80fe393`；各功能的执行实现提交仍 `not-recorded`。T43–T56 的实现、离线/打包验证和独立复审继续在来源票完成；未满足之前均 blocked。规划与配置代码已随 `efa6557` 原哈希进入 v2，实际业务实现提交仍未记录；Git 合入不会将这些状态改为 ready。
 
 <a id="live-ops-routines"></a>
 ### LIVE-OPS-ROUTINES — Agent/Routine 原生 CRUD、Payload 与模板隔离
