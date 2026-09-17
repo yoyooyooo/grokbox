@@ -119,10 +119,10 @@ grokbox (alias: gbox)
 │
 │  换脑（按 Bot；须 confirmed_box）
 ├── models list
-├── models use <provider/model> --for <agent> [--effort <level>]
+├── models use <provider/model> (--for <agent>|--default) [--effort <level>]
 ├── models show --for <agent>
 ├── models migrate --confirm
-├── models reset --for <agent>
+├── models reset (--for <agent>|--default)
 │
 │  Bot / 群 / 消息
 ├── agents list [--ownership]
@@ -171,7 +171,7 @@ grokbox (alias: gbox)
 
 不进入本树（实现可暂留，不写进 Skill 正文）：`daemon *`、`runtime *`（含 re-adopt / watchdog / modeld / monitor / profile 切片工具）、`desktop prune *`（闲时息屏由 `on`/`off`/`upgrade` 开关）。`skills get grokbox` 是 Agent 入口；`skills get core --full` 给人看整棵 CLI。
 
-Title trailer：`[<用户字>][ | owner=box|temporal|conflict[,m=<alias-or-model>]]`。无参数 `title show` 非法；`hide` 无参数清场；`sync` 不把 hide 变成 show。`models use --for` 会给该 Bot 刷 trailer 并保留用户标题；`reset --for` 只刷新已在 show 的 trailer 并去掉 `m=`。
+Title trailer：`[<用户字>][ | owner=box|temporal|conflict[,m=<alias-or-model>][,e=<requested-effort>]]`。无参数 `title show` 非法；`hide` 无参数清场；`sync` 不把 hide 变成 show。`models use --for` 会给该 Bot 刷 trailer 并保留用户标题；`reset --for` 只刷新已在 show 的 trailer 并去掉 `m=` 与 `e=`。
 
 **Export 与模板：** 共用对某个 Bot 的只读材料（profile、约定 Memory、automations、可打包的 skill 散文）和 secret 打码。`export agent` 写成盒内目录；`template pack` 写成官方 recipe JSON。`stage` = aiserver `CreateGrokBotTemplate` + PUT blob（不是 Gateway）；`publish` / `import` / `visibility` / `delete` 走 Gateway。`listBotTemplates` 是空 stub，不做 `template list`。Skill 散文进 recipe，不把 grokbox CLI 捆绑 skill 拷进模板。
 
@@ -315,7 +315,7 @@ Quota adapter 同样独立声明 `quota.read`。静态 Profile 只能报告 `pro
 
 Roster只读投影保留`harness: box|temporal|unknown`；字段缺失不假报box，也不从serverId推断。它是Gateway声明，不证明桌面实际选源。**2026-09-12目标合同：普通`agents update`不得发送/回填harness，显式修改既有归属写前拒绝；Create可请求类型，但Server确认/回读才构成资格，未知不重新create或强写本地。** 当前隐式写入仍待[T38](tickets/T38-identity-write-alignment.md)收口，文档更新不是已实现声明。
 
-App Label (`title`) is display-only. User text is optional; grokbox may append ` | owner=box|temporal|conflict[,m=<alias-or-model>]`. Trailer presence is the show switch. `agents title show` (named Bots or `--all`) paints from live ownership and `models.json`; `hide` strips the trailer; `sync` refreshes trailers already showing. Create does not paint. `models use --for` paints that Bot's trailer and keeps the user title; `models reset --for` only refreshes an already-showing trailer and omits `m=`. Title write failure does not undo model assignment. `agents update --title` replaces the user segment and, when showing, refreshes the trailer. Unconfirmed Bots are skipped on show/sync. The daemon interval only syncs showing Bots. CLI/daemon `title sync` and Host profile writes refresh a showing trailer from local harness and models.json, and leave hidden titles unchanged. A missing models snapshot, unresolved assigned token, or non-UUID Host agentId preserves existing `m=`; only a confirmed empty assignment clears it. The same preserve/clear rule applies to `agents update --title` on a showing Bot.
+App Label (`title`) is display-only. User text is optional; grokbox may append ` | owner=box|temporal|conflict[,m=<alias-or-model>][,e=<requested-effort>]`. Trailer presence is the show switch. `agents title show` (named Bots or `--all`) paints from live ownership and `models.json`; `hide` strips the trailer; `sync` refreshes trailers already showing. Create does not paint. `models use --for` paints that Bot's trailer and keeps the user title; `models reset --for` only refreshes an already-showing trailer and omits `m=` and `e=`. Title write failure does not undo model assignment. `agents update --title` replaces the user segment and, when showing, refreshes the trailer. Unconfirmed Bots are skipped on show/sync. The daemon interval only syncs showing Bots. CLI/daemon `title sync` and Host profile writes refresh a showing trailer from local harness and models.json, and leave hidden titles unchanged. A missing models snapshot, unresolved assigned token, or non-UUID Host agentId preserves existing `m=`; only a confirmed empty assignment clears it. The same preserve/clear rule applies to `agents update --title` on a showing Bot.
 
 `agents ownership <targets...>` is a read-only Host-backed inspection of official Server registrations, not a harness setter. It accepts 1–32 named/public-UUID targets, makes one native Server List call, and compares finite Server identity/harness fields with local before/after observations. Server credentials stay inside the Host; the explicit getHostStatus extension does not run on ordinary status calls. Unknown bridge/auth/identity, duplicates, unstable local evidence or Gateway changes must not produce a confirmed result. Classes are confirmed_box / confirmed_temporal / conflict / unconfirmed; App route and migration observations are separate facets. When the Host channel is official, the projection adds blocker `host_channel_not_enabled` and `next` is `grokbox host start` (aligned with `doctor.next`), not identity-lost wording. When live Host SHA does not match the reviewed profile, the projection adds blocker `host_source_mismatch` and `next` is a copy-paste `grokbox runtime profile observe --from /home/box/sand-host/host-main.cjs then grokbox runtime profile write --sha` plus the full 64-hex live digest (never a placeholder). If the live digest is not yet known, `next` is observe-only. confirmed_box is not production approval, ownership inspection never reconciles/migrates/repairs, and the command does not yet automatically guard send/models-use. Implemented across direct Gateway and daemon transports; [harness current home](maintainers/transcript-harness-box-vs-server.md#read-only-ownership-inspection-contract) owns details.
 

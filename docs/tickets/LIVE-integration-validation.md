@@ -285,9 +285,11 @@ Status: blocked — mapped to v2; independent review, native qualification and a
 
 ## 同通道模型推理设置
 
-共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；source commit `1e9a76a5a8cac784dfba927626d78baa15403ca3`。v2 integrated/candidate commit、source digest、实际加载身份均 `not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
+共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；初始 source `1e9a76a` → 最新 v2 `fa476b1` 上的 `ac73435`，原回执 `1108011` → `697fe0c`；配置/命令面组合修复为 `0f2cd0aab6397ba1ea207b012193cb2798786948`。固定代码候选 sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`；实际 v2 快进与合入后复验另记，live candidate/loaded identities 仍 `not-selected`/`not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
 
 只读原生资格补充（2026-09-17）：来源树的独立 native-source 运行 **28 pass / 0 fail**，覆盖普通全库默认跳过的 6 个原生源码 case；已安装源码匹配既有资格 pin，源文件与相关 PID 快照未变，受保护临时副本已清理。这不是已加载新 Host/modeld、真实 Provider 或原 App 回合证明，以下三条状态不因此关闭。
+
+组合树复验补充（2026-09-17）：当前相同构建输入已通过 2190 pass / 6 default native skip / 0 fail 的全库、516/0 的 modeld release-offline，随后在最终变基树完成 read-only native-source 28/0。后一次变基仅接入并行配置文档回执，不改源代码/锁文件/构建输入。普通全库跳过的六个原生源码 case 已在该只读 lane 覆盖，仍不能证明已加载制品/网关/App。独立复审留在来源票；基线已有的历史提交邮箱元数据扫描问题属于发布隐私门禁，不进入 live 验收，也不因本次合并擅自重写既有 v2 历史。
 
 <a id="live-reasoning-cutover"></a>
 ### LIVE-REASONING-CUTOVER — schema v2 与 wire v7 成套切换及退路
@@ -295,7 +297,9 @@ Status: awaiting-integration
 
 依赖固定 v2 集成映射、来源非 live 出口和适用的 [MODELD CUTOVER](#live-modeld-cutover) 接点资格。必须 live 的原因是磁盘新构建不能证明已经加载的 Host/preload/modeld 同版；旧 schema/制品的恢复还涉及真实服务生命周期。离线已覆盖 v1 只读/v2 保存、取消与 CAS、v6 只读探测/禁止执行、真实隔离 Unix 和磁盘绑定；计数与候选以来源票为准。
 
-环境与动作：批准的 restart/installed-host 窗口，预先保护原 models/desired/profile 与旧制品，不输出凭据；排空旧工作，成套更新 CLI/preload/Host/modeld，再明确执行 schema 保存。原有路径不因此搬家。不在未合入 feature 上抢占全局 shim 或現役服务。
+环境与动作：批准的 restart/installed-host 窗口，预先保护 canonical config/models、profile、安装布局与旧制品，不输出凭据；若尚有旧 general config，先按 [CONFIG CUTOVER](#live-config-cutover) 停止旧 writer 并完成显式迁移，再协调 CLI/preload/Host/modeld 的 v7 加载与模型 schema 保存。`config migrate` 对已有 model v1/v2 原字节不改写，`models migrate --confirm` 只负责模型 schema，不能互相替代；人读别名与 canonical 实体沿统一布局，不另建设置文件。不在未合入 feature 上抢占全局 shim 或現役服务。
+
+源码 CLI 边界：已确认全局开发 shim 跟随 v2；Git 快进后下次命令使用新代码，不代表现役 Host/modeld 已重启。普通模型保存会发出 schema v2，不在旧 Host/modeld 仍运行时把一次成功保存当上线资格。组合验收还须核对 home aliases、canonical 路径以及 client/desktop 编辑与 Bot effort 相互不改写；本地跨域、种子与迁移中断保真已有离线测试，现场实际采用需 [CONFIG CONSUMERS](#live-config-consumers) 与本条共同留证。
 
 Oracle：逐个记录实际 source/profile/preload/service/wire 身份，新执行均为 v7；旧 peer 可诊断但不能接 managed STEP；旧 service epoch 不复活、历史消息不重发；v1→v2 不改变其他 Bot、wire model 或凭据引用。回退演练恢复匹配旧制品和受保护旧 schema 配置，不能以静默删掉 effort 作为无损降版。实际原生身份或旧配置不可证明时保持 blocked。
 
