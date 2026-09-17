@@ -1,6 +1,10 @@
 # AUTH — Ownership evidence availability follow-up
 
-Status: linearly integrated into v2 and offline/full-suite reverified in the v2 worktree; partial native-source-copy qualification passed; independent fixed-tip review pending; actual native/tool/App acceptance not run. Source baseline `f8c82c0`. Source branch `feat/ownership-evidence-availability`, integrated tip `8760d3a`. Depends on T45/T47/T48; release and independent review gates remain T49. Specification: [S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core). This ticket follows the completed core slices without reopening their historical receipts. The [v2 integration receipt](#v2-integration-receipt) records exact mappings and revalidation.
+Status: linearly integrated into v2 and offline/full-suite reverified in the v2 worktree; partial native-source-copy qualification passed; independent fixed-tip review pending; W17 loaded-policy/ordinary native-read/tool vectors exercised, with controlled revocation/approval/App acceptance still open. Source baseline `f8c82c0`. Source branch `feat/ownership-evidence-availability`, integrated tip `8760d3a`. Depends on T45/T47/T48; release and independent review gates remain T49. Specification: [S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core). This ticket follows the completed core slices without reopening their historical receipts. The [v2 integration receipt](#v2-integration-receipt) records exact mappings and revalidation.
+
+## Current live receipt
+
+The authorized [W17 integration window](LIVE-integration-validation.md#window-20260917) now includes actual strict-observation-v2 loading, ordinary real source/STEP/cache observations and native tool consumption. Controlled slow-source, pause/unbound/cancellation, long-approval final execution and original-App vectors remain unproven. Review and the historical unresolved offline anomaly remain source-ticket obligations. The older integration receipts below are historical; current per-vector results and loaded artifacts are recorded only in LIVE and its linked report.
 
 ## Goal and policy decision
 

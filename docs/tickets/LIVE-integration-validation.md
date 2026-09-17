@@ -6,6 +6,25 @@ Status: **open, continuing process**. Individual entries close; this ticket rema
 
 **默认先合入 v2，再选择固定集成提交、构建并成套切换 Host/profile/preload/modeld，集中验证同批兼容条目。未合入的 feature worktree 不为验收而轮流接管现役环境。** 本票只记录计划，不自动合分支、改 shim、切 profile、重启、领养、改 Bot 模型、发送消息或消耗模型额度。
 
+<a id="window-20260917"></a>
+## 2026-09-17 已执行集成窗口
+
+**本轮已经运行，不再是仅登记。** 用户明确授权现役 Host/modeld 切换及尽可能完成 live 验收。基线 W17-A 为代码候选 `7994b92`（后续 `15a0594`/`02a6d81` 只改文档）；回退演练发现的 Host 重复 apply 缺陷以 `338cf83` 修复、`fe05442` 更新制品 pin，线性集成至 `dc03066` 后运行 W17-B。完整制品身份、逐消息结果、实际影响、预算、回退与清理见 [本轮回执](../reports/2026-09-17-live-integration-window.md)。
+
+最终现役为 **config schema v2 / models schema v2 / wire v7 / strict-observation-v2**；Host 与 modeld 的最终 canary 终态同 source digest `f2226ccb9938221054693e94ca27308c62cc25d289c9cf40fec3e1ddc167fc59`，preload 为 `0d31637d0524acaffab59b1d8da75244badedbf61bdeaced0a0ab61a84718ffd`。doctor 为 custom / ready / next=none；daemon 也已换代并取得实际 desktop domain 采用证据。
+
+共两只一次性 Bot、12 条新消息：9 条关联 expected_result_observed，2 条上游 HTTP 503，1 条 stock 回程读回持久回复但 outcome unknown。关联 modeld 共 19 次 HTTP（17 成功、2 失败）；官方请求/外部 reviewer 不在该计数中，不推算费用。继续阶段只补三条新消息，未重播旧失败请求。测试 Bot 已导出留证、撤销 assignment 并删除，原有 catalog/assignment 逐项保持；唯一 23 字节合成文件与受保护备份/回执保留。Host force 窗口曾列出既存活动 Bot，不能声称业务执行零中断或把重启当 temporal 子任务取消。
+
+| 已取得的 live 向量 | 尚未取得的独立向量 |
+|---|---|
+| 旧 writer 停写、exact-plan 迁移、canonical/alias、models 字节保全；schema 分开迁移 | 平台 Reset、未选模型的凭据资格、旧 schema 真正恢复 |
+| desktop committed→applied、原值恢复、模型域不变、新 daemon PID/start/domain revision | 独立代码 review；不把配置保存当全部消费者/平台通过 |
+| 实际 v7 Host/modeld 加载、patched official、MiniMax 主回合/原生工具/Memory/投递 | 长审批末端执行门、受控慢 List/撤权/取消、完整原版 App |
+| 同 channel/model 的 high→xhigh→default→official；在途 TURN 仍 high；用户标题与历史标记保留 | Provider 明确档位回报仍 unknown；一条通道 503；compact checkpoint 往返 |
+| modeld 正式 replace、旧 epoch 拒绝；同修复制品 stop→start→already_started；最终 canary | stock 缺桥期间 strong identity/correlation、旧制品/schema 回退与 App |
+
+来源 review gate 仍 pending，本轮 reviewer 返回 HTTP 503 无报告。因此下面部分条目虽然已有成功的 live 子向量，仍保留 blocked，而不是越过既有 ready/整体验收条件。**旧集成段落的 not-run/not-selected 描述的是预登记时点；当前结果以本节和逐条 W17 回执为准。** 未实现的五条 Template Ops 与三条 CTX 没有运行，不因本次服务升级改变状态。长期票保持 open。
+
 ## 哪些项目进入本票
 
 只有需要真实原生组件、已加载制品、真实 Provider、原版 App、实际权限/迁移或重启恢复链才能取得证据的部分进入这里。源码检查、复制品转换、类型检查、合成故障注入、离线协议/打包回归、代码 Bug 和独立代码复审仍应在功能 worktree 完成；不能改名为“待 live”藏在这里。
@@ -61,13 +80,15 @@ Status: awaiting-integration
 
 <a id="live-config-cutover"></a>
 ### LIVE-CONFIG-CUTOVER — 实际配置迁移与入口切换
-Status: blocked — integrated into v2; independent review and an authorized live cutover remain pending
+Status: blocked — W17 physical migration vectors verified; T60 independent review remains a non-live release gate
 
-来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，最终 rebase 基线 v2 `6f2fcd1`，实现提交 `80fe393`（初始实现 `dbc43f5` 的 rebase 映射）；[配置收口回执](../reports/2026-09-17-unified-configuration-closeout.md)保存 source/packed 验证与未放行项。2026-09-17 实际集成：v2 从 `6f2fcd1` 快进至 `efa6557`，实现映射 `80fe393 → 80fe393`、live 登记 `efa6557 → efa6557`，零 merge commit。合入后的 v2 已重新通过配置专项 200/0 与制品专项 15/0，详见 [v2 集成回执](../reports/2026-09-17-config-ops-v2-integration.md)。这是离线集成候选；实际 live candidate/loaded identity 仍 `not-selected`/`not-recorded`，独立复审和授权窗口未满足，不能转 ready。
+**W17 回执：** 旧 daemon/modeld writer 已停，exact-plan apply 到 retired，home aliases/canonical 已核对，general migration 前后 models 原字节一致；随后单独迁移 model schema v2。新消费者和部分真实凭据见 CONSUMERS。本条不再是未运行，完整范围见[窗口回执 §4](../reports/2026-09-17-live-integration-window.md#4-迁移与消费者)。
+
+来源：[配置 Spec](../roadmap/configuration-rebuild-spec.md)、[T57](T57-unified-config-schema-layout.md)、[T58](T58-config-command-single-writer.md)、[T59](T59-config-migration-cutover.md)、[T60](T60-config-ops-integration-proof.md)，source branch `feat/template-ops-automation`，最终 rebase 基线 v2 `6f2fcd1`，实现提交 `80fe393`（初始实现 `dbc43f5` 的 rebase 映射）；[配置收口回执](../reports/2026-09-17-unified-configuration-closeout.md)保存 source/packed 验证与未放行项。2026-09-17 实际集成：v2 从 `6f2fcd1` 快进至 `efa6557`，实现映射 `80fe393 → 80fe393`、live 登记 `efa6557 → efa6557`，零 merge commit。合入后的 v2 已重新通过配置专项 200/0 与制品专项 15/0，详见 [v2 集成回执](../reports/2026-09-17-config-ops-v2-integration.md)。该历史回执只证明离线集成。其后 W17 已选择并加载现役制品，迁移结果见本条 W17 回执；独立复审仍是未满足的来源门禁。
 
 离线已证明：严格 v2、真实临时文件/锁与死亡 owner 恢复、迁移各阶段中断、模型原字节/secret ref 保持、bootstrap 回退不得覆盖后来编辑、alias 保全恢复、prepared/ABA 不重放、desktop 精确应用收据、source/packed CLI 和 Host 选模依赖隔离。独立代码复审尚待，属于 T60 非 live 阻断；本条不代替它。
 
-必须 live 的原因：现役配置来源、旧 writer 是否确已停止、source-backed shim 的实际采用及既有凭据仍可用，不能从临时目录推导。消费者的持续采用/重启另由 [LIVE-CONFIG-CONSUMERS](#live-config-consumers) 取证，平台 Reset/home 重建另由 [LIVE-CONFIG-HOME-RESET](#live-config-home-reset) 取证；本条成功不代替它们。当前环境/对象/停止权限/窗口均 `not-selected`，不执行 Bot、模型、Webhook 或 GitHub 探针。
+必须 live 的原因：现役配置来源、旧 writer 是否确已停止、source-backed shim 的实际采用及既有凭据仍可用，不能从临时目录推导。消费者的持续采用/重启另由 [LIVE-CONFIG-CONSUMERS](#live-config-consumers) 取证，平台 Reset/home 重建另由 [LIVE-CONFIG-HOME-RESET](#live-config-home-reset) 取证；本条成功不代替它们。W17 已执行迁移与有界 Bot/模型探针，未执行 Webhook 或 GitHub 探针；后续新增对象、动作和额度须单独固定。
 
 步骤/oracle：
 
@@ -79,19 +100,21 @@ Status: blocked — integrated into v2; independent review and an authorized liv
 
 停止/恢复：新旧 writer 并存、配置/别名冲突、source 变更、未知提交、模型或 secret 引用不一致即停止。按 migration/bootstrap 的精确 before/after 版本恢复，保留后续用户编辑及所有 unknown 回执；不重放用户消息、不自动回滚官方 Host。恢复后重新检查真实消费者，未验证则报告 blocked，不靠 doctor 单项绿代替全部结果。
 
-回执：本条未运行。预算/授权、实际 source/artifact/installation/process identities 和各 oracle 结果在窗口后回填；原始私密配置与令牌不进入仓库。
+回执：已执行 W17，预算/影响与实际身份见本票顶部及窗口报告；原始私密配置与令牌不进入仓库。独立复审仍未签署，不以迁移成功关闭来源 release gate。
 
 <a id="live-config-consumers"></a>
 ### LIVE-CONFIG-CONSUMERS — 现役消费者采用、重启与模型路径
-Status: blocked — integrated into v2 at efa6557; T60 review, CUTOVER and an authorized consumer window remain prerequisites
+Status: blocked — W17 consumer adoption/restart and selected Provider paths verified; review and untested scope remain
 
-- 来源与依赖：[T58](T58-config-command-single-writer.md)、[T60](T60-config-ops-integration-proof.md)、[配置指南](../configuration.md)，实现 `80fe393`，分支 `feat/template-ops-automation`，基线 `6f2fcd1`；依赖 CUTOVER 已通过。actual live candidate/loaded identities 为 `not-selected`/`not-recorded`，独立复审仍归 T60。
+**W17 回执：** minIdleMs 600000→660000→600000 均取得真实 applied，期间 models 字节不变；daemon 再次重启后 PID/start 与恢复的 dependency revision 相符。Host/modeld 新进程读取同 canonical 模型，MiniMax/指定 Responses lane 实际请求有回执。最终旧迁移 writer absent；不据此认证全部凭据、ops worker 或 Reset。见[窗口回执 §4](../reports/2026-09-17-live-integration-window.md#4-迁移与消费者)。
+
+- 来源与依赖：[T58](T58-config-command-single-writer.md)、[T60](T60-config-ops-integration-proof.md)、[配置指南](../configuration.md)，实现 `80fe393`，分支 `feat/template-ops-automation`，基线 `6f2fcd1`；依赖 CUTOVER 已通过。W17 actual live candidate/loaded identities 已记录于窗口报告，独立复审仍归 T60。
 - 必须 live 的原因：临时 daemon 测试不能证明当前服务采用了哪个配置根、revision 和制品；模型文件原字节不变也不能证明现役 Host/provider 仍能读取同一凭据。
 - 环境与动作：固定安装与一个经批准的测试对象。先只读核对 source/packed CLI、daemon PID/start、domain revision、Host/modeld 实际身份、canonical 与别名，正常业务 Bot 不改模型。需要配置变更、服务重启或 provider 请求时另固定具体字段、对象和预算。
 - 步骤/oracle：用不会扩大权限或回收范围的明确测试变更验证 committed 与真实 applied；无消费者回执时保持 pending，重启策略保持 restart-required，不隐式启动消费者。按授权正常重启 daemon/modeld 后，证明读取的仍是新根，无旧 writer 重新创建历史配置。client/desktop 的无关修改不能改变实际模型分配/当前 TURN 捕获；经批准的新测试请求需分别证明凭据解析、实际模型、最终投递，不靠 health 或文件存在自证。
-- 预算与授权：配置字段、目标、每种重启次数、请求/token/费用、等待上限和原状态均 `not-selected`。没有模型额度时可先验证文件/进程路径，provider 与用户交付向量保留未证。
+- 预算与授权：W17 的字段、测试对象、有限动作与实际消耗见窗口报告；本窗口已结束，不构成后续服务操作或模型消费的长期授权。没有额度的后续窗口只做文件/进程读取，Provider/交付保留未证。
 - 停止/恢复：错根、旧 writer 复活、错误应用回执、模型/凭据变化或未知操作即停止；恢复本次字段时先核对版本，不覆盖后来的用户编辑，不重放旧消息或全局解除 circuit。
-- 回执：`not-run`；保存实际 consumer/version/domain revision 与有限测试结果。配置、进程、provider 和 App 证据分别记录，不能用一次 restart 关闭所有向量。
+- 回执：W17 配置、进程与所选 Provider 向量已记录；原版 App 未观察。每项只覆盖记录的 consumer/version/domain revision，不用一次 restart 关闭全部向量。
 
 <a id="live-config-home-reset"></a>
 ### LIVE-CONFIG-HOME-RESET — 平台 Reset 后的 durable、别名和凭据
@@ -164,7 +187,7 @@ Status: blocked — T47/T48/T49/T50 implementation, independent review and expli
 
 **共同集成状态（2026-09-17）：** 已按用户明确指令线性合入 v2：原分支 `967b409` 的十一项提交变基到 v2 `36e6dc5`，再将 v2 快进到 `b57574844428219ead9b9ee18dce90ad3c8535fc`。核心/期限提交映射为 `6d0e914 → ce942f2`、`743daea → e6c5bf5`；全部映射、组合树验证和测试制品摘要见 [v2 集成回执](../reports/2026-09-17-modeld-v2-integration.md)。该组合树已重新通过类型检查、全库与制品离线验证，不沿用旧分支的测试计数。
 
-**共同阻断与授权状态：** T49 G5 仍为 `review_pending`，其非 live 代码复审义务留在来源票，不因本次合入而豁免。live 目标、请求/费用上限、窗口与变更许可均 `not-selected`；实际加载 artifact/native identities 仍 `not-recorded`。因此六条进入 `blocked`（集成已完成，复审/原生窗口未满足），没有任何 live 运行或通过回执。下次部署必须固定当时的 v2 提交并核对是否仍覆盖本回执；五秒策略未放宽。
+**共同阻断与授权状态：** W17 已执行真实部署、取证及有限 canary，实际 artifact/native identities 和逐条结果见顶部窗口与本节回执。T49 G5 仍 `review_pending`，非 live 代码复审义务没有豁免；未覆盖的原生撤权、审批、App 和完整退路仍 blocked。下一窗口重新固定候选、授权和预算，不能把这次权限续用或把部分回执当全量资格；五秒策略未放宽。
 
 | 条目 | 所需现实 | 依赖 |
 |---|---|---|
@@ -177,7 +200,9 @@ Status: blocked — T47/T48/T49/T50 implementation, independent review and expli
 
 <a id="live-modeld-native"></a>
 ### LIVE-MODELD-NATIVE — 原生接点与三路对照
-Status: blocked — mapped to v2; T49 review and authorized native window pending
+Status: blocked — W17 native source/passthrough/managed observations obtained; complete stock authority and review pending
+
+**W17 回执：** 两版 native-source 各 28/0；真实 patched official 与 managed 精确投递，原生接点加载有 Host 终态。stock 退出有进程/无 preload/不变原生 SHA 观察，但缺桥期间 harness unknown，持久回复读回仍不能补成完整三路授权证明。暂停/撤权和最终工具 gate 未证。见窗口报告 C01–C12。
 
 来源：T43/T45/T49，当前 [原生覆盖审查](../maintainers/modeld-authority-boundaries.md)。必须读取/运行固定原生版本；合成的 `allowed/bound` 或 source-shaped fixture 不能证明原生 per-Agent/per-TURN 授权覆盖。优先在隔离原生环境比较未补丁官方路径、补丁官方 passthrough、补丁 managed 路径；不为对照反复抢占现役环境。
 
@@ -187,7 +212,9 @@ Status: blocked — mapped to v2; T49 review and authorized native window pendin
 
 <a id="live-modeld-cutover"></a>
 ### LIVE-MODELD-CUTOVER — 成套加载与版本身份
-Status: blocked — mapped to v2; T49 review and authorized native window pending
+Status: blocked — W17 loaded v7 tuple and final canary verified; independent review and full NATIVE prerequisites remain
+
+**W17 回执：** 从旧 wire v5 成套切至 v7；最终 B Host/modeld 终态同 source digest，doctor custom/ready，旧 epoch 不作为新执行身份。源码/磁盘/已加载证据已分开记录，不再沿用“尚未选择制品”。完整 NATIVE/独立复审仍未关闭。
 
 来源：T44/T49、[T40](T40-persistent-release-and-rollback.md)。磁盘构建通过不足以证明进程已加载。依赖 NATIVE 后，从固定 v2 候选排空并切换 Host/profile/preload/modeld，读取实际加载的 generation、源码/制品摘要和协议。
 
@@ -197,7 +224,9 @@ Oracle：新协议一致、`doctor`/运行状态无阻断，旧 peer 只有有�
 
 <a id="live-modeld-authority"></a>
 ### LIVE-MODELD-AUTHORITY — 原生取证恢复与取消
-Status: blocked — mapped to v2; T49 review and authorized native window pending
+Status: blocked — W17 real ordinary reads/checkpoints observed; controlled slow-source/revocation/cancellation vectors pending
+
+**W17 回执：** 专用 Bot 的真实 Gateway/native List、source/STEP/cache 区分及过期后的新证据均有日志；每 STEP 一次模型调用，无放宽原始五秒年龄。没有合格的 per-Bot 慢源/暂停/取消注入窗口，未改整机网络或业务归属来补证。
 
 来源：T45/T47/T49。离线已证明慢首次读取后重新获取新鲜证据、共享等待者取消、总期限与同 STEP 不重推理；这里补实际 Gateway/native source 的生命周期证据。依赖 CUTOVER。
 
@@ -207,7 +236,9 @@ Status: blocked — mapped to v2; T49 review and authorized native window pendin
 
 <a id="live-modeld-tools"></a>
 ### LIVE-MODELD-TOOLS — 审批等待后的实际工具消费
-Status: blocked — mapped to v2; T49 review and authorized native window pending
+Status: blocked — W17 ordinary native tool consumption verified; long-approval final execution fence not observed
+
+**W17 回执：** MiniMax 正常原生工具链写入并读取唯一合成标记，独立文件内容与 SendToUser 一致，后续 Memory 正常；另一次有界 shell 与在途 effort 固定得到证明。sleep 6/12 秒不是用户审批等待；没有据此关闭跨五秒审批、取消后不执行或重复 STEP 最终消费者门。
 
 来源：T47/T49、[Host 主链](../maintainers/host-inbound-agent-loop.md)。modeld 的材料放行并不证明原生工具执行，尤其不能代替长审批等待后的最后一道原生门。依赖 AUTHORITY。
 
@@ -217,7 +248,9 @@ Status: blocked — mapped to v2; T49 review and authorized native window pendin
 
 <a id="live-modeld-app"></a>
 ### LIVE-MODELD-APP — 真实模型与原版 App 状态
-Status: blocked — mapped to v2; T49 review and authorized native window pending
+Status: blocked — W17 Provider/Host/transcript delivery observed; original App not observed
+
+**W17 回执：** nonce→TURN/STEP→Provider→Host→精确投递已有多条回执；真实 503 正确归类 upstream_http，未自动重试/降级。测试 Bot 的 running 标志最终 false，但未取得原版 App 像素/当前会话/侧栏证据，也没清缓存或删除旧业务消息。
 
 来源：T48/T49、[观测 runbook](../maintainers/run-outcome-observation.md)、[Working 语义](../maintainers/composer-working-status.md)。真实 Provider 的终态、App 消息发送确认、当前 session 与侧栏聚合状态各有独立 owner。依赖 CUTOVER，含工具情况依赖 TOOLS。
 
@@ -227,7 +260,9 @@ Status: blocked — mapped to v2; T49 review and authorized native window pendin
 
 <a id="live-modeld-restart"></a>
 ### LIVE-MODELD-RESTART — 旧代隔离与恢复退路
-Status: blocked — mapped to v2; T49 review and authorized native window pending
+Status: blocked — W17 replacement and repaired same-artifact reapply verified; full stock/schema/App rollback pending
+
+**W17 回执：** 正式 idle replace 换代、旧 epoch 拒绝、新代启动零重放及新 canary 通过；Host 同制品再启停发现并修复 [重复 apply 缺陷](FIX-host-lifecycle-reapply.md)，B 的 stop→start→already_started 与最终 canary 通过。stock 回复有持久内容但强关联 unknown；旧 v5/schema 恢复、原生 compact checkpoint 与 App 回退仍未验收。
 
 来源：T44/T46/T49、[官方回退验收](../maintainers/official-rollback-acceptance.md)。离线临时进程/LevelDB 已证明所有权与防重放；现役的 supervisor、已加载 Host、配置和 App 恢复需要组合回执。依赖同窗口基本路径通过。
 
@@ -237,55 +272,61 @@ Status: blocked — mapped to v2; T49 review and authorized native window pendin
 
 ## 当前已登记：ownership evidence availability
 
-来源：[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md)、[Spec S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。Source branch `feat/ownership-evidence-availability`，固定实现提交 `90346bb2bd72b44b345eb4752d730c7922d8e809`，基于v2 `f8c82c0`。Source digest `a6eb9fb9ab63052fa22504639c6c529b3301d26c383b817178063bd44496dceb`；preload digest `c00484cf80649b95e920efea862cb744f800b8151942a8d2f050705eea2e6f4d`。当前策略为`strict-observation-v2`，执行wire仍为v6；未知旧组件组合不因wire编号相同自动取得资格。
+来源：[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md)、[Spec S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。Source branch `feat/ownership-evidence-availability`，固定实现提交 `90346bb2bd72b44b345eb4752d730c7922d8e809`，基于v2 `f8c82c0`。Source digest `a6eb9fb9ab63052fa22504639c6c529b3301d26c383b817178063bd44496dceb`；preload digest `c00484cf80649b95e920efea862cb744f800b8151942a8d2f050705eea2e6f4d`。该来源提交的策略为`strict-observation-v2`、wire为v6；W17 实际成套运行已是 wire v7。未知组件组合不因wire编号相同自动取得资格。
 
 共同集成回执（2026-09-17）：按用户明确指令，v2从`f8c82c0abdf2fc16ed54c1d2af559920e6fb8320`快进到`8760d3a09bd36975cf65192585ba0ba3daabc0e5`；实现提交`90346bb`与文档提交`8760d3a`均原哈希保留，无rebase、冲突、squash或merge commit。该v2候选已重新通过类型检查、重建release-offline（514通过）和全库（2088通过、6项原生默认跳过、0失败）；精确映射、源码/制品摘要与证据范围见[AUTH集成回执](AUTH-ownership-evidence-availability.md#v2-integration-receipt)。
 
-共同阻断与授权状态：源码集成已完成，但本次实际live候选/loaded身份、目标、窗口、请求/费用上限与切换授权仍为`not-selected`/`not-recorded`。固定原生源码复制品/隔离片段的历史回执不证明当前实际加载或原版App/最终工具消费者。独立固定提交复审及一次未定因的历史全库测试异常仍在AUTH/T49中记录，不搬成live-only残留，也不因本轮全库通过而宣称根因已修复。下列三条转为`blocked`（已集成，复审/原生资格与授权窗口未满足），均未执行，无live通过回执。下一窗口必须固定当时的v2候选并复核包含关系和制品身份，不能从源码快进推定已经部署。
+共同阻断与授权状态：W17 已有实际加载策略、正常 native 读取/工具/终态回执；受控慢源、撤权/取消、长审批末端工具门及原版 App 仍未证明，以下三条整体保持 blocked。独立固定提交复审及一次未定因的历史全库测试异常仍归 AUTH/T49，不因本轮全库通过而宣称旧异常根因已修复。下一窗口重新固定候选、身份、对象与预算；本次授权不构成长驻测试许可。
 
 <a id="live-auth-availability-native"></a>
 ### LIVE-AUTH-AVAILABILITY-NATIVE — 已加载策略、真实取证与失效
-Status: blocked — mapped to v2; independent review, native qualification and authorized window pending
+Status: blocked — W17 loaded policy and ordinary native reads verified; controlled expiry/revocation/cancellation and review pending
 
-- 来源与依赖：AUTH实现提交`90346bb`；依赖本次固定候选上的`LIVE-MODELD-NATIVE`、`LIVE-MODELD-CUTOVER`语义资格。v2 source→integrated映射为`90346bb → 90346bb`、`8760d3a → 8760d3a`，已离线复验的集成tip为`8760d3a`；实际live候选及loaded identity仍`not-selected`/`not-recorded`。
+**W17 回执：** 实际 v7 Host/modeld 已加载 strict-observation-v2，真实请求保留 source/STEP/cache 区分和五秒原始年龄，正常读后工具/完成检查点可关联。未实施可控慢 List、暂停/unbound、共享等待者取消或代变化中的失效注入；这些向量继续 blocked，不能用普通请求成功代替。A/B 制品与身份见[窗口报告](../reports/2026-09-17-live-integration-window.md)。
+
+- 来源与依赖：AUTH实现提交`90346bb`；依赖本次固定候选上的`LIVE-MODELD-NATIVE`、`LIVE-MODELD-CUTOVER`语义资格。v2 source→integrated映射为`90346bb → 90346bb`、`8760d3a → 8760d3a`，历史离线集成tip为`8760d3a`；W17 实际候选/loaded identity 见窗口报告。
 - 必须live的原因：已测试的native源码锚点、隔离retry/compact片段和模拟List不能证明实际Gateway读取生命周期、当前scope/native暂停状态或正在运行的Host/modeld加载了v2策略。
 - 环境与动作：优先使用隔离原生环境；现役只在批准的单个测试Bot与成套制品上操作。先读实际loaded Host/profile/preload/modeld身份、wire与policy，核对非目标Bot和官方passthrough不受影响。
 - 步骤与oracle：在安全、批准的延迟注入点验证2.5–4 s读取跨多个检查点时同STEP复用；新STEP不继承超过2 s的跨STEP缓存，原始证据不超过5 s。首次慢读可在原10 s累计预算内取得另一份新鲜证据；持续超龄仍拒绝。检查本地pause/unbound、scope/Host代变化和共享等待者取消，已观察失效不能被稍后ready结果复活；不合作source仍保留占用至实际结算。关联operation/waiter/STEP与模型实际调用数，不用标题证明授权。
-- 预算与授权：目标、最多请求/费用/总等待、允许的暂停/取消及恢复动作均`not-selected`，没有授权不得运行。不为复现改整机网络或业务Bot归属；缺安全注入点则该向量`blocked`。
+- 预算与授权：W17 普通取证/模型请求的目标及消耗已记录；受控暂停/取消/慢源向量未运行，下一窗口须单独固定动作。不得为复现改整机网络或业务Bot归属；缺安全注入点则该向量 blocked。
 - 停止与回滚：身份不明、原始年龄续期、越权或重复模型调用、资源无法有界收敛即停止；按窗口预选的已验证制品与测试对象原状态回退，不复制旧permit/service epoch或重放旧消息。
-- 回执：`not-run`；须记录实际native/artifact/wire/policy、测试输入、逐向量结果、source真实停止/未知结算与回滚检查。磁盘构建摘要不代替loaded身份。
+- 回执：W17 已记录实际 loaded v7/policy 和正常源读取向量；受控故障与未知结算向量 not-run。磁盘摘要不代替 loaded 身份，普通成功不代替撤权/取消证明。
 
 <a id="live-auth-availability-tools"></a>
 ### LIVE-AUTH-AVAILABILITY-TOOLS — 长审批后的原生工具执行门
-Status: blocked — mapped to v2; independent review, native qualification and authorized window pending
+Status: blocked — W17 ordinary tool consumption observed; long-approval/revocation final native gate not observed
 
-- 来源与依赖：AUTH实现提交`90346bb`；依赖上条NATIVE及`LIVE-MODELD-TOOLS`的当前候选资格。实现已按原哈希`90346bb → 90346bb`集成，离线复验tip为`8760d3a`；实际live候选及loaded identity仍`not-selected`/`not-recorded`。
+**W17 回执：** C03 有真实工具调用、唯一临时标记独立读回、后续结果投递及 Memory 终态。没有长审批后撤权/取消/换代的最终原生消费门证据，也没有重复 STEP 的 live 副作用测试。sleep 等待不替代审批等待，原有要求不放宽。
+
+- 来源与依赖：AUTH实现提交`90346bb`；依赖上条NATIVE及`LIVE-MODELD-TOOLS`的当前候选资格。实现已按原哈希`90346bb → 90346bb`集成，历史离线tip为`8760d3a`；W17 实际候选/loaded identity 见窗口报告。
 - 必须live的原因：离线已验证模型只调用一次、工具材料检查点、等待/过期/失效与终态；modeld释放材料不等于原生消费者在审批后重新检查了权限。
 - 环境与动作：指定批准的无破坏性测试工具、临时标记和审批操作者；分别验证正常消费、审批跨5 s证据窗口，以及审批中暂停/取消/换代。不得用真实业务工具代替。
 - 步骤与oracle：分别记录模型调用、材料释放、审批、最后执行门、实际标记写入、结果入库与投递。有效上下文只执行一次；失效上下文不再新增工具副作用；同一STEP或已关闭TURN不能被重放。原生per-Agent/per-TURN覆盖不足仍作为阻断，不能用allowed/bound两布尔值或缓存快照签署通过。
-- 预算与授权：工具、路径、次数、等待上限、审批人和变更许可均`not-selected`；不自动调用。
+- 预算与授权：W17 的临时工具标记和有限工具回合见报告；长审批操作者/撤权场景未选择，不能追加自动调用。
 - 停止与回滚：任何失效后执行、重复副作用或无法关联消费者身份即停止并回来源修复票；仅清理本次批准的临时标记，外部结果未知不得宣称回滚成功。
-- 回执：`not-run`；缺哪一段消费者证据就保留哪一段，不能仅凭模型响应或材料释放成功关闭本条。
+- 回执：W17 正常实际消费有证据；长审批/失效后的最终消费门 not-run，保留该缺口，不凭模型响应或材料释放关闭本条。
 
 <a id="live-auth-availability-app"></a>
 ### LIVE-AUTH-AVAILABILITY-APP — 原版App的等待、拒绝与下一步提示
-Status: blocked — mapped to v2; independent review, native qualification and authorized window pending
+Status: blocked — W17 Host/CLI failure attribution observed; original App and controlled authority refusal presentation pending
 
-- 来源与依赖：AUTH实现提交`90346bb`；依赖NATIVE，涉及实际工具的展示同时依赖TOOLS；实现已按原哈希`90346bb → 90346bb`集成，离线复验tip为`8760d3a`；实际live候选及loaded identity仍`not-selected`/`not-recorded`。
+**W17 回执：** C04/C05 真实 HTTP 503 保持 upstream_http 分类、一次调用、无自动重试/降档；正常 authority 控制记录没有变成 canary 回复正文。未取得原版 App 或各类受控 authority 拒绝的显示证据，不从 CLI/title/roster 推定 UI 已验收。
+
+- 来源与依赖：AUTH实现提交`90346bb`；依赖NATIVE，涉及实际工具的展示同时依赖TOOLS；实现已按原哈希`90346bb → 90346bb`集成，历史离线tip为`8760d3a`；W17 候选与实际 Host/modeld 身份见窗口报告，App 实际观察仍缺失。
 - 必须live的原因：新字段已通过真实fixture Unix/Host/journal/SQLite冷读/CLI投影验证；原版App实际渲染、消息确认及真实Provider调用/费用仍属不同事实源。
 - 环境与动作：批准的单个Bot、模型和新nonce测试消息，核对当前session/STEP，不自动发送或删除历史失败消息。
 - 步骤与oracle：等待不显示为已完成或模型正文；stale/read_elapsed、后续过期、permit过期、预算耗尽、真正temporal与访问拒绝可按有记录的原因区分，未知历史原因不补猜。stale不声称归属已变，访问拒绝不误指向模型Provider，建议不默认重启Host或刷新title。已发起模型/已释放工具的事实保持准确，终态只有一次；完成、投递与侧栏子任务Working各自核对。
-- 预算与授权：模型、请求数、token/费用、最大等待及允许动作均`not-selected`；不得为了验证提示无限重试或升级App/清缓存。
+- 预算与授权：W17 有限模型/Host/CLI 请求已记录；App 和受控 authority 拒绝场景仍待独立窗口，不得为了验证提示无限重试或升级App/清缓存。
 - 停止与回滚：发生错误身份关联、控制帧冒充模型输出、误导性的零调用/自动重放提示或越出预算即停止；保存脱敏回执，按NATIVE窗口的既定制品退路恢复，不重播旧任务。
-- 回执：`not-run`；记录实际artifact/native/policy、发送确认、对应STEP、Provider与Host终态及App观察范围。原始截图/日志和私密身份只保留受控引用，不进入公开仓库。
+- 回执：W17 Provider/Host/CLI 与发送关联已记录，原版 App not-observed。原始日志和私密身份仅留受控引用，不进入公开仓库；未采集的 App 图像不补造。
 
-## 已完成回执
+## 已执行回执
 
-暂无 **live 验收**回执。v2 源码集成与组合树离线回执已记录在上方，但没有选择/加载 live 制品或执行 live 窗口。后续逐条追加带固定候选、时间、结果、证据范围和失效条件的回执；源码合入、构建成功或一次重启不能变成“全部 live 通过”。
+[W17 集成窗口](#window-20260917)已取得现役迁移、消费者、真实模型/工具/投递、改档、重启与修复回执；[完整报告](../reports/2026-09-17-live-integration-window.md)逐项列明成功、失败、unknown 与清理。正式条目的完整 oracle 和独立复审仍不全，不能把部分已验证向量改写成全部 passed，也不能再把它们记成未运行。后续保留各制品历史，补对应缺口并按失效条件重验。
 
 ## 同通道模型推理设置
 
-共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；初始 source `1e9a76a` → 最新 v2 `fa476b1` 上的 `ac73435`，原回执 `1108011` → `697fe0c`；配置/命令面组合修复为 `0f2cd0aab6397ba1ea207b012193cb2798786948`。固定代码候选 sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`；实际 v2 已从 `fa476b1` 快进到 `e82d116114de501dd6fb99b01adeea72a0db7757`（0 merge commits）；合入后的 v2 配置专项 205/0、reasoning/制品专项 37/0，详见 [v2 集成回执](../reports/2026-09-17-reasoning-v2-integration.md)。live candidate/loaded identities 仍 `not-selected`/`not-recorded`。这三条只登记必须真实环境才能证明的事实；源码/离线/独立 review gate 在来源票，不由登记豁免。共同许可、目标、请求/费用上限和窗口为 `not-selected`，不得运行。
+共同来源：[FEAT-model-reasoning-policy](FEAT-model-reasoning-policy.md)、[Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy)、[ADR](../decisions/2026-09-17-model-reasoning-policy.md)。Source branch `feat/model-reasoning-policy`；初始 source `1e9a76a` → 最新 v2 `fa476b1` 上的 `ac73435`，原回执 `1108011` → `697fe0c`；配置/命令面组合修复为 `0f2cd0aab6397ba1ea207b012193cb2798786948`。固定代码候选 sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`；实际 v2 已从 `fa476b1` 快进到 `e82d116114de501dd6fb99b01adeea72a0db7757`（0 merge commits）；合入后的 v2 配置专项 205/0、reasoning/制品专项 37/0，详见 [v2 集成回执](../reports/2026-09-17-reasoning-v2-integration.md)。以上是源代码集成映射；其后 W17 已选定并加载制品，实际身份与高/超高/默认档位测试见以下回执。源码/离线/独立 review gate 在来源票，不因 live 测试豁免。W17 窗口已结束，其许可不延续到后续对象或请求。
 
 只读原生资格补充（2026-09-17）：来源树的独立 native-source 运行 **28 pass / 0 fail**，覆盖普通全库默认跳过的 6 个原生源码 case；已安装源码匹配既有资格 pin，源文件与相关 PID 快照未变，受保护临时副本已清理。这不是已加载新 Host/modeld、真实 Provider 或原 App 回合证明，以下三条状态不因此关闭。
 
@@ -293,7 +334,9 @@ Status: blocked — mapped to v2; independent review, native qualification and a
 
 <a id="live-reasoning-cutover"></a>
 ### LIVE-REASONING-CUTOVER — schema v2 与 wire v7 成套切换及退路
-Status: blocked — integrated into v2; independent review and authorized live qualification remain pending
+Status: blocked — W17 schema/loaded wire cutover verified; matching old-schema rollback and independent review pending
+
+**W17 回执：** general config 与 model schema 分开迁移，旧 writer 已停，最终新 Host/modeld v7 tuple 与实际 canary 一致。目录/既存 assignment/凭据引用保持，测试结束移除测试 assignment。正式 modeld 换代及旧 epoch 拒绝已有证据；没有恢复旧 v5 制品及其匹配 schema 的实际演练，不通过删 effort 冒充无损降级。
 
 依赖固定 v2 集成映射、来源非 live 出口和适用的 [MODELD CUTOVER](#live-modeld-cutover) 接点资格。必须 live 的原因是磁盘新构建不能证明已经加载的 Host/preload/modeld 同版；旧 schema/制品的恢复还涉及真实服务生命周期。离线已覆盖 v1 只读/v2 保存、取消与 CAS、v6 只读探测/禁止执行、真实隔离 Unix 和磁盘绑定；计数与候选以来源票为准。
 
@@ -303,27 +346,31 @@ Status: blocked — integrated into v2; independent review and authorized live q
 
 Oracle：逐个记录实际 source/profile/preload/service/wire 身份，新执行均为 v7；旧 peer 可诊断但不能接 managed STEP；旧 service epoch 不复活、历史消息不重发；v1→v2 不改变其他 Bot、wire model 或凭据引用。回退演练恢复匹配旧制品和受保护旧 schema 配置，不能以静默删掉 effort 作为无损降版。实际原生身份或旧配置不可证明时保持 blocked。
 
-预算与授权：对象、最多切换次数、窗口、允许停止/写入及批准回执 `not-selected`。任一身份/协议/配置不匹配、旧 TURN 被重跑或影响非目标 Bot 即停止；恢复已核验备份并复查服务与官方对照，不扩大请求。回执：`not-run`，加载身份/回滚结果 `not-recorded`。
+预算与授权：W17 有限切换及影响见窗口报告；后续窗口另固定对象和允许动作。身份/协议/配置不匹配、旧 TURN 重放或未经批准的影响即停止，不扩大请求。回执：W17 v7/schema 采用与部分重启退路已记录，匹配旧 schema 恢复 not-run。
 
 <a id="live-reasoning-provider"></a>
 ### LIVE-REASONING-PROVIDER — 原通道档位透传与上游证据
-Status: blocked — integrated into v2; independent review and authorized live qualification remain pending
+Status: blocked — W17 emitted high/xhigh/default and one successful channel observed; providerReported remains unknown and another channel returned 503
+
+**W17 回执：** A 制品 C04/C05 在同一 Responses 通道分别 emitted high/xhigh，但真实 HTTP 503，不视为请求资格通过。独立另选通道的 C06/C07/C08 在不改变该 lane 的 channel/model/credential 下完成 high/xhigh/default，请求均成功。所有 providerReported 仍 unknown；没有 Provider 合格回报，不能签其内部档位已执行。负例无白名单拒绝且模型文件未变；原有 catalog 未改写。
 
 依赖 CUTOVER（或单独批准的非现役真实 Provider 资格环境）。离线已证明 locked SDK 反例、Chat/Responses 最终 HTTP effort、冲突零 fetch、同 channel/model 稳定；不能据此证明真实网关未覆盖/忽略参数。作用域必须是明确批准的 endpoint/API/wire model/credential reference，不自动换另一 Provider 或铸造 wire 变体。
 
 步骤与 oracle：先核对通道能力的权威依据，再在批准对象上比较 default/high/xhigh 的配置、TURN revision、emitted 与 HTTP/Provider 结果，核对 endpoint/key-reference/wire model 不变。收集可审计且脱敏的网关转换或 Provider 明确回报；没有合格回报解码器时 `providerReported:unknown` 是正确结果，不能用 latency、reasoningTokens、标题或自述签署 xhigh 已执行。分别记录“请求成功发出”和“上游档位是否证实”，任何真实不支持应撤销能力声明并回来源票修复，不降档重试。
 
-预算与授权：canary ID、最多请求/费用/等待、工具权限与授权回执均 `not-selected`。达到预算、能力与响应矛盾、参数丢失/冲突或未知副作用即停止。回滚只恢复该 Bot 原 assignment/能力声明，不更改 ownership；不重发旧请求。回执：`not-run`，Provider 资格与实际执行档位 `not-recorded`。
+预算与授权：W17 限定两个一次性对象和有限新消息，实际消耗见窗口报告；503 lane 未继续重试，测试 assignment 已撤销，未改 ownership 或 catalog。回执：emitted 与 HTTP 结果已记录，Provider 内部档位仍 unknown；后续请求须新窗口，不能把其它通道的成功替代该失败 lane。
 
 <a id="live-reasoning-host-app"></a>
 ### LIVE-REASONING-HOST-APP — 原生会话与 App 的下一 TURN 改档
-Status: blocked — integrated into v2; independent review and authorized live qualification remain pending
+Status: blocked — W17 next-TURN effort isolation, native tool/Memory and title/history continuity observed; App/compact and provider confirmation pending
+
+**W17 回执：** C06 的运行中 TURN 保存同模型 xhigh 后，其后续三个 STEP 仍 requested/emitted high；C07 下一 TURN 才采用 xhigh，C08 default，C09 official。工具、Memory 未关闭，用户标题保持、default 清 e、official 清 m/e；官方回程能取回先前真实工具标记。原版 App、compact checkpoint 与 Provider 明确档位回报没有证明。C06–C09 属于 A 制品历史，不改写为 B 上重新运行过全部向量。
 
 依赖 CUTOVER 与适用通道的 PROVIDER 请求资格；与原 [MODELD TOOLS](#live-modeld-tools)、[MODELD APP](#live-modeld-app) 共享窗口时仍独立记录。本条必须使用已加载的真实原生 Host 与未修改的 App；source-shaped fixture 和标题字符串测试不证明原生恢复、工具消费者或 UI 展示。
 
 在批准的一个 confirmed_box canary 上执行同 modelId 的 high → xhigh → default → official，另一个 Bot 保持原配置/official 对照。只使用批准的有界任务；需要工具/Memory/compact 的向量不得靠停掉这些原生路径通过。已有 TURN 必须继续原绑定，新 TURN 才改变 effort；实际工具调用、Host normalized terminal、最终交付及 App 标题 `m=/e=` 各自留证。改 effort 不应因为伪造新 modelId 触发不必要的模型切换/上下文清空；default/official 清 e，不破坏用户标题。配置查询不得冒充当前 TURN，tokens 不代表 Provider 档位确认。
 
-预算与授权：对象、TURN/HTTP/费用上限、允许工具和等待时间、原 App 观察及回退许可 `not-selected`。旧 TURN 混档、重放请求、上下文/工具结果丢失、其他 Bot 被改或 Working/交付异常即停止。恢复该 Bot 原 assignment 与标题显示状态，核对 pending 工作是否实际终止，不将重启当全部副作用停止；必要制品回退沿 CUTOVER 预案。回执：`not-run`；实际 native/artifact/wire/selection identities、App 图像与结果均 `not-recorded`。
+预算与授权：W17 对象、有限 TURN/HTTP 与工具边界见窗口报告；未观察原版 App，也未执行 compact。回执：在途 TURN 固定/下一 TURN 改档、原生工具/Memory/标题与历史回程已记录；两个测试对象已空闲、导出、撤 assignment 并删除。App/compact/完整旧 schema 退路保持未证，不能将重启当全部副作用停止。
 
 ## 预登记：默认本地上下文维护（CTX）
 

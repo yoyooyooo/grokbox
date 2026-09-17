@@ -1,5 +1,7 @@
 # Reports：历史解释与有界证据
 
+- [2026-09-17 现役集成窗口](2026-09-17-live-integration-window.md)：统一配置真实迁移、v7 成套加载、12 条有界 canary、改档/工具/重启与 stock 回程；记录现场发现的 Host 重复 apply 缺陷及修复、最终验证、清理和仍未证明的范围。不是全部 LIVE 或独立复审通过。
+
 - [2026-09-17 Modeld 线性合入 v2](2026-09-17-modeld-v2-integration.md)：记录原提交到变基提交的完整映射、保留既有 MiniMax/投递修复的冲突处理、组合树验证及 LIVE 状态更新；源码集成不代表复审或 live 发布通过。
 
 - [2026-09-17 Modeld 非 live 收尾](2026-09-17-modeld-effect-core-closeout.md)：固定候选的单一期限、最终类型/全库/制品验证、基线重跑、外部复审失败回执，以及跨 worktree LIVE 票；不是 live 发布成功证明。

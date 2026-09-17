@@ -8,6 +8,8 @@
 
 [`LIVE — integration validation backlog`](LIVE-integration-validation.md) collects only native/live-dependent acceptance across feature worktrees. Use feature-scoped entry IDs rather than another shared T-number; register source commit/range and dependencies, map them to a fixed v2 integration commit, and validate matching Host/profile/preload/modeld artifacts together in an approved window. Code, offline regressions and independent code review remain in their source tickets. `passed` is per entry and artifact; this continuing ticket is not closed by one deployment. The first registered entries cover the modeld core's native coverage, cutover, authority, tool-consumer, Provider/App and restart/rollback gates; no live action has run merely by creating the entries.
 
+The authorized [W17 window](LIVE-integration-validation.md#window-20260917) has now exercised deployed configuration, models, native tools, effort changes and restart/return paths. Its [dated report](../reports/2026-09-17-live-integration-window.md) separates verified vectors, failures and remaining proof. The discovered same-artifact Host stop/start failure is tracked and repaired in [FIX — Host lifecycle reapply](FIX-host-lifecycle-reapply.md); review gates are not waived by this maintenance window.
+
 <a id="modeld-effect-core"></a>
 ## Current change — modeld execution-core consolidation
 
