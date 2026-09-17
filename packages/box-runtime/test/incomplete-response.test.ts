@@ -53,7 +53,7 @@ test("non-empty assistant text with SendToUser declared becomes a Host SendToUse
   expect(response.finishReason).toBe("tool-calls");
   expect(response.messages).toEqual([{
     role: "assistant",
-    content: [{ type: "tool-call", toolCallId: expect.any(String), toolName: "SendToUser", args: { type: "text", content: "MANAGED_VISIBLE" } }],
+    content: [{ type: "text", text: "MANAGED_VISIBLE" }, { type: "tool-call", toolCallId: expect.any(String), toolName: "SendToUser", args: { type: "text", content: "MANAGED_VISIBLE" } }],
   }]);
 });
 

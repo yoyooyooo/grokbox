@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { attachFailureLink } from "./alert-provenance.ts";
+import { declaredTextEndTurn } from "./delivery-fallback.ts";
 import { isDeepStrictEqual } from "node:util";
 import { cloneJson, envelopeHasImage, EnvelopeError, parseModelEnvelope,
   type EnvelopeErrorCode, type ModelEnvelope, type PromptContentPart, type PromptMessage, type ToolCall } from "@grokbox/runtime-kernel/contract";
@@ -576,13 +577,17 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
           reason = "error";
           error = failure("invalid_stream", undefined, { ...streamCtx("normalize"), diagnostic: { normalizeCause: "empty_output", rejectSite: "host_terminal", stream: evidence.snapshot() } });
         } else if (declaredTools.has("SendToUser")) {
+          const endTurn = declaredTextEndTurn(envelope.tools.find(tool => tool.name === "SendToUser")!);
           const call: ToolCall = {
             type: "tool-call",
             toolCallId: randomUUID(),
             toolName: "SendToUser",
-            args: { type: "text", content: delivered },
+            args: { type: "text", content: delivered, ...(endTurn ? { end_turn: true } : {}) },
           };
-          content.length = 0;
+          // The text delivery is a projection, not a replacement for the model's
+          // ordered assistant history (including native inline reasoning).
+          evidence.setCount("syntheticDeliveries", 1);
+          if (endTurn) evidence.setCount("syntheticFinalDeliveries", 1);
           held.push(call);
           heldToolParts.push(call);
         }
