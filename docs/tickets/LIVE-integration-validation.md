@@ -324,3 +324,51 @@ Status: blocked — integrated into v2; independent review and authorized live q
 在批准的一个 confirmed_box canary 上执行同 modelId 的 high → xhigh → default → official，另一个 Bot 保持原配置/official 对照。只使用批准的有界任务；需要工具/Memory/compact 的向量不得靠停掉这些原生路径通过。已有 TURN 必须继续原绑定，新 TURN 才改变 effort；实际工具调用、Host normalized terminal、最终交付及 App 标题 `m=/e=` 各自留证。改 effort 不应因为伪造新 modelId 触发不必要的模型切换/上下文清空；default/official 清 e，不破坏用户标题。配置查询不得冒充当前 TURN，tokens 不代表 Provider 档位确认。
 
 预算与授权：对象、TURN/HTTP/费用上限、允许工具和等待时间、原 App 观察及回退许可 `not-selected`。旧 TURN 混档、重放请求、上下文/工具结果丢失、其他 Bot 被改或 Working/交付异常即停止。恢复该 Bot 原 assignment 与标题显示状态，核对 pending 工作是否实际终止，不将重启当全部副作用停止；必要制品回退沿 CUTOVER 预案。回执：`not-run`；实际 native/artifact/wire/selection identities、App 图像与结果均 `not-recorded`。
+
+## 预登记：默认本地上下文维护（CTX）
+
+规划来源：[Spec S12](../roadmap/box-runtime-impl-spec.md#context-maintenance)、[CTX-01–CTX-04](README.md#context-maintenance)、[ADR](../decisions/2026-09-17-local-context-maintenance.md)；固定规划提交 `15a0594`，已在 `feat/box-runtime-v2`，读取基线 `7994b92`。**implementation source commit/range = not-recorded**；代码/离线/制品测试/原生隔离消费者资格/独立review均未因规划提交而完成，它们继续留在CTX来源票。下面只登记确实需要现役加载、真实用户入口/Provider或重启的最后oracle，不是“全部只剩live”。
+
+集成候选、实际Host/profile/preload/modeld/config/wire身份、目标对象、窗口、模型费用和动作授权均 `not-selected` / `not-recorded`。规划commit不等于功能代码，必须先补实现source→固定v2候选映射并重验依赖后才可推进。本轮三个条目全部blocked、not-run，没有执行模型、工具、原生状态写入或服务切换。
+
+| Entry | 独立证明 |
+|---|---|
+| [LIVE-CTX-ADOPTION](#live-ctx-adoption) | 现役配置/匹配协议/原生维护能力确已采用，而非仅新源码 |
+| [LIVE-CTX-NEXT-INPUT](#live-ctx-next-input) | 已有失败长会话下一条普通输入先维护、再处理一次的实际Host/App旅程 |
+| [LIVE-CTX-DURABILITY](#live-ctx-durability) | 实际原生checkpoint跨重启、取消/未知结果对账及受限退路 |
+
+<a id="live-ctx-adoption"></a>
+### LIVE-CTX-ADOPTION — 当前运行代真正采用维护策略与能力
+Status: blocked — CTX-01–CTX-04 implementation, offline qualification, independent review and authorized cutover required
+
+来源：CTX-01/02/04，S12.2/4/9。依赖实际所需的 [CONFIG CUTOVER](#live-config-cutover) 与 [CONFIG CONSUMERS](#live-config-consumers) 合格结果；reasoning/模型资格仍按其来源票。新功能目标config3/下一wire必须按当时实现精确确认，不照抄当前历史wire7。旧peer有限只读诊断不等于能够运行新维护操作。
+
+必须live的原因：实际进程是否已采用policy/新purpose、Host safe point是否加载、原生归属/队列与root能力是否属于同代，不能从build或临时目录证明。源码切片独立审查与隔离native-copy资格是前置，未完成时不把本条当替代。
+
+Oracle：记录configured-next-turn/captured/contextPolicyRevision、模型/effort/selectionRevision、声明容量/有效本地窗口、已加载原生维护capability及协议身份；正常auto不依赖旧环境gate，注入保持off。明确未配置/其他Bot及official路径未被opt-in；配置保存与真实采用分别留证。读状态不产生摘要/工具/发送或安装修复。
+
+预算/停止/恢复：对象与允许暂停工作/迁移/切换/回退范围未选择时零动作。批准窗口只操作一个固定集成候选，先保护配置和原生root、确认旧writer/在途工作，再按既有生命周期程序成套采用。发现版本/ownership/alias冲突或无法确认当前状态即停止；不擅开gate、删ledger或将旧schema恢复覆盖后来的用户编辑。回执not-run，采用身份/结果not-recorded。
+
+<a id="live-ctx-next-input"></a>
+### LIVE-CTX-NEXT-INPUT — 已失败旧会话的下一条输入自动恢复
+Status: blocked — ADOPTION and CTX-A01–A15 offline/packed proofs required before an authorized user journey
+
+来源：CTX-04的CTX-A01/A04/A07/A16，依赖 [ADOPTION](#live-ctx-adoption) 与当前选定模型的基础请求资格。使用一个已确认box归属、已有过长历史并最近失败/无新有效usage的批准会话；存在真实受影响会话时须单独取得其业务数据/暂停范围授权，不能默认沿用事故ID。新建短Bot/手工compact成功不能替代这份证明。
+
+必须live的原因：原版App的真实输入接收、当前Host队列/root恢复、摘要与主请求的真实次数、后续工具/交付和活动显示须实际观察。核心本地500K→128K阈值机制已由离线Fake证明；本条不要求制造真实provider窗口超限或用巨型pad冲撞端点。
+
+Oracle：普通输入保留原nonce/文本/附件；按实际采用的128K工作策略，在首次主模型HTTP之前发生必要维护；独立摘要请求有purpose/预算计数，候选满足预算且Host接受/checkpoint可核对。新输入只被处理一次，旧失败STEP仍终态失败，既有工具不重做。原App通过Host事件体现维护与结束，不造thinking或长期Working。再一条短输入验证陈旧usage/error不重触发无谓compact；未知阶段单列，摘要返回或Bot声称“压缩好了”不足以通过。
+
+预算/停止/恢复：预先填写主请求数、摘要请求数/总input、费用、总时间和允许工具白名单；默认验证范围为一个目标会话、至多两条新普通输入，摘要不超过实际配置与本窗口更小上限。任何重复业务/越权数据/无界等待/材料或root异常立即停止后续请求并保留证据；不重发旧失败STEP、不扩大对象或换provider。摘要失败如实记录原消息状态，未验后续继续则保持blocked。回执not-run，窗口/目标/请求预算not-selected。
+
+<a id="live-ctx-durability"></a>
+### LIVE-CTX-DURABILITY — 原生checkpoint重启与取消/退路
+Status: blocked — NEXT-INPUT, persistence/fault offline proofs and an independently authorized restart window required
+
+来源：CTX-02/04的CTX-A11/A12/A14/A16，依赖 [NEXT-INPUT](#live-ctx-next-input)。公共进程重开/真实临时store及原生隔离消费者证明已在来源票完成后，才进入本条；不能将其未实现写成待live。
+
+必须live的原因：当前原生archive/carrier/root/checkpoint是否能被实际新Host进程读回、在途输入/实际副作用怎样对账、原版App和官方回程是否仍可用，不能由owned JSON夹具替代。
+
+Oracle：完成一个已确认持久的compact，在明确允许的空闲窗口按现有Host/modeld生命周期重启一次，新进程只从当前原生提交root继续，旧长窗口不复活、原始archive可追溯；只发新的批准消息，不恢复旧service STEP。取消/迟到/回执丢失向量只在受控原生测试对象和安全注入点运行，分别报告未提交/已提交/commit_unknown，不伪造回滚或重复摘要；缺安全注入点则仅该向量blocked。观察输入队列、工具/Memory/交付及Working真实状态，必要官方选择退路保持同会话合法历史。
+
+预算/停止/恢复：明确一次重启影响的所有Bot/运行、最多新输入/Provider/费用、数据保护和停止许可；未知活动不能当空闲。只恢复匹配制品/schema与被批准的配置范围，不回滚用户新消息/删除root/旧ledger，模型assignment与effort不因降版静默丢失。平台Reset不是本条自动授权。回执not-run，原生持久/重启/退路结果not-recorded。

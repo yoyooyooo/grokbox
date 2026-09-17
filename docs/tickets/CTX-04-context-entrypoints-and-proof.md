@@ -32,7 +32,7 @@ Status: **Planned / Spec-only** · M4。2026-09-17规划基线 `7994b92`；新�
 
 ## Native / live gates
 
-原生隔离consumer/profile/合法root处理的离线资格与独立review留在本票或CTX-02，不能因为运行官方代码就统称live。只有现役加载、真实provider/Host/App的下一消息、checkpoint重启/回退等最终oracle预登记至 [LIVE](LIVE-integration-validation.md)。规划登记状态必须blocked，implementation commit=not-recorded；将来逐条补固定source→v2集成映射/制品/对象/预算/停止条件。
+原生隔离consumer/profile/合法root处理的离线资格与独立review留在本票或CTX-02，不能因为运行官方代码就统称live。最终oracle已按规划提交 `15a0594` 预登记为 [ADOPTION](LIVE-integration-validation.md#live-ctx-adoption)、[NEXT-INPUT](LIVE-integration-validation.md#live-ctx-next-input)、[DURABILITY](LIVE-integration-validation.md#live-ctx-durability)，分别证明现役能力、已有失败会话普通输入和原生重启。三条均blocked/not-run，implementation commit=not-recorded；将来逐条补固定实现source→v2集成映射/制品/对象/预算/停止条件，不把预登记当功能实现。
 
 上线前保护原配置和原生状态，核对所属Server/Host、旧writer已退出、所有参与组件的实际版本/能力。schema3或新wire发布不等于Host已经采用；默认auto只属于已正常启用的受支持managed运行范围，不借配置迁移给别的Bot选模型。无本次明确授权，不切换Host/modeld，不发用户业务消息，不制造大prompt消耗。
 
