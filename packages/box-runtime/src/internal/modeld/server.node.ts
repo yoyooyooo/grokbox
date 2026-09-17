@@ -1,8 +1,7 @@
 import type { Socket } from "node:net";
 import { randomUUID } from "node:crypto";
-import { Cause, Deferred, Effect, Layer, Queue, Stream } from "effect";
+import { Cause, Clock, Deferred, Effect, Layer, Queue, Stream } from "effect";
 import {
-  OWNERSHIP_ADMISSION_WAIT_MS,
   BackendFailure,
   BindingFailure,
   StreamOutputBudget,
@@ -194,10 +193,14 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     }
 
     const request = parsed.request;
-    // One STEP wall deadline, including the now network-backed ownership check.
-    const startedTick = performance.now();
+    // One request deadline across claim/admission/prepare and streaming. Use the
+    // same injected monotonic clock and origin as the kernel; the authority
+    // gate owns its smaller cumulative allowance, not another admission timer.
+    const clock = yield* Clock.Clock;
+    const startedTick = clock.monotonicTimeNanosUnsafe();
     const startedAt = new Date().toISOString();
-    const deadlineAt = startedTick + REQUEST_WALL_DEADLINE_MS;
+    const deadlineAt = startedTick + BigInt(REQUEST_WALL_DEADLINE_MS) * 1_000_000n;
+    const remainingMs = () => Math.max(0, Number(deadlineAt - clock.monotonicTimeNanosUnsafe()) / 1_000_000);
     const observeStep = options.observeStep;
     let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0, startedAt };
     let backendAttempts = 0;
@@ -227,7 +230,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           : observation), cleanup: { ...observation.cleanup, exitFailure } };
       }
       observation = withFailureSummary({ ...observation, at: observation.at ?? new Date().toISOString(), startedAt,
-        durationMs: Math.max(0, Math.floor(performance.now() - startedTick)), backendAttempts, attempts,
+        durationMs: Math.max(0, Math.floor(Number(clock.monotonicTimeNanosUnsafe() - startedTick) / 1_000_000)), backendAttempts, attempts,
         ...(lastAuthority ? { authority: lastAuthority } : {}),
         ...(authorityObservationGaps ? { authorityObservationGaps } : {}),
         ...(readRecovery?.() ? { recovery: readRecovery!() } : {}) });
@@ -298,8 +301,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
     );
     const admitted = yield* Effect.result(
-      Effect.raceFirst(runStep(parsed.request), transportHalt).pipe(
-        Effect.timeout(`${Math.min(OWNERSHIP_ADMISSION_WAIT_MS, Math.max(0, deadlineAt - performance.now()))} millis`),
+      Effect.raceFirst(runStep(parsed.request, { startedTick }), transportHalt).pipe(
+        Effect.timeout(`${remainingMs()} millis`),
         Effect.provideService(ModelBackend, compactBackend),
         Effect.provideService(RuntimeEvents, runtimeEvents),
       ),
@@ -375,7 +378,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
           sequence += 1;
           observation.eventCount = sequence;
         }),
-      ).pipe(Effect.timeout(`${Math.max(0, Math.floor(deadlineAt - performance.now()))} millis`)),
+      ).pipe(Effect.timeout(`${remainingMs()} millis`)),
     );
     const clientDisconnected = yield* Deferred.isDone(disconnected);
     const failure = collected._tag === "Failure" ? modeldFailureOutcome(collected.failure, "provider", sequence) : undefined;

@@ -811,6 +811,8 @@ packages/cli/src/
 
 模型已经被调用过时，资格等待恢复不产生第二次模型调用；当次终态已发出或服务代已退出后不自动恢复。暂时 `waiting` 只发生在同一尚未终止的 STEP；不为旧 TURN 提供新握手/新模型捷径。明确失效应对原 binding 保持单调，不被后续 box 观测覆盖。
 
+**单一期限：** server 与 kernel 共用同一进程内 ingress 单调时钟起点；`runStep` 的可选 timing 是内部调用参数，不是 wire DTO，未来起点在 claim 前拒绝。180秒请求期限从入口一直覆盖到流结束，accepted 不续期；资格门拥有其更小的累计等待预算。移除历史10.5秒复合准入计时器与500ms常量，不用外层同量级计时器抢走已返回的源失败。总期限先到且无源结果时只报告 deadline，不拼出虚构的 RPC 原因；不可中断的持久化确认仍可能延迟取消结算，不靠 detach 伪造停止。
+
 **时钟：** 进程内预算用可注入单调时钟；ISO 时间只作跨日志关联。固定 Effect 版本的 `Clock.monotonicTimeNanos` 才是 elapsed-time 来源；`currentTimeMillis/currentTimeNanos` 都是可跳变墙钟，不得因单位是 nanos 就当成单调。跨进程不直接相减 monotonic tick。共享请求由协调器记原始操作起点；Host 返回有界相对耗时/身份，收到时间不刷新 evidence。墙钟跳变、未来时间、未知原始年龄拒绝执行而不产生负年龄。
 
 ### S10.4 共享 source operation 与等待者

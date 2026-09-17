@@ -281,11 +281,18 @@ function settleStep(memory: InferenceMemoryValue, request: RunStepRequest, statu
   }));
 }
 
-export function runStep(request: RunStepRequest) {
+/** timing is a process-local ingress observation, not part of RunStepRequest
+ * or the wire schema. A server may account for pre-kernel work, never grant a
+ * later origin. Direct kernel callers start their budget at invocation. */
+export function runStep(request: RunStepRequest, timing?: { readonly startedTick: bigint }) {
   return Effect.gen(function* () {
     const memory = yield* InferenceMemory;
     const now = yield* Clock.currentTimeMillis;
-    const startedTick = yield* Clock.monotonicTimeNanos;
+    const currentTick = yield* Clock.monotonicTimeNanos;
+    const startedTick = timing?.startedTick ?? currentTick;
+    if (typeof startedTick !== "bigint" || startedTick > currentTick) {
+      return yield* Effect.fail(new BindingFailure("step_invalid"));
+    }
     // Cache maintenance has no authority to reject unrelated work. Failed
     // cooling retains the hot owner; the actual identity claim below still
     // must commit successfully before this request may dispatch.

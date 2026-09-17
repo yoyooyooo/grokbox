@@ -36,6 +36,35 @@ function graph(authority: () => Effect.Effect<AdmissionAuthorityResult, unknown>
   );
 }
 
+test("the gate accounts for ingress time before runStep instead of renewing the total deadline", async () => {
+  const counts = createCountedSeams();
+  const result = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const startedTick = yield* Clock.monotonicTimeNanos;
+    const worker = yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
+      yield* Effect.sleep("175 seconds");
+      return yield* Effect.result(runStep(request, { startedTick }));
+    })));
+    yield* TestClock.adjust("181 seconds");
+    return yield* Fiber.join(worker);
+  }).pipe(Effect.provide(graph(() => Effect.never, counts)), Effect.provide(TestClock.layer()))));
+  expect(result._tag).toBe("Failure");
+  if (result._tag === "Failure") expect(streamFailureDiagnostic(result.failure)?.authority).toMatchObject({
+    reason: "ownership_read_timeout", waitBudgetMs: 5000,
+  });
+  expect(counts.network).toBe(0);
+});
+
+test("a future process-local ingress origin is rejected before claiming the STEP", async () => {
+  const counts = createCountedSeams();
+  const result = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const startedTick = (yield* Clock.monotonicTimeNanos) + 1n;
+    const outcome = yield* Effect.result(runStep(request, { startedTick }));
+    return { outcome, capacity: yield* inferenceCapacity };
+  }).pipe(Effect.provide(graph(() => permitted, counts)), Effect.provide(TestClock.layer()))));
+  expect(result.outcome).toMatchObject({ _tag: "Failure", failure: { code: "step_invalid" } });
+  expect(result.capacity.counters.accepted).toBe(0); expect(counts.network).toBe(0);
+});
+
 test("all checkpoints share one cumulative authority allowance instead of resetting a ten-second timeout", async () => {
   const counts = createCountedSeams(), progress: AuthorityProgress[] = [];
   let calls = 0;

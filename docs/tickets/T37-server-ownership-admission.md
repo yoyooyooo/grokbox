@@ -49,7 +49,7 @@
 
 - 初始化/重新领养、账号与Host代变更、启用/换模、新TURN等边界使用有界新鲜证据；重复查询按同范围合并并限制并发、目标数、总时限。复用现有桥，不逐token/逐工具轮询。
 - 已在`contract/ownership.ts`固定：证据最大年龄5秒、Server缓存2秒、读取等待10秒、最多32个目标；没有开放任意扩大安全范围的配置。RPC年龄从请求开始保守计算，慢回复不能在返回时重新获得5秒新鲜度；超龄回复不入缓存，非法当前时钟不能准入。合并并发读取不共享可变local结果，每次仍核对本地/迁移前后值。
-- 冷Server读取不能被旧local-only的500ms整个包住。当前modeld复合准入上限为`OWNERSHIP_WAIT_MS + ADMISSION_WAIT_MS = 10.5秒`，不是每次read再续10秒；接下来的流仅使用180秒STEP总期限的剩余时间，partial socket的1秒保持不变。700ms受控冷读正例与超龄FakeClock反例分别验证可推进和拒绝。
+- 冷Server读取不能被旧local-only的500ms整个包住。此票历史实现采用10.5秒复合准入上限；该机制已由 [T47](T47-modeld-authority-state-machine.md) / [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) 取代：当前server和kernel共享180秒单调时钟总期限，资格门单独拥有累计等待预算，不再叠加旧复合计时器。partial socket的1秒保持不变。历史700ms冷读和超龄反例仍保留，新deadline/取消/不续期验证见T47。
 - 每条已受理TURN捕获所属范围及证据/模型身份；单纯配置变化不撤销旧TURN。后续STEP检查本地失效/原生屏障，不重新选模型。
 - 真正的归属撤销、迁移、Host代变化使旧准入无效。复用原生resume-ownership/turn-execution暂停和迁移屏障；不把List快照伪装成Server租约，不以两次读取声称跨端原子性。
 - 对已开始的效果按未发生/已发生/未知记录，取消不能伪造回滚；迟到摘要/工具/消息不能借旧授权进入新root。跨服务重启不复用旧准入或自动重放未知STEP。

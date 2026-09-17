@@ -1,4 +1,3 @@
-import { ADMISSION_WAIT_MS } from "./limits.ts";
 import { projectServerActivitySnapshot } from "./activity-observation.ts";
 import { OWNERSHIP_READ_ERRORS, ownershipReadObservationFromSnapshot, type OwnershipReadObservation } from "./ownership-observation.ts";
 
@@ -8,9 +7,6 @@ export type OwnershipRefusalClass = "temporal" | "conflict" | "unconfirmed" | "u
 export const OWNERSHIP_EVIDENCE_MAX_AGE_MS = 5_000;
 export const OWNERSHIP_SERVER_CACHE_MS = 2_000;
 export const OWNERSHIP_WAIT_MS = 10_000;
-// Once Server ownership is part of admission, the old local-only 500ms budget
-// cannot wrap the entire RPC. This is one bounded combined admission budget.
-export const OWNERSHIP_ADMISSION_WAIT_MS = OWNERSHIP_WAIT_MS + ADMISSION_WAIT_MS;
 export const OWNERSHIP_MAX_TARGETS = 32;
 export const OWNERSHIP_LOCAL_SOURCE = "Host.native-local-ownership" as const;
 

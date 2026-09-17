@@ -62,6 +62,7 @@ const MODEL_CORE_SUITES = {
     `${kernel}step-ledger.test.ts`,
     `${kernel}overflow-recovery.test.ts`,
     `${box}authority-wait-unix.test.ts`,
+    `${box}modeld-deadline.test.ts`,
     `${box}authority-wire.test.ts`,
     `${box}ownership-coordinator.test.ts`,
     `${box}ownership-observation-unix.test.ts`,
