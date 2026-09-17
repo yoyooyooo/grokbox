@@ -4,7 +4,7 @@
 
 **Configuration lane implemented and offline-verified; production cutover/review remain open。** T57–T59 的 schema、writer、迁移、bootstrap 与当前 CLI/领域消费者已接通。该状态只覆盖 AH-99/AH-100 的配置工程，不关闭原生 Routine、多 Bot 路由、诊断、issue 或 Host 自动维护的执行票。
 
-合同归 [配置 Spec](../roadmap/configuration-rebuild-spec.md)，操作入口归 [配置指南](../configuration.md)。实现提交 `dbc43f5`，基于 v2 `f8c82c0`，同分支线性提交，不修改并行 v2 工作区或现役 shim。[AH-99/AH-100 收口回执](../reports/2026-09-17-unified-configuration-closeout.md)记录固定 Bun 1.3.14 下配置专项 200/0、全仓 2118/6-skip/0、打包 15/0；严格 all 验收器因原生跳过仍未放行。
+合同归 [配置 Spec](../roadmap/configuration-rebuild-spec.md)，操作入口归 [配置指南](../configuration.md)。实现提交 `80fe393`，最终 rebase 到 v2 `6f2fcd1`，同分支线性提交，不修改并行 v2 工作区或现役 shim。[AH-99/AH-100 收口回执](../reports/2026-09-17-unified-configuration-closeout.md)记录固定 Bun 1.3.14 下配置专项 200/0、全仓 2152/6-skip/0、打包 15/0；严格 all 验收器因原生跳过仍未放行。
 
 ## Implementation and actual consumers
 

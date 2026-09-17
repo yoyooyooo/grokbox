@@ -1,6 +1,6 @@
 # AH-99 / AH-100 — 统一配置实现与验收收口
 
-日期：2026-09-17。实现提交：`dbc43f53c30fc80484c63a3fd95b19f6bb2a0cb3`，分支 `feat/template-ops-automation`，基线为 v2 `f8c82c0`。本报告记录配置工程交付，不代表生产迁移、独立代码复审或其余 ops 执行功能已完成。
+日期：2026-09-17。实现提交：`80fe393`，分支 `feat/template-ops-automation`，最终固定基线为 v2 `6f2fcd1`。初始 `f8c82c0` 基线上的实现 `dbc43f5` 已 rebase 映射到 `80fe393`；只解决一个制品指纹冲突，按组合源码重新构建并执行配置专项及全仓回归。本报告记录配置工程交付，不代表生产迁移、独立代码复审或其余 ops 执行功能已完成。
 
 ## AH-99：一个配置根，两份人读文档
 
@@ -27,13 +27,13 @@ models 独立使用顶级 list/check/use/reset/persist-key；--for 与 --default
 | 验证入口 | 实际结果 / 范围 |
 |---|---|
 | `bun scripts/verify-runtime-rebuild.mjs config-unification` | **通过**；typecheck、build、200 tests、Host import fence，源码摘要前后相同 |
-| `bun test`（通过 all 验收器执行） | **2118 pass / 6 skip / 0 fail**，275 文件，17385 assertions |
+| `bun test`（通过 all 验收器执行） | **2152 pass / 6 skip / 0 fail**，278 文件，17758 assertions |
 | `bun scripts/verify-runtime-rebuild.mjs all` | **未放行**：其严格策略不接受上述 6 个 opt-in native source tests 被跳过；未删除或放宽该门 |
 | `bun test test/packaging.test.ts packages/box-runtime/test/context-continuity-artifact.test.ts test/config-packed.test.ts` | **15 pass / 0 fail**；真实 tarball 安装、Node CLI、模型原字节、别名恢复和 E09 制品指纹 |
 | `bun test test/ah97-followups.test.ts test/skills.test.ts test/models-command-surface.test.ts` | **34 pass / 0 fail**；恢复有效 packaged Node 说明，并删除 core Skill 的过时 stub-only 口径 |
 | `node scripts/check-publication.mjs`、`git diff --check` | 无隐私发现、无空白错误 |
 
-配置专项固定源码摘要：`a8e208f000c75cabe5d29a10f4c73d2eb61dbe2783011615ac68aa4245fbed1b`。分组之间有重叠，不相加为独立测试总量。没有对 Node20 或真实 Reset 作未执行的成功声明。
+最终配置专项与全仓测试的固定源码摘要：`66d9ac8494bc5eb720722cc79be729a99684e078a51067745fdcda08ad67028a`，两个验收器各自前后相同。组合 preload SHA256 为 `db93a6e2707037155ea76f0ed61d581343c655bd3ae9d399c2638bb78674b78f`，E09 拒旧制品测试保持严格。分组之间有重叠，不相加为独立测试总量。没有对 Node20 或真实 Reset 作未执行的成功声明。
 
 ## 关闭与剩余门
 
