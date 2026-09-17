@@ -7,6 +7,8 @@ import type { InferenceEvent } from "./internal/contract/events.ts";
 import type { HostCompactRequest, HostCompactResult } from "./internal/contract/overflow.ts";
 import type { RunStepRequest } from "./internal/contract/binding.ts";
 import type { AdmissionAuthorityResult } from "./internal/contract/authority-policy.ts";
+import type { ContextIntent } from "./internal/config/context-policy.ts";
+import type { ContextBudget, ContextCandidate, ContextCommitReceipt, ContextFailure, ContextMaterial, ContextMeasure, ContextPlan, ContextMaintenanceIdentity, ContextSummaryInput, ContextSummaryOutput } from "./internal/contract/context-maintenance.ts";
 
 /** Process-local opaque handle. Not a contract DTO; never stringify, log, or put on the wire. */
 export type PreparedCall = { readonly _PreparedCall: unique symbol };
@@ -15,6 +17,7 @@ export type AuthLease = { readonly _AuthLease: unique symbol };
 export type ConfigurationSnapshot = {
   models: ModelsFile;
   desired: DesiredFile;
+  context?: ContextIntent;
 };
 
 export class ConfigurationRead extends Context.Service<ConfigurationRead, {
@@ -38,6 +41,8 @@ export type AuthorityReadControl = {
 };
 export class AdmissionAuthority extends Context.Service<AdmissionAuthority, {
   readonly current: (request: RunStepRequest, control?: AuthorityReadControl) => Effect.Effect<AdmissionAuthorityResult, unknown>;
+  /** Same native evidence reader; no fabricated business STEP for maintenance. */
+  readonly currentContext?: (request: ContextMaintenanceIdentity, control?: AuthorityReadControl) => Effect.Effect<AdmissionAuthorityResult, unknown>;
 }>()("grokbox/AdmissionAuthority") {}
 
 export class BackendAuth extends Context.Service<BackendAuth, {
@@ -128,6 +133,27 @@ export class ObservationRead extends Context.Service<ObservationRead, {
   readonly snapshot: () => Effect.Effect<StatusEvidence, unknown>;
 }>()("grokbox/ObservationRead") {}
 
+export type ContextSummaryRequest = (input: ContextSummaryInput) => Effect.Effect<ContextSummaryOutput, ContextFailure>;
+
+/** One external-algorithm boundary. No Pi types, credentials, root writes or Runtime. */
+export class ContextCompactionAlgorithm extends Context.Service<ContextCompactionAlgorithm, {
+  readonly measure: (material: ContextMaterial) => Effect.Effect<ContextMeasure, ContextFailure>;
+  readonly plan: (material: ContextMaterial, budget: ContextBudget, summaryBudget: ContextBudget) => Effect.Effect<ContextPlan, ContextFailure>;
+  readonly generate: (plan: ContextPlan, budget: ContextBudget, request: ContextSummaryRequest) => Effect.Effect<string, ContextFailure>;
+}>()("grokbox/ContextCompactionAlgorithm") {}
+
+/** A qualified native root lease; never populated from caller JSON. Preview
+ * materializes the real carrier without replacing the active/persisted root. */
+export type HostContextMaintenance = {
+  /** Native activity reporting is observation only; it grants no execution or write authority. */
+  readonly startActivity?: (identity: ContextMaintenanceIdentity) => Effect.Effect<void, ContextFailure>;
+  readonly authorize: (identity: ContextMaintenanceIdentity) => Effect.Effect<void, ContextFailure>;
+  readonly inspect: (identity: ContextMaintenanceIdentity) => Effect.Effect<ContextMaterial, ContextFailure>;
+  readonly preview: (identity: ContextMaintenanceIdentity, candidate: ContextCandidate) => Effect.Effect<ContextMaterial, ContextFailure>;
+  readonly commit: (identity: ContextMaintenanceIdentity, candidate: ContextCandidate) => Effect.Effect<ContextCommitReceipt, ContextFailure>;
+  readonly readCommit: (identity: ContextMaintenanceIdentity) => Effect.Effect<ContextCommitReceipt | undefined, ContextFailure>;
+};
 export class HostCompact extends Context.Service<HostCompact, {
   readonly request: (input: HostCompactRequest) => Effect.Effect<HostCompactResult>;
+  readonly maintenance?: HostContextMaintenance;
 }>()("grokbox/HostCompact") {}

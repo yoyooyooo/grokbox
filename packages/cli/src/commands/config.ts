@@ -8,7 +8,7 @@ import {
 } from "@grokbox/box-runtime/runtime";
 import {
   ConfigError, CONFIG_SCHEMA, applyConfigChange, configPathTokens, configSchemaAt, configurationRevisions,
-  effectiveOps, getConfigValue, parseConfigJson, portableConfig, redactConfig, validateConfig,
+  effectiveOps, effectiveContextIntent, getConfigValue, parseConfigJson, portableConfig, redactConfig, validateConfig,
   type ConfigChange, type UnifiedConfig,
 } from "@grokbox/runtime-kernel/config";
 import type { CliDeps } from "../deps.ts";
@@ -25,7 +25,7 @@ export type ConfigCommandOptions = {
 };
 function intentProjection(document: UnifiedConfig): UnifiedConfig {
   return { ...document, desktop: { idleReclaim: { enabled: false, minIdleMs: 600000, ...document.desktop?.idleReclaim }, keepAgentIds: document.desktop?.keepAgentIds ?? [] },
-    runtime: { desiredMode: document.runtime?.desiredMode ?? "disabled" }, ops: effectiveOps(document.ops) };
+    runtime: { desiredMode: document.runtime?.desiredMode ?? "disabled", context: effectiveContextIntent(document.runtime?.context) }, ops: effectiveOps(document.ops) };
 }
 function selectedRemote(document: UnifiedConfig, selected?: string): boolean {
   const profile = document.client.profiles[selected ?? document.client.currentProfile];
@@ -91,11 +91,11 @@ export async function runConfigCommand(deps: CliDeps, command: string, args: Arr
   }
   if (command === "schema") {
     const tokens = configPathTokens(args[0] ?? "");
-    writeSuccess(deps.stdout, { schemaVersion: 2, path: args[0] ?? "", schema: configSchemaAt(tokens) }); return;
+    writeSuccess(deps.stdout, { schemaVersion: 3, path: args[0] ?? "", schema: configSchemaAt(tokens) }); return;
   }
   if (command === "validate" && raw.file) {
     validateConfig(await readConfigFile(resolve(raw.file)));
-    writeSuccess(deps.stdout, { valid: true, schemaVersion: 2, written: false }); return;
+    writeSuccess(deps.stdout, { valid: true, schemaVersion: 3, written: false }); return;
   }
   const layout = await readConfigLayout(deps.configDir, deps.env.GROKBOX_BOX_RUNTIME_ROOT);
   if (command === "path") {
@@ -113,7 +113,7 @@ export async function runConfigCommand(deps: CliDeps, command: string, args: Arr
     writeSuccess(deps.stdout, await recoverConfigCommit(store, raw.operationId)); return;
   }
   const snapshot = await store.read();
-  if (command === "validate") { writeSuccess(deps.stdout, { valid: true, schemaVersion: 2, configRevision: snapshot.revision, written: false }); return; }
+  if (command === "validate") { writeSuccess(deps.stdout, { valid: true, schemaVersion: 3, configRevision: snapshot.revision, written: false }); return; }
   if (command === "get") {
     configScope(layout, snapshot.document, args[0], raw, false, deps.env.GROKBOX_PROFILE);
     const tokens = configPathTokens(args[0] ?? ""); const schema = configSchemaAt(tokens);

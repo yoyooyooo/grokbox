@@ -47,6 +47,13 @@ describe("L2 Host harness always-emit", () => {
       "ownership-read-schema",
       "ownership-read-api",
       "ownership-resume-gate",
+      "context-manual-shell-owner",
+      "context-manual-trusted-options",
+      "context-manual-native-action",
+      "context-manual-no-business-settlement",
+      "context-manual-summary-owner",
+      "context-control-rpc-schema",
+      "context-control-rpc-api",
     ]);
   });
 

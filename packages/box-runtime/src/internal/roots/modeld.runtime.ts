@@ -5,7 +5,9 @@ import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import type { Server } from "node:net";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS, providerRecoveryFromEnv, streamFailureDiagnostic, type AdmissionAuthorityResult, type AuthorityDiagnostic } from "@grokbox/runtime-kernel/contract";
-import { AdmissionAuthority } from "@grokbox/runtime-kernel/ports";
+import { AdmissionAuthority, type AuthorityReadControl } from "@grokbox/runtime-kernel/ports";
+import type { RunStepRequest } from "@grokbox/runtime-kernel/contract";
+import { piCompactionAlgorithmLayer } from "../context/pi-compaction.ts";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
 import { createLiveBackendAuth } from "../io/credentials.node.ts";
@@ -26,8 +28,7 @@ export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string
   const ports = modeldStorePorts(durableRoot, runRoot);
   return Layer.effect(AdmissionAuthority, Effect.gen(function* () {
     const coordinator = yield* makeOwnershipCoordinator(ownershipRead);
-    return {
-    current: (request, control): Effect.Effect<AdmissionAuthorityResult> => Effect.gen(function* () {
+    const current = (request: Pick<RunStepRequest, "hostEpoch" | "agentId">, control?: AuthorityReadControl): Effect.Effect<AdmissionAuthorityResult> => Effect.gen(function* () {
       const authority = yield* Effect.tryPromise({ try: () => ports.authority(), catch: () => "authority_unavailable" });
       if (authority.state !== "committed") return { admitted: false, reason: "authority_not_committed" } as const;
       const host = authority.host;
@@ -47,34 +48,21 @@ export function liveAdmissionAuthorityLayer(durableRoot: string, runRoot: string
       const diagnostic = streamFailureDiagnostic(error);
       return Effect.succeed({ admitted: false as const, reason: typeof reason === "string" && (AUTHORITY_REASONS as readonly string[]).includes(reason) ? reason as AuthorityDiagnostic["reason"] : "unknown" as const,
         ...(diagnostic ? { diagnostic } : {}) });
-    })),
-    };
+    }));
+    return { current, currentContext: current };
   }));
 }
 
 export function admitAllAuthorityLayer(): Layer.Layer<AdmissionAuthority> {
-  return Layer.succeed(AdmissionAuthority, {
-    current: () => Effect.map(Clock.currentTimeMillis, observedAtMs => ({ admitted: true,
-      ownership: { scopeId: "a".repeat(64), serverId: "owned-test-server", observedAtMs } })),
-  });
+  const current = () => Effect.map(Clock.currentTimeMillis, observedAtMs => ({ admitted: true as const,
+    ownership: { scopeId: "a".repeat(64), serverId: "owned-test-server", observedAtMs } }));
+  return Layer.succeed(AdmissionAuthority, { current, currentContext: current });
 }
 
-export const MODELD_HOST_COMPACT_ENV = "GROKBOX_MODELD_HOST_COMPACT";
-
-/** Explicit opt-in only. Any other value, including unset, keeps HostCompact off. Omitted env follows process.env so live `runtime modeld run` can set/read GATE=1. */
-export function modeldHostCompactEnabled(env: NodeJS.Dict<string> = process.env): boolean {
-  return env[MODELD_HOST_COMPACT_ENV] === "1";
-}
-
-/** Production attach for ensure/start. Undefined unless the env gate is exactly `1`. */
-export function modeldCompactForIncoming(env: NodeJS.Dict<string> = process.env) {
-  return modeldHostCompactEnabled(env) ? sameConnectionHostCompactLayer : undefined;
-}
-
-function compactAttach(env: NodeJS.Dict<string> = process.env) {
-  const compactForIncoming = modeldCompactForIncoming(env);
-  return compactForIncoming ? { compactForIncoming } : {};
-}
+/** Normal maintenance is configured per captured context policy. Native
+ * capability, current ownership and the narrow recovery ledger remain mandatory. */
+export function modeldCompactForIncoming() { return sameConnectionHostCompactLayer; }
+function compactAttach() { return { compactForIncoming: modeldCompactForIncoming() }; }
 
 export type ModeldRootOptions = {
   durableRoot: string;
@@ -109,6 +97,7 @@ export function modeldRootLayer(options: {
     Layer.merge(liveAdmissionAuthorityLayer(options.durableRoot, options.runRoot, options.ownershipRead)),
     Layer.merge(auth.layer),
     Layer.merge(backend),
+    Layer.merge(piCompactionAlgorithmLayer),
     Layer.merge(Layer.unwrap(openExecutionHistory(options.runRoot, options.serviceEpoch).pipe(
       Effect.map(history => inferenceMemoryLayer({ serviceEpoch: options.serviceEpoch, history,
         providerRecovery: providerRecoveryFromEnv(options.env ?? process.env) })),
@@ -186,7 +175,7 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
         hooks: options.hooks,
         maxClients: options.maxClients,
         env: options.env ?? process.env,
-        ...compactAttach(options.env ?? process.env),
+        ...compactAttach(),
       });
       if (!listener.server.listening) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_closed"));
       yield* ready({ kind: "owned", path, generation });

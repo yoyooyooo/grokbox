@@ -1,5 +1,6 @@
-/** Parallel 19-slice envelope window observation.
- * Measure/encode may persist from retain when a 19-slice reviewed recipe exists
+/** Execution-envelope observation, including the complete context-maintenance group.
+ * Historical 19-slice recipes remain readable without inventing newer evidence.
+ * Measure/encode may persist from retain when a complete reviewed recipe exists
  * (passed or profiles/reviewed.json). The recipe pin SHA need not match the new generation.
  * Status loads/diffs only. Never invents without reviewed, never expands driftedSlices,
  * never applies, never writes/adopts reviewed.
@@ -10,6 +11,7 @@ import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
 import {
   OPTIONAL_SLICE_IDS,
   OBSERVATION_SLICE_IDS,
+  CONTEXT_SLICE_IDS,
   REQUIRED_SLICE_IDS,
   type PatchProfile,
   type SliceId,
@@ -23,12 +25,19 @@ import type { HostBundlesObservation } from "../../io/provenance.node.ts";
 // The existing execution-envelope golden remains a 19-slice contract. Pure
 // scheduling observers have independent exact source/transform profile checks;
 // adding one must not invalidate every historical execution golden.
-export const ENVELOPE_SLICE_IDS = [...REQUIRED_SLICE_IDS, ...OPTIONAL_SLICE_IDS.filter(id => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(id))] as const satisfies readonly SliceId[];
+export const ENVELOPE_SLICE_IDS = [...REQUIRED_SLICE_IDS, ...OPTIONAL_SLICE_IDS.filter(id => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(id)
+  && !(CONTEXT_SLICE_IDS as readonly string[]).includes(id))] as const satisfies readonly SliceId[];
 export const ENVELOPE_SLICE_COUNT = ENVELOPE_SLICE_IDS.length;
+const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...ENVELOPE_SLICE_IDS, ...CONTEXT_SLICE_IDS];
+function completeEnvelopeIds(ids: ReadonlySet<string>): boolean {
+  const withContext = CONTEXT_SLICE_IDS.some(id => ids.has(id));
+  const expected = withContext ? ALL_ENVELOPE_SLICE_IDS : ENVELOPE_SLICE_IDS;
+  return ids.size === expected.length && expected.every(id => ids.has(id));
+}
 export const ENVELOPE_WINDOWS_FILE = "envelope-windows.json";
 
 const SHA = /^[a-f0-9]{64}$/;
-const ENVELOPE_SLICE_SET = new Set<string>(ENVELOPE_SLICE_IDS);
+const ENVELOPE_SLICE_SET = new Set<string>(ALL_ENVELOPE_SLICE_IDS);
 
 export type EnvelopeByteRange = { startByte: number; endByte: number };
 
@@ -125,7 +134,7 @@ function parseWindowSlice(value: unknown): EnvelopeWindowSlice | null {
 export function envelopeProfileShape(profile: PatchProfile | undefined): profile is PatchProfile {
   if (!profile || !Array.isArray(profile.slices)) return false;
   const core = profile.slices.filter(s => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(s.id));
-  if (core.length !== ENVELOPE_SLICE_COUNT) return false;
+  if (core.length !== ENVELOPE_SLICE_COUNT && core.length !== ALL_ENVELOPE_SLICE_IDS.length) return false;
   const ids = new Set<string>();
   for (const slice of core) {
     if (!slice || !isSliceId(slice.id) || ids.has(slice.id)) return false;
@@ -134,7 +143,7 @@ export function envelopeProfileShape(profile: PatchProfile | undefined): profile
     if (typeof slice.find !== "string" || slice.find.length === 0) return false;
     ids.add(slice.id);
   }
-  return ids.size === ENVELOPE_SLICE_COUNT && ENVELOPE_SLICE_IDS.every((id) => ids.has(id));
+  return completeEnvelopeIds(ids);
 }
 
 /** True only for a 19-slice reviewed envelope pinned to this sourceSha. Write-gate / AH-85. */
@@ -173,7 +182,8 @@ export function envelopeWindowsFromReviewed(
 /** Loader for a retained generation / archive `envelope-windows.json`. Never invents rows. */
 export function parseEnvelopeWindows(value: unknown): EnvelopeWindows {
   if (!isRecord(value) || typeof value.sourceSha !== "string" || !SHA.test(value.sourceSha) ||
-    !boundedText(value.profileId, 128) || !Array.isArray(value.slices) || value.slices.length !== ENVELOPE_SLICE_COUNT) {
+    !boundedText(value.profileId, 128) || !Array.isArray(value.slices)
+    || (value.slices.length !== ENVELOPE_SLICE_COUNT && value.slices.length !== ALL_ENVELOPE_SLICE_IDS.length)) {
     throw new Error("invalid envelope-windows");
   }
   const ids = new Set<string>();
@@ -184,7 +194,7 @@ export function parseEnvelopeWindows(value: unknown): EnvelopeWindows {
     ids.add(parsed.id);
     slices.push(parsed);
   }
-  if (ids.size !== ENVELOPE_SLICE_COUNT || ENVELOPE_SLICE_IDS.some((id) => !ids.has(id))) {
+  if (!completeEnvelopeIds(ids)) {
     throw new Error("invalid envelope-windows");
   }
   return { sourceSha: value.sourceSha, profileId: value.profileId as string, slices };
@@ -221,8 +231,8 @@ function measureOne(source: string, slice: SlicePatch): EnvelopeWindowSlice {
  */
 export function measureEnvelopeWindows(source: string, profile: PatchProfile): EnvelopeWindows {
   const core = profile.slices.filter(s => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(s.id));
-  if (core.length !== ENVELOPE_SLICE_COUNT || !SHA.test(sha256Text(source))) {
-    throw new Error("envelope measure requires 19 unique reviewed slices and UTF-8 source");
+  if (!envelopeProfileShape(profile) || !SHA.test(sha256Text(source))) {
+    throw new Error("envelope measure requires a complete reviewed slice set and UTF-8 source");
   }
   const ids = new Set<string>();
   const slices = core.map((slice) => {
@@ -230,8 +240,8 @@ export function measureEnvelopeWindows(source: string, profile: PatchProfile): E
     ids.add(slice.id);
     return measureOne(source, slice);
   });
-  if (ids.size !== ENVELOPE_SLICE_COUNT || ENVELOPE_SLICE_IDS.some((id) => !ids.has(id))) {
-    throw new Error("envelope measure requires the full 19-slice envelope");
+  if (!completeEnvelopeIds(ids)) {
+    throw new Error("envelope measure requires the full reviewed envelope");
   }
   return {
     sourceSha: sha256Text(source),
@@ -326,7 +336,7 @@ export function diffEnvelopeWindows(previous: EnvelopeWindows, current: Envelope
   const drifted: EnvelopeDriftedSlice[] = [];
   let unchangedCount = 0;
   const ids = new Set<SliceId>([...prevById.keys(), ...curById.keys()]);
-  for (const id of ENVELOPE_SLICE_IDS) {
+  for (const id of ALL_ENVELOPE_SLICE_IDS) {
     if (!ids.has(id)) continue;
     const prev = prevById.get(id);
     const cur = curById.get(id);
@@ -542,7 +552,7 @@ export function classifyWriteEnvelopeDrift(
   const appeared: SliceId[] = [];
   const rejecting: WriteEnvelopeDriftedSlice[] = [];
   const informational: WriteEnvelopeDriftedSlice[] = [];
-  for (const id of ENVELOPE_SLICE_IDS) {
+  for (const id of ALL_ENVELOPE_SLICE_IDS) {
     const prev = prevById.get(id);
     const cur = curById.get(id);
     if (prev && !cur) {

@@ -48,6 +48,7 @@ export function runOverflowRecovery(input: {
     if (Option.isNone(compact)) return yield* Effect.fail(new CompactFailure("capability_not_ready"));
     const blocked = admitOverflowRecovery(input);
     if (blocked) return yield* Effect.fail(new CompactFailure(blocked));
+    input.ledger.evidence = structuredClone(input.evidence);
     input.ledger.nonceConsumed = true;
     input.ledger.compactInvocations += 1;
     const request: HostCompactRequest = { tuple: input.identity, recoveryNonce: input.recoveryNonce };

@@ -21,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Finite read-only probe. Does not create, unlink or repair a socket. */
-async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number, version: 4 | 5 | 6 | typeof WIRE_VERSION = WIRE_VERSION): Promise<Record<string, unknown> | null> {
+async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number, version: 4 | 5 | 6 | 7 | typeof WIRE_VERSION = WIRE_VERSION): Promise<Record<string, unknown> | null> {
   return await new Promise((resolve) => {
     const socket = createConnection({ path: modeldSocketPath(runRoot) });
     let buf: Buffer = Buffer.alloc(0);
@@ -78,7 +78,7 @@ export async function probeModeldExecution(runRoot: string, timeoutMs = 500): Pr
 /** Operator-only transition probe. A verified legacy identity is enough to
  * inspect/replace a service, never enough to call it with a managed STEP. */
 export async function probeModeldReplacement(runRoot: string, timeoutMs = 500) {
-  for (const version of [WIRE_VERSION, 6, 5, 4] as const) {
+  for (const version of [WIRE_VERSION, 7, 6, 5, 4] as const) {
     const identity = await probe(runRoot, "service-info", timeoutMs, version);
     if (!identity || typeof identity.rootId !== "string" || typeof identity.serverGeneration !== "string") continue;
     const activity = await probe(runRoot, "execution-status", timeoutMs, version);
@@ -117,7 +117,7 @@ export async function observeModeldService(durableRoot: string, runRoot: string)
   }
   // Observation must not depend on the stricter replacement gate. A legacy
   // service with no execution-status still has an observable protocol identity.
-  for (const version of [6, 5, 4] as const) {
+  for (const version of [7, 6, 5, 4] as const) {
   const legacy = await probe(runRoot, "service-info", 200, version);
   if (legacy && typeof legacy.rootId === "string" && typeof legacy.serverGeneration === "string") {
     const matched = legacy.rootId === modeldRootId(durableRoot, runRoot);

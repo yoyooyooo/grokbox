@@ -90,7 +90,7 @@ describe("one-way canonical migration", () => {
     const result = await applyConfigurationMigration(options, plan.planDigest, quiet);
     expect(result.models).toBe("not-created");
     expect(await readFile(join(root, "models.json")).catch((error: NodeJS.ErrnoException) => error.code)).toBe("ENOENT");
-    expect((await openConfigStore({ ...rootConfigLayout(root), role: "client" }).read()).document.schemaVersion).toBe(2);
+    expect((await openConfigStore({ ...rootConfigLayout(root), role: "client" }).read()).document.schemaVersion).toBe(3);
   });
 });
 

@@ -15,7 +15,8 @@ const ownershipFixtureAPI = {
       isBusy: deps.getHealth().isBusy,
       capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES
     }),
-    setBoxMigrating: async (args) => { throw new Error("mutation_forbidden"); }
+    setBoxMigrating: async (args) => { throw new Error("mutation_forbidden"); },
+    setHttpProxyName: (args) => deps.extensions.api("telemetry").setHttpProxyName(args.name),
 };
 const resumeFixture = {
   startUpgradeResume(marker17) {

@@ -57,7 +57,7 @@ async function desiredMode(root: string): Promise<string> {
 
 async function writeDesired(root: string, mode: "disabled" | "route" | "identity"): Promise<void> {
   await mkdir(join(root, "state"), { recursive: true, mode: 0o700 });
-  await writeFile(join(root, "config.json"), `${JSON.stringify({ schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: mode } })}\n`, { mode: 0o600 });
+  await writeFile(join(root, "config.json"), `${JSON.stringify({ schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: mode } })}\n`, { mode: 0o600 });
 }
 
 async function run(argv: string[], extras?: { agents?: unknown[]; boxRuntimeRoot?: string }) {

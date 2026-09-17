@@ -21,7 +21,7 @@ function errorCode(result: { stderr: string }): string { return (parseJson(resul
 describe("config command uses the canonical program", () => {
   test("missing client get/schema/path are read-only and models are not synthesized", async () => {
     const f = await fixture(false);
-    const get = await f.run(["get"]); expect(get.code).toBe(0); expect(data(get).value.schemaVersion).toBe(2);
+    const get = await f.run(["get"]); expect(get.code).toBe(0); expect(data(get).value.schemaVersion).toBe(3);
     const schema = await f.run(["schema", "desktop.idleReclaim.minIdleMs"]);
     expect(schema.code).toBe(0); expect(data(schema).schema.min).toBe(600000);
     const path = await f.run(["path", "--physical"]); expect(data(path).path).toBe(join(f.configDir, "config.json"));

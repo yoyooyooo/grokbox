@@ -28,13 +28,13 @@ class Runner {
     catch (error41) {
         markTurnTraceError(turnTrace, error41);
         if (epoch === this.tm.sendPipeline.currentTurnEpoch(session)) {
-          const description7 = describeAgentRunError(error41);
+          const description9 = describeAgentRunError(error41);
           const requestId2 = session.db.getRequestIds().at(-1)?.id;
           this.tm.trayErrors.pushError({
             agentId: session.id,
             requestId: requestId2,
-            ...description7,
-            ...hostTrayTitle({ kind: turnTrayTitleKind(description7.errorKind), description: description7 })
+            ...description9,
+            ...hostTrayTitle({ kind: turnTrayTitleKind(description9.errorKind), description: description9 })
           });
         }
         await this.tm.roster.emitAgentUpdate(session.id);
@@ -42,11 +42,11 @@ class Runner {
         this.forgetTemplateSetupWriteHints(session.id, turnMessageIds);
       }
   }
-  notifyAutomationFailure(session, automation, trigger2, description7) {
+  notifyAutomationFailure(session, automation, trigger2, description9) {
     if (isBackgroundAutomationTrigger(trigger2)) return;
     const occurrence = trigger2;
     if (!shouldNotifyAutomationFailure(occurrence)) return;
-    this.tm.trayErrors.pushError({agentId: session.id, ...description7});
+    this.tm.trayErrors.pushError({agentId: session.id, ...description9});
   }
   clearAutomationFailureState(agentId, automationId) { return undefined; }
 }

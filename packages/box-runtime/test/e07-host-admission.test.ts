@@ -20,6 +20,7 @@ describe("E07 Host admission D2", () => {
   test("optional purpose slices replay with all strict profile gates; older profiles remain valid", () => {
     expect(LIVE_SLICE_PATCHES.map((slice) => slice.id)).toEqual([
       "create-session", "agent-id", "compact-register", "compact-background-start", "compact-background-response", "managed-retry-gate", "managed-turn-retry-gate", "managed-step-error-scope", "managed-output-retry-gate", "managed-summary-retry-gate", "activity-bridge", "memory-purpose", "episode-purpose", "harness-blank", "profile-title-marker", "harness-summary", "run-queue-observation", "group-member-observation", "group-buffer-observation", "alert-manager-observation", "alert-main-decision", "alert-input-cleanup", "alert-automation-decision", "alert-automation-throttle", "server-activity-live-observation", "server-activity-expiry-observation", "ownership-read-schema", "ownership-read-api", "ownership-resume-gate",
+      "context-manual-shell-owner", "context-manual-trusted-options", "context-manual-native-action", "context-manual-no-business-settlement", "context-manual-summary-owner", "context-control-rpc-schema", "context-control-rpc-api",
     ]);
     for (const slices of [OLD_SLICES.slice(0, 2), OLD_SLICES, [...OLD_SLICES, PURPOSE_SLICES[0]!], LIVE_SLICE_PATCHES]) {
       const profile = profileFromSource(LIVE_SHAPED_HOST, slices, "e07-admission");

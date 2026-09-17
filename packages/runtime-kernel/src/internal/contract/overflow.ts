@@ -42,6 +42,9 @@ export type RecoveryLedger = {
   compactInvocations: number;
   managedAttempts: number;
   nonceConsumed: boolean;
+  /** In-memory proof from the current failed attempt, never reconstructed from logs. */
+  evidence?: OverflowEvidence;
+  maintenanceOperationId?: string;
 };
 
 export type CompactFailureCode =

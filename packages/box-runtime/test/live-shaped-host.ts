@@ -1,3 +1,4 @@
+import { CONTEXT_SHAPED_HOST } from "./context-shaped-host.ts";
 import { OWNERSHIP_SHAPED_HOST } from "./ownership-shaped-host.ts";
 import { ALERT_SHAPED_HOST } from "./alert-shaped-host.ts";
 import { SERVER_ACTIVITY_SHAPED_HOST } from "./server-activity-shaped-host.ts";
@@ -6,6 +7,7 @@ export const LIVE_SHAPED_HOST = `"use strict";
 ${OWNERSHIP_SHAPED_HOST}
 ${ALERT_SHAPED_HOST}
 ${SERVER_ACTIVITY_SHAPED_HOST}
+${CONTEXT_SHAPED_HOST}
 const api = {
   createSession(onRequestId, sessionOptions) {
     const inferenceOptions = { sessionOptions, onRequestId };

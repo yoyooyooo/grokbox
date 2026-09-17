@@ -21,6 +21,7 @@ import { observeBackendFailure, backendFailureObservation } from "./failure-obse
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezePreparedSnapshot, makePreparedCall, readPreparedCall } from "./prepared.ts";
 import { encodeReasoningRequest } from "./reasoning-request.ts";
+import { verifyContextEgress } from "./context-meter.ts";
 import { ToolIdentityObserver } from "./tool-identity-audit.ts";
 import { chatDialect, encodeDialectRequest, InlineThinkingParts, type ChatDialect } from "./chat-dialect.ts";
 
@@ -42,7 +43,7 @@ function bodyBytes(init?: RequestInit): number {
   return 0;
 }
 
-function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect, model: string, reasoning?: ReasoningPolicy): typeof fetch {
+function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect, model: string, reasoning?: ReasoningPolicy, contextBudget?: ContextSnapshot["contextBudget"]): typeof fetch {
   const run = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     // Bound raw SDK encoding before any dialect JSON parse, then recheck the
     // final body below. Neither form may bypass the egress request budget.
@@ -59,6 +60,7 @@ function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identi
     if (typeof init?.body !== "string" || !identity.request(init.body, api)) {
       throw invalidStream("tool_declaration_mismatch", "provider_request");
     }
+    verifyContextEgress(init, api, contextBudget);
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     try {
       audit.evidence.reasoningEmitted(reasoning?.effort ?? "default");
@@ -169,7 +171,7 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
               let secret: string;
               try { secret = unseal(lease); }
               catch (error) { throw observeBackendFailure(new BackendFailure("auth_mismatch"), "auth", error); }
-              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit, identity, payload.api, dialect, payload.model, payload.reasoning) });
+              const openai = createOpenAI({ apiKey: secret, baseURL: payload.endpoint, fetch: guardEgress(fetchImpl, audit, identity, payload.api, dialect, payload.model, payload.reasoning, payload.contextBudget) });
               const model = payload.api === "responses" ? openai.responses(payload.model) : openai.chat(payload.model);
               const { toolChoice, ...settings } = payload.settings;
               const tools = payload.tools.map(tool => ({ type: "function" as const, name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));

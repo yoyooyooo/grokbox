@@ -7,7 +7,9 @@ import { BindingFailure, type CancelStepRequest, type DuplicateStep, type RunSte
 import { emptyRecoveryLedger } from "../contract/overflow.ts";
 import { BackendAuth, ConfigurationRead, HostCompact, ModelBackend, RuntimeEvents, type AuthLease, type PreparedCall } from "../../ports.ts";
 import { runOverflowRecovery } from "./overflow-recovery.ts";
-import { STUB_ECHO_MODEL_ID, captureManagedSelection, modelForAgent, qualifiedContextWindowTokens } from "../../selection.ts";
+import { STUB_ECHO_MODEL_ID, captureManagedSelection, modelForAgent } from "../../selection.ts";
+import { captureContextPolicy, type CapturedContextPolicy } from "../config/context-policy.ts";
+import { budgetedContextSnapshot } from "./context-budget.ts";
 import {
   InferenceMemory,
   modifyExecutionState, updateExecutionState, updateExecutionStateSync,
@@ -143,7 +145,11 @@ function recoverOverflowStream(
       },
       catch: () => new BackendFailure("invalid_prepared_call"),
     });
-    const prepared = yield* backend.prepare(binding.model, resumed).pipe(Effect.mapError(asBindingOrBackend));
+    const preparedSnapshot = binding.model.id === STUB_ECHO_MODEL_ID ? resumed : yield* Effect.try({
+      try: () => budgetedContextSnapshot(binding.model, resumed, binding.contextPolicy ?? captureContextPolicy(undefined, binding.model.id, request.agentId)),
+      catch: asBindingOrBackend,
+    });
+    const prepared = yield* backend.prepare(binding.model, preparedSnapshot).pipe(Effect.mapError(asBindingOrBackend));
     // prepare may suspend: the earlier fence cannot authorize an effect after
     // an ownership/credential change during that suspension. Match attempt0.
     yield* dispatchFence(request, lease);
@@ -371,10 +377,10 @@ function admitLive(request: RunStepRequest, now: number) {
       if (existing.serviceEpoch.incarnationId !== request.serviceEpoch.incarnationId) {
         return yield* Effect.fail(new BindingFailure("service_epoch_mismatch"));
       }
-      if (existing.model.id !== STUB_ECHO_MODEL_ID && qualifiedContextWindowTokens(existing.model) === undefined) {
-        return yield* Effect.fail(new BindingFailure("not_admitted"));
-      }
-      prepared = yield* backend.prepare(existing.model, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
+      const effectiveSnapshot = existing.model.id === STUB_ECHO_MODEL_ID ? request.snapshot : yield* Effect.try({
+        try: () => budgetedContextSnapshot(existing.model, request.snapshot, existing.contextPolicy ?? captureContextPolicy(undefined, existing.model.id, request.agentId)), catch: asBindingOrBackend,
+      });
+      prepared = yield* backend.prepare(existing.model, effectiveSnapshot).pipe(Effect.mapError(asBindingOrBackend));
       bindingId = existing.bindingId;
       if (cached) lease = cached.lease;
       else {
@@ -418,10 +424,11 @@ function admitLive(request: RunStepRequest, now: number) {
       if (request.bindingId) return yield* Effect.fail(new BindingFailure("binding_missing"));
       const config = yield* ConfigurationRead;
       const snapshot = yield* config.snapshot();
+      const contextCapture = memory.history.getContextSelection ? yield* memory.history.getContextSelection(storeKey) : undefined;
       // Host capture throws BoxRuntimeError for assigned-but-unresolved models.
       // That is an expected STEP admission failure here, not an Effect defect.
       const captured = yield* Effect.try({
-        try: () => captureManagedSelection(snapshot.models, request.agentId),
+        try: () => contextCapture ? { kind: "managed" as const, ...contextCapture.selection } : captureManagedSelection(snapshot.models, request.agentId),
         catch: asBindingOrBackend,
       });
       if (captured.kind !== "managed") return yield* Effect.fail(new BindingFailure("not_admitted"));
@@ -429,14 +436,15 @@ function admitLive(request: RunStepRequest, now: number) {
         return yield* Effect.fail(new BindingFailure("selection_mismatch"));
       }
       const resolved = yield* Effect.try({
-        try: () => modelForAgent(snapshot.models, request.agentId),
+        try: () => contextCapture?.model ?? modelForAgent(snapshot.models, request.agentId),
         catch: asBindingOrBackend,
       });
       if (!resolved) return yield* Effect.fail(new BindingFailure("not_admitted"));
-      if (resolved.id !== STUB_ECHO_MODEL_ID && qualifiedContextWindowTokens(resolved) === undefined) {
-        return yield* Effect.fail(new BindingFailure("not_admitted"));
-      }
-      prepared = yield* backend.prepare(resolved, request.snapshot).pipe(Effect.mapError(asBindingOrBackend));
+      const contextPolicy = contextCapture?.policy ?? captureContextPolicy(snapshot.context, resolved.id, request.agentId);
+      const effectiveSnapshot = resolved.id === STUB_ECHO_MODEL_ID ? request.snapshot : yield* Effect.try({
+        try: () => budgetedContextSnapshot(resolved, request.snapshot, contextPolicy), catch: asBindingOrBackend,
+      });
+      prepared = yield* backend.prepare(resolved, effectiveSnapshot).pipe(Effect.mapError(asBindingOrBackend));
       const pinned = yield* pinOnTurn(request, resolved.apiKeyRef);
       bindingId = makeBindingId({
         hostEpoch: request.hostEpoch,
@@ -454,6 +462,7 @@ function admitLive(request: RunStepRequest, now: number) {
         turnId: request.turnId,
         selection: request.selection,
         model: resolved,
+        contextPolicy,
         fingerprint: pinned.fingerprint,
         ownership,
         lease,

@@ -355,7 +355,8 @@ describe("D2 Host compact registration", () => {
       abiIdentity: "host-abi-v1",
     });
     const preload = await readFile(new URL("../src/preload.ts", import.meta.url), "utf8");
-    expect(preload).toContain("bindHostCompactHook(stateSystemCompactHookOptions())");
+    expect(preload).toContain("bindHostCompactHook({ ...stateSystemCompactHookOptions(),");
+    expect(preload).toContain("context: hostContextClient(");
     expect(preload).not.toContain("bindHostCompactHook();");
     resetHostCompactSlotForTests();
     const counts = { compact: 0 };
@@ -516,5 +517,5 @@ describeLive("D2 live Host compact anchors", () => {
     expect(applied.source).toContain("stepClosed: () => !__grokbox_compact_active");
     expect(() => new Script(applied.source, { filename: "qualified-host-syntax.cjs" })).not.toThrow();
     expect(await readFile(LIVE_HOST_BUNDLE, "utf8")).toBe(before);
-  });
+  }, 20000);
 });

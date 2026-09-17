@@ -15,7 +15,9 @@ import {
   type InferenceEvent,
   type RunStepRequest,
 } from "@grokbox/runtime-kernel/contract";
-import { cancelStep, runStep, inferenceCapacity } from "@grokbox/runtime-kernel/inference";
+import { cancelStep, runStep, inferenceCapacity, InferenceMemory, makeContextMaintenanceRunner, contextStatus } from "@grokbox/runtime-kernel/inference";
+import { handleContextMaintenance, type MaintenanceRunner } from "./context-maintenance.node.ts";
+import type { ContextMaintenanceRequest, ContextMaintenanceReceipt } from "@grokbox/runtime-kernel/contract";
 import { HostCompact, ModelBackend, RuntimeEvents } from "@grokbox/runtime-kernel/ports";
 import { withOverflowCanary } from "../backends/overflow-canary.ts";
 import { decodeModeldFrame, encodeModeldFrame, MODELD_MAX_FRAME, parseModeldRequest } from "../wire/modeld-wire.ts";
@@ -152,13 +154,31 @@ function emit(socket: Socket, value: unknown) {
 }
 
 function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer, options: ServeOptions,
-  enqueueAuthority: (request: RunStepRequest, state: AuthorityProgress, gap: () => void) => void) {
+  enqueueAuthority: (request: RunStepRequest, state: AuthorityProgress, gap: () => void) => void, contextRunner: MaintenanceRunner) {
   const socket = incoming.socket;
   return Effect.gen(function* () {
     incoming.consumed = true;
     incoming.buf = Buffer.alloc(0);
     if (extra.length > 0) {
       yield* emit(socket, errorFrame("extra_keys"));
+      return;
+    }
+    if (value && typeof value === "object" && "method" in value && value.method === "context-status") {
+      const raw = value as Record<string, unknown>;
+      if (raw.version !== WIRE_VERSION || Object.keys(raw).some(key => !["version", "method", "agentId", "sessionId", "operationId"].includes(key))
+        || typeof raw.agentId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw.agentId)
+        || typeof raw.sessionId !== "string" || raw.sessionId.length > 128 || /[\x00-\x1f]/.test(raw.sessionId)
+        || raw.operationId !== undefined && (typeof raw.operationId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(raw.operationId))) {
+        yield* emit(socket, errorFrame("invalid_usage")); return;
+      }
+      const result = yield* Effect.result(contextStatus({ agentId: raw.agentId, sessionId: raw.sessionId,
+        ...(typeof raw.operationId === "string" ? { operationId: raw.operationId } : {}) }));
+      yield* emit(socket, result._tag === "Success" ? { ok: true, method: "context-status", version: WIRE_VERSION, serverGeneration: generation, data: result.success }
+        : errorFrame("context_status_unavailable"));
+      return;
+    }
+    if (value && typeof value === "object" && "method" in value && value.method === "maintain-context") {
+      yield* handleContextMaintenance(incoming, value, generation, contextRunner, options.observeContext);
       return;
     }
     let parsed;
@@ -406,6 +426,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 }
 
 export type ServeOptions = {
+  observeContext?: (request: ContextMaintenanceRequest, outcome: { receipt?: ContextMaintenanceReceipt; failure?: string }) => Effect.Effect<void, unknown>;
   /** Diagnostic scope only; never grants STEP admission or replaces attestation. */
   rootId?: string;
   observeStep?: (request: RunStepRequest, outcome: ModeldStepOutcome) => Effect.Effect<void, unknown>;
@@ -424,6 +445,8 @@ export type ServeOptions = {
 
 export function serveModeld(options: ServeOptions) {
   return Effect.gen(function* () {
+    const contextMemory = yield* InferenceMemory;
+    const contextRunner = yield* makeContextMaintenanceRunner(contextMemory.history);
     const maxClients = options.maxClients ?? SERVER_ACTIVE_CLIENTS_MAX;
     const capacity = { clients: 0 };
     const live = new Set<Socket>();
@@ -512,7 +535,7 @@ export function serveModeld(options: ServeOptions) {
       yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
         const socket = yield* trackSocket(raw.socket, options.counts, capacity);
         const frame = yield* readOneFrame(raw);
-        const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options, enqueueAuthority);
+        const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options, enqueueAuthority, contextRunner);
         yield* options.compactForIncoming
           ? handled.pipe(Effect.provide(options.compactForIncoming(raw)))
           : handled;

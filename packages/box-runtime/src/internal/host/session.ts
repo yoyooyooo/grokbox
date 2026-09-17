@@ -10,7 +10,7 @@ import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
 import { INVALID_STREAM_AGENT_MESSAGE, LEDGER_UNAVAILABLE_AGENT_MESSAGE, AUTHORITY_AGENT_MESSAGE, LOCAL_TRANSPORT_AGENT_MESSAGE } from "./failure-catalog.ts";
-import { StreamOutputBudget, ChunkedText, STREAM_STORAGE_CHARS, type InferenceEvent, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, projectFailureSummary, annotateFailureSummary, failureSummaryOf, presentFailure, type FailureSummary, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { contextFailureMessage, StreamOutputBudget, ChunkedText, STREAM_STORAGE_CHARS, type InferenceEvent, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, projectFailureSummary, annotateFailureSummary, failureSummaryOf, presentFailure, type FailureSummary, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
 
 export type FinishReason = "stop" | "error" | "abort";
@@ -356,6 +356,8 @@ function budgetEvent(part: StreamPart): InferenceEvent | undefined {
 }
 
 const FAILURE_MESSAGES: Record<string, string> = {
+  context_budget_exceeded: contextFailureMessage("context_budget_exceeded"),
+  context_policy_invalid: contextFailureMessage("context_policy_invalid"),
   unsupported_image: "Configured model does not accept images. No model request was sent.",
   parallel_tools: "Parallel tool calls are not supported. Rejected calls were not executed.",
   invalid_envelope: "The model request could not be converted safely. No model request was sent.",

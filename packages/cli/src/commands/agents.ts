@@ -30,6 +30,34 @@ import {
 import { composeAgentTitle, labelOwnerFromState, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
 import { liveDesktopIo, readDesktopReap, reapDeletedAgentSeat, type DesktopReapResult } from "../daemon/desktop.ts";
 
+export async function runAgentsContext(deps: CliDeps, action: "status" | "compact", target: string,
+  raw: { json?: boolean; timeoutMs?: string; session?: string; operationId?: string; confirm?: boolean }): Promise<void> {
+  if (!target) throw usage("An Agent is required.");
+  if (raw.session !== undefined && (raw.session.length > 128 || /[\x00-\x1f]/.test(raw.session))) throw usage("Invalid session identity.");
+  if (raw.operationId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(raw.operationId)) throw usage("Invalid operation identity.");
+  if (action === "compact" && (!raw.operationId || raw.confirm !== true)) throw usage("Compaction requires --operation-id and --confirm; it can incur model cost.");
+  const io = ioFromOpts({ ...raw, timeoutMs: raw.timeoutMs ?? (action === "compact" ? "180000" : "15000") });
+  const client = new GatewayClient(deps);
+  let agentId = target;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target)) {
+    agentId = asString(findRosterRow((await client.listAgents(io.timeoutMs)).agents, target, ["agent"]).id);
+  }
+  const { result, discovery } = await client.contextControl({ action, agentId,
+    ...(raw.session !== undefined ? { sessionId: raw.session } : {}),
+    ...(raw.operationId !== undefined ? { operationId: raw.operationId } : {}),
+    ...(action === "compact" ? { confirm: true } : {}) }, io.timeoutMs);
+  if (!isRecord(result) || typeof result.ok !== "boolean") throw new CliError("capability_unavailable", "Host context maintenance capability is unavailable.");
+  if (!result.ok) {
+    const reason = isRecord(result.error) && typeof result.error.code === "string" && /^[a-z_]{1,64}$/.test(result.error.code) ? result.error.code : "capability_unqualified";
+    throw new CliError(reason === "commit_unknown" ? "operation_outcome_unknown" : "capability_unavailable", "Context operation did not complete.", {
+      hostReason: reason,
+      next: action === "compact" ? "Inspect this operation with agents context; do not create a new operation to replay an unknown result." : "Verify the loaded Host/modeld capability and exact session.",
+      ...(raw.operationId ? { context: { operationId: raw.operationId, object: { id: agentId, kind: "agent" as const }, phase: "context-maintenance" } } : {}),
+    });
+  }
+  writeSuccess(deps.stdout, result.data, gatewayMeta(discovery));
+}
+
 export async function runAgentsList(
   deps: CliDeps,
   raw: { json?: boolean; table?: boolean; timeoutMs?: string; includeHidden?: boolean; ownership?: boolean },

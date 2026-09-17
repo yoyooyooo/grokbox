@@ -546,6 +546,23 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     streaming: false,
   },
   {
+    path: ["agents", "context"], usage: "grokbox agents context <agent> [--session <id>] [--operation-id <id>]",
+    summary: "Read configured context budget and acknowledged maintenance; does not compact or restore a root.",
+    arguments: [{ syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] }],
+    options: options([{ flags: "--session <id>", description: "Exact session ID (default: native default Box session)" },
+      { flags: "--operation-id <id>", description: "Inspect a specific maintenance receipt" }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false,
+  },
+  {
+    path: ["agents", "compact"], usage: "grokbox agents compact <agent> --operation-id <id> --confirm [--session <id>]",
+    summary: "Explicitly maintain an idle loaded Box session through its native owner; may incur model cost, never sends a user prompt.",
+    arguments: [{ syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] }],
+    options: options([{ flags: "--session <id>", description: "Exact session ID; unsupported sessions refuse" },
+      { flags: "--operation-id <id>", description: "Required idempotent maintenance identity" },
+      { flags: "--confirm", description: "Confirm bounded summary inference and native checkpoint update" }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false,
+  },
+  {
     path: ["agents", "ownership"],
     usage: "grokbox agents ownership <agents...>",
     summary: "Read official Server registrations through the Host and classify local ownership; never migrate or repair.",
@@ -1852,6 +1869,7 @@ export function renderCommandReference(cliVersion: string): string {
 
 export const GATEWAY_METHODS = [
   "getHostStatus",
+  "grokboxContextControl",
   "getTrays",
   "listAgents",
   "searchAgents",

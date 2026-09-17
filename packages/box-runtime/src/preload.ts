@@ -12,6 +12,8 @@ import { appendHostJournal } from "./internal/host/terminal-journal.node.ts";
 import { createAlertObserver, HOST_ALERT_OBSERVATION_SYMBOL } from "./internal/host/alert-observation.ts";
 import { createServerActivityObserver, HOST_SERVER_ACTIVITY_SYMBOL } from "./internal/host/server-activity-observation.ts";
 import { deferManagedHostResume } from "./internal/host/selection.node.ts";
+import { hostContextClient } from "./internal/host/context-client.node.ts";
+import { createHostContextControl, HOST_CONTEXT_CONTROL_SYMBOL } from "./internal/host/context-control.node.ts";
 import { bindHostCompactHook, isHostManagedRootActive, recordHostManagedStepFailure, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
 import { bindHostOwnershipRead, HOST_OWNERSHIP_READ_SYMBOL } from "./internal/host/ownership-read.ts";
 import { bindHostProfileTitle, HOST_PROFILE_TITLE_SYMBOL } from "./internal/host/title-marker.ts";
@@ -103,7 +105,14 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       generation: binding?.generationId ?? "unbound", emit: event => { void appendHostJournal(runRoot, event); },
     });
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_AUX_SYMBOL)] = wrapHostAuxExecutor;
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook(stateSystemCompactHookOptions());
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_CONTEXT_CONTROL_SYMBOL)] = createHostContextControl({
+    mode: admittedMode, runRoot, durableRoot, binding,
+    compile: { profileId: profile.profileId, profileSha256, sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 },
+  });
+  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook({ ...stateSystemCompactHookOptions(),
+      context: hostContextClient({ mode: admittedMode, runRoot, binding, compile: { profileId: profile.profileId,
+        profileSha256, sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 } }),
+    });
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_SYMBOL)] = isHostManagedRootActive;
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_FAILURE_SYMBOL)] = isHostManagedFailure;
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_FAILURE_SYMBOL)] = recordHostManagedStepFailure;
@@ -146,6 +155,10 @@ if (process.env.GROKBOX_PACKED_SESSION_FACTORY === "1" && process.env.GROKBOX_AL
     // Same explicit test-only/live-excluded boundary as the session factory.
     // These are the bundled production functions, not substitute gate logic.
     bindHostSessionHook,
+    bindHostCompactHook,
+    stateSystemCompactHookOptions,
+    hostContextClient,
+    createHostContextControl,
     bindHostOwnershipRead,
     deferManagedHostResume,
     isHostManagedFailure,

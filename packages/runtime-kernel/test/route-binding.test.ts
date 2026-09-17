@@ -425,14 +425,16 @@ describe("route binding", () => {
     expect(counts.network).toBeLessThanOrEqual(1);
   }, 8_000);
 
-  test("non-stub missing context window is not admitted before pin/HTTP", async () => {
+  test("unknown provider capacity still uses the explicit default local working budget", async () => {
     const file = models({ "agent-a": "openai/gpt" }, { noWindow: true });
     const counts = createCountedSeams();
     const layer = graph({ file: () => file, counts });
-    await expect(run(Effect.scoped(collect(request(file)).pipe(Effect.provide(layer))))).rejects.toMatchObject({ code: "not_admitted" });
-    expect(counts.credential).toBe(0);
-    expect(counts.network).toBe(0);
-    expect(counts.prepare).toBe(0);
+    const result = await run(Effect.scoped(collect(request(file)).pipe(Effect.provide(layer))));
+    expect(result.kind).toBe("live");
+    expect(counts.credential).toBe(1);
+    expect(counts.network).toBe(1);
+    expect(counts.prepare).toBe(1);
+    expect(file.models["openai/gpt"]?.contextWindowTokens).toBeUndefined();
   });
 
   test("existing TURN rejects a different selectionRevision before prepare", async () => {

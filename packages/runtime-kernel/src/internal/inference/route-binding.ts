@@ -4,6 +4,7 @@ import { canonicalJson, sha256Text } from "../../hash.ts";
 import { SERVER_ACTIVE_STEPS_MAX, TURN_RESOURCE_IDLE_MS } from "../contract/limits.ts";
 import { memoryExecutionHistory, type ColdTurn, type ExecutionHistory } from "./execution-history.ts";
 import type { AuthLease } from "../../ports.ts";
+import type { CapturedContextPolicy } from "../config/context-policy.ts";
 import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "../contract/identity.ts";
 import type { ResolvedModelSelection } from "../../selection.ts";
 import { BindingFailure, type RunStepRequest } from "../contract/binding.ts";
@@ -32,6 +33,7 @@ export type RouteBindingRecord = {
   turnId: string;
   selection: SelectionIdentity;
   model: ResolvedModelSelection;
+  contextPolicy?: CapturedContextPolicy;
   fingerprint: string;
   ownership: OwnershipAdmission;
   lease: AuthLease;

@@ -319,6 +319,10 @@ describe("E08 budget/cancel/fault", () => {
     expect(selectedBytes).toBeLessThan(ENVELOPE_MAX_BYTES);
     await withFakeHttpSession({
       turnId: "HOST_TURN_E08_near",
+      // This vector tests transport/root byte bounds, not the default 128K policy.
+      // Declare a large local window and model capacity; never bypass the budget gate.
+      model: { ...SYNTHETIC_OPENAI, contextWindowTokens: 2097152 },
+      context: { windowTokens: 2097152 },
       fn: async ({ session, requests, dir }) => {
         const store = join(dir, "host-window-root.json");
         const executor = session.getExecutor(window);

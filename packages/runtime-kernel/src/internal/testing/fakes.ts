@@ -8,6 +8,7 @@ import {
 } from "../contract/events.ts";
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import { AdmissionAuthority, BackendAuth, ConfigurationRead, ConfigurationWrite, ControlResources, HostCompact, ModelBackend, type AuthLease, type FrozenControllerCommand, type OperationPrefix, type OperationRecord, type PreparedCall } from "../../ports.ts";
+import type { ContextIntent } from "../config/context-policy.ts";
 import type { HostCompactRequest, HostCompactResult } from "../contract/overflow.ts";
 import type { ModelsFile, DesiredFile } from "../../selection.ts";
 
@@ -149,6 +150,7 @@ export function fakeConfigurationWriteLayer(input: {
 
 export function fakeConfigurationReadLayer(input: {
   models: () => ModelsFile;
+  context?: ContextIntent;
   desired?: DesiredFile;
   beforeRead?: Effect.Effect<void>;
 }): Layer.Layer<ConfigurationRead> {
@@ -157,6 +159,7 @@ export function fakeConfigurationReadLayer(input: {
       if (input.beforeRead) yield* input.beforeRead;
       return {
         models: input.models(),
+        ...(input.context ? { context: structuredClone(input.context) } : {}),
         desired: input.desired ?? { version: 1, mode: "route" as const },
       };
     }),

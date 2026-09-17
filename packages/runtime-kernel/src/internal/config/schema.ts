@@ -1,4 +1,5 @@
 import { ConfigError, FORBIDDEN_CONFIG_KEYS, isObject, type JsonObject, type JsonValue } from "./path.ts";
+import { validateContextIntent, type ContextIntent } from "./context-policy.ts";
 
 export type ConnectionProfile = {
   transport?: "auto" | "daemon" | "local" | "gateway";
@@ -25,11 +26,11 @@ export type DesktopIntent = {
   keepAgentIds?: string[];
 };
 export type UnifiedConfig = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   client: { currentProfile: string; profiles: Record<string, ConnectionProfile> };
   daemon?: DaemonIntent;
   desktop?: DesktopIntent;
-  runtime?: { desiredMode?: "disabled" | "observe" | "identity" | "route" };
+  runtime?: { desiredMode?: "disabled" | "observe" | "identity" | "route"; context?: ContextIntent };
   ops?: JsonObject;
 };
 export type SchemaNode = {
@@ -110,12 +111,22 @@ export const OPS_SCHEMA = object({
   routing: object({ enabled: boolean, defaultTarget: string(32, TARGET_NAME_PATTERN),
     reportTarget: string(32, TARGET_NAME_PATTERN), rules: array(rule, 32) }),
 });
+const contextOverride = object({
+  windowTokens: integer(1024, 16777216),
+  compaction: object({ mode: enumeration("auto", "manual"), reserveTokens: integer(1, 16777215), keepRecentTokens: integer(0, 16777215),
+    limits: object({ maxSummaryRequests: integer(1, 64), maxSummaryInputTokens: integer(1, 16777216), timeoutMs: integer(1000, 120000) }),
+  }),
+});
+export const CONTEXT_SCHEMA = object({ ...contextOverride.properties,
+  models: map(contextOverride, 128, "^[^\\x00-\\x1f]{1,256}$"),
+  agents: { ...map(contextOverride, 1024, "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"), sensitive: true },
+});
 export const CONFIG_SCHEMA = object({
-  schemaVersion: { type: "integer", enum: [2] },
+  schemaVersion: { type: "integer", enum: [3] },
   client: object({ currentProfile: string(64, PROFILE_NAME_PATTERN), profiles: map(profile, 64, PROFILE_NAME_PATTERN) }, ["currentProfile", "profiles"]),
   daemon: DAEMON_INTENT_SCHEMA,
   desktop: object({ idleReclaim: object({ enabled: boolean, minIdleMs: integer(600_000, 86_400_000) }), keepAgentIds: array({ ...uuid, sensitive: true }, 64) }),
-  runtime: object({ desiredMode: enumeration("disabled", "observe", "identity", "route") }),
+  runtime: object({ desiredMode: enumeration("disabled", "observe", "identity", "route"), context: CONTEXT_SCHEMA }),
   ops: OPS_SCHEMA,
 }, ["schemaVersion", "client"]);
 
@@ -174,7 +185,7 @@ export function configSchemaAt(tokens: readonly string[]): SchemaNode {
   return schema;
 }
 export function defaultConfig(): UnifiedConfig {
-  return { schemaVersion: 2, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } } };
+  return { schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } } };
 }
 
 export function validateDaemonIntent(value: unknown): DaemonIntent {
@@ -255,7 +266,7 @@ function validateRouting(ops: JsonObject): void {
   for (const key of targetKeys) visit(key, new Set());
 }
 export function validateConfig(input: unknown): UnifiedConfig {
-  if (isObject(input) && (input.version !== undefined || input.schemaVersion === 1)) {
+  if (isObject(input) && (input.version !== undefined || input.schemaVersion === 1 || input.schemaVersion === 2)) {
     throw new ConfigError("config_migration_required", "Run grokbox config migrate --preview before using this configuration.");
   }
   validateNode(input, CONFIG_SCHEMA);
@@ -263,7 +274,19 @@ export function validateConfig(input: unknown): UnifiedConfig {
   if (!Object.hasOwn(result.client.profiles, result.client.currentProfile) || !Object.hasOwn(result.client.profiles, "default")) bad("Current and default profiles must exist.");
   if (result.daemon) result.daemon = validateDaemonIntent(result.daemon);
   if (result.ops) validateRouting(effectiveOps(result.ops));
+  if (result.runtime?.context) {
+    try { result.runtime.context = validateContextIntent(result.runtime.context); }
+    catch { throw new ConfigError("config_invalid", "Context policy has invalid fields or incompatible budgets."); }
+  }
   return result;
+}
+
+/** Explicit migrator only. Ordinary readers/writers reject schema v2. */
+export function migrateConfigV2(input: unknown): UnifiedConfig {
+  if (!isObject(input) || input.schemaVersion !== 2 || (isObject(input.runtime) && input.runtime.context !== undefined)) {
+    throw new ConfigError("config_invalid", "Unsupported legacy context configuration.");
+  }
+  return validateConfig({ ...input, schemaVersion: 3 });
 }
 
 /** Safe tree for regular output, not an apply-able backup. */

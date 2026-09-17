@@ -1,12 +1,16 @@
-import { WIRE_VERSION, REQUEST_WALL_DEADLINE_MS, type ContextSnapshot, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
+import { contextFailure, contextFailureMessage, WIRE_VERSION, REQUEST_WALL_DEADLINE_MS, type ContextSnapshot, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
 import { HOST_COMPACT_SYMBOL } from "./profile.ts";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { HOST_ROOT_CONTRACTS } from "./root-contract.ts";
-import { recordHostManagedFailure } from "./session.ts";
+import { recordHostManagedFailure, hostVisibleStreamError } from "./session.ts";
 
 export { HOST_COMPACT_SYMBOL };
 
 const MAX_LIVE_SLOTS = 16;
+type ContextClient = {
+  preflight: () => Promise<unknown>;
+  recover: (request: HostCompactRequest, deadlineMs: number) => Promise<unknown>;
+};
 
 type CompactCapture = {
   orchestrator: { handleSummarization: (...args: unknown[]) => Promise<unknown> };
@@ -21,6 +25,7 @@ type CompactCapture = {
   agentId: string;
   resourceAccessor: unknown;
   stepClosed: () => boolean;
+  normalizeContext?: (messages: unknown[]) => unknown[];
 };
 
 type CompactSlot = {
@@ -30,6 +35,7 @@ type CompactSlot = {
   consumed: boolean;
   disposed: boolean;
   managed: boolean;
+  context?: ContextClient;
 };
 
 const slots = new Map<string, CompactSlot>();
@@ -74,6 +80,7 @@ function parseCapture(value: unknown): CompactCapture | undefined {
     agentId,
     resourceAccessor: value.resourceAccessor,
     stepClosed: value.stepClosed as () => boolean,
+    ...(typeof value.normalizeContext === "function" ? { normalizeContext: value.normalizeContext as (messages: unknown[]) => unknown[] } : {}),
   };
 }
 
@@ -113,7 +120,9 @@ function signalAborted(ctx: CompactCapture["ctx"]): boolean {
 function readSnapshot(slot: CompactSlot): ContextSnapshot | undefined {
   if (!snapshotQualified(slot.profileId, slot.abiIdentity) || !slot.profileId || !slot.abiIdentity) return undefined;
   const root = slot.capture.rootPromptExecutor;
-  const state = typeof root.getState === "function" ? root.getState() : typeof root.getMessages === "function" ? root.getMessages() : undefined;
+  const state = slot.capture.normalizeContext && typeof root.getMessages === "function"
+    ? slot.capture.normalizeContext(root.getMessages() as unknown[])
+    : typeof root.getState === "function" ? root.getState() : typeof root.getMessages === "function" ? root.getMessages() : undefined;
   try {
     return hostToContextSnapshot({ profileId: slot.profileId, abiIdentity: slot.abiIdentity, state });
   } catch {
@@ -129,7 +138,8 @@ function lookup(input: HostCompactRequest): CompactSlot | undefined {
 export function bindHostCompactHook(options?: {
   profileId?: string;
   abiIdentity?: string;
-}): (raw: unknown) => { [Symbol.dispose](): void } | undefined {
+  context?: (raw: unknown, valid: () => boolean) => ContextClient | undefined;
+}): (raw: unknown) => { preflight?: () => Promise<unknown>; [Symbol.dispose](): void } | undefined {
   return (raw) => {
     const capture = parseCapture(raw);
     if (!capture) return undefined;
@@ -147,7 +157,17 @@ export function bindHostCompactHook(options?: {
     };
     slots.set(key, slot);
     rootOwners.set(capture.rootPromptExecutor, slot);
+    slot.context = options?.context?.(raw, () => !slotInvalid(slot) && !signalAborted(capture.ctx));
+    if (slot.context) slot.managed = true;
     return {
+      ...(slot.context ? { preflight: async () => {
+        try { return await slot.context!.preflight(); }
+        catch (error) {
+          const failure = contextFailure(error);
+          throw hostVisibleStreamError({ userVisible: true, code: failure.code, message: contextFailureMessage(failure.code),
+            stage: "admit", agentId: capture.agentId, invocationId: capture.invocationId });
+        }
+      } } : {}),
       [Symbol.dispose]() {
         slot.disposed = true;
         if (slots.get(key) === slot) slots.delete(key);
@@ -296,6 +316,15 @@ export async function requestHostCompact(input: HostCompactRequest, lifetime: Ho
   if (!slot || slotInvalid(slot)) return unavailable("capability_not_ready");
   if (slot.consumed) return unavailable("blocked");
   if (!snapshotQualified(slot.profileId, slot.abiIdentity)) return unavailable("capability_not_ready");
+  if (slot.context) {
+    slot.consumed = true;
+    try {
+      await slot.context.recover(input, budget);
+      if (slotInvalid(slot) || signalAborted(slot.capture.ctx) || lifetime.stopped?.() || now() >= deadline) return unavailable("cancelled");
+      const snapshot = readSnapshot(slot);
+      return snapshot ? { kind: "snapshot", snapshot } : { kind: "no_improvement" };
+    } catch { return unavailable("unknown"); }
+  }
   if (unqualifiedResourceChain(slot.capture.config, slot.capture.requestContext)) return unavailable("blocked");
   if (slot.capture.stateHandler.backgroundSummarizationPromiseInfo != null) return unavailable("blocked");
   const cancelled = () => signalAborted(slot.capture.ctx) || lifetime.stopped?.() === true || now() >= deadline;

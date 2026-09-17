@@ -5,6 +5,7 @@ import { runConfigCommand, type ConfigCommandOptions } from "./commands/config.t
 import { Command, CommanderError } from "commander";
 import {
   runAgentsCreate,
+  runAgentsContext,
   runAgentsDelete,
   runAgentsList,
   runAgentsShow,
@@ -298,6 +299,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "box keepalive status": async (deps, _args, options) => await runBoxKeepaliveStatus(deps, options),
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
+    "agents context": async (deps, args, options) => await runAgentsContext(deps, "status", args[0] ?? "", options),
+    "agents compact": async (deps, args, options) => await runAgentsContext(deps, "compact", args[0] ?? "", options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),
     "agents create": async (deps, _args, options) => await runAgentsCreate(deps, options),
     "agents update": async (deps, args, options) => await runAgentsUpdate(deps, args[0] ?? "", options),

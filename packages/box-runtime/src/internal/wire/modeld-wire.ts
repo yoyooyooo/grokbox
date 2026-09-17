@@ -145,6 +145,7 @@ export function parseModeldRequest(value: unknown): ParsedWireRequest {
 }
 
 export type ClientSession =
+  | { method: "context-status"; agentId: string; sessionId: string }
   | { method: "health" }
   | { method: "service-info" }
   | { method: "execution-status" }
@@ -154,6 +155,9 @@ export type ClientSession =
 export function clientSessionFor(body: unknown): ClientSession {
   if (!isRecord(body) || typeof body.method !== "string") throw new WireError("malformed_frame");
   if (body.method === "health" || body.method === "service-info" || body.method === "execution-status") return { method: body.method };
+  if (body.method === "context-status" && typeof body.agentId === "string" && typeof body.sessionId === "string") {
+    return { method: "context-status", agentId: body.agentId, sessionId: body.sessionId };
+  }
   if (body.method === "cancel-step") return { method: "cancel-step" };
   if (body.method === "run-step") return { method: "run-step", phase: "start", sequence: 0, ...(typeof body.bindingId === "string" ? { expectedBindingId: body.bindingId } : {}) };
   throw new WireError("unknown_method");
@@ -189,6 +193,13 @@ export function acceptModeldFrame(session: ClientSession, value: unknown): { ses
     if (!isRecord(value.error) || !exactKeys(value.error, ["code"], ["failure"]) || typeof value.error.code !== "string") {
       throw new WireError("malformed_frame");
     }
+    return { session, done: true };
+  }
+  if (session.method === "context-status") {
+    if (!exactKeys(value, ["ok", "method", "version", "serverGeneration", "data"]) || value.ok !== true
+      || value.method !== "context-status" || value.version !== WIRE_VERSION || !uuidLike(value.serverGeneration)
+      || !isRecord(value.data) || value.data.agentId !== session.agentId || value.data.sessionId !== session.sessionId
+      || value.data.currentNativeRoot !== "not-observed") throw new WireError("malformed_frame");
     return { session, done: true };
   }
   if (session.method === "execution-status") {

@@ -11,6 +11,8 @@ export type ContextSnapshot = {
   tools: ToolDefinition[];
   options: GenerationOptions;
   snapshotDigest: string;
+  /** Kernel-owned preparation metadata. Host wire submissions cannot supply it. */
+  contextBudget?: { inputTokens: number; outputTokens: number; policyRevision: string };
 };
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -32,6 +34,7 @@ export function contextSnapshotBody(snapshot: Omit<ContextSnapshot, "snapshotDig
     messages: snapshot.messages,
     tools: snapshot.tools,
     options: snapshot.options,
+    ...(snapshot.contextBudget ? { contextBudget: snapshot.contextBudget } : {}),
   };
 }
 
@@ -49,6 +52,14 @@ export function parseContextSnapshot(value: unknown): ContextSnapshot {
   if (systemMessages.some((message) => message.role !== "system")) throw new EnvelopeError("invalid_envelope");
   const envelope = buildModelEnvelope(value.messages, value.tools, value.options);
   if (envelope.messages.some((message) => message.role === "system")) throw new EnvelopeError("invalid_envelope");
+  let contextBudget: ContextSnapshot["contextBudget"];
+  if (value.contextBudget !== undefined) {
+    const b = value.contextBudget;
+    if (!object(b) || Object.keys(b).some(key => !["inputTokens", "outputTokens", "policyRevision"].includes(key))
+      || !Number.isSafeInteger(b.inputTokens) || Number(b.inputTokens) <= 0 || !Number.isSafeInteger(b.outputTokens) || Number(b.outputTokens) <= 0
+      || typeof b.policyRevision !== "string" || !/^[a-f0-9]{64}$/.test(b.policyRevision)) throw new EnvelopeError("invalid_envelope");
+    contextBudget = { inputTokens: Number(b.inputTokens), outputTokens: Number(b.outputTokens), policyRevision: b.policyRevision };
+  }
   const body = contextSnapshotBody({
     version: 1,
     profileId: value.profileId,
@@ -57,6 +68,7 @@ export function parseContextSnapshot(value: unknown): ContextSnapshot {
     messages: envelope.messages,
     tools: envelope.tools,
     options: envelope.options,
+    ...(contextBudget ? { contextBudget } : {}),
   });
   const snapshotDigest = computeSnapshotDigest(body);
   if (snapshotDigest !== value.snapshotDigest) throw new EnvelopeError("invalid_envelope");

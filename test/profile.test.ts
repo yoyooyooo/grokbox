@@ -109,7 +109,7 @@ describe("Profiles in unified config v2",  () => {
     expect(await stat(join(configDir, "profiles")).catch((error: NodeJS.ErrnoException) => error.code)).toBe("ENOENT");
     expect((await stat(profilePath)).mode & 0o777).toBe(0o600);
     const document = JSON.parse(await readFile(profilePath, "utf8"));
-    expect(document.schemaVersion).toBe(2);
+    expect(document.schemaVersion).toBe(3);
     const persisted = document.client.profiles.remote;
     expect(persisted.daemonTokenRef).toBe("file:/tmp/daemon-token");
     expect(persisted.quota).toEqual({
@@ -258,7 +258,7 @@ describe("Profiles in unified config v2",  () => {
 
   test("unknown fields and inline tokens fail before any secret read", async () => {
     const configDir = await makeConfigDir();
-    await writeFile(join(configDir, "config.json"), JSON.stringify({ schemaVersion: 2, client: {
+    await writeFile(join(configDir, "config.json"), JSON.stringify({ schemaVersion: 3, client: {
       currentProfile: "default", profiles: { default: { transport: "auto" }, bad: { daemon_token: "raw-secret", daemonTokenRef: "file:/missing" } },
     } }), { mode: 0o600 });
     const result = await cli(configDir, ["profile", "show", "bad"]);
@@ -266,7 +266,7 @@ describe("Profiles in unified config v2",  () => {
     expect(code(result.stderr)).toBe("config_invalid");
     expect(result.stderr).not.toContain("raw-secret");
     expect(result.stderr).not.toContain("/missing");
-    await writeFile(join(configDir, "config.json"), JSON.stringify({ schemaVersion: 2, client: {
+    await writeFile(join(configDir, "config.json"), JSON.stringify({ schemaVersion: 3, client: {
       currentProfile: "default", profiles: { default: { transport: "auto" } },
     } }), { mode: 0o600 });
 

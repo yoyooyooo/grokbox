@@ -16,6 +16,7 @@ export type PreparedPayload = {
   options: GenerationOptions;
   settings: ReturnType<typeof generationSettings>;
   reasoning?: ReasoningPolicy;
+  contextBudget?: ContextSnapshot["contextBudget"];
 };
 
 const prepared = new WeakMap<PreparedCall, PreparedPayload>();
@@ -35,10 +36,12 @@ export function freezePreparedSnapshot(snapshot: ContextSnapshot, api: OpenaiPro
   options: GenerationOptions;
   settings: ReturnType<typeof generationSettings>;
   reasoning?: ReasoningPolicy;
+  contextBudget?: ContextSnapshot["contextBudget"];
 } {
   const tools = cloneJson(snapshot.tools) as ToolDefinition[];
   const options = cloneJson(snapshot.options) as GenerationOptions;
-  return { tools, options, settings: generationSettings(options, api, reasoning), ...(reasoning ? { reasoning: Object.freeze({ ...reasoning }) } : {}) };
+  return { tools, options, settings: generationSettings(options, api, reasoning), ...(reasoning ? { reasoning: Object.freeze({ ...reasoning }) } : {}),
+    ...(snapshot.contextBudget ? { contextBudget: Object.freeze({ ...snapshot.contextBudget }) } : {}) };
 }
 
 export function makeAuthLease(): AuthLease {

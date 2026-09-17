@@ -178,7 +178,8 @@ for (const errorStatus of [400, 401] as const) {
       const applied = transformUnchecked(SOURCE, LIVE_SLICE_PATCHES.filter((slice) => slice.id.startsWith("compact-")));
       if (!applied.ok) throw new Error(`owned_fixture_patch_failed: ${applied.code}`);
       const module = { exports: undefined as unknown as (input: unknown) => Promise<unknown> };
-      runInContext(applied.source, createContext({ module, Symbol, globalThis: {
+      runInContext(applied.source, createContext({ module, Symbol, fromRedactedCoreMessages: (value: unknown) => value,
+        PrivacyCapability: { UNSAFE_ALWAYS_ALLOWED: "owned-test" }, globalThis: {
         [Symbol.for(HOST_COMPACT_SYMBOL)]: bindHostCompactHook(stateSystemCompactHookOptions()),
         [Symbol.for(HOST_MANAGED_STEP_SYMBOL)]: isHostManagedRootActive,
       } }));

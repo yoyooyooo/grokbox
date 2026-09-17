@@ -25,6 +25,7 @@ import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.
 import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } from "./aux-request.ts";
 import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
 import { noteHostManagedStep } from "./compact.ts";
+import { registerHostContextTurn, hostContextWindow } from "./context-client.node.ts";
 import { boundedClientNonce, mapAdmitCatch, mapTerminalReject } from "./failure-catalog.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
@@ -253,6 +254,7 @@ export function bindHostSessionHook(input: {
     const vision = record.capabilities.vision === true || record.capabilities.images === true
       || (record.dataTypes ?? []).includes("images");
     const compiledRoot = lookupHostRootContract(input.compile?.profileId);
+    registerHostContextTurn({ agentId, modelId, selectionRevision: captured.selectionRevision }, turnId);
     const runtime = createModeldProduce({
       runRoot: input.runRoot,
       agentId,

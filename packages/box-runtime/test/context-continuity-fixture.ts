@@ -583,8 +583,8 @@ export function produceFor(runRoot: string, turnId: string, model: ModelRecord =
   }).produce;
 }
 
-function dispatchLayer(generation: string, models: () => ReturnType<typeof parseModelsFile>, fetchImpl: typeof fetch, env: NodeJS.Dict<string>) {
-  const config = fakeConfigurationReadLayer({ models, desired: { version: 1, mode: "route" } });
+function dispatchLayer(generation: string, models: () => ReturnType<typeof parseModelsFile>, fetchImpl: typeof fetch, env: NodeJS.Dict<string>, context?: { windowTokens: number }) {
+  const config = fakeConfigurationReadLayer({ models, context, desired: { version: 1, mode: "route" } });
   const auth = createLiveBackendAuth(env);
   return config.pipe(
     Layer.merge(admitAllAuthorityLayer()),
@@ -609,6 +609,7 @@ export type CapturedRequest = { body: unknown; text: string };
 
 export async function withFakeHttpSession<T>(input: {
   turnId: string;
+  context?: { windowTokens: number };
   model?: ModelRecord;
   contextWindowTokens?: number;
   usage?: ProviderUsage | "omit";
@@ -653,7 +654,7 @@ export async function withFakeHttpSession<T>(input: {
   const stop = await serve(
     join(dir, "modeld.sock"),
     generation,
-    dispatchLayer(generation, () => models, fetchImpl, { OPENAI_API_KEY: "sk-test" }) as Layer.Layer<unknown, never, never>,
+    dispatchLayer(generation, () => models, fetchImpl, { OPENAI_API_KEY: "sk-test" }, input.context) as Layer.Layer<unknown, never, never>,
   );
   const makeSession = (opts: { turnId: string; model: ModelRecord; contextWindowTokens?: number }) => {
     const window = opts.contextWindowTokens ?? opts.model.contextWindowTokens;

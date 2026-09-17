@@ -28,6 +28,7 @@ export type InferenceEvent =
   | { type: "backend_finish"; finishReason: "stop" | "error" | "abort"; usage?: InferenceUsage; stream?: StreamSummary };
 
 export type BackendFailureCode =
+  | "context_budget_exceeded"
   | "unknown_backend_kind"
   | "invalid_prepared_call"
   | "auth_mismatch"
@@ -41,6 +42,7 @@ export type BackendFailureCode =
   | "credential_invalid";
 
 export const BACKEND_FAILURE_CODES: readonly BackendFailureCode[] = [
+  "context_budget_exceeded",
   "unknown_backend_kind",
   "invalid_prepared_call",
   "auth_mismatch",

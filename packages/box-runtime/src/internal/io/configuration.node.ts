@@ -20,7 +20,7 @@ import {
 } from "@grokbox/runtime-kernel/selection";
 import { readBoundedJson as readExternalCatalogJson } from "./bounded-json.node.ts";
 import { modelsPath, resolveDurableRoot } from "./paths.ts";
-import { runtimeDesiredFromConfig, ConfigError } from "@grokbox/runtime-kernel/config";
+import { runtimeDesiredFromConfig, validateConfig, ConfigError } from "@grokbox/runtime-kernel/config";
 import { rootConfigLayout, readConfigFile } from "./config-layout.node.ts";
 import { openConfigStore, commitConfigChange } from "./config-store.node.ts";
 
@@ -161,6 +161,8 @@ export function configurationReadLayer(store: RuntimeStore): Layer.Layer<Configu
     snapshot: () => Effect.gen(function* () {
       const modelsRaw = yield* readBoundedJson(modelsPath(store.root));
       const desired = yield* Effect.tryPromise({ try: () => loadRuntimeDesired(store.root), catch: (error) => error });
+      const configRaw = yield* readBoundedJson(join(store.root, "config.json"), true);
+      const context = configRaw === undefined ? undefined : validateConfig(configRaw).runtime?.context;
       const models = yield* Effect.tryPromise({
         try: () => resolveStoreModels(parseModelsFile(modelsRaw)),
         catch: (error) => error instanceof BoxRuntimeError ? error : new BoxRuntimeError("invalid_usage", "Model configuration is unavailable."),
@@ -168,6 +170,7 @@ export function configurationReadLayer(store: RuntimeStore): Layer.Layer<Configu
       return {
         models,
         desired,
+        ...(context ? { context } : {}),
       };
     }),
   });

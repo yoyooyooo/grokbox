@@ -30,6 +30,9 @@ export type ConfigCommitReceipt = {
 };
 
 function requiresConfirmation(before: UnifiedConfig, next: UnifiedConfig, paths: readonly string[]): boolean {
+  // Context policy can enable paid summaries or enlarge their request budget.
+  // Require an explicit impact acknowledgement, including parent replacement/unset.
+  if (paths.some(path => path === "/runtime/context" || path.startsWith("/runtime/context/"))) return true;
   if (paths.some((path) => path.startsWith("/daemon/") || /\/(?:agentId|routineKey|allowedIntents|dataPolicy|reportTarget|fallbackTargets|credentialRef|repository)$/.test(path))) return true;
   if (paths.some((path) => /(?:maxAutomaticWakeupsPerDay|criticalReservePerDay)$/.test(path))) return true;
   const left = effectiveOps(before.ops); const right = effectiveOps(next.ops);
@@ -56,7 +59,7 @@ export function applyConfigChange(current: UnifiedConfig, command: ConfigChange)
     if (!command.confirm || !command.expectedRevision) throw new ConfigError("config_conflict", "Document replacement requires confirmation and expected revision.");
     if (command.scope === "target") {
       if (!isObject(command.value) || Object.hasOwn(command.value, "client")) throw new ConfigError("config_scope_unavailable", "Target apply cannot replace client profiles.");
-      candidate = { ...command.value, schemaVersion: 2, client: current.client };
+      candidate = { ...command.value, schemaVersion: 3, client: current.client };
     } else candidate = command.value;
   } else if (command.kind === "preset") {
     if (!command.confirm) throw new ConfigError("config_conflict", "Changing preset requires confirmation.");

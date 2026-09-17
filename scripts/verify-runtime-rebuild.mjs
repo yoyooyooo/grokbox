@@ -7,12 +7,40 @@ import { captureVerificationSource, withVerificationSource } from "./verificatio
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const kase = process.argv[2];
-if (!kase) {
+if (!kase || process.argv.length !== 3) {
   console.error("usage: bun scripts/verify-runtime-rebuild.mjs <case>");
   process.exit(1);
 }
 
+const CONTEXT_TESTS = [
+  "packages/runtime-kernel/test/context-policy.test.ts", "packages/box-runtime/test/context-reuse.test.ts",
+  "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-host.test.ts",
+  "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts",
+  "test/context-commands.test.ts",
+];
 const CASES = {
+  "context-reuse": [
+    ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/context-reuse.test.ts", "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-packed.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+  ],
+  "context-policy": [
+    ["bun", "run", "typecheck"],
+    ["bun", "test", "packages/runtime-kernel/test/context-policy.test.ts", "packages/runtime-kernel/test/unified-config.test.ts", "packages/box-runtime/test/config-migration.test.ts", "test/config-cli.test.ts"],
+  ],
+  "context-owner": [
+    ["bun", "test", "packages/box-runtime/test/context-maintenance-host.test.ts", "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "test/context-commands.test.ts"],
+  ],
+  "context-summary": [
+    ["bun", "test", "packages/box-runtime/test/context-reuse.test.ts", "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-lifetime.test.ts", "packages/runtime-kernel/test/overflow-recovery.test.ts"],
+  ],
+  "context-maintenance": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", ...CONTEXT_TESTS],
+    ["bun", "test", "packages/box-runtime/test/context-maintenance-packed.test.ts", "test/config-packed.test.ts", "packages/box-runtime/test/authority-wire.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+  ],
+  "context-native": [["bun", "test", "packages/box-runtime/test/context-native-qualification.test.ts"]],
   all: [
     ["bun", "run", "typecheck"],
     ["bun", "run", "build"],
@@ -93,7 +121,7 @@ const CASES = {
   ],
 };
 
-const mapped = CASES[kase];
+const mapped = Object.hasOwn(CASES, kase) ? CASES[kase] : undefined;
 if (!mapped) {
   console.error(`unknown case: ${kase}`);
   process.exit(1);
@@ -143,14 +171,20 @@ for (const argv of mapped) {
   if (ran.status !== 0) failed = true;
   if (isTest) {
     if (pass == null || pass === 0) failed = true;
-    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
+    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || kase.startsWith("context-") || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
     if ((failn ?? 0) > 0) failed = true;
   }
 }
 
 const SUPPORTS = {
+  "context-reuse": ["pinned-pi-controlled-extraction", "independent-cut-and-usage-goldens", "untruncated-summary-input", "real-sdk-request-owner", "packed-host-process-reopen"],
+  "context-policy": ["strict-config-v3", "explicit-v2-migration", "local-window-and-output-reserve", "per-model-per-bot-policy-revision", "unknown-usage-local-measurement"],
+  "context-owner": ["pre-main-http-maintenance", "native-facade-accept-fence", "pending-owner-cancellation", "late-root-and-checkpoint-faults", "shared-source-cancellation", "durable-manual-noop", "confirmed-cli-control"],
+  "context-summary": ["pi-cut-plan-and-templates", "complete-tool-tail-material", "bounded-summary-request-budget", "blank-tool-and-incomplete-rejection", "narrow-overflow-recovery"],
+  "context-maintenance": ["local-budget-old-failed-context", "new-input-exactly-once-in-owned-host", "ten-maintenance-cycles", "new-node-process-checkpoint-reuse", "actual-packed-host-client", "shared-effect-sdk-owner", "config-v3-and-wire-v8", "preload-import-fence"],
+  "context-native": ["pinned-native-summarizer-and-archive-accept-methods", "actual-native-carrier-and-durable-block-rendering", "no-native-provider-inference", "all-current-native-slices-unique"],
   all: ["typecheck", "repository-regression-suite"],
-  "config-unification": ["strict-v2-schema-and-paths", "shared-cas-domain-writer", "client-box-scope-isolation", "consumer-specific-application-receipts", "operation-crash-reconciliation", "one-way-migration-recovery", "bootstrap-rollback-preserves-later-edits", "alias-repair-preserves-detached-files", "models-and-domain-revision-isolation", "source-and-packed-node-cli", "preload-import-fence"],
+  "config-unification": ["strict-v3-schema-and-paths", "shared-cas-domain-writer", "client-box-scope-isolation", "consumer-specific-application-receipts", "operation-crash-reconciliation", "one-way-migration-recovery", "bootstrap-rollback-preserves-later-edits", "alias-repair-preserves-detached-files", "models-and-domain-revision-isolation", "source-and-packed-node-cli", "preload-import-fence"],
   layout: ["layout-structure", "import-export-gates", "preload-esbuild-fence"],
   codec: ["host-context-snapshot", "openai-prompt-http-oracle"],
   status: ["status-facets", "host-journal-roles", "readonly-status-ports"],
@@ -170,6 +204,12 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "context-reuse": "selected-pi-source-extraction-real-sdk-local-http-and-packaged-host-no-global-pi-or-external-provider",
+  "context-policy": "pure-policy-real-temporary-config-files-and-explicit-migrator",
+  "context-owner": "production-effect-program-and-host-facade-owned-native-methods-real-unix-http-leveldb",
+  "context-summary": "real-pi-derived-algorithm-real-sdk-local-http-and-bounded-provider-substitutes",
+  "context-maintenance": "production-kernel-real-sdk-local-http-unix-actual-packed-host-owned-native-store-and-fresh-node-processes",
+  "context-native": "exact-pinned-native-methods-in-isolated-vm-blob-telemetry-and-privacy-capability-substitutes-no-live-host",
   all: "repository-tests-owned-fixtures-local-processes-sdk-mocks-and-native-source-pins",
   "config-unification": "source-and-packed-node-cli-real-temporary-files-disposable-processes-fake-gateway-no-live-config-or-native-host-mutation",
   layout: "offline-layout",
@@ -191,6 +231,12 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "context-reuse": ["live-native-context-adoption", "real-provider-summary-quality", "independent-review", "pi-ai-backend-adoption"],
+  "context-policy": ["live-config-migration-and-adoption", "arbitrary-provider-tokenizer-equivalence", "native-prompt-delivery"],
+  "context-owner": ["loaded-native-abi", "actual-native-store-checkpoint-restart", "original-App-activity", "independent-review"],
+  "context-summary": ["real-provider-summary-quality", "all-provider-tokenizer-equivalence", "native-store-and-App"],
+  "context-maintenance": ["live-native-adoption", "real-provider-user-journey", "native-checkpoint-service-restart", "original-App-observation", "independent-review", "production-release"],
+  "context-native": ["live-loaded-Host", "native-storage-service-crash-atomicity", "real-provider-inference", "original-App", "independent-review"],
   "config-unification": ["production-config-migration", "platform-Reset-and-home-restoration", "remote-config-write-capability", "native-webhook-ops-workers", "independent-code-review", "live-deployment"],
   "observation-monitor": ["live-scoped-native-bridge", "cross-admission-priority-refresh", "abrupt-crash-lock-recovery", "schema-migration-backup-retention", "external-notification-delivery", "service-install-autostart", "full-T41-production-acceptance", "live-deployment"],
   "runtime-start": ["supported-service-manager-install-autostart", "persistent-credential-inference", "native-model-roundtrip", "test2-state-preservation", "live-deployment", "production-release"],

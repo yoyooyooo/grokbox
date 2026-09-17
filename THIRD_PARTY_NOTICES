@@ -68,3 +68,34 @@ classic-level 3.0.0 (external execution-history runtime dependency)
 The npm classic-level package and its dependencies retain their own license
 files. It is installed externally and is separate from the monitor SQLite store.
 No native database engine is imported into Host preload.
+
+Pi agent-core 0.85.1 (controlled compaction algorithm/template extraction)
+------------------------------------------------------------------------
+
+The selected usage estimates, cut-point/preparation algorithms and summary
+prompts are adapted from @earendil-works/pi-agent-core 0.85.1. No Pi Agent,
+SessionManager, credential store or tool executor is included. Exact source
+hashes and intentional adaptations are recorded in
+packages/box-runtime/src/internal/context/vendor/pi-compaction/PROVENANCE.md.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import {
-  ConfigError, defaultConfig, isObject, validateConfig, validateDaemonIntent, configRevision,
+  ConfigError, defaultConfig, isObject, validateConfig, migrateConfigV2, validateDaemonIntent, configRevision,
   type ConnectionProfile, type JsonObject, type UnifiedConfig,
 } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -119,8 +119,10 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
   const canonicalPath = join(options.root, "config.json");
   const canonical = await capture("canonical", canonicalPath);
   const home = canonicalPath === join(options.configDir, "config.json") ? canonical : await capture("home", join(options.configDir, "config.json"), true);
-  let candidate = canonical && isObject(canonical) && canonical.schemaVersion === 2 ? validateConfig(canonical) : defaultConfig();
-  const canonicalPresent = isObject(canonical) && canonical.schemaVersion === 2;
+  const unified = (raw: unknown) => isObject(raw) && (raw.schemaVersion === 2 || raw.schemaVersion === 3);
+  const upgrade = (raw: unknown) => isObject(raw) && raw.schemaVersion === 2 ? migrateConfigV2(raw) : validateConfig(raw);
+  let candidate = unified(canonical) ? upgrade(canonical) : defaultConfig();
+  const canonicalPresent = unified(canonical);
   function choose(key: keyof UnifiedConfig, value: unknown) {
     if (canonicalPresent && candidate[key] !== undefined && canonicalJson(candidate[key]) !== canonicalJson(value)) {
       if (!options.prefer) conflicts.push(key);
@@ -130,9 +132,9 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
   }
   let legacyCurrent: string | undefined;
   for (const raw of new Set([canonical, home])) if (raw !== undefined) {
-    if (isObject(raw) && raw.schemaVersion === 2) {
+    if (unified(raw)) {
       if (raw !== canonical) {
-        const other = validateConfig(raw);
+        const other = upgrade(raw);
         for (const [key, value] of Object.entries(other)) if (key !== "schemaVersion") choose(key as keyof UnifiedConfig, value);
       }
     } else {
@@ -177,7 +179,7 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
   if (desired !== undefined) {
     requireObject(desired, ["version", "mode"], "legacy runtime intent");
     if (options.role !== "box") conflicts.push("runtime-requires-box-role");
-    choose("runtime", { desiredMode: parseDesiredFile(desired).mode });
+    choose("runtime", { ...candidate.runtime, desiredMode: parseDesiredFile(desired).mode });
   }
   const ops = await capture("ops", join(options.root, "ops-policy.json"), true);
   let opsRevalidation = false;

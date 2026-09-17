@@ -5,6 +5,7 @@ export {
 } from "./internal/contract/errors.ts";
 export * from "./internal/contract/context.ts";
 export * from "./internal/contract/identity.ts";
+export * from "./internal/contract/context-maintenance.ts";
 export * from "./internal/contract/events.ts";
 export * from "./internal/contract/stream-diagnostic.ts";
 export * from "./internal/contract/tool-identity-observation.ts";

@@ -35,7 +35,7 @@ for (const api of ["chat", "responses"] as const) test(`${api}: Host hook, disk 
   } finally { await f.stop(); }
 }, 15000);
 test("wire v7 preserves reasoning usage and rejects inconsistent subsets and older execution", () => {
-  expect(WIRE_VERSION).toBe(7);
+  expect(WIRE_VERSION).toBe(8);
   for (const version of [3, 4, 5, 6]) expect(() => parseModeldRequest({ version, method: "run-step" })).toThrow(WireError);
   const session = acceptModeldFrame(clientSessionFor({ method: "run-step" }), { ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: "binding" }).session;
   const terminal = { kind: "terminal", outcome: "ok", bindingId: "binding", finishReason: "stop", usage: { promptTokens: 10, completionTokens: 20, reasoningTokens: 12 } };
