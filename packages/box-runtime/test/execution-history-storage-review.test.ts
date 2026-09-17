@@ -94,10 +94,20 @@ test("the real kernel completes 2048 STEPs backed by disk without accepting an o
         }));
         const duplicate = yield* Effect.scoped(runStep(request(0)));
         expect(duplicate.kind).toBe("duplicate");
-        const capacity = yield* inferenceCapacity;
-        expect(capacity).toMatchObject({ lifetimeStepLimit: null, accepting: true, activeSteps: 0, hotStepRecords: 0 });
+        // hotTurnsTarget is an asynchronous pressure target, not an admission
+        // quota. Observe the service-owned cooler settle; do not force cooling
+        // from the test or require the last STEP to await unrelated storage IO.
+        const capacity = yield* Effect.gen(function* () {
+          for (;;) {
+            const observed = yield* inferenceCapacity;
+            expect(observed).toMatchObject({ lifetimeStepLimit: null, accepting: true, activeSteps: 0, hotStepRecords: 0 });
+            if (observed.hotTurns <= 2 && observed.pinnedTurns <= 2 && observed.pendingScopeReleases === 0) return observed;
+            yield* Effect.sleep("10 millis");
+          }
+        }).pipe(Effect.timeout("5 seconds"));
         expect(capacity.hotTurns).toBeLessThanOrEqual(2);
         expect(capacity.pinnedTurns).toBeLessThanOrEqual(2);
+        expect(capacity.pendingScopeReleases).toBe(0);
         expect(counts.network).toBe(2048);
         const stale = yield* Effect.result(Effect.scoped(runStep({ ...request(3000), serviceEpoch: { incarnationId: "retired-epoch" } })));
         expect(stale).toMatchObject({ _tag: "Failure", failure: { code: "service_epoch_mismatch" } });

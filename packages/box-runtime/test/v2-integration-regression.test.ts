@@ -146,10 +146,23 @@ test("a stalled Host reader backpressures the socket instead of draining arbitra
   const iterator = streamModeld(root, { method: "run-step", version: WIRE_VERSION }, { timeoutMs: 2000 })[Symbol.asyncIterator]();
   try {
     expect((await iterator.next()).value.kind).toBe("accepted");
-    begin(); await pause(50);
-    const stalledAt = produced;
-    expect(stalledAt).toBeGreaterThan(0); expect(stalledAt).toBeLessThan(total);
-    await pause(50); expect(produced).toBe(stalledAt);
+    begin();
+    // Socket and stream buffers can finish accepting queued writes after the
+    // first timer tick. Wait for bounded quiescence instead of assuming that
+    // exactly 50ms means every OS/Bun buffer has already filled.
+    const deadline = Date.now() + 1500;
+    let stalledAt = produced, stableSince = Date.now();
+    for (;;) {
+      await pause(20);
+      expect(produced).toBeLessThan(total); // an eager-draining reader still fails
+      if (produced !== stalledAt) { stalledAt = produced; stableSince = Date.now(); }
+      if (stalledAt > 0 && Date.now() - stableSince >= 100) break;
+      if (Date.now() >= deadline) throw new Error("stalled Host never backpressured within the bounded observation window");
+    }
+    expect(stalledAt).toBeGreaterThan(0);
+    expect(stalledAt).toBeLessThan(total);
+    // The socket is paused by lack of reader demand, not irreversibly broken.
+    expect((await iterator.next()).value.kind).toBe("event");
   } finally {
     begin(); await iterator.return?.();
     for (const socket of sockets) socket.destroy();
