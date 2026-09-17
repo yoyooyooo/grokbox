@@ -1,6 +1,6 @@
 # AUTH — Ownership evidence availability follow-up
 
-Status: implemented and fixed-source offline/full-suite verified; partial native-source-copy qualification passed; independent fixed-tip review pending; actual native/tool/App acceptance not run. Source baseline `f8c82c0`. Branch `feat/ownership-evidence-availability`. Depends on T45/T47/T48; release and independent review gates remain T49. Specification: [S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core). This ticket follows the completed core slices without reopening their historical receipts.
+Status: linearly integrated into v2 and offline/full-suite reverified in the v2 worktree; partial native-source-copy qualification passed; independent fixed-tip review pending; actual native/tool/App acceptance not run. Source baseline `f8c82c0`. Source branch `feat/ownership-evidence-availability`, integrated tip `8760d3a`. Depends on T45/T47/T48; release and independent review gates remain T49. Specification: [S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core). This ticket follows the completed core slices without reopening their historical receipts. The [v2 integration receipt](#v2-integration-receipt) records exact mappings and revalidation.
 
 ## Goal and policy decision
 
@@ -29,7 +29,7 @@ This is an explicit observation-frequency tradeoff, not merely a performance ref
 
 ## Live-only acceptance
 
-Registered entries are [LIVE-AUTH-AVAILABILITY-NATIVE](LIVE-integration-validation.md#live-auth-availability-native), [TOOLS](LIVE-integration-validation.md#live-auth-availability-tools) and [APP](LIVE-integration-validation.md#live-auth-availability-app), each linked to implementation commit `90346bb`. Required: fixed-artifact Host/Gateway source sharing and cancellation, native pause/identity invalidation, long-approval final tool consumption, original App warning/wait/terminal projection, and loaded artifact/policy compatibility. Default validation uses a fixed integrated v2 candidate in an authorized window, not this unmerged worktree. No model spend, restart, adopt or automatic message replay is authorized by this ticket.
+Registered entries are [LIVE-AUTH-AVAILABILITY-NATIVE](LIVE-integration-validation.md#live-auth-availability-native), [TOOLS](LIVE-integration-validation.md#live-auth-availability-tools) and [APP](LIVE-integration-validation.md#live-auth-availability-app), each linked to implementation commit `90346bb`. Required: fixed-artifact Host/Gateway source sharing and cancellation, native pause/identity invalidation, long-approval final tool consumption, original App warning/wait/terminal projection, and loaded artifact/policy compatibility. Default validation uses a fixed integrated v2 candidate in an authorized window, rather than switching live to a feature worktree. No model spend, restart, adopt or automatic message replay is authorized by this ticket.
 
 ## Non-live blockers and proof limits
 
@@ -39,11 +39,11 @@ Independent fixed-tip review belongs here/T49, not in LIVE as a substitute for c
 
 Initial scoped verification passed with pinned Bun 1.3.14 / Effect 4.0.0-beta.107: typecheck; 104 availability tests across eight suites; 28 read-only native-source tests across six suites. The latter uses the fixed `7920c2f6e28a4f9790d802d60f4b036cbf92676409ebb8b180c7ee6a53834192` native input and checks that installed source/PIDs remain unchanged; extracted snippets run only with substitute capabilities. It does not qualify the loaded feature or actual Server/tool/App behavior.
 
-The first release-offline run found one stale preload digest expectation (471 passed, one failed); it was updated to the rebuilt artifact while retaining drift/empty-artifact refusal. The first full run found four CLI tests asserting the superseded restart/create guidance (2084 passed, six native skips, four failed). Those assertions now check the exact read-only guidance; an old snapshot with no detailed cause remains `server_read_unavailable` rather than being guessed to be a stopped Host. Both real CLI suites were added to the availability verifier. Final fixed-source reruns are still required below; no failed run is counted as a pass.
+The first release-offline run found one stale preload digest expectation (471 passed, one failed); it was updated to the rebuilt artifact while retaining drift/empty-artifact refusal. The first full run found four CLI tests asserting the superseded restart/create guidance (2084 passed, six native skips, four failed). Those assertions now check the exact read-only guidance; an old snapshot with no detailed cause remains `server_read_unavailable` rather than being guessed to be a stopped Host. Both real CLI suites were added to the availability verifier. Final fixed-source reruns are recorded below; no failed run is counted as a pass.
 
 Implementation audit checked owner scope, original-age preservation, local/deployment revalidation, invalidation during the final local witness, bounded payload retention, error projection and call/terminal accounting. This is the implementer's audit, not an independent review receipt. Independent fixed-tip review remains a non-live requirement in this ticket/T49; no new external reviewer invocation or review pass is claimed.
 
-No live execution, restart, adopt, model spend, source merge or release is claimed.
+The initial feature-worktree receipt did not include source integration, live execution, restart, adopt, model spend or release. Source integration was subsequently authorized and is recorded below; no live action or release is claimed.
 
 ### Fixed-source final receipt — 2026-09-17
 
@@ -65,4 +65,27 @@ These suites overlap; counts are not added as unique tests. The availability tes
 
 A full-suite run on `90346bb` reported one failure in `modeld STEP outcome > production root ownership wrong-gateway refuses a real Host/Unix STEP before provider` (2087 passed, six skips, one failure). The retained console tail identifies the test but not its failed assertion. The unchanged suite then passed individually (11 tests), all four refusal paths passed 100 repetitions each, and a fresh whole-repository run passed as recorded above. No production or test code was changed between those runs. The failure is not reproduced and its cause remains unknown; it is not claimed fixed or attributed to asynchronous logs. Include this evidence limit in fixed-tip independent review. Any recurrence requires retaining the full assertion/stack and fixing the source/test owner before release; live validation cannot resolve or waive this code/test concern.
 
-Independent review remains `review_pending`; the implementer's audit and passing reruns do not sign that gate. LIVE entries remain `awaiting-integration`, with v2 mapping, target, budget and authorized window unselected.
+Independent review remains `review_pending`; the implementer's audit and passing reruns do not sign that gate. The v2 source mapping is now recorded below and in LIVE. The three LIVE entries are `blocked` on review/current-native qualification and an authorized window; target, budget and actual loaded identities remain unselected/unrecorded.
+
+<a id="v2-integration-receipt"></a>
+### Linear v2 integration receipt — 2026-09-17
+
+Under the user's explicit integration instruction, both clean worktrees were checked at the exact source refs. v2 had not advanced beyond `f8c82c0abdf2fc16ed54c1d2af559920e6fb8320`; the feature tip `8760d3a09bd36975cf65192585ba0ba3daabc0e5` was exactly two commits ahead. A pre-integration typecheck and rebuilt availability verification passed on that tip. v2 was then fast-forwarded with `git merge --ff-only` to the same exact tip. No rebase, conflict resolution, squash or merge commit was needed, and no unrelated feature branch was included.
+
+| Source commit | Integrated v2 commit | Scope |
+|---|---|---|
+| `90346bb2bd72b44b345eb4752d730c7922d8e809` | same hash | Ownership availability implementation, tests and source documentation |
+| `8760d3a09bd36975cf65192585ba0ba3daabc0e5` | same hash | Feature proof and live-only acceptance registration |
+
+The integrated tree exactly matched the feature tip before this documentation-only receipt. Rebuilt source digest remains `a6eb9fb9ab63052fa22504639c6c529b3301d26c383b817178063bd44496dceb`, and preload SHA-256 remains `c00484cf80649b95e920efea862cb744f800b8151942a8d2f050705eea2e6f4d`. These identify disk artifacts, not running Host/modeld instances. Dependency pins, `strict-observation-v2`, wire v6, original-age and deadline limits are unchanged by integration.
+
+| Actual integration verification, Bun 1.3.14 | Result | Location and boundary |
+|---|---|---|
+| `bun run typecheck` | passed before and after fast-forward | Exact feature tip, then v2 worktree |
+| `bun scripts/verify-modeld-core.mjs availability` | 146 passed, 0 failed, 10 files, 1113 assertions | Rebuilt exact feature tip before fast-forward |
+| `bun scripts/verify-modeld-core.mjs release-offline` | 514 passed, 0 failed, 53 files, 3097 assertions | Rebuilt integrated v2 worktree; includes availability and packed/package gates |
+| `GROKBOX_TEST_NATIVE_HOST=0 GROKBOX_TEST_ALLOW_NATIVE=0 bun test --timeout 30000` | 2088 passed, 6 explicit native skips, 0 failed, 267 files, 17253 assertions | Fresh integrated v2 whole-repository run |
+
+No source change or HEAD drift occurred during the integrated runs. Suites overlap and are not added as independent tests. The six default native skips remain skips; the earlier 28-test native-source-copy receipt above was not rerun in this integration and does not qualify loaded components. The previously unlocalized `wrong-gateway` failure did not recur in this full run; its root cause remains unknown and the review concern above is retained.
+
+Integration does not sign T49's independent review or any native/live gate. LIVE now records the source mappings but keeps targets, request/cost budgets, cutover permission and actual loaded artifacts unselected. There was no remote push, global shim change, Host/modeld restart/adopt, real provider spend or automatic message replay. The feature worktree and its two original commits are retained.

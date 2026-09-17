@@ -138,13 +138,15 @@ Status: blocked — mapped to v2; T49 review and authorized native window pendin
 
 来源：[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md)、[Spec S10.4](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。Source branch `feat/ownership-evidence-availability`，固定实现提交 `90346bb2bd72b44b345eb4752d730c7922d8e809`，基于v2 `f8c82c0`。Source digest `a6eb9fb9ab63052fa22504639c6c529b3301d26c383b817178063bd44496dceb`；preload digest `c00484cf80649b95e920efea862cb744f800b8151942a8d2f050705eea2e6f4d`。当前策略为`strict-observation-v2`，执行wire仍为v6；未知旧组件组合不因wire编号相同自动取得资格。
 
-共同状态：v2实际集成映射、共同候选、目标、窗口、请求/费用上限与切换授权均`not-selected`/`not-recorded`。实现提交已在独立worktree完成全库与重建release-offline验证，固定原生源码的复制品/隔离片段测试也已运行；这些均不证明实际加载或原版App/最终工具消费者。独立固定提交复审及一次未复现的全库测试异常仍在AUTH/T49中记录，不搬成live-only残留。下列三条均未执行，没有live通过回执；默认等待映射到固定集成v2制品后再进入授权窗口。
+共同集成回执（2026-09-17）：按用户明确指令，v2从`f8c82c0abdf2fc16ed54c1d2af559920e6fb8320`快进到`8760d3a09bd36975cf65192585ba0ba3daabc0e5`；实现提交`90346bb`与文档提交`8760d3a`均原哈希保留，无rebase、冲突、squash或merge commit。该v2候选已重新通过类型检查、重建release-offline（514通过）和全库（2088通过、6项原生默认跳过、0失败）；精确映射、源码/制品摘要与证据范围见[AUTH集成回执](AUTH-ownership-evidence-availability.md#v2-integration-receipt)。
+
+共同阻断与授权状态：源码集成已完成，但本次实际live候选/loaded身份、目标、窗口、请求/费用上限与切换授权仍为`not-selected`/`not-recorded`。固定原生源码复制品/隔离片段的历史回执不证明当前实际加载或原版App/最终工具消费者。独立固定提交复审及一次未定因的历史全库测试异常仍在AUTH/T49中记录，不搬成live-only残留，也不因本轮全库通过而宣称根因已修复。下列三条转为`blocked`（已集成，复审/原生资格与授权窗口未满足），均未执行，无live通过回执。下一窗口必须固定当时的v2候选并复核包含关系和制品身份，不能从源码快进推定已经部署。
 
 <a id="live-auth-availability-native"></a>
 ### LIVE-AUTH-AVAILABILITY-NATIVE — 已加载策略、真实取证与失效
-Status: awaiting-integration
+Status: blocked — mapped to v2; independent review, native qualification and authorized window pending
 
-- 来源与依赖：AUTH实现提交`90346bb`；依赖本次固定候选上的`LIVE-MODELD-NATIVE`、`LIVE-MODELD-CUTOVER`语义资格。v2 source→integrated映射及candidate identity为`not-recorded`。
+- 来源与依赖：AUTH实现提交`90346bb`；依赖本次固定候选上的`LIVE-MODELD-NATIVE`、`LIVE-MODELD-CUTOVER`语义资格。v2 source→integrated映射为`90346bb → 90346bb`、`8760d3a → 8760d3a`，已离线复验的集成tip为`8760d3a`；实际live候选及loaded identity仍`not-selected`/`not-recorded`。
 - 必须live的原因：已测试的native源码锚点、隔离retry/compact片段和模拟List不能证明实际Gateway读取生命周期、当前scope/native暂停状态或正在运行的Host/modeld加载了v2策略。
 - 环境与动作：优先使用隔离原生环境；现役只在批准的单个测试Bot与成套制品上操作。先读实际loaded Host/profile/preload/modeld身份、wire与policy，核对非目标Bot和官方passthrough不受影响。
 - 步骤与oracle：在安全、批准的延迟注入点验证2.5–4 s读取跨多个检查点时同STEP复用；新STEP不继承超过2 s的跨STEP缓存，原始证据不超过5 s。首次慢读可在原10 s累计预算内取得另一份新鲜证据；持续超龄仍拒绝。检查本地pause/unbound、scope/Host代变化和共享等待者取消，已观察失效不能被稍后ready结果复活；不合作source仍保留占用至实际结算。关联operation/waiter/STEP与模型实际调用数，不用标题证明授权。
@@ -154,9 +156,9 @@ Status: awaiting-integration
 
 <a id="live-auth-availability-tools"></a>
 ### LIVE-AUTH-AVAILABILITY-TOOLS — 长审批后的原生工具执行门
-Status: awaiting-integration
+Status: blocked — mapped to v2; independent review, native qualification and authorized window pending
 
-- 来源与依赖：AUTH实现提交`90346bb`；依赖上条NATIVE及`LIVE-MODELD-TOOLS`的当前候选资格。v2映射`not-recorded`。
+- 来源与依赖：AUTH实现提交`90346bb`；依赖上条NATIVE及`LIVE-MODELD-TOOLS`的当前候选资格。实现已按原哈希`90346bb → 90346bb`集成，离线复验tip为`8760d3a`；实际live候选及loaded identity仍`not-selected`/`not-recorded`。
 - 必须live的原因：离线已验证模型只调用一次、工具材料检查点、等待/过期/失效与终态；modeld释放材料不等于原生消费者在审批后重新检查了权限。
 - 环境与动作：指定批准的无破坏性测试工具、临时标记和审批操作者；分别验证正常消费、审批跨5 s证据窗口，以及审批中暂停/取消/换代。不得用真实业务工具代替。
 - 步骤与oracle：分别记录模型调用、材料释放、审批、最后执行门、实际标记写入、结果入库与投递。有效上下文只执行一次；失效上下文不再新增工具副作用；同一STEP或已关闭TURN不能被重放。原生per-Agent/per-TURN覆盖不足仍作为阻断，不能用allowed/bound两布尔值或缓存快照签署通过。
@@ -166,9 +168,9 @@ Status: awaiting-integration
 
 <a id="live-auth-availability-app"></a>
 ### LIVE-AUTH-AVAILABILITY-APP — 原版App的等待、拒绝与下一步提示
-Status: awaiting-integration
+Status: blocked — mapped to v2; independent review, native qualification and authorized window pending
 
-- 来源与依赖：AUTH实现提交`90346bb`；依赖NATIVE，涉及实际工具的展示同时依赖TOOLS；v2映射`not-recorded`。
+- 来源与依赖：AUTH实现提交`90346bb`；依赖NATIVE，涉及实际工具的展示同时依赖TOOLS；实现已按原哈希`90346bb → 90346bb`集成，离线复验tip为`8760d3a`；实际live候选及loaded identity仍`not-selected`/`not-recorded`。
 - 必须live的原因：新字段已通过真实fixture Unix/Host/journal/SQLite冷读/CLI投影验证；原版App实际渲染、消息确认及真实Provider调用/费用仍属不同事实源。
 - 环境与动作：批准的单个Bot、模型和新nonce测试消息，核对当前session/STEP，不自动发送或删除历史失败消息。
 - 步骤与oracle：等待不显示为已完成或模型正文；stale/read_elapsed、后续过期、permit过期、预算耗尽、真正temporal与访问拒绝可按有记录的原因区分，未知历史原因不补猜。stale不声称归属已变，访问拒绝不误指向模型Provider，建议不默认重启Host或刷新title。已发起模型/已释放工具的事实保持准确，终态只有一次；完成、投递与侧栏子任务Working各自核对。

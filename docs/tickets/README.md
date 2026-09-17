@@ -34,7 +34,7 @@ Each ticket's evidence section is the completion source; this table is a route, 
 
 ### Follow-up — ownership evidence availability
 
-[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md) owns the post-core same-STEP evidence reuse, finite expiry/budget explanations and shared CLI/STEP guidance. It retains the five-second original-age limit and explicit observation-frequency tradeoff under policy v2. Its `verify:modeld-core availability` suite is included in `release-offline`; code-review obligations remain non-live, and feature-scoped native/tool/App acceptance is registered in LIVE. The ticket, not this index, owns source-bound test counts and remaining gates.
+[AUTH — ownership evidence availability](AUTH-ownership-evidence-availability.md) owns the post-core same-STEP evidence reuse, finite expiry/budget explanations and shared CLI/STEP guidance. It retains the five-second original-age limit and explicit observation-frequency tradeoff under policy v2. Its `verify:modeld-core availability` suite is included in `release-offline`. The feature is now linearly integrated and reverified in v2; the [integration receipt](AUTH-ownership-evidence-availability.md#v2-integration-receipt) records unchanged commit mappings and proof boundaries. Code-review obligations remain non-live, and feature-scoped native/tool/App acceptance remains blocked in LIVE. The ticket, not this index, owns source-bound test counts and remaining gates.
 
 ## Prior delivery baseline — 2026-09-12 documentation governance
 
