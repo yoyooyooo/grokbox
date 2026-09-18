@@ -316,7 +316,10 @@ if (existsSync(preload)) {
       } catch {
         fail("preload metafile unreadable");
       }
-      const trap = spawnSync(process.execPath, ["-e", `
+      // Publication targets Node. The verifier itself may run under Bun, but
+      // that must not silently substitute Bun for the import-side-effect proof.
+      // Bun compatibility remains a separate packed smoke test.
+      const trap = spawnSync("node", ["-e", `
         const fs = require("node:fs");
         const fsp = require("node:fs/promises");
         const writes = [];
@@ -328,8 +331,13 @@ if (existsSync(preload)) {
           if (typeof fsp[name] === "function") fsp[name] = (...args) => { record("fs.promises." + name, args); return Promise.resolve(); };
         }
         require(${JSON.stringify(outfile)});
-        setImmediate(() => { process.stdout.write(JSON.stringify({ imported: true, writes })); });
-      `], { encoding: "utf8", timeout: 5000 });
+        setImmediate(() => { process.stdout.write(JSON.stringify({ imported: true, writes, engine: process.versions.bun ? "bun" : "node" })); });
+      `], { encoding: "utf8", timeout: 5000,
+        // This proof is the default, side-effect-free import, not adoption of
+        // whichever live/test profile happens to be in the invoking shell.
+        env: { ...process.env, NODE_OPTIONS: "", GROKBOX_ALLOW_LIVE_HOST: "", GROKBOX_PACKED_SESSION_FACTORY: "",
+          GROKBOX_PACKED_PRELOAD: "", GROKBOX_PATCH_PROFILE: "", GROKBOX_OPERATION_ID: "", GROKBOX_PRELOAD_MARKER: "" },
+      });
       if (trap.error) {
         fail("preload import-time trap failed", { error: String(trap.error.message ?? trap.error) });
       } else if (trap.status !== 0) {
@@ -339,7 +347,7 @@ if (existsSync(preload)) {
       } else {
         let trapResult;
         try { trapResult = JSON.parse(trap.stdout); } catch { trapResult = null; }
-        if (!trapResult || trapResult.imported !== true || !Array.isArray(trapResult.writes)) {
+        if (!trapResult || trapResult.imported !== true || trapResult.engine !== "node" || !Array.isArray(trapResult.writes)) {
           fail("preload import-time trap unreadable");
         } else if (trapResult.writes.length > 0) {
           fail("preload import-time side effect", { writes: trapResult.writes });

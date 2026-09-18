@@ -28,6 +28,7 @@ import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
 import { runRoutines } from "./commands/routines.ts";
+import { runRoutineProvisionCli } from "./commands/routine-provision.ts";
 import { runRuntimeMonitor } from "./commands/monitor.ts";
 import {
   runDesktopKeepAdd,
@@ -302,6 +303,9 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "box wake": async (deps, _args, options) => await runBoxWake(deps, options),
     "box keepalive run": async (deps, _args, options) => await runBoxKeepalive(deps, options),
     "box keepalive status": async (deps, _args, options) => await runBoxKeepaliveStatus(deps, options),
+    "agents routines apply": async (deps, args, options) => await runRoutineProvisionCli(deps, "apply", args[0] ?? "", options),
+    "agents routines outcome": async (deps, args, options) => await runRoutineProvisionCli(deps, "outcome", args[0] ?? "", options),
+    "agents routines reconcile": async (deps, args, options) => await runRoutineProvisionCli(deps, "reconcile", args[0] ?? "", options),
     "agents routines list": async (deps, args, options) => await runRoutines(deps, "list", args[0] ?? "", undefined, options),
     "agents routines show": async (deps, args, options) => await runRoutines(deps, "show", args[0] ?? "", args[1], options),
     "agents routines enable": async (deps, args, options) => await runRoutines(deps, "enable", args[0] ?? "", args[1], options),

@@ -12,6 +12,12 @@
 
 保护、精确claim解除和GC共用**本域**持久事务/锁，公共层不存第二套pin。14项`obs-continuity-contract.test.ts`以真实临时文件、SQLite和owned恢复owner验证诊断过期/轮转、引用并发、容量下降保留最后可靠点、安全记录不足拒绝新effect、未知操作不随TTL终结、共享物理计量与Scope结算。该fixture不是CONT恢复发布器或执行ledger；生产owner和完整安全退役仍由本票/CONT-02/11完成，不签J2。
 
+## T53 scoped provision 记录（2026-09-18）
+
+新增`state/routine-provision/operations.sqlite`由T53单独持有创建/更新的重放保护，不纳入诊断GC。该owner已在storage status独立计量：主文件2MiB、最多256操作，不存prompt；容量不足只拒绝新的provision，不影响模型执行。attempting/unknown不能被TTL清除，损坏/缺失既有账本不能初始化成新许可。真实文件、并发、SIGKILL和诊断维护隔离已验证，详见[T53回执](../reports/2026-09-18-disabled-routine-provisioning.md)。
+
+这不是本票完整退役方案：operation的安全压缩/退役、首次初始化中断修复尚未实现。未来解除阻断必须由该owner证明不会让旧请求重放，不能靠通用GC删库；J1恢复/安全owner合同不因此改变。
+
 ## Work
 
 先做持久对象清单：STEP/TURN/context selection、maintenance c!/c-latest!、controller operations、grant、迁移回执与备份、provenance/profile引用、CONT snapshots。逐类记录唯一writer、重放入口、目前保留、可缩减字段、最后引用和退役条件；不能把热内存sweep当冷库GC。

@@ -6,7 +6,8 @@ import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
-import { validateRoutineCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
+import { validateRoutineCommand, validateProvisionCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
+import { provisionCliError } from "../gateway-routine-provision.ts";
 import { routineCliError } from "../gateway-automation.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
 import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig, DaemonProcessConfig } from "./config.ts";
@@ -245,6 +246,13 @@ export async function startDaemonHost(
       }
       const value = await gateway.getAgentOwnership(params.agentIds as string[], asNumber(params.timeoutMs, 15_000));
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "routineProvision") {
+      assertParamKeys(params, ["command", "timeoutMs"], "routineProvision");
+      let command;
+      try { command = validateProvisionCommand(params.command); } catch (e) { throw provisionCliError(e); }
+      const value = await gateway.routineProvision(command, asNumber(params.timeoutMs, 10_000));
+      return { result: value.result, ...(value.discovery ? { gateway: gatewayMeta(value.discovery) } : {}) };
     }
     if (method === "agentRoutines") {
       assertParamKeys(params, ["command", "timeoutMs"], "agentRoutines");

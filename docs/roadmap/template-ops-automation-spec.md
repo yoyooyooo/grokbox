@@ -425,9 +425,11 @@ grokbox ops claim <delivery-id>
 <a id="agent-routines"></a>
 ### 10.1 通用原生Routine管理
 
-**源码切片（2026-09-18）：** 已注册`agents routines list/show/enable/disable/delete`，kernel `AgentRoutines`程序经box-runtime facade由直连/daemon共同调用；精确ID、预期revision、确认、单次变更与读回共享，不自动重试未知结果。新增按需`routines` Skill仅包含已实现动作。创建/apply、`--routines-from`、配对、invoke/outcome和真实通知仍是本节待实现目标，不能因前五个命令通过而标整票Done。固定源函数隔离探针归T43，真实HTTP与Bot旅程归LIVE。
+**源码切片（2026-09-18）：** 已有`agents routines list/show/enable/disable/delete`，新增单份disabled `apply`、本域历史`outcome`和精确ID `reconcile`。两条kernel程序均由box-runtime facade及直连/daemon共用。前者核对revision后单次管理，后者先在有界独立provision账本提交dispatch guard，再发一次原生创建/更新；未知操作按agent/key阻止换operationId重做。凭据配对、Webhook invoke/native run outcome、多份`--routines-from`与真实通知仍未交付，不因这些命令通过而整票Done。固定源函数探针归T43，真实HTTP/Bot旅程归LIVE。
 
 T43冻结真实原生接口映射，T53实现`agents routines list/show/apply/enable/disable/delete/invoke/outcome`，`agents create/update --routines-from`、独立apply与模板配对复用一条程序。默认disabled，Webhook不附带周期schedule；未知原生trigger只读、不猜格式。省略已有Routine不表示删除。
+
+当前单份apply只接受显式或缺省disabled的webhook blueprint；存储在`state/routine-provision/operations.sqlite`的仅有身份、digest和状态，不存prompt。主文件2MiB、256操作上限，不适用诊断TTL；既有账本损坏/丢失不能被当作首次使用重建。`outcome`是历史回执，不证明当前启用状态；`reconcile`要求精确ID、相同预期定义和disabled读回，不向原生发变更。运行中的attempt owner不得被对账抢走。安全退役和初始化中断恢复未实现时宁可阻断，不释放重复副作用许可。详见[T53](../tickets/T53-agent-routines-cli.md)。
 
 Agent成功而Routine失败保留exact Agent ID、operation/阶段与partial/unknown，不删掉重建；原生无CAS/幂等时前后读回只证明所见，不能伪称挡住App writer。参数/能力预检尽量发生在创建前。invoke为单独授权的真实native Webhook POST，不退化成sendPrompt；超时先对账，不重复create/invoke。
 

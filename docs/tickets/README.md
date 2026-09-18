@@ -197,7 +197,7 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 | [T50](T50-template-ops-release-proof.md) | Planned：服务常驻与分lane原生验收 | 首发OBS+单目标；自主/维护分别签署 |
 | [T51](T51-ops-capability-presets.md) | Partial：schema4共享storage意图、2/3迁移及support退役、monitor/process/journal采用 | 复用T57–T60；全安装物理预留/统一applied、自启与成套现场仍未完成 |
 | [T52](T52-consented-support-issues.md) | **Deferred**：用户决定后的草稿 | 不属于首发，不再默认询问Issue |
-| [T53](T53-agent-routines-cli.md) | Partial：list/show/enable/disable/delete与按需Skill；apply/provision/invoke/outcome待完成 | 只依T43，不要求ops开启；local/daemon共享程序 |
+| [T53](T53-agent-routines-cli.md) | Partial：原管理命令＋单份disabled apply、持久provision outcome、精确ID reconcile；批量组合/配对/invoke待完成 | local/daemon共享程序；provision安全账本与诊断TTL隔离，不声明原生CAS |
 | [T54](T54-ops-targets-and-routing.md) | Planned：单目标先行、有限路由后置 | T51/T43/T53合同；最小模式独立出口 |
 | [T55](T55-custom-receiver-delivery.md) | 所选目标最小资格必需；高级备用/交接后置 | T54/T45/T53；unknown不广播 |
 | [T56](T56-scripted-issue-publishing.md) | **Deferred**：未来gh-only用户发布 | 无认证就跳过，不建设自动发布平台 |

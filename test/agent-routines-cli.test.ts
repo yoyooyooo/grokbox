@@ -25,7 +25,15 @@ export async function routineFixture(mode: "local" | "daemon" = "local") {
     const body = await request.json() as Record<string, unknown>; calls.push({ path, body });
     if (path === "/api/listAgents") return Response.json([]);
     if (path === "/api/getAgentAutomations") return badRead ? new Response("PRIVATE_NATIVE_FAILURE") : Response.json(rows);
-    if (body.id !== AGENT || body.automationId !== "notify") return new Response("bad identity", { status: 400 });
+    if (body.id !== AGENT) return new Response("bad identity", { status: 400 });
+    if (path === "/api/createAgentAutomation" || path === "/api/updateAgentAutomation") {
+      const spec = body.spec as { name: string; prompt: string; trigger: { type: string }; isEnabled: boolean };
+      const id = path === "/api/createAgentAutomation" ? `created-${calls.filter(c => c.path === path).length}` : String(body.automationId);
+      const next = { id, ...spec, createdAt: 100, lastRunAt: null, filePath: "/PRIVATE/STORE", webhookKey: "PRIVATE_KEY" };
+      if (path === "/api/createAgentAutomation") rows.push(next); else rows = rows.map(row => row.id === id ? next : row);
+      return loseMutation ? new Response("PRIVATE_LOST_ACK", { status: 500 }) : Response.json(rows);
+    }
+    if (body.automationId !== "notify") return new Response("bad identity", { status: 400 });
     if (path === "/api/setAgentAutomationEnabled") rows = rows.map(row => ({ ...row, isEnabled: body.isEnabled as boolean }));
     else if (path === "/api/deleteAgentAutomation") rows = [];
     else return new Response("unexpected method", { status: 404 });
@@ -40,7 +48,7 @@ export async function routineFixture(mode: "local" | "daemon" = "local") {
   if (mode === "daemon") daemon = await startDaemonHost(deps, daemonSocket);
   return { directory, deps, calls, daemonSocket,
     run: (args: string[]) => captureCli(["agents", "routines", ...args, "--json"], { ...commandDeps, transport: mode }),
-    rows: () => rows, loseMutation: () => { loseMutation = true; }, breakRead: () => { badRead = true; },
+    rows: () => rows, loseMutation: (value = true) => { loseMutation = value; }, breakRead: () => { badRead = true; },
     close: async () => { await daemon?.close(); server.stop(true); await rm(directory, { recursive: true, force: true }); } };
 }
 const result = (r: Awaited<ReturnType<Awaited<ReturnType<typeof routineFixture>>["run"]>>) => { expect(r.code, r.stderr).toBe(0); return JSON.parse(r.stdout).data; };
@@ -131,8 +139,52 @@ test("actual packed Node CLI resolves the configured native target and round-tri
     expect(after).toMatchObject({ state: "requested_state_observed", operationId: "packed-once", webhookInvoked: false });
     const shown = await run(["list", AGENT]); expect(shown.routines[0].enabled).toBe(true);
     expect(f.calls.filter(c => c.path === "/api/setAgentAutomationEnabled")).toHaveLength(1);
+    const file = join(f.directory, "packed-blueprint.json");
+    await writeFile(file, JSON.stringify({ schemaVersion: 1, key: "packed-notice", name: "Packed notice", prompt: "PRIVATE_PROMPT_BLUEPRINT", trigger: { type: "webhook" } }), { mode: 0o600 });
+    const provisioned = await run(["apply", AGENT, "--from", file, "--operation-id", "packed-provision", "--confirm"]);
+    expect(provisioned).toMatchObject({ state: "disabled_definition_observed", routineId: "created-1", automaticEnable: false });
+    const requests = f.calls.length;
+    expect(await run(["outcome", AGENT, "--operation-id", "packed-provision"])).toEqual(provisioned);
+    expect(await run(["apply", AGENT, "--from", file, "--operation-id", "packed-provision", "--confirm"])).toEqual(provisioned);
+    expect(f.calls).toHaveLength(requests);
   } finally { await f.close(); }
 }, 20000);
+
+for (const mode of ["local", "daemon"] as const) test(`${mode}: disabled provisioning is durable, idempotent, updates only its managed key and never touches the unrelated Routine`, async () => {
+  const f = await routineFixture(mode);
+  try {
+    const file = join(f.directory, "routine.json"), blueprint = { schemaVersion: 1, key: "ops-notice", name: "Ops notice", prompt: "PRIVATE_PROVISION", trigger: { type: "webhook" } };
+    await writeFile(file, JSON.stringify(blueprint), { mode: 0o600 });
+    const before = structuredClone(f.rows()[0]);
+    const args = ["apply", AGENT, "--from", file, "--operation-id", "create-1", "--confirm"];
+    const receipt = result(await f.run(args)); expect(receipt).toMatchObject({ state: "disabled_definition_observed", routineId: "created-1", automaticEnable: false });
+    const calls = f.calls.length; expect(result(await f.run(args))).toEqual(receipt); expect(f.calls).toHaveLength(calls);
+    expect(result(await f.run(["outcome", AGENT, "--operation-id", "create-1"]))).toEqual(receipt); expect(f.calls).toHaveLength(calls);
+    await writeFile(file, JSON.stringify({ ...blueprint, prompt: "PRIVATE_UPDATED" }));
+    const updated = result(await f.run(["apply", AGENT, "--from", file, "--operation-id", "update-1", "--expect-revision", receipt.revision, "--confirm"]));
+    expect(updated.action).toBe("update"); expect(updated.routineId).toBe("created-1"); expect(f.rows()[0]).toEqual(before);
+    expect(f.calls.filter(c => c.path === "/api/createAgentAutomation")).toHaveLength(1);
+    expect(f.calls.filter(c => c.path === "/api/updateAgentAutomation")).toHaveLength(1);
+    expect(f.calls.filter(c => ["/api/createAgentAutomation", "/api/updateAgentAutomation"].includes(c.path)).every(c => (c.body.spec as { isEnabled: boolean }).isEnabled === false)).toBe(true);
+    expect(JSON.stringify(receipt) + JSON.stringify(updated)).not.toContain("PRIVATE");
+  } finally { await f.close(); }
+});
+
+for (const mode of ["local", "daemon"] as const) test(`${mode}: lost provision ACK is persisted and explicitly reconciled without another mutation`, async () => {
+  const f = await routineFixture(mode);
+  try {
+    const file = join(f.directory, "routine.json");
+    await writeFile(file, JSON.stringify({ schemaVersion: 1, key: "ops-notice", name: "Ops", prompt: "PRIVATE", trigger: { type: "webhook" } }), { mode: 0o600 });
+    f.loseMutation(); const args = ["apply", AGENT, "--from", file, "--operation-id", "lost-create", "--confirm"];
+    const unknown = await f.run(args); expect(unknown.code).not.toBe(0); expect(unknown.stderr).toContain("operation_outcome_unknown");
+    f.loseMutation(false); expect(result(await f.run(["outcome", AGENT, "--operation-id", "lost-create"])).state).toBe("outcome_unknown");
+    expect((await f.run(args)).code).not.toBe(0);
+    const confirmed = result(await f.run(["reconcile", AGENT, "--operation-id", "lost-create", "--routine-id", "created-1", "--confirm"]));
+    expect(confirmed.state).toBe("disabled_definition_observed");
+    expect(f.calls.filter(c => c.path === "/api/createAgentAutomation")).toHaveLength(1);
+    expect(f.calls.every(c => !/Webhook|runAgentAutomationNow|sendPrompt/.test(c.path))).toBe(true);
+  } finally { await f.close(); }
+});
 
 test("stream body is bounded before JSON parsing, including missing length and invalid UTF-8", async () => {
   let cancelled = 0, sent = 0;

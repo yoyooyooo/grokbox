@@ -10,7 +10,8 @@ import { CliError, httpStatusToError } from "./errors.ts";
 import type { GatewayMethod } from "./registry.ts";
 import { isRecord } from "./util.ts";
 import { currentStateRpcRequest, MAX_CURRENT_STATE_WIRE_BYTES, type CurrentStateRpcRequest } from "@grokbox/runtime-kernel/continuity";
-import { validateRoutineCommand, projectRoutineResult, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
+import { validateRoutineCommand, projectRoutineResult, validateProvisionCommand, projectProvisionReceipt, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
+import { executeRoutineProvision, provisionCliError } from "./gateway-routine-provision.ts";
 import { executeNativeRoutine, boundedGatewayBody, routineCliError } from "./gateway-automation.ts";
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]", "*"]);
@@ -428,6 +429,24 @@ export class GatewayClient {
       maxResponseBytes: options.maxResponseBytes,
     });
     return { result: result.body, discovery: this.lastDiscovery! };
+  }
+
+  async routineProvision(input: unknown, timeoutMs: number) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw new CliError("invalid_usage", "Routine timeout must be 1–120000 ms.");
+    let command;
+    try { command = validateProvisionCommand(input); } catch (e) { throw provisionCliError(e); }
+    const daemon = await this.daemonFor("grok.routines.provision", timeoutMs);
+    if (daemon) {
+      const response = await daemon.call("routineProvision", { command, timeoutMs });
+      try {
+        const result = projectProvisionReceipt(command, response.result);
+        const discovery = response.gateway ? this.discoveryFromDaemon(response.gateway) : undefined;
+        if (discovery) this.lastDiscovery = discovery;
+        return { result, discovery };
+      } catch { throw new CliError(command.action === "outcome" ? "gateway_internal" : "operation_outcome_unknown", "Routine provision receipt is not a valid bounded observation."); }
+    }
+    if (this.deps.transport === "gateway" || this.deps.gatewayServerUrl || this.deps.sshHost) throw new CliError("runtime_local_only", "Routine provisioning requires its Box-local ledger or the matching daemon capability.");
+    return executeRoutineProvision(this, command, this.deps.boxRuntimeRoot, timeoutMs, this.deps.signal);
   }
 
   async agentRoutines(input: RoutineCommand, timeoutMs: number) {

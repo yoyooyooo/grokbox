@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
-import { spawn } from "node:child_process";
+import { afterAll, expect, test } from "bun:test";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,7 +12,18 @@ import { defaultConfig } from "@grokbox/runtime-kernel/config";
 import { ensurePackedCli } from "../../../test/packed-cli-fixture.ts";
 import { PACKED_SESSION_SYMBOL } from "../src/internal/host/profile.ts";
 
-const worker = fileURLToPath(new URL("./fixtures/journal-lock-worker.ts", import.meta.url));
+const workerSource = fileURLToPath(new URL("./fixtures/journal-lock-worker.ts", import.meta.url));
+let compiledWorker: string | undefined, compiledDirectory: string | undefined;
+function workerPath() {
+  if (compiledWorker) return compiledWorker;
+  compiledDirectory = mkdtempSync(join(tmpdir(), "journal-lock-node-worker-"));
+  const target = join(compiledDirectory, "worker.mjs");
+  const build = spawnSync(fileURLToPath(new URL("../../../node_modules/.bin/esbuild", import.meta.url)),
+    [workerSource, "--bundle", "--platform=node", "--format=esm", `--outfile=${target}`], { encoding: "utf8", timeout: 30000 });
+  if (build.error || build.status !== 0) throw Error("owned_node_worker_build_failed");
+  compiledWorker = target; return target;
+}
+afterAll(async () => { if (compiledDirectory) await rm(compiledDirectory, { recursive: true, force: true }); });
 const linuxTest = process.platform === "linux" ? test : test.skip;
 async function root() { return mkdtemp(join(tmpdir(), "journal-lock-test-")); }
 async function bounded<T>(promise: Promise<T>, ms = 5000) {
@@ -20,7 +32,9 @@ async function bounded<T>(promise: Promise<T>, ms = 5000) {
   finally { if (timer) clearTimeout(timer); }
 }
 function launch(directory: string, stage?: string) {
-  const child = spawn(process.execPath, [worker, directory, ...(stage ? [stage] : [])], { cwd: directory,
+  // Exercise the production Node filesystem/process semantics, not the test
+  // runner's TypeScript loader. Source is bundled once into an owned temp file.
+  const child = spawn("node", [workerPath(), directory, ...(stage ? [stage] : [])], { cwd: directory,
     env: { PATH: process.env.PATH, HOME: directory }, stdio: ["ignore", "pipe", "pipe"] });
   let stderr = ""; child.stderr.on("data", d => stderr = (stderr + d).slice(-4096));
   const ready = new Promise<void>((resolve, reject) => {

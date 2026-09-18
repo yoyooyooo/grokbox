@@ -11,11 +11,10 @@ const checker = join(repoRoot, "scripts", "check-runtime-boundaries.mjs");
 // allow that bounded proof to finish rather than racing it at the same 5s.
 const CHECKER_TEST_TIMEOUT_MS = 15_000;
 
-async function runChecker(root: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  // Verify on the product runtime. A finite synchronous Node child also avoids
-  // retaining Bun subprocess pipe readers after a test has already timed out.
+async function runChecker(root: string, env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+  // Retain the Node checker and allow tests to exercise inherited activation.
   const child = spawnSync(process.env.GROKBOX_TEST_NODE ?? "node", [checker, "--root", root, "--json"], {
-    cwd: repoRoot, encoding: "utf8", timeout: 10000, killSignal: "SIGKILL",
+    cwd: repoRoot, env: { ...process.env, ...env }, encoding: "utf8", timeout: 10000, killSignal: "SIGKILL",
   });
   if (child.error) throw child.error;
   return { code: child.status ?? -1, stdout: child.stdout, stderr: child.stderr };
@@ -91,6 +90,12 @@ describe("runtime layout boundaries", () => {
     const result = await runChecker(await fixture());
     expect(result.code, result.stdout).toBe(0);
   }, CHECKER_TEST_TIMEOUT_MS);
+
+  test("default import proof excludes inherited profile activation while still checking unconditional side effects", async () => {
+    const root = await fixture({ "packages/box-runtime/src/preload.ts": 'if (process.env.GROKBOX_ALLOW_LIVE_HOST === "1" || process.env.GROKBOX_PATCH_PROFILE || process.env.GROKBOX_OPERATION_ID) throw Error("unexpected inherited activation"); export {};\n' });
+    const result = await runChecker(root, { GROKBOX_ALLOW_LIVE_HOST: "1", GROKBOX_PATCH_PROFILE: "/owned-fixture/not-a-real-profile", GROKBOX_OPERATION_ID: "synthetic" });
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+  });
 
   const rejects: Array<[string, Record<string, string> | undefined, boolean?]> = [
     ["host-to-io", {

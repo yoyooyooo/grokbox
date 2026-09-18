@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial implementation：list/show/enable/disable/delete已接通共享程序及CLI/daemon；apply/provision/invoke/outcome仍待实现。** [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines)。统一Routine CRUD/apply/provision，让独立CLI、agents create/update与模板配对复用。Webhook是事件入口，不是周期性LLM轮询。
+**Partial implementation：现有管理命令与单份disabled apply、持久provision outcome、精确ID reconcile已接通CLI/daemon；批量组合、凭据配对及Webhook invoke/native outcome仍待实现。** [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines)。统一Routine CRUD/apply/provision，让独立CLI、agents create/update与模板配对复用。Webhook是事件入口，不是周期性LLM轮询。
 
 ## Depends-on / Modules
 
@@ -24,11 +24,23 @@ invoke仅在显式目标/费用/请求预算授权下真实POST原生已核验en
 
 新增`routines`按需Skill仅展示已实现命令，不注册未交付的创建或投递接口。其余本票范围仍按下文实施，不能以这份CLI切片关闭原生通知链。
 
+## Disabled provisioning 增量（2026-09-18）
+
+`agents routines apply <agent-id> --from <file> --operation-id <id> --confirm`接收一份严格schema1 blueprint（key/name/prompt/webhook trigger，isEnabled只能缺省或false）。原生请求显式disabled；不建周期、不领取凭据、不调用模型或Webhook。已有managed key只更新本安装保存的精确ID，要求expected revision同时匹配本地binding和当前原生定义；外部变化或对象缺失停止，不创建替代品。
+
+`RoutineProvisionLedger`与`NativeRoutineProvision`两项能力经`runRoutineProvision`程序组合，box-runtime facade与本地/daemon同用。账本位于`state/routine-provision/operations.sqlite`，只复用原便携SQL driver，不依赖monitor初始化/TTL，也不保存prompt。先提交attempting记录再发一次网络请求，SQLite事务不跨网络；未知记录按agent/key挡住新的operation ID。重入相同ID检查fingerprint并返回原历史回执。
+
+`agents routines outcome`只读本域历史；`reconcile --routine-id ... --confirm`只读取精确原生定义并写本地对账，不重发create。仍活着或无法证明失效的attempt owner不可被抢走；硬崩后经真实进程身份核验才能转unknown并对账。读回不是原生CAS、原生nonce或远端全部工作已终结的证明。
+
+本域主文件2MiB、全安装256操作上限；达到上限只阻新provision，不删除未知记录、不影响普通推理。回执安全退役与第一次初始化中断恢复尚无资格；缺失/损坏/被清零的既有账本不重建。`runtime storage status`单列本域，诊断GC不得清理。J1公共接口及CONT本域职责未改变。
+
 ## Executable acceptance
 
 已实现`packages/runtime-kernel/test/agent-routines.test.ts`和`test/agent-routines-cli.test.ts`；实际打包Node子进程也在后者内验证，不新增空的packed测试文件。组合`bun scripts/verify-runtime-rebuild.mjs agent-routines`80 pass/0 fail；全仓2405 pass/19 skip/0 fail。证明exact ID、确认/revision、投影、local/daemon共享程序和unknown不重试。固定证据见[回执](../reports/2026-09-18-native-routine-management.md)。
 
-仍待实现并补测partial create/update、持久provision nonce冲突、clone endpoint隔离、真实禁用后的后续fire和cleanup_required；当前测试不声称覆盖这些场景。
+新增`packages/box-runtime/test/routine-provision.test.ts`及既有CLI文件中的local/daemon/packed Node完整旅程，覆盖持久nonce冲突、单次disabled create/update、未知对账、真实SIGKILL、并发、容量、损坏保护及诊断GC隔离。组合入口`bun scripts/verify-runtime-rebuild.mjs routine-provision`，固定结果见[本轮回执](../reports/2026-09-18-disabled-routine-provisioning.md)。
+
+仍待实现multi-entry与agents create/update --routines-from组合的partial阶段、clone endpoint隔离、真实禁用后的后续fire和cleanup_required。`routines outcome`目前只指provision回执，不冒充native run/report结果。
 
 原生E2E单独授权一次性Bot：create disabled→读回→enable→POST→run/报告→update→新POST→disable→清理，两种组合/独立apply入口都测，模型与其他对象不变。source/fake不证明原生实际行为。
 

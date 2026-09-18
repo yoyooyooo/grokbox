@@ -1,4 +1,5 @@
 import { canonicalJson, sha256Text } from "./hash.ts";
+export * from "./internal/commands/routine-provision-contract.ts";
 
 /** Native definitions remain authoritative. These are read projections, not a
  * scheduler, a recovery archive, or permission to invoke a webhook. */

@@ -1,6 +1,6 @@
 import { Context, Effect, Stream } from "effect";
 import type { EvidenceView } from "./observation.ts";
-import type { RoutineSnapshot, RoutineError } from "./routines.ts";
+import type { RoutineSnapshot, RoutineError, RoutineProvisionError, RoutineBlueprint, ProvisionRecord, ProvisionBinding, ProvisionReservation, ProvisionObservation } from "./routines.ts";
 import type { Scope } from "effect/Scope";
 import type { ModelsFile, DesiredFile } from "./selection.ts";
 import type { ConfigChange, ConfigCommitReceipt } from "./internal/commands/config.ts";
@@ -31,6 +31,19 @@ export class ConfigurationWrite extends Context.Service<ConfigurationWrite, {
   readonly saveModels: (file: ModelsFile) => Effect.Effect<{ configRevision: string }, unknown>;
   readonly saveDesired: (file: DesiredFile) => Effect.Effect<{ configRevision: string }, unknown>;
 }>()("grokbox/ConfigurationWrite") {}
+
+export class RoutineProvisionLedger extends Context.Service<RoutineProvisionLedger, {
+  readonly read: (agentId: string, operationId: string) => Effect.Effect<ProvisionRecord | null, RoutineProvisionError>;
+  readonly binding: (agentId: string, key: string) => Effect.Effect<ProvisionBinding | null, RoutineProvisionError>;
+  readonly reserve: (input: ProvisionReservation) => Effect.Effect<{ dispatch: boolean; record: ProvisionRecord }, RoutineProvisionError>;
+  readonly markUnknown: (agentId: string, operationId: string) => Effect.Effect<void, RoutineProvisionError>;
+  readonly reconcileRecord: (agentId: string, operationId: string) => Effect.Effect<ProvisionRecord, RoutineProvisionError>;
+  readonly finish: (record: ProvisionRecord, nativeId: string, revision: string) => Effect.Effect<ProvisionRecord, RoutineProvisionError>;
+}>()("grokbox/RoutineProvisionLedger") {}
+export class NativeRoutineProvision extends Context.Service<NativeRoutineProvision, {
+  readonly list: (agentId: string) => Effect.Effect<ProvisionObservation, RoutineProvisionError>;
+  readonly write: (agentId: string, blueprint: RoutineBlueprint, nativeId: string | null) => Effect.Effect<ProvisionObservation, RoutineProvisionError>;
+}>()("grokbox/NativeRoutineProvision") {}
 
 export class AgentRoutines extends Context.Service<AgentRoutines, {
   readonly list: (agentId: string) => Effect.Effect<RoutineSnapshot, RoutineError>;

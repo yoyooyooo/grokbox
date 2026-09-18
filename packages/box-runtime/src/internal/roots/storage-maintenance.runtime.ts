@@ -7,6 +7,7 @@ import { observeStorageMaintenance } from "../io/storage-maintenance-receipt.nod
 import { observeDiagnosticFootprint } from "../io/storage-footprint.node.ts";
 import type { ContinuityStorageOwners } from "@grokbox/runtime-kernel/observation";
 import { measureContinuityStorage } from "../io/continuity-storage.node.ts";
+import { openRoutineProvisionStore } from "../io/routine-provision.node.ts";
 
 /** Read-only owner inventory. One unavailable source must not hide another.
  * This does not install a maintenance scheduler or enforce a global quota. */
@@ -39,5 +40,8 @@ export async function observeRuntimeStorage(input: { durableRoot: string; runRoo
       : knownBytes >= storage.policy.diagnostics.targetBytes ? "at_or_above_target" : "counted_namespaces_below_target",
     reservationEnforced: false };
   const continuityStorage = await measureContinuityStorage(input.continuityOwners);
-  return { ...monitor, processLogs, journals, storageIntent, maintenance, footprint, budgetComparison, continuityStorage, installationBudgetEnforced: false as const };
+  const routineProvision = await openRoutineProvisionStore(input.durableRoot).status().catch(() => ({
+    owner: "routine_provision", state: "unavailable", fileBytes: null, diagnosticGcAllowed: false,
+  }));
+  return { ...monitor, processLogs, journals, storageIntent, maintenance, footprint, budgetComparison, continuityStorage, routineProvision, installationBudgetEnforced: false as const };
 }
