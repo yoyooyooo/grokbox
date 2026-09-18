@@ -63,6 +63,14 @@ Reconcile performs native reads and a local receipt update, never a new creation
 
 The ledger has a 2 MiB main-file limit and 256-operation limit per installation. Its unknown records are not diagnostic cache; automatic GC and replay-safe retirement are not provided. Capacity, damaged/missing existing ledgers, or interrupted first initialization block new provisioning. Never delete the ledger to make a command work. `runtime storage status` reports this owner separately. Remote use requires the matching daemon capability, not a client-local ledger paired with a remote Gateway.
 
+## Prepare and inspect the reminder-only receiver
+
+`grokbox ops targets blueprint <alias> --json` returns a fixed, disabled Webhook Routine blueprint for that configured target. Extract the envelope's `data` object into an owned JSON file before passing it to `agents routines apply --from`. This command does not create or enable anything. Its prompt limits only the automatic reminder task, not the Bot's later user-delegated work.
+
+After provisioning and preparing a private binding, `grokbox ops targets verify <alias> --json` checks the exact managed definition, canonical reminder prompt and the loaded Host's default automation-session model selection. It does not request a native key or persist qualification. A missing or outdated Host observation, changed definition, stale model preview or concurrent unbind blocks the check. Do not substitute the native global chat model for the automation model: native automation experiments may choose differently.
+
+`preflight_ready` / `localPreflightComplete=true` is only a local read result. `deliveryAuthorized=false`, `canaryAuthorized=false` and `executionOwnership=not_checked` remain explicit. It does not prove Server ownership, HTTP authentication, native execution, tool permissions, or user delivery, and is not permission to invoke anything. The reminder prompt is not an enforced sandbox. Use a separately authorized and qualified native test window for those remaining boundaries.
+
 ## Prepare a local notification target pairing
 
 After explicitly provisioning a disabled managed Webhook Routine and configuring `ops.targets.<alias>`, inspect and prepare its local pairing:

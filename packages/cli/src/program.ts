@@ -308,6 +308,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents routines apply": async (deps, args, options) => await runRoutineProvisionCli(deps, "apply", args[0] ?? "", options),
     "agents routines outcome": async (deps, args, options) => await runRoutineProvisionCli(deps, "outcome", args[0] ?? "", options),
     "agents routines reconcile": async (deps, args, options) => await runRoutineProvisionCli(deps, "reconcile", args[0] ?? "", options),
+    "ops targets blueprint": async (deps, args, options) => await runOpsTargetsCli(deps, "blueprint", args[0], options),
+    "ops targets verify": async (deps, args, options) => await runOpsTargetsCli(deps, "verify", args[0], options),
     "ops targets list": async (deps, _args, opts) => await runOpsTargetsCli(deps, "list", undefined, opts),
     "ops targets show": async (deps, args, opts) => await runOpsTargetsCli(deps, "show", args[0], opts),
     "ops targets bind": async (deps, args, opts) => await runOpsTargetsCli(deps, "bind", args[0], opts),

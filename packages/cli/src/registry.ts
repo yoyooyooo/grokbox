@@ -673,6 +673,20 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     arguments: [{ syntax: "<alias>", description: "Configured target alias" }], options: options([]), stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
+    path: ["ops", "targets", "blueprint"],
+    usage: "grokbox ops targets blueprint <alias> --json",
+    summary: "Read the fixed disabled reminder-only Routine blueprint; does not create, bind, enable or send.",
+    arguments: [{ syntax: "<alias>", description: "Configured target alias" }], options: options([]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["ops", "targets", "verify"],
+    usage: "grokbox ops targets verify <alias> --json",
+    summary: "Read current binding, reminder policy and loaded Host automation model selection; never grants delivery or fetches keys.",
+    arguments: [{ syntax: "<alias>", description: "Exact local pairing alias" }], options: options([], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["ops", "targets", "bind"],
     usage: "grokbox ops targets bind <alias> --routine-id <id> --expect-revision <sha256> --operation-id <id> --preview|--confirm --json",
     summary: "Prepare a disabled managed Routine pairing; confirmed credential retrieval may mint a key but never enables delivery.",

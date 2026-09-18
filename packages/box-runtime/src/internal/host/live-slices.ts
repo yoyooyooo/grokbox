@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { OWNERSHIP_READ_SLICES } from "./ownership-slices.ts";
+import { RECEIVER_MODEL_SLICES } from "./receiver-slices.ts";
 import { CONTEXT_MAINTENANCE_SLICES } from "./context-slices.ts";
 import { ALERT_OBSERVATION_SLICES } from "./alert-slices.ts";
 import { SERVER_ACTIVITY_OBSERVATION_SLICES } from "./server-activity-slices.ts";
@@ -183,5 +184,6 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
   ...ALERT_OBSERVATION_SLICES,
   ...SERVER_ACTIVITY_OBSERVATION_SLICES,
   ...OWNERSHIP_READ_SLICES,
+  ...RECEIVER_MODEL_SLICES,
   ...CONTEXT_MAINTENANCE_SLICES,
 ];

@@ -20,6 +20,7 @@ import { hostContextClient } from "./internal/host/context-client.node.ts";
 import { createHostContextControl, HOST_CONTEXT_CONTROL_SYMBOL } from "./internal/host/context-control.node.ts";
 import { bindHostCompactHook, isHostManagedRootActive, recordHostManagedStepFailure, stateSystemCompactHookOptions } from "./internal/host/compact.ts";
 import { bindHostOwnershipRead, HOST_OWNERSHIP_READ_SYMBOL } from "./internal/host/ownership-read.ts";
+import { bindReceiverModel, HOST_RECEIVER_MODEL_SYMBOL } from "./internal/host/receiver-model.node.ts";
 import { bindHostProfileTitle, HOST_PROFILE_TITLE_SYMBOL } from "./internal/host/title-marker.ts";
 import { wrapHostAuxExecutor } from "./internal/host/aux-purpose.ts";
 import { bindCompiledHost } from "./internal/host/host-binding.ts";
@@ -78,6 +79,10 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     ...(self ? { loaded: { pid: self.pid, start: self.start, profileSha256,
       sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 } } : {}),
   });
+  if (profile.slices.some(slice => slice.id === "receiver-native-model-preview")) {
+    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RECEIVER_MODEL_SYMBOL)] = bindReceiverModel({ durableRoot, mode: admittedMode,
+      profileRevision: profileSha256, sourceRevision: profile.sourceSha256, preloadRevision: preloadSha256 });
+  }
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_PROFILE_TITLE_SYMBOL)] = bindHostProfileTitle({ durableRoot });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RESUME_GATE_SYMBOL)] =
     (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed);
@@ -182,6 +187,7 @@ if (process.env.GROKBOX_PACKED_SESSION_FACTORY === "1" && process.env.GROKBOX_AL
     hostContextClient,
     createHostContextControl,
     bindHostOwnershipRead,
+    bindReceiverModel,
     deferManagedHostResume,
     isHostManagedFailure,
   };

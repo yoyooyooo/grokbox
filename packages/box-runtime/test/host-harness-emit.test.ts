@@ -47,6 +47,7 @@ describe("L2 Host harness always-emit", () => {
       "ownership-read-schema",
       "ownership-read-api",
       "ownership-resume-gate",
+      "receiver-native-model-preview",
       "context-manual-shell-owner",
       "context-manual-trusted-options",
       "context-manual-native-action",

@@ -26,6 +26,7 @@ export async function routineFixture(mode: "local" | "daemon" = "local") {
     if (path === "/health") return Response.json({ ok: true, pid: 4242, startedAt: 1700000000000, isBusy: false });
     const body = await request.json() as Record<string, unknown>; calls.push({ path, body });
     if (path === "/api/listAgents") return Response.json([]);
+    if (path === "/api/getHostStatus") return Response.json({ capabilities: {}, grokboxReceiverModel: null, grokboxRuntimeCapabilities: null });
     if (path === "/api/getAgentAutomations") return badRead ? new Response("PRIVATE_NATIVE_FAILURE") : Response.json(rows);
     if (body.id !== AGENT) return new Response("bad identity", { status: 400 });
     if (path === "/api/getAutomationWebhookCredential") {
@@ -206,7 +207,13 @@ test("target pairing CLI previews without key fetch, binds once, and packed Node
     expect(f.calls.filter(c => c.path.includes("Credential"))).toHaveLength(0);
     const bound = result(await f.runPairing([...args, "--confirm"]));
     expect(bound).toMatchObject({ state: "prepared", deliveryAuthorized: false, credential: "stored_private" });
-    const calls = f.calls.length; expect(result(await f.runPairing([...args, "--confirm"]))).toEqual(bound); expect(f.calls).toHaveLength(calls);
+    let calls = f.calls.length; expect(result(await f.runPairing([...args, "--confirm"]))).toEqual(bound); expect(f.calls).toHaveLength(calls);
+    const verification = result(await f.runPairing(["verify", "default"]));
+    expect(verification).toMatchObject({ state: "blocked", deliveryAuthorized: false, nativeHttp: "not_qualified", nativeCredentialsRequested: false });
+    expect(verification.blockers).toContain("loaded_host_not_matched");
+    expect(f.calls.filter(c => c.path.includes("Credential"))).toHaveLength(1);
+    expect(f.calls.some(c => /runAgentAutomation|setAgentAutomationEnabled/.test(c.path))).toBe(false);
+    calls = f.calls.length;
     const entry = ensurePackedCli();
     const packed = async (args: string[]) => {
       const child = spawn("node", [entry, "ops", "targets", ...args, "--json"], { cwd: f.directory,
@@ -218,7 +225,9 @@ test("target pairing CLI previews without key fetch, binds once, and packed Node
       return JSON.parse(out).data;
     };
     expect(await packed(["show", "default"])).toMatchObject({ state: "observed", deliveryAuthorized: false });
+    expect(await packed(["blueprint", "default"])).toMatchObject({ schemaVersion: 1, key: "notice", isEnabled: false, trigger: { type: "webhook" } });
     expect(await packed(["unbind", "default", "--expect-binding-revision", "1", "--confirm"])).toMatchObject({ state: "unbound", remoteCredentialRevoked: false });
+    expect(await packed(["verify", "default"])).toMatchObject({ state: "blocked", blockers: ["binding_not_prepared"], deliveryAuthorized: false });
     expect(f.calls).toHaveLength(calls); expect(f.rows().find(r => r.id === routine.routineId)?.isEnabled).toBe(false);
   } finally { await f.close(); }
 }, 20000);

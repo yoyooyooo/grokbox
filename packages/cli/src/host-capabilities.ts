@@ -1,6 +1,7 @@
 import { openRuntimeStore, projectLiveStatus, reviewedProfilePath } from "@grokbox/box-runtime/runtime";
 import { assessLoadedHostCapabilities, type HostCapabilityReport, type LoadedHostIdentity } from "@grokbox/runtime-kernel/contract";
-import { sha256Text } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { projectReceiverModelObservation, type ReceiverModelObservation } from "@grokbox/runtime-kernel/observation";
 import type { CliDeps } from "./deps.ts";
 import { GatewayClient } from "./gateway.ts";
 
@@ -15,22 +16,34 @@ function expectedProfile(bytes: string): Pick<LoadedHostIdentity, "profileSha256
   } catch { return undefined; }
 }
 
-/** One local read-only status request. No target discovery, Server List, auth refresh or Provider call. */
-export async function observeHostCapabilities(deps: CliDeps, timeoutMs: number): Promise<HostCapabilityReport> {
-  // A remote Profile cannot borrow this machine's durable state/Host proof.
-  if (deps.daemonServerUrl || deps.gatewayServerUrl) return unavailable();
+export type HostCapabilitySnapshot = { capabilities: HostCapabilityReport; gatewayGeneration: string | null; receiverModel: ReceiverModelObservation | null };
+/** One local read-only status frame: capabilities and optional receiver preview
+ * must share the same Gateway generation. No Server List or Provider request. */
+export async function observeHostCapabilitySnapshot(deps: CliDeps, timeoutMs: number, receiverAgentId?: string): Promise<HostCapabilitySnapshot> {
+  const empty = (capabilities: HostCapabilityReport = unavailable()): HostCapabilitySnapshot => ({ capabilities, gatewayGeneration: null, receiverModel: null });
+  if (deps.daemonServerUrl || deps.gatewayServerUrl || deps.sshHost) return empty();
+  if (receiverAgentId !== undefined && !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(receiverAgentId)) return empty();
   try {
     const runtime = openRuntimeStore(deps.boxRuntimeRoot, deps.env);
     const path = reviewedProfilePath(runtime.root);
     const before = expectedProfile(await deps.readFile(path));
-    if (!before) return { state: "unavailable", reason: "expected_profile_unavailable" };
+    if (!before) return empty({ state: "unavailable", reason: "expected_profile_unavailable" });
     const client = new GatewayClient({ ...deps, transport: "local" });
-    const reply = await client.rpc("getHostStatus", { grokboxRuntimeCapabilities: true }, { timeoutMs: Math.min(timeoutMs, 5000) });
+    const reply = await client.rpc("getHostStatus", { grokboxRuntimeCapabilities: true,
+      ...(receiverAgentId ? { grokboxOwnershipAgentIds: [receiverAgentId], grokboxOwnershipLocalOnly: true } : {}) },
+      { timeoutMs: Math.min(timeoutMs, 5000), maxResponseBytes: 512 * 1024 });
     const after = expectedProfile(await deps.readFile(path));
-    if (!after || before.profileSha256 !== after.profileSha256) return { state: "unavailable", reason: "expected_profile_unavailable" };
+    if (!after || before.profileSha256 !== after.profileSha256) return empty({ state: "unavailable", reason: "expected_profile_unavailable" });
     const result = reply.result && typeof reply.result === "object" ? reply.result as Record<string, unknown> : {};
-    return assessLoadedHostCapabilities(result.grokboxRuntimeCapabilities, { gatewayPid: reply.discovery.pid, profile: after });
-  } catch { return unavailable(); }
+    return { capabilities: assessLoadedHostCapabilities(result.grokboxRuntimeCapabilities, { gatewayPid: reply.discovery.pid, profile: after }),
+      gatewayGeneration: sha256Text(canonicalJson([reply.discovery.baseUrl, reply.discovery.pid, reply.discovery.startedAt])),
+      receiverModel: receiverAgentId ? projectReceiverModelObservation(result.grokboxReceiverModel, receiverAgentId, Date.now()) : null };
+  } catch { return empty(); }
+}
+
+/** Existing callers retain the narrow capability-only surface. */
+export async function observeHostCapabilities(deps: CliDeps, timeoutMs: number): Promise<HostCapabilityReport> {
+  return (await observeHostCapabilitySnapshot(deps, timeoutMs)).capabilities;
 }
 
 /** Only the controller's committed terminal outcomes qualify. A missing/novel

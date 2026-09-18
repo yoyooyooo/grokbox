@@ -9,3 +9,5 @@ export { effectiveStorage, type EffectiveStorage } from "./internal/config/stora
 export { CONFIG_SCHEMA_VERSION } from "./internal/config/version.ts";
 export * from "./internal/observation/notification-contract.ts";
 export * from "./internal/observation/pairing-contract.ts";
+export * from "./internal/observation/receiver-contract.ts";
+export { runtimeDesiredFromConfig } from "./internal/config/runtime.ts";

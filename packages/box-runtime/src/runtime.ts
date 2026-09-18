@@ -22,6 +22,7 @@ export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration
 export { readStorageConfiguration } from "./internal/io/storage-configuration.node.ts";
 export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roots/agent-routines.runtime.ts";
 export { runOpsNotificationDelivery, observeOpsNotification, type PairedNotificationDriver } from "./internal/roots/ops-notification.runtime.ts";
+export { verifyOpsReceiver, prepareOpsReceiverBlueprint, type ReceiverNativeRead, type ReceiverNativeReader } from "./internal/roots/ops-receiver.runtime.ts";
 export { runOpsPairing, observeOpsTargets, revokeOpsTarget, type NativePairingSource } from "./internal/roots/ops-pairing.runtime.ts";
 export { runRoutineProvisionCommand, type RoutineProvisionNative } from "./internal/roots/routine-provision.runtime.ts";
 export { observeRuntimeStorage } from "./internal/roots/storage-maintenance.runtime.ts";

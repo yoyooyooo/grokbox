@@ -1,4 +1,4 @@
-import { assertBoxLocal, runOpsPairing, observeOpsTargets, revokeOpsTarget } from "@grokbox/box-runtime/runtime";
+import { assertBoxLocal, runOpsPairing, observeOpsTargets, revokeOpsTarget, verifyOpsReceiver, prepareOpsReceiverBlueprint } from "@grokbox/box-runtime/runtime";
 import { OPS_PAIRING_POLICY, OpsPairingError, validatePairingCommand } from "@grokbox/runtime-kernel/observation";
 import { NATIVE_ROUTINE_MAX_BYTES, projectNativeRoutines } from "@grokbox/runtime-kernel/routines";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -7,14 +7,21 @@ import { CliError } from "../errors.ts";
 import { ioFromOpts } from "../opts.ts";
 import { writeSuccess } from "../output.ts";
 import type { CliDeps } from "../deps.ts";
+import { nativeReceiverReader } from "../gateway-receiver.ts";
 
-export async function runOpsTargetsCli(deps: CliDeps, action: "list" | "show" | "bind" | "disable" | "unbind", alias: string | undefined,
+export async function runOpsTargetsCli(deps: CliDeps, action: "list" | "show" | "bind" | "disable" | "unbind" | "verify" | "blueprint", alias: string | undefined,
   raw: { json?: boolean; timeoutMs?: string; routineId?: string; expectRevision?: string; operationId?: string;
     expectBindingRevision?: string; preview?: boolean; confirm?: boolean }) {
   assertBoxLocal(deps);
   if (deps.gatewayServerUrl) throw new CliError("invalid_usage", "Target pairing requires this Box's native Gateway, not an explicit URL.");
   const durableRoot = deps.boxRuntimeRoot, io = ioFromOpts(raw);
   try {
+    if (action === "blueprint") {
+      writeSuccess(deps.stdout, await prepareOpsReceiverBlueprint({ durableRoot, alias: alias ?? "" })); return;
+    }
+    if (action === "verify") {
+      writeSuccess(deps.stdout, await verifyOpsReceiver({ durableRoot, alias: alias ?? "", readNative: nativeReceiverReader(deps, io.timeoutMs), signal: deps.signal })); return;
+    }
     if (action === "list" || action === "show") {
       if (action === "show" && !alias) throw new OpsPairingError("invalid_input");
       writeSuccess(deps.stdout, await observeOpsTargets({ durableRoot, ...(alias ? { alias } : {}) })); return;

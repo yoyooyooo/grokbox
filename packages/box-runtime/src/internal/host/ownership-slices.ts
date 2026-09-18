@@ -2,6 +2,7 @@ import type { SlicePatch } from "./profile.ts";
 import { HOST_OWNERSHIP_READ_SYMBOL } from "./ownership-read.ts";
 import { HOST_RESUME_GATE_SYMBOL } from "./profile.ts";
 import { HOST_SERVER_ACTIVITY_SYMBOL } from "./server-activity-observation.ts";
+import { HOST_RECEIVER_MODEL_SYMBOL } from "./receiver-model.node.ts";
 
 // A narrowly scoped read extension of the existing Gateway. The native client
 // owns authentication. No credential or generic RPC dispatch is exported.
@@ -25,7 +26,10 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
         isBusy: deps.getHealth().isBusy,
         capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES,
         ...(grokboxRuntimeCapabilities === true ? {
-          grokboxRuntimeCapabilities: typeof read?.capabilities === "function" ? read.capabilities(1) : null
+          grokboxRuntimeCapabilities: typeof read?.capabilities === "function" ? read.capabilities(1) : null,
+          ...(Array.isArray(grokboxOwnershipAgentIds) && grokboxOwnershipAgentIds.length === 1 ? {
+            grokboxReceiverModel: globalThis[Symbol.for("${HOST_RECEIVER_MODEL_SYMBOL}")]?.read(grokboxOwnershipAgentIds[0]) ?? null
+          } : {})
         } : {})
       };
       if (grokboxOwnershipAgentIds === undefined) return result;
