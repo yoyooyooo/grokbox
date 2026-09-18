@@ -107,6 +107,7 @@ const requiredKernelExports = {
   "./alerts": "./src/alerts.ts",
   "./observation": "./src/observation.ts",
   "./routines": "./src/routines.ts",
+  "./continuity": "./src/continuity.ts",
   "./testing": "./src/testing.ts",
   "./inference": "./src/inference.ts",
   "./commands": "./src/commands.ts",
@@ -134,6 +135,7 @@ const KERNEL_SUBPATH = {
   "@grokbox/runtime-kernel/alerts": "packages/runtime-kernel/src/alerts.ts",
   "@grokbox/runtime-kernel/observation": "packages/runtime-kernel/src/observation.ts",
   "@grokbox/runtime-kernel/routines": "packages/runtime-kernel/src/routines.ts",
+  "@grokbox/runtime-kernel/continuity": "packages/runtime-kernel/src/continuity.ts",
   "@grokbox/runtime-kernel/testing": "packages/runtime-kernel/src/testing.ts",
   "@grokbox/runtime-kernel/inference": "packages/runtime-kernel/src/inference.ts",
   "@grokbox/runtime-kernel/commands": "packages/runtime-kernel/src/commands.ts",
@@ -287,8 +289,11 @@ if (existsSync(preload)) {
     const ran = spawnSync(esbuild, [preload, "--bundle", "--platform=node", "--format=cjs", `--outfile=${outfile}`, `--metafile=${metafile}`], {
       cwd: root,
       encoding: "utf8",
+      // This is a small per-fixture proof, not a throughput benchmark. Bound
+      // compiler workers and lifetime so nested test processes cannot pile up.
+      env: { ...process.env, GOMAXPROCS: "2" }, timeout: 5000, killSignal: "SIGKILL",
     });
-    if (ran.status !== 0) fail("preload esbuild failed", { stderr: (ran.stderr ?? "").slice(0, 500) });
+    if (ran.status !== 0) fail("preload esbuild failed", { error: ran.error?.code ?? null, stderr: (ran.stderr ?? "").slice(0, 500) });
     else {
       const bundle = readFileSync(outfile, "utf8");
       if (/\bfrom ["']effect["']/.test(bundle) || bundle.includes("@ai-sdk/") || /\bfrom ["']ai["']/.test(bundle)) {

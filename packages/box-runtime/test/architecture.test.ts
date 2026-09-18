@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,13 +12,13 @@ const checker = join(repoRoot, "scripts", "check-runtime-boundaries.mjs");
 const CHECKER_TEST_TIMEOUT_MS = 15_000;
 
 async function runChecker(root: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  const child = Bun.spawn(["bun", checker, "--root", root, "--json"], { cwd: repoRoot, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { code, stdout, stderr };
+  // Verify on the product runtime. A finite synchronous Node child also avoids
+  // retaining Bun subprocess pipe readers after a test has already timed out.
+  const child = spawnSync(process.env.GROKBOX_TEST_NODE ?? "node", [checker, "--root", root, "--json"], {
+    cwd: repoRoot, encoding: "utf8", timeout: 10000, killSignal: "SIGKILL",
+  });
+  if (child.error) throw child.error;
+  return { code: child.status ?? -1, stdout: child.stdout, stderr: child.stderr };
 }
 
 async function put(root: string, rel: string, text: string): Promise<void> {
@@ -49,6 +50,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "./alerts": "./src/alerts.ts",
       "./observation": "./src/observation.ts",
       "./routines": "./src/routines.ts",
+      "./continuity": "./src/continuity.ts",
       "./testing": "./src/testing.ts",
       "./inference": "./src/inference.ts",
       "./commands": "./src/commands.ts",
@@ -67,6 +69,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "packages/runtime-kernel/src/alerts.ts",
       "packages/runtime-kernel/src/observation.ts",
       "packages/runtime-kernel/src/routines.ts",
+      "packages/runtime-kernel/src/continuity.ts",
       "packages/runtime-kernel/src/testing.ts",
       "packages/runtime-kernel/src/inference.ts",
       "packages/runtime-kernel/src/commands.ts",

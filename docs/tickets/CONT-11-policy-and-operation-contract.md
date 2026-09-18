@@ -1,8 +1,14 @@
 # CONT-11 — 保护策略与逐职责操作合同
 
-**状态：planned；M0先固定最小合同，当前不启用实际操作。**
+**状态：Partial implementation。材料/操作纯合同及持久安全意图、一次claim、unknown对账已有；完整配置策略、逐职责状态机和生产执行控制仍待实现。**
 
 合同：[S13策略](../roadmap/box-runtime-impl-spec.md#continuity-policy-evidence)与[全程里程碑](../roadmap/box-runtime-impl-spec.md#continuity-delivery)。
+
+## 已实现的安全记录入口
+
+CONT私有管理SQLite保存内容绑定的operation、policy revision、snapshot引用与effect ID。prepare不派发；claim在返回唯一的本地派发标志前持久化effect_unknown，重复调用或新进程不再获得第二次claim。只有显式结算材料才能变为succeeded/not_executed，未知不因时间、换请求ID或诊断GC而消失；真实外部权限和副作用由后续controller单独核验，回执始终不授予执行权限。
+
+最低安全记录容量不足拒绝新增操作；当前安全墓碑尚未取得语义退役资格，保留最小记录并报告blocked，不宣称无限请求/长期日用已闭合。真实CONT恢复与安全owner共用本域DB，OBS诊断库只接事件与证据引用。[实现/进程崩溃/J1接线报告](../reports/2026-09-18-continuity-recovery-store.md)限定当前证明；不代替配置授权、职责冲突/继任generation、原生效果或独立review。
 
 ## 目标与依赖
 

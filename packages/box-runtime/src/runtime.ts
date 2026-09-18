@@ -23,6 +23,8 @@ export { readStorageConfiguration } from "./internal/io/storage-configuration.no
 export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roots/agent-routines.runtime.ts";
 export { observeRuntimeStorage } from "./internal/roots/storage-maintenance.runtime.ts";
 export { openContinuityObservationBridge, runContinuityReferenceChange, type ContinuityObservationBatch } from "./internal/roots/continuity-integration.runtime.ts";
+export { openContinuityRecoveryStore } from "./internal/roots/continuity.runtime.ts";
+export type { ContinuityStoreInput, PublicationReceipt } from "./internal/io/continuity-store.node.ts";
 export { measureContinuityStorage } from "./internal/io/continuity-storage.node.ts";
 export { maintainObservationStorage, type StorageMaintenanceInput } from "./internal/io/storage-maintenance.node.ts";
 export type { ContinuitySource, ContinuityEvent, ProtectedStorageRef, ContinuityStorageOwner, ContinuityStorageOwners, OwnerMeasurement, ReferenceChange, ReferenceReceipt, OwnedMaintenanceReceipt } from "@grokbox/runtime-kernel/observation";

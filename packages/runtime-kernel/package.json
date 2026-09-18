@@ -11,6 +11,7 @@
     "./status": "./src/status.ts",
     "./monitor": "./src/monitor.ts",
     "./observation": "./src/observation.ts",
+    "./continuity": "./src/continuity.ts",
     "./alerts": "./src/alerts.ts",
     "./routines": "./src/routines.ts",
     "./testing": "./src/testing.ts",

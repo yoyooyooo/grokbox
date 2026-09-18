@@ -1,8 +1,14 @@
 # CONT-02 — 分档保护与有来源的恢复材料
 
-**状态：planned；复用S12捕获/codec，恢复vault和完整快照仍需实现。**
+**状态：Partial implementation。真实私有vault、manifest/字节发布、引用保护与回收及J1 owner接线已有；原生capture、四档配置和自动安全点保全尚未完成。**
 
 合同：[S13材料与档位](../roadmap/box-runtime-impl-spec.md#continuity-material)。依赖CONT-00/11和CTX-02原生提交边界，可与CONT-01/06并行。
+
+## 已实现切片与边界
+
+`openContinuityRecoveryStore`通过生产Effect程序维护CONT私有`continuity/state.sqlite`、content-addressed对象和staging；recovery/safety共用该管理DB，不受OBS诊断TTL支配。显式初始化、完整声明图/hash验证、先reservation后发布、unknown读回、引用与GC共同事务、先退役metadata后unlink、最近两份及最后可靠原生点保护已实现。GET无写入，不安装新timer或自动捕获真实Bot。
+
+实际入口、114项组合证明和未证项见[固定报告](../reports/2026-09-18-continuity-recovery-store.md)。新增验证入口`node scripts/verify-runtime-rebuild.mjs continuity-store`使用声明的Bun/Node。材料是synthetic opaque bytes；`nativeImportProven=false`，声明依赖闭包不证明原生隐含引用/格式已齐。真实capture与导入、Memory范围/附件映射、canonical保护策略消费、持续owner安装和全安装物理预算仍需后续实现，不把该存储切片标为整票Done。
 
 ## 目标与模块
 

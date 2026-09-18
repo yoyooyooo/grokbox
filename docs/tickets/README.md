@@ -67,7 +67,7 @@ T32保留既有零放行/一次额外主请求合同，T35保留原生寿命与�
 <a id="ownership-continuity"></a>
 ## 单盒 Bot 状态塑造、替身与交接 — CONT-00–11
 
-[Spec S13](../roadmap/box-runtime-impl-spec.md#ownership-continuity)是唯一实施合同，固定保真尽力而为、新替身接活同时机械/旧Bot辅助交接、持续观察旧入站直至条件式退役。单Bot长期Memory身份只保留一份当前工作上下文，不建sessions、不做跨机器。**当前仅CONT-00历史8探针已证；扩充后的完整产品链路尚未交付。**
+[Spec S13](../roadmap/box-runtime-impl-spec.md#ownership-continuity)是唯一实施合同，固定保真尽力而为、新替身接活同时机械/旧Bot辅助交接、持续观察旧入站直至条件式退役。单Bot长期Memory身份只保留一份当前工作上下文，不建sessions、不做跨机器。**CONT-00历史8探针及CONT-02/11真实恢复存储/安全意图的部分实现已有；完整产品链仍未交付。** [首个真实消费者报告](../reports/2026-09-18-continuity-recovery-store.md)固定114项离线/独立进程/J1接线证明，未证明原生Bot恢复或live。
 
 | 阶段 | Ticket与具体出口 |
 |---|---|

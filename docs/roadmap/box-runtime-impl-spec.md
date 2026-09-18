@@ -1200,7 +1200,7 @@ meter/默认预算、config模型覆盖、generation/output含义、Host safe po
 <a id="ownership-continuity"></a>
 ## S13. 单盒 Bot 状态塑造、替身接替与交接收敛（2026-09-18 accepted target）
 
-**状态：CONT-00 有 8 个历史原生边界探针；CONT-01–11 新能力尚未交付。** 观测/日志旁支的已有实现各自保留证据范围，不算本节已上线。这里是完整终局的实施合同，不是只规划首个实验。编号保持 CONT，不重开已完成 CTX/T 票；阶段完成不能代替整体验收。
+**状态：CONT-00有8个历史原生边界探针；CONT-02/11已有真实恢复存储/安全意图与J1接线的部分实现，完整CONT产品链尚未交付。** 观测/日志旁支的已有实现各自保留证据范围，不算本节已上线。这里是完整终局的实施合同，不是只规划首个实验。编号保持 CONT，不重开已完成 CTX/T 票；阶段完成不能代替整体验收。
 
 <a id="continuity-north-star"></a>
 ### S13.1 北极星、单一产品模型与已定取舍
@@ -1336,7 +1336,7 @@ watching → confirmed_loss → 固定证据/按配置暂停Routine/通知
 | `runtime-kernel/src/internal/continuity/` | 纯policy、材料质量、operation/duty/retirement状态、revision；不触文件/RPC，不依赖原生私有类型 |
 | 现有 `internal/config/schema.ts` 与config writer | 保护范围/档位/操作授权/预算/逐Bot覆盖及变更回执；遵循当前集成schema迁移，不另造配置文件 |
 | 现有 `box-runtime/src/internal/roots/monitor.runtime.ts`、`io/monitor-store.node.ts` 及OBS事件入口 | 共享读取、owner持续条件、旧入站覆盖/水位、事件/证据/outbox；观察回调不执行克隆/删除 |
-| `box-runtime/src/internal/io/continuity-store.node.ts` | 在同一管理存储扩展operation/duty/ancestry/revision；协调私有vault完整发布/引用GC。只写管理与备份，不直接改原生活状态 |
+| `box-runtime/src/internal/io/continuity-store.node.ts` | recovery/safety共用CONT私有管理SQLite，与OBS诊断库分离；operation/duty/ancestry/revision和vault引用由本域管理，跨OBS对账显式。只写管理/备份，不直接改原生活状态 |
 | `box-runtime/src/internal/roots/continuity.runtime.ts` | 由既有常驻服务监督的Effect owner，按operation协调创建/恢复/激活/逐职责交接/退役；无第二模型或工具loop |
 | `box-runtime/src/internal/host/continuity-import.ts`、`continuity-slices.ts` | 非修复capture、原生hold/initialize/reset/recover/start/reopen的有限版本能力；原生Host仍拥有root、Memory、历史和正常执行的最终writer |
 | `box-runtime/src/internal/io/continuity-relations.node.ts` | 关系与旧入站只读发现、正式群/peer/任务能力适配；复用既有Gateway/身份授权，不暴露任意sender或SQL |
@@ -1351,6 +1351,8 @@ Ports按能力固定：复用`OwnershipReader`；`ContinuitySnapshotReader`、`N
 
 <a id="continuity-delivery"></a>
 ### S13.8 面向终局的完整里程碑、依赖和验收
+
+**2026-09-18真实消费者切片：** CONT-02/11已提供`openContinuityRecoveryStore`、有限manifest/私有字节发布、J1 recovery/safety owner、内容绑定操作意图与一次派发claim；已有真实SQLite/Node独立进程/owned SIGKILL及诊断过期交互证明，见[固定报告](../reports/2026-09-18-continuity-recovery-store.md)。没有native capture/import、四档config消费、默认生产owner安装、完整职责状态机或安全墓碑退役；接口返回`nativeImportProven=false`且不授执行权。验证入口为`node scripts/verify-runtime-rebuild.mjs continuity-store`，不等价于原生Bot恢复或完整J2。
 
 全部阶段在本期规划内；可分批交付不是把后半段留白。替身/交接是主线，辅助产品验证公共原语但不先建设完整通用Agent平台。已有CONT-00–05保留编号并更新范围，新增票按独立能力拆分。
 

@@ -334,6 +334,8 @@ Host在有资格的原生安全点通过有界modeld协议取得最小捕获策�
 
 ### 2026-09-18 Single-current-state continuity and handover（目标，尚未交付）
 
+首个真实消费者已实现CONT私有恢复/safety存储，共用`continuity/state.sqlite`而非OBS诊断TTL数据库；复用低层SQLite driver，Effect拥有本域事务与文件发布/回收，既有J1只调用明确owner。当前是原生capture/import之前的有限持久能力，不注册生产timer或自动恢复；[固定实现与证明](reports/2026-09-18-continuity-recovery-store.md)记录边界。
+
 [S13](roadmap/box-runtime-impl-spec.md#continuity-architecture)固定单盒公共链路：真实身份→prepare hold→受管指令/材料初始化→原生commit/read-back/reopen→激活→逐职责交接与退役。每Bot只维护唯一当前工作上下文，contextRevision/activationEpoch不是会话目录；快照vault是非权威备份，原生Host仍是活状态和Agent loop的最终writer。
 
 kernel continuity保存纯规则；既有config writer管理保护/权限；monitor/OBS只发布证据/意图；受监督的continuity Effect owner协调正式创建、当前状态控制、职责和关系ports。管理DB中的operation/duty/ancestry及vault发布需要显式恢复协议，不能用本地CAS宣称跨原生/服务端事务。现有session适配器、S12、Routine和title writer复用，不另造模型loop或多session控制面。
