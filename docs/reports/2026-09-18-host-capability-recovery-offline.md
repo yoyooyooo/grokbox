@@ -97,3 +97,52 @@
 固定模型独立审查的主通道3次、已配置备用通道1次均以HTTP 503退出；其中最后一次针对`4663b5e`。没有返回审查发现或签收报告，不能标为“零缺陷”或独立review通过。由于当前环境不提供Herdr，本窗口使用同步有界Pi调用而非后台等待；未派出实现者、未让审查任务修改代码、未读取实际Host/账号材料。
 
 目标Bun工具链离线门在本窗口关闭；独立固定提交review仍是非live阻断，macOS实际执行仍未证明。分支在本窗口结束时未合入v2、未push、未切Host/modeld、未做真实Bot推理；后续集成与现场窗口仍按[LIVE唯一入口](../tickets/LIVE-integration-validation.md#live-host-capability-recovery)的授权和资格执行。
+
+<a id="hcr-v2-integration"></a>
+## 集成窗口：非 live 收口与 v2 线性合入
+
+本窗口按用户明确指令，将live留在唯一索引，完成仍能执行的非live工作。已在功能worktree完成补充实现者复查、反例修复和定向验证，然后rebase并fast-forward进入v2。独立审查的外部依赖没有伪装成已通过，也不因其503无限暂停可执行的源码集成；源码合入不豁免独立审查或授权部署。
+
+### 补充复查与 doctor 反例
+
+固定审查请求针对 `d2fb583`，主通道和已配置备用通道各一次均立即HTTP503退出，没有审查报告。此前四次请求属于上一窗口，不回填为本次结论。本窗口停止空转；独立复审残项由[HCR-02](../tickets/HCR-02-loaded-capabilities.md#independent-review-residue)保存，其他来源票回链，不把它改名为live工作。
+
+实现者复查覆盖锁描述符/恢复次序、取消与未知结果、配方同源基线及发布比较、有限诊断和实际加载/提交状态之间的区别。发现doctor入口没有消费生命周期已使用的committed观察：daemon与loaded capability就绪、adoption仍为`recovery_pending`时会返回`next=none`。新建CLI回归先得到该失败，再以 `bb1e7d2` 修复：doctor报告`operator.committed`，缺失/不可用/未提交时保留只读下一步；upgrade复用同一次观察。准入、Provider、Host副作用路径没有放宽。定向8文件127 pass/0 fail，安装包6 pass/0 fail，E09重建6 pass/0 fail。
+
+### 基线交集与提交映射
+
+集成前v2从 `da6b5d4` 前进到 `3e285fe`，仅更新其他分支的`LIVE-OPS-ROUTINES`行。旧基线保护使第一次合入命令没有执行。功能分支rebase至 `3e285fe` 后无冲突，`git range-diff` 对9个提交均为等价；生产源码、测试和构建输入与rebase前无差异，另一条LIVE行完整保留。
+
+| rebase前 | rebase后 | 范围 |
+| --- | --- | --- |
+| `1d03908` | `71ce6b5` | Spec/Ticket |
+| `a2cf0bd` | `6d151db` | 配方/witness诊断 |
+| `1af30b4` | `4a622bd` | 失效操作锁恢复 |
+| `cd836f2` | `b22dd84` | 加载能力/受控配方升级 |
+| `be4dda9` | `e577812` | 初始离线记录 |
+| `f3b831b` | `deca8b6` | 取消与lease生命周期 |
+| `4663b5e` | `38b835f` | 按命令组验证帮助 |
+| `d2fb583` | `8169c66` | 目标工具链记录 |
+| `bb1e7d2` | `aefe851` | doctor提交状态检查 |
+
+v2已从 `3e285fe863a470c6c3a718f17327aae6d3504894` fast-forward到固定实现 `aefe851e048bceed9d4fe5c663b2efc6fe3c48aa`，没有merge commit。后续本报告/Ticket更新不改变实现头。
+
+### 固定集成版验证
+
+以下命令在v2工作目录执行，使用Bun **1.3.14**；frozen install无依赖变化，typecheck和build通过。分组按Git完整测试路径运行，JUnit文件集合与Git清单对照为311/311，无遗漏或额外文件。
+
+| 分组 | 文件数 | 通过 | 跳过 | 失败 |
+| --- | ---: | ---: | ---: | ---: |
+| Root / CLI / kernel | 91 | 928 | 0 | 0 |
+| box-runtime A | 75 | 522 | 3 | 0 |
+| box-runtime B | 75 | 397 | 4 | 0 |
+| box-runtime C | 70 | 561 | 8 | 0 |
+| 合计 | **311** | **2408** | **15** | **0** |
+
+Root组包含实际tarball安装和Node20运行的6项package验证。15项原生资格skip未变化，不是未实现功能或本轮live通过。验证前后的构建输入source digest相同，为 `f9dd26fd7db47146ec59db3db2af43b377defe7dac3231246b635659fbf4a36e`；preload摘要及E09 pin为 `94aeee8ec45287968a39377ae4b519757002f2b791ee93f46cb7bf86c67378c2`。这是固定集成版的分组验证，不宣称单进程全库、macOS CI或现场部署通过。
+
+### 窗口边界
+
+HCR-01–04已实现、已做实现者复查及Linux指定工具链/安装包复验、已线性集成。没有登记尚未完成的功能实现；仍未取得独立复审签收，残项见来源票。macOS只属于仓库原有跨平台CI，不是这条Linux Box修复的额外功能或live前置，本窗口没有改变原CI矩阵。
+
+没有修改全局shim、写现役profile/config/model assignment、重启Host/modeld、执行re-adopt或新Bot消息，也没有push。重建的是工作区dist；源码模式CLI后续读取新v2代码不等于现役进程已换代。真正的旧/新Host加载、双锁中断后attestation提交、App细因和新STEP Provider往返，仅留在[LIVE-HOST-CAPABILITY-RECOVERY](../tickets/LIVE-integration-validation.md#live-host-capability-recovery)，不在本报告另设当前现场状态表。

@@ -1,6 +1,6 @@
 # HCR-03 — Controller / identity 中断恢复
 
-Status: implemented / Bun 1.3.14 offline, cancellation boundaries and installed Node20 CLI verified; independent review blocked by reviewer availability. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
+Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inventory, cancellation and installed Node20 CLI verified; independent review residue in HCR-02. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
 
 ## Goal / owner
 
@@ -19,6 +19,8 @@ Status: implemented / Bun 1.3.14 offline, cancellation boundaries and installed 
 不把Scope当硬崩事务；不裸unlink活锁，不按进程名kill，不自动恢复未知owner；不引入第二执行器或npm原生依赖。Linux primitive不可用必须拒绝，不能降级为弱锁。
 
 ## Evidence
+
+固定实现 `aefe851` 已线性合入v2并复验，见[集成窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。本票无已登记未实现功能；独立复审外部依赖统一见[HCR-02残项](HCR-02-loaded-capabilities.md#independent-review-residue)。macOS不是本次Linux Box恢复验收的额外前置；实际Host提交与恢复仅归LIVE。
 
 `hcr-operation-recovery.test.ts` 的14项隔离测试覆盖持有进程退出、并发恢复、PID身份、损坏/替换文件、持久化失败与后续恢复；源码及安装包CLI复用同一断言，Node20入口实测通过。`f3b831b` 将CLI取消接入原Effect根，增加 `hcr-operation-lifetime.test.ts` 5项生产lease测试：持锁与申请中取消、预取消零gate、只读取证中取消、提交中取消不提前放锁。取消/失败的回执明确保留元数据可能已提交的未知结果，不承诺回滚。
 

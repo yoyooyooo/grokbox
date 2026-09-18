@@ -1,6 +1,6 @@
 # HCR-01 — 配方与 local-witness 诊断
 
-Status: implemented / Bun 1.3.14 offline verified; independent review blocked by reviewer availability. Depends-on: existing HSO writer and strict-observation-v2.
+Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inventory verified; independent review residue in HCR-02. Depends-on: existing HSO writer and strict-observation-v2.
 
 ## Goal / owner
 
@@ -18,6 +18,8 @@ Status: implemented / Bun 1.3.14 offline verified; independent review blocked by
 不放宽 freshness，不用完整注册快照替代 local-only，不重放业务，不推断 Provider 故障，不输出 Host/provider 原文。
 
 ## Evidence
+
+固定实现 `aefe851` 已线性合入v2并复验，见[集成窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。本票无已登记未实现功能；独立复审外部依赖统一见[HCR-02残项](HCR-02-loaded-capabilities.md#independent-review-residue)，不能算作live或已通过。以下记录保留各历史窗口的原范围。
 
 源码及安装包CLI已增加`error.profileWrite`的有限诊断投影，保留refusal与slice/code，不回传源码或replacement；测试覆盖额外字段和访问器。与HCR其余阶段的验证范围、工具版本及剩余审查见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)。后续Bun1.3.14完整清单已验证，独立审查服务503仍未产生报告；见[补充窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-pinned-qualification)。
 

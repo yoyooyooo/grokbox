@@ -27,7 +27,7 @@ The operator/template Bot stays on the official brain. Run exact `doctor` / `err
 2. If next is observe → write, run observe and then write with the retained digest or exact next string.
 3. On write reject-on-drift, follow write's next. Analyze may settle `missing_runner` while emitting `envelope.requiredIds`. A `recipe_unapplicable` / `recipeFailure` needs adaptation; an executable write next exists only when its recipe is applicable. Do not skip a required `--slice-review`.
 4. Once the profile is durable, run doctor. Follow its loaded-state next under the existing interruption authorization; starting an already-custom Host does not reload its profile.
-5. Re-run doctor. Inspect Host origin, modeld service admission and `hostCapabilities` separately. Lifecycle `alignment=verified` is component evidence, not a Bot execution permit or Provider roundtrip. Finish when the requested scope's blockers are gone; unrelated next items do not widen permission.
+5. Re-run doctor. Inspect Host origin, modeld service admission, `hostCapabilities` and `committed` separately. A ready loaded bridge does not clear a pending or unavailable commit observation. Lifecycle `alignment=verified` is component evidence, not a Bot execution permit or Provider roundtrip. Finish when the requested scope's blockers are gone; unrelated next items do not widen permission.
 
 ## Bounded ownership-local upgrade
 
