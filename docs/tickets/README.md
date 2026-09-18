@@ -199,7 +199,7 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 | [T52](T52-consented-support-issues.md) | **Deferred**：用户决定后的草稿 | 不属于首发，不再默认询问Issue |
 | [T53](T53-agent-routines-cli.md) | Partial：原管理命令＋单份disabled apply、持久provision outcome、精确ID reconcile；批量组合/配对/invoke待完成 | local/daemon共享程序；provision安全账本与诊断TTL隔离，不声明原生CAS |
 | [T54](T54-ops-targets-and-routing.md) | Partial：default目标、精确disabled绑定/私有credential准备及本地撤销；激活/driver与高级路由待完成 | T51/T43/T53；配置偏好、prepared和合格接收者分别取证 |
-| [T55](T55-custom-receiver-delivery.md) | 所选目标最小资格必需；高级备用/交接后置 | T54/T45/T53；unknown不广播 |
+| [T55](T55-custom-receiver-delivery.md) | Partial：固定提醒blueprint、同帧loaded Host自动选模预检；真实Webhook/工具资格与激活待完成 | T54/T45/T53；preflight不授权发送，unknown不广播 |
 | [T56](T56-scripted-issue-publishing.md) | **Deferred**：未来gh-only用户发布 | 无认证就跳过，不建设自动发布平台 |
 
 所有新增命令/测试路径在实现后才注册；规划不授予实际安装、费用、原生对象写入、清理或模板发布权限。CONT-01消费同一通知链，CONT-02恢复快照遵循自己的私有引用闭包，不与诊断报告混用。

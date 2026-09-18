@@ -214,6 +214,8 @@ T46/T54已实现`ops targets list/show/bind/disable/unbind`的Box-local准备切
 <a id="receiver-resilience"></a>
 ### 6.4 状态、重试与故障隔离
 
+**接收者预检源码增量（2026-09-18）：** `ops targets blueprint`与`verify`已提供固定disabled提醒任务及只读预检。原生自动任务选模与loaded capabilities取自同一状态帧，核对prepared绑定/受管Routine/作用域/定义/配置，末尾复验新鲜度；Host闭包使用原生automation选择器而非聊天配置猜测。`preflight_ready`不等于真实Webhook或工具资格，不授权激活、模型调用或发送，也不写资格回执。固定源码函数探针已单独运行，完整原生HTTP及现场采用仍归[T55](../tickets/T55-custom-receiver-delivery.md)和LIVE；[固定回执](../reports/2026-09-18-receiver-model-preflight.md)区分已通过范围、测试拦截与审查超时。
+
 **当前可靠发送切片：** `runOpsNotificationDelivery`/`OpsNotification`复用原monitor SQLite的work/attempt表，已有唯一default目标策略、固定证据及8KiB白名单body、实际Agent共享滑动24h额度、事务预留→启动→原生结果结算。绑定必须由受信`PairedNotificationDriver`提供并二次核对；最终policy检查与启动在既有配置写锁内，网络在所有本地锁之外，退出等待真实在途步骤收口。新`ops notifications list/show`只读，不配对、安装或发送。
 
 本切片每work最多一次attempt，unknown不重投；明确未接收也暂不重试，不消耗额外critical reserve。原生配对/凭据owner、自动宿主安装、真实HTTP资格、Bot报告、unknown对账及备份恢复fence尚未实现；默认driver为unavailable。不能把测试注入的binding、配置里的Agent ID或本地nonce当作配对授权。下面有限重试是后续合同，不是当前已启用行为。[固定证明](../reports/2026-09-18-notification-outbox.md)。

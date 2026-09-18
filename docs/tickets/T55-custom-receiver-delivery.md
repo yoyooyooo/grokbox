@@ -2,11 +2,17 @@
 
 ## Status / Goal
 
-**Planned / Spec-only；高级分流是独立后续，不阻塞已资格化单目标提醒。** [Spec §6.3–6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。首发每个实际支持的目标仍须取得其最小身份/模型/数据/成本资格；不能因为高级延期就免验custom接收者。
+**Partial：固定disabled提醒blueprint与实际加载Host的只读自动任务选模预检已实现；真实Webhook回合/激活仍未资格化。高级分流是独立后续。** [Spec §6.3–6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。首发每个实际支持的目标仍须取得其最小身份/模型/数据/成本资格；不能因为高级延期就免验custom接收者。
 
 ## Depends-on / Modules
 
 依T43/T53原生合同、T54 frozen route、T45 delivery；T47仅是后续诊断消费者。kernel routing/policy/notification；box-runtime native-notification与bindings/state，复用同一outbox而非新增sender。
+
+## 已实现的接收者预检
+
+`ops targets blueprint <alias>`生成固定禁用Routine定义；`ops targets verify <alias>`只读prepared配对、安装scope、受管原生ID/revision、prompt策略和Host选模见证。模型与loaded capabilities来自同一原生状态帧，前后校验reviewed profile和Gateway代际，最终本地核对后再次检查五秒新鲜度。缺证、已启用、变化或过期不得得到绿色预检，不读key、不写资格/配置、不发模型请求。
+
+Host选模闭包复用原生automation实验/默认/环境逻辑，route模式附精确Agent的managed selection revision；仅限下一次本地默认自动任务。`preflight_ready`明确没有Server所有权、实际工具、HTTP或用户已读证明，也不授权canary/activate/send。旧Host没有对应观察点时返回缺证，不从当前配置猜测模型。
 
 ## Work
 
@@ -20,7 +26,9 @@
 
 ## Executable acceptance
 
-待新增`packages/box-runtime/test/ops-receiver-qualification.test.ts`、`packages/box-runtime/test/ops-receiver-handoff.test.ts`。验证不同模型路径/数据改变需重绑、目标失效/unknown不广播、预算多alias不放大、primary无资格不换规则、跨Bot同incident不重复动作，默认brief无升级。
+已新增`packages/box-runtime/test/ops-receiver-qualification.test.ts`、`test/receiver-frame.test.ts`及显式固定源`native-receiver-model.test.ts`。`ops-receiver`完整专项117 pass/0 fail，原生函数探针1 pass/72断言；CLI全量732 pass。最终packages前两组1156 pass/20 skip，第三组86文件被工具拦截，未签全仓完成。独立审查超时无报告。实际失败、夹具更新、Node checker与未证范围见[本轮回执](../reports/2026-09-18-receiver-model-preflight.md)。
+
+`ops-receiver-handoff.test.ts`及实际Webhook模型/工具/数据链仍待实现和验证，不能从预览推导已执行。高级故障切换/交接后续独立完成，不以默认提醒扩大权限。
 
 原生资格在独立授权的一次性接收Bot上通过实际Webhook捕获选模/供应商/报告；无证据标unqualified，不用配置值代替。首发只签所选目标已证范围，高级route/handoff另记未完成。
 

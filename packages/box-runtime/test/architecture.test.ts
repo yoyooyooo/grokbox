@@ -12,12 +12,18 @@ const checker = join(repoRoot, "scripts", "check-runtime-boundaries.mjs");
 const CHECKER_TEST_TIMEOUT_MS = 15_000;
 
 async function runChecker(root: string, env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
-  // Retain the Node checker and allow tests to exercise inherited activation.
+  // Retain v2's settled Node child and OBS's structured-verdict requirement.
+  // A timeout/crash is never proof that a negative architecture fixture passed.
   const child = spawnSync(process.env.GROKBOX_TEST_NODE ?? "node", [checker, "--root", root, "--json"], {
     cwd: repoRoot, env: { ...process.env, ...env }, encoding: "utf8", timeout: 10000, killSignal: "SIGKILL",
   });
   if (child.error) throw child.error;
-  return { code: child.status ?? -1, stdout: child.stdout, stderr: child.stderr };
+  if (child.status === null || child.signal) throw new Error("checker_did_not_settle");
+  const result = JSON.parse(child.stdout);
+  if (typeof result?.ok !== "boolean" || !Array.isArray(result.failures) || result.ok !== (child.status === 0)) {
+    throw new Error("checker_missing_structured_verdict");
+  }
+  return { code: child.status, stdout: child.stdout, stderr: child.stderr };
 }
 
 async function put(root: string, rel: string, text: string): Promise<void> {
@@ -95,7 +101,7 @@ describe("runtime layout boundaries", () => {
     const root = await fixture({ "packages/box-runtime/src/preload.ts": 'if (process.env.GROKBOX_ALLOW_LIVE_HOST === "1" || process.env.GROKBOX_PATCH_PROFILE || process.env.GROKBOX_OPERATION_ID) throw Error("unexpected inherited activation"); export {};\n' });
     const result = await runChecker(root, { GROKBOX_ALLOW_LIVE_HOST: "1", GROKBOX_PATCH_PROFILE: "/owned-fixture/not-a-real-profile", GROKBOX_OPERATION_ID: "synthetic" });
     expect(result.code, result.stdout + result.stderr).toBe(0);
-  });
+  }, CHECKER_TEST_TIMEOUT_MS);
 
   const rejects: Array<[string, Record<string, string> | undefined, boolean?]> = [
     ["host-to-io", {
