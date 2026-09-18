@@ -601,6 +601,8 @@ Golden 回归可以正确断言一次 `unknown-sha` 拒绝，即 `regressionPass
 
 ### 不变量与验收
 
+CLI取消接入原Effect恢复根。预先取消应在资源申请前返回；取证中取消不推进提交；已经进入短提交临界区时，等待文件操作结束后再释放资源。未收到完成回执须重新观察，不能将取消解释为元数据回滚。限定路径证据见HCR-03与补充离线窗口。
+
 不放宽五秒原始证据年龄、不接受 full snapshot 冒充 local-only、不由错误码猜 Provider 问题。有限诊断包括 capability/schema、scope、target rows、clock/age；自由字符串和原始对象不能进入 incident。Source/transformed/profile 身份保留，能力声明只增加早期检查，不取代执行时权威校验。
 
 Linux gate 使用已打开的受保护文件描述符及 `/usr/bin/flock`，不依赖 PID-only 互斥；helper退出后父进程fd继续持锁，不启动keeper。缺失 primitive 必须显式失败，不能静默退到有竞争窗口的 unlink。目录与 gate inode 不被恢复命令替换。Effect 管理 acquire/release，Scope 不被当成硬崩事务。

@@ -1,6 +1,6 @@
 # HCR-04 — 受控能力配方升级
 
-Status: implemented / offline and installed Node20 CLI verified; independent review pending. Depends-on: HCR-01, HCR-02.
+Status: implemented / Bun 1.3.14 offline and installed Node20 CLI verified; independent review blocked by reviewer availability. Depends-on: HCR-01, HCR-02.
 
 ## Goal / owner
 
@@ -20,4 +20,4 @@ Status: implemented / offline and installed Node20 CLI verified; independent rev
 
 ## Evidence
 
-`hcr-profile-upgrade.test.ts` 的7项测试覆盖无关alert变化下的局部升级、目标失配、基线校验/竞争、依赖完整性和系统gate；`test/hcr-cli.test.ts`与安装包复用同一断言。缺少可测golden的历史基线仍拒绝，不能由能力selector绕过。独立review待办，详见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)；当前加载、App和新STEP验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
+`hcr-profile-upgrade.test.ts` 的7项测试覆盖无关alert变化下的局部升级、目标失配、基线校验/竞争、依赖完整性和系统gate；`test/hcr-cli.test.ts`与安装包复用同一断言。缺少可测golden的历史基线仍拒绝，不能由能力selector绕过。Bun1.3.14完整清单及安装包通过，独立review服务503未签收；详见[补充窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-pinned-qualification)；当前加载、App和新STEP验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。

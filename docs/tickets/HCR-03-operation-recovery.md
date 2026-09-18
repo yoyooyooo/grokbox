@@ -1,6 +1,6 @@
 # HCR-03 — Controller / identity 中断恢复
 
-Status: implemented / offline and installed Node20 CLI verified; independent review pending. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
+Status: implemented / Bun 1.3.14 offline, cancellation boundaries and installed Node20 CLI verified; independent review blocked by reviewer availability. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
 
 ## Goal / owner
 
@@ -20,4 +20,6 @@ Status: implemented / offline and installed Node20 CLI verified; independent rev
 
 ## Evidence
 
-`hcr-operation-recovery.test.ts` 的14项隔离测试覆盖持有进程退出、并发恢复、PID身份、损坏/替换文件、持久化失败与后续恢复；源码及安装包CLI复用同一断言，Node20入口实测通过。仅使用临时root与一次性子进程。取消、旧版不协作写者与真实提交窗口的证明范围不扩大；独立review仍待完成。详见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)。真实中断/attestation窗口只登记 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
+`hcr-operation-recovery.test.ts` 的14项隔离测试覆盖持有进程退出、并发恢复、PID身份、损坏/替换文件、持久化失败与后续恢复；源码及安装包CLI复用同一断言，Node20入口实测通过。`f3b831b` 将CLI取消接入原Effect根，增加 `hcr-operation-lifetime.test.ts` 5项生产lease测试：持锁与申请中取消、预取消零gate、只读取证中取消、提交中取消不提前放锁。取消/失败的回执明确保留元数据可能已提交的未知结果，不承诺回滚。
+
+Bun1.3.14完整清单验证通过。以上只使用临时root与一次性子进程，不扩展为旧版不协作写者、真实adopt提交或macOS执行证明。独立审查调用返回503，未取得review报告；详见[补充窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-pinned-qualification)。真实中断/attestation窗口只登记 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
