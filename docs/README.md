@@ -28,6 +28,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T39 native model roundtrip](tickets/T39-native-model-roundtrip.md): same-session official/A/B/official, durable native-state return and original-App journey.
 - [T40 persistent release](tickets/T40-persistent-release-and-rollback.md): normal service lifecycle, scoped production release and distinct unpatched-Host exit, reusing T25/T28.
 - [T41 continuous observation](tickets/T41-continuous-observation-and-alerting.md): local CLI/collector, incremental SQLite transactions, incident/Alert indexing and tested crash/maintenance boundaries are implemented. Persistent installation, current native Host qualification and external/client delivery remain separate gates; observation never grants admission.
+- [归属丢失与新身份连续性 Spec S13](roadmap/box-runtime-impl-spec.md#ownership-continuity)：及时识别/通知、已提交上下文快照、原生新 Box 身份导入和预授权自动接替的实施设计；[CONT-00–05](tickets/README.md#ownership-continuity)拆分资格与交付。8 个原生隔离探针已证明普通 duplicate 不是 resume，完整通知/克隆/自动替换尚未实现，现场只看 [LIVE-OWNERSHIP-CONTINUITY](tickets/LIVE-integration-validation.md#live-ownership-continuity)。
 - [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 

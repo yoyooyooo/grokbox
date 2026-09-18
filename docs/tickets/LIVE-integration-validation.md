@@ -55,6 +55,12 @@
 | <a id="live-runtime-persistence"></a>**LIVE-RUNTIME-PERSISTENCE**<br>安装、自启与长期服务 owner | **进程级重启已证；持久安装未证。** W17 Host/modeld/daemon 换代、配置/所选凭据与新请求正常；detach/父 PID 不是自启证据。 | 支持的持久服务 owner、干净启动/父 shell 退出、安装幂等、官方 Host 自行重建后的补丁采用、开机/环境重建恢复及单实例；正常配置不依赖临时环境变量或故障注入。 | `blocked`：安装/boot-hook 实现与目标平台资格仍归 [T40](T40-persistent-release-and-rollback.md)，不是再做一次 restart 就能关闭。真实高影响重建另开窗口；平台 Reset 另记 CONFIG-HOME-RESET。 |
 | <a id="live-monitor-persistence"></a>**LIVE-MONITOR-PERSISTENCE**<br>现有本地 collector / SQLite / incident | **现役 collector 未安装验收。** W17 的 daemon/desktop applied 不替代 monitor 长驻。本地/source/packed 测试保留原范围。 | 无网页/CLI 退出仍采集、与准入共享读取有界；真实 scope/代/失联 gap；重启保留 incident/ack/snooze/cursor；受控 DB 异常不影响执行；local-only 与实际通知接收分开。 | `blocked`：先由 [T41](T41-continuous-observation-and-alerting.md)/[T40](T40-persistent-release-and-rollback.md)关闭调度/安装前置，明确服务 owner、测试存储与窗口。不要等待未来 Webhook 运维全部实现，也不把未来外部离线监控拖进本项。[观测手册](../maintainers/continuous-observation.md) |
 
+### 归属丢失与新身份连续性
+
+| 维度 / 稳定 ID | 现场进度与已验证范围 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
+|---|---|---|---|
+| <a id="live-ownership-continuity"></a>**LIVE-OWNERSHIP-CONTINUITY**<br>归属变化通知与新Box替身 | **完整现场链路未运行。** 原生复制/导出边界已有隔离探针，归CONT-00；空Bot创建能力不构成恢复证明。 | 实际接管发现与用户通知延迟；已提交root/Memory/转录保全；新身份隔离导入、关闭重开及真实下一回合；旧routine/外部任务对账；原App新旧UUID与未切换入口；自动操作跨重启、重复迁移和通知丢回执。 | `blocked`：CONT-01–04实现/离线/原生资格和独立review前置，之后由CONT-05固定v2候选与授权对象/预算。通知纵切先交付，不等待clone；常驻安装同时回链MONITOR-PERSISTENCE。[S13](../roadmap/box-runtime-impl-spec.md#ownership-continuity) · [CONT-00](CONT-00-native-clone-feasibility.md) · [通知](CONT-01-ownership-loss-notification.md) · [验收](CONT-05-continuity-acceptance.md) |
+
 ### 待闭合资格：CTX已有现场子项，运维仍按来源前置推进
 
 五条Template Ops仍无本表范围内的新现场回执。CTX的源码、打包和原生隔离证明见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)，本轮新增的成套采用、真实503/备用端点与modeld换代见[CTX-V8回执](../reports/2026-09-17-context-v8-live-window.md)。用户已明确接受503与备用模型的有限测试窗口；这不把Astra的503或备用review超时改成独立审核通过，亦不签正式发布。实际Bot消息被工具安全检查拦截，现有阻断已不只是review通道不可用。

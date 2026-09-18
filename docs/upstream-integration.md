@@ -60,6 +60,17 @@ The reviewed bridge can additionally accept `grokboxOwnershipLocalOnly: true` fo
 
 Server responses distinguish public `agentId`, Server row `id` and `harness`. Generic identity Update does not carry harness, and the native App's server-roster view may filter to temporal rows. Ownership inspection must therefore use unfiltered original List evidence, not infer box from an omitted row. Official controlled migration is separate, has side effects, and is not invoked by this command. Exact finite DTO/classifier and synthetic interoperability tests are in `ownership-read.ts`, `ownership-slices.ts`, CLI `ownership.ts`, and their tests. Unsupported Host versions remain unavailable, never silently replaced with local evidence.
 
+<a id="continuity-import-boundary"></a>
+## Native duplication and continuity import boundary
+
+The reviewed native `duplicateAgent` delegates to a new-identity materialization flow, opens the new session and changes the active-session projection. Its directory copier checkpoints the source SQLite before copying the store, copies selected profile/settings/avatar and automation definitions, then clears transient state and deliberately clears the conversation. The new profile does not carry the source's harness/server registration. In this version the copier does not copy the separate conversation-blob database or filesystem Memory directory, unhides the new Bot and does not disable copied routine definitions. Neither opening a new local directory nor omitting the old registration proves Server-confirmed Box ownership.
+
+The native conversation-clear operation removes transcript/completion records and resets the retained root reference. Merely changing the internal history flag is therefore not a complete clone implementation: it still lacks a complete working-state closure, scoped Memory, new-identity validation, paused target preparation and side-effect reconciliation. Native duplication is not a supported resume primitive for grokbox.
+
+A separate native working-state export path walks the retained root and reachable blobs, but skips Temporal agents and in-flight turns. The exposed export operation also uploads to the upstream object store; it is not a read-only local backup command. Its internal snapshot helper can attempt root recovery when the root is missing, so its name is not a non-mutation guarantee. A continuity snapshot adapter must qualify a non-repairing reader and preserve committed closure provenance without invoking migration, upload or repair as a side effect of observation.
+
+These facts are bounded by the explicitly pinned native qualification in `packages/box-runtime/test/ownership-continuity-native.test.ts`. It executes selected original functions with owned filesystem/database/network dependencies, without importing the full Host or copying its implementation into this repository. Ordinary public tests do not require private source. The probes do not prove cross-identity import, live restart/resume, original-App delivery, routine transfer or a permanently Box-owned replacement. [Spec S13](roadmap/box-runtime-impl-spec.md#ownership-continuity) and [CONT-00](tickets/CONT-00-native-clone-feasibility.md) own the proposed integration and remaining qualification.
+
 ## Capability separation
 
 The Gateway is not a general cloud-computer RPC. Governed filesystem, process, and Job operations belong to the grokbox daemon. Sandbox lifecycle and quota are separate adapters with separate credential references. Authority on one surface never implies authority on another.

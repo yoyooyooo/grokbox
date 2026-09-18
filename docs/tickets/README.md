@@ -59,6 +59,13 @@ T32保留既有零放行/一次额外主请求合同，T35保留原生寿命与�
 
 [PI-AI-01](PI-AI-01-model-backend-qualification.md) / [Spec S6.2.1](../roadmap/box-runtime-impl-spec.md#pi-ai-qualification)研究进程内pi-ai能否在同一ModelBackend后替换当前AI SDK。它不是T30的Pi RPC Agent backend，不阻塞CTX，不默认切换生产、双真实请求或另造model/credential store。core的传递依赖出现pi-ai不等于选用了其Provider执行。资格/Node/性能/维护差异有明确采纳提案与独立review，切换与live另行批准。
 
+<a id="ownership-continuity"></a>
+## 归属丢失与新身份连续性
+
+[Spec S13](../roadmap/box-runtime-impl-spec.md#ownership-continuity) 是实施合同。当前仅[CONT-00 原生可行性](CONT-00-native-clone-feasibility.md)的8个隔离探针已通过，完整产品链路尚未实现。
+
+交付依次为[CONT-01 持续识别与通知](CONT-01-ownership-loss-notification.md)、[CONT-02 连续性快照](CONT-02-continuity-snapshots.md)、[CONT-03 新Box身份原生导入](CONT-03-native-box-clone.md)、[CONT-04 预授权自动替换](CONT-04-automatic-replacement.md)、[CONT-05 成套验收](CONT-05-continuity-acceptance.md)。通知与快照可并行，通知无需等待完整克隆。当前现场状态只在[LIVE-OWNERSHIP-CONTINUITY](LIVE-integration-validation.md#live-ownership-continuity)维护；实现、离线与复核分别在来源票。
+
 ## Prior delivery baseline — 2026-09-12 documentation governance
 
 **已定边界：Server归属优先；不改官方App；同Box会话换模型不换harness；test2仅冲突样本。** 查询已存在，执行门/可逆日用/全卸载不能据此算完成。现场缺口与日期证据统一从 [LIVE](LIVE-integration-validation.md)进入，历史计数留原来源票/报告；本页不复制产物和当前验收表。

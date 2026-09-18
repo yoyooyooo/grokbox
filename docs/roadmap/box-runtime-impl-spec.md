@@ -1194,3 +1194,124 @@ grokbox agents compact <agent> [--session <id>] --operation-id <uuid> --confirm 
 文档/规划、代码/离线、review、原生资格与live发布分别取证。CTX-00–04已有实现和实际case，不再记implementation=not-recorded；独立review请求503没有结论，仍为来源票非live前置。LIVE只维护实际加载/原用户输入/重启的未证范围及窗口，不复制实现清单。用户已批准本功能前置完成后的rebase v2和Host/modeld切换/重启，执行前仍须固定集成候选、归属/在途工作、配置保护与成套制品、有限对象/费用/时间和退路，不复用旧事故STEP。
 
 meter/默认预算、config模型覆盖、generation/output含义、Host safe point/root/摘要/队列/工具引用、wire/SDK/dialect、persistence、Pi package/exports/传递依赖/serializer/补丁/提取版本/Node最低版本或部署制品变化，相关CTX-R/CTX-A向量、接点及review失效并重验。历史回执不自动签新构建；本地估算和有损摘要不承诺任意真实端点或完整语义召回，必须证明的是可压缩普通长历史有有界推进路径且失败不损坏/重放用户工作。
+
+<a id="ownership-continuity"></a>
+## S13. 归属丢失感知与新身份连续性（2026-09-18 用户目标 / 实施设计）
+
+**状态：原生可行性探针已有；CONT-01–CONT-05 产品链路尚未实现、未安装。** 用户要求及时发现/通知官方接管，并可预授权自动创建 Box 替身、恢复上下文与继续工作。这里冻结工程骨架和准入条件，不宣称已经通知、恢复或获得任意 Bot 的自动切换权限。CONT 编号不复用 T41/CTX 或并行运维 T 序列。目标不是把原 Temporal 身份硬改回 Box，而是新身份的受控连续性；新 UUID 必须明确展示。
+
+### S13.1 两条独立的用户合同
+
+**感知：** 常驻无模型 collector 发现 Server 执行归属变化，原子保存前后事实、固定现场引用与通知意图；一次短通知告诉用户哪些 Bot 受影响、自定义选型是否已失效、已保全到哪里、下一步入口。日志/通知不等待 LLM 解释，不默认诊断或建单。复用 T41 存储、T40 服务生命周期以及 Template Ops 的目标/数据同意/费用/投递合同，不另造通知系统。
+
+**连续性：** 用户显式为某个逻辑 Bot 开启 `auto-replace` 后，在所有准入条件成立时自动完成创建、恢复、切换和恢复通知，无须每次重新批准。`alert` 只通知；`prepare` 自动准备不执行的替身；未注册策略不允许由一次观测启动业务。允许对已经 Temporal 的指定源手动建立恢复操作，但不能把首次读到 Temporal 伪称为刚发生的迁移。
+
+逻辑 Bot 是 grokbox 管理的稳定槽位，包含 scope、currentPhysicalAgentId、generation、predecessor 和 replacement operation。它只路由经过 grokbox 管理入口的消息；不劫持官方 App、旧 UUID、第三方 webhook 或其他 Bot 文本中的引用。原 Bot 不删除，继任关系不是原身份永久改名，更不是全客户端透明替换。
+
+### S13.2 观测模型和及时性
+
+`ownership_changed` 保留为边沿事件；它在后续不变样本中关闭不能解释成恢复 Box。新增注册期望 `expectedHarness=box` 的持续条件 `expected_box_unavailable`：成功观测为 Temporal、或 Server-temporal/local-box conflict 时保持打开。首次采样即不符也要报告，变化时间标 unknown；读失败、Host bridge 缺失、scope 切换只形成 observation gap，不声称迁移，也不自动创建。
+
+期望由用户保护注册或已启用保护服务后的合格 managed assignment 建立，不从名字、标题或任意旧模型条目推断迁移。固定期望跨 collector/Host/modeld 重启保留。解除期望与成功替换关闭的是管理事件；原 Bot 的历史 Temporal 事实仍保留。ack/snooze 不是恢复。
+
+低延迟通道是原生身份/upsert、执行许可撤销、升级/migration 生命周期与 checkpoint 事件；它们仅触发同一受控 Server re-read，不凭本地事件授权。独立进程的 serial batch polling 是兜底，目标策略先使用现有 10–30 秒范围及 10 秒读取预算，不放宽 T37 的五秒证据年龄、不抢占业务准入。目标数超过现有单次 32 个时必须分批并报告全覆盖/延迟，不能静默漏掉。事件/轮询/collector 恢复落在同一 operation 去重域。
+
+验收测量实际发生或最后成功样本→首次发现→outbox commit→外部接收各段延迟及故障下 gap，不承诺网络断开或整盒冻结时的秒级到达。Host 外 sidecar 可跨 Host 重启；整盒不可达还需要用户另外配置的盒外 heartbeat watcher，盒内进程不能自证存活。
+
+每次变化保留 source scope/row ID、before/after harness、最后 confirmed_box 和首次 non-box 的观测区间、读请求 identity/age、local before/after、Host source/loaded digest/generation、modeld epoch、native execution/migration 状态和 operationId（若可观察）、最后 committed checkpoint/转录水位及缺口。Server updatedAt 不是迁移时间；无 operation 因果关联时，Host 升级只能标相关事件。
+
+### S13.3 通知与管理事务
+
+monitor SQLite 仍是本地观测与管理事实 owner，不是 Server 所有权 owner。incident + 冻结现场 manifest 引用 + durable outbox 在同一事务提交；发送方只消费 outbox。`notification_decided`、写 stdout、HTTP accepted、目标消息记录和用户已阅读必须分开，未知响应不伪称未送达。transport 只有在已证明的幂等/无 effect 失败规则下重试；不通过自动发另一条业务消息解决不确定送达。
+
+复用 `ops.targets` 与 notifications/routing budgets，默认一次迁移批次聚合提醒、去重 delivery key、有限重要事件保留额度。目标未配对/失联/模型失败时保留待投递状态并显式报告，不能把“本地存盘”宣传为“用户已获通知”。通知目标不得仅依赖受影响 Bot 自己。短信/额外外部通道不是本切片默认。
+
+接收 Bot 只做短提醒并结束；原始 prompt、Memory、工具结果、凭据及原生 blob 不进入通知或普通 journal。用户指定 custom 接收 Bot 时仍沿用已有模型/数据许可，失败不擅自换模型。
+
+### S13.4 恢复材料：平时保全，不事后猜 RAM
+
+复用 S12 的 native root capture、codec、summary carrier 和 checkpoint read-back。保护注册后，在原生已完成 checkpoint 的安全点制作有版本的 **非权威恢复快照**，不是第二个在线会话 writer。完整 manifest 包含 source identity/scope、Host/schema、root revision/closure hashes、typed metadata、最近窗口/summary、转录来源及 watermark、Memory 分类 manifest、model/effort/config revision、pending/effect 状态与材料质量。每次发布 manifest 前确认完整闭包可读，GC 不得删除被快照 pin 的 blob。
+
+材料放在 canonical durable root 下的私有 continuity vault；普通 journal 只留引用/hash/覆盖指标。目录权限、symlink/root containment、大小/磁盘压力、加密能力和凭据排除都必须测试。保留当前/上一完整快照及有界增量；空间不足使保护降级并通知，不影响原 Bot 的正常提交、也不静默宣称有新快照。系统不把 partial assistant stream 或 in-flight 副作用当 committed checkpoint。
+
+三种恢复质量分开：
+
+| 质量 | 来源与行为 | 对用户的含义 |
+|---|---|---|
+| `native_checkpoint` | 支持版本的完整 committed root + 可达 blob + 配对历史，经新身份原生 importer 接受并持久读回 | 恢复到明确安全点；仍不恢复进程栈/网络请求/旧执行权限 |
+| `semantic_resume` | 旧 checkpoint/Memory + 有来源和截止水位的 archive/转录增量 → 新原生恢复摘要及最近安全窗口 | 可继续任务，但属于有损重建，披露缺口；使用已预授权摘要预算 |
+| `memory_only` / `blocked` | 缺闭包、缺来源、未知 schema 或中断副作用不能判定 | 不假装原样 resume；策略决定只准备或停在需处理状态 |
+
+native route 优先，不为方便默认退成“把展示 transcript prepend 到正常 prompt”。降级导入是显式新 operation/new identity 的受控候选，不改变 S12 日常管线、零静默截断或 Host 最终 writer 合同。不能从被脱敏的日志重造隐藏推理、缺失 tool result 或精确当时输入；早期未保全的迁移只能给有证据的最佳材料与缺口。
+
+原生互操作关键边界见 [upstream integration](../upstream-integration.md#continuity-import-boundary)：普通 duplicate 会清 conversation/root 且未复制独立 Memory/blob；working-state exporter 跳过 Temporal/in-flight Bot；其 snapshot helper 在无 root 时可进入恢复分支。保全 adapter 必须使用明确无修复的 root reader；不能冒用“read”方法修改原 Bot、调用会上传的出口或绕过原生 Temporal export 拒绝。
+
+### S13.5 创建与注入路径
+
+主线为 **官方创建新身份并 confirmed_box → 新 Bot 恢复隔离 → 原生 writer 导入 → 新持久 root 读回 → 复核归属 → 有条件激活**。已有 `agents create` 的 nonce/created-but-unconfirmed 语义必须保留。一个 replacement operation 绑定一个创建 nonce 和一个继任 ID；创建结果不确定先 reconcile，不改 nonce 反复创建，也不按同名当成功。
+
+默认 duplicate 不是 resume API，不能仅将其 `includesChatHistory` 参数改 true 后发布；还缺 blob closure、Memory、pending清理、身份重绑和隔离。可复用其身份清理和 native materialization 部件，但必须由有限、版本限定的 Host import 能力统筹，不暴露通用 eval、任意路径覆盖或修改现有 harness 的接口。
+
+新 Bot 需在不执行、不启 routine、不消费外部 inbox 的状态下准备，且尽量不抢 App 当前选择。先取新 session 的 native writer/maintenance hold，再做 staged data validation、原生落盘、校验闭包和独立 session reopen。当前 `create`/`duplicate` 的全局 active-session 副作用需在 CONT-03 的资格实验明确处理；隐藏 sidebar 不是执行隔离。不能覆写已加载的新 `store.db`、不能复制原库 WAL 文件当一致性备份，也不把全局重启 Host 当每次恢复原语。
+
+Memory 按 agent/user/project 区分：复制选定 agent 私有内容到新 owner；user/project 历史 shard 保留 provenance，优先引用/聚合，不因新 ID 再复制成第二份事实。共享 workflow、workspace 文件、浏览器登录、插件/第三方 grants 和秘密不按 Bot 私有文件复制；引用可用性和新身份权限单独验证。
+
+原生系统身份/提示按新 Bot 重建；source UUID 保留在 ancestry/历史 attribution，只重绑有 schema 的自引用，不全文字符串替换。历史 tool-call/result 只作为配对数据导入，不 replay。旧 request/TURN/STEP/nonces、pending tool calls、automation completion/inbox、approval、监听者、后台工作句柄和运行标志不直接恢复为新待执行队列；外部作业要 read-only 对账后再决定接续。
+
+完全“造目录+改 harness+启动”的路径只允许 owned fixture 研究，不是产品创建主线。本地目录存在、能打开甚至能发一次请求，都不等于 Server 注册、App 路由和后续重启确认。后续若验证 local-first 可行，也须通过相同注册/导入/准入标准，不成为绕过 Server 的隐藏 fallback。
+
+### S13.6 自动替换状态机与副作用边界
+
+```text
+watching → suspected → confirmed_loss → evidence_frozen
+  → replacement_creating → replacement_prepared → native_restored
+  → old_effects_reconciled → replacement_activated → replacement_verified
+```
+
+每步有 durable operation identity、state revision、结果不确定状态和复读规则；断电/重启不生成第二继任者。源 scope 变化、目标创建非 Box、原生 ABI 不合格或 restored checkpoint 回读不一致只阻断相关推进，通知仍继续。
+
+`auto-replace` 允许自动创建/恢复，不等于可以双跑。激活前需要：旧身份的在途主回合/子任务/外部工作和 routine 状态有明确对账；受支持接口能停用旧 routine/监听或确定无业务冲突；新的 model/effort/数据许可及 ownership 通过；最后输入和 effect 水位已定。不能将旧父回合 idle、App 没 Working 或本地 tasks 空当作服务端已停。
+
+旧 Temporal 不能可靠隔离时，新 Bot 保留为 prepared，展示“已恢复材料，未接替执行”的原因；不冒充 exactly-once。新 routine 初始禁用，按原始 schedule/timezone/下次触发/上次结果重新绑定新 ID，仅在旧触发停止确认后启用；未知是否已执行的 fire 和消息不自动 replay。新的 webhook 凭据必须新建，不能复制旧 secret；外部 URL/硬编码 ID 未改的入口要列出，不能声称透明替换。
+
+逻辑槽位切换使用管理 CAS，并为受控入口设置 generation fence；它只约束 grokbox 管理的 writers，不能声称能禁止官方 App 向旧 ID 发消息。外部副作用在支持处使用业务幂等 key；历史成功不可重复，未知结果要求对账。克隆成功不关闭原 Bot 的 ownership 事实，只完成替换操作并发一次恢复通知。
+
+防连续被收回的创建风暴：同一逻辑 Bot 只许一个未完成 replacement；重启仍保留创建 nonce、generation 与冷却；按策略限制时间窗内自动替换次数，触发后 `replacement_storm_blocked` 并通知，不无限增殖。新 Bot 刚建就 Temporal、全批次创建策略改变或权限丢失时停止自动推进，不强改身份。
+
+### S13.7 固定骨架与依赖方向（新增路径均为待实现）
+
+| owner / 路径 | 职责与限制 |
+|---|---|
+| `runtime-kernel/src/internal/continuity/` | 纯保护策略、材料质量、operation状态/准入、logical generation；不触文件/RPC |
+| 现有 `internal/config/schema.ts` | 注册模式、预算与授权引用进入统一 config；不另加第三人编配置文件 |
+| `box-runtime/src/internal/roots/monitor.runtime.ts` + `io/monitor-store.node.ts` | 复用采集、持续期望条件、证据/outbox事务；不在观察回调执行 clone |
+| `box-runtime/src/internal/io/continuity-store.node.ts` | 同一管理DB中的操作/槽位/CAS与私有vault文件；备份不是 native root SoT |
+| `box-runtime/src/internal/roots/continuity.runtime.ts` | 由现有常驻服务监督的单一 Effect 操作 owner；消费已授权 intent，协调执行，无第二模型loop |
+| `box-runtime/src/internal/host/continuity-import.ts` + `continuity-slices.ts` | 有限版本原生 capture/import/hold/reopen；唯一会话写入归原生 owner，禁止直接产品文件patch |
+| `cli/src/commands/continuity.ts` | 保护注册、plan/prepare/activate/status，显式目标/费用/影响，GET只读；沿现有Gateway typed capability与model selection |
+| Template Ops 既有通知实现切片 | 配对目标、脱敏通知投递、去重与送达不确定性；不新增自动分析/Issue发布 |
+
+application-owned ports 固定为 `OwnershipReader`（复用）、`ContinuitySnapshotReader`、`NativeContinuityImporter`、`ReplacementCreator`、`SourceExecutionControl` 和已规划的通知投递 port；只暴露目标能力和有限收据，不泄露官方客户端/认证或任意 SQL。CLI/observer 不直接调用 native setter；composition 只装配，状态转移由纯 policy + application operation 决定。遵守现有 Effect adoption standard，具体辅助函数不另套服务。
+
+### S13.8 交付、验证与失效
+
+| 票据 | 单独可交付出口 |
+|---|---|
+| [CONT-00](../tickets/CONT-00-native-clone-feasibility.md) | 原生复制/工作态导出边界探针；真实新建只证明身份，未证明上下文恢复 |
+| [CONT-01](../tickets/CONT-01-ownership-loss-notification.md) | 常驻发现、持久expected-owner incident、固定证据和真正外部通知；不等待clone |
+| [CONT-02](../tickets/CONT-02-continuity-snapshots.md) | committed checkpoint/闭包/Memory manifest的非权威保全、质量/水位/retention |
+| [CONT-03](../tickets/CONT-03-native-box-clone.md) | 手动Temporal源→新Box身份→原生安全导入→关闭重开和下一输入；无自动业务接管 |
+| [CONT-04](../tickets/CONT-04-automatic-replacement.md) | 预授权自动链、effect/routine对账、logical CAS、未知结果/重启/风暴防护 |
+| [CONT-05](../tickets/CONT-05-continuity-acceptance.md) | 成套打包/原生/App/真实通知/重启与失效重验；唯一LIVE索引 |
+
+CONT-01 与 CONT-02 可在原生边界明确后并行，手动导入先于自动切换；通知不能等全恢复系统做完才上线。必要矩阵包含 Box→Temporal、Server-temporal/local-box conflict、首次Temporal、unknown/stale/scope变更不误克隆、Host升级前后/bridge丢失、批量去重、通知提交后崩溃/未知响应、任意操作步断电、创建accepted丢回执、目标立即再迁移、缺blob/摘要carrier/不配对tool/身份自引用、源Temporal新增消息、旧routine已触发但未结算、外部job仍运行、原App旧UUID/新UUID负对照。
+
+验收必须检查新进程从新 root 读到指定历史sentinel、真实下一次模型request含规定窗口、工具及业务副作用计数、历史来源/缺口和通知实际接收，不能只问模型“你记得吗”。public fixtures不依赖私人源；显式原生资格固定SHA且不启动Host。可用边界探针入口：
+
+```bash
+GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/ownership-continuity-native.test.ts
+```
+
+这条命令不是clone/resume的产品命令，且通过不等于CONT-03。只有固定已合入v2的组合制品才进入live；所有部署/原生/App/通知未证项维护在 [LIVE-OWNERSHIP-CONTINUITY](../tickets/LIVE-integration-validation.md#live-ownership-continuity)，CONT-01服务/通知与原有monitor条目交叉链接，不复制状态账本。当前工作不会自动安装collector、开启策略、克隆真实业务Bot、重启或切换live。
+
+Host clone/身份注册/导出/Blob schema/Memory作用域、checkpoint writer、App路由、routine/Webhook、config/通知预算/授权/幂等或服务生命周期改变时相关资格失效；任何恢复质量降级均需表述。不能把“曾成功创建一个Box”提升为永久避免服务端迁移的保证。
