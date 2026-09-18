@@ -6,7 +6,8 @@ import { compileReceiptAgrees, expectedCompileReceipt, type CompileReceipt } fro
 import { writeRuntimeArtifact } from "../io/artifacts.node.ts";
 import { count, isRecord } from "../io/observation.node.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
-import { acquireExclusiveLock, operationLockPath } from "../io/op-lock.ts";
+import { operationLockPath } from "../io/op-lock.ts";
+import { acquireOperationLease } from "../io/operation-lease.node.ts";
 import {
   findAdoptedHostState,
   findUniqueOfficialChain,
@@ -218,7 +219,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
     launchMode: "transient-adopt",
   });
 
-  const lock = await acquireExclusiveLock(operationLockPath(ctx.ephemeralRoot));
+  const lock = await acquireOperationLease(operationLockPath(ctx.ephemeralRoot), ctx.operationId);
   if (!lock.ok) return fail("lock-conflict", false, false);
 
   try {
@@ -634,7 +635,7 @@ export async function runTransientAdoptDeactivate(
     coverage: didSignal ? "window-open" : "none",
     launchMode: "transient-adopt",
   });
-  const lock = await acquireExclusiveLock(operationLockPath(ctx.ephemeralRoot));
+  const lock = await acquireOperationLease(operationLockPath(ctx.ephemeralRoot));
   if (!lock.ok) return fail("lock-conflict", false);
   try {
     if (!ctx.attestation) {

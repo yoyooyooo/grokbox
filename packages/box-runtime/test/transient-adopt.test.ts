@@ -137,7 +137,8 @@ describe("adopted topology proof is not PPID parentage", () => {
   });
 });
 
-describe("transient-adopt fake tree", () => {
+// Fake Host process tree, but the operation lease is the real Linux syscall adapter.
+describeLinux("transient-adopt fake tree", () => {
   test("orphan Host is attested; PPID is not the new supervisor; drift and preparation failure do not attest", async () => {
     const tree = new FakeProcessTree();
     const wrapper = tree.spawn("wrapper");

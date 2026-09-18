@@ -50,7 +50,8 @@ async function writeFacts(boxRoot: string, profile: unknown = validProfile) {
   await writeFile(reviewedProfilePath(boxRoot), `${JSON.stringify(profile)}\n`);
 }
 
-describe("controller IO facade", () => {
+// Production controller filesystem leases require Linux; pure admission/recovery law tests below remain portable.
+(process.platform === "linux" ? describe : describe.skip)("controller IO facade", () => {
   test("inspect distinguishes missing facts and reviewed-profile mismatch", async () => {
     resetLiveMutationAttempts();
     const kills: Array<{ pid: number; sig: unknown }> = [];

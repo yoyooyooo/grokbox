@@ -164,7 +164,8 @@ describe("waitOfficialReplacement", () => {
   });
 });
 
-describe("runTransientAdoptDeactivate replacement Gateway proof", () => {
+// The deactivate executor uses the real Linux operation lease even with a fake Host.
+(process.platform === "linux" ? describe : describe.skip)("runTransientAdoptDeactivate replacement Gateway proof", () => {
   test("delayed Gateway publish after Host spawn succeeds; publish-before-return is not required", async () => {
     const tree = new FakeProcessTree();
     const { wrapper, supervisor, host } = spawnAdopted(tree);

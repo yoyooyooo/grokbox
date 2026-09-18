@@ -1,4 +1,5 @@
-import { acquireExclusiveLock, operationLockPath } from "../io/op-lock.ts";
+import { operationLockPath } from "../io/op-lock.ts";
+import { acquireOperationLease } from "../io/operation-lease.node.ts";
 import { findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import {
   countRoles,
@@ -83,7 +84,7 @@ export async function runIdentityOperation(ctx: IdentityOpContext): Promise<Iden
     coverage: signaled ? "window-open" : "none",
   });
 
-  const lock = await acquireExclusiveLock(operationLockPath(ctx.ephemeralRoot));
+  const lock = await acquireOperationLease(operationLockPath(ctx.ephemeralRoot), ctx.operationId);
   if (!lock.ok) return fail("lock-conflict", false, false);
 
   try {
@@ -195,7 +196,7 @@ export async function runIdentityDeactivate(ctx: DeactivateContext): Promise<Ide
     census: rolesCensus(ctx.processes, ctx.classify),
     coverage: "window-open",
   });
-  const lock = await acquireExclusiveLock(operationLockPath(ctx.ephemeralRoot));
+  const lock = await acquireOperationLease(operationLockPath(ctx.ephemeralRoot));
   if (!lock.ok) return fail("lock-conflict", false);
   try {
   if (!ctx.attestation) {

@@ -1,5 +1,7 @@
-import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { constants, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, readSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { Effect, Layer } from "effect";
 import { runControllerOperation } from "@grokbox/runtime-kernel/commands";
 import { sha256Bytes, sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
@@ -19,7 +21,9 @@ import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { parseCoordinatorState } from "../io/coordinator-state.ts";
 import { readAttestation, writeAttestation, type CoverageAttestation } from "../io/authority.node.ts";
-import { acquireExclusiveLock } from "../io/op-lock.ts";
+import { operationLockPath } from "../io/op-lock.ts";
+import { acquireOperationLease, acquireOperationRecoveryGates, inspectOperationLease, operationOwnerState, parseOperationLeaseOwner,
+  recheckOperationLease, removeRecoveredOperationLease, type OperationLeaseOwner, type OperationLeaseObservation } from "../io/operation-lease.node.ts";
 import { coordinatorStatePath, runtimeConfigPath, modelsPath, reviewedProfilePath } from "../io/paths.ts";
 import { pinLaunchProfile, parseReviewedProfile, loadDurableReviewedProfile } from "../process/profile.node.ts";
 import { spawnIndependentGuardian } from "../process/guardian-process.ts";
@@ -79,7 +83,7 @@ export function controllerOperationId(
   }));
 }
 
-type StoreFile = Record<string, OperationRecord>;
+type StoreFile = Record<string, OperationRecord & { leaseOwner?: OperationLeaseOwner }>;
 const RECORD_STATES = new Set(["reserved", "running", "unknown", "terminal"]);
 const HEX64 = /^[a-f0-9]{64}$/;
 
@@ -108,15 +112,18 @@ function parseStore(raw: string): { ok: true; store: StoreFile } | { ok: false }
     return { ok: false };
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false };
-  const store: StoreFile = {};
+  const store: StoreFile = Object.create(null);
   for (const [id, rec] of Object.entries(parsed as Record<string, unknown>)) {
-    if (!id || !rec || typeof rec !== "object" || Array.isArray(rec)) return { ok: false };
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id) || !rec || typeof rec !== "object" || Array.isArray(rec)) return { ok: false };
     const row = rec as Record<string, unknown>;
     if (typeof row.fingerprint !== "string" || row.fingerprint.length === 0) return { ok: false };
     if (typeof row.state !== "string" || !RECORD_STATES.has(row.state)) return { ok: false };
+    const leaseOwner = row.leaseOwner === undefined ? undefined : parseOperationLeaseOwner(row.leaseOwner);
+    if (leaseOwner === null) return { ok: false };
     store[id] = {
       fingerprint: row.fingerprint,
       state: row.state as OperationRecord["state"],
+      ...(leaseOwner ? { leaseOwner } : {}),
       ...(parsePrefix(row.prefix) ? { prefix: parsePrefix(row.prefix) } : {}),
     };
   }
@@ -125,24 +132,39 @@ function parseStore(raw: string): { ok: true; store: StoreFile } | { ok: false }
 
 function loadStore(boxRoot: string): { ok: true; store: StoreFile } | { ok: false; reason: "store-corrupt" } {
   const path = storePath(boxRoot);
-  if (!existsSync(path)) return { ok: true, store: {} };
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return { ok: false, reason: "store-corrupt" };
+  const corrupt = () => ({ ok: false as const, reason: "store-corrupt" as const });
+  let fd: number;
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
+  catch (error) {
+    return error && typeof error === "object" && "code" in error && error.code === "ENOENT"
+      ? { ok: true, store: Object.create(null) } : corrupt();
   }
-  const parsed = parseStore(raw);
-  if (!parsed.ok) return { ok: false, reason: "store-corrupt" };
-  return parsed;
+  try {
+    const before = fstatSync(fd);
+    if (!before.isFile() || before.uid !== process.getuid?.() || before.size > 4 * 1024 * 1024) return corrupt();
+    const bytes = Buffer.alloc(before.size + 1);
+    const length = readSync(fd, bytes, 0, bytes.length, 0);
+    const after = fstatSync(fd), current = lstatSync(path);
+    if (length !== before.size || [after, current].some(info => info.dev !== before.dev || info.ino !== before.ino
+      || info.size !== before.size || info.mtimeMs !== before.mtimeMs || info.ctimeMs !== before.ctimeMs) || current.isSymbolicLink()) return corrupt();
+    const parsed = parseStore(bytes.subarray(0, length).toString("utf8"));
+    return parsed.ok ? parsed : corrupt();
+  } catch { return corrupt(); }
+  finally { closeSync(fd); }
 }
 
 function saveStore(boxRoot: string, store: StoreFile): void {
   const path = storePath(boxRoot);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(store)}\n`, { mode: 0o600 });
+  // A crash's unpublished staging file must not block the next explicit recovery
+  // or be followed as a symlink. Failed staging remains non-canonical evidence.
+  const tmp = `${path}.${randomUUID()}.tmp`;
+  const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try { writeFileSync(fd, `${JSON.stringify(store)}\n`); fsyncSync(fd); }
+  finally { closeSync(fd); }
   renameSync(tmp, path);
+  const directory = openSync(dirname(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try { fsyncSync(directory); } finally { closeSync(directory); }
 }
 
 function readOptionalJson(path: string): { present: false } | { present: true; value: unknown } | { present: true; invalid: true } {
@@ -570,7 +592,7 @@ export function liveControlResourcesLayer(
   return Layer.succeed(ControlResources, {
     lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
       const locked = yield* Effect.acquireRelease(
-        Effect.tryPromise(() => acquireExclusiveLock(lockPath(input.boxRoot))),
+        Effect.tryPromise(() => acquireOperationLease(lockPath(input.boxRoot), input.operationId)),
         (acquired) => acquired.ok ? Effect.promise(() => acquired.lock.release()) : Effect.void,
       );
       if (!locked.ok) return { status: "busy" as const } satisfies LeaseDecision;
@@ -585,7 +607,7 @@ export function liveControlResourcesLayer(
         else decision = { status: "busy" };
       }
       if (decision.status !== "acquired") return decision;
-      loaded.store[input.operationId] = { fingerprint: input.fingerprint, state: "running", prefix: existing?.prefix };
+      loaded.store[input.operationId] = { fingerprint: input.fingerprint, state: "running", prefix: existing?.prefix, leaseOwner: locked.lock.owner };
       yield* Effect.try({
         try: () => saveStore(input.boxRoot, loaded.store),
         catch: (error) => error,
@@ -656,4 +678,87 @@ export async function startControlOperation(request: ControllerRequest): Promise
   return Effect.runPromise(
     Effect.scoped(runControllerOperation(request).pipe(Effect.provide(liveControlResourcesLayer()))),
   );
+}
+
+export type OperationRecoveryReport = {
+  process: "operation-recovery";
+  outcome: "clear" | "ready" | "blocked" | "recovered";
+  reason: string | null;
+  locks: Array<OperationLeaseObservation & { name: "controller" | "identity" }>;
+  operations: { running: number; unknown: number; terminal: number };
+  clearedLocks: number;
+  markedUnknown: number;
+  signaled: false;
+  adopted: false;
+  replayAuthorized: false;
+  next: string;
+};
+
+async function operationRecoveryFacts(boxRoot: string, runRoot: string) {
+  const paths = [lockPath(boxRoot), operationLockPath(runRoot)];
+  const snapshots = await Promise.all(paths.map(inspectOperationLease));
+  const loaded = loadStore(boxRoot);
+  const entries = loaded.ok ? Object.entries(loaded.store) : [];
+  const running = entries.filter(([, row]) => row.state === "running" || row.state === "reserved");
+  let reason: string | null = !loaded.ok ? "operation_store_unavailable"
+    : snapshots.some(row => !["missing", "stale"].includes(row.observation.state)) ? "lock_owner_live_or_unproven" : null;
+  if (!reason) for (const [, row] of running) {
+    // Legacy running rows have no identity. Only a proven stale controller
+    // record can justify demoting them; missing files alone are not proof.
+    if (row.leaseOwner ? await operationOwnerState(row.leaseOwner) !== "stale" : snapshots[0]!.observation.state !== "stale") {
+      reason = "operation_owner_live_or_unproven"; break;
+    }
+  }
+  const needsRecovery = snapshots.some(row => row.observation.state === "stale") || running.length > 0;
+  const report: OperationRecoveryReport = {
+    process: "operation-recovery", outcome: reason ? "blocked" : needsRecovery ? "ready" : "clear", reason,
+    locks: snapshots.map((snapshot, index) => ({ name: index === 0 ? "controller" : "identity", ...snapshot.observation })),
+    operations: { running: running.length, unknown: entries.filter(([, row]) => row.state === "unknown").length,
+      terminal: entries.filter(([, row]) => row.state === "terminal").length },
+    clearedLocks: 0, markedUnknown: 0, signaled: false, adopted: false, replayAuthorized: false,
+    next: reason ? "grokbox runtime status --json" : needsRecovery ? "grokbox runtime operation-recovery --confirm"
+      : entries.some(([, row]) => row.state === "unknown") ? "grokbox runtime re-adopt --confirm" : "none",
+  };
+  return { paths, snapshots, loaded, running, report };
+}
+
+/** Metadata-only recovery, not a second adopt executor. Both physical gates
+ * remain owned by this Effect Scope. A partial metadata commit leaves unknown,
+ * never a fabricated attestation or permission to replay business work.
+ */
+export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean }): Promise<OperationRecoveryReport> {
+  const runRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
+  if (!isAbsolute(input.boxRoot) || !isAbsolute(runRoot)) throw new BoxRuntimeError("invalid_usage", "Operation recovery requires absolute local roots.");
+  const program = Effect.gen(function* () {
+    if (input.confirm !== true) return (yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot))).report;
+    const paths = [lockPath(input.boxRoot), operationLockPath(runRoot)];
+    const gate = yield* Effect.acquireRelease(
+      Effect.tryPromise(() => acquireOperationRecoveryGates(paths)),
+      held => held ? Effect.promise(() => held.release()) : Effect.void,
+    );
+    const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
+    if (!gate) return { ...facts.report, outcome: "blocked" as const, reason: "operation_busy", next: "grokbox runtime status --json" };
+    if (facts.report.outcome !== "ready" || !facts.loaded.ok) return facts.report;
+    const store = facts.loaded.store;
+    // Only the short commit/cleanup boundary is uninterruptible: the gate must
+    // not be released while a pending unlink could still affect its successor.
+    return yield* Effect.uninterruptible(Effect.tryPromise(async () => {
+      for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
+      for (const [id, row] of facts.running) store[id] = { ...row, state: "unknown" };
+      if (facts.running.length > 0) saveStore(input.boxRoot, store);
+      for (const snapshot of facts.snapshots) await removeRecoveredOperationLease(snapshot);
+      return { ...facts.report, outcome: "recovered" as const,
+        locks: facts.report.locks.map(row => ({ name: row.name, state: "missing" as const, recoverable: false })),
+        operations: { ...facts.report.operations, running: 0, unknown: facts.report.operations.unknown + facts.running.length },
+        clearedLocks: facts.snapshots.filter(row => row.observation.state === "stale").length,
+        markedUnknown: facts.running.length,
+        next: "grokbox runtime re-adopt --confirm",
+      };
+    }));
+  });
+  try { return await Effect.runPromise(Effect.scoped(program)); }
+  catch {
+    throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery did not complete. Inspect again before any adopt; no Host signal or business replay was requested.",
+      { next: "grokbox runtime operation-recovery --json" });
+  }
 }

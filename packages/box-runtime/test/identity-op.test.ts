@@ -40,7 +40,8 @@ function guard(tree: FakeProcessTree, frozen: Array<{ pid: number }>) {
   return { ok: true as const, release: () => g.close() };
 }
 
-describe("identity operation preflight (zero-signal abort)", () => {
+// These fixtures acquire the production Linux operation lease; pure topology tests remain portable.
+(process.platform === "linux" ? describe : describe.skip)("identity operation preflight (zero-signal abort)", () => {
   test("unknown SHA, duplicate role, lock conflict, and stale marker do not signal", async () => {
     const tree = new FakeProcessTree();
     const wrapper = tree.spawn("wrapper");
@@ -135,7 +136,7 @@ describe("identity operation preflight (zero-signal abort)", () => {
   });
 });
 
-describe("identity operation happy path and fail-closed deactivate", () => {
+(process.platform === "linux" ? describe : describe.skip)("identity operation happy path and fail-closed deactivate", () => {
   test("supervisor-owned replacement, wait old host exit, attest real identity", async () => {
     const tree = new FakeProcessTree();
     const wrapper = tree.spawn("wrapper");
