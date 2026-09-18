@@ -83,7 +83,8 @@ describe("stopPatchedHostCoverage", () => {
     expect(tree.alive(host.pid)).toBe(true);
   });
 
-  test("route attestation unloads patched Host and proves supervisor-owned official replacement", async () => {
+  // These executor fixtures use the real Linux lease; the zero-effect observations above remain portable.
+  (process.platform === "linux" ? test : test.skip)("route attestation unloads patched Host and proves supervisor-owned official replacement", async () => {
     const tree = new FakeProcessTree();
     const wrapper = tree.spawn("wrapper");
     const supervisor = tree.spawn("supervisor", { parent: wrapper });
@@ -119,7 +120,7 @@ describe("stopPatchedHostCoverage", () => {
     expect(result.host?.pid).toBe(gatewayPid);
   });
 
-  test("identity attestation unloads patched Host on a supervisor-owned chain", async () => {
+  (process.platform === "linux" ? test : test.skip)("identity attestation unloads patched Host on a supervisor-owned chain", async () => {
     const tree = new FakeProcessTree();
     const wrapper = tree.spawn("wrapper");
     const supervisor = tree.spawn("supervisor", { parent: wrapper });

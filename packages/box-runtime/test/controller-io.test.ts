@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -383,13 +383,11 @@ describe("unknown controller lease recovery", () => {
   test("unique official direct-launch re-acquires unknown", async () => {
     const live = censusLive(uniqueOfficial, 13);
     expect(recoverUnknownLease(live)).toEqual({ status: "acquired" });
-    expect(await leaseUnknown(await emptyRoot(), live)).toEqual({ status: "acquired" });
   });
 
   test("transient-adopt unique official still re-acquires unknown", async () => {
     const live = censusLive(adoptedOfficial, 13);
     expect(recoverUnknownLease(live)).toEqual({ status: "acquired" });
-    expect(await leaseUnknown(await emptyRoot(), live)).toEqual({ status: "acquired" });
   });
 
   test("gateway mismatch stays uncertain", async () => {
@@ -397,7 +395,6 @@ describe("unknown controller lease recovery", () => {
     const adopted = censusLive(adoptedOfficial, 99);
     expect(recoverUnknownLease(direct)).toEqual({ status: "uncertain" });
     expect(recoverUnknownLease(adopted)).toEqual({ status: "uncertain" });
-    expect(await leaseUnknown(await emptyRoot(), direct)).toEqual({ status: "uncertain" });
   });
 
   test("invalid census stays uncertain", async () => {
@@ -405,7 +402,18 @@ describe("unknown controller lease recovery", () => {
     const duplicateHost = censusLive([...uniqueOfficial, { ...officialHost, pid: 14, start: 103 }], 13);
     expect(recoverUnknownLease(empty)).toEqual({ status: "uncertain" });
     expect(recoverUnknownLease(duplicateHost)).toEqual({ status: "uncertain" });
-    expect(await leaseUnknown(await emptyRoot(), empty)).toEqual({ status: "uncertain" });
+  });
+
+  for (const [name, rows, gateway, status] of [
+    ["direct-launch", uniqueOfficial, 13, "acquired"],
+    ["transient-adopt", adoptedOfficial, 13, "acquired"],
+    ["gateway mismatch", uniqueOfficial, 99, "uncertain"],
+    ["empty census", [], 13, "uncertain"],
+  ] as const) (process.platform === "linux" ? test : test.skip)(`Linux scoped lease applies ${name} recovery decision`, async () => {
+    const root = await emptyRoot();
+    try {
+      expect(await leaseUnknown(root, censusLive([...rows], gateway))).toEqual({ status });
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
 

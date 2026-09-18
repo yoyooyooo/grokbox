@@ -726,9 +726,13 @@ async function operationRecoveryFacts(boxRoot: string, runRoot: string) {
  * remain owned by this Effect Scope. A partial metadata commit leaves unknown,
  * never a fabricated attestation or permission to replay business work.
  */
-export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean }): Promise<OperationRecoveryReport> {
+export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal }): Promise<OperationRecoveryReport> {
   const runRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   if (!isAbsolute(input.boxRoot) || !isAbsolute(runRoot)) throw new BoxRuntimeError("invalid_usage", "Operation recovery requires absolute local roots.");
+  // acquireRelease deliberately masks interruption until resource ownership is
+  // registered. Refuse an already-cancelled caller before that acquisition starts.
+  if (input.signal?.aborted) throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery was cancelled before inspection; no recovery was attempted.",
+    { next: "grokbox runtime operation-recovery --json" });
   const program = Effect.gen(function* () {
     if (input.confirm !== true) return (yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot))).report;
     const paths = [lockPath(input.boxRoot), operationLockPath(runRoot)];
@@ -756,9 +760,11 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
       };
     }));
   });
-  try { return await Effect.runPromise(Effect.scoped(program)); }
+  try { return await Effect.runPromise(Effect.scoped(program), { signal: input.signal }); }
   catch {
-    throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery did not complete. Inspect again before any adopt; no Host signal or business replay was requested.",
+    // Cancellation before commit has no mutation; cancellation during the short
+    // uninterruptible commit may follow a metadata commit. Never promise rollback.
+    throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery did not return a completion receipt; metadata may already have changed. Inspect again before any adopt; no Host signal or business replay was requested.",
       { next: "grokbox runtime operation-recovery --json" });
   }
 }

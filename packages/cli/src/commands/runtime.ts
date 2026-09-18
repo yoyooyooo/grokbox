@@ -386,7 +386,7 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
 export async function runRuntimeOperationRecovery(deps: CliDeps, confirmed: boolean | undefined): Promise<void> {
   try {
     const runtime = store(deps);
-    writeSuccess(deps.stdout, await recoverControllerOperationState({ boxRoot: runtime.root, ephemeralRoot: runtimeRunRoot(deps), confirm: confirmed === true }));
+    writeSuccess(deps.stdout, await recoverControllerOperationState({ boxRoot: runtime.root, ephemeralRoot: runtimeRunRoot(deps), confirm: confirmed === true, signal: deps.signal }));
   } catch (error) { rethrow(error); }
 }
 
