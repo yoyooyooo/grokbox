@@ -2,11 +2,11 @@
 
 ## Status / Goal
 
-**Planned / M2–M4；Spec-only。** [Spec §11](../roadmap/template-ops-automation-spec.md#tickets)。首发验收用户不保持CLI/网页/Bot回合也能持续观测、保存有界现场并收到已配置目标提醒；不包含自动Issue或自动维护。OBS-06拥有证据/存储成套测试，本票拥有服务安装和真实用户旅程。
+**Partial / M2–M4。** daemon已持有通知sender，modeld已持有必要存储维护；collector的持久安装、自启和真实端到端交付仍未完成，不再把整票写为Spec-only。 [Spec §11](../roadmap/template-ops-automation-spec.md#tickets)。首发验收用户不保持CLI/网页/Bot回合也能持续观测、保存有界现场并收到已配置目标提醒；不包含自动Issue或自动维护。OBS-06拥有证据/存储成套测试，本票拥有服务安装和真实用户旅程。
 
 ## Depends-on / Modules
 
-复用T40服务/持久安装；source/drain/notify装配于monitor宿主，storage-maintenance为独立子Scope且不随通知关闭。首发依OBS-00–06、T43–46/T51/T53/T54最小路径；不依T47–49/T52/T55高级/T56。
+复用T40服务/持久安装。当前source/drain由collector拥有，sender由现有daemon拥有，必要storage-maintenance由modeld的子Scope拥有且不随通知关闭；共享既有SQLite/outbox与文件owner，不新建scheduler。collector持久装配仍为本票/T40前置。首发依OBS-00–06、T43–46/T51/T53/T54最小路径；不依T47–49/T52/T55高级/T56。
 
 ## Work
 
@@ -22,7 +22,9 @@ README/运维手册/Skill/包内registry必须与真实可用命令同版本，�
 
 ## Executable acceptance
 
-实现时新增`test/ops-service-lifetime.test.ts`、`test/ops-notice-packed.test.ts`，与OBS-06的`incident-evidence`组共用成套候选。实际发布Node CLI、临时真实进程/DB/HTTP验证安装幂等、调用者退出、独立重启、断网/撤销/GC期间读取、unknown恢复和单实例；不得以detach/父PID或HTTP200代替完整生命周期。
+阶段性真实E2E统一按[LIVE的W0–W7](LIVE-integration-validation.md#window-order)与[执行手册](../maintainers/live-end-to-end.md)执行。先签已实现的单条/自动新告警链，再签无人值守安装和长期容量；后者若未完成，不得将默认自动提醒的发布承诺静默降为手动collector。源码部分已有`ops-automatic-notification.test.ts`、`ops-automatic-cli.test.ts`及`storage-maintenance-lifetime.test.ts`，固定证据见[自动通知回执](../reports/2026-09-19-automatic-notification.md)，不代替安装资格。
+
+持久安装实现时新增`test/ops-service-lifetime.test.ts`、`test/ops-notice-packed.test.ts`，与OBS-06的`incident-evidence`组共用成套候选。实际发布Node CLI、临时真实进程/DB/HTTP验证安装幂等、调用者退出、独立重启、断网/撤销/GC期间读取、unknown恢复和单实例；不得以detach/父PID或HTTP200代替完整生命周期。
 
 原生最小旅程：单目标配对→真实异常→固定revision→Webhook→Bot只提醒→用户随后取证；不自动执行命令/模型诊断/Issue询问。取消/禁用/原生任务清理需exact本次对象和终结证据。真实请求/费用/重启另获批准。
 

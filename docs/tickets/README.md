@@ -6,7 +6,7 @@
 
 ## Cross-worktree live acceptance — continuing ticket
 
-**[LIVE — 现场集成验收唯一索引](LIVE-integration-validation.md)** 集中维护所有已登记维度的现场进度、具体未验项、阻断、下一步和日期回执链接。本页及各来源票只做路由，不复制当前 live 状态。功能实现、离线/打包资格和独立 review 留在来源票；操作方法留 runbook，固定窗口结果留 report。登记不授权部署，单项通过不关闭长期索引。
+**[LIVE — 端到端验收与并行worktree唯一清单](LIVE-integration-validation.md)** 按W0–W7用户旅程覆盖全部已注册命令、三模型六effort格、工具/compact/App、原生提醒、持续运行、状态初始化及清理。实现是否完成与当前候选是否通过分开，[G0–G3/D范围](LIVE-integration-validation.md#release-lanes)避免把未来全部规划绑成无限前置。[追加模板](LIVE-integration-validation.md#worktree-intake)用于离线特性合回v2时登记场景/失效范围；[执行手册](../maintainers/live-end-to-end.md)只保存步骤和窗口模板。状态仍只在LIVE，来源票负责实现/离线/review，报告保留固定证据；登记不授权部署、单项通过不关闭长期索引。
 
 [W17 窗口及证据](LIVE-integration-validation.md#window-20260917)和 [Host reapply 修复对应的重启条目](LIVE-integration-validation.md#live-modeld-restart)均从该索引进入；修复实现与离线证明归 [FIX — Host lifecycle reapply](FIX-host-lifecycle-reapply.md)。
 
@@ -166,7 +166,7 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 <a id="incident-evidence"></a>
 ## 故障证据与有界存储 — OBS-00–06（2026-09-18）
 
-**全部Planned / Spec-only，不重开T41或modeld已完成切片。** 唯一合同为[Template Ops Spec](../roadmap/template-ops-automation-spec.md)，[本轮决策](../decisions/2026-09-18-observable-native-bot-ops.md)固定默认提醒/受托自主/有界保留。新编号只承担本轮增量；source/tests决定实现事实，LIVE决定现场资格。
+**已分段实现证据合同、intake、固定现场/视图、journal与SQLite保留、J1及维护owner；不是全部Spec-only，也不是全部完成。** 完整跨owner配额、安全退役和现场稳态仍按各来源票关闭，不重开T41或modeld已证切片。 唯一合同为[Template Ops Spec](../roadmap/template-ops-automation-spec.md)，[本轮决策](../decisions/2026-09-18-observable-native-bot-ops.md)固定默认提醒/受托自主/有界保留。新编号只承担本轮增量；source/tests决定实现事实，LIVE决定现场资格。
 
 | 阶段 / Ticket | 唯一职责 | 前置 / 出口 |
 |---|---|---|

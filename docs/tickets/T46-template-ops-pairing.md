@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial：私有凭据准备/撤销与实际CLI已实现；接收者资格、激活投递、独立模板仍未完成，M3未关闭。** [Spec §10](../roadmap/template-ops-automation-spec.md#surface)。提供默认告警只提醒的接收流程，同时保留通用Bot受托后的完整自主操作能力。新增`grokbox-ledger`作为独立可分发模板，不要求用户安装多个Bot。
+**Partial：私有配对/撤销、接收者预检、显式发送、未来提醒授权与daemon sender已集成；真实原生接收、collector持久安装和独立模板仍未完成，M3未关闭。** [Spec §10](../roadmap/template-ops-automation-spec.md#surface)。提供默认告警只提醒的接收流程，同时保留通用Bot受托后的完整自主操作能力。新增`grokbox-ledger`作为独立可分发模板，不要求用户安装多个Bot。
 
 ## Depends-on / Modules
 
@@ -15,6 +15,10 @@
 采用单一私有原子capsule而非分离secret与metadata的部分写入：`state/ops-pairing/bindings.json`及固定暂存各64KiB、最多8槽、0600文件。查询不领取原生凭据、不创建owner，诊断GC不删除它。unknown不能用新operation绕过；并发unbind递增revision，使晚到credential不能重新发布。旧slot新绑定要求显式unbound revision，不以清目录恢复操作。
 
 新`ops-target-pairing.test.ts`11项，实际SQLite/provision/config/私有文件、并发与真实子进程SIGKILL；CLI测试覆盖预览、领取、重复操作与打包Node状态/解绑。`ops-pairing`组合106 pass，最新v2组合全仓2568 pass/19 skip/0 fail。准确边界见[固定回执](../reports/2026-09-18-private-target-pairing.md)。这不关闭真实原生HTTP、接收者model/行为/成本、完整备份恢复fence、首次初始化故障恢复、远端key撤销或物理安全擦除资格。
+
+## 激活与执行边界
+
+`ops targets activate`在原outbox的accepted测试记录、当前绑定/模型/所有权和操作人明确已见提醒的声明齐备后，持久授予未来work权限；不启用Routine、不领新key、不启动collector、不补旧积压。sender复用T45单attempt程序，模型/代际变化停发，disable/unbind撤销尚未发送的资格。人工声明与程序观察分开，HTTP200不是用户已读。实现证据见[自动通知回执](../reports/2026-09-19-automatic-notification.md)，当前真实结果仅看[LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines)和[重新资格旅程](LIVE-integration-validation.md#live-notice-requalification)。
 
 ## Work
 

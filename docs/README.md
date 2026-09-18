@@ -33,7 +33,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged. [HCR-01–04](tickets/README.md#host-capability-recovery)实现必需桥能力观察、受控同源配方升级和显式操作元数据恢复；[离线回执](reports/2026-09-18-host-capability-recovery-offline.md)保留工具版本、独立review与未部署边界，现场只看LIVE。
 
-- [原生 Bot 运维、故障证据与有界存储 Spec](roadmap/template-ops-automation-spec.md)：[OBS-00–06](tickets/README.md#incident-evidence)补最低证据、未知/无STEP入口、固定现场、分层脱敏、容量稳态与安全退役；T43–T56收口为默认单目标提醒、原生Routine及后续受托自主/维护。**接受设计，尚未交付；自动Issue退出，T52/T56延期。** [本轮决策](decisions/2026-09-18-observable-native-bot-ops.md)区分默认提醒与自主目标，[操作手册](maintainers/template-ops-automation.md)区分当前命令和规划。通知配对不是诊断/维护授权，关闭通知不关闭必要存储维护。
+- [原生 Bot 运维、故障证据与有界存储 Spec](roadmap/template-ops-automation-spec.md)：[OBS-00–06](tickets/README.md#incident-evidence)补最低证据、未知/无STEP入口、固定现场、分层脱敏、容量稳态与安全退役；T43–T56收口为默认单目标提醒、原生Routine及后续受托自主/维护。**证据/存储、Routine、配对、显式发送、未来通知授权与daemon sender已有分段实现；collector持久安装、完整容量与真实原生验收仍未闭合。自动Issue退出，T52/T56延期。** [本轮决策](decisions/2026-09-18-observable-native-bot-ops.md)区分默认提醒与自主目标，[操作手册](maintainers/template-ops-automation.md)区分当前命令和规划。通知配对不是诊断/维护授权，关闭通知不关闭必要存储维护。
 
 - [统一配置与命令面重建 Spec](roadmap/configuration-rebuild-spec.md)：AH-99/AH-100 + T57–T60 的两文件入口、config v2、canonical durable/alias、单一 writer、作用域与迁移合同。取代 ops-policy 第三配置与旧通用命令草案；运维业务仍归 Template Ops Spec。[设计取舍](decisions/2026-09-17-unified-configuration-rebuild.md)。配置实现与隔离验证见操作指南；现役迁移和 Reset 验收另归 LIVE 队列。
 
@@ -41,7 +41,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 ## Cross-worktree live acceptance
 
-**[LIVE — 现场集成验收唯一索引](tickets/LIVE-integration-validation.md)** 集中回答各维度已经验证什么、还缺什么、被什么阻断以及下一步。当前 live 进度只更新这张表；来源 Spec/Ticket 保留功能合同与实现/离线/review，maintainer 文档保留操作方法，日期 report 保留当次固定制品与原始结论，均回链对应稳定条目。默认验证已合入 `feat/box-runtime-v2` 的固定组合制品；索引不是重启、模型消费或发布授权，部分现场证据不豁免其他门禁。
+**[LIVE — 端到端验收与并行worktree唯一清单](tickets/LIVE-integration-validation.md)** 按候选/安装、Bot与模型六格、工具/compact/App、原生提醒、持久运行、已实现状态控制、清理与发布声明组织验收。实现状态、本候选现场结果、历史证据与被选发布范围分别表达；[精确命令覆盖](tickets/LIVE-integration-validation.md#command-coverage)防止漏掉已有入口，[追加约定](tickets/LIVE-integration-validation.md#worktree-intake)供并行开发登记未来现场判据。**[Live E2E执行手册](maintainers/live-end-to-end.md)**拥有窗口记录、模型/effort步骤、Webhook与恢复/清理方法，不另存当前结果。实际live状态只更新LIVE；来源票保留实现/离线/review，日期报告保留当次固定制品与结果。默认运行已合入v2的固定候选，源码合入不是部署，验证通过不是npm/市场发布授权。
 
 ## Roadmap
 

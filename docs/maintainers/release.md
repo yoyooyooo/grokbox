@@ -50,7 +50,7 @@ release proves the OIDC exchange end to end.
 
 ## Cross-worktree native/live acceptance
 
-Current live progress, missing proof, blockers and receipt links are maintained **only** in [`LIVE — the integration acceptance index`](../tickets/LIVE-integration-validation.md). This runbook owns execution procedure, not a second status table. Feature tickets own semantics, implementation and independent review; dated reports own the evidence for each actual window. npm release/tag authority remains as described above.
+Current live progress, missing proof, blockers and receipt links are maintained **only** in [`LIVE — the end-to-end acceptance checklist`](../tickets/LIVE-integration-validation.md). Its [release lanes](../tickets/LIVE-integration-validation.md#release-lanes) distinguish core use, default unattended reminders, selected extensions and deferred scope. The [live E2E runbook](live-end-to-end.md) supplies candidate/object/budget records, the six provider-effort cells, real compact/tool oracles and the Webhook-to-reminder journey; it is not a second status table. Feature tickets own semantics, implementation and independent review; dated reports own immutable evidence. Coverage and supported-model claims must match the exact runtime and tested cells. npm release/tag authority remains separate.
 
 <a id="live-window-procedure"></a>
 ### Run one bounded integration window
@@ -70,15 +70,21 @@ Specific safety and operation contracts remain in [configuration](../configurati
 ```bash
 bun install --frozen-lockfile
 bun run check
-bun run shim:install
-grokbox --version
-grokbox doctor
+bun run check:publication
+bun test test/live-e2e-checklist.test.ts test/modeld-core-verifier.test.ts
 ```
 
-The source-backed global shim proves the current checkout on this machine. The
-package test separately proves the Node-only tarball. The manual `Release
-candidate artifact` workflow produces a downloadable tarball without publishing
-it.
+Use the pinned package manager and the fixed candidate. The checklist tests are
+structure and command-routing checks, not live proof. Install the resulting
+Node-only tarball into an isolated prefix and inspect its `grokbox`/`gbox`, native
+dependencies and bundled Skills before any production adoption. The manual
+`Release candidate artifact` workflow produces a tarball without publishing it.
+
+Do not include `shim:install` in an otherwise read-only candidate gate: it
+changes the everyday command entry. A source-backed global shim, migration and
+Host/modeld/daemon adoption belong to the separately coordinated live window,
+after runnable old artifacts and configuration recovery are preserved. Do not
+let concurrent worktree merges change the next CLI invocation mid-window.
 
 ## Prepare and publish
 
