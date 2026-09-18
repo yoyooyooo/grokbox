@@ -1,0 +1,20 @@
+import { isAbsolute, basename } from "node:path";
+import { effectiveOps } from "@grokbox/runtime-kernel/config";
+import { pairingPlan, pairingTarget } from "@grokbox/runtime-kernel/observation";
+import { openConfigStore } from "../../src/internal/io/config-store.node.ts";
+import { rootConfigLayout } from "../../src/internal/io/config-layout.node.ts";
+import { openMonitorStore } from "../../src/internal/io/monitor-store.node.ts";
+import { openRoutineProvisionStore } from "../../src/internal/io/routine-provision.node.ts";
+import { openOpsBindings } from "../../src/internal/io/ops-bindings.node.ts";
+import { projectNativeRoutines } from "@grokbox/runtime-kernel/routines";
+
+const root = process.argv[2];
+if (!root || !isAbsolute(root) || !basename(root).startsWith("ops-pairing-test-")) throw Error("owned_pairing_fixture_required");
+const target = pairingTarget(effectiveOps((await openConfigStore(rootConfigLayout(root)).read()).document.ops), "default");
+const binding = await openRoutineProvisionStore(root).binding(target.agentId, target.routineKey);
+if (!binding) throw Error("owned_binding_required");
+const command = { action: "bind" as const, alias: "default", routineId: binding.routineId, expectedRevision: binding.revision, operationId: "bind-one", confirmed: true };
+const catalog = projectNativeRoutines(target.agentId, [{ id: binding.routineId, name: "Ops", prompt: "PRIVATE_PAIRING_PROMPT", trigger: { type: "webhook" }, isEnabled: false, createdAt: 100 }]);
+const plan = pairingPlan(command, target, await openMonitorStore(root).notificationScope(), { catalog, generation: "a".repeat(64) });
+await openOpsBindings(root).reserve(plan, 0, async () => undefined);
+process.kill(process.pid, "SIGKILL");

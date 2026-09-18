@@ -45,6 +45,15 @@ export class NativeRoutineProvision extends Context.Service<NativeRoutineProvisi
   readonly write: (agentId: string, blueprint: RoutineBlueprint, nativeId: string | null) => Effect.Effect<ProvisionObservation, RoutineProvisionError>;
 }>()("grokbox/NativeRoutineProvision") {}
 
+export class OpsTargetPairing extends Context.Service<OpsTargetPairing, {
+  readonly prior: (alias: string) => Effect.Effect<import("./observation.ts").PairingRecord | null, unknown>;
+  readonly plan: (command: import("./observation.ts").PairingCommand) => Effect.Effect<import("./observation.ts").PairingPlan, unknown>;
+  readonly reserve: (plan: import("./observation.ts").PairingPlan, expectedRevision: number) => Effect.Effect<{ dispatch: boolean; record: import("./observation.ts").PairingRecord }, unknown>;
+  readonly credential: (plan: import("./observation.ts").PairingPlan) => Effect.Effect<unknown, unknown>;
+  readonly recheck: (plan: import("./observation.ts").PairingPlan) => Effect.Effect<void, unknown>;
+  readonly finish: (record: import("./observation.ts").PairingRecord, credential: import("./observation.ts").PairingCredential) => Effect.Effect<import("./observation.ts").PairingRecord, unknown>;
+}>()("grokbox/OpsTargetPairing") {}
+
 export class OpsNotification extends Context.Service<OpsNotification, {
   readonly attempted: (workId: string) => Effect.Effect<boolean, unknown>;
   readonly route: () => Effect.Effect<import("./observation.ts").NotificationRoute, unknown>;

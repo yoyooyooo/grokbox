@@ -11,6 +11,7 @@ import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout } from "../io/config-layout.node.ts";
 import { acquireConfigurationLease } from "../io/config-lock.node.ts";
 import { readStorageConfiguration } from "../io/storage-configuration.node.ts";
+import { openOpsBindings } from "../io/ops-bindings.node.ts";
 
 /** T46 supplies a genuinely paired native driver. The default is unavailable;
  * the CLI cannot turn a URL, event payload or effective config into this port.
@@ -95,7 +96,8 @@ export async function observeOpsNotification(input: { durableRoot: string; workI
   catch { route = { state: "unavailable", reason: "configuration_unavailable" }; }
   const store = openMonitorStore(input.durableRoot);
   const delivery = input.workId ? await store.notificationDelivery(input.workId) : await store.notificationWork(100);
-  return { route, delivery, coverage: input.workId ? { kind: "exact_work" } : { kind: "most_recent_window", limit: 100, complete: false },
+  const pairing = await openOpsBindings(input.durableRoot).status(route.state === "selected" && route.target ? route.target.alias : undefined);
+  return { route, delivery, pairing, coverage: input.workId ? { kind: "exact_work" } : { kind: "most_recent_window", limit: 100, complete: false },
     nativeTransport: "unavailable", binding: "not_checked", automaticRetry: false,
     initialized: false, botReport: "not_observed", userRead: "not_observed" };
 }

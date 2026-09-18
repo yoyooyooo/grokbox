@@ -63,6 +63,21 @@ Reconcile performs native reads and a local receipt update, never a new creation
 
 The ledger has a 2 MiB main-file limit and 256-operation limit per installation. Its unknown records are not diagnostic cache; automatic GC and replay-safe retirement are not provided. Capacity, damaged/missing existing ledgers, or interrupted first initialization block new provisioning. Never delete the ledger to make a command work. `runtime storage status` reports this owner separately. Remote use requires the matching daemon capability, not a client-local ledger paired with a remote Gateway.
 
+## Prepare a local notification target pairing
+
+After explicitly provisioning a disabled managed Webhook Routine and configuring `ops.targets.<alias>`, inspect and prepare its local pairing:
+
+```bash
+grokbox ops targets list --json
+grokbox ops targets bind <alias> --routine-id <id> --expect-revision <routine-revision> --operation-id <stable-id> --preview --json
+grokbox ops targets bind <alias> --routine-id <id> --expect-revision <routine-revision> --operation-id <stable-id> --confirm --json
+grokbox ops targets show <alias> --json
+```
+
+Preview reads only. Confirm authorizes a native credential lookup that may mint a key, not a Routine enable, model operation or notification. The key and endpoint stay in a bounded, private installation capsule; ordinary output never includes them. `prepared` still has `deliveryAuthorized=false`: receiver model/behavior, endpoint origin and HTTP qualification are separate unfinished gates. Do not claim a working alert subscription or enable the Routine to compensate.
+
+Unknown enrollment must not be retried under a new operation ID. Queries never retrieve another native key. Local revocation uses `ops targets disable|unbind <alias> --expect-binding-revision <n> --confirm --json`; unbind removes the current local credential reference, not the native key or Routine, and is not secure media erasure. Re-pairing an explicitly unbound slot requires its current binding revision and a new operation ID. These commands are Box-local; there is no remote/daemon pairing capability in this phase.
+
 ## Current boundaries
 
 Multi-entry `--routines-from`, Webhook credential pairing, invoke and native run/outcome tracking are not implemented by these commands; `routines outcome` above is only the provision ledger receipt. Do not invent their flags, call `runAgentAutomationNow` as a substitute for a Webhook, retrieve credentials just to inspect a Routine, or send a synthetic Human message to simulate a native event. Native credential retrieval may mint a secret and belongs to a separately authorized pairing flow.

@@ -10,6 +10,8 @@ import { boundedGatewayBody } from "../packages/cli/src/gateway-automation.ts";
 import { spawn } from "node:child_process";
 import { ensurePackedCli } from "./packed-cli-fixture.ts";
 import { defaultConfig, validateConfig } from "../packages/runtime-kernel/src/config.ts";
+import { nativeAutomationIdentity } from "../packages/runtime-kernel/src/observation.ts";
+import { openMonitorStore } from "../packages/box-runtime/src/internal/io/monitor-store.node.ts";
 
 const AGENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", TOKEN = "fixture-routine-auth";
 export async function routineFixture(mode: "local" | "daemon" = "local") {
@@ -26,6 +28,10 @@ export async function routineFixture(mode: "local" | "daemon" = "local") {
     if (path === "/api/listAgents") return Response.json([]);
     if (path === "/api/getAgentAutomations") return badRead ? new Response("PRIVATE_NATIVE_FAILURE") : Response.json(rows);
     if (body.id !== AGENT) return new Response("bad identity", { status: 400 });
+    if (path === "/api/getAutomationWebhookCredential") {
+      if (!rows.some(r => r.id === body.automationId)) return new Response("not found", { status: 404 });
+      return Response.json({ key: "PRIVATE_PAIR_KEY", url: `https://fixture.invalid/automations/webhook/${nativeAutomationIdentity(AGENT, String(body.automationId))}` });
+    }
     if (path === "/api/createAgentAutomation" || path === "/api/updateAgentAutomation") {
       const spec = body.spec as { name: string; prompt: string; trigger: { type: string }; isEnabled: boolean };
       const id = path === "/api/createAgentAutomation" ? `created-${calls.filter(c => c.path === path).length}` : String(body.automationId);
@@ -48,6 +54,7 @@ export async function routineFixture(mode: "local" | "daemon" = "local") {
   if (mode === "daemon") daemon = await startDaemonHost(deps, daemonSocket);
   return { directory, deps, calls, daemonSocket,
     run: (args: string[]) => captureCli(["agents", "routines", ...args, "--json"], { ...commandDeps, transport: mode }),
+    runPairing: (args: string[]) => captureCli(["ops", "targets", ...args, "--json"], { ...commandDeps, transport: "local" }),
     rows: () => rows, loseMutation: (value = true) => { loseMutation = value; }, breakRead: () => { badRead = true; },
     close: async () => { await daemon?.close(); server.stop(true); await rm(directory, { recursive: true, force: true }); } };
 }
@@ -185,6 +192,36 @@ for (const mode of ["local", "daemon"] as const) test(`${mode}: lost provision A
     expect(f.calls.every(c => !/Webhook|runAgentAutomationNow|sendPrompt/.test(c.path))).toBe(true);
   } finally { await f.close(); }
 });
+
+test("target pairing CLI previews without key fetch, binds once, and packed Node reads/unbinds without native side effects", async () => {
+  const f = await routineFixture(); try {
+    const file = join(f.directory, "pair-routine.json");
+    await writeFile(file, JSON.stringify({ schemaVersion: 1, key: "notice", name: "Pair fixture", prompt: "PRIVATE_PAIR_PROMPT", trigger: { type: "webhook" } }), { mode: 0o600 });
+    const routine = result(await f.run(["apply", AGENT, "--from", file, "--operation-id", "make-pair", "--confirm"]));
+    const doc = validateConfig({ ...defaultConfig(), ops: { enabled: false, notifications: { mode: "off" }, targets: { default: { agentId: AGENT, routineKey: "notice" } } } });
+    await writeFile(join(f.deps.boxRuntimeRoot, "config.json"), JSON.stringify(doc), { mode: 0o600 });
+    await openMonitorStore(f.deps.boxRuntimeRoot).initialize();
+    const args = ["bind", "default", "--routine-id", routine.routineId, "--expect-revision", routine.revision, "--operation-id", "pair-once"];
+    expect(result(await f.runPairing([...args, "--preview"]))).toMatchObject({ state: "preview", credentialRequested: false });
+    expect(f.calls.filter(c => c.path.includes("Credential"))).toHaveLength(0);
+    const bound = result(await f.runPairing([...args, "--confirm"]));
+    expect(bound).toMatchObject({ state: "prepared", deliveryAuthorized: false, credential: "stored_private" });
+    const calls = f.calls.length; expect(result(await f.runPairing([...args, "--confirm"]))).toEqual(bound); expect(f.calls).toHaveLength(calls);
+    const entry = ensurePackedCli();
+    const packed = async (args: string[]) => {
+      const child = spawn("node", [entry, "ops", "targets", ...args, "--json"], { cwd: f.directory,
+        env: { PATH: process.env.PATH, HOME: f.directory, GROKBOX_CONFIG_DIR: f.deps.configDir, GROKBOX_BOX_RUNTIME_ROOT: f.deps.boxRuntimeRoot },
+        stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
+      let out = "", err = ""; child.stdout.on("data", c => out += c); child.stderr.on("data", c => err += c);
+      const exit = await new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
+      expect(exit, err).toBe(0); expect(out + err).not.toContain("PRIVATE_PAIR_KEY"); expect(out + err).not.toContain("fixture.invalid");
+      return JSON.parse(out).data;
+    };
+    expect(await packed(["show", "default"])).toMatchObject({ state: "observed", deliveryAuthorized: false });
+    expect(await packed(["unbind", "default", "--expect-binding-revision", "1", "--confirm"])).toMatchObject({ state: "unbound", remoteCredentialRevoked: false });
+    expect(f.calls).toHaveLength(calls); expect(f.rows().find(r => r.id === routine.routineId)?.isEnabled).toBe(false);
+  } finally { await f.close(); }
+}, 20000);
 
 test("stream body is bounded before JSON parsing, including missing length and invalid UTF-8", async () => {
   let cancelled = 0, sent = 0;
