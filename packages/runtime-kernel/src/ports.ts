@@ -1,4 +1,5 @@
 import { Context, Effect, Stream } from "effect";
+import type { EvidenceView } from "./observation.ts";
 import type { Scope } from "effect/Scope";
 import type { ModelsFile, DesiredFile } from "./selection.ts";
 import type { ConfigChange, ConfigCommitReceipt } from "./internal/commands/config.ts";
@@ -29,6 +30,14 @@ export class ConfigurationWrite extends Context.Service<ConfigurationWrite, {
   readonly saveModels: (file: ModelsFile) => Effect.Effect<{ configRevision: string }, unknown>;
   readonly saveDesired: (file: DesiredFile) => Effect.Effect<{ configRevision: string }, unknown>;
 }>()("grokbox/ConfigurationWrite") {}
+
+export class EvidenceRead extends Context.Service<EvidenceRead, {
+  readonly read: (query: { incidentId: string; revision?: number; view: EvidenceView }) => Effect.Effect<unknown, unknown>;
+}>()("grokbox/EvidenceRead") {}
+export class EvidenceStore extends Context.Service<EvidenceStore, {
+  readonly capture: (incidentId: string, nowMs: number) => Effect.Effect<unknown, unknown>;
+  readonly lease: (request: { incidentId: string; revision: number; durationMs: number; nowMs: number }) => Effect.Effect<unknown, unknown>;
+}>()("grokbox/EvidenceStore") {}
 
 /** Process-local controls from the STEP owner, never decoded from caller JSON.
  * Only the source coordinator consumes retries; the gate owns the total budget. */

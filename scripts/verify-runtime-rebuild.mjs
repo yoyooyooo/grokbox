@@ -20,6 +20,12 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "observation-evidence": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/runtime-kernel/test/observation-evidence-contract.test.ts", "packages/runtime-kernel/test/observation-evidence-privacy.test.ts", "packages/box-runtime/test/incident-evidence-store.test.ts", "packages/box-runtime/test/observation-storage-pressure.test.ts", "packages/box-runtime/test/monitor-scheduling-review.test.ts", "test/monitor-incident-cli.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/monitor-migration-review.test.ts", "packages/box-runtime/test/monitor-crash-node.test.ts", "test/incident-observability.test.ts", "test/publication-privacy.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"], ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "context-reuse": [
     ["bun", "run", "build"],
     ["bun", "test", "packages/box-runtime/test/context-reuse.test.ts", "packages/box-runtime/test/context-maintenance-summary.test.ts", "packages/box-runtime/test/context-maintenance-packed.test.ts"],
@@ -178,6 +184,7 @@ for (const argv of mapped) {
 }
 
 const SUPPORTS = {
+  "observation-evidence": ["unknown-tray-and-no-step-failure-intake", "immutable-revision-node-cli-read", "public-structure-without-private-identities", "bounded-revisions-and-shared-leases", "sqlite-file-growth-guard-and-retention-resume", "slow-rpc-independent-local-drain", "explicit-v2-migration-no-backlog-wake", "read-only-storage-status", "untracked-source-privacy-scan"],
   "context-reuse": ["pinned-pi-controlled-extraction", "independent-cut-and-usage-goldens", "untruncated-summary-input", "real-sdk-request-owner", "packed-host-process-reopen"],
   "context-policy": ["strict-config-v3", "explicit-v2-migration", "local-window-and-output-reserve", "per-model-per-bot-policy-revision", "unknown-usage-local-measurement"],
   "context-owner": ["pre-main-http-maintenance", "native-facade-accept-fence", "pending-owner-cancellation", "late-root-and-checkpoint-faults", "shared-source-cancellation", "durable-manual-noop", "confirmed-cli-control"],
@@ -205,6 +212,7 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "observation-evidence": "production-collector-and-sqlite-writers-real-temporary-databases-files-and-packaged-node-cli-owned-rpc-and-native-event-fixtures-no-live-mutations",
   "context-reuse": "selected-pi-source-extraction-real-sdk-local-http-and-packaged-host-no-global-pi-or-external-provider",
   "context-policy": "pure-policy-real-temporary-config-files-and-explicit-migrator",
   "context-owner": "production-effect-program-and-host-facade-owned-native-methods-real-unix-http-leveldb",
@@ -232,6 +240,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "observation-evidence": ["all-native-boundary-instrumentation", "installation-wide-diagnostic-budget", "process-journal-rotation", "execution-safety-state-retirement", "native-webhook-pairing-and-bot-delivery", "persistent-service-installation", "independent-review", "live-adoption"],
   "context-reuse": ["live-native-context-adoption", "real-provider-summary-quality", "independent-review", "pi-ai-backend-adoption"],
   "context-policy": ["live-config-migration-and-adoption", "arbitrary-provider-tokenizer-equivalence", "native-prompt-delivery"],
   "context-owner": ["loaded-native-abi", "actual-native-store-checkpoint-restart", "original-App-activity", "independent-review"],

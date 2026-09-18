@@ -21,8 +21,8 @@ function fixture(body: (root: string) => void) {
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 function commit(root: string) { git(root, "add", "--all"); git(root, "commit", "-q", "-m", "fixture"); }
-function scan(root: string, history = false) {
-  const ran = spawnSync(process.execPath, [scanner, "--root", root, ...(history ? ["--history", "--ref", "HEAD"] : [])], { encoding: "utf8", timeout: 20_000 });
+function scan(root: string, history = false, includeUntracked = false) {
+  const ran = spawnSync(process.execPath, [scanner, "--root", root, ...(history ? ["--history", "--ref", "HEAD"] : []), ...(includeUntracked ? ["--include-untracked"] : [])], { encoding: "utf8", timeout: 20_000 });
   expect(ran.stderr).toBe("");
   return { status: ran.status, body: JSON.parse(ran.stdout), raw: ran.stdout };
 }
@@ -75,6 +75,19 @@ test("publication guard rejects private endpoints and non-anonymized commit meta
   expect(rules).toContain("non-anonymized-commit-email");
   expect(result.raw).not.toContain(endpoint);
   expect(result.raw).not.toContain("fixture@private.example");
+}));
+
+test("untracked source is scanned explicitly without changing the Git index", () => fixture((root) => {
+  writeFileSync(join(root, "README.md"), "public\n"); commit(root);
+  const before = git(root, "status", "--porcelain");
+  const endpoint = "https://fixture." + "tail" + "abcdef" + ".ts.net/";
+  writeFileSync(join(root, "new.md"), endpoint);
+  expect(scan(root).status).toBe(0);
+  const result = scan(root, false, true);
+  expect(result.status).toBe(1); expect(result.body).toMatchObject({ includesUntracked: true, blobs: 2 });
+  expect(result.raw).not.toContain(endpoint);
+  expect(git(root, "diff", "--cached", "--name-only")).toBe("");
+  expect(git(root, "status", "--porcelain")).toBe("?? new.md"); expect(before).toBe("");
 }));
 
 test("publication guard fails closed for a missing history revision", () => fixture((root) => {

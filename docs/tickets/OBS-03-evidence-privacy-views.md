@@ -1,6 +1,12 @@
 # OBS-03 — 保留诊断价值的分层脱敏
 
-**Status：Planned / Spec-only；M1。** Contract：[Spec §5.3](../roadmap/template-ops-automation-spec.md#privacy)。依OBS-00；可与OBS-01/02并行定义，最终在OBS-02真实采集/导出与T45发送边界接线。
+**Status：Partial implementation / local public-view proof；M1未关闭。** Contract：[Spec §5.3](../roadmap/template-ops-automation-spec.md#privacy)。依OBS-00；可与OBS-01/02并行定义，最终在OBS-02真实采集/导出与T45发送边界接线。
+
+## 当前切片
+
+已实现安全公共摘要、报告内稳定身份别名、无原始正文/真实ID/私有digest的输出与本地bot-notice材料；结构非干扰/getter/coercion反例见`packages/runtime-kernel/test/observation-evidence-privacy.test.ts`，实际stdout/Node取证见`test/monitor-incident-cli.test.ts`。发布扫描增加显式include-untracked模式，可覆盖未提交新增源文件且不改变Git索引。
+
+此处bot-diagnostic仍只是本地显式读取视图，不是已完成目标配对和数据授权的远端接口。真实供应商去向、原生caller/工具权限、实际Webhook字节及完整公开契约catalog仍需T43/T45/T55和本票后续验证，不能拿本地脱敏测试当外发许可。[首片范围](../reports/2026-09-18-observation-evidence-first-slice.md) · [存储/检查增量](../reports/2026-09-18-observation-storage-followup.md)。
 
 ## Goal / Modules
 

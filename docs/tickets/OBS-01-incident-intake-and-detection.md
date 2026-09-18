@@ -1,6 +1,12 @@
 # OBS-01 — 通用故障入口与主动未收束检测
 
-**Status：Planned / Spec-only；M1。** Contract：[Spec §3–4](../roadmap/template-ops-automation-spec.md#chain)。依[OBS-00](OBS-00-evidence-contracts.md)；复用T41索引和共享读取，T44负责HSO接线，CONT-01负责归属规则，不建立并行collector。
+**Status：Partial implementation / local intake and scheduling proof；M1未关闭。** Contract：[Spec §3–4](../roadmap/template-ops-automation-spec.md#chain)。依[OBS-00](OBS-00-evidence-contracts.md)；复用T41索引和共享读取，T44负责HSO接线，CONT-01负责归属规则，不建立并行collector。
+
+## 当前切片
+
+未知原生error tray、无STEP原生run failed与unsupported source gap已进入同一incident/固定证据/本地待通知流程。历史失败可索引，但超过通知新鲜窗口不生成新的Bot唤醒工作；压力丢弃只推进有gap的消费水位，不伪造故障现场。journal drain与远端采样已在同一Effect宿主分离，挂起RPC不会挡住本地失败。
+
+实际证明在`observation-evidence-contract.test.ts`、`incident-evidence-store.test.ts`、`observation-storage-pressure.test.ts`和`monitor-scheduling-review.test.ts`。主动停滞检测仅接受显式source-liveness输入，尚未接真实健康source到生产周期，不能宣称所有卡住任务会自动发现。全部来源/动态目标、原生资格、prepare异步化和独立review仍未闭合。限定结果见[首片](../reports/2026-09-18-observation-evidence-first-slice.md)及[增量](../reports/2026-09-18-observation-storage-followup.md)。
 
 ## Goal / Modules
 

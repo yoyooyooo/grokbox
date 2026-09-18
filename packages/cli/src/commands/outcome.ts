@@ -39,7 +39,9 @@ export async function runRuntimeIncident(deps: CliDeps, step: string, raw: { age
   const read = await observeRuntimeEvents({ durableRoot, runRoot: deps.env.GROKBOX_RUN_ROOT, source: "host", selector: { agentId, stepId: selectedStep } });
   const writerHealth = await observeJournalHealth(read.root);
   const gap = read.state !== "present" ? read.state : read.truncated ? "truncated" : read.window?.selectorMatched === false ? "not_in_retained_window" : undefined;
-  const result = projectSendOutcome({ agentId, stepId: selectedStep, entries: [], alerts: [], truncated: false, runtimeEvents: read.events, runtimeGap: gap });
+  const result = projectSendOutcome({ agentId, stepId: selectedStep, entries: [], alerts: [], truncated: false, runtimeEvents: read.events, runtimeGap: gap,
+    runtimeEvidence: { root: read.root, coverage: read.coverage, lookup: read.lookup, retention: read.retention, readFailure: read.readFailure,
+      health: await readJournalHealth(read.root) } });
   writeSuccess(deps.stdout, { ...result, evidence: { ...result.evidence,
     transcript: "not_checked", alerts: "not_checked", runtimeRoot: read.root, runtimeWindow: read.window ?? null, writerHealth },
     events: read.events, queryMode: "offline_step", replayAuthorized: false,

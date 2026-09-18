@@ -61,10 +61,11 @@ function checkText(path, bytes, oid, commit = false) {
 }
 try {
   const { values } = parseArgs({ options: {
-    root: { type: "string" }, history: { type: "boolean" }, ref: { type: "string" },
+    root: { type: "string" }, history: { type: "boolean" }, ref: { type: "string" }, "include-untracked": { type: "boolean" },
   }, strict: true, allowPositionals: false });
   root = realpathSync(values.root ?? process.cwd());
   if (values.ref && !values.history) throw new Error("ref_requires_history");
+  if (values.history && values["include-untracked"]) throw new Error("untracked_requires_working_tree");
   if (values.history) {
     if (git(["rev-parse", "--is-shallow-repository"]).toString().trim() === "true") throw new Error("incomplete_shallow_history");
     const head = git(["rev-parse", "--verify", "--end-of-options", `${values.ref ?? "HEAD"}^{commit}`]).toString().trim();
@@ -89,7 +90,7 @@ try {
     }
     if (offset !== data.length) throw new Error("unexpected_object_data");
   } else {
-    const paths = git(["ls-files", "-z"]).toString().split("\0").filter(Boolean);
+    const paths = [...new Set(git(["ls-files", "-z", ...(values["include-untracked"] ? ["--cached", "--others", "--exclude-standard"] : [])]).toString().split("\0").filter(Boolean))];
     for (const path of paths) {
       checkPath(path);
       const absolute = resolve(root, path);
@@ -97,7 +98,7 @@ try {
       stats.blobs++; checkText(path, readFileSync(absolute));
     }
   }
-  console.log(JSON.stringify({ ok: findings.length === 0, mode: values.history ? "history" : "working-tree", ...stats, findings }, null, 2));
+  console.log(JSON.stringify({ ok: findings.length === 0, mode: values.history ? "history" : "working-tree", includesUntracked: values["include-untracked"] === true, ...stats, findings }, null, 2));
   process.exitCode = findings.length ? 1 : 0;
 } catch (error) {
   console.log(JSON.stringify({ ok: false, error: error instanceof Error && /^[a-z_]+$/.test(error.message) ? error.message : "publication_scan_failed" }));

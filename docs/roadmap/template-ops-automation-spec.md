@@ -1,6 +1,6 @@
 # 原生 Bot 运维、故障证据与有界存储实施规格
 
-**Accepted target · 2026-09-18 · Spec-only。** 当前施工主线是「发现异常 → 固定关键现场 → 给配置目标 Bot 发送简短告警、ID 和可用取证命令 → 默认只提醒」。长期终点是原生 Grok Bot 在用户任务或独立预授权范围内，自主完成排障、Bot 运维、模型管理和 grokbox 使用；不是另建 Agent loop，也不是把命令交回用户手工完成。**自动 Issue 已退出本阶段，默认不询问是否建单。**
+**Accepted target · 2026-09-18 · 证据/本地容量护栏已部分实现，原生通知与整安装治理未完成。** [首个切片](../reports/2026-09-18-observation-evidence-first-slice.md)与[存储/调度增量](../reports/2026-09-18-observation-storage-followup.md)保存限定证明；不是现役已采用声明。当前施工主线是「发现异常 → 固定关键现场 → 给配置目标 Bot 发送简短告警、ID 和可用取证命令 → 默认只提醒」。长期终点是原生 Grok Bot 在用户任务或独立预授权范围内，自主完成排障、Bot 运维、模型管理和 grokbox 使用；不是另建 Agent loop，也不是把命令交回用户手工完成。**自动 Issue 已退出本阶段，默认不询问是否建单。**
 
 本页是本专项唯一实施合同；[主 Spec](box-runtime-impl-spec.md#template-ops-automation)拥有总运行时/执行权，[配置 Spec](configuration-rebuild-spec.md)拥有配置 writer/迁移，[S13](box-runtime-impl-spec.md#ownership-continuity)拥有恢复快照/新身份连续性，[HSO](host-seam-ops-recognition.md)拥有来源与 profile 资格。新的 [OBS-00–06](../tickets/README.md#incident-evidence)补齐证据与存储；既有 T43–T56 的未实现运维票按本页收口，不重开已完成的 modeld 同号票。
 
@@ -19,14 +19,14 @@
 
 默认brief-notice是一次任务的策略，不是通用Bot永久只读限制。收件Bot不必来自模板；一个Bot即可作为完整入口。专用`grokbox-ledger`模板侧重提醒/跟进，通用`grokbox`模板负责全部已有能力，两者共用Skill、证据和控制程序。
 
-本次只写Spec/Tickets及相关路由，不创建Bot/Routine、改模型/生产配置、发Webhook、查认证、运行真实探针、安装服务、重启Host/modeld、清理用户数据、提Issue或发布市场模板。代码/配置存在、已配对、具备权限、已资格化、真实交付分别表示。
+文档、代码或离线测试本身不授权创建Bot/Routine、改模型/生产配置、发Webhook、安装服务、重启Host/modeld、清理用户数据、提Issue或发布市场模板。实际操作仍需用户明确范围；现场切换与验收按LIVE索引进行。代码/配置存在、已配对、具备权限、已资格化、真实交付分别表示。
 
 首发不以高级路由、自动诊断、自动维护、Issue或完整连续性恢复为前置。全链路可观测指关键边界可证且缺口可见，不承诺永久全量日志、精确恢复外部副作用、全类型上游告警或本机报告整盒断电。
 
 <a id="baseline"></a>
 ## 2. 源码基线与实际缺口
 
-基线`8139339`（前一实现基线`7d93399`之上增加S13规划）；不是现役健康或本轮运行测试回执。实现前重新对照v2，已新增能力按证据吸收，不重复施工。
+下表是规划时基线`8139339`（前一实现基线`7d93399`之上增加S13规划），不再作为新切片的当前实现清单。新增代码/限定证明见本页首段报告与来源票；现役只看LIVE。继续实施前对照v2，已新增能力按证据吸收，不重复施工。
 
 | 现有基础 | 当前局限 / 对应施工 |
 |---|---|
@@ -327,6 +327,7 @@ packages/box-runtime/src/internal/
     monitor-store.node.ts                # 同一SQLite迁移与短事务；拆内聚子文件不换owner
     incident-evidence.node.ts            # manifest/blob/租约、只读来源组合
     observation-retention.node.ts        # journal/DB/blob/孤儿与容量计量
+    monitor-storage.node.ts              # 每writer的SQLite文件护栏、辅助文件计量；非全安装预算
     bounded-process-log.node.ts          # 受管stdio限流与换段
     execution-history.node.ts            # 原安全账本owner的退役/compaction
     ops-bindings.node.ts / ops-grants.node.ts
@@ -360,9 +361,9 @@ scripts/templates/grokbox-ledger.recipe.json # 无身份/secret/活routine的独
 <a id="surface"></a>
 ## 10. 公开命令与模板旅程
 
-现有可用命令保留：`runtime incident <step-id> --agent <id> [--from journal|monitor]`、`alerts trace <tray-id>`、`history outcome`、`runtime monitor snapshot/events/incidents`。前者始终是STEP，不把monitor incident ID塞入这个位置。
+现有可用命令保留：`runtime incident <step-id> --agent <id> [--from journal|monitor]`、`alerts trace <tray-id>`、`history outcome`、`runtime monitor snapshot/events/incidents`。前者始终是STEP，不把monitor incident ID塞入这个位置。新增`monitor incident/capture/evidence lease`已经完成本地及Node制品切片；`runtime storage status`当前仅报告monitor数据库，显式`installationBudgetEnforced=false`。它们不意味着全局shim已采用或真实Bot投递已完成。
 
-以下均为**待实现接口**，主通知只引用当时installed CLI支持的命令；未实现不进入真实Skill或README使用示例：
+以下为**目标命令面**；已实现子集以本节上段、来源票与实际help为准。主通知只引用当时installed CLI支持的命令；未实现不进入真实Skill或README使用示例：
 
 ```text
 grokbox runtime monitor incident <incident-id> --evidence-revision <n> --json

@@ -1,6 +1,14 @@
 # OBS-04 — 诊断容量池、轮转与证据GC
 
-**Status：Planned / Spec-only；M2，完整通知首发必需。** Contract：[Spec §8](../roadmap/template-ops-automation-spec.md#storage)。依OBS-00/02与T51配置合同；OBS-05独立处理执行/恢复安全状态，不能由本票代删。
+**Status：Partial implementation / local SQLite proof；M2，完整通知首发仍未关闭。** Contract：[Spec §8](../roadmap/template-ops-automation-spec.md#storage)。依OBS-00/02与T51配置合同；OBS-05独立处理执行/恢复安全状态，不能由本票代删。
+
+## 当前切片与未完成范围
+
+已实现每个SQLite writer连接的文件增长护栏（默认128MiB，不是全安装预算）、预留元数据余量、压力批次游标/gap提交、物理页/空闲页/辅助文件计量、最多3份可读修订及受保护修订拒绝、每revision一个有总量/累计期限限制的租约、通知与修订历史的增量回收。`runtime storage status`只报告monitor域并明确installationBudgetEnforced=false。
+
+`observation-storage-pressure.test.ts`使用512KiB真实数据库验证持续高基数错误不越过文件上限、压力丢弃可见、重复批次不加倍、跨32个保留周期后无重启恢复新证据接纳；实际SQLite拒绝物理增长另有独立反例。`incident-evidence-store.test.ts`验证旧通知引用和leases不被修订数回收破坏。来源/结果见[增量回执](../reports/2026-09-18-observation-storage-followup.md)。
+
+仍缺整安装统一配置/容量预留、process fd与journal分段轮转、全部metadata/Jobs/备份/Trash治理、独立于ops开关的常驻服务组合、实际原生/live稳态和独立review。文件护栏只限制SQLite主文件，辅助文件目前仅测量，不能把128MiB当整安装上限或把32轮TTL前进当多年负载证明。执行状态仍由OBS-05处理。
 
 ## Goal / Modules
 
@@ -24,7 +32,9 @@ SQLite新建与迁移库真实auto_vacuum/回收模式分别验证；logical/liv
 
 ## Executable acceptance
 
-待新增：
+当前可运行的本地切片验证：`bun scripts/verify-runtime-rebuild.mjs observation-evidence`，其notProven明确保留全安装/轮转/执行退役/native/安装/review/live。
+
+完整范围仍待新增：
 
 ```bash
 bun test packages/box-runtime/test/observation-retention.test.ts packages/box-runtime/test/process-log-rotation.test.ts packages/box-runtime/test/evidence-lease-gc.test.ts test/runtime-storage-cli.test.ts

@@ -2,7 +2,13 @@
 
 ## Status / Goal
 
-**Planned / Spec-only；2026-09-18收口。** [Spec §4](../roadmap/template-ops-automation-spec.md#chain)。将HSO/source/loaded/component健康作为OBS intake来源；不再以“不可安全自修”作为进入告警的硬条件。
+**Partial implementation / local scheduling isolation；2026-09-18。** [Spec §4](../roadmap/template-ops-automation-spec.md#chain)。将HSO/source/loaded/component健康作为OBS intake来源；不再以“不可安全自修”作为进入告警的硬条件。
+
+## 当前切片
+
+`monitor.runtime.ts`已将远端采样、本地journal drain、周期维护分成同一Effect生命周期的三个有界子任务，网络不持本地writer许可；DB提交/发布串行，取消等待各任务结算后才finish collector。once仍合并为一次输出；持续drain逐批发布不累积无限结果数组。`monitor-scheduling-review.test.ts`加入挂起RPC时本地原生失败仍ready、随后source收到取消的实测反例，并保留6000条积压不加速ownership读的原有测试。
+
+源adapter/HSO接线、canonical runRoot/目标集合、实际source-liveness、安装自启与原生Webhook尚未闭合，不把子任务拆分当完整常驻资格。[限定回执](../reports/2026-09-18-observation-storage-followup.md)。
 
 ## Depends-on / Modules
 

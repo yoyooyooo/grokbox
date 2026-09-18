@@ -105,6 +105,7 @@ const requiredKernelExports = {
   // Shared payload-free diagnosis consumed by Host, CLI and monitor; it has no
   // IO, execution or provider capability and remains under the import fence.
   "./alerts": "./src/alerts.ts",
+  "./observation": "./src/observation.ts",
   "./testing": "./src/testing.ts",
   "./inference": "./src/inference.ts",
   "./commands": "./src/commands.ts",
@@ -130,6 +131,7 @@ const KERNEL_SUBPATH = {
   "@grokbox/runtime-kernel/monitor": "packages/runtime-kernel/src/monitor.ts",
   "@grokbox/runtime-kernel/config": "packages/runtime-kernel/src/config.ts",
   "@grokbox/runtime-kernel/alerts": "packages/runtime-kernel/src/alerts.ts",
+  "@grokbox/runtime-kernel/observation": "packages/runtime-kernel/src/observation.ts",
   "@grokbox/runtime-kernel/testing": "packages/runtime-kernel/src/testing.ts",
   "@grokbox/runtime-kernel/inference": "packages/runtime-kernel/src/inference.ts",
   "@grokbox/runtime-kernel/commands": "packages/runtime-kernel/src/commands.ts",

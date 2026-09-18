@@ -52,6 +52,25 @@ grokbox runtime incident <step-id> --agent <agent-id> --from monitor --json
 
 `--agents` 是 ownership 批量观察目标；显式 `GROKBOX_RUN_ROOT` 是本地执行/提醒 journal 的来源。未提供 run root 时 collector 披露 `journal.state=not_configured`，不把 ownership 采样冒充 Alert 采集。当前最多32个目标是原生 ownership 单批协议范围，不是累计运行次数配额。
 
+## 固定 incident 证据（首个 OBS 实施切片）
+
+当前源码已实现以下本地入口；[固定源码与离线回执](../reports/2026-09-18-observation-evidence-first-slice.md)说明实际范围。它们不是自动 Bot 推送已经上线的承诺。
+
+```text
+grokbox runtime monitor incident <incident-id> --evidence-revision <n> --json
+grokbox runtime monitor incident <incident-id> --view public-summary --json
+grokbox runtime monitor capture --incident <incident-id> --confirm --json
+grokbox runtime monitor capture --step <step-id> --agent <agent-id> --confirm --json
+grokbox runtime monitor capture --tray <tray-id> --confirm --json
+grokbox runtime monitor evidence lease <incident-id> --revision <n> --duration-ms <n> --confirm --json
+```
+
+新 `incident` 参数是 monitor 的 incident UUID；旧 `runtime incident` 仍接 STEP。默认读取已保存修订，不运行 Gateway、采集、GC 或续租。capture 是显式本地写入，只使用已经索引的证据；缺失或多义关联不能按时间猜测。快照共享事实并校验 digest，补取产生新修订，不改写已经发出的引用。
+
+未知 error tray 和无 STEP 的原生任务 failed 现在可进入 incident，而非只存 evidence。`notification_work` 仅记录本地待通知意图，生成的 brief-notice 含实际命令、期限和缺口；仍没有真实 Webhook 投递。Bot 默认只提醒的范围、后续受托自主与配对权限继续归专项 Spec。
+
+公共视图仅保留安全结构与报告内别名，不含真实身份、原始正文或私有摘要；普通本地输出不可整包视为公共材料。E01–E08 逐项披露来源和缺口，不以字段存在或空 diagnostic 冒充全链路完备。ack/snooze 与明细保留解耦；明细被回收时报告 expired/summary，而不是空成功。全安装容量池、完整物理回收、后台活性与安全账本退役尚待 OBS 后续票，不把本切片当成长期存储已验收。
+
 ## 原生提醒链路
 
 `host_alert_observation` 带 `eventId/sourceInstanceId/sourceSequence`、Host generation、发生与观察时间，以及已知的源码/preload 指纹。没有字段时保持未观测。
@@ -88,23 +107,31 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 
 ## 磁盘事务与迁移
 
-Schema v2 用固定 `sqlite3@6.0.1` 的 Node-API 磁盘 SQLite。发布最低 Node 为 **20.17.0**；Host/preload 不导入 SQLite、SDK 或 Effect。`sql.js` 仅留在开发依赖中生成独立 v1 迁移夹具，退役的全库镜像 runtime companion 不再打包。
+当前源码的 monitor schema v3 用固定 `sqlite3@6.0.1` 的 Node-API 磁盘 SQLite，增加固定证据修订、共享引用、限时租约与本地待通知记录；它与通用配置 schema 是不同版本域。发布最低 Node 为 **20.17.0**；Host/preload 不导入 SQLite、SDK 或 Effect。`sql.js` 仅留在开发依赖中生成独立 v1 迁移夹具，退役的全库镜像 runtime companion 不再打包。
 
 这里刻意使用 **DELETE rollback-journal** 的增量页事务，而非 WAL：短事务串行写，严格只读连接不创建 WAL/SHM sidecar。不是每次加载、导出、替换整个 JS 数据库镜像。磁盘引擎缺失/文件坏时明确失败，禁止回退内存或创建空库报健康。
 
-`init --confirm` 才迁移 v1：核对 root/schema/private file，持有 SQLite 事务及旧 writer lock，保全独占备份，再事务升级；旧 writer 在下次加载时拒绝 v2。活的、身份不明的旧 collector 不被抢占。迁移或旧文件锁恢复只在明确 PID 已不存在并且锁文件身份未变时进行；不存在“锁太旧就删掉”。跨平台不能证明 PID 身份时保持 recovery-required。
+`init --confirm` 才迁移 v1/v2：核对 root/schema/private file，持有 SQLite 事务并检查相应旧 writer/collector owner，保全独占备份，再事务升级；旧 writer 在下次加载时拒绝 v3。迁移不为历史事故补造快照或自动排队通知。活的、身份不明的旧 collector 不被抢占。迁移或旧文件锁恢复只在明确 PID 已不存在并且锁文件身份未变时进行；不存在“锁太旧就删掉”。跨平台不能证明 PID 身份时保持 recovery-required。
 
 新的 collector 所有权记录使用 PID、启动身份和 boot 身份摘要；并发启动被数据库事务拒绝。正常退出释放；硬崩溃后显式 run 可在证实旧进程已退出后建立新 collector epoch，恢复 SQLite 自身事务。旧 callback/cursor 不得继续写新代。初始化先私有 staging 再独占发布，失败不留下一个被误当成有效库的空文件。
 
 采集 cursor、证据、incident 和通知决定同一事务提交。提交后回执丢失为 unknown；相同 source cursor/batch 或 management request 的重试会对账，不重复开事故。数据库迁移与 collector 更替会使不适用的旧分页 cursor 失效；不会在普通 GET 中进行隐式迁移或恢复写。
+
+## 当前SQLite容量与修订护栏
+
+`grokbox runtime storage status --json`已在源码入口提供严格只读的monitor存储报告：主文件bytes、页/空闲页、rollback journal/WAL/SHM辅助文件、压力丢弃计数和回收能力。当前scope为`monitor_database_only`、`installationBudgetEnforced=false`；不能用它估算整机/全安装已受控。缺数据库时返回未初始化，不创建文件。全局CLI需采用相应制品后才有此入口。
+
+当前每writer连接对SQLite主文件设置128MiB增长护栏，并为压力记录留出余量；旧超额文件不被强制截断。达到护栏时诊断批次可被丢弃，但消费游标与storage_pressure/gap/计数同事务落盘，重复同批不加倍，回收后可接纳新证据，不是累计请求寿命配额。辅助文件已单独测量但尚无跨owner总量预留；不得宣称全安装512MiB策略已生效。
+
+同incident默认最多3份可读修订；有效通知或证据租约保护的版本不被计数淘汰，全部受保护时新capture拒绝。退役水位保证revision不复用，已回收版本返回snapshot_revision_retired，不改读最新版。lease是同revision共享的保护槽而非任意caller授权；受安装活动槽/总期限限制，读取不续期。未知投递仍保留对账约束，不因回收明细变成可盲重试。
 
 ## 长期运行与维护
 
 没有累计16MiB/50000事件后拒绝新观察的旧限额。保留期限与数量目标用于自动维护和压力披露，不是服务寿命：
 
 - journal cursor 每批有界前进；半行不确认，轮转、改写、坏 UTF-8、超长行和截断明确报告。
-- ownership RPC 按独立退避时钟采样；本地 journal 追赶每次让出执行时间，不把积压变成高频 Server 轮询。
-- collector 周期执行小批 retention 和增量空闲页回收；不等待一次全库重写。
+- ownership RPC、本地journal drain和维护在同一Effect宿主内各有有界子任务；网络不持本地writer许可，挂起的ownership RPC不阻止本地failed事件入库。drain按单调时钟让出执行时间，积压不加速Server轮询，取消时各任务结算后才关闭collector。
+- collector运行期间按独立周期执行小批retention和增量空闲页回收；不等待一次全库重写。常驻安装、process fd/journal轮转及跨全部owner的维护仍未完成，本地run不证明无人值守总量可控。
 - 活跃条件、ack/snooze/management request 不能仅为达到数量目标而删除；历史高频证据可以过期，查询披露 retention floor。已管理的 occurrence 保留受限诊断摘要，不需要永久保存 Alert 对象或全文。
 - DB/collector 退化不参与模型准入，不取消正常业务。观测缺口不能证明没有失败；Alert 消失也不能证明恢复。
 

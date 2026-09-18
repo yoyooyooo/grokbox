@@ -67,6 +67,12 @@ export async function indexExecutionOccurrence(db: MonitorSqlite, input: {
   const generation = observationId(value.hostGenerationId) ? value.hostGenerationId : null;
   const key = sha256Text(canonicalJson([generation, value.agentId, value.turnId, value.stepId]));
   let child = await db.first("SELECT * FROM incidents WHERE scope=? AND agent_id=? AND rule='execution_failure' AND occurrence_key=?", [rootId, value.agentId, key]);
+  // An alert can precede its terminal record. Reuse its incident only through a
+  // native direct failure link; never merge by text, time, or mutable Bot name.
+  if (!child && observationId(value.failureId) && generation) {
+    child = await db.first("SELECT i.* FROM incidents i JOIN incident_evidence l ON l.incident_id=i.id JOIN evidence e ON e.ref=l.event_ref WHERE i.scope=? AND i.rule='native_alert' AND e.agent_id=? AND e.host_generation=? AND e.failure_id=? ORDER BY i.first_seen LIMIT 1", [rootId, value.agentId, generation, value.failureId]);
+    if (child) { await db.run("UPDATE incidents SET rule='execution_failure',occurrence_key=?,revision=revision+1 WHERE id=?", [key, String(child.id)]); }
+  }
   if (!child) {
     const id = randomUUID();
     await db.run("INSERT INTO incidents(id,scope,agent_id,rule,status,first_seen,last_seen,revision,occurrence_key,category,summary_json) VALUES(?,?,?,'execution_failure','recorded',?,?,1,?,'occurrence',?)", [id, rootId, value.agentId, at, at, key, canonicalJson([value])]);

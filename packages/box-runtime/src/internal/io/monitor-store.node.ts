@@ -13,7 +13,12 @@ import { projectControlEvent } from "./journal.node.ts";
 import { recordSourceSequence } from "./monitor-source-sequence.node.ts";
 import { indexExecutionOccurrence, retainedDiagnosis } from "./monitor-occurrence.node.ts";
 import { indexProviderRouteCondition, projectProviderRouteDiagnosis } from "./monitor-provider-route.node.ts";
-const VERSION=2;
+import { OBSERVATION_INCIDENT_RULES, OBSERVATION_RETENTION, type EvidenceView } from "@grokbox/runtime-kernel/observation";
+import { INCIDENT_EVIDENCE_SCHEMA, captureIncidentEvidence, readIncidentEvidence, noticeForWork, collectIncidentEvidence } from "./incident-evidence.node.ts";
+import { indexNativeIncident, indexExecutionProgress, recordSourceGap, detectUnsettledExecutions } from "./monitor-incident-intake.node.ts";
+import { retireObservationDetails, sqlitePhysicalUsage } from "./observation-retention.node.ts";
+import { capMonitorDatabase, monitorDatabaseBytes, monitorWriteAdmission, monitorAuxiliaryUsage } from "./monitor-storage.node.ts";
+const VERSION=3;
 const error=(message:string)=>new BoxRuntimeError("invalid_usage",message);
 const number=(v:unknown):number=>{if(typeof v!=="number"||!Number.isSafeInteger(v)||v<0)throw error("monitor_store_invalid");return v;};
 const uuid=(v:unknown):string=>{if(!monitorUuid(v))throw error("monitor_store_invalid");return v;};
@@ -21,10 +26,10 @@ const scope=(v:unknown):string=>{if(!monitorScope(v))throw error("monitor_store_
 const nullableTime=(v:unknown)=>v===null?null:number(v);
 const harness=(v:unknown):"box"|"temporal"|null=>{if(v!==null&&v!=="box"&&v!=="temporal")throw error("monitor_store_invalid");return v;};
 const missing=(e:unknown)=>e!==null&&typeof e==="object"&&"code"in e&&e.code==="ENOENT";
-const RUNTIME_RULES=["execution_failure","pre_step_failure","shared_runtime_failure","upstream_route_failure"] as const;
+const RUNTIME_RULES=["execution_failure","pre_step_failure","shared_runtime_failure","upstream_route_failure",...OBSERVATION_INCIDENT_RULES] as const;
 const rule=(v:unknown)=>{if(![...MONITOR_RULES,...RUNTIME_RULES].includes(v as never))throw error("monitor_store_invalid");return v as MonitorRule|typeof RUNTIME_RULES[number];};
 const SCHEMA=`
-PRAGMA user_version=2;
+PRAGMA user_version=3;
 CREATE TABLE meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL,database_id TEXT NOT NULL,root_id TEXT NOT NULL,epoch TEXT,running INTEGER NOT NULL DEFAULT 0,current_scope TEXT,gateway_epoch TEXT,heartbeat INTEGER,last_number INTEGER NOT NULL DEFAULT 0,last_sample_id TEXT,last_digest TEXT,owner_pid INTEGER,owner_start TEXT,event_floor INTEGER NOT NULL DEFAULT 0,evidence_floor INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE watched(agent_id TEXT PRIMARY KEY);
 CREATE TABLE observations(scope TEXT NOT NULL,agent_id TEXT NOT NULL,state TEXT NOT NULL,server_id TEXT,server_harness TEXT,local_harness TEXT,last_attempt INTEGER NOT NULL,last_success INTEGER,latest_success INTEGER NOT NULL,PRIMARY KEY(scope,agent_id));
@@ -50,19 +55,21 @@ CREATE INDEX evidence_host_kind ON evidence(host_generation,json_extract(payload
 CREATE TABLE source_gaps(source_key TEXT NOT NULL,start_seq INTEGER NOT NULL,end_seq INTEGER NOT NULL,PRIMARY KEY(source_key,start_seq));
 CREATE UNIQUE INDEX notification_decision_key ON events(json_extract(detail_json,'$.deliveryKey')) WHERE kind='notification_decided';
 `;
-export type MonitorStoreOptions={beforePublish?:()=>void;afterRename?:()=>void;retentionMs?:number;eventTarget?:number};
+export type MonitorStoreOptions={beforePublish?:()=>void;afterRename?:()=>void;retentionMs?:number;eventTarget?:number;maxDatabaseBytes?:number};
 /** Existing observation domain, incremental disk transactions. No alerts DB,
  * no modeld authority, no query-time initialization or retention mutation. */
 export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
  const rootId=sha256Text(canonicalJson(["grokbox-observability-v1",resolve(root)]));
  const directory=join(resolve(root),"observability"),file=join(directory,"observations.sqlite");
  const retentionMs=options.retentionMs??MONITOR_POLICY.retentionMs,eventTarget=options.eventTarget??MONITOR_POLICY.evidenceTarget;
+ const maxDatabaseBytes=monitorDatabaseBytes(options.maxDatabaseBytes);
  if(!Number.isSafeInteger(retentionMs)||retentionMs<1||!Number.isSafeInteger(eventTarget)||eventTarget<1)throw error("monitor_invalid_policy");
  const meta=async(db:MonitorSqlite)=>{const m=await db.first("SELECT * FROM meta WHERE singleton=1");if(!m)throw error("monitor_store_invalid");return m;};
  async function load(mode:"read"|"write"="read"){
   let db:MonitorSqlite|undefined;
-  try{db=await openMonitorSqlite(file,mode);const m=await meta(db);if(m.root_id!==rootId||!monitorUuid(m.database_id)||![1,VERSION].includes(Number(m.version)))throw error("monitor_store_schema_or_root_mismatch");
-   if(mode==="write"&&m.version!==VERSION)throw error("monitor_migration_required");return db;
+  try{db=await openMonitorSqlite(file,mode);const m=await meta(db);if(m.root_id!==rootId||!monitorUuid(m.database_id)||![1,2,VERSION].includes(Number(m.version)))throw error("monitor_store_schema_or_root_mismatch");
+   if(mode==="write"&&m.version!==VERSION)throw error("monitor_migration_required");
+   if(mode==="write")await capMonitorDatabase(db,maxDatabaseBytes);return db;
   }catch(e){await db?.close().catch(()=>{});throw e instanceof BoxRuntimeError?e:error(missing(e)?"monitor_not_initialized":e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_reader_busy":"monitor_store_unavailable");}
  }
  async function read<T>(f:(db:MonitorSqlite)=>Promise<T>):Promise<T>{const db=await load();try{await db.run("BEGIN");return await f(db);}catch(e){throw e instanceof BoxRuntimeError?e:error(e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_reader_busy":"monitor_store_unavailable");}finally{await db.close();}}
@@ -71,7 +78,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   if(await legacyLockPresent())throw error("monitor_writer_busy");
   const db=await load("write");let committed=false;
   try{await db.run("BEGIN IMMEDIATE");const result=await f(db);options.beforePublish?.();await db.run("COMMIT");committed=true;options.afterRename?.();return result;
-  }catch(e){if(!committed)await db.run("ROLLBACK").catch(()=>{});throw e instanceof BoxRuntimeError?e:error(committed?"monitor_commit_unknown":e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_writer_busy":"monitor_commit_failed");}
+  }catch(e){if(!committed)await db.run("ROLLBACK").catch(()=>{});throw e instanceof BoxRuntimeError?e:error(committed?"monitor_commit_unknown":e&&typeof e==="object"&&"code"in e&&e.code==="SQLITE_FULL"?"monitor_storage_pressure":e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_writer_busy":"monitor_commit_failed");}
   finally{await db.close();}
  }
  const lastSequence=async(db:MonitorSqlite)=>number((await db.first("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='events'),0) AS n"))?.n);
@@ -95,6 +102,13 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   const result:Array<{eventId:string;incidentId:string;deliveryKey:string;decision:"emit"|"suppress";reason:"new_occurrence"|"acknowledged"|"snoozed"|"aggregated";channel:"local_only"}>=[];
   for(const e of changes){if(!e.incidentId||!["incident_opened","execution_failure_observed"].includes(e.kind))continue;const row=await db.first("SELECT * FROM incidents WHERE id=?",[e.incidentId]);if(!row)continue;
    const chosen=chooseNotification({acknowledged:row.acknowledged===1,snoozeUntilMs:row.snooze_until===null?null:Number(row.snooze_until),nowMs:at,parentIncidentId:monitorUuid(row.parent_id)?row.parent_id:null});
+   try { await captureIncidentEvidence(db,e.incidentId,at,{detailMs:retentionMs,prepareNotification:chosen.decision==="emit",maxDatabaseBytes}); }
+   catch (failure) {
+    if (!(failure instanceof BoxRuntimeError) || !["monitor_storage_pressure","monitor_evidence_revisions_protected","monitor_evidence_alias_budget"].includes(failure.message)) throw failure;
+    await db.run("UPDATE observation_maintenance SET pressure_state='storage_pressure' WHERE singleton=1");
+    // The incident remains durable. No ready notice may claim a missing snapshot.
+    continue;
+   }
    const decision={eventId:e.eventId,incidentId:e.incidentId,deliveryKey:sha256Text(`${e.incidentId}:${e.eventId}:local-v1`),...chosen};
    result.push(decision);
    await db.run("INSERT INTO events(id,epoch,kind,scope,agent_id,incident_id,at_ms,detail_json) VALUES(?,?,'notification_decided',?,?,?,?,?)",[randomUUID(),e.collectorEpoch,e.scopeId,e.agentId,e.incidentId,at,canonicalJson({...decision,ruleVersion:"monitor-local-v1"})]);
@@ -114,8 +128,9 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     let fresh:MonitorSqlite|undefined,published=false;
     try{
      fresh=await openMonitorSqlite(staging,"create");
+     await capMonitorDatabase(fresh,maxDatabaseBytes);
      await fresh.run("PRAGMA journal_mode=DELETE; PRAGMA auto_vacuum=INCREMENTAL; BEGIN IMMEDIATE;");
-     await fresh.run(SCHEMA+EVIDENCE_SCHEMA);const databaseId=randomUUID();
+     await fresh.run(SCHEMA+EVIDENCE_SCHEMA+INCIDENT_EVIDENCE_SCHEMA);const databaseId=randomUUID();
      await fresh.run("INSERT INTO meta(singleton,version,database_id,root_id) VALUES(1,?,?,?)",[VERSION,databaseId,rootId]);
      options.beforePublish?.();await fresh.run("COMMIT");await fresh.close();fresh=undefined;
      try{await link(staging,file);published=true;}
@@ -135,17 +150,25 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
      // Serialize new migration/recovery owners with SQLite, then fence legacy
      // image writers with their lock. Only demonstrably dead lock PIDs recover.
      db=await openMonitorSqlite(file,"write");await db.run("BEGIN IMMEDIATE");
-     const m=await meta(db);if(m.root_id!==rootId||!monitorUuid(m.database_id)||![1,VERSION].includes(Number(m.version)))throw error("monitor_store_schema_or_root_mismatch");
+     const m=await meta(db);if(m.root_id!==rootId||!monitorUuid(m.database_id)||![1,2,VERSION].includes(Number(m.version)))throw error("monitor_store_schema_or_root_mismatch");
      held=await acquireMonitorMigrationLock(join(directory,"writer.lock"));if(!held)throw error("monitor_writer_busy");
      if(m.version===VERSION){await db.run("COMMIT");migrationCommitted=true;return {databaseId:uuid(m.database_id),created:false,migrated:false};}
      const legacyCollector=await lstat(join(directory,"collector.lock")).catch(e=>{if(!missing(e))throw e;return null;});
      if(legacyCollector){collectorLock=await acquireMonitorMigrationLock(join(directory,"collector.lock"));if(!collectorLock)throw error("monitor_legacy_collector_requires_stop");}
-     const backup=join(directory,`observations-v1-${m.database_id}-${randomUUID()}.sqlite`);
+     if(m.version===2&&m.running===1){
+       const owner=Number.isSafeInteger(m.owner_pid)?await processStart(Number(m.owner_pid)):null;
+       if(!owner||owner.state==='unavailable'||(owner.state==='present'&&owner.start===m.owner_start))throw error('monitor_migration_requires_stop');
+     }
+     const backup=join(directory,`observations-v${m.version}-${m.database_id}-${randomUUID()}.sqlite`);
      await copyFile(file,backup,constants.COPYFILE_EXCL);
      const backupHandle=await open(backup,"r");try{await backupHandle.sync();}finally{await backupHandle.close();}
      const directoryHandle=await open(directory,"r");try{await directoryHandle.sync();}finally{await directoryHandle.close();}
-     await db.run("ALTER TABLE events ADD COLUMN detail_json TEXT; ALTER TABLE meta ADD COLUMN owner_pid INTEGER; ALTER TABLE meta ADD COLUMN owner_start TEXT; ALTER TABLE meta ADD COLUMN event_floor INTEGER NOT NULL DEFAULT 0; ALTER TABLE meta ADD COLUMN evidence_floor INTEGER NOT NULL DEFAULT 0; ALTER TABLE incidents ADD COLUMN occurrence_key TEXT NOT NULL DEFAULT ''; ALTER TABLE incidents ADD COLUMN category TEXT NOT NULL DEFAULT 'condition'; ALTER TABLE incidents ADD COLUMN parent_id TEXT; ALTER TABLE incidents ADD COLUMN summary_json TEXT; DROP INDEX one_open_incident; CREATE UNIQUE INDEX one_open_incident ON incidents(scope,COALESCE(agent_id,''),rule,occurrence_key) WHERE status IN ('open','recorded');");
-     await db.run(EVIDENCE_SCHEMA);await db.run("UPDATE meta SET version=2,running=0,epoch=NULL,owner_pid=NULL,owner_start=NULL; PRAGMA user_version=2;");options.beforePublish?.();await db.run("COMMIT");migrationCommitted=true;options.afterRename?.();
+     if(m.version===1){
+       await db.run("ALTER TABLE events ADD COLUMN detail_json TEXT; ALTER TABLE meta ADD COLUMN owner_pid INTEGER; ALTER TABLE meta ADD COLUMN owner_start TEXT; ALTER TABLE meta ADD COLUMN event_floor INTEGER NOT NULL DEFAULT 0; ALTER TABLE meta ADD COLUMN evidence_floor INTEGER NOT NULL DEFAULT 0; ALTER TABLE incidents ADD COLUMN occurrence_key TEXT NOT NULL DEFAULT ''; ALTER TABLE incidents ADD COLUMN category TEXT NOT NULL DEFAULT 'condition'; ALTER TABLE incidents ADD COLUMN parent_id TEXT; ALTER TABLE incidents ADD COLUMN summary_json TEXT; DROP INDEX one_open_incident; CREATE UNIQUE INDEX one_open_incident ON incidents(scope,COALESCE(agent_id,''),rule,occurrence_key) WHERE status IN ('open','recorded');");
+       await db.run(EVIDENCE_SCHEMA);
+     }
+     await db.run(INCIDENT_EVIDENCE_SCHEMA);
+     await db.run("UPDATE meta SET version=3,running=0,epoch=NULL,owner_pid=NULL,owner_start=NULL; PRAGMA user_version=3;");options.beforePublish?.();await db.run("COMMIT");migrationCommitted=true;options.afterRename?.();
      return {databaseId:uuid(m.database_id),created:false,migrated:true,backup};
    }catch(e){if(!migrationCommitted)await db?.run("ROLLBACK").catch(()=>{});throw e instanceof BoxRuntimeError?e:error(migrationCommitted?"monitor_commit_unknown":"monitor_initialization_failed");}
    finally{await collectorLock?.release();await held?.release();await db?.close();}
@@ -196,8 +219,56 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   },
   async snapshot(now=Date.now()){return read(async db=>{const m=await meta(db),epoch=m.epoch===null?null:uuid(m.epoch),sid=m.current_scope===null?null:scope(m.current_scope),cursor=await lastSequence(db);
    const rows=await db.all("SELECT w.agent_id AS watched_id,o.* FROM watched w LEFT JOIN observations o ON o.agent_id=w.agent_id AND o.scope IS ? ORDER BY w.agent_id",[sid]);
-   return {schemaVersion:number(m.version),databaseId:uuid(m.database_id),collectorEpoch:epoch,source:"local_observations_not_authority",scopeId:sid,cursor:`${m.database_id}:${epoch??"none"}:${cursor}`,lastHeartbeatMs:nullableTime(m.heartbeat),collectorRecordedRunning:m.running===1,lastObservedGatewayEpoch:typeof m.gateway_epoch==="string"?m.gateway_epoch:null,admissionAuthority:false,productionAccepted:false,notificationMode:"local_only",storage:{engine:"sqlite-disk",journalMode:"delete",lifetimeEventLimit:null,migrationRequired:m.version!==VERSION},
+   const observationHealth=m.version===VERSION?await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_state FROM observation_maintenance WHERE singleton=1"):null;
+   return {observationHealth,schemaVersion:number(m.version),databaseId:uuid(m.database_id),collectorEpoch:epoch,source:"local_observations_not_authority",scopeId:sid,cursor:`${m.database_id}:${epoch??"none"}:${cursor}`,lastHeartbeatMs:nullableTime(m.heartbeat),collectorRecordedRunning:m.running===1,lastObservedGatewayEpoch:typeof m.gateway_epoch==="string"?m.gateway_epoch:null,admissionAuthority:false,productionAccepted:false,notificationMode:"local_only",storage:{engine:"sqlite-disk",journalMode:"delete",lifetimeEventLimit:null,migrationRequired:m.version!==VERSION},
     agents:rows.map(row=>row.state===null?{agentId:uuid(row.watched_id),lastKnown:null,lastAttemptMs:nullableTime(m.heartbeat),lastSuccessMs:null,freshness:"unavailable" as const}:{agentId:uuid(row.agent_id),lastKnown:{state:String(row.state),serverHarness:harness(row.server_harness),localHarness:harness(row.local_harness)},lastAttemptMs:number(row.last_attempt),lastSuccessMs:nullableTime(row.last_success),freshness:monitorFreshness(nullableTime(row.last_success),now,m.running===1&&row.latest_success===1)})};});},
+  async incidentEvidence(incidentId:string,revision?:number,view:EvidenceView="local-diagnostic"){
+   if(!monitorUuid(incidentId)||(revision!==undefined&&(!Number.isSafeInteger(revision)||revision<1))||!["local-diagnostic","bot-diagnostic","public-summary"].includes(view))throw error("monitor_invalid_evidence_selector");
+   return read(async db=>{if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");return readIncidentEvidence(db,incidentId,revision,view);});
+  },
+  async resolveIncident(selector:{agentId?:string;stepId?:string;trayId?:string}){
+   if((selector.stepId!==undefined&&(!observationId(selector.stepId)||!monitorUuid(selector.agentId)))||(selector.trayId!==undefined&&!observationId(selector.trayId))||Number(selector.stepId!==undefined)+Number(selector.trayId!==undefined)!==1)throw error("monitor_invalid_evidence_selector");
+   return read(async db=>{const rows=await db.all("SELECT DISTINCT i.id FROM incidents i JOIN incident_evidence l ON l.incident_id=i.id JOIN evidence e ON e.ref=l.event_ref WHERE (? IS NULL OR e.agent_id=?) AND (? IS NULL OR e.step_id=?) AND (? IS NULL OR e.tray_id=?) LIMIT 2",[selector.agentId??null,selector.agentId??null,selector.stepId??null,selector.stepId??null,selector.trayId??null,selector.trayId??null]);
+    if(rows.length!==1)throw error(rows.length?"monitor_incident_ambiguous":"monitor_incident_not_found");return String(rows[0]!.id);});
+  },
+  async captureIncident(incidentId:string,now=Date.now()){
+   if(!monitorUuid(incidentId)||!Number.isSafeInteger(now)||now<1)throw error("monitor_invalid_evidence_selector");
+   return mutate(db=>captureIncidentEvidence(db,incidentId,now,{detailMs:retentionMs,maxDatabaseBytes}));
+  },
+  async evidenceLease(input:{incidentId:string;revision:number;durationMs:number;nowMs:number}){
+   if(!monitorUuid(input.incidentId)||!Number.isSafeInteger(input.revision)||input.revision<1||!Number.isSafeInteger(input.durationMs)||input.durationMs<1||input.durationMs>OBSERVATION_RETENTION.leaseMaxTotalMs||!Number.isSafeInteger(input.nowMs)||input.nowMs<1)throw error("monitor_invalid_evidence_lease");
+   return mutate(async db=>{
+    const row=await db.first("SELECT * FROM incident_snapshots WHERE incident_id=? AND revision=?",[input.incidentId,input.revision]);
+    if(!row||row.tier!=="detail"||Number(row.expires_at)<=input.nowMs)throw error("monitor_evidence_expired");
+    const existing=await db.first("SELECT * FROM evidence_leases WHERE incident_id=? AND revision=?",[input.incidentId,input.revision]);
+    const last=await db.first("SELECT last_at FROM observation_maintenance WHERE singleton=1");
+    if(input.nowMs<Math.max(Number(row.created_at),Number(row.lease_origin_at??0),Number(existing?.created_at??0),Number(last?.last_at??0)))throw error("monitor_evidence_clock_unavailable");
+    const origin=row.lease_origin_at===null?input.nowMs:Number(row.lease_origin_at);
+    const expiresAtMs=Math.min(Math.max(Number(existing?.expires_at??0),input.nowMs+input.durationMs),origin+OBSERVATION_RETENTION.leaseMaxTotalMs,Number(row.summary_expires_at));
+    if(expiresAtMs<=input.nowMs)throw error("monitor_evidence_lease_exhausted");
+    const leases=await db.first("SELECT COALESCE(SUM(reserved_bytes),0) AS n,COUNT(*) AS count FROM evidence_leases WHERE expires_at>?",[input.nowMs]);
+    const active=existing&&Number(existing.expires_at)>input.nowMs;
+    const reserved=Number(leases?.n??0)-(active?Number(existing.reserved_bytes):0),bytes=Number(row.logical_bytes);
+    if(!active&&Number(leases?.count??0)>=OBSERVATION_RETENTION.maxActiveLeases)throw error("monitor_evidence_lease_budget");
+    const fileBytes=(await stat(file)).size;
+    if(fileBytes+reserved+bytes>OBSERVATION_RETENTION.maxBytes-OBSERVATION_RETENTION.reserveBytes)throw error("monitor_storage_pressure");
+    await db.run("UPDATE incident_snapshots SET lease_origin_at=COALESCE(lease_origin_at,?) WHERE incident_id=? AND revision=?",[origin,input.incidentId,input.revision]);
+    // A single shared protection slot per immutable revision. Repeated requests
+    // extend within the original lifetime, not append unbounded reservation rows.
+    const leaseId=existing?String(existing.id):randomUUID();await db.run("INSERT INTO evidence_leases(id,incident_id,revision,created_at,expires_at,reserved_bytes) VALUES(?,?,?,?,?,?) ON CONFLICT(incident_id,revision) DO UPDATE SET expires_at=excluded.expires_at,reserved_bytes=excluded.reserved_bytes",[leaseId,input.incidentId,input.revision,input.nowMs,expiresAtMs,bytes]);
+    return {leaseId,incidentId:input.incidentId,evidenceRevision:input.revision,reservedUntil:expiresAtMs,reservedBytes:bytes};
+   });
+  },
+  async notificationWork(limit=100){
+   if(!Number.isSafeInteger(limit)||limit<1||limit>200)throw error("monitor_invalid_limit");
+   return read(db=>db.all("SELECT id,incident_id AS incidentId,evidence_revision AS evidenceRevision,state,created_at AS createdAtMs,expires_at AS expiresAtMs,last_reason AS lastReason FROM notification_work ORDER BY created_at DESC LIMIT ?",[limit]));
+  },
+  async notificationNotice(workId:string){if(!monitorUuid(workId))throw error("notification_invalid_work");return read(db=>noticeForWork(db,workId));},
+  async detectUnsettled(input:{nowMs:number;sourceLiveness:ReadonlyMap<string,number>}){
+   return mutate(async db=>{const m=await meta(db);if(m.running!==1)throw error("monitor_not_running");const epoch=uuid(m.epoch),before=await lastSequence(db);
+    const result=await detectUnsettledExecutions(db,{rootId,...input,opened:(id,agent)=>event(db,epoch,"execution_failure_observed",rootId,agent,input.nowMs,id)});
+    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[before])).map(getEvent);await notificationDecisions(db,changes,input.nowMs);return result;});
+  },
   async incidents(){return read(async db=>{const rows=await db.all("SELECT * FROM incidents ORDER BY first_seen DESC,id LIMIT 201");if(rows.length>MONITOR_POLICY.maxPage)throw error("monitor_use_incident_pagination");return rows.map(getIncident);});},
   async incidentPage(after?:string,limit:number=MONITOR_POLICY.maxPage){if(!Number.isSafeInteger(limit)||limit<1||limit>MONITOR_POLICY.maxPage)throw error("monitor_invalid_limit");return read(async db=>{const m=await meta(db);let before=Number.MAX_SAFE_INTEGER,id="";
    if(after){const p=after.split(":");if(p.length!==5||p[0]!==m.database_id||p[1]!==String(m.epoch??"none")||p[2]!=="incidents"||!/^\d+$/.test(p[3]!)||!Number.isSafeInteger(Number(p[3]))||!monitorUuid(p[4]))throw error("monitor_cursor_invalid");before=Number(p[3]);id=p[4]!;}
@@ -226,12 +297,27 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   },
   async evidenceCursor(sourceKey:string){return read(async db=>{if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");const row=await db.first("SELECT * FROM evidence_cursors WHERE source_key=?",[sourceKey]);return row?{cursor:String(row.cursor),gap:row.gap===null?null:String(row.gap)}:null;});},
   async ingestEvidence(input:{epoch:string;sourceKey:string;expectedCursor:string|null;nextCursor:string;events:unknown[];atMs:number;gap?:string}){
-   if(!monitorUuid(input.epoch)||!monitorScope(input.sourceKey)||input.nextCursor.length>2048||input.events.length>4096)throw error("monitor_invalid_evidence_batch");
-   const safe=input.events.map(projectControlEvent).filter((x):x is NonNullable<typeof x>=>x!==null),digest=sha256Text(canonicalJson({events:safe,gap:input.gap??null}));
+   if(!monitorUuid(input.epoch)||!monitorScope(input.sourceKey)||input.nextCursor.length>2048||input.events.length>4096||!Number.isSafeInteger(input.atMs)||input.atMs<1)throw error("monitor_invalid_evidence_batch");
+   const safe=input.events.map(value=>{try{return projectControlEvent(value);}catch{return null;}}).filter((x):x is NonNullable<typeof x>=>x!==null),digest=sha256Text(canonicalJson({events:safe,gap:input.gap??null,rejected:input.events.length-safe.length}));
+   const skipPressure=async(db:MonitorSqlite)=>{
+    const m=await meta(db);if(m.epoch!==input.epoch||m.running!==1)throw error("monitor_epoch_changed");
+    const current=await db.first("SELECT cursor,batch_digest FROM evidence_cursors WHERE source_key=?",[input.sourceKey]);
+    if(current?.cursor===input.nextCursor&&current.batch_digest===digest)return {duplicate:true,inserted:0,conflicts:0,retirementSkipped:0,droppedEvents:0,storagePressure:true,changes:[] as ReturnType<typeof getEvent>[],notifications:[]};
+    if((current?.cursor??null)!==input.expectedCursor)throw error("monitor_source_cursor_conflict");
+    await db.run("INSERT INTO evidence_cursors(source_key,cursor,batch_digest,updated_at,gap) VALUES(?,?,?,?,'storage_pressure') ON CONFLICT(source_key) DO UPDATE SET cursor=excluded.cursor,batch_digest=excluded.batch_digest,updated_at=excluded.updated_at,gap=excluded.gap",[input.sourceKey,input.nextCursor,digest,input.atMs]);
+    await db.run("UPDATE observation_maintenance SET pressure_state='storage_pressure',dropped_events=MIN(9007199254740991,dropped_events+?),rejected_batches=MIN(9007199254740991,rejected_batches+1) WHERE singleton=1",[input.events.length]);
+    return {duplicate:false,inserted:0,conflicts:0,retirementSkipped:0,droppedEvents:input.events.length,storagePressure:true,changes:[] as ReturnType<typeof getEvent>[],notifications:[]};
+   };
    return mutate(async db=>{const m=await meta(db);if(m.epoch!==input.epoch||m.running!==1)throw error("monitor_epoch_changed");const current=await db.first("SELECT * FROM evidence_cursors WHERE source_key=?",[input.sourceKey]);
-    if(current?.cursor===input.nextCursor&&current.batch_digest===digest)return {duplicate:true,inserted:0,conflicts:0,changes:[] as ReturnType<typeof getEvent>[]};
-    if((current?.cursor??null)!==input.expectedCursor)throw error("monitor_source_cursor_conflict");const previous=await lastSequence(db);let inserted=0,conflicts=0;
-    if(input.gap)await event(db,input.epoch,"observation_gap",rootId,null,input.atMs);
+    if(current?.cursor===input.nextCursor&&current.batch_digest===digest)return {duplicate:true,inserted:0,conflicts:0,retirementSkipped:0,droppedEvents:0,storagePressure:false,changes:[] as ReturnType<typeof getEvent>[]};
+    const estimate=16*1024+safe.reduce((n,value)=>n+Buffer.byteLength(canonicalJson(value))*8+4096,0);
+    if(!(await monitorWriteAdmission(db,maxDatabaseBytes,estimate)).accepted)return skipPressure(db);
+    await db.run("UPDATE observation_maintenance SET pressure_state='normal' WHERE singleton=1");
+    if((current?.cursor??null)!==input.expectedCursor)throw error("monitor_source_cursor_conflict");const previous=await lastSequence(db);let inserted=0,conflicts=0,retirementSkipped=0;
+    if(input.gap||safe.length!==input.events.length){
+      await event(db,input.epoch,"observation_gap",rootId,null,input.atMs);
+      await recordSourceGap(db,{rootId,sourceKey:input.sourceKey,at:input.atMs,reason:input.gap??"unsupported_schema",opened:(id,agent)=>event(db,input.epoch,"execution_failure_observed",rootId,agent,input.atMs,id)});
+    }
     for(const item of safe){const value=item as Record<string,unknown>,payload=canonicalJson(value),hash=sha256Text(payload),source=observationId(value.sourceInstanceId)?value.sourceInstanceId:input.sourceKey;
      const ref=observationId(value.eventId)?`${source}:${value.eventId}`:`legacy:${input.sourceKey}:${hash}`,old=await db.first("SELECT digest FROM evidence WHERE ref=?",[ref]);
      const sequenceConflict=Number.isSafeInteger(value.sourceSequence)?await db.first("SELECT ref,digest FROM evidence WHERE source_key=? AND source_seq=?",[source,Number(value.sourceSequence)]):null;
@@ -240,6 +326,8 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
        await db.run("INSERT INTO source_health(source_key,last_sequence,last_event_at,gaps,conflicts) VALUES(?,NULL,?,0,1) ON CONFLICT(source_key) DO UPDATE SET conflicts=source_health.conflicts+1",[source,input.atMs]);
      }continue;}
      const at=typeof value.at==="string"&&Number.isFinite(Date.parse(value.at))?Date.parse(value.at):input.atMs;
+     const retired=await db.first("SELECT through_sequence,through_time FROM evidence_retirement WHERE source_key=?",[source]);
+     if(retired&&(Number.isSafeInteger(value.sourceSequence)?Number(value.sourceSequence)<=Number(retired.through_sequence):at<=Number(retired.through_time))){retirementSkipped++;continue;}
      const field=(k:string)=>observationId(value[k])?String(value[k]):null;
      await db.run("INSERT INTO evidence(ref,digest,source_key,source_seq,at_ms,agent_id,step_id,host_generation,tray_id,failure_id,decision_id,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",[ref,hash,source,Number.isSafeInteger(value.sourceSequence)?Number(value.sourceSequence):null,at,field("agentId"),field("stepId"),field("hostGenerationId"),field("trayId"),field("failureId"),field("decisionId"),payload]);inserted++;
      if(Number.isSafeInteger(value.sourceSequence))await recordSourceSequence(db,source,Number(value.sourceSequence),at);
@@ -249,19 +337,28 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
      await indexProviderRouteCondition(db,{rootId,value,ref,
        opened:(id,agent)=>event(db,input.epoch,"execution_failure_observed",rootId,agent,at,id),
        recovered:id=>event(db,input.epoch,"incident_resolved",rootId,null,at,id)});
+     const intake={rootId,value,ref,at,sourceKey:source,opened:(id:string,agent:string|null)=>event(db,input.epoch,"execution_failure_observed",rootId,agent,at,id)};
+     await indexNativeIncident(db,intake);
+     await indexExecutionProgress(db,intake);
     }
-    await db.run("INSERT INTO evidence_cursors(source_key,cursor,batch_digest,updated_at,gap) VALUES(?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET cursor=excluded.cursor,batch_digest=excluded.batch_digest,updated_at=excluded.updated_at,gap=excluded.gap",[input.sourceKey,input.nextCursor,digest,input.atMs,input.gap??null]);
-    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications=await notificationDecisions(db,changes,input.atMs);return {duplicate:false,inserted,conflicts,changes:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications};
+    if(retirementSkipped)await db.run("UPDATE observation_maintenance SET dropped_events=dropped_events+? WHERE singleton=1",[retirementSkipped]);
+    await db.run("INSERT INTO evidence_cursors(source_key,cursor,batch_digest,updated_at,gap) VALUES(?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET cursor=excluded.cursor,batch_digest=excluded.batch_digest,updated_at=excluded.updated_at,gap=excluded.gap",[input.sourceKey,input.nextCursor,digest,input.atMs,retirementSkipped?"retired_source_window":input.gap??null]);
+    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications=await notificationDecisions(db,changes,input.atMs);return {duplicate:false,inserted,conflicts,retirementSkipped,droppedEvents:0,storagePressure:false,changes:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications};
+   }).catch(failure=>{
+    // A file-cap rejection rolled back the entire batch. Use the reserved
+    // metadata headroom to acknowledge a gap, never spin replaying the batch.
+    if(failure instanceof BoxRuntimeError&&failure.message==="monitor_storage_pressure")return mutate(skipPressure);
+    throw failure;
    });
   },
   async executionEvidence(selector:{agentId:string;stepId:string}){return read(async db=>{
     if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");
     if(!observationId(selector.agentId)||!observationId(selector.stepId))throw error("monitor_invalid_trace_selector");
-    const raw=await db.all("SELECT payload FROM evidence WHERE agent_id=? AND step_id=? ORDER BY seq LIMIT 4097",[selector.agentId,selector.stepId]);
-    const values=raw.slice(0,4096).map(r=>JSON.parse(String(r.payload))),summaryRows=await db.all("SELECT summary_json FROM incidents WHERE rule='execution_failure' AND json_extract(summary_json,'$[0].agentId')=? AND json_extract(summary_json,'$[0].stepId')=? LIMIT 33",[selector.agentId,selector.stepId]);
+    const closure=await collectIncidentEvidence(db,{id:"execution-query"},selector);
+    const values:Record<string,unknown>[]=closure.facts.map(f=>f.value),summaryRows=await db.all("SELECT summary_json FROM incidents WHERE rule='execution_failure' AND json_extract(summary_json,'$[0].agentId')=? AND json_extract(summary_json,'$[0].stepId')=? LIMIT 33",[selector.agentId,selector.stepId]);
     let summaryUsed=false;
     if(!values.length)for(const row of summaryRows.slice(0,32)){try{const summary=JSON.parse(String(row.summary_json));if(Array.isArray(summary))for(const event of summary){const safe=projectControlEvent(event);if(safe){values.push(safe);summaryUsed=true;}}}catch{/* malformed summary is not evidence */}}
-    return {events:values,source:"monitor_materialized_journal",summaryUsed,truncated:raw.length>4096||summaryRows.length>32,retentionFloor:Number((await meta(db)).evidence_floor??0)};
+    return {events:values,source:"monitor_materialized_journal",summaryUsed,truncated:closure.truncated||summaryRows.length>32,retentionFloor:Number((await meta(db)).evidence_floor??0)};
   });},
   async alertTrace(selector:AlertTraceSelector){return read(async db=>{
     if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");
@@ -305,19 +402,32 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   });},
   async maintain(now=Date.now()){return mutate(async db=>{
     const before=number((await db.first("SELECT COUNT(*) AS n FROM evidence"))?.n),cutoff=now-retentionMs;
+    const retired=await retireObservationDetails(db,now,retentionMs);
+    if(!retired.mayExpire)return {removedEvidence:0,remainingEvidence:before,pressure:before>eventTarget,lifetimeEventLimit:null,managementRetained:true,retention:retired};
     // Small incremental batches. Active conditions/management facts are not
     // deleted to meet a count. A target is housekeeping pressure, not admission.
     const expired=await db.all("SELECT id FROM incidents WHERE category='occurrence' AND acknowledged=0 AND id NOT IN(SELECT incident_id FROM management) AND id NOT IN(SELECT parent_id FROM incidents WHERE parent_id IS NOT NULL) AND last_seen<? AND (snooze_until IS NULL OR snooze_until<?) LIMIT 1000",[cutoff,now]);
     for(const row of expired){await db.run("DELETE FROM incident_evidence WHERE incident_id=?",[uuid(row.id)]);await db.run("DELETE FROM incidents WHERE id=?",[uuid(row.id)]);}
-    const floor=await db.first("SELECT MAX(seq) AS n FROM (SELECT seq FROM evidence WHERE (at_ms<? OR ?=1) AND ref NOT IN (SELECT event_ref FROM incident_evidence) ORDER BY seq LIMIT 1000)",[cutoff,before>eventTarget?1:0]);
-    if(floor?.n!==null&&floor?.n!==undefined){await db.run("DELETE FROM evidence WHERE seq<=? AND (at_ms<? OR ?=1) AND ref NOT IN(SELECT event_ref FROM incident_evidence)",[number(floor.n),cutoff,before>eventTarget?1:0]);await db.run("UPDATE meta SET evidence_floor=MAX(evidence_floor,?)",[number(floor.n)]);}
+    const obsolete=await db.all("SELECT ref,seq,source_key,source_seq,at_ms FROM evidence WHERE (at_ms<? OR ?=1) AND ref NOT IN (SELECT event_ref FROM incident_evidence) AND ref NOT IN (SELECT event_ref FROM snapshot_links) ORDER BY seq LIMIT 1000",[cutoff,before>eventTarget?1:0]);
+    for(const row of obsolete){
+      await db.run("INSERT INTO evidence_retirement(source_key,through_sequence,through_time) VALUES(?,?,?) ON CONFLICT(source_key) DO UPDATE SET through_sequence=MAX(through_sequence,excluded.through_sequence),through_time=MAX(through_time,excluded.through_time)",[String(row.source_key),row.source_seq===null?-1:Number(row.source_seq),Math.min(Number(row.at_ms),now)]);
+      await db.run("DELETE FROM evidence WHERE ref=?",[String(row.ref)]);
+    }
+    const floor=obsolete.at(-1)?.seq;if(floor!==undefined)await db.run("UPDATE meta SET evidence_floor=MAX(evidence_floor,?)",[Number(floor)]);
     const eventFloor=await db.first("SELECT MAX(seq) AS n FROM (SELECT seq FROM events WHERE at_ms<? AND (incident_id IS NULL OR incident_id NOT IN(SELECT id FROM incidents WHERE status='open')) ORDER BY seq LIMIT 1000)",[cutoff]);
     if(eventFloor?.n!==null&&eventFloor?.n!==undefined){await db.run("DELETE FROM events WHERE seq<=? AND at_ms<? AND (incident_id IS NULL OR incident_id NOT IN(SELECT id FROM incidents WHERE status='open'))",[number(eventFloor.n),cutoff]);await db.run("UPDATE meta SET event_floor=MAX(event_floor,?)",[number(eventFloor.n)]);}
     // A short page-reclamation slice, never a full-image rewrite or a GET side effect.
     await db.run("PRAGMA incremental_vacuum(128)");
-    const after=number((await db.first("SELECT COUNT(*) AS n FROM evidence"))?.n);return {removedEvidence:before-after,remainingEvidence:after,pressure:after>eventTarget,lifetimeEventLimit:null,managementRetained:true};
+    const after=number((await db.first("SELECT COUNT(*) AS n FROM evidence"))?.n);return {removedEvidence:before-after,remainingEvidence:after,pressure:after>eventTarget,lifetimeEventLimit:null,managementRetained:true,retention:retired,physical:await sqlitePhysicalUsage(db)};
   });},
-  async storageHealth(){return read(async db=>{const m=await meta(db);const info=await stat(file);return {engine:"sqlite-disk",schemaVersion:m.version,fileBytes:info.size,lifetimeEventLimit:null,sources:m.version===VERSION?await db.all("SELECT * FROM source_health ORDER BY source_key LIMIT 200"):[],migrationRequired:m.version!==VERSION};});},
+  async storageHealth(){return read(async db=>{
+   const m=await meta(db),info=await stat(file),physical=await sqlitePhysicalUsage(db),auxiliary=await monitorAuxiliaryUsage(file);
+   const health=m.version===VERSION?await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_at,last_state FROM observation_maintenance WHERE singleton=1"):null;
+   return {engine:"sqlite-disk",schemaVersion:m.version,scope:"monitor_database_only",installationBudgetEnforced:false,
+    fileBytes:info.size,allocatedFilesystemBytes:info.blocks*512,physical,auxiliary,totalObservedBytes:info.size+auxiliary.bytes,
+    growthGuard:{maxDatabaseBytes,source:"runtime_default_or_explicit_store_policy",existingOversize:info.size>maxDatabaseBytes},
+    health,lifetimeEventLimit:null,sources:m.version===VERSION?await db.all("SELECT * FROM source_health ORDER BY source_key LIMIT 200"):[],migrationRequired:m.version!==VERSION};
+  });},
  };
  return api;
 }

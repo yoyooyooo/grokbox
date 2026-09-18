@@ -1,6 +1,12 @@
 # OBS-02 — 固定现场、同源查询与可用取证命令
 
-**Status：Planned / Spec-only；M1。** Contract：[Spec §5/§10](../roadmap/template-ops-automation-spec.md#evidence)。依OBS-00/01，与OBS-03投影、OBS-04保留合同联合接线。现有STEP incident只读性质保持。
+**Status：Partial implementation / source and packed-read proof；M1未整票关闭。** Contract：[Spec §5/§10](../roadmap/template-ops-automation-spec.md#evidence)。依OBS-00/01，与OBS-03投影、OBS-04保留合同联合接线。现有STEP incident只读性质保持。
+
+## 当前实现
+
+已有同库不可变revision/manifest、共享fact引用与digest校验、离线incident/capture/lease命令、旧STEP入口coverage补接及公共安全摘要。增量实现每incident最多3份可读revision，通知与有效租约保护的revision不可淘汰；无可回收项则拒绝新capture。持久history watermark保证回收后不复用revision，缺失的已采集修订返回snapshot_revision_retired而非snapshot_not_captured，查询不借用新现场。
+
+实际新增测试名为`packages/box-runtime/test/incident-evidence-store.test.ts`和`test/monitor-incident-cli.test.ts`；原计划中的同义文件名不再额外创建。完整跨来源关联/原生边界、异步prepare worker、所有崩溃矩阵和独立review仍未关闭。限定证据见[首片](../reports/2026-09-18-observation-evidence-first-slice.md)及[存储增量](../reports/2026-09-18-observation-storage-followup.md)。
 
 ## Goal / Modules
 
@@ -20,10 +26,10 @@ collector提交通知准备任务后，独立worker固定最小现场；manifest
 
 ## Executable acceptance
 
-待新增：
+当前命令（完整验收矩阵仍需在这些文件中补齐）：
 
 ```bash
-bun test packages/box-runtime/test/incident-evidence-snapshot.test.ts test/incident-evidence-cli.test.ts
+bun test packages/box-runtime/test/incident-evidence-store.test.ts test/monitor-incident-cli.test.ts
 bun test test/runtime-incident.test.ts test/alert-trace-review.test.ts test/incident-observability.test.ts
 bun run typecheck
 ```

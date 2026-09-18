@@ -1,6 +1,12 @@
 # OBS-00 — 最低证据合同与真实边界覆盖
 
-**Status：Planned / Spec-only；M0。** Contract：[Spec §2–5](../roadmap/template-ops-automation-spec.md#evidence)。这是新证据增量，不重开T41/modeld已完成切片。当前已有流/工具关系、run/tray、context维护回执，不能以字段名存在宣称完整。
+**Status：Partial implementation / E01–08 contract and local proof；M0未整票关闭。** Contract：[Spec §2–5](../roadmap/template-ops-automation-spec.md#evidence)。这是新证据增量，不重开T41/modeld已完成切片。当前已有流/工具关系、run/tray、context维护回执，不能以字段名存在宣称完整。
+
+## 当前切片
+
+`observation.ts`及`internal/observation/evidence-contract.ts`已落地，含E01–08、缺失/截断/冲突、显式关系与不可跨代赋权的合同。实际测试在`observation-evidence-contract.test.ts`和`observation-evidence-privacy.test.ts`；原STEP CLI的coverage/lookup/retention/readFailure/health接线已补。E03需实际请求见证，只有错误文本或空diagnostic不能报完整。
+
+E02/E04/E05/E08的完整真实writer观察仍未完成，其他requirement也不因此拥有全部原生资格；source→E矩阵、实际工具接受/checkpoint/App及独立review均保留缺口。[首片回执](../reports/2026-09-18-observation-evidence-first-slice.md)与[后续增量](../reports/2026-09-18-observation-storage-followup.md)只签所列范围。
 
 ## Goal / Dependencies
 
