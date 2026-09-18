@@ -246,6 +246,8 @@ S13连续性替换继续由CONT owner判断允许模式、原生快照完整性�
 <a id="storage"></a>
 ## 8. 有界存储：轮转、分层保留与安全GC
 
+**源码增量（2026-09-18）：** 已有SQLite局部容量、modeld结构化生命周期日志和原journal共享锁分段/游标/缺口/归档查询；各owner的本地限制不等于本节全部合同已兑现。journal活动路径保持不变、段ID与inode联合校验、普通轮转过渡不建故障；旧watchdog不改写受管活动inode，J13 writer不迁移。实际证明、未签的撕裂文件/硬崩锁与全安装预算见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)和[分段回执](../reports/2026-09-18-structured-journal-rotation.md)。现场状态只看LIVE。
+
 ### 8.1 三个互不混同的容量域
 
 诊断池：grokbox自动生成的日志/journal/观测SQLite含索引与辅助文件/事故证据/通知状态/管理导出/维护暂存，目标256MiB、硬接纳预算512MiB、其中64MiB保留给元数据和回收暂存。所有安装共用，不按Bot/进程倍增；同物理文件只计一次，软链接不得跨root重复统计或逃逸。默认不保存完整业务正文。

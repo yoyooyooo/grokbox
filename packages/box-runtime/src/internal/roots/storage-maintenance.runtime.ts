@@ -1,6 +1,7 @@
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { openMonitorStore } from "../io/monitor-store.node.ts";
 import { observeProcessLogStorage } from "../io/bounded-process-log.node.ts";
+import { observeJournalStorage } from "../io/journal-storage.node.ts";
 
 /** Read-only owner inventory. One unavailable source must not hide another.
  * This does not install a maintenance scheduler or enforce a global quota. */
@@ -17,5 +18,7 @@ export async function observeRuntimeStorage(input: { durableRoot: string; runRoo
   }
   const processLogs = input.runRoot ? await observeProcessLogStorage(input.runRoot)
     : { state: "not_configured" as const, scope: "owned_modeld_process_segments" as const, bytes: null };
-  return { ...monitor, processLogs, installationBudgetEnforced: false as const };
+  const journals = [{ source: "control", ...await observeJournalStorage(input.durableRoot) }];
+  if (input.runRoot && input.runRoot !== input.durableRoot) journals.push({ source: "host", ...await observeJournalStorage(input.runRoot) });
+  return { ...monitor, processLogs, journals, installationBudgetEnforced: false as const };
 }

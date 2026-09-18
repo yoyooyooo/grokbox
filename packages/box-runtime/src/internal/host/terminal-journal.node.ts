@@ -11,6 +11,7 @@ import { projectRuntimeBuildInfo, type RuntimeBuildInfo } from "@grokbox/runtime
 import { projectObservationIdentity, type ObservationIdentity } from "./observation-identity.node.ts";
 import { projectNativeTurnObservation } from "./turn-observation.ts";
 import { HOST_STATE_SHAPES } from "./context-codec.ts";
+import { prepareJournalAppend, type JournalRotationOptions } from "./journal-segments.node.ts";
 import {
   boundedClientNonce,
   HOST_FAILURE_CATALOG,
@@ -111,12 +112,15 @@ function delay(ms: number): Promise<void> {
 async function ensureLogDir(filePath: string): Promise<void> {
   const dir = dirname(filePath);
   await mkdir(dir, { recursive: true, mode: 0o700 });
+  const info = await lstat(dir);
+  if (!info.isDirectory() || info.isSymbolicLink() || (process.getuid && info.uid !== process.getuid())) throw new Error("journal_unsafe_directory");
+  if ((info.mode & 0o300) !== 0o300) throw Object.assign(new Error("journal_directory_not_writable"), { code: "EACCES" });
   await chmod(dir, 0o700);
 }
 
 export async function withEventsLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
   const path = lockPath(root);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await ensureLogDir(path);
   for (let attempt = 0; attempt < 1000; attempt += 1) {
     let handle;
     try { handle = await open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600); }
@@ -140,7 +144,7 @@ export async function withEventsLock<T>(root: string, fn: () => Promise<T>): Pro
   throw Object.assign(new Error("box-runtime events journal lock timeout"), { code: "LOCK_TIMEOUT" });
 }
 
-export async function appendNdjsonLine(root: string, line: string, role: JournalWriterRole = "control"): Promise<void> {
+export async function appendNdjsonLine(root: string, line: string, role: JournalWriterRole = "control", rotation?: JournalRotationOptions): Promise<void> {
   const path = hostEventsPath(root);
   const payload = line.endsWith("\n") ? line : `${line}\n`;
   const complete = startJournalWrite(root, role);
@@ -151,6 +155,7 @@ export async function appendNdjsonLine(root: string, line: string, role: Journal
   try {
     await withEventsLock(root, async () => {
       await ensureLogDir(path);
+      await prepareJournalAppend(root, Buffer.byteLength(payload), rotation);
       const handle = await open(path, fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
       try {
         const stat = await handle.stat();

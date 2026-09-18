@@ -33,6 +33,10 @@ Host 不读 canonical attestation、不拥有 provider credential。允许复用
 
 **J13 决策门：当前保留 Host append-only terminal journal，watchdog 仍唯一 compactor。** Journal-via-modeld 尚未接受：不得迁移 writer、新增 terminal-report IPC method 或在 Host 加 Effect。现有锁等待/fsync 是明确的 **decision-gated gap，不是永久豁免**；完整重副作用收口不能跳过它。未来放置变化必须先获 owner 决定，并更新同日志的并发、去重、ack/gap、拒绝/断线/重启合同；模型完成不能冒充 Host normalized delivery。日志失败只影响证据，不改变 Host 回复或工具循环。
 
+### 2026-09-18 OBS-04 字节轮转补充
+
+J13 writer放置不变。原append入口在同一个events.lock内拥有有界字节分段和轮转意图恢复，纯Host leaf不引入Effect/SQLite/RPC；这不是另一个语义compactor。watchdog对legacy仍执行原保留选择器，对已登记分段只调用同协议的关闭段维护，不重写活动inode。只读reader不恢复或删除文件，日志失败仍只影响证据。实现与明确未证的硬崩锁/撕裂文件范围见[分段回执](reports/2026-09-18-structured-journal-rotation.md)。
+
 ## Owner adjudication（2026-09-07）
 
 详见 [docs/decisions/2026-09-07-offline-live-adjudication.md](decisions/2026-09-07-offline-live-adjudication.md)。摘要：

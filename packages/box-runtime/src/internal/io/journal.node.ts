@@ -20,6 +20,8 @@ import { eventsPath } from "./paths.ts";
 import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { type ObservationState } from "./observation.node.ts";
 import { readJournalWindow, JOURNAL_LOOKUP_READ_BYTES, type JournalCoverage } from "./journal-window.node.ts";
+import { readObservationJournalWindow } from "./journal-segment-window.node.ts";
+import { maintainSegmentedJournal } from "../host/journal-segments.node.ts";
 import { observeJournalRetention, writeJournalRetention, type JournalRetentionObservation, type JournalRetentionReceipt } from "./journal-retention.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { projectRunObservation } from "../host/run-observation.ts";
@@ -595,7 +597,7 @@ function asLookup(query?: JournalLookup | RuntimeEventSelector): JournalLookup |
 export async function observeEvents(root: string, limit = CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION, query?: JournalLookup | RuntimeEventSelector): Promise<EventsObservation> {
   const cap = query ? 4096 : CONTROL_PLANE_EVENT_RETENTION + TURN_SEAM_TERMINAL_RETENTION;
   if (!Number.isSafeInteger(limit) || limit < 0) return { state: "invalid", events: [], truncated: false, readFailure: "invalid_limit" };
-  const read = await readJournalWindow(eventsPath(root), query ? JOURNAL_LOOKUP_READ_BYTES : undefined);
+  const read = await readObservationJournalWindow(root, query ? JOURNAL_LOOKUP_READ_BYTES : undefined);
   if (read.state !== "present") return { state: read.state, events: [], truncated: false, readFailure: read.failure };
   let marker: RetentionObservation | undefined;
   let malformed = 0;
@@ -689,6 +691,7 @@ export async function maintainObservationJournals(input: { durableRoot: string; 
 export async function compactEvents(root: string): Promise<void> {
   const path = eventsPath(root);
   await withEventsLock(root, async () => {
+    if (await maintainSegmentedJournal(root)) return;
     const read = await readJournalWindow(path, JOURNAL_LOOKUP_READ_BYTES);
     if (read.state === "missing") return;
     if (read.state !== "present" || !read.coverage || read.coverage.partialLastLine || read.coverage.invalidLines > 0

@@ -20,6 +20,13 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "journal-rotation": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/journal-segment-rotation.test.ts", "test/incident-observability.test.ts", "test/runtime-incident.test.ts", "test/monitor-incident-cli.test.ts", "packages/box-runtime/test/monitor-scheduling-review.test.ts", "packages/box-runtime/test/alert-observability-store.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/host-journal.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "process-log-rotation": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/box-runtime/test/process-log-rotation.test.ts", "packages/box-runtime/test/process-log-modeld.test.ts", "packages/box-runtime/test/modeld-running-failure.test.ts", "packages/box-runtime/test/modeld-packaged-lifecycle.test.ts", "test/monitor-incident-cli.test.ts"],
@@ -191,6 +198,7 @@ for (const argv of mapped) {
 }
 
 const SUPPORTS = {
+  "journal-rotation": ["shared-writer-byte-rotation", "durable-segment-cursor-resume", "bounded-registered-journal-data", "retirement-gap-not-fake-health", "rotation-intent-recovery-no-append-replay", "sealed-partial-tail", "packed-node-closed-segment-lookup", "fixed-incident-survives-source-eviction", "no-query-recovery-or-gc"],
   "process-log-rotation": ["writer-owned-modeld-segments", "bounded-multi-generation-disk", "partial-tail-not-reappended", "borrower-does-not-rotate", "diagnostic-failure-does-not-block-modeld", "packaged-node-replacement-no-raw-log-fd", "independent-read-only-storage-facets"],
   "observation-evidence": ["unknown-tray-and-no-step-failure-intake", "immutable-revision-node-cli-read", "public-structure-without-private-identities", "bounded-revisions-and-shared-leases", "sqlite-file-growth-guard-and-retention-resume", "slow-rpc-independent-local-drain", "explicit-v2-migration-no-backlog-wake", "read-only-storage-status", "untracked-source-privacy-scan"],
   "context-reuse": ["pinned-pi-controlled-extraction", "independent-cut-and-usage-goldens", "untruncated-summary-input", "real-sdk-request-owner", "packed-host-process-reopen"],
@@ -220,6 +228,7 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "journal-rotation": "real-owned-files-and-sqlite-source-writers-rotation-stage-faults-and-packed-node-readers-no-native-host-or-provider-effects",
   "process-log-rotation": "real-private-files-real-unix-modeld-source-root-and-disposable-packaged-node-replacement-no-Host-or-provider-effects",
   "observation-evidence": "production-collector-and-sqlite-writers-real-temporary-databases-files-and-packaged-node-cli-owned-rpc-and-native-event-fixtures-no-live-mutations",
   "context-reuse": "selected-pi-source-extraction-real-sdk-local-http-and-packaged-host-no-global-pi-or-external-provider",
@@ -249,6 +258,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "journal-rotation": ["whole-installation-budget", "arbitrary-power-loss-or-torn-manifest-recovery", "hard-crash-events-lock-recovery", "native-host-adoption", "persistent-service-installation", "native-bot-notification", "independent-review", "live-adoption"],
   "process-log-rotation": ["installation-wide-storage-budget", "structured-journal-rotation", "other-process-log-producers", "native-webhook-delivery", "persistent-service-installation", "independent-review", "live-adoption"],
   "observation-evidence": ["all-native-boundary-instrumentation", "installation-wide-diagnostic-budget", "process-journal-rotation", "execution-safety-state-retirement", "native-webhook-pairing-and-bot-delivery", "persistent-service-installation", "independent-review", "live-adoption"],
   "context-reuse": ["live-native-context-adoption", "real-provider-summary-quality", "independent-review", "pi-ai-backend-adoption"],

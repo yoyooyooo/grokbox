@@ -31,6 +31,10 @@
 
 实际preload SHA-256为`9e39c7487d016e7a418e3e0ed1c3d2852af921ff7bbe0be5a4529be96d173d6a`，E09 pin按真实构建更新并已通过拒旧制品测试。新增`verify-runtime-rebuild.mjs process-log-rotation`组合这些现有测试与原生命周期/边界/隐私门；该整组尚未在最终候选上取得回执，不能把注册verifier当通过。
 
+## 后续完整复验
+
+继续推进时，在干净的98b62ea上实际执行了`verify-runtime-rebuild.mjs process-log-rotation`：类型检查、构建、52项测试（9文件、2813断言）、运行时边界与隐私扫描均通过，source前后稳定。由此闭合本片此前的最终typecheck/组合verifier缺口。该提交已快进合入v2；这不是现役采用。独立复核新调用被工具安全检查拦截，仍无审核回执，不能把旧503或新拦截当审核通过。结构化journal后续实现另见[分段回执](2026-09-18-structured-journal-rotation.md)。
+
 ## 前置、复核与现场边界
 
 已提交的前片为`8835fcf`（本地incident/不可变证据/SQLite局部容量与采集调度），其专项验证64项、边界/构建/隐私检查通过。一次只读独立复核使用指定Astra渠道返回上游503，未取得审核报告；实现者测试不替代独立review。

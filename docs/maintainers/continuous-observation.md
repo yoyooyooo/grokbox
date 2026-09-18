@@ -135,6 +135,14 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 - 活跃条件、ack/snooze/management request 不能仅为达到数量目标而删除；历史高频证据可以过期，查询披露 retention floor。已管理的 occurrence 保留受限诊断摘要，不需要永久保存 Alert 对象或全文。
 - DB/collector 退化不参与模型准入，不取消正常业务。观测缺口不能证明没有失败；Alert 消失也不能证明恢复。
 
+## 结构化 journal 分段与游标
+
+源码已接通原writer的字节轮转：活动路径仍是`log/events.ndjson`，达到8MiB或发现半行时按持久段ID归档；每root受管数据默认128MiB，索引/暂存索引另有32KiB单文件上限。它不是整安装预算，也不表示现役Host已经采用；`runtime storage status`的journals分区单列字节、待恢复/缺失、退役量和writerAdoption=not_checked。
+
+现有`runtime incident`、`alerts trace`和monitor采集读取同一分段来源，不要求用户记住归档文件名。旧v1游标按inode续读，新v2游标绑定段ID和字节锚点；正常轮转的短暂过渡显示rotation_in_progress且不新建故障，旧段实际淘汰才返回retired_segment。关闭段半行显示sealed_partial_line，不能拼成新JSON。固定incident revision不随源段删除而改变。
+
+普通GET不恢复轮转、不GC；writer在原锁内继续已登记意图，watchdog对分段只作同协议维护，不重新改写活动inode。损坏/撕裂索引或无法确认死writer锁时保留明确阻断，不删锁/清目录造绿。全安装额度、持久调度、原生采用和独立review仍见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)及[LIVE](../tickets/LIVE-integration-validation.md#live-obs-storage)。证明与原子性范围见[分段回执](../reports/2026-09-18-structured-journal-rotation.md)。
+
 ## 资格边界
 
 源码测试包含实际磁盘、Node 打包、旧库迁移/回滚、事务提交前后强制退出、cursor 原子性、超过旧限额、只读无 sidecar、事件冲突与乱序、共享父事故和独立通知周期。原生最小切片有独立 synthetic Host fixture 行为对照；它不等于现役私有 bundle 与 App 的资格证明。新源码/preload 必须走现有 profile/re-adopt 流程后才有现场覆盖，不能因构建或单测通过就声称已上线。

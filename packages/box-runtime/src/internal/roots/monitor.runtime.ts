@@ -90,7 +90,7 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
           expectedCursor: saved?.cursor ?? null, nextCursor: batch.nextCursor ?? "null", events: batch.events, atMs: Date.now(), gap: batch.gap }));
         if (batch.gap) gaps.add(batch.gap);
         if (indexed.storagePressure) gaps.add("storage_pressure");
-        const journal = { state: gaps.size ? [...gaps].join(",") : "observed", readBytes: batch.readBytes, inserted: indexed.inserted, hasMore: batch.hasMore, droppedEvents: indexed.droppedEvents };
+        const journal = { state: gaps.size ? [...gaps].join(",") : batch.deferred ?? "observed", readBytes: batch.readBytes, inserted: indexed.inserted, hasMore: batch.hasMore, droppedEvents: indexed.droppedEvents };
         if (!input.once && (indexed.changes.length || indexed.inserted || indexed.droppedEvents || journal.state !== previousJournalState))
           yield* publish({ changes: indexed.changes, notifications: indexed.notifications ?? [], journal });
         previousJournalState = journal.state;

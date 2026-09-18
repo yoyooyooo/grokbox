@@ -19,6 +19,8 @@ export type JournalCoverage = {
   snapshot: "descriptor-pinned";
   fileIdentity: string;
   recordLimitHit: boolean;
+  segmentCoverage?: { indexRevision: number; retiredThrough: number; retiredSegments: number; retiredBytes: number;
+    gaps: string[]; consistency: "per-segment-descriptor"; segments: Array<{ id: string; sequence: number; identity: string; bytesRead: number }> };
 };
 export type JournalWindow = {
   state: ObservationState;
