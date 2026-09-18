@@ -1,50 +1,31 @@
-# T51 — 默认用户能力、维护者预设与配置治理
+# T51 — 默认提醒、存储预算与配置切换
 
 ## Status / Goal
 
-**Planned · 2026-09-17 Spec-only。** 普通用户获得低成本的最小异常提醒；维护者能单独开启需要的观察/分析，配置不把可见性、成本与执行权限混成一个档位。Owning contract：[Spec §6.1](../roadmap/template-ops-automation-spec.md#capability-tiers)、[§6.2](../roadmap/template-ops-automation-spec.md#configuration)、[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)。
+**Planned；部分统一配置基础已由T57–T60实现，本轮仅Spec。** [Spec §6.2/§8](../roadmap/template-ops-automation-spec.md#configuration)。收口下一版ops/storage合同，不把现有config3旧support字段当新通知实现。
 
 ## Depends-on / Modules
 
-**AH-99/AH-100 集成：** [配置 Spec](../roadmap/configuration-rebuild-spec.md) / T57–T60 拥有通用文件/schema/writer/迁移，本票只拥有 ops 默认与能力规则；纯规则可先行，持久接线依该底座，不先落第三份配置。
-
-纯规则/配置可与 T43 并行，原生支持作为 effective 的能力输入，不等待 T48/T49。复用 ConfigurationWrite 和 T41，不能在模板里另写一套默认值。
-
-kernel `internal/ops/policy.ts`、`ops.ts`、统一 ConfigChange；box-runtime `internal/io/config-store.node.ts`、独立 ops-bindings/ops-grants 与 `monitor-store.node.ts`；CLI `commands/config.ts` 和领域 `commands/ops.ts`；T46/T50 消费预设与安装规则，维护手册解释，不复制可执行常量。
+依既有ConfigurationWrite/配置schema与OBS-00字段/OBS-04保留合同，纯schema可并行。kernel `internal/config/schema.ts`、revision、ConfigChange与ops policy；box-runtime原config migrate/store/application；CLI现有config registry。不新建ops-policy文件或第二writer。
 
 ## Work
 
-实现 user/maintainer versioned presets 和 leaf overrides；monitor、本地深观察、用户影响提醒、maintainer 通知、auto-diagnose、canary、维护、issue prepare/submit 分开。user 默认不运行深诊断，只对 confirmed user impact 且合法自修不可用/失败产生一次 brief-notice；不能调用模型或先尝试修复来判断这个条件。
+目标为下一不兼容schema：新增顶级storage及受限类别policy；当前编号在实施时与最新v2统一分配，不与CONT/其他worktree抢号。严格版本拒绝，显式迁移保留client/daemon/desktop/runtime/models原有语义和字节保护；普通reader不容忍未知字段。
 
-正常启用服务的新安装使用 user 基线；仅安装 CLI/GET/import 不启服务/活 Webhook。未配对显示 blocked-unpaired，旧安装 off/预算/覆盖在升级中保留。维护者 preset 不自动开启原生推理、主动探针、维护 grant 或公开 issue；通知对象不因 preset 改为发布者账号。
+ops默认notify、diagnostics=on-request、maintenance=off；默认brief不询问Issue。旧ops.support意图在迁移预览中明确退役/停用，不转成自动诊断/新binding/grant。T52/T56延期，首发不新增发布凭据/认证字段。
 
-偏好写 config.json.ops：preset/presetRevision、实际出现的显式叶、targets/routing，不存 overrides 包装。通用 get/set/apply/preset 复用 T58，不能在 ops 下再造 config 命令。真实配对和 maintenance/issue grants 归机器状态，普通 config 无写许可；便携导出排除身份/secret。preset 切换保留显式覆盖，reset 需确认且不生成 grant，文件迁移由 T59 负责。environment/临时 flags 不可越过授权或扩大预算。
+storage预算全安装共用，diagnostics目标256MiB/max512MiB/reserve64MiB含在max内，detail7d/summary30d；类别按Spec单一policy。禁止普通config把execution safety变成任意TTL。service必要GC独立于ops/notifications关闭，用户模型任务不受关闭通知取消。
 
-effective 与 requested 分开，返回 valueSource/blockedReason；unknown/无 capability/过期 binding/预算/坏配置均不伪装开启或写回 desired。user 自动首醒上限和 critical 配额按 Spec 唯一 policy 实现，抑制有记录；native 不提供 token 硬门时保留 not_proven。用户确认前的准备/提醒逻辑无 GitHub 网络。
+版本化preset→显式叶，保留旧off/成本/数据选择。requested/effective/valueSource/blockedReason与真实服务/绑定/权限分别输出。配对、grant、容量计量/GC游标/租约属于机器状态，不可移植config不携带真实身份/secret。
 
-## 多目标与发布授权补充
-
-[T54](T54-ops-targets-and-routing.md)定义 default target 和可选规则，关闭 routing 只停高级匹配、不关闭告警；单目标也是同一 schema。T55 的安装级/真实原生 Bot/工作额度取交集，alias 不能翻倍。通知模型继续归既有 models/原生 owner，配置这里不得新增 modelId 真相源。
-
-[T56](T56-scripted-issue-publishing.md)给 support.submit 增加 off/confirm-each/preauthorized-summary，最后一个没有有效独立 issue grant 仍 blocked。maintainer、自动诊断、maintenance grant 都不自动赋予发布权。schema/preview/export 保持 secret 与权限私有区边界；纯 config apply 不隐式创建 Bot/Routine。新增 mode 和 target 配置示例纳入 roundtrip 测试。
+增加费用/供应商/数据范围/保留预算时显示预览；普通config不授予Host维护/公开权。无关领域revision不失效当前模型选择；通知target修改冻结旧attempt的对账，不重放。
 
 ## Executable acceptance
 
-本票创建并运行：
+新增`packages/runtime-kernel/test/ops-notice-storage-config.test.ts`、`test/ops-storage-config-migration.test.ts`，回归`packages/runtime-kernel/test/unified-config.test.ts`、`test/config-cli.test.ts`、`test/config-packed.test.ts`。证明旧support退役、off保持、schema拒绝、迁移崩溃恢复、未知字段不丢、预算非法拒绝、ops off仍保留storage intent。
 
-```bash
-bun test packages/runtime-kernel/test/ops-presets.test.ts test/ops-config-cli.test.ts packages/box-runtime/test/config-ops-migration.test.ts
-bun run typecheck
-```
+Fake consumer/临时真实文件验证config提交不安装服务、不唤醒Bot、不GC、不改模型、不生成grant；实际状态只有owner读回后才applied。与T54共享目标schema，不复制第二层配置。
 
-以上新文件目前不存在。覆盖 fresh user、未配对、显式 off、maintainer 不签 grant、preset 保留覆盖/reset、未知字段、并发 CAS、旧 schema/坏文件/备份恢复、secret-free export、旧配置升级不新增收费能力、临时 flags 只能收紧。所有 GET 写入/服务启动为 0。
+## Forbidden / Exit evidence
 
-FakeClock 验证无变化/无用户影响/同周期/拒绝或不回复/预算耗尽均不额外唤醒；普通异常首醒只走 brief path，模型诊断、GitHub 请求、Host mutation 均为 0。控制器/通知读取同一 effective projection，不各自重新猜默认值。
-
-## Forbidden / Non-goals
-
-不创造超级 maintainer 角色，不按用户名/环境检测隐式开 debug，不开启真实服务或真实 token 消费，不把无范围 autoSubmit=true 写入配置，不因 preset 自动签发提单/附件权限，不为配置升级 modeld/依赖。
-
-## Done evidence / Next
-
-交付 preset/schema/迁移和真实 CLI 预览/读回证明；T44–T47 与 T48/T49 分别消费观察、诊断和 grant 门，不能回退成单一 mode。T50 验收默认用户安装，不等全自动维护。
+不在本轮改生产配置，不将preset当权限角色，不用迁移升级现役服务。提交schema及迁移/consumer证据；现场切换依[LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)，存储实际生效归[LIVE-OBS-STORAGE](LIVE-integration-validation.md#live-obs-storage)，保持历史config2/3回执原范围。

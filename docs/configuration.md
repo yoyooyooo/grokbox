@@ -2,6 +2,8 @@
 
 `grokbox config` is the shared, schema-checked interface for preferences and client connections. Models remain a separate document and are changed through model commands. Configuration reads never start services or repair files.
 
+> **Planned ops/storage cutover:** the [September 18 plan](roadmap/template-ops-automation-spec.md#configuration) adds bounded-storage policy and replaces the old support intent in a future incompatible schema. It does not change this guide's current schema3 implementation. The default notification design only reminds a paired Bot; automatic Issue publishing is deferred. New fields and execution commands are not usable until their implementation and migration ship.
+
 ## Two human entry points
 
 | Entry | Contents | Physical storage |

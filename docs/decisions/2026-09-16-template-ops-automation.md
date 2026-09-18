@@ -1,5 +1,7 @@
 # 2026-09-16 — Template Bot 告警、诊断与受限静默运维
 
+> 历史决策。本页当时的默认能力表述已由[2026-09-18决策](2026-09-18-observable-native-bot-ops.md)及[当前Spec](../roadmap/template-ops-automation-spec.md)收口：默认固定现场后只提醒，受托后自主处理；自动Issue退出、支持票延期。原生资格、独立维护授权与唯一controller边界保留，本页不再定义当前默认。
+
 **状态：接受用户补充后的设计方向；实现与本机部署未授权于本文件。** 施工细节唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，本页只保存决策及其对既有规则的精确修订。总运行时仍归 [主 Spec](../roadmap/box-runtime-impl-spec.md)。
 
 **2026-09-17 后续裁决：** [默认能力/支持/Routine 决策](2026-09-17-ops-defaults-support-and-routines.md)补充 D8–D12；当前默认为正常服务启用后 user 轻量观察、配对后最小提示，不是默认模型排障。T51–T53 扩展配置、用户确认后 issue 与通用 Routine CLI。本页保留初始设计，不再作为默认值的唯一说明；有限维护授权和单 controller 边界不变。

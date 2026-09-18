@@ -1,5 +1,7 @@
 # 2026-09-17 — 默认用户保护、维护者配置与 Routine CLI
 
+> 历史决策。默认“不可自修才提醒并询问Issue”已被[2026-09-18决策](2026-09-18-observable-native-bot-ops.md)替代：真实未知/无STEP异常进入证据链，默认Bot只提醒，用户委托后自主处理；T52/T56延期。当前字段、配对、成本与有界保留仅由[当前Spec](../roadmap/template-ops-automation-spec.md)拥有，以下保留当时的理由，不再作为现行默认。
+
 **状态：用户补充后的接受方向，Spec/Tickets 更新，不是功能已实现或现役已启用。** 细节唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)。本页补充 [2026-09-16 决策](2026-09-16-template-ops-automation.md)，仅修订默认能力与支持/配置/通用 Routine 边界；精确补丁资格、独立 grant、唯一 controller、Bot 先结束再维护自己的 Host 等规则不变。
 
 **同日后续修订：** [多目标与授权发布决策](2026-09-17-ops-routing-and-authorized-issues.md)取消「只能单个官方模板接收」限制，默认 user 小能力保持；D10 继续拥有默认 exact-consent 路径，另增仅限固定公共摘要、独立明确授权的 issue grant。D11 的 singular binding 扩为命名 targets/routing/private bindings，模型仍归原 owner。新细节只在专项 Spec §5.2、§6.3–6.5 维护，不从旧语句排除新范围。

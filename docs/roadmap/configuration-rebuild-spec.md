@@ -3,6 +3,12 @@
 **状态：配置 v2、统一写入程序、显式迁移、bootstrap、别名恢复及源码/打包 CLI 已实现；生产切换与平台 Reset 验收独立。** AH-99/AH-100 的实现范围由 [T57–T60](../tickets/README.md#configuration-rebuild)跟踪，实际使用见 [配置指南](../configuration.md)。本规格拥有配置文件、schema、作用域、提交与恢复；运维行为仍归 [Template Ops Spec](template-ops-automation-spec.md)。
 
 <a id="decisions"></a>
+## 后续 ops/storage 变更（2026-09-18接受，尚未实现）
+
+本页保留T57–T60原配置重建的交付合同；当前源码schema3与CTX扩展见[配置指南](../configuration.md)。[T51](../tickets/T51-ops-capability-presets.md)将在下一不兼容配置版本新增顶级storage并显式退役旧ops.support意图，具体版本号实施时与最新v2统一分配。字段语义唯一归[Template Ops Spec §6.2](template-ops-automation-spec.md#configuration)，物理布局、CAS与迁移继续复用本页，不双读双写、不新增配置文件。
+
+因此下文原v2/support形状仅代表该次已实现范围，不代表新的通知/存储能力已可用。旧off、预算和无关领域保留，迁移不创建binding/grant、不唤醒Bot、不自动公开；新命令/字段不能直接用于当前schema3。
+
 ## 1. 用户与程序边界
 
 日常配置只有 `config.json` 和独立的 `models.json`。前者聚合 client Profiles、daemon、desktop、runtime desired 和 ops 偏好；后者保持现有模型目录、凭据引用与逐 Bot 分配。模型协议、Server 归属与同 TURN 选择不因普通配置变化而改变。

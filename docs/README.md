@@ -32,7 +32,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 - [T42 upstream Host session lessons](tickets/T42-upstream-host-session-lessons.md): record of grok-bot-setup Host ABI pitfalls vs grokbox; not an S0 implementation ticket.
 - [Host seam ops recognition](roadmap/host-seam-ops-recognition.md): forward-only upgrade recognition, private corpus replay, candidate review/publication and phased offline gates. Runtime SHA/literal application and separate adopt confirmation remain unchanged.
 
-- [Bot 运维闭环 Spec](roadmap/template-ops-automation-spec.md)：T43–T56，默认单接收者、允许用户指定 custom Bot、可选按意图/来源/严重度分流；user 小提醒、maintainer 配置、Routine CLI 与授权后内置 issue 提交。仅 Spec，不代表已启用；[初始决策](decisions/2026-09-16-template-ops-automation.md)限定维护预授权，[分层决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)保留低成本默认，[多目标/发布决策](decisions/2026-09-17-ops-routing-and-authorized-issues.md)扩充命名目标/故障成本/有限 issue grant，[操作手册](maintainers/template-ops-automation.md)给出单目标到高级配置与支持流程。
+- [原生 Bot 运维、故障证据与有界存储 Spec](roadmap/template-ops-automation-spec.md)：[OBS-00–06](tickets/README.md#incident-evidence)补最低证据、未知/无STEP入口、固定现场、分层脱敏、容量稳态与安全退役；T43–T56收口为默认单目标提醒、原生Routine及后续受托自主/维护。**接受设计，尚未交付；自动Issue退出，T52/T56延期。** [本轮决策](decisions/2026-09-18-observable-native-bot-ops.md)区分默认提醒与自主目标，[操作手册](maintainers/template-ops-automation.md)区分当前命令和规划。通知配对不是诊断/维护授权，关闭通知不关闭必要存储维护。
 
 - [统一配置与命令面重建 Spec](roadmap/configuration-rebuild-spec.md)：AH-99/AH-100 + T57–T60 的两文件入口、config v2、canonical durable/alias、单一 writer、作用域与迁移合同。取代 ops-policy 第三配置与旧通用命令草案；运维业务仍归 Template Ops Spec。[设计取舍](decisions/2026-09-17-unified-configuration-rebuild.md)。配置实现与隔离验证见操作指南；现役迁移和 Reset 验收另归 LIVE 队列。
 
@@ -82,7 +82,7 @@ The [2026-09-08 Host seam adjudication](decisions/2026-09-08-host-seam-normaliza
 
 本地窗口/计量/摘要预算、Host安全点/root/队列、SDK编码、Pi包/exports/传递依赖/补丁/提取、Node基线或部署版本变化时，按[S12/CTX-R与CTX-A](roadmap/box-runtime-impl-spec.md#context-maintenance)重验；普通功能gate退场与注入隔离分别取证，旧T32成功或库能import均不签新的默认主动能力。
 
-Template ops 的原生 routine/模板克隆/Payload/认证、目标模型/数据同意/路由/备用、preset 默认与成本、issue 用户确认来源/仓库/可见性/模板/grant、工具权限或安装绑定变化时，复核 [专项资格与失效条件](roadmap/template-ops-automation-spec.md#baseline)；模板发布和配对不等于维护授权。
+原生routine/模板复制/Payload/调用身份、证据字段与分类/关系算法、脱敏catalog、容量/保留/安全退役、目标模型/数据/费用/路由或用户授权来源变化时，复核[专项资格与失效条件](roadmap/template-ops-automation-spec.md#baseline)。模板配对不等于维护授权，通知只是默认提醒；后续用户决定公开的gh支路另行启动，不能恢复旧自动Issue默认。
 
 Review the relevant current homes when any of these change:
 

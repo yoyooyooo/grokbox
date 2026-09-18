@@ -2,7 +2,9 @@
 
 ## Status / Goal
 
-**Planned · Spec-only。** 让极低风险变化可由明确规则获得自动维护资格，同时拒绝「锚点没变但语义已变」；不把所有新 SHA 永久锁成手工，也不让模型自批补丁。Owning contract：[Spec §6](../roadmap/template-ops-automation-spec.md#policy)、[ADR D3](../decisions/2026-09-16-template-ops-automation.md)。
+**2026-09-18范围：独立后续M，不阻塞默认提醒首发。** 低风险资格与原生安全门保持；最低证据/固定现场由OBS-00/02提供，回收资格依赖的制品由OBS-05及原provenance owner核对。当前合同改由[Spec §7](../roadmap/template-ops-automation-spec.md#execution)统一，不从旧支持流程恢复自动Issue。
+
+**Planned · Spec-only。** 让极低风险变化可由明确规则获得自动维护资格，同时拒绝「锚点没变但语义已变」；不把所有新 SHA 永久锁成手工，也不让模型自批补丁。Owning contract：[Spec §7](../roadmap/template-ops-automation-spec.md#execution)、[ADR D3](../decisions/2026-09-16-template-ops-automation.md)。
 
 ## Depends-on / Modules
 
@@ -26,7 +28,7 @@ LLM 仅解释、推荐候选或否决；规则资格不得读取模型 confidenc
 
 新 source 无影响时资格缺失只留本地，不自动骚扰普通用户；已确认用户影响且没有合法安全修复路径时向 T52 提供安全摘要及缺口，不能靠一轮昂贵分析当作 issue 询问的强制前置。缺资格不得伪装「已尝试修复失败」。
 
-追加测试：preset=maintainer + 深分析通过但无 grant 的发布/信号为 0；user 默认不深扫；同一结果不能作为 support consent；分析预算或 scope 变化使后续工作停止而非提升权限。
+追加测试：preset=maintainer + 深分析通过但无 grant 的发布/信号为 0；user 默认不深扫；同一结果不能作为公开许可；分析预算或 scope 变化使后续工作停止而非提升权限。
 
 ## Executable acceptance
 

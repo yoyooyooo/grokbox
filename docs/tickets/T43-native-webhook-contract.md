@@ -1,52 +1,27 @@
-# T43 — 原生 Webhook 能力资格与事件合同
+# T43 — 原生 Webhook 与 Routine 能力资格
 
 ## Status / Goal
 
-**Planned · Spec-only · 尚无 native qualification。** 将用户确认存在的「Webhook routine 接收 Payload」转成有来源、有版本、可替换的窄能力，固定 grokbox envelope 与缺失证据的表示。Owning contract：[Spec §2](../roadmap/template-ops-automation-spec.md#baseline)、[§5](../roadmap/template-ops-automation-spec.md#payload)。本票是接口资格，不借验证直接开启监控或维护。
+**Planned / Spec-only；2026-09-18收口。** [Spec §5.4/§10.1](../roadmap/template-ops-automation-spec.md#payload)拥有合同。验证Grok Bot原生事件唤醒，不新增scheduler，不把普通sendPrompt或模板正文当Webhook能力。
 
 ## Depends-on / Modules
 
-无新票前置；复用现有 Gateway capability 路由、template-recipe 与 T41 notification policy。
-
-目标：`packages/cli/src/gateway-automation.ts`、`packages/runtime-kernel/src/ops.ts`、`internal/ops/notification.ts`、`ports.ts`、`packages/box-runtime/src/internal/io/template-notify.node.ts`。最小上游事实写入 `docs/upstream-integration.md`，实际用法与限制写入维护手册。private DTO 不穿透 kernel，box-runtime 不 import CLI。
+可与OBS-00/T51并行；给T53通用Routine和T45固定目标transport提供合同。kernel `routines.ts`/ports；CLI `gateway-automation.ts`；box-runtime `io/native-notification.node.ts`，装配不能形成box-runtime→CLI导入。
 
 ## Work
 
-核实原生 routine 的 create/read/disable/delete、trigger 类型、endpoint/secret 获取与轮换、Payload 原样/文本/包装投影、长度/编码/空对象、运行中重复触发、接收回执、run/result correlation、重试和任务删除语义。分别记录 source-backed / synthetic / native-observed / unknown；不知道就返回能力 gap，不编造接口。
+核对原生routine/automation/trigger映射、exact IDs/revision、disabled创建、read/update/enable/disable/delete、认证/大小/编码、payload进入Bot的形状、接受与run/report关联、是否有CAS/幂等及clone/import隔离。保存最低公开兼容事实和合成fixtures，不把私有上游源码当公共依赖。
 
-验证 template stage/import/clone 到底复制什么：当前 `routines[].content` 与原生任务是否同一对象、是否默认启用、是否产生独立 endpoint/secret、能否阻止 publisher 的活绑定泄漏。不支持安全导入时落实 blueprint + install-time create 的同一产品路径。
+内部NotificationEnvelope不是上游DTO；只允许已绑定endpoint/secretRef，无任意URL、重定向或凭据回显。原生不支持签名/去重/调用身份就明确unsupported/notProven，不照搬其他产品Webhook语义。模型唤醒前无法拒绝伪造流量时披露成本/信任边界，不能开放自动维护。
 
-定义 grokbox v1 envelope、错误类别、固定目标 NotificationTransport、原生 capability 版本与失效条件。任何 raw payload 都只能成为受限候选；no arbitrary URL/command，低级错误正文不回显。
-
-## 2026-09-17 补充：通用 Routine 与低成本首醒
-
-本票提供原生事实，新增 [T53](T53-agent-routines-cli.md)拥有通用 Agent/Routine 命令实现；不要将全部 CRUD 塞入模板 bootstrap。明确 routine 正文、automation 配置、trigger/schedule、原生 ID/修订是否不同对象；检查原生 CAS/幂等和禁用后在途任务/endpoint 的实际语义。不能从文件导出存在推断 CRUD 可用。
-
-能力表补充：最小 brief-notice 是否仍触发模型、能否设置/证明工具与推理预算、原生用户回复与自动事件能否区分、POST→run→report 是否存在可靠关联。缺 token 硬门/确认来源时显式 not_proven，不假设 webhook 免费或由模型自己证明用户同意。Webhook trigger 不带 cron；只有另获资格的 schedule 类型可写。
-
-新增 acceptance：原生无 CAS 不得给出 protected=true；错 trigger/未知 schema 拒绝写；用户确认文本来自 Payload 时不得生成 support consent；真实 HTTP 与内部调用不能混作一种证明。原生费用、受信用户确认和精确 run 关联的资格供 T45/T52/T53 消费。
-
-## 多接收者资格补充
-
-T54/T55 接收目标可为用户自建官方/custom Bot。原生接口合同须分清普通聊天与 Webhook automation 的 session/选模来源，公开安全的 actual-captured 模型证据或明确 not_proven；不能以 roster/assignment/普通聊天回执声称 Routine 已采用同一模型。基础官方合成 probe 与 custom lane 分开授权，不为证明接收者功能修改 Host 或模型。
+默认brief载荷足以提醒，不要求完整JSON或诊断工具；原生caller身份/工具隔离资格与简单通知分开。普通聊天使用custom model不证明Webhook回合使用它，交T55单独资格。
 
 ## Executable acceptance
 
-实现时新增 `test/native-webhook-contract.test.ts` 和 `packages/runtime-kernel/test/ops-notification-contract.test.ts`，执行：
+待新增：`packages/runtime-kernel/test/native-routine-contract.test.ts`、`test/native-webhook-adapter.test.ts`。运行这两项及`bun run typecheck`。Fake native/临时HTTP验证错身份、旧revision、无认证、超大/未知payload、编码、禁用、重定向和ACK丢失；真实POST参数不能来自自由文本。
 
-```bash
-bun test test/native-webhook-contract.test.ts packages/runtime-kernel/test/ops-notification-contract.test.ts
-bun run typecheck
-```
+原生证明须另获一次性Bot/请求/费用/清理授权，使用实际CLI disabled→enable→POST→run/report→update→disable，清理只涉及已终结测试资源。没有权限就保留native未证，不阻塞Fake合同施工。
 
-测试文件是本票交付物，目前尚不存在。必须覆盖：JSON/空 Payload/Unicode/超限、未知 schema/危险字段、错 scope、版本变化、native accepted 无 run receipt、signature 能力缺失、429/超时/断连、重定向拒绝、secret sentinel 零输出。Fake 与 Live 实现同一 port，不用 Fake header 假设真实上游支持。
+## Forbidden / Non-goals / Exit
 
-独立授权后，用一次性官方模型测试 Bot 和无害合成 marker 做 create → POST → observed run → report → disable 的原生验收；通过原生支持的接口清理本测试拥有的任务。记录最小安全事实，真实 IDs/URL/secret/私有源码留在受保护现场，不进 git。未执行时声明 `native: not_proven`，不阻塞纯合同与 Fake 测试交付。
-
-## Forbidden / Non-goals
-
-禁止把用户确认功能存在当作所有接口已验证；禁止直接改产品 SQLite、在模板存活 webhook secret、把其他厂商的签名/重试当上游事实。无 Host restart/adopt、无模型兼容探针、无通用任务调度器、无公共 ingress。
-
-## Done evidence / Next
-
-关闭需提供实现路径、测试命令/构建、adapter 能力表及已完成或缺失的 native 证据；没有 native 资格时只关闭 offline 子集，live gate 保留。T44/T45 可据冻结合同推进 Fake 纵切，不替本票编造 live success。
+不创建现役Routine、不复制endpoint/secret、不自动选模或启用Host，不触发Issue。交付adapter能力表/原生版本失效条件/source-fixture测试，实际资格只登记[LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines)。

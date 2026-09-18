@@ -6,15 +6,15 @@
 
 用户结果：没有打开网页时，也能发现归属冲突/变化或失去观察能力；重启后仍可查已有事件、告警处理记录；多个CLI/页面不成倍访问Server。告警不替代准入，不暗中修身份或重放任务。
 
-## 2026-09-16 Template Bot 出口扩展（未实现）
+## 2026-09-18 证据、通知与存储增量（未实现）
 
 [T43–T56](README.md#template-ops-automation)在 [Template Ops Spec](../roadmap/template-ops-automation-spec.md) 下扩展本票的 bot-webhook 出口：默认一个命名目标，也允许用户指定官方/custom Bot 和有限路由，由独立回合按 intent 做简短报告或已授权诊断。目标/规则归 T54，故障/额度/交接归 T55；仍消费同库 outbox，不按 Bot 新建数据库。它有原生推理成本，不能沿用“所有通知绝不触发模型”的无条件表述；collector 仍不直接调用 provider/sendPrompt，重试仍仅投递同一通知，不借此重做诊断工具或维护。
 
-本票仍唯一拥有观察/incident/交付管理与原 SQLite。后续 binding/grant 归 ConfigurationWrite，plan/实际变更归唯一 controller；通知 outbox 或 Bot 结论不授予任何执行权限。一般第三方外发保持默认禁止；新出口只对显式绑定目标开放。现有 `local_only` 与未完成 native/持久安装资格在实现前不改写。
+本票保留既有实现/离线证据与原SQLite所有权；[OBS-00–06](README.md#incident-evidence)负责新最低证据、未知/无STEP入口、固定manifest、视图及有界存储，不重做或重开已证范围。配置偏好仍由ConfigurationWrite管理，实际binding/grant由各受信机器状态程序写；plan/变更归唯一controller。通知与Bot结论不授权执行；现有local_only与持久安装资格不因规划改写。
 
-**2026-09-17 补充（未实现）：** T51 为正常服务启用的新安装提供 user 默认轻量观察与配对后的 brief-notice，maintainer 更多观察单独开启；默认不发动模型深诊断。T52 在现有 SQL 的 support 域管理草稿/受信 consent/submission，普通 collector 不能签同意，issue 不是自动通知副作用。T53 通用 Routine CLI 不依赖此数据库；模板/测试复用它。旧 off/预算保留，预设不授予维护/公开发布权；细节只在专项 Spec §5.1/6.1/6.2/10.1 维护。
+默认固定关键现场后向配置目标Bot发摘要、ID和可用JSON命令，Bot只提醒并结束，不自动诊断/询问Issue。用户委托后原生Bot可自主取证和操作，默认提醒不是永久只读限制。T53通用Routine不依赖本库；T52/T56延期，不新增自动发布域或grant，不作为首发前置。
 
-T52/T56 的支持草稿/consent/submission 仍为原库独立管理域，有限 issue grant 本体归 ConfigurationWrite，GitHub 写入由独立 support/publisher 程序；collector 不发 token、不签许可。单目标预算不因多 Bot/备用/升级而变大，unknown 不广播。
+OBS-04使诊断数据分层回收并测物理空间，ack/snooze不永久锁住全部明细；OBS-05只经原执行owner退役安全状态。关闭通知不停止必要存储维护，旧off/费用保持，unknown不广播。详细合同与失效条件只在专项Spec维护。
 
 ## 当前实现与证据范围
 

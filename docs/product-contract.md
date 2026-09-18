@@ -495,17 +495,19 @@ MVP / 可发布声明的 ordinary main envelope：
 
 **发布合同分层**：T37必须保护实际Host的新managed准入，不仅CLI预检；T38先保全/门禁再退错误writer；T39证明同Bot官方→A→B→官方→A和custom checkpoint的原生回程；T36证明当前会话Working与真实执行一致；T40证明持久服务及完整未补丁退出。读取副本可以先到/落后，但不能改变prompt事实或执行归属；Server迁移发生时不得继续假称本地接管。Prompt cache未命中影响性能，不应改变上下文正确性。当前现场支持范围、未验项与验收结论只由 [LIVE 唯一索引](tickets/LIVE-integration-validation.md)及其固定窗口证据承载；独立 review/发布前置仍归来源票，不由某个绿色测试或ownership结果直接生成批准。
 
-### 12.1 Bot 主动运维（2026-09-17 分层/多目标/支持整合，尚未实现）
+### 12.1 原生 Bot 运维与默认故障提醒（2026-09-18 accepted target；尚未交付）
 
-正常启用服务的新安装采用 user 预设，默认轻量无模型观察；完成独立接收目标配对与成本告知后，只对已确认用户影响且不可安全自修的事件做一次简短提醒，询问是否准备脱敏 issue 草稿后结束，不默认深诊断。maintainer 是手动选择的观察偏好，不是超级权限；自动诊断、主动探针和低风险维护分别开启，维护仍需独立 grant。单纯安装 CLI/import/GET 不启服务或花费，旧 off/预算在升级时保留。模板不含发布者活 endpoint/secret/grant；内置模板保持默认官方模型，但用户可指定自己创建/获授权的 custom Bot 接收通知，路由不代用户改模型。
+正常服务启用后的新安装默认轻量本地观察；目标独立配对并告知数据/成本后，向它发送异常摘要、ID与可用JSON取证命令。默认Bot只提醒并结束，不执行命令、不诊断、不询问Issue或催问。未知/无STEP异常不能因尚未分类或可自修而丢弃；纯上游与本地处理缺陷分开。CLI安装/import/GET不启动服务或花费，旧off/预算保持。用户可指定有权使用的Bot，配对不自动改模型或扩大权限。
 
-[专项 Spec](roadmap/template-ops-automation-spec.md)拥有 T43–T56 的详细合同；[多目标/授权发布决策](decisions/2026-09-17-ops-routing-and-authorized-issues.md)及 T54–T56 扩充命名目标、确定性分流、custom 故障/成本边界和 CLI 内置发布；[补充决策](decisions/2026-09-17-ops-defaults-support-and-routines.md)及 T51–T53 拥有分层配置、确认后 issue、通用 Routine 的新增范围；[初始决策](decisions/2026-09-16-template-ops-automation.md)明确对 HSO 逐次人工 gate 的狭窄扩展：限定已审核动作类可使用有时效/作用域的预授权，新 SHA 只有满足已审核等价规则才可自动派生 profile。未知依赖或修改语义仍需人工审核；runtime 精确应用与 Server 权威不变。现有 CLI 行为不因此获得自动执行权。
+[专项Spec](roadmap/template-ops-automation-spec.md)拥有运维票与[OBS-00–06](tickets/README.md#incident-evidence)的完整合同；[本轮决策](decisions/2026-09-18-observable-native-bot-ops.md)替代旧默认支持/发布路径。长期目标是原生Bot自主帮助用户排障、管理Bot、换模型和使用grokbox；用户委托后可在范围内选择工具、操作和核验，不要求用户逐条运行CLI。默认提醒不是永久只读限制；额外费用、数据去向、中断或公开范围仍需明确决定。现有Server、exact SHA与执行安全门不因本合同改变。
 
-Bot 只解释/诊断/提交候选，唯一 controller 实际执行；Webhook HTTP 接收、Bot 领取、诊断、维护验证、报告交付和用户已读各自有证据。Bot 需先持久交接并结束回合再维护其所在 Host；整个 Box/原生服务离线的自我告警能力不作无条件承诺。撤销自动化不等于回滚已发生效果，自动退出补丁也不授权同 STEP 换供应商或重做工具。
+原生Bot编排用户任务，既有模型/原生接口/唯一controller分别执行所属动作；不重建Agent loop或第二控制器。Webhook接受、诊断、动作核验、报告交付和用户已读分别取证。维护所在Host前，Bot先持久交接并结束自身回合；安全屏障和真实回执不可由模型文字替代。未知结果先对账，不重放旧STEP；整个Box离线的自我告警能力不作无条件承诺。
 
-支持流程独立于维护，默认 confirm-each：同意整理仅允许本地草稿；展示 exact 目标仓库/可见性/标题/正文/附件/作者后确认，才可创建 issue。无回应不追问，默认无附件/无原始现场外发；安全信息按 SECURITY.md 私密处理。maintainer preset、维护 grant 或 Payload 不批准公开，提交 unknown 先对账不盲重发，后续评论另需确认。用户另可按 [Spec §5.2](roadmap/template-ops-automation-spec.md#issue-automation) 显式授予固定仓库/作者/事件类/脱敏模板、create-only、有期限/额度的发布 grant；不包含模型自由正文、附件、评论或维护权限。获准后由 CLI 同一 support/内置 REST 程序完成，不再让用户抄日志或重复批准；多 Bot 不产生重复 submission。
+T52/T56延期，不作为首发前置；自动Issue、默认建单询问与发布grant退出当前方案。未来用户主动决定公开时仅复用已有可用gh身份，无认证/权限就本地保留并跳过，不自动登录、换账号或追补旧事故。公开视图/内容/目标与真实用户决定绑定，敏感信息遵循SECURITY.md；通知、维护权限和Bot转述不能批准公开。详见[支持支路](roadmap/template-ops-automation-spec.md#issue-automation)。
 
-默认仅一个命名目标，已启用通知都流向它；高级 routing 关闭不等于关闭告警。按 intent/source/severity/audience 的有限首匹配规则可分流到廉价/分析 Bot，但不能自动提高诊断权限或改供应商。custom 接收者的依赖、数据同意、备用和总费用均显式检查，unknown 不广播；集中 reportTarget 是可选且有成本的后续交付。配置唯一写入和 requested/effective/阻断原因归 [Spec §6.2–6.5](roadmap/template-ops-automation-spec.md#configuration)，模型分配继续归既有 owner，不得用默认值隐藏收费或执行权限。
+关键现场先固定后通知，取证按不可变revision读取；事发状态与当前查询分开，事实/推断/缺证、工具释放/执行/checkpoint与完整任务状态分开。默认不采集业务正文；本地、Bot、公共视图由程序投影，不让LLM先收原文再脱敏。全安装诊断容量有界，普通日志轮转、事故分层GC、数据库空间回收与执行安全状态退役分别治理；关闭通知不停止必要维护，观测GC不删除用户数据或恢复依赖。详细合同归[证据](roadmap/template-ops-automation-spec.md#evidence)与[存储](roadmap/template-ops-automation-spec.md#storage)。
+
+默认仅一个命名目标，已启用通知都流向它；高级routing后置，关闭规则不等于关闭告警。按 intent/source/severity/audience 的有限首匹配规则可分流到廉价/分析 Bot，但不能自动提高诊断权限或改供应商。custom 接收者的依赖、数据同意、备用和总费用均显式检查，unknown 不广播；集中 reportTarget 是可选且有成本的后续交付。配置唯一写入和 requested/effective/阻断原因归 [Spec §6.2–6.5](roadmap/template-ops-automation-spec.md#configuration)，模型分配继续归既有 owner，不得用默认值隐藏收费或执行权限。
 
 <a id="context-maintenance-product"></a>
 ### 12.2 默认本地上下文维护（2026-09-17 accepted contract；源码主链已实现）

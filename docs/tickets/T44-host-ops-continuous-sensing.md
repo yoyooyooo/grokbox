@@ -1,48 +1,27 @@
-# T44 — Host 运维持续采样与同源 incident
+# T44 — 持续来源感知与共用 incident 接线
 
 ## Status / Goal
 
-**Planned · Spec-only。** 将现有 HSO one-shot 升级识别接成长期只读采样并纳入 T41，持续区分磁盘、已加载、组件、配置与监测自身失联。Owning contract：[Spec §4](../roadmap/template-ops-automation-spec.md#chain)、[§8](../roadmap/template-ops-automation-spec.md#storage)，来源事实继续归 [HSO](../roadmap/host-seam-ops-recognition.md)。
+**Planned / Spec-only；2026-09-18收口。** [Spec §4](../roadmap/template-ops-automation-spec.md#chain)。将HSO/source/loaded/component健康作为OBS intake来源；不再以“不可安全自修”作为进入告警的硬条件。
 
 ## Depends-on / Modules
 
-依 T43 的事件/scope 与 T51 的 preset/预算合同，可先用 Fake；复用 T41 已实现 collector/store 和 HSO observe/retain，不等待 T41/T40 整票关闭。
-
-`packages/box-runtime/src/internal/ops/host-seam/watch.ts`、`observe.ts`、`upgrade-sense.ts`、`seam-status.ts`、`internal/roots/monitor.runtime.ts`、`internal/io/monitor-store.node.ts`；纯分类在 kernel ops/monitor 现有 owner。profile watch 与 monitor 调用同一 provenance writer/lease，不抢占或复制源码库。
+依OBS-00/01、T51配置合同；不依赖Webhook、诊断或维护。复用HSO `ops/host-seam/watch.ts`、T41 `roots/monitor.runtime.ts`及原provenance；CONT-01归属判定独立，只共用源接口/出口。
 
 ## Work
 
-实现目录事件 dirty 标记、合并、周期 metadata/hash backstop、启动/重连/PID+start/overflow 重新采样；各资源在 monitor Effect Scope 内，背压与 single-flight 有界。填真实 sense，而不是 CLI 永远传空。source 捕获用 fd/字节一致性，installed 与 loaded 分列，companion 未覆盖明确 partial。
+事件dirty＋周期backstop＋启动/换代重同步；区分advertised/staged/installed/loaded，固定来源/receipt而非猜最新SHA。原生读取、journal drain、健康检测和GC有界子Scope，慢上游不阻塞本地失败。runRoot从受信安装清单接线，不能仅依赖交互shell临时环境。
 
-HSO receipt 固定后，T41 按稳定 source receipt ID 索引并提交 incident/outbox 意图；跨存储中断后幂等补齐，不虚构原子性。不要让 controller operation 去重吞掉后续采样。
+按OBS-01通用规则提交：有影响的源契约/加载失配、组件不可用和未知异常进入incident；无影响更新本地留存。记录未覆盖对象、source schema漂移和observer不可用；恢复要正证据，旧代缓存不当当前健康。
 
-分别分类：源码不匹配、加载漂移、完整资格过期、无资格的新 source、模型分配无效、observer gap、历史 circuit 原因。统一 status/doctor 使用同一事实定义；不从窗口名或单个 green 推断全部切片/语义安全。
-
-## 2026-09-17 补充：默认用户与维护者分流
-
-按 [T51](T51-ops-capability-presets.md) 的 effective 配置运行轻量/深观测；user 默认只对 confirmed user impact 且 safe remedy unavailable/blocked/failed 输出可提醒的 incident。source-only 更新、位置变化、maintainer-only debug 可记本地但不唤醒普通用户。用户上报与源码异常只能在有同源关联时关联，unknown 保留 unknown，不自动诊断根因。
-
-无合法安全修复路径可由规则判断，不先发动模型/尝试变更来证明不能自修；T52 据此询问是否准备 issue。GET、未启服务/未配对、显式 off 与坏配置的 requested/effective/gap 要诚实显示。深 replay 不因 user 开启基础观察而自动运行。
-
-追加 FakeClock/端到端 oracle：无用户影响连续多个 source 事件的 Bot 唤醒/模型调用/GitHub 写入均为 0；有影响首次输出一次 brief 事件，重复周期合并；maintainer preset 不改变普通用户接收范围或自动修复权。
+跨provenance与SQLite使用稳定receipt引用、幂等索引和缺口恢复，不宣称跨库事务。采样不启动Provider/canary、发signal或调用官方更新RPC。源范围/游标/retention与OBS-04协调，缺monitor不能阻塞原生推理/撤权门。
 
 ## Executable acceptance
 
-实现时新增 `packages/box-runtime/test/host-ops-sensing.test.ts`、`test/host-ops-status.test.ts`；执行：
+待新增`packages/box-runtime/test/ops-sensing.test.ts`，并回归`packages/box-runtime/test/monitor-scheduling-review.test.ts`、`monitor-source-lifecycle.test.ts`。验证无变化零Bot唤醒/零模型/零Host mutation；变化一次入库、scope切换不伪造迁移、慢RPC不拖日志、断源有gap、重启不重播已处理工作。
 
-```bash
-bun test packages/box-runtime/test/host-ops-sensing.test.ts test/host-ops-status.test.ts test/host-upgrade-watch-cli.test.ts packages/box-runtime/test/host-upgrade-sense-contract.test.ts
-bun run typecheck
-```
+真实常驻是T50安装出口，不以一个run调用或GET绿色签署。实际窗口只看[LIVE-MONITOR-PERSISTENCE](LIVE-integration-validation.md#live-monitor-persistence)与[LIVE-OPS-OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime)。
 
-首两项为待创建文件。FakeClock/临时源文件证明：atomic rename 丢事件仍被 backstop 捕获；同 version 不同 bytes、同 SHA 新 PID、helper-only、A→B→A、中途 swap、文件不可读、collector 重启、迟到旧 scope 都不生成虚假 safe。源先提交而 DB 未提交时可补索引；重复采样不开第二 incident。
+## Forbidden / Non-goals / Exit
 
-观察模式全过程 signal/spawn/官方升级 RPC/provider 请求次数为 0；read-only status 不启动服务、不写库或 retain。数据库满或监测器退出时，现有推理不依赖本 observer；gap 可在本地状态观察。
-
-## Forbidden / Non-goals
-
-不接回 `observeAndHeal()`，不加执行权限，不自动清 circuit，不把安装完成从版本号/ack/PID 推出来，不读取任意日志正文，不实施升级器，不改 modeld 热路径或 Host App。
-
-## Done evidence / Next
-
-交付 source/CLI 测试与取消/资源释放证据；持续运行的原生安装留给 T50。T45 从已提交 incident 消费，不能在采样 callback 里直接唤醒 Bot。
+不另造HSO报警库/controller，不定期LLM扫描，不从旧计划推导权限，不把采集失联当官方接管。交付source→OBS-01接线表和离线故障/周期证明；事件投递另归T45，长期资源治理归OBS-04。

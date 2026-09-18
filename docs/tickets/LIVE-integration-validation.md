@@ -17,7 +17,7 @@
 
 ## 当前验收总表
 
-覆盖原有 23 个稳定条目，以及本轮从既有 T24–T41/Provider 合同补入的 6 个未闭合维度。原有 ID 与锚点保留；新增行是需求归档，不代表本次执行、重新开启已关闭事故或新增产品范围。未来能力不自动进入本表。
+保留既有稳定ID与历史回执；本轮新增已接受的OBS证据/存储/安全退役及原生自主任务维度，均先登记实现/资格前置，不代表已经执行或只剩live。延期的Issue条目保留锚点但不计首发阻断，不重新开启历史事故。
 
 ### 配置与成套加载
 
@@ -55,6 +55,14 @@
 | <a id="live-runtime-persistence"></a>**LIVE-RUNTIME-PERSISTENCE**<br>安装、自启与长期服务 owner | **进程级重启已证；持久安装未证。** W17 Host/modeld/daemon 换代、配置/所选凭据与新请求正常；detach/父 PID 不是自启证据。 | 支持的持久服务 owner、干净启动/父 shell 退出、安装幂等、官方 Host 自行重建后的补丁采用、开机/环境重建恢复及单实例；正常配置不依赖临时环境变量或故障注入。 | `blocked`：安装/boot-hook 实现与目标平台资格仍归 [T40](T40-persistent-release-and-rollback.md)，不是再做一次 restart 就能关闭。真实高影响重建另开窗口；平台 Reset 另记 CONFIG-HOME-RESET。 |
 | <a id="live-monitor-persistence"></a>**LIVE-MONITOR-PERSISTENCE**<br>现有本地 collector / SQLite / incident | **现役 collector 未安装验收。** W17 的 daemon/desktop applied 不替代 monitor 长驻。本地/source/packed 测试保留原范围。 | 无网页/CLI 退出仍采集、与准入共享读取有界；真实 scope/代/失联 gap；重启保留 incident/ack/snooze/cursor；受控 DB 异常不影响执行；local-only 与实际通知接收分开。 | `blocked`：先由 [T41](T41-continuous-observation-and-alerting.md)/[T40](T40-persistent-release-and-rollback.md)关闭调度/安装前置，明确服务 owner、测试存储与窗口。不要等待未来 Webhook 运维全部实现，也不把未来外部离线监控拖进本项。[观测手册](../maintainers/continuous-observation.md) |
 
+### 故障证据与有界存储
+
+| 维度 / 稳定 ID | 现场进度与已验证范围 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
+|---|---|---|---|
+| <a id="live-obs-evidence"></a>**LIVE-OBS-EVIDENCE**<br>原生故障→固定证据→提醒后取证 | 本轮未运行；现有journal/incident测试不证明新增链已交付。 | 未知tray/queue failed/无STEP实际进入incident；真实工具/checkpoint关联和缺口；告警引用同revision在后续输入/轮转后仍可查；Bot默认只提醒，实际网络数据符合视图。 | `blocked`：先完成[OBS-00](OBS-00-evidence-contracts.md)至[OBS-03](OBS-03-evidence-privacy-views.md)、T45/T46与独立review；由[OBS-06](OBS-06-integration-and-soak-proof.md)/T50冻结候选、对象与费用，复用ROUTINES窗口。不改原App、不复演旧STEP。 |
+| <a id="live-obs-storage"></a>**LIVE-OBS-STORAGE**<br>长期容量与物理空间回收 | 本轮未运行；局部retention已有离线范围，不是全安装容量资格。 | 实际journal/process fd轮转、SQLite含索引/辅助文件、manifest/租约/孤儿在长期高基数故障下稳态；ops通知关闭后GC继续；reader并发、崩溃、磁盘压力与gap；无用户数据误删。 | `blocked`：[OBS-04](OBS-04-bounded-observation-storage.md)/[OBS-06](OBS-06-integration-and-soak-proof.md)/[T50](T50-template-ops-release-proof.md)实现/物理存储离线/review前置。先定可丢弃存储和受控负载；不能在生产填满盘或清历史制造通过。 |
+| <a id="live-obs-safe-retirement"></a>**LIVE-OBS-SAFE-RETIREMENT**<br>执行身份与恢复引用退役 | 本轮未运行；现有incarnation隔离不证明同代安全GC已完成。 | 真实延迟请求在GC/重启/恢复后不再执行；commit_unknown最小阻断保持；当前/回退制品及CONT私有manifest闭包不被清；物理回收而非累计STEP上限。 | `blocked`：先完成[OBS-05](OBS-05-safe-state-retirement.md)的协议退役/入口覆盖与独立review，再选明确授权原生操作和安全存储窗口。复用CTX/CONT相关回执但独立签本条，不删ledger造空环境。 |
+
 ### 归属丢失与新身份连续性
 
 | 维度 / 稳定 ID | 现场进度与已验证范围 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
@@ -63,14 +71,15 @@
 
 ### 待闭合资格：CTX已有现场子项，运维仍按来源前置推进
 
-五条Template Ops仍无本表范围内的新现场回执。CTX的源码、打包和原生隔离证明见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)，本轮新增的成套采用、真实503/备用端点与modeld换代见[CTX-V8回执](../reports/2026-09-17-context-v8-live-window.md)。用户已明确接受503与备用模型的有限测试窗口；这不把Astra的503或备用review超时改成独立审核通过，亦不签正式发布。实际Bot消息被工具安全检查拦截，现有阻断已不只是review通道不可用。
+Template Ops与OBS本轮仅更新规划，没有新增现场回执；Issue支路延期，不作为首发前置。CTX的源码、打包和原生隔离证明见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)，本轮新增的成套采用、真实503/备用端点与modeld换代见[CTX-V8回执](../reports/2026-09-17-context-v8-live-window.md)。用户已明确接受503与备用模型的有限测试窗口；这不把Astra的503或备用review超时改成独立审核通过，亦不签正式发布。实际Bot消息被工具安全检查拦截，现有阻断已不只是review通道不可用。
 
 | 维度 / 稳定 ID | 当前现场进度 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
 |---|---|---|---|
 | <a id="live-ops-routines"></a>**LIVE-OPS-ROUTINES**<br>原生 Routine / Payload / 模板隔离 | 未运行；`blocked`。 | disabled 创建→读回→enable→真实 POST→原生 run/Payload/报告关联→更新再 POST→disable/清理；认证、大小/编码/禁用语义及双模板 endpoint/secret 不继承。 | [T43](T43-native-webhook-contract.md)/[T46](T46-template-ops-pairing.md)/[T53](T53-agent-routines-cli.md) 实现前置。之后固定 Bot、请求/费用与清理；sendPrompt/mock 不替代 Webhook，unknown 不重复创建。 |
 | <a id="live-ops-receivers"></a>**LIVE-OPS-RECEIVERS**<br>custom 接收者与有限路由 | 未运行；`blocked`。 | Webhook 回合真实模型/供应商/工具/数据同意；单目标、intent 分流、一层交接、备用/集中报告和改配置需重绑；ACK unknown 不广播，总预算不放大。 | [T45](T45-template-webhook-delivery.md)/[T47](T47-bounded-ops-diagnosis.md)/[T54](T54-ops-targets-and-routing.md)/[T55](T55-custom-receiver-delivery.md) 实现前置，依赖 ROUTINES。普通聊天选模成功不算本项。 |
-| <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>无人值守运维提醒 | 未运行；`blocked`。 | 启动 Bot 回合与网页结束后持续感知；无变化零唤醒、需处理才一次提醒；重启/断网/endpoint 撤销/存储故障后的 cursor、欠账、去重、预算和 degraded；真实投递不等于 outbox accepted。 | [T44](T44-host-ops-continuous-sensing.md)/[T45](T45-template-webhook-delivery.md)/[T46](T46-template-ops-pairing.md)/[T50](T50-template-ops-release-proof.md) 实现与安装前置，依赖 CONSUMERS/ROUTINES。本地 collector 验收另见 MONITOR-PERSISTENCE。 |
-| <a id="live-ops-issue-publishing"></a>**LIVE-OPS-ISSUE-PUBLISHING**<br>受信同意与真实 GitHub 提交 | 未运行；`blocked`。 | 原生用户确认区别于自动事件；exact 内容/仓库/作者同意→提交并读回；有限 grant 有效期/额度/撤销、跨 Bot 去重、ACK unknown 对账；仅批准范围清理。 | [T52](T52-consented-support-issues.md)/[T56](T56-scripted-issue-publishing.md) 实现前置；另缺专用仓库与公开合成内容授权。人工关闭历史 issue 不算此功能资格。 |
+| <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>无人值守运维提醒 | 未运行；`blocked`。 | 调用Bot/网页结束后持续采集，慢上游不阻本地故障；固定现场后发ID/命令，Bot只提醒，无自动诊断/Issue询问；重启/断网/撤销后的游标、过期合并、去重、预算和unknown；关闭通知不停止必要GC。 | [T44](T44-host-ops-continuous-sensing.md)/[T45](T45-template-webhook-delivery.md)/[T46](T46-template-ops-pairing.md)/[T50](T50-template-ops-release-proof.md)实现/安装前置，依赖CONSUMERS/ROUTINES及OBS证据/容量合同。collector另验MONITOR-PERSISTENCE，不能用本地callback返回代用户交付。 |
+| <a id="live-ops-autonomy"></a>**LIVE-OPS-AUTONOMY**<br>原生Bot受托自主排障与换模 | 未运行；独立后续A，不阻塞默认提醒首发。 | 用户委托后同incident自主多步取证/选择工具/执行与核验，不逐条询问常规读；只排查不擅自重启/换模/公开，明确换模只改指定Bot并验下一TURN采用；提醒模板不永久限只读。 | `blocked`：[T47](T47-bounded-ops-diagnosis.md)与证据/租约/授权实现、离线和原生能力review前置；之后固定用户任务、对象、模型预算与原生交互窗口。单次工具mock不证明用户旅程。 |
+| <a id="live-ops-issue-publishing"></a>**LIVE-OPS-ISSUE-PUBLISHING**<br>用户决定后的公开支持 | **Deferred；未运行，不计首发阻断。** | 将来用户明确要求公开时才验确切稿件/目标/作者同意、已有gh身份、无认证跳过、unknown对账；当前不验自动Issue或发布grant。 | [T52](T52-consented-support-issues.md)/[T56](T56-scripted-issue-publishing.md)已延期。未来启动需先实现与独立review，再取得测试仓库/合成公开内容授权；不为消除本行状态而提前建单。 |
 | <a id="live-ops-maintenance"></a>**LIVE-OPS-MAINTENANCE**<br>自动维护屏障与交接 | 未运行；`blocked`。 | 原生 admission fence/排空、提出者及子任务终结后唯一 controller 执行；busy/审批/新任务/撤销/换代拒绝；一次对齐/安全退出及未知退路。 | [T47](T47-bounded-ops-diagnosis.md)/[T48](T48-low-risk-host-qualification.md)/[T49](T49-policy-host-maintenance.md)/[T50](T50-template-ops-release-proof.md) 实现与 review 前置。W17 人工 force 不证明自动维护屏障；idle 采样不替代 fence。 |
 | <a id="live-ctx-adoption"></a>**LIVE-CTX-ADOPTION**<br>默认本地维护策略真正加载 | **成套采用与modeld换代子项已证，含5f2afdb新修复。** CTX-V8使用已合入v2的 `6fb4b48`：config2→3到retired、前次manifest/模型字节保留、精确profile、custom Host和wire8/expected8 ready；普通retry off；原desktop偏好恢复，测试Bot清理后models回到原始字节。 | 真正主请求对本地策略的captured使用、运行中的root维护调用、原版App以及完整独立review；CLI↔modeld兼容不自动证明每个Host执行路径或native存储事务。 | `blocked`：加载本身不再待做，不为消除状态重复迁移/重启。真实send与context查询被工具安全检查拦截，后续原故障Bot只读核对仍受阻；补丁5f2afdb已有64+11项组合证明和2256/0全库，随后从集成v2 `6e88991`正式采用；新Host marker=77dcf653…、modeld新epoch/ready/active0、models原字节不变。已验加载不再重跑，真实Bot查询仍被拦截，保留review缺口。[补丁采用§9](../reports/2026-09-17-context-v8-live-window.md#9-后续补丁采用5f2afdb-原生不确定提交保护)。后续使用正常可用的已授权消息/状态入口，保留review缺口。[CTX-04](CTX-04-context-entrypoints-and-proof.md) · [CTX-V8 §5–7](../reports/2026-09-17-context-v8-live-window.md#5-实际迁移与成套加载) |
 | <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>已失败长会话下一条普通输入 | **真实旅程未闭合；非部署问题。** CTX-V8测试Bot创建confirmed_box，主模型和Grok/high的下一TURN配置均保存/读回，但send被工具拦截、无accepted回执，outcome为unknown/无echo。新增真实SDK/Unix离线用例已证明摘要503与主请求503后显式换模型的新消息能继续，旧失败回执保留、无隐藏切换。 | 原业务长会话的新输入、真正native compact/checkpoint及随后主请求、原App输入/活动/Working/交付；端点200、配置保存或离线fixture不能代替。 | `blocked`：等待正常可用且获授权的消息执行/原App观察入口，不绕过工具拦截，不复用本次nonce或重放旧事故STEP。测试Bot已删除；后续固定新窗口/对象及费用。独立review仍单列。[CTX-04](CTX-04-context-entrypoints-and-proof.md) · [CTX-V8 §4/6](../reports/2026-09-17-context-v8-live-window.md#6-备用选择发送拦截与资源清理) |

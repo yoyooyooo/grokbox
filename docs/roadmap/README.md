@@ -20,21 +20,21 @@ T29自有Web UI确定会做，但前端仍未排期；实际Grok Bot.app不修�
 
 [PI-AI-01](../tickets/PI-AI-01-model-backend-qualification.md)独立评估pi-ai替换ModelBackend后的传输实现，不等于T30的RPC也不阻塞CTX。未经采纳决定，生产仍使用AI SDK；Node最低版本/Provider通道/credential不随规划静默改变。
 
-## 新专项施工：Template Bot 运维闭环
+## 新专项施工：原生 Bot 运维、固定证据与有界存储
 
-[Template Ops Spec](template-ops-automation-spec.md) / [T43–T56](../tickets/README.md#template-ops-automation)按 Spec-first 推进；2026-09-17 补充 user 默认轻量监测/短提醒、maintainer 手动配置、用户预览确认后 issue、通用 Agent/Routine CLI 与真实 HTTP E2E。基础支持可先上线，深诊断与低风险维护各自 opt-in/验收。不是已实现/已部署声明；HSO/T41/唯一 controller 各守事实 owner。[初始决策](../decisions/2026-09-16-template-ops-automation.md)限定维护授权，[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)限定默认/公开发布，[维护手册](../maintainers/template-ops-automation.md)拥有配置/操作解释。
+[Template Ops Spec](template-ops-automation-spec.md)是唯一合同；[OBS-00–06](../tickets/README.md#incident-evidence)补最低证据、未知/无STEP故障入口、快照/脱敏及容量与安全退役。[T43–T56](../tickets/README.md#template-ops-automation)复用原生Routine、目标与可靠投递。首发固定现场后通知一个配置Bot，默认只提醒；用户委托后自主排障/管理/换模，自动维护另有权限和资格。
 
-[同日多目标/授权发布修订](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)由 T54–T56 落地：默认单命名目标、用户自建 custom Bot、按处理意图等有限规则分流；明确模型/数据/故障域/总成本，内置 Node REST 提 issue 并单独支持有限摘要 grant。模板不是唯一接收者，维护者预设不默认开发布/诊断/维护。专项路径不变，不复制第二份总 Spec。
+[2026-09-18决策](../decisions/2026-09-18-observable-native-bot-ops.md)将自动Issue退出本阶段，T52/T56延期，未来只保留用户决定后的gh路径。先做OBS合同与配置、原生任务，再并行证据/有界存储/最小通知；完整首发必须验收容量稳态，不等待高级路由或维护。当前是规划，不代表已部署，操作解释见[手册](../maintainers/template-ops-automation.md)。
 
 ## 配置底座同轮收口：AH-99 / AH-100
 
-[统一配置重建 Spec](configuration-rebuild-spec.md) / [T57–T60](../tickets/README.md#configuration-rebuild)以破坏重建方式统一人读 config/models、client/Box 作用域、schema/writer 与迁移。ops 偏好不先落第三文件，公开命令收为 config/models/ops；真实配对与权限仍是机器状态。T51/T54 的纯规则、T43/T53 的原生任务可并行，production config 接线依统一底座。[决策](../decisions/2026-09-17-unified-configuration-rebuild.md)记录对旧冻结评论的取舍。配置底座现已实现，当前命令与证明见[配置指南](../configuration.md)及T57–T60；ops业务仍planned。CTX的schema3扩展另在主Spec S12规划，不把它当作当前schema2已支持。
+[统一配置重建 Spec](configuration-rebuild-spec.md) / [T57–T60](../tickets/README.md#configuration-rebuild)以破坏重建方式统一人读 config/models、client/Box 作用域、schema/writer 与迁移。ops 偏好不先落第三文件，公开命令收为 config/models/ops；真实配对与权限仍是机器状态。T51/T54 的纯规则、T43/T53 的原生任务可并行，production config 接线依统一底座。[决策](../decisions/2026-09-17-unified-configuration-rebuild.md)记录对旧冻结评论的取舍。配置底座现已实现，当前命令与证明见[配置指南](../configuration.md)及T57–T60；ops业务仍planned。当前源码已包含CTX的schema3扩展；本轮ops/storage下一不兼容版本由T51在实施时统一分配，不能将其当作当前schema3已支持。
 
 ## Future：以后做的能力
 
 [future/README.md](future/README.md)是未排期范围的唯一目录，按能力命名，不按阶段/date/final-v2复制方案。包含：
 
-- 单盒Web UI；多盒与盒外失联监测；高级通知与长期保留。
+- 单盒Web UI；多盒与盒外失联监测；尚未排期的外部渠道与长期归档。当前已接受的Bot通知和有界保留由上面的专项Spec拥有。
 - daemon多客户端/通用流；额外环境与tailnet兼容；受控凭据发现；quota新来源。
 
 每页声明已接受方向还是候选、晋升条件、当前owner、验收与非目标。晋升后把合同写回当前home、挂同一Ticket序列；future页只保留剩余内容，不成为第二progress表。

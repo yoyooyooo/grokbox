@@ -12,6 +12,8 @@ kernel continuity定义manifest、质量与完整性规则。Host continuity rea
 
 ## 材料与发布
 
+与[OBS存储合同](../roadmap/template-ops-automation-spec.md#storage)分域：本票保存私有原生恢复manifest/blob，不是普通诊断JSON，也不发送到默认通知Bot。OBS-04只计量诊断引用，不直接回收本票可达blob；[OBS-05](OBS-05-safe-state-retirement.md)通过本票owner取得当前/上一完整manifest与未完恢复操作的保护根。容量不足停止新增保护并报告降级，不能损害已有闭包或原Bot checkpoint。
+
 完整快照包括source身份/scope/Host版本、root revision、可达blob闭包、summary carrier和Host metadata、合法工具配对窗口、转录来源及水位、Memory分层manifest、model/effort/config revision。capture时间、checkpoint完成时间及完整发布时刻分开记录。
 
 先验证所有引用可读，再发布manifest。不能在一次读取中追逐不断变化的最新root；并发变化须重新捕获或报告未完成。保留当前及上一完整版本和有界增量，GC保留被manifest引用的blob。存储满或读失败使保护降级，但不得损害原Bot的正常checkpoint。

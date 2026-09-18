@@ -104,18 +104,20 @@ Web UI是确定的后续产品方向，但浏览器仍暂缓；**持续观测不
 
 **本地在线能力与远期边界**：T41交付CLI可查的事件/incident、ack/snooze和一个显式启用的有限通知出口（测试用fake，不默认外发）。整机离线不能靠盒内进程自报；外部失联监测、多盒汇总、多渠道升级规则归future。快照+游标+有限订阅合同先落内核，Web UI后消费。既有`alerts list`仍读取Host tray，新的monitor incidents有自己的语义，不悄悄替换或合并同名告警。
 
-**当前第一片（2026-09-13）**：`runtime monitor`通过显式确认init/run与纯GET，组合稳定scope的单次批量读取、SQLite观察事务、持久incident/ack/snooze和提交后的本地changes；只读查询不打Server。policy唯一位置为kernel `monitor.ts`：默认30s/10–300s，单读10s，失败退避+正抖动上限300s，观察90s变stale；最多32目标、200项页、16MiB镜像/50000事件、snooze24h。SQL引擎固定sql.js 1.13.0 asm，短独占writer锁、export+fsync+rename+目录fsync，并非原生WAL；不升级Node20运行下限。`dist/observation-sqlite.cjs`按需加载，不进入Host preload。限定小规模镜像存储而非无限审计；未知提交按稳定管理requestId对账。当前没有硬崩溃锁回收、自动retention/schema迁移、跨准入优先调度或外部通知投递；`local_only`和`productionAccepted:false`不能删。具体操作/故障入口归[观测维护页](../maintainers/continuous-observation.md)，正常启动/停止不是安装自启证明。
+**当前实现与后续范围（2026-09-18核对）**：`runtime monitor`已有显式init/run、纯GET、磁盘SQLite增量事务、incident/ack/snooze、消费cursor、source gap与局部retention/增量空间回收；早期sql.js全镜像/16MiB寿命上限不再是现实现合同。实际实现与限定证明归[T41](../tickets/T41-continuous-observation-and-alerting.md)及[观测维护页](../maintainers/continuous-observation.md)，policy常量归kernel `monitor.ts`。当前出口仍`local_only`、`productionAccepted:false`，正常run不证明安装自启或Bot收到提醒。[OBS-00–06](../tickets/README.md#incident-evidence)与[专项Spec](template-ops-automation-spec.md#storage)补未知/无STEP入口、完整度要求、固定证据及全安装容量治理；现有GC不等于全部对象已安全退役。
 
 **依赖**：T37先完成共享事实与真实门；T41可与T38/T24/T39并行，复用T25/T40长期服务安装能力。T40签持续生产时验证T41单盒最低监控闭环，T37开发和普通推理不依赖DB，T41不等待T40整票放行。T29仅在前端排期后消费；共用ConfigurationWrite的revision/冲突合同现在明确，真正第二写入入口落地时实现，不造UI-only writer。没有T41或没有外部通知渠道的运行应如实说明监控范围，不把future能力列入已完成。
 
 <a id="template-ops-automation"></a>
-### S0.1.5 Bot 告警与受限自动维护（2026-09-17 多目标/授权支持整合）
+### S0.1.5 原生 Bot 运维、默认提醒与有界证据（2026-09-18）
 
-用户接受由 grokbox template bot 的原生 Webhook/Payload 入口主动告警、有界只读排障及有限预授权静默维护；9月17日新增默认 user 最小提醒、maintainer 手动观测配置、确认后 issue 和 Agent/Routine CLI。专项施工合同唯一归 [Template Ops Spec](template-ops-automation-spec.md)，[T43–T56](../tickets/README.md#template-ops-automation)是专项任务；本主 Spec 继续拥有总运行时树、Server/Host/session 与唯一 controller。不是重建 modeld 或新增 Agent loop，也不是现役已开启声明。
+长期目标是原生Grok Bot自主帮助用户排障、管理Bot、换模型和使用grokbox；当前首发主链收为持续发现→固定关键现场→通知配置目标Bot，携带安全摘要、ID与可用JSON取证命令→默认只提醒并结束。不自动分析、询问Issue、公开或催问。用户随后委托或独立预授权时，Bot可在对应范围内自主执行并核验；提醒策略不是通用Bot永久只读限制。[本轮决策](../decisions/2026-09-18-observable-native-bot-ops.md)替代旧默认支持/发布路径。
 
-本地 collector 无模型、无 Host mutation；T41 只管观察/incident/通知交付。模板或用户指定的官方/custom 接收 Bot 按需解释与提候选，Payload 和模型 confidence 无执行权；ConfigurationWrite 管理配对/预授权，既有 controller 管理不可变计划和实际变更。Bot 提交后结束回合，独立维护角色等待真正安全边界，不能边等自己重启边占 busy。具体布局、ports、预算和 native 资格只在专项 Spec 维护。T51 的 user/maintainer preset 不授予安全权限；正常服务开启的新安装默认轻量观察、配对后 brief 提醒，深诊断/探针/维护独立 opt-in，旧 off 保留。T52 支持整理/预览/提交各有同意边界，不默认公开现场；T53 打通通用 Agent create/update 的 Routine apply 与真实 HTTP E2E，不需要 ops 开启。
+专项施工合同唯一归[Template Ops Spec](template-ops-automation-spec.md)，新[OBS-00–06](../tickets/README.md#incident-evidence)拥有最低证据、未知故障入口、分层视图与有界存储；既有[T43–T56](../tickets/README.md#template-ops-automation)复用原生Routine、目标配对、可靠投递与后续诊断/维护，T52/T56延期且仅保留未来用户决定后的gh路径。配置仍经唯一ConfigurationWrite；目标binding/执行grant归各受信机器状态owner，不由普通配置签署。具体下一版schema切换在T51统一，不更改当前config3的实现事实。
 
-[新决策](../decisions/2026-09-16-template-ops-automation.md)仅对指定低风险动作类接受作用域/证据/时效绑定的可撤销预授权，包含满足审核等价规则的新 SHA 派生；不放宽 exact SHA/唯一性、Server gate、语义审核、权限隔离或安全排空。其它未知/越界变化继续人工审核。通知成功不等于维护或用户交付成功，模板导入不继承活 endpoint/secret/grant。[补充决策](../decisions/2026-09-17-ops-defaults-support-and-routines.md)只修订默认/支持/配置和通用 Routine 目标；[多目标/授权发布决策](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)进一步由 T54–T56 定义 default 单目标、可选确定性多 Bot 分流、custom 依赖/模型数据同意/总成本，以及内置 REST 支持流水线与有限 create-only issue grant。模板官方只是默认，不限制其他 Bot；路由不改模型、不复制控制或发布权限。issue 默认仍 exact 确认，预授权另签作用域/模板/期限/额度，unknown 不重发。全部实现前既有 reconcile/live 边界不变；基础 user 支持不等待高级诊断/维护。
+本地collector不调用模型、不发Host信号；同一T41 SQLite保存incident、证据引用和outbox，原生Bot仍拥有Agent loop，原controller仍是唯一维护writer。普通日志轮转、事故分层GC与执行安全状态退役分开；GET不采集/清理/续租，关闭通知不关闭必要存储维护。S13连续性恢复有自己的私有manifest/blob与权限，不拿诊断JSON当resume材料。
+
+后续预授权维护继续要求exact SHA/完整切片与依赖资格、Server gate、原生排空屏障、真实回执和未知结果对账。Bot交接后结束自身回合，不能等待自己的Host重启并占busy；路由/模板/严重度不扩大权限或费用。首发不等待自动维护、完整恢复或Issue，也不能以离线配置/投递成功声称现役已开启或用户已读。
 
 <a id="configuration-rebuild"></a>
 ### S0.1.6 AH-99/AH-100 配置底座收口（2026-09-17 Spec-only）

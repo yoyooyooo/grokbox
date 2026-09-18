@@ -148,29 +148,46 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 
 原重建依赖链 **T20 → T21 → T27 → T23 → T24 → T25 → T26 → T28** 不要求重做已有实现；当前主链见 Spec S0.5。T22 不 gate 保真/内核。T27 尽早。Phase 1 出口停在 T28；T29 不自动开工。T30/T31 的资格失败只阻塞本 adapter，不阻塞 T32/T33。Astra 复审/授权边界统一见[规格 S9](../roadmap/box-runtime-impl-spec.md#review-live)。里程碑「审→修→复看→交 grok」之后的异步终审残留只进 [T34](T34-astra-milestone-residue.md)，不交 grok。
 
-<a id="template-ops-automation"></a>
-## Template Bot 运维闭环 — T43–T56（2026-09-17 多目标/授权支持整合）
+<a id="incident-evidence"></a>
+## 故障证据与有界存储 — OBS-00–06（2026-09-18）
 
-专项合同唯一归 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，总运行时仍归 [主 Spec S0.1.5](../roadmap/box-runtime-impl-spec.md#template-ops-automation)。[初始决策](../decisions/2026-09-16-template-ops-automation.md)接受主动运维；[9月17日补充](../decisions/2026-09-17-ops-defaults-support-and-routines.md)固定 user 默认小提示、maintainer 手动配置、确认后 issue 和通用 Agent/Routine CLI。[多目标/授权发布决策](../decisions/2026-09-17-ops-routing-and-authorized-issues.md)进一步允许用户自建 custom 接收 Bot、默认单目标/可选分流，以及 CLI 内置发布和独立有限 issue grant。[维护手册](../maintainers/template-ops-automation.md)区分当前与目标。全部新票仍为 Planned / Spec-only，不代表已部署。
+**全部Planned / Spec-only，不重开T41或modeld已完成切片。** 唯一合同为[Template Ops Spec](../roadmap/template-ops-automation-spec.md)，[本轮决策](../decisions/2026-09-18-observable-native-bot-ops.md)固定默认提醒/受托自主/有界保留。新编号只承担本轮增量；source/tests决定实现事实，LIVE决定现场资格。
 
-| Ticket | 范围 | 依赖 / 独立退出 |
+| 阶段 / Ticket | 唯一职责 | 前置 / 出口 |
 |---|---|---|
-| [T43 原生 Webhook 合同](T43-native-webhook-contract.md) | Payload、认证、routine/clone、receipt、adapter | 先冻结合同/Fake，native 无权限则保留 not_proven |
-| [T44 持续感知](T44-host-ops-continuous-sensing.md) | HSO → T41 source/loaded/component/用户影响事实 | T43/T51；无信号的独立观察纵切 |
-| [T45 可靠投递](T45-template-webhook-delivery.md) | 消费冻结目标的 outbox/Webhook/claim；T55 扩展 custom/交接 | T43/T51/T54 合同；与 T44 并行，不另造模板 sender |
-| [T46 模板配对](T46-template-ops-pairing.md) | 模板默认便利与任意获授权 Bot 的命名配对共用 T53 | T43/T45/T51/T53/T54 合同；不依赖深诊断/维护上线 |
-| [T47 有界诊断](T47-bounded-ops-diagnosis.md) | 独立 opt-in/用户请求的排障、plan/handoff | T44–T46/T51；不是默认提醒或 issue 前置 |
-| [T48 低风险资格](T48-low-risk-host-qualification.md) | 全切片/依赖覆盖、等价派生、唯一 publisher/CAS | T43/T44/T51；分析不授权发布，不需要模型批准 |
-| [T49 受限维护](T49-policy-host-maintenance.md) | 唯一 controller、统一 drain、交接/执行/退出 | T48/T47 handoff/T51 grant；复用 T28/T40 |
-| [T50 持久验收](T50-template-ops-release-proof.md) | CLI 原生用户旅程、分 lane 安装/故障/退场 | user 支持先验；diagnose/maintain 分别增量签署 |
-| [T51 分层与配置](T51-ops-capability-presets.md) | 版本化 user/maintainer preset、覆盖、预算、effective/CAS | 纯规则可与 T43 并行，不等待维护 |
-| [T52 确认后支持上报](T52-consented-support-issues.md) | 默认短提醒/草稿/受信 consent，发布与 T56 共用程序 | T44/T45/T51；不依赖深诊断或自动维护 |
-| [T53 Agent/Routine CLI](T53-agent-routines-cli.md) | create/update 组合、同一 apply、真实 POST/outcome/清理 | 只依 T43 原生合同，通用能力不要求 ops 开启 |
-| [T54 目标与路由](T54-ops-targets-and-routing.md) | default 单目标、用户指定/custom Bot、有限规则与解释、bindings | T51/T43/T53 合同；配置先冻结，纯规则可并行 |
-| [T55 接收者与交接](T55-custom-receiver-delivery.md) | custom 资格/故障域、总成本/备用/升级、集中报告 | T54/T45/T53；T47 为可选诊断消费者 |
-| [T56 脚本化 issue](T56-scripted-issue-publishing.md) | 内置 REST、exact consent 一次完成、有限摘要 grant 与对账 | T52/T51；不依赖多 Bot/模型诊断/维护 |
+| M0 [OBS-00](OBS-00-evidence-contracts.md) | E01–08最低字段、真实边界/关系/缺口与覆盖矩阵 | 原Host/modeld/context事实；不只新增JSON字段 |
+| M1 [OBS-01](OBS-01-incident-intake-and-detection.md) | 未知tray/queue failed/无STEP与未收束检测、同库incident | OBS-00；真实异常不得只进evidence不触发 |
+| M1 [OBS-02](OBS-02-incident-evidence-snapshots.md) | 不可变manifest、同源查询、真实可用取证命令 | OBS-00/01；Gateway不可用/日志轮转仍诚实可查 |
+| M1 [OBS-03](OBS-03-evidence-privacy-views.md) | local/Bot/public视图、隐私非干扰与诊断价值 | OBS-00，和OBS-02联合接线；实际网络bytes检查 |
+| M2 [OBS-04](OBS-04-bounded-observation-storage.md) | 全安装诊断预算、fd轮转、DB/证据GC和租约 | OBS-00/02及T51合同；物理空间稳态而非只删行 |
+| M2 [OBS-05](OBS-05-safe-state-retirement.md) | 原执行owner安全遗忘、恢复/制品引用与退役 | OBS-00/原owner；GC后旧ID/unknown不复活 |
+| M4 [OBS-06](OBS-06-integration-and-soak-proof.md) | source/packed/真实DB/故障注入/稳态组合证明 | OBS-00–05与最小通知链；不假签原生/live |
 
-这些票是具体能力依赖，不要求 T40/T41 整票先 Done；也不反向阻塞主线的准入/正常推理。先冻结 T43/T51/T54 的原生/配置/目标合同并做 T53 通用 CLI，以 default 目标交付 user 监测→Webhook→短提醒和 T52/T56 授权后内置提交；基础支持不等 T47/T48/T49 或全部高级分流。T55、T56 有限 grant、诊断和维护分别启用并验收，不把新增 Bot 误当新增权限/额度。各票中的新测试路径和 verifier 是待实现验收目标，不是已存在命令。真实部署、模型成本与原生变更仍需相应范围授权。
+先冻结OBS-00/T51/T43/T54合同，再并行M1与Routine；M2存储是完整首发门，M3通知可先做离线集成。完整DAG与限定预算只在[Spec §11](../roadmap/template-ops-automation-spec.md#tickets)。现场引用[LIVE-OBS-EVIDENCE](LIVE-integration-validation.md#live-obs-evidence)、[STORAGE](LIVE-integration-validation.md#live-obs-storage)、[SAFE-RETIREMENT](LIVE-integration-validation.md#live-obs-safe-retirement)，不在本索引复制进度。
+
+<a id="template-ops-automation"></a>
+## 原生 Bot 通知与自主运维 — T43–T56（2026-09-18收口）
+
+[专项Spec](../roadmap/template-ops-automation-spec.md)及[主Spec S0.1.5](../roadmap/box-runtime-impl-spec.md#template-ops-automation)明确：默认固定现场后发到配置Bot，Bot只提醒；用户委托后可自主操作并验收。自动Issue退出，T52/T56延期；[维护手册](../maintainers/template-ops-automation.md)严格分当前命令与目标命令。
+
+| Ticket | 状态 / 范围 | 依赖与独立退出 |
+|---|---|---|
+| [T43](T43-native-webhook-contract.md) | Planned：原生Webhook/Routine/认证/回执资格 | 与OBS-00/T51并行，为T53/T45提供合同 |
+| [T44](T44-host-ops-continuous-sensing.md) | Planned：HSO/loaded/component接共用intake | OBS-00/01、T51；不等诊断或Webhook |
+| [T45](T45-template-webhook-delivery.md) | Planned：持久outbox、固定证据、原生投递/unknown | OBS-02/03、T43/T51/T54；不等Issue/维护 |
+| [T46](T46-template-ops-pairing.md) | Planned：配对、只提醒入口、独立ledger模板 | T43/45/51/53/54；模板不永久限制自主能力 |
+| [T47](T47-bounded-ops-diagnosis.md) | 独立后续A：受托自主排障/换模与验收 | 证据/权限底座；不反向阻塞默认提醒 |
+| [T48](T48-low-risk-host-qualification.md) | 独立后续M：全切片/依赖等价资格 | 原HSO/qualification；不是首发通知门 |
+| [T49](T49-policy-host-maintenance.md) | 独立后续M：唯一controller、排空/交接/恢复 | T48/T47/T51与原控制程序 |
+| [T50](T50-template-ops-release-proof.md) | Planned：服务常驻与分lane原生验收 | 首发OBS+单目标；自主/维护分别签署 |
+| [T51](T51-ops-capability-presets.md) | Planned增量：下一版ops/storage配置与旧support退役 | 复用已实现T57–T60，保留off/预算 |
+| [T52](T52-consented-support-issues.md) | **Deferred**：用户决定后的草稿 | 不属于首发，不再默认询问Issue |
+| [T53](T53-agent-routines-cli.md) | Planned：通用Routine CRUD/provision/invoke | 只依T43，不要求ops开启 |
+| [T54](T54-ops-targets-and-routing.md) | Planned：单目标先行、有限路由后置 | T51/T43/T53合同；最小模式独立出口 |
+| [T55](T55-custom-receiver-delivery.md) | 所选目标最小资格必需；高级备用/交接后置 | T54/T45/T53；unknown不广播 |
+| [T56](T56-scripted-issue-publishing.md) | **Deferred**：未来gh-only用户发布 | 无认证就跳过，不建设自动发布平台 |
+
+所有新增命令/测试路径在实现后才注册；规划不授予实际安装、费用、原生对象写入、清理或模板发布权限。CONT-01消费同一通知链，CONT-02恢复快照遵循自己的私有引用闭包，不与诊断报告混用。
 
 <a id="configuration-rebuild"></a>
 ## 统一配置与命令面 — T57–T60（AH-99 / AH-100）

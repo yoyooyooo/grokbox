@@ -332,29 +332,31 @@ Host在有资格的原生安全点通过有界modeld协议取得最小捕获策�
 
 摘要算法提出的每个请求仍由唯一Effect/ModelBackend/BackendAuth运行，公共Models桥或受控callback不能开启隐式认证/重试/目录刷新或新Runtime；只有实际Provider是测试替身，算法不能被mock掉冒充集成。当前AI SDK继续供给模型传输；[PI-AI-01](tickets/PI-AI-01-model-backend-qualification.md)另评估进程内pi-ai Provider，并非T30 RPC。新的Node最低版本/完整AgentHarness/SessionManager/模型store不在本轮默许范围，打包与许可差异显式审查。
 
-### 2026-09-17 Template ops boundary（目标，尚未实现）
+### 2026-09-18 Native Bot ops / bounded evidence boundary（目标，尚未交付）
 
-[Template Ops Spec](roadmap/template-ops-automation-spec.md#layout)锁定 T43–T56 的最小增量骨架：HSO 拥有来源/资格，T41 原 SQLite 管理 incident/work/route decision/delivery/claim/报告及独立 support draft/consent/submission 域，T57–T60 的 ConfigChange 管理 config.ops 的 preset/显式叶/targets/routing；真实 bindings 与分开的 maintenanceGrants/issueGrants 在机器状态由受信程序管理，已有 controller store 管理 plan/动作。support consent 仅受信 support 用例可写，collector/维护 grant 不授予公开发布权。不新增 npm 包、Webhook 数据库、官方更新器或第二控制器。
+[Template Ops Spec §9](roadmap/template-ops-automation-spec.md#layout)是唯一骨架：OBS-00–03拥有最低证据、intake、固定manifest和视图；T41原SQLite扩展incident/evidence/outbox/预算/租约各受限事务域。OBS-04拥有诊断容量/轮转/分层GC，OBS-05通过原执行/恢复/制品owner实施安全退役，不把安全账本当日志。现有ConfigChange管理ops与下一版storage偏好，bindings/grants/实测容量/租约归各机器状态owner；本轮不改现役schema3。
 
-内置模板 Bot 默认官方模型；T54/T55 允许任意获授权的 custom 接收 Bot，模型仍由既有 selection/原生设置拥有，不在 ops 建第二目录。user 默认单目标 brief-notice 只报告/询问，不进入深诊断。T51 的 preset 是偏好而非安全角色，requested/effective/valueSource/blockedReason 分列，旧 off 与成本预算保留。合法 Webhook 才按需加载对应能力；不常驻采样、不拥有原始 signals、不从 Payload 获得授权。`monitor.runtime.ts` 组合只读采样与通知子 Scope；计划中的 `ops.runtime.ts` 是独立 Bot/modeld 的受限维护调度，只调用唯一 controller。Bot 持久交接后结束，维护在已资格化安全屏障内推进，结果由原 controller 保存后再通知。
+`monitor.runtime.ts`在同一宿主分开有界source读取、本地drain、检测和通知子Scope，慢上游不能拖住本地异常；单DB事务writer，网络在事务外。`storage-maintenance.runtime.ts`是现有服务内的维护组合，不新增daemon，必要GC不随通知关闭。跨manifest/blob/DB/controller使用稳定引用、部分提交和恢复协议，不宣称跨文件原子事务；GET不capture/GC/续租。
 
-普通纯规则保持 TS，重 IO/lease/退避/期限/取消按现有 Effect pin 与 Scope 标准；Host/preload 仍不导入 Effect/SQLite/Webhook/ops policy。上游 routine、模板克隆、Payload 和工具权限必须单独资格化。单 UID 的任意 shell 不构成硬隔离，无法证明 Bot 工具边界时只做固定只读报告；不能让 prompt 文字替代权限设计。
+默认目标Bot只提醒安全摘要、ID和可信registry生成的只读命令，不执行它们、不自动分析或询问Issue。用户委托后原生Bot仍能自主取证、管理Bot/模型并核验；使用原Agent loop和既有工具，不把提醒策略写成永久只读persona。后续Host维护调度只调用唯一controller，Bot交接后先结束，原生排空屏障和实际回执决定完成。
 
-T53 的通用 AgentRoutines port / command 由 CLI 的 native adapter 装配；agents create/update、独立 routines apply、模板配对和 E2E 复用同一程序，不要求 ops/SQLite 启用。原生 Routine/trigger 是权威，本地仅保留 scoped provision 回执，不新增 scheduler。IssuePublisher 只被 exact-content consent 或 T56 有限 public-summary grant 校验后的同一个 support command 消费，内置 Node REST adapter 固定仓库/作者并持久对账；普通通知器/控制器没有该权力。独立受限 publisher Scope 只领取 approved 支持作业，不新建 Agent loop。无 credential 时仍可本地 draft/export，不绕过授权。
+普通规则/视图为纯TS，IO/租约/退避/取消复用仓库Effect pin/Scope；Host/preload不导入Effect/SQLite/CLI/Webhook或ops配置。默认不采集原始正文，local/bot/public分层投影保留诊断关系。通知reference不是执行权限，同UID任意shell不是安全沙箱；缺工具隔离资格时不开放自动诊断/维护。
 
-T54 routing.ts 为唯一纯规则 owner，T55 通知程序消费冻结决策，不再自己猜目标。默认规则关闭等于全流向 default；可选按 intent/source/severity/audience 首匹配，最多一个 primary，显式备用只在已证明未执行时使用。模型/data change 失效、同原生 Bot 预算、跨 Bot 一层诊断交接与集中报告都是同 outbox/claim 程序的状态，不另造 router.db/服务/模型调度平台。多接收者不能复制 controller operation 或 issue submission 身份。
+T53的AgentRoutines由CLI native adapter装配，通用CRUD/create-update/模板配对共用程序，原生scheduler仍是权威。T54先交付一个固定目标与binding，T55的高级路由/备用/一层交接后置；unknown不广播，路由不改模型、不放大真实Bot额度。CONT通知消费同一outbox，恢复manifest/blob仍由S13私有owner控制。
+
+T52/T56延期，首发不建支持发布worker/REST adapter或issue grant。未来用户决定后仅GhIssuePublisher复用已有可用gh身份，无认证则本地保留，不提取token/切身份。通知、诊断、控制、公开四种副作用不能互相借权。
 
 ### 2026-09-12 Observation and incident management boundary
 
 **First local slice implemented; full T41 remains open.** [Spec S0.1.4](roadmap/box-runtime-impl-spec.md#continuous-observation) / [T41](tickets/T41-continuous-observation-and-alerting.md) add a scoped long-lived observer before Web UI. It reuses T37's native evidence acquisition and T27/T33 DTOs, not a second admission or controller. Box identity, account/team/backend scope, Bot identity and each source/runtime epoch remain explicit. CLI and future API read one projection and use the existing command programs.
 
-The current `monitor.runtime.ts` collector, `monitor-store.node.ts` transaction adapter and pure `kernel/monitor.ts` policy form one CLI/application path. `init` and `run` are explicitly confirmed, queries only reopen local committed snapshots, and management uses request identity plus incident revision. Production installation, safe abrupt-crash lock recovery, maintenance and external delivery remain separate unproved work; see [current operations](maintainers/continuous-observation.md).
+The current `monitor.runtime.ts` collector, `monitor-store.node.ts` transaction adapter and pure `kernel/monitor.ts` policy form one CLI/application path. `init` and `run` are explicitly confirmed, queries only reopen local committed snapshots, and management uses request identity plus incident revision. Installation and native delivery remain separate gates; incremental storage, crash and retention proofs retain their scoped source/test evidence in [T41](tickets/T41-continuous-observation-and-alerting.md). See [current operations](maintainers/continuous-observation.md) rather than treating every historical gap as unimplemented.
 
 The observer's Node adapter owns `${durableRoot}/observability/observations.sqlite` on that Box; no Host leaf SQLite import, browser direct access or cross-machine shared database. Current-state/index rows are rebuildable only from available sources; observed transitions and incident acknowledgement/snooze/notification receipts have their own retention and durability, not an assumed disposable-cache policy. J13/raw provenance and native Host stores stay with their existing writers. The database is never configuration, transcript, execution, identity or deployment authority.
 
 Collector/incident writes are explicit background capabilities, not GET side effects. Network sampling precedes a bounded local transaction; committed observation/incident updates are published with source/scope/cursor. Notification sends happen outside that transaction with stable delivery IDs and honest unknown/retry semantics; they cannot invoke model, tool or control effects. Corruption/migration/retention use controlled maintenance and preserve gaps. T37 consumes qualified live evidence, never restored SQL green state, and does not wait for database or notifier availability.
 
-SQLite implementation is a bounded portable image adapter: pinned sql.js asm performs transactions, a short exclusive writer lock serializes reload/export, then fsync+atomic rename publishes the image. It does not claim native WAL semantics or unlimited scale. The Node20 CJS engine is a lazily loaded `dist/observation-sqlite.cjs` companion; ordinary commands and Host preload do not load it. The root npm package remains self-contained with empty runtime dependencies. Existing J13 writers and configuration files are not moved into this database.
+Current source uses a disk SQLite adapter with incremental transactions and explicit maintenance; the early sql.js full-image adapter is retired. The database, indexes, auxiliary files and retained references need physical capacity accounting, not a lifetime row quota. [OBS-04](tickets/OBS-04-bounded-observation-storage.md) extends bounded retention/reclamation without changing original J13, configuration or execution authority. Host/preload does not load the database; package/runtime qualification stays with source and executable tests.
 
 Monitor resources belong to the existing Effect runtime/service owner, not the webpage. UI later adds snapshot/subscription and command calls; it does not start a collector per tab. Model/monitor configuration still uses ConfigurationWrite; incident management has its own revision and writer. Future product surfaces and fleet/external-offline limitations are in [future](roadmap/future/README.md).
 

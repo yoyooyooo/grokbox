@@ -15,6 +15,8 @@ remain the property of their respective owners.
 > `v0.1.0-alpha.4` exist as Git tags only. Prereleases publish only after
 > release checks and explicitly scoped external acceptance.
 
+> **Planned: native Bot assistance and fault notifications.** The accepted next step preserves bounded diagnostic evidence and sends a brief alert, incident IDs and retrieval commands to a separately paired Bot. Automatic alerts only remind by default; a user-delegated task can then drive troubleshooting, Bot management or model changes. This notification chain is **not shipped or enabled by this documentation change**, and does not automatically create Issues. Native Bot wakeups may incur model usage; data scope, retention limits and an off switch are part of the release contract. See the [implementation plan](docs/roadmap/template-ops-automation-spec.md).
+
 ## What it does
 
 ```text

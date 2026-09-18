@@ -6,6 +6,8 @@
 
 ## 目标与依赖
 
+2026-09-18共用出口收口：[OBS-01](OBS-01-incident-intake-and-detection.md)提供intake和发生周期，[OBS-02](OBS-02-incident-evidence-snapshots.md)固定诊断证据，[T45](T45-template-webhook-delivery.md)发送摘要/ID/取证命令。CONT仍拥有归属变更判断，默认Bot只提醒，不自动诊断或询问Issue；S13明确预授权的替换模式保持独立，不因本补充被降成只能提醒。
+
 无模型常驻服务及时发现指定 Bot 不再满足 Box 期望，保存可解释前后证据，向已经配对的用户接收目标做一次短提醒。读不到不是被迁移，写日志不是通知成功。本票独立上线，不等待 CONT-02–04。
 
 依赖 T41 observer/store、T40 服务生命周期、现有 ownership read scheduler，以及 Template Ops 已接受的目标绑定/脱敏投递/费用合同。若投递尚未实现，在本票的最小通知纵切中复用其合同实现，不能以“运维大功能还没完成”为由无限推迟。

@@ -2,6 +2,8 @@
 
 ## Status / Goal
 
+**2026-09-18范围：独立后续M，不阻塞默认提醒首发。** 默认通知不启动本票动作；用户任务/独立预授权与原控制门都满足时才处理，原操作状态的GC只由OBS-05及controller owner批准。
+
 **Planned · Spec-only。** 在已有唯一 controller 内兑现有限预授权自动变更，而不是另造一个能杀 Host 的 watcher。模板 Bot 持久交接后结束；维护可独立完成并给后续 Bot 留回执。Owning contract：[Spec §7](../roadmap/template-ops-automation-spec.md#execution)、[§9](../roadmap/template-ops-automation-spec.md#layout)。
 
 ## Depends-on / Modules
@@ -26,15 +28,15 @@ Bot submit 的回执只证明持久 handoff；Bot 随后结束。独立维护 Sc
 
 user 和 maintainer 都默认 maintenance off；切 preset、打开 deepReplay、配对模板、收到 issue 确认都不能建立维护 grant。maintenance mode 已设但无 grant 时明确 blocked-no-grant，不能修改 desired 回避解释。T51 的 config revision/权限撤销须在计划准入与执行前检查。
 
-无法执行/退出受阻的真实收据只作为 T52 的用户影响与支持候选证据，不调用 IssuePublisher，不在 controller 里组织上传材料。用户只同意公开草稿时，不允许自动重试维护；反过来同意维护也不允许公开现场。已有 operation unknown 先对账，不借切 preset 或重新创建 issue 来复活计划。
+无法执行/退出受阻的真实收据进入OBS共用incident/证据链，按T45通知目标Bot，不附带Issue询问。T52/T56延期；维护权限不包含公开，用户决定公开也不授权维护重试。operation unknown先对账，不借切preset或新通知身份复活计划。
 
-追加测试：maintainer 切换、支持确认、无 grant mode=low-risk、用户拒绝 issue 后计划/配置不被改写；controller→incident→支持询问只产生候选，不发生 GitHub 写入或新的 Host attempt。
+追加测试：maintainer切换、无grant mode=low-risk、与维护无关的用户决定均不改写计划/配置；controller→incident→默认提醒不产生诊断、公开或新的Host attempt。
 
 ## 多接收者的控制边界补充
 
 [T54/T55](T55-custom-receiver-delivery.md) 可有多个不同模型 Bot 提出同一个 incident 的维护候选；plan/operation 身份不随 target/route/delivery 变化而重建。controller 对授权、当前证据和已发生前缀仍唯一串行判定，昂贵模型不等于可信批准者。
 
-所有参与本次交接的真实回合/原生子任务都应结束，不能只排除 default 模板 Bot 或只检查最初提出者。custom 接收路径故障本身不授权重启 Host，备用切换不修改 grant 或未知 operation。T56 的 issue 发布 grant 与维护 grant 必须互不替代。
+所有参与本次交接的真实回合/原生子任务都应结束，不能只排除 default 模板 Bot 或只检查最初提出者。custom 接收路径故障本身不授权重启 Host，备用切换不修改 grant 或未知 operation。T56已延期，任何未来公开权限仍不得替代维护grant。
 
 追加回归：两个 Bot 重复/相反 proposal 不双重 signal；换路由不重放 unknown；receiver model/身份改变不能借旧 grant；报告目标尚忙不反向制造无穷维护等待或取消用户任务。
 

@@ -1,5 +1,7 @@
 # 2026-09-17 — 可配置接收 Bot、多目标分流与授权后 issue 自动化
 
+> 历史决策。单目标/可配置接收者、权限与费用分离的原则保留；内置REST、有限自动发布grant及默认支持流程已由[2026-09-18决策](2026-09-18-observable-native-bot-ops.md)退役。当前首发只提醒，T52/T56延期，未来用户决定公开时仅复用已有gh身份。施工以[当前Spec](../roadmap/template-ops-automation-spec.md)为准，不从下文恢复旧范围。
+
 **状态：接受用户本轮补充，Spec-only；未实际启用或授予任何安装权限。** 本决策在同日 [分层/支持/Routine 决策](2026-09-17-ops-defaults-support-and-routines.md)之后生效，精确修订单模板接收和全部发布逐份确认的限制。唯一实施合同仍为 [Template Ops Spec](../roadmap/template-ops-automation-spec.md)，新施工增量为 T54–T56；旧 T43–T53 不因新文件成为 Done。
 
 配置遵循 [统一配置决策](2026-09-17-unified-configuration-rebuild.md) 与 [配置 Spec](../roadmap/configuration-rebuild-spec.md)：偏好位于 config.ops，真实 bindings/grants 由受信机器状态程序维护。config 管配置，models 管模型，ops 管通知与执行用例。
