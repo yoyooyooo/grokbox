@@ -1,4 +1,4 @@
-import { assertBoxLocal, openRuntimeStore, openMonitorStore, runMonitor, runIncidentEvidenceCommand, BoxRuntimeError } from "@grokbox/box-runtime/runtime";
+import { assertBoxLocal, openRuntimeStore, openMonitorStore, runMonitor, runIncidentEvidenceCommand, observeRuntimeStorage, BoxRuntimeError } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
 import type { IncidentEvidenceCommand } from "@grokbox/runtime-kernel/commands";
 import type { EvidenceView } from "@grokbox/runtime-kernel/observation";
@@ -36,7 +36,9 @@ export async function runRuntimeMonitor(deps: CliDeps, action: "init"|"run"|"sna
     }
     if (action === "init") { writeSuccess(deps.stdout,await store.initialize()); return; }
     if (action === "snapshot") { writeSuccess(deps.stdout,await store.snapshot()); return; }
-    if (action === "storage-status") { writeSuccess(deps.stdout,await store.storageHealth()); return; }
+    if (action === "storage-status") {
+      writeSuccess(deps.stdout, await observeRuntimeStorage({ durableRoot: root, runRoot: deps.env.GROKBOX_RUN_ROOT })); return;
+    }
     if (action === "incidents") { writeSuccess(deps.stdout,{ ...await store.incidentPage(raw.after,raw.limit ? integer(raw.limit) : undefined), notificationMode: "local_only", admissionAuthority: false }); return; }
     if (action === "events") { writeSuccess(deps.stdout,await store.events(raw.after,raw.limit ? integer(raw.limit) : undefined)); return; }
     if (action === "ack" || action === "snooze") {

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { readFile, readdir, readlink, open, mkdir } from "node:fs/promises";
-import { join, isAbsolute } from "node:path";
+import { readFile, readdir, readlink } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { Effect } from "effect";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { linuxProcessPort } from "../process/linux.node.ts";
@@ -52,12 +52,12 @@ export async function replaceModeld(input: {
     }).pipe(Effect.timeout("10 seconds"));
     // The prior process must remove its own socket during normal Scope cleanup.
     if ((yield* Effect.promise(() => probeModeldReplacement(input.runRoot, 500))) !== null) return yield* Effect.fail(refuse("a different modeld took ownership; replacement not started"));
-    const logDir = join(input.runRoot, "log");
-    yield* Effect.promise(() => mkdir(logDir, { recursive: true, mode: 0o700 }));
-    const log = yield* Effect.acquireRelease(Effect.promise(() => open(join(logDir, "modeld-process.log"), "a", 0o600)), handle => Effect.promise(() => handle.close()));
+    // The service writes its own bounded, schema-projected lifecycle segments.
+    // Do not leave detached stdout/stderr holding an unbounded raw-log fd, and
+    // do not put an ephemeral CLI in charge of a long-lived child's log pipes.
     let published = false;
     const child = yield* Effect.acquireRelease(Effect.sync(() => spawn(target.exe, [input.entry, "runtime", "modeld", "run", "--json"], {
-      detached: true, stdio: ["ignore", log.fd, log.fd], env: { ...input.env, GROKBOX_RUN_ROOT: input.runRoot, GROKBOX_BOX_RUNTIME_ROOT: input.durableRoot },
+      detached: true, stdio: "ignore", env: { ...input.env, GROKBOX_RUN_ROOT: input.runRoot, GROKBOX_BOX_RUNTIME_ROOT: input.durableRoot },
     })), child => Effect.sync(() => {
       if (published) child.unref();
       else if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");

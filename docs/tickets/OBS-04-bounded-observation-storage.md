@@ -10,6 +10,10 @@
 
 仍缺整安装统一配置/容量预留、process fd与journal分段轮转、全部metadata/Jobs/备份/Trash治理、独立于ops开关的常驻服务组合、实际原生/live稳态和独立review。文件护栏只限制SQLite主文件，辅助文件目前仅测量，不能把128MiB当整安装上限或把32轮TTL前进当多年负载证明。执行状态仍由OBS-05处理。
 
+## modeld 日志增量（2026-09-18）
+
+modeld服务自身的结构化生命周期writer、真实fd关闭/新段、固定数量/字节容量、borrower隔离和诊断失败非致命已实现；replacement不再追加raw stdout/stderr，旧raw文件仅计量。真实Node替换/独立fd检查、25代轮转及只读存储facet的范围与缺口见[本片回执](../reports/2026-09-18-modeld-process-log-rotation.md)。年龄清理在写入或重开时执行，闲置无增长不宣称定时TTL删除已经交付。结构化journal、其他producer、跨owner容量、配置与常驻维护仍未关闭本票。
+
 ## Goal / Modules
 
 自动观测不无限积累；普通日志滚动、结构化journal按消费窗口分段、SQLite/事故/通知按生命周期回收，并测真实磁盘回落。
@@ -20,7 +24,7 @@ kernel `internal/observation/retention-policy.ts`；box-runtime `io/observation-
 
 诊断池目标256MiB/max512MiB，64MiB内部reserve；shared SQLite/索引/辅助文件、所有进程/Bot日志、事故blob、自动exports与维护临时量全计入，不能每Bot重新给512MiB。容量预留发生在新写/换段/压缩之前；当前超额进入只读诊断/降级与有界回收，不暴力删保护记录。数字按Spec单一policy定义，不复制到Skill。
 
-普通process log单段4MiB/总32MiB/72h；结构化journal8MiB/总128MiB/72h。实现受管有界stdio sink处理子进程长期fd，不能rename后仍写旧inode。关闭段才压缩，失败/中断不丢有效段；默认Host忽略raw stdio策略不扩大。journal manifest/cursor按segment identity跨重启接续；关键事故先固定，未消费超额允许loss但显式gap。
+普通process log单段4MiB/总32MiB/72h；结构化journal8MiB/总128MiB/72h。modeld使用取得listener后的受管结构化writer，不再捕获无限raw stdio；其他producer须由其真正长期owner处理fd，不能rename后仍写旧inode。关闭段才压缩，失败/中断不丢有效段；默认Host忽略raw stdio策略不扩大。journal manifest/cursor按segment identity跨重启接续；关键事故先固定，未消费超额允许loss但显式gap。
 
 DB分批回收observations/events/evidence/incidents/management/cursors/source health/notifications/leases，逐表说明authority、可重建性和终止条件。ack/snooze/父子关系/open不永久pin全量payload；事件明细→核心→摘要，保留所需管理/去重最小标记。drop总结注明范围/原因，GET不清理。
 

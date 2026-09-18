@@ -284,7 +284,7 @@ lease只保护快照一致性/承诺范围，不影响执行权限。不足空�
 
 超过target先清孤儿/过期普通日志，再合并重复记录、降级事故明细；max前为新写预留最坏临时字节。无法预留则拒绝非必要诊断write并更新固定容量健康槽，保证Host正常执行不等观察库。观察自身故障不递归制造无界告警；健康槽也写不下时如实degraded。安全账本真实写失败仍须拒绝其不能安全记录的新副作用。
 
-日志轮转必须考虑已打开fd：原process.log子进程持有fd时，仅rename不能切写入。T50/OBS-04选择受管有界stdio sink，由其own writer切段；默认Host raw stdio忽略策略不为了可观测而改成全量收集。长行/慢sink/断管不造成无界内存，诊断流允许有计数的丢弃；Job/协议输出不能混同普通stderr丢弃。
+日志轮转必须考虑已打开fd：原process.log子进程持有fd时，仅rename不能切写入。modeld选定服务自身拥有的结构化生命周期sink：取得真实listener后才获取日志writer，Scope退出先关闭writer再释放listener；borrower/失败竞争者不轮转。固定数量带序号的段由同一writer关闭后回收，重启不接写可能残留半行的旧段。replacement不再将raw stdout/stderr指向无限追加文件；正常交互CLI仍输出原有结果，原始stack/provider正文不自动落盘。旧raw文件只计量、不自动删除。其他process/debug producer仍须逐owner接线，不能据此宣称全部stdio已捕获。默认Host raw stdio忽略策略不扩大；有界并发写不建无限Promise队列，诊断丢弃有计数；Job/协议输出不能混同普通stderr丢弃。
 
 SQLite用对应模式的增量清理/回收，迁移库也验证真实auto_vacuum设置。统计logical/live/free/file/auxiliary bytes，测实际文件回落，不以DELETE行数证明释放磁盘。重型重建要预留空间/另获维护窗口，满盘不盲全量VACUUM。LevelDB compaction由原owner在可接受时机执行，不直接删SST/LOCK。
 

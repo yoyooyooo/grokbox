@@ -19,6 +19,7 @@ export {
   retainedGenerationSourcePath,
 } from "./internal/io/paths.ts";
 export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration.node.ts";
+export { observeRuntimeStorage } from "./internal/roots/storage-maintenance.runtime.ts";
 export { openConfigStore, commitConfigChange, recoverConfigCommit, unifiedConfigurationLayer, type ConfigStore, type ConfigSnapshot } from "./internal/io/config-store.node.ts";
 export { readConfigLayout, rootConfigLayout, readConfigFile, publishConfigFile, publishLayoutAliases, readInstallation, type ConfigLayout, type InstallationState } from "./internal/io/config-layout.node.ts";
 export { planConfigurationMigration, applyConfigurationMigration, recoverConfigurationMigration, configurationMigrationStatus, migrationPreview, type MigrationOptions } from "./internal/io/config-migrate.node.ts";

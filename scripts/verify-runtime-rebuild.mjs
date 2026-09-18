@@ -20,6 +20,13 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "process-log-rotation": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/process-log-rotation.test.ts", "packages/box-runtime/test/process-log-modeld.test.ts", "packages/box-runtime/test/modeld-running-failure.test.ts", "packages/box-runtime/test/modeld-packaged-lifecycle.test.ts", "test/monitor-incident-cli.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/modeld-lifecycle.test.ts", "packages/box-runtime/test/modeld-start-failure.test.ts", "test/runtime-modeld-lifetime.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "observation-evidence": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/runtime-kernel/test/observation-evidence-contract.test.ts", "packages/runtime-kernel/test/observation-evidence-privacy.test.ts", "packages/box-runtime/test/incident-evidence-store.test.ts", "packages/box-runtime/test/observation-storage-pressure.test.ts", "packages/box-runtime/test/monitor-scheduling-review.test.ts", "test/monitor-incident-cli.test.ts"],
@@ -184,6 +191,7 @@ for (const argv of mapped) {
 }
 
 const SUPPORTS = {
+  "process-log-rotation": ["writer-owned-modeld-segments", "bounded-multi-generation-disk", "partial-tail-not-reappended", "borrower-does-not-rotate", "diagnostic-failure-does-not-block-modeld", "packaged-node-replacement-no-raw-log-fd", "independent-read-only-storage-facets"],
   "observation-evidence": ["unknown-tray-and-no-step-failure-intake", "immutable-revision-node-cli-read", "public-structure-without-private-identities", "bounded-revisions-and-shared-leases", "sqlite-file-growth-guard-and-retention-resume", "slow-rpc-independent-local-drain", "explicit-v2-migration-no-backlog-wake", "read-only-storage-status", "untracked-source-privacy-scan"],
   "context-reuse": ["pinned-pi-controlled-extraction", "independent-cut-and-usage-goldens", "untruncated-summary-input", "real-sdk-request-owner", "packed-host-process-reopen"],
   "context-policy": ["strict-config-v3", "explicit-v2-migration", "local-window-and-output-reserve", "per-model-per-bot-policy-revision", "unknown-usage-local-measurement"],
@@ -212,6 +220,7 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "process-log-rotation": "real-private-files-real-unix-modeld-source-root-and-disposable-packaged-node-replacement-no-Host-or-provider-effects",
   "observation-evidence": "production-collector-and-sqlite-writers-real-temporary-databases-files-and-packaged-node-cli-owned-rpc-and-native-event-fixtures-no-live-mutations",
   "context-reuse": "selected-pi-source-extraction-real-sdk-local-http-and-packaged-host-no-global-pi-or-external-provider",
   "context-policy": "pure-policy-real-temporary-config-files-and-explicit-migrator",
@@ -240,6 +249,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "process-log-rotation": ["installation-wide-storage-budget", "structured-journal-rotation", "other-process-log-producers", "native-webhook-delivery", "persistent-service-installation", "independent-review", "live-adoption"],
   "observation-evidence": ["all-native-boundary-instrumentation", "installation-wide-diagnostic-budget", "process-journal-rotation", "execution-safety-state-retirement", "native-webhook-pairing-and-bot-delivery", "persistent-service-installation", "independent-review", "live-adoption"],
   "context-reuse": ["live-native-context-adoption", "real-provider-summary-quality", "independent-review", "pi-ai-backend-adoption"],
   "context-policy": ["live-config-migration-and-adoption", "arbitrary-provider-tokenizer-equivalence", "native-prompt-delivery"],

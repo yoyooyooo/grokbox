@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { openMonitorStore } from "../packages/box-runtime/src/internal/io/monitor-store.node.ts";
+import { openBoundedProcessLog } from "../packages/box-runtime/src/internal/io/bounded-process-log.node.ts";
 import { captureCli, parseJson } from "./helpers.ts";
 
 const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", now = Date.now();
@@ -77,7 +78,27 @@ test("storage status is read-only and does not claim to enforce the whole instal
       growthGuard: { maxDatabaseBytes: 128 * 1024 * 1024 }, auxiliary: { bytes: 0, unavailable: [] } } });
     expect(await readFile(f.store.path)).toEqual(before); expect(await readdir(join(f.root, "observability"))).toEqual(names);
     const missing = await captureCli(["runtime", "storage", "status"], { ...f.deps, boxRuntimeRoot: join(f.root, "missing-root") });
-    expect(missing.code).not.toBe(0); expect(await readdir(join(f.root, "observability"))).toEqual(names);
+    expect(missing.code).toBe(0);
+    expect(parseJson(missing.stdout)).toMatchObject({ data: { state: "not_initialized", reason: "monitor_not_initialized", fileBytes: null, installationBudgetEnforced: false } });
+    expect(await readdir(join(f.root, "observability"))).toEqual(names);
+  } finally { await f.close(); }
+});
+
+test("storage status preserves independent process evidence when the monitor database is missing", async () => {
+  const f = await fixture();
+  try {
+    const logger = await openBoundedProcessLog({ runRoot: f.root, generation: randomUUID(), nowMs: now });
+    await logger.append({ event: "ready", atMs: now }); await logger.close();
+    const segmentDir = join(f.root, "log", "process"), names = await readdir(segmentDir);
+    const before = await readFile(join(segmentDir, names[0]!));
+    const result = await captureCli(["runtime", "storage", "status", "--json"], { ...f.deps,
+      boxRuntimeRoot: join(f.root, "missing-root"), env: { GROKBOX_RUN_ROOT: f.root } });
+    expect(result.code, result.stderr).toBe(0);
+    expect(parseJson(result.stdout)).toMatchObject({ data: { state: "not_initialized", processLogs: {
+      state: "available", rawStdioCaptured: false, legacyFileManaged: false, bytes: before.length,
+    } } });
+    expect(await readFile(join(segmentDir, names[0]!))).toEqual(before); expect(await readdir(segmentDir)).toEqual(names);
+    expect(await readdir(f.root)).not.toContain("missing-root");
   } finally { await f.close(); }
 });
 

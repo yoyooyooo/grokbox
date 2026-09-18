@@ -16,6 +16,7 @@ import { type OwnershipReader } from "../io/ownership-admission.node.ts";
 import { makeOwnershipCoordinator } from "../io/ownership-coordinator.node.ts";
 import { writeModeldStepOutcome, writeModeldRecoveryProgress, writeModeldAuthorityProgress } from "../io/modeld-outcome.node.ts";
 import { openExecutionHistory } from "../io/execution-history.node.ts";
+import { openBoundedProcessLog, type ProcessLogEvent, type ProcessLogHealth } from "../io/bounded-process-log.node.ts";
 import { noteJournalObservationTimeout } from "../host/journal-health.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
 import { probeModeldHealth, probeModeldIdentity, modeldRootId, modeldSocketPath } from "../wire/modeld-probe.node.ts";
@@ -119,7 +120,7 @@ function listenerLifetime(server: Server): Effect.Effect<never, BoxRuntimeError>
 
 export type ModeldEnsure =
   | { kind: "borrowed"; path: string; generation?: string }
-  | { kind: "owned"; path: string; generation: string };
+  | { kind: "owned"; path: string; generation: string; processLog?: ProcessLogHealth };
 
 /** A responsive old/foreign service is not proof that it consumes this root.
  * Refuse instead of rewriting configuration under another service's socket. */
@@ -178,8 +179,25 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
         ...compactAttach(),
       });
       if (!listener.server.listening) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_closed"));
-      yield* ready({ kind: "owned", path, generation });
-      yield* listenerLifetime(listener.server);
+      // Acquire only AFTER the real listener: a borrower or failed competing
+      // owner must never rotate the active service's diagnostics. Scoped release
+      // closes this writer before the listener removes its own socket.
+      const processLog = yield* Effect.acquireRelease(
+        Effect.tryPromise({ try: () => openBoundedProcessLog({ runRoot: options.runRoot, generation, nowMs: Date.now() }), catch: () => "process_log_unavailable" })
+          .pipe(Effect.catch(() => Effect.succeed(undefined))),
+        log => log ? Effect.tryPromise({ try: () => log.close(), catch: () => "process_log_close_failed" }).pipe(Effect.catch(() => Effect.void)) : Effect.void,
+      );
+      const note = (event: ProcessLogEvent) => Effect.gen(function* () {
+        const atMs = yield* Clock.currentTimeMillis;
+        if (processLog) yield* Effect.uninterruptible(Effect.tryPromise({ try: () => processLog.append({ event, atMs }), catch: () => "process_log_write_failed" })).pipe(Effect.catch(() => Effect.void));
+      });
+      yield* note("ready");
+      yield* ready({ kind: "owned", path, generation, processLog: processLog?.health() ?? {
+        state: "unavailable", writtenRecords: 0, droppedRecords: 0, rotations: 0, reason: "storage_unavailable",
+      } });
+      yield* listenerLifetime(listener.server).pipe(Effect.onExit(exit =>
+        note(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? "shutdown_requested" : "listener_failed"),
+      ));
     }).pipe(Effect.provide(layer));
     return { kind: "owned" as const, path, generation };
   });
