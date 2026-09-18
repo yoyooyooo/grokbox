@@ -60,7 +60,7 @@
 | 维度 / 稳定 ID | 现场进度与已验证范围 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
 |---|---|---|---|
 | <a id="live-obs-evidence"></a>**LIVE-OBS-EVIDENCE**<br>原生故障→固定证据→提醒后取证 | **本轮未运行真实链。** 新增本地unknown tray/无STEP intake、固定revision/安全摘要与Node取证已通过限定离线测试，不是原生Bot送达证明。 | 未知tray/queue failed/无STEP实际进入incident；真实工具/checkpoint关联和缺口；告警引用同revision在后续输入/轮转后仍可查；Bot默认只提醒，实际网络数据符合视图。 | `blocked`：先完成[OBS-00](OBS-00-evidence-contracts.md)至[OBS-03](OBS-03-evidence-privacy-views.md)、T45/T46与独立review；由[OBS-06](OBS-06-integration-and-soak-proof.md)/T50冻结候选、对象与费用，复用ROUTINES窗口。不改原App、不复演旧STEP。 |
-| <a id="live-obs-storage"></a>**LIVE-OBS-STORAGE**<br>长期容量与物理空间回收 | **本轮未运行现场压力/切换。** SQLite文件护栏、压力gap、3份修订/共享lease、TTL回收与慢源隔离已有离线切片；全安装预算明确未生效。[增量证据](../reports/2026-09-18-observation-storage-followup.md)。 | 实际journal/process fd轮转、SQLite含索引/辅助文件、manifest/租约/孤儿在长期高基数故障下稳态；ops通知关闭后GC继续；reader并发、崩溃、磁盘压力与gap；无用户数据误删。 | `blocked`：[OBS-04](OBS-04-bounded-observation-storage.md)/[OBS-06](OBS-06-integration-and-soak-proof.md)/[T50](T50-template-ops-release-proof.md)尚缺跨owner预算、轮转、常驻组合及review；最终构建调用被工具安全检查拦截，未换入口重试或采用切片。先补来源前置并冻结v2集成制品，再用可丢弃存储验收；不在生产填满盘或清历史。 |
+| <a id="live-obs-storage"></a>**LIVE-OBS-STORAGE**<br>长期容量与物理空间回收 | **本轮未运行现役压力/切换。** 证据/SQLite局部容量/采集调度切片8835fcf已线性合入v2，并在v2工作区复验39项通过；不是原生通知或全安装预算证明。[增量证据](../reports/2026-09-18-observation-storage-followup.md)。 | 实际journal/process fd轮转、SQLite含索引/辅助文件、manifest/租约/孤儿在长期高基数故障下稳态；ops通知关闭后GC继续；reader并发、崩溃、磁盘压力与gap；无用户数据误删。 | `blocked`：[OBS-04](OBS-04-bounded-observation-storage.md)/[OBS-06](OBS-06-integration-and-soak-proof.md)/[T50](T50-template-ops-release-proof.md)尚缺跨owner预算、结构化journal/其他producer轮转、常驻组合与独立review（指定复核请求503）。8835fcf的类型/构建/专项门已通过；modeld日志增量仍在独立工作分支，最终typecheck缺回执，不把它视为已合入/加载。先完成相应门禁再固定v2制品验现役，不在生产填满盘或清历史。 |
 | <a id="live-obs-safe-retirement"></a>**LIVE-OBS-SAFE-RETIREMENT**<br>执行身份与恢复引用退役 | 本轮未运行；现有incarnation隔离不证明同代安全GC已完成。 | 真实延迟请求在GC/重启/恢复后不再执行；commit_unknown最小阻断保持；当前/回退制品及CONT私有manifest闭包不被清；物理回收而非累计STEP上限。 | `blocked`：先完成[OBS-05](OBS-05-safe-state-retirement.md)的协议退役/入口覆盖与独立review，再选明确授权原生操作和安全存储窗口。复用CTX/CONT相关回执但独立签本条，不删ledger造空环境。 |
 
 ### 归属丢失与新身份连续性
@@ -71,7 +71,7 @@
 
 ### 待闭合资格：CTX已有现场子项，运维仍按来源前置推进
 
-Template Ops与OBS本轮仅更新规划，没有新增现场回执；Issue支路延期，不作为首发前置。CTX的源码、打包和原生隔离证明见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)，本轮新增的成套采用、真实503/备用端点与modeld换代见[CTX-V8回执](../reports/2026-09-17-context-v8-live-window.md)。用户已明确接受503与备用模型的有限测试窗口；这不把Astra的503或备用review超时改成独立审核通过，亦不签正式发布。实际Bot消息被工具安全检查拦截，现有阻断已不只是review通道不可用。
+Template Ops与OBS已有局部实现和离线证明，尚无本轮现役采用/原生通知回执；Issue支路延期，不作为首发前置。CTX的源码、打包和原生隔离证明见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)，本轮新增的成套采用、真实503/备用端点与modeld换代见[CTX-V8回执](../reports/2026-09-17-context-v8-live-window.md)。用户已明确接受503与备用模型的有限测试窗口；这不把Astra的503或备用review超时改成独立审核通过，亦不签正式发布。实际Bot消息被工具安全检查拦截，现有阻断已不只是review通道不可用。
 
 | 维度 / 稳定 ID | 当前现场进度 | 还没验证什么 | 验收状态、阻断与下一步 / 详情 |
 |---|---|---|---|
