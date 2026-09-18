@@ -1037,6 +1037,33 @@ test("host status/realign/logs are reserved stubs", async () => {
   }
 });
 
+test("doctor requires current committed state even when the daemon and loaded bridge are ready", async () => {
+  stubHost("custom");
+  hostSwitchPorts.enable = async () => { throw new Error("doctor must not mutate Host"); };
+  const gateway = await startMockGateway();
+  const dir = await mkdtemp(join(tmpdir(), "grokbox-doctor-commit-"));
+  const discoveryPath = await writeDiscovery({ port: gateway.port, pid: gateway.pid, startedAt: gateway.startedAt, token: gateway.token });
+  const daemonSocket = join(dir, "daemon.sock");
+  const deps: Partial<CliDeps> = { configDir: dir, discoveryPath, env: {}, transport: "local", stdinIsTTY: false, daemonSocket };
+  await writeDaemonConfig(dir, { version: 1 });
+  await writeProfileFile(dir, "default", { version: 1, transport: "local", gateway_discovery: discoveryPath, daemon_socket: daemonSocket });
+  const daemon = await startDaemonHost({ ...createProductionDeps(), ...deps, transport: "local" }, daemonSocket);
+  try {
+    for (const committed of [
+      { state: "blocked", reason: "recovery_pending" },
+      { state: "unavailable", reason: "observation_unavailable" },
+      { state: "ready", reason: "matched" },
+    ] as const) {
+      hostCapabilityPorts.alignment = async () => committed;
+      const result = await captureCli(["doctor", "--json"], deps);
+      expect(result.code, result.stderr).toBe(0);
+      const report = (parseJson(result.stdout) as { data: Record<string, unknown> }).data;
+      expect(report.next).toBe(committed.state === "ready" ? "none" : "grokbox runtime status --json");
+      expect(report.operator).toMatchObject({ daemon: "up", host: "custom", committed });
+    }
+  } finally { await daemon.close(); gateway.stop(); }
+});
+
 test("top-level on starts services without switching Host and annotates host start", async () => {
   stubHost("official");
   hostSwitchPorts.enable = async () => {

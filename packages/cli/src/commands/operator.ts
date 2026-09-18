@@ -40,6 +40,7 @@ export type OperatorReport = {
   hostReason: string | null;
   modeldAdmission?: "ready" | "blocked" | "not_instrumented";
   hostCapabilities?: HostCapabilityReport;
+  committed?: CommittedHostAlignment;
   next: string;
   liveShaPrefix?: string;
   profileShaPrefix?: string;
@@ -125,6 +126,7 @@ export function operatorNext(input: {
   liveSha?: string | null;
   modeldAdmission?: "ready" | "blocked" | "not_instrumented";
   hostCapabilities?: HostCapabilityReport;
+  committed?: CommittedHostAlignment;
 }): string {
   if (input.hostReason === "source_mismatch") return profileWriteNext(input.liveSha);
   if (input.host === "unknown" && (input.hostReason === "stale_attestation" || input.hostReason === "unmanaged_preload")) {
@@ -146,6 +148,9 @@ export function operatorNext(input: {
     }
     return "grokbox runtime status --json";
   }
+  // Loaded capability proof does not establish that the current adoption
+  // committed, or that its recovery journal/service is ready.
+  if (input.committed?.state !== "ready") return "grokbox runtime status --json";
   return "none";
 }
 
@@ -179,6 +184,7 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
   const daemon: OperatorDaemon = await handshakeDaemon(deps, timeoutMs) ? "up" : "down";
   const classified = await inspectHostClass(deps, true);
   const hostCapabilities = classified.host === "custom" ? await hostCapabilityPorts.observe(deps, timeoutMs) : undefined;
+  const committed = classified.host === "custom" ? await hostCapabilityPorts.alignment(deps) : undefined;
   let pruneEnabled = false;
   try {
     pruneEnabled = (await readDaemonConfig(deps.configDir)).desktop?.pruneEnabled === true;
@@ -193,6 +199,7 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
     hostReason: classified.hostReason,
     ...(classified.modeldAdmission ? { modeldAdmission: classified.modeldAdmission } : {}),
     ...(hostCapabilities ? { hostCapabilities } : {}),
+    ...(committed ? { committed } : {}),
     next: operatorNext({
       daemon,
       host: classified.host,
@@ -200,6 +207,7 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
       liveSha: classified.liveSha,
       modeldAdmission: classified.modeldAdmission,
       hostCapabilities,
+      committed,
     }),
     ...(classified.liveShaPrefix ? { liveShaPrefix: classified.liveShaPrefix } : {}),
     ...(classified.profileShaPrefix ? { profileShaPrefix: classified.profileShaPrefix } : {}),
@@ -348,8 +356,8 @@ function refuseUnknown(classified: HostClass & SourceFacts): void {
   if (classified.host === "unknown") throw hostMismatchError(classified.hostReason, classified.liveSha);
 }
 
-function successNext(actual: HostClass & SourceFacts, hostCapabilities?: HostCapabilityReport): string {
-  if (actual.host === "custom") return operatorNext({ daemon: "up", ...actual, hostCapabilities });
+function successNext(actual: HostClass & SourceFacts, hostCapabilities?: HostCapabilityReport, committed?: CommittedHostAlignment): string {
+  if (actual.host === "custom") return operatorNext({ daemon: "up", ...actual, hostCapabilities, committed });
   if (actual.host === "official") return "none";
   return mismatchNext(actual.hostReason, actual.liveSha);
 }
@@ -368,7 +376,7 @@ function lifecyclePayload(input: {
   const pending = input.command !== "stop" && input.outcome !== "already_started" && !controllerApplyCompleted(applyReceipt);
   const pendingAuthority = input.actual.host === "custom" && input.committed?.state !== "ready";
   const next = pending ? rec(applyReceipt).reason === "operation-busy" ? "grokbox runtime operation-recovery --json"
-    : "grokbox runtime status --json" : pendingAuthority ? "grokbox runtime status --json" : successNext(input.actual, input.hostCapabilities);
+    : "grokbox runtime status --json" : pendingAuthority ? "grokbox runtime status --json" : successNext(input.actual, input.hostCapabilities, input.committed);
   return {
     command: input.command,
     desired: input.command === "stop" ? "official" : "custom",
@@ -570,7 +578,7 @@ export async function runOperatorUpgrade(
     await rpcPruneEnabled(deps, io.timeoutMs, true);
   }
   const observed = await inspectOperator(deps, io.timeoutMs);
-  const committed = await hostCapabilityPorts.alignment(deps);
+  const committed = observed.committed ?? await hostCapabilityPorts.alignment(deps);
   const blockers = [
     ...(!controllerApplyCompleted(enable) ? ["operation_not_completed"] : []),
     ...(observed.daemon === "down" ? ["daemon_down"] : []),

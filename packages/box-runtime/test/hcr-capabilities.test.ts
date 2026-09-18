@@ -110,10 +110,14 @@ test("runtime alignment requires committed bridge, clear recovery and accepting 
 
 test("doctor never maps unknown observation or missing bridge proof to none", () => {
   expect(operatorNext({ daemon: "up", host: "unknown", hostReason: "observation_unavailable" })).toBe("grokbox runtime status --json");
-  const base = { daemon: "up", host: "custom", hostReason: null, modeldAdmission: "ready", liveSha: loaded.sourceSha256 } as const;
+  const base = { daemon: "up", host: "custom", hostReason: null, modeldAdmission: "ready", liveSha: loaded.sourceSha256,
+    committed: { state: "ready", reason: "matched" } } as const;
   expect(operatorNext(base)).not.toBe("none");
   expect(operatorNext({ ...base, hostCapabilities: { state: "not_instrumented", reason: "missing_manifest" } })).toContain("--capability ownership-local");
   expect(operatorNext({ ...base, hostCapabilities: { state: "ready", reason: "matched" } })).toBe("none");
+  expect(operatorNext({ ...base, committed: undefined, hostCapabilities: { state: "ready", reason: "matched" } })).toBe("grokbox runtime status --json");
+  expect(operatorNext({ ...base, committed: { state: "blocked", reason: "recovery_pending" },
+    hostCapabilities: { state: "ready", reason: "matched" } })).toBe("grokbox runtime status --json");
   expect(operatorNext({ ...base, hostCapabilities: { state: "incompatible", reason: "loaded_profile_mismatch" } })).toBe("grokbox host restart");
   expect(operatorNext({ ...base, hostCapabilities: { state: "incompatible", reason: "generation_mismatch" } })).toBe("grokbox runtime status --json");
   expect(operatorNext({ ...base, modeldAdmission: "blocked", hostCapabilities: { state: "ready", reason: "matched" } })).toBe("grokbox runtime modeld status");
