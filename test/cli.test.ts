@@ -152,8 +152,13 @@ describe("registry, help, and runtime", () => {
     }
   });
 
-  test("every leaf help projects exactly its registry option set", async () => {
-    for (const leaf of LEAF_COMMANDS) {
+  // Each command family has its own bounded test lifetime. A single 5s test
+  // over the growing registry can time out while its async loop keeps running
+  // through later tests. Preserve the complete option-set assertions per leaf.
+  test.each([...TOP_LEVEL_COMMANDS])("every %s leaf help projects exactly its registry option set", async (top) => {
+    const leaves = LEAF_COMMANDS.filter(leaf => leaf.path[0] === top);
+    expect(leaves.length).toBeGreaterThan(0);
+    for (const leaf of leaves) {
       const result = await captureCli([...leaf.path, "--help"], {
         skillsDir,
         discoveryPath: "/dev/null",
