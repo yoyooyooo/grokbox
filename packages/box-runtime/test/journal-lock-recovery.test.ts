@@ -24,7 +24,7 @@ function launch(directory: string, stage?: string) {
     env: { PATH: process.env.PATH, HOME: directory }, stdio: ["ignore", "pipe", "pipe"] });
   let stderr = ""; child.stderr.on("data", d => stderr = (stderr + d).slice(-4096));
   const ready = new Promise<void>((resolve, reject) => {
-    child.stdout.once("data", d => { if (String(d).includes('"locked":true')) resolve(); else reject(Error("owned_invalid_ready")); });
+    child.stdout.once("data", d => { if (String(d).includes(stage === "queued" ? '"started":true' : '"locked":true')) resolve(); else reject(Error("owned_invalid_ready")); });
     child.once("error", reject); child.once("exit", () => reject(Error("owned_child_before_ready")));
   });
   void ready.catch(() => undefined);
@@ -111,7 +111,8 @@ linuxTest("a dead queued contender's bounded preparation slot is reclaimed on a 
   const directory = await root(); let child: ReturnType<typeof launch> | undefined;
   try {
     await withEventsLock(directory, async () => {
-      child = launch(directory);
+      child = launch(directory, "queued");
+      await bounded(child.ready);
       let prepared = false;
       for (let attempt = 0; attempt < 200; attempt++) {
         const names = (await readdir(join(directory, "log"))).filter(name => name.startsWith("events.prepare-"));
@@ -124,7 +125,7 @@ linuxTest("a dead queued contender's bounded preparation slot is reclaimed on a 
         if (prepared) break;
         await new Promise(resolve => setTimeout(resolve, 5));
       }
-      expect(prepared).toBe(true); await stop(child);
+      expect(prepared, child.stderr()).toBe(true); await stop(child);
     });
     await withEventsLock(directory, async () => undefined);
     expect(await readdir(join(directory, "log"))).toEqual([]);
