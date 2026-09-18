@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import { captureCli } from "../../../test/helpers.ts";
 import { ensurePackedCli } from "../../../test/packed-cli-fixture.ts";
 import { defaultConfig, effectiveOps, validateConfig } from "@grokbox/runtime-kernel/config";
@@ -82,7 +83,7 @@ test("unpaired default has no sender, no attempt and no inferred live binding", 
   try {
     const workId = await f.work(), before = await readFile(f.store.path);
     expect(await runOpsNotificationDelivery({ durableRoot: f.root, workId, now: f.now })).toMatchObject({ state: "unavailable", reason: "target_not_paired" });
-    expect(await observeOpsNotification({ durableRoot: f.root, workId })).toMatchObject({ route: { state: "selected" }, nativeTransport: "unavailable", binding: "not_checked" });
+    expect(await observeOpsNotification({ durableRoot: f.root, workId })).toMatchObject({ route: { state: "selected" }, nativeTransport: "not_probed", automaticDelivery: "unavailable", binding: "not_checked" });
     expect(await f.store.notificationDelivery(workId)).toMatchObject({ attempt: null }); expect(await readFile(f.store.path)).toEqual(before);
   } finally { await f.close(); }
 });
@@ -234,19 +235,27 @@ test("pure status against an absent store neither initializes it nor invents an 
 });
 
 for (const phase of ["reserved", "attempting"] as const) test(`real writer death after ${phase} leaves a durable no-replay guard`, async () => {
-  const f = await fixture(); try {
+  const f = await fixture(); let buildDir: string | undefined;
+  try {
     const workId = await f.work();
-    const worker = fileURLToPath(new URL("./fixtures/notification-attempt-worker.ts", import.meta.url));
-    const child = spawn(process.execPath, [worker, f.root, workId, phase], { cwd: f.root,
+    const source = fileURLToPath(new URL("./fixtures/notification-attempt-worker.ts", import.meta.url));
+    const scratch = fileURLToPath(new URL("../../../.scratch/", import.meta.url));
+    await mkdir(scratch, { recursive: true }); buildDir = await mkdtemp(join(scratch, "notification-crash-"));
+    const worker = join(buildDir, "worker.mjs");
+    // Qualify the published Node/native-SQLite path, not a second Bun runtime's
+    // TypeScript loader. Keep the exact durable stage and hard-kill assertions.
+    await build({ entryPoints: [source], outfile: worker, bundle: true, platform: "node", target: "node20", format: "esm",
+      external: ["sqlite3"], logLevel: "silent", banner: { js: "import {createRequire} from 'node:module'; const require=createRequire(import.meta.url);" } });
+    const child = spawn("node", [worker, f.root, workId, phase], { cwd: f.root,
       env: { PATH: process.env.PATH, HOME: f.root }, stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
     let output = "", errors = "";
     child.stdout.on("data", value => output += value); child.stderr.on("data", value => errors += value);
     await new Promise<void>((resolve, reject) => { child.once("close", () => resolve()); child.once("error", reject); });
-    expect(child.signalCode, errors).toBe("SIGKILL"); expect(JSON.parse(output)).toEqual({ phase, committed: true });
+    expect(child.signalCode, errors).toBe("SIGKILL"); expect(JSON.parse(output)).toEqual({ phase, committed: true, runtime: "node" });
     let sent = 0; const driver = driverFor(f, async () => { sent++; return { state: "native-accepted" }; });
     expect(await runOpsNotificationDelivery({ durableRoot: f.root, workId, driver, now: f.now })).toMatchObject({ state: "already_attempted" });
     expect(sent).toBe(0); expect(await openMonitorStore(f.root).notificationDelivery(workId)).toMatchObject({ state: "unknown", attempt: { state: phase } });
-  } finally { await f.close(); }
+  } finally { await f.close(); if (buildDir) await rm(buildDir, { recursive: true, force: true }); }
 }, 15000);
 
 test("source and packed Node notification queries bypass broken Profile config without writes or network", async () => {
@@ -256,13 +265,13 @@ test("source and packed Node notification queries bypass broken Profile config w
     const result = await captureCli(["ops", "notifications", "show", workId, "--json"], { boxRuntimeRoot: f.root, configDir: f.root, env: {},
       fetch: (async () => { throw Error("must_not_contact_gateway"); }) as unknown as typeof fetch });
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ data: { route: { state: "unavailable" }, delivery: { state: "ready", attempt: null }, nativeTransport: "unavailable" } });
+    expect(JSON.parse(result.stdout)).toMatchObject({ data: { route: { state: "unavailable" }, delivery: { state: "ready", attempt: null }, nativeTransport: "not_probed", automaticDelivery: "unavailable" } });
     const child = spawn("node", [ensurePackedCli(), "ops", "notifications", "show", workId, "--json"], { cwd: f.root,
       env: { PATH: process.env.PATH, HOME: f.root, GROKBOX_CONFIG_DIR: f.root, GROKBOX_BOX_RUNTIME_ROOT: f.root }, stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
     let stdout = "", stderr = "";
     child.stdout.on("data", chunk => stdout += chunk); child.stderr.on("data", chunk => stderr += chunk);
     const exit = await new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
-    expect(exit, stderr).toBe(0); expect(JSON.parse(stdout)).toMatchObject({ data: { nativeTransport: "unavailable", delivery: { workId } } });
+    expect(exit, stderr).toBe(0); expect(JSON.parse(stdout)).toMatchObject({ data: { nativeTransport: "not_probed", automaticDelivery: "unavailable", delivery: { workId } } });
     expect(stdout + stderr).not.toContain("PRIVATE"); expect(await readFile(f.store.path)).toEqual(before);
   } finally { await f.close(); }
 }, 15000);

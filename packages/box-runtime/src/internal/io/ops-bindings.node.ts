@@ -4,10 +4,11 @@ import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { OpsPairingError, OPS_PAIRING_POLICY, pairingFail, pairingAlias, pairingOperation, pairingReceipt, pairingScope, validatePairingCredential,
-  validateNotificationTarget, type PairingRecord, type PairingPlan, type PairingCredential } from "@grokbox/runtime-kernel/observation";
+  validateNotificationTarget, type PairingRecord, type PairingPlan, type PairingCredential, type NotificationBinding, type NativeNotificationResult } from "@grokbox/runtime-kernel/observation";
 import { routineAgentId, routineId, routineRevision } from "@grokbox/runtime-kernel/routines";
 import { acquireConfigurationLease } from "./config-lock.node.ts";
 import { assertSafeDirectory } from "./config-layout.node.ts";
+import { sendNativeNotification, type NotificationRequest } from "./native-notification.node.ts";
 
 type Slot = PairingRecord & { credential: PairingCredential | null };
 type Capsule = { schemaVersion: 1; owner: "ops-pairing"; rootId: string; slots: Slot[] };
@@ -93,6 +94,25 @@ export function openOpsBindings(durableRoot: string) {
   };
   return {
     record,
+    /** Only the explicit delivery composition calls this after its outbox start
+     * barrier. Credential material never crosses the private-owner boundary.
+     * Local revoke wins before this read; a later revoke cannot unsend a POST. */
+    sendPreparedNotice: async (expected: PairingRecord, input: { binding: NotificationBinding; body: string; envelopeDigest: string;
+      signal: AbortSignal }, request?: NotificationRequest): Promise<NativeNotificationResult> => {
+      let enteredTransport = false;
+      try {
+        const slot = (await read())?.slots.find(s => s.bindingId === expected.bindingId);
+        if (!slot || slot.state !== "prepared" || !slot.credential || canonicalJson(projected(slot)) !== canonicalJson(expected))
+          return { state: "definitely-not-accepted", reason: "revoked" };
+        const b = input.binding, p = slot.plan;
+        if (b.bindingId !== slot.bindingId || b.revision !== slot.revision || b.databaseId !== p.scope.databaseId || b.scopeId !== p.scope.scopeId
+          || b.targetAlias !== p.target.alias || b.agentId !== p.target.agentId || b.routineKey !== p.target.routineKey
+          || b.routineId !== p.routineId || b.policyRevision !== p.target.policyRevision)
+          return { state: "definitely-not-accepted", reason: "policy_changed" };
+        enteredTransport = true;
+        return await sendNativeNotification({ ...input, plan: p, credential: slot.credential }, request);
+      } catch { return enteredTransport ? { state: "unknown", reason: "transport_failure" } : { state: "definitely-not-accepted", reason: "revoked" }; }
+    },
     status: async (alias?: string) => {
       if (alias) pairingAlias(alias);
       try {

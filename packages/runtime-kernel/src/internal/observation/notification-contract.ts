@@ -132,3 +132,27 @@ export function freezeNotification(input: { scope: NotificationScope; target: No
     envelopeBytes, workId, attemptId, incidentId: notice.incidentId, evidenceRevision: notice.evidenceRevision, expiresAtMs };
   return { frozen, envelope, serialized };
 }
+
+/** Revalidate the exact bytes at the secret-bearing HTTP boundary. Reconstruct
+ * every field rather than trusting a caller's JSON, hash, or extra properties.
+ * No clock is refreshed and no historical observation becomes a new permit. */
+export function validateNotificationBody(body: string, digest: string, binding: NotificationBinding, target: NotificationTarget, nowMs: number): NotificationEnvelope {
+  if (typeof body !== "string" || new TextEncoder().encode(body).length > NOTIFICATION_DELIVERY_POLICY.maxBytes
+    || !hash(digest) || sha256Text(body) !== digest || !positive(nowMs)) return fail();
+  let value: NotificationEnvelope;
+  try { value = JSON.parse(body); } catch { return fail(); }
+  if (!value || value.schemaVersion !== 1 || value.kind !== "grokbox.ops.notification" || value.intent !== "brief-notice"
+    || !uuid(value.deliveryId) || !uuid(value.workId) || !hash(value.routeDecisionId)
+    || !positive(value.createdAtMs) || !positive(value.expiresAtMs) || value.createdAtMs > nowMs
+    || value.expiresAtMs <= nowMs || value.expiresAtMs <= value.createdAtMs) return fail();
+  validateNotificationBinding(binding, target, { databaseId: binding.databaseId, scopeId: binding.scopeId }, nowMs);
+  const notice = deliveryNotice(value.notice);
+  if (value.expiresAtMs > notice.evidence.expiresAtMs) return fail();
+  const expected: NotificationEnvelope = { schemaVersion: 1, kind: "grokbox.ops.notification", intent: "brief-notice",
+    deliveryId: value.deliveryId, workId: value.workId,
+    routeDecisionId: sha256Text(canonicalJson([value.workId, target, notificationBindingIdentity(binding)])),
+    createdAtMs: value.createdAtMs, expiresAtMs: value.expiresAtMs,
+    target: { agentId: binding.agentId, routineId: binding.routineId, bindingId: binding.bindingId, bindingRevision: binding.revision }, notice };
+  if (canonicalJson(expected) !== body) return fail();
+  return expected;
+}

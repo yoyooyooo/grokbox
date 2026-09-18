@@ -707,6 +707,16 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     stdin: "none" as const, table: false, timeout: false, destructive: true, gateway: false, streaming: false, profile: false, localOnly: true,
   })),
   {
+    path: ["ops", "notifications", "send"],
+    usage: "grokbox ops notifications send <work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --confirm --json",
+    summary: "Send one existing safe notice through its prepared native Webhook after fresh checks; may consume model usage, never enables Routines or retries.",
+    arguments: [{ syntax: "<work-id>", description: "Exact existing notification work UUID" }],
+    options: options([{ flags: "--expect-binding-revision <n>", description: "Exact private pairing revision", required: true },
+      { flags: "--expect-model-revision <sha256>", description: "Model fingerprint reviewed during target verification", required: true },
+      { flags: "--confirm", description: "Authorize this one Webhook attempt and possible native model usage", required: true }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["ops", "notifications", "list"],
     usage: "grokbox ops notifications list --json",
     summary: "Inspect local queued notifications and default-target policy without pairing, sending or initializing stores.",

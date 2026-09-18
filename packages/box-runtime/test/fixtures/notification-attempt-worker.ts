@@ -18,9 +18,12 @@ const result = await store.reserveNotification({ workId, target, nowMs, binding:
   modelRevision: "d".repeat(64), qualificationRevision: "e".repeat(64), policyRevision: target.policyRevision,
   dataPolicy: "safe-summary", receiverMode: "notify_then_end", observedAtMs: nowMs, validUntilMs: nowMs + 5000 } });
 if (result.state !== "reserved") throw Error("fixture_reserve_failed");
-if (phase === "attempting") await store.beginNotification({ workId, attemptId: result.frozen.attemptId,
-  envelopeDigest: result.frozen.envelopeDigest, bindingDigest: result.frozen.bindingDigest, nowMs: Date.now() });
+if (phase === "attempting") {
+  const began = await store.beginNotification({ workId, attemptId: result.frozen.attemptId,
+    envelopeDigest: result.frozen.envelopeDigest, bindingDigest: result.frozen.bindingDigest, nowMs: Date.now() });
+  if (!began.dispatch) throw Error("fixture_start_not_committed");
+}
 // A blocking descriptor write publishes the stage before intentional death;
 // do not depend on a runtime-specific stdout callback to trigger the crash.
-writeSync(1, JSON.stringify({ phase, committed: true }) + "\n");
+writeSync(1, JSON.stringify({ phase, committed: true, runtime: process.release.name }) + "\n");
 process.kill(process.pid, "SIGKILL");

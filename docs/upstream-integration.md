@@ -52,6 +52,16 @@ Every write has an explicit schema and command. Groups reject nested groups, mem
 
 `sendPrompt` represents one Human message to an ordinary agent or group. It is not peer delivery, an administrative broadcast, approval resolution, or arbitrary host execution.
 
+## Native Routine and notification Webhook boundary
+
+The management adapters use the narrow `getAgentAutomations`, `createAgentAutomation`, `updateAgentAutomation`, `setAgentAutomationEnabled` and `deleteAgentAutomation` methods. Exact bodies and bounded projections belong to the typed adapters/tests. Their returned definition windows are not native CAS, deletion transactions or evidence that in-flight work stopped. Credential retrieval can mint a key and is not an ordinary inspection command; its result stays with the private pairing owner.
+
+The [official Routines help](https://cursor.com/help/grok-bot/routines), checked September 18, 2026, specifies a POST to the saved Routine URL, a Bearer sender key, and an optional JSON body delivered with the instruction. HTTP 200 establishes acceptance, not completion; results require separate observation. The original instruction is not a tool-permission sandbox.
+
+The first native HTTP sender supports only `https://api2.cursor.sh`, the existing production backend default used by this repository's Sandbox/template adapters. It validates the stored endpoint against the exact Agent/Routine-derived automation identity, then uses Node HTTPS with normal certificate verification, no redirects and no retries. No CLI URL, proxy, key or arbitrary payload option broadens that destination. Unsupported deployment origins require a separate adapter qualification, not a user-string allowlist bypass.
+
+Only an existing fixed safe notice may be sent, after explicit confirmation, matching pairing/model revisions, current local/Server ownership and an enabled unchanged reminder Routine. The existing outbox owns the attempt and wake budget. A complete 200 response is native acceptance; selected explicit 4xx refusals are recorded as rejection; redirects, unexpected success codes, 5xx, oversized/incomplete responses, timeout and connection loss remain unknown without replay. Neither the official HTTP contract nor synthetic HTTP tests prove a particular receiver ran the expected model, completed its reminder, or was read by the user. Automatic activation and worker installation remain separately gated.
+
 ## Official registration inspection via Host
 
 A versioned optional `grokboxOwnershipAgentIds` field on the existing `getHostStatus` request activates the grokbox Host read bridge. It is absent from ordinary status requests. The native Host Gateway deps expose `environment` directly (not `context.host.environment`); the bridge constructs its official client with that backend and the Host auth API. Only `ListGrokBotAgents` is borrowed, with cancellation/deadline and target projection; no token value or generic remote invocation crosses Gateway.

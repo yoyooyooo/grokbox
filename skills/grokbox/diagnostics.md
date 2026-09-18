@@ -29,9 +29,21 @@ grokbox ops notifications list --json
 grokbox ops notifications show <work-id> --json
 ```
 
-These are Box-local, read-only views of the existing outbox. They do not initialize a store, pair a receiver, access Webhook credentials, start monitoring or send anything. The list is a bounded recent window, not a complete history. Configured target preferences do not prove pairing; the default native transport remains unavailable until its dedicated adapter is installed and qualified.
+These are Box-local, read-only views of the existing outbox. They do not initialize a store, pair a receiver, access Webhook credentials, start monitoring or send anything. The list is a bounded recent window, not a complete history. Configured target preferences do not prove pairing. Status reports transport as not probed; automatic delivery remains unavailable. An explicit single-attempt send is a separate capability, never a side effect of these reads.
 
 A reserved/attempting/unknown record is not permission to retry. Keep the exact work/attempt ID and evidence revision. `native-accepted` means only the transport's acceptance boundary, never Bot completion or user read; the latter remain separately unobserved. Do not create a new work, switch target aliases or re-run a business task to bypass the uncertain record. The default alert task still only reminds and ends.
+
+## One explicitly authorized notice delivery
+
+Only when the user specifically authorizes sending one existing notice (including possible native usage), use:
+
+```bash
+grokbox ops notifications send <work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --confirm --json
+```
+
+Take the binding revision from target status and the reviewed model fingerprint from `ops targets verify`. The managed reminder Routine must already have been separately enabled without other definition changes; send never enables it or mints a key. Changed model, ownership, scope, definition or pairing stops the attempt. The program takes the fixed safe body from the existing outbox, not arbitrary text, a URL, a key or a supplied JSON file.
+
+HTTP acceptance is not the Bot's completed reminder or user read. A previous attempt, timeout or unknown result is not permission to retry under another work ID. This one-shot path does not enable background delivery or bypass installation/target wake limits. An automatic alert-receiving Bot must not use it unless a later user task authorizes it.
 
 ## Separate gaps from failures
 

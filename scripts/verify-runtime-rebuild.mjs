@@ -20,6 +20,12 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "native-notification": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/ops-native-notification.test.ts", "test/ops-native-notification-cli.test.ts", "test/receiver-frame.test.ts", "packages/box-runtime/test/ops-notification-outbox.test.ts", "packages/box-runtime/test/ops-target-pairing.test.ts", "packages/box-runtime/test/obs-continuity-contract.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/context-continuity-artifact.test.ts", "test/skills.test.ts", "test/modeld-core-verifier.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"], ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "ops-receiver": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/box-runtime/test/ops-receiver-qualification.test.ts", "test/receiver-frame.test.ts", "test/agent-routines-cli.test.ts", "packages/box-runtime/test/ops-target-pairing.test.ts", "packages/box-runtime/test/obs-continuity-contract.test.ts"],
@@ -305,6 +311,7 @@ for (const argv of mapped) {
 }
 
 const SUPPORTS = {
+  "native-notification": ["explicit-existing-work-no-auto-activation", "model-revision-and-server-ownership-preflight", "private-capsule-to-fixed-origin-no-secret-export", "exact-safe-body-revalidation", "durable-single-attempt-before-http", "real-http-no-redirect-and-response-byte-limit", "request-and-response-close-before-settlement", "actual-node-http-transport", "packed-node-cli-refusal-without-effects", "j1-contract-preserved"],
   "ops-receiver": ["fixed-disabled-notice-blueprint", "readonly-binding-routine-and-loaded-model-preflight", "capabilities-and-model-from-same-native-frame", "freshness-rechecked-after-local-reads", "same-native-automation-selector-closure", "managed-assignment-fingerprint-no-secret-output", "stale-scope-definition-and-unbind-refusal", "no-canary-or-delivery-authorization", "source-cli-and-packed-node-reader", "j1-boundaries-unchanged"],
   "ops-pairing": ["explicit-disabled-managed-target-preflight", "no-key-fetch-in-preview-or-query", "private-bounded-atomic-credential-capsule", "single-native-credential-dispatch-after-reservation", "real-reserver-death-no-retry", "concurrent-unbind-blocks-late-credential", "config-and-definition-recheck", "packed-node-query-and-unbind", "prepared-is-not-delivery-authorization", "j1-unchanged"],
   "ops-notification": ["default-target-policy-not-pairing", "existing-sqlite-atomic-wake-reservation", "fixed-revision-and-byte-validated-envelope", "alias-shared-budget", "single-attempt-unknown-no-replay", "paired-driver-revalidation-before-local-start-barrier", "network-outside-config-and-db-locks", "real-child-death-at-reserved-and-started", "read-only-source-and-packed-node-status", "j1-domain-boundaries-preserved"],
@@ -350,6 +357,7 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "native-notification": "real-sqlite-capsule-and-loopback-http-with-node-transport-worker-synthetic-native-selection-authority-no-live-webhook-or-model-usage",
   "ops-receiver": "real-owned-config-capsule-sqlite-source-and-packed-node-readers-synthetic-native-http-current-native-source-qualified-separately-no-live-writes",
   "ops-pairing": "real-owned-config-journal-sqlite-capsule-and-child-sigkill-synthetic-native-http-real-cli-packed-node-query-no-live-key-or-webhook",
   "ops-notification": "real-private-sqlite-files-config-lock-and-owned-transport-adapter-real-child-sigkill-and-packed-node-readers-no-native-webhook-effects",
@@ -395,6 +403,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "native-notification": ["live-native-tls-endpoint-and-key", "actual-receiver-turn-model-tools-or-user-read", "automatic-pairing-activation-and-worker", "server-idempotency-and-native-unknown-reconciliation", "backup-restoration-replay-fence", "schema4-live-adoption", "independent-review"],
   "ops-receiver": ["actual-webhook-authentication-and-receiver-turn", "server-ownership-and-account-scope-binding", "native-child-session-overrides", "model-request-or-tool-permission", "activation-and-paired-send-driver", "prompt-policy-as-enforced-sandbox", "independent-review-and-live-schema4-adoption"],
   "ops-pairing": ["current-native-http-credential-qualification", "receiver-model-and-notify-behavior-qualification", "endpoint-origin-and-http-post-contract", "live-binding-activation-or-driver", "remote-key-revocation", "backup-restore-fence", "first-initialization-crash-recovery", "physical-secure-erasure", "independent-review-and-schema4-live-adoption"],
   "ops-notification": ["native-pairing-owner-and-credential-store", "native-http-contract-and-receiver-model-qualification", "automatic-worker-installation", "native-unknown-reconciliation", "bounded-definite-rejection-retries-and-critical-reserve", "backup-restore-replay-fence", "bot-report-or-user-read", "independent-review-and-live-schema4-adoption"],
