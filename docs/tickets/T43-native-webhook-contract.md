@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial qualification；2026-09-18：已完成4项固定源函数隔离探针，真实HTTP/唤醒/模型与配对链仍未验收。** [Spec §5.4/§10.1](../roadmap/template-ops-automation-spec.md#payload)拥有合同。验证Grok Bot原生事件唤醒，不新增scheduler，不把普通sendPrompt或模板正文当Webhook能力。
+**Partial qualification；2026-09-18：已有固定源函数隔离探针与官方HTTP合同核对；显式Node HTTPS发送/受控HTTP验证已实现，现役TLS/唤醒/模型与报告链仍未验收。** [Spec §5.4/§10.1](../roadmap/template-ops-automation-spec.md#payload)拥有合同。验证Grok Bot原生事件唤醒，不新增scheduler，不把普通sendPrompt或模板正文当Webhook能力。
 
 ## Depends-on / Modules
 
@@ -18,9 +18,9 @@
 
 ## Executable acceptance
 
-已新增`packages/box-runtime/test/native-routine-qualification.test.ts`，显式`GROKBOX_TEST_NATIVE_HOST=1`时对照既有固定源SHA，仅执行选定函数与受控边界；4项通过、0失败，29断言。默认公共测试跳过，不复制或依赖私有源码构建。它不启动Host，不读取真实Bot状态，不代替下面的原生HTTP旅程。上游事实文档的本轮更新被工具拦截，仍为待同步项，没有记为已落盘。
+已新增`packages/box-runtime/test/native-routine-qualification.test.ts`，显式`GROKBOX_TEST_NATIVE_HOST=1`时对照既有固定源SHA，仅执行选定函数与受控边界；4项通过、0失败，29断言。默认公共测试跳过，不复制或依赖私有源码构建。它不启动Host，不读取真实Bot状态，不代替下面的原生HTTP旅程。上游Current Home本轮已按官方Routines文档补齐Bearer、JSON POST、200接受非完成及受限backend边界，旧的文档未落盘阻断已关闭；这不续签已换版的旧私有源码资格。
 
-待新增：`packages/runtime-kernel/test/native-routine-contract.test.ts`、`test/native-webhook-adapter.test.ts`。运行这两项及`bun run typecheck`。Fake native/临时HTTP验证错身份、旧revision、无认证、超大/未知payload、编码、禁用、重定向和ACK丢失；真实POST参数不能来自自由文本。
+当前真实传输适配器为`io/native-notification.node.ts`，实际验证放在`ops-native-notification.test.ts`、`ops-native-notification-cli.test.ts`和独立Node worker，不增空的同义测试入口。临时HTTP/真实SQLite覆盖错身份与模型、禁用/定义变化、body重构、敏感头隔离、redirect不跳转、超大响应/断连/取消/未知不重投；生产请求参数不能来自自由文本。专项122项通过，范围见[固定回执](../reports/2026-09-18-explicit-native-notification.md)。TLS生产端点、当前账号key和原生run/Payload/报告仍须现场单独验。
 
 原生证明须另获一次性Bot/请求/费用/清理授权，使用实际CLI disabled→enable→POST→run/report→update→disable，清理只涉及已终结测试资源。没有权限就保留native未证，不阻塞Fake合同施工。
 

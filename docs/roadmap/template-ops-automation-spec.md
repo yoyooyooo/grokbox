@@ -146,6 +146,8 @@ Raw-sensitive采集默认关闭，只有明确用途/对象/字节/期限授权�
 <a id="payload"></a>
 ### 5.4 通知载荷与原生资格
 
+**显式传输源码增量（2026-09-18）：** `ops notifications send <work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --confirm`已接到真实Node HTTPS。只允许一个已有work及私有绑定的固定生产端点，不接受任意body/URL/key，不启用Routine或授予后台资格。当前Box/Server身份、用户确认的model revision、已单独启用且未改定义的提醒Routine须通过二次核对。网络继续受原outbox预留/额度/unknown控制，完整200仅表示原生接受。此显式调用为实际现场验证提供入口，不把接收者预检或函数探针自动升级成“Bot已运行”。官方HTTP事实、受限origin和不重定向边界归[上游Current Home](../upstream-integration.md#native-routine-and-notification-webhook-boundary)，固定执行证据见[本片回执](../reports/2026-09-18-explicit-native-notification.md)。
+
 `NotificationEnvelope v1`是grokbox内部合同，不是已验证上游API DTO。最大8KiB，包含workId/deliveryId/routeDecisionId、incident/occurrence/evidenceRevision、target/bindingRevision、intent=`brief-notice`、createdAt/expiresAt、safeSummary、scope描述与取证命令描述。命令保存`commandId + validated arguments + requires=box-local + readOnly=true`，展示时按可信registry安全引用；自由文本不能指定shell/URL/root。主命令一条、必要补充一条。
 
 默认正文已经足以提醒，不要求接收Bot先读完整JSON。至少128-bit随机delivery reference仅为引用，不是执行bearer。若原生支持受信claim，则只领取已授权安全摘要并去重；不能用自报agentId证明身份。无可信caller能力时采用已固定最小载荷，不能据此开放诊断或维护。
@@ -218,7 +220,7 @@ T46/T54已实现`ops targets list/show/bind/disable/unbind`的Box-local准备切
 
 **当前可靠发送切片：** `runOpsNotificationDelivery`/`OpsNotification`复用原monitor SQLite的work/attempt表，已有唯一default目标策略、固定证据及8KiB白名单body、实际Agent共享滑动24h额度、事务预留→启动→原生结果结算。绑定必须由受信`PairedNotificationDriver`提供并二次核对；最终policy检查与启动在既有配置写锁内，网络在所有本地锁之外，退出等待真实在途步骤收口。新`ops notifications list/show`只读，不配对、安装或发送。
 
-本切片每work最多一次attempt，unknown不重投；明确未接收也暂不重试，不消耗额外critical reserve。原生配对/凭据owner、自动宿主安装、真实HTTP资格、Bot报告、unknown对账及备份恢复fence尚未实现；默认driver为unavailable。不能把测试注入的binding、配置里的Agent ID或本地nonce当作配对授权。下面有限重试是后续合同，不是当前已启用行为。[固定证明](../reports/2026-09-18-notification-outbox.md)。
+本切片每work最多一次attempt，unknown不重投；明确未接收也暂不重试，不消耗额外critical reserve。私有配对owner与显式单次HTTP driver已实现；后台自动资格/宿主、原生生产TLS及实际receiver回合、Bot报告、native unknown对账和备份恢复fence仍未闭合。默认后台driver仍unavailable；查询只报告not_probed，不发送网络以猜测可用性。不能把测试注入的binding、配置里的Agent ID或本地nonce当作配对授权。下面有限重试是后续合同，不是当前已启用行为。[固定证明](../reports/2026-09-18-notification-outbox.md)。
 
 ```text
 work: preparing → ready → completed | expired | superseded | blocked

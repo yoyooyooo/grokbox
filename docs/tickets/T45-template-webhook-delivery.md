@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial：固定证据/J1接纳、单目标策略及事务化发送程序已实现；原生配对driver、自动安装和真实回执对账未完成，M3未关闭。** [Spec §4/§5.4/§6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。把已固定的故障摘要、ID和取证命令送给配置目标Bot；默认仅提醒，不自动执行取证或Issue。
+**Partial：固定证据/J1接纳、事务化outbox和显式单条原生HTTPS发送已实现；默认自动激活/worker、真实接收者回合及native对账未完成，M3未关闭。** [Spec §4/§5.4/§6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。把已固定的故障摘要、ID和取证命令送给配置目标Bot；默认仅提醒，不自动执行取证或Issue。
 
 ## Depends-on / Modules
 
@@ -22,9 +22,17 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 同一work本片至多一次attempt，BEGIN IMMEDIATE共同预留实际Agent的滑动24h额度和安装额度；别名不增加额度，未决及已拒绝attempt仍占普通额度，不借critical reserve。冻结incident revision、binding/model/routine/data/policy身份及实际body digest/bytes；只发程序生成的安全摘要和只读命令，最大8KiB。新增最多4096个attempt和既有文件空间接纳门，不按TTL删除unknown以换取再次发送。
 
-`runOpsNotificationDelivery`默认无driver；有明确信任的`PairedNotificationDriver`时才检查配对。inspect不能返回secret/endpoint，发送前再检查身份，并在现有config锁内对照最新policy后提交启动。网络在所有本地事务/锁之外，真正返回后才结算；取消不会遗留detached writer。callback异常/本地提交回执丢失保留unknown，既有attempt不重发；native-accepted不表示Bot完成或用户已读。T46仍需实现实际私有binding/凭据/资格owner，不能把测试注入对象写成config来启用。
+`runOpsNotificationDelivery`默认无driver；有明确信任的`PairedNotificationDriver`时才检查配对。inspect不能返回secret/endpoint，发送前再检查身份，并在现有config锁内对照最新policy后提交启动。网络在所有本地事务/锁之外，真正返回后才结算；取消不会遗留detached writer。callback异常/本地提交回执丢失保留unknown，既有attempt不重发；native-accepted不表示Bot完成或用户已读。T46已有私有binding/capsule，显式发送driver复用它；默认自动资格/激活仍未完成，不能把测试注入对象写成config来启用。
 
 只读`ops notifications list/show`已注册，坏Profile不挡本地取证；不建库、配对或发消息，列表明确有限窗口。明确未接收的有限重试、native unknown对账、备份恢复fence和自动worker安装仍在下文未完成范围。J1 bridge接口与CONT生命周期边界不变。
+
+## 显式原生发送出口（2026-09-18）
+
+`ops notifications send <work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --confirm`只发送一个既有work；不自动启用Routine、不领取新key、不接受任意body/URL。绑定的提醒Routine须已单独启用且只有enabled位改变，模型须匹配用户确认指纹；Host同帧与Server所有权采用现有准入事实并保持原始时龄。复用原outbox的预算、二次检查和单attempt语义。
+
+`ops-explicit-delivery.runtime.ts`装配现有程序，`ops-bindings.node.ts`在私有owner内持key调用`native-notification.node.ts`；生产只允许已登记backend，Node HTTPS验证证书且不重定向/重试。固定body再次全量重构校验，响应仅有界计数，不输出正文/敏感头。完整200与Bot报告、用户已读分列；断连/异常响应保持unknown，取消必须结算真实描述符。当前控制命令是explicit，不产生永久automaticDelivery授权。
+
+官方HTTP事实已写入[上游Current Home](../upstream-integration.md#native-routine-and-notification-webhook-boundary)。固定源码/Node/HTTP证明与两次整目录测试宿主超时的诚实限定见[回执](../reports/2026-09-18-explicit-native-notification.md)。
 
 ## Work
 
@@ -38,7 +46,7 @@ unknown默认不重投/不切备用；确定未接收有限退避，遵守安装
 
 已实现`packages/box-runtime/test/ops-notification-outbox.test.ts`（含真实source/packed CLI、子进程强杀）和`packages/runtime-kernel/test/ops-routing.test.ts`；组合`bun scripts/verify-runtime-rebuild.mjs ops-notification`。固定结果与依赖范围见[本片回执](../reports/2026-09-18-notification-outbox.md)。
 
-`ops-webhook-delivery.test.ts`真实HTTP契约、自动worker与原生对账仍待实现；不创建空测试文件或把owned transport算native资格。
+HTTP验证实际实现为`packages/box-runtime/test/ops-native-notification.test.ts`与`test/ops-native-notification-cli.test.ts`，含独立Node传输子进程，不另建同义空文件。组合`bun scripts/verify-runtime-rebuild.mjs native-notification`122 pass；全仓不重叠分组2612 pass/20 skip/0 fail。自动worker、实际原生TLS/接收者回合和native对账仍待资格，不能把loopback HTTP算native产品已收到。
 
 临时真实DB/HTTP＋Fake原生Bot，注入prepare/manifest/commit/reserve/POST后崩溃，证明游标/证据不丢，未知不会重复创建工作或唤醒。多进程争领、错误binding/旧revision/预算耗尽/同Bot多alias、禁用、断网、过期恢复、恶意payload均有断言；网络实际bytes通过OBS-03投影。
 

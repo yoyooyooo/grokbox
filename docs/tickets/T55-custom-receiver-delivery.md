@@ -4,6 +4,10 @@
 
 **Partial：固定disabled提醒blueprint与实际加载Host的只读自动任务选模预检已实现；真实Webhook回合/激活仍未资格化。高级分流是独立后续。** [Spec §6.3–6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。首发每个实际支持的目标仍须取得其最小身份/模型/数据/成本资格；不能因为高级延期就免验custom接收者。
 
+## 显式发送前置增量
+
+T45的`ops notifications send`已把用户确认的model fingerprint、prepared配对与启用定义、当前Host同帧观察、既有Server/local所有权门接到真实HTTPS。只在显式单条既有work上使用，保持原证据年龄，不将`verify`结果写为永久资格，也不凭预检自动启用Routine。模型/ownership/代际/定义变化在发送前拒绝；真实回合使用的模型与工具及用户送达仍未观测。自动资格、长期激活和后续交接不由该命令代替。[固定回执](../reports/2026-09-18-explicit-native-notification.md)。
+
 ## Depends-on / Modules
 
 依T43/T53原生合同、T54 frozen route、T45 delivery；T47仅是后续诊断消费者。kernel routing/policy/notification；box-runtime native-notification与bindings/state，复用同一outbox而非新增sender。

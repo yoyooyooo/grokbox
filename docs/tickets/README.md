@@ -187,9 +187,9 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 
 | Ticket | 状态 / 范围 | 依赖与独立退出 |
 |---|---|---|
-| [T43](T43-native-webhook-contract.md) | Partial：固定源函数隔离资格已跑；真实HTTP/认证/配对/提醒仍未证 | 与OBS-00/T51并行，为T53/T45提供合同 |
+| [T43](T43-native-webhook-contract.md) | Partial：官方HTTP合同与受控Node传输已证；生产TLS/实际原生回合仍未证 | 与OBS-00/T51并行，为T53/T45提供合同 |
 | [T44](T44-host-ops-continuous-sensing.md) | Partial：本地drain与慢RPC隔离；HSO/loaded/component接线仍待完成 | OBS-00/01、T51；不等诊断或Webhook |
-| [T45](T45-template-webhook-delivery.md) | Partial：同库预留/预算/固定body/单次投递程序及只读状态；原生driver与自动安装未完成 | OBS-02/03、T43/T51/T54；unknown不重发，不等Issue/维护 |
+| [T45](T45-template-webhook-delivery.md) | Partial：同库outbox＋显式单条原生HTTPS及只读状态；默认自动激活/worker和native报告未完成 | OBS-02/03、T43/T51/T54；unknown不重发，不等Issue/维护 |
 | [T46](T46-template-ops-pairing.md) | Partial：私有配对准备/撤销；资格激活、只提醒接收与独立模板仍未完成 | T43/45/51/53/54；prepared不等于允许投递 |
 | [T47](T47-bounded-ops-diagnosis.md) | 独立后续A：受托自主排障/换模与验收 | 证据/权限底座；不反向阻塞默认提醒 |
 | [T48](T48-low-risk-host-qualification.md) | 独立后续M：全切片/依赖等价资格 | 原HSO/qualification；不是首发通知门 |
