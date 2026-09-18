@@ -155,3 +155,36 @@ test("worktree contributors have intake, invalidation and one current result hom
   for (const token of ["来源SHA", "失败/重启反例", "费用", "清理", "受影响LIVE-ID", "不整段覆盖", "awaiting-integration"]) expect(index).toContain(token);
   expect(guide).toContain("不要在这里打第二套通过/待办勾");
 });
+
+function completionIssues(resultCell: string): string[] {
+  const checked = /^\[x\]\s/i.test(resultCell), passed = /`passed`/.test(resultCell);
+  const issues: string[] = [];
+  if (checked !== passed) issues.push("completion_mark_must_match_passed");
+  const reports = [...resultCell.matchAll(/\]\((\.\.\/reports\/[^)\s]+)\)/g)].map(match => match[1]!);
+  if (passed && (reports.length !== 1 || !/\.md#[^#\s]+$/.test(reports[0]!))) issues.push("one_current_anchored_report_required");
+  return issues;
+}
+
+test("completion ticks require one current per-scenario evidence pointer, not a growing report history", () => {
+  for (const row of rows) expect(completionIssues(cells(row)[1]!), idOf(row)).toEqual([]);
+  // Parser fixtures only: these are not live results or links in the index.
+  const proof = "[evidence](../reports/example-live-window.md#live-example)";
+  expect(completionIssues(`[x] \`integrated\`；\`passed\`；candidate；${proof}`)).toEqual([]);
+  expect(completionIssues("[ ] `integrated`；`blocked`；ENV")).toEqual([]);
+  expect(completionIssues(`[ ] \`passed\`；${proof}`)).toContain("completion_mark_must_match_passed");
+  expect(completionIssues("[x] `blocked`")).toContain("completion_mark_must_match_passed");
+  expect(completionIssues("[x] `passed`；[window](../reports/example-live-window.md)"))
+    .toContain("one_current_anchored_report_required");
+  expect(completionIssues(`[x] \`passed\`；${proof}；${proof}`)).toContain("one_current_anchored_report_required");
+});
+
+test("evidence and blockers have explicit homes without accumulating execution history in LIVE", () => {
+  expect(anchors(guide).has("evidence-lifecycle")).toBe(true);
+  expect(index).toContain("一场景一行当前结果");
+  expect(index).toContain("执行轮数增加不得使入口持续变长");
+  expect(index).toContain("一个当前证据入口");
+  expect(guide).toContain("代码修复完成后仍为待现场复验");
+  expect(guide).toContain("旧报告不删错");
+  expect(guide).toContain("受控私有证据目录");
+  expect(guide).toContain("docs/reports/README.md");
+});

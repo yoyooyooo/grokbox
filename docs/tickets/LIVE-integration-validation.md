@@ -197,20 +197,26 @@ W0 固定候选/私有退路与离线放行 → W1 成套采用及安装/基础C
 
 每个worktree离线完成后，在合入同一个提交中追加/更新**最小受影响场景**，不要只写“需要live”。来源票保持实现/审查事实，本页只拥有现场状态。当前稳定ID不改名、不复用；旧报告不可被新窗口覆盖。
 
+**入口有界：一场景一行当前结果，不随执行次数追加行或窗口历史段落。** 第二列只保留勾选/状态、当前适用候选或窗口、限定范围和一个当前证据入口；失败时末列仅保留阻断类别、一句影响/下一动作及来源链接。详细步骤归执行手册，逐点证据/运行过程归日期报告，修复推进归来源票。原始JSON、截图、命令输出和多轮失败经过不粘入本页。更新当前候选摘要也用替换，不串接历次候选；只有真正新增的验收义务才增加场景。
+
+通过用`[x]`配`passed`，未通过用`[ ]`配具体结果（既有未勾选行按其结果读取）。勾选表示本条全部必需判据及适用清理在明确候选/范围下成立，不表示跑过命令；只通过部分子项不勾整行，细分结果留报告。已完成行保留稳定ID、精简判据和证据链接，不复制成另一张完成表；相关改变使证据不足时取消勾选并标`needs-revalidation`，不删除旧事实，也不因纯文档变化重跑。
+
+证据入口须指向`../reports/<日期>-live-<主题>.md#<场景或证据汇总锚点>`。多窗口共同支撑时由该报告章节逐项引用原窗口；不把承接的旧证据冒充本轮重跑。仍然有效的阻断详细说明按[证据与阻断流转](../maintainers/live-end-to-end.md#evidence-lifecycle)归位，解除后移除入口里的旧阻断叙事。
+
 1. **登记**：给出来源Spec/Ticket、入口与前置、对象/代际/身份、正常旅程与失败/重启反例、成功oracle、不可证明项、风险/费用/清理、需要的原生环境；用下述模板。新leaf同步命令覆盖表。
 2. **集成**：未合入标`awaiting-integration`；来源SHA→固定v2 SHA的映射放窗口报告。归并相同场景的判据，不整段覆盖另一个worktree的证据。一个窗口只由协调者维护当前结果。
 3. **失效**：声明受影响LIVE-ID及原因。模型adapter/effort影响六格相关格；schema/生命周期影响CUTOVER/CONSUMERS/RESTART；原生compact或状态codec影响CTX/SESSION/CURRENT；outbox/配对影响ROUTINES/RECEIVERS/OBSERVER；脱敏/存储影响PRIVACY/EVIDENCE/STORAGE。不要因docs-only变化废掉无关现场证据。
-4. **执行后**：每个子oracle有事实/缺口、依赖真实性、模型档位、run/STEP/operation引用和cleanup。发现失败先固定现场、返回worktree修复/离线/审核/合入，旧失败仍可追；不得在live直接补私有状态或换nonce掩盖unknown。
+4. **执行后**：每个子oracle的事实/缺口、依赖真实性、模型档位、run/STEP/operation引用和cleanup写入窗口报告的稳定锚点，本页只替换当前短结果和证据入口。发现失败先固定现场、返回worktree修复/离线/审核/合入；来源票承载修复进度，旧失败由新报告回链仍可追。不得在live直接补私有状态或换nonce掩盖unknown。
 5. **汇总**：按本窗口选定oracle和模型格计数，`excluded/blocked/not-run`不能进入通过分子；同一次调用只计一次实际费用。使用[轻量结构检查](../../test/live-e2e-checklist.test.ts)防止丢旧锚点、漏新命令或模型格，但检查通过不算任何live通过。
 
 <a id="live-feature-case"></a>
 ### 追加模板（不是一个已注册测试）
 
 ```markdown
-| <a id="live-your-feature"></a>**LIVE-YOUR-FEATURE**<br>G1/G2/G3 | `partial`；`awaiting-integration`；来源SHA；历史证据或无 | ①前置/对象；②正式入口→期望状态；③失败/重启反例；④独立oracle与可接受not-observed；⑤清理 | CODE/ENV/AUTH等具体阻断→下一动作；[来源票](来源.md) · [执行步骤](../maintainers/步骤.md) |
+| <a id="live-your-feature"></a>**LIVE-YOUR-FEATURE**<br>G1/G2/G3 | [ ] `partial`；`awaiting-integration`；来源SHA；无本候选证据 | ①前置/对象；②正式入口→期望状态；③失败/重启反例；④独立oracle与可接受not-observed；⑤清理 | CODE/ENV/AUTH等具体阻断→下一动作；[来源票](来源.md) · [执行步骤](../maintainers/步骤.md) |
 ```
 
-执行后第二列改写为例如`passed / WIN-YYYYMMDD-N / candidate SHA / exact scope`并链接不可变日期报告；有两个不同结果的子场景拆ID或明确子oracle，不用“部分通过”掩盖关键失败。
+执行后第二列格式为`[x] integrated；passed；WIN-YYYYMMDD-N；candidate SHA；限定范围；证据锚点`（实现/结果仍用行内代码），这是格式示例，不是已通过记录。未闭合则保留`[ ]`与`failed/blocked/needs-revalidation`。只有子场景具有独立持续维护意义才拆ID，否则逐点差异留报告；不为每次重测新增场景，不用“部分通过”掩盖关键失败。
 
 ## 历史窗口：只作证据索引，不代表当前已部署
 
@@ -234,4 +240,4 @@ A `7994b92`与B `dc03066`：配置迁移、所选Provider/工具/Memory/effort�
 
 [显式发送](../reports/2026-09-18-explicit-native-notification.md)与[自动通知](../reports/2026-09-19-automatic-notification.md)保存源码、合成HTTP、真实SQLite/Node/daemon、source→v2映射和缺失末组回归。sender/激活代码已存在；生产TLS、实际接收者与collector持久安装不能由这些离线事实推导。
 
-本次清单升级没有产生任何新的live通过结果。之后每一窗口追加日期证据链接，只更新本候选受影响行，保留上述稳定历史锚点。
+本次清单升级没有产生任何新的live通过结果。上述已有历史锚点仅为兼容入口，保留且不扩展成逐轮日志；后续窗口在[报告目录](../reports/README.md)归档，并由对应场景的当前证据章节串联旧窗口，本页只替换受影响行的当前链接。**场景不变时，执行轮数增加不得使入口持续变长。**
