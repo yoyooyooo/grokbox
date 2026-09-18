@@ -2,6 +2,8 @@
 
 **当前现场已验/未验、阻断与下一步只看 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)。** 本目录报告固定在各自窗口结束时，不随后续推进维护当前状态；报告中的未验清单只说明当时缺口。
 
+- [2026-09-19 官方式duplicate](2026-09-19-native-agent-duplicate.md)：明确预检/确认、持久创建ID、未知不重建、原生语义及独立Node恢复；最新v2上的37项专项、3项原生和136项交叉回归，未操作真实Bot，不是完整clone。
+
 - [2026-09-19 原生当前状态接线](2026-09-19-continuity-native-binding.md)：真实原生worker/SQLite事务、主Host准备与应用记录、有限CLI/RPC、70项基础与22项原生资格；记录分组回归、两项竞态修正与未进行live采用的边界。
 
 - [2026-09-18 原生checkpoint格式](2026-09-18-continuity-native-checkpoint.md)：固定Host/worker的原生引用图与AgentStore、严格全图读回和独立进程；不等于真实业务Bot初始化。

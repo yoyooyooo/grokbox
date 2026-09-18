@@ -33,6 +33,14 @@ GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continu
 
 代码核对顺带修复既有`agents state`的local-only registry边界，禁止先解析Profile覆盖调用上下文。独立操作指南和命令帮助已更新；ownership技能主题追加被工具拒绝，本轮未写入，未把它作为已交付文档。独立外部review尚未取得。
 
+## 最新v2基线上的复验
+
+实现重放到v2 `7deeeac`，保留并行分支的Routine创建、配对、显式/自动通知及其验收入口。冲突只发生在验收case表和派生preload摘要，均做组合保留而非覆盖一方。
+
+在`f14b071`实现和新组合实际构建上重新执行：公开专项 **37 pass / 0 fail / 196 assertions**；固定原生语义 **3 pass / 0 fail / 22 assertions**；共享CONT/J1/当前初始化/worker/维护及新增Routine和通知CLI交叉回归 **136 pass / 0 fail / 816 assertions**。后者直接覆盖旧记录、B2不重导、部分写入unknown、引用/GC和非复制命令语义。组合有重叠，不累加独立全仓总数。
+
+两条专项回执source fingerprint均为`ed03f3cb692c18d7ba6c83f3e6bd36f42aaf2e2db8214ad21578c5e41671e5ee`，854个source/test/lock输入，前后稳定。重建preload为`7e7eb3e3d47d4b141221b6e68f038a4f8ff2c9d9501afdc1c6c889b1dc269e2c`；不是修改旧原生Host资格pin来放行。类型、构建、导入边界与隐私检查均通过。早期大范围分组是重放前证据，不伪称全部新合入代码已再次全仓验证。
+
 ## 集成与现场边界
 
 从已集成v2基础继续，公共Gateway/存储变化需在最新v2上重验后线性合并，不覆盖并行通知/Routine实现。真实源/目标创建、App当前选择、复制Routine实际行为、现场账本迁移和跨Host版本兼容均无本轮回执；Git合并不执行这些动作。

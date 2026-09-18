@@ -30,7 +30,7 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 当前能力通过独立`current-state`同源profile升级接入，不改变默认历史recipe。prepare保留现有来源/目标，initialize完成双层读回但不开始工作；activate显式释放已核实屏障，只允许后续正常输入。原生worker commit、主Host应用完成、本地安全账本完成分别记录；部分成功unknown不重导，B2继续工作后不能被B0覆盖。
 
-`agents state show/capture/initialize/operation/reconcile/activate`及`agents create --defer-start`已有注册/帮助/处理程序。defer-start只请求抑制介绍和kickstart，不是入站屏障；state命令Box-local、UUID限定、写操作需confirm、普通输出无原始上下文。CONT库显式v1→v2迁移保存原始初始化请求，GET不迁移。使用方法和限制唯一归操作指南。
+`agents state show/capture/initialize/operation/reconcile/activate`及`agents create --defer-start`已有注册/帮助/处理程序。defer-start只请求抑制介绍和kickstart，不是入站屏障；state命令Box-local、UUID限定、写操作需confirm、普通输出无原始上下文。CONT库的显式迁移保留原始初始化请求；CONT-06追加后当前私有库为v3，支持v1/v2连续升级并保存复制身份回执，GET不迁移。使用方法和限制唯一归操作指南。
 
 稳定验证入口：`node scripts/verify-runtime-rebuild.mjs continuity-native-binding`；明确本机原生资格另用`GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continuity-native-binding-qualified`。后者Node22仅来自原生worker的node:sqlite要求，不提高grokbox Node20.17产品基线。独立外部review和实际profile加载仍未签；不把未实现项移成单纯live待验。
 
