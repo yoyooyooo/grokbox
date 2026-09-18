@@ -18,6 +18,7 @@ import { writeModeldStepOutcome, writeModeldRecoveryProgress, writeModeldAuthori
 import { openExecutionHistory } from "../io/execution-history.node.ts";
 import { openBoundedProcessLog, type ProcessLogEvent, type ProcessLogHealth } from "../io/bounded-process-log.node.ts";
 import { readStorageConfiguration } from "../io/storage-configuration.node.ts";
+import { modeldStorageMaintenance } from "./storage-lifetime.runtime.ts";
 import { noteJournalObservationTimeout } from "../host/journal-health.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
 import { probeModeldHealth, probeModeldIdentity, modeldRootId, modeldSocketPath } from "../wire/modeld-probe.node.ts";
@@ -202,7 +203,13 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
       yield* ready({ kind: "owned", path, generation, ...(storagePolicyRevision ? { storagePolicyRevision } : {}), processLog: processLog?.health() ?? {
         state: "unavailable", writtenRecords: 0, droppedRecords: 0, rotations: 0, reason: "storage_unavailable",
       } });
-      yield* listenerLifetime(listener.server).pipe(Effect.onExit(exit =>
+      // Nested scope joins housekeeping before lifecycle log close or listener
+      // release. Borrowers never reach this branch; no UI/collector is required.
+      yield* Effect.scoped(Effect.gen(function* () {
+        yield* Effect.forkScoped(modeldStorageMaintenance({ durableRoot: options.durableRoot, runRoot: options.runRoot,
+          serviceEpoch: generation, processLog, processPolicyRevision: storagePolicyRevision }));
+        yield* listenerLifetime(listener.server);
+      })).pipe(Effect.onExit(exit =>
         note(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? "shutdown_requested" : "listener_failed"),
       ));
     }).pipe(Effect.provide(layer));

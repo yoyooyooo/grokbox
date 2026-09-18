@@ -131,9 +131,17 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 
 - journal cursor 每批有界前进；半行不确认，轮转、改写、坏 UTF-8、超长行和截断明确报告。
 - ownership RPC、本地journal drain和维护在同一Effect宿主内各有有界子任务；网络不持本地writer许可，挂起的ownership RPC不阻止本地failed事件入库。drain按单调时钟让出执行时间，积压不加速Server轮询，取消时各任务结算后才关闭collector。
-- collector运行期间按独立周期执行小批retention和增量空闲页回收；不等待一次全库重写。常驻安装、process fd/journal轮转及跨全部owner的维护仍未完成，本地run不证明无人值守总量可控。
+- collector运行期间按独立周期执行小批retention和增量空闲页回收；不等待一次全库重写。候选modeld现已在listener所属Scope内启动独立必要维护，因此没有collector或通知关闭时也会回收既有过期证据；不会自动建库/迁移或启动采集。process/journal轮转已实现，跨全部owner配额和Box重启自启仍未完成。
 - 活跃条件、ack/snooze/management request 不能仅为达到数量目标而删除；历史高频证据可以过期，查询披露 retention floor。已管理的 occurrence 保留受限诊断摘要，不需要永久保存 Alert 对象或全文。
 - DB/collector 退化不参与模型准入，不取消正常业务。观测缺口不能证明没有失败；Alert 消失也不能证明恢复。
+
+## modeld 必要维护与占用状态
+
+候选modeld成功拥有listener后执行有限维护，完成后等待30秒再运行；借用服务的CLI不启动它。数据库事务结算后才做文件回收，忙锁跳过；过程日志仅由持有writer回收过期关闭段，活动fd不动。退出时先结算维护再关闭日志/listener；回收或回执故障不关闭modeld。配置损坏不启动默认GC，缺库不自动初始化；这不是原生事件collector或Bot通知器。
+
+`runtime storage status`的maintenance分区显示最近周期、完整成功时间、回收量和running/stopped/interrupted/stale/unavailable，固定回执与暂存各16KiB。footprint在最多2048目录项/深度4内读取受管诊断命名空间的元数据，分开文件长度和allocated块，计入备份/暂存/SQLite辅助文件并按inode去重；不读取正文、不输出文件名、不沿符号链接。扫描缺口与未覆盖owner可见，budgetComparison不是全安装硬预留或删除许可，installationBudgetEnforced仍false。
+
+只读命令不执行维护、恢复或服务安装。必要维护已由真实Node owner离线验证，Box重启自启和成套现役采用另见LIVE。[实现与证明](../reports/2026-09-18-modeld-storage-lifetime.md)。
 
 ## 结构化 journal 分段与游标
 

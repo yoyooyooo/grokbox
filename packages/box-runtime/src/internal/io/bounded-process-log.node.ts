@@ -81,7 +81,9 @@ function encodeRecord(input: unknown, generation: string): Buffer | null {
   const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, kind: "modeld_process_event", generation, event, atMs }) + "\n");
   return bytes.length <= MAX_RECORD ? bytes : null;
 }
+export type ProcessLogMaintenance = { state: "maintained" | "busy" | "unavailable"; reclaimedBytes: number; activeSegmentPreserved: true };
 export type BoundedProcessLog = {
+  maintain: (nowMs: number) => Promise<ProcessLogMaintenance>;
   append: (input: unknown) => Promise<"written" | "dropped" | "unavailable">;
   close: () => Promise<void>;
   health: () => ProcessLogHealth;
@@ -136,6 +138,26 @@ export async function openBoundedProcessLog(input: { runRoot: string; generation
   try { await rotate(input.nowMs); } catch (e) { await handle?.close().catch(() => undefined); throw e; }
   return {
     health: () => ({ ...health }),
+    maintain: async nowMs => {
+      const result = (state: ProcessLogMaintenance["state"], reclaimedBytes = 0): ProcessLogMaintenance => ({ state, reclaimedBytes, activeSegmentPreserved: true });
+      if (!validTime(nowMs) || health.state !== "available") return result("unavailable");
+      if (busy) return result("busy");
+      busy = true;
+      let reclaimed = 0;
+      try {
+        // Only this listener owner's writer can retire its closed descriptors.
+        // Never rotate/create a new active file merely because the service idles.
+        for (const segment of [...found]) {
+          if (segment === current || nowMs < segment.createdAtMs || nowMs - segment.createdAtMs < policy.maxAgeMs) continue;
+          await removeSegment(dir, segment); found.splice(found.indexOf(segment), 1); reclaimed += segment.bytes;
+        }
+        if (reclaimed) await syncDirectory();
+        return result("maintained", reclaimed);
+      } catch {
+        health.state = "unavailable"; health.reason = "storage_unavailable";
+        return result("unavailable", reclaimed);
+      } finally { busy = false; }
+    },
     append: async value => {
       if (health.state !== "available") return "unavailable";
       const record = encodeRecord(value, input.generation);

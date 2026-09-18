@@ -248,6 +248,8 @@ S13连续性替换继续由CONT owner判断允许模式、原生快照完整性�
 <a id="storage"></a>
 ## 8. 有界存储：轮转、分层保留与安全GC
 
+**服务内维护增量：** 候选modeld取得listener并ready后，在嵌套Effect Scope执行有限回收，完成后等待30秒；与通知/collector独立，缺库不初始化、坏配置不启动默认GC。退出先结算子任务再关闭日志/listener；借用服务不获取维护owner。闲置过程日志只清关闭段；维护回执/暂存各16KiB，并区分进程失效、停止、陈旧和真实最近成功。有限元数据footprint计量三个诊断命名空间，inode去重并披露深度/数量/缺口；不是所有owner物理预留，不签Box自启或统一storage applied。[实现证据](../reports/2026-09-18-modeld-storage-lifetime.md)。
+
 **配置/恢复增量：** journal显式来源绑定、写入后采用回执、缩额恢复、collector内维护及目录锁v2的确证死owner退役已实现。真实进程SIGKILL跨四个轮转阶段、不重放callback、有限准备槽和打包Node写入已有证明；旧PID-only锁与未知/撕裂文件不自动清理，LevelDB安全账本不归此协议。当前限定证明见[回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)，不取代下面的全安装、服务安装与原生验收合同。
 
 **源码增量（2026-09-18）：** 已有SQLite局部容量、modeld结构化生命周期日志和原journal共享锁分段/游标/缺口/归档查询；各owner的本地限制不等于本节全部合同已兑现。journal活动路径保持不变、段ID与inode联合校验、普通轮转过渡不建故障；旧watchdog不改写受管活动inode，J13 writer不迁移。实际证明、未签的撕裂文件/硬崩锁与全安装预算见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)和[分段回执](../reports/2026-09-18-structured-journal-rotation.md)。现场状态只看LIVE。
@@ -341,7 +343,8 @@ packages/box-runtime/src/internal/
   ops/host-seam/watch.ts                  # HSO只读来源adapter，不创建第二collector
   roots/
     monitor.runtime.ts                   # source/drain/detect/notification有界子Scope
-    storage-maintenance.runtime.ts       # 服务内维护组合，不新建daemon/Agent loop
+    storage-maintenance.runtime.ts       # 只读计量/维护回执，缺口不隐藏其他来源
+    storage-lifetime.runtime.ts          # modeld所属维护子Scope，不新建daemon/Agent loop
     ops.runtime.ts                       # 后续计划调度，只调用原controller
 packages/cli/src/
   commands/monitor.ts / outcome.ts        # 原命令与新manifest入口均为薄适配
@@ -367,7 +370,7 @@ scripts/templates/grokbox-ledger.recipe.json # 无身份/secret/活routine的独
 <a id="surface"></a>
 ## 10. 公开命令与模板旅程
 
-现有可用命令保留：`runtime incident <step-id> --agent <id> [--from journal|monitor]`、`alerts trace <tray-id>`、`history outcome`、`runtime monitor snapshot/events/incidents`。前者始终是STEP，不把monitor incident ID塞入这个位置。新增`monitor incident/capture/evidence lease`已经完成本地及Node制品切片；`runtime storage status`分别报告monitor/processLogs/journals与storageIntent，绕过Profile初始化，旧/坏配置不隐藏可用磁盘证据，显式`installationBudgetEnforced=false`。它们不意味着全局shim已采用或真实Bot投递已完成。
+现有可用命令保留：`runtime incident <step-id> --agent <id> [--from journal|monitor]`、`alerts trace <tray-id>`、`history outcome`、`runtime monitor snapshot/events/incidents`。前者始终是STEP，不把monitor incident ID塞入这个位置。新增`monitor incident/capture/evidence lease`已经完成本地及Node制品切片；`runtime storage status`分别报告monitor/processLogs/journals、storageIntent、维护周期与有界footprint，绕过Profile初始化，旧/坏配置不隐藏可用磁盘证据，显式`installationBudgetEnforced=false`。它们不意味着全局shim已采用或真实Bot投递已完成。
 
 以下为**目标命令面**；已实现子集以本节上段、来源票与实际help为准。主通知只引用当时installed CLI支持的命令；未实现不进入真实Skill或README使用示例：
 

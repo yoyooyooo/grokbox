@@ -3,6 +3,8 @@ import { openMonitorStore } from "../io/monitor-store.node.ts";
 import { observeProcessLogStorage } from "../io/bounded-process-log.node.ts";
 import { observeJournalStorage } from "../io/journal-storage.node.ts";
 import { readStorageConfiguration, type StorageConfiguration } from "../io/storage-configuration.node.ts";
+import { observeStorageMaintenance } from "../io/storage-maintenance-receipt.node.ts";
+import { observeDiagnosticFootprint } from "../io/storage-footprint.node.ts";
 
 /** Read-only owner inventory. One unavailable source must not hide another.
  * This does not install a maintenance scheduler or enforce a global quota. */
@@ -26,5 +28,13 @@ export async function observeRuntimeStorage(input: { durableRoot: string; runRoo
   const journalIntent = storage ? { revision: storage.revision, policy: storage.policy.retention.journal } : undefined;
   const journals = [{ source: "control", ...await observeJournalStorage(input.durableRoot, journalIntent) }];
   if (input.runRoot && input.runRoot !== input.durableRoot) journals.push({ source: "host", ...await observeJournalStorage(input.runRoot, journalIntent) });
-  return { ...monitor, processLogs, journals, storageIntent, installationBudgetEnforced: false as const };
+  const maintenance = input.runRoot ? await observeStorageMaintenance({ durableRoot: input.durableRoot, runRoot: input.runRoot })
+    : { state: "not_configured", fileBytes: null };
+  const footprint = await observeDiagnosticFootprint(input);
+  const knownBytes = Math.max(footprint.fileBytes, footprint.allocatedBytes);
+  const budgetComparison = { knownBytes, basis: "max_file_length_or_allocated", coverage: "partial",
+    state: !storage ? "policy_unavailable" : knownBytes >= storage.policy.diagnostics.maxBytes ? "at_or_above_max"
+      : knownBytes >= storage.policy.diagnostics.targetBytes ? "at_or_above_target" : "counted_namespaces_below_target",
+    reservationEnforced: false };
+  return { ...monitor, processLogs, journals, storageIntent, maintenance, footprint, budgetComparison, installationBudgetEnforced: false as const };
 }

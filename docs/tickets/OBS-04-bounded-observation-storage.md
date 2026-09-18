@@ -36,11 +36,19 @@ collector现有维护子Scope每轮调用两个显式root的分段维护；不�
 
 可重复入口`bun scripts/verify-runtime-rebuild.mjs journal-maintenance`：90 pass/0 fail，类型/构建/边界/隐私和source稳定通过；全仓2368 pass/15 skip/0 fail。详见[回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)。本票仍Partial，不能将上述slice签成全安装预算或原生通知首发。
 
+## modeld 必要维护与诊断计量（2026-09-18）
+
+`storage-lifetime.runtime.ts`已接在实际modeld listener的嵌套Scope：首轮有限工作，完成后等30秒，不依赖collector/UI/通知开关；borrower不启动。复用原数据库/journal/过程writer，缺库不初始化，坏配置不启动默认GC，忙锁不循环等待，退出结算后才关闭日志/listener。过程writer增加闲置关闭段回收，活动fd保持。没有另建daemon、collector或执行权威。
+
+新增两个固定16KiB回执槽和只读维护状态；真实进程身份失效后为interrupted，旧回执/活PID不当全域applied。footprint只扫描三个明确诊断命名空间，2048项/深度4上限，元数据计量备份/暂存/辅助文件并inode去重；缺口和未覆盖owner可见，不输出路径/正文、不删除计量对象。物理计量不是跨writer预留，全安装配额仍未签。
+
+`verify-runtime-rebuild.mjs storage-lifetime`63 pass/0 fail；全仓2381 pass/15 skip/0 fail。源码modeld/实际打包Node、SQLite、闲置fd、延迟结算、强杀、坏配置、符号链接和小文件洪峰的准确范围见[回执](../reports/2026-09-18-modeld-storage-lifetime.md)。Box重启自启、全安装预留、执行/CONT安全退役、原生投递与独立review仍是各自前置。
+
 ## Goal / Modules
 
 自动观测不无限积累；普通日志滚动、结构化journal按消费窗口分段、SQLite/事故/通知按生命周期回收，并测真实磁盘回落。
 
-kernel `internal/observation/retention-policy.ts`；box-runtime `io/observation-retention.node.ts`、`bounded-process-log.node.ts`、原journal/monitor-store、`roots/storage-maintenance.runtime.ts`；CLI `runtime storage status/plan/apply`复用同owner。既有Jobs/provenance保留逻辑由原owner接预算，不写通用rm。
+kernel `internal/observation/retention-policy.ts`；box-runtime `io/observation-retention.node.ts`、`bounded-process-log.node.ts`、原journal/monitor-store、`roots/storage-maintenance.runtime.ts`只读计量、`roots/storage-lifetime.runtime.ts`所属modeld周期维护；CLI `runtime storage status/plan/apply`复用同owner。既有Jobs/provenance保留逻辑由原owner接预算，不写通用rm。
 
 ## Work
 

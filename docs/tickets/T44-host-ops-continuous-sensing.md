@@ -10,6 +10,8 @@
 
 源adapter/HSO接线、canonical runRoot/目标集合、实际source-liveness、安装自启与原生Webhook尚未闭合，不把子任务拆分当完整常驻资格。[限定回执](../reports/2026-09-18-observation-storage-followup.md)。
 
+必要存储维护另已接入实际modeld listener的子Scope，不再仅依赖本collector；其固定回执、闲置日志回收和真实Node/退出证明归[OBS-04](OBS-04-bounded-observation-storage.md)与[回执](../reports/2026-09-18-modeld-storage-lifetime.md)。这不是把modeld变成新collector，也没有因此完成目标集合、原生告警或通知投递。
+
 ## Depends-on / Modules
 
 依OBS-00/01、T51配置合同；不依赖Webhook、诊断或维护。复用HSO `ops/host-seam/watch.ts`、T41 `roots/monitor.runtime.ts`及原provenance；CONT-01归属判定独立，只共用源接口/出口。
