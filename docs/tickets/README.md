@@ -11,6 +11,10 @@
 [W17 窗口及证据](LIVE-integration-validation.md#window-20260917)和 [Host reapply 修复对应的重启条目](LIVE-integration-validation.md#live-modeld-restart)均从该索引进入；修复实现与离线证明归 [FIX — Host lifecycle reapply](FIX-host-lifecycle-reapply.md)。
 
 <a id="modeld-effect-core"></a>
+## Host 必需能力与中断恢复 — HCR-01–04
+
+[Spec §11](../roadmap/host-seam-ops-recognition.md#capability-recovery) 固定原 writer/controller 的补强合同：[HCR-01 配方与witness诊断](HCR-01-profile-and-witness-diagnostics.md) → [HCR-02 实际加载能力](HCR-02-loaded-capabilities.md)，[HCR-03 操作恢复](HCR-03-operation-recovery.md) 与 [HCR-04 受控能力升级](HCR-04-capability-profile-upgrade.md)。不放宽ownership gate，不引入第二注入路径；实现/离线/review归来源票，当前现场只看 [LIVE-HOST-CAPABILITY-RECOVERY](LIVE-integration-validation.md#live-host-capability-recovery)。
+
 ## Current change — modeld execution-core consolidation
 
 [Spec S10](../roadmap/box-runtime-impl-spec.md#modeld-effect-core) is the sole implementation home for this branch; [ADR](../decisions/2026-09-16-modeld-effect-core.md) records accepted boundaries. This new series consumes existing T24/T25/T26/T37/T40 implementation rather than reopening historical tickets or creating a parallel execution kernel. Original product/native/rollback gates remain in force.

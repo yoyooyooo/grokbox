@@ -570,3 +570,47 @@ Golden 回归可以正确断言一次 `unknown-sha` 拒绝，即 `regressionPass
 - 因未知、parse 失败、性能超限或人工未批准而静默退到更宽松的匹配/执行路径。
 
 **完成标准：**官方更新与其他实际换代路径能被多源感知，missed/unknown不伪造；稳定新source进入原provenance/replay链，mid-swap不推进；机械和Agent判断有证据、有界迭代有实际离线验证；每片有明确匹配/拒绝/未知；只有Human绑定审核的字面profile能经原writer发布。pending→验证的各事实面可观测；runtime仍只做原fail-closed apply，live adoption及其canary始终是另一次授权。本文交付是方案 refinement，不宣称上述 sensing/Agent/迭代用例已实现。
+
+<a id="capability-recovery"></a>
+## 11. HCR — Host 必需能力、局部配方升级与中断恢复
+
+这是现有唯一 profile publisher / controller 的补强，不创建第二注入器、第二执行器或新的 ownership 权限来源。源码能力、磁盘 reviewed 配方、实际加载桥、当前 Bot admission、Provider roundtrip 是五个不同事实。服务可达、profile 自洽、confirmed_box 和 enable-requested 都不能代替其余事实。
+
+### 骨架与所有权
+
+| 模块 | 本轮职责 | 禁止依赖 |
+| --- | --- | --- |
+| `runtime-kernel/internal/contract/ownership.ts`、`stream-diagnostic.ts` | 有限 local-witness 拒绝原因及脱敏投影；保留全部原准入检查 | 文件、进程、CLI、Provider |
+| `box-runtime/internal/host/profile.ts`、`process/profile.node.ts` | 同一个配方 preflight、保留真实失败 slice/code；analyze/write 同判据 | 运行 retained Host、隐式 adopt |
+| `box-runtime/internal/host/ownership-read.ts`、`ownership-slices.ts` | 安装的 reader 与实际 Gateway wrapper 共同报告版本化的必需能力；只读且不做 Server List / 模型调用 | Effect、SDK、密钥输出 |
+| `box-runtime/internal/host/profile-capabilities.ts` | 有限能力包及依赖闭包、基于当前 reviewed 的精确局部升级 | 任意 skip slice / 可执行外部配方 |
+| `box-runtime/internal/io/operation-lease.node.ts` | Linux advisory gate + 有界持久 owner 记录、只读 inspection、显式恢复；syscall adapter | Host signal、业务重放 |
+| `box-runtime/internal/roots/controller-program.node.ts` | Effect Scope 持有 controller/identity lease；显式失效记录恢复至 unknown，继续复用原 controller reconcile | 第二 re-adopt executor |
+| `cli/commands/operator.ts`、`runtime.ts`、命令注册 | doctor 分层、局部升级 selector、恢复命令、upgrade 后置读回与剩余 blocker | 把建议当重启/模型消费授权 |
+
+### 唯一主链
+
+1. `profile analyze` 对 retained 原文和实际选择配方 preflight。应用失败直接给出有限 `sliceId/code`，不再建议原样 write；窗口不可测不伪装成空 drift。
+2. 默认 write 保留完整当前配方。显式能力升级从已验证的 durable profile 开始，只更新已登记能力和必需依赖；不删除原切片、不自动跳过失败项，非目标切片字节保持不变。
+3. 局部升级必须在同一源 SHA 上绑定 baseline 配方 digest，经过原 envelope review、hash、protected staging 和发布前 baseline 复验。缺失、漂移、依赖不完整均拒绝；本轮不扩展成通用历史 recipe 导入。
+4. Host 状态只报告实际加载 wrapper/reader 共同支持的能力版本；旧 wrapper/旧 reader/未知响应不升级成 ready。能力观察没有 Bot admission 权限，永远不由测试 UUID、缓存注册快照或 doctor 结果签发许可。
+5. doctor 分别报告 Host origin、modeld 服务准入与必需桥能力；unknown 有明确观察下一步，`next=none` 不能掩盖缺少必需能力。
+6. lifecycle receipt 分开 requested、实际加载观察和 remaining blockers；无变化不等于失败，发生换代也不等于业务可用。
+7. controller 与 identity 的新写者在整个操作内持有系统 advisory gate；进程硬退出释放 gate，owner 文件留作证据。不能在只读检查或普通 acquire 时擅自删除 stale 记录。
+8. 显式锁恢复按 controller→identity 同序持有 gate，验证 owner 确定已失效和文件实例不变，拒绝活 owner、未知身份、symlink/替换。持久 running 只恢复为 unknown；不写 attestation、不发 signal、不重放业务。下一步由原 re-adopt 的 current facts/journal 再判断。
+
+### 不变量与验收
+
+不放宽五秒原始证据年龄、不接受 full snapshot 冒充 local-only、不由错误码猜 Provider 问题。有限诊断包括 capability/schema、scope、target rows、clock/age；自由字符串和原始对象不能进入 incident。Source/transformed/profile 身份保留，能力声明只增加早期检查，不取代执行时权威校验。
+
+Linux gate 使用已打开的受保护文件描述符及 `flock`，不依赖 PID-only 互斥；缺失 primitive 必须显式失败，不能静默退到有竞争窗口的 unlink。目录与 gate inode 不被恢复命令替换。Effect 管理 acquire/release，Scope 不被当成硬崩事务。
+
+| 阶段 | Ticket | 离线退出 |
+| --- | --- | --- |
+| 确定性诊断 | [HCR-01](../tickets/HCR-01-profile-and-witness-diagnostics.md) | analyze/write 同一个失配原因、无循环 next；witness 原准入不变、细因可脱敏流转 |
+| 加载能力与回执 | [HCR-02](../tickets/HCR-02-loaded-capabilities.md) | 新旧 wrapper/reader 组合、无 Server/Provider 副作用、doctor unknown、upgrade 部分成功 |
+| 中断恢复 | [HCR-03](../tickets/HCR-03-operation-recovery.md) | 独立进程退出/竞争、活锁拒绝、旧锁保守恢复、journal 不变、running→unknown |
+| 受控局部升级 | [HCR-04](../tickets/HCR-04-capability-profile-upgrade.md) | 旧配方与无关切片失配 fixture、依赖完整、基线漂移拒绝、原 publisher 原子性与包内 CLI |
+
+当前 live 状态只在 [LIVE-HOST-CAPABILITY-RECOVERY](../tickets/LIVE-integration-validation.md#live-host-capability-recovery)。离线使用合成 Host/临时 root/一次性子进程，无真实 Host eval、官方进程 signal 或模型消费。真实旧/新 Host 组合、adopt 中断读回、App 提示和新 STEP roundtrip 在合入固定 v2 且获得单独窗口授权后分别验收。独立 review 缺席或失败须明确保留，不能写为完成。
+
