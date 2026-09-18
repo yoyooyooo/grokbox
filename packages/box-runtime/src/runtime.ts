@@ -24,6 +24,8 @@ export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roo
 export { observeRuntimeStorage } from "./internal/roots/storage-maintenance.runtime.ts";
 export { openContinuityObservationBridge, runContinuityReferenceChange, type ContinuityObservationBatch } from "./internal/roots/continuity-integration.runtime.ts";
 export { openContinuityRecoveryStore } from "./internal/roots/continuity.runtime.ts";
+export { openContinuityCurrentState, type CurrentStateInput, type InitializationResult } from "./internal/roots/continuity-state.runtime.ts";
+export type { NativeCurrentStatePort, NativeCurrentHead, CaptureCurrentRequest, InitializeCurrentRequest, InitializationPermission } from "@grokbox/runtime-kernel/continuity";
 export type { ContinuityStoreInput, PublicationReceipt } from "./internal/io/continuity-store.node.ts";
 export { measureContinuityStorage } from "./internal/io/continuity-storage.node.ts";
 export { maintainObservationStorage, type StorageMaintenanceInput } from "./internal/io/storage-maintenance.node.ts";

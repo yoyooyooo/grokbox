@@ -16,6 +16,8 @@
 
 档位为observe、memory、resume（新保护默认）、archive，另有off。级别增加材料覆盖，不扩大自动操作权限；resume必须保存root必要的完整依赖，archive不是整盒备份或多会话。
 
+**后续接线切片：** [CONT-07当前状态协调](CONT-07-current-context-control.md)已通过有限原生read port把捕获接到本存储，验证预算、原始root字节、前后revision和复制后的不可变材料；重复请求返回原快照，不再次读源。所用原生端仍是owned合成协议，未接官方decoder、自动安全点或四档生产配置，不能将其称为真实Bot capture已经完成。[限定证明](../reports/2026-09-18-continuity-current-state.md)。
+
 ## 材料与恢复质量
 
 root槽位ID可不变而字节变化，compact rootRevision也不是完整Bot版本。快照记录实际root/闭包hash、Host/schema、Memory分层版本、转录和关系水位、model/effort/配置、必要资源与未决动作。原生最近提交、最后完整保全、各职责安全续接点分开；保存pending/partial不等于允许重放。

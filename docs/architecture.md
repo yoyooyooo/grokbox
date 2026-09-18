@@ -342,6 +342,8 @@ kernel continuity保存纯规则；既有config writer管理保护/权限；moni
 
 新Bot开始可确认职责时，旧Bot可继续指路/处理旧结果；职责、关系、恢复质量与退役分别表达，不要求旧端全局idle。未知effect只隔离相关职责/冲突资源，健康旧入站观察与未结依赖决定退役。OBS/Template Ops持有通知目标、诊断/告警权限和容量策略，CONT只消费其typed边界，不重复实现。完整阶段和代码落点只在S13，不在本页复制第二实施表。
 
+当前CONT-07应用程序在`roots/continuity-state.runtime.ts`直接复用存储Effect programs，经`host/continuity-import.ts`有限校验和`NativeCurrentStatePort`处理capture/initialize/显式对账。没有自动注册原生binding；接口要求的原生应用凭据尚须固定Host资格，不可由管理DB自造。reconcile对native只读但写本地结算，不能作GET；它确认历史应用而非修复屏障或激活。范围与owned端验证见[当前状态报告](reports/2026-09-18-continuity-current-state.md)。
+
 ### 2026-09-18 Native Bot ops / bounded evidence boundary（目标，尚未交付）
 
 [Template Ops Spec §9](roadmap/template-ops-automation-spec.md#layout)是唯一骨架：OBS-00–03拥有最低证据、intake、固定manifest和视图；T41原SQLite扩展incident/evidence/outbox/预算/租约各受限事务域。OBS-04拥有诊断容量/轮转/分层GC，OBS-05通过原执行/恢复/制品owner实施安全退役，不把安全账本当日志。现有ConfigChange管理ops与下一版storage偏好，bindings/grants/实测容量/租约归各机器状态owner；本轮不改现役schema3。

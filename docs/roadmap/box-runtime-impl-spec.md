@@ -1200,7 +1200,7 @@ meter/默认预算、config模型覆盖、generation/output含义、Host safe po
 <a id="ownership-continuity"></a>
 ## S13. 单盒 Bot 状态塑造、替身接替与交接收敛（2026-09-18 accepted target）
 
-**状态：CONT-00有8个历史原生边界探针；CONT-02/11已有真实恢复存储/安全意图与J1接线的部分实现，完整CONT产品链尚未交付。** 观测/日志旁支的已有实现各自保留证据范围，不算本节已上线。这里是完整终局的实施合同，不是只规划首个实验。编号保持 CONT，不重开已完成 CTX/T 票；阶段完成不能代替整体验收。
+**状态：CONT-00有8个历史原生边界探针；CONT-02/11已有真实恢复存储/安全意图与J1接线，CONT-07已有capture/initialize/reconcile协调及owned原生边界验证。安装中的官方decoder/hold/writer未绑定，完整CONT产品链尚未交付。** 观测/日志旁支的已有实现各自保留证据范围，不算本节已上线。这里是完整终局的实施合同，不是只规划首个实验。编号保持 CONT，不重开已完成 CTX/T 票；阶段完成不能代替整体验收。
 
 <a id="continuity-north-star"></a>
 ### S13.1 北极星、单一产品模型与已定取舍
@@ -1337,7 +1337,7 @@ watching → confirmed_loss → 固定证据/按配置暂停Routine/通知
 | 现有 `internal/config/schema.ts` 与config writer | 保护范围/档位/操作授权/预算/逐Bot覆盖及变更回执；遵循当前集成schema迁移，不另造配置文件 |
 | 现有 `box-runtime/src/internal/roots/monitor.runtime.ts`、`io/monitor-store.node.ts` 及OBS事件入口 | 共享读取、owner持续条件、旧入站覆盖/水位、事件/证据/outbox；观察回调不执行克隆/删除 |
 | `box-runtime/src/internal/io/continuity-store.node.ts` | recovery/safety共用CONT私有管理SQLite，与OBS诊断库分离；operation/duty/ancestry/revision和vault引用由本域管理，跨OBS对账显式。只写管理/备份，不直接改原生活状态 |
-| `box-runtime/src/internal/roots/continuity.runtime.ts` | 由既有常驻服务监督的Effect owner，按operation协调创建/恢复/激活/逐职责交接/退役；无第二模型或工具loop |
+| `box-runtime/src/internal/roots/continuity.runtime.ts` / `continuity-state.runtime.ts` | 同一域的存储facade与当前状态操作程序，复用存储Effect programs而非嵌套Runtime；后续由既有服务监督创建/激活/逐职责交接/退役，无第二模型loop |
 | `box-runtime/src/internal/host/continuity-import.ts`、`continuity-slices.ts` | 非修复capture、原生hold/initialize/reset/recover/start/reopen的有限版本能力；原生Host仍拥有root、Memory、历史和正常执行的最终writer |
 | `box-runtime/src/internal/io/continuity-relations.node.ts` | 关系与旧入站只读发现、正式群/peer/任务能力适配；复用既有Gateway/身份授权，不暴露任意sender或SQL |
 | `cli/src/commands/continuity.ts` 及现有agents/context/registry/Gateway/daemon边界 | 统一plan/执行/只读状态；duplicate/clone/replace/context/spawn映射到同一use case，不用shell拼写活库 |
@@ -1350,6 +1350,8 @@ Ports按能力固定：复用`OwnershipReader`；`ContinuitySnapshotReader`、`N
 四类时间/身份分开：输入水位、snapshot版本、currentContext revision、activation/replacement generation；它们不是多session。每次外部操作保留稳定ID及unknown恢复规则；管理DB事务与原生root/远端调用之间采用明确读回恢复，不把一个本地CAS宣称跨服务端事务。临时模型窗口保真复用S12/现有session适配器，不把vault变成日常模型选窗来源。
 
 <a id="continuity-delivery"></a>
+**2026-09-18当前状态协调切片：** `openContinuityCurrentState`对有限`NativeCurrentStatePort`执行捕获、准备中的目标初始化与显式对账，复用真实CONT记录。原始归属年龄在实际dispatch前复查；native提交/reopen/marker/current root/cleanup与本地结算分开，未知不重发、不覆盖后续B2。marker是待资格化binding须实现的合同，不声明官方已有字段。capture限定声明材料校验；context-only initialize不复制全部Memory/历史。没有生产native binding、自动安装或新CLI；[105项限定报告](../reports/2026-09-18-continuity-current-state.md)为真实store＋owned合成原生端/生产window codec/Node强杀，并非真实Host或Provider请求。下一步必须补当前原生资格和正式绑定，不拿更多fixture替代。
+
 ### S13.8 面向终局的完整里程碑、依赖和验收
 
 **2026-09-18真实消费者切片：** CONT-02/11已提供`openContinuityRecoveryStore`、有限manifest/私有字节发布、J1 recovery/safety owner、内容绑定操作意图与一次派发claim；已有真实SQLite/Node独立进程/owned SIGKILL及诊断过期交互证明，见[固定报告](../reports/2026-09-18-continuity-recovery-store.md)。没有native capture/import、四档config消费、默认生产owner安装、完整职责状态机或安全墓碑退役；接口返回`nativeImportProven=false`且不授执行权。验证入口为`node scripts/verify-runtime-rebuild.mjs continuity-store`，不等价于原生Bot恢复或完整J2。

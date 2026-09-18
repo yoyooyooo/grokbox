@@ -2,6 +2,8 @@
 
 **当前现场已验/未验、阻断与下一步只看 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)。** 本目录报告固定在各自窗口结束时，不随后续推进维护当前状态；报告中的未验清单只说明当时缺口。
 
+- [2026-09-18 唯一当前状态协调](2026-09-18-continuity-current-state.md)：capture/initialize/显式对账、原始归属证据复核、105项组合与Node强杀/B2不重导；使用真实CONT存储及owned合成原生端，未安装官方Host绑定或验证真实Agent loop。
+
 - [2026-09-18 CONT真实恢复材料与操作安全记录](2026-09-18-continuity-recovery-store.md)：CONT-02/11首个真实持久消费者、J1引用/过期接线、固定Bun/Node20的114项组合与owned进程硬崩；未接原生Bot捕获/导入、配置自动采用或live。
 
 - [2026-09-17 CTX v8 现场窗口](2026-09-17-context-v8-live-window.md)：config3/wire8成套采用、真实503/备用200、测试Bot选择及清理、modeld replacement；保留真实消息入口和原版App未证范围。

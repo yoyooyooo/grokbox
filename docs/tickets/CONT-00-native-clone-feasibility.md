@@ -26,6 +26,10 @@ GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/ow
 
 同轮防回归：`monitor-store.test.ts`、`monitor-commit-boundaries.test.ts`、`context-maintenance-boundaries.test.ts`、`context-maintenance-control.test.ts` 合计 **28 pass / 0 fail / 290 assertions**；`bun run typecheck` 与 working-tree publication检查通过。未运行整个仓库套件，未完成独立架构review；这些旧行为回归不代表CONT-01–05已经实现。
 
+## 当前状态协调切片与版本门
+
+CONT-07新增的[捕获/初始化/对账程序](../reports/2026-09-18-continuity-current-state.md)已有生产CONT存储＋owned合成原生端验证，但本轮磁盘Host源码摘要已不同于原8探针的固定pin，直接读取受工具路径限制。原pin保持不变，未将当前安装认定为已资格化。新增NativeCurrentStatePort、application marker是需要原生绑定满足的合同，不表示官方已经暴露这些API/字段。下一步须在可合法读取当前源的条件下核对decoder、准备屏障、writer/持久收据、reopen及有限取消行为；不得通过只改pin或追加更多fixture替代。
+
 ## 后续决策与扩展资格
 
 [S13完整路线](../roadmap/box-runtime-impl-spec.md#continuity-delivery)已经冻结单盒、每Bot唯一当前上下文、best-effort恢复和按职责边接活边交接。旧8探针只保留其实际已证范围，不重新命名为全部能力通过；CONT-06–11及更新的CONT-01–05都有单独出口。

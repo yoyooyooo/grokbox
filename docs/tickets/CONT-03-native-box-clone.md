@@ -10,6 +10,8 @@
 
 CLI通过`commands/continuity.ts`、现有Gateway/create/selection接口进入共享operation；Host写入只用CONT-07的initialize/hold/commit/reopen；CONT-02提供固定恢复候选，管理store保存source/target/operation/quality和收据。
 
+**公共前置进展：** CONT-07现已提供真实持久层上的capture/initialize/reconcile协调，持久单次派发、原生reopen/marker核验、异常对账与B2不重导规则已有owned端验证。它尚无安装中的官方原生binding，不构成本票的真实clone；下一步优先完成当前Host资格及该binding，而不是继续把合成端通过当作产品已能换脑。[范围与证据](../reports/2026-09-18-continuity-current-state.md)。
+
 ## 顺序与边界
 
 1. 固定源输入范围与质量、费用、目标配置和创建nonce。请求官方Box身份并读回；响应丢失先对账已知对象，不按名字猜、不换nonce再建。

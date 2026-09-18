@@ -20,6 +20,14 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "continuity-current-state": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/runtime-kernel/test/current-state-contract.test.ts", "packages/box-runtime/test/continuity-current-state.test.ts", "packages/box-runtime/test/current-state-process.test.ts"],
+    ["bun", "test", "packages/runtime-kernel/test/continuity-material.test.ts", "packages/box-runtime/test/continuity-store.test.ts", "packages/box-runtime/test/continuity-process.test.ts", "packages/box-runtime/test/obs-continuity-contract.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/context-maintenance-boundaries.test.ts", "packages/box-runtime/test/context-maintenance-control.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts", "packages/box-runtime/test/monitor-commit-boundaries.test.ts"],
+    ["node", "scripts/check-runtime-boundaries.mjs"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "continuity-store": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/runtime-kernel/test/continuity-material.test.ts", "packages/box-runtime/test/continuity-store.test.ts", "packages/box-runtime/test/continuity-process.test.ts", "packages/box-runtime/test/obs-continuity-contract.test.ts"],
@@ -241,6 +249,7 @@ for (const argv of mapped) {
 }
 
 const SUPPORTS = {
+  "continuity-current-state": ["finite-native-capability-no-default-binding", "immutable-capture-under-owner-boundary", "source-revision-drift-refusal", "context-only-initialization-with-durable-effect-claim", "original-ownership-age-rechecked-at-dispatch", "native-reopen-and-marker-before-ledger-settlement", "unknown-never-reimports-or-activates", "b2-progress-survives-initialization-reentry", "owned-node-process-kill-and-readback", "no-human-message-or-background-native-writer"],
   "continuity-store": ["real-scoped-recovery-and-safety-sqlite-owners", "declared-graph-hash-checked-immutable-material", "publication-reservation-reconciliation-no-false-success", "two-phase-reference-safe-object-gc", "last-readable-fallback-retained", "content-bound-effect-intent-and-single-dispatch-claim", "unknown-is-not-retryable", "real-cont-owner-j1-diagnostic-expiry-integration", "node-process-reopen-kill-boundaries-and-concurrent-claim", "read-only-private-bounded-status"],
   "obs-continuity": ["typed-continuity-intake-existing-sqlite-outbox", "source-zero-based-cursor-gap-and-reentry", "notification-off-not-domain-completion", "fixed-owner-reference-gc-serialization-contract", "owned-recovery-closure-survives-diagnostic-expiry", "capacity-degradation-not-effect-authorization", "unmeasured-not-zero-and-shared-allocation-deduplication", "owner-write-settles-before-supervised-exit"],
   "agent-routines": ["bounded-native-definition-projection", "exact-id-revision-confirm-before-write", "no-native-cas-claim", "single-mutation-and-readback-unknown-not-retry", "local-and-daemon-share-program", "packed-node-routine-management", "no-credential-mint-create-or-invoke"],
@@ -277,6 +286,7 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "continuity-current-state": "production-Effect-coordinator-real-private-SQLite-and-content-store-owned-synthetic-native-port-actual-window-codec-packed-Node-SIGKILL-no-installed-Host-binding-or-provider-effects",
   "continuity-store": "production-Effect-programs-real-temporary-private-SQLite-and-content-files-synthetic-material-pinned-Bun-source-packaged-Node-workers-owned-SIGKILL-no-live-Bot-or-provider-effects",
   "obs-continuity": "real-temporary-files-journal-sqlite-and-owned-recovery-adapter-existing-effect-lifetime-no-native-bot-or-network-effects",
   "agent-routines": "synthetic-native-http-boundary-real-cli-daemon-effect-program-and-packed-node-no-live-native-writes",
@@ -313,6 +323,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "continuity-current-state": ["installed-native-schema-decoder-and-writer-qualification", "actual-Host-preparation-fence-and-cross-identity-import", "first-real-Agent-loop-or-provider-request", "reset-recover-spawn-or-clone-cli", "memory-transcript-attachment-import", "production-config-authority-composition-and-owner-installation", "full-j2-notification-inbound-and-handover", "independent-review-and-live-cutover"],
   "continuity-store": ["native-Bot-capture-schema-and-current-state-import", "configuration-policy-binding-and-production-owner-installation", "actual-clone-start-and-duty-handover", "safety-tombstone-retirement-and-endless-operation-capacity", "full-installation-physical-reservations", "arbitrary-power-loss-or-backup-rollback", "native-notification-and-temporal-inbound", "independent-review-and-live-cutover"],
   "obs-continuity": ["native-recovery-owner-import-and-operation-ledger", "real-temporal-inbound-coverage", "native-notification-delivery-and-unknown-reconciliation", "replacement-relationship-migration-and-bot-retirement", "installation-wide-reservations", "cross-store-atomicity", "independent-review-and-live-schema4-adoption"],
   "agent-routines": ["native-http-management-roundtrip", "durable-create-apply-provisioning", "native-webhook-http-authentication-and-invoke", "bot-delivery-or-user-read", "target-pairing-and-model-qualification", "in-flight-run-cancellation", "independent-review", "live-cutover"],

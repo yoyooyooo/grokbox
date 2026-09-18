@@ -154,6 +154,9 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
       || (row.state === "prepared" ? row.effect_id !== null : !isContinuityUuid(row.effect_id))
       || (["succeeded", "not_executed"].includes(String(row.state)) ? !isContinuityHash(row.evidence_hash) : row.evidence_hash !== null)) return failContinuity("integrity_failure");
     return { operationId: String(row.operation_id), revision: Number(row.revision), state: String(row.state),
+    // Safe binding fields support a read-only reconciliation without recapturing
+    // source state or re-running an importer. No content is exposed here.
+    agentId: intent.agentId, kind: intent.kind, inputDigest: intent.inputDigest, policyRevision: intent.policyRevision, snapshotId: intent.snapshotId,
     effectId: row.effect_id as string | null, evidenceHash: row.evidence_hash as string | null, dispatch,
     // Local durable claim only: the controller must separately validate current
     // authority/policy before dispatch. Restoring a record never grants rights.
