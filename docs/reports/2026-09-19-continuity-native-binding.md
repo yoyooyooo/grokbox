@@ -33,7 +33,7 @@ GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continu
 
 第一组 **70 pass / 0 fail / 346 assertions**，覆盖有限CLI/RPC、管理库迁移、实际CONT存储、准备/初始化/激活与中断对账。第二组 **22 pass / 0 fail / 87 assertions**，包含固定Host/worker源码对、原worker线程和真实原生SQLite、持久保护与重开、既有原生格式/新Node往返。不是整主Host/App实际业务回合；第一轮真实模型输入仍需现场取证。
 
-两组最终source指纹均为`9d34de9c2974b615e6512981f9ab1d00a3cf990907ea478ae619337f0718f911`，801个source/test/lock输入，执行前后未漂移。实际preload摘要`609ce543c61de02fe5aad0c83509a603910c9a8ce46cfbd560fb7f8080929c4f`；类型、构建、依赖边界及含未跟踪文件的隐私检查通过。原生源码对沿用独立资格pin，不把它升级成整个现役Host的通过证明。
+最终线性rebase到`a2fe878`之后，代码提交为`d040e53`，两组专项再次得到70/22 pass。最终source指纹均为`b05cde05a71558771b5dee47944bd1dc8e6de38aece4848a96e6ced584e8d8da`，801个source/test/lock输入，执行前后未漂移。实际preload摘要`99931096d84058f433d91ed1ef2c23ba56ffbeb923e1efff4f35792459a3fae9`；类型、构建、依赖边界及含未跟踪文件的隐私检查通过。最终diff清理改变构建来源指纹，旧制品pin反例确实拒绝；根据真实新构建更新制品pin后整组重验，未修改原生源码资格pin或放宽校验。
 
 同轮较早候选完成按目录/文件分组的全仓覆盖：kernel+CLI package 266 pass，顶层test 731 pass，runtime六组1601 pass/40 skip，独立architecture 25 pass，共 **2623 pass / 40 skip**。之后新增上述两个竞态测试并用最终70/22专项重验；不能把各组合重复累加为一个更大的独立测试数，也不声称最终源码单进程完整全仓通过。
 
@@ -41,7 +41,7 @@ GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continu
 
 ## 集成与运行边界
 
-本线继承了J1公共接口、schema4候选和存储维护代码；与最新v2的HCR代码做线性rebase。合并代码不隐式采用新schema或新Host。
+本线继承了J1公共接口、schema4候选和存储维护代码；线性rebase到`a2fe878`保留HCR代码及对方最新原生通知/接收者验收记录。rebase后的业务源码没有额外差异，仅LIVE的两项通知记录取最新版本；共同维护信息保留。合并代码不隐式采用新schema或新Host。
 
 检查时日常CLI已指向单独的schema3保留分支，固定源码为`9f6b001`，现役配置读取仍为schemaVersion3。该入口不再随v2分支代码前进；本轮不迁移运行配置、不重启Host/modeld、不调用真实Bot写操作。后续schema4与current-state profile需要沿既有成套采用流程另开LIVE窗口。
 
