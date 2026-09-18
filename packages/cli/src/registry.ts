@@ -687,6 +687,19 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     stdin: "none", table: false, timeout: true, destructive: false, gateway: true, streaming: false, profile: false, localOnly: true,
   },
   {
+    path: ["ops", "targets", "activate"],
+    usage: "grokbox ops targets activate <alias> --from-work <id> --expect-binding-revision <n> --expect-model-revision <sha256> --operation-id <id> --confirm-receiver --confirm --json",
+    summary: "Authorize future brief reminders after the user observed an accepted test reminder; never infers delivery from HTTP status.",
+    arguments: [{ syntax: "<alias>", description: "Configured default target alias" }],
+    options: options([{ flags: "--from-work <id>", description: "Existing accepted test work, not caller-supplied evidence", required: true },
+      { flags: "--expect-binding-revision <n>", description: "Current private pairing revision", required: true },
+      { flags: "--expect-model-revision <sha256>", description: "Confirmed current receiver model digest", required: true },
+      { flags: "--operation-id <id>", description: "Stable local authorization operation", required: true },
+      { flags: "--confirm-receiver", description: "User states the test reminder was actually observed; not implied by an Agent or HTTP 200", required: true },
+      { flags: "--confirm", description: "Authorize future bounded reminders and model wake costs", required: true }], { timeout: true }),
+    stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["ops", "targets", "bind"],
     usage: "grokbox ops targets bind <alias> --routine-id <id> --expect-revision <sha256> --operation-id <id> --preview|--confirm --json",
     summary: "Prepare a disabled managed Routine pairing; confirmed credential retrieval may mint a key but never enables delivery.",
@@ -715,6 +728,13 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
       { flags: "--expect-model-revision <sha256>", description: "Model fingerprint reviewed during target verification", required: true },
       { flags: "--confirm", description: "Authorize this one Webhook attempt and possible native model usage", required: true }], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["ops", "notifications", "worker"],
+    usage: "grokbox ops notifications worker --json",
+    summary: "Read the existing local daemon's notification worker without starting services or sending alerts.",
+    arguments: [], options: options([], { timeout: true }), stdin: "none", table: false, timeout: true,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
     path: ["ops", "notifications", "list"],

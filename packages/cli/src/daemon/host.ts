@@ -6,6 +6,8 @@ import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
+import { startOpsNotificationWorker } from "@grokbox/box-runtime/runtime";
+import { nativeExplicitReceiverReader } from "../gateway-receiver.ts";
 import { validateRoutineCommand, validateProvisionCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
 import { provisionCliError } from "../gateway-routine-provision.ts";
 import { routineCliError } from "../gateway-automation.ts";
@@ -167,6 +169,7 @@ export async function startDaemonHost(
   ) : null;
   const gateway = new GatewayClient(directDeps);
   const desktop = await DesktopManager.create(deps.configDir, deps.now, desktopConfig, desktopIo);
+  let notificationWorker: ReturnType<typeof startOpsNotificationWorker> | undefined;
   const titleSync = new TitleSyncManager(gateway, deps.boxRuntimeRoot, deps.env);
   titleSync.start();
 
@@ -204,6 +207,10 @@ export async function startDaemonHost(
     signal?: AbortSignal,
   ) => {
     if (method === "handshake") return { result: await handshake() };
+    if (method === "getOpsNotificationWorker") {
+      assertParamKeys(params, [], "Notification worker status");
+      return { result: notificationWorker?.status() ?? { state: "not_started" } };
+    }
     if (method === "health") {
       const value = await gateway.health(asNumber(params.timeoutMs, 10_000));
       return { result: value.health, gateway: gatewayMeta(value.discovery) };
@@ -607,11 +614,18 @@ export async function startDaemonHost(
     throw error;
   }
 
+  // The daemon already owns native Gateway access. This child neither starts
+  // monitoring nor creates bindings, and never sends without a persisted local
+  // authorization plus fresh source checks. Do not attach it to an RPC request.
+  notificationWorker = startOpsNotificationWorker({ durableRoot: deps.boxRuntimeRoot,
+    readNative: nativeExplicitReceiverReader(directDeps, 15000) });
+
   return {
     socketPath,
     network: networkPort === null ? null : { host: "127.0.0.1", port: networkPort },
     handshake,
     close: async () => {
+      await notificationWorker?.close();
       await events.close();
       const results = await Promise.allSettled([
         closeServer(localServer),

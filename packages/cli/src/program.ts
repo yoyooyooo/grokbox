@@ -28,7 +28,7 @@ import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
 import { runRoutines } from "./commands/routines.ts";
-import { runOpsNotifications, runOpsNotificationSend } from "./commands/ops-notifications.ts";
+import { runOpsNotifications, runOpsNotificationSend, runOpsNotificationWorkerStatus } from "./commands/ops-notifications.ts";
 import { runOpsTargetsCli } from "./commands/ops-targets.ts";
 import { runRoutineProvisionCli } from "./commands/routine-provision.ts";
 import { runRuntimeMonitor } from "./commands/monitor.ts";
@@ -313,10 +313,12 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "ops targets list": async (deps, _args, opts) => await runOpsTargetsCli(deps, "list", undefined, opts),
     "ops targets show": async (deps, args, opts) => await runOpsTargetsCli(deps, "show", args[0], opts),
     "ops targets bind": async (deps, args, opts) => await runOpsTargetsCli(deps, "bind", args[0], opts),
+    "ops targets activate": async (deps, args, opts) => await runOpsTargetsCli(deps, "activate", args[0], opts),
     "ops targets disable": async (deps, args, opts) => await runOpsTargetsCli(deps, "disable", args[0], opts),
     "ops targets unbind": async (deps, args, opts) => await runOpsTargetsCli(deps, "unbind", args[0], opts),
     "ops notifications send": async (deps, args, options) => await runOpsNotificationSend(deps, args[0] ?? "", options),
     "ops notifications list": async deps => await runOpsNotifications(deps),
+    "ops notifications worker": async (deps, _args, options) => await runOpsNotificationWorkerStatus(deps, options),
     "ops notifications show": async (deps, args) => await runOpsNotifications(deps, args[0]),
     "agents routines list": async (deps, args, options) => await runRoutines(deps, "list", args[0] ?? "", undefined, options),
     "agents routines show": async (deps, args, options) => await runRoutines(deps, "show", args[0] ?? "", args[1], options),

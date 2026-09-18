@@ -4,7 +4,7 @@ import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { OpsPairingError, OPS_PAIRING_POLICY, pairingFail, pairingAlias, pairingOperation, pairingReceipt, pairingScope, validatePairingCredential,
-  validateNotificationTarget, type PairingRecord, type PairingPlan, type PairingCredential, type NotificationBinding, type NativeNotificationResult } from "@grokbox/runtime-kernel/observation";
+  validateNotificationTarget, validateNoticeAuthorization, type NoticeAuthorization, type PairingRecord, type PairingPlan, type PairingCredential, type NotificationBinding, type NativeNotificationResult } from "@grokbox/runtime-kernel/observation";
 import { routineAgentId, routineId, routineRevision } from "@grokbox/runtime-kernel/routines";
 import { acquireConfigurationLease } from "./config-lock.node.ts";
 import { assertSafeDirectory } from "./config-layout.node.ts";
@@ -35,6 +35,10 @@ export function openOpsBindings(durableRoot: string) {
       if (p.schemaVersion !== 1 || p.fingerprint !== sha256Text(canonicalJson({ operationId: p.operationId, target: p.target, scope: p.scope,
         routineId: p.routineId, routineRevision: p.routineRevision, generation: p.generation }))) return pairingFail("store_unavailable");
       if (names.has(p.target.alias) || ids.has(slot.bindingId) || slot.credentialPresent !== (slot.credential !== null)) return pairingFail("store_unavailable");
+      if (slot.automatic !== undefined) {
+        validateNoticeAuthorization(slot.automatic);
+        if (slot.state !== "prepared" || slot.automatic.bindingRevision !== slot.revision) return pairingFail("store_unavailable");
+      }
       if (slot.credential !== null) validatePairingCredential(slot.credential, p);
       if (slot.state === "prepared" && slot.credential === null || ["enrolling", "unbound"].includes(slot.state) && slot.credential !== null) return pairingFail("store_unavailable");
       names.add(p.target.alias); ids.add(slot.bindingId);
@@ -98,12 +102,15 @@ export function openOpsBindings(durableRoot: string) {
      * barrier. Credential material never crosses the private-owner boundary.
      * Local revoke wins before this read; a later revoke cannot unsend a POST. */
     sendPreparedNotice: async (expected: PairingRecord, input: { binding: NotificationBinding; body: string; envelopeDigest: string;
-      signal: AbortSignal }, request?: NotificationRequest): Promise<NativeNotificationResult> => {
+      signal: AbortSignal }, request?: NotificationRequest, authorizationId?: string): Promise<NativeNotificationResult> => {
       let enteredTransport = false;
       try {
         const slot = (await read())?.slots.find(s => s.bindingId === expected.bindingId);
         if (!slot || slot.state !== "prepared" || !slot.credential || canonicalJson(projected(slot)) !== canonicalJson(expected))
           return { state: "definitely-not-accepted", reason: "revoked" };
+        if (authorizationId && (!slot.automatic || slot.automatic.id !== authorizationId
+          || slot.automatic.bindingRevision !== slot.revision || slot.automatic.modelRevision !== input.binding.modelRevision
+          || slot.automatic.qualificationRevision !== input.binding.qualificationRevision)) return { state: "definitely-not-accepted", reason: "revoked" };
         const b = input.binding, p = slot.plan;
         if (b.bindingId !== slot.bindingId || b.revision !== slot.revision || b.databaseId !== p.scope.databaseId || b.scopeId !== p.scope.scopeId
           || b.targetAlias !== p.target.alias || b.agentId !== p.target.agentId || b.routineKey !== p.target.routineKey
@@ -143,12 +150,26 @@ export function openOpsBindings(durableRoot: string) {
       slot.credential = validatePairingCredential(credential, slot.plan); slot.credentialPresent = true;
       slot.state = "prepared"; slot.updatedAtMs = Date.now(); await publish(value); return projected(slot);
     }),
+    authorizeAutomatic: (expected: PairingRecord, authorization: NoticeAuthorization, current: () => Promise<void>) => mutation(async value => {
+      validateNoticeAuthorization(authorization);
+      const slot = value.slots.find(s => s.bindingId === expected.bindingId);
+      if (!slot || slot.state !== "prepared" || !slot.credential) return pairingFail("not_found");
+      if (slot.automatic?.operationId === authorization.operationId) {
+        if (slot.automatic.requestDigest !== authorization.requestDigest) return pairingFail("operation_conflict");
+        return projected(slot);
+      }
+      if (slot.automatic || canonicalJson(projected(slot)) !== canonicalJson(expected)
+        || authorization.bindingRevision !== slot.revision + 1) return pairingFail("operation_conflict");
+      await current();
+      slot.revision = authorization.bindingRevision; slot.automatic = authorization; slot.updatedAtMs = authorization.activatedAtMs;
+      await publish(value); return projected(slot);
+    }),
     revoke: (alias: string, revision: number, action: "disable" | "unbind", confirmed: boolean) => mutation(async value => {
       pairingAlias(alias); if (confirmed !== true) return pairingFail("confirmation_required");
       const slot = value.slots.find(s => s.plan.target.alias === alias);
       if (!slot) return pairingFail("not_found");
       if (slot.revision !== revision) return pairingFail("operation_conflict");
-      slot.state = action === "disable" ? "disabled" : "unbound"; slot.revision++; slot.updatedAtMs = Date.now();
+      slot.state = action === "disable" ? "disabled" : "unbound"; slot.revision++; slot.updatedAtMs = Date.now(); delete slot.automatic;
       if (action === "unbind") { slot.credential = null; slot.credentialPresent = false; }
       await publish(value); return pairingReceipt(projected(slot));
     }),

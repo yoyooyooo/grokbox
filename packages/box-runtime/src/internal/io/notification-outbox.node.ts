@@ -57,6 +57,42 @@ async function pending(db: MonitorSqlite, workId: string, nowMs: number) {
 export function notificationOutbox(access: Access) {
   return {
     notificationScope: () => access.read(db => scope(db, access.rootId)),
+    acceptedNotificationSeed: (workId: string) => {
+      if (!monitorUuid(workId)) return failure("invalid_work");
+      return access.read(async db => {
+        const rows = await db.all("SELECT a.* FROM notification_attempts a JOIN notification_work w ON w.id=a.work_id WHERE a.work_id=? AND w.state='completed' LIMIT 2", [workId]);
+        if (rows.length !== 1) return null;
+        const row = rows[0]!, record = decode(row);
+        if (row.state !== "native-accepted" || record.result?.state !== "native-accepted" || !timestamp(Number(row.settled_at))) return null;
+        if (canonicalJson(record.frozen.scope) !== canonicalJson(await scope(db, access.rootId))) return null;
+        return { frozen: record.frozen, acceptedAtMs: Number(row.settled_at) };
+      });
+    },
+    notificationBudgetAvailable: (target: NotificationTarget, nowMs: number) => {
+      validateNotificationTarget(target); if (!timestamp(nowMs)) return failure("invalid_window");
+      return access.read(async db => {
+        const total = await db.first("SELECT COUNT(*) AS n,MAX(reserved_at) AS latest FROM notification_attempts");
+        if (Number(total?.n) >= NOTIFICATION_DELIVERY_POLICY.maxAttempts || total?.latest !== null && Number(total?.latest) > nowMs) return false;
+        const counted = await db.first("SELECT COUNT(*) AS installation,SUM(CASE WHEN target_id=? THEN 1 ELSE 0 END) AS target FROM notification_attempts WHERE reserved_at>?", [target.agentId, nowMs - NOTIFICATION_DELIVERY_POLICY.budgetWindowMs]);
+        return Number(counted?.installation) < target.installationLimit && Number(counted?.target ?? 0) < target.targetLimit;
+      });
+    },
+    /** A bounded index lookup, not permission to send. Authorization excludes all
+     * pre-existing work; eligibility is checked again in the start transaction. */
+    nextAutomaticNotification: (afterMs: number, nowMs: number) => {
+      if (!timestamp(afterMs) || !timestamp(nowMs)) return failure("invalid_window");
+      if (nowMs < afterMs) return Promise.resolve(null);
+      return access.read(async db => {
+        const row = await db.first(`SELECT w.id FROM notification_work w JOIN incidents i ON i.id=w.incident_id
+          JOIN incident_snapshots s ON s.incident_id=w.incident_id AND s.revision=w.evidence_revision
+          WHERE w.state IN ('ready','blocked','preparing') AND w.created_at>? AND w.created_at<=? AND w.expires_at>?
+          AND i.acknowledged=0 AND (i.snooze_until IS NULL OR i.snooze_until<=?) AND s.tier='detail' AND s.expires_at>?
+          AND NOT EXISTS(SELECT 1 FROM notification_attempts a WHERE a.work_id=w.id)
+          AND NOT EXISTS(SELECT 1 FROM events e WHERE e.incident_id=w.incident_id AND e.kind='notification_export_unknown')
+          ORDER BY w.created_at,w.id LIMIT 1`, [afterMs, nowMs, nowMs, nowMs, nowMs]);
+        return row ? String(row.id) : null;
+      });
+    },
     notificationDelivery: async (workId: string) => {
       if (!monitorUuid(workId)) return failure("invalid_work");
       return access.read(async db => {

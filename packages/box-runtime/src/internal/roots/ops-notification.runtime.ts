@@ -98,6 +98,8 @@ export async function observeOpsNotification(input: { durableRoot: string; workI
   const delivery = input.workId ? await store.notificationDelivery(input.workId) : await store.notificationWork(100);
   const pairing = await openOpsBindings(input.durableRoot).status(route.state === "selected" && route.target ? route.target.alias : undefined);
   return { route, delivery, pairing, coverage: input.workId ? { kind: "exact_work" } : { kind: "most_recent_window", limit: 100, complete: false },
-    nativeTransport: "not_probed", explicitDelivery: "single-confirmed-attempt", automaticDelivery: "unavailable", binding: "not_checked", automaticRetry: false,
+    nativeTransport: "not_probed", explicitDelivery: "single-confirmed-attempt",
+    automaticDelivery: route.state === "selected" && pairing.bindings?.some(b => b.automaticAuthorization.state === "authorized")
+      ? "authorized_requires_current_checks" : "unavailable", worker: "not_checked", binding: "not_checked", automaticRetry: false,
     initialized: false, botReport: "not_observed", userRead: "not_observed" };
 }

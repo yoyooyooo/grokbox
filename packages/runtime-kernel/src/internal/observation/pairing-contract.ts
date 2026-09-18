@@ -2,6 +2,7 @@ import { canonicalJson, sha256Text } from "../../hash.ts";
 import { observationOwn as own } from "../contract/provider-observation.ts";
 import { validateNotificationTarget, type NotificationTarget, type NotificationScope } from "./notification-contract.ts";
 import { routineAgentId, routineId, routineRevision, type RoutineView, type RoutineSnapshot } from "../../routines.ts";
+import { automaticAuthorizationView, type NoticeAuthorization } from "./notification-activation.ts";
 
 /** Pairing is a capability-changing action even when it only retrieves a native
  * credential. This first phase never enables a Routine or authorizes delivery. */
@@ -72,7 +73,7 @@ export function validatePairingCredential(value: unknown, plan: PairingPlan): Pa
   return { url: u.toString(), key };
 }
 export type PairingRecord = { plan: PairingPlan; bindingId: string; revision: number; state: "enrolling" | "prepared" | "disabled" | "unbound";
-  updatedAtMs: number; credentialPresent: boolean };
+  updatedAtMs: number; credentialPresent: boolean; automatic?: NoticeAuthorization };
 export function pairingReceipt(record: PairingRecord) {
   return { schemaVersion: 1, bindingId: record.bindingId, revision: record.revision, alias: record.plan.target.alias,
     agentId: record.plan.target.agentId, routineKey: record.plan.target.routineKey, routineId: record.plan.routineId,
@@ -80,5 +81,6 @@ export function pairingReceipt(record: PairingRecord) {
     state: record.state === "enrolling" ? "outcome_unknown" as const : record.state,
     credential: record.credentialPresent ? "stored_private" as const : "not_available" as const,
     qualification: "not_verified", deliveryAuthorized: false, automaticEnable: false, webhookInvoked: false,
+    automaticAuthorization: automaticAuthorizationView(record.automatic),
     modelChanged: false, remoteCredentialRevoked: false, automaticRetry: false, updatedAtMs: record.updatedAtMs };
 }

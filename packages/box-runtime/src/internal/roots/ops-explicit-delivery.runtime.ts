@@ -18,10 +18,8 @@ export type ExplicitNoticeInput = { durableRoot: string; workId: string; expecte
  * key, or substitute a synthetic incident/canary. The normal outbox owns the
  * immutable work, durable attempt, budget and unknown/no-replay semantics.
  * Actual receiver execution/report stays unobserved even after HTTP acceptance. */
-export async function runExplicitOpsNotification(input: ExplicitNoticeInput, testPorts: { request?: NotificationRequest } = {}) {
-  if (input.confirmed !== true || !Number.isSafeInteger(input.expectedBindingRevision) || input.expectedBindingRevision < 1
-    || !/^[a-f0-9]{64}$/.test(input.expectedModelRevision))
-    throw new NotificationError("explicit_confirmation_required");
+export function createPreparedNoticeDriver(input: Omit<ExplicitNoticeInput, "workId" | "confirmed"> & { authorizationId?: string },
+  testPorts: { request?: NotificationRequest } = {}) {
   const owner = openOpsBindings(input.durableRoot);
   let latest: PairingRecord | null = null;
   let blocker: string | null = null;
@@ -32,6 +30,9 @@ export async function runExplicitOpsNotification(input: ExplicitNoticeInput, tes
       const record = await owner.record(target.alias);
       if (!record || record.state !== "prepared" || !record.credentialPresent || record.revision !== input.expectedBindingRevision)
         return stop("pairing_not_prepared_or_revision_changed");
+      if (input.authorizationId && (!record.automatic || record.automatic.id !== input.authorizationId
+        || record.automatic.bindingRevision !== record.revision || Date.now() < record.automatic.activatedAtMs))
+        return stop("automatic_authorization_changed");
       if (canonicalJson(record.plan.target) !== canonicalJson(target) || canonicalJson(record.plan.scope) !== canonicalJson(scope))
         return stop("pairing_scope_or_policy_changed");
       const managedStore = openRoutineProvisionStore(input.durableRoot);
@@ -65,6 +66,8 @@ export async function runExplicitOpsNotification(input: ExplicitNoticeInput, tes
         noticePolicy: RECEIVER_NOTICE_POLICY_REVISION, generation: native.snapshot.generation,
         accountScope: ownership.evidence.scopeId, serverId: ownership.evidence.serverId,
         profile: model.loadedProfileRevision, source: model.loadedSourceRevision, preload: model.loadedPreloadRevision, mode: model.loadedMode }));
+      if (input.authorizationId && (record.automatic!.modelRevision !== model.modelRevision
+        || record.automatic!.qualificationRevision !== qualificationRevision)) return stop("automatic_qualification_changed");
       // Keep original witness age. Local reads must not renew a stale native
       // observation; validation in the delivery program enforces the deadline.
       const observedAtMs = Math.min(model.observedAtMs, ownership.evidence.observedAtMs);
@@ -79,11 +82,18 @@ export async function runExplicitOpsNotification(input: ExplicitNoticeInput, tes
     send: async args => {
       if (!latest || latest.bindingId !== args.binding.bindingId || latest.revision !== args.binding.revision)
         return { state: "definitely-not-accepted", reason: "revoked" };
-      return owner.sendPreparedNotice(latest, args, testPorts.request);
+      return owner.sendPreparedNotice(latest, args, testPorts.request, input.authorizationId);
     },
   };
+  return { driver, blocker: () => blocker };
+}
+
+export async function runExplicitOpsNotification(input: ExplicitNoticeInput, testPorts: { request?: NotificationRequest } = {}) {
+  if (input.confirmed !== true || !Number.isSafeInteger(input.expectedBindingRevision) || input.expectedBindingRevision < 1
+    || !/^[a-f0-9]{64}$/.test(input.expectedModelRevision)) throw new NotificationError("explicit_confirmation_required");
+  const { driver, blocker } = createPreparedNoticeDriver(input, testPorts);
   const result = await runOpsNotificationDelivery({ durableRoot: input.durableRoot, workId: input.workId, driver, signal: input.signal });
-  return { ...result, ...(blocker ? { preflightBlocker: blocker } : {}), deliveryMode: "explicit-single-attempt",
+  return { ...result, ...(blocker() ? { preflightBlocker: blocker() } : {}), deliveryMode: "explicit-single-attempt",
     automaticDeliveryEnabled: false, routineChanged: false, credentialsRequested: false,
     receiverQualification: "fresh_preflight_only", actualReceiverTurn: "not_observed", toolsObserved: false,
     httpContractRevision: NATIVE_NOTIFICATION_HTTP_REVISION, botReport: "not_observed", userRead: "not_observed" };

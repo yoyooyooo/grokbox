@@ -5,6 +5,8 @@ import type { CliDeps } from "../deps.ts";
 import { monitorUuid } from "@grokbox/runtime-kernel/monitor";
 import { nativeExplicitReceiverReader } from "../gateway-receiver.ts";
 import { ioFromOpts } from "../opts.ts";
+import { LocalDaemonClient } from "../daemon/client.ts";
+import { projectNoticeWorker } from "@grokbox/runtime-kernel/observation";
 
 /** Local read-only inspection. No driver, binding, credential, send, reservation,
  * profile initialization, database initialization or automatic retry. */
@@ -16,6 +18,21 @@ export async function runOpsNotifications(deps: CliDeps, workId?: string) {
     if (error instanceof BoxRuntimeError) throw new CliError(error.code, error.message);
     throw new CliError("capability_unavailable", "Local notification evidence is unavailable; no store was created.");
   }
+}
+
+/** Inspect an already running local daemon; never install/start one to answer. */
+export async function runOpsNotificationWorkerStatus(deps: CliDeps, raw: { timeoutMs?: string }) {
+  assertBoxLocal(deps);
+  if (deps.daemonServerUrl || deps.gatewayServerUrl) throw new CliError("invalid_usage", "Notification worker status requires this Box's daemon socket.");
+  const io = ioFromOpts(raw), client = new LocalDaemonClient(deps.daemonSocket, io.timeoutMs, deps.signal);
+  const handshake = await client.handshake();
+  if (!handshake.capabilities.includes("grok.notifications.worker.read")) {
+    writeSuccess(deps.stdout, { state: "not_instrumented", serviceStarted: false }); return;
+  }
+  try {
+    const response = await client.call("getOpsNotificationWorker", {});
+    writeSuccess(deps.stdout, projectNoticeWorker(response.result));
+  } catch { throw new CliError("capability_unavailable", "The local notification worker has no valid status; no service was started."); }
 }
 
 /** One selected, existing work item. No arbitrary payload/URL/key, automatic

@@ -1,0 +1,258 @@
+import { expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { activateOpsNotifications } from "../src/internal/roots/ops-activation.runtime.ts";
+import { automaticNoticeCycle, runAutomaticOpsNotification, startOpsNotificationWorker } from "../src/internal/roots/ops-automatic-notification.runtime.ts";
+import { projectNoticeWorker, validateNoticeAuthorization, type NoticeAuthorization } from "@grokbox/runtime-kernel/observation";
+import { automaticFixture, MODEL, tick } from "./fixtures/automatic-notice.ts";
+
+async function until<T>(read: () => T | Promise<T>, ready: (v: T) => boolean) {
+  const end = performance.now() + 5000;
+  do { const value = await read(); if (ready(value)) return value; await tick(5); } while (performance.now() < end);
+  throw Error("owned_notification_timeout");
+}
+const active = async (f: Awaited<ReturnType<typeof automaticFixture>>) => (await f.owner.record("default"))!.automatic!;
+
+test("prepared is not authorized; idle worker does not read native state, reserve or initialize anything", async () => {
+  const f = await automaticFixture();
+  try {
+    const work = await f.emit(), before = await readFile(f.store.path), capsule = await readFile(join(f.root, "state/ops-pairing/bindings.json"));
+    expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ state: "blocked", reason: "automatic_not_authorized" });
+    expect(f.reads()).toBe(0); expect(f.requests).toHaveLength(0);
+    expect(await f.store.notificationDelivery(work)).toMatchObject({ attempt: null });
+    expect(await readFile(f.store.path)).toEqual(before); expect(await readFile(join(f.root, "state/ops-pairing/bindings.json"))).toEqual(capsule);
+  } finally { await f.close(); }
+});
+
+test("HTTP acceptance alone cannot provide the user's reminder attestation or ongoing authorization", async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed(); expect(seed.result.state).toBe("native-accepted");
+    const before = await readFile(join(f.root, "state/ops-pairing/bindings.json")), reads = f.reads();
+    for (const patch of [{ confirmed: false }, { reminderObserved: false }]) {
+      await expect(activateOpsNotifications({ ...f.input, command: { ...f.command(seed.workId), ...patch } })).rejects.toThrow("automatic_confirmation_required");
+    }
+    expect(f.reads()).toBe(reads); expect(f.requests).toHaveLength(1);
+    expect(await readFile(join(f.root, "state/ops-pairing/bindings.json"))).toEqual(before);
+    expect(await active(f)).toBeUndefined();
+  } finally { await f.close(); }
+});
+
+test("activation is atomic, redacted and idempotent without renewing the future-work fence", async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed(), result = await f.activate(seed.workId), authorization = await active(f);
+    expect(result).toMatchObject({ state: "authorized", duplicate: false, nativeTurnObserved: false, notificationSent: false, serviceStarted: false,
+      userRead: "operator_attestation_only", automaticAuthorization: { receiverAttestation: "operator-confirmed-reminder", includesExistingWork: false } });
+    expect(authorization.bindingRevision).toBe(f.pairing.revision + 1); expect(f.requests).toHaveLength(1);
+    const bytes = await readFile(join(f.root, "state/ops-pairing/bindings.json")), reads = f.reads();
+    expect(await f.activate(seed.workId)).toMatchObject({ duplicate: true, automaticAuthorization: result.automaticAuthorization });
+    expect(await readFile(join(f.root, "state/ops-pairing/bindings.json"))).toEqual(bytes); expect(f.reads()).toBe(reads);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_TEST_KEY"); expect(JSON.stringify(await f.owner.status())).not.toContain("PRIVATE_TEST_KEY");
+    await expect(activateOpsNotifications({ ...f.input, command: { ...f.command(seed.workId), operationId: "different" } })).rejects.toThrow("authorization_conflict");
+  } finally { await f.close(); }
+});
+
+for (const failure of ["missing", "unknown", "different-model"] as const) test(`${failure} test record cannot authorize automatic sends`, async () => {
+  const f = await automaticFixture();
+  try {
+    if (failure === "unknown") f.reply(res => { res.writeHead(500); res.end("PRIVATE_ERROR"); });
+    const seed = await f.seed();
+    const command = { ...f.command(failure === "missing" ? randomUUID() : seed.workId), ...(failure === "different-model" ? { expectedModelRevision: "a".repeat(64) } : {}) };
+    await expect(activateOpsNotifications({ ...f.input, command })).rejects.toBeDefined(); expect(await active(f)).toBeUndefined();
+    expect(f.requests).toHaveLength(1);
+  } finally { await f.close(); }
+});
+
+test("concurrent activation of one operation publishes one stable authorization and performs no extra POST", async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed();
+    const results = await Promise.allSettled([f.activate(seed.workId), f.activate(seed.workId)]);
+    const saved = await active(f);
+    expect(results.some(result => result.status === "fulfilled")).toBe(true);
+    for (const result of results) {
+      if (result.status === "fulfilled") expect(result.value.automaticAuthorization.authorizationId).toBe(saved.id);
+      else expect(result.reason).toMatchObject({ reason: "activation_busy" });
+    }
+    expect(saved.bindingRevision).toBe(f.pairing.revision + 1);
+    expect(f.requests).toHaveLength(1);
+    const before = await readFile(join(f.root, "state/ops-pairing/bindings.json"));
+    expect(await f.activate(seed.workId)).toMatchObject({ duplicate: true });
+    expect(await readFile(join(f.root, "state/ops-pairing/bindings.json"))).toEqual(before);
+  } finally { await f.close(); }
+});
+
+test("revocation during activation preflight cannot be overwritten by a late permission", async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed();
+    const readNative: typeof f.readNative = async () => {
+      const snapshot = await f.readNative(), prior = (await f.owner.record("default"))!;
+      await f.owner.revoke("default", prior.revision, "unbind", true);
+      return snapshot;
+    };
+    await expect(activateOpsNotifications({ ...f.input, readNative, command: f.command(seed.workId) })).rejects.toBeDefined();
+    expect((await f.owner.record("default"))!.state).toBe("unbound"); expect(await active(f)).toBeUndefined();
+    expect(f.requests).toHaveLength(1);
+  } finally { await f.close(); }
+});
+
+test("authorization excludes old backlog; future work uses the same durable single-attempt HTTP path", async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed(), backlog = await f.emit(); await f.activate(seed.workId);
+    const authorization = await active(f);
+    expect(await runAutomaticOpsNotification({ ...f.input, workId: backlog, authorization }, { request: f.request })).toMatchObject({ state: "blocked", reason: "work_precedes_authorization" });
+    const next = await f.emit();
+    expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ state: "processed", workId: next, outcome: "native-accepted" });
+    const reads = f.reads(); expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ state: "idle", reason: "no_fresh_work" });
+    expect(f.reads()).toBe(reads); expect(f.requests).toHaveLength(2); expect(JSON.parse(f.requests[1]!).workId).toBe(next);
+    expect(await f.store.notificationDelivery(backlog)).toMatchObject({ attempt: null });
+    expect(await f.store.notificationDelivery(next)).toMatchObject({ attempt: { state: "native-accepted" }, userRead: "not_observed" });
+    expect(f.requests[1]).not.toContain("PRIVATE");
+  } finally { await f.close(); }
+});
+
+test("the running worker picks up a future work and sends it without another caller command", async () => {
+  const f = await automaticFixture(); let worker: ReturnType<typeof startOpsNotificationWorker> | undefined;
+  try {
+    const seed = await f.seed(); await f.activate(seed.workId);
+    worker = startOpsNotificationWorker(f.input, { request: f.request, idleMs: 5, blockedMs: 5 });
+    await until(worker.status, s => s.cycles > 0); const next = await f.emit();
+    await until(() => f.store.notificationDelivery(next), s => "attempt" in s && s.attempt?.state === "native-accepted");
+    expect(f.requests).toHaveLength(2); expect(JSON.parse(f.requests[1]!).workId).toBe(next);
+    await worker.close(); worker = undefined; await f.emit(); await tick(20); expect(f.requests).toHaveLength(2);
+  } finally { await worker?.close(); await f.close(); }
+});
+
+test("shutdown aborts and settles a real in-flight HTTP request before the worker reports stopped", async () => {
+  const f = await automaticFixture(); let worker: ReturnType<typeof startOpsNotificationWorker> | undefined;
+  try {
+    const seed = await f.seed(); await f.activate(seed.workId); const work = await f.emit(); f.reply(() => {});
+    worker = startOpsNotificationWorker(f.input, { request: f.request, idleMs: 5, blockedMs: 5 });
+    await until(() => f.requests.length, n => n === 2); await worker.close();
+    expect(worker.status().state).toBe("stopped"); expect(await f.store.notificationDelivery(work)).toMatchObject({ state: "unknown", attempt: { state: "unknown" } });
+    await tick(20); expect(f.requests).toHaveLength(2);
+  } finally { await worker?.close(); await f.close(); }
+});
+
+test("concurrent workers may inspect but only one can spend and POST the same work", async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed(); await f.activate(seed.workId); const next = await f.emit();
+    await Promise.all([automaticNoticeCycle(f.input, { request: f.request }), automaticNoticeCycle(f.input, { request: f.request })]);
+    expect(f.requests.filter(body => JSON.parse(body).workId === next)).toHaveLength(1);
+    expect(await f.store.notificationDelivery(next)).toMatchObject({ attempt: { state: "native-accepted" } });
+  } finally { await f.close(); }
+});
+
+test("unknown automatic HTTP result is preserved across worker reopening without another POST", async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed(); await f.activate(seed.workId); const next = await f.emit();
+    f.reply(res => { res.writeHead(500); res.end("PRIVATE_REPLY"); });
+    expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ state: "processed", outcome: "unknown" });
+    const worker = startOpsNotificationWorker(f.input, { request: f.request, idleMs: 5, blockedMs: 5 });
+    try { await until(worker.status, s => s.cycles >= 3); } finally { await worker.close(); }
+    expect(f.requests.filter(body => JSON.parse(body).workId === next)).toHaveLength(1);
+    expect(await f.store.notificationDelivery(next)).toMatchObject({ state: "unknown", attempt: { state: "unknown" } });
+    expect(worker.status().state).toBe("stopped");
+  } finally { await f.close(); }
+});
+
+for (const phase of [1, 2] as const) test(`revoke during preflight ${phase} fences the pending send and removes the authorization`, async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed(); await f.activate(seed.workId); const workId = await f.emit(); let calls = 0;
+    const readNative: typeof f.readNative = async () => {
+      const result = await f.readNative();
+      if (++calls === phase) { const record = (await f.owner.record("default"))!; await f.owner.revoke("default", record.revision, "disable", true); }
+      return result;
+    };
+    await automaticNoticeCycle({ ...f.input, readNative }, { request: f.request });
+    expect(f.requests).toHaveLength(1); expect(await active(f)).toBeUndefined();
+    const state = await f.store.notificationDelivery(workId);
+    expect(state).toMatchObject(phase === 1 ? { attempt: null } : { attempt: { state: "definitely-not-accepted" } });
+  } finally { await f.close(); }
+});
+
+for (const change of ["model", "generation", "source", "ownership"] as const) test(`${change} drift blocks future work without silently re-authorizing`, async () => {
+  const f = await automaticFixture();
+  try {
+    const seed = await f.seed(); await f.activate(seed.workId); const workId = await f.emit(), authorization = await active(f);
+    f.mutateNative(v => {
+      if (change === "model" && v.model) v.model.modelRevision = "a".repeat(64);
+      if (change === "source" && v.model) v.model.loadedSourceRevision = "a".repeat(64);
+      if (change === "generation") { v.ownershipGeneration = "a".repeat(64); v.snapshot.generation = "a".repeat(64); }
+      if (change === "ownership") v.ownership = null;
+    });
+    expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ state: "blocked" });
+    expect(f.requests).toHaveLength(1); expect(await f.store.notificationDelivery(workId)).toMatchObject({ attempt: null }); expect(await active(f)).toEqual(authorization);
+  } finally { await f.close(); }
+});
+
+test("off and exhausted wake budgets are checked before native RPCs, not after spending a model wake", async () => {
+  const f = await automaticFixture(1);
+  try {
+    const seed = await f.seed(); await f.activate(seed.workId); await f.emit(); const reads = f.reads();
+    expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ state: "blocked", reason: "wake_budget" });
+    expect(f.reads()).toBe(reads);
+    await writeFile(f.configPath, JSON.stringify({ ...f.document, ops: { ...f.document.ops, enabled: false } }), { mode: 0o600 });
+    expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ reason: "notifications_off" });
+    expect(f.reads()).toBe(reads); expect(f.requests).toHaveLength(1);
+  } finally { await f.close(); }
+});
+
+test("structured shutdown waits for a cycle to settle and never overlaps or leaves a late writer", async () => {
+  let enter!: () => void, finish!: () => void;
+  const started = new Promise<void>(resolve => enter = resolve), release = new Promise<void>(resolve => finish = resolve);
+  let calls = 0, finished = false, stopped = false;
+  const worker = startOpsNotificationWorker({ durableRoot: "/unreached-owned-test", readNative: async () => { throw Error("not_called"); } }, {
+    idleMs: 1, blockedMs: 1, cycle: async signal => { calls++; enter(); await release; expect(signal.aborted).toBe(true); finished = true;
+      return { state: "blocked", reason: "stopping" }; },
+  });
+  await started; const close = worker.close().then(() => { stopped = true; });
+  await tick(20); expect(stopped).toBe(false); expect(finished).toBe(false); finish(); await close;
+  expect(calls).toBe(1); expect(finished).toBe(true); expect(worker.status().state).toBe("stopped"); await tick(10); expect(calls).toBe(1);
+});
+
+test("blocked cycles back off without overlapping and the first idle cycle resets the delay", async () => {
+  let count = 0, idleStarted!: () => void, finishIdle!: () => void;
+  const reachedIdle = new Promise<void>(resolve => idleStarted = resolve), idleBarrier = new Promise<void>(resolve => finishIdle = resolve);
+  const worker = startOpsNotificationWorker({ durableRoot: "/unreached-owned-test", readNative: async () => { throw Error("not_called"); } }, {
+    idleMs: 100, blockedMs: 5, cycle: async () => {
+      if (++count <= 3) return { state: "blocked", reason: "automatic_not_authorized" };
+      idleStarted(); await idleBarrier; return { state: "idle", reason: "no_fresh_work" };
+    },
+  });
+  try {
+    await reachedIdle;
+    expect(worker.status()).toMatchObject({ cycles: 3, nextDelayMs: 20 });
+    finishIdle(); await until(worker.status, value => value.cycles === 4);
+    expect(worker.status()).toMatchObject({ state: "waiting", nextDelayMs: 100 });
+  } finally { finishIdle(); await worker.close(); }
+  expect(count).toBe(4); expect(worker.status().state).toBe("stopped");
+});
+
+test("safe worker projection drops unknown fields, refuses fake delivery and never exports errors", async () => {
+  const worker = startOpsNotificationWorker({ durableRoot: "/unreached-owned-test", readNative: async () => { throw Error("not_called"); } }, {
+    idleMs: 5, blockedMs: 5, cycle: async () => ({ state: "unavailable", reason: "local_or_native_source_unavailable" }),
+  });
+  try {
+    await until(worker.status, s => s.cycles > 0); const state = worker.status();
+    expect(projectNoticeWorker({ ...state, credential: "PRIVATE" })).toEqual(state);
+    expect(() => projectNoticeWorker({ ...state, userRead: "confirmed" })).toThrow();
+    expect(() => projectNoticeWorker({ ...state, lastCycle: { state: "unavailable", reason: "PRIVATE_EXCEPTION" } })).toThrow();
+  } finally { await worker.close(); }
+});
+
+test("authorization cannot contain arbitrary data or turn an operator statement into native proof", () => {
+  const sample: NoticeAuthorization = { version: 1, id: randomUUID(), operationId: "test", requestDigest: "a".repeat(64), bindingRevision: 2,
+    activatedAtMs: Date.now(), modelRevision: MODEL, qualificationRevision: "b".repeat(64), seedWorkId: randomUUID(), seedAttemptId: randomUUID(),
+    seedEnvelopeDigest: "c".repeat(64), seedAcceptedAtMs: Date.now() - 10, receiverAttestation: "operator-confirmed-reminder", nativeTurnObserved: false, includesExistingWork: false };
+  expect(validateNoticeAuthorization(sample)).toEqual(sample);
+  for (const patch of [{ nativeTurnObserved: true }, { includesExistingWork: true }, { secret: "PRIVATE" }, { seedAcceptedAtMs: Date.now() - 2 * 86400000 }])
+    expect(() => validateNoticeAuthorization({ ...sample, ...patch })).toThrow();
+});
