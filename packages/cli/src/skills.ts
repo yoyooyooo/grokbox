@@ -24,6 +24,7 @@ export const GROKBOX_SKILL_TOPICS: readonly SkillTopic[] = [
   { name: "label", file: "label.md", level: "task", summary: "Display-only Bot title trailers." },
   { name: "desktop", file: "desktop.md", level: "task", summary: "Desktop seats and login-fork protection." },
   { name: "templates", file: "templates.md", level: "task", summary: "Template packaging, sharing, and import." },
+  { name: "routines", file: "routines.md", level: "task", summary: "Inspect and explicitly control existing native Routines without secret export or invocation." },
   { name: "config", file: "config.md", level: "advanced", summary: "Unified configuration, schema-safe edits, migration and commit evidence." },
   { name: "ownership", file: "ownership.md", level: "advanced", summary: "Resolve Server ownership before custom-model use." },
   { name: "troubleshoot", file: "troubleshoot.md", level: "advanced", summary: "Route failures to the smallest safe recovery." },

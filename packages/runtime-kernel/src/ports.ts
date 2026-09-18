@@ -1,5 +1,6 @@
 import { Context, Effect, Stream } from "effect";
 import type { EvidenceView } from "./observation.ts";
+import type { RoutineSnapshot, RoutineError } from "./routines.ts";
 import type { Scope } from "effect/Scope";
 import type { ModelsFile, DesiredFile } from "./selection.ts";
 import type { ConfigChange, ConfigCommitReceipt } from "./internal/commands/config.ts";
@@ -30,6 +31,11 @@ export class ConfigurationWrite extends Context.Service<ConfigurationWrite, {
   readonly saveModels: (file: ModelsFile) => Effect.Effect<{ configRevision: string }, unknown>;
   readonly saveDesired: (file: DesiredFile) => Effect.Effect<{ configRevision: string }, unknown>;
 }>()("grokbox/ConfigurationWrite") {}
+
+export class AgentRoutines extends Context.Service<AgentRoutines, {
+  readonly list: (agentId: string) => Effect.Effect<RoutineSnapshot, RoutineError>;
+  readonly change: (agentId: string, routineId: string, action: "enable" | "disable" | "delete") => Effect.Effect<RoutineSnapshot, RoutineError>;
+}>()("grokbox/AgentRoutines") {}
 
 export class EvidenceRead extends Context.Service<EvidenceRead, {
   readonly read: (query: { incidentId: string; revision?: number; view: EvidenceView }) => Effect.Effect<unknown, unknown>;

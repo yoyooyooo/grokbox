@@ -6,6 +6,8 @@ import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
+import { validateRoutineCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
+import { routineCliError } from "../gateway-automation.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
 import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig, DaemonProcessConfig } from "./config.ts";
 import { DesktopManager, type DesktopIo } from "./desktop.ts";
@@ -242,6 +244,13 @@ export async function startDaemonHost(
         throw new CliError("invalid_usage", "Ownership requires an Agent UUID array.");
       }
       const value = await gateway.getAgentOwnership(params.agentIds as string[], asNumber(params.timeoutMs, 15_000));
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "agentRoutines") {
+      assertParamKeys(params, ["command", "timeoutMs"], "agentRoutines");
+      let command: RoutineCommand;
+      try { command = validateRoutineCommand(params.command as RoutineCommand); } catch (e) { throw routineCliError(e); }
+      const value = await gateway.agentRoutines(command, asNumber(params.timeoutMs, 10_000));
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
     }
     if (method === "getTrays") {

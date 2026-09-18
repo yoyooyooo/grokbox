@@ -12,6 +12,7 @@
     "./monitor": "./src/monitor.ts",
     "./observation": "./src/observation.ts",
     "./alerts": "./src/alerts.ts",
+    "./routines": "./src/routines.ts",
     "./testing": "./src/testing.ts",
     "./inference": "./src/inference.ts",
     "./commands": "./src/commands.ts"

@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Planned / Spec-only。** [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines)。统一Routine CRUD/apply/provision，让独立CLI、agents create/update与模板配对复用。Webhook是事件入口，不是周期性LLM轮询。
+**Partial implementation：list/show/enable/disable/delete已接通共享程序及CLI/daemon；apply/provision/invoke/outcome仍待实现。** [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines)。统一Routine CRUD/apply/provision，让独立CLI、agents create/update与模板配对复用。Webhook是事件入口，不是周期性LLM轮询。
 
 ## Depends-on / Modules
 
@@ -18,9 +18,17 @@
 
 invoke仅在显式目标/费用/请求预算授权下真实POST原生已核验endpoint；不能任意URL或sendPrompt代替。HTTP接受、run开始、报告、App呈现分开。超时先对账，禁用不等于在途任务已取消。清理只针对本次拥有且父/子任务结束的资源。
 
+## 已实现切片
+
+`kernel/routines.ts`提供有限定义投影和显式命令校验，`AgentRoutines` port与`internal/commands/agent-routines.ts`拥有前置检查、单次变更及读回；box-runtime只装配该程序，CLI/Gateway/daemon复用，不写原生数据库。现有五个命令要求精确Agent UUID，变更还需精确Routine ID、expected revision与确认。不能将本地revision称为原生CAS，也不声称取消在途运行。
+
+新增`routines`按需Skill仅展示已实现命令，不注册未交付的创建或投递接口。其余本票范围仍按下文实施，不能以这份CLI切片关闭原生通知链。
+
 ## Executable acceptance
 
-待新增`packages/runtime-kernel/test/agent-routines.test.ts`、`test/agent-routines-cli.test.ts`、`test/agent-routines-packed.test.ts`；默认Fake native/临时HTTP与真实CLI，不写生产对象。覆盖partial create/update、nonce冲突、错target/revision、disabled、无CAS、timeout unknown、clone endpoint隔离、禁用后不再触发、cleanup_required。
+已实现`packages/runtime-kernel/test/agent-routines.test.ts`和`test/agent-routines-cli.test.ts`；实际打包Node子进程也在后者内验证，不新增空的packed测试文件。组合`bun scripts/verify-runtime-rebuild.mjs agent-routines`80 pass/0 fail；全仓2405 pass/19 skip/0 fail。证明exact ID、确认/revision、投影、local/daemon共享程序和unknown不重试。固定证据见[回执](../reports/2026-09-18-native-routine-management.md)。
+
+仍待实现并补测partial create/update、持久provision nonce冲突、clone endpoint隔离、真实禁用后的后续fire和cleanup_required；当前测试不声称覆盖这些场景。
 
 原生E2E单独授权一次性Bot：create disabled→读回→enable→POST→run/报告→update→新POST→disable→清理，两种组合/独立apply入口都测，模型与其他对象不变。source/fake不证明原生实际行为。
 

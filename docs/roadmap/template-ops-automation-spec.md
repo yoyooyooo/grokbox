@@ -398,6 +398,8 @@ grokbox ops claim <delivery-id>
 <a id="agent-routines"></a>
 ### 10.1 通用原生Routine管理
 
+**源码切片（2026-09-18）：** 已注册`agents routines list/show/enable/disable/delete`，kernel `AgentRoutines`程序经box-runtime facade由直连/daemon共同调用；精确ID、预期revision、确认、单次变更与读回共享，不自动重试未知结果。新增按需`routines` Skill仅包含已实现动作。创建/apply、`--routines-from`、配对、invoke/outcome和真实通知仍是本节待实现目标，不能因前五个命令通过而标整票Done。固定源函数隔离探针归T43，真实HTTP与Bot旅程归LIVE。
+
 T43冻结真实原生接口映射，T53实现`agents routines list/show/apply/enable/disable/delete/invoke/outcome`，`agents create/update --routines-from`、独立apply与模板配对复用一条程序。默认disabled，Webhook不附带周期schedule；未知原生trigger只读、不猜格式。省略已有Routine不表示删除。
 
 Agent成功而Routine失败保留exact Agent ID、operation/阶段与partial/unknown，不删掉重建；原生无CAS/幂等时前后读回只证明所见，不能伪称挡住App writer。参数/能力预检尽量发生在创建前。invoke为单独授权的真实native Webhook POST，不退化成sendPrompt；超时先对账，不重复create/invoke。

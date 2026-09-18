@@ -5,6 +5,7 @@ export const DAEMON_METHODS = [
   "health",
   "listAgents",
   "getAgentOwnership",
+  "agentRoutines",
   "searchAgents",
   "getAgentTranscriptTail",
   "getAgentThread",
@@ -63,6 +64,8 @@ export const DAEMON_CAPABILITIES = [
   "grok.transcript.write",
   "grok.memory.read",
   "grok.roster.write",
+  "grok.routines.read",
+  "grok.routines.write",
   "grok.events.read",
   "grok.alerts.read",
 ] as const;

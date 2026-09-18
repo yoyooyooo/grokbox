@@ -355,7 +355,7 @@ test/packaging.test.ts                # 既有 Node20 发布验证位置
 
 `contract.ts` 只转导 `internal/contract` 的纯声明/校验（含共享 identity/authority 判断）；不得从 Effect 模块 `export *`。仅 `hash.ts` 允许 `node:crypto` 的确定性 SHA-256；selection、Host 与 kernel 使用同一 canonical JSON/hash，不把通用 digest 藏在 model selector。除此之外 kernel 不导入 `node:*`、`bun:*`、环境或 wall-clock IO；Effect Clock/ports 提供时间和外部能力。未来 browser 只导入 `contract`，不导入 Node hash/selection；该约束属于 T29，不要求 T20 创建 browser。
 
-`box-runtime` package exports 只有 `./runtime`；移除原 `.` mega barrel。preload 由 pack 脚本直接构建，Host 私有模块不是其它 package 的 API。kernel 只开放上述八个显式 subpath；不导出根 barrel，不开放 `internal/*`。
+`box-runtime` package exports 只有 `./runtime`；移除原 `.` mega barrel。preload 由 pack 脚本直接构建，Host 私有模块不是其它 package 的 API。kernel 只开放显式 subpath，不导出根 barrel、不开放 `internal/*`；后续配置/观测专题的新增边界以package exports与边界测试同步维护。T43/T53新增`./routines`，只承载原生Routine的纯输入/安全输出/校验，执行仍经既有`ports`与`commands`，不会把Gateway、原生存储或新的scheduler放进kernel。
 
 <a id="imports"></a>
 ### S2.3 谁可以 import 谁

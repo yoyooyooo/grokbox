@@ -51,11 +51,11 @@ export interface DaemonClient {
   ): Promise<DaemonCallResult>;
 }
 
-function lostResponse(method: DaemonMethod): CliError {
+function lostResponse(method: DaemonMethod, params?: Record<string, unknown>): CliError {
   if (method === "sendPrompt") {
     return new CliError("send_delivery_unknown", "Send may have reached the daemon before the response was lost.");
   }
-  if (MANAGEMENT_WRITES.has(method)) {
+  if (MANAGEMENT_WRITES.has(method) || method === "agentRoutines" && (!isRecord(params?.command) || !["list", "show"].includes(String(params.command.action)))) {
     return new CliError("operation_outcome_unknown", "The write may have reached the daemon before the response was lost.");
   }
   return new CliError("daemon_unreachable", "Daemon is unreachable.", { retryable: true });
@@ -201,7 +201,7 @@ export class LocalDaemonClient extends VersionedDaemonClient {
               resolve(parseResponse(text, res.statusCode ?? 0));
             } catch (error) {
               if (error instanceof CliError && error.code !== "daemon_unreachable") reject(error);
-              else reject(lostResponse(method));
+              else reject(lostResponse(method, params));
             }
           });
         },
@@ -211,7 +211,7 @@ export class LocalDaemonClient extends VersionedDaemonClient {
       req.setTimeout(this.timeoutMs, () => req.destroy(new Error("timeout")));
       req.on("error", () => {
         cleanup();
-        reject(lostResponse(method));
+        reject(lostResponse(method, params));
       });
       if (!options.ignoreSignal && this.signal) {
         if (this.signal.aborted) {
@@ -259,13 +259,13 @@ export class RemoteDaemonClient extends VersionedDaemonClient {
           : AbortSignal.timeout(this.timeoutMs),
       });
     } catch {
-      throw lostResponse(method);
+      throw lostResponse(method, params);
     }
     try {
       return parseResponse(await responseTextBounded(response), response.status);
     } catch (error) {
       if (!(error instanceof CliError) || error.code === "daemon_unreachable") {
-        throw lostResponse(method);
+        throw lostResponse(method, params);
       }
       throw error;
     }

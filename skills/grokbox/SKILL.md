@@ -45,6 +45,7 @@ grokbox skills get grokbox --topic models
 | Show/hide the model in a Bot title | [label](label.md) |
 | Inspect desktop seats or protect a login fork | [desktop](desktop.md) |
 | Pack, stage, publish, or import a template | [templates](templates.md) |
+| Inspect, enable, pause or remove an existing native Routine | [routines](routines.md) |
 
 **Escalate only when needed:**
 

@@ -9,6 +9,8 @@ import {
 import { CliError, httpStatusToError } from "./errors.ts";
 import type { GatewayMethod } from "./registry.ts";
 import { isRecord } from "./util.ts";
+import { validateRoutineCommand, projectRoutineResult, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
+import { executeNativeRoutine, boundedGatewayBody, routineCliError } from "./gateway-automation.ts";
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]", "*"]);
 
@@ -409,6 +411,7 @@ export class GatewayClient {
       write?: boolean;
       slim?: boolean;
       unknownOutcomeCode?: UnknownOutcomeCode;
+      maxResponseBytes?: number;
     },
   ): Promise<{ result: unknown; discovery: Discovery }> {
     const result = await this.request({
@@ -421,8 +424,27 @@ export class GatewayClient {
       slim: options.slim === true,
       write: options.write === true,
       unknownOutcomeCode: options.unknownOutcomeCode,
+      maxResponseBytes: options.maxResponseBytes,
     });
     return { result: result.body, discovery: this.lastDiscovery! };
+  }
+
+  async agentRoutines(input: RoutineCommand, timeoutMs: number) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw new CliError("invalid_usage", "Routine timeout must be 1–120000 ms.");
+    let command: RoutineCommand;
+    try { command = validateRoutineCommand(input); } catch (e) { throw routineCliError(e); }
+    const readOnly = command.action === "list" || command.action === "show";
+    const daemon = await this.daemonFor(readOnly ? "grok.routines.read" : "grok.routines.write", timeoutMs);
+    if (daemon) {
+      const response = await daemon.call("agentRoutines", { command, timeoutMs });
+      if (!response.gateway) throw new CliError(readOnly ? "gateway_internal" : "operation_outcome_unknown", "Routine response has no Gateway generation.");
+      try {
+        const result = projectRoutineResult(command, response.result), discovery = this.discoveryFromDaemon(response.gateway);
+        this.lastDiscovery = discovery;
+        return { result, discovery };
+      } catch { throw new CliError(readOnly ? "gateway_internal" : "operation_outcome_unknown", "Routine response is not a valid bounded observation."); }
+    }
+    return executeNativeRoutine(this, command, timeoutMs, this.deps.signal);
   }
 
   async listAgents(timeoutMs: number): Promise<{ agents: unknown[]; discovery: Discovery }> {
@@ -725,6 +747,7 @@ export class GatewayClient {
     unknownOutcomeCode?: UnknownOutcomeCode;
     accept?: string;
     stream?: boolean;
+    maxResponseBytes?: number;
   }): Promise<HttpResult> {
     const serialized = input.jsonBody === undefined ? undefined : JSON.stringify(input.jsonBody);
     const write = input.write === true;
@@ -773,6 +796,7 @@ export class GatewayClient {
       slim?: boolean;
       accept?: string;
       stream?: boolean;
+      maxResponseBytes?: number;
     },
     serialized: string | undefined,
     write: boolean,
@@ -839,8 +863,9 @@ export class GatewayClient {
     }
     let text = "";
     try {
-      text = await response.text();
-    } catch {
+      text = input.maxResponseBytes === undefined ? await response.text() : await boundedGatewayBody(response, input.maxResponseBytes);
+    } catch (error) {
+      if (!write && error instanceof CliError) throw error;
       if (write) {
         throw new CliError(
           unknownOutcomeCode,

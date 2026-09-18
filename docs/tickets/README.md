@@ -187,7 +187,7 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 
 | Ticket | 状态 / 范围 | 依赖与独立退出 |
 |---|---|---|
-| [T43](T43-native-webhook-contract.md) | Planned：原生Webhook/Routine/认证/回执资格 | 与OBS-00/T51并行，为T53/T45提供合同 |
+| [T43](T43-native-webhook-contract.md) | Partial：固定源函数隔离资格已跑；真实HTTP/认证/配对/提醒仍未证 | 与OBS-00/T51并行，为T53/T45提供合同 |
 | [T44](T44-host-ops-continuous-sensing.md) | Partial：本地drain与慢RPC隔离；HSO/loaded/component接线仍待完成 | OBS-00/01、T51；不等诊断或Webhook |
 | [T45](T45-template-webhook-delivery.md) | Planned：持久outbox、固定证据、原生投递/unknown | OBS-02/03、T43/T51/T54；不等Issue/维护 |
 | [T46](T46-template-ops-pairing.md) | Planned：配对、只提醒入口、独立ledger模板 | T43/45/51/53/54；模板不永久限制自主能力 |
@@ -195,9 +195,9 @@ T41与T38/T24/T39可并行，其collector复用T25/T40服务能力但不等整�
 | [T48](T48-low-risk-host-qualification.md) | 独立后续M：全切片/依赖等价资格 | 原HSO/qualification；不是首发通知门 |
 | [T49](T49-policy-host-maintenance.md) | 独立后续M：唯一controller、排空/交接/恢复 | T48/T47/T51与原控制程序 |
 | [T50](T50-template-ops-release-proof.md) | Planned：服务常驻与分lane原生验收 | 首发OBS+单目标；自主/维护分别签署 |
-| [T51](T51-ops-capability-presets.md) | Partial：schema4共享storage意图、2/3迁移及support退役、monitor/process局部采用 | 复用T57–T60；全安装预留/journal采用/统一applied与成套现场仍未完成 |
+| [T51](T51-ops-capability-presets.md) | Partial：schema4共享storage意图、2/3迁移及support退役、monitor/process/journal采用 | 复用T57–T60；全安装物理预留/统一applied、自启与成套现场仍未完成 |
 | [T52](T52-consented-support-issues.md) | **Deferred**：用户决定后的草稿 | 不属于首发，不再默认询问Issue |
-| [T53](T53-agent-routines-cli.md) | Planned：通用Routine CRUD/provision/invoke | 只依T43，不要求ops开启 |
+| [T53](T53-agent-routines-cli.md) | Partial：list/show/enable/disable/delete与按需Skill；apply/provision/invoke/outcome待完成 | 只依T43，不要求ops开启；local/daemon共享程序 |
 | [T54](T54-ops-targets-and-routing.md) | Planned：单目标先行、有限路由后置 | T51/T43/T53合同；最小模式独立出口 |
 | [T55](T55-custom-receiver-delivery.md) | 所选目标最小资格必需；高级备用/交接后置 | T54/T45/T53；unknown不广播 |
 | [T56](T56-scripted-issue-publishing.md) | **Deferred**：未来gh-only用户发布 | 无认证就跳过，不建设自动发布平台 |
