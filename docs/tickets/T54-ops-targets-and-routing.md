@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial：唯一default目标解析与配对身份合同已实现；实际bind/私有凭据owner及高级路由仍未完成。** [Spec §6.3](../roadmap/template-ops-automation-spec.md#bot-routing)。复用ops.targets/defaultTarget，任意用户有权使用的原生Bot可作为接收者，不限模板。
+**Partial：default目标策略、配对准备/私有凭据owner与本地撤销已实现；合格接收者激活/driver与高级路由仍未完成。** [Spec §6.3](../roadmap/template-ops-automation-spec.md#bot-routing)。复用ops.targets/defaultTarget，任意用户有权使用的原生Bot可作为接收者，不限模板。
 
 ## Depends-on / Modules
 
@@ -13,6 +13,12 @@
 `selectNotificationTarget`从已校验effective ops选择defaultTarget；routing.enabled=false仍选默认目标，通知off/缺Agent或routineKey/不支持的数据或意图均明确blocked。高级routing、digest、允许重复投递尚不执行，不能静默改用别的目标。`NotificationBinding`约束database/scope、alias/exact Agent/Routine、model/qualification、policy revision和5秒内观察窗口；它必须来自本域配对owner，不是config或告警可提供的授权DTO。
 
 实际发送程序`runOpsNotificationDelivery`可接入`PairedNotificationDriver`，默认driver缺失则unavailable、不生成attempt；当前未实现`ops targets bind`或保存活凭据。存储按真实Agent而非alias共同计数。配对变更后未发停止、已经预留/尝试不自动重发的离线证明归[T45回执](../reports/2026-09-18-notification-outbox.md)。
+
+## 私有配对准备已实现（仍不等于接收资格）
+
+新增Box-local `ops targets list/show/bind/disable/unbind`；target偏好即使通知off也可明确准备，但不会解除off。只有本安装T53管理的disabled Webhook定义可参与，预期revision与scope/代际重核，确认后原生key请求至多一次。私有capsule原子发布、8槽、主/固定暂存各64KiB；状态投影、存储计量和通知查询不返回credential。
+
+unknown占位、并发撤销/晚到响应、强杀、损坏/丢失/符号链接保护及真实CLI已验证；全部prepared binding保持deliveryAuthorized=false，默认driver仍unavailable。模型/行为/HTTP资格、active采用、verify/远端配对、高级路由与自动宿主仍是剩余范围，不以普通聊天选模或拿到key替代。本片证据见[T46](T46-template-ops-pairing.md)和[回执](../reports/2026-09-18-private-target-pairing.md)。
 
 ## Minimum Work / 首发出口
 

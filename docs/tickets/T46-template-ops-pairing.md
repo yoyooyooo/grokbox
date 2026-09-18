@@ -2,11 +2,19 @@
 
 ## Status / Goal
 
-**Planned / Spec-only；M3。** [Spec §10](../roadmap/template-ops-automation-spec.md#surface)。提供默认告警只提醒的接收流程，同时保留通用Bot受托后的完整自主操作能力。新增`grokbox-ledger`作为独立可分发模板，不要求用户安装多个Bot。
+**Partial：私有凭据准备/撤销与实际CLI已实现；接收者资格、激活投递、独立模板仍未完成，M3未关闭。** [Spec §10](../roadmap/template-ops-automation-spec.md#surface)。提供默认告警只提醒的接收流程，同时保留通用Bot受托后的完整自主操作能力。新增`grokbox-ledger`作为独立可分发模板，不要求用户安装多个Bot。
 
 ## Depends-on / Modules
 
 依T43/T45/T51/T53/T54最小目标和OBS-02/03。CLI `template-recipe.ts`、`commands/template.ts`、`commands/ops.ts`、`skills.ts`；实现时新增`skills/grokbox/ops.md`、`scripts/templates/grokbox-ledger.recipe.json`，复用现有stage/publish/import，不在本次文档修改生产recipe。
+
+## 已实现的准备阶段
+
+`ops targets list/show/bind/disable/unbind`只运行在Box本地。bind先核对canonical配置、monitor安装scope、T53受管key、精确disabled Webhook定义/revision与Gateway代际；preview不领key。确认后持久记录enrolling，再至多调用一次原生凭据接口，重核后保存prepared。普通状态不返回endpoint/key/prompt；prepared始终不是合格接收者，不自动enable、发POST或改模型。
+
+采用单一私有原子capsule而非分离secret与metadata的部分写入：`state/ops-pairing/bindings.json`及固定暂存各64KiB、最多8槽、0600文件。查询不领取原生凭据、不创建owner，诊断GC不删除它。unknown不能用新operation绕过；并发unbind递增revision，使晚到credential不能重新发布。旧slot新绑定要求显式unbound revision，不以清目录恢复操作。
+
+新`ops-target-pairing.test.ts`11项，实际SQLite/provision/config/私有文件、并发与真实子进程SIGKILL；CLI测试覆盖预览、领取、重复操作与打包Node状态/解绑。`ops-pairing`组合106 pass，最新v2组合全仓2568 pass/19 skip/0 fail。准确边界见[固定回执](../reports/2026-09-18-private-target-pairing.md)。这不关闭真实原生HTTP、接收者model/行为/成本、完整备份恢复fence、首次初始化故障恢复、远端key撤销或物理安全擦除资格。
 
 ## Work
 

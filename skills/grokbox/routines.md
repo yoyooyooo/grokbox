@@ -80,6 +80,6 @@ Unknown enrollment must not be retried under a new operation ID. Queries never r
 
 ## Current boundaries
 
-Multi-entry `--routines-from`, Webhook credential pairing, invoke and native run/outcome tracking are not implemented by these commands; `routines outcome` above is only the provision ledger receipt. Do not invent their flags, call `runAgentAutomationNow` as a substitute for a Webhook, retrieve credentials just to inspect a Routine, or send a synthetic Human message to simulate a native event. Native credential retrieval may mint a secret and belongs to a separately authorized pairing flow.
+Multi-entry `--routines-from`, qualified pairing activation, invoke and native run/outcome tracking are not implemented by these commands; `routines outcome` above is only the provision ledger receipt. Do not invent their flags, call `runAgentAutomationNow` as a substitute for a Webhook, retrieve credentials just to inspect a Routine, or send a synthetic Human message to simulate a native event. Native credential retrieval may mint a secret and belongs to a separately authorized pairing flow.
 
 These primitives are also usable by a user-delegated Bot maintenance task. They do not create a new scheduler or limit the Bot's other authorized grokbox abilities. Load [send](send.md), [models](models.md) or [diagnostics](diagnostics.md) only when that task needs them.

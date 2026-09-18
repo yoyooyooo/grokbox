@@ -203,7 +203,11 @@ T51在v2基线09e6405上分配并实现**配置schema4候选**，新增顶级`st
 <a id="bot-routing"></a>
 ### 6.3 默认一个目标，高级分流后置
 
-复用`ops.targets`与`routing.defaultTarget`。targets bind核对installation/scope、exact agent/routine/revision、secretRef、实际模型/数据/工具能力与费用，写受保护`state/ops-bindings.json`；不改模型/persona/其他Routine。当前没有可用目标时local-only/blocked-unpaired可见，不猜最近Bot。模型仍归models/native selection owner。
+复用`ops.targets`与`routing.defaultTarget`。配对分为准备和资格采用：先核对installation/scope、受管且disabled的exact agent/routine/revision，经确认领取原生凭据；随后仍须核对实际模型/数据/工具能力、费用和HTTP合同，才可能允许投递。准备成功不是原生Webhook可用证明，不改模型/persona/其他Routine。当前没有合格目标时local-only/blocked-unpaired可见，不猜最近Bot。模型仍归models/native selection owner。
+
+T46/T54已实现`ops targets list/show/bind/disable/unbind`的Box-local准备切片。bind支持preview，确认后先持久占位，再至多一次原生凭据请求；配置/scope/受管定义/原生generation在最终存储前重核。丢回执或强杀保留enrolling/unknown，新operation不能绕过；解绑的revision阻止晚到凭据复活。状态始终`deliveryAuthorized=false`，不自动启用Routine，不安装发送driver或调用模型。
+
+机器凭据与普通config/模板/outbox分开：本片采用`state/ops-pairing/bindings.json`的**单一私有原子capsule**，合并内部凭据与其对应元数据，避免两个文件部分发布后错配；对外只提供白名单metadata视图，不导出秘密读取接口。最多8槽，主文件与固定暂存各64KiB，缺失/损坏的既有owner不重新初始化。保留单调revision的unbound槽不由诊断GC清理，未完成首次初始化/备份恢复fence和槽位安全退役仍单独阻断。unbind移除当前本地引用，不宣称原生key撤销、取消在途任务或介质安全擦除。
 
 高级路由T54/T55在后续开放：枚举字段AND/字段数组OR，有序首匹配，最多8目标/32规则/每规则2备用；未命中default，不广播。route decision不可变；禁用/改绑定只阻止未发工作，已attempted先对账。未知字段/重复规则/引用不存在/循环拒绝。fallback只在确定未接收/未开始处理时使用，unknown不扇出。模型供应商/数据级别改变重新配对，不能为了通知可达自动换模。
 
