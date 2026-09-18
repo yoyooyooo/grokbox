@@ -86,8 +86,23 @@ Preview reads only. Confirm authorizes a native credential lookup that may mint 
 
 Unknown enrollment must not be retried under a new operation ID. Queries never retrieve another native key. Local revocation uses `ops targets disable|unbind <alias> --expect-binding-revision <n> --confirm --json`; unbind removes the current local credential reference, not the native key or Routine, and is not secure media erasure. Re-pairing an explicitly unbound slot requires its current binding revision and a new operation ID. These commands are Box-local; there is no remote/daemon pairing capability in this phase.
 
+## Authorize ongoing reminders after the test
+
+A prepared binding, model preflight or HTTP acceptance is not ongoing permission. After an explicit test send, the user must state that they observed the reminder and authorize future model wake costs. Never infer that statement from HTTP 200, this Skill, or another Bot's claim.
+
+```bash
+grokbox ops targets activate <alias> --from-work <accepted-test-work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --operation-id <stable-id> --confirm-receiver --confirm --json
+grokbox ops notifications worker --json
+```
+
+Activation rechecks the exact prepared binding, managed Routine, current model/ownership and the stored test attempt. It only records local permission for work newer than the recorded activation boundary; it does not enable a Routine, fetch a key, start a service, or send a notification. Use the same operation ID after an uncertain local result and inspect `ops targets show`; do not create another authorization to bypass it. `activation_busy` is a refused local lock acquisition, not evidence that this request was committed.
+
+The existing local daemon owns the sender when it is running. It checks fresh work and budgets locally before native reads, uses the same single-attempt outbox/HTTP path, backs off when blocked, and settles in-flight requests before stopping. A changed model, Host generation, account scope, definition or binding blocks delivery rather than choosing a fallback or renewing permission. `disable`/`unbind` remove the stored permission. Worker status does not start a daemon and does not prove collector installation or Box boot persistence.
+
+`operator-confirmed-reminder` is explicitly a user attestation, not program-observed native execution or tool isolation. Default automatic turns only remind and finish; later user-delegated diagnosis and maintenance retain their existing scope.
+
 ## Current boundaries
 
-Multi-entry `--routines-from`, automatic pairing activation, arbitrary Routine invocation and native run/outcome tracking are not implemented by these commands; `routines outcome` above is only the provision ledger receipt. The separate [diagnostics](diagnostics.md#one-explicitly-authorized-notice-delivery) topic documents an explicitly confirmed single send of an existing safe notification, requiring a reviewed model fingerprint and a separately enabled reminder Routine. That path does not grant automatic delivery. Do not invent their flags, call `runAgentAutomationNow` as a substitute for a Webhook, retrieve credentials just to inspect a Routine, or send a synthetic Human message to simulate a native event. Native credential retrieval may mint a secret and belongs to a separately authorized pairing flow.
+Multi-entry `--routines-from`, unattended pairing/provisioning, arbitrary Routine invocation and native run/outcome tracking are not implemented by these commands; `routines outcome` above is only the provision ledger receipt. The separate [diagnostics](diagnostics.md#one-explicitly-authorized-notice-delivery) topic documents an explicitly confirmed single send of an existing safe notification, requiring a reviewed model fingerprint and a separately enabled reminder Routine. That path does not grant automatic delivery. Do not invent their flags, call `runAgentAutomationNow` as a substitute for a Webhook, retrieve credentials just to inspect a Routine, or send a synthetic Human message to simulate a native event. Native credential retrieval may mint a secret and belongs to a separately authorized pairing flow.
 
 These primitives are also usable by a user-delegated Bot maintenance task. They do not create a new scheduler or limit the Bot's other authorized grokbox abilities. Load [send](send.md), [models](models.md) or [diagnostics](diagnostics.md) only when that task needs them.
