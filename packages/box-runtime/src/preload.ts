@@ -68,7 +68,10 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       transformedSha256: profile.transformedSourceSha256,
     },
   });
-  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_OWNERSHIP_READ_SYMBOL)] = bindHostOwnershipRead();
+  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_OWNERSHIP_READ_SYMBOL)] = bindHostOwnershipRead({
+    ...(self ? { loaded: { pid: self.pid, start: self.start, profileSha256,
+      sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 } } : {}),
+  });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_PROFILE_TITLE_SYMBOL)] = bindHostProfileTitle({ durableRoot });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RESUME_GATE_SYMBOL)] =
     (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed);

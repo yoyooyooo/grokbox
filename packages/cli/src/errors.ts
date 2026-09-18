@@ -95,6 +95,7 @@ export type ErrorBody = {
   hostReason?: string;
   liveShaPrefix?: string;
   profileShaPrefix?: string;
+  profileWrite?: { refusal: string; recipeFailure?: { ok: false; code: string; sliceId?: string } };
   context?:
     | { clientNonce: string; target: { id: string; kind: "agent" | "group" } }
     | { operationId: string; object?: { id: string; kind: "agent" | "group" }; phase?: string;
@@ -194,6 +195,7 @@ export class CliError extends Error {
   readonly hostReason?: string;
   readonly liveShaPrefix?: string;
   readonly profileShaPrefix?: string;
+  readonly profileWrite?: ErrorBody["profileWrite"];
   readonly context?: ErrorBody["context"];
 
   constructor(
@@ -208,6 +210,7 @@ export class CliError extends Error {
       hostReason?: string;
       liveShaPrefix?: string;
       profileShaPrefix?: string;
+      profileWrite?: ErrorBody["profileWrite"];
       context?: ErrorBody["context"];
     } = {},
   ) {
@@ -222,6 +225,7 @@ export class CliError extends Error {
     this.hostReason = extras.hostReason;
     this.liveShaPrefix = extras.liveShaPrefix;
     this.profileShaPrefix = extras.profileShaPrefix;
+    this.profileWrite = extras.profileWrite;
     this.context = extras.context;
   }
 
@@ -242,6 +246,7 @@ export class CliError extends Error {
     if (this.hostReason !== undefined) body.hostReason = this.hostReason;
     if (this.liveShaPrefix !== undefined) body.liveShaPrefix = this.liveShaPrefix;
     if (this.profileShaPrefix !== undefined) body.profileShaPrefix = this.profileShaPrefix;
+    if (this.profileWrite !== undefined) body.profileWrite = this.profileWrite;
     if (this.context !== undefined) body.context = this.context;
     return body;
   }

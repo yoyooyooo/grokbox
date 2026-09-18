@@ -9,7 +9,7 @@ import { preflightProfileRecipe, profileFromSource } from "../src/internal/host/
 import { retainHostBundle } from "../src/internal/io/provenance.node.ts";
 import { retainedGenerationSourcePath } from "../src/internal/io/paths.ts";
 import { ownershipUseError } from "../src/internal/io/ownership-admission.node.ts";
-import { inspectRetainedWriteEnvelope, writeReviewedProfileFromCopy } from "../src/internal/process/profile.node.ts";
+import { inspectRetainedWriteEnvelope, writeReviewedProfileFromCopy, ProfileWriteRefused } from "../src/internal/process/profile.node.ts";
 import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 
 const roots: string[] = [];
@@ -44,6 +44,19 @@ test("preflight, analyze and writer preserve the same slice failure and do not p
     .rejects.toMatchObject({ refusal: "recipe_unapplicable", next: inspect.next, details: { recipeFailure: failure } });
   expect(await readFile(join(input.destDir, "reviewed.json"), "utf8")).toBe(before);
   expect(await readFile(input.hostBundle, "utf8")).toBe(source);
+});
+
+test("profile refusal public details never expose source payload, arbitrary ids or accessors", () => {
+  const error = new ProfileWriteRefused("recipe_unapplicable", "bounded message", "bounded next", {
+    source: "PRIVATE", recipeFailure: { ok: false, code: "find-missing", sliceId: "alert-main-decision", replacement: "PRIVATE" },
+  });
+  expect(error.publicDiagnostic()).toEqual({ refusal: "recipe_unapplicable", recipeFailure: { ok: false, code: "find-missing", sliceId: "alert-main-decision" } });
+  error.details.recipeFailure = { ok: false, code: "find-missing", sliceId: "PRIVATE" };
+  expect(JSON.stringify(error.publicDiagnostic())).not.toContain("PRIVATE");
+  let calls = 0;
+  Object.defineProperty(error.details, "recipeFailure", { get() { calls++; return "PRIVATE"; } });
+  expect(error.publicDiagnostic()).toEqual({ refusal: "recipe_unapplicable" });
+  expect(calls).toBe(0);
 });
 
 test("valid local witness stays qualified; execution pause is not a bridge format failure", () => {

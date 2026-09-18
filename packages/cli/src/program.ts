@@ -124,6 +124,7 @@ import {
   runRuntimeProfileWatch,
   runRuntimeProfileWrite,
   runRuntimeReAdopt,
+  runRuntimeOperationRecovery,
   runRuntimeStart,
   runRuntimeStatus,
   runRuntimeWatchdog,
@@ -205,6 +206,8 @@ type CliOptions = ProfileOptions & ConfigCommandOptions & {
   against?: string;
   allowUnretained?: boolean;
   sliceReview?: string | string[];
+  capability?: string;
+  expectedReviewedSha?: string;
 };
 
 type LeafAction = (
@@ -388,7 +391,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "models persist-key": async (deps, args, options) => await runRuntimeModelsPersistKey(deps, args[0] ?? "", options.fromPi, options.confirm),
     "models show": async (deps, _args, options) => await runRuntimeModelsShow(deps, options.for ?? ""),
     "models migrate": async (deps, _args, options) => await runRuntimeModelsMigrate(deps, options.confirm),
-    "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out),
+    "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out, options.capability),
     "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
     "runtime profile propose": async (deps, _args, options) => await runRuntimeProfilePropose(deps, options.from, options.out, options.against),
     "runtime profile prune": async (deps, _args, options) => await runRuntimeProfilePrune(deps, options.plan, options.confirm),
@@ -402,8 +405,11 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
         allowUnretained: options.allowUnretained,
         confirm: options.confirm,
         sliceReview: options.sliceReview,
+        capability: options.capability,
+        expectedReviewedSha: options.expectedReviewedSha,
       }),
     "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),
+    "runtime operation-recovery": async (deps, _args, options) => await runRuntimeOperationRecovery(deps, options.confirm),
     "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),
     "runtime modeld run": async (deps) => await runRuntimeModeld(deps),
     "runtime modeld status": async (deps) => await runRuntimeModeldStatus(deps),

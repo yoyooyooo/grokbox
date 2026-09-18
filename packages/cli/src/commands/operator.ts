@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import type { HostCapabilityReport } from "@grokbox/runtime-kernel/contract";
+import { controllerApplyCompleted, hostCapabilityPorts, type CommittedHostAlignment } from "../host-capabilities.ts";
 import { readFile, writeFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { BoxRuntimeError, openRuntimeStore, projectLiveStatus } from "@grokbox/box-runtime/runtime";
@@ -37,6 +39,7 @@ export type OperatorReport = {
   host: OperatorHost;
   hostReason: string | null;
   modeldAdmission?: "ready" | "blocked" | "not_instrumented";
+  hostCapabilities?: HostCapabilityReport;
   next: string;
   liveShaPrefix?: string;
   profileShaPrefix?: string;
@@ -121,6 +124,7 @@ export function operatorNext(input: {
   hostReason: string | null;
   liveSha?: string | null;
   modeldAdmission?: "ready" | "blocked" | "not_instrumented";
+  hostCapabilities?: HostCapabilityReport;
 }): string {
   if (input.hostReason === "source_mismatch") return profileWriteNext(input.liveSha);
   if (input.host === "unknown" && (input.hostReason === "stale_attestation" || input.hostReason === "unmanaged_preload")) {
@@ -129,6 +133,19 @@ export function operatorNext(input: {
   if (input.daemon === "down") return "grokbox on";
   if (input.host === "official") return HOST_START;
   if (input.modeldAdmission === "blocked" || input.modeldAdmission === "not_instrumented") return "grokbox runtime modeld status";
+  if (input.host === "unknown") return "grokbox runtime status --json";
+  if (input.hostCapabilities?.state !== "ready") {
+    // A new durable recipe may already be correct: rewriting it cannot update
+    // an older loaded process. The suggestion still requires interruption scope.
+    if (input.hostCapabilities?.reason === "loaded_profile_mismatch") return "grokbox host restart";
+    if (input.hostCapabilities?.reason === "generation_mismatch") return "grokbox runtime status --json";
+    if (input.hostCapabilities?.state === "not_instrumented" || input.hostCapabilities?.state === "incompatible") {
+      return isFullSourceSha(input.liveSha)
+        ? `grokbox runtime profile analyze --sha ${input.liveSha} --out <abs> --capability ownership-local`
+        : "grokbox runtime profile status --json";
+    }
+    return "grokbox runtime status --json";
+  }
   return "none";
 }
 
@@ -161,6 +178,7 @@ async function inspectHostClass(deps: CliDeps, overlay: boolean): Promise<HostCl
 export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise<OperatorReport> {
   const daemon: OperatorDaemon = await handshakeDaemon(deps, timeoutMs) ? "up" : "down";
   const classified = await inspectHostClass(deps, true);
+  const hostCapabilities = classified.host === "custom" ? await hostCapabilityPorts.observe(deps, timeoutMs) : undefined;
   let pruneEnabled = false;
   try {
     pruneEnabled = (await readDaemonConfig(deps.configDir)).desktop?.pruneEnabled === true;
@@ -174,12 +192,14 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
     host: classified.host,
     hostReason: classified.hostReason,
     ...(classified.modeldAdmission ? { modeldAdmission: classified.modeldAdmission } : {}),
+    ...(hostCapabilities ? { hostCapabilities } : {}),
     next: operatorNext({
       daemon,
       host: classified.host,
       hostReason: classified.hostReason,
       liveSha: classified.liveSha,
       modeldAdmission: classified.modeldAdmission,
+      hostCapabilities,
     }),
     ...(classified.liveShaPrefix ? { liveShaPrefix: classified.liveShaPrefix } : {}),
     ...(classified.profileShaPrefix ? { profileShaPrefix: classified.profileShaPrefix } : {}),
@@ -328,8 +348,9 @@ function refuseUnknown(classified: HostClass & SourceFacts): void {
   if (classified.host === "unknown") throw hostMismatchError(classified.hostReason, classified.liveSha);
 }
 
-function successNext(actual: HostClass & SourceFacts): string {
-  if (actual.host !== "unknown") return "none";
+function successNext(actual: HostClass & SourceFacts, hostCapabilities?: HostCapabilityReport): string {
+  if (actual.host === "custom") return operatorNext({ daemon: "up", ...actual, hostCapabilities });
+  if (actual.host === "official") return "none";
   return mismatchNext(actual.hostReason, actual.liveSha);
 }
 
@@ -340,13 +361,25 @@ function lifecyclePayload(input: {
   forced: boolean;
   running: RunningBot[];
   receipt?: unknown;
+  hostCapabilities?: HostCapabilityReport;
+  committed?: CommittedHostAlignment;
 }): Record<string, unknown> {
+  const applyReceipt = input.command === "restart" ? rec(input.receipt).enable : input.receipt;
+  const pending = input.command !== "stop" && input.outcome !== "already_started" && !controllerApplyCompleted(applyReceipt);
+  const pendingAuthority = input.actual.host === "custom" && input.committed?.state !== "ready";
+  const next = pending ? rec(applyReceipt).reason === "operation-busy" ? "grokbox runtime operation-recovery --json"
+    : "grokbox runtime status --json" : pendingAuthority ? "grokbox runtime status --json" : successNext(input.actual, input.hostCapabilities);
   return {
     command: input.command,
     desired: input.command === "stop" ? "official" : "custom",
     actual: input.actual.host,
     outcome: input.outcome,
-    next: successNext(input.actual),
+    next,
+    ...(input.hostCapabilities ? { hostCapabilities: input.hostCapabilities } : {}),
+    ...(input.committed ? { committed: input.committed } : {}),
+    alignment: pending || pendingAuthority || next !== "none" ? "not_verified" : "verified",
+    executionAdmission: "not_proven",
+    providerRoundtrip: "not_proven",
     hostReason: input.actual.hostReason,
     forced: input.forced,
     running: input.running,
@@ -392,6 +425,8 @@ async function runHostLifecycle(
     await ensureHostStartDesired(deps);
     writeSuccess(deps.stdout, lifecyclePayload({
       command, outcome: "already_started", actual: pre, forced: false, running: [],
+      hostCapabilities: await hostCapabilityPorts.observe(deps, io.timeoutMs),
+      committed: await hostCapabilityPorts.alignment(deps),
     }));
     return;
   }
@@ -432,6 +467,8 @@ async function runHostLifecycle(
     command,
     outcome: command === "start" ? "started" : command === "stop" ? "stopped" : "restarted",
     actual: post,
+    ...(post.host === "custom" ? { hostCapabilities: await hostCapabilityPorts.observe(deps, io.timeoutMs),
+      committed: await hostCapabilityPorts.alignment(deps) } : {}),
     forced: force,
     running,
     receipt,
@@ -532,11 +569,30 @@ export async function runOperatorUpgrade(
     await persistPruneEnabled(deps, true);
     await rpcPruneEnabled(deps, io.timeoutMs, true);
   }
+  const observed = await inspectOperator(deps, io.timeoutMs);
+  const committed = await hostCapabilityPorts.alignment(deps);
+  const blockers = [
+    ...(!controllerApplyCompleted(enable) ? ["operation_not_completed"] : []),
+    ...(observed.daemon === "down" ? ["daemon_down"] : []),
+    ...(observed.host !== "custom" ? ["host_not_custom"] : []),
+    ...(committed.state !== "ready" ? ["authority_not_verified"] : []),
+    ...(observed.modeldAdmission && observed.modeldAdmission !== "ready" ? ["modeld_not_ready"] : []),
+    ...(observed.hostCapabilities?.state !== "ready" ? ["host_capabilities_not_verified"] : []),
+  ];
   writeSuccess(deps.stdout, {
     host: "enable-requested",
     daemon,
     titleSync: daemon !== "down",
     screenIdle: daemon !== "down",
     enable,
+    observed,
+    committed,
+    alignment: blockers.length === 0 ? "verified" : "not_verified",
+    blockers,
+    next: blockers.includes("operation_not_completed") ? rec(enable).reason === "operation-busy"
+      ? "grokbox runtime operation-recovery --json" : "grokbox runtime status --json"
+      : committed.state !== "ready" ? "grokbox runtime status --json" : observed.next,
+    executionAdmission: "not_proven",
+    providerRoundtrip: "not_proven",
   });
 }

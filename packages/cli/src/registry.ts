@@ -1633,12 +1633,13 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "analyze"],
-    usage: "grokbox runtime profile analyze --sha <sha> --out <abs>",
+    usage: "grokbox runtime profile analyze --sha <sha> --out <abs> [--capability ownership-local]",
     summary: "Triage retained snapshot; missing runner still emits envelope reject ids and write next.",
     arguments: [],
     options: options([
       { flags: "--sha <sha>", description: "Retained source SHA", required: true },
       { flags: "--out <abs>", description: "Protected analysis artifact path", required: true },
+      { flags: "--capability <name>", description: "Inspect a maintained ownership-local upgrade against the same-source reviewed baseline" },
     ]),
     stdin: "none",
     table: false,
@@ -1758,7 +1759,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "write"],
-    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>]",
+    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>] [--capability ownership-local --expected-reviewed-sha <sha>]",
     summary: "Atomically author a durable PatchProfile from a retained Host generation; envelope reject-on-drift. No live inject.",
     arguments: [],
     options: options([
@@ -1767,6 +1768,8 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
       { flags: "--allow-unretained", description: "Waive retain-dir bind only; never skips envelope reject-on-drift" },
       { flags: "--confirm", description: "Required with --from --allow-unretained" },
       { flags: "--slice-review <id...>", description: "Exact rejecting envelope slice ids (windowSha/count/find.inWindow)" },
+      { flags: "--capability <name>", description: "Upgrade only the maintained ownership-local capability and dependencies; requires --sha and an applicable baseline" },
+      { flags: "--expected-reviewed-sha <sha>", description: "Required with --capability: exact baselineProfileSha256 from analysis; rejects intervening profile changes" },
     ]),
     stdin: "none",
     table: false,
@@ -1778,9 +1781,18 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     localOnly: true,
   },
   {
+    path: ["runtime", "operation-recovery"],
+    usage: "grokbox runtime operation-recovery [--confirm]",
+    summary: "Inspect controller/identity leases; explicitly recover proven stale metadata without Host signals or replay.",
+    arguments: [],
+    options: options([{ flags: "--confirm", description: "Recover only proven stale operation metadata under both gates; does not adopt or replay" }]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false,
+    streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["runtime", "re-adopt"],
     usage: "grokbox runtime re-adopt --confirm",
-    summary: "Confirmed one-shot box-local re-adopt via the watchdog coordinator.",
+    summary: "Confirmed one-shot box-local re-adopt through the existing controller; observe loaded bridge afterward.",
     arguments: [],
     options: options([{ flags: "--confirm", description: "Required; perform at most one adopt attempt and exit" }]),
     stdin: "none",

@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const checker = join(repoRoot, "scripts", "check-runtime-boundaries.mjs");
+// The checker owns a 5s import probe plus compilation. Its test owner must
+// allow that bounded proof to finish rather than racing it at the same 5s.
+const CHECKER_TEST_TIMEOUT_MS = 15_000;
 
 async function runChecker(root: string): Promise<{ code: number; stdout: string; stderr: string }> {
   const child = Bun.spawn(["bun", checker, "--root", root, "--json"], { cwd: repoRoot, stdout: "pipe", stderr: "pipe" });
@@ -77,12 +80,12 @@ describe("runtime layout boundaries", () => {
   test("repository layout checker is green", async () => {
     const result = await runChecker(repoRoot);
     expect(result.code, result.stderr + result.stdout).toBe(0);
-  });
+  }, CHECKER_TEST_TIMEOUT_MS);
 
   test("minimal valid fixture is green", async () => {
     const result = await runChecker(await fixture());
     expect(result.code, result.stdout).toBe(0);
-  });
+  }, CHECKER_TEST_TIMEOUT_MS);
 
   const rejects: Array<[string, Record<string, string> | undefined, boolean?]> = [
     ["host-to-io", {
@@ -151,10 +154,10 @@ describe("runtime layout boundaries", () => {
   test.each(rejects)("%s is a non-zero checker", async (_name, changes) => {
     const result = await runChecker(await fixture(changes));
     expect(result.code).not.toBe(0);
-  });
+  }, CHECKER_TEST_TIMEOUT_MS);
 
   test("missing required source is a non-zero checker", async () => {
     const result = await runChecker(await fixture({}, true));
     expect(result.code).not.toBe(0);
-  });
+  }, CHECKER_TEST_TIMEOUT_MS);
 });

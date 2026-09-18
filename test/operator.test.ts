@@ -16,9 +16,12 @@ import {
 } from "../packages/cli/src/commands/operator.ts";
 import { hostControlPorts } from "../packages/cli/src/commands/runtime.ts";
 import { hostSourcePorts, profileWriteNext } from "../packages/cli/src/host-source.ts";
+import { hostCapabilityPorts } from "../packages/cli/src/host-capabilities.ts";
 import { BoxRuntimeError } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson, sampleAgents, startMockGateway, writeDiscovery } from "./helpers.ts";
 
+const originalCapability = hostCapabilityPorts.observe;
+const originalAlignment = hostCapabilityPorts.alignment;
 const originalSwitch = { enable: hostSwitchPorts.enable, disable: hostSwitchPorts.disable };
 const originalControl = { ...hostControlPorts };
 const originalObserve = { classifyLive: hostObservePorts.classifyLive };
@@ -28,6 +31,8 @@ const SHA_B = "b".repeat(64);
 const WRITE_NEXT_A = profileWriteNext(SHA_A);
 
 beforeEach(() => {
+  hostCapabilityPorts.observe = async () => ({ state: "ready", reason: "matched" });
+  hostCapabilityPorts.alignment = async () => ({ state: "ready", reason: "matched" });
   hostControlPorts.generation = () => "c".repeat(64);
   hostObservePorts.classifyLive = async () => ({ host: "official", hostReason: null });
   hostSourcePorts.readLiveSha = async () => null;
@@ -35,6 +40,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  hostCapabilityPorts.observe = originalCapability;
+  hostCapabilityPorts.alignment = originalAlignment;
   hostSwitchPorts.enable = originalSwitch.enable;
   hostSwitchPorts.disable = originalSwitch.disable;
   hostControlPorts.apply = originalControl.apply;
@@ -200,6 +207,67 @@ test("upgrade --yes refreshes Host on this computer", async () => {
   }
 });
 
+test("upgrade and already-started distinguish an uninstrumented Host from successful alignment", async () => {
+  stubHost("custom");
+  hostCapabilityPorts.observe = async () => ({ state: "not_instrumented", reason: "missing_manifest" });
+  hostSourcePorts.readLiveSha = async () => SHA_A;
+  hostSourcePorts.readProfileSha = async () => SHA_A;
+  hostSwitchPorts.enable = async () => ({ outcome: "noop", signaled: false });
+  for (const argv of [["upgrade", "--yes"], ["host", "start"]]) {
+    const { result, gateway } = await run(argv);
+    try {
+      expect(result.code).toBe(0);
+      const data = (parseJson(result.stdout) as { data: Record<string, unknown> }).data;
+      expect(data).toMatchObject({ alignment: "not_verified", executionAdmission: "not_proven", providerRoundtrip: "not_proven" });
+      expect(data.next).not.toBe("none");
+      if (argv[0] === "upgrade") expect(data.blockers).toContain("host_capabilities_not_verified");
+      else expect(data.next).toContain("--capability ownership-local");
+    } finally { gateway.stop(); }
+  }
+});
+
+for (const outcome of ["refused", "partial", "unknown", "recovery-required"] as const) {
+  test(`lifecycle ${outcome} cannot become verified from an unrelated ready Host`, async () => {
+    const state = stubHost("custom");
+    const receipt = { outcome, reason: outcome === "refused" ? "operation-busy" : "commit-failed",
+      signaled: false, spawned: false, guardian: false, operationId: "incomplete-fixture" };
+    hostSwitchPorts.enable = async () => { state.host.value = "custom"; return receipt; };
+    hostSwitchPorts.disable = async () => { state.host.value = "official"; return { host: "official" }; };
+    hostControlPorts.apply = async () => receipt;
+    const root = await mkdtemp(join(tmpdir(), "grokbox-hcr-incomplete-"));
+    await writeDesired(root, "route");
+    for (const args of [["upgrade", "--yes"], ["runtime", "re-adopt", "--confirm"], ["host", "restart"]]) {
+      const { result, gateway } = await run(args, { boxRuntimeRoot: root });
+      try {
+        expect(result.code, result.stderr).toBe(0);
+        const body = (parseJson(result.stdout) as { data: Record<string, unknown> }).data;
+        expect(body.alignment).toBe("not_verified");
+        expect(body.next).not.toBe("none");
+        if (outcome === "refused") expect(body.next).toBe("grokbox runtime operation-recovery --json");
+      } finally { gateway.stop(); }
+    }
+  });
+}
+
+test("old completed receipt and loaded bridge do not conceal pending attestation", async () => {
+  stubHost("custom");
+  hostCapabilityPorts.alignment = async () => ({ state: "blocked", reason: "recovery_pending" });
+  const receipt = { outcome: "converged" as const, reason: "duplicate-operation", signaled: false, spawned: false, guardian: false, operationId: "old-complete" };
+  hostSwitchPorts.enable = async () => receipt;
+  hostControlPorts.apply = async () => receipt;
+  const root = await mkdtemp(join(tmpdir(), "grokbox-hcr-attestation-"));
+  await writeDesired(root, "route");
+  for (const args of [["upgrade", "--yes"], ["runtime", "re-adopt", "--confirm"], ["host", "start"]]) {
+    const { result, gateway } = await run(args, { boxRuntimeRoot: root });
+    try {
+      expect(result.code, result.stderr).toBe(0);
+      const body = (parseJson(result.stdout) as { data: Record<string, unknown> }).data;
+      expect(body).toMatchObject({ alignment: "not_verified", committed: { state: "blocked", reason: "recovery_pending" } });
+      expect(body.next).not.toBe("none");
+    } finally { gateway.stop(); }
+  }
+});
+
 test("upgrade --yes refuses source mismatch before enable", async () => {
   let enabled = 0;
   hostSwitchPorts.enable = async () => {
@@ -332,7 +400,7 @@ test("host start applies when official and no bots are running", async () => {
   hostSwitchPorts.enable = async () => {
     enabled += 1;
     state.host.value = "custom";
-    return { stub: "enable" };
+    return { stub: "enable", outcome: "signaled", reason: null };
   };
   const { result, gateway } = await run(["host", "start"]);
   try {
@@ -605,7 +673,7 @@ test("host restart always bounces even when already custom", async () => {
   hostSwitchPorts.enable = async () => {
     enabled += 1;
     state.host.value = "custom";
-    return { stub: "enable" };
+    return { stub: "enable", outcome: "signaled", reason: null };
   };
   const { result, gateway } = await run(["host", "restart"]);
   try {

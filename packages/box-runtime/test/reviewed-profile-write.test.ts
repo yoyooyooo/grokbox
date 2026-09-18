@@ -262,15 +262,17 @@ describe("offline reviewed profile authoring", () => {
     const bothStaged = deferred();
     const gates = { a: deferred(), b: deferred() };
     const stagedPaths = new Set<string>();
-    const original = fs.rename;
-    const spy = spyOn(fs, "rename").mockImplementation(async (from, to) => {
-      if (staging(from, f.destDir)) {
-        const id = JSON.parse(await fs.readFile(from, "utf8")).profileId as "a" | "b";
-        stagedPaths.add(from);
+    // Pause before the publication gate: both writers may stage concurrently,
+    // but their final baseline-check/rename critical sections are serialized.
+    const original = fs.writeFile;
+    const spy = spyOn(fs, "writeFile").mockImplementation(async (path, body, options) => {
+      await original(path, body, options);
+      if (staging(path, f.destDir)) {
+        const id = JSON.parse(String(body)).profileId as "a" | "b";
+        stagedPaths.add(String(path));
         if (stagedPaths.size === 2) bothStaged.resolve();
         await gates[id].promise;
       }
-      await original(from, to);
     });
     const a = writeReviewedProfileFromCopy({ ...f.input, hostBundle: aPath, profileId: "a" });
     const b = writeReviewedProfileFromCopy({ ...f.input, hostBundle: bPath, profileId: "b" });

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { constants, readFileSync, type Stats } from "node:fs";
+import { constants, lstatSync, readFileSync, type Stats } from "node:fs";
 import { chmod, lstat, mkdir, open, rename, stat, writeFile } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
+import { parseProfileCapability, upgradeProfileCapability, type CapabilityUpgradeReceipt, type ProfileCapability } from "../host/profile-capabilities.ts";
+import { acquireAdvisoryGate } from "../io/advisory-gate.node.ts";
 import {
   ALL_ENVELOPE_SLICE_IDS,
   admitWriteEnvelope,
@@ -55,6 +57,9 @@ export type WriteReviewedProfileFromCopyInput = {
   /** Explicit absolute path to a read-only Host bundle input. No full-bundle copy is retained. */
   hostBundle: string;
   slices?: readonly SlicePatch[];
+  capability?: string;
+  /** Exact durable bytes observed during capability analysis, not the source digest. */
+  expectedReviewedSha?: string;
   profileId?: string;
   /** Optional. CLI always supplies this; library tests may omit it. */
   lineage?: ProfileWriteLineage;
@@ -66,7 +71,9 @@ export type ProfileWriteRefusal =
   | "missing_golden"
   | "envelope_unmeasurable"
   | "envelope_drift"
-  | "recipe_unapplicable";
+  | "recipe_unapplicable"
+  | "capability_baseline_invalid"
+  | "capability_baseline_changed";
 
 export type WriteEnvelopeReceipt = {
   bootstrap: boolean;
@@ -85,6 +92,7 @@ export type WriteReviewedProfileReceipt = {
   diskSha: string;
   unretained_source?: true;
   envelope?: WriteEnvelopeReceipt;
+  capabilityUpgrade?: CapabilityUpgradeReceipt;
 };
 
 export function profileWriteUnretainedNext(fromPath: string): string {
@@ -103,16 +111,19 @@ export function profileWriteMissingGoldenNext(pinSourcePath: string): string {
   return `grokbox runtime profile observe --from ${pinSourcePath}`;
 }
 
-export function profileWriteDriftNext(candidateSha: string, driftedIds: readonly string[]): string {
+export function profileWriteDriftNext(candidateSha: string, driftedIds: readonly string[], capability?: ProfileCapability, baselineSha?: string): string {
   const ids = driftedIds.length > 0 ? driftedIds.join(",") : "<drifted-slice-ids>";
-  return `grokbox runtime profile analyze --sha ${candidateSha} --out <abs> then grokbox runtime profile write --sha ${candidateSha} --slice-review ${ids}`;
+  const select = capability ? ` --capability ${capability}` : "";
+  const expected = capability ? ` --expected-reviewed-sha ${baselineSha ?? "<reviewed-sha>"}` : "";
+  return `grokbox runtime profile analyze --sha ${candidateSha} --out <abs>${select} then grokbox runtime profile write --sha ${candidateSha}${select}${expected} --slice-review ${ids}`;
 }
 
 /** Write command after analyze has named reject ids. Does not loop back to analyze. */
-export function profileWriteExecutableNext(candidateSha: string, driftedIds: readonly string[]): string {
+export function profileWriteExecutableNext(candidateSha: string, driftedIds: readonly string[], capability?: ProfileCapability, baselineSha?: string): string {
+  const select = capability ? ` --capability ${capability} --expected-reviewed-sha ${baselineSha ?? "<reviewed-sha>"}` : "";
   return driftedIds.length > 0
-    ? `grokbox runtime profile write --sha ${candidateSha} --slice-review ${driftedIds.join(",")}`
-    : `grokbox runtime profile write --sha ${candidateSha}`;
+    ? `grokbox runtime profile write --sha ${candidateSha}${select} --slice-review ${driftedIds.join(",")}`
+    : `grokbox runtime profile write --sha ${candidateSha}${select}`;
 }
 
 /** A failed recipe needs adaptation, not a replay of the same write command. */
@@ -127,6 +138,7 @@ export type ProfileWriteInspect = {
   bootstrap: boolean;
   refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | "recipe_unapplicable" | null;
   recipeFailure?: TransformFailure;
+  capabilityUpgrade?: CapabilityUpgradeReceipt;
   requiredIds: SliceId[];
   informationalIds: SliceId[];
   insertionGroups: EnvelopeInsertionGroup[];
@@ -163,30 +175,65 @@ async function retainedGenerationPresent(root: string, sha: string): Promise<boo
   }
 }
 
+type CapabilityBaseline = { path: string; info: Stats; sha: string; slices: SlicePatch[]; receipt: CapabilityUpgradeReceipt };
+
+function capabilityBaseline(root: string, source: string, capability: ProfileCapability): CapabilityBaseline {
+  const path = reviewedProfilePath(root);
+  try {
+    const info = lstatSync(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024) throw new Error("invalid_baseline");
+    const bytes = readFileSync(path);
+    if (!sameSource(info, lstatSync(path))) throw new Error("baseline_changed");
+    const checked = validateReviewedProfile(JSON.parse(bytes.toString("utf8")), source);
+    if (!checked.ok) throw new Error("invalid_baseline");
+    const selected = upgradeProfileCapability(source, checked.profile, capability);
+    const sha = sha256Bytes(bytes);
+    return { path, info, sha, slices: selected.slices, receipt: { capability, baselineProfileSha256: sha,
+      updatedIds: selected.updatedIds, addedIds: selected.addedIds } };
+  } catch {
+    refuse("capability_baseline_invalid", "Capability upgrade requires a regular, applicable same-source reviewed baseline.",
+      "grokbox runtime profile status --json", { capability });
+  }
+}
+
+function recheckCapabilityBaseline(baseline: CapabilityBaseline): void {
+  try {
+    if (!sameSource(baseline.info, lstatSync(baseline.path)) || sha256Bytes(readFileSync(baseline.path)) !== baseline.sha) throw new Error("changed");
+  } catch {
+    refuse("capability_baseline_changed", "Reviewed baseline changed during capability authoring; nothing was published.",
+      "grokbox runtime profile status --json", { capability: baseline.receipt.capability });
+  }
+}
+
 async function loadCandidateEnvelopeWindows(
   root: string,
   candidateSha: string,
   recipe: readonly SlicePatch[],
   generationPresent: boolean,
-): Promise<{ candidate: EnvelopeWindows | null; sourceAvailable: boolean; recipeFailure?: TransformFailure }> {
+  capability?: ProfileCapability,
+): Promise<{ candidate: EnvelopeWindows | null; sourceAvailable: boolean; recipeFailure?: TransformFailure; capabilityUpgrade?: CapabilityUpgradeReceipt }> {
   if (!generationPresent) return { candidate: null, sourceAvailable: false };
   const source = await readHostBundleSource(root, candidateSha);
   if (!source) return { candidate: null, sourceAvailable: false };
   // Match the exact recipe the writer will apply; historical windows cannot
   // establish that newly selected patches apply to this generation.
-  const inspected = preflightProfileRecipe(source, authoringSlices(recipe), "write-envelope-candidate");
-  if (!inspected.ok) return { candidate: null, sourceAvailable: true, recipeFailure: inspected };
-  return { candidate: envelopeWindowsFromRecipe(source, inspected.profile), sourceAvailable: true };
+  const selected = capability ? capabilityBaseline(root, source, capability) : undefined;
+  const inspected = preflightProfileRecipe(source, authoringSlices(selected?.slices ?? recipe), "write-envelope-candidate");
+  const extra = selected ? { capabilityUpgrade: selected.receipt } : {};
+  if (!inspected.ok) return { candidate: null, sourceAvailable: true, recipeFailure: inspected, ...extra };
+  if (selected) recheckCapabilityBaseline(selected);
+  return { candidate: envelopeWindowsFromRecipe(source, inspected.profile), sourceAvailable: true, ...extra };
 }
 
 /** Read-only write-gate compare for analyze. Never authors reviewed.json. */
-export async function inspectRetainedWriteEnvelope(root: string, candidateSha: string, recipe: readonly SlicePatch[] = LIVE_SLICE_PATCHES): Promise<ProfileWriteInspect> {
+export async function inspectRetainedWriteEnvelope(root: string, candidateSha: string, recipe: readonly SlicePatch[] = LIVE_SLICE_PATCHES, capabilityName?: string): Promise<ProfileWriteInspect> {
+  const capability = capabilityName === undefined ? undefined : parseProfileCapability(capabilityName);
   if (typeof root !== "string" || !isAbsolute(root)) invalid("Profile write lineage requires an absolute runtime root.");
   if (!SHA.test(candidateSha)) invalid("--sha must be a 64-character lowercase hex source digest.");
   const resolved = resolve(root);
   const baseline = await loadWriteEnvelopeBaseline(resolved);
   const generationPresent = await retainedGenerationPresent(resolved, candidateSha);
-  const { candidate, sourceAvailable, recipeFailure } = await loadCandidateEnvelopeWindows(resolved, candidateSha, recipe, generationPresent);
+  const { candidate, sourceAvailable, recipeFailure, capabilityUpgrade } = await loadCandidateEnvelopeWindows(resolved, candidateSha, recipe, generationPresent, capability);
   const admission = admitWriteEnvelope({
     pinSha: baseline.pinSha,
     golden: baseline.golden,
@@ -208,7 +255,7 @@ export async function inspectRetainedWriteEnvelope(root: string, candidateSha: s
   } else if (!admission.ok && admission.refusal === "missing_golden" && baseline.pinSha) {
     next = profileWriteMissingGoldenNext(retainedGenerationSourcePath(resolved, baseline.pinSha));
   } else {
-    next = profileWriteExecutableNext(candidateSha, requiredIds);
+    next = profileWriteExecutableNext(candidateSha, requiredIds, capability, capabilityUpgrade?.baselineProfileSha256);
   }
   return {
     pinSha: baseline.pinSha,
@@ -216,6 +263,7 @@ export async function inspectRetainedWriteEnvelope(root: string, candidateSha: s
     bootstrap: admission.bootstrap,
     refusal: recipeFailure ? "recipe_unapplicable" : !sourceAvailable && generationPresent ? "envelope_unmeasurable" : admission.ok ? null : admission.refusal,
     ...(recipeFailure ? { recipeFailure } : {}),
+    ...(capabilityUpgrade ? { capabilityUpgrade } : {}),
     requiredIds,
     informationalIds: admission.informational.map((row) => row.id),
     insertionGroups: admission.insertionGroups,
@@ -242,6 +290,23 @@ export class ProfileWriteRefused extends BoxRuntimeError {
     this.refusal = refusal;
     this.next = next;
     this.details = details;
+  }
+
+  /** Public diagnostic is a finite projection, never the authoring payload or source bytes. */
+  publicDiagnostic(): { refusal: ProfileWriteRefusal; recipeFailure?: TransformFailure } {
+    const descriptor = Object.getOwnPropertyDescriptor(this.details, "recipeFailure");
+    const raw = descriptor && "value" in descriptor ? descriptor.value : null;
+    const own = (key: string): unknown => {
+      if (!raw || typeof raw !== "object") return undefined;
+      const field = Object.getOwnPropertyDescriptor(raw, key);
+      return field && "value" in field ? field.value : undefined;
+    };
+    const code = own("code"), sliceId = own("sliceId");
+    const codes = ["unknown-sha", "anchor-missing", "anchor-duplicate", "find-missing", "find-duplicate", "transformed-mismatch", "slice-not-unique", "retired-slice"];
+    if (this.refusal !== "recipe_unapplicable" || own("ok") !== false || typeof code !== "string" || !codes.includes(code)) return { refusal: this.refusal };
+    const ids = new Set<string>(["create-session", "agent-id", ...OPTIONAL_SLICE_IDS]);
+    return { refusal: this.refusal, recipeFailure: { ok: false, code: code as TransformFailure["code"],
+      ...(typeof sliceId === "string" && ids.has(sliceId) ? { sliceId: sliceId as SliceId } : {}) } };
   }
 }
 
@@ -388,7 +453,14 @@ export async function writeReviewedProfileFromCopy(
   const destDir = resolve(input.destDir);
   const profilePath = join(destDir, "reviewed.json");
   if (hostBundle === profilePath) invalid("Host bundle input must not be the reviewed artifact.");
-  const slices = authoringSlices(input.slices === undefined ? LIVE_SLICE_PATCHES : input.slices);
+  const capability = input.capability === undefined ? undefined : parseProfileCapability(input.capability);
+  if (capability && (input.slices !== undefined || !input.lineage?.retainedSha || input.lineage.allowUnretained || process.platform !== "linux")) {
+    invalid("Capability upgrades require a retained source on the local Linux Box; explicit slices and unretained input are not allowed.");
+  }
+  if (capability ? typeof input.expectedReviewedSha !== "string" || !SHA.test(input.expectedReviewedSha) : input.expectedReviewedSha !== undefined) {
+    invalid("--expected-reviewed-sha is required only with --capability and must be the analyzed baseline's 64-character digest.");
+  }
+  let slices = authoringSlices(input.slices === undefined ? LIVE_SLICE_PATCHES : input.slices);
   const profileId = input.profileId === undefined ? "live-h3-copy" : input.profileId;
   if (typeof profileId !== "string" || !profileId.trim() || profileId.length > 128 || /[\r\n]/.test(profileId)) {
     invalid("Profile id must be a non-empty bounded string.");
@@ -474,6 +546,15 @@ export async function writeReviewedProfileFromCopy(
     }
   }
 
+  const selected = capability ? capabilityBaseline(resolve(lineage!.root), source, capability) : undefined;
+  if (selected) {
+    if (resolve(selected.path) !== profilePath) invalid("Capability upgrades must publish to the baseline's canonical reviewed profile.");
+    if (selected.sha !== input.expectedReviewedSha) {
+      refuse("capability_baseline_changed", "Reviewed baseline differs from the analyzed digest; nothing was published.",
+        `grokbox runtime profile analyze --sha ${diskSha} --out <abs> --capability ${capability}`, { capability });
+    }
+    slices = authoringSlices(selected.slices);
+  }
   const inspected = preflightProfileRecipe(source, slices, profileId);
   if (!inspected.ok) {
     refuse("recipe_unapplicable", "Host bundle does not match the approved profile slices.",
@@ -523,7 +604,7 @@ export async function writeReviewedProfileFromCopy(
         "envelope_drift",
         `Envelope windows drifted at ${admission.requiredIds.join(",") || "(none)"} ` +
           `(insertion groups: ${groups}). --slice-review must list exactly those ids; one review note per group.`,
-        profileWriteDriftNext(diskSha, admission.requiredIds),
+        profileWriteDriftNext(diskSha, admission.requiredIds, capability, selected?.sha),
         {
           pinSha,
           candidateSha: diskSha,
@@ -552,10 +633,22 @@ export async function writeReviewedProfileFromCopy(
   } finally {
     await staged.close();
   }
-  if (!sameSource(sourceInfo, await stat(hostBundle))) invalid("Host bundle changed during authoring.");
-  await checkDestination(profilePath, sourceInfo);
-  await rename(stagingPath, profilePath);
-  // No fallible post-commit read: another successful writer may already have published next.
+  // All new Linux publishers share the same permanent gate. Under that gate a
+  // capability writer rechecks its baseline before rename; default writers keep
+  // their explicit last-rename-wins behavior. Older/uncooperative writers must
+  // be stopped for maintenance and do not gain transactional guarantees here.
+  const gate = process.platform === "linux"
+    ? await acquireAdvisoryGate(join(dirname(destDir), "state", "profile-publication.gate"), 2000) : undefined;
+  if (gate === null) invalid("Another profile publisher is busy; no profile was published.");
+  try {
+    if (!sameSource(sourceInfo, await stat(hostBundle))) invalid("Host bundle changed during authoring.");
+    await checkDestination(profilePath, sourceInfo);
+    if (selected) recheckCapabilityBaseline(selected);
+    await rename(stagingPath, profilePath);
+  } finally {
+    await gate?.release();
+  }
+  // No post-commit read: another successful writer may already have published next.
   return {
     profilePath,
     profile,
@@ -564,6 +657,7 @@ export async function writeReviewedProfileFromCopy(
     diskSha,
     ...(allowUnretained ? { unretained_source: true as const } : {}),
     ...(envelope ? { envelope } : {}),
+    ...(selected ? { capabilityUpgrade: selected.receipt } : {}),
   };
 }
 

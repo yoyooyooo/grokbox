@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { OWNERSHIP_MAX_TARGETS, OWNERSHIP_LOCAL_SOURCE, OWNERSHIP_WAIT_MS, OWNERSHIP_READ_SOURCE, projectOwnershipReadObservation, type OwnershipReadObservation } from "@grokbox/runtime-kernel/contract";
+import { OWNERSHIP_MAX_TARGETS, OWNERSHIP_LOCAL_SOURCE, OWNERSHIP_WAIT_MS, OWNERSHIP_READ_SOURCE, projectOwnershipReadObservation, loadedHostCapabilities, type LoadedHostIdentity, type OwnershipReadObservation } from "@grokbox/runtime-kernel/contract";
 
 // Native credential owner only. No caller-provided evidence can authorize execution.
 export const HOST_OWNERSHIP_READ_SYMBOL = "grokbox.box-runtime.ownership-read.v1";
@@ -84,6 +84,7 @@ type NativeReadEntry = {
 
 export function bindHostOwnershipRead(options: {
   timeoutMs?: number; now?: () => number; monotonicNow?: () => number;
+  loaded?: LoadedHostIdentity;
   schedule?: (callback: () => void, delayMs: number) => () => void;
 } = {}) {
   const timeoutMs = Math.max(1, Math.min(OWNERSHIP_READ_DEADLINE_MS, options.timeoutMs ?? OWNERSHIP_READ_DEADLINE_MS));
@@ -95,8 +96,9 @@ export function bindHostOwnershipRead(options: {
   });
   const age = (end: number, start: number) => Math.max(0, Math.ceil(end - start));
   let pending: NativeReadEntry | undefined;
+  const loaded = options.loaded ? Object.freeze({ ...options.loaded }) : undefined;
 
-  return async (ports: ReadPorts) => {
+  const read = async (ports: ReadPorts) => {
     const ids = ports.agentIds;
     const started = now(), startedTick = tick();
     const observedAt = new Date(started).toISOString();
@@ -246,4 +248,5 @@ export function bindHostOwnershipRead(options: {
       }),
     };
   };
+  return Object.assign(read, { capabilities: (wrapperVersion: unknown) => loadedHostCapabilities(loaded, wrapperVersion) });
 }

@@ -138,6 +138,7 @@ export { openMonitorStore } from "./internal/io/monitor-store.node.ts";
 export { runMonitor } from "./internal/roots/monitor.runtime.ts";
 export { runIncidentEvidenceCommand } from "./internal/roots/incident-evidence.runtime.ts";
 export { startRuntimeCommand, type RuntimeStartResult } from "./internal/roots/command.runtime.ts";
-export { startControlOperation, controllerOperationId, observeControllerHostGeneration, diskPreloadSha256, reviewedProfileSha256 } from "./internal/roots/controller-program.node.ts";
+export { startControlOperation, controllerOperationId, observeControllerHostGeneration, diskPreloadSha256, reviewedProfileSha256,
+  recoverControllerOperationState, type OperationRecoveryReport } from "./internal/roots/controller-program.node.ts";
 export { stopPatchedHostCoverage, stopLivePatchedHost } from "./internal/process/host-stop.ts";
 export type { IdentityOpResult } from "./internal/process/identity-op.ts";

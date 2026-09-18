@@ -23,6 +23,7 @@ import {
 } from "../bin/runtime.js";
 import { resolvePackageRoot } from "../packages/cli/src/deps.ts";
 import { GROKBOX_SKILL_TOPICS } from "../packages/cli/src/skills.ts";
+import { exerciseHcrProfileCli } from "./hcr-cli-fixture.ts";
 
 const repoRoot = join(import.meta.dir, "..");
 const bun = Bun.which("bun") ?? process.execPath;
@@ -320,6 +321,19 @@ describe("published Node package", () => {
     expect(notices).toContain("Commander.js");
     expect(notices).toContain("Copyright (c) 2011 TJ Holowaychuk");
     expect(notices).toContain("Copyright (c) 2017 sql.js authors");
+
+    // HCR runs the installed Node binary outside the checkout against synthetic
+    // retained bytes. No real profile, Gateway, Host process or model is used.
+    if (process.platform === "linux") {
+      const hcrRoot = join(fixture, "installed-hcr-runtime");
+      await mkdir(hcrRoot, { recursive: true, mode: 0o700 });
+      const hcrEnv = { PATH: process.env.PATH ?? "", HOME: fixture,
+        GROKBOX_CONFIG_DIR: join(fixture, "hcr-config"), GROKBOX_BOX_RUNTIME_ROOT: hcrRoot,
+        GROKBOX_RUN_ROOT: join(hcrRoot, "run") };
+      // Explicit Node entry, including the local Node20 baseline where installed.
+      const hcrNode = existsSync("/usr/bin/node") ? "/usr/bin/node" : nodeExecutable;
+      await exerciseHcrProfileCli(args => run([hcrNode, grokbox, ...args], fixture, hcrEnv), hcrRoot);
+    }
 
     // Verify the published companion after installation with no workspace
     // dependency resolution. Read operations must not initialize storage.

@@ -11,21 +11,24 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
     startAnchor: "var hostStatusArgs = rpcObject({",
     endAnchor: "var localToolPermissionResolution =",
     find: "  includeManagedCapabilities: rpcOptional(rpcBoolean())\n",
-    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString())),\n  grokboxOwnershipLocalOnly: rpcOptional(rpcBoolean())\n",
+    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString())),\n  grokboxOwnershipLocalOnly: rpcOptional(rpcBoolean()),\n  grokboxRuntimeCapabilities: rpcOptional(rpcBoolean())\n",
   },
   {
     id: "ownership-read-api",
     startAnchor: "    getHostStatus: async ({ includeManagedCapabilities }) => ({",
     endAnchor: "    setBoxMigrating: async (args) => {",
     find: "    getHostStatus: async ({ includeManagedCapabilities }) => ({\n      ...deps.extensions.api(\"host-upgrade\").getVersionState(),\n      isBusy: deps.getHealth().isBusy,\n      capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES\n    }),\n",
-    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds, grokboxOwnershipLocalOnly }) => {
+    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds, grokboxOwnershipLocalOnly, grokboxRuntimeCapabilities }) => {
+      const read = globalThis[Symbol.for("${HOST_OWNERSHIP_READ_SYMBOL}")];
       const result = {
         ...deps.extensions.api("host-upgrade").getVersionState(),
         isBusy: deps.getHealth().isBusy,
-        capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES
+        capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES,
+        ...(grokboxRuntimeCapabilities === true ? {
+          grokboxRuntimeCapabilities: typeof read?.capabilities === "function" ? read.capabilities(1) : null
+        } : {})
       };
       if (grokboxOwnershipAgentIds === undefined) return result;
-      const read = globalThis[Symbol.for("${HOST_OWNERSHIP_READ_SYMBOL}")];
       if (typeof read !== "function") return result;
       const observed = await read({
         agentIds: grokboxOwnershipAgentIds,

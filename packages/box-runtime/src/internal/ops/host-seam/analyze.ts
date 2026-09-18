@@ -4,6 +4,7 @@ import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import type { EnvelopeInsertionGroup } from "./envelope-windows.ts";
 import type { TransformFailure } from "../../host/profile.ts";
+import type { CapabilityUpgradeReceipt } from "../../host/profile-capabilities.ts";
 import type { ReplayReport } from "./replay.ts";
 import type { CandidateArtifact } from "./propose.ts";
 
@@ -24,6 +25,7 @@ export type AnalysisEnvelopeEvidence = {
   bootstrap: boolean;
   refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | "recipe_unapplicable" | null;
   recipeFailure?: TransformFailure;
+  capabilityUpgrade?: CapabilityUpgradeReceipt;
   requiredIds: string[];
   informationalIds: string[];
   insertionGroups: EnvelopeInsertionGroup[];
@@ -58,6 +60,7 @@ export function attachWriteEnvelopeInspect(
     bootstrap: boolean;
     refusal: AnalysisEnvelopeEvidence["refusal"];
     recipeFailure?: TransformFailure;
+    capabilityUpgrade?: CapabilityUpgradeReceipt;
     requiredIds: readonly string[];
     informationalIds: readonly string[];
     insertionGroups: EnvelopeInsertionGroup[];
@@ -80,6 +83,7 @@ export function attachWriteEnvelopeInspect(
       bootstrap: inspect.bootstrap,
       refusal: inspect.refusal,
       ...(inspect.recipeFailure ? { recipeFailure: inspect.recipeFailure } : {}),
+      ...(inspect.capabilityUpgrade ? { capabilityUpgrade: inspect.capabilityUpgrade } : {}),
       requiredIds: [...inspect.requiredIds],
       informationalIds: [...inspect.informationalIds],
       insertionGroups: inspect.insertionGroups,

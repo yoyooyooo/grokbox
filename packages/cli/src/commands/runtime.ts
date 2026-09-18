@@ -28,6 +28,7 @@ import {
   reviewedProfileSha256,
   startRuntimeCommand,
   startControlOperation,
+  recoverControllerOperationState,
   startModeldProcess,
   stopLivePatchedHost,
   writeReviewedProfileFromCopy,
@@ -63,10 +64,11 @@ import { findRosterRow } from "./roster.ts";
 import { writeSuccess } from "../output.ts";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
 import { paintTitleAfterModelAssignment } from "../title-sync.ts";
+import { controllerApplyCompleted, hostCapabilityPorts } from "../host-capabilities.ts";
 
 function rethrow(error: unknown): never {
   if (error instanceof ProfileWriteRefused) {
-    throw new CliError(error.code, error.message, { next: error.next });
+    throw new CliError(error.code, error.message, { next: error.next, profileWrite: error.publicDiagnostic() });
   }
   if (error instanceof BoxRuntimeError) {
     throw new CliError(error.code, error.message, { next: error.next, failureCode: error.failureCode });
@@ -366,10 +368,26 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
     if (confirmed !== true) {
       throw new CliError("invalid_usage", "runtime re-adopt requires --confirm.");
     }
-    writeSuccess(deps.stdout, await applyHostEnable(deps));
+    const receipt = await applyHostEnable(deps);
+    const row = isRecord(receipt) ? receipt : {};
+    const hostCapabilities = await hostCapabilityPorts.observe(deps, 5000);
+    const committed = await hostCapabilityPorts.alignment(deps);
+    const aligned = controllerApplyCompleted(receipt) && hostCapabilities.state === "ready" && committed.state === "ready";
+    writeSuccess(deps.stdout, { ...row, hostCapabilities, committed,
+      alignment: aligned ? "verified" : "not_verified",
+      next: row.reason === "operation-busy" ? "grokbox runtime operation-recovery --json" : aligned ? "none" : "grokbox doctor",
+      executionAdmission: "not_proven", providerRoundtrip: "not_proven",
+    });
   } catch (error) {
     rethrow(error);
   }
+}
+
+export async function runRuntimeOperationRecovery(deps: CliDeps, confirmed: boolean | undefined): Promise<void> {
+  try {
+    const runtime = store(deps);
+    writeSuccess(deps.stdout, await recoverControllerOperationState({ boxRoot: runtime.root, ephemeralRoot: runtimeRunRoot(deps), confirm: confirmed === true }));
+  } catch (error) { rethrow(error); }
 }
 
 export async function runRuntimeWatchdog(deps: CliDeps): Promise<void> {
@@ -475,6 +493,7 @@ export async function runRuntimeProfileAnalyze(
   deps: CliDeps,
   sha: string | undefined,
   outPath: string | undefined,
+  capability?: string,
 ): Promise<void> {
   try {
     if (!sha || !/^[a-f0-9]{64}$/.test(sha)) {
@@ -486,7 +505,7 @@ export async function runRuntimeProfileAnalyze(
     const runtime = store(deps);
     const last = await readLastReplayReport(runtime.root);
     const session = createAnalysisSession();
-    const inspect = await inspectRetainedWriteEnvelope(runtime.root, sha);
+    const inspect = await inspectRetainedWriteEnvelope(runtime.root, sha, undefined, capability);
     const result = attachWriteEnvelopeInspect(
       await session.run({
         analysis: {
@@ -652,6 +671,8 @@ export async function runRuntimeProfileWrite(
     allowUnretained?: boolean;
     confirm?: boolean;
     sliceReview?: string | string[];
+    capability?: string;
+    expectedReviewedSha?: string;
   },
 ): Promise<void> {
   try {
@@ -691,6 +712,8 @@ export async function runRuntimeProfileWrite(
         destDir,
         hostBundle,
         profileId: "reviewed-copy-envelope",
+        ...(options.capability !== undefined ? { capability: options.capability } : {}),
+        ...(options.expectedReviewedSha !== undefined ? { expectedReviewedSha: options.expectedReviewedSha } : {}),
         lineage: {
           root: runtime.root,
           ...(sha ? { retainedSha: sha } : { allowUnretained: true }),
@@ -722,6 +745,7 @@ export async function runRuntimeProfileWrite(
       hostBundle,
       ...(written.unretained_source ? { unretained_source: true } : {}),
       ...(written.envelope ? { envelope: written.envelope } : {}),
+      ...(written.capabilityUpgrade ? { capabilityUpgrade: written.capabilityUpgrade } : {}),
     });
   } catch (error) {
     rethrow(error);
