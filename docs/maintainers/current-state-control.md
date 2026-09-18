@@ -1,0 +1,42 @@
+# 单盒当前状态操作
+
+本页说明已实现的手动当前状态基础能力，不代表完整clone、替身自动接替或现场采用已经完成。产品仍是一个长期Memory身份、一份当前工作上下文，没有会话列表或切换。合同归 [S13](../roadmap/box-runtime-impl-spec.md#continuity-primitives)，实现范围归 [CONT-07](../tickets/CONT-07-current-context-control.md)，现场只看 [LIVE-CURRENT-CONTEXT](../tickets/LIVE-integration-validation.md#live-current-context)。
+
+## 前置边界
+
+仅限本云电脑的原生Gateway和已加载、已注册的默认Bot。当前候选通过`current-state` profile能力增加有限RPC、主Host准备屏障及原生worker事务；没有这些接缝时明确返回unavailable，不自动更新Host或改profile。使用现有同源reviewed baseline升级流程，保留所有已有接缝，不能拿测试中删减过的baseline安装到现役。
+
+当前运行配置为旧schema时先安排成套配置/消费者采用，不能只运行新版源码迁移其中一个对象。`runtime profile analyze/write --capability current-state`是已有profile工作流的显式新能力选项；其写入和后续re-adopt仍遵守原来的确认、基线摘要与LIVE窗口。
+
+## 命令与效果
+
+| 命令 | 实际效果 |
+|---|---|
+| `agents state show <id>` | 读取当前head及profile绑定策略版本，不创建CONT库，不授执行权 |
+| `agents state capture <id> --operation-id <uuid> --confirm` | 将有界原生checkpoint闭包保全到本机私有CONT库；不修复源、不调用模型 |
+| `agents state initialize <target-id> --snapshot-id <uuid> --expect-revision <sha256> --operation-id <uuid> --confirm` | 把固定原生上下文导入处于同scope的空白目标；保持准备屏障，不启动任务 |
+| `agents state operation <target-id> --operation-id <uuid> --scope-id <sha256>` | 离线读取本地初始化操作，不访问Host、也不升级旧CONT库 |
+| `agents state reconcile <target-id> --operation-id <uuid> --confirm` | 使用已保存的原请求对账原生应用凭据，更新本地安全记录；不重做导入、不解除未知屏障 |
+| `agents state activate <target-id> --operation-id <uuid> --confirm` | 对已读回的初始化解除准备屏障，允许后续普通输入；不发送Human消息，不主动开始推理 |
+
+所有目标使用精确UUID。创建、捕获和初始化是不同操作；各自固定UUID，丢回执后继续检查原操作，不能换ID盲重试。输出仅含head、引用和收据，原始prompt/blob不进入普通stdout。正常CLI只做本机管理，不支持远端Profile伪装成同盒初始化。
+
+## 手动验证顺序
+
+先show源Bot再capture，记录返回的snapshot引用、scope和质量缺口。当前捕获只保全所选原生引用图，Memory和产品展示转录不是这个基础操作的复制范围；pending/未知效果不能直接导入成新的待执行任务。
+
+通过`agents create --harness box --defer-start`显式请求关闭自我介绍和kickstart，核实新ID/归属。这个开关不构成入站隔离，不等于prepared；不要在初始化前给目标发业务消息。新目标已运行、存在转录/请求/结算记录或待处理Routine结果，即使没有root也不再是本入口允许的空白目标。
+
+show目标，使用其exact revision和已保存snapshot初始化。原生worker在同一事务写root/依赖与应用凭据；主Host随后CAS发布指针、重新装载并写自己的应用记录。只有两层读回与准备状态完成才返回prepared。没有跨两个数据库的虚构原子事务：任何中间失败保持unknown/blocked并可对账，不以worker成功单独宣布Bot准备好了。
+
+检查prepared结果后，再按已有权限显式activate。激活不启动任务；之后的正常输入才进入目标Agent loop，继续产生B1/B2。旧初始化操作重入不能把B0重新灌到B2。已加载正式Host/实际模型/客户端上的首轮、重启后续轮，需要LIVE取证，fixture通过不替代。
+
+## 故障处置
+
+`source_changed`重新读取状态并重新评估，不能自动覆写新版本。`not_prepared`表示目标或在途状态不适合初始化，不使用clearConversation清掉记录来通过门禁。`commit_unknown`与`cleanup_unknown`先查询原操作和reconcile；原生凭据缺失不是未执行证明，禁止改operationId再尝试。仅worker已提交而主Host应用记录未完成时，对账仍可能unknown；保持屏障，不擅自补写或激活。
+
+接缝不支持、worker握手不匹配或Host源码换版时拒绝该能力，沿现有profile诊断/重新资格流程处理。普通GET不修复数据库，不把首次读取Temporal伪称刚刚发生迁移。
+
+## 明确未交付的产品范围
+
+这些命令是当前上下文基础操作，不是完整`agents clone/replace`。完整Memory/展示历史/附件与新身份语义转换、best-effort语义恢复、已有非空Bot reset、受管初始system指令spawn、分档自动保护、关系交接及旧Bot退役继续在CONT来源票实施；它们是实现事项，不可以改标成只剩live验收。现役切换和真实行为验证另放唯一LIVE索引。

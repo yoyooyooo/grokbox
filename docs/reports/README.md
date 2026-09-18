@@ -2,6 +2,10 @@
 
 **当前现场已验/未验、阻断与下一步只看 [LIVE 唯一索引](../tickets/LIVE-integration-validation.md)。** 本目录报告固定在各自窗口结束时，不随后续推进维护当前状态；报告中的未验清单只说明当时缺口。
 
+- [2026-09-19 原生当前状态接线](2026-09-19-continuity-native-binding.md)：真实原生worker/SQLite事务、主Host准备与应用记录、有限CLI/RPC、70项基础与22项原生资格；记录分组回归、两项竞态修正与未进行live采用的边界。
+
+- [2026-09-18 原生checkpoint格式](2026-09-18-continuity-native-checkpoint.md)：固定Host/worker的原生引用图与AgentStore、严格全图读回和独立进程；不等于真实业务Bot初始化。
+
 - [2026-09-18 唯一当前状态协调](2026-09-18-continuity-current-state.md)：capture/initialize/显式对账、原始归属证据复核、105项组合与Node强杀/B2不重导；使用真实CONT存储及owned合成原生端，未安装官方Host绑定或验证真实Agent loop。
 
 - [2026-09-18 CONT真实恢复材料与操作安全记录](2026-09-18-continuity-recovery-store.md)：CONT-02/11首个真实持久消费者、J1引用/过期接线、固定Bun/Node20的114项组合与owned进程硬崩；未接原生Bot捕获/导入、配置自动采用或live。

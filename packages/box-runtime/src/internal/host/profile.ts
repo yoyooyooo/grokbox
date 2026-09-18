@@ -7,7 +7,11 @@ export const CONTEXT_SLICE_IDS = [
   "context-manual-shell-owner", "context-manual-trusted-options", "context-manual-native-action",
   "context-manual-no-business-settlement", "context-manual-summary-owner", "context-control-rpc-schema", "context-control-rpc-api",
 ] as const;
+export const NATIVE_CHECKPOINT_SLICE_IDS = ["continuity-native-worker-handshake", "continuity-native-worker-client", "continuity-native-blob-owner"] as const;
+export const NATIVE_CURRENT_STATE_SLICE_IDS = ["continuity-native-run-fence", "continuity-native-session-owner", "continuity-native-checkpoint-fence", "continuity-native-checkpoint-revision", "continuity-native-rpc-schema", "continuity-native-rpc-api", "continuity-native-created-owner", "continuity-native-duplicate-identity"] as const;
 export const OPTIONAL_SLICE_IDS = [
+  ...NATIVE_CHECKPOINT_SLICE_IDS,
+  ...NATIVE_CURRENT_STATE_SLICE_IDS,
   "ownership-read-schema",
   "ownership-read-api",
   "ownership-resume-gate",

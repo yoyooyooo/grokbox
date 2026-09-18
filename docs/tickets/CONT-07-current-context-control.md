@@ -1,6 +1,6 @@
 # CONT-07 — 唯一当前上下文的原生控制
 
-**状态：部分实现。** capture/initialize/显式reconcile协调程序、有限native port和接缝校验已实现，接入真实CONT持久层；当前原生Host/worker的decoder和选定AgentStore行为已有独立资格，生产hold/读取/初始化writer仍未绑定，reset/recover/spawn/clone CLI未交付。
+**状态：当前原生初始化基础切片已实现，真实部署待验；本票完整reset/recover范围仍有实现工作。** capture/initialize/reconcile/hold release已有具体主Host/worker接线、有限RPC和`agents state` CLI，接入CONT持久层；显式`current-state` profile升级保持既有接缝，未修改现役profile。已有非空状态reset、完整语义recover、Memory/展示历史和完整clone/spawn不由本切片冒充完成。
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)。依赖CONT-00、CONT-11和CTX-02；接口可先用owned fixture，产品reset/recover必须先满足CONT-02保全。为CONT-03和CONT-08提供最小公共内核，不先建设多会话平台。
 
@@ -14,15 +14,25 @@
 
 `openContinuityCurrentState`在`roots/continuity-state.runtime.ts`持有捕获、初始化和对账操作寿命；kernel `current-state.ts`定义有限identity/revision/材料与application receipt，`host/continuity-import.ts`只作Effect-free原生边界校验，无文件/RPC/修复副作用。捕获传递读取预算并验证前后head和字节；初始化仅限empty/prepared目标，保护源快照、复核原始归属证据年龄、单次claim后提交，reopen和真实root读回且cleanup成功后才结算。
 
-同操作重入不重新捕获/生成材料；目标有B2新进度不重导B0。原生结果unknown不盲重试；显式reconcile向原生只读取证但会写本地结算，不能当GET或重新激活。接口中application marker是对后续native binding的要求，不声称官方已有此结构。正常pipeline、Memory/转录/附件完整导入、self-reset以及原生持久屏障仍未实现。
+同操作重入不重新捕获/生成材料；目标有B2新进度不重导B0。原生结果unknown不盲重试；显式reconcile向原生只读取证但会写本地结算，不能当GET或重新激活。application marker与持久准备状态已由下述worker和主Host适配实现，并非官方原本已有的字段。完整Memory/转录/附件导入、self-reset和语义恢复仍需实现；整条原生业务回合尚待现场验证。
 
 [协调程序固定报告](../reports/2026-09-18-continuity-current-state.md)记录105项组合/711断言，真实CONT SQLite、owned合成原生协议、生产window codec与Node进程强杀；不是真实Host/Provider执行。
 
-后续[原生checkpoint切片](../reports/2026-09-18-continuity-native-checkpoint.md)已解除源码读取阻断，新增`host/native-checkpoint.ts`具体capture adapter与严格root/全图读回。使用单独固定Host/worker对的原schema和AgentStore，在owned端口及独立Node进程中完成源移除后的持久往返；不是再用合成protobuf代替原生。旧whole-Host pin不变。实际准备锁、worker预算读取、持久application marker和第一轮原生loop仍需接线，普通openSession的隐式repair/GC不能当无修复capture。公开与显式资格入口见对应报告，未签部分不以局部原生通过替代。
+后续[原生checkpoint切片](../reports/2026-09-18-continuity-native-checkpoint.md)已解除源码读取阻断，新增`host/native-checkpoint.ts`具体capture adapter与严格root/全图读回。使用单独固定Host/worker对的原schema和AgentStore，在owned端口及独立Node进程中完成源移除后的持久往返；不是再用合成protobuf代替原生。旧whole-Host pin不变。该历史报告当时尚缺的worker事务/预算读取、持久应用凭据、主Host准备屏障和RPC已经在下一切片接线，见[当前操作指南](../maintainers/current-state-control.md)与[2026-09-19集成回执](../reports/2026-09-19-continuity-native-binding.md)。原生worker在owned数据库上实际启动，主Host注册/runner/checkpoint/profile接缝通过固定原源资格；整Host/真实Bot的第一轮及重启后续轮仍须LIVE，不把worker往返当整条用户旅程。
 
 ```bash
 node scripts/verify-runtime-rebuild.mjs continuity-current-state
 ```
+
+## 当前初始化切片
+
+`native-checkpoint-worker.ts`在原worker连接内串行执行有界读取事务或写入事务，root/依赖/worker marker同库提交；prepared marker阻断原生GC/写入，重启保留。`native-current-state-owner.ts`登记实际原生store与metadata，协调主回合/异步checkpoint、CAS root指针和主Host应用标记；只接受未运行、无历史请求/转录/待处理结果的空白目标，不把缺root等同新Bot。
+
+当前能力通过独立`current-state`同源profile升级接入，不改变默认历史recipe。prepare保留现有来源/目标，initialize完成双层读回但不开始工作；activate显式释放已核实屏障，只允许后续正常输入。原生worker commit、主Host应用完成、本地安全账本完成分别记录；部分成功unknown不重导，B2继续工作后不能被B0覆盖。
+
+`agents state show/capture/initialize/operation/reconcile/activate`及`agents create --defer-start`已有注册/帮助/处理程序。defer-start只请求抑制介绍和kickstart，不是入站屏障；state命令Box-local、UUID限定、写操作需confirm、普通输出无原始上下文。CONT库显式v1→v2迁移保存原始初始化请求，GET不迁移。使用方法和限制唯一归操作指南。
+
+稳定验证入口：`node scripts/verify-runtime-rebuild.mjs continuity-native-binding`；明确本机原生资格另用`GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continuity-native-binding-qualified`。后者Node22仅来自原生worker的node:sqlite要求，不提高grokbox Node20.17产品基线。独立外部review和实际profile加载仍未签；不把未实现项移成单纯live待验。
 
 ## 必需行为
 

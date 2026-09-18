@@ -37,5 +37,6 @@ export function openContinuityRecoveryStore(input: ContinuityStoreInput, hooks: 
     claimEffect: (operationId: string, effectId: string, policyRevision: string, signal?: AbortSignal) => run(programs.claimEffect(operationId, effectId, policyRevision), signal),
     settleEffect: (operationId: string, effectId: string, outcome: "succeeded" | "not_executed", evidenceHash: string, signal?: AbortSignal) => run(programs.settleEffect(operationId, effectId, outcome, evidenceHash), signal),
     operation: (operationId: string) => run(programs.operation(operationId)),
+    initializationRequest: (operationId: string) => run(programs.initializationRequest(operationId)),
   };
 }

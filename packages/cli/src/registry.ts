@@ -562,6 +562,25 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
       { flags: "--confirm", description: "Confirm bounded summary inference and native checkpoint update" }], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false,
   },
+  ...(["show", "capture", "initialize", "operation", "reconcile", "activate"] as const).map(action => ({
+    path: ["agents", "state", action],
+    usage: `grokbox agents state ${action} <agent-id> [options]`,
+    summary: ({ show: "Read the single current native state; never initializes storage or grants execution.",
+      capture: "Save a bounded native checkpoint to the private CONT vault; no repair, user prompt or model call.",
+      initialize: "Initialize a virgin prepared Box target from a saved native checkpoint; context-only, not a full clone.",
+      operation: "Read a saved initialization operation offline using its scope ID.",
+      reconcile: "Reconcile native initialization evidence without replaying the write or activating the Bot.",
+      activate: "Release a verified initialization hold for subsequent normal input; does not start a task." })[action],
+    arguments: [{ syntax: "<agent-id>", description: "Exact Bot UUID; one current context, not a selectable session" }],
+    options: options([
+      ...(action !== "show" ? [{ flags: "--operation-id <uuid>", description: "Stable capture or initialization operation UUID", required: true }] : []),
+      ...(action === "initialize" ? [{ flags: "--snapshot-id <uuid>", description: "Published native checkpoint ID", required: true },
+        { flags: "--expect-revision <sha256>", description: "Exact target revision from state show", required: true }] : []),
+      ...(action === "operation" ? [{ flags: "--scope-id <sha256>", description: "Scope from the original state receipt; offline read only", required: true }] : []),
+      ...(!["show", "operation"].includes(action) ? [{ flags: "--confirm", description: "Confirm local capture, initialization, reconciliation or hold release", required: true }] : []),
+    ], { timeout: true }),
+    stdin: "none" as const, table: false, timeout: true, destructive: !["show", "operation"].includes(action), gateway: action !== "operation", streaming: false,
+  })),
   {
     path: ["agents", "ownership"],
     usage: "grokbox agents ownership <agents...>",
@@ -644,6 +663,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     options: options(
       [
         { flags: "--name <name>", description: "Agent name", required: true },
+        { flags: "--defer-start", description: "Request no introduction or kickstart for a Box target; not an incoming-message hold" },
         { flags: "--description <text>", description: "Agent persona or description" },
         { flags: "--instructions <text>", description: "Alias input for agent description" },
         { flags: "--title <title>", description: "Agent title" },
@@ -1657,13 +1677,13 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "analyze"],
-    usage: "grokbox runtime profile analyze --sha <sha> --out <abs> [--capability ownership-local]",
+    usage: "grokbox runtime profile analyze --sha <sha> --out <abs> [--capability ownership-local|current-state]",
     summary: "Triage retained snapshot; missing runner still emits envelope reject ids and write next.",
     arguments: [],
     options: options([
       { flags: "--sha <sha>", description: "Retained source SHA", required: true },
       { flags: "--out <abs>", description: "Protected analysis artifact path", required: true },
-      { flags: "--capability <name>", description: "Inspect a maintained ownership-local upgrade against the same-source reviewed baseline" },
+      { flags: "--capability <name>", description: "Inspect a maintained ownership-local or qualified current-state upgrade against the same-source reviewed baseline" },
     ]),
     stdin: "none",
     table: false,
@@ -1783,7 +1803,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "write"],
-    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>] [--capability ownership-local --expected-reviewed-sha <sha>]",
+    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>] [--capability ownership-local|current-state --expected-reviewed-sha <sha>]",
     summary: "Atomically author a durable PatchProfile from a retained Host generation; envelope reject-on-drift. No live inject.",
     arguments: [],
     options: options([
@@ -1792,7 +1812,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
       { flags: "--allow-unretained", description: "Waive retain-dir bind only; never skips envelope reject-on-drift" },
       { flags: "--confirm", description: "Required with --from --allow-unretained" },
       { flags: "--slice-review <id...>", description: "Exact rejecting envelope slice ids (windowSha/count/find.inWindow)" },
-      { flags: "--capability <name>", description: "Upgrade only the maintained ownership-local capability and dependencies; requires --sha and an applicable baseline" },
+      { flags: "--capability <name>", description: "Upgrade the selected ownership-local or current-state capability and dependencies; requires --sha and an applicable baseline" },
       { flags: "--expected-reviewed-sha <sha>", description: "Required with --capability: exact baselineProfileSha256 from analysis; rejects intervening profile changes" },
     ]),
     stdin: "none",
@@ -1942,6 +1962,7 @@ export function renderCommandReference(cliVersion: string): string {
 export const GATEWAY_METHODS = [
   "getHostStatus",
   "grokboxContextControl",
+  "grokboxCurrentStateControl",
   "getTrays",
   "getAgentAutomations",
   "setAgentAutomationEnabled",

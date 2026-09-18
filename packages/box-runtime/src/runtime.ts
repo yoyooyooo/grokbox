@@ -26,6 +26,7 @@ export { openContinuityObservationBridge, runContinuityReferenceChange, type Con
 export { openContinuityRecoveryStore } from "./internal/roots/continuity.runtime.ts";
 export { createNativeCheckpointCapturePort } from "./internal/host/native-checkpoint.ts";
 export type { NativeCheckpointBoundary, NativeCheckpointSchema } from "./internal/host/native-checkpoint.ts";
+export { createCurrentStateClient, type CurrentStateTransport } from "./internal/io/current-state-client.node.ts";
 export { openContinuityCurrentState, type CurrentStateInput, type InitializationResult } from "./internal/roots/continuity-state.runtime.ts";
 export type { NativeCurrentStatePort, NativeCurrentHead, CaptureCurrentRequest, InitializeCurrentRequest, InitializationPermission } from "@grokbox/runtime-kernel/continuity";
 export type { ContinuityStoreInput, PublicationReceipt } from "./internal/io/continuity-store.node.ts";

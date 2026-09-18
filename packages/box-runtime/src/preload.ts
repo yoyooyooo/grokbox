@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { installNativeCheckpointWorkerHook, NATIVE_CHECKPOINT_PAIR } from "./internal/host/native-checkpoint-worker-hook.ts";
+import { createNativeCurrentStateOwner, NATIVE_CURRENT_STATE_SYMBOL } from "./internal/host/native-current-state-owner.ts";
+import { createNativeCurrentStateRpc } from "./internal/host/native-current-state-rpc.ts";
+import { NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, CONTEXT_SLICE_IDS } from "./internal/host/profile.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
@@ -122,6 +126,19 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_FAILURE_SYMBOL)] = isHostManagedFailure;
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_FAILURE_SYMBOL)] = recordHostManagedStepFailure;
   }
+  if (binding && profile.sourceSha256 === NATIVE_CHECKPOINT_PAIR.host
+    && [...NATIVE_CHECKPOINT_SLICE_IDS, ...NATIVE_CURRENT_STATE_SLICE_IDS, ...CONTEXT_SLICE_IDS].every(id => profile.slices.some(slice => slice.id === id))) {
+    const currentState = createNativeCurrentStateOwner({
+      qualification: { hostSourceSha: profile.sourceSha256, nativeSchema: NATIVE_CHECKPOINT_PAIR.schema }, generation: binding.generationId });
+    (globalThis as Record<symbol, unknown>)[Symbol.for(NATIVE_CURRENT_STATE_SYMBOL)] = Object.assign(currentState, {
+      call: createNativeCurrentStateRpc(currentState, profileSha256) });
+  }
+  // Worker threads inherit this preload. Only the exact independently reviewed
+  // Host/worker pair with all client slices opts into the finite transaction
+  // protocol. Existing workers advertise no capability and are never sent it.
+  installNativeCheckpointWorkerHook({ targetPath: join(dirname(target), "agent-isolation", "agent-store-worker.cjs"),
+    hostSourceSha: profile.sourceSha256,
+    enabled: NATIVE_CHECKPOINT_SLICE_IDS.every(id => profile.slices.some(slice => slice.id === id)) });
   installCompileHook({
     targetPath: target,
     profile,

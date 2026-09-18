@@ -30,7 +30,7 @@ GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/ow
 
 CONT-07已有[捕获/初始化/对账程序](../reports/2026-09-18-continuity-current-state.md)。先前的工具路径阻断现已解除，当前Host/worker源码对通过独立固定pin做了[原生checkpoint资格](../reports/2026-09-18-continuity-native-checkpoint.md)：16项原生性质与2项独立Node往返，另12项公开reader用例，合计30 pass。旧whole-Host pin保持不变，新证明不签其他旧接缝或整安装。
 
-生产`native-checkpoint.ts`已使用限定schema引用元数据遍历原生闭包，并接CONT capture/vault；保留GC/export省略的历史root/摘要引用，严格验证未知字段、叶子编码/JSON、预算以及持久root/内存/全图一致。实际原AgentStore方法在owned数据端口上执行，已证明其静默空恢复和写入后metadata失败边界。真正Host准备屏障、预算化worker读取、跨身份初始化持久收据与activation尚未绑定；NativeCurrentStatePort的application marker不是官方现成字段，不能据此开放真实初始化。
+生产`native-checkpoint.ts`已使用限定schema引用元数据遍历原生闭包，并接CONT capture/vault；保留GC/export省略的历史root/摘要引用，严格验证未知字段、叶子编码/JSON、预算以及持久root/内存/全图一致。实际原AgentStore方法在owned数据端口上执行，已证明其静默空恢复和写入后metadata失败边界。下一切片已新增实际原生worker线程上的预算化读取、同库应用凭据和prepared保护，以及主Host的当前状态控制接缝、RPC和手动CLI。[2026-09-19回执](../reports/2026-09-19-continuity-native-binding.md)区分真实worker/SQLite与仍未运行的整Host/业务Bot。应用marker由我们的有限原生适配实现，不伪称官方原本有该字段；双库部分完成仍unknown，不开放自动重放。现役profile采用、真实首轮和重启后续轮归LIVE；完整Memory/身份语义克隆仍归CONT-03实现。
 
 ## 后续决策与扩展资格
 

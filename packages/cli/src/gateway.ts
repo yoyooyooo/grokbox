@@ -9,6 +9,7 @@ import {
 import { CliError, httpStatusToError } from "./errors.ts";
 import type { GatewayMethod } from "./registry.ts";
 import { isRecord } from "./util.ts";
+import { currentStateRpcRequest, MAX_CURRENT_STATE_WIRE_BYTES, type CurrentStateRpcRequest } from "@grokbox/runtime-kernel/continuity";
 import { validateRoutineCommand, projectRoutineResult, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
 import { executeNativeRoutine, boundedGatewayBody, routineCliError } from "./gateway-automation.ts";
 
@@ -519,6 +520,12 @@ export class GatewayClient {
     return await this.rpc("getAgentThread", { id: body.id, rootId: body.rootId }, { timeoutMs });
   }
 
+  async currentStateControl(raw: CurrentStateRpcRequest, timeoutMs: number) {
+    const body = currentStateRpcRequest(raw), write = body.action === "initialize" || body.action === "activate";
+    return await this.rpc("grokboxCurrentStateControl", body, { timeoutMs, write, maxResponseBytes: MAX_CURRENT_STATE_WIRE_BYTES,
+      ...(write ? { unknownOutcomeCode: "operation_outcome_unknown" as const } : {}) });
+  }
+
   async contextControl(body: { action: "status" | "compact"; agentId: string; sessionId?: string; operationId?: string; confirm?: boolean }, timeoutMs: number) {
     return await this.rpc("grokboxContextControl", body, { timeoutMs, write: body.action === "compact",
       ...(body.action === "compact" ? { unknownOutcomeCode: "operation_outcome_unknown" as const } : {}) });
@@ -863,7 +870,8 @@ export class GatewayClient {
     }
     let text = "";
     try {
-      text = input.maxResponseBytes === undefined ? await response.text() : await boundedGatewayBody(response, input.maxResponseBytes);
+      text = input.maxResponseBytes === undefined ? await response.text() : await boundedGatewayBody(response, input.maxResponseBytes,
+        input.path === "/api/grokboxCurrentStateControl" ? "current-state" : "routine");
     } catch (error) {
       if (!write && error instanceof CliError) throw error;
       if (write) {

@@ -35,3 +35,11 @@ Server registration is the execution fact. Local `harness=` on `agents list` is 
 If ownership later becomes temporal or conflict, stop managed use for that ID. A refreshed showing trailer can change to `owner=temporal` / `owner=conflict` and drop `m=`; the title does not perform migration. Server remains the ownership authority.
 
 The operator/template Bot stays on the official brain. Continue an eligible, separately authorized test through [models](models.md); unresolved failures route through [troubleshoot](troubleshoot.md).
+
+## Explicit current-state initialization
+
+On a Box with a separately qualified `current-state` Host profile, `grokbox agents state show <uuid>` reads the one current working state. The `capture`, `initialize`, `reconcile`, and `activate` actions require a stable operation UUID and `--confirm`; use their command help for exact arguments. `operation` is an offline receipt read with the original scope ID. There is no session list or switching.
+
+`agents create --harness box --defer-start` requests no introduction or kickstart; it does not establish an input hold. Initialization only accepts an unused target with no old requests, transcript or pending results. It preserves the target's Memory and imports the saved native working context, not a complete Bot clone. Do not clear an existing Bot merely to make initialization pass.
+
+Initialization remains prepared. `activate` releases its verified hold for a later ordinary input; it does not send a user message or start a task. Unknown results must be reconciled under the same operation ID, never replayed with a fresh UUID. Missing capability calls for the governed profile/adoption process, not an automatic update or a hidden send.

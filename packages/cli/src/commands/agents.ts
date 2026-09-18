@@ -128,13 +128,15 @@ export async function runAgentsShow(
 
 export async function runAgentsCreate(
   deps: CliDeps,
-  raw: RosterAttributes & { json?: boolean; timeoutMs?: string; nonce?: string },
+  raw: RosterAttributes & { json?: boolean; timeoutMs?: string; nonce?: string; deferStart?: boolean },
 ): Promise<void> {
   const io = ioFromOpts(raw);
   validateRosterSettings(raw);
   const client = new GatewayClient(deps);
   const operationId = createNonce(raw.nonce, deps);
-  const body: Record<string, unknown> = { ...createProfile(raw), clientNonce: operationId };
+  const body: Record<string, unknown> = { ...createProfile(raw), clientNonce: operationId,
+    ...(raw.deferStart === true ? { isIntroductionSuppressed: true, isKickstartRequested: false } : {}) };
+  if (raw.deferStart === true && body.harness !== "box") throw usage("--defer-start requires --harness box.");
   const created = await client.createAgent(body, io.timeoutMs, operationId);
   if (!isRecord(created.result) || !isRecord(created.result.agent)) {
     throw new CliError("gateway_internal", "Gateway createAgent response has the wrong shape.");
@@ -159,6 +161,7 @@ export async function runAgentsCreate(
     const ownershipConfirmed = actual?.state === `confirmed_${requestedHarness}`;
     writeSuccess(deps.stdout, { agent,
       creation: { operationId, created: true, requestedHarness, ownershipConfirmed,
+        ...(raw.deferStart === true ? { initialStartSuppressionRequested: true, preparationHoldEstablished: false } : {}),
         outcome: ownershipConfirmed ? "created_ownership_confirmed" : actual?.state === "conflict" || actual?.state.startsWith("confirmed_") ? "created_ownership_mismatch" : "created_ownership_unconfirmed",
         managedEnabled: false }, ownership,
     }, gatewayMeta(current.discovery));

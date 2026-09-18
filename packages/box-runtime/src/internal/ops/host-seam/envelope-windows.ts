@@ -12,6 +12,8 @@ import {
   OPTIONAL_SLICE_IDS,
   OBSERVATION_SLICE_IDS,
   CONTEXT_SLICE_IDS,
+  NATIVE_CHECKPOINT_SLICE_IDS,
+  NATIVE_CURRENT_STATE_SLICE_IDS,
   REQUIRED_SLICE_IDS,
   type PatchProfile,
   type SliceId,
@@ -25,13 +27,17 @@ import type { HostBundlesObservation } from "../../io/provenance.node.ts";
 // The existing execution-envelope golden remains a 19-slice contract. Pure
 // scheduling observers have independent exact source/transform profile checks;
 // adding one must not invalidate every historical execution golden.
+const CURRENT_STATE_ENVELOPE_IDS: readonly SliceId[] = [...NATIVE_CHECKPOINT_SLICE_IDS, ...NATIVE_CURRENT_STATE_SLICE_IDS];
 export const ENVELOPE_SLICE_IDS = [...REQUIRED_SLICE_IDS, ...OPTIONAL_SLICE_IDS.filter(id => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(id)
-  && !(CONTEXT_SLICE_IDS as readonly string[]).includes(id))] as const satisfies readonly SliceId[];
+  && !(CONTEXT_SLICE_IDS as readonly string[]).includes(id) && !CURRENT_STATE_ENVELOPE_IDS.includes(id))] as const satisfies readonly SliceId[];
 export const ENVELOPE_SLICE_COUNT = ENVELOPE_SLICE_IDS.length;
-export const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...ENVELOPE_SLICE_IDS, ...CONTEXT_SLICE_IDS];
+const WITH_CONTEXT_IDS: readonly SliceId[] = [...ENVELOPE_SLICE_IDS, ...CONTEXT_SLICE_IDS];
+export const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...WITH_CONTEXT_IDS, ...CURRENT_STATE_ENVELOPE_IDS];
+const validEnvelopeLength = (length: number) => [ENVELOPE_SLICE_COUNT, WITH_CONTEXT_IDS.length, ALL_ENVELOPE_SLICE_IDS.length].includes(length);
 function completeEnvelopeIds(ids: ReadonlySet<string>): boolean {
+  const withCurrentState = CURRENT_STATE_ENVELOPE_IDS.some(id => ids.has(id));
   const withContext = CONTEXT_SLICE_IDS.some(id => ids.has(id));
-  const expected = withContext ? ALL_ENVELOPE_SLICE_IDS : ENVELOPE_SLICE_IDS;
+  const expected = withCurrentState ? ALL_ENVELOPE_SLICE_IDS : withContext ? WITH_CONTEXT_IDS : ENVELOPE_SLICE_IDS;
   return ids.size === expected.length && expected.every(id => ids.has(id));
 }
 export const ENVELOPE_WINDOWS_FILE = "envelope-windows.json";
@@ -134,7 +140,7 @@ function parseWindowSlice(value: unknown): EnvelopeWindowSlice | null {
 export function envelopeProfileShape(profile: PatchProfile | undefined): profile is PatchProfile {
   if (!profile || !Array.isArray(profile.slices)) return false;
   const core = profile.slices.filter(s => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(s.id));
-  if (core.length !== ENVELOPE_SLICE_COUNT && core.length !== ALL_ENVELOPE_SLICE_IDS.length) return false;
+  if (!validEnvelopeLength(core.length)) return false;
   const ids = new Set<string>();
   for (const slice of core) {
     if (!slice || !isSliceId(slice.id) || ids.has(slice.id)) return false;
@@ -183,7 +189,7 @@ export function envelopeWindowsFromReviewed(
 export function parseEnvelopeWindows(value: unknown): EnvelopeWindows {
   if (!isRecord(value) || typeof value.sourceSha !== "string" || !SHA.test(value.sourceSha) ||
     !boundedText(value.profileId, 128) || !Array.isArray(value.slices)
-    || (value.slices.length !== ENVELOPE_SLICE_COUNT && value.slices.length !== ALL_ENVELOPE_SLICE_IDS.length)) {
+    || !validEnvelopeLength(value.slices.length)) {
     throw new Error("invalid envelope-windows");
   }
   const ids = new Set<string>();

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { lstat } from "node:fs/promises";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { ContinuityFailure, continuityEffectIntent, continuityStorePolicy, failContinuity, isContinuityHash, isContinuityUuid,
-  recoveryManifest, recoveryRevision, type ContinuityEffectIntent, type ContinuityStorePolicy, type RecoveryManifest, type RecoveryPublication } from "@grokbox/runtime-kernel/continuity";
+  recoveryManifest, recoveryRevision, initializeCurrentRequest, initializationDigest, type InitializeCurrentRequest, type ContinuityEffectIntent, type ContinuityStorePolicy, type RecoveryManifest, type RecoveryPublication } from "@grokbox/runtime-kernel/continuity";
 import { referenceChange, type ContinuityStorageOwnerId, type ReferenceChange, type ReferenceReceipt, type OwnerMeasurement,
   type OwnedMaintenanceReceipt, type ProtectedStorageRef } from "@grokbox/runtime-kernel/observation";
 import type { MonitorSqlite, SqlRow } from "./monitor-sqlite.node.ts";
@@ -145,6 +145,32 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
     await db.run("INSERT INTO operations(operation_id,digest,intent_json,agent_id,snapshot_id,state,revision,created_at) VALUES(?,?,?,?,?,'prepared',1,?)",
       [intent.operationId, digest, canonicalJson(intent), intent.agentId, intent.snapshotId, Date.now()]);
     return operationReceipt((await db.first("SELECT * FROM operations WHERE operation_id=?", [intent.operationId]))!, false);
+  });
+  const rememberInitializationRequest = (raw: InitializeCurrentRequest) => database.write("remember-initialization", async db => {
+    const request = initializeCurrentRequest(raw), encoded = canonicalJson(request);
+    const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [request.operationId]);
+    if (!row) return failContinuity("not_found");
+    const intent = continuityEffectIntent(JSON.parse(String(row.intent_json)));
+    if (intent.kind !== "initialize" || intent.inputDigest !== initializationDigest(request) || intent.agentId !== request.expected.agentId
+      || intent.policyRevision !== request.policyRevision || intent.snapshotId !== request.snapshot.ref) return failContinuity("conflict");
+    if (row.request_json !== null && row.request_json !== encoded) return failContinuity("conflict");
+    if (row.request_json === null) {
+      if (row.state !== "prepared") return failContinuity("conflict");
+      await database.metadataRoom(db, Buffer.byteLength(encoded) * 2 + 4096);
+      await db.run("UPDATE operations SET request_json=? WHERE operation_id=? AND request_json IS NULL", [encoded, request.operationId]);
+    }
+    return request;
+  });
+  const initializationRequest = (operationId: string) => database.read(async db => {
+    const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [id(operationId)]);
+    if (!row || typeof row.request_json !== "string") return failContinuity("not_found");
+    try {
+      const request = initializeCurrentRequest(JSON.parse(row.request_json));
+      const intent = continuityEffectIntent(JSON.parse(String(row.intent_json)));
+      if (request.operationId !== operationId || intent.kind !== "initialize" || intent.inputDigest !== initializationDigest(request)
+        || intent.agentId !== request.expected.agentId || intent.policyRevision !== request.policyRevision || intent.snapshotId !== request.snapshot.ref) return failContinuity("integrity_failure");
+      return request;
+    } catch { return failContinuity("integrity_failure"); }
   });
   const operationReceipt = (row: SqlRow, dispatch: boolean) => {
     let intent;
@@ -298,7 +324,7 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
   });
   const maintainSafety = () => database.read(async db => ({ owner: "continuity.safety", state: "blocked", reclaimedBytes: 0,
     blockedBy: await total(db, "SELECT COUNT(*) AS n FROM operations WHERE state='effect_unknown'") ? ["effect_unknown"] : ["unsupported"] } satisfies OwnedMaintenanceReceipt));
-  return { initialize: database.initialize, publish, reconcilePublication, readSnapshot, prepareEffect, claimEffect, settleEffect, changeReference, measure, maintainRecovery, maintainSafety,
+  return { initialize: database.initialize, publish, reconcilePublication, readSnapshot, prepareEffect, rememberInitializationRequest, initializationRequest, claimEffect, settleEffect, changeReference, measure, maintainRecovery, maintainSafety,
     publication: (requestId: string) => database.read(async db => receipt(await getPublication(db, requestId))),
     operation: (operationId: string) => database.read(async db => {
       const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [id(operationId)]);

@@ -128,6 +128,7 @@ export function continuityCurrentStatePrograms(input: CurrentStateInput, hooks: 
     yield* authorize(request);
     yield* store.prepareEffect({ operationId: attempt.operationId, agentId: attempt.expected.agentId, kind: "initialize",
       inputDigest: attempt.inputDigest, policyRevision: attempt.policyRevision, snapshotId: attempt.snapshot.ref });
+    yield* store.rememberInitializationRequest(request);
     // prepareEffect keeps the snapshot reachable until this operation settles.
     const material = yield* store.readSnapshot(attempt.snapshot.ref);
     if (material.reference.revision !== attempt.snapshot.revision) return yield* Effect.fail(failure("material_invalid"));

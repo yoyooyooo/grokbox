@@ -38,6 +38,7 @@ export type MockOptions = {
   createAgentId?: string;
   hostStatus?: unknown;
   contextControl?: (body: unknown) => unknown | Promise<unknown>;
+  currentStateControl?: (body: unknown) => unknown | Promise<unknown>;
 };
 
 export type MockGateway = {
@@ -159,6 +160,7 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
         return Response.json({ error: "unauthorized" }, { status: 401 });
       }
       if (url.pathname === "/api/grokboxContextControl" && req.method === "POST" && options.contextControl) return Response.json(await options.contextControl(body));
+      if (url.pathname === "/api/grokboxCurrentStateControl" && req.method === "POST" && options.currentStateControl) return Response.json(await options.currentStateControl(body));
       if (url.pathname === "/api/getTrays" && req.method === "POST") return Response.json(options.trays ?? []);
       if (url.pathname === "/api/getHostStatus" && req.method === "POST") {
         return Response.json(options.hostStatus ?? { version: "stock" });

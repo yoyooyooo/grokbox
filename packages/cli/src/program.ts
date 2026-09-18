@@ -90,6 +90,7 @@ import {
 } from "./commands/profile.ts";
 import { runSend } from "./commands/send.ts";
 import { resolveProfile } from "./config/profile.ts";
+import { runAgentState } from "./commands/agent-state.ts";
 import type { CliDeps } from "./deps.ts";
 import { CliError, usage } from "./errors.ts";
 import { writeFailure } from "./output.ts";
@@ -308,6 +309,12 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents routines delete": async (deps, args, options) => await runRoutines(deps, "delete", args[0] ?? "", args[1], options),
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
+    "agents state show": async (deps, args, options) => await runAgentState(deps, "show", args[0] ?? "", options),
+    "agents state capture": async (deps, args, options) => await runAgentState(deps, "capture", args[0] ?? "", options),
+    "agents state initialize": async (deps, args, options) => await runAgentState(deps, "initialize", args[0] ?? "", options),
+    "agents state operation": async (deps, args, options) => await runAgentState(deps, "operation", args[0] ?? "", options),
+    "agents state reconcile": async (deps, args, options) => await runAgentState(deps, "reconcile", args[0] ?? "", options),
+    "agents state activate": async (deps, args, options) => await runAgentState(deps, "activate", args[0] ?? "", options),
     "agents context": async (deps, args, options) => await runAgentsContext(deps, "status", args[0] ?? "", options),
     "agents compact": async (deps, args, options) => await runAgentsContext(deps, "compact", args[0] ?? "", options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),

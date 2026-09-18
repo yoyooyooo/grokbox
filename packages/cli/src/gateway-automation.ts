@@ -1,4 +1,5 @@
 import { runAgentRoutineCommand } from "@grokbox/box-runtime/runtime";
+import { MAX_CURRENT_STATE_WIRE_BYTES } from "@grokbox/runtime-kernel/continuity";
 import { RoutineError, NATIVE_ROUTINE_MAX_BYTES, projectNativeRoutines, type RoutineCommand, type RoutineSnapshot } from "@grokbox/runtime-kernel/routines";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import type { Discovery, GatewayClient } from "./gateway.ts";
@@ -43,8 +44,11 @@ export async function executeNativeRoutine(client: GatewayClient, command: Routi
 
 /** Bounded, strict UTF-8 body decoding before JSON/projection. Never keep reading
  * an unlimited native response just to produce a small final summary. */
-export async function boundedGatewayBody(response: Response, maxBytes: number): Promise<string> {
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > NATIVE_ROUTINE_MAX_BYTES) throw new CliError("gateway_internal", "Invalid response budget.");
+export async function boundedGatewayBody(response: Response, maxBytes: number, purpose: "routine" | "current-state" = "routine"): Promise<string> {
+  // The current-state endpoint transports a bounded native checkpoint. This
+  // exception is selected by the exact RPC path; routine limits are unchanged.
+  const ceiling = purpose === "current-state" ? MAX_CURRENT_STATE_WIRE_BYTES : NATIVE_ROUTINE_MAX_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > ceiling) throw new CliError("gateway_internal", "Invalid response budget.");
   const length = response.headers.get("content-length");
   if (length !== null && /^\d+$/.test(length) && Number(length) > maxBytes) {
     await response.body?.cancel().catch(() => undefined); throw new CliError("gateway_internal", "Gateway response exceeds the allowed byte budget.");
