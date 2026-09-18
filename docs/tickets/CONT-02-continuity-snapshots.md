@@ -20,6 +20,8 @@
 
 ## 材料与恢复质量
 
+具体原生引用捕获已在`host/native-checkpoint.ts`实现并接到CONT协调/存储：完整遍历限定schema的引用，包含原生GC省略的历史root/摘要归档，处理嵌套map与循环；字节/编码/依赖不合法拒绝native候选，不静默丢边。当前已用原生Host/worker对及新Node进程取得[限定证明](../reports/2026-09-18-continuity-native-checkpoint.md)。实际无修复read-boundary/worker预算接口、全Memory/展示历史/附件采集、四档自动触发仍未接入；native引用图通过不等于整Bot材料齐备。
+
 root槽位ID可不变而字节变化，compact rootRevision也不是完整Bot版本。快照记录实际root/闭包hash、Host/schema、Memory分层版本、转录和关系水位、model/effort/配置、必要资源与未决动作。原生最近提交、最后完整保全、各职责安全续接点分开；保存pending/partial不等于允许重放。
 
 best-effort默认优先native_checkpoint，必要时按授权预算使用semantic_resume，最少材料可形成memory_only且只开放可明确负责的工作。未知工具结果不编造。重建固定输入、角色/因果去重、摘要与近期合法窗口/未决清单；生成结果保存一次，重启不重新摘要旧材料。

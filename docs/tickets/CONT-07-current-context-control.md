@@ -1,6 +1,6 @@
 # CONT-07 — 唯一当前上下文的原生控制
 
-**状态：部分实现。** capture/initialize/显式reconcile协调程序、有限native port和接缝校验已实现，接入真实CONT持久层；安装中的官方Host decoder/hold/writer仍未绑定和资格化，reset/recover/spawn/clone CLI未交付。
+**状态：部分实现。** capture/initialize/显式reconcile协调程序、有限native port和接缝校验已实现，接入真实CONT持久层；当前原生Host/worker的decoder和选定AgentStore行为已有独立资格，生产hold/读取/初始化writer仍未绑定，reset/recover/spawn/clone CLI未交付。
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)。依赖CONT-00、CONT-11和CTX-02；接口可先用owned fixture，产品reset/recover必须先满足CONT-02保全。为CONT-03和CONT-08提供最小公共内核，不先建设多会话平台。
 
@@ -16,7 +16,9 @@
 
 同操作重入不重新捕获/生成材料；目标有B2新进度不重导B0。原生结果unknown不盲重试；显式reconcile向原生只读取证但会写本地结算，不能当GET或重新激活。接口中application marker是对后续native binding的要求，不声称官方已有此结构。正常pipeline、Memory/转录/附件完整导入、self-reset以及原生持久屏障仍未实现。
 
-[固定报告](../reports/2026-09-18-continuity-current-state.md)记录105项组合/711断言，真实CONT SQLite、owned合成原生协议、生产window codec与Node进程强杀；不是真实Host/Provider执行。当前原生源码已变化且本轮直接读取受路径限制，历史资格pin未修改，缺正式新资格不得安装。
+[协调程序固定报告](../reports/2026-09-18-continuity-current-state.md)记录105项组合/711断言，真实CONT SQLite、owned合成原生协议、生产window codec与Node进程强杀；不是真实Host/Provider执行。
+
+后续[原生checkpoint切片](../reports/2026-09-18-continuity-native-checkpoint.md)已解除源码读取阻断，新增`host/native-checkpoint.ts`具体capture adapter与严格root/全图读回。使用单独固定Host/worker对的原schema和AgentStore，在owned端口及独立Node进程中完成源移除后的持久往返；不是再用合成protobuf代替原生。旧whole-Host pin不变。实际准备锁、worker预算读取、持久application marker和第一轮原生loop仍需接线，普通openSession的隐式repair/GC不能当无修复capture。公开与显式资格入口见对应报告，未签部分不以局部原生通过替代。
 
 ```bash
 node scripts/verify-runtime-rebuild.mjs continuity-current-state

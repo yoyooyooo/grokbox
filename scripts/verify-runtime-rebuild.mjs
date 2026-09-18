@@ -20,6 +20,18 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "continuity-native-checkpoint": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/native-checkpoint.test.ts", "packages/runtime-kernel/test/current-state-contract.test.ts", "packages/box-runtime/test/continuity-current-state.test.ts", "packages/box-runtime/test/continuity-store.test.ts", "packages/box-runtime/test/obs-continuity-contract.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts"],
+    ["node", "scripts/check-runtime-boundaries.mjs"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
+  "continuity-native-checkpoint-qualified": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "--timeout", "30000", "packages/box-runtime/test/native-checkpoint.test.ts", "packages/box-runtime/test/native-checkpoint-qualification.test.ts", "packages/box-runtime/test/native-checkpoint-process.test.ts"],
+    ["node", "scripts/check-runtime-boundaries.mjs"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "continuity-current-state": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/runtime-kernel/test/current-state-contract.test.ts", "packages/box-runtime/test/continuity-current-state.test.ts", "packages/box-runtime/test/current-state-process.test.ts"],
@@ -220,6 +232,13 @@ if (!expectedBun || actualBun !== expectedBun) {
   process.exit(1);
 }
 
+if (kase === "continuity-native-checkpoint-qualified" && process.env.GROKBOX_TEST_NATIVE_CONTINUITY !== "1") {
+  console.log(JSON.stringify({ case: kase, ok: false, error: "native_continuity_opt_in_required", commit: sha(),
+    dependencyReality: "opt-in-check-only", toolchain, supports: [], commands: [],
+    notProven: ["native-tests-not-executed", "installed-Host-binding"] }, null, 2));
+  process.exit(1);
+}
+
 const sourceBefore = captureVerificationSource(root);
 const commands = [];
 let failed = false;
@@ -243,12 +262,14 @@ for (const argv of mapped) {
   if (ran.status !== 0) failed = true;
   if (isTest) {
     if (pass == null || pass === 0) failed = true;
-    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || kase.startsWith("context-") || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
+    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || kase.startsWith("context-") || kase.startsWith("continuity-native-checkpoint") || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
     if ((failn ?? 0) > 0) failed = true;
   }
 }
 
 const SUPPORTS = {
+  "continuity-native-checkpoint": ["bounded-native-reference-walker", "all-declared-edges-including-cycles", "opaque-leaf-encoding-and-syntax", "root-and-closure-readback-not-activation", "no-default-native-binding", "current-state-and-real-vault-regression"],
+  "continuity-native-checkpoint-qualified": ["separately-pinned-installed-Host-worker-protobuf-pair", "native-schema-archive-and-historical-root-closure", "original-AgentStore-checkpoint-and-reset-semantics", "original-partial-write-is-not-no-effect", "strict-root-and-closure-readback", "original-writer-and-fresh-Node-reader-after-owned-source-removal", "production-window-codec-projection-not-Agent-loop"],
   "continuity-current-state": ["finite-native-capability-no-default-binding", "immutable-capture-under-owner-boundary", "source-revision-drift-refusal", "context-only-initialization-with-durable-effect-claim", "original-ownership-age-rechecked-at-dispatch", "native-reopen-and-marker-before-ledger-settlement", "unknown-never-reimports-or-activates", "b2-progress-survives-initialization-reentry", "owned-node-process-kill-and-readback", "no-human-message-or-background-native-writer"],
   "continuity-store": ["real-scoped-recovery-and-safety-sqlite-owners", "declared-graph-hash-checked-immutable-material", "publication-reservation-reconciliation-no-false-success", "two-phase-reference-safe-object-gc", "last-readable-fallback-retained", "content-bound-effect-intent-and-single-dispatch-claim", "unknown-is-not-retryable", "real-cont-owner-j1-diagnostic-expiry-integration", "node-process-reopen-kill-boundaries-and-concurrent-claim", "read-only-private-bounded-status"],
   "obs-continuity": ["typed-continuity-intake-existing-sqlite-outbox", "source-zero-based-cursor-gap-and-reentry", "notification-off-not-domain-completion", "fixed-owner-reference-gc-serialization-contract", "owned-recovery-closure-survives-diagnostic-expiry", "capacity-degradation-not-effect-authorization", "unmeasured-not-zero-and-shared-allocation-deduplication", "owner-write-settles-before-supervised-exit"],
@@ -286,6 +307,8 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "continuity-native-checkpoint": "production-capture-and-readback-public-reflection-fixture-real-SQLite-vault-owned-current-state-port-no-private-source-or-live-effects",
+  "continuity-native-checkpoint-qualified": "selected-original-protobuf-and-AgentStore-from-exact-installed-source-pair-isolated-VM-owned-file-ports-production-vault-new-Node-processes-no-full-Host-or-provider",
   "continuity-current-state": "production-Effect-coordinator-real-private-SQLite-and-content-store-owned-synthetic-native-port-actual-window-codec-packed-Node-SIGKILL-no-installed-Host-binding-or-provider-effects",
   "continuity-store": "production-Effect-programs-real-temporary-private-SQLite-and-content-files-synthetic-material-pinned-Bun-source-packaged-Node-workers-owned-SIGKILL-no-live-Bot-or-provider-effects",
   "obs-continuity": "real-temporary-files-journal-sqlite-and-owned-recovery-adapter-existing-effect-lifetime-no-native-bot-or-network-effects",
@@ -323,6 +346,8 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "continuity-native-checkpoint": ["installed-schema-qualification", "native-exclusive-read-and-writer-boundary", "cross-identity-import-or-application-marker", "complete-Memory-display-history-and-attachments", "original-Agent-loop-and-provider", "independent-review-and-live"],
+  "continuity-native-checkpoint-qualified": ["full-Host-native-storage-transaction-and-preparation-fence", "installed-production-capture-binding", "cross-identity-initialization-and-persistent-application-marker", "original-Agent-loop-or-first-provider-request", "complete-Memory-display-history-and-file-resources", "modeld-live-adoption", "independent-review-and-live"],
   "continuity-current-state": ["installed-native-schema-decoder-and-writer-qualification", "actual-Host-preparation-fence-and-cross-identity-import", "first-real-Agent-loop-or-provider-request", "reset-recover-spawn-or-clone-cli", "memory-transcript-attachment-import", "production-config-authority-composition-and-owner-installation", "full-j2-notification-inbound-and-handover", "independent-review-and-live-cutover"],
   "continuity-store": ["native-Bot-capture-schema-and-current-state-import", "configuration-policy-binding-and-production-owner-installation", "actual-clone-start-and-duty-handover", "safety-tombstone-retirement-and-endless-operation-capacity", "full-installation-physical-reservations", "arbitrary-power-loss-or-backup-rollback", "native-notification-and-temporal-inbound", "independent-review-and-live-cutover"],
   "obs-continuity": ["native-recovery-owner-import-and-operation-ledger", "real-temporal-inbound-coverage", "native-notification-delivery-and-unknown-reconciliation", "replacement-relationship-migration-and-bot-retirement", "installation-wide-reservations", "cross-store-atomicity", "independent-review-and-live-schema4-adoption"],

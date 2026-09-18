@@ -1,6 +1,6 @@
 # CONT-00 — 原生克隆与恢复能力资格
 
-**状态：部分资格已证；8 个原生隔离探针通过，跨身份恢复未证。**
+**状态：部分资格已证；历史8探针保留原范围，另有当前Host/worker对的原生checkpoint格式、writer语义和严格读回资格；完整现场跨身份恢复未证。**
 
 合同：[Spec S13](../roadmap/box-runtime-impl-spec.md#ownership-continuity)。互操作事实唯一归 [upstream integration](../upstream-integration.md#continuity-import-boundary)。现场索引：[LIVE-OWNERSHIP-CONTINUITY](LIVE-integration-validation.md#live-ownership-continuity)。
 
@@ -28,7 +28,9 @@ GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/ow
 
 ## 当前状态协调切片与版本门
 
-CONT-07新增的[捕获/初始化/对账程序](../reports/2026-09-18-continuity-current-state.md)已有生产CONT存储＋owned合成原生端验证，但本轮磁盘Host源码摘要已不同于原8探针的固定pin，直接读取受工具路径限制。原pin保持不变，未将当前安装认定为已资格化。新增NativeCurrentStatePort、application marker是需要原生绑定满足的合同，不表示官方已经暴露这些API/字段。下一步须在可合法读取当前源的条件下核对decoder、准备屏障、writer/持久收据、reopen及有限取消行为；不得通过只改pin或追加更多fixture替代。
+CONT-07已有[捕获/初始化/对账程序](../reports/2026-09-18-continuity-current-state.md)。先前的工具路径阻断现已解除，当前Host/worker源码对通过独立固定pin做了[原生checkpoint资格](../reports/2026-09-18-continuity-native-checkpoint.md)：16项原生性质与2项独立Node往返，另12项公开reader用例，合计30 pass。旧whole-Host pin保持不变，新证明不签其他旧接缝或整安装。
+
+生产`native-checkpoint.ts`已使用限定schema引用元数据遍历原生闭包，并接CONT capture/vault；保留GC/export省略的历史root/摘要引用，严格验证未知字段、叶子编码/JSON、预算以及持久root/内存/全图一致。实际原AgentStore方法在owned数据端口上执行，已证明其静默空恢复和写入后metadata失败边界。真正Host准备屏障、预算化worker读取、跨身份初始化持久收据与activation尚未绑定；NativeCurrentStatePort的application marker不是官方现成字段，不能据此开放真实初始化。
 
 ## 后续决策与扩展资格
 

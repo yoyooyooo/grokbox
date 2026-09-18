@@ -1350,7 +1350,9 @@ Ports按能力固定：复用`OwnershipReader`；`ContinuitySnapshotReader`、`N
 四类时间/身份分开：输入水位、snapshot版本、currentContext revision、activation/replacement generation；它们不是多session。每次外部操作保留稳定ID及unknown恢复规则；管理DB事务与原生root/远端调用之间采用明确读回恢复，不把一个本地CAS宣称跨服务端事务。临时模型窗口保真复用S12/现有session适配器，不把vault变成日常模型选窗来源。
 
 <a id="continuity-delivery"></a>
-**2026-09-18当前状态协调切片：** `openContinuityCurrentState`对有限`NativeCurrentStatePort`执行捕获、准备中的目标初始化与显式对账，复用真实CONT记录。原始归属年龄在实际dispatch前复查；native提交/reopen/marker/current root/cleanup与本地结算分开，未知不重发、不覆盖后续B2。marker是待资格化binding须实现的合同，不声明官方已有字段。capture限定声明材料校验；context-only initialize不复制全部Memory/历史。没有生产native binding、自动安装或新CLI；[105项限定报告](../reports/2026-09-18-continuity-current-state.md)为真实store＋owned合成原生端/生产window codec/Node强杀，并非真实Host或Provider请求。下一步必须补当前原生资格和正式绑定，不拿更多fixture替代。
+**2026-09-18当前状态协调切片：** `openContinuityCurrentState`对有限`NativeCurrentStatePort`执行捕获、准备中的目标初始化与显式对账，复用真实CONT记录。原始归属年龄在实际dispatch前复查；native提交/reopen/marker/current root/cleanup与本地结算分开，未知不重发、不覆盖后续B2。marker是待资格化binding须实现的合同，不声明官方已有字段。capture限定声明材料校验；context-only initialize不复制全部Memory/历史。没有生产native binding、自动安装或新CLI；[105项限定报告](../reports/2026-09-18-continuity-current-state.md)为真实store＋owned合成原生端/生产window codec/Node强杀，并非真实Host或Provider请求。所需原生能力继续按CONT-00逐项资格化，未实现的正式绑定不由fixture替代。
+
+**2026-09-18原生checkpoint切片：** `host/native-checkpoint.ts`将实际schema引用图接入capture/vault，保留原生GC省略的历史root/摘要归档；验证root与依赖实际字节、未知字段/类型、预算、JSON/UTF-8和循环。独立固定Host/worker对的原protobuf/AgentStore及新Node进程读回已有[限定原生证明](../reports/2026-09-18-continuity-native-checkpoint.md)，不再受源码读取路径阻断。普通session打开存在repair/GC副作用，实际预算读取/准备屏障/持久application marker尚未绑定；root可读不证明所有依赖完好，更不授激活或证明真实loop。旧whole-Host pin不变，四档/Memory/完整clone与现场仍各自验收。
 
 ### S13.8 面向终局的完整里程碑、依赖和验收
 
