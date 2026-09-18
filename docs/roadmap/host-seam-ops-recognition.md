@@ -592,7 +592,7 @@ Golden 回归可以正确断言一次 `unknown-sha` 拒绝，即 `regressionPass
 
 1. `profile analyze` 对 retained 原文和实际选择配方 preflight。应用失败直接给出有限 `sliceId/code`，不再建议原样 write；窗口不可测不伪装成空 drift。
 2. 默认 write 保留完整当前配方。显式能力升级从已验证的 durable profile 开始，只更新已登记能力和必需依赖；不删除原切片、不自动跳过失败项，非目标切片字节保持不变。
-3. 局部升级必须在同一源 SHA 上绑定 baseline 配方 digest，经过原 envelope review、hash、protected staging 和发布前 baseline 复验。缺失、漂移、依赖不完整均拒绝；本轮不扩展成通用历史 recipe 导入。
+3. 局部升级必须在同一源 SHA 上绑定 baseline 配方 digest。`analyze --capability ownership-local` 输出 `capabilityUpgrade.baselineProfileSha256`，`write --capability ownership-local --expected-reviewed-sha <digest>` 必须携带该精确摘要；分析到写入以及写入到发布之间的变化均拒绝。继续经过原 envelope review、hash、protected staging 和同 publication gate 下的 baseline 复验。缺失、漂移、依赖不完整均拒绝；本轮不扩展成通用历史 recipe 导入。可提出完整依赖集合不等于可绕过缺失 golden 发布。
 4. Host 状态只报告实际加载 wrapper/reader 共同支持的能力版本；旧 wrapper/旧 reader/未知响应不升级成 ready。能力观察没有 Bot admission 权限，永远不由测试 UUID、缓存注册快照或 doctor 结果签发许可。
 5. doctor 分别报告 Host origin、modeld 服务准入与必需桥能力；unknown 有明确观察下一步，`next=none` 不能掩盖缺少必需能力。
 6. lifecycle receipt 分开 requested、实际加载观察和 remaining blockers；无变化不等于失败，发生换代也不等于业务可用。
@@ -603,7 +603,13 @@ Golden 回归可以正确断言一次 `unknown-sha` 拒绝，即 `regressionPass
 
 不放宽五秒原始证据年龄、不接受 full snapshot 冒充 local-only、不由错误码猜 Provider 问题。有限诊断包括 capability/schema、scope、target rows、clock/age；自由字符串和原始对象不能进入 incident。Source/transformed/profile 身份保留，能力声明只增加早期检查，不取代执行时权威校验。
 
-Linux gate 使用已打开的受保护文件描述符及 `flock`，不依赖 PID-only 互斥；缺失 primitive 必须显式失败，不能静默退到有竞争窗口的 unlink。目录与 gate inode 不被恢复命令替换。Effect 管理 acquire/release，Scope 不被当成硬崩事务。
+Linux gate 使用已打开的受保护文件描述符及 `/usr/bin/flock`，不依赖 PID-only 互斥；helper退出后父进程fd继续持锁，不启动keeper。缺失 primitive 必须显式失败，不能静默退到有竞争窗口的 unlink。目录与 gate inode 不被恢复命令替换。Effect 管理 acquire/release，Scope 不被当成硬崩事务。
+
+旧PID-only记录只在owner确实已退出时可恢复；PID重用而缺少start身份时保守拒绝。恢复前须停止旧版维护写者：内核gate只覆盖使用新协议的写者，不对绕过gate的手动替换给出事务保证。新store bounded no-follow读取，悬空symlink不是空store；unique staging/fsync后发布unknown，再移除两把遗留锁。部分失败保留unknown或原始证据，必须再次inspect，不能声称已回滚或重新attest。
+
+公开路径为 `runtime operation-recovery --json` 观察、另获授权后 `--confirm` 恢复元数据；readonly preview不创建gate/root。`profileWrite.recipeFailure`只携带有限code/sliceId，不携带source/replacement。doctor对`loaded_profile_mismatch`指向受授权重启而不是重复profile写入；不同generation先重新观察。
+
+实际Linux锁IO测试只在Linux运行；纯合同/投影测试保持跨平台。Node20隔离安装包复用同一CLI断言，Bun版本与macOS执行证据须在日期报告中单独说明。
 
 | 阶段 | Ticket | 离线退出 |
 | --- | --- | --- |

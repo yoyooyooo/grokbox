@@ -19,4 +19,6 @@ Status: implemented / targeted offline verified; independent review pending. Dep
 
 ## Evidence
 
-2026-09-18：声明版本 Bun 1.3.14 frozen install、typecheck通过；`hcr-diagnostics`、`reviewed-profile-write`、`reviewed-profile-write-lineage`、`ownership-coordinator`、`ownership-availability-presentation` 五文件合计101 pass / 0 fail。新增15项覆盖配方原子拒绝、witness细因、getter/自由字符串脱敏和动态失败不导向组件升级。当前真实加载与App验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)，这里不另维护live进度。
+源码及安装包CLI已增加`error.profileWrite`的有限诊断投影，保留refusal与slice/code，不回传源码或replacement；测试覆盖额外字段和访问器。与HCR其余阶段的验证范围、工具版本及剩余审查见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)。
+
+以下仅为HCR-01早期切片记录，不签后续整合头的目标工具链；最终实测版本与范围以上方离线报告为准。2026-09-18早期记录：声明版本 Bun 1.3.14 frozen install、typecheck通过；`hcr-diagnostics`、`reviewed-profile-write`、`reviewed-profile-write-lineage`、`ownership-coordinator`、`ownership-availability-presentation` 五文件合计101 pass / 0 fail。新增15项覆盖配方原子拒绝、witness细因、getter/自由字符串脱敏和动态失败不导向组件升级。当前真实加载与App验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)，这里不另维护live进度。

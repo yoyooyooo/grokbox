@@ -16,6 +16,12 @@ For a confirmed temporal route, query the original nonce with `grokbox history o
 
 Choose one selector. A model STEP is not necessarily the first display request-id. `--request-id` looks up the same send, not a new operation. A null request ID can accompany an early failure. Never manufacture a new send to obtain an observation handle.
 
+## Admission is not a Provider failure
+
+For `ownership_bridge_unavailable`, inspect the finite `localWitnessFailure` when present: source/schema mismatch, missing observation, scope change, missing/duplicate target rows, invalid clock and expired local evidence have different repair paths. Do not infer an old Host from that top-level code alone. `confirmed_box` is Server registration evidence, not a fresh local-only execution permit.
+
+Doctor's `hostCapabilities` compares the actually loaded wrapper/reader and profile identity; it makes no Server List or model request. `modeldAdmission=ready`, Host `custom`, and `next=none` are not Provider roundtrip proof. A loaded-profile mismatch requires scoped component adoption, not another model assignment. For interrupted `operation-busy`, inspect `runtime operation-recovery --json` and read [adopt](adopt.md#interrupted-controller--identity-operation); never clear locks by guessing a PID. Keep the original STEP/nonce, and do not replay a failed send as a diagnostic probe.
+
 ## Separate gaps from failures
 
 If modeld was started with an explicit `GROKBOX_RUN_ROOT`, pass the **same** value to `history outcome --runtime` and inspect `evidence.runtimeRoot`. Do not assume every `runtimeGap` is a root mismatch: permissions, malformed records, partial append, and retention have different meanings. Large journals are byte-windowed rather than rejected wholesale.

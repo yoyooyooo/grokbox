@@ -1,6 +1,6 @@
 # HCR-02 — 实际加载能力与生命周期回执
 
-Status: implementing. Depends-on: HCR-01.
+Status: implemented / offline verified; independent review pending. Depends-on: HCR-01.
 
 ## Goal / owner
 
@@ -20,4 +20,4 @@ Status: implementing. Depends-on: HCR-01.
 
 ## Evidence
 
-实施后记录测试与review。当前live状态唯一入口：[LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
+实现与离线测试已完成，独立审查待办。详见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)。当前live状态唯一入口：[LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。

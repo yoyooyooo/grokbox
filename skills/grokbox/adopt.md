@@ -13,8 +13,10 @@ The operator/template Bot stays on the official brain. Run exact `doctor` / `err
 | Installed grokbox package needs alignment | Follow `grokbox upgrade --yes` only for the authorized update. |
 | Custom channel is off and requested | `grokbox host start`. |
 | Next is observe → write | Follow printed `next` literally. A known live digest is supplied as `write --sha` with full hex; otherwise observe first. Never invent a SHA placeholder. |
-| Write rejects on drift | Follow **write's** `error.next`, commonly analyze then `write --sha … --slice-review …`. Use the emitted arguments, not a remembered recipe. |
-| Write succeeds | `grokbox host start`, then doctor to verify the requested channel. |
+| Write rejects on drift | Follow **write's** `error.next`; `error.profileWrite` preserves the refusal and failing slice/code. A recipe mismatch needs adaptation, not the same write again. |
+| Only ownership-local capability is outdated | Use the printed `profile analyze --capability ownership-local` next; the bounded upgrade path below preserves unrelated reviewed slices. |
+| Write succeeds | The durable file changed, not the loaded Host. Run doctor; `host start` can be a no-op on an already-custom Host. Follow the scoped loaded-profile/restart next. |
+| Re-adopt says operation-busy | Inspect `grokbox runtime operation-recovery --json`; do not delete lock files. Explicit stale-metadata recovery is described below. |
 | Host switch refuses because Bots are running | Obtain acceptance of that interruption before using the corresponding `--force`. The operator Bot counts. |
 | Force cannot bypass source/profile mismatch | Stop forcing; return to doctor / write next. |
 | No safe next, or repeated failure | Use the failsafe below; stop the recovery loop. |
@@ -23,9 +25,21 @@ The operator/template Bot stays on the official brain. Run exact `doctor` / `err
 
 1. Run `grokbox doctor` and retain its exact `next`.
 2. If next is observe → write, run observe and then write with the retained digest or exact next string.
-3. On write reject-on-drift, follow write's next. Analyze may settle `missing_runner` while still emitting `envelope.requiredIds` and the write next. Do not treat that artifact as empty or skip a required `--slice-review`.
-4. Once the profile write is durable, run `grokbox host start`. A profile write alone is not a live Host transition.
-5. Re-run doctor. Finish when the requested channel is confirmed and relevant blockers are gone; unrelated next items are not permission to expand the task.
+3. On write reject-on-drift, follow write's next. Analyze may settle `missing_runner` while emitting `envelope.requiredIds`. A `recipe_unapplicable` / `recipeFailure` needs adaptation; an executable write next exists only when its recipe is applicable. Do not skip a required `--slice-review`.
+4. Once the profile is durable, run doctor. Follow its loaded-state next under the existing interruption authorization; starting an already-custom Host does not reload its profile.
+5. Re-run doctor. Inspect Host origin, modeld service admission and `hostCapabilities` separately. Lifecycle `alignment=verified` is component evidence, not a Bot execution permit or Provider roundtrip. Finish when the requested scope's blockers are gone; unrelated next items do not widen permission.
+
+## Bounded ownership-local upgrade
+
+Only the maintained `ownership-local` selector is supported. Analyze the retained same-source generation using `--capability ownership-local`, then review its `capabilityUpgrade` and exact next. Write requires `--expected-reviewed-sha` from that analysis; this is the reviewed file's digest, not the Host source SHA. An intervening baseline change requires new analysis.
+
+This path replaces the ownership schema/API/resume dependency set, preserves unrelated reviewed slices, and still requires the original envelope golden/review and atomic publisher. Missing golden, unprovable baseline or target slice mismatch stays blocked. Do not invent a skip list or manually edit `reviewed.json`. Publication does not authorize adoption, restart or a new model request.
+
+## Interrupted controller / identity operation
+
+`grokbox runtime operation-recovery --json` only observes local owner records and the operation store. With explicit metadata-recovery authorization, `grokbox runtime operation-recovery --confirm --json` can clear only proven stale controller/identity records under their Linux kernel gates, marking interrupted `running` entries `unknown`.
+
+Recovery does not signal a Host, fabricate attestation, clear the adopt journal, or replay business work. Live/unproven owners, malformed records and missing legacy-owner evidence remain blocked. New writers require `/usr/bin/flock`; there is no PID-only fallback. Stop old-version maintenance writers before recovery; uncooperative/manual file replacement is not covered by the new gates. A recovered receipt is not successful re-adoption: inspect again and use only the original, separately authorized re-adopt path.
 
 ## Unrecoverable failsafe
 

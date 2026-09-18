@@ -1,6 +1,6 @@
 # HCR-03 — Controller / identity 中断恢复
 
-Status: implementing. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
+Status: implemented / offline and installed Node20 CLI verified; independent review pending. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
 
 ## Goal / owner
 
@@ -20,4 +20,4 @@ Status: implementing. Depends-on: existing Effect controller / adopt journal; HC
 
 ## Evidence
 
-实施后记录隔离测试与review。真实中断/attestation窗口只登记 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
+`hcr-operation-recovery.test.ts` 的14项隔离测试覆盖持有进程退出、并发恢复、PID身份、损坏/替换文件、持久化失败与后续恢复；源码及安装包CLI复用同一断言，Node20入口实测通过。仅使用临时root与一次性子进程。取消、旧版不协作写者与真实提交窗口的证明范围不扩大；独立review仍待完成。详见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)。真实中断/attestation窗口只登记 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。

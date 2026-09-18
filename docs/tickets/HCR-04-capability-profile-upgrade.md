@@ -1,6 +1,6 @@
 # HCR-04 — 受控能力配方升级
 
-Status: implementing. Depends-on: HCR-01, HCR-02.
+Status: implemented / offline and installed Node20 CLI verified; independent review pending. Depends-on: HCR-01, HCR-02.
 
 ## Goal / owner
 
@@ -11,7 +11,7 @@ Status: implementing. Depends-on: HCR-01, HCR-02.
 - 默认完整当前recipe行为保留；显式 `ownership-local` 从同源且可验证的durable profile升级schema/api及resume依赖。
 - 原非目标切片逐字保留，不静默删除或跳过。未登记selector、基线缺失/变换失败/source不符均拒绝。
 - 旧profile+无关alert匹配失败的合成fixture可以通过受控局部路径；目标自身失配仍拒绝。
-- envelope exact review与原子protected publisher复用；基线在发布前改变则拒绝，旧profile不被覆盖。
+- envelope exact review与原子protected publisher复用；写入必须携带分析回执的`--expected-reviewed-sha`，分析到写入及写入到发布之间基线改变均拒绝。
 - analyze和write使用同一配方，输出基线/更新能力的有限receipt；无第二注入路径，无隐式live切换。
 
 ## Forbidden / non-goals
@@ -20,4 +20,4 @@ Status: implementing. Depends-on: HCR-01, HCR-02.
 
 ## Evidence
 
-实施后记录测试与review；当前加载、App和新STEP验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
+`hcr-profile-upgrade.test.ts` 的7项测试覆盖无关alert变化下的局部升级、目标失配、基线校验/竞争、依赖完整性和系统gate；`test/hcr-cli.test.ts`与安装包复用同一断言。缺少可测golden的历史基线仍拒绝，不能由能力selector绕过。独立review待办，详见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)；当前加载、App和新STEP验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。

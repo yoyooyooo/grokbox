@@ -13,7 +13,9 @@ Read the failing check, `error.code`, and `next`. Keep exact commands for execut
 | Observation | Meaning / safe next step | Read only if needed |
 | --- | --- | --- |
 | Host `official` | Custom channel is off; normal for official-only work. Enable it only for a requested custom-model task. | [services](services.md) |
-| Host `custom` | Channel is present, not proof a model replied. | [send](send.md) |
+| Host `custom` | Origin is present; inspect `hostCapabilities` separately. Neither it nor modeld ready proves a model replied. | [send](send.md) |
+| `hostCapabilities` is missing / incompatible | Compare the loaded component/profile cause; a new source checkout is not proof the running Host loaded it. | [adopt](adopt.md) |
+| `operation-busy` after an interrupted Host change | Inspect `runtime operation-recovery --json`; only proven stale metadata can be explicitly recovered. Do not remove locks manually. | [adopt](adopt.md#interrupted-controller--identity-operation) |
 | Host `unknown` or source/profile mismatch | Cannot prove channel readiness. Follow the printed recovery next, without guessing flags. | [adopt](adopt.md) |
 | Daemon `down` | grokbox services are off. `on` is a change, not a status probe. | [services](services.md) |
 | Model use rejects ownership | Inspect ownership/error cause before changing anything. | [ownership](ownership.md) |
