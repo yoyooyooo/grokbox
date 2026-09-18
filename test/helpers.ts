@@ -39,6 +39,8 @@ export type MockOptions = {
   hostStatus?: unknown;
   contextControl?: (body: unknown) => unknown | Promise<unknown>;
   currentStateControl?: (body: unknown) => unknown | Promise<unknown>;
+  nativeRoutines?: unknown;
+  duplicateAgent?: (body: unknown) => { status: number; body: unknown } | Promise<{ status: number; body: unknown }>;
 };
 
 export type MockGateway = {
@@ -163,10 +165,14 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
       if (url.pathname === "/api/grokboxCurrentStateControl" && req.method === "POST" && options.currentStateControl) return Response.json(await options.currentStateControl(body));
       if (url.pathname === "/api/getTrays" && req.method === "POST") return Response.json(options.trays ?? []);
       if (url.pathname === "/api/getHostStatus" && req.method === "POST") {
-        return Response.json(options.hostStatus ?? { version: "stock" });
+        return Response.json(typeof options.hostStatus === "function" ? await options.hostStatus(body) : options.hostStatus ?? { version: "stock" });
       }
       if (url.pathname === "/api/listAgents" && req.method === "POST") {
         return Response.json(agents);
+      }
+      if (url.pathname === "/api/getAgentAutomations" && req.method === "POST" && options.nativeRoutines !== undefined) return Response.json(options.nativeRoutines);
+      if (url.pathname === "/api/duplicateAgent" && req.method === "POST" && options.duplicateAgent) {
+        const reply = await options.duplicateAgent(body); return Response.json(reply.body, { status: reply.status });
       }
       if (url.pathname === "/api/createAgent" && req.method === "POST") {
         const input = body as Record<string, unknown>;

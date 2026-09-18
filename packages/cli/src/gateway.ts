@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { OWNERSHIP_EVIDENCE_MAX_AGE_MS } from "@grokbox/runtime-kernel/contract";
+import { DuplicateDispatchRefused } from "@grokbox/runtime-kernel/continuity";
 import { resolveDaemonCredential, resolveSecretRef } from "./config/secret.ts";
 import type { CliDeps } from "./deps.ts";
 import {
@@ -414,6 +417,9 @@ export class GatewayClient {
       slim?: boolean;
       unknownOutcomeCode?: UnknownOutcomeCode;
       maxResponseBytes?: number;
+      expectedGeneration?: string;
+      singleAttempt?: boolean;
+      observedAtMs?: number;
     },
   ): Promise<{ result: unknown; discovery: Discovery }> {
     const result = await this.request({
@@ -427,6 +433,9 @@ export class GatewayClient {
       write: options.write === true,
       unknownOutcomeCode: options.unknownOutcomeCode,
       maxResponseBytes: options.maxResponseBytes,
+      expectedGeneration: options.expectedGeneration,
+      singleAttempt: options.singleAttempt,
+      observedAtMs: options.observedAtMs,
     });
     return { result: result.body, discovery: this.lastDiscovery! };
   }
@@ -537,6 +546,16 @@ export class GatewayClient {
       return { result: response.result, discovery };
     }
     return await this.rpc("getAgentThread", { id: body.id, rootId: body.rootId }, { timeoutMs });
+  }
+
+  async duplicateAgent(sourceId: string, expectedGeneration: string, observedAtMs: number, timeoutMs: number) {
+    if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(sourceId) || !/^[a-f0-9]{64}$/.test(expectedGeneration) || !Number.isSafeInteger(observedAtMs) || observedAtMs < 1) {
+      throw new CliError("invalid_usage", "An exact source identity and Gateway generation are required.");
+    }
+    // The upstream endpoint has no creation nonce. No automatic HTTP retry,
+    // credential-rotation retry or follow-up create may repeat this effect.
+    return this.rpc("duplicateAgent", { id: sourceId }, { timeoutMs, write: true, slim: true, singleAttempt: true,
+      expectedGeneration, observedAtMs, maxResponseBytes: 512 * 1024, unknownOutcomeCode: "operation_outcome_unknown" });
   }
 
   async currentStateControl(raw: CurrentStateRpcRequest, timeoutMs: number) {
@@ -774,12 +793,21 @@ export class GatewayClient {
     accept?: string;
     stream?: boolean;
     maxResponseBytes?: number;
+    expectedGeneration?: string;
+    singleAttempt?: boolean;
+    observedAtMs?: number;
   }): Promise<HttpResult> {
     const serialized = input.jsonBody === undefined ? undefined : JSON.stringify(input.jsonBody);
     const write = input.write === true;
     let attemptedIdentity: string | undefined;
+    const startedAt = performance.now(), startingAge = input.observedAtMs === undefined ? 0 : Date.now() - input.observedAtMs;
     const attempt = async (rejectIdentity?: string): Promise<HttpResult> => {
       const discovery = await this.load();
+      if (input.expectedGeneration !== undefined && input.expectedGeneration !== sha256Text(canonicalJson([discovery.baseUrl, discovery.pid, discovery.startedAt,
+        ...(input.path === "/api/duplicateAgent" ? [sha256Text(discovery.token)] : [])]))) {
+        if (input.path === "/api/duplicateAgent") throw new DuplicateDispatchRefused("generation_changed");
+        throw new CliError("capability_unavailable", "Gateway generation changed before this operation; no request was sent.");
+      }
       const identity = createHash("sha256")
         .update(discovery.token)
         .digest("hex");
@@ -787,6 +815,11 @@ export class GatewayClient {
         throw new CliError("gateway_unauthorized", "Gateway credential did not rotate after rejection.");
       }
       attemptedIdentity = identity;
+      if (input.path === "/api/duplicateAgent" && input.observedAtMs !== undefined) {
+        const age = Date.now() - input.observedAtMs, elapsed = performance.now() - startedAt;
+        if (this.deps.signal?.aborted) throw new DuplicateDispatchRefused("cancelled");
+        if (startingAge < 0 || age < 0 || elapsed < 0 || Math.max(age, startingAge + elapsed) > OWNERSHIP_EVIDENCE_MAX_AGE_MS) throw new DuplicateDispatchRefused("evidence_expired");
+      }
       if (input.auth) this.requireToken(discovery);
       return await this.sendOnce(
         discovery,
@@ -800,6 +833,7 @@ export class GatewayClient {
     try {
       return await this.interpret(await attempt());
     } catch (error) {
+      if (input.singleAttempt) throw error;
       if (error instanceof CliError && error.code === "gateway_unauthorized") {
         await new Promise((resolve) => setTimeout(resolve, 50));
         return await this.interpret(await attempt(attemptedIdentity));

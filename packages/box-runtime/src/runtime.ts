@@ -31,6 +31,7 @@ export { runRoutineProvisionCommand, type RoutineProvisionNative } from "./inter
 export { observeRuntimeStorage } from "./internal/roots/storage-maintenance.runtime.ts";
 export { openContinuityObservationBridge, runContinuityReferenceChange, type ContinuityObservationBatch } from "./internal/roots/continuity-integration.runtime.ts";
 export { openContinuityRecoveryStore } from "./internal/roots/continuity.runtime.ts";
+export { openAgentDuplication } from "./internal/roots/agent-duplicate.runtime.ts";
 export { createNativeCheckpointCapturePort } from "./internal/host/native-checkpoint.ts";
 export type { NativeCheckpointBoundary, NativeCheckpointSchema } from "./internal/host/native-checkpoint.ts";
 export { createCurrentStateClient, type CurrentStateTransport } from "./internal/io/current-state-client.node.ts";

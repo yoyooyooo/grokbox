@@ -94,6 +94,7 @@ import {
 import { runSend } from "./commands/send.ts";
 import { resolveProfile } from "./config/profile.ts";
 import { runAgentState } from "./commands/agent-state.ts";
+import { runAgentDuplicate, runAgentOperation } from "./commands/agent-duplicate.ts";
 import type { CliDeps } from "./deps.ts";
 import { CliError, usage } from "./errors.ts";
 import { writeFailure } from "./output.ts";
@@ -336,6 +337,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents context": async (deps, args, options) => await runAgentsContext(deps, "status", args[0] ?? "", options),
     "agents compact": async (deps, args, options) => await runAgentsContext(deps, "compact", args[0] ?? "", options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),
+    "agents duplicate": async (deps, args, options) => await runAgentDuplicate(deps, args[0] ?? "", options),
+    "agents operations show": async (deps, args, options) => await runAgentOperation(deps, args[0] ?? "", options),
     "agents create": async (deps, _args, options) => await runAgentsCreate(deps, options),
     "agents update": async (deps, args, options) => await runAgentsUpdate(deps, args[0] ?? "", options),
     "agents delete": async (deps, args, options) => await runAgentsDelete(deps, args[0] ?? "", options),

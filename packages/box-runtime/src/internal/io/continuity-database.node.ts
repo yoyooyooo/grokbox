@@ -5,7 +5,7 @@ import { ContinuityFailure, failContinuity, type ContinuityStorePolicy } from "@
 import { openMonitorSqlite, type MonitorSqlite } from "./monitor-sqlite.node.ts";
 import { checkContinuityFile, checkContinuityRoot, continuityPrivateDirectory, syncContinuityDirectory, continuityIoFailure, missingFile } from "./continuity-files.node.ts";
 
-export const CONTINUITY_DB_VERSION = 2;
+export const CONTINUITY_DB_VERSION = 3;
 const SCHEMA = `
 CREATE TABLE continuity_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL,root_id TEXT NOT NULL,scope_id TEXT NOT NULL);
 CREATE TABLE publications(sequence INTEGER PRIMARY KEY AUTOINCREMENT,request_id TEXT NOT NULL UNIQUE,digest TEXT NOT NULL,agent_id TEXT NOT NULL,quality TEXT NOT NULL,manifest_json TEXT,
@@ -18,8 +18,9 @@ CREATE TABLE reference_requests(request_id TEXT PRIMARY KEY,digest TEXT NOT NULL
 CREATE TABLE claims(owner TEXT NOT NULL,claim_id TEXT NOT NULL,ref TEXT NOT NULL,revision TEXT NOT NULL,active INTEGER NOT NULL CHECK(active IN (0,1)),PRIMARY KEY(owner,claim_id));
 CREATE INDEX protected_reference ON claims(owner,ref,revision);
 CREATE TABLE operations(operation_id TEXT PRIMARY KEY,digest TEXT NOT NULL,intent_json TEXT NOT NULL,agent_id TEXT NOT NULL,snapshot_id TEXT REFERENCES publications(request_id),
- state TEXT NOT NULL CHECK(state IN ('prepared','effect_unknown','succeeded','not_executed')),revision INTEGER NOT NULL,effect_id TEXT UNIQUE,evidence_hash TEXT,created_at INTEGER NOT NULL,request_json TEXT);
+ state TEXT NOT NULL CHECK(state IN ('prepared','effect_unknown','succeeded','not_executed')),revision INTEGER NOT NULL,effect_id TEXT UNIQUE,evidence_hash TEXT,created_at INTEGER NOT NULL,request_json TEXT,result_json TEXT);
 CREATE INDEX operation_snapshot ON operations(snapshot_id,state);
+CREATE INDEX operation_agent_state ON operations(agent_id,state);
 `;
 export type ContinuityStoreHooks = {
   /** Private fault/barrier seams; no environment or CLI can provide them. */
@@ -88,8 +89,8 @@ export function continuityDatabase(root: string, scopeId: string, policy: Contin
     const exists = yield* continuityIo(() => checkContinuityFile(file, true));
     if (exists) {
       // Explicit initializer only. GET never performs schema migration. Preserve
-      // all old unknown operations; the new column stores the exact request
-      // required for a restarted CLI to reconcile rather than reconstruct it.
+      // all old unknown operations. Exact requests and bounded identity receipts
+      // let restarted consumers reconcile without inferring or recreating Bots.
       yield* continuityIo(checkDirectories);
       const existing = yield* Effect.acquireRelease(Effect.uninterruptible(continuityIo(() => openMonitorSqlite(file, "write"))), close);
       return yield* Effect.uninterruptible(continuityIo(async () => {
@@ -98,9 +99,13 @@ export function continuityDatabase(root: string, scopeId: string, policy: Contin
           const version = await existing.first("PRAGMA user_version"), meta = await existing.first("SELECT * FROM continuity_meta WHERE singleton=1");
           if (meta?.root_id !== rootId || meta.scope_id !== scopeId) return failContinuity("scope_mismatch");
           if ((await existing.first("PRAGMA journal_mode"))?.journal_mode !== "delete") return failContinuity("schema_mismatch");
-          const migrated = version?.user_version === 1 && meta.version === 1;
+          const previous = version?.user_version;
+          if (previous !== meta.version || ![1, 2, CONTINUITY_DB_VERSION].includes(Number(previous))) return failContinuity("schema_mismatch");
+          const migrated = previous !== CONTINUITY_DB_VERSION;
           if (migrated) {
-            await existing.run("ALTER TABLE operations ADD COLUMN request_json TEXT");
+            if (previous === 1) await existing.run("ALTER TABLE operations ADD COLUMN request_json TEXT");
+            await existing.run("ALTER TABLE operations ADD COLUMN result_json TEXT");
+            await existing.run("CREATE INDEX IF NOT EXISTS operation_agent_state ON operations(agent_id,state)");
             await existing.run(`UPDATE continuity_meta SET version=${CONTINUITY_DB_VERSION} WHERE singleton=1; PRAGMA user_version=${CONTINUITY_DB_VERSION};`);
           } else await checkDb(existing);
           await hooks.beforeCommit?.("initialize-schema"); committing = true; await existing.run("COMMIT");

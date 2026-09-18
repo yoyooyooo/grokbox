@@ -52,6 +52,16 @@ const CASES = {
     ["bun", "scripts/check-runtime-boundaries.mjs"],
     ["node", "scripts/check-publication.mjs", "--include-untracked"],
   ],
+  "continuity-duplicate": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "--timeout", "30000", "packages/runtime-kernel/test/duplication.test.ts", "packages/box-runtime/test/agent-duplicate.test.ts", "packages/box-runtime/test/duplicate-process.test.ts", "packages/box-runtime/test/continuity-state-migration.test.ts", "test/agent-duplicate-cli.test.ts", "test/agent-state-commands.test.ts"],
+    ["node", "scripts/check-runtime-boundaries.mjs"], ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
+  "continuity-duplicate-qualified": [
+    ["bun", "run", "typecheck"],
+    ["bun", "test", "--timeout", "30000", "packages/box-runtime/test/native-duplicate-qualification.test.ts"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "continuity-native-binding": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "--timeout", "30000", "packages/runtime-kernel/test/current-state-wire.test.ts", "packages/box-runtime/test/native-checkpoint-worker.test.ts", "packages/box-runtime/test/native-current-state-owner.test.ts", "packages/box-runtime/test/continuity-state-migration.test.ts", "test/agent-state-commands.test.ts", "packages/box-runtime/test/continuity-current-state.test.ts", "packages/box-runtime/test/current-state-process.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts"],
@@ -281,7 +291,7 @@ if (!expectedBun || actualBun !== expectedBun) {
   process.exit(1);
 }
 
-if (["continuity-native-checkpoint-qualified", "continuity-native-binding-qualified"].includes(kase) && process.env.GROKBOX_TEST_NATIVE_CONTINUITY !== "1") {
+if (["continuity-native-checkpoint-qualified", "continuity-native-binding-qualified", "continuity-duplicate-qualified"].includes(kase) && process.env.GROKBOX_TEST_NATIVE_CONTINUITY !== "1") {
   console.log(JSON.stringify({ case: kase, ok: false, error: "native_continuity_opt_in_required", commit: sha(),
     dependencyReality: "opt-in-check-only", toolchain, supports: [], commands: [],
     notProven: ["native-tests-not-executed", "installed-Host-binding"] }, null, 2));
@@ -311,7 +321,7 @@ for (const argv of mapped) {
   if (ran.status !== 0) failed = true;
   if (isTest) {
     if (pass == null || pass === 0) failed = true;
-    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || kase.startsWith("context-") || kase.startsWith("continuity-native-") || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
+    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || kase.startsWith("context-") || kase.startsWith("continuity-native-") || kase.startsWith("continuity-duplicate") || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
     if ((failn ?? 0) > 0) failed = true;
   }
 }
@@ -322,6 +332,8 @@ const SUPPORTS = {
   "ops-receiver": ["fixed-disabled-notice-blueprint", "readonly-binding-routine-and-loaded-model-preflight", "capabilities-and-model-from-same-native-frame", "freshness-rechecked-after-local-reads", "same-native-automation-selector-closure", "managed-assignment-fingerprint-no-secret-output", "stale-scope-definition-and-unbind-refusal", "no-canary-or-delivery-authorization", "source-cli-and-packed-node-reader", "j1-boundaries-unchanged"],
   "ops-pairing": ["explicit-disabled-managed-target-preflight", "no-key-fetch-in-preview-or-query", "private-bounded-atomic-credential-capsule", "single-native-credential-dispatch-after-reservation", "real-reserver-death-no-retry", "concurrent-unbind-blocks-late-credential", "config-and-definition-recheck", "packed-node-query-and-unbind", "prepared-is-not-delivery-authorization", "j1-unchanged"],
   "ops-notification": ["default-target-policy-not-pairing", "existing-sqlite-atomic-wake-reservation", "fixed-revision-and-byte-validated-envelope", "alias-shared-budget", "single-attempt-unknown-no-replay", "paired-driver-revalidation-before-local-start-barrier", "network-outside-config-and-db-locks", "real-child-death-at-reserved-and-started", "read-only-source-and-packed-node-status", "j1-domain-boundaries-preserved"],
+  "continuity-duplicate": ["read-only-native-copy-plan", "explicit-plan-bound-local-command", "one-dispatch-per-operation-and-unresolved-source", "exact-created-identity-before-ownership-readback", "no-auth-or-http-auto-retry", "generation-and-evidence-before-POST", "CONT-v1-v2-to-v3-explicit-migration", "fresh-Node-after-claim-and-result-hard-death", "read-only-offline-operation-inspection", "no-profile-or-remote-fallback"],
+  "continuity-duplicate-qualified": ["exact-current-native-clone-functions", "conversation-reset-not-complete-Memory-or-blob-clone", "enabled-local-Routine-copy-and-active-session-delegation", "existing-current-state-identity-cleanup-slice"],
   "continuity-native-binding": ["finite-local-CLI-and-authenticated-RPC", "explicit-CONT-v1-to-v2-saved-request-migration", "bounded-original-worker-transaction-adapter", "root-graph-and-worker-marker-atomicity", "durable-main-and-worker-preparation-fences", "virgin-target-evidence-not-missing-root", "late-checkpoint-and-completion-refusal", "explicit-initialize-reconcile-release-no-business-start", "B2-progress-not-overwritten", "profile-upgrade-preserves-baseline"],
   "continuity-native-binding-qualified": ["exact-Host-worker-pair-and-unique-new-slices", "maintained-opt-in-profile-and-complete-envelope", "original-worker-thread-node-sqlite-transaction", "worker-persistent-marker-and-GC-fence-across-reopen", "native-capture-prepare-apply-observe-release-protocol", "native-graph-and-new-Node-readback", "source-independent-B2-idempotency"],
   "continuity-native-checkpoint": ["bounded-native-reference-walker", "all-declared-edges-including-cycles", "opaque-leaf-encoding-and-syntax", "root-and-closure-readback-not-activation", "no-default-native-binding", "current-state-and-real-vault-regression"],
@@ -369,6 +381,8 @@ const REALITY = {
   "ops-receiver": "real-owned-config-capsule-sqlite-source-and-packed-node-readers-synthetic-native-http-current-native-source-qualified-separately-no-live-writes",
   "ops-pairing": "real-owned-config-journal-sqlite-capsule-and-child-sigkill-synthetic-native-http-real-cli-packed-node-query-no-live-key-or-webhook",
   "ops-notification": "real-private-sqlite-files-config-lock-and-owned-transport-adapter-real-child-sigkill-and-packed-node-readers-no-native-webhook-effects",
+  "continuity-duplicate": "production-policy-Effect-coordinator-real-CONT-SQLite-local-HTTP-CLI-owned-effect-counts-and-fresh-Node-processes-no-real-Bot-creation",
+  "continuity-duplicate-qualified": "fixed-original-Host-functions-in-isolated-VM-owned-files-and-native-dependencies-no-Host-startup-or-account-RPC",
   "continuity-native-binding": "production-coordinator-RPC-client-private-CONT-SQLite-bounded-worker-adapter-owned-native-metadata-projections-local-HTTP-CLI-Node20-no-live-Bot-effects",
   "continuity-native-binding-qualified": "actual-pinned-original-worker-thread-and-node-sqlite-owned-temporary-databases-original-protobuf-AgentStore-new-processes-no-main-Host-startup-no-provider",
   "continuity-native-checkpoint": "production-capture-and-readback-public-reflection-fixture-real-SQLite-vault-owned-current-state-port-no-private-source-or-live-effects",
@@ -416,6 +430,8 @@ const NOT_PROVEN = {
   "ops-receiver": ["actual-webhook-authentication-and-receiver-turn", "server-ownership-and-account-scope-binding", "native-child-session-overrides", "model-request-or-tool-permission", "activation-and-paired-send-driver", "prompt-policy-as-enforced-sandbox", "independent-review-and-live-schema4-adoption"],
   "ops-pairing": ["current-native-http-credential-qualification", "receiver-model-and-notify-behavior-qualification", "endpoint-origin-and-http-post-contract", "live-binding-activation-or-driver", "remote-key-revocation", "backup-restore-fence", "first-initialization-crash-recovery", "physical-secure-erasure", "independent-review-and-schema4-live-adoption"],
   "ops-notification": ["native-pairing-owner-and-credential-store", "native-http-contract-and-receiver-model-qualification", "automatic-worker-installation", "native-unknown-reconciliation", "bounded-definite-rejection-retries-and-critical-reserve", "backup-restore-replay-fence", "bot-report-or-user-read", "independent-review-and-live-schema4-adoption"],
+  "continuity-duplicate": ["current-account-native-duplicate-roundtrip", "original-App-selection-and-copied-Routine-behavior", "native-idempotency-or-all-client-deduplication", "automatic-identity-resolution-after-lost-native-reply", "full-clone-replace-and-handover", "independent-external-review-and-live-adoption"],
+  "continuity-duplicate-qualified": ["actual-Server-registration-and-resulting-ownership", "real-App-and-Routine-effects", "private-store-live-migration", "arbitrary-newer-Host-compatibility"],
   "continuity-native-binding": ["installed-profile-and-worker-reload", "first-real-Agent-loop-and-provider-request", "full-Memory-display-history-resource-import", "reset-semantic-recovery-spawn-clone-and-replace-products", "automatic-protection-and-handover", "independent-external-review-and-live-adoption"],
   "continuity-native-binding-qualified": ["entire-main-Host-lifecycle-with-actual-App", "production-client-and-profile-adoption", "same-Box-identity-creation-first-turn-and-Host-restart", "real-Memory-display-history-resource-import", "full-J2-notification-inbound-and-retirement", "independent-external-review-and-live-adoption"],
   "continuity-native-checkpoint": ["installed-schema-qualification", "native-exclusive-read-and-writer-boundary", "cross-identity-import-or-application-marker", "complete-Memory-display-history-and-attachments", "original-Agent-loop-and-provider", "independent-review-and-live"],

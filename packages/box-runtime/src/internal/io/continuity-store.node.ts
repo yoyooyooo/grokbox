@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { lstat } from "node:fs/promises";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { ContinuityFailure, continuityEffectIntent, continuityStorePolicy, failContinuity, isContinuityHash, isContinuityUuid,
+  DUPLICATION_POLICY_REVISION, duplicateRequest, duplicateInputDigest, duplicateEffectId, duplicateCreated, type DuplicateRequest, type DuplicateCreated,
   recoveryManifest, recoveryRevision, initializeCurrentRequest, initializationDigest, type InitializeCurrentRequest, type ContinuityEffectIntent, type ContinuityStorePolicy, type RecoveryManifest, type RecoveryPublication } from "@grokbox/runtime-kernel/continuity";
 import { referenceChange, type ContinuityStorageOwnerId, type ReferenceChange, type ReferenceReceipt, type OwnerMeasurement,
   type OwnedMaintenanceReceipt, type ProtectedStorageRef } from "@grokbox/runtime-kernel/observation";
@@ -134,6 +135,7 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
   });
   const prepareEffect = (raw: ContinuityEffectIntent) => database.write("prepare-effect", async db => {
     const intent = continuityEffectIntent(raw), digest = sha256Text(canonicalJson(intent));
+    if (intent.kind === "duplicate") return failContinuity("conflict"); // use the atomic per-source provisioning entry
     const prior = await db.first("SELECT * FROM operations WHERE operation_id=?", [intent.operationId]);
     if (prior) { if (prior.digest !== digest) return failContinuity("conflict"); return operationReceipt(prior, false); }
     if (intent.snapshotId) {
@@ -215,12 +217,77 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
     const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [operationId]);
     if (!row) return failContinuity("not_found");
     if (row.effect_id !== effectId || row.state === "prepared") return failContinuity("conflict");
+    if (outcome === "succeeded" && continuityEffectIntent(JSON.parse(String(row.intent_json))).kind === "duplicate") return failContinuity("conflict");
     if (row.state !== "effect_unknown") {
       if (row.state !== outcome || row.evidence_hash !== evidenceHash) return failContinuity("conflict");
       return operationReceipt(row, false);
     }
     await db.run("UPDATE operations SET state=?,evidence_hash=?,revision=revision+1 WHERE operation_id=?", [outcome, evidenceHash, operationId]);
     return operationReceipt({ ...row, state: outcome, evidence_hash: evidenceHash, revision: Number(row.revision) + 1 }, false);
+  });
+  const decodeDuplication = (row: SqlRow) => {
+    const operation = operationReceipt(row, false);
+    try {
+      const request = duplicateRequest(JSON.parse(String(row.request_json)));
+      if (operation.kind !== "duplicate" || request.operationId !== operation.operationId || request.source.agentId !== operation.agentId
+        || request.source.scopeId !== input.scopeId || duplicateInputDigest(request) !== operation.inputDigest
+        || operation.policyRevision !== DUPLICATION_POLICY_REVISION || operation.snapshotId !== null) return failContinuity("integrity_failure");
+      const result = row.result_json === null ? null : duplicateCreated(JSON.parse(String(row.result_json)), request);
+      if ((operation.state === "succeeded") !== (result !== null)
+        || result && operation.evidenceHash !== sha256Text(canonicalJson(result))) return failContinuity("integrity_failure");
+      return { request, operation, result };
+    } catch { return failContinuity("integrity_failure"); }
+  };
+  const prepareDuplication = (raw: DuplicateRequest) => database.write("prepare-duplication", async db => {
+    const request = duplicateRequest(raw);
+    if (request.source.scopeId !== input.scopeId) return failContinuity("scope_mismatch");
+    const prior = await db.first("SELECT * FROM operations WHERE operation_id=?", [request.operationId]);
+    if (prior) {
+      const saved = decodeDuplication(prior);
+      if (saved.request.planRevision !== request.planRevision || saved.request.source.agentId !== request.source.agentId
+        || saved.request.source.scopeId !== request.source.scopeId) return failContinuity("conflict");
+      return saved;
+    }
+    // Different operation IDs must not bypass an unresolved native creation.
+    // This is a per-source guard, not a global Bot lock or remote idempotency.
+    const active = await db.first("SELECT operation_id FROM operations WHERE agent_id=? AND state IN ('prepared','effect_unknown') AND json_extract(intent_json,'$.kind')='duplicate' LIMIT 1", [request.source.agentId]);
+    if (active) return failContinuity("busy");
+    const intent = continuityEffectIntent({ operationId: request.operationId, agentId: request.source.agentId, kind: "duplicate",
+      inputDigest: duplicateInputDigest(request), policyRevision: DUPLICATION_POLICY_REVISION, snapshotId: null });
+    await database.metadataRoom(db, 16384);
+    await db.run("INSERT INTO operations(operation_id,digest,intent_json,agent_id,snapshot_id,state,revision,created_at,request_json) VALUES(?,?,?,?,NULL,'prepared',1,?,?)",
+      [intent.operationId, sha256Text(canonicalJson(intent)), canonicalJson(intent), intent.agentId, Date.now(), canonicalJson(request)]);
+    return decodeDuplication((await db.first("SELECT * FROM operations WHERE operation_id=?", [request.operationId]))!);
+  });
+  const recordDuplication = (raw: DuplicateCreated) => database.write("record-duplication", async db => {
+    const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [id(raw.operationId)]);
+    if (!row) return failContinuity("not_found");
+    const saved = decodeDuplication(row), result = duplicateCreated(raw, saved.request), encoded = canonicalJson(result);
+    if (saved.result) {
+      if (canonicalJson(saved.result) !== encoded) return failContinuity("conflict");
+      return saved;
+    }
+    if (saved.operation.state !== "effect_unknown" || saved.operation.effectId !== duplicateEffectId(result.operationId)) return failContinuity("conflict");
+    await database.metadataRoom(db, 4096);
+    const evidenceHash = sha256Text(encoded);
+    await db.run("UPDATE operations SET result_json=?,state='succeeded',evidence_hash=?,revision=revision+1 WHERE operation_id=?",
+      [encoded, evidenceHash, result.operationId]);
+    return decodeDuplication({ ...row, result_json: encoded, state: "succeeded", evidence_hash: evidenceHash, revision: Number(row.revision) + 1 });
+  });
+  const stopUnclaimedDuplication = (operationId: string) => database.write("stop-unclaimed-duplication", async db => {
+    const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [id(operationId)]);
+    if (!row) return failContinuity("not_found");
+    const saved = decodeDuplication(row);
+    if (saved.operation.state !== "prepared") return saved;
+    const effectId = duplicateEffectId(operationId), evidenceHash = sha256Text("native-duplicate:plan-changed-before-claim");
+    await db.run("UPDATE operations SET state='not_executed',effect_id=?,evidence_hash=?,revision=revision+1 WHERE operation_id=?",
+      [effectId, evidenceHash, operationId]);
+    return decodeDuplication({ ...row, state: "not_executed", effect_id: effectId, evidence_hash: evidenceHash, revision: Number(row.revision) + 1 });
+  });
+  const duplication = (operationId: string) => database.read(async db => {
+    const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [id(operationId)]);
+    if (!row) return failContinuity("not_found");
+    return decodeDuplication(row);
   });
   const changeReference = (owner: ContinuityStorageOwnerId, raw: ReferenceChange) => database.write("reference-change", async db => {
     const change = referenceChange(raw);
@@ -324,7 +391,7 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
   });
   const maintainSafety = () => database.read(async db => ({ owner: "continuity.safety", state: "blocked", reclaimedBytes: 0,
     blockedBy: await total(db, "SELECT COUNT(*) AS n FROM operations WHERE state='effect_unknown'") ? ["effect_unknown"] : ["unsupported"] } satisfies OwnedMaintenanceReceipt));
-  return { initialize: database.initialize, publish, reconcilePublication, readSnapshot, prepareEffect, rememberInitializationRequest, initializationRequest, claimEffect, settleEffect, changeReference, measure, maintainRecovery, maintainSafety,
+  return { initialize: database.initialize, publish, reconcilePublication, readSnapshot, prepareDuplication, recordDuplication, stopUnclaimedDuplication, duplication, prepareEffect, rememberInitializationRequest, initializationRequest, claimEffect, settleEffect, changeReference, measure, maintainRecovery, maintainSafety,
     publication: (requestId: string) => database.read(async db => receipt(await getPublication(db, requestId))),
     operation: (operationId: string) => database.read(async db => {
       const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [id(operationId)]);

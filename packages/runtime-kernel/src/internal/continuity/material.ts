@@ -89,11 +89,11 @@ export function recoveryManifest(input: unknown, policy: ContinuityStorePolicy):
     root: v.root as string | null, gaps: [...new Set<string>(v.gaps)].sort(), parts };
 }
 export const recoveryRevision = (manifest: RecoveryManifest) => sha256Text(canonicalJson(manifest));
-export type ContinuityEffectIntent = { operationId: string; agentId: string; kind: "create" | "initialize" | "activate" | "handover" | "retire";
+export type ContinuityEffectIntent = { operationId: string; agentId: string; kind: "create" | "duplicate" | "initialize" | "activate" | "handover" | "retire";
   inputDigest: string; policyRevision: string; snapshotId: string | null };
 export function continuityEffectIntent(input: unknown): ContinuityEffectIntent {
   const v = continuityObject(input, ["operationId", "agentId", "kind", "inputDigest", "policyRevision", "snapshotId"]);
-  if (!isContinuityUuid(v.operationId) || !isContinuityUuid(v.agentId) || typeof v.kind !== "string" || !["create", "initialize", "activate", "handover", "retire"].includes(v.kind)
+  if (!isContinuityUuid(v.operationId) || !isContinuityUuid(v.agentId) || typeof v.kind !== "string" || !["create", "duplicate", "initialize", "activate", "handover", "retire"].includes(v.kind)
     || !isContinuityHash(v.inputDigest) || !isContinuityHash(v.policyRevision) || !(v.snapshotId === null || isContinuityUuid(v.snapshotId))) return failContinuity("invalid_material");
   return { operationId: v.operationId, agentId: v.agentId, kind: v.kind as ContinuityEffectIntent["kind"], inputDigest: v.inputDigest,
     policyRevision: v.policyRevision, snapshotId: v.snapshotId as string | null };

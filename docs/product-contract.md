@@ -330,7 +330,7 @@ App Label (`title`) is display-only. User text is optional; grokbox may append `
 
 一个Bot是长期Memory身份，只管理一份默认进入后续Agent loop的当前工作上下文；不做`agents sessions`、会话选择/分支或跨机器迁移。检查点是恢复材料，不是可切换的另一个Bot会话。新身份由官方创建并核实归属，当前状态通过原生writer接受、持久化和读回。
 
-目标命令族包含官方式duplicate、尽力保真的状态clone、带交接退役的replace、唯一当前context的reset/initialize/recover和带持久初始指令的临时spawn/start。后者以程序启动事件工作，不使用伪Human任务；指令不扩张工具权限，Memory/共享文件和外部任务不因context恢复回滚。具体命令参数在实现时与registry/技能一起发布，当前不能当现成CLI使用。
+目标命令族包含官方式duplicate、尽力保真的状态clone、带交接退役的replace、唯一当前context的reset/initialize/recover和带持久初始指令的临时spawn/start。后者以程序启动事件工作，不使用伪Human任务；指令不扩张工具权限，Memory/共享文件和外部任务不因context恢复回滚。当前`agents state`手动初始化基础链和官方式`agents duplicate`已进入源码命令面，分别按[当前状态指南](maintainers/current-state-control.md)与[duplicate指南](maintainers/native-agent-duplicate.md)使用；其余命令参数仍随实现发布，不能因本节列出目标便当作已可用或已部署。
 
 北极星是确认接管后及时通知、默认暂停旧Routine（可配置不暂停）、分档保全并创建新Box替身。保真尽力而为、不强求一模一样；材料缺口可按策略接受，未知副作用不能猜。新替身按已核实职责接活的同时，程序迁移群/DM/Routine/外部任务，旧Bot辅助指路并被持续观察旧入站；某项unknown只阻断相关职责。替身上线、关系迁完和原身份可删除分别取证，不能将一项成功泛化。
 
