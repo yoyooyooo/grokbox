@@ -248,6 +248,33 @@ S13连续性替换继续由CONT owner判断允许模式、原生快照完整性�
 <a id="storage"></a>
 ## 8. 有界存储：轮转、分层保留与安全GC
 
+### OBS/CONT J0：公共边界核对（2026-09-18）
+
+A/B/C与当前实现无产品冲突。直接复用`openMonitorStore.ingestEvidence/evidenceCursor/incidentEvidence/notificationWork`、原SQLite事务与证据修订，`maintainObservationStorage/modeldStorageMaintenance`、schema4 storage域和既有ops目标/预算；不恢复support、不接替身业务循环。
+
+J1只补两处公共接线：固定的CONT恢复/安全owner端口（owner + opaque ref + revision、计量与有界维护，保护/解除/GC共用本域并发边界），以及严格白名单CONT事件/意图进入原incident/outbox的入口。诊断TTL不持有恢复材料删除权；evidence lease不替代恢复保护；commit_unknown与未结职责由CONT自己的安全账本保留。测量不授权删除，缺owner是unmeasured，物理共享对象按身份去重，不能累加逻辑引用冒充物理用量。
+
+归属丢失是用户保护影响，不受纯上游项目bug过滤；`ownership_changed`仍是原边沿语义，still-Temporal不自动关闭CONT期望。通知off/TTL/预算不结束交接或撤销独立Routine授权。gap/unsupported不证明旧入站为零；真实入站reader、持续期望、恢复导入、职责和Bot删除由CONT实现。J1没有真实native投递时明确unavailable，unknown不授权重投；两个store只按稳定事件/cursor重入对账，不宣称跨store原子。
+
+此J0不要求通读S13，也不授予部署。J1以owned恢复owner＋真实文件/SQLite合同测试交付；J2再对固定组合补真实owner、原生投递、独立复核与LIVE，schema4仍须旧制品/配置退路和成套采用。
+
+<a id="obs-continuity-interface"></a>
+### J1：固定的最小接线合同
+
+纯类型/严格校验归`runtime-kernel/internal/observation/continuity-contract.ts`，从`@grokbox/runtime-kernel/observation`导出。`ProtectedStorageRef={owner,ref,revision}`只接受`continuity.recovery`/`continuity.safety`及有界不透明标识，不接受路径。`ContinuityStorageOwner`提供`measure/changeReference/maintain`，通过`ContinuityStorageOwners={recovery?,safety?}`显式注入；不是插件发现或第二份存储配置。完整发布/引用闭包、内容绑定requestId、精确claimId解除和GC并发边界由本域owner实现，诊断层不持有第二套pin。
+
+`runContinuityReferenceChange`通过原runtime facade调用指定owner并等待当前写入结算；未接入是unavailable/not_attempted，坏回执或调用失联是unknown，不能自行补发解除。owner自行拒绝超预算的新保护、保存最后可靠点，并由安全操作准入拒绝无法持久记录的新effect；公共层不代做准入/导入/Bot操作。
+
+`measureContinuityStorage`及`observeRuntimeStorage({continuityOwners})`显示真实采样时间、coverage、逻辑保护/可回收量和有界physical allocation身份；共享物理对象去重，跨采样冲突降为partial。未接入measurement/bytes为null，不把未知算0；结果不叠加进diagnostic footprint或声称全安装覆盖。`maintainObservationStorage({continuityOwners})`在原维护生命周期内只调用owner有限GC，不传诊断TTL/路径、不另起任务；modeld子Scope仍负责真实写步骤结算。
+
+`openContinuityObservationBridge({durableRoot,source})`从runtime facade导出，提供`sourceKey/cursor/publish/receipts`。source为`{scopeId,source,generation}`；sourceKey由同名kernel helper生成，generation表示稳定来源代而非每次查询随机值。CONT事件使用原字段`eventId/sourceInstanceId/sourceSequence/at/agentId`；sequence从0开始，另带occurrenceId、可选operationId/dutyId、coverage与最多8个安全引用。严格白名单拒绝任意JSON/正文；gap/unsupported窗口必须保留缺口，入站计数只能为null，不能拿modeld静默或缺页证明quiet。
+
+publish需要真实当前collectorEpoch和源expected/nextCursor，复用现有ingestEvidence事务，同时保存事实、incident、固定revision与本地通知意图。CONT先提交自己的operation，再以稳定身份重入/对账；无collector/配置/空间时明确不可用或有缺口，不宣称跨store原子。归属丢失、恢复降级、未知操作走continuity_attention用户影响规则，不受纯上游项目bug过滤；普通ownership_observed不自动resolve。ops/storage取自同一配置快照，off只阻止新通知意图，不停CONT。
+
+receipts只回传本地incident/revision/work与outbox状态，native transport明确unavailable，automaticRetry=false；已知本地export/attempt不确定时保留unknown观察。真实投递、目标/数据/费用重校验及native unknown对账仍归T45/T46，J1测试不冒充它们。诊断明细TTL、incident状态、CONToperation终结和旧Bot可删彼此独立。
+
+唯一组合验证为`bun scripts/verify-runtime-rebuild.mjs obs-continuity`；14项新合同使用真实临时文件、journal、SQLite和owned CONT adapter，不是native恢复/消息reader。J2再接真实owner及安全台账、上游入站、native投递和成套schema4采用，分别回链OBS/CONT既有LIVE条目。
+
 **服务内维护增量：** 候选modeld取得listener并ready后，在嵌套Effect Scope执行有限回收，完成后等待30秒；与通知/collector独立，缺库不初始化、坏配置不启动默认GC。退出先结算子任务再关闭日志/listener；借用服务不获取维护owner。闲置过程日志只清关闭段；维护回执/暂存各16KiB，并区分进程失效、停止、陈旧和真实最近成功。有限元数据footprint计量三个诊断命名空间，inode去重并披露深度/数量/缺口；不是所有owner物理预留，不签Box自启或统一storage applied。[实现证据](../reports/2026-09-18-modeld-storage-lifetime.md)。
 
 **配置/恢复增量：** journal显式来源绑定、写入后采用回执、缩额恢复、collector内维护及目录锁v2的确证死owner退役已实现。真实进程SIGKILL跨四个轮转阶段、不重放callback、有限准备槽和打包Node写入已有证明；旧PID-only锁与未知/撕裂文件不自动清理，LevelDB安全账本不归此协议。当前限定证明见[回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)，不取代下面的全安装、服务安装与原生验收合同。

@@ -2,13 +2,19 @@
 
 ## Status / Goal
 
-**Planned / Spec-only；M3。** [Spec §4/§5.4/§6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。把已固定的故障摘要、ID和取证命令送给配置目标Bot；默认仅提醒，不自动执行取证或Issue。
+**Partial：已有固定证据/本地意图及J1类型化CONT接纳；native投递与对账仍Planned，M3未关闭。** [Spec §4/§5.4/§6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。把已固定的故障摘要、ID和取证命令送给配置目标Bot；默认仅提醒，不自动执行取证或Issue。
 
 ## Depends-on / Modules
 
 依OBS-02/03证据与视图、T43 transport、T51/T54最小目标合同；Fake可先行，T53/T46完成原生接收集成。不依赖T47/T48/T49/T52/T56/高级多Bot路由。
 
 kernel `internal/commands/ops-notification.ts`及policy/routing；box-runtime原SQLite扩outbox/attempt/budget/claim域、`native-notification.node.ts`，由monitor宿主有界Scope装配。
+
+## J1 共享接纳（不等于投递可用）
+
+`openContinuityObservationBridge`复用`openMonitorStore.ingestEvidence/evidenceCursor/evidenceSourceStatus/linkedEvidenceIncidents`；CONT从自己的store提交后用稳定事件ID与源cursor重入，不创建第二通知器或跨store事务。固定revision与本地work复用现有SQLite；ops off仍保留证据但不创建新通知意图。归属丢失作为保护对象用户影响，不套用纯上游项目bug过滤；原ownership_changed边沿不改。
+
+bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export/已有attempt未知时可查unknown；没有POST、绑定、网络去重或接收者模型资格。14项J1合同测试覆盖真实SQLite重复/重启、提交前后故障、窗口/序号gap与关闭通知不结束CONToperation，真实网络unknown仍待下文T45验收。接口唯一归[Spec J1](../roadmap/template-ops-automation-spec.md#obs-continuity-interface)，不把J1算作原生Bot送达。
 
 ## Work
 

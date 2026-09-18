@@ -1,4 +1,6 @@
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
+import type { ContinuityStorageOwners } from "@grokbox/runtime-kernel/observation";
+import { maintainContinuityStorage } from "./continuity-storage.node.ts";
 import { openMonitorStore } from "./monitor-store.node.ts";
 import { readStorageConfiguration } from "./storage-configuration.node.ts";
 import { maintainRegisteredJournals, type JournalMaintenanceReceipt } from "./journal-maintenance.node.ts";
@@ -9,6 +11,7 @@ export type StorageMaintenanceCycle = {
   atMs: number; elapsedMs: number; budgetExceeded: boolean;
   state: "completed" | "partial" | "configuration_unavailable";
   policyRevision: string | null;
+  continuity?: Awaited<ReturnType<typeof maintainContinuityStorage>>;
   monitor: { state: "maintained" | "busy" | "not_initialized" | "migration_required" | "unavailable" | "not_checked";
     removedEvidence: number; expiredSnapshots: number; physicalBytes: number | null; clockState: string | null };
   journals: JournalMaintenanceReceipt[];
@@ -17,6 +20,7 @@ export type StorageMaintenanceCycle = {
 export type StorageMaintenanceInput = {
   durableRoot: string; runRoot: string; nowMs?: number;
   processLog?: BoundedProcessLog; processPolicyRevision?: string;
+  continuityOwners?: ContinuityStorageOwners;
 };
 /** One finite pass using existing owners, never a second collector. No Gateway,
  * models, initialization, migration, full VACUUM or arbitrary file deletion.
@@ -60,5 +64,7 @@ export async function maintainObservationStorage(input: StorageMaintenanceInput)
     catch { result.processLog = { state: "unavailable", reclaimedBytes: 0, activeSegmentPreserved: true }; }
     if (result.processLog.state !== "maintained") result.state = "partial";
   }
+  result.continuity = await maintainContinuityStorage(input.continuityOwners, atMs);
+  if (result.continuity.some(r => r.state === "unavailable" || r.receipt?.state === "blocked")) result.state = "partial";
   return finish();
 }

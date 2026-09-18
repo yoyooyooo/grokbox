@@ -1,15 +1,16 @@
 import { observationOwn as own } from "../contract/provider-observation.ts";
 import { failureSummaryFromObservation, type FailureCategory } from "../contract/failure-summary.ts";
 import { evidenceIdentity, type EvidenceFact } from "./evidence-contract.ts";
+import { projectContinuityEvent } from "./continuity-contract.ts";
 
 export const INCIDENT_CLASSIFIER_VERSION = "incident-rules-v1";
-export const OBSERVATION_INCIDENT_RULES = ["native_alert", "native_run_failure", "execution_stalled", "source_gap"] as const;
+export const OBSERVATION_INCIDENT_RULES = ["native_alert", "native_run_failure", "execution_stalled", "source_gap", "continuity_attention"] as const;
 export type ObservationIncidentRule = typeof OBSERVATION_INCIDENT_RULES[number];
 export type IncidentAssessment = {
   classifierVersion: typeof INCIDENT_CLASSIFIER_VERSION;
-  category: FailureCategory | "native_failure" | "suspected_stall" | "observation_gap";
+  category: FailureCategory | "native_failure" | "suspected_stall" | "observation_gap" | "continuity_impact";
   disposition: "notify" | "local_only";
-  reason: "runtime_failure" | "unclassified_failure" | "upstream_only" | "expected_cancellation" | "suspected_stall" | "observation_gap";
+  reason: "runtime_failure" | "unclassified_failure" | "upstream_only" | "expected_cancellation" | "suspected_stall" | "observation_gap" | "protected_subject_changed";
   basis: "derived";
   basisRefs: string[];
   rootCause: "not_proven";
@@ -21,6 +22,15 @@ const id = (value: unknown) => evidenceIdentity(value) ? value : undefined;
  * A snapshot does not manufacture a historical creation; it is its own observed
  * condition. Alert decisions alone do not mean a tray was actually published. */
 export function observationIncidentCandidate(value: Record<string, unknown>): IncidentCandidate | undefined {
+  if (own(value, "name") === "continuity_observation") {
+    const event = projectContinuityEvent(value); if (!event) return;
+    if (event.coverage.state !== "observed") return { rule: "source_gap", identity: ["source-gap", event.sourceInstanceId], agentId: event.agentId, category: "condition" };
+    if (["ownership_lost", "recovery_degraded", "operation_unknown"].includes(event.kind)) return { rule: "continuity_attention",
+      identity: [event.scopeId, event.agentId, event.kind, event.occurrenceId], agentId: event.agentId, category: "occurrence" };
+    // Still-Temporal, progress and an inbound window do not resolve a domain
+    // expectation or authorize retirement. CONT owns those decisions.
+    return;
+  }
   const name = own(value, "name"), generation = id(own(value, "hostGenerationId"));
   const agentId = id(own(value, "agentId")) ?? null;
   if (name === "host_run_observation" && own(value, "state") === "failed" && generation && id(own(value, "dispatchId"))) {
@@ -35,6 +45,9 @@ export function observationIncidentCandidate(value: Record<string, unknown>): In
 /** Reuses the existing failure classifier. Upstream status cannot suppress a
  * separate positively observed local integrity/storage/settlement failure. */
 export function assessIncident(rule: string, facts: readonly EvidenceFact[]): IncidentAssessment {
+  if (rule === "continuity_attention") return { classifierVersion: INCIDENT_CLASSIFIER_VERSION, category: "continuity_impact",
+    disposition: "notify", reason: "protected_subject_changed", basis: "derived", rootCause: "not_proven",
+    basisRefs: facts.filter(f => own(f.value, "name") === "continuity_observation").slice(0, 16).map(f => f.ref) };
   const failures = facts.filter(f => ["host_stream_rejected", "host_normalized_terminal", "model_step_terminal"].includes(own(f.value, "name") as string)
     && (own(f.value, "name") === "host_stream_rejected" || ["error", "abort", "cancelled"].includes((own(f.value, "terminalClass") ?? own(f.value, "outcome")) as string)));
   const summaries = failures.map(f => ({ ref: f.ref, summary: failureSummaryFromObservation(f.value) })).filter(row => row.summary !== undefined);

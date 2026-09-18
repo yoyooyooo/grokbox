@@ -1,10 +1,16 @@
 # OBS-05 — 执行安全状态与恢复引用的安全退役
 
-**Status：Planned / Spec-only；M2。** Contract：[Spec §8.5](../roadmap/template-ops-automation-spec.md#storage)；执行语义仍归[主Spec S10/S12/S13](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。依OBS-00与既有execution/context/controller owners，可与OBS-04并行；通知和Bot能力不是前置。
+**Status：Partial（J1公共owner/ref接线已实现）；实际执行账本退役仍Planned，M2未关闭。** Contract：[Spec §8.5](../roadmap/template-ops-automation-spec.md#storage)；执行语义仍归[主Spec S10/S12/S13](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。依OBS-00与既有execution/context/controller owners，可与OBS-04并行；通知和Bot能力不是前置。
 
 ## Goal / Modules
 
 长时间运行不靠重启删账本，也不因GC让旧STEP/未知提交重新执行。kernel原`internal/inference/execution-history.ts`、step/turn/context程序；box-runtime `io/execution-history.node.ts`及controller/provenance/contracts/config-migration owners。CONT恢复manifest/blob由CONT-02/04自己的store实现，本票只提供共同计量/保护接口和退役证明要求。
+
+## OBS/CONT J0/J1 公共出口
+
+边界核对A/B/C无冲突，精确合同归[原专项Spec J1](../roadmap/template-ops-automation-spec.md#obs-continuity-interface)。`ProtectedStorageRef/ContinuityStorageOwner/ContinuityStorageOwners`从kernel observation导出；runtime facade提供`runContinuityReferenceChange`、`measureContinuityStorage`，既有status/maintenance接受显式owner注入。未接真实恢复/安全owner保持unmeasured/null；不扫描原生Memory、不按诊断TTL解除保护、不重复维护调度。
+
+保护、精确claim解除和GC共用**本域**持久事务/锁，公共层不存第二套pin。14项`obs-continuity-contract.test.ts`以真实临时文件、SQLite和owned恢复owner验证诊断过期/轮转、引用并发、容量下降保留最后可靠点、安全记录不足拒绝新effect、未知操作不随TTL终结、共享物理计量与Scope结算。该fixture不是CONT恢复发布器或执行ledger；生产owner和完整安全退役仍由本票/CONT-02/11完成，不签J2。
 
 ## Work
 

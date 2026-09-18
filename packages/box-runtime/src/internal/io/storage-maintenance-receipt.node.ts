@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { CONTINUITY_STORAGE_OWNERS, ownedMaintenanceReceipt } from "@grokbox/runtime-kernel/observation";
 import { monitorProcessIdentity } from "./monitor-owner.node.ts";
 import { STORAGE_MAINTENANCE_INTERVAL_MS, type StorageMaintenanceCycle } from "./storage-maintenance.node.ts";
 
@@ -35,7 +36,19 @@ function cycle(value: unknown): StorageMaintenanceCycle | null {
       || !num(j.reclaimedBytes) || !num(j.elapsedMs)) return null;
     journals.push({ source: j.source as "control" | "host", state: j.state as typeof journals[number]["state"], reclaimedBytes: j.reclaimedBytes, elapsedMs: j.elapsedMs });
   }
-  return { atMs: value.atMs, elapsedMs: value.elapsedMs, budgetExceeded: value.budgetExceeded,
+  const continuity: NonNullable<StorageMaintenanceCycle["continuity"]> = [];
+  if (value.continuity !== undefined) {
+    if (!Array.isArray(value.continuity) || value.continuity.length !== 2) return null;
+    try {
+      for (const [i, item] of value.continuity.entries()) {
+        const owner = CONTINUITY_STORAGE_OWNERS[i]!;
+        if (!row(item) || item.owner !== owner || !["unmeasured", "unavailable", "observed"].includes(String(item.state))) return null;
+        if (item.state === "observed") continuity.push({ owner, state: "observed", receipt: ownedMaintenanceReceipt(item.receipt, owner) });
+        else { if (item.receipt !== null) return null; continuity.push({ owner, state: item.state as "unmeasured" | "unavailable", receipt: null }); }
+      }
+    } catch { return null; }
+  }
+  return { ...(value.continuity !== undefined ? { continuity } : {}), atMs: value.atMs, elapsedMs: value.elapsedMs, budgetExceeded: value.budgetExceeded,
     state: value.state as StorageMaintenanceCycle["state"], policyRevision: value.policyRevision as string | null,
     monitor: { state: m.state as StorageMaintenanceCycle["monitor"]["state"], removedEvidence: m.removedEvidence, expiredSnapshots: m.expiredSnapshots,
       physicalBytes: m.physicalBytes as number | null, clockState: m.clockState as string | null }, journals,

@@ -27,6 +27,7 @@ import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { projectRunObservation } from "../host/run-observation.ts";
 import { projectAlertEvent, traceAlerts, observationId } from "@grokbox/runtime-kernel/alerts";
 import { projectModeldStepOutcome, type ModeldStepOutcomeEvent } from "./modeld-outcome.node.ts";
+import { projectContinuityEvent } from "@grokbox/runtime-kernel/observation";
 
 export {
   appendHostStreamRejected,
@@ -41,6 +42,7 @@ export {
 } from "../host/terminal-journal.node.ts";
 
 export const EVENT_NAMES = [
+  "continuity_observation",
   "disk_sha_observed",
   "contracts_snapshot",
   "attestation_invalidated",
@@ -458,6 +460,7 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
 
 export function projectJournalEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
+  if (input.name === "continuity_observation") return projectContinuityEvent(input) as unknown as RuntimeEvent | null;
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
   if (input.name === "host_server_activity_observation") return projectServerActivityEvent(input);
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as RuntimeEvent | null;

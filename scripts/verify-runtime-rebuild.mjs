@@ -20,6 +20,13 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "obs-continuity": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/obs-continuity-contract.test.ts", "packages/box-runtime/test/monitor-store.test.ts", "packages/box-runtime/test/alert-observability-store.test.ts", "packages/box-runtime/test/storage-maintenance-lifetime.test.ts", "packages/box-runtime/test/storage-footprint.test.ts", "test/monitor-incident-cli.test.ts", "test/incident-observability.test.ts"],
+    ["bun", "test", "test/ops-storage-config-migration.test.ts", "packages/runtime-kernel/test/ops-notice-storage-config.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "agent-routines": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/runtime-kernel/test/agent-routines.test.ts", "test/agent-routines-cli.test.ts", "test/daemon.test.ts", "test/capabilities_gateway_server_url.test.ts", "test/skills.test.ts"],
@@ -226,6 +233,7 @@ for (const argv of mapped) {
 }
 
 const SUPPORTS = {
+  "obs-continuity": ["typed-continuity-intake-existing-sqlite-outbox", "source-zero-based-cursor-gap-and-reentry", "notification-off-not-domain-completion", "fixed-owner-reference-gc-serialization-contract", "owned-recovery-closure-survives-diagnostic-expiry", "capacity-degradation-not-effect-authorization", "unmeasured-not-zero-and-shared-allocation-deduplication", "owner-write-settles-before-supervised-exit"],
   "agent-routines": ["bounded-native-definition-projection", "exact-id-revision-confirm-before-write", "no-native-cas-claim", "single-mutation-and-readback-unknown-not-retry", "local-and-daemon-share-program", "packed-node-routine-management", "no-credential-mint-create-or-invoke"],
   "storage-lifetime": ["modeld-owner-maintenance-no-collector-required", "ops-off-gc-no-model-or-gateway", "settled-child-before-log-listener-close", "fixed-delay-no-overlap-no-fast-retry", "idle-closed-process-segments-only", "bounded-private-maintenance-receipt", "packed-node-owner-death-observed-not-repaired", "bounded-metadata-footprint-with-inode-deduplication"],
   "journal-maintenance": ["canonical-journal-policy-at-real-writer", "last-successful-write-witness-not-config-save", "confirmed-policy-shrink-with-explicit-retirement", "scope-owned-journal-housekeeping-no-rpc-or-bot", "busy-writer-housekeeping-skip", "exact-dead-owner-directory-lock-recovery", "real-process-death-during-rotation-no-append-replay", "bounded-preparation-slots-and-readonly-lock-metadata", "packed-node-host-hook-and-post-crash-write"],
@@ -260,6 +268,7 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "obs-continuity": "real-temporary-files-journal-sqlite-and-owned-recovery-adapter-existing-effect-lifetime-no-native-bot-or-network-effects",
   "agent-routines": "synthetic-native-http-boundary-real-cli-daemon-effect-program-and-packed-node-no-live-native-writes",
   "storage-lifetime": "real-owned-sqlite-files-source-and-packed-node-modeld-injected-clock-lifetime-barriers-metadata-only-footprint-no-live-state-or-provider-effects",
   "journal-maintenance": "canonical-temporary-config-real-files-sqlite-linux-process-identities-owned-child-SIGKILL-and-packed-node-host-hook-no-live-state-or-model-requests",
@@ -294,6 +303,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "obs-continuity": ["native-recovery-owner-import-and-operation-ledger", "real-temporal-inbound-coverage", "native-notification-delivery-and-unknown-reconciliation", "replacement-relationship-migration-and-bot-retirement", "installation-wide-reservations", "cross-store-atomicity", "independent-review-and-live-schema4-adoption"],
   "agent-routines": ["native-http-management-roundtrip", "durable-create-apply-provisioning", "native-webhook-http-authentication-and-invoke", "bot-delivery-or-user-read", "target-pairing-and-model-qualification", "in-flight-run-cancellation", "independent-review", "live-cutover"],
   "storage-lifetime": ["full-installation-reservations-and-all-owners", "modeld-autostart-after-box-reboot", "native-bot-delivery", "execution-safety-retirement", "arbitrary-power-loss-storage-repair", "aggregate-storage-config-applied", "independent-review", "live-cutover"],
   "journal-maintenance": ["installation-wide-physical-reservations", "legacy-pid-only-lock-retirement", "arbitrary-power-loss-or-torn-owner-index-repair", "all-storage-owner-hot-reload", "service-install-autostart", "native-bot-notification", "independent-review", "live-adoption"],

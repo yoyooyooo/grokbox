@@ -44,6 +44,12 @@ collector现有维护子Scope每轮调用两个显式root的分段维护；不�
 
 `verify-runtime-rebuild.mjs storage-lifetime`63 pass/0 fail；全仓2381 pass/15 skip/0 fail。源码modeld/实际打包Node、SQLite、闲置fd、延迟结算、强杀、坏配置、符号链接和小文件洪峰的准确范围见[回执](../reports/2026-09-18-modeld-storage-lifetime.md)。Box重启自启、全安装预留、执行/CONT安全退役、原生投递与独立review仍是各自前置。
 
+## OBS/CONT J1公共owner接线
+
+只增加`ContinuityStorageOwners={recovery?,safety?}`固定消费点，不注册插件、不增加配置根或周期任务。`observeRuntimeStorage`显示`continuityStorage`独立计量；没有真实owner时measurement/bytes为null且unmeasured，共享allocation ID去重，不加入已计量diagnostic footprint来重复算盘。`maintainObservationStorage`只在原周期中调用被显式接入owner的64项有限维护；完整发布、引用保护/解除与GC并发边界归CONT本域，不传诊断TTL或任意路径。
+
+接口与J0裁决见[Spec J1](../roadmap/template-ops-automation-spec.md#obs-continuity-interface)。组合`obs-continuity`使用owned adapter/真实临时文件与SQLite；未连接原生恢复材料、安全台账或新业务controller，仍不签全安装配额、native恢复或LIVE资格。
+
 ## Goal / Modules
 
 自动观测不无限积累；普通日志滚动、结构化journal按消费窗口分段、SQLite/事故/通知按生命周期回收，并测真实磁盘回落。

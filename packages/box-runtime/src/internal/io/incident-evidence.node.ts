@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { assessEvidenceCoverage, assessIncident, buildBotIncidentNotice, evidenceIdentity, publicEvidenceSummary, allocateEvidenceAliases, selectEvidenceClosure,
-  OBSERVATION_RETENTION, type EvidenceFact, type EvidenceView, type IncidentAssessment, type IncidentEvidenceManifest } from "@grokbox/runtime-kernel/observation";
+  OBSERVATION_RETENTION, projectContinuityEvent, type EvidenceFact, type EvidenceView, type IncidentAssessment, type IncidentEvidenceManifest } from "@grokbox/runtime-kernel/observation";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { projectControlEvent } from "./journal.node.ts";
 import type { MonitorSqlite, SqlRow } from "./monitor-sqlite.node.ts";
@@ -132,11 +132,12 @@ export async function captureIncidentEvidence(db: MonitorSqlite, incidentId: str
   if (removable.length < toRetire) return fail("monitor_evidence_revisions_protected");
   const meta = await db.first("SELECT evidence_floor FROM meta WHERE singleton=1");
   const generations = new Set(data.facts.map(f => f.value.hostGenerationId).filter(evidenceIdentity));
+  const continuityGaps = [...new Set(data.facts.flatMap(f => projectContinuityEvent(f.value)?.coverage.gapCodes ?? []))];
   const manifest: IncidentEvidenceManifest = {
     schemaVersion: 1, incidentId, occurrenceId: incidentId, evidenceRevision: revision, capturedAtMs: atMs,
     classifierVersion: assessed.classifierVersion, incidentRule: String(incident.rule),
-    sourceWindow: { source: "monitor", state: data.facts.length ? "observed" : "not_observed_in_window", retainedFloor: Number(meta?.evidence_floor ?? 0), selected: data.facts.length, truncated: data.truncated,
-      gapCodes: data.facts.length ? [] : ["source_facts_not_available"] },
+    sourceWindow: { source: "monitor", state: continuityGaps.length ? "partial" : data.facts.length ? "observed" : "not_observed_in_window", retainedFloor: Number(meta?.evidence_floor ?? 0), selected: data.facts.length, truncated: data.truncated,
+      gapCodes: data.facts.length ? continuityGaps : ["source_facts_not_available"] },
     factRefs: data.facts.map(f => ({ ref: f.ref, digest: sha256Text(canonicalJson(f.value)) })), relationEdges: [],
     identityAliases: allocateEvidenceAliases(data.facts, previous ? (JSON.parse(String(previous.manifest_json)) as IncidentEvidenceManifest).identityAliases : {}),
     assessmentDigest: sha256Text(canonicalJson(assessed)),
@@ -159,7 +160,7 @@ export async function captureIncidentEvidence(db: MonitorSqlite, incidentId: str
     if(index<0)for(let i=data.facts.length-1;i>=0;i--)if(!assessed.basisRefs.includes(data.facts[i]!.ref)){index=i;break;}
     if(index<0)index=data.facts.length-1;
     const removed=data.facts.splice(index,1)[0]!;data.logicalBytes-=Buffer.byteLength(canonicalJson(removed.value));manifest.factRefs.splice(index,1);
-    manifest.sourceWindow.truncated=true;manifest.sourceWindow.selected=data.facts.length;manifest.sourceWindow.gapCodes=["snapshot_byte_budget"];
+    manifest.sourceWindow.truncated=true;manifest.sourceWindow.selected=data.facts.length;manifest.sourceWindow.gapCodes=[...new Set([...manifest.sourceWindow.gapCodes,"snapshot_byte_budget"])];
     manifest.relationEdges=manifest.relationEdges.filter(edge=>edge.from!==removed.ref&&edge.to!==removed.ref);
     manifest.coverageByRequirement=assessEvidenceCoverage(data.facts,{truncated:true,conflicting:manifest.coverageByRequirement.some(row=>row.status==="conflicting")});manifest.logicalBytes=data.logicalBytes;
   }

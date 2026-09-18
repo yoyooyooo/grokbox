@@ -3,13 +3,14 @@ import { projectStreamDiagnostic } from "../contract/stream-diagnostic.ts";
 import { failureSummaryFromObservation } from "../contract/failure-summary.ts";
 import { evidenceIdentity, type EvidenceFact, type IncidentEvidenceManifest } from "./evidence-contract.ts";
 import type { IncidentAssessment } from "./incident-rules.ts";
+import { projectContinuityEvent } from "./continuity-contract.ts";
 
 export const EVIDENCE_VIEW_POLICY = "evidence-views-v1";
 export const PUBLIC_TOOL_CATALOG = Object.freeze({ SendToAgent: ["target_id", "message"], SendToUser: ["message"] } as const);
 export type EvidenceView = "local-diagnostic" | "bot-diagnostic" | "public-summary";
-const sourceNames = ["host_seam_stage", "host_stream_rejected", "host_normalized_terminal", "model_step_terminal", "host_run_observation", "host_alert_observation", "host_server_activity_observation", "host_context_observation", "host_tool_observation", "provider_error_observed", "observation_source_health"] as const;
+const sourceNames = ["continuity_observation", "host_seam_stage", "host_stream_rejected", "host_normalized_terminal", "model_step_terminal", "host_run_observation", "host_alert_observation", "host_server_activity_observation", "host_context_observation", "host_tool_observation", "provider_error_observed", "observation_source_health"] as const;
 const states = ["queued", "started", "finished", "failed", "cancelled", "reply_buffered", "member_returned", "checkpoint_started", "checkpoint_observed", "commit_unknown", "generated", "released", "native_started", "returned", "result_accepted"] as const;
-const fields = ["agentId", "stepId", "turnId", "dispatchId", "failureId", "trayId", "hostGenerationId", "serviceEpoch", "sourceInstanceId", "clientNonce", "operationId", "rootId", "parentStepId"] as const;
+const fields = ["agentId", "stepId", "turnId", "dispatchId", "failureId", "trayId", "hostGenerationId", "serviceEpoch", "sourceInstanceId", "clientNonce", "operationId", "dutyId", "occurrenceId", "scopeId", "rootId", "parentStepId"] as const;
 const member = <T extends string>(value: unknown, values: readonly T[]) => typeof value === "string" && values.includes(value as T) ? value as T : undefined;
 const uint = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : undefined;
 
@@ -41,7 +42,7 @@ export function publicEvidenceSummary(manifest: IncidentEvidenceManifest, facts:
     assessment: { classifierVersion: assessment.classifierVersion, category: assessment.category, reason: assessment.reason,
       basis: assessment.basis, rootCause: assessment.rootCause, basisRefs: assessment.basisRefs.map(ref => references.get(ref)).filter(Boolean) },
     facts: facts.map(f => {
-      const v = f.value;
+      const v = f.value, continuity = projectContinuityEvent(v);
       const failed = own(v, "name") === "host_stream_rejected" || (["model_step_terminal", "host_normalized_terminal"].includes(own(v, "name") as string)
         && ["error", "abort", "cancelled"].includes((own(v, "terminalClass") ?? own(v, "outcome")) as string));
       const summary = failed ? failureSummaryFromObservation(v) : undefined, diagnostic = projectStreamDiagnostic(own(v, "diagnostic"));
@@ -50,6 +51,9 @@ export function publicEvidenceSummary(manifest: IncidentEvidenceManifest, facts:
       const counts: Record<string, number> = {};
       for (const key of ["eventCount", "toolCallCount", "count", "waitMs", "elapsedMs"] as const) { const n = uint(own(v, key)); if (n !== undefined) counts[key] = n; }
       return { ref: references.get(f.ref), source: member(own(v, "name"), sourceNames) ?? "unknown_source", identities, counts,
+        ...(continuity ? { continuity: { kind: continuity.kind, coverage: continuity.coverage.state,
+          gapCodes: continuity.coverage.gapCodes, inboundCount: continuity.inboundCount, quietPeriodProven: false,
+          recoveryReferences: "not_published", domainCompletion: "not_proven" } } : {}),
         ...(member(own(v, "state"), states) ? { state: member(own(v, "state"), states) } : {}),
         ...(summary ? { failure: { code: summary.code, phase: summary.phase, category: summary.category,
           ...(summary.http ? { httpStatus: summary.http.status } : {}) } } : {}),
@@ -91,6 +95,7 @@ export type BotIncidentNotice = {
 export function buildBotIncidentNotice(manifest: IncidentEvidenceManifest, assessment: IncidentAssessment): BotIncidentNotice {
   if (!evidenceIdentity(manifest.incidentId) || !Number.isSafeInteger(manifest.evidenceRevision) || manifest.evidenceRevision < 1) throw new Error("evidence_invalid_notice");
   const messages: Record<string, string> = {
+    continuity_attention: "观察到受保护 Bot 的归属、恢复或未结操作异常；交接完成和安全退役须由业务证据另行判断。",
     native_alert: "观察到原生 Bot 告警，原因尚需结合现场判断。",
     native_run_failure: "观察到原生 Bot 任务失败；这不证明整个用户任务或所有子任务均已结束。",
     execution_stalled: "观察到任务长时间未收束的迹象；尚不能确认死锁。",

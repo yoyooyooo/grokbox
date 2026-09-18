@@ -99,17 +99,18 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
  function getEvent(row:Row){const allowed=["collector_started","observation_gap","collector_stopped","scope_changed","ownership_changed","incident_opened","incident_resolved","incident_ack","incident_snooze","execution_failure_observed","source_conflict","notification_decided","notification_exported","notification_export_unknown"];
   if(!allowed.includes(String(row.kind)))throw error("monitor_store_invalid");return {seq:number(row.seq),eventId:uuid(row.id),collectorEpoch:uuid(row.epoch),kind:String(row.kind),scopeId:scope(row.scope),agentId:row.agent_id===null?null:uuid(row.agent_id),incidentId:row.incident_id===null?null:uuid(row.incident_id),observedAtMs:number(row.at_ms),previousHarness:harness(row.before_harness),currentHarness:harness(row.after_harness),observationIntervalStartMs:nullableTime(row.interval_start), ...(typeof row.detail_json === "string" ? { notification: projectNotification(JSON.parse(row.detail_json)) } : {})};
  }
- async function notificationDecisions(db:MonitorSqlite,changes:ReturnType<typeof getEvent>[],at:number){
+ async function notificationDecisions(db:MonitorSqlite,changes:ReturnType<typeof getEvent>[],at:number,enabled=true){
   const result:Array<{eventId:string;incidentId:string;deliveryKey:string;decision:"emit"|"suppress";reason:"new_occurrence"|"acknowledged"|"snoozed"|"aggregated";channel:"local_only"}>=[];
   for(const e of changes){if(!e.incidentId||!["incident_opened","execution_failure_observed"].includes(e.kind))continue;const row=await db.first("SELECT * FROM incidents WHERE id=?",[e.incidentId]);if(!row)continue;
    const chosen=chooseNotification({acknowledged:row.acknowledged===1,snoozeUntilMs:row.snooze_until===null?null:Number(row.snooze_until),nowMs:at,parentIncidentId:monitorUuid(row.parent_id)?row.parent_id:null});
-   try { await captureIncidentEvidence(db,e.incidentId,at,{detailMs:retentionMs,summaryMs,prepareNotification:chosen.decision==="emit",maxDatabaseBytes}); }
+   try { await captureIncidentEvidence(db,e.incidentId,at,{detailMs:retentionMs,summaryMs,prepareNotification:enabled&&chosen.decision==="emit",maxDatabaseBytes}); }
    catch (failure) {
     if (!(failure instanceof BoxRuntimeError) || !["monitor_storage_pressure","monitor_evidence_revisions_protected","monitor_evidence_alias_budget"].includes(failure.message)) throw failure;
     await db.run("UPDATE observation_maintenance SET pressure_state='storage_pressure' WHERE singleton=1");
     // The incident remains durable. No ready notice may claim a missing snapshot.
     continue;
    }
+   if(!enabled)continue; // Evidence survives; notification policy never controls domain operations.
    const decision={eventId:e.eventId,incidentId:e.incidentId,deliveryKey:sha256Text(`${e.incidentId}:${e.eventId}:local-v1`),...chosen};
    result.push(decision);
    await db.run("INSERT INTO events(id,epoch,kind,scope,agent_id,incident_id,at_ms,detail_json) VALUES(?,?,'notification_decided',?,?,?,?,?)",[randomUUID(),e.collectorEpoch,e.scopeId,e.agentId,e.incidentId,at,canonicalJson({...decision,ruleVersion:"monitor-local-v1"})]);
@@ -265,6 +266,22 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
    return read(db=>db.all("SELECT id,incident_id AS incidentId,evidence_revision AS evidenceRevision,state,created_at AS createdAtMs,expires_at AS expiresAtMs,last_reason AS lastReason FROM notification_work ORDER BY created_at DESC LIMIT ?",[limit]));
   },
   async notificationNotice(workId:string){if(!monitorUuid(workId))throw error("notification_invalid_work");return read(db=>noticeForWork(db,workId));},
+  async linkedEvidenceIncidents(refs:readonly string[]){
+   if(refs.length>64||refs.some(ref=>typeof ref!=="string"||ref.length>512||/[\x00-\x1f]/.test(ref)))throw error("monitor_invalid_evidence_refs");
+   return read(async db=>{
+    if(!refs.length)return [];
+    const rows=await db.all(`SELECT DISTINCT i.id AS incident_id,w.id AS work_id,w.evidence_revision,w.state,
+      (SELECT MAX(revision) FROM incident_snapshots WHERE incident_id=i.id) AS captured_revision,
+      EXISTS(SELECT 1 FROM events e WHERE e.incident_id=i.id AND e.kind='notification_export_unknown') AS export_unknown,
+      EXISTS(SELECT 1 FROM notification_attempts a WHERE a.work_id=w.id AND a.state IN ('reserved','attempting','unknown')) AS attempt_unknown
+      FROM incident_evidence l JOIN incidents i ON i.id=l.incident_id LEFT JOIN notification_work w ON w.incident_id=i.id
+      WHERE l.event_ref IN (${refs.map(()=>"?").join(",")}) ORDER BY i.id LIMIT 65`,[...refs]);
+    if(rows.length>64)throw error("monitor_evidence_receipt_budget");
+    return rows.map(row=>({incidentId:uuid(row.incident_id),evidenceRevision:nullableTime(row.evidence_revision??row.captured_revision??null),
+      workId:row.work_id?uuid(row.work_id):null,outboxState:row.export_unknown||row.attempt_unknown?"unknown":["preparing","ready","blocked","attempting","unknown","expired","completed","superseded"].includes(String(row.state))?String(row.state):"not_prepared",
+      transport:"unavailable" as const,automaticRetry:false as const}));
+   });
+  },
   async detectUnsettled(input:{nowMs:number;sourceLiveness:ReadonlyMap<string,number>}){
    return mutate(async db=>{const m=await meta(db);if(m.running!==1)throw error("monitor_not_running");const epoch=uuid(m.epoch),before=await lastSequence(db);
     const result=await detectUnsettledExecutions(db,{rootId,...input,opened:(id,agent)=>event(db,epoch,"execution_failure_observed",rootId,agent,input.nowMs,id)});
@@ -296,8 +313,19 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     }return {observed:written,remoteReceipt:"not_configured"};
    });
   },
+  async evidenceSourceStatus(sourceKey:string){
+   if(!monitorScope(sourceKey))throw error("monitor_invalid_source");
+   return read(async db=>{
+    const cursor=await db.first("SELECT cursor,gap FROM evidence_cursors WHERE source_key=?",[sourceKey]);
+    const health=await db.first("SELECT last_sequence,last_event_at,gaps,conflicts FROM source_health WHERE source_key=?",[sourceKey]);
+    return {cursor:cursor?String(cursor.cursor):null,gap:cursor?.gap??null,
+      lastSequence:health?.last_sequence??null,knownMissingEvents:health?number(health.gaps):null,
+      conflicts:health?number(health.conflicts):null,lastEventAtMs:health?.last_event_at??null,
+      coverage:health?"observed_window":"not_observed",quietPeriodProven:false};
+   });
+  },
   async evidenceCursor(sourceKey:string){return read(async db=>{if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");const row=await db.first("SELECT * FROM evidence_cursors WHERE source_key=?",[sourceKey]);return row?{cursor:String(row.cursor),gap:row.gap===null?null:String(row.gap)}:null;});},
-  async ingestEvidence(input:{epoch:string;sourceKey:string;expectedCursor:string|null;nextCursor:string;events:unknown[];atMs:number;gap?:string}){
+  async ingestEvidence(input:{epoch:string;sourceKey:string;expectedCursor:string|null;nextCursor:string;events:unknown[];atMs:number;gap?:string;notifications?:"off"}){
    if(!monitorUuid(input.epoch)||!monitorScope(input.sourceKey)||input.nextCursor.length>2048||input.events.length>4096||!Number.isSafeInteger(input.atMs)||input.atMs<1)throw error("monitor_invalid_evidence_batch");
    const safe=input.events.map(value=>{try{return projectControlEvent(value);}catch{return null;}}).filter((x):x is NonNullable<typeof x>=>x!==null),digest=sha256Text(canonicalJson({events:safe,gap:input.gap??null,rejected:input.events.length-safe.length}));
    const skipPressure=async(db:MonitorSqlite)=>{
@@ -344,7 +372,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     }
     if(retirementSkipped)await db.run("UPDATE observation_maintenance SET dropped_events=dropped_events+? WHERE singleton=1",[retirementSkipped]);
     await db.run("INSERT INTO evidence_cursors(source_key,cursor,batch_digest,updated_at,gap) VALUES(?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET cursor=excluded.cursor,batch_digest=excluded.batch_digest,updated_at=excluded.updated_at,gap=excluded.gap",[input.sourceKey,input.nextCursor,digest,input.atMs,retirementSkipped?"retired_source_window":input.gap??null]);
-    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications=await notificationDecisions(db,changes,input.atMs);return {duplicate:false,inserted,conflicts,retirementSkipped,droppedEvents:0,storagePressure:false,changes:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications};
+    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications=await notificationDecisions(db,changes,input.atMs,input.notifications!=="off");return {duplicate:false,inserted,conflicts,retirementSkipped,droppedEvents:0,storagePressure:false,changes:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications};
    }).catch(failure=>{
     // A file-cap rejection rolled back the entire batch. Use the reserved
     // metadata headroom to acknowledge a gap, never spin replaying the batch.

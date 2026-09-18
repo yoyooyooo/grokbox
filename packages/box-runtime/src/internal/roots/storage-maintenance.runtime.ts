@@ -5,10 +5,12 @@ import { observeJournalStorage } from "../io/journal-storage.node.ts";
 import { readStorageConfiguration, type StorageConfiguration } from "../io/storage-configuration.node.ts";
 import { observeStorageMaintenance } from "../io/storage-maintenance-receipt.node.ts";
 import { observeDiagnosticFootprint } from "../io/storage-footprint.node.ts";
+import type { ContinuityStorageOwners } from "@grokbox/runtime-kernel/observation";
+import { measureContinuityStorage } from "../io/continuity-storage.node.ts";
 
 /** Read-only owner inventory. One unavailable source must not hide another.
  * This does not install a maintenance scheduler or enforce a global quota. */
-export async function observeRuntimeStorage(input: { durableRoot: string; runRoot?: string }) {
+export async function observeRuntimeStorage(input: { durableRoot: string; runRoot?: string; continuityOwners?: ContinuityStorageOwners }) {
   let storage: StorageConfiguration | undefined;
   try { storage = await readStorageConfiguration(input.durableRoot); } catch { /* config does not hide local storage evidence */ }
   const storageIntent = storage ? { state: "available", ...storage, application: "not-observed", aggregateConsumer: "not-installed" }
@@ -36,5 +38,6 @@ export async function observeRuntimeStorage(input: { durableRoot: string; runRoo
     state: !storage ? "policy_unavailable" : knownBytes >= storage.policy.diagnostics.maxBytes ? "at_or_above_max"
       : knownBytes >= storage.policy.diagnostics.targetBytes ? "at_or_above_target" : "counted_namespaces_below_target",
     reservationEnforced: false };
-  return { ...monitor, processLogs, journals, storageIntent, maintenance, footprint, budgetComparison, installationBudgetEnforced: false as const };
+  const continuityStorage = await measureContinuityStorage(input.continuityOwners);
+  return { ...monitor, processLogs, journals, storageIntent, maintenance, footprint, budgetComparison, continuityStorage, installationBudgetEnforced: false as const };
 }
