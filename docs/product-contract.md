@@ -325,6 +325,19 @@ App Label (`title`) is display-only. User text is optional; grokbox may append `
 
 新 Routine 默认 disabled，Webhook 是事件 trigger，不隐式附带 cron。创建 Agent 后任务部分失败保留 exact ID/nonce 与恢复阶段，不自动删掉重建；省略的已有任务不删。真实 HTTP invoke 必须明确确认唤醒/费用，不能用 sendPrompt 或文件写入替代测试。原生无 CAS/幂等时披露限制，不以本地锁宣称跨 App 排他；模板配对、CLI 与 E2E 共用同一程序，原生任务仍是权威。
 
+<a id="bot-continuity"></a>
+### 7.1.2 单盒 Bot 状态塑造与替身交接（2026-09-18 accepted target；未交付）
+
+一个Bot是长期Memory身份，只管理一份默认进入后续Agent loop的当前工作上下文；不做`agents sessions`、会话选择/分支或跨机器迁移。检查点是恢复材料，不是可切换的另一个Bot会话。新身份由官方创建并核实归属，当前状态通过原生writer接受、持久化和读回。
+
+目标命令族包含官方式duplicate、尽力保真的状态clone、带交接退役的replace、唯一当前context的reset/initialize/recover和带持久初始指令的临时spawn/start。后者以程序启动事件工作，不使用伪Human任务；指令不扩张工具权限，Memory/共享文件和外部任务不因context恢复回滚。具体命令参数在实现时与registry/技能一起发布，当前不能当现成CLI使用。
+
+北极星是确认接管后及时通知、默认暂停旧Routine（可配置不暂停）、分档保全并创建新Box替身。保真尽力而为、不强求一模一样；材料缺口可按策略接受，未知副作用不能猜。新替身按已核实职责接活的同时，程序迁移群/DM/Routine/外部任务，旧Bot辅助指路并被持续观察旧入站；某项unknown只阻断相关职责。替身上线、关系迁完和原身份可删除分别取证，不能将一项成功泛化。
+
+保护档位与自动操作授权分开；明确预授权后直接按范围推进，失败/不支持/unknown要可查并按策略告警。旧Bot进入“替身交接期”侧栏分区，独立`handoff=`字段表达进度，`owner=`仍只表示真实归属；标题没有权限效力。旧入站趋零是目标，只有健康连续观察、未结依赖清零、新Bot可用和删除前条件满足才退役，期限/gap/空列表不构成删除证明。
+
+完整策略、公共原语、阶段/票和证据矩阵唯一归[Spec S13](roadmap/box-runtime-impl-spec.md#ownership-continuity)，跨阶段现场验收只看[LIVE索引](tickets/LIVE-integration-validation.md#live-ownership-continuity)。本文是接受的产品边界，不表示已经安装或操作真实对象。
+
 ### 7.2 Groups
 
 Group 是 roster 中 `isGroup=true` 的产品对象，不是 CLI 自建文件格式。正常 writer 是 Gateway。成员命令拒绝 nested group、重复成员和超过 Gateway 当前限制的集合；Gateway 拒绝仍是最终事实。

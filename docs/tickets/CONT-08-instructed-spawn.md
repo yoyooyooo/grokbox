@@ -1,0 +1,31 @@
+# CONT-08 — 受管初始指令与临时 Bot 启动
+
+**状态：planned；原生创建/kickstart存在不代表本功能已实现。**
+
+合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)。依赖CONT-07、CONT-11与CONT-00创建/启动资格。列入完整交付范围，但不阻塞已合格的替身导入和交接主线。
+
+## 目标与模块
+
+`agents spawn/start`复用受控创建、初始化和activation，不通过用户身份发一条任务消息。真实Box身份在首次推理前配置好持久指令、初始材料、模型、工具/费用边界和结果接收者，再以程序startup事件进入原生Agent loop。
+
+CLI/operation仍由continuity命令及runtime负责；Host适配复用CONT-07 writer/runner，增加有限startup语义而不是第二模型loop。初始化材料、运行指令和启动意图分开，原生系统与权限规则保留。
+
+## 行为要求
+
+创建显式关闭原生introduction/kickstart，保持hold并核实无提前推理；官方创建路径不同默认值不可靠。优先验证background materialization避免抢用户活动聊天。初始化、ready、started和completed独立，actual ownership/模型/指令版本必须读回。
+
+现有`--instructions`是description别名，原生kickstart是介绍流程，不包装冒充本能力；hidden prompt不等于非Human startup。启动有稳定activationId、实际发起者与政策，失败/重启重入先对账，不再派一份相同工作。线上协议中环境载体和伪用户任务区别取证，严格模式不支持则明确失败，不能暗退为sendPrompt。
+
+持久受管指令在后续TURN、compact和Host重启后仍被装配，不只临时prepend一次请求。初始数据不能升格为授权；临时身份不自动继承创建者Memory、工具/告警或诊断权限。
+
+临时lifecycle有时间/模型费用/创建次数预算、结果交付和清理规则；未结任务/未交付结果不因TTL到达就删。共享云电脑不是新沙箱，结果交给指定合法接收者，不套自我介绍强迫向用户发问。
+
+## 验收出口
+
+新增真实生产装配/owned provider/原生资格与packed测试：初始化前零推理，第一请求即正确模型/指令，无Human任务条目；指令跨compact/reopen保持；重复startup、丢回执、所有权变更、预算耗尽、结果未交付和TTL清理。
+
+实际Server/Host/下一回合及临时Bot清理在[LIVE-CONTINUITY-SPAWN](LIVE-integration-validation.md#live-continuity-spawn)取证。功能路径未实现不建立空壳green verifier。
+
+## 非目标
+
+不替换全部官方system规则，不造权限，不复制外部运行句柄，不用恢复动作或compact冒充首次启动，不开跨机器或多会话平台。

@@ -60,11 +60,21 @@ T32保留既有零放行/一次额外主请求合同，T35保留原生寿命与�
 [PI-AI-01](PI-AI-01-model-backend-qualification.md) / [Spec S6.2.1](../roadmap/box-runtime-impl-spec.md#pi-ai-qualification)研究进程内pi-ai能否在同一ModelBackend后替换当前AI SDK。它不是T30的Pi RPC Agent backend，不阻塞CTX，不默认切换生产、双真实请求或另造model/credential store。core的传递依赖出现pi-ai不等于选用了其Provider执行。资格/Node/性能/维护差异有明确采纳提案与独立review，切换与live另行批准。
 
 <a id="ownership-continuity"></a>
-## 归属丢失与新身份连续性
+## 单盒 Bot 状态塑造、替身与交接 — CONT-00–11
 
-[Spec S13](../roadmap/box-runtime-impl-spec.md#ownership-continuity) 是实施合同。当前仅[CONT-00 原生可行性](CONT-00-native-clone-feasibility.md)的8个隔离探针已通过，完整产品链路尚未实现。
+[Spec S13](../roadmap/box-runtime-impl-spec.md#ownership-continuity)是唯一实施合同，固定保真尽力而为、新替身接活同时机械/旧Bot辅助交接、持续观察旧入站直至条件式退役。单Bot长期Memory身份只保留一份当前工作上下文，不建sessions、不做跨机器。**当前仅CONT-00历史8探针已证；扩充后的完整产品链路尚未交付。**
 
-交付依次为[CONT-01 持续识别与通知](CONT-01-ownership-loss-notification.md)、[CONT-02 连续性快照](CONT-02-continuity-snapshots.md)、[CONT-03 新Box身份原生导入](CONT-03-native-box-clone.md)、[CONT-04 预授权自动替换](CONT-04-automatic-replacement.md)、[CONT-05 成套验收](CONT-05-continuity-acceptance.md)。通知与快照可并行，通知无需等待完整克隆。当前现场状态只在[LIVE-OWNERSHIP-CONTINUITY](LIVE-integration-validation.md#live-ownership-continuity)维护；实现、离线与复核分别在来源票。
+| 阶段 | Ticket与具体出口 |
+|---|---|
+| M0 | [CONT-00 原生资格](CONT-00-native-clone-feasibility.md)＋[CONT-11 策略/逐职责合同](CONT-11-policy-and-operation-contract.md)：最小公共类型、权限和原生能力资格 |
+| M1并行 | [CONT-01 发现/暂停/通知](CONT-01-ownership-loss-notification.md)、[CONT-02 分档材料](CONT-02-continuity-snapshots.md)、[CONT-06 原生duplicate](CONT-06-native-duplicate-cli.md)：独立保护和基础能力先交付 |
+| M2 | [CONT-07 唯一当前上下文](CONT-07-current-context-control.md)→[CONT-03 状态clone](CONT-03-native-box-clone.md)：原生初始化/重置/恢复、持久读回和真实新身份续接 |
+| M2b | [CONT-08 初始指令与临时spawn](CONT-08-instructed-spawn.md)：公共内核的独立消费者，不阻塞已合格替身主线 |
+| M3 | [CONT-04 逐职责接替](CONT-04-automatic-replacement.md)＋[CONT-09 机械/辅助关系交接](CONT-09-relationship-handover.md)：新旧并行、群/DM/Routine/job与handoff投影 |
+| M4 | [CONT-10 旧入站与退役](CONT-10-inbound-convergence-retirement.md)：健康覆盖/收敛/依赖/安全删除及多代替身 |
+| M5贯穿 | [CONT-05 北极星验收](CONT-05-continuity-acceptance.md)：全部接受范围的source/packed/native/App/通知/重启和日用存储 |
+
+依赖细节、完整矩阵和禁止事项以[S13.8](../roadmap/box-runtime-impl-spec.md#continuity-delivery)为准，不把阶段交付说成整项关闭；实现、离线、独立review归来源票。所有当前现场状态仅在[LIVE-OWNERSHIP-CONTINUITY及关联维度](LIVE-integration-validation.md#live-ownership-continuity)，通知复用OBS/Template Ops，Routine复用T53，不等待整套恢复才发布感知。
 
 ## Prior delivery baseline — 2026-09-12 documentation governance
 

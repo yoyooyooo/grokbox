@@ -332,6 +332,14 @@ Host在有资格的原生安全点通过有界modeld协议取得最小捕获策�
 
 摘要算法提出的每个请求仍由唯一Effect/ModelBackend/BackendAuth运行，公共Models桥或受控callback不能开启隐式认证/重试/目录刷新或新Runtime；只有实际Provider是测试替身，算法不能被mock掉冒充集成。当前AI SDK继续供给模型传输；[PI-AI-01](tickets/PI-AI-01-model-backend-qualification.md)另评估进程内pi-ai Provider，并非T30 RPC。新的Node最低版本/完整AgentHarness/SessionManager/模型store不在本轮默许范围，打包与许可差异显式审查。
 
+### 2026-09-18 Single-current-state continuity and handover（目标，尚未交付）
+
+[S13](roadmap/box-runtime-impl-spec.md#continuity-architecture)固定单盒公共链路：真实身份→prepare hold→受管指令/材料初始化→原生commit/read-back/reopen→激活→逐职责交接与退役。每Bot只维护唯一当前工作上下文，contextRevision/activationEpoch不是会话目录；快照vault是非权威备份，原生Host仍是活状态和Agent loop的最终writer。
+
+kernel continuity保存纯规则；既有config writer管理保护/权限；monitor/OBS只发布证据/意图；受监督的continuity Effect owner协调正式创建、当前状态控制、职责和关系ports。管理DB中的operation/duty/ancestry及vault发布需要显式恢复协议，不能用本地CAS宣称跨原生/服务端事务。现有session适配器、S12、Routine和title writer复用，不另造模型loop或多session控制面。
+
+新Bot开始可确认职责时，旧Bot可继续指路/处理旧结果；职责、关系、恢复质量与退役分别表达，不要求旧端全局idle。未知effect只隔离相关职责/冲突资源，健康旧入站观察与未结依赖决定退役。OBS/Template Ops持有通知目标、诊断/告警权限和容量策略，CONT只消费其typed边界，不重复实现。完整阶段和代码落点只在S13，不在本页复制第二实施表。
+
 ### 2026-09-18 Native Bot ops / bounded evidence boundary（目标，尚未交付）
 
 [Template Ops Spec §9](roadmap/template-ops-automation-spec.md#layout)是唯一骨架：OBS-00–03拥有最低证据、intake、固定manifest和视图；T41原SQLite扩展incident/evidence/outbox/预算/租约各受限事务域。OBS-04拥有诊断容量/轮转/分层GC，OBS-05通过原执行/恢复/制品owner实施安全退役，不把安全账本当日志。现有ConfigChange管理ops与下一版storage偏好，bindings/grants/实测容量/租约归各机器状态owner；本轮不改现役schema3。

@@ -1,35 +1,31 @@
-# CONT-03 — 新 Box 身份的原生导入与手动恢复
+# CONT-03 — 新 Box 身份的状态 clone
 
-**状态：planned；创建身份已是既有能力，本票的跨身份导入/reopen尚未实现。**
+**状态：planned；官方创建和现有compact不是完整跨身份导入。**
 
-合同：[S13.5](../roadmap/box-runtime-impl-spec.md#ownership-continuity)。依赖 [CONT-00](CONT-00-native-clone-feasibility.md)、[CONT-02](CONT-02-continuity-snapshots.md)、T37/CTX-02。现场只看 [LIVE-OWNERSHIP-CONTINUITY](LIVE-integration-validation.md#live-ownership-continuity)。
+合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)与[best-effort材料](../roadmap/box-runtime-impl-spec.md#continuity-material)。依赖CONT-00/02/07/11，不依赖官方duplicate包装CONT-06；后者会清会话，不能当本能力内核。
 
-## 目标
+## 目标与模块
 
-为指定 Temporal 源创建一个新的 Server-confirmed Box Bot，接受有来源的历史材料，持久化为新身份的合法原生上下文，关闭重开后可继续。成功只指声明的恢复质量与安全点，不意味着旧身份、旧 App 链接或第三方 ID 自动迁移。
+创建真实新Box身份，将声明范围的profile/Memory/历史/当前状态和模型配置装配为目标唯一的工作状态。质量尽力而为、缺口可解释，原生提交是否合法必须严格核实。源Bot保留，关系迁移由CONT-04/09完成。
 
-## 模块和接口
+CLI通过`commands/continuity.ts`、现有Gateway/create/selection接口进入共享operation；Host写入只用CONT-07的initialize/hold/commit/reopen；CONT-02提供固定恢复候选，管理store保存source/target/operation/quality和收据。
 
-CLI有限入口在 `packages/cli/src/commands/continuity.ts`；复用 `runAgentsCreate` 的nonce/已创建但归属未确认语义与model selection写入合同。`box-runtime/src/internal/host/continuity-import.ts` 和版本限定slices提供 target hold、native import/read-back/reopen。纯材料验证在kernel continuity，操作台账在continuity store；原生Host仍是会话最终writer。
+## 顺序与边界
 
-入口必须区分只读plan、prepare和执行激活；命令名及schema随实现进入registry，不在文档中假造已经可用的CLI。plan至少列源目标scope、输入质量与水位、model/effort/预算、复制范围、关联ID变更、可能消费及不会继续的在途动作。
+1. 固定源输入范围与质量、费用、目标配置和创建nonce。请求官方Box身份并读回；响应丢失先对账已知对象，不按名字猜、不换nonce再建。
+2. 显式抑制介绍/自动启动，目标维持准备屏障，不消费Routine或业务入站。隐藏不是屏障，尽可能不改变App当前选择。
+3. 将profile/受管指令、Memory、历史展示和模型工作状态分别校验后原生导入，保留历史来源，当前身份/环境重新绑定；不全文替换UUID或复制旧待执行动作。
+4. checkpoint读回、关闭重开并核实目标状态。重启后沿B0→B1→B2发展，不反复读源重建覆盖新工作。native缺失可以按政策生成独立合法语义候选，不能把坏结构当成功。
+5. 返回prepared与质量/缺口。单独clone不迁移关系、不启复制Routine、不删除源；激活仍走共享职责判断。允许best-effort而不强求逐字一致。
 
-## 操作顺序
+“血肉”既要能从原生资料/历史读取，又要实际进入后续request，重启后仍在；展示或一次prompt临时注入均不够。源删除独立性必须验证，跨共享Memory和外部文件不整体覆盖。
 
-1. 验证source材料与用户策略，固定operation和创建nonce；请求官方Box身份并读回确认。未知创建结果先核对已知ID，不以新nonce重复创建。
-2. 新Bot准备期间必须hold主回合、inbox和routine；隐藏不是hold。普通create/duplicate可能切换App当前会话，需新增或复用已验证不抢当前选择的入口。
-3. 校验完整root闭包与schema，按新身份重建当前系统/profile提示；保留历史来源，仅schema化重绑必要自引用。导入Memory按agent/user/project分类，不复制共享权限或旧队列。
-4. 由原生writer接受恢复候选和checkpoint；验证实际root/内容/revision，再关闭并重开新session读取。不得覆盖活跃SQLite，不以全局重启Host代替单会话lifecycle。
-5. 复核ownership、model/effort和恢复质量，保留prepared状态。只有执行授权及来源副作用对账通过才允许下一次受控输入；业务接管由CONT-04负责。
+## 验收出口
 
-完整native checkpoint优先；只有获准的 `semantic_resume` 才以归因转录/Memory生成有损恢复摘要，不能把它标为精确当时状态。缺工具结果/摘要标记/闭包拒绝精确恢复，未知结果保持blocked，而不是注入成功断言。
+新增CLI→use case→原生形状store→真实模型adapter/owned HTTP→新进程用例；验证初始事实、summary/最近tool组、来源、实际request和effect计数。覆盖缺blob/Memory、语义降级、目标创建后立即Temporal、partial写入、取消/丢checkpoint回执、重复导入、源后来增量、源目录清理不破坏目标。
 
-## 可执行验收要求
+原生资格固定版本、原生writer与实际Server/App分别取证；LIVE只在[LIVE-CONTINUITY-PRIMITIVES](LIVE-integration-validation.md#live-continuity-primitives)，新建空Bot/模型自报记得不能关闭本票。
 
-实现时新增 public fixture 和独立新进程测试，通过真实生产codec/import协议验证：新UUID/root、typed自引用、完整blob、summary/尾部、Memory provenance及正常新输入。fake Provider只能从真实收到的request验证sentinel；历史tool records不触发工具，旧pending不自动重放。
+## 非目标
 
-覆盖创建结果丢回执、target立即变Temporal、target已有非空root、导入前/后取消、部分native写入、checkpoint ack丢失、reopen失败；错误为明确prepared/commit_unknown，不能覆盖源或再创建一次。source/packed/原生隔离各自证明，固定native方法探针仍用CONT-00已有入口。
-
-## 禁止与非目标
-
-不修改原Temporal归属，不把普通duplicate当resume，不只切换内部history flag，不用目录相似度代替Server注册，不把历史请求/审批/任务句柄当作新身份待执行状态。全自动替换、routine切换和旧UUID重定向不在本票；手动恢复闭环先于自动化。
+不原地把Temporal改Box，不构造本地假注册，不完整复制进程/权限，不做多session，不因一个未结job阻止独立clone准备，不把clone成功说成业务已交接。

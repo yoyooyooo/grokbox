@@ -1,33 +1,29 @@
-# CONT-02 — 连续性恢复快照
+# CONT-02 — 分档保护与有来源的恢复材料
 
-**状态：planned；S12原生context capture/checkpoint可复用，本票恢复快照尚未实现。**
+**状态：planned；复用S12捕获/codec，恢复vault和完整快照仍需实现。**
 
-合同：[S13.4](../roadmap/box-runtime-impl-spec.md#ownership-continuity)。依赖 [CONT-00](CONT-00-native-clone-feasibility.md) 与CTX-02，可与CONT-01并行。现场只看 [LIVE-OWNERSHIP-CONTINUITY](LIVE-integration-validation.md#live-ownership-continuity)。
+合同：[S13材料与档位](../roadmap/box-runtime-impl-spec.md#continuity-material)。依赖CONT-00/11和CTX-02原生提交边界，可与CONT-01/06并行。
 
 ## 目标与模块
 
-在Bot仍归Box时，从原生已提交checkpoint保存有来源的恢复材料。接管后冻结最近完整快照及已知增量，报告截止水位。恢复材料不是第二个在线会话；正常模型请求仍使用Host选择的窗口。
+平时增量保全、不常驻另一个活Bot；接管时固定最后可靠点与可读增量，不靠日志猜RAM。kernel continuity定义manifest/质量，Host adapter仅作明确无修复读取，`io/continuity-store.node.ts`协调私有vault和管理引用，不成为活会话writer。
 
-kernel continuity定义manifest、质量与完整性规则。Host continuity reader复用context codec和原生安全点；原生Host继续写活会话。`io/continuity-store.node.ts` 在canonical durable root下保管私有快照，管理DB仅保存引用和状态。
+档位为observe、memory、resume（新保护默认）、archive，另有off。级别增加材料覆盖，不扩大自动操作权限；resume必须保存root必要的完整依赖，archive不是整盒备份或多会话。
 
-## 材料与发布
+## 材料与恢复质量
 
-与[OBS存储合同](../roadmap/template-ops-automation-spec.md#storage)分域：本票保存私有原生恢复manifest/blob，不是普通诊断JSON，也不发送到默认通知Bot。OBS-04只计量诊断引用，不直接回收本票可达blob；[OBS-05](OBS-05-safe-state-retirement.md)通过本票owner取得当前/上一完整manifest与未完恢复操作的保护根。容量不足停止新增保护并报告降级，不能损害已有闭包或原Bot checkpoint。
+root槽位ID可不变而字节变化，compact rootRevision也不是完整Bot版本。快照记录实际root/闭包hash、Host/schema、Memory分层版本、转录和关系水位、model/effort/配置、必要资源与未决动作。原生最近提交、最后完整保全、各职责安全续接点分开；保存pending/partial不等于允许重放。
 
-完整快照包括source身份/scope/Host版本、root revision、可达blob闭包、summary carrier和Host metadata、合法工具配对窗口、转录来源及水位、Memory分层manifest、model/effort/config revision。capture时间、checkpoint完成时间及完整发布时刻分开记录。
+best-effort默认优先native_checkpoint，必要时按授权预算使用semantic_resume，最少材料可形成memory_only且只开放可明确负责的工作。未知工具结果不编造。重建固定输入、角色/因果去重、摘要与近期合法窗口/未决清单；生成结果保存一次，重启不重新摘要旧材料。
 
-先验证所有引用可读，再发布manifest。不能在一次读取中追逐不断变化的最新root；并发变化须重新捕获或报告未完成。保留当前及上一完整版本和有界增量，GC保留被manifest引用的blob。存储满或读失败使保护降级，但不得损害原Bot的正常checkpoint。
+agent Memory按计划复制/合并；共享user/project保留来源、不新增重复全局事实。旧Bot的Temporal增量与最后Box状态分别标来源。源删除前核验目标不依赖旧目录/附件/blob；普通日志和脱敏incident不是完整恢复材料。
 
-Memory区分agent、user、project：私有材料随恢复计划选择；共享shard保留provenance，避免新ID造成重复事实。共享工作目录只记录关联。普通journal和通知不包含原始会话内容，快照访问有私有目录权限、路径边界、大小与保留期限检查。
+## 发布、保留与验收
 
-原生export与内部snapshot helper的副作用边界以CONT-00为准。采用明确不修复原状态的reader，缺root时报告缺口，不把上传接口当本地只读备份。不能根据展示转录或脱敏日志声称获得精确原生root。
+先验证内容再发布manifest；跨文件/DB使用明确恢复协议，不声称一笔事务。至少最近两份完整版本与有界增量，交接pin受配额限制，GC保留有效引用；磁盘不足保留最后可靠点并降级报告，不影响原生正常checkpoint。复用OBS总容量/普通日志策略，安全台账不被日志轮转删掉。
 
-## 验收出口
+实现时新增fixture/独立进程测试：固定ID不同内容、闭包缺失、并发root变化、错误schema/metadata、跨材料水位、重复历史/tool配对、摘要不重复生成、symlink/路径边界、空间不足、发布前后崩溃及GC。真实Bot保护档位、材料水位和重启读回在[LIVE-CONTINUITY-MATERIAL](LIVE-integration-validation.md#live-continuity-material)。
 
-实现时新增public owned-fixture及显式native资格测试，覆盖root并发变更、缺blob、未知schema、summary metadata、工具配对、越界路径、磁盘不足和崩溃。manifest发布前崩溃不得出现有效半份快照；发布后重启可完整读回；GC不能破坏已有有效闭包。
+## 非目标
 
-独立进程逐项验证hash及早中末sentinel，区分 `native_checkpoint`、`semantic_resume`、`memory_only` 和blocked。已有context维护测试只作回归；真实Host安全点和保全水位另入LIVE，不用新建空Bot替代。
-
-## 禁止与非目标
-
-不改原Bot归属或数据库，不恢复在途进程/网络状态，不复制旧待执行动作，不用普通日志补造缺失数据。本票只保全材料，不创建替身、启用routine或自动执行恢复工作。
+不在观察时修复源或上传状态，不复制活动网络/工具权限，不用memory_only冒充精确旧窗口，不建立第二在线context store或跨机器同步。无完整包是可见质量缺口，不用假成功掩盖，也不必阻止无冲突的其他职责。

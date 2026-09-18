@@ -12,6 +12,12 @@
 
 沿同一票号序列新增[T37归属准入](../tickets/T37-server-ownership-admission.md)、[T38身份writer/test2](../tickets/T38-identity-write-alignment.md)、[T39原生往返](../tickets/T39-native-model-roundtrip.md)、[T40持久发布](../tickets/T40-persistent-release-and-rollback.md)。T24负责选择，T26/T32/T35/T36各交本域证据；T40服务隔离可与T39并行，最终发布才合取。test2已是冲突样本，不再沿用历史heavy canary授权；旧文档片段/测试计数均不能替代新门。
 
+## 2026-09-18 单盒连续性北极星与完整实施路线
+
+[Spec S13](box-runtime-impl-spec.md#continuity-north-star)是本轮替身/交接主线：及时发现Box归属丢失，默认暂停Routine并通知，按档位保全、尽力保真构造真实新Box状态，新Bot按职责接活，机械迁移关系并让旧Bot辅助指路，监控旧DM/群聊/任务结果入站至收敛，再按可证条件退役。不强求逐字一致，不把全关系完成作为上线门；unknown副作用只锁相关职责。
+
+完整阶段已冻结为M0合同/资格→M1保护/快照/官方duplicate→M2唯一当前状态与clone→M3并行替身交接→M4旧入站收敛与退役→M5成套日用验收。M2b初始指令/临时spawn复用公共能力并独立交付，不要求先建完整通用平台。[CONT-00–11](../tickets/README.md#ownership-continuity)覆盖全部接受范围，不仅第一实验。单Bot保持长期Memory身份和唯一当前上下文；不做多session或跨机器。本轮是完整规划，现有实现/历史探针不能提升为现场闭环完成。
+
 ## 当前基线
 
 本轮单轨重建基线为 `pre-publication-revision`；运行时代码仍为 `pre-publication-revision` 的状态，包含 `pre-publication-revision` 安全修复。下面列的是保留的产品性质/研究素材，不要求保留 POC 的内部接口或实现路径。

@@ -26,6 +26,14 @@ GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/ow
 
 同轮防回归：`monitor-store.test.ts`、`monitor-commit-boundaries.test.ts`、`context-maintenance-boundaries.test.ts`、`context-maintenance-control.test.ts` 合计 **28 pass / 0 fail / 290 assertions**；`bun run typecheck` 与 working-tree publication检查通过。未运行整个仓库套件，未完成独立架构review；这些旧行为回归不代表CONT-01–05已经实现。
 
+## 后续决策与扩展资格
+
+[S13完整路线](../roadmap/box-runtime-impl-spec.md#continuity-delivery)已经冻结单盒、每Bot唯一当前上下文、best-effort恢复和按职责边接活边交接。旧8探针只保留其实际已证范围，不重新命名为全部能力通过；CONT-06–11及更新的CONT-01–05都有单独出口。
+
+新增资格需识别：原生后台创建和抑制introduction/kickstart；唯一当前状态的hold/initialize/reset/recover及首次startup；固定root槽位覆写与真实内容版本；reset后salvage/prepend不复活旧历史；profile指令装配与重启/compact；Box/Temporal Routine当前管理端、群成员/peer发言身份、侧栏分区和可用删除前屏障。只记录所选版本证据，不把接口名或hidden prompt当满足产品语义。
+
+新测试继续只提取必要函数，以owned依赖运行；未加入源码和执行收据的向量仍为planned。原生事实最小化写入upstream integration，不能把私有实现、用户内容或本机测试身份放进仓库。
+
 ## 剩余实验与模块
 
 CONT-03 的 Host importer 从 `internal/host/context-maintenance.ts`、`context-codec.ts` 的原生 owner/版本接口复用，实验须覆盖：
@@ -39,4 +47,4 @@ CONT-03 的 Host importer 从 `internal/host/context-maintenance.ts`、`context-
 
 不直接改原 Bot harness/profile/SQLite，不为恢复调用迁移，不复制凭据、审批、旧待执行队列或运行中网络状态。不包装普通 duplicate 后标 full resume，不把上游上传出口当本地只读备份，不从普通日志重建不存在的精确模型上下文。
 
-本票不启用自动监控、通知、替换、routine切换，不承担整个产品上线；实际创建/导入/reopen/App 测试在 LIVE 条目登记，完整部署证据不能由本页 8 个隔离探针替代。
+本票不启用自动监控、通知、替换、Routine切换，不承担整个产品上线；实际创建/导入/reopen/App 测试在 LIVE 条目登记，完整部署证据不能由本页 8 个隔离探针替代。完整阶段由CONT-05贯穿收口，不能只做第一条实验便将其余已接受能力后移为未规划事项。

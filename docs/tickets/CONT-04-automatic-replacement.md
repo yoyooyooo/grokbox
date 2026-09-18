@@ -1,41 +1,34 @@
-# CONT-04 — 预授权自动替换与工作交接
+# CONT-04 — 逐职责接替与自动替身编排
 
-**状态：planned；须先完成手动原生导入闭环，当前不自动克隆真实Bot。**
+**状态：planned；本票将替身上线与完整交接/删除明确分开。**
 
-合同：[S13.6–S13.7](../roadmap/box-runtime-impl-spec.md#ownership-continuity)。依赖CONT-01可靠事件/通知、CONT-02快照、CONT-03新身份恢复，以及可验证的来源执行控制。现场：[LIVE-OWNERSHIP-CONTINUITY](LIVE-integration-validation.md#live-ownership-continuity)。
+合同：[S13并行交接](../roadmap/box-runtime-impl-spec.md#continuity-handover)。依赖CONT-01/03/11；CONT-09消费本票逐职责协议并实现关系交接，不把其全完成设为激活前置；CONT-10拥有旧身份最终退役。
 
-## 目标与权限
+## 目标与模块
 
-用户按逻辑Bot注册 `alert`、`prepare` 或 `auto-replace`。auto-replace是有效期/范围/预算明确的持久策略，在条件通过时自动继续，不要求每次接管重新审批。注册不等于绕过新身份准入或来源对账；缺可靠执行隔离时只准备替身并通知原因。
-
-逻辑Bot映射由本地管理DB的revision/CAS维护，服务有唯一Effect operation owner。新physical UUID/generation/predecessor显式保留，只路由经过grokbox管理的入口，不冒充官方全局身份代理。
-
-## 固定骨架
-
-kernel continuity拥有纯状态机/下一步决策；`roots/continuity.runtime.ts` 使用已声明ports协调；`io/continuity-store.node.ts` 持久operation/nonce/槽位revision/恢复manifest与审计。observer只提交候选事件，创建/暂停/导入等执行由该owner及相应授权控制。
+同一台云电脑，用户预授权后程序发现接管、恢复新身份、开放合格职责，同时继续迁移关系和观察旧端。`roots/continuity.runtime.ts`为单一Effect操作owner，kernel continuity决定transition/duty，store持久operation/nonce/generation/收据，observer仅提交候选事实。
 
 ```text
-confirmed_loss → evidence_frozen → replacement_creating
-→ replacement_prepared → native_restored → old_effects_reconciled
-→ replacement_activated → replacement_verified
+confirmed_loss → evidence_frozen → creating → prepared
+→ active_with_handover → retirement_eligible → retired
 ```
 
-所有外部调用之前保存operation身份，之后保存结果或unknown。创建超时重读同一operation/已知ID；服务重启不会换nonce生第二个Bot。处理旧事件时核对scope、物理ID及logical generation，不允许迟到操作覆盖新槽位。
+prepared到active的条件是目标原生状态合法、实际Box归属和模型/政策合格，以及被开放职责自己的输入/effect边界可确认；不是所有旧任务和关系都已完成。退役后两步由CONT-10提供明确判定和正式删除。
 
-## 交接门
+## 逐职责推进
 
-替身默认不执行、routine默认禁用。原Temporal侧主回合、子任务、inbox、routine和外部job需分别对账；本地idle或App没Working不是停止证明。已执行效果不重放，未知执行结果通过原业务查询确认，无法确认则保留prepared。
+为routine、任务、关系入口或冲突资源保存old/new执行方、已处理水位、未决结果、交接状态和证据。已确认职责新Bot立即接手；旧job结果unknown只阻断该职责及可证明冲突资源。独立职责不能被全局idle门卡住；无法确定共享资源冲突范围时明确扩大范围并告警，不盲放行。
 
-旧routine的停用须经支持的接口并读回；新routine按原schedule/timezone和触发水位重建，避免已经到点的fire被重复消费。Webhook凭据和目标绑定由正式新建/重绑流程产生，旧URL和硬编码UUID仍未改的入口列为剩余影响。群成员、其他Bot引用和对外消息通道也按授权独立处理，不文本全替换历史ID。
+背景材料可best-effort，非法native提交/身份不明仍阻断目标激活。旧Bot可以合法继续指路和接旧结果，new active与old active不是自动认定双跑；禁止的是同一效果被重复执行。旧任务没有读回结果不能重新派发，Routine按CONT-01逐项切换，未结项留prepared duty而非回滚所有成功项。
 
-源副作用隔离证明、new ownership/model/effort/数据授权、native读回和输入水位全通过后才CAS切槽位并开放执行。结束后再次验证实际新回合及通知；不删除原Bot或篡改其历史ownership事实。旧App仍向旧ID发消息时需明确提示，grokbox不能声称能阻止全部官方入口。
+稳定继任槽位只控制grokbox管理入口，官方App旧ID可能继续来消息，由CONT-09/10处理。每次创建/激活先持久operation ID；结果丢失读回，不换nonce多建，迟到旧代不能覆盖当前。每逻辑Bot最多一个构建/激活候选，旧grace代可多份受限存在；反复迁移触发冷却/次数/费用限额，指路统一解析当前继任者防循环。
 
-## 防风暴与可执行验收
+## 验收出口
 
-一个逻辑Bot最多一个未完成replacement；跨重启保留冷却/限额和失败状态。新身份立即Temporal、相同时间窗多次被回收、创建策略改变或授权失效时进入明确blocked并通知，而不是无限创建。
+新增纯状态/真实SQLite/独立进程和owned端口测试：各步崩溃/取消、创建丢回执、目标立即再迁移、旧代迟到、同输入重复、多代风暴/指路、配置撤销。必须有一个实际case证明新Bot已执行职责A，旧job B仍unknown且关系C未迁；A继续，B不重复，C明确挂账。
 
-实现时每个状态边界注入崩溃/取消/结果丢失；使用真实管理SQLite与独立进程验证唯一nonce/继任ID/CAS。owned Creator/Importer/ExecutionControl/Notification端口独立记录实际effect次数，证明旧pending不被重放、迟到reply不串generation、源仍运行时不会激活、新Bot再次失去Box时不会无限增殖。测试还需区分source读取不可用与已确认迁移、准备成功与激活成功、通知accepted与实际接收。
+手动replace和auto-replace共用用例，按配置自动执行而非每步再问。状态输出同时展示quality、职责、关系、旧入站和退役阻断。真实并行主线在[LIVE-CONTINUITY-HANDOVER](LIVE-integration-validation.md#live-continuity-handover)。
 
 ## 非目标
 
-不永久钉住Server所有权，不修改原Temporal为Box，不转移活动进程/网络连接/审批权限，不承诺官方App和第三方固定ID透明重定向。用户只启通知时不得升级成auto-replace，管理ack不视为执行授权。
+不永久钉住ownership，不全局claim exactly-once，不要求旧Bot全局空闲后才能开始，不把active当全部完成，不在本票自行删除旧身份。无多会话、跨机器或第二Agent loop。
