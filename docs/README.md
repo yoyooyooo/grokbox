@@ -6,7 +6,7 @@ This documentation separates source truth, accepted contracts, interoperability 
 
 ## Current homes
 
-- [Configuration](configuration.md): current source config v3, two human entry points, local context policy, nested edits, scope, successive migration/recovery and consumer receipts. Existing v2 deployments require explicit migration and matching runtime adoption.
+- [Configuration](configuration.md): source candidate config v4, two human entry points, local context and storage policy, nested edits, successive migration/recovery and consumer receipts. Existing v2/v3 deployments require explicit migration and matching runtime adoption; allocation arithmetic is not a global physical quota.
 
 - [Agent 操作入口](../skills/grokbox/SKILL.md)：默认只读小入口，以 `grokbox skills get grokbox --topic <name>` 按能力展开；Host 恢复、运行时诊断与 canary 验收不进入模板启动正文。[分层与维护约束](product-contract.md#15-bundled-skills)由入口预算、主题清单、链接和安装包测试保护。
 - [Product contract](product-contract.md): commands, Profiles, capabilities, output, and security boundaries.

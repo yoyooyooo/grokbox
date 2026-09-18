@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import {
-  ConfigError, defaultConfig, isObject, validateConfig, migrateConfigV2, validateDaemonIntent, configRevision,
+  ConfigError, CONFIG_SCHEMA_VERSION, defaultConfig, effectiveStorage, isObject, validateConfig, migrateConfigV2, migrateConfigV3, migrateLegacyOps, validateDaemonIntent, configRevision,
   type ConnectionProfile, type JsonObject, type UnifiedConfig,
 } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -126,8 +126,9 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
   const canonicalPath = join(options.root, "config.json");
   const canonical = await capture("canonical", canonicalPath);
   const home = canonicalPath === join(options.configDir, "config.json") ? canonical : await capture("home", join(options.configDir, "config.json"), true);
-  const unified = (raw: unknown) => isObject(raw) && (raw.schemaVersion === 2 || raw.schemaVersion === 3);
-  const upgrade = (raw: unknown) => isObject(raw) && raw.schemaVersion === 2 ? migrateConfigV2(raw) : validateConfig(raw);
+  const unified = (raw: unknown) => isObject(raw) && [2, 3, CONFIG_SCHEMA_VERSION].includes(Number(raw.schemaVersion));
+  const upgrade = (raw: unknown) => isObject(raw) && raw.schemaVersion === 2 ? migrateConfigV2(raw)
+    : isObject(raw) && raw.schemaVersion === 3 ? migrateConfigV3(raw) : validateConfig(raw);
   let candidate = unified(canonical) ? upgrade(canonical) : defaultConfig();
   const canonicalPresent = unified(canonical);
   function choose(key: keyof UnifiedConfig, value: unknown) {
@@ -199,7 +200,7 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
       const overrides = requireObject(raw.overrides, ["monitor", "notifications", "diagnostics", "canary", "maintenance", "support"], "ops overrides");
       Object.assign(preferences, overrides);
     }
-    choose("ops", preferences);
+    choose("ops", migrateLegacyOps(preferences));
     opsRevalidation = ["binding", "bindings", "maintenanceGrants", "issueGrants"].some((key) => raw[key] !== undefined);
     if (options.role !== "box") conflicts.push("ops-requires-box-role");
   }
@@ -211,7 +212,7 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
     if (homeModels !== undefined && canonicalJson(homeModels) !== canonicalJson(models)) conflicts.push("models-alias-contains-independent-data");
   }
   candidate = validateConfig(candidate);
-  if (options.role === "client" && [candidate.daemon, candidate.desktop, candidate.runtime, candidate.ops].some((value) => value !== undefined)) conflicts.push("client-document-contains-box-intent");
+  if (options.role === "client" && [candidate.daemon, candidate.desktop, candidate.runtime, candidate.ops, candidate.storage].some((value) => value !== undefined)) conflicts.push("client-document-contains-box-intent");
   security = { ...security, schemaVersion: 1, role: "box", root: options.root, installationId: installationId ?? "unassigned-at-preview" };
   if (options.role === "box") validateInstallationState({ ...security, installationId: installationId ?? "00000000-0000-4000-8000-000000000000" }, options.root);
   const blockedWriters = await (ports.writers ?? inspectConfigurationWriters)(options);
@@ -236,6 +237,8 @@ export function migrationPreview(plan: MigrationPlan) {
     conflicts: plan.conflicts, blockedWriters: plan.blockedWriters, models: plan.modelsExist ? "preserved-in-place" : plan.options.role === "box" ? "initialize-empty" : "not-created",
     credentials: "existing-reference-locations-preserved", opsAuthorization: plan.opsRevalidation ? "revalidation-required" : "not-created",
     targetSchemaVersion: plan.candidate.schemaVersion,
+    support: { disposition: "retired", offerIssue: false, automaticPublishing: false, credentialsCreated: false, bindingsCreated: false },
+    storage: { policy: effectiveStorage(plan.candidate.storage), activation: "matching-storage-owners-required", garbageCollectionDuringMigration: false, installationBudgetEnforced: false },
     ...(plan.previousMigration ? { previousMigration: { operationId: plan.previousMigration.operationId, disposition: "preserve-completed-receipt" } } : {}),
     contextMaintenance: { defaultMode: "auto", localWindowTokens: 128000, activation: "matching-runtime-required", modelCallsDuringMigration: 0 } };
 }

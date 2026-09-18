@@ -17,6 +17,7 @@ import { makeOwnershipCoordinator } from "../io/ownership-coordinator.node.ts";
 import { writeModeldStepOutcome, writeModeldRecoveryProgress, writeModeldAuthorityProgress } from "../io/modeld-outcome.node.ts";
 import { openExecutionHistory } from "../io/execution-history.node.ts";
 import { openBoundedProcessLog, type ProcessLogEvent, type ProcessLogHealth } from "../io/bounded-process-log.node.ts";
+import { readStorageConfiguration } from "../io/storage-configuration.node.ts";
 import { noteJournalObservationTimeout } from "../host/journal-health.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
 import { probeModeldHealth, probeModeldIdentity, modeldRootId, modeldSocketPath } from "../wire/modeld-probe.node.ts";
@@ -120,7 +121,7 @@ function listenerLifetime(server: Server): Effect.Effect<never, BoxRuntimeError>
 
 export type ModeldEnsure =
   | { kind: "borrowed"; path: string; generation?: string }
-  | { kind: "owned"; path: string; generation: string; processLog?: ProcessLogHealth };
+  | { kind: "owned"; path: string; generation: string; processLog?: ProcessLogHealth; storagePolicyRevision?: string };
 
 /** A responsive old/foreign service is not proof that it consumes this root.
  * Refuse instead of rewriting configuration under another service's socket. */
@@ -182,8 +183,14 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
       // Acquire only AFTER the real listener: a borrower or failed competing
       // owner must never rotate the active service's diagnostics. Scoped release
       // closes this writer before the listener removes its own socket.
+      let storagePolicyRevision: string | undefined;
       const processLog = yield* Effect.acquireRelease(
-        Effect.tryPromise({ try: () => openBoundedProcessLog({ runRoot: options.runRoot, generation, nowMs: Date.now() }), catch: () => "process_log_unavailable" })
+        Effect.gen(function* () {
+          const storage = yield* Effect.tryPromise({ try: () => readStorageConfiguration(options.durableRoot), catch: () => "storage_config_unavailable" });
+          const log = yield* Effect.tryPromise({ try: () => openBoundedProcessLog({ runRoot: options.runRoot, generation, nowMs: Date.now(), policy: storage.policy.retention.process }), catch: () => "process_log_unavailable" });
+          storagePolicyRevision = storage.revision;
+          return log;
+        })
           .pipe(Effect.catch(() => Effect.succeed(undefined))),
         log => log ? Effect.tryPromise({ try: () => log.close(), catch: () => "process_log_close_failed" }).pipe(Effect.catch(() => Effect.void)) : Effect.void,
       );
@@ -192,7 +199,7 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
         if (processLog) yield* Effect.uninterruptible(Effect.tryPromise({ try: () => processLog.append({ event, atMs }), catch: () => "process_log_write_failed" })).pipe(Effect.catch(() => Effect.void));
       });
       yield* note("ready");
-      yield* ready({ kind: "owned", path, generation, processLog: processLog?.health() ?? {
+      yield* ready({ kind: "owned", path, generation, ...(storagePolicyRevision ? { storagePolicyRevision } : {}), processLog: processLog?.health() ?? {
         state: "unavailable", writtenRecords: 0, droppedRecords: 0, rotations: 0, reason: "storage_unavailable",
       } });
       yield* listenerLifetime(listener.server).pipe(Effect.onExit(exit =>

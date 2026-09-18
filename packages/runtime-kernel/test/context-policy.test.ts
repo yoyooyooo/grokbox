@@ -40,11 +40,11 @@ test("invalid windows, output combinations, unknown/unsafe fields and accessor v
   const small = captureContextPolicy({ windowTokens: 8192, compaction: { reserveTokens: 1024, keepRecentTokens: 2000 } }, "model", A);
   expect(summaryBudget(small).inputTokens).toBe(7168);
 });
-test("schema v3 is explicit; v2 only enters through the migrator and retains other domains", () => {
+test("current schema is explicit; v2 only enters through the migrator and retains other domains", () => {
   const original = { ...defaultConfig(), schemaVersion: 2, runtime: { desiredMode: "observe" as const }, desktop: { keepAgentIds: [A] } };
   expect(() => validateConfig(original)).toThrow("config migrate");
   const upgraded = migrateConfigV2(original);
-  expect(upgraded.schemaVersion).toBe(3);
+  expect(upgraded.schemaVersion).toBe(4);
   expect(upgraded.runtime).toEqual(original.runtime);
   expect(upgraded.desktop).toEqual(original.desktop);
   expect(original.schemaVersion).toBe(2);
@@ -52,7 +52,7 @@ test("schema v3 is explicit; v2 only enters through the migrator and retains oth
   expect(() => migrateConfigV2({ ...original, runtime: { context: { windowTokens: 64000 } } })).toThrow();
   const valid = validateConfig({ ...defaultConfig(), runtime: { context: { windowTokens: 128000 } } });
   expect(valid.runtime?.context?.windowTokens).toBe(128000);
-  expect(() => validateConfig({ ...valid, schemaVersion: 4 })).toThrow();
+  expect(() => validateConfig({ ...valid, schemaVersion: 5 })).toThrow();
 });
 test("first-request local measurement includes Unicode, tools and system without any provider usage", () => {
   const material = parseContextMaterial({ rootId: "root", rootRevision: "revision", messages: [

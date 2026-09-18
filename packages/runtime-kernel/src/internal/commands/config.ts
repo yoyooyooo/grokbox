@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { ConfigurationWrite } from "../../ports.ts";
 import { canonicalJson } from "../../hash.ts";
 import { ConfigError, configPathTokens, getConfigValue, isObject, replaceConfigValue, type JsonObject } from "../config/path.ts";
-import { CONFIG_SCHEMA, configSchemaAt, effectiveOps, validateConfig, type UnifiedConfig } from "../config/schema.ts";
+import { CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA, configSchemaAt, effectiveOps, validateConfig, type UnifiedConfig } from "../config/schema.ts";
 import { changedConfigPaths } from "../config/revision.ts";
 
 export type ConfigChange = {
@@ -25,7 +25,7 @@ export type ConfigCommitReceipt = {
   commit: "committed" | "unchanged";
   configRevision: string;
   changedPaths: string[];
-  applicationRevisions?: Partial<Record<"desktop" | "daemon" | "runtime" | "ops", string>>;
+  applicationRevisions?: Partial<Record<"desktop" | "daemon" | "runtime" | "ops" | "storage", string>>;
   application: { state: "not-required" | "pending" | "applied" | "restart-required"; reason?: string };
 };
 
@@ -33,6 +33,9 @@ function requiresConfirmation(before: UnifiedConfig, next: UnifiedConfig, paths:
   // Context policy can enable paid summaries or enlarge their request budget.
   // Require an explicit impact acknowledgement, including parent replacement/unset.
   if (paths.some(path => path === "/runtime/context" || path.startsWith("/runtime/context/"))) return true;
+  // Lowering retention can destroy evidence; raising budgets consumes disk.
+  // Parent unset/replacement must not bypass the same preview boundary.
+  if (paths.some(path => path === "/storage" || path.startsWith("/storage/"))) return true;
   if (paths.some((path) => path.startsWith("/daemon/") || /\/(?:agentId|routineKey|allowedIntents|dataPolicy|reportTarget|fallbackTargets|credentialRef|repository)$/.test(path))) return true;
   if (paths.some((path) => /(?:maxAutomaticWakeupsPerDay|criticalReservePerDay)$/.test(path))) return true;
   const left = effectiveOps(before.ops); const right = effectiveOps(next.ops);
@@ -47,7 +50,6 @@ function requiresConfirmation(before: UnifiedConfig, next: UnifiedConfig, paths:
   if ((right.diagnostics as JsonObject).mode === "automatic-bounded" && (left.diagnostics as JsonObject).mode !== "automatic-bounded") return true;
   if ((right.canary as JsonObject).enabled && !(left.canary as JsonObject).enabled) return true;
   if ((right.maintenance as JsonObject).mode === "low-risk" && (left.maintenance as JsonObject).mode !== "low-risk") return true;
-  if ((right.support as JsonObject).submit === "preauthorized-summary" && (left.support as JsonObject).submit !== "preauthorized-summary") return true;
   return paths.some((path) => path.startsWith("/client/") && /(?:Ref|Url|sshHost)$/.test(path));
 }
 
@@ -59,7 +61,7 @@ export function applyConfigChange(current: UnifiedConfig, command: ConfigChange)
     if (!command.confirm || !command.expectedRevision) throw new ConfigError("config_conflict", "Document replacement requires confirmation and expected revision.");
     if (command.scope === "target") {
       if (!isObject(command.value) || Object.hasOwn(command.value, "client")) throw new ConfigError("config_scope_unavailable", "Target apply cannot replace client profiles.");
-      candidate = { ...command.value, schemaVersion: 3, client: current.client };
+      candidate = { ...command.value, schemaVersion: CONFIG_SCHEMA_VERSION, client: current.client };
     } else candidate = command.value;
   } else if (command.kind === "preset") {
     if (!command.confirm) throw new ConfigError("config_conflict", "Changing preset requires confirmation.");

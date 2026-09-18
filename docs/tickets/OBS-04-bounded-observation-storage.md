@@ -8,7 +8,7 @@
 
 `observation-storage-pressure.test.ts`使用512KiB真实数据库验证持续高基数错误不越过文件上限、压力丢弃可见、重复批次不加倍、跨32个保留周期后无重启恢复新证据接纳；实际SQLite拒绝物理增长另有独立反例。`incident-evidence-store.test.ts`验证旧通知引用和leases不被修订数回收破坏。来源/结果见[增量回执](../reports/2026-09-18-observation-storage-followup.md)。
 
-仍缺整安装统一配置/容量预留、其他producer与全部metadata/Jobs/备份/Trash治理、独立于ops开关的常驻服务组合、journal死writer锁/撕裂索引恢复、实际原生/live稳态和独立review。文件护栏只限制SQLite主文件，辅助文件目前仅测量，不能把128MiB当整安装上限或把32轮TTL前进当多年负载证明。执行状态仍由OBS-05处理。
+T51已有schema4共享配置候选、类别分配校验及monitor/process局部采用；仍缺全安装物理容量预留、journal配置接线、其他producer与全部metadata/Jobs/备份/Trash治理、独立于ops开关的常驻服务组合、journal死writer锁/撕裂索引恢复、实际原生/live稳态和独立review。文件护栏只限制SQLite主文件，辅助文件目前仅测量，不能把128MiB当整安装上限或把32轮TTL前进当多年负载证明。执行状态仍由OBS-05处理。
 
 ## modeld 日志增量（2026-09-18）
 
@@ -19,6 +19,12 @@ modeld服务自身的结构化生命周期writer、真实fd关闭/新段、固�
 已接通原Host/modeld/control writer的共享锁字节轮转、8MiB段/128MiB每root数据预算、持久段ID/改名意图、关闭段退役与缺口、v1→v2消费游标、跨段离线incident读取。普通轮转过渡是deferred，不自动建故障；半行封存且不跨段拼接，GET不恢复/清理。旧watchdog不再改写受管活动inode。证据固定revision与源日志GC解耦。
 
 `verify-runtime-rebuild.mjs journal-rotation`实际完成79项/0失败，类型/构建/边界/隐私及source稳定通过；全仓2317 pass/15 skip/0 fail。详见[分段回执](../reports/2026-09-18-structured-journal-rotation.md)。测试证明有序中断点恢复，不宣称任意掉电、半写索引/死锁自动恢复；本片新增Host叶，原生采用需重新资格。数据上限不包含已单独计量的有界索引，不等于整安装共享容量。
+
+## 共享配置候选（2026-09-18）
+
+[T51](T51-ops-capability-presets.md)已在09e6405基线上实现schema4、严格2/3迁移与support退役。monitor初始化/collector/显式capture和modeld过程日志消费canonical存储意图；storage有独立revision，关闭通知不删除保留策略。当前只支持既有writer硬上限内的缩减。真实collector按1日明细/3日摘要、modeld连续12代按8KiB测试预算运行已证明，GET不伪造统一applied。
+
+整安装物理预留、journal配置、所有owner热加载/常驻仍未完成；分配416MiB、内部reserve64MiB及未分配32MiB的算术校验不构成磁盘强制上限。实际执行证据和schema4切换边界见[回执](../reports/2026-09-18-storage-config-v4.md)，现役采用仅归LIVE。
 
 ## Goal / Modules
 

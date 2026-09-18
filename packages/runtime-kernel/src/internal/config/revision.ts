@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import { effectiveOps, type UnifiedConfig } from "./schema.ts";
+import { effectiveStorage } from "./storage-policy.ts";
 import { isObject, type JsonObject } from "./path.ts";
 
 export function configRevision(document: UnifiedConfig): string { return sha256Text(canonicalJson(document)); }
@@ -13,7 +14,7 @@ export function configurationRevisions(document: UnifiedConfig) {
     runtime: sha256Text(canonicalJson(document.runtime ?? { desiredMode: "disabled" })),
     ops: sha256Text(canonicalJson(ops)),
     targets: Object.fromEntries(Object.entries(ops.targets as JsonObject).map(([key, value]) => [key, sha256Text(canonicalJson(value))])),
-    support: sha256Text(canonicalJson(ops.support)),
+    storage: sha256Text(canonicalJson(effectiveStorage(document.storage))),
   };
 }
 export function changedConfigPaths(before: unknown, after: unknown, path = ""): string[] {

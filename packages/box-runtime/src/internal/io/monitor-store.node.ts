@@ -55,13 +55,14 @@ CREATE INDEX evidence_host_kind ON evidence(host_generation,json_extract(payload
 CREATE TABLE source_gaps(source_key TEXT NOT NULL,start_seq INTEGER NOT NULL,end_seq INTEGER NOT NULL,PRIMARY KEY(source_key,start_seq));
 CREATE UNIQUE INDEX notification_decision_key ON events(json_extract(detail_json,'$.deliveryKey')) WHERE kind='notification_decided';
 `;
-export type MonitorStoreOptions={beforePublish?:()=>void;afterRename?:()=>void;retentionMs?:number;eventTarget?:number;maxDatabaseBytes?:number};
+export type MonitorStoreOptions={beforePublish?:()=>void;afterRename?:()=>void;retentionMs?:number;summaryMs?:number;eventTarget?:number;maxDatabaseBytes?:number};
 /** Existing observation domain, incremental disk transactions. No alerts DB,
  * no modeld authority, no query-time initialization or retention mutation. */
 export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
  const rootId=sha256Text(canonicalJson(["grokbox-observability-v1",resolve(root)]));
  const directory=join(resolve(root),"observability"),file=join(directory,"observations.sqlite");
- const retentionMs=options.retentionMs??MONITOR_POLICY.retentionMs,eventTarget=options.eventTarget??MONITOR_POLICY.evidenceTarget;
+ const retentionMs=options.retentionMs??MONITOR_POLICY.retentionMs,summaryMs=options.summaryMs??OBSERVATION_RETENTION.summaryMs,eventTarget=options.eventTarget??MONITOR_POLICY.evidenceTarget;
+ if(!Number.isSafeInteger(summaryMs)||summaryMs<retentionMs)throw error("monitor_invalid_policy");
  const maxDatabaseBytes=monitorDatabaseBytes(options.maxDatabaseBytes);
  if(!Number.isSafeInteger(retentionMs)||retentionMs<1||!Number.isSafeInteger(eventTarget)||eventTarget<1)throw error("monitor_invalid_policy");
  const meta=async(db:MonitorSqlite)=>{const m=await db.first("SELECT * FROM meta WHERE singleton=1");if(!m)throw error("monitor_store_invalid");return m;};
@@ -102,7 +103,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   const result:Array<{eventId:string;incidentId:string;deliveryKey:string;decision:"emit"|"suppress";reason:"new_occurrence"|"acknowledged"|"snoozed"|"aggregated";channel:"local_only"}>=[];
   for(const e of changes){if(!e.incidentId||!["incident_opened","execution_failure_observed"].includes(e.kind))continue;const row=await db.first("SELECT * FROM incidents WHERE id=?",[e.incidentId]);if(!row)continue;
    const chosen=chooseNotification({acknowledged:row.acknowledged===1,snoozeUntilMs:row.snooze_until===null?null:Number(row.snooze_until),nowMs:at,parentIncidentId:monitorUuid(row.parent_id)?row.parent_id:null});
-   try { await captureIncidentEvidence(db,e.incidentId,at,{detailMs:retentionMs,prepareNotification:chosen.decision==="emit",maxDatabaseBytes}); }
+   try { await captureIncidentEvidence(db,e.incidentId,at,{detailMs:retentionMs,summaryMs,prepareNotification:chosen.decision==="emit",maxDatabaseBytes}); }
    catch (failure) {
     if (!(failure instanceof BoxRuntimeError) || !["monitor_storage_pressure","monitor_evidence_revisions_protected","monitor_evidence_alias_budget"].includes(failure.message)) throw failure;
     await db.run("UPDATE observation_maintenance SET pressure_state='storage_pressure' WHERE singleton=1");
@@ -233,7 +234,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   },
   async captureIncident(incidentId:string,now=Date.now()){
    if(!monitorUuid(incidentId)||!Number.isSafeInteger(now)||now<1)throw error("monitor_invalid_evidence_selector");
-   return mutate(db=>captureIncidentEvidence(db,incidentId,now,{detailMs:retentionMs,maxDatabaseBytes}));
+   return mutate(db=>captureIncidentEvidence(db,incidentId,now,{detailMs:retentionMs,summaryMs,maxDatabaseBytes}));
   },
   async evidenceLease(input:{incidentId:string;revision:number;durationMs:number;nowMs:number}){
    if(!monitorUuid(input.incidentId)||!Number.isSafeInteger(input.revision)||input.revision<1||!Number.isSafeInteger(input.durationMs)||input.durationMs<1||input.durationMs>OBSERVATION_RETENTION.leaseMaxTotalMs||!Number.isSafeInteger(input.nowMs)||input.nowMs<1)throw error("monitor_invalid_evidence_lease");

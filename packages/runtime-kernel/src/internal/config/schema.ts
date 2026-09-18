@@ -1,5 +1,8 @@
 import { ConfigError, FORBIDDEN_CONFIG_KEYS, isObject, type JsonObject, type JsonValue } from "./path.ts";
 import { validateContextIntent, type ContextIntent } from "./context-policy.ts";
+import { effectiveStorage, type StorageIntent } from "./storage-policy.ts";
+import { MIB, OBSERVATION_RETENTION } from "../observation/retention-policy.ts";
+export const CONFIG_SCHEMA_VERSION = 4 as const;
 
 export type ConnectionProfile = {
   transport?: "auto" | "daemon" | "local" | "gateway";
@@ -26,12 +29,13 @@ export type DesktopIntent = {
   keepAgentIds?: string[];
 };
 export type UnifiedConfig = {
-  schemaVersion: 3;
+  schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   client: { currentProfile: string; profiles: Record<string, ConnectionProfile> };
   daemon?: DaemonIntent;
   desktop?: DesktopIntent;
   runtime?: { desiredMode?: "disabled" | "observe" | "identity" | "route"; context?: ContextIntent };
   ops?: JsonObject;
+  storage?: StorageIntent;
 };
 export type SchemaNode = {
   type: "object" | "map" | "array" | "string" | "integer" | "boolean";
@@ -104,9 +108,6 @@ export const OPS_SCHEMA = object({
     digest: boolean, allowDuplicateDelivery: boolean }),
   diagnostics: object({ mode: enumeration("off", "on-request", "automatic-bounded") }),
   canary: object({ enabled: boolean }), maintenance: object({ mode: enumeration("off", "low-risk") }),
-  support: object({ offerIssue: boolean, draft: enumeration("after-consent"), submit: enumeration("off", "confirm-each", "preauthorized-summary"),
-    repository: { ...string(201), format: "repository" }, attachments: enumeration("none"),
-    credentialRef: secret, reportProfile: string(64, "^[a-z][a-z0-9._-]{0,63}$") }),
   targets: map(target, 8, TARGET_NAME_PATTERN),
   routing: object({ enabled: boolean, defaultTarget: string(32, TARGET_NAME_PATTERN),
     reportTarget: string(32, TARGET_NAME_PATTERN), rules: array(rule, 32) }),
@@ -121,13 +122,31 @@ export const CONTEXT_SCHEMA = object({ ...contextOverride.properties,
   models: map(contextOverride, 128, "^[^\\x00-\\x1f]{1,256}$"),
   agents: { ...map(contextOverride, 1024, "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"), sensitive: true },
 });
+export const STORAGE_SCHEMA = object({
+  policyRevision: { type: "integer", enum: [1] },
+  diagnostics: object({ targetBytes: integer(MIB, OBSERVATION_RETENTION.maxBytes), maxBytes: integer(4 * MIB, OBSERVATION_RETENTION.maxBytes),
+    reserveBytes: integer(MIB, OBSERVATION_RETENTION.maxBytes), detailDays: integer(1, 30), summaryDays: integer(1, 365) }),
+  retention: object({
+    monitor: object({ maxBytes: integer(MIB, OBSERVATION_RETENTION.monitorDatabaseBytes) }),
+    journal: object({ segmentBytes: integer(128 * 1024, OBSERVATION_RETENTION.journalSegmentBytes), maxBytes: integer(256 * 1024, OBSERVATION_RETENTION.journalMaxBytes), maxAgeMs: integer(60_000, OBSERVATION_RETENTION.journalMaxAgeMs) }),
+    process: object({ segmentBytes: integer(2048, OBSERVATION_RETENTION.processSegmentBytes), maxBytes: integer(4096, OBSERVATION_RETENTION.processMaxBytes), maxAgeMs: integer(60_000, OBSERVATION_RETENTION.journalMaxAgeMs) }),
+  }),
+});
+// Only the explicit migrator can read the retired support shape. It is absent
+// from current config paths, effective defaults, exports and execution owners.
+const LEGACY_OPS_SCHEMA = object({ ...OPS_SCHEMA.properties,
+  support: object({ offerIssue: boolean, draft: enumeration("after-consent"), submit: enumeration("off", "confirm-each", "preauthorized-summary"),
+    repository: { ...string(201), format: "repository" }, attachments: enumeration("none"), credentialRef: secret,
+    reportProfile: string(64, "^[a-z][a-z0-9._-]{0,63}$") }),
+});
 export const CONFIG_SCHEMA = object({
-  schemaVersion: { type: "integer", enum: [3] },
+  schemaVersion: { type: "integer", enum: [CONFIG_SCHEMA_VERSION] },
   client: object({ currentProfile: string(64, PROFILE_NAME_PATTERN), profiles: map(profile, 64, PROFILE_NAME_PATTERN) }, ["currentProfile", "profiles"]),
   daemon: DAEMON_INTENT_SCHEMA,
   desktop: object({ idleReclaim: object({ enabled: boolean, minIdleMs: integer(600_000, 86_400_000) }), keepAgentIds: array({ ...uuid, sensitive: true }, 64) }),
   runtime: object({ desiredMode: enumeration("disabled", "observe", "identity", "route"), context: CONTEXT_SCHEMA }),
   ops: OPS_SCHEMA,
+  storage: STORAGE_SCHEMA,
 }, ["schemaVersion", "client"]);
 
 function bad(message = "Configuration does not satisfy its schema."): never { throw new ConfigError("config_invalid", message); }
@@ -185,7 +204,7 @@ export function configSchemaAt(tokens: readonly string[]): SchemaNode {
   return schema;
 }
 export function defaultConfig(): UnifiedConfig {
-  return { schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } } };
+  return { schemaVersion: CONFIG_SCHEMA_VERSION, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } } };
 }
 
 export function validateDaemonIntent(value: unknown): DaemonIntent {
@@ -213,7 +232,6 @@ const DEFAULT_OPS: JsonObject = {
   monitor: { enabled: true, deepReplay: false, upstreamAdvisory: false, intervalMs: 30_000 },
   notifications: { mode: "actionable-user", channel: "bot-webhook", maxAutomaticWakeupsPerDay: 2, criticalReservePerDay: 1, digest: false, allowDuplicateDelivery: false },
   diagnostics: { mode: "on-request" }, canary: { enabled: false }, maintenance: { mode: "off" },
-  support: { offerIssue: true, draft: "after-consent", submit: "confirm-each", repository: "yoyooyooo/grokbox", attachments: "none", reportProfile: "public-summary-v1" },
   targets: { default: { enabled: true } }, routing: { enabled: false, defaultTarget: "default", rules: [] },
 };
 /** Apply defaults only through declared object fields; map entries and arrays replace.
@@ -266,7 +284,7 @@ function validateRouting(ops: JsonObject): void {
   for (const key of targetKeys) visit(key, new Set());
 }
 export function validateConfig(input: unknown): UnifiedConfig {
-  if (isObject(input) && (input.version !== undefined || input.schemaVersion === 1 || input.schemaVersion === 2)) {
+  if (isObject(input) && (input.version !== undefined || input.schemaVersion === 1 || input.schemaVersion === 2 || input.schemaVersion === 3)) {
     throw new ConfigError("config_migration_required", "Run grokbox config migrate --preview before using this configuration.");
   }
   validateNode(input, CONFIG_SCHEMA);
@@ -274,6 +292,7 @@ export function validateConfig(input: unknown): UnifiedConfig {
   if (!Object.hasOwn(result.client.profiles, result.client.currentProfile) || !Object.hasOwn(result.client.profiles, "default")) bad("Current and default profiles must exist.");
   if (result.daemon) result.daemon = validateDaemonIntent(result.daemon);
   if (result.ops) validateRouting(effectiveOps(result.ops));
+  if (result.storage) effectiveStorage(result.storage);
   if (result.runtime?.context) {
     try { result.runtime.context = validateContextIntent(result.runtime.context); }
     catch { throw new ConfigError("config_invalid", "Context policy has invalid fields or incompatible budgets."); }
@@ -281,13 +300,26 @@ export function validateConfig(input: unknown): UnifiedConfig {
   return result;
 }
 
-/** Explicit migrator only. Ordinary readers/writers reject schema v2. */
-export function migrateConfigV2(input: unknown): UnifiedConfig {
-  if (!isObject(input) || input.schemaVersion !== 2 || (isObject(input.runtime) && input.runtime.context !== undefined)) {
-    throw new ConfigError("config_invalid", "Unsupported legacy context configuration.");
-  }
-  return validateConfig({ ...input, schemaVersion: 3 });
+/** Validate legacy fields before retiring them; unknown data must not be silently
+ * dropped by migration. Existing off, targets, cost and data policies survive. */
+export function migrateLegacyOps(input: unknown): JsonObject {
+  validateNode(input, LEGACY_OPS_SCHEMA);
+  const result = structuredClone(input) as JsonObject;
+  delete result.support;
+  return result;
 }
+function migrateLegacyConfig(input: unknown, version: 2 | 3): UnifiedConfig {
+  if (!isObject(input) || input.schemaVersion !== version || Object.hasOwn(input, "storage")
+    || version === 2 && isObject(input.runtime) && input.runtime.context !== undefined) {
+    throw new ConfigError("config_invalid", "Unsupported legacy configuration shape.");
+  }
+  const candidate = { ...input, schemaVersion: CONFIG_SCHEMA_VERSION,
+    ...(input.ops !== undefined ? { ops: migrateLegacyOps(input.ops) } : {}) };
+  return validateConfig(candidate);
+}
+/** Explicit migrators only. Ordinary readers/writers reject both old schemas. */
+export function migrateConfigV2(input: unknown): UnifiedConfig { return migrateLegacyConfig(input, 2); }
+export function migrateConfigV3(input: unknown): UnifiedConfig { return migrateLegacyConfig(input, 3); }
 
 /** Safe tree for regular output, not an apply-able backup. */
 export function redactConfig(value: unknown, schema: SchemaNode = CONFIG_SCHEMA): unknown {
@@ -312,5 +344,6 @@ export function portableConfig(input: UnifiedConfig): UnifiedConfig {
   if (input.desktop) result.desktop = { idleReclaim: structuredClone(input.desktop.idleReclaim ?? {}), keepAgentIds: [] };
   if (input.runtime) result.runtime = { desiredMode: "disabled" };
   if (input.ops) result.ops = project(input.ops, OPS_SCHEMA) as JsonObject;
+  if (input.storage) result.storage = structuredClone(input.storage);
   return validateConfig(result);
 }

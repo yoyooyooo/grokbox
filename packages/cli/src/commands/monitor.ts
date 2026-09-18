@@ -1,7 +1,8 @@
-import { assertBoxLocal, openRuntimeStore, openMonitorStore, runMonitor, runIncidentEvidenceCommand, observeRuntimeStorage, BoxRuntimeError } from "@grokbox/box-runtime/runtime";
+import { assertBoxLocal, openRuntimeStore, openMonitorStore, runMonitor, runIncidentEvidenceCommand, observeRuntimeStorage, readStorageConfiguration, BoxRuntimeError } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
 import type { IncidentEvidenceCommand } from "@grokbox/runtime-kernel/commands";
 import type { EvidenceView } from "@grokbox/runtime-kernel/observation";
+import { ConfigError } from "@grokbox/runtime-kernel/config";
 import { CliError } from "../errors.ts";
 import { writeSuccess } from "../output.ts";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
@@ -19,7 +20,8 @@ export async function runRuntimeMonitor(deps: CliDeps, action: "init"|"run"|"sna
     if (deps.gatewayServerUrl) throw new CliError("runtime_local_only", "Monitor evidence requires a box-local Profile.");
     if ((action === "init" || action === "run") && raw.confirm !== true) throw new CliError("invalid_usage","monitor_requires_confirm");
     const root = openRuntimeStore(deps.boxRuntimeRoot,deps.env).root;
-    const store = openMonitorStore(root);
+    const storage = ["init", "ack", "snooze"].includes(action) ? await readStorageConfiguration(root) : undefined;
+    const store = openMonitorStore(root, storage?.monitor);
     if (["incident", "capture", "lease"].includes(action)) {
       if (raw.view && !["local-diagnostic", "bot-diagnostic", "public-summary"].includes(raw.view)) throw new CliError("invalid_usage", "monitor_invalid_evidence_view");
       let command: IncidentEvidenceCommand;
@@ -58,6 +60,7 @@ export async function runRuntimeMonitor(deps: CliDeps, action: "init"|"run"|"sna
     } finally { if (fallback) { process.off("SIGINT",abort); process.off("SIGTERM",abort); } }
   } catch (e) {
     if (e instanceof CliError) throw e;
+    if (e instanceof ConfigError) throw new CliError(e.code,e.message);
     if (e instanceof BoxRuntimeError) throw new CliError(e.code,e.message);
     if (e instanceof Error && /^monitor_[a-z_]+$/.test(e.message)) throw new CliError("invalid_usage",e.message);
     throw new CliError("runtime_not_ready","monitor_unavailable");

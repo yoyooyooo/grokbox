@@ -28,7 +28,7 @@ describe("configuration domain isolation through production readers", () => {
     const after = configurationRevisions((await store.read()).document);
     expect(after.config).not.toBe(before.config); expect(after.desktop).not.toBe(before.desktop);
     expect(after.runtime).toBe(before.runtime); expect(after.ops).toBe(before.ops);
-    expect(after.targets).toEqual(before.targets); expect(after.support).toBe(before.support);
+    expect(after.targets).toEqual(before.targets); expect(after.storage).toBe(before.storage);
     expect(captureHostManagedSelection(root, agent)).toEqual(captured);
     expect(await openRuntimeStore(root).loadDesired()).toEqual({ version: 1, mode: "route" });
     expect(await readFile(join(root, "models.json"), "utf8")).toBe(models);
@@ -42,7 +42,7 @@ describe("configuration domain isolation through production readers", () => {
     const after = configurationRevisions((await store.read()).document);
     expect(after.targets.default).toBe(before.targets.default);
     expect(after.targets.analysis).not.toBe(before.targets.analysis);
-    expect(after.support).toBe(before.support);
+    expect(after.storage).toBe(before.storage);
     expect(await readFile(join(root, "state", "ops-bindings.json"), "utf8").catch(() => "absent")).toBe("absent");
     expect(await readFile(join(root, "state", "ops-grants.json"), "utf8").catch(() => "absent")).toBe("absent");
   });

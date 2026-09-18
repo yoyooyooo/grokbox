@@ -50,7 +50,7 @@ describe("unified config grammar and ownership", () => {
     const after = applyConfigChange(before, { ...change({}), kind: "set", path: "desktop.idleReclaim.minIdleMs", value: 600000 }).document;
     const a = configurationRevisions(before); const b = configurationRevisions(after);
     expect(a.config).not.toBe(b.config); expect(a.desktop).not.toBe(b.desktop);
-    expect(a.ops).toBe(b.ops); expect(a.targets).toEqual(b.targets); expect(a.runtime).toBe(b.runtime); expect(a.support).toBe(b.support);
+    expect(a.ops).toBe(b.ops); expect(a.targets).toEqual(b.targets); expect(a.runtime).toBe(b.runtime); expect(a.storage).toBe(b.storage);
   });
   test("filesystem policy rejects protected roots hidden behind harmless path segments", () => {
     for (const path of ["/proc", "/./proc", "//sys/./kernel", "/dev//shm", "/run/.", "/./", "/tmp/../proc"]) {
@@ -80,7 +80,7 @@ describe("unified config grammar and ownership", () => {
     expect(() => applyConfigChange(defaultConfig(), { ...change({}), kind: "set", path: "ops.notifications.digest", value: true })).toThrow("confirmation");
   });
   test("portable output strips identities and refs without inventing bindings", () => {
-    const doc = validateConfig({ ...defaultConfig(), client: { currentProfile: "default", profiles: { default: { daemonTokenRef: "env:SECRET" } } }, ops: { targets: { default: { agentId: id } }, support: { credentialRef: "env:GITHUB_SECRET" } } });
+    const doc = validateConfig({ ...defaultConfig(), client: { currentProfile: "default", profiles: { default: { daemonTokenRef: "env:SECRET" } } }, ops: { targets: { default: { agentId: id } } }, storage: { diagnostics: { detailDays: 2 } } });
     const text = JSON.stringify(portableConfig(doc));
     expect(text).not.toContain("SECRET"); expect(text).not.toContain(id); expect(text).not.toContain("bindings");
   });

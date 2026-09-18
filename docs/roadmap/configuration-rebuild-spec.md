@@ -3,11 +3,11 @@
 **状态：配置 v2、统一写入程序、显式迁移、bootstrap、别名恢复及源码/打包 CLI 已实现；生产切换与平台 Reset 验收独立。** AH-99/AH-100 的实现范围由 [T57–T60](../tickets/README.md#configuration-rebuild)跟踪，实际使用见 [配置指南](../configuration.md)。本规格拥有配置文件、schema、作用域、提交与恢复；运维行为仍归 [Template Ops Spec](template-ops-automation-spec.md)。
 
 <a id="decisions"></a>
-## 后续 ops/storage 变更（2026-09-18接受，尚未实现）
+## ops/storage 候选增量（2026-09-18，schema4已实现部分采用）
 
-本页保留T57–T60原配置重建的交付合同；当前源码schema3与CTX扩展见[配置指南](../configuration.md)。[T51](../tickets/T51-ops-capability-presets.md)将在下一不兼容配置版本新增顶级storage并显式退役旧ops.support意图，具体版本号实施时与最新v2统一分配。字段语义唯一归[Template Ops Spec §6.2](template-ops-automation-spec.md#configuration)，物理布局、CAS与迁移继续复用本页，不双读双写、不新增配置文件。
+本页保留T57–T60原配置重建的交付合同；[T51](../tickets/T51-ops-capability-presets.md)在09e6405基线上实现schema4候选，新增顶级storage并显式退役ops.support；配置形状/命令见[配置指南](../configuration.md)。monitor和modeld日志已有canonical策略捕获，其他owner与统一物理预留未完成。字段语义唯一归[Template Ops Spec §6.2](template-ops-automation-spec.md#configuration)，物理布局、CAS与迁移继续复用本页，不双读双写、不新增配置文件。
 
-因此下文原v2/support形状仅代表该次已实现范围，不代表新的通知/存储能力已可用。旧off、预算和无关领域保留，迁移不创建binding/grant、不唤醒Bot、不自动公开；新命令/字段不能直接用于当前schema3。
+下文原v2/support形状仅保留该次重建的合同范围，不是当前schema4可接受形状。2/3只经显式迁移进入4，旧off、预算、目标和无关领域保留，先验证旧support再退役；迁移不创建binding/grant、不唤醒Bot、不GC、不自动公开。新字段不能写给仍运行schema3消费者的现役安装；当前现场只归LIVE，源码与集成/部署分别记录。
 
 ## 1. 用户与程序边界
 

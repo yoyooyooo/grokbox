@@ -4,6 +4,7 @@ import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { makeMonitorSample, monitorDelay, monitorInterval, monitorTargets, MONITOR_POLICY } from "@grokbox/runtime-kernel/monitor";
 import { openMonitorStore, type MonitorStore } from "../io/monitor-store.node.ts";
+import { readStorageConfiguration, type StorageConfiguration } from "../io/storage-configuration.node.ts";
 import { readJournalBatch } from "../io/journal-cursor.node.ts";
 import type { OwnershipReader } from "../io/ownership-admission.node.ts";
 
@@ -31,6 +32,7 @@ export type MonitorRunOptions = {
   publish: (receipt: {
     process: "monitor"; collectorEpoch: string; sampleNumber: number; state: "observed" | "unavailable";
     notificationMode: "local_only"; productionAccepted: false;
+    storagePolicy?: { revision: string; source: StorageConfiguration["source"]; scope: "monitor"; hotReload: false };
     changes: Changes;
     snapshot: Awaited<ReturnType<MonitorStore["snapshot"]>>;
     journal?: JournalProgress; maintenance?: Maintenance;
@@ -45,7 +47,8 @@ export type MonitorRunOptions = {
 export async function runMonitor(input: MonitorRunOptions): Promise<void> {
   const ids = monitorTargets(input.agentIds), interval = monitorInterval(input.intervalMs ?? MONITOR_POLICY.intervalMs);
   if (input.signal.aborted) throw new BoxRuntimeError("invalid_usage", "monitor_cancelled");
-  const store = openMonitorStore(input.durableRoot), epoch = randomUUID();
+  const epoch = randomUUID();
+  let store: MonitorStore, storage: StorageConfiguration;
   const localWriter = Semaphore.makeUnsafe(1);
   let sampleNumber = 0, failures = 0;
   let sampleState: "observed" | "unavailable" = "unavailable", previousJournalState: string | undefined;
@@ -54,6 +57,7 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
     const journal = tick.journal ?? { state: input.runRoot ? previousJournalState ?? "not_checked" : "not_configured", readBytes: 0, inserted: 0, hasMore: false };
     const publication = yield* Effect.exit(Effect.sync(() => input.publish({ process: "monitor", collectorEpoch: epoch,
       sampleNumber, state: sampleState, notificationMode: "local_only", productionAccepted: false,
+      storagePolicy: { revision: storage.revision, source: storage.source, scope: "monitor", hotReload: false },
       changes: tick.changes, snapshot, journal, maintenance: tick.maintenance, notifications: tick.notifications })));
     if (tick.notifications.length) yield* attempt(() => store.recordNotificationExport(epoch, tick.notifications, Exit.isSuccess(publication), Date.now()))
       .pipe(Effect.catchCause(() => Effect.void));
@@ -111,6 +115,8 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
     return tick;
   }));
   const program = Effect.scoped(Effect.gen(function*() {
+    storage = yield* singleAttempt(() => readStorageConfiguration(input.durableRoot));
+    store = openMonitorStore(input.durableRoot, storage.monitor);
     yield* Effect.acquireRelease(
       Effect.uninterruptible(singleAttempt(() => store.begin(epoch, Date.now(), ids))),
       () => Effect.promise(() => store.finish(epoch, Date.now())),

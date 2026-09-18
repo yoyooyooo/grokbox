@@ -22,7 +22,7 @@ describe("packaged Node unified configuration", () => {
   test("fresh bootstrap, aliases, commits, redaction and source-independent schema", async () => {
     const home = await mkdtemp(join(tmpdir(), "grokbox-config-packed-"));
     const root = join(home, "durable"), configDir = join(home, ".grokbox");
-    expect(data(cli(home, root, ["config", "get"])).value.schemaVersion).toBe(3);
+    expect(data(cli(home, root, ["config", "get"])).value.schemaVersion).toBe(4);
     expect(await lstat(configDir).catch(() => null)).toBeNull();
     const resources = join(home, "resources.json");
     await writeFile(resources, JSON.stringify({ version: 1, desktop: { pruneEnabled: false, floorAgentIds: ["00000000-0000-4000-8000-000000000001"] } }), { mode: 0o600 });
@@ -63,7 +63,7 @@ describe("packaged Node unified configuration", () => {
     expect(repaired).toMatchObject({ repaired: true, canonicalPreserved: true, servicesStarted: false });
     expect(await readFile(join(root, "models.json"), "utf8")).toBe(canonical);
     expect(await readFile(join(dir, `.grokbox-models.json-${preview.planDigest}.detached`), "utf8")).toBe("unsaved editor fragment");
-    expect(data(cli(home, root, ["config", "get"])).value.schemaVersion).toBe(3);
+    expect(data(cli(home, root, ["config", "get"])).value.schemaVersion).toBe(4);
   });
 
   test("explicit migration retires legacy files, preserves exact models and remains cold-readable", async () => {

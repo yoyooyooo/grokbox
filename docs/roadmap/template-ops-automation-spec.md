@@ -40,7 +40,7 @@
 | SQLite约7天/50,000 evidence软目标、增量删除/vacuum | 已管理/父子关联可长期pin明细，行数不是总磁盘上限；OBS-04 |
 | `execution-history.node.ts`LevelDB、service incarnation退役 | 同代安全遗忘及跨重启maintenance未知记录退役未统一；compaction不删除有效业务状态；OBS-05 |
 | Jobs256终态/24h、输出上限；Host bundles16/契约5代 | 数量不等于安装总字节；process日志追加、Trash、备份/孤儿与恢复引用需各owner治理；OBS-04/05 |
-| config schema3、统一ConfigChange、ops目标偏好已实现 | support旧默认仍在schema；不能把保存成功当通知worker已运行；T51/54 |
+| 基线config3；T51候选schema4复用统一ConfigChange | 已新增storage、显式2/3迁移并退役support；monitor/process已捕获局部策略，统一物理预留/journal采用/真实worker仍未完成；T51/54 |
 | template pack/stage/publish/import已有，recipe routines为空 | Routine CRUD/配对/Webhook与只提醒模板尚待资格/实现；T43/46/53 |
 | S13 / CONT-00–05 | 恢复快照和自动新身份接替是独立合同；8个原生隔离探针不等于完整恢复链已实现 |
 
@@ -177,7 +177,7 @@ notify、diagnose、model-change、Host-maintain、continuity-replace、public-p
 <a id="configuration"></a>
 ### 6.2 唯一配置与目标schema切换
 
-本基线config3已实现，不修改当前生产文件。本专项采用**下一次不兼容配置版本**新增顶级`storage`、收口`ops`旧support意图；具体版本号在T51实现时与当时最新schema单次分配，不并行抢占固定数字。源码reader/writer严格拒绝未知版本，迁移必须复用现有ConfigChange/CAS/备份/alias程序，不双读双写。
+T51在v2基线09e6405上分配并实现**配置schema4候选**，新增顶级`storage`、退役`ops.support`；models v2与wire v8不因此改号。现役文件未修改。普通reader/writer严格拒绝2/3及未知版本，只有显式迁移复用ConfigChange/CAS/备份/alias；旧support先按历史schema验证再删除，不静默丢弃未知值。迁移不授予配对、执行或发布能力。整安装预留和统一applied仍独立于配置已提交。
 
 目标字段（下列为叶级合同，不是可直接apply到当前CLI的完整JSON）：
 
@@ -192,9 +192,11 @@ notify、diagnose、model-change、Host-maintain、continuity-replace、public-p
 | storage.policyRevision | 1；与ops开关无关，服务存续期间必要GC继续 |
 | storage.diagnostics.targetBytes / maxBytes / reserveBytes | 256MiB / 512MiB / 64MiB，reserve包含在max内；§8拥有语义 |
 | storage.diagnostics.detailDays / summaryDays | 7 / 30；受容量上限约束，不是无限流量保留SLA |
-| storage.retention各类别覆盖 | 仅已登记类别、TTL/数量/字节合法值；不能把safety-store按日志TTL配置 |
+| storage.retention.monitor/journal/process | maxBytes；journal/process另有segmentBytes/maxAgeMs。候选只支持缩小现有writer硬上限，禁止safety TTL/任意路径。两份journal预算参与安装分配校验，不按Bot倍增 |
 
 旧`ops.support`发布/offer意图显式退役；迁移预览记录其停用，不转成通知配对、执行grant或恢复旧积压。旧off/显式预算/目标数据选择保持；移除字段和改变preset不自动提高成本。已存在配置损坏时外发fail closed，不重建默认来复活能力。config/model/user数据无关修改不失效捕获中的执行选择；各consumer独立domain revision。
+
+候选monitor init/run及显式capture/lease已读取canonical策略，collector固定启动revision；modeld取得listener后固定process策略。未接journal配置、全安装物理预留、跨owner热加载或统一storage applied回执，所以查询effective-intent、分配算术、局部启动回执均不宣称完整生效。改变存储字段或unset必须确认，关闭ops不改变storage revision。
 
 `storage`顶级放置是跨诊断/执行/制品owner的共同预算入口，不是第二执行账本。偏好仍归统一config；实测bytes、pin、GC游标、储存保留租约归机器状态。支持范围变化时显示requested/effective/valueSource/blockedReason，不假称保存配置即已常驻。
 
@@ -363,7 +365,7 @@ scripts/templates/grokbox-ledger.recipe.json # 无身份/secret/活routine的独
 <a id="surface"></a>
 ## 10. 公开命令与模板旅程
 
-现有可用命令保留：`runtime incident <step-id> --agent <id> [--from journal|monitor]`、`alerts trace <tray-id>`、`history outcome`、`runtime monitor snapshot/events/incidents`。前者始终是STEP，不把monitor incident ID塞入这个位置。新增`monitor incident/capture/evidence lease`已经完成本地及Node制品切片；`runtime storage status`当前仅报告monitor数据库，显式`installationBudgetEnforced=false`。它们不意味着全局shim已采用或真实Bot投递已完成。
+现有可用命令保留：`runtime incident <step-id> --agent <id> [--from journal|monitor]`、`alerts trace <tray-id>`、`history outcome`、`runtime monitor snapshot/events/incidents`。前者始终是STEP，不把monitor incident ID塞入这个位置。新增`monitor incident/capture/evidence lease`已经完成本地及Node制品切片；`runtime storage status`分别报告monitor/processLogs/journals与storageIntent，绕过Profile初始化，旧/坏配置不隐藏可用磁盘证据，显式`installationBudgetEnforced=false`。它们不意味着全局shim已采用或真实Bot投递已完成。
 
 以下为**目标命令面**；已实现子集以本节上段、来源票与实际help为准。主通知只引用当时installed CLI支持的命令；未实现不进入真实Skill或README使用示例：
 

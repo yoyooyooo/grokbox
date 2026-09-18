@@ -44,7 +44,7 @@ async function configuredFixture(adopt = true) {
       host: f.host,
     });
   }
-  await fs.writeFile(desiredPath(f.root), JSON.stringify({ schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: f.input.desired.mode } }));
+  await fs.writeFile(desiredPath(f.root), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: f.input.desired.mode } }));
   await fs.writeFile(modelsPath(f.root), JSON.stringify(f.input.models));
   const status = () => projectLiveStatus({ root: f.root, ephemeralRoot: f.ephemeralRoot,
     processes: f.tree, classify: f.input.classify, diskSha: SHA, gatewayPid: f.gateway.pid,
@@ -55,7 +55,7 @@ async function configuredFixture(adopt = true) {
 describe("desired/actual observation closed loop", () => {
   test("disabled request is pending while the owned patched Host survives, including confirmed manual", async () => {
     const f = await configuredFixture();
-    await fs.writeFile(desiredPath(f.root), JSON.stringify({ schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "disabled" } }));
+    await fs.writeFile(desiredPath(f.root), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "disabled" } }));
     const signals = [...f.tree.signals];
     const before = await snapshotTree(f.root);
     const observed = await f.status();

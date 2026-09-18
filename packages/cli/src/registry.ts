@@ -1418,9 +1418,9 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["runtime", "storage", "status"],
     usage: "grokbox runtime storage status --json",
-    summary: "Read monitor database bytes, reclamation capability and pressure; other storage owners are explicitly not yet measured.",
+    summary: "Read local monitor, process-log and journal storage independently of configuration health; adoption is reported separately.",
     arguments: [], options: options([]), stdin: "none", table: false, timeout: false,
-    destructive: false, gateway: false, streaming: false, localOnly: true,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
     path: ["runtime", "monitor", "init"],

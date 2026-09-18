@@ -23,7 +23,7 @@ const base = { name: "model_step_terminal", schemaVersion: 3, at: "2026-09-09T00
 async function fixture(fetch: typeof globalThis.fetch, options: { echo?: boolean; brokenJournal?: boolean; ownershipRead?: OwnershipReader | null } = {}) {
   const durableRoot = await mkdtemp(join(tmpdir(), "out-d-")), runRoot = await mkdtemp(join(tmpdir(), "out-r-"));
   await mkdir(join(durableRoot, "state"), { mode: 0o700 });
-  await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
+  await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
   await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 1,
     models: options.echo ? {} : { "openai-responses/fixture": { provider: "openai-responses", model: "fixture", endpoint: "https://owned.invalid/v1", apiKeyRef: "env:FIXTURE_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } },
     assignments: { main: null, agents: { "fixture-agent": options.echo ? "stub/echo" : "openai-responses/fixture" } } }));

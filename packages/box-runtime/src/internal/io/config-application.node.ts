@@ -7,7 +7,7 @@ import {
 import { publishConfigFile, readConfigFile } from "./config-layout.node.ts";
 import { configurationProcessIdentity } from "./config-lock.node.ts";
 
-export const CONFIG_CONSUMERS = ["desktop", "daemon", "runtime", "ops"] as const;
+export const CONFIG_CONSUMERS = ["desktop", "daemon", "runtime", "ops", "storage"] as const;
 export type ConfigConsumer = typeof CONFIG_CONSUMERS[number];
 export type ConfigConsumerOwner = { root: string; consumer: ConfigConsumer; instanceId: string; pid: number; uid: number; start: string | null };
 type ApplicationRecord = ConfigConsumerOwner & { schemaVersion: 1; dependencyRevision: string; appliedAt: number; active: boolean };

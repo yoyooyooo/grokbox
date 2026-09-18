@@ -69,7 +69,7 @@ for (const condition of ["missing", "malformed", "symlink", "unknown-model"] as 
     const dir = await mkdtemp(join(tmpdir(), "gbox-start-packed-invalid-"));
     const root = join(dir, "durable");
     await mkdir(join(root, "state"), { recursive: true, mode: 0o700 });
-    const desired = JSON.stringify({ schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "disabled" } });
+    const desired = JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "disabled" } });
     await writeFile(join(root, "config.json"), desired, { mode: 0o600 });
     if (condition === "malformed") await writeFile(join(root, "models.json"), "{");
     if (condition === "symlink") {

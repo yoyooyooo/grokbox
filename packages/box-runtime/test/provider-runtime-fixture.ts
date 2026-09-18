@@ -24,7 +24,7 @@ export async function providerRuntimeFixture(fetch: typeof globalThis.fetch, opt
   const binding = bindCompiledHost(identity, "owned-operation", compile);
   const modelId = options.record?.id ?? "openai/fixture";
   const catalog = { version: 2, models: { [modelId]: options.record ?? { provider: options.api === "responses" ? "openai-responses" : "openai-chat", model: "fixture", endpoint: "https://fixture.invalid/v1", apiKeyRef: "env:FIXTURE_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } }, assignments: { main: null, agents: { [agentId]: { modelId, ...(options.reasoning ? { reasoning: options.reasoning } : {}) } } } };
-  await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
+  await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
   await writeFile(join(durableRoot, "models.json"), JSON.stringify(catalog));
   await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha, pid: process.pid, start: 1, identity,
     at: new Date().toISOString(), profileId: "fixture", transformedSha: sha, operationId: "owned-operation", launchMode: "direct-launch", compile });

@@ -91,7 +91,7 @@ describe("one-way canonical migration", () => {
     const result = await applyConfigurationMigration(options, plan.planDigest, quiet);
     expect(result.models).toBe("not-created");
     expect(await readFile(join(root, "models.json")).catch((error: NodeJS.ErrnoException) => error.code)).toBe("ENOENT");
-    expect((await openConfigStore({ ...rootConfigLayout(root), role: "client" }).read()).document.schemaVersion).toBe(3);
+    expect((await openConfigStore({ ...rootConfigLayout(root), role: "client" }).read()).document.schemaVersion).toBe(4);
   });
 });
 
@@ -134,13 +134,13 @@ async function completedV2Fixture() {
   return { ...f, directory, pointer, predecessorText, oldOperationId: first.operationId, v2 };
 }
 
-for (const interruption of [undefined, "prepared", "published"] as const) test(`v2 to v3 can follow an already retired migration, interruption=${interruption ?? "none"}`, async () => {
+for (const interruption of [undefined, "prepared", "published"] as const) test(`v2 to current schema can follow an already retired migration, interruption=${interruption ?? "none"}`, async () => {
   const f = await completedV2Fixture();
   const protectedBackup = await readFile(join(f.directory, "backup-home.json"), "utf8");
   const plan = await planConfigurationMigration(f.options, quiet);
   expect(plan.canApply).toBe(true);
   expect(plan.previousMigration?.operationId).toBe(f.oldOperationId);
-  expect(plan.candidate.schemaVersion).toBe(3);
+  expect(plan.candidate.schemaVersion).toBe(4);
   expect(await readFile(join(f.directory, "manifest.json")).catch((error: NodeJS.ErrnoException) => error.code)).toBe("ENOENT");
   let result;
   if (interruption) {
@@ -156,7 +156,7 @@ for (const interruption of [undefined, "prepared", "published"] as const) test(`
   expect(await readFile(join(f.root, "models.json"), "utf8")).toBe(f.modelBytes);
   expect(await readlink(join(f.home, "config.json"))).toBe(join(f.root, "config.json"));
   const current = JSON.parse(await readFile(join(f.root, "config.json"), "utf8"));
-  expect(current).toEqual({ ...f.v2, schemaVersion: 3 });
+  expect(current).toEqual({ ...f.v2, schemaVersion: 4 });
   expect(await applyConfigurationMigration(f.options, plan.planDigest, quiet)).toEqual(result);
 });
 

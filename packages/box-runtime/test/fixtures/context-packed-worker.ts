@@ -42,7 +42,7 @@ const models = parseModelsFile({ version: 2, models: { [M]: { provider: "openai"
   assignments: { main: null, agents: { [A]: { modelId: M } } } });
 await writeFile(join(durableRoot, "models.json"), JSON.stringify(models), { mode: 0o600 });
 const policy = { windowTokens: 32000, compaction: { reserveTokens: 4096, keepRecentTokens: 1024 } };
-await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route", context: policy } }), { mode: 0o600 });
+await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route", context: policy } }), { mode: 0o600 });
 const epoch = randomUUID(), auth = createLiveBackendAuth({ OWNED_KEY: "not-a-real-credential" });
 const layers = fakeConfigurationReadLayer({ models: () => models, context: policy, desired: { version: 1, mode: "route" } }).pipe(
   Layer.merge(admitAllAuthorityLayer()), Layer.merge(auth.layer), Layer.merge(dispatchingModelBackendLayer(fetch, auth.unseal)),

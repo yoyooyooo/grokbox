@@ -2,13 +2,13 @@
 
 `grokbox config` is the shared, schema-checked interface for preferences and client connections. Models remain a separate document and are changed through model commands. Configuration reads never start services or repair files.
 
-> **Planned ops/storage cutover:** the [September 18 plan](roadmap/template-ops-automation-spec.md#configuration) adds bounded-storage policy and replaces the old support intent in a future incompatible schema. It does not change this guide's current schema3 implementation. The default notification design only reminds a paired Bot; automatic Issue publishing is deferred. New fields and execution commands are not usable until their implementation and migration ship.
+> **Schema 4 source candidate:** storage policy now has one configuration domain; the former `ops.support` intent is retired. Existing schema 2/3 files require explicit migration and matching consumers. This is not permission to replace a running installation piecemeal. Monitor and modeld log owners capture their relevant budgets at start; aggregate reservations, journal policy adoption and native Bot delivery remain separate implementation gates. Current live state is only in the [LIVE index](tickets/LIVE-integration-validation.md).
 
 ## Two human entry points
 
 | Entry | Contents | Physical storage |
 |---|---|---|
-| `~/.grokbox/config.json` | Client Profiles, daemon policy, desktop preferences, runtime desired mode/local context policy and ops preferences | On a Box: the installed durable root's `config.json`; on a client: the local file |
+| `~/.grokbox/config.json` | Client Profiles, daemon policy, desktop preferences, runtime desired mode/local context policy, ops preferences and storage budgets | On a Box: the installed durable root's `config.json`; on a client: the local file |
 | `~/.grokbox/models.json` | Model catalog, credential references and per-Bot assignments | On a Box: the existing durable root's `models.json`; a client does not synthesize this file |
 
 On a Box, the home entries are managed aliases. The default durable root is `/workspace/.grokbox/box-runtime`; the installed layout and explicit root selection must agree. The CLI writes beside the physical file, not on top of its alias. A detached alias or a different installed root is a conflict, not an instruction to merge files.
@@ -25,7 +25,7 @@ The CLI install tree `~/.grokbox/runtime/` is not configuration. Runtime sockets
 
 ```json
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "client": {
     "currentProfile": "default",
     "profiles": { "default": { "transport": "auto" } }
@@ -44,6 +44,10 @@ The CLI install tree `~/.grokbox/runtime/` is not configuration. Runtime sockets
     "maintenance": { "mode": "off" },
     "targets": { "default": { "enabled": true } },
     "routing": { "enabled": false, "defaultTarget": "default", "rules": [] }
+  },
+  "storage": {
+    "policyRevision": 1,
+    "diagnostics": { "targetBytes": 268435456, "maxBytes": 536870912, "reserveBytes": 67108864, "detailDays": 7, "summaryDays": 30 }
   }
 }
 ```
@@ -51,6 +55,24 @@ The CLI install tree `~/.grokbox/runtime/` is not configuration. Runtime sockets
 Only `schemaVersion` and `client` are required. An absent document is read as the built-in client default without being created. Present ops leaves override the pinned user/maintainer preset; there is no additional overrides document. `--effective` resolves requested defaults, not a deployment or authorization claim. The ops execution and native Webhook work has its own [implementation tickets](tickets/README.md#template-ops-automation); accepting its preferences does not implement or enable those workers.
 
 Client Profiles use camelCase fields under `client.profiles`: transport, serverUrl, daemonTokenRef, daemonSocket, gatewayUrl, gatewayTokenRef, gatewayHeadersRef, gatewayDiscovery, sshHost, sandbox and quota. The [product contract](product-contract.md#52-profile-字段) owns connection semantics. `profile add/update/use/remove` uses the same configuration writer and does not create a second Profile file tree.
+
+## Storage policy and adoption
+
+`storage` is intent, not a GC receipt. Its independent dependency revision prevents notification or desktop changes from invalidating storage, and storage changes from altering captured model selection. Both lowering retention and enlarging budgets require impact confirmation, including parent replacement or unset.
+
+The registered retention categories are `monitor` (`maxBytes`), `journal` and `process` (`segmentBytes`, `maxBytes`, `maxAgeMs`). Current schema limits allow reducing the existing writer ceilings, not arbitrary larger allocations or path-based deletion. Detailed evidence lasts 1–30 days and summaries 1–365 days, with detail no longer than summary. Safety ledgers, native Memory and user files have no configurable observation TTL. The default monitor/two-journal/process allocation is 416 MiB within the 512 MiB diagnostic pool, with 64 MiB reserved and 32 MiB unallocated. Allocation validation is not a guarantee that all physical auxiliary files are reserved yet.
+
+```bash
+grokbox config get storage --effective
+grokbox config schema storage
+grokbox config set storage.diagnostics.detailDays 2 --preview
+grokbox config set storage.diagnostics.detailDays 2 --confirm
+grokbox runtime storage status --json
+```
+
+Monitor initialization, explicit capture and lease acquire current policy; an explicitly started collector captures it for its lifetime. The actual modeld log writer captures its process allocation after acquiring its listener. There is no hot-reload or aggregate `storage applied` receipt yet; `--wait-applied` remains pending until qualified consumers acknowledge the exact revision. Merely reading configuration never installs a consumer or performs GC. `runtime storage status` bypasses Profile initialization so old or broken config does not hide local storage evidence. Ordinary incident reads do not require healthy current config; new writes fail closed rather than silently restoring defaults.
+
+Migration validates the old support shape before removing it. Unknown fields or raw credentials refuse migration; explicit off, target, cost and data-policy choices survive. The preview explicitly says support is retired and no binding, credential, model call or garbage collection is created. Existing model bytes and predecessor migration receipts remain protected. Source and executable proof are in [T51](tickets/T51-ops-capability-presets.md).
 
 ## Read, validate and change
 
@@ -127,7 +149,7 @@ The preview binds the installation, physical files and current aliases. Apply re
 
 ## Local context maintenance
 
-Schema v3 implements `runtime.context` for local working-window and automatic-compaction policy. **An existing schema v2 installation needs explicit migration and matching wire-v8 Host/modeld artifacts before this feature can be used.** Migration is not deployment and does not itself start a summary. Models remain schema v2 with their catalog, credentials and reasoning assignments. The old HostCompact environment gate is not a normal enablement step; fault injection remains separate and disabled.
+Schema v3 introduced `runtime.context`; schema v4 preserves it for local working-window and automatic-compaction policy. **An existing schema v2 installation needs explicit migration and matching wire-v8 Host/modeld artifacts before this feature can be used.** Migration is not deployment and does not itself start a summary. Models remain schema v2 with their catalog, credentials and reasoning assignments. The old HostCompact environment gate is not a normal enablement step; fault injection remains separate and disabled.
 
 Default policy is auto, local window 128000, reserve 16384, and recent-message retention budget 20000. Policy belongs to `config.json`, not a third file or a fabricated model capacity. Inheritance is common policy → exact model override → Bot override; an override does not opt a Bot into managed inference. Use JSON Pointer paths for model IDs containing dots/slashes. All context changes require explicit confirmation because they can affect model cost.
 
@@ -161,6 +183,6 @@ The implementation contract and owner/import rules are in [Configuration rebuild
 
 ## Model reasoning schema and general config migration
 
-Current source uses `config.json` `schemaVersion: 3`; `models.json` independently uses `version: 2` with `{ modelId, reasoning?: { effort } }` assignments. New bootstrap and a general config migration without an existing model file initialize an empty model v2 document. General `config migrate` preserves existing model bytes in place, including v2 policies/capabilities; it never normalizes that domain as a side effect. `models migrate --confirm` is the explicit model-schema operation and does not migrate general config, relocate files or grant execution. Protect configuration and coordinate matching loaded CLI/preload/Host/modeld artifacts before using new schemas on an existing deployment: reasoning originally introduced wire v7, while context maintenance now requires wire v8. Historical v7 acceptance is not proof of v8 adoption. See the [reasoning ADR](decisions/2026-09-17-model-reasoning-policy.md).
+Current source candidate uses `config.json` `schemaVersion: 4`; `models.json` independently uses `version: 2` with `{ modelId, reasoning?: { effort } }` assignments. New bootstrap and a general config migration without an existing model file initialize an empty model v2 document. General `config migrate` preserves existing model bytes in place, including v2 policies/capabilities; it never normalizes that domain as a side effect. `models migrate --confirm` is the explicit model-schema operation and does not migrate general config, relocate files or grant execution. Protect configuration and coordinate matching loaded CLI/preload/Host/modeld artifacts before using new schemas on an existing deployment: reasoning originally introduced wire v7, while context maintenance now requires wire v8. Historical v7 acceptance is not proof of v8 adoption. See the [reasoning ADR](decisions/2026-09-17-model-reasoning-policy.md).
 
 Client/desktop/general config edits do not rewrite models or change the selected reasoning revision. Effort updates through `models use` do not write general config or invalidate its unrelated domain revisions. Both rules are integration-tested on the unified canonical readers/writers.

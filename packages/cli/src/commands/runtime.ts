@@ -445,6 +445,7 @@ export async function runRuntimeModeld(deps: CliDeps): Promise<void> {
       path: started.ensure.path,
       generation: started.ensure.kind === "owned" ? started.ensure.generation : undefined,
       processLog: started.ensure.kind === "owned" ? started.ensure.processLog : undefined,
+      storagePolicyRevision: started.ensure.kind === "owned" ? started.ensure.storagePolicyRevision : undefined,
     });
     if (started.ensure.kind === "borrowed") return;
     // The actual resource lifetime settles after cleanup. It can fail without

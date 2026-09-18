@@ -99,7 +99,7 @@ export function ownedMappingProbeCommand(dnsName: string): string {
   const script = [
     "const fs=require('node:fs');",
     "try{",
-    "const p=process.env.HOME+'/.grokbox/config.json';const s=fs.statSync(p);if(!s.isFile()||s.size>131072)process.exit(1);const d=JSON.parse(fs.readFileSync(p,'utf8'));if(d.schemaVersion!==3)process.exit(1);const c=d.daemon;",
+    "const p=process.env.HOME+'/.grokbox/config.json';const s=fs.statSync(p);if(!s.isFile()||s.size>131072)process.exit(1);const d=JSON.parse(fs.readFileSync(p,'utf8'));if(d.schemaVersion!==4)process.exit(1);const c=d.daemon;",
     `process.exit(c?.serve?.httpsPort===${SERVE_HTTPS_PORT}&&c?.serve?.dnsName===${JSON.stringify(dnsName)}&&c?.serve?.proxyUrl===${JSON.stringify(`http://127.0.0.1:${DAEMON_PORT}`)}?0:1)`,
     "}catch{process.exit(1)}",
   ].join("");
