@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial：已有固定证据/本地意图及J1类型化CONT接纳；native投递与对账仍Planned，M3未关闭。** [Spec §4/§5.4/§6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。把已固定的故障摘要、ID和取证命令送给配置目标Bot；默认仅提醒，不自动执行取证或Issue。
+**Partial：固定证据/J1接纳、单目标策略及事务化发送程序已实现；原生配对driver、自动安装和真实回执对账未完成，M3未关闭。** [Spec §4/§5.4/§6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。把已固定的故障摘要、ID和取证命令送给配置目标Bot；默认仅提醒，不自动执行取证或Issue。
 
 ## Depends-on / Modules
 
@@ -16,6 +16,16 @@ kernel `internal/commands/ops-notification.ts`及policy/routing；box-runtime原
 
 bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export/已有attempt未知时可查unknown；没有POST、绑定、网络去重或接收者模型资格。14项J1合同测试覆盖真实SQLite重复/重启、提交前后故障、窗口/序号gap与关闭通知不结束CONToperation，真实网络unknown仍待下文T45验收。接口唯一归[Spec J1](../roadmap/template-ops-automation-spec.md#obs-continuity-interface)，不把J1算作原生Bot送达。
 
+## 单次可靠投递切片（2026-09-18）
+
+`notification-contract.ts`从已校验effective ops选取唯一default目标；`ops-notification.ts`经OpsNotification port执行一次程序。原monitor SQLite的`notification_work/notification_attempts`承载预留、启动和结算，不另建router/queue数据库，也不改schema4/models2/wire8。存储方法是`notificationScope/notificationDelivery/reserveNotification/beginNotification/settleNotification`。
+
+同一work本片至多一次attempt，BEGIN IMMEDIATE共同预留实际Agent的滑动24h额度和安装额度；别名不增加额度，未决及已拒绝attempt仍占普通额度，不借critical reserve。冻结incident revision、binding/model/routine/data/policy身份及实际body digest/bytes；只发程序生成的安全摘要和只读命令，最大8KiB。新增最多4096个attempt和既有文件空间接纳门，不按TTL删除unknown以换取再次发送。
+
+`runOpsNotificationDelivery`默认无driver；有明确信任的`PairedNotificationDriver`时才检查配对。inspect不能返回secret/endpoint，发送前再检查身份，并在现有config锁内对照最新policy后提交启动。网络在所有本地事务/锁之外，真正返回后才结算；取消不会遗留detached writer。callback异常/本地提交回执丢失保留unknown，既有attempt不重发；native-accepted不表示Bot完成或用户已读。T46仍需实现实际私有binding/凭据/资格owner，不能把测试注入对象写成config来启用。
+
+只读`ops notifications list/show`已注册，坏Profile不挡本地取证；不建库、配对或发消息，列表明确有限窗口。明确未接收的有限重试、native unknown对账、备份恢复fence和自动worker安装仍在下文未完成范围。J1 bridge接口与CONT生命周期边界不变。
+
 ## Work
 
 同incident/occurrence/阶段稳定workId；准备工作只在固定manifest可读后ready，缺证可partial。冻结evidenceRevision/目标/binding/dataPolicy，默认inline安全摘要足够提醒。最多一主一补充只读command descriptor；不发完整JSON/任意shell，标box-local限制。
@@ -26,12 +36,9 @@ unknown默认不重投/不切备用；确定未接收有限退避，遵守安装
 
 ## Executable acceptance
 
-待新增：
+已实现`packages/box-runtime/test/ops-notification-outbox.test.ts`（含真实source/packed CLI、子进程强杀）和`packages/runtime-kernel/test/ops-routing.test.ts`；组合`bun scripts/verify-runtime-rebuild.mjs ops-notification`。固定结果与依赖范围见[本片回执](../reports/2026-09-18-notification-outbox.md)。
 
-```bash
-bun test packages/box-runtime/test/ops-notification-outbox.test.ts packages/box-runtime/test/ops-webhook-delivery.test.ts test/ops-notification-cli.test.ts
-bun test packages/box-runtime/test/alert-observability-store.test.ts
-```
+`ops-webhook-delivery.test.ts`真实HTTP契约、自动worker与原生对账仍待实现；不创建空测试文件或把owned transport算native资格。
 
 临时真实DB/HTTP＋Fake原生Bot，注入prepare/manifest/commit/reserve/POST后崩溃，证明游标/证据不丢，未知不会重复创建工作或唤醒。多进程争领、错误binding/旧revision/预算耗尽/同Bot多alias、禁用、断网、过期恢复、恶意payload均有断言；网络实际bytes通过OBS-03投影。
 

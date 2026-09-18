@@ -18,6 +18,7 @@ import { INCIDENT_EVIDENCE_SCHEMA, captureIncidentEvidence, readIncidentEvidence
 import { indexNativeIncident, indexExecutionProgress, recordSourceGap, detectUnsettledExecutions } from "./monitor-incident-intake.node.ts";
 import { retireObservationDetails, sqlitePhysicalUsage } from "./observation-retention.node.ts";
 import { capMonitorDatabase, monitorDatabaseBytes, monitorWriteAdmission, monitorAuxiliaryUsage } from "./monitor-storage.node.ts";
+import { notificationOutbox } from "./notification-outbox.node.ts";
 const VERSION=3;
 const error=(message:string)=>new BoxRuntimeError("invalid_usage",message);
 const number=(v:unknown):number=>{if(typeof v!=="number"||!Number.isSafeInteger(v)||v<0)throw error("monitor_store_invalid");return v;};
@@ -117,6 +118,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   }return result;
  }
  const api={
+  ...notificationOutbox({rootId,maxDatabaseBytes,read,mutate}),
   path:file,
   async initialize(){
    await mkdir(root,{recursive:true,mode:0o700});await privateMonitorDirectory(resolve(root));await privateMonitorDirectory(directory,true);

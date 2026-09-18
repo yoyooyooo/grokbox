@@ -45,6 +45,17 @@ export class NativeRoutineProvision extends Context.Service<NativeRoutineProvisi
   readonly write: (agentId: string, blueprint: RoutineBlueprint, nativeId: string | null) => Effect.Effect<ProvisionObservation, RoutineProvisionError>;
 }>()("grokbox/NativeRoutineProvision") {}
 
+export class OpsNotification extends Context.Service<OpsNotification, {
+  readonly attempted: (workId: string) => Effect.Effect<boolean, unknown>;
+  readonly route: () => Effect.Effect<import("./observation.ts").NotificationRoute, unknown>;
+  readonly scope: () => Effect.Effect<import("./observation.ts").NotificationScope, unknown>;
+  readonly inspect: (target: import("./observation.ts").NotificationTarget, scope: import("./observation.ts").NotificationScope) => Effect.Effect<import("./observation.ts").NotificationBinding | null, unknown>;
+  readonly reserve: (workId: string, target: import("./observation.ts").NotificationTarget, binding: import("./observation.ts").NotificationBinding) => Effect.Effect<import("./observation.ts").NotificationReservation, unknown>;
+  readonly begin: (frozen: import("./observation.ts").FrozenNotification) => Effect.Effect<{ dispatch: boolean; reason: string }, unknown>;
+  readonly send: (frozen: import("./observation.ts").FrozenNotification, envelope: import("./observation.ts").NotificationEnvelope, binding: import("./observation.ts").NotificationBinding) => Effect.Effect<import("./observation.ts").NativeNotificationResult, unknown>;
+  readonly settle: (frozen: import("./observation.ts").FrozenNotification, result: import("./observation.ts").NativeNotificationResult) => Effect.Effect<unknown, unknown>;
+}>()("grokbox/OpsNotification") {}
+
 export class AgentRoutines extends Context.Service<AgentRoutines, {
   readonly list: (agentId: string) => Effect.Effect<RoutineSnapshot, RoutineError>;
   readonly change: (agentId: string, routineId: string, action: "enable" | "disable" | "delete") => Effect.Effect<RoutineSnapshot, RoutineError>;

@@ -28,6 +28,7 @@ import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
 import { runRoutines } from "./commands/routines.ts";
+import { runOpsNotifications } from "./commands/ops-notifications.ts";
 import { runRoutineProvisionCli } from "./commands/routine-provision.ts";
 import { runRuntimeMonitor } from "./commands/monitor.ts";
 import {
@@ -306,6 +307,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents routines apply": async (deps, args, options) => await runRoutineProvisionCli(deps, "apply", args[0] ?? "", options),
     "agents routines outcome": async (deps, args, options) => await runRoutineProvisionCli(deps, "outcome", args[0] ?? "", options),
     "agents routines reconcile": async (deps, args, options) => await runRoutineProvisionCli(deps, "reconcile", args[0] ?? "", options),
+    "ops notifications list": async deps => await runOpsNotifications(deps),
+    "ops notifications show": async (deps, args) => await runOpsNotifications(deps, args[0]),
     "agents routines list": async (deps, args, options) => await runRoutines(deps, "list", args[0] ?? "", undefined, options),
     "agents routines show": async (deps, args, options) => await runRoutines(deps, "show", args[0] ?? "", args[1], options),
     "agents routines enable": async (deps, args, options) => await runRoutines(deps, "enable", args[0] ?? "", args[1], options),

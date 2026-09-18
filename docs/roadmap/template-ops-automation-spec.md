@@ -210,6 +210,10 @@ T51在v2基线09e6405上分配并实现**配置schema4候选**，新增顶级`st
 <a id="receiver-resilience"></a>
 ### 6.4 状态、重试与故障隔离
 
+**当前可靠发送切片：** `runOpsNotificationDelivery`/`OpsNotification`复用原monitor SQLite的work/attempt表，已有唯一default目标策略、固定证据及8KiB白名单body、实际Agent共享滑动24h额度、事务预留→启动→原生结果结算。绑定必须由受信`PairedNotificationDriver`提供并二次核对；最终policy检查与启动在既有配置写锁内，网络在所有本地锁之外，退出等待真实在途步骤收口。新`ops notifications list/show`只读，不配对、安装或发送。
+
+本切片每work最多一次attempt，unknown不重投；明确未接收也暂不重试，不消耗额外critical reserve。原生配对/凭据owner、自动宿主安装、真实HTTP资格、Bot报告、unknown对账及备份恢复fence尚未实现；默认driver为unavailable。不能把测试注入的binding、配置里的Agent ID或本地nonce当作配对授权。下面有限重试是后续合同，不是当前已启用行为。[固定证明](../reports/2026-09-18-notification-outbox.md)。
+
 ```text
 work: preparing → ready → completed | expired | superseded | blocked
 attempt: reserved → attempting → native-accepted | definitely-not-accepted | unknown

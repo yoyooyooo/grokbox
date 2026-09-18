@@ -100,6 +100,7 @@ describe("registry, help, and runtime", () => {
       "recover",
       "box",
       "agents",
+      "ops",
       "groups",
       "send",
       "alerts",

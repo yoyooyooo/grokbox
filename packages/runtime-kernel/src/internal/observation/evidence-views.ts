@@ -92,9 +92,7 @@ export type BotIncidentNotice = {
   behavior: "notify_then_end";
   automaticDiagnosis: false; automaticIssue: false; replayAuthorized: false;
 };
-export function buildBotIncidentNotice(manifest: IncidentEvidenceManifest, assessment: IncidentAssessment): BotIncidentNotice {
-  if (!evidenceIdentity(manifest.incidentId) || !Number.isSafeInteger(manifest.evidenceRevision) || manifest.evidenceRevision < 1) throw new Error("evidence_invalid_notice");
-  const messages: Record<string, string> = {
+export const BOT_NOTICE_SUMMARIES: Readonly<Record<string, string>> = Object.freeze({
     continuity_attention: "观察到受保护 Bot 的归属、恢复或未结操作异常；交接完成和安全退役须由业务证据另行判断。",
     native_alert: "观察到原生 Bot 告警，原因尚需结合现场判断。",
     native_run_failure: "观察到原生 Bot 任务失败；这不证明整个用户任务或所有子任务均已结束。",
@@ -107,7 +105,10 @@ export function buildBotIncidentNotice(manifest: IncidentEvidenceManifest, asses
     pre_step_failure: "请求在建立完整 STEP 身份前被拒绝，现场保留了实际可用的关联信息。",
     shared_runtime_failure: "观察到本地运行时共享故障。",
     upstream_route_failure: "观察到上游模型路由失败条件。",
-  };
+  });
+export function buildBotIncidentNotice(manifest: IncidentEvidenceManifest, assessment: IncidentAssessment): BotIncidentNotice {
+  if (!evidenceIdentity(manifest.incidentId) || !Number.isSafeInteger(manifest.evidenceRevision) || manifest.evidenceRevision < 1) throw new Error("evidence_invalid_notice");
+  const messages = BOT_NOTICE_SUMMARIES;
   return { schemaVersion: 1, kind: "grokbox.ops.notification", intent: "brief-notice",
     incidentId: manifest.incidentId, evidenceRevision: manifest.evidenceRevision, capturedAtMs: manifest.capturedAtMs,
     summary: Object.hasOwn(messages, manifest.incidentRule) ? messages[manifest.incidentRule]! : "观察到尚未分类的异常，已有证据与缺口已保存。",

@@ -22,6 +22,17 @@ For `ownership_bridge_unavailable`, inspect the finite `localWitnessFailure` whe
 
 Doctor's `hostCapabilities` compares the actually loaded wrapper/reader and profile identity; it makes no Server List or model request. `modeldAdmission=ready`, Host `custom`, and `next=none` are not Provider roundtrip proof. A loaded-profile mismatch requires scoped component adoption, not another model assignment. For interrupted `operation-busy`, inspect `runtime operation-recovery --json` and read [adopt](adopt.md#interrupted-controller--identity-operation); never clear locks by guessing a PID. Keep the original STEP/nonce, and do not replay a failed send as a diagnostic probe.
 
+## Inspect a queued notification without sending it
+
+```bash
+grokbox ops notifications list --json
+grokbox ops notifications show <work-id> --json
+```
+
+These are Box-local, read-only views of the existing outbox. They do not initialize a store, pair a receiver, access Webhook credentials, start monitoring or send anything. The list is a bounded recent window, not a complete history. Configured target preferences do not prove pairing; the default native transport remains unavailable until its dedicated adapter is installed and qualified.
+
+A reserved/attempting/unknown record is not permission to retry. Keep the exact work/attempt ID and evidence revision. `native-accepted` means only the transport's acceptance boundary, never Bot completion or user read; the latter remain separately unobserved. Do not create a new work, switch target aliases or re-run a business task to bypass the uncertain record. The default alert task still only reminds and ends.
+
 ## Separate gaps from failures
 
 If modeld was started with an explicit `GROKBOX_RUN_ROOT`, pass the **same** value to `history outcome --runtime` and inspect `evidence.runtimeRoot`. Do not assume every `runtimeGap` is a root mismatch: permissions, malformed records, partial append, and retention have different meanings. Large journals are byte-windowed rather than rejected wholesale.

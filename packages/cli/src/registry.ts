@@ -661,6 +661,20 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false,
   },
   {
+    path: ["ops", "notifications", "list"],
+    usage: "grokbox ops notifications list --json",
+    summary: "Inspect local queued notifications and default-target policy without pairing, sending or initializing stores.",
+    arguments: [], options: options([]), stdin: "none", table: false, timeout: false,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["ops", "notifications", "show"],
+    usage: "grokbox ops notifications show <work-id> --json",
+    summary: "Read a fixed notification attempt and its uncertainty; native acceptance is not Bot completion or user read.",
+    arguments: [{ syntax: "<work-id>", description: "Exact local notification work UUID" }], options: options([]), stdin: "none", table: false, timeout: false,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["agents", "routines", "list"],
     usage: "grokbox agents routines list <agent-id> --json",
     summary: "Read a bounded native Routine window without prompts, credentials, invocation or initialization.",
