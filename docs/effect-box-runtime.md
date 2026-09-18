@@ -37,6 +37,10 @@ Host 不读 canonical attestation、不拥有 provider credential。允许复用
 
 J13 writer放置不变。原append入口在同一个events.lock内拥有有界字节分段和轮转意图恢复，纯Host leaf不引入Effect/SQLite/RPC；这不是另一个语义compactor。watchdog对legacy仍执行原保留选择器，对已登记分段只调用同协议的关闭段维护，不重写活动inode。只读reader不恢复或删除文件，日志失败仍只影响证据。实现与明确未证的硬崩锁/撕裂文件范围见[分段回执](reports/2026-09-18-structured-journal-rotation.md)。
 
+### 2026-09-18 journal配置与恢复补充
+
+J13仍由原Host/modeld/control writer写入。配置根由composition root显式传递，Host只导入纯storage策略/version leaf与有界文件读取，不引入Effect/SQLite/网络。目录锁v2只管理日志临界区，以唯一owner token及进程身份恢复确证失主；不回放callback、不回收LevelDB锁，不把超时当所有权证据。原collector的Effect维护子Scope先结算有界文件维护，再进入SQLite写许可，忙锁单次跳过，GET不恢复。测试与旧PID-only/撕裂文件等未签边界见[回执](reports/2026-09-18-journal-policy-and-lock-recovery.md)。
+
 ## Owner adjudication（2026-09-07）
 
 详见 [docs/decisions/2026-09-07-offline-live-adjudication.md](decisions/2026-09-07-offline-live-adjudication.md)。摘要：

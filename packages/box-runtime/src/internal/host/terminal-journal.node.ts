@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { copyInferenceTupleOrReject, journalRoleAllows } from "@grokbox/runtime-kernel/status";
 import { projectAlertEvent } from "@grokbox/runtime-kernel/alerts";
@@ -12,6 +12,7 @@ import { projectObservationIdentity, type ObservationIdentity } from "./observat
 import { projectNativeTurnObservation } from "./turn-observation.ts";
 import { HOST_STATE_SHAPES } from "./context-codec.ts";
 import { prepareJournalAppend, type JournalRotationOptions } from "./journal-segments.node.ts";
+import { withJournalLock } from "./journal-lock.node.ts";
 import {
   boundedClientNonce,
   HOST_FAILURE_CATALOG,
@@ -105,10 +106,6 @@ function lockPath(root: string): string {
   return hostEventsPath(root).replace(/events\.ndjson$/, "events.lock");
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function ensureLogDir(filePath: string): Promise<void> {
   const dir = dirname(filePath);
   await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -118,30 +115,11 @@ async function ensureLogDir(filePath: string): Promise<void> {
   await chmod(dir, 0o700);
 }
 
-export async function withEventsLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
+export async function withEventsLock<T>(root: string, fn: () => Promise<T>, maxAttempts = 1000): Promise<T> {
+  if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 1000) throw new Error("journal_invalid_lock_budget");
   const path = lockPath(root);
   await ensureLogDir(path);
-  for (let attempt = 0; attempt < 1000; attempt += 1) {
-    let handle;
-    try { handle = await open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600); }
-    catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-      await delay(2); continue;
-    }
-    let identity: { dev: number; ino: number } | undefined;
-    try {
-      identity = await handle.stat();
-      await handle.writeFile(`${process.pid}\n`);
-      await handle.close();
-      // Only lock acquisition retries. An EEXIST thrown by fn must not replay it.
-      return await fn();
-    } finally {
-      await handle.close().catch(() => undefined);
-      const current = await lstat(path).catch(() => undefined);
-      if (identity && current?.dev === identity.dev && current.ino === identity.ino) await unlink(path).catch(() => undefined);
-    }
-  }
-  throw Object.assign(new Error("box-runtime events journal lock timeout"), { code: "LOCK_TIMEOUT" });
+  return withJournalLock(path, fn, maxAttempts);
 }
 
 export async function appendNdjsonLine(root: string, line: string, role: JournalWriterRole = "control", rotation?: JournalRotationOptions): Promise<void> {
@@ -155,7 +133,7 @@ export async function appendNdjsonLine(root: string, line: string, role: Journal
   try {
     await withEventsLock(root, async () => {
       await ensureLogDir(path);
-      await prepareJournalAppend(root, Buffer.byteLength(payload), rotation);
+      const writtenPolicy = await prepareJournalAppend(root, Buffer.byteLength(payload), rotation);
       const handle = await open(path, fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
       try {
         const stat = await handle.stat();
@@ -165,6 +143,7 @@ export async function appendNdjsonLine(root: string, line: string, role: Journal
         await handle.writeFile(payload, "utf8");
         await handle.sync();
       } finally { await handle.close(); }
+      await writtenPolicy?.();
     });
   } catch (error) { await complete(error); throw error; }
   await complete();
@@ -348,21 +327,21 @@ function projectHostEvent(input: unknown): Record<string, unknown> | null {
 }
 
 /** Host-only append. Journal write failure never throws to the caller. */
-export async function appendHostJournal(root: string, input: unknown): Promise<HostJournalWriteResult> {
+export async function appendHostJournal(root: string, input: unknown, rotation?: JournalRotationOptions): Promise<HostJournalWriteResult> {
   const projected = projectHostEvent(input);
   if (!projected) { noteUnprojectedJournalEvent(root, "host"); return "unprojected"; }
   try {
-    await appendNdjsonLine(root, JSON.stringify(projected), "host");
+    await appendNdjsonLine(root, JSON.stringify(projected), "host", rotation);
     return "written";
   } catch {
     return "write_failed";
   }
 }
 
-export async function appendTurnSeamTerminal(root: string, input: unknown): Promise<HostJournalWriteResult> {
-  return appendHostJournal(root, input);
+export async function appendTurnSeamTerminal(root: string, input: unknown, rotation?: JournalRotationOptions): Promise<HostJournalWriteResult> {
+  return appendHostJournal(root, input, rotation);
 }
 
-export async function appendHostStreamRejected(root: string, input: unknown): Promise<HostJournalWriteResult> {
-  return appendHostJournal(root, input);
+export async function appendHostStreamRejected(root: string, input: unknown, rotation?: JournalRotationOptions): Promise<HostJournalWriteResult> {
+  return appendHostJournal(root, input, rotation);
 }

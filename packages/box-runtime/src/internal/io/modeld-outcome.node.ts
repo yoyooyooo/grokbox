@@ -188,27 +188,27 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
 
 export function writeModeldAuthorityProgress(root: string,
   request: Pick<RunStepRequest, "agentId" | "turnId" | "stepId" | "hostEpoch" | "serviceEpoch">,
-  authority: AuthorityProgress, observedAt = new Date().toISOString()) {
+  authority: AuthorityProgress, observedAt = new Date().toISOString(), configurationRoot?: string) {
   return Effect.tryPromise(async () => {
     const projected = projectModelAuthorityProgress({ name: "model_authority_progress", schemaVersion: 1, at: observedAt,
       agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
       hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId, authority });
     if (!projected) { noteUnprojectedJournalEvent(root, "modeld"); return; }
-    await appendNdjsonLine(root, JSON.stringify(projected), "modeld");
+    await appendNdjsonLine(root, JSON.stringify(projected), "modeld", configurationRoot === undefined ? undefined : { configurationRoot });
   }).pipe(Effect.asVoid);
 }
 
-export function writeModeldRecoveryProgress(root: string, request: RunStepRequest, recovery: ProviderRecoveryState) {
+export function writeModeldRecoveryProgress(root: string, request: RunStepRequest, recovery: ProviderRecoveryState, configurationRoot?: string) {
   return Effect.tryPromise(async () => {
     const projected = projectModelRecoveryProgress({ name: "model_recovery_progress", schemaVersion: 1, at: new Date().toISOString(),
       agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
       hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId, recovery });
     if (!projected) { noteUnprojectedJournalEvent(root, "modeld"); return; }
-    await appendNdjsonLine(root, JSON.stringify(projected), "modeld");
+    await appendNdjsonLine(root, JSON.stringify(projected), "modeld", configurationRoot === undefined ? undefined : { configurationRoot });
   }).pipe(Effect.asVoid);
 }
 
-export function writeModeldStepOutcome(root: string, request: RunStepRequest, outcome: ModeldStepOutcome) {
+export function writeModeldStepOutcome(root: string, request: RunStepRequest, outcome: ModeldStepOutcome, configurationRoot?: string) {
   return Effect.tryPromise(async () => {
     let measures: ReturnType<typeof snapshotWireMeasures> | undefined;
     try {
@@ -229,6 +229,6 @@ export function writeModeldStepOutcome(root: string, request: RunStepRequest, ou
       runtime: { name: process.versions.bun ? "bun" : "node", version: process.versions.bun ?? process.versions.node },
     });
     if (!projected) { noteUnprojectedJournalEvent(root, "modeld"); return; }
-    await appendNdjsonLine(root, JSON.stringify(projected), "modeld");
+    await appendNdjsonLine(root, JSON.stringify(projected), "modeld", configurationRoot === undefined ? undefined : { configurationRoot });
   }).pipe(Effect.asVoid);
 }

@@ -137,11 +137,11 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 
 ## 结构化 journal 分段与游标
 
-源码已接通原writer的字节轮转：活动路径仍是`log/events.ndjson`，达到8MiB或发现半行时按持久段ID归档；每root受管数据默认128MiB，索引/暂存索引另有32KiB单文件上限。它不是整安装预算，也不表示现役Host已经采用；`runtime storage status`的journals分区单列字节、待恢复/缺失、退役量和writerAdoption=not_checked。
+源码已接通原writer的字节轮转与配置采用：活动路径仍是`log/events.ndjson`，默认8MiB段/每root128MiB受管数据，受canonical配置覆盖。已知配置源在首次写入登记，未绑定的小型旧日志保持单文件；索引/暂存索引另有32KiB单文件上限。成功append/fsync后才记录writerPolicy，查询比较最后成功写入revision与请求值，currentWriterLiveness仍not_checked，不签整安装或现役Host已采用。配置被删除/损坏不恢复更大的默认上限。
 
 现有`runtime incident`、`alerts trace`和monitor采集读取同一分段来源，不要求用户记住归档文件名。旧v1游标按inode续读，新v2游标绑定段ID和字节锚点；正常轮转的短暂过渡显示rotation_in_progress且不新建故障，旧段实际淘汰才返回retired_segment。关闭段半行显示sealed_partial_line，不能拼成新JSON。固定incident revision不随源段删除而改变。
 
-普通GET不恢复轮转、不GC；writer在原锁内继续已登记意图，watchdog对分段只作同协议维护，不重新改写活动inode。损坏/撕裂索引或无法确认死writer锁时保留明确阻断，不删锁/清目录造绿。全安装额度、持久调度、原生采用和独立review仍见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)及[LIVE](../tickets/LIVE-integration-validation.md#live-obs-storage)。证明与原子性范围见[分段回执](../reports/2026-09-18-structured-journal-rotation.md)。
+普通GET不恢复轮转、不GC；writer在原锁内继续已登记意图，watchdog对分段只作同协议维护，不重新改写活动inode。目录锁v2仅按PID/UID/启动身份的缺失或变化回收对应唯一token；真实硬崩和竞争回收已验证，不用文件年龄。旧PID-only锁、无完整身份的有限准备槽及损坏/撕裂索引仍保留明确阻断，不清目录造绿。journals分区附带只读lockMetadata占用和owner状态，不输出PID/start/token或进行恢复。collector现有维护子Scope处理两个显式root的登记分段，锁忙立即跳过，通知off不停止维护；安装/自启未由这条接线证明。全安装额度、持久安装、原生采用和独立review仍见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)及[LIVE](../tickets/LIVE-integration-validation.md#live-obs-storage)。原分段证明见[分段回执](../reports/2026-09-18-structured-journal-rotation.md)，后续配置/锁/维护的原子性和未证边界见[增量回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)。
 
 ## 资格边界
 

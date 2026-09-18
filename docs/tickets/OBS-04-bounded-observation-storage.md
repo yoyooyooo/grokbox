@@ -8,7 +8,7 @@
 
 `observation-storage-pressure.test.ts`使用512KiB真实数据库验证持续高基数错误不越过文件上限、压力丢弃可见、重复批次不加倍、跨32个保留周期后无重启恢复新证据接纳；实际SQLite拒绝物理增长另有独立反例。`incident-evidence-store.test.ts`验证旧通知引用和leases不被修订数回收破坏。来源/结果见[增量回执](../reports/2026-09-18-observation-storage-followup.md)。
 
-T51已有schema4共享配置候选、类别分配校验及monitor/process局部采用；仍缺全安装物理容量预留、journal配置接线、其他producer与全部metadata/Jobs/备份/Trash治理、独立于ops开关的常驻服务组合、journal死writer锁/撕裂索引恢复、实际原生/live稳态和独立review。文件护栏只限制SQLite主文件，辅助文件目前仅测量，不能把128MiB当整安装上限或把32轮TTL前进当多年负载证明。执行状态仍由OBS-05处理。
+T51已有schema4共享配置候选、类别分配校验及monitor/process/journal局部采用；已接collector内journal维护和目录锁v2死owner恢复。仍缺全安装物理容量预留、其他producer与全部metadata/Jobs/备份/Trash治理、服务安装/自启、旧PID-only锁及撕裂索引恢复、实际原生/live稳态和独立review。文件护栏只限制SQLite主文件，辅助文件目前仅测量，不能把128MiB当整安装上限或把32轮TTL前进当多年负载证明。执行状态仍由OBS-05处理。
 
 ## modeld 日志增量（2026-09-18）
 
@@ -24,7 +24,17 @@ modeld服务自身的结构化生命周期writer、真实fd关闭/新段、固�
 
 [T51](T51-ops-capability-presets.md)已在09e6405基线上实现schema4、严格2/3迁移与support退役。monitor初始化/collector/显式capture和modeld过程日志消费canonical存储意图；storage有独立revision，关闭通知不删除保留策略。当前只支持既有writer硬上限内的缩减。真实collector按1日明细/3日摘要、modeld连续12代按8KiB测试预算运行已证明，GET不伪造统一applied。
 
-整安装物理预留、journal配置、所有owner热加载/常驻仍未完成；分配416MiB、内部reserve64MiB及未分配32MiB的算术校验不构成磁盘强制上限。实际执行证据和schema4切换边界见[回执](../reports/2026-09-18-storage-config-v4.md)，现役采用仅归LIVE。
+整安装物理预留、全体owner热加载/自启仍未完成；journal写入端采用与collector内维护在下述增量完成，分配416MiB、内部reserve64MiB及未分配32MiB的算术校验不构成磁盘强制上限。实际执行证据和schema4切换边界见[回执](../reports/2026-09-18-storage-config-v4.md)，现役采用仅归LIVE。
+
+## journal采用、维护与锁恢复增量（2026-09-18）
+
+Host原生观察器/session hook、modeld终态/恢复/准入和control append均显式传递canonical配置根；成功写入后记录storage revision，不由配置GET/GC伪造采用。已绑定配置被删除时拒绝新写，不能回到更大默认；旧活动文件超出新额度时先封存并回收关闭段，允许的短暂新段头开销有界，历史缺口不被隐藏。
+
+collector现有维护子Scope每轮调用两个显式root的分段维护；不持SQLite writer等待文件锁，锁忙单次跳过，通知off不改变维护。已验证once的相同维护路径；安装、自启、真实长期周期仍归LIVE。状态分开显示请求策略、最后成功写入、当前liveness未检查与锁metadata逻辑/allocated字节。
+
+目录锁v2以不可复用的owner token、PID/UID/start确认进程丢失/换代，真实SIGKILL的四个轮转边界与并发恢复已验证；不按超时删除锁，不重放append/业务callback。64个准备槽有界，未知/空/撕裂slot保留；旧PID-only文件锁仍无自动退役资格，LevelDB LOCK/SST与执行账本完全独立。
+
+可重复入口`bun scripts/verify-runtime-rebuild.mjs journal-maintenance`：90 pass/0 fail，类型/构建/边界/隐私和source稳定通过；全仓2368 pass/15 skip/0 fail。详见[回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)。本票仍Partial，不能将上述slice签成全安装预算或原生通知首发。
 
 ## Goal / Modules
 

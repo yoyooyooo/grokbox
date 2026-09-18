@@ -2,7 +2,8 @@ import { ConfigError, FORBIDDEN_CONFIG_KEYS, isObject, type JsonObject, type Jso
 import { validateContextIntent, type ContextIntent } from "./context-policy.ts";
 import { effectiveStorage, type StorageIntent } from "./storage-policy.ts";
 import { MIB, OBSERVATION_RETENTION } from "../observation/retention-policy.ts";
-export const CONFIG_SCHEMA_VERSION = 4 as const;
+import { CONFIG_SCHEMA_VERSION } from "./version.ts";
+export { CONFIG_SCHEMA_VERSION } from "./version.ts";
 
 export type ConnectionProfile = {
   transport?: "auto" | "daemon" | "local" | "gateway";

@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial implementation；schema4、显式迁移与monitor/modeld日志策略采用已实现，整安装预留/统一applied及现场切换未完成。** [Spec §6.2/§8](../roadmap/template-ops-automation-spec.md#configuration)。复用T57–T60，不把配置成功当作原生通知已运行。
+**Partial implementation；schema4、显式迁移、monitor/process/journal策略采用已实现，整安装预留/统一applied及现场切换未完成。** [Spec §6.2/§8](../roadmap/template-ops-automation-spec.md#configuration)。复用T57–T60，不把配置成功当作原生通知已运行。
 
 ## Depends-on / Modules
 
@@ -26,13 +26,15 @@ storage预算全安装共用，diagnostics目标256MiB/max512MiB/reserve64MiB含
 
 ConfigurationWrite对storage修改/unset/父替换统一确认，storage有独立revision；删除旧support revision。迁移2/3严格验证旧support后退役，保留off/目标/预算和模型原字节，preview不暴露凭据引用值，不创建grant/binding/worker，不进行GC。旧文件读取返回migration_required，不双读。
 
-显式monitor init/run、capture/lease消费canonical存储策略，运行collector固定该revision与TTL；modeld获得listener后才捕获process策略并返回其revision，borrower不获取writer。关闭ops/notifications不改变已有本地维护政策。配置坏时只读incident/storage仍可用，写入/新collector拒绝；status提供独立storageIntent而不假称已采用。没有全局热加载、journal配置注入或统一storage consumer receipt，因此wait-applied仍pending。
+显式monitor init/run、capture/lease消费canonical存储策略，运行collector固定该revision与TTL；modeld获得listener后才捕获process策略并返回其revision，borrower不获取writer。关闭ops/notifications不改变已有本地维护政策。配置坏时只读incident/storage仍可用，写入/新collector拒绝；status提供独立storageIntent而不假称已采用。journal现已在Host/modeld/control写入端明确绑定canonical配置源，每次写入验证当前storage切片；成功append/fsync后才记录writerPolicy，配置删除/旧版本/损坏不恢复更大默认值，异源writer拒绝。GET只比较请求策略与最后成功写入的revision，不签当前writer存活。没有全体owner热加载或统一storage consumer receipt，因此wait-applied仍pending。
+
+journal增量的配置缩额、缺配置、跨root、打包Host采用及collector维护/锁恢复见[实现回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)。关闭通知不停止collector已有的SQLite/journal维护子Scope；这不是安装自启证明，也不把局部字节约束说成完整共享配额。
 
 ## Executable acceptance
 
 已新增`packages/runtime-kernel/test/ops-notice-storage-config.test.ts`、`test/ops-storage-config-migration.test.ts`、`packages/box-runtime/test/storage-configuration-owner.test.ts`，回归`packages/runtime-kernel/test/unified-config.test.ts`、`test/config-cli.test.ts`、`test/config-packed.test.ts`。证明旧support退役、off保持、schema拒绝、迁移崩溃恢复、未知字段不丢、预算非法拒绝、ops off仍保留storage intent。
 
-临时真实文件/SQLite/Node服务验证config提交不安装服务、不唤醒Bot、不GC、不改模型、不生成grant；真实collector使用1日明细/3日摘要，modeld连续12代在8KiB测试预算内。实际状态只有全部相关owner读回后才applied。与T54共享目标schema，不复制第二层配置。可重复组合为`bun scripts/verify-runtime-rebuild.mjs storage-config`；固定结果见[本片回执](../reports/2026-09-18-storage-config-v4.md)。
+临时真实文件/SQLite/Node服务验证config提交不安装服务、不唤醒Bot、不GC、不改模型、不生成grant；真实collector使用1日明细/3日摘要，modeld连续12代在8KiB测试预算内。实际状态只有全部相关owner读回后才applied。与T54共享目标schema，不复制第二层配置。可重复组合为`bun scripts/verify-runtime-rebuild.mjs storage-config`；固定结果见[本片回执](../reports/2026-09-18-storage-config-v4.md)。journal后续使用`bun scripts/verify-runtime-rebuild.mjs journal-maintenance`，90项/0失败；全仓2368 pass/15 skip/0 fail，各自保持限定scope。
 
 ## Forbidden / Exit evidence
 

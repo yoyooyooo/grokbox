@@ -40,7 +40,7 @@
 | SQLite约7天/50,000 evidence软目标、增量删除/vacuum | 已管理/父子关联可长期pin明细，行数不是总磁盘上限；OBS-04 |
 | `execution-history.node.ts`LevelDB、service incarnation退役 | 同代安全遗忘及跨重启maintenance未知记录退役未统一；compaction不删除有效业务状态；OBS-05 |
 | Jobs256终态/24h、输出上限；Host bundles16/契约5代 | 数量不等于安装总字节；process日志追加、Trash、备份/孤儿与恢复引用需各owner治理；OBS-04/05 |
-| 基线config3；T51候选schema4复用统一ConfigChange | 已新增storage、显式2/3迁移并退役support；monitor/process已捕获局部策略，统一物理预留/journal采用/真实worker仍未完成；T51/54 |
+| 基线config3；T51候选schema4复用统一ConfigChange | 已新增storage、显式2/3迁移并退役support；monitor/process/journal已采用局部策略，统一物理预留/全体consumer/真实worker仍未完成；T51/54 |
 | template pack/stage/publish/import已有，recipe routines为空 | Routine CRUD/配对/Webhook与只提醒模板尚待资格/实现；T43/46/53 |
 | S13 / CONT-00–05 | 恢复快照和自动新身份接替是独立合同；8个原生隔离探针不等于完整恢复链已实现 |
 
@@ -196,7 +196,7 @@ T51在v2基线09e6405上分配并实现**配置schema4候选**，新增顶级`st
 
 旧`ops.support`发布/offer意图显式退役；迁移预览记录其停用，不转成通知配对、执行grant或恢复旧积压。旧off/显式预算/目标数据选择保持；移除字段和改变preset不自动提高成本。已存在配置损坏时外发fail closed，不重建默认来复活能力。config/model/user数据无关修改不失效捕获中的执行选择；各consumer独立domain revision。
 
-候选monitor init/run及显式capture/lease已读取canonical策略，collector固定启动revision；modeld取得listener后固定process策略。未接journal配置、全安装物理预留、跨owner热加载或统一storage applied回执，所以查询effective-intent、分配算术、局部启动回执均不宣称完整生效。改变存储字段或unset必须确认，关闭ops不改变storage revision。
+候选monitor init/run及显式capture/lease已读取canonical策略，collector固定启动revision；modeld取得listener后固定process策略。journal已通过显式canonical根在每次写入时读取当前storage切片，并在成功落盘后记录writerPolicy；源配置缺失/损坏不恢复更大默认值。collector维护子Scope按已登记段回收并跳过忙锁。未接全安装物理预留、全体owner热加载或统一storage applied回执，所以查询effective-intent、分配算术、局部启动/写入回执均不宣称完整生效。改变存储字段或unset必须确认，关闭ops不改变storage revision。
 
 `storage`顶级放置是跨诊断/执行/制品owner的共同预算入口，不是第二执行账本。偏好仍归统一config；实测bytes、pin、GC游标、储存保留租约归机器状态。支持范围变化时显示requested/effective/valueSource/blockedReason，不假称保存配置即已常驻。
 
@@ -247,6 +247,8 @@ S13连续性替换继续由CONT owner判断允许模式、原生快照完整性�
 
 <a id="storage"></a>
 ## 8. 有界存储：轮转、分层保留与安全GC
+
+**配置/恢复增量：** journal显式来源绑定、写入后采用回执、缩额恢复、collector内维护及目录锁v2的确证死owner退役已实现。真实进程SIGKILL跨四个轮转阶段、不重放callback、有限准备槽和打包Node写入已有证明；旧PID-only锁与未知/撕裂文件不自动清理，LevelDB安全账本不归此协议。当前限定证明见[回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)，不取代下面的全安装、服务安装与原生验收合同。
 
 **源码增量（2026-09-18）：** 已有SQLite局部容量、modeld结构化生命周期日志和原journal共享锁分段/游标/缺口/归档查询；各owner的本地限制不等于本节全部合同已兑现。journal活动路径保持不变、段ID与inode联合校验、普通轮转过渡不建故障；旧watchdog不改写受管活动inode，J13 writer不迁移。实际证明、未签的撕裂文件/硬崩锁与全安装预算见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)和[分段回执](../reports/2026-09-18-structured-journal-rotation.md)。现场状态只看LIVE。
 

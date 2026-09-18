@@ -21,7 +21,7 @@ import { ephemeralRuntimeRoot } from "./ephemeral.ts";
 import { type ObservationState } from "./observation.node.ts";
 import { readJournalWindow, JOURNAL_LOOKUP_READ_BYTES, type JournalCoverage } from "./journal-window.node.ts";
 import { readObservationJournalWindow } from "./journal-segment-window.node.ts";
-import { maintainSegmentedJournal } from "../host/journal-segments.node.ts";
+import { maintainSegmentedJournal, type JournalRotationOptions } from "../host/journal-segments.node.ts";
 import { observeJournalRetention, writeJournalRetention, type JournalRetentionObservation, type JournalRetentionReceipt } from "./journal-retention.node.ts";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { projectRunObservation } from "../host/run-observation.ts";
@@ -420,7 +420,7 @@ export async function appendEvent(root: string, event: RuntimeEvent): Promise<vo
   if (!journalRoleAllows("control", event.name)) return;
   const sanitized = sanitizeEvent(event);
   if (!sanitized) return;
-  await appendNdjsonLine(root, JSON.stringify(sanitized));
+  await appendNdjsonLine(root, JSON.stringify(sanitized), "control", { configurationRoot: root });
 }
 
 export async function appendModelStepTerminal(root: string, input: unknown): Promise<TurnSeamWriteResult> {
@@ -681,17 +681,17 @@ export async function maintainObservationJournals(input: { durableRoot: string; 
     // Never compact an implicit HOME fallback on behalf of an isolated/custom
     // durable root. Mutating host-journal maintenance requires the explicit root.
     if (source === "host" && !input.runRoot) { roots.push({ source, root, outcome: "not_configured" }); continue; }
-    try { await compactEvents(root); roots.push({ source, root, outcome: "maintained" }); }
+    try { await compactEvents(root, { configurationRoot: input.durableRoot }); roots.push({ source, root, outcome: "maintained" }); }
     catch { roots.push({ source, root, outcome: "unavailable" }); }
   }
   return { roots, installedScheduler: false };
 }
 
 
-export async function compactEvents(root: string): Promise<void> {
+export async function compactEvents(root: string, rotation: JournalRotationOptions = { configurationRoot: root }): Promise<void> {
   const path = eventsPath(root);
   await withEventsLock(root, async () => {
-    if (await maintainSegmentedJournal(root)) return;
+    if (await maintainSegmentedJournal(root, rotation)) return;
     const read = await readJournalWindow(path, JOURNAL_LOOKUP_READ_BYTES);
     if (read.state === "missing") return;
     if (read.state !== "present" || !read.coverage || read.coverage.partialLastLine || read.coverage.invalidLines > 0

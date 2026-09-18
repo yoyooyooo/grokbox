@@ -6,6 +6,7 @@ import { makeMonitorSample, monitorDelay, monitorInterval, monitorTargets, MONIT
 import { openMonitorStore, type MonitorStore } from "../io/monitor-store.node.ts";
 import { readStorageConfiguration, type StorageConfiguration } from "../io/storage-configuration.node.ts";
 import { readJournalBatch } from "../io/journal-cursor.node.ts";
+import { maintainRegisteredJournals } from "../io/journal-maintenance.node.ts";
 import type { OwnershipReader } from "../io/ownership-admission.node.ts";
 
 const singleAttempt = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: error => error });
@@ -23,7 +24,7 @@ const attempt = <A>(run: () => Promise<A>) => Effect.gen(function*() {
 });
 type JournalProgress = { state: string; readBytes: number; inserted: number; hasMore: boolean; droppedEvents?: number };
 type Changes = Awaited<ReturnType<MonitorStore["record"]>>["events"];
-type Maintenance = Awaited<ReturnType<MonitorStore["maintain"]>>;
+type Maintenance = Awaited<ReturnType<MonitorStore["maintain"]>> & { journals?: Awaited<ReturnType<typeof maintainRegisteredJournals>> };
 type Tick = { changes: Changes; notifications: unknown[]; journal?: JournalProgress; maintenance?: Maintenance };
 const emptyTick = (): Tick => ({ changes: [], notifications: [] });
 export type MonitorRunOptions = {
@@ -108,12 +109,19 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
     } while (true);
     return tick;
   });
-  const maintain = localWriter.withPermit(Effect.gen(function*() {
-    const maintenance = yield* attempt(() => store.maintain(Date.now()));
-    const tick = { ...emptyTick(), maintenance };
-    if (!input.once) yield* publish(tick);
-    return tick;
-  }));
+  const maintain = Effect.gen(function*() {
+    // Filesystem housekeeping never holds the SQLite writer permit. Rotation
+    // settles before scope cancellation; an occupied journal lock is skipped.
+    const journals = yield* Effect.uninterruptible(singleAttempt(() => maintainRegisteredJournals({
+      durableRoot: input.durableRoot, runRoot: input.runRoot, signal: input.signal,
+    })));
+    return yield* localWriter.withPermit(Effect.gen(function*() {
+      const maintenance = { ...yield* attempt(() => store.maintain(Date.now())), journals };
+      const tick: Tick = { ...emptyTick(), maintenance };
+      if (!input.once) yield* publish(tick);
+      return tick;
+    }));
+  });
   const program = Effect.scoped(Effect.gen(function*() {
     storage = yield* singleAttempt(() => readStorageConfiguration(input.durableRoot));
     store = openMonitorStore(input.durableRoot, storage.monitor);

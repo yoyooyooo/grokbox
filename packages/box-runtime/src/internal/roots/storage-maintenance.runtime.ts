@@ -23,7 +23,8 @@ export async function observeRuntimeStorage(input: { durableRoot: string; runRoo
   }
   const processLogs = input.runRoot ? await observeProcessLogStorage(input.runRoot)
     : { state: "not_configured" as const, scope: "owned_modeld_process_segments" as const, bytes: null };
-  const journals = [{ source: "control", ...await observeJournalStorage(input.durableRoot) }];
-  if (input.runRoot && input.runRoot !== input.durableRoot) journals.push({ source: "host", ...await observeJournalStorage(input.runRoot) });
+  const journalIntent = storage ? { revision: storage.revision, policy: storage.policy.retention.journal } : undefined;
+  const journals = [{ source: "control", ...await observeJournalStorage(input.durableRoot, journalIntent) }];
+  if (input.runRoot && input.runRoot !== input.durableRoot) journals.push({ source: "host", ...await observeJournalStorage(input.runRoot, journalIntent) });
   return { ...monitor, processLogs, journals, storageIntent, installationBudgetEnforced: false as const };
 }

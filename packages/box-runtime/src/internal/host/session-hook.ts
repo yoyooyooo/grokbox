@@ -21,7 +21,7 @@ import {
   type PromptSession,
   type StreamHandle,
 } from "./session.ts";
-import { appendHostJournal, appendHostStreamRejected } from "./terminal-journal.node.ts";
+import { appendHostJournal as appendJournal, appendHostStreamRejected as appendRejection } from "./terminal-journal.node.ts";
 import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } from "./aux-request.ts";
 import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
 import { noteHostManagedStep } from "./compact.ts";
@@ -122,6 +122,8 @@ export function bindHostSessionHook(input: {
   onRequestId?: (id: string) => void;
 }) => unknown {
   if (input.mode !== "route") return (args) => args.originalSession;
+  const appendHostJournal = (root: string, event: unknown) => appendJournal(root, event, { configurationRoot: input.durableRoot });
+  const appendHostStreamRejected = (root: string, event: unknown) => appendRejection(root, event, { configurationRoot: input.durableRoot });
   return (args) => {
     const options = isRecord(args.sessionOptions) ? args.sessionOptions : {};
     const agentId = boundedId(args.agentId) ?? boundedId(options.agentId);

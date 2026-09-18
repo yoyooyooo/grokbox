@@ -20,6 +20,13 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "journal-maintenance": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "packages/box-runtime/test/journal-policy-adoption.test.ts", "packages/box-runtime/test/journal-lock-recovery.test.ts", "packages/box-runtime/test/storage-configuration-owner.test.ts"],
+    ["bun", "test", "packages/box-runtime/test/journal-segment-rotation.test.ts", "packages/box-runtime/test/host-journal.test.ts", "packages/box-runtime/test/modeld-outcome.test.ts", "packages/box-runtime/test/monitor-scheduling-review.test.ts", "test/incident-observability.test.ts", "test/monitor-incident-cli.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts"],
+    ["bun", "scripts/check-runtime-boundaries.mjs"],
+    ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "storage-config": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/runtime-kernel/test/ops-notice-storage-config.test.ts", "test/ops-storage-config-migration.test.ts", "packages/box-runtime/test/storage-configuration-owner.test.ts"],
@@ -205,6 +212,7 @@ for (const argv of mapped) {
 }
 
 const SUPPORTS = {
+  "journal-maintenance": ["canonical-journal-policy-at-real-writer", "last-successful-write-witness-not-config-save", "confirmed-policy-shrink-with-explicit-retirement", "scope-owned-journal-housekeeping-no-rpc-or-bot", "busy-writer-housekeeping-skip", "exact-dead-owner-directory-lock-recovery", "real-process-death-during-rotation-no-append-replay", "bounded-preparation-slots-and-readonly-lock-metadata", "packed-node-host-hook-and-post-crash-write"],
   "storage-config": ["explicit-config4-migration-no-support-resurrection", "validated-single-storage-intent-and-allocation", "storage-only-dependency-revision", "preserved-model-bytes-and-disabled-notifications", "migration-crash-recovery-and-confirmed-config-writes", "configured-monitor-ttl-and-modeld-log-cap", "offline-evidence-survives-broken-config", "pending-adoption-not-fake-applied"],
   "journal-rotation": ["shared-writer-byte-rotation", "durable-segment-cursor-resume", "bounded-registered-journal-data", "retirement-gap-not-fake-health", "rotation-intent-recovery-no-append-replay", "sealed-partial-tail", "packed-node-closed-segment-lookup", "fixed-incident-survives-source-eviction", "no-query-recovery-or-gc"],
   "process-log-rotation": ["writer-owned-modeld-segments", "bounded-multi-generation-disk", "partial-tail-not-reappended", "borrower-does-not-rotate", "diagnostic-failure-does-not-block-modeld", "packaged-node-replacement-no-raw-log-fd", "independent-read-only-storage-facets"],
@@ -236,6 +244,7 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "journal-maintenance": "canonical-temporary-config-real-files-sqlite-linux-process-identities-owned-child-SIGKILL-and-packed-node-host-hook-no-live-state-or-model-requests",
   "storage-config": "strict-kernel-schema-production-migrator-real-owned-files-sqlite-source-modeld-and-packed-node-cli-no-live-config-or-model-spend",
   "journal-rotation": "real-owned-files-and-sqlite-source-writers-rotation-stage-faults-and-packed-node-readers-no-native-host-or-provider-effects",
   "process-log-rotation": "real-private-files-real-unix-modeld-source-root-and-disposable-packaged-node-replacement-no-Host-or-provider-effects",
@@ -267,6 +276,7 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "journal-maintenance": ["installation-wide-physical-reservations", "legacy-pid-only-lock-retirement", "arbitrary-power-loss-or-torn-owner-index-repair", "all-storage-owner-hot-reload", "service-install-autostart", "native-bot-notification", "independent-review", "live-adoption"],
   "storage-config": ["installation-wide-physical-reservations", "journal-writer-config-adoption", "live-config4-cutover", "persistent-service-owner", "aggregate-storage-applied-receipt", "native-webhook-and-bot-delivery", "independent-review"],
   "journal-rotation": ["whole-installation-budget", "arbitrary-power-loss-or-torn-manifest-recovery", "hard-crash-events-lock-recovery", "native-host-adoption", "persistent-service-installation", "native-bot-notification", "independent-review", "live-adoption"],
   "process-log-rotation": ["installation-wide-storage-budget", "structured-journal-rotation", "other-process-log-producers", "native-webhook-delivery", "persistent-service-installation", "independent-review", "live-adoption"],

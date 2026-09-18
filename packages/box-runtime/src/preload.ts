@@ -8,7 +8,7 @@ import { installCompileHook } from "./internal/host/compile-hook.ts";
 import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts";
 import { bindHostSessionHook } from "./internal/host/session-hook.ts";
 import { createRunObserver, HOST_RUN_OBSERVATION_SYMBOL } from "./internal/host/run-observation.ts";
-import { appendHostJournal } from "./internal/host/terminal-journal.node.ts";
+import { appendHostJournal as appendHostJournalAtRoot } from "./internal/host/terminal-journal.node.ts";
 import { createAlertObserver, HOST_ALERT_OBSERVATION_SYMBOL } from "./internal/host/alert-observation.ts";
 import { createServerActivityObserver, HOST_SERVER_ACTIVITY_SYMBOL } from "./internal/host/server-activity-observation.ts";
 import { deferManagedHostResume } from "./internal/host/selection.node.ts";
@@ -30,6 +30,8 @@ const markerPath = process.env.GROKBOX_PRELOAD_MARKER;
 const operationId = process.env.GROKBOX_OPERATION_ID;
 const runRoot = process.env.GROKBOX_RUN_ROOT ?? join(homedir(), ".grokbox", "run");
 const durableRoot = process.env.GROKBOX_BOX_RUNTIME_ROOT ?? "/workspace/.grokbox/box-runtime";
+// Every native observer uses this installation's explicit policy source.
+const appendHostJournal = (root: string, event: unknown) => appendHostJournalAtRoot(root, event, { configurationRoot: durableRoot });
 
 function requiredPreloadPath(): string | null {
   const argv = process.execArgv;

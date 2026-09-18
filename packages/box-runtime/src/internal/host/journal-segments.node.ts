@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, open, rename, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { OBSERVATION_RETENTION } from "@grokbox/runtime-kernel/observation";
+import { readJournalPolicy, type JournalPolicyReceipt } from "./journal-policy.node.ts";
 
 /** Byte rotation only. All mutation callers hold the existing events.lock.
  * The Host retains its append writer; no SQLite, RPC, Effect or semantic
@@ -26,9 +27,11 @@ type Index = {
   schemaVersion: 1; format: typeof FORMAT; revision: number;
   active: JournalSegment; closed: JournalSegment[]; garbage: JournalSegment[];
   pending: Pending | null; retiredThrough: number; retiredSegments: number; retiredBytes: number;
+  writerPolicy?: JournalPolicyReceipt & { observedAtMs: number };
+  policyBinding?: { sourceRootId: string; configRequired: boolean };
 };
 export type RotationStage = "intent" | "renamed" | "created" | "committed" | "retired";
-export type JournalRotationOptions = { policy?: Partial<JournalSegmentPolicy>; nowMs?: number; afterStage?: (stage: RotationStage) => void };
+export type JournalRotationOptions = { configurationRoot?: string; policy?: Partial<JournalSegmentPolicy>; nowMs?: number; afterStage?: (stage: RotationStage) => void };
 const activePath = (root: string) => join(root, "log", "events.ndjson");
 const archivePath = (root: string, id: string) => join(root, "log", `events.segment-${id}.ndjson`);
 function validateSegment(v: JournalSegment) {
@@ -39,6 +42,14 @@ function validateIndex(v: Index): Index {
   if (!v || v.schemaVersion !== 1 || v.format !== FORMAT || !uint(v.revision) || v.revision < 1
     || !Array.isArray(v.closed) || !Array.isArray(v.garbage) || v.closed.length + v.garbage.length > MAX_SEGMENTS
     || !uint(v.retiredThrough) || !uint(v.retiredSegments) || !uint(v.retiredBytes)) invalid();
+  if (v.policyBinding !== undefined && (!v.policyBinding || !/^[a-f0-9]{64}$/.test(v.policyBinding.sourceRootId)
+    || typeof v.policyBinding.configRequired !== "boolean")) invalid();
+  if (v.writerPolicy !== undefined) {
+    const p = v.writerPolicy;
+    if (!p || !["canonical-config", "default-no-config"].includes(p.source) || !/^[a-f0-9]{64}$/.test(p.sourceRootId)
+      || !/^[a-f0-9]{64}$/.test(p.storageRevision) || !uint(p.observedAtMs) || !p.policy) invalid();
+    policyFor(p.policy);
+  }
   [v.active, ...v.closed, ...v.garbage].forEach(validateSegment);
   const entries = [v.active, ...v.closed, ...v.garbage];
   if (new Set(entries.map(s => s.id)).size !== entries.length || new Set(entries.map(s => s.sequence)).size !== entries.length
@@ -168,33 +179,63 @@ async function prune(root: string, index: Index, policy: JournalSegmentPolicy, i
   await removeGarbage(root, index);
 }
 
-/** Called immediately before append, under events.lock. Small legacy journals
- * retain their old one-file shape. Activation/rotation is crash-recoverable;
+/** Called immediately before append, under events.lock. Unbound small legacy
+ * journals retain their shape. A known canonical source is bound on first write
+ * so later deletion cannot silently restore larger defaults. Rotation is recoverable;
  * the append itself is never replayed by recovery. */
-export async function prepareJournalAppend(root: string, incomingBytes: number, options: JournalRotationOptions = {}) {
-  const policy = policyFor(options.policy), now = options.nowMs ?? Date.now();
+export async function prepareJournalAppend(root: string, incomingBytes: number, options: JournalRotationOptions = {}): Promise<(() => Promise<void>) | undefined> {
+  if (options.configurationRoot !== undefined && options.policy !== undefined) throw new Error("journal_policy_conflicting_sources");
+  const receipt = options.configurationRoot !== undefined ? await readJournalPolicy(options.configurationRoot) : undefined;
+  const policy = policyFor(receipt?.policy ?? options.policy), now = options.nowMs ?? Date.now();
   if (!uint(now) || now < 1 || !uint(incomingBytes) || incomingBytes > MAX_LINE_BYTES
     || incomingBytes + 256 > policy.segmentBytes) throw new Error("journal_record_capacity");
   await checkDirectory(root);
   let index = await readIndexFile(join(root, "log", INDEX));
   let st = await safeStat(activePath(root)).catch(e => { if (missing(e)) return null; throw e; });
+  const binding = index?.policyBinding ?? (index?.writerPolicy ? { sourceRootId: index.writerPolicy.sourceRootId, configRequired: index.writerPolicy.source === "canonical-config" } : undefined);
+  if (binding && binding.sourceRootId !== receipt?.sourceRootId) throw new Error("journal_policy_source_required");
+  if (binding?.configRequired && receipt?.source !== "canonical-config") throw new Error("journal_storage_config_unavailable");
   if (!index) {
-    if (!st || st.size + incomingBytes <= policy.segmentBytes && !(await partialTail(activePath(root), st.size))) return;
+    if (!st && receipt?.source === "canonical-config") {
+      const initial = await open(activePath(root), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      try { await initial.sync(); } finally { await initial.close(); }
+      st = await safeStat(activePath(root));
+    }
+    if (!st || receipt?.source !== "canonical-config" && st.size + incomingBytes <= policy.segmentBytes && !(await partialTail(activePath(root), st.size))) return;
     index = { schemaVersion: 1, format: FORMAT, revision: 1, active: descriptor(st, randomUUID(), 1, now),
-      closed: [], garbage: [], pending: null, retiredThrough: 0, retiredSegments: 0, retiredBytes: 0 };
+      closed: [], garbage: [], pending: null, retiredThrough: 0, retiredSegments: 0, retiredBytes: 0,
+      ...(receipt ? { policyBinding: { sourceRootId: receipt.sourceRootId, configRequired: receipt.source === "canonical-config" } } : {}) };
     await publish(root, index);
+  }
+  if (receipt && (!index.policyBinding || receipt.source === "canonical-config" && !index.policyBinding.configRequired)) {
+    index.policyBinding = { sourceRootId: receipt.sourceRootId, configRequired: receipt.source === "canonical-config" };
+    index.revision++; await publish(root, index);
   }
   await finishRotation(root, index); await removeGarbage(root, index);
   st = await safeStat(activePath(root)); if (!matches(st, index.active)) invalid();
   if (st.size + incomingBytes > policy.segmentBytes || now >= index.active.createdAtMs + policy.maxAgeMs || await partialTail(activePath(root), st.size)) {
     // Reserve the next file header before creation; archived files are retired
     // first so even the rename/create window has a bounded data footprint.
-    await prune(root, index, policy, incomingBytes + 256, now, options.afterStage);
+    // A confirmed policy shrink may leave the existing active file larger than
+    // the new allocation. Seal it first, then reclaim that now-closed segment.
+    // No new event is admitted until the requested cap is restored. The one
+    // new header is bounded migration overhead, not permission to grow data.
+    if (st.size + incomingBytes + 256 <= policy.maxBytes) await prune(root, index, policy, incomingBytes + 256, now, options.afterStage);
     index.pending = { source: { ...index.active, bytes: st.size }, nextId: randomUUID(), nextSequence: index.active.sequence + 1, atMs: now };
     index.revision++; await publish(root, index); options.afterStage?.("intent");
     await finishRotation(root, index, options.afterStage);
   }
   await prune(root, index, policy, incomingBytes, now, options.afterStage);
+  // A query/config save/GC cannot manufacture writer adoption. This callback
+  // runs only after append+fsync, while the same writer lock is still held.
+  if (incomingBytes > 0 && receipt && (index.writerPolicy?.storageRevision !== receipt.storageRevision || index.writerPolicy?.source !== receipt.source)) {
+    const captured = index;
+    return async () => {
+      captured.writerPolicy = { ...receipt, observedAtMs: now };
+      captured.revision++;
+      await publish(root, captured);
+    };
+  }
 }
 
 export type JournalSegmentEntry = JournalSegment & { path: string; sealed: boolean };
@@ -203,6 +244,7 @@ export type JournalSegmentEntry = JournalSegment & { path: string; sealed: boole
 export async function inspectJournalSegments(root: string): Promise<{
   mode: "legacy" | "segmented"; entries: JournalSegmentEntry[]; revision: number; retiredThrough: number;
   retiredSegments: number; retiredBytes: number; pending: boolean; gaps: string[];
+  writerPolicy?: Omit<NonNullable<Index["writerPolicy"]>, "sourceRootId">;
 }> {
   try { await checkDirectory(root, false); } catch (e) {
     if (missing(e)) return { mode: "legacy", entries: [], revision: 0, retiredThrough: 0, retiredSegments: 0, retiredBytes: 0, pending: false, gaps: [] };
@@ -227,7 +269,9 @@ export async function inspectJournalSegments(root: string): Promise<{
   }
   return { mode: "segmented", entries: entries.sort((a, b) => a.sequence - b.sequence), revision: index.revision,
     retiredThrough: index.retiredThrough, retiredSegments: index.retiredSegments, retiredBytes: index.retiredBytes,
-    pending: index.pending !== null || index.garbage.length > 0, gaps: [...new Set(gaps)] };
+    pending: index.pending !== null || index.garbage.length > 0, gaps: [...new Set(gaps)],
+    ...(index.writerPolicy ? { writerPolicy: { source: index.writerPolicy.source, storageRevision: index.writerPolicy.storageRevision,
+      observedAtMs: index.writerPolicy.observedAtMs, policy: { ...index.writerPolicy.policy } } } : {}) };
 }
 
 /** Watchdog retention must not rewrite a registered active inode. Semantic
