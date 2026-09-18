@@ -99,7 +99,8 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
         return yield* Effect.fail(ownershipUseError("ownership_gateway_mismatch", "unavailable", input.agentId));
       }
       const witness = inspectNativeOwnershipLocal({ agentId: input.agentId, snapshot: result.snapshot, nowMs: yield* Clock.currentTimeMillis });
-      if (!witness.valid) return yield* Effect.fail(ownershipUseError("ownership_bridge_unavailable", "unavailable", input.agentId));
+      if (!witness.valid) return yield* Effect.fail(ownershipUseError("ownership_bridge_unavailable", "unavailable", input.agentId,
+        undefined, { localWitnessFailure: witness.failure! }));
       const hostKey = canonicalJson([input.hostGeneration, result.gateway.pid, result.gateway.startedAt]);
       const previous = observedScopes.get(hostKey);
       if (previous !== undefined && previous !== witness.scopeId) retireHost(hostKey);
@@ -280,7 +281,8 @@ export function makeOwnershipCoordinator(read?: OwnershipReader, options: Option
           localSnapshot: after.result.snapshot, nowMs: yield* Clock.currentTimeMillis });
         if (!decision.ok) {
           entry.retired = true;
-          return yield* Effect.fail(ownershipUseError(decision.reason, decision.class, input.agentId, decision.ownershipRead));
+          return yield* Effect.fail(ownershipUseError(decision.reason, decision.class, input.agentId, decision.ownershipRead,
+            decision.localWitnessFailure ? { localWitnessFailure: decision.localWitnessFailure } : undefined));
         }
         if (input.evidenceOwner) reuseOwners.set(input.evidenceOwner, entry.operationId);
         return { ...value, gateway: after.result.gateway, evidence: decision.evidence, evidenceId: entry.operationId,

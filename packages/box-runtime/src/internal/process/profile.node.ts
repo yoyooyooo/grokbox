@@ -19,7 +19,7 @@ import {
 } from "../ops/host-seam/envelope-windows.ts";
 import { readHostBundleSource } from "../io/provenance.node.ts";
 import { retainedGenerationSourcePath, reviewedProfilePath } from "../io/paths.ts";
-import { applyPatchProfile, approvedSliceSet, MAX_APPROVED_SLICES, OPTIONAL_SLICE_IDS, profileFromSource, type PatchProfile, type SliceId, type SlicePatch } from "../host/profile.ts";
+import { applyPatchProfile, approvedSliceSet, MAX_APPROVED_SLICES, OPTIONAL_SLICE_IDS, preflightProfileRecipe, type TransformFailure, type PatchProfile, type SliceId, type SlicePatch } from "../host/profile.ts";
 
 export function loadDurableReviewedProfile(root: string): PatchProfile | undefined {
   try {
@@ -65,7 +65,8 @@ export type ProfileWriteRefusal =
   | "retained_missing"
   | "missing_golden"
   | "envelope_unmeasurable"
-  | "envelope_drift";
+  | "envelope_drift"
+  | "recipe_unapplicable";
 
 export type WriteEnvelopeReceipt = {
   bootstrap: boolean;
@@ -114,11 +115,18 @@ export function profileWriteExecutableNext(candidateSha: string, driftedIds: rea
     : `grokbox runtime profile write --sha ${candidateSha}`;
 }
 
+/** A failed recipe needs adaptation, not a replay of the same write command. */
+export function profileRecipeFailureNext(fromPath: string): string {
+  const quoted = `'${fromPath.replace(/'/g, "'\\''")}'`;
+  return `grokbox runtime profile propose --from ${quoted} --out <abs>`;
+}
+
 export type ProfileWriteInspect = {
   pinSha: string | null;
   candidateSha: string;
   bootstrap: boolean;
-  refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | null;
+  refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | "recipe_unapplicable" | null;
+  recipeFailure?: TransformFailure;
   requiredIds: SliceId[];
   informationalIds: SliceId[];
   insertionGroups: EnvelopeInsertionGroup[];
@@ -160,16 +168,15 @@ async function loadCandidateEnvelopeWindows(
   candidateSha: string,
   recipe: readonly SlicePatch[],
   generationPresent: boolean,
-): Promise<EnvelopeWindows | null> {
-  if (!generationPresent) return null;
+): Promise<{ candidate: EnvelopeWindows | null; sourceAvailable: boolean; recipeFailure?: TransformFailure }> {
+  if (!generationPresent) return { candidate: null, sourceAvailable: false };
   const source = await readHostBundleSource(root, candidateSha);
-  if (!source) return null;
-  // Analyze the same recipe that the next writer will actually apply. A retained
-  // observation made with the old pin is historical evidence, not the candidate
-  // recipe; reusing it hides newly added context slices from the review command.
-  try {
-    return envelopeWindowsFromRecipe(source, profileFromSource(source, authoringSlices(recipe), "write-envelope-candidate"));
-  } catch { return null; }
+  if (!source) return { candidate: null, sourceAvailable: false };
+  // Match the exact recipe the writer will apply; historical windows cannot
+  // establish that newly selected patches apply to this generation.
+  const inspected = preflightProfileRecipe(source, authoringSlices(recipe), "write-envelope-candidate");
+  if (!inspected.ok) return { candidate: null, sourceAvailable: true, recipeFailure: inspected };
+  return { candidate: envelopeWindowsFromRecipe(source, inspected.profile), sourceAvailable: true };
 }
 
 /** Read-only write-gate compare for analyze. Never authors reviewed.json. */
@@ -179,7 +186,7 @@ export async function inspectRetainedWriteEnvelope(root: string, candidateSha: s
   const resolved = resolve(root);
   const baseline = await loadWriteEnvelopeBaseline(resolved);
   const generationPresent = await retainedGenerationPresent(resolved, candidateSha);
-  const candidate = await loadCandidateEnvelopeWindows(resolved, candidateSha, recipe, generationPresent);
+  const { candidate, sourceAvailable, recipeFailure } = await loadCandidateEnvelopeWindows(resolved, candidateSha, recipe, generationPresent);
   const admission = admitWriteEnvelope({
     pinSha: baseline.pinSha,
     golden: baseline.golden,
@@ -188,12 +195,16 @@ export async function inspectRetainedWriteEnvelope(root: string, candidateSha: s
     sliceReview: [],
   });
   const requiredIds = admission.requiredIds;
-  const sliceReviewRequired = !admission.ok && admission.refusal === "envelope_drift";
+  const sliceReviewRequired = !recipeFailure && !admission.ok && admission.refusal === "envelope_drift";
   const limitations: string[] = [];
   if (!generationPresent) limitations.push("retained_generation_missing");
+  if (recipeFailure) limitations.push("recipe_unapplicable");
+  else if (generationPresent && (!sourceAvailable || !candidate && !admission.ok)) limitations.push("candidate_unmeasurable");
   let next: string;
   if (!generationPresent) {
     next = profileWriteUnretainedNext(LIVE_HOST_BUNDLE);
+  } else if (recipeFailure || !sourceAvailable || !candidate && !admission.ok && admission.refusal === "envelope_unmeasurable") {
+    next = profileRecipeFailureNext(retainedGenerationSourcePath(resolved, candidateSha));
   } else if (!admission.ok && admission.refusal === "missing_golden" && baseline.pinSha) {
     next = profileWriteMissingGoldenNext(retainedGenerationSourcePath(resolved, baseline.pinSha));
   } else {
@@ -203,7 +214,8 @@ export async function inspectRetainedWriteEnvelope(root: string, candidateSha: s
     pinSha: baseline.pinSha,
     candidateSha,
     bootstrap: admission.bootstrap,
-    refusal: admission.ok ? null : admission.refusal,
+    refusal: recipeFailure ? "recipe_unapplicable" : !sourceAvailable && generationPresent ? "envelope_unmeasurable" : admission.ok ? null : admission.refusal,
+    ...(recipeFailure ? { recipeFailure } : {}),
     requiredIds,
     informationalIds: admission.informational.map((row) => row.id),
     insertionGroups: admission.insertionGroups,
@@ -462,12 +474,12 @@ export async function writeReviewedProfileFromCopy(
     }
   }
 
-  let profile: PatchProfile;
-  try {
-    profile = profileFromSource(source, slices, profileId);
-  } catch {
-    invalid("Host bundle does not match the approved profile slices.");
+  const inspected = preflightProfileRecipe(source, slices, profileId);
+  if (!inspected.ok) {
+    refuse("recipe_unapplicable", "Host bundle does not match the approved profile slices.",
+      profileRecipeFailureNext(hostBundle), { recipeFailure: inspected });
   }
+  const profile = inspected.profile;
   const applied = applyPatchProfile(source, profile);
   if (!applied.ok || profile.sourceSha256 !== diskSha ||
     sha256Bytes(Buffer.from(applied.source, "utf8")) !== profile.transformedSourceSha256) {
@@ -501,8 +513,8 @@ export async function writeReviewedProfileFromCopy(
       if (admission.refusal === "envelope_unmeasurable") {
         refuse(
           "envelope_unmeasurable",
-          "Candidate Host is not a 19-slice envelope; cannot compare against the pinned golden.",
-          profileWriteDriftNext(diskSha, []),
+          "Candidate recipe has no measurable envelope; adapt the recipe before writing.",
+          profileRecipeFailureNext(hostBundle),
           { pinSha, candidateSha: diskSha },
         );
       }

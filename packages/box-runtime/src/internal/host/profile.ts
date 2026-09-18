@@ -106,15 +106,24 @@ export function applyPatchProfile(source: string, profile: PatchProfile): Transf
   return { ok: true, source: next, sourceSha256, transformedSha256 };
 }
 
-export function profileFromSource(source: string, slices: readonly SlicePatch[], profileId = "synthetic"): PatchProfile {
+/** Shared authoring preflight. Failures contain only finite codes/IDs, never source text. */
+export function preflightProfileRecipe(source: string, slices: readonly SlicePatch[], profileId = "synthetic"):
+  | { ok: true; profile: PatchProfile }
+  | TransformFailure {
   const applied = transformUnchecked(source, slices);
-  if (!applied.ok) throw new Error(`synthetic profile failed: ${applied.code}`);
-  return {
+  if (!applied.ok) return applied;
+  return { ok: true, profile: {
     profileId,
     sourceSha256: applied.sourceSha256,
     transformedSourceSha256: applied.transformedSha256,
     slices,
-  };
+  } };
+}
+
+export function profileFromSource(source: string, slices: readonly SlicePatch[], profileId = "synthetic"): PatchProfile {
+  const inspected = preflightProfileRecipe(source, slices, profileId);
+  if (!inspected.ok) throw new Error(`synthetic profile failed: ${inspected.code}${inspected.sliceId ? ` (${inspected.sliceId})` : ""}`);
+  return inspected.profile;
 }
 
 export function transformUnchecked(source: string, slices: readonly SlicePatch[]): TransformResult {

@@ -22,6 +22,21 @@ function message(detail?: AuthorityDiagnostic): string {
   if (detail?.reason === "ownership_read_timeout") return detail.availabilityCause === "wait_budget"
     ? "This STEP exhausted its remaining qualification wait budget. This does not establish that Bot ownership changed."
     : "The local runtime timed out waiting for the Host/Gateway ownership read. This does not establish that Bot ownership changed.";
+  if (detail?.reason === "ownership_bridge_unavailable" && detail.localWitnessFailure) {
+    const explanations = {
+      source_mismatch: "The Host did not return a native-local ownership witness; a server registration snapshot cannot replace it.",
+      schema_mismatch: "The Host native-local ownership witness uses an unsupported schema; schema 1 is required.",
+      observation_unavailable: "The Host could not complete its native-local witness observation. This alone does not establish a missing bridge capability.",
+      scope_unavailable: "The native-local witness could not establish its identity scope.",
+      scope_changed: "The native-local identity scope was unstable during observation.",
+      target_limit: "The native-local witness exceeded the bounded target limit.",
+      target_missing: "The native-local witness did not contain the requested Bot.",
+      target_ambiguous: "The native-local witness contained duplicate rows for the requested Bot.",
+      clock_invalid: "The native-local witness timestamps could not be validated; check clock and observation order.",
+      evidence_expired: "The native-local witness expired before it could authorize execution; the evidence-age limit was not relaxed.",
+    };
+    return explanations[detail.localWitnessFailure];
+  }
   if (["ownership_reader_unavailable", "ownership_read_unavailable", "ownership_bridge_unavailable", "ownership_gateway_mismatch"].includes(detail?.reason ?? "")) {
     return "The local runtime could not obtain ownership evidence through the current Host/Gateway channel. Check the channel and loaded components; this does not establish that the Host is stopped.";
   }
@@ -52,13 +67,15 @@ export function presentAuthorityFailure(raw: AuthorityDiagnostic | undefined, ta
   const ownership = `grokbox agents ownership ${id(target.agentId) ? target.agentId : "<agent>"}`;
   const incident = id(target.agentId) && id(target.stepId)
     ? `grokbox runtime incident ${target.stepId} --agent ${target.agentId} --json` : ownership;
-  const component = ["ownership_bridge_unavailable", "ownership_gateway_mismatch", "host_identity_mismatch", "host_generation_changed", "authority_not_committed"].includes(reason ?? "")
+  const witnessRuntime = reason === "ownership_bridge_unavailable" && detail?.localWitnessFailure !== undefined
+    && !["source_mismatch", "schema_mismatch"].includes(detail.localWitnessFailure);
+  const component = !witnessRuntime && ["ownership_bridge_unavailable", "ownership_gateway_mismatch", "host_identity_mismatch", "host_generation_changed", "authority_not_committed"].includes(reason ?? "")
     || reason === "server_read_unavailable" && ["unsupported_rpc", "invalid_request", "invalid_response"].includes(readCode ?? "");
-  const local = ["ownership_reader_unavailable", "ownership_read_unavailable", "authority_unavailable", "native_execution_not_ready"].includes(reason ?? "");
+  const local = witnessRuntime || ["ownership_reader_unavailable", "ownership_read_unavailable", "authority_unavailable", "native_execution_not_ready"].includes(reason ?? "");
   const access = reason === "server_read_unavailable" && readCode === "authorization_unavailable";
   const action = component ? "align_local_components" : local ? "inspect_local_runtime"
     : access ? "check_ownership_access" : "check_ownership";
-  const next = component || local ? "grokbox doctor"
+  const next = witnessRuntime ? (id(target.stepId) ? incident : "grokbox runtime status --json") : component || local ? "grokbox doctor"
     : ["ownership_evidence_stale", "ownership_read_timeout", "turn_closed", "turn_revoked"].includes(reason ?? "") ? incident : ownership;
   return { message: message(detail), action, next };
 }

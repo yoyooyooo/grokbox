@@ -27,7 +27,7 @@ export type OwnershipReader = ((agentIds: string[], signal: AbortSignal) => Prom
   local?: (agentIds: string[], signal: AbortSignal) => Promise<OwnershipReadReply>;
 };
 
-type AvailabilityDetail = Pick<AuthorityDiagnostic, "availabilityCause" | "evidenceAgeMs">;
+type AvailabilityDetail = Pick<AuthorityDiagnostic, "availabilityCause" | "evidenceAgeMs" | "localWitnessFailure">;
 
 export function presentOwnershipRefusal(input: {
   reason: string;

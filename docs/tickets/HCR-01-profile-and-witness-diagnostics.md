@@ -1,6 +1,6 @@
 # HCR-01 — 配方与 local-witness 诊断
 
-Status: implementing. Depends-on: existing HSO writer and strict-observation-v2.
+Status: implemented / targeted offline verified; independent review pending. Depends-on: existing HSO writer and strict-observation-v2.
 
 ## Goal / owner
 
@@ -19,4 +19,4 @@ Status: implementing. Depends-on: existing HSO writer and strict-observation-v2.
 
 ## Evidence
 
-实施后记录固定测试命令与结果。当前真实加载与App验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)，这里不另维护live进度。
+2026-09-18：声明版本 Bun 1.3.14 frozen install、typecheck通过；`hcr-diagnostics`、`reviewed-profile-write`、`reviewed-profile-write-lineage`、`ownership-coordinator`、`ownership-availability-presentation` 五文件合计101 pass / 0 fail。新增15项覆盖配方原子拒绝、witness细因、getter/自由字符串脱敏和动态失败不导向组件升级。当前真实加载与App验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)，这里不另维护live进度。

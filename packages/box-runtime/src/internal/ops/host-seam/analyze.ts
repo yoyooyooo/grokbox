@@ -3,6 +3,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import type { EnvelopeInsertionGroup } from "./envelope-windows.ts";
+import type { TransformFailure } from "../../host/profile.ts";
 import type { ReplayReport } from "./replay.ts";
 import type { CandidateArtifact } from "./propose.ts";
 
@@ -21,7 +22,8 @@ export type AnalysisEnvelopeEvidence = {
   pinSha: string | null;
   candidateSha: string;
   bootstrap: boolean;
-  refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | null;
+  refusal: "missing_golden" | "envelope_unmeasurable" | "envelope_drift" | "recipe_unapplicable" | null;
+  recipeFailure?: TransformFailure;
   requiredIds: string[];
   informationalIds: string[];
   insertionGroups: EnvelopeInsertionGroup[];
@@ -55,6 +57,7 @@ export function attachWriteEnvelopeInspect(
     candidateSha: string;
     bootstrap: boolean;
     refusal: AnalysisEnvelopeEvidence["refusal"];
+    recipeFailure?: TransformFailure;
     requiredIds: readonly string[];
     informationalIds: readonly string[];
     insertionGroups: EnvelopeInsertionGroup[];
@@ -76,6 +79,7 @@ export function attachWriteEnvelopeInspect(
       candidateSha: inspect.candidateSha,
       bootstrap: inspect.bootstrap,
       refusal: inspect.refusal,
+      ...(inspect.recipeFailure ? { recipeFailure: inspect.recipeFailure } : {}),
       requiredIds: [...inspect.requiredIds],
       informationalIds: [...inspect.informationalIds],
       insertionGroups: inspect.insertionGroups,

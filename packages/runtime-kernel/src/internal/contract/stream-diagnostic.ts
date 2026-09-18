@@ -3,6 +3,7 @@ import { addFinishField, observeFinishField, projectFinishAudit, projectToolTerm
 import { projectOwnershipReadObservation, projectOwnershipWaitObservation, projectOwnershipRecoveryObservation, type OwnershipRecoveryObservation, type OwnershipWaitObservation, type OwnershipReadObservation } from "./ownership-observation.ts";
 import { projectToolIdentityAudit, type ToolIdentityAudit } from "./tool-identity-observation.ts";
 import { projectSdkValidation, type SdkValidationObservation } from "./sdk-validation-observation.ts";
+import { LOCAL_WITNESS_FAILURES, type LocalWitnessFailure } from "./ownership.ts";
 /** Payload-free, request-local evidence shared by modeld and the SDK/Effect-free Host. */
 export const NORMALIZE_CAUSES = [
   "reasoning_request_conflict", "missing_finish", "unsupported_finish_reason", "open_tools_at_finish", "tool_arguments_invalid",
@@ -57,6 +58,7 @@ export type AuthorityDiagnostic = {
   reason: typeof AUTHORITY_REASONS[number];
   /** Detecting-boundary explanation only. It never grants permission or retry. */
   availabilityCause?: typeof AUTHORITY_AVAILABILITY_CAUSES[number];
+  localWitnessFailure?: LocalWitnessFailure;
   checkpoint?: typeof AUTHORITY_CHECKPOINTS[number];
   durationMs?: number;
   evidenceAgeMs?: number;
@@ -185,12 +187,14 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
       const cause = member(own(authority, "availabilityCause"), AUTHORITY_AVAILABILITY_CAUSES);
       const availabilityCause = reason === "ownership_evidence_stale" && cause !== "wait_budget" ? cause
         : reason === "ownership_read_timeout" && cause === "wait_budget" ? cause : undefined;
+      const localWitnessFailure = reason === "ownership_bridge_unavailable"
+        ? member(own(authority, "localWitnessFailure"), LOCAL_WITNESS_FAILURES) : undefined;
       const durationMs = count(own(authority, "durationMs")), evidenceAgeMs = count(own(authority, "evidenceAgeMs"));
       const waitBudgetMs = count(own(authority, "waitBudgetMs"));
       const ownershipRead = projectOwnershipReadObservation(own(authority, "ownershipRead"));
       const ownershipWait = projectOwnershipWaitObservation(own(authority, "ownershipWait"));
       const readRecovery = projectOwnershipRecoveryObservation(own(authority, "readRecovery"));
-      out.authority = { reason, ...(availabilityCause ? { availabilityCause } : {}), ...(checkpoint ? { checkpoint } : {}), ...(durationMs !== undefined ? { durationMs } : {}),
+      out.authority = { reason, ...(localWitnessFailure ? { localWitnessFailure } : {}), ...(availabilityCause ? { availabilityCause } : {}), ...(checkpoint ? { checkpoint } : {}), ...(durationMs !== undefined ? { durationMs } : {}),
         ...(evidenceAgeMs !== undefined ? { evidenceAgeMs } : {}), ...(waitBudgetMs !== undefined ? { waitBudgetMs } : {}),
         ...(ownershipRead ? { ownershipRead } : {}), ...(ownershipWait ? { ownershipWait } : {}), ...(readRecovery ? { readRecovery } : {}) };
     }

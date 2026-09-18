@@ -9,6 +9,8 @@ export const OWNERSHIP_SERVER_CACHE_MS = 2_000;
 export const OWNERSHIP_WAIT_MS = 10_000;
 export const OWNERSHIP_MAX_TARGETS = 32;
 export const OWNERSHIP_LOCAL_SOURCE = "Host.native-local-ownership" as const;
+export const LOCAL_WITNESS_FAILURES = ["source_mismatch", "schema_mismatch", "observation_unavailable", "scope_unavailable", "scope_changed", "target_limit", "target_missing", "target_ambiguous", "clock_invalid", "evidence_expired"] as const;
+export type LocalWitnessFailure = typeof LOCAL_WITNESS_FAILURES[number];
 
 export function chunkOwnershipTargets(ids: readonly string[]): string[][] {
   const unique: string[] = [];
@@ -157,13 +159,24 @@ export function inspectNativeOwnershipLocal(input: { agentId: string; snapshot: 
   const execution = rec(value.localExecution);
   const executionBefore = rec(execution.before), executionAfter = rec(execution.after);
   const window = rec(value.localMigrationWindow);
-  const valid = value.schemaVersion === 1 && value.source === OWNERSHIP_LOCAL_SOURCE && value.state === "observed"
-    && scope.stable === true && scopeId !== null && rows.length <= OWNERSHIP_MAX_TARGETS && matches.length === 1
-    && Number.isFinite(input.nowMs) && input.nowMs >= 0
-    && times.every(time => Number.isFinite(time) && time <= input.nowMs && input.nowMs - time <= OWNERSHIP_EVIDENCE_MAX_AGE_MS)
-    && times[0]! <= times[1]!;
+  // Keep the original admission predicate; report the first failed boundary
+  // without returning untrusted strings or turning diagnostics into permission.
+  const failure: LocalWitnessFailure | null = value.source !== OWNERSHIP_LOCAL_SOURCE ? "source_mismatch"
+    : value.schemaVersion !== 1 ? "schema_mismatch"
+    : value.state !== "observed" ? value.errorCode === "scope_changed" ? "scope_changed"
+      : value.errorCode === "scope_unavailable" ? "scope_unavailable"
+      : value.errorCode === "clock_unavailable" ? "clock_invalid" : "observation_unavailable"
+    : scopeId === null ? "scope_unavailable"
+    : scope.stable !== true ? "scope_changed"
+    : rows.length > OWNERSHIP_MAX_TARGETS ? "target_limit"
+    : matches.length === 0 ? "target_missing"
+    : matches.length !== 1 ? "target_ambiguous"
+    : !Number.isFinite(input.nowMs) || input.nowMs < 0
+      || !times.every(time => Number.isFinite(time) && time <= input.nowMs) || times[0]! > times[1]! ? "clock_invalid"
+    : times.some(time => input.nowMs - time > OWNERSHIP_EVIDENCE_MAX_AGE_MS) ? "evidence_expired" : null;
+  const valid = failure === null;
   return {
-    valid, scopeId, observedAt, completedAt,
+    valid, failure, scopeId, observedAt, completedAt,
     ready: valid && stable && before.serverId !== null && before.harness !== "unknown"
       && executionBefore.allowed === true && executionAfter.allowed === true
       && executionBefore.bound === true && executionAfter.bound === true
@@ -180,7 +193,7 @@ export function decideOwnershipWithLocal(input: {
   agentId: string; remote: RemoteOwnershipEvidence; localSnapshot: unknown; nowMs: number;
 }): OwnershipDecision {
   const local = inspectNativeOwnershipLocal({ agentId: input.agentId, snapshot: input.localSnapshot, nowMs: input.nowMs });
-  if (!local.valid) return refuse("ownership_bridge_unavailable", undefined, input.remote.readObservation);
+  if (!local.valid) return { ...refuse("ownership_bridge_unavailable", undefined, input.remote.readObservation), localWitnessFailure: local.failure! };
   if (!local.ready) return refuse("native_execution_not_ready", undefined, input.remote.readObservation);
   if (input.remote.scope?.id !== local.scopeId) return refuse("ownership_identity_changed", undefined, input.remote.readObservation);
   return decideManagedOwnership({ agentId: input.agentId, nowMs: input.nowMs, snapshot: {
@@ -196,7 +209,7 @@ export function decideOwnershipWithLocal(input: {
 export type OwnershipAdmission = { scopeId: string; serverId: string; observedAtMs: number };
 export type OwnershipDecision =
   | { ok: true; evidence: OwnershipAdmission }
-  | { ok: false; reason: string; class: OwnershipRefusalClass; ownershipRead?: OwnershipReadObservation };
+  | { ok: false; reason: string; class: OwnershipRefusalClass; ownershipRead?: OwnershipReadObservation; localWitnessFailure?: LocalWitnessFailure };
 
 const UNAVAILABLE_REASONS = new Set([
   "ownership_reader_unavailable",
@@ -216,7 +229,7 @@ export function classifyManagedOwnershipRefusal(reason: string, state?: Ownershi
   return "unconfirmed";
 }
 
-function refuse(reason: string, state?: OwnershipState, ownershipRead?: OwnershipReadObservation): OwnershipDecision {
+function refuse(reason: string, state?: OwnershipState, ownershipRead?: OwnershipReadObservation): Extract<OwnershipDecision, { ok: false }> {
   return { ok: false, reason, class: classifyManagedOwnershipRefusal(reason, state), ...(ownershipRead ? { ownershipRead } : {}) };
 }
 
