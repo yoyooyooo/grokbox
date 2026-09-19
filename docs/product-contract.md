@@ -79,7 +79,7 @@ Bot 和 Group 是原生 roster 中的不同对象。show 不附带历史；历�
 Routine 管理已存在 list/show/enable/disable/delete、单份 disabled apply、provision outcome/reconcile；完整批量、agents create/update --routines-from、通用 invoke/native outcome 仍不能由这些子集推导。准确差额归 [ops/T53](tickets/T53-agent-routines-cli.md)。默认新任务 disabled；未列出的任务不删除；禁用不证明在途运行已取消；原生无 CAS 时不以本地锁宣称跨 App 排他。原生调度仍是权威。
 
 <a id="bot-continuity"></a>
-官方式 duplicate、当前状态、clone、replace 和 spawn 是不同操作。已实现的 duplicate 与 state 基础入口按 [操作指南](maintainers/current-state-control.md) 和 [duplicate](maintainers/native-agent-duplicate.md) 使用；完整状态保真、替身交接与退役的接受目标归 [连续性](runtime/continuity.md)，没有会话列表/切换或跨机器迁移。
+官方式 duplicate、当前状态、clone、replace 和 spawn 是不同操作。各有限源码入口与剩余边界统一由 [连续性](runtime/continuity.md)说明；操作分别见 [当前状态控制](maintainers/current-state-control.md)、[生命周期与交接](maintainers/bot-lifecycle.md)和 [duplicate](maintainers/native-agent-duplicate.md)。准备、激活、启动、业务交付、关系迁移与源退役分别取证，没有会话列表/切换或跨机器迁移。
 
 ### 7.2 Groups
 

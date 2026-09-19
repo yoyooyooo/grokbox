@@ -9,7 +9,8 @@ Choose the operation or question. These guides are not a mandatory reading seque
 | Inspect Server/local harness disagreement | [Transcript/ownership](transcript-harness-box-vs-server.md) |
 | Operate the collector and incident store | [Continuous observation](continuous-observation.md) |
 | Configure pairing, reminders and their limits | [Native operations](template-ops-automation.md), [operations contract](../runtime/operations.md) |
-| Capture/initialize/reconcile current state | [Current-state control](current-state-control.md) |
+| Capture/initialize/reset/recover/reconcile current state | [Current-state control](current-state-control.md) |
+| Clone, replace, spawn, or inspect protection/handover | [Bot lifecycle](bot-lifecycle.md), [continuity contract](../runtime/continuity.md) |
 | Create an official-style duplicate | [Native duplicate](native-agent-duplicate.md) |
 | Evaluate context preservation and auxiliary purposes | [Managed continuity](managed-context-continuity.md), [E07 admission](e07-path-b-host-admission.md) |
 | Inspect Pi compaction provenance and upgrade constraints | [Pi reference](pi-compaction-reference.md) |

@@ -1,6 +1,6 @@
 # 单 Box 当前状态、复制与交接
 
-本页区分已经实现的当前状态/复制基础和已接受但尚未交付的完整连续性目标。源码是实现事实，[CONT 来源票](../tickets/README.md#ownership-continuity)拥有具体差额，[LIVE](../tickets/LIVE-integration-validation.md#live-ownership-continuity)拥有当前现场资格。原生协议事实归 [upstream integration](../upstream-integration.md#continuity-import-boundary)。
+本页区分已经实现的当前状态、复制与有限生命周期能力，以及已接受但尚未交付的完整连续性目标。源码是实现事实，[CONT 来源票](../tickets/README.md#ownership-continuity)拥有具体差额，[LIVE](../tickets/LIVE-integration-validation.md#live-ownership-continuity)拥有当前现场资格。原生协议事实归 [upstream integration](../upstream-integration.md#continuity-import-boundary)。
 
 ## 一个产品模型
 
@@ -15,13 +15,13 @@
 | 能力 | 当前边界 |
 | --- | --- |
 | 私有恢复与 safety store | CONT 本域 SQLite、manifest/blob、内容绑定意图和 claim；不是 OBS 日志缓存 |
-| 原生 capture / initialize / reconcile | 有限 current-state profile 能力、worker 事务、主 Host 准备屏障/root CAS/应用凭据和 CLI；只对声明的空白目标，unknown 不重导 |
+| 原生 capture / initialize / reconcile | 有限 current-state profile 能力、worker 事务、主 Host 准备屏障/root CAS/应用凭据和 CLI；initialize 限定空白目标，unknown 不重导；材料可含声明的 agent Memory/历史/受管指令补充 |
 | 官方式 duplicate | 原生新 ID、持久创建回执与独立归属读回；保留官方复制语义，不是完整 clone 或安全 prepared 替身 |
-| reset / semantic recover /完整分档保护 | 接受目标，不能从 initialize 子集推导已完整实现 |
-| clone / replace / instructed spawn | 接受目标，参数随正式 registry 实现，不把旧目标命令树当可运行 CLI |
-| 按职责交接、旧入站收敛与自动退役 | 接受目标，需独立权限、能力、存储与实际用户旅程证明 |
+| 外部空闲 Bot reset / recover | 已注册原生备份→候选→受控替换→读回入口；不回滚长期 Memory 或文件。self-reset 安全排队、完整语义恢复仍有差额 |
+| clone / replace / instructed spawn | 已有固定 plan、持久分阶段程序、目标创建/选模/初始化/激活和程序 startup；clone 默认准备完成而不激活，replace 默认激活并进入交接，spawn 请求启动。全附件/资源独立性和临时任务结果交付/清理未完成 |
+| protection / handover / convergence | 已有配置消费者、保护与关系账本、有限推进和旧入站观察；完整外部任务与逐职责效果约束、多代关系、安全墓碑退役仍未交付。缺少可靠删除前屏障时 retire 保持阻断 |
 
-实际手动操作见 [当前状态控制](../maintainers/current-state-control.md)和 [duplicate](../maintainers/native-agent-duplicate.md)。代码从 kernel `internal/continuity/`、Box `continuity-state.runtime.ts`、`continuity-store.node.ts`、原生 checkpoint/worker 和 CLI agents state/duplicate 进入。来源票保留独立 review 和原生资格差额，不复制其通过计数。
+实际操作见 [当前状态控制](../maintainers/current-state-control.md)、[生命周期与交接](../maintainers/bot-lifecycle.md)和 [duplicate](../maintainers/native-agent-duplicate.md)。代码从 [CLI](../../packages/cli/src/commands/bot-lifecycle.ts)、[生命周期程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)、[工作流存储](../../packages/box-runtime/src/internal/io/continuity-workflows.node.ts)、原生 checkpoint/worker 和 kernel `internal/continuity/` 进入。新增实现的固定证明归 [生命周期集成报告](../reports/2026-09-19-continuity-lifecycle-integration.md)；来源票保留独立 review 和原生资格差额，不复制通过计数。
 
 ## 当前状态与材料的权威
 
@@ -47,17 +47,19 @@ root 槽位可能覆盖同一 ID，因此保存实际字节摘要、完整可达
 
 统一目标链为真实身份 → preparing hold → 初始化材料/指令 → 原生提交/读回/reopen → 受控激活 → 正常 loop/checkpoint。hidden 不是 hold，介绍/kickstart 不是用户任务；准备必须阻止初始化前首轮抢跑。创建需正式新身份与独立 Box 归属核验，不能把旧 Temporal harness 改回 Box。丢失创建回执按原 nonce/ID 对账，不凭名字重建。
 
-当前 initialize 通过有限原生 worker 事务提交依赖图与应用凭据，再由主 Host CAS 指针、重新加载并记录本层应用事实。任一层成功不能替代另一层；中断/unknown 保持屏障，只读不清除，对账不重新导入。仅允许满足空白/无未结历史前置的目标，不能覆盖正在积累新状态的 Bot。
+当前 initialize 通过有限原生 worker 事务提交依赖图与应用凭据，再由主 Host CAS 指针、重新加载并记录本层应用事实。任一层成功不能替代另一层；中断/unknown 保持屏障，只读不清除，对账不重新导入。initialize 仅允许满足空白/无未结历史前置的目标；对有工作历史的 Bot，只有独立 reset/recover 模式可在原生空闲屏障和精确 revision 下替换，不能以 initialize 绕过。
 
-完整 reset/recover 还须处理排队输入、迟到 checkpoint、旧摘要/pins/reply/prepend 和未决工具；只清 messages/root 可能被原生 salvage 复活，不能作为完成。Bot 对自己发起操作先持久排队并结束旧 revision 控制回合，不相互等待；新 revision/activationEpoch 是并发版本，不是新用户会话。
+已实现的外部 reset/recover 在写入前保全当前状态，再使用同一原生接受/读回程序。recover 的候选含 unknown_effects 时改用有来源的受限摘要候选，不重放过去工具；是否恢复完整材料仍须看 coverage。排队输入、迟到 checkpoint、旧摘要/pins/reply/prepend 和未决工具仍需对应验收，不能仅凭命令存在关闭完整恢复合同。self-reset 的安全排队尚未交付：目标是持久排队后结束旧 revision 控制回合，不相互等待；当前不能建议 Bot 直接对自己运行 reset/recover 来验证该目标。
 
-instructed spawn 的接受目标是首次推理前安装有版本的受管指令/材料/模型和预算，再通过正式 startup 进入 loop，不伪造 Human 任务。指令在 compact/restart 后仍存在但不扩工具权限；description/--instructions 和原生介绍流程本身不证明该能力。创建、初始化、ready、started、业务 completed 和安全删除独立取证。TTL 不删除未结任务/未交付结果。
+instructed spawn 已通过有限原生 prepare/compose/startup 接缝安装受管指令并请求程序启动；原生新 turn 的空文本 simulated 载体用于持久事件身份，不作为用户任务追加。description/--instructions 和原生介绍流程仍不是本能力的替代。固定代码探针不证明完整官方 loop/真实 Provider 首请求，compact/restart 后的指令存续与实际费用仍需资格。创建、初始化、ready、started、业务 completed 和安全删除独立取证；当前 maxRunMs 是启动预算，不是有保证的临时 Bot 到期清理服务。
 
 ## 归属丢失、Routine 与通知
 
 复用 monitor/OBS 的无模型观测，事件加速、有限批量轮询兜底；覆盖、cursor、最后成功、scope 和运行代明确。超时/缺桥/陈旧不是迁移，gap 不是静默期。expectedHarness=box 是持续期望，首次即 Temporal 是 baseline mismatch、时间 unknown，不因第二次还是 Temporal 自动 resolve。
 
-接受默认是在确认丢失后独立通知并请求暂停旧 Routine，不等 clone 或 LLM 分析。必须操作当前真实调度 owner，不能只改本地定义代表 Temporal 任务已停。原启用意图、停用回执和在途 fire 分开。pauseOnOwnershipLoss 与 routineTransfer 的 move/keep-source 是独立策略：准备期可继续旧触发，正式 move 再停旧启新；keep-source 不在新端重复启用且阻止源自动删除。missed fire 默认不补跑，新 Webhook 不复制旧 secret。
+保护功能的启用/自动模式以实际 config schema 和 [保护源码](../../packages/cli/src/bot-protection-worker.ts)为准，不能从接受目标推出安装后已开启。当前保护/交接循环的采样节奏及尚未消费的 intervalMs 见操作指南；配置字段存在不是调度已应用证明。
+
+对明确启用的保护，接受默认是在确认丢失后独立通知并请求暂停旧 Routine，不等 clone 或 LLM 分析。必须操作当前真实调度 owner，不能只改本地定义代表 Temporal 任务已停。原启用意图、停用回执和在途 fire 分开。pauseOnOwnershipLoss 与 routineTransfer 的 move/keep-source 是独立策略：准备期可继续旧触发，正式 move 再停旧启新；keep-source 不在新端重复启用且阻止源自动删除。missed fire 默认不补跑，新 Webhook 不复制旧 secret。
 
 归属丢失是用户保护事件，不被“纯上游错误不报项目 bug”过滤吞掉。通知目标、权限/费用、outbox、真实投递仍归 [operations](operations.md)；通知关闭不丢管理事实，接收者不能只依赖失去归属的源 Bot 自己。
 

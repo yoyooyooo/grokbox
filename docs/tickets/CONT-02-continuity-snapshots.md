@@ -1,6 +1,6 @@
 # CONT-02 — 分档保护与有来源的恢复材料
 
-**状态：Partial implementation。真实私有vault、manifest/字节发布、引用保护与回收及J1 owner接线已有；原生capture、四档配置和自动安全点保全尚未完成。**
+**状态：Partial implementation。私有 vault、manifest/字节发布、引用保护/回收和 J1 已有；有限原生 worker capture/initialize、受限 agent Memory/历史/指令补充也已接线。完整四档材料覆盖、附件/引用迁移、源资源独立及自动安全点保全仍需实现或资格。**
 
 合同：[S13材料与档位](../roadmap/box-runtime-impl-spec.md#continuity-material)。依赖CONT-00/11和CTX-02原生提交边界，可与CONT-01/06并行。
 
@@ -8,7 +8,7 @@
 
 `openContinuityRecoveryStore`通过生产Effect程序维护CONT私有`continuity/state.sqlite`、content-addressed对象和staging；recovery/safety共用该管理DB，不受OBS诊断TTL支配。显式初始化、完整声明图/hash验证、先reservation后发布、unknown读回、引用与GC共同事务、先退役metadata后unlink、最近两份及最后可靠原生点保护已实现。GET无写入，不安装新timer或自动捕获真实Bot。
 
-实际入口、114项组合证明和未证项见[固定报告](../reports/2026-09-18-continuity-recovery-store.md)。新增验证入口`node scripts/verify-runtime-rebuild.mjs continuity-store`使用声明的Bun/Node。材料是synthetic opaque bytes；`nativeImportProven=false`，声明依赖闭包不证明原生隐含引用/格式已齐。真实capture与导入、Memory范围/附件映射、canonical保护策略消费、持续owner安装和全安装物理预算仍需后续实现，不把该存储切片标为整票Done。
+实际入口、114项组合证明和未证项见[固定报告](../reports/2026-09-18-continuity-recovery-store.md)。新增验证入口`node scripts/verify-runtime-rebuild.mjs continuity-store`使用声明的Bun/Node。该早期存储组合的材料是 synthetic opaque bytes，`nativeImportProven=false` 仅描述其证明边界；不能用它否定后续原生 capture/导入接线，也不能从管理层闭包推出所有原生隐含引用已齐。新增受限 Memory/历史/指令补充、保护配置和生命周期引用保护见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)。全材料/附件映射、自动安全点、源资源独立、持续安装和全安装物理预算仍未关闭。
 
 ## 目标与模块
 
@@ -16,7 +16,7 @@
 
 档位为observe、memory、resume（新保护默认）、archive，另有off。级别增加材料覆盖，不扩大自动操作权限；resume必须保存root必要的完整依赖，archive不是整盒备份或多会话。
 
-**后续接线切片：** [CONT-07当前状态协调](CONT-07-current-context-control.md)已通过有限原生read port把捕获接到本存储，验证预算、原始root字节、前后revision和复制后的不可变材料；重复请求返回原快照，不再次读源。所用原生端仍是owned合成协议，未接官方decoder、自动安全点或四档生产配置，不能将其称为真实Bot capture已经完成。[限定证明](../reports/2026-09-18-continuity-current-state.md)。
+**协调器早期证据（2026-09-18）：** [固定报告](../reports/2026-09-18-continuity-current-state.md)验证有限 read port、预算、原始 root 字节、前后 revision 和不可变材料；当时原生端是 owned 合成协议。这份证据不签原生 capture，但当前 binding 已按下节接通，不能把“尚未接官方 decoder”作为今天的实现状态。重复请求仍返回原快照，不重新读取或写入源。
 
 ## 材料与恢复质量
 

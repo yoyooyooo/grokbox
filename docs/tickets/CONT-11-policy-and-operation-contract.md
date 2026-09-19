@@ -1,14 +1,16 @@
 # CONT-11 — 保护策略与逐职责操作合同
 
-**状态：Partial implementation。材料/操作纯合同及持久安全意图、一次claim、unknown对账已有；完整配置策略、逐职责状态机和生产执行控制仍待实现。**
+**状态：Partial implementation。材料/操作纯合同、安全意图、一次 claim、unknown 对账、runtime.continuity 配置及有限生命周期/保护/关系记录已接入；完整逐职责效果约束、多代收口和安全墓碑退役仍未实现，字段存在不证明所有消费者已采用。**
+
+配置以 [实际 schema](../../packages/runtime-kernel/src/internal/config/schema.ts)及 [protection 规则](../../packages/runtime-kernel/src/internal/continuity/protection.ts)为准，工作流持久化见 [原 owner](../../packages/box-runtime/src/internal/io/continuity-workflows.node.ts)。新增限定证明见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)；现役和完整默认自动化不从源码接线推导。
 
 合同：[S13策略](../roadmap/box-runtime-impl-spec.md#continuity-policy-evidence)与[全程里程碑](../roadmap/box-runtime-impl-spec.md#continuity-delivery)。
 
 ## 已实现的安全记录入口
 
-CONT私有管理SQLite保存内容绑定的operation、policy revision、snapshot引用与effect ID。prepare不派发；claim在返回唯一的本地派发标志前持久化effect_unknown，重复调用或新进程不再获得第二次claim。只有显式结算材料才能变为succeeded/not_executed，未知不因时间、换请求ID或诊断GC而消失；真实外部权限和副作用由后续controller单独核验，回执始终不授予执行权限。
+CONT私有管理SQLite保存内容绑定的operation、policy revision、snapshot引用与effect ID。prepare不派发；claim在返回唯一的本地派发标志前持久化effect_unknown，重复调用或新进程不再获得第二次claim。只有显式结算材料才能变为succeeded/not_executed，未知不因时间、换请求ID或诊断GC而消失；真实外部权限和副作用由相应原生/控制 owner 单独核验，回执始终不授予执行权限。
 
-最低安全记录容量不足拒绝新增操作；当前安全墓碑尚未取得语义退役资格，保留最小记录并报告blocked，不宣称无限请求/长期日用已闭合。真实CONT恢复与安全owner共用本域DB，OBS诊断库只接事件与证据引用。[实现/进程崩溃/J1接线报告](../reports/2026-09-18-continuity-recovery-store.md)限定当前证明；不代替配置授权、职责冲突/继任generation、原生效果或独立review。
+最低安全记录容量不足拒绝新增操作；当前安全墓碑尚未取得语义退役资格，保留最小记录并报告blocked，不宣称无限请求/长期日用已闭合。真实CONT恢复与安全owner共用本域DB，OBS诊断库只接事件与证据引用。[实现/进程崩溃/J1接线报告](../reports/2026-09-18-continuity-recovery-store.md)固定早期存储切片的证明；不代替配置授权、职责冲突/继任generation、原生效果或独立review。
 
 ## 目标与依赖
 

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_SCHEMA_VERSION, validateConfig } from "../packages/runtime-kernel/src/internal/config/schema.ts";
+import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 
 // Pure repository checks: no network, runtime probes, private source or writes.
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -96,6 +97,30 @@ test("convergence retains every cross-domain, context and reasoning obligation I
   for (let n = 1; n <= 16; n++) expect(context).toContain(`CTX-A${String(n).padStart(2, "0")}`);
   for (let n = 1; n <= 7; n++) expect(context).toContain(`CTX-R${String(n).padStart(2, "0")}`);
   for (let n = 1; n <= 6; n++) expect(read("docs/runtime/execution.md")).toContain(`R0${n}`);
+});
+
+test("every source ticket remains reachable by its complete filename", () => {
+  const index = withoutFences(read("docs/tickets/README.md"));
+  const linked = new Set([...index.matchAll(/\]\(([^)\s]+)\)/g)].map(match => match[1]!.split("#")[0]!));
+  const tickets = readdirSync(resolve(root, "docs/tickets"))
+    .filter(name => name.endsWith(".md") && name !== "README.md");
+  expect(tickets.length).toBeGreaterThan(0);
+  for (const ticket of tickets) expect(linked.has(ticket), ticket).toBe(true);
+});
+
+test("lifecycle instructions are discoverable and examples use registered commands", () => {
+  for (const file of ["docs/product-contract.md", "docs/runtime/continuity.md", "docs/maintainers/README.md", "docs/maintainers/current-state-control.md"]) {
+    expect(read(file), file).toContain("bot-lifecycle.md");
+  }
+  const guide = read("docs/maintainers/bot-lifecycle.md");
+  const commands = LEAF_COMMANDS.map(command => command.path.join(" ")).sort((a, b) => b.length - a.length);
+  const examples = [...guide.matchAll(/^```bash\n([\s\S]*?)^```/gm)]
+    .flatMap(match => match[1]!.split("\n")).filter(line => line.startsWith("grokbox "));
+  expect(examples.length).toBeGreaterThan(0);
+  for (const line of examples) {
+    const text = line.slice("grokbox ".length);
+    expect(commands.some(command => text === command || text.startsWith(`${command} `)), line).toBe(true);
+  }
 });
 
 test("archive discovery separates retired research from the stable report store", () => {

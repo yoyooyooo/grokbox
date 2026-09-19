@@ -1,6 +1,8 @@
 # CONT-04 — 逐职责接替与自动替身编排
 
-**状态：planned；本票将替身上线与完整交接/删除明确分开。**
+**状态：Partial implementation。分阶段 replace、创建/选模/初始化/激活及 active_with_handover 已接通；完整外部任务和逐职责效果约束仍未交付，不能从生命周期 ready/active 推导全部工作已接替或源可删除。**
+
+当前实现入口为 [生命周期程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)和 [handover 程序](../../packages/box-runtime/src/internal/roots/bot-handover.runtime.ts)，限定证明归 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)，操作归 [指南](../maintainers/bot-lifecycle.md)。下文完整目标与独立验收继续保留。
 
 合同：[S13并行交接](../roadmap/box-runtime-impl-spec.md#continuity-handover)。依赖CONT-01/03/11；CONT-09消费本票逐职责协议并实现关系交接，不把其全完成设为激活前置；CONT-10拥有旧身份最终退役。
 

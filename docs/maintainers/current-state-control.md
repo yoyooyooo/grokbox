@@ -1,6 +1,6 @@
 # 单盒当前状态操作
 
-本页说明已实现的手动当前状态基础能力，不代表完整clone、替身自动接替或现场采用已经完成。产品仍是一个长期Memory身份、一份当前工作上下文，没有会话列表或切换。合同归 [S13](../roadmap/box-runtime-impl-spec.md#continuity-primitives)，实现范围归 [CONT-07](../tickets/CONT-07-current-context-control.md)，现场只看 [LIVE-CURRENT-CONTEXT](../tickets/LIVE-integration-validation.md#live-current-context)。
+本页说明手动当前状态控制，包括空白目标初始化和外部空闲目标 reset/recover；完整复制、生命周期和关系交接另见 [生命周期指南](bot-lifecycle.md)。它不代表完整替身自动接替或现场采用已经完成。产品仍是一个长期Memory身份、一份当前工作上下文，没有会话列表或切换。合同归 [S13](../roadmap/box-runtime-impl-spec.md#continuity-primitives)，实现范围归 [CONT-07](../tickets/CONT-07-current-context-control.md)，现场只看 [LIVE-CURRENT-CONTEXT](../tickets/LIVE-integration-validation.md#live-current-context)。
 
 ## 前置边界
 
@@ -14,7 +14,9 @@
 |---|---|
 | `agents state show <id>` | 读取当前head及profile绑定策略版本，不创建CONT库，不授执行权 |
 | `agents state capture <id> --operation-id <uuid> --confirm` | 将有界原生checkpoint闭包保全到本机私有CONT库；不修复源、不调用模型 |
-| `agents state initialize <target-id> --snapshot-id <uuid> --expect-revision <sha256> --operation-id <uuid> --confirm` | 把固定原生上下文导入处于同scope的空白目标；保持准备屏障，不启动任务 |
+| `agents state initialize <target-id> --snapshot-id <uuid> --expect-revision <sha256> --operation-id <uuid> --confirm` | 按材料清单导入同scope的空白目标，包括声明的 Memory/历史补充；保持准备屏障，不启动任务 |
+| `agents state reset <target-id> --expect-revision <sha256> --operation-id <uuid> --confirm` | 先保全当前状态，再通过原生空闲屏障替换工作上下文；不清长期 Memory/真实文件，不启动任务 |
+| `agents state recover <target-id> --snapshot-id <uuid> --expect-revision <sha256> --operation-id <uuid> --confirm` | 先保全当前状态，再从固定快照建立恢复候选并读回；不重放过去工具，不把恢复当成会话切换 |
 | `agents state operation <target-id> --operation-id <uuid> --scope-id <sha256>` | 离线读取本地初始化操作，不访问Host、也不升级旧CONT库 |
 | `agents state reconcile <target-id> --operation-id <uuid> --confirm` | 使用已保存的原请求对账原生应用凭据，更新本地安全记录；不重做导入、不解除未知屏障 |
 | `agents state activate <target-id> --operation-id <uuid> --confirm` | 对已读回的初始化解除准备屏障，允许后续普通输入；不发送Human消息，不主动开始推理 |
@@ -31,6 +33,14 @@ show目标，使用其exact revision和已保存snapshot初始化。原生worker
 
 检查prepared结果后，再按已有权限显式activate。激活不启动任务；之后的正常输入才进入目标Agent loop，继续产生B1/B2。旧初始化操作重入不能把B0重新灌到B2。已加载正式Host/实际模型/客户端上的首轮、重启后续轮，需要LIVE取证，fixture通过不替代。
 
+## 外部 reset / recover
+
+这两个入口由外部操作者用于空闲、已加载目标；self-reset 的持久安全排队仍未交付，不能在 Bot 自己的控制回合中以同步调用冒充该能力。先用 show 获取实际 contextRevision，明确本次替换工作上下文的授权；reset/recover 要求已有 root，不能用来隐式创建一个 Bot。
+
+同一 operation 固定 backupSnapshot 和候选引用，备份必须先于原生替换。reset 构造不带旧对话的合法新上下文；recover 使用指定快照，候选含 unknown_effects 时构造有来源的受限摘要候选，不将 pending 工具重放。读取 coverage 和原生应用回执，而非将 snapshot 存在当作完整恢复。
+
+两者复用初始化接受/读回/对账程序。结果与 scope/operation 一起保存；确认 prepared 后，解除准备仍使用相同操作的 activate，不以 reset/recover 返回推导任务已启动。长期 Memory、模型配置和已发生外部文件/任务不回滚。源 revision 变化或不确定原生写入应检查原操作，不能换 UUID 重做。
+
 ## 故障处置
 
 `source_changed`重新读取状态并重新评估，不能自动覆写新版本。`not_prepared`表示目标或在途状态不适合初始化，不使用clearConversation清掉记录来通过门禁。`commit_unknown`与`cleanup_unknown`先查询原操作和reconcile；原生凭据缺失不是未执行证明，禁止改operationId再尝试。仅worker已提交而主Host应用记录未完成时，对账仍可能unknown；保持屏障，不擅自补写或激活。
@@ -39,4 +49,4 @@ show目标，使用其exact revision和已保存snapshot初始化。原生worker
 
 ## 明确未交付的产品范围
 
-生命周期、外部空闲Bot reset/recover、受管指令startup及保护/关系交接已有有限源码切片，范围和证明见[本轮回执](../reports/2026-09-19-continuity-lifecycle-integration.md)。它们不是完整北极星已交付：全附件/资源迁移、self-reset安全队列、完整外部任务与职责约束、临时结果交付/清理、可靠旧Bot退役仍归来源票，不改标成只差Live。当前guide保留基础操作步骤，新增完整指南尚未落盘；精确参数以本候选registry/help为准，实际现场结果只归唯一索引。
+生命周期、外部空闲Bot reset/recover、受管指令startup及保护/关系交接已有有限源码切片，范围和证明见[固定回执](../reports/2026-09-19-continuity-lifecycle-integration.md)，操作见[生命周期指南](bot-lifecycle.md)。全附件/资源迁移、self-reset安全队列、完整外部任务与职责约束、临时结果交付/清理、可靠旧Bot退役仍归来源票，不改标成只差Live。精确参数以registry/help为准，实际现场结果只归唯一索引。

@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial：default目标策略、配对准备/私有凭据owner与本地撤销已实现；合格接收者激活/driver与高级路由仍未完成。** [Spec §6.3](../roadmap/template-ops-automation-spec.md#bot-routing)。复用ops.targets/defaultTarget，任意用户有权使用的原生Bot可作为接收者，不限模板。
+**Partial：default 目标、私有配对/撤销、接收者预检、显式发送及未来 work 激活授权/daemon sender 已集成；真实接收资格、完整恢复防重放和高级路由仍未关闭。** [Spec §6.3](../roadmap/template-ops-automation-spec.md#bot-routing)。复用ops.targets/defaultTarget，任意用户有权使用的原生Bot可作为接收者，不限模板。
 
 ## Depends-on / Modules
 
@@ -12,13 +12,13 @@
 
 `selectNotificationTarget`从已校验effective ops选择defaultTarget；routing.enabled=false仍选默认目标，通知off/缺Agent或routineKey/不支持的数据或意图均明确blocked。高级routing、digest、允许重复投递尚不执行，不能静默改用别的目标。`NotificationBinding`约束database/scope、alias/exact Agent/Routine、model/qualification、policy revision和5秒内观察窗口；它必须来自本域配对owner，不是config或告警可提供的授权DTO。
 
-实际发送程序`runOpsNotificationDelivery`可接入`PairedNotificationDriver`，默认driver缺失则unavailable、不生成attempt；当前未实现`ops targets bind`或保存活凭据。存储按真实Agent而非alias共同计数。配对变更后未发停止、已经预留/尝试不自动重发的离线证明归[T45回执](../reports/2026-09-18-notification-outbox.md)。
+`runOpsNotificationDelivery`使用受信 `PairedNotificationDriver`，没有合格 binding/授权则 unavailable，不生成 attempt。`ops targets bind` 和私有凭据 capsule 已实现；显式 HTTP 与获准未来 work 的 daemon sender 复用原 outbox 程序，不另造存储。存储按真实 Agent 而非 alias 共同计数；旧预留/unknown 不自动重发。早期 outbox 范围见 [固定回执](../reports/2026-09-18-notification-outbox.md)，后续激活/自动链见 [集成回执](../reports/2026-09-19-automatic-notification.md)。
 
 ## 私有配对准备已实现（仍不等于接收资格）
 
 新增Box-local `ops targets list/show/bind/disable/unbind`；target偏好即使通知off也可明确准备，但不会解除off。只有本安装T53管理的disabled Webhook定义可参与，预期revision与scope/代际重核，确认后原生key请求至多一次。私有capsule原子发布、8槽、主/固定暂存各64KiB；状态投影、存储计量和通知查询不返回credential。
 
-unknown占位、并发撤销/晚到响应、强杀、损坏/丢失/符号链接保护及真实CLI已验证；全部prepared binding保持deliveryAuthorized=false，默认driver仍unavailable。模型/行为/HTTP资格、active采用、verify/远端配对、高级路由与自动宿主仍是剩余范围，不以普通聊天选模或拿到key替代。本片证据见[T46](T46-template-ops-pairing.md)和[回执](../reports/2026-09-18-private-target-pairing.md)。
+unknown占位、并发撤销/晚到响应、强杀、损坏/丢失/符号链接保护与CLI的早期证明见 [配对回执](../reports/2026-09-18-private-target-pairing.md)。prepared-only 不授权投递；后续 `verify` 只读预检，`activate` 需要确切测试 work、当前绑定/模型与操作人已见提醒的独立声明。它不启用 Routine、不启动 collector、不补旧积压；缺授权时 driver 仍不可用。真实模型/行为/HTTP与重新资格、远端配对、高级路由、持续 collector 安装仍有独立范围，详见 [T46](T46-template-ops-pairing.md)，不能继续将已集成的 activate/sender 记为未实现。
 
 ## Minimum Work / 首发出口
 

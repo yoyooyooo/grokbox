@@ -1,6 +1,8 @@
 # CONT-09 — 机械关系迁移与旧 Bot 辅助交接
 
-**状态：planned；新替身接活与本票关系交接并行，不要求先全迁完。**
+**状态：Partial implementation。关系账本、正式用户身份的有界交接说明、群成员与 Routine 停旧启新已接线；完整外部任务/职责效果约束和多代关系收口仍有差额。新替身接活与关系交接并行，不要求先全迁完。**
+
+源码入口为 [handover 程序](../../packages/box-runtime/src/internal/roots/bot-handover.runtime.ts)和 [Gateway adapter](../../packages/cli/src/gateway-bot-handover.ts)；[CLI 回归](../../test/bot-handover-cli.test.ts)验证命名范围，固定证明见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)。操作与权限边界见 [指南](../maintainers/bot-lifecycle.md)，本票不维护另一份现场结果。
 
 合同：[S13交接](../roadmap/box-runtime-impl-spec.md#continuity-handover)。依赖CONT-03、CONT-04最小逐职责协议、CONT-11；原生Routine复用T53，消息身份与投递复用正式Gateway/ops能力。CLI未提供的原生能力先资格化再公开。
 
