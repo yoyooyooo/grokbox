@@ -12,6 +12,10 @@ export type ColdTurn = {
   turn: TurnRecord;
   binding?: Omit<RouteBindingRecord, "lease">;
 };
+export type ExecutionRetirementReceipt = {
+  state: "maintained" | "protected"; retiredSteps: number; closedTurns: number; blockedActiveSteps: number;
+  fileBytes: number; maxBytes: number; authority: "closed-turn-and-service-epoch"; ttlDeletion: false; replayAuthorized: false;
+};
 export type ExecutionHistoryHealth = {
   kind: "leveldb" | "memory-test";
   available: boolean;
@@ -21,6 +25,7 @@ export type ExecutionHistoryHealth = {
   lastError: "storage_unavailable" | null;
   /** Cumulative adapter I/O elapsed time, not a disk-latency estimate. */
   ioTiming?: { readMs: number; writeMs: number };
+  retention?: ExecutionRetirementReceipt;
 };
 export type ExecutionHistory = {
   getContextSelection?(key: string): Effect.Effect<ContextSelectionCapture | undefined, BindingFailure>;
@@ -35,6 +40,8 @@ export type ExecutionHistory = {
   getMaintenance?(key: string): Effect.Effect<ContextMaintenanceRecord | undefined, BindingFailure>;
   getLatestMaintenance?(agentId: string, sessionId: string): Effect.Effect<ContextMaintenanceRecord | undefined, BindingFailure>;
   putMaintenance?(key: string, value: ContextMaintenanceRecord): Effect.Effect<void, BindingFailure>;
+  /** Original execution writer owns both retirement and the denied TURN marker. */
+  maintain?(): Effect.Effect<ExecutionRetirementReceipt, BindingFailure>;
   health(): ExecutionHistoryHealth;
 };
 

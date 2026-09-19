@@ -102,6 +102,32 @@ for (const phase of ["beforeFinish", "afterFinish"] as const) test(`${phase} fai
   } finally { await f.close(); }
 });
 
+test("hundreds of settled updates shrink to exact tombstones, while current binding and unknown creation remain protected", async () => {
+  const f = await fixture();
+  try {
+    let last = await f.run(apply());
+    f.lose();
+    const pending = apply("pending-create"); if (pending.action !== "apply") throw Error("fixture");
+    expect((await f.run({ ...pending, blueprint: { ...pending.blueprint, key: "pending" } })).state).toBe("outcome_unknown");
+    f.lose(false);
+    for (let n = 0; n < 300; n++) {
+      const next = apply(`update-${n}`, `finite-definition-${n}`); if (next.action !== "apply") throw Error("fixture");
+      last = await f.run({ ...next, expectedRevision: last.revision! });
+      expect(last.state).toBe("disabled_definition_observed");
+    }
+    const beforeWrites = f.writes(), beforeReads = f.reads();
+    expect(await f.run(apply())).toMatchObject({ state: "retired", automaticRetry: false, durableReplayGuard: true });
+    expect((await f.run({ action: "outcome", agentId: AGENT, operationId: "initial" })).state).toBe("retired");
+    await expect(f.run(apply("initial", "altered"))).rejects.toMatchObject({ reason: "operation_conflict" });
+    expect(f.writes()).toBe(beforeWrites); expect(f.reads()).toBe(beforeReads);
+    expect(await f.store().status()).toMatchObject({ operations: 3, unresolved: 1, retiredOperations: 299 });
+    expect((await stat(f.store().path)).size).toBeLessThanOrEqual(ROUTINE_PROVISION_POLICY.maxDatabaseBytes);
+    const binding = await f.store().binding(AGENT, "notice"); expect(binding?.operationId).toBe("update-299");
+    expect((await f.store().read(AGENT, "pending-create"))?.state).toBe("unknown");
+    expect(f.rows()).toHaveLength(2);
+  } finally { await f.close(); }
+}, 30000);
+
 test("pure outcome queries do not create a store; invalid inputs and unsafe paths produce no remote effect", async () => {
   const f = await fixture(); try {
     expect((await f.run({ action: "outcome", agentId: AGENT, operationId: "missing" })).state).toBe("not_recorded");

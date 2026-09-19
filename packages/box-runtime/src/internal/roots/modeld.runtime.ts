@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect";
@@ -8,7 +7,7 @@ import { BoxRuntimeError, OWNED_SHUTDOWN_MS, AUTHORITY_REASONS, providerRecovery
 import { AdmissionAuthority, type AuthorityReadControl } from "@grokbox/runtime-kernel/ports";
 import type { RunStepRequest } from "@grokbox/runtime-kernel/contract";
 import { piCompactionAlgorithmLayer } from "../context/pi-compaction.ts";
-import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
+import { inferenceMemoryLayer, type ExecutionHistory } from "@grokbox/runtime-kernel/inference";
 import { configurationReadLayer, openRuntimeStore } from "../io/configuration.node.ts";
 import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { modeldStorePorts } from "../io/store.node.ts";
@@ -16,6 +15,7 @@ import { type OwnershipReader } from "../io/ownership-admission.node.ts";
 import { makeOwnershipCoordinator } from "../io/ownership-coordinator.node.ts";
 import { writeModeldStepOutcome, writeModeldRecoveryProgress, writeModeldAuthorityProgress } from "../io/modeld-outcome.node.ts";
 import { openExecutionHistory } from "../io/execution-history.node.ts";
+import { acquireServiceSocket } from "../io/daemon-socket.node.ts";
 import { openBoundedProcessLog, type ProcessLogEvent, type ProcessLogHealth } from "../io/bounded-process-log.node.ts";
 import { readStorageConfiguration } from "../io/storage-configuration.node.ts";
 import { modeldStorageMaintenance } from "./storage-lifetime.runtime.ts";
@@ -88,6 +88,7 @@ export function modeldRootLayer(options: {
   serviceEpoch: string;
   fetch?: typeof fetch;
   ownershipRead?: OwnershipReader;
+  onHistory?: (history: ExecutionHistory) => void;
 }) {
   const store = openRuntimeStore(options.durableRoot, options.env);
   const config = configurationReadLayer(store);
@@ -102,6 +103,7 @@ export function modeldRootLayer(options: {
     Layer.merge(backend),
     Layer.merge(piCompactionAlgorithmLayer),
     Layer.merge(Layer.unwrap(openExecutionHistory(options.runRoot, options.serviceEpoch).pipe(
+      Effect.tap(history => Effect.sync(() => options.onHistory?.(history))),
       Effect.map(history => inferenceMemoryLayer({ serviceEpoch: options.serviceEpoch, history,
         providerRecovery: providerRecoveryFromEnv(options.env ?? process.env) })),
     ))),
@@ -153,15 +155,22 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
       yield* ready(borrowed);
       return borrowed;
     }
-    if (existsSync(path)) {
-      return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld socket exists"));
-    }
     const generation = randomUUID();
+    // The registered exact socket plus a dead process identity may recover;
+    // unknown/legacy paths still refuse. Acquire before listener, release after
+    // listener close, so neither a borrower nor a competitor can unlink it.
+    const socketLease = yield* Effect.acquireRelease(
+      Effect.tryPromise({ try: () => acquireServiceSocket(path, generation),
+        catch: () => new BoxRuntimeError("invalid_usage", "modeld socket exists or owner is unqualified") }),
+      value => Effect.tryPromise({ try: () => value.release(), catch: () => new BoxRuntimeError("invalid_usage", "modeld_socket_cleanup_gap") }).pipe(Effect.orDie),
+    );
+    let executionHistory: ExecutionHistory | undefined;
     const layer = modeldRootLayer({
       durableRoot: options.durableRoot,
       runRoot: options.runRoot,
       env: options.env,
       serviceEpoch: generation,
+      onHistory: history => { executionHistory = history; },
       fetch: options.fetch,
       ownershipRead: options.ownershipRead,
     });
@@ -181,6 +190,7 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
         ...compactAttach(),
       });
       if (!listener.server.listening) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "modeld_listener_closed"));
+      yield* Effect.tryPromise({ try: () => socketLease.recordBound(), catch: () => new BoxRuntimeError("invalid_usage", "modeld_socket_identity_unavailable") });
       // Acquire only AFTER the real listener: a borrower or failed competing
       // owner must never rotate the active service's diagnostics. Scoped release
       // closes this writer before the listener removes its own socket.
@@ -207,7 +217,8 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
       // release. Borrowers never reach this branch; no UI/collector is required.
       yield* Effect.scoped(Effect.gen(function* () {
         yield* Effect.forkScoped(modeldStorageMaintenance({ durableRoot: options.durableRoot, runRoot: options.runRoot,
-          serviceEpoch: generation, processLog, processPolicyRevision: storagePolicyRevision }));
+          serviceEpoch: generation, processLog, processPolicyRevision: storagePolicyRevision,
+          retireExecution: executionHistory?.maintain ? () => executionHistory!.maintain!() : undefined }));
         yield* listenerLifetime(listener.server);
       })).pipe(Effect.onExit(exit =>
         note(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? "shutdown_requested" : "listener_failed"),

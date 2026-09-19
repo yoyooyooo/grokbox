@@ -28,6 +28,7 @@ import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
 import { runRoutines } from "./commands/routines.ts";
+import { runRuntimeServicesCli } from "./commands/runtime-services.ts";
 import { runOpsNotifications, runOpsNotificationSend, runOpsNotificationWorkerStatus } from "./commands/ops-notifications.ts";
 import { runOpsTargetsCli } from "./commands/ops-targets.ts";
 import { runRoutineProvisionCli } from "./commands/routine-provision.ts";
@@ -413,6 +414,9 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "is running": async (deps, args, options) => await runIsRunning(deps, args[0] ?? "", options),
     "runtime status": async (deps) => await runRuntimeStatus(deps),
     "runtime storage status": async (deps,args,options) => await runRuntimeMonitor(deps,"storage-status",args,options),
+    "runtime services install": async (deps, _args, options) => await runRuntimeServicesCli(deps, "install", options),
+    "runtime services status": async (deps, _args, options) => await runRuntimeServicesCli(deps, "status", options),
+    "runtime services uninstall": async (deps, _args, options) => await runRuntimeServicesCli(deps, "uninstall", options),
     "runtime monitor install": async (deps,args,options) => await runRuntimeMonitor(deps,"install",args,options),
     "runtime monitor service": async (deps,args,options) => await runRuntimeMonitor(deps,"service",args,options),
     "runtime monitor init": async (deps,args,options) => await runRuntimeMonitor(deps,"init",args,options),

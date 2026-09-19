@@ -66,7 +66,7 @@ export type DaemonSocketLease = { recordBound: () => Promise<void>; release: () 
  * connection is reclaimable. A legacy socket, timeout, or PID alone is not that
  * proof. No process is signalled, and the permanent gate inode is never deleted.
  * Other platforms preserve exclusive bind behavior without claiming recovery. */
-export async function acquireDaemonSocket(path: string, generation: string): Promise<DaemonSocketLease> {
+export async function acquireServiceSocket(path: string, generation: string): Promise<DaemonSocketLease> {
   if (!isAbsolute(path) || path.includes("\0") || !/^[a-f0-9-]{36}$/.test(generation)) return fail("invalid_input");
   const parent = dirname(path), socketId = sha256Text(resolve(path)), ownerPath = `${path}.owner.json`;
   await mkdir(parent, { recursive: true, mode: 0o700 });
@@ -121,3 +121,5 @@ export async function acquireDaemonSocket(path: string, generation: string): Pro
     };
   } catch (e) { await gate?.release(); throw e; }
 }
+/** Backwards-compatible daemon entry; modeld uses the same exact-inode owner. */
+export const acquireDaemonSocket = acquireServiceSocket;

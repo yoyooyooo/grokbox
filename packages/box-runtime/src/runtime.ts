@@ -20,6 +20,7 @@ export {
 } from "./internal/io/paths.ts";
 export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration.node.ts";
 export { readStorageConfiguration } from "./internal/io/storage-configuration.node.ts";
+export { runRuntimeServiceCommand, RuntimeServiceError, type RuntimeServiceRequest } from "./internal/roots/runtime-services.runtime.ts";
 export { acquireDaemonSocket, type DaemonSocketLease } from "./internal/io/daemon-socket.node.ts";
 export { configureMonitorService, readMonitorServiceConfiguration, type MonitorServiceConfiguration } from "./internal/io/monitor-installation.node.ts";
 export { startMonitorService, type MonitorServiceStatus } from "./internal/roots/monitor-service.runtime.ts";

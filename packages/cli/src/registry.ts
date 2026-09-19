@@ -1637,6 +1637,27 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     localOnly: true,
   },
   {
+    path: ["runtime", "services", "status"],
+    usage: "grokbox runtime services status --run-root <path> --json",
+    summary: "Read exact user-service registration, file/artifact matches and manager state without starting or repairing anything.",
+    arguments: [], options: options([{ flags: "--run-root <path>", description: "Explicit service run root; otherwise GROKBOX_RUN_ROOT" }]),
+    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  ...(["install", "uninstall"] as const).map(action => ({
+    path: ["runtime", "services", action],
+    usage: `grokbox runtime services ${action} --run-root <path>${action === "install" ? " --release <installed-package> --node <executable> [--start]" : ""} [--expect-plan <sha256> --confirm] --json`,
+    summary: action === "install" ? "Preview or confirm exact systemd user units for daemon/modeld; requires a working lingering user manager, never alters Host startup."
+      : "Preview or remove only owned inactive units; does not signal processes or delete runtime data.",
+    arguments: [], options: options([
+      { flags: "--run-root <path>", description: "Explicit service run root; otherwise GROKBOX_RUN_ROOT" },
+      ...(action === "install" ? [{ flags: "--release <path>", description: "Installed grokbox package root, not a source checkout", required: true },
+        { flags: "--node <path>", description: "Exact supported Node executable", required: true },
+        { flags: "--start", description: "Explicitly start the two registered services in addition to enabling boot startup" }] : []),
+      { flags: "--expect-plan <sha256>", description: "Digest returned by the current preview" },
+      { flags: "--confirm", description: "Commit this exact registration plan; default is read-only preview" },
+    ]), stdin: "none" as const, table: false, timeout: false, destructive: true, gateway: false, streaming: false, profile: false, localOnly: true,
+  })),
+  {
     path: ["runtime", "storage", "status"],
     usage: "grokbox runtime storage status --json",
     summary: "Read local monitor, process-log and journal storage independently of configuration health; adoption is reported separately.",

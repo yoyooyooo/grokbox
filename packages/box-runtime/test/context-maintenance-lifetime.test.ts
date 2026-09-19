@@ -140,6 +140,46 @@ test("joined waiters share one source; cancelling one does not cancel the surviv
   }).pipe(Effect.provide(w.layer))));
 });
 
+test("superseded settled context detail retires while its old operation stays consumed across epochs", async () => {
+  const w = world({ mode: "manual", small: true }), dir = await mkdtemp(join(tmpdir(), "context-retirement-"));
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const history = yield* openExecutionHistory(dir, "first");
+      const runner = yield* makeContextMaintenanceRunner(history), auth = yield* (yield* BackendAuth).pin({ apiKeyRef: w.model.apiKeyRef });
+      yield* runner.run({ ...w, lease: auth.lease });
+      yield* runner.run({ ...w, request: { ...w.request, operationId: "next-op" }, lease: auth.lease });
+      const key = canonicalJson([A, "", w.request.operationId]);
+      expect(yield* history.getMaintenance!(key)).toMatchObject({ state: "committed", detailsRetired: true });
+      expect((yield* history.getMaintenance!(key))?.receipt).toBeUndefined();
+      expect(yield* Effect.result(runner.run({ ...w, lease: auth.lease }))).toMatchObject({ _tag: "Failure", failure: { code: "operation_retired" } });
+      expect((yield* history.getLatestMaintenance!(A, ""))?.detailsRetired).toBeUndefined();
+    }).pipe(Effect.provide(w.layer))));
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const history = yield* openExecutionHistory(dir, "second");
+      const runner = yield* makeContextMaintenanceRunner(history), auth = yield* (yield* BackendAuth).pin({ apiKeyRef: w.model.apiKeyRef });
+      expect(yield* Effect.result(runner.run({ ...w, lease: auth.lease }))).toMatchObject({ _tag: "Failure", failure: { code: "operation_retired" } });
+    }).pipe(Effect.provide(w.layer))));
+    expect(w.counters()).toEqual({ requests: 0, commits: 0, producers: 0 });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("a newer context record never retires a prior unknown checkpoint guard", async () => {
+  const w = world({ inconsistentReadback: "source" }), dir = await mkdtemp(join(tmpdir(), "context-unknown-protected-"));
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const history = yield* openExecutionHistory(dir, "unknown-protection");
+      const runner = yield* makeContextMaintenanceRunner(history), auth = yield* (yield* BackendAuth).pin({ apiKeyRef: w.model.apiKeyRef });
+      expect(yield* Effect.result(runner.run({ ...w, lease: auth.lease }))).toMatchObject({ _tag: "Failure", failure: { code: "commit_unknown" } });
+      const old = (yield* history.getLatestMaintenance!(A, ""))!, used = w.counters().requests;
+      yield* history.putMaintenance!(canonicalJson([A, "", "new-failed"]), { ...old, identity: { ...old.identity, operationId: "new-failed" },
+        state: "failed", failure: "cancelled", receipt: undefined });
+      expect(yield* history.getMaintenance!(canonicalJson([A, "", w.request.operationId]))).toEqual(old);
+      expect(yield* Effect.result(runner.run({ ...w, lease: auth.lease }))).toMatchObject({ _tag: "Failure", failure: { code: "commit_unknown" } });
+      expect(w.counters().requests).toBe(used);
+    }).pipe(Effect.provide(w.layer))));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test("manual no-op is durably claimed and remains a no-op after a new service epoch", async () => {
   const w = world({ mode: "manual", small: true });
   const dir = await mkdtemp(join(tmpdir(), "context-noop-"));

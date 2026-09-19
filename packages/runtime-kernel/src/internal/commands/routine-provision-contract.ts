@@ -75,6 +75,8 @@ export type ProvisionRecord = {
   action: "create" | "update"; state: "attempting" | "unknown" | "observed";
   nativeId: string | null; observedRevision: string | null; beforeRevision: string | null; createdAtMs: number;
 };
+export type ProvisionRetired = { schemaVersion: 1; agentId: string; operationId: string; fingerprint: string; state: "retired" };
+export type ProvisionLookup = ProvisionRecord | ProvisionRetired;
 export type ProvisionObservation = { catalog: RoutineCatalog; generation: string; definitions: ReadonlyMap<string, string> };
 export type ProvisionReservation = { agentId: string; operationId: string; key: string; fingerprint: string; desiredDigest: string;
   action: "create" | "update"; binding: ProvisionBinding | null; atMs: number };
@@ -95,9 +97,9 @@ export function verifyProvisionObservation(record: ProvisionRecord, observation:
     || observation.definitions.get(nativeId) !== record.desiredDigest) return fail("outcome_unknown");
   return item;
 }
-export function provisionReceipt(record: ProvisionRecord | null, agentId: string, operationId: string) {
-  return { schemaVersion: 1, agentId, operationId, state: record?.state === "observed" ? "disabled_definition_observed" : record ? "outcome_unknown" : "not_recorded",
-    ...(record ? { key: record.key, action: record.action, routineId: record.nativeId, revision: record.observedRevision, createdAtMs: record.createdAtMs } : {}),
+export function provisionReceipt(record: ProvisionLookup | null, agentId: string, operationId: string) {
+  return { schemaVersion: 1, agentId, operationId, state: record?.state === "retired" ? "retired" : record?.state === "observed" ? "disabled_definition_observed" : record ? "outcome_unknown" : "not_recorded",
+    ...(record && record.state !== "retired" ? { key: record.key, action: record.action, routineId: record.nativeId, revision: record.observedRevision, createdAtMs: record.createdAtMs } : {}),
     nativeCompareAndSwap: false, nativeIdempotency: false, automaticRetry: false, automaticEnable: false, webhookInvoked: false,
     inFlightRunsCancelled: false, durableReplayGuard: true, promptPersisted: false, currentNativeState: "not_checked" } as const;
 }
@@ -107,10 +109,11 @@ export function projectProvisionReceipt(command: RoutineProvisionCommand, value:
   const r = value as Record<string, unknown>;
   for (const k of Object.keys(r)) if (!Object.hasOwn(Object.getOwnPropertyDescriptor(r, k)!, "value")) return fail("source_unavailable");
   if (r.schemaVersion !== 1 || r.agentId !== command.agentId || r.operationId !== command.operationId
-    || !["not_recorded", "outcome_unknown", "disabled_definition_observed"].includes(String(r.state))
+    || !["not_recorded", "retired", "outcome_unknown", "disabled_definition_observed"].includes(String(r.state))
     || ["nativeCompareAndSwap", "nativeIdempotency", "automaticRetry", "automaticEnable", "webhookInvoked", "inFlightRunsCancelled", "promptPersisted"].some(k => r[k] !== false)
     || r.durableReplayGuard !== true || r.currentNativeState !== "not_checked") return fail("source_unavailable");
   if (r.state === "not_recorded") return provisionReceipt(null, command.agentId, command.operationId);
+  if (r.state === "retired") return provisionReceipt({ schemaVersion: 1, agentId: command.agentId, operationId: command.operationId, fingerprint: "", state: "retired" }, command.agentId, command.operationId);
   if (typeof r.key !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(r.key) || !["create", "update"].includes(String(r.action))
     || !Number.isSafeInteger(r.createdAtMs) || Number(r.createdAtMs) < 1) return fail("source_unavailable");
   let nativeId: string | null, revision: string | null;

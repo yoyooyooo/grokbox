@@ -27,6 +27,6 @@ export function contextStatus(query: ContextStatusQuery) {
       lastMaintenance: record ? { operationId: record.identity.operationId, updatedAtMs: record.updatedAtMs ?? null,
         hostEpoch: record.identity.hostEpoch, serviceEpoch: record.identity.serviceEpoch, state: record.state,
         summaryRequests: record.summaryRequests, summaryInputTokens: record.summaryInputTokens,
-        failure: record.failure ?? null, receipt: record.receipt ?? null } : null };
+        failure: record.failure ?? null, receipt: record.receipt ?? null, detailsRetired: record.detailsRetired === true } : null };
   });
 }

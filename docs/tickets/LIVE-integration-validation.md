@@ -174,7 +174,7 @@ W0 固定候选/私有退路与离线放行 → W1 成套采用及安装/基础C
 | `config get`, `config set`, `config unset`, `config apply`, `config validate`, `config schema`, `config path`, `config export`, `config preset`, `config aliases`, `config recover` | [LIVE-CONFIG-EDIT](#live-config-edit) | 写确认/revision及纯读取拒副作用 |
 | `config migrate`, `config bootstrap` | [LIVE-CONFIG-CUTOVER](#live-config-cutover) | 两套schema不可混用 |
 | `skills list`, `skills get`, `template pack`, `template stage`, `template publish`, `template show`, `template visibility`, `template delete`, `template import` | [LIVE-SKILLS-TEMPLATES](#live-skills-templates) | 公开publish/visibility本轮excluded；私有stage需范围确认 |
-| `daemon serve`, `daemon ensure`, `daemon status`, `on`, `off` | [LIVE-RUNTIME-PERSISTENCE](#live-runtime-persistence) | foreground/daemon/自启分开 |
+| `daemon serve`, `daemon ensure`, `daemon status`, `on`, `off`, `runtime services install`, `runtime services status`, `runtime services uninstall` | [LIVE-RUNTIME-PERSISTENCE](#live-runtime-persistence) | foreground/daemon/自启分开 |
 | `upgrade`, `host start`, `host stop`, `host restart`, `runtime activate`, `runtime deactivate`, `runtime re-adopt` | [LIVE-MODELD-CUTOVER](#live-modeld-cutover) | 只走唯一生命周期程序，退路另证 |
 | `host status`, `host realign`, `host logs` | [LIVE-CLI-RESERVED](#live-cli-reserved) | 应准确拒绝/指引，不冒充完成 |
 | `models list`, `models use`, `models show`, `models reset`, `models check`, `models persist-key` | [LIVE-MODEL-SELECTION](#live-model-selection) | 不把persist-key写成自动迁移/多凭据通用权限 |

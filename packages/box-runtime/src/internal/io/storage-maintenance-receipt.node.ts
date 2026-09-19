@@ -48,7 +48,15 @@ function cycle(value: unknown): StorageMaintenanceCycle | null {
       }
     } catch { return null; }
   }
-  return { ...(value.continuity !== undefined ? { continuity } : {}), atMs: value.atMs, elapsedMs: value.elapsedMs, budgetExceeded: value.budgetExceeded,
+  let execution: StorageMaintenanceCycle["execution"];
+  if (value.execution !== undefined) {
+    const e = value.execution;
+    if (!row(e) || !["maintained", "protected", "unavailable"].includes(String(e.state)) || !num(e.retiredSteps) || !num(e.closedTurns) || !num(e.blockedActiveSteps)
+      || !(e.fileBytes === null || num(e.fileBytes)) || !(e.maxBytes === null || num(e.maxBytes))) return null;
+    execution = { state: e.state as NonNullable<StorageMaintenanceCycle["execution"]>["state"], retiredSteps: e.retiredSteps, closedTurns: e.closedTurns,
+      blockedActiveSteps: e.blockedActiveSteps, fileBytes: e.fileBytes as number | null, maxBytes: e.maxBytes as number | null };
+  }
+  return { ...(execution ? { execution } : {}), ...(value.continuity !== undefined ? { continuity } : {}), atMs: value.atMs, elapsedMs: value.elapsedMs, budgetExceeded: value.budgetExceeded,
     state: value.state as StorageMaintenanceCycle["state"], policyRevision: value.policyRevision as string | null,
     monitor: { state: m.state as StorageMaintenanceCycle["monitor"]["state"], removedEvidence: m.removedEvidence, expiredSnapshots: m.expiredSnapshots,
       physicalBytes: m.physicalBytes as number | null, clockState: m.clockState as string | null }, journals,

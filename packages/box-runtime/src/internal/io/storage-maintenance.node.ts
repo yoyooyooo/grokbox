@@ -11,6 +11,7 @@ export type StorageMaintenanceCycle = {
   atMs: number; elapsedMs: number; budgetExceeded: boolean;
   state: "completed" | "partial" | "configuration_unavailable";
   policyRevision: string | null;
+  execution?: { state: "maintained" | "protected" | "unavailable"; retiredSteps: number; closedTurns: number; blockedActiveSteps: number; fileBytes: number | null; maxBytes: number | null };
   continuity?: Awaited<ReturnType<typeof maintainContinuityStorage>>;
   monitor: { state: "maintained" | "busy" | "not_initialized" | "migration_required" | "unavailable" | "not_checked";
     removedEvidence: number; expiredSnapshots: number; physicalBytes: number | null; clockState: string | null };

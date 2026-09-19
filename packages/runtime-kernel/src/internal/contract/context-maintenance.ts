@@ -16,7 +16,7 @@ export const CONTEXT_FAILURE_CODES = [
   "context_material_too_large", "context_material_invalid", "context_target_unreachable",
   "summary_unavailable", "summary_invalid", "no_improvement", "stale_root",
   "maintenance_budget_exhausted", "deadline_exceeded", "capability_unqualified",
-  "commit_unknown", "maintenance_conflict", "maintenance_busy", "native_cleanup_unknown", "cancelled", "not_admitted", "auth_mismatch",
+  "commit_unknown", "operation_retired", "maintenance_conflict", "maintenance_busy", "native_cleanup_unknown", "cancelled", "not_admitted", "auth_mismatch",
 ] as const;
 export type ContextFailureCode = typeof CONTEXT_FAILURE_CODES[number];
 export class ContextFailure extends Error {
@@ -33,6 +33,7 @@ export function contextFailureMessage(code: ContextFailureCode): string {
     summary_invalid: "The summary was empty, incomplete or invalid and was not accepted as a new context.",
     no_improvement: "Compaction did not produce a sufficiently smaller valid context. The original history was retained.",
     commit_unknown: "Context checkpoint completion is uncertain. Inspect the maintenance operation before retrying; the root may already have changed.",
+    operation_retired: "This completed operation's detailed receipt was retired. Its identity remains consumed; it cannot start another summary or checkpoint.",
     maintenance_busy: "The session has another active context owner. Maintenance did not start a competing writer.",
     native_cleanup_unknown: "The native summary source has not confirmed shutdown. Do not start a competing maintenance operation.",
     maintenance_budget_exhausted: "Context maintenance reached its request or token budget before producing a valid replacement.",
@@ -158,6 +159,8 @@ export function contextMaintenanceKey(agentId: string, sessionId: string, operat
   return canonicalJson([agentId, sessionId, operationId]);
 }
 export type ContextMaintenanceRecord = {
+  /** Only settled, superseded detail can be reduced; the exact identity stays consumed. */
+  detailsRetired?: true;
   updatedAtMs?: number;
   fingerprint: string;
   identity: ContextMaintenanceIdentity;

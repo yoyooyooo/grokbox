@@ -13,6 +13,10 @@ export function runRoutineProvision(input: unknown, atMs: number) {
     const ledger = yield* RoutineProvisionLedger;
     const previous = yield* ledger.read(command.agentId, command.operationId);
     if (command.action === "outcome") return provisionReceipt(previous, command.agentId, command.operationId);
+    if (previous?.state === "retired") {
+      if (command.action === "apply" && previous.fingerprint !== provisionFingerprint(command)) return yield* Effect.fail(new RoutineProvisionError("operation_conflict"));
+      return provisionReceipt(previous, command.agentId, command.operationId);
+    }
     const native = yield* NativeRoutineProvision;
     if (command.action === "reconcile") {
       if (!previous) return yield* Effect.fail(new RoutineProvisionError("not_recorded"));

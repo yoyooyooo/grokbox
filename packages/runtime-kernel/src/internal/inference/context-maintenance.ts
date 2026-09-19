@@ -106,6 +106,7 @@ function executeContextMaintenance(input: ContextMaintenanceExecution, history: 
     yield* fence;
     const prior = yield* history.getMaintenance(key).pipe(Effect.mapError(storageError));
     if (prior && prior.fingerprint !== fingerprint) return yield* Effect.fail(new ContextFailure("maintenance_conflict"));
+    if (prior?.detailsRetired) return yield* Effect.fail(new ContextFailure("operation_retired"));
     if (prior?.state === "committed" && prior.receipt) return prior.receipt;
     if (prior) {
       // A partially acknowledged operation is never automatically replayed.

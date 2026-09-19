@@ -7,6 +7,7 @@ import { parseResolvedModelSelection, computeSelectionRevision } from "@grokbox/
 import { sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
 import type { ColdTurn, ExecutionHistory, ExecutionHistoryHealth, LedgerRecord } from "@grokbox/runtime-kernel/inference";
 import type { ClassicLevel } from "classic-level";
+import { admitExecutionWrite, retireExecutionBatch } from "./execution-retirement.node.ts";
 
 const fail = () => new BindingFailure("ledger_unavailable");
 const digest = (value: unknown) => typeof value === "string" && (value === "" || /^[a-f0-9]{64}$/.test(value));
@@ -66,13 +67,14 @@ function maintenanceRecord(value: unknown): ContextMaintenanceRecord | undefined
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const v = value as ContextMaintenanceRecord;
-  const allowed = ["fingerprint", "identity", "state", "summaryRequests", "summaryInputTokens", "failure", "receipt", "updatedAtMs"];
+  const allowed = ["fingerprint", "identity", "state", "summaryRequests", "summaryInputTokens", "failure", "receipt", "updatedAtMs", "detailsRetired"];
   if (Object.keys(v).some(key => !allowed.includes(key)) || !digest(v.fingerprint) || !v.fingerprint
     || !["claimed", "summarizing", "committing", "committed", "failed", "commit_unknown"].includes(v.state)
     || !Number.isSafeInteger(v.summaryRequests) || v.summaryRequests < 0 || v.summaryRequests > 64
     || !Number.isSafeInteger(v.summaryInputTokens) || v.summaryInputTokens < 0 || v.summaryInputTokens > 16777216
     || (v.failure !== undefined && !CONTEXT_FAILURE_CODES.includes(v.failure)) || !v.identity
     || (v.updatedAtMs !== undefined && (!Number.isSafeInteger(v.updatedAtMs) || v.updatedAtMs < 0))) throw fail();
+  if (v.detailsRetired !== undefined && (v.detailsRetired !== true || !["committed", "failed"].includes(v.state) || v.receipt !== undefined)) throw fail();
   const id = v.identity;
   if (Object.keys(id).some(key => !["operationId", "hostEpoch", "serviceEpoch", "agentId", "sessionId", "rootId", "rootRevision", "selection", "parent"].includes(key))) throw fail();
   for (const key of ["operationId", "agentId", "rootId", "rootRevision"] as const) {
@@ -124,7 +126,7 @@ export function openExecutionHistory(runRoot: string, serviceEpoch: string) {
         const path = join(runRoot, "state", "modeld-execution");
         await privateDirectory(path);
         const { ClassicLevel } = await import("classic-level");
-        const db = new ClassicLevel<string, unknown>(path, { valueEncoding: "json" });
+        const db = new ClassicLevel<string, unknown>(path, { valueEncoding: "json", writeBufferSize: 4 * 1024 * 1024, maxFileSize: 2 * 1024 * 1024 });
         try {
           await db.open(); // LEVEL_LOCKED refuses a competing writer; never delete its lock.
           const previous = await db.get("!service-epoch");
@@ -143,21 +145,34 @@ export function openExecutionHistory(runRoot: string, serviceEpoch: string) {
       catch: fail,
     }),
     db => Effect.promise(() => db.close()),
-  ).pipe(Effect.map(db => historyAdapter(db)));
+  ).pipe(Effect.map(db => historyAdapter(db, join(runRoot, "state", "modeld-execution"))));
 }
 
-function historyAdapter(db: ClassicLevel<string, unknown>): ExecutionHistory {
+function historyAdapter(db: ClassicLevel<string, unknown>, path: string): ExecutionHistory {
+  // One queue belongs to the LevelDB owner. GC cannot race a claim/settlement,
+  // and every queued Promise is awaited by its caller before Scope release.
+  let writesSettled: Promise<unknown> = Promise.resolve();
+  const serialized = <T>(run: () => Promise<T>): Promise<T> => {
+    const next = writesSettled.then(run, run); writesSettled = next.catch(() => undefined); return next;
+  };
+  const admit = (value: unknown) => admitExecutionWrite(path, Buffer.byteLength(JSON.stringify(value)));
+  const closed = (turn: ColdTurn | undefined) => turn && turn.turn.lifecycle !== "open";
+  const stepTurnHash = (key: string): string | null => {
+    try { const id = JSON.parse(key); return id && typeof id.host === "string" && typeof id.agentId === "string" && typeof id.turnId === "string"
+      ? sha256Text(canonicalJson({ host: id.host, agentId: id.agentId, turnId: id.turnId })) : null; } catch { return null; }
+  };
   const state: ExecutionHistoryHealth = { kind: "leveldb", available: true, reads: 0, writes: 0, failures: 0, lastError: null };
   // A successful read does not prove that a previously failed write can now
   // commit a new identity claim (for example after ENOSPC). Recover each side
   // only on an actually successful operation on that side.
   const failed = { read: false, write: false };
   const ioTiming = { readMs: 0, writeMs: 0 };
-  const io = <T>(side: "read" | "write", operation: () => Promise<T>) => Effect.tryPromise({
+  const io = <T>(side: "read" | "write", operation: () => Promise<T>) => {
+    const effect = Effect.tryPromise({
     try: async () => {
       const started = performance.now();
       try {
-        const result = await operation();
+        const result = await (side === "write" ? serialized(operation) : operation());
         failed[side] = false;
         state.available = !failed.read && !failed.write;
         state.lastError = state.available ? null : "storage_unavailable";
@@ -166,32 +181,53 @@ function historyAdapter(db: ClassicLevel<string, unknown>): ExecutionHistory {
         ioTiming[side === "read" ? "readMs" : "writeMs"] += Math.max(0, performance.now() - started);
       }
     },
-    catch: () => { failed[side] = true; state.available = false; state.failures++; state.lastError = "storage_unavailable"; return fail(); },
-  });
+    catch: error => { failed[side] = true; state.available = false; state.failures++; state.lastError = "storage_unavailable";
+      return error instanceof BindingFailure ? error : fail(); },
+    });
+    // Cancellation waits for an admitted/queued batch. Scope release must never
+    // close LevelDB while an abandoned Promise can later publish a claim.
+    return side === "write" ? Effect.uninterruptible(effect) : effect;
+  };
   return {
     getContextSelection: key => io("read", async () => { state.reads++; return contextSelectionRecord(await db.get(`p!${sha256Text(key)}`)); }),
     putContextSelection: (key, value) => io("write", async () => {
       const checked = contextSelectionRecord(value); if (!checked) throw fail();
+      await admit(checked);
       await db.put(`p!${sha256Text(key)}`, checked, { sync: true }); state.writes++;
     }),
     getStep: key => io("read", async () => { state.reads++; return stepRecord(await db.get(`s!${sha256Text(key)}`)); }),
     putStep: (key, value) => io("write", async () => {
       const checked = stepRecord(value);
       if (!checked) throw fail();
+      const parent = stepTurnHash(key), previous = parent ? turnRecord(await db.get(`t!${parent}`)) : undefined;
+      if (closed(previous) && await db.get(`s!${sha256Text(key)}`) === undefined) {
+        if (checked.status === "active") throw new BindingFailure("cancelled");
+        return; // Late settlement cannot resurrect an already retired child.
+      }
+      await admit(checked);
       await db.put(`s!${sha256Text(key)}`, checked, { sync: true }); state.writes++;
     }),
     getTurn: key => io("read", async () => { state.reads++; return turnRecord(await db.get(`t!${sha256Text(key)}`)); }),
     putTurn: (key, value) => io("write", async () => {
       const checked = turnRecord(value);
       if (!checked) throw fail();
-      await db.put(`t!${sha256Text(key)}`, checked, { sync: true }); state.writes++;
+      const hash = sha256Text(key), previous = turnRecord(await db.get(`t!${hash}`));
+      if (closed(previous) && checked.turn.lifecycle === "open") throw new BindingFailure("cancelled");
+      await admit(checked);
+      await db.batch<string, unknown>([
+        { type: "put", key: `t!${hash}`, value: checked },
+        ...(closed(checked) ? [{ type: "put" as const, key: `r!${hash}`, value: true }] : []),
+      ], { sync: true }); state.writes++;
     }),
     putIdentity: input => io("write", async () => {
       const step = stepRecord(input.step), turn = turnRecord(input.turn);
       if (!step || !turn) throw fail();
+      if (closed(turnRecord(await db.get(`t!${sha256Text(input.turnKey)}`)))) throw new BindingFailure("cancelled");
+      await admit({ step, turn });
       await db.batch<string, unknown>([
         { type: "put", key: `s!${sha256Text(input.stepKey)}`, value: step },
         { type: "put", key: `t!${sha256Text(input.turnKey)}`, value: turn },
+        { type: "put", key: `x!${sha256Text(input.turnKey)}!${sha256Text(input.stepKey)}`, value: true },
       ], { sync: true });
       state.writes += 2;
     }),
@@ -203,11 +239,27 @@ function historyAdapter(db: ClassicLevel<string, unknown>): ExecutionHistory {
       return value;
     }),
     putMaintenance: (key, value) => io("write", async () => {
-      const checked = maintenanceRecord(value); if (!checked) throw fail();
-      await db.batch<string, unknown>([
-        { type: "put", key: `c!${sha256Text(key)}`, value: checked },
-        { type: "put", key: `c-latest!${sha256Text(canonicalJson([checked.identity.agentId, checked.identity.sessionId]))}`, value: checked },
-      ], { sync: true }); state.writes += 2;
+      const checked = maintenanceRecord(value); if (!checked || checked.detailsRetired) throw fail();
+      const currentKey = `c!${sha256Text(key)}`;
+      if (maintenanceRecord(await db.get(currentKey))?.detailsRetired) throw new BindingFailure("cancelled");
+      const latestKey = `c-latest!${sha256Text(canonicalJson([checked.identity.agentId, checked.identity.sessionId]))}`;
+      const previous = maintenanceRecord(await db.get(latestKey));
+      const changes: Array<{ type: "put"; key: string; value: unknown }> = [
+        { type: "put", key: currentKey, value: checked }, { type: "put", key: latestKey, value: checked },
+      ];
+      if (previous && previous.identity.operationId !== checked.identity.operationId && ["committed", "failed"].includes(previous.state)) {
+        const priorKey = `c!${sha256Text(canonicalJson([previous.identity.agentId, previous.identity.sessionId, previous.identity.operationId]))}`;
+        const retained = maintenanceRecord(await db.get(priorKey));
+        if (retained?.fingerprint === previous.fingerprint && !retained.detailsRetired) {
+          const { receipt: _receipt, ...guard } = retained;
+          changes.push({ type: "put", key: priorKey, value: { ...guard, detailsRetired: true } });
+        }
+      }
+      await admit(changes);
+      await db.batch<string, unknown>(changes, { sync: true }); state.writes += 2;
+    }),
+    maintain: () => io("write", async () => {
+      const receipt = await retireExecutionBatch(db, path); state.retention = receipt; return receipt;
     }),
     health: () => ({ ...state, ioTiming: { ...ioTiming } }),
   };
