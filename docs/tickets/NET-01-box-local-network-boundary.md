@@ -59,6 +59,8 @@ bun test test/cli.test.ts test/skills.test.ts test/box.test.ts test/events.test.
 
 ## Integration and remaining qualification
 
-合入固定 V2 候选后，按 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary) 选择相关现场范围：普通 Box init、无 Tailscale CLI 的外部自管 HTTPS endpoint、受控 SSH 恢复，以及明确选择的旧 mapping 兼容验证。旧脚本断言/恢复选项与候选必须匹配。不能从模拟通过签真实 TLS、休眠唤醒或第三方网络兼容。
+已线性合入 V2 `303926d`。重新连接后已在该 V2 提交完成合入后复验；源码映射、实际命令、退出码与证明范围见 [固定集成回执](../reports/2026-09-19-network-boundary-v2-integration.md)。此次补充只回填文档，不修改功能实现或重新处理冲突。
+
+独立代码审查仍无结论；按 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary) 选择并授权相关现场范围：普通 Box init、无 Tailscale CLI 的外部自管 HTTPS endpoint、受控 SSH 恢复，以及明确选择的旧 mapping 兼容验证。旧脚本断言/恢复选项与候选必须匹配。不能从模拟通过签真实 TLS、休眠唤醒或第三方网络兼容。
 
 本次用户仅授权本地线性合入 V2，冲突以 V2 为准；没有授权 push、发布、安装到现役、Host/modeld 重启、全局 shim 切换、Sandbox wake 或 Tailscale/Serve/ACL 变更。T40/T41 的持久进程生命周期仍是各自义务，不由网络收敛关闭或延期。
