@@ -63,3 +63,23 @@ export async function readJournalPolicy(configurationRoot: string): Promise<Jour
   return { source: value === undefined ? "default-no-config" : "canonical-config", sourceRootId: sha256Text(root),
     storageRevision: sha256Text(canonicalJson(storage)), policy: storage.retention.journal };
 }
+
+/** The only cross-writer scope is the explicitly installed observation root.
+ * Capture two consistent reads rather than inferring another root from HOME or
+ * a journal event. This projects no credentials or other daemon privileges. */
+export async function readDiagnosticPoolPolicy(configurationRoot: string) {
+  const journal = await readJournalPolicy(configurationRoot), root = resolve(configurationRoot);
+  const value = await document(join(root, "config.json"));
+  if ((value === undefined) !== (journal.source === "default-no-config")) return invalid();
+  if (value !== undefined && field(value, "schemaVersion") !== CONFIG_SCHEMA_VERSION) return invalid();
+  let storage: ReturnType<typeof effectiveStorage>;
+  try { storage = effectiveStorage(field(value, "storage") as Parameters<typeof effectiveStorage>[0]); }
+  catch { return invalid(); }
+  if (sha256Text(canonicalJson(storage)) !== journal.storageRevision) return invalid();
+  const installation = field(field(value, "daemon"), "observation");
+  if (installation === undefined) return null;
+  const runRoot = field(installation, "runRoot");
+  if (typeof runRoot !== "string" || !isAbsolute(runRoot) || runRoot.includes("\u0000") || runRoot.length > 4096 || resolve(runRoot) === "/") return invalid();
+  return { durableRoot: root, runRoot: resolve(runRoot), revision: journal.storageRevision,
+    diagnostics: storage.diagnostics, retention: storage.retention };
+}

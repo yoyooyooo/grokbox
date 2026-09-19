@@ -5,6 +5,7 @@ import { observeJournalStorage } from "../io/journal-storage.node.ts";
 import { readStorageConfiguration, type StorageConfiguration } from "../io/storage-configuration.node.ts";
 import { observeStorageMaintenance } from "../io/storage-maintenance-receipt.node.ts";
 import { observeDiagnosticFootprint } from "../io/storage-footprint.node.ts";
+import { observeDiagnosticAdmission } from "../host/diagnostic-budget.node.ts";
 import { openOpsBindings } from "../io/ops-bindings.node.ts";
 import type { ContinuityStorageOwners } from "@grokbox/runtime-kernel/observation";
 import { measureContinuityStorage } from "../io/continuity-storage.node.ts";
@@ -48,5 +49,6 @@ export async function observeRuntimeStorage(input: { durableRoot: string; runRoo
   const pairingStorage = { owner: "ops_pairing_credentials", state: paired.state, fileBytes: paired.fileBytes,
     bindings: paired.state === "observed" ? paired.bindings.length : null, maxBindings: 8, maxFileBytes: 65536, maxStagingBytes: 65536,
     automaticGcAllowed: false, credentialValuesIncluded: false, diagnosticBudgetIncluded: false };
-  return { ...monitor, processLogs, journals, storageIntent, maintenance, footprint, budgetComparison, continuityStorage, routineProvision, pairingStorage, installationBudgetEnforced: false as const };
+  const diagnosticAdmission = await observeDiagnosticAdmission(input.durableRoot);
+  return { ...monitor, processLogs, journals, storageIntent, maintenance, footprint, budgetComparison, diagnosticAdmission, continuityStorage, routineProvision, pairingStorage, installationBudgetEnforced: false as const };
 }

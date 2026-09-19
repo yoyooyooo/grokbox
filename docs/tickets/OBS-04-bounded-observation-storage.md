@@ -8,7 +8,7 @@
 
 `observation-storage-pressure.test.ts`使用512KiB真实数据库验证持续高基数错误不越过文件上限、压力丢弃可见、重复批次不加倍、跨32个保留周期后无重启恢复新证据接纳；实际SQLite拒绝物理增长另有独立反例。`incident-evidence-store.test.ts`验证旧通知引用和leases不被修订数回收破坏。来源/结果见[增量回执](../reports/2026-09-18-observation-storage-followup.md)。
 
-T51已有schema4共享配置候选、类别分配校验及monitor/process/journal局部采用；已接collector内journal维护和目录锁v2死owner恢复。仍缺全安装物理容量预留、其他producer与全部metadata/Jobs/备份/Trash治理、服务安装/自启、旧PID-only锁及撕裂索引恢复、实际原生/live稳态和独立review。文件护栏只限制SQLite主文件，辅助文件目前仅测量，不能把128MiB当整安装上限或把32轮TTL前进当多年负载证明。执行状态仍由OBS-05处理。
+T51配置和原writer接线已有实现。2026-09-19新增安装范围内monitor/journal/process的共享写前接纳、rollback/备份空间预留、24轮真实存储soak及过期payload/未知attempt解耦；代码与限定测试见[联合接纳回执](../reports/2026-09-19-diagnostic-admission.md)。这推进了诊断池，不覆盖所有producer/Jobs/执行/恢复/制品，也不证明旧现役writer采用。服务自启、完整安全退役、未知旧锁/撕裂状态恢复、全部owner配额和独立review仍有差额；不能将本票改成全安装已强制有界。
 
 ## modeld 日志增量（2026-09-18）
 
@@ -72,7 +72,7 @@ SQLite新建与迁移库真实auto_vacuum/回收模式分别验证；logical/liv
 
 ## Executable acceptance
 
-当前可运行的本地切片验证：`bun scripts/verify-runtime-rebuild.mjs observation-evidence`，其notProven明确保留全安装/轮转/执行退役/native/安装/review/live。
+当前组合入口：`bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation`；精确执行结果和源码身份归[固定回执](../reports/2026-09-19-diagnostic-admission.md)。已完成的局部轮转/维护不再作为缺实现重复施工；全安装所有owner、最终安全退役、自启、native/review/live仍分别保留差额。
 
 完整范围仍待新增：
 

@@ -20,6 +20,7 @@ import { retireObservationDetails, sqlitePhysicalUsage } from "./observation-ret
 import { capMonitorDatabase, monitorDatabaseBytes, monitorWriteAdmission, monitorAuxiliaryUsage } from "./monitor-storage.node.ts";
 import { notificationOutbox } from "./notification-outbox.node.ts";
 import type { NativeRunHealth } from "@grokbox/runtime-kernel/observation";
+import { DiagnosticBudgetError, withDiagnosticAdmission } from "../host/diagnostic-budget.node.ts";
 const VERSION=3;
 const error=(message:string)=>new BoxRuntimeError("invalid_usage",message);
 const number=(v:unknown):number=>{if(typeof v!=="number"||!Number.isSafeInteger(v)||v<0)throw error("monitor_store_invalid");return v;};
@@ -77,13 +78,17 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
  }
  async function read<T>(f:(db:MonitorSqlite)=>Promise<T>):Promise<T>{const db=await load();try{await db.run("BEGIN");return await f(db);}catch(e){throw e instanceof BoxRuntimeError?e:error(e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_reader_busy":"monitor_store_unavailable");}finally{await db.close();}}
  async function legacyLockPresent(){try{await lstat(join(directory,"writer.lock"));return true;}catch(e){if(missing(e))return false;throw e;}}
- async function mutate<T>(f:(db:MonitorSqlite)=>Promise<T>):Promise<T>{
+ async function admission<T>(writer:"monitor"|"monitor-initialize",f:()=>Promise<T>,maintenance=false):Promise<T>{
+  try{return await withDiagnosticAdmission({configurationRoot:resolve(root),sourceRoot:resolve(root),writer,maxBytes:maxDatabaseBytes,maintenance},f);}
+  catch(e){if(e instanceof DiagnosticBudgetError)throw error(e.reason==="busy"?"monitor_writer_busy":e.reason==="pressure"?"monitor_storage_pressure":"monitor_storage_scope_unavailable");throw e;}
+ }
+ async function mutate<T>(f:(db:MonitorSqlite)=>Promise<T>,maintenance=false):Promise<T>{return admission("monitor",async()=>{
   if(await legacyLockPresent())throw error("monitor_writer_busy");
   const db=await load("write");let committed=false;
   try{await db.run("BEGIN IMMEDIATE");const result=await f(db);options.beforePublish?.();await db.run("COMMIT");committed=true;options.afterRename?.();return result;
   }catch(e){if(!committed)await db.run("ROLLBACK").catch(()=>{});throw e instanceof BoxRuntimeError?e:error(committed?"monitor_commit_unknown":e&&typeof e==="object"&&"code"in e&&e.code==="SQLITE_FULL"?"monitor_storage_pressure":e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_writer_busy":"monitor_commit_failed");}
   finally{await db.close();}
- }
+ },maintenance);}
  const lastSequence=async(db:MonitorSqlite)=>number((await db.first("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='events'),0) AS n"))?.n);
  async function event(db:MonitorSqlite,epoch:string,kind:string,sid:string,agentId:string|null,at:number,incidentId:string|null=null,before:"box"|"temporal"|null=null,after:"box"|"temporal"|null=null,from:number|null=null){
   await db.run("INSERT INTO events(id,epoch,kind,scope,agent_id,incident_id,at_ms,before_harness,after_harness,interval_start) VALUES(?,?,?,?,?,?,?,?,?,?)",[randomUUID(),epoch,kind,sid,agentId,incidentId,at,before,after,from]);
@@ -121,7 +126,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
  const api={
   ...notificationOutbox({rootId,maxDatabaseBytes,read,mutate}),
   path:file,
-  async initialize(){
+  async initialize(){return admission("monitor-initialize",async()=>{
    await mkdir(root,{recursive:true,mode:0o700});await privateMonitorDirectory(resolve(root));await privateMonitorDirectory(directory,true);
    const initial=await lstat(file).catch(e=>{if(!missing(e))throw e;return null;});
    if(!initial){
@@ -177,7 +182,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
      return {databaseId:uuid(m.database_id),created:false,migrated:true,backup};
    }catch(e){if(!migrationCommitted)await db?.run("ROLLBACK").catch(()=>{});throw e instanceof BoxRuntimeError?e:error(migrationCommitted?"monitor_commit_unknown":"monitor_initialization_failed");}
    finally{await collectorLock?.release();await held?.release();await db?.close();}
-  },
+  });},
   async begin(epoch:string,at:number,agentIds:string[]){
    if(!monitorUuid(epoch)||number(at)===0)throw error("monitor_invalid_epoch");const ids=monitorTargets(agentIds),owner=await processStart(process.pid);
    return mutate(async db=>{const previous=await meta(db),oldAt=nullableTime(previous.heartbeat);
@@ -395,7 +400,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
    }).catch(failure=>{
     // A file-cap rejection rolled back the entire batch. Use the reserved
     // metadata headroom to acknowledge a gap, never spin replaying the batch.
-    if(failure instanceof BoxRuntimeError&&failure.message==="monitor_storage_pressure")return mutate(skipPressure);
+    if(failure instanceof BoxRuntimeError&&failure.message==="monitor_storage_pressure")return mutate(skipPressure,true);
     throw failure;
    });
   },
@@ -467,7 +472,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     // A short page-reclamation slice, never a full-image rewrite or a GET side effect.
     await db.run("PRAGMA incremental_vacuum(128)");
     const after=number((await db.first("SELECT COUNT(*) AS n FROM evidence"))?.n);return {removedEvidence:before-after,remainingEvidence:after,pressure:after>eventTarget,lifetimeEventLimit:null,managementRetained:true,retention:retired,physical:await sqlitePhysicalUsage(db)};
-  });},
+  },true);},
   async storageHealth(){return read(async db=>{
    const m=await meta(db),info=await stat(file),physical=await sqlitePhysicalUsage(db),auxiliary=await monitorAuxiliaryUsage(file);
    const health=m.version===VERSION?await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_at,last_state FROM observation_maintenance WHERE singleton=1"):null;

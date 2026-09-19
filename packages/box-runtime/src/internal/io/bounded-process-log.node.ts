@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { OBSERVATION_RETENTION } from "@grokbox/runtime-kernel/observation";
+import { DiagnosticBudgetError, withDiagnosticAdmission } from "../host/diagnostic-budget.node.ts";
 
 /** Writer-owned diagnostic segments. The caller must already own the modeld
  * listener; a borrower or failed competing acquisition must not open this sink.
@@ -11,7 +12,7 @@ export type ProcessLogEvent = "ready" | "listener_failed" | "shutdown_requested"
 export type ProcessLogHealth = {
   state: "available" | "unavailable" | "closed";
   writtenRecords: number; droppedRecords: number; rotations: number;
-  reason: "none" | "invalid_record" | "writer_busy" | "storage_unavailable";
+  reason: "none" | "invalid_record" | "writer_busy" | "storage_unavailable" | "storage_pressure";
 };
 const POLICY: ProcessLogPolicy = {
   segmentBytes: OBSERVATION_RETENTION.processSegmentBytes,
@@ -89,7 +90,7 @@ export type BoundedProcessLog = {
   health: () => ProcessLogHealth;
 };
 
-export async function openBoundedProcessLog(input: { runRoot: string; generation: string; nowMs: number; policy?: Partial<ProcessLogPolicy> }): Promise<BoundedProcessLog> {
+export async function openBoundedProcessLog(input: { runRoot: string; generation: string; nowMs: number; configurationRoot?: string; policy?: Partial<ProcessLogPolicy> }): Promise<BoundedProcessLog> {
   const policy = policyFor(input.policy);
   if (!validGeneration(input.generation) || !validTime(input.nowMs)) throw new Error("process_log_invalid_identity");
   // The existing listener owner creates the run root. Never follow a symlink to
@@ -133,9 +134,11 @@ export async function openBoundedProcessLog(input: { runRoot: string; generation
     current = { slot, sequence, generation: input.generation, createdAtMs: atMs, bytes: header.length, dev: st.dev, ino: st.ino };
     found.push(current); await syncDirectory(); health.rotations++;
   }
+  const admit = <T>(run: () => Promise<T>, maxBytes = 16 * 1024, maintenance = false) => input.configurationRoot
+    ? withDiagnosticAdmission({ configurationRoot: input.configurationRoot, sourceRoot: input.runRoot, writer: "process", maxBytes, maintenance }, run) : run();
   // Always start a new segment: a prior hard crash may have left a partial tail,
   // which must never be joined to a new record to manufacture valid NDJSON.
-  try { await rotate(input.nowMs); } catch (e) { await handle?.close().catch(() => undefined); throw e; }
+  try { await admit(() => rotate(input.nowMs)); } catch (e) { await handle?.close().catch(() => undefined); throw e; }
   return {
     health: () => ({ ...health }),
     maintain: async nowMs => {
@@ -147,11 +150,13 @@ export async function openBoundedProcessLog(input: { runRoot: string; generation
       try {
         // Only this listener owner's writer can retire its closed descriptors.
         // Never rotate/create a new active file merely because the service idles.
-        for (const segment of [...found]) {
-          if (segment === current || nowMs < segment.createdAtMs || nowMs - segment.createdAtMs < policy.maxAgeMs) continue;
-          await removeSegment(dir, segment); found.splice(found.indexOf(segment), 1); reclaimed += segment.bytes;
-        }
-        if (reclaimed) await syncDirectory();
+        await admit(async () => {
+          for (const segment of [...found]) {
+            if (segment === current || nowMs < segment.createdAtMs || nowMs - segment.createdAtMs < policy.maxAgeMs) continue;
+            await removeSegment(dir, segment); found.splice(found.indexOf(segment), 1); reclaimed += segment.bytes;
+          }
+          if (reclaimed) await syncDirectory();
+        }, 0, true);
         return result("maintained", reclaimed);
       } catch {
         health.state = "unavailable"; health.reason = "storage_unavailable";
@@ -165,14 +170,20 @@ export async function openBoundedProcessLog(input: { runRoot: string; generation
       if (busy) { health.droppedRecords++; health.reason = "writer_busy"; return "dropped"; }
       busy = true;
       try {
+        return await admit(async () => {
         const atMs = Number(own(value, "atMs"));
         if (!current || current.bytes + record.length > policy.segmentBytes
           || (atMs >= current.createdAtMs && atMs - current.createdAtMs >= policy.maxAgeMs)) await rotate(atMs);
         const st = await lstat(join(dir, segmentName(current!.slot)));
         if (st.dev !== current!.dev || st.ino !== current!.ino || st.isSymbolicLink() || st.nlink !== 1 || st.size !== current!.bytes) throw new Error("process_log_segment_changed");
         await handle!.writeFile(record); await handle!.sync(); current!.bytes += record.length;
-        health.writtenRecords++; return "written";
-      } catch {
+        health.writtenRecords++; return "written" as const;
+        });
+      } catch (error) {
+        if (error instanceof DiagnosticBudgetError && (error.reason === "pressure" || error.reason === "busy")) {
+          health.reason = error.reason === "busy" ? "writer_busy" : "storage_pressure"; health.droppedRecords++;
+          return "dropped";
+        }
         health.state = "unavailable"; health.reason = "storage_unavailable"; health.droppedRecords++;
         return "unavailable";
       } finally { busy = false; }

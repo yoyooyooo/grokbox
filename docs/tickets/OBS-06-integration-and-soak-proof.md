@@ -40,7 +40,7 @@ bun run check:publication
 
 O01/O02/O03/O04/O05/O07/O09已补实际源producer和组合路径，不能仅用最终JSON断言代替：原生handler和checkpoint挂点有固定源函数探针；公开默认测试使用owned原生边界，文件/数据库/Node/HTTP为真实依赖。尤其新增反例发现并修复授权前故障在授权后才入库导致误补发，工作选择与直接自动入口均检查incident first_seen和work created_at。
 
-O06全安装物理预留/长期稳态、O08完整执行/恢复台账安全退役仍由OBS-04/05实施，当前局部cap、unknown不重试、J1保护与实际SIGKILL不签全部。O10真实Bot行为必须在原生窗口观察；没有因此实现完整受托诊断policy。独立review与实际计数见[固定回执](../reports/2026-09-19-pre-e2e-observation.md)。
+O06新增已安装诊断writer共享接纳、事务临时空间预留和24轮真实文件/SQLite填充回收；O07验证材料到期退役但未知attempt的禁止重放标记仍保留。O08已有自动worker启动边界和同进程数据库恢复反例，不签全部执行/恢复台账安全退役。O10真实Bot行为必须在原生窗口观察；没有因此实现完整受托诊断policy。当前完整离线组合、全仓结果和精确源码身份见[联合接纳回执](../reports/2026-09-19-diagnostic-admission.md)，独立review仍单独记录。
 
 ## Native / LIVE gates
 

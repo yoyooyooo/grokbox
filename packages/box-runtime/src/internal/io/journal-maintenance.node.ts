@@ -1,5 +1,6 @@
 import { inspectJournalSegments, maintainSegmentedJournal } from "../host/journal-segments.node.ts";
 import { withEventsLock } from "../host/terminal-journal.node.ts";
+import { DiagnosticBudgetError, withDiagnosticAdmission } from "../host/diagnostic-budget.node.ts";
 
 export type JournalMaintenanceReceipt = {
   source: "control" | "host";
@@ -22,17 +23,17 @@ export async function maintainRegisteredJournals(input: { durableRoot: string; r
       const before = await inspectJournalSegments(root);
       if (before.mode === "legacy") state = "not_segmented";
       else {
-        await withEventsLock(root, async () => {
+        await withDiagnosticAdmission({ configurationRoot: input.durableRoot, sourceRoot: root, writer: "journal", maxBytes: 128 * 1024, maintenance: true }, () => withEventsLock(root, async () => {
           if (input.signal?.aborted) return;
           const lockedBefore = await inspectJournalSegments(root);
           await maintainSegmentedJournal(root, { configurationRoot: input.durableRoot, nowMs: input.nowMs });
           const after = await inspectJournalSegments(root);
           reclaimedBytes = Math.max(0, after.retiredBytes - lockedBefore.retiredBytes);
           state = "maintained";
-        }, 1);
+        }, 1));
       }
     } catch (error) {
-      state = error && typeof error === "object" && "code" in error && error.code === "LOCK_TIMEOUT" ? "busy" : "unavailable";
+      state = error instanceof DiagnosticBudgetError && error.reason === "busy" || error && typeof error === "object" && "code" in error && error.code === "LOCK_TIMEOUT" ? "busy" : "unavailable";
     }
     receipts.push({ source, state, reclaimedBytes, elapsedMs: Math.max(0, performance.now() - started) });
   }

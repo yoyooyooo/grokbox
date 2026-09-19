@@ -12,6 +12,7 @@ import { projectObservationIdentity, type ObservationIdentity } from "./observat
 import { projectNativeTurnObservation } from "./turn-observation.ts";
 import { HOST_STATE_SHAPES } from "./context-codec.ts";
 import { prepareJournalAppend, type JournalRotationOptions } from "./journal-segments.node.ts";
+import { withDiagnosticAdmission } from "./diagnostic-budget.node.ts";
 import { projectExecutionBoundary } from "@grokbox/runtime-kernel/observation";
 import { withJournalLock } from "./journal-lock.node.ts";
 import {
@@ -132,7 +133,7 @@ export async function appendNdjsonLine(root: string, line: string, role: Journal
     throw Object.assign(new Error("journal observation backlog"), { code: "JOURNAL_BACKPRESSURE" });
   }
   try {
-    await withEventsLock(root, async () => {
+    const append = () => withEventsLock(root, async () => {
       await ensureLogDir(path);
       const writtenPolicy = await prepareJournalAppend(root, Buffer.byteLength(payload), rotation);
       const handle = await open(path, fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
@@ -146,6 +147,9 @@ export async function appendNdjsonLine(root: string, line: string, role: Journal
       } finally { await handle.close(); }
       await writtenPolicy?.();
     });
+    if (rotation?.configurationRoot) await withDiagnosticAdmission({ configurationRoot: rotation.configurationRoot, sourceRoot: root,
+      writer: "journal", maxBytes: Buffer.byteLength(payload) + 128 * 1024 }, append);
+    else await append();
   } catch (error) { await complete(error); throw error; }
   await complete();
 }

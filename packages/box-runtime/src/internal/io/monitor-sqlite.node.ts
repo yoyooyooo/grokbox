@@ -36,7 +36,15 @@ export async function openMonitorSqlite(file:string,mode:"read"|"write"|"create"
    db.configure("busyTimeout",1000);
    // Rollback-journal disk transactions preserve strict read-only opens without
    // creating WAL/SHM files. Writers touch changed pages, never export the DB.
-   if(mode!=="read")await connection.run("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
+   // Admission reserves the DELETE rollback journal, not unconstrained temp
+   // files elsewhere on the filesystem. These pragmas are connection-local;
+   // never change an existing journal mode merely to make a budget look valid.
+   await connection.run("PRAGMA temp_store=MEMORY; PRAGMA cache_size=-4096;");
+   if(mode!=="read"){
+    const journal=await connection.first("PRAGMA journal_mode");
+    if(journal?.journal_mode!=="delete")throw Error("monitor_journal_mode_unsupported");
+    await connection.run("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
+   }
    return connection;
  }catch(error){await connection.close();throw error;}
 }

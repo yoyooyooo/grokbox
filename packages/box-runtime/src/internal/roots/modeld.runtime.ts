@@ -188,7 +188,7 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
       const processLog = yield* Effect.acquireRelease(
         Effect.gen(function* () {
           const storage = yield* Effect.tryPromise({ try: () => readStorageConfiguration(options.durableRoot), catch: () => "storage_config_unavailable" });
-          const log = yield* Effect.tryPromise({ try: () => openBoundedProcessLog({ runRoot: options.runRoot, generation, nowMs: Date.now(), policy: storage.policy.retention.process }), catch: () => "process_log_unavailable" });
+          const log = yield* Effect.tryPromise({ try: () => openBoundedProcessLog({ runRoot: options.runRoot, configurationRoot: options.durableRoot, generation, nowMs: Date.now(), policy: storage.policy.retention.process }), catch: () => "process_log_unavailable" });
           storagePolicyRevision = storage.revision;
           return log;
         })

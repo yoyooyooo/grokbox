@@ -24,6 +24,10 @@
 
 `notification-restore-fence.test.ts`使用真实SQLite备份/还原和loopback HTTP，覆盖已接受、unknown、worker重启、新故障继续、同故障换work ID、容量与时钟。该防护仅覆盖自动通知的副作用；不称为执行/维护/provision全域恢复fence，不保证任意整机快照恢复后的全局费用计数不会回退，也不授予显式重发权限。其他owner仍需各自的安全退役协议。
 
+## 诊断payload与安全标记的退役分界（2026-09-19）
+
+已验证：材料/通知/lease期限全部结束后，可回收原diagnostic snapshot而保留精确work/attempt与revision水位。reserved/attempting/unknown在清理后仍不能再次reserve/begin；旧证据返回expired，不因incident行退役被说成从未存在。实现及三个状态反例见[固定回执](../reports/2026-09-19-diagnostic-admission.md)。这不是安全标记的最终删除或对整个恢复盘回滚的保证，本票原准入/退役义务不由该局部成功消除。
+
 ## Work
 
 先做持久对象清单：STEP/TURN/context selection、maintenance c!/c-latest!、controller operations、grant、迁移回执与备份、provenance/profile引用、CONT snapshots。逐类记录唯一writer、重放入口、目前保留、可缩减字段、最后引用和退役条件；不能把热内存sweep当冷库GC。
