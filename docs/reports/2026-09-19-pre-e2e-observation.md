@@ -61,7 +61,24 @@ bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation
 
 首次全CLI回归出现6项失败：五项源/packaging/Host profile测试来自合成Host缺新工具观察anchor，一项是新增命令未进LIVE映射。补齐最小合成壳和精确覆盖后对应组通过。首次packages全目录2045 pass/47 skip/2 fail，两项为旧slice白名单未登记新增观察点；只补名单，不放宽其他断言。
 
-## 6. 未签范围与部署边界
+<a id="restore-fence"></a>
+## 6. 续作：自动通知的数据库恢复防护
+
+本轮新增实际worker持有的有限防重放状态，独立于可被还原的SQLite。worker启动时冻结新的接受边界，启动前故障/旧work不会因数据库恢复被自动补发。真正POST之前记住由scope、rule、occurrence_key和原始first_seen导出的稳定身份；同一故障即使重建新work ID也不能重复发。结果unknown同样保护，不能由HTTP错误清掉guard。若live记忆仍在但还原库已丢attempt，精确work进入unknown隔离，不伪造已接受且不阻挡后续新故障。
+
+guard最多4096项，仅在原work期限与原始发生的15分钟窗口都过后回收；时间高水位使时钟回拨不能重新打开过期区间。实际备份/还原证明包含accepted、HTTP unknown、worker重启、新work ID、后续新故障继续发送、容量及30轮到期回收。该机制只保护自动通知，不覆盖显式人为发送、所有业务ledger、整机时间倒退或恢复后的累计费用回退。
+
+最终`pre-e2e-observation`专项145 pass / 0 fail，18文件、2179断言；source前后为`a60c8fe5e0903ceed7eaa74e67333262e0c22494489be562f4462ae1bb05bbbb`，实际preload `21c49e113a0b7b8e6058e4d90ec98aa93e7432bf48fe53cbbcb5a62d9693df6c`。类型、构建、真实仓库导入边界和隐私检查通过；该数字包含原切片与本轮guard，不能再与前一组138相加。
+
+## 7. 验证宿主与环境的剩余阻断
+
+当前canonical kernel exports新增了monitor/observation/continuity/routines/inference/commands，但源码tsconfig路径曾未同步，已补齐精确路径及自动清单测试。shim安装器的Bun定位和版本探针增加有限等待，测试子进程等close并清理自有目录；不执行现役shim安装。仓库外CLI及shim有过一次2项成功复验，后续仍复现版本子进程超时，故不能宣布该通路最终稳定。
+
+本轮全CLI尝试771 pass / 2 fail / 1 error，失败在local-shim。运行时全目录和90文件第一组均遇到架构检查的隔离空preload esbuild超时，未取得完整结果；单独架构组24 pass / 2 fail。真实仓库边界检查通过，但不能替代这两项隔离fixture。没有调大期限把超时算成功，也没有取消负例的结构化拒绝要求。专项145项与kernel全组270 pass（31文件、1335断言）是限定有效证据，不是全仓通过。一次进一步编译器探针被工具拦截，未绕过重试。
+
+本轮只读核对目标环境PID1为tini，system/user两种systemd状态均offline；没有把systemctl二进制存在当作可用启动owner。不安装无资格的systemd unit，不修改官方supervisor，不以nohup/临时daemon声称boot注册已经实现。T40/T50需先形成受支持的环境启动接口，之后才有实际安装/重启验收。
+
+## 8. 未签范围与部署边界
 
 本片没有切Host/modeld、生产daemon或全局shim，没有迁移现役schema、创建Bot/Routine、领取凭据或POST原生端点。独立复审状态和最终合入范围以本片收口回执为准；实现者检查不替代独立报告。
 

@@ -10,8 +10,9 @@ import cliPackage from "../package.json" with { type: "json" };
 const marker = "# managed by grokbox scripts/install-local-shim.mjs";
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const entry = join(repoRoot, "packages", "cli", "src", "index.ts");
-const locatedBun = spawnSync("sh", ["-c", "command -v bun"], { encoding: "utf8" });
 const configuredBun = process.env.GROKBOX_BUN;
+const locatedBun = configuredBun ? { status: 0, stdout: configuredBun }
+  : spawnSync("sh", ["-c", "command -v bun"], { encoding: "utf8", timeout: 5000, killSignal: "SIGKILL" });
 const bun = configuredBun || locatedBun.stdout.trim();
 if ((!configuredBun && locatedBun.status !== 0) || !isAbsolute(bun) || bun.includes("\n")) {
   throw new Error("Cannot install the local shim without an absolute Bun executable path.");
@@ -66,7 +67,7 @@ for (const target of targets) {
   const probe = spawnSync(target, ["--version"], {
     cwd: tmpdir(),
     encoding: "utf8",
-    env: process.env,
+    env: process.env, timeout: 10000, killSignal: "SIGKILL",
   });
   if (probe.status !== 0 || probe.stdout.trim() !== cliPackage.version) {
     throw new Error(`Installed shim verification failed: ${target}`);

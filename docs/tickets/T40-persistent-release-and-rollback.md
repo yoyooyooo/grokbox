@@ -24,6 +24,10 @@ test2只保留T38冲突诊断/校准；test1未opt-in官方对照；test0或另�
 - 开始新managed TURN前读取T37新鲜身份；凭据/权限/所有权变更与配置切换分层，不重放上次未知STEP。status报告desired/实际加载/ready/执行证据差异，不把端口存在当已签字。
 - 不以全局Compact GATE或canary筛选代替per-Bot正常启用；稳定状态下所有故障注入关闭。
 
+### 当前启动前置（2026-09-19）
+
+E2E前置实现已提供daemon collector装配和确证失主socket恢复，但OS开机注册没有完成。限定只读环境检查显示PID1为tini，system与user systemd均offline；不能以systemctl存在选择一个实际不可用的启动owner，更不能修改官方supervisor或用临时nohup声称完成。下一实现需先取得当前环境支持的持久启动合同，再通过显式安装、独立进程和重启测试证明；此为本票CODE/ENV阻断，不转写成“只差live”。固定检查和测试宿主限制见[续作回执](../reports/2026-09-19-pre-e2e-observation.md#7-验证宿主与环境的剩余阻断)。
+
 ### 单盒monitor的长期运行（T41）
 
 [T41](T41-continuous-observation-and-alerting.md)承担采集/SQLite/incident程序，2026-09-13已有显式前台run、SQLite/本地changes及冷进程管理首片，入口见[持续观测](../maintainers/continuous-observation.md)。它没有安装服务或承诺残留锁恢复；本票只复用现有服务owner装配和生命周期：重启后一个collector、可读lastKnown但live证据待重新确认，CLI/网页退出不停止监控。collector的DB锁/满/迁移失败要可见，不重写产品配置或阻塞独立准入；停止/升级时有界退出事务/通知等待，保留unknown。

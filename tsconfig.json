@@ -22,6 +22,12 @@
       "@grokbox/runtime-kernel/selection": ["./packages/runtime-kernel/src/selection.ts"],
       "@grokbox/runtime-kernel/ports": ["./packages/runtime-kernel/src/ports.ts"],
       "@grokbox/runtime-kernel/status": ["./packages/runtime-kernel/src/status.ts"],
+      "@grokbox/runtime-kernel/monitor": ["./packages/runtime-kernel/src/monitor.ts"],
+      "@grokbox/runtime-kernel/observation": ["./packages/runtime-kernel/src/observation.ts"],
+      "@grokbox/runtime-kernel/continuity": ["./packages/runtime-kernel/src/continuity.ts"],
+      "@grokbox/runtime-kernel/routines": ["./packages/runtime-kernel/src/routines.ts"],
+      "@grokbox/runtime-kernel/inference": ["./packages/runtime-kernel/src/inference.ts"],
+      "@grokbox/runtime-kernel/commands": ["./packages/runtime-kernel/src/commands.ts"],
       "@grokbox/runtime-kernel/testing": ["./packages/runtime-kernel/src/testing.ts"]
     }
   },

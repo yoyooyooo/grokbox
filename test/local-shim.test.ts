@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile, rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import cliPackage from "../package.json" with { type: "json" };
@@ -7,23 +8,29 @@ import cliPackage from "../package.json" with { type: "json" };
 const repoRoot = join(import.meta.dir, "..");
 const installer = join(repoRoot, "scripts", "install-local-shim.mjs");
 
-async function text(stream: ReadableStream<Uint8Array>): Promise<string> {
-  return await new Response(stream).text();
-}
-
 async function run(argv: string[], cwd: string, env = process.env) {
-  const child = Bun.spawn(argv, { cwd, env, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([text(child.stdout), text(child.stderr), child.exited]);
+  const child = spawn(argv[0]!, argv.slice(1), { cwd, env, stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+  let stdout = "", stderr = "";
+  child.stdout.on("data", data => { stdout += data; });
+  child.stderr.on("data", data => { stderr += data; });
+  const code = await new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
   return { stdout, stderr, code };
 }
 
 describe("source-backed local global shim", () => {
+  test("all explicit kernel subpaths resolve from source without requiring the checkout cwd", async () => {
+    const metadata = JSON.parse(await readFile(join(repoRoot, "packages/runtime-kernel/package.json"), "utf8"));
+    const paths = JSON.parse(await readFile(join(repoRoot, "tsconfig.json"), "utf8")).compilerOptions.paths;
+    for (const [subpath, target] of Object.entries(metadata.exports)) {
+      expect(paths[`@grokbox/runtime-kernel/${subpath.slice(2)}`]).toEqual([`./packages/runtime-kernel/${String(target).slice(2)}`]);
+    }
+  });
   test("installs exact executable aliases and runs the TypeScript entry from another cwd", async () => {
     const fixture = await mkdtemp(join(tmpdir(), "grokbox-shim-test-"));
     const bin = join(fixture, "bin");
-    const env = { ...process.env, GROKBOX_SHIM_DIR: bin };
-
-    const first = await run(["bun", "run", installer], fixture, env);
+    const env = { ...process.env, GROKBOX_BUN: process.execPath, GROKBOX_SHIM_DIR: bin };
+    try {
+    const first = await run(["node", installer], fixture, env);
     expect(first.code, first.stderr).toBe(0);
     const second = await run(["bun", "run", installer], fixture, env);
     expect(second.code, second.stderr).toBe(0);
@@ -49,6 +56,7 @@ describe("source-backed local global shim", () => {
     expect(shortVersion).toEqual(longVersion);
     expect(help.code, help.stderr).toBe(0);
     expect(help.stdout).toContain("Usage: grokbox [options] [command]");
+    } finally { await rm(fixture, { recursive: true, force: true }); }
   }, 20_000);
 
   test("refuses an unmanaged command before installing either alias", async () => {
@@ -58,8 +66,9 @@ describe("source-backed local global shim", () => {
     const existing = join(bin, "grokbox");
     await writeFile(existing, "#!/bin/sh\necho unrelated\n", { mode: 0o755 });
 
+    try {
     const result = await run(
-      ["bun", "run", installer],
+      ["node", installer],
       fixture,
       { ...process.env, GROKBOX_SHIM_DIR: bin },
     );
@@ -67,5 +76,6 @@ describe("source-backed local global shim", () => {
     expect(result.stderr).toContain("Refusing to replace unmanaged command");
     expect(await readFile(existing, "utf8")).toBe("#!/bin/sh\necho unrelated\n");
     await expect(stat(join(bin, "gbox"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await rm(fixture, { recursive: true, force: true }); }
   });
 });
