@@ -18,7 +18,7 @@ export async function providerRuntimeFixture(fetch: typeof globalThis.fetch, opt
 } = {}) {
   const parent = await mkdtemp(join(tmpdir(), "provider-contract-"));
   const durableRoot = join(parent, "d"), runRoot = join(parent, "r"), agentId = randomUUID();
-  await mkdir(join(durableRoot, "state"), { recursive: true, mode: 0o700 }); await mkdir(runRoot);
+  await mkdir(join(durableRoot, "state"), { recursive: true, mode: 0o700 }); await mkdir(runRoot, { mode: 0o700 });
   const sha = "a".repeat(64), compile = { profileId: "fixture", profileSha256: sha, sourceSha256: sha, transformedSha256: sha };
   const identity = { pid: process.pid, start: 1, uid: 1, ppid: 1, exe: "/fixture/node", cmdline: ["node"], ancestry: [1] };
   const binding = bindCompiledHost(identity, "owned-operation", compile);

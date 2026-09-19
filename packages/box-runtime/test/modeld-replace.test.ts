@@ -11,7 +11,7 @@ const node = "/usr/bin/node";
 test("packed Node replaces only an exact old socket owner and exposes disk-backed admission", async () => {
   const root = await mkdtemp(join(tmpdir(), "replace-modeld-"));
   const run = join(root, "run"), durable = join(root, "durable");
-  await mkdir(run); await mkdir(durable);
+  await mkdir(run, { mode: 0o700 }); await mkdir(durable, { mode: 0o700 });
   const epoch = randomUUID();
   const old = spawn(node, [join(import.meta.dir, "fixtures/old-modeld-process.mjs"), join(run, "modeld.sock"), epoch,
     modeldRootId(durable, run), "runtime", "modeld", "run"], { stdio: ["ignore", "pipe", "pipe"] });

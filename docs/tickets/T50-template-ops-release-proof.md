@@ -2,11 +2,11 @@
 
 ## Status / Goal
 
-**Partial / M2–M4。** daemon已持有通知sender及经明确配置的collector，modeld已持有必要存储维护；canonical安装意图、调用者退出、同路径Node重启与游标接续已有实现和离线证明。Box开机注册/自启、全安装容量与真实原生端到端交付仍未完成，不把本票写为Spec-only或全Done。 [Spec §11](../roadmap/template-ops-automation-spec.md#tickets)。首发验收用户不保持CLI/网页/Bot回合也能持续观测、保存有界现场并收到已配置目标提醒；不包含自动Issue或自动维护。OBS-06拥有证据/存储成套测试，本票拥有服务安装和真实用户旅程。
+**当前前置实现已提供；环境/独立审查/原生发布资格仍Open。** daemon持有sender/collector，modeld持有诊断和执行owner维护；已提供精确服务注册/状态/退场命令、共同诊断容量接纳、执行/context/provision安全收缩，以及真实Node重启接续和拒重入反例。服务安装只对已可用且启用linger的systemd用户管理器生效，目标Box缺少该前提时保持ENV阻断；不声明OS全盘quota、任意整机回滚识别或已经真实送达。 [Spec §11](../roadmap/template-ops-automation-spec.md#tickets)。首发验收用户不保持CLI/网页/Bot回合也能持续观测、保存有界现场并收到已配置目标提醒；不包含自动Issue或自动维护。OBS-06拥有证据/存储成套测试，本票拥有服务安装和真实用户旅程。
 
 ## Depends-on / Modules
 
-复用T40服务/持久安装。当前source/drain由collector拥有，sender由现有daemon拥有，必要storage-maintenance由modeld的子Scope拥有且不随通知关闭；共享既有SQLite/outbox与文件owner，不新建scheduler。collector服务内装配已通过本轮实现，开机/平台生命周期仍为本票/T40前置。首发依OBS-00–06、T43–46/T51/T53/T54最小路径；不依T47–49/T52/T55高级/T56。
+复用T40服务注册和原有生命周期。source/drain由collector拥有，sender由daemon拥有，诊断/执行维护由modeld子Scope调用原owner且不随通知关闭；共享既有SQLite/outbox与文件owner，不新建scheduler。操作系统管理器及原生Host生命周期是目标环境资格，不用模拟manager证明已开机采用。首发依OBS-00–06、T43–46/T51/T53/T54最小路径；不依T47–49/T52/T55高级/T56。
 
 ## Work
 
@@ -24,7 +24,7 @@ README/运维手册/Skill/包内registry必须与真实可用命令同版本，�
 
 阶段性真实E2E统一按[LIVE的W0–W7](LIVE-integration-validation.md#window-order)与[执行手册](../maintainers/live-end-to-end.md)执行。先签已实现的单条/自动新告警链，再签无人值守安装和长期容量；后者若未完成，不得将默认自动提醒的发布承诺静默降为手动collector。源码部分已有`ops-automatic-notification.test.ts`、`ops-automatic-cli.test.ts`及`storage-maintenance-lifetime.test.ts`，固定证据见[自动通知回执](../reports/2026-09-19-automatic-notification.md)，不代替安装资格。
 
-当前实际用例为`monitor-service-lifetime.test.ts`、`test/monitor-service-packed.test.ts`、`daemon-socket-recovery.test.ts`和`test/incident-evidence-integration.test.ts`；通过`pre-e2e-observation`组合复验，不创建同义空测试。实际进程层覆盖Linux持有fd的服务门、准确socket owner和强杀后的游标恢复；缺失/损坏证据库不由重放安装自动重建。实际发布Node CLI、临时真实进程/DB/HTTP验证安装幂等、调用者退出、独立重启、断网/撤销/GC期间读取、unknown恢复和单实例；不得以detach/父PID或HTTP200代替完整生命周期。
+当前实际用例包括`runtime-services-installation.test.ts`、`test/runtime-services-packed.test.ts`、`modeld-persistent-restart.test.ts`、`execution-retirement.test.ts`、`monitor-service-lifetime.test.ts`、`test/monitor-service-packed.test.ts`、`daemon-socket-recovery.test.ts`和`test/incident-evidence-integration.test.ts`；通过`pre-e2e-observation`组合复验，不创建同义空测试。实际进程层覆盖Linux持有fd的服务门、准确socket owner和强杀后的游标恢复；缺失/损坏证据库不由重放安装自动重建。实际发布Node CLI、临时真实进程/DB/HTTP验证安装幂等、调用者退出、独立重启、断网/撤销/GC期间读取、unknown恢复和单实例；不得以detach/父PID或HTTP200代替完整生命周期。
 
 原生最小旅程：单目标配对→真实异常→固定revision→Webhook→Bot只提醒→用户随后取证；不自动执行命令/模型诊断/Issue询问。取消/禁用/原生任务清理需exact本次对象和终结证据。真实请求/费用/重启另获批准。
 
@@ -34,7 +34,7 @@ README/运维手册/Skill/包内registry必须与真实可用命令同版本，�
 
 原daemon监听器增加同路径服务所有权：Linux使用已有advisory fd gate，只有已登记的准确socket inode、确证已死的进程身份和拒绝连接同时成立时，才删除遗留socket重新bind；未知/损坏/旧无标记socket保留阻断。服务退出先结算collector、sender和其余资源再释放门，不遗留争抢失败产生的后台管理器。其他平台仍靠独占bind，不宣称同等强杀恢复。
 
-采集器已覆盖Host/control两个来源、配置变更/停用后的顺序退出、原生run health与进度、通知off下继续采集。source failure→固定revision→受管sender→loopback HTTP的组合及旧源事件晚到不补发已有证明；当前不是操作系统自启安装器、生产Provider/App或完整物理配额证明。[固定回执](../reports/2026-09-19-pre-e2e-observation.md)。
+采集器已覆盖Host/control两个来源、配置变更/停用后的顺序退出、原生run health与进度、通知off下继续采集。source failure→固定revision→受管sender→loopback HTTP的组合及旧源事件晚到不补发已有证明；这些旧组合不单独证明操作系统安装；新增注册命令与其环境要求另见[服务注册](../maintainers/runtime-service-registration.md)。生产Provider/App与完整现场证据仍需LIVE。[固定回执](../reports/2026-09-19-pre-e2e-observation.md)。
 
 ## LIVE routes / 分lane
 

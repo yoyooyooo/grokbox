@@ -1,6 +1,6 @@
 # OBS-05 — 执行安全状态与恢复引用的安全退役
 
-**Status：Partial（J1公共owner/ref接线已实现）；实际执行账本退役仍Planned，M2未关闭。** Contract：[Spec §8.5](../roadmap/template-ops-automation-spec.md#storage)；执行语义仍归[主Spec S10/S12/S13](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。依OBS-00与既有execution/context/controller owners，可与OBS-04并行；通知和Bot能力不是前置。
+**Status：当前E2E所用owner的安全收缩与写前容量门已实现，原生/整机恢复资格仍Open。** Contract：[Spec §8.5](../roadmap/template-ops-automation-spec.md#storage)；执行语义仍归[主Spec S10/S12/S13](../roadmap/box-runtime-impl-spec.md#modeld-effect-core)。依OBS-00与既有execution/context/controller owners，可与OBS-04并行；通知和Bot能力不是前置。
 
 ## Goal / Modules
 
@@ -14,9 +14,9 @@
 
 ## T53 scoped provision 记录（2026-09-18）
 
-新增`state/routine-provision/operations.sqlite`由T53单独持有创建/更新的重放保护，不纳入诊断GC。该owner已在storage status独立计量：主文件2MiB、最多256操作，不存prompt；容量不足只拒绝新的provision，不影响模型执行。attempting/unknown不能被TTL清除，损坏/缺失既有账本不能初始化成新许可。真实文件、并发、SIGKILL和诊断维护隔离已验证，详见[T53回执](../reports/2026-09-18-disabled-routine-provisioning.md)。
+新增`state/routine-provision/operations.sqlite`由T53单独持有创建/更新的重放保护，不纳入诊断GC。该owner已在storage status独立计量：主文件2MiB、最多256条完整操作，已被取代的结算历史可缩为精确tombstone，不存prompt；容量不足只拒绝新的provision，不影响模型执行。attempting/unknown不能被TTL清除，损坏/缺失既有账本不能初始化成新许可。真实文件、并发、SIGKILL和诊断维护隔离已验证，详见[T53回执](../reports/2026-09-18-disabled-routine-provisioning.md)。
 
-这不是本票完整退役方案：operation的安全压缩/退役、首次初始化中断修复尚未实现。未来解除阻断必须由该owner证明不会让旧请求重放，不能靠通用GC删库；J1恢复/安全owner合同不因此改变。
+operation的安全收缩现已实现，见下方owner边界；首次初始化中断、损坏存储等仍保守拒绝，不当作空数据库重新授予创建权。这种明确拒绝不是允许通用GC删库；J1恢复/安全owner合同不因此改变。
 
 ## 自动通知恢复防护（2026-09-19）
 
@@ -28,7 +28,16 @@
 
 已验证：材料/通知/lease期限全部结束后，可回收原diagnostic snapshot而保留精确work/attempt与revision水位。reserved/attempting/unknown在清理后仍不能再次reserve/begin；旧证据返回expired，不因incident行退役被说成从未存在。实现及三个状态反例见[固定回执](../reports/2026-09-19-diagnostic-admission.md)。这不是安全标记的最终删除或对整个恢复盘回滚的保证，本票原准入/退役义务不由该局部成功消除。
 
-## Work
+## 已实现的owner收缩边界
+
+- execution：原LevelDB writer串行提交STEP/TURN索引；只有closed/revoked TURN下非active STEP可按128项有限批次删除，原TURN拒绝标记保留并由真实kernel准入消费。旧epoch由既有服务代际拒绝，晚到结算不重建已退役STEP；新claim预留LevelDB重写/compaction空间，压力不清空安全数据。modeld同一维护Scope调用原owner并等待结算，不引入第二GC或累计STEP次数门；TURN队列与子项游标有限推进，未结前缀不会饿死后续已结明细。
+- context：已被后续操作取代且settled的详细receipt可收缩为同键`detailsRetired`标记；旧请求返回`operation_retired`，不再调用摘要/原生checkpoint。unknown/committing、最新receipt与明确保护对象不删。该标记跨服务epoch保留，不能换成not-found。
+- routine provision：原SQLite事务把不再被当前binding引用的observed操作收缩为精确operation/fingerprint tombstone；旧操作读出retired，改内容冲突，均不重新接触原生创建。unknown/attempting和当前binding不变；私有schema2使旧writer不能忽略新标记。300次更新/重入反例已实现，不再将256条完整历史记录当作永久运行寿命。
+- notification和CONT：沿用已实现的固定work/attempt、时间/代际恢复边界和CONT本域引用闭包；不借此次维护删除恢复点、未结职责或任意原生状态。
+
+所有安全标记依然受物理容量门约束，必要时拒绝新effect。没有“常量空间永久记住任意旧ID”或“无外部单调锚点识别任意整机快照回滚”的承诺；更强保证要先改变系统边界，不是本轮用TTL删除unknown。固定验证及剩余现场范围见[收口回执](../reports/2026-09-19-pre-e2e-closeout.md)。
+
+## Work / 后续更强范围
 
 先做持久对象清单：STEP/TURN/context selection、maintenance c!/c-latest!、controller operations、grant、迁移回执与备份、provenance/profile引用、CONT snapshots。逐类记录唯一writer、重放入口、目前保留、可缩减字段、最后引用和退役条件；不能把热内存sweep当冷库GC。
 
@@ -42,13 +51,15 @@ context commit_unknown/未结算副作用保留最小禁止重放标记或真实
 
 ## Executable acceptance
 
-待新增：
+已实现、纳入同一前置组合的实际入口：
 
 ```bash
-bun test packages/box-runtime/test/execution-retirement.test.ts packages/box-runtime/test/recovery-reference-gc.test.ts packages/runtime-kernel/test/retired-identity-admission.test.ts
-bun test packages/box-runtime/test/execution-history-storage-review.test.ts packages/box-runtime/test/execution-history-node.test.ts
-bun run typecheck
+bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation
+bun test packages/box-runtime/test/execution-retirement.test.ts packages/box-runtime/test/execution-history-storage-review.test.ts packages/box-runtime/test/execution-history-node.test.ts
+bun test packages/box-runtime/test/context-maintenance-lifetime.test.ts packages/box-runtime/test/routine-provision.test.ts packages/box-runtime/test/notification-restore-fence.test.ts packages/box-runtime/test/obs-continuity-contract.test.ts
 ```
+
+准入反例直接位于execution-retirement测试中，恢复引用保护位于既有J1测试，不为旧计划名再建空的同义文件。精确结果、制品与源码身份见[本轮回执](../reports/2026-09-19-pre-e2e-closeout.md)。
 
 实际kernel＋真实LevelDB＋新进程：大量不同STEP/turn结算后压缩，旧STEP/旧turn/旧operation在GC后、重启后、备份恢复后均零新增模型/工具副作用；新合法请求继续成功。维护commit_unknown在压缩后仍阻断，读成功不掩盖写失败。
 

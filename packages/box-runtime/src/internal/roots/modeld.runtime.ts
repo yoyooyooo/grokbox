@@ -160,8 +160,11 @@ function modeldServiceLifetime(options: ModeldRootOptions, ready: (value: Modeld
     // unknown/legacy paths still refuse. Acquire before listener, release after
     // listener close, so neither a borrower nor a competitor can unlink it.
     const socketLease = yield* Effect.acquireRelease(
-      Effect.tryPromise({ try: () => acquireServiceSocket(path, generation),
-        catch: () => new BoxRuntimeError("invalid_usage", "modeld socket exists or owner is unqualified") }),
+      Effect.tryPromise({ try: () => acquireServiceSocket(path, generation, "owner-writable"),
+        catch: error => {
+          const reason = error instanceof Error && /^(?:daemon_socket|advisory_gate)_[a-z_]+$/.test(error.message) ? error.message : "socket_owner_unavailable";
+          return new BoxRuntimeError("invalid_usage", `modeld socket exists or owner is unqualified: ${reason}`);
+        } }),
       value => Effect.tryPromise({ try: () => value.release(), catch: () => new BoxRuntimeError("invalid_usage", "modeld_socket_cleanup_gap") }).pipe(Effect.orDie),
     );
     let executionHistory: ExecutionHistory | undefined;

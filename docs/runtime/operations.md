@@ -6,7 +6,7 @@
 
 三条行为链分开：自动通知默认只提醒并结束；用户明确委托后，原生 Bot 可在任务范围内自主取证、操作和核验；独立预授权维护还需对应能力/预算/原生安全门。通知模式不是所有 Bot 的永久只读 persona，也不是诊断/重启/公开授权。
 
-源码已经提供 incident/evidence 与局部存储维护、Routine 管理/provision、私有配对、接收者预检、显式发送、通知激活授权以及 daemon sender。**自动 sender 不再是未实现 placeholder。** collector 的持续安装、完整跨 owner 容量、恢复重放防护、安全退役和 native unknown 对账仍有独立实现/资格差额；不能把已实现 sender 说成整条无人值守链已交付。
+源码提供 incident/evidence、daemon 所属 collector/sender、Routine 管理/provision、私有配对、接收者预检、显式发送和持续通知授权。已安装的诊断 writer 共享写前容量接纳；执行历史、compact 和 provision 由原 owner 压缩已结算明细并保留拒绝旧操作的标记。`runtime services`只对已证明可用且启用 linger 的 systemd 用户管理器注册精确 daemon/modeld 单元，预览/状态不安装，确认也不修改原生 Host。目标机器的启动管理器、当前制品采用、实际原生提醒与 unknown 对账需各自资格，不能由源码存在或已注册单元推导整条无人值守交付。
 
 首发默认提醒不等待高级 routing、自动诊断/Host 维护、完整连续性或支持发布；但若宣称长期无人值守和全安装有界，必须完成对应服务/容量门。自动 Issue、默认询问是否建单、内置 REST publisher 和自动公开 grant 已退出当前范围。后续用户决定公开时仅复用已有可用 gh 身份，不自动登录、换身份或补发旧事故。
 
@@ -82,7 +82,7 @@ raw-sensitive 默认不采集，额外用途/对象/字节/期限授权仍不能
 
 三个容量域独立：诊断池、执行/恢复安全状态、制品/用户数据。诊断池包括日志、SQLite 主文件/索引/辅助页、证据、通知状态和受管暂存；safety/CONT 原生恢复不因占空间被诊断 TTL 删除。用户 export、Memory、原生会话、共享文件不归观测 GC。
 
-target 是平时回收水位，max 是新诊断数据接纳边界，reserve 计入 max；实际物理预留与全体消费者采用不能由配置算术推导。当前局部 writer 采用、结构化日志、journal 分段、SQLite 增量回收和 footprint 已有实现；`installationBudgetEnforced=false` 的缺口不能改成全安装保证。精确预算/版本只看 [configuration](../configuration.md)和 source policy。
+target 是平时回收水位，max 是新诊断数据接纳边界，reserve 计入 max。已安装范围的 monitor、journal、过程日志在原域锁之前取得共同接纳门，计入实际文件/allocated 块并预留主文件增长、DELETE rollback journal和迁移备份；计量不完整或范围丢失时不恢复更大的默认池。尚未采用的新旧 writer、用户导出、执行/恢复及制品不因此变成一个OS quota，`installationBudgetEnforced=false`保留范围限制。精确预算/版本只看[configuration](../configuration.md)和原owner策略。
 
 process/debug 日志由真正写入 owner 分段，关闭段才回收；持有 fd 时仅 rename 不会切 writer，不用 copytruncate 假装无损。modeld 取得 listener 后才持有结构化生命周期 sink，borrower 不抢 writer；退出先结算日志/维护再关 listener。raw stdout/stderr、Job 协议输出和普通诊断有不同契约，旧 raw 文件只计量，不擅删。
 
@@ -94,7 +94,9 @@ SQLite 回收同时量 logical/live/free/file/auxiliary bytes，不以 DELETE �
 
 服务维护以有界批次/游标组合各 owner，无模型、全盘扫描、每 GET vacuum 或通用 path 删除器。计划时间限额不是物理 commit 完成 SLA；实际不可中断写入需结算。墙钟回拨不复活权限/通知，大幅前跳不误删承诺证据。超过预算时诊断写可丢弃并计数，执行安全账本不能因此假提交。
 
-**先失效旧请求，再删除去重记录。** 每个 owner 证明 TURN/operation 终结、旧 epoch 不再准入、迟到和恢复入口执行同一 fence，才能收缩为 tombstone 或最终回收。任意旧 ID 可无限重投时，不能同时承诺常量空间和永久安全去重。commit_unknown 只可缩成阻断记录，不能因时间转为 failed/safe-to-retry。当前/回退制品、迁移和 CONT 闭包依赖由原 owner 保留，Trash 仍计占用。
+**先失效旧请求，再收缩明细。** 原 LevelDB writer 在同一串行队列内，仅回收已关闭/撤销 TURN 下的已结算 STEP，保留实际准入会读取的 TURN 拒绝标记；活动子项仍保护。新服务代际沿原协议拒绝旧 captured 请求。已被新操作取代的 settled compact 回执可压缩成 `detailsRetired`，旧操作返回 `operation_retired`，不再次生成摘要；unknown checkpoint不压缩成可重试。Routine provision 的已结算旧操作仅在不再被当前binding引用时，以同一SQLite事务压缩成精确fingerprint tombstone；旧ID直接返回retired，不再访问原生接口。其私有schema升级使旧writer拒绝不认识的退役状态。
+
+这些owner保持明确物理增长门，容量不足拒绝不能可靠记账的新effect，不以累计STEP次数停服，也不删除unknown腾空间。它们不承诺无限寿命、常量空间且任意旧ID永久可重放；同样不宣称没有外部单调锚点时能识别任意整机回滚。自动通知已有worker启动边界及同生命周期数据库恢复guard；显式用户操作、全盘备份恢复仍必须按来源与未知副作用对账。当前/回退制品、迁移和CONT闭包由原owner保留，Trash仍计占用。
 
 ### OBS / CONT 接口
 

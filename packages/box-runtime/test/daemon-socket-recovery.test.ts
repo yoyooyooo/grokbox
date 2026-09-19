@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { createServer } from "node:net";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { acquireDaemonSocket } from "../src/internal/io/daemon-socket.node.ts";
+import { acquireDaemonSocket, acquireServiceSocket } from "../src/internal/io/daemon-socket.node.ts";
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "daemon-socket-proof-")), socket = join(directory, "daemon.sock");
@@ -61,6 +61,19 @@ test.skipIf(process.platform !== "linux")("malformed or redirected owner records
     await symlink(victim, owner);
     await expect(acquireDaemonSocket(f.socket, randomUUID())).rejects.toThrow("owner_unqualified");
     expect(await readFile(victim, "utf8")).toBe("KEEP");
+  } finally { await f.close(); }
+});
+
+test("modeld permits owner-only writable directories without changing permissions, while group-writable parents are refused", async () => {
+  const f = await fixture();
+  try {
+    await chmod(f.directory, 0o755);
+    await expect(acquireDaemonSocket(f.socket, randomUUID())).rejects.toThrow("directory_unqualified");
+    const lease = await acquireServiceSocket(f.socket, randomUUID(), "owner-writable"); await lease.release();
+    expect((await stat(f.directory)).mode & 0o777).toBe(0o755);
+    await chmod(f.directory, 0o775);
+    await expect(acquireServiceSocket(f.socket, randomUUID(), "owner-writable")).rejects.toThrow("directory_unqualified");
+    expect((await stat(f.directory)).mode & 0o777).toBe(0o775);
   } finally { await f.close(); }
 });
 

@@ -39,7 +39,7 @@ test("actual Node owner writes bounded lifecycle records; a CLI borrower neither
 test.skipIf(process.platform !== "linux")("actual modeld replacement does not inherit an unbounded log fd and leaves old raw logs untouched", async () => {
   const dir = await mkdtemp(join(tmpdir(), "node-modeld-log-replace-"));
   const runRoot = join(dir, "run"), durableRoot = join(dir, "durable");
-  await mkdir(runRoot); await mkdir(join(runRoot, "log"), { mode: 0o700 });
+  await mkdir(runRoot, { mode: 0o700 }); await mkdir(join(runRoot, "log"), { mode: 0o700 });
   const legacyPath = join(runRoot, "log", "modeld-process.log"); await writeFile(legacyPath, "OLD_RAW_DO_NOT_MODIFY");
   const owner = launchPackedRuntime(dir, ["modeld", "run"], durableRoot);
   let replacement: { pid: number; serviceEpoch: string } | undefined;

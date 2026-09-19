@@ -16,9 +16,11 @@ export type RuntimeServiceRequest = {
   releaseRoot?: string; nodeExecutable?: string;
   confirmed?: boolean; expectedPlan?: string; start?: boolean;
 };
+export type ServiceUnitState = { name: string; active: string; enabled: boolean; mainPid: number;
+  fragmentPath: string | null; hasDropIns: boolean };
 export type ServiceManager = {
   probe(): Promise<{ available: boolean; bootPersistent: boolean; reason: string }>;
-  states(units: string[]): Promise<Array<{ name: string; active: string; enabled: boolean; mainPid: number }>>;
+  states(units: string[]): Promise<ServiceUnitState[]>;
   reload(): Promise<void>; enable(units: string[], start: boolean): Promise<void>; disable(units: string[]): Promise<void>;
 };
 export class RuntimeServiceError extends Error {
@@ -43,7 +45,13 @@ async function privateText(file: string): Promise<string | null> {
   try {
     fd = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const before = await fd.stat();
-    if (!before.isFile() || before.nlink !== 1 || before.size > LIMIT || (before.mode & 0o077) !== 0 || process.getuid && before.uid !== process.getuid()) return bad("unsafe_file");
+    if (!before.isFile() || ![1, 2].includes(before.nlink) || before.size > LIMIT || (before.mode & 0o077) !== 0 || process.getuid && before.uid !== process.getuid()) return bad("unsafe_file");
+    if (before.nlink === 2) {
+      // Exclusive publish is link+unlink. Only its precise canonical/staging pair
+      // may be read after a crash between those calls, never an arbitrary alias.
+      const paired = await lstat(file.endsWith(".next") ? file.slice(0, -5) : `${file}.next`);
+      if (!paired.isFile() || paired.isSymbolicLink() || paired.dev !== before.dev || paired.ino !== before.ino || paired.nlink !== 2) return bad("unsafe_file");
+    }
     const bytes = Buffer.alloc(LIMIT + 1); const read = await fd.read(bytes, 0, bytes.length, 0);
     const after = await fd.stat(), named = await lstat(file);
     if (read.bytesRead !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs || named.dev !== before.dev || named.ino !== before.ino) return bad("file_changed");
@@ -87,11 +95,13 @@ export function systemdUserManager(): ServiceManager {
       } catch { return { available: false, bootPersistent: false, reason: "user_manager_unavailable" }; }
     },
     states: async units => Promise.all(units.map(async name => {
-      const text = await exec("systemctl", ["--user", "--no-pager", "show", unit(name), "--property=ActiveState,UnitFileState,MainPID"]);
+      const text = await exec("systemctl", ["--user", "--no-pager", "show", unit(name), "--property=ActiveState,UnitFileState,MainPID,FragmentPath,DropInPaths"]);
       const rows = Object.fromEntries(text.split("\n").map(line => { const at = line.indexOf("="); return [line.slice(0, at), line.slice(at + 1)]; }));
       const pid = Number(rows.MainPID ?? 0);
       if (!Number.isSafeInteger(pid) || pid < 0 || !["active", "inactive", "failed", "activating", "deactivating", "reloading", "maintenance"].includes(rows.ActiveState ?? "")) return bad("manager_state_invalid");
-      return { name, active: rows.ActiveState!, enabled: rows.UnitFileState === "enabled", mainPid: pid };
+      if (rows.FragmentPath === undefined || rows.DropInPaths === undefined) return bad("manager_state_invalid");
+      return { name, active: rows.ActiveState!, enabled: rows.UnitFileState === "enabled", mainPid: pid,
+        fragmentPath: rows.FragmentPath || null, hasDropIns: rows.DropInPaths !== "" };
     })),
     reload: async () => { await exec("systemctl", ["--user", "daemon-reload"]); },
     enable: async (units, start) => { await exec("systemctl", ["--user", "enable", ...(start ? ["--now"] : []), ...units.map(unit)]); },
@@ -122,17 +132,28 @@ async function publish(file: string, text: string, replace: boolean) {
   if (pending !== null && pending !== text) return bad("staging_requires_reconciliation");
   if (pending === null) { const fd = await open(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     try { await fd.writeFile(text); await fd.sync(); } finally { await fd.close(); } }
-  if (replace) await rename(temp, file); else { await link(temp, file); await unlink(temp); }
+  const staged = await lstat(temp), current = await lstat(file).catch(e => { if (missing(e)) return null; throw e; });
+  if (current && current.dev === staged.dev && current.ino === staged.ino && current.isFile() && current.nlink === 2 && staged.nlink === 2) await unlink(temp);
+  else if (replace) await rename(temp, file);
+  else { await link(temp, file); await unlink(temp); }
   await syncDirectory(dirname(file));
 }
 // Constant pre-start program executes only before the installed entry, never
 // through that unverified entry. It checks bounded regular files each restart.
 const CHECK_RELEASE = "const f=require('node:fs'),c=require('node:crypto');for(let i=1;i<process.argv.length;i+=2){const p=process.argv[i],s=f.lstatSync(p);if(!s.isFile()||s.isSymbolicLink()||s.size>67108864)process.exit(78);const h=c.createHash('sha256').update(f.readFileSync(p)).digest('hex');if(h!==process.argv[i+1])process.exit(78)}";
+function loadedDefinitions(states: ServiceUnitState[], units: Unit[], unitDir: string, absent = false, missingNames: ReadonlySet<string> = new Set()) {
+  if (states.length !== units.length || states.some((s, i) => s.name !== units[i]!.name || s.hasDropIns
+    || (absent || missingNames.has(s.name) ? s.fragmentPath !== null : s.fragmentPath !== join(unitDir, units[i]!.name)))) return bad("manager_definition_mismatch");
+}
+const publicStates = (states: ServiceUnitState[]) => states.map(({ fragmentPath: _path, hasDropIns, ...state }) => ({ ...state, hasDropIns }));
 function render(scope: string, component: Unit["component"], root: string, run: string, home: string, release: string, node: string, artifacts: Registration["artifacts"]): Unit {
   const name = `grokbox-${scope.slice(0, 16)}-${component}.service`, entry = join(release, "dist/index.js");
   const args = component === "daemon" ? ["daemon", "serve", "--socket", join(run, "daemon.sock"), "--json"] : ["runtime", "modeld", "run", "--json"];
   const text = ["# grokbox-owned-runtime-service-v1", "[Unit]", `Description=grokbox ${component} (${scope.slice(0, 16)})`,
     "StartLimitIntervalSec=300", "StartLimitBurst=3", "", "[Service]", "Type=exec", "UMask=0077",
+    // A user's service-manager environment is not a verified loader policy.
+    // These can execute code before our pre-start artifact check even runs.
+    "UnsetEnvironment=NODE_OPTIONS NODE_PATH LD_PRELOAD LD_LIBRARY_PATH DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH",
     `WorkingDirectory=${release}`, ...Object.entries({ HOME: home, GROKBOX_CONFIG_DIR: root, GROKBOX_BOX_RUNTIME_ROOT: root, GROKBOX_RUN_ROOT: run }).map(([k, v]) => `Environment=${quote(`${k}=${v}`)}`),
     `ExecStartPre=${[node, "--eval", CHECK_RELEASE, entry, artifacts.entry, join(release, "dist/preload.cjs"), artifacts.preload].map(quote).join(" ")}`,
     `ExecStart=${[node, entry, ...args].map(quote).join(" ")}`, "Restart=on-failure", "RestartSec=30", "TimeoutStopSec=40",
@@ -150,7 +171,8 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     try { await directory(parent); } catch (e) { if (!missing(e)) throw e; }
   }
   const savedText = await privateText(file), saved = registration(savedText);
-  if (saved && saved.scope !== scope) return bad("scope_changed");
+  const pendingText = await privateText(`${file}.next`), pending = registration(pendingText);
+  if (saved && saved.scope !== scope || pending && pending.scope !== scope) return bad("scope_changed");
   const environment = await manager.probe();
   if (input.action === "status") {
     const units = saved ? await Promise.all(saved.units.map(async u => ({ name: u.name, definitionMatched: await privateText(join(unitDir, u.name)) === u.text }))) : [];
@@ -160,10 +182,14 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     if (saved) try { artifactsMatched = await artifact(join(saved.release, "dist/index.js")) === saved.artifacts.entry
       && await artifact(join(saved.release, "dist/preload.cjs")) === saved.artifacts.preload && await artifact(saved.node, 256 * 1024 * 1024) === saved.artifacts.node; }
     catch { artifactsMatched = false; }
-    return { schemaVersion: 1, scope, environment, phase: saved?.phase ?? "not_installed", units, managerObserved: observed, artifactsMatched,
+    let loadedDefinitionsMatched: boolean | null = null;
+    if (saved && observed) { try { loadedDefinitions(observed, saved.units, unitDir, saved.phase === "retired"); loadedDefinitionsMatched = true; }
+      catch { loadedDefinitionsMatched = false; } }
+    return { schemaVersion: 1, scope, environment, phase: saved?.phase ?? "not_installed", units,
+      managerObserved: observed ? publicStates(observed) : null, loadedDefinitionsMatched, artifactsMatched, pendingPhase: pending?.phase ?? null,
       filesMatched: saved ? units.every(u => u.definitionMatched) : false, executionQualified: false, createsServices: false };
   }
-  let target: Registration;
+  let target: Registration, configRevision: string | null = null;
   if (input.action === "install") {
     const release = path(input.releaseRoot), node = path(await realpath(path(input.nodeExecutable)));
     const releaseInfo = await lstat(release);
@@ -172,8 +198,9 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     if (await lstat(join(release, ".git")).then(() => true, e => { if (missing(e)) return false; throw e; })) return bad("source_checkout_not_release");
     const pkgFile = join(release, "package.json"); await artifact(pkgFile, 64 * 1024);
     const pkg = JSON.parse(await readFile(pkgFile, "utf8")); if (pkg.name !== "grokbox") return bad("wrong_package");
-    const version = await exec(node, ["--version"]); if (!/^v(?:2[2-9]|[3-9][0-9])\./.test(version)) return bad("node_version_unsupported");
-    const config = await openConfigStore(rootConfigLayout(root)).read();
+    const version = /^v(\d+)\.(\d+)\.(\d+)$/.exec(await exec(node, ["--version"]));
+    if (!version || Number(version[1]) < 20 || Number(version[1]) === 20 && Number(version[2]) < 17) return bad("node_version_unsupported");
+    const config = await openConfigStore(rootConfigLayout(root)).read(); configRevision = config.revision;
     if (config.document.daemon?.observation && config.document.daemon.observation.runRoot !== run) return bad("collector_root_mismatch");
     const artifacts = { entry: await artifact(join(release, "dist/index.js")), preload: await artifact(join(release, "dist/preload.cjs")), node: await artifact(node, 256 * 1024 * 1024) };
     const units = ["modeld", "daemon"].map(c => render(scope, c as Unit["component"], root, run, home, release, node, artifacts));
@@ -189,8 +216,8 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     if (!saved || saved.phase === "retired") { if (value.content !== null) return bad("unit_already_exists"); }
     else if (value.content !== null && value.content !== target.units[i]!.text) return bad("unit_changed");
   }
-  const planDigest = sha256Text(canonicalJson({ action: input.action, request: target.requestDigest, saved: savedText === null ? null : sha256Text(savedText),
-    files: currentFiles.map(f => f.content === null ? null : sha256Text(f.content)), start: input.start === true }));
+  const planDigest = sha256Text(canonicalJson({ action: input.action, request: target.requestDigest, saved: savedText === null ? null : sha256Text(savedText), pending: pendingText === null ? null : sha256Text(pendingText),
+    files: currentFiles.map(f => f.content === null ? null : sha256Text(f.content)), configRevision, start: input.start === true }));
   const preview = { schemaVersion: 1, action: input.action, scope, planDigest, environment, units: names,
     releaseRevision: target.requestDigest, startsNow: input.action === "install" && input.start === true,
     affectsHost: false, importsShellCredentials: false, executionQualified: false, written: false };
@@ -200,14 +227,41 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
   if (!environment.available || !environment.bootPersistent) return bad(environment.reason);
   await directory(state, true);
   return withJournalLock(join(state, "runtime-services.lock"), async () => {
-    if (await privateText(file) !== savedText) return bad("plan_conflict");
+    if (await privateText(file) !== savedText || await privateText(`${file}.next`) !== pendingText) return bad("plan_conflict");
+    for (const [i, u] of target.units.entries()) if (await privateText(join(unitDir, u.name)) !== currentFiles[i]!.content) return bad("plan_conflict");
+    if (input.action === "install" && (await openConfigStore(rootConfigLayout(root)).read()).revision !== configRevision) return bad("plan_conflict");
     if (input.action === "install" && (await artifact(join(target.release, "dist/index.js")) !== target.artifacts.entry
       || await artifact(join(target.release, "dist/preload.cjs")) !== target.artifacts.preload || await artifact(target.node, 256 * 1024 * 1024) !== target.artifacts.node)) return bad("artifact_changed");
     const currentEnv = await manager.probe(); if (!currentEnv.available || !currentEnv.bootPersistent) return bad(currentEnv.reason);
     for (const p of [join(home, ".config"), join(home, ".config/systemd"), unitDir]) await directory(p, true);
     if (input.action === "uninstall") {
       const active = await manager.states(names);
+      const absent = new Set(currentFiles.filter(f => f.content === null).map(f => f.name));
+      if (absent.size && !["preparing", "removing"].includes(saved?.phase ?? "")) return bad("unit_missing");
+      loadedDefinitions(active, target.units, unitDir, false, absent);
       if (active.some(u => !["inactive", "failed"].includes(u.active) || u.mainPid !== 0)) return bad("services_must_be_stopped");
+    }
+    if (pending && ["installed", "retired"].includes(pending.phase)) {
+      // A lost final local acknowledgement cannot justify replaying manager
+      // actions. Complete only the already-staged result after fresh readback.
+      const expectedPhase = input.action === "install" ? "installed" : "retired";
+      if (pending.requestDigest !== target.requestDigest || pending.phase !== expectedPhase) return bad("staging_requires_reconciliation");
+      for (const u of target.units) {
+        const present = await privateText(join(unitDir, u.name));
+        if (present !== (expectedPhase === "installed" ? u.text : null)) return bad("unit_changed");
+        const staged = await privateText(`${join(unitDir, u.name)}.next`);
+        if (staged !== null) {
+          if (expectedPhase !== "installed" || staged !== u.text) return bad("staging_requires_reconciliation");
+          await publish(join(unitDir, u.name), u.text, true);
+        }
+      }
+      const observed = await manager.states(names);
+      loadedDefinitions(observed, target.units, unitDir, expectedPhase === "retired");
+      if (observed.some(s => s.enabled !== (expectedPhase === "installed")
+        || expectedPhase === "retired" && (s.mainPid !== 0 || !["inactive", "failed"].includes(s.active))
+        || input.start === true && !["active", "activating"].includes(s.active))) return bad("manager_readback_mismatch");
+      await publish(file, pendingText!, savedText !== null);
+      return { ...preview, phase: expectedPhase, written: true, reconciled: true, managerObserved: publicStates(observed) };
     }
     // Persist the exact intent before manager changes. Recovery may resume only
     // matching owned definitions; unknown/mismatched content is never replaced.
@@ -217,25 +271,38 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
       for (const u of target.units) {
         const present = await privateText(join(unitDir, u.name));
         if (present !== null && present !== u.text) return bad("unit_changed");
-        if (input.action === "install" && present === null) await publish(join(unitDir, u.name), u.text, false);
+        if (input.action === "install") {
+          const staged = await privateText(`${join(unitDir, u.name)}.next`);
+          if (staged !== null && staged !== u.text) return bad("staging_requires_reconciliation");
+          if (present === null || staged !== null) await publish(join(unitDir, u.name), u.text, present !== null);
+        }
       }
-      if (input.action === "install") { await manager.reload(); await manager.enable(names, input.start === true); }
+      if (input.action === "install") {
+        await manager.reload();
+        loadedDefinitions(await manager.states(names), target.units, unitDir);
+        if ((await openConfigStore(rootConfigLayout(root)).read()).revision !== configRevision) return bad("plan_conflict");
+        await manager.enable(names, input.start === true);
+      }
       else {
         await manager.disable(names);
         const stillStopped = await manager.states(names);
+        loadedDefinitions(stillStopped, target.units, unitDir, false, new Set(currentFiles.filter(f => f.content === null).map(f => f.name)));
         if (stillStopped.some(u => !["inactive", "failed"].includes(u.active) || u.mainPid !== 0)) return bad("services_must_be_stopped");
         for (const u of target.units) {
-          if (await privateText(join(unitDir, u.name)) !== u.text) return bad("unit_changed");
+          const present = await privateText(join(unitDir, u.name));
+          if (present === null && currentFiles.some(f => f.name === u.name && f.content === null)) continue;
+          if (present !== u.text) return bad("unit_changed");
           await unlink(join(unitDir, u.name));
         }
         await syncDirectory(unitDir); await manager.reload();
       }
       const managerObserved = await manager.states(names);
+      loadedDefinitions(managerObserved, target.units, unitDir, input.action === "uninstall");
       if (managerObserved.length !== names.length || managerObserved.some((u, i) => u.name !== names[i]
         || u.enabled !== (input.action === "install") || input.action === "install" && input.start === true && !["active", "activating"].includes(u.active))) return bad("manager_readback_mismatch");
       const phase = input.action === "install" ? "installed" as const : "retired" as const;
       await publish(file, JSON.stringify({ ...target, phase }) + "\n", true);
-      return { ...preview, written: true, phase, managerObserved };
+      return { ...preview, written: true, phase, managerObserved: publicStates(managerObserved) };
     } catch (e) { if (e instanceof RuntimeServiceError && e.reason === "unit_changed") throw e; return bad("installation_outcome_unknown"); }
   }, 1);
 }

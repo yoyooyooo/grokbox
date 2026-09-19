@@ -10,10 +10,10 @@ export const EXECUTION_STORAGE_POLICY = Object.freeze({
   targetBytes: 64 * 1024 * 1024, maxBytes: 160 * 1024 * 1024,
   transitionReserveBytes: 32 * 1024 * 1024, maxFiles: 2048, batch: 128,
 });
-export async function executionFootprint(path: string) {
+export async function executionFootprint(path: string, resample = 0): Promise<{ fileBytes: number; files: number }> {
   const dir = await lstat(path);
   if (!dir.isDirectory() || dir.isSymbolicLink() || process.getuid && dir.uid !== process.getuid()) throw new BindingFailure("ledger_unavailable");
-  const handle = await opendir(path); let bytes = dir.blocks * 512, files = 0;
+  const handle = await opendir(path); let bytes = dir.blocks * 512, files = 0, changed = false;
   try {
     for (;;) {
       const entry = await handle.read(); if (!entry) break;
@@ -24,12 +24,23 @@ export async function executionFootprint(path: string) {
       });
       // LevelDB may retire a file during this metadata observation. Admission
       // reserves transition headroom; this is not a zero-race disk snapshot.
-      if (!value) continue;
-      if (!value.isFile() || value.isSymbolicLink() || value.nlink !== 1 || process.getuid && value.uid !== process.getuid()) throw new BindingFailure("ledger_unavailable");
+      if (!value || value.nlink === 0) { changed = true; continue; }
+      if (!value.isFile() || value.isSymbolicLink() || value.nlink !== 1 || process.getuid && value.uid !== process.getuid()) {
+        throw Object.assign(new BindingFailure("ledger_unavailable"), { storageObservation: {
+          regular: value.isFile(), symlink: value.isSymbolicLink(), links: value.nlink, sameOwner: !process.getuid || value.uid === process.getuid(),
+        } });
+      }
       bytes += Math.max(value.size, value.blocks * 512);
       if (!Number.isSafeInteger(bytes)) throw new BindingFailure("ledger_unavailable");
     }
   } finally { await handle.close(); }
+  // A native compaction can unlink a looked-up inode before lstat materializes
+  // its link count. Re-sample a bounded number of times; do not report that
+  // incomplete pass as either unsafe user data or a fully measured empty file.
+  if (changed) {
+    if (resample >= 2) throw new BindingFailure("ledger_unavailable");
+    return executionFootprint(path, resample + 1);
+  }
   return { fileBytes: bytes, files };
 }
 
@@ -37,9 +48,18 @@ export async function executionFootprint(path: string) {
  * closed/revoked TURN. reserveStep/occupy consume that retained TURN certificate
  * before provider effects. Neither age nor diagnostic success closes a TURN. */
 export async function retireExecutionBatch(db: ClassicLevel<string, unknown>, path: string): Promise<ExecutionRetirementReceipt> {
-  let retiredSteps = 0, closedTurns = 0, blockedActiveSteps = 0;
+  let retiredSteps = 0, closedTurns = 0, blockedActiveSteps = 0, examinedSteps = 0;
   const batchLimit = EXECUTION_STORAGE_POLICY.batch;
-  for await (const [queueKey] of db.iterator({ gte: "r!", lt: "r\"", limit: 8 })) {
+  const cursor = await db.get("!retirement-cursor");
+  if (cursor !== undefined && (typeof cursor !== "string" || !/^r![a-f0-9]{64}$/.test(cursor))) throw new BindingFailure("ledger_unavailable");
+  const queues = async (after?: string) => {
+    const rows: Array<[string, unknown]> = [];
+    for await (const row of db.iterator({ ...(after ? { gt: after } : { gte: "r!" }), lt: "r\"", limit: 8 })) rows.push(row);
+    return rows;
+  };
+  let selected = await queues(cursor as string | undefined);
+  if (!selected.length && cursor !== undefined) selected = await queues();
+  for (const [queueKey, progress] of selected) {
     const turnHash = queueKey.slice(2);
     if (!/^[a-f0-9]{64}$/.test(turnHash)) throw new BindingFailure("ledger_unavailable");
     const turn = await db.get(`t!${turnHash}`) as ColdTurn | undefined;
@@ -48,7 +68,22 @@ export async function retireExecutionBatch(db: ClassicLevel<string, unknown>, pa
       || typeof turn.turn.expired !== "boolean" || !Number.isFinite(turn.turn.lastActivityMs)) throw new BindingFailure("ledger_unavailable");
     const changes: Array<{ type: "del"; key: string }> = [];
     const prefix = `x!${turnHash}!`;
-    for await (const [membership] of db.iterator({ gte: prefix, lt: `${prefix}~`, limit: batchLimit - retiredSteps })) {
+    let after: string | undefined;
+    if (progress !== true) {
+      if (!progress || typeof progress !== "object" || Array.isArray(progress) || Object.keys(progress).length !== 1
+        || !("after" in progress) || typeof progress.after !== "string" || !progress.after.startsWith(prefix)
+        || !/^[a-f0-9]{64}$/.test(progress.after.slice(prefix.length))) throw new BindingFailure("ledger_unavailable");
+      after = progress.after;
+    }
+    const children = async (cursor?: string) => {
+      const rows: string[] = [];
+      for await (const membership of db.keys({ ...(cursor ? { gt: cursor } : { gte: prefix }), lt: `${prefix}~`, limit: batchLimit - examinedSteps })) rows.push(membership);
+      return rows;
+    };
+    let selectedChildren = await children(after);
+    if (!selectedChildren.length && after !== undefined) selectedChildren = await children();
+    for (const membership of selectedChildren) {
+      examinedSteps++;
       const stepHash = membership.slice(prefix.length);
       if (!/^[a-f0-9]{64}$/.test(stepHash)) throw new BindingFailure("ledger_unavailable");
       const step = await db.get(`s!${stepHash}`) as { status?: string } | undefined;
@@ -59,6 +94,11 @@ export async function retireExecutionBatch(db: ClassicLevel<string, unknown>, pa
     if (changes.length) await db.batch(changes, { sync: true });
     let remaining = false;
     for await (const _ of db.keys({ gte: prefix, lt: `${prefix}~`, limit: 1 })) { remaining = true; }
+    if (remaining && selectedChildren.length) {
+      // A protected/unknown child may remain forever. Advance the bounded scan
+      // rather than repeatedly examining that prefix and starving settled work.
+      await db.put(queueKey, { after: selectedChildren.at(-1)! }, { sync: true });
+    }
     if (!remaining) {
       // Resolved configuration is no longer required by a closed TURN. Keep its
       // exact denied identity until service-epoch retirement. Unknown stays put.
@@ -67,7 +107,8 @@ export async function retireExecutionBatch(db: ClassicLevel<string, unknown>, pa
         { type: "del", key: queueKey },
       ], { sync: true }); closedTurns++;
     }
-    if (retiredSteps >= batchLimit) break;
+    await db.put("!retirement-cursor", queueKey, { sync: true });
+    if (examinedSteps >= batchLimit) break;
   }
   const usage = await executionFootprint(path);
   return { state: blockedActiveSteps ? "protected" : "maintained", retiredSteps, closedTurns,

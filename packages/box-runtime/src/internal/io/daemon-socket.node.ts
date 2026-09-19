@@ -66,12 +66,12 @@ export type DaemonSocketLease = { recordBound: () => Promise<void>; release: () 
  * connection is reclaimable. A legacy socket, timeout, or PID alone is not that
  * proof. No process is signalled, and the permanent gate inode is never deleted.
  * Other platforms preserve exclusive bind behavior without claiming recovery. */
-export async function acquireServiceSocket(path: string, generation: string): Promise<DaemonSocketLease> {
+export async function acquireServiceSocket(path: string, generation: string, directoryPolicy: "private" | "owner-writable" = "private"): Promise<DaemonSocketLease> {
   if (!isAbsolute(path) || path.includes("\0") || !/^[a-f0-9-]{36}$/.test(generation)) return fail("invalid_input");
   const parent = dirname(path), socketId = sha256Text(resolve(path)), ownerPath = `${path}.owner.json`;
   await mkdir(parent, { recursive: true, mode: 0o700 });
   const dir = await lstat(parent);
-  if (!dir.isDirectory() || dir.isSymbolicLink() || dir.uid !== process.getuid?.() || (dir.mode & 0o077) !== 0) return fail("directory_unqualified");
+  if (!dir.isDirectory() || dir.isSymbolicLink() || dir.uid !== process.getuid?.() || (dir.mode & (directoryPolicy === "private" ? 0o077 : 0o022)) !== 0) return fail("directory_unqualified");
   let gate: AdvisoryGate | null | undefined;
   let bound: SocketIdentity | null = null, self: Owner | undefined, released = false;
   try {

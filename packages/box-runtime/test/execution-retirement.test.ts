@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Effect, Layer } from "effect";
 import { contextSnapshotBody, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
-import { canonicalJson, computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, computeSnapshotDigest, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { inferenceMemoryLayer, runStep, type LedgerRecord } from "@grokbox/runtime-kernel/inference";
 import { captureManagedSelection, parseModelsFile, STUB_ECHO_MODEL_ID } from "@grokbox/runtime-kernel/selection";
 import { createCountedSeams, fakeAdmissionAuthorityLayer, fakeBackendAuthLayer, fakeConfigurationReadLayer, fakeModelBackendLayer } from "@grokbox/runtime-kernel/testing";
@@ -76,6 +76,35 @@ test("real kernel refuses retired STEP through retained TURN before provider eff
       Layer.merge(inferenceMemoryLayer({ serviceEpoch: "new-incarnation", history })));
     expect(yield* Effect.result(Effect.scoped(runStep(request)).pipe(Effect.provide(layer)))).toMatchObject({ _tag: "Failure", failure: { code: "service_epoch_mismatch" } });
     expect(counts.network).toBe(0);
+  })));
+}));
+
+test("protected early TURNs do not starve a later closed TURN's reclaimable children", () => fixture(async root => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const history = yield* openExecutionHistory(root, "fair-retirement");
+    const names = Array.from({ length: 20 }, (_, i) => `turn-${i}`).sort((a, b) => sha256Text(key(a)).localeCompare(sha256Text(key(b))));
+    for (const name of names) {
+      yield* history.putIdentity({ stepKey: stepKey(0, name), step: name === names.at(-1) ? terminal : { ...terminal, status: "active" }, turnKey: key(name), turn: turn("fair-retirement") });
+      yield* history.putTurn(key(name), turn("fair-retirement", "closed"));
+    }
+    let retired = 0;
+    for (let n = 0; n < 4; n++) retired += (yield* history.maintain!()).retiredSteps;
+    expect(retired).toBe(1);
+    expect(yield* history.getStep(stepKey(0, names.at(-1)))).toBeUndefined();
+    expect(yield* history.getStep(stepKey(0, names[0]))).toMatchObject({ status: "active" });
+  })));
+}));
+
+test("a protected child prefix cannot starve terminal children later in the same TURN", () => fixture(async root => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const history = yield* openExecutionHistory(root, "child-fairness");
+    const children = Array.from({ length: 130 }, (_, n) => stepKey(n)).sort((a, b) => sha256Text(a).localeCompare(sha256Text(b)));
+    for (const child of children) yield* history.putIdentity({ stepKey: child, step: child === children.at(-1) ? terminal : { ...terminal, status: "active" }, turnKey: key(), turn: turn("child-fairness") });
+    yield* history.putTurn(key(), turn("child-fairness", "closed"));
+    expect(yield* history.maintain!()).toMatchObject({ retiredSteps: 0, blockedActiveSteps: 128 });
+    expect(yield* history.maintain!()).toMatchObject({ retiredSteps: 1, blockedActiveSteps: 1 });
+    expect(yield* history.getStep(children.at(-1)!)).toBeUndefined();
+    expect(yield* history.getStep(children[0]!)).toMatchObject({ status: "active" });
   })));
 }));
 

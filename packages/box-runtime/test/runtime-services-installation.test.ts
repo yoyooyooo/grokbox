@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { defaultConfig } from "@grokbox/runtime-kernel/config";
@@ -15,10 +15,12 @@ async function fixture() {
   await writeFile(join(release, "dist/index.js"), "// owned release fixture\n", { mode: 0o600 });
   await writeFile(join(release, "dist/preload.cjs"), "// owned preload fixture\n", { mode: 0o600 });
   const node = execFileSync("node", ["-p", "process.execPath"], { encoding: "utf8", timeout: 5000 }).trim();
-  const calls: string[] = [], enabled = new Set<string>(); let active = false, supported = true, lose = false;
+  const calls: string[] = [], enabled = new Set<string>(); let active = false, supported = true, lose = false, foreignDefinition = false, dropIns = false;
+  const unitDir = join(home, ".config/systemd/user");
   const manager: ServiceManager = {
     probe: async () => ({ available: supported, bootPersistent: supported, reason: supported ? "ready" : "user_manager_unavailable" }),
-    states: async names => names.map(name => ({ name, active: active ? "active" : "inactive", enabled: enabled.has(name), mainPid: active ? 1234 : 0 })),
+    states: async names => Promise.all(names.map(async name => ({ name, active: active ? "active" : "inactive", enabled: enabled.has(name), mainPid: active ? 1234 : 0,
+      fragmentPath: await readFile(join(unitDir, name), "utf8").then(() => foreignDefinition ? `/foreign/${name}` : join(unitDir, name), () => null), hasDropIns: dropIns }))),
     reload: async () => { calls.push("reload"); },
     enable: async (names, start) => { calls.push(start ? "enable-start" : "enable"); for (const n of names) enabled.add(n); if (start) active = true; if (lose) throw Error("owned_manager_ack_lost"); },
     disable: async names => { calls.push("disable"); for (const n of names) enabled.delete(n); },
@@ -27,6 +29,7 @@ async function fixture() {
   const command = (action: RuntimeServiceRequest["action"], rest: Partial<RuntimeServiceRequest> = {}) => runRuntimeServiceCommand({ ...input, action, ...rest }, manager);
   return { dir, root, run, home, release, input, command, manager, calls, unitDir: join(home, ".config/systemd/user"),
     unsupported: () => { supported = false; }, active: (value: boolean) => { active = value; }, lose: (value: boolean) => { lose = value; },
+    foreignDefinition: () => { foreignDefinition = true; }, dropIns: () => { dropIns = true; },
     close: () => rm(dir, { recursive: true, force: true }) };
 }
 const digest = (v: Awaited<ReturnType<typeof runRuntimeServiceCommand>>) => {
@@ -64,7 +67,7 @@ test("confirmed installation enables exact immutable-release units without start
     for (const name of names) {
       const unit = await readFile(join(f.unitDir, name), "utf8");
       expect(unit).toContain("Type=exec"); expect(unit).toContain("WantedBy=default.target"); expect(unit).toContain("RestartSec=30"); expect(unit).toContain("SendSIGKILL=no");
-      expect(unit).toContain(f.release); expect(unit).not.toContain("NODE_OPTIONS"); expect(unit).not.toContain("API_KEY"); expect(unit).not.toContain("nohup");
+      expect(unit).toContain(f.release); expect(unit).toContain("UnsetEnvironment=NODE_OPTIONS NODE_PATH LD_PRELOAD LD_LIBRARY_PATH"); expect(unit).not.toContain("API_KEY"); expect(unit).not.toContain("nohup");
     }
     expect(await f.command("status")).toMatchObject({ phase: "installed", artifactsMatched: true, filesMatched: true });
     const remove = await f.command("uninstall"); f.active(true);
@@ -88,6 +91,68 @@ test("manager acknowledgement loss remains preparing and can only resume the exa
     const name = (await readdir(f.unitDir))[0]!; await writeFile(join(f.unitDir, name), "USER_EDIT", { mode: 0o600 });
     await expect(f.command("uninstall")).rejects.toMatchObject({ reason: "unit_changed" });
     expect(await readFile(join(f.unitDir, name), "utf8")).toBe("USER_EDIT");
+  } finally { await f.close(); }
+});
+
+test("partial removal resumes only the exact recorded inactive units without recreating removed files", async () => {
+  const f = await fixture();
+  try {
+    const install = await f.command("install"); await f.command("install", { confirmed: true, expectedPlan: digest(install) });
+    const remove = await f.command("uninstall"), disable = f.manager.disable;
+    f.manager.disable = async units => { await disable(units); throw Error("owned_lost_disable_reply"); };
+    await expect(f.command("uninstall", { confirmed: true, expectedPlan: digest(remove) })).rejects.toMatchObject({ reason: "installation_outcome_unknown" });
+    f.manager.disable = disable;
+    const files = await readdir(f.unitDir); await unlink(join(f.unitDir, files[0]!));
+    const resume = await f.command("uninstall");
+    expect(await f.command("uninstall", { confirmed: true, expectedPlan: digest(resume) })).toMatchObject({ phase: "retired" });
+    expect(await readdir(f.unitDir)).toEqual([]);
+  } finally { await f.close(); }
+});
+
+test("a staged final acknowledgement is reconciled without enabling or starting the units a second time", async () => {
+  const f = await fixture();
+  try {
+    const plan = await f.command("install"); await f.command("install", { confirmed: true, expectedPlan: digest(plan) });
+    const file = join(f.root, "state/runtime-services.json"), installed = await readFile(file, "utf8");
+    await writeFile(`${file}.next`, installed, { mode: 0o600 });
+    await writeFile(file, JSON.stringify({ ...JSON.parse(installed), phase: "preparing" }) + "\n", { mode: 0o600 });
+    expect(await f.command("status")).toMatchObject({ phase: "preparing", pendingPhase: "installed" });
+    const before = [...f.calls], recover = await f.command("install");
+    expect(await f.command("install", { confirmed: true, expectedPlan: digest(recover) })).toMatchObject({ phase: "installed", reconciled: true });
+    expect(f.calls).toEqual(before);
+    expect(await f.command("status")).toMatchObject({ phase: "installed", pendingPhase: null, loadedDefinitionsMatched: true });
+  } finally { await f.close(); }
+});
+
+test("exclusive-publish link residue is recoverable only for the exact owned staging pair", async () => {
+  const f = await fixture();
+  try {
+    const plan = await f.command("install"); await f.command("install", { confirmed: true, expectedPlan: digest(plan) });
+    const name = (await readdir(f.unitDir))[0]!, unit = join(f.unitDir, name), original = await readFile(unit, "utf8");
+    await link(unit, `${unit}.next`);
+    const recovery = await f.command("install");
+    expect(await f.command("install", { confirmed: true, expectedPlan: digest(recovery) })).toMatchObject({ phase: "installed" });
+    expect(await readFile(unit, "utf8")).toBe(original); expect(await readdir(f.unitDir)).toHaveLength(2);
+    await link(unit, join(f.dir, "unrelated-link"));
+    await expect(f.command("install")).rejects.toBeDefined();
+    expect(await readFile(join(f.dir, "unrelated-link"), "utf8")).toBe(original);
+  } finally { await f.close(); }
+});
+
+test("configuration changes after preview or before activation do not start services under a stale plan", async () => {
+  const f = await fixture();
+  try {
+    const initial = await f.command("install", { start: true });
+    await writeFile(join(f.root, "config.json"), JSON.stringify({ ...defaultConfig(), ops: { enabled: false } }), { mode: 0o600 });
+    await expect(f.command("install", { start: true, confirmed: true, expectedPlan: digest(initial) })).rejects.toMatchObject({ reason: "plan_conflict" });
+    expect(f.calls).toEqual([]);
+    const current = await f.command("install", { start: true });
+    f.manager.reload = async () => {
+      f.calls.push("reload");
+      await writeFile(join(f.root, "config.json"), JSON.stringify(defaultConfig()), { mode: 0o600 });
+    };
+    await expect(f.command("install", { start: true, confirmed: true, expectedPlan: digest(current) })).rejects.toMatchObject({ reason: "installation_outcome_unknown" });
+    expect(f.calls).toEqual(["reload"]);
   } finally { await f.close(); }
 });
 
@@ -116,6 +181,16 @@ test.skipIf(process.env.GROKBOX_TEST_SERVICE_MANAGER !== "1")("installed systemd
       env: { PATH: process.env.PATH, HOME: f.home, SYSTEMD_LOG_LEVEL: "warning" } });
     expect(checked.error).toBeUndefined(); expect(checked.status, checked.stderr).toBe(0);
     expect(f.calls).toEqual(["reload", "enable"]); // Calls are only to our fake manager; verify is a real offline parser.
+  } finally { await f.close(); }
+});
+
+for (const mode of ["foreignDefinition", "dropIns"] as const) test(`manager ${mode} blocks before enable/start, even with matching on-disk unit files`, async () => {
+  const f = await fixture();
+  try {
+    const plan = await f.command("install", { start: true }); f[mode]();
+    await expect(f.command("install", { start: true, confirmed: true, expectedPlan: digest(plan) })).rejects.toMatchObject({ reason: "installation_outcome_unknown" });
+    expect(f.calls).toEqual(["reload"]);
+    expect(await f.command("status")).toMatchObject({ phase: "preparing", filesMatched: true, loadedDefinitionsMatched: false });
   } finally { await f.close(); }
 });
 

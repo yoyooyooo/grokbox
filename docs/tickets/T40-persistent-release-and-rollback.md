@@ -14,6 +14,14 @@
 
 test2只保留T38冲突诊断/校准；test1未opt-in官方对照；test0或另一个经明确批准、Server确认box的对象承担正例。新建Bot或真实B模型要有具名授权，不由文档自动扩展到业务对象。
 
+## 当前实现入口
+
+`runtime services install/status/uninstall`已提供明确的服务注册程序和实际CLI。只支持当前已可达且linger开启的systemd用户管理器；默认预览，确认必须带精确planDigest，固定已安装发行包/Node、两个unit与根范围。真实解析器验证过单元语法，Node验证启动前制品变更拒绝；不修改官方Host/supervisor，不启动新通用守护进程。详见[操作手册](../maintainers/runtime-service-registration.md)和[前置收口证据](../reports/2026-09-19-pre-e2e-closeout.md)。
+
+manager不可用是明确ENV阻断，安装器在任何单元写入前拒绝，不以tini、systemctl文件、桌面脚本或nohup冒充可用boot owner。安装读回、现役启动、退出调用者、系统重启和Host采用分别验收，不能把本节视为当前Box已安装。
+
+modeld复用daemon的准确socket owner/advisory gate：仅对登记inode+确证死进程+拒绝连接恢复，保持owner-only writable的既有run目录兼容，不擅自chmod用户目录。实际Node SIGKILL再启动已验证新服务epoch，unknown/legacy socket与其他进程不清理。
+
 ## 1. 正常持久运行
 
 复用现有`runtime start/status`、controller/re-adopt、modeld与凭据存储接口，打通当前占位或不完整闭环。服务管理器采用当前部署环境可证明支持的一个明确方案，不并存多套启动所有者，不另造supervisor体系。
@@ -26,7 +34,7 @@ test2只保留T38冲突诊断/校准；test1未opt-in官方对照；test0或另�
 
 ### 当前启动前置（2026-09-19）
 
-E2E前置实现已提供daemon collector装配和确证失主socket恢复，但OS开机注册没有完成。限定只读环境检查显示PID1为tini，system与user systemd均offline；不能以systemctl存在选择一个实际不可用的启动owner，更不能修改官方supervisor或用临时nohup声称完成。下一实现需先取得当前环境支持的持久启动合同，再通过显式安装、独立进程和重启测试证明；此为本票CODE/ENV阻断，不转写成“只差live”。固定检查和测试宿主限制见[续作回执](../reports/2026-09-19-pre-e2e-observation.md#7-验证宿主与环境的剩余阻断)。
+服务内collector装配、daemon/modeld准确socket恢复与systemd用户服务注册已实现，当前步骤是目标环境资格而非再次开发同义安装器。此前本机只读检查为tini且user manager不可用；没有适配器能够把不存在的管理器当成已注册，须在W0重查。环境不支持时，相应开机持久性场景保持ENV阻断，不擅改官方supervisor或用nohup代签；匹配环境的实际注册/独立进程/重启仍需现场证明。当前方法与证据见[服务注册](../maintainers/runtime-service-registration.md)、[前置收口](../reports/2026-09-19-pre-e2e-closeout.md)。
 
 ### 单盒monitor的长期运行（T41）
 
@@ -127,7 +135,7 @@ route启动前复用128KiB/no-follow/regular-file ConfigurationRead检查canonic
 
 正常发行包只包含生产实现，自写fixture自包含；私有research和现场receipt留在私有仓库/受控空间。T40签生产前需必需证据合取和可执行退路；仅清理worktree不提高产品资格，未清理则如实记交付残留。
 
-下一动作：前台start/borrow/orderly restart和失去listener的收尾已有source/Unix/packed子证明，不重复做占位修复。继续目标环境的受支持持久服务owner、安装/启动恢复和真实凭据推理回执，并与T37/T38当前原生资格、独立review、test2保全及T39原生checkpoint往返合流。tmux存在或本地PodDaemon历史机制可用不等于产品boot hook或跨recreate自启已证；不改官方wrapper/supervisor，不另建通用重启管理器，不用后台detach伪装安装完成。整票仍Open。
+下一动作：固定已合入候选并进入W0核验目标服务管理器、原生资格、独立review和制品退路，再按本票对应LIVE场景完成实际注册、重启及原生checkpoint往返。前台生命周期、服务注册与恢复的已实现部分不再列回占位修复。tmux或历史PodDaemon不等于boot hook/cross-recreate资格；没有匹配管理器时不擅改官方wrapper/supervisor，不用detach伪装安装。整票保留环境和生产放行Open。
 
 **2026-09-13 现场 start 借用：** `runtime start --mode route` 对当时 modeld REDACTED_PROCESS_ID 回执 borrowed / productionAccepted:false / autostartInstalled:false。
 
