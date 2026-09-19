@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-基于 `feat/box-runtime-v2` 的 `4181e5e` 收敛默认网络边界。产品范围唯一归 [Product §2.2](../product-contract.md#22-网络与旧部署兼容边界)，组合与源码职责归 [Architecture §13](../architecture.md#13-deployment-and-operator-managed-networking)。本票只拥有实现、兼容变化和离线证明；当前候选现场状态只看 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)。
+实现提交 `8d900af` 基于 `feat/box-runtime-v2` 的 `4181e5e` 收敛默认网络边界。该来源提交已经包含本票列出的代码、测试与合同；后续来源登记只修改文档。产品范围唯一归 [Product §2.2](../product-contract.md#22-网络与旧部署兼容边界)，组合与源码职责归 [Architecture §13](../architecture.md#13-deployment-and-operator-managed-networking)。本票只拥有实现、兼容变化和离线证明；当前候选现场状态只看 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)。
 
 Box 内执行是主要路径。既有远程能力按原范围保留，不要求新增 runtime/Host/模型/观测命令远程化；不建立网络 provider 框架。用户自管 DNS/IP、VPN、ACL、TLS 与入口代理。未来 Box-hosted Web UI 的外部浏览器访问归 [T29](T29-runtime-webui.md)，本票不实现或启动 Web UI。
 
