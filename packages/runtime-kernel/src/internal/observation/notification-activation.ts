@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import { observationOwn as own } from "../contract/provider-observation.ts";
-import { NotificationError } from "./notification-contract.ts";
+import { NotificationError, NOTIFICATION_DELIVERY_POLICY } from "./notification-contract.ts";
+import type { NoticeReplayFence } from "./notice-replay-fence.ts";
 
 /** Ongoing permission is distinct from delivery evidence. The operator attests
  * to having observed the test reminder; grokbox proves only its stored HTTP
@@ -47,7 +48,8 @@ export type AutomaticNoticeCycle = { state: "idle" | "blocked" | "processed" | "
 export type AutomaticNoticeWorkerStatus = { state: "starting" | "waiting" | "working" | "stopped"; cycles: number;
   lastCycleAtMs: number | null; lastCycle: AutomaticNoticeCycle | null; nextDelayMs: number;
   owner: "daemon-lifetime"; automaticDiagnosis: false; automaticIssue: false; pollingCallsModels: false;
-  serviceInstallation: "not_proven"; botReport: "not_observed"; userRead: "not_observed" };
+  serviceInstallation: "not_proven"; botReport: "not_observed"; userRead: "not_observed";
+  replayFence?: ReturnType<NoticeReplayFence["status"]> };
 export function projectNoticeWorker(value: unknown): AutomaticNoticeWorkerStatus {
   const state = own(value, "state"), cycles = own(value, "cycles"), at = own(value, "lastCycleAtMs"), delay = own(value, "nextDelayMs");
   if (!["starting", "waiting", "working", "stopped"].includes(String(state)) || typeof cycles !== "number" || !Number.isSafeInteger(cycles) || cycles < 0
@@ -59,12 +61,24 @@ export function projectNoticeWorker(value: unknown): AutomaticNoticeWorkerStatus
     const s = own(last, "state"), reason = own(last, "reason"), workId = own(last, "workId"), auth = own(last, "authorizationId"), outcome = own(last, "outcome");
     if (!["idle", "blocked", "processed", "unavailable"].includes(String(s)) || !["notifications_off", "routing_unsupported", "mode_unsupported", "target_missing", "target_disabled",
       "target_unconfigured", "intent_not_allowed", "data_policy_unsupported", "stopping", "automatic_not_authorized", "target_policy_changed", "clock_reversed", "installation_scope_changed",
-      "no_fresh_work", "wake_budget", "delivery_preflight_blocked", "attempt_settled", "local_or_native_source_unavailable"].includes(String(reason))
+      "no_fresh_work", "wake_budget", "delivery_preflight_blocked", "attempt_settled", "local_or_native_source_unavailable",
+      "replay_clock_reversed", "replay_identity_unavailable", "prior_lifetime_attempt"].includes(String(reason))
       || !(workId === undefined || uuid(workId)) || !(auth === undefined || uuid(auth))
       || !(outcome === undefined || ["native-accepted", "definitely-not-accepted", "unknown", "already_attempted", "blocked", "unavailable"].includes(String(outcome)))) return bad();
     lastCycle = { state: s as AutomaticNoticeCycle["state"], reason: String(reason), ...(workId ? { workId } : {}), ...(auth ? { authorizationId: auth } : {}), ...(outcome ? { outcome: String(outcome) } : {}) };
   }
-  return { state: state as AutomaticNoticeWorkerStatus["state"], cycles, lastCycleAtMs: at as number | null, lastCycle, nextDelayMs: delay,
+  const rawFence = own(value, "replayFence");
+  let replayFence: AutomaticNoticeWorkerStatus["replayFence"];
+  if (rawFence !== undefined) {
+    const started = own(rawFence, "startedAtMs"), high = own(rawFence, "highWaterMs"), guarded = own(rawFence, "guardedWork"), max = own(rawFence, "maxEntries");
+    if (!positive(started) || !positive(high) || high < started || !positive(max) || max > NOTIFICATION_DELIVERY_POLICY.maxAttempts
+      || typeof guarded !== "number" || !Number.isSafeInteger(guarded) || guarded < 0 || guarded > max
+      || own(rawFence, "policy") !== "worker-start-and-live-attempts-v1" || own(rawFence, "restoresExistingWork") !== false
+      || own(rawFence, "scope") !== "automatic_notifications_only") return bad();
+    replayFence = { policy: "worker-start-and-live-attempts-v1", startedAtMs: started, highWaterMs: high, guardedWork: guarded,
+      maxEntries: max, restoresExistingWork: false, scope: "automatic_notifications_only" };
+  }
+  return { ...(replayFence ? { replayFence } : {}), state: state as AutomaticNoticeWorkerStatus["state"], cycles, lastCycleAtMs: at as number | null, lastCycle, nextDelayMs: delay,
     owner: "daemon-lifetime", automaticDiagnosis: false, automaticIssue: false, pollingCallsModels: false, serviceInstallation: "not_proven", botReport: "not_observed", userRead: "not_observed" };
 }
 

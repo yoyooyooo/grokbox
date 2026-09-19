@@ -44,6 +44,14 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 专项`automatic-notification`131 pass/0 fail，含真实私有capsule/SQLite/loopback HTTP、并发与撤销、daemon生命周期及打包Node。与最新v2的CONT交叉回归52项通过；完整回归范围与末组工具拦截见[固定回执](../reports/2026-09-19-automatic-notification.md)。
 
+## 发生时间与恢复后自动重放防护（2026-09-19）
+
+collector组合反例已修复：自动选择和直接自动发送同时检查incident原始first_seen与work.created_at晚于授权，不能把授权前发生、授权后才索引的旧故障补投。
+
+实际daemon sender另外持有`notice-replay-fence.ts`：本次worker启动前的work/发生周期不自动补投；真正POST之前记住稳定occurrence摘要，数据库恢复掉attempt或给同一故障换work ID也不能绕过。遇到live记忆存在但DB attempt缺失，将精确匹配的work隔离为unknown，不伪造成功，并让其他新故障继续发送。有限guard在work期限及原始15分钟发生窗口都过后可退役，时间高水位拒绝回拨。停止后留下的旧work需要显式对账；不以重启重新授权、补领凭据或延长旧授权。
+
+该证明由`notification-restore-fence.test.ts`的真实SQLite备份还原/loopback HTTP提供。它不是所有安全账本的恢复协议，也不签整机快照/系统时间回退后的全局计费计数、显式人工重发或上游副作用对账。完整安全退役仍归OBS-05，源文件和固定测试证据见[本次回执](../reports/2026-09-19-pre-e2e-observation.md#restore-fence)。
+
 ## Work
 
 同incident/occurrence/阶段稳定workId；准备工作只在固定manifest可读后ready，缺证可partial。冻结evidenceRevision/目标/binding/dataPolicy，默认inline安全摘要足够提醒。最多一主一补充只读command descriptor；不发完整JSON/任意shell，标box-local限制。

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
-import { canonicalJson } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezeNotification, NOTIFICATION_DELIVERY_POLICY, notificationBindingIdentity, projectNativeNotificationResult,
   validateNotificationBinding, validateNotificationTarget, type FrozenNotification, type NativeNotificationResult,
   type NotificationBinding, type NotificationReservation, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
@@ -94,10 +94,26 @@ export function notificationOutbox(access: Access) {
         return row ? String(row.id) : null;
       });
     },
+    quarantineRestoredNotification: async (workId: string, occurrenceIdentity: string) => {
+      if (!monitorUuid(workId) || !/^[a-f0-9]{64}$/.test(occurrenceIdentity)) return failure("invalid_work");
+      return access.mutate(async db => {
+        const work = await db.first(`SELECT w.state,i.scope,i.rule,i.occurrence_key,i.first_seen FROM notification_work w
+          JOIN incidents i ON i.id=w.incident_id WHERE w.id=?`, [workId]);
+        if (!work || sha256Text(canonicalJson([work.scope, work.rule, work.occurrence_key, work.first_seen])) !== occurrenceIdentity)
+          return { state: "unavailable" as const };
+        if (await db.first("SELECT 1 FROM notification_attempts WHERE work_id=?", [workId])) return { state: "already_attempted" as const };
+        // A live sender remembers the occurrence, but the restored database has
+        // lost its attempt. Preserve unknown instead of fabricating acceptance
+        // or letting this oldest work starve unrelated new notifications.
+        if (["ready", "blocked", "preparing"].includes(String(work.state)))
+          await db.run("UPDATE notification_work SET state='unknown',last_reason='live_attempt_missing_after_restore' WHERE id=?", [workId]);
+        return { state: "quarantined" as const };
+      });
+    },
     notificationDelivery: async (workId: string) => {
       if (!monitorUuid(workId)) return failure("invalid_work");
       return access.read(async db => {
-        const work = await db.first("SELECT w.id,w.incident_id,w.evidence_revision,w.state,w.created_at,w.expires_at,i.first_seen AS incident_first_seen FROM notification_work w LEFT JOIN incidents i ON i.id=w.incident_id WHERE w.id=?", [workId]);
+        const work = await db.first("SELECT w.id,w.incident_id,w.evidence_revision,w.state,w.created_at,w.expires_at,i.first_seen AS incident_first_seen,i.scope AS incident_scope,i.occurrence_key,i.rule FROM notification_work w LEFT JOIN incidents i ON i.id=w.incident_id WHERE w.id=?", [workId]);
         if (!work) return { state: "not_found", automaticRetry: false, botReport: "not_observed", userRead: "not_observed" };
         const rows = await db.all("SELECT * FROM notification_attempts WHERE work_id=? ORDER BY reserved_at LIMIT 2", [workId]);
         if (rows.length > 1) return failure("attempt_conflict");
@@ -106,6 +122,8 @@ export function notificationOutbox(access: Access) {
           workId, incidentId: String(work.incident_id), evidenceRevision: Number(work.evidence_revision),
           createdAtMs: Number(work.created_at), expiresAtMs: Number(work.expires_at),
           incidentFirstSeenAtMs: work.incident_first_seen === null || work.incident_first_seen === undefined ? null : Number(work.incident_first_seen),
+          occurrenceIdentity: typeof work.incident_scope === "string" && typeof work.occurrence_key === "string"
+            ? sha256Text(canonicalJson([work.incident_scope, work.rule, work.occurrence_key, work.incident_first_seen])) : null,
           attempt: attempt && decoded ? { attemptId: String(attempt.id), state: state(attempt.state),
             targetAgentId: String(attempt.target_id), bindingRevision: Number(attempt.binding_revision),
             envelopeDigest: decoded.frozen.envelopeDigest, envelopeBytes: decoded.frozen.envelopeBytes,

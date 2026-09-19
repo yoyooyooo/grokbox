@@ -130,8 +130,10 @@ test("the running worker picks up a future work and sends it without another cal
 test("shutdown aborts and settles a real in-flight HTTP request before the worker reports stopped", async () => {
   const f = await automaticFixture(); let worker: ReturnType<typeof startOpsNotificationWorker> | undefined;
   try {
-    const seed = await f.seed(); await f.activate(seed.workId); const work = await f.emit(); f.reply(() => {});
+    const seed = await f.seed(); await f.activate(seed.workId); f.reply(() => {});
     worker = startOpsNotificationWorker(f.input, { request: f.request, idleMs: 5, blockedMs: 5 });
+    await until(worker.status, state => state.cycles > 0);
+    const work = await f.emit();
     await until(() => f.requests.length, n => n === 2); await worker.close();
     expect(worker.status().state).toBe("stopped"); expect(await f.store.notificationDelivery(work)).toMatchObject({ state: "unknown", attempt: { state: "unknown" } });
     await tick(20); expect(f.requests).toHaveLength(2);

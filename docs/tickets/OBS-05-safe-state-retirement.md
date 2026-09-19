@@ -18,6 +18,12 @@
 
 这不是本票完整退役方案：operation的安全压缩/退役、首次初始化中断修复尚未实现。未来解除阻断必须由该owner证明不会让旧请求重放，不能靠通用GC删库；J1恢复/安全owner合同不因此改变。
 
+## 自动通知恢复防护（2026-09-19）
+
+`notice-replay-fence.ts`由实际daemon sender持有，不是另一份持久outbox。新worker只自动处理授权之后、且本次worker启动之后发生并入库的故障；恢复旧库中的既有work仍可查询，但必须显式对账，不自动补投。活worker在真正HTTP发送前记住稳定occurrence身份，恢复掉数据库attempt、甚至重建新work ID也不能在该生命周期重复发。守卫最多4096项，只有故障自动通知窗口和原work期限都过去才回收；保留时间高水位，回拨不重开已经退休的时间段。
+
+`notification-restore-fence.test.ts`使用真实SQLite备份/还原和loopback HTTP，覆盖已接受、unknown、worker重启、新故障继续、同故障换work ID、容量与时钟。该防护仅覆盖自动通知的副作用；不称为执行/维护/provision全域恢复fence，不保证任意整机快照恢复后的全局费用计数不会回退，也不授予显式重发权限。其他owner仍需各自的安全退役协议。
+
 ## Work
 
 先做持久对象清单：STEP/TURN/context selection、maintenance c!/c-latest!、controller operations、grant、迁移回执与备份、provenance/profile引用、CONT snapshots。逐类记录唯一writer、重放入口、目前保留、可缩减字段、最后引用和退役条件；不能把热内存sweep当冷库GC。

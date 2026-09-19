@@ -5,7 +5,7 @@ import { effectiveOps } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { monitorUuid } from "@grokbox/runtime-kernel/monitor";
 import { NotificationError, NOTIFICATION_DELIVERY_POLICY, selectNotificationTarget, validateNotificationBinding,
-  projectNativeNotificationResult, type NotificationBinding, type NotificationEnvelope, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
+  projectNativeNotificationResult, type NoticeReplayFence, type NotificationBinding, type NotificationEnvelope, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
 import { openMonitorStore, type MonitorStoreOptions } from "../io/monitor-store.node.ts";
 import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout } from "../io/config-layout.node.ts";
@@ -22,7 +22,7 @@ export type PairedNotificationDriver = {
   send: (input: { binding: NotificationBinding; body: string; envelopeDigest: string; signal: AbortSignal }) => Promise<unknown>;
 };
 export type OpsNotificationInput = { durableRoot: string; workId: string; driver?: PairedNotificationDriver;
-  signal?: AbortSignal; now?: () => number; storeOptions?: MonitorStoreOptions };
+  signal?: AbortSignal; now?: () => number; storeOptions?: MonitorStoreOptions; replayFence?: NoticeReplayFence };
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: () => new NotificationError("source_unavailable") });
 
 /** One explicit iteration. No service/autostart installation, pairing or retry.
@@ -73,6 +73,13 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
       const body = canonicalJson(envelope);
       if (sha256Text(body) !== frozen.envelopeDigest || Buffer.byteLength(body) !== frozen.envelopeBytes
         || frozen.envelopeBytes > NOTIFICATION_DELIVERY_POLICY.maxBytes) throw new NotificationError("payload_changed");
+      if (input.replayFence) {
+        const work = await observedStore.notificationDelivery(frozen.workId);
+        if (!("createdAtMs" in work) || typeof work.incidentFirstSeenAtMs !== "number" || typeof work.occurrenceIdentity !== "string"
+          || input.replayFence.claim({ workId: frozen.workId, occurrenceIdentity: work.occurrenceIdentity, createdAtMs: work.createdAtMs,
+            occurrenceAtMs: work.incidentFirstSeenAtMs, expiresAtMs: work.expiresAtMs, nowMs: now() }) !== null)
+          throw new NotificationError("replay_fence_blocked");
+      }
       const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), NOTIFICATION_DELIVERY_POLICY.deliveryTimeoutMs);
       const signal = input.signal ? AbortSignal.any([input.signal, deadline.signal]) : deadline.signal;
       try {
