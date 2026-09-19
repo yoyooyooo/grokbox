@@ -7,9 +7,10 @@ import { createNativeCurrentStateOwner } from "./native-current-state-owner.ts";
 
 const fail = (code: ConstructorParameters<typeof CurrentStateFailure>[0]): never => { throw new CurrentStateFailure(code); };
 /** Authenticated native Gateway is the transport owner. This finite bridge
- * adds no generic method/path/sender and never starts a model. Manual mutation
- * requires explicit confirm plus live Server Box proof at dispatch. It is not
- * the future configured automatic replacement policy. */
+ * adds no generic method/path/sender. Only the explicit startup action may
+ * enter a model loop; reads and preparation never do. Mutations require confirm
+ * and their live scope/Box checks. Configured protection authorization remains
+ * owned by the caller's bounded policy controller, not this transport bridge. */
 export type NativeLifecycleHost = { create: (args: Record<string, unknown>) => Promise<any>; load: (agentId: string) => Promise<unknown>;
   start: (request: BotStartup, authorize: () => Promise<void>) => Promise<unknown> };
 export function createNativeCurrentStateRpc(owner: ReturnType<typeof createNativeCurrentStateOwner>, profileDigest: string) {

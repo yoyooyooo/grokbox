@@ -1,6 +1,8 @@
 # CONT-07 — 唯一当前上下文的原生控制
 
-**状态：当前原生初始化基础切片已实现，真实部署待验；本票完整reset/recover范围仍有实现工作。** capture/initialize/reconcile/hold release已有具体主Host/worker接线、有限RPC和`agents state` CLI，接入CONT持久层；显式`current-state` profile升级保持既有接缝，未修改现役profile。已有非空状态reset、完整语义recover、Memory/展示历史和完整clone/spawn不由本切片冒充完成。
+**状态：partial implementation；原生初始化基础及外部空闲Bot的reset/recover已接线，self-reset安全队列仍未实现。** capture/initialize/reconcile/hold release与新的原生compose、历史补齐floor、Memory/指令保留进入有限RPC/CLI和CONT持久层；完整profile叠加compact通过限定原生验证。见[本轮集成证据](../reports/2026-09-19-continuity-lifecycle-integration.md)。
+
+活动回合自身调用仍明确not_prepared，不能宣称后台已排队；需要补安全收尾与后续输入归属。附件/全历史资源覆盖、真实原App/首次及重启后模型窗口、独立review仍各自有门，未修改现役profile。
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)。依赖CONT-00、CONT-11和CTX-02；接口可先用owned fixture，产品reset/recover必须先满足CONT-02保全。为CONT-03和CONT-08提供最小公共内核，不先建设多会话平台。
 

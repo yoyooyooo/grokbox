@@ -604,7 +604,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     usage: `grokbox agents state ${action} <agent-id> [options]`,
     summary: ({ show: "Read the single current native state; never initializes storage or grants execution.",
       capture: "Save a bounded native checkpoint to the private CONT vault; no repair, user prompt or model call.",
-      initialize: "Initialize a virgin prepared Box target from a saved native checkpoint; context-only, not a full clone.",
+      initialize: "Initialize an unused prepared Box target from scoped material; declared Memory/history supplements may also be applied.",
       reset: "Back up and reset the single current working context; keep Memory, identity and real files.",
       recover: "Back up the current context and restore a saved working state without replaying past tools.",
       operation: "Read a saved initialization operation offline using its scope ID.",

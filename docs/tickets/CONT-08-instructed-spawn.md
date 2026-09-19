@@ -1,6 +1,10 @@
 # CONT-08 — 受管初始指令与临时 Bot 启动
 
-**状态：planned；原生创建/kickstart存在不代表本功能已实现。**
+**状态：partial implementation；已实现受管指令、准备状态创建、显式程序startup及持久去重，完整临时生命周期未完成。**
+
+[本轮集成证据](../reports/2026-09-19-continuity-lifecycle-integration.md)覆盖CLI→生命周期账本→原生owner/worker及选定原生启动接点。已修复空resume无turn直接返回的问题，使用新turn的空文本simulated事件载体，并在私有启动范围内不向模型追加用户任务提示；普通输入不受影响。该窄接缝证明不等于完整原生handler、Provider首请求或用户已收到结果。
+
+maxRunMs仅约束一次启动；完整费用/TTL、结果交付、孤儿和未结任务清理仍是实现任务，不以只差Live关闭本票。
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)。依赖CONT-07、CONT-11与CONT-00创建/启动资格。列入完整交付范围，但不阻塞已合格的替身导入和交接主线。
 

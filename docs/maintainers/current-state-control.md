@@ -23,7 +23,7 @@
 
 ## 手动验证顺序
 
-先show源Bot再capture，记录返回的snapshot引用、scope和质量缺口。当前捕获只保全所选原生引用图，Memory和产品展示转录不是这个基础操作的复制范围；pending/未知效果不能直接导入成新的待执行任务。
+先show源Bot再capture，记录snapshot引用、scope和质量缺口。新版捕获在原生引用图之外可携带有界agent Memory、历史补充及受管指令；初始化会按材料清单应用这些补充，不再统一承诺只改模型窗口。共享user/project Memory和完整附件未被整体复制；pending/未知效果不能直接导入成新的待执行任务。
 
 通过`agents create --harness box --defer-start`显式请求关闭自我介绍和kickstart，核实新ID/归属。这个开关不构成入站隔离，不等于prepared；不要在初始化前给目标发业务消息。新目标已运行、存在转录/请求/结算记录或待处理Routine结果，即使没有root也不再是本入口允许的空白目标。
 
@@ -39,4 +39,4 @@ show目标，使用其exact revision和已保存snapshot初始化。原生worker
 
 ## 明确未交付的产品范围
 
-这些命令是当前上下文基础操作，不是完整`agents clone/replace`。完整Memory/展示历史/附件与新身份语义转换、best-effort语义恢复、已有非空Bot reset、受管初始system指令spawn、分档自动保护、关系交接及旧Bot退役继续在CONT来源票实施；它们是实现事项，不可以改标成只剩live验收。现役切换和真实行为验证另放唯一LIVE索引。
+生命周期、外部空闲Bot reset/recover、受管指令startup及保护/关系交接已有有限源码切片，范围和证明见[本轮回执](../reports/2026-09-19-continuity-lifecycle-integration.md)。它们不是完整北极星已交付：全附件/资源迁移、self-reset安全队列、完整外部任务与职责约束、临时结果交付/清理、可靠旧Bot退役仍归来源票，不改标成只差Live。当前guide保留基础操作步骤，新增完整指南尚未落盘；精确参数以本候选registry/help为准，实际现场结果只归唯一索引。

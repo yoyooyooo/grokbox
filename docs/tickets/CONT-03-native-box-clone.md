@@ -1,6 +1,10 @@
 # CONT-03 — 新 Box 身份的状态 clone
 
-**状态：planned；官方创建和现有compact不是完整跨身份导入。**
+**状态：partial implementation；已注册clone生命周期，具备受控创建、模型选择、原生/语义候选、有限Memory/历史补充与持久初始化；完整资源迁移未完成。**
+
+本轮实现与限定验证见[集成证据](../reports/2026-09-19-continuity-lifecycle-integration.md)。正式CLI/RPC/CONT账本/原生owner与worker适配已串联，结果unknown不重建身份，当前状态后续演进不重导旧材料。真实账户、原App和首轮Provider尚未取证。
+
+源码仍需补附件/引用文件搬迁、源目录删除独立性、更多历史/共享资源覆盖和精确职责约束；不能把已有有界Memory/转录补充说成任意Bot逐字全复制。新的操作指南被工具阻断未落盘，命令面以registry/help为准；本票不因此关闭。
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)与[best-effort材料](../roadmap/box-runtime-impl-spec.md#continuity-material)。依赖CONT-00/02/07/11，不依赖官方duplicate包装CONT-06；后者会清会话，不能当本能力内核。
 
