@@ -8,7 +8,7 @@ export const CONTEXT_SLICE_IDS = [
   "context-manual-no-business-settlement", "context-manual-summary-owner", "context-control-rpc-schema", "context-control-rpc-api",
 ] as const;
 export const NATIVE_CHECKPOINT_SLICE_IDS = ["continuity-native-worker-handshake", "continuity-native-worker-client", "continuity-native-blob-owner"] as const;
-export const NATIVE_CURRENT_STATE_SLICE_IDS = ["continuity-native-run-fence", "continuity-native-session-owner", "continuity-native-checkpoint-fence", "continuity-native-checkpoint-revision", "continuity-native-rpc-schema", "continuity-native-rpc-api", "continuity-native-created-owner", "continuity-native-duplicate-identity"] as const;
+export const NATIVE_CURRENT_STATE_SLICE_IDS = ["continuity-native-run-fence", "continuity-native-session-owner", "continuity-native-checkpoint-fence", "continuity-native-checkpoint-revision", "continuity-native-rpc-schema", "continuity-native-rpc-api", "continuity-native-created-owner", "continuity-native-duplicate-identity", "continuity-native-history-boundary", "continuity-native-instructions", "continuity-native-history-position", "continuity-native-birth-options", "continuity-native-birth-background", "continuity-native-birth-fence", "continuity-native-prepared-load", "continuity-native-startup-input", "continuity-native-startup-action", "continuity-native-startup-scheduler", "continuity-native-startup-no-user-prompt"] as const;
 export const OPTIONAL_SLICE_IDS = [
   ...NATIVE_CHECKPOINT_SLICE_IDS,
   ...NATIVE_CURRENT_STATE_SLICE_IDS,

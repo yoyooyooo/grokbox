@@ -176,7 +176,7 @@ test("SIGKILL after durable reserve preserves the no-replay guard; only explicit
 }, 10000);
 
 test("unsupported triggers, automatic enable and unbounded bodies are rejected locally", () => {
-  for (const patch of [{ isEnabled: true }, { trigger: { type: "cron", schedule: "* * * * *" } }, { prompt: "x".repeat(20000) }, { name: " padded " }, { secret: "PRIVATE" }]) {
+  for (const patch of [{ isEnabled: true }, { trigger: { type: "cron", schedule: "" } }, { prompt: "x".repeat(20000) }, { name: " padded " }, { secret: "PRIVATE" }]) {
     expect(() => parseRoutineBlueprint({ ...blueprint, ...patch })).toThrow();
   }
 });

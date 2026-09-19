@@ -1,7 +1,7 @@
 import { Effect, Exit } from "effect";
 import { ContinuityFailure, CurrentStateFailure, applicationObservation, assertCapturedHead, assertInitializationPermission,
   assertNativeBinding, captureCurrentRequest, continuityStorePolicy, initializationDigest, initializeCurrentRequest,
-  nativeApplicationDigest, nativeCurrentHead, nativeQualification, sameCurrentHead,
+  nativeApplicationDigest, nativeCurrentHead, nativeQualification, sameCurrentHead, continuityId,
   type CaptureCurrentRequest, type InitializationAttempt, type InitializationPermission, type InitializeCurrentRequest,
   type NativeCurrentStatePort, type NativeQualification } from "@grokbox/runtime-kernel/continuity";
 import { captureNativeCurrentMaterial, prepareNativeCurrentMaterial, verifyNativeCurrentApplication } from "../host/continuity-import.ts";
@@ -88,10 +88,16 @@ export function continuityCurrentStatePrograms(input: CurrentStateInput, hooks: 
     if (op.kind !== "initialize" || op.agentId !== attempt.expected.agentId || op.inputDigest !== attempt.inputDigest || op.policyRevision !== attempt.policyRevision
       || op.snapshotId !== attempt.snapshot.ref || op.effectId !== null && op.effectId !== attempt.effectId) throw failure("operation_conflict");
   };
+  const backupReference = (attempt: InitializationAttempt, action: "protect" | "release") => Effect.gen(function* () {
+    if (!attempt.backupSnapshot) return;
+    const change = yield* store.changeReference("continuity.recovery", {
+      action, requestId: continuityId(attempt.operationId, "backup", action), claimId: continuityId(attempt.operationId, "backup"), reference: attempt.backupSnapshot });
+    if (change.state !== (action === "protect" ? "protected" : "released")) return yield* Effect.fail(failure("material_invalid"));
+  });
   const reconcileAttempt = (attempt: InitializationAttempt) => Effect.gen(function* () {
     const op = yield* store.operation(attempt.operationId);
     yield* check(() => assertOperation(op, attempt));
-    if (op.state === "succeeded") return result(attempt, "already_applied", "not_checked", false);
+    if (op.state === "succeeded") { yield* backupReference(attempt, "release"); return result(attempt, "already_applied", "not_checked", false); }
     if (op.state === "not_executed") return result(attempt, "not_executed", "not_checked", false);
     if (op.state !== "effect_unknown") return result(attempt, "unknown", "not_checked", false);
     const { port, qualification } = yield* check(requireNative);
@@ -105,6 +111,7 @@ export function continuityCurrentStatePrograms(input: CurrentStateInput, hooks: 
     if (observed.state !== "applied") return result(attempt, "unknown", "not_checked", false);
     const evidenceHash = nativeApplicationDigest(observed.marker);
     yield* store.settleEffect(attempt.operationId, attempt.effectId, "succeeded", evidenceHash);
+    yield* backupReference(attempt, "release");
     const same = observed.current.contextRevision === observed.marker.contextRevision && observed.current.rootHash === observed.marker.rootHash
       && observed.current.state === "prepared" && observed.current.effects === "clear";
     // Native-side readback certifies past application, NOT a repaired hold or
@@ -124,8 +131,15 @@ export function continuityCurrentStatePrograms(input: CurrentStateInput, hooks: 
     // Strip the derived digest before invoking the policy port: it accepts the
     // public request shape, not a second policy or a native DTO.
     const request: InitializeCurrentRequest = { operationId: attempt.operationId, effectId: attempt.effectId,
-      snapshot: attempt.snapshot, expected: attempt.expected, policyRevision: attempt.policyRevision };
+      snapshot: attempt.snapshot, expected: attempt.expected, policyRevision: attempt.policyRevision,
+      ...(attempt.mode ? { mode: attempt.mode, backupSnapshot: attempt.backupSnapshot } : {}) };
     yield* authorize(request);
+    if (attempt.backupSnapshot) {
+      const backup = yield* store.readSnapshot(attempt.backupSnapshot.ref);
+      if (backup.reference.revision !== attempt.backupSnapshot.revision) return yield* Effect.fail(failure("material_invalid"));
+      yield* check(() => assertCapturedHead(backup, attempt.expected));
+      yield* backupReference(attempt, "protect");
+    }
     yield* store.prepareEffect({ operationId: attempt.operationId, agentId: attempt.expected.agentId, kind: "initialize",
       inputDigest: attempt.inputDigest, policyRevision: attempt.policyRevision, snapshotId: attempt.snapshot.ref });
     yield* store.rememberInitializationRequest(request);
@@ -162,6 +176,7 @@ export function continuityCurrentStatePrograms(input: CurrentStateInput, hooks: 
     // Only after reopen AND successful fence release do we settle the ledger.
     // Lost settlement ack is independently reconciled from the native marker.
     yield* store.settleEffect(attempt.operationId, attempt.effectId, "succeeded", nativeApplicationDigest(verified.marker));
+    yield* backupReference(attempt, "release");
     return result(attempt, "prepared", "verified_prepared", dispatched);
   });
   const reconcile = (raw: InitializeCurrentRequest) => Effect.gen(function* () {

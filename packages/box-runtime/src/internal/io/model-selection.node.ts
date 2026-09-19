@@ -1,7 +1,7 @@
 import { Clock, Effect } from "effect";
 import { BoxRuntimeError, OWNERSHIP_EVIDENCE_MAX_AGE_MS } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { applyReset, applyUse, parseRequestedEffort, assertResetAllowed, assertStubOnlyRouteAssignments, disclosure, persistModelsDocument, requireModel } from "@grokbox/runtime-kernel/selection";
+import { applyReset, applyUse, parseRequestedEffort, assertResetAllowed, assertStubOnlyRouteAssignments, disclosure, persistModelsDocument, requireModel, captureManagedSelection } from "@grokbox/runtime-kernel/selection";
 import { runConfigurationSave } from "@grokbox/runtime-kernel/commands";
 import { configurationWriteLayer } from "./configuration-write.node.ts";
 import type { RuntimeStore } from "./configuration.node.ts";
@@ -11,7 +11,7 @@ import { probeOpenAiCatalog } from "./openai-catalog-probe.node.ts";
 /** One command root; no Host signal, provider request or identity/config mirror. */
 export async function changeRuntimeModel(input: {
   store: RuntimeStore; forAgent?: string; modelId?: string; effort?: string; ownershipRead?: OwnershipReader; signal?: AbortSignal;
-  env?: NodeJS.Dict<string>; fetch?: typeof fetch;
+  env?: NodeJS.Dict<string>; fetch?: typeof fetch; expectedSelectionHash?: string;
 }) {
   return await Effect.runPromise(Effect.gen(function* () {
     const reasoning = yield* Effect.try({ try: () => parseRequestedEffort(input.effort), catch: error => error });
@@ -24,6 +24,9 @@ export async function changeRuntimeModel(input: {
       catch: () => new BoxRuntimeError("invalid_usage", "Model configuration is unavailable."),
     });
     const before = yield* load();
+    if (input.expectedSelectionHash !== undefined && (!input.forAgent || !/^[a-f0-9]{64}$/.test(input.expectedSelectionHash)
+      || sha256Text(canonicalJson(captureManagedSelection(before.models,input.forAgent))) !== input.expectedSelectionHash))
+      return yield* Effect.fail(new BoxRuntimeError("invalid_usage","selection_configuration_changed"));
     const next = yield* Effect.try({
       try: () => {
         if (input.modelId === undefined) assertResetAllowed(before.desired, input.forAgent);

@@ -5,7 +5,9 @@ import { ContinuityFailure, failContinuity, type ContinuityStorePolicy } from "@
 import { openMonitorSqlite, type MonitorSqlite } from "./monitor-sqlite.node.ts";
 import { checkContinuityFile, checkContinuityRoot, continuityPrivateDirectory, syncContinuityDirectory, continuityIoFailure, missingFile } from "./continuity-files.node.ts";
 
-export const CONTINUITY_DB_VERSION = 3;
+import { CONTINUITY_WORKFLOW_SCHEMA } from "./continuity-workflow-schema.ts";
+
+export const CONTINUITY_DB_VERSION = 4;
 const SCHEMA = `
 CREATE TABLE continuity_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL,root_id TEXT NOT NULL,scope_id TEXT NOT NULL);
 CREATE TABLE publications(sequence INTEGER PRIMARY KEY AUTOINCREMENT,request_id TEXT NOT NULL UNIQUE,digest TEXT NOT NULL,agent_id TEXT NOT NULL,quality TEXT NOT NULL,manifest_json TEXT,
@@ -21,6 +23,7 @@ CREATE TABLE operations(operation_id TEXT PRIMARY KEY,digest TEXT NOT NULL,inten
  state TEXT NOT NULL CHECK(state IN ('prepared','effect_unknown','succeeded','not_executed')),revision INTEGER NOT NULL,effect_id TEXT UNIQUE,evidence_hash TEXT,created_at INTEGER NOT NULL,request_json TEXT,result_json TEXT);
 CREATE INDEX operation_snapshot ON operations(snapshot_id,state);
 CREATE INDEX operation_agent_state ON operations(agent_id,state);
+${CONTINUITY_WORKFLOW_SCHEMA}
 `;
 export type ContinuityStoreHooks = {
   /** Private fault/barrier seams; no environment or CLI can provide them. */
@@ -100,11 +103,12 @@ export function continuityDatabase(root: string, scopeId: string, policy: Contin
           if (meta?.root_id !== rootId || meta.scope_id !== scopeId) return failContinuity("scope_mismatch");
           if ((await existing.first("PRAGMA journal_mode"))?.journal_mode !== "delete") return failContinuity("schema_mismatch");
           const previous = version?.user_version;
-          if (previous !== meta.version || ![1, 2, CONTINUITY_DB_VERSION].includes(Number(previous))) return failContinuity("schema_mismatch");
+          if (previous !== meta.version || ![1, 2, 3, CONTINUITY_DB_VERSION].includes(Number(previous))) return failContinuity("schema_mismatch");
           const migrated = previous !== CONTINUITY_DB_VERSION;
           if (migrated) {
             if (previous === 1) await existing.run("ALTER TABLE operations ADD COLUMN request_json TEXT");
-            await existing.run("ALTER TABLE operations ADD COLUMN result_json TEXT");
+            if (Number(previous) < 3) await existing.run("ALTER TABLE operations ADD COLUMN result_json TEXT");
+            await existing.run(CONTINUITY_WORKFLOW_SCHEMA);
             await existing.run("CREATE INDEX IF NOT EXISTS operation_agent_state ON operations(agent_id,state)");
             await existing.run(`UPDATE continuity_meta SET version=${CONTINUITY_DB_VERSION} WHERE singleton=1; PRAGMA user_version=${CONTINUITY_DB_VERSION};`);
           } else await checkDb(existing);

@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
+import { startGatewayBotProtection } from "../bot-protection-worker.ts";
 import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
 import { startOpsNotificationWorker } from "@grokbox/box-runtime/runtime";
 import { nativeExplicitReceiverReader } from "../gateway-receiver.ts";
@@ -619,12 +620,14 @@ export async function startDaemonHost(
   // authorization plus fresh source checks. Do not attach it to an RPC request.
   notificationWorker = startOpsNotificationWorker({ durableRoot: deps.boxRuntimeRoot,
     readNative: nativeExplicitReceiverReader(directDeps, 15000) });
+  const protectionWorker = startGatewayBotProtection(directDeps);
 
   return {
     socketPath,
     network: networkPort === null ? null : { host: "127.0.0.1", port: networkPort },
     handshake,
     close: async () => {
+      await protectionWorker.close();
       await notificationWorker?.close();
       await events.close();
       const results = await Promise.allSettled([

@@ -8,6 +8,10 @@ export class ContinuityFailure extends Error {
 }
 export const failContinuity = (code: ContinuityFailureCode): never => { throw new ContinuityFailure(code); };
 export const isContinuityUuid = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
+export const continuityId = (...parts: unknown[]): string => {
+  const hash = sha256Text(canonicalJson(parts));
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+};
 export const isContinuityHash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 export const isContinuityToken = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(v);
 export const continuityUint = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
@@ -76,14 +80,15 @@ export function recoveryManifest(input: unknown, policy: ContinuityStorePolicy):
   };
   for (const p of parts) visit(p.id);
   if (v.root !== null && !byId.has(v.root as string)) return failContinuity("invalid_material");
-  if (v.quality === "native_checkpoint") {
-    if (v.root === null || byId.get(String(v.root))?.kind !== "native-root" || v.gaps.includes("missing_native_root") || v.gaps.includes("unsupported_native_schema")) return failContinuity("invalid_material");
+  if (v.quality === "native_checkpoint" || v.quality === "semantic_resume" && byId.get(String(v.root))?.kind === "native-root") {
+    if (v.root === null || byId.get(String(v.root))?.kind !== "native-root" || v.quality === "native_checkpoint" && (v.gaps.includes("missing_native_root") || v.gaps.includes("unsupported_native_schema"))) return failContinuity("invalid_material");
     const reachable = new Set<string>();
     const follow = (id: string) => { if (reachable.has(id)) return; reachable.add(id); for (const next of byId.get(id)!.dependencies) follow(next); };
     follow(String(v.root));
     if (parts.some(p => ["native-root", "native-blob"].includes(p.kind) && !reachable.has(p.id))) return failContinuity("invalid_material");
   }
-  if (v.quality === "semantic_resume" && (v.root === null || byId.get(String(v.root))?.kind !== "context-summary")) return failContinuity("invalid_material");
+  if (v.quality === "semantic_resume" && (v.root === null || !(byId.get(String(v.root))?.kind === "context-summary"
+    || byId.get(String(v.root))?.kind === "native-root" && byId.get("bot:context-seed")?.kind === "context-summary"))) return failContinuity("invalid_material");
   return { version: 1, source: { agentId: s.agentId, scopeId: s.scopeId, contextRevision: s.contextRevision, nativeSchema: s.nativeSchema,
     capturedAtMs: s.capturedAtMs, transcriptThrough: s.transcriptThrough as number | null }, quality: v.quality as RecoveryQuality,
     root: v.root as string | null, gaps: [...new Set<string>(v.gaps)].sort(), parts };

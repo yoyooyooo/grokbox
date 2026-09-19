@@ -94,6 +94,9 @@ import {
 import { runSend } from "./commands/send.ts";
 import { resolveProfile } from "./config/profile.ts";
 import { runAgentState } from "./commands/agent-state.ts";
+import { runBotLifecycle } from "./commands/bot-lifecycle.ts";
+import { runBotHandover } from "./commands/bot-handover.ts";
+import { runBotProtection } from "./commands/bot-protection.ts";
 import { runAgentDuplicate, runAgentOperation } from "./commands/agent-duplicate.ts";
 import type { CliDeps } from "./deps.ts";
 import { CliError, usage } from "./errors.ts";
@@ -328,9 +331,24 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents routines delete": async (deps, args, options) => await runRoutines(deps, "delete", args[0] ?? "", args[1], options),
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
+    "agents protection status": async (deps,_args,options)=>await runBotProtection(deps,"status",options),
+    "agents protection observe": async (deps,_args,options)=>await runBotProtection(deps,"observe",options),
+    "agents protection advance": async (deps,_args,options)=>await runBotProtection(deps,"advance",options),
+    "agents handover status": async (deps, _args, options) => await runBotHandover(deps,"status",options),
+    "agents handover advance": async (deps, _args, options) => await runBotHandover(deps,"advance",options),
+    "agents handover observe": async (deps, _args, options) => await runBotHandover(deps,"observe",options),
+    "agents handover attest": async (deps, _args, options) => await runBotHandover(deps,"attest",options),
+    "agents handover retire": async (deps, _args, options) => await runBotHandover(deps,"retire",options),
+    "agents clone": async (deps, args, options) => await runBotLifecycle(deps, "clone", args[0], options),
+    "agents replace": async (deps, args, options) => await runBotLifecycle(deps, "replace", args[0], options),
+    "agents spawn": async (deps, _args, options) => await runBotLifecycle(deps, "spawn", undefined, options),
+    "agents lifecycle status": async (deps, _args, options) => await runBotLifecycle(deps, "status", undefined, options),
+    "agents lifecycle advance": async (deps, _args, options) => await runBotLifecycle(deps, "advance", undefined, options),
     "agents state show": async (deps, args, options) => await runAgentState(deps, "show", args[0] ?? "", options),
     "agents state capture": async (deps, args, options) => await runAgentState(deps, "capture", args[0] ?? "", options),
     "agents state initialize": async (deps, args, options) => await runAgentState(deps, "initialize", args[0] ?? "", options),
+    "agents state reset": async (deps, args, options) => await runAgentState(deps, "reset", args[0] ?? "", options),
+    "agents state recover": async (deps, args, options) => await runAgentState(deps, "recover", args[0] ?? "", options),
     "agents state operation": async (deps, args, options) => await runAgentState(deps, "operation", args[0] ?? "", options),
     "agents state reconcile": async (deps, args, options) => await runAgentState(deps, "reconcile", args[0] ?? "", options),
     "agents state activate": async (deps, args, options) => await runAgentState(deps, "activate", args[0] ?? "", options),

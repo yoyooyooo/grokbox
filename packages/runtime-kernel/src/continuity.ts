@@ -2,3 +2,8 @@ export * from "./internal/continuity/material.ts";
 export * from "./internal/continuity/current-state.ts";
 export * from "./internal/continuity/current-state-wire.ts";
 export * from "./internal/continuity/duplication.ts";
+export * from "./internal/continuity/bot-material.ts";
+export * from "./internal/continuity/context-seed.ts";
+export * from "./internal/continuity/lifecycle.ts";
+export * from "./internal/continuity/handover.ts";
+export * from "./internal/continuity/protection.ts";

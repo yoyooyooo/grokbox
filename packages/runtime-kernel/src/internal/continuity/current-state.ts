@@ -75,16 +75,24 @@ export function captureCurrentRequest(input: unknown): CaptureCurrentRequest {
   if (!isContinuityUuid(v.requestId)) return bad();
   return { requestId: v.requestId, expected: nativeCurrentHead(v.expected) };
 }
-export type InitializeCurrentRequest = { operationId: string; effectId: string; snapshot: ProtectedStorageRef; expected: NativeCurrentHead; policyRevision: string };
+export type InitializeCurrentRequest = { operationId: string; effectId: string; snapshot: ProtectedStorageRef; expected: NativeCurrentHead; policyRevision: string;
+  mode?: "reset" | "recover"; backupSnapshot?: ProtectedStorageRef };
 export function initializeCurrentRequest(input: unknown): InitializeCurrentRequest {
-  const v = object(input, ["operationId", "effectId", "snapshot", "expected", "policyRevision"]);
+  const v = object(input, ["operationId", "effectId", "snapshot", "expected", "policyRevision", "mode", "backupSnapshot"]);
   if (!isContinuityUuid(v.operationId) || !isContinuityUuid(v.effectId) || !isContinuityHash(v.policyRevision)) return bad();
   let snapshot: ProtectedStorageRef;
   try { snapshot = protectedStorageRef(v.snapshot); } catch { return bad(); }
   if (snapshot.owner !== "continuity.recovery" || !isContinuityUuid(snapshot.ref) || !isContinuityHash(snapshot.revision)) return bad();
   const expected = nativeCurrentHead(v.expected);
   if (!["empty", "prepared"].includes(expected.state) || expected.effects !== "clear") return bad("not_prepared");
-  return { operationId: v.operationId, effectId: v.effectId, snapshot, expected, policyRevision: v.policyRevision };
+  let backupSnapshot: ProtectedStorageRef | undefined;
+  if (v.mode !== undefined) {
+    if (!["reset", "recover"].includes(String(v.mode)) || expected.rootHash === null) return bad("not_prepared");
+    try { backupSnapshot = protectedStorageRef(v.backupSnapshot); } catch { return bad(); }
+    if (backupSnapshot.owner !== "continuity.recovery" || !isContinuityUuid(backupSnapshot.ref) || !isContinuityHash(backupSnapshot.revision)) return bad();
+  } else if (v.backupSnapshot !== undefined) return bad();
+  return { operationId: v.operationId, effectId: v.effectId, snapshot, expected, policyRevision: v.policyRevision,
+    ...(v.mode === undefined ? {} : { mode: v.mode as "reset" | "recover", backupSnapshot }) };
 }
 export const initializationDigest = (request: InitializeCurrentRequest) => sha256Text(canonicalJson(request));
 export type InitializationAttempt = InitializeCurrentRequest & { inputDigest: string };

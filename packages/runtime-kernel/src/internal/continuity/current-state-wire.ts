@@ -5,16 +5,16 @@ import { CurrentStateFailure, copyNativeMaterial, type NativeMaterial } from "./
 export const CURRENT_STATE_RPC_VERSION = 1 as const;
 export const MAX_CURRENT_STATE_WIRE_BYTES = 24 * 1024 * 1024;
 export type CurrentStateWireMaterial = { manifest: RecoveryManifest; content: Array<{ hash: string; base64: string }> };
-export type CurrentStateRpcRequest = { version: 1; action: "head" | "capture" | "preview" | "initialize" | "observe" | "activate";
+export type CurrentStateRpcRequest = { version: 1; action: "capabilities" | "head" | "capture" | "compose" | "birth" | "load" | "startup" | "startup-status" | "preview" | "initialize" | "observe" | "activate";
   agentId: string; payload?: string; confirm?: boolean };
 const bad = (): never => { throw new CurrentStateFailure("invalid_request"); };
 export function currentStateRpcRequest(raw: unknown): CurrentStateRpcRequest {
   try {
     const v = continuityObject(raw, ["version", "action", "agentId", "payload", "confirm"]);
-    if (v.version !== 1 || !["head", "capture", "preview", "initialize", "observe", "activate"].includes(String(v.action))
+    if (v.version !== 1 || !["capabilities", "head", "capture", "compose", "birth", "load", "startup", "startup-status", "preview", "initialize", "observe", "activate"].includes(String(v.action))
       || !isContinuityUuid(v.agentId) || v.payload !== undefined && (typeof v.payload !== "string" || Buffer.byteLength(v.payload) > MAX_CURRENT_STATE_WIRE_BYTES)
       || v.confirm !== undefined && typeof v.confirm !== "boolean") return bad();
-    if (["initialize", "activate"].includes(String(v.action)) && v.confirm !== true) return bad();
+    if (["initialize", "activate", "birth", "load", "startup"].includes(String(v.action)) && v.confirm !== true) return bad();
     return v as CurrentStateRpcRequest;
   } catch { return bad(); }
 }

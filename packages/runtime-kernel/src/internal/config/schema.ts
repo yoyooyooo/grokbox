@@ -34,7 +34,7 @@ export type UnifiedConfig = {
   client: { currentProfile: string; profiles: Record<string, ConnectionProfile> };
   daemon?: DaemonIntent;
   desktop?: DesktopIntent;
-  runtime?: { desiredMode?: "disabled" | "observe" | "identity" | "route"; context?: ContextIntent };
+  runtime?: { desiredMode?: "disabled" | "observe" | "identity" | "route"; context?: ContextIntent; continuity?: JsonObject };
   ops?: JsonObject;
   storage?: StorageIntent;
 };
@@ -123,6 +123,16 @@ export const CONTEXT_SCHEMA = object({ ...contextOverride.properties,
   models: map(contextOverride, 128, "^[^\\x00-\\x1f]{1,256}$"),
   agents: { ...map(contextOverride, 1024, "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"), sensitive: true },
 });
+export const CONTINUITY_SCHEMA = object({
+  enabled: boolean, intervalMs: integer(10000, 300000),
+  bots: { ...map(object({ enabled: boolean, mode: enumeration("alert", "prepare", "auto-replace"), tier: enumeration("observe", "memory", "resume", "archive"),
+    pauseOnOwnershipLoss: boolean, captureIntervalMs: integer(10000, 86400000), maxReplacementsPerDay: integer(0, 16), cooldownMs: integer(60000, 86400000),
+    handover: object({ routines: enumeration("move", "keep-source"), groups: boolean, directMessages: boolean, oldBotAssistance: boolean,
+      titles: boolean, sidebar: boolean, allowUserMessages: boolean, automaticDelete: boolean,
+      minGraceMs: integer(60000, 90 * 86400000), quietMs: integer(60000, 90 * 86400000) }),
+  }), 128, "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"), sensitive: true },
+});
+CONTINUITY_SCHEMA.dangerous = true;
 export const STORAGE_SCHEMA = object({
   policyRevision: { type: "integer", enum: [1] },
   diagnostics: object({ targetBytes: integer(MIB, OBSERVATION_RETENTION.maxBytes), maxBytes: integer(4 * MIB, OBSERVATION_RETENTION.maxBytes),
@@ -145,7 +155,7 @@ export const CONFIG_SCHEMA = object({
   client: object({ currentProfile: string(64, PROFILE_NAME_PATTERN), profiles: map(profile, 64, PROFILE_NAME_PATTERN) }, ["currentProfile", "profiles"]),
   daemon: DAEMON_INTENT_SCHEMA,
   desktop: object({ idleReclaim: object({ enabled: boolean, minIdleMs: integer(600_000, 86_400_000) }), keepAgentIds: array({ ...uuid, sensitive: true }, 64) }),
-  runtime: object({ desiredMode: enumeration("disabled", "observe", "identity", "route"), context: CONTEXT_SCHEMA }),
+  runtime: object({ desiredMode: enumeration("disabled", "observe", "identity", "route"), context: CONTEXT_SCHEMA, continuity: CONTINUITY_SCHEMA }),
   ops: OPS_SCHEMA,
   storage: STORAGE_SCHEMA,
 }, ["schemaVersion", "client"]);

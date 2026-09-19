@@ -336,6 +336,9 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
           AND n.quality='native_checkpoint' AND (n.created_at>p.created_at OR (n.created_at=p.created_at AND n.sequence>p.sequence))))
         AND NOT EXISTS(SELECT 1 FROM claims c WHERE c.owner='continuity.recovery' AND c.active=1 AND c.ref=p.request_id AND c.revision=p.digest)
         AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.snapshot_id=p.request_id AND o.state IN ('prepared','effect_unknown'))
+        AND NOT EXISTS(SELECT 1 FROM continuity_workflow_materials r JOIN continuity_workflows w ON w.operation_id=r.operation_id
+          WHERE r.snapshot_id=p.request_id AND w.phase<>'retired')
+        AND NOT EXISTS(SELECT 1 FROM continuity_subject_materials r WHERE r.snapshot_id=p.request_id)
         ORDER BY p.sequence LIMIT ?`, [policy.keepRecent, maxItems]);
       // One subject per finite pass. Revalidate the retained points before
       // discarding older fallback material; corrupt newest bytes are not a
@@ -392,6 +395,13 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
   const maintainSafety = () => database.read(async db => ({ owner: "continuity.safety", state: "blocked", reclaimedBytes: 0,
     blockedBy: await total(db, "SELECT COUNT(*) AS n FROM operations WHERE state='effect_unknown'") ? ["effect_unknown"] : ["unsupported"] } satisfies OwnedMaintenanceReceipt));
   return { initialize: database.initialize, publish, reconcilePublication, readSnapshot, prepareDuplication, recordDuplication, stopUnclaimedDuplication, duplication, prepareEffect, rememberInitializationRequest, initializationRequest, claimEffect, settleEffect, changeReference, measure, maintainRecovery, maintainSafety,
+    latestSnapshot: (agentId: string) => database.read(async db => {
+      id(agentId);
+      const row = await db.first("SELECT * FROM publications WHERE agent_id=? AND state='published' ORDER BY sequence DESC LIMIT 1", [agentId]);
+      if (!row) return null;
+      const manifest = decode(row); await verify(manifest);
+      return { ...receipt(row), requestId: String(row.request_id) };
+    }),
     publication: (requestId: string) => database.read(async db => receipt(await getPublication(db, requestId))),
     operation: (operationId: string) => database.read(async db => {
       const row = await db.first("SELECT * FROM operations WHERE operation_id=?", [id(operationId)]);

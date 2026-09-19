@@ -31,6 +31,11 @@ export { runRoutineProvisionCommand, type RoutineProvisionNative } from "./inter
 export { observeRuntimeStorage } from "./internal/roots/storage-maintenance.runtime.ts";
 export { openContinuityObservationBridge, runContinuityReferenceChange, type ContinuityObservationBatch } from "./internal/roots/continuity-integration.runtime.ts";
 export { openContinuityRecoveryStore } from "./internal/roots/continuity.runtime.ts";
+export { openBotLifecycle, type BotLifecyclePort } from "./internal/roots/bot-lifecycle.runtime.ts";
+export { openBotHandover, type BotHandoverPort, type HandoverEffect } from "./internal/roots/bot-handover.runtime.ts";
+export { openContinuityControls } from "./internal/roots/continuity-control.runtime.ts";
+export { openBotConvergence, type BotConvergencePort } from "./internal/roots/bot-convergence.runtime.ts";
+export { openBotProtection, startBotProtectionWorker, startPolicyBoundBotProtection, type BotProtectionPort } from "./internal/roots/bot-protection.runtime.ts";
 export { openAgentDuplication } from "./internal/roots/agent-duplicate.runtime.ts";
 export { createNativeCheckpointCapturePort } from "./internal/host/native-checkpoint.ts";
 export type { NativeCheckpointBoundary, NativeCheckpointSchema } from "./internal/host/native-checkpoint.ts";

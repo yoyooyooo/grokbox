@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { CurrentStateFailure, copyNativeMaterial, continuityObject, continuityStorePolicy, initializationDigest,
-  initializeCurrentRequest, nativeCurrentHead, nativeQualification, recoveryRevision,
+  initializeCurrentRequest, nativeCurrentHead, nativeQualification, recoveryRevision, nativeMaterialParts, readBotSupplement,
+  currentContextSeed, contextSeedMetadata, annotateContextSeed, appendBotSupplement, CONTEXT_SEED_PART,
   type NativeMaterial, type NativeCurrentHead, type NativeQualification, type NativeApplicationMarker } from "@grokbox/runtime-kernel/continuity";
 import { captureNativeCheckpoint, type NativeCheckpointSchema } from "./native-checkpoint.ts";
 
@@ -93,12 +94,15 @@ export function createNativeCheckpointWorker(input: NativeCheckpointWorkerInput)
     const request = continuityObject(raw, ["attempt", "rootId", "material"]);
     const attempt = initializeCurrentRequest(request.attempt), expected = checkedHead(attempt.expected), rootId = bytesId(request.rootId);
     const material = copyNativeMaterial(request.material as NativeMaterial, policy), root = material.manifest.parts.find(p => p.id === material.manifest.root);
-    if (!root || root.kind !== "native-root" || material.manifest.quality !== "native_checkpoint"
+    const seed = contextSeedMetadata(material);
+    if (!root || root.kind !== "native-root" || !(material.manifest.quality === "native_checkpoint" || material.manifest.quality === "semantic_resume" && seed)
       || material.manifest.source.scopeId !== expected.scopeId || material.manifest.source.nativeSchema !== expected.nativeSchema
       || recoveryRevision(material.manifest) !== attempt.snapshot.revision || material.manifest.root !== `n:${hex(rootId)}`
-      || material.manifest.gaps.includes("unknown_effects") || material.manifest.parts.some(p => !["native-root", "native-blob"].includes(p.kind))) return error("material_invalid");
-    const blobs = new Map(material.manifest.parts.map(part => [part.id.slice(2), material.content.get(part.hash)!]));
-    if (material.manifest.parts.some(p => !/^n:(?:[a-f0-9]{2}){1,32}$/.test(p.id))) return error("material_invalid");
+      || material.manifest.gaps.includes("unknown_effects") || material.manifest.parts.some(p => !["native-root", "native-blob"].includes(p.kind) && p.id !== "bot:supplement" && p.id !== CONTEXT_SEED_PART)) return error("material_invalid");
+    readBotSupplement(material);
+    const nativeParts = nativeMaterialParts(material.manifest.parts);
+    const blobs = new Map(nativeParts.map(part => [part.id.slice(2), material.content.get(part.hash)!]));
+    if (nativeParts.some(p => !/^n:(?:[a-f0-9]{2}){1,32}$/.test(p.id))) return error("material_invalid");
     // Validate the actual schema graph before any database mutation. This is
     // context-only; identity/prompt rebinding and target readiness are separate.
     const candidateHead = { ...expected, rootHash: root.hash, state: "prepared" as const };
@@ -106,9 +110,9 @@ export function createNativeCheckpointWorker(input: NativeCheckpointWorkerInput)
       reader: { rootId, readBlob: async (id, max) => {
         const value = blobs.get(hex(id)); if (value && value.byteLength > max) return error("material_invalid"); return value;
       } }, policy, capturedAtMs: material.manifest.source.capturedAtMs });
-    if (canonicalJson(actual.manifest.parts) !== canonicalJson(material.manifest.parts)
+    if (canonicalJson(actual.manifest.parts) !== canonicalJson(nativeParts)
       || actual.manifest.gaps.includes("unknown_effects")) return error("material_invalid");
-    const digest = initializationDigest(attempt), candidateHash = sha256Text(canonicalJson(material.manifest.parts));
+    const digest = initializationDigest(attempt), candidateHash = sha256Text(canonicalJson(nativeParts));
     const receipt: NativeApplicationMarker = { version: 1, operationId: attempt.operationId, effectId: attempt.effectId,
       agentId: expected.agentId, scopeId: expected.scopeId, inputDigest: digest, snapshotRevision: attempt.snapshot.revision,
       candidateHash, rootHash: root.hash, contextRevision: sha256Text(canonicalJson([expected.contextRevision, digest, root.hash])), nativeSchema: expected.nativeSchema };
@@ -128,7 +132,7 @@ export function createNativeCheckpointWorker(input: NativeCheckpointWorkerInput)
       store.db.exec(`CREATE TABLE IF NOT EXISTS ${markerTable}(operation_id TEXT PRIMARY KEY,digest TEXT NOT NULL,marker TEXT NOT NULL,held INTEGER NOT NULL DEFAULT 1 CHECK(held IN (0,1)));`);
       // Existing blobs may contain a different source-era meaning under the same
       // native ID. Overwriting them could break retained historical state.
-      for (const part of material.manifest.parts) {
+      for (const part of nativeParts) {
         if (part.id === material.manifest.root) continue;
         const id = Uint8Array.from(Buffer.from(part.id.slice(2), "hex"));
         const previous = await readBlob(id, policy.maxPartBytes);
@@ -138,10 +142,28 @@ export function createNativeCheckpointWorker(input: NativeCheckpointWorkerInput)
       store.setBlob(rootId, material.content.get(root.hash)!);
       const copied = await captureNativeCheckpoint({ expected: candidateHead, schema, reader: { rootId, readBlob }, policy,
         capturedAtMs: material.manifest.source.capturedAtMs });
-      if (canonicalJson(copied.manifest.parts) !== canonicalJson(material.manifest.parts)) return error("material_invalid");
+      if (canonicalJson(copied.manifest.parts) !== canonicalJson(nativeParts)) return error("material_invalid");
       store.db.prepare(`INSERT INTO ${markerTable}(operation_id,digest,marker) VALUES(?,?,?)`).run(attempt.operationId, digest, canonicalJson(receipt));
       return { state: "worker_committed" as const, marker: receipt, duplicate: false, nativeApplicationComplete: false as const };
     });
+  };
+  const compose = async (raw: unknown) => {
+    const request = continuityObject(raw, ["expected", "rootId", "seed"]), expected = checkedHead(request.expected);
+    const rootId = bytesId(request.rootId), seed = currentContextSeed(request.seed);
+    const root = schema.root.fromBinary(new Uint8Array());
+    if (root.getType().typeName !== "agent.v1.ConversationStateStructure" || !Array.isArray(root.rootPromptMessagesJson)) return error("material_invalid");
+    const content = new Map<string, Uint8Array>();
+    if (seed.summary.length) {
+      const message = new TextEncoder().encode(JSON.stringify({ role: "assistant", content: [{ type: "text", text: seed.summary }] }));
+      const id = Uint8Array.from(Buffer.from(sha256Bytes(message), "hex"));
+      root.rootPromptMessagesJson = [id]; content.set(hex(id), message);
+    }
+    const bytes = root.toBinary(); content.set(hex(rootId), bytes);
+    const source = { ...expected, agentId: seed.sourceId, contextRevision: seed.sourceRevision, rootHash: sha256Bytes(bytes), state: "prepared" as const, effects: "clear" as const };
+    let material = await captureNativeCheckpoint({ expected: source, schema, policy, capturedAtMs: Date.now(),
+      reader: { rootId, readBlob: async (id, max) => { const value = content.get(hex(id)); if (value && value.byteLength > max) return error("material_invalid"); return value; } } });
+    if (seed.supplement) material = appendBotSupplement(material, seed.supplement);
+    return annotateContextSeed(material, seed);
   };
   const release = async (raw: unknown) => {
     const request = continuityObject(raw, ["attempt", "rootId"]), attempt = initializeCurrentRequest(request.attempt);
@@ -163,7 +185,7 @@ export function createNativeCheckpointWorker(input: NativeCheckpointWorkerInput)
     if (!["set-blob", "clear-blobs", "clear-stale-roots", "collect-garbage", "verify-legacy-blob-retirement"].includes(kind)) return true;
     return !hasMarkers() || !store.db.prepare(`SELECT 1 FROM ${markerTable} WHERE held=1 LIMIT 1`).get();
   };
-  return { capture, apply: (raw: unknown) => apply(raw), prepare: (raw: unknown) => apply(raw, true), observe, release, permitsOrdinary };
+  return { capture, compose, apply: (raw: unknown) => apply(raw), prepare: (raw: unknown) => apply(raw, true), observe, release, permitsOrdinary };
 }
 
 /** Runs inside the existing worker. No detached timer, database opener or
@@ -185,8 +207,8 @@ export function createNativeCheckpointWorkerDispatcher(input: NativeCheckpointWo
           original(request); return;
         }
         const value = continuityObject(request, ["kind", "requestId", "version", "action", "payload"]);
-        if (value.version !== NATIVE_CHECKPOINT_PROTOCOL || !["capture", "prepare", "apply", "observe", "release"].includes(String(value.action))) return error();
-        const result = await operations[value.action as "capture" | "prepare" | "apply" | "observe" | "release"](value.payload);
+        if (value.version !== NATIVE_CHECKPOINT_PROTOCOL || !["capture", "compose", "prepare", "apply", "observe", "release"].includes(String(value.action))) return error();
+        const result = await operations[value.action as "capture" | "compose" | "prepare" | "apply" | "observe" | "release"](value.payload);
         post({ kind: "grokbox-current-state-ok", requestId, version: NATIVE_CHECKPOINT_PROTOCOL, result });
       } catch {
         post({ kind: "error", requestId, message: "grokbox_checkpoint_operation_failed" });

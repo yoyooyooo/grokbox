@@ -559,9 +559,9 @@ export class GatewayClient {
   }
 
   async currentStateControl(raw: CurrentStateRpcRequest, timeoutMs: number) {
-    const body = currentStateRpcRequest(raw), write = body.action === "initialize" || body.action === "activate";
+    const body = currentStateRpcRequest(raw), write = ["initialize", "activate", "birth", "load", "startup"].includes(body.action);
     return await this.rpc("grokboxCurrentStateControl", body, { timeoutMs, write, maxResponseBytes: MAX_CURRENT_STATE_WIRE_BYTES,
-      ...(write ? { unknownOutcomeCode: "operation_outcome_unknown" as const } : {}) });
+      ...(write ? { unknownOutcomeCode: "operation_outcome_unknown" as const, singleAttempt: true } : {}) });
   }
 
   async contextControl(body: { action: "status" | "compact"; agentId: string; sessionId?: string; operationId?: string; confirm?: boolean }, timeoutMs: number) {

@@ -7,7 +7,7 @@ import { openContinuityRecoveryStore } from "../src/runtime.ts";
 import { openMonitorSqlite } from "../src/internal/io/monitor-sqlite.node.ts";
 
 const scopeId = "a".repeat(64), agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-for (const originalVersion of [1, 2]) test(`explicit CONT v${originalVersion} upgrade preserves unknown operations; GET never performs the upgrade`, async () => {
+for (const originalVersion of [1, 2, 3]) test(`explicit CONT v${originalVersion} upgrade preserves unknown operations; GET never performs the upgrade`, async () => {
   const root = await mkdtemp(join(tmpdir(), "continuity-schema-"));
   try {
     const store = openContinuityRecoveryStore({ durableRoot: root, scopeId }); await store.initialize();
@@ -16,7 +16,8 @@ for (const originalVersion of [1, 2]) test(`explicit CONT v${originalVersion} up
     await store.claimEffect(operationId, effectId, policyRevision);
     const db = await openMonitorSqlite(join(root, "continuity", "state.sqlite"), "write");
     try {
-      await db.run("ALTER TABLE operations DROP COLUMN result_json;");
+      if (originalVersion < 3) await db.run("ALTER TABLE operations DROP COLUMN result_json;");
+      for (const table of ["continuity_workflow_materials", "continuity_subject_materials", "continuity_steps", "continuity_handover_items", "continuity_workflows", "continuity_subjects", "continuity_queued_controls"]) await db.run(`DROP TABLE ${table}`);
       if (originalVersion === 1) await db.run("ALTER TABLE operations DROP COLUMN request_json;");
       await db.run(`UPDATE continuity_meta SET version=${originalVersion}; PRAGMA user_version=${originalVersion};`);
     } finally { await db.close(); }
@@ -24,6 +25,8 @@ for (const originalVersion of [1, 2]) test(`explicit CONT v${originalVersion} up
     const before = await openMonitorSqlite(join(root, "continuity", "state.sqlite"), "read");
     try { expect((await before.first("PRAGMA user_version"))?.user_version).toBe(originalVersion); } finally { await before.close(); }
     expect(await store.initialize()).toMatchObject({ initialized: true, created: false, migrated: true });
+    const after = await openMonitorSqlite(join(root, "continuity", "state.sqlite"), "read");
+    try { expect((await after.first("SELECT name FROM sqlite_master WHERE name='continuity_workflow_materials'"))?.name).toBe("continuity_workflow_materials"); } finally { await after.close(); }
     expect(await store.operation(operationId)).toMatchObject({ state: "effect_unknown", effectId });
     await expect(store.initializationRequest(operationId)).rejects.toThrow("not_found");
     expect((await store.claimEffect(operationId, effectId, policyRevision)).dispatch).toBe(false);

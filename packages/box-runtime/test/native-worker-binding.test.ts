@@ -35,7 +35,14 @@ nativeTest("explicit current-state upgrade preserves its baseline and measures t
   const baseline = profileFromSource(source, LIVE_SLICE_PATCHES.filter(slice => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(slice.id)));
   const before = JSON.stringify(baseline);
   const upgraded = upgradeProfileCapability(source, baseline, "current-state");
-  expect(upgraded.addedIds).toHaveLength(11); expect(JSON.stringify(baseline)).toBe(before);
+  expect(upgraded.addedIds.map(String).sort()).toEqual([
+    "continuity-native-worker-handshake","continuity-native-worker-client","continuity-native-blob-owner",
+    "continuity-native-run-fence","continuity-native-session-owner","continuity-native-checkpoint-fence","continuity-native-checkpoint-revision",
+    "continuity-native-rpc-schema","continuity-native-rpc-api","continuity-native-created-owner","continuity-native-duplicate-identity",
+    "continuity-native-history-boundary","continuity-native-instructions","continuity-native-history-position",
+    "continuity-native-birth-options","continuity-native-birth-background","continuity-native-birth-fence","continuity-native-prepared-load",
+    "continuity-native-startup-input","continuity-native-startup-action","continuity-native-startup-scheduler","continuity-native-startup-no-user-prompt",
+  ].sort()); expect(JSON.stringify(baseline)).toBe(before);
   const profile = profileFromSource(source, upgraded.slices);
   expect(envelopeProfileShape(profile)).toBe(true);
   const windows = envelopeWindowsFromRecipe(source, profile); expect(windows).not.toBeNull();

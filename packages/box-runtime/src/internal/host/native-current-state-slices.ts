@@ -1,9 +1,42 @@
 import type { SlicePatch } from "./profile.ts";
 import { NATIVE_CURRENT_STATE_SYMBOL } from "./native-current-state-owner.ts";
 import { NATIVE_CHECKPOINT_PAIR } from "./native-checkpoint-worker-hook.ts";
+import { NATIVE_BOT_LIFECYCLE_SLICES } from "./native-bot-lifecycle-slices.ts";
 const control = `globalThis[Symbol.for("${NATIVE_CURRENT_STATE_SYMBOL}")]`;
 
 export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
+  ...NATIVE_BOT_LIFECYCLE_SLICES,
+  {
+    id: "continuity-native-history-position",
+    startAnchor: "var SandAgentDb = class {",
+    endAnchor: "// src/host/extensions/session/connector-secret-store.ts",
+    find: "  getTranscriptEntriesAfter(id) {\n",
+    replacement: `  historyPosition(id) {
+    if (this.isClosed) throw new Error("grokbox_history_closed");
+    if (id === null) return this.statements.listTranscriptTail.all(null, null, 1)[0]?.seq ?? 0;
+    return this.statements.getTranscriptEntrySeq.get(id)?.seq ?? null;
+  }
+  getTranscriptEntriesAfter(id) {
+`,
+  },
+  {
+    id: "continuity-native-instructions",
+    startAnchor: "  function renderSystemPrompt(profileSnapshot,",
+    endAnchor: "  function createSystemPromptGeneratorForRun({",
+    find: '    push("profile", profileSnapshot?.profileSection ?? getProfileSection(profile));\n',
+    replacement: `    push("profile", profileSnapshot?.profileSection ?? getProfileSection(profile));
+    push("grokbox_managed_instructions", ${control}?.systemInstructions(deps.agentStore()) ?? null);
+`,
+  },
+  {
+    id: "continuity-native-history-boundary",
+    startAnchor: "async function collectPrependUserMessages(host, recentUserMessages, currentMessageId) {",
+    endAnchor: "// ../packages/grok-bot-harness/src/cloud-agents/cloud-agent-images.ts",
+    find: "  if (recentUserMessages == null || recentUserMessages.length === 0) {\n",
+    replacement: `  recentUserMessages = ${control}?.filterRecent(host, recentUserMessages) ?? recentUserMessages;
+  if (recentUserMessages == null || recentUserMessages.length === 0) {
+`,
+  },
   {
     id: "continuity-native-run-fence",
     startAnchor: "function createTurnRunShell(host) {",
@@ -42,7 +75,10 @@ export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
     replacement: `    grokboxCurrentStateControl: async args => {
       const __grokbox_current = ${control};
       if (typeof __grokbox_current?.call !== "function") return { ok: false, error: { code: "native_unavailable" } };
-      return await __grokbox_current.call(args, () => api.getHostStatus({ grokboxOwnershipAgentIds: [args.agentId] }));
+      return await __grokbox_current.call(args, () => api.getHostStatus({ grokboxOwnershipAgentIds: [args.agentId] }), {
+        create: value => api.createAgent(value), load: id => manager.grokboxLoadPrepared(id),
+        start: (request, authorize) => manager.grokboxStartup(request, authorize)
+      });
     },
     setBoxMigrating: async (args) => {`,
   },
@@ -53,6 +89,7 @@ export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
     find: "    options2.configureAgentDir?.(this.tm.sessionStore.getAgentDir(session.id));\n",
     replacement: `    options2.configureAgentDir?.(this.tm.sessionStore.getAgentDir(session.id));
     ${control}?.register(session.id, { store: session.agentStore, metadata: session.db, ctx: this.tm.ctx,
+      material: { memory: session.memory, history: session.db },
       rootId: SAND_CONVERSATION_ROOT_SLOT_ID,
       source: { hostSourceSha: "${NATIVE_CHECKPOINT_PAIR.host}", nativeSchema: "${NATIVE_CHECKPOINT_PAIR.schema}" },
       valid: () => session.db.isClosed !== true });
@@ -83,6 +120,7 @@ export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
       scheduleConversationSizeMaintenance(maintenance, dbPath, db);
     }
     __grokbox_current?.register(agentId, { store: agentStore, metadata: db, ctx: this.host.ctx,
+      material: { memory: this.host.memory().createAgentStore((0, import_node_path137.dirname)(dbPath)), history: db },
       rootId: SAND_CONVERSATION_ROOT_SLOT_ID,
       source: { hostSourceSha: "${NATIVE_CHECKPOINT_PAIR.host}", nativeSchema: "${NATIVE_CHECKPOINT_PAIR.schema}" },
       valid: () => db.isClosed !== true });

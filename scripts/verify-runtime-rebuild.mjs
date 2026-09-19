@@ -20,6 +20,17 @@ const CONTEXT_TESTS = [
   "test/context-commands.test.ts", "packages/box-runtime/test/reviewed-profile-write-lineage.test.ts",
 ];
 const CASES = {
+  "continuity-lifecycle": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "--timeout", "30000", "packages/runtime-kernel/test/bot-lifecycle-contract.test.ts", "packages/box-runtime/test/bot-lifecycle.test.ts", "packages/box-runtime/test/bot-protection.test.ts", "packages/box-runtime/test/bot-convergence.test.ts", "packages/box-runtime/test/continuity-workflow-retention.test.ts", "packages/box-runtime/test/continuity-state-migration.test.ts", "packages/box-runtime/test/native-current-state-owner.test.ts", "test/bot-handover-cli.test.ts"],
+    ["bun", "test", "--timeout", "30000", "packages/box-runtime/test/continuity-store.test.ts", "packages/box-runtime/test/continuity-process.test.ts", "packages/box-runtime/test/continuity-current-state.test.ts", "packages/box-runtime/test/current-state-process.test.ts", "packages/box-runtime/test/obs-continuity-contract.test.ts", "packages/box-runtime/test/native-checkpoint-worker.test.ts", "packages/box-runtime/test/context-continuity-artifact.test.ts"],
+    ["node", "scripts/check-runtime-boundaries.mjs"], ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
+  "continuity-lifecycle-qualified": [
+    ["bun", "run", "typecheck"], ["bun", "run", "build"],
+    ["bun", "test", "--timeout", "30000", "packages/box-runtime/test/native-worker-binding.test.ts", "packages/box-runtime/test/native-startup-seams.test.ts", "packages/box-runtime/test/native-checkpoint-qualification.test.ts", "packages/box-runtime/test/native-checkpoint-process.test.ts", "packages/box-runtime/test/native-duplicate-qualification.test.ts"],
+    ["node", "scripts/check-runtime-boundaries.mjs"], ["node", "scripts/check-publication.mjs", "--include-untracked"],
+  ],
   "automatic-notification": [
     ["bun", "run", "typecheck"], ["bun", "run", "build"],
     ["bun", "test", "packages/box-runtime/test/ops-automatic-notification.test.ts", "test/ops-automatic-cli.test.ts", "packages/box-runtime/test/ops-native-notification.test.ts", "packages/box-runtime/test/ops-notification-outbox.test.ts"],
@@ -291,7 +302,7 @@ if (!expectedBun || actualBun !== expectedBun) {
   process.exit(1);
 }
 
-if (["continuity-native-checkpoint-qualified", "continuity-native-binding-qualified", "continuity-duplicate-qualified"].includes(kase) && process.env.GROKBOX_TEST_NATIVE_CONTINUITY !== "1") {
+if (["continuity-native-checkpoint-qualified", "continuity-native-binding-qualified", "continuity-duplicate-qualified", "continuity-lifecycle-qualified"].includes(kase) && process.env.GROKBOX_TEST_NATIVE_CONTINUITY !== "1") {
   console.log(JSON.stringify({ case: kase, ok: false, error: "native_continuity_opt_in_required", commit: sha(),
     dependencyReality: "opt-in-check-only", toolchain, supports: [], commands: [],
     notProven: ["native-tests-not-executed", "installed-Host-binding"] }, null, 2));
@@ -321,12 +332,14 @@ for (const argv of mapped) {
   if (ran.status !== 0) failed = true;
   if (isTest) {
     if (pass == null || pass === 0) failed = true;
-    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || kase.startsWith("context-") || kase.startsWith("continuity-native-") || kase.startsWith("continuity-duplicate") || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
+    if ((skip ?? 0) > 0 && ((pass ?? 0) === 0 || kase.startsWith("context-") || kase.startsWith("continuity-native-") || kase.startsWith("continuity-duplicate") || kase.startsWith("continuity-lifecycle") || ["compact", "all", "ownership-admission", "ownership-artifact", "identity-alignment", "model-selection", "service-lifecycle", "runtime-start", "observation-monitor"].includes(kase))) failed = true;
     if ((failn ?? 0) > 0) failed = true;
   }
 }
 
 const SUPPORTS = {
+  "continuity-lifecycle": ["private-v4-workflow-ledger-and-explicit-migrations", "best-effort-clone-and-prepared-birth", "persistent-instructions-and-nonhuman-startup", "external-idle-current-context-reset-and-recovery", "bounded-Memory-and-history-import-with-attribution", "policy-off-no-native-effects", "source-scoped-protection-and-gap-aware-convergence", "mechanical-group-DM-Routine-handover-through-real-HTTP-test", "workflow-and-subject-pins-share-GC-transaction", "unknown-effects-are-not-replayed", "original-current-state-and-J1-regressions"],
+  "continuity-lifecycle-qualified": ["exact-native-Host-worker-pair", "full-profile-composes-with-existing-compact", "native-resume-no-turn-negative-control", "program-carrier-new-turn-and-no-user-prompt-gate", "actual-worker-SQLite-and-fresh-Node-readback", "official-duplicate-semantics-retained"],
   "automatic-notification": ["accepted-test-plus-explicit-operator-attestation", "bounded-private-authorization-no-inferred-delivery", "activation-fences-old-work", "same-outbox-and-http-driver", "no-native-read-when-idle-off-or-budget-exhausted", "one-attempt-across-concurrent-workers", "generation-model-and-revoke-fences", "daemon-owned-fixed-delay-lifetime", "actual-http-settled-before-stop", "original-handshake-preserved"],
   "native-notification": ["explicit-existing-work-no-auto-activation", "model-revision-and-server-ownership-preflight", "private-capsule-to-fixed-origin-no-secret-export", "exact-safe-body-revalidation", "durable-single-attempt-before-http", "real-http-no-redirect-and-response-byte-limit", "request-and-response-close-before-settlement", "actual-node-http-transport", "packed-node-cli-refusal-without-effects", "j1-contract-preserved"],
   "ops-receiver": ["fixed-disabled-notice-blueprint", "readonly-binding-routine-and-loaded-model-preflight", "capabilities-and-model-from-same-native-frame", "freshness-rechecked-after-local-reads", "same-native-automation-selector-closure", "managed-assignment-fingerprint-no-secret-output", "stale-scope-definition-and-unbind-refusal", "no-canary-or-delivery-authorization", "source-cli-and-packed-node-reader", "j1-boundaries-unchanged"],
@@ -376,6 +389,8 @@ const SUPPORTS = {
   compact: ["confirmed-overflow-ledger", "owned-native-order-unix-sdk-recovery", "root-delegate-lifetime", "remaining-parent-budget", "exact-native-outer-turn-retry"],
 };
 const REALITY = {
+  "continuity-lifecycle": "production-CLI-Effect-coordinators-real-private-SQLite-files-and-loopback-HTTP-owned-native-and-provider-boundaries-no-real-Bot-effects",
+  "continuity-lifecycle-qualified": "selected-original-Host-decisions-and-protobuf-original-worker-node-sqlite-owned-databases-full-profile-preflight-not-entire-Host-Agent-loop",
   "automatic-notification": "real-private-capsule-sqlite-loopback-http-owned-daemon-and-packed-node-synthetic-operator-attestation-and-native-sources-no-live-deployment",
   "native-notification": "real-sqlite-capsule-and-loopback-http-with-node-transport-worker-synthetic-native-selection-authority-no-live-webhook-or-model-usage",
   "ops-receiver": "real-owned-config-capsule-sqlite-source-and-packed-node-readers-synthetic-native-http-current-native-source-qualified-separately-no-live-writes",
@@ -425,6 +440,8 @@ const REALITY = {
   "model-selection": "production-config-hook-unix-kernel-sdk-mock-http-owned-official-consumer-and-packed-node-reset",
 };
 const NOT_PROVEN = {
+  "continuity-lifecycle": ["whole-original-Host-first-provider-request-and-App", "attachment-and-source-resource-migration", "self-reset-deferred-control", "complete-external-task-transfer-and-enforced-duty-isolation", "automatic-source-deletion-boundary", "temporary-result-delivery-cleanup", "complete-policy-cadence-and-long-term-safety-retirement", "independent-external-review-and-live-adoption"],
+  "continuity-lifecycle-qualified": ["entire-native-user-message-handler-startup-and-provider-request", "full-live-Memory-history-and-first-turn-roundtrip", "real-account-group-DM-Routine-effects", "conditional-Temporal-deletion", "deployment-and-independent-review"],
   "automatic-notification": ["program-observed-native-run-tools-and-user-read", "production-webhook-qualification", "daemon-and-collector-boot-installation", "backup-restore-replay-fence", "full-installation-storage-budget", "native-unknown-reconciliation", "independent-review-and-schema4-live-cutover"],
   "native-notification": ["live-native-tls-endpoint-and-key", "actual-receiver-turn-model-tools-or-user-read", "automatic-pairing-activation-and-worker", "server-idempotency-and-native-unknown-reconciliation", "backup-restoration-replay-fence", "schema4-live-adoption", "independent-review"],
   "ops-receiver": ["actual-webhook-authentication-and-receiver-turn", "server-ownership-and-account-scope-binding", "native-child-session-overrides", "model-request-or-tool-permission", "activation-and-paired-send-driver", "prompt-policy-as-enforced-sandbox", "independent-review-and-live-schema4-adoption"],

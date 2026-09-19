@@ -18,15 +18,18 @@ function object(value: unknown, keys: readonly string[]) {
 export function provisionOperationId(value: unknown): string {
   if (typeof value !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(value)) return fail(); return value;
 }
-export type RoutineBlueprint = { schemaVersion: 1; key: string; name: string; prompt: string; trigger: { type: "webhook" }; isEnabled: false };
+export type RoutineBlueprint = { schemaVersion: 1; key: string; name: string; prompt: string; trigger: { type: "webhook" } | { type: "cron"; schedule: string }; isEnabled: false };
 export function parseRoutineBlueprint(value: unknown): RoutineBlueprint {
-  const r = object(value, ["schemaVersion", "key", "name", "prompt", "trigger", "isEnabled"]), t = object(r.trigger, ["type"]);
-  if (r.schemaVersion !== 1 || t.type !== "webhook" || r.isEnabled !== undefined && r.isEnabled !== false
+  const r = object(value, ["schemaVersion", "key", "name", "prompt", "trigger", "isEnabled"]), t = object(r.trigger, ["type", "schedule"]);
+  if (r.schemaVersion !== 1 || !["webhook", "cron"].includes(String(t.type))
+    || t.type === "webhook" && t.schedule !== undefined
+    || t.type === "cron" && (typeof t.schedule !== "string" || !t.schedule.trim() || t.schedule.length > 512 || /[\x00-\x1f]/.test(t.schedule))
+    || r.isEnabled !== undefined && r.isEnabled !== false
     || typeof r.key !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(r.key)
     || typeof r.name !== "string" || r.name.trim() !== r.name || r.name.length < 1 || r.name.length > 64 || /[\x00-\x1f\x7f]/.test(r.name)
     || typeof r.prompt !== "string" || !r.prompt.trim() || r.prompt.trim() !== r.prompt || r.prompt.includes("\0")
     || new TextEncoder().encode(r.prompt).length > ROUTINE_PROVISION_POLICY.maxPromptBytes) return fail();
-  return { schemaVersion: 1, key: r.key, name: r.name, prompt: r.prompt, trigger: { type: "webhook" }, isEnabled: false };
+  return { schemaVersion: 1, key: r.key, name: r.name, prompt: r.prompt, trigger: t.type === "webhook" ? { type: "webhook" } : { type: "cron", schedule: t.schedule as string }, isEnabled: false };
 }
 export type RoutineProvisionCommand =
   | { action: "apply"; agentId: string; operationId: string; confirmed: true; blueprint: RoutineBlueprint; expectedRevision?: string }
@@ -82,13 +85,13 @@ export function planProvision(command: Extract<RoutineProvisionCommand, { action
     return { action: "create" as const, nativeId: null };
   }
   const item = before.catalog.routines.find(r => r.id === binding.routineId);
-  if (!item || !item.mutable || item.trigger.type !== "webhook") return fail("unsupported");
+  if (!item || !item.mutable || item.trigger.type !== command.blueprint.trigger.type) return fail("unsupported");
   if (!command.expectedRevision || command.expectedRevision !== item.revision || binding.revision !== item.revision) return fail("revision_conflict");
   return { action: "update" as const, nativeId: binding.routineId };
 }
 export function verifyProvisionObservation(record: ProvisionRecord, observation: ProvisionObservation, nativeId: string): RoutineView {
   const item = observation.catalog.routines.find(r => r.id === nativeId);
-  if (observation.catalog.agentId !== record.agentId || !item || !item.mutable || item.enabled || item.trigger.type !== "webhook"
+  if (observation.catalog.agentId !== record.agentId || !item || !item.mutable || item.enabled || item.trigger.type === "unsupported"
     || observation.definitions.get(nativeId) !== record.desiredDigest) return fail("outcome_unknown");
   return item;
 }

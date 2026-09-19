@@ -1,7 +1,7 @@
 import { CurrentStateFailure, applicationObservation, copyNativeMaterial, continuityStorePolicy, decodeCurrentStateMaterial,
   encodeCurrentStateMaterial, initializationDigest, nativeCurrentHead, nativeQualification,
   preparedCurrentState, type NativeCurrentStatePort, type NativeCurrentHead, type NativeQualification,
-  type CurrentStateRpcRequest, type InitializationAttempt } from "@grokbox/runtime-kernel/continuity";
+  currentContextSeed, botBirth, botStartup, type BotBirth, type BotStartup, type CurrentContextSeed, type CurrentStateRpcRequest, type InitializationAttempt } from "@grokbox/runtime-kernel/continuity";
 
 export type CurrentStateTransport = (request: CurrentStateRpcRequest) => Promise<unknown>;
 const fail = (): never => { throw new CurrentStateFailure("native_unavailable"); };
@@ -28,7 +28,8 @@ export function createCurrentStateClient(input: { call: CurrentStateTransport; q
     return { head: value, policyRevision: result.policyRevision as string };
   };
   const publicRequest = (attempt: InitializationAttempt) => ({ operationId: attempt.operationId, effectId: attempt.effectId, snapshot: attempt.snapshot,
-    expected: attempt.expected, policyRevision: attempt.policyRevision });
+    expected: attempt.expected, policyRevision: attempt.policyRevision,
+    ...(attempt.mode ? { mode: attempt.mode, backupSnapshot: attempt.backupSnapshot } : {}) });
   const observe = async (attempt: InitializationAttempt) => applicationObservation(await request("observe", attempt.expected.agentId, { request: publicRequest(attempt) }), attempt);
   const port: NativeCurrentStatePort = { qualification,
     capture: async expected => {
@@ -69,5 +70,13 @@ export function createCurrentStateClient(input: { call: CurrentStateTransport; q
     }, observeApplication: observe,
   };
   return { port, head,
+    birth: async (raw: BotBirth) => { const value = botBirth(raw); return request("birth", value.operationId, value, true); },
+    load: async (agentId: string, scopeId: string) => request("load", agentId, { scopeId }, true),
+    startup: async (raw: BotStartup) => { const value = botStartup(raw); return request("startup", value.expected.agentId, value, true); },
+    startupStatus: async (agentId: string, operationId: string) => request("startup-status", agentId, { operationId }),
+    compose: async (expected: NativeCurrentHead, seed: CurrentContextSeed) => {
+      const result = await request("compose", expected.agentId, { expected, seed: currentContextSeed(seed) });
+      return decodeCurrentStateMaterial(result.material);
+    },
     activate: (attempt: InitializationAttempt, current: NativeCurrentHead) => request("activate", current.agentId, { request: publicRequest(attempt), current }, true) };
 }

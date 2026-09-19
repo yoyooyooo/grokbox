@@ -223,8 +223,16 @@ test("lost claim acknowledgement never grants another dispatch, even when no eff
   } finally { await f.close(); }
 });
 
+test("a metadata budget below the expanded schema cost refuses initialization, not the configured quota", async () => {
+  const f = await fixture({ maxMetadataBytes: 128 * 1024 });
+  try { await expect(f.store.initialize()).rejects.toThrow("continuity_capacity"); }
+  finally { await f.close(); }
+});
+
 test("finite metadata capacity blocks new dispatch intent without deleting unknown records or old material", async () => {
-  const f = await fixture({ maxMetadataBytes: 128 * 1024 }); try {
+  // The v4 workflow/index schema itself exceeds 128 KiB. Keep a small, explicit
+  // budget that fits one unknown operation, then prove admission still stops.
+  const f = await fixture({ maxMetadataBytes: 256 * 1024 }); try {
     await f.store.initialize(); const input = materialFixture(); await f.store.publish(input);
     const unknown = effectIntent(input.requestId), effectId = randomUUID(); await f.store.prepareEffect(unknown); await f.store.claimEffect(unknown.operationId, effectId, CONT_POLICY);
     let refused = false;

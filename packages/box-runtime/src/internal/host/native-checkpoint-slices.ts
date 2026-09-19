@@ -16,7 +16,7 @@ export const NATIVE_CHECKPOINT_HOST_SLICES: readonly SlicePatch[] = [
     endAnchor: "var DEFAULT_IDLE_TIMEOUT_MS =",
     find: "  async getBlob(blobId) {\n",
     replacement: `  async grokboxCurrentState(action, payload) {
-    if (!["capture", "prepare", "apply", "observe", "release"].includes(action)) throw new Error("grokbox_checkpoint_action_invalid");
+    if (!["capture", "compose", "prepare", "apply", "observe", "release"].includes(action)) throw new Error("grokbox_checkpoint_action_invalid");
     if (this.grokboxCheckpointProtocol !== 1) throw new Error("grokbox_checkpoint_worker_unavailable");
     const response = await this.send(requestId => ({ kind: "grokbox-current-state", version: 1, requestId, action, payload }));
     if (response?.kind !== "grokbox-current-state-ok" || response.version !== 1) throw new Error("grokbox_checkpoint_worker_unavailable");
@@ -31,7 +31,7 @@ export const NATIVE_CHECKPOINT_HOST_SLICES: readonly SlicePatch[] = [
     endAnchor: "// src/host/extensions/session/session-store-factories.ts\nvar import_node_path136 =",
     find: "  async getBlob(_ctx, blobId) {\n",
     replacement: `  async grokboxCurrentState(action, payload) {
-    if (!["capture", "prepare", "apply", "observe", "release"].includes(action)) throw new Error("grokbox_checkpoint_action_invalid");
+    if (!["capture", "compose", "prepare", "apply", "observe", "release"].includes(action)) throw new Error("grokbox_checkpoint_action_invalid");
     this.pool.retain(this.blobDbPath);
     try {
       const connection = await this.pool.ensure(this.agentId, this.blobDbPath, this.legacyBlobDbPath);

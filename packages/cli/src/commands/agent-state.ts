@@ -1,6 +1,6 @@
 import { createCurrentStateClient, openContinuityCurrentState, openContinuityRecoveryStore } from "@grokbox/box-runtime/runtime";
 import { ContinuityFailure, CurrentStateFailure, initializationDigest, isContinuityHash, isContinuityUuid,
-  nativeCurrentHead, type InitializeCurrentRequest, type CurrentStateRpcRequest } from "@grokbox/runtime-kernel/continuity";
+  nativeCurrentHead, continuityId, readBotSupplement, summaryFromSupplement, type InitializeCurrentRequest, type CurrentStateRpcRequest } from "@grokbox/runtime-kernel/continuity";
 import { decideManagedOwnership } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import type { CliDeps } from "../deps.ts";
@@ -10,7 +10,7 @@ import { writeSuccess } from "../output.ts";
 import { ioFromOpts } from "../opts.ts";
 import { isRecord } from "../util.ts";
 
-type Action = "show" | "capture" | "initialize" | "operation" | "reconcile" | "activate";
+type Action = "show" | "capture" | "initialize" | "reset" | "recover" | "operation" | "reconcile" | "activate";
 type Options = { timeoutMs?: string; json?: boolean; operationId?: string; snapshotId?: string; expectRevision?: string; scopeId?: string; confirm?: boolean };
 const stableUuid = (text: string) => { const hash = sha256Text(text); return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`; };
 
@@ -21,6 +21,7 @@ export async function runAgentState(deps: CliDeps, action: Action, agentId: stri
   if (!isContinuityUuid(agentId) || action !== "show" && !isContinuityUuid(raw.operationId)) throw usage("An exact Bot UUID and stable operation UUID are required.");
   if (!["show", "operation"].includes(action) && raw.confirm !== true) throw usage("This state operation requires --confirm.");
   if (action === "initialize" && (!isContinuityUuid(raw.snapshotId) || !isContinuityHash(raw.expectRevision))) throw usage("Initialization requires --snapshot-id and --expect-revision from state show.");
+  if ((action === "reset" || action === "recover") && (!isContinuityHash(raw.expectRevision) || action === "recover" && !isContinuityUuid(raw.snapshotId))) throw usage("Reset/recover requires --expect-revision; recover also requires --snapshot-id.");
   if (action === "operation" && !isContinuityHash(raw.scopeId)) throw usage("Offline operation inspection requires the original --scope-id.");
   if (!["auto", "local"].includes(deps.transport) || deps.sshHost || deps.daemonServerUrl || deps.gatewayServerUrl) {
     throw new CliError("capability_unavailable", "Current-state management is Box-local; remote transport and cross-machine restoration are not supported.");
@@ -71,6 +72,27 @@ export async function runAgentState(deps: CliDeps, action: Action, agentId: stri
       if (error instanceof ContinuityFailure && error.code === "not_found") return null; throw error;
     });
     if (request && request.expected.agentId !== agentId) throw usage("Initialization belongs to a different Bot.");
+    if (action === "reset" || action === "recover") {
+      if (request && (request.mode !== action || request.expected.contextRevision !== raw.expectRevision)) throw usage("This operation has a different saved reset/recovery request.");
+      if (!request) {
+        if (head.contextRevision !== raw.expectRevision || head.rootHash === null) throw new CurrentStateFailure("source_changed");
+        const backupId = continuityId(raw.operationId, "before-current-replacement"), candidateId = continuityId(raw.operationId, "current-replacement");
+        const capture = openContinuityCurrentState({ durableRoot: deps.boxRuntimeRoot, scopeId: head.scopeId, native: client.port });
+        await capture.capture({ requestId: backupId, expected: head }, deps.signal);
+        const backup = await store.readSnapshot(backupId);
+        let candidate = action === "recover" ? await store.readSnapshot(raw.snapshotId!) : null;
+        if (action === "reset" || candidate?.manifest.gaps.includes("unknown_effects")) {
+          const supplement = candidate ? readBotSupplement(candidate) : null;
+          candidate = { ...(await client.compose(head, { version: 1, purpose: action, sourceId: agentId, sourceRevision: head.contextRevision,
+            instructions: "", summary: supplement ? summaryFromSupplement({ ...supplement, sourceId: agentId }) : "" })), reference: backup.reference } as typeof candidate;
+        }
+        if (!candidate) throw new CurrentStateFailure("material_invalid");
+        await store.publish({ requestId: candidateId, manifest: candidate.manifest, content: candidate.content }, deps.signal);
+        request = { operationId: raw.operationId!, effectId: continuityId(raw.operationId, "current-replacement-effect"), expected: head,
+          snapshot: (await store.readSnapshot(candidateId)).reference, policyRevision: initial.data.policyRevision,
+          mode: action, backupSnapshot: backup.reference };
+      }
+    }
     if (action === "initialize") {
       if (request && (request.snapshot.ref !== raw.snapshotId || request.expected.contextRevision !== raw.expectRevision)) throw usage("This operation already has different input; do not reuse its UUID.");
       if (!request) {
@@ -93,7 +115,7 @@ export async function runAgentState(deps: CliDeps, action: Action, agentId: stri
           ownership: stable && decideManagedOwnership({ agentId, snapshot, nowMs: Date.now() }).ok ? "confirmed_box" : "unconfirmed",
           observedAtMs: Date.parse(snapshot?.serverObservedAt ?? snapshot?.observedAt ?? "") };
       } });
-    const result = action === "initialize" ? await program.initialize(exact, deps.signal)
+    const result = ["initialize", "reset", "recover"].includes(action) ? await program.initialize(exact, deps.signal)
       : action === "reconcile" ? await program.reconcile(exact, deps.signal)
       : await client.activate({ ...exact, inputDigest: initializationDigest(exact) }, (await client.head(agentId)).head);
     writeSuccess(deps.stdout, { result, operationId: exact.operationId, scopeId: head.scopeId, startedTask: false }, gatewayMeta(generation!));
