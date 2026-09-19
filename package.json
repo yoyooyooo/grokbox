@@ -74,6 +74,7 @@
     "release": "bun run scripts/release.ts",
     "verify:context-continuity": "bun scripts/verify-context-continuity.mjs",
     "verify:external": "node scripts/verify-external.mjs",
+    "verify:live-window": "node scripts/live-validation.mjs",
     "observe:sandbox": "node scripts/observe-sandbox.mjs",
     "experiment:sandbox-ssh-activity": "node scripts/experiment-sandbox-ssh-activity.mjs",
     "monitor:sandbox-ssh-activity": "node scripts/monitor-sandbox-ssh-activity.mjs",

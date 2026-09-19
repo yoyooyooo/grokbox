@@ -2,6 +2,13 @@
 
 本页是长期维护的 **Live 验证 Checklist 与当前结果唯一入口**，不是一次部署的日志，也不是全部未来功能的发布阻塞器。按用户旅程验收已经实现的能力；来源票负责实现/离线/review，日期报告保存固定窗口证据。[执行手册](../maintainers/live-end-to-end.md)只描述步骤与判据，不维护第二份状态表。
 
+<a id="validation-levers"></a>
+## 执行杠杆与 Skill 路由
+
+现场执行前先用 `bun run verify:live-window -- candidate --json` 做只读候选预检；按本页稳定 ID 用 `plan --scenario <id>` 取一个有限切片，用 `probe` 收集边界状态，用 `receipt` 校验脱敏回执。它们只做候选、路由、观察和结构校验，不发送提示、不切模型、不启用 Routine、不重启 Host/modeld、不清理对象，也不替代本页的通过判据。
+
+需要由 Agent 执行全链路窗口时，加载仓库维护者的 [`grokbox-live-validation` Skill](../../.agents/skills/grokbox-live-validation/SKILL.md)；模型/effort 六格另加载产品侧 [`validation` Skill](../../skills/grokbox/validation.md)。Skill 只教选择入口、证据边界、停止规则和回填位置，当前结果仍只写本页，固定窗口事实写日期报告。
+
 ## 本次重整与候选边界
 
 - **规划窗口：RC-E2E-20260919，尚未执行。** 本次仅重整清单、路由和可维护性检查，不迁移配置、不切 Host/modeld/daemon、不创建 Bot、不调用模型或 Webhook、不发布。

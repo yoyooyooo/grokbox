@@ -6,6 +6,19 @@
 
 先沿LIVE的W0–W7挑选本轮已实现、获授权的旅程。下面命令是**逐项操作示例**，不是可无确认粘贴运行的脚本；`<...>`必须替换为现场回执里的准确ID。必要参数以固定候选安装包的`--help`为准。不要调用尚未实现的`verify --live-all`、通用Routine invoke或模板自动安装器。
 
+### 1.1 使用验证杠杆
+
+需要 Agent 执行这套流程时，先加载仓库维护者的 [`grokbox-live-validation` Skill](../../.agents/skills/grokbox-live-validation/SKILL.md)。它只负责路由和边界，不拥有当前结果。可复用控制器提供四个有限入口：
+
+```bash
+bun run verify:live-window -- candidate --json
+bun run verify:live-window -- plan --scenario <LIVE-ID> --json
+bun run verify:live-window -- probe --probe doctor --probe roster --probe models --probe runtime --json
+bun run verify:live-window -- receipt --file <redacted-receipt.json> --json
+```
+
+`candidate` 固定源码、制品和工具链身份，并运行 LIVE 文档完整性回归；`plan` 只从本索引取一个或多个稳定场景；`probe` 只调用显式列出的只读 CLI 入口并脱敏输出；`receipt` 检查窗口回执的场景、候选 SHA、证据锚点和清理状态。任何入口都不发送提示、不改变模型、不启用 Routine、不重启 Host/modeld，也不代替场景 oracle。`--allow-dirty` 只允许生成规划信息，不能作为实际候选放行。
+
 区分依赖真实性：静态/schema测试、fake原生端、loopback真实HTTP、所选原生函数、真实Host/App/Provider分别记录。源码测试绿不等于当前Host已加载；API成功不等于用户看到；人工合成journal只能证明后半链，不能签“原生故障已被发现”。
 
 <a id="window-record"></a>
