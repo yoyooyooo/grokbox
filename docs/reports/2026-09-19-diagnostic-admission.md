@@ -48,6 +48,12 @@ bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation
 
 独立Astra只读审查在限定窗口未返回报告，进程以timeout退出124，未计为审核通过。`docs/runtime/operations.md`的合同同步写入被工具拦截，未落盘；本票/报告记录实际实现与差额，不把未完成的Current Home更新说成已完成。后续集成是源码收口，不自动授予live放行。
 
+## 源码集成回执
+
+已将`83119c6`至`d3ec6e6`的七个提交快进合入`feat/box-runtime-v2`，其中观测/collector、通知恢复guard、工具链修正、过期材料退役和联合容量接纳不再只留在feature worktree。基线`25dd61b`的并行network/overflow及文档收口完整保留。
+
+在v2执行接纳/soak/通知恢复/打包collector/故障到通知/清单六文件复验，实际**23 pass / 0 fail、2247断言**。该重点复验与前述全仓有重叠，不再相加。没有push、全局shim安装、配置迁移、原生通知或现役服务切换；独立review未完成，不签live放行。
+
 ## 剩余边界
 
 独立审查结果以提交后的报告为准，测试数量不替代审查。OS启动owner尚无完整受支持安装路径，本机tini/无有效systemd会话不能用二进制存在或X窗口管理器存在补证；没有改官方supervisor。全安全台账有界退役、所有owner物理配额、完整备份恢复和真实Provider/App/Webhook仍各有来源票或LIVE范围。未切Host/modeld/daemon、未迁移生产配置、未发送真实通知。
