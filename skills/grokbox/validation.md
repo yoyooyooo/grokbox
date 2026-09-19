@@ -18,11 +18,11 @@ grokbox agents show model-dogfood --json
 # data.agent.title (App Label) must include m=<alias-or-model>.
 
 grokbox agents title sync model-dogfood
-# Wait at least two minutes (one daemon title refresh), then show the same Bot again.
+# For scheduled-refresh acceptance, observe a completed daemon refresh before reading again.
 grokbox agents show model-dogfood --json
 ```
 
-The title-refresh service must be running for this acceptance; check [services](services.md). Scope the refresh to the validation Bot instead of repainting every Bot. The second read must still show `m=<alias-or-model>`.
+An explicit sync and readback checks the selected Bot. Scheduled-refresh acceptance additionally needs a running title service and evidence that its refresh completed; elapsed time alone proves neither. Scope the explicit sync to the validation Bot. The second read must still show `m=<alias-or-model>`.
 
 Read outcome using the [send state table](send.md#read-the-outcome-not-just-the-receipt). Do not claim success on `recorded`, empty alerts, runtime gaps, or a title that looked right only in the first second.
 

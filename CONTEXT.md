@@ -6,7 +6,7 @@
 
 The published package exposes `grokbox` and its exact alias `gbox`. The three unpublished workspaces separate the CLI/daemon, reusable runtime kernel, and Box/Host adapters. The Host retains the native Agent loop and state writers; grokbox adds governed operations, per-Bot model selection, context maintenance and observation rather than replacing the upstream product.
 
-## Find current implementation facts
+## Find evidence to check
 
 | Question | Source |
 | --- | --- |
@@ -16,7 +16,7 @@ The published package exposes `grokbox` and its exact alias `gbox`. The three un
 | Host/modeld protocol version | [wire contract](packages/runtime-kernel/src/internal/contract/wire.ts) |
 | Current loaded installation and live qualification | [LIVE index](docs/tickets/LIVE-integration-validation.md) and its fixed-window evidence; re-observe before mutation |
 
-Do not copy version numbers, test counts or deployment status into this entry. Source integration, offline verification, native compatibility and actual adoption are separate claims.
+Do not copy version numbers, test counts or deployment status into this entry. Source integration, offline verification, native compatibility and actual adoption are separate claims. These routes do not certify their contents; verify the behavior you intend to rely on.
 
 ## Vocabulary and authority
 

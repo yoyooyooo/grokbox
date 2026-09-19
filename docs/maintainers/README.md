@@ -1,6 +1,6 @@
 # Maintainer guides
 
-Choose the operation or question. These guides are not a mandatory reading sequence and do not replace the current source/schema. [Contracts](../README.md) define semantics; [LIVE-integration-validation](../tickets/LIVE-integration-validation.md) owns current live results; [reports](../reports/README.md) preserve fixed windows.
+Choose the operation or question. These guides route investigation; neither their claims nor the current source/schema are proof of correctness. [Contracts](../README.md) define semantics; [LIVE-integration-validation](../tickets/LIVE-integration-validation.md) owns current live results; [reports](../reports/README.md) preserve fixed windows.
 
 | Task | Guide |
 | --- | --- |
@@ -16,7 +16,7 @@ Choose the operation or question. These guides are not a mandatory reading seque
 | Inspect Pi compaction provenance and upgrade constraints | [Pi reference](pi-compaction-reference.md) |
 | Distinguish native authorization from modeld evidence | [Authority boundaries](modeld-authority-boundaries.md), [execution contract](../runtime/execution.md) |
 | Investigate a provider encoding/tool/terminal difference | [Chat-provider compatibility](chat-provider-compatibility.md) |
-| Understand the native inbound/loop responsibilities | [Host loop map](host-inbound-agent-loop.md); its dated source evidence is not current deployment proof |
+| Understand the native inbound/loop responsibilities | [Host loop evidence](host-inbound-agent-loop.md); old native details are unverified |
 | Inspect provenance or profile qualification | [Provenance](provenance.md), [Host compatibility](../runtime/host-compatibility.md) |
 | Plan an authorized live window | [Live execution](live-end-to-end.md), [maintainer Skill route](live-validation-skill.md) |
 | Return a Bot to official or exit the patched Host | [Rollback acceptance](official-rollback-acceptance.md) |

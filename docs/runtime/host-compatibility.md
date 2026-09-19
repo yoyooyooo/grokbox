@@ -1,6 +1,6 @@
 # Host compatibility, provenance and recovery
 
-This page owns precise Host patch application, provenance/profile qualification and HCR recovery. Source and executable suites determine which authoring/sensing capabilities exist; the broader HSO stages below are acceptance responsibilities, not a promise that every target workflow is implemented. [Architecture](../architecture.md) owns composition, [execution](execution.md) owns admission, and [operations](operations.md) owns incident/notification policy.
+This page owns precise Host patch application, provenance/profile qualification and HCR recovery. Source and executable suites are evidence to check for authoring/sensing capabilities; the broader HSO stages below are acceptance responsibilities, not a promise that every target workflow is implemented. [Architecture](../architecture.md) owns composition, [execution](execution.md) owns admission, and [operations](operations.md) owns incident/notification policy.
 
 ## Exact runtime application
 
@@ -44,7 +44,7 @@ Golden site labels and behavior expectations are independent of the matcher. Cha
 
 Candidate engines contribute literal, fingerprint and structural evidence to one table, not three competing authorities. Keep all semantic variants with distinct bindings/replacement, even at one span. Ranking affects presentation only; contradictions, ties, multiple sites and truncation cannot be hidden by a highest score.
 
-The create-session role is the synchronous factory method in the actual inference options object, after directive prologue and before official provider initialization. Callback/options bindings and same-object neighbors provide evidence, not merely a name or two-argument shape. Async/generator/destructured/computed changes require explicit supported binding semantics rather than guessed replacement.
+The intended create-session role is the synchronous factory method in the actual inference options object, after directive prologue and before official provider initialization. The current literal patch and structural emitter instead construct the official session before calling the hook. This conflict is unresolved; independence from official-provider preconditions is unverified. See [the observed boundary](../upstream-integration.md#host-session-boundary). Callback/options bindings and same-object neighbors provide evidence, not merely a name or two-argument shape. Async/generator/destructured/computed changes require explicit supported binding semantics rather than guessed replacement.
 
 The agent-id role is the main TURN options object actually passed as the factory's second argument, with the same Host receiver and already-initialized TURN binding. STEP callback IDs and arbitrary UUID variables are not TURN identity. Shadowing, TDZ, spreads/getters/duplicate identity fields, background lookalikes and already-patched source need explicit rejection or new review. Preserve original evaluation order and untouched bytes.
 

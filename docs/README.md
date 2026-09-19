@@ -1,6 +1,6 @@
 # Documentation
 
-Enter from the question you are answering. These routes are not a mandatory reading sequence. Current source/schema/tests determine implementation; the latest applicable adopted change resolves documentary disagreement. A future target, a fixed observation and the current installation are different scopes.
+Enter from the question you are answering. These routes are not a mandatory reading sequence. Treat every claim, including code and test expectations, as a hypothesis. Use the current path plus an executable counterexample or current upstream evidence to verify it; unsupported claims remain unverified. Accepted intent, fixed observations and the current installation are different scopes.
 
 ## Contracts and implementation
 

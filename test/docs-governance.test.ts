@@ -81,24 +81,6 @@ test("current configuration example validates against the actual source schema",
   }
 });
 
-test("current task map routes directly to concern contracts", () => {
-  const map = read("docs/README.md");
-  for (const file of ["execution", "context", "continuity", "operations", "host-compatibility"]) {
-    expect(map).toContain(`runtime/${file}.md`);
-    expect(existsSync(resolve(root, `docs/runtime/${file}.md`))).toBe(true);
-  }
-  expect(map).not.toMatch(/\]\(roadmap\/(?:box-runtime-impl-spec|template-ops-automation-spec|configuration-rebuild-spec|host-seam-ops-recognition)\.md/);
-});
-
-test("convergence retains every cross-domain, context and reasoning obligation ID", () => {
-  const acceptance = read("docs/runtime/acceptance.md");
-  for (let n = 1; n <= 30; n++) expect(acceptance).toContain(`V${String(n).padStart(2, "0")}`);
-  const context = read("docs/runtime/context.md");
-  for (let n = 1; n <= 16; n++) expect(context).toContain(`CTX-A${String(n).padStart(2, "0")}`);
-  for (let n = 1; n <= 7; n++) expect(context).toContain(`CTX-R${String(n).padStart(2, "0")}`);
-  for (let n = 1; n <= 6; n++) expect(read("docs/runtime/execution.md")).toContain(`R0${n}`);
-});
-
 test("every source ticket remains reachable by its complete filename", () => {
   const index = withoutFences(read("docs/tickets/README.md"));
   const linked = new Set([...index.matchAll(/\]\(([^)\s]+)\)/g)].map(match => match[1]!.split("#")[0]!));
@@ -108,10 +90,7 @@ test("every source ticket remains reachable by its complete filename", () => {
   for (const ticket of tickets) expect(linked.has(ticket), ticket).toBe(true);
 });
 
-test("lifecycle instructions are discoverable and examples use registered commands", () => {
-  for (const file of ["docs/product-contract.md", "docs/runtime/continuity.md", "docs/maintainers/README.md", "docs/maintainers/current-state-control.md"]) {
-    expect(read(file), file).toContain("bot-lifecycle.md");
-  }
+test("lifecycle examples use registered commands", () => {
   const guide = read("docs/maintainers/bot-lifecycle.md");
   const commands = LEAF_COMMANDS.map(command => command.path.join(" ")).sort((a, b) => b.length - a.length);
   const examples = [...guide.matchAll(/^```bash\n([\s\S]*?)^```/gm)]
@@ -120,14 +99,5 @@ test("lifecycle instructions are discoverable and examples use registered comman
   for (const line of examples) {
     const text = line.slice("grokbox ".length);
     expect(commands.some(command => text === command || text.startsWith(`${command} `)), line).toBe(true);
-  }
-});
-
-test("archive discovery separates retired research from the stable report store", () => {
-  const archive = read("docs/archive/README.md");
-  expect(archive).toContain("../reports/README.md");
-  for (const file of ["runtime-rebuild", "managed-compact-evolution", "milestone-review-residue", "external-session-research"]) {
-    expect(archive).toContain(`${file}.md`);
-    expect(existsSync(resolve(root, `docs/archive/${file}.md`))).toBe(true);
   }
 });

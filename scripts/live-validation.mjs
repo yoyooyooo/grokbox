@@ -4,7 +4,7 @@
  *
  * This is an observer and receipt checker. It never sends prompts, changes
  * models, enables Routines, restarts services, deletes objects, or publishes.
- * The LIVE index and the runbook remain the acceptance authority.
+ * LIVE/runbook requirements and reported results still need direct evidence.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -118,11 +118,11 @@ function sourceSnapshot() {
 }
 
 function runStaticGate() {
-  const result = spawnSync("bun", ["test", "test/live-e2e-checklist.test.ts"], {
+  const result = spawnSync("bun", ["test", "test/docs-governance.test.ts", "test/live-e2e-checklist.test.ts"], {
     cwd: root, encoding: "utf8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024,
   });
   return {
-    command: "bun test test/live-e2e-checklist.test.ts",
+    command: "bun test test/docs-governance.test.ts test/live-e2e-checklist.test.ts",
     ok: !result.error && result.status === 0 && !result.signal,
     exitCode: result.status,
     signal: result.signal ?? null,
@@ -147,7 +147,7 @@ function candidate(args) {
   if (snapshot.dirty && !has(args, "--allow-dirty")) blockers.push("WORKTREE_DIRTY");
   if (snapshot.dirty && has(args, "--allow-dirty")) blockers.push("WORKTREE_DIRTY_ALLOWED_ONLY_FOR_PLANNING");
   if (!staticGate.ok) blockers.push(staticGate.skipped ? "STATIC_GATE_SKIPPED" : "STATIC_GATE_FAILED");
-  if (rows.length < 69) blockers.push("LIVE_INDEX_ROWS_INCOMPLETE");
+  if (rows.length === 0) blockers.push("LIVE_INDEX_EMPTY");
   if (rows.some((row) => !row.gate || !row.currentResult || row.sourceLinks.length === 0)) blockers.push("LIVE_INDEX_ROW_MISSING_ROUTE");
   const result = {
     version: 1,

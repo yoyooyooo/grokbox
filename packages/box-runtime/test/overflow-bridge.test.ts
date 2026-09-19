@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { admitOverflowRecovery } from "@grokbox/runtime-kernel/inference";
 import { emptyRecoveryLedger } from "@grokbox/runtime-kernel/contract";
-import { isProviderConfirmedOverflow, overflowEvidenceFromProvider, structuredOverflowFromUnknown } from "../src/internal/backends/provider-error.ts";
+import { backendFailureFromUnknown, isProviderConfirmedOverflow, overflowEvidenceFromProvider, structuredOverflowFromUnknown } from "../src/internal/backends/provider-error.ts";
 
 delete process.env.GROKBOX_MODELD_HOST_COMPACT;
 delete process.env.GROKBOX_CONTEXT_CAP;
@@ -101,7 +101,7 @@ describe("confirmed overflow classifier", () => {
     expect(evidence.releasedText).toBeUndefined();
   });
 
-  test("live Responses 400+code and response.failed+code confirm", () => {
+  test("synthetic Responses 400+code and response.failed+code confirm", () => {
     expect(isProviderConfirmedOverflow({
       statusCode: 400,
       responseBody: JSON.stringify({
@@ -121,8 +121,8 @@ describe("confirmed overflow classifier", () => {
     })).toBe(true);
   });
 
-  test("Sub2API passthrough message-fallback is medium and allowlisted", () => {
-    // Passthrough HTTP: type=upstream_error, no code, sanitized message (survey medium).
+  test("text compatibility recognizes explicit overflow phrases", () => {
+    // Owned proxy-shaped error: this does not qualify a live provider.
     expect(isProviderConfirmedOverflow({
       statusCode: 400,
       data: { error: { type: "upstream_error", message: "This model's maximum context length was exceeded" } },
@@ -172,6 +172,32 @@ describe("confirmed overflow classifier", () => {
       statusCode: 400,
       data: { error: { type: "invalid_request_error", message: "max_tokens is too large" } },
     })).toBe(false);
+  });
+
+  test("output-parameter errors mentioning context capacity do not authorize compact", () => {
+    for (const message of [
+      "The maximum context length is 8192; max_tokens must be at least 1",
+      "max_tokens exceeds the maximum context length",
+      "The context length is 8192; max_tokens is too large",
+    ]) {
+      const error = Object.assign(new Error(message), {
+        statusCode: 400,
+        data: { error: { type: "invalid_request_error", param: "max_tokens", message } },
+      });
+      expect(isProviderConfirmedOverflow(error), message).toBe(false);
+      expect(backendFailureFromUnknown(error).code, message).toBe("provider_error");
+    }
+  });
+
+  test("a token count containing 401 cannot override structured overflow evidence", () => {
+    for (const count of [1400, 1401, 4010]) {
+      const error = Object.assign(new Error(`context_length_exceeded: requested ${count} tokens`), {
+        statusCode: 400, data: { error: { code: "context_length_exceeded" } },
+      });
+      const failure = backendFailureFromUnknown(error);
+      expect(failure.code).toBe("overflow_candidate");
+      expect(failure.overflowEvidence?.auth).toBe(false);
+    }
   });
 
   test("omitted or invalid release counts do not admit recovery", () => {

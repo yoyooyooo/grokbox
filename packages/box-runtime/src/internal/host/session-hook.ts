@@ -102,12 +102,10 @@ function attachManagedAuxStreams(
 }
 
 /**
- * Entry interceptor: undefined declines, letting the unchanged Host construct its official session.
- * Identity/observe and route + unassigned agent decline (S4.1).
- * Route + managed assignment: Host fullStream over v4 modeld (T26).
- * Known compile profileIds that match snapshot-root contracts bind produce qualification.
- * Unknown compiled patch profiles keep Host-selected root at stream time (no live fail-close).
- * bridgeDigest from compile.transformedSha256.
+ * Select a managed session or return the supplied official session.
+ * The current patch constructs originalSession before entering this hook.
+ * Managed execution does not consume that session; native precondition
+ * independence remains unverified. Compile identity qualifies the root contract.
  */
 export function bindHostSessionHook(input: {
   mode: SeamMode;

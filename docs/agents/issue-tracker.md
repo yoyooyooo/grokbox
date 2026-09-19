@@ -10,4 +10,4 @@ Public bugs, feature proposals, and implementation discussions belong in [GitHub
 - Never attach credentials, private addresses, prompts, transcripts, provider bodies, or machine-local evidence.
 - Large product or architecture changes must update the owning current home before implementation is treated as accepted.
 
-Source and executable tests determine current implementation truth; an issue or roadmap entry does not prove delivery.
+Reproduce the reported behavior and inspect the expected result. Code, tests, issues and roadmap entries can share the same incorrect assumption; unresolved claims remain unverified.

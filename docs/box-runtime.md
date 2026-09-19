@@ -1,6 +1,6 @@
 # Box-local model runtime
 
-The runtime adds governed per-Bot model execution and maintenance to the native Grok Bot Host. It does not replace the upstream Agent loop, rewrite Server ownership or modify the official App. Current implementation is source/test fact; installation and actual user journeys require separate [LIVE evidence](tickets/LIVE-integration-validation.md).
+The runtime adds governed per-Bot model execution and maintenance to the native Grok Bot Host. It does not replace the upstream Agent loop, rewrite Server ownership or modify the official App. Source and tests provide evidence to challenge, not a correctness guarantee; installation and actual user journeys require separate [LIVE evidence](tickets/LIVE-integration-validation.md).
 
 ## 1. Product and authority
 
@@ -12,7 +12,7 @@ Server registration owns execution ownership; native Host/worker owns root, tool
 
 The reviewed Host profile applies exact source/ordered literal/transformed-hash checks. Host/preload is a pure/bounded bridge, with no Effect, SDK, SQLite, parser or provider credential loading. Modeld exposes a finite versioned local protocol; the actual [wire constant](../packages/runtime-kernel/src/internal/contract/wire.ts), schemas and package metadata are the implementation owners.
 
-Native synchronous API shape, createSession-before-provider behavior, identity, mixed-content order and validated tool material must remain intact. A private upstream corpus may explain interoperability but cannot become a public build dependency, runtime fallback or executable restoration source.
+Native synchronous API shape, identity, mixed-content order and validated tool material need qualification. The intended createSession-before-provider boundary conflicts with the current late hook; official-provider precondition independence is unverified (see [upstream integration](upstream-integration.md#host-session-boundary)). A private upstream corpus may explain interoperability but cannot become a public build dependency, runtime fallback or executable restoration source.
 
 ## 3. Read by concern
 

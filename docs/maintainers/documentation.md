@@ -1,61 +1,30 @@
 # Documentation maintenance
 
-This page owns documentation roles, discovery, freshness and retirement. It does not define product or runtime behavior. Work from the affected claim; there is no repository-wide mandatory reading sequence.
+No repository surface is self-authenticating. A source branch shows what may execute; a test shows what its setup and assertions observed. Neither establishes that the behavior is correct.
 
-## Resolve a disagreement
+## Verify before keeping a claim
 
-For statements about the current implementation, inspect the actual source, schema, migrations, command registry, dependency lock and executable tests. They take precedence over prose. Next use the latest applicable adopted change, including its scope; a new date on an unrelated document is not supersession. The 2026-09-19 source-first convergence explicitly replaces stale implementation descriptions, not historical observations.
+- Identify the affected entry point and an observation that could disprove the claim. Execute it where possible; inspect whether the test's expected result merely repeats the implementation.
+- Verify upstream behavior against a current primary source or an identified native version. A private evidence placeholder, old line number or source hash alone is not reproducible proof.
+- Keep intent, observed implementation and deployment evidence separate. Mark unsupported claims **unverified**; remove obsolete instructions and unverifiable explanatory detail.
+- Fix the owning text and its consumers together. Prefer a few key points and a reproducible command over another spec, status table or dated override paragraph.
+- Preserve only necessary links, distinct unresolved decisions and useful bounded evidence. Git already retains committed obsolete text; unknown external bookmarks are not a reason to preserve every old rule.
 
-Keep three facts separate: implemented behavior, accepted target, and observed deployment. Existing code may implement only part of a larger accepted target. Preserve that remaining obligation in its source ticket or roadmap rather than saying either “nothing exists” or “complete”. An unobserved runtime is unknown, even when the source is integrated. Security and authorization do not arise from implementation capability.
+## Where to put the remaining information
 
-Change the owning claim, then update or remove repeated descriptions. Do not resolve a conflict by adding an override paragraph to every file. Do not change fixed reports to make their old versions, failures or missing proof look current.
-
-## Homes and routes
-
-| Role | Home and update rule |
+| Material | Place |
 | --- | --- |
-| Product semantics | `docs/product-contract.md`; command registry/help owns exact command inventory |
-| Architecture and runtime invariants | `docs/architecture.md`, `docs/box-runtime.md`, concern-oriented `docs/runtime/` |
-| Configuration facts | Source schemas and `docs/configuration.md`; other pages link instead of copying current versions/defaults |
-| Operating procedure | `docs/maintainers/`; examples must use implemented commands and state scope/side effects |
-| Implementation/offline/review gaps | The owning ticket; the ticket index routes, not duplicates its progress |
-| Current live result | `docs/tickets/LIVE-integration-validation.md`; one current row/evidence pointer per stable scenario |
-| Fixed verification receipts | `docs/reports/`; bounded source/window and `notProven`, never a second live ledger |
-| Retired research/delivery history | `docs/archive/`; preserve useful reasons/evidence without current instructions |
-| Remaining targets/candidates | `docs/roadmap/`; distinguish accepted remainder from unaccepted extensions |
-| Decision rationale | `docs/decisions/`; mark scope and supersession, incorporate current meaning into its owner |
+| User-facing behavior and configuration | Product/configuration guides, with executable examples |
+| Runtime mechanisms and their reasons | Relevant runtime guide and nearby source/test |
+| Scoped unresolved work | Existing ticket, identified by full path |
+| Observed integration result | [LIVE](../tickets/LIVE-integration-validation.md), linked to its bounded report |
+| Historical observations | Existing reports/archive; unverified for a different version or deployment |
+| Possible future work | Roadmap, explicitly separated from accepted requirements |
 
-`docs/README.md`, `CONTEXT.md`, ticket/roadmap maps and `AGENTS.md` are routes. They do not copy current schema/wire versions, pass counts, temporary blockers, PIDs, worktree inventories, candidate SHAs or model budgets. A version-sensitive guide links its code owner. A code or test reader should be able to find the relevant invariant by command/domain name without following old milestones.
+Entry files and Skills route to these places. Do not duplicate versions, test counts, temporary inventories or model-specific operating choreography.
 
-Use English or Chinese according to the surrounding document. Preserve API identifiers and stable anchors. Write complete, direct sentences; prefer intent, invariants and completion evidence over role-playing a particular model or scripting its reasoning. Named models in historical reports are evidence, not a permanent reviewer/implementer assignment.
+## Check the change
 
-## Ticket identity and lifecycle
+Run `bun run check:docs` for links, examples and LIVE/receipt structure. Run affected behavior tests for changed commands or code, plus typecheck/build when appropriate. Do not write tests that freeze prose, a historical document count or a former phase's IDs as correctness.
 
-The canonical identity of an existing ticket is its full repository path, not a bare `T` number. Historic `T32` and `T43`–`T50` have multiple meanings. Display a domain-qualified label such as `modeld/T43` or `ops/T43` and link the exact file. New work uses a meaningful domain key (as CTX, CONT, OBS and HCR already do); do not renumber historical externally cited paths.
-
-A ticket may retain fixed implementation receipts. Its current opening describes only its scoped remaining work and links the current contract. Old phases, earlier “next step” instructions and superseded layouts are not active orders. Do not set Done because a file exists, and do not leave implemented work described as absent. Independent review is an observed process outcome, not an automatic consequence of self-review or a tool error.
-
-Before retiring a record, identify any unresolved finding, acceptance obligation or unique source reference. Route each to a current ticket or explicitly retain it for triage. A historical ticket can be archived without declaring its technical concerns resolved. Model-specific dispatch loops and personal-memory dependencies do not belong to current repository rules.
-
-## Archive and evidence
-
-Reports remain the canonical fixed-window receipt store because LIVE and its executable consumer use those stable paths. Archive is for material retired from current contracts and delivery instructions, including old research and review history. These roles are distinct: do not copy the same report into both directories. Archive's index can route to reports without acquiring their content.
-
-Use direct text for historical facts worth reading. For removed repetitive plans already committed, an intentional archive note may give the exact commit/path and a `git show` recovery command instead of copying the entire obsolete plan. Verify that the source commit includes all removed text; dirty/untracked material is not protected by Git history. Do not publish private paths, raw dumps or hidden upstream code through either history surface.
-
-Preserve known external paths/anchors with a short route when needed. Such routes own no current semantics, are absent from normal task maps, and should be retired only when their consumers are understood. An ordinary repository search cannot prove external bookmarks absent. Link current readers directly to the actual owner.
-
-## Checks and completion
-
-From the repository root:
-
-```bash
-bun run check:docs
-bun run typecheck
-```
-
-The documentation check covers local paths/anchors, source-backed current contracts, discovery, LIVE structure and mutable-state fixtures. It does not fetch external/private pages or prove native behavior. If report syntax, parsers, commands or package surfaces change, run their tests and the package/build checks too. The root `package.json` and lock own toolchain versions; record actual versions rather than silently changing pins.
-
-Completion means affected facts agree with their owners, current routes reach them without a historical detour, unresolved obligations and useful evidence survive, and changed consumers pass. File count and word count alone are not completion criteria.
-
-The entry/Skill design follows the adopted principle of narrow triggers, on-demand references and bounded completion, informed by [OpenAI's September 11 article](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra) and the supplied docs-governance Skill. These references are rationale, not a build dependency or a required read for each task.
+Report what was observed, what was removed and what remains unverified. Correcting a document does not qualify a native deployment or close an unresolved product requirement.

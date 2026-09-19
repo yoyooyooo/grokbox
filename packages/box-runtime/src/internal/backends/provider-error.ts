@@ -3,7 +3,6 @@ import { sdkValidationObservation } from "./sdk-validation.ts";
 import { observeBackendFailure, type BackendPhase } from "./failure-observation.ts";
 
 const OVERFLOW = /context_length|context_window|prompt_too_long|request_too_large/i;
-const AUTH = /unauthorized|invalid_api_key|authentication|401/i;
 const CONFIRMED_OVERFLOW_CODES = new Set(["context_length_exceeded", "context_too_large"]);
 const AUTH_MARKERS = new Set(["authentication_error", "invalid_api_key", "unauthorized"]);
 const RATE_MARKERS = new Set(["rate_limit_exceeded", "rate_limit_error"]);
@@ -40,18 +39,10 @@ type InspectAcc = {
   messages: string[];
 };
 
-/**
- * Sub2API `isOpenAIContextWindowError` phrases (survey medium).
- * Does not match `max_tokens` / output-length / payload-too-large.
- */
+// Text-only compatibility is narrower than structured error codes: mentioning
+// a capacity or an invalid output parameter does not prove input overflow.
 function isOpenAIContextWindowMessage(text: string): boolean {
-  const t = text.toLowerCase();
-  if (t.includes("context_too_large") || t.includes("context_length_exceeded")) return true;
-  if (/\bmax(?:imum)?\s+context\s+length\b/.test(t)) return true;
-  if (/(?:context window|context length)[\s\S]{0,80}(?:exceed|too large|too long)/.test(t)) return true;
-  if (/(?:exceed|too large|too long)[\s\S]{0,80}(?:context window|context length)/.test(t)) return true;
-  if (/\btoken limit\b/.test(t) && /\bcontext\b/.test(t) && /exceed/.test(t)) return true;
-  return false;
+  return /\bcontext_(?:too_large|length_exceeded)\b|\bcontext (?:window|length)\s+(?:(?:is|was|has been)\s+)?(?:exceeded|too (?:large|long))\b/i.test(text);
 }
 
 function noteMarker(marker: string, acc: InspectAcc, inError: boolean): void {
@@ -73,10 +64,7 @@ function inspectStructuredProviderError(raw: unknown, depth = 0, acc: InspectAcc
     const marker = raw[key];
     if (typeof marker === "string") noteMarker(marker, acc, errorRole);
   }
-  if (errorRole && typeof raw.message === "string" && raw.message.length > 0 && raw.message.length <= 8 * 1024) {
-    acc.messages.push(raw.message);
-  }
-  if (depth === 0 && typeof raw.message === "string" && raw.message.length > 0 && raw.message.length <= 8 * 1024) {
+  if ((errorRole || depth === 0) && typeof raw.message === "string" && raw.message.length > 0 && raw.message.length <= 8 * 1024) {
     acc.messages.push(raw.message);
   }
   for (const key of ["statusCode", "status"] as const) {
@@ -134,18 +122,16 @@ export function structuredOverflowFromUnknown(raw: unknown): { httpStatus?: numb
   };
 }
 
-/** Recovery evidence. Structured codes first; Sub2API message fallback is allowlisted medium only. */
+/** Recovery evidence from structured fields or the bounded text compatibility rule. */
 export function overflowEvidenceFromProvider(input: unknown): OverflowEvidence {
   const named = isRecord(input) ? input : {};
   const inspected = inspectStructuredProviderError(input);
   const providerCode = inspected.providerCode ?? (typeof named.providerCode === "string" ? named.providerCode : undefined);
   const namedStatus = typeof named.httpStatus === "number" ? named.httpStatus : undefined;
   const httpStatus = inspected.unknown ? undefined : (inspected.httpStatus ?? namedStatus);
-  const code = typeof providerCode === "string" && CONFIRMED_OVERFLOW_CODES.has(providerCode)
-    ? providerCode : providerCode;
   const messageFallback = inspected.messageFallback === true || named.messageFallback === true;
   return {
-    ...(typeof code === "string" ? { providerCode: code } : {}),
+    ...(providerCode !== undefined ? { providerCode } : {}),
     ...(httpStatus !== undefined ? { httpStatus } : {}),
     auth: named.auth === true || inspected.auth || httpStatus === 401,
     rateLimited: named.rateLimited === true || inspected.rateLimited || httpStatus === 429,
@@ -153,7 +139,7 @@ export function overflowEvidenceFromProvider(input: unknown): OverflowEvidence {
     timeout: named.timeout === true,
     disconnected: named.disconnected === true || inspected.disconnected,
     unknown: named.unknown === true || inspected.unknown,
-    ...(messageFallback && !code ? { messageFallback: true } : {}),
+    ...(messageFallback && !providerCode ? { messageFallback: true } : {}),
     ...(typeof named.releasedText === "number" ? { releasedText: named.releasedText } : {}),
     ...(typeof named.releasedReasoning === "number" ? { releasedReasoning: named.releasedReasoning } : {}),
     ...(typeof named.releasedTools === "number" ? { releasedTools: named.releasedTools } : {}),
@@ -173,7 +159,7 @@ export function backendFailureFromUnknown(error: unknown, phase: BackendPhase = 
   if (sdkValidation) return annotateStreamFailure(invalidStream(sdkValidation.kind === "schema" ? "sdk_schema_mismatch" : "invalid_event_shape", "sdk_part"), { sdkValidation });
   const text = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const inspected = inspectStructuredProviderError(error);
-  const auth = AUTH.test(text) || inspected.auth;
+  const auth = inspected.auth;
   const overflow = OVERFLOW.test(text) || inspected.messageFallback;
   const evidence = overflowEvidenceFromProvider({
     ...inspected,
