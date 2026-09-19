@@ -2,45 +2,28 @@
 
 ## Product
 
-`grokbox` is an unofficial, Profile-based CLI and control plane for operating Grok Bot cloud computers from inside or outside the box. The Node package and source-backed development shim expose `grokbox` and the exact alias `gbox`.
+`grokbox` is an unofficial CLI and control plane for Grok Bot cloud computers. Development centers on the CLI/runtime inside one Box. Existing external Profile, daemon, SSH, Sandbox and quota capabilities remain supported only within their implemented and qualified scope; they do not imply that every runtime command works remotely. Network installation, routing and access policy belong to the operator, not to the model runtime.
 
-## Current implementation
+The published package exposes `grokbox` and its exact alias `gbox`. The three unpublished workspaces separate the CLI/daemon, reusable runtime kernel, and Box/Host adapters. The Host retains the native Agent loop and state writers; grokbox adds governed operations, per-Bot model selection, context maintenance and observation rather than replacing the upstream product.
 
-The TypeScript CLI lives in `packages/cli`. Box-local model runtime code, when it lands, lives in unpublished `packages/box-runtime`. npm still publishes one `grokbox` package. The CLI currently provides:
+## Find current implementation facts
 
-- strict local, daemon, remote, and Gateway-compatible Profiles;
-- protected `env:`, `file:`, and macOS `keychain:` secret references;
-- idempotent local or Tailscale-peer initialization;
-- a finite, capability-gated daemon over a Unix socket or authenticated loopback HTTP;
-- typed Grok Bot roster, send, history, Memory, event, and offline agent-export commands;
-- governed named-root filesystem access and structured Linux Jobs;
-- layered read-only diagnosis and explicit recovery;
-- opt-in experimental Sandbox, quota, and desktop compatibility adapters.
+| Question | Source |
+| --- | --- |
+| Available commands, arguments and capabilities | [CLI registry](packages/cli/src/registry.ts), command help, executable tests |
+| Node/Bun requirements, workspaces and runtime dependencies | [package.json](package.json), [bun.lock](bun.lock) |
+| Configuration fields, defaults and revisions | [configuration guide](docs/configuration.md) and its schema/source links |
+| Host/modeld protocol version | [wire contract](packages/runtime-kernel/src/internal/contract/wire.ts) |
+| Current loaded installation and live qualification | [LIVE index](docs/tickets/LIVE-integration-validation.md) and its fixed-window evidence; re-observe before mutation |
 
-Node.js 20.17.0+ is the published runtime; the minimum minor version follows the pinned native monitor SQLite dependency. Bun is development tooling. Source and package checks run on Linux and macOS; host filesystem, process, Job, and desktop capabilities remain Linux-only.
+Do not copy version numbers, test counts or deployment status into this entry. Source integration, offline verification, native compatibility and actual adoption are separate claims.
 
-## Compatibility boundary
+## Vocabulary and authority
 
-Gateway methods, Sandbox lifecycle RPCs, quota endpoints, and desktop layouts are not documented upstream public APIs. They may change without notice and must remain explicit, narrowly typed, redacted, and fail-closed. A credential accepted by one surface never implies authority on another.
+**Box** is the Linux execution environment. **Bot** is the upstream Agent identity. **Gateway** is the discovered native product API; **daemon** is grokbox's governed RPC surface. **Profile** selects a connection and client policy, not Bot ownership. **Target** resolves ID-first, then by an unambiguous name/title. **Sandbox** is the external machine-lifecycle control plane. **Quota** comes from one explicitly configured credential-owning source.
 
-The project does not claim that App-free wake or long-lived keeper behavior works for every account or environment. Real-provider observations do not become product guarantees; tests and public contracts must remain valid without private research or machine-local evidence.
+Server registration owns execution ownership; native Host writers own Box conversation state. CLI configuration expresses future intent; observed process state and execution receipts show what actually happened. See [architecture](docs/architecture.md).
 
-## Vocabulary
+Gateway, Sandbox, quota and desktop integration depend on undocumented upstream behavior and require scoped revalidation. Credentials for one surface do not authorize another. Private research and machine evidence are never public build dependencies.
 
-- **Grok Bot:** upstream product and host runtime.
-- **box / cloud computer:** Linux environment hosting Grok Bot state and processes.
-- **Gateway:** Grok Bot product API discovered inside the box.
-- **daemon:** grokbox-owned host RPC for governed Gateway and host capabilities.
-- **Profile:** selected connection and policy configuration.
-- **target:** agent or group identity resolved ID-first and then by unambiguous name/title.
-- **Sandbox control plane:** external lifecycle surface, separate from Gateway and daemon authority.
-- **quota:** account-level usage state from one explicitly configured source.
-
-## Authority
-
-- Current behavior: source and executable tests.
-- Accepted product behavior: `docs/product-contract.md`.
-- Implementation ownership: `docs/architecture.md`.
-- Required compatibility facts: `docs/upstream-integration.md`.
-- Deferred work: `docs/roadmap/`.
-- Public work intake: GitHub Issues.
+[Documentation](docs/README.md) routes current contracts and operating guides. [Roadmap](docs/roadmap/README.md) owns remaining accepted work and candidates. [Archive](docs/archive/README.md) explains retired design and evidence without reviving old instructions.

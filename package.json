@@ -62,6 +62,7 @@
     "prepack": "bun run build",
     "test": "bun test",
     "test:native-host": "GROKBOX_TEST_NATIVE_HOST=1 bun test --timeout 30000 packages/box-runtime/test/live-copy.test.ts packages/box-runtime/test/host-harness-emit.test.ts packages/box-runtime/test/host-managed-turn-retry.test.ts packages/box-runtime/test/host-compact.test.ts packages/box-runtime/test/transform.test.ts packages/box-runtime/test/native-auxiliary-noop.test.ts",
+    "check:docs": "bun test test/docs-governance.test.ts test/live-e2e-checklist.test.ts test/live-validation-harness.test.ts",
     "check:publication": "node scripts/check-publication.mjs",
     "check:publication:history": "node scripts/check-publication.mjs --history --ref HEAD",
     "typecheck": "tsc --noEmit -p tsconfig.json",

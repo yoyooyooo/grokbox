@@ -1,85 +1,45 @@
 # Box-runtime Effect 标准
 
-本标准约束 `packages/runtime-kernel`、`packages/box-runtime` 及其 CLI/console composition roots 的后续改动：**重副作用必须由 Effect 拥有执行、失败、取消和资源生命周期，不只是返回类型换皮。** 依赖安装不代表迁移完成；当前实现以源码和测试为准。产品与权限仍由 [产品合同 §12](product-contract.md#12-box-local-model-runtime)、[运行时设计](box-runtime.md) 和 [架构 §17](architecture.md#17-box-local-model-runtime) 拥有。
+适用于 `packages/runtime-kernel`、`packages/box-runtime` 及 CLI/未来 UI 的 runtime composition roots。Effect 必须拥有重副作用的执行、失败、取消、并发和资源寿命，而不是给一个既有 Promise 工作流换返回类型。纯判定仍可用普通 TypeScript。
 
-## 当前执行核心收口
+## 依赖与执行边界
 
-[Spec S10](roadmap/box-runtime-impl-spec.md#modeld-effect-core) 与 [T43–T50](tickets/README.md#modeld-effect-core) 把本标准落到 modeld 的唯一 service acquisition、typed authority、source/等待者 Scope、按身份状态同步、有界维护和同 STEP 等待。保留已有 Effect 实现与存储/协议不变量，不以 runPromise 数量或新建 Service 数量验收。source、waiter、Fiber、外部操作结算是不同事实；Scope 不是数据库事务或远程取消证明。该变更不升级 catalog pin、不让 Host 导入 Effect，也不改 J13。
+版本唯一来源是根 [package.json](../package.json) 的 `effect-v4-beta` named catalog 和 [bun.lock](../bun.lock)。workspace 引用 catalog，不并存 v3、不使用浮动 tag。升级必须显式修改依赖和锁并重新验证；旧 E0 阶段“不安装 SDK”等施工限制不再是当前架构规则。
 
-## 强制范围与普通 TS 边界
+Node 是生产目标，Bun 是开发工具。kernel、Host、modeld、CLI runtime 不导入 `bun:*` 或 Bun globals。Host/preload 保持 Effect-free、SDK-free、SQLite-free；以实际 bundle contribution、外部 import 和 import-time side effects 验证，不只看直接 import 或被 tree-shake 的输入。
 
-| 执行面 | 规则 |
-|---|---|
-| coordinator / re-adopt | lease、operation lock、guardian 创建/释放、身份核对后的 signals、spawn/wait、commit/read-back/recovery 必须由同一 Effect operation 管理 |
-| modeld | 服务端 listener/已接受的 client sockets、admission 等待、authority/config 读取、immutable pin、TTL、disconnect/stop、credential 与真实 driver 生命周期必须由 Effect 管理 |
-| 文件写入 | journal/attestation、protected artifact、配置发布、合同 snapshot/retention 等重 IO 必须逐步纳入 Effect；Host terminal journal 的未决放置见下节 |
-| 普通 TS 可保留 | hash、path、parser、envelope、binding/identity/topology 判定、纯投影、Host 同步 handle/replay 与有界 IPC 桥接；只读观察不得偷偷 repair |
+| 面 | 必须保持的所有权 |
+| --- | --- |
+| modeld 服务 | 一次 acquisition，owned/borrowed 明确；listener、已接受 socket、credential 和 driver 随实际 owner 关闭 |
+| STEP / context | 唯一业务程序；共享 source 与 waiter 寿命分开，有界 deadline/cancellation，终态不会复活 |
+| controller | 同一 operation 组合 lock/lease、guardian、精确身份核对、signals、等待、提交、读回与恢复 |
+| config/store/观测维护 | adapter 管 syscall，Effect 管组合、错误和寿命；事务/持久协议由对应 store owner 明确实现 |
+| 普通 TS | hash/parser/codec、identity/policy 判定、纯投影、必要同步 Host bootstrap 和有界 IPC leaf |
 
-最底层 Node syscall/Promise adapter 可以保留 TS，但不得在 Effect 旁另行编排重试、计时器或资源生命周期。不为每个纯函数创建 Service。模型数据和 SDK 类型保持分离。
+底层 Node syscall/Promise adapter 可以存在，但不得在 Effect 旁拥有第二套 retry、timer 或取消程序。不为纯函数创建 Service，不以 Service/runPromise 数量衡量采用质量。
 
-## 版本与唯一生产路径
+## 一个程序与可替换能力
 
-- `effect` 精确固定 **`4.0.0-beta.107`**，根 Bun named catalog 为 **`effect-v4-beta`**；workspace 使用 `"effect": "catalog:effect-v4-beta"`。禁止 caret/tilde、dist-tag、RC 或混用 v3；升级必须显式更新 catalog、生成锁并复验。
-- E0 只增加 `effect`。不安装 AI SDK、`@effect/platform-*`、Vitest 或另换测试框架；发布目标仍是 Node 20+，Bun 是 package manager 与本地测试/脚本工具。runtime-kernel / Host / modeld / CLI runtime 禁止 `bun:*` 与 Bun globals。
-- Fake/Live **Layers 替换能力，不替换业务程序**。重建目标是 CLI/API → kernel commands、Host IPC → kernel inference，各只有一套程序；旧 `createModeld`/coordinator 名称不是兼容承诺。按[实施规格](roadmap/box-runtime-impl-spec.md)撤旧入口，无第二 reconciler/admission kernel、旧 facade 或 `effectMode`。
-- 每个真实进程/命令生命周期一个执行根；callback 需要时复用其 ManagedRuntime 并明确 dispose。Promise facade 只在宿主边界调用同一 Effect 实现，不在每个 helper/Bot/request 自建 Runtime。
-- 重建后的 AI SDK 只能实现 **ModelBackend Service**（唯一 port，kernel 定义、box-runtime backend 实现）。Effect 拥有调用与流的 lifetime/interrupt/resources；SDK 不执行 tools/Agent loop、不写 Transcript/Memory/SendToUser。T4/T4b 的 A+S1/ModeldDriver/complete-buffer 是历史 substrate，不能作为永久 Promise shim 保留；T23–T26 原地换成唯一 port/stream/root，Host fullStream 真实接通。SDK 仍仅在 box-runtime backend；测试默认零真实 spend。
+Fake/Live Layer 替换外部能力，不替换业务程序。CLI/API 调 kernel commands，Host IPC 调 kernel inference；ModelBackend 是唯一 provider port，SDK 只在 Box backend。SDK 不执行 tools/Agent loop，不写原生 Transcript/Memory/SendToUser，也不持有第二会话库。
 
-## Host import fence 与 J13
+每个实际进程/命令 owner 有一个执行根；宿主 callback 需要时复用有明确 dispose 的 ManagedRuntime。不要每 helper、Bot 或 request 自建 Runtime；Promise facade 只在宿主边界运行同一 Effect 程序。独立 guardian 不能被随父进程消失的 Fiber 替代。
 
-**preload / Host 保持 Effect-free、SDK-free。** 在首次向 Host 可达模块引入 Effect 前，先隔离 server/client 和纯合同的 value imports；验证 preload 实际 bundle contribution、external imports 及 import-time side effects，不只检查 `preload.ts` 的直接 imports，也不把被 tree-shake 的 parsed input 当作已执行代码。
+## 事务、取消与未知结果
 
-Host 不读 canonical attestation、不拥有 provider credential。允许复用有界模型选择读取，在现有 session ABI 上携带 modelId/selectionRevision 等薄字段；完整 admission 与 credential/provider effect 留在 modeld，不先增加投影文件族。保留 pinned-profile/exact compile 所需的最小同步 bootstrap 与成功编译后的 marker；marker 不是 committed attestation。外部 operation 负责等待、核对和签字。见 [Host seam ADR](decisions/2026-09-08-host-seam-normalization-and-roadmap.md)。
+Scope 不是 SQLite/跨文件事务，interrupt 不是远端取消证明。claim-before-effect、commit/readback、unknown 和 crash recovery 按所属执行/存储合同实现。保留已发生的 side effect 与真实取消/信号回执；超时不自动 SIGKILL 未核验的官方/竞争进程，不重新握手重投旧 invocation。
 
-**J13 决策门：当前保留 Host append-only terminal journal，watchdog 仍唯一 compactor。** Journal-via-modeld 尚未接受：不得迁移 writer、新增 terminal-report IPC method 或在 Host 加 Effect。现有锁等待/fsync 是明确的 **decision-gated gap，不是永久豁免**；完整重副作用收口不能跳过它。未来放置变化必须先获 owner 决定，并更新同日志的并发、去重、ack/gap、拒绝/断线/重启合同；模型完成不能冒充 Host normalized delivery。日志失败只影响证据，不改变 Host 回复或工具循环。
+避免全流程 uninterruptible、无限 finalizer、无界队列、脱离 owner 的 Fiber、SDK×Effect 双重 retry。清理失败必须可观察；失败/defect/interrupt/unknown 不能全部压成空成功。日志不输出原始 Cause/body、secret、prompt 或工具正文。
 
-### 2026-09-18 OBS-04 字节轮转补充
+## Host journal（J13）
 
-J13 writer放置不变。原append入口在同一个events.lock内拥有有界字节分段和轮转意图恢复，纯Host leaf不引入Effect/SQLite/RPC；这不是另一个语义compactor。watchdog对legacy仍执行原保留选择器，对已登记分段只调用同协议的关闭段维护，不重写活动inode。只读reader不恢复或删除文件，日志失败仍只影响证据。实现与明确未证的硬崩锁/撕裂文件范围见[分段回执](reports/2026-09-18-structured-journal-rotation.md)。
+Host terminal journal 保留原 append owner，watchdog 的语义 compaction 与段维护不创造第二事件 writer。字节轮转、关闭段保留与日志锁恢复使用同一协议；GET 不恢复锁、不删文件。Host 可以使用纯 storage 策略/version leaf 和有界文件桥，不因此导入 Effect/SQLite/网络。
 
-### 2026-09-18 journal配置与恢复补充
+配置采用、分段发布、owner-token/进程身份恢复和物理占用分别取证。证据损坏影响可观察性，不改变模型回复或工具循环。journal-via-modeld、另加 terminal-report IPC 或迁移 writer 不是本标准的默认授权；需要明确的接口/寿命/故障合同变更。[存储合同](runtime/operations.md#storage)和其源码/报告保存具体证明边界。
 
-J13仍由原Host/modeld/control writer写入。配置根由composition root显式传递，Host只导入纯storage策略/version leaf与有界文件读取，不引入Effect/SQLite/网络。目录锁v2只管理日志临界区，以唯一owner token及进程身份恢复确证失主；不回放callback、不回收LevelDB锁，不把超时当所有权证据。原collector的Effect维护子Scope先结算有界文件维护，再进入SQLite写许可，忙锁单次跳过，GET不恢复。测试与旧PID-only/撕裂文件等未签边界见[回执](reports/2026-09-18-journal-policy-and-lock-recovery.md)。
+## 修改与验证
 
-## Owner adjudication（2026-09-07）
+从实际失败/资源 owner 开始，修改生产入口及其负例，不另写测试专用 admission。使用 pinned Effect API 的 TestClock/barrier 验证预算、并发和取消；覆盖 success/failure/interruption、partial acquire 和有界 shutdown。真实 CLI/Unix composition、Node packed、Host import fence 与硬崩恢复有不同证明，不以一层 fake 概括全部。
 
-详见 [docs/decisions/2026-09-07-offline-live-adjudication.md](decisions/2026-09-07-offline-live-adjudication.md)。摘要：
+工具版本来自 package/lock。按影响运行 typecheck、目标测试、build/pack；遇到已证失败继续修复并复验受影响范围，不因一次绿就忽略后续改动。独立 review、native/live 和发布按 [验收入口](tickets/LIVE-integration-validation.md)及来源票分别处理，不能假称工具超时完成了 review。
 
-1. **J13**：当前保持 Host append；不因 Effect 收口强制先搬 journal。
-2. **G1**：身份/SHA 预检通过后即可推进 stub live；**不**把 E1–E2 当 G1 前置墙。
-3. **Bun**：合并/CI 以声明的 `packageManager`（`bun@1.3.14`）+ frozen lock 为准；不在临界路径升 1.4.2。
-
-## 历史 E 接缝与本轮替代
-
-下表保留 E1–E4 的原始范围便于追溯，不再拥有当前文件布局/执行顺序，也不授权保留旧 API。当前破坏式重建按[实施规格](roadmap/box-runtime-impl-spec.md)与 T20–T33 执行。Phase 1 的 T25 引入长寿命 root 时同片闭合 A9 acquire/finalizer；T23 用 AI SDK + Fake 建立一个 ModelBackend port，T28 关闭控制面的单程序/IO。每 helper/文件锁不单独 Service 化；不留双执行器。
-
-| 接缝 | 最小闭环 |
-|---|---|
-| **E1：artifact IO** | `runtime-artifact.ts` 的 acquire/write/read-back/sync/close/rename，接回 attestation/adopt journal；不顺带搬 terminal journal 或重写所有 store |
-| **E2：coordinator** | 分步迁移 lease/lock、guardian/signal/wait、commit/recovery 和所用 control-event IO；复用现有 manual/coordinator，保留独立 deadman |
-| **E3：modeld** | 先 scoped server acquire/stop 与 CLI signal bridge，再同一 kernel 的 authority/pin/admit/TTL/disconnect；只改外壳不算完成。T5a 已落地 C1 credential Effect 接缝（`modeld-credentials.ts`）；E3 其余 listener/admit/TTL 仍开放 |
-| **J13：放置待决** | owner 决策后才实现相应 journal 方案；不阻塞无关接缝，也不被它们的通过掩盖 |
-| **E4：SDK driver** | T4 已锁定 A+S1 形状（generate port → `complete()` 缓冲）。后续才安装 AI SDK 并接真实 generate，加上 C1/S2 合同与验证；真实 provider 调用另需授权。不得把 S1 骨架或 stub 当 streaming 证据 |
-
-T5a 已把 C1 credential 读取收口为 modeld 内 Effect 接缝；E3（listener/admit/TTL）与 T5b/S2 streaming IPC 仍开放。
-
-重建各能力按对应新票据接回唯一程序，不以这份历史清单另开迁移轨。结构替换不改变已接受的 generation/operation identity、pending 与 unavailable 区分、dispatch 前 authority 复核、immutable pins、重复拒绝/tombstone/capacity 或有界 shutdown。不得重新握手重投旧 invocation；不得静默回官方。
-
-## 拒绝的反模式
-
-- 只用 `Effect.tryPromise(() => legacyWorkflow())` 包住旧流程，内部仍是无 owner 的 Promise/timer/AbortController 编排；或只在 offline fake 路径使用 Effect。
-- 同一重能力长期暴露 `Promise | Effect` 双制式 API、Service 内部偷偷 `runPromise`、每请求重建 Layer/Runtime、第二 registry/reconciler 或无界队列/脱离 owner 的 Fiber。
-- 在 Host hook 导入 Effect/SDK；把纯 helper 全部 Service 化；为 adoption 顺带重写 Schema、Daemon 或 CLI framework。
-- 把 **Scope 当作跨文件原子事务或 crash safety**；删掉独立 guardian，改成随父进程一起死亡的 Fiber。正常资源由 Effect 管理，硬崩恢复仍须独立进程证据。
-- 全流程 uninterruptible、无限等待 finalizer、SDK × Effect 双重 retry；timeout/interrupt 被当成外部操作已撤销。保留 unknown、真实 `signaled`/已读回 receipt，不伪造回滚，不因超时 SIGKILL 官方/竞争进程。
-- 吞掉 release error 或把失败/defect/interrupt/unknown 统统变成空成功；输出原始 provider Cause/body、credential、prompt 或工具正文。
-
-## PR 如何合规
-
-1. **声明一个接缝及其 owner。** 列出真实入口、能力边界、资源关闭路径和保留的不变量；修改实际实现及该入口的测试，不只增加孤立 demo。需要拆文件时只隔离受影响的 import 边，不扩散到纯逻辑。
-2. **保留范围与授权。** E0 仅 catalog/dependency/generated lock；非 SDK 切片不加 SDK，J13 未决不改 placement/协议。标准不授权 live Host/G1、provider spend 或自动接管；不运行未经隔离的 Host/guardian/full live-shaped process suites。
-3. **按版本验证。** 用根 `packageManager` / CI 声明的 Bun 生成锁，执行 `bun install --frozen-lockfile` 与 `bun run typecheck`。工具版本不一致须在 PR/commit 中记录未验证的目标版本门禁，不夹带改 packageManager/CI pin，不声称目标工具 merge-green。
-4. **针对性质补证据。** 沿用 `bun test`，在 capability 边界替换 Layer；用 pin 版本的 `effect/testing` TestClock 和 barrier 验证预算/TTL/并发，用 success/failure/interruption 验证 finalizer 与部分 acquire。覆盖实际 CLI/Unix composition，不重新实现测试专用 admission。停机须关闭 owned Fiber/socket/listener，但不等待不配合的外部 driver 永远结束；记录其未知结果。
-5. **检查影响并诚实交付。** Host 可达依赖变化时验证 import fence；打包变化时在隔离环境验证 Node20 package。报告命令、工具版本、依赖现实与未证实项；精确审查/stage 文件，不把无关 WIP 或私有机器证据带入提交。
-
-Effect pin、Host/IPC 合同、journal 放置或 execution owner 改变时同步复核本标准；产品与架构规则仍维护在各自 Current Home，不复制实施报告或机器本地交付账本。
+[执行合同](runtime/execution.md)拥有 service/source/waiter/STEP 细节；[架构](architecture.md)拥有模块边界。本页不保存旧 E 接缝阶段进度或特定模型的审查循环。Effect 版本、Host 可达依赖、wire、journal writer 或资源 owner 变化时同步复核。

@@ -1,35 +1,27 @@
-# T29 command/API boundary incubate
+# Shared command boundary for a future browser client
 
-**Not the default post-T28 chain. Not a browser MVP. Not a second SoT.** Owner allowed this parallel incubate; [T29](../tickets/T29-runtime-webui.md) still forbids treating it as the next construction ticket after T28. Console/browser/Playwright stay unauthorized here.
+This page owns how a future UI consumes existing application capabilities, not a browser implementation plan or a second configuration/state store. [T29](../tickets/T29-runtime-webui.md) owns remaining UI work and [the console target](../roadmap/future/webui-console.md) owns page/interaction scope. [Architecture](../architecture.md) owns current composition.
 
-## Historical incubate inventory (not a fresh source check)
+## Reuse the existing writers
 
-Current accepted boundary is [T29](../tickets/T29-runtime-webui.md); future page/interaction scope is [Web UI](../roadmap/future/webui-console.md). [T41](../tickets/T41-continuous-observation-and-alerting.md) now owns pre-browser observation/incident SQLite. It is not a configuration/revision/execute SoT and does not wait for a frontend. The old inventory below records its original inspection, not a new implementation claim.
+ConfigurationChange and model ConfigurationWrite already have real implementations. Cooperative concurrent CLI writes demonstrated a second-writer need; canonical reread, expected revision, short lock and atomic publication/readback are not deferred until the browser exists. A future client must call the same program and respect the same conflict/unknown result, not write JSON/SQLite directly or add a UI-only lock.
 
-| Surface | Exists | Honest gap |
-|---|---|---|
-| `kernel/commands` | Yes — controller + `runConfigurationSave` | CAS / second writer still absent |
-| `kernel/status` | Yes — facets, correlation, journal roles | Future API must consume this, not a console projector |
-| `ConfigurationWrite` **port** | Yes — `saveModels`/`saveDesired` → `{ configRevision }` | No live Layer; modeld graph correctly lacks this port |
-| Config IO | `openRuntimeStore` atomic tmp+rename; `configurationReadLayer` | Returns `void`, no expected revision, no short lock |
-| CLI runtime | `packages/cli/src/commands/runtime.ts` via runtime facade | Not yet a second writer; do not add UI-only lock |
-| Box identity | Controller `boxRoot`; durable root resolver | Command-boundary agentId/runtime-root refuse-remote not a T29 CAS |
-| `console/` / `console.runtime.ts` / `runtime-roster.ts` | **Absent** (required) | Do not scaffold for this incubate |
+Full config revision and a consumer's domain dependency revision are different. A saved future assignment does not rebind an in-flight TURN; draft, saving, committed-awaiting-use and observed-effective must remain distinguishable. Cancellation of a request is not rollback of a committed preference. No new revision database, assignment mirror or automatic conflict merge is implied.
 
-## 当前共享writer增量（2026-09-13，T24/T38）
+## Observe without acquiring execution authority
 
-旧表仅为历史。当前已有ConfigurationWrite Live Layer；Astra在实际多Bot CLI use/reset/persist-key发现两个协作调用可同时越过读前检查、整文件互相覆盖，因此真实第二writer压力已出现，不必等浏览器。最终model commit现用短独占锁→canonical reread/expected model revision→原子发布→读回；冲突拒绝，不自动merge/retry。Effect等待该有界commit和锁释放完成，不把取消当回滚。没有新增revision DB、UI-only writer或SQLite配置SoT；desired与models仍非跨文件事务，崩溃残锁不自动回收。
+The client consumes bounded status/incident/snapshot/cursor projections. The existing monitor SQLite owns observation history, incident management and notification facts; it is not model configuration, Server ownership or permission to execute. A stale snapshot cannot authorize a write or turn gap into healthy idle. Closing a browser must not stop service-owned collection.
 
-事实owner和实现证明归 [T24](../tickets/T24-runtime-route-binding.md)，当前现场缺口与回执入口归 [LIVE](../tickets/LIVE-integration-validation.md#live-session-roundtrip)，不是本incubate晋升浏览器。下面D6规则保留，但“CAS仍完全未实现”已不再是当前状态。
+Each mutation has an explicit capability, target, scope, expected revision where applicable, operation identity and confirmation semantics. Unknown writes query/reconcile that same operation. A transport timeout does not justify another nonce or an automatic controller retry. Credentials and private evidence are not exposed merely because a page needs diagnostics.
 
-## D6 / CAS timing
+## Qualification when the client is implemented
 
-[ADR D6](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d6--simple-anti-overwrite-at-the-second-writer): keep the single-writer path simple. **Do not implement shared CAS until a real second writer exists.** When it does, add short lock → canonical reread → expected `configRevision` → mutate/publish **on the same ConfigurationWrite entry**, CLI included. No configuration revision DB, UI-only lock, or SQLite configuration/execution SoT. T41's incident acknowledgements and observation history have separate ownership/retention; they are not a second model-config writer.
+Verify CLI/UI concurrency against the same writer, old-TURN/new-choice behavior, read-only no-side-effects, duplicate/unknown reconciliation, slow/disconnected event readers and exact source/generation visibility. Browser draft state may be local; durable facts stay with their original owner. Actual UI availability is not inferred from the existence of these shared interfaces.
 
-This incubate did not add that CAS. The subsequent T24 cooperative-writer correction above supplies the earned model-commit boundary; atomic rename alone is still not concurrency-safe publication.
+The original no-Live-Layer/no-CAS inventory described an earlier snapshot and is no longer a current claim. It remains recoverable for design history:
 
-## Next (when actually scheduled)
+```bash
+git show 4181e5ec822b6a199681822c7b597710c1195a44:docs/maintainers/t29-command-boundary-incubate.md
+```
 
-1. Configuration use case on `kernel/commands` — landed (`runConfigurationSave` / `saveRuntimeModels`). No CAS.
-2. CAS only with a real second writer.
-3. Browser MVP only under a separate owner authorization.
+Current qualification is routed through [LIVE-integration-validation](../tickets/LIVE-integration-validation.md), not a new browser readiness ledger. This page neither launches a browser project nor grants live mutations.

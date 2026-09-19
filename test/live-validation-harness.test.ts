@@ -11,9 +11,22 @@ test("live controller parses the current index without creating a second status 
     stableId: "LIVE-MODEL-SOL-HIGH",
     gate: "G1",
     implementation: "integrated",
-    currentResult: "not-run",
   });
   expect(model.sourceLinks.length).toBeGreaterThan(0);
+  if (typeof model.currentResult !== "string") throw new Error("model scenario has no current result");
+  expect(["not-run", "awaiting-integration", "ready", "running", "passed", "failed", "blocked", "needs-revalidation", "excluded", "superseded"])
+    .toContain(model.currentResult);
+});
+
+test("live result parsing accepts normal state changes without freezing today's index", () => {
+  for (const status of ["not-run", "ready", "running", "passed", "failed", "blocked", "needs-revalidation", "excluded", "superseded", "awaiting-integration"]) {
+    const fixture = `| <a id="live-fixture"></a>**LIVE-FIXTURE**<br>G1 | \`integrated\`; \`${status}\` | Observe the complete bounded fixture result. | DEP: [source](fixture.md) |`;
+    expect(parseLiveIndex(fixture)).toEqual([{
+      id: "live-fixture", stableId: "LIVE-FIXTURE", title: "LIVE-FIXTURE", gate: "G1",
+      implementation: "integrated", currentResult: status,
+      oracle: "Observe the complete bounded fixture result.", blocker: "DEP: [source](fixture.md)", sourceLinks: ["fixture.md"],
+    }]);
+  }
 });
 
 test("receipt validation distinguishes structurally eligible evidence from product acceptance", () => {
@@ -32,10 +45,13 @@ test("receipt validation distinguishes structurally eligible evidence from produ
     cleanup: { state: "complete" },
     notProven: [],
   };
+  const priorResult = parseLiveIndex().find((row) => row.id === receipt.scenario)?.currentResult;
+  if (typeof priorResult !== "string") throw new Error("receipt scenario has no current result");
   const result = validateReceipt(receipt);
   expect(result.ok).toBe(true);
   expect(result.derived.indexEligible).toBe(true);
-  expect(result.derived.currentResult).toBe("not-run");
+  expect(result.derived.currentResult).toBe(priorResult);
+  expect(parseLiveIndex().find((row) => row.id === receipt.scenario)?.currentResult).toBe(priorResult);
 });
 
 test("receipt validation rejects secrets, machine paths and unknown scenarios", () => {

@@ -6,7 +6,7 @@
 
 ## v6 资格等待、失败摘要与受控模型恢复
 
-当前源码实现的 Host/modeld 使用 wire v6；这不证明已驻留进程已升级。`FailureSummary` 由 kernel 的同一纯合同分类，保留安全 HTTP 状态/请求 ID/Retry-After、资格/规范化/预算事实及执行身份。正常摘要由 modeld 直接传给 Host；Host 增补其实际观察到的输出和工具释放，不反查 journal 生成错误，不复制 provider 原始 message/body/headers。错误摘要缺失、版本未知、身份不符时保留原错误码并记录 `failureSummaryStatus`，不将诊断损坏当成新的 `invalid_stream`。严格成功终态、工具和 binding 检查不放宽。
+当前 Host/modeld 的协议版本以 [wire 常量](../../packages/runtime-kernel/src/internal/contract/wire.ts)为准；旧窗口的协议数字不描述当前源码，源码相容也不证明已驻留进程已升级。`FailureSummary` 由 kernel 的同一纯合同分类，保留安全 HTTP 状态/请求 ID/Retry-After、资格/规范化/预算事实及执行身份。正常摘要由 modeld 直接传给 Host；Host 增补其实际观察到的输出和工具释放，不反查 journal 生成错误，不复制 provider 原始 message/body/headers。错误摘要缺失、版本未知、身份不符时保留原错误码并记录 `failureSummaryStatus`，不将诊断损坏当成新的 `invalid_stream`。严格成功终态、工具和 binding 检查不放宽。
 
 结束审计分开记录 `finishAudit` 与 `terminalAudit`。字段缺失、null、空串、空白、已知结束枚举、未知非空值和错误类型不混同；未知字符串只保留长度/摘要。首次/末次有效终态、首次/末次不支持值与冲突均有记录；后来的 stop 不能洗掉先前异常。旧 `providerFinishObserved` 的语义不变，历史记录不能倒推新字段。DONE/EOF/取消/异常退出独立结算工具参数的可解析性、缺失和最终对象一致性；主失败不被二次审计覆盖。无工具为 `not_applicable`，无有效 finish 的合法参数也不等于可执行调用。
 
@@ -260,7 +260,10 @@ canonical 成功 terminal 等 SDK stream EOF 后才释放，晚到参数/错误�
 
 2026-09-12本轮 scoped regression **123 pass / 0 fail**（含CLI/事件/管理/运行时合同、12个结果观测测试、5个工具准入/终态测试、持久凭据与原生outer retry回归）。真实只读结果查询也已完成。完整全仓测试调用及候选 profile-write/re-adopt 调用被工具安全检查拦截，未执行；未改路重试部署，没有宣称串行策略修复已在现场加载或真实工具链已验完。该历史窗口不维护后续进度；具体制品证据与当前待验项统一从 [LIVE](../tickets/LIVE-integration-validation.md#live-modeld-app)进入。
 
-## 推理档位证据（schema v2 / wire v7）
+<a id="推理档位证据schema-v2--wire-v7"></a>
+## 推理档位证据
+
+模型 schema、实际 wire 和迁移范围由 [配置指南](../configuration.md#model-reasoning-schema-and-general-config-migration)及其源码拥有；早期 reasoning 的 wire-v7 证据不签当前加载版本。
 
 `models show --for <uuid>` 只报告 configured-next-turn；不能用它说明现有 TURN。`model_step_terminal.selectionRevision` 对应该 TURN 的选择身份；`stream.reasoning.requested` 是绑定设置，`emitted` 表示最终字节通过 guard 后提交给 fetch 的值，default 表示未显式设置。Provider 执行档位没有合格解码证据时为 `providerReported:unknown`，不是自动成功。HTTP/body 失败可能已经 emitted，但不证明上游接受。
 

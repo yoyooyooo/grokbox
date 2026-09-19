@@ -2,7 +2,7 @@
 
 ## Status / Goal
 
-**Partial implementation：现有管理命令与单份disabled apply、持久provision outcome、精确ID reconcile已接通CLI/daemon；批量组合、凭据配对及Webhook invoke/native outcome仍待实现。** [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines)。统一Routine CRUD/apply/provision，让独立CLI、agents create/update与模板配对复用。Webhook是事件入口，不是周期性LLM轮询。
+**Partial implementation：管理命令、单份 disabled apply、持久 provision outcome 和精确 ID reconcile 已接通 CLI/daemon；本票剩余包括批量组合、agents create/update --routines-from 与通用 invoke/native run outcome。** ops 的私有配对、预检、显式发送和自动 sender 已在各自 owner 实现，见 [operations](../runtime/operations.md#配对接收者与自动授权)，不能把本票剩余范围表述为全项目尚无配对/投递。 [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines)。统一Routine CRUD/apply/provision，让独立CLI、agents create/update与模板配对复用。Webhook是事件入口，不是周期性LLM轮询。
 
 ## Depends-on / Modules
 

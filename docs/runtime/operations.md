@@ -1,0 +1,119 @@
+# 原生 Bot 运维、故障证据与有界存储
+
+本页拥有通知、incident/证据、存储和后续受托运维的合同。当前字段/默认/版本以 [配置源码](../../packages/runtime-kernel/src/internal/config/schema.ts)和 [storage policy](../../packages/runtime-kernel/src/internal/config/storage-policy.ts)为准；运行时参数由 registry/help 拥有。本页不复制一份当前完成表，具体差额归 [OBS/ops tickets](../tickets/README.md#incident-evidence)，现场状态归 [LIVE](../tickets/LIVE-integration-validation.md)。
+
+## 范围与能力现状
+
+三条行为链分开：自动通知默认只提醒并结束；用户明确委托后，原生 Bot 可在任务范围内自主取证、操作和核验；独立预授权维护还需对应能力/预算/原生安全门。通知模式不是所有 Bot 的永久只读 persona，也不是诊断/重启/公开授权。
+
+源码已经提供 incident/evidence 与局部存储维护、Routine 管理/provision、私有配对、接收者预检、显式发送、通知激活授权以及 daemon sender。**自动 sender 不再是未实现 placeholder。** collector 的持续安装、完整跨 owner 容量、恢复重放防护、安全退役和 native unknown 对账仍有独立实现/资格差额；不能把已实现 sender 说成整条无人值守链已交付。
+
+首发默认提醒不等待高级 routing、自动诊断/Host 维护、完整连续性或支持发布；但若宣称长期无人值守和全安装有界，必须完成对应服务/容量门。自动 Issue、默认询问是否建单、内置 REST publisher 和自动公开 grant 已退出当前范围。后续用户决定公开时仅复用已有可用 gh 身份，不自动登录、换身份或补发旧事故。
+
+## 对象与权威
+
+SourceFact 由实际 Host/modeld/controller/原生 adapter 捕获；Incident 是 occurrence 或 condition；Assessment 保存版本、basis 和推断；EvidenceSnapshot 固定 revision/manifest；NotificationWork 属于一个发生周期及阶段；DiagnosisTask 源于用户任务或独立授权；MaintenancePlan 由原 controller 执行；RetentionPlan 由对应存储 owner 批准。
+
+installation/scope、Bot、dispatch/TURN/STEP/native request、failure/tray、Host/service generation 分开。无 STEP 可以建 incident，不能虚构 STEP。关系只来自显式原生字段、同调用上下文或核验回执，保存 edge basis；名字、时间相邻和文本相似只能形成检索候选，不能 join 成执行许可。
+
+自由错误文本、日志、模型输出不能决定命令、路径、接收目标、severity 或授权。通知命令从可信 registry 和验证参数构造，仍只是取证入口。相同 UID 任意 shell 不是沙箱；缺原生工具隔离时不得宣称自动诊断/维护已安全。
+
+## 发现、固定现场与投递
+
+原 writer 在关键边界输出有界事件，失败/背压影响观察质量而非改写业务结果。执行安全持久化失败则由原执行 owner 拒绝不能安全记录的新副作用。collector 复用安装 scope、受管目标和有限来源读取；目录事件仅加速，有界轮询兜底，准入需求优先，不每个 Bot/页面/token 建 collector。
+
+本地 drain、远端采样、过期检查、存储维护各有有界子任务；慢 Server 读取不能阻塞本地故障发现。单 SQLite writer 短事务提交 evidence、incident/revision、分类依据与通知准备工作，消费 cursor 同步；网络和模型不在事务内。跨文件/DB 用稳定引用、staging/manifest 与恢复协议，不假称分布式事务。
+
+intake 接受已知错误、独立原生未知错误、无 STEP 拒绝、队列失败、组件故障和观察自身 gap。未知 schema 只保留安全形状/计数/coverage，不原样保存 payload，也不静默丢弃后报健康。stalled/suspected 与实际死锁分开；正常长任务、审批和源失联有不同含义，迟到事件不复活终态。
+
+先固定最低证据再通知；证据不齐可生成 partial 和明确缺口，不无限等待工具收束或 LLM。事故时 loaded 状态与事后当前查询分栏。真实项目错误、未分类异常和归属丢失可通知；纯上游正常行为的项目 bug 分类不得吞掉 CONT 用户保护影响。severity、是否修复和是否有自主权限不是同一维度。
+
+默认 Bot 只转述安全现象、ID、一条主取证命令和必要补充，然后结束；不读整份 JSON、不自动诊断、询问 Issue、派 Bot 或循环催问。用户随后委托才开启同 incident 的独立任务。
+
+## 配对、接收者与自动授权
+
+配对的配置意图、私有 binding、原生 Routine、当前模型/能力、发送授权和用户收到通知是不同事实。bind 先验证安装/scope、受管且 disabled 的 exact Routine/revision，确认后持久占位，至多一次原生凭据请求，再复核后原子发布 capsule。enrolling/unknown 阻止换 operation 绕过；晚到凭据不能复活已解绑 revision。
+
+capsule 是单一受保护凭据/元数据 owner，不把 secret 拆成可能错配的独立普通配置；输出只有白名单 metadata。既有 owner 丢失/损坏不当首次初始化。unbind 移除本地引用/授权，不声称原生 key 已撤销、在途任务已取消或介质擦除。
+
+blueprint 提供固定 disabled 提醒定义，verify 只读预检。实际自动任务模型和 loaded capabilities 必须来自同帧原生选择，而非聊天配置猜测；前后 scope/Host/定义/绑定/模型 revision 和最后新鲜度核验。preflight_ready 不是真实 Webhook、工具执行、接收或运行权限。
+
+显式 send 只处理一个既有 work 和私有固定 endpoint；不接受任意 URL/key/body，不启用 Routine、不创建后台 grant。Routine 必须由独立动作启用，且除 enabled 位外与配对定义一致。使用原 outbox 预算/claim/unknown 协议，生产 TLS/origin/无 redirect 约束归 [上游 Webhook 边界](../upstream-integration.md#native-routine-and-notification-webhook-boundary)。
+
+**当前自动发送链：** `ops targets activate` 在精确绑定、原 accepted 测试回执和操作人独立接收声明上记录授权；不启动服务/collector、不启用 Routine、不立即发送。`ops notifications worker` 只读 sender 状态。已经运行的 daemon 监督自动发送程序，只选授权边界之后的新 work，不补发旧积压。无授权、无新 work、关闭或预算不足时，不为探测可用性请求原生接口。每轮有界处理，完成后等待/退避；停止需中止并等待真实 HTTP 与本地提交结算，不能留下脱离寿命的发送。解绑清授权，模型/身份/定义/Host/scope 变化阻断而非自动重签或切备用。
+
+源码入口：kernel `internal/observation/notification-activation.ts`、`internal/commands/ops-notification.ts`，Box `internal/roots/ops-activation.runtime.ts`、`ops-automatic-notification.runtime.ts`，CLI daemon 组合。原生当前资格和独立 review 仍由 [ops/T45](../tickets/T45-template-webhook-delivery.md)、[ops/T50](../tickets/T50-template-ops-release-proof.md)及 LIVE 记录。
+
+## 投递状态、成本与撤销
+
+work 的准备/ready/完成/过期/替代/阻断，attempt 的 reserved/attempting/native-accepted/definitely-not-accepted/unknown，Bot report 的 observed/not-observed 和 incident 的 open/resolved/ack/snooze 分开。HTTP accepted 不证明 Bot 完成或用户已读；用户接收声明与程序证据也分开。
+
+发送前短事务预留 attempt 和费用，最终 policy/binding 检查沿既有配置锁完成，网络在所有本地锁之外。当前每 work 最多一次 attempt，unknown 不重投；“未来可有限重试明确未接收”不能写成当前已启用。持久 attempting 崩溃后先 unknown，对账不能换目标广播。费用按安装/真实接收 Bot/发生周期共同计数，多 alias 不扩额度；原生 token 花费不是本地请求数硬限。
+
+精确配额、TTL、backoff 和状态 schema 由 source policy 拥有。无变化不产生周期 LLM 摘要。过期积压不逐条补送，有限合并必须保存 supersedes/未知投递和原发生周期限制。sender 故障形成有界本地健康状态，不递归制造无限通知。
+
+默认一个明确 primary/default，routing disabled 不等于通知 off。高级首匹配、备用、集中报告和跨 Bot 一层诊断交接是后续范围；unknown 不 fan-out，供应商/数据/模型变更需重新核验授权，不能为了可达自动换脑。官方与自定义接收者可能共用故障中的 Host/Box，不保证跨故障域高可用。
+
+备份恢复不能复活 binding/grant/claim，需安装身份复核和新 effect fence。通知关闭不取消业务、卸载 Host 或停止必要 GC；配置 intent/effective 与运行采用不同，损坏配置不重建默认来恢复外发能力。
+
+## 最低证据与视图
+
+| Requirement | 最低可诊断边界 |
+| --- | --- |
+| E01 | dispatch/TURN/STEP/代次/purpose 关系及 basis；时间邻近不是同执行 |
+| E02 | 事故时实际 loaded 制品、选择和 revision；当前磁盘不是事故事实 |
+| E03 | Provider/SDK/stream 阶段、有限结构、finish/tools/retry/cancel/预算 |
+| E04 | generated → validated/released → native-started → returned → result-accepted；不能跳过实际副作用边界 |
+| E05 | context operation/root、append/checkpoint/readback/unknown 与后续阻断 |
+| E06 | 父运行、子任务、队列、审批、终结和 App 展示各自观察 |
+| E07 | 原生告警的 create/update/publish/remove/suppress 与来源能力；消失不等于恢复/已读 |
+| E08 | writer/source/collector、窗口、retention/版本/读取缺口和真实存储压力 |
+
+字段是 observed、derived 或 hypothesis，缺失区别 not_instrumented、not_checked、not_observed_in_window、expired、truncated、redacted、unavailable、unsupported、not_applicable、conflicting。已知失败不因别处 gap 消失，未知副作用不填零。
+
+EvidenceSnapshot 固定 sourceWindow、identities/edges、事故制品、当前观察、facts/assessments、按 requirement 的 coverage、分段引用、view policy、retention 和 digest。revision 不可变；补证新建 revision，旧通知仍指原版。查询不捕获、不建库、不联网、不 GC/续租；过期返回 summary/gap，不返回无事故空成功。
+
+local-diagnostic 保留必要结构/身份，无默认正文；bot-notice 仅最小摘要/ID/取证入口；bot-diagnostic 需委托和数据/供应商范围；public-summary 需用户主动决定，使用报告内一致别名/公开枚举。未知工具名/字段不天然公开，参数只投影安全类型/长度/关系。低熵 hash 不是匿名化，TTL 不是安全擦除。
+
+raw-sensitive 默认不采集，额外用途/对象/字节/期限授权仍不能把原文先发模型再脱敏。拒绝未知键、访问器、原型污染、过深/大数组和自由 Markdown 链接。输入正文/凭据/真实身份变化不应改变公共结构性结论，脱敏仍须保留故障和工具关系可诊断性。
+
+<a id="storage"></a>
+## 存储、轮转与安全退役
+
+三个容量域独立：诊断池、执行/恢复安全状态、制品/用户数据。诊断池包括日志、SQLite 主文件/索引/辅助页、证据、通知状态和受管暂存；safety/CONT 原生恢复不因占空间被诊断 TTL 删除。用户 export、Memory、原生会话、共享文件不归观测 GC。
+
+target 是平时回收水位，max 是新诊断数据接纳边界，reserve 计入 max；实际物理预留与全体消费者采用不能由配置算术推导。当前局部 writer 采用、结构化日志、journal 分段、SQLite 增量回收和 footprint 已有实现；`installationBudgetEnforced=false` 的缺口不能改成全安装保证。精确预算/版本只看 [configuration](../configuration.md)和 source policy。
+
+process/debug 日志由真正写入 owner 分段，关闭段才回收；持有 fd 时仅 rename 不会切 writer，不用 copytruncate 假装无损。modeld 取得 listener 后才持有结构化生命周期 sink，borrower 不抢 writer；退出先结算日志/维护再关 listener。raw stdout/stderr、Job 协议输出和普通诊断有不同契约，旧 raw 文件只计量，不擅删。
+
+journal 活动段、segment ID/inode、共享锁、游标/gap 和轮转意图共同核验；普通换段不是故障，实际缺损不能掩盖。J13 原 append owner 保留，watchdog 不重写受管活动 inode。新锁 owner-token/进程身份可恢复确证失主，旧 PID-only、未知/撕裂锁和 LevelDB LOCK 不用超时擅清。
+
+SQLite 回收同时量 logical/live/free/file/auxiliary bytes，不以 DELETE 行数证明磁盘回落。压缩、临时文件和 compaction 需最坏空间预算；满盘不盲 VACUUM、不直接删 SST。迁移前已超额可降级分批回收，不能删除保护数据制造合规。
+
+按明细→核心→摘要→退役治理，长期 open/ack/snooze 不永久 pin 全部明细。租约显式申请、先预留字节、有限时长/累计额度，GET 不续租；空间不足拒绝新 pin/大采集并保留摘要和最后可靠点。已发送通知说明材料有效期和缺口，回收不改变过去通知事实。
+
+服务维护以有界批次/游标组合各 owner，无模型、全盘扫描、每 GET vacuum 或通用 path 删除器。计划时间限额不是物理 commit 完成 SLA；实际不可中断写入需结算。墙钟回拨不复活权限/通知，大幅前跳不误删承诺证据。超过预算时诊断写可丢弃并计数，执行安全账本不能因此假提交。
+
+**先失效旧请求，再删除去重记录。** 每个 owner 证明 TURN/operation 终结、旧 epoch 不再准入、迟到和恢复入口执行同一 fence，才能收缩为 tombstone 或最终回收。任意旧 ID 可无限重投时，不能同时承诺常量空间和永久安全去重。commit_unknown 只可缩成阻断记录，不能因时间转为 failed/safe-to-retry。当前/回退制品、迁移和 CONT 闭包依赖由原 owner 保留，Trash 仍计占用。
+
+### OBS / CONT 接口
+
+[continuity-contract](../../packages/runtime-kernel/src/internal/observation/continuity-contract.ts)的 ProtectedStorageRef 只接受 recovery/safety owner 与不透明 ref/revision，不传路径。measure/changeReference/maintain 由显式注入的 CONT owner 执行并结算，未接入是 unavailable/unmeasured，未知不是零。物理共享对象按 identity 去重，不把逻辑引用累加成安装物理用量。
+
+CONT 先提交自身操作，再以稳定 eventId/source/generation/sequence 与 cursor 进入 monitor 事务；没有跨 store 原子事务。gap/unsupported 不伪造旧入站为零。通知回执、诊断 TTL、恢复保护、CONT 终结和 Bot 可删独立；事件桥不会自己导入、克隆或重投 unknown。J1 合同测试与真实恢复/原生投递的 J2 资格分别记录。
+
+## Routine 与后续自主维护
+
+通用 Routine 程序由 kernel 定义、CLI native adapter/Box facade 装配，直连与 daemon 共用。管理 list/show/enable/disable/delete 和单份 disabled apply、provision outcome/reconcile 已存在；批量组合、create/update --routines-from、通用 invoke/native outcome 不由此推导。provision 的独立有界 safety ledger 先 claim 后网络，unknown 按 agent/key 阻止新操作；reconcile 读精确原生定义再结算本地，不重发 create，不冒称原生 CAS。
+
+模板只带小型 Skill 入口，不带真实 identity、secret、endpoint、历史/grant 或已启用业务任务。duplicate 实际可能复制启用 Routine，与本域新 provision 默认 disabled 不矛盾；分别披露，不能暗称复制即安静替身。
+
+后续自主诊断复用原生 Agent loop 和已有 doctor/models/agents/context；后续 Host 自动维护只调用原 controller。计划固定实际 source/profile/切片闭包、scope、权限、影响、预算/到期/退路和 config revision。真实原生 admission fence/排空须覆盖父子任务、审批、工具、流、compact 和未结操作；一次 idle 不够。发起维护的 Bot 先交接并结束，不等待自己的 Host 重启。
+
+cancel/timeout/换代按原 operation 对账，不重复 signal/spawn；不能自动清 circuit、改 Server harness/updater、执行保留源码或删原生数据。CONT 替换由其领域 owner 批准，通知与诊断 JSON 不签恢复权。
+
+## 证明与失效
+
+首发旅程是安装/实际服务→配对/资格→真实异常→固定现场→Webhook→Bot只提醒→相同 revision 可读；受托操作是独立旅程。Routine 单独验证 disabled 创建/读回、启用、实际 POST/运行/报告、更新版本、禁用和任务收尾清理。模板 endpoint/secret 隔离、通知 off 而 GC 继续、unknown 不重投都需反例。
+
+存储必须覆盖正常/高基数故障/重复/未答通知/租约、重启、GC 中断、满盘、只读目录及多轮实际物理容量平台期，不只一次删行。source/fake、Node packed、原生隔离、独立 review 和实际账号/App/长期运行分别取证。原生事件/身份/定义、schema/分类/关系、脱敏、GC/时钟、供应商/数据或授权变化使相应资格失效；源码合入不授权现役切换。

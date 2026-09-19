@@ -1,29 +1,31 @@
-# Agent Instructions
+# Agent instructions
 
-## Product boundary
+## Work from the task
 
-`grokbox` is this project's canonical **published** npm package and CLI name. `gbox` is an exact binary alias. Implementation lives in unpublished workspaces `packages/cli` and `packages/box-runtime`. Grok Bot is the upstream product being controlled; do not rename upstream protocol, product, or provider identifiers.
+`grokbox` is the published npm package and CLI; `gbox` is its exact binary alias. Grok Bot is the upstream product. Keep upstream protocol/product identifiers unchanged. The unpublished workspaces are `packages/cli`, `packages/runtime-kernel`, and `packages/box-runtime`.
 
-## Documentation
+Use the affected source, tests, and command as the starting point. [CONTEXT](CONTEXT.md) describes the product; [the documentation map](docs/README.md) routes by question. Load only the relevant contract or Skill, not the whole documentation tree.
 
-Read `CONTEXT.md` and `docs/README.md` before changing product boundaries. Product and architecture documents may describe accepted behavior beyond the current implementation; source and executable tests own current implementation truth.
+For current implementation conflicts, source/schema/lockfile and executable tests win; use the latest applicable adopted change next. Keep accepted but unimplemented targets explicit. Neither source presence nor a historical test proves the running installation. [Documentation maintenance](docs/maintainers/documentation.md) owns the full rule.
 
-## Upstream research boundary
+## Complete the authorized change
 
-This public repository is self-contained for build, test, review, and contribution. Maintainers may have separate private upstream research, but it is never a public dependency or implementation authority. Keep only the minimum source-backed interoperability facts required by grokbox in `docs/upstream-integration.md` and fake-provider tests. Never copy provider dumps, private application code, credentials, transcripts, or machine-local evidence into this repository.
+In an isolated feature worktree, carry implementation, relevant offline checks, and fixes through to the requested outcome. Do not stop after a plan or require approval for each routine step. Preserve unrelated work. Report the actual checks, results, and remaining limits; do not fabricate an independent review.
 
-## Box-local model runtime
+Commands run from the repository root. Resolve toolchain versions from `package.json` and `bun.lock`. `bun run typecheck`, `bun run build`, and targeted `bun test <files>` are development checks, not live acceptance. Documentation-only changes use `bun run check:docs`; broaden checks when changed consumers or failures require it. Native/provider/service suites require their documented isolation or authorization.
 
-Accepted design is `docs/box-runtime.md`. Product obligations are `docs/product-contract.md` §12. Composition roots are `docs/architecture.md` §17. Follow the [Effect adoption standard](docs/effect-box-runtime.md) for box-runtime side effects and incremental migration. Delivery slices, if any, stay machine-local and are not a public git dependency.
+## Project boundaries
 
-## Parallel worktrees and live acceptance
+Keep one writer for each fact. [Architecture](docs/architecture.md) owns composition and trust boundaries; [runtime](docs/box-runtime.md) routes execution, context, and continuity contracts. Apply [the Effect standard](docs/effect-box-runtime.md) to runtime side effects. Host/preload remains Effect-free and SDK-free.
 
-Finish code, offline tests and code review in the feature worktree. [`docs/tickets/LIVE-integration-validation.md`](docs/tickets/LIVE-integration-validation.md) is the **only current live-acceptance index**: every dimension must show proved scope, concrete unverified items, blocker, next action and links to its source contract and dated receipts. Preserve feature-scoped stable IDs/anchors. Source tickets own implementation/offline/review; runbooks own procedure; reports preserve fixed-window evidence. They link back to the relevant LIVE row instead of maintaining another current live status table or readiness ledger. Keep non-live blockers in the source ticket and expose only their gating effect in LIVE. Default live validation uses one fixed, revalidated integration commit on `feat/box-runtime-v2`; do not switch the active Host/modeld or global shim to an unmerged feature branch just to validate it. Index registration and merge do not authorize restart, adoption, model spend or publication. Update affected rows and receipt links after each window; one successful restart does not close the entire index. For maintainer-side full-window execution, load the repository-local [.agents/skills/grokbox-live-validation/SKILL.md](.agents/skills/grokbox-live-validation/SKILL.md); it is not part of the published operator skills.
+This public repository must build and test without private upstream research. Keep only necessary interoperability facts in [upstream integration](docs/upstream-integration.md) and owned fixtures. Do not copy private application code, provider dumps, transcripts, machine-local evidence, or credentials into the repository.
 
-## Issues
+Do not put Cursor, Gateway, daemon, SSH, or tailnet credentials in argv, fixtures, snapshots, normal output, or logs. Gateway, daemon, Sandbox, and quota capabilities remain separate. A suggested recovery action is not permission to execute it.
 
-Public bugs and proposals use GitHub Issues. Security reports use the private route in `SECURITY.md`.
+## Live work and publication
 
-## Security
+Use a fixed, merged integration candidate for live work; do not switch active services or the global shim to this feature branch. [LIVE-integration-validation](docs/tickets/LIVE-integration-validation.md) is the sole current live result index. Its source tickets own implementation/review gaps; fixed reports own bounded evidence. Load the [maintainer live-validation Skill](.agents/skills/grokbox-live-validation/SKILL.md) for an authorized integration window.
 
-Do not put Cursor, Gateway, daemon, SSH, or tailnet credentials in argv, fixtures, snapshots, output, or ordinary logs. Keep Gateway, daemon, Sandbox, and quota capabilities separate.
+A merge, successful offline check, or index entry does not authorize restart/adoption, model spend, identity migration, irreversible cleanup, or publication. Stop only the affected action when its authorization, identity, result, or recovery is unknown; continue safe investigation and independent work.
+
+Public bugs/proposals use GitHub Issues; security reports follow [SECURITY.md](SECURITY.md).
