@@ -76,13 +76,16 @@ test("AH-92.5 unofficial assignment is the admit-deny negative because models us
   expect(SEND_OUTCOME_STATES).not.toContain("accepted");
 });
 
-test("AH-92.5 observation docs keep the two-command canary and unofficial-assignment negative", () => {
+test("observation guidance binds existing operations and keeps missing evidence distinct from success", () => {
   const observation = readFileSync(join(root, "docs/maintainers/run-outcome-observation.md"), "utf8");
   expect(observation).toContain("history outcome <agent-id> --nonce <clientNonce> --runtime");
-  expect(observation).toContain("route admits only stub/echo or openai* in this slice.");
-  expect(observation).toContain("ah92-admit-deny/none");
-  expect(observation).toContain("verify-ah92-admit-observation.mjs");
-  expect(observation).toContain("不要用 `alerts list --nonce`");
+  // The actual admission negative remains exercised above. A current runbook
+  // need not carry an obsolete experiment's model list or synthetic target.
+  expect(observation).toContain("runtime incident <step-id> --agent <agent-id>");
+  expect(observation).toContain("history outcome <agent-id> --step-id <step-id> --runtime");
+  expect(observation).not.toContain("alerts list --nonce");
+  expect(observation).toContain("查询缺少关联时保持未知");
+  expect(observation).toContain("不是没有失败");
   expect(observation).not.toMatch(/data\.state\s*=\s*accepted/);
 });
 

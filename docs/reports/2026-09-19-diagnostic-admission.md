@@ -40,6 +40,14 @@ bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation
 
 七项新接纳测试使用真实小额配置、文件/SQLite、八个并发writer、精确scope破坏、库存截断和真实子进程SIGKILL，证明压力下三类writer均拒写、用户字节不变、释放人工压力后恢复、维护可用预留且查询不修复。另24轮soak核对两份journal、数据库及过程日志真实字节、游标、租约和用户导出。子进程reservation测试使用源Bun进程；既有collector/daemon旅程使用打包Node，二者不混称原生生产依赖。
 
+## 合入最新 v2 后的重新验证
+
+随后rebase到`25dd61b`，保留并行的network责任收口和overflow证据修正，没有将旧执行假设补回。该基线移除部分文档结构测试，原两项跟随测试仍断言旧文案/固定等待时间；更新为实际nonce/STEP取证入口及完成title refresh的证据要求，原模型准入负例未修改。
+
+重新跑完整CLI为791 pass / 0 fail（79文件、7502断言）；完整packages为2099 pass / 49 skip / 0 fail（293文件、20397断言）。最终合计**2890 pass / 49 skip / 0 fail**，不是将旧基线数字相加。最终`pre-e2e-observation`完整专项**150 pass / 0 fail**、20文件、3197断言；类型/构建/导入边界通过，source前后为`86cddff8867685cd2aff86daf18a9ccccf8c0866133cfa835fb06faef52c3337`（906文件），实际preload为`51ddf20da8a4a10bb1453263e0d4356879300cf6e61a837955e5f4c1a0465cb0`。最终源码扫描1180文件、零发现。
+
+独立Astra只读审查在限定窗口未返回报告，进程以timeout退出124，未计为审核通过。`docs/runtime/operations.md`的合同同步写入被工具拦截，未落盘；本票/报告记录实际实现与差额，不把未完成的Current Home更新说成已完成。后续集成是源码收口，不自动授予live放行。
+
 ## 剩余边界
 
 独立审查结果以提交后的报告为准，测试数量不替代审查。OS启动owner尚无完整受支持安装路径，本机tini/无有效systemd会话不能用二进制存在或X窗口管理器存在补证；没有改官方supervisor。全安全台账有界退役、所有owner物理配额、完整备份恢复和真实Provider/App/Webhook仍各有来源票或LIVE范围。未切Host/modeld/daemon、未迁移生产配置、未发送真实通知。

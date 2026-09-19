@@ -17,15 +17,18 @@ test("AH-97 opt-in validation topic teaches model-switch stay-green, not instant
   expect(skill).toContain("grokbox models use <model-id> --for model-dogfood");
   expect(skill).toContain("history outcome model-dogfood --nonce <clientNonce> --runtime");
   expect(skill).toContain("agents title sync");
-  expect(skill).toMatch(/two minutes/);
+  expect(skill).toContain("observe a completed daemon refresh");
+  expect(skill).toContain("elapsed time alone proves neither");
   expect(skill).toContain("m=<alias-or-model>");
   expect(skill).not.toMatch(/data\.state\s*=\s*accepted/);
   expect(models).toContain("Stay-green after a switch");
   expect(models).toContain("agents title sync");
   expect(models).toContain("validation.md#prove-a-model-switch");
-  expect(observation).toContain("换模防回归（AH-97）");
-  expect(observation).toContain("~120s");
-  expect(observation).toContain("history outcome model-dogfood --nonce <clientNonce> --runtime");
+  expect(observation).toContain("configured-next-turn");
+  expect(observation).toContain("当前 TURN captured");
+  expect(observation).toContain("请求 emitted");
+  expect(observation).toContain("Provider reported");
+  expect(observation).toContain("等待两分钟本身不是验证");
 });
 
 test("AH-97 packaged modeld dogfood path is Node dist, not worktree TypeScript", () => {
