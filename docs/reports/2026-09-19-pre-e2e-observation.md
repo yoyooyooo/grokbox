@@ -78,7 +78,13 @@ guard最多4096项，仅在原work期限与原始发生的15分钟窗口都过�
 
 本轮只读核对目标环境PID1为tini，system/user两种systemd状态均offline；没有把systemctl二进制存在当作可用启动owner。不安装无资格的systemd unit，不修改官方supervisor，不以nohup/临时daemon声称boot注册已经实现。T40/T50需先形成受支持的环境启动接口，之后才有实际安装/重启验收。
 
-## 8. 未签范围与部署边界
+## 8. 续作：诊断退役与未知发送保护解耦
+
+明细和摘要到期、通知交付期限已过且无有效lease后，允许退役原诊断revision，即使发送attempt仍为reserved/attempting/unknown。保留精确work、冻结attempt及revision水位：再次reserve/begin不能产生第二次发送，查询旧revision明确expired而不是incident不存在。读查询不修改文件；这一变化不把unknown改为失败或授权重新发送。
+
+新增24轮真实journal/SQLite/过程日志填充与回收测试，缩小预算仅用于受控fixture；覆盖租约、用户导出不动、独立物理字节、游标不重放、默认预算smoke。连同三个未知attempt退役反例及原固定证据/恢复防护，本轮实际执行4文件44 pass / 0 fail、1506断言，类型检查通过。该组证明诊断材料可回收而安全guard保留，不是全安全台账已经获得最终删除条件，也不签整个安装配额。
+
+## 9. 未签范围与部署边界
 
 本片没有切Host/modeld、生产daemon或全局shim，没有迁移现役schema、创建Bot/Routine、领取凭据或POST原生端点。独立复审状态和最终合入范围以本片收口回执为准；实现者检查不替代独立报告。
 

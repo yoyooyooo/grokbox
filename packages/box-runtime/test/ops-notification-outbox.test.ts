@@ -78,6 +78,34 @@ test("single delivery commits its fixed body and budget before network; DB and c
   } finally { await f.close(); }
 });
 
+for (const phase of ["reserved", "attempting", "unknown"] as const) test(`expired ${phase} keeps its exact replay guard without indefinitely pinning incident evidence`, async () => {
+  const f = await fixture();
+  try {
+    const workId = await f.work(), target = f.selected();
+    const reservation = await f.store.reserveNotification({ workId, target, binding: f.bind(), nowMs: f.now() });
+    expect(reservation.state).toBe("reserved");
+    if (reservation.state !== "reserved") throw Error("fixture_not_reserved");
+    const { frozen } = reservation;
+    if (phase !== "reserved") expect(await f.store.beginNotification({ workId, attemptId: frozen.attemptId,
+      envelopeDigest: frozen.envelopeDigest, bindingDigest: frozen.bindingDigest, nowMs: f.now() })).toMatchObject({ dispatch: true });
+    if (phase === "unknown") await f.store.settleNotification({ workId, attemptId: frozen.attemptId,
+      nowMs: f.now(), result: { state: "unknown", reason: "transport_failure" } });
+    await f.store.maintain(f.now());
+    for (let day = 0; day < 29; day++) { f.advance(DAY); await f.store.maintain(f.now()); }
+    expect(await f.store.incidentEvidence(frozen.incidentId, 1)).toMatchObject({ state: "expired", retention: { tier: "summary" } });
+    for (let day = 0; day < 3; day++) { f.advance(DAY); await f.store.maintain(f.now()); }
+    const reopened = openMonitorStore(f.root);
+    expect(await reopened.incidentEvidence(frozen.incidentId, 1)).toMatchObject({ state: "expired", reason: "snapshot_revision_retired" });
+    expect(await reopened.notificationDelivery(workId)).toMatchObject({ state: "unknown", attempt: { state: phase, attemptId: frozen.attemptId } });
+    expect(await reopened.reserveNotification({ workId, target, binding: f.bind(), nowMs: f.now() })).toMatchObject({ state: "already_attempted" });
+    expect(await reopened.beginNotification({ workId, attemptId: frozen.attemptId, envelopeDigest: frozen.envelopeDigest,
+      bindingDigest: frozen.bindingDigest, nowMs: f.now() })).toMatchObject({ dispatch: false });
+    const before = await readFile(reopened.path);
+    await reopened.incidentEvidence(frozen.incidentId, 1); await reopened.notificationDelivery(workId);
+    expect(await readFile(reopened.path)).toEqual(before);
+  } finally { await f.close(); }
+});
+
 test("unpaired default has no sender, no attempt and no inferred live binding", async () => {
   const f = await fixture();
   try {

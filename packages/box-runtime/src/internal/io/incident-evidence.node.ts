@@ -196,12 +196,15 @@ export async function readIncidentEvidence(db: MonitorSqlite, incidentId: string
     : await db.first("SELECT * FROM incident_snapshots WHERE incident_id=? AND revision=?", [incidentId, revision]);
   if (!row) {
     const incident = await db.first("SELECT id,rule,status,first_seen,last_seen FROM incidents WHERE id=?", [incidentId]);
-    if (!incident) return fail("monitor_incident_not_found");
     const history = await db.first("SELECT last_revision,retired_through FROM incident_evidence_history WHERE incident_id=?", [incidentId]);
+    // The compact revision watermark outlives the occurrence row when a delivery
+    // guard still references it. Absence of that mutable incident row does not
+    // turn a known expired revision into an unknown/nonexistent incident.
+    if (!incident && !history) return fail("monitor_incident_not_found");
     const expired = !!history && (revision === undefined || revision <= Number(history.last_revision));
     const state = expired ? "expired" : "not_checked", reason = expired ? "snapshot_revision_retired" : "snapshot_not_captured";
     if(view==="public-summary")return {schemaVersion:1,view,state,reason,facts:[],replayAuthorized:false};
-    return { schemaVersion: 1, incidentId, evidenceRevision: revision ?? null, state, reason, incident,
+    return { schemaVersion: 1, incidentId, evidenceRevision: revision ?? null, state, reason, incident: incident ?? null,
       facts: [], replayAuthorized: false, currentObservations: { status: "not_checked" } };
   }
   const manifest = JSON.parse(String(row.manifest_json)) as IncidentEvidenceManifest;

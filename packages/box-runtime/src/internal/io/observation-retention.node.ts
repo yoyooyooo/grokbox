@@ -23,10 +23,15 @@ export async function retireObservationDetails(db: MonitorSqlite, nowMs: number,
   await db.run("DELETE FROM open_executions WHERE identity IN(SELECT identity FROM open_executions WHERE state NOT IN ('queued','started') AND last_progress<? LIMIT 1000)", [nowMs - OBSERVATION_RETENTION.dedupeMs]);
   // Snapshot identities remain queryable as summary-only throughout their stated
   // summary window; no query-time deletion or lease renewal is permitted.
+  // An unknown HTTP effect keeps its exact work/attempt replay guard below, NOT
+  // an unlimited pin on diagnostic material. After the promised summary/lease
+  // window and delivery expiry, payload may retire independently. Both begin
+  // and reservation still reject the old identity, and a late settlement uses
+  // its frozen attempt rather than reviving/recreating an evidence revision.
   const expired = await db.all(`SELECT s.incident_id,s.revision FROM incident_snapshots s WHERE s.tier='summary' AND s.summary_expires_at<=?
     AND NOT EXISTS(SELECT 1 FROM evidence_leases l WHERE l.incident_id=s.incident_id AND l.revision=s.revision AND l.expires_at>?)
     AND NOT EXISTS(SELECT 1 FROM notification_work w WHERE w.incident_id=s.incident_id AND w.evidence_revision=s.revision
-      AND (w.state IN ('preparing','ready','attempting') OR EXISTS(SELECT 1 FROM notification_attempts a WHERE a.work_id=w.id AND a.state IN ('reserved','attempting','unknown')))) LIMIT 1000`, [nowMs, nowMs]);
+      AND w.expires_at>? AND w.state IN ('preparing','ready','attempting')) LIMIT 1000`, [nowMs, nowMs, nowMs]);
   for (const snapshot of expired) {
     const id = String(snapshot.incident_id), revision = Number(snapshot.revision);
     await db.run("INSERT INTO incident_evidence_history(incident_id,last_revision,retired_through,updated_at) VALUES(?,?,?,?) ON CONFLICT(incident_id) DO UPDATE SET last_revision=MAX(last_revision,excluded.last_revision),retired_through=MAX(retired_through,excluded.retired_through),updated_at=excluded.updated_at", [id, revision, revision, nowMs]);
