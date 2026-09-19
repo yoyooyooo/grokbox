@@ -12,6 +12,7 @@ import { projectObservationIdentity, type ObservationIdentity } from "./observat
 import { projectNativeTurnObservation } from "./turn-observation.ts";
 import { HOST_STATE_SHAPES } from "./context-codec.ts";
 import { prepareJournalAppend, type JournalRotationOptions } from "./journal-segments.node.ts";
+import { projectExecutionBoundary } from "@grokbox/runtime-kernel/observation";
 import { withJournalLock } from "./journal-lock.node.ts";
 import {
   boundedClientNonce,
@@ -273,6 +274,8 @@ export function projectHostSeamStage(input: unknown): Record<string, unknown> | 
     ...(projectObservationIdentity(input.observation) ? { observation: projectObservationIdentity(input.observation) } : {}),
     ...(stage === "hook_enter" && projectRuntimeBuildInfo(input.build) ? { build: projectRuntimeBuildInfo(input.build) } : {}),
     ...(stage === "hook_enter" && sourceIdentity ? { sourceIdentity } : {}),
+    ...(stage === "hook_enter" && typeof input.wireVersion === "number" && Number.isSafeInteger(input.wireVersion)
+      && input.wireVersion > 0 && input.wireVersion <= 65535 ? { wireVersion: input.wireVersion } : {}),
     ...(stage === "hook_enter" && projectNativeTurnObservation(input.nativeTurn) ? { nativeTurn: projectNativeTurnObservation(input.nativeTurn) } : {}),
     ...(stage === "hook_enter" && (input.triggerEvidence === "not_instrumented" || (input.triggerEvidence === "client_nonce" && clientNonce)) ? { triggerEvidence: input.triggerEvidence } : {}),
     ...runLinks(input),
@@ -316,6 +319,7 @@ function runLinks(input: Record<string, unknown>): Record<string, string> {
 
 function projectHostEvent(input: unknown): Record<string, unknown> | null {
   if (!isRecord(input) || typeof input.name !== "string" || !journalRoleAllows("host", input.name)) return null;
+  if (input.name === "host_context_observation" || input.name === "host_tool_observation") return projectExecutionBoundary(input);
   if (input.name === "host_server_activity_observation") return projectServerActivityEvent(input);
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as Record<string, unknown> | null;
   if (input.name === "host_run_observation") return projectRunObservation(input) as unknown as Record<string, unknown> | null;

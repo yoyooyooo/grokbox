@@ -27,7 +27,7 @@ import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { projectRunObservation } from "../host/run-observation.ts";
 import { projectAlertEvent, traceAlerts, observationId } from "@grokbox/runtime-kernel/alerts";
 import { projectModeldStepOutcome, type ModeldStepOutcomeEvent } from "./modeld-outcome.node.ts";
-import { projectContinuityEvent } from "@grokbox/runtime-kernel/observation";
+import { projectContinuityEvent, projectExecutionBoundary, projectObservationSourceHealth, projectNativeRunHealthEvent } from "@grokbox/runtime-kernel/observation";
 
 export {
   appendHostStreamRejected,
@@ -60,6 +60,10 @@ export const EVENT_NAMES = [
   "host_stream_rejected",
   "host_seam_stage",
   "host_run_observation",
+  "host_context_observation",
+  "host_tool_observation",
+  "observation_source_health",
+  "host_run_health",
   "host_server_activity_observation",
   "host_alert_observation",
   "provider_error_observed",
@@ -461,6 +465,9 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
 export function projectJournalEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "continuity_observation") return projectContinuityEvent(input) as unknown as RuntimeEvent | null;
+  if (input.name === "host_context_observation" || input.name === "host_tool_observation") return projectExecutionBoundary(input);
+  if (input.name === "observation_source_health") return projectObservationSourceHealth(input);
+  if (input.name === "host_run_health") return projectNativeRunHealthEvent(input);
   if (input.name === "turn_seam_terminal") return projectTurnSeamTerminal(input) as TurnSeamTerminalEvent | null;
   if (input.name === "host_server_activity_observation") return projectServerActivityEvent(input);
   if (input.name === "host_alert_observation") return projectAlertEvent(input) as unknown as RuntimeEvent | null;

@@ -22,18 +22,21 @@ const attempt = <A>(run: () => Promise<A>) => Effect.gen(function*() {
     yield* Effect.sleep("50 millis");
   }
 });
-type JournalProgress = { state: string; readBytes: number; inserted: number; hasMore: boolean; droppedEvents?: number };
+export type JournalSourceProgress = { source: "host" | "control"; sourceKey: string; state: string; observedAtMs: number;
+  readBytes: number; inserted: number; hasMore: boolean; producerLiveness: "not_checked" };
+type JournalProgress = { state: string; readBytes: number; inserted: number; hasMore: boolean; droppedEvents?: number; sources?: JournalSourceProgress[] };
 type Changes = Awaited<ReturnType<MonitorStore["record"]>>["events"];
 type Maintenance = Awaited<ReturnType<MonitorStore["maintain"]>> & { journals?: Awaited<ReturnType<typeof maintainRegisteredJournals>> };
 type Tick = { changes: Changes; notifications: unknown[]; journal?: JournalProgress; maintenance?: Maintenance };
 const emptyTick = (): Tick => ({ changes: [], notifications: [] });
 export type MonitorRunOptions = {
   durableRoot: string; runRoot?: string; agentIds: string[]; read: OwnershipReader; signal: AbortSignal;
-  once?: boolean; intervalMs?: number;
+  once?: boolean; intervalMs?: number; includeControlJournal?: boolean; notifications?: "off";
   publish: (receipt: {
     process: "monitor"; collectorEpoch: string; sampleNumber: number; state: "observed" | "unavailable";
     notificationMode: "local_only"; productionAccepted: false;
     storagePolicy?: { revision: string; source: StorageConfiguration["source"]; scope: "monitor"; hotReload: false };
+    nativeRunHealth?: { state: "not_observed" | "observed_window" | "partial"; observedAtMs: number | null; tasks: number };
     changes: Changes;
     snapshot: Awaited<ReturnType<MonitorStore["snapshot"]>>;
     journal?: JournalProgress; maintenance?: Maintenance;
@@ -45,7 +48,7 @@ export type MonitorRunOptions = {
  * hold the local writer or delay journal intake. Independent sleeps use the
  * runtime's elapsed-time scheduler; wall time remains observation metadata.
  * This is not three collectors, a second Runtime, or detached Promise loops. */
-export async function runMonitor(input: MonitorRunOptions): Promise<void> {
+export function monitorProgram(input: MonitorRunOptions) {
   const ids = monitorTargets(input.agentIds), interval = monitorInterval(input.intervalMs ?? MONITOR_POLICY.intervalMs);
   if (input.signal.aborted) throw new BoxRuntimeError("invalid_usage", "monitor_cancelled");
   const epoch = randomUUID();
@@ -53,12 +56,13 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
   const localWriter = Semaphore.makeUnsafe(1);
   let sampleNumber = 0, failures = 0;
   let sampleState: "observed" | "unavailable" = "unavailable", previousJournalState: string | undefined;
+  let nativeRunHealth: NonNullable<Parameters<MonitorRunOptions["publish"]>[0]["nativeRunHealth"]> = { state: "not_observed", observedAtMs: null, tasks: 0 };
   const publish = (tick: Tick) => Effect.gen(function*() {
     const snapshot = yield* attempt(() => store.snapshot(Date.now()));
-    const journal = tick.journal ?? { state: input.runRoot ? previousJournalState ?? "not_checked" : "not_configured", readBytes: 0, inserted: 0, hasMore: false };
+    const journal = tick.journal ?? { state: sources.length ? previousJournalState ?? "not_checked" : "not_configured", readBytes: 0, inserted: 0, hasMore: false, sources: [...sourceStates.values()] };
     const publication = yield* Effect.exit(Effect.sync(() => input.publish({ process: "monitor", collectorEpoch: epoch,
       sampleNumber, state: sampleState, notificationMode: "local_only", productionAccepted: false,
-      storagePolicy: { revision: storage.revision, source: storage.source, scope: "monitor", hotReload: false },
+      storagePolicy: { revision: storage.revision, source: storage.source, scope: "monitor", hotReload: false }, nativeRunHealth,
       changes: tick.changes, snapshot, journal, maintenance: tick.maintenance, notifications: tick.notifications })));
     if (tick.notifications.length) yield* attempt(() => store.recordNotificationExport(epoch, tick.notifications, Exit.isSuccess(publication), Date.now()))
       .pipe(Effect.catchCause(() => Effect.void));
@@ -72,31 +76,57 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
     const observation = makeMonitorSample({ sampleId: randomUUID(), agentIds: ids, startedAtMs, completedAtMs,
       ...(response._tag === "Success" ? { response: response.success } : {}) });
     return yield* localWriter.withPermit(Effect.gen(function*() {
-      const committed = yield* attempt(() => store.record(epoch, sampleNumber + 1, observation));
+      const committed = yield* attempt(() => store.record(epoch, sampleNumber + 1, observation, input.notifications));
+      nativeRunHealth = observation.runObservation ? { state: observation.runObservation.coverage,
+        observedAtMs: observation.runObservation.observedAtMs, tasks: observation.runObservation.tasks.length }
+        : { state: "not_observed", observedAtMs: null, tasks: 0 };
+      const detected = observation.runObservation ? yield* attempt(() => store.detectUnsettled({ epoch, nowMs: Date.now(),
+        sourceLiveness: new Map(), nativeRuns: observation.runObservation, notifications: input.notifications })) : undefined;
       sampleNumber++;
       sampleState = observation.failure === null ? "observed" : "unavailable";
       failures = observation.failure === null ? 0 : failures + 1;
-      const tick: Tick = { changes: committed.events, notifications: committed.notifications };
+      const tick: Tick = { changes: [...committed.events, ...(detected?.changes ?? [])], notifications: [...committed.notifications, ...(detected?.notifications ?? [])] };
       if (!input.once) yield* publish(tick);
       return tick;
     }));
   });
-  const drain = Effect.gen(function*() {
+  const sourceStates = new Map<string, JournalSourceProgress>();
+  const sources: Array<{ root: string; source: "host" | "control"; sourceKey: string }> = [];
+  if (input.runRoot) sources.push({ root: input.runRoot, source: "host", sourceKey: sha256Text(`host-journal:${input.runRoot}`) });
+  if (input.includeControlJournal && input.durableRoot !== input.runRoot) sources.push({ root: input.durableRoot, source: "control", sourceKey: sha256Text(`control-journal:${input.durableRoot}`) });
+  const drainSource = (source: typeof sources[number]) => Effect.gen(function*() {
     const tick = emptyTick();
-    tick.journal = { state: "not_configured", readBytes: 0, inserted: 0, hasMore: false };
-    if (!input.runRoot) return tick;
-    const sourceKey = sha256Text(`host-journal:${input.runRoot}`), begun = yield* Clock.monotonicTimeNanos;
+    tick.journal = { state: "not_checked", readBytes: 0, inserted: 0, hasMore: false };
+    const { sourceKey } = source, begun = yield* Clock.monotonicTimeNanos;
     const gaps = new Set<string>();
     do {
       const saved = yield* attempt(() => store.evidenceCursor(sourceKey));
-      const batch = yield* attempt(() => readJournalBatch(input.runRoot!, saved?.cursor ?? null));
+      const batch = yield* attempt(() => readJournalBatch(source.root, saved?.cursor ?? null));
+      // A not-yet-created journal is not an execution failure. Disappearance
+      // after a committed cursor is a genuine gap. Neither grants producer
+      // liveness merely because a file can be read.
+      if (!saved && batch.gap === "missing") {
+        sourceStates.set(sourceKey, { source: source.source, sourceKey, state: "not_observed", observedAtMs: Date.now(), readBytes: 0, inserted: 0, hasMore: false, producerLiveness: "not_checked" });
+        tick.journal = { state: "not_observed", readBytes: 0, inserted: 0, hasMore: false, sources: [...sourceStates.values()] };
+        break;
+      }
       yield* localWriter.withPermit(Effect.gen(function*() {
+        const atMs = Date.now();
         const indexed = yield* attempt(() => store.ingestEvidence({ epoch, sourceKey,
-          expectedCursor: saved?.cursor ?? null, nextCursor: batch.nextCursor ?? "null", events: batch.events, atMs: Date.now(), gap: batch.gap }));
+          expectedCursor: saved?.cursor ?? null, nextCursor: batch.nextCursor ?? "null", events: batch.events, atMs, gap: batch.gap,
+          notifications: input.notifications, sourceHealth: { name: "observation_source_health", schemaVersion: 1,
+            at: new Date(atMs).toISOString(), collectorEpoch: epoch, sourceKey, source: source.source,
+            state: batch.gap || batch.deferred ? "partial" : "observed", basis: "collector_read", producerLiveness: "not_checked",
+            readBytes: batch.readBytes, records: batch.events.length, hasMore: batch.hasMore } }));
         if (batch.gap) gaps.add(batch.gap);
         if (indexed.storagePressure) gaps.add("storage_pressure");
-        const journal = { state: gaps.size ? [...gaps].join(",") : batch.deferred ?? "observed", readBytes: batch.readBytes, inserted: indexed.inserted, hasMore: batch.hasMore, droppedEvents: indexed.droppedEvents };
-        if (!input.once && (indexed.changes.length || indexed.inserted || indexed.droppedEvents || journal.state !== previousJournalState))
+        const state = gaps.size ? [...gaps].join(",") : batch.deferred ?? "observed";
+        const previousSourceState = sourceStates.get(sourceKey)?.state;
+        sourceStates.set(sourceKey, { source: source.source, sourceKey, state, observedAtMs: Date.now(), readBytes: batch.readBytes,
+          inserted: indexed.inserted, hasMore: batch.hasMore, producerLiveness: "not_checked" });
+        const journal = { state, readBytes: batch.readBytes, inserted: indexed.inserted, hasMore: batch.hasMore,
+          droppedEvents: indexed.droppedEvents, sources: [...sourceStates.values()] };
+        if (!input.once && (indexed.changes.length || indexed.inserted || indexed.droppedEvents || journal.state !== previousSourceState))
           yield* publish({ changes: indexed.changes, notifications: indexed.notifications ?? [], journal });
         previousJournalState = journal.state;
         // One-shot aggregate is bounded by the same drain slice; continuous
@@ -108,6 +138,20 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
       yield* Effect.yieldNow;
     } while (true);
     return tick;
+  });
+  const drain = Effect.gen(function* () {
+    const result = emptyTick();
+    result.journal = { state: "not_configured", readBytes: 0, inserted: 0, hasMore: false, sources: [] };
+    for (const source of sources) {
+      const tick = yield* drainSource(source);
+      result.changes.push(...tick.changes); result.notifications.push(...tick.notifications);
+      result.journal.readBytes += tick.journal?.readBytes ?? 0;
+      result.journal.inserted += tick.journal?.inserted ?? 0;
+      result.journal.hasMore ||= tick.journal?.hasMore === true;
+    }
+    result.journal.sources = [...sourceStates.values()];
+    if (sources.length) result.journal.state = result.journal.sources.every(s => s.state === "observed") ? "observed" : "partial";
+    return result;
   });
   const maintain = Effect.gen(function*() {
     // Filesystem housekeeping never holds the SQLite writer permit. Rotation
@@ -136,13 +180,17 @@ export async function runMonitor(input: MonitorRunOptions): Promise<void> {
       return;
     }
     const sourceLoop = Effect.forever(Effect.gen(function*() { yield* sample; yield* Effect.sleep(`${monitorDelay(interval, failures, Math.random())} millis`); }));
-    const localLoop = input.runRoot ? Effect.forever(Effect.gen(function*() { const tick = yield* drain; yield* Effect.sleep(tick.journal?.hasMore ? "100 millis" : "1 second"); })) : Effect.void;
+    const localLoop = sources.length ? Effect.forever(Effect.gen(function*() { const tick = yield* drain; yield* Effect.sleep(tick.journal?.hasMore ? "100 millis" : "1 second"); })) : Effect.void;
     // Delay the first maintenance slice so startup evidence need not compete
     // with housekeeping. It has its own clock and does not wait for remote reads.
     const maintenanceLoop = Effect.forever(Effect.gen(function*() { yield* Effect.sleep("30 seconds"); yield* maintain; }));
     yield* Effect.all([sourceLoop, localLoop, maintenanceLoop], { concurrency: 3, discard: true });
   }));
-  const exit = await Effect.runPromiseExit(program, { signal: input.signal });
+  return program;
+}
+
+export async function runMonitor(input: MonitorRunOptions): Promise<void> {
+  const exit = await Effect.runPromiseExit(monitorProgram(input), { signal: input.signal });
   if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return;
   throw Cause.squash(exit.cause);
 }

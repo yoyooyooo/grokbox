@@ -19,6 +19,7 @@ import { indexNativeIncident, indexExecutionProgress, recordSourceGap, detectUns
 import { retireObservationDetails, sqlitePhysicalUsage } from "./observation-retention.node.ts";
 import { capMonitorDatabase, monitorDatabaseBytes, monitorWriteAdmission, monitorAuxiliaryUsage } from "./monitor-storage.node.ts";
 import { notificationOutbox } from "./notification-outbox.node.ts";
+import type { NativeRunHealth } from "@grokbox/runtime-kernel/observation";
 const VERSION=3;
 const error=(message:string)=>new BoxRuntimeError("invalid_usage",message);
 const number=(v:unknown):number=>{if(typeof v!=="number"||!Number.isSafeInteger(v)||v<0)throw error("monitor_store_invalid");return v;};
@@ -190,7 +191,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     await event(db,epoch,previous.epoch===null?"collector_started":"observation_gap",rootId,null,at,null,null,null,oldAt);return {collectorEpoch:epoch,previousHeartbeatMs:oldAt,gap:previous.epoch!==null};});
   },
   async finish(epoch:string,at:number){return mutate(async db=>{if((await meta(db)).epoch!==epoch)throw error("monitor_epoch_changed");await db.run("UPDATE meta SET running=0,heartbeat=?,owner_pid=NULL,owner_start=NULL WHERE singleton=1",[number(at)]);await event(db,epoch,"collector_stopped",rootId,null,at);return {stopped:true};});},
-  async record(epoch:string,sampleNumber:number,sample:MonitorSample){
+  async record(epoch:string,sampleNumber:number,sample:MonitorSample,notificationsMode?:"off"){
    if(!monitorUuid(epoch)||!monitorUuid(sample.sampleId)||!Number.isSafeInteger(sampleNumber)||sampleNumber<1||!Array.isArray(sample.agents)||sample.agents.length>MONITOR_POLICY.maxTargets||!Number.isSafeInteger(sample.startedAtMs)||sample.startedAtMs<1||sample.completedAtMs<sample.startedAtMs)throw error("monitor_invalid_sample");
    return mutate(async db=>{const current=await meta(db),digest=sha256Text(canonicalJson(sample));if(current.epoch!==epoch||current.running!==1)throw error("monitor_epoch_changed");
     if(sampleNumber===current.last_number&&sample.sampleId===current.last_sample_id&&digest===current.last_digest)return {duplicate:true,sampleNumber,events:[] as ReturnType<typeof getEvent>[],notifications:[]};
@@ -217,7 +218,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
      }
     }
     await db.run("UPDATE meta SET heartbeat=?,last_number=?,last_sample_id=?,last_digest=? WHERE singleton=1",[at,sampleNumber,sample.sampleId,digest]);const events=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previousSeq])).map(getEvent);
-    const notifications=await notificationDecisions(db,events,at);
+    const notifications=await notificationDecisions(db,events,at,notificationsMode!=="off");
     return {duplicate:false,sampleNumber,events:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previousSeq])).map(getEvent),notifications};
    });
   },
@@ -284,10 +285,14 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
       transport:"unavailable" as const,automaticRetry:false as const}));
    });
   },
-  async detectUnsettled(input:{nowMs:number;sourceLiveness:ReadonlyMap<string,number>}){
-   return mutate(async db=>{const m=await meta(db);if(m.running!==1)throw error("monitor_not_running");const epoch=uuid(m.epoch),before=await lastSequence(db);
+  async detectUnsettled(input:{nowMs:number;sourceLiveness:ReadonlyMap<string,number>;nativeRuns?:NativeRunHealth;epoch?:string;notifications?:"off"}){
+   return mutate(async db=>{const m=await meta(db);if(m.running!==1)throw error("monitor_not_running");
+    if(input.epoch!==undefined&&input.epoch!==m.epoch)throw error("monitor_epoch_changed");
+    const epoch=uuid(m.epoch),before=await lastSequence(db);
     const result=await detectUnsettledExecutions(db,{rootId,...input,opened:(id,agent)=>event(db,epoch,"execution_failure_observed",rootId,agent,input.nowMs,id)});
-    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[before])).map(getEvent);await notificationDecisions(db,changes,input.nowMs);return result;});
+    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[before])).map(getEvent);
+    const notifications=await notificationDecisions(db,changes,input.nowMs,input.notifications!=="off");
+    return {...result,changes:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[before])).map(getEvent),notifications};});
   },
   async incidents(){return read(async db=>{const rows=await db.all("SELECT * FROM incidents ORDER BY first_seen DESC,id LIMIT 201");if(rows.length>MONITOR_POLICY.maxPage)throw error("monitor_use_incident_pagination");return rows.map(getIncident);});},
   async incidentPage(after?:string,limit:number=MONITOR_POLICY.maxPage){if(!Number.isSafeInteger(limit)||limit<1||limit>MONITOR_POLICY.maxPage)throw error("monitor_invalid_limit");return read(async db=>{const m=await meta(db);let before=Number.MAX_SAFE_INTEGER,id="";
@@ -327,7 +332,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
    });
   },
   async evidenceCursor(sourceKey:string){return read(async db=>{if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");const row=await db.first("SELECT * FROM evidence_cursors WHERE source_key=?",[sourceKey]);return row?{cursor:String(row.cursor),gap:row.gap===null?null:String(row.gap)}:null;});},
-  async ingestEvidence(input:{epoch:string;sourceKey:string;expectedCursor:string|null;nextCursor:string;events:unknown[];atMs:number;gap?:string;notifications?:"off"}){
+  async ingestEvidence(input:{epoch:string;sourceKey:string;expectedCursor:string|null;nextCursor:string;events:unknown[];atMs:number;gap?:string;notifications?:"off";sourceHealth?:unknown}){
    if(!monitorUuid(input.epoch)||!monitorScope(input.sourceKey)||input.nextCursor.length>2048||input.events.length>4096||!Number.isSafeInteger(input.atMs)||input.atMs<1)throw error("monitor_invalid_evidence_batch");
    const safe=input.events.map(value=>{try{return projectControlEvent(value);}catch{return null;}}).filter((x):x is NonNullable<typeof x>=>x!==null),digest=sha256Text(canonicalJson({events:safe,gap:input.gap??null,rejected:input.events.length-safe.length}));
    const skipPressure=async(db:MonitorSqlite)=>{
@@ -374,7 +379,19 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     }
     if(retirementSkipped)await db.run("UPDATE observation_maintenance SET dropped_events=dropped_events+? WHERE singleton=1",[retirementSkipped]);
     await db.run("INSERT INTO evidence_cursors(source_key,cursor,batch_digest,updated_at,gap) VALUES(?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET cursor=excluded.cursor,batch_digest=excluded.batch_digest,updated_at=excluded.updated_at,gap=excluded.gap",[input.sourceKey,input.nextCursor,digest,input.atMs,retirementSkipped?"retired_source_window":input.gap??null]);
-    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications=await notificationDecisions(db,changes,input.atMs,input.notifications!=="off");return {duplicate:false,inserted,conflicts,retirementSkipped,droppedEvents:0,storagePressure:false,changes:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications};
+    const changes=(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent);
+    if(input.sourceHealth!==undefined){
+      const health=projectControlEvent(input.sourceHealth);
+      if(!health||health.name!=="observation_source_health"||health.collectorEpoch!==input.epoch||health.sourceKey!==input.sourceKey
+        || Date.parse(health.at)!==input.atMs)throw error("monitor_invalid_source_health");
+      const incidentIds=[...new Set(changes.filter(change=>["incident_opened","execution_failure_observed"].includes(change.kind)&&change.incidentId).map(change=>change.incidentId!))];
+      if(incidentIds.length){
+        const payload=canonicalJson(health),hash=sha256Text(payload),ref=`source-health:${hash}`;
+        await db.run("INSERT OR IGNORE INTO evidence(ref,digest,source_key,at_ms,payload) VALUES(?,?,?,?,?)",[ref,hash,input.sourceKey,input.atMs,payload]);
+        for(const id of incidentIds)await db.run("INSERT OR IGNORE INTO incident_evidence(incident_id,event_ref) VALUES(?,?)",[id,ref]);
+      }
+    }
+    const notifications=await notificationDecisions(db,changes,input.atMs,input.notifications!=="off");return {duplicate:false,inserted,conflicts,retirementSkipped,droppedEvents:0,storagePressure:false,changes:(await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq",[previous])).map(getEvent),notifications};
    }).catch(failure=>{
     // A file-cap rejection rolled back the entire batch. Use the reserved
     // metadata headroom to acknowledge a gap, never spin replaying the batch.

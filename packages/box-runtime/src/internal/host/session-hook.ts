@@ -1,7 +1,7 @@
 import type { HostBinding } from "./host-binding.ts";
 import type { StreamDiagnostic, StreamSummary, FailureSummary } from "@grokbox/runtime-kernel/contract";
 import { HOST_RUN_OBSERVATION_SYMBOL, createRunObserver } from "./run-observation.ts";
-import { runtimeBuildInfo } from "@grokbox/runtime-kernel/contract";
+import { runtimeBuildInfo, WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
 import { nextObservationIdentity } from "./observation-identity.node.ts";
 import { observeNativeTurn } from "./turn-observation.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
@@ -149,7 +149,7 @@ export function bindHostSessionHook(input: {
       result: "entered",
       ...facts,
       triggerEvidence: clientNonce ? "client_nonce" : "not_instrumented",
-      observation: nextObservationIdentity("host"), build: runtimeBuildInfo(),
+      observation: nextObservationIdentity("host"), build: runtimeBuildInfo(), wireVersion: WIRE_VERSION,
       nativeTurn: observeNativeTurn(options),
       ...(input.compile ? { sourceIdentity: {
         sourceSha256: input.compile.sourceSha256, profileSha256: input.compile.profileSha256,
@@ -220,8 +220,20 @@ export function bindHostSessionHook(input: {
           ...(stepId ? { stepId } : {}),
           ...(request?.aux ? { auxPurpose: request.aux.purpose, parentStepId: request.aux.parent.stepId } : {}),
         });
-        if (stepId && agentId && turnId && !request?.aux) noteHostManagedStep({ agentId, turnId, stepId });
-        return session.stream(request);
+        if (stepId && agentId && turnId && !request?.aux) {
+          noteHostManagedStep({ agentId, turnId, stepId });
+          runObserver?.progress("model");
+        }
+        const handle = session.stream(request);
+        if (request?.aux || !runObserver) return handle;
+        // Source progress follows actual stream consumption, not a timer or a
+        // fresh heartbeat. A long, still-producing model stream is not idle.
+        return { ...handle, fullStream: { async *[Symbol.asyncIterator]() {
+          for await (const event of handle.fullStream) {
+            try { runObserver.progress("model"); } catch { /* observation never owns inference */ }
+            yield event;
+          }
+        } } };
       },
     });
     if (!turnId) {
@@ -294,6 +306,7 @@ export function bindHostSessionHook(input: {
         }
         const stepId = terminal.invocationId;
         if (!stepId) return;
+        runObserver?.progress("native");
         const producedThisStep = runtime.last.stepId === stepId;
         void appendHostJournal(input.runRoot, {
           name: "host_normalized_terminal",
@@ -328,6 +341,12 @@ export function bindHostSessionHook(input: {
     const managed = asHostPromptSession(wrapStream(session), modelId, onRequestId, {
       requireStepId: true, reject, contextWindowTokens: record.contextWindowTokens,
       onInvalidState: (code, shape) => writeReject("admit", "invalid-state", code, shape),
+      onToolResultAccepted: event => {
+        void appendHostJournal(input.runRoot, { name: "host_tool_observation", schemaVersion: 1, at: nowIso(),
+          ...facts, ...event, basis: "prompt_executor_append", state: "result_accepted",
+          nativeHandlerObserved: false, externalCommitObserved: false, build: runtimeBuildInfo(),
+          ...(runtime.last.stepId === event.stepId && runtime.last.serviceEpoch ? { serviceEpoch: runtime.last.serviceEpoch } : {}) });
+      },
     });
     return attachManagedAuxStreams(managed, { agentId, turnId, modelId, selectionRevision: captured.selectionRevision });
   };

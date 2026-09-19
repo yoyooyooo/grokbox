@@ -1,3 +1,4 @@
+import { projectNativeRunHealth, NATIVE_RUN_HEALTH_MAX_AGE_MS, type NativeRunHealth } from "./internal/observation/run-health.ts";
 import { inspectOwnership, OWNERSHIP_MAX_TARGETS } from "./internal/contract/ownership.ts";
 import { projectOwnershipReadObservation, type OwnershipReadObservation } from "./internal/contract/ownership-observation.ts";
 import { observationOwn as own } from "./internal/contract/provider-observation.ts";
@@ -28,6 +29,7 @@ export type MonitorSample = {
   failure: "read_unavailable" | "scope_unavailable" | "invalid_observation" | null;
   agents: MonitorAgent[];
   readObservation?: OwnershipReadObservation;
+  runObservation?: NativeRunHealth;
 };
 export type MonitorOwnershipDiagnosis = {
   version: 1; source: "monitor_ownership_read"; observedAtMs: number;
@@ -84,6 +86,9 @@ export function makeMonitorSample(input: {
   if (!input.response) return result;
   const gateway = input.response.gateway;
   if (!Number.isSafeInteger(gateway.pid) || gateway.pid < 1 || !time(gateway.startedAt)) return result;
+  const native = projectNativeRunHealth(own(input.response.snapshot, "runObservation"));
+  if (native && JSON.stringify([...native.targetIds].sort()) === JSON.stringify(ids) && native.observedAtMs <= input.completedAtMs
+    && input.completedAtMs - native.observedAtMs <= NATIVE_RUN_HEALTH_MAX_AGE_MS) result.runObservation = native;
   const projected = inspectOwnership({ agentIds: ids, snapshot: input.response.snapshot });
   if (projected.readObservation) result.readObservation = projected.readObservation;
   // A failed native read also marks its scope unstable. Preserve the first

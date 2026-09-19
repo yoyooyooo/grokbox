@@ -19,7 +19,9 @@ export type ProcessPolicy = {
   environment: string[]; maxConcurrent: number; maxQueued: number; maxRuntimeMs: number;
   maxOutputBytes: number; shell?: { executable: string };
 };
+export type DaemonObservationIntent = { runRoot: string; agentIds: string[] };
 export type DaemonIntent = {
+  observation?: DaemonObservationIntent;
   network?: { host: "127.0.0.1"; port: number };
   serve?: { httpsPort: number; dnsName: string; proxyUrl: string };
   filesystem?: FilesystemPolicy;
@@ -70,6 +72,7 @@ const profile = object({
   quota: object({ source: enumeration("cursor-web"), accessTokenRef: secret }, ["source", "accessTokenRef"]),
 });
 export const DAEMON_INTENT_SCHEMA = object({
+  observation: object({ runRoot: path, agentIds: array({ ...uuid, sensitive: true }, 32, 1) }, ["runRoot", "agentIds"]),
   network: object({ host: enumeration("127.0.0.1"), port: integer(1, 65535) }, ["host", "port"]),
   serve: object({ httpsPort: integer(1, 65535), dnsName: string(253, "^[A-Za-z0-9.-]+$"), proxyUrl: url }, ["httpsPort", "dnsName", "proxyUrl"]),
   filesystem: object({ roots: array(object({

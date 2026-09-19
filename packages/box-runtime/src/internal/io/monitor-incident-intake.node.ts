@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { evidenceIdentity, observationIncidentCandidate, assessUnsettledExecution, STALL_POLICY } from "@grokbox/runtime-kernel/observation";
+import { evidenceIdentity, observationIncidentCandidate, assessUnsettledExecution, STALL_POLICY,
+  projectNativeRunHealth, NATIVE_RUN_HEALTH_MAX_AGE_MS, type NativeRunHealth } from "@grokbox/runtime-kernel/observation";
 import { monitorUuid } from "@grokbox/runtime-kernel/monitor";
 import type { MonitorSqlite } from "./monitor-sqlite.node.ts";
 
@@ -67,16 +68,36 @@ export async function recordSourceGap(db: MonitorSqlite, input: Pick<Input, "roo
 /** Callers must supply actual source-liveness evidence. Reading an unchanged log
  * file or an unrelated Bot heartbeat is not sufficient to diagnose a stall. */
 export async function detectUnsettledExecutions(db: MonitorSqlite, input: { rootId: string; nowMs: number;
-  sourceLiveness: ReadonlyMap<string, number>; opened: Input["opened"] }) {
+  sourceLiveness: ReadonlyMap<string, number>; nativeRuns?: NativeRunHealth; opened: Input["opened"] }) {
   const rows = await db.all("SELECT * FROM open_executions WHERE state IN ('queued','started') AND last_progress<=? ORDER BY last_progress LIMIT 100", [input.nowMs - STALL_POLICY.minIdleMs]);
   let suspected = 0, unqualified = 0;
+  const native = projectNativeRunHealth(input.nativeRuns);
   for (const row of rows) {
-    const result = assessUnsettledExecution({ state: String(row.state), nowMs: input.nowMs, lastProgressMs: Number(row.last_progress), sourceLastObservedMs: input.sourceLiveness.get(String(row.source_key)) ?? null });
+    let progressMs = Number(row.last_progress), sourceLastObservedMs = input.sourceLiveness.get(String(row.source_key)) ?? null;
+    if (input.nativeRuns !== undefined) {
+      if (!native || native.coverage !== "observed_window" || native.droppedTasks !== 0 || input.nowMs < native.observedAtMs
+        || input.nowMs - native.observedAtMs > NATIVE_RUN_HEALTH_MAX_AGE_MS || native.hostGenerationId !== row.host_generation) { unqualified++; continue; }
+      const task = native.tasks.find(task => task.agentId === row.agent_id && task.dispatchId === row.dispatch_id);
+      // A queue backlog, tool/approval wait or absent task is not a deadlock.
+      // In particular, missing terminal evidence does not prove completion.
+      if (!task || task.state !== "started" || task.phase === "tool_or_approval") { unqualified++; continue; }
+      progressMs = Math.max(progressMs, task.lastProgressMs); sourceLastObservedMs = native.observedAtMs;
+    }
+    const result = assessUnsettledExecution({ state: String(row.state), nowMs: input.nowMs, lastProgressMs: progressMs, sourceLastObservedMs });
     if (result === "source_unavailable") { unqualified++; continue; }
     if (result !== "suspected" || row.incident_id) continue;
     const id = randomUUID();
     await db.run("INSERT INTO incidents(id,scope,agent_id,rule,status,first_seen,last_seen,revision,occurrence_key,category) VALUES(?,?,?,'execution_stalled','open',?,?,1,?,'condition')", [id, input.rootId, String(row.agent_id), input.nowMs, input.nowMs, String(row.identity)]);
     await db.run("INSERT OR IGNORE INTO incident_evidence(incident_id,event_ref) VALUES(?,?)", [id, String(row.event_ref)]);
+    if (native) {
+      // Only a newly opened incident retains this exact source-owned window;
+      // periodic reads never append a lifetime-sized stream of heartbeats.
+      const witness = { ...native, name: "host_run_health", at: new Date(native.observedAtMs).toISOString() };
+      const payload = canonicalJson(witness), hash = sha256Text(payload), ref = `native-run-health:${hash}`;
+      await db.run("INSERT OR IGNORE INTO evidence(ref,digest,source_key,at_ms,host_generation,payload) VALUES(?,?,?,?,?,?)",
+        [ref, hash, String(row.source_key), native.observedAtMs, native.hostGenerationId, payload]);
+      await db.run("INSERT OR IGNORE INTO incident_evidence(incident_id,event_ref) VALUES(?,?)", [id, ref]);
+    }
     await db.run("UPDATE open_executions SET incident_id=? WHERE identity=?", [id, String(row.identity)]);
     await input.opened(id, String(row.agent_id)); suspected++;
   }

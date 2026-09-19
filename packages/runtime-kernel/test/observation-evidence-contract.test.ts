@@ -27,7 +27,7 @@ test("same TURN closure is bounded by actual generation and epoch, not Agent or 
 });
 test("tool release is only partial evidence; checkpoint and App results are not inferred", () => {
   const coverage = assessEvidenceCoverage([seed, fact("tool", { ...identity, name: "host_normalized_terminal", toolCallCount: 1 })]);
-  expect(coverage.find(r => r.requirement === "E04")).toMatchObject({ status: "partial", missing: ["external_business_commit", "native_tool_execution_and_acceptance"] });
+  expect(coverage.find(r => r.requirement === "E04")).toMatchObject({ status: "partial", missing: ["external_business_commit", "native_tool_execution", "tool_result_context_acceptance"] });
   expect(coverage.find(r => r.requirement === "E05")?.status).toBe("not_instrumented");
   expect(coverage.find(r => r.requirement === "E06")?.status).not.toBe("observed");
 });

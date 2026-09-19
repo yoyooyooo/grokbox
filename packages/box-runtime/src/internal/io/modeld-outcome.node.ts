@@ -5,7 +5,7 @@ import { STEP_FAILURE_CODES, STEP_OUTCOMES, STEP_PHASES, type ModeldStepOutcome 
 import { appendNdjsonLine } from "../host/terminal-journal.node.ts";
 import { noteUnprojectedJournalEvent } from "../host/journal-health.node.ts";
 import { nextObservationIdentity, projectObservationIdentity } from "../host/observation-identity.node.ts";
-import { projectRuntimeBuildInfo, runtimeBuildInfo } from "@grokbox/runtime-kernel/contract";
+import { projectRuntimeBuildInfo, runtimeBuildInfo, WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -158,6 +158,7 @@ export function projectModeldStepOutcome(value: unknown): ModeldStepOutcomeEvent
   }
   const build = projectRuntimeBuildInfo(v.build), observation = projectObservationIdentity(v.observation);
   if (build) out.build = build;
+  if (boundedInt(v.wireVersion, 65535) && Number(v.wireVersion) > 0) out.wireVersion = v.wireVersion;
   if (observation) out.observation = observation;
   const runtime = record(v.runtime);
   if (runtime && (runtime.name === "node" || runtime.name === "bun") && typeof runtime.version === "string" && /^[0-9][A-Za-z0-9.+-]{0,63}$/.test(runtime.version)) {
@@ -225,7 +226,7 @@ export function writeModeldStepOutcome(root: string, request: RunStepRequest, ou
       selectionRevision: request.selection.selectionRevision,
       hostGenerationId: request.hostEpoch.compile, agentId: request.agentId,
       turnId: request.turnId, stepId: request.stepId, serviceEpoch: request.serviceEpoch.incarnationId,
-      build: runtimeBuildInfo(), observation: nextObservationIdentity("modeld"),
+      build: runtimeBuildInfo(), wireVersion: WIRE_VERSION, observation: nextObservationIdentity("modeld"),
       runtime: { name: process.versions.bun ? "bun" : "node", version: process.versions.bun ?? process.versions.node },
     });
     if (!projected) { noteUnprojectedJournalEvent(root, "modeld"); return; }

@@ -20,6 +20,8 @@ export type NativeContextCapture = {
   checkpoint: () => Promise<unknown>;
   activity?: (active: boolean, failed: boolean) => Promise<unknown>;
   valid: () => boolean;
+  observe?: (event: { state: "checkpoint_started" | "checkpoint_observed" | "commit_unknown"; operationId: string;
+    rootId: string; sourceRootRevision: string; rootRevision: string; persisted: boolean }) => Promise<void>;
 };
 export type NativeContextOwner = ReturnType<typeof createNativeContextOwner>;
 const MARKER = "grokboxContextMaintenance";
@@ -42,6 +44,7 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
   let operation: string | undefined, candidateFingerprint: string | undefined;
   let nativeWork: Promise<unknown> | undefined;
   let checkpointWork: Promise<unknown> | undefined;
+  const pendingCommits = new Set<Promise<unknown>>();
   let pendingReady: ReturnType<typeof deferred<ContextMaterial>> | undefined;
   const child = typeof capture.ctx.withCancel === "function" ? invoke(capture.ctx, "withCancel") : undefined;
   const nativeCtx = Array.isArray(child) && object(child[0]) ? child[0] : capture.ctx;
@@ -245,23 +248,35 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
     nativePending = capture.stateHandler.backgroundSummarizationPromiseInfo;
     return result;
   };
-  const commit = async (candidate: ContextCandidate): Promise<ContextCommitReceipt> => {
+  const observeCommit = async (state: "checkpoint_started" | "checkpoint_observed" | "commit_unknown") => {
+    if (!operation || !original || !proposed || !capture.observe) return;
+    try { await capture.observe({ state, operationId: operation, rootId, sourceRootRevision: original.rootRevision,
+      rootRevision: proposed.rootRevision, persisted: state === "checkpoint_observed" }); }
+    catch { /* A diagnostic sink does not decide whether a native commit happened. */ }
+  };
+  const commitCandidate = async (candidate: ContextCandidate): Promise<ContextCommitReceipt> => {
     assertLive();
     if (!proposed || operation !== candidate.operationId || candidateFingerprint !== sha256Text(canonicalJson(candidate)) || !release || !nativeWork) throw new ContextFailure("not_admitted");
     if (!committing) {
-      checkCandidate(candidate); committing = true; release.resolve();
+      checkCandidate(candidate); committing = true;
       try {
+        await observeCommit("checkpoint_started");
+        // Diagnostic I/O is not an authorization lease. The root or cancellation
+        // state can change while recording the intent, so check at consumption.
+        checkCandidate(candidate);
+        release.resolve();
         await nativeWork; assertLive();
         if (!published || rootRevision(rawMessages()) !== proposed.rootRevision) throw new ContextFailure("commit_unknown");
         checkpointWork = Promise.resolve().then(() => { assertLive(); return capture.checkpoint(); });
         await checkpointWork; assertLive();
         if (rootRevision(rawMessages()) !== proposed.rootRevision) throw new ContextFailure("commit_unknown");
         persisted = true;
+        await observeCommit("checkpoint_observed");
       } catch (error) {
         // Preserve publication uncertainty across the Host/client/wire facade.
         // A raw checkpoint or append error must not become invalid input, nor
         // imply the old root survived or that this operation can be replayed.
-        if (publicationStarted) throw new ContextFailure("commit_unknown");
+        if (publicationStarted) { await observeCommit("commit_unknown"); throw new ContextFailure("commit_unknown"); }
         throw error;
       }
     }
@@ -297,7 +312,7 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
         new Promise<void>(resolve => { timer = setTimeout(resolve, 1000); })]); }
       finally { if (timer) clearTimeout(timer); }
     }
-    const pending = [nativeWork, checkpointWork].filter((work): work is Promise<unknown> => work !== undefined);
+    const pending = [nativeWork, checkpointWork, ...pendingCommits].filter((work): work is Promise<unknown> => work !== undefined);
     if (pending.length) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -311,6 +326,12 @@ export function createNativeContextOwner(capture: NativeContextCapture) {
     if (nativePending && capture.stateHandler.backgroundSummarizationPromiseInfo === nativePending) {
       invoke(capture.stateHandler, "clearBackgroundSummarizationState");
     }
+  };
+  const commit = (candidate: ContextCandidate): Promise<ContextCommitReceipt> => {
+    const work = commitCandidate(candidate);
+    pendingCommits.add(work);
+    void work.then(() => pendingCommits.delete(work), () => pendingCommits.delete(work));
+    return work;
   };
   return { rootId, inspect, preview, commit, readCommit, startActivity,
     hasPublicationStarted: () => publicationStarted,

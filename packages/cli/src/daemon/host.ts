@@ -7,7 +7,8 @@ import { CliError } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { startGatewayBotProtection } from "../bot-protection-worker.ts";
 import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
-import { startOpsNotificationWorker } from "@grokbox/box-runtime/runtime";
+import { startOpsNotificationWorker, startMonitorService, acquireDaemonSocket, type DaemonSocketLease } from "@grokbox/box-runtime/runtime";
+import { runtimeOwnershipReader } from "../runtime-ownership.ts";
 import { nativeExplicitReceiverReader } from "../gateway-receiver.ts";
 import { validateRoutineCommand, validateProvisionCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
 import { provisionCliError } from "../gateway-routine-provision.ts";
@@ -171,6 +172,7 @@ export async function startDaemonHost(
   const gateway = new GatewayClient(directDeps);
   const desktop = await DesktopManager.create(deps.configDir, deps.now, desktopConfig, desktopIo);
   let notificationWorker: ReturnType<typeof startOpsNotificationWorker> | undefined;
+  let monitorService: ReturnType<typeof startMonitorService> | undefined;
   const titleSync = new TitleSyncManager(gateway, deps.boxRuntimeRoot, deps.env);
   titleSync.start();
 
@@ -208,6 +210,10 @@ export async function startDaemonHost(
     signal?: AbortSignal,
   ) => {
     if (method === "handshake") return { result: await handshake() };
+    if (method === "getMonitorService") {
+      assertParamKeys(params, [], "Monitor service status");
+      return { result: monitorService?.status() ?? { state: "not_started" } };
+    }
     if (method === "getOpsNotificationWorker") {
       assertParamKeys(params, [], "Notification worker status");
       return { result: notificationWorker?.status() ?? { state: "not_started" } };
@@ -597,21 +603,21 @@ export async function startDaemonHost(
     ? createServer((req, res) => { void handle(req, res, true); })
     : null;
 
-  await mkdir(dirname(socketPath), { recursive: true, mode: 0o700 });
-  await chmod(dirname(socketPath), 0o700);
   let networkPort: number | null = null;
-  let ownsSocket = false;
+  let socketLease: DaemonSocketLease | undefined;
   try {
+    socketLease = await acquireDaemonSocket(socketPath, daemonGeneration);
     await listenUnix(localServer, socketPath);
-    ownsSocket = true;
     await chmod(socketPath, 0o600);
+    await socketLease.recordBound();
     if (networkServer && networkConfig) networkPort = await listenNetwork(networkServer, networkConfig);
   } catch (error) {
     await Promise.allSettled([
       closeServer(localServer),
       ...(networkServer ? [closeServer(networkServer)] : []),
-      ...(ownsSocket ? [rm(socketPath, { force: true })] : []),
+      events.close(), jobs?.close() ?? Promise.resolve(), desktop.close(), titleSync.close(), filesystem.close(),
     ]);
+    await socketLease?.release();
     throw error;
   }
 
@@ -621,15 +627,19 @@ export async function startDaemonHost(
   notificationWorker = startOpsNotificationWorker({ durableRoot: deps.boxRuntimeRoot,
     readNative: nativeExplicitReceiverReader(directDeps, 15000) });
   const protectionWorker = startGatewayBotProtection(directDeps);
+  monitorService = startMonitorService({ durableRoot: deps.boxRuntimeRoot, read: runtimeOwnershipReader(directDeps) });
 
   return {
     socketPath,
     network: networkPort === null ? null : { host: "127.0.0.1", port: networkPort },
     handshake,
     close: async () => {
-      await protectionWorker.close();
-      await notificationWorker?.close();
-      await events.close();
+      // Stop all producers before delivery shutdown. Each child settles its
+      // transactions before the enclosing listeners and socket owner disappear.
+      const lifecycleFailures: unknown[] = [];
+      for (const close of [() => protectionWorker.close(), () => monitorService?.close(), () => notificationWorker?.close(), () => events.close()]) {
+        try { await close(); } catch (error) { lifecycleFailures.push(error); }
+      }
       const results = await Promise.allSettled([
         closeServer(localServer),
         ...(networkServer ? [closeServer(networkServer)] : []),
@@ -638,8 +648,9 @@ export async function startDaemonHost(
         titleSync.close(),
         filesystem.close(),
       ]);
-      await rm(socketPath, { force: true });
+      try { await socketLease?.release(); } catch (error) { lifecycleFailures.push(error); }
       const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (lifecycleFailures.length) throw lifecycleFailures[0];
       if (rejected) throw rejected.reason;
     },
   };

@@ -18,13 +18,28 @@
 
 原生 Alert observer 延后到精确目标 Host compile 通过时才初始化，继承 NODE_OPTIONS 的无关子进程不会仅因 require preload 就伪造 observer_started。默认 `alerts trace` 只展示直接关联/已挂接的来源；都不存在时，保留每个 Host generation 的一个真实覆盖样本，并报告总数/省略数，不能凭样本冒称所有采集点已安装。`--include-unrelated-observers` 显式展开同代完整来源。来源列表不授予执行身份或当前活性。
 
+## daemon 所属的持续采集
+
+当前源码提供一个明确的服务配置入口，复用统一config4和现有daemon，不要求终端一直运行。先预览，再把返回的配置revision连同本次operation ID用于确认：
+
+```bash
+grokbox runtime monitor install --run-root <owned-host-run-root> --agents <uuid1,uuid2> --json
+grokbox runtime monitor install --run-root <owned-host-run-root> --agents <uuid1,uuid2> --expect-revision <config-revision> --operation-id <new-id> --confirm --json
+grokbox runtime monitor service --json
+```
+
+确认会初始化/迁移观测域并保存`daemon.observation.runRoot/agentIds`，不会启动daemon或更改通知授权。已运行的匹配daemon会随后采用；重复同一operation核对原指纹，不重建丢失的证据库。实际服务同时消费Host/control journal，各有游标和健康；配置改变时先结算旧collector再替换。缺源、读取成功、原生源活性和采集器存活是不同事实。
+
+`service`只读既有daemon，缺服务直接拒绝，不用GET创建环境。`ops.monitor.enabled=false`或移除`daemon.observation`会停止相应collector；只关闭通知不关闭采集或必要维护。该入口不是操作系统开机注册，状态保留`bootInstalled=false`。Linux已注册daemon socket可在确证原owner死亡、准确inode及连接拒绝时恢复；未知旧socket、损坏owner或未完成首次绑定不自动清理。实际Node/文件/SQLite证明与限制见[固定回执](../reports/2026-09-19-pre-e2e-observation.md#collector-lifetime)。
+
 ## 命令
 
 ```bash
 # 既有观测域，显式创建或迁移；普通查询不会做这些操作。
 grokbox runtime monitor init --confirm --json
 
-# collector 为显式前台进程。GROKBOX_RUN_ROOT 选中要索引的 Host journal。
+# 单独手动运行仍是前台进程；不要与同根已配置daemon collector并行争抢。
+# GROKBOX_RUN_ROOT仅供这次显式运行，不代替daemon的canonical配置。
 GROKBOX_RUN_ROOT="$HOME/.grokbox/run" \
   grokbox runtime monitor run --agents <uuid1,uuid2> --interval-ms 30000 --confirm --json
 

@@ -10,6 +10,27 @@ ${ALERT_SHAPED_HOST}
 ${SERVER_ACTIVITY_SHAPED_HOST}
 ${CONTEXT_SHAPED_HOST}
 ${RECEIVER_SHAPED_HOST}
+// Synthetic tool shell: only the selected interoperability anchors are kept.
+// This is not a copy of the native handler and supplies no execution authority.
+const toolOwner = {
+  async executeToolCall(parentCtx, toolCall, callId, promiseFn, resultMergeFn, hookContextCollector) {
+    const ctx = parentCtx;
+    let result;
+    let finish, fail;
+    const promise = new Promise((yes, no) => { finish = yes; fail = no; });
+    const resolvers = { promise, resolve: finish, reject: fail };
+      promiseFn(ctx).then((r) => {
+        result = r;
+        resolvers.resolve(toolCall);
+      }).catch((error41) => {
+        resolvers.reject(error41);
+      });
+      const newToolCall = this.withToolCallMetadata(callId, await resolvers.promise,
+        hookContextCollector);
+    resultMergeFn(newToolCall);
+    return result;
+  },
+};
 const api = {
   createSession(onRequestId, sessionOptions) {
     const inferenceOptions = { sessionOptions, onRequestId };

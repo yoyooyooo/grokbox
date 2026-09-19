@@ -12,6 +12,8 @@ import type { HostBinding } from "./host-binding.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
 import type { HostCompactRequest } from "@grokbox/runtime-kernel/contract";
 import { recordHostManagedFailure } from "./session.ts";
+import { appendHostJournal } from "./terminal-journal.node.ts";
+import { runtimeBuildInfo } from "@grokbox/runtime-kernel/contract";
 
 const turns = new Map<string, { selection: SelectionIdentity; policy?: CapturedContextPolicy; windowTokens?: number }>();
 const key = (agentId: string, turnId: string) => `${agentId}\n${turnId}`;
@@ -115,12 +117,13 @@ export async function maintainHostContext(runRoot: string, request: ContextMaint
   }
 }
 
-export type HostContextClientOptions = { runRoot: string; binding?: HostBinding; compile?: CompileReceipt; mode: string };
+export type HostContextClientOptions = { runRoot: string; durableRoot?: string; binding?: HostBinding; compile?: CompileReceipt; mode: string };
 export function hostContextClient(options: HostContextClientOptions) {
   return (raw: unknown, valid: () => boolean, manualOperationId?: string) => {
     if (options.mode !== "route" || !object(raw) || typeof raw.agentId !== "string" || typeof raw.turnId !== "string") return undefined;
     const turn = turns.get(key(raw.agentId, raw.turnId));
     if (!turn) return undefined; // Unassigned/native-only sessions keep their own behavior.
+    let observedServiceEpoch: string | undefined;
     const makeOwner = () => {
       if (!options.binding || !options.compile || !object(raw.config) || !object(raw.ctx) || !object(raw.stateHandler)
         || !object(raw.rootPromptExecutor) || !object(raw.orchestrator) || manualOperationId === undefined && typeof raw.invocationId !== "string"
@@ -133,13 +136,21 @@ export function hostContextClient(options: HostContextClientOptions) {
         modelId: turn.selection.modelId,
         normalize: raw.normalizeContext as NativeContextCapture["normalize"], fixedMessages: raw.contextFixedMessages as NativeContextCapture["fixedMessages"],
         tools: raw.contextTools as NativeContextCapture["tools"], checkpoint: raw.contextCheckpoint as NativeContextCapture["checkpoint"],
-        ...(typeof raw.contextActivity === "function" ? { activity: raw.contextActivity as NativeContextCapture["activity"] } : {}), valid });
+        ...(typeof raw.contextActivity === "function" ? { activity: raw.contextActivity as NativeContextCapture["activity"] } : {}), valid,
+        ...(options.durableRoot ? { observe: async event => {
+          await appendHostJournal(options.runRoot, { name: "host_context_observation", schemaVersion: 1, at: new Date().toISOString(),
+            hostGenerationId: options.binding!.generationId, agentId: raw.agentId, turnId: raw.turnId,
+            ...(manualOperationId === undefined ? { stepId: raw.invocationId } : {}),
+            ...(observedServiceEpoch ? { serviceEpoch: observedServiceEpoch } : {}),
+            ...event, basis: "native_context_owner", build: runtimeBuildInfo() }, { configurationRoot: options.durableRoot });
+        } } : {}) });
     };
     const run = async (recovery?: HostCompactRequest, deadlineMs = 180000) => {
       const owner = makeOwner();
       try {
         const health = (await requestModeld(options.runRoot, { version: WIRE_VERSION, method: "health" }))[0];
         if (!object(health) || typeof health.serverGeneration !== "string") throw new ContextFailure("capability_unqualified");
+        observedServiceEpoch = health.serverGeneration;
         const before = owner.inspect();
         const request: ContextMaintenanceRequest = { operationId: manualOperationId ?? (recovery ? `overflow:${recovery.recoveryNonce}` : randomUUID()),
           hostEpoch: hostEpochFromFacts({ binding: options.binding!, profileId: "t21-state-root", bridgeDigest: options.compile!.transformedSha256 }),

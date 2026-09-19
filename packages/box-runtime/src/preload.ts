@@ -117,6 +117,8 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   if (admittedMode === "route") {
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RUN_OBSERVATION_SYMBOL)] = createRunObserver({
       generation: binding?.generationId ?? "unbound", emit: event => { void appendHostJournal(runRoot, event); },
+      emitTool: event => { void appendHostJournal(runRoot, event); },
+      instrumented: !!binding && ["run-queue-observation", "tool-execution-observation", "tool-execution-failure-observation"].every(id => profile.slices.some(slice => slice.id === id)),
     });
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_AUX_SYMBOL)] = wrapHostAuxExecutor;
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_CONTEXT_CONTROL_SYMBOL)] = createHostContextControl({
@@ -124,7 +126,7 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     compile: { profileId: profile.profileId, profileSha256, sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 },
   });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook({ ...stateSystemCompactHookOptions(),
-      context: hostContextClient({ mode: admittedMode, runRoot, binding, compile: { profileId: profile.profileId,
+      context: hostContextClient({ mode: admittedMode, runRoot, durableRoot, binding, compile: { profileId: profile.profileId,
         profileSha256, sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 } }),
     });
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_SYMBOL)] = isHostManagedRootActive;

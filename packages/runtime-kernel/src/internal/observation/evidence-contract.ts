@@ -147,8 +147,20 @@ export function assessEvidenceCoverage(facts: readonly EvidenceFact[], input: { 
   };
   const identity = select(v => has(v, "agentId") && (has(v, "stepId") || has(v, "dispatchId")));
   add("E01", identity, identity.some(f => has(f.value, "turnId") && has(f.value, "stepId") && has(f.value, "hostGenerationId") && has(f.value, "serviceEpoch")) ? [] : ["complete_execution_identity"]);
-  const artifacts = select(v => has(v, "stream.engine") || has(v, "diagnostic.stream.engine") || has(v, "artifacts"));
-  add("E02", artifacts, artifacts.some(f => has(f.value, "artifacts.hostBuild") && has(f.value, "artifacts.modeldBuild") && has(f.value, "artifacts.wireVersion")) ? [] : ["incident_time_loaded_tuple"]);
+  // Consume actual Host hook/modeld terminal producers, never an invented
+  // after-the-fact artifact bundle. Their identities remain in this revision.
+  const artifacts = select(v => has(v, "build") || has(v, "sourceIdentity") || has(v, "stream.engine") || has(v, "diagnostic.stream.engine"));
+  const hostArtifacts = artifacts.filter(f => named(f, "host_seam_stage") && own(f.value, "stage") === "hook_enter"
+    && atPath(f.value, "build.kind") === "bundled" && has(f.value, "build.sourceDigest")
+    && ["sourceSha256", "profileSha256", "transformedSha256"].every(field => has(f.value, `sourceIdentity.${field}`)) && has(f.value, "wireVersion"));
+  const modeldArtifacts = artifacts.filter(f => named(f, "model_step_terminal") && atPath(f.value, "build.kind") === "bundled"
+    && has(f.value, "build.sourceDigest") && has(f.value, "wireVersion"));
+  const sameExecution = (a: EvidenceFact, b: EvidenceFact) => ["agentId", "turnId", "hostGenerationId"].every(key =>
+    evidenceIdentity(own(a.value, key)) && own(a.value, key) === own(b.value, key));
+  const artifactGaps = [...(!hostArtifacts.length ? ["incident_time_host_loaded_tuple"] : []), ...(!modeldArtifacts.length ? ["incident_time_modeld_build"] : [])];
+  if (hostArtifacts.length && modeldArtifacts.length && !hostArtifacts.some(h => modeldArtifacts.some(m => sameExecution(h, m)
+    && atPath(h.value, "build.sourceDigest") === atPath(m.value, "build.sourceDigest") && own(h.value, "wireVersion") === own(m.value, "wireVersion")))) artifactGaps.push("host_modeld_identity_build_or_wire_mismatch");
+  add("E02", artifacts, artifactGaps);
   const stream = select(v => ["diagnostic.normalizeCause", "diagnostic.rejectSite", "diagnostic.sdkValidation", "diagnostic.stream.http", "diagnostic.stream.engine", "stream.engine", "stream.http"].some(path => has(v, path))
     || (own(v, "name") === "provider_error_observed" && has(v, "status")));
   const requestWitness = (value: Record<string, unknown>) => ["stream", "diagnostic.stream"].some(prefix => {
@@ -161,14 +173,24 @@ export function assessEvidenceCoverage(facts: readonly EvidenceFact[], input: { 
   });
   add("E03", stream, stream.length && stream.every(f => requestWitness(f.value)) ? [] : ["complete_provider_sdk_request_witness"]);
   const tools = select(v => own(v, "name") === "host_tool_observation" || has(v, "toolCallCount") || has(v, "diagnostic.stream.toolBatchState"));
-  add("E04", tools, ["external_business_commit", ...(!tools.some(f => named(f, "host_tool_observation") && own(f.value, "state") === "result_accepted") ? ["native_tool_execution_and_acceptance"] : [])]);
+  const handled = tools.filter(f => named(f, "host_tool_observation") && own(f.value, "basis") === "native_tool_handler"
+    && ["returned", "failed"].includes(own(f.value, "state") as string));
+  const accepted = tools.filter(f => named(f, "host_tool_observation") && own(f.value, "state") === "result_accepted"
+    && own(f.value, "basis") === "prompt_executor_append");
+  const toolPair = handled.some(h => accepted.some(a => sameExecution(h, a) && ["stepId", "toolCallId"].every(key =>
+    evidenceIdentity(own(h.value, key)) && own(h.value, key) === own(a.value, key))));
+  add("E04", tools, ["external_business_commit", ...(!handled.length ? ["native_tool_execution"] : []),
+    ...(!accepted.length ? ["tool_result_context_acceptance"] : []),
+    ...(handled.length && accepted.length && !toolPair ? ["tool_identity_correlation"] : [])]);
   const context = select(v => own(v, "name") === "host_context_observation");
-  add("E05", context, context.some(f => own(f.value, "state") === "checkpoint_observed") ? [] : ["context_checkpoint_readback"]);
+  add("E05", context, context.some(f => own(f.value, "state") === "checkpoint_observed" && own(f.value, "persisted") === true
+    && own(f.value, "basis") === "native_context_owner") ? [] : ["context_checkpoint_readback"]);
   const runs = select(v => own(v, "name") === "host_run_observation" || own(v, "name") === "host_server_activity_observation");
   add("E06", runs, ["application_rendering", "complete_child_task_coverage"]);
   const alerts = select(v => own(v, "name") === "host_alert_observation");
   add("E07", alerts, ["application_received_or_read", ...(!alerts.some(f => own(f.value, "kind") === "manager_attached") ? ["native_manager_attachment"] : [])]);
-  const health = select(v => own(v, "name") === "observation_source_health");
-  add("E08", health, health.length ? [] : ["source_health_snapshot"], "not_checked");
+  const health = select(v => ["observation_source_health", "host_run_health"].includes(own(v, "name") as string));
+  add("E08", health, health.some(f => named(f, "host_run_health") && own(f.value, "coverage") === "observed_window"
+    && own(f.value, "droppedTasks") === 0) ? [] : health.length ? ["producer_liveness_not_checked"] : ["source_health_snapshot"], "not_checked");
   return rows;
 }

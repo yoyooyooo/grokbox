@@ -242,13 +242,16 @@ export type HostStreamRejectDetail = {
   stage?: "stream-id" | "admit" | "normalize";
 };
 export function asHostPromptSession(session: PromptSession, modelId: string, onRequestId?: (id: string) => void,
-  input: { invocationId?: string; requireStepId?: boolean; contextWindowTokens?: number; onInvalidState?: (code: EnvelopeErrorCode, shape?: HostStateShape) => void; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
+  input: { invocationId?: string; requireStepId?: boolean; contextWindowTokens?: number;
+    onToolResultAccepted?: (event: { stepId: string; toolCallId: string }) => void; onInvalidState?: (code: EnvelopeErrorCode, shape?: HostStateShape) => void; reject?: (code: string, detail?: HostStreamRejectDetail) => StreamHandle } = {}): HostPromptSession {
   const notified = new Set<string>();
   const createExecutor = (state?: unknown): HostPromptExecutor => {
     let messages: ReturnType<typeof cloneHostExecutorWindow> = [];
     let invalidCode: EnvelopeErrorCode | undefined;
     let invalidReported = false;
     let invalidShape: HostStateShape | undefined;
+    let observationEpoch = 0;
+    const releasedTools = new Map<string, string | null>();
     const reportInvalid = () => {
       if (!invalidCode || invalidReported) return;
       invalidReported = true;
@@ -272,6 +275,16 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
         try {
           const batch = cloneHostExecutorWindow(next == null ? [] : next);
           messages = [...messages, ...batch];
+          // This proves only that a result for a previously released tool call
+          // entered this executor. It does not prove native approval/execution
+          // or an external commit, and historical imported results are ignored.
+          for (const message of batch) if (Array.isArray(message.content)) for (const part of message.content) {
+            if (part.type !== "tool-result" || typeof part.toolCallId !== "string") continue;
+            const stepId = releasedTools.get(part.toolCallId);
+            if (!stepId) continue;
+            releasedTools.delete(part.toolCallId);
+            try { input.onToolResultAccepted?.({ stepId, toolCallId: part.toolCallId }); } catch { /* Observation is not a state writer. */ }
+          }
         } catch (error) {
           invalidCode = error instanceof EnvelopeError ? error.code : "invalid_envelope";
           invalidShape = error instanceof HostStateCodecError ? error.stateShape : undefined;
@@ -281,7 +294,8 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
       },
       getMessages: read,
       getState: read,
-      clearMessages() { messages = []; invalidCode = undefined; invalidReported = false; invalidShape = undefined; },
+      clearMessages() { messages = []; invalidCode = undefined; invalidReported = false; invalidShape = undefined;
+        releasedTools.clear(); observationEpoch++; },
       stream(ctx, invocationId, tools, options) {
         const aux = grokboxAuxFrom(ctx) ?? grokboxAuxFrom(options);
         const requestId = aux
@@ -317,6 +331,18 @@ export function asHostPromptSession(session: PromptSession, modelId: string, onR
             ...(aux ? { aux } : {}),
           });
           void handle.response.then(cancellation.dispose, cancellation.dispose);
+          if (!aux && typeof requestId === "string" && input.onToolResultAccepted) {
+            const epoch = observationEpoch;
+            void handle.response.then(response => {
+              if (epoch !== observationEpoch || response.error) return;
+              for (const message of response.messages) if (Array.isArray(message.content)) for (const part of message.content) {
+                if (part.type !== "tool-call") continue;
+                const previous = releasedTools.get(part.toolCallId);
+                if (previous !== undefined && previous !== requestId) { releasedTools.set(part.toolCallId, null); continue; }
+                if (releasedTools.size < 512) releasedTools.set(part.toolCallId, requestId);
+              }
+            }, () => { /* Failed/aborted responses do not qualify a result link. */ });
+          }
           if (!aux && typeof requestId === "string" && !notified.has(requestId)) {
             notified.add(requestId);
             try { onRequestId?.(requestId); } catch { /* Host notification is not a model effect. */ }

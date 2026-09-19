@@ -413,6 +413,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "is running": async (deps, args, options) => await runIsRunning(deps, args[0] ?? "", options),
     "runtime status": async (deps) => await runRuntimeStatus(deps),
     "runtime storage status": async (deps,args,options) => await runRuntimeMonitor(deps,"storage-status",args,options),
+    "runtime monitor install": async (deps,args,options) => await runRuntimeMonitor(deps,"install",args,options),
+    "runtime monitor service": async (deps,args,options) => await runRuntimeMonitor(deps,"service",args,options),
     "runtime monitor init": async (deps,args,options) => await runRuntimeMonitor(deps,"init",args,options),
     "runtime monitor run": async (deps,args,options) => await runRuntimeMonitor(deps,"run",args,options),
     "runtime monitor ack": async (deps,args,options) => await runRuntimeMonitor(deps,"ack",args,options),

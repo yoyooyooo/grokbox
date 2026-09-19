@@ -8,9 +8,11 @@
 
 `monitor.runtime.ts`已将远端采样、本地journal drain、周期维护分成同一Effect生命周期的三个有界子任务，网络不持本地writer许可；DB提交/发布串行，取消等待各任务结算后才finish collector。once仍合并为一次输出；持续drain逐批发布不累积无限结果数组。`monitor-scheduling-review.test.ts`加入挂起RPC时本地原生失败仍ready、随后source收到取消的实测反例，并保留6000条积压不加速ownership读的原有测试。
 
-源adapter/HSO接线、canonical runRoot/目标集合、实际source-liveness、安装自启与原生Webhook尚未闭合，不把子任务拆分当完整常驻资格。[限定回执](../reports/2026-09-18-observation-storage-followup.md)。
+canonical runRoot/目标集合及daemon所属collector已接通，原生run-observer同帧健康进入周期检测；读取文件成功仍不代表producer存活。Host与control journal独立游标/状态，未创建来源、失联、截断和实际退役分开。配置移除/停用/改目标时先结算旧collector才替换，坏配置不复活默认采集。HSO其他来源、动态目标、Box开机安装和完整原生现场仍未闭合，不把daemon子任务或手工重启当boot资格。[限定回执](../reports/2026-09-18-observation-storage-followup.md)。
 
 必要存储维护另已接入实际modeld listener的子Scope，不再仅依赖本collector；其固定回执、闲置日志回收和真实Node/退出证明归[OBS-04](OBS-04-bounded-observation-storage.md)与[回执](../reports/2026-09-18-modeld-storage-lifetime.md)。这不是把modeld变成新collector，也没有因此完成目标集合、原生告警或通知投递。
+
+本轮`runtime monitor install`仅经明确确认初始化观测库并提交统一`daemon.observation`配置，不启动daemon；已经运行的daemon随后按该配置持有collector。`runtime monitor service`只读已存在服务。实际Node验证CLI退出后继续采集、强杀daemon再启动按持久游标接续、正常停止后无晚写；详见[固定回执](../reports/2026-09-19-pre-e2e-observation.md)。
 
 ## Depends-on / Modules
 

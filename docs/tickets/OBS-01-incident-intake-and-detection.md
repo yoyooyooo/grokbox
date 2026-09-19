@@ -6,7 +6,9 @@
 
 未知原生error tray、无STEP原生run failed与unsupported source gap已进入同一incident/固定证据/本地待通知流程。历史失败可索引，但超过通知新鲜窗口不生成新的Bot唤醒工作；压力丢弃只推进有gap的消费水位，不伪造故障现场。journal drain与远端采样已在同一Effect宿主分离，挂起RPC不会挡住本地失败。
 
-实际证明在`observation-evidence-contract.test.ts`、`incident-evidence-store.test.ts`、`observation-storage-pressure.test.ts`和`monitor-scheduling-review.test.ts`。主动停滞检测仅接受显式source-liveness输入，尚未接真实健康source到生产周期，不能宣称所有卡住任务会自动发现。全部来源/动态目标、原生资格、prepare异步化和独立review仍未闭合。限定结果见[首片](../reports/2026-09-18-observation-evidence-first-slice.md)及[增量](../reports/2026-09-18-observation-storage-followup.md)。
+实际证明在`observation-evidence-contract.test.ts`、`incident-evidence-store.test.ts`、`observation-storage-pressure.test.ts`和`monitor-scheduling-review.test.ts`。主动停滞检测现已接入同一次原生ownership响应中的run-observer窗口：只对相同Agent/dispatch/Host代、5秒内且未丢任务的started任务判断suspected；队列等待、工具/审批、缺task、旧代或不完整窗口均不猜死锁。并行工具全部结算前保持等待阶段，实际模型流消费更新进度。健康读本身不刷新任务进度，缺terminal不推断完成。全部来源/动态目标、原生现场资格、prepare异步化和独立review仍未闭合。限定结果见[首片](../reports/2026-09-18-observation-evidence-first-slice.md)及[增量](../reports/2026-09-18-observation-storage-followup.md)。
+
+E2E前组合已验证生产observer任务失败→实际journal→双源collector→SQLite固定revision→持久授权sender→loopback HTTP；真实原生Provider/App未运行。授权前发生而后入库的旧故障必须同时被工作选择和自动发送入口拦住，不能因work创建较晚补发。详见[回执](../reports/2026-09-19-pre-e2e-observation.md)。
 
 ## Goal / Modules
 

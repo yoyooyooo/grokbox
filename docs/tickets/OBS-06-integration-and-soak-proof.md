@@ -1,12 +1,12 @@
 # OBS-06 — 观测、脱敏、保留与通知的成套证明
 
-**Status：Planned / Spec-only；M4。** Contract：[Spec §11](../roadmap/template-ops-automation-spec.md#tickets)。依OBS-00–05、T44/T45/T46的最小纵切与T51/T54；T50拥有服务安装/原生发布验收，本票拥有证据/存储成套回归，不重复维护LIVE状态。
+**Status：Partial / E2E前观测组合已实现；全安装稳态与安全退役未签，M4未关闭。** Contract：[Spec §11](../roadmap/template-ops-automation-spec.md#tickets)。依OBS-00–05、T44/T45/T46的最小纵切与T51/T54；T50拥有服务安装/原生发布验收，本票拥有证据/存储成套回归，不重复维护LIVE状态。
 
 ## Goal / Modules
 
 验证真实写入边界到可用告警的完整链，避免“JSON好看”“一张issue创建”“一次GC成功”取代产品结果。默认不需要Issue、gh认证、高级分流、自动维护或CONT完整恢复。
 
-新增公共合成集成测试、实际Node制品fixture与verifier group；`scripts/verify-runtime-rebuild.mjs`仅在测试真实存在后注册`incident-evidence`组。不在本轮Spec阶段注册空成功测试或占位能力。
+已建立生产observer→真实journal/SQLite→固定现场→持久授权sender→loopback HTTP组合，实际Node CLI/daemon安装、强杀、重开及读取接续也有独立用例。稳定组合为`pre-e2e-observation`，不为了原计划名再注册同义空组。当前真原生账号/Provider/App与24小时稳态仍未运行。
 
 ## Acceptance matrix
 
@@ -25,16 +25,22 @@
 
 ## Executable exits
 
-待新增并运行：
+当前已实现并可运行：
 
 ```bash
-bun test test/incident-evidence-integration.test.ts test/incident-evidence-packed.test.ts packages/box-runtime/test/observation-storage-soak.test.ts
-bun scripts/verify-runtime-rebuild.mjs incident-evidence
+bun test test/incident-evidence-integration.test.ts test/monitor-service-packed.test.ts packages/box-runtime/test/observation-producer-boundaries.test.ts
+bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation
 bun run typecheck
 bun run check:publication
 ```
 
 默认public owned-fixture＋临时真实SQLite/LevelDB/HTTP＋受控进程，不调用真实账号/模型。soak缩小预算、至少20轮填充回收并另测默认参数，不把小样本百分比推为生产SLA。逐项记录source/packed/physical-storage/原生隔离/独立review，测试跳过保留notProven。
+
+## 当前证明边界
+
+O01/O02/O03/O04/O05/O07/O09已补实际源producer和组合路径，不能仅用最终JSON断言代替：原生handler和checkpoint挂点有固定源函数探针；公开默认测试使用owned原生边界，文件/数据库/Node/HTTP为真实依赖。尤其新增反例发现并修复授权前故障在授权后才入库导致误补发，工作选择与直接自动入口均检查incident first_seen和work created_at。
+
+O06全安装物理预留/长期稳态、O08完整执行/恢复台账安全退役仍由OBS-04/05实施，当前局部cap、unknown不重试、J1保护与实际SIGKILL不签全部。O10真实Bot行为必须在原生窗口观察；没有因此实现完整受托诊断policy。独立review与实际计数见[固定回执](../reports/2026-09-19-pre-e2e-observation.md)。
 
 ## Native / LIVE gates
 

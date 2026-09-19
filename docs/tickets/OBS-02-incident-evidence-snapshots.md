@@ -6,7 +6,7 @@
 
 已有同库不可变revision/manifest、共享fact引用与digest校验、离线incident/capture/lease命令、旧STEP入口coverage补接及公共安全摘要。增量实现每incident最多3份可读revision，通知与有效租约保护的revision不可淘汰；无可回收项则拒绝新capture。持久history watermark保证回收后不复用revision，缺失的已采集修订返回snapshot_revision_retired而非snapshot_not_captured，查询不借用新现场。
 
-实际新增测试名为`packages/box-runtime/test/incident-evidence-store.test.ts`和`test/monitor-incident-cli.test.ts`；原计划中的同义文件名不再额外创建。完整跨来源关联/原生边界、异步prepare worker、所有崩溃矩阵和独立review仍未关闭。限定证据见[首片](../reports/2026-09-18-observation-evidence-first-slice.md)及[存储增量](../reports/2026-09-18-observation-storage-followup.md)。
+实际新增测试名为`packages/box-runtime/test/incident-evidence-store.test.ts`和`test/monitor-incident-cli.test.ts`；原计划中的同义文件名不再额外创建。本轮补充Host/modeld事发制品、原生tool handler与executor接受、checkpoint和collector/native health的严格身份关联；组合source failure→固定revision→sender及打包Node读回已接线。全部跨来源、异步prepare worker、所有崩溃矩阵与独立review仍未关闭，不以局部补齐宣称全量原生覆盖。限定证据见[首片](../reports/2026-09-18-observation-evidence-first-slice.md)及[存储增量](../reports/2026-09-18-observation-storage-followup.md)。
 
 ## Goal / Modules
 
@@ -20,7 +20,7 @@ collector提交通知准备任务后，独立worker固定最小现场；manifest
 
 统一journal/monitor的显式身份闭包、source冲突和legacy关系；接回coverage/lookup/retention/readFailure/writer health。缺在保留窗口、截断、redacted、unsupported与未instrumented分开，不因已知失败的其他证据缺失将其抹掉。
 
-注册待实现命令：`runtime monitor incident <id> --evidence-revision <n> --json`为稳定主查询；`runtime monitor capture`是明确本地写入；`runtime monitor evidence lease`是单独限时预留。现有`runtime incident <step-id> --agent`不改接收身份，不能把monitor UUID放到STEP位置。
+已注册命令：`runtime monitor incident <id> --evidence-revision <n> --json`为稳定主查询；`runtime monitor capture`是明确本地写入；`runtime monitor evidence lease`是单独限时预留。现有`runtime incident <step-id> --agent`不改接收身份，不能把monitor UUID放到STEP位置。
 
 通知command descriptor从实际registry/capabilities生成：一主一补充、validated argv、readOnly、box-local requirement；自由文字不能拼shell。无能力或目标无Box执行权限时说明限制，不伪造命令。查询过期revision返回保留的summary/expiry，不改查“最新Bot错误”。
 

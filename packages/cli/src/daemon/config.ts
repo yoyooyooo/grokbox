@@ -21,13 +21,14 @@ export type DaemonDesktopConfig = { stopWindowPath?: string; floorAgentIds?: str
 /** Daemon launch resources, assembled from intent and installation security state.
  * This is not an on-disk daemon config or a second source of user preferences. */
 export type DaemonConfig = { version: 1; network?: DaemonNetworkConfig; serve?: DaemonServeConfig;
-  filesystem?: DaemonFilesystemConfig; process?: DaemonProcessConfig; desktop?: DaemonDesktopConfig };
+  filesystem?: DaemonFilesystemConfig; process?: DaemonProcessConfig; desktop?: DaemonDesktopConfig;
+  observation?: { runRoot: string; agentIds: string[] } };
 
 export function validateDaemonConfig(input: unknown): DaemonConfig {
-  if (!isRecord(input) || input.version !== 1 || Object.keys(input).some((key) => !["version", "network", "serve", "filesystem", "process", "desktop"].includes(key))) throw new CliError("profile_invalid", "Invalid daemon launch resources.");
+  if (!isRecord(input) || input.version !== 1 || Object.keys(input).some((key) => !["version", "network", "serve", "filesystem", "process", "desktop", "observation"].includes(key))) throw new CliError("profile_invalid", "Invalid daemon launch resources.");
   const resources = structuredClone(input);
   const intent: Record<string, unknown> = {};
-  for (const key of ["serve", "filesystem", "process"]) if (input[key] !== undefined) intent[key] = input[key];
+  for (const key of ["serve", "filesystem", "process", "observation"]) if (input[key] !== undefined) intent[key] = input[key];
   if (input.network !== undefined) {
     const network = input.network;
     if (!isRecord(network) || Object.keys(network).some((key) => !["host", "port", "tokenSha256"].includes(key)) || typeof network.tokenSha256 !== "string" || !/^[0-9a-f]{64}$/.test(network.tokenSha256)) throw new CliError("profile_invalid", "Daemon credential verifier is invalid.");
@@ -85,6 +86,7 @@ export async function writeDaemonConfig(configDir: string, resources: DaemonConf
       ...(config.network ? { network: { host: config.network.host, port: config.network.port } } : {}),
       ...(config.serve ? { serve: config.serve } : {}), ...(config.filesystem ? { filesystem: config.filesystem } : {}),
       ...(config.process ? { process: config.process } : {}),
+      ...(config.observation ? { observation: config.observation } : {}),
     },
     ...(config.desktop ? { desktop: {
       idleReclaim: { ...(config.desktop.pruneEnabled !== undefined ? { enabled: config.desktop.pruneEnabled } : {}),

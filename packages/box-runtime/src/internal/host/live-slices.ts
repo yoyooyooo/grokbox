@@ -181,6 +181,25 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "          sent.push(update.message.content);\n",
     replacement: `          sent.push(update.message.content);\n          try { globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")]?.buffered(); } catch {}\n`,
   },
+  {
+    id: "tool-execution-observation",
+    startAnchor: "  async executeToolCall(parentCtx, toolCall, callId, promiseFn, resultMergeFn, hookContextCollector) {\n",
+    endAnchor: "      const newToolCall = this.withToolCallMetadata(callId, await resolvers.promise,",
+    find: "      promiseFn(ctx).then((r) => {\n        result = r;\n",
+    replacement: `      let __grokbox_tool_observation;
+      try { __grokbox_tool_observation = globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")]?.tool(ctx.get(requestIdKey), this.invocationId, callId); } catch {}
+      promiseFn(ctx).then((r) => {
+        try { __grokbox_tool_observation?.finish(true); } catch {}
+        result = r;
+`,
+  },
+  {
+    id: "tool-execution-failure-observation",
+    startAnchor: "  async executeToolCall(parentCtx, toolCall, callId, promiseFn, resultMergeFn, hookContextCollector) {\n",
+    endAnchor: "      const newToolCall = this.withToolCallMetadata(callId, await resolvers.promise,",
+    find: "      }).catch((error41) => {\n        resolvers.reject(error41);\n      });\n",
+    replacement: "      }).catch((error41) => {\n        try { __grokbox_tool_observation?.finish(false); } catch {}\n        resolvers.reject(error41);\n      });\n",
+  },
   ...ALERT_OBSERVATION_SLICES,
   ...SERVER_ACTIVITY_OBSERVATION_SLICES,
   ...OWNERSHIP_READ_SLICES,

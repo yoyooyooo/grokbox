@@ -2,11 +2,12 @@ import { expect, test } from "bun:test";
 import { captureContextPolicy, contextBudget, summaryBudget } from "@grokbox/runtime-kernel/config";
 import { ContextFailure, type ContextCandidate } from "@grokbox/runtime-kernel/contract";
 import { validateContextReplacement } from "@grokbox/runtime-kernel/inference";
-import { createNativeContextOwner } from "../src/internal/host/context-maintenance.ts";
+import { createNativeContextOwner, type NativeContextCapture } from "../src/internal/host/context-maintenance.ts";
 import { planPiCompaction } from "../src/internal/context/pi-projection.ts";
 import { ownedNativeSummary } from "./context-native-fixture.ts";
 
-function fixture(options: { checkpointFails?: boolean; appendFails?: boolean; beforeAccept?: () => Promise<void>; checkpointWait?: () => Promise<void> } = {}) {
+function fixture(options: { checkpointFails?: boolean; appendFails?: boolean; beforeAccept?: () => Promise<void>; checkpointWait?: () => Promise<void>;
+  observe?: NativeContextCapture["observe"] } = {}) {
   let live = true, checkpoints = 0;
   let messages: any[] = [
     { role: "system", content: "Retain system policy", providerOptions: { privateControl: { sentinel: "SYSTEM" } } },
@@ -29,6 +30,7 @@ function fixture(options: { checkpointFails?: boolean; appendFails?: boolean; be
     invocationId: "step", turnId: "turn", agentId: "agent", sessionId: "", modelId: "owned/model",
     normalize: rows => rows, fixedMessages: () => root.getMessages().slice(0, 2), tools: () => [], valid: () => live,
     checkpoint: async () => { await options.checkpointWait?.(); if (options.checkpointFails) throw new Error("checkpoint_failed"); checkpoints++; },
+    observe: options.observe,
   });
   const material = owner.inspect();
   const policy = captureContextPolicy({ windowTokens: 32000, compaction: { reserveTokens: 4096, keepRecentTokens: 500 } }, "owned/model", "agent");
@@ -39,6 +41,52 @@ function fixture(options: { checkpointFails?: boolean; appendFails?: boolean; be
   return { owner, native, original, material, candidate, root, controller,
     current: () => messages, checkpoints: () => checkpoints, writes: () => ({ clears, appends }), revoke: () => { live = false; } };
 }
+
+test("context evidence is emitted at the real native checkpoint boundary without exporting summary text", async () => {
+  const events: Array<Parameters<NonNullable<NativeContextCapture["observe"]>>[0]> = [];
+  const f = fixture({ observe: async event => { events.push(event); } });
+  try {
+    await f.owner.preview(f.candidate); expect(events).toEqual([]);
+    const committed = await f.owner.commit(f.candidate);
+    expect(events.map(event => event.state)).toEqual(["checkpoint_started", "checkpoint_observed"]);
+    expect(events[1]).toMatchObject({ persisted: true, operationId: f.candidate.operationId,
+      sourceRootRevision: f.material.rootRevision, rootRevision: committed.rootRevision });
+    expect(JSON.stringify(events)).not.toContain("TOOL_TAIL"); expect(JSON.stringify(events)).not.toContain("NEW_NONCE");
+    await f.owner.commit(f.candidate); expect(events).toHaveLength(2);
+  } finally { await f.owner.close(); }
+});
+
+test("cancellation during diagnostic I/O is rechecked before native publication and close waits for the observer", async () => {
+  let enter!: () => void, release!: () => void;
+  const began = new Promise<void>(r => { enter = r; }), hold = new Promise<void>(r => { release = r; });
+  const states: string[] = [];
+  const f = fixture({ observe: async event => { states.push(event.state); if (event.state === "checkpoint_started") { enter(); await hold; } } });
+  let closing: Promise<void> | undefined;
+  try {
+    await f.owner.preview(f.candidate);
+    const commit = f.owner.commit(f.candidate).then(value => value, error => error);
+    await began; f.revoke();
+    let closed = false;
+    closing = f.owner.close().then(() => { closed = true; });
+    await new Promise<void>(r => setImmediate(r)); expect(closed).toBe(false);
+    expect(f.writes()).toEqual({ clears: 0, appends: 0 });
+    release(); expect(await commit).toMatchObject({ code: "cancelled" }); await closing;
+    expect(f.current()).toEqual(f.original); expect(f.checkpoints()).toBe(0);
+    expect(states).toEqual(["checkpoint_started"]);
+  } finally { release(); await closing; await f.owner.close(); }
+});
+
+test("checkpoint failure yields a durable-uncertainty observation, and an observation sink cannot turn it into success", async () => {
+  const states: string[] = [];
+  const f = fixture({ checkpointFails: true, observe: async event => { states.push(event.state); } });
+  try {
+    await f.owner.preview(f.candidate); await expect(f.owner.commit(f.candidate)).rejects.toMatchObject({ code: "commit_unknown" });
+    expect(states).toEqual(["checkpoint_started", "commit_unknown"]); expect(f.owner.readCommit()?.persisted).toBe(false);
+  } finally { await f.owner.close(); }
+  const g = fixture({ observe: async () => { throw Error("PRIVATE_DIAGNOSTIC_SINK_FAILURE"); } });
+  try { await g.owner.preview(g.candidate); expect(await g.owner.commit(g.candidate)).toMatchObject({ outcome: "committed", persisted: true }); }
+  finally { await g.owner.close(); }
+});
 
 test("native fixed material survives cloning reads; preview does not mutate or checkpoint", async () => {
   const f = fixture();

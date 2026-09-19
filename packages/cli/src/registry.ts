@@ -1644,6 +1644,24 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
+    path: ["runtime", "monitor", "install"],
+    usage: "grokbox runtime monitor install --run-root <path> --agents <uuid,...> [--expect-revision <sha256> --operation-id <id> --confirm]",
+    summary: "Preview or explicitly initialize observation storage and configure the existing daemon collector; never starts a process or enables notifications.",
+    arguments: [], options: options([
+      { flags: "--run-root <path>", description: "Explicit owned Host runtime root", required: true },
+      { flags: "--agents <uuid,...>", description: "One to 32 explicit ownership-observation Bot UUIDs; journals cover their own source events", required: true },
+      { flags: "--expect-revision <sha256>", description: "Canonical configuration revision from the preview" },
+      { flags: "--operation-id <id>", description: "Stable configuration operation identity" },
+      { flags: "--confirm", description: "Initialize/migrate local observation storage and publish collector configuration" },
+    ]), stdin: "none", table: false, timeout: false, destructive: true, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
+    path: ["runtime", "monitor", "service"], usage: "grokbox runtime monitor service --json",
+    summary: "Read the already-running local daemon's collector lifecycle and source coverage; does not start or repair anything.",
+    arguments: [], options: options(), stdin: "none", table: false, timeout: false,
+    destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["runtime", "monitor", "init"],
     usage: "grokbox runtime monitor init --confirm",
     summary: "Initialize this installation's observation database with explicit confirmation; existing data is never replaced.",

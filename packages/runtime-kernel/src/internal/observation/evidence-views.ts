@@ -4,13 +4,15 @@ import { failureSummaryFromObservation } from "../contract/failure-summary.ts";
 import { evidenceIdentity, type EvidenceFact, type IncidentEvidenceManifest } from "./evidence-contract.ts";
 import type { IncidentAssessment } from "./incident-rules.ts";
 import { projectContinuityEvent } from "./continuity-contract.ts";
+import { projectExecutionBoundary, projectObservationSourceHealth } from "./boundary-events.ts";
+import { projectNativeRunHealthEvent } from "./run-health.ts";
 
 export const EVIDENCE_VIEW_POLICY = "evidence-views-v1";
 export const PUBLIC_TOOL_CATALOG = Object.freeze({ SendToAgent: ["target_id", "message"], SendToUser: ["message"] } as const);
 export type EvidenceView = "local-diagnostic" | "bot-diagnostic" | "public-summary";
-const sourceNames = ["continuity_observation", "host_seam_stage", "host_stream_rejected", "host_normalized_terminal", "model_step_terminal", "host_run_observation", "host_alert_observation", "host_server_activity_observation", "host_context_observation", "host_tool_observation", "provider_error_observed", "observation_source_health"] as const;
+const sourceNames = ["continuity_observation", "host_seam_stage", "host_stream_rejected", "host_normalized_terminal", "model_step_terminal", "host_run_observation", "host_alert_observation", "host_server_activity_observation", "host_context_observation", "host_tool_observation", "provider_error_observed", "observation_source_health", "host_run_health"] as const;
 const states = ["queued", "started", "finished", "failed", "cancelled", "reply_buffered", "member_returned", "checkpoint_started", "checkpoint_observed", "commit_unknown", "generated", "released", "native_started", "returned", "result_accepted"] as const;
-const fields = ["agentId", "stepId", "turnId", "dispatchId", "failureId", "trayId", "hostGenerationId", "serviceEpoch", "sourceInstanceId", "clientNonce", "operationId", "dutyId", "occurrenceId", "scopeId", "rootId", "parentStepId"] as const;
+const fields = ["agentId", "stepId", "turnId", "dispatchId", "failureId", "trayId", "hostGenerationId", "serviceEpoch", "sourceInstanceId", "clientNonce", "operationId", "dutyId", "occurrenceId", "scopeId", "rootId", "parentStepId", "toolCallId", "sourceKey", "collectorEpoch"] as const;
 const member = <T extends string>(value: unknown, values: readonly T[]) => typeof value === "string" && values.includes(value as T) ? value as T : undefined;
 const uint = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : undefined;
 
@@ -42,7 +44,7 @@ export function publicEvidenceSummary(manifest: IncidentEvidenceManifest, facts:
     assessment: { classifierVersion: assessment.classifierVersion, category: assessment.category, reason: assessment.reason,
       basis: assessment.basis, rootCause: assessment.rootCause, basisRefs: assessment.basisRefs.map(ref => references.get(ref)).filter(Boolean) },
     facts: facts.map(f => {
-      const v = f.value, continuity = projectContinuityEvent(v);
+      const v = f.value, continuity = projectContinuityEvent(v), boundary = projectExecutionBoundary(v), sourceHealth = projectObservationSourceHealth(v), nativeHealth = projectNativeRunHealthEvent(v);
       const failed = own(v, "name") === "host_stream_rejected" || (["model_step_terminal", "host_normalized_terminal"].includes(own(v, "name") as string)
         && ["error", "abort", "cancelled"].includes((own(v, "terminalClass") ?? own(v, "outcome")) as string));
       const summary = failed ? failureSummaryFromObservation(v) : undefined, diagnostic = projectStreamDiagnostic(own(v, "diagnostic"));
@@ -55,6 +57,13 @@ export function publicEvidenceSummary(manifest: IncidentEvidenceManifest, facts:
           gapCodes: continuity.coverage.gapCodes, inboundCount: continuity.inboundCount, quietPeriodProven: false,
           recoveryReferences: "not_published", domainCompletion: "not_proven" } } : {}),
         ...(member(own(v, "state"), states) ? { state: member(own(v, "state"), states) } : {}),
+        ...(boundary ? { boundary: { basis: boundary.basis, state: boundary.state,
+          ...(boundary.name === "host_context_observation" ? { persisted: boundary.persisted,
+            rootChanged: boundary.sourceRootRevision !== boundary.rootRevision } : { nativeHandlerObserved: boundary.nativeHandlerObserved, externalCommitObserved: false }) } } : {}),
+        ...(nativeHealth ? { nativeHealth: { coverage: nativeHealth.coverage, tasks: nativeHealth.tasks.length,
+          droppedTasks: nativeHealth.droppedTasks, source: nativeHealth.source, terminalAbsenceMeansSuccess: false } } : {}),
+        ...(sourceHealth ? { sourceHealth: { source: sourceHealth.source, state: sourceHealth.state, basis: sourceHealth.basis,
+          readBytes: sourceHealth.readBytes, records: sourceHealth.records, hasMore: sourceHealth.hasMore, producerLiveness: "not_checked" } } : {}),
         ...(summary ? { failure: { code: summary.code, phase: summary.phase, category: summary.category,
           ...(summary.http ? { httpStatus: summary.http.status } : {}) } } : {}),
         ...(diagnostic ? { diagnostic: {

@@ -26,7 +26,13 @@ export async function runAutomaticOpsNotification(input: Input & { workId: strin
   if (!record || record.state !== "prepared" || !record.automatic || canonicalJson(record.automatic) !== canonicalJson(input.authorization))
     return { state: "blocked", reason: "automatic_authorization_changed" };
   const work = await openMonitorStore(input.durableRoot).notificationDelivery(input.workId);
-  if (!("createdAtMs" in work) || typeof work.createdAtMs !== "number" || work.createdAtMs <= record.automatic.activatedAtMs)
+  // A work created now can describe a source failure buffered before consent.
+  // Both immutable times must be inside this authorization's future window.
+  const nowMs = Date.now();
+  if (!("createdAtMs" in work) || typeof work.createdAtMs !== "number" || !Number.isSafeInteger(work.createdAtMs)
+    || work.createdAtMs <= record.automatic.activatedAtMs || work.createdAtMs > nowMs
+    || !("incidentFirstSeenAtMs" in work) || typeof work.incidentFirstSeenAtMs !== "number" || !Number.isSafeInteger(work.incidentFirstSeenAtMs)
+    || work.incidentFirstSeenAtMs <= record.automatic.activatedAtMs || work.incidentFirstSeenAtMs > nowMs)
     return { state: "blocked", reason: "work_precedes_authorization" };
   const prepared = createPreparedNoticeDriver({ durableRoot: input.durableRoot, expectedBindingRevision: record.revision,
     expectedModelRevision: record.automatic.modelRevision, authorizationId: record.automatic.id, readNative: input.readNative, signal: input.signal }, ports);

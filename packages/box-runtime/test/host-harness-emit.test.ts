@@ -37,6 +37,8 @@ describe("L2 Host harness always-emit", () => {
       "run-queue-observation",
       "group-member-observation",
       "group-buffer-observation",
+      "tool-execution-observation",
+      "tool-execution-failure-observation",
       "alert-manager-observation",
       "alert-main-decision",
       "alert-input-cleanup",

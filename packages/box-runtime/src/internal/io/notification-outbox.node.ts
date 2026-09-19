@@ -86,17 +86,18 @@ export function notificationOutbox(access: Access) {
         const row = await db.first(`SELECT w.id FROM notification_work w JOIN incidents i ON i.id=w.incident_id
           JOIN incident_snapshots s ON s.incident_id=w.incident_id AND s.revision=w.evidence_revision
           WHERE w.state IN ('ready','blocked','preparing') AND w.created_at>? AND w.created_at<=? AND w.expires_at>?
+          AND i.first_seen>? AND i.first_seen<=?
           AND i.acknowledged=0 AND (i.snooze_until IS NULL OR i.snooze_until<=?) AND s.tier='detail' AND s.expires_at>?
           AND NOT EXISTS(SELECT 1 FROM notification_attempts a WHERE a.work_id=w.id)
           AND NOT EXISTS(SELECT 1 FROM events e WHERE e.incident_id=w.incident_id AND e.kind='notification_export_unknown')
-          ORDER BY w.created_at,w.id LIMIT 1`, [afterMs, nowMs, nowMs, nowMs, nowMs]);
+          ORDER BY w.created_at,w.id LIMIT 1`, [afterMs, nowMs, nowMs, afterMs, nowMs, nowMs, nowMs]);
         return row ? String(row.id) : null;
       });
     },
     notificationDelivery: async (workId: string) => {
       if (!monitorUuid(workId)) return failure("invalid_work");
       return access.read(async db => {
-        const work = await db.first("SELECT id,incident_id,evidence_revision,state,created_at,expires_at FROM notification_work WHERE id=?", [workId]);
+        const work = await db.first("SELECT w.id,w.incident_id,w.evidence_revision,w.state,w.created_at,w.expires_at,i.first_seen AS incident_first_seen FROM notification_work w LEFT JOIN incidents i ON i.id=w.incident_id WHERE w.id=?", [workId]);
         if (!work) return { state: "not_found", automaticRetry: false, botReport: "not_observed", userRead: "not_observed" };
         const rows = await db.all("SELECT * FROM notification_attempts WHERE work_id=? ORDER BY reserved_at LIMIT 2", [workId]);
         if (rows.length > 1) return failure("attempt_conflict");
@@ -104,6 +105,7 @@ export function notificationOutbox(access: Access) {
         return { state: attempt && ["reserved", "attempting", "unknown"].includes(String(attempt.state)) ? "unknown" : String(work.state),
           workId, incidentId: String(work.incident_id), evidenceRevision: Number(work.evidence_revision),
           createdAtMs: Number(work.created_at), expiresAtMs: Number(work.expires_at),
+          incidentFirstSeenAtMs: work.incident_first_seen === null || work.incident_first_seen === undefined ? null : Number(work.incident_first_seen),
           attempt: attempt && decoded ? { attemptId: String(attempt.id), state: state(attempt.state),
             targetAgentId: String(attempt.target_id), bindingRevision: Number(attempt.binding_revision),
             envelopeDigest: decoded.frozen.envelopeDigest, envelopeBytes: decoded.frozen.envelopeBytes,

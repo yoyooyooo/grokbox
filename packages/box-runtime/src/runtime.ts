@@ -20,6 +20,9 @@ export {
 } from "./internal/io/paths.ts";
 export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration.node.ts";
 export { readStorageConfiguration } from "./internal/io/storage-configuration.node.ts";
+export { acquireDaemonSocket, type DaemonSocketLease } from "./internal/io/daemon-socket.node.ts";
+export { configureMonitorService, readMonitorServiceConfiguration, type MonitorServiceConfiguration } from "./internal/io/monitor-installation.node.ts";
+export { startMonitorService, type MonitorServiceStatus } from "./internal/roots/monitor-service.runtime.ts";
 export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roots/agent-routines.runtime.ts";
 export { runOpsNotificationDelivery, observeOpsNotification, type PairedNotificationDriver } from "./internal/roots/ops-notification.runtime.ts";
 export { activateOpsNotifications } from "./internal/roots/ops-activation.runtime.ts";
