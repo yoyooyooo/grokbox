@@ -1,12 +1,12 @@
 # grokbox core
 
-Version-matched usage guide for the local/remote Grok Bot CLI and box daemon. Load this file from the installed
+Version-matched usage guide for the Box-first Grok Bot CLI and its established remote daemon capabilities. Load this file from the installed
 binary (`grokbox skills get core --full`) instead of copying command docs into an Agent skill
 stub.
 
 ## What this CLI is
 
-`grokbox` is an agent-first adapter, not a raw Gateway wrapper. The published package requires Node.js 20+; both `grokbox` and `gbox` resolve to the same shim, which returns stable `runtime_unsupported` before loading the bundle on an older runtime. Bun is development tooling only.
+`grokbox` is an agent-first adapter primarily executed inside the supported Box, not a raw Gateway wrapper. Existing remote commands remain available, but new local runtime capabilities need no remote equivalent. The operator owns networking and supplies endpoint/credential references; Tailscale is not a default dependency. The published package requires Node.js 20+; both `grokbox` and `gbox` resolve to the same shim, which returns stable `runtime_unsupported` before loading the bundle on an older runtime. Bun is development tooling only.
 
 ```text
 Agent / Skill
@@ -82,12 +82,12 @@ grokbox runtime deactivate
 
 Targets accept an exact ID first, then an unambiguous case-insensitive name/title. The built-in
 `default` Profile works without a file; use `grokbox init` for local onboarding and
-`grokbox profile ...` for explicit selection/configuration. Remote bootstrap preserves any existing filesystem policy; add `--admit-home-read` only when the user explicitly authorizes the peer home read/download root. Use `--expect-kind agent|group` on
+`grokbox profile ...` for explicit selection/configuration. For a user-managed remote service use `profile add <name> --transport daemon --server-url <https-url> --daemon-token-ref <reference>` and `profile use <name>`. Normal DNS, MagicDNS and IP use the same URL/TLS rules; no peer discovery is needed. `init --peer` / `daemon ensure --bootstrap` are retained legacy compatibility only, never automatic setup. Legacy bootstrap preserves existing filesystem policy; add `--admit-home-read` only when explicitly authorized. Use `--expect-kind agent|group` on
 `send` when the caller needs a kind guard.
 
 ## Common paths
 
-1. **Discover and recover**: `doctor` performs a read-only staged check of Profile/secret source, optional Sandbox state, tailnet path, exact Serve ownership, daemon HTTP/auth/capabilities, and Gateway health. The diagnostic returns exit 0 with `data.ok: false` when it successfully describes an unhealthy target; inspect each check's stable code/action. `daemon status` is only a local daemon handshake, not a second doctor. `recover` is the explicit mutating composition and may wake the configured Sandbox, wait for Tailscale/IPv4, restore only the bootstrap-recorded mapping, and start an installed daemon through declared BatchMode SSH before rerunning doctor. `daemon ensure` is narrower and never wakes or repairs Serve; `--bootstrap` is the separately confirmed install/replace and credential-rotation transition.
+1. **Diagnose and recover**: `doctor` checks Profile/secret, endpoint HTTP/TLS, daemon auth/capabilities and Gateway health without Tailscale or SSH probes. `data.ok` is application health; diagnostic exit 0 alone is not success. Legacy `tailnet`/`serve` fields are skipped and network identity remains unverified. An unreachable endpoint with a configured Sandbox ref may add read-only provider state. `recover` is a no-op for healthy endpoints; otherwise declared SSH may ensure an installed daemon, followed by doctor. Only a provider-confirmed `hibernated/absent` state plus endpoint failure permits wake; unknown/network failure does not. Default recovery never reads or repairs Serve. Only explicit `recover --legacy-tailnet` restores a previously recorded exact mapping with the old ownership/drift checks. Do not select that option automatically or remove working mappings. `daemon status` is a narrow local handshake; `daemon ensure` never wakes or repairs Serve; confirmed `--bootstrap` is legacy install/replace/credential rotation.
 2. **Manage the roster**: `agents list/show/create/update/delete` only own non-group agents.
    `groups list/show/create/update/delete` only own product groups. Membership is only
    `groups members list/add/remove/set`; every member must resolve to a non-group agent and a group

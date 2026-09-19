@@ -1,4 +1,3 @@
-import { checkBatchModeSsh, inspectRecordedServeMapping } from "./bootstrap.ts";
 import { resolveDaemonCredential, resolveSecretRef } from "./config/secret.ts";
 import type { CliDeps } from "./deps.ts";
 import { LocalDaemonClient, RemoteDaemonClient, type DaemonClient } from "./daemon/client.ts";
@@ -69,7 +68,7 @@ function refSource(ref: string | undefined): string {
 }
 
 function isLoopbackHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 
@@ -121,6 +120,7 @@ function peerMatches(peer: Record<string, unknown>, hostname: string, sshHost?: 
   return names.some((name) => wanted.has(name));
 }
 
+// Compatibility-only probe used by recover --legacy-tailnet, never by ordinary doctor.
 export async function inspectTailnetPeer(
   deps: CliDeps,
   hostname: string,
@@ -207,44 +207,13 @@ async function probeRemoteDaemonHttp(
       signal,
     });
   } catch {
-    return failed("serve_https_unreachable", "Check tailnet reachability and the recorded private Serve mapping.");
+    return failed("daemon_endpoint_unreachable", "Check the configured endpoint, DNS, TLS, listener and operator-managed network or proxy.");
   }
   await response.body?.cancel().catch(() => undefined);
   if (response.status === 401 || response.status === 403) {
     return passed("daemon_http_auth_gate_reached");
   }
-  return failed("daemon_listener_mismatch", "Verify that the private Serve handler targets the grokbox loopback listener.");
-}
-
-async function inspectServeOwnership(
-  deps: CliDeps,
-  hostname: string,
-  timeoutMs: number,
-): Promise<DiagnosticCheck> {
-  if (!deps.sshHost || !(await checkBatchModeSsh(deps, deps.sshHost, timeoutMs))) {
-    return {
-      status: "unverified",
-      code: "serve_state_unverified",
-      action: "Configure the declared BatchMode SSH recovery adapter to verify mapping ownership.",
-    };
-  }
-  try {
-    const state = await inspectRecordedServeMapping(deps, deps.sshHost, hostname, timeoutMs);
-    if (state === "exact") return passed("serve_mapping_exact");
-    if (state === "absent") {
-      return failed("serve_not_configured", "Run explicit recover to restore the recorded private mapping.");
-    }
-    if (state === "drifted") {
-      return failed("serve_mapping_drifted", "Resolve the conflicting or changed Serve handler before recovery.");
-    }
-    return failed("serve_mapping_unrecorded", "Use confirmed daemon ensure --bootstrap for first-time mapping creation.");
-  } catch {
-    return {
-      status: "unverified",
-      code: "serve_state_unverified",
-      action: "Verify passwordless SSH and Tailscale Serve read authority, then retry doctor.",
-    };
-  }
+  return failed("daemon_listener_mismatch", "Verify that the configured endpoint or proxy targets the authenticated grokbox daemon RPC listener.");
 }
 
 function daemonProjection(handshake: DaemonHandshake): DoctorReport["daemon"] {
@@ -306,47 +275,34 @@ export async function diagnose(deps: CliDeps, timeoutMs: number): Promise<Doctor
     checks.secretSession = { ...passed("local_discovery_session"), source: "discovery-file" };
   }
 
-  let hostname = "";
   if (remoteDaemon && deps.daemonServerUrl) {
-    hostname = new URL(deps.daemonServerUrl).hostname;
-    if (isLoopbackHost(hostname)) {
-      checks.tailnet = skipped("tailnet_not_applicable_loopback");
-      checks.tailnetIdentity = "unverified";
-    } else {
-      const tailnet = await inspectTailnetPeer(deps, hostname, timeoutMs);
-      checks.tailnet = tailnet.status;
-      checks.tailnetIdentity = tailnet.status.status === "pass" ? "verified" : "unverified";
-      if (!tailnet.ipv4Present && tailnet.status.status === "pass") {
-        checks.tailnet = failed("tailnet_ipv4_unavailable", "Wait for the box Tailscale IPv4 assignment before recovery.");
-      }
-      if (checks.tailnet.status !== "pass" && deps.sandboxAccessTokenRef) {
-        try {
-          const accessToken = await resolveSecretRef(deps, deps.sandboxAccessTokenRef);
-          const status = await new CursorSandboxClient({
-            accessToken,
-            fetch: deps.fetch,
-            timeoutMs,
-            ...(deps.signal ? { signal: deps.signal } : {}),
-            randomUUID: deps.randomUUID,
-            now: deps.now,
-          }).status();
-          checks.sandbox = {
-            ...passed("sandbox_status_read"),
-            source: refSource(deps.sandboxAccessTokenRef),
-            state: status.state,
-          };
-        } catch (error) {
-          checks.sandbox = failed(publicFailure(error, "sandbox_unavailable"), "Repair Sandbox account access or retry later.");
-        }
+    // Endpoint health is independent of the operator's network/proxy vendor.
+    // Preserve legacy JSON keys without inventing network identity evidence.
+    checks.tailnet = skipped("network_operator_managed");
+    checks.serve = skipped("network_operator_managed");
+    checks.tailnetIdentity = "unverified";
+    checks.daemonHttp = await probeRemoteDaemonHttp(deps, deps.daemonServerUrl, timeoutMs);
+    checks.networkReachable = checks.daemonHttp.status === "pass";
+    if (checks.daemonHttp.code === "daemon_endpoint_unreachable" && deps.sandboxAccessTokenRef) {
+      try {
+        const accessToken = await resolveSecretRef(deps, deps.sandboxAccessTokenRef);
+        const status = await new CursorSandboxClient({
+          accessToken,
+          fetch: deps.fetch,
+          timeoutMs,
+          ...(deps.signal ? { signal: deps.signal } : {}),
+          randomUUID: deps.randomUUID,
+          now: deps.now,
+        }).status();
+        checks.sandbox = {
+          ...passed("sandbox_status_read"),
+          source: refSource(deps.sandboxAccessTokenRef),
+          state: status.state,
+        };
+      } catch (error) {
+        checks.sandbox = failed(publicFailure(error, "sandbox_unavailable"), "Repair Sandbox account access or retry later.");
       }
     }
-
-    checks.daemonHttp = await probeRemoteDaemonHttp(deps, deps.daemonServerUrl, timeoutMs);
-    const ownership = isLoopbackHost(hostname)
-      ? skipped("serve_not_applicable_loopback")
-      : await inspectServeOwnership(deps, hostname, timeoutMs);
-    checks.serve = ownership;
-    checks.networkReachable = checks.daemonHttp.status === "pass";
   }
 
   let handshake: DaemonHandshake | undefined = localAutoHandshake;
@@ -405,16 +361,11 @@ export async function diagnose(deps: CliDeps, timeoutMs: number): Promise<Doctor
     checks.gateway = skipped("gateway_probe_blocked_by_daemon_boundary");
   }
 
-  if (
-    remoteDaemon && checks.tailnet.code === "tailnet_peer_unreachable" &&
-    checks.daemonHttp.status === "pass" && checks.daemonAuth.status === "pass" && checks.gateway.status === "pass"
-  ) {
-    checks.tailnet = { ...passed("tailnet_peer_reachable_via_daemon_https"), path: "reachable" };
-    checks.tailnetIdentity = "verified";
+  const required = [checks.profile, checks.secretSession, checks.gateway];
+  if (remoteDaemon || explicitLocalDaemon || localAutoHandshake) {
+    required.push(checks.daemonHttp, checks.daemonAuth, checks.capabilities);
   }
-
-  const required = [checks.profile, checks.secretSession, checks.tailnet, checks.daemonHttp, checks.daemonAuth, checks.capabilities, checks.gateway];
-  const ok = required.every((check) => check.status !== "fail") && (checks.serve.status !== "fail");
+  const ok = required.every((check) => check.status === "pass");
   let operator: OperatorReport | undefined;
   try {
     operator = await inspectOperator(deps, timeoutMs);

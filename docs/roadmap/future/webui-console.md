@@ -34,13 +34,15 @@ Web UI成为真实第二写入口前，在同一ConfigurationWrite实现短锁�
 
 ## 安全与部署
 
-未来入口可沿既有T29候选`runtime webui run`，但当前没有据此创建可执行命令。服务初期loopback/明确本机runtime root；不允许任意Profile、URL、路径、exec或RPC转发。API用独立console会话认证、owner-only bootstrap、HttpOnly/SameSite、CSRF和严格Host/Origin；Gateway/provider/daemon凭据不发给浏览器，不入URL/日志。
+未来入口可沿既有T29候选`runtime webui run`，但当前没有据此创建可执行命令。Web UI进程与runtime都运行在Box内，浏览器允许在云电脑外通过用户自管网络/HTTPS入口访问；这属于单Box普通部署，不是跨Box runtime写入。监听默认loopback，外部入口可反向代理至本机；确有直接绑定需求时只提供通用host/port配置，不增加Tailscale SDK、peer发现、Serve/ACL管理或尾网明文例外。[产品网络边界](../../product-contract.md#22-网络与旧部署兼容边界)拥有范围。
 
-桌面App的历史/Working继续由原版App验收，Web UI的green不能代替T39真实旅程。现有远程daemon能力不自动扩张到远程runtime mutation；外部部署或尾网访问需单独威胁模型、target绑定和授权方案。
+服务绑定明确本机runtime root，不允许任意Profile、URL、路径、exec或RPC转发。页面/API优先同源相对地址；外部origin与可信代理需显式配置，不把浏览器localhost当成Box。API用独立console会话认证、owner-only bootstrap、HttpOnly/SameSite/Secure cookie、CSRF和严格Host/Origin；Gateway/provider/daemon凭据不发给浏览器，不入URL/日志。网络可达不等于登录或操作授权。
+
+桌面App的历史/Working继续由原版App验收，Web UI的green不能代替T39真实旅程。现有远程daemon能力不自动扩张到远程runtime mutation；外部浏览器访问使用同一应用安全模型和target绑定，不因底层是Tailscale增加专属开发项目，也不豁免认证、授权或浏览器安全验收。
 
 ## 浏览器验收与非目标
 
-真浏览器验证：URL恢复、切Box/切Bot、过期/未知、快照流交界、断线恢复、关闭tab、草稿/写冲突、双击apply、未知operation、权限/CSRF拒绝和脱敏。headless reducer或API单测不算像素/交互通过。没有浏览器环境记录缺证，不skip后签绿。
+真浏览器验证：本地与外部HTTPS入口访问同一Box、同源API/事件流与登录cookie、严格Origin/CSRF拒绝、不依赖浏览器localhost或客户端Tailscale CLI；另验证URL恢复、切Box/切Bot、过期/未知、快照流交界、断线恢复、关闭tab、草稿/写冲突、双击apply、未知operation、权限拒绝和脱敏。headless reducer或API单测不算像素/交互通过。没有浏览器环境记录缺证，不skip后签绿。
 
 首版不做聊天composer、任意secret CRUD、通用provider平台、跨团队多租户、无限期历史图表、自动修复工作流或SQLite浏览器。更高级[通知](notification-escalation.md)、[多盒](fleet-observation.md)各有晋升条件。
 

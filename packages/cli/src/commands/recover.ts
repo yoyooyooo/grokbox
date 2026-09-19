@@ -120,22 +120,32 @@ async function waitForTailnet(
   );
 }
 
+async function waitForSsh(deps: CliDeps, host: string, timeoutMs: number): Promise<boolean> {
+  const probeMs = Math.min(2_000, timeoutMs);
+  const attempts = Math.max(1, Math.ceil(timeoutMs / (probeMs * 2)));
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await checkBatchModeSsh(deps, host, probeMs)) return true;
+    if (attempt === attempts - 1 || !(await deps.wait(probeMs, deps.signal))) break;
+  }
+  return false;
+}
+
 export async function runRecover(
   deps: CliDeps,
-  raw: { json?: boolean; timeoutMs?: string },
+  raw: { json?: boolean; timeoutMs?: string; legacyTailnet?: boolean },
 ): Promise<void> {
   const io = ioFromOpts(raw);
   const operationId = deps.randomUUID();
-  if (!deps.daemonServerUrl || !deps.sshHost || deps.transport === "local" || deps.transport === "gateway") {
+  if (!deps.daemonServerUrl || deps.transport === "local" || deps.transport === "gateway") {
     throw new CliError(
       "recover_unavailable",
-      "Recover requires a remote daemon Profile with server_url and the declared ssh_host adapter.",
+      "Recover requires a configured daemon endpoint; local runtime lifecycle remains Box-local.",
       { failureCode: "remote_recovery_not_configured", context: { operationId, phase: "preflight" } },
     );
   }
   const endpoint = new URL(deps.daemonServerUrl);
   const initial = await diagnose(deps, io.timeoutMs);
-  if (initial.ok) {
+  if (initial.ok && !raw.legacyTailnet) {
     writeSuccess(deps.stdout, {
       recovered: true,
       changed: false,
@@ -167,29 +177,53 @@ export async function runRecover(
     );
   }
 
+  if (initial.checks.capabilities.status === "fail" || initial.checks.daemonHttp.code === "daemon_listener_mismatch") {
+    const failureCode = initial.checks.capabilities.status === "fail"
+      ? initial.checks.capabilities.code : initial.checks.daemonHttp.code;
+    throw new CliError("recover_unavailable", "Repair the configured endpoint or application policy; recovery does not replace either.", {
+      failureCode, context: { operationId, phase: "daemon-authority-preflight" },
+    });
+  }
+  if (!deps.sshHost) {
+    throw new CliError("recover_unavailable", "The endpoint is unhealthy and no SSH recovery adapter is configured. Repair the operator-managed network or start the installed daemon inside the Box.", {
+      failureCode: "remote_recovery_not_configured", context: { operationId, phase: "preflight" },
+    });
+  }
+
   const actions: RecoveryAction[] = [];
-  if (initial.checks.tailnet.status !== "pass") {
+  // A connection failure (or missing networking tool) is not evidence of sleep.
+  // Only the configured control plane can establish a wake candidate.
+  const asleep = initial.checks.sandbox.status === "pass" &&
+    (initial.checks.sandbox.state === "hibernated" || initial.checks.sandbox.state === "absent");
+  if (initial.checks.daemonHttp.code === "daemon_endpoint_unreachable" && asleep) {
     await wakeSandbox(deps, io.timeoutMs, operationId);
     actions.push({ action: "sandbox-wake", changed: true, outcome: "brokered-noop-verified" });
   }
-  await waitForTailnet(deps, endpoint.hostname, io.timeoutMs, operationId);
-  actions.push({ action: "tailnet-wait", changed: false, outcome: "peer-and-ipv4-reachable" });
+  // Frozen compatibility path only: never infer it from an address or sshHost.
+  if (raw.legacyTailnet) {
+    await waitForTailnet(deps, endpoint.hostname, io.timeoutMs, operationId);
+    actions.push({ action: "tailnet-wait", changed: false, outcome: "peer-and-ipv4-reachable" });
+  }
 
-  if (!(await checkBatchModeSsh(deps, deps.sshHost, io.timeoutMs))) {
+  if (!(await waitForSsh(deps, deps.sshHost, io.timeoutMs))) {
+    const sandboxCredentialFailed = initial.checks.sandbox.status === "fail" &&
+      ["credential_unavailable", "credential_locked", "credential_invalid"].includes(initial.checks.sandbox.code);
     throw new CliError(
       "recover_unavailable",
-      "The declared BatchMode SSH recovery adapter is unavailable.",
-      { failureCode: "ssh_recovery_unavailable", context: { operationId, phase: "ssh-preflight" } },
+      "The declared SSH recovery adapter is unavailable. Repair network access; wake requires verified Sandbox state and credentials.",
+      { failureCode: sandboxCredentialFailed ? initial.checks.sandbox.code : "ssh_recovery_unavailable", context: { operationId, phase: "ssh-preflight" } },
     );
   }
 
-  let mapping: Awaited<ReturnType<typeof ensureRecordedServeMapping>>;
-  try {
-    mapping = await ensureRecordedServeMapping(deps, deps.sshHost, endpoint.hostname, io.timeoutMs);
-  } catch (error) {
-    throw recoveryPhaseError(error, operationId, "serve-restore");
+  if (raw.legacyTailnet) {
+    let mapping: Awaited<ReturnType<typeof ensureRecordedServeMapping>>;
+    try {
+      mapping = await ensureRecordedServeMapping(deps, deps.sshHost, endpoint.hostname, io.timeoutMs);
+    } catch (error) {
+      throw recoveryPhaseError(error, operationId, "serve-restore");
+    }
+    actions.push({ action: "serve-restore", changed: mapping.changed, outcome: mapping.state });
   }
-  actions.push({ action: "serve-restore", changed: mapping.changed, outcome: mapping.state });
 
   let daemon: Awaited<ReturnType<typeof ensureInstalledDaemonThroughSsh>>;
   try {

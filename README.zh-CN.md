@@ -2,7 +2,7 @@
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-`grokbox` 是一个非官方 CLI 与控制面，用于从 Grok Bot 云电脑内部或外部进行操作。规范命令是 `grokbox`，`gbox` 是完全等价的别名。
+`grokbox` 是以受支持的 Grok Bot 云电脑内执行为主的非官方 CLI 与控制面。既有远程 Profile 保留明确支持的命令；新增本地 runtime 能力不承担远程等价义务。规范命令是 `grokbox`，`gbox` 是完全等价的别名。
 
 本项目与 Anysphere、Cursor、xAI 或 Grok Bot 没有隶属或背书关系。Grok Bot、Cursor 及相关名称仅用于标识兼容产品，其权利归各自所有者。
 
@@ -14,7 +14,7 @@
 
 ```text
 Profile -> 本机 daemon -> 本机 Grok Bot Gateway
-        -> 通过私有 Tailscale Serve 连接远端 daemon
+        -> 通过用户自管网络连接已配置的 HTTPS daemon
         -> 显式 direct-local 或 Gateway 兼容路径
         -> 显式 Cursor Sandbox 或 quota 兼容适配器
 ```
@@ -30,7 +30,7 @@ fs  exec  jobs  desktop
 主要能力：
 
 - 严格区分本机与远端 Profile，并分离不同凭据权威；
-- 有限的 Unix socket/loopback daemon 与私有 Tailscale Serve 映射；
+- 有限的 Unix socket/loopback daemon 与用户自管的外部 endpoint；
 - Agent/Group 管理、消息发送、Transcript、Memory 和有界事件读取；
 - 通过命名根目录治理文件读取与变更；
 - 字面量结构化执行、持久 Job 和有界日志；
@@ -41,7 +41,7 @@ Daemon 不提供通用 raw RPC 或任意 shell。仅有 Gateway 权限的 Profil
 
 ## 两条路径
 
-1. **遥控官方产品** — Profile、daemon、`agents` / `send` / `history`。可在盒子里或笔记本 Profile 上用。这是 Alpha CLI 主故事。
+1. **操作官方产品** — Profile、daemon、`agents` / `send` / `history`。以 Box 内执行为默认，既有远程命令按原有支持范围保留。
 2. **给单个 Bot 换大脑** — 在电脑上：`grokbox on`，`grokbox host start`，`agents create`，`models use --for <agent>`。grokbox 更新后：`grokbox upgrade --yes`。App 新建在不少账号上是 **temporal**，走不了自定义模型通道。
 
 给 Agent：先读 `grokbox skills get grokbox` 的小型入口，再按能力加载，例如 `grokbox skills get grokbox --topic models`；`grokbox skills list` 可发现所有主题。`--full` 是显式查阅全部专题，不是默认启动步骤。文档与安装的 CLI 同版本，不要把完整指南拷进 Bot；模板只保留[`加载桩`](./skills/stubs/grokbox.md)。完整命令清单仍是 `grokbox skills get core --full`。
@@ -51,7 +51,8 @@ Daemon 不提供通用 raw RPC 或任意 shell。仅有 Gateway 权限的 Profil
 - 发布版 CLI 运行时需要 Node.js 20.17.0+（与原生 monitor SQLite 依赖的最低版本一致）。
 - 源码开发与发布前源码 shim 需要 Bun 1.3.14。
 - 需要一个你拥有或获准使用的 Grok Bot 云电脑。
-- 远程 bootstrap/recovery 需要 Tailscale 与 BatchMode SSH；bootstrap 还需要本机 npm 或 Bun，以便重新打包已安装运行时并传输。
+- 远程命令需要可达的用户自管 HTTPS endpoint 与 daemon 凭据引用；Tailscale 是可选基础设施，不是 CLI 前置依赖。
+- 已安装 daemon 的远程恢复可显式配置 BatchMode SSH。只有旧 peer/bootstrap 兼容入口依赖 Tailscale；旧 bootstrap 另需 npm 或 Bun。
 
 | 角色 | 支持或已测试平台 |
 | --- | --- |
@@ -99,26 +100,25 @@ grokbox doctor
 
 安装器可幂等运行，以原子方式写入两个别名，拒绝覆盖无关命令，并从仓库外验证每个命令。它记录 checkout 与 Bun 的绝对路径，因此仓库或 Bun 可执行文件移动后需要重新运行。该路径用于验证本机真实源码，不替代 Node tarball 验证。
 
-## 远程初始化
+## 本地初始化与用户自管 endpoint
 
-先发现和诊断，再显式执行特权 bootstrap：
-
-```bash
-grokbox init remote --peer <tailnet-peer>
-grokbox doctor --profile remote
-
-# 安装或替换 grokbox daemon、轮换 daemon 凭据，并且只应用被记录的
-# 私有 Serve 映射。需要 BatchMode SSH 与明确确认。
-grokbox init remote --peer <tailnet-peer> --bootstrap --yes
-```
-
-读取 home 是单独的权限变化，不会由 bootstrap 隐式开启：
+`grokbox init` 只初始化本地 Box，不发现 Tailscale peer，也不自动选择远端 Profile。使用既有远程命令时，显式配置已部署的入口；凭据只传引用，不把值放进 argv：
 
 ```bash
-grokbox init remote --peer <tailnet-peer> --bootstrap --admit-home-read --yes
+grokbox profile add remote --transport daemon --server-url https://box.example.invalid:9443 --daemon-token-ref env:GROKBOX_REMOTE_TOKEN
+grokbox profile use remote
+grokbox doctor
 ```
 
-启用 host 能力前，请审阅命名文件系统根目录和进程 allowlist。
+普通 DNS、MagicDNS 与 IP 使用同一 URL 字段，均须通过正常 TLS 校验。VPN、DNS、ACL、证书与代理由用户管理。daemon 保留 Unix socket/loopback 监听；用户自管 HTTPS 入口可转发至 loopback，非 loopback HTTP 仍被拒绝，不要求开放公网。
+
+`doctor` 判断 endpoint 与应用健康，不判断 Tailscale/Serve 状态。`recover` 对健康 endpoint 直接 no-op；不健康时可通过已声明的 SSH ensure 已安装 daemon。默认不修复网络，只有控制面确认休眠才可唤醒 Sandbox。
+
+### 仅保留旧部署兼容
+
+显式 `init --peer`、`daemon ensure --bootstrap --yes`、`recover --legacy-tailnet` 保留旧的有界 Tailscale/Serve 部署路径，不再是推荐入口，也不扩展为网络管理。既有映射和凭据不会自动删除。Bootstrap 仍须确认，`--admit-home-read` 仍是独立扩权。详见[网络与兼容合同](docs/product-contract.md#22-网络与旧部署兼容边界)。
+
+未来 Web UI 服务运行在 Box 内，外部浏览器通过用户自管入口访问；不因此实现远程 runtime 或 Tailscale SDK。应用会话认证、授权及 Origin/CSRF 边界仍须落实。
 
 ## 常用安全探针
 

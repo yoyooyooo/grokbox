@@ -11,7 +11,7 @@ interoperates. The project does not use official logos or trade dress.
 | --- | --- | --- |
 | CLI registry, Profile format, output/error projection | alpha | Versioned by this repository |
 | grokbox daemon, governed filesystem, Jobs | alpha | Versioned by this repository; Linux daemon |
-| Tailscale/SSH bootstrap | alpha | Uses public tools but depends on local policy and versions |
+| Legacy Tailscale/SSH bootstrap | explicit compatibility only | Frozen existing deployment path; not a default dependency or future network-management feature |
 | Grok Bot Gateway discovery and methods | experimental compatibility | Upstream-private, may break without notice |
 | Cursor Sandbox status/wake/keeper | experimental compatibility | Upstream-private and method-authority dependent |
 | Cursor web quota adapter | experimental compatibility | Explicit opt-in, source-local account binding only |
@@ -41,6 +41,6 @@ release scope; private maintainer evidence is not a public runtime guarantee.
 ## Revalidation
 
 Revalidate an adapter when upstream methods, schemas, tokens, endpoints, app
-storage, Tailscale behavior, or Grok Bot filesystem/process layouts change.
+storage, configured endpoint behavior (or retained legacy bootstrap), or Grok Bot filesystem/process layouts change.
 Report suspected security issues through the private process in
 [`SECURITY.md`](../SECURITY.md), not a public issue.

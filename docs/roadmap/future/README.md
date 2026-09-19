@@ -8,7 +8,7 @@
 | [多Box与外部失联监测](fleet-observation.md) | 候选；真实多盒或盒外告警需求，先有外部owner和安全API | T40单盒服务、T41单盒状态 |
 | [多渠道通知/升级/长保留](notification-escalation.md) | 候选；实际多个渠道/责任人或长期审计需求 | T41基础incident/有限通知 |
 | [Daemon多客户端与通用流](daemon-access-and-streaming.md) | 候选；独立权限/撤销或至少两个已实现流族重复同合同 | architecture的现有有限daemon |
-| [额外环境与tailnet兼容](box-lifecycle-and-tailnet-hardening.md) | 候选；新宿主/多handler/版本迁移造成真实压力 | T40当前环境的持久运行不延期 |
+| [额外宿主生命周期 / 网络非目标](box-lifecycle-and-tailnet-hardening.md) | 仅额外宿主进程适配是候选；Tailscale专属扩展退出产品范围 | T40持久运行不延期；用户自管endpoint与Web UI外部访问不依赖网络适配 |
 | [凭据发现](cursor-credential-discovery.md) | 候选；受支持broker/明确同意与窄权限均成立 | product-contract已有secret refs |
 | [Quota新来源](quota-query.md) | 候选；确有有界授权API和源身份合同 | quota.md已有实现 |
 

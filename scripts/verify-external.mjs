@@ -410,8 +410,10 @@ try {
     doctorBoundaries:
       doctor?.data?.checks?.profile?.status === "pass" &&
       doctor?.data?.checks?.secretSession?.status === "pass" &&
-      doctor?.data?.checks?.tailnet?.status === "pass" &&
-      doctor?.data?.checks?.serve?.status === "pass" &&
+      // This explicitly bootstrapped legacy lane still uses ordinary, vendor-neutral doctor.
+      doctor?.data?.checks?.tailnet?.code === "network_operator_managed" &&
+      doctor?.data?.checks?.serve?.code === "network_operator_managed" &&
+      doctor?.data?.checks?.tailnetIdentity === "unverified" &&
       doctor?.data?.checks?.daemonHttp?.status === "pass" &&
       doctor?.data?.checks?.daemonAuth?.status === "pass" &&
       doctor?.data?.checks?.capabilities?.status === "pass" &&

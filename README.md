@@ -2,9 +2,10 @@
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-Unofficial CLI and control plane for operating Grok Bot cloud computers from
-inside or outside the box. The canonical command is `grokbox`; `gbox` is an
-exact alias.
+Unofficial CLI and control plane primarily run inside a supported Grok Bot cloud
+computer. Existing remote Profiles cover their established commands; new local
+runtime capabilities do not require remote equivalents. The canonical command
+is `grokbox`; `gbox` is an exact alias.
 
 This project is not affiliated with or endorsed by Anysphere, Cursor, xAI, or
 Grok Bot. Grok Bot, Cursor, and related names identify compatible products and
@@ -21,7 +22,7 @@ remain the property of their respective owners.
 
 ```text
 Profile -> local daemon -> local Grok Bot Gateway
-        -> remote daemon over private Tailscale Serve
+        -> configured HTTPS daemon over an operator-managed network
         -> explicit direct-local or Gateway compatibility path
         -> explicit Cursor Sandbox or quota compatibility adapter
 ```
@@ -37,7 +38,7 @@ fs  exec  jobs  desktop
 Highlights:
 
 - strict local and remote Profiles with separate credential authorities;
-- finite Unix-socket/loopback daemon and private Tailscale Serve mapping;
+- finite Unix-socket/loopback daemon with operator-managed external endpoints;
 - agent/group management, send, transcript, Memory, and bounded events;
 - named-root governed file reads and mutations;
 - literal structured execution with durable Jobs and bounded logs;
@@ -49,8 +50,8 @@ never gain host filesystem or process authority.
 
 ## Two tracks
 
-1. **Remote the official product** — Profile, daemon, `agents` / `send` / `history`.
-   Works from the box or a laptop Profile. This is the Alpha CLI story.
+1. **Operate the official product** — Profile, daemon, `agents` / `send` / `history`.
+   Run inside the Box by default; established remote command support remains available.
 2. **Switch one Bot's brain** — on the computer: `grokbox on`, `grokbox host start`,
    `agents create`, `models use --for <agent>`. After a grokbox update:
    `grokbox upgrade --yes`. App New Bot is often **temporal** and never uses
@@ -68,8 +69,10 @@ not the whole manual. Load only the capability needed, for example
 - Node.js 20.17.0+ for the published-style CLI runtime (including the native monitor SQLite dependency).
 - Bun 1.3.14 for source development and the pre-release source shim.
 - An existing Grok Bot cloud computer that you own or are authorized to use.
-- Tailscale plus BatchMode SSH for remote bootstrap/recovery; bootstrap also
-  needs npm or Bun locally to repack the installed runtime for transfer.
+- For remote commands, a reachable operator-managed HTTPS endpoint and its daemon
+  credential reference. Tailscale is optional infrastructure, not a CLI prerequisite.
+- BatchMode SSH is optional for installed-daemon recovery. Only retained legacy
+  peer/bootstrap operations require Tailscale; legacy bootstrap also needs npm or Bun.
 
 | Role | Supported or tested |
 | --- | --- |
@@ -126,28 +129,40 @@ repository. It records the absolute checkout and Bun paths, so rerun it after
 moving the repository or Bun executable. This is a local-real source harness;
 it does not replace the separate Node tarball verification.
 
-## Remote initialization
+## Local initialization and operator-managed endpoints
 
-Start with discovery and diagnosis. Bootstrap is an explicit privileged step:
-
-```bash
-grokbox init remote --peer <tailnet-peer>
-grokbox doctor --profile remote
-
-# Installs/replaces the grokbox daemon, rotates its credential, and applies only
-# the recorded private Serve mapping. Requires BatchMode SSH and confirmation.
-grokbox init remote --peer <tailnet-peer> --bootstrap --yes
-```
-
-Home reads are a separate authority transition and are never implied by
-bootstrap:
+`grokbox init` initializes the local Box only. It does not discover Tailscale peers
+or select remote Profiles. For established remote commands, configure an existing
+endpoint explicitly (the credential value never belongs in argv):
 
 ```bash
-grokbox init remote --peer <tailnet-peer> --bootstrap --admit-home-read --yes
+grokbox profile add remote --transport daemon --server-url https://box.example.invalid:9443 --daemon-token-ref env:GROKBOX_REMOTE_TOKEN
+grokbox profile use remote
+grokbox doctor
 ```
 
-Review the named filesystem roots and process allowlist before enabling host
-capabilities.
+DNS names, MagicDNS names and IPs use the same URL field and normal TLS validation.
+The operator owns VPN, DNS, ACLs, certificates and proxy setup. The daemon retains
+its Unix-socket/loopback listener; a user-managed HTTPS entry point may forward to
+it. Non-loopback HTTP is still rejected. No public-internet exposure is required.
+
+`doctor` checks endpoint and application health, not Tailscale/Serve state.
+`recover` is a no-op for a healthy endpoint; otherwise it may ensure an installed
+daemon through declared SSH. It never repairs the network by default, and only a
+control-plane-confirmed sleeping Sandbox may be woken.
+
+### Legacy compatibility only
+
+Explicit `init --peer`, `daemon ensure --bootstrap --yes`, and
+`recover --legacy-tailnet` retain the old bounded Tailscale/Serve deployment path.
+They are not the recommended setup and are not expanded into network management.
+Existing mappings and credentials are not automatically removed. Bootstrap still
+requires confirmation; `--admit-home-read` is a separate explicit authority change.
+See the [network boundary and legacy contract](docs/product-contract.md#22-网络与旧部署兼容边界).
+
+Future Web UI is a service inside the Box, reachable by external browsers through
+a user-managed entry point. It does not require a remote runtime or Tailscale SDK;
+application sessions, authorization and browser-origin protections remain required.
 
 ## Common safe probes
 

@@ -6,7 +6,6 @@ import { GatewayClient } from "../gateway.ts";
 import { writeSuccess } from "../output.ts";
 import { asString, isRecord } from "../util.ts";
 import {
-  listProfileNames,
   profileExists,
   resolveProfile,
   writeGlobalConfig,
@@ -66,32 +65,13 @@ function matchesPeer(node: TailnetNode, query: string): boolean {
     .some((value) => value.toLocaleLowerCase() === wanted);
 }
 
-async function selectExistingPeerProfile(
-  deps: CliDeps,
-  tailnet: TailnetProjection,
-): Promise<string | null> {
-  const matched: string[] = [];
-  for (const name of await listProfileNames(deps.configDir)) {
-    if (name === "default") continue;
-    const profile = await resolveProfile(deps, name);
-    const endpointHost = profile.server_url ? new URL(profile.server_url).hostname : undefined;
-    if (
-      profile.server_url &&
-      profile.daemon_token_ref &&
-      tailnet.peers.some((peer) => [profile.ssh_host, endpointHost].filter(Boolean).some((value) => matchesPeer(peer, value!)))
-    ) {
-      matched.push(name);
-    }
-  }
-  return matched.length === 1 ? matched[0]! : null;
-}
-
 export async function runInit(
   deps: CliDeps,
   nameArg: string | undefined,
   raw: InitOptions,
 ): Promise<void> {
   if (raw.local && raw.peer) throw usage("Choose exactly one of --local or --peer.");
+  if (raw.bootstrap && !raw.peer) throw usage("Legacy bootstrap requires an explicit --peer; use profile add --server-url for an operator-managed endpoint.");
   if (raw.yes && !raw.bootstrap) throw usage("--yes is only valid with --bootstrap.");
   if (raw.admitHomeRead && !raw.bootstrap) {
     throw usage("--admit-home-read is only valid with --bootstrap.");
@@ -100,7 +80,11 @@ export async function runInit(
     throw usage("Headless bootstrap requires --bootstrap --yes.");
   }
   const name = nameArg ?? "default";
-  const tailnet = await inspectTailnet(deps);
+  // Peer discovery belongs only to the explicit legacy bootstrap path.
+  // See docs/product-contract.md §2: local execution and operator-managed networking.
+  const tailnet: TailnetProjection = raw.peer
+    ? await inspectTailnet(deps)
+    : { available: false, self: null, peers: [] };
 
   let localAvailable = false;
   try {
@@ -108,15 +92,6 @@ export async function runInit(
     localAvailable = true;
   } catch {
     localAvailable = false;
-  }
-
-  if (!raw.peer && !raw.local && !localAvailable && tailnet.available) {
-    const existing = await selectExistingPeerProfile(deps, tailnet);
-    if (existing) {
-      await writeGlobalConfig(deps.configDir, { version: 1, current_profile: existing });
-      writeSuccess(deps.stdout, { profile: existing, selected: true, existing: true });
-      return;
-    }
   }
 
   let selectedPeer: BootstrapPeer | null = null;
@@ -137,9 +112,6 @@ export async function runInit(
     } else {
       throw new CliError("tailscale_not_ready", "Tailscale status is unavailable; use --bootstrap with an explicit SSH peer.");
     }
-  } else if (!raw.local && !localAvailable && tailnet.available && tailnet.peers.length === 1) {
-    selectedPeer = tailnet.peers[0]!;
-    sshHost = selectedPeer.dnsName || selectedPeer.name;
   }
 
   if (selectedPeer && sshHost) {
@@ -227,17 +199,12 @@ export async function runInit(
     return;
   }
 
-  if (!raw.local && !localAvailable) {
-    if (!tailnet.available) {
-      throw new CliError("tailscale_not_ready", "No local Gateway was found and Tailscale is not initialized.");
-    }
+  if (!localAvailable) {
     throw new CliError(
-      "target_ambiguous",
-      "No trusted Profile uniquely matches this environment; use --local or --peer.",
+      "discovery_unavailable",
+      "Local Gateway discovery is unavailable. Run init inside the Box, or configure an operator-managed endpoint with grokbox profile add <name> --transport daemon --server-url <https-url> --daemon-token-ref <reference> and select it with profile use.",
     );
   }
-
-  if (!localAvailable) throw new CliError("discovery_unavailable", "Local Gateway discovery is unavailable.");
   const profile: ProfileFile = { version: 1, transport: "auto" };
   if (deps.discoveryPath !== "/home/box/sand-data/gateway.json") {
     profile.gateway_discovery = deps.discoveryPath;
@@ -253,7 +220,7 @@ export async function runInit(
     profile: name,
     selected: true,
     target: "local",
-    tailnet: { available: tailnet.available, self: tailnet.self },
+    tailnet: { available: false, self: null, inspected: false },
     doctor: {
       ok: health.ok === true,
       gateway: { pid: discovery.pid, startedAt: discovery.startedAt },

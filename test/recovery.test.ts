@@ -57,6 +57,8 @@ function execSuccess(): Buffer {
 
 async function remoteFixture(options: {
   sandbox?: boolean;
+  serverUrl?: string;
+  ssh?: boolean;
   missingDaemonCredential?: boolean;
   fetch: typeof fetch;
   runCommand: ReturnType<typeof commandAdapter>;
@@ -69,9 +71,9 @@ async function remoteFixture(options: {
   await writeProfileFile(configDir, profileName, {
     version: 1,
     transport: "daemon",
-    server_url: endpoint,
+    server_url: options.serverUrl ?? endpoint,
     daemon_token_ref: options.missingDaemonCredential ? "env:MISSING_DAEMON_TOKEN" : `file:${daemonSecret}`,
-    ssh_host: hostname,
+    ...(options.ssh === false ? {} : { ssh_host: hostname }),
     ...(options.sandbox ? { sandbox: { access_token_ref: `file:${sandboxSecret}` } } : {}),
   });
   return async (argv: string[]) => await captureCli(["--profile", profileName, ...argv], {
@@ -137,7 +139,7 @@ describe("layered doctor and explicit recovery", () => {
     expect(result.stderr).toBe("Command timed out.");
   });
 
-  test("doctor proves each reachable boundary without wake, Serve mutation, or daemon start", async () => {
+  test("doctor proves application boundaries without inspecting or mutating network infrastructure", async () => {
     const events: string[] = [];
     const commands = commandAdapter((argv, command) => {
       events.push(`command:${argv[0]}:${command}`);
@@ -167,13 +169,14 @@ describe("layered doctor and explicit recovery", () => {
       profile: { status: "pass", code: "profile_valid" },
       secretSession: { status: "pass", code: "daemon_credential_resolved", source: "file" },
       sandbox: { status: "skipped" },
-      tailnet: { status: "pass", code: "tailnet_peer_reachable", path: "relay" },
-      serve: { status: "pass", code: "serve_mapping_exact" },
+      tailnet: { status: "skipped", code: "network_operator_managed" },
+      serve: { status: "skipped", code: "network_operator_managed" },
       daemonHttp: { status: "pass", code: "daemon_http_auth_gate_reached" },
       daemonAuth: { status: "pass", code: "daemon_credential_accepted" },
       capabilities: { status: "pass", code: "grok_health_capability_authorized" },
       gateway: { status: "pass", code: "gateway_healthy" },
     });
+    expect(commands.calls).toEqual([]);
     const trace = JSON.stringify({ events, commands: commands.calls });
     expect(trace).not.toContain("EnsureSandBox");
     expect(trace).not.toContain("tailscale serve --bg");
@@ -181,7 +184,7 @@ describe("layered doctor and explicit recovery", () => {
     expect(trace).not.toContain("sendPrompt");
   });
 
-  test("authenticated daemon HTTPS reconciles a false-negative Tailscale ping", async () => {
+  test("authenticated daemon HTTPS never claims a verified tailnet identity", async () => {
     const commands = commandAdapter((argv, command) => {
       if (argv[0] === "tailscale" && argv[1] === "status") {
         return {
@@ -206,15 +209,15 @@ describe("layered doctor and explicit recovery", () => {
     const report = (parseJson(result.stdout) as { data: Record<string, any> }).data;
     expect(report.ok).toBe(true);
     expect(report.checks.tailnet).toEqual({
-      status: "pass",
-      code: "tailnet_peer_reachable_via_daemon_https",
+      status: "skipped",
+      code: "network_operator_managed",
       action: "none",
-      path: "reachable",
     });
-    expect(report.checks.tailnetIdentity).toBe("verified");
+    expect(report.checks.tailnetIdentity).toBe("unverified");
+    expect(commands.calls).toEqual([]);
   });
 
-  test("recover orders Sandbox wake, tailnet IPv4, exact Serve restore, installed daemon ensure, and final doctor", async () => {
+  test("explicit legacy recovery retains verified wake, tailnet wait, exact Serve restore and installed daemon ensure", async () => {
     const events: string[] = [];
     let woken = false;
     let mappingExact = false;
@@ -292,7 +295,7 @@ describe("layered doctor and explicit recovery", () => {
       return await healthyDaemonFetch(events)(input, init);
     }) as typeof fetch;
     const run = await remoteFixture({ sandbox: true, fetch: fetchFn, runCommand: commands });
-    const result = await run(["recover", "--timeout-ms", "10000"]);
+    const result = await run(["recover", "--legacy-tailnet", "--timeout-ms", "10000"]);
     expect(result.code, result.stderr).toBe(0);
     const body = (parseJson(result.stdout) as { data: Record<string, any> }).data;
     expect(body).toMatchObject({
@@ -346,7 +349,7 @@ describe("layered doctor and explicit recovery", () => {
     expect(JSON.stringify(events)).not.toContain("EnsureSandBox");
   });
 
-  test("recover refuses Serve drift without overwriting the occupied handler or starting the daemon", async () => {
+  test("explicit legacy recovery refuses Serve drift without overwriting the handler or starting the daemon", async () => {
     const commands = commandAdapter((argv, command) => {
       if (argv[0] === "tailscale" && argv[1] === "status") {
         return {
@@ -374,7 +377,7 @@ describe("layered doctor and explicit recovery", () => {
       fetch: (async () => { throw new Error("unreachable"); }) as unknown as typeof fetch,
       runCommand: commands,
     });
-    const result = await run(["recover"]);
+    const result = await run(["recover", "--legacy-tailnet"]);
     expect(result.code).toBe(58);
     const error = (parseJson(result.stderr) as {
       error: { failureCode: string; retryable: boolean; context: { operationId: string; phase: string } };
@@ -388,6 +391,162 @@ describe("layered doctor and explicit recovery", () => {
     expect(trace).not.toContain("tailscale serve --bg");
     expect(trace).not.toContain("nohup");
     expect(trace).not.toContain("tailscale serve reset");
+  });
+
+  test.each([
+    "https://service.example.invalid:9443",
+    "https://box.example.ts.net:8443",
+    "https://192.0.2.20:9443",
+    "https://[2001:db8::20]:9443",
+    "http://[::1]:37134",
+  ])("doctor accepts a healthy configured endpoint without network tools: %s", async (serverUrl) => {
+    const events: string[] = [];
+    const commands = commandAdapter(); // No Tailscale/SSH installation in this runner.
+    const run = await remoteFixture({ serverUrl, ssh: false, sandbox: true, fetch: healthyDaemonFetch(events), runCommand: commands });
+    const result = await run(["doctor"]);
+    expect(result.code, result.stderr).toBe(0);
+    const report = (parseJson(result.stdout) as { data: Record<string, any> }).data;
+    expect(report.ok).toBe(true);
+    expect(report.checks.sandbox.status).toBe("skipped");
+    expect(report.checks.tailnet.status).toBe("skipped");
+    expect(report.checks.serve.status).toBe("skipped");
+    expect(report.checks.tailnetIdentity).toBe("unverified");
+    expect(commands.calls).toEqual([]);
+    expect(events.every(event => event.startsWith("daemon-"))).toBe(true);
+  });
+
+  test("unreachable operator endpoint reports an application connection failure and never repairs networking", async () => {
+    const commands = commandAdapter();
+    const run = await remoteFixture({ ssh: false, runCommand: commands,
+      fetch: (async () => { throw new Error("DNS or TLS failure"); }) as unknown as typeof fetch,
+    });
+    const diagnostic = await run(["doctor"]);
+    expect(diagnostic.code).toBe(0);
+    expect((parseJson(diagnostic.stdout) as { data: unknown }).data).toMatchObject({
+      ok: false,
+      checks: {
+        daemonHttp: { status: "fail", code: "daemon_endpoint_unreachable" },
+        tailnet: { status: "skipped", code: "network_operator_managed" },
+        serve: { status: "skipped", code: "network_operator_managed" },
+      },
+    });
+    const recovery = await run(["recover"]);
+    expect(recovery.code).toBe(57);
+    expect((parseJson(recovery.stderr) as { error: unknown }).error).toMatchObject({
+      code: "recover_unavailable", failureCode: "remote_recovery_not_configured",
+    });
+    expect(commands.calls).toEqual([]);
+  });
+
+  test("healthy endpoint recovery is a no-op without SSH, Tailscale or Sandbox authority", async () => {
+    const commands = commandAdapter();
+    const run = await remoteFixture({ ssh: false, fetch: healthyDaemonFetch([]), runCommand: commands });
+    const result = await run(["recover"]);
+    expect(result.code, result.stderr).toBe(0);
+    expect((parseJson(result.stdout) as { data: unknown }).data).toMatchObject({ recovered: true, changed: false, actions: [], doctor: { ok: true } });
+    expect(commands.calls).toEqual([]);
+  });
+
+  test("default recovery ensures an installed daemon through SSH without reading or restoring Serve", async () => {
+    let running = false;
+    const commands = commandAdapter((argv, command) => {
+      expect(argv[0]).toBe("ssh");
+      if (command === "true") return { code: 0, stdout: "", stderr: "" };
+      if (command.includes("nohup \"$binary\" daemon serve")) {
+        running = true;
+        return { code: 0, stdout: "changed\n", stderr: "" };
+      }
+      throw new Error("Unexpected recovery command");
+    });
+    const run = await remoteFixture({
+      fetch: (async (input, init) => {
+        if (!running) throw new Error("listener unavailable");
+        return await healthyDaemonFetch([])(input, init);
+      }) as typeof fetch,
+      runCommand: commands,
+    });
+    const result = await run(["recover"]);
+    expect(result.code, result.stderr).toBe(0);
+    expect((parseJson(result.stdout) as { data: unknown }).data).toMatchObject({
+      changed: true,
+      actions: [{ action: "daemon-ensure", changed: true, outcome: "started" }],
+      doctor: { ok: true },
+    });
+    expect(JSON.stringify(commands.calls)).not.toContain("tailscale");
+  });
+
+  test.each(["RUNNING", "UNKNOWN"])("connection failure with Sandbox %s never authorizes wake or network repair", async (state) => {
+    const events: string[] = [];
+    const commands = commandAdapter();
+    const run = await remoteFixture({
+      sandbox: true,
+      fetch: (async input => {
+        const url = String(input);
+        events.push(url);
+        if (url.includes("GetSandBoxRunState")) return Response.json({ state });
+        throw new Error("network unavailable");
+      }) as typeof fetch,
+      runCommand: commands,
+    });
+    const result = await run(["recover", "--timeout-ms", "100"]);
+    expect(result.code).toBe(57);
+    expect(events.some(url => url.includes("GetSandBoxRunState"))).toBe(true);
+    expect(events.some(url => url.includes("EnsureSandBox"))).toBe(false);
+    expect(commands.calls.every(argv => argv[0] === "ssh" && argv.at(-1) === "true")).toBe(true);
+  });
+
+  test("default recovery wakes only a control-plane-confirmed sleeper and waits for SSH, not tailnet IPv4", async () => {
+    const events: string[] = [];
+    let woken = false;
+    let running = false;
+    let sshAttempts = 0;
+    const commands = commandAdapter((argv, command) => {
+      expect(argv[0]).toBe("ssh");
+      if (command === "true") {
+        sshAttempts += 1;
+        return { code: woken && sshAttempts > 1 ? 0 : 255, stdout: "", stderr: "" };
+      }
+      if (command.includes("nohup \"$binary\" daemon serve")) {
+        running = true;
+        return { code: 0, stdout: "changed\n", stderr: "" };
+      }
+      throw new Error("Unexpected command");
+    });
+    const run = await remoteFixture({ sandbox: true, runCommand: commands, fetch: (async (input, init) => {
+      const url = String(input);
+      if (url.includes("GetSandBoxRunState")) return Response.json({ state: "HIBERNATED" });
+      if (url.includes("EnsureSandBox")) {
+        woken = true;
+        events.push("wake");
+        return Response.json({ execDaemonUrl: "https://exec.example.invalid", execDaemonAuthToken: "exec-auth", networkToken: "network-auth", podId: "pod-1" });
+      }
+      if (url.includes("agent.v1.ExecService/Exec")) return new Response(execSuccess(), { headers: { "content-type": "application/connect+json" } });
+      if (!running) throw new Error("unreachable");
+      return await healthyDaemonFetch(events)(input, init);
+    }) as typeof fetch });
+    const result = await run(["recover", "--timeout-ms", "10000"]);
+    expect(result.code, result.stderr).toBe(0);
+    expect((parseJson(result.stdout) as { data: unknown }).data).toMatchObject({
+      actions: [{ action: "sandbox-wake" }, { action: "daemon-ensure" }], doctor: { ok: true },
+    });
+    expect(sshAttempts).toBe(2);
+    expect(JSON.stringify(commands.calls)).not.toContain("tailscale");
+  });
+
+  test.each(["auth", "capability", "listener"])("recovery cannot repair %s policy by starting a daemon", async (failure) => {
+    const commands = commandAdapter();
+    const run = await remoteFixture({ runCommand: commands, fetch: (async (input, init) => {
+      const headers = new Headers(init?.headers);
+      if (failure === "listener" && !headers.has("authorization")) return new Response("", { status: 200 });
+      if (failure === "auth" && headers.has("authorization")) return new Response("", { status: 401 });
+      if (failure === "capability" && JSON.parse(String(init?.body)).method === "handshake") {
+        return Response.json({ ok: true, result: { ...daemonHandshake(), capabilities: [] } });
+      }
+      return await healthyDaemonFetch([])(input, init);
+    }) as typeof fetch });
+    const result = await run(["recover"]);
+    expect(result.code).toBe(57);
+    expect(commands.calls).toEqual([]);
   });
 
   test("daemon ensure starts only an installed daemon and does not bootstrap or alter Serve", async () => {

@@ -531,7 +531,7 @@ describe("Profiles in unified config v2",  () => {
 });
 
 describe("init discovery boundaries", () => {
-  test("local init is idempotent, persists selection, inspects Tailscale, and finishes health", async () => {
+  test("local init is idempotent, persists selection, never probes Tailscale, and finishes health", async () => {
     const configDir = await makeConfigDir();
     const { startMockGateway, writeDiscovery } = await import("./helpers.ts");
     const gateway = await startMockGateway();
@@ -547,16 +547,16 @@ describe("init discovery boundaries", () => {
         env: {},
         discoveryPath,
         skillsDir,
-        runCommand: async () => ({ code: 0, stdout: tailnetStatus(), stderr: "" }),
+        runCommand: async () => { throw new Error("Local init must not execute networking tools"); },
       };
       const first = await captureCli(["init", "remote", "--local"], overrides);
       expect(first.code).toBe(0);
       const body = parseJson(first.stdout) as {
-        data: { profile: string; target: string; tailnet: { self: { name: string } }; doctor: { ok: boolean } };
+        data: { profile: string; target: string; tailnet: { available: boolean; inspected: boolean; self: null }; doctor: { ok: boolean } };
       };
       expect(body.data.profile).toBe("remote");
       expect(body.data.target).toBe("local");
-      expect(body.data.tailnet.self.name).toBe("outside");
+      expect(body.data.tailnet).toEqual({ available: false, self: null, inspected: false });
       expect(body.data.doctor.ok).toBe(true);
       expect(gateway.requests.map((request) => request.pathname)).toEqual(["/health"]);
 
@@ -569,7 +569,7 @@ describe("init discovery boundaries", () => {
     }
   });
 
-  test("bounded discovery selects one trusted Profile and rejects untrusted multiple peers", async () => {
+  test.each([false, true])("init without local discovery never selects a peer or changes a saved Profile (TTY=%s)", async (stdinIsTTY) => {
     const configDir = await makeConfigDir();
     await writeProfileFile(configDir, "saved", {
       version: 1,
@@ -578,47 +578,33 @@ describe("init discovery boundaries", () => {
       daemon_token_ref: "env:DAEMON_TOKEN",
       ssh_host: "remote",
     });
-    const base = {
+    const before = await readFile(join(configDir, "config.json"), "utf8");
+    const commands: string[][] = [];
+    let confirmations = 0;
+    const result = await captureCli(["init"], {
       configDir,
-      env: { DAEMON_TOKEN: "not-resolved-during-discovery" },
+      env: {},
       discoveryPath: "/missing/gateway.json",
       skillsDir,
-      stdinIsTTY: false,
-      runCommand: async () => ({ code: 0, stdout: tailnetStatus(), stderr: "" }),
-    };
-    const selected = await captureCli(["init"], base);
-    expect(selected.code).toBe(0);
-    expect((parseJson(selected.stdout) as { data: { profile: string; selected: boolean; existing: boolean } }).data).toEqual({
-      profile: "saved",
-      selected: true,
-      existing: true,
+      stdinIsTTY,
+      confirm: async () => { confirmations += 1; return true; },
+      runCommand: async (argv) => { commands.push([...argv]); return { code: 0, stdout: tailnetStatus(), stderr: "" }; },
     });
-
-    const otherConfig = await makeConfigDir();
-    const multiple = JSON.parse(tailnetStatus()) as { Peer: Record<string, unknown> };
-    multiple.Peer.other = {
-      HostName: "other",
-      DNSName: "other.example.ts.net.",
-      TailscaleIPs: ["192.0.2.30"],
-    };
-    const ambiguous = await captureCli(["init"], {
-      ...base,
-      configDir: otherConfig,
-      env: {},
-      runCommand: async () => ({ code: 0, stdout: JSON.stringify(multiple), stderr: "" }),
-    });
-    expect(ambiguous.code).toBe(19);
-    expect(code(ambiguous.stderr)).toBe("target_ambiguous");
+    expect(code(result.stderr)).toBe("discovery_unavailable");
+    expect(result.stderr).toContain("profile add");
+    expect(commands).toEqual([]);
+    expect(confirmations).toBe(0);
+    expect(await readFile(join(configDir, "config.json"), "utf8")).toBe(before);
   });
 
-  test("single-peer TTY init can bootstrap without naming the Profile or peer", async () => {
+  test("explicit legacy peer TTY init retains confirmed bootstrap without naming the Profile", async () => {
     const configDir = await makeConfigDir();
     const commands: string[][] = [];
     const nonce = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let confirmations = 0;
     let authHeader = "";
     let serveConfigured = false;
-    const result = await captureCli(["init"], {
+    const result = await captureCli(["init", "--peer", "remote"], {
       configDir,
       env: {},
       discoveryPath: "/missing/gateway.json",
@@ -760,11 +746,29 @@ describe("init discovery boundaries", () => {
     expect(code(result.stderr)).toBe("profile_invalid");
   });
 
-  test("missing local Gateway and unavailable Tailscale fail without mutation", async () => {
+  test.each([
+    { argv: ["init", "--bootstrap", "--yes"] },
+    { argv: ["init", "--local", "--bootstrap", "--yes"] },
+  ])("bootstrap without an explicit legacy peer is rejected before discovery or writes: %j", async ({ argv }) => {
+    const configDir = await makeConfigDir();
+    const commands: string[][] = [];
+    const result = await captureCli([...argv], {
+      configDir,
+      env: {},
+      skillsDir,
+      runCommand: async args => { commands.push([...args]); return { code: 0, stdout: tailnetStatus(), stderr: "" }; },
+    });
+    expect(result.code).toBe(2);
+    expect(code(result.stderr)).toBe("invalid_usage");
+    expect(commands).toEqual([]);
+    expect(await readFile(join(configDir, "config.json"), "utf8").catch(() => null)).toBeNull();
+  });
+
+  test("missing local Gateway fails with local guidance and without mutation", async () => {
     const configDir = await makeConfigDir();
     const result = await cli(configDir, ["init"]);
-    expect(result.code).toBe(23);
-    expect(code(result.stderr)).toBe("tailscale_not_ready");
+    expect(result.code).not.toBe(0);
+    expect(code(result.stderr)).toBe("discovery_unavailable");
     expect(await readFile(join(configDir, "config.json"), "utf8").catch(() => null)).toBeNull();
   });
 });

@@ -83,12 +83,12 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["init"],
     usage: "grokbox init [<name>] [--local | --peer <name-or-dns>] [--bootstrap] [--admit-home-read] [--yes]",
-    summary: "Inspect the environment and idempotently create or update a Profile.",
+    summary: "Initialize the local Box Profile; operator-managed remote endpoints use profile add.",
     arguments: [{ syntax: "[name]", description: "Profile to create/update (default: default)" }],
     options: options([
       { flags: "--local", description: "Select the local box" },
-      { flags: "--peer <name-or-dns>", description: "Select one initialized Tailscale peer" },
-      { flags: "--bootstrap", description: "Authorize missing daemon/endpoint bootstrap" },
+      { flags: "--peer <name-or-dns>", description: "Legacy compatibility: explicitly select an initialized Tailscale peer" },
+      { flags: "--bootstrap", description: "Legacy compatibility: authorize daemon/Serve bootstrap for the explicit peer" },
       { flags: "--admit-home-read", description: "Explicitly add the peer home read policy" },
       { flags: "--yes", description: "Confirm a headless bootstrap mutation" },
     ]),
@@ -442,10 +442,12 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["recover"],
-    usage: "grokbox recover [--timeout-ms <n>]",
-    summary: "Explicitly recover a configured remote Sandbox, private mapping, and installed daemon.",
+    usage: "grokbox recover [--timeout-ms <n>] [--legacy-tailnet]",
+    summary: "Ensure an installed daemon through declared SSH; networking remains operator-managed.",
     arguments: [],
-    options: options([], { timeout: true }),
+    options: options([
+      { flags: "--legacy-tailnet", description: "Explicit compatibility opt-in: wait for Tailscale and restore only a previously recorded Serve mapping" },
+    ], { timeout: true }),
     stdin: "none",
     table: false,
     timeout: true,
