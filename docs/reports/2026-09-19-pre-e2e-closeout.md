@@ -46,6 +46,12 @@ Routine私有schema由1增至2，在原已确认写事务内增加tombstone表�
 
 只读独立Astra请求在限定窗口未返回报告，工具退出124；随后使用用户已允许的SOL提供者，对固定提交`b767470`中的服务注册和执行退役两文件再次请求限定只读复核，也退出124且无报告。不能据此诊断为某个Provider故障，更不能把尝试、作者复查或绿色测试写成独立review。W0保留REVIEW，源码集成不自动授予现场切换。
 
+## 集成回执
+
+本批`9eed616`、`b767470`与`5b1d4d7`已经从`fe49300`线性快进合入`feat/box-runtime-v2`，没有留下未合入的实现切片。v2上实际复验服务注册、执行退役、compact记录、Routine重入、modeld强杀恢复、J1和打包入口/清单：8文件**62 pass / 1 skip / 0 fail**、1516断言。该组与全仓重叠，不重复累计。默认跳过的是已另行显式验证的离线systemd解析器，不代表本机已安装服务。
+
+本轮未push、未修改全局shim、未迁移现役配置、未重启生产服务、未领取真实凭据或发送原生通知。源码收口和实际采用仍是不同事实；独立review与ENV阻断已在LIVE对应行保留，不用失败的复核调用或源码合入自动打勾。
+
 ## 当前合同与剩余现场门
 
 [OBS-05](../tickets/OBS-05-safe-state-retirement.md)、[T40](../tickets/T40-persistent-release-and-rollback.md)、[T50](../tickets/T50-template-ops-release-proof.md)记录当前实现范围；旧“完全没接collector/没实现安全压缩/只有前台进程”的描述应被更新，不能再次指挥同义开发。
