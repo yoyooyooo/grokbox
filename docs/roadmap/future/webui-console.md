@@ -34,7 +34,7 @@ Web UI成为真实第二写入口前，在同一ConfigurationWrite实现短锁�
 
 ## 安全与部署
 
-未来入口可沿既有T29候选`runtime webui run`，但当前没有据此创建可执行命令。Web UI进程与runtime都运行在Box内，浏览器允许在云电脑外通过用户自管网络/HTTPS入口访问；这属于单Box普通部署，不是跨Box runtime写入。监听默认loopback，外部入口可反向代理至本机；确有直接绑定需求时只提供通用host/port配置，不增加Tailscale SDK、peer发现、Serve/ACL管理或尾网明文例外。[产品网络边界](../../product-contract.md#22-网络与旧部署兼容边界)拥有范围。
+未来入口可沿既有T29候选`runtime webui run`，但当前没有据此创建可执行命令。Web UI进程与runtime都运行在Box内，浏览器允许在云电脑外通过用户自管网络/HTTPS入口访问；这属于单Box普通部署，不是跨Box runtime写入。监听默认loopback，外部入口可反向代理至本机；确有直接绑定需求时只提供通用host/port配置，不增加Tailscale SDK、peer发现、Serve/ACL管理或尾网明文例外。[产品网络边界](../../product-contract.md#2-默认入口与连接)拥有范围。
 
 服务绑定明确本机runtime root，不允许任意Profile、URL、路径、exec或RPC转发。页面/API优先同源相对地址；外部origin与可信代理需显式配置，不把浏览器localhost当成Box。API用独立console会话认证、owner-only bootstrap、HttpOnly/SameSite/Secure cookie、CSRF和严格Host/Origin；Gateway/provider/daemon凭据不发给浏览器，不入URL/日志。网络可达不等于登录或操作授权。
 

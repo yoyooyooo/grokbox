@@ -158,7 +158,7 @@ Explicit `init --peer`, `daemon ensure --bootstrap --yes`, and
 They are not the recommended setup and are not expanded into network management.
 Existing mappings and credentials are not automatically removed. Bootstrap still
 requires confirmation; `--admit-home-read` is a separate explicit authority change.
-See the [network boundary and legacy contract](docs/product-contract.md#22-网络与旧部署兼容边界).
+See the [network boundary and legacy contract](docs/product-contract.md#2-默认入口与连接).
 
 Future Web UI is a service inside the Box, reachable by external browsers through
 a user-managed entry point. It does not require a remote runtime or Tailscale SDK;

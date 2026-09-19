@@ -49,6 +49,7 @@
 | [T42 · 外部 Host 经验](T42-upstream-host-session-lessons.md) | 有版本来源参考，不是新的执行权威 |
 | [AUTH · 取证可用性](AUTH-ownership-evidence-availability.md) | 同 STEP 复用、原始年龄、有限等待与共同诊断 |
 | [FIX · Host reapply](FIX-host-lifecycle-reapply.md) | 生命周期重应用的已知修复及对应回归 |
+| [NET-01 · 本地执行与网络边界](NET-01-box-local-network-boundary.md) | 用户自管 endpoint、默认诊断/恢复与显式旧部署兼容 |
 | [FEAT · 推理设置](FEAT-model-reasoning-policy.md) | 同通道 effort、不可变选择与最终请求证据 |
 
 <a id="modeld-effect-core"></a>

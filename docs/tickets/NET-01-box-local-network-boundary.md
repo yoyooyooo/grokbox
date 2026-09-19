@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-实现提交 `8d900af` 基于 `feat/box-runtime-v2` 的 `4181e5e` 收敛默认网络边界。该来源提交已经包含本票列出的代码、测试与合同；后续来源登记只修改文档。产品范围唯一归 [Product §2.2](../product-contract.md#22-网络与旧部署兼容边界)，组合与源码职责归 [Architecture §13](../architecture.md#13-deployment-and-operator-managed-networking)。本票只拥有实现、兼容变化和离线证明；当前候选现场状态只看 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)。
+原始实现 `8d900af` 与来源登记 `ab62db3` 基于 V2 的 `4181e5e`。本次按用户授权线性重放到 V2 `02a4b5f`，对应提交为 `e2908af`、`c2b39bd`；冲突文档保留 V2 的最新结构与内容，功能代码没有冲突。产品范围归 [默认入口与连接](../product-contract.md#2-默认入口与连接) 和 [Daemon 与恢复](../product-contract.md#11-daemon-与恢复)，组合职责归 [连接和授权](../architecture.md#6-连接和授权)。本票拥有实现、兼容变化和离线证明；当前候选现场状态只看 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)。
 
 Box 内执行是主要路径。既有远程能力按原范围保留，不要求新增 runtime/Host/模型/观测命令远程化；不建立网络 provider 框架。用户自管 DNS/IP、VPN、ACL、TLS 与入口代理。未来 Box-hosted Web UI 的外部浏览器访问归 [T29](T29-runtime-webui.md)，本票不实现或启动 Web UI。
 
@@ -55,10 +55,10 @@ bun test test/cli.test.ts test/skills.test.ts test/box.test.ts test/events.test.
   test/sandbox-observer.test.ts packages/cli/test
 ```
 
-全仓一次 `bun test` 超过执行工具时限，未取得完整结果，不据此宣称全套通过；拆分验证只证明实际跑过的用例。代码/diff 自检不等同独立 reviewer 的结论；没有独立 code-review 凭据。
+原始功能分支未取得全仓 `bun test` 的完整结果；先前将原因归为工具时限，但没有保存该调用的具体时限、原始超时回执与退出码，故原因未证实。分组验证只证明实际跑过的用例，不宣称全套通过。代码/diff 自检不等同独立 reviewer 的结论；没有独立 code-review 凭据。
 
 ## Integration and remaining qualification
 
 合入固定 V2 候选后，按 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary) 选择相关现场范围：普通 Box init、无 Tailscale CLI 的外部自管 HTTPS endpoint、受控 SSH 恢复，以及明确选择的旧 mapping 兼容验证。旧脚本断言/恢复选项与候选必须匹配。不能从模拟通过签真实 TLS、休眠唤醒或第三方网络兼容。
 
-本票没有授权 merge、push、发布、安装到现役、Host/modeld 重启、全局 shim 切换、Sandbox wake 或 Tailscale/Serve/ACL 变更。T40/T41 的持久进程生命周期仍是各自义务，不由网络收敛关闭或延期。
+本次用户仅授权本地线性合入 V2，冲突以 V2 为准；没有授权 push、发布、安装到现役、Host/modeld 重启、全局 shim 切换、Sandbox wake 或 Tailscale/Serve/ACL 变更。T40/T41 的持久进程生命周期仍是各自义务，不由网络收敛关闭或延期。

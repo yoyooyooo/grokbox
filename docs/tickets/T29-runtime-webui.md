@@ -20,7 +20,7 @@ collector/已授权operation归长期runtime，网页仅拥有订阅和草稿。
 
 ## 部署边界
 
-进程与runtime在Box内，外部浏览器经用户自管HTTPS入口访问，是已接受的单Box场景，不是跨Box runtime写入。沿用[产品网络边界](../product-contract.md#22-网络与旧部署兼容边界)：只提供必要的通用监听/外部Origin配置，不发现或管理Tailscale、Serve、ACL。使用同源API或显式地址，不能依赖浏览器localhost指向Box；应用会话、严格Host/Origin、CSRF、代理信任和target绑定照常验收。本票仍未启动浏览器开发。
+进程与runtime在Box内，外部浏览器经用户自管HTTPS入口访问，是已接受的单Box场景，不是跨Box runtime写入。沿用[产品网络边界](../product-contract.md#2-默认入口与连接)：只提供必要的通用监听/外部Origin配置，不发现或管理Tailscale、Serve、ACL。使用同源API或显式地址，不能依赖浏览器localhost指向Box；应用会话、严格Host/Origin、CSRF、代理信任和target绑定照常验收。本票仍未启动浏览器开发。
 
 ## Module / dependency
 

@@ -1,6 +1,6 @@
 # Additional Box lifecycle; network management excluded
 
-**Only additional-host process lifecycle remains a future candidate. Tailscale-specific hardening is outside product scope, not postponed work.** Current contracts are [Product §2.2](../../product-contract.md#22-网络与旧部署兼容边界) and [Architecture](../../architecture.md#13-deployment-and-operator-managed-networking). This historical filename remains a discovery route, not a second network roadmap.
+**Only additional-host process lifecycle remains a future candidate. Tailscale-specific hardening is outside product scope, not postponed work.** Current contracts are [Product §2.2](../../product-contract.md#2-默认入口与连接) and [Architecture](../../architecture.md#6-连接和授权). This historical filename remains a discovery route, not a second network roadmap.
 
 ## Process lifecycle promotion conditions
 
