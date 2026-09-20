@@ -14,13 +14,13 @@ async function until<T>(read:()=>Promise<T>,ok:(value:T)=>boolean,ms=8000){const
 const health=(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>f.client().hostHealth();
 const incidents=async(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>(await f.observations.incidents()).filter(r=>r.rule==="host_patch_health");
 
-test("actual TS candidate passes three Rust checks through the management owner with no Bot roster or native RPC",async()=>{
+test("actual TS candidate passes four Rust checks through the management owner with no Bot roster or native RPC",async()=>{
  const f=await hostHealthFixture(origin);try{
   const v=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
   assert.equal(v.data.latest!.applicability,"exact");assert.equal(v.data.assessment,"degraded");assert.equal(v.data.qualified,false);assert.equal(v.data.latest!.loaded,"not-observed");
   assert.deepEqual(v.data.latest!.uncoveredSlices,["create-session"]);assert.equal(v.data.latest!.notificationCoverage,"local-only");assert.equal(f.state.nativeCalls,0);assert.equal((await incidents(f)).length,0);
   const journal=await readHostHealthJournal(f.root,H_INSTALL), report=journal!.receipts.at(-1)!.analysis!;
-  assert.equal(report.parser,"oxc-0.75.0");assert.equal(report.checks.length,3);assert.ok(report.checks.every(r=>r.state==="passed"));
+  assert.equal(report.parser,"oxc-0.75.0");assert.equal(report.checks.length,4);assert.ok(report.checks.every(r=>r.state==="passed"));
   const count=f.state.pids.length;for(let i=0;i<4;i++)await health(f);await delay(650);assert.equal(f.state.pids.length,count);
   for(const pid of f.state.pids)assert.throws(()=>process.kill(pid,0));
   for(const secret of [f.root,"contextCheckpoint",H_OWNER,"Symbol.for","native-gateway"])assert.ok(!JSON.stringify(v).includes(secret));
@@ -47,6 +47,21 @@ test("a semantically broken retry with freshly pinned valid source/candidate has
   const rows=await incidents(f);assert.equal(rows.filter(r=>r.status==="open").length,1);const id=rows.find(r=>r.status==="open")!.id;
   await f.writeProfile();await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
   assert.equal((await incidents(f)).find(r=>r.id===id)!.status,"resolved");
+ }finally{await f.close();}
+});
+
+test("lost lease-finally semantics become an installation incident before any native execution and survive restart",async()=>{
+ const f=await hostHealthFixture(origin);try{
+  await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  const broken=f.slices.map(s=>s.id==="compact-register"?{...s,replacement:s.replacement.replace("__grokbox_compact_active = false;","__grokbox_compact_active = true;")}:s);
+  await f.writeProfile(f.source,broken);
+  const v=await until(()=>health(f),v=>v.data.latest?.analysis==="violated"&&v.data.intake==="committed");
+  assert.equal(v.data.latest!.applicability,"exact");assert.deepEqual(v.data.latest!.failedChecks,["context.lease-finally"]);
+  const id=(await incidents(f)).find(r=>r.status==="open")!.id;
+  await f.restart();await until(()=>health(f),v=>v.data.latest?.analysis==="violated"&&v.data.intake==="committed");
+  assert.equal((await incidents(f)).filter(r=>r.status==="open").length,1);assert.equal((await incidents(f)).find(r=>r.id===id)!.status,"open");
+  await f.writeProfile();await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  assert.equal((await incidents(f)).find(r=>r.id===id)!.status,"resolved");assert.equal(f.state.nativeCalls,0);
  }finally{await f.close();}
 });
 

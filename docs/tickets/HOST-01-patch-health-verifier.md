@@ -76,6 +76,10 @@ Node对子进程输入/输出/权限/哈希和job/attempt/build/schema/checker�
 
 **下一实施出口**是完整lease/finally/opportunity及未覆盖能力，而不是重做已通过的三项真实native role或本ABI tuple。当前Host主入口/账号采用、idle summary完整受管行为、模型/App恢复及独立审查仍需各自资格；整体qualified=false保留，但不能将已完成的局部native证据重新写成全部synthetic或unreviewed-pair。
 
+## lease / finally 检查已接通（2026-09-21）
+
+第四项 `context.lease-finally@1` 已通过原Node/Rust、provenance/OBS及共享查询路径，实际61片候选四项passed。检查绑定同一资源环境、同步disposer、登记先于preflight、结果等待及finally关闭；资源helper有独立ABI测试，不凭名字猜语义。历史health-v1可读但不冒充新health-v2义务。反例、当前来源和提交时验证限制见[lease静态报告](../reports/2026-09-21-host-lease-finally.md)。下一批继续运行时取得/释放与独立调用机会，静态词法寿命不证明所有异步副作用已停止。
+
 ## 同一工作包的顺序与出口
 
 ### A. 先收实际原生依赖风险

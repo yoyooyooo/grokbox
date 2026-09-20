@@ -1,18 +1,19 @@
 /** Pure health semantics, independent of wire, parser, filesystem and execution authority. */
 export * from "./host-compilation.ts";
 export * from "./host-witness.ts";
-export const HOST_HEALTH_CONTRACT = "host-health-v1";
+export const HOST_HEALTH_CONTRACT = "host-health-v2";
 export const HOST_CHECK_REQUIREMENTS = [
   { id:"session.main-binding", revision:2, slices:["agent-id"], scope:"main-options-binding" },
   { id:"retry.turn-guard", revision:2, slices:["managed-turn-retry-gate"], scope:"turn-entry-managed-refusal" },
   { id:"context.checkpoint-await", revision:2, slices:["compact-register"], scope:"checkpoint-callback-settlement" },
+  { id:"context.lease-finally", revision:1, slices:["compact-register"], scope:"sync-resource-scope-and-preflight-order" },
 ] as const;
 export type StaticCheck = { id:string; revision:number; state:"passed"|"violated"|"unsupported"; code:string; start:number; end:number };
 export type StaticAnalysis = { jobId:string; attemptId:string; buildId:string; schemaDigest:string; parser:string;
   artifacts:{role:"source"|"candidate"|"companion";sha256:string;bytes:number;valid:boolean;diagnostics:number;nodes:number}[];
   checks:StaticCheck[]; elapsedMs:number };
 export type HostHealthEvidence = {
-  name:"host_patch_health"; schemaVersion:1; eventId:string; at:string; installationId:string; contractRevision:typeof HOST_HEALTH_CONTRACT;
+  name:"host_patch_health"; schemaVersion:1; eventId:string; at:string; installationId:string; contractRevision:typeof HOST_HEALTH_CONTRACT|"host-health-v1";
   sourceInstanceId:string; sourceSequence:number; sourceState:"stable"|"unavailable"|"changed"; sourceSet:string|null; sourceSha:string|null; workerSha:string|null; profileDigest:string|null; candidateSha:string|null; checkerBuildId:string|null;
   companionQualification:"not-required"|"matched"|"unreviewed";
   applicability:"exact"|"mismatch"|"profile-unavailable"; analysis:"pending"|"passed"|"violated"|"unsupported"|"unavailable";
@@ -29,13 +30,16 @@ export function projectHostHealth(value:unknown):HostHealthEvidence|null {
   const v=value as HostHealthEvidence;
   const keys=["name","schemaVersion","eventId","at","installationId","contractRevision","sourceInstanceId","sourceSequence","sourceState","sourceSet","sourceSha","workerSha","profileDigest","candidateSha","checkerBuildId","companionQualification","applicability","analysis","requiredChecks","failedChecks","unsupportedChecks","uncoveredSlices","loaded","attachment","exercised","notificationCoverage","detectorCode","qualified"];
   if(Reflect.ownKeys(v).length!==keys.length||Reflect.ownKeys(v).some(k=>typeof k!=="string"||!keys.includes(k)||!("value" in Object.getOwnPropertyDescriptor(v,k)!)))return null;
-  if(v.name!=="host_patch_health"||v.schemaVersion!==1||!uuid(v.eventId)||!uuid(v.installationId)||v.contractRevision!==HOST_HEALTH_CONTRACT||!hash(v.sourceInstanceId)||!["stable","unavailable","changed"].includes(v.sourceState)
+  // Historical receipts keep their original obligation set, without acquiring
+  // proof of the newer lifecycle requirement. Accessors were rejected above.
+  const required = v.contractRevision === "host-health-v1" ? HOST_CHECK_REQUIREMENTS.filter(c=>c.id!=="context.lease-finally") : HOST_CHECK_REQUIREMENTS;
+  if(v.name!=="host_patch_health"||v.schemaVersion!==1||!uuid(v.eventId)||!uuid(v.installationId)||![HOST_HEALTH_CONTRACT,"host-health-v1"].includes(v.contractRevision)||!hash(v.sourceInstanceId)||!["stable","unavailable","changed"].includes(v.sourceState)
     ||(v.sourceState==="stable"? !hash(v.sourceSet)||!hash(v.sourceSha)||!hash(v.workerSha) : v.sourceSet!==null||v.sourceSha!==null||v.workerSha!==null||v.profileDigest!==null||v.candidateSha!==null)
     ||v.workerSha!==null&&!hash(v.workerSha)||v.profileDigest!==null&&!hash(v.profileDigest)||v.candidateSha!==null&&!hash(v.candidateSha)||v.checkerBuildId!==null&&!hash(v.checkerBuildId)||!Number.isSafeInteger(v.sourceSequence)||v.sourceSequence<0
     ||typeof v.at!=="string"||!Number.isFinite(Date.parse(v.at))||new Date(v.at).toISOString()!==v.at
     ||!["not-required","matched","unreviewed"].includes(v.companionQualification)||!["exact","mismatch","profile-unavailable"].includes(v.applicability)||!["pending","passed","violated","unsupported","unavailable"].includes(v.analysis)
     ||!tokens(v.requiredChecks,32)||!tokens(v.failedChecks,32)||!tokens(v.unsupportedChecks,32)||!tokens(v.uncoveredSlices,128)
-    ||v.requiredChecks.length!==HOST_CHECK_REQUIREMENTS.length||HOST_CHECK_REQUIREMENTS.some(c=>!v.requiredChecks.includes(c.id))
+    ||v.requiredChecks.length!==required.length||required.some(c=>!v.requiredChecks.includes(c.id))
     ||v.failedChecks.some(id=>!v.requiredChecks.includes(id))||v.unsupportedChecks.some(id=>!v.requiredChecks.includes(id))
     ||v.loaded!=="not-observed"||v.attachment!=="not-observed"||v.exercised!=="not-exercised"||v.notificationCoverage!=="local-only"||v.qualified!==false
     ||v.detectorCode!==null&&(typeof v.detectorCode!=="string"||!/^[a-z][a-z0-9-]{0,79}$/.test(v.detectorCode)))return null;
@@ -59,7 +63,8 @@ export function hostHealthSummary(v:HostHealthEvidence):"blocked"|"unknown"|"deg
   if(v.sourceState!=="stable")return "unknown";
   if(v.applicability==="mismatch"||v.analysis==="violated")return "blocked";
   if(v.applicability!=="exact"||v.analysis!=="passed")return "unknown";
-  // The three narrow static proofs never assert full capability/load/use qualification.
+  if(v.contractRevision!==HOST_HEALTH_CONTRACT)return "unknown";
+  // These scoped static proofs never assert full capability/load/use qualification.
   return "degraded";
 }
 export function hostHealthConditions(v:HostHealthEvidence):{cause:"applicability"|"semantics"|"sensing"|"companion";result:"failed"|"passed"|"unknown"}[]{

@@ -346,7 +346,7 @@ describe("published Node package", () => {
     expect(JSON.parse(nativeIdentity.stdout).build_id).toBe(verifierManifest.build_id);
     expect(verifierManifest.licenses.length).toBeGreaterThan(0);
     expect(verifierManifest.licenses.every((row:{license:string})=>row.license!=="unverified")).toBe(true);
-    const verifierSource=await readFile(join(repoRoot,"test/fixtures/host-verifier/sources/qualified.cjs"));
+    const verifierSource=await readFile(join(repoRoot,"test/fixtures/host-verifier/sources/lease-lifetime.cjs"));
     const verifierResult=await qualifyVerifierArtifacts(nativeDir,[{role:"source",bytes:verifierSource},{role:"candidate",bytes:verifierSource}]);
     expect(verifierResult.buildId).toBe(verifierManifest.build_id);expect(verifierResult.checks.every(c=>c.state==="passed")).toBe(true);
     const installedWebManifest = JSON.parse(await readFile(join(installedRoot, "dist", "web", "manifest.json"), "utf8"));

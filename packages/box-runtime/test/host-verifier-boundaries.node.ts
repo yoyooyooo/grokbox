@@ -14,7 +14,7 @@ import { SCHEMA_DIGEST } from "../src/internal/io/host-verifier/generated/protoc
 const directory=join(dirname(process.env.GROKBOX_TEST_CLI_ENTRY!),"native/x86_64-unknown-linux-gnu");
 const sha=(v:Uint8Array|string)=>createHash("sha256").update(v).digest("hex");
 const manifest=JSON.parse(await readFile(join(directory,"verifier-manifest.json"),"utf8"));
-const good=await readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/qualified.cjs"));
+const good=await readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/lease-lifetime.cjs"));
 const checks=HOST_CHECK_REQUIREMENTS.map(({id,revision})=>({id,revision}));
 const job=()=>({jobId:randomUUID(),attemptId:randomUUID(),checks,artifacts:[{role:"source" as const,bytes:good},{role:"candidate" as const,bytes:good}]});
 const analyze=(runtime:ManagedRuntime.ManagedRuntime<HostVerifier, never>,input=job(),signal?:AbortSignal)=>runtime.runPromise(Effect.gen(function*(){const port=yield* HostVerifier;return yield* port.analyze(input);}),signal?{signal}:undefined);

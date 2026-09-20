@@ -4,11 +4,19 @@ import { ManagementClient } from "../src/client.ts";
 import { hostHealthView } from "../src/host-health-contract.ts";
 import { HOST_CHECK_REQUIREMENTS, hostHealthConditions, hostHealthSummary, projectHostHealth, type HostHealthEvidence } from "@grokbox/runtime-kernel/host-health";
 const installation="11111111-1111-4111-8111-111111111111";
-const evidence=():HostHealthEvidence=>({name:"host_patch_health",schemaVersion:1,eventId:randomUUID(),at:new Date().toISOString(),installationId:installation,contractRevision:"host-health-v1",sourceInstanceId:"a".repeat(64),sourceSequence:0,
+const evidence=():HostHealthEvidence=>({name:"host_patch_health",schemaVersion:1,eventId:randomUUID(),at:new Date().toISOString(),installationId:installation,contractRevision:"host-health-v2",sourceInstanceId:"a".repeat(64),sourceSequence:0,
  sourceState:"stable",sourceSet:"b".repeat(64),sourceSha:"c".repeat(64),workerSha:"d".repeat(64),profileDigest:"e".repeat(64),candidateSha:"f".repeat(64),checkerBuildId:"1".repeat(64),companionQualification:"not-required",
  applicability:"exact",analysis:"passed",requiredChecks:HOST_CHECK_REQUIREMENTS.map(c=>c.id),failedChecks:[],unsupportedChecks:[],uncoveredSlices:["create-session"],loaded:"not-observed",attachment:"not-observed",exercised:"not-exercised",notificationCoverage:"local-only",detectorCode:null,qualified:false});
 const view=()=>({component:"host-integration",owner:"management-server",state:"running",reason:"observed",observedAtMs:Date.now(),lastAttemptAtMs:Date.now(),assessment:"degraded",latest:evidence(),intake:"committed",runtime:null,witness:null,runtimeIntake:"not-observed",watch:"active",analyses:1,qualified:false,executionAuthority:false});
-test("three static passes never certify loaded identity, exercised behavior or independent delivery",()=>{const v=evidence();expect(projectHostHealth(v)).not.toBeNull();expect(hostHealthSummary(v)).toBe("degraded");expect(hostHealthView(view(),installation)).toBe(true);});
+test("scoped static passes never certify loaded identity, exercised behavior or independent delivery",()=>{const v=evidence();expect(projectHostHealth(v)).not.toBeNull();expect(hostHealthSummary(v)).toBe("degraded");expect(hostHealthView(view(),installation)).toBe(true);});
+test("historical static receipts retain their obligation set without certifying the added lifetime requirement",()=>{
+ const old={...evidence(),contractRevision:"host-health-v1" as const,requiredChecks:HOST_CHECK_REQUIREMENTS.filter(c=>c.id!=="context.lease-finally").map(c=>c.id)};
+ expect(projectHostHealth(old)).toEqual(old);expect(hostHealthSummary(old)).toBe("unknown");
+ expect(projectHostHealth({...old,contractRevision:"host-health-v2"})).toBeNull();
+ let reads=0;Object.defineProperty(old,"contractRevision",{enumerable:true,get(){reads++;return "host-health-v1";}});
+ expect(projectHostHealth(old)).toBeNull();expect(reads).toBe(0);
+});
+
 test("missing requirements, private source fields, fabricated loaded proof and contradictory passes are rejected",()=>{
  for(const v of [{...evidence(),requiredChecks:[]},{...evidence(),sourceText:"private"},{...evidence(),loaded:"matching"},{...evidence(),qualified:true},{...evidence(),analysis:"passed",failedChecks:["retry.turn-guard"]},{...evidence(),notificationCoverage:"delivered"}])expect(projectHostHealth(v)).toBeNull();
 });

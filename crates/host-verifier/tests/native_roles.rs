@@ -1,7 +1,7 @@
 use grokbox_host_verifier::{analyze, CHECKS};
 const NATIVE: &str = include_str!("../../../test/fixtures/host-verifier/sources/native-roles.cjs");
 fn findings(text: &str) -> Vec<(String, String)> {
-    let r = analyze(text, true, &CHECKS.iter().map(|(id,v)| ((*id).into(), *v)).collect::<Vec<_>>());
+    let r = analyze(text, true, &CHECKS.iter().filter(|(id,_)| *id != "context.lease-finally").map(|(id,v)| ((*id).into(), *v)).collect::<Vec<_>>());
     assert!(r.valid, "variant must be valid JS; syntax rejection is not this oracle");
     r.findings.iter().map(|f| (f.state.into(), f.code.into())).collect()
 }

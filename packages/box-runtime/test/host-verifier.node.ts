@@ -14,7 +14,7 @@ import { SCHEMA_DIGEST } from "../src/internal/io/host-verifier/generated/protoc
 import { HOST_CHECK_REQUIREMENTS } from "@grokbox/runtime-kernel/host-health";
 const dir=join(dirname(process.env.GROKBOX_TEST_CLI_ENTRY!),"native/x86_64-unknown-linux-gnu"), checks=HOST_CHECK_REQUIREMENTS.map(c=>({id:c.id,revision:c.revision}));
 const hash=(b:string|Uint8Array)=>createHash("sha256").update(b).digest("hex"), delay=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms));
-const source=()=>readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/qualified.cjs"));
+const source=()=>readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/lease-lifetime.cjs"));
 async function job():Promise<StaticJob>{const bytes=await source();return {jobId:randomUUID(),attemptId:randomUUID(),artifacts:[{role:"source",bytes},{role:"candidate",bytes}],checks};}
 function execute(runtime:ManagedRuntime.ManagedRuntime<HostVerifier,never>,input:StaticJob,signal?:AbortSignal){return runtime.runPromise(Effect.gen(function*(){const v=yield* HostVerifier;return yield* v.analyze(input);}),signal?{signal}:undefined);}
 const rejected=(p:Promise<unknown>,code:string)=>assert.rejects(p,(e:any)=>e.code===code);
@@ -31,7 +31,7 @@ test("packaged revision-two checker consumes native role fixtures rather than a 
  const runtime=ManagedRuntime.make(hostVerifierLayer({directory:dir}));
  try {
   const bytes=await readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/native-roles.cjs"));
-  const input:StaticJob={jobId:randomUUID(),attemptId:randomUUID(),checks,artifacts:[{role:"source",bytes},{role:"candidate",bytes}]};
+  const input:StaticJob={jobId:randomUUID(),attemptId:randomUUID(),checks:checks.filter(c=>c.id!=="context.lease-finally"),artifacts:[{role:"source",bytes},{role:"candidate",bytes}]};
   const report=await execute(runtime,input);assert.ok(report.checks.every(c=>c.state==="passed"&&c.revision===2));
   for(const [before,after,index] of [["clientNonce: options.clientNonce","clientNonce: foreign.clientNonce",0],["return false;","return true;",1],["await onStateUpdate(ctx,","onStateUpdate(ctx,",2]] as const){
    const candidate=Buffer.from(bytes.toString().replace(before,after));
@@ -39,6 +39,20 @@ test("packaged revision-two checker consumes native role fixtures rather than a 
    assert.equal(broken.artifacts[1]!.valid,true);assert.equal(broken.artifacts[1]!.sha256,hash(candidate));assert.notEqual(broken.checks[index]!.state,"passed");
   }
   await rejected(execute(runtime,{...input,checks:checks.map(c=>({...c,revision:1}))}),"checker-mismatch");
+ }finally{await runtime.dispose();}
+});
+
+test("packaged lease checker catches semantic damage with recomputed candidate hashes, not source-SHA mismatch",async()=>{
+ const runtime=ManagedRuntime.make(hostVerifierLayer({directory:dir}));try{
+  const input=await job(),original=input.artifacts[1]!.bytes;
+  for(const [from,to,code] of [["disposeResources(env);","void 0;","lease-finally-not-exact"],
+    ["await lease.preflight()","lease.preflight()","lease-preflight-not-awaited"],
+    ["active = false;","active = true;","lease-not-closed-before-dispose"]]){
+   const candidate=Buffer.from(Buffer.from(original).toString().replace(from!,to!));assert.notEqual(hash(candidate),hash(original));
+   const r=await execute(runtime,{...input,attemptId:randomUUID(),artifacts:[input.artifacts[0]!,{role:"candidate",bytes:candidate}]});
+   assert.equal(r.artifacts[1]!.valid,true);assert.equal(r.artifacts[1]!.sha256,hash(candidate));
+   assert.equal(r.checks.find(c=>c.id==="context.lease-finally")!.code,code);assert.equal(r.checks.find(c=>c.id==="context.lease-finally")!.state,"violated");
+  }
  }finally{await runtime.dispose();}
 });
 

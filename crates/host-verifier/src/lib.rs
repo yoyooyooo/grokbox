@@ -9,8 +9,9 @@ use oxc_syntax::node::NodeId;
 use oxc_syntax::{operator::{BinaryOperator, LogicalOperator, UnaryOperator}, symbol::SymbolId};
 
 mod native_roles;
+mod lease_lifetime;
 
-pub const CHECKS: &[(&str, u64)] = &[("session.main-binding",2),("retry.turn-guard",2),("context.checkpoint-await",2)];
+pub const CHECKS: &[(&str, u64)] = &[("session.main-binding",2),("retry.turn-guard",2),("context.checkpoint-await",2),("context.lease-finally",1)];
 pub struct Finding { pub id: String, pub revision: u64, pub state: &'static str, pub code: &'static str, pub start: u32, pub end: u32 }
 pub struct Analysis { pub valid: bool, pub diagnostics: usize, pub nodes: usize, pub findings: Vec<Finding> }
 fn finding(id: &str, revision: u64, state: &'static str, code: &'static str, span: Span) -> Finding {
@@ -284,7 +285,7 @@ pub fn analyze(source: &str, candidate: bool, requirements: &[(String,u64)]) -> 
     let findings=if candidate {requirements.iter().map(|(id,v)|{
         let (state,code,span)=if !valid{("unsupported","semantic-diagnostics",Span::default())}
         else if !CHECKS.contains(&(id.as_str(),*v)){("unsupported","checker-not-implemented",Span::default())}
-        else{match id.as_str(){"session.main-binding"=>main_binding(&s),"retry.turn-guard"=>turn_guard(&s),"context.checkpoint-await"=>checkpoint(&s),_=>unreachable!()}};
+        else{match id.as_str(){"session.main-binding"=>main_binding(&s),"retry.turn-guard"=>turn_guard(&s),"context.checkpoint-await"=>checkpoint(&s),"context.lease-finally"=>lease_lifetime::check(&s,source),_=>unreachable!()}};
         finding(id,*v,state,code,span)
     }).collect()}else{Vec::new()};
     Analysis{valid,diagnostics:built.errors.len().min(1000000),nodes:s.nodes().iter().count(),findings}
