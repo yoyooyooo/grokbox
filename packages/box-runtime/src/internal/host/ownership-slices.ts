@@ -13,15 +13,24 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
     startAnchor: "var hostStatusArgs = rpcObject({",
     endAnchor: "var localToolPermissionResolution =",
     find: "  includeManagedCapabilities: rpcOptional(rpcBoolean())\n",
-    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString())),\n  grokboxOwnershipLocalOnly: rpcOptional(rpcBoolean()),\n  grokboxRuntimeCapabilities: rpcOptional(rpcBoolean())\n",
+    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString())),\n  grokboxOwnershipLocalOnly: rpcOptional(rpcBoolean()),\n  grokboxRuntimeCapabilities: rpcOptional(rpcBoolean()),\n  grokboxHealthChallenge: rpcOptional(rpcString())\n",
   },
   {
     id: "ownership-read-api",
     startAnchor: "    getHostStatus: async ({ includeManagedCapabilities }) => ({",
     endAnchor: "    setBoxMigrating: async (args) => {",
     find: "    getHostStatus: async ({ includeManagedCapabilities }) => ({\n      ...deps.extensions.api(\"host-upgrade\").getVersionState(),\n      isBusy: deps.getHealth().isBusy,\n      capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES\n    }),\n",
-    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds, grokboxOwnershipLocalOnly, grokboxRuntimeCapabilities }) => {
+    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds, grokboxOwnershipLocalOnly, grokboxRuntimeCapabilities, grokboxHealthChallenge }) => {
       const read = globalThis[Symbol.for("${HOST_OWNERSHIP_READ_SYMBOL}")];
+      if (grokboxHealthChallenge !== undefined) {
+        // Only local metadata; do not sample ownership, auth, Bot roster or model.
+        let health = null;
+        try {
+          const descriptor = typeof read === "function" ? Object.getOwnPropertyDescriptor(read, "health") : null;
+          if (descriptor && "value" in descriptor && typeof descriptor.value === "function") health = descriptor.value(grokboxHealthChallenge, 1);
+        } catch {}
+        return { grokboxHostHealth: health };
+      }
       const result = {
         ...deps.extensions.api("host-upgrade").getVersionState(),
         isBusy: deps.getHealth().isBusy,

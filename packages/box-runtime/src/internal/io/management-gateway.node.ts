@@ -141,6 +141,12 @@ export function createManagementGatewayIO(options: { discoveryPath: string; conf
   });
   return {
     ownershipRead,
+    readHostWitness: async (challenge: string, signal: AbortSignal) => {
+      if (!UUID.test(challenge)) throw invalid();
+      const { result, source } = await call("getHostStatus", { grokboxHealthChallenge: challenge }, signal, 3000, 64 * 1024);
+      if (!record(result) || Object.keys(result).length !== 1 || !Object.hasOwn(result, "grokboxHostHealth")) throw invalid();
+      return { value: result.grokboxHostHealth, pid: source.pid };
+    },
     readNotificationReceiver: receiver.readExplicit,
     routineAccess: createRoutineGateway(call),
     continuityAccess: (signal: AbortSignal) => {

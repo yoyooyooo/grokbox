@@ -194,8 +194,15 @@ test("unknown native creation remains blocked through restart and never creates 
   const f=await protectionFixture(origin,{simulatedRestore:true});
   try{
     await until(()=>subject(f),v=>!!v?.lastSnapshotRef);await policy(f,{mode:"auto-replace",pauseOnOwnershipLoss:false});f.state.lostBirth=true;f.state.temporal.add(P_BOT);
-    const current=await until(()=>subject(f),v=>v?.lastAction==="blocked"&&!!v.pendingHandoverRef);
-    assert.equal(f.state.created,1);const handover=(await f.client().protectionHandover(current!.pendingHandoverRef!)).data;
+    // A temporary policy/source fence may also say blocked before creation.
+    // Wait for this test's actual unknown-create checkpoint, not that generic label.
+    const observed=await until(async()=>{
+      const current=await subject(f);
+      const handover=current?.pendingHandoverRef?(await f.client().protectionHandover(current.pendingHandoverRef)).data:null;
+      return {current,handover};
+    },v=>v.handover?.steps.some(s=>s.step==="create"&&s.state==="effect_unknown")===true&&v.handover.phase==="blocked");
+    const {current,handover}=observed;assert.ok(handover);
+    assert.equal(f.state.created,1);
     assert.equal(handover.phase,"blocked");assert.ok(handover.steps.some(s=>s.step==="create"&&s.state==="effect_unknown"));
     assert.equal(handover.targetUsability,"not-observed");assert.equal(handover.privateInputsIncluded,false);
     await f.restart();await delay(200);assert.equal(f.state.created,1);assert.equal((await subject(f))?.pendingHandoverRef,current?.pendingHandoverRef);

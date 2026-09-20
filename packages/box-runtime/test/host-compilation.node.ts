@@ -109,7 +109,7 @@ test("retain-before-intake interruption replays the original compilation receipt
  const f=await hostHealthFixture("https://compile-intake.example.test");let child:ChildProcess|undefined;
  try{await until(()=>f.client().hostHealth(),v=>v.data.runtimeIntake==="committed");
   let resolve!:()=>void;const retained=new Promise<void>(r=>resolve=r);
-  f.ports.runtime!.afterRetain=async()=>{const j=await readHostRuntimeJournal(f.root,"11111111-1111-4111-8111-111111111111");if(j?.receipts.at(-1)?.event.observation.receipt?.nativeCompilation==="threw"){assert.notEqual((await f.client().hostHealth()).data.runtimeIntake,"committed");resolve();throw Error("synthetic-interruption-before-intake");}};
+  f.ports.runtime!.afterRetain=async()=>{const j=await readHostRuntimeJournal(f.root,"11111111-1111-4111-8111-111111111111");if(j?.receipts.some(row=>row.event.name==="host_runtime_health"&&row.event.observation.receipt?.nativeCompilation==="threw")){assert.notEqual((await f.client().hostHealth()).data.runtimeIntake,"committed");resolve();throw Error("synthetic-interruption-before-intake");}};
   await prepare(f,'throw new Error("synthetic failed module");');const p=await launch(f);child=p.child;await retained;await f.server.close();
   const journal=(await readHostRuntimeJournal(f.root,"11111111-1111-4111-8111-111111111111"))!,last=journal.receipts.at(-1)!.event;assert.ok(journal.acknowledgedThrough<last.sourceSequence);
   delete f.ports.runtime!.afterRetain;await f.restart();await until(()=>f.client().hostHealth(),v=>v.data.runtimeIntake==="committed");
@@ -135,7 +135,7 @@ test("runtime provenance remains bounded and never evicts unindexed evidence to 
   for(let n=0;n<64;n++)await retainHostRuntimeEvidence(f.root,installation,event(n));
   await assert.rejects(retainHostRuntimeEvidence(f.root,installation,event(64)),/capacity/);assert.equal((await readHostRuntimeJournal(f.root,installation))!.nextSequence,64);
   await acknowledgeHostRuntimeEvidence(f.root,installation,10);await retainHostRuntimeEvidence(f.root,installation,event(64));const journal=(await readHostRuntimeJournal(f.root,installation))!;
-  assert.equal(journal.receipts.length,64);assert.equal(journal.receipts[0]!.event.sourceSequence,1);assert.equal(hostRuntimeCondition(journal.receipts[0]!.event),"unknown");
+  assert.equal(journal.receipts.length,64);assert.equal(journal.receipts[0]!.event.sourceSequence,1);const retained=journal.receipts[0]!.event;assert.equal(retained.name,"host_runtime_health");if(retained.name==="host_runtime_health")assert.equal(hostRuntimeCondition(retained),"unknown");
  }finally{await f.close();}
 });
 

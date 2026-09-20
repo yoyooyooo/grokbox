@@ -2,7 +2,7 @@ import { Effect, Fiber, ManagedRuntime } from "effect";
 import { watch, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { HOST_HEALTH_CONTRACT, HOST_CHECK_REQUIREMENTS, hostHealthSummary, type HostHealthEvidence, type HostRuntimeObservation, type HostRuntimeEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
+import { HOST_HEALTH_CONTRACT, HOST_CHECK_REQUIREMENTS, hostHealthSummary, type HostHealthEvidence, type HostRuntimeObservation, type HostRuntimeEvidence, type HostWitnessObservation, type HostWitnessEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
 import { canonicalJson, sha256Text, sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { HostVerifier } from "../ops/host-health/verifier.port.ts";
 import { hostVerifierLayer } from "../io/host-verifier/client.node.ts";
@@ -10,6 +10,7 @@ import { VerifierFailure } from "../io/host-verifier/stdio.node.ts";
 import { readHostArtifacts, HostSourceFailure, type HostArtifactPaths, type HostArtifacts } from "../io/host-artifact-source.node.ts";
 import { readHostHealthJournal, retainHostHealthEvidence, acknowledgeHostHealthEvidence, type HostHealthJournal, readHostRuntimeJournal, retainHostRuntimeEvidence, acknowledgeHostRuntimeEvidence, type HostRuntimeJournal } from "../io/provenance.node.ts";
 import { observeHostCompilation, type CompilationReadPorts } from "../io/host-compilation.node.ts";
+import { observeHostWitness, type HostWitnessRead } from "../io/host-witness.node.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout, assertSafeDirectory } from "../io/config-layout.node.ts";
@@ -19,10 +20,10 @@ import { acquireAdvisoryGate, type AdvisoryGate } from "../io/advisory-gate.node
 import { openMonitorStore } from "../io/monitor-store.node.ts";
 export type HostHealthStatus = { owner:"management-server"; state:"starting"|"disabled"|"running"|"blocked"|"stopped"; reason:string;
   observedAtMs:number|null; lastAttemptAtMs:number|null; assessment:"blocked"|"unknown"|"degraded"; latest:HostHealthEvidence|null;
-  intake:"not-observed"|"committed"|"unavailable"|"gap"; runtime:HostRuntimeObservation|null; runtimeIntake:"not-observed"|"committed"|"unavailable"|"gap"; watch:"active"|"backstop-only"; analyses:number; qualified:false; executionAuthority:false };
+  intake:"not-observed"|"committed"|"unavailable"|"gap"; runtime:HostRuntimeObservation|null; witness:HostWitnessObservation|null; runtimeIntake:"not-observed"|"committed"|"unavailable"|"gap"; watch:"active"|"backstop-only"; analyses:number; qualified:false; executionAuthority:false };
 export type HostHealthTestPorts = { enabled?:boolean; paths?:HostArtifactPaths; binaryDirectory?:string; pollMs?:number; backstopMs?:number;
   afterRetain?:()=>Promise<void>; onSpawn?:(pid:number)=>void;
-  runtime?: CompilationReadPorts & { runRoot?:string; afterRetain?:()=>Promise<void> } };
+  runtime?: CompilationReadPorts & { runRoot?:string; afterRetain?:()=>Promise<void> }; witnessPollMs?:number; afterWitnessRetain?:()=>Promise<void> };
 const local = <A>(work:()=>Promise<A>) => Effect.uninterruptible(Effect.tryPromise({try:work,catch:e=>e}));
 const analyzeArtifacts=(a:HostArtifacts)=>Effect.gen(function*(){const verifier=yield* HostVerifier;return yield* verifier.analyze({jobId:randomUUID(),attemptId:randomUUID(),checks:HOST_CHECK_REQUIREMENTS.map(c=>({id:c.id,revision:c.revision})),
   artifacts:[{role:"source",bytes:a.source},...(a.candidate?[{role:"candidate" as const,bytes:a.candidate}]:[]),{role:"companion",bytes:a.worker}]});});
@@ -37,10 +38,12 @@ export async function inspectHostHealthSources(paths:HostArtifactPaths,binaryDir
 /** Installation sensing and static computation share one Server owner, not the
  * Bot roster. The two lanes never hold a database transaction across analysis.
  * Reports certify immutable inputs only; no loaded/use authority is inferred. */
-export function startHostHealth(input:{root:string;installationId:string;enabled?:boolean}, ports:HostHealthTestPorts={}) {
+export function startHostHealth(input:{root:string;installationId:string;enabled?:boolean;readWitness?:HostWitnessRead}, ports:HostHealthTestPorts={}) {
   const paths=ports.paths??{source:LIVE_HOST_BUNDLE,worker:join(dirname(LIVE_HOST_BUNDLE),"agent-isolation/agent-store-worker.cjs"),profile:reviewedProfilePath(input.root)};
   const pollMs=ports.pollMs??1000, backstopMs=ports.backstopMs??180000;
   if(!Number.isSafeInteger(pollMs)||pollMs<10||pollMs>30000||!Number.isSafeInteger(backstopMs)||backstopMs<pollMs||backstopMs>600000) throw Error("invalid-health-period");
+  const witnessPollMs = ports.witnessPollMs ?? 10000;
+  if (!Number.isSafeInteger(witnessPollMs) || witnessPollMs < 10 || witnessPollMs > 60000) throw Error("invalid-witness-period");
   const runtime=ManagedRuntime.make(hostVerifierLayer({directory:ports.binaryDirectory,onSpawn:ports.onSpawn}));
   const controller=new AbortController();
   let gate:AdvisoryGate|null=null, watchers:FSWatcher[]=[], dirty=true, lastHashAt=0, closed=false, enabled=false;
@@ -49,10 +52,11 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   let pending:Pending|null=null, active:Pending|null=null;
   const cache=new Map<string,StaticAnalysis>();
   let runtimeRoot=ports.runtime?.runRoot??ephemeralRuntimeRoot(), runtimeKey:string|null=null;
+  let witnessKey: string | null = null, previousWitness: { observationId: string; sequence: number } | undefined;
   let writes:Promise<unknown>=Promise.resolve();
   const serial=<A>(work:()=>Promise<A>):Promise<A>=>{const next=writes.then(work);writes=next.catch(()=>undefined);return next;};
   let status:HostHealthStatus={owner:"management-server",state:"starting",reason:"not-observed",observedAtMs:null,lastAttemptAtMs:null,assessment:"unknown",latest:null,
-    intake:"not-observed",runtime:null,runtimeIntake:"not-observed",watch:"backstop-only",analyses:0,qualified:false,executionAuthority:false};
+    intake:"not-observed",runtime:null,witness:null,runtimeIntake:"not-observed",watch:"backstop-only",analyses:0,qualified:false,executionAuthority:false};
   const sourceInstanceId=sha256Text(canonicalJson(["host-health",input.installationId]));
   async function intake(journal:HostHealthJournal|null) {
     if(!journal){status={...status,intake:"not-observed"};return;}
@@ -115,7 +119,11 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     const selectedRoot=runtimeRoot, observation=await observeHostCompilation(input.root,selectedRoot,paths.source,ports.runtime);
     if(closed||!enabled||selectedRoot!==runtimeRoot)return;
     const key=canonicalJson([selectedRoot,observation.state,observation.process,observation.receipt]);
-    status={...status,runtime:observation,...(key!==runtimeKey?{runtimeIntake:"not-observed" as const}:{})};
+    status={...status,runtime:observation,
+      // Preserve detector failures as well as positive samples while the same
+      // launch is selected. A fast marker tick cannot erase an invalid reply.
+      witness:observation.state===status.runtime?.state&&observation.receipt?.observationId===status.runtime?.receipt?.observationId?status.witness:null,
+      ...(key!==runtimeKey?{runtimeIntake:"not-observed" as const}:{})};
     await serial(async()=>{
       if(closed||!enabled||selectedRoot!==runtimeRoot)return;
       let journal=await readHostRuntimeJournal(input.root,input.installationId);
@@ -130,12 +138,38 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       await runtimeIntake(journal);
     });
   }
+  async function tickWitness() {
+    if (closed || !enabled || !gate) return;
+    const selectedRoot = runtimeRoot, observedGeneration = generation, compilation = status.runtime;
+    const selectedLaunch = canonicalJson([compilation?.state ?? null, compilation?.receipt ?? null]);
+    const stillSelected = () => selectedRoot === runtimeRoot && observedGeneration === generation
+      && selectedLaunch === canonicalJson([status.runtime?.state ?? null, status.runtime?.receipt ?? null]);
+    const observation = await observeHostWitness({ root: input.root, runRoot: selectedRoot, target: paths.source,
+      compilation, read: input.readWitness, previous: previousWitness, inspect: ports.runtime }, controller.signal);
+    if (closed || !enabled || !stillSelected()) return;
+    if (observation.snapshot) previousWitness = { observationId: observation.snapshot.compilation.observationId, sequence: observation.snapshot.sequence };
+    const s = observation.snapshot;
+    // Challenge/sequence/heartbeat are read freshness, not new business evidence.
+    const key = canonicalJson([selectedRoot, observation.state, observation.reason, s ? [s.compilation, s.capabilities, s.events, s.eventsDropped, s.untrackedSlices] : null]);
+    status = { ...status, witness: observation, ...(key !== witnessKey ? { runtimeIntake: "not-observed" as const } : {}) };
+    await serial(async () => {
+      if (closed || !enabled || !stillSelected()) return;
+      let journal = await readHostRuntimeJournal(input.root, input.installationId);
+      if (key !== witnessKey) {
+        const event: HostWitnessEvidence = { name: "host_capability_health", schemaVersion: 1, eventId: randomUUID(), at: new Date().toISOString(),
+          installationId: input.installationId, sourceInstanceId: runtimeSource, sourceSequence: journal?.nextSequence ?? 0, observation };
+        journal = await retainHostRuntimeEvidence(input.root, input.installationId, event); witnessKey = key;
+        await ports.afterWitnessRetain?.();
+      }
+      await runtimeIntake(journal);
+    });
+  }
   async function tick() {
     if(closed) return;
     const config=input.enabled===false?null:(await openConfigStore(rootConfigLayout(input.root)).read()).document;
     if(!config||!config.runtime?.desiredMode||config.runtime.desiredMode==="disabled") {
       if(enabled){generation++;currentKey=null;analyzedKey=null;}
-      enabled=false;pending=null;dirty=true;runtimeKey=null;status={...status,state:"disabled",reason:"intent-disabled",runtime:null};return;
+      enabled=false;pending=null;dirty=true;runtimeKey=null;witnessKey=null;status={...status,state:"disabled",reason:"intent-disabled",runtime:null,witness:null};return;
     }
     enabled=true;
     runtimeRoot=ports.runtime?.runRoot??config.daemon?.observation?.runRoot??ephemeralRuntimeRoot();
@@ -193,15 +227,21 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     else {dirty=true;retryAt=Date.now()+Math.min(30000,Math.max(pollMs,250)*2**Math.min(failures++,6));}
     status={...status,state:"running",reason:a.applicability==="mismatch"?"recipe-mismatch":analysis?"observed":"analysis-unavailable"};
   }
-  const lane=(work:()=>Promise<void>)=>Effect.forever(Effect.gen(function*(){
+  const lane=(work:()=>Promise<void>, interval=pollMs)=>Effect.forever(Effect.gen(function*(){
     yield* local(work).pipe(Effect.catch(()=>Effect.sync(()=>{status={...status,state:"blocked",reason:"source-or-provenance-unavailable"};retryAt=Date.now()+Math.max(pollMs,1000);dirty=true;})));
-    yield* Effect.sleep(pollMs);
+    yield* Effect.sleep(interval);
   }));
   const fiber=runtime.runFork(Effect.scoped(Effect.gen(function*(){yield* lane(tick).pipe(Effect.forkScoped);yield* lane(analyzePending).pipe(Effect.forkScoped);
     yield* lane(async()=>{try{await tickRuntime();}catch{status={...status,runtimeIntake:"unavailable"};}}).pipe(Effect.forkScoped);
+    yield* lane(async()=>{try{await tickWitness();}catch{status={...status,witness:{state:"unavailable",reason:"read-unavailable",observedAtMs:Date.now(),snapshot:null,qualified:false},runtimeIntake:"unavailable"};}},witnessPollMs).pipe(Effect.forkScoped);
     yield* Effect.never;})));
   let closePromise:Promise<void>|undefined;
-  return {status:()=>structuredClone(status),refresh:()=>{dirty=true;analyzedKey=null;retryAt=0;cache.clear();},close:()=>closePromise??=(async()=>{
+  return {status:()=>{
+    const value=structuredClone(status);
+    if(value.witness?.state==="current"&&(closed||Date.now()-value.witness.observedAtMs>witnessPollMs+5000||Date.now()<value.witness.observedAtMs))
+      value.witness={state:"unavailable",reason:"read-unavailable",observedAtMs:value.witness.observedAtMs,snapshot:null,qualified:false};
+    return value;
+  },refresh:()=>{dirty=true;analyzedKey=null;retryAt=0;cache.clear();},close:()=>closePromise??=(async()=>{
     closed=true;controller.abort();for(const w of watchers)w.close();watchers=[];
     await Effect.runPromise(Fiber.interrupt(fiber));await runtime.dispose();await writes;await gate?.release();gate=null;status={...status,state:"stopped",reason:"stopped"};
   })()};

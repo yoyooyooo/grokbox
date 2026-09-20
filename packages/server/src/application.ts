@@ -20,7 +20,7 @@ import { lifecycleApplication, type LifecycleDomain } from "./lifecycle.ts";
 import { contextApplication, type ContextDomain } from "./context.ts";
 
 export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, "listBots" | "ownershipRead">
-  & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "routineAccess" | "continuityAccess">>;
+  & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess">>;
 import { hostHealthQuery } from "./host-health.ts";
 import type { HostHealthStatus } from "@grokbox/box-runtime/runtime";
 export type ApplicationOptions = { hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };

@@ -259,6 +259,12 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 源码 `b7fb831cc870e970dd7d810f1c0b905357b6f0cad6c405bfffd2830b563a3d3a`，1161个输入，两组前后固定：core334/36文件、integration22/16文件，合计356 pass/0 fail；20个 Rust 测试、协议生成和根/Web typecheck通过。包装内部编译 Node11、Chrome65等不与356相加。安装后binary/Node、搬移Web、原其他管理域都按当前源码复验，不沿用旧705项。分层反例保持纯合同不能导入Effect，未放宽任意出口或恢复旧writer。
 
+### 同代注册与实际边界见证
+
+已接续并完成 preload 原引用注册→原认证 getHostStatus challenge→管理 Server 独立采样→原 runtime provenance/OBS→CLI/Web。session、retry、context 记录有界实际边界；原对象/方法被替换可检测，getter不执行；没有机会覆盖时不推断 bypass。错误旧回复也核运行代，丢失原回执文件不重置稳定来源序列；心跳不制造持久事件或重复通知。详细实现、反例及剩余范围归[固定见证报告](../reports/2026-09-20-host-capability-witness.md)。
+
+固定源码 `2d1c173370c46232c964c24d8e459f5acbb2ab5ed24b32fd65cb55648a51745b`、1168个输入，两组前后相同：core375/42文件、integration23/17文件，398项/0失败；Rust20、根/Web类型及实际打包/安装通过。包装内部 witness Node19、Chrome66 不与398重复相加。仍 `qualified=false`，没有真实Host/Provider/外部投递或部署。
+
 ### 阶段提交与 v2 集成
 
 用户已授权从本阶段开始分批提交。原工作树由 detached HEAD 转为 `feat/agent-first-management`，本地跟踪集成目标 `feat/box-runtime-v2`；创建分支时两者均位于 `a3e9131`，未移动 v2、重置文件或创建平行工程。已有422个暂存文件作为一份完整的重建施工基线保全，避免为拆历史提交制造不可构建的中间状态。提交前源码指纹与上一 Host 健康固定回归相同；后续每个可验证工作包分别提交，未经验证的差额明确记录。

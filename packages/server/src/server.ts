@@ -322,7 +322,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
       worker=>Effect.promise(()=>worker.close()),
     ).pipe(Effect.provideService(Scope.Scope,runtime.scope)));
     hostHealth = await runtime.runPromise(Effect.acquireRelease(
-      Effect.sync(()=>startHostHealth({root:options.store.root,installationId,enabled:testPorts.hostHealth?.enabled},testPorts.hostHealth)),
+      Effect.sync(()=>startHostHealth({root:options.store.root,installationId,enabled:testPorts.hostHealth?.enabled,readWitness:options.native.readHostWitness},testPorts.hostHealth)),
       worker=>Effect.promise(()=>worker.close()),
     ).pipe(Effect.provideService(Scope.Scope,runtime.scope)));
     const address = server.address();

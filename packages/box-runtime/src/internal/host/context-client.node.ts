@@ -11,6 +11,7 @@ import { createNativeContextOwner, type NativeContextCapture, type NativeContext
 import type { HostBinding } from "./host-binding.ts";
 import type { CompileReceipt } from "./compile-receipt.ts";
 import type { HostCompactRequest } from "@grokbox/runtime-kernel/contract";
+import type { HostWitnessNote } from "@grokbox/runtime-kernel/host-health";
 import { recordHostManagedFailure } from "./session.ts";
 import { appendHostJournal } from "./terminal-journal.node.ts";
 import { runtimeBuildInfo } from "@grokbox/runtime-kernel/contract";
@@ -117,7 +118,7 @@ export async function maintainHostContext(runRoot: string, request: ContextMaint
   }
 }
 
-export type HostContextClientOptions = { runRoot: string; durableRoot?: string; binding?: HostBinding; compile?: CompileReceipt; mode: string };
+export type HostContextClientOptions = { runRoot: string; durableRoot?: string; binding?: HostBinding; compile?: CompileReceipt; mode: string; witness?: (note: HostWitnessNote) => void };
 export function hostContextClient(options: HostContextClientOptions) {
   return (raw: unknown, valid: () => boolean, manualOperationId?: string) => {
     if (options.mode !== "route" || !object(raw) || typeof raw.agentId !== "string" || typeof raw.turnId !== "string") return undefined;
@@ -137,8 +138,11 @@ export function hostContextClient(options: HostContextClientOptions) {
         normalize: raw.normalizeContext as NativeContextCapture["normalize"], fixedMessages: raw.contextFixedMessages as NativeContextCapture["fixedMessages"],
         tools: raw.contextTools as NativeContextCapture["tools"], checkpoint: raw.contextCheckpoint as NativeContextCapture["checkpoint"],
         ...(typeof raw.contextActivity === "function" ? { activity: raw.contextActivity as NativeContextCapture["activity"] } : {}), valid,
-        ...(options.durableRoot ? { observe: async event => {
-          await appendHostJournal(options.runRoot, { name: "host_context_observation", schemaVersion: 1, at: new Date().toISOString(),
+        ...(options.durableRoot || options.witness ? { observe: async event => {
+          if (event.state === "checkpoint_observed" || event.state === "commit_unknown") {
+            try { options.witness?.({ capability: "context", stage: "checkpoint-settled", outcome: event.state === "checkpoint_observed" ? "returned" : "threw", agentId: raw.agentId as string, turnId: raw.turnId as string, stepId: raw.invocationId as string }); } catch { /* Keep the actual native commit outcome. */ }
+          }
+          if (options.durableRoot) await appendHostJournal(options.runRoot, { name: "host_context_observation", schemaVersion: 1, at: new Date().toISOString(),
             hostGenerationId: options.binding!.generationId, agentId: raw.agentId, turnId: raw.turnId,
             ...(manualOperationId === undefined ? { stepId: raw.invocationId } : {}),
             ...(observedServiceEpoch ? { serviceEpoch: observedServiceEpoch } : {}),

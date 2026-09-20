@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile, open }
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
-import { projectHostHealth, projectHostRuntimeEvidence, validStaticAnalysis, type HostRuntimeEvidence, type HostHealthEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
+import { projectHostHealth, projectHostRuntimeEvidence, projectHostWitnessEvidence, validStaticAnalysis, type HostRuntimeEvidence, type HostWitnessEvidence, type HostHealthEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
 import { assertSafeDirectory } from "./config-layout.node.ts";
 import { join } from "node:path";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
@@ -215,13 +215,16 @@ export async function acknowledgeHostHealthEvidence(root:string,installationId:s
   await publishHostHealthJournal(root,{...prior,acknowledgedThrough:sequence});
 }
 
-export type HostRuntimeJournal = { version: 1; installationId: string; nextSequence: number; acknowledgedThrough: number; receipts: Array<{ event: HostRuntimeEvidence }> };
+export type HostRuntimeJournal = { version: 1; installationId: string; nextSequence: number; acknowledgedThrough: number; receipts: Array<{ event: HostRuntimeEvidence | HostWitnessEvidence }> };
+const runtimeEvidence = (v: unknown) => projectHostRuntimeEvidence(v) ?? projectHostWitnessEvidence(v);
 /** Runtime observations extend this same bounded provenance owner. Their cursor
  * is independent of disk/AST evidence; an old disk pass cannot resolve a load
  * failure. The selected launch marker is the input, not another process owner. */
 export async function readHostRuntimeJournal(root: string, installationId: string): Promise<HostRuntimeJournal | null> {
   const directory = join(hostBundlesDir(root), "runtime-health"), path = join(directory, "receipts.json");
-  if (!await lstat(path).catch(error => { if (error.code === "ENOENT") return null; throw error; })) return null;
+  // A lost file inside an existing owner is a gap, not a fresh producer with
+  // sequence zero. Reinitializing here would strand the higher OBS cursor.
+  if (!await lstat(directory).catch(error => { if (error.code === "ENOENT") return null; throw error; })) return null;
   await assertSafeDirectory(directory);
   const fd = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -237,7 +240,7 @@ export async function readHostRuntimeJournal(root: string, installationId: strin
       || !Array.isArray(document.receipts) || !document.receipts.length || document.receipts.length > HEALTH_LIMIT) throw Error("runtime-receipt-invalid");
     let prior = -1;
     for (const row of document.receipts) {
-      const event = projectHostRuntimeEvidence(row.event);
+      const event = runtimeEvidence(row.event);
       if (!event || event.installationId !== installationId || event.sourceInstanceId !== sha256Text(canonicalJson(["host-runtime", installationId]))
         || event.sourceSequence <= prior || event.sourceSequence >= document.nextSequence) throw Error("runtime-receipt-invalid");
       prior = event.sourceSequence;
@@ -246,9 +249,9 @@ export async function readHostRuntimeJournal(root: string, installationId: strin
     return document;
   } finally { await fd.close(); }
 }
-export async function retainHostRuntimeEvidence(root: string, installationId: string, event: HostRuntimeEvidence): Promise<HostRuntimeJournal> {
+export async function retainHostRuntimeEvidence(root: string, installationId: string, event: HostRuntimeEvidence | HostWitnessEvidence): Promise<HostRuntimeJournal> {
   const prior = await readHostRuntimeJournal(root, installationId);
-  if (!projectHostRuntimeEvidence(event) || event.installationId !== installationId || event.sourceInstanceId !== sha256Text(canonicalJson(["host-runtime", installationId]))
+  if (!runtimeEvidence(event) || event.installationId !== installationId || event.sourceInstanceId !== sha256Text(canonicalJson(["host-runtime", installationId]))
     || event.sourceSequence !== (prior?.nextSequence ?? 0)) throw Error("runtime-receipt-conflict");
   const receipts = [...(prior?.receipts ?? [])];
   while (receipts.length >= HEALTH_LIMIT && receipts[0]!.event.sourceSequence <= (prior?.acknowledgedThrough ?? -1)) receipts.shift();

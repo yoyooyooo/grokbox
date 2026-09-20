@@ -13,7 +13,7 @@ const digest=(s:string)=>createHash("sha256").update(s).digest("hex");
 /** Public, independently authored JavaScript, never imported/evaluated. The
  * production TS transformation supplies the actual candidate to the real Rust
  * binary. Native RPCs deliberately fail: sensing must not need any Bot. */
-export async function hostHealthFixture(origin:string, settings:{disabled?:boolean;noMonitor?:boolean;badRecipe?:boolean;ports?:HostHealthTestPorts}={}) {
+export async function hostHealthFixture(origin:string, settings:{disabled?:boolean;noMonitor?:boolean;badRecipe?:boolean;ports?:HostHealthTestPorts;readWitness?:(challenge:string,signal:AbortSignal)=>Promise<{value:unknown;pid:number}>}={}) {
   const root=await mkdtemp(join(tmpdir(),"host-health-management-")), inputs=join(root,"inputs");await mkdir(inputs,{mode:0o700});
   const source=await readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/contracts.cjs"),"utf8");
   const paths={source:join(inputs,"host-main.cjs"),worker:join(inputs,"worker.cjs"),profile:join(inputs,"profile.json")};
@@ -28,7 +28,7 @@ export async function hostHealthFixture(origin:string, settings:{disabled?:boole
   const observations=openMonitorStore(root);
   if(!settings.noMonitor){await observations.initialize();await observations.begin(randomUUID(),Date.now(),[]);}
   const ports:HostHealthTestPorts={paths,runtime:{runRoot:join(root,"run")},binaryDirectory:join(dirname(process.env.GROKBOX_TEST_CLI_ENTRY!),"native/x86_64-unknown-linux-gnu"),pollMs:25,backstopMs:500,onSpawn:pid=>{state.pids.push(pid);},...settings.ports};
-  const options={store:openRuntimeStore(root,{}),observations,installationId:H_INSTALL,native:{listBots:async()=>{state.nativeCalls++;throw Error("no-native-roster");},ownershipRead:async()=>{state.nativeCalls++;throw Error("no-native-ownership");}},
+  const options={store:openRuntimeStore(root,{}),observations,installationId:H_INSTALL,native:{...(settings.readWitness?{readHostWitness:settings.readWitness}:{}),listBots:async()=>{state.nativeCalls++;throw Error("no-native-roster");},ownershipRead:async()=>{state.nativeCalls++;throw Error("no-native-ownership");}},
     env:{},allowedOrigins:[origin],port:0,readGrants:async()=>structuredClone(state.grants)};
   let server=await startManagementServer(options,{hostHealth:ports});options.port=Number(new URL(server.url).port);
   config.client.profiles={default:{serverUrl:server.url,installationId:H_INSTALL,daemonTokenRef:"env:SYNTHETIC_HEALTH_CREDENTIAL"}};config.client.currentProfile="default";

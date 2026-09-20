@@ -17,6 +17,7 @@ import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { isHostPromptSession } from "../src/internal/host/session.ts";
 import { bindHostCompactHook, stateSystemCompactHookOptions } from "../src/internal/host/compact.ts";
 import { hostContextClient } from "../src/internal/host/context-client.node.ts";
+import type { HostWitnessNote } from "@grokbox/runtime-kernel/host-health";
 
 const A = "00000000-0000-4000-8000-000000000001", M = "owned/context-model";
 const h = (c: string) => c.repeat(64);
@@ -56,12 +57,13 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
   const server = Effect.runFork(Effect.scoped(serveModeld({ path: join(runRoot, "modeld.sock"), generation: epoch }).pipe(
     Effect.andThen(Deferred.succeed(ready, undefined)), Effect.andThen(Effect.never), Effect.provide(layers))));
   let scope: ReturnType<ReturnType<typeof bindHostCompactHook>>;
+  const notes: HostWitnessNote[] = [], witness = (note: HostWitnessNote) => { notes.push(note); };
   try {
     await Effect.runPromise(Deferred.await(ready).pipe(Effect.timeout("2 seconds")));
     const binding = { generationId: h("a"), activationId: "owned", pid: 1, start: 1, sourceSha: h("b"), identitySha: h("c") };
     const compile = { profileId: "t21-state-root", profileSha256: h("e"), sourceSha256: h("b"), transformedSha256: h("d") };
     const turnId = "ordinary-next-turn", stepId = "ordinary-next-step";
-    const session = bindHostSessionHook({ mode: "route", durableRoot, runRoot, binding, compile })({ agentId: A,
+    const session = bindHostSessionHook({ mode: "route", durableRoot, runRoot, binding, compile, witness })({ agentId: A,
       sessionOptions: { agentId: A, invocationId: turnId }, originalSession: { getExecutor() { throw new Error("official_fallback_forbidden"); } } });
     if (!isHostPromptSession(session)) throw new Error("managed session missing");
     const oldMessages: any[] = [{ role: "system", content: "Keep facts and answer the newest request." },
@@ -72,11 +74,11 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
     const root = { getMessages: () => executor.getMessages(), getState: () => executor.getState(), clearMessages: () => executor.clearMessages(), appendMessages: (messages: unknown[]) => executor.appendMessages(messages) };
     const native = ownedNativeSummary(); native.state.lastStepInvocationId = stepId;
     const abort = new AbortController(); let checkpoints = 0;
-    scope = bindHostCompactHook({ ...stateSystemCompactHookOptions(), context: hostContextClient({ mode: "route", runRoot, binding, compile }) })({
+    scope = bindHostCompactHook({ ...stateSystemCompactHookOptions(), witness, context: hostContextClient({ mode: "route", runRoot, binding, compile, witness }) })({
       ...native, stateHandler: native.state, rootPromptExecutor: root, ctx: { signal: abort.signal }, config: { agentSessionId: "" },
       invocationId: stepId, turnId, agentId: A, stepClosed: () => false, normalizeContext: (messages: unknown[]) => messages,
       contextFixedMessages: () => [root.getMessages()[0]], contextTools: () => [],
-      contextCheckpoint: async () => { await writeFile(join(dir, "checkpoint.json"), JSON.stringify(root.getState())); checkpoints++; },
+      contextCheckpoint: async () => { expect(notes.some(n => n.stage === "checkpoint-settled")).toBe(false); await writeFile(join(dir, "checkpoint.json"), JSON.stringify(root.getState())); checkpoints++; },
     });
     expect(scope?.preflight).toBeDefined();
     if (scenario === "summary-503") {
@@ -87,6 +89,8 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
       expect(requests[0].messages[0].content).toContain("context summarization assistant");
       expect(root.getMessages()).toEqual(oldMessages);
       expect(checkpoints).toBe(0);
+      expect(notes.filter(n => n.stage === "checkpoint-settled")).toHaveLength(0);
+      expect(notes.filter(n => n.stage === "preflight-settled")).toMatchObject([{ outcome: "threw", agentId: A, turnId, stepId }]);
       expect(native.state.archive).toHaveLength(0);
       return;
     }
@@ -95,6 +99,7 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
     expect(summaryCalls).toBeGreaterThan(0);
     expect(requests.every(body => body.messages[0].content.includes("context summarization assistant"))).toBe(true);
     expect(checkpoints).toBe(1);
+    expect(notes.filter(n => n.stage === "checkpoint-settled")).toMatchObject([{ capability: "context", outcome: "returned", agentId: A, turnId, stepId }]);
     const persisted = JSON.parse(await readFile(join(dir, "checkpoint.json"), "utf8"));
     expect(JSON.stringify(persisted)).toContain("grokboxContextMaintenance");
     expect(JSON.stringify(persisted)).toContain("DURABLE=NATIVE_CARRIER");
@@ -123,6 +128,8 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
     expect(JSON.stringify(main.messages)).toContain("FACT_0=value0");
     expect(JSON.stringify(main.messages).length).toBeLessThan(100000);
     expect(native.state.archive).toHaveLength(1);
+    expect(notes.filter(n => n.stage === "terminal-consumed")).toMatchObject([{ outcome: "returned", agentId: A, turnId, stepId }]);
+    expect(notes.filter(n => n.stage === "managed-selected")).toHaveLength(1);
   } finally {
     scope?.[Symbol.dispose]();
     await Effect.runPromise(Fiber.interrupt(server));

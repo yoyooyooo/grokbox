@@ -26,6 +26,7 @@ import { attachHostAuxStreamContext, grokboxAuxFrom, type AuxParentBinding } fro
 import { hostAuxIntentFrom, type HostAuxIntent } from "./aux-purpose.ts";
 import { noteHostManagedStep } from "./compact.ts";
 import { registerHostContextTurn, hostContextWindow } from "./context-client.node.ts";
+import type { HostWitnessNote } from "@grokbox/runtime-kernel/host-health";
 import { boundedClientNonce, mapAdmitCatch, mapTerminalReject } from "./failure-catalog.ts";
 
 export type SeamMode = "observe" | "identity" | "route";
@@ -113,13 +114,19 @@ export function bindHostSessionHook(input: {
   runRoot: string;
   binding?: HostBinding;
   compile?: CompileReceipt;
+  witness?: (note: HostWitnessNote) => void;
 }): (args: {
   originalSession?: unknown;
   sessionOptions?: unknown;
   agentId?: string;
   onRequestId?: (id: string) => void;
 }) => unknown {
-  if (input.mode !== "route") return (args) => args.originalSession;
+  const witness = (note: HostWitnessNote) => { try { input.witness?.(note); } catch { /* Non-authoritative metadata. */ } };
+  if (input.mode !== "route") return (args) => {
+    witness({ capability: "session", stage: "session-enter", outcome: "observed" });
+    witness({ capability: "session", stage: "native-selected", outcome: "returned" });
+    return args.originalSession;
+  };
   const appendHostJournal = (root: string, event: unknown) => appendJournal(root, event, { configurationRoot: input.durableRoot });
   const appendHostStreamRejected = (root: string, event: unknown) => appendRejection(root, event, { configurationRoot: input.durableRoot });
   return (args) => {
@@ -156,6 +163,7 @@ export function bindHostSessionHook(input: {
         transformedSha256: input.compile.transformedSha256,
       } } : {}),
     });
+    witness({ capability: "session", stage: "session-enter", outcome: "observed", agentId, turnId });
     // A real hook entry remains observable even if selection declines or lacks an agent id.
     let captured: ReturnType<typeof captureHostManagedSelection>;
     try {
@@ -173,7 +181,11 @@ export function bindHostSessionHook(input: {
       });
       throw error;
     }
-    if (captured.kind === "official") return args.originalSession;
+    if (captured.kind === "official") {
+      witness({ capability: "session", stage: "native-selected", outcome: "returned", agentId, turnId });
+      return args.originalSession;
+    }
+    witness({ capability: "session", stage: "managed-selected", outcome: "observed", agentId, turnId });
     const modelId = captured.modelId;
     const record = captured.record;
     const writeReject = (stage: string, reason: string, errorCode = "invalid_envelope", stateShape?: string, stepId?: string,
@@ -216,6 +228,7 @@ export function bindHostSessionHook(input: {
     const wrapStream = (session: PromptSession): PromptSession => ({
       stream(request) {
         const stepId = boundedId(request?.invocationId);
+        if (!request?.aux) witness({ capability: "session", stage: "stream-enter", outcome: "observed", agentId, turnId, stepId });
         writeStage("stream_enter", "entered", {
           ...(stepId ? { stepId } : {}),
           ...(request?.aux ? { auxPurpose: request.aux.purpose, parentStepId: request.aux.parent.stepId } : {}),
@@ -306,6 +319,7 @@ export function bindHostSessionHook(input: {
         }
         const stepId = terminal.invocationId;
         if (!stepId) return;
+        if (!terminal.purpose || terminal.purpose === "main") witness({ capability: "session", stage: "terminal-consumed", outcome: terminal.terminalClass === "error" ? "threw" : "returned", agentId, turnId, stepId });
         runObserver?.progress("native");
         const producedThisStep = runtime.last.stepId === stepId;
         void appendHostJournal(input.runRoot, {

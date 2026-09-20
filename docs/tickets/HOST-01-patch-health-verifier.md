@@ -50,6 +50,12 @@ Node对子进程输入/输出/权限/哈希和job/attempt/build/schema/checker�
 
 固定证明见[编译健康阶段报告](../reports/2026-09-20-host-compilation-health.md)：实际打包 preload/公开合成模块、真实 Node进程、原存储和Chrome，含负编译、PID复用、旧marker回滚、retain-before-intake与无OBS。未修改当前私人Host配方或配对pin；该适配和完整挂接/实际触发仍是本票下一阶段。
 
+## 同代注册与实际边界见证
+
+已落地原preload引用登记和原getHostStatus本地challenge。管理Server前后核运行代，读取handle/method真实身份、必要切片与最多32项连续事件后缀；注册失配、见证读取失败进入原runtime provenance/OBS，不刷新即宣称修复、不放宽通知门。session选择/流/terminal、retry识别、context lease/preflight/checkpoint记录实际边界；读面不触发这些动作。错误旧回复不归因于新代，原证据文件丢失不静默重置序号。来源与运行scope仍独立，机会覆盖未建立，不称全路径已正确挂接。固定398项、Rust20、Node19、Chrome66等范围见[见证报告](../reports/2026-09-20-host-capability-witness.md)。
+
+下一批继续完整能力目录与当前来源适配；不重新开发已闭合编译/见证链，仍不得由有限handle检查将`qualified`升级为true。
+
 ## 同一工作包的顺序与出口
 
 ### A. 先收实际原生依赖风险

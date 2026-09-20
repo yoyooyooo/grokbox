@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isMainThread } from "node:worker_threads";
 import { writeHostCompileMarker } from "./internal/host/compile-marker.node.ts";
+import { createHostCapabilityWitness } from "./internal/host/capability-witness.ts";
 import { installNativeCheckpointWorkerHook, NATIVE_CHECKPOINT_PAIR } from "./internal/host/native-checkpoint-worker-hook.ts";
 import { createNativeCurrentStateOwner, NATIVE_CURRENT_STATE_SYMBOL } from "./internal/host/native-current-state-owner.ts";
 import { createNativeCurrentStateRpc } from "./internal/host/native-current-state-rpc.ts";
@@ -59,13 +60,19 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   const bytes = readFileSync(profilePath);
   const profile = JSON.parse(bytes.toString("utf8")) as PatchProfile;
   const profileSha256 = sha256Bytes(bytes);
+  const witness = createHostCapabilityWitness(profile, admittedMode);
+  const install = (symbol: string, value: unknown) => {
+    (globalThis as Record<symbol, unknown>)[Symbol.for(symbol)] = value;
+    witness.register(symbol, value);
+  };
   // Capture the loaded module generation before executing Host code or re-reading mutable paths.
   const preloadPath = typeof __filename === "string" ? __filename : requiredPreloadPath();
   const preloadSha256 = preloadPath ? sha256Bytes(readFileSync(preloadPath)) : undefined;
   const self = inspectPid(process.pid);
   const binding = self ? bindCompiledHost(self, operationId, { profileId: profile.profileId, profileSha256,
     sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 }) : undefined;
-  (globalThis as Record<symbol, unknown>)[Symbol.for(ROUTE_SESSION_SYMBOL)] = bindHostSessionHook({
+  install(ROUTE_SESSION_SYMBOL, bindHostSessionHook({
+    witness: witness.note,
     mode: admittedMode,
     durableRoot,
     runRoot,
@@ -76,14 +83,14 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       sourceSha256: profile.sourceSha256,
       transformedSha256: profile.transformedSourceSha256,
     },
-  });
-  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_OWNERSHIP_READ_SYMBOL)] = bindHostOwnershipRead({
+  }));
+  install(HOST_OWNERSHIP_READ_SYMBOL, Object.assign(bindHostOwnershipRead({
     ...(self ? { loaded: { pid: self.pid, start: self.start, profileSha256,
       sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 } } : {}),
-  });
+  }), { health: witness.read }));
   if (profile.slices.some(slice => slice.id === "receiver-native-model-preview")) {
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RECEIVER_MODEL_SYMBOL)] = bindReceiverModel({ durableRoot, mode: admittedMode,
-      profileRevision: profileSha256, sourceRevision: profile.sourceSha256, preloadRevision: preloadSha256 });
+    install(HOST_RECEIVER_MODEL_SYMBOL, bindReceiverModel({ durableRoot, mode: admittedMode,
+      profileRevision: profileSha256, sourceRevision: profile.sourceSha256, preloadRevision: preloadSha256 }));
   }
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_PROFILE_TITLE_SYMBOL)] = bindHostProfileTitle({ durableRoot });
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RESUME_GATE_SYMBOL)] =
@@ -94,17 +101,17 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
   const installServerActivityObservation = () => {
     if (activityObserverInstalled) return;
     activityObserverInstalled = true;
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_SERVER_ACTIVITY_SYMBOL)] = createServerActivityObserver({
+    install(HOST_SERVER_ACTIVITY_SYMBOL, createServerActivityObserver({
       generation: binding?.generationId ?? "unbound",
       instrumented: ["server-activity-live-observation", "server-activity-expiry-observation"].every(id => profile.slices.some(slice => slice.id === id)),
       emit: event => { void appendHostJournal(runRoot, event); },
-    });
+    }));
   };
   let alertObserverInstalled = false;
   const installAlertObservation = () => {
     if (alertObserverInstalled || admittedMode !== "route") return;
     alertObserverInstalled = true;
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_ALERT_OBSERVATION_SYMBOL)] = createAlertObserver({
+    install(HOST_ALERT_OBSERVATION_SYMBOL, createAlertObserver({
       observerRole: "host_target",
       generation: binding?.generationId ?? "unbound", nativeSourceSha256: profile.sourceSha256, preloadSha256,
       capture: {
@@ -114,33 +121,37 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
         inputCleanup: profile.slices.some(slice => slice.id === "alert-input-cleanup"),
       },
       emit: event => { void appendHostJournal(runRoot, event); },
-    });
+    }));
   };
   if (admittedMode === "route") {
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RUN_OBSERVATION_SYMBOL)] = createRunObserver({
+    install(HOST_RUN_OBSERVATION_SYMBOL, createRunObserver({
       generation: binding?.generationId ?? "unbound", emit: event => { void appendHostJournal(runRoot, event); },
       emitTool: event => { void appendHostJournal(runRoot, event); },
       instrumented: !!binding && ["run-queue-observation", "tool-execution-observation", "tool-execution-failure-observation"].every(id => profile.slices.some(slice => slice.id === id)),
-    });
+    }));
     (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_AUX_SYMBOL)] = wrapHostAuxExecutor;
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_CONTEXT_CONTROL_SYMBOL)] = createHostContextControl({
+    install(HOST_CONTEXT_CONTROL_SYMBOL, createHostContextControl({
     mode: admittedMode, runRoot, durableRoot, binding,
     compile: { profileId: profile.profileId, profileSha256, sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 },
-  });
-  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_COMPACT_SYMBOL)] = bindHostCompactHook({ ...stateSystemCompactHookOptions(),
-      context: hostContextClient({ mode: admittedMode, runRoot, durableRoot, binding, compile: { profileId: profile.profileId,
+  }));
+  install(HOST_COMPACT_SYMBOL, bindHostCompactHook({ ...stateSystemCompactHookOptions(), witness: witness.note,
+      context: hostContextClient({ mode: admittedMode, runRoot, durableRoot, binding, witness: witness.note, compile: { profileId: profile.profileId,
         profileSha256, sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 } }),
+    }));
+    install(HOST_MANAGED_STEP_SYMBOL, isHostManagedRootActive);
+    install(HOST_MANAGED_FAILURE_SYMBOL, (error: unknown) => {
+      const recognized = isHostManagedFailure(error);
+      if (recognized) witness.note({ capability: "retry", stage: "managed-failure-recognized", outcome: "observed" });
+      return recognized;
     });
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_SYMBOL)] = isHostManagedRootActive;
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_FAILURE_SYMBOL)] = isHostManagedFailure;
-    (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_MANAGED_STEP_FAILURE_SYMBOL)] = recordHostManagedStepFailure;
+    install(HOST_MANAGED_STEP_FAILURE_SYMBOL, recordHostManagedStepFailure);
   }
   if (binding && profile.sourceSha256 === NATIVE_CHECKPOINT_PAIR.host
     && [...NATIVE_CHECKPOINT_SLICE_IDS, ...NATIVE_CURRENT_STATE_SLICE_IDS, ...CONTEXT_SLICE_IDS].every(id => profile.slices.some(slice => slice.id === id))) {
     const currentState = createNativeCurrentStateOwner({
       qualification: { hostSourceSha: profile.sourceSha256, nativeSchema: NATIVE_CHECKPOINT_PAIR.schema }, generation: binding.generationId });
-    (globalThis as Record<symbol, unknown>)[Symbol.for(NATIVE_CURRENT_STATE_SYMBOL)] = Object.assign(currentState, {
-      call: createNativeCurrentStateRpc(currentState, profileSha256) });
+    install(NATIVE_CURRENT_STATE_SYMBOL, Object.assign(currentState, {
+      call: createNativeCurrentStateRpc(currentState, profileSha256) }));
   }
   // Worker threads inherit this preload. Only the exact independently reviewed
   // Host/worker pair with all client slices opts into the finite transaction
@@ -159,12 +170,14 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       // The receipt records actual evaluated bytes, never the desired profile
       // hash as a substitute for a rejected transformation.
       if (!markerPath || !isMainThread || !self || !preloadSha256 || resolve(process.argv[1] ?? "") !== resolve(target)) return;
-      writeHostCompileMarker(markerPath, operationId, profile.profileId, {
+      const receipt: import("@grokbox/runtime-kernel/host-health").HostCompileReceipt = {
         version: 1, observationId: randomUUID(), at: new Date().toISOString(), pid: self.pid, start: self.start, uid: self.uid,
         operationDigest: sha256Text(operationId), rootDigest: sha256Text(resolve(durableRoot)), targetDigest: sha256Text(resolve(target)),
         exeDigest: sha256Text(self.exe), argvDigest: sha256Text(canonicalJson(self.cmdline)),
         mode: admittedMode, ...actual, profileDigest: profileSha256, preloadDigest: preloadSha256,
-      });
+      };
+      witness.compiled(receipt);
+      writeHostCompileMarker(markerPath, operationId, profile.profileId, receipt);
     },
   });
 }

@@ -1,5 +1,6 @@
 import { contextFailure, contextFailureMessage, WIRE_VERSION, REQUEST_WALL_DEADLINE_MS, type ContextSnapshot, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
 import { HOST_COMPACT_SYMBOL } from "./profile.ts";
+import type { HostWitnessNote } from "@grokbox/runtime-kernel/host-health";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { HOST_ROOT_CONTRACTS } from "./root-contract.ts";
 import { recordHostManagedFailure, hostVisibleStreamError } from "./session.ts";
@@ -139,6 +140,7 @@ export function bindHostCompactHook(options?: {
   profileId?: string;
   abiIdentity?: string;
   context?: (raw: unknown, valid: () => boolean) => ContextClient | undefined;
+  witness?: (note: HostWitnessNote) => void;
 }): (raw: unknown) => { preflight?: () => Promise<unknown>; [Symbol.dispose](): void } | undefined {
   return (raw) => {
     const capture = parseCapture(raw);
@@ -159,17 +161,24 @@ export function bindHostCompactHook(options?: {
     rootOwners.set(capture.rootPromptExecutor, slot);
     slot.context = options?.context?.(raw, () => !slotInvalid(slot) && !signalAborted(capture.ctx));
     if (slot.context) slot.managed = true;
+    const note = (stage: "lease-open" | "lease-close" | "preflight-settled", outcome: HostWitnessNote["outcome"]) => {
+      try { options?.witness?.({ capability: "context", stage, outcome, agentId: capture.agentId, turnId: capture.turnId, stepId: capture.invocationId }); } catch { /* Metadata does not own a native lease. */ }
+    };
+    note("lease-open", "observed");
     return {
       ...(slot.context ? { preflight: async () => {
-        try { return await slot.context!.preflight(); }
+        try { const result = await slot.context!.preflight(); note("preflight-settled", "returned"); return result; }
         catch (error) {
+          note("preflight-settled", "threw");
           const failure = contextFailure(error);
           throw hostVisibleStreamError({ userVisible: true, code: failure.code, message: contextFailureMessage(failure.code),
             stage: "admit", agentId: capture.agentId, invocationId: capture.invocationId });
         }
       } } : {}),
       [Symbol.dispose]() {
+        const wasDisposed = slot.disposed;
         slot.disposed = true;
+        if (!wasDisposed) note("lease-close", "returned");
         if (slots.get(key) === slot) slots.delete(key);
         if (rootOwners.get(capture.rootPromptExecutor) === slot) rootOwners.delete(capture.rootPromptExecutor);
       },

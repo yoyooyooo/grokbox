@@ -6,6 +6,7 @@ import { launchPublicHost, preparePublicHost, stopPublicHost } from "./host-comp
 import type { ChildProcess } from "node:child_process";
 import type { Browser, Page } from "playwright";
 import { hostHealthFixture,H_OWNER,H_READER,H_INSTALL } from "./host-health-fixture.ts";
+import { hostWitnessFixture } from "./host-witness-fixture.ts";
 type Ports={browser:Browser;entry:string;home:string;evidence?:string;freePort:()=>Promise<number>;launchWeb:(entry:string,home:string,origin:string,management:string)=>Promise<{child:ChildProcess}>;stop:(child:ChildProcess)=>Promise<void>};
 export async function hostHealthBrowserJourney(t:TestContext,ports:Ports){
  async function withPage(run:(page:Page,f:Awaited<ReturnType<typeof hostHealthFixture>>,origin:string)=>Promise<void>,token=H_OWNER,badRecipe=false){
@@ -59,6 +60,25 @@ export async function hostHealthBrowserJourney(t:TestContext,ports:Ports){
    await page.getByRole("link",{name:"Inspect persistent incidents",exact:true}).click();await page.getByText("host_patch_health",{exact:true}).first().waitFor();
   }finally{await stopPublicHost(host.child);}
  }));
+ await t.test("real native challenges and recorded hook boundaries render without a whole-path success claim",async()=>{
+  const origin=`http://127.0.0.1:${await ports.freePort()}`,f=await hostWitnessFixture(origin),web=await ports.launchWeb(ports.entry,ports.home,origin,f.server.url);
+  const context=await ports.browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();page.setDefaultTimeout(12000);const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
+  const wait=async(ok:(v:Awaited<ReturnType<ReturnType<typeof f.client>["hostHealth"]>>["data"])=>boolean)=>{for(let i=0;i<150;i++){if(ok((await f.client().hostHealth()).data))return;await new Promise(r=>setTimeout(r,30));}throw Error("browser-witness-deadline");};
+  try{
+   const grant=(await f.client().createConsoleGrant(origin)).data;await page.goto(`${origin}/login`);await page.locator("#login-code").fill(grant.code);await page.getByRole("button",{name:"安全登录",exact:true}).click();await page.getByRole("heading",{name:"Box 概览",exact:true}).waitFor();
+   const nativeBefore=f.state.nativeCalls; // The preceding overview may try its own Bot list.
+   await wait(v=>v.witness?.state==="current");await page.goto(`${origin}/host-health`);await page.locator('[data-testid="host-health-witness"]').waitFor();
+   assert.ok((await page.locator('[data-testid="host-health-witness"]').innerText()).includes("present"));assert.ok((await page.locator('[data-testid="host-health-witness-events"]').innerText()).includes("No execution boundary"));
+   await f.control("exercise");await wait(v=>!!v.witness?.snapshot?.events.length);await page.getByRole("button",{name:"Refresh health observations",exact:true}).click();await page.getByText("session · native-selected",{exact:true}).waitFor();
+   await f.control("replace");await wait(v=>v.witness?.snapshot?.capabilities[0]?.handles==="changed");await page.reload();await page.locator('[data-testid="host-health-witness"]').waitFor();assert.ok((await page.locator('[data-testid="host-health-witness"]').innerText()).includes("changed"));
+   assert.ok((await page.locator('[data-testid="host-health-runtime"]').innerText()).includes("Not established"));
+   await page.locator("h1").click();await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   if(ports.evidence){await page.screenshot({path:join(ports.evidence,"host-witness-mobile.png"),fullPage:true});await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:join(ports.evidence,"host-witness-desktop.png"),fullPage:true});}
+   f.probeState.decorate=r=>({...r,value:null});await wait(v=>v.witness?.state==="invalid");await page.reload();await page.locator('[data-testid="host-health-witness"]').waitFor();assert.ok((await page.locator('[data-testid="host-health-witness"]').innerText()).includes("invalid-reply"));assert.equal(await page.getByText("session · native-selected",{exact:true}).count(),0);
+   const html=await (await context.request.get(page.url())).text();for(const secret of [H_OWNER,grant.code,f.root,"synthetic-witness-native","PRIVATE",'"csrfToken"'])assert.ok(!html.includes(secret));
+   assert.equal(f.state.nativeCalls,nativeBefore,"health page must not query the Bot roster");assert.deepEqual(errors,[]);
+  }finally{await context.close();await ports.stop(web.child);await f.close();}
+ });
  await t.test("reader cannot reveal health evidence and the console exposes no health mutation endpoint",()=>withPage(async(page,f,origin)=>{
   await page.getByRole("alert").filter({hasText:"permission_denied"}).waitFor();assert.equal(await page.locator('[data-testid="host-health-candidate"]').count(),0);
   const response=await page.context().request.post(`${origin}/v1/host-health`,{headers:{origin,"x-grokbox-installation-id":H_INSTALL},data:{refresh:true}});assert.equal(response.status(),404);
