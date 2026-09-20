@@ -56,6 +56,9 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "./observation": "./src/observation.ts",
       "./routines": "./src/routines.ts",
       "./continuity": "./src/continuity.ts",
+      "./model-management": "./src/model-management.ts",
+      "./materials": "./src/materials.ts",
+      "./host-health": "./src/host-health.ts",
       "./testing": "./src/testing.ts",
       "./inference": "./src/inference.ts",
       "./commands": "./src/commands.ts",
@@ -75,6 +78,9 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "packages/runtime-kernel/src/observation.ts",
       "packages/runtime-kernel/src/routines.ts",
       "packages/runtime-kernel/src/continuity.ts",
+      "packages/runtime-kernel/src/model-management.ts",
+      "packages/runtime-kernel/src/materials.ts",
+      "packages/runtime-kernel/src/host-health.ts",
       "packages/runtime-kernel/src/testing.ts",
       "packages/runtime-kernel/src/inference.ts",
       "packages/runtime-kernel/src/commands.ts",
@@ -147,6 +153,9 @@ describe("runtime layout boundaries", () => {
     ["kernel-effect-regression", {
       "packages/runtime-kernel/src/contract.ts": 'import { Effect } from "effect"; export const program = Effect.succeed(1);',
     }],
+    ...["model-management", "materials", "host-health"].map(name => [
+      `pure-domain-effect-${name}`, { [`packages/runtime-kernel/src/${name}.ts`]: 'import { Effect } from "effect"; export const program = Effect.succeed(1);' },
+    ] as [string, Record<string, string>]),
     ["bun-global-version", {
       "packages/box-runtime/src/runtime.ts": "export const version = () => Bun.version;",
     }],
@@ -170,6 +179,11 @@ describe("runtime layout boundaries", () => {
   test.each(rejects)("%s is a non-zero checker", async (_name, changes) => {
     const result = await runChecker(await fixture(changes));
     expect(result.code).not.toBe(0);
+    // An unavailable compiler/import trap is not evidence for the mutated
+    // architecture. New pure-domain exports retain the existing Effect fence.
+    const failures = JSON.parse(result.stdout).failures as Array<{ message: string }>;
+    if (_name.startsWith("pure-domain-effect-")) expect(failures.some(f => f.message === "kernel non-ports file imports Effect")).toBe(true);
+    expect(failures.some(f => !["preload esbuild failed", "preload import-time trap failed", "missing esbuild evidence"].includes(f.message))).toBe(true);
   }, CHECKER_TEST_TIMEOUT_MS);
 
   test("missing required source is a non-zero checker", async () => {

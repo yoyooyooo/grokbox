@@ -44,6 +44,12 @@ Node对子进程输入/输出/权限/哈希和job/attempt/build/schema/checker�
 
 **HOST-01仍未整票关闭。** 后续依赖是实际native role/完整能力目录与post-transform行为、加载负回执、同代attachment/exercised、profile/companion资格、长期容量和独立出口。下一段handover/compact等受Host影响路径须先补对应当前来源资格；无关材料/管理可以并行。当前工具/安装集成通过不准许部署或宣称真实恢复。
 
+## 编译正负回执与运行代集成
+
+原 compile hook/preload marker 已提供实际模块求值的正负观察；Server 在独立采样通道核对 PID/start/UID/exe/argv、安装根与启动目标，区分当前运行代和历史，不用磁盘新字节撤销旧运行代事实。原 provenance→OBS 的运行事件流已接通；静态通过、进程退出和缺 marker 不能替代运行编译恢复证据。CLI/Web 分开展示两种来源，attachment/exercised 仍缺证，qualified=false。
+
+固定证明见[编译健康阶段报告](../reports/2026-09-20-host-compilation-health.md)：实际打包 preload/公开合成模块、真实 Node进程、原存储和Chrome，含负编译、PID复用、旧marker回滚、retain-before-intake与无OBS。未修改当前私人Host配方或配对pin；该适配和完整挂接/实际触发仍是本票下一阶段。
+
 ## 同一工作包的顺序与出口
 
 ### A. 先收实际原生依赖风险

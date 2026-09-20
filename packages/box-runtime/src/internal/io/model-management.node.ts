@@ -4,9 +4,10 @@ import { Effect, Layer } from "effect";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
 import { persistModelsDocument } from "@grokbox/runtime-kernel/selection";
 import {
-  ModelConfiguration, ModelManagementError, modelChangeTarget, modelConfigurationRevision, persistedModelsRevision,
+  ModelManagementError, modelChangeTarget, modelConfigurationRevision, persistedModelsRevision,
   type ModelOperation, type ModelOperationLocator, type ModelSnapshot,
 } from "@grokbox/runtime-kernel/model-management";
+import { ModelConfiguration } from "@grokbox/runtime-kernel/ports";
 import type { RuntimeStore } from "./configuration.node.ts";
 import { acquireConfigurationLease } from "./config-lock.node.ts";
 import { assertSafeDirectory, publishConfigFile, readConfigFile } from "./config-layout.node.ts";

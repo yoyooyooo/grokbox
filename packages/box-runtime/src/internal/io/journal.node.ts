@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { projectHostHealth } from "@grokbox/runtime-kernel/host-health";
+import { projectHostHealth, projectHostRuntimeEvidence } from "@grokbox/runtime-kernel/host-health";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -43,7 +43,7 @@ export {
 } from "../host/terminal-journal.node.ts";
 
 export const EVENT_NAMES = [
-  "host_patch_health",
+  "host_patch_health", "host_runtime_health",
   "continuity_observation",
   "disk_sha_observed",
   "contracts_snapshot",
@@ -467,6 +467,7 @@ export async function appendSeamRouteEvent(root: string, input: unknown): Promis
 export function projectJournalEvent(input: unknown): RuntimeEvent | TurnSeamTerminalEvent | ModelStepTerminalEvent | ModeldStepOutcomeEvent | HostStreamRejectedEvent | ProviderErrorObservedEvent | null {
   if (!isRecord(input) || !(EVENT_NAMES as readonly unknown[]).includes(input.name)) return null;
   if (input.name === "host_patch_health") return projectHostHealth(input) as unknown as RuntimeEvent | null;
+  if (input.name === "host_runtime_health") return projectHostRuntimeEvidence(input) as unknown as RuntimeEvent | null;
   if (input.name === "continuity_observation") return projectContinuityEvent(input) as unknown as RuntimeEvent | null;
   if (input.name === "host_context_observation" || input.name === "host_tool_observation") return projectExecutionBoundary(input);
   if (input.name === "observation_source_health") return projectObservationSourceHealth(input);

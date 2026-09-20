@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { isMainThread } from "node:worker_threads";
+import { writeHostCompileMarker } from "./internal/host/compile-marker.node.ts";
 import { installNativeCheckpointWorkerHook, NATIVE_CHECKPOINT_PAIR } from "./internal/host/native-checkpoint-worker-hook.ts";
 import { createNativeCurrentStateOwner, NATIVE_CURRENT_STATE_SYMBOL } from "./internal/host/native-current-state-owner.ts";
 import { createNativeCurrentStateRpc } from "./internal/host/native-current-state-rpc.ts";
 import { NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, CONTEXT_SLICE_IDS } from "./internal/host/profile.ts";
-import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
 import { isLiveHostPath, LIVE_HOST_BUNDLE } from "./internal/host/live-slices.ts";
@@ -152,25 +154,17 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     argv: process.argv,
     allowLiveHost,
     onTransforming: () => { installAlertObservation(); installServerActivityObservation(); },
-    onTransformed: (actual) => {
-      if (!markerPath) return;
-      const staging = `${markerPath}.${randomUUID()}.tmp`;
-      writeFileSync(
-        staging,
-        `${JSON.stringify({
-          operationId,
-          pid: process.pid,
-          start: inspectPid(process.pid)?.start,
-          mode: admittedMode,
-          transformed: true,
-          compiled: true,
-          modeld: false,
-          compile: { profileId: profile.profileId, profileSha256, ...actual },
-          ...(preloadSha256 ? { preloadSha256 } : {}),
-        })}\n`,
-        { mode: 0o600, flag: "wx" },
-      );
-      renameSync(staging, markerPath);
+    onCompilation: (actual) => {
+      // Workers and inherited child preloads cannot certify a main Host load.
+      // The receipt records actual evaluated bytes, never the desired profile
+      // hash as a substitute for a rejected transformation.
+      if (!markerPath || !isMainThread || !self || !preloadSha256 || resolve(process.argv[1] ?? "") !== resolve(target)) return;
+      writeHostCompileMarker(markerPath, operationId, profile.profileId, {
+        version: 1, observationId: randomUUID(), at: new Date().toISOString(), pid: self.pid, start: self.start, uid: self.uid,
+        operationDigest: sha256Text(operationId), rootDigest: sha256Text(resolve(durableRoot)), targetDigest: sha256Text(resolve(target)),
+        exeDigest: sha256Text(self.exe), argvDigest: sha256Text(canonicalJson(self.cmdline)),
+        mode: admittedMode, ...actual, profileDigest: profileSha256, preloadDigest: preloadSha256,
+      });
     },
   });
 }

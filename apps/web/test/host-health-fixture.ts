@@ -16,7 +16,7 @@ const digest=(s:string)=>createHash("sha256").update(s).digest("hex");
 export async function hostHealthFixture(origin:string, settings:{disabled?:boolean;noMonitor?:boolean;badRecipe?:boolean;ports?:HostHealthTestPorts}={}) {
   const root=await mkdtemp(join(tmpdir(),"host-health-management-")), inputs=join(root,"inputs");await mkdir(inputs,{mode:0o700});
   const source=await readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/contracts.cjs"),"utf8");
-  const paths={source:join(inputs,"host.cjs"),worker:join(inputs,"worker.cjs"),profile:join(inputs,"profile.json")};
+  const paths={source:join(inputs,"host-main.cjs"),worker:join(inputs,"worker.cjs"),profile:join(inputs,"profile.json")};
   const slices=LIVE_SLICE_PATCHES.filter(s=>["create-session","agent-id","managed-turn-retry-gate","compact-register"].includes(s.id));
   const writeProfile=async(text=source, selected:readonly SlicePatch[]=slices)=>publishConfigFile(paths.profile,profileFromSource(text,selected,"public-health-fixture"));
   await writeFile(paths.source,source,{mode:0o600});await writeFile(paths.worker,"// Independent companion.\nmodule.exports = {};\n",{mode:0o600});await writeProfile();
@@ -27,7 +27,7 @@ export async function hostHealthFixture(origin:string, settings:{disabled?:boole
     {principalId:"reader",tokenSha256:digest(H_READER),capabilities:["bots.read","console.grants.create"]}] as AccessGrant[]};
   const observations=openMonitorStore(root);
   if(!settings.noMonitor){await observations.initialize();await observations.begin(randomUUID(),Date.now(),[]);}
-  const ports:HostHealthTestPorts={paths,binaryDirectory:join(dirname(process.env.GROKBOX_TEST_CLI_ENTRY!),"native/x86_64-unknown-linux-gnu"),pollMs:25,backstopMs:500,onSpawn:pid=>{state.pids.push(pid);},...settings.ports};
+  const ports:HostHealthTestPorts={paths,runtime:{runRoot:join(root,"run")},binaryDirectory:join(dirname(process.env.GROKBOX_TEST_CLI_ENTRY!),"native/x86_64-unknown-linux-gnu"),pollMs:25,backstopMs:500,onSpawn:pid=>{state.pids.push(pid);},...settings.ports};
   const options={store:openRuntimeStore(root,{}),observations,installationId:H_INSTALL,native:{listBots:async()=>{state.nativeCalls++;throw Error("no-native-roster");},ownershipRead:async()=>{state.nativeCalls++;throw Error("no-native-ownership");}},
     env:{},allowedOrigins:[origin],port:0,readGrants:async()=>structuredClone(state.grants)};
   let server=await startManagementServer(options,{hostHealth:ports});options.port=Number(new URL(server.url).port);

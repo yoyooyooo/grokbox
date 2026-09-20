@@ -108,6 +108,11 @@ const requiredKernelExports = {
   "./observation": "./src/observation.ts",
   "./routines": "./src/routines.ts",
   "./continuity": "./src/continuity.ts",
+  // Accepted management domain values are pure exports. Effect programs stay
+  // in commands and service tags in ports; the same graph checks apply here.
+  "./model-management": "./src/model-management.ts",
+  "./materials": "./src/materials.ts",
+  "./host-health": "./src/host-health.ts",
   "./testing": "./src/testing.ts",
   "./inference": "./src/inference.ts",
   "./commands": "./src/commands.ts",
@@ -120,7 +125,7 @@ for (const [key, target] of Object.entries(requiredKernelExports)) {
 }
 if (kernelExports["./contract"] === "./src/ports.ts") fail("kernel contract export must not target ports");
 for (const key of Object.keys(kernelExports)) {
-  if (!(key in requiredKernelExports)) fail("kernel export not in S2 subpaths", { key });
+  if (!(key in requiredKernelExports)) fail("kernel export not in approved subpaths", { key });
   if (String(kernelExports[key]).includes("internal")) fail("kernel must not export internal/*", { key });
 }
 

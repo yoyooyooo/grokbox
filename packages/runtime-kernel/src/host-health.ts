@@ -1,4 +1,5 @@
 /** Pure health semantics, independent of wire, parser, filesystem and execution authority. */
+export * from "./host-compilation.ts";
 export const HOST_HEALTH_CONTRACT = "host-health-v1";
 export const HOST_CHECK_REQUIREMENTS = [
   { id:"session.main-binding", revision:1, slices:["agent-id"], scope:"main-options-binding" },

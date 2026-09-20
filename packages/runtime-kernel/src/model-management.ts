@@ -1,4 +1,3 @@
-import { Context, Effect } from "effect";
 import { BoxRuntimeError } from "./contract.ts";
 import { canonicalJson, sha256Text } from "./hash.ts";
 import {
@@ -46,12 +45,6 @@ export class ModelManagementError extends Error {
     this.name = "ModelManagementError";
   }
 }
-
-export class ModelConfiguration extends Context.Service<ModelConfiguration, {
-  read: () => Effect.Effect<ModelSnapshot, ModelManagementError>;
-  lookup: (key: ModelOperationLocator & { fingerprint?: string }) => Effect.Effect<ModelOperation | undefined, ModelManagementError>;
-  commit: (key: ModelOperationKey, current: ModelSnapshot, next: ModelsFile, change: ModelChange) => Effect.Effect<ModelOperation, ModelManagementError>;
-}>()("grokbox/ModelConfiguration") {}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const invalid = () => new ModelManagementError("invalid_input", "Invalid model management request.");
@@ -182,12 +175,6 @@ export function modelOperationLocator(caller: ModelCaller, requestId: string): M
 export function modelOperationKey(caller: ModelCaller, request: ModelChangeRequest): ModelOperationKey {
   return { ...modelOperationLocator(caller, request.requestId), fingerprint: sha256Text(canonicalJson({ version: 1, ...request })) };
 }
-export function readModelOperation(caller: ModelCaller, requestId: string) {
-  return Effect.gen(function* () {
-    const locator = yield* Effect.try({ try: () => modelOperationLocator(caller, requestId), catch: error => error as ModelManagementError });
-    return yield* (yield* ModelConfiguration).lookup(locator);
-  });
-}
 
 export function modelConfigurationRevision(models: ModelsFile): string {
   return sha256Text(canonicalJson(models));
@@ -234,21 +221,4 @@ export function applyModelChange(current: ModelsFile, change: ModelChange): Mode
     if (reason === "model_default_missing" || reason === "model_source_read_only") throw new ModelManagementError(reason, reason);
     throw invalid();
   }
-}
-
-/** Authentication belongs to the caller boundary. Replay precedes *first-use*
- * admission, so a lost response survives later revision or ownership changes. */
-export function runModelChange(caller: ModelCaller, input: unknown, admit: (change: ModelChange, next: ModelsFile) => Effect.Effect<void, unknown>) {
-  return Effect.gen(function* () {
-    const request = yield* Effect.try({ try: () => parseModelChangeRequest(input), catch: error => error as ModelManagementError });
-    const key = yield* Effect.try({ try: () => modelOperationKey(caller, request), catch: error => error as ModelManagementError });
-    const store = yield* ModelConfiguration;
-    const previous = yield* store.lookup(key);
-    if (previous) return previous;
-    const current = yield* store.read();
-    if (current.revision !== request.expectedRevision) return yield* Effect.fail(new ModelManagementError("revision_conflict", "Model configuration changed; reread before submitting a new request."));
-    const next = yield* Effect.try({ try: () => applyModelChange(current.models, request.change), catch: error => error as ModelManagementError });
-    yield* admit(request.change, next);
-    return yield* store.commit(key, current, next, request.change);
-  });
 }

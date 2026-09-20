@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Effect } from "effect";
 import {
-  ModelConfiguration, ModelManagementError, modelConfigurationRevision, modelOperationKey,
-  parseModelChangeRequest, readModelOperation, runModelChange, type ModelChangeRequest,
+  ModelManagementError, modelConfigurationRevision, modelOperationKey,
+  parseModelChangeRequest, type ModelChangeRequest,
 } from "@grokbox/runtime-kernel/model-management";
+import { ModelConfiguration } from "@grokbox/runtime-kernel/ports";
+import { readModelOperation, runModelChange } from "@grokbox/runtime-kernel/commands";
 import { applyUse, modelForAgent, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import { modelConfigurationLayer } from "../src/internal/io/model-management.node.ts";
 import { openRuntimeStore, type RuntimeStore } from "../src/internal/io/configuration.node.ts";

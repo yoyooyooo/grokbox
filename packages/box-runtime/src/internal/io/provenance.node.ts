@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile, open }
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
-import { projectHostHealth, validStaticAnalysis, type HostHealthEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
+import { projectHostHealth, projectHostRuntimeEvidence, validStaticAnalysis, type HostRuntimeEvidence, type HostHealthEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
 import { assertSafeDirectory } from "./config-layout.node.ts";
 import { join } from "node:path";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
@@ -183,8 +183,9 @@ export async function readHostHealthJournal(root: string, installationId: string
     return document;
   }finally{await file.close();}
 }
-async function publishHostHealthJournal(root:string,document:HostHealthJournal){
-  const directory=join(hostBundlesDir(root),"health"),body=canonicalJson(document)+"\n";
+async function publishHostHealthJournal(root:string,document:HostHealthJournal | HostRuntimeJournal, channel: "static" | "runtime" = "static"){
+  const filename = "receipts.json";
+  const directory=join(hostBundlesDir(root),channel === "static" ? "health" : "runtime-health"),body=canonicalJson(document)+"\n";
   if(Buffer.byteLength(body)>HEALTH_BYTES)throw Error("health-receipt-capacity");
   await assertSafeDirectory(root);await assertSafeDirectory(hostBundlesDir(root),true);
   const known=await lstat(directory).catch(e=>{if(e.code==="ENOENT")return null;throw e;});
@@ -193,7 +194,7 @@ async function publishHostHealthJournal(root:string,document:HostHealthJournal){
   const temp=join(stage,`.receipts-${randomUUID()}`);
   try{
     await writeProtected(temp,body);const fd=await open(temp,constants.O_RDONLY|constants.O_NOFOLLOW);try{await fd.sync();}finally{await fd.close();}
-    await rename(temp,join(stage,"receipts.json"));const dir=await open(stage,constants.O_RDONLY);try{await dir.sync();}finally{await dir.close();}
+    await rename(temp,join(stage,filename));const dir=await open(stage,constants.O_RDONLY);try{await dir.sync();}finally{await dir.close();}
     if(!known){await rename(stage,directory);const parent=await open(hostBundlesDir(root),constants.O_RDONLY);try{await parent.sync();}finally{await parent.close();}}
   }finally{await rm(temp,{force:true});if(!known)await rm(stage,{recursive:true,force:true});}
 }
@@ -212,6 +213,53 @@ export async function acknowledgeHostHealthEvidence(root:string,installationId:s
   const prior=await readHostHealthJournal(root,installationId);if(!prior||sequence>=prior.nextSequence||sequence<prior.acknowledgedThrough)throw Error("health-receipt-conflict");
   if(sequence===prior.acknowledgedThrough)return;
   await publishHostHealthJournal(root,{...prior,acknowledgedThrough:sequence});
+}
+
+export type HostRuntimeJournal = { version: 1; installationId: string; nextSequence: number; acknowledgedThrough: number; receipts: Array<{ event: HostRuntimeEvidence }> };
+/** Runtime observations extend this same bounded provenance owner. Their cursor
+ * is independent of disk/AST evidence; an old disk pass cannot resolve a load
+ * failure. The selected launch marker is the input, not another process owner. */
+export async function readHostRuntimeJournal(root: string, installationId: string): Promise<HostRuntimeJournal | null> {
+  const directory = join(hostBundlesDir(root), "runtime-health"), path = join(directory, "receipts.json");
+  if (!await lstat(path).catch(error => { if (error.code === "ENOENT") return null; throw error; })) return null;
+  await assertSafeDirectory(directory);
+  const fd = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const stat = await fd.stat();
+    if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid?.() || (stat.mode & 0o077) || stat.size > HEALTH_BYTES) throw Error("runtime-receipt-invalid");
+    const bytes = Buffer.alloc(HEALTH_BYTES + 1); let n = 0;
+    while (n < bytes.length) { const result = await fd.read(bytes, n, bytes.length - n, n); if (!result.bytesRead) break; n += result.bytesRead; }
+    const after = await fd.stat();
+    if (n !== stat.size || after.size !== stat.size || after.ctimeMs !== stat.ctimeMs || after.mtimeMs !== stat.mtimeMs) throw Error("runtime-receipt-changed");
+    const document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, n))) as HostRuntimeJournal;
+    if (document.version !== 1 || document.installationId !== installationId || !Number.isSafeInteger(document.nextSequence) || document.nextSequence < 1
+      || !Number.isSafeInteger(document.acknowledgedThrough) || document.acknowledgedThrough < -1 || document.acknowledgedThrough >= document.nextSequence
+      || !Array.isArray(document.receipts) || !document.receipts.length || document.receipts.length > HEALTH_LIMIT) throw Error("runtime-receipt-invalid");
+    let prior = -1;
+    for (const row of document.receipts) {
+      const event = projectHostRuntimeEvidence(row.event);
+      if (!event || event.installationId !== installationId || event.sourceInstanceId !== sha256Text(canonicalJson(["host-runtime", installationId]))
+        || event.sourceSequence <= prior || event.sourceSequence >= document.nextSequence) throw Error("runtime-receipt-invalid");
+      prior = event.sourceSequence;
+    }
+    if (prior !== document.nextSequence - 1) throw Error("runtime-receipt-gap");
+    return document;
+  } finally { await fd.close(); }
+}
+export async function retainHostRuntimeEvidence(root: string, installationId: string, event: HostRuntimeEvidence): Promise<HostRuntimeJournal> {
+  const prior = await readHostRuntimeJournal(root, installationId);
+  if (!projectHostRuntimeEvidence(event) || event.installationId !== installationId || event.sourceInstanceId !== sha256Text(canonicalJson(["host-runtime", installationId]))
+    || event.sourceSequence !== (prior?.nextSequence ?? 0)) throw Error("runtime-receipt-conflict");
+  const receipts = [...(prior?.receipts ?? [])];
+  while (receipts.length >= HEALTH_LIMIT && receipts[0]!.event.sourceSequence <= (prior?.acknowledgedThrough ?? -1)) receipts.shift();
+  if (receipts.length >= HEALTH_LIMIT) throw Error("runtime-receipt-capacity");
+  const document: HostRuntimeJournal = { version: 1, installationId, nextSequence: event.sourceSequence + 1, acknowledgedThrough: prior?.acknowledgedThrough ?? -1, receipts: [...receipts, { event }] };
+  await publishHostHealthJournal(root, document, "runtime"); return document;
+}
+export async function acknowledgeHostRuntimeEvidence(root: string, installationId: string, sequence: number): Promise<void> {
+  const prior = await readHostRuntimeJournal(root, installationId);
+  if (!prior || sequence >= prior.nextSequence || sequence < prior.acknowledgedThrough) throw Error("runtime-receipt-conflict");
+  if (sequence !== prior.acknowledgedThrough) await publishHostHealthJournal(root, { ...prior, acknowledgedThrough: sequence }, "runtime");
 }
 
 export function lineDiffStats(previous: string, current: string): Pick<HostBundleDiff,

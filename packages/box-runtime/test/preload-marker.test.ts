@@ -13,7 +13,7 @@ import { inspectPid } from "../src/internal/process/linux.node.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "./synthetic-host.ts";
 
 const PRELOAD_SRC = fileURLToPath(new URL("../src/preload.ts", import.meta.url));
-const NODE = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
+const NODE = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : (Bun.which("node") ?? process.execPath);
 const describeLinux = existsSync("/proc/self/stat") ? describe : describe.skip;
 
 describeLinux("real preload marker on disposable copy", () => {
@@ -75,7 +75,7 @@ setInterval(() => {}, 1000);
     expect(marker?.compile).toEqual(expectedCompileReceipt(profile));
   }, 10_000);
 
-  test.each(["source-mismatch", "syntax-error", "compile-throws"])("%s emits no compiled receipt", async (fault) => {
+  test.each(["source-mismatch", "syntax-error", "compile-throws"])("%s records a bounded negative observation but never a positive compiled receipt", async (fault) => {
     const dir = await mkdtemp(join(tmpdir(), "grokbox-preload-refuse-"));
     const copyPath = join(dir, "host-main.cjs");
     const markerPath = join(dir, "marker.json");
@@ -94,6 +94,10 @@ setInterval(() => {}, 1000);
     }, stdout: "pipe", stderr: "pipe" });
     const exit = await child.exited;
     if (fault !== "source-mismatch") expect(exit).not.toBe(0);
-    expect(existsSync(markerPath)).toBe(false);
+    const marker = JSON.parse(await readFile(markerPath, "utf8"));
+    expect(marker.compiled).toBe(false);
+    expect(marker.compilationObservation).toMatchObject({ nativeCompilation: fault === "source-mismatch" ? "returned" : "threw",
+      code: fault === "source-mismatch" ? "unknown-sha" : "native-compile-failed" });
+    expect(JSON.stringify(marker)).not.toContain("synthetic compile failure");
   });
 });

@@ -45,7 +45,7 @@ export function observationIncidentCandidate(value: Record<string, unknown>): In
 /** Reuses the existing failure classifier. Upstream status cannot suppress a
  * separate positively observed local integrity/storage/settlement failure. */
 export function assessIncident(rule: string, facts: readonly EvidenceFact[]): IncidentAssessment {
-  if(rule==="host_patch_health")return {classifierVersion:INCIDENT_CLASSIFIER_VERSION,category:"host_compatibility",disposition:"notify",reason:"host_contract",basis:"derived",rootCause:"not_proven",basisRefs:facts.filter(f=>own(f.value,"name")==="host_patch_health").slice(0,16).map(f=>f.ref)};
+  if(rule==="host_patch_health")return {classifierVersion:INCIDENT_CLASSIFIER_VERSION,category:"host_compatibility",disposition:"notify",reason:"host_contract",basis:"derived",rootCause:"not_proven",basisRefs:facts.filter(f=>["host_patch_health","host_runtime_health"].includes(String(own(f.value,"name")))).slice(0,16).map(f=>f.ref)};
   if (rule === "continuity_attention") return { classifierVersion: INCIDENT_CLASSIFIER_VERSION, category: "continuity_impact",
     disposition: "notify", reason: "protected_subject_changed", basis: "derived", rootCause: "not_proven",
     basisRefs: facts.filter(f => own(f.value, "name") === "continuity_observation").slice(0, 16).map(f => f.ref) };

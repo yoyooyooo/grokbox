@@ -6,7 +6,7 @@ import { reviewedProfilePath } from "./paths.ts";
 import { isAbsolute } from "node:path";
 import { NATIVE_ROUTINE_MAX_BYTES } from "@grokbox/runtime-kernel/routines";
 import { createRoutineGateway, type RoutineRpc } from "./routine-gateway.node.ts";
-import { createContinuityGateway, type ContinuityRpc } from "./continuity-gateway.node.ts";
+import { createContinuityGatewayIO, type ContinuityRpc, type ContinuityPrograms } from "./continuity-gateway.node.ts";
 
 export type NativeBotSummary = {
   id: string; name: string; title: string | null; description: string | null;
@@ -99,7 +99,7 @@ function summary(raw: Record<string, unknown>): NativeBotSummary {
 /** Each call re-observes local discovery. Reads are narrow projections; Routine
  * writes are exposed only through a per-operation pinned domain adapter. No
  * retries, remote fallback, caller-selected RPC or service control. */
-export function createManagementGateway(options: { discoveryPath: string; configurationRoot?: string; fetch?: typeof fetch; timeoutMs?: number }) {
+export function createManagementGatewayIO(options: { discoveryPath: string; configurationRoot?: string; fetch?: typeof fetch; timeoutMs?: number }, programs: ContinuityPrograms) {
   const timeoutMs = options.timeoutMs ?? 10_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw unavailable();
   if (options.configurationRoot !== undefined && !isAbsolute(options.configurationRoot)) throw unavailable();
@@ -145,7 +145,7 @@ export function createManagementGateway(options: { discoveryPath: string; config
     routineAccess: createRoutineGateway(call),
     continuityAccess: (signal: AbortSignal) => {
       if (!options.configurationRoot) throw unavailable();
-      return createContinuityGateway(call, options.configurationRoot, signal);
+      return createContinuityGatewayIO(call, options.configurationRoot, signal, programs);
     },
     listBots: async (signal: AbortSignal): Promise<NativeBotSnapshot> => {
       const { result, source } = await call("listAgents", {}, signal);

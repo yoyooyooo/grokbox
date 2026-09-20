@@ -50,7 +50,8 @@ export { openBotConvergence, type BotConvergencePort } from "./internal/roots/bo
 export { openBotProtection, startBotProtectionWorker, startPolicyBoundBotProtection, type BotProtectionPort } from "./internal/roots/bot-protection.runtime.ts";
 export { startHostHealth, type HostHealthStatus, type HostHealthTestPorts } from "./internal/roots/host-health.runtime.ts";
 export { readHostHealthJournal } from "./internal/io/provenance.node.ts";
-export { createContinuityGateway, type ContinuityGateway, type NativeContinuityContext } from "./internal/io/continuity-gateway.node.ts";
+export { createContinuityGateway, createManagementGateway } from "./internal/roots/management-gateway.runtime.ts";
+export type { ContinuityGateway, NativeContinuityContext } from "./internal/io/continuity-gateway.node.ts";
 export { nativeMaterialReader, botProfileRevision } from "./internal/io/continuity-material.node.ts";
 export { createNativeBotLifecycle } from "./internal/roots/continuity-native-lifecycle.runtime.ts";
 export { createNativeBotHandover } from "./internal/roots/continuity-native-handover.runtime.ts";
@@ -84,7 +85,7 @@ export { persistModelCredential } from "./internal/io/persist-model-credential.n
 export { readManagedOwnership, type OwnershipReader } from "./internal/io/ownership-admission.node.ts";
 export { changeRuntimeModel, migrateRuntimeModels } from "./internal/io/model-selection.node.ts";
 export { modelConfigurationLayer } from "./internal/io/model-management.node.ts";
-export { createManagementGateway, ManagementSourceError, type NativeBotSummary, type NativeBotSnapshot } from "./internal/io/management-gateway.node.ts";
+export { ManagementSourceError, type NativeBotSummary, type NativeBotSnapshot } from "./internal/io/management-gateway.node.ts";
 export { managedModelAdmission } from "./internal/roots/model-management.runtime.ts";
 export {
   projectLiveStatus,

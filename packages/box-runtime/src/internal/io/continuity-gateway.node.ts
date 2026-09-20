@@ -2,10 +2,12 @@ import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { currentStateRpcRequest, MAX_CURRENT_STATE_WIRE_BYTES, CurrentStateFailure, type CurrentStateRpcRequest } from "@grokbox/runtime-kernel/continuity";
 import { validateRoutineCommand, validateProvisionCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
 import { createRoutineGateway, type RoutineRpc } from "./routine-gateway.node.ts";
-import { runAgentRoutineCommand } from "../roots/agent-routines.runtime.ts";
-import { runRoutineProvisionCommand } from "../roots/routine-provision.runtime.ts";
 import type { OwnershipReader } from "./ownership-admission.node.ts";
 
+export type ContinuityPrograms = {
+  routineProvision: (input: { durableRoot:string; command:unknown; native:ReturnType<ReturnType<typeof createRoutineGateway>>; signal:AbortSignal }) => Promise<unknown>;
+  agentRoutines: (input: { command:RoutineCommand; native:ReturnType<ReturnType<typeof createRoutineGateway>>; signal:AbortSignal }) => Promise<unknown>;
+};
 export type ContinuityDiscovery = { baseUrl: string; pid: number; startedAt: number };
 export type ContinuityRpc = Exclude<RoutineRpc, "getAutomationWebhookCredential"> | "listAgents" | "getHostStatus"
   | "getAgentMemories" | "getAgentTranscriptTail" | "grokboxCurrentStateControl"
@@ -34,7 +36,7 @@ const allowed = new Set<ContinuityRpc>(["listAgents", "getHostStatus", "getAgent
 /** Internal capability, not a public RPC proxy. One native generation is pinned
  * before later reads and writes. No credential minting, off-Box fallback or
  * transport retry; the CONT/provision owners reserve every external effect. */
-export function createContinuityGateway(call: ContinuityCall, root: string, signal: AbortSignal): ContinuityGateway {
+export function createContinuityGatewayIO(call: ContinuityCall, root: string, signal: AbortSignal, programs: ContinuityPrograms): ContinuityGateway {
   let pinned: string | undefined, latest: ContinuityDiscovery | undefined;
   const invoke: ContinuityCall = async (method, input, owner, timeoutMs, maxBytes, expected) => {
     if (!allowed.has(method) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000
@@ -84,13 +86,13 @@ export function createContinuityGateway(call: ContinuityCall, root: string, sign
     routineProvision: async (raw, timeoutMs) => {
       const owner = operationSignal(timeoutMs);
       const command = validateProvisionCommand(raw), native = routine(owner);
-      const result = await runRoutineProvisionCommand({ durableRoot: root, command, native, signal: owner });
+      const result = await programs.routineProvision({ durableRoot: root, command, native, signal: owner });
       return { result, ...(latest ? { discovery: latest } : {}) };
     },
     agentRoutines: async (raw, timeoutMs) => {
       const owner = operationSignal(timeoutMs);
       const command = validateRoutineCommand(raw), native = routine(owner);
-      const result = await runAgentRoutineCommand({ command, native, signal: owner });
+      const result = await programs.agentRoutines({ command, native, signal: owner });
       if (!latest) throw new CurrentStateFailure("native_unavailable");
       return { result, discovery: latest };
     },

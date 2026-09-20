@@ -253,6 +253,12 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 **本票下一段仍先在HOST-01收必要平台依赖**：实际native角色/全能力、compile负回执与同代attachment/exercised、当前idle/manual/startup等适配。三个有限静态规则、local-only投递coverage和产品qualified=false明确保留，不把这一纵切上限当最终可靠性交付。相关HCR/CONT、T41/T44、OBS-01/04、T40/T50、T45/T55职责已回写原票。其后再继续受Host依赖的handover/compact与其他尚未迁移领域；无关材料/纯管理工作可并行。未提交、部署、真实Bot/Provider或外部通知，未切现役服务和全局入口。
 
+### Host 编译与运行代阶段
+
+接续已有编译/运行观察施工成果，完成 preload 正负 marker→准确进程身份→原 provenance/OBS→CLI/Web 的组合，并修正中断的 model-management/transport 分层迁移。运行代与磁盘来源分别呈现；编译成功不代表 native 挂接/实际使用，静态通过不能修复正在运行的未打补丁代。未安装旁路 controller 或修改实际 Host 配方。固定细节归[编译健康报告](../reports/2026-09-20-host-compilation-health.md)。
+
+源码 `b7fb831cc870e970dd7d810f1c0b905357b6f0cad6c405bfffd2830b563a3d3a`，1161个输入，两组前后固定：core334/36文件、integration22/16文件，合计356 pass/0 fail；20个 Rust 测试、协议生成和根/Web typecheck通过。包装内部编译 Node11、Chrome65等不与356相加。安装后binary/Node、搬移Web、原其他管理域都按当前源码复验，不沿用旧705项。分层反例保持纯合同不能导入Effect，未放宽任意出口或恢复旧writer。
+
 ### 阶段提交与 v2 集成
 
 用户已授权从本阶段开始分批提交。原工作树由 detached HEAD 转为 `feat/agent-first-management`，本地跟踪集成目标 `feat/box-runtime-v2`；创建分支时两者均位于 `a3e9131`，未移动 v2、重置文件或创建平行工程。已有422个暂存文件作为一份完整的重建施工基线保全，避免为拆历史提交制造不可构建的中间状态。提交前源码指纹与上一 Host 健康固定回归相同；后续每个可验证工作包分别提交，未经验证的差额明确记录。

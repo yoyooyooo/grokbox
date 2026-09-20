@@ -14,9 +14,11 @@ const suites={
   "packages/box-runtime/test/monitor-correlation-review.test.ts","packages/box-runtime/test/monitor-commit-boundaries.test.ts",
   "packages/box-runtime/test/incident-evidence-store.test.ts","packages/box-runtime/test/host-root-provenance.test.ts",
   "packages/box-runtime/test/modeld-lifecycle.test.ts","packages/box-runtime/test/modeld-packaged-lifecycle.test.ts",
-  "packages/box-runtime/test/compile-receipt.test.ts","packages/box-runtime/test/legacy-executor-removed.test.ts",
+  "packages/box-runtime/test/compile-receipt.test.ts","packages/box-runtime/test/preload-marker.test.ts","packages/box-runtime/test/hook.test.ts",
+  "packages/box-runtime/test/architecture.test.ts","packages/box-runtime/test/legacy-executor-removed.test.ts",
+  "packages/box-runtime/test/model-management.test.ts","packages/box-runtime/test/management-gateway.test.ts",
   "test/verification-source.test.js","test/cli.test.ts","test/skills.test.ts"],
- integration:["test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts",
+ integration:["test/host-compilation.test.ts","test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts",
   "test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
   "test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
   "packages/server/test/server.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"]

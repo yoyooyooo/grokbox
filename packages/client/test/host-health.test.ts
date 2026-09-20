@@ -7,12 +7,16 @@ const installation="11111111-1111-4111-8111-111111111111";
 const evidence=():HostHealthEvidence=>({name:"host_patch_health",schemaVersion:1,eventId:randomUUID(),at:new Date().toISOString(),installationId:installation,contractRevision:"host-health-v1",sourceInstanceId:"a".repeat(64),sourceSequence:0,
  sourceState:"stable",sourceSet:"b".repeat(64),sourceSha:"c".repeat(64),workerSha:"d".repeat(64),profileDigest:"e".repeat(64),candidateSha:"f".repeat(64),checkerBuildId:"1".repeat(64),companionQualification:"not-required",
  applicability:"exact",analysis:"passed",requiredChecks:HOST_CHECK_REQUIREMENTS.map(c=>c.id),failedChecks:[],unsupportedChecks:[],uncoveredSlices:["create-session"],loaded:"not-observed",attachment:"not-observed",exercised:"not-exercised",notificationCoverage:"local-only",detectorCode:null,qualified:false});
-const view=()=>({component:"host-integration",owner:"management-server",state:"running",reason:"observed",observedAtMs:Date.now(),lastAttemptAtMs:Date.now(),assessment:"degraded",latest:evidence(),intake:"committed",watch:"active",analyses:1,qualified:false,executionAuthority:false});
+const view=()=>({component:"host-integration",owner:"management-server",state:"running",reason:"observed",observedAtMs:Date.now(),lastAttemptAtMs:Date.now(),assessment:"degraded",latest:evidence(),intake:"committed",runtime:null,runtimeIntake:"not-observed",watch:"active",analyses:1,qualified:false,executionAuthority:false});
 test("three static passes never certify loaded identity, exercised behavior or independent delivery",()=>{const v=evidence();expect(projectHostHealth(v)).not.toBeNull();expect(hostHealthSummary(v)).toBe("degraded");expect(hostHealthView(view(),installation)).toBe(true);});
 test("missing requirements, private source fields, fabricated loaded proof and contradictory passes are rejected",()=>{
  for(const v of [{...evidence(),requiredChecks:[]},{...evidence(),sourceText:"private"},{...evidence(),loaded:"matching"},{...evidence(),qualified:true},{...evidence(),analysis:"passed",failedChecks:["retry.turn-guard"]},{...evidence(),notificationCoverage:"delivered"}])expect(projectHostHealth(v)).toBeNull();
 });
 test("health projection does not execute a property getter",()=>{let accesses=0;const v=evidence();Object.defineProperty(v,"analysis",{enumerable:true,get:()=>{accesses++;return "passed";}});expect(projectHostHealth(v)).toBeNull();expect(accesses).toBe(0);});
+test("whole health transport rejects top-level getters without evaluating them",()=>{
+ const v=view();let accesses=0;Object.defineProperty(v,"runtime",{enumerable:true,get(){accesses++;return null;}});
+ expect(hostHealthView(v,installation)).toBe(false);expect(accesses).toBe(0);
+});
 test("known mismatch survives analyzer failure and missing sources cannot supply a repair",()=>{
  const mismatch={...evidence(),applicability:"mismatch" as const,analysis:"unavailable" as const,candidateSha:null};expect(hostHealthSummary(mismatch)).toBe("blocked");
  expect(hostHealthConditions(mismatch).find(c=>c.cause==="applicability")?.result).toBe("failed");

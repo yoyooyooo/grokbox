@@ -22,6 +22,10 @@ canonical runRoot/目标集合及daemon所属collector已接通，原生run-obse
 
 生产管理/恢复证明由 `test/host-health-management.test.ts`，真实子进程协议/退出证明由 `test/host-verifier.test.ts` 与 `test/host-verifier-boundaries.test.ts` 承载；实际来源静态资格用 `scripts/qualify-host-health.ts` 明确指定文件。完整运行见证和实际安装常驻仍是后续，不以首次静态纵切关闭本票。
 
+## 运行编译来源增量
+
+管理 Server 已独立读取原 preload-marker 的严格正负编译观察，核对真实 PID/start/UID/exe/argv；磁盘静态结果、运行代结果和两路 OBS intake 分别显示。原 marker 回滚、进程退出、缺 marker 不修复失败；恢复需要准确较新编译正证据。运行事件复用 provenance 和 OBS，停 Server 不 signal Host。固定测试与范围见[编译健康报告](../reports/2026-09-20-host-compilation-health.md)，完整 attachment/exercised 及实际来源适配仍由 HOST-01 承接。
+
 ## Depends-on / Modules
 
 新架构的完整静态识别、Rust/Oxc sidecar 与能力合同由 [HOST-01](HOST-01-patch-health-verifier.md)承接；本票继续拥有管理 Server 所属的来源/loaded/检测器健康 producer 和共用 OBS 接线。源码不适用、加载负回执等确定故障可以先入库，不等待全部 AST 检查完成；但一个已接通的故障例子不代表完整能力覆盖已经交付。插入时点由 [CLI-05](CLI-05-implementation-follow-through.md#下一实施边界)协调，不恢复旧 daemon 或旁路 heal writer。

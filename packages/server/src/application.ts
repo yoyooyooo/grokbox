@@ -3,9 +3,8 @@ import {
   API_VERSION, UUID, botIdFromRef, botRef, type BotModelView, type DefaultModelView,
   type ManagementIdentity, type ModelList, type ModelView, type ManagementServiceView, type NotificationWorkerView,
 } from "@grokbox/client/contract";
-import {
-  ModelConfiguration, readModelOperation, runModelChange,
-} from "@grokbox/runtime-kernel/model-management";
+import { ModelConfiguration } from "@grokbox/runtime-kernel/ports";
+import { readModelOperation, runModelChange } from "@grokbox/runtime-kernel/commands";
 import { assignmentForBot, parseApiKeyRef, requireModel, type ModelRecord } from "@grokbox/runtime-kernel/selection";
 import { managedModelAdmission, type createManagementGateway } from "@grokbox/box-runtime/runtime";
 import { HttpFailure, requireCapability, type Principal } from "./access.ts";

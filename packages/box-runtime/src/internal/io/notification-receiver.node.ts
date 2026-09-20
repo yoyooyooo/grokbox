@@ -2,8 +2,6 @@ import { assessLoadedHostCapabilities, type LoadedHostIdentity } from "@grokbox/
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { NATIVE_ROUTINE_MAX_BYTES, projectNativeRoutines } from "@grokbox/runtime-kernel/routines";
 import { projectReceiverModelObservation, RECEIVER_NOTICE_POLICY_REVISION } from "@grokbox/runtime-kernel/observation";
-import type { ReceiverNativeReader } from "../roots/ops-receiver.runtime.ts";
-import type { ExplicitReceiverReader } from "../roots/ops-explicit-delivery.runtime.ts";
 
 export type ReceiverReadMethod = "getAgentAutomations" | "getHostStatus";
 export type ReceiverReadPorts = {
@@ -28,9 +26,7 @@ function profile(value: unknown): Pick<LoadedHostIdentity, "profileSha256" | "so
 /** Shared narrow native read sequence for management workers and remaining CLI
  * callers. It never acquires a webhook key, creates a session, enables a Routine,
  * invokes a provider or returns prompt text. Both consumers use the same facts. */
-export function createNotificationReceiver(ports: ReceiverReadPorts, timeoutMs = 15_000): {
-  read: ReceiverNativeReader; readExplicit: ExplicitReceiverReader;
-} {
+export function createNotificationReceiver(ports: ReceiverReadPorts, timeoutMs = 15_000) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 15_000) throw Error("receiver_invalid_deadline");
   const observe = async (agentId: string, routineId: string, parent: AbortSignal | undefined, explicit: boolean) => {
     if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(agentId)
@@ -71,6 +67,6 @@ export function createNotificationReceiver(ports: ReceiverReadPorts, timeoutMs =
     const ownership = await call("getHostStatus", { grokboxOwnershipAgentIds: [agentId] });
     return { ...receiver, ownership: own(ownership.result, "grokboxOwnership"), ownershipGeneration: generation(ownership.source) };
   };
-  return { read: (agentId, routineId, signal) => observe(agentId, routineId, signal, false),
-    readExplicit: (agentId, routineId, signal) => observe(agentId, routineId, signal, true) };
+  return { read: (agentId: string, routineId: string, signal?: AbortSignal) => observe(agentId, routineId, signal, false),
+    readExplicit: (agentId: string, routineId: string, signal?: AbortSignal) => observe(agentId, routineId, signal, true) };
 }
