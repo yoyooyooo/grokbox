@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { startManagementServer } from "../src/server.ts";
-import { openMonitorStore, publishConfigFile } from "@grokbox/box-runtime/runtime";
+import { openMonitorStore, publishConfigFile, readProtectionSubjects, readProtectionSnapshots } from "@grokbox/box-runtime/runtime";
 import { continuitySourceKey } from "@grokbox/runtime-kernel/observation";
 import { openMonitorSqlite } from "../../box-runtime/src/internal/io/monitor-sqlite.node.ts";
 import { ManagementClient } from "@grokbox/client";
@@ -187,6 +187,22 @@ test("the original staged lifecycle promotes one successor and restart does not 
     assert.equal(f.state.created,1);assert.equal((await f.client().protection()).data.subjects.length,1);
     assert.deepEqual((await subject(f))?.handoverRefs,history);
     assert.ok(!f.state.calls.some(c=>c==="/api/sendPrompt"));
+  }finally{await f.close();}
+});
+
+test("concurrent metadata readers keep a promoted identity visible while the original writer captures",async()=>{
+  const f=await protectionFixture(origin,{simulatedRestore:true});
+  try{
+    await until(()=>subject(f),v=>!!v?.lastSnapshotRef);await policy(f,{mode:"auto-replace"});f.state.temporal.add(P_BOT);
+    await until(()=>subject(f),v=>v?.currentBotRef===`bot:${P_INSTALL}:${P_TARGET}`);
+    const failures:string[]=[];
+    for(let n=0;n<80;n++){
+      await Promise.all(Array.from({length:4},async(_,i)=>{
+        try { if(i%2)await readProtectionSubjects(f.root);else await readProtectionSnapshots(f.root,{botId:P_BOT,limit:20}); }
+        catch(error){const e=error as any;failures.push(JSON.stringify({name:e?.name,code:e?.code,message:e?.message,reason:e?.reason,cause:e?.cause?.code}));}
+      }));
+    }
+    assert.deepEqual(failures,[],"A normal committing writer must not be classified as damaged recovery history.");
   }finally{await f.close();}
 });
 
