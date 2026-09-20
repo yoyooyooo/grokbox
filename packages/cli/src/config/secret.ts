@@ -49,10 +49,11 @@ function checkedSecret(value: string): string {
   return secret;
 }
 
-async function readProtectedSecretFile(path: string): Promise<string> {
+async function readProtectedSecretFile(path: string, signal?: AbortSignal): Promise<string> {
   let handle;
+  signal?.throwIfAborted();
   try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ELOOP") {
       throw new CliError("credential_invalid", "The referenced file credential must not be a symbolic link.");
@@ -65,6 +66,7 @@ async function readProtectedSecretFile(path: string): Promise<string> {
     const bytes = Buffer.alloc(MAX_SECRET_BYTES + 1);
     let offset = 0;
     while (offset < bytes.length) {
+      signal?.throwIfAborted();
       const result = await handle.read(bytes, offset, bytes.length - offset, offset);
       if (result.bytesRead === 0) break;
       offset += result.bytesRead;
@@ -85,7 +87,9 @@ async function readProtectedSecretFile(path: string): Promise<string> {
 export async function resolveSecretRef(
   deps: Pick<CliDeps, "env" | "readFile" | "runCommand">,
   ref: string,
+  signal?: AbortSignal,
 ): Promise<string> {
+  signal?.throwIfAborted();
   validateSecretRef(ref, "credential_ref");
   if (ref.startsWith("env:")) {
     const value = deps.env[ref.slice(4)];
@@ -95,7 +99,7 @@ export async function resolveSecretRef(
     return checkedSecret(value);
   }
   if (ref.startsWith("file:")) {
-    return checkedSecret(await readProtectedSecretFile(ref.slice(5)));
+    return checkedSecret(await readProtectedSecretFile(ref.slice(5), signal));
   }
 
   const payload = ref.slice("keychain:".length);
@@ -110,7 +114,7 @@ export async function resolveSecretRef(
     service,
     "-a",
     account,
-  ]);
+  ], { signal });
   if (result.code !== 0) {
     const locked = /interaction is not allowed|user interaction|locked/i.test(result.stderr);
     throw new CliError(

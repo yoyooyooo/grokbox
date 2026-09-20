@@ -84,6 +84,23 @@ describe("host profile title marker", () => {
     }
   });
 
+  test("default followers refresh from the current default while explicit selections retain their own label", () => {
+    const model = (name: string) => ({ provider: "openai-responses", model: name, alias: name,
+      endpoint: "https://models.invalid/v1", apiKeyRef: "env:FIXTURE_KEY", capabilities: { reasoning: { efforts: ["high", "xhigh"] } } });
+    const document = { version: 3, models: { "channel/first": model("first"), "channel/second": model("second") },
+      assignments: { main: { modelId: "channel/first", reasoning: { effort: "high" } },
+        agents: { [AGENT]: { kind: "default" }, [OTHER]: { modelId: "channel/first", reasoning: { effort: "high" } } } } };
+    const root = modelsRoot(document);
+    try {
+      const hook = bindHostProfileTitle({ durableRoot: root });
+      expect(hook({ profile: { title: SHOWING }, localHarness: "box", agentId: AGENT })).toEqual({ title: "coding | owner=box,m=first,e=high" });
+      document.assignments.main = { modelId: "channel/second", reasoning: { effort: "xhigh" } };
+      writeFileSync(join(root, "models.json"), JSON.stringify(document));
+      expect(hook({ profile: { title: SHOWING }, localHarness: "box", agentId: AGENT })).toEqual({ title: "coding | owner=box,m=second,e=xhigh" });
+      expect(hook({ profile: { title: SHOWING }, localHarness: "box", agentId: OTHER })).toEqual({ title: "coding | owner=box,m=first,e=high" });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test("resolved token refreshes showing m=", () => {
     const root = modelsRoot({
       version: 1,

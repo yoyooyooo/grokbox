@@ -1,4 +1,4 @@
-import { assertBoxLocal, runOpsPairing, observeOpsTargets, revokeOpsTarget, verifyOpsReceiver, prepareOpsReceiverBlueprint, activateOpsNotifications } from "@grokbox/box-runtime/runtime";
+import { assertBoxLocal, runOpsPairing, observeOpsTargets, verifyOpsReceiver, prepareOpsReceiverBlueprint } from "@grokbox/box-runtime/runtime";
 import { OPS_PAIRING_POLICY, OpsPairingError, NotificationError, validatePairingCommand } from "@grokbox/runtime-kernel/observation";
 import { NATIVE_ROUTINE_MAX_BYTES, projectNativeRoutines } from "@grokbox/runtime-kernel/routines";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -7,11 +7,11 @@ import { CliError } from "../errors.ts";
 import { ioFromOpts } from "../opts.ts";
 import { writeSuccess } from "../output.ts";
 import type { CliDeps } from "../deps.ts";
-import { nativeReceiverReader, nativeExplicitReceiverReader } from "../gateway-receiver.ts";
+import { nativeReceiverReader } from "../gateway-receiver.ts";
 
-export async function runOpsTargetsCli(deps: CliDeps, action: "list" | "show" | "bind" | "disable" | "unbind" | "verify" | "blueprint" | "activate", alias: string | undefined,
+export async function runOpsTargetsCli(deps: CliDeps, action: "list" | "show" | "bind" | "verify" | "blueprint", alias: string | undefined,
   raw: { json?: boolean; timeoutMs?: string; routineId?: string; expectRevision?: string; operationId?: string;
-    expectBindingRevision?: string; expectModelRevision?: string; fromWork?: string; confirmReceiver?: boolean; preview?: boolean; confirm?: boolean }) {
+    expectBindingRevision?: string; preview?: boolean; confirm?: boolean }) {
   assertBoxLocal(deps);
   if (deps.gatewayServerUrl) throw new CliError("invalid_usage", "Target pairing requires this Box's native Gateway, not an explicit URL.");
   const durableRoot = deps.boxRuntimeRoot, io = ioFromOpts(raw);
@@ -28,15 +28,6 @@ export async function runOpsTargetsCli(deps: CliDeps, action: "list" | "show" | 
     }
     const expected = raw.expectBindingRevision === undefined ? 0 : /^\d+$/.test(raw.expectBindingRevision) ? Number(raw.expectBindingRevision) : NaN;
     if (!Number.isSafeInteger(expected) || expected < 0) throw new OpsPairingError("invalid_input");
-    if (action === "activate") {
-      writeSuccess(deps.stdout, await activateOpsNotifications({ durableRoot, command: { alias: alias ?? "", fromWorkId: raw.fromWork ?? "",
-        expectedBindingRevision: expected, expectedModelRevision: raw.expectModelRevision ?? "", operationId: raw.operationId ?? "",
-        confirmed: raw.confirm === true, reminderObserved: raw.confirmReceiver === true },
-        readNative: nativeExplicitReceiverReader(deps, io.timeoutMs), signal: deps.signal })); return;
-    }
-    if (action === "disable" || action === "unbind") {
-      writeSuccess(deps.stdout, await revokeOpsTarget({ durableRoot, alias: alias ?? "", expectedRevision: expected, action, confirmed: raw.confirm === true })); return;
-    }
     if (raw.preview && raw.confirm) throw new OpsPairingError("invalid_input");
     const command = validatePairingCommand({ action: raw.preview ? "preview" : "bind", alias: alias ?? "", routineId: raw.routineId ?? "",
       expectedRevision: raw.expectRevision ?? "", operationId: raw.operationId ?? "", ...(raw.confirm ? { confirmed: true } : {}) });

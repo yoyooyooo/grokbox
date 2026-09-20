@@ -10,6 +10,12 @@
 
 E2E前组合已验证生产observer任务失败→实际journal→双源collector→SQLite固定revision→持久授权sender→loopback HTTP；真实原生Provider/App未运行。授权前发生而后入库的旧故障必须同时被工作选择和自动发送入口拦住，不能因work创建较晚补发。详见[回执](../reports/2026-09-19-pre-e2e-observation.md)。
 
+## Host 健康来源集成（2026-09-20）
+
+[HOST-01](HOST-01-patch-health-verifier.md)的版本化 `host_patch_health` 证据已通过原 `projectControlEvent` 和原 `ingestEvidence` 事务接入，不另建报警库。`monitor-host-health.node.ts` 按安装及有限原因族归并 applicability / semantics / sensing / companion condition；同事务建立证据关系、incident和原通知准备工作。重复采样不逐slice开故障，较旧sourceSequence不修复较新状态；缺源或分析器不可用不当成适用性/语义恢复。
+
+实际入口为 `test/host-health-management.test.ts`：真实TS变换→正式Rust/FD→原provenance→SQLite→管理HTTP/CLI，重新固定变体hash后仍捕获错误retry；正证据仅结算对应条件。当前新producer不依赖旧watchdog四事件来判断完整健康，历史四事件只入evidence的局限没有被改写成全覆盖。完整加载/挂接/触发规则仍归HOST-01后续阶段。
+
 ## Goal / Modules
 
 避免“evidence入库但没有incident/通知”。kernel `internal/observation/incident-rules.ts`；box-runtime `monitor-occurrence.node.ts`、`monitor-store.node.ts`、`roots/monitor.runtime.ts`及各source adapter。显式来源和分类范围，不声称覆盖全部上游类型。

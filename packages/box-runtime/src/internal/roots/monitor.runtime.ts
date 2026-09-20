@@ -49,7 +49,7 @@ export type MonitorRunOptions = {
  * runtime's elapsed-time scheduler; wall time remains observation metadata.
  * This is not three collectors, a second Runtime, or detached Promise loops. */
 export function monitorProgram(input: MonitorRunOptions) {
-  const ids = monitorTargets(input.agentIds), interval = monitorInterval(input.intervalMs ?? MONITOR_POLICY.intervalMs);
+  const ids = monitorTargets(input.agentIds,true), interval = monitorInterval(input.intervalMs ?? MONITOR_POLICY.intervalMs);
   if (input.signal.aborted) throw new BoxRuntimeError("invalid_usage", "monitor_cancelled");
   const epoch = randomUUID();
   let store: MonitorStore, storage: StorageConfiguration;
@@ -69,6 +69,7 @@ export function monitorProgram(input: MonitorRunOptions) {
     if (Exit.isFailure(publication)) return yield* Effect.failCause(publication.cause);
   });
   const sample = Effect.gen(function*() {
+    if(!ids.length) return emptyTick(); // Installation-only intake is not a fabricated ownership observation.
     const startedAtMs = yield* Clock.currentTimeMillis;
     const response = yield* Effect.result(Effect.tryPromise({ try: signal => input.read(ids, signal), catch: () => "read_unavailable" })
       .pipe(Effect.timeout(`${MONITOR_POLICY.readTimeoutMs} millis`)));
@@ -179,7 +180,8 @@ export function monitorProgram(input: MonitorRunOptions) {
       yield* localWriter.withPermit(publish({ changes: [...source.changes, ...local.changes], notifications: [...source.notifications, ...local.notifications], journal: local.journal, maintenance: maintenance.maintenance }));
       return;
     }
-    const sourceLoop = Effect.forever(Effect.gen(function*() { yield* sample; yield* Effect.sleep(`${monitorDelay(interval, failures, Math.random())} millis`); }));
+    if(!ids.length) yield* publish(emptyTick());
+    const sourceLoop = ids.length ? Effect.forever(Effect.gen(function*() { yield* sample; yield* Effect.sleep(`${monitorDelay(interval, failures, Math.random())} millis`); })) : Effect.never;
     const localLoop = sources.length ? Effect.forever(Effect.gen(function*() { const tick = yield* drain; yield* Effect.sleep(tick.journal?.hasMore ? "100 millis" : "1 second"); })) : Effect.void;
     // Delay the first maintenance slice so startup evidence need not compete
     // with housekeeping. It has its own clock and does not wait for remote reads.

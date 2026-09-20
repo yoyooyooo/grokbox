@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   applyReset,
   applyUse,
-  assertResetAllowed,
+  applyFollowDefault,
   assertRouteAssignment,
   disclosure,
   parseApiKeyRef,
@@ -55,7 +55,7 @@ describe("models.json store", () => {
     expect(CLI_INSTALL_ROOT).toContain(".grokbox/runtime");
   });
 
-  test("use/reset default vs --for and route refuses reset", async () => {
+  test("default reset depends on followers, not route mode", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-runtime-"));
     const store = openRuntimeStore(root);
     await store.saveModels(parseModelsFile(SAMPLE));
@@ -74,8 +74,9 @@ describe("models.json store", () => {
     const stubbed = applyUse(applyUse(nonStub, "stub/echo"), "stub/echo", "agent-tom");
     await store.saveModels(stubbed);
     await store.saveDesired({ version: 1, mode: "route" });
-    const desired = await store.loadDesired();
-    expect(() => assertResetAllowed(desired)).toThrow(BoxRuntimeError);
+    expect((await store.loadDesired()).mode).toBe("route");
+    expect(applyReset(stubbed).assignments.main).toBeNull();
+    expect(() => applyReset(applyFollowDefault(stubbed, "follower"))).toThrow("model_default_in_use");
     assertRouteAssignment(await store.loadModels());
     const drifted = applyUse(await store.loadModels(), "acme/fast");
     expect(() => assertRouteAssignment(drifted)).toThrow(BoxRuntimeError);

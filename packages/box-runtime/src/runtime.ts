@@ -2,7 +2,6 @@ export { BoxRuntimeError, runtimeNotReady, type BoxRuntimeErrorCode } from "@gro
 export {
   applyReset,
   applyUse,
-  assertResetAllowed,
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
   disclosure,
@@ -27,7 +26,16 @@ export { startMonitorService, type MonitorServiceStatus } from "./internal/roots
 export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roots/agent-routines.runtime.ts";
 export { runOpsNotificationDelivery, observeOpsNotification, type PairedNotificationDriver } from "./internal/roots/ops-notification.runtime.ts";
 export { activateOpsNotifications } from "./internal/roots/ops-activation.runtime.ts";
+export { openOpsBindings } from "./internal/io/ops-bindings.node.ts";
+export { createPreparedNoticeDriver } from "./internal/roots/ops-explicit-delivery.runtime.ts";
+export { openMaterialStore } from "./internal/io/material-store.node.ts";
+export { bindMaterialSource, readMaterialSource, replaceMaterialSource, scanMaterialSource, type MaterialWriteHooks } from "./internal/io/material-source.node.ts";
+export { currentMaterialSources, materialViews, startMaterialIndexer, type MaterialDomain } from "./internal/roots/materials.runtime.ts";
 export { startOpsNotificationWorker, type AutomaticNoticeWorkerStatus } from "./internal/roots/ops-automatic-notification.runtime.ts";
+export { openRoutineProvisionStore } from "./internal/io/routine-provision.node.ts";
+export { changeManagedRoutine } from "./internal/roots/routine-management.runtime.ts";
+export { createRoutineGateway, type RoutineAccess } from "./internal/io/routine-gateway.node.ts";
+export { createNotificationReceiver, type ReceiverReadPorts } from "./internal/io/notification-receiver.node.ts";
 export { runExplicitOpsNotification, type ExplicitReceiverRead, type ExplicitReceiverReader } from "./internal/roots/ops-explicit-delivery.runtime.ts";
 export { verifyOpsReceiver, prepareOpsReceiverBlueprint, type ReceiverNativeRead, type ReceiverNativeReader } from "./internal/roots/ops-receiver.runtime.ts";
 export { runOpsPairing, observeOpsTargets, revokeOpsTarget, type NativePairingSource } from "./internal/roots/ops-pairing.runtime.ts";
@@ -40,6 +48,20 @@ export { openBotHandover, type BotHandoverPort, type HandoverEffect } from "./in
 export { openContinuityControls } from "./internal/roots/continuity-control.runtime.ts";
 export { openBotConvergence, type BotConvergencePort } from "./internal/roots/bot-convergence.runtime.ts";
 export { openBotProtection, startBotProtectionWorker, startPolicyBoundBotProtection, type BotProtectionPort } from "./internal/roots/bot-protection.runtime.ts";
+export { startHostHealth, type HostHealthStatus, type HostHealthTestPorts } from "./internal/roots/host-health.runtime.ts";
+export { readHostHealthJournal } from "./internal/io/provenance.node.ts";
+export { createContinuityGateway, type ContinuityGateway, type NativeContinuityContext } from "./internal/io/continuity-gateway.node.ts";
+export { nativeMaterialReader, botProfileRevision } from "./internal/io/continuity-material.node.ts";
+export { createNativeBotLifecycle } from "./internal/roots/continuity-native-lifecycle.runtime.ts";
+export { createNativeBotHandover } from "./internal/roots/continuity-native-handover.runtime.ts";
+export { createNativeBotConvergence } from "./internal/roots/continuity-native-convergence.runtime.ts";
+export { createNativeBotProtection, protectiveOwnership } from "./internal/roots/continuity-native-protection.runtime.ts";
+export { startProtectionService, type ProtectionServiceStatus, type ProtectionServiceInput, type ProtectionServiceTestPorts } from "./internal/roots/protection-service.runtime.ts";
+export { readContinuityIdentity } from "./internal/io/continuity-database.node.ts";
+export { contextManagementPrograms, contextControlId, managedContextRecord, contextStorePresent, type ManagedContextDeclaration, type ManagedContextRecord, type ManagedContextRow } from "./internal/io/context-management.node.ts";
+export { createNativeContextControl, managedContextPrograms, withManagedContextGate, type ContextNative } from "./internal/roots/managed-context.runtime.ts";
+export { readManagedLifecycle, listManagedLifecycles, withManagedLifecycleGate } from "./internal/roots/managed-lifecycle.runtime.ts";
+export { readProtectionSubjects, readProtectionSnapshots, readProtectionHandover } from "./internal/io/protection-views.node.ts";
 export { openAgentDuplication } from "./internal/roots/agent-duplicate.runtime.ts";
 export { createNativeCheckpointCapturePort } from "./internal/host/native-checkpoint.ts";
 export type { NativeCheckpointBoundary, NativeCheckpointSchema } from "./internal/host/native-checkpoint.ts";
@@ -61,6 +83,9 @@ export { saveRuntimeModels, saveRuntimeDesired, configurationWriteLayer } from "
 export { persistModelCredential } from "./internal/io/persist-model-credential.node.ts";
 export { readManagedOwnership, type OwnershipReader } from "./internal/io/ownership-admission.node.ts";
 export { changeRuntimeModel, migrateRuntimeModels } from "./internal/io/model-selection.node.ts";
+export { modelConfigurationLayer } from "./internal/io/model-management.node.ts";
+export { createManagementGateway, ManagementSourceError, type NativeBotSummary, type NativeBotSnapshot } from "./internal/io/management-gateway.node.ts";
+export { managedModelAdmission } from "./internal/roots/model-management.runtime.ts";
 export {
   projectLiveStatus,
   readContracts,

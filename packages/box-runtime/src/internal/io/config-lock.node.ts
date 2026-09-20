@@ -89,7 +89,7 @@ async function acquire(path: string, recover: boolean, depth = 0): Promise<Confi
   } finally { await guard.release(); }
 }
 
-export async function acquireConfigurationLease(root: string, recover = false, owner: "config-write" | "config-bootstrap" = "config-write"): Promise<ConfigLease> {
+export async function acquireConfigurationLease(root: string, recover = false, owner: "config-write" | "config-bootstrap" | "models-write" | "model-operations" = "config-write"): Promise<ConfigLease> {
   await assertSafeDirectory(join(root, "state"), true);
   return await acquire(join(root, "state", `${owner}.lock`), recover);
 }

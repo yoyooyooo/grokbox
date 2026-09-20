@@ -25,6 +25,8 @@ export type ReceiptCheck = {
 };
 
 export function parseLiveIndex(markdown?: string): LiveScenario[];
+export function selectLiveScenarios(ids: string[], rows?: LiveScenario[]): LiveScenario[];
+export const READ_ONLY_PROBES: Readonly<Record<string, readonly string[]>>;
 export function validateReceipt(receipt: unknown, rows?: LiveScenario[]): ReceiptCheck;
 export function sourceSnapshot(): {
   sourceCommit: string | null;

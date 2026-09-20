@@ -1,7 +1,4 @@
-import { parseModelsFile, persistModelsDocument } from "@grokbox/runtime-kernel/selection";
-import { ensurePackedCli } from "./packed-cli-fixture.ts";
 import { expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -54,97 +51,6 @@ async function fixture(mode: "box" | "temporal" | "confirmed-temporal" | "old" |
     close: async () => { gateway.stop(true); await rm(root, { recursive: true, force: true }); } };
 }
 
-test("real CLI use admits ownership; explicit reset only removes intent and preserves the other Bot", async () => {
-  const f = await fixture();
-  try {
-    for (const args of [["use", "openai/owned"], ["reset"]]) {
-      const ran = await captureCli(["models", ...args, "--for", A], f.deps);
-      expect(ran.code, ran.stderr).toBe(0);
-      const data = parseJson(ran.stdout) as { data: { title?: { from?: string; to?: string; written?: boolean; m?: string | null } } };
-      expect(data).toMatchObject({ data: { selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", blastRadius: "single_bot", ownership: args[0] === "reset" ? "not_required_for_reset" : "confirmed_box" } });
-      expect(data.data.title?.to).toContain("Keep Me");
-      if (args[0] === "use") {
-        expect(data.data.title).toMatchObject({ from: "Keep Me", written: true, m: "owned" });
-        expect(data.data.title?.to).toContain("m=owned");
-      } else {
-        expect(data.data.title?.from).toContain("m=owned");
-        expect(data.data.title?.written).toBe(true);
-        expect(data.data.title?.to?.includes("m=") ?? false).toBe(false);
-      }
-      expect((await f.load()).assignments.agents[B]?.modelId).toBe("stub/echo");
-      expect((await f.load()).assignments.agents[A]?.modelId).toBe(args[0] === "reset" ? undefined : "openai/owned");
-    }
-    expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(true);
-    const byName = await captureCli(["models", "use", "openai/owned", "--for", "owned"], f.deps);
-    expect(byName.code, byName.stderr).toBe(0);
-    expect(f.calls.map(call => call.path).filter((path) => path === "/api/listAgents").length).toBeGreaterThan(0);
-  } finally { await f.close(); }
-});
-
-for (const mode of ["temporal", "old", "failure", "wrong-id"] as const) {
-  test(`explicit CLI reset with ${mode} cannot be trapped behind managed admission`, async () => {
-    const f = await fixture(mode);
-    try {
-      const before = await f.load();
-      const result = await captureCli(["models", "reset", "--for", A], f.deps);
-      expect(result.code, result.stderr).toBe(0);
-      expect(parseJson(result.stdout)).toMatchObject({ data: { ownership: "not_required_for_reset", effectiveUse: "not_observed" } });
-      expect(f.calls.some((call) => call.path === "/api/updateAgent")).toBe(false);
-      expect(await f.load()).toEqual({ ...persistModelsDocument(parseModelsFile(before)), assignments: { main: null, agents: { [B]: { modelId: "stub/echo" } } } });
-      const use = await captureCli(["models", "use", "openai/owned", "--for", A], f.deps);
-      expect(use.code).not.toBe(0);
-      expect((await f.load()).assignments.agents[A]).toBeUndefined();
-      expect(f.calls.some((c) => c.path === "/api/getHostStatus")).toBe(true);
-      const error = (parseJson(use.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
-      expect(error.message).not.toBe(error.failureCode ?? "");
-      expect(error.next).not.toContain("host on");
-    } finally { await f.close(); }
-  });
-}
-
-for (const [mode, expected] of [
-  ["temporal", { code: "runtime_ownership_conflict", next: `grokbox agents ownership ${A}` }],
-  ["confirmed-temporal", { code: "runtime_ownership_temporal", next: `grokbox agents ownership ${A}` }],
-  ["old", { code: "runtime_ownership_unavailable", failureCode: "server_read_unavailable", next: `grokbox agents ownership ${A}` }],
-  ["failure", { code: "runtime_ownership_unavailable", next: "grokbox doctor" }],
-  ["wrong-id", { code: "runtime_ownership_unconfirmed", next: `grokbox agents ownership ${A}` }],
-] as const) {
-  test(`models use types ${mode} ownership refusal with next`, async () => {
-    const f = await fixture(mode);
-    try {
-      const before = await f.load();
-      const use = await captureCli(["models", "use", "openai/owned", "--for", A], f.deps);
-      expect(use.code).not.toBe(0);
-      expect(use.stdout).toBe("");
-      const error = (parseJson(use.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
-      expect(error).toMatchObject(expected);
-      expect(error.next).not.toContain("host start");
-      expect(error.next).not.toContain("title sync");
-      expect(error.next).not.toContain("agents create");
-      expect(error.message.length).toBeGreaterThan(20);
-      expect(error.message).not.toBe(error.failureCode ?? "");
-      expect(error.next).not.toContain("host on");
-      expect((await f.load()).assignments).toEqual(before.assignments);
-    } finally { await f.close(); }
-  });
-}
-
-test("actual packed Node reset removes an override with no Gateway/discovery or credential environment", async () => {
-  const f = await fixture("failure");
-  try {
-    const before = await f.load();
-    const cli = ensurePackedCli();
-    const result = spawnSync("node", [cli, "models", "reset", "--for", A, "--json"], {
-      env: { PATH: process.env.PATH, HOME: f.deps.configDir, GROKBOX_BOX_RUNTIME_ROOT: f.deps.boxRuntimeRoot, GROKBOX_RUN_ROOT: join(f.deps.configDir, "no-gateway") },
-      encoding: "utf8", timeout: 10_000,
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(parseJson(result.stdout)).toMatchObject({ data: { selectionSaved: true, ownership: "not_required_for_reset", currentTurn: "unchanged", effectiveUse: "not_observed" } });
-    expect(f.calls).toEqual([]);
-    expect(await f.load()).toEqual({ ...persistModelsDocument(parseModelsFile(before)), assignments: { main: null, agents: { [B]: { modelId: "stub/echo" } } } });
-  } finally { await f.close(); }
-});
-
 for (const mode of ["box", "temporal", "old", "failure", "wrong-id"] as const) {
   test(`created Bot ${mode} ownership read-back never retries create or pretends migration`, async () => {
     const f = await fixture(mode);
@@ -160,23 +66,3 @@ for (const mode of ["box", "temporal", "old", "failure", "wrong-id"] as const) {
     } finally { await f.close(); }
   });
 }
-
-test("top-level model effort works with explicit target selection and clears independently of model identity", async () => {
-  const f = await fixture();
-  try {
-    for (const effort of ["xhigh", "default"] as const) {
-      const selected = await captureCli(["models", "use", "openai/owned", "--for", A, "--effort", effort], f.deps);
-      expect(selected.code, selected.stderr).toBe(0);
-      const data = (parseJson(selected.stdout) as any).data;
-      expect(data.reasoning).toMatchObject({ requested: effort, providerReported: "unknown" });
-      expect(data.title.to).toContain("m=owned");
-      expect(data.title.to.includes("e=xhigh")).toBe(effort === "xhigh");
-      expect((await f.load()).assignments.agents[A]).toEqual({ modelId: "openai/owned", ...(effort === "xhigh" ? { reasoning: { effort } } : {}) });
-      expect((await f.load()).assignments.agents[B]).toEqual({ modelId: "stub/echo" });
-    }
-    const selected = await captureCli(["models", "use", "openai/owned", "--default", "--effort", "high"], f.deps);
-    expect(selected.code, selected.stderr).toBe(0);
-    expect((await f.load()).assignments.main).toEqual({ modelId: "openai/owned", reasoning: { effort: "high" } });
-    expect((await f.load()).assignments.agents[A]).toEqual({ modelId: "openai/owned" });
-  } finally { await f.close(); }
-});

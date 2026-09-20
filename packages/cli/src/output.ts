@@ -2,6 +2,7 @@ import type { CliError, ErrorBody } from "./errors.ts";
 
 export type Writable = {
   write(chunk: string): void;
+  writeAsync?(chunk: string, signal?: AbortSignal): Promise<void>;
 };
 
 export type SuccessEnvelope = {

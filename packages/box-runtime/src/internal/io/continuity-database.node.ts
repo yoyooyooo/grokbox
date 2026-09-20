@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 import { join, resolve } from "node:path";
+import { lstat } from "node:fs/promises";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { ContinuityFailure, failContinuity, type ContinuityStorePolicy } from "@grokbox/runtime-kernel/continuity";
+import { ContinuityFailure, failContinuity, continuityStorePolicy, isContinuityHash, type ContinuityStorePolicy } from "@grokbox/runtime-kernel/continuity";
 import { openMonitorSqlite, type MonitorSqlite } from "./monitor-sqlite.node.ts";
 import { checkContinuityFile, checkContinuityRoot, continuityPrivateDirectory, syncContinuityDirectory, continuityIoFailure, missingFile } from "./continuity-files.node.ts";
 
@@ -33,6 +34,28 @@ export type ContinuityStoreHooks = {
   afterCommit?: (label: string) => Promise<void>;
 };
 export const continuityIo = <A>(work: () => Promise<A>) => Effect.tryPromise({ try: work, catch: continuityIoFailure });
+
+/** Read only the existing owner identity. It is historical scope, not a fresh
+ * account attestation. A missing database inside a known owner directory is
+ * damage, never permission to initialize a replacement safety history. */
+export async function readContinuityIdentity(root: string): Promise<{ scopeId: string; schemaVersion: number } | null> {
+  const directory = join(resolve(root), "continuity"), file = join(directory, "state.sqlite");
+  await checkContinuityRoot(root);
+  const found = await lstat(directory).catch(error => { if (missingFile(error)) return null; throw error; });
+  if (!found) return null;
+  await continuityPrivateDirectory(directory);
+  const info = await checkContinuityFile(file, true);
+  if (!info) return failContinuity("integrity_failure");
+  if ((await lstat(file)).size > continuityStorePolicy().maxMetadataBytes) return failContinuity("capacity");
+  const db = await openMonitorSqlite(file, "read");
+  try {
+    const meta = await db.first("SELECT version,root_id,scope_id FROM continuity_meta WHERE singleton=1");
+    const version = (await db.first("PRAGMA user_version"))?.user_version;
+    if (!meta || !isContinuityHash(meta.scope_id) || !Number.isSafeInteger(version) || meta.version !== version
+      || meta.root_id !== sha256Text(canonicalJson(["continuity-store-v1", resolve(root), meta.scope_id]))) return failContinuity("integrity_failure");
+    return { scopeId: meta.scope_id, schemaVersion: Number(version) };
+  } finally { await db.close(); }
+}
 
 /** One private CONT management DB shared by recovery + safety, separate from
  * the diagnostic TTL/cap. Reuses the existing Node SQLite driver only. No
@@ -85,6 +108,8 @@ export function continuityDatabase(root: string, scopeId: string, policy: Contin
   const initialize = () => Effect.scoped(Effect.gen(function* () {
     yield* continuityIo(async () => {
       await checkContinuityRoot(root);
+      const existingOwner = await lstat(directory).catch(error => { if (missingFile(error)) return null; throw error; });
+      if (existingOwner && !await checkContinuityFile(file, true)) return failContinuity("integrity_failure");
       await continuityPrivateDirectory(directory, true);
       await continuityPrivateDirectory(join(directory, "objects"), true);
       await continuityPrivateDirectory(join(directory, "staging"), true);

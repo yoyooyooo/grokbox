@@ -12,6 +12,12 @@ CONT私有管理SQLite保存内容绑定的operation、policy revision、snapsho
 
 最低安全记录容量不足拒绝新增操作；当前安全墓碑尚未取得语义退役资格，保留最小记录并报告blocked，不宣称无限请求/长期日用已闭合。真实CONT恢复与安全owner共用本域DB，OBS诊断库只接事件与证据引用。[实现/进程崩溃/J1接线报告](../reports/2026-09-18-continuity-recovery-store.md)固定早期存储切片的证明；不代替配置授权、职责冲突/继任generation、原生效果或独立review。
 
+## 人工生命周期的管理主体
+
+新人工工作流在原 immutable request 中保存安装、主体、公共 request UUID 与 intent digest；内层 operation ID 按安装/主体推导，原 scope 和完整 plan digest 不变。列表在存储查询中先按主体过滤再做有界 keyset，不能用其他主体的记录挤掉本主体窗口。返回结果只投影阶段与真实身份，私有指令/profile/材料不进入普通操作读面。
+
+重复提交不执行阶段，显式 resume 不修改原声明；ready/active 是可能的中间检查点，最后所请求阶段的持久完成记录才用于跳过执行。replace 的激活完成后可单独继续原交接，不回头重建。原生 policy 与管理权限分别核对，旧 native/daemon/保护策略不能继承人工主体的授权。一个有限 fd gate 串行人工 driver，原 CONT claim 仍拥有外部防重放。未知/容量与长期安全退役义务保持原界限。验证入口和当前结果见 [CLI-05](CLI-05-implementation-follow-through.md)。
+
 ## 目标与依赖
 
 将best-effort恢复、唯一当前上下文、边接活边交接实现为明确规则。依赖现有config、ownership及OBS/Template Ops合同，不依赖下游clone实现。指定告警和排障Bot的配置由既有owner维护，本票仅消费其接口。

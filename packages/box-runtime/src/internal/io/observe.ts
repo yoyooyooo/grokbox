@@ -12,7 +12,7 @@ import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { linuxProcessPort, procEnvHas, roleOf } from "../process/linux.node.ts";
 import { copyInferenceTuple, projectRuntimeStatus, type ObservationGap, type RuntimeStatusFacets, type StatusEvidence } from "@grokbox/runtime-kernel/status";
 import { runtimeDesiredFromConfig } from "@grokbox/runtime-kernel/config";
-import { parseModelsFile, routeHasNonStubAssignment, routeModelAdmitted, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { assignmentForBot, parseModelsFile, routeHasNonStubAssignment, routeModelAdmitted, STUB_ECHO_MODEL, STUB_ECHO_MODEL_ID, type DesiredFile, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { boundedText, count, isRecord, observeJson, type Observation, type ObservationState } from "./observation.node.ts";
 import { parseReviewedProfile } from "../process/profile.node.ts";
 import type { PatchProfile } from "../host/profile.ts";
@@ -88,7 +88,7 @@ const safeToken = (value: unknown): string | null => boundedText(value) && /^[a-
 
 function assignmentState(models: ModelsFile | null): LiveStatusDraft["models"]["assignmentState"] {
   if (!models) return "unknown";
-  return [models.assignments.main, ...Object.values(models.assignments.agents)].filter((assignment) => assignment !== null).map(assignment => assignment.modelId)
+  return [models.assignments.main, ...Object.keys(models.assignments.agents).map(id => assignmentForBot(models, id))].filter((assignment) => assignment != null).map(assignment => assignment.modelId)
     .every((id) => id === STUB_ECHO_MODEL_ID || Object.hasOwn(models.models, id)) ? "valid" : "invalid";
 }
 
@@ -229,7 +229,7 @@ export function projectStatus(input: { root: string; desired: DesiredFile | null
     bundles: { state: "not_observed", head: null, retained: null, liveRetained: null, lastMatchedSha: null },
     watchdog: { required: mode === "identity" || mode === "route", state: "unknown" },
     modeld: { required: mode === "route", state: "unknown" },
-    models: { main: input.models?.assignments.main?.modelId ?? null, agents: Object.fromEntries(Object.entries(input.models?.assignments.agents ?? {}).map(([id, assignment]) => [id, assignment.modelId])), assignmentState: assignmentState(input.models) },
+    models: { main: input.models?.assignments.main?.modelId ?? null, agents: Object.fromEntries(Object.keys(input.models?.assignments.agents ?? {}).map(id => [id, assignmentForBot(input.models!, id)!.modelId])), assignmentState: assignmentState(input.models) },
     window: { durationMs: null, affectedInvocations: "unknown" },
     evidence: { desired: "not_observed", models: "not_observed", source: "not_observed", processes: "not_observed",
       gateway: "not_observed", attestation: "not_observed", profile: "not_observed", events: "not_observed" },

@@ -18,7 +18,7 @@ import { adoptOpStatePath } from "../src/internal/process/transient-adopt.ts";
 import { SHA, reviewed, targetFor } from "./admission-fixture.ts";
 import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
 
-const MODELS: ModelsFile = { version: 2, models: {}, assignments: { main: null, agents: {} } };
+const MODELS: ModelsFile = { version: 3, models: {}, assignments: { main: null, agents: {} } };
 
 function fail(message: string): never {
   console.error(message);

@@ -21,22 +21,22 @@ test("Node bundle executes both qualified reasoning backends with synthetic HTTP
     expect(proof.observed).toEqual([{ api: "chat", calls: 1, effort: "xhigh", reasoningTokens: 12 }, { api: "responses", calls: 1, effort: "xhigh", reasoningTokens: 12 }]);
   } finally { await rm(home, { recursive: true, force: true }); }
 });
-test("actual packed Node CLI migrates old assignments explicitly and queries configured policy without Gateway", async () => {
+test("actual packed Node CLI migrates old assignments only through explicit maintenance, never query fallback", async () => {
   const cli = ensurePackedCli(), home = await mkdtemp(join(tmpdir(), "reasoning-packed-cli-"));
   const durable = join(home, "durable"), path = join(durable, "models.json");
   const agent = "11111111-1111-4111-8111-111111111111";
   try {
-    await mkdir(durable);
+    await mkdir(durable, { mode: 0o700 });
     const original = JSON.stringify({ version: 1, models: {}, assignments: { main: null, agents: { [agent]: "stub/echo" } } });
     await writeFile(path, original, { mode: 0o600 });
     const run = (...args: string[]) => spawnSync("node", [cli, ...args], { env: { ...safeEnv(home), GROKBOX_BOX_RUNTIME_ROOT: durable,
       GROKBOX_RUN_ROOT: join(home, "run"), GROKBOX_CONFIG_DIR: join(home, "config") }, encoding: "utf8", timeout: 30000 });
     expect(run("models", "migrate").status).not.toBe(0); expect(await readFile(path, "utf8")).toBe(original);
     const migrated = run("models", "migrate", "--confirm"); expect(migrated.status, migrated.stderr).toBe(0);
-    expect(JSON.parse(migrated.stdout)).toMatchObject({ data: { modelsSchemaVersion: 2, assignmentsUnchanged: true } });
+    expect(JSON.parse(migrated.stdout)).toMatchObject({ data: { modelsSchemaVersion: 3, assignmentsUnchanged: true } });
     const saved = await readFile(path, "utf8"); expect(JSON.parse(saved).assignments.agents[agent]).toEqual({ modelId: "stub/echo" });
-    const shown = run("models", "show", "--for", agent); expect(shown.status, shown.stderr).toBe(0);
-    expect(JSON.parse(shown.stdout)).toMatchObject({ data: { scope: "configured_next_turn", model: "stub/echo", reasoning: { requested: "default", providerReported: "unknown" }, effectiveUse: "not_observed" } });
+    const shown = run("bot", "model", "get", agent); expect(shown.status).toBe(7);
+    expect(JSON.parse(shown.stdout)).toMatchObject({ ok: false, error: { code: "unavailable" } });
     expect(await readFile(path, "utf8")).toBe(saved);
   } finally { await rm(home, { recursive: true, force: true }); }
 });

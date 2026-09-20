@@ -11,7 +11,7 @@ export const MONITOR_POLICY = Object.freeze({
   // Housekeeping targets, never lifetime admission ceilings. Managed incident
   // facts and acknowledgements are not deleted merely to reach a row count.
   evidenceTarget: 50_000, retentionMs: 7 * 24 * 60 * 60 * 1000,
-  maxPage: 200, maxSnoozeMs: 24 * 60 * 60 * 1000,
+  maxPage: 200, maxSnoozeMs: 24 * 60 * 60 * 1000, maxManagementReceipts: 10_000,
 });
 export const MONITOR_RULES = ["ownership_conflict", "ownership_changed", "observation_unavailable"] as const;
 export type MonitorRule = typeof MONITOR_RULES[number];
@@ -47,13 +47,15 @@ export function projectMonitorOwnershipDiagnosis(value: unknown): MonitorOwnersh
   } catch { return undefined; }
 }
 export function monitorUuid(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
+  return typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 }
 export function monitorScope(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 }
-export function monitorTargets(ids: string[]): string[] {
-  if (!Array.isArray(ids) || !ids.length || ids.length > MONITOR_POLICY.maxTargets || ids.some(id => !monitorUuid(id))) {
+/** Empty installation membership is valid for local evidence intake. Native
+ * ownership requests and samples still require at least one exact Bot. */
+export function monitorTargets(ids: string[], installationOnly = false): string[] {
+  if (!Array.isArray(ids) || !ids.length && !installationOnly || ids.length > MONITOR_POLICY.maxTargets || ids.some(id => !monitorUuid(id))) {
     throw new Error("monitor_invalid_targets");
   }
   return [...new Set(ids.map(id => id.toLowerCase()))].sort();

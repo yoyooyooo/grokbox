@@ -30,11 +30,25 @@ OBS-04使诊断数据分层回收并测物理空间，ack/snooze不永久锁住�
 
 **源码/离线剩余资格：** admission 与背景刷新更广义的共享调度、未知旧锁/任意备份恢复。外部通知/客户端与 T40 安装、自启、长驻的当前现场缺口统一在 [LIVE-MONITOR-PERSISTENCE](LIVE-integration-validation.md#live-monitor-persistence)及其关联条目更新。已实现的本地 journal 追赶不会提高 ownership RPC 频率，v2 正常/硬崩溃恢复与 v1 事务迁移有独立测试。取消 16MiB/50000 条累计拒绝门槛，期限/软目标驱动自动维护并披露缺口，保留管理语义。local-only 出口成功不等于远端或 App 到达。
 
+## Host 健康安装级入口（2026-09-20）
+
+HOST-01/T44的Server所属producer已通过原OBS接入安装级 `host_patch_health`，不要求虚构一个Bot目标才能索引。实际source→Rust→provenance→condition测试见 `test/host-health-management.test.ts`，现有 collector 空目标安装/生命周期反例也已补齐；不会为空列表发原生ownership请求。已知配方失败先于重分析入库；后续三项candidate结构通过只修复其对应静态condition，不能证明actual loaded/attachment或远端投递。
+
+事件留存、incident及通知准备仍在本库原事务；同一原因聚合、source序列去重和正证据恢复，不建立第二报警面。新增Web `/host-health` 与 `system host health` 读取同一Server状态，refresh不启动额外采集或分析。完整运行见证、独立故障出口和实际服务安装仍需HOST-01及T40/T50资格。
+
+## 新管理入口接线
+
+[管理服务读面](../../packages/server/src/observations.ts)已复用原 MonitorStore：`system observation get`、`incident list`、`event list` 与自有 Web 消费相同公开投影。请求先校验独立观察权限，再只读原库；缺库、坏库、旧 schema、陈旧事实和 cursor gap 不被替换为空结果或健康。快照与事件 cursor 同事务，incident 引用包含安装与数据库身份；诊断正文和通知载荷不进入该有限列表。
+
+[Node/SQLite 集成](../../packages/server/test/observations.node.ts)验证零原生请求、未初始化不建库、只读字节/mtime/sidecar 不变、分页与 epoch/retention 边界；[Chrome 旅程](../../apps/web/test/browser.node.ts)验证正式 CLI 和页面同源、SSR、权限隔离及窄屏。初次事件读取从可接续的 event floor 开始并披露更早 gap；被保护的旧 incident/证据仍由原 owner 保留，不因列表边界清除。
+
+原 MonitorService 已由管理 Server Scope 获得/关闭，按既有显式配置运行；旧 daemon 的 collector 接线和 `runtime monitor service`/`getMonitorService` 入口退出。状态改由 `system service get server` 读取，权限与观察内容分别管理。Node 管理服务验证了配置后采集、取消慢读、关闭后零晚写、重启不重复 incident 和竞争实例故障隔离；没有新增第二 writer。通知 worker 也已复用原 outbox 移入管理 Scope，保护及其他旧入口仍待迁移。incident ack/snooze 经新 API/CLI/Web 复用同一事务和作用域回执，旧直写入口退出；有界事件订阅从快照游标接续，共享在途 DB 读取，每批前后重查授权，缺口/撤权不再重连。上述新增路径及 Node/Chrome 证据见 [CLI-05](CLI-05-implementation-follow-through.md#异常处理恢复与订阅接续)。不将此局部 Scope 验证视作原生无人值守和完整 Web 已通过。
+
 ## 实施边界与复用
 
 复用T37原生List读取/纯归属规则、T27/T33安全DTO及现有事件、配置回执。kernel保持纯合同与Effect观察/incident程序；box-runtime增加owner-private Node IO和长期root装配，CLI仅命令投影。不新建npm包、执行ledger、通用事件总线、身份数据库、App补丁或第二supervisor。
 
-未来Web UI不是collector owner；页面只读快照/订阅和调用共用命令。独立`getHostStatus`/`agents ownership`的一次性查询仍保持它们已定义的无持久写语义。不能在GET或普通读取时偷偷启动collector、迁移DB、投递告警或开启远程连接。
+Web UI不是collector owner；页面只读快照/订阅和调用共用命令。独立`getHostStatus`/`agents ownership`的一次性查询仍保持它们已定义的无持久写语义。不能在GET或普通读取时偷偷启动collector、迁移DB、投递告警或开启远程连接。
 
 ## 1. 采集与共享证据
 

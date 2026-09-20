@@ -4,13 +4,13 @@ import { evidenceIdentity, type EvidenceFact } from "./evidence-contract.ts";
 import { projectContinuityEvent } from "./continuity-contract.ts";
 
 export const INCIDENT_CLASSIFIER_VERSION = "incident-rules-v1";
-export const OBSERVATION_INCIDENT_RULES = ["native_alert", "native_run_failure", "execution_stalled", "source_gap", "continuity_attention"] as const;
+export const OBSERVATION_INCIDENT_RULES = ["host_patch_health", "native_alert", "native_run_failure", "execution_stalled", "source_gap", "continuity_attention"] as const;
 export type ObservationIncidentRule = typeof OBSERVATION_INCIDENT_RULES[number];
 export type IncidentAssessment = {
   classifierVersion: typeof INCIDENT_CLASSIFIER_VERSION;
-  category: FailureCategory | "native_failure" | "suspected_stall" | "observation_gap" | "continuity_impact";
+  category: FailureCategory | "host_compatibility" | "native_failure" | "suspected_stall" | "observation_gap" | "continuity_impact";
   disposition: "notify" | "local_only";
-  reason: "runtime_failure" | "unclassified_failure" | "upstream_only" | "expected_cancellation" | "suspected_stall" | "observation_gap" | "protected_subject_changed";
+  reason: "host_contract" | "runtime_failure" | "unclassified_failure" | "upstream_only" | "expected_cancellation" | "suspected_stall" | "observation_gap" | "protected_subject_changed";
   basis: "derived";
   basisRefs: string[];
   rootCause: "not_proven";
@@ -45,6 +45,7 @@ export function observationIncidentCandidate(value: Record<string, unknown>): In
 /** Reuses the existing failure classifier. Upstream status cannot suppress a
  * separate positively observed local integrity/storage/settlement failure. */
 export function assessIncident(rule: string, facts: readonly EvidenceFact[]): IncidentAssessment {
+  if(rule==="host_patch_health")return {classifierVersion:INCIDENT_CLASSIFIER_VERSION,category:"host_compatibility",disposition:"notify",reason:"host_contract",basis:"derived",rootCause:"not_proven",basisRefs:facts.filter(f=>own(f.value,"name")==="host_patch_health").slice(0,16).map(f=>f.ref)};
   if (rule === "continuity_attention") return { classifierVersion: INCIDENT_CLASSIFIER_VERSION, category: "continuity_impact",
     disposition: "notify", reason: "protected_subject_changed", basis: "derived", rootCause: "not_proven",
     basisRefs: facts.filter(f => own(f.value, "name") === "continuity_observation").slice(0, 16).map(f => f.ref) };

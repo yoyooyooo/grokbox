@@ -10,9 +10,9 @@ maxRunMs仅约束一次启动；完整费用/TTL、结果交付、孤儿和未�
 
 ## 目标与模块
 
-`agents spawn/start`复用受控创建、初始化和activation，不通过用户身份发一条任务消息。真实Box身份在首次推理前配置好持久指令、初始材料、模型、工具/费用边界和结果接收者，再以程序startup事件进入原生Agent loop。
+当前 `bot spawn --input ... --preview/--confirm` 复用受控创建、初始化和 activation，不通过用户身份发一条任务消息。旧 `agents spawn` 入口已退出。真实Box身份在首次推理前配置好持久指令、初始材料、模型、工具/费用边界和结果接收者，再以程序startup事件进入原生Agent loop。
 
-CLI/operation仍由continuity命令及runtime负责；Host适配复用CONT-07 writer/runner，增加有限startup语义而不是第二模型loop。初始化材料、运行指令和启动意图分开，原生系统与权限规则保留。
+CLI 经统一管理 Server 和共享客户端提交，原 CONT 程序与 Host 的 CONT-07 writer/runner 继续负责效果，不增加第二模型 loop。`lifecycle.write` 与 `lifecycle.start` 分别控制生命周期和可能收费的程序启动；私有声明绑定原管理主体，阶段前重新核权。`operation get/resume --domain lifecycle` 只定位并续接原工作流，查询不启动模型；Web `/lifecycles` 仅观察，不创建/启动。初始化材料、运行指令和启动意图分开，原生规则保持独立。[CLI-05](CLI-05-implementation-follow-through.md)维护本次管理迁入的固定测试与未证项。
 
 ## 行为要求
 

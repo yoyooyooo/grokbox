@@ -4,6 +4,12 @@ import { canonicalJson } from "../../hash.ts";
 import { ConfigError, configPathTokens, getConfigValue, isObject, replaceConfigValue, type JsonObject } from "../config/path.ts";
 import { CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA, configSchemaAt, effectiveOps, validateConfig, type UnifiedConfig } from "../config/schema.ts";
 import { changedConfigPaths } from "../config/revision.ts";
+import { botProtection, continuityProtection } from "../continuity/protection.ts";
+
+export type NotificationSettingsChange = {
+  alias: string; agentId: string; routineKey: string; mode: "off" | "actionable-user";
+  installationBudget: number; targetBudget: number;
+};
 
 export type ConfigChange = {
   operationId: string;
@@ -17,6 +23,8 @@ export type ConfigChange = {
   | { kind: "replace"; value: unknown }
   | { kind: "preset"; preset: "user" | "maintainer"; resetOverrides?: boolean }
   | { kind: "keep"; action: "add" | "remove"; agentId: string }
+  | { kind: "notification-settings"; settings: NotificationSettingsChange }
+  | { kind: "protection-settings"; change: { action: "system"; enabled: boolean } | { action: "set"; agentId: string; patch: unknown } | { action: "reset"; agentId: string } }
 );
 export type ConfigCommitReceipt = {
   operationId: string;
@@ -32,10 +40,10 @@ export type ConfigCommitReceipt = {
 function requiresConfirmation(before: UnifiedConfig, next: UnifiedConfig, paths: readonly string[]): boolean {
   // Context policy can enable paid summaries or enlarge their request budget.
   // Require an explicit impact acknowledgement, including parent replacement/unset.
-  if (paths.some(path => path === "/runtime/context" || path.startsWith("/runtime/context/"))) return true;
+  if (paths.some(path => path === "/runtime/context" || path.startsWith("/runtime/context/") || path === "/runtime/continuity" || path.startsWith("/runtime/continuity/"))) return true;
   // Lowering retention can destroy evidence; raising budgets consumes disk.
   // Parent unset/replacement must not bypass the same preview boundary.
-  if (paths.some(path => path === "/storage" || path.startsWith("/storage/"))) return true;
+  if (paths.some(path => path === "/storage" || path.startsWith("/storage/") || path === "/materials" || path.startsWith("/materials/"))) return true;
   if (paths.some((path) => path.startsWith("/daemon/") || /\/(?:agentId|routineKey|allowedIntents|dataPolicy|reportTarget|fallbackTargets|credentialRef|repository)$/.test(path))) return true;
   if (paths.some((path) => /(?:maxAutomaticWakeupsPerDay|criticalReservePerDay)$/.test(path))) return true;
   const left = effectiveOps(before.ops); const right = effectiveOps(next.ops);
@@ -57,7 +65,48 @@ function requiresConfirmation(before: UnifiedConfig, next: UnifiedConfig, paths:
 export function applyConfigChange(current: UnifiedConfig, command: ConfigChange): { document: UnifiedConfig; changedPaths: string[] } {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(command.operationId)) throw new ConfigError("config_invalid", "Invalid configuration operation identity.");
   let candidate: unknown;
-  if (command.kind === "replace") {
+  if (command.kind === "protection-settings") {
+    const c = command.change;
+    if (!command.confirm || !command.expectedRevision || command.scope !== "box" || !isObject(c)) throw new ConfigError("config_invalid","Protection changes require explicit confirmed scope and revision.");
+    const previous = current.runtime?.continuity ?? {}, bots: Record<string,unknown> = { ...(isObject(previous.bots) ? previous.bots : {}) };
+    if (c.action === "system") {
+      if (Object.keys(c).some(k=>!["action","enabled"].includes(k)) || typeof c.enabled !== "boolean") throw new ConfigError("config_invalid","Invalid protection policy.");
+      candidate = { ...current, runtime: { ...current.runtime, continuity: { ...previous, enabled: c.enabled } } };
+    } else {
+      if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(c.agentId) || Object.keys(c).some(k=>!["action","agentId",...(c.action==="set"?["patch"]:[])].includes(k))) throw new ConfigError("config_invalid","Invalid protection target.");
+      if (c.action === "reset") delete bots[c.agentId];
+      else if (c.action === "set" && isObject(c.patch)) {
+        const selected = bots[c.agentId], prior = isObject(selected) ? selected : {};
+        // Preserve other Bot overrides and any omitted handover policy. Only
+        // reset removes an override; it never deletes snapshots or native data.
+        const next = { ...prior, ...c.patch, ...(c.patch.handover === undefined ? {} : { handover: { ...(isObject(prior.handover)?prior.handover:{}), ...(isObject(c.patch.handover)?c.patch.handover:{}) } }) };
+        botProtection(c.patch); botProtection(next); bots[c.agentId] = next;
+      } else throw new ConfigError("config_invalid","Invalid protection change.");
+      candidate = { ...current, runtime: { ...current.runtime, continuity: { ...previous, bots } } };
+    }
+    continuityProtection((candidate as UnifiedConfig).runtime?.continuity);
+  } else if (command.kind === "notification-settings") {
+    const s = command.settings;
+    if (!command.confirm || !command.expectedRevision || command.scope !== "box" || !s
+      || Object.keys(s).some(k => !["alias", "agentId", "routineKey", "mode", "installationBudget", "targetBudget"].includes(k))
+      || !/^[a-z][a-z0-9_-]{0,31}$/.test(s.alias) || !/^[a-z][a-z0-9_-]{0,63}$/.test(s.routineKey)
+      || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(s.agentId)
+      || !["off", "actionable-user"].includes(s.mode)
+      || ![s.installationBudget, s.targetBudget].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 1000)) {
+      throw new ConfigError("config_invalid", "Invalid explicit notification settings.");
+    }
+    const ops = current.ops ?? {}, targets = isObject(ops.targets) ? ops.targets : {};
+    const targetBefore = targets[s.alias];
+    // A narrow domain update, not wholesale ops replacement. Preserve other
+    // targets, monitor/protection policy and routing rules. Configuration is
+    // not a private receiver grant, Routine change or credential request.
+    candidate = { ...current, ops: { ...ops,
+      notifications: { ...(isObject(ops.notifications) ? ops.notifications : {}), mode: s.mode, maxAutomaticWakeupsPerDay: s.installationBudget },
+      routing: { ...(isObject(ops.routing) ? ops.routing : {}), defaultTarget: s.alias },
+      targets: { ...targets, [s.alias]: { ...(isObject(targetBefore) ? targetBefore : {}),
+        enabled: true, agentId: s.agentId, routineKey: s.routineKey, maxAutomaticWakeupsPerDay: s.targetBudget } },
+    } };
+  } else if (command.kind === "replace") {
     if (!command.confirm || !command.expectedRevision) throw new ConfigError("config_conflict", "Document replacement requires confirmation and expected revision.");
     if (command.scope === "target") {
       if (!isObject(command.value) || Object.hasOwn(command.value, "client")) throw new ConfigError("config_scope_unavailable", "Target apply cannot replace client profiles.");

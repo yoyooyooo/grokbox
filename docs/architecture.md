@@ -4,8 +4,15 @@
 
 ## 1. 主链与组合根
 
+当前处于破坏式重建，已接通模型管理与有限 Bot 查询；其他领域、Web 和安装收束仍见 [CLI-05](tickets/CLI-05-implementation-follow-through.md)。以下两段按尚未迁移的能力区分，不是为同一操作保留兼容入口。
+
 ```text
-CLI registry / parser / input
+Management CLI
+  → shared client + pinned installation + credential reference
+  → authenticated Effect Server
+  → shared domain program / protected writer / native adapter
+
+Unmigrated CLI commands
   → application use case
   → resolved Profile + required capability
   → local Gateway | direct Gateway | daemon RPC
@@ -44,11 +51,13 @@ Sandbox 和 quota 使用各自的显式外部能力，不借 daemon/Gateway 凭�
 
 ## 3. Repository Shape
 
-一个发布包、三个 unpublished workspaces。精确 package 名、exports、依赖、Node engines 和 Bun pin 由各 `package.json` 与 [根配置](../package.json) / [锁文件](../bun.lock) 拥有，不在架构副本中手写版本。
+一个发布包，内部 workspace 按实际边界拆分。精确 package 名、exports、依赖、Node engines 和 Bun pin 由各 `package.json` 与 [根配置](../package.json) / [锁文件](../bun.lock) 拥有，不在架构副本中手写版本。
 
 ```text
 bin/                         shared Node entry for grokbox / gbox
-packages/cli/                registry, application, connections, daemon, adapters
+packages/cli/                registry, parser, management consumer, remaining legacy adapters
+packages/client/             browser-safe contracts, bounded transport, scoped request lookup
+packages/server/             authenticated API, Effect-owned lifetime, application dispatch
 packages/runtime-kernel/     pure contracts, policies, command/inference programs
 packages/box-runtime/        Host leaf, Node IO, backends, runtime composition roots
 skills/                      packaged operator topics and generated command reference
@@ -58,7 +67,7 @@ scripts/                     build and explicit proof runners
 
 发布清单不是空 dependencies：原生 SQLite/LevelDB 依赖由 package/build/安装测试一起保护。Node 生产路径不导入 `bun:*` 或 Bun globals；Bun 可运行开发脚本和测试。`dist` 是构建输出，不是源码权威。
 
-依赖方向：CLI 调公共 kernel/Box 门面；kernel 不导入 CLI、Host 私有模块或 provider SDK；Box adapters 实现 ports；Host/preload 仅有纯合同、同步必要 bootstrap 和有界原生/IPC leaf，不导入 Effect、SDK、SQLite 或 CLI。纯规则无需为对称性创建 Service。未来 UI 调共用命令，不另写配置或运行时。
+依赖方向：已迁移的 CLI 业务调 shared client，Server 组合公共 kernel/Box 门面；CLI 只有明确的本机前台服务入口直接组合 Server。kernel 不导入 CLI、Host 私有模块或 provider SDK；Box adapters 实现 ports；Host/preload 仅有纯合同、同步必要 bootstrap 和有界原生/IPC leaf，不导入 Effect、SDK、SQLite 或 CLI。纯规则无需为对称性创建 Service。Web 将使用同一客户端与 Server 领域程序，不执行 CLI 子进程，也不另写模型或配置规则。
 
 ## 4. Registry、输入与输出
 
@@ -76,15 +85,17 @@ registry 每个 leaf 统一定义 path、usage、target role/kind、required cap
 
 ## 6. 连接和授权
 
-Profile resolver 输出不可变连接描述；应用只依赖能力形状，不认识网络发现 DTO。daemon transport、direct/local Gateway、Sandbox、quota 和桌面适配各保留有限接口。显式 remote 失败不改走更高权限的 local/SSH 路径。
+新管理连接从 canonical client 描述取得 endpoint、credential reference 和安装绑定；缺省只能是本机，不消费共享 current Profile。连接失败不回退本地 writer、Gateway 或 SSH。未迁移的 Profile resolver 仍输出其连接描述；其 daemon/direct Gateway、Sandbox、quota 和桌面适配待按实际能力迁入或退出。
 
 secret reference 在有权消费它的 adapter 解封；连接 ref 的平台形式与 provider ref 的窄形式不同。file 读取检查 no-follow、regular file、owner、mode、大小与编码。App descriptor 仅是 Gateway-only 兼容来源；不能从其成功推出 Sandbox/quota 权限。独立共享 daemon credential 可轮换，网络身份不代替 capability auth。
 
 已有 init/SSH/peer/endpoint bootstrap 实现在 CLI 部署层，按当前源码保留；只检查已配置前提或操作明确拥有的目标，不修改无关映射/策略。它不进入 Box 模型执行链。后续网络边界变更需要与源实现同步，不因文档收敛假称旧适配已删除。
 
-## 7. Daemon 与 Gateway
+## 7. Server 与原生入口
 
-`daemon serve` 组合 listener、auth/policy、Gateway discovery、host adapters、Jobs、有限流和 shutdown。Unix socket 权限与认证 loopback HTTP 分开；禁止默认公网 listener。常驻和自启动由实际部署 owner/资格决定，不能依据某台开发机的进程列表写成长期架构。
+[管理 Server](../packages/server/src/server.ts)拥有 Effect Scope、loopback listener、每请求授权、安装绑定和并发/字节/时间边界。调用者断开不取消已准入模型写入；关闭等待不可中断的发布检查点，普通观察可中断。已安装入口只读现有 canonical 配置与安装 verifier，不隐式初始化、迁移或采用 Host。每次请求重读 verifier，轮换不改变原回执主体，安装权威替换则拒绝。它尚未承载全部后台 worker，也未完成 modeld 实执行的独立寿命资格。
+
+剩余 `daemon serve` 组合 listener、auth/policy、Gateway discovery、host adapters、Jobs、有限流和 shutdown。Unix socket 权限与认证 loopback HTTP 分开；禁止默认公网 listener。常驻和自启动由实际部署 owner/资格决定，不能依据某台开发机的进程列表写成长期架构。
 
 Gateway discovery 在启动与明确的认证/代际失效后重读；wildcard bind 只拨 loopback，非本机发现须由显式连接授权。有限 method allowlist 和 typed projection 在 adapter 边界执行，unknown management write 不重放。完整 profile 更新按原生语义合并遗漏字段，但不回填 harness。收到对象 ID 后投影失败必须保留该身份。
 

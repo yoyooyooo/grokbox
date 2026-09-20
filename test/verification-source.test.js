@@ -2,7 +2,16 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync, symlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { captureVerificationSource, withVerificationSource } from "../scripts/verification-source.mjs";
+import { captureVerificationSource, withVerificationSource, VERIFICATION_SOURCE_PATHS } from "../scripts/verification-source.mjs";
+
+test("source input roots cover apps and shipped CLI assets without generated output", () => {
+  for (const path of ["apps", "packages", "scripts", "test", "bin", "skills", "package.json", "bun.lock"]) {
+    expect(VERIFICATION_SOURCE_PATHS).toContain(path);
+  }
+  expect(VERIFICATION_SOURCE_PATHS).not.toContain("dist");
+  expect(VERIFICATION_SOURCE_PATHS).not.toContain("node_modules");
+  expect(new Set(VERIFICATION_SOURCE_PATHS).size).toBe(VERIFICATION_SOURCE_PATHS.length);
+});
 
 test("verification input hash detects content, added files and deletions while ignoring generated files", () => {
   const root = mkdtempSync(join(tmpdir(), "gbox-source-proof-"));

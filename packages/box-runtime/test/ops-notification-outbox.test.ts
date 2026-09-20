@@ -86,6 +86,7 @@ for (const phase of ["reserved", "attempting", "unknown"] as const) test(`expire
     expect(reservation.state).toBe("reserved");
     if (reservation.state !== "reserved") throw Error("fixture_not_reserved");
     const { frozen } = reservation;
+    if (frozen.incidentId === null) throw Error("fixture_requires_incident_notification");
     if (phase !== "reserved") expect(await f.store.beginNotification({ workId, attemptId: frozen.attemptId,
       envelopeDigest: frozen.envelopeDigest, bindingDigest: frozen.bindingDigest, nowMs: f.now() })).toMatchObject({ dispatch: true });
     if (phase === "unknown") await f.store.settleNotification({ workId, attemptId: frozen.attemptId,

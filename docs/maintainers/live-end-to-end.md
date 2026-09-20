@@ -1,213 +1,173 @@
-# Live E2E 执行手册：固定候选到可发布声明
+# Live E2E 执行手册：重建、集中验收与用户采用
 
-本文件只拥有**执行方法、取证格式和窗口模板**。当前候选结果、阻断、范围选择与并行worktree追加统一在[唯一LIVE清单](../tickets/LIVE-integration-validation.md)，不要在这里打第二套通过/待办勾。代码/离线/review仍归来源票；正式发布另遵守[release](release.md)。
+本文件拥有执行方法和取证规则；接受目标来自 [Agent-first Spec](../roadmap/agent-first-cli/spec.md)，当前场景/结果只在 [LIVE](../tickets/LIVE-integration-validation.md)，代码/离线/审查归来源票。旧 v2 窗口是历史，不要求先跑完旧 E2E 或持续维持旧开发版可用。正式发布另遵守 [release](release.md)。
 
-## 1. 不是一条“跑全量”命令
+## 1. 选择验证层次，不把施工当发布
 
-先沿LIVE的W0–W7挑选本轮已实现、获授权的旅程。下面命令是**逐项操作示例**，不是可无确认粘贴运行的脚本；`<...>`必须替换为现场回执里的准确ID。必要参数以固定候选安装包的`--help`为准。不要调用尚未实现的`verify --live-all`、通用Routine invoke或模板自动安装器。
+| 工作状态 | 验证方式 | 不作的承诺 |
+| --- | --- | --- |
+| 重建中的局部能力 | 按性质运行合同、真实存储/进程、浏览器或明确授权原生探针；及早验证高风险来源与宿主 | 不要求每个提交整站可用、全仓全绿或跑完整模型矩阵 |
+| 完整功能候选 | 收口适用全仓、类型、构建、安装制品、隐私与独立审查，冻结可追溯输入 | 不从源码绿推断实际加载或用户接受 |
+| 集中 E2E | 按 LIVE E0–E5 对同一候选做真实 CLI/API、原生、浏览器、恢复和有界持续运行 | 不拼不同版本的通过，不把缺实现改成可选 |
+| 用户与视觉验收 | 用户集中走核心故事后决定吃狗粮；视觉定稿后完成 E6 的相应体验验证 | 不让用户长期使用替工程补证据，不自动发布 |
 
-### 1.1 使用验证杠杆
+旧测试按其性质复用、迁移或随退役合同退出，不为了保持旧入口而增加兼容壳。局部缺口应有 owner 和闭合条件；整合候选必须处理适用失败，不能用“施工允许坏”豁免最终质量。安全、数据不丢和未知不重放始终有效。
 
-需要 Agent 执行这套流程时，先加载仓库维护者的 [`grokbox-live-validation` Skill](../../.agents/skills/grokbox-live-validation/SKILL.md)。它只负责路由和边界，不拥有当前结果。可复用控制器提供四个有限入口：
+### 验证工具
 
 ```bash
 bun run verify:live-window -- candidate --json
-bun run verify:live-window -- plan --scenario <LIVE-ID> --json
-bun run verify:live-window -- probe --probe doctor --probe roster --probe models --probe runtime --json
+bun run verify:live-window -- plan --scenario LIVE-CLI-API --json
 bun run verify:live-window -- receipt --file <redacted-receipt.json> --json
 ```
 
-`candidate` 固定源码、制品和工具链身份，并运行 LIVE 文档完整性回归；`plan` 只从本索引取一个或多个稳定场景；`probe` 只调用显式列出的只读 CLI 入口并脱敏输出；`receipt` 检查窗口回执的场景、候选 SHA、证据锚点和清理状态。任何入口都不发送提示、不改变模型、不启用 Routine、不重启 Host/modeld，也不代替场景 oracle。`--allow-dirty` 只允许生成规划信息，不能作为实际候选放行。
+`candidate` 只检查源码身份、输入稳定性和清单结构，不能单独放行原生操作。`--allow-dirty` 只产生规划信息；正式候选必须固定实际制品。`plan` 不执行场景，已退役场景不再生成执行计划；`receipt` 的结构合格不签用户或产品验收。
 
-区分依赖真实性：静态/schema测试、fake原生端、loopback真实HTTP、所选原生函数、真实Host/App/Provider分别记录。源码测试绿不等于当前Host已加载；API成功不等于用户看到；人工合成journal只能证明后半链，不能签“原生故障已被发现”。
+`probe` 只运行当前 registry 中显式允许的只读命令，可用 `--bin <固定制品入口>` 指定实际 CLI；默认入口的可达/成功不证明它就是目标候选。当前旧实现的只读发现例子：
+
+```bash
+grokbox skills list --json
+```
+
+这是施工盘点，不是新 CLI 合同。CLI-04 切换时必须同批迁移示例、probes、Skill、包和命令覆盖；不先填入尚未实现的新命令。执行全链路时加载 [maintainer Skill](../../.agents/skills/grokbox-live-validation/SKILL.md)。
 
 <a id="window-record"></a>
-## 2. 窗口记录、许可和停止规则
+## 2. 候选、目标、授权与停止规则
 
-每个实际窗口写一份`docs/reports/<日期>-live-<主题>.md`，只放安全摘要；原始数据留私有现场。将报告锚点回填LIVE对应oracle。窗口开始/结束使用ISO8601和时区，例如`2026-09-19T...+08:00`，不要只写“刚才”。
+集中验收前登记一次可追溯候选，不固定分支名字。独立局部原生探针也要固定其输入和目标，但无需先完成整个产品。一个实际窗口一份 `docs/reports/<日期>-live-<主题>.md`，只放脱敏摘要；原始证据留在受控私有位置。
 
 ```text
-windowId / planned-or-running / operator / startedAt / endedAt
-selected LIVE IDs + gate + excludes + reason
-source commits -> integrated v2 SHA -> actual runtime/artifact hashes
-Node/Bun/lock/package version/tarball integrity
-Host/App/native worker/profile/CLI/modeld/daemon actual loaded identity
-config/models/wire/policy revisions; old runnable artifacts and recovery plan
-object roles and exact private receipt refs; no historical ID guessing
-provider/model/effort/API family/credential reference digest, never secret value
-new nonce/TURN/STEP/operation/work/attempt mappings
-allowed mutation/restart/tool paths/cleanup scope; planned and consumed budgets
+windowId / operator / startedAt / endedAt
+selected LIVE IDs, acceptance stage, explicit exclusions and reasons
+source commits/content digest -> built artifacts -> actual loaded identities
+CLI/Server/Web/modeld/Host adapter and native versions, locks/toolchain
+configuration/policy revisions, installation/account/source scopes
+exact test object roles and private receipt references
+allowed actions, native changes, request/cost/time budgets, cleanup scope
+nonce/request/operation/submission/run/STEP/work/attempt correlations
 per oracle: action -> observation -> independent check -> result -> notProven
-failures and first wrong owner; effect ambiguity; cleanup/recovery receipts
+first failure, unresolved effects, safe stop/recovery and retained resources
 ```
 
-**本轮授权**以2026-09-19用户明确提出的新测试Bot、三模型两档、compact、Webhook和核心E2E为依据，结合已授权的协调Host/modeld切换。不要让清单本身变成授权，也不要把已给的权限每一步重新询问。维护者开始各窗口前登记资源与上限；超额、改变高影响对象或发布行为另行决定。
+沿用仍有效的明确授权，不逐动作重复询问；但旧报告、本清单或“允许施工不可用”本身不授权现役切换、真实资料改写、费用、关系迁移、平台 Reset 或公开发布。执行前核对本次目标与原许可范围，扩大时再对齐。不得把全局 shim 或活动服务指向施工 worktree。
 
-**建议初始预算，不是用户已经消耗或产品硬限额**：本轮最多5个自有测试Bot（主长会话/控制/接收者/空白状态目标/选定的官方duplicate目标），专用测试群1个；最多48次顶层测试任务（包含正常输入与Webhook，不含未知下的自动重试），其中6次以内Webhook、12次以内摘要维护。记录实际Provider调用和原生多步推理，顶层任务数不等于HTTP次数或token费用。正式发请求前按已能支持的max output/时间预算设限；无法机器硬限时记录not-enforced并在观察点停止，不以“自由使用”开启无上限循环。
+对象和预算按新旅程确定，不机械沿用旧窗口的五 Bot/48 任务上限。至少区分长会话主 Bot、原生/跟随/指定关系对照、通知接收者与授权的材料/交接对象；优先安全复用已明确角色，不为每个断言创建新对象。顶层输入数不等于 Provider HTTP 次数、摘要次数或费用，分别计量并设限；无法硬限的部分披露并在观察点停止。
 
-**立即停止受影响lane**：身份/加载不匹配、涉及非测试对象、出现重复模型/工具副作用、未知写结果、费用上限、凭据泄露、数据不完整、无法保存退路。先保存首个错误边界与时间，之后只做已有授权的读回/对账。不要换nonce重发旧输入、切端点伪装通过、删账本/改Server ownership/手工补attestation；不可绕过工具安全拒绝。其他不依赖此故障的只读检查仍可继续。
+**停止受影响的变更路径**：身份/加载不符、影响非目标资料、重复推理/工具、关键写结果未知、预算耗尽、秘密泄露或无法保全数据。先保留首个失败和原身份，再只做已授权的读回/对账；独立检查可以继续。不能换 nonce 重发旧意图、切 Provider 掩盖失败、清账本或绕过工具拒绝。
 
-## 3. W0/W1：先证明是同一套产品
+恢复目标可以是安全停用、修复后重装或产品定义的官方退出，不要求回到旧开发版继续服务。已发生效果不可回滚；重新接入前必须识别未结/unknown 与旧 writer，不能因为旧内部库不承诺导入就忘掉真实外部效果。
 
-- [ ] **源码与制品**：固定干净`feat/box-runtime-v2`和来源映射，完整测试文件清单无漏组；按来源要求完成review。文档-only提交不自动改变运行候选，但新构建若内嵌source摘要变化须说明。保留旧可执行包而非只有旧Git SHA。
-- [ ] **安装包**：隔离前缀安装实际tarball，用Node声明最低版本和目标Box版本执行CLI、native SQLite/LevelDB及Skill。`grokbox`与`gbox`保持同义；离开源码目录仍可用，不依赖Bun/开发机绝对路径。其他已声明平台另跑其适用子集，不突然把Linux-only能力列为macOS门。
-- [ ] **现役快照与退路**：确认当前shim指向、Host/profile/worker、modeld/daemon、根路径/alias和现役schema。备份必须可读且绑定本窗口；不把老PID或历史“active0”当屏障。未知业务操作不会因新部署消失。
-- [ ] **协调采用**：只通过既有controller和明确迁移入口；停止相关writer后按精确计划迁移config3→4，models2无须重复迁移；匹配CLI/Host/modeld/daemon共同切入。查看每个实际消费者，不从CLI↔modeld wire一致推断Host↔modeld匹配。
-- [ ] **基础使用**：init幂等、Profile/local/daemon/现有remote、doctor/能力、配置读写/验证/预览/revision冲突、版本与帮助输出；确认只读操作不暗中创建数据库、服务、凭据或发送消息。
+## 3. E0：首次安装与共同入口
 
-这些操作不改变发布分支/tag/npm dist-tag。普通`on/off`与Host切换是不同能力；`host status/realign/logs`当前为保留入口，要验其正确指引而不是虚构实现。独立存储状态可以在配置坏时读取，不应为了取证先修好现场。
+- 固定完整安装制品，覆盖 CLI、Server、Web、modeld、Host 适配和声明依赖；离开源码目录仍能运行，不能用 dev server 或分支名代替字节身份。
+- 及早确认目标 Box 的真实服务宿主。旧 systemd 适配和环境报告是来源，不证明当前环境；确无支持宿主是具体实现/环境阻断，不能临时 nohup 或擅改官方 supervisor。
+- 接入已有原生 Bot/Memory/Project/文件而不重置身份；必要模型/连接配置按需一次性导入。索引重建披露历史起点，不建设通用旧库迁移/旧 schema 降级。
+- 核对 CLI/Server/modeld/Host 实际消费者、权限和相容版本；不相容拒新执行，旧 writer 退出，未知操作保留定位路径。
+- 陌生 Agent 从按需发现到 identity/capability、resolve/get；写用稳定 ref，self 缺证、名称歧义、错安装和版本不符均有明确结果。
+- 真实 CLI 与浏览器共同修改一个 Bot：同一 writer、并发 revision、严格输入、计划/授权、重复点击、回执丢失与 GET 零业务副作用。Web 不执行 CLI，SSR 不成为第二业务服务。
+
+生命周期及外部恢复还要覆盖 R05：管理服务仍不可达时，凭提交前保存的 owner/target/request 信息找回原回执，不能等恢复成功后才具有查询能力。
 
 <a id="model-matrix"></a>
-## 4. W2：一只Bot跑完三模型、六档与compact
+## 4. E1：模型、上下文与官方往返
 
-### 建立可重复、不会靠猜测通过的样本
+三模型两档仍是已接受的集中验收目标，不是日常施工的每次前置。执行前确认实际资格、协议、配置和费用，不能把旧许可误写成当前可用性保证。需要改变目标或接受缺口时单独对齐。
 
-用`agents create --name <窗口名> --harness box --defer-start --nonce <新UUID>`创建主测试Bot。保存精确ID，查询`agents ownership`等待原生确认Box，不能只凭创建时请求的harness。控制Bot不参与任何assignment修改，用来检测串扰。`--defer-start`不保证阻断外来输入，CONT初始化需要其自己的准备屏障。
+| LIVE ID | 原指定目标 | effort |
+| --- | --- | --- |
+| LIVE-MODEL-SOL-HIGH | sub2api-codex/gpt-6-sol | high |
+| LIVE-MODEL-SOL-XHIGH | sub2api-codex/gpt-6-sol | xhigh |
+| LIVE-MODEL-GROK-HIGH | sub2api-xai/grok-4.6 | high |
+| LIVE-MODEL-GROK-XHIGH | sub2api-xai/grok-4.6 | xhigh |
+| LIVE-MODEL-DEEPSEEK-HIGH | sub2api-deepseek/deepseek-v4.1-flash | high |
+| LIVE-MODEL-DEEPSEEK-XHIGH | sub2api-deepseek/deepseek-v4.1-flash | xhigh |
 
-主Bot建立短小、合成的基准材料：窗口唯一标记、两项跨语言事实、一个需保留的文件路径别名、一次已完成工具回执。Memory通过实际原生能力只写合成事实；记忆/历史/文件三种观察要分开，不能让模型重复同一句话就当三种都持久。不要把用户真实业务文本塞进兼容性用例。
+同一主 Bot 保持官方→六格→官方→受管的长会话旅程，不在每次换模型时换空 Bot 或清历史。使用短小合成材料：唯一标记、跨语言事实、文件引用和已完成工具回执；Memory、展示历史、文件及真实上下文分别检查。
 
-同一默认会话顺序：官方基线 → SOL high → SOL xhigh → Grok high → Grok xhigh → DeepSeek high → DeepSeek xhigh → 官方 → SOL high。每次切换检查控制Bot/main/default/catalog不变，不能为了过测清空历史或创建新的空会话。
+每格至少：新输入和相关历史→一次安全工具副作用及独立读回→requested/captured/emitted 的实际 effort 链→真正 compact 的 operation/root/checkpoint→新输入采用并继续。Provider 没有可信实际档位回报时 reported 保持 not-observed；no-op 不签 compact 成功，模型复述事实不代原生持久读回。
 
-### 六个模型格与证据结构
+三种模型关系另做对照：原生不隐式 opt-in，跟随者随默认变化，显式指定即使等于默认也不变成跟随。更新被指定模型自身配置只影响后续轮次，在途保留捕获；在用引用拒删/默认拒清空，覆盖并发换绑和 CLI/Web 冲突。
 
-| LIVE ID | Provider/model（本轮用户提供） | effort | 必须单独留证 |
-|---|---|---|---|
-| LIVE-MODEL-SOL-HIGH | `sub2api-codex/gpt-5.6-sol` | `high` | chat/tool/emitted/compact/post-compact |
-| LIVE-MODEL-SOL-XHIGH | `sub2api-codex/gpt-5.6-sol` | `xhigh` | 同通道高档，不借high结果 |
-| LIVE-MODEL-GROK-HIGH | `sub2api-xai/grok-4.6` | `high` | 跨Provider工具/摘要历史 |
-| LIVE-MODEL-GROK-XHIGH | `sub2api-xai/grok-4.6` | `xhigh` | 最终请求实际映射 |
-| LIVE-MODEL-DEEPSEEK-HIGH | `sub2api-deepseek/deepseek-v4.1-flash` | `high` | 工具契约、终态与中文/Unicode |
-| LIVE-MODEL-DEEPSEEK-XHIGH | `sub2api-deepseek/deepseek-v4.1-flash` | `xhigh` | 不静默降档或改端点 |
+手动 compact、主动阈值和 confirmed-overflow 分别验。至少一个真实 compact 后经正式 modeld/必要 Host 重启，由新消费者读取 checkpoint 再回官方/受管。拒绝/失败/旧 unknown 与后续新输入分开，不靠重发旧失败任务或另一 Provider 的绿覆盖。审批跨时间窗与撤权用真实原生屏障，不用 sleep 替代。
 
-这是允许测试的目标，不代表当前可用或Provider已保证执行这些档位。记录实际API family/协议与安全凭据引用；相同model名但不同endpoint、adapter或配置视为不同覆盖。不要公开endpoint中的token或秘密query参数。
+## 5. E2：材料、事件与两个界面
 
-每格执行以下动作：
+原版 App 的输入、Working/typing/队列、工具审批、增量、终结与错误必须有同一原生身份的实际观察；后台回执和自有 Web 不签原版 App。只用授权测试群/目标，不形成无限 Bot 对话。
 
-- [ ] **选择与对照**：`models use <provider/model> --for <agent-id> --effort <high或xhigh>`，随后`models show --for <agent-id>`。保存选择revision和控制Bot对照；不要误用`--agent`代`--for`。
-- [ ] **新回合**：用新nonce发送包含合成标记的任务，检查中文/英文、稳定结构化结果、上一段历史。示例入口是`send <agent-id> --expect-kind agent --nonce <uuid> --text <合成任务>`，不是复用旧失败气泡。
-- [ ] **实际工具**：要求只在批准测试目录执行一次唯一写入，再独立读回字节或hash；读写工具结果必须出现在原生会话，而不是只看到模型提出tool call。必要时后续工具输入验证上一输出，不把工具参数原文公开到报告。
-- [ ] **effort链**：分别对照配置requested、该TURN captured、SDK/adapter编码和最终请求emitted；记录unsupported/映射而非补写默认。Provider若没有回报实际内部档位，reported=`not-observed`；不能凭token、速度、标题或回答自称推断。缺少最终wire安全见证时该oracle保持blocked，不抓全量敏感HTTP。
-- [ ] **真compact**：先`agents context <agent-id>`读取已加载预算/状态；只在支持的安全点，以新operation ID运行`agents compact <agent-id> --operation-id <uuid> --confirm`。核对摘要请求、旧/新root、原生checkpoint、操作回读和一次提交。内容不足时no-op是有效防误触结果，但不是“该格compact成功”，可在预算内追加少量有意义合成历史再试。
-- [ ] **压缩后继续**：全新nonce要求读取基准事实、上次工具回执和文件；独立检查上下文确实采用新root。结束前查看`history outcome`、原生history与App；配置保存、已发送一条回复、execution completed和实际持久提交分别留证。
+材料从授权来源检索到原位置，再显式读正文和按能力修改。使用合成数据独立核对原内容、membership、写结果及索引追赶；覆盖缺源/同步延迟、监听漏报、索引重建、版本冲突和外部 writer 限制。不把无结果写成全局不存在，不通过 file 绕过领域权限。
 
-下面是单格的**交互参考，不循环自动运行**：
+快照→cursor 续流覆盖重复/乱序/断线/旧代/保留窗口/慢消费者。原生无 replay 时校准当前状态并报告 gap，不能补造历史；Gateway 后台观察连接对原生焦点的副作用须按版本验证，不能只因 SSE 可读就签持续观察。
 
-```bash
-grokbox models use sub2api-codex/gpt-5.6-sol --for <agent-id> --effort high
-grokbox models show --for <agent-id>
-grokbox send <agent-id> --expect-kind agent --nonce <new-uuid> --text <bounded-synthetic-task>
-grokbox history outcome <agent-id> --nonce <same-uuid> --runtime --wait-for execution --wait-ms 120000 --json
-grokbox agents context <agent-id> --json
-grokbox agents compact <agent-id> --operation-id <new-operation-uuid> --confirm --json
-grokbox agents context <agent-id> --operation-id <same-operation-uuid> --json
-```
+朴素 Web 也要验证真实 SSR/API、会话隔离、同源/外部 HTTPS、Host/Origin/CSRF、代理信任、URL 恢复、刷新/返回、切对象、草稿/冲突、重复提交及未知恢复。请求、缓存、草稿、订阅各有 owner；无秘密序列化、无每组件 collector，关页面不取消后台操作。API/reducer 通过不代浏览器。
 
-### 必须有的交叉反例
-
-在有真实可观察的在途TURN时修改同通道effort，确认旧TURN保留原captured、下一TURN采用新值；不要靠长sleep冒充原生审批。省略effort或用default清覆盖、reset回官方也要验证下一TURN和标题/历史，没有残留上一Provider的reasoning字段。
-
-手动compact、主动阈值维护、已确认overflow恢复是三种触发，不互相替代。主动路径优先用安全下调的已支持context策略或有意义的有限历史；恢复路径优先利用自然出现的错误，不能向生产端点无界填pad。不可安全触发的场景标ENV/ CODE缺口，保留已经完成的手动路径。
-
-至少一个成功compact后通过正式modeld/Host换代，用新进程读取原生checkpoint、继续工具和历史，再回官方/回受管。读到相同答案但没有checkpoint消费者证据不够。旧unknown维护保留原operation，对新输入另用nonce；只在原协议允许时进行对账，不重复副作用。
-
-## 5. W3：用户真正看见和使用的系统
-
-原版App旅程必须由实际App输入、视图与同session/run对应。截取经过脱敏的关键画面或结构化App观察；后台投递不能代替Working/typing/发送队列/工具审批/标题展示。至少覆盖开始、增量、完成、错误、取消、断连重连，区分父回合结束与原生监听子任务结束。
-
-群聊只使用本轮测试群/Bot，先单收件人或明确点名，避免多Bot无限对话。验证members增删set、线程和group-progress，不把原生SendToAgent的`target_id`写成不存在的接口。不同target解析、歧义名称与写权限拒绝都要有观察。
-
-fs/Jobs用独立named root及真实Job句柄：文件大小/hash、越界拒绝、受管长任务、非零退出、取消/超时和日志截断。不得调用自造后台loop或按进程名批量kill。历史/Memory/export只包含测试内容；可见导出不等于允许公开。
-
-真实503/限流可以证明错误分类与收束，不能证明成功响应或compact成功；另一个Provider的成功不能覆盖失败格。坏stream、伪凭据、硬崩和磁盘压力先在隔离实际服务/存储副本验证；业务环境不能通过破坏配置、删账本或断整机网络制造负例。
+文件与 Job 验受控 named root、字节/hash、越界拒绝、真实进程身份、日志截断、取消/超时和调用者退出。故障注入只影响本次拥有的资源，不断整机网络、不填满业务磁盘、不修改私有账本制造成功。
 
 <a id="webhook-journey"></a>
-## 6. W4：从disabled定义到自动新告警
+## 6. E3：默认保护、交接与通知
 
-选一个本轮接收Bot与一个默认alias，使用用户已授权的Provider。它不必是主长会话Bot，避免接收通知混入六格上下文。接收者模型/effort覆盖与聊天矩阵分开：本轮计划三Provider至少high，并选一个xhigh；剩余未试档位不能声称已验证Webhook。
+确认 Box-owned 后默认观察和保全，可逐 Bot 调整/关闭。来源失联/stale 不等于官方回收；确认丢失后按有效策略由后台推进，不要求 Agent 循环 advance。材料/新身份/激活/可工作/关系迁移/旧对象可退役各有证据；可靠 checkpoint 优先，降级也必须有原生能力和披露。Bot 可辅助理解，不能代签执行。
 
-- [ ] **定义**：`ops targets blueprint <alias>`取得禁用提醒定义，经受限文件输入到`agents routines apply`；保存provision operation/outcome、精确native ID。list/show确认disabled和prompt policy；原生创建省略enabled的默认行为不能替代grokbox明确disabled。
-- [ ] **配对**：bind preview不领key；确认后绑定exact revision、安装scope与受管ID，key只在私有capsule内。verify来自同帧Host能力/下一原生automation选模；错误scope/模型/代际不得续鲜。修改Provider/effort后重新核对，不把普通聊天配置当自动任务实际选择。
-- [ ] **启用与单条发送**：单独确认Routine enable；使用一条已固定、带清晰测试标识且允许外发的work。`ops notifications send`核对binding/model revision，只发程序生成的8KiB以内最小body。不要手工向events/SQLite插入伪原生证据；若源故障无法安全触发，该段保持blocked。
-- [ ] **真正接收**：匹配POST、原生run、模型请求、最后提醒内容与精确incident/evidence revision。HTTP200单列；缺少可信report/用户视图时`not-observed`，不要把模型自报身份或成功当控制权威。
-- [ ] **激活未来通知**：只有用户实际看到测试提醒并明确授权时，才填写activate的`--confirm-receiver`；不能由Agent根据200代签。activation只保存未来work权限，不启动collector、不启用Routine、不立刻发送、不补历史积压。
-- [ ] **自动链**：已运行daemon持有sender，collector在已记录的scope与root生产一条新的受控异常；验证无需另一条send命令即可收到提醒。旧work、同work重入、off/未配对/预算耗尽不POST，不用真实重复Webhook碰撞生产端点测幂等。
-- [ ] **撤销与换代**：disable/unbind阻止尚未发的任务；在途请求结果单列。Host重启会使已有资格失效时应保守停发并显示原因，重新资格流程单独留证。不要为求自动恢复而绕过代际检查。
+新旧群/DM/Routine 等关系只在已接受、具备资格且获本窗口授权的范围验证。unknown 不重复，独立步骤可继续；旧 ref 不重定向。缺覆盖、入站 gap、资源依赖或可靠退役能力时保留旧对象，同时把未兑现的必需能力留在来源票，不把安全拒绝当整链交付。
 
-已实现命令参考：
+通知必须分别验证：
 
-```bash
-grokbox ops targets blueprint <alias> --json
-grokbox agents routines apply <agent-id> --help
-grokbox ops targets bind <alias> --help
-grokbox ops targets verify <alias> --json
-grokbox agents routines enable <agent-id> <routine-id> --expect-revision <revision> --confirm --json
-grokbox ops notifications send <work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --confirm --json
-grokbox ops targets activate <alias> --from-work <accepted-work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --operation-id <id> --confirm-receiver --confirm --json
-grokbox ops notifications worker --json
-grokbox ops notifications show <work-id> --json
-```
+- 健康首装完成接收者/Routine/绑定与必要授权后，可以不测试而显式启用；verify 不发送，enable 不暗中测试。
+- 独立可选 test 向已配置目标发送固定测试内容，产生 test work/attempt，不伪造 incident；测试失败/unknown 与启用状态分开。
+- 原生 Routine、配对和真实提醒分别读回；HTTP accepted、原生 run、最终提醒和用户实际看见不是同一事实。
+- 启用后真实新管理异常→固定证据→outbox→后台投递→接收提醒，关闭页面/CLI 后仍继续；关闭通知不关闭必要采集/维护。
+- 去重、有限重试、授权前积压、撤销、模型/代际资格改变和 unknown 先对账；不借改接收者重投同一未知 work。
 
-bind/provision是可能创建原生资源的写入，不能在普通状态读取时隐式执行。unknown不换operation/alias/目标重投，保留attempt和实际连接结算证据。停止sender必须等待HTTP与本地写入结算；断网恢复不能自动补全部旧消息。
+验收计划需要证明真实投递，但产品不要求用户先测试成功或人工声明收到才启用。普通提醒结束后不自动诊断/建单；用户明确委托的后续自主工作仍按实际授予能力验证。
 
-**提醒与自主性必须在同一个Bot上分开验**：普通告警只提醒后结束，无自动取证/诊断/Issue询问；之后用户明确要求“排查这个incident/将测试Bot换成指定模型”时，Bot应按权限自主完成常规步骤和结果核对，而不是永远只读。提醒prompt不是工具沙箱，不能仅审文本就签实际行为。
+## 7. E4：成品寿命与持续运行
 
-## 7. W5/W6：持续性与状态，不扩大到未实现功能
+分别验证 CLI/浏览器退出、Web 重启、管理服务重启、modeld 正常替换/崩溃恢复和目标宿主重启。管理服务重启不主动终止已经开始的合法 modeld 执行；新工作仍核实时资格。恢复后一个 owner/writer，原操作可定位，不因新进程重放旧 STEP 或通知。
 
-短链可显式运行受控collector；必须记录实际目标集合、runRoot/durableRoot、来源scope和owner。caller退出后仍运行、重启后接cursor、daemon/collector自启、Host自动重建后的采用各有独立oracle。source慢或不可用不能阻本地journal；source gap与quiet区分，通知失败不递归创建无限通知。
+采集、索引、通知的慢源/失败有独立故障与资源预算，不阻断基本管理和必要本地观察；队列/日志/临时文件/索引/DB 的实际占用有界。先验实际维护周期、受控到期、重启后幂等与数据读回，再安排至少24小时的有界持续观察。记录实际时长/负载/资源与覆盖；计划时长不算完成，也不靠用户提前吃狗粮补测。
 
-存储先观察三个实际维护周期、真实文件段回收和查询结果，再计划至少24小时的扩展窗口；“计划观察24小时”不是执行过。正文TTL可以借合法缩小配置做受控到期，不改系统时钟，不生产填满磁盘。显示主文件、索引、WAL/回滚journal、staging/backup、私有capsule和安全账本的可测范围；计量不等于全部强制配额。源日志过期后已有固定incident revision可读或明确降摘要；读操作不暗续租/清理。
-
-并行已集成的`agents duplicate`单列为可选G3旅程，按[官方duplicate手册](native-agent-duplicate.md)先preview、再固定plan/scope/operation确认。它可能复制仍启用的Routine并改变App当前聊天，第一轮只选本测试源且源测试Routine已禁用；保留原生副作用和独立新ID/归属读回，未知不重试。复制不会完整恢复Memory/会话，不把它写成安静的prepared clone。`agents operations show`只读结果，不暗中重派发。
-
-当前状态只对已实现的手动native-context切片执行：新空白测试目标、原生准备屏障、capture/initialize的持久operation与精确revision，实际activate只解除hold，第一/第二次输入使用本轮授权模型。参考[正式步骤](current-state-control.md)，不在此复制复杂命令。非空reset、完整Memory/历史导入、clone/关系迁移/退役都不是该切片隐含能力。源与目标均属本轮资源；不删除源来“证明脱离”而使退路不可用。
+日常回原生模型、完整退出 Host 集成、重装新版和旧开发版降级是不同事项。前两者按产品合同验证，后者不是本次通用承诺。原生身份/资料、未知副作用及未补丁 Host 的真实可继续性不能因为施工期允许中断而放弃。
 
 <a id="cleanup"></a>
-## 8. W7：清理、回退与最终结论
+## 8. E5/E6：收束、用户验收与最终呈现
 
-- [ ] 先关闭本轮自动发送权限并读取最新binding版本；禁用测试Routine，列出仍在途的原生run、Job与子任务。无终态不删对象，等待预算耗尽写`cleanup_required`。
-- [ ] 已接受消息/工具副作用不可回滚。回旧制品/配置时保存最新outbox、provision、unknown状态，不恢复一个可重新发送的旧数据库镜像。备份回滚防护未实现时只做隔离恢复用例，不签生产恢复安全。
-- [ ] 对本次改动做精确对照恢复；不把整份最初配置盲写回去覆盖用户并行编辑。主Bot/default/其他Bot/catalog/凭据引用单独核对。业务Bot和业务群从未纳入自动清理范围。
-- [ ] 按准确ID删除已终结的测试Routine/Bot/群/Job、释放本轮租约、处理owned临时导出；历史报告引用和必需安全标记保持。解绑只证明本地撤销，不声称远端key已撤销或磁盘安全擦除。
-- [ ] 对照窗口前后的实际运行制品、关键配置与控制Bot，记录留下什么、为什么和谁负责；恢复到哪套制品必须明确，不能只写“已恢复”。
-- [ ] 汇总每个选定LIVE oracle的实际结果、六格差异、费用/HTTP计数、未知/阻断/排除、缺陷归属与复验范围。G0/G1必须满足；若保留默认自动提醒/无人值守承诺，G2也是硬门。要缩小发布声明需维护者明确决定并同步README/Skill，不得事后为了过门偷偷改标准。
+关闭本次自动外发许可，核对测试 Routine/run/Job/租约及未结效果。只处理本次拥有且可安全终结的资源；文件按可恢复回收方式处理，不自动删除原生资料或旧状态。保留 unknown 和必要证据，不用旧 DB 镜像复活已执行效果。
 
-本次只输出候选资格结论与下一批最小修复，不自动push、打tag、发布npm、改变市场可见性或创建Issue。[npm发布程序](release.md#prepare-and-publish)仍是独立授权链。
+精确恢复本次改动或记录保留的新状态，保护并行编辑；允许留在新版或安全停用，不要求每次回到旧开发版。清理未知则记录 cleanup_required，不假称结束。
 
-## 9. 可复用的单场景回执
+汇总适用 G0/G1/G2 与所声明 G3：实际候选/依赖/费用、失败、缺口、审查及清理。完整功能资格不能靠缩小承诺求通过。随后由用户集中走核心故事，明确接受或拒绝；Agent 不能替用户签字。通过后才进入日常吃狗粮，不是先长时间用起来再补基本工程证明。
 
-一个实际窗口一份`docs/reports/<日期>-live-<主题>.md`，同日多窗加窗口后缀，不能覆盖已关闭窗口。窗口内每个LIVE-ID一个稳定章节，每个子判据一条证据；模型六格分别记录，不为每个工具调用创建一份报告。下列是模板，不是执行结果。
+视觉定稿后单独验证最终页面、响应式、可访问性、资源和动效，以及受影响功能回归；不重跑无关 Provider 矩阵。功能 E2E 通过不表示视觉已经确认。发布、tag/npm/市场/公开 Issue 仍是单独授权链。
+
+## 9. 固定窗口回执
+
+每窗口一个报告，每个 LIVE-ID 一个稳定章节，不为每个调用制造报告。使用 ISO 时间和时区；报告不含凭据、私有路径、原始转录或 Provider body。
 
 ```markdown
-<a id="live-<feature>-<case>"></a>
-### <LIVE-ID> / <windowId> / <model-cell>
-候选：source -> v2 -> tarball -> 实际loaded；配置/原生版本与时间范围。
-输入：新nonce/operation/work引用，测试对象角色，实际依赖，预算。
-动作：正式产品入口、必要参数类别（无secret）、安全注入范围。
+### LIVE-ID / windowId
+候选：source/content -> built artifacts -> actual loaded；原生/配置范围。
+输入：目标角色、授权范围、request/operation 私有引用、预算。
+依赖：fixture/fake/local-real/native-isolated/external-real/browser 分别说明。
 
-| 子判据ID | 动作与观察 | 独立核对及私有证据引用 | 结果/不可证明项 |
-|---|---|---|---|
-| <LIVE-ID>/01 | 实际发生的入口和状态 | run/STEP/operation、证据摘要/受控引用；不含凭据 | passed/failed/blocked/not-run；精确范围 |
+| 子判据 | 动作与独立观察 | 安全证据引用 | 结果与局限 |
+| --- | --- | --- | --- |
+| LIVE-ID/01 | 实际入口与结果，不是预期描述 | 报告锚点或受控引用 | passed/failed/blocked/not-run |
 
-局限：Provider reported、App可见、未知副作用等不能从其他层推断。
-恢复：已完成操作、未结记录、cleanup_required、保留证据与下一动作。
-关联：来源修复票、被影响LIVE IDs、独立回归测试、旧失败报告锚点。
-承接证据：若复用旧窗口，逐项列原报告、适用性/失效检查和未重跑范围。
+恢复：未结效果、保留资源、清理/安全停用及下一步。
+关联：来源修复票、影响场景、回归与旧失败报告。
+承接：仅复用仍适用证据，说明候选/依赖未受影响的依据和未重跑范围。
 ```
 
 <a id="evidence-lifecycle"></a>
-## 10. 证据、阻断与完成勾选如何流转
+## 10. 证据与复验
 
-| 内容 | 唯一落点 | LIVE入口保留什么 |
-|---|---|---|
-| 测试旅程和逐点事实，包括失败/中断 | `docs/reports/<日期>-live-<主题>.md#<稳定锚点>`；窗口关闭后固定 | 当前结果、候选/窗口、限定范围和一个证据入口 |
-| 源码缺陷、缺实现、独立review与修复计划 | 复用`docs/tickets/`对应来源票；确有独立问题才新增FIX票，回链失败报告 | CODE/REVIEW、一句具体影响与下一动作、来源票链接 |
-| 环境、权限、预算、工具或依赖阻断 | 当次报告记录观察时间、失败入口、已产生副作用、不能证明项、解除条件及责任方；不为暂时环境问题制造空实现票 | ENV/AUTH/BUDGET/TOOL/DEP、一句影响与下一动作、报告锚点 |
-| 原始JSON、日志、截图、请求与私有配置 | 窗口开始时指定的受控私有证据目录，记录来源、摘要/hash、访问范围和保留期限；临时`.scratch`不是唯一长期凭据 | 不附原文、不暴露私有路径/密钥；只链接已脱敏报告 |
+| 内容 | 唯一落点 |
+| --- | --- |
+| 当前集中验收结果、限定候选和一个证据入口 | LIVE 对应场景；不堆逐轮日志 |
+| 固定动作、观察、失败、依赖真实性、预算与恢复 | 日期报告及其场景锚点 |
+| 实现、离线、独立审查缺口 | 原来源票，必要时新增有独立责任的修复票 |
+| 临时 ENV/AUTH/BUDGET/TOOL 阻断 | 当次报告写观察与解除条件，LIVE 只保留当前影响 |
+| 原始日志/截图/材料 | 受控私有证据位置，公开只放安全引用 |
 
-有问题时先保全现场：报告写“当时发生了什么”，来源票写“现在如何修复”，LIVE行写“当前阻塞哪个判据、下一步是什么”。只暂停受影响范围；另外的子判据可以有证据，但整行必需项未齐就不勾。代码修复完成后仍为待现场复验，不直接改成passed；非代码阻断解除也只是重新具备执行条件。
+修复后更新候选并按依赖选择复验；不改旧报告成成功，不无条件累加跨版本通过。共享合同/权限改变必须覆盖相关 CLI/API/Web，视觉调整不自动重验模型。旧语法退役同步迁移检查，旧真实反例迁入正确 owner，不删除仍成立的安全性质。
 
-复验通过后，在新窗口报告写新结果并回链原失败、修复commit和回归证据；旧报告不删错、不将失败改写为成功。LIVE同一行换成`[x]`与`passed`、限定候选/范围及新证据锚点，移除已解除阻断的叙述，不堆“第一次失败→修复→第二次失败→通过”的流水账。
-
-一个证据章节可以汇总多个必要窗口，但必须逐判据标明复用关系；LIVE不累计挂所有旧报告链接。相关实现/配置/原生版本变化使旧覆盖失效时，只取消受影响项的勾并标`needs-revalidation`；旧成功仍是原窗口事实。已完成场景留在原行供回归，不再复制到第二张完成表。
-
-后续报告在现有`docs/reports/README.md`按需登记为档案目录，不复制当前待办。LIVE当前候选摘要与证据链接采用替换更新；历史窗口不会每跑一次就在入口新增一节。新worktree沿同一LIVE追加模板登记新义务，不新建自己的长期live-todo文件。
+整条场景的必需项与适用清理齐备才勾选 passed。只做了局部验证就记录局部范围，不签整行；结构检查、代码 review、浏览器、原生和用户接受各有自己的证明边界。

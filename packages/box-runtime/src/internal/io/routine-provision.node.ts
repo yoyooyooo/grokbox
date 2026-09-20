@@ -13,14 +13,18 @@ import { openMonitorSqlite, type MonitorSqlite, type SqlRow } from "./monitor-sq
 // and GC must never erase it. No prompt, credential or network response stored.
 const APPLICATION_ID = 1196576848;
 const RETIRED_DDL = "CREATE TABLE operation_tombstones(agent_id TEXT NOT NULL,operation_id TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(agent_id,operation_id));";
-const DDL = `PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=2;
+const STATE_DDL = `CREATE TABLE state_operations(operation_id TEXT PRIMARY KEY,agent_id TEXT NOT NULL,native_id TEXT NOT NULL,action TEXT NOT NULL,
+ fingerprint TEXT NOT NULL,before_revision TEXT NOT NULL,definition_revision TEXT NOT NULL,generation TEXT NOT NULL,
+ state TEXT NOT NULL,after_revision TEXT,evidence TEXT NOT NULL,created_at INTEGER NOT NULL,owner_pid INTEGER NOT NULL,owner_start TEXT NOT NULL);
+ CREATE UNIQUE INDEX unresolved_routine_state ON state_operations(agent_id,native_id) WHERE state IN ('attempting','unknown');`;
+const DDL = `PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=3;
 CREATE TABLE meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),root_id TEXT NOT NULL);
 CREATE TABLE operations(agent_id TEXT NOT NULL,operation_id TEXT NOT NULL,managed_key TEXT NOT NULL,fingerprint TEXT NOT NULL,desired_digest TEXT NOT NULL,
  action TEXT NOT NULL,state TEXT NOT NULL,native_id TEXT,observed_revision TEXT,before_revision TEXT,created_at INTEGER NOT NULL,owner_pid INTEGER NOT NULL,owner_start TEXT NOT NULL,
  PRIMARY KEY(agent_id,operation_id));
 CREATE UNIQUE INDEX unresolved_key ON operations(agent_id,managed_key) WHERE state IN ('attempting','unknown');
 CREATE TABLE bindings(agent_id TEXT NOT NULL,managed_key TEXT NOT NULL,native_id TEXT NOT NULL,revision TEXT NOT NULL,operation_id TEXT NOT NULL,
- PRIMARY KEY(agent_id,managed_key),UNIQUE(agent_id,native_id));${RETIRED_DDL}`;
+ PRIMARY KEY(agent_id,managed_key),UNIQUE(agent_id,native_id));${RETIRED_DDL}${STATE_DDL}`;
 const missing = (e: unknown) => !!e && typeof e === "object" && "code" in e && e.code === "ENOENT";
 const fail = (reason: ConstructorParameters<typeof RoutineProvisionError>[0]): never => { throw new RoutineProvisionError(reason); };
 const key = (v: unknown): string => typeof v === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(v) ? v : fail("ledger_unavailable");
@@ -52,6 +56,21 @@ async function retireSuperseded(db: MonitorSqlite) {
 function binding(r: SqlRow | null): ProvisionBinding | null {
   return r ? { key: key(r.managed_key), routineId: routineId(r.native_id), revision: routineRevision(r.revision), operationId: provisionOperationId(r.operation_id) } : null;
 }
+export type RoutineStateRecord = {
+  operationId: string; agentId: string; nativeId: string; action: "enable" | "disable" | "delete";
+  fingerprint: string; beforeRevision: string; definitionRevision: string; generation: string;
+  state: "attempting" | "unknown" | "observed"; afterRevision: string | null;
+  evidence: "not-verified" | "requested-state-observed" | "absent-in-returned-window"; createdAtMs: number;
+};
+function stateRecord(row: SqlRow): RoutineStateRecord {
+  if (!["enable", "disable", "delete"].includes(String(row.action)) || !["attempting", "unknown", "observed"].includes(String(row.state))
+    || !["not-verified", "requested-state-observed", "absent-in-returned-window"].includes(String(row.evidence))
+    || !Number.isSafeInteger(row.created_at) || Number(row.created_at) < 1) return fail("ledger_unavailable");
+  return { operationId: provisionOperationId(row.operation_id), agentId: routineAgentId(row.agent_id), nativeId: routineId(row.native_id),
+    action: row.action as RoutineStateRecord["action"], fingerprint: routineRevision(row.fingerprint), beforeRevision: routineRevision(row.before_revision),
+    definitionRevision: routineRevision(row.definition_revision), generation: routineRevision(row.generation), state: row.state as RoutineStateRecord["state"],
+    afterRevision: row.after_revision === null ? null : routineRevision(row.after_revision), evidence: row.evidence as RoutineStateRecord["evidence"], createdAtMs: Number(row.created_at) };
+}
 export type ProvisionStoreHooks = { afterReserve?: () => void; beforeFinish?: () => void; afterFinish?: () => void };
 export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionStoreHooks = {}) {
   const root = resolve(durableRoot), directory = join(root, "state", "routine-provision"), path = join(directory, "operations.sqlite");
@@ -75,7 +94,7 @@ export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionS
     return { db: await openMonitorSqlite(path, write ? "write" : "read"), initializing };
   }
   async function transaction<T>(write: boolean, action: (db: MonitorSqlite | null) => Promise<T>): Promise<T> {
-    let db: MonitorSqlite | null = null, committed = false;
+    let db: MonitorSqlite | null = null, committed = false, commitStarted = false;
     try {
       const connected = await connect(write); db = connected?.db ?? null; if (!db) return await action(null);
       if (write) {
@@ -89,19 +108,24 @@ export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionS
       const tables = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
       if (write && connected?.initializing && application === 0 && tables.length === 0) {
         await db.run(DDL); await db.run("INSERT INTO meta(singleton,root_id) VALUES(1,?)", [rootId]);
-      } else if (application !== APPLICATION_ID || ![1, 2].includes(Number(Object.values((await db.first("PRAGMA user_version"))!)[0]))
+      } else if (application !== APPLICATION_ID || ![1, 2, 3].includes(Number(Object.values((await db.first("PRAGMA user_version"))!)[0]))
         || (await db.first("SELECT root_id FROM meta WHERE singleton=1"))?.root_id !== rootId) return fail("ledger_unavailable");
       if (write && Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) === 1) {
         // Additive owner-local migration within the already-confirmed write.
         // Old binaries reject version 2 instead of ignoring consumed identities.
         await db.run(RETIRED_DDL + "PRAGMA user_version=2;");
       }
+      if (write && Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) < 3) {
+        await db.run(STATE_DDL + "PRAGMA user_version=3;");
+      }
       const result = await action(db);
+      commitStarted = write;
       await db.run("COMMIT"); committed = true;
       if (write) { const d = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await d.sync(); } finally { await d.close(); } }
       return result;
     } catch (e) {
       if (!committed) await db?.run("ROLLBACK").catch(() => undefined);
+      if (commitStarted) return fail("outcome_unknown");
       if (e instanceof RoutineProvisionError) throw e;
       if (e && typeof e === "object" && "code" in e && e.code === "SQLITE_FULL") return fail("capacity");
       return fail("ledger_unavailable");
@@ -115,6 +139,48 @@ export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionS
     return t ? retired(t, agentId, operationId) : null;
   });
   return { path, read,
+    stateRecord: (agentId: string, operationId: string) => transaction(false, async db => {
+      routineAgentId(agentId); provisionOperationId(operationId);
+      if (!db || Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) < 3) return null;
+      const row = await db.first("SELECT * FROM state_operations WHERE agent_id=? AND operation_id=?", [agentId, operationId]);
+      return row ? stateRecord(row) : null;
+    }),
+    reserveState: async (input: Omit<RoutineStateRecord, "state" | "afterRevision" | "evidence">) => {
+      const owner = await monitorProcessIdentity(process.pid);
+      if (owner.state !== "present") return fail("ledger_unavailable");
+      routineAgentId(input.agentId); routineId(input.nativeId); provisionOperationId(input.operationId); routineRevision(input.fingerprint);
+      routineRevision(input.beforeRevision); routineRevision(input.definitionRevision); routineRevision(input.generation);
+      if (!["enable", "disable", "delete"].includes(input.action) || !Number.isSafeInteger(input.createdAtMs) || input.createdAtMs < 1) return fail("invalid_input");
+      return transaction(true, async db => {
+        if (!db) return fail("ledger_unavailable");
+        const prior = await db.first("SELECT * FROM state_operations WHERE operation_id=?", [input.operationId]);
+        if (prior) {
+          const record = stateRecord(prior);
+          if (record.fingerprint !== input.fingerprint || record.agentId !== input.agentId) return fail("operation_conflict");
+          return { dispatch: false, record };
+        }
+        if (await db.first("SELECT 1 FROM operations WHERE agent_id=? AND operation_id=?", [input.agentId, input.operationId]) || await tombstone(db, input.agentId, input.operationId)) return fail("operation_conflict");
+        if (await db.first("SELECT 1 FROM state_operations WHERE agent_id=? AND native_id=? AND state IN ('attempting','unknown')", [input.agentId, input.nativeId])
+          || await db.first("SELECT 1 FROM operations WHERE agent_id=? AND native_id=? AND state IN ('attempting','unknown')", [input.agentId, input.nativeId])) return fail("key_busy");
+        if (Number((await db.first("SELECT COUNT(*) AS n FROM state_operations"))?.n) >= ROUTINE_PROVISION_POLICY.maxOperations) return fail("capacity");
+        await db.run("INSERT INTO state_operations VALUES(?,?,?,?,?,?,?,?,'attempting',NULL,'not-verified',?,?,?)", [input.operationId,input.agentId,input.nativeId,input.action,input.fingerprint,input.beforeRevision,input.definitionRevision,input.generation,input.createdAtMs,process.pid,owner.start]);
+        return { dispatch: true, record: { ...input, state: "attempting" as const, afterRevision: null, evidence: "not-verified" as const } };
+      });
+    },
+    settleState: (record: RoutineStateRecord, afterRevision: string | null, evidence: "requested-state-observed" | "absent-in-returned-window") => transaction(true, async db => {
+      if (!db) return fail("ledger_unavailable");
+      if (afterRevision !== null) routineRevision(afterRevision);
+      const row = await db.first("SELECT * FROM state_operations WHERE agent_id=? AND operation_id=?", [record.agentId, record.operationId]);
+      if (!row) return fail("not_recorded");
+      const current = stateRecord(row);
+      if (current.fingerprint !== record.fingerprint || (current.state === "observed" && (current.afterRevision !== afterRevision || current.evidence !== evidence))) return fail("operation_conflict");
+      await db.run("UPDATE state_operations SET state='observed',after_revision=?,evidence=? WHERE operation_id=?", [afterRevision,evidence,record.operationId]);
+      return { ...current, state: "observed" as const, afterRevision, evidence };
+    }),
+    markStateUnknown: (record: RoutineStateRecord) => transaction(true, async db => {
+      if (!db) return fail("ledger_unavailable");
+      await db.run("UPDATE state_operations SET state='unknown' WHERE operation_id=? AND fingerprint=? AND state='attempting'", [record.operationId,record.fingerprint]);
+    }),
     status: () => transaction(false, async db => {
       const common = { owner: "routine_provision", diagnosticGcAllowed: false, maxOperations: ROUTINE_PROVISION_POLICY.maxOperations,
         maxMainFileBytes: ROUTINE_PROVISION_POLICY.maxDatabaseBytes, replaySafeRetirement: "superseded-observed-to-exact-tombstone" } as const;
@@ -139,7 +205,8 @@ export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionS
         if (!db) return fail("ledger_unavailable");
         const prior = await db.first("SELECT * FROM operations WHERE agent_id=? AND operation_id=?", [input.agentId, input.operationId]);
         if (prior) { const record = parse(prior); if (record.fingerprint !== input.fingerprint) return fail("operation_conflict"); return { dispatch: false, record }; }
-        if (await tombstone(db, input.agentId, input.operationId)) return fail("operation_conflict");
+        if (await tombstone(db, input.agentId, input.operationId) || await db.first("SELECT 1 FROM state_operations WHERE operation_id=?", [input.operationId])) return fail("operation_conflict");
+        if (input.binding && await db.first("SELECT 1 FROM state_operations WHERE agent_id=? AND native_id=? AND state IN ('attempting','unknown')", [input.agentId,input.binding.routineId])) return fail("key_busy");
         await retireSuperseded(db);
         if (await db.first("SELECT 1 FROM operations WHERE agent_id=? AND managed_key=? AND state IN ('attempting','unknown')", [input.agentId, input.key])) return fail("key_busy");
         const current = binding(await db.first("SELECT * FROM bindings WHERE agent_id=? AND managed_key=?", [input.agentId, input.key]));

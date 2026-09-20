@@ -55,8 +55,7 @@ function lostResponse(method: DaemonMethod, params?: Record<string, unknown>): C
   if (method === "sendPrompt") {
     return new CliError("send_delivery_unknown", "Send may have reached the daemon before the response was lost.");
   }
-  if (MANAGEMENT_WRITES.has(method) || method === "agentRoutines" && (!isRecord(params?.command) || !["list", "show"].includes(String(params.command.action)))
-    || method === "routineProvision" && (!isRecord(params?.command) || params.command.action !== "outcome")) {
+  if (MANAGEMENT_WRITES.has(method)) {
     return new CliError("operation_outcome_unknown", "The write may have reached the daemon before the response was lost.");
   }
   return new CliError("daemon_unreachable", "Daemon is unreachable.", { retryable: true });

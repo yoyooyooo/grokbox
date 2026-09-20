@@ -1,5 +1,11 @@
 # Reports：固定验证回执
 
+- [2026-09-20 旧 Host 补丁健康链审计](2026-09-20-host-patch-health-chain-audit.md)：限定旧逻辑，核对字符串/Golden/AST、watchdog实际入口、来源事件到incident与通知资格；89项隔离检查包含4个缺口反例，不签持续感知接通或现场告警送达。
+
+- [2026-09-20 Grok Bot 上游版本影响](2026-09-20-grok-bot-upstream-impact.md)：App 0.47→0.57.1、磁盘 Host 0382fa8 与当前工作树的接口/切片核对；记录 Memory 回退、idle compaction、旧回放资格失效及 53 项隔离回归，不签当前进程、模型链路或部署。
+
+- [2026-09-19 本机原生来源只读资格](2026-09-19-live-source-qualification.md)：4 次有界元数据请求与目录/stat；记录 ownership 响应缺字段，不签部署、材料写入或模型 E2E。
+
 - [2026-09-19 上下文债审计](2026-09-19-context-debt-audit.md)：反例、删减、代码简化与未证边界；不签整库或当前部署。
 
 固定报告保留各自源码/窗口、失败与未证范围，不维护另一份当前进度。退役的设计和研究解释归 [archive](../archive/README.md)；需要继续被 LIVE 引用的验证回执保持本目录稳定路径。

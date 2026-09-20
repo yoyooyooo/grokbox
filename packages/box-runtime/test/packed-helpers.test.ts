@@ -84,7 +84,7 @@ describe("runtime helper published layout", () => {
       const ephemeralRoot = await mkdtemp(join(tmpdir(), "grokbox-helper-readopt-eph-"));
       await writeFile(
         join(root, "models.json"),
-        `${JSON.stringify({ version: 2, models: {}, assignments: { main: null, agents: {} } })}\n`,
+        `${JSON.stringify({ version: 3, models: {}, assignments: { main: null, agents: {} } })}\n`,
       );
       const wired = wireLiveManualReadopt({ root, ephemeralRoot, now: () => 0 });
       expect(spy).toHaveBeenCalledTimes(1);
@@ -95,7 +95,7 @@ describe("runtime helper published layout", () => {
         confirmed: true,
         root,
         desired: { version: 1, mode: "identity" },
-        models: { version: 2, models: {}, assignments: { main: null, agents: {} } },
+        models: { version: 3, models: {}, assignments: { main: null, agents: {} } },
         now: () => 0,
         ...wired,
         freshDiskSha: () => "none",

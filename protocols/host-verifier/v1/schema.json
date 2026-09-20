@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "grokbox:host-verifier:v1",
+  "$defs": {
+    "Initialize": {"type":"object","additionalProperties":false,"required":["protocol","schema_digest","build_id"],"properties":{
+      "protocol":{"type":"integer","minimum":1,"maximum":1},"schema_digest":{"type":"string","minLength":64,"maxLength":64},"build_id":{"type":"string","minLength":64,"maxLength":64}}},
+    "InitializeRequest": {"type":"object","additionalProperties":false,"required":["jsonrpc","id","method","params"],"properties":{
+      "jsonrpc":{"type":"string","enum":["2.0"]},"id":{"type":"string","minLength":1,"maxLength":64},"method":{"type":"string","enum":["initialize"]},"params":{"$ref":"#/$defs/Initialize"}}},
+    "AnalyzeRequest": {"type":"object","additionalProperties":false,"required":["jsonrpc","id","method","params"],"properties":{
+      "jsonrpc":{"type":"string","enum":["2.0"]},"id":{"type":"string","minLength":1,"maxLength":64},"method":{"type":"string","enum":["analyze"]},"params":{"$ref":"#/$defs/Job"}}},
+    "HelloResponse": {"type":"object","additionalProperties":false,"required":["jsonrpc","id","result"],"properties":{
+      "jsonrpc":{"type":"string","enum":["2.0"]},"id":{"type":"string","minLength":1,"maxLength":64},"result":{"$ref":"#/$defs/Hello"}}},
+    "AnalyzeResponse": {"type":"object","additionalProperties":false,"required":["jsonrpc","id","result"],"properties":{
+      "jsonrpc":{"type":"string","enum":["2.0"]},"id":{"type":"string","minLength":1,"maxLength":64},"result":{"$ref":"#/$defs/Report"}}},
+    "Artifact": {"type":"object","additionalProperties":false,"required":["role","fd","sha256","bytes"],"properties":{
+      "role":{"type":"string","enum":["source","candidate","companion"]},"fd":{"type":"integer","minimum":3,"maximum":5},"sha256":{"type":"string","minLength":64,"maxLength":64},"bytes":{"type":"integer","minimum":1,"maximum":67108864}}},
+    "Requirement": {"type":"object","additionalProperties":false,"required":["id","revision"],"properties":{
+      "id":{"type":"string","minLength":1,"maxLength":80},"revision":{"type":"integer","minimum":1,"maximum":1000}}},
+    "Job": {"type":"object","additionalProperties":false,"required":["job_id","attempt_id","artifacts","checks"],"properties":{
+      "job_id":{"type":"string","minLength":1,"maxLength":64},"attempt_id":{"type":"string","minLength":1,"maxLength":64},"artifacts":{"type":"array","minItems":1,"maxItems":3,"items":{"$ref":"#/$defs/Artifact"}},"checks":{"type":"array","minItems":1,"maxItems":32,"items":{"$ref":"#/$defs/Requirement"}}}},
+    "Finding": {"type":"object","additionalProperties":false,"required":["id","revision","state","code","start","end"],"properties":{
+      "id":{"type":"string","minLength":1,"maxLength":80},"revision":{"type":"integer","minimum":1,"maximum":1000},"state":{"type":"string","enum":["passed","violated","unsupported"]},"code":{"type":"string","minLength":1,"maxLength":80},"start":{"type":"integer","minimum":0,"maximum":67108864},"end":{"type":"integer","minimum":0,"maximum":67108864}}},
+    "Syntax": {"type":"object","additionalProperties":false,"required":["role","sha256","bytes","state","diagnostics","nodes"],"properties":{
+      "role":{"type":"string","enum":["source","candidate","companion"]},"sha256":{"type":"string","minLength":64,"maxLength":64},"bytes":{"type":"integer","minimum":1,"maximum":67108864},"state":{"type":"string","enum":["valid","invalid"]},"diagnostics":{"type":"integer","minimum":0,"maximum":1000000},"nodes":{"type":"integer","minimum":0,"maximum":10000000}}},
+    "Report": {"type":"object","additionalProperties":false,"required":["job_id","attempt_id","schema_digest","build_id","syntax","findings","elapsed_ms"],"properties":{
+      "job_id":{"type":"string","minLength":1,"maxLength":64},"attempt_id":{"type":"string","minLength":1,"maxLength":64},"schema_digest":{"type":"string","minLength":64,"maxLength":64},"build_id":{"type":"string","minLength":64,"maxLength":64},"syntax":{"type":"array","minItems":1,"maxItems":3,"items":{"$ref":"#/$defs/Syntax"}},"findings":{"type":"array","minItems":1,"maxItems":32,"items":{"$ref":"#/$defs/Finding"}},"elapsed_ms":{"type":"integer","minimum":0,"maximum":180000}}},
+    "Hello": {"type":"object","additionalProperties":false,"required":["protocol","schema_digest","build_id","parser","checks"],"properties":{
+      "protocol":{"type":"integer","minimum":1,"maximum":1},"schema_digest":{"type":"string","minLength":64,"maxLength":64},"build_id":{"type":"string","minLength":64,"maxLength":64},"parser":{"type":"string","enum":["oxc-0.75.0"]},"checks":{"type":"array","minItems":1,"maxItems":32,"items":{"$ref":"#/$defs/Requirement"}}}}
+  }
+}

@@ -1,49 +1,54 @@
-# T53 — 通用 Agent/Routine CLI 与原生事件唤醒
+# T53 — 原生 Routine 管理、持久回执与精确对账
 
 ## Status / Goal
 
-**Partial implementation：管理命令、单份 disabled apply、持久 provision outcome 和精确 ID reconcile 已接通 CLI/daemon；本票剩余包括批量组合、agents create/update --routines-from 与通用 invoke/native run outcome。** ops 的私有配对、预检、显式发送和自动 sender 已在各自 owner 实现，见 [operations](../runtime/operations.md#配对接收者与自动授权)，不能把本票剩余范围表述为全项目尚无配对/投递。 [Spec §10.1–10.2](../roadmap/template-ops-automation-spec.md#agent-routines)。统一Routine CRUD/apply/provision，让独立CLI、agents create/update与模板配对复用。Webhook是事件入口，不是周期性LLM轮询。
+**Partial：普通 Routine 的读取、disabled apply/update、enable/disable/delete、历史回执与精确 provision reconcile 已经迁入共享管理 Server、正式 CLI 和真实 Web。原生 LIVE、长期状态回执维护及 CONT 组合仍未收口。** 产品范围以 [Agent-first Spec](../roadmap/agent-first-cli/spec.md) 和 [命令目录](../roadmap/agent-first-cli/command-catalog.md) 为准，不把早期候选 invoke、批量组合或 `agents create/update --routines-from` 自动升级成首版已实现承诺。
 
-## Depends-on / Modules
+原生调度与定义始终是事实来源。本地只拥有受管 key、操作记录及恢复关系；不编辑原生 automation 文件或建立第二 scheduler。通知配对、明确授权、独立可选测试和投递归 [T45](T45-template-webhook-delivery.md) / [T46](T46-template-ops-pairing.md)，通用 Routine 管理不以通知已启用为前置。
 
-只依T43原生能力合同，不依赖ops开启、监控SQLite、诊断、Issue或Host维护。kernel `routines.ts`、`internal/commands/agent-routines.ts`和ports；CLI `gateway-automation.ts`、`agent-routines.node.ts`、`commands/routines.ts`、agents/management/registry。
+## 当前入口与责任
 
-## Work
+```text
+grokbox routine list --bot <bot-ref>
+grokbox routine get <routine-ref>
+grokbox routine apply --input @file|-
+grokbox routine enable <routine-ref> --request-id <uuid> --expect-revision <sha256> --confirm
+grokbox routine disable <routine-ref> --request-id <uuid> --expect-revision <sha256> --confirm
+grokbox routine delete <routine-ref> --request-id <uuid> --expect-revision <sha256> --confirm
+grokbox operation get --domain routine --bot <original-bot-ref> --request-id <original-request-uuid>
+grokbox operation reconcile --domain routine --request-id <original-provision-request-uuid> --routine-ref <exact-ref> --expect-revision <current-sha256> --confirm
+```
 
-实现`agents routines list/show/apply/enable/disable/delete/invoke/outcome`与`agents create/update --routines-from`。原生调度是权威，本地只保存scoped provision回执；不编辑原生automation文件/数据库。正文读取单独有界，普通状态不含secret/endpoint。
+输入和操作定位见 [Routine Skill](../../skills/grokbox/routines.md)。CLI 与 `/notification-setup` 通过共享客户端调用[管理用例](../../packages/server/src/notification-setup.ts)。`routines.read` 和 `routines.write` 独立授权；原生凭据领取由 `notifications.bind` 另管，页面不接受任意 RPC、URL 或凭据正文。
 
-默认disabled，Webhook不附cron/interval。apply只更新请求managed keys，省略不删除现存任务；删除指定exact ID确认。先验证全部Agent属性/routine文档/能力，创建成功而routine失败保留Agent ID、nonce、阶段partial/unknown，不删掉重建。重复nonce需内容digest一致，按已有回执续做/对账。
+`routineRef` 绑定安装、原生 Bot UUID 和原生 Routine ID。列表只投影有限原生窗口，普通读取没有 prompt/key/endpoint，source failure 不伪装空列表。相同名称不授权修改；窗口中的缺失不证明账号全局删除。
 
-原生有CAS/幂等则使用；没有则说明外部并发不受本地锁保护，变化或身份未知停写。update只更请求字段，不改模型/harness/别的routine。endpoint/revision变更使旧binding失效，交配对owner处理。
+[原生适配](../../packages/box-runtime/src/internal/io/routine-gateway.node.ts)每个用例拥有一个有界、固定代际的交互：先读当前定义，再允许明确方法的单次修改，独立读回。重新读取 discovery 后须仍为同一 generation，不能把已保留的操作发给替换后的 Gateway。沿用配对来源的原 generation 算法；不重定向、不重试、不通过旧 daemon fallback。
 
-invoke仅在显式目标/费用/请求预算授权下真实POST原生已核验endpoint；不能任意URL或sendPrompt代替。HTTP接受、run开始、报告、App呈现分开。超时先对账，禁用不等于在途任务已取消。清理只针对本次拥有且父/子任务结束的资源。
+旧 `agents routines ...` 和 `ops targets ...` 普通命令已退出。daemon 的 `agentRoutines` / `routineProvision` RPC 和相关 capability 也已退出。尚未迁移的保护/交接程序仍借用其**本地**原生 primitive；不能因此宣称 CONT 已迁移，亦不暴露新的普通管理后门。
 
-## 已实现切片
+## 原数据库中的两类操作
 
-`kernel/routines.ts`提供有限定义投影和显式命令校验，`AgentRoutines` port与`internal/commands/agent-routines.ts`拥有前置检查、单次变更及读回；box-runtime只装配该程序，CLI/Gateway/daemon复用，不写原生数据库。现有五个命令要求精确Agent UUID，变更还需精确Routine ID、expected revision与确认。不能将本地revision称为原生CAS，也不声称取消在途运行。
+`state/routine-provision/operations.sqlite` 保留原有 provision/binding/tombstone，并在 schema 3 增加有界 `state_operations`。新增 schema 只在明确写入时加表，GET 不升级或创建库；主文件空间约束继续使用原 owner。没有通用 operation 数据库或额外 scheduler。
 
-新增`routines`按需Skill仅展示已实现命令，不注册未交付的创建或投递接口。其余本票范围仍按下文实施，不能以这份CLI切片关闭原生通知链。
+**Disabled apply/update** 复用 `runRoutineProvision`、`RoutineProvisionLedger` 和 `NativeRoutineProvision`。新建明确 disabled；已有 managed key 只更新本安装保存的精确 ID，expected revision 同时匹配本地 binding 和当前原生定义。先提交 attempting 再发送一次原生请求，事务不跨网络；未知记录按 Bot/key 阻止换 request-id 绕过。普通输出不保存或回显 blueprint prompt。
 
-## Disabled provisioning 增量（2026-09-18）
+**Enable/disable/delete** 复用原 `runAgentRoutineCommand` 的前置/读回规则，外层[持久状态操作](../../packages/box-runtime/src/internal/roots/routine-management.runtime.ts)先保留 Bot/原生 ID/action/revision/指纹和 owner。新增目标 guard 与 provision guard 协调；回执记录 observed 或 unknown，原请求重放先读历史，不再向原生发送。COMMIT 回调丢失也保留不确定性，不能因本地尚未标记 committed 而断言没有提交。
 
-`agents routines apply <agent-id> --from <file> --operation-id <id> --confirm`接收一份严格schema1 blueprint（key/name/prompt/webhook trigger，isEnabled只能缺省或false）。原生请求显式disabled；不建周期、不领取凭据、不调用模型或Webhook。已有managed key只更新本安装保存的精确ID，要求expected revision同时匹配本地binding和当前原生定义；外部变化或对象缺失停止，不创建替代品。
+新公开操作键绑定安装、主体、领域、原 Bot 和 request UUID；不同主体不能用相同 UUID 读到对方的回执。原生状态变化后的旧成功回执仍是历史事实，不把它改写成当前状态。
 
-`RoutineProvisionLedger`与`NativeRoutineProvision`两项能力经`runRoutineProvision`程序组合，box-runtime facade与本地/daemon同用。账本位于`state/routine-provision/operations.sqlite`，只复用原便携SQL driver，不依赖monitor初始化/TTL，也不保存prompt。先提交attempting记录再发一次网络请求，SQLite事务不跨网络；未知记录按agent/key挡住新的operation ID。重入相同ID检查fingerprint并返回原历史回执。
+## 恢复的证据边界
 
-`agents routines outcome`只读本域历史；`reconcile --routine-id ... --confirm`只读取精确原生定义并写本地对账，不重发create。仍活着或无法证明失效的attempt owner不可被抢走；硬崩后经真实进程身份核验才能转unknown并对账。读回不是原生CAS、原生nonce或远端全部工作已终结的证明。
+精确 reconcile 只适用于原 **provision** 操作：用户选择当前返回的 exact disabled definition，核对当前 revision，程序检查保留的定义摘要后更新原本地关联。它不重发 create、不领取 key，也不宣称本次查询证明了历史原生因果。仍活着或无法证明失效的原 attempting owner 不被夺权。
 
-本域主文件2MiB、全安装256操作上限；达到上限只阻新provision，不删除未知记录、不影响普通推理。回执安全退役与第一次初始化中断恢复尚无资格；缺失/损坏/被清零的既有账本不重建。`runtime storage status`单列本域，诊断GC不得清理。J1公共接口及CONT本域职责未改变。
+未知 enable/disable/delete 不能仅凭当前 enabled 值相同而判成历史成功，也不能换 ID 重发来补一个“成功”。这类原生对账和恢复能力仍有资格差额。revision preflight / readback **不是 native CAS**；外部并发 writer 不受本地锁约束。delete 只记录 `absent-in-returned-window`，禁用/删除不证明在途运行已取消，enable 允许原生计划未来运行但不主动 invoke。
 
-## Executable acceptance
+现有 provision 有安全 tombstone 退役；新增状态回执暂按 256 条有限容量拒绝新动作，尚未声明长期无限使用或完整维护资格。未知 guard 不因 TTL 或诊断 GC 清除；相关容量和撤销需求必须由原 owner 后续收口，不能用丢失历史腾出重复执行机会。
 
-已实现`packages/runtime-kernel/test/agent-routines.test.ts`和`test/agent-routines-cli.test.ts`；实际打包Node子进程也在后者内验证，不新增空的packed测试文件。组合`bun scripts/verify-runtime-rebuild.mjs agent-routines`80 pass/0 fail；全仓2405 pass/19 skip/0 fail。证明exact ID、确认/revision、投影、local/daemon共享程序和unknown不重试。固定证据见[回执](../reports/2026-09-18-native-routine-management.md)。
+## 已执行验证与剩余资格
 
-新增`packages/box-runtime/test/routine-provision.test.ts`及既有CLI文件中的local/daemon/packed Node完整旅程，覆盖持久nonce冲突、单次disabled create/update、未知对账、真实SIGKILL、并发、容量、损坏保护及诊断GC隔离。组合入口`bun scripts/verify-runtime-rebuild.mjs routine-provision`，固定结果见[本轮回执](../reports/2026-09-18-disabled-routine-provisioning.md)。
+[新的 Node 集成](../../test/notification-setup.test.ts)真实执行管理 HTTP、合成 Gateway HTTP、原 SQLite/私有文件和打包 CLI：首次 disabled 创建、managed-key update 保持原生 ID/无关定义、状态读回、丢回复守卫、精确 reconcile、主体隔离、换代前拒绝 dispatch，以及关闭时中止并结算凭据请求。真实浏览器覆盖整段 setup、草稿冲突、未知结果刷新和精确对账；固定源码与最终组合数统一归 [CLI-05](CLI-05-implementation-follow-through.md)。
 
-仍待实现multi-entry与agents create/update --routines-from组合的partial阶段、clone endpoint隔离、真实禁用后的后续fire和cleanup_required。`routines outcome`目前只指provision回执，不冒充native run/report结果。
+[旧入口测试](../../test/agent-routines-cli.test.ts)现在验证退役命令/RPC 不调用原生，普通成功旅程已移到管理 Node / 浏览器，而不是恢复旧入口迁就测试。原 [kernel primitive](../../packages/runtime-kernel/test/agent-routines.test.ts)、[provision 崩溃/容量](../../packages/box-runtime/test/routine-provision.test.ts) 和实际 CONT handover 回归继续验证被复用的领域实现。
 
-原生E2E单独授权一次性Bot：create disabled→读回→enable→POST→run/报告→update→新POST→disable→清理，两种组合/独立apply入口都测，模型与其他对象不变。source/fake不证明原生实际行为。
-
-## Forbidden / Exit evidence
-
-不建立第二scheduler、不复制活endpoint/secret、不自动启用测试Routine、不因Bot创建成功伪称整链成功。当前现场只归[LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines)。
+历史窗口只支持当时 CLI/daemon 实现：[原生管理](../reports/2026-09-18-native-routine-management.md)、[disabled provisioning](../reports/2026-09-18-disabled-routine-provisioning.md)。不得把历史计数或新合成来源通过改写为实际账号资格。实际原生定义/调度/启停、通知到达、外部并发、长期存储和目标宿主安装仍归 [LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines) 及来源票；测试不调用真实模型、采用 Host 或修改现役服务。

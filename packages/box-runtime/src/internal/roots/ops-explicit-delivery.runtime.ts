@@ -18,7 +18,7 @@ export type ExplicitNoticeInput = { durableRoot: string; workId: string; expecte
  * key, or substitute a synthetic incident/canary. The normal outbox owns the
  * immutable work, durable attempt, budget and unknown/no-replay semantics.
  * Actual receiver execution/report stays unobserved even after HTTP acceptance. */
-export function createPreparedNoticeDriver(input: Omit<ExplicitNoticeInput, "workId" | "confirmed"> & { authorizationId?: string },
+export function createPreparedNoticeDriver(input: Omit<ExplicitNoticeInput, "workId" | "confirmed"> & { authorizationId?: string; allowDisabled?: boolean },
   testPorts: { request?: NotificationRequest } = {}) {
   const owner = openOpsBindings(input.durableRoot);
   let latest: PairingRecord | null = null;
@@ -28,7 +28,7 @@ export function createPreparedNoticeDriver(input: Omit<ExplicitNoticeInput, "wor
       latest = null;
       const stop = (why: string) => { blocker = why; return null; };
       const record = await owner.record(target.alias);
-      if (!record || record.state !== "prepared" || !record.credentialPresent || record.revision !== input.expectedBindingRevision)
+      if (!record || !(record.state === "prepared" || input.allowDisabled && record.state === "disabled") || !record.credentialPresent || record.revision !== input.expectedBindingRevision)
         return stop("pairing_not_prepared_or_revision_changed");
       if (input.authorizationId && (!record.automatic || record.automatic.id !== input.authorizationId
         || record.automatic.bindingRevision !== record.revision || Date.now() < record.automatic.activatedAtMs))

@@ -11,10 +11,10 @@ export type MonitorServiceStatus = {
   ownershipState: "not_observed" | "observed" | "unavailable";
   targets: number; sources: JournalSourceProgress[];
   nativeRunHealth: NonNullable<Parameters<MonitorRunOptions["publish"]>[0]["nativeRunHealth"]>;
-  owner: "daemon"; createsDatabase: false; notifiesDirectly: false; bootInstalled: false;
+  owner: "management-server"; createsDatabase: false; notifiesDirectly: false; bootInstalled: false;
 };
 export type MonitorServiceInput = { durableRoot: string; read: OwnershipReader };
-/** One daemon-owned Scope. Configuration polling is local-only; there is at most
+/** One management-Server-owned Scope. Configuration polling is local-only; there is at most
  * one collector and its real source/DB writes settle before replacement. Reads
  * do not initialize or migrate storage, invoke a model or start another daemon. */
 export function startMonitorService(input: MonitorServiceInput, testPorts: { pollMs?: number } = {}) {
@@ -23,7 +23,7 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
   let state: MonitorServiceStatus = { state: "not_configured", reason: null, desiredRevision: null, collectorEpoch: null,
     startedAtMs: Date.now(), lastReceiptAtMs: null, replacements: 0, ownershipState: "not_observed", targets: 0, sources: [],
     nativeRunHealth: { state: "not_observed", observedAtMs: null, tasks: 0 },
-    owner: "daemon", createsDatabase: false, notifiesDirectly: false, bootInstalled: false };
+    owner: "management-server", createsDatabase: false, notifiesDirectly: false, bootInstalled: false };
   const signal = new AbortController();
   let child: Fiber.Fiber<void, unknown> | undefined, childSignal: AbortController | undefined;
   let finished = false, failures = 0, nextAttemptAt = 0, expectedSourceCount = 0;

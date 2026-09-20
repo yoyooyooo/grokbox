@@ -16,7 +16,7 @@ export function botProtection(raw: unknown = {}): BotProtection {
   return { ...v, handover: handoverPolicy(value.handover) } as BotProtection;
 }
 export function continuityProtection(raw: unknown = {}): ContinuityProtection {
-  const value = continuityObject(raw, ["enabled", "intervalMs", "bots"]), enabled = value.enabled ?? false, intervalMs = value.intervalMs ?? 30000;
+  const value = continuityObject(raw, ["enabled", "intervalMs", "bots"]), enabled = value.enabled ?? true, intervalMs = value.intervalMs ?? 30000;
   if (typeof enabled !== "boolean" || !Number.isSafeInteger(intervalMs) || Number(intervalMs) < 10000 || Number(intervalMs) > 300000) return failContinuity("invalid_material");
   const map = value.bots ?? {};
   if (!map || typeof map !== "object" || ![Object.prototype, null].includes(Object.getPrototypeOf(map)) || Reflect.ownKeys(map).length > 128) return failContinuity("invalid_material");

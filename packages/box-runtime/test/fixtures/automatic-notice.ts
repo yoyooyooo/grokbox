@@ -68,10 +68,10 @@ export async function automaticFixture(limit = 10) {
     const result = await runExplicitOpsNotification({ ...input, workId, confirmed: true, expectedBindingRevision: pairing.revision, expectedModelRevision: MODEL }, { request });
     return { workId, result };
   };
-  const command = (workId: string): NoticeActivationCommand => ({ alias: "default", fromWorkId: workId, expectedBindingRevision: pairing.revision,
-    expectedModelRevision: MODEL, operationId: "activate", confirmed: true, reminderObserved: true });
+  const command = (_workId?: string): NoticeActivationCommand => ({ alias: "default", expectedBindingRevision: pairing.revision,
+    expectedModelRevision: MODEL, operationId: "activate", confirmed: true });
   return { root, configPath, document, store, owner, pairing, rows, input, readNative, request, requests, reads: () => reads, emit, seed, command,
     mutateNative: (fn: typeof nativeChange) => { nativeChange = fn; }, reply: (fn: typeof response) => { response = fn; },
-    activate: (workId: string) => activateOpsNotifications({ ...input, command: command(workId) }),
+    activate: (workId?: string) => activateOpsNotifications({ ...input, command: command(workId) }),
     close: async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); } };
 }

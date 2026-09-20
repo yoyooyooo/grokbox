@@ -1,21 +1,18 @@
 import { expect, test } from "bun:test";
-import { parseLiveIndex, validateReceipt } from "../scripts/live-validation.mjs";
+import { parseLiveIndex, selectLiveScenarios, validateReceipt, READ_ONLY_PROBES } from "../scripts/live-validation.mjs";
+import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 
-test("live controller parses the current index without creating a second status source", () => {
+test("live controller parses scenario routes without freezing a historical inventory or implementation state", () => {
   const rows = parseLiveIndex();
-  expect(rows.length).toBeGreaterThanOrEqual(69);
-  const model = rows.find((row) => row.id === "live-model-sol-high");
-  expect(model).toBeDefined();
-  if (!model) throw new Error("model scenario missing from LIVE index");
-  expect(model).toMatchObject({
-    stableId: "LIVE-MODEL-SOL-HIGH",
-    gate: "G1",
-    implementation: "integrated",
-  });
-  expect(model.sourceLinks.length).toBeGreaterThan(0);
-  if (typeof model.currentResult !== "string") throw new Error("model scenario has no current result");
-  expect(["not-run", "awaiting-integration", "ready", "running", "passed", "failed", "blocked", "needs-revalidation", "excluded", "superseded"])
-    .toContain(model.currentResult);
+  expect(rows.length).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.stableId).toBe(row.id.toUpperCase());
+    expect(row.sourceLinks.length).toBeGreaterThan(0);
+    expect(row.oracle.length).toBeGreaterThan(0);
+    expect(row.currentResult).not.toBeNull();
+    expect(["not-run", "awaiting-integration", "ready", "running", "passed", "failed", "blocked", "needs-revalidation", "excluded", "superseded"])
+      .toContain(row.currentResult!);
+  }
 });
 
 test("live result parsing accepts normal state changes without freezing today's index", () => {
@@ -52,6 +49,37 @@ test("receipt validation distinguishes structurally eligible evidence from produ
   expect(result.derived.indexEligible).toBe(true);
   expect(result.derived.currentResult).toBe(priorResult);
   expect(parseLiveIndex().find((row) => row.id === receipt.scenario)?.currentResult).toBe(priorResult);
+});
+
+test("plans and new receipts cannot revive a superseded scenario", () => {
+  const rows = parseLiveIndex([
+    '| <a id="live-current"></a>**LIVE-CURRENT**<br>G1 | `planned`; `not-run` | Current obligation. | [source](fixture.md) |',
+    '| <a id="live-retired"></a>**LIVE-RETIRED**<br>D | `partial`; `superseded` | Replaced obligation. | [source](fixture.md) |',
+  ].join("\n"));
+  expect(selectLiveScenarios(["LIVE-CURRENT"], rows)).toEqual([rows[0]!]);
+  expect(() => selectLiveScenarios([], rows)).toThrow("requires at least one");
+  expect(() => selectLiveScenarios(["live-missing"], rows)).toThrow("unknown LIVE scenario");
+  expect(() => selectLiveScenarios(["live-current", "live-retired"], rows)).toThrow("superseded LIVE scenario");
+  const result = validateReceipt({
+    version: 1, kind: "grokbox-live-receipt", windowId: "fixture-window", scenario: "live-retired",
+    candidate: { sourceCommit: "0123456789abcdef0123456789abcdef01234567" },
+    steps: [{ id: "LIVE-RETIRED/01", status: "passed", observation: "Old contract checked.", evidenceRef: "private:fixture" }],
+    cleanup: { state: "complete" }, notProven: [],
+  }, rows);
+  expect(result.errors).toContain("scenario_superseded");
+  expect(result.derived.indexEligible).toBe(false);
+});
+
+test("read-only probes use actual registered leaves and declared options, not future syntax", () => {
+  for (const [name, argv] of Object.entries(READ_ONLY_PROBES)) {
+    const leaf = LEAF_COMMANDS.find(candidate => candidate.path.every((part, index) => argv[index] === part));
+    expect(leaf, name).toBeDefined();
+    if (!leaf) throw new Error(`unregistered probe: ${name}`);
+    expect(leaf.destructive, name).toBe(false);
+    for (const flag of argv.slice(leaf.path.length).filter(value => value.startsWith("--"))) {
+      expect(leaf.options.some(option => option.flags.split(/[ ,<]/).includes(flag)), `${name}: ${flag}`).toBe(true);
+    }
+  }
 });
 
 test("receipt validation rejects secrets, machine paths and unknown scenarios", () => {

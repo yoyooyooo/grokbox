@@ -15,7 +15,7 @@ export type QuotaProfile = { source: "cursor-web"; access_token_ref: SecretRef }
 /** Transport DTO used by Gateway/bootstrap. Persistence is exclusively the
  * camelCase client.profiles map in config v2, never a separate Profile file. */
 export type ProfileFile = {
-  version: 1; transport?: Transport; server_url?: string; daemon_token_ref?: SecretRef;
+  version: 1; transport?: Transport; server_url?: string; daemon_token_ref?: SecretRef; installation_id?: string;
   gateway_url?: string; gateway_token_ref?: SecretRef; gateway_headers_ref?: SecretRef;
   gateway_discovery?: string; daemon_socket?: string; ssh_host?: string;
   sandbox?: SandboxProfile; quota?: QuotaProfile;
@@ -23,7 +23,7 @@ export type ProfileFile = {
 export type ResolvedProfile = ProfileFile & { name: string; transport: Transport; gateway_discovery: string; daemon_socket: string };
 export type GlobalConfig = { version: 1; current_profile?: string };
 const FIELD_MAP = {
-  transport: "transport", server_url: "serverUrl", daemon_token_ref: "daemonTokenRef",
+  transport: "transport", server_url: "serverUrl", daemon_token_ref: "daemonTokenRef", installation_id: "installationId",
   gateway_url: "gatewayUrl", gateway_token_ref: "gatewayTokenRef", gateway_headers_ref: "gatewayHeadersRef",
   gateway_discovery: "gatewayDiscovery", daemon_socket: "daemonSocket", ssh_host: "sshHost",
 } as const;

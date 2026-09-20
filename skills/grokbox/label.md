@@ -28,6 +28,6 @@ The fence is ASCII ` | `; parsing uses the last fence followed by valid `k=v` pa
 
 ## Interaction with models and user titles
 
-`models use --for` paints the selected Bot's trailer and preserves its user title. `models reset --for` refreshes only an already-showing trailer and drops `m=` and `e=`. Title write failure does not undo an assignment. `agents update --title` replaces the user segment while keeping a showing trailer refreshed; missing credentials preserve `m=`, while a confirmed absent assignment clears it.
+Model selection/reset uses `bot model set/reset` through the management Server. Its receipt establishes saved next-turn intent, not a native title write. Use an explicitly scoped title action and readback when display is part of the authorized task. `agents update --title` replaces the user segment while keeping a showing trailer refreshed; missing credentials preserve `m=`, while a confirmed absent assignment clears it.
 
 For the deliberately delayed refresh acceptance check, load [validation](validation.md). A routine title edit does not require that full playbook.

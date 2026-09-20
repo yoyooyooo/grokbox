@@ -5,14 +5,9 @@ import { dirname } from "node:path";
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
-import { startGatewayBotProtection } from "../bot-protection-worker.ts";
 import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
-import { startOpsNotificationWorker, startMonitorService, acquireDaemonSocket, type DaemonSocketLease } from "@grokbox/box-runtime/runtime";
+import { acquireDaemonSocket, type DaemonSocketLease } from "@grokbox/box-runtime/runtime";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
-import { nativeExplicitReceiverReader } from "../gateway-receiver.ts";
-import { validateRoutineCommand, validateProvisionCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
-import { provisionCliError } from "../gateway-routine-provision.ts";
-import { routineCliError } from "../gateway-automation.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
 import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig, DaemonProcessConfig } from "./config.ts";
 import { DesktopManager, type DesktopIo } from "./desktop.ts";
@@ -171,8 +166,6 @@ export async function startDaemonHost(
   ) : null;
   const gateway = new GatewayClient(directDeps);
   const desktop = await DesktopManager.create(deps.configDir, deps.now, desktopConfig, desktopIo);
-  let notificationWorker: ReturnType<typeof startOpsNotificationWorker> | undefined;
-  let monitorService: ReturnType<typeof startMonitorService> | undefined;
   const titleSync = new TitleSyncManager(gateway, deps.boxRuntimeRoot, deps.env);
   titleSync.start();
 
@@ -210,14 +203,6 @@ export async function startDaemonHost(
     signal?: AbortSignal,
   ) => {
     if (method === "handshake") return { result: await handshake() };
-    if (method === "getMonitorService") {
-      assertParamKeys(params, [], "Monitor service status");
-      return { result: monitorService?.status() ?? { state: "not_started" } };
-    }
-    if (method === "getOpsNotificationWorker") {
-      assertParamKeys(params, [], "Notification worker status");
-      return { result: notificationWorker?.status() ?? { state: "not_started" } };
-    }
     if (method === "health") {
       const value = await gateway.health(asNumber(params.timeoutMs, 10_000));
       return { result: value.health, gateway: gatewayMeta(value.discovery) };
@@ -259,20 +244,6 @@ export async function startDaemonHost(
         throw new CliError("invalid_usage", "Ownership requires an Agent UUID array.");
       }
       const value = await gateway.getAgentOwnership(params.agentIds as string[], asNumber(params.timeoutMs, 15_000));
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
-    if (method === "routineProvision") {
-      assertParamKeys(params, ["command", "timeoutMs"], "routineProvision");
-      let command;
-      try { command = validateProvisionCommand(params.command); } catch (e) { throw provisionCliError(e); }
-      const value = await gateway.routineProvision(command, asNumber(params.timeoutMs, 10_000));
-      return { result: value.result, ...(value.discovery ? { gateway: gatewayMeta(value.discovery) } : {}) };
-    }
-    if (method === "agentRoutines") {
-      assertParamKeys(params, ["command", "timeoutMs"], "agentRoutines");
-      let command: RoutineCommand;
-      try { command = validateRoutineCommand(params.command as RoutineCommand); } catch (e) { throw routineCliError(e); }
-      const value = await gateway.agentRoutines(command, asNumber(params.timeoutMs, 10_000));
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
     }
     if (method === "getTrays") {
@@ -621,13 +592,6 @@ export async function startDaemonHost(
     throw error;
   }
 
-  // The daemon already owns native Gateway access. This child neither starts
-  // monitoring nor creates bindings, and never sends without a persisted local
-  // authorization plus fresh source checks. Do not attach it to an RPC request.
-  notificationWorker = startOpsNotificationWorker({ durableRoot: deps.boxRuntimeRoot,
-    readNative: nativeExplicitReceiverReader(directDeps, 15000) });
-  const protectionWorker = startGatewayBotProtection(directDeps);
-  monitorService = startMonitorService({ durableRoot: deps.boxRuntimeRoot, read: runtimeOwnershipReader(directDeps) });
 
   return {
     socketPath,
@@ -637,7 +601,7 @@ export async function startDaemonHost(
       // Stop all producers before delivery shutdown. Each child settles its
       // transactions before the enclosing listeners and socket owner disappear.
       const lifecycleFailures: unknown[] = [];
-      for (const close of [() => protectionWorker.close(), () => monitorService?.close(), () => notificationWorker?.close(), () => events.close()]) {
+      for (const close of [() => events.close()]) {
         try { await close(); } catch (error) { lifecycleFailures.push(error); }
       }
       const results = await Promise.allSettled([

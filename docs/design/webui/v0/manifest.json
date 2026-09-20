@@ -1,0 +1,49 @@
+{
+  "version": "v0",
+  "status": "visual-reference-not-final",
+  "generatedAt": "2026-09-19",
+  "format": "SVG container with original PNG bytes embedded without transcoding",
+  "assets": [
+    {
+      "file": "partners.svg",
+      "title": "伙伴列表",
+      "originalFilename": "exec-6b3e1360-16e0-4759-9daa-8f3d51e2eda6.png",
+      "pngBytes": 1042079,
+      "pngSha256": "3c86b8a9c8e7726635cf4453e7b0179734190e5292309494edcd1061ef911045",
+      "width": 1586,
+      "height": 992,
+      "functionalContract": false
+    },
+    {
+      "file": "bot-detail.svg",
+      "title": "Bot 详情",
+      "originalFilename": "exec-ff38daef-02c2-4cf7-a143-f211e0f658aa.png",
+      "pngBytes": 1215816,
+      "pngSha256": "d491376d7d9ca6998ed0e1a37eea598a96b100ff51f846350332109f5d42a1e2",
+      "width": 1586,
+      "height": 992,
+      "functionalContract": false
+    },
+    {
+      "file": "workbench.svg",
+      "availability": "missing",
+      "title": "工作台",
+      "originalFilename": "exec-12aa2daa-23cb-436a-baf4-60f2c4eeb43b.png",
+      "pngBytes": 1250922,
+      "pngSha256": "696c00ecf24fcd6c4808e209a2ea922a61d5cee998c8894784c8aa458e0718b8",
+      "width": 1586,
+      "height": 992,
+      "functionalContract": false
+    },
+    {
+      "file": "attention.svg",
+      "title": "提醒",
+      "originalFilename": "exec-72fe39de-019b-4b13-b02f-9a8fc1b703ee.png",
+      "pngBytes": 1195614,
+      "pngSha256": "2425398ac36d82cc601a65e847947a5ec4130d494e78e7cc8fe3c26c1cb12cd9",
+      "width": 1586,
+      "height": 992,
+      "functionalContract": false
+    }
+  ]
+}

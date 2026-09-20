@@ -1,62 +1,88 @@
 # Models
 
-Load for per-Bot model selection or catalog configuration: `grokbox skills get grokbox --topic models`.
+Load for per-Bot selection or catalog configuration: `grokbox skills get grokbox --topic models`.
 
-## Select a model for one Bot
+## Select one Bot's future model
 
-**Operator / template Bot stays on the official brain. Never `models use` yourself.** Use disposable Bots for custom-model experiments, not App New Bot. Ordinary official-Bot work needs no model assignment.
+**Operator / template Bot stays on the official brain. Never change your own model.** Use a separately authorized disposable Bot for custom-model experiments. Ordinary official-Bot work needs no assignment.
 
-```bash
-grokbox models list
-grokbox agents create --name "<test-bot-name>" --harness box
-# Keep the created Bot ID. Do not repeat create if its outcome is unknown.
-grokbox agents ownership <created-agent-id>
-# Continue only when ownership is confirmed_box and the custom channel is ready.
-grokbox models use <model-id> --for <created-agent-id>
-```
-
-`<model-id>` must exist in the catalog. Assignments apply to the next turn; other Bots stay unchanged. `models use/reset` require exactly one of `--for <agent>` or `--default`; the explicit default is not a routing fallback. Use only the top-level `models` commands. `confirmed_box` is eligibility, not a production sign-off. A rejected use does not mutate the assignment; inspect `error.code` / `error.next`. Ownership uncertainty routes to [ownership](ownership.md); Host-channel recovery to [adopt](adopt.md). Do not guess the class from `harness=` or the title.
-
-`models use --for` also paints the selected Bot's title trailer and preserves the user title. `m=` uses its alias, otherwise the short `model` field. A title write failure does not undo the assignment; display is not routing authority. See [label](label.md).
-
-After a requested test send, observe it through [send](send.md). State exactly what was verified: saving an assignment is not proof that a provider replied.
-
-## Choose a reasoning effort on the same channel
+The model commands use the management Server, not a local-file or Gateway fallback. The implicit connection is this Box. `--connection <name>` selects an explicitly pinned endpoint for this invocation; neither `profile use` nor `GROKBOX_PROFILE` changes that target. A missing Server is a failure, not permission to start or bypass it.
 
 ```bash
-grokbox models use <model-id> --for <agent> --effort xhigh
-grokbox models show --for <agent>
-grokbox models use <model-id> --for <agent> --effort default
+grokbox system identity get
+grokbox model list
+grokbox bot list
+grokbox bot resolve <name-or-title>
+grokbox bot get <bot-ref>
+grokbox bot model get <bot-ref>
+grokbox bot model set <bot-ref> --model <model-id> --request-id <persisted-uuid> --expect-revision <observed-revision>
 ```
 
-An explicit effort must appear in that record's `capabilities.reasoning.efforts` whitelist. Missing capability is unknown, `false` means unsupported; both refuse explicit effort before ownership/catalog I/O and saving. The CLI never changes endpoint, credential or wire model to obtain an effort. Allowed wire vocabulary is `none|minimal|low|medium|high|xhigh|max`, but each channel supports only its declared subset. `none` is not `default`. A `reasoning: true` flag or an OpenAI-compatible endpoint alone proves no whitelist.
+Use a native UUID or `bot:<installation-id>:<native-uuid>` for a change, not a display name. `bot list` returns scoped refs; `bot resolve` performs exact case-insensitive name/title matching and returns candidates on ambiguity. Truncated identity text does not become a unique match, and `self` requires a trusted runtime binding. Persist the request UUID and exact input before submission. Read `revision` from the model query and use it for the change. A fresh intent needs its own UUID; an uncertain intent must not acquire a new one merely to retry.
 
-Omitting `--effort`, or specifying `default`, clears the prior override and sends no explicit effort; it does not guess the provider default. Existing TURNs retain their captured policy; the next TURN uses the new selection. `models show` reports configured-next-turn data, not current execution. The title adds `e=<effort>` independently of `m=`; default/official clears it. Emitted effort, Provider execution and token usage are distinct evidence, not guaranteed by the title or model self-report.
+The Server validates the model, ownership and catalog before publication. `confirmed_box` is eligibility, not production qualification. Failure or stale source evidence never authorizes a local harness edit, Host switch or alternate route. See [ownership](ownership.md) and [adopt](adopt.md) for the remaining inspection/maintenance paths.
 
-## Return one Bot to official
+Selection affects subsequent TURNs. The reply records configuration publication, not provider execution, current TURN adoption or an App title update. Saving a selection does not write a native title; title display and execution must be observed separately through [label](label.md) and [send](send.md).
+
+## Follow or change the default
 
 ```bash
-grokbox models reset --for <agent>
+grokbox model default get
+grokbox model default set <model-id> --request-id <persisted-uuid> --expect-revision <observed-revision>
+grokbox bot model set <bot-ref> --follow-default --request-id <persisted-uuid> --expect-revision <observed-revision>
 ```
 
-`reset` returns that Bot to official on the next turn; its harness does not change. It removes `m=` and `e=` only from an already-showing trailer. This does not restore the whole computer's official Host; that separate operation belongs to [services](services.md).
+An unassigned Bot remains native. Following the default is an explicit relationship; selecting the same model explicitly is not following it. Default changes affect followers only. A follower cannot supply its own effort. Clearing a referenced default refuses until its followers are explicitly rebound; a missing default cannot be followed.
 
-## Configure the catalog only when needed
+## Set or clear reasoning effort
 
-Human catalog entry: `~/.grokbox/models.json`. On a Box it aliases the installed durable `models.json`; resolve the actual path with `grokbox config path --physical --document models`. The runtime reads the canonical file, never the CLI install tree. `models *` owns model writes; generic `config set` does not edit this document. Prefer an existing catalog entry for normal selection; see [config](config.md) for layout and migration.
+```bash
+grokbox bot model set <bot-ref> --model <model-id> --effort xhigh --request-id <persisted-uuid> --expect-revision <observed-revision>
+grokbox bot model get <bot-ref>
+grokbox bot model set <bot-ref> --model <model-id> --effort default --request-id <new-persisted-uuid> --expect-revision <new-observed-revision>
+```
 
-Each model has `id`, `provider`, `model`, `endpoint`, and `apiKeyRef`. `openai` / `openai-chat` use Chat Completions; `openai-responses` uses Responses API; `stub/echo` is for tests only. `apiKeyRef` is `env:NAME` or `file:/absolute/path`, never a literal key or `$VAR`. Keep secret values out of argv and ordinary logs.
+An explicit effort must be in the model's `capabilities.reasoning.efforts` whitelist. Missing capability is unknown; `false` is unsupported. Both refuse an explicit effort before ownership/catalog work and publication. The request never changes endpoint, credential or wire model to obtain an effort. Wire vocabulary is `none|minimal|low|medium|high|xhigh|max`, limited to the model's declaration. `none` is not `default`.
 
-MiniMax's official HTTPS `/v1` Chat endpoints use the qualified `minimax-inline-v1` dialect: inline thinking is preserved across tool turns but kept out of ordinary answer text, and known empty continuation placeholders are normalized without repairing tool names. A proxy must explicitly set `chatDialect: "minimax-inline-v1"` on its model record; `"standard"` opts out. This field is Chat-only. Do not enable `reasoning_split` independently: nonempty split state is rejected rather than silently lost. A saved assignment or endpoint qualification is not a live acceptance result.
+Omitting effort, or specifying `default`, clears the override without guessing the provider's default. In-flight TURNs retain their captured selection. `bot model get` is a configured-next-turn projection and reports current execution as `not-observed`. Captured, emitted, provider-reported and title values are separate evidence.
 
-Optional `alias` must be unique and match `^[a-z0-9][a-z0-9._-]{0,15}$`. Schema v2 assignments are `assignments.agents[<bot-uuid>] = { "modelId": "<model-id>", "reasoning": { "effort": "high" } }` (reasoning is optional); route selection is per Bot, not a box-wide default. Use the CLI for assignment changes rather than editing this map by hand. Unlisted Bots stay official.
+## Reset or inspect uncertainty
 
-## Schema upgrade is a maintenance operation
+```bash
+grokbox bot model reset <bot-ref> --request-id <persisted-uuid> --expect-revision <observed-revision>
+grokbox model default reset --request-id <persisted-uuid> --expect-revision <observed-revision>
+grokbox operation get --request-id <original-request-uuid>
+```
 
-Readers normalize old v1 string assignments in memory without writing. Explicit model saves write v2; `grokbox models migrate --confirm` performs that normalization without changing model identity or adding effort. Before any v2 save on an existing deployment, a maintainer must protect the old configuration and coordinate compatible CLI/preload/Host/modeld artifacts and verify the loaded protocol; the model schema number does not establish wire compatibility. Old CLI readers reject v2 rather than silently dropping settings. No automatic root relocation, credential copy, Host restart or downgrade occurs. Rollback restores the matching old artifact and its protected old-schema snapshot together; it is not deleting effort fields.
+Bot reset removes only its managed intent; it does not change native ownership, reset context or switch the whole Host. It is not trapped behind unavailable ownership evidence. Default reset is a separate operation and refuses while followers exist.
 
-For a local record, capability declaration is `"capabilities": { "reasoning": { "efforts": ["low", "medium", "high", "xhigh"] } }` only when qualified for that exact endpoint/API/wire model. Pi imports can supply an explicit identity `thinkingLevelMap`; numeric budgets, lossy level mapping and booleans are not accepted as effort qualification. An administrator's declaration authorizes a request shape, not a claim that the gateway honors it. Never add guessed capabilities merely to bypass a refusal.
+Model mutations return exit `8` for an uncertain outcome; interruption returns `130` without cancelling an admitted Server commit. A read-only receipt lookup may succeed while reporting `state: unknown`. Do not infer success from exit `0` on that lookup, matching file contents or an empty error list. Prepared receipts are uncertainty fences, not retry permission. Lookup is installation/principal scoped and currently covers the model domain.
 
-## Deliberate acceptance, not routine setup
+## Catalog and credential maintenance
 
-**Stay-green after a switch** is a separate validation task: correlated reply evidence, `agents title sync` for the same Bot, then another title read after observing the scheduled refresh. Load [validation](validation.md#prove-a-model-switch) with `--topic validation` only when that sustained check is requested. An instant title is not acceptance, and a routine model task is not permission for indefinite monitoring.
+Human catalog entry: `~/.grokbox/models.json`. On a Box it aliases the installed canonical document; `grokbox config path --physical --document models` identifies it. General `config` commands do not edit model records or assignments. Do not bypass the management writer with manual assignment edits.
+
+The current source still exposes `models check`, `models persist-key` and `models migrate` as maintenance entries pending their remaining CLI migration. They do not restore the retired selection syntax. `check` is schema-only, not provider readiness; credential persistence is separately confirmed.
+
+```bash
+grokbox model apply <model-id> --mode patch --input @model-change.json --request-id <persisted-uuid> --expect-revision <observed-revision>
+grokbox model delete <model-id> --request-id <persisted-uuid> --expect-revision <observed-revision>
+```
+
+The apply document contains `modelId`, `mode`, `model`, `requestId` and `expectedRevision`; a field may instead come from its positional argument or flag, never both. `--input -` reads explicit bounded UTF-8 stdin. Unknown/duplicate keys, invalid null and oversized input refuse before submission. When identity, mode and concurrency fields are provided as flags above, the file can be `{"model":{"alias":"example"}}`.
+
+`patch` preserves omitted fields, including the credential reference and capabilities. Supplied arrays replace that field. Null explicitly clears `alias`, `contextWindowTokens`, `chatDialect` or `capabilities.reasoning`; required fields do not accept null. A reasoning change that invalidates current selections refuses. `replace` requires a complete model declaration; omitted optional settings reset according to the model schema. Neither mode rewrites an in-flight captured selection.
+
+Apply writes a local definition, including when explicitly overriding a Pi-imported identity; it never edits Pi's file. Delete refuses current Bot/default references and direct imported/builtin deletion. Removing a local override may reveal an imported definition again: inspect `model get` and its `configurationSource`. A verified local publication reports its actual readback revision; this does not claim control over the external catalog owner's writes. Full credential import management is still awaiting migration.
+
+Records contain provider, wire model, endpoint, capabilities and a private credential reference. `openai` / `openai-chat` use Chat Completions; `openai-responses` uses Responses API; `stub/echo` is test-only. References are `env:NAME` or `file:/absolute/path`, never a literal key or `$VAR`. API model views disclose only credential source/configuration status, not the reference or value.
+
+Current writes use models schema v3. Readers normalize v1/v2 without saving or inventing followers; explicit legacy assignments remain explicit. Every serving CLI/Host/modeld artifact must support the installed schema before adoption. No schema read automatically relocates roots, copies credentials, restarts a Host or downgrades data.
+
+An optional alias is unique and matches `^[a-z0-9][a-z0-9._-]{0,15}$`. Local reasoning capabilities and exact Pi `thinkingLevelMap` imports declare request shapes, not observed provider support. Never add guessed capabilities to bypass a refusal. Referenced model deletion and incompatible reasoning changes refuse instead of silently rebinding users.
+
+MiniMax's qualified `minimax-inline-v1` Chat dialect preserves inline thinking across tool turns without putting it in ordinary answers. A proxy requires that explicit dialect; `standard` opts out. Nonempty split thinking state is rejected. Endpoint configuration alone is not live acceptance.
+
+## Deliberate acceptance
+
+Load [validation](validation.md#prove-a-model-switch) only for a requested bounded canary or sustained check. Correlated provider/tool/compact/reply evidence and a later title read are distinct from saving configuration. Do not start indefinite monitoring or select a production Bot to fill an evidence gap.

@@ -10,9 +10,17 @@
 
 ## Dependencies without cycles
 
+本次重建按 [Agent-first Spec](../roadmap/agent-first-cli/spec.md)和 [LIVE E0–E6](LIVE-integration-validation.md#window-order)推进：施工期允许不可用，整合候选再集中验收；不要求先完成旧 v2 采用或每次恢复旧开发版。T40 承接新版首次安装、真实宿主、独立服务寿命、安全停止与官方退出，必要配置导入不扩成通用历史迁移。旧实现/日期证据保留原范围。
+
 本票服务启动/停止的隔离实现以T25/T28现有机制为基础，可与T39旅程夹具并行。真实试验先用已满足的T37/T38身份门；**最终生产放行**才合取T24/T26/T32/T35/T36/T37/T38的必需子集和T39完成证据。T39不依赖本票整票Done，避免“先有发布才允许验发布”的环。
 
-test2只保留T38冲突诊断/校准；test1未opt-in官方对照；test0或另一个经明确批准、Server确认box的对象承担正例。新建Bot或真实B模型要有具名授权，不由文档自动扩展到业务对象。
+原有 test0/test1/test2 只属于历史窗口；新窗口从实际回执确定测试角色和授权对象。不能因旧对照名称或报告而修改已有 Bot，也不要求先修复历史测试对象才建设新版。
+
+## Host verifier 制品依赖（2026-09-20）
+
+[HOST-01](HOST-01-patch-health-verifier.md) 已把 `dist/native/x86_64-unknown-linux-gnu/` 的正式Rust binary、构建/协议/checker manifest和完整依赖许可文本纳入根构建、源码身份及精确tarball清单。Rust/Cargo/schema/生成合同版本固定，运行时不需要cargo、不下载latest。安装测试实际调用安装后binary及Node/FD链，核对binary/许可文本哈希；不由source checkout中的可执行文件替代发行制品。
+
+这只资格化当前Linux x64构建目标，不擅自提高所有CLI消费者的平台能力声明。Host/preload/browser不包含Oxc AST引擎；Server拥有分析子进程的取消和close。真实服务注册/boot/独立modeld运行仍按本票及LIVE分别证明，静态工具通过不准许采用profile或杀旧Host。
 
 ## 当前实现入口
 
@@ -27,6 +35,7 @@ modeld复用daemon的准确socket owner/advisory gate：仅对登记inode+确证
 复用现有`runtime start/status`、controller/re-adopt、modeld与凭据存储接口，打通当前占位或不完整闭环。服务管理器采用当前部署环境可证明支持的一个明确方案，不并存多套启动所有者，不另造supervisor体系。
 
 - 首次启动、重复启动、干净shell/父shell退出、modeld重启及需要的整机重启均读回同一批准配置；无需人工补shell env、临时故障注入或每次重新配模型。
+- 新版 Server/Web/modeld 的制品与寿命分别核验；关闭页面或重启管理服务不主动结束已开始的合法 modeld 执行，新工作仍核验资格。目标宿主可行性提前验证，不等视觉或全站完成。
 - 已有file/env凭据解析和官方renewal都按本身权限工作；私钥不在argv/log/收据中。自定义凭据可用不替代官方身份读取认证，官方凭据失效不偷偷使用另一个服务的key。
 - 每个listener/socket/process/helper由T25/T28精确标识，重复操作不多启进程；PID复用/错Host/旧receipt零错误signal。CLI退出不误杀长期服务，也不留无人管理的writer。
 - 开始新managed TURN前读取T37新鲜身份；凭据/权限/所有权变更与配置切换分层，不重放上次未知STEP。status报告desired/实际加载/ready/执行证据差异，不把端口存在当已签字。
@@ -34,7 +43,7 @@ modeld复用daemon的准确socket owner/advisory gate：仅对登记inode+确证
 
 ### 当前启动前置（2026-09-19）
 
-服务内collector装配、daemon/modeld准确socket恢复与systemd用户服务注册已实现，当前步骤是目标环境资格而非再次开发同义安装器。此前本机只读检查为tini且user manager不可用；没有适配器能够把不存在的管理器当成已注册，须在W0重查。环境不支持时，相应开机持久性场景保持ENV阻断，不擅改官方supervisor或用nohup代签；匹配环境的实际注册/独立进程/重启仍需现场证明。当前方法与证据见[服务注册](../maintainers/runtime-service-registration.md)、[前置收口](../reports/2026-09-19-pre-e2e-closeout.md)。
+服务内collector装配、daemon/modeld准确socket恢复与systemd用户服务注册已实现，当前步骤是目标环境资格而非再次开发同义安装器。此前本机只读检查为tini且user manager不可用；没有适配器能够把不存在的管理器当成已注册，须在目标宿主资格检查及 E0 重查。环境不支持时，相应开机持久性场景保持ENV阻断，不擅改官方supervisor或用nohup代签；匹配环境的实际注册/独立进程/重启仍需现场证明。当前方法与证据见[服务注册](../maintainers/runtime-service-registration.md)、[前置收口](../reports/2026-09-19-pre-e2e-closeout.md)。
 
 ### 单盒monitor的长期运行（T41）
 
@@ -59,10 +68,10 @@ T41不等本票整票完成，本票服务实现也不等前端；**最终持续
 ## 3. 固定候选与有限放行
 
 - 一次验证窗口固定source/未提交内容指纹、锁文件/工具链、实际preload/CLI/modeld、Host/profile与运行代。测试期间变化使受影响证据失效，不把多个候选的通过数相加。
-- 独立review和真实使用试验分开；review必须绑定固定内容身份。没有review或缺必要live证据保持候选，不自签、不开全局生产。
+- 新版用户验收前收口适用独立 review 和真实使用试验，两者都绑定固定内容。开发中只验证受影响性质，不把每个提交当发布；旧报告的 review 缺口不自动扩为全部新能力的施工前置。
 - 只对具名批准Bot逐一启用。支持模型/协议/窗口/Host/App版本、凭据载入方式、未观测项和退出入口写 LIVE 对应条目，详细身份写日期报告；若用户要求的完整往返未齐不能改称已稳定。
 - 失败按最早失败owner回票修复，再复验；outcome查询复用原nonce/TURN，不以新send探测旧请求是否完成。先保存证据，停止受影响准入，不隐式转官方或重试副作用。
-- 客户端已确认记录不得被其它来源覆盖；App-only失败不能靠CLI成功放行。test2实际校准可经独立确认后进行，或明确保留；冲突阻断与防再引入仍是必须门。
+- 客户端已确认记录不得被其它来源覆盖；App-only失败不能靠CLI成功放行。非目标资料与实际冲突保护继续验，历史 test2 的校准不再是新版默认前置。
 
 ## 3.1 本次候选核验的部署前问题（2026-09-12）
 
@@ -135,7 +144,7 @@ route启动前复用128KiB/no-follow/regular-file ConfigurationRead检查canonic
 
 正常发行包只包含生产实现，自写fixture自包含；私有research和现场receipt留在私有仓库/受控空间。T40签生产前需必需证据合取和可执行退路；仅清理worktree不提高产品资格，未清理则如实记交付残留。
 
-下一动作：固定已合入候选并进入W0核验目标服务管理器、原生资格、独立review和制品退路，再按本票对应LIVE场景完成实际注册、重启及原生checkpoint往返。前台生命周期、服务注册与恢复的已实现部分不再列回占位修复。tmux或历史PodDaemon不等于boot hook/cross-recreate资格；没有匹配管理器时不擅改官方wrapper/supervisor，不用detach伪装安装。整票保留环境和生产放行Open。
+下一动作：在统一骨架阶段先核验目标宿主可行性；完整功能候选再进入 E0，固定实际制品、适用原生/独立审查和安全恢复路径，随后验安装、重启与 checkpoint 往返。原实现按新边界复用或调整，不重建同义安装器，也不为了保持旧开发版运行增加兼容层。tmux/旧 PodDaemon 不等于开机资格；缺环境明确阻断，不擅改官方宿主或用 detach 代签。下方日期记录仅为历史观察。
 
 **2026-09-13 现场 start 借用：** `runtime start --mode route` 对当时 modeld REDACTED_PROCESS_ID 回执 borrowed / productionAccepted:false / autostartInstalled:false。
 

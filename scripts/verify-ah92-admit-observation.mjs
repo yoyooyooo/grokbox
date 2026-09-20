@@ -45,7 +45,7 @@ if (help) {
       "grokbox send <agent> --text '…' --json",
       "grokbox history outcome <agent> --nonce <clientNonce> --runtime [--wait-ms 60000] --json",
     ],
-    note: "Live catalog models are openai*; models use of unofficial ids is refused. This script writes a temporary unofficial assignment, observes admit deny, then restores models.json. It is not a second CLI surface.",
+    note: "This explicit legacy fault-injection experiment bypasses normal model admission, then restores the captured models.json bytes. It requires scoped authorization and fresh qualification for the selected candidate; it is not a second CLI surface.",
   })}\n`);
   process.exit(0);
 }
@@ -171,9 +171,7 @@ try {
     "--nonce", nonce,
     "--runtime",
   ], 60_000);
-  const after = grokbox(["models", "list"], 30_000);
-  const restoredAssignment = after.data?.assignments?.agents?.[agentId] ?? null;
-  const originalAssignment = original?.assignments?.agents?.[agentId] ?? null;
+  const modelBytesRestored = readFileSync(modelsPath).equals(originalBytes);
   const runRoot = process.env.GROKBOX_RUN_ROOT && isAbsolute(process.env.GROKBOX_RUN_ROOT)
     ? process.env.GROKBOX_RUN_ROOT
     : join(homedir(), ".grokbox", "run");
@@ -194,7 +192,7 @@ try {
     A14: rejects.length === 1,
     A16: data.state !== "accepted" && data.state !== "recorded",
     emptyAlertsStayFailed: Array.isArray(data.alerts) && data.alerts.length === 0 && data.state === "failed",
-    restored: restoredAssignment === originalAssignment,
+    restored: modelBytesRestored,
   };
   const ok = Object.values(checks).every(Boolean);
   process.stdout.write(`${JSON.stringify({

@@ -35,7 +35,7 @@ export async function receiptFixture(mode: "identity" | "route" = "route", refre
   });
   const input: ManualReadoptInput = {
     root, ephemeralRoot, confirmed: true, now: () => 100,
-    desired: { version: 1, mode }, models: { version: 2, models: {}, assignments: { main: { modelId: "stub/echo" }, agents: {} } },
+    desired: { version: 1, mode }, models: { version: 3, models: {}, assignments: { main: { modelId: "stub/echo" }, agents: {} } },
     diskSha: SHA, reviewedProfile: structuredClone(reviewed), processes: tree,
     classify: (ident) => {
       const role = tree.roles().find((row) => row.pid === ident.pid)?.role;

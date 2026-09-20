@@ -1,6 +1,6 @@
 import {expect,test} from "bun:test";
 import {mkdtemp,rm,stat} from "node:fs/promises";import {tmpdir} from "node:os";import {join} from "node:path";import {randomUUID} from "node:crypto";
-import {openBotProtection,startPolicyBoundBotProtection,openContinuityControls,type BotProtectionPort,type BotLifecyclePort} from "../src/runtime.ts";
+import {openBotProtection,startBotProtectionWorker,startPolicyBoundBotProtection,openContinuityControls,type BotProtectionPort,type BotLifecyclePort} from "../src/runtime.ts";
 import {continuityProtection,botWorkflowRequest,protectionRevision} from "@grokbox/runtime-kernel/continuity";
 const id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",target="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",scopeId="c".repeat(64);
 async function fixture(){
@@ -51,6 +51,33 @@ test("pause opt-out and prepare-only policy remain distinct from automatic activ
  await f.program.advance();expect(f.counts().created).toBe(1);
  }finally{await f.close();}
 });
+test("a slow capture cannot suppress ownership loss observation and shutdown waits for its final write",async()=>{
+ const f=await fixture();let worker:ReturnType<typeof startBotProtectionWorker>|undefined;
+ let entered!:()=>void,release!:()=>void,paused!:()=>void;
+ const capturing=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve),lossObserved=new Promise<void>(resolve=>paused=resolve);
+ const bounded=async(promise:Promise<void>,label:string)=>{
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try{await Promise.race([promise,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(label)),1500);})]);}
+  finally{clearTimeout(timer);}
+ };
+ const capture=f.native.capture,pause=f.native.pause;
+ let finished=false,closed=false;
+ try{
+  f.update({bots:{[id]:{mode:"alert"}}});await f.program.observe();
+  f.native.capture=async(...args)=>{entered();await gate;const value=await capture(...args);finished=true;return value;};
+  f.native.pause=async(...args)=>{const value=await pause(...args);paused();return value;};
+  worker=startBotProtectionWorker({durableRoot:f.root,scopeId,native:f.native},{observationMs:10,advancementMs:10,handoverMs:10});
+  await bounded(capturing,"capture-not-started");
+  f.state("temporal");
+  await bounded(lossObserved,"observation-blocked-by-capture");
+  expect(finished).toBe(false);expect(f.counts().created).toBe(0);expect(f.counts().paused).toBe(1);
+  const stopping=worker.close().then(()=>{closed=true;});await new Promise(resolve=>setTimeout(resolve,25));expect(closed).toBe(false);
+  release();await stopping;expect(finished).toBe(true);expect(worker.status()).toMatchObject({state:"stopped"});
+  const row=await f.controls.subject(id),counts=f.counts();expect(row?.data.lossId).toBeString();expect(row?.data.lastSnapshotId).toBeString();
+  await new Promise(resolve=>setTimeout(resolve,30));expect(f.counts()).toEqual(counts);expect(await f.controls.subject(id)).toEqual(row);
+ }finally{release();await worker?.close();await f.close();}
+});
+
 test("normal daemon lifecycle does not instantiate native controller while config is off",async()=>{
  const f=await fixture();let reads=0,created=0;
  const worker=startPolicyBoundBotProtection({durableRoot:f.root,read:async()=>{reads++;return {enabled:false,scopeId:null};},create:()=>{created++;return f.native;}});

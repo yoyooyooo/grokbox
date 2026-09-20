@@ -105,11 +105,38 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128) return failContinuity("invalid_material");
     return db.all("SELECT operation_id,kind,source_id,target_id,phase,updated_at FROM continuity_workflows ORDER BY updated_at DESC LIMIT ?", [limit]);
   });
+  const managedRequests = (installationId: string, principalId: string, limit = 20, after?: string) => database.read(async db => {
+    id(installationId);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/.test(principalId) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) return failContinuity("invalid_material");
+    if (after !== undefined) id(after);
+    // Ownership is stored inside the original immutable workflow declaration.
+    // Filter before LIMIT, so another principal cannot exhaust this window.
+    const records = await db.all("SELECT operation_id FROM continuity_workflows WHERE json_extract(request_json,'$.management.installationId')=? AND json_extract(request_json,'$.management.principalId')=? AND operation_id>? ORDER BY operation_id LIMIT ?", [installationId, principalId, after ?? "", limit + 1]);
+    const requests: BotWorkflowRequest[] = [];
+    for (const value of records.slice(0, limit)) requests.push((await row(db, String(value.operation_id))).request);
+    return { requests, nextCursor: records.length > limit ? requests.at(-1)!.operationId : null };
+  });
+  const enrollment = () => database.read(async db => {
+    // Independent clones/startups may enter default protection once their
+    // requested lifecycle is complete. Replacements remain the predecessor's
+    // lineage; pending/unknown creation targets must not become a second owner.
+    const targets = await db.all(`SELECT DISTINCT w.target_id FROM continuity_workflows w WHERE w.target_id IS NOT NULL AND
+      (w.kind='replace' OR NOT EXISTS (SELECT 1 FROM continuity_steps s WHERE s.operation_id=w.operation_id AND s.state='complete' AND
+        s.step=CASE WHEN json_extract(w.request_json,'$.start')=1 THEN 'startup' WHEN json_extract(w.request_json,'$.activate')=1 THEN 'activate' ELSE 'initialize' END)) LIMIT 129`);
+    const unknown = await db.first("SELECT COUNT(*) AS n FROM continuity_workflows w WHERE target_id IS NULL AND EXISTS (SELECT 1 FROM continuity_steps s WHERE s.operation_id=w.operation_id AND s.step='create' AND s.state='effect_unknown')");
+    return { targets:targets.slice(0,128).map(row=>id(String(row.target_id))), hasMore:targets.length>128, unknownCreations:Number(unknown?.n??0) };
+  });
+  const subjects = (limit = 128) => database.read(async db => {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128) return failContinuity("invalid_material");
+    const rows = await db.all("SELECT * FROM continuity_subjects ORDER BY logical_id LIMIT ?", [limit + 1]);
+    return { subjects: rows.slice(0, limit).map(value => ({ logicalId: id(String(value.logical_id)), currentId: id(String(value.current_id)),
+      generation: Number(value.generation), revision: Number(value.revision), data: parse(value.state_json) })), hasMore: rows.length > limit };
+  });
   const subject = (logicalId: string) => database.read(async db => {
     const value = await db.first("SELECT * FROM continuity_subjects WHERE logical_id=?", [id(logicalId)]);
     return value ? { logicalId, currentId: String(value.current_id), generation: Number(value.generation), revision: Number(value.revision), data: parse(value.state_json) } : null;
   });
-  const updateSubject = (logicalId: string, expectedRevision: number, currentId: string, generation: number, raw: unknown) => database.write("continuity-subject", async db => {
+  const writeSubject = async (db: MonitorSqlite, logicalId: string, expectedRevision: number, currentId: string, generation: number, raw: unknown) => {
     id(logicalId); id(currentId);
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !Number.isSafeInteger(generation) || generation < 0) return failContinuity("invalid_material");
     const previous = await db.first("SELECT revision FROM continuity_subjects WHERE logical_id=?", [logicalId]);
@@ -125,7 +152,28 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     await db.run("DELETE FROM continuity_subject_materials WHERE logical_id=?", [logicalId]);
     for (const value of new Set(references)) await db.run("INSERT INTO continuity_subject_materials VALUES(?,?)", [logicalId, value]);
     return expectedRevision + 1;
-  });
+  };
+  const updateSubject = (logicalId: string, expectedRevision: number, currentId: string, generation: number, raw: unknown) =>
+    database.write("continuity-subject", db => writeSubject(db,logicalId,expectedRevision,currentId,generation,raw));
+  /** Capture completion only merges its own material fields. Observation may
+   * have advanced while the source was read; preserve that newer loss/queue
+   * state, and change both the snapshot association and GC pins atomically. */
+  const completeSubjectCapture = (input: {logicalId:string;currentId:string;generation:number;requestId:string;snapshotId:string|null;capturedAtMs:number;archive:boolean}) =>
+    database.write("continuity-capture-complete", async db => {
+      id(input.logicalId);id(input.currentId);id(input.requestId);if(input.snapshotId!==null)id(input.snapshotId);
+      if(!Number.isSafeInteger(input.generation)||input.generation<0||!Number.isSafeInteger(input.capturedAtMs)||input.capturedAtMs<1||typeof input.archive!=="boolean")return failContinuity("invalid_material");
+      const previous=await db.first("SELECT current_id,generation,revision,state_json FROM continuity_subjects WHERE logical_id=?",[input.logicalId]);
+      if(!previous||previous.current_id!==input.currentId||previous.generation!==input.generation)return "superseded" as const;
+      const state=parse(previous.state_json);
+      if(state.pendingSnapshotId!==input.requestId)return "superseded" as const;
+      state.lastAction=input.snapshotId===null?"snapshot_unavailable":"snapshot_saved";
+      if(input.snapshotId!==null){
+        state.lastSnapshotId=input.snapshotId;state.capturedAtMs=input.capturedAtMs;state.pendingSnapshotId=null;
+        state.archiveSnapshotIds=input.archive?[...new Set([...(state.archiveSnapshotIds??[]),input.snapshotId])].slice(-8):[];
+      }
+      await writeSubject(db,input.logicalId,Number(previous.revision),input.currentId,input.generation,state);
+      return state.lastAction as "snapshot_saved"|"snapshot_unavailable";
+    });
   const handoverItems = (operationId: string) => database.read(async db => { await row(db, operationId); return (await db.all("SELECT * FROM continuity_handover_items WHERE operation_id=? ORDER BY item_id LIMIT 1025", [operationId])).map(v => ({
     itemId: String(v.item_id), kind: String(v.kind), state: String(v.state), input: parse(v.input_json), result: v.result_json === null ? null : parse(v.result_json) })); });
   const putHandover = (operationId: string, itemId: string, kind: string, raw: unknown) => database.write("handover-plan", async db => {
@@ -165,5 +213,5 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     await db.run("UPDATE continuity_queued_controls SET state=?,result_json=?,updated_at=? WHERE operation_id=?",[next,encoded,Date.now(),operationId]);return {state:next};
   });
   return { initialize: database.initialize, create, request, step, beginStep, completeStep, phase, status, list,
-    subject, updateSubject, handoverItems, putHandover, settleHandover,control,reserveControl,transitionControl };
+    subject, subjects, enrollment, managedRequests, updateSubject, completeSubjectCapture, handoverItems, putHandover, settleHandover,control,reserveControl,transitionControl };
 }

@@ -8,7 +8,7 @@
 
 ## 目标与模块
 
-同一长期Memory身份只有一份当前工作状态。提供观察、原生hold、initialize、reset、recover、commit/read-back/reopen及激活边界；context版本与activationEpoch是并发控制，不是用户session。
+同一原生 Bot 只有一份本能力管理的当前工作状态。提供观察、原生hold、initialize、reset、recover、commit/read-back/reopen及激活边界；context版本与activationEpoch是并发控制，不是用户session。
 
 `internal/host/continuity-import.ts`及有限slices对接原生writer/runner；`roots/continuity.runtime.ts`管理操作寿命；kernel continuity校验候选与revision，CLI在现有context能力上扩展。原生Host仍拥有活状态，vault是备份，不直接覆盖活库，不为单次操作全局重启Host。
 
@@ -32,7 +32,11 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 当前能力通过独立`current-state`同源profile升级接入，不改变默认历史recipe。prepare保留现有来源/目标，initialize完成双层读回但不开始工作；activate显式释放已核实屏障，只允许后续正常输入。原生worker commit、主Host应用完成、本地安全账本完成分别记录；部分成功unknown不重导，B2继续工作后不能被B0覆盖。
 
-`agents state show/capture/initialize/operation/reconcile/activate`及`agents create --defer-start`已有注册/帮助/处理程序。defer-start只请求抑制介绍和kickstart，不是入站屏障；state命令Box-local、UUID限定、写操作需confirm、普通输出无原始上下文。CONT库的显式迁移保留原始初始化请求；CONT-06追加后当前私有库为v3，支持v1/v2连续升级并保存复制身份回执，GET不迁移。使用方法和限制唯一归操作指南。
+当前状态的普通管理已进入 `bot context get/initialize/reset/restore`、`bot snapshot create`、`bot activate` 和 context 域 operation get/reconcile/resume/cancel；旧 `agents state` 注册和直连 writer 已退出。`agents create --defer-start`仍只请求抑制介绍和 kickstart，不是入站屏障。管理主体、安装、原请求与固定目标/head/material 存入原 CONT 控制表，不新建操作数据库；源码版本以原数据库 owner 为准，GET 不迁移。操作方法唯一归[当前指南](../maintainers/current-state-control.md)。
+
+[管理组合](../../test/context-management.test.ts)和[生产浏览器旅程](../../apps/web/test/context-browser.node.ts)通过共享 API 消费原生 owner/RPC/checkpoint worker，实际测试 Node HTTP、SQLite、打包 CLI、SIGKILL 后原标记对账、未知原生 apply 不重发、独立解除和 B2 不回退。Web 只保存原定位，丢解除回执后从历史取首次解除 revision，不用刷新后的新 revision 替代。读源、写上下文、解除和历史权限分开，最后授权撤销、客户端断连、关闭结算与元数据泄漏都有对应反例。
+
+未完成准备与等待解除的来源/备份/候选在原 CONT GC 事务中受保护。有限 cancel 仅在没有任何原生应用声明和解除声明时保留原取消墓碑，不能取消未知 apply；来源不存在在预留前拒绝。完整 self-reset、附件、源资源独立和真实账号资格仍未关闭；固定源码及扩大回归归 [CLI-05](CLI-05-implementation-follow-through.md)。
 
 稳定验证入口：`node scripts/verify-runtime-rebuild.mjs continuity-native-binding`；明确本机原生资格另用`GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continuity-native-binding-qualified`。后者Node22仅来自原生worker的node:sqlite要求，不提高grokbox Node20.17产品基线。独立外部review和实际profile加载仍未签；不把未实现项移成单纯live待验。
 

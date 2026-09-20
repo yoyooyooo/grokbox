@@ -52,15 +52,16 @@ export const STUB_ECHO_MODEL: ModelRecord = {
 
 /** A catalog identity plus per-Bot policy, never a derived catalog model. */
 export type ModelAssignment = { modelId: string; reasoning?: ReasoningPolicy };
+export type BotModelAssignment = ModelAssignment | { kind: "default"; modelId?: never; reasoning?: never };
 /** Runtime-only immutable snapshot. reasoning is never a catalog record field. */
 export type ResolvedModelSelection = ModelRecord & { reasoning?: ReasoningPolicy };
 
 export type ModelsFile = {
-  version: 2;
+  version: 3;
   models: Record<string, ModelRecord>;
   assignments: {
     main: ModelAssignment | null;
-    agents: Record<string, ModelAssignment>;
+    agents: Record<string, BotModelAssignment>;
   };
   externalCatalog?: ExternalCatalogEntry[];
   credentials?: Record<string, string>;
@@ -72,7 +73,7 @@ export type DesiredFile = {
 };
 
 const EMPTY_MODELS: ModelsFile = {
-  version: 2,
+  version: 3,
   models: {},
   assignments: { main: null, agents: {} },
 };
@@ -231,9 +232,9 @@ function parseModel(id: string, value: unknown): ModelRecord {
 }
 
 export function parseModelsFile(value: unknown): ModelsFile {
-  if (value === undefined) return EMPTY_MODELS;
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) {
-    throw new BoxRuntimeError("invalid_usage", "models.json must be version 1 (read-only migration input) or version 2.");
+  if (value === undefined) return structuredClone(EMPTY_MODELS);
+  if (!isRecord(value) || ![1, 2, 3].includes(value.version as number)) {
+    throw new BoxRuntimeError("invalid_usage", "models.json must be version 3; versions 1 and 2 are import inputs.");
   }
   exactFields(value, ["version", "models", "assignments", "externalCatalog", "credentials"], "models.json");
   if ((value.models !== undefined && !isRecord(value.models)) ||
@@ -265,19 +266,25 @@ export function parseModelsFile(value: unknown): ModelsFile {
       if (typeof entry !== "string" || !entry.length) throw new BoxRuntimeError("invalid_usage", "Version 1 assignments must be nonempty model ids.");
       return { modelId: entry };
     }
-    if (!isRecord(entry)) throw new BoxRuntimeError("invalid_usage", "Version 2 assignments must be modelId/reasoning objects.");
+    if (!isRecord(entry)) throw new BoxRuntimeError("invalid_usage", "Assignments must be modelId/reasoning objects.");
     exactFields(entry, ["modelId", "reasoning"], "model assignment");
     if (typeof entry.modelId !== "string" || !entry.modelId.length) throw new BoxRuntimeError("invalid_usage", "An assignment requires a nonempty modelId.");
     const reasoning = parseReasoningPolicy(entry.reasoning);
     return { modelId: entry.modelId, ...(reasoning ? { reasoning } : {}) };
   };
   const main = assignmentsRaw.main === null || assignmentsRaw.main === undefined ? null : parseAssignment(assignmentsRaw.main);
-  const agents: Record<string, ModelAssignment> = Object.create(null);
+  const agents: Record<string, BotModelAssignment> = Object.create(null);
   if (isRecord(assignmentsRaw.agents)) {
-    for (const [agentId, assignment] of Object.entries(assignmentsRaw.agents)) agents[agentId] = parseAssignment(assignment);
+    for (const [agentId, assignment] of Object.entries(assignmentsRaw.agents)) {
+      if (value.version === 3 && isRecord(assignment) && assignment.kind === "default") {
+        exactFields(assignment, ["kind"], "default model selection");
+        if (!main) throw new BoxRuntimeError("invalid_usage", "model_default_missing");
+        agents[agentId] = { kind: "default" };
+      } else agents[agentId] = parseAssignment(assignment);
+    }
   }
   return {
-    version: 2,
+    version: 3,
     models,
     assignments: { main, agents },
     ...(externalCatalog.length > 0 ? { externalCatalog } : {}),
@@ -323,7 +330,7 @@ function parseCatalogCredentials(value: unknown): Record<string, string> {
 
 /** Disk document: assignments, catalog pointer, credentials, local models. Strips Pi-adapted records. */
 export function persistModelsDocument(file: ModelsFile): {
-  version: 2;
+  version: 3;
   models: Record<string, ModelRecord>;
   assignments: ModelsFile["assignments"];
   externalCatalog?: ExternalCatalogEntry[];
@@ -336,7 +343,7 @@ export function persistModelsDocument(file: ModelsFile): {
     models[id] = rest;
   }
   return {
-    version: 2,
+    version: 3,
     models,
     assignments: file.assignments,
     ...(file.externalCatalog && file.externalCatalog.length > 0 ? { externalCatalog: file.externalCatalog } : {}),
@@ -384,8 +391,9 @@ const LABEL_TOKEN = /^[A-Za-z0-9._:/-]+$/;
 /** Label `m=` token: alias if set, otherwise the short `model` field when it fits. */
 export function assignedModelTokens(file: ModelsFile, mode: "alias-only" | "alias-or-model" = "alias-or-model"): Map<string, string> {
   const tokens = new Map<string, string>();
-  for (const [agentId, assignment] of Object.entries(file.assignments.agents)) {
-    const record = file.models[assignment.modelId];
+  for (const agentId of Object.keys(file.assignments.agents)) {
+    const assignment = assignmentForBot(file, agentId)!;
+    const record = Object.hasOwn(file.models, assignment.modelId) ? file.models[assignment.modelId] : undefined;
     if (!record) continue;
     const token = record.alias ?? (mode === "alias-or-model" && LABEL_TOKEN.test(record.model) ? record.model : undefined);
     if (token !== undefined) tokens.set(agentId.toLowerCase(), token);
@@ -445,6 +453,8 @@ export function applyUse(file: ModelsFile, modelId: string, forAgent?: string, r
 
 export function applyReset(file: ModelsFile, forAgent?: string): ModelsFile {
   if (forAgent === undefined || forAgent.length === 0) {
+    const followers = Object.values(file.assignments.agents).some(assignment => assignment.modelId === undefined);
+    if (followers) throw new BoxRuntimeError("invalid_usage", "model_default_in_use");
     return { ...file, assignments: { ...file.assignments, main: null } };
   }
   const agents = { ...file.assignments.agents };
@@ -452,13 +462,54 @@ export function applyReset(file: ModelsFile, forAgent?: string): ModelsFile {
   return { ...file, assignments: { ...file.assignments, agents } };
 }
 
-export function assertResetAllowed(desired: DesiredFile, forAgent?: string): void {
-  if (desired.mode === "route" && !forAgent) {
-    throw new BoxRuntimeError(
-      "invalid_usage",
-      "Reset of the box default is refused in route mode; use --for <agent-id> for a single Bot's next-turn official selection.",
-    );
+export function assignmentForBot(file: ModelsFile, agentId: string): ModelAssignment | undefined {
+  if (!Object.hasOwn(file.assignments.agents, agentId)) return undefined;
+  const assignment = file.assignments.agents[agentId]!;
+  if (assignment.modelId !== undefined) return assignment;
+  if (!file.assignments.main) throw new BoxRuntimeError("invalid_usage", "model_default_missing");
+  return file.assignments.main;
+}
+
+export function applyFollowDefault(file: ModelsFile, agentId: string): ModelsFile {
+  if (!agentId) throw new BoxRuntimeError("invalid_usage", "A default follower requires a Bot ID.");
+  if (!file.assignments.main) throw new BoxRuntimeError("invalid_usage", "model_default_missing");
+  resolveModelSelection(file, file.assignments.main);
+  return { ...file, assignments: { ...file.assignments, agents: { ...file.assignments.agents, [agentId]: { kind: "default" } } } };
+}
+
+export function modelReferences(file: ModelsFile, modelId: string, limit = 100) {
+  const references: Array<{ kind: "default" } | { kind: "bot"; agentId: string; selection: "model" | "default" }> = [];
+  if (file.assignments.main?.modelId === modelId) references.push({ kind: "default" });
+  for (const [agentId, selection] of Object.entries(file.assignments.agents)) {
+    if (assignmentForBot(file, agentId)?.modelId === modelId) {
+      references.push({ kind: "bot", agentId, selection: selection.modelId === undefined ? "default" : "model" });
+    }
   }
+  const bound = Math.max(1, Math.min(100, Number.isSafeInteger(limit) ? limit : 100));
+  return { references: references.slice(0, bound), total: references.length, truncated: references.length > bound };
+}
+
+export function applyModelDelete(file: ModelsFile, modelId: string): ModelsFile {
+  const record = requireModel(file, modelId);
+  if (modelReferences(file, modelId).total) throw new BoxRuntimeError("invalid_usage", "model_in_use");
+  if (record.catalog === "pi" || modelId === STUB_ECHO_MODEL_ID) throw new BoxRuntimeError("invalid_usage", "model_source_read_only");
+  const models = { ...file.models };
+  delete models[modelId];
+  return { ...file, models };
+}
+
+export function applyModelRecord(file: ModelsFile, modelId: string, input: unknown): ModelsFile {
+  const record = parseModel(modelId, input);
+  if (record.alias && Object.values(file.models).some(other => other.id !== modelId && other.alias === record.alias)) {
+    throw new BoxRuntimeError("invalid_usage", "Model alias is already in use.");
+  }
+  const next = { ...file, models: { ...file.models, [modelId]: record } };
+  if (next.assignments.main?.modelId === modelId) resolveModelSelection(next, next.assignments.main);
+  for (const agentId of Object.keys(next.assignments.agents)) {
+    const assignment = assignmentForBot(next, agentId)!;
+    if (assignment.modelId === modelId) resolveModelSelection(next, assignment);
+  }
+  return next;
 }
 
 /** Data rule only. Not the OpenAI mapper / SDK codec (T23). */
@@ -488,7 +539,7 @@ export function backendKindForModel(record: ModelRecord): BackendKind {
 function assignedModelIds(file: ModelsFile): string[] {
   const ids: string[] = [];
   if (file.assignments.main) ids.push(file.assignments.main.modelId);
-  ids.push(...Object.values(file.assignments.agents).map(assignment => assignment.modelId));
+  ids.push(...Object.keys(file.assignments.agents).map(agentId => assignmentForBot(file, agentId)!.modelId));
   return ids;
 }
 
@@ -521,17 +572,17 @@ export function assertStubOnlyRouteAssignments(file: ModelsFile): void {
 export function assertRouteAssignment(file: ModelsFile): void {
   assertStubOnlyRouteAssignments(file);
   if (file.assignments.main) resolveModelSelection(file, file.assignments.main);
-  for (const assignment of Object.values(file.assignments.agents)) resolveModelSelection(file, assignment);
+  for (const agentId of Object.keys(file.assignments.agents)) resolveModelSelection(file, assignmentForBot(file, agentId)!);
 }
 
 export function disclosure(file: ModelsFile, modelId: string, forAgent?: string) {
   const record = requireModel(file, modelId);
   const target = assignmentTarget(forAgent);
-  const assignment = forAgent ? file.assignments.agents[forAgent] : file.assignments.main;
+  const assignment = forAgent ? assignmentForBot(file, forAgent) : file.assignments.main;
   return {
     reasoning: { requested: assignment?.reasoning?.effort ?? "default", providerReported: "unknown" },
     reasoningCapability: record.capabilities.reasoning ?? "unknown",
-    modelsSchemaVersion: 2,
+    modelsSchemaVersion: 3,
     model: record.id,
     provider: record.provider,
     endpoint: record.endpoint,
@@ -560,7 +611,7 @@ export function resolveModelSelection(file: ModelsFile, assignment: ModelAssignm
 }
 
 export function resolveAssignment(file: ModelsFile, agentId?: string): ResolvedModelSelection {
-  const assignment = agentId && Object.hasOwn(file.assignments.agents, agentId) ? file.assignments.agents[agentId] : file.assignments.main;
+  const assignment = agentId && Object.hasOwn(file.assignments.agents, agentId) ? assignmentForBot(file, agentId) : file.assignments.main;
   if (!assignment) throw new BoxRuntimeError("invalid_usage", "No assignments.main; modeld pin requires a managed model id.");
   return resolveModelSelection(file, assignment);
 }
@@ -571,7 +622,7 @@ export type RouteSessionDecision =
 
 export function decideRouteSession(file: ModelsFile, agentId?: string): RouteSessionDecision {
   if (!agentId || !Object.hasOwn(file.assignments.agents, agentId)) return { kind: "official" };
-  const assignment = file.assignments.agents[agentId]!;
+  const assignment = assignmentForBot(file, agentId)!;
   const id = assignment.modelId;
   const record = id === STUB_ECHO_MODEL_ID ? stubFromFile(file) : Object.hasOwn(file.models, id) ? file.models[id] : undefined;
   if (!record || !routeModelAdmitted(record)) routeModelNotAdmitted();
@@ -590,11 +641,14 @@ export function resolveRouteSessionModel(file: ModelsFile, agentId?: string): { 
 export function modelForAgent(file: ModelsFile, agentId: string): ResolvedModelSelection | undefined {
   const decided = decideRouteSession(file, agentId);
   if (decided.kind !== "managed") return undefined;
-  return resolveModelSelection(file, file.assignments.agents[agentId]!);
+  return resolveModelSelection(file, assignmentForBot(file, agentId)!);
 }
 
 export function assignedReasoningEfforts(file: ModelsFile): Map<string, string> {
-  return new Map(Object.entries(file.assignments.agents).flatMap(([id, selection]) => selection.reasoning ? [[id.toLowerCase(), selection.reasoning.effort]] : []));
+  return new Map(Object.keys(file.assignments.agents).flatMap(id => {
+    const selection = assignmentForBot(file, id)!;
+    return selection.reasoning ? [[id.toLowerCase(), selection.reasoning.effort]] : [];
+  }));
 }
 
 /** Revalidate a durable TURN snapshot without consulting today's assignments.
@@ -604,6 +658,6 @@ export function parseResolvedModelSelection(value: unknown): ResolvedModelSelect
   const { reasoning, ...raw } = value;
   const model = parseModel(value.id, raw);
   if (raw.catalog === "pi") model.catalog = "pi";
-  return resolveModelSelection({ version: 2, models: { [model.id]: model }, assignments: { main: null, agents: {} } },
+  return resolveModelSelection({ version: 3, models: { [model.id]: model }, assignments: { main: null, agents: {} } },
     { modelId: model.id, ...(reasoning !== undefined ? { reasoning: parseReasoningPolicy(reasoning) } : {}) });
 }

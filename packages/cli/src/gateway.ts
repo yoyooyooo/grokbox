@@ -444,17 +444,10 @@ export class GatewayClient {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw new CliError("invalid_usage", "Routine timeout must be 1–120000 ms.");
     let command;
     try { command = validateProvisionCommand(input); } catch (e) { throw provisionCliError(e); }
-    const daemon = await this.daemonFor("grok.routines.provision", timeoutMs);
-    if (daemon) {
-      const response = await daemon.call("routineProvision", { command, timeoutMs });
-      try {
-        const result = projectProvisionReceipt(command, response.result);
-        const discovery = response.gateway ? this.discoveryFromDaemon(response.gateway) : undefined;
-        if (discovery) this.lastDiscovery = discovery;
-        return { result, discovery };
-      } catch { throw new CliError(command.action === "outcome" ? "gateway_internal" : "operation_outcome_unknown", "Routine provision receipt is not a valid bounded observation."); }
-    }
-    if (this.deps.transport === "gateway" || this.deps.gatewayServerUrl || this.deps.sshHost) throw new CliError("runtime_local_only", "Routine provisioning requires its Box-local ledger or the matching daemon capability.");
+    // Remaining CONT/protection programs borrow this local native primitive.
+    // Ordinary Routine commands now enter the management Server; the retired
+    // daemon protocol is not a second mutation/recovery route.
+    if (this.deps.transport === "daemon" || this.deps.transport === "gateway" || this.deps.daemonServerUrl || this.deps.gatewayServerUrl || this.deps.sshHost) throw new CliError("runtime_local_only", "This internal Routine primitive requires its Box-local owner.");
     return executeRoutineProvision(this, command, this.deps.boxRuntimeRoot, timeoutMs, this.deps.signal);
   }
 
@@ -462,17 +455,7 @@ export class GatewayClient {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw new CliError("invalid_usage", "Routine timeout must be 1–120000 ms.");
     let command: RoutineCommand;
     try { command = validateRoutineCommand(input); } catch (e) { throw routineCliError(e); }
-    const readOnly = command.action === "list" || command.action === "show";
-    const daemon = await this.daemonFor(readOnly ? "grok.routines.read" : "grok.routines.write", timeoutMs);
-    if (daemon) {
-      const response = await daemon.call("agentRoutines", { command, timeoutMs });
-      if (!response.gateway) throw new CliError(readOnly ? "gateway_internal" : "operation_outcome_unknown", "Routine response has no Gateway generation.");
-      try {
-        const result = projectRoutineResult(command, response.result), discovery = this.discoveryFromDaemon(response.gateway);
-        this.lastDiscovery = discovery;
-        return { result, discovery };
-      } catch { throw new CliError(readOnly ? "gateway_internal" : "operation_outcome_unknown", "Routine response is not a valid bounded observation."); }
-    }
+    if (this.deps.transport === "daemon" || this.deps.transport === "gateway" || this.deps.daemonServerUrl || this.deps.gatewayServerUrl || this.deps.sshHost) throw new CliError("runtime_local_only", "This internal Routine primitive requires its Box-local owner.");
     return executeNativeRoutine(this, command, timeoutMs, this.deps.signal);
   }
 

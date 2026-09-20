@@ -1,5 +1,9 @@
-import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile, open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { canonicalJson } from "@grokbox/runtime-kernel/hash";
+import { projectHostHealth, validStaticAnalysis, type HostHealthEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
+import { assertSafeDirectory } from "./config-layout.node.ts";
 import { join } from "node:path";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -139,6 +143,75 @@ async function isRealDir(path: string): Promise<boolean> {
 
 async function writeProtected(path: string, body: string | Uint8Array): Promise<void> {
   await writeFile(path, body, { mode: 0o600, flag: "wx" });
+}
+
+export type HostHealthRetained = { event: HostHealthEvidence; analysis: StaticAnalysis | null };
+export type HostHealthJournal = { version: 1; installationId: string; nextSequence: number; acknowledgedThrough: number; receipts: HostHealthRetained[] };
+const HEALTH_LIMIT = 64, HEALTH_BYTES = 1024 * 1024;
+function retainedHealthValid(record:HostHealthRetained):boolean {
+  const e=projectHostHealth(record?.event),a=record?.analysis;if(!e)return false;
+  if(e.sourceInstanceId!==sha256Text(canonicalJson(['host-health',e.installationId])))return false;
+  if(e.sourceState==='stable'&&e.sourceSet!==sha256Text(canonicalJson([e.sourceSha,e.workerSha,e.profileDigest])))return false;
+  if(a===null)return ['pending','unavailable'].includes(e.analysis)&&e.checkerBuildId===null;
+  if(!validStaticAnalysis(a)||a.buildId!==e.checkerBuildId||canonicalJson(a.checks.map(c=>c.id))!==canonicalJson(e.requiredChecks))return false;
+  const identities={source:e.sourceSha,candidate:e.candidateSha,companion:e.workerSha};
+  if(a.artifacts.some(v=>identities[v.role]!==v.sha256)||a.artifacts.length!==Object.values(identities).filter(v=>v!==null).length)return false;
+  const phase=a.artifacts.some(v=>!v.valid)||a.checks.some(c=>c.state==='violated')?'violated':a.checks.some(c=>c.state==='unsupported')?'unsupported':'passed';
+  return e.analysis===phase&&canonicalJson(e.failedChecks)===canonicalJson(a.checks.filter(c=>c.state==='violated').map(c=>c.id))&&canonicalJson(e.unsupportedChecks)===canonicalJson(a.checks.filter(c=>c.state==='unsupported').map(c=>c.id));
+}
+/** Health receipts extend the existing private provenance owner. The one bounded
+ * document is not another incident database. Unindexed receipts cannot be
+ * evicted; current evidence and replay position survive a Server restart. */
+export async function readHostHealthJournal(root: string, installationId: string): Promise<HostHealthJournal | null> {
+  const directory=join(hostBundlesDir(root),"health"),path=join(directory,"receipts.json");
+  const exists=await lstat(directory).catch(e=>{if(e.code==="ENOENT")return null;throw e;});if(!exists)return null;
+  await assertSafeDirectory(directory);
+  const file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try{
+    const s=await file.stat();if(!s.isFile()||s.nlink!==1||(s.mode&0o077)!==0||s.size>HEALTH_BYTES)throw Error("health-receipt-invalid");
+    const document=JSON.parse(await file.readFile("utf8")) as HostHealthJournal;
+    if(document.version!==1||document.installationId!==installationId||!Number.isSafeInteger(document.nextSequence)||document.nextSequence<0
+      ||!Number.isSafeInteger(document.acknowledgedThrough)||document.acknowledgedThrough< -1||document.acknowledgedThrough>=document.nextSequence
+      ||!Array.isArray(document.receipts)||!document.receipts.length||document.receipts.length>HEALTH_LIMIT)throw Error("health-receipt-invalid");
+    let previous=-1;
+    for(const row of document.receipts){
+      const event=projectHostHealth(row.event);if(!event||event.installationId!==installationId||event.sourceSequence<=previous||event.sourceSequence>=document.nextSequence)throw Error("health-receipt-invalid");
+      if(!retainedHealthValid(row))throw Error("health-analysis-invalid");
+      previous=event.sourceSequence;
+    }
+    if(previous!==document.nextSequence-1)throw Error("health-receipt-gap");
+    return document;
+  }finally{await file.close();}
+}
+async function publishHostHealthJournal(root:string,document:HostHealthJournal){
+  const directory=join(hostBundlesDir(root),"health"),body=canonicalJson(document)+"\n";
+  if(Buffer.byteLength(body)>HEALTH_BYTES)throw Error("health-receipt-capacity");
+  await assertSafeDirectory(root);await assertSafeDirectory(hostBundlesDir(root),true);
+  const known=await lstat(directory).catch(e=>{if(e.code==="ENOENT")return null;throw e;});
+  const stage=known?directory:await mkdtemp(join(hostBundlesDir(root),".health-stage-"));
+  await assertSafeDirectory(stage);
+  const temp=join(stage,`.receipts-${randomUUID()}`);
+  try{
+    await writeProtected(temp,body);const fd=await open(temp,constants.O_RDONLY|constants.O_NOFOLLOW);try{await fd.sync();}finally{await fd.close();}
+    await rename(temp,join(stage,"receipts.json"));const dir=await open(stage,constants.O_RDONLY);try{await dir.sync();}finally{await dir.close();}
+    if(!known){await rename(stage,directory);const parent=await open(hostBundlesDir(root),constants.O_RDONLY);try{await parent.sync();}finally{await parent.close();}}
+  }finally{await rm(temp,{force:true});if(!known)await rm(stage,{recursive:true,force:true});}
+}
+/** Caller is the installation's single health producer. expectedSequence fences
+ * stale callers; the producer gate is held across read/retain/intake/ack. */
+export async function retainHostHealthEvidence(root:string,installationId:string,expectedSequence:number,record:HostHealthRetained):Promise<HostHealthJournal>{
+  const prior=await readHostHealthJournal(root,installationId);
+  if((prior?.nextSequence??0)!==expectedSequence||record.event.sourceSequence!==expectedSequence||record.event.installationId!==installationId||!retainedHealthValid(record))throw Error("health-receipt-conflict");
+  const receipts=[...(prior?.receipts??[])];
+  while(receipts.length>=HEALTH_LIMIT&&receipts.length>1&&receipts[0]!.event.sourceSequence<=(prior?.acknowledgedThrough??-1))receipts.shift();
+  if(receipts.length>=HEALTH_LIMIT)throw Error("health-receipt-capacity");
+  const document:HostHealthJournal={version:1,installationId,nextSequence:expectedSequence+1,acknowledgedThrough:prior?.acknowledgedThrough??-1,receipts:[...receipts,record]};
+  await publishHostHealthJournal(root,document);return document;
+}
+export async function acknowledgeHostHealthEvidence(root:string,installationId:string,sequence:number):Promise<void>{
+  const prior=await readHostHealthJournal(root,installationId);if(!prior||sequence>=prior.nextSequence||sequence<prior.acknowledgedThrough)throw Error("health-receipt-conflict");
+  if(sequence===prior.acknowledgedThrough)return;
+  await publishHostHealthJournal(root,{...prior,acknowledgedThrough:sequence});
 }
 
 export function lineDiffStats(previous: string, current: string): Pick<HostBundleDiff,

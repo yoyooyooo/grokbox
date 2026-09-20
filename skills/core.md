@@ -25,6 +25,8 @@ Agent / Skill
         -> Grok Bot host Gateway
 ```
 
+The source is mid-rebuild. Model selection/query commands now use the authenticated management Server and fixed-local or explicitly pinned connections, with no direct-Gateway fallback. Other command families below still describe their unmigrated implementations; this source is not a complete installation candidate.
+
 The current source reads and manages a narrow product roster surface, appends one Human message to an ordinary agent or product group, reads explicitly admitted cloud-computer files, runs allowlisted structured processes as durable Jobs, queries an explicitly configured fresh account-quota source, and controls the optional Cursor Sandbox lifecycle from outside the box. In `auto` mode, finite Grok commands prefer the local daemon, then direct local Gateway, then a configured remote daemon. Filesystem and process/Job commands require their live daemon capabilities and never fall back to Gateway, SSH, or direct local host access.
 
 ## Start here
@@ -40,9 +42,10 @@ grokbox off
 grokbox host stop [--force]
 grokbox host restart [--force]
 grokbox upgrade --yes
-grokbox models list
-grokbox models use <provider/model> --for <agent>
-grokbox models reset --for <agent>
+grokbox model list
+grokbox bot model get <bot-ref>
+grokbox bot model set <bot-ref> --model <model-id> --request-id <persisted-uuid> --expect-revision <observed-revision>
+grokbox bot model reset <bot-ref> --request-id <persisted-uuid> --expect-revision <observed-revision>
 grokbox quota
 grokbox recover
 grokbox box status
@@ -68,9 +71,9 @@ grokbox desktop keep add <agent>
 grokbox desktop prune run
 grokbox desktop prune enable
 grokbox runtime status
-grokbox models list
+grokbox model list
 grokbox models check
-grokbox models use stub/echo --default
+grokbox model default set stub/echo --request-id <persisted-uuid> --expect-revision <observed-revision>
 grokbox config get desktop.idleReclaim --effective
 grokbox runtime activate --mode observe|identity|route
 grokbox runtime profile write --sha <retainedSourceSha>
@@ -106,14 +109,14 @@ Targets accept an exact ID first, then an unambiguous case-insensitive name/titl
    `failed` | `delivered` | `expected_result_observed`.
 6. **Watch events**: `events` emits unified NDJSON from `gateway`, `job`, and `daemon` sources. Daemon cursors resume a bounded journal; direct Gateway reconnects and all unobserved intervals emit explicit gaps. `is running <target>` reads the roster projection.
 7. **Read account quota**: `quota` requires a selected Profile with `quota.source:"cursor-web"` and its independent `quota.accessTokenRef` in `config.client.profiles`. It performs one fixed bounded HTTPS request and returns only a fresh sanitized DTO. It has no cache, fallback, Gateway/daemon route, Sandbox lifecycle effect, or App-private credential discovery. Missing quota configuration fails closed before discovery/SSH/host/App side effects even when the CLI runs inside the box. Copying an external OAuth token onto the box is not the in-box quota path. Static `profile capabilities` reports `provider-authorization-dependent`; only a successful call proves quota authority.
-8. **Memory metadata**: `memory list <agent>` strips `content` unless `--content` is explicit.
+8. **Material scopes**: `memory list --scope agent` returns indexed document metadata from explicitly configured sources. `memory read <material-ref>` separately reads source text; native Memory/Project replicas are read-only. Load `grokbox skills get grokbox --topic materials` for search, coverage and file-write recovery.
 9. **Export one local Bot**: `export agent <agent> --out <dir>` reads the local agent-data tree only. Default output is owned profile/settings/Memory/automations plus `manifest.json`. Skill/workflow/plugin have no per-bot structured ownership (`association: none`); related workflow names are text references. `--include-related-workflows` copies referenced `SKILL.md` only. It never packs `gateway.json`, tokens, or transcript DBs, and it does not use Gateway or Profile.
 10. **Use governed files**: `fs stat/list/read` use `root:/relative/path`; `fs download` writes a new local destination only after size and SHA-256 verification. `fs write` accepts explicit `--text` or stdin and supports `--expected-sha256`; `fs upload` uses bounded verified chunks; `fs mkdir` creates one level; `fs remove` moves content to recoverable trash and requires confirmation. `--recursive` additionally requires elevated live root policy. JSON `read` returns UTF-8 or explicit base64 and never writes arbitrary binary to stdout.
 
 11. **Run governed processes**: `exec run -- <argv...>` resolves argv[0] only as a configured executable alias, preserves all remaining arguments literally, and returns a durable Job. `--run-timeout-ms` governs process lifetime while `--timeout-ms` bounds the client wait; `--detach` returns after admission. `jobs list/show/logs/cancel` require `host.process.manage`; logs are bounded base64 NDJSON and resumable by offset. Shell is separately privileged and normally unavailable. An admitted executable runs as the daemon user and is not sandboxed by cwd.
 12. **Control Sandbox lifecycle**: `box status` reads the Cursor run state without waking it. `box wake` performs one broker Ensure plus a bounded exec no-op. `box keepalive run` is an external foreground lease loop; `box keepalive status` reads its redacted protected state. These commands require an explicit `client.profiles.<name>.sandbox.accessTokenRef` and do not depend on daemon, SSH, Tailscale, Gateway health, or an in-box process.
 13. **Idle desktop forks**: `desktop status` classifies seated forks and prints keep/floor ids. `desktop keep add|remove` commits `config.desktop.keepAgentIds` through the same canonical writer as `config set`; installation floor protection remains separately enforced. `desktop prune run` dry-runs by default; `--yes` and the daemon tick call official `stop-window`, which deletes `chrome-profile-N`. Keep must-keep agents before `prune enable`. Idle prune never edits the seating table or kills host/Xvfb. Display 1 is always kept. `agents delete` on the box is the exception: after Gateway delete it stops a non-main fork and atomically drops that agent from `.sand-window-assignments.json` (`assignments` and matching `tokens`). The delete receipt includes `desktop: { display, outcome }` (`stopped` | `no_seat` | `unavailable` | `skipped_main`).
-14. **Box-local model runtime**: `runtime *` and `models *` refuse remote execution. `models check` checks schema, not provider readiness; `models use/reset --for <agent>` changes only that Bot's next-turn selection. `--default` explicitly changes the non-routing default and never opts other Bots in. `runtime activate/deactivate` saves `config.runtime.desiredMode`; saved intent is not a Host switch or rollback proof. Read `runtime status/log/contracts` for qualified evidence, keeping missing and stale facts unknown. Profile authoring operates on retained source through `runtime profile write --sha <retainedSourceSha>`; it is neither approval nor live activation. Confirmed `runtime re-adopt` and `host start/stop/restart` use the governed Host control paths. Modeld is a packaged Node service. For development dogfood, run `bun run build` then `bun run modeld:run`; the equivalent installed-artifact entry is `node dist/index.js runtime modeld run`, never worktree TypeScript. `runtime watchdog run` performs observation without granting itself mutation authority. Use the installed `grokbox` skill's models, services, config and adopt topics for the specific capability. **No live unless authorized**: source tests, configuration saves and a green modeld health response never authorize a Host switch or provider probe.
+14. **Execution services and model intent**: `bot model get/set/reset` and `model list/get/default` use the shared management service. Changes require a persisted request UUID and expected revision; explicit followers alone follow the default. Read-only `operation get --request-id` does not replay an uncertain model write. Remaining `runtime *` and `models check/persist-key/migrate` are local maintenance paths, not selection alternatives. `models check` is schema-only, not provider readiness. `runtime activate/deactivate` saves `config.runtime.desiredMode`; saved intent is not a Host switch or rollback proof. Read `runtime status/log/contracts` for qualified evidence, keeping missing and stale facts unknown. Profile authoring operates on retained source through `runtime profile write --sha <retainedSourceSha>`; it is neither approval nor live activation. Confirmed `runtime re-adopt` and `host start/stop/restart` use the governed Host control paths. Modeld is a packaged Node service. For development dogfood, run `bun run build` then `bun run modeld:run`; the equivalent installed-artifact entry is `node dist/index.js runtime modeld run`, never worktree TypeScript. `runtime watchdog run` performs observation without granting itself mutation authority. Use the installed `grokbox` skill's models, services, config and adopt topics for the specific capability. **No live unless authorized**: source tests, configuration saves and a green modeld health response never authorize a Host switch or provider probe.
 
 Sensitive or multiline prompts should go on stdin:
 
@@ -142,13 +145,12 @@ retry the same send, reuse `--nonce <uuid>` and the same target/prompt.
   `content`.
 - Transcript and Memory content are private product data; do not copy them into ordinary logs.
 - Unsupported options are absent from each leaf command and fail before any network request.
-- Box-local `runtime *` and model-selection commands are local-only. Saving desired mode or an offline profile does not switch the live Host. Host lifecycle commands and confirmed re-adoption use the governed controller; valid per-Bot custom assignments use the qualified backend, while unassigned Bots retain their official path. Missing or invalid configuration is never permission for a silent model fallback. The short-lived run root is `~/.grokbox/run/`; live changes and provider probes require explicit scope authorization.
+- Box-local `runtime *` and the remaining model maintenance commands are local-only. Management model operations use their pinned Server connection. Saving desired mode or an offline profile does not switch the live Host. Host lifecycle commands and confirmed re-adoption use the governed controller; valid per-Bot custom assignments use the qualified backend, while unassigned Bots retain their official path. Missing or invalid configuration is never permission for a silent model fallback. The short-lived run root is `~/.grokbox/run/`; live changes and provider probes require explicit scope authorization.
 
 ## Output
 
 Finite commands write one JSON object plus a trailing newline, except `skills get`, which is
-Markdown unless `--json`. `events`, `jobs logs`, and `box keepalive run` write NDJSON. On failure, stdout is empty and stderr is one
-JSON error object. `is running` returning false is still exit 0.
+Markdown unless `--json`. Management commands put a versioned success or failure envelope on stdout; a failed mutation can require read-only reconciliation even when the client was interrupted. The remaining unmigrated commands retain their earlier envelope: `events`, `jobs logs`, and `box keepalive run` write NDJSON, and finite failures use stderr. `is running` returning false is still exit 0.
 
 ## External skill stub
 

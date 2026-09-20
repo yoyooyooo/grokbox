@@ -60,6 +60,22 @@ Only `schemaVersion` and `client` are required. An absent document is read as th
 
 Client Profiles use camelCase fields under `client.profiles`: transport, serverUrl, daemonTokenRef, daemonSocket, gatewayUrl, gatewayTokenRef, gatewayHeadersRef, gatewayDiscovery, sshHost, sandbox and quota. The [product contract](product-contract.md#52-profile-字段) owns connection semantics. `profile add/update/use/remove` uses the same configuration writer and does not create a second Profile file tree.
 
+## Explicit material sources
+
+The optional `materials` slice contains `enabled`, `intervalMs` (10–300 seconds) and up to eight `sources`. Each source requires a unique `id`, exact absolute `root`, and a 64-hex `accountScope` supplied by the operator for that source binding. This declaration is not a freshly verified native account identity. A `native-memory` source also requires explicit `agentIds` and Project `projects` allowlists and cannot be writable. A `files` source requires explicit `writable` and cannot carry native selectors.
+
+```bash
+grokbox config schema materials
+grokbox config get materials --scope local
+grokbox config set materials --value-file /absolute/path/material-sources.json --scope local --replace --preview
+grokbox config set materials --value-file /absolute/path/material-sources.json --scope local --replace --expect-revision <observed-config-sha> --operation-id <new-id> --confirm
+grokbox system materials get
+```
+
+The input file is the value of the `materials` slice, not a whole configuration document. Confirming that intent lets an already running management Server index the exact configured local sources; it does not install/start the Server or write source content. Root/account/allowlist/permission changes invalidate old material bindings immediately. Queries never enroll sources, initialize the index, or widen permissions. `config export --portable` omits source onboarding; it does not export real roots or account/Bot membership.
+
+The current material adapter is qualified for Linux descriptor-backed local files. Broad system roots, overlapping source roots, native/credential file roots and unsafe aliases are rejected. Indexing has finite scan/text/storage limits, keeps no reconstructed history and never calls a model. Source availability, index freshness and upstream synchronization are separate. Native Memory/Project replicas are read-only; only an existing file in an explicit writable file source supports the new `file write` path. The [material topic](../skills/grokbox/materials.md) and [DATA-01](tickets/DATA-01-memory-project-files.md) describe source-operation recovery and outstanding native/file capabilities.
+
 ## Storage policy and adoption
 
 `storage` is intent, not a GC receipt. Its independent dependency revision prevents notification or desktop changes from invalidating storage, and storage changes from altering captured model selection. Both lowering retention and enlarging budgets require impact confirmation, including parent replacement or unset.
@@ -151,11 +167,11 @@ The preview binds the installation, physical files and current aliases. Apply re
 
 ## Model commands
 
-`grokbox models list/check/use/reset/persist-key` is the public model family. `use` and `reset` require exactly one of `--for <agent>` or `--default`. The explicit default changes no Bot assignment; ordinary routing still uses only per-Bot opt-in. `check` is schema-only and `persist-key` needs a separately confirmed credential operation. General `config` commands cannot rewrite model records or assignments.
+`grokbox model list/get/apply/delete/default` and `bot model get/set/reset` use the authenticated management Server and shared model program. Every mutation binds a persisted request UUID and expected revision; `operation get --request-id` reads its model-domain receipt. An explicit default affects only explicit followers, never unassigned Bots. `models check`, `models persist-key` and `models migrate` remain maintenance entries pending their remaining CLI migration; schema checking does not prove readiness and credential persistence requires separate confirmation. General `config` commands cannot rewrite model records or assignments. Model `apply` requires explicit patch/replace; patches preserve omitted values and declared null clears only optional fields. Local override removal may reveal an imported Pi definition, so source and effective readback revision are reported separately from the local publication.
 
 ## Local context maintenance
 
-Schema v3 introduced `runtime.context`; schema v4 preserves it for local working-window and automatic-compaction policy. **Any older general-configuration schema requires its explicit migration path and matched CLI/Host/modeld consumers before new-schema operation.** Migration is not deployment and does not itself start a summary. Models remain schema v2 with their catalog, credentials and reasoning assignments. The old HostCompact environment gate is not a normal enablement step; fault injection remains separate and disabled.
+Schema v3 introduced `runtime.context`; schema v4 preserves it for local working-window and automatic-compaction policy. **Any older general-configuration schema requires its explicit migration path and matched CLI/Host/modeld consumers before new-schema operation.** Migration is not deployment and does not itself start a summary. Models use their independent schema v3 for catalog, credentials, explicit reasoning assignments and default-following relationships. The old HostCompact environment gate is not a normal enablement step; fault injection remains separate and disabled.
 
 Default policy is auto, local window 128000, reserve 16384, and recent-message retention budget 20000. Policy belongs to `config.json`, not a third file or a fabricated model capacity. Inheritance is common policy → exact model override → Bot override; an override does not opt a Bot into managed inference. Use JSON Pointer paths for model IDs containing dots/slashes. All context changes require explicit confirmation because they can affect model cost.
 
@@ -189,6 +205,8 @@ This guide owns current configuration usage, layout and migration. [Architecture
 
 ## Model reasoning schema and general config migration
 
-The source uses `config.json` `schemaVersion: 4`; `models.json` independently uses `version: 2` with `{ modelId, reasoning?: { effort } }` assignments. New bootstrap and a general config migration without an existing model file initialize an empty model v2 document. General `config migrate` preserves existing model bytes in place, including v2 policies/capabilities; it never normalizes that domain as a side effect. `models migrate --confirm` is the explicit model-schema operation and does not migrate general config, relocate files or grant execution. Protect configuration and coordinate matching loaded CLI/preload/Host/modeld artifacts before using new schemas on an existing deployment: reasoning originally introduced wire v7, while context maintenance now requires wire v8. Historical v7 acceptance is not proof of v8 adoption. See the [reasoning ADR](decisions/2026-09-17-model-reasoning-policy.md).
+The source uses `config.json` `schemaVersion: 4`; `models.json` independently uses `version: 3`. Explicit selections remain `{ modelId, reasoning?: { effort } }`; `{ kind: "default" }` is a separate per-Bot relationship. An absent Bot assignment selects native execution. The default changes only followers, and cannot be cleared while followers remain. Model records cannot be deleted while selected by a Bot or the default. Captured TURN records remain detached from later configuration changes.
 
-Client/desktop/general config edits do not rewrite models or change the selected reasoning revision. Effort updates through `models use` do not write general config or invalidate its unrelated domain revisions. Both rules are integration-tested on the unified canonical readers/writers.
+New bootstrap and a general config migration without an existing model file initialize an empty model v3 document. General `config migrate` preserves existing model bytes in place; it never normalizes that domain as a side effect. Model v1/v2 input normalization preserves explicit selections without inventing followers. `models migrate --confirm` is the current explicit model-schema operation and does not migrate general config, relocate files or grant execution. The new domain program and receipt store are implemented, but the Agent-first CLI/API cutover is still pending in [CLI-05](tickets/CLI-05-implementation-follow-through.md). Protect configuration and coordinate matching loaded CLI/preload/Host/modeld artifacts before using new schemas on an existing deployment. See the [reasoning ADR](decisions/2026-09-17-model-reasoning-policy.md) for the earlier reasoning decision, not current deployment qualification.
+
+Client/desktop/general config edits do not rewrite models or change the selected reasoning revision. Effort updates through `bot model set` do not write general config or invalidate its unrelated domain revisions. Both paths use the canonical readers/writers; management transport, replay and uncertainty are checked separately from native execution.

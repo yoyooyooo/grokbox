@@ -22,7 +22,7 @@ function fixture() {
     ownershipRead: async (...args: Parameters<typeof reader>) => { ownership++; return reader(...args); },
     counts: () => ({ writes, ownership, calls }) };
 }
-test("CLI program saves explicit effort/default/reset and never changes the other Bot", async () => {
+test("selection admission primitive saves explicit effort/default/reset without changing the other Bot", async () => {
   const f = fixture();
   for (const effort of ["xhigh", "default", undefined]) {
     const receipt = await changeRuntimeModel({ ...f, forAgent: A, modelId: f.record.id, effort, env: { FIXTURE_KEY: "synthetic" } });
@@ -48,29 +48,25 @@ test("explicit migration is confirmation-gated, read-only until save, idempotent
   try {
     const bytes = JSON.stringify(legacy); await writeFile(path, bytes, { mode: 0o600 });
     const store = openRuntimeStore(root, {});
-    expect((await store.loadModels()).version).toBe(2); expect(await readFile(path, "utf8")).toBe(bytes);
+    expect((await store.loadModels()).version).toBe(3); expect(await readFile(path, "utf8")).toBe(bytes);
     await expect(migrateRuntimeModels({ store, confirmed: false })).rejects.toMatchObject({ code: "invalid_usage" });
     await expect(migrateRuntimeModels({ store, confirmed: true, signal: AbortSignal.abort() })).rejects.toBeDefined();
     expect(await readFile(path, "utf8")).toBe(bytes);
-    expect(await migrateRuntimeModels({ store, confirmed: true })).toMatchObject({ modelsSchemaVersion: 2, assignmentsUnchanged: true, effectiveUse: "not_observed" });
+    expect(await migrateRuntimeModels({ store, confirmed: true })).toMatchObject({ modelsSchemaVersion: 3, assignmentsUnchanged: true, effectiveUse: "not_observed" });
     const migrated = await readFile(path, "utf8");
     expect(JSON.parse(migrated).assignments.agents[A]).toEqual({ modelId: "stub/echo" });
     await migrateRuntimeModels({ store, confirmed: true }); expect(await readFile(path, "utf8")).toBe(migrated);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
-test("models show is configured-only and works with no Gateway or provider credentials", async () => {
+test("model projection requires the management service and never reads local models as a fallback", async () => {
   const root = await mkdtemp(join(tmpdir(), "reasoning-show-"));
   try {
     const f = fixture(), store = openRuntimeStore(root, {});
     await store.saveModels(applyUse(f.get(), f.record.id, A, { effort: "xhigh" }));
     const before = await readFile(join(root, "models.json"), "utf8");
-    const result = await captureCli(["models", "show", "--for", A], { configDir: root, boxRuntimeRoot: root, env: {}, transport: "local" });
-    expect(result.code, result.stderr).toBe(0);
-    expect(parseJson(result.stdout)).toMatchObject({ data: { scope: "configured_next_turn", model: f.record.id,
-      reasoning: { requested: "xhigh", providerReported: "unknown" }, currentTurn: "not_observed", effectiveUse: "not_observed" } });
-    expect(await readFile(join(root, "models.json"), "utf8")).toBe(before);
-    const invalid = await captureCli(["models", "use", f.record.id, "--for", A, "--effort", "typo"], { configDir: root, boxRuntimeRoot: root, env: {}, transport: "local" });
-    expect(invalid.code).not.toBe(0); expect(invalid.stderr).toContain("reasoning_effort_invalid");
+    const result = await captureCli(["bot", "model", "get", A], { configDir: root, boxRuntimeRoot: root, env: {}, transport: "local" });
+    expect(result.code).toBe(7); expect(result.stderr).toBe("");
+    expect(parseJson(result.stdout)).toMatchObject({ ok: false, error: { code: "unavailable" } });
     expect(await readFile(join(root, "models.json"), "utf8")).toBe(before);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

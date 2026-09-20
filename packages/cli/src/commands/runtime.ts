@@ -4,17 +4,13 @@ import { projectModeldAvailability } from "@grokbox/runtime-kernel/status";
 import { join } from "node:path";
 import {
   assertBoxLocal,
-  changeRuntimeModel,
   migrateRuntimeModels,
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
   BoxRuntimeError,
-  disclosure,
   openRuntimeStore,
-  saveRuntimeModels,
   persistModelCredential,
   saveRuntimeDesired,
-  parseModelId,
   projectLiveStatus,
   observeModeldService,
   replaceModeld,
@@ -54,16 +50,13 @@ import {
   type DesiredMode,
   type IdentityOpResult,
 } from "@grokbox/box-runtime/runtime";
-import { captureManagedSelection, parseRequestedEffort } from "@grokbox/runtime-kernel/selection";
 import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { LIVE_HOST_BUNDLE_PATH } from "../host-source.ts";
 import { GatewayClient } from "../gateway.ts";
-import { asString, isRecord } from "../util.ts";
-import { findRosterRow } from "./roster.ts";
+import { isRecord } from "../util.ts";
 import { writeSuccess } from "../output.ts";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
-import { paintTitleAfterModelAssignment } from "../title-sync.ts";
 import { controllerApplyCompleted, hostCapabilityPorts } from "../host-capabilities.ts";
 
 function rethrow(error: unknown): never {
@@ -89,15 +82,6 @@ function store(deps: CliDeps) {
 function runtimeRunRoot(deps: CliDeps): string {
   const configured = deps.env.GROKBOX_RUN_ROOT;
   return typeof configured === "string" && configured.length > 0 ? configured : join(homedir(), ".grokbox", "run");
-}
-
-const AGENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-async function resolveBotId(deps: CliDeps, target: string): Promise<string> {
-  const query = target.trim();
-  if (AGENT_ID.test(query)) return query.toLowerCase();
-  const { agents } = await new GatewayClient(deps).listAgents(10_000);
-  return asString(findRosterRow(agents, query, ["agent"]).id);
 }
 
 export async function runRuntimeStatus(deps: CliDeps): Promise<void> {
@@ -191,56 +175,6 @@ export async function runRuntimeModelsCheck(deps: CliDeps): Promise<void> {
   }
 }
 
-export async function runRuntimeModelsList(deps: CliDeps): Promise<void> {
-  try {
-    const runtime = store(deps);
-    const models = await runtime.loadModels();
-    writeSuccess(deps.stdout, models);
-  } catch (error) {
-    rethrow(error);
-  }
-}
-
-export async function runRuntimeModelsUse(
-  deps: CliDeps,
-  modelId: string,
-  forAgent: string | undefined,
-  effort?: string,
-): Promise<void> {
-  try {
-    parseModelId(modelId);
-    parseRequestedEffort(effort);
-    const runtime = store(deps);
-    const agentId = forAgent === undefined ? undefined : await resolveBotId(deps, forAgent);
-    const selection = await changeRuntimeModel({ store: runtime, modelId, forAgent: agentId, effort,
-      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal, env: deps.env });
-    writeSuccess(deps.stdout, {
-      ...selection,
-      ...(agentId ? { title: await paintTitleAfterModelAssignment(new GatewayClient(deps), {
-        agentId, boxRuntimeRoot: deps.boxRuntimeRoot, env: deps.env, mode: "custom",
-      }) } : {}),
-    });
-  } catch (error) {
-    rethrow(error);
-  }
-}
-
-/** Configuration projection only; a selected revision is not a captured live TURN. */
-export async function runRuntimeModelsShow(deps: CliDeps, target: string): Promise<void> {
-  try {
-    if (!target.trim()) throw new CliError("invalid_usage", "models show requires --for <agent>.");
-    const runtime = store(deps);
-    const agentId = await resolveBotId(deps, target);
-    const models = await runtime.loadModels();
-    const selection = captureManagedSelection(models, agentId);
-    writeSuccess(deps.stdout, {
-      scope: "configured_next_turn", agentId,
-      ...(selection.kind === "managed" ? { ...disclosure(models, selection.modelId, agentId), selectionRevision: selection.selectionRevision }
-        : { model: "official", reasoning: null }),
-      currentTurn: "not_observed", effectiveUse: "not_observed",
-    });
-  } catch (error) { rethrow(error); }
-}
 export async function runRuntimeModelsMigrate(deps: CliDeps, confirmed: boolean | undefined): Promise<void> {
   try { writeSuccess(deps.stdout, await migrateRuntimeModels({ store: store(deps), confirmed: confirmed === true, signal: deps.signal })); }
   catch (error) { rethrow(error); }
@@ -254,23 +188,6 @@ export async function runRuntimeModelsPersistKey(deps: CliDeps, modelId: string,
       store: runtime, modelId, piProvider, confirmed: confirmed === true, signal: deps.signal,
     }));
   } catch (error) { rethrow(error); }
-}
-
-export async function runRuntimeModelsReset(deps: CliDeps, forAgent: string | undefined): Promise<void> {
-  try {
-    const runtime = store(deps);
-    const agentId = forAgent === undefined ? undefined : await resolveBotId(deps, forAgent);
-    const selection = await changeRuntimeModel({ store: runtime, forAgent: agentId,
-      ownershipRead: runtimeOwnershipReader(deps), signal: deps.signal });
-    writeSuccess(deps.stdout, {
-      ...selection,
-      ...(agentId ? { title: await paintTitleAfterModelAssignment(new GatewayClient(deps), {
-        agentId, boxRuntimeRoot: deps.boxRuntimeRoot, env: deps.env, mode: "official",
-      }) } : {}),
-    });
-  } catch (error) {
-    rethrow(error);
-  }
 }
 
 export const hostControlPorts = {

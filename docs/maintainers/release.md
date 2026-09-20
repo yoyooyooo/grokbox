@@ -48,17 +48,19 @@ npm trust list grokbox
 This readback confirms npm configuration visibility; only an authorized real
 release proves the OIDC exchange end to end.
 
-## Cross-worktree native/live acceptance
+## Rebuild qualification and first use
 
-Current live progress, missing proof, blockers and receipt links are maintained **only** in [`LIVE — the end-to-end acceptance checklist`](../tickets/LIVE-integration-validation.md). Its [release lanes](../tickets/LIVE-integration-validation.md#release-lanes) distinguish core use, default unattended reminders, selected extensions and deferred scope. The [live E2E runbook](live-end-to-end.md) supplies candidate/object/budget records, the six provider-effort cells, real compact/tool oracles and the Webhook-to-reminder journey; it is not a second status table. Feature tickets own semantics, implementation and independent review; dated reports own immutable evidence. Coverage and supported-model claims must match the exact runtime and tested cells. npm release/tag authority remains separate.
+[LIVE](../tickets/LIVE-integration-validation.md) owns the new accepted scope and current results; the [execution guide](live-end-to-end.md) owns local verification versus concentrated E2E. Development may be incomplete or unavailable. Do not finish the retired v2 window first, keep every intermediate commit deployable, or build a compatibility/zero-downtime layer for an unused development release. Preserve native data and unknown effects; final runtime reliability remains required.
+
+Functional Web, API, CLI and background capabilities qualify together before user acceptance and dogfooding. Visual confirmation has a separate browser exit. Package publication remains independent. Historical reports and unresolved reviews apply to their original content; reused code needs scoped revalidation, not automatic inherited approval or a blanket requirement to close every old release lane.
 
 <a id="live-window-procedure"></a>
 ### Run one bounded integration window
 
-1. **Select and freeze.** Read the relevant LIVE rows and their source contracts. Complete code, offline/native-isolated qualification and independent review in the feature worktree; map the actual source commits onto one fixed `feat/box-runtime-v2` candidate. A rebase/cherry-pick needs a verified mapping, not a branch-name assertion. Rerun affected combined tests. Neither integration nor a report grants deployment permission.
-2. **Build and protect the recovery path.** Record CLI/preload digests, source/profile/transformed SHA, native version, wire/schema/policy and locked dependency versions. Identify whether the global CLI is a source shim: its next invocation may change after Git integration although resident processes have not changed. Preserve fixed, usable old artifacts and configuration before stopping anything. General `config migrate` and `models migrate` have separate contracts; do not rewrite model bytes or credential references as an incidental general migration. Preview exact roots, fingerprints, conflicts, aliases and old writers; unresolved conflicts or unconfirmed old-writer shutdown block application.
+1. **Select and freeze.** Follow the new LIVE obligations. Targeted development checks need only their affected scope; a complete functional candidate needs applicable full regression, artifact checks and independent review. Record source/content-to-artifact mapping without a fixed branch name. Integration or a passing report does not authorize live actions.
+2. **Build and protect data.** Fix CLI/Server/Web/modeld/Host adapter artifacts, dependencies and actual loaded identities. Use an isolated installed candidate, not the mutable global source shim. Preserve native identities/materials/credentials and unknown external effects; import valuable configuration once as needed, fence old writers and rebuild derived indexes with explicit coverage. Generic legacy database migration, old-schema downgrade and return to continuous old-development service are not required. Establish a safe stop/recovery or qualified official-exit path before native changes.
 3. **Authorize and coordinate.** Fix the installation, individual Bots/models/tools, new-message nonces, allowed mutation/stop scope, request/token/cost and waiting bounds, approval operator and rollback target. Specify which native version upgrades or high-impact resets are allowed; Host/modeld restart is not an implicit native binary or platform upgrade grant. One operator coordinates the window. Drain or fence relevant work under the existing native/control contract; unknown work is not idle. Use the supported CLI/controller lifecycle, not a second supervisor, random operation IDs, deleted ledgers or reconstructed attestations. Do not adopt an unmerged feature worktree.
-4. **Observe distinct layers.** Establish native source/loaded identity and official passthrough before managed canaries; then authority, actual tool consumption, Provider/Host terminals and original-App delivery; finally the selected restart/return paths. Prefer isolated native three-route comparisons over repeated takeover of a business environment. A model response, released tool batch, approval, tool side effect, stored result, transcript delivery and App view are separate facts. Long shell waits do not prove approval-time revocation. A new service epoch must not replay an old STEP or inherit in-memory permits. Per-Bot official selection, full unpatched Host exit, old-schema rollback and platform Reset each need their own evidence.
+4. **Observe distinct layers.** Establish native source/loaded identity and official passthrough before managed canaries; then authority, actual tool consumption, Provider/Host terminals and original-App delivery; finally the selected restart/return paths. Prefer isolated native three-route comparisons over repeated takeover of a business environment. A model response, released tool batch, approval, tool side effect, stored result, transcript delivery and App view are separate facts. Long shell waits do not prove approval-time revocation. A new service epoch must not replay an old STEP or inherit in-memory permits. Per-Bot official selection and full unpatched Host exit need their own evidence; platform Reset remains separately authorized, and generic old-schema rollback is not a rebuild obligation.
 5. **Stop, reconcile and record.** Stop the affected lane on unexpected identity/version, budget, duplicate inference/effect, failed oracle or unknown mutation; do not enlarge the target set or retry old messages. Recover only through the selected, identity-checked path, preserving later user edits and unknown outcomes. Deleting effort fields is not lossless downgrade; restarting does not cancel temporal children or roll back external side effects. Verify actual post-recovery owners and loaded state, and clean only owned, settled test resources. Record cleanup_required/unknown rather than inventing closure. Write the dated evidence report and update each affected LIVE row with proved scope, exact residual, blocker and next action; a single restart cannot close unrelated rows.
 
 Each window report must retain source→integration mapping; planned and actually loaded identities; native/wire/schema/policy; target and nonce/STEP correlation; permissions and actual consumption; per-oracle results; stopping, recovery and cleanup outcomes. Raw credentials, private prompts, dumps and machine-local evidence locations stay outside the public repository; use controlled receipt references and sanitized summaries. Missing App images, native consumer evidence or Provider-reported effort remains not-observed/unknown.
@@ -76,14 +78,17 @@ bun test test/live-e2e-checklist.test.ts test/modeld-core-verifier.test.ts
 
 Use the pinned package manager and the fixed candidate. The checklist tests are
 structure and command-routing checks, not live proof. Install the resulting
-Node-only tarball into an isolated prefix and inspect its `grokbox`/`gbox`, native
-dependencies and bundled Skills before any production adoption. The manual
+candidate artifacts into an isolated prefix and inspect CLI, Server/Web, modeld,
+native dependencies and bundled Skills before concentrated E2E. The current build
+still packages the existing CLI/runtime; CLI-05/WEB-02 must extend the real build,
+input provenance and installation checks when the new apps exist, not merely add
+an empty directory to the acceptance list. The manual
 `Release candidate artifact` workflow produces a tarball without publishing it.
 
 Do not include `shim:install` in an otherwise read-only candidate gate: it
 changes the everyday command entry. A source-backed global shim, migration and
 Host/modeld/daemon adoption belong to the separately coordinated live window,
-after runnable old artifacts and configuration recovery are preserved. Do not
+after the affected data and safe recovery path are protected. This is not a requirement to re-adopt and restore the old development installation after each code change. Do not
 let concurrent worktree merges change the next CLI invocation mid-window.
 
 ## Prepare and publish

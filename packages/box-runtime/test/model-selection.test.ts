@@ -129,7 +129,9 @@ test("invalid model is refused without even consulting Server; default-only sele
   await changeRuntimeModel({ store: f.store, modelId: "stub/echo", ownershipRead: read });
   expect(reads).toBe(0);
   expect(f.get().assignments.agents).toEqual(before);
-  await expect(changeRuntimeModel({ store: f.store })).rejects.toMatchObject({ code: "invalid_usage" });
+  await changeRuntimeModel({ store: f.store });
+  expect(f.get().assignments.main).toBeNull();
+  expect(f.get().assignments.agents).toEqual(before);
 });
 
 test("GET /v1/models failure or missing id refuses before any selection write", async () => {

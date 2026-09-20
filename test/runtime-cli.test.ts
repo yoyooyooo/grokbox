@@ -18,6 +18,8 @@ import { SHA, SOURCE } from "../packages/box-runtime/test/admission-fixture.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { applyPatchProfile } from "../packages/box-runtime/src/internal/host/profile.ts";
 import { LIVE_SHAPED_HOST } from "../packages/box-runtime/test/live-shaped-host.ts";
+import { applyUse } from "@grokbox/runtime-kernel/selection";
+import { openRuntimeStore } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson } from "./helpers.ts";
 
 const SAMPLE_MODELS = {
@@ -37,23 +39,13 @@ const SAMPLE_MODELS = {
 
 async function withRoot() {
   const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-box-runtime-"));
-  await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify(SAMPLE_MODELS, null, 2)}\n`);
+  await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify(SAMPLE_MODELS, null, 2)}\n`, { mode: 0o600 });
   return boxRuntimeRoot;
 }
 
-async function useSyntheticAcme(boxRuntimeRoot: string) {
-  const fakeFetch = Object.assign(async (url: Parameters<typeof fetch>[0]) => {
-    expect(String(url)).toBe("https://api.acme.test/v1/models");
-    return new Response(JSON.stringify({ data: [{ id: "fast" }] }), { headers: { "content-type": "application/json" } });
-  }, { preconnect: async () => undefined }) as typeof fetch;
-  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(fakeFetch);
-  try {
-    const result = await captureCli(["models", "use", "acme/fast", "--default"], {
-      discoveryPath: "/dev/null", boxRuntimeRoot, env: { ACME_KEY: "synthetic-fixture-only" },
-    });
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    return result;
-  } finally { fetchSpy.mockRestore(); }
+async function seedDefaultModel(boxRuntimeRoot: string, modelId: string) {
+  const store = openRuntimeStore(boxRuntimeRoot, {});
+  await store.saveModels(applyUse(await store.loadModels(), modelId));
 }
 
 function data(stdout: string): Record<string, unknown> {
@@ -166,9 +158,9 @@ describe("box-local runtime CLI", () => {
       "runtime log",
       "runtime contracts",
       "models check",
-      "models list",
-      "models use",
-      "models reset",
+      "model list",
+      "bot model set",
+      "bot model reset",
       "models persist-key",
       "runtime profile analyze",
       "runtime profile observe",
@@ -421,7 +413,7 @@ describe("box-local runtime CLI", () => {
     const boxRuntimeRoot = await withRoot();
     await mkdir(join(boxRuntimeRoot, "state"));
     await writeFile(desiredPath(boxRuntimeRoot), "{broken");
-    await writeFile(join(boxRuntimeRoot, "models.json"), "null");
+    await writeFile(join(boxRuntimeRoot, "models.json"), "null", { mode: 0o600 });
     const before = await snapshotTree(boxRuntimeRoot);
     const restore = spyStatusReaders(join(boxRuntimeRoot, "missing-run"));
     try {
@@ -520,62 +512,6 @@ describe("box-local runtime CLI", () => {
     expect(data(checked.stdout)).toMatchObject({ ok: true, checked: ["schema"], serviceReadiness: "not_checked" });
   });
 
-  test("default models use discloses endpoint; per-Bot use requires a scoped ownership reader", async () => {
-    const boxRuntimeRoot = await withRoot();
-    const used = await useSyntheticAcme(boxRuntimeRoot);
-    expect(used.code, used.stderr).toBe(0);
-    expect(data(used.stdout)).toMatchObject({
-      endpoint: "https://api.acme.test/v1",
-      dataTypes: ["text", "tools"],
-      takesEffect: "next_user_turn",
-      blastRadius: "box_default",
-      assignment: "main",
-    });
-
-    const forBot = await captureCli(["models", "use", "acme/fast", "--for", "11111111-1111-4111-8111-111111111111"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(forBot.code).not.toBe(0);
-    expect(forBot.stdout).toBe("");
-    expect(parseJson(forBot.stderr)).toMatchObject({ error: { code: "runtime_ownership_unavailable" } });
-  });
-
-  test("per-Bot models use types Host/bridge unavailability with read-only doctor next", async () => {
-    const boxRuntimeRoot = await withRoot();
-    const forBot = await captureCli(["models", "use", "stub/echo", "--for", "11111111-1111-4111-8111-111111111111"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(forBot.code).not.toBe(0);
-    expect(forBot.stdout).toBe("");
-    const error = (parseJson(forBot.stderr) as { error: { code: string; message: string; next: string; failureCode?: string } }).error;
-    expect(error).toMatchObject({ code: "runtime_ownership_unavailable", next: "grokbox doctor" });
-    expect(error.message).toContain("Host");
-    expect(error.message).not.toBe(error.failureCode ?? "ownership_read_unavailable");
-    expect(error.next).not.toContain("host on");
-  });
-
-  test("models reset is refused while route is desired", async () => {
-    const boxRuntimeRoot = await withRoot();
-    const use = await captureCli(["models", "use", "stub/echo", "--default"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(use.code, use.stderr).toBe(0);
-    const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(activate.code, activate.stderr).toBe(0);
-    const reset = await captureCli(["models", "reset", "--default"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(reset.code).toBe(2);
-    expect((parseJson(reset.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
-  });
-
   test("re-adopt without --confirm refuses before mutation", async () => {
     const boxRuntimeRoot = await withRoot();
     const refused = await captureCli(["runtime", "re-adopt"], {
@@ -672,11 +608,7 @@ describe("box-local runtime CLI", () => {
       expect(activate.code, activate.stderr).toBe(0);
       expect(spy).not.toHaveBeenCalled();
 
-      const useStub = await captureCli(["models", "use", "stub/echo", "--default"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(useStub.code, useStub.stderr).toBe(0);
+      await seedDefaultModel(boxRuntimeRoot, "stub/echo");
       const route = await captureCli(["runtime", "activate", "--mode", "route"], {
         discoveryPath: "/dev/null",
         boxRuntimeRoot,
@@ -712,36 +644,9 @@ describe("box-local runtime CLI", () => {
     }
   });
 
-  test("models use refuses a non-stub assignment while route is desired", async () => {
-    const boxRuntimeRoot = await withRoot();
-    const useStub = await captureCli(["models", "use", "stub/echo", "--default"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(useStub.code, useStub.stderr).toBe(0);
-    const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(activate.code, activate.stderr).toBe(0);
-    const drifted = await captureCli(["models", "use", "acme/fast", "--default"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(drifted.code).toBe(2);
-    expect((parseJson(drifted.stderr) as { error: { code: string } }).error.code).toBe("invalid_usage");
-    const listed = await captureCli(["models", "list"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(listed.code, listed.stderr).toBe(0);
-    expect((data(listed.stdout).assignments as { main: { modelId: string } }).main).toEqual({ modelId: "stub/echo" });
-  });
-
   test("activate --mode route refuses a non-stub assignment", async () => {
     const boxRuntimeRoot = await withRoot();
-    const use = await useSyntheticAcme(boxRuntimeRoot);
-    expect(use.code, use.stderr).toBe(0);
+    await seedDefaultModel(boxRuntimeRoot, "acme/fast");
     const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
@@ -764,38 +669,30 @@ describe("box-local runtime CLI", () => {
         },
       },
       assignments: { main: "openai/gpt-4o-mini", agents: {} },
-    })}\n`);
+    })}\n`, { mode: 0o600 });
     const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,
     });
     expect(activate.code, activate.stderr).toBe(0);
     expect(data(activate.stdout)).toMatchObject({ desired: "route", inject: false });
-    const refused = await captureCli(["models", "use", "acme/fast", "--default"], {
-      discoveryPath: "/dev/null",
-      boxRuntimeRoot,
-    });
-    expect(refused.code).toBe(2);
   });
 
       test("literal secrets are rejected", async () => {
     const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-box-runtime-"));
     await mkdir(boxRuntimeRoot, { recursive: true });
-    await writeFile(
-      join(boxRuntimeRoot, "models.json"),
-      `${JSON.stringify({
-        version: 1,
-        models: {
-          "acme/fast": {
-            provider: "acme",
-            model: "fast",
-            endpoint: "https://api.acme.test/v1",
-            apiKeyRef: "sk-literal",
-          },
+    await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify({
+      version: 1,
+      models: {
+        "acme/fast": {
+          provider: "acme",
+          model: "fast",
+          endpoint: "https://api.acme.test/v1",
+          apiKeyRef: "sk-literal",
         },
-        assignments: { main: null, agents: {} },
-      })}\n`,
-    );
+      },
+      assignments: { main: null, agents: {} },
+    })}\n`, { mode: 0o600 });
     const check = await captureCli(["models", "check"], {
       discoveryPath: "/dev/null",
       boxRuntimeRoot,

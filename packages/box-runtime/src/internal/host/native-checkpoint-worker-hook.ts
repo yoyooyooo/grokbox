@@ -4,11 +4,8 @@ import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { NATIVE_CHECKPOINT_WORKER_SYMBOL, createNativeCheckpointWorkerDispatcher } from "./native-checkpoint-worker.ts";
 
 /** Independent qualification of the worker ABI. Not the whole Host profile. */
-export const NATIVE_CHECKPOINT_PAIR = Object.freeze({
-  host: "e7031f773bf035d02952d8b76dc2d2be6cea7167305116cf3e9b05d2c067b06e",
-  worker: "56f87fa9fe599610b6c8201540ec3b510cc36a4535f629e2600aaf3cb90d7c4e",
-  schema: "native-checkpoint-proto-20260918",
-});
+import { NATIVE_CHECKPOINT_PAIR } from "./native-checkpoint-pair.ts";
+export { NATIVE_CHECKPOINT_PAIR } from "./native-checkpoint-pair.ts";
 const open = '  port.on("message", (request) => {\n    try {\n      switch (request.kind) {';
 const end = '  });\n}\nmain();\n';
 /** Exact original worker transformed in memory. No private source is stored in

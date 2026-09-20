@@ -78,10 +78,24 @@ export function notificationBindingIdentity(v: NotificationBinding) {
 }
 export type NotificationEnvelope = { schemaVersion: 1; kind: "grokbox.ops.notification"; intent: "brief-notice";
   deliveryId: string; workId: string; routeDecisionId: string; createdAtMs: number; expiresAtMs: number;
-  target: { agentId: string; routineId: string; bindingId: string; bindingRevision: number }; notice: BotIncidentNotice };
+  target: { agentId: string; routineId: string; bindingId: string; bindingRevision: number }; notice: BotIncidentNotice | BotTestNotice };
+export type BotTestNotice = { schemaVersion: 1; kind: "grokbox.ops.notification-test"; intent: "brief-notice"; testId: string;
+  createdAtMs: number; expiresAtMs: number; summary: typeof NOTIFICATION_TEST_SUMMARY; behavior: "notify_then_end";
+  automaticDiagnosis: false; automaticIssue: false; replayAuthorized: false; commands: [] };
+export const NOTIFICATION_TEST_SUMMARY = "This is an explicitly requested notification test, not an incident. Briefly confirm receipt and end; do not run tools or diagnose anything.";
+export function notificationTestNotice(testId: string, createdAtMs: number, expiresAtMs: number): BotTestNotice {
+  if (!uuid(testId) || !positive(createdAtMs) || !positive(expiresAtMs) || expiresAtMs <= createdAtMs) return fail();
+  return { schemaVersion: 1, kind: "grokbox.ops.notification-test", intent: "brief-notice", testId, createdAtMs, expiresAtMs,
+    summary: NOTIFICATION_TEST_SUMMARY, behavior: "notify_then_end", automaticDiagnosis: false, automaticIssue: false, replayAuthorized: false, commands: [] };
+}
+function testNotice(value: unknown): BotTestNotice {
+  const v = value as BotTestNotice;
+  if (!v || canonicalJson(v) !== canonicalJson(notificationTestNotice(v.testId, v.createdAtMs, v.expiresAtMs))) return fail();
+  return notificationTestNotice(v.testId, v.createdAtMs, v.expiresAtMs);
+}
 export type FrozenNotification = { schemaVersion: 1; scope: NotificationScope; target: NotificationTarget; binding: NotificationBinding;
   bindingDigest: string; envelopeDigest: string; envelopeBytes: number; workId: string; attemptId: string;
-  incidentId: string; evidenceRevision: number; expiresAtMs: number };
+  incidentId: string | null; evidenceRevision: number | null; expiresAtMs: number };
 export type NotificationReservation = { state: "reserved"; frozen: FrozenNotification; envelope: NotificationEnvelope }
   | { state: "blocked"; reason: string } | { state: "already_attempted"; attemptState: string };
 export type NativeNotificationResult = { state: "native-accepted"; receiptId?: string }
@@ -114,13 +128,15 @@ function deliveryNotice(v: BotIncidentNotice): BotIncidentNotice {
     behavior: "notify_then_end", automaticDiagnosis: false, automaticIssue: false, replayAuthorized: false };
 }
 export function freezeNotification(input: { scope: NotificationScope; target: NotificationTarget; binding: NotificationBinding;
-  workId: string; attemptId: string; createdAtMs: number; expiresAtMs: number; notice: BotIncidentNotice }) {
+  workId: string; attemptId: string; createdAtMs: number; expiresAtMs: number; notice: BotIncidentNotice | BotTestNotice }) {
   const { workId, attemptId, createdAtMs, expiresAtMs } = input;
   const scope: NotificationScope = { databaseId: input.scope.databaseId, scopeId: input.scope.scopeId };
-  const notice = deliveryNotice(input.notice);
+  const notice = input.notice.kind === "grokbox.ops.notification-test" ? testNotice(input.notice) : deliveryNotice(input.notice);
+  const isTest = notice.kind === "grokbox.ops.notification-test";
   const target = validateNotificationTarget(input.target), binding = validateNotificationBinding(input.binding, target, scope, createdAtMs);
   if (!uuid(workId) || !uuid(attemptId) || !positive(expiresAtMs) || expiresAtMs <= createdAtMs
-    || !uuid(notice.incidentId) || !positive(notice.evidenceRevision) || notice.behavior !== "notify_then_end"
+    || (isTest ? notice.testId !== workId || notice.createdAtMs > createdAtMs || notice.expiresAtMs !== expiresAtMs
+      : !uuid(notice.incidentId) || !positive(notice.evidenceRevision)) || notice.behavior !== "notify_then_end"
     || notice.automaticDiagnosis !== false || notice.automaticIssue !== false || notice.replayAuthorized !== false) return fail();
   const bindingDigest = notificationBindingIdentity(binding);
   const envelope: NotificationEnvelope = { schemaVersion: 1, kind: "grokbox.ops.notification", intent: "brief-notice", deliveryId: attemptId,
@@ -129,7 +145,7 @@ export function freezeNotification(input: { scope: NotificationScope; target: No
   const serialized = canonicalJson(envelope), envelopeBytes = new TextEncoder().encode(serialized).length;
   if (envelopeBytes > NOTIFICATION_DELIVERY_POLICY.maxBytes) throw new NotificationError("payload_budget");
   const frozen: FrozenNotification = { schemaVersion: 1, scope, target, binding, bindingDigest, envelopeDigest: sha256Text(serialized),
-    envelopeBytes, workId, attemptId, incidentId: notice.incidentId, evidenceRevision: notice.evidenceRevision, expiresAtMs };
+    envelopeBytes, workId, attemptId, incidentId: isTest ? null : notice.incidentId, evidenceRevision: isTest ? null : notice.evidenceRevision, expiresAtMs };
   return { frozen, envelope, serialized };
 }
 
@@ -146,8 +162,10 @@ export function validateNotificationBody(body: string, digest: string, binding: 
     || !positive(value.createdAtMs) || !positive(value.expiresAtMs) || value.createdAtMs > nowMs
     || value.expiresAtMs <= nowMs || value.expiresAtMs <= value.createdAtMs) return fail();
   validateNotificationBinding(binding, target, { databaseId: binding.databaseId, scopeId: binding.scopeId }, nowMs);
-  const notice = deliveryNotice(value.notice);
-  if (value.expiresAtMs > notice.evidence.expiresAtMs) return fail();
+  const notice = value.notice?.kind === "grokbox.ops.notification-test" ? testNotice(value.notice) : deliveryNotice(value.notice);
+  if (notice.kind === "grokbox.ops.notification-test"
+    ? notice.testId !== value.workId || notice.createdAtMs > value.createdAtMs || notice.expiresAtMs !== value.expiresAtMs
+    : value.expiresAtMs > notice.evidence.expiresAtMs) return fail();
   const expected: NotificationEnvelope = { schemaVersion: 1, kind: "grokbox.ops.notification", intent: "brief-notice",
     deliveryId: value.deliveryId, workId: value.workId,
     routeDecisionId: sha256Text(canonicalJson([value.workId, target, notificationBindingIdentity(binding)])),

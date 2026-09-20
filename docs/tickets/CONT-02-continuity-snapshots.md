@@ -10,6 +10,12 @@
 
 实际入口、114项组合证明和未证项见[固定报告](../reports/2026-09-18-continuity-recovery-store.md)。新增验证入口`node scripts/verify-runtime-rebuild.mjs continuity-store`使用声明的Bun/Node。该早期存储组合的材料是 synthetic opaque bytes，`nativeImportProven=false` 仅描述其证明边界；不能用它否定后续原生 capture/导入接线，也不能从管理层闭包推出所有原生隐含引用已齐。新增受限 Memory/历史/指令补充、保护配置和生命周期引用保护见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)。全材料/附件映射、自动安全点、源资源独立、持续安装和全安装物理预算仍未关闭。
 
+## 当前管理服务接线
+
+[保护服务](../../packages/box-runtime/src/internal/roots/protection-service.runtime.ts)已按新架构拥有默认发现和分档捕获通道；复用上述原 vault、原生 checkpoint 与有界 fallback，不创建第二材料库。`bot snapshot list/get`、Web `/protection` 只读取原发布记录的元数据，正文、实际原生导入和当前可用性分开。unsupported capture 保持 snapshot_unavailable，不能为页面生成替代成功材料。慢捕获与归属观察/暂停分离；关闭等待真实回调和最后本地写入，subject/workflow 引用仍参与原 GC 事务。
+
+当前[管理验证](../../test/protection-management.test.ts)包含无能力时拒绝、带显式合成恢复端的发布、配置关闭/重启保留、原 Bot/继任者身份和快照引用。它证明生产协调/存储与页面接线，不证明实际账户原生材料完整性、全部四档或附件/源资源独立。固定源码与计数见 [CLI-05](CLI-05-implementation-follow-through.md)。
+
 ## 目标与模块
 
 平时增量保全、不常驻另一个活Bot；接管时固定最后可靠点与可读增量，不靠日志猜RAM。kernel continuity定义manifest/质量，Host adapter仅作明确无修复读取，`io/continuity-store.node.ts`协调私有vault和管理引用，不成为活会话writer。

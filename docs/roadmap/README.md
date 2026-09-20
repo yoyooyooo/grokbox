@@ -2,6 +2,12 @@
 
 本目录只路由尚需交付的目标和未排期候选，不维护当前实现或现场结果。实现事实从源码和来源票读取；长期合同已归入 [产品](../product-contract.md)、[架构](../architecture.md)和 [runtime 专题](../box-runtime.md)。旧 Spec 路径仅保留稳定锚点跳转，不再定义另一套当前合同。
 
+## 本轮方案收束
+
+[Agent-first CLI 与架构重建](agent-first-cli/README.md)拥有命令合同、统一后台、能力重建至 Web UI 完整交付的已接受目标与工作链路。精确合同和施工细节仍待推进，尚未启动业务重组。Web 功能工程与后台一起推进，最终视觉后置；施工期间允许不可用，整合后集中验收，再由用户确认并吃狗粮。Web UI 的[功能边界](future/webui-console.md)、[V0 视觉](../design/webui/v0/README.md)与[来源研究](../reports/2026-09-19-webui-source-feasibility.md)分别拥有各自含义。
+
+[Host 补丁健康识别与监控告警闭环](host-patch-health-proposal.md)面向新架构：Rust/Oxc 静态内核、Node 管理的按任务 stdio/只读FD调用已讨论确认；[包与目录建议](host-patch-health-proposal.md#package-layout)明确五个现有TS包的职责、一个Cargo package和独立wire schema。完整方案仍保留其决策/实施边界；复用HSO/HCR、T44、原OBS与唯一controller，不代表增量已实现或获准现场采用。
+
 ## 已接受目标的剩余交付
 
 | 目标 | 合同与差额入口 |
@@ -12,14 +18,14 @@
 | 单一当前状态、材料保护、逐职责替身与关系交接、旧入站收敛和安全退役 | [Continuity](../runtime/continuity.md)、[CONT](../tickets/README.md#ownership-continuity)；已实现基础不等于完整终局 |
 | 已有配置/模型/上下文能力的进一步资格 | [Configuration](../configuration.md)、[CTX](../tickets/README.md#context-maintenance)、[reasoning](../tickets/FEAT-model-reasoning-policy.md) |
 | Host 来源感知、候选语义和受控发布 | [HSO/HCR 合同](../runtime/host-compatibility.md)；复用原 publisher/controller，不引入第二升级器 |
+| 单 Box Web UI 与共享后台 | [页面/交互目标](future/webui-console.md)、[T29](../tickets/T29-runtime-webui.md)、[重建骨架](agent-first-cli/implementation-impact.md)；作为本次完整交付的一部分，共用领域用例与合同 |
 
-本表不声称这些领域完全未实现，也不要求每次修复重开全部旧票。选择本次交付的用户结果和必要依赖；各来源票拥有具体实现/离线/review 差额，[LIVE](../tickets/LIVE-integration-validation.md)拥有被选发布范围的实际现场判据。
+本表不声称这些领域完全未实现，也不要求每次修复重开全部旧票。新版验收范围来自已接受目标，不能按当前实现进度自行缩小；各来源票拥有具体实现/离线/review 差额，[LIVE](../tickets/LIVE-integration-validation.md)拥有集中验收判据和当前结果。开发中的局部验证不等于每段发布，旧窗口报告不自动签署新候选。
 
 ## 未排期与独立候选
 
 | 方向 | 入口与边界 |
 | --- | --- |
-| 单 Box Web UI | [页面/交互目标](future/webui-console.md)、[共享命令边界](../maintainers/t29-command-boundary-incubate.md)；复用现有 writer/DTO，不另建 UI 配置权威 |
 | 多 Box 和盒外失联观察 | [fleet observation](future/fleet-observation.md)；本地进程不能自报整机离线，不跨机器共享 SQLite |
 | 更多通知渠道与升级规则 | [notification escalation](future/notification-escalation.md)；不改变当前单目标提醒或扩大权限 |
 | 额外 backend | [Pi RPC](../tickets/T30-runtime-pi-backend.md)、[Cursor](../tickets/T31-runtime-cursor-backend.md)、[进程内 pi-ai 资格](../tickets/PI-AI-01-model-backend-qualification.md)是不同候选，不阻塞本地 compact |

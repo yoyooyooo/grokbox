@@ -18,6 +18,10 @@ T45的`ops notifications send`已把用户确认的model fingerprint、prepared�
 
 Host选模闭包复用原生automation实验/默认/环境逻辑，route模式附精确Agent的managed selection revision；仅限下一次本地默认自动任务。`preflight_ready`明确没有Server所有权、实际工具、HTTP或用户已读证明，也不授权canary/activate/send。旧Host没有对应观察点时返回缺证，不从当前配置猜测模型。
 
+## 新管理健康面（2026-09-20）
+
+HOST-01当前提供来源/静态分析和原installation incident，公开合同保留 `notificationCoverage=local-only`，不把依赖同Host的receiver当独立兜底。原接收者所有资格门保持不变，检测器不能写入许可或改模型/目标。首次接入和enable/test已经由T45/T46统一管理入口替代本票早期 `ops targets` 示例；阅读历史预检回执不得恢复已退役writer。实际送达、同故障域失效和独立出口仍需本票/现场证据。
+
 ## Work
 
 分别验证identity、routine、ownership、Webhook实际model selection、tool scope、data consent与availability。普通聊天选模不证明automation回合走同一供应商；配置/捕获/观察值不同必须展示。custom依赖本次故障Host/modeld/provider时明确dependency-unavailable；官方也可能共用Host/Box，不承诺高可用。

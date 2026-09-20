@@ -21,7 +21,7 @@ async function packed(root: string, args: string[]) {
 const args = (workId: string) => ["ops", "targets", "activate", "default", "--from-work", workId, "--expect-binding-revision", "1",
   "--expect-model-revision", MODEL, "--operation-id", "activate", "--confirm-receiver", "--confirm"];
 
-test("CLI never derives receiver attestation from HTTP success, and validates required flags before side effects", async () => {
+test("retired activation syntax cannot bypass the management consent entry, with or without its old attestation flag", async () => {
   const f = await automaticFixture();
   try {
     const seed = await f.seed(), capsule = await readFile(join(f.root, "state/ops-pairing/bindings.json")); let network = 0;
@@ -34,22 +34,25 @@ test("CLI never derives receiver attestation from HTTP success, and validates re
   } finally { await f.close(); }
 }, 15000);
 
-test("actual Node replays the durable authorization operation without renewing it or reading native state", async () => {
+test("actual Node refuses retired activation, disable and unbind writers while preserving prior consent", async () => {
   const f = await automaticFixture();
   try {
     const seed = await f.seed(); await f.activate(seed.workId);
     const path = join(f.root, "state/ops-pairing/bindings.json"), before = await readFile(path);
-    const replay = await packed(f.root, args(seed.workId));
-    expect(replay.code, replay.stderr).toBe(0);
-    expect(JSON.parse(replay.stdout)).toMatchObject({ data: { state: "authorized", duplicate: true, notificationSent: false, nativeTurnObserved: false } });
-    expect(await readFile(path)).toEqual(before); expect(f.requests).toHaveLength(1);
-    expect(replay.stdout + replay.stderr).not.toContain("PRIVATE_TEST_KEY");
+    for (const command of [args(seed.workId), ["ops", "targets", "disable", "default", "--expect-binding-revision", "2", "--confirm"],
+      ["ops", "targets", "unbind", "default", "--expect-binding-revision", "2", "--confirm"]]) {
+      const replay = await packed(f.root, command);
+      expect(replay.code).not.toBe(0); expect(replay.stdout).toBe("");
+      expect(await readFile(path)).toEqual(before); expect(f.requests).toHaveLength(1);
+      expect(replay.stdout + replay.stderr).not.toContain("PRIVATE_TEST_KEY");
+    }
     const status = await packed(f.root, ["ops", "targets", "show", "default"]);
-    expect(status.code, status.stderr).toBe(0); expect(JSON.parse(status.stdout).data.bindings[0].automaticAuthorization.state).toBe("authorized");
+    expect(status.code).not.toBe(0); expect(status.stdout).toBe("");
+    expect((await f.owner.record("default"))!.automatic).toBeDefined();
   } finally { await f.close(); }
 }, 15000);
 
-test("an existing daemon owns the idle worker; original handshake shape stays compatible and reads start no services", async () => {
+test("the legacy daemon no longer advertises or starts a notification worker", async () => {
   const f = await automaticFixture(); let daemon: DaemonHost | undefined;
   try {
     const seed = await f.seed(); await f.activate(seed.workId);
@@ -61,26 +64,20 @@ test("an existing daemon owns the idle worker; original handshake shape stays co
     const before = await readFile(f.store.path);
     daemon = await startDaemonHost(deps, socket);
     const client = new LocalDaemonClient(socket, 2000);
-    expect((await client.handshake()).capabilities).toContain("grok.notifications.worker.read");
-    for (let n = 0; n < 50; n++) {
-      const current = await client.call("getOpsNotificationWorker", {});
-      if ((current.result as { cycles: number }).cycles > 0) break;
-      await tick(5);
-    }
+    expect((await client.handshake()).capabilities).not.toContain("grok.notifications.worker.read");
+    await tick(40);
     const observed = await packed(f.root, ["ops", "notifications", "worker"]);
-    expect(observed.code, observed.stderr).toBe(0);
-    expect(JSON.parse(observed.stdout)).toMatchObject({ data: { owner: "daemon-lifetime", state: "waiting",
-      lastCycle: { state: "idle", reason: "no_fresh_work" }, automaticDiagnosis: false, automaticIssue: false, serviceInstallation: "not_proven" } });
+    expect(observed.code).not.toBe(0);
     expect(nativeRequests).toBe(0); expect(f.requests).toHaveLength(1); expect(await readFile(f.store.path)).toEqual(before);
     await daemon.close(); daemon = undefined;
     const names = await readdir(join(f.root, "run")); expect(names).not.toContain("daemon.sock");
   } finally { await daemon?.close(); await f.close(); }
 }, 15000);
 
-test("worker status refuses an absent daemon instead of silently starting one or initializing storage", async () => {
+test("management notification status refuses an absent installation instead of starting a service", async () => {
   const root = await mkdtemp(join(tmpdir(), "worker-status-"));
   try {
-    const result = await captureCli(["ops", "notifications", "worker", "--json"], { boxRuntimeRoot: root, configDir: root, env: {}, daemonSocket: join(root, "absent.sock") });
+    const result = await captureCli(["notification", "status"], { boxRuntimeRoot: root, configDir: root, env: {}, daemonSocket: join(root, "absent.sock") });
     expect(result.code).not.toBe(0); expect(await readdir(root)).toEqual([]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

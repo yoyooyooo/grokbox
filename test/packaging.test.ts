@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -24,6 +25,7 @@ import {
 import { resolvePackageRoot } from "../packages/cli/src/deps.ts";
 import { GROKBOX_SKILL_TOPICS } from "../packages/cli/src/skills.ts";
 import { exerciseHcrProfileCli } from "./hcr-cli-fixture.ts";
+import { qualifyVerifierArtifacts } from "../packages/box-runtime/test/host-verifier-qualification.ts";
 
 const repoRoot = join(import.meta.dir, "..");
 const bun = Bun.which("bun") ?? process.execPath;
@@ -193,6 +195,25 @@ describe("published Node package", () => {
         .filter((line) => line.startsWith("package/") && line !== "package/")
         .map((line) => line.slice("package/".length)))].sort();
     }
+    const webManifest = JSON.parse(await readFile(join(repoRoot, "dist", "web", "manifest.json"), "utf8")) as {
+      version: number; sourceDigest: string; node: string; files: Record<string, { bytes: number; sha256: string }>;
+    };
+    expect(webManifest.version).toBe(1); expect(webManifest.node).toBe(">=22.12.0");
+    expect(webManifest.sourceDigest).toMatch(/^[a-f0-9]{64}$/);
+    const webPaths = Object.keys(webManifest.files);
+    expect(webPaths.length).toBeGreaterThan(3); expect(webPaths.length).toBeLessThanOrEqual(512);
+    expect(webPaths).toContain("run.mjs"); expect(webPaths).toContain("server/server.js");
+    expect(webPaths.some(path => /^client\/assets\/index-[\w-]+\.js$/.test(path))).toBe(true);
+    expect(webPaths.some(path => /^client\/assets\/styles-[\w-]+\.css$/.test(path))).toBe(true);
+    // An explicit artifact layout, not a wildcard accepting every new dist file.
+    // Runtime never needs source, maps, private fixtures, or development JSX.
+    for (const path of webPaths) {
+      expect(path).toMatch(/^(run\.mjs|server\/server\.js|(?:client|server)\/assets\/[A-Za-z0-9_.-]+\.(?:js|css))$/);
+      expect(path).not.toContain("jsx-dev-runtime");
+      expect(webManifest.files[path]!.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(Number.isSafeInteger(webManifest.files[path]!.bytes)).toBe(true);
+      expect(webManifest.files[path]!.bytes).toBeGreaterThan(0);
+    }
     expect(paths).toEqual([
       "LICENSE",
       "README.md",
@@ -206,6 +227,12 @@ describe("published Node package", () => {
       "dist/index.js",
       "dist/injector-hold.cjs",
       "dist/preload.cjs",
+      "dist/server.js",
+      "dist/native/x86_64-unknown-linux-gnu/grokbox-host-verifier",
+      "dist/native/x86_64-unknown-linux-gnu/verifier-manifest.json",
+      "dist/native/x86_64-unknown-linux-gnu/LICENSES.txt",
+      "dist/web/manifest.json",
+      ...webPaths.map(path => `dist/web/${path}`),
       "package.json",
       "skills/core.md",
       "skills/grokbox/SKILL.md",
@@ -214,6 +241,7 @@ describe("published Node package", () => {
       "skills/grokbox/desktop.md",
       "skills/grokbox/diagnostics.md",
       "skills/grokbox/label.md",
+      "skills/grokbox/materials.md",
       "skills/grokbox/models.md",
       "skills/grokbox/ownership.md",
       "skills/grokbox/routines.md",
@@ -223,7 +251,7 @@ describe("published Node package", () => {
       "skills/grokbox/troubleshoot.md",
       "skills/grokbox/validation.md",
       "skills/stubs/grokbox.md",
-    ]);
+    ].sort());
 
     const prefix = join(fixture, "prefix");
     const installed = npm
@@ -305,6 +333,35 @@ describe("published Node package", () => {
     const installedRoot = npm
       ? join(prefix, "node_modules", "grokbox")
       : join(prefix, "install", "global", "node_modules", "grokbox");
+    const nativeDir=join(installedRoot,"dist/native/x86_64-unknown-linux-gnu");
+    const verifierManifest=JSON.parse(await readFile(join(nativeDir,"verifier-manifest.json"),"utf8"));
+    const binaryBytes=await readFile(join(nativeDir,"grokbox-host-verifier"));
+    const verifierNotices=await readFile(join(nativeDir,"LICENSES.txt"));
+    expect(createHash("sha256").update(verifierNotices).digest("hex")).toBe(verifierManifest.license_notices_sha256);
+    expect(verifierNotices.toString()).toContain("VoidZero Inc.");
+    expect(binaryBytes.length).toBe(verifierManifest.binary_bytes);
+    expect(createHash("sha256").update(binaryBytes).digest("hex")).toBe(verifierManifest.binary_sha256);
+    const nativeIdentity=await run([join(nativeDir,"grokbox-host-verifier"),"--identity"],fixture,{PATH:"",HOME:fixture});
+    expect(nativeIdentity.code,nativeIdentity.stderr).toBe(0);
+    expect(JSON.parse(nativeIdentity.stdout).build_id).toBe(verifierManifest.build_id);
+    expect(verifierManifest.licenses.length).toBeGreaterThan(0);
+    expect(verifierManifest.licenses.every((row:{license:string})=>row.license!=="unverified")).toBe(true);
+    const verifierSource=await readFile(join(repoRoot,"test/fixtures/host-verifier/sources/qualified.cjs"));
+    const verifierResult=await qualifyVerifierArtifacts(nativeDir,[{role:"source",bytes:verifierSource},{role:"candidate",bytes:verifierSource}]);
+    expect(verifierResult.buildId).toBe(verifierManifest.build_id);expect(verifierResult.checks.every(c=>c.state==="passed")).toBe(true);
+    const installedWebManifest = JSON.parse(await readFile(join(installedRoot, "dist", "web", "manifest.json"), "utf8"));
+    expect(installedWebManifest).toEqual(webManifest);
+    for (const path of webPaths) {
+      const bytes = await readFile(join(installedRoot, "dist", "web", path));
+      expect(bytes.length).toBe(webManifest.files[path]!.bytes);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(webManifest.files[path]!.sha256);
+    }
+    for (const entry of ["dist/server.js", "dist/web/run.mjs", "dist/web/server/server.js"]) {
+      const syntax = await run([nodeExecutable, "--check", join(installedRoot, entry)], fixture, { PATH: process.env.PATH ?? "", HOME: fixture });
+      expect(syntax.code, syntax.stderr).toBe(0);
+    }
+    const webHelp = await run([grokbox, "system", "service", "run", "--help"], fixture, { PATH: process.env.PATH ?? "", HOME: fixture });
+    expect(webHelp.code, webHelp.stderr).toBe(0); expect(webHelp.stdout).toContain("web");
     const runtimeText = `${await readFile(join(installedRoot, "bin", "grokbox"), "utf8")}\n${await readFile(join(installedRoot, "dist", "index.js"), "utf8")}`;
     expect(runtimeText).not.toContain("Bun.");
     const installedPackage = JSON.parse(await readFile(join(installedRoot, "package.json"), "utf8"));
@@ -446,7 +503,7 @@ setInterval(() => {}, 1000);
         confirmed: true,
         root: boxRuntimeRoot,
         desired: { version: 1, mode: "identity" },
-        models: { version: 2, models: {}, assignments: { main: null, agents: {} } },
+        models: { version: 3, models: {}, assignments: { main: null, agents: {} } },
         now: () => 0,
         ...wired,
         freshDiskSha: () => "none",

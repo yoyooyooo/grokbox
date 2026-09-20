@@ -18,19 +18,37 @@
 
 原生 Alert observer 延后到精确目标 Host compile 通过时才初始化，继承 NODE_OPTIONS 的无关子进程不会仅因 require preload 就伪造 observer_started。默认 `alerts trace` 只展示直接关联/已挂接的来源；都不存在时，保留每个 Host generation 的一个真实覆盖样本，并报告总数/省略数，不能凭样本冒称所有采集点已安装。`--include-unrelated-observers` 显式展开同代完整来源。来源列表不授予执行身份或当前活性。
 
-## daemon 所属的持续采集
+## 新管理服务的共享读取
 
-当前源码提供一个明确的服务配置入口，复用统一config4和现有daemon，不要求终端一直运行。先预览，再把返回的配置revision连同本次operation ID用于确认：
+新版管理入口提供以下有界查询，CLI 和 Web 使用同一 API、权限与原 SQLite 读面：
+
+```bash
+grokbox system service get server
+grokbox system observation get
+grokbox incident list --limit 25
+grokbox incident list --cursor <incident-page-cursor> --limit 25
+grokbox event list --cursor <snapshot-or-event-cursor> --limit 50
+```
+
+默认固定本机，其他连接须显式 pinned connection；普通观察请求需要 `observations.read`，当前管理进程和采集器状态需要独立 `system.read`。Web 对应 `/observation`、`/incidents` 与 `/events`。快照返回其读取事务的 cursor，后续 event list 从该边界接续；事件页按数据库/采集代/保留边界校验，`cursor_gap` 要重新获取快照，不能把失效游标当空结果。没有 cursor 的历史页从可接续保留区间开始，存在更早缺失时显示 `history-truncated`。
+
+这些 GET 不启动 collector、不调用原生 RPC、不创建/迁移数据库、不回收数据或投递通知。未初始化返回 `source_unavailable`；recordedRunning 只代表持久记录，进程 liveness 保持 `not-probed`。原始 lastSuccess 与新鲜度不因页面读取而刷新，acknowledged/snooze 与 resolved 分开。新管理读面不输出诊断正文或通知载荷；详细证据仍由原有限范围入口读取。
+
+采集器和自动通知后台寿命已迁入管理 Server；下面部分配置/诊断命令尚未全部迁移，保护 worker 以及通知启用/测试/对账仍有独立来源票。跨域接管/旧入口退出沿 CLI-05/T41 继续，不新增临时业务 fallback。
+
+## 管理 Server 所属的持续采集
+
+当前源码复用统一配置与原 collector 程序，由管理 Server 的 Effect Scope 持有其启动和关闭，不要求终端或页面一直运行。现有配置入口尚待命令域收束：先预览，再把返回的配置revision连同本次operation ID用于确认：
 
 ```bash
 grokbox runtime monitor install --run-root <owned-host-run-root> --agents <uuid1,uuid2> --json
 grokbox runtime monitor install --run-root <owned-host-run-root> --agents <uuid1,uuid2> --expect-revision <config-revision> --operation-id <new-id> --confirm --json
-grokbox runtime monitor service --json
+grokbox system service get server
 ```
 
-确认会初始化/迁移观测域并保存`daemon.observation.runRoot/agentIds`，不会启动daemon或更改通知授权。已运行的匹配daemon会随后采用；重复同一operation核对原指纹，不重建丢失的证据库。实际服务同时消费Host/control journal，各有游标和健康；配置改变时先结算旧collector再替换。缺源、读取成功、原生源活性和采集器存活是不同事实。
+确认会初始化/迁移观测域并保存`daemon.observation.runRoot/agentIds`，不会启动管理服务或更改通知授权。字段名称是保留的配置位置，不代表旧 daemon 继续拥有 collector。已运行的匹配管理 Server 会随后采用；重复同一operation核对原指纹，不重建丢失的证据库。实际服务同时消费Host/control journal，各有游标和健康；配置改变时先结算旧collector再替换。缺源、读取成功、原生源活性和采集器存活是不同事实。
 
-`service`只读既有daemon，缺服务直接拒绝，不用GET创建环境。`ops.monitor.enabled=false`或移除`daemon.observation`会停止相应collector；只关闭通知不关闭采集或必要维护。该入口不是操作系统开机注册，状态保留`bootInstalled=false`。Linux已注册daemon socket可在确证原owner死亡、准确inode及连接拒绝时恢复；未知旧socket、损坏owner或未完成首次绑定不自动清理。实际Node/文件/SQLite证明与限制见[固定回执](../reports/2026-09-19-pre-e2e-observation.md#collector-lifetime)。
+`system service get server`只读已存在的管理进程及其 worker 状态，缺服务直接拒绝，不用 GET 创建环境；旧 `runtime monitor service` 与 daemon 状态 RPC 已退出。`ops.monitor.enabled=false`或移除`daemon.observation`会停止相应collector；只关闭通知不关闭采集或必要维护。该入口不是操作系统开机注册，状态保留`bootInstalled=false`。Linux已注册daemon socket可在确证原owner死亡、准确inode及连接拒绝时恢复；未知旧socket、损坏owner或未完成首次绑定不自动清理。原 daemon 窗口的 Node/文件/SQLite 证据保留在[固定回执](../reports/2026-09-19-pre-e2e-observation.md#collector-lifetime)，不改写为新 Server 通过；当前归属、取消、互斥与恢复由[管理服务集成](../../packages/server/test/observations.node.ts)验证，原生现场资格仍另验。
 
 ## 命令
 
@@ -38,8 +56,8 @@ grokbox runtime monitor service --json
 # 既有观测域，显式创建或迁移；普通查询不会做这些操作。
 grokbox runtime monitor init --confirm --json
 
-# 单独手动运行仍是前台进程；不要与同根已配置daemon collector并行争抢。
-# GROKBOX_RUN_ROOT仅供这次显式运行，不代替daemon的canonical配置。
+# 单独手动运行仍是前台进程；不要与同根已配置的管理 Server collector并行争抢。
+# GROKBOX_RUN_ROOT仅供这次显式运行，不代替管理 Server读取的canonical配置。
 GROKBOX_RUN_ROOT="$HOME/.grokbox/run" \
   grokbox runtime monitor run --agents <uuid1,uuid2> --interval-ms 30000 --confirm --json
 
@@ -50,8 +68,14 @@ GROKBOX_RUN_ROOT="$HOME/.grokbox/run" \
 grokbox runtime monitor snapshot --json
 grokbox runtime monitor events --after <cursor> --limit 100 --json
 grokbox runtime monitor incidents --limit 100 --json
-grokbox runtime monitor ack <incident-id> --request-id <uuid> --expected-revision <n> --json
-grokbox runtime monitor snooze <incident-id> --request-id <uuid> --expected-revision <n> --until-ms <epoch-ms> --json
+# 管理写入统一经 Server；引用包含安装、数据库与原 incident UUID。
+grokbox incident get <incident-ref>
+grokbox incident ack <incident-ref> --request-id <uuid> --expect-revision <n>
+grokbox incident snooze <incident-ref> --request-id <uuid> --expect-revision <n> --until-ms <epoch-ms>
+grokbox operation get --domain incident --database-id <original-database-uuid> --request-id <original-request-uuid>
+
+# 从快照或已验证事件游标接续；默认 30 秒窗口，有明确终帧。
+grokbox event watch --cursor <snapshot-cursor> --duration-ms 30000
 
 # 当前原生警告；不是永久历史。
 grokbox alerts list --agent <agent-id> --json
@@ -66,6 +90,22 @@ grokbox runtime incident <step-id> --agent <agent-id> --from monitor --json
 ```
 
 `--agents` 是 ownership 批量观察目标；显式 `GROKBOX_RUN_ROOT` 是本地执行/提醒 journal 的来源。未提供 run root 时 collector 披露 `journal.state=not_configured`，不把 ownership 采样冒充 Alert 采集。当前最多32个目标是原生 ownership 单批协议范围，不是累计运行次数配额。
+
+## 管理回执与变化订阅
+
+`incident list/get` 读原观察库的安全投影，ack/snooze 复用同一 SQLite 事务中的事件和管理回执，不创建第二账本。Server 按安装、主体、数据库和请求 UUID 隔离操作；操作引用也保留该隔离，另一个主体复用相同 request-id 不会读到原回执。新动作检查 incident revision 与权限；同键同意图的已完成回执优先返回，不重新检查已过期的暂缓期限。旧直写 `runtime monitor` 的 ack/snooze 入口已退出，不作为兼容别名。
+
+丢失回执后查询原数据库与请求，未找到不证明没有提交。数据库身份改变时拒绝把旧动作投到新库；配置损坏或回执容量满不阻止现有已完成回执的只读查询。当前管理回执容量由 `MONITOR_POLICY.maxManagementReceipts` 限制，满时拒绝新增，不静默淘汰。ack/snooze 不修复异常、不改变原生身份、不直接投递通知。
+
+`event watch` 输出有界 NDJSON 窗口，每帧关联安装与同一次 invocation，结束帧带最后验证游标。EOF、断线、取消不代替成功终帧；旧 collector 代或超保留期明确 gap。默认 30 秒、最多 60 秒，显式 `--timeout-ms` 可提前结束客户端观察。Server 每批读取前后重查权限，限制订阅数/帧/字节，等待慢消费者 drain；同游标只共享在途磁盘读取，不共享授权或取消。订阅不查询原生来源、不启动采集器，关闭一个页面/CLI 不停止后台。
+
+浏览器仅对读取做有限重连，从最后验证游标继续；遇到 scope/gap 要求显式新快照。页面最多展示最近 100 条并披露省略数。异常草稿冲突时保留，未知提交经刷新仍保留恢复定位并阻止替代请求；本地存储只保存定位，不保存完整输入或凭据。
+
+## 管理服务的通知状态
+
+`grokbox notification status` 和 Web `/notifications` 通过管理 API 读取 worker 安全状态，需要独立 `notifications.read` 权限；旧 daemon 的 worker/RPC 及 `ops notifications worker` 已退出。查询不启用通知、不发消息、不创建配对或数据库。`waiting` 是循环等待而不是已启用；`blocked`、`no_fresh_work` 和已尝试结果分别展示。HTTP `native-accepted` 不代表 Bot 完成或用户已读，公开视图不包含私有 work/授权ID、秘密或诊断正文。
+
+管理 Scope 结算 collector 后关闭 sender，sender 继续使用原 outbox 与持久授权，未知结果和重启不重发。这里证明的是生命周期和读取路径；旧 activation 强制 accepted seed/人工确认仍须按新合同替换，独立测试、逐条对账和原生接收资格仍归 [T45](../tickets/T45-template-webhook-delivery.md)。
 
 ## 固定 incident 证据（首个 OBS 实施切片）
 

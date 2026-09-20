@@ -8,6 +8,8 @@
 
 ## Depends-on / Modules
 
+**与新版核心检测的边界：** [HOST-01](HOST-01-patch-health-verifier.md)承接所声明 Host 能力的准确识别、Rust/Oxc 与健康链集成；这些必要证据不因本票的“后续 M”定位而延期。T48 保留在充分资格与明确许可下自动派生/维护的职责，不把解析通过升级为发布/adopt 权限，也不要求先交付自动维护才能拥有可靠监控。
+
 依 T43 的能力/版本表示、T44 的稳定 source/loaded/component 证据与 T51 的 deepReplay/预算配置；T47 的模型诊断不是资格前置，纯规则路线可无模型进行。复用 HSO 精确 apply/replay/provenance 和现有 profile writer。
 
 kernel `internal/ops/qualification.ts`、`policy.ts`；box-runtime `internal/ops/automation/qualify.ts`、`internal/ops/host-seam/*`、`internal/process/profile.node.ts` 及 ConfigurationWrite/IO 的相应 CAS adapter。profile runtime apply 保持不变。

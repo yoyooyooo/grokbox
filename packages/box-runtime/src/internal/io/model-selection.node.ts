@@ -1,7 +1,7 @@
 import { Clock, Effect } from "effect";
 import { BoxRuntimeError, OWNERSHIP_EVIDENCE_MAX_AGE_MS } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { applyReset, applyUse, parseRequestedEffort, assertResetAllowed, assertStubOnlyRouteAssignments, disclosure, persistModelsDocument, requireModel, captureManagedSelection } from "@grokbox/runtime-kernel/selection";
+import { applyReset, applyUse, applyFollowDefault, assignmentForBot, parseRequestedEffort, assertStubOnlyRouteAssignments, disclosure, persistModelsDocument, requireModel, captureManagedSelection } from "@grokbox/runtime-kernel/selection";
 import { runConfigurationSave } from "@grokbox/runtime-kernel/commands";
 import { configurationWriteLayer } from "./configuration-write.node.ts";
 import type { RuntimeStore } from "./configuration.node.ts";
@@ -10,11 +10,14 @@ import { probeOpenAiCatalog } from "./openai-catalog-probe.node.ts";
 
 /** One command root; no Host signal, provider request or identity/config mirror. */
 export async function changeRuntimeModel(input: {
-  store: RuntimeStore; forAgent?: string; modelId?: string; effort?: string; ownershipRead?: OwnershipReader; signal?: AbortSignal;
+  store: RuntimeStore; forAgent?: string; modelId?: string; followDefault?: boolean; effort?: string; ownershipRead?: OwnershipReader; signal?: AbortSignal;
   env?: NodeJS.Dict<string>; fetch?: typeof fetch; expectedSelectionHash?: string;
 }) {
   return await Effect.runPromise(Effect.gen(function* () {
     const reasoning = yield* Effect.try({ try: () => parseRequestedEffort(input.effort), catch: error => error });
+    if (input.followDefault && (!input.forAgent || input.modelId !== undefined || input.effort !== undefined)) {
+      return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "Following the default requires a Bot and cannot include model or effort overrides."));
+    }
     if (input.modelId === undefined && input.effort !== undefined) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "An effort requires a model selection, not reset."));
     if (input.forAgent !== undefined && (!input.forAgent.length || input.forAgent.length > 128 || /[\s\x00-\x1f]/.test(input.forAgent))) {
       return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "--for must be a stable agent ID."));
@@ -29,8 +32,8 @@ export async function changeRuntimeModel(input: {
       return yield* Effect.fail(new BoxRuntimeError("invalid_usage","selection_configuration_changed"));
     const next = yield* Effect.try({
       try: () => {
-        if (input.modelId === undefined) assertResetAllowed(before.desired, input.forAgent);
-        const file = input.modelId === undefined ? applyReset(before.models, input.forAgent) : applyUse(before.models, input.modelId, input.forAgent, reasoning);
+        const file = input.followDefault ? applyFollowDefault(before.models, input.forAgent!)
+          : input.modelId === undefined ? applyReset(before.models, input.forAgent) : applyUse(before.models, input.modelId, input.forAgent, reasoning);
         if (before.desired.mode === "route") assertStubOnlyRouteAssignments(file);
         return file;
       },
@@ -40,10 +43,11 @@ export async function changeRuntimeModel(input: {
     // catalog I/O. Explicit reset only removes our override: it must remain
     // possible after revocation or bridge loss, and never asserts that the
     // native owner is now Box/ready.
-    const ownership = input.forAgent && input.modelId !== undefined
+    const selectedModelId = input.followDefault ? assignmentForBot(next, input.forAgent!)!.modelId : input.modelId;
+    const ownership = input.forAgent && selectedModelId !== undefined
       ? yield* readManagedOwnership({ agentId: input.forAgent, read: input.ownershipRead }) : null;
-    if (input.modelId !== undefined) {
-      const modelId = input.modelId;
+    if (selectedModelId !== undefined) {
+      const modelId = selectedModelId;
       yield* Effect.tryPromise({
         try: () => probeOpenAiCatalog({
           record: requireModel(next, modelId),
@@ -66,7 +70,8 @@ export async function changeRuntimeModel(input: {
     const receipt = yield* runConfigurationSave({ boxRoot: input.store.root, kind: "models", file: next }).pipe(Effect.provide(configurationWriteLayer(input.store, sha256Text(canonicalJson(persistModelsDocument(before.models))))));
     if (!receipt.ok) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", receipt.reason));
     return {
-      ...(input.modelId ? disclosure(next, input.modelId, input.forAgent) : { assignments: next.assignments, model: "official", takesEffect: "next_user_turn", blastRadius: input.forAgent ? "single_bot" : "box_default" }),
+      ...(selectedModelId ? disclosure(next, selectedModelId, input.forAgent) : { assignments: next.assignments, model: "official", takesEffect: "next_user_turn", blastRadius: input.forAgent ? "single_bot" : "box_default" }),
+      selection: input.followDefault ? "default" : selectedModelId ? "model" : "native",
       configRevision: receipt.configRevision, selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed",
       ownership: ownership ? "confirmed_box" : input.forAgent ? "not_required_for_reset" : "not_applicable_default_only",
     };
@@ -77,12 +82,12 @@ export async function changeRuntimeModel(input: {
  * grant managed ownership, resolve credentials, change desired or call Provider. */
 export async function migrateRuntimeModels(input: { store: RuntimeStore; confirmed: boolean; signal?: AbortSignal }) {
   return Effect.runPromise(Effect.gen(function* () {
-    if (!input.confirmed) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "models migrate requires --confirm; coordinate the Host/modeld upgrade before saving schema v2."));
+    if (!input.confirmed) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", "models migrate requires --confirm; coordinate the Host/modeld upgrade before saving schema v3."));
     const models = yield* Effect.tryPromise({ try: () => input.store.loadModels(), catch: error => error });
     const receipt = yield* runConfigurationSave({ boxRoot: input.store.root, kind: "models", file: models }).pipe(
       Effect.provide(configurationWriteLayer(input.store, sha256Text(canonicalJson(persistModelsDocument(models))))));
     if (!receipt.ok) return yield* Effect.fail(new BoxRuntimeError("invalid_usage", receipt.reason));
-    return { modelsSchemaVersion: 2, configRevision: receipt.configRevision, configurationSaved: true,
+    return { modelsSchemaVersion: 3, configRevision: receipt.configRevision, configurationSaved: true,
       assignmentsUnchanged: true, currentTurn: "unchanged", effectiveUse: "not_observed" };
   }), { signal: input.signal });
 }

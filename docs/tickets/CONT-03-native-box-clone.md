@@ -8,6 +8,12 @@
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)与[best-effort材料](../roadmap/box-runtime-impl-spec.md#continuity-material)。依赖CONT-00/02/07/11，不依赖官方duplicate包装CONT-06；后者会清会话，不能当本能力内核。
 
+## 管理服务迁入
+
+`bot clone/replace --input ... --preview/--confirm` 已接入共享管理 Server，替代旧 `agents clone/replace/lifecycle` 普通命令。继续使用原生命周期程序和 CONT 工作流；原声明增加安装/主体/request/输入摘要，不建立第二操作库。相同提交只查历史，`operation resume --domain lifecycle` 才明确继续原计划；未知 create 不重发，已初始化目标不重导旧材料。Web `/lifecycles` 只读阶段、原/目标引用及交接链接。详细当前实现与固定验证归 [CLI-05](CLI-05-implementation-follow-through.md)，操作用法见 [指南](../maintainers/bot-lifecycle.md)。
+
+原 `native-current-state-owner` 的完整 clone/spawn 测试已迁到管理 HTTP 入口，仍经过真实的被测原生 owner/worker 和恢复材料程序，不以假初始化替代；上游来源和工作区仍是隔离测试输入，未因此证明真实账号/附件/完整 Provider 链。
+
 ## 目标与模块
 
 创建真实新Box身份，将声明范围的profile/Memory/历史/当前状态和模型配置装配为目标唯一的工作状态。质量尽力而为、缺口可解释，原生提交是否合法必须严格核实。源Bot保留，关系迁移由CONT-04/09完成。

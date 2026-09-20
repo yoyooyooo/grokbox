@@ -9,7 +9,11 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { CAPABILITIES } from "@grokbox/client";
+import { startManagementServer } from "@grokbox/server";
+import { defaultConfig } from "@grokbox/runtime-kernel/config";
+import { openRuntimeStore, createManagementGateway, publishConfigFile, publishLayoutAliases } from "../src/runtime.ts";
 import { initializationDigest, continuityStorePolicy, type InitializeCurrentRequest, CONTEXT_INSTRUCTIONS_KEY } from "@grokbox/runtime-kernel/continuity";
 import { openContinuityCurrentState, openContinuityRecoveryStore } from "../src/runtime.ts";
 import { createNativeCurrentStateOwner, NATIVE_CURRENT_STATE_KEY } from "../src/internal/host/native-current-state-owner.ts";
@@ -335,21 +339,33 @@ for(const kind of ["clone","spawn"] as const){
     const gateway=await startMockGateway({agents:[{id:sourceId,name:"Source",description:"source profile",title:"",isGroup:false}],
       hostStatus:{grokboxOwnership:ownedOwnershipSnapshot([sourceId,targetId],{scopeId,nowMs:Date.now(),serverHarness:"box",localHarness:"box"})},
       currentStateControl:body=>native(body,readOwnership,lifecycle)});
+    let management: Awaited<ReturnType<typeof startManagementServer>> | undefined;
     try{
-      const discoveryPath=await writeDiscovery({port:gateway.port,pid:gateway.pid,startedAt:gateway.startedAt,token:gateway.token});
-      const instructionFile=join(base,"instructions.md");await writeFile(instructionFile,"EXPLICIT_INITIAL_SYSTEM_DUTY");
-      const op=randomUUID(),args=["agents",kind,...(kind==="clone"?[sourceId]:[]),"--operation-id",op,"--system-prompt-file",instructionFile,"--json"];
-      const deps={configDir:join(base,"config"),boxRuntimeRoot:root,env:{},discoveryPath,transport:"local" as const,skillsDir:join(import.meta.dir,"../../../skills")};
-      const preview=await captureCli(args,deps);expect(preview.code,preview.stderr).toBe(0);expect(births).toBe(0);
+      const discoveryPath=join(base,"gateway.json");
+      await publishConfigFile(discoveryPath,{scheme:"http",host:"127.0.0.1",port:gateway.port,pid:gateway.pid,startedAt:gateway.startedAt,token:gateway.token});
+      const installationId = "11111111-1111-4111-8111-111111111111", token = "synthetic-native-lifecycle-management";
+      const config = { ...defaultConfig(), runtime: { desiredMode: "disabled", continuity: { enabled: false } } };
+      await publishConfigFile(join(root, "config.json"), config);
+      management = await startManagementServer({ store: openRuntimeStore(root, {}), installationId, native: createManagementGateway({ discoveryPath, configurationRoot: root }),
+        readGrants: async () => [{ principalId: "owner", tokenSha256: sha256Text(token), capabilities: [...CAPABILITIES] }] });
+      config.client.profiles.default = { serverUrl: management.url, installationId, daemonTokenRef: "env:SYNTHETIC_NATIVE_LIFECYCLE_CREDENTIAL" };
+      await publishConfigFile(join(root, "config.json"), config);
+      await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId, role: "box", root, daemon: { tokenSha256: sha256Text(token) } });
+      await publishLayoutAliases(root, root, installationId);
+      const instructionFile=join(base,"lifecycle-input.json"), op=randomUUID();
+      await writeFile(instructionFile, JSON.stringify({ requestId: op, name: "Native lifecycle test", instructions: "EXPLICIT_INITIAL_SYSTEM_DUTY" }));
+      const args=["bot",kind,...(kind==="clone"?[sourceId]:[]),"--input",`@${instructionFile}`];
+      const deps={configDir:root,boxRuntimeRoot:root,env:{SYNTHETIC_NATIVE_LIFECYCLE_CREDENTIAL:token},discoveryPath,transport:"local" as const,skillsDir:join(import.meta.dir,"../../../skills")};
+      const preview=await captureCli([...args,"--preview"],deps);expect(preview.code,preview.stdout+preview.stderr).toBe(0);expect(births).toBe(0);
       const plan=JSON.parse(preview.stdout).data;
       const result=await captureCli([...args,"--scope-id",plan.scopeId,"--expect-plan",plan.planRevision,"--confirm"],deps);
-      expect(result.code,result.stderr).toBe(0);expect(JSON.parse(result.stdout).data).toMatchObject({blocked:false,targetId,phase:kind==="clone"?"ready":"active"});
+      expect(result.code,result.stdout+result.stderr).toBe(0);expect(JSON.parse(result.stdout).data).toMatchObject({effectsUnknown:false,targetBotRef:`bot:${installationId}:${targetId}`,state:kind==="clone"?"ready":"active"});
       expect(births).toBe(1);expect(turns).toBe(kind==="spawn"?1:0);
       if(kind==="clone"){expect(target!.memories.some(m=>m.content==="LONG_TERM_FACT")).toBe(true);expect(target!.entries[0]?.continuitySource).toMatchObject({agentId:sourceId,historical:true});}
       else expect(String(firstInstructions)).toContain("EXPLICIT_INITIAL_SYSTEM_DUTY");
       expect(gateway.requests.some(r=>/sendPrompt|kickstartAgent/.test(r.pathname))).toBe(false);
       const again=await captureCli([...args,"--scope-id",plan.scopeId,"--expect-plan",plan.planRevision,"--confirm"],deps);expect(again.code,again.stderr).toBe(0);expect(births).toBe(1);expect(turns).toBe(kind==="spawn"?1:0);
-    }finally{gateway.stop();source.close();target?.close();await rm(base,{recursive:true,force:true});}
+    }finally{await management?.close();gateway.stop();source.close();target?.close();await rm(base,{recursive:true,force:true});}
   },30000);
 }
 

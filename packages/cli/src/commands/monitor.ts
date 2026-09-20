@@ -6,32 +6,27 @@ import { ConfigError } from "@grokbox/runtime-kernel/config";
 import { CliError } from "../errors.ts";
 import { writeSuccess } from "../output.ts";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
-import { LocalDaemonClient } from "../daemon/client.ts";
 
 type Options = { agents?: string; intervalMs?: string; once?: boolean; after?: string; limit?: string;
   runRoot?: string; operationId?: string; expectRevision?: string;
-  requestId?: string; expectedRevision?: string; untilMs?: string; confirm?: boolean;
+  confirm?: boolean;
   evidenceRevision?: string; revision?: string; durationMs?: string; view?: string; incident?: string; step?: string; tray?: string; agent?: string };
 function integer(value: string | undefined): number {
   if (!value || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) throw new CliError("invalid_usage","monitor_requires_integer");
   return Number(value);
 }
-export async function runRuntimeMonitor(deps: CliDeps, action: "init"|"install"|"service"|"run"|"snapshot"|"events"|"incidents"|"ack"|"snooze"|"incident"|"capture"|"lease"|"storage-status", args: Array<string | undefined>, raw: Options): Promise<void> {
+export async function runRuntimeMonitor(deps: CliDeps, action: "init"|"install"|"run"|"snapshot"|"events"|"incidents"|"incident"|"capture"|"lease"|"storage-status", args: Array<string | undefined>, raw: Options): Promise<void> {
   try {
     assertBoxLocal({ sshHost: deps.sshHost, daemonServerUrl: deps.daemonServerUrl, transport: deps.transport, profileName: deps.profileName });
     if (deps.gatewayServerUrl) throw new CliError("runtime_local_only", "Monitor evidence requires a box-local Profile.");
     if ((action === "init" || action === "run") && raw.confirm !== true) throw new CliError("invalid_usage","monitor_requires_confirm");
     const root = openRuntimeStore(deps.boxRuntimeRoot,deps.env).root;
-    if (action === "service") {
-      const result = await new LocalDaemonClient(deps.daemonSocket, 5000, deps.signal).call("getMonitorService", {});
-      writeSuccess(deps.stdout, result.result); return;
-    }
     if (action === "install") {
       if (!raw.runRoot || !raw.agents) throw new CliError("invalid_usage", "monitor_install_requires_explicit_sources");
       writeSuccess(deps.stdout, await configureMonitorService({ durableRoot: root, runRoot: raw.runRoot, agentIds: raw.agents.split(","),
         confirmed: raw.confirm === true, operationId: raw.operationId, expectedRevision: raw.expectRevision })); return;
     }
-    const storage = ["init", "ack", "snooze"].includes(action) ? await readStorageConfiguration(root) : undefined;
+    const storage = action === "init" ? await readStorageConfiguration(root) : undefined;
     const store = openMonitorStore(root, storage?.monitor);
     if (["incident", "capture", "lease"].includes(action)) {
       if (raw.view && !["local-diagnostic", "bot-diagnostic", "public-summary"].includes(raw.view)) throw new CliError("invalid_usage", "monitor_invalid_evidence_view");
@@ -55,11 +50,6 @@ export async function runRuntimeMonitor(deps: CliDeps, action: "init"|"install"|
     }
     if (action === "incidents") { writeSuccess(deps.stdout,{ ...await store.incidentPage(raw.after,raw.limit ? integer(raw.limit) : undefined), notificationMode: "local_only", admissionAuthority: false }); return; }
     if (action === "events") { writeSuccess(deps.stdout,await store.events(raw.after,raw.limit ? integer(raw.limit) : undefined)); return; }
-    if (action === "ack" || action === "snooze") {
-      writeSuccess(deps.stdout,await store.manage({ incidentId: args[0] ?? "", requestId: raw.requestId ?? "",
-        expectedRevision: integer(raw.expectedRevision), action, nowMs: Date.now(),
-        ...(action === "snooze" ? { untilMs: integer(raw.untilMs) } : {}) })); return;
-    }
     if (!raw.agents) throw new CliError("invalid_usage","monitor_requires_agent_ids");
     const fallback = deps.signal ? undefined : new AbortController();
     const signal = deps.signal ?? fallback!.signal;

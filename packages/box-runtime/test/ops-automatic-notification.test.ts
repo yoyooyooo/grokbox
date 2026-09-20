@@ -25,14 +25,13 @@ test("prepared is not authorized; idle worker does not read native state, reserv
   } finally { await f.close(); }
 });
 
-test("HTTP acceptance alone cannot provide the user's reminder attestation or ongoing authorization", async () => {
+test("HTTP acceptance never grants ongoing permission; enabling requires explicit consent, not a test attestation", async () => {
   const f = await automaticFixture();
   try {
     const seed = await f.seed(); expect(seed.result.state).toBe("native-accepted");
     const before = await readFile(join(f.root, "state/ops-pairing/bindings.json")), reads = f.reads();
-    for (const patch of [{ confirmed: false }, { reminderObserved: false }]) {
-      await expect(activateOpsNotifications({ ...f.input, command: { ...f.command(seed.workId), ...patch } })).rejects.toThrow("automatic_confirmation_required");
-    }
+    await expect(activateOpsNotifications({ ...f.input, command: { ...f.command(), confirmed: false } })).rejects.toThrow("automatic_confirmation_required");
+    await expect(activateOpsNotifications({ ...f.input, command: { ...f.command(), reminderObserved: true } as never })).rejects.toThrow("invalid_automatic_authorization");
     expect(f.reads()).toBe(reads); expect(f.requests).toHaveLength(1);
     expect(await readFile(join(f.root, "state/ops-pairing/bindings.json"))).toEqual(before);
     expect(await active(f)).toBeUndefined();
@@ -44,7 +43,7 @@ test("activation is atomic, redacted and idempotent without renewing the future-
   try {
     const seed = await f.seed(), result = await f.activate(seed.workId), authorization = await active(f);
     expect(result).toMatchObject({ state: "authorized", duplicate: false, nativeTurnObserved: false, notificationSent: false, serviceStarted: false,
-      userRead: "operator_attestation_only", automaticAuthorization: { receiverAttestation: "operator-confirmed-reminder", includesExistingWork: false } });
+      userRead: "not_observed", testRequired: false, automaticAuthorization: { testRequired: false, includesExistingWork: false } });
     expect(authorization.bindingRevision).toBe(f.pairing.revision + 1); expect(f.requests).toHaveLength(1);
     const bytes = await readFile(join(f.root, "state/ops-pairing/bindings.json")), reads = f.reads();
     expect(await f.activate(seed.workId)).toMatchObject({ duplicate: true, automaticAuthorization: result.automaticAuthorization });
@@ -54,14 +53,25 @@ test("activation is atomic, redacted and idempotent without renewing the future-
   } finally { await f.close(); }
 });
 
-for (const failure of ["missing", "unknown", "different-model"] as const) test(`${failure} test record cannot authorize automatic sends`, async () => {
+for (const prior of ["none", "unknown"] as const) test(`enable is independent of ${prior} prior delivery evidence and performs no send`, async () => {
   const f = await automaticFixture();
   try {
-    if (failure === "unknown") f.reply(res => { res.writeHead(500); res.end("PRIVATE_ERROR"); });
-    const seed = await f.seed();
-    const command = { ...f.command(failure === "missing" ? randomUUID() : seed.workId), ...(failure === "different-model" ? { expectedModelRevision: "a".repeat(64) } : {}) };
-    await expect(activateOpsNotifications({ ...f.input, command })).rejects.toBeDefined(); expect(await active(f)).toBeUndefined();
-    expect(f.requests).toHaveLength(1);
+    if (prior === "unknown") { f.reply(res => { res.writeHead(500); res.end("PRIVATE_ERROR"); }); await f.seed(); }
+    const requests = f.requests.length;
+    const enabled = await activateOpsNotifications({ ...f.input, command: f.command() });
+    expect(enabled).toMatchObject({ state: "authorized", notificationSent: false, testRequired: false, userRead: "not_observed" });
+    expect(await active(f)).toMatchObject({ version: 2, consent: "explicit-enable" });
+    expect(f.requests).toHaveLength(requests);
+    if (prior === "none") expect(await f.store.incidents()).toEqual([]);
+  } finally { await f.close(); }
+});
+
+test("removing the test prerequisite does not weaken the reviewed model and exact binding checks", async () => {
+  const f = await automaticFixture();
+  try {
+    await expect(activateOpsNotifications({ ...f.input, command: { ...f.command(), expectedModelRevision: "a".repeat(64) } })).rejects.toBeDefined();
+    expect(await active(f)).toBeUndefined(); expect(f.requests).toHaveLength(0);
+    await expect(activateOpsNotifications({ ...f.input, command: { ...f.command(), expectedBindingRevision: 99 } })).rejects.toThrow("binding_revision_changed");
   } finally { await f.close(); }
 });
 

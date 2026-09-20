@@ -11,13 +11,13 @@ function base() {
     assignments: { main: null, agents: { a: { modelId: id }, b: { modelId: id } } } });
 }
 describe("structured model reasoning selection", () => {
-  test("legacy read normalizes without inventing policy and writes schema v2", () => {
+  test("legacy read normalizes without inventing policy and writes schema v3", () => {
     const raw = { version: 1, models: {}, assignments: { main: "stub/echo", agents: { a: "stub/echo" } } };
     const before = JSON.stringify(raw), file = parseModelsFile(raw);
     expect(JSON.stringify(raw)).toBe(before);
-    expect(file.version).toBe(2);
+    expect(file.version).toBe(3);
     expect(file.assignments).toEqual({ main: { modelId: "stub/echo" }, agents: { a: { modelId: "stub/echo" } } });
-    expect(persistModelsDocument(file).version).toBe(2);
+    expect(persistModelsDocument(file).version).toBe(3);
     expect(parseModelsFile(persistModelsDocument(file))).toEqual(file);
     expect(() => parseModelsFile({ ...raw, version: 2 })).toThrow();
     expect(() => parseModelsFile({ ...raw, version: 3 })).toThrow();

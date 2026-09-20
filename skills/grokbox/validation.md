@@ -9,7 +9,8 @@ Use a separately authorized test Bot, never the operator/template Bot. `model-do
 A send receipt or an immediate title paint is not enough: the App name must still show the model after a title refresh.
 
 ```bash
-grokbox models use <model-id> --for model-dogfood
+grokbox bot model get <model-dogfood-uuid>
+grokbox bot model set <model-dogfood-uuid> --model <model-id> --request-id <persisted-uuid> --expect-revision <observed-revision>
 grokbox send model-dogfood --text "<text>" --json
 # Keep data.clientNonce. data.accepted / data.status=accepted means queued, not a reply.
 

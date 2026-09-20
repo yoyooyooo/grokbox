@@ -2,67 +2,73 @@
 
 本页说明已注册的有限 clone/replace/spawn、lifecycle、protection 和 handover 操作。语义与剩余产品边界归 [连续性合同](../runtime/continuity.md)，当前状态的 capture/initialize/reset/recover 归 [当前状态指南](current-state-control.md)，官方式 duplicate 归 [复制指南](native-agent-duplicate.md)。这些不是同一条复制命令的别名。
 
-命令源码：[registry](../../packages/cli/src/registry.ts)、[生命周期 CLI](../../packages/cli/src/commands/bot-lifecycle.ts)、[持久分阶段程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)。固定实现证明见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)；现场结果只在 [LIVE](../tickets/LIVE-integration-validation.md#live-ownership-continuity)。
+命令源码：[管理命令](../../packages/cli/src/management-registry.ts)、[共享管理用例](../../packages/server/src/lifecycle.ts)、[持久分阶段程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)。当前迁入状态与验证归 [CLI-05](../tickets/CLI-05-implementation-follow-through.md)；[早期生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)只描述其原窗口，现场结果在 [LIVE](../tickets/LIVE-integration-validation.md#live-ownership-continuity)。
 
 ## 前置条件与影响
 
-只在目标 Box 本机使用，不能通过远端 Profile、SSH 或任意 RPC 绕过本地边界。需要匹配的已加载 Host 能力、安装 scope、原生 worker/profile 和配置；缺失时沿已有能力诊断处理，命令不自动升级 Host。模型必须来自已配置目录并满足原准入，源码已集成不证明当前安装可用。
+clone/replace/spawn 和原操作续接已使用新版绑定安装的管理 Server；服务不可用时不回退到 CLI 本地或旧 daemon。内部原生执行仍在该 Box，要求匹配的已加载 Host、账号 scope、原生 worker/profile 与配置；缺失时不自动升级 Host。模型来自配置目录并满足原准入。尚未迁移的独立 current-state/旧 handover 命令仍有其本地边界，不能用于绕过新操作的主体授权。
 
-先明确源对象、材料/Memory 的去向、模型费用、激活/启动及交接发言范围。预览可读取原生能力、源 profile、模型选择及显式指令文件，但不创建目标、初始化 CONT 库、调用模型或发交接消息。确认执行会分阶段持久写入；失败可已经创建目标，不能因为没有最终成功就删除重建。
+先明确源对象、材料/Memory 的去向、模型费用、激活/启动及交接发言范围。预览读取原生能力、源 profile 和模型选择，不创建目标、初始化 CONT 库、调用模型或发交接消息。`lifecycle.write` 允许生命周期预览与执行；请求程序启动还需 `lifecycle.start`，允许用户身份的交接消息还需 `lifecycle.messages`，实际阶段前重新验证。确认后的失败可能已经创建目标，不能因没有最终成功就删除重建。
 
 | 入口 | 真实边界 |
 | --- | --- |
-| clone | 固定源与材料计划，创建真实新身份并初始化；默认到 ready，不激活、不启动。显式 --activate 释放准备，--start 还请求程序启动 |
-| replace | 共用生命周期程序，默认激活并进入 active_with_handover；不等于关系全部迁完，更不等于源已删除。只有 --start 才额外请求程序启动 |
-| spawn | 不需要源 ID；初始化受管指令/模型与材料后激活并请求一次程序启动。不是模拟一条用户任务消息，也不是有自动到期删除保证的临时沙箱 |
-| lifecycle status / advance | 按原 operation/scope 读取或推进保存的计划；不把 unknown 创建当作可重试的新操作 |
+| bot clone | 固定源与材料计划，默认到 ready，不激活/启动；结构化输入的 activate/start 分别请求释放准备和程序启动 |
+| bot replace | 激活后进入 active_with_handover；不等于关系全部迁完或源已删除，start 独立显式选择 |
+| bot spawn | 无源 ID，要求明确 name；初始化后激活并请求一次程序启动，不伪造用户任务或承诺自动到期删除 |
+| operation list/get/resume --domain lifecycle | 查询当前主体的保留历史，或按原 request/scope/plan 明确续接；不把 unknown 创建变成可重试新操作 |
 
-普通创建的 description/--instructions、介绍/kickstart 与 `--system-prompt-file` 的受管初始指令不是同一能力。指令文件要求明确 UTF-8 regular file，最多64KiB；内容不进入普通结果，也不扩大工具/数据/维护权限。maxRunMs 是受限启动预算，不能推导任务已完成、结果已交付或对象会自动清理。
+输入从 `--input @file` 或 `--input -` 读取严格 JSON。`description` 是 profile 文本，`instructions` 是受管初始指令，分别限16KiB/32KiB UTF-8；指令不进入普通回执、页面或日志。`modelId` 缺省继承源的已解析选择，null 明确使用原生模型；它不创造新的跟随关系。`snapshotRef` 必须是本安装/原账号 scope 的准确材料引用。maxRunMs 是启动预算，不是业务完成、交付或清理证明。旧 `--system-prompt-file` 及独立副作用 flags 不作为新版别名。
 
 ## 预览、执行与原操作续接
 
 先检查安装版本 help。以下是人工选择对象与范围后的步骤，不是一键批量创建脚本：
 
-```bash
-grokbox agents clone <source-id> --operation-id <uuid> --name <name>
-grokbox agents clone <source-id> --operation-id <uuid> --name <name> --scope-id <scope-from-preview> --expect-plan <plan-from-preview> --confirm
-```
-
-两次使用同一 operation ID 和相同参数。预览返回 scopeId、planRevision、将使用的模型、指令摘要及 activate/start；源 profile、模型或指令改变则重新审阅计划，不沿用失效 digest。请求开始持久执行后，原操作不允许改成另一种任务。
-
-replace 的默认激活与关系交接会扩大影响；`--allow-handover-messages` 另外允许明确以用户身份发送群/DM交接说明，不伪造旧 Bot 作者。没有发言许可时对应关系步骤可以 blocked，不暗中换成用户或 Bot 发送。
+输入文件由调用方保留 requestId，例如包含 `requestId`、`name`、`instructions`，以及必要的 activate/start/modelId 等字段。命令已指定 kind 和源对象，不得在文件内重复声明同一字段；requestId 可在文件或 `--request-id` 提供，但不能重复。
 
 ```bash
-grokbox agents spawn --operation-id <uuid> --name <name> --system-prompt-file <file>
-grokbox agents lifecycle status --operation-id <uuid> --scope-id <scope-from-preview>
-grokbox agents lifecycle advance --operation-id <uuid> --scope-id <scope-from-preview> --expect-plan <plan-from-preview> --confirm
+grokbox bot clone <source-bot-ref> --input @lifecycle.json --preview
+grokbox bot clone <source-bot-ref> --input @lifecycle.json --scope-id <scope-from-preview> --expect-plan <plan-from-preview> --confirm
+grokbox bot spawn --input @startup.json --preview
+grokbox operation list --domain lifecycle --limit 20
+grokbox operation get --domain lifecycle --scope-id <original-scope> --request-id <original-uuid>
+grokbox operation resume <lifecycle-operation-ref> --domain lifecycle --expect-plan <original-plan> --confirm
 ```
 
-spawn 首条仍只是预览；实际执行需与 clone 相同的 scope/plan/confirm，保留原指令和选模参数。status 是本域离线读取，不加载 Bot、不创建库；advance 只消费保存的固定计划。先读每阶段回执、knownTargetId、blocked/reason 和材料缺口。顶层命令返回 JSON 或 ok 不代表 workflow 全部成功。
+预览返回 scopeId、planRevision、原操作引用、选模和指令摘要；不持久化计划。提交重新读原生状态并比对同一计划。源 profile、模型或指令改变必须重新审阅，旧摘要不授权新输入。请求正式保存在原 CONT 工作流后不可改目的；相同提交仅返回历史，继续未完阶段必须显式 resume。HTTP 断线不取消已受理程序；管理服务关闭会取消原生读写并等待原领域结算，重启后查询原身份再续接。不是所有阶段都可自动重试。
 
-步骤的 claim、原生效果、结果写回与阶段推进分别记录。创建结果未知时不换 operation ID 再 create，也不根据相同名称猜目标；缺少可证明的原生对账则保持阻断。已经到 ready/active 的原操作重入不能用旧初始材料覆盖目标后续 B1/B2。
+replace 的 `allowHandoverMessages: true` 允许在独立权限齐备时以用户身份发送明确的群/DM交接说明，不伪造旧 Bot 作者。没有发言许可的职责保持 blocked。继任激活后 resume 只继续原交接职责，不再次 capture/create/initialize。`ready` 或 `active` 可能只是下一阶段之前的检查点，实际续接以请求的最后阶段回执为准。
+
+list/get 经管理 API 只读当前主体的原工作流，保留账号 scope；分页是有界 keyset，不是全安装或冻结历史。Web `/lifecycles` 只展示原/目标身份、阶段和交接链接，不提供创建、任务发起或续接按钮。原生当前可用性、业务成功、源退役与历史阶段完成分开。
+
+步骤的 claim、原生效果、结果写回与阶段推进分别记录。创建结果未知时不换 requestId 再 create，不根据相同名称猜目标；缺少可证明的原生对账保持阻断。已完成初始化的历史重放不能用 B0 覆盖后续 B1/B2。旧 `agents clone/replace/spawn` 和 `agents lifecycle status/advance` 已退出，原生与后台适配也不继承新人工操作的主体权限。
 
 ## 保护与关系交接
 
-保护意图在 `runtime.continuity`，精确字段用 schema 查询；不另建手写状态文件。默认关闭的功能不能由文档、已有快照或 ops 通知开启来隐式启用。各 Bot 的材料档位、alert/prepare/auto-replace、暂停 Routine、关系权限与费用约束独立。
+保护意图在 `runtime.continuity`，由共享配置 writer 发布，不另建手写状态文件。当前默认开启对已核验属于本账号 Box 的 Bot 的发现、观察与恢复材料保全；默认 mode 为 alert、tier 为 resume，实际材料能力缺失显示 snapshot_unavailable，不制造快照。prepare/auto-replace 需要显式策略，通知仍须独立授权。各 Bot 的材料档位、暂停 Routine、关系权限与费用约束分开。显式关闭或排除的 Bot 不被默认发现重新开启。
 
 ```bash
 grokbox config schema runtime.continuity
-grokbox agents protection status --scope-id <scope-id>
-grokbox agents protection observe --scope-id <scope-id> --confirm
-grokbox agents protection advance --scope-id <scope-id> --confirm
+grokbox system protection get
+grokbox bot protection get <original-bot-ref>
+grokbox bot protection set <original-bot-ref> --input @policy-patch.json --request-id <uuid> --expect-revision <config-revision> --confirm
+grokbox bot protection reset <original-bot-ref> --request-id <uuid> --expect-revision <config-revision> --confirm
+grokbox system protection set --enabled false --request-id <uuid> --expect-revision <config-revision> --confirm
+grokbox bot snapshot list --bot <original-bot-ref> --limit 20
+grokbox bot snapshot get <snapshot-ref>
+grokbox bot handover get <handover-ref>
+grokbox operation get --domain protection --target <original-bot-ref-or-system> --request-id <original-uuid>
 grokbox agents handover status --operation-id <replacement-id> --scope-id <scope-id>
 grokbox agents handover advance --operation-id <replacement-id> --scope-id <scope-id> --confirm
 grokbox agents handover observe --operation-id <replacement-id> --scope-id <scope-id> --confirm
 ```
 
-status 只读。observe 虽主要观察原生事实，仍会写本地保护/关系水位，因而需要确认，不应归入纯 GET。advance 可能在已保存权限与配置内创建/推进替身或改变关系，不能把它当作一次健康探针。
+新版 get/list 只读原存储和进程状态，不调用原生、初始化或采集；快照页只读元数据。配置修改使用原 request-id 和 config revision，提交不证明后台已采用；丢回复后查询原主体/目标/request-id，不重放旧许可。Web `/protection` 使用同一权限、CSRF 和恢复定位。旧 `agents protection status/observe/advance` 已退出，不作为兼容别名。
 
-当前后台保护随已启动的 daemon 组合，运行时 Scope 管理取消和回调结算；它不证明 Box 自启。当前保护观察/推进和交接循环仍使用固定节奏，`runtime.continuity.intervalMs` 尚未被该 worker 消费；保存它不证明调度已经采用，后续差额归 [CONT-01](../tickets/CONT-01-ownership-loss-notification.md)。通知也仍须通过独立配对、授权、预算和原生投递门。
+后台保护现由管理 Server 的 Scope 持有。默认发现每30秒轮转至多32个原生所有权目标，累计至多128个受保护主体；观察、材料/继任推进、关系交接是独立串行通道。`runtime.continuity.intervalMs` 已供观察通道消费；容量与轮转覆盖独立显示，不宣称所有 Bot 同一时刻完成采样。同根 fd gate 保证单个后台 owner；停止先取消原生读取并结算实际回调和本地写入，不删除恢复材料、重启被暂停 Routine 或证明 Box 自启。状态、快照和模型执行资格分开。
 
-每个关系保存真实进度：群成员、DM说明、Routine停旧启新、外部依赖、旧入站覆盖不是一个成功布尔值。新 Bot 可用可以与部分关系 blocked 同时成立；活动、失败、unknown 和缺少权限必须保留。监控失败/长断档不计 quiet，近期转录没有附件也不证明目标不依赖源资源。
+原 Bot 引用不自动指向继任者；页面分别展示 original/current/previous。继任激活后，未完交接仍以原 workflow 引用可查；最近16条导航链接与更早省略说明只是有限展示，不回收原操作或授予退役权限。每个关系保存真实进度：群成员、DM说明、Routine停旧启新、外部依赖、旧入站覆盖不是一个成功布尔值。新 Bot 可用可以与部分关系 blocked 同时成立；活动、失败、unknown 和缺少权限必须保留。监控失败/长断档不计 quiet，近期转录没有附件也不证明目标不依赖源资源。
 
-`handover attest` 需要确切外部依赖 item 与人工已核验 evidence hash；这是有影响的声明，不是程序自行证实。`handover retire` 即使带确认与证据，也必须经过源资源独立性和删除前屏障。当前原生 adapter 没有可靠的条件删除/入站排空能力，因此自动源删除保持阻断；不得伪造 evidence、清空关系账本或绕回普通 delete 把 blocked 改成成功。
+剩余旧独立 handover 路径不能接管带有管理主体的新人工工作流；它们的完整命令迁入仍归 CONT 来源票。`handover attest` 需要确切外部依赖 item 与人工已核验 evidence hash；这是有影响的声明，不是程序自行证实。`handover retire` 即使带确认与证据，也必须经过源资源独立性和删除前屏障。当前原生 adapter 没有可靠的条件删除/入站排空能力，因此自动源删除保持阻断；不得伪造 evidence、清空关系账本或绕回普通 delete 把 blocked 改成成功。
 
 ## 验收与停止边界
 

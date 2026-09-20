@@ -7,7 +7,7 @@ export { CONFIG_SCHEMA_VERSION } from "./version.ts";
 
 export type ConnectionProfile = {
   transport?: "auto" | "daemon" | "local" | "gateway";
-  serverUrl?: string; daemonTokenRef?: string; daemonSocket?: string;
+  serverUrl?: string; daemonTokenRef?: string; daemonSocket?: string; installationId?: string;
   gatewayUrl?: string; gatewayTokenRef?: string; gatewayHeadersRef?: string; gatewayDiscovery?: string;
   sshHost?: string;
   sandbox?: { accessTokenRef?: string; keepaliveIntervalMs?: number };
@@ -32,6 +32,7 @@ export type DesktopIntent = {
   keepAgentIds?: string[];
 };
 export type UnifiedConfig = {
+  materials?: import("../../materials.ts").MaterialsConfiguration;
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   client: { currentProfile: string; profiles: Record<string, ConnectionProfile> };
   daemon?: DaemonIntent;
@@ -65,6 +66,7 @@ export const OPS_SOURCE_KINDS = ["host-seam", "runtime", "ownership", "provider"
 export const OPS_SEVERITIES = ["notice", "warning", "error", "critical"] as const;
 const profile = object({
   transport: enumeration("auto", "daemon", "local", "gateway"), serverUrl: url,
+  installationId: { ...string(36, "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"), sensitive: true },
   daemonTokenRef: secret, daemonSocket: path, gatewayUrl: url, gatewayTokenRef: secret,
   gatewayHeadersRef: secret, gatewayDiscovery: path,
   sshHost: { ...string(255), format: "ssh", sensitive: true },
@@ -72,7 +74,7 @@ const profile = object({
   quota: object({ source: enumeration("cursor-web"), accessTokenRef: secret }, ["source", "accessTokenRef"]),
 });
 export const DAEMON_INTENT_SCHEMA = object({
-  observation: object({ runRoot: path, agentIds: array({ ...uuid, sensitive: true }, 32, 1) }, ["runRoot", "agentIds"]),
+  observation: object({ runRoot: path, agentIds: array({ ...uuid, sensitive: true }, 32) }, ["runRoot", "agentIds"]),
   network: object({ host: enumeration("127.0.0.1"), port: integer(1, 65535) }, ["host", "port"]),
   serve: object({ httpsPort: integer(1, 65535), dnsName: string(253, "^[A-Za-z0-9.-]+$"), proxyUrl: url }, ["httpsPort", "dnsName", "proxyUrl"]),
   filesystem: object({ roots: array(object({
@@ -161,6 +163,11 @@ export const CONFIG_SCHEMA = object({
   runtime: object({ desiredMode: enumeration("disabled", "observe", "identity", "route"), context: CONTEXT_SCHEMA, continuity: CONTINUITY_SCHEMA }),
   ops: OPS_SCHEMA,
   storage: STORAGE_SCHEMA,
+  materials: { ...object({ enabled: boolean, intervalMs: integer(10000, 300000), sources: array(object({
+    id: string(32, "^[a-z][a-z0-9-]{0,31}$"), kind: enumeration("native-memory", "files"), root: { ...path, sensitive: true },
+    accountScope: string(64, "^[a-f0-9]{64}$"), writable: boolean,
+    agentIds: array(uuid, 32), projects: array(string(96, "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$"), 64),
+  }, ["id", "kind", "root", "accountScope"]), 8) }, ["enabled", "intervalMs", "sources"]), dangerous: true },
 }, ["schemaVersion", "client"]);
 
 function bad(message = "Configuration does not satisfy its schema."): never { throw new ConfigError("config_invalid", message); }
@@ -307,6 +314,16 @@ export function validateConfig(input: unknown): UnifiedConfig {
   if (result.daemon) result.daemon = validateDaemonIntent(result.daemon);
   if (result.ops) validateRouting(effectiveOps(result.ops));
   if (result.storage) effectiveStorage(result.storage);
+  if (result.materials) {
+    const sources = result.materials.sources;
+    if (new Set(sources.map(s => s.id)).size !== sources.length) bad("Material source IDs must be unique.");
+    for (const source of sources) {
+      if (source.kind === "native-memory") {
+        if (!Array.isArray(source.agentIds) || !Array.isArray(source.projects) || Object.hasOwn(source, "writable")
+          || new Set(source.agentIds).size !== source.agentIds.length || new Set(source.projects).size !== source.projects.length) bad("Native materials require explicit unique Bot and Project allowlists and are read-only.");
+      } else if (typeof source.writable !== "boolean" || Object.hasOwn(source, "agentIds") || Object.hasOwn(source, "projects")) bad("File source permissions must be explicit.");
+    }
+  }
   if (result.runtime?.context) {
     try { result.runtime.context = validateContextIntent(result.runtime.context); }
     catch { throw new ConfigError("config_invalid", "Context policy has invalid fields or incompatible budgets."); }

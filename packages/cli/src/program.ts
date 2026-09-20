@@ -27,11 +27,8 @@ import {
 import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
-import { runRoutines } from "./commands/routines.ts";
 import { runRuntimeServicesCli } from "./commands/runtime-services.ts";
-import { runOpsNotifications, runOpsNotificationSend, runOpsNotificationWorkerStatus } from "./commands/ops-notifications.ts";
-import { runOpsTargetsCli } from "./commands/ops-targets.ts";
-import { runRoutineProvisionCli } from "./commands/routine-provision.ts";
+import { runOpsNotifications, runOpsNotificationSend } from "./commands/ops-notifications.ts";
 import { runRuntimeMonitor } from "./commands/monitor.ts";
 import {
   runDesktopKeepAdd,
@@ -81,7 +78,6 @@ import { runAlertTrace } from "./commands/alert-trace.ts";
 import { runJobsCancel, runJobsList, runJobsLogs, runJobsShow } from "./commands/jobs.ts";
 import { runInit } from "./commands/init.ts";
 import { runIsRunning } from "./commands/is.ts";
-import { runMemoryList } from "./commands/memory.ts";
 import {
   runProfileAdd,
   runProfileCapabilities,
@@ -94,10 +90,10 @@ import {
 } from "./commands/profile.ts";
 import { runSend } from "./commands/send.ts";
 import { resolveProfile } from "./config/profile.ts";
-import { runAgentState } from "./commands/agent-state.ts";
-import { runBotLifecycle } from "./commands/bot-lifecycle.ts";
+import { ManagementClientError } from "@grokbox/client";
+import { MANAGEMENT_COMMANDS } from "./management-registry.ts";
+import { runManagementCommand, writeManagementFailure, type ManagementCommandOptions } from "./commands/management-api.ts";
 import { runBotHandover } from "./commands/bot-handover.ts";
-import { runBotProtection } from "./commands/bot-protection.ts";
 import { runAgentDuplicate, runAgentOperation } from "./commands/agent-duplicate.ts";
 import type { CliDeps } from "./deps.ts";
 import { CliError, usage } from "./errors.ts";
@@ -119,11 +115,7 @@ import {
   runRuntimeModeldStatus,
   runRuntimeModeldReplace,
   runRuntimeModelsCheck,
-  runRuntimeModelsList,
-  runRuntimeModelsShow,
   runRuntimeModelsMigrate,
-  runRuntimeModelsReset,
-  runRuntimeModelsUse,
   runRuntimeModelsPersistKey,
   runRuntimeProfileAnalyze,
   runRuntimeProfileObserve,
@@ -141,7 +133,7 @@ import {
 } from "./commands/runtime.ts";
 import { runSkillsGet, runSkillsList } from "./skills.ts";
 
-type CliOptions = ProfileOptions & ConfigCommandOptions & {
+type CliOptions = ProfileOptions & ConfigCommandOptions & ManagementCommandOptions & {
   agent?: string;
   requestId?: string;
   stepId?: string;
@@ -273,6 +265,7 @@ function unexpectedMessage(error: unknown): string {
 
 function actionBindings(): Readonly<Record<string, LeafAction>> {
   return {
+    ...Object.fromEntries(MANAGEMENT_COMMANDS.map(leaf => [leafKey(leaf.path), async (deps: CliDeps, args: Array<string | undefined>, options: CliOptions) => runManagementCommand(deps, leafKey(leaf.path), args, options)])),
     ...Object.fromEntries(CONFIG_COMMANDS.map((leaf) => [leafKey(leaf.path), async (deps: CliDeps, args: Array<string | undefined>, options: CliOptions) => await runConfigCommand(deps, leaf.path[1]!, args, options)])),
     init: async (deps, args, options) => await runInit(deps, args[0], options),
     "skills list": async (deps, _args, options) => await runSkillsList(deps, options),
@@ -310,49 +303,16 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "box wake": async (deps, _args, options) => await runBoxWake(deps, options),
     "box keepalive run": async (deps, _args, options) => await runBoxKeepalive(deps, options),
     "box keepalive status": async (deps, _args, options) => await runBoxKeepaliveStatus(deps, options),
-    "agents routines apply": async (deps, args, options) => await runRoutineProvisionCli(deps, "apply", args[0] ?? "", options),
-    "agents routines outcome": async (deps, args, options) => await runRoutineProvisionCli(deps, "outcome", args[0] ?? "", options),
-    "agents routines reconcile": async (deps, args, options) => await runRoutineProvisionCli(deps, "reconcile", args[0] ?? "", options),
-    "ops targets blueprint": async (deps, args, options) => await runOpsTargetsCli(deps, "blueprint", args[0], options),
-    "ops targets verify": async (deps, args, options) => await runOpsTargetsCli(deps, "verify", args[0], options),
-    "ops targets list": async (deps, _args, opts) => await runOpsTargetsCli(deps, "list", undefined, opts),
-    "ops targets show": async (deps, args, opts) => await runOpsTargetsCli(deps, "show", args[0], opts),
-    "ops targets bind": async (deps, args, opts) => await runOpsTargetsCli(deps, "bind", args[0], opts),
-    "ops targets activate": async (deps, args, opts) => await runOpsTargetsCli(deps, "activate", args[0], opts),
-    "ops targets disable": async (deps, args, opts) => await runOpsTargetsCli(deps, "disable", args[0], opts),
-    "ops targets unbind": async (deps, args, opts) => await runOpsTargetsCli(deps, "unbind", args[0], opts),
     "ops notifications send": async (deps, args, options) => await runOpsNotificationSend(deps, args[0] ?? "", options),
     "ops notifications list": async deps => await runOpsNotifications(deps),
-    "ops notifications worker": async (deps, _args, options) => await runOpsNotificationWorkerStatus(deps, options),
     "ops notifications show": async (deps, args) => await runOpsNotifications(deps, args[0]),
-    "agents routines list": async (deps, args, options) => await runRoutines(deps, "list", args[0] ?? "", undefined, options),
-    "agents routines show": async (deps, args, options) => await runRoutines(deps, "show", args[0] ?? "", args[1], options),
-    "agents routines enable": async (deps, args, options) => await runRoutines(deps, "enable", args[0] ?? "", args[1], options),
-    "agents routines disable": async (deps, args, options) => await runRoutines(deps, "disable", args[0] ?? "", args[1], options),
-    "agents routines delete": async (deps, args, options) => await runRoutines(deps, "delete", args[0] ?? "", args[1], options),
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
-    "agents protection status": async (deps,_args,options)=>await runBotProtection(deps,"status",options),
-    "agents protection observe": async (deps,_args,options)=>await runBotProtection(deps,"observe",options),
-    "agents protection advance": async (deps,_args,options)=>await runBotProtection(deps,"advance",options),
     "agents handover status": async (deps, _args, options) => await runBotHandover(deps,"status",options),
     "agents handover advance": async (deps, _args, options) => await runBotHandover(deps,"advance",options),
     "agents handover observe": async (deps, _args, options) => await runBotHandover(deps,"observe",options),
     "agents handover attest": async (deps, _args, options) => await runBotHandover(deps,"attest",options),
     "agents handover retire": async (deps, _args, options) => await runBotHandover(deps,"retire",options),
-    "agents clone": async (deps, args, options) => await runBotLifecycle(deps, "clone", args[0], options),
-    "agents replace": async (deps, args, options) => await runBotLifecycle(deps, "replace", args[0], options),
-    "agents spawn": async (deps, _args, options) => await runBotLifecycle(deps, "spawn", undefined, options),
-    "agents lifecycle status": async (deps, _args, options) => await runBotLifecycle(deps, "status", undefined, options),
-    "agents lifecycle advance": async (deps, _args, options) => await runBotLifecycle(deps, "advance", undefined, options),
-    "agents state show": async (deps, args, options) => await runAgentState(deps, "show", args[0] ?? "", options),
-    "agents state capture": async (deps, args, options) => await runAgentState(deps, "capture", args[0] ?? "", options),
-    "agents state initialize": async (deps, args, options) => await runAgentState(deps, "initialize", args[0] ?? "", options),
-    "agents state reset": async (deps, args, options) => await runAgentState(deps, "reset", args[0] ?? "", options),
-    "agents state recover": async (deps, args, options) => await runAgentState(deps, "recover", args[0] ?? "", options),
-    "agents state operation": async (deps, args, options) => await runAgentState(deps, "operation", args[0] ?? "", options),
-    "agents state reconcile": async (deps, args, options) => await runAgentState(deps, "reconcile", args[0] ?? "", options),
-    "agents state activate": async (deps, args, options) => await runAgentState(deps, "activate", args[0] ?? "", options),
     "agents context": async (deps, args, options) => await runAgentsContext(deps, "status", args[0] ?? "", options),
     "agents compact": async (deps, args, options) => await runAgentsContext(deps, "compact", args[0] ?? "", options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),
@@ -393,7 +353,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "history outcome": async (deps, args, options) => await runSendOutcome(deps, args[0] ?? "", options),
     "history thread": async (deps, args, options) =>
       await runHistoryThread(deps, args[0] ?? "", options),
-    "memory list": async (deps, args, options) => await runMemoryList(deps, args[0] ?? "", options),
     "export agent": async (deps, args, options) => await runExportAgent(deps, args[0] ?? "", options),
     "fs stat": async (deps, args, options) => await runFsStat(deps, args[0] ?? "", options),
     "fs list": async (deps, args, options) => await runFsList(deps, args[0] ?? "", options),
@@ -418,11 +377,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime services status": async (deps, _args, options) => await runRuntimeServicesCli(deps, "status", options),
     "runtime services uninstall": async (deps, _args, options) => await runRuntimeServicesCli(deps, "uninstall", options),
     "runtime monitor install": async (deps,args,options) => await runRuntimeMonitor(deps,"install",args,options),
-    "runtime monitor service": async (deps,args,options) => await runRuntimeMonitor(deps,"service",args,options),
     "runtime monitor init": async (deps,args,options) => await runRuntimeMonitor(deps,"init",args,options),
     "runtime monitor run": async (deps,args,options) => await runRuntimeMonitor(deps,"run",args,options),
-    "runtime monitor ack": async (deps,args,options) => await runRuntimeMonitor(deps,"ack",args,options),
-    "runtime monitor snooze": async (deps,args,options) => await runRuntimeMonitor(deps,"snooze",args,options),
     "runtime monitor snapshot": async (deps,args,options) => await runRuntimeMonitor(deps,"snapshot",args,options),
     "runtime monitor events": async (deps,args,options) => await runRuntimeMonitor(deps,"events",args,options),
     "runtime monitor incidents": async (deps,args,options) => await runRuntimeMonitor(deps,"incidents",args,options),
@@ -437,17 +393,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime group-progress": async (deps, args) => await runGroupProgress(deps, args[0] ?? ""),
     "runtime contracts": async (deps) => await runRuntimeContracts(deps),
     "models check": async (deps) => await runRuntimeModelsCheck(deps),
-    "models list": async (deps) => await runRuntimeModelsList(deps),
-    "models use": async (deps, args, options) => {
-      if (Boolean(options.for) === Boolean(options.default)) throw usage("models use requires exactly one of --for <agent> or --default.");
-      await runRuntimeModelsUse(deps, args[0] ?? "", options.for, options.effort);
-    },
-    "models reset": async (deps, _args, options) => {
-      if (Boolean(options.for) === Boolean(options.default)) throw usage("models reset requires exactly one of --for <agent> or --default.");
-      await runRuntimeModelsReset(deps, options.for);
-    },
     "models persist-key": async (deps, args, options) => await runRuntimeModelsPersistKey(deps, args[0] ?? "", options.fromPi, options.confirm),
-    "models show": async (deps, _args, options) => await runRuntimeModelsShow(deps, options.for ?? ""),
     "models migrate": async (deps, _args, options) => await runRuntimeModelsMigrate(deps, options.confirm),
     "runtime profile analyze": async (deps, _args, options) => await runRuntimeProfileAnalyze(deps, options.sha, options.out, options.capability),
     "runtime profile observe": async (deps, _args, options) => await runRuntimeProfileObserve(deps, options.from),
@@ -481,6 +427,7 @@ function addLeaf(
   parents: Map<string, Command>,
   leaf: LeafCommand,
   action: LeafAction,
+  onManagementCommand?: (command: string) => void,
 ): void {
   let parent = program;
   for (let index = 0; index < leaf.path.length - 1; index += 1) {
@@ -508,6 +455,7 @@ function addLeaf(
     else command.option(option.flags, option.description);
   }
   command.action(async (...values: unknown[]) => {
+    if (leaf.protocol === "management") onManagementCommand?.(leafKey(leaf.path));
     const args = values
       .slice(0, leaf.arguments.length)
       .flatMap((value) => Array.isArray(value)
@@ -559,7 +507,7 @@ function addLeaf(
   });
 }
 
-export function createProgram(deps: CliDeps): Command {
+export function createProgram(deps: CliDeps, onManagementCommand?: (command: string) => void): Command {
   const program = new Command();
   program
     .name("grokbox")
@@ -572,6 +520,10 @@ export function createProgram(deps: CliDeps): Command {
     .exitOverride()
     .addHelpText("before", `${START_HERE}\n`);
 
+  const managementRoots = new Set(MANAGEMENT_COMMANDS.map(leaf => leaf.path[0]));
+  program.hook("preSubcommand", (_parent, command) => {
+    if (managementRoots.has(command.name())) onManagementCommand?.(command.name());
+  });
   for (const option of GLOBAL_OPTIONS) program.option(option.flags, option.description);
   program.configureOutput({
     writeOut: (chunk) => deps.stdout.write(chunk),
@@ -589,7 +541,7 @@ export function createProgram(deps: CliDeps): Command {
     const key = leafKey(leaf.path);
     const action = bindings[key];
     if (!action) throw new Error(`No implementation binding for registry leaf '${key}'.`);
-    addLeaf(deps, program, parents, leaf, action);
+    addLeaf(deps, program, parents, leaf, action, onManagementCommand);
   }
   for (const key of Object.keys(bindings)) {
     if (!LEAF_COMMANDS.some((leaf) => leafKey(leaf.path) === key)) {
@@ -605,7 +557,8 @@ export function createProgram(deps: CliDeps): Command {
 }
 
 export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
-  const program = createProgram(deps);
+  let managementCommand: string | undefined;
+  const program = createProgram(deps, command => { managementCommand = command; });
   try {
     await program.parseAsync(argv, { from: "user" });
     return 0;
@@ -618,9 +571,11 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       ) {
         return 0;
       }
+      if (managementCommand) return writeManagementFailure(deps, managementCommand, new ManagementClientError("invalid_input", "Input does not match the command schema.", { parserCode: error.code }));
       writeFailure(deps.stderr, usage(publicCommanderMessage(error)));
       return 2;
     }
+    if (managementCommand) return writeManagementFailure(deps, managementCommand, error);
     if (error instanceof CliError) {
       writeFailure(deps.stderr, error);
       return error.exitCode;

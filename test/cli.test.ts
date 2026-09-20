@@ -85,38 +85,8 @@ describe("registry, help, and runtime", () => {
     const result = await captureCli(["--help"], { skillsDir, discoveryPath: "/dev/null" });
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Start here (for Agents):");
-    expect(TOP_LEVEL_COMMANDS).toEqual([
-      "config", "init",
-      "skills",
-      "profile",
-      "daemon",
-      "doctor",
-      "on",
-      "off",
-      "upgrade",
-      "host",
-      "models",
-      "quota",
-      "recover",
-      "box",
-      "agents",
-      "ops",
-      "groups",
-      "send",
-      "alerts",
-      "history",
-      "memory",
-      "export",
-      "template",
-      "fs",
-      "exec",
-      "jobs",
-      "desktop",
-      "events",
-      "is",
-      "runtime",
-    ]);
-    for (const name of TOP_LEVEL_COMMANDS) expect(result.stdout).toContain(name);
+    expect(new Set(TOP_LEVEL_COMMANDS).size).toBe(TOP_LEVEL_COMMANDS.length);
+    for (const name of TOP_LEVEL_COMMANDS) expect(result.stdout).toMatch(new RegExp(`^\\s{2}${name}(?:\\s|$)`, "m"));
     expect(TOP_LEVEL_COMMANDS).not.toContain("credential");
     expect(LEAF_COMMANDS.map((leaf) => leaf.path.join(" "))).not.toContain("credential sync");
     expect(result.stdout).not.toMatch(/^\s+raw\b/m);
@@ -183,7 +153,6 @@ describe("registry, help, and runtime", () => {
       ["agents", "list", "--kind", "all"],
       ["agents", "show", "agent-alpha", "--history", "10"],
       ["send", "--agent", "agent-alpha", "--text", "x"],
-      ["memory", "list", "--agent", "agent-alpha"],
       ["--table", "send", "agent-alpha", "--text", "x"],
       ["profile", "doctor"],
       ["daemon", "doctor"],
@@ -543,23 +512,12 @@ describe("history, memory, events, and running", () => {
     expect(body.data.nextBeforeSeq).toBe(9);
   });
 
-  test("memory list uses a positional agent and strips content by default", async () => {
-    const hidden = await withGateway(["memory", "list", "alpha"]);
-    expect(hidden.code).toBe(0);
-    const hiddenBody = parseJson(hidden.stdout) as {
-      data: { agentId: string; memories: Array<Record<string, unknown>> };
-    };
-    expect(hiddenBody.data.agentId).toBe("agent-alpha");
-    expect(hiddenBody.data.memories[0]?.content).toBeUndefined();
-    expect(hiddenBody.data.memories[0]?.contentBytes).toBeGreaterThan(0);
-    hidden.mock.stop();
-    mock = undefined;
-
-    const shown = await withGateway(["memory", "list", "agent-alpha", "--content"]);
-    const shownBody = parseJson(shown.stdout) as {
-      data: { memories: Array<Record<string, unknown>> };
-    };
-    expect(shownBody.data.memories[0]?.content).toBe("secret memory body");
+  test("retired positional Memory and implicit body flags refuse without native calls", async () => {
+    for (const argv of [["memory","list","alpha"],["memory","list","--agent","agent-alpha"],["memory","list","--content"]]) {
+      const result=await withGateway(argv);
+      expect(result.code).toBe(2);expect(JSON.parse(result.stdout)).toMatchObject({ok:false,error:{code:"invalid_input"}});
+      expect(result.mock.requests).toEqual([]);result.mock.stop();mock=undefined;
+    }
   });
 
   test("events default subset is NDJSON and redacts roster secrets", async () => {

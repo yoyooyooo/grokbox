@@ -7,6 +7,8 @@ description: Use for a requested grokbox maintainer live/E2E validation window. 
 
 Start with the selected row in `docs/tickets/LIVE-integration-validation.md` and its section in `docs/maintainers/live-end-to-end.md`. Read linked tickets or operator topics only as needed. These records are claims to check, not proof of current deployment behavior.
 
+The rebuild separates targeted development checks, integrated-candidate E2E, user acceptance/dogfooding, and final visual acceptance. Intermediate builds need not remain usable; do not complete the retired v2 window first or deploy every slice. Native data safety and final recovery properties remain required. The accepted scope and current results come only from LIVE; a low-fidelity functional Web still needs real security and browser proof.
+
 Identify the candidate and select the scenario:
 
 ```bash
@@ -14,7 +16,7 @@ bun run verify:live-window -- candidate --json
 bun run verify:live-window -- plan --scenario <LIVE-ID> --json
 ```
 
-The controller's source digest and structural checks do not prove Host/modeld adoption or live behavior. A dirty candidate is planning-only. Record the actual loaded artifacts, target objects, authorized actions, budget and cleanup scope for the window; existing user authorization persists.
+The controller's source digest and structural checks do not prove implementation completeness, independent review, actual adoption or live behavior. A dirty candidate is planning-only. Probes use the current registered CLI, not planned syntax; command cutover must update probes, Skills and runbook together. Retired scenarios cannot qualify a new result. Record actual CLI/Server/Web/modeld/Host artifacts, targets, authorization, budgets and cleanup scope. Existing explicit authorization remains valid only within its original scope; this plan grants no live mutation.
 
 Observe the same nonce, TURN, STEP and operation after an uncertain result. Do not resend or change Provider to turn unknown into pass. Distinguish configured/captured/emitted/reported model settings, queued input, tool execution, committed checkpoint, delivery and App display.
 

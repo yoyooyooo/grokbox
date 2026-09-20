@@ -53,7 +53,7 @@ never gain host filesystem or process authority.
 1. **Operate the official product** — Profile, daemon, `agents` / `send` / `history`.
    Run inside the Box by default; established remote command support remains available.
 2. **Switch one Bot's brain** — on the computer: `grokbox on`, `grokbox host start`,
-   `agents create`, `models use --for <agent>`. After a grokbox update:
+   `agents create`, then `bot model get/set` with a persisted request UUID and the observed revision. After a grokbox update:
    `grokbox upgrade --yes`. App New Bot is often **temporal** and never uses
    the custom-model channel.
 

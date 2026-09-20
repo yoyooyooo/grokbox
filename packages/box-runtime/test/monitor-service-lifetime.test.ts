@@ -113,6 +113,25 @@ test("real collector drains control and Host writers while notifications remain 
   } finally { await service?.close(); await f.close(); }
 }, 15000);
 
+test("installation-only collection with no Bots retains evidence and survives restart without any native ownership request", async()=>{
+  const f=await fixture();let service:ReturnType<typeof startMonitorService>|undefined;
+  try {
+    const input={durableRoot:f.root,runRoot:f.run,agentIds:[]};
+    const plan=await configureMonitorService(input);if(plan.state!=="preview")throw Error("fixture_preview");
+    await configureMonitorService({...input,expectedRevision:plan.expectedRevision,confirmed:true,operationId:randomUUID()});
+    await f.append(f.run,"local-without-roster");
+    service=startMonitorService({durableRoot:f.root,read:f.read},{pollMs:10});
+    const store=openMonitorStore(f.root);
+    await until(()=>store.incidents(),rows=>rows.some(r=>r.rule==="execution_failure"));
+    const before=await store.snapshot();expect(before.agents).toEqual([]);expect(before.collectorRecordedRunning).toBe(true);expect(f.reads()).toBe(0);
+    const ids=(await store.incidents()).map(r=>r.id);await service.close();
+    service=startMonitorService({durableRoot:f.root,read:f.read},{pollMs:10});
+    await until(()=>store.snapshot(),s=>s.collectorEpoch!==before.collectorEpoch&&s.collectorRecordedRunning);
+    expect((await store.incidents()).map(r=>r.id)).toEqual(ids);expect(f.reads()).toBe(0);
+    await service.close();service=undefined;const bytes=await readFile(store.path);await delay(40);expect(await readFile(store.path)).toEqual(bytes);
+  } finally {await service?.close();await f.close();}
+});
+
 test("two services never collect concurrently; config target replacement settles before the next owner begins", async () => {
   const f = await fixture(); let first: ReturnType<typeof startMonitorService> | undefined, second: ReturnType<typeof startMonitorService> | undefined;
   try {

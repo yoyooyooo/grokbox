@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 dist/
+/target/
 artifacts/
 .scratch/
 # Private publication audits and pre-rewrite backups must never be committed.
@@ -16,3 +17,7 @@ artifacts/
 .private-audit/
 *.bundle
 *.patch.private
+
+# Reproducible TanStack route/build cache; source routes are the input.
+apps/web/src/routeTree.gen.ts
+apps/web/.tanstack/

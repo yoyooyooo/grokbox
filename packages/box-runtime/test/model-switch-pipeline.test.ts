@@ -51,13 +51,13 @@ function answer(model: string, requestNo: number) {
 test("per-Bot official/A/B/official/A selection preserves active TURNs, Host state and the other Bot", async () => {
   const dir = await mkdtemp(join(tmpdir(), "gbox-switch-pipeline-"));
   const durableRoot = join(dir, "durable"), runRoot = join(dir, "run");
-  await mkdir(join(durableRoot, "state"), { recursive: true });
+  await mkdir(join(durableRoot, "state"), { recursive: true, mode: 0o700 });
   const model = (provider: string, name: string) => ({ provider, model: name, endpoint: "https://owned.invalid/v1", apiKeyRef: "env:OWNED_KEY",
     capabilities: { vision: false, tools: true, images: false }, dataTypes: ["text", "tools"], contextWindowTokens: 200000 });
   await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
   await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 1,
     models: { [A]: model("openai", "owned-a"), [B]: model("openai-responses", "owned-b") },
-    assignments: { main: null, agents: { [OTHER]: A } } }));
+    assignments: { main: null, agents: { [OTHER]: A } } }), { mode: 0o600 });
   const identity = { pid: process.pid, start: 1, uid: 1, ppid: 1, exe: "/owned/node", cmdline: ["node"], ancestry: [1] };
   const binding = bindCompiledHost(identity, "owned-switch", compile);
   await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha,

@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Cause, Effect, Exit } from "effect";
 import { ConfigError, effectiveOps } from "@grokbox/runtime-kernel/config";
-import { canonicalJson } from "@grokbox/runtime-kernel/hash";
-import { NotificationError, NOTICE_SEED_MAX_AGE_MS, automaticAuthorizationView, noticeActivationDigest,
-  notificationBindingIdentity, selectNotificationTarget, validateNoticeActivation, validateNotificationBinding,
-  type NoticeActivationCommand, type NoticeAuthorization } from "@grokbox/runtime-kernel/observation";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { NotificationError, OpsPairingError, selectNotificationTarget, validateNoticeActivation,
+  validateNotificationBinding, type NoticeActivationCommand, type NoticeAuthorization, type ReceiverManagementReceipt } from "@grokbox/runtime-kernel/observation";
 import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout } from "../io/config-layout.node.ts";
 import { openMonitorStore } from "../io/monitor-store.node.ts";
@@ -14,60 +13,66 @@ import { createPreparedNoticeDriver, type ExplicitReceiverReader } from "./ops-e
 
 const io = <A>(read: () => Promise<A>) => Effect.tryPromise({ try: read, catch: () => new NotificationError("activation_source_unavailable") });
 const refuse = (reason: string): never => { throw new NotificationError(reason); };
-const receipt = (authorization: NoticeAuthorization, duplicate: boolean) => ({ schemaVersion: 1, state: "authorized", duplicate,
-  automaticAuthorization: automaticAuthorizationView(authorization), routineChanged: false, credentialsRequested: false,
-  notificationSent: false, serviceStarted: false, nativeTurnObserved: false, userRead: "operator_attestation_only" });
+function result(receipt: ReceiverManagementReceipt, duplicate: boolean) {
+  return { schemaVersion: 1, state: "authorized", duplicate, receipt,
+    automaticAuthorization: {
+      state: "authorized", authorizationId: receipt.authorizationId, bindingRevision: receipt.appliedRevision,
+      activatedAtMs: receipt.appliedAtMs, testRequired: false, includesExistingWork: false, nativeTurnObserved: false, currentEligibility: "requires_fresh_checks" },
+    routineChanged: false, credentialsRequested: false, notificationSent: false, serviceStarted: false,
+    nativeTurnObserved: false, userRead: "not_observed", testRequired: false };
+}
 
-/** A one-time local permission after the operator has observed a test reminder.
- * Acceptance is read from the actual outbox, not caller JSON. This does NOT
- * claim program-observed native execution, tool isolation or a service install.
- * Network preflight precedes the existing config lease; no network under lock. */
+/** Local explicit permission, independent of test reminders or user-read claims.
+ * Fresh receiver preflight is read-only and outside the private capsule lease.
+ * Receipt and authorization publish atomically; replay returns history without
+ * renewing the consent boundary or resurrecting a revoked authorization. */
 export async function activateOpsNotifications(input: { durableRoot: string; command: NoticeActivationCommand;
-  readNative: ExplicitReceiverReader; signal?: AbortSignal }) {
-  const command = validateNoticeActivation(input.command), requestDigest = noticeActivationDigest(command);
+  expectedBindingId?: string; requestDigest?: string; readNative: ExplicitReceiverReader; signal?: AbortSignal }) {
+  const command = validateNoticeActivation(input.command);
+  const requestDigest = input.requestDigest ?? sha256Text(canonicalJson({ command, bindingId: input.expectedBindingId ?? null }));
+  if (!/^[a-f0-9]{64}$/.test(requestDigest)) return refuse("invalid_automatic_authorization");
   const owner = openOpsBindings(input.durableRoot), config = openConfigStore(rootConfigLayout(input.durableRoot));
   const monitor = openMonitorStore(input.durableRoot), routines = openRoutineProvisionStore(input.durableRoot);
   const program = Effect.gen(function* () {
-    const record = yield* io(() => owner.record(command.alias));
-    if (!record || record.state !== "prepared" || !record.credentialPresent) return refuse("binding_not_prepared");
-    if (record.automatic) {
-      if (record.automatic.operationId !== command.operationId || record.automatic.requestDigest !== requestDigest) return refuse("authorization_conflict");
-      // Idempotent replay of the local write; never renew the start boundary or
-      // call it a new freshness check against the current native environment.
-      return receipt(record.automatic, true);
+    const prior = yield* io(() => owner.managementReceipt(command.operationId));
+    if (prior) {
+      if (prior.requestDigest !== requestDigest || prior.action !== "enable" || (input.expectedBindingId && prior.bindingId !== input.expectedBindingId)) return refuse("authorization_conflict");
+      return result(prior, true);
     }
+    const record = yield* io(() => owner.record(command.alias));
+    if (!record || !["prepared", "disabled"].includes(record.state) || !record.credentialPresent) return refuse("binding_not_prepared");
+    if (input.expectedBindingId && record.bindingId !== input.expectedBindingId) return refuse("binding_identity_changed");
+    if (record.automatic) return refuse("authorization_conflict");
     if (record.revision !== command.expectedBindingRevision) return refuse("binding_revision_changed");
     const configured = yield* io(() => config.read());
     const route = selectNotificationTarget(effectiveOps(configured.document.ops));
     if (route.state !== "selected" || route.target.alias !== command.alias) return refuse("default_target_not_selected");
     const scope = yield* io(() => monitor.notificationScope());
     const preflight = createPreparedNoticeDriver({ durableRoot: input.durableRoot, expectedBindingRevision: command.expectedBindingRevision,
-      expectedModelRevision: command.expectedModelRevision, readNative: input.readNative, signal: input.signal });
+      expectedModelRevision: command.expectedModelRevision, readNative: input.readNative, signal: input.signal, allowDisabled: true });
     const binding = yield* io(() => preflight.driver.inspect({ target: route.target, scope, signal: input.signal ?? new AbortController().signal }));
     if (!binding) return refuse(preflight.blocker() ?? "receiver_preflight_unavailable");
-    const seed = yield* io(() => monitor.acceptedNotificationSeed(command.fromWorkId));
-    if (!seed || seed.frozen.bindingDigest !== notificationBindingIdentity(binding)) return refuse("accepted_test_not_matched");
     const activatedAtMs = Date.now();
-    if (seed.acceptedAtMs > activatedAtMs || activatedAtMs - seed.acceptedAtMs > NOTICE_SEED_MAX_AGE_MS) return refuse("accepted_test_expired");
-    const authorization: NoticeAuthorization = { version: 1, id: randomUUID(), operationId: command.operationId, requestDigest,
+    const authorization: NoticeAuthorization = { version: 2, consent: "explicit-enable", id: randomUUID(), operationId: command.operationId, requestDigest,
       bindingRevision: record.revision + 1, activatedAtMs, modelRevision: binding.modelRevision, qualificationRevision: binding.qualificationRevision,
-      seedWorkId: command.fromWorkId, seedAttemptId: seed.frozen.attemptId, seedEnvelopeDigest: seed.frozen.envelopeDigest,
-      seedAcceptedAtMs: seed.acceptedAtMs, receiverAttestation: "operator-confirmed-reminder", nativeTurnObserved: false, includesExistingWork: false };
-    const saved = yield* Effect.uninterruptible(Effect.tryPromise({ try: () => owner.authorizeAutomatic(record, authorization, async () => {
-      const [currentConfig, currentScope, currentManaged, currentSeed] = await Promise.all([
-        config.read(), monitor.notificationScope(), routines.binding(route.target.agentId, route.target.routineKey), monitor.acceptedNotificationSeed(command.fromWorkId),
+      nativeTurnObserved: false, includesExistingWork: false };
+    const identity = { operationId: command.operationId, requestDigest, bindingId: record.bindingId };
+    yield* Effect.uninterruptible(Effect.tryPromise({ try: () => owner.authorizeAutomatic(record, authorization, async () => {
+      const [currentConfig, currentScope, currentManaged] = await Promise.all([
+        config.read(), monitor.notificationScope(), routines.binding(route.target.agentId, route.target.routineKey),
       ]);
       if (currentConfig.revision !== configured.revision || canonicalJson(currentScope) !== canonicalJson(scope)
-        || currentManaged?.routineId !== record.plan.routineId || currentManaged?.revision !== record.plan.routineRevision
-        || canonicalJson(currentSeed) !== canonicalJson(seed)) return refuse("changed_during_activation");
+        || currentManaged?.routineId !== record.plan.routineId || currentManaged?.revision !== record.plan.routineRevision) return refuse("changed_during_activation");
       validateNotificationBinding(binding, route.target, scope, Date.now());
-    }), catch: error => new NotificationError(error instanceof ConfigError && error.code === "config_conflict"
-      ? "activation_busy" : "activation_outcome_unknown") }));
-    if (!saved.automatic) return refuse("authorization_not_persisted");
-    return receipt(saved.automatic, false);
+    }, identity), catch: error => new NotificationError(error instanceof ConfigError && error.code === "config_conflict" ? "activation_busy"
+      : error instanceof OpsPairingError && error.reason === "capacity" ? "receipt_capacity"
+      : error instanceof OpsPairingError && error.reason === "operation_conflict" ? "authorization_conflict" : "activation_outcome_unknown") }));
+    const receipt = yield* Effect.tryPromise({ try: () => owner.managementReceipt(command.operationId), catch: () => new NotificationError("activation_outcome_unknown") });
+    if (!receipt) return refuse("activation_outcome_unknown");
+    return result(receipt, false);
   });
-  const result = await Effect.runPromiseExit(program, { signal: input.signal });
-  if (Exit.isSuccess(result)) return result.value;
-  const error = Cause.squash(result.cause);
+  const outcome = await Effect.runPromiseExit(program, { signal: input.signal });
+  if (Exit.isSuccess(outcome)) return outcome.value;
+  const error = Cause.squash(outcome.cause);
   throw error instanceof NotificationError ? error : new NotificationError("activation_source_unavailable");
 }

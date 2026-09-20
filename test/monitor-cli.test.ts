@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { captureCli, writeDiscovery } from "./helpers.ts";
 import { ownedOwnershipSnapshot } from "../packages/box-runtime/test/ownership-fixture.ts";
+import { ensurePackedCli } from "./packed-cli-fixture.ts";
 
 const ID="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const entry=fileURLToPath(new URL("../dist/index.js",import.meta.url));
@@ -64,7 +65,7 @@ test("CLI read surfaces have zero Server calls/writes; mutation requires explici
   }finally{await f.close();}
 });
 
-test("source CLI batches observations, records conflict and management receipts across cold store opens",async()=>{
+test("source CLI batches observations; retired incident writers refuse without changing the store",async()=>{
   const f=await fixture();
   try{
     await captureCli(["runtime","monitor","init","--confirm"],f.deps);
@@ -79,16 +80,19 @@ test("source CLI batches observations, records conflict and management receipts 
     expect(list).toHaveLength(2);
     const requestId=randomUUID();
     const args=["runtime","monitor","ack",list[0].id,"--request-id",requestId,"--expected-revision","1"];
-    const ack=await captureCli(args,f.deps);expect(ack.code).toBe(0);
-    expect(JSON.parse(ack.stdout).data).toMatchObject({duplicate:false,repaired:false,appliedRevision:2});
-    expect(JSON.parse((await captureCli(args,f.deps)).stdout).data.duplicate).toBe(true);
+    const before=await readFile(join(f.root,"observability/observations.sqlite"));
+    const ack=await captureCli(args,f.deps);expect(ack.code).not.toBe(0);
+    const snooze=await captureCli(["runtime","monitor","snooze",list[0].id,"--request-id",randomUUID(),"--expected-revision","1","--until-ms",String(Date.now()+60000)],f.deps);
+    expect(snooze.code).not.toBe(0);
+    expect(await readFile(join(f.root,"observability/observations.sqlite"))).toEqual(before);
     expect(f.requests).toEqual(["/api/getHostStatus"]);
     expect(run.stdout+ack.stdout).not.toContain("PRIVATE_SENTINEL");
     expect(existsSync(join(f.root,"models.json"))).toBe(false);expect(existsSync(join(f.root,"state"))).toBe(false);
   }finally{await f.close();}
 });
 
-test("packaged Node init/read/ack and a fresh process preserve real SQLite observations",async()=>{
+test("packaged Node maintenance reads preserve real SQLite observations without a legacy mutation route",async()=>{
+  ensurePackedCli();
   const f=await fixture();const children:Array<ReturnType<typeof launch>>=[];
   const invoke=async(args:string[])=>{const p=launch(f.root,args);children.push(p);return bounded(p.done);};
   try{
@@ -101,9 +105,10 @@ test("packaged Node init/read/ack and a fresh process preserve real SQLite obser
     const result=await invoke(["incidents"]);expect(result.code).toBe(0);
     const incident=JSON.parse(result.stdout).data.incidents[0];
     expect(incident).toMatchObject({rule:"ownership_conflict",status:"open"});
-    expect((await invoke(["ack",incident.id,"--request-id",randomUUID(),"--expected-revision","1"])).code).toBe(0);
     const second=await invoke(["incidents"]);
-    expect(JSON.parse(second.stdout).data.incidents[0]).toMatchObject({acknowledged:true,status:"open"});
+    expect(JSON.parse(second.stdout).data.incidents[0]).toMatchObject({acknowledged:false,status:"open"});
+    // New authenticated incident CLI writes/receipts are exercised against a
+    // real Server in incident-actions.test.ts, not reintroduced as a disk bypass.
     expect((await readFile(join(f.root,"observability/observations.sqlite"))).subarray(0,16).toString()).toBe("SQLite format 3\u0000");
     expect(f.requests).toHaveLength(1);
     for(const p of children){const r=await p.done;expect(r.stderr).toBe("");}

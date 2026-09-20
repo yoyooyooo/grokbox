@@ -1,0 +1,7 @@
+{
+  "name": "@grokbox/client",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/client.ts", "./contract": "./src/contract.ts" },
+  "dependencies": { "@grokbox/runtime-kernel": "workspace:*" }
+}

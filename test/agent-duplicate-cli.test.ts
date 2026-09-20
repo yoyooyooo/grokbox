@@ -111,7 +111,7 @@ test("changed Gateway generation and expired evidence refuse before the native P
 test("explicit Profiles are refused for both duplicate and existing current-state controls", async () => {
   const f = await fixture();
   try {
-    for (const args of [["agents", "duplicate", sourceId], ["agents", "state", "show", sourceId]]) {
+    for (const args of [["agents", "duplicate", sourceId], ["bot", "context", "get", sourceId]]) {
       const result = await captureCli(["--profile", "default", ...args, "--json"], f.deps);
       expect(result.code).not.toBe(0); expect(f.gateway.requests).toHaveLength(0);
     }

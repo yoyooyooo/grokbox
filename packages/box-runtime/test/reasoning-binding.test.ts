@@ -5,15 +5,16 @@ import { tmpdir } from "node:os";
 import { Clock, Effect, Layer, Stream } from "effect";
 import { WIRE_VERSION, type RunStepRequest } from "@grokbox/runtime-kernel/contract";
 import { InferenceMemory, coolInactiveTurns, inferenceMemoryLayer, runStep } from "@grokbox/runtime-kernel/inference";
-import { applyUse, captureManagedSelection, parseModelsFile } from "@grokbox/runtime-kernel/selection";
+import { applyUse, applyFollowDefault, captureManagedSelection, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import { createCountedSeams, fakeAdmissionAuthorityLayer, fakeConfigurationReadLayer } from "@grokbox/runtime-kernel/testing";
 import { turnKey } from "../../runtime-kernel/src/internal/inference/route-binding.ts";
 import { openExecutionHistory } from "../src/internal/io/execution-history.node.ts";
 import { testSdkBackendLayer } from "../src/internal/roots/layers.ts";
 import { reasoningModel, reasoningResponse, reasoningSnapshot } from "./reasoning-fixture.ts";
-test("disk-backed TURN retains effort across edits, cooling, resume and duplicate STEP", async () => {
+for (const followsDefault of [false, true]) test(`disk-backed TURN retains effort across edits, cooling, resume and duplicate STEP; followsDefault=${followsDefault}`, async () => {
   const dir = await mkdtemp(join(tmpdir(), "reasoning-binding-")), record = reasoningModel();
-  let file = applyUse(parseModelsFile({ version: 2, models: { [record.id]: record }, assignments: { main: null, agents: {} } }), record.id, "a", { effort: "high" });
+  const initial = applyUse(parseModelsFile({ version: 3, models: { [record.id]: record }, assignments: { main: null, agents: {} } }), record.id, followsDefault ? undefined : "a", { effort: "high" });
+  let file = followsDefault ? applyFollowDefault(initial, "a") : initial;
   const calls: string[] = [], counts = createCountedSeams();
   const fetch = Object.assign(async (_url: unknown, init?: RequestInit) => { calls.push(JSON.parse(String(init?.body)).reasoning.effort); return reasoningResponse("responses"); }, { preconnect: async () => undefined }) as typeof globalThis.fetch;
   const request = (stepId: string, turnId = "turn-one"): RunStepRequest => {
@@ -36,7 +37,7 @@ test("disk-backed TURN retains effort across edits, cooling, resume and duplicat
       );
       yield* Effect.gen(function* () {
         const original = request("step-one"), first = yield* collect(original);
-        file = applyUse(file, record.id, "a", { effort: "xhigh" });
+        file = applyUse(file, record.id, followsDefault ? undefined : "a", { effort: "xhigh" });
         yield* collect({ ...original, stepId: "step-two", bindingId: first.bindingId });
         expect(calls).toEqual(["high", "high"]);
         const memory = yield* InferenceMemory;

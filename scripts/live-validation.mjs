@@ -152,6 +152,7 @@ function candidate(args) {
   const result = {
     version: 1,
     kind: "grokbox-live-candidate-check",
+    qualification: "structural-precheck-only",
     status: blockers.length === 0 ? "ready" : "blocked",
     ok: blockers.length === 0,
     candidate: snapshot,
@@ -168,17 +169,20 @@ function candidate(args) {
   return result;
 }
 
-function plan(args) {
-  ensureKnownFlags(args, new Set(["--json", "--scenario"]));
-  const ids = flagValues(args, "--scenario");
+function selectLiveScenarios(ids, rows = parseLiveIndex()) {
   if (ids.length === 0) usage("plan requires at least one --scenario");
-  const rows = parseLiveIndex();
-  const selected = ids.map((input) => {
+  return ids.map((input) => {
     const id = input.toLowerCase();
     const row = rows.find((candidateRow) => candidateRow.id === id);
     if (!row) usage(`unknown LIVE scenario ${input}`);
+    if (row.currentResult === "superseded") usage(`superseded LIVE scenario ${input}; follow its replacement route`);
     return row;
   });
+}
+
+function plan(args) {
+  ensureKnownFlags(args, new Set(["--json", "--scenario"]));
+  const selected = selectLiveScenarios(flagValues(args, "--scenario"));
   return {
     version: 1,
     kind: "grokbox-live-plan",
@@ -215,10 +219,10 @@ function redacted(value, key = "") {
 const READ_ONLY_PROBES = Object.freeze({
   doctor: ["doctor", "--json"],
   roster: ["agents", "list", "--ownership", "--json"],
-  models: ["models", "list", "--json"],
+  models: ["model", "list", "--limit", "100"],
   runtime: ["runtime", "status", "--json"],
   storage: ["runtime", "storage", "status", "--json"],
-  targets: ["ops", "targets", "list", "--json"],
+  targets: ["notification", "receiver", "list"],
   notifications: ["ops", "notifications", "list", "--json"],
 });
 
@@ -254,11 +258,13 @@ function probe(args) {
   return {
     version: 1,
     kind: "grokbox-live-readonly-probe",
+    commandSurface: "current-registered-cli",
     status: results.every((result) => result.ok) ? "observed" : "blocked",
     ok: results.every((result) => result.ok),
     binary: bin.split(/[\\/]/).pop() ?? "grokbox",
     probes: results,
     notProven: [
+      "These probes target the current registered CLI, not the planned replacement syntax; success does not bind the binary to a candidate.",
       "Provider identity, requested/captured/emitted/reported effort, tool side effects, compact checkpoint, App rendering, Webhook delivery, restart adoption, and cleanup.",
     ],
   };
@@ -279,6 +285,7 @@ function validateReceipt(receipt, rows = parseLiveIndex()) {
   const scenario = typeof receipt.scenario === "string" ? receipt.scenario.toLowerCase() : "";
   const row = rows.find((candidateRow) => candidateRow.id === scenario);
   if (!row) errors.push("unknown_scenario");
+  if (row?.currentResult === "superseded") errors.push("scenario_superseded");
   if (!receipt.candidate || typeof receipt.candidate !== "object") errors.push("candidate_missing");
   else {
     if (!SHA.test(receipt.candidate.sourceCommit ?? "")) errors.push("candidate_source_commit");
@@ -342,7 +349,7 @@ function print(result, json) {
   if (result.derived) process.stdout.write(`indexEligible: ${result.derived.indexEligible ? "yes" : "no"}\n`);
 }
 
-export { parseLiveIndex, validateReceipt, sourceSnapshot };
+export { parseLiveIndex, selectLiveScenarios, validateReceipt, sourceSnapshot, READ_ONLY_PROBES };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2);

@@ -46,7 +46,7 @@ test("default grokbox skill reads only the small entry and retains universal gua
   // Budgets protect progressive disclosure, not exact prose or line wrapping.
   expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(4096);
   expect(result.stdout.trim().split(/\s+/).length).toBeLessThanOrEqual(600);
-  for (const rule of ["Never `models use` yourself", "confirmed_box", "clientNonce", "queued, not a reply", "authorization", "credentials"]) {
+  for (const rule of ["Never change your own model", "confirmed_box", "clientNonce", "queued, not a reply", "authorization", "credentials"]) {
     expect(result.stdout).toContain(rule);
   }
   for (const advanced of ["--slice-review", "GROKBOX_RUN_ROOT", "model-dogfood", "runtimeFailure.diagnostic"]) {

@@ -339,6 +339,12 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
         AND NOT EXISTS(SELECT 1 FROM continuity_workflow_materials r JOIN continuity_workflows w ON w.operation_id=r.operation_id
           WHERE r.snapshot_id=p.request_id AND w.phase<>'retired')
         AND NOT EXISTS(SELECT 1 FROM continuity_subject_materials r WHERE r.snapshot_id=p.request_id)
+        AND NOT EXISTS(SELECT 1 FROM continuity_queued_controls c, json_each(c.request_json,'$.materialIds') r
+          WHERE c.kind='managed-current-state' AND r.value=p.request_id
+            AND json_extract(c.result_json,'$.disposition') IS NOT 'cancelled-before-source-application' AND
+            (c.state<>'complete' OR (json_extract(c.request_json,'$.declaration.action')<>'capture' AND NOT EXISTS
+              (SELECT 1 FROM continuity_queued_controls a WHERE a.operation_id=json_extract(c.request_json,'$.activationId')
+                AND a.kind='managed-current-release' AND a.state='complete'))))
         ORDER BY p.sequence LIMIT ?`, [policy.keepRecent, maxItems]);
       // One subject per finite pass. Revalidate the retained points before
       // discarding older fallback material; corrupt newest bytes are not a

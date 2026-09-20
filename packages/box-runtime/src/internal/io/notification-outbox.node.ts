@@ -2,13 +2,19 @@ import { randomUUID } from "node:crypto";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezeNotification, NOTIFICATION_DELIVERY_POLICY, notificationBindingIdentity, projectNativeNotificationResult,
-  validateNotificationBinding, validateNotificationTarget, type FrozenNotification, type NativeNotificationResult,
+  validateNotificationBinding, validateNotificationTarget, notificationTestNotice, type FrozenNotification, type NativeNotificationResult,
   type NotificationBinding, type NotificationReservation, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
 import { monitorUuid } from "@grokbox/runtime-kernel/monitor";
 import { noticeForWork, readIncidentEvidence } from "./incident-evidence.node.ts";
 import type { MonitorSqlite, SqlRow } from "./monitor-sqlite.node.ts";
 import { monitorWriteAdmission } from "./monitor-storage.node.ts";
 
+export const NOTIFICATION_TEST_SCHEMA = `
+CREATE TABLE notification_tests(id TEXT PRIMARY KEY,operation_id TEXT NOT NULL UNIQUE,request_digest TEXT NOT NULL,
+  target_alias TEXT NOT NULL,binding_id TEXT NOT NULL,binding_revision INTEGER NOT NULL,model_revision TEXT NOT NULL,
+  created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL,last_reason TEXT);
+CREATE INDEX notification_tests_created ON notification_tests(created_at,id);
+`;
 const failure = (reason: string): never => { throw new BoxRuntimeError("invalid_usage", `notification_${reason}`); };
 const timestamp = (n: number) => Number.isSafeInteger(n) && n > 0;
 const state = (v: unknown) => ["reserved", "attempting", "native-accepted", "definitely-not-accepted", "unknown"].includes(String(v)) ? String(v) : failure("attempt_corrupt");
@@ -20,8 +26,9 @@ function decode(row: SqlRow): AttemptRecord {
   try {
     const value = JSON.parse(String(row.receipt_json)) as AttemptRecord, f = value.frozen;
     if (value.schemaVersion !== 1 || f.schemaVersion !== 1 || f.attemptId !== row.id || f.workId !== row.work_id
-      || f.binding.agentId !== row.target_id || f.binding.revision !== row.binding_revision || !monitorUuid(f.incidentId)
-      || !Number.isSafeInteger(f.evidenceRevision) || f.evidenceRevision < 1 || !timestamp(f.expiresAtMs)
+      || f.binding.agentId !== row.target_id || f.binding.revision !== row.binding_revision
+      || (f.incidentId === null ? f.evidenceRevision !== null : !monitorUuid(f.incidentId) || !Number.isSafeInteger(f.evidenceRevision) || Number(f.evidenceRevision) < 1)
+      || !timestamp(f.expiresAtMs)
       || !/^[a-f0-9]{64}$/.test(f.envelopeDigest) || !Number.isSafeInteger(f.envelopeBytes) || f.envelopeBytes < 1
       || f.envelopeBytes > NOTIFICATION_DELIVERY_POLICY.maxBytes) return failure("attempt_corrupt");
     const binding = validateNotificationBinding(f.binding, validateNotificationTarget(f.target), f.scope, Number(row.reserved_at));
@@ -32,12 +39,19 @@ function decode(row: SqlRow): AttemptRecord {
 }
 async function scope(db: MonitorSqlite, rootId: string): Promise<NotificationScope> {
   const meta = await db.first("SELECT database_id,root_id,version FROM meta WHERE singleton=1");
-  if (!meta || meta.root_id !== rootId || !monitorUuid(meta.database_id) || meta.version !== 3) return failure("store_unavailable");
+  if (!meta || meta.root_id !== rootId || !monitorUuid(meta.database_id) || ![3, 4].includes(Number(meta.version))) return failure("store_unavailable");
   return { databaseId: meta.database_id, scopeId: rootId };
 }
 async function pending(db: MonitorSqlite, workId: string, nowMs: number) {
   const work = await db.first("SELECT w.*,i.acknowledged,i.snooze_until FROM notification_work w LEFT JOIN incidents i ON i.id=w.incident_id WHERE w.id=?", [workId]);
-  if (!work) return { reason: "not_found" } as const;
+  if (!work) {
+    const test = await db.first("SELECT * FROM notification_tests WHERE id=?", [workId]);
+    if (!test) return { reason: "not_found" } as const;
+    if (Number(test.created_at) > nowMs) return { reason: "clock_reversed" } as const;
+    if (Number(test.expires_at) <= nowMs) return { reason: "expired" } as const;
+    if (!["ready", "attempting"].includes(String(test.state))) return { reason: "not_pending" } as const;
+    return { work: { ...test, incident_id: null, evidence_revision: null } as SqlRow, test } as const;
+  }
   if (!["ready", "blocked", "preparing", "attempting"].includes(String(work.state))) return { reason: String(work.state) === "expired" ? "expired" : "not_pending" } as const;
   if (Number(work.created_at) > nowMs) return { reason: "clock_reversed" } as const;
   if (Number(work.expires_at) <= nowMs) return { reason: "expired" } as const;
@@ -57,6 +71,48 @@ async function pending(db: MonitorSqlite, workId: string, nowMs: number) {
 export function notificationOutbox(access: Access) {
   return {
     notificationScope: () => access.read(db => scope(db, access.rootId)),
+    notificationTest: (databaseId: string, workId: string) => access.read(async db => {
+      if (!monitorUuid(workId) || (await scope(db, access.rootId)).databaseId !== databaseId) return failure("scope_changed");
+      const row = await db.first("SELECT * FROM notification_tests WHERE id=?", [workId]);
+      return row ? { workId: String(row.id), operationId: String(row.operation_id), requestDigest: String(row.request_digest),
+        alias: String(row.target_alias), bindingId: String(row.binding_id), bindingRevision: Number(row.binding_revision), modelRevision: String(row.model_revision),
+        createdAtMs: Number(row.created_at), expiresAtMs: Number(row.expires_at) } : null;
+    }),
+    createNotificationTest: (input: { databaseId: string; workId: string; operationId: string; requestDigest: string; alias: string;
+      bindingId: string; bindingRevision: number; modelRevision: string; nowMs: number }) => access.mutate(async db => {
+      if (!monitorUuid(input.workId) || !/^[a-f0-9]{64}$/.test(input.operationId) || !/^[a-f0-9]{64}$/.test(input.requestDigest)
+        || !/^[a-z][a-z0-9_-]{0,31}$/.test(input.alias) || !monitorUuid(input.bindingId) || !timestamp(input.bindingRevision)
+        || !/^[a-f0-9]{64}$/.test(input.modelRevision) || !timestamp(input.nowMs)) return failure("invalid_test");
+      if ((await scope(db, access.rootId)).databaseId !== input.databaseId) return failure("scope_changed");
+      const prior = await db.first("SELECT * FROM notification_tests WHERE id=? OR operation_id=?", [input.workId, input.operationId]);
+      if (prior) {
+        if (prior.id !== input.workId || prior.operation_id !== input.operationId || prior.request_digest !== input.requestDigest) return failure("test_conflict");
+        return { created: false, workId: input.workId };
+      }
+      if (Number((await db.first("SELECT COUNT(*) AS n FROM notification_tests"))?.n) >= 128) return failure("test_capacity");
+      if (!(await monitorWriteAdmission(db, access.maxDatabaseBytes, 32768)).accepted) return failure("storage_pressure");
+      await db.run("INSERT INTO notification_tests(id,operation_id,request_digest,target_alias,binding_id,binding_revision,model_revision,created_at,expires_at,state) VALUES(?,?,?,?,?,?,?,?,?,'ready')",
+        [input.workId, input.operationId, input.requestDigest, input.alias, input.bindingId, input.bindingRevision, input.modelRevision, input.nowMs, input.nowMs + 15 * 60_000]);
+      return { created: true, workId: input.workId };
+    }),
+    settleNotificationTestWithoutAttempt: (workId: string) => access.mutate(async db => {
+      if (!monitorUuid(workId)) return failure("invalid_test");
+      await db.run("UPDATE notification_tests SET state='blocked',last_reason='preflight_blocked' WHERE id=? AND state='ready' AND NOT EXISTS(SELECT 1 FROM notification_attempts WHERE work_id=?)", [workId, workId]);
+    }),
+    notificationPage: (after: string | undefined, limit: number) => access.read(async db => {
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) return failure("invalid_page");
+      const current = await scope(db, access.rootId);
+      let before = Number.MAX_SAFE_INTEGER, id = "";
+      if (after) {
+        const parts = after.split(":");
+        if (parts.length !== 3 || parts[0] !== current.databaseId || !/^[1-9][0-9]*$/.test(parts[1]!) || !Number.isSafeInteger(Number(parts[1])) || !monitorUuid(parts[2])) return failure("cursor_gap");
+        before = Number(parts[1]); id = parts[2]!;
+      }
+      const rows = await db.all(`SELECT id,created_at FROM (SELECT id,created_at FROM notification_work UNION ALL SELECT id,created_at FROM notification_tests)
+        WHERE created_at<? OR (created_at=? AND id>?) ORDER BY created_at DESC,id LIMIT ?`, [before, before, id, limit + 1]);
+      const selected = rows.slice(0, limit), last = selected.at(-1);
+      return { databaseId: current.databaseId, ids: selected.map(row => String(row.id)), nextCursor: rows.length > limit && last ? `${current.databaseId}:${last.created_at}:${last.id}` : null };
+    }),
     acceptedNotificationSeed: (workId: string) => {
       if (!monitorUuid(workId)) return failure("invalid_work");
       return access.read(async db => {
@@ -110,16 +166,19 @@ export function notificationOutbox(access: Access) {
         return { state: "quarantined" as const };
       });
     },
-    notificationDelivery: async (workId: string) => {
+    notificationDelivery: async (workId: string, databaseId?: string) => {
       if (!monitorUuid(workId)) return failure("invalid_work");
       return access.read(async db => {
-        const work = await db.first("SELECT w.id,w.incident_id,w.evidence_revision,w.state,w.created_at,w.expires_at,i.first_seen AS incident_first_seen,i.scope AS incident_scope,i.occurrence_key,i.rule FROM notification_work w LEFT JOIN incidents i ON i.id=w.incident_id WHERE w.id=?", [workId]);
+        if (databaseId !== undefined && (await scope(db, access.rootId)).databaseId !== databaseId) return failure("scope_changed");
+        let work = await db.first("SELECT w.id,w.incident_id,w.evidence_revision,w.state,w.created_at,w.expires_at,i.first_seen AS incident_first_seen,i.scope AS incident_scope,i.occurrence_key,i.rule FROM notification_work w LEFT JOIN incidents i ON i.id=w.incident_id WHERE w.id=?", [workId]);
+        const test = work ? null : await db.first("SELECT * FROM notification_tests WHERE id=?", [workId]);
+        if (!work && test) work = { ...test, incident_id: null, evidence_revision: null, incident_first_seen: null, incident_scope: null, occurrence_key: null, rule: null };
         if (!work) return { state: "not_found", automaticRetry: false, botReport: "not_observed", userRead: "not_observed" };
         const rows = await db.all("SELECT * FROM notification_attempts WHERE work_id=? ORDER BY reserved_at LIMIT 2", [workId]);
         if (rows.length > 1) return failure("attempt_conflict");
         const attempt = rows[0], decoded = attempt ? decode(attempt) : null;
         return { state: attempt && ["reserved", "attempting", "unknown"].includes(String(attempt.state)) ? "unknown" : String(work.state),
-          workId, incidentId: String(work.incident_id), evidenceRevision: Number(work.evidence_revision),
+          purpose: test ? "test" : "incident", workId, incidentId: work.incident_id === null ? null : String(work.incident_id), evidenceRevision: work.evidence_revision === null ? null : Number(work.evidence_revision),
           createdAtMs: Number(work.created_at), expiresAtMs: Number(work.expires_at),
           incidentFirstSeenAtMs: work.incident_first_seen === null || work.incident_first_seen === undefined ? null : Number(work.incident_first_seen),
           occurrenceIdentity: typeof work.incident_scope === "string" && typeof work.occurrence_key === "string"
@@ -148,14 +207,19 @@ export function notificationOutbox(access: Access) {
         if (Number(counters?.installation) >= destination.installationLimit || Number(counters?.target ?? 0) >= destination.targetLimit)
           return { state: "blocked", reason: "wake_budget" };
         if (!(await monitorWriteAdmission(db, access.maxDatabaseBytes, 32768)).accepted) return { state: "blocked", reason: "storage_pressure" };
-        const evidence = await readIncidentEvidence(db, String(eligibility.work.incident_id), Number(eligibility.work.evidence_revision));
-        if (evidence.state !== "available") return { state: "blocked", reason: "evidence_unavailable" };
-        const notice = await noticeForWork(db, input.workId), attemptId = randomUUID();
+        const test = "test" in eligibility ? eligibility.test : undefined;
+        if (test && (test.binding_id !== binding.bindingId || test.binding_revision !== binding.revision || test.target_alias !== destination.alias || test.model_revision !== binding.modelRevision))
+          return { state: "blocked", reason: "test_target_changed" };
+        if (!test) {
+          const evidence = await readIncidentEvidence(db, String(eligibility.work.incident_id), Number(eligibility.work.evidence_revision));
+          if (evidence.state !== "available") return { state: "blocked", reason: "evidence_unavailable" };
+        }
+        const notice = test ? notificationTestNotice(input.workId, Number(test.created_at), Number(test.expires_at)) : await noticeForWork(db, input.workId), attemptId = randomUUID();
         const prepared = freezeNotification({ scope: installation, target: destination, binding, workId: input.workId, attemptId,
           createdAtMs: input.nowMs, expiresAtMs: Number(eligibility.work.expires_at), notice });
         await db.run("INSERT INTO notification_attempts(id,work_id,target_id,binding_revision,state,reserved_at,receipt_json) VALUES(?,?,?,?,'reserved',?,?)",
           [attemptId, input.workId, destination.agentId, binding.revision, input.nowMs, canonicalJson({ schemaVersion: 1, frozen: prepared.frozen, result: null })]);
-        await db.run("UPDATE notification_work SET state='attempting',last_reason='delivery_reserved' WHERE id=?", [input.workId]);
+        await db.run(`UPDATE ${test ? "notification_tests" : "notification_work"} SET state='attempting',last_reason='delivery_reserved' WHERE id=?`, [input.workId]);
         return { state: "reserved", frozen: prepared.frozen, envelope: prepared.envelope };
       });
     },
@@ -188,7 +252,7 @@ export function notificationOutbox(access: Access) {
         if (row.state === "reserved" && observed.state === "native-accepted") return failure("attempt_not_started");
         await db.run("UPDATE notification_attempts SET state=?,settled_at=?,receipt_json=? WHERE id=?",
           [observed.state, input.nowMs, canonicalJson({ schemaVersion: 1, frozen: record.frozen, result: observed }), input.attemptId]);
-        await db.run("UPDATE notification_work SET state=?,last_reason=? WHERE id=?", [observed.state === "native-accepted" ? "completed" : observed.state === "unknown" ? "unknown" : "blocked", observed.state, input.workId]);
+        await db.run(`UPDATE ${record.frozen.incidentId === null ? "notification_tests" : "notification_work"} SET state=?,last_reason=? WHERE id=?`, [observed.state === "native-accepted" ? "completed" : observed.state === "unknown" ? "unknown" : "blocked", observed.state, input.workId]);
         return { state: observed.state, duplicate: false };
       });
     },

@@ -16,6 +16,7 @@ export async function runBotHandover(deps:CliDeps,action:"status"|"advance"|"obs
   const scopeId=raw.scopeId,operationId=raw.operationId;
   try{
     const controls=openContinuityControls({durableRoot:deps.boxRuntimeRoot,scopeId});
+    if ((await controls.request(operationId)).management) throw usage("This workflow belongs to its original management principal; use the lifecycle management receipt and authorized continuation, not legacy local controls.");
     const handover=createGatewayBotHandover(deps,scopeId,30000),convergence=createGatewayBotConvergence(deps,scopeId);
     if(action==="status"){writeSuccess(deps.stdout,await handover.program.status(operationId));return;}
     if(action==="advance"){writeSuccess(deps.stdout,await handover.program.advance(operationId,16,deps.signal));return;}

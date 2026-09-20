@@ -50,6 +50,10 @@ collector现有维护子Scope每轮调用两个显式root的分段维护；不�
 
 接口与J0裁决见[Spec J1](../roadmap/template-ops-automation-spec.md#obs-continuity-interface)。组合`obs-continuity`使用owned adapter/真实临时文件与SQLite；未连接原生恢复材料、安全台账或新业务controller，仍不签全安装配额、native恢复或LIVE资格。
 
+## Host 健康回执（2026-09-20）
+
+HOST-01复用原provenance目录保存单个有界私有receipt文档：最多64条、1MiB，已索引旧项可退役，尚未索引项不可为腾容量而丢弃；达到上限明确暴露存储/采集缺口。文件发布与OBS提交不是跨存储原子事务，重启按原sequence/eventId补入，OBS仍拥有incident/outbox。此有限上限不代表全安装物理预算或任意备份回滚已经合格。Rust进程内存/CPU/管道与缓存另有有限预算，不与原生当前状态和业务安全记录混为诊断垃圾。
+
 ## Goal / Modules
 
 自动观测不无限积累；普通日志滚动、结构化journal按消费窗口分段、SQLite/事故/通知按生命周期回收，并测真实磁盘回落。

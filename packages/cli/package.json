@@ -4,6 +4,8 @@
   "type": "module",
   "dependencies": {
     "@grokbox/box-runtime": "workspace:*",
+    "@grokbox/client": "workspace:*",
+    "@grokbox/server": "workspace:*",
     "@grokbox/runtime-kernel": "workspace:*"
   }
 }

@@ -6,7 +6,7 @@
 
 三条行为链分开：自动通知默认只提醒并结束；用户明确委托后，原生 Bot 可在任务范围内自主取证、操作和核验；独立预授权维护还需对应能力/预算/原生安全门。通知模式不是所有 Bot 的永久只读 persona，也不是诊断/重启/公开授权。
 
-源码提供 incident/evidence、daemon 所属 collector/sender、Routine 管理/provision、私有配对、接收者预检、显式发送和持续通知授权。已安装的诊断 writer 共享写前容量接纳；执行历史、compact 和 provision 由原 owner 压缩已结算明细并保留拒绝旧操作的标记。`runtime services`只对已证明可用且启用 linger 的 systemd 用户管理器注册精确 daemon/modeld 单元，预览/状态不安装，确认也不修改原生 Host。目标机器的启动管理器、当前制品采用、实际原生提醒与 unknown 对账需各自资格，不能由源码存在或已注册单元推导整条无人值守交付。
+源码提供 incident/evidence、管理 Server 所属 collector/sender、Routine 管理/provision、私有配对、接收者预检、显式发送和持续通知授权。collector/sender 已复用原实现移入管理 Server Scope，旧 daemon 不再启动二者；采集状态由 `system service get server`、通知安全状态由 `notification status` 读取，具体接线与证据范围见 [CLI-05](../tickets/CLI-05-implementation-follow-through.md)。已安装的诊断 writer 共享写前容量接纳；执行历史、compact 和 provision 由原 owner 压缩已结算明细并保留拒绝旧操作的标记。`runtime services`只对已证明可用且启用 linger 的 systemd 用户管理器注册精确 daemon/modeld 单元，预览/状态不安装，确认也不修改原生 Host。目标机器的启动管理器、当前制品采用、实际原生提醒与 unknown 对账需各自资格，不能由源码存在或已注册单元推导整条无人值守交付。
 
 首发默认提醒不等待高级 routing、自动诊断/Host 维护、完整连续性或支持发布；但若宣称长期无人值守和全安装有界，必须完成对应服务/容量门。自动 Issue、默认询问是否建单、内置 REST publisher 和自动公开 grant 已退出当前范围。后续用户决定公开时仅复用已有可用 gh 身份，不自动登录、换身份或补发旧事故。
 
@@ -40,9 +40,11 @@ blueprint 提供固定 disabled 提醒定义，verify 只读预检。实际自�
 
 显式 send 只处理一个既有 work 和私有固定 endpoint；不接受任意 URL/key/body，不启用 Routine、不创建后台 grant。Routine 必须由独立动作启用，且除 enabled 位外与配对定义一致。使用原 outbox 预算/claim/unknown 协议，生产 TLS/origin/无 redirect 约束归 [上游 Webhook 边界](../upstream-integration.md#native-routine-and-notification-webhook-boundary)。
 
-**当前自动发送链：** `ops targets activate` 在精确绑定、原 accepted 测试回执和操作人独立接收声明上记录授权；不启动服务/collector、不启用 Routine、不立即发送。`ops notifications worker` 只读 sender 状态。已经运行的 daemon 监督自动发送程序，只选授权边界之后的新 work，不补发旧积压。无授权、无新 work、关闭或预算不足时，不为探测可用性请求原生接口。每轮有界处理，完成后等待/退避；停止需中止并等待真实 HTTP 与本地提交结算，不能留下脱离寿命的发送。解绑清授权，模型/身份/定义/Host/scope 变化阻断而非自动重签或切备用。
+**当前自动发送链：** `notification receiver enable` 在精确绑定、当前模型/来源核验及显式费用确认上记录未来授权，不要求 accepted 测试回执或操作人已读声明；不启动服务/collector、不启用 Routine、不立即发送。`notification status` 通过共享 API 只读 sender 状态。已经运行的管理 Server 监督自动发送程序，只选授权边界之后的新真实 incident work，不补发旧积压。无授权、无新 work、关闭或预算不足时，不为探测可用性请求原生接口。每轮有界处理，完成后等待/退避；停止需中止并等待真实 HTTP 与本地提交结算，不能留下脱离寿命的发送。解绑清授权，模型/身份/定义/Host/scope 变化阻断而非自动重签或切备用。
 
-源码入口：kernel `internal/observation/notification-activation.ts`、`internal/commands/ops-notification.ts`，Box `internal/roots/ops-activation.runtime.ts`、`ops-automatic-notification.runtime.ts`，CLI daemon 组合。原生当前资格和独立 review 仍由 [ops/T45](../tickets/T45-template-webhook-delivery.md)、[ops/T50](../tickets/T50-template-ops-release-proof.md)及 LIVE 记录。
+`notification receiver test` 是独立显式外发；使用单独测试权限、原 outbox/费用限制和固定测试内容，不创建 incident 或授予未来权限。`notification receiver disable/unbind` 与 enable 的历史回执原子保留在原私有 capsule；重放旧 enable 不复活已撤销授权。`notification list/get` 展示 test/incident 及各自 attempt；`operation get --domain receiver|notification-test` 按原数据库和请求查回结果。unknown 测试阻止再次测试，但不能成为启用门槛；测试、Bot 报告、用户已读分别判断。
+
+源码入口：kernel `internal/observation/notification-activation.ts`、`internal/commands/ops-notification.ts`，Box `internal/roots/ops-activation.runtime.ts`、`ops-automatic-notification.runtime.ts`，Server `notification-management.ts` 与管理 Scope 组合。原生当前资格和独立 review 仍由 [ops/T45](../tickets/T45-template-webhook-delivery.md)、[ops/T50](../tickets/T50-template-ops-release-proof.md)及 LIVE 记录。
 
 ## 投递状态、成本与撤销
 

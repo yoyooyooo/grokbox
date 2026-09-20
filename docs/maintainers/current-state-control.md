@@ -1,52 +1,58 @@
-# 单盒当前状态操作
+# 单盒当前上下文操作
 
-本页说明手动当前状态控制，包括空白目标初始化和外部空闲目标 reset/recover；完整复制、生命周期和关系交接另见 [生命周期指南](bot-lifecycle.md)。它不代表完整替身自动接替或现场采用已经完成。产品仍是一个长期Memory身份、一份当前工作上下文，没有会话列表或切换。合同归 [S13](../roadmap/box-runtime-impl-spec.md#continuity-primitives)，实现范围归 [CONT-07](../tickets/CONT-07-current-context-control.md)，现场只看 [LIVE-CURRENT-CONTEXT](../tickets/LIVE-integration-validation.md#live-current-context)。
+当前状态控制通过绑定安装的管理 Server，CLI、共享客户端和 Web 共用同一 CONT 程序。对象仍是原生 Bot 的一份当前工作上下文，不提供 session 列表或切换，也不把管理引用改成跨产品人格。生命周期与关系交接见[生命周期指南](bot-lifecycle.md)，剩余能力归 [CONT-07](../tickets/CONT-07-current-context-control.md)，真实现场资格归 [LIVE-CURRENT-CONTEXT](../tickets/LIVE-integration-validation.md#live-current-context)。
 
-## 前置边界
+## 权限与原生能力
 
-仅限本云电脑的原生Gateway和已加载、已注册的默认Bot。当前候选通过`current-state` profile能力增加有限RPC、主Host准备屏障及原生worker事务；没有这些接缝时明确返回unavailable，不自动更新Host或改profile。使用现有同源reviewed baseline升级流程，保留所有已有接缝，不能拿测试中删减过的baseline安装到现役。
+查询当前原生 head 需要 `context.read`；捕获、初始化、重置、恢复和原操作准备阶段的续接/对账/取消需要 `context.write`；解除原准备屏障另需 `context.activate`。历史回执需要 `operations.read`。原生 scope、所有权、资格、当前 revision 和 worker 屏障仍独立核对，管理权限不代替原生资格。
 
-当前运行配置为旧schema时先安排成套配置/消费者采用，不能只运行新版源码迁移其中一个对象。`runtime profile analyze/write --capability current-state`是已有profile工作流的显式新能力选项；其写入和后续re-adopt仍遵守原来的确认、基线摘要与LIVE窗口。
+生产适配只调用本 Box 已加载并已注册的原生 current-state 能力，不直写原生数据库、不自动升级 Host 或变更 profile。原生能力缺失明确 unavailable，没有本地副本或模拟成功 fallback。远端调用者必须选择显式安装绑定，管理 Server 仍只操作其本机原生源；旧 `agents state ...` 不再注册，也不作为恢复备用 writer。
 
-## 命令与效果
+## 正式入口
 
-| 命令 | 实际效果 |
-|---|---|
-| `agents state show <id>` | 读取当前head及profile绑定策略版本，不创建CONT库，不授执行权 |
-| `agents state capture <id> --operation-id <uuid> --confirm` | 将有界原生checkpoint闭包保全到本机私有CONT库；不修复源、不调用模型 |
-| `agents state initialize <target-id> --snapshot-id <uuid> --expect-revision <sha256> --operation-id <uuid> --confirm` | 按材料清单导入同scope的空白目标，包括声明的 Memory/历史补充；保持准备屏障，不启动任务 |
-| `agents state reset <target-id> --expect-revision <sha256> --operation-id <uuid> --confirm` | 先保全当前状态，再通过原生空闲屏障替换工作上下文；不清长期 Memory/真实文件，不启动任务 |
-| `agents state recover <target-id> --snapshot-id <uuid> --expect-revision <sha256> --operation-id <uuid> --confirm` | 先保全当前状态，再从固定快照建立恢复候选并读回；不重放过去工具，不把恢复当成会话切换 |
-| `agents state operation <target-id> --operation-id <uuid> --scope-id <sha256>` | 离线读取本地初始化操作，不访问Host、也不升级旧CONT库 |
-| `agents state reconcile <target-id> --operation-id <uuid> --confirm` | 使用已保存的原请求对账原生应用凭据，更新本地安全记录；不重做导入、不解除未知屏障 |
-| `agents state activate <target-id> --operation-id <uuid> --confirm` | 对已读回的初始化解除准备屏障，允许后续普通输入；不发送Human消息，不主动开始推理 |
+以下命令都以准确 Bot UUID 或安装内引用为目标。`scope-id` 和 `expect-revision` 来自该 Bot 当前读面；`request-id` 由调用者在发送前持久保存。
 
-所有目标使用精确UUID。创建、捕获和初始化是不同操作；各自固定UUID，丢回执后继续检查原操作，不能换ID盲重试。输出仅含head、引用和收据，原始prompt/blob不进入普通stdout。正常CLI只做本机管理，不支持远端Profile伪装成同盒初始化。
+```bash
+grokbox bot context get <bot-ref>
+grokbox bot snapshot create --bot <source-bot-ref> --scope-id <scope> --request-id <uuid> --expect-revision <native-revision> --confirm
+grokbox bot context initialize <unused-target-ref> --snapshot-ref <snapshot-ref> --scope-id <scope> --request-id <uuid> --expect-revision <target-revision> --confirm
+grokbox bot context reset <bot-ref> --scope-id <scope> --request-id <uuid> --expect-revision <native-revision> --confirm
+grokbox bot context restore <bot-ref> --snapshot-ref <snapshot-ref> --scope-id <scope> --request-id <uuid> --expect-revision <native-revision> --confirm
+```
 
-## 手动验证顺序
+捕获只保存原生 checkpoint 的声明闭包和受支持补充，不修复源、不调用模型。初始化导入同账号 scope 的已发布材料，可能包含声明的 agent Memory、历史显示与受管指令；共享 user/project Memory、完整附件和外部依赖不是这份快照的隐含完整性保证。目标已经运行或含请求、转录、结算、待处理 Routine 结果时，即使没有 root，也不能当成未使用目标。
 
-先show源Bot再capture，记录snapshot引用、scope和质量缺口。新版捕获在原生引用图之外可携带有界agent Memory、历史补充及受管指令；初始化会按材料清单应用这些补充，不再统一承诺只改模型窗口。共享user/project Memory和完整附件未被整体复制；pending/未知效果不能直接导入成新的待执行任务。
+reset/restore 只用于外部操作者选择的空闲、已加载、拥有当前 root 的目标。备份先于上下文替换，备份、候选及原请求的关联在 CONT 中保留；不回滚长期 Memory、模型配置、已经发生的文件或外部任务效果。含未知效果的来源只允许原程序支持的受限恢复候选，不把过去 pending 工具重新发起。self-reset 的持久安全排队仍未交付，不以同步调用规避。
 
-通过`agents create --harness box --defer-start`显式请求关闭自我介绍和kickstart，核实新ID/归属。这个开关不构成入站隔离，不等于prepared；不要在初始化前给目标发业务消息。新目标已运行、存在转录/请求/结算记录或待处理Routine结果，即使没有root也不再是本入口允许的空白目标。
+## 保存、应用、解除屏障分别核对
 
-show目标，使用其exact revision和已保存snapshot初始化。原生worker在同一事务写root/依赖与应用凭据；主Host随后CAS发布指针、重新装载并写自己的应用记录。只有两层读回与准备状态完成才返回prepared。没有跨两个数据库的虚构原子事务：任何中间失败保持unknown/blocked并可对账，不以worker成功单独宣布Bot准备好了。
+原生 worker 在自己的事务中写 root/依赖及应用标记，主 Host 再核对发布、重新装载并记录其应用状态。CONT 只在对应读回和清理结算后确认历史应用，不能以某一个数据库成功代替整段完成。结果 `prepared` 不代表允许新输入，更不代表已启动模型任务。
 
-检查prepared结果后，再按已有权限显式activate。激活不启动任务；之后的正常输入才进入目标Agent loop，继续产生B1/B2。旧初始化操作重入不能把B0重新灌到B2。已加载正式Host/实际模型/客户端上的首轮、重启后续轮，需要LIVE取证，fixture通过不替代。
+```bash
+grokbox operation get --domain context --scope-id <original-scope> --request-id <original-uuid>
+grokbox operation reconcile --domain context --bot <original-bot-ref> --scope-id <original-scope> --request-id <original-uuid> --confirm
+grokbox operation resume <context-operation-ref> --domain context --bot <original-bot-ref> --confirm
+grokbox bot activate <original-bot-ref> --scope-id <original-scope> --request-id <original-uuid> --expect-revision <current-prepared-revision> --confirm
+```
 
-## 外部 reset / recover
+普通提交重入只返回原历史，不继续准备或重发写入。`resume` 才推进保存的原计划；已存在未知原生应用时只能查原标记，不能再 apply。`reconcile` 不捕获、compose、导入或解除屏障，仅核对已保存发布或原生应用证据并结算原记录。原生标记缺失不是未执行证明。
 
-这两个入口由外部操作者用于空闲、已加载目标；self-reset 的持久安全排队仍未交付，不能在 Bot 自己的控制回合中以同步调用冒充该能力。先用 show 获取实际 contextRevision，明确本次替换工作上下文的授权；reset/recover 要求已有 root，不能用来隐式创建一个 Bot。
+`activate` 使用该原操作的应用标记解除准备屏障，只允许后续普通输入，不发用户消息、不启动业务任务。首次解除前固定其审阅 revision；丢回复后使用同一原操作和首次解除 revision。读面 `activationExpectedRevision` 保留该定位，浏览器不在 localStorage 保存 revision。原生解除接口能证明同一标记已解除，或仅解除其仍准备中的原 hold；不能打开另一操作的 hold，更不能用旧材料覆盖目标后续 B1/B2。
 
-同一 operation 固定 backupSnapshot 和候选引用，备份必须先于原生替换。reset 构造不带旧对话的合法新上下文；recover 使用指定快照，候选含 unknown_effects 时构造有来源的受限摘要候选，不将 pending 工具重放。读取 coverage 和原生应用回执，而非将 snapshot 存在当作完整恢复。
+管理 Server 持有已受理操作，客户端断开不等于撤销；服务关闭会取消实际原生读取并等待有限回调与持久结算。进程被强杀后原 CONT 安全记录仍在，重启不能取得第二次未知 apply 权限。历史查询不依赖当前 Host 存活，也不创建、迁移或修复安全库。
 
-两者复用初始化接受/读回/对账程序。结果与 scope/operation 一起保存；确认 prepared 后，解除准备仍使用相同操作的 activate，不以 reset/recover 返回推导任务已启动。长期 Memory、模型配置和已发生外部文件/任务不回滚。源 revision 变化或不确定原生写入应检查原操作，不能换 UUID 重做。
+## 有证据的准备阶段取消
 
-## 故障处置
+```bash
+grokbox operation cancel <context-operation-ref> --domain context --bot <original-bot-ref> --confirm
+```
 
-`source_changed`重新读取状态并重新评估，不能自动覆写新版本。`not_prepared`表示目标或在途状态不适合初始化，不使用clearConversation清掉记录来通过门禁。`commit_unknown`与`cleanup_unknown`先查询原操作和reconcile；原生凭据缺失不是未执行证明，禁止改operationId再尝试。仅worker已提交而主Host应用记录未完成时，对账仍可能unknown；保持屏障，不擅自补写或激活。
+仅在持有原 driver 互斥、没有任何原生应用声明、也没有解除声明时允许取消。它保存原请求墓碑，释放不再使用的准备材料引用，不删除原请求或原生资料；同一旧请求不能在取消后复活。已有 prepared/effect_unknown 的原生应用声明都不能靠取消变成未执行，也不能换 UUID 绕过目标未决操作。缺失或损坏的已知 CONT 数据库不重建为空历史。
 
-接缝不支持、worker握手不匹配或Host源码换版时拒绝该能力，沿现有profile诊断/重新资格流程处理。普通GET不修复数据库，不把首次读取Temporal伪称刚刚发生迁移。
+材料保护与回收在原 CONT 数据库事务内检查：未完成准备、未结原生效果以及等待解除的上下文保留其来源/备份/候选引用；受支持的完成或准备取消只退出自己这组引用。历史回执可以继续指向已经按原策略退役的材料，保留引用不等于正文永久可用。
 
-## 明确未交付的产品范围
+## Web 与证据范围
 
-生命周期、外部空闲Bot reset/recover、受管指令startup及保护/关系交接已有有限源码切片，范围和证明见[固定回执](../reports/2026-09-19-continuity-lifecycle-integration.md)，操作见[生命周期指南](bot-lifecycle.md)。全附件/资源迁移、self-reset安全队列、完整外部任务与职责约束、临时结果交付/清理、可靠旧Bot退役仍归来源票，不改标成只差Live。精确参数以registry/help为准，实际现场结果只归唯一索引。
+`/contexts` 只为明确选择的 Bot 读取当前 head；历史可按原 operation ref 独立查询。捕获、上下文替换、对账、有限取消与解除分别明确确认，CSRF 和服务端权限持续检查。草稿 revision 不被后台页面刷新偷偷替换；提交前只持久化原主体/安装/Bot/账号 scope/request 定位，正文、快照选择、revision、令牌不进入本地恢复记录。未知原生效果仍阻止替代提交；尝试取消或续接被拒绝，不能把原未知效果误标为已拒绝。
+
+[管理 Node 测试](../../test/context-management.test.ts)使用真实 HTTP、CONT SQLite、原生 owner/RPC/checkpoint worker、打包 CLI 和受控 SIGKILL；原生 schema、账号和资料均为隔离合成输入。[生产浏览器旅程](../../apps/web/test/context-browser.node.ts)消费搬移后的 Web 制品，没有假后台。它们不证明现场 Host/Provider/App 的恢复首轮，也不关闭全附件、self-reset、逐职责资源独立和安全退役等剩余义务。完整阶段结果记录在 [CLI-05](../tickets/CLI-05-implementation-follow-through.md)。

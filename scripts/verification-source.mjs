@@ -3,6 +3,12 @@ import { createHash } from "node:crypto";
 import { constants, openSync, closeSync, fstatSync, readSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
+export const VERIFICATION_SOURCE_PATHS = Object.freeze([
+  "apps", "packages", "scripts", "test", "bin", "skills", "crates", "protocols",
+  "Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
+  "package.json", "bun.lock", "bun.lockb", "bunfig.toml", "tsconfig.json",
+]);
+
 /** Ephemeral proof input, not a new runtime/version store. Include uncommitted and
  * untracked sources/tests plus lock/config inputs; exclude generated dist and ignored
  * dependencies. Dependency installation and native Host qualification remain separate.
@@ -13,7 +19,7 @@ export function captureVerificationSource(root, ownedPaths) {
     const base = resolve(root);
     const paths = ownedPaths ?? execFileSync("git", [
       "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
-      "packages", "scripts", "test", "package.json", "bun.lock", "bun.lockb", "bunfig.toml", "tsconfig.json",
+      ...VERIFICATION_SOURCE_PATHS,
     ], { cwd: base, encoding: "utf8", maxBuffer: 2 * 1024 * 1024 }).split("\0").filter(Boolean);
     const ordered = [...new Set(paths)].sort();
     if (!ordered.length || ordered.length > 20_000) throw new Error("source_count");

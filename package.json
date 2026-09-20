@@ -15,7 +15,7 @@
   },
   "type": "module",
   "workspaces": {
-    "packages": ["packages/*"],
+    "packages": ["packages/*", "apps/*"],
     "catalogs": {
       "effect-v4-beta": {
         "effect": "4.0.0-beta.107"
@@ -54,6 +54,14 @@
   },
   "scripts": {
     "build": "bun scripts/build.mjs",
+    "web:dev": "bun run --cwd apps/web dev",
+    "web:build": "node scripts/build-web.mjs",
+    "web:serve": "node dist/web/run.mjs",
+    "typecheck:web": "tsc --noEmit -p apps/web/tsconfig.json",
+    "test:web": "bun test apps/web/test/operations.test.ts test/web-bridge.test.ts test/observation-management.test.ts test/incident-actions.test.ts test/notification-management.test.ts test/notification-setup.test.ts test/materials-management.test.ts test/protection-management.test.ts test/lifecycle-management.test.ts test/context-management.test.ts test/host-health-management.test.ts test/web-browser.test.ts",
+    "verify:web-browser": "bun test test/web-browser.test.ts",
+    "verify:host-health": "node scripts/verify-host-health.mjs core && node scripts/verify-host-health.mjs integration",
+    "qualify:host-health": "bun scripts/qualify-host-health.ts",
     "modeld:run": "node scripts/run-packaged-modeld.mjs --json",
     "grokbox": "bun run packages/cli/src/index.ts",
     "gbox": "bun run packages/cli/src/index.ts",

@@ -96,7 +96,7 @@ async function fixtureAsVersionTwo(f: Awaited<ReturnType<typeof fixture>>) {
   const db=await openMonitorSqlite(f.store.path,"write");
   try{await db.run(`BEGIN IMMEDIATE;
     DROP TABLE snapshot_links; DROP TABLE evidence_leases; DROP TABLE incident_snapshots;
-    DROP TABLE notification_attempts; DROP TABLE notification_work; DROP TABLE open_executions;
+    DROP TABLE notification_attempts; DROP TABLE notification_work; DROP TABLE notification_tests; DROP TABLE open_executions;
     DROP TABLE evidence_retirement; DROP TABLE observation_maintenance; DROP TABLE incident_evidence_history;
     DROP INDEX evidence_turn; DROP INDEX evidence_dispatch;
     UPDATE meta SET version=2; PRAGMA user_version=2; COMMIT;`);
@@ -114,7 +114,7 @@ test("explicit disk v2 migration preserves historical acknowledgement without ma
     await expect(f.store.incidentEvidence(id,1)).rejects.toThrow("monitor_migration_required");
     expect(await readFile(f.store.path)).toEqual(before);
     expect(await f.store.initialize()).toMatchObject({migrated:true,created:false});
-    expect((await f.store.snapshot()).schemaVersion).toBe(3);
+    expect((await f.store.snapshot()).schemaVersion).toBe(4);
     expect((await f.store.incidents())[0]).toMatchObject({id,acknowledged:true});
     expect((await f.store.manage(ack)).duplicate).toBe(true);
     expect(await f.store.incidentEvidence(id,1)).toMatchObject({state:"not_checked",reason:"snapshot_not_captured"});

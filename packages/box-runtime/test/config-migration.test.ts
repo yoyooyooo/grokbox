@@ -185,10 +185,10 @@ test("unfinished predecessor is a recovery requirement, not a new migration", as
   expect(JSON.parse(await readFile(join(f.root, "config.json"), "utf8"))).toEqual(f.v2);
 });
 
-test("general migration creates model v2 only when no model file exists", async () => {
+test("general migration creates model v3 only when no model file exists", async () => {
   const { root, options } = await fixture();
   await (await import("node:fs/promises")).unlink(join(root, "models.json"));
   const plan = await planConfigurationMigration(options, quiet);
   expect((await applyConfigurationMigration(options, plan.planDigest, quiet)).models).toBe("initialized");
-  expect(JSON.parse(await readFile(join(root, "models.json"), "utf8"))).toEqual({ version: 2, models: {}, assignments: { main: null, agents: {} } });
+  expect(JSON.parse(await readFile(join(root, "models.json"), "utf8"))).toEqual({ version: 3, models: {}, assignments: { main: null, agents: {} } });
 });

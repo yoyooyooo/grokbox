@@ -27,7 +27,7 @@ export async function readMonitorServiceConfiguration(durableRoot: string): Prom
   const ops = effectiveOps(snapshot.document.ops), monitor = ops.monitor as Record<string, unknown>;
   const enabled = monitor.enabled === true;
   const notifications = ops.notifications as Record<string, unknown>;
-  const policy = { runRoot: resolve(installation.runRoot), agentIds: monitorTargets(installation.agentIds), enabled,
+  const policy = { runRoot: resolve(installation.runRoot), agentIds: monitorTargets(installation.agentIds,true), enabled,
     notificationsEnabled: ops.enabled === true && notifications.mode !== "off", intervalMs: monitorInterval(Number(monitor.intervalMs)) };
   // The storage domain is captured by each collector lifetime. Policy changes
   // require a settled replacement. Only the notification enable boundary is
@@ -44,7 +44,7 @@ export type MonitorInstallationInput = {
  * is retained and no missing-config collector starts. Never rolls back newer
  * user edits, starts a process, migrates business state or changes notifications. */
 export async function configureMonitorService(input: MonitorInstallationInput) {
-  const runRoot = await validateMonitorRoot(input.runRoot), agentIds = monitorTargets(input.agentIds);
+  const runRoot = await validateMonitorRoot(input.runRoot), agentIds = monitorTargets(input.agentIds,true);
   const store = openConfigStore(rootConfigLayout(input.durableRoot)), before = await store.read();
   if (!input.confirmed) return { state: "preview" as const, expectedRevision: before.revision,
     observation: { runRoot, agentIds }, databaseInitialized: false, serviceStarted: false, notificationsChanged: false };
@@ -66,7 +66,7 @@ export async function configureMonitorService(input: MonitorInstallationInput) {
   }
   const storage = await readStorageConfiguration(input.durableRoot);
   // Explicit install is allowed to initialize/migrate the observation DB, never
-  // an implicit status/read or daemon startup. Existing active collectors block
+  // an implicit status/read or management Server startup. Existing active collectors block
   // migrations in the DB owner's existing implementation.
   const database = await openMonitorStore(input.durableRoot, storage.monitor).initialize();
   let configuration: ConfigCommitReceipt;

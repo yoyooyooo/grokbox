@@ -1,8 +1,14 @@
 # T59 — 配置迁移、bootstrap 与旧 writer 单向退役
 
-## Status / Goal
+## 本次重建范围
 
-**Implemented · isolated migration/bootstrap/recovery verified。** 当前程序只读写统一配置；历史文件由明确的迁移命令一次性处理。当前生产 writer/迁移进度只看 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)，真实平台 Reset 独立看 [LIVE-CONFIG-HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)；本票不复制当前现场状态。合同归 [配置 Spec §7](../roadmap/configuration-rebuild-spec.md#migration)。
+既有配置迁移实现与证据保留原版本；旧 LIVE-CONFIG-CUTOVER 已退役，不再要求先做 config3→4 才允许建设新版。本票按 [Agent-first 数据边界](../roadmap/agent-first-cli/spec.md#数据兼容范围)承接首次安装、必要模型/连接配置的一次性导入和旧 writer 退出，实际验收归 [INITIAL-ADOPTION](LIVE-integration-validation.md#live-initial-adoption)。不要求通用旧内部 DB/日志/回执迁移或旧 schema 降级。
+
+原生身份/资料/凭据不重置；未知或在途外部效果接入前须定位，不能以不迁旧历史为由重新执行。保全、冲突、读回和安全停止仍要验证，但开发期间不要求连续服务或反复恢复旧开发版。具体新格式由实现决定，不能照搬下述旧版本程序作为新合同。
+
+## Existing implementation / prior qualification
+
+**Implemented · isolated migration/bootstrap/recovery verified。** 当前程序只读写统一配置；历史文件由明确的迁移命令一次性处理。旧版本 writer/迁移证据保留在已退役的 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)及其来源报告；新版首次接入看 [INITIAL-ADOPTION](LIVE-integration-validation.md#live-initial-adoption)，真实平台 Reset 独立看 [LIVE-CONFIG-HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)；本票不复制当前现场状态。合同归 [配置 Spec §7](../roadmap/configuration-rebuild-spec.md#migration)。
 
 ## Implementation
 

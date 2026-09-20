@@ -21,6 +21,7 @@ export const GROKBOX_SKILL_TOPICS: readonly SkillTopic[] = [
   { name: "services", file: "services.md", level: "task", summary: "Services, Host channel, and package alignment." },
   { name: "send", file: "send.md", level: "task", summary: "Send once and observe the same reply." },
   { name: "models", file: "models.md", level: "task", summary: "Per-Bot model selection and catalog configuration." },
+  { name: "materials", file: "materials.md", level: "task", summary: "Scoped Memory/Project documents, local file search and explicit text-write recovery." },
   { name: "label", file: "label.md", level: "task", summary: "Display-only Bot title trailers." },
   { name: "desktop", file: "desktop.md", level: "task", summary: "Desktop seats and login-fork protection." },
   { name: "templates", file: "templates.md", level: "task", summary: "Template packaging, sharing, and import." },

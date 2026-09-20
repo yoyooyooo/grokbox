@@ -1,6 +1,12 @@
 # T60 — 统一配置集成验证与发布边界
 
-## Status / Goal
+## 本次重建验收
+
+[新版 Spec](../roadmap/agent-first-cli/spec.md)不要求先关闭旧 v2 窗口或维持施工期可用。本票复用仍适用的配置/并发/消费者反例，按新领域用例补 CLI/API 的共同写入、未来采用和必要配置导入，归 [INITIAL-ADOPTION](LIVE-integration-validation.md#live-initial-adoption)、[CLI-API](LIVE-integration-validation.md#live-cli-api)和 CONFIG-CONSUMERS。旧 CONFIG/REASONING-CUTOVER 是历史合同，不再作为首次使用门；平台 Reset 仍独立授权。
+
+代码/离线的旧结论不签新版，适用整体回归和独立审查在整合候选收口。源码、Server/Web/CLI 制品和实际消费者须匹配；不要求每个施工提交部署或回到旧版本。
+
+## Existing implementation / prior qualification
 
 **Configuration lane implemented and offline-verified; independent review remains open。** 当前现场进度由下方 LIVE 条目唯一维护。 T57–T59 的 schema、writer、迁移、bootstrap 与当前 CLI/领域消费者已接通。该状态只覆盖 AH-99/AH-100 的配置工程，不关闭原生 Routine、多 Bot 路由、诊断、issue 或 Host 自动维护的执行票。
 
@@ -30,8 +36,8 @@ node scripts/check-publication.mjs
 ## Remaining work and release gates
 
 - 独立代码复审仍待；这是非 live 发布门，不藏入 native 待办。
-- 生产迁移、source-backed CLI 采用和实际旧 writer 退出归 [LIVE-CONFIG-CUTOVER](LIVE-integration-validation.md#live-config-cutover)；现役消费者/domain revision/重启与真实模型凭据归 [LIVE-CONFIG-CONSUMERS](LIVE-integration-validation.md#live-config-consumers)；平台 Reset、home 别名重建与 credential 存续归 [LIVE-CONFIG-HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)。三条分别取证，不能用一次迁移或重启全部关闭。
+- 新版必要配置导入与旧 writer 退出归 [INITIAL-ADOPTION](LIVE-integration-validation.md#live-initial-adoption)，共同写入归 [CLI-API](LIVE-integration-validation.md#live-cli-api)，实际 consumer/domain revision/重启归 [CONFIG-CONSUMERS](LIVE-integration-validation.md#live-config-consumers)。平台 Reset 独立看 [CONFIG-HOME-RESET](LIVE-integration-validation.md#live-config-home-reset)，不能用一次安装或进程重启代签。
 - 远端 config 写 capability 未交付，当前明确拒绝而非写错机器。
 - T43–T56 的 native Webhook、真实配对、grant、通知 worker、诊断/维护和 issue 发布仍依各来源票；配置规则不是这些功能的实现证明。
 
-AH-99/AH-100 最终关闭评论应准确列出源码/打包证据和未执行的部署范围，不以此票替其他运维票宣布 Done。上述 AH 收口评论描述其历史源码交付范围。后续当前现场结果、未验项和下一步只以 LIVE 三个配置条目为准；这份来源票不再维护另一份部署清单。
+AH-99/AH-100 最终关闭评论应准确列出源码/打包证据和未执行的部署范围，不以此票替其他运维票宣布 Done。上述 AH 收口评论描述其历史源码交付范围。后续当前现场结果、未验项和下一步只以 LIVE 对应条目为准；这份来源票不再维护另一份部署清单。

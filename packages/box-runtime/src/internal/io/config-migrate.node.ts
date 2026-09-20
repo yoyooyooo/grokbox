@@ -216,7 +216,7 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
   security = { ...security, schemaVersion: 1, role: "box", root: options.root, installationId: installationId ?? "unassigned-at-preview" };
   if (options.role === "box") validateInstallationState({ ...security, installationId: installationId ?? "00000000-0000-4000-8000-000000000000" }, options.root);
   const blockedWriters = await (ports.writers ?? inspectConfigurationWriters)(options);
-  const modelDocument = models ?? { version: 2, models: {}, assignments: { main: null, agents: {} } };
+  const modelDocument = models ?? { version: 3, models: {}, assignments: { main: null, agents: {} } };
   // A preview also binds generated model bytes: a schema upgrade cannot reuse
   // the old empty-seed plan digest while publishing a different document.
   const descriptor = { options, sources: sources.map(({ key, path, sha256, retire }) => ({ key, path, sha256, retire })), candidate,

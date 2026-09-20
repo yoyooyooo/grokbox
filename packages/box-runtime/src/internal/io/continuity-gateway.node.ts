@@ -1,0 +1,98 @@
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { currentStateRpcRequest, MAX_CURRENT_STATE_WIRE_BYTES, CurrentStateFailure, type CurrentStateRpcRequest } from "@grokbox/runtime-kernel/continuity";
+import { validateRoutineCommand, validateProvisionCommand, type RoutineCommand } from "@grokbox/runtime-kernel/routines";
+import { createRoutineGateway, type RoutineRpc } from "./routine-gateway.node.ts";
+import { runAgentRoutineCommand } from "../roots/agent-routines.runtime.ts";
+import { runRoutineProvisionCommand } from "../roots/routine-provision.runtime.ts";
+import type { OwnershipReader } from "./ownership-admission.node.ts";
+
+export type ContinuityDiscovery = { baseUrl: string; pid: number; startedAt: number };
+export type ContinuityRpc = Exclude<RoutineRpc, "getAutomationWebhookCredential"> | "listAgents" | "getHostStatus"
+  | "getAgentMemories" | "getAgentTranscriptTail" | "grokboxCurrentStateControl"
+  | "getHostSettings" | "setHostSettings" | "assignAgentToSidebarSection" | "updateAgent" | "setGroupMembers" | "sendPrompt";
+export type ContinuityCall = (method: ContinuityRpc, input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
+  maxBytes: number, expectedGeneration?: string) => Promise<{ result: unknown; source: ContinuityDiscovery }>;
+export type ContinuityRpcOptions = { timeoutMs: number; maxResponseBytes?: number; write?: boolean; singleAttempt?: boolean; unknownOutcomeCode?: "operation_outcome_unknown" };
+export type ContinuityGateway = {
+  rpc: (method: ContinuityRpc, input: Record<string, unknown>, options: ContinuityRpcOptions) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
+  listAgents: (timeoutMs: number) => Promise<{ agents: unknown[]; discovery: ContinuityDiscovery }>;
+  getAgentOwnership: (ids: string[], timeoutMs: number, localOnly?: boolean) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
+  currentStateControl: (input: CurrentStateRpcRequest, timeoutMs: number) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
+  routineProvision: (input: unknown, timeoutMs: number) => Promise<{ result: unknown; discovery?: ContinuityDiscovery }>;
+  agentRoutines: (input: RoutineCommand, timeoutMs: number) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
+};
+export type NativeContinuityContext = {
+  boxRuntimeRoot: string; env: NodeJS.ProcessEnv; fetch?: typeof fetch; signal?: AbortSignal;
+  gateway: () => ContinuityGateway; ownershipRead: OwnershipReader;
+};
+const uuid = (id: string) => /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(id);
+const generation = (source: ContinuityDiscovery) => sha256Text(canonicalJson([source.baseUrl, source.pid, source.startedAt]));
+const allowed = new Set<ContinuityRpc>(["listAgents", "getHostStatus", "getAgentMemories", "getAgentTranscriptTail", "grokboxCurrentStateControl",
+  "getAgentAutomations", "createAgentAutomation", "updateAgentAutomation", "setAgentAutomationEnabled", "deleteAgentAutomation",
+  "getHostSettings", "setHostSettings", "assignAgentToSidebarSection", "updateAgent", "setGroupMembers", "sendPrompt"]);
+
+/** Internal capability, not a public RPC proxy. One native generation is pinned
+ * before later reads and writes. No credential minting, off-Box fallback or
+ * transport retry; the CONT/provision owners reserve every external effect. */
+export function createContinuityGateway(call: ContinuityCall, root: string, signal: AbortSignal): ContinuityGateway {
+  let pinned: string | undefined, latest: ContinuityDiscovery | undefined;
+  const invoke: ContinuityCall = async (method, input, owner, timeoutMs, maxBytes, expected) => {
+    if (!allowed.has(method) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000
+      || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > (method === "grokboxCurrentStateControl" ? MAX_CURRENT_STATE_WIRE_BYTES : 2 * 1024 * 1024)) throw new CurrentStateFailure("invalid_request");
+    if (expected !== undefined && pinned !== undefined && expected !== pinned) throw new CurrentStateFailure("source_changed");
+    const bounded = AbortSignal.any([signal, owner, AbortSignal.timeout(timeoutMs)]);
+    bounded.throwIfAborted();
+    const result = await call(method, input, bounded, timeoutMs, maxBytes, pinned ?? expected);
+    const observed = generation(result.source);
+    if (pinned !== undefined && pinned !== observed) throw new CurrentStateFailure("source_changed");
+    pinned = observed;
+    // Do not carry the discovery credential into the shared adapters.
+    latest = { baseUrl: result.source.baseUrl, pid: result.source.pid, startedAt: result.source.startedAt };
+    return { result: result.result, source: latest };
+  };
+  const rpc: ContinuityGateway["rpc"] = async (method, input, options) => {
+    const reply = await invoke(method, input, signal, options.timeoutMs, options.maxResponseBytes ?? 512 * 1024);
+    return { result: reply.result, discovery: reply.source };
+  };
+  const routine = (owner: AbortSignal) => createRoutineGateway(async (method, input, signal, deadline, bytes, expected) => {
+    if (method === "getAutomationWebhookCredential") throw new CurrentStateFailure("invalid_request");
+    return invoke(method, input, signal, deadline, bytes, expected);
+  })(owner);
+  const operationSignal = (timeoutMs: number) => {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000) throw new CurrentStateFailure("invalid_request");
+    return AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+  };
+  return {
+    rpc,
+    listAgents: async timeoutMs => {
+      const reply = await rpc("listAgents", {}, { timeoutMs, maxResponseBytes: 2 * 1024 * 1024 });
+      if (!Array.isArray(reply.result) || reply.result.length > 4096) throw new CurrentStateFailure("material_invalid");
+      return { agents: reply.result, discovery: reply.discovery };
+    },
+    getAgentOwnership: async (ids, timeoutMs, localOnly = false) => {
+      if (ids.length < 1 || ids.length > 32 || ids.some(id => !uuid(id)) || new Set(ids.map(id => id.toLowerCase())).size !== ids.length) throw new CurrentStateFailure("invalid_request");
+      const reply = await rpc("getHostStatus", { grokboxOwnershipAgentIds: ids, ...(localOnly ? { grokboxOwnershipLocalOnly: true } : {}) }, { timeoutMs });
+      const result = reply.result as Record<string, unknown> | null;
+      if (!result || typeof result !== "object" || !Object.hasOwn(result, "grokboxOwnership")) throw new CurrentStateFailure("native_unavailable");
+      return { result: result.grokboxOwnership, discovery: reply.discovery };
+    },
+    currentStateControl: async (raw, timeoutMs) => {
+      const input = currentStateRpcRequest(raw);
+      if (new TextEncoder().encode(JSON.stringify(input)).length > MAX_CURRENT_STATE_WIRE_BYTES) throw new CurrentStateFailure("material_invalid");
+      return rpc("grokboxCurrentStateControl", input as unknown as Record<string, unknown>, { timeoutMs, maxResponseBytes: MAX_CURRENT_STATE_WIRE_BYTES });
+    },
+    routineProvision: async (raw, timeoutMs) => {
+      const owner = operationSignal(timeoutMs);
+      const command = validateProvisionCommand(raw), native = routine(owner);
+      const result = await runRoutineProvisionCommand({ durableRoot: root, command, native, signal: owner });
+      return { result, ...(latest ? { discovery: latest } : {}) };
+    },
+    agentRoutines: async (raw, timeoutMs) => {
+      const owner = operationSignal(timeoutMs);
+      const command = validateRoutineCommand(raw), native = routine(owner);
+      const result = await runAgentRoutineCommand({ command, native, signal: owner });
+      if (!latest) throw new CurrentStateFailure("native_unavailable");
+      return { result, discovery: latest };
+    },
+  };
+}

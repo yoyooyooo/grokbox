@@ -9,6 +9,7 @@ import cliPackage from "../../../package.json" with { type: "json" };
 import type { DesktopIo } from "./daemon/desktop.ts";
 import { DEFAULT_AGENT_DATA_ROOT, DEFAULT_DISCOVERY_PATH } from "./registry.ts";
 import type { Writable } from "./output.ts";
+import { writeStreamOutput } from "./stream-output.ts";
 
 export type FetchFn = typeof fetch;
 
@@ -29,7 +30,7 @@ export type CliDeps = {
   stdout: Writable;
   stderr: Writable;
   stdinIsTTY: boolean;
-  readStdin: () => Promise<string>;
+  readStdin: (maxBytes?: number) => Promise<string>;
   skillsDir: string;
   packageRoot: string;
   cliVersion: string;
@@ -70,11 +71,21 @@ export function resolvePackageRoot(moduleDir: string): string {
   return dirname(moduleDir);
 }
 
-async function readAllStdin(): Promise<string> {
-  process.stdin.setEncoding("utf8");
-  let input = "";
-  for await (const chunk of process.stdin) input += chunk;
-  return input;
+async function readAllStdin(maxBytes = 16 * 1024 * 1024, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  const cancel = () => process.stdin.destroy(new Error("Command input was interrupted."));
+  signal?.addEventListener("abort", cancel, { once: true });
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  try {
+    for await (const chunk of process.stdin) {
+      const buffer = Buffer.from(chunk);
+      bytes += buffer.length;
+      if (bytes > maxBytes) { process.stdin.destroy(); throw new Error("Command input exceeds its byte limit."); }
+      chunks.push(buffer);
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+  } finally { signal?.removeEventListener("abort", cancel); }
 }
 
 async function runProcess(argv: readonly string[], options: CommandOptions = {}): Promise<CommandResult> {
@@ -161,6 +172,7 @@ export function createProductionDeps(signal?: AbortSignal): CliDeps {
     randomUUID,
     readFile: async (path) => await readFile(path, "utf8"),
     stdout: {
+      writeAsync: (chunk, signal) => writeStreamOutput(process.stdout, chunk, signal),
       write(chunk) {
         process.stdout.write(chunk);
       },
@@ -171,7 +183,7 @@ export function createProductionDeps(signal?: AbortSignal): CliDeps {
       },
     },
     stdinIsTTY: Boolean(process.stdin.isTTY),
-    readStdin: readAllStdin,
+    readStdin: maxBytes => readAllStdin(maxBytes, signal),
     skillsDir: join(resolvePackageRoot(moduleDir), "skills"),
     packageRoot: resolvePackageRoot(moduleDir),
     cliVersion: CLI_VERSION,

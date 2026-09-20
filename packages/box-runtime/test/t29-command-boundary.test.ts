@@ -1,35 +1,34 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigurationWrite } from "@grokbox/runtime-kernel/ports";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+const source = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 
-describe("T29 command boundary incubate (no browser, no fake CAS)", () => {
-  test("later/T29-only console assets are not scaffolded", () => {
-    expect(existsSync(join(repoRoot, "packages/box-runtime/src/internal/console"))).toBe(false);
-    expect(existsSync(join(repoRoot, "packages/box-runtime/src/internal/roots/console.runtime.ts"))).toBe(false);
-    expect(existsSync(join(repoRoot, "packages/cli/src/commands/runtime-roster.ts"))).toBe(false);
+describe("shared configuration writer import boundaries", () => {
+  // Structural ownership checks complement configuration-write/model-management
+  // behavior tests; source strings do not prove durability or concurrent safety.
+  test("model publication uses the shared protected publisher and process lease", () => {
+    const writer = source("packages/box-runtime/src/internal/io/configuration.node.ts");
+    expect(writer).toContain("acquireConfigurationLease");
+    expect(writer).toContain("publishConfigFile(modelsPath(root), persisted)");
+    expect(writer).toContain("expectedRevision");
+    expect(writer).not.toContain("writeJsonAtomic");
+    const operations = source("packages/box-runtime/src/internal/io/model-management.node.ts");
+    expect(operations).toContain("store.saveModels(next, persistedModelsRevision(current.models))");
+    expect(operations).not.toContain("publishConfigFile(modelsPath");
   });
 
-  test("ConfigurationWrite owns cooperative model commits without a browser-only revision API", () => {
-    expect(ConfigurationWrite.key).toBe("grokbox/ConfigurationWrite");
-    const io = readFileSync(join(repoRoot, "packages/box-runtime/src/internal/io/configuration.node.ts"), "utf8");
-    expect(io).toContain("writeJsonAtomic");
-    expect(io).toContain("saveModels");
-    expect(io).not.toContain("expectedConfigRevision");
-    expect(io).toContain("expectedRevision");
-    expect(io).toContain("models-write.lock");
-    expect(io).not.toMatch(/\bfcntl\b|\bflock\b/);
-    const commands = readFileSync(join(repoRoot, "packages/runtime-kernel/src/commands.ts"), "utf8");
-    expect(commands).toContain("runControllerOperation");
-    expect(commands).toContain("runConfigurationSave");
-    expect(commands).not.toContain("expectedConfigRevision");
-    const cli = readFileSync(join(repoRoot, "packages/cli/src/commands/runtime.ts"), "utf8");
-    expect(cli).toContain("saveRuntimeModels");
+  test("CLI model selection has no direct file writer or implicit Gateway path", () => {
+    const cli = source("packages/cli/src/commands/runtime.ts");
+    expect(cli).not.toContain("changeRuntimeModel");
     expect(cli).toContain("saveRuntimeDesired");
     expect(cli).not.toMatch(/runtime\.saveModels\(/);
     expect(cli).not.toMatch(/runtime\.saveDesired\(/);
+    const management = source("packages/cli/src/commands/management-api.ts");
+    expect(management).toContain("client.changeModels");
+    expect(management).not.toContain("GatewayClient");
+    expect(management).not.toContain("saveModels");
   });
 });

@@ -1,0 +1,20 @@
+[
+  {"name":"readonly-source-shape","definition":"Artifact","valid":true,"value":{"role":"source","fd":3,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":1}},
+  {"name":"largest-companion-shape","definition":"Artifact","valid":true,"value":{"role":"companion","fd":5,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","bytes":67108864}},
+  {"name":"stdin-is-not-source","definition":"Artifact","valid":false,"value":{"role":"source","fd":0,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":1}},
+  {"name":"descriptor-outside-capability","definition":"Artifact","valid":false,"value":{"role":"source","fd":6,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":1}},
+  {"name":"no-path-input","definition":"Artifact","valid":false,"value":{"role":"source","fd":3,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":1,"path":"/private-source"}},
+  {"name":"size-not-negative","definition":"Artifact","valid":false,"value":{"role":"source","fd":3,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":-1}},
+  {"name":"size-not-fractional","definition":"Artifact","valid":false,"value":{"role":"source","fd":3,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":1.5}},
+  {"name":"source-capacity","definition":"Artifact","valid":false,"value":{"role":"source","fd":3,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":67108865}},
+  {"name":"no-unknown-role","definition":"Artifact","valid":false,"value":{"role":"eval","fd":3,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":1}},
+  {"name":"no-empty-hash","definition":"Artifact","valid":false,"value":{"role":"source","fd":3,"sha256":"","bytes":1}},
+  {"name":"revision-one","definition":"Requirement","valid":true,"value":{"id":"session.main-binding","revision":1}},
+  {"name":"no-zero-revision","definition":"Requirement","valid":false,"value":{"id":"session.main-binding","revision":0}},
+  {"name":"bounded-revision","definition":"Requirement","valid":false,"value":{"id":"session.main-binding","revision":1001}},
+  {"name":"finding-supported","definition":"Finding","valid":true,"value":{"id":"retry.turn-guard","revision":1,"state":"passed","code":"entry-guard-terminates-managed-branch","start":10,"end":20}},
+  {"name":"finding-not-health","definition":"Finding","valid":false,"value":{"id":"retry.turn-guard","revision":1,"state":"healthy","code":"claim","start":10,"end":20}},
+  {"name":"no-raw-source","definition":"Finding","valid":false,"value":{"id":"retry.turn-guard","revision":1,"state":"unsupported","code":"unproven","start":0,"end":0,"snippet":"private text"}},
+  {"name":"no-missing-end","definition":"Finding","valid":false,"value":{"id":"retry.turn-guard","revision":1,"state":"unsupported","code":"unproven","start":0}},
+  {"name":"no-empty-job","definition":"Job","valid":false,"value":{"job_id":"job","attempt_id":"attempt","artifacts":[],"checks":[]}}
+]

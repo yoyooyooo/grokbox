@@ -2,7 +2,7 @@
 
 > Publication note: operational identities below are synthetic examples. Private evidence locations and machine execution records are not distributed; historical observations do not qualify a current deployment.
 
-**Current Home：完整返回未补丁 Host 的目标、操作边界与验收判据。** 当前已验/未验、阻断和下一步只看 [LIVE-MODELD-RESTART](../tickets/LIVE-integration-validation.md#live-modeld-restart)；旧 schema 退路另见 [REASONING-CUTOVER](../tickets/LIVE-integration-validation.md#live-reasoning-cutover)。 [T40](../tickets/T40-persistent-release-and-rollback.md)拥有生命周期/发布闭环，T28提供唯一控制程序；日常逐Bot官方选择归T24，原生会话往返归T39。本文不提供通用signal权限，不修改App/产品SQLite、Server归属或官方迁移hold。
+**Current Home：完整返回未补丁 Host 的目标、操作边界与验收判据。** 当前已验/未验、阻断和下一步只看 [LIVE-MODELD-RESTART](../tickets/LIVE-integration-validation.md#live-modeld-restart)；旧 schema 降级仅为 [REASONING-CUTOVER](../tickets/LIVE-integration-validation.md#live-reasoning-cutover) 的历史合同，不是本次重建门槛；必要配置导入看 [INITIAL-ADOPTION](../tickets/LIVE-integration-validation.md#live-initial-adoption)。 [T40](../tickets/T40-persistent-release-and-rollback.md)拥有生命周期/发布闭环，T28提供唯一控制程序；日常逐Bot官方选择归T24，原生会话往返归T39。本文不提供通用signal权限，不修改App/产品SQLite、Server归属或官方迁移hold。
 
 ## 1. 两种“回官方”，不是同一个操作
 

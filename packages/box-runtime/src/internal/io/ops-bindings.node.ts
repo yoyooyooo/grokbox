@@ -4,14 +4,23 @@ import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { OpsPairingError, OPS_PAIRING_POLICY, pairingFail, pairingAlias, pairingOperation, pairingReceipt, pairingScope, validatePairingCredential,
-  validateNotificationTarget, validateNoticeAuthorization, type NoticeAuthorization, type PairingRecord, type PairingPlan, type PairingCredential, type NotificationBinding, type NativeNotificationResult } from "@grokbox/runtime-kernel/observation";
+  validateNotificationTarget, validateNoticeAuthorization, validateReceiverManagementReceipt, type ReceiverManagementReceipt, type NoticeAuthorization, type PairingRecord, type PairingPlan, type PairingCredential, type NotificationBinding, type NativeNotificationResult } from "@grokbox/runtime-kernel/observation";
 import { routineAgentId, routineId, routineRevision } from "@grokbox/runtime-kernel/routines";
 import { acquireConfigurationLease } from "./config-lock.node.ts";
 import { assertSafeDirectory } from "./config-layout.node.ts";
 import { sendNativeNotification, type NotificationRequest } from "./native-notification.node.ts";
 
 type Slot = PairingRecord & { credential: PairingCredential | null };
-type Capsule = { schemaVersion: 1; owner: "ops-pairing"; rootId: string; slots: Slot[] };
+export type PairingManagementIdentity = { operationId: string; requestDigest: string; databaseId: string; agentId: string };
+export type PairingManagementReceipt = PairingManagementIdentity & { bindingId: string; alias: string; routineId: string;
+  beforeRevision: number; revision: number; state: "unknown" | "succeeded" };
+type Capsule = { schemaVersion: 1; owner: "ops-pairing"; rootId: string; slots: Slot[]; operations?: ReceiverManagementReceipt[]; pairingOperations?: PairingManagementReceipt[] };
+export type ReceiverMutationIdentity = { operationId: string; requestDigest: string; bindingId: string };
+const NEW_GRANT_RECEIPTS = 64;
+// Reserve two revocations per slot (disable then unbind). A full ordinary
+// audit budget must not trap an enabled receiver in continued authorization.
+const MAX_RECEIVER_OPERATIONS = NEW_GRANT_RECEIPTS + 2 * OPS_PAIRING_POLICY.maxSlots;
+const REVOCATION_RESERVED_BYTES = 2 * OPS_PAIRING_POLICY.maxSlots * 1024;
 const absent = (e: unknown) => !!e && typeof e === "object" && "code" in e && e.code === "ENOENT";
 const privateFile = (s: { mode: number; uid: number; nlink: number }) => (s.mode & 0o077) === 0 && s.nlink === 1 && (!process.getuid || s.uid === process.getuid());
 function projected(slot: Slot): PairingRecord { const { credential: _, ...record } = slot; return structuredClone(record); }
@@ -27,6 +36,16 @@ export function openOpsBindings(durableRoot: string) {
     if (!value || typeof value !== "object") return pairingFail("store_unavailable");
     const v = value as Capsule;
     if (v.schemaVersion !== 1 || v.owner !== "ops-pairing" || v.rootId !== rootId || !Array.isArray(v.slots) || v.slots.length > OPS_PAIRING_POLICY.maxSlots) return pairingFail("store_unavailable");
+    if (v.operations !== undefined && (!Array.isArray(v.operations) || v.operations.length > MAX_RECEIVER_OPERATIONS
+      || new Set(v.operations.map(row => validateReceiverManagementReceipt(row).operationId)).size !== v.operations.length)) return pairingFail("store_unavailable");
+    if (v.pairingOperations !== undefined) {
+      if (!Array.isArray(v.pairingOperations) || v.pairingOperations.length > 64 || new Set(v.pairingOperations.map(row => row.operationId)).size !== v.pairingOperations.length) return pairingFail("store_unavailable");
+      for (const row of v.pairingOperations) {
+        if (!row || Object.keys(row).some(k => !["operationId","requestDigest","databaseId","agentId","bindingId","alias","routineId","beforeRevision","revision","state"].includes(k))
+          || !["unknown", "succeeded"].includes(row.state) || !Number.isSafeInteger(row.beforeRevision) || row.beforeRevision < 0 || row.revision !== row.beforeRevision + 1) return pairingFail("store_unavailable");
+        pairingOperation(row.operationId); routineRevision(row.requestDigest); routineAgentId(row.databaseId); routineAgentId(row.agentId); routineAgentId(row.bindingId); pairingAlias(row.alias); routineId(row.routineId);
+      }
+    }
     const names = new Set<string>(), ids = new Set<string>();
     for (const slot of v.slots) {
       if (!slot || !slot.plan || !["enrolling", "prepared", "disabled", "unbound"].includes(slot.state)
@@ -67,9 +86,9 @@ export function openOpsBindings(durableRoot: string) {
     // installation granting another credential request.
     return readFile(path);
   }
-  async function publish(value: Capsule) {
+  async function publish(value: Capsule, reserveRevocations = true) {
     parse(value); const bytes = Buffer.from(canonicalJson(value) + "\n");
-    if (bytes.length > OPS_PAIRING_POLICY.maxFileBytes) return pairingFail("capacity");
+    if (bytes.length > OPS_PAIRING_POLICY.maxFileBytes - (reserveRevocations ? REVOCATION_RESERVED_BYTES : 0)) return pairingFail("capacity");
     const leftover = await lstat(temp).catch(e => { if (absent(e)) return null; throw e; });
     if (leftover) { await readFile(temp); const again = await lstat(temp); if (again.dev !== leftover.dev || again.ino !== leftover.ino) return pairingFail("store_unavailable"); await unlink(temp); }
     const handle = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
@@ -96,8 +115,33 @@ export function openOpsBindings(durableRoot: string) {
     try { const slot = (await read())?.slots.find(s => s.plan.target.alias === alias); return slot ? projected(slot) : null; }
     catch { return pairingFail("store_unavailable"); }
   };
+  const lookup = async (operationId: string) => {
+    pairingOperation(operationId);
+    return (await read())?.operations?.find(row => row.operationId === operationId) ?? null;
+  };
+  function priorOperation(value: Capsule, identity: ReceiverMutationIdentity, action: "enable" | "disable" | "unbind"): ReceiverManagementReceipt | null {
+    pairingOperation(identity.operationId); routineAgentId(identity.bindingId); routineRevision(identity.requestDigest);
+    const prior = value.operations?.find(row => row.operationId === identity.operationId);
+    if (prior && (prior.requestDigest !== identity.requestDigest || prior.bindingId !== identity.bindingId)) return pairingFail("operation_conflict");
+    if (!prior && (value.operations?.length ?? 0) >= (action === "enable" ? NEW_GRANT_RECEIPTS : MAX_RECEIVER_OPERATIONS)) return pairingFail("capacity");
+    return prior ?? null;
+  }
+  function recordOperation(value: Capsule, slot: Slot, identity: ReceiverMutationIdentity, action: ReceiverManagementReceipt["action"]) {
+    if (slot.bindingId !== identity.bindingId) return pairingFail("operation_conflict");
+    const receipt = validateReceiverManagementReceipt({ version: 1, operationId: identity.operationId, requestDigest: identity.requestDigest,
+      alias: slot.plan.target.alias, bindingId: slot.bindingId, action, beforeRevision: slot.revision - 1, appliedRevision: slot.revision,
+      appliedAtMs: slot.updatedAtMs, authorizationId: action === "enable" ? slot.automatic?.id : null, state: "succeeded" });
+    (value.operations ??= []).push(receipt);
+    return receipt;
+  }
   return {
-    record,
+    record, managementReceipt: lookup,
+    pairingOperation: async (operationId: string): Promise<PairingManagementReceipt | null> => {
+      pairingOperation(operationId);
+      const row = (await read())?.pairingOperations?.find(row => row.operationId === operationId);
+      return row ? structuredClone(row) : null;
+    },
+    records: async () => ((await read())?.slots ?? []).map(projected),
     /** Only the explicit delivery composition calls this after its outbox start
      * barrier. Credential material never crosses the private-owner boundary.
      * Local revoke wins before this read; a later revoke cannot unsend a POST. */
@@ -129,7 +173,14 @@ export function openOpsBindings(durableRoot: string) {
           fileBytes: value ? (await lstat(path)).size : null, privateCredentialsIncluded: false, deliveryAuthorized: false, diagnosticGcAllowed: false };
       } catch { return { state: "unavailable", bindings: [], privateCredentialsIncluded: false, deliveryAuthorized: false, fileBytes: null }; }
     },
-    reserve: (plan: PairingPlan, expectedBindingRevision: number, current: () => Promise<void>) => mutation(async value => {
+    reserve: (plan: PairingPlan, expectedBindingRevision: number, current: () => Promise<void>, management?: PairingManagementIdentity) => mutation(async value => {
+      if (management) {
+        pairingOperation(management.operationId); routineRevision(management.requestDigest);
+        if (management.operationId !== plan.operationId || management.databaseId !== plan.scope.databaseId || management.agentId !== plan.target.agentId) return pairingFail("scope_changed");
+        const old = value.pairingOperations?.find(row => row.operationId === management.operationId);
+        if (old && old.requestDigest !== management.requestDigest) return pairingFail("operation_conflict");
+        if (!old && (value.pairingOperations?.length ?? 0) >= 64) return pairingFail("capacity");
+      }
       await current(); const prior = value.slots.find(s => s.plan.target.alias === plan.target.alias);
       if (prior?.plan.operationId === plan.operationId) {
         if (prior.plan.fingerprint !== plan.fingerprint) return pairingFail("operation_conflict");
@@ -141,19 +192,29 @@ export function openOpsBindings(durableRoot: string) {
       if (value.slots.some(s => s.state !== "unbound" && s.plan.target.agentId === plan.target.agentId && s.plan.routineId === plan.routineId)) return pairingFail("pairing_busy");
       const slot: Slot = { plan, bindingId: randomUUID(), revision: (prior?.revision ?? 0) + 1,
         state: "enrolling", updatedAtMs: Date.now(), credentialPresent: false, credential: null };
-      value.slots = value.slots.filter(s => s.plan.target.alias !== plan.target.alias); value.slots.push(slot); await publish(value);
+      value.slots = value.slots.filter(s => s.plan.target.alias !== plan.target.alias); value.slots.push(slot);
+      if (management) (value.pairingOperations ??= []).push({ ...management, bindingId: slot.bindingId, alias: plan.target.alias,
+        routineId: plan.routineId, beforeRevision: expectedBindingRevision, revision: slot.revision, state: "unknown" });
+      await publish(value);
       return { dispatch: true, record: projected(slot) };
     }, true),
     finish: (record: PairingRecord, credential: PairingCredential, current: () => Promise<void>) => mutation(async value => {
       await current(); const slot = value.slots.find(s => s.bindingId === record.bindingId);
       if (!slot || slot.revision !== record.revision || slot.state !== "enrolling" || slot.plan.fingerprint !== record.plan.fingerprint) return pairingFail("operation_conflict");
       slot.credential = validatePairingCredential(credential, slot.plan); slot.credentialPresent = true;
-      slot.state = "prepared"; slot.updatedAtMs = Date.now(); await publish(value); return projected(slot);
+      slot.state = "prepared"; slot.updatedAtMs = Date.now();
+      const managed = value.pairingOperations?.find(row => row.operationId === record.plan.operationId && row.bindingId === record.bindingId);
+      if (managed) managed.state = "succeeded";
+      await publish(value); return projected(slot);
     }),
-    authorizeAutomatic: (expected: PairingRecord, authorization: NoticeAuthorization, current: () => Promise<void>) => mutation(async value => {
+    authorizeAutomatic: (expected: PairingRecord, authorization: NoticeAuthorization, current: () => Promise<void>, identity?: ReceiverMutationIdentity) => mutation(async value => {
       validateNoticeAuthorization(authorization);
       const slot = value.slots.find(s => s.bindingId === expected.bindingId);
-      if (!slot || slot.state !== "prepared" || !slot.credential) return pairingFail("not_found");
+      if (identity) {
+        const prior = priorOperation(value, identity, "enable");
+        if (prior) return slot ? projected(slot) : pairingFail("not_found");
+      }
+      if (!slot || !["prepared", "disabled"].includes(slot.state) || !slot.credential) return pairingFail("not_found");
       if (slot.automatic?.operationId === authorization.operationId) {
         if (slot.automatic.requestDigest !== authorization.requestDigest) return pairingFail("operation_conflict");
         return projected(slot);
@@ -161,17 +222,24 @@ export function openOpsBindings(durableRoot: string) {
       if (slot.automatic || canonicalJson(projected(slot)) !== canonicalJson(expected)
         || authorization.bindingRevision !== slot.revision + 1) return pairingFail("operation_conflict");
       await current();
-      slot.revision = authorization.bindingRevision; slot.automatic = authorization; slot.updatedAtMs = authorization.activatedAtMs;
+      slot.revision = authorization.bindingRevision; slot.state = "prepared"; slot.automatic = authorization; slot.updatedAtMs = authorization.activatedAtMs;
+      if (identity) recordOperation(value, slot, identity, "enable");
       await publish(value); return projected(slot);
     }),
-    revoke: (alias: string, revision: number, action: "disable" | "unbind", confirmed: boolean) => mutation(async value => {
+    revoke: (alias: string, revision: number, action: "disable" | "unbind", confirmed: boolean, identity?: ReceiverMutationIdentity) => mutation(async value => {
       pairingAlias(alias); if (confirmed !== true) return pairingFail("confirmation_required");
+      if (identity) {
+        const prior = priorOperation(value, identity, action);
+        if (prior) return prior;
+      }
       const slot = value.slots.find(s => s.plan.target.alias === alias);
       if (!slot) return pairingFail("not_found");
-      if (slot.revision !== revision) return pairingFail("operation_conflict");
+      if (slot.revision !== revision || revision >= Number.MAX_SAFE_INTEGER || (identity && slot.bindingId !== identity.bindingId)) return pairingFail("operation_conflict");
+      if (identity && (slot.state === "unbound" || action === "disable" && slot.state === "disabled")) return pairingFail("operation_conflict");
       slot.state = action === "disable" ? "disabled" : "unbound"; slot.revision++; slot.updatedAtMs = Date.now(); delete slot.automatic;
       if (action === "unbind") { slot.credential = null; slot.credentialPresent = false; }
-      await publish(value); return pairingReceipt(projected(slot));
+      const receipt = identity ? recordOperation(value, slot, identity, action) : pairingReceipt(projected(slot));
+      await publish(value, false); return receipt;
     }),
   };
 }

@@ -31,7 +31,7 @@ const EXECUTOR_NAMES = [
 ];
 
 const desired = { version: 1 as const, mode: "observe" as const };
-const models = { version: 2 as const, models: {}, assignments: { main: null, agents: {} } };
+const models = { version: 3 as const, models: {}, assignments: { main: null, agents: {} } };
 
 async function walk(dir: string): Promise<string[]> {
   const out: string[] = [];

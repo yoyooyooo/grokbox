@@ -1,5 +1,5 @@
 import { composeAgentTitle, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
-import { assignedModelTokens, assignedReasoningEfforts, type ModelsFile } from "@grokbox/runtime-kernel/selection";
+import { assignedModelTokens, assignedReasoningEfforts, assignmentForBot, type ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { loadModelsFileSync } from "./selection.node.ts";
 
 export const HOST_PROFILE_TITLE_SYMBOL = "grokbox.box-runtime.profile-title.v1";
@@ -11,9 +11,9 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function assignedModelId(file: ModelsFile, agentId: string): string | undefined {
   const agents = file.assignments.agents;
-  if (Object.hasOwn(agents, agentId)) return agents[agentId]?.modelId;
-  for (const [id, modelId] of Object.entries(agents)) {
-    if (id.toLowerCase() === agentId) return modelId.modelId;
+  if (Object.hasOwn(agents, agentId)) return assignmentForBot(file, agentId)?.modelId;
+  for (const id of Object.keys(agents)) {
+    if (id.toLowerCase() === agentId) return assignmentForBot(file, id)?.modelId;
   }
   return undefined;
 }

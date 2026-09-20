@@ -25,7 +25,7 @@ export async function providerRuntimeFixture(fetch: typeof globalThis.fetch, opt
   const modelId = options.record?.id ?? "openai/fixture";
   const catalog = { version: 2, models: { [modelId]: options.record ?? { provider: options.api === "responses" ? "openai-responses" : "openai-chat", model: "fixture", endpoint: "https://fixture.invalid/v1", apiKeyRef: "env:FIXTURE_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } }, assignments: { main: null, agents: { [agentId]: { modelId, ...(options.reasoning ? { reasoning: options.reasoning } : {}) } } } };
   await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
-  await writeFile(join(durableRoot, "models.json"), JSON.stringify(catalog));
+  await writeFile(join(durableRoot, "models.json"), JSON.stringify(catalog), { mode: 0o600 });
   await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha, pid: process.pid, start: 1, identity,
     at: new Date().toISOString(), profileId: "fixture", transformedSha: sha, operationId: "owned-operation", launchMode: "direct-launch", compile });
   const server = await startModeldProcess({ durableRoot, runRoot, fetch, env: { FIXTURE_KEY: "synthetic-only", ...options.env },
@@ -42,7 +42,7 @@ export async function providerRuntimeFixture(fetch: typeof globalThis.fetch, opt
     },
     async rows() { const data = await readFile(join(runRoot, "log/events.ndjson"), "utf8").catch(() => ""); return data.split("\n").flatMap(line => { try { return [JSON.parse(line) as Record<string, any>]; } catch { return []; } }); },
     async stop() { await server.stop(); await rm(parent, { recursive: true, force: true }); },
-    async changeModel() { await writeFile(join(durableRoot, "models.json"), JSON.stringify({ ...catalog, assignments: { main: null, agents: {} } })); },
+    async changeModel() { await writeFile(join(durableRoot, "models.json"), JSON.stringify({ ...catalog, assignments: { main: null, agents: {} } }), { mode: 0o600 }); },
   };
 }
 export const syntheticTool = { name: "lookup", inputSchema: { type: "object", properties: { q: { type: "string" } } } };

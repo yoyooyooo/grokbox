@@ -25,9 +25,10 @@ export type BotWorkflowRequest = { version: 1; operationId: string; scopeId: str
   sourceId: string | null; profile: BotProfile; modelRef: string | null; instructions: string; snapshotId: string | null;
   activate: boolean; start: boolean; maxRunMs: number; policyRevision: string;
   modelRevision?: string; effort?: string; sourceRevision?: string; handover?: HandoverPolicy;
-  routineIntent?: Array<{id:string;enabled:boolean;definitionRevision:string;mutable:boolean}> };
+  routineIntent?: Array<{id:string;enabled:boolean;definitionRevision:string;mutable:boolean}>;
+  management?: { installationId: string; principalId: string; requestId: string; intentDigest: string } };
 export function botWorkflowRequest(raw: unknown): BotWorkflowRequest {
-  const v = continuityObject(raw, ["version", "operationId", "scopeId", "kind", "sourceId", "profile", "modelRef", "instructions", "snapshotId", "activate", "start", "maxRunMs", "policyRevision", "modelRevision", "effort", "sourceRevision", "handover", "routineIntent"]);
+  const v = continuityObject(raw, ["version", "operationId", "scopeId", "kind", "sourceId", "profile", "modelRef", "instructions", "snapshotId", "activate", "start", "maxRunMs", "policyRevision", "modelRevision", "effort", "sourceRevision", "handover", "routineIntent", "management"]);
   if (v.version !== 1 || !isContinuityUuid(v.operationId) || !isContinuityHash(v.scopeId) || !["clone", "replace", "spawn"].includes(String(v.kind))
     || !(v.sourceId === null || isContinuityUuid(v.sourceId)) || v.kind !== "spawn" && v.sourceId === null || v.kind === "spawn" && v.sourceId !== null
     || !(v.snapshotId === null || isContinuityUuid(v.snapshotId)) || !isContinuityHash(v.policyRevision)
@@ -35,6 +36,13 @@ export function botWorkflowRequest(raw: unknown): BotWorkflowRequest {
     || v.modelRevision !== undefined && !isContinuityHash(v.modelRevision) || v.sourceRevision !== undefined && !isContinuityHash(v.sourceRevision)
     || v.effort !== undefined && (typeof v.effort !== "string" || !/^[a-z0-9_-]{1,32}$/.test(v.effort))
     || !Number.isSafeInteger(v.maxRunMs) || Number(v.maxRunMs) < 1000 || Number(v.maxRunMs) > 180000) return failContinuity("invalid_material");
+  let management: BotWorkflowRequest["management"];
+  if (v.management !== undefined) {
+    const m = continuityObject(v.management, ["installationId", "principalId", "requestId", "intentDigest"]);
+    if (!isContinuityUuid(m.installationId) || !isContinuityUuid(m.requestId) || !isContinuityHash(m.intentDigest)
+      || typeof m.principalId !== "string" || !m.principalId.length || m.principalId.length > 128 || /[\x00-\x1f]/.test(m.principalId)) return failContinuity("invalid_material");
+    management = { installationId: m.installationId, principalId: m.principalId, requestId: m.requestId, intentDigest: m.intentDigest };
+  }
   let routineIntent: BotWorkflowRequest["routineIntent"];
   if(v.routineIntent!==undefined){
     if(!Array.isArray(v.routineIntent)||v.routineIntent.length>100)return failContinuity("invalid_material");
@@ -48,7 +56,7 @@ export function botWorkflowRequest(raw: unknown): BotWorkflowRequest {
     ...(v.modelRevision === undefined ? {} : { modelRevision: v.modelRevision as string }),
     ...(v.sourceRevision === undefined ? {} : { sourceRevision: v.sourceRevision as string }),
     ...(v.effort === undefined ? {} : { effort: v.effort as string }),
-    ...(v.handover === undefined ? {} : { handover: handoverPolicy(v.handover) }), ...(routineIntent?{routineIntent}:{}) };
+    ...(v.handover === undefined ? {} : { handover: handoverPolicy(v.handover) }), ...(routineIntent?{routineIntent}:{}), ...(management ? { management } : {}) };
 }
 export type BotStartup = { operationId: string; expected: NativeCurrentHead; maxRunMs: number };
 export function botStartup(raw: unknown): BotStartup {

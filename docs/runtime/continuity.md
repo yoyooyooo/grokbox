@@ -21,7 +21,7 @@
 | clone / replace / instructed spawn | 已有固定 plan、持久分阶段程序、目标创建/选模/初始化/激活和程序 startup；clone 默认准备完成而不激活，replace 默认激活并进入交接，spawn 请求启动。全附件/资源独立性和临时任务结果交付/清理未完成 |
 | protection / handover / convergence | 已有配置消费者、保护与关系账本、有限推进和旧入站观察；完整外部任务与逐职责效果约束、多代关系、安全墓碑退役仍未交付。缺少可靠删除前屏障时 retire 保持阻断 |
 
-实际操作见 [当前状态控制](../maintainers/current-state-control.md)、[生命周期与交接](../maintainers/bot-lifecycle.md)和 [duplicate](../maintainers/native-agent-duplicate.md)。代码从 [CLI](../../packages/cli/src/commands/bot-lifecycle.ts)、[生命周期程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)、[工作流存储](../../packages/box-runtime/src/internal/io/continuity-workflows.node.ts)、原生 checkpoint/worker 和 kernel `internal/continuity/` 进入。新增实现的固定证明归 [生命周期集成报告](../reports/2026-09-19-continuity-lifecycle-integration.md)；来源票保留独立 review 和原生资格差额，不复制通过计数。
+实际操作见 [当前状态控制](../maintainers/current-state-control.md)、[生命周期与交接](../maintainers/bot-lifecycle.md)和 [duplicate](../maintainers/native-agent-duplicate.md)。代码从 [管理用例](../../packages/server/src/lifecycle.ts)、[生命周期程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)、[工作流存储](../../packages/box-runtime/src/internal/io/continuity-workflows.node.ts)、原生 checkpoint/worker 和 kernel `internal/continuity/` 进入。新增实现的固定证明归 [生命周期集成报告](../reports/2026-09-19-continuity-lifecycle-integration.md)；来源票保留独立 review 和原生资格差额，不复制通过计数。
 
 ## 当前状态与材料的权威
 

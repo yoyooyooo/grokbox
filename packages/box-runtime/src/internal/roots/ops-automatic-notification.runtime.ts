@@ -84,7 +84,7 @@ export async function automaticNoticeCycle(input: Input, ports: Ports = {}): Pro
   } catch { return { state: "unavailable", reason: "local_or_native_source_unavailable" }; }
 }
 
-/** Owned by the existing daemon, never by a caller's HTTP request. Delay begins
+/** Owned by the management Server, never by a caller's HTTP request. Delay begins
  * after the previous pass settles. No overlapping pass, infinite catch-up, or
  * detached network write on shutdown. Outbox reservations fence other owners. */
 export function startOpsNotificationWorker(input: Omit<Input, "signal">, testPorts: Ports & {
@@ -95,7 +95,7 @@ export function startOpsNotificationWorker(input: Omit<Input, "signal">, testPor
   const controller = new AbortController();
   const replayFence = createNoticeReplayFence(Date.now());
   const state: AutomaticNoticeWorkerStatus = { state: "starting", cycles: 0, lastCycleAtMs: null, lastCycle: null, nextDelayMs: idleMs,
-    owner: "daemon-lifetime", automaticDiagnosis: false, automaticIssue: false, pollingCallsModels: false,
+    owner: "management-server", automaticDiagnosis: false, automaticIssue: false, pollingCallsModels: false,
     serviceInstallation: "not_proven", botReport: "not_observed", userRead: "not_observed" };
   let failures = 0;
   const program = Effect.scoped(Effect.gen(function* () {

@@ -6,10 +6,12 @@ import type { ContinuityStoreInput } from "../io/continuity-store.node.ts";
 import { openBotLifecycle, type BotLifecyclePort } from "./bot-lifecycle.runtime.ts";
 
 type Observation = { state: "box" | "temporal" | "conflict" | "gap"; scopeId: string; atMs: number };
+type ProtectionEvent = { id: string; atMs: number; kind: "ownership_lost" | "source_gap" | "ownership_observed"; sequence?: number };
 type SubjectData = { lastState: Observation["state"] | null; lastObservedAtMs: number; lossId: string | null; lossAtMs: number | null;
   lastSnapshotId: string | null; capturedAtMs: number; replacementTimes: number[]; pendingOperationId: string | null;
-  lastAction: string | null; previousIds: string[]; eventPending?: { id: string; atMs: number; kind: "ownership_lost" | "source_gap" | "ownership_observed" };
-  pause?: { complete: boolean; remaining: number; failed: number }; pendingSnapshotId?: string | null; archiveSnapshotIds?: string[] };
+  lastAction: string | null; previousIds: string[]; eventPending?: ProtectionEvent; eventQueue?: ProtectionEvent[]; eventDropped?: number; nextEventSequence?: number;
+  pause?: { complete: boolean; remaining: number; failed: number }; pendingSnapshotId?: string | null; archiveSnapshotIds?: string[];
+  handoverOperationIds?: string[]; handoverHistoryTruncated?: boolean };
 const empty = (): SubjectData => ({lastState:null,lastObservedAtMs:0,lossId:null,lossAtMs:null,lastSnapshotId:null,capturedAtMs:0,replacementTimes:[],pendingOperationId:null,lastAction:null,previousIds:[]});
 export type BotProtectionPort = {
   policy: () => Promise<ContinuityProtection>;
@@ -46,10 +48,27 @@ export function openBotProtection(input:ContinuityStoreInput & {native:BotProtec
       const candidate=samples.get(currentId),sample:Observation=candidate&&candidate.scopeId===input.scopeId&&clock(candidate.atMs)&&now>=candidate.atMs&&now-candidate.atMs<=5000?candidate:{state:"gap",scopeId:input.scopeId,atMs:now};
       const prior=row?(row.data as SubjectData):empty(),data:SubjectData={...prior,lastState:sample.state,lastObservedAtMs:sample.atMs};
       const loss=sample.state==="temporal"||sample.state==="conflict";
+      const enqueue=(event:ProtectionEvent)=>{
+        if(data.eventPending?.id===event.id||data.eventQueue?.some(row=>row.id===event.id))return;
+        const sequence=data.nextEventSequence??0;
+        if(!Number.isSafeInteger(sequence)||sequence<0||sequence>=Number.MAX_SAFE_INTEGER)throw new ContinuityFailure("integrity_failure");
+        event={...event,sequence};data.nextEventSequence=sequence+1;
+        // Persist the sequence in the same subject CAS as the event. Overflow
+        // still consumes it, so a later event exposes a genuine retained gap.
+        if(!data.eventPending){data.eventPending=event;return;}
+        // Export blockage must not couple protection state to notification
+        // availability. Retain a bounded ordered backlog and disclose any loss.
+        const queue=[...(data.eventQueue??[])];
+        if(queue.length<15)queue.push(event);else data.eventDropped=Math.min(Number.MAX_SAFE_INTEGER,(data.eventDropped??0)+1);
+        data.eventQueue=queue;
+      };
       if(loss&&prior.lossId===null){data.lossId=continuityId(logicalId,`loss:${row?.generation??0}:${sample.atMs}`);data.lossAtMs=sample.atMs;
-        data.eventPending={id:data.lossId,atMs:sample.atMs,kind:"ownership_lost"};data.pause=undefined;}
-      else if(sample.state==="gap"&&prior.lastState!=="gap"&&!data.eventPending)data.eventPending={id:continuityId(logicalId,`gap:${sample.atMs}`),atMs:sample.atMs,kind:"source_gap"};
-      else if(sample.state==="box"&&prior.lastState!=="box"&&!data.eventPending)data.eventPending={id:continuityId(logicalId,`box:${sample.atMs}`),atMs:sample.atMs,kind:"ownership_observed"};
+        enqueue({id:data.lossId,atMs:sample.atMs,kind:"ownership_lost"});data.pause=undefined;}
+      else if(sample.state==="gap"&&prior.lastState!=="gap")enqueue({id:continuityId(logicalId,`gap:${sample.atMs}`),atMs:sample.atMs,kind:"source_gap"});
+      else if(sample.state==="box"&&prior.lossId&&!data.pendingOperationId){
+        enqueue({id:continuityId(prior.lossId,"ownership-recovered"),atMs:sample.atMs,kind:"ownership_observed"});
+        data.lossId=null;data.lossAtMs=null;data.pause=undefined;
+      } else if(sample.state==="box"&&prior.lastState!=="box"&&!prior.lossId)enqueue({id:continuityId(logicalId,`box:${sample.atMs}`),atMs:sample.atMs,kind:"ownership_observed"});
       // Scope belongs to this declared installation. A failed CAS cannot act on
       // a different controller's newly promoted successor.
       let revision:number;
@@ -57,7 +76,7 @@ export function openBotProtection(input:ContinuityStoreInput & {native:BotProtec
       if(write._tag==="Failure")continue;revision=write.success;
       if(data.eventPending){
         const delivered=yield* io(()=>native.notify(logicalId,currentId,data.eventPending!)).pipe(Effect.catch(()=>Effect.succeed(false)));
-        if(delivered){data.eventPending=undefined;actions++;}
+        if(delivered){const queue=[...(data.eventQueue??[])];data.eventPending=queue.shift();data.eventQueue=queue;actions++;}
       }
       const fresh=continuityProtection(yield* io(native.policy));
       if(!fresh.enabled||!fresh.bots[logicalId]?.enabled||protectionRevision(logicalId,fresh.bots[logicalId]!)!==protectionRevision(logicalId,p))continue;
@@ -77,16 +96,15 @@ export function openBotProtection(input:ContinuityStoreInput & {native:BotProtec
       const snapshotId=data.pendingSnapshotId??continuityId(logicalId,`snapshot:${row.generation}:${Math.floor(now/p.captureIntervalMs)}`);
       data.pendingSnapshotId=snapshotId;
       revision=yield* db.updateSubject(logicalId,revision,currentId,row.generation,data);
-      const result=yield* Effect.result(io(()=>native.capture(logicalId,currentId,snapshotId,p)));
-      const latest=yield* db.subject(logicalId);
-      if(!latest||latest.currentId!==currentId||latest.generation!==row.generation)return {state:"superseded"};
-      const next={...latest.data} as SubjectData;
-      if(result._tag==="Success"){next.lastSnapshotId=result.success.snapshotId;next.capturedAtMs=now;next.lastAction="snapshot_saved";next.pendingSnapshotId=null;
-        next.archiveSnapshotIds=p.tier==="archive"?[...new Set([...(next.archiveSnapshotIds??[]),result.success.snapshotId])].slice(-8):[];}
-      else {next.lastAction="snapshot_unavailable";}
-      yield* db.updateSubject(logicalId,latest.revision,currentId,row.generation,next).pipe(Effect.catch(()=>Effect.succeed(0)));
-      data.lastAction=next.lastAction;
-      return {state:data.lastAction,logicalId,currentId};
+      return yield* Effect.uninterruptible(Effect.gen(function*(){
+        // The native port is independently cancellable by its service owner.
+        // Once it settles, finish the small local association checkpoint before
+        // acknowledging fiber interruption; never swallow a stale subject CAS.
+        const result=yield* Effect.result(io(()=>native.capture(logicalId,currentId,snapshotId,p)));
+        const state=yield* db.completeSubjectCapture({logicalId,currentId,generation:row.generation,requestId:snapshotId,
+          snapshotId:result._tag==="Success"?result.success.snapshotId:null,capturedAtMs:now,archive:p.tier==="archive"});
+        return {state,logicalId,currentId};
+      }));
     }
     if(!data.lossId||!["temporal","conflict"].includes(data.lastState??"")||p.mode==="alert")return {state:"watching",logicalId,currentId};
     if(!data.pendingOperationId){
@@ -102,6 +120,12 @@ export function openBotProtection(input:ContinuityStoreInput & {native:BotProtec
     if(!latest||latest.currentId!==currentId||latest.generation!==row.generation)return {state:"superseded",operationId};
     const next={...latest.data} as SubjectData;
     if(result.phase==="active_with_handover"&&result.targetId){
+      // Promotion clears the pending replacement, not its unfinished duties.
+      // Retain exact workflow links for inspection across subsequent losses;
+      // this bounded presentation history never controls effects or retention.
+      const handovers=[...new Set([...(next.handoverOperationIds??[]),operationId])];
+      next.handoverOperationIds=handovers.slice(-16);
+      next.handoverHistoryTruncated=next.handoverHistoryTruncated===true||handovers.length>16;
       next.previousIds=[...new Set([...next.previousIds,currentId])].slice(-16);next.pendingOperationId=null;next.lossId=null;next.lossAtMs=null;next.lastState=null;next.lastSnapshotId=null;next.pendingSnapshotId=null;next.capturedAtMs=0;next.lastAction="successor_active";
       yield* db.updateSubject(logicalId,latest.revision,result.targetId,row.generation+1,next);
     }else{next.lastAction=String(result.phase);yield* db.updateSubject(logicalId,latest.revision,currentId,row.generation,next).pipe(Effect.catch(()=>Effect.succeed(0)));}
@@ -123,7 +147,8 @@ export function openBotProtection(input:ContinuityStoreInput & {native:BotProtec
     subjects:async()=>{const policy=continuityProtection(await native.policy());return {enabled:policy.enabled,subjects:await Promise.all(Object.keys(policy.bots).map(id=>run(db.subject(id))))};}};
 }
 
-/** Normal daemon-owned child fibers. No task survives shutdown; actual bounded
+/** Scoped child fibers. The caller supplies their process ownership and policy;
+ * no task survives shutdown. Actual bounded
  * callbacks settle before a fiber closes. Construction never changes config. */
 export function startPolicyBoundBotProtection(input:{durableRoot:string;read:()=>Promise<{enabled:boolean;scopeId:string|null}>;create:(scopeId:string)=>BotProtectionPort}){
   let current:ReturnType<typeof startBotProtectionWorker>|undefined,scopeId:string|undefined,closed=false,last="off";
@@ -143,16 +168,26 @@ export function startPolicyBoundBotProtection(input:{durableRoot:string;read:()=
   return {status:()=>({state:last,scopeId:scopeId??null,closed,worker:current?.status()??null}),
     close:async()=>{if(!closed){closed=true;await Effect.runPromise(Fiber.interrupt(fiber));}}};
 }
-export function startBotProtectionWorker(input:ContinuityStoreInput & {native:BotProtectionPort}) {
-  const controller=openBotProtection(input);let closed=false,last:Record<string,unknown>={state:"starting"};
-  const loop=(name:string,work:()=>Promise<unknown>,ms:number)=>Effect.forever(Effect.gen(function*(){
-    const result=yield* io(work).pipe(Effect.catch(()=>Effect.succeed({state:"unavailable"})));last={...last,[name]:result};yield* Effect.sleep(ms);
+export function startBotProtectionWorker(input:ContinuityStoreInput & {native:BotProtectionPort}, timing: {
+  observationMs?: number; advancementMs?: number; handoverMs?: number;
+} = {}) {
+  const periods = { observation: timing.observationMs ?? 30000, advancement: timing.advancementMs ?? 10000, handover: timing.handoverMs ?? 30000 };
+  if (Object.values(periods).some(ms => !Number.isSafeInteger(ms) || ms < 1 || ms > 300000)) throw new Error("invalid_protection_interval");
+  const controller = openBotProtection(input); let closed = false, closePromise: Promise<void> | undefined;
+  let last: Record<string,unknown> = {state:"starting"};
+  const loop = (name:keyof typeof periods,work:()=>Promise<unknown>) => Effect.forever(Effect.gen(function*(){
+    const result = yield* io(work).pipe(Effect.catch(()=>Effect.succeed({state:"unavailable"})));
+    last = {...last,state:"running",[name]:result,[`${name}AtMs`]:Date.now()};
+    yield* Effect.sleep(periods[name]);
   }));
-  const fiber=Effect.runFork(Effect.scoped(Effect.gen(function*(){
-    yield* loop("observation",()=>controller.observe(),10000).pipe(Effect.forkScoped);
-    yield* loop("advancement",()=>controller.advance(),10000).pipe(Effect.forkScoped);
-    yield* loop("handover",()=>controller.handovers(),30000).pipe(Effect.forkScoped);
+  const fiber = Effect.runFork(Effect.scoped(Effect.gen(function*(){
+    yield* loop("observation",()=>controller.observe()).pipe(Effect.forkScoped);
+    yield* loop("advancement",()=>controller.advance()).pipe(Effect.forkScoped);
+    yield* loop("handover",()=>controller.handovers()).pipe(Effect.forkScoped);
     yield* Effect.never;
   })));
-  return {status:()=>({...last,closed}),close:async()=>{if(!closed){closed=true;await Effect.runPromise(Fiber.interrupt(fiber));}}};
+  return {status:()=>({...last,closed}),close:()=>{
+    closed = true;
+    return closePromise ??= Effect.runPromise(Fiber.interrupt(fiber)).then(()=>{last={...last,state:"stopped"};});
+  }};
 }

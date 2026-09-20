@@ -20,8 +20,10 @@ test("material keeps history attribution and cannot elevate transcripts into man
  const summary=summaryFromSupplement(s);expect(summary).toContain("Past task");expect(summary).toContain(id);
  expect(()=>currentContextSeed({version:1,purpose:"reset",sourceId:id,sourceRevision:sha256Text("a"),instructions:"",summary:"old task"})).toThrow();
 });
-test("policies default off globally and pause routines when a Bot is explicitly protected",()=>{
- expect(continuityProtection()).toEqual({enabled:false,intervalMs:30000,bots:{}});
+test("default protection requests discovery and preservation, while explicit off and effect policies remain separate",()=>{
+ expect(continuityProtection()).toEqual({enabled:true,intervalMs:30000,bots:{}});
+ expect(continuityProtection({enabled:false}).enabled).toBe(false);
+ expect(continuityProtection({bots:{[id]:{enabled:false}}}).bots[id]!.enabled).toBe(false);
  const p=botProtection();expect(p).toMatchObject({mode:"alert",tier:"resume",pauseOnOwnershipLoss:true});expect(p.handover.automaticDelete).toBe(false);
  expect(botProtection({pauseOnOwnershipLoss:false}).pauseOnOwnershipLoss).toBe(false);
  expect(protectionRevision(id,p)).not.toBe(protectionRevision(id,{...p,pauseOnOwnershipLoss:false}));

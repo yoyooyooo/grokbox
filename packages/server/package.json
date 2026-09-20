@@ -1,0 +1,12 @@
+{
+  "name": "@grokbox/server",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/server.ts" },
+  "dependencies": {
+    "@grokbox/client": "workspace:*",
+    "@grokbox/box-runtime": "workspace:*",
+    "@grokbox/runtime-kernel": "workspace:*",
+    "effect": "catalog:effect-v4-beta"
+  }
+}

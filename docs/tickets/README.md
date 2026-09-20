@@ -8,6 +8,23 @@
 
 不要从 open 推断完全没有代码，也不要从旧 done 推断当前版本已获原生/生产资格。完成范围与剩余义务由具体来源票解释，索引不重写结论。依赖按本次受影响用户结果选择，不把历史阶段当成重建起点；产品/运行时合同从 [文档地图](../README.md)进入。
 
+## Agent-first 命令、架构重建与 Web UI 交付
+
+[本轮 Spec 与决策](../roadmap/agent-first-cli/README.md)以命令合同为前置，整体覆盖统一后台、已有能力重建、Web UI 与最终交付。合同票完成不等于代码交付；CLI-05 负责跨域收束，既有领域票继续拥有各自差额。施工期不要求持续可用；功能工程先行、视觉后置，整合候选集中验收后由用户确认，再进入吃狗粮。旧 LIVE 不是重建前置。
+
+| 来源票 | 范围 |
+| --- | --- |
+| [CLI-01](CLI-01-discovery-and-targeting.md) | 按需发现、真实身份、稳定引用与机器输出 |
+| [CLI-02](CLI-02-operation-contract.md) | 提交、幂等、未知结果、并发与恢复 |
+| [CLI-03](CLI-03-observation-and-wait.md) | 活动读面、来源覆盖、等待与快照续流 |
+| [CLI-04](CLI-04-command-cutover.md) | 完整命令目录、旧入口去向和切换合同 |
+| [CLI-05](CLI-05-implementation-follow-through.md) | 架构重建、消费者迁入、旧边界退出与端到端交付 |
+| [WEB-01](WEB-01-visual-baseline.md) | V0 参考与后续视觉定稿，不阻功能工程 |
+| [WEB-02](WEB-02-web-foundation.md) | Web 工程、状态/请求归属、SSR 与访问安全 |
+| [WEB-03](WEB-03-functional-prototype.md) | 信息架构、真实功能页面与浏览器验收 |
+| [DATA-01](DATA-01-memory-project-files.md) | Memory/Project/文件来源、检索索引和受支持修改 |
+| [T29](T29-runtime-webui.md) / [T15](T15-webui-ops-config-storage.md) | 共享合同/API、并发修改保护与 Web 交付总责 |
+
 ## 集成、验收与公共工作入口
 
 | 责任 | 入口 |
@@ -158,6 +175,7 @@
 
 | 来源票 | 责任 |
 | --- | --- |
+| [HOST-01 · 健康验证内核](HOST-01-patch-health-verifier.md) | Rust/Oxc 静态识别与健康链集成；新架构 W3 插入建议，复用 HCR/T44/OBS 与原 controller |
 | [HCR-01](HCR-01-profile-and-witness-diagnostics.md) | 配方/见证诊断与共同拒绝原因 |
 | [HCR-02](HCR-02-loaded-capabilities.md) | 实际 wrapper/reader 能力与回执 |
 | [HCR-03](HCR-03-operation-recovery.md) | 原操作元数据、失主锁与中断对账 |
@@ -169,7 +187,6 @@
 
 | 来源票 | 范围 |
 | --- | --- |
-| [T29](T29-runtime-webui.md) / [T15](T15-webui-ops-config-storage.md) | 共享命令边界与未来 Web UI |
 | [T30](T30-runtime-pi-backend.md) / [T31](T31-runtime-cursor-backend.md) / [T16](T16-model-backend-adapters-pi-cursor.md) | Pi RPC / Cursor backend 的独立资格 |
 | [T13](T13-status-honesty-after-adopt.md) | 原状态产品范围；执行差额由 T27/T33 拥有 |
 | [T14](T14-managed-context-compact-on-model-switch.md) / [T14b](T14b-host-reuse-compact-on-confirmed-overflow.md) | 原上下文/溢出问题；现行合同见 Context 与 T32/T35 |
