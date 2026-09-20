@@ -16,6 +16,8 @@ import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout, assertSafeDirectory } from "../io/config-layout.node.ts";
 import { reviewedProfilePath } from "../io/paths.ts";
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
+import { hostRecipeForSourceSha } from "../host/source-recipes.ts";
+import { applyPatchProfile, preflightProfileRecipe } from "../host/profile.ts";
 import { acquireAdvisoryGate, type AdvisoryGate } from "../io/advisory-gate.node.ts";
 import { openMonitorStore } from "../io/monitor-store.node.ts";
 export type HostHealthStatus = { owner:"management-server"; state:"starting"|"disabled"|"running"|"blocked"|"stopped"; reason:string;
@@ -29,10 +31,23 @@ const analyzeArtifacts=(a:HostArtifacts)=>Effect.gen(function*(){const verifier=
   artifacts:[{role:"source",bytes:a.source},...(a.candidate?[{role:"candidate" as const,bytes:a.candidate}]:[]),{role:"companion",bytes:a.worker}]});});
 /** Explicit qualification consumes the same analysis program, not a second
  * checker. No provenance/OBS/config publication or native execution occurs. */
-export async function inspectHostHealthSources(paths:HostArtifactPaths,binaryDirectory:string,signal?:AbortSignal){
-  const artifacts=await readHostArtifacts(paths,signal),runtime=ManagedRuntime.make(hostVerifierLayer({directory:binaryDirectory}));
+export async function inspectHostHealthSources(paths:HostArtifactPaths,binaryDirectory:string,signal?:AbortSignal,candidateRecipe?:"core"|"current-state"){
+  if (candidateRecipe !== undefined && (paths.profile !== null || !["core", "current-state"].includes(candidateRecipe))) throw new HostSourceFailure("invalid-profile");
+  let artifacts=await readHostArtifacts(paths,signal);
+  let proposal: { recipeId:string; capability:"core"|"current-state"; profileDigest:string|null; reviewed:false; published:false } | null = null;
+  if (candidateRecipe) {
+    const recipe=hostRecipeForSourceSha(artifacts.sourceSha), slices=candidateRecipe==="core"?recipe.core:[...recipe.core,...recipe.checkpoint,...recipe.currentState];
+    const text=new TextDecoder("utf-8",{fatal:true}).decode(artifacts.source),result=preflightProfileRecipe(text,slices,recipe.id);
+    // Explicit static authoring inspection only. The same TS transformer builds
+    // the actual candidate, but nothing is published or promoted to a profile.
+    const applied=result.ok?applyPatchProfile(text,result.profile):null;
+    if(result.ok&&!applied?.ok)throw new HostSourceFailure("invalid-profile");
+    proposal={recipeId:recipe.id,capability:candidateRecipe,profileDigest:result.ok?sha256Text(canonicalJson(result.profile)):null,reviewed:false,published:false};
+    artifacts={...artifacts,candidate:applied?.ok?Buffer.from(applied.source):null,applicability:result.ok?"exact":"mismatch",failureCode:result.ok?null:result.code,sliceId:result.ok?null:result.sliceId??null};
+  }
+  const runtime=ManagedRuntime.make(hostVerifierLayer({directory:binaryDirectory}));
   try {const analysis=await runtime.runPromise(analyzeArtifacts(artifacts),signal?{signal}:undefined);
-    if(!await artifacts.current())throw new HostSourceFailure("source-changed");return {artifacts,analysis};
+    if(!await artifacts.current())throw new HostSourceFailure("source-changed");return {artifacts,analysis,proposal};
   } finally {await runtime.dispose();}
 }
 /** Installation sensing and static computation share one Server owner, not the
@@ -53,6 +68,9 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   const cache=new Map<string,StaticAnalysis>();
   let runtimeRoot=ports.runtime?.runRoot??ephemeralRuntimeRoot(), runtimeKey:string|null=null;
   let witnessKey: string | null = null, previousWitness: { observationId: string; sequence: number } | undefined;
+  // Current in-memory observations can lead the serialized durable writer.
+  // One lane completing intake cannot certify another lane's queued change.
+  let observedRuntimeKey: string | null = null, observedWitnessKey: string | null = null;
   let writes:Promise<unknown>=Promise.resolve();
   const serial=<A>(work:()=>Promise<A>):Promise<A>=>{const next=writes.then(work);writes=next.catch(()=>undefined);return next;};
   let status:HostHealthStatus={owner:"management-server",state:"starting",reason:"not-observed",observedAtMs:null,lastAttemptAtMs:null,assessment:"unknown",latest:null,
@@ -111,7 +129,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
         cursor=String(sequence);
         if(sequence>journal.acknowledgedThrough){await acknowledgeHostRuntimeEvidence(input.root,input.installationId,sequence);journal.acknowledgedThrough=sequence;}
       }
-      status={...status,runtimeIntake:"committed"};
+      status={...status,runtimeIntake:enabled && runtimeKey===observedRuntimeKey && witnessKey===observedWitnessKey?"committed":"not-observed"};
     }catch{status={...status,runtimeIntake:"unavailable"};}
   }
   async function tickRuntime() {
@@ -119,6 +137,8 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     const selectedRoot=runtimeRoot, observation=await observeHostCompilation(input.root,selectedRoot,paths.source,ports.runtime);
     if(closed||!enabled||selectedRoot!==runtimeRoot)return;
     const key=canonicalJson([selectedRoot,observation.state,observation.process,observation.receipt]);
+    observedRuntimeKey=key;
+    if(observation.state!==status.runtime?.state || observation.receipt?.observationId!==status.runtime?.receipt?.observationId) observedWitnessKey=null;
     status={...status,runtime:observation,
       // Preserve detector failures as well as positive samples while the same
       // launch is selected. A fast marker tick cannot erase an invalid reply.
@@ -151,6 +171,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     const s = observation.snapshot;
     // Challenge/sequence/heartbeat are read freshness, not new business evidence.
     const key = canonicalJson([selectedRoot, observation.state, observation.reason, s ? [s.compilation, s.capabilities, s.events, s.eventsDropped, s.untrackedSlices] : null]);
+    observedWitnessKey = key;
     status = { ...status, witness: observation, ...(key !== witnessKey ? { runtimeIntake: "not-observed" as const } : {}) };
     await serial(async () => {
       if (closed || !enabled || !stillSelected()) return;
@@ -169,7 +190,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     const config=input.enabled===false?null:(await openConfigStore(rootConfigLayout(input.root)).read()).document;
     if(!config||!config.runtime?.desiredMode||config.runtime.desiredMode==="disabled") {
       if(enabled){generation++;currentKey=null;analyzedKey=null;}
-      enabled=false;pending=null;dirty=true;runtimeKey=null;witnessKey=null;status={...status,state:"disabled",reason:"intent-disabled",runtime:null,witness:null};return;
+      enabled=false;pending=null;dirty=true;runtimeKey=null;witnessKey=null;observedRuntimeKey=null;observedWitnessKey=null;status={...status,state:"disabled",reason:"intent-disabled",runtime:null,witness:null,runtimeIntake:"not-observed"};return;
     }
     enabled=true;
     runtimeRoot=ports.runtime?.runRoot??config.daemon?.observation?.runRoot??ephemeralRuntimeRoot();

@@ -6,6 +6,10 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 
 按 [HCR Spec](../roadmap/host-seam-ops-recognition.md#capability-recovery) 增加显式能力selector。`host/profile-capabilities.ts` owns有限能力包及依赖；`process/profile.node.ts` 在原writer内组装、校验和基线复验；CLI analyze/write使用相同selector。
 
+## 固定来源维护布局（2026-09-20）
+
+原writer与只读envelope预览现按实际源码SHA选择维护配方，明确指定slices的原行为不变；对固定idle-compaction来源保留native actionOnly分支并完成9+2处适配。`ownership-local`替换同样消费这份准确来源配方，仍要求可应用的同源baseline；`current-state`独立Host/worker pin未扩大。生成完整候选不等于作者review、原生角色或实际采用已通过，所有Golden/来源/并发发布门保留。实际候选与独立行为、原publisher及HCR回归见[来源适配报告](../reports/2026-09-20-host-idle-layout-adaptation.md)；不改写本票旧固定窗口的证据范围。
+
 ## Acceptance
 
 - 默认完整当前recipe行为保留；显式 `ownership-local` 从同源且可验证的durable profile升级schema/api及resume依赖。

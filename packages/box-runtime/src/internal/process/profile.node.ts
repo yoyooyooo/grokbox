@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
+import { hostRecipeForSourceSha } from "../host/source-recipes.ts";
 import { parseProfileCapability, upgradeProfileCapability, type CapabilityUpgradeReceipt, type ProfileCapability } from "../host/profile-capabilities.ts";
 import { acquireAdvisoryGate } from "../io/advisory-gate.node.ts";
 import {
@@ -208,7 +209,7 @@ function recheckCapabilityBaseline(baseline: CapabilityBaseline): void {
 async function loadCandidateEnvelopeWindows(
   root: string,
   candidateSha: string,
-  recipe: readonly SlicePatch[],
+  recipe: readonly SlicePatch[] | undefined,
   generationPresent: boolean,
   capability?: ProfileCapability,
 ): Promise<{ candidate: EnvelopeWindows | null; sourceAvailable: boolean; recipeFailure?: TransformFailure; capabilityUpgrade?: CapabilityUpgradeReceipt }> {
@@ -218,7 +219,7 @@ async function loadCandidateEnvelopeWindows(
   // Match the exact recipe the writer will apply; historical windows cannot
   // establish that newly selected patches apply to this generation.
   const selected = capability ? capabilityBaseline(root, source, capability) : undefined;
-  const inspected = preflightProfileRecipe(source, authoringSlices(selected?.slices ?? recipe), "write-envelope-candidate");
+  const inspected = preflightProfileRecipe(source, authoringSlices(selected?.slices ?? recipe ?? hostRecipeForSourceSha(candidateSha).core), "write-envelope-candidate");
   const extra = selected ? { capabilityUpgrade: selected.receipt } : {};
   if (!inspected.ok) return { candidate: null, sourceAvailable: true, recipeFailure: inspected, ...extra };
   if (selected) recheckCapabilityBaseline(selected);
@@ -226,7 +227,7 @@ async function loadCandidateEnvelopeWindows(
 }
 
 /** Read-only write-gate compare for analyze. Never authors reviewed.json. */
-export async function inspectRetainedWriteEnvelope(root: string, candidateSha: string, recipe: readonly SlicePatch[] = LIVE_SLICE_PATCHES, capabilityName?: string): Promise<ProfileWriteInspect> {
+export async function inspectRetainedWriteEnvelope(root: string, candidateSha: string, recipe?: readonly SlicePatch[], capabilityName?: string): Promise<ProfileWriteInspect> {
   const capability = capabilityName === undefined ? undefined : parseProfileCapability(capabilityName);
   if (typeof root !== "string" || !isAbsolute(root)) invalid("Profile write lineage requires an absolute runtime root.");
   if (!SHA.test(candidateSha)) invalid("--sha must be a 64-character lowercase hex source digest.");
@@ -525,6 +526,7 @@ export async function writeReviewedProfileFromCopy(
   const source = sourceBytes.toString("utf8");
   if (!Buffer.from(source, "utf8").equals(sourceBytes)) invalid("Host bundle must be valid UTF-8.");
   const diskSha = sha256Bytes(sourceBytes);
+  if (input.slices === undefined && !capability) slices = authoringSlices(hostRecipeForSourceSha(diskSha).core);
 
   if (lineage && !allowUnretained) {
     const retainedSha = lineage.retainedSha as string;

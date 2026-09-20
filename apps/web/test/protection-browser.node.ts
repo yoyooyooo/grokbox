@@ -92,7 +92,13 @@ export async function protectionBrowserJourney(t:TestContext,ports:Ports){
     assert.ok(details.includes("active_with_handover"));assert.ok(details.includes(P_BOT));assert.ok(details.includes(P_TARGET));
     assert.ok(details.includes("retirement eligibility are not proven"));assert.equal(f.state.created,1);
     const url=page.url();await page.reload();await page.locator('[data-testid="protection-handover"]').waitFor();
-    assert.equal(page.url(),url);assert.equal(await page.getByRole("link",{name:"Inspect successor handover",exact:true}).count(),1);
+    assert.equal(page.url(),url);
+    const successorLinks=page.getByRole("link",{name:"Inspect successor handover",exact:true});
+    const linkCount=await successorLinks.count();
+    if(linkCount!==1){
+      const current=(await f.client().protection()).data;
+      assert.equal(linkCount,1,JSON.stringify({store:current.store,subjects:current.subjects,body:(await page.locator("body").innerText()).slice(-12000)}));
+    }
     assert.ok(!(await page.locator("body").innerText()).includes("PRIVATE_RECOVERY_MATERIAL"));
     assert.equal(f.state.calls.includes("/api/sendPrompt"),false);
   }));

@@ -93,8 +93,8 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       profileRevision: profileSha256, sourceRevision: profile.sourceSha256, preloadRevision: preloadSha256 }));
   }
   (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_PROFILE_TITLE_SYMBOL)] = bindHostProfileTitle({ durableRoot });
-  (globalThis as Record<symbol, unknown>)[Symbol.for(HOST_RESUME_GATE_SYMBOL)] =
-    (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed);
+  install(HOST_RESUME_GATE_SYMBOL,
+    (agentId: unknown, allowed: unknown) => admittedMode === "route" && deferManagedHostResume(durableRoot, agentId, allowed));
   // Child Node processes may inherit preload configuration. Allocate an Alert
   // observer only when this process actually compiles the qualified target.
   let activityObserverInstalled = false;

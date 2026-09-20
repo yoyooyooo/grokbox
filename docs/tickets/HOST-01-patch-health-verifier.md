@@ -56,6 +56,14 @@ Node对子进程输入/输出/权限/哈希和job/attempt/build/schema/checker�
 
 下一批继续完整能力目录与当前来源适配；不重新开发已闭合编译/见证链，仍不得由有限handle检查将`qualified`升级为true。
 
+## 固定新版来源的配方适配与注册复核
+
+已针对固定`2380c2c7…`源码完成原9+2处失配适配，并经原TS完整有序apply得到61片候选。原profile writer/只读envelope按准确源码选择维护布局，未知源码不模糊替换，旧profile与Golden/配对pin不变。新actionOnly/idle/resume、受信手动Compact与private startup各走原语义分支；独立执行fixture验证异常、工具、alert抑制和上下文分支。实际source/candidate/worker经正式Rust严格诊断均合法，但3个native role规则仍unsupported、配对未资格，不能宣称恢复可用了。
+
+真实factory复核修正了Alert attachManager误登记与其他遗漏handle；另以阻塞反例修复两采样lane把未留存见证提前显示committed的问题。最终固定486项/0失败，witness Node20与Chrome66等内部范围、实际候选SHA及尚未归因的浏览器偶发失败见[本批报告](../reports/2026-09-20-host-idle-layout-adaptation.md)。本批仍不执行私人Host、发布profile或采用现役服务。
+
+下一批应扩展当前真实包的主链角色/完整checker与相关Host-worker资格，再接续受影响的handover/compact；原生应用与边界见证不是仅靠61片匹配或一个工厂表就闭合。
+
 ## 同一工作包的顺序与出口
 
 ### A. 先收实际原生依赖风险

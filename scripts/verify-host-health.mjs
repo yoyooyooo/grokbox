@@ -8,7 +8,9 @@ const bun=spawnSync("bun",["--version"],{encoding:"utf8"});
 if(bun.status!==0||bun.stdout.trim()!=="1.3.14")throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
 const suites={
  core:["packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
-  "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/monitor-service-lifetime.test.ts",
+  "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/source-recipes.test.ts","packages/box-runtime/test/capability-witness.test.ts",
+  "packages/box-runtime/test/reviewed-profile-write.test.ts","packages/box-runtime/test/reviewed-profile-write-lineage.test.ts","packages/box-runtime/test/host-envelope.test.ts",
+  "packages/box-runtime/test/monitor-service-lifetime.test.ts",
   "packages/box-runtime/test/monitor-store.test.ts","packages/box-runtime/test/monitor-source-lifecycle.test.ts",
   "packages/box-runtime/test/monitor-scheduling-review.test.ts","packages/box-runtime/test/monitor-durability-review.test.ts",
   "packages/box-runtime/test/monitor-correlation-review.test.ts","packages/box-runtime/test/monitor-commit-boundaries.test.ts",

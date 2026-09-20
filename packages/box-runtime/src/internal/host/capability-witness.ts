@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { HOST_WITNESS_CAPABILITIES, HOST_WITNESS_REQUIRED, type HostCompileReceipt, type HostWitnessCapability, type HostWitnessNote, type HostWitnessEvent, type HostWitnessSnapshot } from "@grokbox/runtime-kernel/host-health";
-import { REQUIRED_SLICE_IDS, CONTEXT_SLICE_IDS, NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, ROUTE_SESSION_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, type PatchProfile } from "./profile.ts";
+import { REQUIRED_SLICE_IDS, CONTEXT_SLICE_IDS, NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, ROUTE_SESSION_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, HOST_RESUME_GATE_SYMBOL, type PatchProfile } from "./profile.ts";
 import { HOST_OWNERSHIP_READ_SYMBOL } from "./ownership-read.ts";
 import { HOST_CONTEXT_CONTROL_SYMBOL } from "./context-control.node.ts";
 import { HOST_RUN_OBSERVATION_SYMBOL } from "./run-observation.ts";
@@ -15,13 +15,13 @@ const registry: Record<HostWitnessCapability, { slices: readonly string[]; handl
   retry: { slices: ["managed-retry-gate", "managed-turn-retry-gate", "managed-step-error-scope", "managed-output-retry-gate", "managed-summary-retry-gate"],
     handles: [[HOST_MANAGED_FAILURE_SYMBOL], [HOST_MANAGED_STEP_FAILURE_SYMBOL]], defaultMode: "route" },
   context: { slices: ["compact-register", "compact-background-start", "compact-background-response", ...CONTEXT_SLICE_IDS],
-    handles: [[HOST_COMPACT_SYMBOL], [HOST_MANAGED_STEP_SYMBOL], [HOST_CONTEXT_CONTROL_SYMBOL, "call"], [HOST_CONTEXT_CONTROL_SYMBOL, "manualAction"]], defaultMode: "route" },
+    handles: [[HOST_COMPACT_SYMBOL], [HOST_MANAGED_STEP_SYMBOL], [HOST_CONTEXT_CONTROL_SYMBOL, "call"], [HOST_CONTEXT_CONTROL_SYMBOL, "manualAction"], [HOST_CONTEXT_CONTROL_SYMBOL, "manualOptions"], [HOST_CONTEXT_CONTROL_SYMBOL, "wrapRun"]], defaultMode: "route" },
   ownership: { slices: ["ownership-read-schema", "ownership-read-api", "ownership-resume-gate"],
-    handles: [[HOST_OWNERSHIP_READ_SYMBOL], [HOST_OWNERSHIP_READ_SYMBOL, "capabilities"], [HOST_OWNERSHIP_READ_SYMBOL, "health"]], defaultMode: "both" },
+    handles: [[HOST_OWNERSHIP_READ_SYMBOL], [HOST_OWNERSHIP_READ_SYMBOL, "capabilities"], [HOST_OWNERSHIP_READ_SYMBOL, "health"], [HOST_RESUME_GATE_SYMBOL]], defaultMode: "both" },
   "run-observer": { slices: ["run-queue-observation", "tool-execution-observation", "tool-execution-failure-observation", "group-member-observation", "group-buffer-observation"],
-    handles: [[HOST_RUN_OBSERVATION_SYMBOL, "queue"], [HOST_RUN_OBSERVATION_SYMBOL, "tool"], [HOST_RUN_OBSERVATION_SYMBOL, "snapshot"]], defaultMode: "route" },
+    handles: [[HOST_RUN_OBSERVATION_SYMBOL, "queue"], [HOST_RUN_OBSERVATION_SYMBOL, "tool"], [HOST_RUN_OBSERVATION_SYMBOL, "snapshot"], [HOST_RUN_OBSERVATION_SYMBOL, "group"], [HOST_RUN_OBSERVATION_SYMBOL, "buffered"], [HOST_RUN_OBSERVATION_SYMBOL, "current"], [HOST_RUN_OBSERVATION_SYMBOL, "progress"]], defaultMode: "route" },
   "alert-observer": { slices: ["alert-manager-observation", "alert-main-decision", "alert-input-cleanup", "alert-automation-decision", "alert-automation-throttle"],
-    handles: [[HOST_ALERT_OBSERVATION_SYMBOL, "attach"]], defaultMode: "route" },
+    handles: [[HOST_ALERT_OBSERVATION_SYMBOL, "attachManager"], [HOST_ALERT_OBSERVATION_SYMBOL, "decision"], [HOST_ALERT_OBSERVATION_SYMBOL, "suppressed"], [HOST_ALERT_OBSERVATION_SYMBOL, "withRemovalReason"], [HOST_ALERT_OBSERVATION_SYMBOL, "removalReason"]], defaultMode: "route" },
   "server-activity": { slices: ["server-activity-live-observation", "server-activity-expiry-observation"],
     handles: [[HOST_SERVER_ACTIVITY_SYMBOL, "snapshot"]], defaultMode: "selected" },
   "receiver-model": { slices: ["receiver-native-model-preview"], handles: [[HOST_RECEIVER_MODEL_SYMBOL, "read"]], defaultMode: "selected" },

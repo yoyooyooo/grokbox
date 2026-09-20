@@ -26,7 +26,9 @@ test("production console browser qualification uses relocated artifacts and synt
         GROKBOX_WEB_EVIDENCE: join(root, ".scratch", "web-validation"),
         GROKBOX_TEST_CHROME: process.env.GROKBOX_TEST_CHROME ?? "/usr/bin/google-chrome",
         GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_ALLOW_NATIVE: "0" } });
-    expect(result.error, result.error?.message).toBeUndefined();
+    // Preserve the last completed scene on timeout/crash as well as on a test
+    // failure; the process error alone hides the first failing browser state.
+    expect(result.error, `${result.error?.message ?? ""}\n${String(result.stdout ?? "").slice(-64000)}\n${String(result.stderr ?? "").slice(-8000)}`).toBeUndefined();
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(result.stdout).toMatch(/# fail 0/); expect(result.stdout).toMatch(/# skipped 0/);
     console.log(JSON.stringify({ suite: "web-production-chrome", tests: Number(result.stdout.match(/# tests (\d+)/)?.[1]),

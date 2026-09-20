@@ -29,11 +29,42 @@ test("fresh native challenge inspects exact registered references with no owners
     assert.equal(s.events.length, 0); assert.equal(s.opportunityCoverage, "not-observed"); assert.equal(s.qualified, false);
     assert.equal(f.state.nativeCalls, 0); assert.equal((await f.control("stats")).nativeReads, 0);
     await until(() => f.client().hostHealth(), v => v.data.latest?.analysis !== "pending" && v.data.runtimeIntake === "committed");
-    const history = await readHostRuntimeJournal(f.root, "11111111-1111-4111-8111-111111111111");
+    // The current in-memory sample and another lane's committed intake are
+    // not proof that BOTH first observations have reached provenance. Fence
+    // this no-heartbeat-growth assertion on their actual retained identities.
+    const history = await until(() => readHostRuntimeJournal(f.root, "11111111-1111-4111-8111-111111111111"), journal =>
+      !!journal && journal.receipts.some(r => r.event.name === "host_runtime_health" && r.event.observation.state === "current"
+        && r.event.observation.receipt?.observationId === s.compilation.observationId)
+      && journal.receipts.some(r => r.event.name === "host_capability_health" && r.event.observation.state === "current"
+        && r.event.observation.snapshot?.compilation.observationId === s.compilation.observationId));
     await delay(180); assert.equal((await readHostRuntimeJournal(f.root, "11111111-1111-4111-8111-111111111111"))!.nextSequence, history!.nextSequence);
     assert.ok((await current(f))!.snapshot!.sequence > s.sequence);
     for (const secret of [f.root, "synthetic-witness-native", "createSession(", "PRIVATE"]) assert.ok(!JSON.stringify(o).includes(secret));
   } finally { await f.close(); }
+});
+
+test("a compilation intake cannot mark a newly sampled but not-yet-retained witness as committed", async () => {
+  const f = await hostWitnessFixture("https://witness-shared-intake.example.test");
+  let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+  let paused = false, ready = false, observedIntake: string | undefined;
+  const marker = join(f.ports.runtime!.runRoot!, "state/preload-marker.json");
+  try {
+    await current(f); const original = await readFile(marker, "utf8");
+    await unlink(marker); await until(() => f.client().hostHealth(), v => v.data.runtime?.state === "not-observed" && v.data.witness?.state === "not-observed" && v.data.runtimeIntake === "committed");
+    f.ports.runtime!.afterRetain = async () => {
+      if (!paused && (await f.client().hostHealth()).data.runtime?.state === "current") { paused = true; await held; }
+    };
+    f.ports.afterWitnessRetain = async () => {
+      if (ready) observedIntake = (await f.client().hostHealth()).data.runtimeIntake;
+    };
+    await writeFile(marker, original, { mode: 0o600 });
+    await until(async () => paused, value => value);
+    await until(() => f.client().hostHealth(), v => v.data.witness?.state === "current" && v.data.runtimeIntake === "not-observed");
+    ready = true; release();
+    await until(async () => observedIntake, value => value !== undefined);
+    assert.equal(observedIntake, "not-observed");
+    await until(() => f.client().hostHealth(), v => v.data.runtimeIntake === "committed");
+  } finally { release(); delete f.ports.runtime!.afterRetain; delete f.ports.afterWitnessRetain; await f.close(); }
 });
 
 test("replaced handler becomes one persistent attachment condition; missing/read failure cannot resolve it, restoring the actual reference can", async () => {
