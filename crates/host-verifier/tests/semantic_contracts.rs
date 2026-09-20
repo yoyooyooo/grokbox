@@ -25,5 +25,5 @@ fn run(text:&str)->grokbox_host_verifier::Analysis{analyze(text,true,&CHECKS.ite
  GOOD.replace("return compact({", "onStateUpdate = foreign; return compact({"),
  GOOD.replace("return compact({", "ctx = foreign; return compact({")]{assert_ne!(run(&text).findings[2].state,"passed");}}
 #[test]fn recovered_ast_is_not_valid_syntax(){for text in ["const x = ;", "let x = 1; let x = 2;", "function f(){'use strict'; const x = 1; delete x;}"]{assert!(!run(text).valid);}}
-#[test]fn unsupported_revision_is_explicit(){let r=analyze(GOOD,true,&[("session.main-binding".into(),2)]);assert_eq!(r.findings[0].code,"checker-not-implemented");}
+#[test]fn unsupported_revision_is_explicit(){let r=analyze(GOOD,true,&[("session.main-binding".into(),999)]);assert_eq!(r.findings[0].code,"checker-not-implemented");}
 #[test]fn source_parse_never_emits_candidate_rule_success(){let r=analyze("const a = ;",false,&[("session.main-binding".into(),1)]);assert!(!r.valid);assert!(r.findings.is_empty());}

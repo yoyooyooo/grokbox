@@ -64,6 +64,10 @@ Node对子进程输入/输出/权限/哈希和job/attempt/build/schema/checker�
 
 下一批应扩展当前真实包的主链角色/完整checker与相关Host-worker资格，再接续受影响的handover/compact；原生应用与边界见证不是仅靠61片匹配或一个工厂表就闭合。
 
+## 原生角色语义规则 revision 2（2026-09-21）
+
+三个原checker已接实际turn shell/trace callback、retry executor和class method消费关系；条件spread的有限写集合与CONT原fence分支被分别核对，正确旁支不能替损坏的已识别主链通过。原源码及61片candidate字节不变，正式Rust对当前大包的三项局部规则已全部passed。反例、边界与固定来源见[原生角色分析报告](../reports/2026-09-21-host-native-role-analysis.md)。这替代的是上一包三个unsupported的静态差额，不升级为全程序可达、完整lease/opportunity或当前Host/worker资格；其余覆盖继续保留。
+
 ## 同一工作包的顺序与出口
 
 ### A. 先收实际原生依赖风险

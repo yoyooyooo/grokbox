@@ -27,6 +27,21 @@ test("real packaged Rust verifies read-only source and candidate FDs and detache
  }finally{await runtime.dispose();}
 });
 
+test("packaged revision-two checker consumes native role fixtures rather than a SHA-only or CJS-export oracle",async()=>{
+ const runtime=ManagedRuntime.make(hostVerifierLayer({directory:dir}));
+ try {
+  const bytes=await readFile(join(process.env.GROKBOX_TEST_FIXTURES!,"host-verifier/sources/native-roles.cjs"));
+  const input:StaticJob={jobId:randomUUID(),attemptId:randomUUID(),checks,artifacts:[{role:"source",bytes},{role:"candidate",bytes}]};
+  const report=await execute(runtime,input);assert.ok(report.checks.every(c=>c.state==="passed"&&c.revision===2));
+  for(const [before,after,index] of [["clientNonce: options.clientNonce","clientNonce: foreign.clientNonce",0],["return false;","return true;",1],["await onStateUpdate(ctx,","onStateUpdate(ctx,",2]] as const){
+   const candidate=Buffer.from(bytes.toString().replace(before,after));
+   const broken=await execute(runtime,{...input,attemptId:randomUUID(),artifacts:[{role:"source",bytes},{role:"candidate",bytes:candidate}]});
+   assert.equal(broken.artifacts[1]!.valid,true);assert.equal(broken.artifacts[1]!.sha256,hash(candidate));assert.notEqual(broken.checks[index]!.state,"passed");
+  }
+  await rejected(execute(runtime,{...input,checks:checks.map(c=>({...c,revision:1}))}),"checker-mismatch");
+ }finally{await runtime.dispose();}
+});
+
 test("candidate predicates remain separate from an invalid companion's syntax verdict",async()=>{
  const runtime=ManagedRuntime.make(hostVerifierLayer({directory:dir}));try{
   const input=await job();input.artifacts.push({role:"companion",bytes:Buffer.from('const = ;')});const report=await execute(runtime,input);

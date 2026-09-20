@@ -3,9 +3,9 @@ export * from "./host-compilation.ts";
 export * from "./host-witness.ts";
 export const HOST_HEALTH_CONTRACT = "host-health-v1";
 export const HOST_CHECK_REQUIREMENTS = [
-  { id:"session.main-binding", revision:1, slices:["agent-id"], scope:"main-options-binding" },
-  { id:"retry.turn-guard", revision:1, slices:["managed-turn-retry-gate"], scope:"turn-entry-managed-refusal" },
-  { id:"context.checkpoint-await", revision:1, slices:["compact-register"], scope:"checkpoint-callback-settlement" },
+  { id:"session.main-binding", revision:2, slices:["agent-id"], scope:"main-options-binding" },
+  { id:"retry.turn-guard", revision:2, slices:["managed-turn-retry-gate"], scope:"turn-entry-managed-refusal" },
+  { id:"context.checkpoint-await", revision:2, slices:["compact-register"], scope:"checkpoint-callback-settlement" },
 ] as const;
 export type StaticCheck = { id:string; revision:number; state:"passed"|"violated"|"unsupported"; code:string; start:number; end:number };
 export type StaticAnalysis = { jobId:string; attemptId:string; buildId:string; schemaDigest:string; parser:string;

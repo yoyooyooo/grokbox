@@ -8,7 +8,9 @@ use oxc_span::{GetSpan, SourceType, Span};
 use oxc_syntax::node::NodeId;
 use oxc_syntax::{operator::{BinaryOperator, LogicalOperator, UnaryOperator}, symbol::SymbolId};
 
-pub const CHECKS: &[(&str, u64)] = &[("session.main-binding",1),("retry.turn-guard",1),("context.checkpoint-await",1)];
+mod native_roles;
+
+pub const CHECKS: &[(&str, u64)] = &[("session.main-binding",2),("retry.turn-guard",2),("context.checkpoint-await",2)];
 pub struct Finding { pub id: String, pub revision: u64, pub state: &'static str, pub code: &'static str, pub start: u32, pub end: u32 }
 pub struct Analysis { pub valid: bool, pub diagnostics: usize, pub nodes: usize, pub findings: Vec<Finding> }
 fn finding(id: &str, revision: u64, state: &'static str, code: &'static str, span: Span) -> Finding {
@@ -146,7 +148,37 @@ fn exposed_owner(s:&Semantic<'_>, node:NodeId) -> bool {
     }
     true
 }
+fn native_main_binding(s: &Semantic<'_>) -> (&'static str,&'static str,Span) {
+    let shell = match native_roles::turn_shell(s) { Ok(shell) => shell, Err(code) => return ("unsupported", code, Span::default()) };
+    let mut primary = Vec::new();
+    for node in s.nodes().iter() {
+        let AstKind::CallExpression(c) = node.kind() else { continue; };
+        let Some(host) = member(&c.callee, "createSession").and_then(|e| member(e, "inference")) else { continue; };
+        if binding(host, s) != Some(shell.host) { continue; }
+        if c.arguments.len() != 2 { return ("unsupported", "unclassified-shell-session", c.span); }
+        let Some(options) = c.arguments[1].as_expression() else { return ("unsupported", "unclassified-shell-session", c.span); };
+        if let Expression::ObjectExpression(o) = options.get_inner_expression() {
+            let Some(f) = native_roles::disjoint_fields(o) else { return ("unsupported", "summary-options-unproven", o.span); };
+            if f.iter().any(|(k,v)| *k == "isSummarizationSession" && matches!(v.get_inner_expression(), Expression::BooleanLiteral(b) if b.value))
+                && !f.iter().any(|(k,_)| ["agentId", "invocationId", "clientNonce"].contains(k)) { continue; }
+            return ("unsupported", "unclassified-shell-session", c.span);
+        }
+        primary.push((c, options, node.id()));
+    }
+    if primary.len() != 1 { return ("unsupported", "native-main-role-not-unique", Span::default()); }
+    let (c, options, node) = primary[0];
+    if !native_roles::main_path(s, node, &shell) { return ("unsupported", "main-trace-consumer-unproven", c.span); }
+    if !unmodified(options,s) || frame(options,s) != Some(shell.run_turn_node) { return ("violated", "native-options-binding-mismatch", c.span); }
+    let Some(Expression::ObjectExpression(o)) = initializer(options,s) else { return ("unsupported", "options-not-direct-object", c.span); };
+    let Some(f) = native_roles::disjoint_fields(o) else { return ("unsupported", "dynamic-or-overwritten-options", o.span); };
+    if !native_roles::main_identity(s, &f, &shell) { return ("violated", "native-turn-identity-mismatch", o.span); }
+    if s.scoping().get_resolved_references(binding(options,s).unwrap()).count() != 1 { return ("unsupported", "options-escape", o.span); }
+    ("passed", "native-main-local-wiring", c.span)
+}
 fn main_binding(s: &Semantic<'_>) -> (&'static str,&'static str,Span) {
+    // Select the native owner before judging its fields. A correct decoy must
+    // not rescue a damaged main path in a recognizable native turn shell.
+    if native_roles::has_shell(s) { return native_main_binding(s); }
     let mut found=Vec::new();
     for node in s.nodes().iter() {
         if let AstKind::CallExpression(c)=node.kind() {
@@ -181,7 +213,11 @@ fn turn_guard(s: &Semantic<'_>) -> (&'static str,&'static str,Span) {
     let functions:Vec<_>=s.nodes().iter().filter_map(|n|if let AstKind::Function(f)=n.kind(){if f.id.as_ref().is_some_and(|i|i.name=="shouldRetryTurnAttempt"){Some((f,n.id()))}else{None}}else{None}).collect();
     if functions.len()!=1{return ("unsupported","turn-policy-not-unique",Span::default());}
     let (f,node)=functions[0];let bad=("violated","guard-does-not-dominate-retry",f.span);
-    if !control_path(s,node,None) || !f.id.as_ref().and_then(|i|i.symbol_id.get()).is_some_and(|id|exposed_symbol(s,id,&mut Vec::new())) { return ("unsupported","retry-control-flow-unproven",f.span); }
+    let registered = f.id.as_ref().and_then(|i|i.symbol_id.get()).is_some_and(|id| {
+        if native_roles::has_function(s, "createStreamAttempt") { native_roles::retry_consumer(s,id) }
+        else { exposed_symbol(s,id,&mut Vec::new()) }
+    });
+    if !control_path(s,node,None) || !registered { return ("unsupported","retry-control-flow-unproven",f.span); }
     if f.r#async || f.generator || f.params.items.len()!=1 || f.params.rest.is_some(){return ("unsupported","turn-policy-shape",f.span);}
     let Some(body)=&f.body else{return bad;};
     if body.statements.len()<3{return bad;}
@@ -212,13 +248,13 @@ fn checkpoint(s: &Semantic<'_>) -> (&'static str,&'static str,Span) {
     let calls:Vec<_>=s.nodes().iter().filter_map(|n|if let AstKind::CallExpression(c)=n.kind(){if initializer(&c.callee,s).is_some_and(|v|hook(v,"grokbox.box-runtime.host-compact.v1",s)){Some((c,n.id()))}else{None}}else{None}).collect();
     if calls.len()!=1{return ("unsupported","compact-hook-not-unique",Span::default());}
     let (c,node)=calls[0];let bad=("violated","checkpoint-lifetime-mismatch",c.span);
-    if !unmodified(&c.callee,s) || !control_path(s,node,Some(&c.callee)) || !exposed_owner(s,node) { return ("unsupported","checkpoint-registration-unproven",c.span); }
+    if !unmodified(&c.callee,s) || !control_path(s,node,Some(&c.callee)) || !(exposed_owner(s,node) || native_roles::checkpoint_owner(s,node)) { return ("unsupported","checkpoint-registration-unproven",c.span); }
     if c.arguments.len()!=1{return bad;}
     let Some(Expression::ObjectExpression(o))=c.arguments[0].as_expression() else{return bad;};
     let Some(f)=fields(o) else{return ("unsupported","dynamic-compact-options",o.span);};
     let get=|key|f.iter().find(|(k,_)|*k==key).map(|(_,v)|*v);
     let Some(ctx)=get("ctx") else{return bad;};let Some(state)=get("stateHandler") else{return bad;};
-    if !unmodified(ctx,s) || !unmodified(state,s) || frame(ctx,s)!=frame(state,s) { return bad; }
+    if !unmodified(ctx,s) || !native_roles::method_unmodified(state,"computeNewStructure",s) || frame(ctx,s)!=frame(state,s) { return bad; }
     let Some(Expression::ArrowFunctionExpression(callback))=get("contextCheckpoint") else{return bad;};
     if !callback.r#async || callback.params.items.len()!=0 || callback.params.rest.is_some() || callback.body.statements.len()!=2{return bad;}
     let Statement::IfStatement(guard)=&callback.body.statements[0] else{return bad;};
