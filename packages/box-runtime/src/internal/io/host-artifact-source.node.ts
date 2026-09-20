@@ -4,7 +4,7 @@ import {isAbsolute} from "node:path";
 import {createHash} from "node:crypto";
 import {canonicalJson,sha256Bytes,sha256Text} from "@grokbox/runtime-kernel/hash";
 import {parseConfigJson} from "@grokbox/runtime-kernel/config";
-import {NATIVE_CHECKPOINT_PAIR} from "../host/native-checkpoint-pair.ts";
+import {nativeCheckpointPair} from "../host/native-checkpoint-pair.ts";
 import {applyPatchProfile,approvedSliceSet,MAX_APPROVED_SLICES,type PatchProfile} from "../host/profile.ts";
 export class HostSourceFailure extends Error {constructor(readonly code:"source-unavailable"|"source-changed"|"invalid-profile"){super(code);}}
 const same=(a:Stats,b:Stats)=>a.dev===b.dev&&a.ino===b.ino&&a.size===b.size&&a.mtimeMs===b.mtimeMs&&a.ctimeMs===b.ctimeMs;
@@ -60,7 +60,7 @@ export async function readHostArtifacts(paths:HostArtifactPaths,signal?:AbortSig
     }catch{return false;}};
     if(!await current())throw new HostSourceFailure("source-changed");
     return {source,worker,sourceSha,workerSha,profileDigest,profile,
-      companionQualification:profile?.slices.some(s=>s.id.startsWith("continuity-native-"))?(sourceSha===NATIVE_CHECKPOINT_PAIR.host&&workerSha===NATIVE_CHECKPOINT_PAIR.worker?"matched":"unreviewed"):"not-required",candidate:result?.ok?Buffer.from(result.source):null,
+      companionQualification:profile?.slices.some(s=>s.id.startsWith("continuity-native-"))?(nativeCheckpointPair(sourceSha,workerSha)?"matched":"unreviewed"):"not-required",candidate:result?.ok?Buffer.from(result.source):null,
       applicability:result===null?"profile-unavailable":result.ok?"exact":"mismatch",failureCode:result&&!result.ok?result.code:profileBytes&&!profile?"invalid-profile":null,sliceId:result&&!result.ok?result.sliceId??null:null,
       sourceSet:sha256Text(canonicalJson([sourceSha,workerSha,profileDigest])),current};
   }catch(error){if(error instanceof HostSourceFailure)throw error;throw new HostSourceFailure("source-unavailable");}

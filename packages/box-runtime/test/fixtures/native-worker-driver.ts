@@ -45,12 +45,24 @@ try {
   await source.call({ kind: "set-blob", blobId: slot, blobData: rootState.toBinary() });
   const sourceHead = { agentId: ids.source, scopeId, hostSourceSha: CONT_NATIVE_PAIR.host, nativeSchema: CONT_NATIVE_PAIR.schema,
     hostGeneration: "owned-driver", contextRevision: "d".repeat(64), activationEpoch: "owned-epoch", rootHash: sha256Bytes(rootState.toBinary()), state: "prepared", effects: "clear" };
+  for (const change of [{ hostSourceSha: "0".repeat(64) }, { nativeSchema: "unreviewed-schema" }, { agentId: ids.target }]) {
+    let refused = false;
+    try { await source.current("capture", { expected: { ...sourceHead, ...change }, rootId: slot, limits: policy, capturedAtMs: 1 }); } catch { refused = true; }
+    expect(refused, "foreign-capture-qualification-refused");
+    expect(sha256Bytes((await source.call({ kind: "get-blob", blobId: slot })).blobData) === sourceHead.rootHash, "foreign-capture-preserves-original-root");
+  }
   const material = await source.current("capture", { expected: sourceHead, rootId: slot, limits: policy, capturedAtMs: 1 });
   expect(material.manifest.parts.length === 2, "worker-capture-closure");
   await source.close();
   const target = await connection("target"), expected = { ...sourceHead, agentId: ids.target, rootHash: null, state: "empty" };
   const attempt = { operationId: randomUUID(), effectId: randomUUID(), policyRevision: "e".repeat(64), expected,
     snapshot: { owner: "continuity.recovery", ref: randomUUID(), revision: recoveryRevision(material.manifest) } };
+  for (const change of [{ hostSourceSha: "0".repeat(64) }, { nativeSchema: "unreviewed-schema" }, { agentId: ids.source }]) {
+    let refused = false;
+    try { await target.current("apply", { attempt: { ...attempt, expected: { ...expected, ...change } }, rootId: slot, material }); } catch { refused = true; }
+    expect(refused, "foreign-apply-qualification-refused");
+    expect((await target.call({ kind: "get-blob", blobId: slot })).blobData === undefined, "foreign-apply-does-not-write");
+  }
   const candidate = await target.current("prepare", { attempt, rootId: slot, material }); expect(candidate.state === "candidate", "prepare-read-only");
   const before = await target.call({ kind: "get-blob", blobId: slot }); expect(before.blobData === undefined, "prepare-did-not-write");
   const result = await target.current("apply", { attempt, rootId: slot, material });

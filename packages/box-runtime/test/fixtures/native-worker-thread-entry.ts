@@ -2,7 +2,8 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { workerData } from "node:worker_threads";
-import { installNativeCheckpointWorkerHook, NATIVE_CHECKPOINT_PAIR } from "../../src/internal/host/native-checkpoint-worker-hook.ts";
+import { installNativeCheckpointWorkerHook } from "../../src/internal/host/native-checkpoint-worker-hook.ts";
+import { nativeContinuityPair } from "../native-continuity-pair.ts";
 
 // Exercise the production compile hook and the ORIGINAL worker entrypoint, but
 // only with caller-owned databases. No installed Bot, main Host or private data.
@@ -11,6 +12,7 @@ if (process.env.GROKBOX_TEST_NATIVE_CONTINUITY !== "1" || typeof workerData?.fix
   || ![join(workerData.fixtureRoot, "source.db"), join(workerData.fixtureRoot, "target.db")].includes(workerData.blobDbPath)
   || workerData.legacyBlobDbPath !== undefined) throw Error("unowned_native_worker_test");
 const originalPath = "/home/box/sand-host/agent-isolation/agent-store-worker.cjs";
-const hook = installNativeCheckpointWorkerHook({ targetPath: originalPath, hostSourceSha: NATIVE_CHECKPOINT_PAIR.host, enabled: true });
+const pair = nativeContinuityPair(process.env);
+const hook = installNativeCheckpointWorkerHook({ targetPath: originalPath, hostSourceSha: pair.host, enabled: true });
 if (!hook.installed) throw Error("native_worker_hook_not_installed");
 try { createRequire(originalPath)(originalPath); } finally { hook.restore(); }

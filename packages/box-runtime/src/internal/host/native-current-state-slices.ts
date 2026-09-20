@@ -1,10 +1,14 @@
 import type { SlicePatch } from "./profile.ts";
 import { NATIVE_CURRENT_STATE_SYMBOL } from "./native-current-state-owner.ts";
-import { NATIVE_CHECKPOINT_PAIR } from "./native-checkpoint-worker-hook.ts";
+import { NATIVE_CHECKPOINT_PAIR, type NativeCheckpointPair } from "./native-checkpoint-pair.ts";
 import { NATIVE_BOT_LIFECYCLE_SLICES } from "./native-bot-lifecycle-slices.ts";
 const control = `globalThis[Symbol.for("${NATIVE_CURRENT_STATE_SYMBOL}")]`;
 
-export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
+/** Source metadata is emitted from the selected tuple, never inherited from a
+ * former Host merely because both workers share the same binary ABI. */
+export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly SlicePatch[] {
+  if (!/^[a-f0-9]{64}$/.test(pair.host) || !/^[a-z0-9-]{1,80}$/.test(pair.schema)) throw Error("native_checkpoint_pair_invalid");
+  return [
   ...NATIVE_BOT_LIFECYCLE_SLICES,
   {
     id: "continuity-native-history-position",
@@ -91,7 +95,7 @@ export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
     ${control}?.register(session.id, { store: session.agentStore, metadata: session.db, ctx: this.tm.ctx,
       material: { memory: session.memory, history: session.db },
       rootId: SAND_CONVERSATION_ROOT_SLOT_ID,
-      source: { hostSourceSha: "${NATIVE_CHECKPOINT_PAIR.host}", nativeSchema: "${NATIVE_CHECKPOINT_PAIR.schema}" },
+      source: { hostSourceSha: "${pair.host}", nativeSchema: "${pair.schema}" },
       valid: () => session.db.isClosed !== true });
 `,
   },
@@ -122,7 +126,7 @@ export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
     __grokbox_current?.register(agentId, { store: agentStore, metadata: db, ctx: this.host.ctx,
       material: { memory: this.host.memory().createAgentStore((0, import_node_path137.dirname)(dbPath)), history: db },
       rootId: SAND_CONVERSATION_ROOT_SLOT_ID,
-      source: { hostSourceSha: "${NATIVE_CHECKPOINT_PAIR.host}", nativeSchema: "${NATIVE_CHECKPOINT_PAIR.schema}" },
+      source: { hostSourceSha: "${pair.host}", nativeSchema: "${pair.schema}" },
       valid: () => db.isClosed !== true });
 `,
   },
@@ -148,3 +152,5 @@ export const NATIVE_CURRENT_STATE_SLICES: readonly SlicePatch[] = [
 `,
   },
 ];
+}
+export const NATIVE_CURRENT_STATE_SLICES = nativeCurrentStateSlices(NATIVE_CHECKPOINT_PAIR);

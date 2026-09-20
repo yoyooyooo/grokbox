@@ -35,7 +35,7 @@ test("only the inspected source selects the new authoring layout; existing profi
   expect(IDLE_COMPACTION_RECIPE.core.filter((s, i) => JSON.stringify(s) !== JSON.stringify(LIVE_SLICE_PATCHES[i])).map(s => String(s.id)).sort()).toEqual([
     "managed-retry-gate", "managed-output-retry-gate", "managed-summary-retry-gate", "tool-execution-failure-observation", "alert-main-decision", "alert-automation-decision", "alert-automation-throttle", "context-manual-native-action", "context-manual-summary-owner",
   ].sort());
-  expect(IDLE_COMPACTION_RECIPE.currentState.filter((s, i) => JSON.stringify(s) !== JSON.stringify(NATIVE_CURRENT_STATE_SLICES[i])).map(s => String(s.id)).sort()).toEqual(["continuity-native-startup-action", "continuity-native-startup-input"]);
+  expect(IDLE_COMPACTION_RECIPE.currentState.filter((s, i) => JSON.stringify(s) !== JSON.stringify(NATIVE_CURRENT_STATE_SLICES[i])).map(s => String(s.id)).sort()).toEqual(["continuity-native-created-owner", "continuity-native-session-owner", "continuity-native-startup-action", "continuity-native-startup-input"]);
 });
 
 const actionIds = ["context-manual-trusted-options", "context-manual-native-action", "continuity-native-startup-input", "continuity-native-startup-action"];

@@ -18,6 +18,10 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 - envelope exact review与原子protected publisher复用；写入必须携带分析回执的`--expected-reviewed-sha`，分析到写入及写入到发布之间基线改变均拒绝。
 - analyze和write使用同一配方，输出基线/更新能力的有限receipt；无第二注入路径，无隐式live切换。
 
+## 当前原生配对升级（2026-09-21）
+
+当前Host/worker的有限ABI实验已通过，原pair目录登记准确新元组且保留旧元组。显式current-state升级现在从同一个source recipe选择core/checkpoint/current-state，避免旧startup片混入；两处native owner注册的source metadata也按选择的tuple生成。原生升级测试实际经过同源baseline→有限依赖→完整apply/envelope，不删Golden/review/CAS要求。wrong worker/未知Host不允许编译或由静态pass自动登记。[固定范围](../reports/2026-09-21-native-checkpoint-pair.md)。这是作者工具与原生ABI适配，不是当前实际profile已发布/采用。
+
 ## Forbidden / non-goals
 
 不提供任意skip/外部JS配方，不声称任意历史Host支持全部当前能力；局部升级不是权限豁免或Provider成功证明。

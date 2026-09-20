@@ -4,7 +4,7 @@ import { LIVE_SLICE_PATCHES } from "../packages/box-runtime/src/internal/host/li
 import { NATIVE_CHECKPOINT_HOST_SLICES } from "../packages/box-runtime/src/internal/host/native-checkpoint-slices.ts";
 import { NATIVE_CURRENT_STATE_SLICES } from "../packages/box-runtime/src/internal/host/native-current-state-slices.ts";
 import { hostRecipeForSourceSha } from "../packages/box-runtime/src/internal/host/source-recipes.ts";
-import { NATIVE_CHECKPOINT_PAIR } from "../packages/box-runtime/src/internal/host/native-checkpoint-pair.ts";
+import { nativeCheckpointPair } from "../packages/box-runtime/src/internal/host/native-checkpoint-pair.ts";
 import { transformUnchecked, preflightProfileRecipe, type SlicePatch } from "../packages/box-runtime/src/internal/host/profile.ts";
 /** Explicit development qualification, NOT a runtime updater or Host loader.
  * Reads named files, applies the existing exact TS program only in memory and
@@ -34,7 +34,7 @@ try {
   selectedApplicability:a.applicability,authoringRecipe:maintained.id,
   originalRecipe:legacy.ok?{state:'applicable-not-reviewed'}:{state:'mismatch',code:legacy.code,sliceId:legacy.sliceId??null},
   completeCurrentRecipe:full.ok?{state:'applicable-not-reviewed'}:{state:'mismatch',code:full.code,sliceId:full.sliceId??null},diagnostic,
-  checkpointPair:a.sourceSha===NATIVE_CHECKPOINT_PAIR.host&&a.workerSha===NATIVE_CHECKPOINT_PAIR.worker?'same-pinned-pair':'unreviewed-pair',
+  checkpointPair:nativeCheckpointPair(a.sourceSha,a.workerSha)?'same-pinned-pair':'unreviewed-pair',
   legacyMemoryRpcTextPresent:text.includes('getAgentMemories'),rpcEvidence:'text-presence-only',
   analysis,wallMs:Math.round(performance.now()-began),nativeExecuted:false,profilePublished:false,loadedProven:false,qualified:false},null,2));
 } catch(error) {console.error(JSON.stringify({ok:false,code:typeof (error as any)?.code==='string'?(error as any).code:'qualification-unavailable',nativeExecuted:false,qualified:false}));process.exitCode=1;}

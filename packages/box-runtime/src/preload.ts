@@ -5,7 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { isMainThread } from "node:worker_threads";
 import { writeHostCompileMarker } from "./internal/host/compile-marker.node.ts";
 import { createHostCapabilityWitness } from "./internal/host/capability-witness.ts";
-import { installNativeCheckpointWorkerHook, NATIVE_CHECKPOINT_PAIR } from "./internal/host/native-checkpoint-worker-hook.ts";
+import { installNativeCheckpointWorkerHook } from "./internal/host/native-checkpoint-worker-hook.ts";
+import { nativeCheckpointPair } from "./internal/host/native-checkpoint-pair.ts";
 import { createNativeCurrentStateOwner, NATIVE_CURRENT_STATE_SYMBOL } from "./internal/host/native-current-state-owner.ts";
 import { createNativeCurrentStateRpc } from "./internal/host/native-current-state-rpc.ts";
 import { NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, CONTEXT_SLICE_IDS } from "./internal/host/profile.ts";
@@ -146,10 +147,11 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
     });
     install(HOST_MANAGED_STEP_FAILURE_SYMBOL, recordHostManagedStepFailure);
   }
-  if (binding && profile.sourceSha256 === NATIVE_CHECKPOINT_PAIR.host
+  const checkpointPair = nativeCheckpointPair(profile.sourceSha256);
+  if (binding && checkpointPair
     && [...NATIVE_CHECKPOINT_SLICE_IDS, ...NATIVE_CURRENT_STATE_SLICE_IDS, ...CONTEXT_SLICE_IDS].every(id => profile.slices.some(slice => slice.id === id))) {
     const currentState = createNativeCurrentStateOwner({
-      qualification: { hostSourceSha: profile.sourceSha256, nativeSchema: NATIVE_CHECKPOINT_PAIR.schema }, generation: binding.generationId });
+      qualification: { hostSourceSha: checkpointPair.host, nativeSchema: checkpointPair.schema }, generation: binding.generationId });
     install(NATIVE_CURRENT_STATE_SYMBOL, Object.assign(currentState, {
       call: createNativeCurrentStateRpc(currentState, profileSha256) }));
   }

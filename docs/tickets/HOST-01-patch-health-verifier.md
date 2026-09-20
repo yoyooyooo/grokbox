@@ -68,6 +68,14 @@ Node对子进程输入/输出/权限/哈希和job/attempt/build/schema/checker�
 
 三个原checker已接实际turn shell/trace callback、retry executor和class method消费关系；条件spread的有限写集合与CONT原fence分支被分别核对，正确旁支不能替损坏的已识别主链通过。原源码及61片candidate字节不变，正式Rust对当前大包的三项局部规则已全部passed。反例、边界与固定来源见[原生角色分析报告](../reports/2026-09-21-host-native-role-analysis.md)。这替代的是上一包三个unsupported的静态差额，不升级为全程序可达、完整lease/opportunity或当前Host/worker资格；其余覆盖继续保留。
 
+## 当前 checkpoint ABI 配对与接线（2026-09-21）
+
+当前2380c2c7…Host / 56f87f…worker已完成独立schema/AgentStore声明与实际worker thread的隔离ABI验证。有限pair目录保留旧元组，新增当前元组；profile升级、preload owner、worker编译和artifact读面共用精确选择。修正了两处注册仍输出旧Host hash，以及能力升级混入旧startup extras的问题。完整61片新candidate与三个revision2规则重新通过；新tuple不等于部署/完整native恢复已通过。
+
+本大阶段固定源码1180输入，core499/integration24/native25，外层548项/72文件全部通过，另Rust30及内部Chrome66；当前pair场景无skip。具体原生/合成输入、candidate摘要、原生拒绝边界和完整证据见[配对报告](../reports/2026-09-21-native-checkpoint-pair.md)。并行发现的保护读面锁等待已按[原SQLite owner修复](../reports/2026-09-21-sqlite-read-scheduling.md)，不另立缓存/存储工程。
+
+**下一实施出口**是完整lease/finally/opportunity及未覆盖能力，而不是重做已通过的三项真实native role或本ABI tuple。当前Host主入口/账号采用、idle summary完整受管行为、模型/App恢复及独立审查仍需各自资格；整体qualified=false保留，但不能将已完成的局部native证据重新写成全部synthetic或unreviewed-pair。
+
 ## 同一工作包的顺序与出口
 
 ### A. 先收实际原生依赖风险

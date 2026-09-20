@@ -4,16 +4,15 @@ import { posix } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
-import { NATIVE_CHECKPOINT_PAIR } from "../src/internal/host/native-checkpoint-worker-hook.ts";
-import { NATIVE_CURRENT_STATE_SLICES } from "../src/internal/host/native-current-state-slices.ts";
-import { nativeContinuityEnabled } from "./native-continuity-code.ts";
+import { hostRecipeForSourceSha } from "../src/internal/host/source-recipes.ts";
+import { nativeContinuityEnabled, CONT_NATIVE_PAIR } from "./native-continuity-code.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 let source: string | undefined;
 function bundle() {
   if (source === undefined) {
     source = readFileSync("/home/box/sand-host/host-main.cjs", "utf8");
-    expect(sha256Text(source)).toBe(NATIVE_CHECKPOINT_PAIR.host);
+    expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
   }
   return source;
 }
@@ -36,7 +35,7 @@ function fixture(patched = false) {
   const recorded: string[] = [], profiles = new Map<string,unknown>(), metadata = new Map<string,unknown>([["grokbox.current-state.v1", "source-prepared-state"]]);
   const originals = ["cloneStoreDb", "writeClonedProfile", "cloneAutomations", "rewriteClonedAgentIdentity", "copyIfPresent", "cloneAgentDir"].map(selected);
   if (patched) {
-    const patch = NATIVE_CURRENT_STATE_SLICES.find(slice => slice.id === "continuity-native-duplicate-identity")!;
+    const patch = hostRecipeForSourceSha(CONT_NATIVE_PAIR.host).currentState.find(slice => slice.id === "continuity-native-duplicate-identity")!;
     originals[3] = originals[3]!.replace(patch.find, patch.replacement);
   }
   const globals = { import_node_fs77: {

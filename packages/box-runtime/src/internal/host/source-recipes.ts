@@ -1,13 +1,14 @@
 import { LIVE_SLICE_PATCHES } from "./live-slices.ts";
 import { NATIVE_CHECKPOINT_HOST_SLICES } from "./native-checkpoint-slices.ts";
-import { NATIVE_CURRENT_STATE_SLICES } from "./native-current-state-slices.ts";
+import { NATIVE_CURRENT_STATE_SLICES, nativeCurrentStateSlices } from "./native-current-state-slices.ts";
+import { IDLE_CHECKPOINT_PAIR } from "./native-checkpoint-pair.ts";
 import { type SlicePatch, type SliceId } from "./profile.ts";
 
 /** A maintained authoring layout for these exact inspected bytes. This is NOT
  * a reviewed profile, a new SHA admission rule, or Host/worker qualification.
  * Existing persisted profiles keep their own exact source/candidate hashes.
  * Unknown sources retain the original recipe and ordinary explicit review. */
-export const IDLE_COMPACTION_HOST_SHA = "2380c2c7bc3bfe6dc661bfc2640df2a34d79b0e43b234a172abbe55d399b1548";
+export const IDLE_COMPACTION_HOST_SHA = IDLE_CHECKPOINT_PAIR.host;
 const fields = ["startAnchor", "endAnchor", "find", "replacement"] as const;
 function names(slice: SlicePatch, bindings: ReadonlyArray<readonly [string, string]>): SlicePatch {
   const result = { ...slice };
@@ -31,7 +32,7 @@ const core = LIVE_SLICE_PATCHES.map(slice => {
   if (slice.id === "context-manual-summary-owner") return names(slice, [["_mcpTools", "mcpTools"]]);
   return { ...slice };
 });
-const currentState = NATIVE_CURRENT_STATE_SLICES.map(slice => {
+const currentState = nativeCurrentStateSlices(IDLE_CHECKPOINT_PAIR).map(slice => {
   if (slice.id === "continuity-native-startup-input") return {
     ...slice, find: "      if (!actionOnly && trimmedPrompt.length === 0",
     replacement: slice.replacement.replace("!resumeTurn &&", "!actionOnly &&"),

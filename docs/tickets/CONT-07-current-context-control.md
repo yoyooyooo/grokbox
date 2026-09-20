@@ -40,6 +40,12 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 稳定验证入口：`node scripts/verify-runtime-rebuild.mjs continuity-native-binding`；明确本机原生资格另用`GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continuity-native-binding-qualified`。后者Node22仅来自原生worker的node:sqlite要求，不提高grokbox Node20.17产品基线。独立外部review和实际profile加载仍未签；不把未实现项移成单纯live待验。
 
+## 当前Host/worker ABI资格（2026-09-21）
+
+[HOST-01配对工作包](../reports/2026-09-21-native-checkpoint-pair.md)已对当前2380c2c7…Host与56f87f…worker完成25项隔离原生验证：原schema/AgentStore、完整引用图、实际worker事务/持久marker/GC hold、重启/解除/B2、startup及duplicate源屏障清理。生产pair目录保留旧元组并精确登记当前元组；preload、worker与主Host注册均使用本次选定身份，不再把旧Host hash写入新来源。
+
+新的显式资格入口是 `node scripts/verify-host-health.mjs native-pair`，需Bun1.3.14及显式native continuity、idle-candidate和native Node配置。它只访问指定源和自有测试库，不自动发布profile、启动Bot或执行真实Provider。原source/candidate/worker静态资格同步通过；整Host实际使用、self-reset、附件独立、完整用户恢复与独立审查不由这个ABI实验代签。
+
 ## 必需行为
 
 reset保全旧状态后建立合法的新工作起点；保留身份、Memory、模型、Routine定义和真实文件，不创建可切换session。原生root为空时的salvage、自动prepend、reply引用、摘要/prompt pins、待办及pending结果均须遵守新revision，不能下一次输入或重启又找回旧窗口。
