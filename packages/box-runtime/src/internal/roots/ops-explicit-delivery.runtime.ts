@@ -5,20 +5,19 @@ import { NotificationError, RECEIVER_NOTICE_POLICY_REVISION, NOTIFICATION_DELIVE
 import { openOpsBindings } from "../io/ops-bindings.node.ts";
 import { openRoutineProvisionStore } from "../io/routine-provision.node.ts";
 import { NATIVE_NOTIFICATION_HTTP_REVISION, type NotificationRequest } from "../io/native-notification.node.ts";
-import { runOpsNotificationDelivery, type PairedNotificationDriver } from "./ops-notification.runtime.ts";
+import { type PairedNotificationDriver } from "./ops-notification.runtime.ts";
 import type { ReceiverNativeRead } from "./ops-receiver.runtime.ts";
 
 export type ExplicitReceiverRead = ReceiverNativeRead & { ownership: unknown; ownershipGeneration: string };
 export type ExplicitReceiverReader = (agentId: string, routineId: string, signal?: AbortSignal) => Promise<ExplicitReceiverRead>;
-export type ExplicitNoticeInput = { durableRoot: string; workId: string; expectedBindingRevision: number; expectedModelRevision: string; confirmed: boolean;
+export type PreparedNoticeDriverInput = { durableRoot: string; expectedBindingRevision: number; expectedModelRevision: string;
   readNative: ExplicitReceiverReader; signal?: AbortSignal };
 
-/** An explicit, user-authorized first-send lane for one EXISTING work item. It
- * does not promote pairing to automatic delivery, enable a Routine, acquire a
- * key, or substitute a synthetic incident/canary. The normal outbox owns the
- * immutable work, durable attempt, budget and unknown/no-replay semantics.
- * Actual receiver execution/report stays unobserved even after HTTP acceptance. */
-export function createPreparedNoticeDriver(input: Omit<ExplicitNoticeInput, "workId" | "confirmed"> & { authorizationId?: string; allowDisabled?: boolean },
+/* Shared private driver for the managed incident/test and authorized worker
+ * lanes. It verifies an existing pairing, never acquires credentials, enables a
+ * Routine or grants permission by itself. The original outbox owns effects. */
+export function createPreparedNoticeDriver(input: PreparedNoticeDriverInput & { authorizationId?: string; allowDisabled?: boolean;
+  expectedBindingId?: string; authorize?: (signal: AbortSignal) => Promise<void> },
   testPorts: { request?: NotificationRequest } = {}) {
   const owner = openOpsBindings(input.durableRoot);
   let latest: PairingRecord | null = null;
@@ -26,9 +25,14 @@ export function createPreparedNoticeDriver(input: Omit<ExplicitNoticeInput, "wor
   const driver: PairedNotificationDriver = {
     inspect: async ({ target, scope, signal }) => {
       latest = null;
+      if (input.authorize) {
+        if (!signal) throw new NotificationError("source_unavailable");
+        await input.authorize(signal);
+      }
       const stop = (why: string) => { blocker = why; return null; };
       const record = await owner.record(target.alias);
-      if (!record || !(record.state === "prepared" || input.allowDisabled && record.state === "disabled") || !record.credentialPresent || record.revision !== input.expectedBindingRevision)
+      if (!record || !(record.state === "prepared" || input.allowDisabled && record.state === "disabled") || !record.credentialPresent || record.revision !== input.expectedBindingRevision
+        || input.expectedBindingId !== undefined && record.bindingId !== input.expectedBindingId)
         return stop("pairing_not_prepared_or_revision_changed");
       if (input.authorizationId && (!record.automatic || record.automatic.id !== input.authorizationId
         || record.automatic.bindingRevision !== record.revision || Date.now() < record.automatic.activatedAtMs))
@@ -82,19 +86,8 @@ export function createPreparedNoticeDriver(input: Omit<ExplicitNoticeInput, "wor
     send: async args => {
       if (!latest || latest.bindingId !== args.binding.bindingId || latest.revision !== args.binding.revision)
         return { state: "definitely-not-accepted", reason: "revoked" };
-      return owner.sendPreparedNotice(latest, args, testPorts.request, input.authorizationId);
+      return owner.sendPreparedNotice(latest, args, testPorts.request, input.authorizationId, input.authorize);
     },
   };
   return { driver, blocker: () => blocker };
-}
-
-export async function runExplicitOpsNotification(input: ExplicitNoticeInput, testPorts: { request?: NotificationRequest } = {}) {
-  if (input.confirmed !== true || !Number.isSafeInteger(input.expectedBindingRevision) || input.expectedBindingRevision < 1
-    || !/^[a-f0-9]{64}$/.test(input.expectedModelRevision)) throw new NotificationError("explicit_confirmation_required");
-  const { driver, blocker } = createPreparedNoticeDriver(input, testPorts);
-  const result = await runOpsNotificationDelivery({ durableRoot: input.durableRoot, workId: input.workId, driver, signal: input.signal });
-  return { ...result, ...(blocker() ? { preflightBlocker: blocker() } : {}), deliveryMode: "explicit-single-attempt",
-    automaticDeliveryEnabled: false, routineChanged: false, credentialsRequested: false,
-    receiverQualification: "fresh_preflight_only", actualReceiverTurn: "not_observed", toolsObserved: false,
-    httpContractRevision: NATIVE_NOTIFICATION_HTTP_REVISION, botReport: "not_observed", userRead: "not_observed" };
 }

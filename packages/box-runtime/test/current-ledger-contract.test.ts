@@ -20,7 +20,7 @@ async function fingerprint(path: string) {
   return { bytes: await readFile(path), entries: (await readdir(dirname(path))).sort() };
 }
 
-for (const version of [1, 2, 3, 5]) test(`observation v${version}: every owner entry refuses, without upgrading or replacing retained evidence`, async () => {
+for (const version of [1, 2, 3, 4, 6]) test(`observation v${version}: every owner entry refuses, without upgrading or replacing retained evidence`, async () => {
   const root = await mkdtemp(join(tmpdir(), "current-observation-contract-"));
   try {
     const store = openMonitorStore(root), epoch = randomUUID();

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { NotificationWorkerView, ReceiverList, ReceiverView, NotificationList, NotificationView } from "@grokbox/client";
 import { Badge, Card, Empty, ErrorNotice, Heading, SourceTime } from "../components/ui.tsx";
 import { ReceiverEditor } from "../components/receiver-editor.tsx";
+import { NotificationSender } from "../components/notification-sender.tsx";
 import { boundedSearch, denied, readView, viewError } from "../lib/views.ts";
 
 export const Route = createFileRoute("/_console/notifications")({
@@ -45,6 +46,7 @@ function Notifications() {
       <dt>Reference</dt><dd><code>{data.delivery.data.notificationRef}</code></dd><dt>Purpose</dt><dd>{data.delivery.data.purpose}</dd><dt>Incident</dt><dd>{data.delivery.data.incidentRef ? <code>{data.delivery.data.incidentRef}</code> : "none — an explicit test"}</dd>
       <dt>Recorded state</dt><dd>{data.delivery.data.state}</dd><dt>Attempt</dt><dd>{data.delivery.data.attempt?.state ?? "not-attempted"}</dd><dt>Bot report / user read</dt><dd>not_observed / not_observed</dd>
       <dt>Original identity</dt><dd><code>{data.delivery.data.attempt?.attemptId ?? data.delivery.data.workId}</code></dd></dl><p>No automatic retry is performed. Unknown is not failure-to-send, and native acceptance is not task completion.</p></div></Card>}
+    {data.delivery?.data?.purpose === "incident" && <NotificationSender key={data.delivery.data.notificationRef} delivery={data.delivery.data} receivers={data.receivers.data?.receivers ?? []}/>}
     <Card title="投递进程"><div className="toolbar"><button onClick={() => { void router.invalidate(); }}>读取通知状态</button></div><ErrorNotice error={viewError(data.worker)}/>
       {worker && <div data-testid="notification-worker"><dl><dt>进程归属</dt><dd>{worker.owner}</dd><dt>工作状态</dt><dd><Badge>{worker.state}</Badge></dd>
         <dt>已完成检查轮数</dt><dd>{worker.cycles}</dd><dt>最近检查</dt><dd>{worker.lastCycleAtMs ? <SourceTime at={worker.lastCycleAtMs}/> : "尚未观察"}</dd>

@@ -13,7 +13,8 @@ import { openOpsBindings } from "../../src/internal/io/ops-bindings.node.ts";
 import { type NotificationRequest } from "../../src/internal/io/native-notification.node.ts";
 import { runOpsPairing } from "../../src/internal/roots/ops-pairing.runtime.ts";
 import { runRoutineProvisionCommand } from "../../src/internal/roots/routine-provision.runtime.ts";
-import { runExplicitOpsNotification, type ExplicitReceiverRead } from "../../src/internal/roots/ops-explicit-delivery.runtime.ts";
+import { type ExplicitReceiverRead } from "../../src/internal/roots/ops-explicit-delivery.runtime.ts";
+import { deliverPreparedFixture } from "./prepared-notice.ts";
 import { activateOpsNotifications } from "../../src/internal/roots/ops-activation.runtime.ts";
 import { ownedOwnershipSnapshot } from "../ownership-fixture.ts";
 
@@ -65,7 +66,7 @@ export async function automaticFixture(limit = 10) {
   const input = { durableRoot: root, readNative };
   const seed = async () => {
     const workId = await emit();
-    const result = await runExplicitOpsNotification({ ...input, workId, confirmed: true, expectedBindingRevision: pairing.revision, expectedModelRevision: MODEL }, { request });
+    const result = await deliverPreparedFixture({ ...input, workId, expectedBindingRevision: pairing.revision, expectedModelRevision: MODEL }, { request });
     return { workId, result };
   };
   const command = (_workId?: string): NoticeActivationCommand => ({ alias: "default", expectedBindingRevision: pairing.revision,

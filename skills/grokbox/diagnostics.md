@@ -25,11 +25,11 @@ Doctor's `hostCapabilities` compares the actually loaded wrapper/reader and prof
 ## Inspect a queued notification without sending it
 
 ```bash
-grokbox ops notifications list --json
-grokbox ops notifications show <work-id> --json
+grokbox notification list
+grokbox notification get <notification-ref>
 ```
 
-These are Box-local, read-only views of the existing outbox. They do not initialize a store, pair a receiver, access Webhook credentials, start monitoring or send anything. The list is a bounded recent window, not a complete history. Configured target preferences do not prove pairing. Status reports transport as not probed; automatic delivery remains unavailable. An explicit single-attempt send is a separate capability, never a side effect of these reads.
+These authenticated management views read the original outbox without initializing a store, pairing, reading Webhook credentials, starting monitoring or sending. References bind the installation and original database; pages cover retained work, not complete upstream history. Configured target preferences do not prove pairing or authorization. `notification status` observes the management-owned worker separately. A stopped Server is not permission to bypass it with local-file or Gateway reads.
 
 A reserved/attempting/unknown record is not permission to retry. Keep the exact work/attempt ID and evidence revision. `native-accepted` means only the transport's acceptance boundary, never Bot completion or user read; the latter remain separately unobserved. Do not create a new work, switch target aliases or re-run a business task to bypass the uncertain record. The default alert task still only reminds and ends.
 
@@ -38,12 +38,15 @@ A reserved/attempting/unknown record is not permission to retry. Keep the exact 
 Only when the user specifically authorizes sending one existing notice (including possible native usage), use:
 
 ```bash
-grokbox ops notifications send <work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --confirm --json
+grokbox notification receiver get <receiver-ref>
+grokbox notification receiver verify <receiver-ref>
+grokbox notification send <notification-ref> --receiver <receiver-ref> --request-id <persisted-uuid> --expect-revision <n> --expect-model-revision <sha256> --confirm
+grokbox operation get --domain notification --database-id <original-database-uuid> --request-id <original-request-uuid>
 ```
 
-Take the binding revision from target status and the reviewed model fingerprint from `ops targets verify`. The managed reminder Routine must already have been separately enabled without other definition changes; send never enables it or mints a key. Changed model, ownership, scope, definition or pairing stops the attempt. The program takes the fixed safe body from the existing outbox, not arbitrary text, a URL, a key or a supplied JSON file.
+Persist the request UUID and both scoped references before submission. Take the binding revision from `notification receiver get` and the reviewed model fingerprint from `notification receiver verify`. The independent `notifications.send` capability is required; read, test and enable rights are not send authority. The managed reminder Routine must already have been separately enabled without other definition changes; send never enables it or mints a key. Changed model, ownership, scope, definition, permission or pairing stops the attempt. The program takes the fixed safe body from the existing incident outbox, not arbitrary text, a URL, a key, supplied JSON or test work.
 
-HTTP acceptance is not the Bot's completed reminder or user read. A previous attempt, timeout or unknown result is not permission to retry under another work ID. This one-shot path does not enable background delivery or bypass installation/target wake limits. An automatic alert-receiving Bot must not use it unless a later user task authorizes it.
+HTTP acceptance is not the Bot's completed reminder or user read. Refused delivery returns exit 5; uncertain submission returns exit 8 and the original lookup locator. Reading a receipt may exit 0 while its state remains unknown. A previous attempt, timeout or unknown result is not permission to retry under another request or work ID. This one-shot path does not enable background delivery or bypass installation/target wake limits. An automatic alert-receiving Bot must not use it unless a later user task authorizes it.
 
 ## Separate gaps from failures
 

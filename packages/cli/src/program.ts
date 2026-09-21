@@ -27,7 +27,6 @@ import { runRecover } from "./commands/recover.ts";
 import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
 import { runRuntimeServicesCli } from "./commands/runtime-services.ts";
-import { runOpsNotifications, runOpsNotificationSend } from "./commands/ops-notifications.ts";
 import { runRuntimeMonitor } from "./commands/monitor.ts";
 import {
   runDesktopKeepAdd,
@@ -300,9 +299,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "box wake": async (deps, _args, options) => await runBoxWake(deps, options),
     "box keepalive run": async (deps, _args, options) => await runBoxKeepalive(deps, options),
     "box keepalive status": async (deps, _args, options) => await runBoxKeepaliveStatus(deps, options),
-    "ops notifications send": async (deps, args, options) => await runOpsNotificationSend(deps, args[0] ?? "", options),
-    "ops notifications list": async deps => await runOpsNotifications(deps),
-    "ops notifications show": async (deps, args) => await runOpsNotifications(deps, args[0]),
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),

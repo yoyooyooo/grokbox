@@ -2,12 +2,13 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { captureVerificationSource } from "./verification-source.mjs";
 const root=fileURLToPath(new URL("../",import.meta.url));
-const group=process.argv[2]??"core";
-if(process.argv.length>3||!["core","integration","native-pair"].includes(group))throw Error("usage: verify-host-health.mjs [core|integration|native-pair]");
-if(group==="native-pair"&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
+const group=process.argv[2]??"core",listOnly=process.argv[3]==="--list";
+const groups=["core","integration","integration-host","integration-domains","integration-web","native-pair"];
+if(process.argv.length>4||(process.argv[3]!==undefined&&!listOnly)||!groups.includes(group))throw Error("usage: verify-host-health.mjs [core|integration|integration-host|integration-domains|integration-web|native-pair] [--list]");
+if(!listOnly&&group==="native-pair"&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
  throw Error("native-pair requires explicit native continuity opt-in and native Node executable; retired pair selectors are not supported and tests never authorize adoption.");
 const bun=spawnSync("bun",["--version"],{encoding:"utf8"});
-if(bun.status!==0||bun.stdout.trim()!=="1.3.14")throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
+if(!listOnly&&(bun.status!==0||bun.stdout.trim()!=="1.3.14"))throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
 const suites={
  core:["packages/runtime-kernel/test/compaction-contract.test.ts","packages/box-runtime/test/journal-settlement.test.ts","packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
   "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/source-recipes.test.ts","packages/box-runtime/test/capability-witness.test.ts",
@@ -20,6 +21,7 @@ const suites={
   "packages/box-runtime/test/continuity-store.test.ts","packages/box-runtime/test/continuity-current-state.test.ts","packages/box-runtime/test/continuity-workflow-retention.test.ts",
   "packages/box-runtime/test/monitor-migration-review.test.ts","packages/box-runtime/test/routine-provision.test.ts",
   "packages/box-runtime/test/ops-automatic-notification.test.ts","packages/runtime-kernel/test/notification-authorization-contract.test.ts",
+  "packages/box-runtime/test/ops-notification-outbox.test.ts","packages/box-runtime/test/ops-native-notification.test.ts","test/ops-native-notification-cli.test.ts","test/ops-automatic-cli.test.ts",
   "packages/box-runtime/test/diagnostic-admission.test.ts","packages/box-runtime/test/storage-maintenance-lifetime.test.ts","test/monitor-cli.test.ts",
   "packages/box-runtime/test/host-seam-acorn.test.ts","packages/box-runtime/test/host-seam-contract.test.ts","packages/box-runtime/test/host-seam-iteration.test.ts",
   "packages/box-runtime/test/host-seam-propose.test.ts","packages/box-runtime/test/host-seam-replay.test.ts","packages/box-runtime/test/host-seam-shape.test.ts",
@@ -48,19 +50,29 @@ const suites={
   "packages/box-runtime/test/config-migration.test.ts","test/title-sync.test.ts", "packages/runtime-kernel/test/model-relationships.test.ts","packages/runtime-kernel/test/reasoning-selection.test.ts","packages/runtime-kernel/test/selection.test.ts",
   "packages/box-runtime/test/context-maintenance-host.test.ts","packages/box-runtime/test/host-lease-runtime.test.ts","packages/box-runtime/test/host-compact-lifetime.test.ts","packages/box-runtime/test/host-compact-coordination.test.ts",
   "packages/box-runtime/test/host-ownership-read.test.ts","packages/box-runtime/test/hcr-capabilities.test.ts","packages/box-runtime/test/hcr-profile-upgrade.test.ts",
-  "test/verification-source.test.js","test/cli.test.ts","test/skills.test.ts"],
+  "test/verification-source.test.js","test/host-health-shards.test.ts","test/cli.test.ts","test/skills.test.ts"],
  integration:["test/sqlite-read-scheduling.test.ts","test/host-witness.test.ts","test/host-compilation.test.ts","test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts",
   "test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
   "./test/handover-management.test.ts","./test/compaction-management.test.ts","test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
   "packages/server/test/server.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"],
  "native-pair":["packages/box-runtime/test/native-checkpoint-qualification.test.ts","packages/box-runtime/test/native-worker-binding.test.ts","packages/box-runtime/test/native-startup-seams.test.ts","packages/box-runtime/test/native-duplicate-qualification.test.ts","packages/box-runtime/test/native-disposal-qualification.test.ts"]
 };
+// Partition the same integration inventory, not a reduced acceptance set. The
+// previous single Bun invocation exhausted its 270s aggregate budget before
+// the browser/package suites finished; per-scenario deadlines stay unchanged.
+const hostIntegration=new Set(["test/sqlite-read-scheduling.test.ts","test/host-witness.test.ts","test/host-compilation.test.ts","test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts"]);
+const webIntegration=new Set(["test/web-browser.test.ts","test/packaging.test.ts"]);
+suites["integration-host"]=suites.integration.filter(path=>hostIntegration.has(path));
+suites["integration-domains"]=suites.integration.filter(path=>!hostIntegration.has(path)&&!webIntegration.has(path));
+suites["integration-web"]=suites.integration.filter(path=>webIntegration.has(path));
+const testCommand=paths=>["bun","test","--timeout","220000",...paths];
 const commands=group==="core"?[
  [process.execPath,"scripts/generate-host-verifier-protocol.mjs","--check"],
  ["cargo","test","--locked","-p","grokbox-host-verifier"],
  ["bun","run","typecheck"],["bun","run","typecheck:web"],
  ["bun","test","--timeout","220000",...suites.core]
-]:[["bun","test","--timeout","220000",...suites[group]]];
+]:group==="integration"?["integration-host","integration-domains","integration-web"].map(shard=>testCommand(suites[shard])):[testCommand(suites[group])];
+if(listOnly){console.log(JSON.stringify({group,files:suites[group],commands}));process.exit(0);}
 const before=captureVerificationSource(root),receipts=[];
 console.log(JSON.stringify({phase:`host-health-${group}-before`,...before}));
 for(const command of commands){

@@ -26,6 +26,22 @@ test("operation locators are persisted before send and contain no model input or
   expect(serialized).not.toMatch(/csrf|cookie|apiKeyRef|"patch"/);
 });
 
+test("incident send stores only original work/request scope, never reusable approval or receiver input", () => {
+  const storage = memoryStorage(), databaseId = randomUUID(), requestId = randomUUID();
+  const ref = `notification:${scope.installationId}:${databaseId}:${randomUUID()}`;
+  const row = rememberOperation(storage, scope, { notificationRef: ref, receiverRef: `receiver:${scope.installationId}:${databaseId}:${randomUUID()}`,
+    requestId, expectedRevision: 7, expectedModelRevision: "b".repeat(64), confirmed: true });
+  expect(row.target).toBe(ref); expect(row.command).toBe("notification-send");
+  expect(operationSearch(row)).toEqual({ requestId, domain: "notification", databaseId });
+  const text = [...storage.values.values()].join();
+  expect(text).not.toMatch(/expectedRevision|expectedModelRevision|receiverRef|confirmed/); expect(text).not.toContain("b".repeat(64));
+  markOperation(storage, row, "unknown"); expect(() => forgetSettledOperation(storage, row)).toThrow();
+  expect(localOperations(storage, scope)[0]?.state).toBe("unknown");
+  const only = [...storage.values.keys()][0]!;
+  storage.setItem(only, JSON.stringify({ ...row, target: row.target.replace("notification:", "receiver:") }));
+  expect(() => localOperations(storage, scope)).toThrow();
+});
+
 test("different requests and principals cannot overwrite each other's recovery locators", () => {
   const storage = memoryStorage();
   const first = rememberOperation(storage, scope, request());

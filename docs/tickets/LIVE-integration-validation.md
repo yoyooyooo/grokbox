@@ -235,9 +235,9 @@
 | `agents duplicate`, `agents operations show` | [LIVE-NATIVE-DUPLICATE](#live-native-duplicate) | 官方语义/精确新ID；复制Routine与App选择的副作用须记录 |
 | `agents ownership` | [LIVE-OWNERSHIP-ALIGNMENT](#live-ownership-alignment) | 查询不改变归属 |
 | `agents title show`, `agents title hide`, `agents title sync` | [LIVE-REASONING-HOST-APP](#live-reasoning-host-app) | 用户标题与模型装饰区分 |
-| `routine apply`, `routine list`, `routine get`, `routine enable`, `routine disable`, `routine delete`, `notification receiver bind`, `ops notifications send` | [LIVE-OPS-ROUTINES](#live-ops-routines) | 真实Webhook而非run-now |
+| `routine apply`, `routine list`, `routine get`, `routine enable`, `routine disable`, `routine delete`, `notification receiver bind`, `notification send` | [LIVE-OPS-ROUTINES](#live-ops-routines) | 真实Webhook而非run-now |
 | `notification receiver list`, `notification receiver get`, `notification receiver verify`, `notification receiver blueprint`, `notification settings get`, `notification settings apply` | [LIVE-OPS-RECEIVERS](#live-ops-receivers) | 新读面经共享 API；key 私有，预检不算授权或实际接收；剩余配对/初始化入口独立迁移 |
-| `notification receiver enable`, `notification receiver disable`, `notification receiver unbind`, `notification receiver test`, `notification list`, `notification get`, `notification status`, `ops notifications list`, `ops notifications show` | [LIVE-OPS-OBSERVER-LIFETIME](#live-ops-observer-lifetime) | 新授权、独立测试与回执复用原 owner；测试不是启用前提，unknown 不重发，不从 200 推定收到；旧 activation/revoke writer 退出 |
+| `notification receiver enable`, `notification receiver disable`, `notification receiver unbind`, `notification receiver test`, `notification list`, `notification get`, `notification status` | [LIVE-OPS-OBSERVER-LIFETIME](#live-ops-observer-lifetime) | 新授权、独立测试与回执复用原 owner；测试不是启用前提，unknown 不重发，不从 200 推定收到；旧 activation/revoke writer 退出 |
 | `groups list`, `groups show`, `groups create`, `groups update`, `groups delete`, `groups members list`, `groups members add`, `groups members remove`, `groups members set`, `runtime group-progress` | [LIVE-GROUPS-INTERACTION](#live-groups-interaction) | 仅本轮测试群与对象 |
 | `send`, `history outcome` | [LIVE-SEND-OUTCOME](#live-send-outcome) | nonce/run/STEP/投递分层 |
 | `history search`, `history tail`, `history thread`, `export agent` | [LIVE-HISTORY-MEMORY-EXPORT](#live-history-memory-export) | 默认输出私有且有界 |

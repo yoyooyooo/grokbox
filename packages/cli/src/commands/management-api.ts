@@ -15,7 +15,7 @@ import { runInstalledWebService } from "../web-service.ts";
 export type ManagementCommandOptions = {
   connection?: string; timeoutMs?: string; limit?: string; cursor?: string; source?: string; scope?: string;
   preview?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
-  requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string;
+  requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string; receiver?: string;
   root?: string; nativeDiscovery?: string; port?: string; input?: string; mode?: string;
   untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; expectModelRevision?: string;
   bot?: string; snapshotRef?: string; routineRef?: string; expectBindingRevision?: string; enabled?: string; target?: string;
@@ -230,6 +230,12 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
     case "notification receiver get": reply = await client.receiver(args[0] ?? "", deps.signal); break;
     case "notification receiver verify": reply = await client.verifyReceiver(args[0] ?? "", deps.signal); break;
     case "notification get": reply = await client.notification(args[0] ?? "", deps.signal); break;
+    case "notification send": {
+      if (options.confirm !== true || !/^[1-9][0-9]{0,15}$/.test(options.expectRevision ?? "")) throw invalid("Explicit confirmation and the reviewed binding revision are required.");
+      reply = await client.sendNotification({ notificationRef: args[0] ?? "", receiverRef: options.receiver ?? "", requestId: options.requestId ?? "",
+        expectedRevision: Number(options.expectRevision), expectedModelRevision: options.expectModelRevision ?? "", confirmed: true }, deps.signal);
+      break;
+    }
     case "notification receiver enable":
     case "notification receiver disable":
     case "notification receiver unbind":
@@ -294,6 +300,7 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       } else if (options.domain === "incident") reply = await client.incidentOperation(options.databaseId ?? "", options.requestId ?? "", deps.signal);
       else if (options.domain === "receiver") reply = await client.receiverOperation(options.databaseId ?? "", options.requestId ?? "", deps.signal);
       else if (options.domain === "notification-test") reply = await client.notificationTestOperation(options.databaseId ?? "", options.requestId ?? "", deps.signal);
+      else if (options.domain === "notification") reply = await client.notificationSendOperation(options.databaseId ?? "", options.requestId ?? "", deps.signal);
       else if ((options.domain === undefined || options.domain === "model") && options.databaseId === undefined) reply = await client.modelOperation(options.requestId ?? "", deps.signal);
       else throw invalid("Select a known operation domain and its original source locator; use operation get --help.");
       break;
@@ -342,7 +349,7 @@ export function writeManagementFailure(deps: CliDeps, command: string, error: un
   const codes: Partial<Record<ApiErrorCode, number>> = {
     invalid_input: 2, authentication_required: 3, permission_denied: 3, caller_identity_unavailable: 3, not_found: 4, ambiguous_target: 5,
     wrong_installation: 5, revision_conflict: 5, idempotency_conflict: 5, model_in_use: 5, model_default_in_use: 5, model_default_missing: 5,
-    model_source_read_only: 6, cursor_gap: 5, operation_unknown: 8, protection_target_conflict: 5, source_changed: 5, incident_resolved: 5, notification_test_refused: 5,
+    model_source_read_only: 6, cursor_gap: 5, operation_unknown: 8, protection_target_conflict: 5, source_changed: 5, incident_resolved: 5, notification_test_refused: 5, notification_send_refused: 5,
   };
   const envelope = failure.reply ?? { schemaVersion: 1, installationId: failure.details?.installationId ?? null, invocationId: deps.randomUUID(), ok: false,
     error: { code: failure.code, message: failure.message, ...(failure.details ? { details: failure.details } : {}) } };

@@ -17,10 +17,11 @@ import { INCIDENT_EVIDENCE_SCHEMA, captureIncidentEvidence, readIncidentEvidence
 import { indexNativeIncident, indexExecutionProgress, recordSourceGap, detectUnsettledExecutions } from "./monitor-incident-intake.node.ts";
 import { retireObservationDetails, sqlitePhysicalUsage } from "./observation-retention.node.ts";
 import { capMonitorDatabase, monitorDatabaseBytes, monitorWriteAdmission, monitorAuxiliaryUsage } from "./monitor-storage.node.ts";
-import { notificationOutbox, NOTIFICATION_TEST_SCHEMA } from "./notification-outbox.node.ts";
+import { notificationOutbox, NOTIFICATION_SCHEMA } from "./notification-outbox.node.ts";
+import { MONITOR_SCHEMA_VERSION } from "./monitor-schema.node.ts";
 import type { NativeRunHealth } from "@grokbox/runtime-kernel/observation";
 import { DiagnosticBudgetError, withDiagnosticAdmission } from "../host/diagnostic-budget.node.ts";
-const VERSION=4;
+const VERSION=MONITOR_SCHEMA_VERSION;
 const error=(message:string)=>new BoxRuntimeError("invalid_usage",message);
 const number=(v:unknown):number=>{if(typeof v!=="number"||!Number.isSafeInteger(v)||v<0)throw error("monitor_store_invalid");return v;};
 const uuid=(v:unknown):string=>{if(!monitorUuid(v))throw error("monitor_store_invalid");return v;};
@@ -31,7 +32,7 @@ const missing=(e:unknown)=>e!==null&&typeof e==="object"&&"code"in e&&e.code==="
 const RUNTIME_RULES=["execution_failure","pre_step_failure","shared_runtime_failure","upstream_route_failure",...OBSERVATION_INCIDENT_RULES] as const;
 const rule=(v:unknown)=>{if(![...MONITOR_RULES,...RUNTIME_RULES].includes(v as never))throw error("monitor_store_invalid");return v as MonitorRule|typeof RUNTIME_RULES[number];};
 const SCHEMA=`
-PRAGMA user_version=4;
+PRAGMA user_version=${VERSION};
 CREATE TABLE meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL,database_id TEXT NOT NULL,root_id TEXT NOT NULL,epoch TEXT,running INTEGER NOT NULL DEFAULT 0,current_scope TEXT,gateway_epoch TEXT,heartbeat INTEGER,last_number INTEGER NOT NULL DEFAULT 0,last_sample_id TEXT,last_digest TEXT,owner_pid INTEGER,owner_start TEXT,event_floor INTEGER NOT NULL DEFAULT 0,evidence_floor INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE watched(agent_id TEXT PRIMARY KEY);
 CREATE TABLE observations(scope TEXT NOT NULL,agent_id TEXT NOT NULL,state TEXT NOT NULL,server_id TEXT,server_harness TEXT,local_harness TEXT,last_attempt INTEGER NOT NULL,last_success INTEGER,latest_success INTEGER NOT NULL,PRIMARY KEY(scope,agent_id));
@@ -160,7 +161,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
      fresh=await openMonitorSqlite(staging,"create");
      await capMonitorDatabase(fresh,maxDatabaseBytes);
      await fresh.run("PRAGMA journal_mode=DELETE; PRAGMA auto_vacuum=INCREMENTAL; BEGIN IMMEDIATE;");
-     await fresh.run(SCHEMA+EVIDENCE_SCHEMA+INCIDENT_EVIDENCE_SCHEMA+NOTIFICATION_TEST_SCHEMA);const databaseId=randomUUID();
+     await fresh.run(SCHEMA+EVIDENCE_SCHEMA+INCIDENT_EVIDENCE_SCHEMA+NOTIFICATION_SCHEMA);const databaseId=randomUUID();
      await fresh.run("INSERT INTO meta(singleton,version,database_id,root_id) VALUES(1,?,?,?)",[VERSION,databaseId,rootId]);
      options.beforePublish?.();await fresh.run("COMMIT");await fresh.close();fresh=undefined;
      const currentDirectory=await lstat(directory);

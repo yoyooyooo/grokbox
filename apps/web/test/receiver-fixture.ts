@@ -28,7 +28,7 @@ export async function receiverFixture(origin: string, budget = 10) {
     allowedOrigins: [origin], readGrants: async () => structuredClone(state.grants), env: {}, port: 0 };
   // This isolated receiver fixture does not authorize reads of the machine's
   // real Host artifacts. Host-health integration has its own real-binary fixture.
-  const ports = { hostHealth:{enabled:false}, notification: { request: f.request, idleMs: 10, blockedMs: 10 } };
+  const ports: NonNullable<Parameters<typeof startManagementServer>[1]> = { hostHealth:{enabled:false}, notification: { request: f.request, idleMs: 10, blockedMs: 10 } };
   let server = await startManagementServer(options, ports);
   options.port = Number(new URL(server.url).port);
   const config = structuredClone(f.document);
@@ -40,7 +40,7 @@ export async function receiverFixture(origin: string, budget = 10) {
   await publishLayoutAliases(f.root, f.root, RECEIVER_INSTALLATION);
   const databaseId = (await f.store.notificationScope()).databaseId;
   const ref = `receiver:${RECEIVER_INSTALLATION}:${databaseId}:${f.pairing.bindingId}`;
-  return { ...f, ref, databaseId, state, native, config, get server() { return server; },
+  return { ...f, ref, databaseId, state, native, config, ports, get server() { return server; },
     client: (credential = RECEIVER_OWNER) => new ManagementClient({ baseUrl: server.url, installationId: RECEIVER_INSTALLATION, credential: async () => credential }),
     restart: async () => { await server.close(); server = await startManagementServer(options, ports); },
     close: async () => { await server.close(); await f.close(); },

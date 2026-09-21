@@ -4,7 +4,7 @@
 
 ## 当前切片与未完成范围
 
-**现行账本合同收束（2026-09-21）：** OBS 普通读取、初始化、维护和通知共享当前 schema 4，同时核对 meta 与物理 header；旧版本迁移、备份和 PID-only 升级锁恢复已退出。旧资料/锁保留，不投影为空记录或升级成功。既有 owner 目录丢失库时拒绝重建，防止通知 attempt 与管理历史被重置；只有新目录创建者可发布首次库，失败清理仅限自己的暂存文件及空目录。API/Web 不再提供 migrationRequired 占位。具体反例、当前初始化的只读行为及证据范围见[当前安全账本收束](../reports/2026-09-21-current-safety-store-contracts.md)，下述历史窗口不构成保留旧实时合同的要求。
+**现行账本合同收束（2026-09-21）：** OBS 普通读取、初始化、维护和通知共享[当前 schema](../../packages/box-runtime/src/internal/io/monitor-schema.node.ts)，同时核对 meta 与物理 header；显式发送现以 schema 5 在原库关联 request/work/attempt，见[通知管理](../reports/2026-09-21-notification-send-management.md)。旧版本迁移、备份和 PID-only 升级锁恢复已退出。旧资料/锁保留，不投影为空记录或升级成功。既有 owner 目录丢失库时拒绝重建，防止通知 attempt 与管理历史被重置；只有新目录创建者可发布首次库，失败清理仅限自己的暂存文件及空目录。API/Web 不再提供 migrationRequired 占位。具体反例、当前初始化的只读行为及证据范围见[当前安全账本收束](../reports/2026-09-21-current-safety-store-contracts.md)，下述历史窗口不构成保留旧实时合同的要求。
 
 已实现每个SQLite writer连接的文件增长护栏（默认128MiB，不是全安装预算）、预留元数据余量、压力批次游标/gap提交、物理页/空闲页/辅助文件计量、最多3份可读修订及受保护修订拒绝、每revision一个有总量/累计期限限制的租约、通知与修订历史的增量回收。`runtime storage status`分开报告monitor、processLogs、journals；各自来源缺失不会遮盖其他分区，仍明确installationBudgetEnforced=false。
 

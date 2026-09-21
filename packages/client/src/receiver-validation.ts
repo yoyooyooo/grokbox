@@ -38,13 +38,16 @@ export function notificationView(value: unknown, installationId: string, databas
       : typeof value.incidentRef !== "string" || !value.incidentRef.startsWith(`incident:${installationId}:${databaseId}:`) || !UUID.test(value.incidentRef.split(":")[3] ?? "") || value.incidentRef.split(":").length !== 4 || !number(value.evidenceRevision, 1))
     || value.automaticRetry !== false || value.botReport !== "not_observed" || value.userRead !== "not_observed") return false;
   if (value.attempt === null) return value.state !== "completed";
-  const a = value.attempt;
+  return notificationAttempt(value.attempt) && (value.state !== "completed" || value.attempt.state === "native-accepted")
+    && (!["reserved", "attempting", "unknown"].includes(value.attempt.state) || value.state === "unknown");
+}
+export function notificationAttempt(a: unknown): a is NonNullable<NotificationView["attempt"]> {
   return record(a) && exact(a, ["attemptId", "state", "targetAgentId", "bindingRevision", "envelopeDigest", "envelopeBytes", "reservedAtMs", "settledAtMs"])
     && typeof a.attemptId === "string" && UUID.test(a.attemptId) && typeof a.targetAgentId === "string" && UUID.test(a.targetAgentId)
     && number(a.bindingRevision, 1) && revision(a.envelopeDigest) && number(a.envelopeBytes, 1) && a.envelopeBytes <= 8192
     && number(a.reservedAtMs, 1) && (a.settledAtMs === null || number(a.settledAtMs, 1) && a.settledAtMs >= a.reservedAtMs)
     && ["reserved", "attempting", "native-accepted", "definitely-not-accepted", "unknown"].includes(String(a.state))
-    && (value.state !== "completed" || a.state === "native-accepted") && (!["reserved", "attempting", "unknown"].includes(String(a.state)) || value.state === "unknown");
+    && (!["native-accepted", "definitely-not-accepted", "unknown"].includes(String(a.state)) || a.settledAtMs !== null);
 }
 export function notificationTestOperation(value: unknown, installationId: string, databaseId: string, requestId: string, request?: ReceiverChangeRequest): value is NotificationTestOperation {
   if (!record(value) || !exact(value, ["version", "operationRef", "requestId", "receiverRef", "action", "expectedRevision", "state", "delivery", "enablesAutomatic"])

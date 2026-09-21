@@ -27,7 +27,7 @@ grokbox runtime monitor incidents --json
 
 原生Bot唤醒可能收费；未配对、目标不可用或预算耗尽明确显示阻断/延迟，不能宣称每条都已送达。默认无模型采集不等于原生提醒零费用。
 
-当前源码已有 `ops targets blueprint/verify/bind/activate` 和 `ops notifications list/show/send/worker`。先核对 help、既有绑定和原生 disabled 定义，再按相应确认操作准备；verify 是只读预检，send 只发送一个既有 work。activate 绑定原 accepted 测试记录、当前精确模型/绑定和操作人独立接收声明，授权后续新 work；不启用 Routine、不启动 collector/服务、不立即发送。已经运行的 daemon 监督自动 sender，关闭/无授权/无新 work 不借探测请求发消息，unknown 不重投。`ops notifications worker --json` 只读状态，不启动 worker。
+当前入口统一为 `notification settings`、`notification receiver`、`routine` 及 `notification list/get/send/status`，由同一管理 Server 承担。先核对 help、既有绑定和原生 disabled 定义，再显式配置/配对；verify 只读，enable 仅授权未来通知，test 独立可选，不要求历史 accepted 测试或用户已读声明。send 用独立 `notifications.send` 权限、原 incident work/receiver 引用、绑定/模型 revision、持久 request UUID 与费用确认，只有原 invocation 能进入原 outbox 的单次发送；不启用 Routine、领取 key 或产生永久授权。自动 sender 随管理 Server 运行，关闭/无授权/无新 work 不发送探测，unknown 不重投。`notification status` 只读，不启动 worker。原请求用 `operation get --domain notification` 加原 database/request 查询；旧 ops 命令没有 fallback。完整边界见[显式通知管理工作包](../reports/2026-09-21-notification-send-management.md)。
 
 这条 sender 已实现，不再按旧稿描述为待建；collector 常驻安装、完整物理容量与真实接收/长期运行仍各有资格门。详细命令参数以 [registry](../../packages/cli/src/registry.ts)和安装版 help 为准，当前现场结果仍只写 LIVE。
 

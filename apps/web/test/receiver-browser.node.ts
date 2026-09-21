@@ -115,6 +115,87 @@ export async function receiverBrowserJourney(t: TestContext, ports: Ports) {
     if (ports.evidence) await page.screenshot({ path: join(ports.evidence, "notification-receiver-mobile.png"), fullPage: true });
   }));
 
+  const incident = async (page: Page, f: Awaited<ReturnType<typeof receiverFixture>>, origin: string) => {
+    const ref = `notification:${RECEIVER_INSTALLATION}:${f.databaseId}:${await f.emit()}`;
+    await page.goto(`${origin}/notifications?delivery=${encodeURIComponent(ref)}`);
+    await page.locator('[data-testid="notification-sender"]').waitFor(); return ref;
+  };
+  const reviewSend = async (page: Page) => {
+    await page.getByRole("button", { name: "Review receiver for this delivery", exact: true }).click();
+    await page.locator('[data-testid="notification-send-approval"]').waitFor();
+  };
+  const confirmSend = (page: Page) => page.getByRole("checkbox", { name: "I authorize this incident notification and its possible model cost.", exact: true }).check();
+
+  await t.test("browser sends one existing incident, retains a delivery operation and never enables future consent", async () => withPage(async (page, f, origin) => {
+    const ref = await incident(page, f, origin); assert.equal(f.requests.length, 0);
+    await reviewSend(page); await confirmSend(page); await page.getByRole("button", { name: "Send incident notification", exact: true }).click();
+    await page.locator('[data-testid="notification-send-receipt"]').filter({ hasText: "native-accepted" }).waitFor();
+    assert.equal(f.requests.length, 1); assert.equal((await f.client().receiver(f.ref)).data.automatic, null);
+    assert.equal(JSON.parse(f.requests[0]!).workId, ref.split(":")[3]);
+    await page.getByRole("link", { name: "Open original delivery operation", exact: true }).click();
+    await page.locator('[data-testid="operation-receipt"]').waitFor(); assert.ok(page.url().includes("domain=notification"));
+    assert.ok((await page.locator('[data-testid="operation-receipt"]').innerText()).includes("native-accepted"));
+    assert.equal(f.requests.length, 1);
+  }));
+
+  await t.test("unknown incident send survives refresh, keeps original recovery and cannot send a replacement", async () => withPage(async (page, f, origin) => {
+    f.reply(response => { response.writeHead(500); response.end("PRIVATE_SEND_FAILURE"); });
+    await incident(page, f, origin); await reviewSend(page); await confirmSend(page);
+    await page.getByRole("button", { name: "Send incident notification", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "operation_unknown" }).waitFor();
+    await page.reload(); await page.getByRole("button", { name: "Recover original delivery", exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Send incident notification", exact: true }).isDisabled(), true);
+    await page.getByRole("button", { name: "Recover original delivery", exact: true }).click();
+    await page.locator('[data-testid="notification-send-receipt"]').filter({ hasText: "unknown" }).waitFor();
+    const saved = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("grokbox:operation:")).map(key => localStorage.getItem(key)).join("\n"));
+    for (const forbidden of [RECEIVER_MODEL, "expectedRevision", "expectedModelRevision", "confirmed", "PRIVATE_TEST_KEY", "receiverRef"]) assert.ok(!saved.includes(forbidden));
+    assert.equal(f.requests.length, 1);
+    await page.setViewportSize({ width: 390, height: 844 }); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    if (ports.evidence) await page.screenshot({ path: join(ports.evidence, "notification-send-recovery-mobile.png"), fullPage: true });
+  }));
+
+  await t.test("lost successful incident reply is read back after refresh, never POSTed again", async () => withPage(async (page, f, origin) => {
+    await incident(page, f, origin); await reviewSend(page); await confirmSend(page); let posts = 0, received!: (status: number) => void;
+    const status = new Promise<number>(resolve => { received = resolve; });
+    await page.route("**/v1/notification-sends", async route => {
+      posts++; const response = await route.fetch(); received(response.status());
+      if (response.status() === 200) await route.abort("failed"); else await route.fulfill({ response });
+    });
+    await page.getByRole("button", { name: "Send incident notification", exact: true }).click();
+    assert.equal(await status, 200);
+    await page.getByRole("alert").filter({ hasText: "operation_unknown" }).waitFor();
+    await page.reload(); await page.getByRole("button", { name: "Recover original delivery", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Recover original delivery", exact: true }).click();
+    await page.locator('[data-testid="notification-send-receipt"]').filter({ hasText: "succeeded" }).waitFor();
+    assert.equal(posts, 1); assert.equal(f.requests.length, 1);
+  }));
+
+  await t.test("incident approval conflict retains its draft until an explicit re-review, without silently updating approval", async () => withPage(async (page, f, origin) => {
+    await incident(page, f, origin); await reviewSend(page); await confirmSend(page);
+    await f.client().changeReceiver({ receiverRef: f.ref, requestId: randomUUID(), expectedRevision: 1, expectedModelRevision: RECEIVER_MODEL, action: "enable", confirmed: true });
+    await page.getByRole("button", { name: "Send incident notification", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "revision_conflict" }).waitFor();
+    assert.ok((await page.locator('[data-testid="notification-send-approval"]').innerText()).includes("revision 1")); assert.equal(f.requests.length, 0);
+    await reviewSend(page); await page.getByText(/Reviewed binding revision 2;/).waitFor();
+    assert.equal(await page.getByRole("checkbox", { name: "I authorize this incident notification and its possible model cost.", exact: true }).isChecked(), false);
+    await confirmSend(page); await page.getByRole("button", { name: "Send incident notification", exact: true }).click();
+    await page.locator('[data-testid="notification-send-receipt"]').filter({ hasText: "native-accepted" }).waitFor(); assert.equal(f.requests.length, 1);
+  }));
+
+  await t.test("incident send requires its own capability and CSRF independently of read access", async () => {
+    await withPage(async (page, f, origin) => {
+      await incident(page, f, origin);
+      assert.equal(await page.getByRole("button", { name: "Send incident notification", exact: true }).isDisabled(), true);
+      assert.equal(f.requests.length, 0);
+    }, RECEIVER_READER);
+    await withPage(async (page, f, origin) => {
+      const ref = await incident(page, f, origin);
+      const response = await page.context().request.post(`${origin}/v1/notification-sends`, { data: { notificationRef: ref, receiverRef: f.ref,
+        requestId: randomUUID(), expectedRevision: 1, expectedModelRevision: RECEIVER_MODEL, confirmed: true }, headers: { origin, "x-grokbox-installation-id": RECEIVER_INSTALLATION } });
+      assert.equal(response.status(), 403); assert.equal(f.requests.length, 0);
+    });
+  });
+
   await t.test("real read-only session cannot enable or test, and a valid owner still needs CSRF", async () => {
     await withPage(async (page, f, origin) => {
       assert.equal(await page.locator("#receiver-action").isDisabled(), true);

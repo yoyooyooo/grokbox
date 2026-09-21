@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import { ManagementClientError, UUID, notificationIdentity, normalizeReceiverChange, type ReceiverView, type ReceiverList,
-  type ReceiverOperation, type ReceiverVerification, type ReceiverChangeRequest, type NotificationView, type NotificationList, type NotificationTestOperation } from "@grokbox/client/contract";
+  type ReceiverOperation, type ReceiverVerification, type ReceiverChangeRequest, type NotificationView, type NotificationList, type NotificationTestOperation, normalizeNotificationSend, type NotificationSendOperation } from "@grokbox/client/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { ConfigError, effectiveOps } from "@grokbox/runtime-kernel/config";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
@@ -12,7 +12,9 @@ import { HttpFailure, requireCapability, type Principal } from "./access.ts";
 import { pageInput } from "./pagination.ts";
 
 export type NotificationDomain = { root: string; installationId: string; readNative: ExplicitReceiverReader;
-  request?: NonNullable<Parameters<typeof startOpsNotificationWorker>[1]>["request"] };
+  request?: NonNullable<Parameters<typeof startOpsNotificationWorker>[1]>["request"];
+  authorizeSend?: (signal: AbortSignal) => Promise<void>;
+  afterSendClaim?: (signal: AbortSignal) => Promise<void> };
 const refuse = (code: "not_found" | "revision_conflict" | "source_changed" | "idempotency_conflict" | "source_unavailable", message: string): never => {
   throw new HttpFailure(code === "not_found" ? 404 : code === "source_unavailable" ? 503 : 409, code, message);
 };
@@ -21,8 +23,8 @@ function projectError(error: unknown): HttpFailure {
   if (error instanceof ManagementClientError) return new HttpFailure(error.code === "wrong_installation" ? 409 : 400, error.code, error.message);
   if (error instanceof ConfigError) return new HttpFailure(503, "source_unavailable", "The notification configuration is unavailable.");
   const reason = error instanceof NotificationError || error instanceof OpsPairingError ? error.reason : error instanceof BoxRuntimeError ? error.message : null;
-  if (reason && ["capacity", "receipt_capacity", "notification_test_capacity"].includes(reason)) return new HttpFailure(507, "store_full", "The notification recovery capacity is full; previous records have not been removed.");
-  if (reason && ["authorization_conflict", "notification_test_conflict"].includes(reason)) return new HttpFailure(409, "idempotency_conflict", "The request ID already belongs to another receiver action.");
+  if (reason && ["capacity", "receipt_capacity", "notification_test_capacity", "notification_send_capacity"].includes(reason)) return new HttpFailure(507, "store_full", "The notification recovery capacity is full; previous records have not been removed.");
+  if (reason && ["authorization_conflict", "notification_test_conflict", "notification_send_conflict"].includes(reason)) return new HttpFailure(409, "idempotency_conflict", "The request ID already belongs to another receiver action.");
   if (reason && ["binding_revision_changed", "binding_identity_changed", "operation_conflict"].includes(reason)) return new HttpFailure(409, "revision_conflict", "The binding changed; refresh its revision without discarding the draft.");
   if (reason === "notification_scope_changed") return new HttpFailure(409, "source_changed", "The notification database changed; do not repeat an old action into its replacement.");
   if (reason === "notification_cursor_gap") return new HttpFailure(409, "cursor_gap", "The retained notification cursor is no longer in this database.");
@@ -40,7 +42,7 @@ const owned = <A>(run: (signal: AbortSignal) => Promise<A>) => Effect.scoped(Eff
   }), task => Effect.promise(async () => { task.controller.abort(); await task.promise.catch(() => undefined); }));
   return yield* io(() => task.promise);
 }));
-export function notificationOperationKey(installationId: string, principalId: string, databaseId: string, requestId: string, domain: "receiver" | "test") {
+export function notificationOperationKey(installationId: string, principalId: string, databaseId: string, requestId: string, domain: "receiver" | "test" | "send") {
   return sha256Text(canonicalJson(["notification-management-v1", installationId, principalId, databaseId, requestId, domain]));
 }
 function testWorkId(key: string): string {
@@ -88,6 +90,17 @@ async function testOperation(domain: NotificationDomain, principalId: string, da
     receiverRef: `receiver:${domain.installationId}:${databaseId}:${row.bindingId}`, action: "test", expectedRevision: row.bindingRevision,
     state: delivery.state === "completed" ? "succeeded" : ["blocked", "expired"].includes(delivery.state) ? "refused" : "unknown", delivery, enablesAutomatic: false };
 }
+async function sendOperation(domain: NotificationDomain, principalId: string, databaseId: string, requestId: string): Promise<NotificationSendOperation> {
+  const key = notificationOperationKey(domain.installationId, principalId, databaseId, requestId, "send");
+  const row = await openMonitorStore(domain.root).notificationSend(databaseId, key);
+  if (!row) return refuse("not_found", "No explicit delivery request is recorded for this principal and request UUID.");
+  const state = row.attempt?.state === "native-accepted" ? "succeeded" : row.attempt?.state === "definitely-not-accepted" || row.reason !== null ? "refused" : "unknown";
+  return { version: 1, operationRef: `notification-operation:${domain.installationId}:${databaseId}:${key}`, requestId,
+    notificationRef: `notification:${domain.installationId}:${databaseId}:${row.workId}`,
+    receiverRef: `receiver:${domain.installationId}:${databaseId}:${row.bindingId}`, action: "send",
+    expectedRevision: row.bindingRevision, expectedModelRevision: row.modelRevision, state, reason: row.reason,
+    attempt: row.attempt as NotificationView["attempt"], enablesAutomatic: false, botReport: "not_observed", userRead: "not_observed" };
+}
 async function verify(domain: NotificationDomain, row: PairingRecord, signal: AbortSignal): Promise<ReceiverVerification> {
   const ref = receiverView(domain.installationId, row).receiverRef;
   const blocked = (reason: string): ReceiverVerification => ({ receiverRef: ref, revision: row.revision, state: "blocked", reason,
@@ -111,7 +124,7 @@ export function notificationManagement(domain: NotificationDomain, principal: Pr
   return Effect.gen(function* () {
     const path = url.pathname;
     yield* Effect.try({ try: () => {
-      requireCapability(principal, method === "POST" ? path === "/v1/notification-tests" ? "notifications.test" : "notifications.write"
+      requireCapability(principal, method === "POST" ? path === "/v1/notification-sends" ? "notifications.send" : path === "/v1/notification-tests" ? "notifications.test" : "notifications.write"
         : path.includes("-operations/") ? "operations.read" : "notifications.read");
       if (path !== "/v1/notifications" && url.search) throw new HttpFailure(400, "invalid_input", "This notification endpoint does not accept query parameters.");
     }, catch: projectError });
@@ -121,11 +134,12 @@ export function notificationManagement(domain: NotificationDomain, principal: Pr
       const row = await findReceiver(domain, decodeURIComponent(receiver[1]!));
       return receiver[2] ? verify(domain, row, signal) : receiverView(domain.installationId, row);
     }).pipe(Effect.timeout("20 seconds"));
-    const lookup = /^\/v1\/notification-(receiver|test)-operations\/([^/]+)\/([^/]+)$/.exec(path);
+    const lookup = /^\/v1\/notification-(receiver|test|send)-operations\/([^/]+)\/([^/]+)$/.exec(path);
     if (method === "GET" && lookup) return yield* io(async () => {
       if (!UUID.test(lookup[2]!) || !UUID.test(lookup[3]!)) throw new HttpFailure(400, "invalid_input", "Invalid notification operation locator.");
       const databaseId = lookup[2]!.toLowerCase(), requestId = lookup[3]!.toLowerCase();
       if (lookup[1] === "test") return testOperation(domain, principal.id, databaseId, requestId);
+      if (lookup[1] === "send") return sendOperation(domain, principal.id, databaseId, requestId);
       const key = notificationOperationKey(domain.installationId, principal.id, databaseId, requestId, "receiver");
       const receipt = await openOpsBindings(domain.root).managementReceipt(key);
       if (!receipt) return refuse("not_found", "No receiver receipt is recorded for this principal and request.");
@@ -142,6 +156,55 @@ export function notificationManagement(domain: NotificationDomain, principal: Pr
       const target = notificationIdentity(decodeURIComponent(delivery[1]!), domain.installationId, "notification");
       return deliveryView(domain, target.databaseId, target.id);
     });
+    if (method === "POST" && path === "/v1/notification-sends") {
+      const request = yield* Effect.try({ try: () => normalizeNotificationSend(input, domain.installationId), catch: projectError });
+      return yield* owned(async signal => {
+        const work = notificationIdentity(request.notificationRef, domain.installationId, "notification");
+        const receiver = notificationIdentity(request.receiverRef, domain.installationId);
+        const key = notificationOperationKey(domain.installationId, principal.id, work.databaseId, request.requestId, "send");
+        const digest = sha256Text(canonicalJson(request)), observed = openMonitorStore(domain.root);
+        const prior = await observed.notificationSend(work.databaseId, key);
+        if (prior) {
+          if (prior.requestDigest !== digest) return refuse("idempotency_conflict", "The original request belongs to different notification input.");
+          return sendOperation(domain, principal.id, work.databaseId, request.requestId);
+        }
+        const original = await observed.notificationDelivery(work.id, work.databaseId);
+        if (original.state === "not_found") return refuse("not_found", "The original notification work is unavailable; a new work was not created.");
+        if (original.purpose !== "incident") throw new HttpFailure(400, "invalid_input", "Independent tests cannot be sent through the incident delivery endpoint.");
+        const row = await findReceiver(domain, request.receiverRef);
+        if (row.revision !== request.expectedRevision) return refuse("revision_conflict", "The receiver changed; review the original target before sending.");
+        if (!domain.authorizeSend) return refuse("source_unavailable", "The delivery authority is unavailable.");
+        await domain.authorizeSend(signal);
+        const preflight = await verify(domain, row, signal);
+        if (row.state !== "prepared" || preflight.state !== "ready" || preflight.modelRevision !== request.expectedModelRevision)
+          return refuse("source_unavailable", "The exact receiver and reviewed model did not pass fresh qualification.");
+        signal.throwIfAborted();
+        const storage = await readStorageConfiguration(domain.root), writes = openMonitorStore(domain.root, storage.monitor);
+        const claim = await writes.createNotificationSend({ databaseId: work.databaseId, workId: work.id, operationId: key, requestDigest: digest,
+          bindingId: receiver.id, bindingRevision: request.expectedRevision, modelRevision: request.expectedModelRevision, nowMs: Date.now() });
+        try {
+          if (claim.dispatch) {
+            await domain.afterSendClaim?.(signal);
+            let permissionRevoked = false;
+            const authorize = async (currentSignal: AbortSignal) => {
+              try { await domain.authorizeSend!(currentSignal); }
+              catch (error) { permissionRevoked = true; throw error; }
+            };
+            const driver = createPreparedNoticeDriver({ durableRoot: domain.root, expectedBindingId: receiver.id,
+              expectedBindingRevision: request.expectedRevision, expectedModelRevision: request.expectedModelRevision,
+              readNative: domain.readNative, signal, authorize }, { request: domain.request });
+            const result = await runOpsNotificationDelivery({ durableRoot: domain.root, workId: work.id, driver: driver.driver, signal, managementOperationId: key });
+            if (["blocked", "unavailable", "already_attempted"].includes(result.state)) {
+              await writes.finishNotificationSendWithoutAttempt(work.databaseId, key, permissionRevoked ? "permission-revoked"
+                : signal.aborted ? "cancelled-before-dispatch" : result.state === "already_attempted" ? "already-attempted" : "not-dispatched");
+            }
+          }
+          return await sendOperation(domain, principal.id, work.databaseId, request.requestId);
+        } catch {
+          throw new HttpFailure(409, "operation_unknown", "The delivery has an original durable request but no verified completion. Read that request; do not submit a replacement.");
+        }
+      });
+    }
     if (method === "POST" && ["/v1/notification-receiver-changes", "/v1/notification-tests"].includes(path)) {
       const request = yield* Effect.try({ try: () => normalizeReceiverChange(input, domain.installationId), catch: projectError });
       if ((request.action === "test") !== (path === "/v1/notification-tests")) return yield* Effect.fail(new HttpFailure(400, "invalid_input", "Use the dedicated endpoint and capability for an independent notification test."));

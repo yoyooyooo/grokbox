@@ -89,7 +89,9 @@ function closeListener(server: Server): Promise<void> {
  * disconnect does not cancel a submitted domain program; shutdown interrupts
  * observations and waits for its owned, uninterruptible commit checkpoints. */
 export async function startManagementServer(options: ManagementServerOptions, testPorts: {
-  notification?: Pick<NonNullable<Parameters<typeof startOpsNotificationWorker>[1]>, "request" | "idleMs" | "blockedMs">;
+  notification?: Pick<NonNullable<Parameters<typeof startOpsNotificationWorker>[1]>, "request" | "idleMs" | "blockedMs"> & {
+    sendClaimed?: (signal: AbortSignal) => Promise<void>;
+  };
   materials?: NonNullable<Parameters<typeof startMaterialIndexer>[1]> & { writeHooks?: MaterialWriteHooks };
   protection?: ProtectionServiceTestPorts;
   lifecycle?: { create?: LifecycleDomain["create"] };
@@ -251,7 +253,8 @@ export async function startManagementServer(options: ManagementServerOptions, te
         materialDomain: { root: options.store.root, installationId, status: () => {
           if (!materialIndexer) throw new HttpFailure(503,"unavailable","Material indexing is starting."); return materialIndexer.status();
         }, authorizeWrite: signal => materialAuthorize(signal,"materials.write"), writeHooks: testPorts.materials?.writeHooks },
-        notificationDomain: { root: options.store.root, installationId,
+        notificationDomain: { root: options.store.root, installationId, authorizeSend: signal => materialAuthorize(signal, "notifications.send"),
+          afterSendClaim: testPorts.notification?.sendClaimed,
           readNative: options.native.readNotificationReceiver ?? (async () => { throw new Error("notification_receiver_unavailable"); }),
           request: testPorts.notification?.request } }, principal!, request.method!, url, input);
       if (request.method === "GET" && (url.pathname === "/v1/materials" || url.pathname.startsWith("/v1/material-"))) {
@@ -267,6 +270,12 @@ export async function startManagementServer(options: ManagementServerOptions, te
       }
       if (request.method === "GET" && (url.pathname === "/v1/protection" || url.pathname.startsWith("/v1/protection/") || url.pathname.startsWith("/v1/protection-"))) {
         yield* Effect.tryPromise({try:signal=>materialAuthorize(signal,url.pathname.startsWith("/v1/protection-operations/")?"operations.read":"protection.read"),catch:error=>error});
+      }
+      if (request.method === "GET" && (url.pathname.startsWith("/v1/notification-") || url.pathname === "/v1/notifications" || url.pathname.startsWith("/v1/notifications/"))) {
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.includes("-operations/") ? "operations.read" : "notifications.read"), catch: error => error });
+      }
+      if (request.method === "POST" && url.pathname === "/v1/notification-sends" && result && typeof result === "object" && "state" in result && result.state === "refused") {
+        return yield* Effect.fail(new HttpFailure(409, "notification_send_refused", "The explicit delivery did not send successfully. Inspect its original receipt; a refusal does not authorize resending this work.", { operation: result }));
       }
       if (request.method === "POST" && result && typeof result === "object" && "action" in result && result.action === "test" && "state" in result && result.state === "refused") {
         return yield* Effect.fail(new HttpFailure(409, "notification_test_refused", "The independent test was not accepted. Its retained receipt describes the refusal; it does not affect permission to enable future notifications.", { operation: result }));

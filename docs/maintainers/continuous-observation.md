@@ -162,7 +162,7 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 
 ## 现行磁盘合同与数据保全
 
-monitor 只接受现行 SQLite schema v4，同时核对 metadata 与物理 header；CONT v4、Routine provision v3 分属各自 owner，不与通用配置 schema 混用。SQLite 依赖和 Node 版本以包声明及安装验证为准；Host/preload 不导入 SQLite、SDK 或 Effect。开发期旧库只作为拒绝／字节保全反例，不是正常运行或初始化的兼容输入。实现与固定范围见[安全存储合同收束](../reports/2026-09-21-current-safety-store-contracts.md)。
+monitor 只接受[现行 SQLite schema](../../packages/box-runtime/src/internal/io/monitor-schema.node.ts)，同时核对 metadata 与物理 header；显式通知请求已在原库增设安全关联，见[通知管理工作包](../reports/2026-09-21-notification-send-management.md)。CONT v4、Routine provision v3 分属各自 owner，不与通用配置 schema 混用。SQLite 依赖和 Node 版本以包声明及安装验证为准；Host/preload 不导入 SQLite、SDK 或 Effect。开发期旧库只作为拒绝／字节保全反例，不是正常运行或初始化的兼容输入。实现与固定范围见[安全存储合同收束](../reports/2026-09-21-current-safety-store-contracts.md)。
 
 这里刻意使用 **DELETE rollback-journal** 的增量页事务，而非 WAL：短事务串行写，严格只读连接不创建 WAL/SHM sidecar。不是每次加载、导出、替换整个 JS 数据库镜像。磁盘引擎缺失/文件坏时明确失败，禁止回退内存或创建空库报健康。
 

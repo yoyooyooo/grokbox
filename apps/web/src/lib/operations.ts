@@ -1,10 +1,10 @@
-import { normalizeCompactionChange, normalizeCompactionContinuation, type CompactionChange, type CompactionContinuation, type CompactionOperation, normalizeContextChange, normalizeContextContinuation, type ContextChange, type ContextContinuation, type ContextOperation, ManagementClientError, UUID, incidentIdentity, notificationIdentity, type ReceiverChangeRequest, type ModelChange, type ModelChangeRequest, type IncidentChangeRequest, type SetupRequest, type SetupKind, type MaterialWrite, type ProtectionChangeRequest, normalizeProtectionChange, materialIdentity, routineIdentity, botIdFromRef, setupKind } from "@grokbox/client";
+import { normalizeNotificationSend, type NotificationSendRequest, normalizeCompactionChange, normalizeCompactionContinuation, type CompactionChange, type CompactionContinuation, type CompactionOperation, normalizeContextChange, normalizeContextContinuation, type ContextChange, type ContextContinuation, type ContextOperation, ManagementClientError, UUID, incidentIdentity, notificationIdentity, type ReceiverChangeRequest, type ModelChange, type ModelChangeRequest, type IncidentChangeRequest, type SetupRequest, type SetupKind, type MaterialWrite, type ProtectionChangeRequest, normalizeProtectionChange, materialIdentity, routineIdentity, botIdFromRef, setupKind } from "@grokbox/client";
 
 import { normalizeHandoverChange, normalizeHandoverContinuation, protectionReferenceIdentity, type HandoverChange, type HandoverContinuation, type HandoverOperation } from "@grokbox/client";
 
 export type OperationScope = { installationId: string; principalId: string };
 export type LocalOperation = {
-  version: 1; requestId: string; installationId: string; principalId: string; command: ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
+  version: 1; requestId: string; installationId: string; principalId: string; command: ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "notification-send" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
   setupKind?: SetupKind; setupScope?: string;
   target: string; createdAt: number; state: "awaiting-response" | "unknown" | "succeeded" | "refused" | "retired";
 };
@@ -19,6 +19,8 @@ const valid = (value: unknown, scope: OperationScope): value is LocalOperation =
     && (row.command === "handover-control" ? validHandoverLocator(row, scope) : ["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
       : row.setupKind === undefined && row.setupScope === undefined && (["incident-ack", "incident-snooze"].includes(row.command)
       ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`incident:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
+      : row.command === "notification-send"
+        ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`notification:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
       : ["receiver-enable", "receiver-disable", "receiver-unbind", "notification-test"].includes(row.command)
         ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`receiver:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
         : row.databaseId === undefined && ["bot-selection", "default-selection", "model-put", "model-patch", "model-delete"].includes(row.command)))
@@ -96,7 +98,7 @@ export function localOperations(storage: StoragePort, scope: OperationScope): Lo
 /** Persist only recovery metadata, never model input, cookie, CSRF or a key ref.
  * One key per UUID avoids overwriting another tab's index. Refuse before send if
  * storage is unavailable; unresolved locators are never silently evicted. */
-export function rememberOperation(storage: StoragePort, scope: OperationScope, input: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
+export function rememberOperation(storage: StoragePort, scope: OperationScope, input: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
   try {
     if (!UUID.test(input.requestId) || !UUID.test(scope.installationId) || !scope.principalId || scope.principalId.length > 128
       || localOperations(storage, scope).length >= 128) throw new Error();
@@ -104,6 +106,8 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
     if (storage.getItem(key) !== null) throw new Error();
     const metadata: Pick<LocalOperation, "command" | "target" | "databaseId" | "setupKind" | "setupScope" | "contextScope"> = "change" in input
       ? { command: input.change.kind, target: input.change.kind === "bot-selection" ? input.change.agentId : input.change.kind === "default-selection" ? "default" : input.change.modelId }
+      : "notificationRef" in input ? { command: "notification-send", target: normalizeNotificationSend(input, scope.installationId).notificationRef,
+        databaseId: notificationIdentity(input.notificationRef, scope.installationId, "notification").databaseId }
       : "receiverRef" in input ? { command: input.action === "test" ? "notification-test" : `receiver-${input.action}`, target: input.receiverRef,
         databaseId: notificationIdentity(input.receiverRef, scope.installationId).databaseId }
       : "incidentRef" in input ? { command: input.action === "ack" ? "incident-ack" : "incident-snooze", target: input.incidentRef,
@@ -120,7 +124,7 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
     return row;
   } catch { throw new ManagementClientError("unavailable", "无法保存操作恢复标识，本次尚未提交。请检查浏览器存储或整理已结束的记录。"); }
 }
-export type OperationDomain = "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification-test" | "notification-settings" | "routine" | "pairing";
+export type OperationDomain = "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification" | "notification-test" | "notification-settings" | "routine" | "pairing";
 export function operationDomain(row: LocalOperation): OperationDomain {
   if (row.command === "handover-control") return "handover";
   if (row.command === "context-compaction") return "compaction";
@@ -128,7 +132,7 @@ export function operationDomain(row: LocalOperation): OperationDomain {
   if (row.command === "protection-policy") return "protection";
   if (row.command === "material-write") return "material";
   if (row.setupKind) return row.setupKind === "settings" ? "notification-settings" : row.setupKind;
-  return row.command === "notification-test" ? "notification-test" : row.command.startsWith("receiver-") ? "receiver" : row.command.startsWith("incident-") ? "incident" : "model";
+  return row.command === "notification-send" ? "notification" : row.command === "notification-test" ? "notification-test" : row.command.startsWith("receiver-") ? "receiver" : row.command.startsWith("incident-") ? "incident" : "model";
 }
 export function operationSearch(row: LocalOperation): { requestId: string; domain?: Exclude<OperationDomain, "model">; databaseId?: string; bot?: string; target?: string; scopeId?: string } {
   const domain = operationDomain(row);

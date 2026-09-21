@@ -146,7 +146,8 @@ export function openOpsBindings(durableRoot: string) {
      * barrier. Credential material never crosses the private-owner boundary.
      * Local revoke wins before this read; a later revoke cannot unsend a POST. */
     sendPreparedNotice: async (expected: PairingRecord, input: { binding: NotificationBinding; body: string; envelopeDigest: string;
-      signal: AbortSignal }, request?: NotificationRequest, authorizationId?: string): Promise<NativeNotificationResult> => {
+      signal: AbortSignal }, request?: NotificationRequest, authorizationId?: string,
+      authorize?: (signal: AbortSignal) => Promise<void>): Promise<NativeNotificationResult> => {
       let enteredTransport = false;
       try {
         const slot = (await read())?.slots.find(s => s.bindingId === expected.bindingId);
@@ -160,6 +161,10 @@ export function openOpsBindings(durableRoot: string) {
           || b.targetAlias !== p.target.alias || b.agentId !== p.target.agentId || b.routineKey !== p.target.routineKey
           || b.routineId !== p.routineId || b.policyRevision !== p.target.policyRevision)
           return { state: "definitely-not-accepted", reason: "policy_changed" };
+        // Management grants are checked again after the durable start and the
+        // private credential read, immediately before entering native transport.
+        // A denial here is known zero HTTP, not an uncertain network failure.
+        if (authorize) await authorize(input.signal);
         enteredTransport = true;
         return await sendNativeNotification({ ...input, plan: p, credential: slot.credential }, request);
       } catch { return enteredTransport ? { state: "unknown", reason: "transport_failure" } : { state: "definitely-not-accepted", reason: "revoked" }; }

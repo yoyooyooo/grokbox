@@ -13,7 +13,7 @@ import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { selectNotificationTarget, type NotificationBinding, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
 import { openMonitorStore, type MonitorStoreOptions } from "../src/internal/io/monitor-store.node.ts";
 import { acquireConfigurationLease } from "../src/internal/io/config-lock.node.ts";
-import { runOpsNotificationDelivery, observeOpsNotification, type PairedNotificationDriver } from "../src/internal/roots/ops-notification.runtime.ts";
+import { runOpsNotificationDelivery, type PairedNotificationDriver } from "../src/internal/roots/ops-notification.runtime.ts";
 
 const SUBJECT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", RECEIVER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", DAY = 86400000;
 async function fixture(max = 10) {
@@ -112,7 +112,7 @@ test("unpaired default has no sender, no attempt and no inferred live binding", 
   try {
     const workId = await f.work(), before = await readFile(f.store.path);
     expect(await runOpsNotificationDelivery({ durableRoot: f.root, workId, now: f.now })).toMatchObject({ state: "unavailable", reason: "target_not_paired" });
-    expect(await observeOpsNotification({ durableRoot: f.root, workId })).toMatchObject({ route: { state: "selected" }, nativeTransport: "not_probed", automaticDelivery: "unavailable", binding: "not_checked" });
+    expect(await f.store.notificationDelivery(workId)).toMatchObject({ state: "ready", attempt: null, automaticRetry: false });
     expect(await f.store.notificationDelivery(workId)).toMatchObject({ attempt: null }); expect(await readFile(f.store.path)).toEqual(before);
   } finally { await f.close(); }
 });
@@ -258,7 +258,7 @@ test("malformed native receipts become unknown without propagating arbitrary fie
 test("pure status against an absent store neither initializes it nor invents an empty healthy history", async () => {
   const root = await mkdtemp(join(tmpdir(), "ops-absent-"));
   try {
-    await expect(observeOpsNotification({ durableRoot: root })).rejects.toBeDefined();
+    await expect(openMonitorStore(root).notificationWork()).rejects.toBeDefined();
     expect(await readdir(root)).toEqual([]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -287,20 +287,20 @@ for (const phase of ["reserved", "attempting"] as const) test(`real writer death
   } finally { await f.close(); if (buildDir) await rm(buildDir, { recursive: true, force: true }); }
 }, 15000);
 
-test("source and packed Node notification queries bypass broken Profile config without writes or network", async () => {
+test("retired source and packed Node ops queries cannot bypass the management service or change stored evidence", async () => {
   const f = await fixture(); try {
     const workId = await f.work(); await writeFile(f.configPath, "{BROKEN_PRIVATE_CONFIG", { mode: 0o600 });
     const before = await readFile(f.store.path);
     const result = await captureCli(["ops", "notifications", "show", workId, "--json"], { boxRuntimeRoot: f.root, configDir: f.root, env: {},
       fetch: (async () => { throw Error("must_not_contact_gateway"); }) as unknown as typeof fetch });
-    expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ data: { route: { state: "unavailable" }, delivery: { state: "ready", attempt: null }, nativeTransport: "not_probed", automaticDelivery: "unavailable" } });
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).not.toContain("BROKEN_PRIVATE_CONFIG");
     const child = spawn("node", [ensurePackedCli(), "ops", "notifications", "show", workId, "--json"], { cwd: f.root,
       env: { PATH: process.env.PATH, HOME: f.root, GROKBOX_CONFIG_DIR: f.root, GROKBOX_BOX_RUNTIME_ROOT: f.root }, stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
     let stdout = "", stderr = "";
     child.stdout.on("data", chunk => stdout += chunk); child.stderr.on("data", chunk => stderr += chunk);
     const exit = await new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
-    expect(exit, stderr).toBe(0); expect(JSON.parse(stdout)).toMatchObject({ data: { nativeTransport: "not_probed", automaticDelivery: "unavailable", delivery: { workId } } });
+    expect(exit).not.toBe(0);
     expect(stdout + stderr).not.toContain("PRIVATE"); expect(await readFile(f.store.path)).toEqual(before);
   } finally { await f.close(); }
 }, 15000);

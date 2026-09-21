@@ -16,14 +16,14 @@ const readPaths = [
   /^\/v1\/notification-settings$/, /^\/v1\/notification-blueprint\/[a-z][a-z0-9_-]{0,31}$/,
   /^\/v1\/routines(?:\/[^/]+)?$/, /^\/v1\/setup-operations\/(?:settings|routine|pairing)\/(?:installation|[0-9a-f-]{36})\/[0-9a-f-]{36}$/,
   /^\/v1\/notification-worker$/, /^\/v1\/notification-receivers$/, /^\/v1\/notification-receivers\/[^/]+(?:\/verification)?$/,
-  /^\/v1\/notification-(?:receiver|test)-operations\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/, /^\/v1\/notifications(?:\/[^/]+)?$/,
+  /^\/v1\/notification-(?:receiver|test|send)-operations\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/, /^\/v1\/notifications(?:\/[^/]+)?$/,
   /^\/v1\/identity$/, /^\/v1\/bots$/, /^\/v1\/bots\/[^/]+$/, /^\/v1\/bots\/[^/]+\/model$/,
   /^\/v1\/models$/, /^\/v1\/models\/[^/]+$/, /^\/v1\/model-default$/,
   /^\/v1\/observation$/, /^\/v1\/observation-events$/, /^\/v1\/incidents$/, /^\/v1\/service$/,
   /^\/v1\/model-operations\/[0-9a-f-]{36}$/, /^\/v1\/console\/session$/,
 ];
 readPaths.push(/^\/v1\/incidents\/[^/]+$/, /^\/v1\/incident-operations\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/, /^\/v1\/observation-events\/watch$/);
-const writePaths = new Set(["/v1/handover-changes", "/v1/handover-continuations", "/v1/context-compactions", "/v1/context-compaction-continuations", "/v1/context-changes", "/v1/context-continuations", "/v1/protection-changes", "/v1/material-changes", "/v1/setup-changes", "/v1/model-changes", "/v1/incident-changes", "/v1/notification-receiver-changes", "/v1/notification-tests", "/v1/console/redeem", "/v1/console/logout"]);
+const writePaths = new Set(["/v1/handover-changes", "/v1/handover-continuations", "/v1/context-compactions", "/v1/context-compaction-continuations", "/v1/context-changes", "/v1/context-continuations", "/v1/protection-changes", "/v1/material-changes", "/v1/setup-changes", "/v1/model-changes", "/v1/incident-changes", "/v1/notification-receiver-changes", "/v1/notification-tests", "/v1/notification-sends", "/v1/console/redeem", "/v1/console/logout"]);
 const securityHeaders = { "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" };
 
 function consoleCookie(request: Request, origin: string): string | undefined {
@@ -133,7 +133,7 @@ export function createConsoleBridge(config: WebConfiguration, upstreamFetch: typ
         return new Response(bytes as BodyInit, { status: result.status, headers: responseHeaders });
       } finally { if (!streamOwned) active--; }
     } catch (error) {
-      if (submitted && ["/v1/protection-changes", "/v1/material-changes", "/v1/setup-changes", "/v1/model-changes", "/v1/incident-changes", "/v1/notification-receiver-changes", "/v1/notification-tests"].includes(new URL(request.url).pathname)) {
+      if (submitted && request.method === "POST" && !["/v1/console/redeem", "/v1/console/logout"].includes(new URL(request.url).pathname)) {
         return failure(503, "operation_unknown", "The response is not verifiable. Query the original request ID; do not resubmit.");
       }
       if (error instanceof WebBoundaryError) return failure(error.status, error.code, error.message);

@@ -11,7 +11,6 @@ import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout } from "../io/config-layout.node.ts";
 import { acquireConfigurationLease } from "../io/config-lock.node.ts";
 import { readStorageConfiguration } from "../io/storage-configuration.node.ts";
-import { openOpsBindings } from "../io/ops-bindings.node.ts";
 
 /** T46 supplies a genuinely paired native driver. The default is unavailable;
  * the CLI cannot turn a URL, event payload or effective config into this port.
@@ -22,7 +21,7 @@ export type PairedNotificationDriver = {
   send: (input: { binding: NotificationBinding; body: string; envelopeDigest: string; signal: AbortSignal }) => Promise<unknown>;
 };
 export type OpsNotificationInput = { durableRoot: string; workId: string; driver?: PairedNotificationDriver;
-  signal?: AbortSignal; now?: () => number; storeOptions?: MonitorStoreOptions; replayFence?: NoticeReplayFence };
+  signal?: AbortSignal; now?: () => number; storeOptions?: MonitorStoreOptions; replayFence?: NoticeReplayFence; managementOperationId?: string };
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: () => new NotificationError("source_unavailable") });
 
 /** One explicit iteration. No service/autostart installation, pairing or retry.
@@ -52,7 +51,8 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
     }),
     reserve: (workId, target, binding) => io(async () => {
       if (input.signal?.aborted) return { state: "blocked", reason: "cancelled_before_reservation" } as const;
-      return (await writeStore()).reserveNotification({ workId, target, binding, nowMs: now() });
+      return (await writeStore()).reserveNotification({ workId, target, binding, nowMs: now(),
+        ...(input.managementOperationId ? { managementOperationId: input.managementOperationId } : {}) });
     }),
     begin: frozen => io(async () => {
       if (input.signal?.aborted) return { dispatch: false, reason: "cancelled_before_start" };
@@ -93,20 +93,4 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
       attemptId: frozen.attemptId, result, nowMs: now() })),
   }));
   return Effect.runPromise(program, { signal: input.signal });
-}
-
-/** Read-only default-target preflight, with no native calls or secret reads. A
- * selected config target is not a persisted/qualified pairing. */
-export async function observeOpsNotification(input: { durableRoot: string; workId?: string }) {
-  let route;
-  try { route = selectNotificationTarget(effectiveOps((await openConfigStore(rootConfigLayout(input.durableRoot)).read()).document.ops)); }
-  catch { route = { state: "unavailable", reason: "configuration_unavailable" }; }
-  const store = openMonitorStore(input.durableRoot);
-  const delivery = input.workId ? await store.notificationDelivery(input.workId) : await store.notificationWork(100);
-  const pairing = await openOpsBindings(input.durableRoot).status(route.state === "selected" && route.target ? route.target.alias : undefined);
-  return { route, delivery, pairing, coverage: input.workId ? { kind: "exact_work" } : { kind: "most_recent_window", limit: 100, complete: false },
-    nativeTransport: "not_probed", explicitDelivery: "single-confirmed-attempt",
-    automaticDelivery: route.state === "selected" && pairing.bindings?.some(b => b.automaticAuthorization.state === "authorized")
-      ? "authorized_requires_current_checks" : "unavailable", worker: "not_checked", binding: "not_checked", automaticRetry: false,
-    initialized: false, botReport: "not_observed", userRead: "not_observed" };
 }

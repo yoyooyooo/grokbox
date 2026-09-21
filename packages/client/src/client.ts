@@ -25,6 +25,8 @@ const materialInput = <A>(read: () => A): A => { try { return read(); } catch (e
 import { notificationIdentity, normalizeReceiverChange, type ReceiverChangeRequest, type ReceiverList, type ReceiverView, type ReceiverOperation,
   type ReceiverVerification, type NotificationView, type NotificationList, type NotificationTestOperation } from "./contract.ts";
 import { receiverView, receiverOperation, notificationView, notificationTestOperation } from "./receiver-validation.ts";
+import { normalizeNotificationSend, type NotificationSendRequest, type NotificationSendOperation } from "./notification-send-contract.ts";
+import { notificationSendOperation } from "./notification-send-validation.ts";
 import { normalizeSetupRequest, routineIdentity, routineReference, setupKind, type SetupRequest, type SetupKind, type SetupOperation,
   type NotificationSettingsView, type RoutineList, type RoutineBlueprint } from "./contract.ts";
 import { settingsView, blueprintView, routineList, setupOperation } from "./setup-validation.ts";
@@ -125,7 +127,7 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
@@ -193,6 +195,10 @@ export class ManagementClient {
       // request/target/approval must be checked just like a successful receipt.
       if (reply.error.code === "compaction_failed" && path.startsWith("/v1/context-compaction")
         && (!mutation || !validate(reply.error.details?.operation) || !record(reply.error.details?.operation) || reply.error.details.operation.state !== "failed")) throw invalidReply();
+      if ((reply.error.code === "notification_send_refused" && path === "/v1/notification-sends"
+        || reply.error.code === "notification_test_refused" && path === "/v1/notification-tests")
+        && (!mutation || !validate(reply.error.details?.operation) || !record(reply.error.details?.operation)
+          || reply.error.details.operation.state !== "refused")) throw invalidReply();
       throw new ManagementClientError(reply.error.code, reply.error.message,
         reply.error.code === "operation_unknown" ? { ...reply.error.details, ...recovery } : reply.error.details, reply);
     }
@@ -415,6 +421,18 @@ export class ManagementClient {
     databaseId = databaseId.toLowerCase(); requestId = requestId.toLowerCase();
     return this.request<NotificationTestOperation>(`/v1/notification-test-operations/${databaseId}/${requestId}`,
       value => notificationTestOperation(value, this.options.installationId!, databaseId, requestId), undefined, signal);
+  }
+  async sendNotification(input: NotificationSendRequest, signal?: AbortSignal) {
+    const request = normalizeNotificationSend(input, this.options.installationId!), target = notificationIdentity(request.notificationRef, this.options.installationId!, "notification");
+    return this.request<NotificationSendOperation>("/v1/notification-sends",
+      value => notificationSendOperation(value, this.options.installationId!, target.databaseId, request.requestId, request), request, signal, false,
+      `/v1/notification-send-operations/${target.databaseId}/${request.requestId}`);
+  }
+  async notificationSendOperation(databaseId: string, requestId: string, signal?: AbortSignal) {
+    if (!UUID.test(databaseId) || !UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Database and original request UUIDs are required.");
+    databaseId = databaseId.toLowerCase(); requestId = requestId.toLowerCase();
+    return this.request<NotificationSendOperation>(`/v1/notification-send-operations/${databaseId}/${requestId}`,
+      value => notificationSendOperation(value, this.options.installationId!, databaseId, requestId), undefined, signal);
   }
   async notification(ref: string, signal?: AbortSignal) {
     const target = notificationIdentity(ref, this.options.installationId!, "notification");

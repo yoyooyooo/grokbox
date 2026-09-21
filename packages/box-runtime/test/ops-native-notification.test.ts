@@ -19,7 +19,8 @@ import { openOpsBindings } from "../src/internal/io/ops-bindings.node.ts";
 import { acquireConfigurationLease } from "../src/internal/io/config-lock.node.ts";
 import { runOpsPairing } from "../src/internal/roots/ops-pairing.runtime.ts";
 import { runRoutineProvisionCommand } from "../src/internal/roots/routine-provision.runtime.ts";
-import { runExplicitOpsNotification, type ExplicitReceiverRead } from "../src/internal/roots/ops-explicit-delivery.runtime.ts";
+import { type ExplicitReceiverRead } from "../src/internal/roots/ops-explicit-delivery.runtime.ts";
+import { deliverPreparedFixture } from "./fixtures/prepared-notice.ts";
 import { NATIVE_NOTIFICATION_HTTP, sendNativeNotification, type NotificationRequest } from "../src/internal/io/native-notification.node.ts";
 import { ownedOwnershipSnapshot } from "./ownership-fixture.ts";
 
@@ -91,9 +92,9 @@ async function fixture(reply: Reply = (_req, res) => { res.end("PRIVATE_NATIVE_R
     req.once("close", () => events.push("request-close")); req.once("error", () => events.push("request-error"));
     return req;
   };
-  const input = (workId: string) => ({ durableRoot: root, workId, expectedBindingRevision: pairing.revision, expectedModelRevision: MODEL, confirmed: true, readNative });
+  const input = (workId: string) => ({ durableRoot: root, workId, expectedBindingRevision: pairing.revision, expectedModelRevision: MODEL, readNative });
   return { root, configPath, document, store, owner, pairing, rows, httpPort: (server.address() as AddressInfo).port, readNative, reads: () => reads, emit, request, input, requests, events, transports: () => transports,
-    send: (workId: string) => runExplicitOpsNotification(input(workId), { request }),
+    send: (workId: string) => deliverPreparedFixture(input(workId), { request }),
     close: async () => { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); await rm(root, { recursive: true, force: true }); } };
 }
 
@@ -108,8 +109,7 @@ test("explicit delivery crosses a real HTTP boundary after durable reservation, 
   try {
     const workId = await f.emit(), capsule = await readFile(join(f.root, "state/ops-pairing/bindings.json"));
     const result = await f.send(workId);
-    expect(result, JSON.stringify(f.events)).toMatchObject({ state: "native-accepted", automaticDeliveryEnabled: false, credentialsRequested: false, routineChanged: false,
-      actualReceiverTurn: "not_observed", botReport: "not_observed", userRead: "not_observed" });
+    expect(result, JSON.stringify(f.events)).toMatchObject({ state: "native-accepted", automaticRetry: false, botReport: "not_observed", userRead: "not_observed" });
     expect(f.requests).toHaveLength(1); expect(f.transports()).toBe(1);
     expect(f.requests[0]!.headers.authorization).toBe(`Bearer ${KEY}`);
     expect(f.requests[0]!.url).toBe(`/automations/webhook/${nativeAutomationIdentity(RECEIVER, "notice-native")}`);
@@ -139,7 +139,7 @@ for (const scenario of ["disabled", "model", "definition", "temporal", "scope", 
   const f = await fixture();
   try {
     const workId = await f.emit();
-    const result = await runExplicitOpsNotification({ ...f.input(workId), readNative: async () => {
+    const result = await deliverPreparedFixture({ ...f.input(workId), readNative: async () => {
       const native = await f.readNative();
       if (scenario === "disabled") native.snapshot.catalog.routines[0]!.enabled = false;
       if (scenario === "definition") native.snapshot.catalog.routines[0]!.definitionRevision = "9".repeat(64);
@@ -188,7 +188,7 @@ test("cancellation after request receipt closes transport, records uncertainty a
   const f = await fixture(() => { controller.abort(); });
   try {
     const workId = await f.emit();
-    await runExplicitOpsNotification({ ...f.input(workId), signal: controller.signal }, { request: f.request }).catch(() => undefined);
+    await deliverPreparedFixture({ ...f.input(workId), signal: controller.signal }, { request: f.request }).catch(() => undefined);
     expect(await f.store.notificationDelivery(workId)).toMatchObject({ state: "unknown" });
     expect(await f.send(workId)).toMatchObject({ state: "already_attempted" }); expect(f.requests).toHaveLength(1);
   } finally { await f.close(); }
@@ -198,7 +198,7 @@ test("fresh revalidation detects a model change after reservation and never star
   const f = await fixture(); let reads = 0;
   try {
     const workId = await f.emit();
-    const result = await runExplicitOpsNotification({ ...f.input(workId), readNative: async () => {
+    const result = await deliverPreparedFixture({ ...f.input(workId), readNative: async () => {
       const v = await f.readNative(); if (++reads > 1) v.model!.modelRevision = "9".repeat(64); return v;
     } }, { request: f.request });
     expect(result.state).toBe("definitely-not-accepted"); expect(f.transports()).toBe(0);
@@ -229,16 +229,6 @@ test("actual Node transport waits for a complete response and closes before retu
     expect(out).not.toContain(KEY); expect(f.requests).toHaveLength(1); expect(f.requests[0]!.body).toBe(notice.serialized);
   } finally { await f.close(); }
 }, 15000);
-
-test("confirmation and reviewed model fingerprints are required before any local or native work", async () => {
-  const f = await fixture();
-  try {
-    const workId = await f.emit(), before = await readFile(f.store.path);
-    await expect(runExplicitOpsNotification({ ...f.input(workId), confirmed: false }, { request: f.request })).rejects.toBeDefined();
-    await expect(runExplicitOpsNotification({ ...f.input(workId), expectedModelRevision: "invented" }, { request: f.request })).rejects.toBeDefined();
-    expect(f.reads()).toBe(0); expect(f.transports()).toBe(0); expect(await readFile(f.store.path)).toEqual(before);
-  } finally { await f.close(); }
-});
 
 test("body substitution is rejected at the private HTTP boundary even with a matching caller-provided digest", async () => {
   const f = await fixture();

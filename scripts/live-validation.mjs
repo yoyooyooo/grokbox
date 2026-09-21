@@ -223,7 +223,7 @@ const READ_ONLY_PROBES = Object.freeze({
   runtime: ["runtime", "status", "--json"],
   storage: ["runtime", "storage", "status", "--json"],
   targets: ["notification", "receiver", "list"],
-  notifications: ["ops", "notifications", "list", "--json"],
+  notifications: ["notification", "list"],
 });
 
 function runProbe(name, bin) {

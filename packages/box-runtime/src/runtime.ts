@@ -24,7 +24,7 @@ export { acquireDaemonSocket, type DaemonSocketLease } from "./internal/io/daemo
 export { configureMonitorService, readMonitorServiceConfiguration, type MonitorServiceConfiguration } from "./internal/io/monitor-installation.node.ts";
 export { startMonitorService, type MonitorServiceStatus } from "./internal/roots/monitor-service.runtime.ts";
 export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roots/agent-routines.runtime.ts";
-export { runOpsNotificationDelivery, observeOpsNotification, type PairedNotificationDriver } from "./internal/roots/ops-notification.runtime.ts";
+export { runOpsNotificationDelivery, type PairedNotificationDriver } from "./internal/roots/ops-notification.runtime.ts";
 export { activateOpsNotifications } from "./internal/roots/ops-activation.runtime.ts";
 export { openOpsBindings } from "./internal/io/ops-bindings.node.ts";
 export { createPreparedNoticeDriver } from "./internal/roots/ops-explicit-delivery.runtime.ts";
@@ -36,7 +36,7 @@ export { openRoutineProvisionStore } from "./internal/io/routine-provision.node.
 export { changeManagedRoutine } from "./internal/roots/routine-management.runtime.ts";
 export { createRoutineGateway, type RoutineAccess } from "./internal/io/routine-gateway.node.ts";
 export { createNotificationReceiver, type ReceiverReadPorts } from "./internal/io/notification-receiver.node.ts";
-export { runExplicitOpsNotification, type ExplicitReceiverRead, type ExplicitReceiverReader } from "./internal/roots/ops-explicit-delivery.runtime.ts";
+export { type ExplicitReceiverRead, type ExplicitReceiverReader } from "./internal/roots/ops-explicit-delivery.runtime.ts";
 export { verifyOpsReceiver, prepareOpsReceiverBlueprint, type ReceiverNativeRead, type ReceiverNativeReader } from "./internal/roots/ops-receiver.runtime.ts";
 export { runOpsPairing, observeOpsTargets, revokeOpsTarget, type NativePairingSource } from "./internal/roots/ops-pairing.runtime.ts";
 export { runRoutineProvisionCommand, type RoutineProvisionNative } from "./internal/roots/routine-provision.runtime.ts";

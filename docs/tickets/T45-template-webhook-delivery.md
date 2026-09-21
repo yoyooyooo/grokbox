@@ -6,6 +6,12 @@
 
 A22 已落实到[启用程序](../../packages/box-runtime/src/internal/roots/ops-activation.runtime.ts)、[共享管理用例](../../packages/server/src/notification-management.ts)和真实浏览器：已准备的接收者可在无历史 incident、无测试投递时显式启用；测试失败或 unknown 不成为启用前置。已退出 `ops targets activate/disable/unbind` 旧直写入口，不恢复 seed/人工已读门槛。首次目标配置/Routine/配对已按下文迁入；仍需完成确定未受理后的有限重试、真实原生对账、长期回执维护与集中 [OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime) 验收；不要求开发期间持续服务。
 
+## 当前显式投递管理链（2026-09-21）
+
+`notification send <notification-ref> --receiver <receiver-ref> --request-id <uuid> --expect-revision <n> --expect-model-revision <sha256> --confirm` 和 Web 共用管理 Server；独立 `notifications.send` 权限不由 read/test/enable 代授。原 OBS schema 5 的 `notification_sends` 将安装/主体/原数据库/request 与既有 incident work、实际 attempt 事务关联，不另建通用操作库。`operation get --domain notification --database-id <uuid> --request-id <uuid>` 只读原请求。丢 claim ACK、并发、Server 硬崩/重启和自动 worker 竞争都不授权第二次 POST；历史成功不恢复授权，也不要求当前配置或原生可用。旧 `ops notifications send/list/show` 注册、CLI writer 及单独查询/发送 facade 已退出，没有兼容转发。
+
+浏览器审阅绑定/模型并单独确认费用，只存原 work/request 定位；unknown 刷新后只查询，不重发。原发送程序、私有凭据出口、预算与 HTTP 结算继续复用。当前观测库只接受 schema 5，不自动升级旧库；CONT/Routine 不变。实现/失败复现与固定验证见[显式通知管理工作包](../reports/2026-09-21-notification-send-management.md)。这只关闭入口迁移，不关闭有限重试、上游对账、长期安全退役或独立告警出口。
+
 ## Status / Goal
 
 **Partial：固定证据/J1、事务化outbox、显式HTTPS及持久授权后的管理 Server 自动发送已接通；采集/服务持久安装、真实接收者回合及native对账仍未完成，M3未关闭。** [Spec §4/§5.4/§6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。把已固定的故障摘要、ID和取证命令送给配置目标Bot；默认仅提醒，不自动执行取证或Issue。
@@ -28,19 +34,19 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 ## 单次可靠投递切片（2026-09-18）
 
-`notification-contract.ts`从已校验effective ops选取唯一default目标；`ops-notification.ts`经OpsNotification port执行一次程序。原monitor SQLite的`notification_work/notification_attempts`承载预留、启动和结算，不另建router/queue数据库，也不改schema4/models2/wire8。存储方法是`notificationScope/notificationDelivery/reserveNotification/beginNotification/settleNotification`。
+`notification-contract.ts`从已校验effective ops选取唯一default目标；`ops-notification.ts`经OpsNotification port执行一次程序。原monitor SQLite的`notification_work/notification_attempts`承载预留、启动和结算，不另建router/queue数据库；本节是早期单次发送切片，当前管理请求与 schema 边界以上节为准。存储方法是`notificationScope/notificationDelivery/reserveNotification/beginNotification/settleNotification`。
 
 同一work本片至多一次attempt，BEGIN IMMEDIATE共同预留实际Agent的滑动24h额度和安装额度；别名不增加额度，未决及已拒绝attempt仍占普通额度，不借critical reserve。冻结incident revision、binding/model/routine/data/policy身份及实际body digest/bytes；只发程序生成的安全摘要和只读命令，最大8KiB。新增最多4096个attempt和既有文件空间接纳门，不按TTL删除unknown以换取再次发送。
 
 `runOpsNotificationDelivery`默认无driver；有明确信任的`PairedNotificationDriver`时才检查配对。inspect不能返回secret/endpoint，发送前再检查身份，并在现有config锁内对照最新policy后提交启动。网络在所有本地事务/锁之外，真正返回后才结算；取消不会遗留detached writer。callback异常/本地提交回执丢失保留unknown，既有attempt不重发；native-accepted不表示Bot完成或用户已读。T46已有私有binding/capsule，显式发送driver复用它；持续授权必须走下述显式激活程序，不能把测试注入对象写成config来启用。
 
-只读`ops notifications list/show`已注册，坏Profile不挡本地取证；不建库、配对或发消息，列表明确有限窗口。明确未接收的有限重试、native unknown对账、备份恢复fence和自动worker安装仍在下文未完成范围。J1 bridge接口与CONT生命周期边界不变。
+当前只读 `notification list/get` 经管理 Server 返回原数据库的有限历史，不建库、配对或发送；旧本地查询已退出，配置或 Server 不可用不授予绕过路径。明确未接收的有限重试、native unknown对账、备份恢复fence和自动worker安装仍在下文未完成范围。J1 bridge接口与CONT生命周期边界不变。
 
 ## 显式原生发送出口（2026-09-18）
 
-`ops notifications send <work-id> --expect-binding-revision <n> --expect-model-revision <sha256> --confirm`只发送一个既有work；不自动启用Routine、不领取新key、不接受任意body/URL。绑定的提醒Routine须已单独启用且只有enabled位改变，模型须匹配用户确认指纹；Host同帧与Server所有权采用现有准入事实并保持原始时龄。复用原outbox的预算、二次检查和单attempt语义。
+当前 `notification send` 经上节原请求合同只发送一个既有 incident work；不自动启用Routine、不领取新key、不接受任意body/URL。绑定的提醒Routine须已单独启用且只有enabled位改变，模型须匹配用户确认指纹；Host同帧与Server所有权采用现有准入事实并保持原始时龄。复用原outbox的预算、二次检查和单attempt语义。
 
-`ops-explicit-delivery.runtime.ts`装配现有程序，`ops-bindings.node.ts`在私有owner内持key调用`native-notification.node.ts`；生产只允许已登记backend，Node HTTPS验证证书且不重定向/重试。固定body再次全量重构校验，响应仅有界计数，不输出正文/敏感头。完整200与Bot报告、用户已读分列；断连/异常响应保持unknown，取消必须结算真实描述符。当前控制命令是explicit，不产生永久automaticDelivery授权。
+管理用例使用 `ops-explicit-delivery.runtime.ts` 的原 prepared driver 装配现有程序，`ops-bindings.node.ts`在私有owner内持key调用`native-notification.node.ts`；生产只允许已登记backend，Node HTTPS验证证书且不重定向/重试。固定body再次全量重构校验，响应仅有界计数，不输出正文/敏感头。完整200与Bot报告、用户已读分列；断连/异常响应保持unknown，取消必须结算真实描述符。当前控制命令是explicit，不产生永久automaticDelivery授权。
 
 官方HTTP事实已写入[上游Current Home](../upstream-integration.md#native-routine-and-notification-webhook-boundary)。固定源码/Node/HTTP证明与两次整目录测试宿主超时的诚实限定见[回执](../reports/2026-09-18-explicit-native-notification.md)。
 
@@ -74,11 +80,11 @@ collector组合反例已修复：自动选择和直接自动发送同时检查in
 
 ## 独立测试 work 与恢复
 
-`notification receiver test` 使用独立 notifications.test 权限和显式确认，与 notifications.write 启用授权分开。测试在原观察 SQLite schema 4 的 `notification_tests` 表保存身份/目标/期限，不写 incident、伪造证据或向自动采集器插入错误；与真实通知共用原 `notification_attempts`、接收者核验、唤醒预算、私有 HTTPS 出口和不确定性规则。固定测试内容在持 key 的出口再次重构验证，不接受任意正文、命令或 URL。
+`notification receiver test` 使用独立 notifications.test 权限和显式确认，与 notifications.write 启用授权分开。测试在原观察 SQLite 的 `notification_tests` 表保存身份/目标/期限，不写 incident、伪造证据或向自动采集器插入错误；与真实通知共用原 `notification_attempts`、接收者核验、唤醒预算、私有 HTTPS 出口和不确定性规则。固定测试内容在持 key 的出口再次重构验证，不接受任意正文、命令或 URL。
 
 相同请求只查回原测试，创建后丢回执、发送未知或服务关闭都不能自动再投。自动 worker 只选真实 incident work，不消费独立测试表。测试 unknown 会阻止浏览器再次测试，却不阻止独立的启用/禁用决定。确定阻断/未受理的测试为 refused，POST 返回明确拒绝而不是成功；原始回执和投递原因仍可读取。`notification list/get` 分别展示 test/incident purpose、尝试状态和原始时间，HTTP 接受、Bot 报告和用户已读不混算。
 
-授权/撤销回执保留在原私有 capsule；普通新授权门为64条，另按8个绑定各保留 disable/unbind 两条撤销容量及16 KiB空间，不因普通回执满而锁死有效授权。重复的已禁用/已解绑新动作不能耗用撤销保留；同请求查回历史仍可用。独立测试元数据最多128条，现有总 attempt/物理空间接纳继续生效。达到容量拒绝新增许可/测试，不淘汰旧 unknown 或使历史 enable 复活；安全回收仍随原 owner 完成，不宣称长期无限使用已验收。schema 3→4 只由显式初始化/升级操作执行，先保留备份和数据库/历史身份；普通 GET 不升级，活跃旧 collector 不被迁移夺权。
+授权/撤销回执保留在原私有 capsule；普通新授权门为64条，另按8个绑定各保留 disable/unbind 两条撤销容量及16 KiB空间，不因普通回执满而锁死有效授权。重复的已禁用/已解绑新动作不能耗用撤销保留；同请求查回历史仍可用。独立测试元数据最多128条，现有总 attempt/物理空间接纳继续生效。达到容量拒绝新增许可/测试，不淘汰旧 unknown 或使历史 enable 复活；安全回收仍随原 owner 完成，不宣称长期无限使用已验收。当前只消费完整现行 schema 5；先前 schema 的文件、历史身份和未知效果保持原样，不由初始化、GET 或服务启动升级。不能删除旧数据库后伪装新安装以恢复发送许可。
 
 ## 首次接入闭环
 
@@ -86,7 +92,7 @@ collector组合反例已修复：自动选择和直接自动发送同时检查in
 
 配置修改只更新声明范围并保留其他目标/系统策略，重放记录先于当前配置读取；prepared 记录不能因当前内容等于 after hash 被升格成历史成功。Routine 修改使用原 SQLite 领域新增的状态 guard，配对历史留在原 capsule；没有第二通用操作库。`operation get` 增加 notification-settings/routine/pairing 领域；仅原 provision 可在 exact disabled definition 与当前 revision 已核对后显式 reconcile，不把 unknown 状态修改或凭据领取变成自动重试。
 
-新 `notifications.bind` / `routines.read` / `routines.write` 能力分别控制凭据领取与原生定义。旧 `agents routines ...`、`ops targets ...` 普通命令和 daemon Routine RPC 已退出；尚未迁移的 CONT/保护本地 primitive、旧 `ops notifications send/list/show` 仍有各自去向，不因此宣称全仓旧入口全部退出。具体输入、恢复和限定见 [T53](T53-agent-routines-cli.md) / [T46](T46-template-ops-pairing.md)。
+新 `notifications.bind` / `routines.read` / `routines.write` 能力分别控制凭据领取与原生定义。旧 `agents routines ...`、`ops targets ...`、`ops notifications ...` 普通命令和 daemon Routine RPC 已退出；CONT/保护继续复用其必要本地原生 primitive，不恢复旁路管理入口，也不因此宣称全仓旧入口全部退出。具体输入、恢复和限定见 [T53](T53-agent-routines-cli.md) / [T46](T46-template-ops-pairing.md)。
 
 实际合成 Gateway、Node 服务/CLI、真实浏览器的首次接入及丢回执场景由 [setup Node](../../test/notification-setup.test.ts) / [setup browser](../../apps/web/test/setup-browser.node.ts)验证。现阶段不签原生产品已投递、通知重试/上游对账或长期安全记录维护完成。
 
