@@ -1,13 +1,11 @@
-import { constants } from "node:fs";
-import { copyFile, link, lstat, mkdir, open, readFile, stat, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, rmdir, stat, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { MONITOR_POLICY, MONITOR_RULES, confirmedObservation, projectMonitorOwnershipDiagnosis, monitorFreshness, monitorScope, monitorTargets, monitorUuid, type MonitorRule, type MonitorSample } from "@grokbox/runtime-kernel/monitor";
 import { traceAlerts, observationId, projectAlertEvent, projectNotification, chooseNotification, type AlertTraceSelector } from "@grokbox/runtime-kernel/alerts";
-import type { LockHandle } from "./op-lock.ts";
-import { acquireMonitorMigrationLock, monitorProcessIdentity as processStart } from "./monitor-owner.node.ts";
+import { monitorProcessIdentity as processStart } from "./monitor-owner.node.ts";
 import { MonitorSqlite, openMonitorSqlite, privateMonitorDirectory, type SqlRow as Row } from "./monitor-sqlite.node.ts";
 import { projectControlEvent } from "./journal.node.ts";
 import { recordSourceSequence } from "./monitor-source-sequence.node.ts";
@@ -70,23 +68,32 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
  const maxDatabaseBytes=monitorDatabaseBytes(options.maxDatabaseBytes);
  if(!Number.isSafeInteger(retentionMs)||retentionMs<1||!Number.isSafeInteger(eventTarget)||eventTarget<1)throw error("monitor_invalid_policy");
  const meta=async(db:MonitorSqlite)=>{const m=await db.first("SELECT * FROM meta WHERE singleton=1");if(!m)throw error("monitor_store_invalid");return m;};
+ const checkIdentity=async(db:MonitorSqlite)=>{
+  const m=await meta(db),header=await db.first("PRAGMA user_version");
+  if(m.root_id!==rootId||!monitorUuid(m.database_id)||m.version!==VERSION||header?.user_version!==VERSION)throw error("monitor_store_schema_or_root_mismatch");
+  return m;
+ };
  async function load(mode:"read"|"write"="read"){
   let db:MonitorSqlite|undefined;
-  try{db=await openMonitorSqlite(file,mode);const m=await meta(db);if(m.root_id!==rootId||!monitorUuid(m.database_id)||![1,2,3,VERSION].includes(Number(m.version)))throw error("monitor_store_schema_or_root_mismatch");
-   if(mode==="write"&&m.version!==VERSION)throw error("monitor_migration_required");
+  try{db=await openMonitorSqlite(file,mode);await checkIdentity(db);
    if(mode==="write")await capMonitorDatabase(db,maxDatabaseBytes);return db;
   }catch(e){await db?.close().catch(()=>{});throw e instanceof BoxRuntimeError?e:error(missing(e)?"monitor_not_initialized":e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_reader_busy":"monitor_store_unavailable");}
  }
- async function read<T>(f:(db:MonitorSqlite)=>Promise<T>):Promise<T>{const db=await load();try{await db.run("BEGIN");return await f(db);}catch(e){throw e instanceof BoxRuntimeError?e:error(e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_reader_busy":"monitor_store_unavailable");}finally{await db.close();}}
- async function legacyLockPresent(){try{await lstat(join(directory,"writer.lock"));return true;}catch(e){if(missing(e))return false;throw e;}}
+ async function read<T>(f:(db:MonitorSqlite)=>Promise<T>):Promise<T>{const db=await load();try{await db.run("BEGIN");await checkIdentity(db);return await f(db);}catch(e){throw e instanceof BoxRuntimeError?e:error(e&&typeof e==="object"&&"code"in e&&["SQLITE_BUSY","SQLITE_LOCKED"].includes(String(e.code))?"monitor_reader_busy":"monitor_store_unavailable");}finally{await db.close();}}
+ // Foreign owner footprints are not ours to delete or recover by PID age.
+ // They block writes, but are never parsed as a supported lock protocol.
+ async function foreignOwnerPresent(){
+  for(const name of ["writer.lock","collector.lock"]){try{await lstat(join(directory,name));return true;}catch(e){if(!missing(e))throw e;}}
+  return false;
+ }
  async function admission<T>(writer:"monitor"|"monitor-initialize",f:()=>Promise<T>,maintenance=false):Promise<T>{
   try{return await withDiagnosticAdmission({configurationRoot:resolve(root),sourceRoot:resolve(root),writer,maxBytes:maxDatabaseBytes,maintenance},f);}
   catch(e){if(e instanceof DiagnosticBudgetError)throw error(e.reason==="busy"?"monitor_writer_busy":e.reason==="pressure"?"monitor_storage_pressure":"monitor_storage_scope_unavailable");throw e;}
  }
  async function mutate<T>(f:(db:MonitorSqlite)=>Promise<T>,maintenance=false):Promise<T>{return admission("monitor",async()=>{
-  if(await legacyLockPresent())throw error("monitor_writer_busy");
+  if(await foreignOwnerPresent())throw error("monitor_writer_busy");
   const db=await load("write");let committed=false,commitAttempted=false,commitUncertain=false;
-  try{await db.run("BEGIN IMMEDIATE");const result=await f(db);options.beforePublish?.();commitAttempted=true;await db.run("COMMIT");committed=true;options.afterRename?.();return result;
+  try{await db.run("BEGIN IMMEDIATE");await checkIdentity(db);const result=await f(db);options.beforePublish?.();commitAttempted=true;await db.run("COMMIT");committed=true;options.afterRename?.();return result;
   }catch(e){
    let rolledBack=false;if(!committed){try{await db.run("ROLLBACK");rolledBack=true;}catch{ /* A failed rollback is not proof of no commit. */ }}
    commitUncertain=committed||(commitAttempted&&!rolledBack);
@@ -132,13 +139,21 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   ...notificationOutbox({rootId,maxDatabaseBytes,read,mutate}),
   path:file,
   async initialize(){return admission("monitor-initialize",async()=>{
-   await mkdir(root,{recursive:true,mode:0o700});await privateMonitorDirectory(resolve(root));await privateMonitorDirectory(directory,true);
-   const initial=await lstat(file).catch(e=>{if(!missing(e))throw e;return null;});
-   if(!initial){
-    // A failed/crashed first transaction must never leave an empty canonical
-    // database. Build privately and publish with an exclusive link. No persistent
-    // bootstrap lock is needed for new databases; racing creators cannot replace
-    // one another's committed file. Legacy migration below still fences v1 writers.
+   await mkdir(root,{recursive:true,mode:0o700});await privateMonitorDirectory(resolve(root));
+   const reopen=async()=>{
+    await privateMonitorDirectory(directory);
+    if(!await lstat(file).catch(e=>{if(!missing(e))throw e;return null;}))throw error("monitor_store_unavailable");
+    return read(async db=>{const m=await meta(db);return {databaseId:uuid(m.database_id),created:false};});
+   };
+   const existingOwner=await lstat(directory).catch(e=>{if(!missing(e))throw e;return null;});
+   if(existingOwner)return reopen();
+   try{await mkdir(directory,{mode:0o700});}
+   catch(e){if(e&&typeof e==="object"&&"code"in e&&e.code==="EEXIST")return reopen();throw e;}
+   const ownedDirectory=await lstat(directory);
+   // Only the creator of a new owner directory can publish its first ledger.
+   // A crash or missing file inside an existing owner is not a fresh history.
+   // An orderly pre-publication failure can remove only its own empty directory.
+   {
     const staging=join(directory,`.observations-init-${randomUUID()}.sqlite`);
     let fresh:MonitorSqlite|undefined,published=false;
     try{
@@ -148,46 +163,28 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
      await fresh.run(SCHEMA+EVIDENCE_SCHEMA+INCIDENT_EVIDENCE_SCHEMA+NOTIFICATION_TEST_SCHEMA);const databaseId=randomUUID();
      await fresh.run("INSERT INTO meta(singleton,version,database_id,root_id) VALUES(1,?,?,?)",[VERSION,databaseId,rootId]);
      options.beforePublish?.();await fresh.run("COMMIT");await fresh.close();fresh=undefined;
+     const currentDirectory=await lstat(directory);
+     if(currentDirectory.dev!==ownedDirectory.dev||currentDirectory.ino!==ownedDirectory.ino)throw error("monitor_store_unavailable");
      try{await link(staging,file);published=true;}
      catch(e){
       if(!(e&&typeof e==="object"&&"code"in e&&e.code==="EEXIST"))throw e;
-      const current=await load();try{const m=await meta(current);return {databaseId:uuid(m.database_id),created:false,migrated:false};}finally{await current.close();}
+      return read(async current=>{const m=await meta(current);return {databaseId:uuid(m.database_id),created:false};});
      }
      await unlink(staging);const parent=await open(directory,"r");try{await parent.sync();}finally{await parent.close();}
-     options.afterRename?.();return {databaseId,created:true,migrated:false};
+     const ownerParent=await open(resolve(root),"r");try{await ownerParent.sync();}finally{await ownerParent.close();}
+     options.afterRename?.();return {databaseId,created:true};
     }catch(e){
      await fresh?.run("ROLLBACK").catch(()=>{});
      throw e instanceof BoxRuntimeError?e:error(published?"monitor_commit_unknown":"monitor_initialization_failed");
-    }finally{await fresh?.close();await unlink(staging).catch(()=>{});}
+    }finally{
+     await fresh?.close();
+     const currentDirectory=await lstat(directory).catch(()=>null);
+     if(currentDirectory?.dev===ownedDirectory.dev&&currentDirectory.ino===ownedDirectory.ino){
+      await unlink(staging).catch(()=>{});
+      if(!published)await rmdir(directory).catch(()=>{}); // Never recursive; preserve every other entry.
+     }
+    }
    }
-   let db:MonitorSqlite|undefined,migrationCommitted=false,held:LockHandle|null=null,collectorLock:LockHandle|null=null;
-   try{
-     // Serialize new migration/recovery owners with SQLite, then fence legacy
-     // image writers with their lock. Only demonstrably dead lock PIDs recover.
-     db=await openMonitorSqlite(file,"write");await db.run("BEGIN IMMEDIATE");
-     const m=await meta(db);if(m.root_id!==rootId||!monitorUuid(m.database_id)||![1,2,3,VERSION].includes(Number(m.version)))throw error("monitor_store_schema_or_root_mismatch");
-     held=await acquireMonitorMigrationLock(join(directory,"writer.lock"));if(!held)throw error("monitor_writer_busy");
-     if(m.version===VERSION){await db.run("COMMIT");migrationCommitted=true;return {databaseId:uuid(m.database_id),created:false,migrated:false};}
-     const legacyCollector=await lstat(join(directory,"collector.lock")).catch(e=>{if(!missing(e))throw e;return null;});
-     if(legacyCollector){collectorLock=await acquireMonitorMigrationLock(join(directory,"collector.lock"));if(!collectorLock)throw error("monitor_legacy_collector_requires_stop");}
-     if((m.version===2||m.version===3)&&m.running===1){
-       const owner=Number.isSafeInteger(m.owner_pid)?await processStart(Number(m.owner_pid)):null;
-       if(!owner||owner.state==='unavailable'||(owner.state==='present'&&owner.start===m.owner_start))throw error('monitor_migration_requires_stop');
-     }
-     const backup=join(directory,`observations-v${m.version}-${m.database_id}-${randomUUID()}.sqlite`);
-     await copyFile(file,backup,constants.COPYFILE_EXCL);
-     const backupHandle=await open(backup,"r");try{await backupHandle.sync();}finally{await backupHandle.close();}
-     const directoryHandle=await open(directory,"r");try{await directoryHandle.sync();}finally{await directoryHandle.close();}
-     if(m.version===1){
-       await db.run("ALTER TABLE events ADD COLUMN detail_json TEXT; ALTER TABLE meta ADD COLUMN owner_pid INTEGER; ALTER TABLE meta ADD COLUMN owner_start TEXT; ALTER TABLE meta ADD COLUMN event_floor INTEGER NOT NULL DEFAULT 0; ALTER TABLE meta ADD COLUMN evidence_floor INTEGER NOT NULL DEFAULT 0; ALTER TABLE incidents ADD COLUMN occurrence_key TEXT NOT NULL DEFAULT ''; ALTER TABLE incidents ADD COLUMN category TEXT NOT NULL DEFAULT 'condition'; ALTER TABLE incidents ADD COLUMN parent_id TEXT; ALTER TABLE incidents ADD COLUMN summary_json TEXT; DROP INDEX one_open_incident; CREATE UNIQUE INDEX one_open_incident ON incidents(scope,COALESCE(agent_id,''),rule,occurrence_key) WHERE status IN ('open','recorded');");
-       await db.run(EVIDENCE_SCHEMA);
-     }
-     if(Number(m.version)<3)await db.run(INCIDENT_EVIDENCE_SCHEMA);
-     await db.run(NOTIFICATION_TEST_SCHEMA);
-     await db.run("UPDATE meta SET version=4,running=0,epoch=NULL,owner_pid=NULL,owner_start=NULL; PRAGMA user_version=4;");options.beforePublish?.();await db.run("COMMIT");migrationCommitted=true;options.afterRename?.();
-     return {databaseId:uuid(m.database_id),created:false,migrated:true,backup};
-   }catch(e){if(!migrationCommitted)await db?.run("ROLLBACK").catch(()=>{});throw e instanceof BoxRuntimeError?e:error(migrationCommitted?"monitor_commit_unknown":"monitor_initialization_failed");}
-   finally{await collectorLock?.release();await held?.release();await db?.close();}
   });},
   async begin(epoch:string,at:number,agentIds:string[]){
    if(!monitorUuid(epoch)||number(at)===0)throw error("monitor_invalid_epoch");const ids=monitorTargets(agentIds,true),owner=await processStart(process.pid);
@@ -235,12 +232,12 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   },
   async snapshot(now=Date.now()){return read(async db=>{const m=await meta(db),epoch=m.epoch===null?null:uuid(m.epoch),sid=m.current_scope===null?null:scope(m.current_scope),cursor=await lastSequence(db);
    const rows=await db.all("SELECT w.agent_id AS watched_id,o.* FROM watched w LEFT JOIN observations o ON o.agent_id=w.agent_id AND o.scope IS ? ORDER BY w.agent_id",[sid]);
-   const observationHealth=m.version===VERSION?await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_state FROM observation_maintenance WHERE singleton=1"):null;
-   return {observationHealth,schemaVersion:number(m.version),databaseId:uuid(m.database_id),collectorEpoch:epoch,source:"local_observations_not_authority",scopeId:sid,cursor:`${m.database_id}:${epoch??"none"}:${cursor}`,lastHeartbeatMs:nullableTime(m.heartbeat),collectorRecordedRunning:m.running===1,lastObservedGatewayEpoch:typeof m.gateway_epoch==="string"?m.gateway_epoch:null,admissionAuthority:false,productionAccepted:false,notificationMode:"local_only",storage:{engine:"sqlite-disk",journalMode:"delete",lifetimeEventLimit:null,migrationRequired:m.version!==VERSION},
+   const observationHealth=await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_state FROM observation_maintenance WHERE singleton=1");
+   return {observationHealth,schemaVersion:number(m.version),databaseId:uuid(m.database_id),collectorEpoch:epoch,source:"local_observations_not_authority",scopeId:sid,cursor:`${m.database_id}:${epoch??"none"}:${cursor}`,lastHeartbeatMs:nullableTime(m.heartbeat),collectorRecordedRunning:m.running===1,lastObservedGatewayEpoch:typeof m.gateway_epoch==="string"?m.gateway_epoch:null,admissionAuthority:false,productionAccepted:false,notificationMode:"local_only",storage:{engine:"sqlite-disk",journalMode:"delete",lifetimeEventLimit:null},
     agents:rows.map(row=>row.state===null?{agentId:uuid(row.watched_id),lastKnown:null,lastAttemptMs:nullableTime(m.heartbeat),lastSuccessMs:null,freshness:"unavailable" as const}:{agentId:uuid(row.agent_id),lastKnown:{state:String(row.state),serverHarness:harness(row.server_harness),localHarness:harness(row.local_harness)},lastAttemptMs:number(row.last_attempt),lastSuccessMs:nullableTime(row.last_success),freshness:monitorFreshness(nullableTime(row.last_success),now,m.running===1&&row.latest_success===1)})};});},
   async incidentEvidence(incidentId:string,revision?:number,view:EvidenceView="local-diagnostic"){
    if(!monitorUuid(incidentId)||(revision!==undefined&&(!Number.isSafeInteger(revision)||revision<1))||!["local-diagnostic","bot-diagnostic","public-summary"].includes(view))throw error("monitor_invalid_evidence_selector");
-   return read(async db=>{if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");return readIncidentEvidence(db,incidentId,revision,view);});
+   return read(async db=>{return readIncidentEvidence(db,incidentId,revision,view);});
   },
   async resolveIncident(selector:{agentId?:string;stepId?:string;trayId?:string}){
    if((selector.stepId!==undefined&&(!observationId(selector.stepId)||!monitorUuid(selector.agentId)))||(selector.trayId!==undefined&&!observationId(selector.trayId))||Number(selector.stepId!==undefined)+Number(selector.trayId!==undefined)!==1)throw error("monitor_invalid_evidence_selector");
@@ -364,7 +361,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
       coverage:health?"observed_window":"not_observed",quietPeriodProven:false};
    });
   },
-  async evidenceCursor(sourceKey:string){return read(async db=>{if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");const row=await db.first("SELECT * FROM evidence_cursors WHERE source_key=?",[sourceKey]);return row?{cursor:String(row.cursor),gap:row.gap===null?null:String(row.gap)}:null;});},
+  async evidenceCursor(sourceKey:string){return read(async db=>{const row=await db.first("SELECT * FROM evidence_cursors WHERE source_key=?",[sourceKey]);return row?{cursor:String(row.cursor),gap:row.gap===null?null:String(row.gap)}:null;});},
   async ingestEvidence(input:{epoch:string;sourceKey:string;expectedCursor:string|null;nextCursor:string;events:unknown[];atMs:number;gap?:string;notifications?:"off";sourceHealth?:unknown}){
    if(!monitorUuid(input.epoch)||!monitorScope(input.sourceKey)||input.nextCursor.length>2048||input.events.length>4096||!Number.isSafeInteger(input.atMs)||input.atMs<1)throw error("monitor_invalid_evidence_batch");
    const safe=input.events.map(value=>{try{return projectControlEvent(value);}catch{return null;}}).filter((x):x is NonNullable<typeof x>=>x!==null),digest=sha256Text(canonicalJson({events:safe,gap:input.gap??null,rejected:input.events.length-safe.length}));
@@ -434,7 +431,6 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
    });
   },
   async executionEvidence(selector:{agentId:string;stepId:string}){return read(async db=>{
-    if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");
     if(!observationId(selector.agentId)||!observationId(selector.stepId))throw error("monitor_invalid_trace_selector");
     const closure=await collectIncidentEvidence(db,{id:"execution-query"},selector);
     const values:Record<string,unknown>[]=closure.facts.map(f=>f.value),summaryRows=await db.all("SELECT summary_json FROM incidents WHERE rule='execution_failure' AND json_extract(summary_json,'$[0].agentId')=? AND json_extract(summary_json,'$[0].stepId')=? LIMIT 33",[selector.agentId,selector.stepId]);
@@ -443,7 +439,6 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     return {events:values,source:"monitor_materialized_journal",summaryUsed,truncated:closure.truncated||summaryRows.length>32,retentionFloor:Number((await meta(db)).evidence_floor??0)};
   });},
   async alertTrace(selector:AlertTraceSelector){return read(async db=>{
-    if((await meta(db)).version!==VERSION)throw error("monitor_migration_required");
     // Read the same explicit relationship closure as the journal projection.
     // A STEP may have produced a Tray subsequently updated by another STEP.
     // Budget exhaustion is disclosed, never silently treated as a complete trace.
@@ -504,11 +499,11 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   },true);},
   async storageHealth(){return read(async db=>{
    const m=await meta(db),info=await stat(file),physical=await sqlitePhysicalUsage(db),auxiliary=await monitorAuxiliaryUsage(file);
-   const health=m.version===VERSION?await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_at,last_state FROM observation_maintenance WHERE singleton=1"):null;
+   const health=await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_at,last_state FROM observation_maintenance WHERE singleton=1");
    return {engine:"sqlite-disk",schemaVersion:m.version,scope:"monitor_database_only",installationBudgetEnforced:false,
     fileBytes:info.size,allocatedFilesystemBytes:info.blocks*512,physical,auxiliary,totalObservedBytes:info.size+auxiliary.bytes,
     growthGuard:{maxDatabaseBytes,source:"runtime_default_or_explicit_store_policy",existingOversize:info.size>maxDatabaseBytes},
-    health,lifetimeEventLimit:null,sources:m.version===VERSION?await db.all("SELECT * FROM source_health ORDER BY source_key LIMIT 200"):[],migrationRequired:m.version!==VERSION};
+    health,lifetimeEventLimit:null,sources:await db.all("SELECT * FROM source_health ORDER BY source_key LIMIT 200")};
   });},
  };
  return api;

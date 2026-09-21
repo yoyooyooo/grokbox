@@ -12,12 +12,13 @@ import { openMonitorSqlite, type MonitorSqlite, type SqlRow } from "./monitor-sq
 // This is the scoped provision replay guard required by T53. Diagnostic TTL
 // and GC must never erase it. No prompt, credential or network response stored.
 const APPLICATION_ID = 1196576848;
+const VERSION = 3;
 const RETIRED_DDL = "CREATE TABLE operation_tombstones(agent_id TEXT NOT NULL,operation_id TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(agent_id,operation_id));";
 const STATE_DDL = `CREATE TABLE state_operations(operation_id TEXT PRIMARY KEY,agent_id TEXT NOT NULL,native_id TEXT NOT NULL,action TEXT NOT NULL,
  fingerprint TEXT NOT NULL,before_revision TEXT NOT NULL,definition_revision TEXT NOT NULL,generation TEXT NOT NULL,
  state TEXT NOT NULL,after_revision TEXT,evidence TEXT NOT NULL,created_at INTEGER NOT NULL,owner_pid INTEGER NOT NULL,owner_start TEXT NOT NULL);
  CREATE UNIQUE INDEX unresolved_routine_state ON state_operations(agent_id,native_id) WHERE state IN ('attempting','unknown');`;
-const DDL = `PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=3;
+const DDL = `PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=${VERSION};
 CREATE TABLE meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),root_id TEXT NOT NULL);
 CREATE TABLE operations(agent_id TEXT NOT NULL,operation_id TEXT NOT NULL,managed_key TEXT NOT NULL,fingerprint TEXT NOT NULL,desired_digest TEXT NOT NULL,
  action TEXT NOT NULL,state TEXT NOT NULL,native_id TEXT,observed_revision TEXT,before_revision TEXT,created_at INTEGER NOT NULL,owner_pid INTEGER NOT NULL,owner_start TEXT NOT NULL,
@@ -41,8 +42,7 @@ function retired(r: SqlRow, agentId: string, operationId: string): ProvisionReti
   return { schemaVersion: 1, agentId: routineAgentId(agentId), operationId: provisionOperationId(operationId), fingerprint: routineRevision(r.fingerprint), state: "retired" };
 }
 async function tombstone(db: MonitorSqlite, agentId: string, operationId: string) {
-  const version = Number(Object.values((await db.first("PRAGMA user_version"))!)[0]);
-  return version >= 2 ? db.first("SELECT fingerprint FROM operation_tombstones WHERE agent_id=? AND operation_id=?", [agentId, operationId]) : null;
+  return db.first("SELECT fingerprint FROM operation_tombstones WHERE agent_id=? AND operation_id=?", [agentId, operationId]);
 }
 async function retireSuperseded(db: MonitorSqlite) {
   const rows = await db.all(`SELECT o.agent_id,o.operation_id,o.fingerprint FROM operations o WHERE o.state='observed'
@@ -108,16 +108,10 @@ export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionS
       const tables = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
       if (write && connected?.initializing && application === 0 && tables.length === 0) {
         await db.run(DDL); await db.run("INSERT INTO meta(singleton,root_id) VALUES(1,?)", [rootId]);
-      } else if (application !== APPLICATION_ID || ![1, 2, 3].includes(Number(Object.values((await db.first("PRAGMA user_version"))!)[0]))
+      } else if (application !== APPLICATION_ID || (await db.first("PRAGMA user_version"))?.user_version !== VERSION
         || (await db.first("SELECT root_id FROM meta WHERE singleton=1"))?.root_id !== rootId) return fail("ledger_unavailable");
-      if (write && Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) === 1) {
-        // Additive owner-local migration within the already-confirmed write.
-        // Old binaries reject version 2 instead of ignoring consumed identities.
-        await db.run(RETIRED_DDL + "PRAGMA user_version=2;");
-      }
-      if (write && Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) < 3) {
-        await db.run(STATE_DDL + "PRAGMA user_version=3;");
-      }
+      // Both reads and mutations consume only the current safety ledger.
+      // Missing old tables never mean an operation was not dispatched.
       const result = await action(db);
       commitStarted = write;
       await db.run("COMMIT"); committed = true;
@@ -141,7 +135,7 @@ export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionS
   return { path, read,
     stateRecord: (agentId: string, operationId: string) => transaction(false, async db => {
       routineAgentId(agentId); provisionOperationId(operationId);
-      if (!db || Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) < 3) return null;
+      if (!db) return null;
       const row = await db.first("SELECT * FROM state_operations WHERE agent_id=? AND operation_id=?", [agentId, operationId]);
       return row ? stateRecord(row) : null;
     }),
@@ -187,8 +181,7 @@ export function openRoutineProvisionStore(durableRoot: string, hooks: ProvisionS
       if (!db) return { ...common, state: "not_initialized", operations: null, unresolved: null, fileBytes: null };
       const count = await db.first("SELECT COUNT(*) AS n, COALESCE(SUM(state IN ('attempting','unknown')),0) AS pending FROM operations");
       const file = await lstat(path);
-      const version = Number(Object.values((await db.first("PRAGMA user_version"))!)[0]);
-      const retiredOperations = version >= 2 ? Number((await db.first("SELECT COUNT(*) AS n FROM operation_tombstones"))?.n) : 0;
+      const retiredOperations = Number((await db.first("SELECT COUNT(*) AS n FROM operation_tombstones"))?.n);
       return { ...common, state: "measured", retiredOperations, operations: Number(count?.n), unresolved: Number(count?.pending), fileBytes: file.size,
         allocatedBytes: file.blocks * 512, diagnosticBudgetIncluded: false };
     }),

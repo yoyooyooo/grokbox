@@ -4,6 +4,8 @@
 
 ## 当前切片与未完成范围
 
+**现行账本合同收束（2026-09-21）：** OBS 普通读取、初始化、维护和通知共享当前 schema 4，同时核对 meta 与物理 header；旧版本迁移、备份和 PID-only 升级锁恢复已退出。旧资料/锁保留，不投影为空记录或升级成功。既有 owner 目录丢失库时拒绝重建，防止通知 attempt 与管理历史被重置；只有新目录创建者可发布首次库，失败清理仅限自己的暂存文件及空目录。API/Web 不再提供 migrationRequired 占位。具体反例、当前初始化的只读行为及证据范围见[当前安全账本收束](../reports/2026-09-21-current-safety-store-contracts.md)，下述历史窗口不构成保留旧实时合同的要求。
+
 已实现每个SQLite writer连接的文件增长护栏（默认128MiB，不是全安装预算）、预留元数据余量、压力批次游标/gap提交、物理页/空闲页/辅助文件计量、最多3份可读修订及受保护修订拒绝、每revision一个有总量/累计期限限制的租约、通知与修订历史的增量回收。`runtime storage status`分开报告monitor、processLogs、journals；各自来源缺失不会遮盖其他分区，仍明确installationBudgetEnforced=false。
 
 `observation-storage-pressure.test.ts`使用512KiB真实数据库验证持续高基数错误不越过文件上限、压力丢弃可见、重复批次不加倍、跨32个保留周期后无重启恢复新证据接纳；实际SQLite拒绝物理增长另有独立反例。`incident-evidence-store.test.ts`验证旧通知引用和leases不被修订数回收破坏。来源/结果见[增量回执](../reports/2026-09-18-observation-storage-followup.md)。
@@ -72,7 +74,7 @@ DB分批回收observations/events/evidence/incidents/management/cursors/source h
 
 自动维护在服务Scope运行，与ops.notifications关闭独立。单tick扫描≤1000对象或50ms计划预算，实际IO需结算且记录超时；记录lastSuccess/backlog/reclaimed/pressure，不发每tick Bot通知。根/符号链接/inode/租约/并发读取/墙钟跳变均检查。
 
-SQLite新建与迁移库真实auto_vacuum/回收模式分别验证；logical/live/free/file/auxiliary bytes可查。物理回收与DELETE行数分开，full VACUUM不是满盘兜底。数据库/日志异常不影响已允许推理，固定容量health槽/丢弃计数也有界。
+SQLite现行新建及重开的真实auto_vacuum/回收模式分别验证；旧库不实时升级或重建。logical/live/free/file/auxiliary bytes可查。物理回收与DELETE行数分开，full VACUUM不是满盘兜底。数据库/日志异常不影响已允许推理，固定容量health槽/丢弃计数也有界。
 
 ## Executable acceptance
 

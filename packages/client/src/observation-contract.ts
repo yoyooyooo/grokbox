@@ -11,7 +11,7 @@ export type ObservationSnapshot = {
   source: "local-observations"; admissionAuthority: false; coverage: "watched-bots-only";
   databaseId: string; collectorEpoch: string | null; scopeId: string | null; cursor: string; readAtMs: number;
   collector: { recordedRunning: boolean; liveness: "not-probed"; lastHeartbeatMs: number | null };
-  storage: { schemaVersion: number; migrationRequired: boolean };
+  storage: { schemaVersion: number };
   agents: ObservedBot[];
 };
 export type IncidentView = {

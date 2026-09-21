@@ -254,23 +254,28 @@ test("formal CLI enables without old seed flags and shares receiver, test and de
   } finally { await f.close(); }
 });
 
-test("schema-three upgrade is explicit and preserves database, incident, acknowledgement and attempt identity", async () => {
+test("retired schema-three cannot resume notification work or be upgraded by initialization", async () => {
   const f = await receiverFixture(origin);
   try {
     const seed = await f.seed(), incident = (await f.store.incidents())[0]!;
     const ack = { requestId: randomUUID(), incidentId: incident.id, expectedRevision: incident.revision, action: "ack" as const, nowMs: Date.now() };
-    await f.store.manage(ack); const attempt = await f.store.notificationDelivery(seed.workId);
+    await f.store.manage(ack); const requests = f.requests.length;
     await f.server.close(); await f.store.finish((await f.store.snapshot()).collectorEpoch!, Date.now());
     const db = await openMonitorSqlite(f.store.path, "write");
     try { await db.run("DROP TABLE notification_tests; UPDATE meta SET version=3; PRAGMA user_version=3;"); } finally { await db.close(); }
-    const before = await readFile(f.store.path), old = await f.store.snapshot(); assert.equal(old.schemaVersion, 3);
-    assert.deepEqual(await readFile(f.store.path), before);
+    const before = await readFile(f.store.path);
+    await assert.rejects(f.store.snapshot(), /monitor_store_schema_or_root_mismatch/);
     await assert.rejects(f.store.createNotificationTest({ databaseId: f.databaseId, workId: randomUUID(), operationId: "a".repeat(64), requestDigest: "b".repeat(64), alias: "default", bindingId: f.pairing.bindingId, bindingRevision: 1, modelRevision: MODEL, nowMs: Date.now() }));
     assert.deepEqual(await readFile(f.store.path), before);
-    const migrated = await f.store.initialize(); assert.equal(migrated.migrated, true); assert.equal(migrated.databaseId, old.databaseId);
-    assert.equal((await f.store.snapshot()).schemaVersion, 4); assert.equal((await f.store.snapshot()).collectorEpoch, null);
-    assert.equal((await f.store.incidents())[0]!.id, incident.id); assert.equal((await f.store.incidents())[0]!.acknowledged, true);
-    assert.equal((await f.store.manage(ack)).duplicate, true); assert.deepEqual(await f.store.notificationDelivery(seed.workId), attempt);
-    const after = await readFile(f.store.path); assert.equal((await f.store.initialize()).migrated, false); assert.deepEqual(await readFile(f.store.path), after);
+    await assert.rejects(f.store.initialize(), /monitor_store_schema_or_root_mismatch/);
+    await assert.rejects(f.store.manage(ack), /monitor_store_schema_or_root_mismatch/);
+    await assert.rejects(f.store.notificationDelivery(seed.workId), /monitor_store_schema_or_root_mismatch/);
+    assert.deepEqual(await readFile(f.store.path), before); assert.equal(f.requests.length, requests);
+    const retained = await openMonitorSqlite(f.store.path, "read");
+    try {
+      assert.equal((await retained.first("SELECT database_id FROM meta"))?.database_id, f.databaseId);
+      assert.equal((await retained.first("SELECT acknowledged FROM incidents WHERE id=?", [incident.id]))?.acknowledged, 1);
+      assert.ok((await retained.all("SELECT * FROM notification_attempts")).length > 0);
+    } finally { await retained.close(); }
   } finally { await f.close(); }
 });

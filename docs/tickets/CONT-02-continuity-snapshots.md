@@ -12,6 +12,8 @@
 
 ## 当前管理服务接线
 
+CONT 当前只消费 schema 4；身份读取、普通操作及 initializer 都拒绝旧版本，既有库的初始化为只读核验，不补列、重放 DDL 或修复对象目录。旧版本 unknown/effectId 保留原字节，不能被重解释为新许可；原现行版本的回执恢复、引用/GC和当前状态程序不变。此项[安全账本收束](../reports/2026-09-21-current-safety-store-contracts.md)不等于完整材料或现场恢复资格。
+
 [保护服务](../../packages/box-runtime/src/internal/roots/protection-service.runtime.ts)已按新架构拥有默认发现和分档捕获通道；复用上述原 vault、原生 checkpoint 与有界 fallback，不创建第二材料库。`bot snapshot list/get`、Web `/protection` 只读取原发布记录的元数据，正文、实际原生导入和当前可用性分开。unsupported capture 保持 snapshot_unavailable，不能为页面生成替代成功材料。慢捕获与归属观察/暂停分离；关闭等待真实回调和最后本地写入，subject/workflow 引用仍参与原 GC 事务。
 
 当前[管理验证](../../test/protection-management.test.ts)包含无能力时拒绝、带显式合成恢复端的发布、配置关闭/重启保留、原 Bot/继任者身份和快照引用。它证明生产协调/存储与页面接线，不证明实际账户原生材料完整性、全部四档或附件/源资源独立。固定源码与计数见 [CLI-05](CLI-05-implementation-follow-through.md)。

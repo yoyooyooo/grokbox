@@ -43,8 +43,8 @@ export function observationSnapshot(value: unknown, installation: string): value
     && eventCursor(value.cursor) && value.cursor.startsWith(`${value.databaseId}:${value.collectorEpoch ?? "none"}:`) && time(value.readAtMs)
     && record(value.collector) && exact(value.collector, ["recordedRunning", "liveness", "lastHeartbeatMs"])
     && typeof value.collector.recordedRunning === "boolean" && value.collector.liveness === "not-probed" && maybeTime(value.collector.lastHeartbeatMs)
-    && record(value.storage) && exact(value.storage, ["schemaVersion", "migrationRequired"])
-    && time(value.storage.schemaVersion) && Number(value.storage.schemaVersion) >= 1 && typeof value.storage.migrationRequired === "boolean"
+    && record(value.storage) && exact(value.storage, ["schemaVersion"])
+    && time(value.storage.schemaVersion) && Number(value.storage.schemaVersion) >= 1
     && Array.isArray(value.agents) && value.agents.length <= 32 && new Set(value.agents.map(row => record(row) ? row.agentId : null)).size === value.agents.length
     && value.agents.every(row => record(row) && exact(row, ["botRef", "agentId", "lastKnown", "lastAttemptMs", "lastSuccessMs", "freshness"])
       && id(row.agentId) && botReference(installation, row.agentId, row.botRef) && maybeTime(row.lastAttemptMs) && maybeTime(row.lastSuccessMs)

@@ -102,28 +102,26 @@ async function fixtureAsVersionTwo(f: Awaited<ReturnType<typeof fixture>>) {
     UPDATE meta SET version=2; PRAGMA user_version=2; COMMIT;`);
   }finally{await db.close();}
 }
-test("explicit disk v2 migration preserves historical acknowledgement without manufacturing snapshots or notifications",async()=>{
+test("retired v2 evidence is preserved without migration, new snapshots or notifications",async()=>{
   const f=await fixture();
   try{
     await f.store.ingestEvidence({epoch:f.epoch,sourceKey:f.sourceKey,expectedCursor:null,nextCursor:"one",events:[failure()],atMs:NOW});
     const id=(await f.store.incidents())[0]!.id;
     const ack={requestId:randomUUID(),incidentId:id,expectedRevision:1,action:"ack" as const,nowMs:NOW+1};
     await f.store.manage(ack);await f.store.finish(f.epoch,NOW+2);await fixtureAsVersionTwo(f);
-    expect((await f.store.snapshot()).storage.migrationRequired).toBe(true);
     const before=await readFile(f.store.path);
-    await expect(f.store.incidentEvidence(id,1)).rejects.toThrow("monitor_migration_required");
+    for(const read of [()=>f.store.snapshot(),()=>f.store.incidentEvidence(id,1),()=>f.store.initialize(),
+      ()=>f.store.manage(ack),()=>f.store.notificationWork()])await expect(read()).rejects.toThrow("monitor_store_schema_or_root_mismatch");
     expect(await readFile(f.store.path)).toEqual(before);
-    expect(await f.store.initialize()).toMatchObject({migrated:true,created:false});
-    expect((await f.store.snapshot()).schemaVersion).toBe(4);
-    expect((await f.store.incidents())[0]).toMatchObject({id,acknowledged:true});
-    expect((await f.store.manage(ack)).duplicate).toBe(true);
-    expect(await f.store.incidentEvidence(id,1)).toMatchObject({state:"not_checked",reason:"snapshot_not_captured"});
-    expect(await f.store.notificationWork()).toEqual([]);
+    const retained=await openMonitorSqlite(f.store.path,"read");
+    try{expect(await retained.first("SELECT id,acknowledged FROM incidents WHERE id=?",[id])).toEqual({id,acknowledged:1});}
+    finally{await retained.close();}
   }finally{await f.close();}
 });
-test("a still-live v2 collector blocks schema migration instead of being silently replaced",async()=>{
+test("a still-live v2 collector is not stopped or rewritten by the current initializer",async()=>{
   const f=await fixture();
-  try{await fixtureAsVersionTwo(f);await expect(f.store.initialize()).rejects.toThrow("monitor_migration_requires_stop");expect((await f.store.snapshot()).schemaVersion).toBe(2);}
+  try{await fixtureAsVersionTwo(f);const before=await readFile(f.store.path);
+    await expect(f.store.initialize()).rejects.toThrow("monitor_store_schema_or_root_mismatch");expect(await readFile(f.store.path)).toEqual(before);}
   finally{await f.close();}
 });
 

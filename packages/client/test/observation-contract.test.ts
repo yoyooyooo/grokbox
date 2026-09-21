@@ -7,7 +7,7 @@ const D = "33333333-3333-4333-8333-333333333333", E = "44444444-4444-4444-8444-4
 const snapshot: ObservationSnapshot = {
   source: "local-observations", admissionAuthority: false, coverage: "watched-bots-only", databaseId: D, collectorEpoch: E,
   scopeId: "a".repeat(64), cursor: `${D}:${E}:1`, readAtMs: 100,
-  collector: { recordedRunning: true, liveness: "not-probed", lastHeartbeatMs: 90 }, storage: { schemaVersion: 3, migrationRequired: false },
+  collector: { recordedRunning: true, liveness: "not-probed", lastHeartbeatMs: 90 }, storage: { schemaVersion: 4 },
   agents: [{ agentId: A, botRef: `bot:${I}:${A}`, lastKnown: { state: "confirmed_box", serverHarness: "box", localHarness: "box" },
     lastAttemptMs: 90, lastSuccessMs: 90, freshness: "fresh" }],
 };
@@ -39,6 +39,7 @@ test("snapshot transport refuses forged authority, identities, process liveness 
   expect(observationSnapshot(snapshot, I)).toBe(true);
   for (const invalid of [
     { ...snapshot, admissionAuthority: true }, { ...snapshot, apiKey: "synthetic-private-sentinel" },
+    { ...snapshot, storage: { ...snapshot.storage, migrationRequired: false } },
     { ...snapshot, cursor: `${A}:${E}:1` }, { ...snapshot, collector: { ...snapshot.collector, liveness: "running" } },
     { ...snapshot, agents: [...snapshot.agents, ...snapshot.agents] },
     { ...snapshot, agents: [{ ...snapshot.agents[0], botRef: `bot:${D}:${A}` }] },

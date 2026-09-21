@@ -16,7 +16,7 @@ export function observationError(error: unknown): HttpFailure {
   if (error instanceof BoxRuntimeError) {
     if (["monitor_cursor_invalid", "monitor_cursor_expired"].includes(error.message)) return new HttpFailure(409, "cursor_gap", "The observation database, collector epoch or retained range changed. Obtain a new snapshot.");
     if (error.message === "monitor_not_initialized") return new HttpFailure(503, "source_unavailable", "Observation storage has not been initialized; this read did not create it.", { sourceState: "not_initialized" });
-    if (["monitor_store_invalid", "monitor_store_schema_or_root_mismatch", "monitor_migration_required"].includes(error.message)) return new HttpFailure(503, "source_invalid", "The observation source needs explicit qualification or migration; this read did not modify it.");
+    if (["monitor_store_invalid", "monitor_store_schema_or_root_mismatch"].includes(error.message)) return new HttpFailure(503, "source_invalid", "The observation source does not match this installation's current contract; its existing bytes were not modified.");
   }
   return new HttpFailure(503, "source_unavailable", "The persisted observation source is unavailable; no empty or healthy result was substituted.");
 }
@@ -50,7 +50,7 @@ export function observationQuery(installationId: string, source: ManagementObser
         source: "local-observations", admissionAuthority: false, coverage: "watched-bots-only",
         databaseId: raw.databaseId, collectorEpoch: raw.collectorEpoch, scopeId: raw.scopeId, cursor: raw.cursor, readAtMs,
         collector: { recordedRunning: raw.collectorRecordedRunning, liveness: "not-probed", lastHeartbeatMs: raw.lastHeartbeatMs },
-        storage: { schemaVersion: raw.schemaVersion, migrationRequired: raw.storage.migrationRequired },
+        storage: { schemaVersion: raw.schemaVersion },
         agents: raw.agents.map(row => ({ agentId: row.agentId, botRef: botRef(installationId, row.agentId), lastKnown: row.lastKnown,
           lastAttemptMs: row.lastAttemptMs, lastSuccessMs: row.lastSuccessMs, freshness: row.freshness })),
       };

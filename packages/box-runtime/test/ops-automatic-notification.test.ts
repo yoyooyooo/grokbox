@@ -260,11 +260,28 @@ test("safe worker projection drops unknown fields, refuses fake delivery and nev
   } finally { await worker.close(); }
 });
 
+test("a preserved tested-consent capsule cannot drive a current automatic delivery or be silently renewed", async () => {
+  const f = await automaticFixture();
+  try {
+    await f.activate();
+    const path = join(f.root, "state/ops-pairing/bindings.json"), capsule = JSON.parse(await readFile(path, "utf8"));
+    const slot = capsule.slots[0], { consent: _, ...grant } = slot.automatic;
+    slot.automatic = { ...grant, version: 1, seedWorkId: randomUUID(), seedAttemptId: randomUUID(), seedEnvelopeDigest: "c".repeat(64),
+      seedAcceptedAtMs: grant.activatedAtMs - 1, receiverAttestation: "operator-confirmed-reminder" };
+    const bytes = JSON.stringify(capsule); await writeFile(path, bytes, { mode: 0o600 });
+    const work = await f.emit(), before = await readFile(f.store.path), reads = f.reads();
+    expect(await automaticNoticeCycle(f.input, { request: f.request })).toMatchObject({ state: "unavailable", reason: "local_or_native_source_unavailable" });
+    await expect(f.activate()).rejects.toBeDefined();
+    expect(f.reads()).toBe(reads); expect(f.requests).toHaveLength(0);
+    expect(await f.store.notificationDelivery(work)).toMatchObject({ attempt: null });
+    expect(await readFile(f.store.path)).toEqual(before); expect(await readFile(path, "utf8")).toBe(bytes);
+  } finally { await f.close(); }
+});
+
 test("authorization cannot contain arbitrary data or turn an operator statement into native proof", () => {
-  const sample: NoticeAuthorization = { version: 1, id: randomUUID(), operationId: "test", requestDigest: "a".repeat(64), bindingRevision: 2,
-    activatedAtMs: Date.now(), modelRevision: MODEL, qualificationRevision: "b".repeat(64), seedWorkId: randomUUID(), seedAttemptId: randomUUID(),
-    seedEnvelopeDigest: "c".repeat(64), seedAcceptedAtMs: Date.now() - 10, receiverAttestation: "operator-confirmed-reminder", nativeTurnObserved: false, includesExistingWork: false };
+  const sample: NoticeAuthorization = { version: 2, consent: "explicit-enable", id: randomUUID(), operationId: "test", requestDigest: "a".repeat(64), bindingRevision: 2,
+    activatedAtMs: Date.now(), modelRevision: MODEL, qualificationRevision: "b".repeat(64), nativeTurnObserved: false, includesExistingWork: false };
   expect(validateNoticeAuthorization(sample)).toEqual(sample);
-  for (const patch of [{ nativeTurnObserved: true }, { includesExistingWork: true }, { secret: "PRIVATE" }, { seedAcceptedAtMs: Date.now() - 2 * 86400000 }])
+  for (const patch of [{ nativeTurnObserved: true }, { includesExistingWork: true }, { secret: "PRIVATE" }, { version: 1 }, { consent: "legacy-tested-consent" }])
     expect(() => validateNoticeAuthorization({ ...sample, ...patch })).toThrow();
 });

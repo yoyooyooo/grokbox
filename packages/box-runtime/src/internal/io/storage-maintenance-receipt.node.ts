@@ -25,7 +25,7 @@ function cycle(value: unknown): StorageMaintenanceCycle | null {
   if (!row(value) || !num(value.atMs) || !num(value.elapsedMs) || typeof value.budgetExceeded !== "boolean"
     || !["completed", "partial", "configuration_unavailable"].includes(String(value.state)) || !(value.policyRevision === null || hash(value.policyRevision))) return null;
   const m = value.monitor, p = value.processLog;
-  if (!row(m) || !["maintained", "busy", "not_initialized", "migration_required", "unavailable", "not_checked"].includes(String(m.state))
+  if (!row(m) || !["maintained", "busy", "not_initialized", "unavailable", "not_checked"].includes(String(m.state))
     || !num(m.removedEvidence) || !num(m.expiredSnapshots) || !(m.physicalBytes === null || num(m.physicalBytes))
     || !(m.clockState === null || ["observed", "clock_reversed", "clock_jump"].includes(String(m.clockState)))
     || !row(p) || !["maintained", "busy", "unavailable", "not_owned", "policy_changed", "not_checked"].includes(String(p.state))

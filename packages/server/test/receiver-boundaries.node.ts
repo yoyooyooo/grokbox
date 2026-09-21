@@ -49,15 +49,16 @@ test("test work capacity never drops unresolved records or repeats a completed t
   } finally { await f.close(); }
 });
 
-test("explicit schema-three migration refuses a live collector and preserves the original file", async () => {
+test("retired schema-three is an invalid source through management HTTP and never changes a live collector", async () => {
   const f = await receiverFixture(origin);
   try {
-    await f.server.close();
     const db = await openMonitorSqlite(f.store.path, "write");
     try { await db.run("DROP TABLE notification_tests; UPDATE meta SET version=3; PRAGMA user_version=3;"); } finally { await db.close(); }
     const before = await readFile(f.store.path);
-    await assert.rejects(f.store.initialize(), /monitor_migration_requires_stop/);
-    assert.equal((await f.store.snapshot()).schemaVersion, 3); assert.deepEqual(await readFile(f.store.path), before);
+    await assert.rejects(f.store.initialize(), /monitor_store_schema_or_root_mismatch/);
+    await rejects(f.client().observation(), "source_invalid");
+    await assert.rejects(f.store.snapshot(), /monitor_store_schema_or_root_mismatch/);
+    assert.deepEqual(await readFile(f.store.path), before); assert.equal(f.requests.length, 0);
   } finally { await f.close(); }
 });
 
@@ -79,11 +80,13 @@ test("Server shutdown during enable preflight cancels the source and cannot publ
   } finally { await f.close(); }
 });
 
-test("old stored tested consent remains readable without silently becoming new consent or a new requirement", () => {
+test("old tested consent cannot be consumed as an ongoing grant; current enable still needs no test", () => {
   const now = Date.now(), legacy = { version: 1, id: randomUUID(), operationId: "legacy-enable", requestDigest: "a".repeat(64), bindingRevision: 2,
     activatedAtMs: now, modelRevision: MODEL, qualificationRevision: "b".repeat(64), seedWorkId: randomUUID(), seedAttemptId: randomUUID(), seedEnvelopeDigest: "c".repeat(64),
     seedAcceptedAtMs: now - 1, receiverAttestation: "operator-confirmed-reminder", nativeTurnObserved: false, includesExistingWork: false };
-  assert.deepEqual(validateNoticeAuthorization(legacy), legacy);
+  const before = JSON.stringify(legacy);
+  assert.throws(() => validateNoticeAuthorization(legacy), /invalid_automatic_authorization/);
+  assert.equal(JSON.stringify(legacy), before);
   assert.throws(() => validateNoticeAuthorization({ ...legacy, version: 2, consent: "explicit-enable" }));
   const current = { version: 2, id: randomUUID(), operationId: "explicit-enable", requestDigest: "d".repeat(64), bindingRevision: 2,
     activatedAtMs: now, modelRevision: MODEL, qualificationRevision: "b".repeat(64), consent: "explicit-enable", nativeTurnObserved: false, includesExistingWork: false };

@@ -3,11 +3,10 @@ import { observationOwn as own } from "../contract/provider-observation.ts";
 import { NotificationError, NOTIFICATION_DELIVERY_POLICY } from "./notification-contract.ts";
 import type { NoticeReplayFence } from "./notice-replay-fence.ts";
 
-/** Explicit ongoing consent is independent of optional test delivery. Legacy
- * authorizations remain readable evidence of consent, not a requirement to test
- * a new receiver. Neither version proves a Bot report or user read. */
+/** The current ongoing grant is explicit enable, independent of optional test
+ * delivery. Preserved historical grants are not current authorization and no
+ * authorization proves a Bot report or user read. */
 export const NOTICE_AUTHORIZATION_VERSION = 2;
-export const NOTICE_SEED_MAX_AGE_MS = 86_400_000;
 export const NOTICE_WORKER_POLICY = Object.freeze({ idleMs: 5000, blockedMs: 30000, maxBlockedMs: 300000, maxPerCycle: 1 });
 const uuid = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
 const hash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
@@ -24,24 +23,23 @@ export function validateNoticeActivation(input: NoticeActivationCommand): Notice
   return { alias, expectedBindingRevision: revision, expectedModelRevision: model, operationId: id, confirmed: true };
 }
 export const noticeActivationDigest = (input: NoticeActivationCommand) => sha256Text(canonicalJson(validateNoticeActivation(input)));
-type NoticeAuthorizationBase = { id: string; operationId: string; requestDigest: string; bindingRevision: number;
+export type NoticeAuthorization = { version: 2; consent: "explicit-enable"; id: string; operationId: string; requestDigest: string; bindingRevision: number;
   activatedAtMs: number; modelRevision: string; qualificationRevision: string; nativeTurnObserved: false; includesExistingWork: false };
-export type NoticeAuthorization = NoticeAuthorizationBase & ({ version: 2; consent: "explicit-enable" } | {
-  version: 1; seedWorkId: string; seedAttemptId: string; seedEnvelopeDigest: string; seedAcceptedAtMs: number;
-  receiverAttestation: "operator-confirmed-reminder" });
 export function validateNoticeAuthorization(value: unknown): NoticeAuthorization {
+  if (!value || typeof value !== "object" || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return bad();
+  const keys = ["version", "consent", "id", "operationId", "requestDigest", "bindingRevision", "activatedAtMs", "modelRevision", "qualificationRevision", "nativeTurnObserved", "includesExistingWork"];
+  if (Reflect.ownKeys(value).length !== keys.length) return bad();
+  // Check descriptors before reading even the version. A prototype or getter
+  // cannot grant authority and then disappear from its canonical persistence.
+  for (const key of keys) {
+    const field = Object.getOwnPropertyDescriptor(value, key);
+    if (!field || !("value" in field) || !field.enumerable) return bad();
+  }
   const v = value as NoticeAuthorization;
-  if (!v || ![1, 2].includes(v.version)) return bad();
-  const keys = ["version", "id", "operationId", "requestDigest", "bindingRevision", "activatedAtMs", "modelRevision", "qualificationRevision", "nativeTurnObserved", "includesExistingWork",
-    ...(v.version === 2 ? ["consent"] : ["seedWorkId", "seedAttemptId", "seedEnvelopeDigest", "seedAcceptedAtMs", "receiverAttestation"])];
-  if (Object.keys(v).some(k => !keys.includes(k))) return bad();
-  for (const k of Object.keys(v)) { const d = Object.getOwnPropertyDescriptor(v, k); if (!d || !("value" in d)) return bad(); }
-  if (!uuid(v.id) || !operation(v.operationId) || !hash(v.requestDigest) || !positive(v.bindingRevision)
+  if (v.version !== NOTICE_AUTHORIZATION_VERSION || v.consent !== "explicit-enable"
+    || !uuid(v.id) || !operation(v.operationId) || !hash(v.requestDigest) || !positive(v.bindingRevision)
     || !positive(v.activatedAtMs) || !hash(v.modelRevision) || !hash(v.qualificationRevision)
     || v.nativeTurnObserved !== false || v.includesExistingWork !== false) return bad();
-  if (v.version === 2 ? v.consent !== "explicit-enable" : !uuid(v.seedWorkId) || !uuid(v.seedAttemptId)
-    || !hash(v.seedEnvelopeDigest) || !positive(v.seedAcceptedAtMs) || v.seedAcceptedAtMs > v.activatedAtMs
-    || v.activatedAtMs - v.seedAcceptedAtMs > NOTICE_SEED_MAX_AGE_MS || v.receiverAttestation !== "operator-confirmed-reminder") return bad();
   return structuredClone(v);
 }
 
@@ -103,7 +101,7 @@ export function automaticAuthorizationView(value: NoticeAuthorization | undefine
   const v = validateNoticeAuthorization(value);
   return { state: "authorized" as const, authorizationId: v.id, bindingRevision: v.bindingRevision,
     activatedAtMs: v.activatedAtMs, modelRevision: v.modelRevision,
-    consent: v.version === 2 ? v.consent : "legacy-tested-consent", testRequired: false,
+    consent: v.consent, testRequired: false,
     nativeTurnObserved: false, includesExistingWork: false,
     currentEligibility: "requires_fresh_checks", hostInstallation: "not_checked" };
 }

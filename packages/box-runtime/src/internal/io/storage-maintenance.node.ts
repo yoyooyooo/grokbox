@@ -13,7 +13,7 @@ export type StorageMaintenanceCycle = {
   policyRevision: string | null;
   execution?: { state: "maintained" | "protected" | "unavailable"; retiredSteps: number; closedTurns: number; blockedActiveSteps: number; fileBytes: number | null; maxBytes: number | null };
   continuity?: Awaited<ReturnType<typeof maintainContinuityStorage>>;
-  monitor: { state: "maintained" | "busy" | "not_initialized" | "migration_required" | "unavailable" | "not_checked";
+  monitor: { state: "maintained" | "busy" | "not_initialized" | "unavailable" | "not_checked";
     removedEvidence: number; expiredSnapshots: number; physicalBytes: number | null; clockState: string | null };
   journals: JournalMaintenanceReceipt[];
   processLog: ProcessLogMaintenance | { state: "not_owned" | "policy_changed" | "not_checked"; reclaimedBytes: 0; activeSegmentPreserved: true };
@@ -48,7 +48,7 @@ export async function maintainObservationStorage(input: StorageMaintenanceInput)
     if (!retired.retention.mayExpire) result.state = "partial";
   } catch (error) {
     const reason = error instanceof BoxRuntimeError ? error.message : "unknown";
-    result.monitor.state = reason === "monitor_not_initialized" ? "not_initialized" : reason === "monitor_migration_required" ? "migration_required"
+    result.monitor.state = reason === "monitor_not_initialized" ? "not_initialized"
       : ["monitor_writer_busy", "monitor_reader_busy"].includes(reason) ? "busy" : "unavailable";
     if (result.monitor.state !== "not_initialized") result.state = "partial";
   }

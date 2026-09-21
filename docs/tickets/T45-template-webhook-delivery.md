@@ -48,7 +48,7 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 新 `notification receiver enable` 需要原接收者引用、绑定 revision、核验得到的模型 revision、持久 request UUID 和明确费用授权。当前身份/模型/Routine/配置仍须通过只读 preflight，但不需要测试或用户已读声明。同一私有 capsule 原子保存 v2 explicit-enable 授权、revision 和操作回执；新动作不领取 key、启用原生 Routine、启动服务或发送消息。原生 Routine 的准备/启用是独立设置步骤。disable/unbind 也通过同一管理用例与 receipt writer；禁用可保留私有凭据供以后显式重新启用，解绑清除本地凭据而不宣称上游撤销。
 
-历史回执绑定安装、主体、数据库、request UUID 与输入摘要，先于当前 revision/配置/原生读取返回；撤销或后续启用不改写旧回执，重放旧 enable 不复活授权。旧 v1 授权仅为读取已有私有状态保留，不允许用旧字段发起新动作，也不把旧测试或 attestation 升格为当前用户收到的证明。
+历史回执绑定安装、主体、数据库、request UUID 与输入摘要，先于当前 revision/配置/原生读取返回；撤销或后续启用不改写现行合同的旧回执，重放旧 enable 不复活授权。实时授权只接受 v2 explicit-enable；历史 v1 tested-consent 胶囊保留字节，但不能被当前 reader/worker 当成有效授权、自动归一化或重新启用。验证在读取 version 前检查准确 own-data 字段，不执行 getter 或接受继承字段。含旧授权且有新待投递 work 的真实私有胶囊反例验证零新增原生读取/HTTP/attempt；完整范围见[现行安全账本与授权收束](../reports/2026-09-21-current-safety-store-contracts.md)。
 
 管理 Server 的 Effect Scope 现持有`startOpsNotificationWorker`，复用此前 daemon 中的领域逻辑而不保留旧自动 sender。每轮最多一条，空闲5秒、阻断30秒起指数退避到5分钟，上一轮结算后才等下一轮；无新work/关闭/预算不足时不访问原生。只处理创建时间严格晚于授权边界的work，历史积压不补发；复用原outbox、私有owner和HTTPS，不增加router/队列/凭据文件。每次发送重新核对模型、Host/账户代际、Routine、scope、预算和撤销。unknown仍不可重投，退出中止并等待真实HTTP与落盘结算，不留后台晚写。
 
@@ -70,7 +70,7 @@ collector组合反例已修复：自动选择和直接自动发送同时检查in
 
 [共享接收者适配](../../packages/box-runtime/src/internal/io/notification-receiver.node.ts)同时供安装 Server 和剩余 CLI 使用，保留已持久配对的 generation 算法，Routine、Host/model 同帧与独立所有权读取都有明确期限。换代、profile变化、重定向、超大/慢响应和取消不给成功资格。`notification status`、安全 HTTP DTO 与 Web 通知状态页只展示有限状态，不输出私有 work/授权引用或诊断正文。
 
-[管理通知 Node 测试](../../test/notification-management.test.ts)已扩展到接收者授权/撤销回执、独立测试、跨主体隔离、真实 HTTP、CLI、SQLite 迁移/容量与未知结果恢复；[浏览器旅程](../../apps/web/test/receiver-browser.node.ts)验证同源权限/CSRF、启用无需测试、测试 unknown 不阻启用、丢回执刷新恢复及窄屏。固定源码与实际计数由 [CLI-05](CLI-05-implementation-follow-through.md)统一记录。原生事实与测试接收端仍为合成隔离输入，不代替实际 Bot/用户收到提醒。
+[管理通知 Node 测试](../../test/notification-management.test.ts)已扩展到接收者授权/撤销回执、独立测试、跨主体隔离、真实 HTTP、CLI、SQLite 旧合同拒绝/容量与未知结果恢复；[浏览器旅程](../../apps/web/test/receiver-browser.node.ts)验证同源权限/CSRF、启用无需测试、测试 unknown 不阻启用、丢回执刷新恢复及窄屏。固定源码与实际计数由 [CLI-05](CLI-05-implementation-follow-through.md)统一记录。原生事实与测试接收端仍为合成隔离输入，不代替实际 Bot/用户收到提醒。
 
 ## 独立测试 work 与恢复
 

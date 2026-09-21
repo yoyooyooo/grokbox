@@ -42,6 +42,20 @@ async function expiredEvidence(f: Awaited<ReturnType<typeof fixture>>) {
   return { store, id };
 }
 
+test("retired migration-required maintenance evidence is preserved but cannot become a current success or write", async () => {
+  const f = await fixture();
+  try {
+    const recorder = await createStorageMaintenanceRecorder({ ...f.input, serviceEpoch: randomUUID() });
+    await recorder.record(await maintainObservationStorage(f.input));
+    const old = JSON.parse(await readFile(f.receipt, "utf8"));
+    old.lastCycle.monitor.state = "migration_required";
+    const bytes = JSON.stringify(old); await writeFile(f.receipt, bytes, { mode: 0o600 });
+    expect((await observeStorageMaintenance(f.input)).state).toBe("unavailable");
+    await expect(recorder.record(await maintainObservationStorage(f.input))).rejects.toThrow("storage_maintenance_receipt_invalid");
+    expect(await readFile(f.receipt, "utf8")).toBe(bytes);
+  } finally { await f.close(); }
+});
+
 test("actual modeld runs maintenance without a collector or enabled notifications; borrower cannot restart it", async () => {
   const f = await fixture(); let owner: Awaited<ReturnType<typeof startModeldProcess>> | undefined;
   try {

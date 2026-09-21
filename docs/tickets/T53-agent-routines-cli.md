@@ -25,11 +25,11 @@ grokbox operation reconcile --domain routine --request-id <original-provision-re
 
 [原生适配](../../packages/box-runtime/src/internal/io/routine-gateway.node.ts)每个用例拥有一个有界、固定代际的交互：先读当前定义，再允许明确方法的单次修改，独立读回。重新读取 discovery 后须仍为同一 generation，不能把已保留的操作发给替换后的 Gateway。沿用配对来源的原 generation 算法；不重定向、不重试、不通过旧 daemon fallback。
 
-旧 `agents routines ...` 和 `ops targets ...` 普通命令已退出。daemon 的 `agentRoutines` / `routineProvision` RPC 和相关 capability 也已退出。尚未迁移的保护/交接程序仍借用其**本地**原生 primitive；不能因此宣称 CONT 已迁移，亦不暴露新的普通管理后门。
+旧 `agents routines ...` 和 `ops targets ...` 普通命令已退出。daemon 的 `agentRoutines` / `routineProvision` RPC 和相关 capability 也已退出。保护/交接现已进入管理 Server，继续复用**本地**原生 primitive；相关[交接管理迁移](../reports/2026-09-21-handover-management.md)已闭合，完整职责、资源独立性与退役资格仍归 CONT，不暴露普通管理后门。
 
 ## 原数据库中的两类操作
 
-`state/routine-provision/operations.sqlite` 保留原有 provision/binding/tombstone，并在 schema 3 增加有界 `state_operations`。新增 schema 只在明确写入时加表，GET 不升级或创建库；主文件空间约束继续使用原 owner。没有通用 operation 数据库或额外 scheduler。
+`state/routine-provision/operations.sqlite` 只有现行 schema 3，包含原有 provision/binding/tombstone 和有界 `state_operations`。读取及写入均核对当前 header/application/root；初始化不升级旧库，缺旧表不能投影为“没有操作”或零防重放记录。旧文件和未知效果原样保留、不重发。现行首次创建、空间约束和回执继续使用原 owner，没有通用 operation 数据库或额外 scheduler；[当前账本收束](../reports/2026-09-21-current-safety-store-contracts.md)记录具体反例和资格边界。
 
 **Disabled apply/update** 复用 `runRoutineProvision`、`RoutineProvisionLedger` 和 `NativeRoutineProvision`。新建明确 disabled；已有 managed key 只更新本安装保存的精确 ID，expected revision 同时匹配本地 binding 和当前原生定义。先提交 attempting 再发送一次原生请求，事务不跨网络；未知记录按 Bot/key 阻止换 request-id 绕过。普通输出不保存或回显 blueprint prompt。
 

@@ -6,10 +6,11 @@ import { randomUUID } from "node:crypto";
 import initialize from "sql.js/dist/sql-asm.js";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { openMonitorStore } from "../src/internal/io/monitor-store.node.ts";
+import { openMonitorSqlite } from "../src/internal/io/monitor-sqlite.node.ts";
 
 const AGENT="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",SCOPE="b".repeat(64);
 async function legacy() {
-  const root=await mkdtemp(join(tmpdir(),"monitor-migrate-review-")),directory=join(root,"observability"),file=join(directory,"observations.sqlite");
+  const root=await mkdtemp(join(tmpdir(),"monitor-retired-contract-")),directory=join(root,"observability"),file=join(directory,"observations.sqlite");
   await mkdir(directory,{mode:0o700});
   const SQL=await initialize(),db=new SQL.Database(),databaseId=randomUUID(),epoch=randomUUID(),incident=randomUUID(),request=randomUUID();
   db.run(`PRAGMA user_version=1;
@@ -30,41 +31,35 @@ async function legacy() {
   return {root,directory,file,databaseId,incident,request,close:()=>rm(root,{recursive:true,force:true})};
 }
 
-test("v1 migration is explicit and retains incident acknowledgement and management idempotency",async()=>{
+test("actual v1 layout is retained but neither queries nor initialization can make it current",async()=>{
   const f=await legacy();try{
-    const store=openMonitorStore(f.root),before=await readFile(f.file);
-    expect((await store.snapshot()).storage.migrationRequired).toBe(true);
-    expect(await readFile(f.file)).toEqual(before);
-    await expect(store.begin(randomUUID(),2000,[AGENT])).rejects.toThrow("monitor_migration_required");
-    const receipt=await store.initialize();expect(receipt).toMatchObject({migrated:true,created:false,databaseId:f.databaseId});
-    expect((await store.incidents())[0]).toMatchObject({id:f.incident,acknowledged:true,revision:2,snoozeUntilMs:9000000});
-    expect(await store.manage({requestId:f.request,incidentId:f.incident,expectedRevision:1,action:"ack",nowMs:2001})).toMatchObject({duplicate:true,appliedRevision:2});
-    const backups=(await readdir(f.directory)).filter(name=>name.startsWith("observations-v1-"));expect(backups).toHaveLength(1);
-    expect(await readFile(join(f.directory,backups[0]))).toEqual(before);
+    const store=openMonitorStore(f.root),before=await readFile(f.file),names=await readdir(f.directory);
+    await expect(store.snapshot()).rejects.toThrow("monitor_store_schema_or_root_mismatch");
+    await expect(store.incidents()).rejects.toThrow("monitor_store_schema_or_root_mismatch");
+    await expect(store.begin(randomUUID(),2000,[AGENT])).rejects.toThrow("monitor_store_schema_or_root_mismatch");
+    await expect(store.initialize()).rejects.toThrow("monitor_store_schema_or_root_mismatch");
+    expect(await readFile(f.file)).toEqual(before);expect(await readdir(f.directory)).toEqual(names);
   }finally{await f.close();}
 });
 
-test("rollback during legacy schema migration preserves the old database for a later confirmed retry",async()=>{
-  const f=await legacy();let refuse=true;try{
-    const store=openMonitorStore(f.root,{beforePublish(){if(refuse)throw Error("injected migration failure");}}),before=await readFile(f.file);
-    await expect(store.initialize()).rejects.toThrow();expect(await readFile(f.file)).toEqual(before);
-    expect((await store.snapshot()).storage.migrationRequired).toBe(true);
-    refuse=false;expect((await store.initialize()).migrated).toBe(true);
+test("a former management receipt cannot trigger an upgrade or a new acknowledgement",async()=>{
+  const f=await legacy();let publications=0;try{
+    const store=openMonitorStore(f.root,{beforePublish(){publications++;},afterRename(){publications++;}}),before=await readFile(f.file);
+    await expect(store.manage({requestId:f.request,incidentId:f.incident,expectedRevision:1,action:"ack",nowMs:2001})).rejects.toThrow("monitor_store_schema_or_root_mismatch");
+    await expect(store.initialize()).rejects.toThrow("monitor_store_schema_or_root_mismatch");
+    expect(publications).toBe(0);expect(await readFile(f.file)).toEqual(before);
+    const db=await openMonitorSqlite(f.file,"read");
+    try{expect(await db.first("SELECT revision,acknowledged,snooze_until FROM incidents")).toEqual({revision:2,acknowledged:1,snooze_until:9000000});}
+    finally{await db.close();}
   }finally{await f.close();}
 });
 
-test("committed migration with lost acknowledgement reports unknown instead of claiming nothing changed",async()=>{
+for(const name of ["writer.lock","collector.lock"])test(`retired ${name} is never parsed, stolen or removed to upgrade a database`,async()=>{
   const f=await legacy();try{
-    const store=openMonitorStore(f.root,{afterRename(){throw Error("lost migration receipt");}});
-    await expect(store.initialize()).rejects.toThrow("monitor_commit_unknown");
-    expect((await openMonitorStore(f.root).snapshot()).storage.migrationRequired).toBe(false);
-  }finally{await f.close();}
-});
-
-test("a legacy collector marker prevents migration and is never removed on a guessed timeout",async()=>{
-  const f=await legacy();try{
-    await writeFile(join(f.directory,"collector.lock"),"synthetic-old-owner\n",{mode:0o600});const before=await readFile(f.file);
-    await expect(openMonitorStore(f.root).initialize()).rejects.toThrow("monitor_legacy_collector_requires_stop");
-    expect(await readFile(f.file)).toEqual(before);expect(await readFile(join(f.directory,"collector.lock"),"utf8")).toBe("synthetic-old-owner\n");
+    const path=join(f.directory,name),bytes="2147483647\n";
+    await writeFile(path,bytes,{mode:0o600});const before=await readFile(f.file),names=(await readdir(f.directory)).sort();
+    await expect(openMonitorStore(f.root).initialize()).rejects.toThrow("monitor_store_schema_or_root_mismatch");
+    expect(await readFile(f.file)).toEqual(before);expect(await readFile(path,"utf8")).toBe(bytes);
+    expect((await readdir(f.directory)).sort()).toEqual(names);
   }finally{await f.close();}
 });

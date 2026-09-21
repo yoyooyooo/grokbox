@@ -49,11 +49,13 @@ export async function readContinuityIdentity(root: string): Promise<{ scopeId: s
   if ((await lstat(file)).size > continuityStorePolicy().maxMetadataBytes) return failContinuity("capacity");
   const db = await openMonitorSqlite(file, "read");
   try {
+    await db.run("BEGIN");
     const meta = await db.first("SELECT version,root_id,scope_id FROM continuity_meta WHERE singleton=1");
     const version = (await db.first("PRAGMA user_version"))?.user_version;
-    if (!meta || !isContinuityHash(meta.scope_id) || !Number.isSafeInteger(version) || meta.version !== version
+    if (version !== CONTINUITY_DB_VERSION || meta?.version !== CONTINUITY_DB_VERSION) return failContinuity("schema_mismatch");
+    if (!isContinuityHash(meta.scope_id)
       || meta.root_id !== sha256Text(canonicalJson(["continuity-store-v1", resolve(root), meta.scope_id]))) return failContinuity("integrity_failure");
-    return { scopeId: meta.scope_id, schemaVersion: Number(version) };
+    return { scopeId: meta.scope_id, schemaVersion: CONTINUITY_DB_VERSION };
   } finally { await db.close(); }
 }
 
@@ -93,6 +95,7 @@ export function continuityDatabase(root: string, scopeId: string, policy: Contin
       let begun = false, commitAttempted = false;
       try {
         await db.run(write ? "BEGIN IMMEDIATE" : "BEGIN"); begun = true;
+        await checkDb(db);
         const result = await body(db);
         if (write) await hooks.beforeCommit?.(label);
         commitAttempted = write; await db.run(write ? "COMMIT" : "ROLLBACK"); begun = false;
@@ -109,42 +112,20 @@ export function continuityDatabase(root: string, scopeId: string, policy: Contin
     yield* continuityIo(async () => {
       await checkContinuityRoot(root);
       const existingOwner = await lstat(directory).catch(error => { if (missingFile(error)) return null; throw error; });
-      if (existingOwner && !await checkContinuityFile(file, true)) return failContinuity("integrity_failure");
+      if (existingOwner) {
+        if (!await checkContinuityFile(file, true)) return failContinuity("integrity_failure");
+        // An existing owner is not repaired or upgraded by service startup.
+        return;
+      }
       await continuityPrivateDirectory(directory, true);
       await continuityPrivateDirectory(join(directory, "objects"), true);
       await continuityPrivateDirectory(join(directory, "staging"), true);
     });
     const exists = yield* continuityIo(() => checkContinuityFile(file, true));
     if (exists) {
-      // Explicit initializer only. GET never performs schema migration. Preserve
-      // all old unknown operations. Exact requests and bounded identity receipts
-      // let restarted consumers reconcile without inferring or recreating Bots.
-      yield* continuityIo(checkDirectories);
-      const existing = yield* Effect.acquireRelease(Effect.uninterruptible(continuityIo(() => openMonitorSqlite(file, "write"))), close);
-      return yield* Effect.uninterruptible(continuityIo(async () => {
-        await existing.run("BEGIN IMMEDIATE"); let committing = false;
-        try {
-          const version = await existing.first("PRAGMA user_version"), meta = await existing.first("SELECT * FROM continuity_meta WHERE singleton=1");
-          if (meta?.root_id !== rootId || meta.scope_id !== scopeId) return failContinuity("scope_mismatch");
-          if ((await existing.first("PRAGMA journal_mode"))?.journal_mode !== "delete") return failContinuity("schema_mismatch");
-          const previous = version?.user_version;
-          if (previous !== meta.version || ![1, 2, 3, CONTINUITY_DB_VERSION].includes(Number(previous))) return failContinuity("schema_mismatch");
-          const migrated = previous !== CONTINUITY_DB_VERSION;
-          if (migrated) {
-            if (previous === 1) await existing.run("ALTER TABLE operations ADD COLUMN request_json TEXT");
-            if (Number(previous) < 3) await existing.run("ALTER TABLE operations ADD COLUMN result_json TEXT");
-            await existing.run(CONTINUITY_WORKFLOW_SCHEMA);
-            await existing.run("CREATE INDEX IF NOT EXISTS operation_agent_state ON operations(agent_id,state)");
-            await existing.run(`UPDATE continuity_meta SET version=${CONTINUITY_DB_VERSION} WHERE singleton=1; PRAGMA user_version=${CONTINUITY_DB_VERSION};`);
-          } else await checkDb(existing);
-          await hooks.beforeCommit?.("initialize-schema"); committing = true; await existing.run("COMMIT");
-          await hooks.afterCommit?.("initialize-schema");
-          return { initialized: true, created: false, ...(migrated ? { migrated: true } : {}) };
-        } catch (cause) {
-          await existing.run("ROLLBACK").catch(() => undefined);
-          if (committing) return failContinuity("commit_unknown"); throw cause;
-        }
-      }));
+      // Check the current contract inside a read transaction. Old safety rows
+      // remain untouched; an initializer cannot turn them into new admissions.
+      return yield* transaction("initialize", false, async () => ({ initialized: true, created: false }));
     }
     const db = yield* Effect.acquireRelease(Effect.uninterruptible(continuityIo(() => openMonitorSqlite(file, "create"))), close);
     yield* Effect.uninterruptible(continuityIo(async () => {
