@@ -259,7 +259,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
           : url.pathname.startsWith("/v1/material-content/") ? "materials.content.read" : url.searchParams.has("query") ? "materials.search" : "materials.read"), catch: error => error });
       }
       if (request.method === "GET" && (url.pathname.startsWith("/v1/contexts/") || url.pathname.startsWith("/v1/context-"))) {
-        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/context-operations/") ? "operations.read" : "context.read"), catch: error => error });
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/context-operations/") || url.pathname.startsWith("/v1/context-compaction-operations/") ? "operations.read" : "context.read"), catch: error => error });
       }
       if(request.method==="GET"&&url.pathname==="/v1/host-health")yield* Effect.tryPromise({try:signal=>materialAuthorize(signal,"system.read"),catch:error=>error});
       if (request.method === "GET" && url.pathname.startsWith("/v1/lifecycle-")) {
@@ -270,6 +270,9 @@ export async function startManagementServer(options: ManagementServerOptions, te
       }
       if (request.method === "POST" && result && typeof result === "object" && "action" in result && result.action === "test" && "state" in result && result.state === "refused") {
         return yield* Effect.fail(new HttpFailure(409, "notification_test_refused", "The independent test was not accepted. Its retained receipt describes the refusal; it does not affect permission to enable future notifications.", { operation: result }));
+      }
+      if (request.method === "POST" && url.pathname.startsWith("/v1/context-compaction") && result && typeof result === "object" && "state" in result && result.state === "failed") {
+        return yield* Effect.fail(new HttpFailure(422, "compaction_failed", "The original compaction settled without success. Review its retained failure before choosing a new request.", { operation: result }));
       }
       if (request.method === "POST" && result && typeof result === "object" && "state" in result && result.state === "unknown") {
         return yield* Effect.fail(new HttpFailure(409, "operation_unknown", "The original operation requires readback; it was not replayed.", { operation: result as ModelOperation }));

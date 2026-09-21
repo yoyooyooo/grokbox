@@ -1,6 +1,6 @@
 # CTX-04 — 旧会话下一消息恢复、操作入口与整体验收
 
-Status: **Implemented / combined offline and native-isolated qualification recorded / independent review pending**。源提交 `883e224`、`269f1e2`，升级/授权一致性修复 `358c057`、`f4b3a18`；后续503/配方 `87463c9`、显式下一TURN备用 `b77ceb0`，manual提交未知/队列边界 `5f2afdb`。源码不再是Spec-only；尚未据此宣布用户现役会话已恢复或正式发布。
+Status: **管理入口已迁入统一 Server；完整原生/App 与独立审查未关闭。** 当前手动维护、原请求恢复和旧入口退出见[管理阶段报告](../reports/2026-09-21-compaction-management.md)。原有主动维护与 confirmed-overflow 程序继续复用，不由手动 Compact 验证替代 CTX-A01。历史提交与窗口只证明其原版本，不能作为本次新版采用许可。
 
 ## Goal / release blocker
 
@@ -10,15 +10,16 @@ Status: **Implemented / combined offline and native-isolated qualification recor
 
 ## Actual entrypoints and retirement
 
-CLI `agents context <agent> [--session <id>] --json`纯读configured预算、历史维护回执和当前有限native capability，历史成功不能当当前root已观察。`agents compact <agent> [--session <id>] --operation-id <id> --confirm --json`只在真实已加载默认Box session空闲安全点执行原生summarize动作，不发送“请总结”业务prompt或伪造STEP；named/server/subagent不隐式映射，busy/无shell明确拒绝。
+CLI `bot context compact <bot> --preview` 读取已核对账号、加载代、模型选择、预算策略和默认 Box session 的原生能力。明确提交携带 `--scope-id`、`--expect-revision`、`--request-id` 与 `--confirm`；可能消耗摘要模型费用，但不发送业务 prompt 或伪造 STEP。preview revision 不是未来 root 的快照，原生 runner 在安全点选取当时的 current root；named/server/subagent 不隐式映射。`operation get/reconcile/resume/cancel --domain compaction` 定位原请求，准备、未知派发、modeld 提交和原生 shell 结算分开。原 `agents context/compact`、直连 Gateway writer 及仅为其存在的 mock 已删除，没有兼容转发。
 
-Host输入/restore/工具后与modeld准备/实际出站均检查本地预算，新候选保持原输入sourceRef/nonce/元数据。可信维护消息为wire8，config升级至schema3而models保留schema2。正常auto由配置与能力资格决定，旧 `GROKBOX_MODELD_HOST_COMPACT` gate已从正常路径退出；注入仍off。源码日志/命令使用安全结构化错误及统计，不写摘要正文/原历史/credential，错误不进入有效Memory。
+Host输入/restore/工具后与modeld准备/实际出站均检查本地预算，新候选保持原输入sourceRef/nonce/元数据。可信维护消息按当前 wire/配置/模型合同核验；manual approval 在 Host、wire 和 modeld 共用声明，缺失或变更不得作为当前授权。正常auto由配置与能力资格决定，旧 `GROKBOX_MODELD_HOST_COMPACT` gate已从正常路径退出；注入仍off。源码日志/命令使用安全结构化错误及统计，不写摘要正文/原历史/credential，错误不进入有效Memory。
 
 用户消息进入实际Host之前，配置写入与模型选择仍在原domain writer。迁移后续版本保留旧retired manifest/备份，不能以删除旧回执开新迁移；preflight与首次主请求、后续维护共享原TURN的credential/policy/lifecycle，不能在维护时绕过取消或热换key。
 
 ## Executable acceptance
 
 ```bash
+bun test test/compaction-management.test.ts packages/box-runtime/test/compaction-management.test.ts
 bun scripts/verify-runtime-rebuild.mjs context-maintenance
 bun scripts/verify-runtime-rebuild.mjs context-policy
 GROKBOX_TEST_NATIVE_HOST=1 bun scripts/verify-runtime-rebuild.mjs context-native

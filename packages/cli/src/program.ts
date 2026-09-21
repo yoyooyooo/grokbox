@@ -5,7 +5,6 @@ import { runConfigCommand, type ConfigCommandOptions } from "./commands/config.t
 import { Command, CommanderError } from "commander";
 import {
   runAgentsCreate,
-  runAgentsContext,
   runAgentsDelete,
   runAgentsList,
   runAgentsShow,
@@ -313,8 +312,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents handover observe": async (deps, _args, options) => await runBotHandover(deps,"observe",options),
     "agents handover attest": async (deps, _args, options) => await runBotHandover(deps,"attest",options),
     "agents handover retire": async (deps, _args, options) => await runBotHandover(deps,"retire",options),
-    "agents context": async (deps, args, options) => await runAgentsContext(deps, "status", args[0] ?? "", options),
-    "agents compact": async (deps, args, options) => await runAgentsContext(deps, "compact", args[0] ?? "", options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),
     "agents duplicate": async (deps, args, options) => await runAgentDuplicate(deps, args[0] ?? "", options),
     "agents operations show": async (deps, args, options) => await runAgentOperation(deps, args[0] ?? "", options),

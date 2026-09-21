@@ -59,6 +59,7 @@ export { createNativeBotConvergence } from "./internal/roots/continuity-native-c
 export { createNativeBotProtection, protectiveOwnership } from "./internal/roots/continuity-native-protection.runtime.ts";
 export { startProtectionService, type ProtectionServiceStatus, type ProtectionServiceInput, type ProtectionServiceTestPorts } from "./internal/roots/protection-service.runtime.ts";
 export { readContinuityIdentity } from "./internal/io/continuity-database.node.ts";
+export { compactionManagementPrograms, compactionControlId, type ManagedCompactionDeclaration, type ManagedCompactionRow } from "./internal/io/compaction-management.node.ts";
 export { contextManagementPrograms, contextControlId, managedContextRecord, contextStorePresent, type ManagedContextDeclaration, type ManagedContextRecord, type ManagedContextRow } from "./internal/io/context-management.node.ts";
 export { createNativeContextControl, managedContextPrograms, withManagedContextGate, type ContextNative } from "./internal/roots/managed-context.runtime.ts";
 export { readManagedLifecycle, listManagedLifecycles, withManagedLifecycleGate } from "./internal/roots/managed-lifecycle.runtime.ts";

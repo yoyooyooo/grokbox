@@ -4,7 +4,7 @@ import { canonicalJson, computeSnapshotDigest, sha256Text } from "../../hash.ts"
 import type { ModelRecord } from "../../selection.ts";
 import { contextBudget, summaryBudget, type CapturedContextPolicy } from "../config/context-policy.ts";
 import { CONTEXT_MAX_OPERATIONS, ContextFailure, contextFailure, estimateContextText, measureContext, parseContextMaterial,
-  contextMaintenanceKey, type ContextCandidate, type ContextMaterial, type ContextMaintenanceReceipt, type ContextMaintenanceRecord,
+  contextMaintenanceKey, parseContextManualApproval, type ContextCandidate, type ContextMaterial, type ContextMaintenanceReceipt, type ContextMaintenanceRecord,
   type ContextMaintenanceRequest, type ContextSummaryInput, type ContextSummaryOutput } from "../contract/context-maintenance.ts";
 import { parseContextSnapshot } from "../contract/snapshot.ts";
 import { buildModelEnvelope } from "../contract/context.ts";
@@ -82,6 +82,11 @@ function executeContextMaintenance(input: ContextMaintenanceExecution, history: 
       || request.deadlineMs > 180000 || request.selection.agentId !== request.agentId || request.selection.modelId !== model.id
       || !["manual", "preflight", "overflow"].includes(request.reason)
       || (request.reason === "manual" && request.confirmed !== true)) return yield* Effect.fail(new ContextFailure("not_admitted"));
+    if (request.reason === "manual") {
+      const approval = yield* Effect.try({ try: () => parseContextManualApproval(request.manualApproval), catch: () => new ContextFailure("not_admitted") });
+      if (approval.hostGeneration !== request.hostEpoch.compile || approval.selectionRevision !== request.selection.selectionRevision
+        || approval.policyRevision !== policy.revision) return yield* Effect.fail(new ContextFailure("not_admitted"));
+    } else if (request.manualApproval !== undefined) return yield* Effect.fail(new ContextFailure("not_admitted"));
     if (request.reason === "overflow" && (!input.overflow || !isConfirmedOverflow(input.overflow)
       || ![input.overflow.releasedText, input.overflow.releasedReasoning, input.overflow.releasedTools].every(isKnownZeroRelease))) {
       return yield* Effect.fail(new ContextFailure("not_admitted"));

@@ -85,13 +85,15 @@ export function handleContextMaintenance(incoming: Incoming, raw: unknown, gener
       if (!result.admitted || !/^[a-f0-9]{64}$/.test(result.ownership.scopeId) || !result.ownership.serverId
         || !Number.isFinite(result.ownership.observedAtMs) || wall < result.ownership.observedAtMs
         || wall - result.ownership.observedAtMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) return yield* Effect.fail(new ContextFailure("not_admitted"));
+      if (request.reason === "manual" && request.manualApproval?.scopeId !== result.ownership.scopeId) return yield* Effect.fail(new ContextFailure("not_admitted"));
       const scope = canonicalJson([result.ownership.scopeId, result.ownership.serverId]);
       if (admittedScope !== undefined && admittedScope !== scope) return yield* Effect.fail(new ContextFailure("not_admitted"));
       admittedScope = scope;
       // The native ownership read cannot resurrect a cancelled/revoked parent
       // or rotate the already-bound TURN's authority behind main admission.
-      yield* captureContextSelection(request, { ownership: result.ownership }).pipe(
+      const selected = yield* captureContextSelection(request, { ownership: result.ownership }).pipe(
         Effect.provideService(ConfigurationRead, configuration), Effect.provideService(InferenceMemory, memory));
+      if (request.reason === "manual" && request.manualApproval?.policyRevision !== selected.policy.revision) return yield* Effect.fail(new ContextFailure("not_admitted"));
     });
     yield* authorize;
     const capture = yield* captureContextSelection(request);

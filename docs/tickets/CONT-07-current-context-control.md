@@ -36,6 +36,8 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 [管理组合](../../test/context-management.test.ts)和[生产浏览器旅程](../../apps/web/test/context-browser.node.ts)通过共享 API 消费原生 owner/RPC/checkpoint worker，实际测试 Node HTTP、SQLite、打包 CLI、SIGKILL 后原标记对账、未知原生 apply 不重发、独立解除和 B2 不回退。Web 只保存原定位，丢解除回执后从历史取首次解除 revision，不用刷新后的新 revision 替代。读源、写上下文、解除和历史权限分开，最后授权撤销、客户端断连、关闭结算与元数据泄漏都有对应反例。
 
+手动压缩现通过同一个 Server 的 `bot context compact` 与 compaction 域原操作入口执行，见[管理切片](../reports/2026-09-21-compaction-management.md)。声明、派发与结算使用原 CONT queued-control 表，并与未完成 current-state 修改在同一事务内互斥；不能换 UUID 或换领域绕过未知原生效果。它保留 Host 默认 current root 的原生 summarize 行为，不是本票 self-reset 安全队列，不能据此签署活动 Bot 自重置已完成。
+
 未完成准备与等待解除的来源/备份/候选在原 CONT GC 事务中受保护。有限 cancel 仅在没有任何原生应用声明和解除声明时保留原取消墓碑，不能取消未知 apply；来源不存在在预留前拒绝。完整 self-reset、附件、源资源独立和真实账号资格仍未关闭；固定源码及扩大回归归 [CLI-05](CLI-05-implementation-follow-through.md)。
 
 稳定验证入口：`node scripts/verify-runtime-rebuild.mjs continuity-native-binding`；明确本机原生资格另用`GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continuity-native-binding-qualified`。后者Node22仅来自原生worker的node:sqlite要求，不提高grokbox Node20.17产品基线。独立外部review和实际profile加载仍未签；不把未实现项移成单纯live待验。

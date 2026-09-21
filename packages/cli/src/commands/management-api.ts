@@ -1,6 +1,6 @@
 import { ManagementClientError, botIdFromRef, type ApiErrorCode, type ApiReply, type ModelChange, normalizeSetupRequest, type MaterialWrite, type MaterialScope, type MaterialKind } from "@grokbox/client";
 import { startInstalledManagementServer } from "@grokbox/server";
-import { contextOperationIdentity, contextOperationRef, type ContextChange } from "@grokbox/client";
+import { contextOperationIdentity, contextOperationRef, compactionOperationIdentity, type ContextChange } from "@grokbox/client";
 import { normalizeLifecycleIntent, lifecycleIdentity, lifecycleReference, type LifecycleIntent } from "@grokbox/client";
 import { parseRequestedEffort } from "@grokbox/runtime-kernel/selection";
 import { ConfigError } from "@grokbox/runtime-kernel/config";
@@ -49,6 +49,11 @@ async function runServer(deps: CliDeps, component: string | undefined, options: 
 
 export async function runManagementCommand(deps: CliDeps, command: string, args: Array<string | undefined>, options: ManagementCommandOptions) {
   if (command === "system service run") return runServer(deps, args[0], options);
+  if (command === "bot context compact") {
+    if (Boolean(options.preview) === Boolean(options.confirm)) throw invalid("Choose a read-only --preview or an explicitly confirmed compaction, not both.");
+    if (options.preview && [options.requestId, options.scopeId, options.expectRevision].some(v => v !== undefined)) throw invalid("Preview accepts no write intent.");
+    if (!options.preview && (!options.requestId || !options.scopeId || !options.expectRevision)) throw invalid("Persist the request-id and supply the exact preview scope-id and expect-revision before confirmation.");
+  }
   let declared: ModelChangeRequest | undefined;
   if (command === "model apply") {
     const input = combineManagementInput(await readManagementInput(deps, options.input), {
@@ -82,6 +87,16 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
   let reply: ApiReply<unknown>;
   switch (command) {
     case "bot context get": reply = await client.context(args[0] ?? "", deps.signal); break;
+    case "bot context compact": {
+      if (options.preview) {
+        if (options.confirm || options.requestId !== undefined || options.scopeId !== undefined || options.expectRevision !== undefined) throw invalid("Compaction preview accepts no write intent or previously approved revision.");
+        reply = await client.compactionPreview(args[0] ?? "", deps.signal);
+      } else {
+        if (options.confirm !== true) throw invalid("Choose --preview, or explicitly confirm compaction with request-id, scope-id and expect-revision. A summary may incur model cost.");
+        reply = await client.compact({ botRef: args[0] ?? "", requestId: options.requestId ?? "", scopeId: options.scopeId ?? "", expectedRevision: options.expectRevision ?? "", confirmed: true }, deps.signal);
+      }
+      break;
+    }
     case "bot snapshot create": case "bot context initialize": case "bot context reset": case "bot context restore": {
       if (options.confirm !== true) throw invalid("Confirm the exact current-state operation.");
       const action = command === "bot snapshot create" ? "capture" : command.split(" ")[2] as "initialize" | "reset" | "restore";
@@ -104,6 +119,11 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       break;
     }
     case "operation cancel": {
+      if (options.domain === "compaction") {
+        if (options.confirm !== true) throw invalid("Confirm cancellation of the original undispatched compaction.");
+        const original = compactionOperationIdentity(args[0] ?? "", installationId);
+        reply = await client.continueCompaction({ action: "cancel", requestId: original.requestId, scopeId: original.scopeId, botRef: options.bot ?? "", confirmed: true }, deps.signal); break;
+      }
       if (options.domain !== "context" || options.confirm !== true) throw invalid("Cancellation is limited to an original context preparation without native application.");
       const original = contextOperationIdentity(args[0] ?? "", installationId);
       reply = await client.continueContext({ action: "cancel", requestId: original.requestId, scopeId: original.scopeId, botRef: options.bot ?? "", confirmed: true }, deps.signal); break;
@@ -112,6 +132,11 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "lifecycle" || options.limit !== undefined && !/^[1-9][0-9]{0,2}$/.test(options.limit)) throw invalid("This listing supports --domain lifecycle and a bounded page.");
       reply = await client.lifecycles({ limit: options.limit === undefined ? undefined : Number(options.limit), cursor: options.cursor, signal: deps.signal }); break;
     case "operation resume": {
+      if (options.domain === "compaction") {
+        if (options.confirm !== true || options.expectPlan !== undefined) throw invalid("Compaction resume uses its original request and Bot, not a replacement plan. Unknown dispatch permits only readback.");
+        const original = compactionOperationIdentity(args[0] ?? "", installationId);
+        reply = await client.continueCompaction({ action: "resume", requestId: original.requestId, scopeId: original.scopeId, botRef: options.bot ?? "", confirmed: true }, deps.signal); break;
+      }
       if (options.domain === "context") {
         if (options.confirm !== true || options.expectPlan !== undefined) throw invalid("Context resume requires only its original operation, Bot and explicit confirmation, not a new plan.");
         const original = contextOperationIdentity(args[0] ?? "", installationId);
@@ -223,6 +248,10 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       break;
     }
     case "operation reconcile":
+      if (options.domain === "compaction") {
+        if (options.confirm !== true || options.routineRef !== undefined || options.expectRevision !== undefined) throw invalid("Compaction readback uses its original request, account and Bot, without a new revision.");
+        reply = await client.continueCompaction({ action: "reconcile", requestId: options.requestId ?? "", scopeId: options.scopeId ?? "", botRef: options.bot ?? "", confirmed: true }, deps.signal); break;
+      }
       if (options.domain === "context") {
         if (options.confirm !== true || options.routineRef !== undefined || options.expectRevision !== undefined) throw invalid("Context reconciliation uses only its original request, scope and Bot; no new revision or Routine is accepted.");
         reply = await client.continueContext({ action: "reconcile", requestId: options.requestId ?? "", scopeId: options.scopeId ?? "", botRef: options.bot ?? "", confirmed: true }, deps.signal); break;
@@ -231,6 +260,7 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "routine" || options.confirm !== true) throw invalid("This reconciliation requires domain routine and explicit confirmation.");
       reply = await client.changeSetup({action:"reconcile",routineRef:options.routineRef ?? "",expectedRevision:options.expectRevision ?? "",requestId:options.requestId ?? "",confirmed:true},deps.signal); break;
     case "operation get":
+      if (options.domain === "compaction") { reply = await client.compactionOperation(options.scopeId ?? "", options.requestId ?? "", deps.signal); break; }
       if (options.domain === "context") { reply = await client.contextOperation(contextOperationRef(installationId, options.scopeId ?? "", options.requestId ?? ""), deps.signal); break; }
       if (options.domain === "lifecycle") { reply = await client.lifecycle(lifecycleReference(installationId, options.scopeId ?? "", options.requestId ?? ""), deps.signal); break; }
       if(options.domain==="protection") { reply=await client.protectionOperation(options.target??"",options.requestId??"",deps.signal);break; }

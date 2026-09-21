@@ -547,11 +547,6 @@ export class GatewayClient {
       ...(write ? { unknownOutcomeCode: "operation_outcome_unknown" as const, singleAttempt: true } : {}) });
   }
 
-  async contextControl(body: { action: "status" | "compact"; agentId: string; sessionId?: string; operationId?: string; confirm?: boolean }, timeoutMs: number) {
-    return await this.rpc("grokboxContextControl", body, { timeoutMs, write: body.action === "compact",
-      ...(body.action === "compact" ? { unknownOutcomeCode: "operation_outcome_unknown" as const } : {}) });
-  }
-
   async getAgentOwnership(agentIds: string[], timeoutMs: number, localOnly = false): Promise<{ result: unknown; discovery: Discovery }> {
     if (agentIds.length < 1 || agentIds.length > 32 || new Set(agentIds).size !== agentIds.length
       || agentIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {

@@ -90,7 +90,7 @@
 
 三模型两档是原已接受的集中验收目标，不代表当前 Provider 可用或每次局部修改都要跑六格。正式执行固定实际模型/协议/配置/预算；若能力不足，保留该格阻断并明确对齐，不以另一模型通过替代。新增三种选择关系的对照对象与材料/交接资源，预算按实际场景登记，不沿用旧窗口的固定对象数。
 
-**六格共同最低判据 M**：记录exact provider/model/API路径类别和凭据引用摘要（无地址秘密）；执行一次相关新消息、一次可独立读回的安全工具副作用、一次真实`agents compact`及其后新消息/状态读取；核对配置→TURN captured→SDK/adapter→最终请求的effort，标记转义/映射，区分Provider reported。保持中文/英文/Unicode、唯一事实标记、工具历史与原用户标题。compact必须有原生operation/root/checkpoint及后续读回；no-op不算该格compact通过。计数与步骤可复用同一回合，不重复造请求。[具体步骤/样例](../maintainers/live-end-to-end.md#model-matrix)。
+**六格共同最低判据 M**：记录exact provider/model/API路径类别和凭据引用摘要（无地址秘密）；执行一次相关新消息、一次可独立读回的安全工具副作用、一次真实`bot context compact`及其后新消息/状态读取；核对配置→TURN captured→SDK/adapter→最终请求的effort，标记转义/映射，区分Provider reported。保持中文/英文/Unicode、唯一事实标记、工具历史与原用户标题。compact必须有原生operation/root/checkpoint及后续读回；no-op不算该格compact通过。计数与步骤可复用同一回合，不重复造请求。[具体步骤/样例](../maintainers/live-end-to-end.md#model-matrix)。
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
@@ -225,7 +225,7 @@
 | `recover` | [LIVE-NETWORK-BOUNDARY](#live-network-boundary) | 默认应用恢复与显式旧映射恢复选项分开，网络故障不自动wake |
 | `system host health`, `runtime profile analyze`, `runtime profile observe`, `runtime profile propose`, `runtime profile prune`, `runtime profile replay`, `runtime profile status`, `runtime profile watch`, `runtime profile write`, `runtime operation-recovery`, `runtime watchdog run`, `runtime contracts` | [LIVE-HOST-CAPABILITY-RECOVERY](#live-host-capability-recovery) | Host健康读面已接Server/Rust/原OBS，显示静态范围与未证运行见证；完整能力/实际加载仍待资格，watcher和recovery非另一自动部署器 |
 | `agents list`, `agents show`, `agents create`, `agents update`, `agents delete` | [LIVE-AGENT-LIFECYCLE](#live-agent-lifecycle) | nonce/歧义/精确清理 |
-| `agents context`, `agents compact` | [LIVE-CTX-ADOPTION](#live-ctx-adoption) | 六格+持久读回另关联 |
+| `bot context compact` | [LIVE-CTX-ADOPTION](#live-ctx-adoption) | preview/明确费用授权、原账号与计划、默认 Box current root；原请求的未知结果/续接/取消归 operation 域；六格+持久读回另关联 |
 | `bot context get`, `bot snapshot create`, `bot context initialize`, `bot context reset`, `bot context restore`, `bot activate` | [LIVE-CURRENT-CONTEXT](#live-current-context) | 当前上下文已进入管理 Server；原请求回执/对账/有限取消归 operation 域，独立解除不启动任务；self-reset 排队仍未实现 |
 | `bot clone`, `bot replace` | [LIVE-CONTINUITY-PRIMITIVES](#live-continuity-primitives) | 经统一管理服务预览/提交原生分阶段程序，原 CLI 直连入口退出；完整资源/职责与实际原生资格仍保留 |
 | `bot spawn` | [LIVE-CONTINUITY-SPAWN](#live-continuity-spawn) | 统一管理服务，程序启动独立权限；临时结果交付/清理与首轮真实 Provider 仍分别验收 |

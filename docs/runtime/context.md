@@ -92,11 +92,15 @@ confirmed-overflow 仅在结构化真实原因、原 attempt 静止、零正文/
 ## 操作与状态
 
 ```bash
-grokbox agents context <agent> --json
-grokbox agents compact <agent> --operation-id <uuid> --confirm --json
+grokbox bot context compact <bot-ref> --preview
+grokbox bot context compact <bot-ref> --scope-id <account-scope> \
+  --request-id <uuid> --expect-revision <preview-revision> --confirm
+grokbox operation get --domain compaction --scope-id <account-scope> --request-id <uuid>
 ```
 
-context 只读，不发模型或修配置；compact 是明确有成本的原生维护，不是给 Bot 发一句“请总结”。精确可用 session/flags 以 help 为准；默认 session 的空字符串合法，未合资格的 named/server/subagent 不假报可用。远端必须有正式有限能力，不能用 generic exec 模拟。
+preview 只读，不发模型、初始化 CONT 或读取正文；compact 是独立 `context.compact` 权限下明确可能有成本的原生维护，不是给 Bot 发一句“请总结”。审批 revision 固定账号、加载 Host 代、模型选择与费用策略，不是假定未来 root 已被冻结；原生 runner 在安全点选择当时的默认 Box current root。named/server/subagent 不隐式映射。CLI/Web 共用管理 Server、原 Host facade 与 modeld 维护程序；旧 `agents context/compact` 和 CLI 直连 writer 已退出，不能用 generic exec 模拟。
+
+`operation reconcile/resume/cancel --domain compaction <operation-ref> --bot <bot-ref> --confirm` 只作用于原请求：未派发的准备可按不可变计划续接或取消；未知派发只查原生结果，不重新调用。modeld 提交与原生 shell 结束分别取证；Server 关闭取消自己持有的 HTTP 并结算 CONT，不冒称已停止独立 Host 工作。已完成 no-op 也永久消费其原请求；安全失败与未知 checkpoint/cleanup 不混同。具体实现和测试范围见[当前管理切片](../reports/2026-09-21-compaction-management.md)。
 
 状态分开 configured/captured、声明/有效容量、meter/余量/coverage、capability、operation/root/parent、before/after、摘要/主请求次数、accepted/persisted 和新输入阶段。不输出材料、摘要、prompt 或凭据。原版 App 的压缩活动和结束需要实际 Host 事件及可见验证，不制造 thinking token 或永久 Working。
 

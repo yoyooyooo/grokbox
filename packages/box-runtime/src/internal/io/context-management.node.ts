@@ -66,8 +66,8 @@ export function contextManagementPrograms(root: string, scopeId: string, hooks: 
     // An unacknowledged mutation on this Bot cannot be bypassed with a new UUID
     // or another principal. Capture-only records cannot mutate the native source.
     if (record.declaration.action !== "capture" && await db.first(`SELECT operation_id FROM continuity_queued_controls
-      WHERE kind='managed-current-state' AND agent_id=? AND state!='complete'
-      AND json_extract(request_json,'$.declaration.action')!='capture' LIMIT 1`, [record.declaration.agentId])) throw new ContinuityFailure("conflict");
+      WHERE agent_id=? AND state!='complete'
+      AND (kind='managed-compaction' OR kind='managed-current-state' AND json_extract(request_json,'$.declaration.action')!='capture') LIMIT 1`, [record.declaration.agentId])) throw new ContinuityFailure("conflict");
     const text = canonicalJson(record), now = Date.now(); await database.metadataRoom(db, Buffer.byteLength(text) * 2 + 8192);
     await db.run("INSERT INTO continuity_queued_controls VALUES(?,?,?,?,'prepared',NULL,?,?)", [record.operationId, record.declaration.agentId, "managed-current-state", text, now, now]);
     return (await row(db, record.operationId))!;

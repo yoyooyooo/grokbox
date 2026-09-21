@@ -18,6 +18,13 @@ const bot = { name: "bot-ref", description: "Stable native UUID or scoped Bot re
 const model = { name: "model-id", description: "Exact configured model identity" };
 export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
   command("bot context get", "Read the single current native context revision without body, capture or repair.", bot),
+  { ...command("bot context compact", "Preview or explicitly compact the current default Box context; can incur summary-model cost, never sends a user task.", bot, [
+    { flags: "--preview", description: "Read current Host/model/policy approval and budget without reading body or writing any operation" },
+    { flags: "--request-id <uuid>", description: "Caller-persisted UUID for the same immutable request" },
+    { flags: "--scope-id <sha256>", description: "Account scope from the preview" },
+    { flags: "--expect-revision <sha256>", description: "Preview revision binding scope, loaded Host, model selection and cost policy; not a root snapshot" },
+    { flags: "--confirm", description: "Confirm paid compaction of the current root when its native runner admits the request" },
+  ]), destructive: true },
   ...(["initialize", "reset", "restore"] as const).map(action => command(`bot context ${action}`, "Change one exact current context through CONT; reset/restore back up first, and all changes remain prepared until explicit activation.", bot, [
     { flags: "--scope-id <sha256>", description: "Exact account scope from context get", required: true },
     ...(action !== "reset" ? [{ flags: "--snapshot-ref <ref>", description: "Exact installation/scope-bound retained source snapshot", required: true }] : []),
@@ -41,7 +48,7 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--confirm", description: "Authorize the reviewed native effects, optional startup costs and explicit handover messages" },
   ]), stdin: "json" as const, destructive: true })),
   { ...command("operation cancel", "Cancel only an original context preparation with no native application declaration; never cancels or forgets an unknown applied effect.", { name: "operation-ref", description: "Original installation/scope/request-bound context operation" }, [
-    { flags: "--domain <domain>", description: "Implemented cancellation domain: context", required: true },
+    { flags: "--domain <domain>", description: "Implemented cancellation domains: context or compaction", required: true },
     { flags: "--bot <ref>", description: "Exact original Bot UUID or reference", required: true },
     { flags: "--confirm", description: "Confirm retaining a cancellation tombstone and releasing only unused preparation pins", required: true },
   ]), destructive: true },
@@ -50,9 +57,9 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--limit <n>", description: "Page size 1 to 100" }, { flags: "--cursor <cursor>", description: "Original principal/scope-bound continuation" },
   ]),
   { ...command("operation resume", "Resume only the original saved lifecycle and its safe stages; never submit a replacement create.", { name: "operation-ref", description: "Original installation/scope/request-bound lifecycle reference" }, [
-    { flags: "--domain <domain>", description: "Implemented domains: lifecycle or context", required: true },
+    { flags: "--domain <domain>", description: "Implemented domains: lifecycle, context or compaction", required: true },
     { flags: "--expect-plan <sha256>", description: "Required for lifecycle: immutable original plan digest" },
-    { flags: "--bot <ref>", description: "Required for context: exact original Bot UUID/ref" },
+    { flags: "--bot <ref>", description: "Required for context/compaction: exact original Bot UUID/ref" },
     { flags: "--confirm", description: "Authorize continuing the original effects within current permissions", required: true },
   ]), destructive: true },
   command("system host health", "Read installation Host source/patch analysis and sensing gaps; not runtime execution authority or a repair."),

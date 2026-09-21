@@ -122,7 +122,12 @@ for (const failure of ["none", "summary-503", "checkpoint-unknown", "append-unkn
       expect(requests).toHaveLength(0); expect(checkpoints).toBe(0);
       expect(control.manualOptions(host, { operationId: "forged", hidden: true })).toBeUndefined();
       expect(await control.call({ action: "compact", agentId: AGENT, operationId: "unconfirmed" }, async () => ownedOwnership())).toMatchObject({ ok: false });
-      const operationId = `manual-${failure}`, command = { action: "compact", agentId: AGENT, sessionId: "", operationId, confirm: true };
+      const approval = { scopeId: hex("a"), hostGeneration: initial.data.hostGeneration, selectionRevision: initial.data.selectionRevision, policyRevision: initial.data.configured.policy.revision };
+      const operationId = `manual-${failure}`, command = { action: "compact", agentId: AGENT, sessionId: "", operationId, confirm: true, approval: JSON.stringify(approval) };
+      for (const changed of [{ scopeId: hex("f") }, { hostGeneration: hex("f") }, { selectionRevision: hex("f") }]) {
+        expect(await control.call({ ...command, approval: JSON.stringify({ ...approval, ...changed }) }, async () => ownedOwnership())).toMatchObject({ ok: false });
+      }
+      expect(requests).toHaveLength(0); expect(nativeCalls).toHaveLength(0);
       manual = control.call(command, async () => ownedOwnership());
       await Promise.race([started.promise, new Promise<never>((_, reject) => { const timer = setTimeout(() => reject(Error("summary did not start")), 5000); timer.unref(); })]);
       expect(nativeCalls).toEqual([{ prompt: "", operationId }]);

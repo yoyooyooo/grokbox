@@ -16,7 +16,7 @@ import { piCompactionAlgorithmLayer } from "../src/internal/context/pi-compactio
 const A = "00000000-0000-4000-8000-000000000001", M = "owned/maintenance-model", hex = (s: string) => s.repeat(64);
 function world(options: { mode?: "preflight" | "manual"; small?: boolean; response?: "blank" | "missing-finish" | "tool"; budget?: number;
   inconsistentReadback?: "source" | "material" } = {}) {
-  const models = parseModelsFile({ version: 2, models: { [M]: { provider: "openai", model: "owned-model", endpoint: "https://fixture.invalid/v1",
+  const models = parseModelsFile({ version: 3, models: { [M]: { provider: "openai", model: "owned-model", endpoint: "https://fixture.invalid/v1",
     apiKeyRef: "env:OWNED_KEY", contextWindowTokens: 500000, capabilities: { vision: false, tools: true, images: false }, dataTypes: ["text", "tools"] } },
     assignments: { main: null, agents: { [A]: { modelId: M } } } });
   const selected = captureManagedSelection(models, A); if (selected.kind !== "managed") throw Error("fixture");
@@ -31,7 +31,7 @@ function world(options: { mode?: "preflight" | "manual"; small?: boolean; respon
   const request: ContextMaintenanceRequest = { operationId: "maintenance-op", hostEpoch: { compile: hex("a"), source: hex("b"), profile: hex("c"),
     bridgeDigest: hex("d"), hostIdentity: "owned-host", wireVersion: "v8" }, serviceEpoch: { incarnationId: "owned-service" }, agentId: A, sessionId: "",
     rootId: material.rootId, rootRevision: material.rootRevision, selection: { agentId: A, modelId: M, selectionRevision: selected.selectionRevision },
-    reason: options.mode ?? "preflight", ...(options.mode === "manual" ? { confirmed: true } : { parent: { turnId: "turn", stepId: "step" } }), deadlineMs: 180000 };
+    reason: options.mode ?? "preflight", ...(options.mode === "manual" ? { confirmed: true, manualApproval: { scopeId: hex("a"), hostGeneration: hex("a"), selectionRevision: selected.selectionRevision, policyRevision: policy.revision } } : { parent: { turnId: "turn", stepId: "step" } }), deadlineMs: 180000 };
   let commits = 0, requests = 0, producers = 0, commit: ContextCommitReceipt | undefined;
   let wait: Effect.Effect<void> = Effect.void;
   let started: Deferred.Deferred<void> | undefined;
@@ -84,6 +84,19 @@ for (const response of ["blank", "missing-finish", "tool"] as const) test(`summa
   expect(result._tag).toBe("Failure");
   expect(w.counters()).toEqual({ requests: 1, commits: 0, producers: 0 });
   expect(w.current().rootRevision).toBe("old-root");
+});
+
+for (const field of ["absent", "policyRevision", "hostGeneration", "selectionRevision"] as const) test(`manual approval ${field} is rejected by the actual runner before summary or checkpoint`, async () => {
+  const w = world({ mode: "manual" });
+  if (field === "absent") delete w.request.manualApproval;
+  else w.request.manualApproval = { ...w.request.manualApproval!, [field]: hex("f") };
+  const result = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const runner = yield* makeContextMaintenanceRunner(memoryExecutionHistory());
+    const auth = yield* (yield* BackendAuth).pin({ apiKeyRef: w.model.apiKeyRef });
+    return yield* Effect.result(runner.run({ ...w, lease: auth.lease }));
+  }).pipe(Effect.provide(w.layer))));
+  expect(result).toMatchObject({ _tag: "Failure", failure: { code: "not_admitted" } });
+  expect(w.counters()).toEqual({ requests: 0, commits: 0, producers: 0 }); expect(w.current().rootRevision).toBe("old-root");
 });
 
 test("one summary request budget cannot be multiplied by internal chunk/merge calls", async () => {

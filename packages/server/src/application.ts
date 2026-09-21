@@ -18,6 +18,7 @@ import { notificationSetup } from "./notification-setup.ts";
 import { protectionApplication, type ProtectionDomain } from "./protection.ts";
 import { lifecycleApplication, type LifecycleDomain } from "./lifecycle.ts";
 import { contextApplication, type ContextDomain } from "./context.ts";
+import { compactionApplication } from "./compaction.ts";
 
 export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, "listBots" | "ownershipRead">
   & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess">>;
@@ -49,6 +50,10 @@ export function application(options: ApplicationOptions, principal: Principal, m
   return Effect.gen(function* () {
     const path = url.pathname;
     if(path==="/v1/host-health")return yield* hostHealthQuery(options.installationId,options.hostHealthState,principal,method,url);
+    if (path.startsWith("/v1/context-compaction")) {
+      if (!options.contextDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "Compaction management is unavailable."));
+      return yield* compactionApplication(options.contextDomain, principal, method, url, input);
+    }
     if (path.startsWith("/v1/contexts/") || path.startsWith("/v1/context-")) {
       if (!options.contextDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "Current-state management is unavailable."));
       return yield* contextApplication(options.contextDomain, principal, method, url, input);

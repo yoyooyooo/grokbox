@@ -12,10 +12,12 @@ export type ContinuityDiscovery = { baseUrl: string; pid: number; startedAt: num
 export type ContinuityRpc = Exclude<RoutineRpc, "getAutomationWebhookCredential"> | "listAgents" | "getHostStatus"
   | "getAgentMemories" | "getAgentTranscriptTail" | "grokboxCurrentStateControl"
   | "getHostSettings" | "setHostSettings" | "assignAgentToSidebarSection" | "updateAgent" | "setGroupMembers" | "sendPrompt";
-export type ContinuityCall = (method: ContinuityRpc, input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
+export type ContinuityCall = (method: ContinuityRpc | "grokboxContextControl", input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
   maxBytes: number, expectedGeneration?: string) => Promise<{ result: unknown; source: ContinuityDiscovery }>;
 export type ContinuityRpcOptions = { timeoutMs: number; maxResponseBytes?: number; write?: boolean; singleAttempt?: boolean; unknownOutcomeCode?: "operation_outcome_unknown" };
 export type ContinuityGateway = {
+  /** Management-owned manual maintenance. Not advertised by the old CLI RPC client. */
+  maintenanceControl?: (input: Record<string, unknown>, options: ContinuityRpcOptions) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
   rpc: (method: ContinuityRpc, input: Record<string, unknown>, options: ContinuityRpcOptions) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
   listAgents: (timeoutMs: number) => Promise<{ agents: unknown[]; discovery: ContinuityDiscovery }>;
   getAgentOwnership: (ids: string[], timeoutMs: number, localOnly?: boolean) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
@@ -39,7 +41,7 @@ const allowed = new Set<ContinuityRpc>(["listAgents", "getHostStatus", "getAgent
 export function createContinuityGatewayIO(call: ContinuityCall, root: string, signal: AbortSignal, programs: ContinuityPrograms): ContinuityGateway {
   let pinned: string | undefined, latest: ContinuityDiscovery | undefined;
   const invoke: ContinuityCall = async (method, input, owner, timeoutMs, maxBytes, expected) => {
-    if (!allowed.has(method) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000
+    if (method !== "grokboxContextControl" && !allowed.has(method) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000
       || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > (method === "grokboxCurrentStateControl" ? MAX_CURRENT_STATE_WIRE_BYTES : 2 * 1024 * 1024)) throw new CurrentStateFailure("invalid_request");
     if (expected !== undefined && pinned !== undefined && expected !== pinned) throw new CurrentStateFailure("source_changed");
     const bounded = AbortSignal.any([signal, owner, AbortSignal.timeout(timeoutMs)]);
@@ -53,6 +55,7 @@ export function createContinuityGatewayIO(call: ContinuityCall, root: string, si
     return { result: result.result, source: latest };
   };
   const rpc: ContinuityGateway["rpc"] = async (method, input, options) => {
+    if (!allowed.has(method)) throw new CurrentStateFailure("invalid_request");
     const reply = await invoke(method, input, signal, options.timeoutMs, options.maxResponseBytes ?? 512 * 1024);
     return { result: reply.result, discovery: reply.source };
   };
@@ -66,6 +69,12 @@ export function createContinuityGatewayIO(call: ContinuityCall, root: string, si
   };
   return {
     rpc,
+    maintenanceControl: async (input, options) => {
+      if (!["status", "compact"].includes(String(input.action)) || Buffer.byteLength(JSON.stringify(input)) > 4096
+        || options.maxResponseBytes !== 65536) throw new CurrentStateFailure("invalid_request");
+      const reply = await invoke("grokboxContextControl", input, signal, options.timeoutMs, 65536);
+      return { result: reply.result, discovery: reply.source };
+    },
     listAgents: async timeoutMs => {
       const reply = await rpc("listAgents", {}, { timeoutMs, maxResponseBytes: 2 * 1024 * 1024 });
       if (!Array.isArray(reply.result) || reply.result.length > 4096) throw new CurrentStateFailure("material_invalid");

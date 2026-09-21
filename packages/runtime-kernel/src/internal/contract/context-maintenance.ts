@@ -1,7 +1,7 @@
 import type { ContextBudget, CapturedContextPolicy } from "../config/context-policy.ts";
 import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "./identity.ts";
 import type { ResolvedModelSelection } from "../../selection.ts";
-import { canonicalJson } from "../../hash.ts";
+import { canonicalJson, sha256Text } from "../../hash.ts";
 import { cloneJson, parsePromptMessages, buildModelEnvelope, type GenerationOptions, type PromptMessage, type ToolDefinition } from "./context.ts";
 
 export type { ContextBudget, CapturedContextPolicy };
@@ -119,8 +119,19 @@ export type ContextSelectionCapture = {
   authFingerprint?: string;
 };
 export type ContextMaintenanceReason = "preflight" | "manual" | "overflow";
+export type ContextManualApproval = { scopeId: string; hostGeneration: string; selectionRevision: string; policyRevision: string };
+/** Explicit manual approval binds account, loaded Host, model selection and
+ * cost policy. It is not a snapshot/CAS of a future native root. */
+export function parseContextManualApproval(raw: unknown): ContextManualApproval {
+  const value = contextObject(raw, ["scopeId", "hostGeneration", "selectionRevision", "policyRevision"]);
+  if (Object.values(value).some(v => typeof v !== "string" || !/^[a-f0-9]{64}$/.test(v))) throw new ContextFailure("not_admitted");
+  return value as ContextManualApproval;
+}
+export const contextManualApprovalKey = (agentId: string, approval: ContextManualApproval) => canonicalJson(["managed-compaction-v1", agentId, parseContextManualApproval(approval)]);
+export const contextManualApprovalRevision = (agentId: string, approval: ContextManualApproval) => sha256Text(contextManualApprovalKey(agentId, approval));
 export type ContextMaintenanceRequest = ContextMaintenanceIdentity & {
   reason: ContextMaintenanceReason;
+  manualApproval?: ContextManualApproval;
   confirmed?: boolean;
   /** Checked against the already-admitted kernel recovery ledger, never trusted alone. */
   recoveryNonce?: string;

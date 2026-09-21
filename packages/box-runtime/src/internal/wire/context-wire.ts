@@ -1,4 +1,4 @@
-import { ContextFailure, WIRE_VERSION, exactKeys, parseContextCandidate, type ContextCandidate, type ContextMaintenanceRequest } from "@grokbox/runtime-kernel/contract";
+import { ContextFailure, WIRE_VERSION, exactKeys, parseContextCandidate, parseContextManualApproval, type ContextCandidate, type ContextMaintenanceRequest } from "@grokbox/runtime-kernel/contract";
 
 export const CONTEXT_PAGE_CHARS = 128 * 1024;
 export const CONTEXT_CONTROL_LIMIT = 2048;
@@ -15,7 +15,7 @@ export function parseContextStart(value: unknown): ContextMaintenanceRequest {
   if (!object(value) || value.version !== WIRE_VERSION || value.method !== "maintain-context"
     || !exactKeys(value, ["version", "method", "request"]) || !object(value.request)) return bad();
   const r = value.request;
-  if (!exactKeys(r, ["operationId", "hostEpoch", "serviceEpoch", "agentId", "sessionId", "rootId", "rootRevision", "selection", "reason", "deadlineMs"], ["parent", "confirmed", "recoveryNonce"])) return bad();
+  if (!exactKeys(r, ["operationId", "hostEpoch", "serviceEpoch", "agentId", "sessionId", "rootId", "rootRevision", "selection", "reason", "deadlineMs"], ["parent", "confirmed", "recoveryNonce", "manualApproval"])) return bad();
   for (const k of ["operationId", "agentId", "rootId", "rootRevision"]) if (!id(r[k])) return bad();
   if (!id(r.sessionId, true) || !Number.isSafeInteger(r.deadlineMs) || Number(r.deadlineMs) <= 0 || Number(r.deadlineMs) > 180000
     || !["preflight", "manual", "overflow"].includes(String(r.reason)) || r.confirmed !== undefined && typeof r.confirmed !== "boolean") return bad();
@@ -27,7 +27,11 @@ export function parseContextStart(value: unknown): ContextMaintenanceRequest {
   if (r.parent !== undefined && (!object(r.parent) || !exactKeys(r.parent, ["turnId"], ["stepId", "bindingId"])
     || Object.values(r.parent).some(v => !id(v)))) return bad();
   if (r.reason === "preflight" && (!object(r.parent) || !id(r.parent.stepId))) return bad();
-  if (r.reason === "manual" && r.confirmed !== true) return bad();
+  if (r.reason === "manual") {
+    if (r.confirmed !== true) return bad();
+    const approval = parseContextManualApproval(r.manualApproval);
+    if (approval.hostGeneration !== r.hostEpoch.compile || approval.selectionRevision !== r.selection.selectionRevision) return bad();
+  } else if (r.manualApproval !== undefined) return bad();
   if (r.reason === "overflow" && (!object(r.parent) || !id(r.parent.stepId) || !id(r.parent.bindingId) || !id(r.recoveryNonce))) return bad();
   return r as unknown as ContextMaintenanceRequest;
 }

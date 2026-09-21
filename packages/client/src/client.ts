@@ -9,6 +9,9 @@ export * from "./contract.ts";
 import { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
 import { normalizeContextChange, normalizeContextContinuation, contextOperationIdentity, contextOperationRef, type ContextChange, type ContextContinuation, type ContextView, type ContextOperation } from "./context-contract.ts";
 import { contextView, contextOperation } from "./context-validation.ts";
+import { contextManualApprovalKey } from "@grokbox/runtime-kernel/contract";
+import { normalizeCompactionChange, normalizeCompactionContinuation, compactionPreview, compactionOperation,
+  type CompactionChange, type CompactionContinuation, type CompactionPreview, type CompactionOperation } from "./compaction-contract.ts";
 import { normalizeLifecycleIntent, normalizeLifecycleSubmission, normalizeLifecycleResume, lifecycleReference, lifecycleIdentity,
   type LifecycleIntent, type LifecycleSubmission, type LifecycleResume, type LifecyclePreview, type LifecycleOperation, type LifecycleList } from "./lifecycle-contract.ts";
 import { lifecyclePreview, lifecycleOperation, lifecycleList } from "./lifecycle-validation.ts";
@@ -121,14 +124,15 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
     const mutation = authentication || readOnlyPost ? undefined : input as { requestId: string; expectedRevision?: unknown; planRevision?: unknown; scopeId?: unknown; action?: unknown } | undefined;
     if (mutation !== undefined && (!record(mutation) || !UUID.test(mutation.requestId)
       || !(["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
-        : path === "/v1/context-changes" ? revision(mutation.scopeId) && revision(mutation.expectedRevision)
+        : path === "/v1/context-changes" || path === "/v1/context-compactions" ? revision(mutation.scopeId) && revision(mutation.expectedRevision)
+        : path === "/v1/context-compaction-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-continuations" ? revision(mutation.scopeId) && (["resume", "reconcile", "cancel"].includes(String(mutation.action)) || mutation.action === "activate" && revision(mutation.expectedRevision))
         : path === "/v1/setup-changes" ? revision(mutation.expectedRevision) || "action" in mutation && mutation.action === "apply" && mutation.expectedRevision === null
         : ["/v1/material-changes","/v1/protection-changes"].includes(path) ? revision(mutation.expectedRevision) : lookupPath ? Number.isSafeInteger(mutation.expectedRevision) && Number(mutation.expectedRevision) > 0 : revision(mutation.expectedRevision)))) throw new ManagementClientError("invalid_input", "A mutation requires a persisted request UUID and expected revision.");
@@ -182,6 +186,10 @@ export class ManagementClient {
         || Object.keys(raw.error).some(key => !["code", "message", "details"].includes(key))
         || (raw.error.details !== undefined && !record(raw.error.details))) throw invalidReply();
       const reply = raw as ApiReply<never> & { ok: false };
+      // A settled compaction failure unlocks future user intent, so its exact
+      // request/target/approval must be checked just like a successful receipt.
+      if (reply.error.code === "compaction_failed" && path.startsWith("/v1/context-compaction")
+        && (!mutation || !validate(reply.error.details?.operation) || !record(reply.error.details?.operation) || reply.error.details.operation.state !== "failed")) throw invalidReply();
       throw new ManagementClientError(reply.error.code, reply.error.message,
         reply.error.code === "operation_unknown" ? { ...reply.error.details, ...recovery } : reply.error.details, reply);
     }
@@ -215,6 +223,31 @@ export class ManagementClient {
     return this.request<LifecycleList>(`/v1/lifecycle-operations${query.size ? `?${query}` : ""}`, v => lifecycleList(v, this.options.installationId!, limit), undefined, options.signal);
   }
 
+  async compactionPreview(bot: string, signal?: AbortSignal) {
+    const installation = this.options.installationId ?? "", id = botIdFromRef(bot, installation);
+    const reply = await this.request<CompactionPreview>(`/v1/context-compactions/${id}`, v => compactionPreview(v, installation, id), undefined, signal);
+    // Same canonical declaration as the native/server owner; WebCrypto keeps
+    // browser revalidation independent of Node-only createHash and SSR caches.
+    const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(contextManualApprovalKey(id, reply.data.approval))));
+    const revision = Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+    if (reply.data.revision !== revision) throw protocolError();
+    return reply;
+  }
+  compact(input: CompactionChange, signal?: AbortSignal) {
+    const installation = this.options.installationId ?? "", r = normalizeCompactionChange(input, installation);
+    return this.request<CompactionOperation>("/v1/context-compactions", v => compactionOperation(v, installation, r.scopeId, r.requestId)
+      && v.botRef === r.botRef && v.expectedRevision === r.expectedRevision, r, signal, false, `/v1/context-compaction-operations/${r.scopeId}/${r.requestId}`);
+  }
+  continueCompaction(input: CompactionContinuation, signal?: AbortSignal) {
+    const installation = this.options.installationId ?? "", r = normalizeCompactionContinuation(input, installation);
+    return this.request<CompactionOperation>("/v1/context-compaction-continuations", v => compactionOperation(v, installation, r.scopeId, r.requestId)
+      && v.botRef === r.botRef, r, signal, false, `/v1/context-compaction-operations/${r.scopeId}/${r.requestId}`);
+  }
+  compactionOperation(scopeId: string, requestId: string, signal?: AbortSignal) {
+    if (!revision(scopeId) || !UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Use the original compaction scope and request UUID.");
+    const installation = this.options.installationId ?? "", id = requestId.toLowerCase();
+    return this.request<CompactionOperation>(`/v1/context-compaction-operations/${scopeId}/${id}`, v => compactionOperation(v, installation, scopeId, id), undefined, signal);
+  }
   context(bot: string, signal?: AbortSignal) {
     const installation = this.options.installationId ?? "", id = botIdFromRef(bot, installation), ref = `bot:${installation}:${id}`;
     return this.request<ContextView>(`/v1/contexts/${id}`, v => contextView(v, installation, ref), undefined, signal);

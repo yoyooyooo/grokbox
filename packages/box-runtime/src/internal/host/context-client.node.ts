@@ -2,7 +2,7 @@ import { createConnection, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ContextFailure, contextFailure, parseContextReceipt, CONTEXT_MATERIAL_MAX_BYTES, WIRE_VERSION,
-  type ContextMaintenanceRequest, type ContextMaintenanceReceipt, type SelectionIdentity, type CapturedContextPolicy } from "@grokbox/runtime-kernel/contract";
+  type ContextMaintenanceRequest, type ContextMaintenanceReceipt, type ContextManualApproval, type SelectionIdentity, type CapturedContextPolicy } from "@grokbox/runtime-kernel/contract";
 import { encodeModeldFrame, decodeModeldFrame, MODELD_MAX_FRAME } from "../wire/modeld-wire.ts";
 import { parseContextCall, CONTEXT_PAGE_CHARS } from "../wire/context-wire.ts";
 import { requestModeld } from "./modeld-client.node.ts";
@@ -120,7 +120,8 @@ export async function maintainHostContext(runRoot: string, request: ContextMaint
 
 export type HostContextClientOptions = { runRoot: string; durableRoot?: string; binding?: HostBinding; compile?: CompileReceipt; mode: string; witness?: (note: HostWitnessNote) => void };
 export function hostContextClient(options: HostContextClientOptions) {
-  return (raw: unknown, valid: () => boolean, manualOperationId?: string) => {
+  return (raw: unknown, valid: () => boolean, manual?: { operationId: string; approval: ContextManualApproval }) => {
+    const manualOperationId = manual?.operationId;
     if (options.mode !== "route" || !object(raw) || typeof raw.agentId !== "string" || typeof raw.turnId !== "string") return undefined;
     const turn = turns.get(key(raw.agentId, raw.turnId));
     if (!turn) return undefined; // Unassigned/native-only sessions keep their own behavior.
@@ -162,7 +163,7 @@ export function hostContextClient(options: HostContextClientOptions) {
           sessionId: object(raw.config) && typeof raw.config.agentSessionId === "string" ? raw.config.agentSessionId : "",
           rootId: before.rootId, rootRevision: before.rootRevision, selection: turn.selection,
           ...(manualOperationId === undefined ? { parent: { turnId: raw.turnId as string, stepId: raw.invocationId as string,
-            ...(recovery ? { bindingId: recovery.tuple.bindingId } : {}) } } : { confirmed: true }),
+            ...(recovery ? { bindingId: recovery.tuple.bindingId } : {}) } } : { confirmed: true, manualApproval: manual!.approval }),
           reason: manualOperationId !== undefined ? "manual" : recovery ? "overflow" : "preflight",
           ...(recovery ? { recoveryNonce: recovery.recoveryNonce } : {}), deadlineMs };
         const result = await maintainHostContext(options.runRoot, request, owner, object(raw.ctx) ? raw.ctx.signal as AbortSignal : undefined);

@@ -15,12 +15,13 @@ export * from "@grokbox/runtime-kernel/materials";
 export * from "./protection-contract.ts";
 export * from "./lifecycle-contract.ts";
 export * from "./context-contract.ts";
+export * from "./compaction-contract.ts";
 export { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
 export { hostLeaseOpportunityWindow } from "@grokbox/runtime-kernel/host-health";
 export const API_VERSION = 1;
 export const REQUEST_MAX_BYTES = 64 * 1024;
 export const RESPONSE_MAX_BYTES = 256 * 1024;
-export const CAPABILITIES = ["bots.read", "context.read", "context.write", "context.activate", "lifecycle.write", "lifecycle.start", "lifecycle.messages", "models.read", "models.write", "operations.read", "observations.read", "incidents.write", "notifications.read", "notifications.write", "notifications.test", "protection.read", "protection.write", "notifications.bind", "routines.read", "routines.write", "materials.read", "materials.search", "materials.content.read", "materials.write", "system.read", "console.grants.create"] as const;
+export const CAPABILITIES = ["bots.read", "context.read", "context.write", "context.activate", "context.compact", "lifecycle.write", "lifecycle.start", "lifecycle.messages", "models.read", "models.write", "operations.read", "observations.read", "incidents.write", "notifications.read", "notifications.write", "notifications.test", "protection.read", "protection.write", "notifications.bind", "routines.read", "routines.write", "materials.read", "materials.search", "materials.content.read", "materials.write", "system.read", "console.grants.create"] as const;
 export type Capability = typeof CAPABILITIES[number];
 export type ConsoleGrant = { grantId: string; code: string; origin: string; expiresAt: number; persistence: "server-lifetime" };
 export type ConsoleSession = {
@@ -29,7 +30,7 @@ export type ConsoleSession = {
 };
 export type ManagementIdentity = { installationId: string; principalId: string; capabilities: Capability[]; apiVersion: 1 };
 export const API_ERROR_CODES = ["invalid_input", "authentication_required", "permission_denied", "wrong_installation",
-  "not_found", "revision_conflict", "idempotency_conflict", "operation_unknown", "protection_target_conflict", "incident_resolved", "notification_test_refused", "source_changed", "model_in_use",
+  "not_found", "revision_conflict", "idempotency_conflict", "operation_unknown", "compaction_failed", "protection_target_conflict", "incident_resolved", "notification_test_refused", "source_changed", "model_in_use",
   "model_default_in_use", "model_default_missing", "model_source_read_only", "store_full", "unavailable",
   "source_unavailable", "source_invalid", "source_unauthorized", "source_timeout", "source_incomplete", "ambiguous_target", "caller_identity_unavailable", "cursor_gap", "internal_error", "protocol_error"] as const;
 export type ApiErrorCode = typeof API_ERROR_CODES[number];

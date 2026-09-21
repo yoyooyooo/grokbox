@@ -81,7 +81,7 @@ export const CONTEXT_MAINTENANCE_SLICES: readonly SlicePatch[] = [
     startAnchor: "    getHostStatus: rpcMethod().args(hostStatusArgs),",
     endAnchor: "    setBoxMigrating: rpcMethod().args({ migrating: rpcBoolean() }),",
     find: "    getHostStatus: rpcMethod().args(hostStatusArgs),\n",
-    replacement: "    getHostStatus: rpcMethod().args(hostStatusArgs),\n    grokboxContextControl: rpcMethod().args(rpcObject({ action: rpcString(), agentId: rpcString(), sessionId: rpcOptional(rpcString()), operationId: rpcOptional(rpcString()), confirm: rpcOptional(rpcBoolean()) })),\n",
+    replacement: "    getHostStatus: rpcMethod().args(hostStatusArgs),\n    grokboxContextControl: rpcMethod().args(rpcObject({ action: rpcString(), agentId: rpcString(), sessionId: rpcOptional(rpcString()), operationId: rpcOptional(rpcString()), confirm: rpcOptional(rpcBoolean()), approval: rpcOptional(rpcString()) })),\n",
   },
   {
     id: "context-control-rpc-api",
