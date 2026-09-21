@@ -90,7 +90,10 @@ export async function hostHealthBrowserJourney(t:TestContext,ports:Ports){
    await page.goto(`${origin}/host-health`);const card=page.locator('[data-testid="host-health-opportunities"]');await card.waitFor();
    assert.ok((await card.innerText()).includes("violated"));assert.ok((await card.innerText()).includes("0 present · 1 missing"));assert.ok((await card.innerText()).includes("managed-main-stream-entry"));
    const pid=f.process.child.pid;await page.reload();await card.waitFor();assert.equal(f.process.child.pid,pid);assert.ok((await card.innerText()).includes("1 missing"));
-   await f.control("managed-stream",{lease:true,count:12});await wait(async()=>{const s=(await f.client().hostHealth()).data.witness?.snapshot;return !!s&&s.eventsDropped>0&&!s.events.some(e=>e.stage==="managed-stream-lease-missing");});
+   // Ring eviction can happen in an intermediate sample of this burst. The
+   // page is read-on-refresh, not a subscription: wait for the actual final
+   // cumulative fact before expecting that exact count in its one read.
+   await f.control("managed-stream",{lease:true,count:12});await wait(async()=>{const s=(await f.client().hostHealth()).data.witness?.snapshot;return !!s&&s.leaseOpportunity.observed===13&&s.leaseOpportunity.missing===1&&s.eventsDropped>0&&!s.events.some(e=>e.stage==="managed-stream-lease-missing");});
    await page.getByRole("button",{name:"Refresh health observations",exact:true}).click();await card.getByText("13 direct checks · 1 missing leases",{exact:true}).waitFor();
    assert.equal(await card.getByText("violated",{exact:true}).count(),1);assert.ok((await card.innerText()).includes("First retained missing lease"));
    assert.ok((await page.locator('[data-testid="host-health-witness-events"]').innerText()).includes("do not repair a known violation"));

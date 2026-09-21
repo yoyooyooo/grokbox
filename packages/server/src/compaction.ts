@@ -1,7 +1,7 @@
 import { Effect } from "effect";
-import { botIdFromRef, botRef, normalizeCompactionChange, normalizeCompactionContinuation, compactionRevision, compactionOperationRef,
+import { botIdFromRef, botRef, normalizeCompactionChange, normalizeCompactionContinuation, compactionOperationRef,
   ManagementClientError, UUID, type CompactionPreview, type CompactionOperation, type CompactionResult } from "@grokbox/client/contract";
-import { parseContextReceipt, parseContextBudget, parseContextManualApproval, decideManagedOwnership } from "@grokbox/runtime-kernel/contract";
+import { parseContextReceipt, parseContextBudget, parseContextManualApproval, contextManualApprovalRevision, decideManagedOwnership } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { ContinuityFailure } from "@grokbox/runtime-kernel/continuity";
 import { compactionManagementPrograms, compactionControlId, contextStorePresent, withManagedContextGate,
@@ -59,7 +59,7 @@ async function preview(d: ContextDomain, agentId: string, g: CompactionGateway):
   const budget = parseContextBudget(configured.budget), approval = parseContextManualApproval({ scopeId, hostGeneration: report.hostGeneration,
     selectionRevision: report.selectionRevision, policyRevision: configured.policy.revision });
   if (budget.policyRevision !== approval.policyRevision) throw unavailable();
-  return { botRef: botRef(d.installationId, agentId), scopeId, revision: compactionRevision(agentId, approval), approval, modelId: configured.modelId, budget,
+  return { botRef: botRef(d.installationId, agentId), scopeId, revision: contextManualApprovalRevision(agentId, approval), approval, modelId: configured.modelId, budget,
     nativeCapability: report.nativeCapability, observedAtMs: Date.now(), rootSelection: "current-at-dispatch", contentIncluded: false, mayCallModel: true, startsTask: false };
 }
 async function row(d: ContextDomain, p: Principal, scopeId: string, requestId: string) {

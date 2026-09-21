@@ -39,6 +39,10 @@ run/STEP/日志、受支持的原生投递对账、完整材料管理与剩余�
 
 `/contexts` 已接入当前上下文的真实 head、原操作历史、checkpoint 捕获、初始化/重置/恢复、显式对账/有限取消及独立解除。页面和 `/operations` 共用 CONT 回执；不加载 Memory/原生 blob 正文。旧 revision 冲突保留选择，未知提交刷新后阻止替代写入，续接失败不会把原未知记录降为普通拒绝。首次解除 revision 从原服务回执查回，不存浏览器本地输入。当前源不可用不妨碍独立历史查询，原请求属于其他 Bot 时不重定向操作。真实生产浏览器使用原生 owner/RPC/checkpoint worker 的隔离 schema/账号端口，见 [context-browser.node.ts](../../apps/web/test/context-browser.node.ts)；不作为完整原生现场或视觉定稿签署。
 
+`/contexts?mode=compact` 现提供默认 Box current-root 的只读审批计划、独立费用确认、Compact 及原请求查询/对账/未派发续接/取消；与已有 current-state 模式共用 Bot 定位但不混合同。`/operations` 识别 compaction 域与原账号 scope；同源桥只开放准确管理 API。浏览器仅存原定位，不存 policy/revision/正文。已完成的原生操作可在来源失联时查询，错 Bot 不重定向；未知取消拒绝不会解锁新请求。[真实生产浏览器旅程](../../apps/web/test/compaction-browser.node.ts)覆盖提交、费用/模型变更冲突、显式重审、丢回执刷新、未知 checkpoint、权限/CSRF和窄屏。
+
+此路径实际暴露 SSR 与浏览器不一致：原同步摘要校验依赖 Node crypto，SSR 通过但浏览器显式刷新失败。现以同一 canonical 声明配合 WebCrypto 校验，不添加 runtime shim 或第二摘要规则。修复后73节点生产 Chrome组合通过；依赖范围和最终检查归[管理切片报告](../reports/2026-09-21-compaction-management.md)，不等于真实账号/Provider/App 或最终视觉验收。
+
 ## Host健康与浏览器重复性差额
 
 `/host-health`已分开显示磁盘候选、运行编译、同代原引用注册、详细边界与累计lease机会。当前API只接受现行完整健康/witness合同，不为旧三项规则或window-only事件读面提供兼容；旧资料保留但不充当新成功。四项静态规则和当前有限配对已有资格，整Host/Provider/App与完整机会覆盖仍未证明，不能显示整体healthy。源码与原生/合成范围见[当前收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。

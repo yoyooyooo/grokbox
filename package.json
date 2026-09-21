@@ -58,7 +58,7 @@
     "web:build": "node scripts/build-web.mjs",
     "web:serve": "node dist/web/run.mjs",
     "typecheck:web": "tsc --noEmit -p apps/web/tsconfig.json",
-    "test:web": "bun test apps/web/test/operations.test.ts test/web-bridge.test.ts test/observation-management.test.ts test/incident-actions.test.ts test/notification-management.test.ts test/notification-setup.test.ts test/materials-management.test.ts test/protection-management.test.ts test/lifecycle-management.test.ts test/context-management.test.ts test/host-health-management.test.ts test/web-browser.test.ts",
+    "test:web": "bun test apps/web/test/operations.test.ts test/web-bridge.test.ts test/observation-management.test.ts test/incident-actions.test.ts test/notification-management.test.ts test/notification-setup.test.ts test/materials-management.test.ts test/protection-management.test.ts test/lifecycle-management.test.ts test/context-management.test.ts ./test/compaction-management.test.ts test/host-health-management.test.ts test/web-browser.test.ts",
     "verify:web-browser": "bun test test/web-browser.test.ts",
     "verify:host-health": "node scripts/verify-host-health.mjs core && node scripts/verify-host-health.mjs integration",
     "qualify:host-health": "bun scripts/qualify-host-health.ts",

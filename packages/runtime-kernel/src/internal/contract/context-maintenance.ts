@@ -1,4 +1,7 @@
 import type { ContextBudget, CapturedContextPolicy } from "../config/context-policy.ts";
+import { ContextFailure, parseContextBudget, contextManualApprovalKey, type ContextManualApproval } from "../../compaction.ts";
+export { CONTEXT_FAILURE_CODES, ContextFailure, contextFailure, contextFailureMessage, parseContextBudget, parseContextManualApproval, contextManualApprovalKey, type ContextFailureCode, type ContextManualApproval } from "../../compaction.ts";
+import type { ContextFailureCode } from "../../compaction.ts";
 import type { HostEpoch, SelectionIdentity, ServiceEpoch } from "./identity.ts";
 import type { ResolvedModelSelection } from "../../selection.ts";
 import { canonicalJson, sha256Text } from "../../hash.ts";
@@ -11,45 +14,6 @@ export const CONTEXT_MAX_MESSAGES = 65536;
 export const CONTEXT_MAX_OPERATIONS = 64;
 export const CONTEXT_METER_VERSION = "unicode-envelope-v1";
 export const CONTEXT_ALGORITHM_VERSION = "pi-0.85.1-extraction-v1";
-export const CONTEXT_FAILURE_CODES = [
-  "context_policy_invalid", "context_budget_exceeded", "context_fixed_input_too_large",
-  "context_material_too_large", "context_material_invalid", "context_target_unreachable",
-  "summary_unavailable", "summary_invalid", "no_improvement", "stale_root",
-  "maintenance_budget_exhausted", "deadline_exceeded", "capability_unqualified",
-  "commit_unknown", "operation_retired", "maintenance_conflict", "maintenance_busy", "native_cleanup_unknown", "cancelled", "not_admitted", "auth_mismatch",
-] as const;
-export type ContextFailureCode = typeof CONTEXT_FAILURE_CODES[number];
-export class ContextFailure extends Error {
-  constructor(readonly code: ContextFailureCode) { super(code); this.name = "ContextFailure"; }
-}
-export function contextFailureMessage(code: ContextFailureCode): string {
-  const messages: Partial<Record<ContextFailureCode, string>> = {
-    context_policy_invalid: "The local context policy has incompatible budgets. Review the captured window and output reserve.",
-    context_budget_exceeded: "This request exceeds the local context budget. No main model request was sent; automatic maintenance is unavailable or manual mode is selected.",
-    context_fixed_input_too_large: "The new input or fixed system/tool material cannot fit the local context window. Older-history compaction cannot make it fit.",
-    context_material_too_large: "The context material exceeds the supported transfer or serialization limit. The original history was not silently truncated.",
-    context_target_unreachable: "Compaction cannot leave enough working space while preserving the required input and tool groups.",
-    summary_unavailable: "Context summarization could not complete. The pending input and original history remain available; the failed model STEP was not replayed.",
-    summary_invalid: "The summary was empty, incomplete or invalid and was not accepted as a new context.",
-    no_improvement: "Compaction did not produce a sufficiently smaller valid context. The original history was retained.",
-    commit_unknown: "Context checkpoint completion is uncertain. Inspect the maintenance operation before retrying; the root may already have changed.",
-    operation_retired: "This completed operation's detailed receipt was retired. Its identity remains consumed; it cannot start another summary or checkpoint.",
-    maintenance_busy: "The session has another active context owner. Maintenance did not start a competing writer.",
-    native_cleanup_unknown: "The native summary source has not confirmed shutdown. Do not start a competing maintenance operation.",
-    maintenance_budget_exhausted: "Context maintenance reached its request or token budget before producing a valid replacement.",
-    deadline_exceeded: "Context maintenance exhausted the current operation deadline. No additional model attempt was started.",
-    capability_unqualified: "The loaded Host/modeld does not provide a qualified context maintenance capability.",
-    cancelled: "Context maintenance was cancelled. Inspect the operation to distinguish an uncommitted candidate from an already-persisted root.",
-    auth_mismatch: "The model credential no longer matches the captured TURN. No new summary request was authorized with the changed credential.",
-  };
-  return messages[code] ?? "Context maintenance could not safely continue. Inspect the operation and current session state.";
-}
-export function contextFailure(error: unknown, fallback: ContextFailureCode = "summary_unavailable"): ContextFailure {
-  if (error instanceof ContextFailure) return error;
-  if (error && typeof error === "object" && "code" in error && typeof error.code === "string"
-    && (CONTEXT_FAILURE_CODES as readonly string[]).includes(error.code)) return new ContextFailure(error.code as ContextFailureCode);
-  return new ContextFailure(fallback);
-}
 export type ContextSourceMessage = {
   /** Opaque native source identity within the captured revision. Never a filesystem path. */
   ref: string;
@@ -119,15 +83,6 @@ export type ContextSelectionCapture = {
   authFingerprint?: string;
 };
 export type ContextMaintenanceReason = "preflight" | "manual" | "overflow";
-export type ContextManualApproval = { scopeId: string; hostGeneration: string; selectionRevision: string; policyRevision: string };
-/** Explicit manual approval binds account, loaded Host, model selection and
- * cost policy. It is not a snapshot/CAS of a future native root. */
-export function parseContextManualApproval(raw: unknown): ContextManualApproval {
-  const value = contextObject(raw, ["scopeId", "hostGeneration", "selectionRevision", "policyRevision"]);
-  if (Object.values(value).some(v => typeof v !== "string" || !/^[a-f0-9]{64}$/.test(v))) throw new ContextFailure("not_admitted");
-  return value as ContextManualApproval;
-}
-export const contextManualApprovalKey = (agentId: string, approval: ContextManualApproval) => canonicalJson(["managed-compaction-v1", agentId, parseContextManualApproval(approval)]);
 export const contextManualApprovalRevision = (agentId: string, approval: ContextManualApproval) => sha256Text(contextManualApprovalKey(agentId, approval));
 export type ContextMaintenanceRequest = ContextMaintenanceIdentity & {
   reason: ContextMaintenanceReason;
@@ -193,19 +148,6 @@ function boundedCount(value: unknown, maximum = Number.MAX_SAFE_INTEGER): value 
 }
 function safeReference(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 256 && !/[\x00-\x1f]/.test(value);
-}
-export function parseContextBudget(raw: unknown): ContextBudget {
-  const v = contextObject(raw, ["policyRevision", "mode", "declaredWindowTokens", "localWindowTokens", "windowTokens", "outputTokens", "reserveTokens", "inputTokens", "preferredTargetTokens", "resumeThresholdTokens", "keepRecentTokens"]);
-  if (!safeReference(v.policyRevision) || !/^[a-f0-9]{64}$/.test(v.policyRevision) || !["auto", "manual"].includes(String(v.mode))) throw new ContextFailure("context_policy_invalid");
-  for (const key of ["localWindowTokens", "windowTokens", "outputTokens", "reserveTokens", "inputTokens", "preferredTargetTokens", "resumeThresholdTokens", "keepRecentTokens"]) {
-    if (!boundedCount(v[key], 16777216)) throw new ContextFailure("context_policy_invalid");
-  }
-  const b = v as ContextBudget;
-  if (b.localWindowTokens < 1024 || b.windowTokens <= 0 || b.outputTokens <= 0 || b.inputTokens <= 0
-    || b.windowTokens > b.localWindowTokens || b.reserveTokens < b.outputTokens || b.inputTokens > b.windowTokens - b.reserveTokens
-    || b.preferredTargetTokens !== Math.floor(b.inputTokens * 0.60) || b.resumeThresholdTokens !== Math.floor(b.inputTokens * 0.90)
-    || b.keepRecentTokens > b.preferredTargetTokens || b.declaredWindowTokens !== null && (!boundedCount(b.declaredWindowTokens) || b.declaredWindowTokens < b.windowTokens)) throw new ContextFailure("context_policy_invalid");
-  return b;
 }
 export function parseContextCandidate(raw: unknown): ContextCandidate {
   const c = contextObject(raw, ["operationId", "sourceRootRevision", "summary", "summarizedRefs", "retainedRefs", "budget"]);

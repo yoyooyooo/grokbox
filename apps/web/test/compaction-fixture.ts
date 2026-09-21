@@ -21,6 +21,7 @@ import { createHostContextControl } from "../../../packages/box-runtime/src/inte
 import { bindHostSessionHook } from "../../../packages/box-runtime/src/internal/host/session-hook.ts";
 import { isHostPromptSession } from "../../../packages/box-runtime/src/internal/host/session.ts";
 import { ownedNativeSummary } from "../../../packages/box-runtime/test/context-native-fixture.ts";
+import { settleJournalWrites } from "../../../packages/box-runtime/src/internal/host/terminal-journal.node.ts";
 import { ownedOwnershipSnapshot } from "../../../packages/box-runtime/test/ownership-fixture.ts";
 import type { ContinuityStoreHooks } from "../../../packages/box-runtime/src/internal/io/continuity-database.node.ts";
 export const C_INSTALL = "11111111-1111-4111-8111-111111111111", C_BOT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", C_SCOPE = "a".repeat(64);
@@ -124,6 +125,6 @@ export async function compactionFixture(origin: string, options: { small?: boole
     close: async () => { signal.abort(); state.waitSummary?.resolve(); state.waitCleanup?.resolve(); await server.close();
       await Promise.allSettled([...nativeJobs]);
       await Effect.runPromise(Fiber.interrupt(modeld)); provider.closeAllConnections(); nativeServer.closeAllConnections();
-      await Promise.all([new Promise<void>(r => provider.close(() => r())), new Promise<void>(r => nativeServer.close(() => r()))]); await rm(root, { recursive: true, force: true }); }
+      await Promise.all([new Promise<void>(r => provider.close(() => r())), new Promise<void>(r => nativeServer.close(() => r()))]); await settleJournalWrites(runRoot); await settleJournalWrites(root); await rm(root, { recursive: true, force: true }); }
   };
 }

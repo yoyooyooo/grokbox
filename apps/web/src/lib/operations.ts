@@ -1,8 +1,8 @@
-import { normalizeContextChange, normalizeContextContinuation, type ContextChange, type ContextContinuation, type ContextOperation, ManagementClientError, UUID, incidentIdentity, notificationIdentity, type ReceiverChangeRequest, type ModelChange, type ModelChangeRequest, type IncidentChangeRequest, type SetupRequest, type SetupKind, type MaterialWrite, type ProtectionChangeRequest, normalizeProtectionChange, materialIdentity, routineIdentity, botIdFromRef, setupKind } from "@grokbox/client";
+import { normalizeCompactionChange, normalizeCompactionContinuation, type CompactionChange, type CompactionContinuation, type CompactionOperation, normalizeContextChange, normalizeContextContinuation, type ContextChange, type ContextContinuation, type ContextOperation, ManagementClientError, UUID, incidentIdentity, notificationIdentity, type ReceiverChangeRequest, type ModelChange, type ModelChangeRequest, type IncidentChangeRequest, type SetupRequest, type SetupKind, type MaterialWrite, type ProtectionChangeRequest, normalizeProtectionChange, materialIdentity, routineIdentity, botIdFromRef, setupKind } from "@grokbox/client";
 
 export type OperationScope = { installationId: string; principalId: string };
 export type LocalOperation = {
-  version: 1; requestId: string; installationId: string; principalId: string; command: ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control"; databaseId?: string; contextScope?: string;
+  version: 1; requestId: string; installationId: string; principalId: string; command: ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction"; databaseId?: string; contextScope?: string;
   setupKind?: SetupKind; setupScope?: string;
   target: string; createdAt: number; state: "awaiting-response" | "unknown" | "succeeded" | "refused" | "retired";
 };
@@ -13,8 +13,8 @@ const valid = (value: unknown, scope: OperationScope): value is LocalOperation =
   return !!row && row.version === 1 && row.installationId === scope.installationId && row.principalId === scope.principalId
     && UUID.test(row.requestId) && Number.isSafeInteger(row.createdAt) && row.createdAt > 0 && typeof row.target === "string" && row.target.length <= (row.command === "material-write" ? 1800 : 256)
     && Object.keys(row).every(key => ["version", "requestId", "installationId", "principalId", "command", "databaseId", "contextScope", "setupKind", "setupScope", "target", "createdAt", "state"].includes(key))
-    && (row.command === "context-control" || row.contextScope === undefined)
-    && (row.command === "context-control" ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
+    && (["context-control", "context-compaction"].includes(row.command) || row.contextScope === undefined)
+    && (["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
       : row.setupKind === undefined && row.setupScope === undefined && (["incident-ack", "incident-snooze"].includes(row.command)
       ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`incident:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
       : ["receiver-enable", "receiver-disable", "receiver-unbind", "notification-test"].includes(row.command)
@@ -29,6 +29,13 @@ function validContextLocator(row: LocalOperation, scope: OperationScope): boolea
 function contextMetadata(input: ContextChange, scope: OperationScope): Pick<LocalOperation, "command" | "target" | "contextScope"> {
   const request = normalizeContextChange(input, scope.installationId);
   return { command: "context-control", target: request.botRef, contextScope: request.scopeId };
+}
+function compactionMetadata(input: CompactionChange, scope: OperationScope): Pick<LocalOperation, "command" | "target" | "contextScope"> {
+  const r = normalizeCompactionChange(input, scope.installationId);
+  return { command: "context-compaction", target: r.botRef, contextScope: r.scopeId };
+}
+export function compactionLocalState(state: CompactionOperation["state"]): LocalOperation["state"] {
+  return state === "admitted" || state === "unknown" ? "unknown" : state === "failed" ? "refused" : state === "cancelled" ? "retired" : "succeeded";
 }
 export function contextLocalState(state: ContextOperation["state"]): LocalOperation["state"] {
   return state === "unknown" || state === "admitted" ? "unknown" : state === "cancelled" ? "retired" : "succeeded";
@@ -80,7 +87,7 @@ export function localOperations(storage: StoragePort, scope: OperationScope): Lo
 /** Persist only recovery metadata, never model input, cookie, CSRF or a key ref.
  * One key per UUID avoids overwriting another tab's index. Refuse before send if
  * storage is unavailable; unresolved locators are never silently evicted. */
-export function rememberOperation(storage: StoragePort, scope: OperationScope, input: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange): LocalOperation {
+export function rememberOperation(storage: StoragePort, scope: OperationScope, input: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange): LocalOperation {
   try {
     if (!UUID.test(input.requestId) || !UUID.test(scope.installationId) || !scope.principalId || scope.principalId.length > 128
       || localOperations(storage, scope).length >= 128) throw new Error();
@@ -93,7 +100,7 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
       : "incidentRef" in input ? { command: input.action === "ack" ? "incident-ack" : "incident-snooze", target: input.incidentRef,
         databaseId: incidentIdentity(input.incidentRef, scope.installationId).databaseId }
       : "ref" in input ? {command:"material-write",target:materialIdentity(input.ref,scope.installationId).ref}
-      : "scopeId" in input ? contextMetadata(input,scope)
+      : "scopeId" in input ? "action" in input ? contextMetadata(input,scope) : compactionMetadata(input,scope)
       : input.action==="system"||input.action==="set"||input.action==="reset" ? protectionMetadata(input,scope) : setupMetadata(input,scope);
     const row: LocalOperation = { version: 1, requestId: input.requestId, ...scope, ...metadata, createdAt: Date.now(), state: "awaiting-response" };
     if (!valid(row, scope)) throw new Error();
@@ -103,8 +110,9 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
     return row;
   } catch { throw new ManagementClientError("unavailable", "无法保存操作恢复标识，本次尚未提交。请检查浏览器存储或整理已结束的记录。"); }
 }
-export type OperationDomain = "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification-test" | "notification-settings" | "routine" | "pairing";
+export type OperationDomain = "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification-test" | "notification-settings" | "routine" | "pairing";
 export function operationDomain(row: LocalOperation): OperationDomain {
+  if (row.command === "context-compaction") return "compaction";
   if (row.command === "context-control") return "context";
   if (row.command === "protection-policy") return "protection";
   if (row.command === "material-write") return "material";
@@ -113,15 +121,18 @@ export function operationDomain(row: LocalOperation): OperationDomain {
 }
 export function operationSearch(row: LocalOperation): { requestId: string; domain?: Exclude<OperationDomain, "model">; databaseId?: string; bot?: string; target?: string; scopeId?: string } {
   const domain = operationDomain(row);
-  return { requestId: row.requestId, ...(domain === "context" ? { scopeId: row.contextScope } : {}), ...(domain !== "model" ? { domain, databaseId: row.databaseId } : {}), ...(row.setupKind === "routine" ? { bot:row.setupScope } : {}), ...(domain==="protection"?{target:row.target.startsWith("protection-system:")?"system":row.target}:{}) };
+  return { requestId: row.requestId, ...(["context", "compaction"].includes(domain) ? { scopeId: row.contextScope } : {}), ...(domain !== "model" ? { domain, databaseId: row.databaseId } : {}), ...(row.setupKind === "routine" ? { bot:row.setupScope } : {}), ...(domain==="protection"?{target:row.target.startsWith("protection-system:")?"system":row.target}:{}) };
 }
 /** Explicit continuation retains the original locator and verifies persistence
  * before send. It never stores the revision, snapshot selection or action body. */
-export function retainContextContinuation(storage: StoragePort, scope: OperationScope, input: ContextContinuation): LocalOperation {
+export const retainContextContinuation = (storage: StoragePort, scope: OperationScope, input: ContextContinuation) => retainScopedContinuation(storage, scope, input, "context-control");
+export const retainCompactionContinuation = (storage: StoragePort, scope: OperationScope, input: CompactionContinuation) => retainScopedContinuation(storage, scope, input, "context-compaction");
+function retainScopedContinuation(storage: StoragePort, scope: OperationScope, input: ContextContinuation | CompactionContinuation, command: "context-control" | "context-compaction"): LocalOperation {
   try {
-    const r = normalizeContextContinuation(input, scope.installationId), rows = localOperations(storage, scope), old = rows.find(v => v.requestId === r.requestId);
-    if (old && (old.command !== "context-control" || old.target !== r.botRef || old.contextScope !== r.scopeId) || !old && rows.length >= 128) throw Error("locator-conflict");
-    const row: LocalOperation = { version: 1, requestId: r.requestId, ...scope, command: "context-control", target: r.botRef, contextScope: r.scopeId,
+    const r = command === "context-control" ? normalizeContextContinuation(input, scope.installationId) : normalizeCompactionContinuation(input, scope.installationId);
+    const rows = localOperations(storage, scope), old = rows.find(v => v.requestId === r.requestId);
+    if (old && (old.command !== command || old.target !== r.botRef || old.contextScope !== r.scopeId) || !old && rows.length >= 128) throw Error("locator-conflict");
+    const row: LocalOperation = { version: 1, requestId: r.requestId, ...scope, command, target: r.botRef, contextScope: r.scopeId,
       createdAt: old?.createdAt ?? Date.now(), state: "awaiting-response" };
     if (!valid(row, scope)) throw Error("locator-invalid");
     const key = `${prefix(scope)}${r.requestId}`, text = JSON.stringify(row); storage.setItem(key, text); if (storage.getItem(key) !== text) throw Error("locator-write-lost");

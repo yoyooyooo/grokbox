@@ -1,5 +1,5 @@
 import { botIdFromRef, botRef, UUID, ManagementClientError } from "./contract.ts";
-import { parseContextBudget, parseContextManualApproval, contextManualApprovalRevision, CONTEXT_FAILURE_CODES, type ContextFailureCode, type ContextBudget, type ContextManualApproval } from "@grokbox/runtime-kernel/contract";
+import { parseContextBudget, parseContextManualApproval, CONTEXT_FAILURE_CODES, type ContextFailureCode, type ContextBudget, type ContextManualApproval } from "@grokbox/runtime-kernel/compaction";
 
 export type CompactionPreview = {
   botRef: string; scopeId: string; revision: string; approval: ContextManualApproval;
@@ -21,7 +21,6 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).sort().join() === [...keys].sort().join();
 const count = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0;
 const bad = (): never => { throw new ManagementClientError("invalid_input", "Use the exact compaction Bot, account, preview revision and original request UUID."); };
-export const compactionRevision = contextManualApprovalRevision;
 export const compactionOperationRef = (installationId: string, scopeId: string, requestId: string) => `compaction-operation:${installationId}:${scopeId}:${requestId}`;
 export function compactionOperationIdentity(ref: string, installationId: string) {
   const parts = ref.split(":");

@@ -124,7 +124,23 @@ export async function withEventsLock<T>(root: string, fn: () => Promise<T>, maxA
   return withJournalLock(path, fn, maxAttempts);
 }
 
-export async function appendNdjsonLine(root: string, line: string, role: JournalWriterRole = "control", rotation?: JournalRotationOptions): Promise<void> {
+const inFlightWrites = new Map<string, Set<Promise<void>>>();
+/** A caller retiring an owned root must first stop its producers, then join
+ * their original writes (including health publication). This is not a flush,
+ * another writer or a barrier imposed on inference completion. */
+export async function settleJournalWrites(root: string): Promise<void> {
+  while (inFlightWrites.get(root)?.size) await Promise.allSettled([...inFlightWrites.get(root)!]);
+}
+export function appendNdjsonLine(root: string, line: string, role: JournalWriterRole = "control", rotation?: JournalRotationOptions): Promise<void> {
+  const writes = inFlightWrites.get(root) ?? new Set<Promise<void>>();
+  inFlightWrites.set(root, writes);
+  const operation = appendLine(root, line, role, rotation);
+  writes.add(operation);
+  const settled = () => { writes.delete(operation); if (writes.size === 0 && inFlightWrites.get(root) === writes) inFlightWrites.delete(root); };
+  void operation.then(settled, settled);
+  return operation;
+}
+async function appendLine(root: string, line: string, role: JournalWriterRole, rotation?: JournalRotationOptions): Promise<void> {
   const path = hostEventsPath(root);
   const payload = line.endsWith("\n") ? line : `${line}\n`;
   const complete = startJournalWrite(root, role);

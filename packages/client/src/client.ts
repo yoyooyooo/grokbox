@@ -9,7 +9,7 @@ export * from "./contract.ts";
 import { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
 import { normalizeContextChange, normalizeContextContinuation, contextOperationIdentity, contextOperationRef, type ContextChange, type ContextContinuation, type ContextView, type ContextOperation } from "./context-contract.ts";
 import { contextView, contextOperation } from "./context-validation.ts";
-import { contextManualApprovalKey } from "@grokbox/runtime-kernel/contract";
+import { contextManualApprovalKey } from "@grokbox/runtime-kernel/compaction";
 import { normalizeCompactionChange, normalizeCompactionContinuation, compactionPreview, compactionOperation,
   type CompactionChange, type CompactionContinuation, type CompactionPreview, type CompactionOperation } from "./compaction-contract.ts";
 import { normalizeLifecycleIntent, normalizeLifecycleSubmission, normalizeLifecycleResume, lifecycleReference, lifecycleIdentity,

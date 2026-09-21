@@ -1,36 +1,59 @@
 import { useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import type { ContextView, ContextOperation } from "@grokbox/client";
+import { compactionOperationIdentity, botIdFromRef, botRef, type CompactionPreview, type CompactionOperation, type ContextView, type ContextOperation } from "@grokbox/client";
 import { Card, Heading, ErrorNotice, Badge, Empty, SourceTime } from "../components/ui.tsx";
 import { ContextEditor } from "../components/context-editor.tsx";
+import { CompactionEditor } from "../components/compaction-editor.tsx";
 import { boundedSearch, denied, readView, viewError } from "../lib/views.ts";
 
 export const Route = createFileRoute("/_console/contexts")({
-  validateSearch: (v: Record<string, unknown>): { bot?: string; operationRef?: string } => ({ bot: boundedSearch(v.bot, 160), operationRef: boundedSearch(v.operationRef, 200) }),
+  validateSearch: (v: Record<string, unknown>): { bot?: string; operationRef?: string; mode?: "compact" } => ({ bot: boundedSearch(v.bot, 160), operationRef: boundedSearch(v.operationRef, 200), mode: v.mode === "compact" ? "compact" : undefined }),
   loaderDeps: ({ search }) => search,
   loader: async ({ context, deps }) => {
     const api = context.services.client(context.bootstrap.binding), permissions = context.bootstrap.session!.capabilities;
+    if (deps.mode === "compact") {
+      const [plan, compactOperation] = await Promise.all([
+        !deps.bot ? null : !permissions.includes("context.read") ? denied<CompactionPreview>() : readView(Promise.resolve().then(() => api.compactionPreview(deps.bot!))),
+        !deps.operationRef ? null : !permissions.includes("operations.read") ? denied<CompactionOperation>() : readView(Promise.resolve().then(() => {
+          const r = compactionOperationIdentity(deps.operationRef!, context.bootstrap.binding.installationId);
+          return api.compactionOperation(r.scopeId, r.requestId);
+        })),
+      ]);
+      let selected: string | undefined;
+      try { if (deps.bot) selected = botRef(context.bootstrap.binding.installationId, botIdFromRef(deps.bot, context.bootstrap.binding.installationId)); } catch { /* The API read carries the input error. */ }
+      return { current: null, operation: null, plan, compactOperation, selected };
+    }
     const [current, operation] = await Promise.all([
       !deps.bot ? null : !permissions.includes("context.read") ? denied<ContextView>() : readView(Promise.resolve().then(() => api.context(deps.bot!))),
       !deps.operationRef ? null : !permissions.includes("operations.read") ? denied<ContextOperation>() : readView(Promise.resolve().then(() => api.contextOperation(deps.operationRef!))),
     ]);
-    return { current, operation };
+    return { current, operation, plan: null, compactOperation: null, selected: undefined };
   },
   component: Contexts,
 });
 function Contexts() {
   const data = Route.useLoaderData(), search = Route.useSearch(), router = useRouter(), navigate = useNavigate({ from: Route.fullPath });
   const [bot, setBot] = useState(search.bot ?? ""), [reference, setReference] = useState(search.operationRef ?? "");
-  const view = data.current?.data, original = data.operation?.data;
-  function select(event: FormEvent) { event.preventDefault(); void navigate({ search: { bot: bot.trim() || undefined, operationRef: reference.trim() || undefined } }); }
+  const view = data.current?.data, original = data.operation?.data, compaction = data.compactOperation?.data;
+  function select(event: FormEvent) { event.preventDefault(); void navigate({ search: { bot: bot.trim() || undefined, operationRef: reference.trim() || undefined, mode: search.mode } }); }
   return <><Heading eyebrow="SINGLE CURRENT CONTEXT" title="Current context">Inspect the native revision, retain a checkpoint, or manage an explicitly selected current context. Prepared, applied, released and task execution are different facts.</Heading>
+    <div className="toolbar"><Link to="/contexts" search={{ bot: search.bot }}>Current-state controls</Link><Link to="/contexts" search={{ bot: search.bot, mode: "compact" }}>Compaction</Link></div>
     <Card title="Select an exact Bot or original operation"><form onSubmit={select}>
       <label htmlFor="context-bot">Native Bot UUID or reference</label><input id="context-bot" value={bot} onChange={e => setBot(e.target.value)} maxLength={160} spellCheck={false}/>
       <label htmlFor="context-original">Original context operation reference</label><input id="context-original" value={reference} onChange={e => setReference(e.target.value)} maxLength={200} spellCheck={false}/>
       <div className="actions"><button type="submit">Inspect current context</button><button type="button" onClick={() => router.invalidate()}>Refresh observations only</button></div>
     </form><p className="field-note">Operation history remains readable without the native source. Selecting an operation never applies its old material or automatically redirects a Bot reference.</p></Card>
     {data.current && <ErrorNotice error={viewError(data.current)}/>}
-    {!data.current && <Empty>Select an exact Bot to inspect its current context. No source was opened by the empty page.</Empty>}
+    {!data.current && search.mode !== "compact" && <Empty>Select an exact Bot to inspect its current context. No source was opened by the empty page.</Empty>}
+    {data.plan && <ErrorNotice error={viewError(data.plan)}/>}
+    {data.compactOperation && <ErrorNotice error={viewError(data.compactOperation)}/>}
+    {compaction && <Card title="Original compaction history"><div data-testid="compaction-history"><p><code>{compaction.operationRef}</code></p><Badge>{compaction.state}</Badge>
+      <p>Exact target: <code>{compaction.botRef}</code>. Native settlement: {compaction.nativeSettlement}. Current root is not observed by this history.</p>
+      <Link to="/operations" search={{ domain: "compaction", scopeId: compaction.scopeId, requestId: compaction.requestId }}>Inspect retained compaction receipt</Link>
+      {data.selected && data.selected !== compaction.botRef && <p role="alert" className="notice danger">This original compaction belongs to another Bot. Its controls have not been retargeted.</p>}
+    </div></Card>}
+    {search.mode === "compact" && (data.selected ? <CompactionEditor key={data.selected} botRef={data.selected} view={data.plan?.data ?? undefined}
+      original={compaction?.botRef === data.selected ? compaction : undefined}/> : <Empty>Select an exact Bot to review compaction. No summary is requested by browsing this page.</Empty>)}
     {view && <Card title="Native context metadata"><div data-testid="context-head"><dl><dt>Bot</dt><dd><code>{view.botRef}</code></dd>
       <dt>Account scope</dt><dd><code>{view.scopeId}</code></dd><dt>Current revision</dt><dd><code>{view.revision}</code></dd>
       <dt>Observed state / unresolved effects</dt><dd><Badge tone={view.effects === "unresolved" ? "warn" : "neutral"}>{view.state}</Badge> / {view.effects}</dd>

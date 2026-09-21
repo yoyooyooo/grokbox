@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { materialReference, type ModelChangeRequest } from "@grokbox/client";
-import { retainContextContinuation, contextLocalState, forgetSettledOperation, localOperations, markOperation, rememberOperation, operationSearch } from "../src/lib/operations.ts";
+import { retainCompactionContinuation, compactionLocalState, retainContextContinuation, contextLocalState, forgetSettledOperation, localOperations, markOperation, rememberOperation, operationSearch } from "../src/lib/operations.ts";
 
 const scope = { installationId: "11111111-1111-4111-8111-111111111111", principalId: "owner" };
 const request = (): ModelChangeRequest => ({ requestId: randomUUID(), expectedRevision: "a".repeat(64),
@@ -53,6 +53,22 @@ test("context recovery stores only original scope and target, and explicit conti
   expect(() => retainContextContinuation({ ...storage, setItem() {} }, scope, { ...continuation, requestId: randomUUID() })).toThrow();
   expect([...storage.values.values()]).toEqual(before);
   expect(contextLocalState("cancelled")).toBe("retired"); expect(contextLocalState("unknown")).toBe("unknown");
+});
+
+test("compaction recovery preserves only the original domain locator and cannot rebind another context request", () => {
+  const storage = memoryStorage(), account = "b".repeat(64), botRef = `bot:${scope.installationId}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`, requestId = randomUUID();
+  const input = { requestId, botRef, scopeId: account, expectedRevision: "e".repeat(64), confirmed: true as const };
+  const row = rememberOperation(storage, scope, input);
+  expect(operationSearch(row)).toMatchObject({ domain: "compaction", requestId, scopeId: account });
+  expect([...storage.values.values()].join()).not.toMatch(/expectedRevision|approval|confirmed|budget|summary|csrf/);
+  markOperation(storage, row, compactionLocalState("unknown")); expect(() => forgetSettledOperation(storage, row)).toThrow();
+  const next = retainCompactionContinuation(storage, scope, { requestId, botRef, scopeId: account, action: "reconcile", confirmed: true });
+  expect(next.createdAt).toBe(row.createdAt); expect(next.state).toBe("awaiting-response");
+  expect(() => retainContextContinuation(storage, scope, { requestId, botRef, scopeId: account, action: "cancel", confirmed: true })).toThrow();
+  expect(localOperations(storage, scope)).toEqual([next]);
+  expect(compactionLocalState("admitted")).toBe("unknown"); expect(compactionLocalState("completed")).toBe("succeeded");
+  expect(compactionLocalState("cancelled")).toBe("retired"); expect(compactionLocalState("failed")).toBe("refused");
+  markOperation(storage, next, compactionLocalState("cancelled")); forgetSettledOperation(storage, next); expect(localOperations(storage, scope)).toEqual([]);
 });
 
 test("unknown locators are retained; only explicit settled locator removal is allowed", () => {
