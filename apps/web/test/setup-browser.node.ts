@@ -56,8 +56,20 @@ export async function setupBrowserJourney(t:TestContext,ports:Ports){
     await page.route("**/v1/setup-changes",async route=>{posts++;const response=await route.fetch();assert.equal(response.status(),200);await route.abort("failed");});
     await page.getByRole("button",{name:"Save notification settings",exact:true}).click();await page.getByRole("alert").filter({hasText:"operation_unknown"}).waitFor();
     await page.reload();await page.getByRole("button",{name:"Query original setup operation",exact:true}).waitFor();assert.equal(await page.locator("#setup-bot").isDisabled(),true);
-    await page.getByRole("button",{name:"Query original setup operation",exact:true}).click();await page.locator('[data-testid="setup-result"]').filter({hasText:"configuration-committed"}).waitFor();
-    assert.equal(posts,1);assert.equal(await page.locator("#setup-bot").isDisabled(),false);await page.unroute("**/v1/setup-changes");
+    // Receipt publication and clearing the local busy/unsettled state are
+    // separate renders. Observe the actual pending read and eventual enabled
+    // control instead of treating the earlier receipt render as both facts.
+    let release!:()=>void,started!:()=>void;
+    const held=new Promise<void>(r=>release=r),reading=new Promise<void>(r=>started=r);
+    await page.route("**/v1/setup-operations/**",async route=>{started();await held;await route.continue();});
+    try{
+      await page.getByRole("button",{name:"Query original setup operation",exact:true}).click();
+      await reading;assert.equal(await page.locator("#setup-bot").isDisabled(),true);
+      release();await page.locator('[data-testid="setup-result"]').filter({hasText:"configuration-committed"}).waitFor();
+      await page.locator("#setup-bot:enabled").waitFor();
+      assert.equal(posts,1);assert.equal(await page.locator("#setup-bot").isDisabled(),false);
+    }finally{release();await page.unroute("**/v1/setup-operations/**");}
+    await page.unroute("**/v1/setup-changes");
     await page.getByRole("link",{name:"View setup receipt",exact:true}).click();await page.locator('[data-testid="operation-receipt"]').waitFor();
     assert.ok(page.url().includes("domain=notification-settings"));assert.ok((await page.locator('[data-testid="operation-receipt"]').innerText()).includes("configuration-committed"));assert.equal(f.deliveries.length,0);
   }));

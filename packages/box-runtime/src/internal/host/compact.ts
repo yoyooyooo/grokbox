@@ -1,4 +1,4 @@
-import { contextFailure, contextFailureMessage, WIRE_VERSION, REQUEST_WALL_DEADLINE_MS, type ContextSnapshot, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
+import { ContextFailure, contextFailure, contextFailureMessage, WIRE_VERSION, REQUEST_WALL_DEADLINE_MS, type ContextSnapshot, type HostCompactRequest, type HostCompactResult } from "@grokbox/runtime-kernel/contract";
 import { HOST_COMPACT_SYMBOL } from "./profile.ts";
 import type { HostWitnessNote } from "@grokbox/runtime-kernel/host-health";
 import { hostToContextSnapshot } from "./context-codec.ts";
@@ -159,15 +159,33 @@ export function bindHostCompactHook(options?: {
     };
     slots.set(key, slot);
     rootOwners.set(capture.rootPromptExecutor, slot);
-    slot.context = options?.context?.(raw, () => !slotInvalid(slot) && !signalAborted(capture.ctx));
-    if (slot.context) slot.managed = true;
+    try {
+      slot.context = options?.context?.(raw, () => !slotInvalid(slot) && !signalAborted(capture.ctx));
+      if (slot.context) slot.managed = true;
+    } catch (error) {
+      // No disposable was returned, so the native finally cannot release this
+      // reservation. Do not resurrect an older owner of the same mutable root.
+      slot.disposed = true;
+      if (slots.get(key) === slot) slots.delete(key);
+      if (rootOwners.get(capture.rootPromptExecutor) === slot) rootOwners.delete(capture.rootPromptExecutor);
+      throw error;
+    }
     const note = (stage: "lease-open" | "lease-close" | "preflight-settled", outcome: HostWitnessNote["outcome"]) => {
       try { options?.witness?.({ capability: "context", stage, outcome, agentId: capture.agentId, turnId: capture.turnId, stepId: capture.invocationId }); } catch { /* Metadata does not own a native lease. */ }
     };
     note("lease-open", "observed");
     return {
       ...(slot.context ? { preflight: async () => {
-        try { const result = await slot.context!.preflight(); note("preflight-settled", "returned"); return result; }
+        try {
+          const assertCurrent = () => {
+            if (slot.disposed || signalAborted(capture.ctx) || capture.stepClosed()) throw new ContextFailure("cancelled");
+            if (rootOwners.get(capture.rootPromptExecutor) !== slot) throw new ContextFailure("stale_root");
+          };
+          assertCurrent();
+          const result = await slot.context!.preflight();
+          assertCurrent();
+          note("preflight-settled", "returned"); return result;
+        }
         catch (error) {
           note("preflight-settled", "threw");
           const failure = contextFailure(error);

@@ -12,7 +12,7 @@ import { createServerActivityObserver, HOST_SERVER_ACTIVITY_SYMBOL } from "../sr
 import { bindReceiverModel, HOST_RECEIVER_MODEL_SYMBOL } from "../src/internal/host/receiver-model.node.ts";
 import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 import { ROUTE_SESSION_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, HOST_RESUME_GATE_SYMBOL } from "../src/internal/host/profile.ts";
-import { projectHostWitnessSnapshot } from "@grokbox/runtime-kernel/host-health";
+import { projectHostWitnessSnapshot, hostLeaseOpportunityWindow } from "@grokbox/runtime-kernel/host-health";
 
 /** Inspect actual factory exports. A hand-authored set of fake method names
  * would repeat a typo in the registry and fail to detect the broken contract. */
@@ -61,6 +61,51 @@ for (const [capability, symbol, method] of [
   expect(f.read().capabilities.find(c => c.id === capability)!.handles).toBe("changed"); expect(calls).toBe(0);
   Object.defineProperty(object, method, { configurable: true, writable: true, value: original });
   expect(f.read().capabilities.find(c => c.id === capability)!.handles).toBe("present");
+});
+
+test("a missing lease cannot disappear before the first sample when the detailed ring rolls over", () => {
+  const f = fixture(), tuple = { agentId: randomUUID(), turnId: randomUUID(), stepId: randomUUID() };
+  f.witness.note({ ...tuple, capability: "context", stage: "managed-stream-lease-missing", outcome: "observed" });
+  for (let i = 0; i < 64; i++) f.witness.note({ ...tuple, capability: "context", stage: "managed-stream-lease-present", outcome: "observed" });
+  const sample = f.read();
+  expect(sample.events).toHaveLength(32);
+  expect(sample.events.every(e => e.stage === "managed-stream-lease-present")).toBe(true);
+  expect(hostLeaseOpportunityWindow(sample).state).toBe("violated");
+});
+
+test("cumulative opportunities remain bounded, detached and consistent with the detailed suffix", () => {
+  const f = fixture(), tuple = { agentId: randomUUID(), turnId: randomUUID(), stepId: randomUUID() };
+  for (const stage of ["managed-stream-lease-present", "managed-stream-lease-missing", "managed-stream-lease-present"] as const)
+    f.witness.note({ ...tuple, capability: "context", stage, outcome: "observed" });
+  const s = f.read(), ledger = s.leaseOpportunity!;
+  expect(s.version).toBe(2); expect(projectHostWitnessSnapshot(s)).not.toBeNull();
+  expect(ledger).toMatchObject({ observed: 3, missing: 1, firstMissing: { sequence: 2 }, last: { sequence: 3 } });
+  for (const patch of [{ observed: 2 }, { missing: 0, firstMissing: null }, { firstMissing: ledger.last }, { last: ledger.firstMissing }, { observed: 1e12 }, { privateBody: "private" }])
+    expect(projectHostWitnessSnapshot({ ...s, leaseOpportunity: { ...ledger, ...patch } })).toBeNull();
+  let calls = 0;
+  const bad = { ...ledger }; Object.defineProperty(bad, "firstMissing", { enumerable: true, get() { calls++; return ledger.firstMissing; } });
+  expect(projectHostWitnessSnapshot({ ...s, leaseOpportunity: bad })).toBeNull(); expect(calls).toBe(0);
+  ledger.firstMissing!.correlation = "b".repeat(64); ledger.missing = 0;
+  expect(f.read().leaseOpportunity!.missing).toBe(1); expect(f.read().leaseOpportunity!.firstMissing!.correlation).not.toBe("b".repeat(64));
+});
+
+test("legacy window-only evidence stays readable without acquiring cumulative coverage", () => {
+  const f = fixture(), { leaseOpportunity: _, ...base } = f.read();
+  const old = { ...base, version: 1 as const };
+  expect(projectHostWitnessSnapshot(old)).not.toBeNull(); expect(hostLeaseOpportunityWindow(old).retained).toBeNull();
+  expect(projectHostWitnessSnapshot({ ...base, version: 2 })).toBeNull();
+  expect(projectHostWitnessSnapshot({ ...old, leaseOpportunity: { observed: 0, missing: 0, firstMissing: null, last: null } })).toBeNull();
+});
+
+test("new metadata reads cannot clear the generation's first violated opportunity", () => {
+  const f = fixture(), tuple = { agentId: randomUUID(), turnId: randomUUID(), stepId: randomUUID() };
+  f.witness.note({ ...tuple, capability: "context", stage: "managed-stream-lease-missing", outcome: "observed" });
+  const first = f.read().leaseOpportunity!.firstMissing;
+  for (let i = 0; i < 100; i++) f.witness.note({ ...tuple, capability: "session", stage: "stream-enter", outcome: "observed" });
+  const s = f.read();
+  expect(s.events.some(e => e.capability === "context")).toBe(false);
+  expect(s.opportunityCoverage).toBe("managed-main-stream-entry"); expect(projectHostWitnessSnapshot(s)).not.toBeNull();
+  expect(s.leaseOpportunity!.firstMissing).toEqual(first); expect(hostLeaseOpportunityWindow(s).state).toBe("violated");
 });
 
 test("ownership resume gate remains a separate required original reference", () => {

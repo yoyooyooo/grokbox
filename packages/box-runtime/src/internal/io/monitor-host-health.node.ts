@@ -1,6 +1,6 @@
 import {randomUUID} from "node:crypto";
 import {canonicalJson,sha256Text} from "@grokbox/runtime-kernel/hash";
-import {projectHostHealth,hostHealthConditions,projectHostRuntimeEvidence,hostRuntimeCondition,projectHostWitnessEvidence,hostWitnessCondition,hostWitnessDetectorCondition} from "@grokbox/runtime-kernel/host-health";
+import {projectHostHealth,hostHealthConditions,projectHostRuntimeEvidence,hostRuntimeCondition,projectHostWitnessEvidence,hostWitnessCondition,hostWitnessDetectorCondition,hostLeaseOpportunityCondition} from "@grokbox/runtime-kernel/host-health";
 import type {MonitorSqlite} from "./monitor-sqlite.node.ts";
 /** Runs inside the ORIGINAL evidence/incident/outbox transaction. There is no
  * second collector, incident database, native operation or notification writer. */
@@ -24,10 +24,10 @@ export async function indexHostHealthCondition(db:MonitorSqlite,input:{rootId:st
     const latest = await db.first("SELECT MAX(json_extract(payload,'$.observation.snapshot.sequence')) AS sequence FROM evidence WHERE source_key=? AND ref<>? AND json_extract(payload,'$.name')='host_capability_health' AND json_extract(payload,'$.observation.snapshot.compilation.observationId')=?", [v.sourceInstanceId,input.ref,s.compilation.observationId]);
     if (latest?.sequence != null && Number(latest.sequence) >= s.sequence) return;
   }
-  const conditions=disk?hostHealthConditions(disk):witness?[{cause:"attachment",result:hostWitnessCondition(witness)},{cause:"witness-reader",result:hostWitnessDetectorCondition(witness)}]:[{cause:"compilation",result:hostRuntimeCondition(runtime!)}];
+  const conditions=disk?hostHealthConditions(disk):witness?[{cause:"attachment",result:hostWitnessCondition(witness)},{cause:"witness-reader",result:hostWitnessDetectorCondition(witness)},{cause:"managed-context-lease",result:hostLeaseOpportunityCondition(witness)}]:[{cause:"compilation",result:hostRuntimeCondition(runtime!)}];
   for(const condition of conditions){
     const key=sha256Text(canonicalJson(["host-health",v.installationId,disk?.contractRevision??"host-runtime-v1",condition.cause]));
-    const row=await db.first("SELECT id,last_seen FROM incidents WHERE scope=? AND rule='host_patch_health' AND occurrence_key=? AND status='open'",[input.rootId,key]);
+    const row=await db.first("SELECT id,last_seen,summary_json FROM incidents WHERE scope=? AND rule='host_patch_health' AND occurrence_key=? AND status='open'",[input.rootId,key]);
     if(condition.result==="failed"){
       let id=row?String(row.id):randomUUID();
       if(!row){await db.run("INSERT INTO incidents(id,scope,agent_id,rule,status,first_seen,last_seen,revision,occurrence_key,category,summary_json) VALUES(?,?,NULL,'host_patch_health','open',?,?,1,?,'condition',?)",
@@ -35,6 +35,16 @@ export async function indexHostHealthCondition(db:MonitorSqlite,input:{rootId:st
       else await db.run("UPDATE incidents SET last_seen=MAX(last_seen,?),summary_json=? WHERE id=?",[input.at,canonicalJson([v]),id]);
       await db.run("INSERT OR IGNORE INTO incident_evidence(incident_id,event_ref) VALUES(?,?)",[id,input.ref]);
     }else if(condition.result==="passed"&&row){
+      if(condition.cause==="managed-context-lease"){
+        // Another STEP in the same process, an evicted failure, reader recovery
+        // or a static pass cannot certify that the known violated path is fixed.
+        // Only a later compiled generation with a complete direct positive
+        // opportunity window can close this current-generation condition.
+        let old:unknown;try{old=JSON.parse(String(row.summary_json));}catch{continue;}
+        const prior=Array.isArray(old)?projectHostWitnessEvidence(old[0])?.observation.snapshot?.compilation:null;
+        const next=witness?.observation.snapshot?.compilation;
+        if(!prior||!next||next.observationId===prior.observationId||Date.parse(next.at)<=Date.parse(prior.at))continue;
+      }
       await db.run("UPDATE incidents SET status='resolved',resolved_at=?,last_seen=MAX(last_seen,?),revision=revision+1 WHERE id=?",[input.at,input.at,String(row.id)]);
       await db.run("INSERT OR IGNORE INTO incident_evidence(incident_id,event_ref) VALUES(?,?)",[String(row.id),input.ref]);await input.recovered(String(row.id));
     }

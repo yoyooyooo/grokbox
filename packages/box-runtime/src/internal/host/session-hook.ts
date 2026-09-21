@@ -234,7 +234,11 @@ export function bindHostSessionHook(input: {
           ...(request?.aux ? { auxPurpose: request.aux.purpose, parentStepId: request.aux.parent.stepId } : {}),
         });
         if (stepId && agentId && turnId && !request?.aux) {
-          noteHostManagedStep({ agentId, turnId, stepId });
+          const hasLease = noteHostManagedStep({ agentId, turnId, stepId });
+          // The managed stream owner observes the original compact registry at
+          // its own entry. This is a direct missing/present fact, not an absent
+          // log inference, modeld admission or permission to alter execution.
+          witness({ capability: "context", stage: hasLease ? "managed-stream-lease-present" : "managed-stream-lease-missing", outcome: "observed", agentId, turnId, stepId });
           runObserver?.progress("model");
         }
         const handle = session.stream(request);

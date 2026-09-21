@@ -21,14 +21,14 @@ export async function preparePublicHost(f: Fixture, extra = "setInterval(() => {
 }
 /** Executes ONLY the independently authored public fixture. No real Host,
  * account, native Gateway or provider is consulted by these disposable nodes. */
-export async function launchPublicHost(f: Fixture) {
+export async function launchPublicHost(f: Fixture, mode: "identity" | "route" = "identity") {
   const runRoot = f.ports.runtime!.runRoot!, marker = join(runRoot, "state/preload-marker.json");
   await mkdir(dirname(marker), { recursive: true, mode: 0o700 });
   const child = spawn(process.execPath, [f.paths.source], {
     env: { PATH: process.env.PATH, HOME: f.root,
       NODE_OPTIONS: `--require=${join(dirname(process.env.GROKBOX_TEST_CLI_ENTRY!), "preload.cjs")}`,
       GROKBOX_HOST_BUNDLE: f.paths.source, GROKBOX_PATCH_PROFILE: f.paths.profile,
-      GROKBOX_PRELOAD_MARKER: marker, GROKBOX_PRELOAD_MODE: "identity", GROKBOX_OPERATION_ID: randomUUID(),
+      GROKBOX_PRELOAD_MARKER: marker, GROKBOX_PRELOAD_MODE: mode, GROKBOX_OPERATION_ID: randomUUID(),
       GROKBOX_BOX_RUNTIME_ROOT: f.root, GROKBOX_RUN_ROOT: runRoot },
     stdio: ["ignore", "pipe", "pipe"],
   });

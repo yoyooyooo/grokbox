@@ -185,6 +185,17 @@ test("management Scope owns configured collection, settles on close and resumes 
   } finally { await f.close(); }
 });
 
+test("fresh direct clients can read the same retained domain after repeated same-port fixture restarts", async () => {
+  const f=await webFixture(origin);
+  try {
+    const seeded=await seedObservations(f);await seeded.sample(seeded.at+2,"temporal");
+    const expected=(await f.client().incidents()).data.incidents.map(r=>r.id).sort();assert.ok(expected.length>0);
+    for(let i=0;i<12;i++){
+      await f.restart();assert.deepEqual((await f.client().incidents()).data.incidents.map(r=>r.id).sort(),expected);
+    }
+  }finally{await f.close();}
+});
+
 test("a competing management worker remains blocked without disrupting the first owner or API", async () => {
   const f = await webFixture(origin); let other: Awaited<ReturnType<typeof startManagementServer>> | undefined;
   try {

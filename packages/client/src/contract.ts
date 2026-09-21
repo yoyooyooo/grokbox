@@ -16,6 +16,7 @@ export * from "./protection-contract.ts";
 export * from "./lifecycle-contract.ts";
 export * from "./context-contract.ts";
 export { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
+export { hostLeaseOpportunityWindow } from "@grokbox/runtime-kernel/host-health";
 export const API_VERSION = 1;
 export const REQUEST_MAX_BYTES = 64 * 1024;
 export const RESPONSE_MAX_BYTES = 256 * 1024;

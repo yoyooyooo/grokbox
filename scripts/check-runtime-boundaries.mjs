@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,8 @@ const rootIdx = args.indexOf("--root");
 const root = resolve(rootIdx >= 0 ? args[rootIdx + 1] : repoRoot);
 const json = args.includes("--json");
 const failures = [];
+const ownedProofDirectories = [];
+process.once("exit", () => { for (const dir of ownedProofDirectories) rmSync(dir, { recursive: true, force: true }); });
 
 function fail(message, extra = {}) {
   failures.push({ message, ...extra });
@@ -284,11 +286,14 @@ for (const dir of productionDirs) {
 }
 
 const preload = join(boxRoot, "src", "preload.ts");
-if (existsSync(preload)) {
+// Known forbidden edges already reject a fixture. Runtime import evidence is
+// required for otherwise admissible graphs, not for re-proving a static refusal
+// by launching a compiler for every negative edge.
+if (existsSync(preload) && failures.length === 0) {
   const esbuild = join(repoRoot, "node_modules", ".bin", "esbuild");
   if (!existsSync(esbuild)) fail("missing esbuild evidence");
   else {
-    const dir = mkdtempSync(join(tmpdir(), "t20-preload-"));
+    const dir = mkdtempSync(join(tmpdir(), "t20-preload-")); ownedProofDirectories.push(dir);
     const outfile = join(dir, "preload.cjs");
     const metafile = join(dir, "meta.json");
     const ran = spawnSync(esbuild, [preload, "--bundle", "--platform=node", "--format=cjs", `--outfile=${outfile}`, `--metafile=${metafile}`], {

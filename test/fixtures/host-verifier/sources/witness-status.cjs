@@ -56,6 +56,29 @@ const server = require("node:http").createServer(async (req, res) => {
           const value = inference.createSession(() => {}, { agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", invocationId: "synthetic-turn" });
           if (!value.native) throw Error("native passthrough changed");
         }
+      } else if (args.action === "managed-stream") {
+        // Independently drive the actual managed main stream, optionally without
+        // its separate native compact lease. There is deliberately no modeld,
+        // Bot database, credential or Provider in this disposable test process.
+        const count = Math.min(12, Math.max(1, args.count || 1));
+        for (let i = 0; i < count; i++) {
+          const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", turnId = require("node:crypto").randomUUID(), stepId = require("node:crypto").randomUUID();
+          const session = inference.createSession(() => {}, { agentId, invocationId: turnId });
+          if (typeof session.getExecutor !== "function") throw Error("managed session missing");
+          const executor = session.getExecutor([{ role: "system", content: "synthetic" }, { role: "user", content: "owned test" }]);
+          const signal = new AbortController().signal;
+          let lease;
+          if (args.lease === true) lease = globalThis[Symbol.for("grokbox.box-runtime.host-compact.v1")]({
+            agentId, turnId, invocationId: stepId, rootPromptExecutor: executor, stateHandler: {}, ctx: { signal }, stepClosed: () => false,
+            orchestrator: { handleSummarization: async () => undefined }
+          });
+          try {
+            const result = executor.stream({ signal }, stepId, [], { maxTokens: 16 });
+            const response = result.response.catch(() => undefined);
+            try { for await (const _ of result.fullStream) {} } catch {}
+            await response;
+          } finally { lease?.[Symbol.dispose](); }
+        }
       } else if (args.action === "delay") delay = Math.min(5000, Math.max(0, args.ms || 0));
       else if (args.action !== "stats") throw Error("unknown test control");
       res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ nativeReads, getterReads, recorded })); return;

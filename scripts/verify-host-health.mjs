@@ -22,7 +22,7 @@ const suites={
   "packages/box-runtime/test/compile-receipt.test.ts","packages/box-runtime/test/preload-marker.test.ts","packages/box-runtime/test/hook.test.ts",
   "packages/box-runtime/test/architecture.test.ts","packages/box-runtime/test/legacy-executor-removed.test.ts",
   "packages/box-runtime/test/model-management.test.ts","packages/box-runtime/test/management-gateway.test.ts",
-  "packages/box-runtime/test/context-maintenance-host.test.ts","packages/box-runtime/test/host-compact-lifetime.test.ts","packages/box-runtime/test/host-compact-coordination.test.ts",
+  "packages/box-runtime/test/context-maintenance-host.test.ts","packages/box-runtime/test/host-lease-runtime.test.ts","packages/box-runtime/test/host-compact-lifetime.test.ts","packages/box-runtime/test/host-compact-coordination.test.ts",
   "packages/box-runtime/test/host-ownership-read.test.ts","packages/box-runtime/test/hcr-capabilities.test.ts","packages/box-runtime/test/hcr-profile-upgrade.test.ts",
   "test/verification-source.test.js","test/cli.test.ts","test/skills.test.ts"],
  integration:["test/sqlite-read-scheduling.test.ts","test/host-witness.test.ts","test/host-compilation.test.ts","test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts",

@@ -80,6 +80,12 @@ Node对子进程输入/输出/权限/哈希和job/attempt/build/schema/checker�
 
 第四项 `context.lease-finally@1` 已通过原Node/Rust、provenance/OBS及共享查询路径，实际61片候选四项passed。检查绑定同一资源环境、同步disposer、登记先于preflight、结果等待及finally关闭；资源helper有独立ABI测试，不凭名字猜语义。历史health-v1可读但不冒充新health-v2义务。反例、当前来源和提交时验证限制见[lease静态报告](../reports/2026-09-21-host-lease-finally.md)。下一批继续运行时取得/释放与独立调用机会，静态词法寿命不证明所有异步副作用已停止。
 
+## 运行 lease 与直接调用机会（2026-09-21）
+
+原 compact hook 的预留/工厂失败/等待前后/释放已由真实变换运行反例覆盖。managed 主流从独立入口直接检查原 lease registry；固定大小同代累计记录保留首次missing，不因首次采样前详细环滚动而丢失。原 Server、provenance/OBS 和 CLI/Web 已接通；同代计数或首次失败倒退拒绝，较新编译代须有直接正机会才能修复已知缺失。固定535项、Rust39及内部Chrome67等实际范围见[运行机会报告](../reports/2026-09-21-host-lease-opportunities.md)。
+
+**最终版本收束要求：** 用户要求彻底翻新、无旧实现或兼容运行路径。接下来的清理不得继续以“历史可读”为理由扩大实时合同的多版本分支，也不得保留旧Host元组/旧配方作为失败回退。历史操作、私有材料与已有证据不因删代码而销毁；不能把旧证据自动改写为当前资格。此要求沿原owner落实，不另建兼容服务。
+
 ## 同一工作包的顺序与出口
 
 ### A. 先收实际原生依赖风险

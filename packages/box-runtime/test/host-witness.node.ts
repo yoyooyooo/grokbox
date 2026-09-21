@@ -10,7 +10,7 @@ import { observeHostWitness } from "../src/internal/io/host-witness.node.ts";
 import { inspectPid } from "../src/internal/host/self-identity.node.ts";
 import { bindHostCompactHook } from "../src/internal/host/compact.ts";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
-import { projectHostWitnessSnapshot, projectHostWitnessObservation, type HostWitnessNote, type HostWitnessObservation } from "@grokbox/runtime-kernel/host-health";
+import { projectHostWitnessSnapshot, projectHostWitnessObservation, hostLeaseOpportunityWindow, type HostWitnessNote, type HostWitnessObservation } from "@grokbox/runtime-kernel/host-health";
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 async function until<T>(read: () => Promise<T>, ok: (v: T) => boolean, ms = 10000): Promise<T> { let last: unknown; const end = Date.now() + ms; do { try { const v = await read(); if (ok(v)) return v; last = v; } catch(e) { last = String(e); } await delay(20); } while(Date.now() < end); throw Error(`witness_deadline:${JSON.stringify(last)}`); }
 type Fixture = Awaited<ReturnType<typeof hostWitnessFixture>>;
@@ -220,6 +220,84 @@ test("event rings cannot hide an interior gap, fabricate an outcome or erase the
     assert.ok(projectHostWitnessSnapshot(ring));
     assert.equal(projectHostWitnessSnapshot({ ...ring, eventsDropped: 0 }), null);
     assert.equal(projectHostWitnessSnapshot({ ...ring, events: ring.events.slice(1) }), null);
+  } finally { await f.close(); }
+});
+
+test("actual managed-stream owner observes its missing lease independently of compact registration and preserves the incident across ring eviction", async () => {
+  const f = await hostWitnessFixture("https://witness-lease.example.test", {}, "route");
+  try {
+    await until(() => f.client().hostHealth(), v => v.data.latest?.analysis === "passed" && v.data.witness?.state === "current" && v.data.runtimeIntake === "committed");
+    const before = new Set((await rows(f)).map(r => r.id));
+    await f.control("managed-stream", { lease: false });
+    const fault = (await until(() => observation(f), o => hostLeaseOpportunityWindow(o?.snapshot ?? null).missing > 0))!.snapshot!;
+    assert.equal(fault.opportunityCoverage, "managed-main-stream-entry");
+    const incident = (await until(() => rows(f), r => r.some(v => !before.has(v.id) && v.status === "open"))).find(r => !before.has(r.id))!;
+    const work = (await f.observations.notificationWork()).length;
+    await f.control("managed-stream", { lease: true, count: 12 });
+    await until(() => observation(f), o => { const w = hostLeaseOpportunityWindow(o?.snapshot ?? null); return w.missing === 0 && w.present > 0 && w.omitted > 0; });
+    await f.restart(); await until(() => f.client().hostHealth(), v => v.data.witness?.state === "current" && v.data.runtimeIntake === "committed");
+    assert.equal((await rows(f)).find(r => r.id === incident.id)!.status, "open");
+    assert.equal((await f.observations.notificationWork()).length, work);
+    // A new compiled generation still needs an actual positive opportunity;
+    // restart, idle handles and a missing read are not that evidence.
+    const oldId = fault.compilation.observationId;
+    await f.restartNative(); await until(() => observation(f), o => !!o?.snapshot && o.snapshot.compilation.observationId !== oldId);
+    assert.equal((await rows(f)).find(r => r.id === incident.id)!.status, "open");
+    await f.control("managed-stream", { lease: true });
+    await until(() => rows(f), r => r.find(v => v.id === incident.id)?.status === "resolved");
+    assert.equal(f.state.nativeCalls, 0); assert.equal((await f.control("stats")).nativeReads, 0);
+    assert.equal((await current(f))!.snapshot!.qualified, false);
+  } finally { await f.close(); }
+});
+
+test("direct opportunity contract rejects uncorrelated, wrong-mode and self-contradictory coverage without inventing an expected count", async () => {
+  const f=await hostWitnessFixture("https://witness-opportunity-contract.example.test",{},"route");
+  try {
+    await current(f);await f.control("managed-stream",{lease:false});
+    const s=(await until(()=>observation(f),o=>hostLeaseOpportunityWindow(o?.snapshot??null).missing>0))!.snapshot!;
+    assert.equal(projectHostWitnessSnapshot({...s,opportunityCoverage:"not-observed"}),null);
+    for(const change of [{correlation:null},{outcome:"threw"}])assert.equal(projectHostWitnessSnapshot({...s,events:s.events.map(e=>e.stage==="managed-stream-lease-missing"?{...e,...change}:e)}),null);
+    assert.equal(projectHostWitnessSnapshot({...s,compilation:{...s.compilation,mode:"identity"}}),null);
+    const {leaseOpportunity: _ledger, ...legacy} = s;
+    const empty={...legacy,version:1 as const,events:[],eventsDropped:0,opportunityCoverage:"not-observed" as const};
+    assert.ok(projectHostWitnessSnapshot(empty));assert.equal(hostLeaseOpportunityWindow(empty).state,"not-observed");
+    assert.equal(projectHostWitnessSnapshot({...s,events:[],eventsDropped:0,opportunityCoverage:"not-observed"}),null);
+  }finally{await f.close();}
+});
+
+test("an unsampled missing lease survives detail eviction and is indexed when the management observer returns", async () => {
+  const f = await hostWitnessFixture("https://witness-unsampled.example.test", {}, "route");
+  try {
+    await current(f); await f.server.close();
+    const before = new Set((await rows(f)).map(r => r.id));
+    await f.control("managed-stream", { lease: false });
+    await f.control("managed-stream", { lease: true, count: 12 });
+    await f.restart();
+    const sample = (await until(() => observation(f), o => hostLeaseOpportunityWindow(o?.snapshot ?? null).retained?.missing === 1))!.snapshot!;
+    const window = hostLeaseOpportunityWindow(sample);
+    assert.equal(window.missing, 0); assert.ok(window.omitted > 0); assert.equal(window.state, "violated");
+    assert.equal(window.retained!.observed, 13); assert.equal(window.retained!.firstMissing!.stage, "managed-stream-lease-missing");
+    const incident = (await until(() => rows(f), r => r.some(v => !before.has(v.id) && v.status === "open"))).find(r => !before.has(r.id))!;
+    const work = (await f.observations.notificationWork()).length;
+    await f.restart(); await until(() => f.client().hostHealth(), v => v.data.witness?.state === "current" && v.data.runtimeIntake === "committed");
+    assert.equal((await rows(f)).find(r => r.id === incident.id)!.status, "open");
+    assert.equal((await f.observations.notificationWork()).length, work); assert.equal(f.process.child.exitCode, null);
+    assert.equal(f.state.nativeCalls, 0); assert.equal((await f.control("stats")).nativeReads, 0);
+  } finally { await f.close(); }
+});
+
+test("a current witness cannot erase its earlier observed total or missing-lease identity", async () => {
+  const f = await hostWitnessFixture("https://witness-ledger-regression.example.test", {}, "route");
+  try {
+    await current(f); await f.control("managed-stream", { lease: false }); await f.control("managed-stream", { lease: true, count: 12 });
+    await until(() => observation(f), o => hostLeaseOpportunityWindow(o?.snapshot ?? null).retained?.observed === 13);
+    f.probeState.decorate = r => {
+      const value = r.value as any, opportunities = value.events.filter((e:any) => e.stage === "managed-stream-lease-present");
+      return { ...r, value: { ...value, leaseOpportunity: { observed: opportunities.length, missing: 0, firstMissing: null, last: opportunities.at(-1) } } };
+    };
+    await until(() => observation(f), o => o?.state === "invalid");
+    f.probeState.decorate = undefined; await current(f);
+    assert.equal(hostLeaseOpportunityWindow((await current(f))!.snapshot).retained!.missing, 1);
   } finally { await f.close(); }
 });
 

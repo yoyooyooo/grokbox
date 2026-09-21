@@ -10,7 +10,7 @@ import { VerifierFailure } from "../io/host-verifier/stdio.node.ts";
 import { readHostArtifacts, HostSourceFailure, type HostArtifactPaths, type HostArtifacts } from "../io/host-artifact-source.node.ts";
 import { readHostHealthJournal, retainHostHealthEvidence, acknowledgeHostHealthEvidence, type HostHealthJournal, readHostRuntimeJournal, retainHostRuntimeEvidence, acknowledgeHostRuntimeEvidence, type HostRuntimeJournal } from "../io/provenance.node.ts";
 import { observeHostCompilation, type CompilationReadPorts } from "../io/host-compilation.node.ts";
-import { observeHostWitness, type HostWitnessRead } from "../io/host-witness.node.ts";
+import { observeHostWitness, type HostWitnessRead, type HostWitnessReadCursor } from "../io/host-witness.node.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout, assertSafeDirectory } from "../io/config-layout.node.ts";
@@ -67,7 +67,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   let pending:Pending|null=null, active:Pending|null=null;
   const cache=new Map<string,StaticAnalysis>();
   let runtimeRoot=ports.runtime?.runRoot??ephemeralRuntimeRoot(), runtimeKey:string|null=null;
-  let witnessKey: string | null = null, previousWitness: { observationId: string; sequence: number } | undefined;
+  let witnessKey: string | null = null, previousWitness: HostWitnessReadCursor | undefined;
   // Current in-memory observations can lead the serialized durable writer.
   // One lane completing intake cannot certify another lane's queued change.
   let observedRuntimeKey: string | null = null, observedWitnessKey: string | null = null;
@@ -167,10 +167,11 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     const observation = await observeHostWitness({ root: input.root, runRoot: selectedRoot, target: paths.source,
       compilation, read: input.readWitness, previous: previousWitness, inspect: ports.runtime }, controller.signal);
     if (closed || !enabled || !stillSelected()) return;
-    if (observation.snapshot) previousWitness = { observationId: observation.snapshot.compilation.observationId, sequence: observation.snapshot.sequence };
+    if (observation.snapshot) previousWitness = { observationId: observation.snapshot.compilation.observationId, sequence: observation.snapshot.sequence,
+      eventTotal: observation.snapshot.eventsDropped + observation.snapshot.events.length, ...(observation.snapshot.leaseOpportunity ? { leaseOpportunity: observation.snapshot.leaseOpportunity } : {}) };
     const s = observation.snapshot;
     // Challenge/sequence/heartbeat are read freshness, not new business evidence.
-    const key = canonicalJson([selectedRoot, observation.state, observation.reason, s ? [s.compilation, s.capabilities, s.events, s.eventsDropped, s.untrackedSlices] : null]);
+    const key = canonicalJson([selectedRoot, observation.state, observation.reason, s ? [s.version, s.compilation, s.capabilities, s.events, s.eventsDropped, s.untrackedSlices, s.leaseOpportunity ?? null] : null]);
     observedWitnessKey = key;
     status = { ...status, witness: observation, ...(key !== witnessKey ? { runtimeIntake: "not-observed" as const } : {}) };
     await serial(async () => {

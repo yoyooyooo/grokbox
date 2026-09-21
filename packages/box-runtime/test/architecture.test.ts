@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,8 @@ const checker = join(repoRoot, "scripts", "check-runtime-boundaries.mjs");
 // The checker owns a 5s import probe plus compilation. Its test owner must
 // allow that bounded proof to finish rather than racing it at the same 5s.
 const CHECKER_TEST_TIMEOUT_MS = 15_000;
+const ownedFixtures: string[] = [];
+afterEach(async () => { for (const root of ownedFixtures.splice(0)) await rm(root, { recursive: true, force: true }); });
 
 async function runChecker(root: string, env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
   // Retain v2's settled Node child and OBS's structured-verdict requirement.
@@ -33,7 +35,10 @@ async function put(root: string, rel: string, text: string): Promise<void> {
 }
 
 async function fixture(changes: Record<string, string> = {}, omitSource = false): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "t20-boundary-"));
+  const root = await mkdtemp(join(tmpdir(), "t20-boundary-")); ownedFixtures.push(root);
+  // This is a standalone project, not a child of the shared machine's /tmp
+  // configuration tree. Stop compiler config discovery at its actual root.
+  await put(root, "tsconfig.json", '{"compilerOptions":{}}\n');
   await put(root, "packages/box-runtime/package.json", `${JSON.stringify({
     name: "@grokbox/box-runtime",
     private: true,

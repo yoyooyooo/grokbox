@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { Badge, Card, Empty, ErrorNotice, Heading, SourceTime } from "../components/ui.tsx";
 import { readView, denied, viewError } from "../lib/views.ts";
-import type { HostHealthView } from "@grokbox/client";
+import { hostLeaseOpportunityWindow, type HostHealthView } from "@grokbox/client";
 
 export const Route=createFileRoute("/_console/host-health")({
  loader:({context})=>context.bootstrap.session?.capabilities.includes("system.read")
@@ -10,6 +10,7 @@ export const Route=createFileRoute("/_console/host-health")({
 });
 function HostHealth(){
  const view=Route.useLoaderData(),router=useRouter(),health=view.data,evidence=health?.latest,runtime=health?.runtime,receipt=runtime?.receipt,witness=health?.witness,handles=witness?.snapshot;
+ const opportunities=hostLeaseOpportunityWindow(handles??null);
  return <><Heading eyebrow="HOST COMPATIBILITY" title="Host patch health">Disk candidates, static checks and the running Host are separate facts. This page reads retained observations; refreshing never adopts a profile, restarts a Host or calls a model.</Heading>
  <ErrorNotice error={viewError(view)}/>
  <div className="toolbar"><button onClick={()=>router.invalidate()}>Refresh health observations</button><Link to="/incidents" search={{}}>Inspect persistent incidents</Link></div>
@@ -32,7 +33,12 @@ function HostHealth(){
  <p className="muted">A fresh challenge crossed the native status wrapper and checked the original function references. This is not proof that every native consumer uses them, or that a model or recovery succeeded. Missing or replaced references never grant repair authority.</p></div></Card>
  <Card title="Recorded execution boundaries"><div data-testid="host-health-witness-events">
  {!handles?<Empty>No verified current boundary window. A missing metadata read does not erase retained incident evidence.</Empty>:!handles.events.length?<Empty>No execution boundary observed. No business or model call is started to fill this gap.</Empty>:<><p className="muted">Showing {Math.min(8,handles.events.length)} of {handles.events.length} retained events; {handles.eventsDropped} earlier events omitted by the bounded Host window.</p><div className="table-wrap"><table><thead><tr><th>Capability / boundary</th><th>Result</th><th>Observed</th></tr></thead><tbody>{handles.events.slice(-8).map(e=><tr key={e.sequence}><td>{e.capability} · {e.stage}</td><td>{e.outcome}</td><td><SourceTime at={e.atMs}/></td></tr>)}</tbody></table></div></>}
- <p className="muted">Trigger opportunities are not independently observed here. A zero count cannot prove bypass, and a recognized failure predicate cannot prove that its caller stopped retrying. Correlated boundary records are not whole-path qualification.</p></div></Card>
+ <dl data-testid="host-health-opportunities"><dt>Managed main-stream lease checks</dt><dd><Badge tone={opportunities.state==="violated"?"warn":"neutral"}>{opportunities.state}</Badge></dd>
+ <dt>Directly observed in this window</dt><dd>{opportunities.present} present · {opportunities.missing} missing</dd>
+ <dt>Retained since this compilation</dt><dd>{opportunities.retained?`${opportunities.retained.observed} direct checks · ${opportunities.retained.missing} missing leases`:"Not supplied by this witness version"}</dd>
+ {opportunities.retained?.firstMissing&&<><dt>First retained missing lease</dt><dd>Boundary {opportunities.retained.firstMissing.sequence} · <SourceTime at={opportunities.retained.firstMissing.atMs}/></dd></>}
+ <dt>Opportunity scope</dt><dd>{handles?.opportunityCoverage??"not-observed"}</dd></dl>
+ <p className="muted">The managed main-stream entry checks the separate native lease registry directly. This does not prove Provider admission, every TURN opportunity, or all-path correctness. Zero observations are not proof of bypass. Version 2 retains the first failure and finite cumulative counts even before the first sample or after detail eviction. These counts cover recorded checks, not inferred expected calls. Later successful STEPs do not repair a known violation in the same Host generation; inspect persistent incidents for retained failures.</p></div></Card>
  {!evidence?<Card title="Candidate evidence"><Empty>No candidate evidence has been retained. Disabled intent is not a repaired Host.</Empty></Card>:<>
  <Card title="Disk candidate compatibility"><div data-testid="host-health-candidate"><Badge tone={health.assessment==="blocked"?"warn":"neutral"}>{health.assessment}</Badge><dl>
  <dt>Source set</dt><dd>{evidence.sourceState}</dd><dt>Exact production recipe</dt><dd>{evidence.applicability}</dd><dt>Static analysis</dt><dd>{evidence.analysis}</dd>

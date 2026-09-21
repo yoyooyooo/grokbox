@@ -50,7 +50,12 @@ export async function webFixture(origin: string) {
   await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId: INSTALLATION, role: "box", root, daemon: { tokenSha256: hash(OWNER) } });
   await publishLayoutAliases(root, root, INSTALLATION);
   return { root, store, observations, state, native, get server() { return server; },
-    client: (credential = OWNER) => new ManagementClient({ baseUrl: server.url, installationId: INSTALLATION, credential: async () => credential }),
+    // These short-lived direct callers verify domain persistence across exact
+    // same-port restarts. Do not carry Node's global idle socket pool from the
+    // killed fixture generation into the next one. Browser transport remains
+    // unchanged, and the production client still reports network failures.
+    client: (credential = OWNER) => new ManagementClient({ baseUrl: server.url, installationId: INSTALLATION, credential: async () => credential,
+      fetch: (async (url, init) => { const headers = new Headers(init?.headers); headers.set("connection", "close"); return fetch(url, { ...init, headers }); }) as typeof fetch }),
     restart: async () => { await server.close(); server = await startManagementServer(options); },
     close: async () => { await server.close(); await rm(root, { recursive: true, force: true }); },
   };

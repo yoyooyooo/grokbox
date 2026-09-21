@@ -107,6 +107,8 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
     expect(root.getMessages().at(-1)).toEqual(oldMessages.at(-1));
     if (rotateAfterPreflight) environment.OWNED_KEY = "rotated-synthetic-credential";
     const result = executor.stream({ signal: abort.signal }, stepId, [], { maxTokens: 512 });
+    expect(notes.filter(n => n.stage === "managed-stream-lease-present")).toMatchObject([{ capability: "context", outcome: "observed", agentId: A, turnId, stepId }]);
+    expect(notes.some(n => n.stage === "managed-stream-lease-missing")).toBe(false);
     if (rotateAfterPreflight || scenario === "main-503") {
       const response = result.response.catch(error => error);
       await expect((async () => { for await (const _ of result.fullStream) { /* must refuse before another HTTP */ } })()).rejects.toBeDefined();

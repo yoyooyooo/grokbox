@@ -7,14 +7,18 @@ export type HostWitnessCapability = typeof HOST_WITNESS_CAPABILITIES[number];
 export const HOST_WITNESS_REQUIRED: Record<"identity" | "route", readonly HostWitnessCapability[]> = {
   identity: ["session", "ownership"], route: ["session", "retry", "context", "ownership", "run-observer", "alert-observer"],
 };
-export const HOST_WITNESS_STAGES = ["session-enter", "native-selected", "managed-selected", "stream-enter", "terminal-consumed", "managed-failure-recognized", "lease-open", "lease-close", "preflight-settled", "checkpoint-settled"] as const;
+export const HOST_WITNESS_STAGES = ["session-enter", "native-selected", "managed-selected", "stream-enter", "terminal-consumed", "managed-failure-recognized", "lease-open", "lease-close", "preflight-settled", "checkpoint-settled", "managed-stream-lease-present", "managed-stream-lease-missing"] as const;
 export type HostWitnessStage = typeof HOST_WITNESS_STAGES[number];
 export type HostWitnessNote = { capability: HostWitnessCapability; stage: HostWitnessStage; outcome: "observed" | "returned" | "threw"; agentId?: string; turnId?: string; stepId?: string };
 export type HostWitnessEvent = { sequence: number; atMs: number; capability: HostWitnessCapability; stage: HostWitnessStage; outcome: HostWitnessNote["outcome"]; correlation: string | null };
 export type HostWitnessRow = { id: HostWitnessCapability; required: boolean; missingSlices: string[]; handles: "present" | "absent" | "changed" | "not-required" };
-export type HostWitnessSnapshot = { version: 1; challenge: string; sequence: number; observedAtMs: number; compilation: HostCompileReceipt;
+/** A constant-size, same-generation record of direct observations. It survives
+ * detail-ring eviction; it is not an expected-invocation counter or permission. */
+export type HostLeaseOpportunityLedger = { observed: number; missing: number; firstMissing: HostWitnessEvent | null; last: HostWitnessEvent | null };
+export type HostWitnessSnapshot = { version: 1 | 2; challenge: string; sequence: number; observedAtMs: number; compilation: HostCompileReceipt;
   capabilities: HostWitnessRow[]; events: HostWitnessEvent[]; eventsDropped: number; untrackedSlices: string[];
-  coverage: "registered-handles-and-recorded-boundaries"; opportunityCoverage: "not-observed"; qualified: false };
+  leaseOpportunity?: HostLeaseOpportunityLedger;
+  coverage: "registered-handles-and-recorded-boundaries"; opportunityCoverage: "not-observed" | "managed-main-stream-entry"; qualified: false };
 export type HostWitnessObservation = { state: "not-observed" | "current" | "unavailable" | "invalid" | "different-generation";
   reason: "not-requested" | "no-current-compilation" | "unsupported-reader" | "read-unavailable" | "invalid-reply" | "generation-changed" | "matched";
   observedAtMs: number; snapshot: HostWitnessSnapshot | null; qualified: false };
@@ -31,9 +35,10 @@ function data(v: unknown, keys: readonly string[]): Record<string, any> | null {
 }
 function ids(v: unknown): v is string[] { return Array.isArray(v) && v.length <= 64 && v.every(s => typeof s === "string" && /^[a-z][a-z0-9-]{0,79}$/.test(s)) && new Set(v).size === v.length; }
 export function projectHostWitnessSnapshot(raw: unknown): HostWitnessSnapshot | null {
-  const v = data(raw, ["version", "challenge", "sequence", "observedAtMs", "compilation", "capabilities", "events", "eventsDropped", "untrackedSlices", "coverage", "opportunityCoverage", "qualified"]);
-  if (!v || v.version !== 1 || !uuid(v.challenge) || !integer(v.sequence, 1) || !integer(v.observedAtMs, 1) || !integer(v.eventsDropped)
-    || v.coverage !== "registered-handles-and-recorded-boundaries" || v.opportunityCoverage !== "not-observed" || v.qualified !== false || !ids(v.untrackedSlices)
+  const version = raw && typeof raw === "object" ? Object.getOwnPropertyDescriptor(raw, "version")?.value : undefined;
+  const v = data(raw, ["version", "challenge", "sequence", "observedAtMs", "compilation", "capabilities", "events", "eventsDropped", "untrackedSlices", "coverage", "opportunityCoverage", "qualified", ...(version === 2 ? ["leaseOpportunity"] : [])]);
+  if (!v || ![1, 2].includes(v.version) || !uuid(v.challenge) || !integer(v.sequence, 1) || !integer(v.observedAtMs, 1) || !integer(v.eventsDropped)
+    || v.coverage !== "registered-handles-and-recorded-boundaries" || !["not-observed", "managed-main-stream-entry"].includes(v.opportunityCoverage) || v.qualified !== false || !ids(v.untrackedSlices)
     || !Array.isArray(v.capabilities) || v.capabilities.length !== HOST_WITNESS_CAPABILITIES.length || !Array.isArray(v.events) || v.events.length > 32) return null;
   const compilation = projectHostCompileReceipt(v.compilation);
   if (!compilation || compilation.patch !== "applied" || compilation.nativeCompilation !== "returned" || Date.parse(compilation.at) > v.observedAtMs) return null;
@@ -56,13 +61,41 @@ export function projectHostWitnessSnapshot(raw: unknown): HostWitnessSnapshot | 
       || !HOST_WITNESS_CAPABILITIES.includes(e.capability) || !HOST_WITNESS_STAGES.includes(e.stage)
       || !["observed", "returned", "threw"].includes(e.outcome) || !(e.correlation === null || hash(e.correlation))) return null;
     const allowed = e.capability === "session" ? ["session-enter", "native-selected", "managed-selected", "stream-enter", "terminal-consumed"]
-      : e.capability === "retry" ? ["managed-failure-recognized"] : e.capability === "context" ? ["lease-open", "lease-close", "preflight-settled", "checkpoint-settled"] : [];
-    const outcomes = ["session-enter", "managed-selected", "stream-enter", "managed-failure-recognized", "lease-open"].includes(e.stage)
+      : e.capability === "retry" ? ["managed-failure-recognized"] : e.capability === "context" ? ["lease-open", "lease-close", "preflight-settled", "checkpoint-settled", "managed-stream-lease-present", "managed-stream-lease-missing"] : [];
+    const outcomes = ["session-enter", "managed-selected", "stream-enter", "managed-failure-recognized", "lease-open", "managed-stream-lease-present", "managed-stream-lease-missing"].includes(e.stage)
       ? ["observed"] : ["native-selected", "lease-close"].includes(e.stage) ? ["returned"] : ["returned", "threw"];
     if (!allowed.includes(e.stage) || !outcomes.includes(e.outcome)) return null;
+    if (isLeaseOpportunity(e as HostWitnessEvent) && (compilation.mode !== "route" || e.correlation === null)) return null;
     events.push(e as HostWitnessEvent); previous = e.sequence; previousAt = e.atMs;
   }
-  return { ...v, compilation, capabilities, events, untrackedSlices: [...v.untrackedSlices] } as HostWitnessSnapshot;
+  const ledger = v.version === 2 ? projectLeaseLedger(v.leaseOpportunity, compilation, v.observedAtMs, events, v.eventsDropped) : undefined;
+  if (v.version === 2 && !ledger) return null;
+  if ((v.opportunityCoverage === "managed-main-stream-entry") !== (ledger ? ledger.observed > 0 : events.some(isLeaseOpportunity))) return null;
+  return { ...v, compilation, capabilities, events, ...(ledger ? { leaseOpportunity: ledger } : {}), untrackedSlices: [...v.untrackedSlices] } as HostWitnessSnapshot;
+}
+function projectLeaseLedger(raw: unknown, compilation: HostCompileReceipt, at: number, events: HostWitnessEvent[], dropped: number): HostLeaseOpportunityLedger | null {
+  const v = data(raw, ["observed", "missing", "firstMissing", "last"]), total = dropped + events.length;
+  if (!v || !integer(v.observed) || v.observed > total || !integer(v.missing) || v.missing > v.observed) return null;
+  const entry = (value: unknown): HostWitnessEvent | null => {
+    const e = data(value, ["sequence", "atMs", "capability", "stage", "outcome", "correlation"]);
+    if (!e || !integer(e.sequence, 1) || e.sequence > total || !integer(e.atMs, Date.parse(compilation.at)) || e.atMs > at
+      || !isLeaseOpportunity(e as HostWitnessEvent) || e.outcome !== "observed" || !hash(e.correlation)) return null;
+    return e as HostWitnessEvent;
+  };
+  const firstMissing = v.firstMissing === null ? null : entry(v.firstMissing), last = v.last === null ? null : entry(v.last);
+  if ((v.missing > 0) !== (firstMissing !== null) || (v.observed > 0) !== (last !== null)
+    || v.firstMissing !== null && !firstMissing || v.last !== null && !last || v.observed > 0 && compilation.mode !== "route"
+    || firstMissing && (firstMissing.stage !== "managed-stream-lease-missing" || !last || firstMissing.sequence > last.sequence || firstMissing.atMs > last.atMs)
+    || last && (last.sequence < v.observed || last.stage === "managed-stream-lease-missing" && !firstMissing || last.stage === "managed-stream-lease-present" && v.observed === v.missing)) return null;
+  const opportunities = events.filter(isLeaseOpportunity), missing = opportunities.filter(e => e.stage === "managed-stream-lease-missing");
+  const omitted = v.observed - opportunities.length, missingOmitted = v.missing - missing.length;
+  if (omitted < 0 || omitted > dropped || missingOmitted < 0 || missingOmitted > omitted) return null;
+  const same = (a: HostWitnessEvent, b: HostWitnessEvent) => a.sequence === b.sequence && a.atMs === b.atMs && a.capability === b.capability && a.stage === b.stage && a.outcome === b.outcome && a.correlation === b.correlation;
+  if (last && opportunities.length && !same(last, opportunities.at(-1)!)) return null;
+  for (const e of [firstMissing, last]) if (e && e.sequence > dropped && !events.some(row => same(e, row))) return null;
+  if (firstMissing && missing.length && (firstMissing.sequence > missing[0]!.sequence || missingOmitted === 0 && !same(firstMissing, missing[0]!))) return null;
+  if (firstMissing && firstMissing.sequence <= dropped && missingOmitted === 0) return null;
+  return { observed: v.observed, missing: v.missing, firstMissing, last };
 }
 export function projectHostWitnessObservation(raw: unknown): HostWitnessObservation | null {
   const v = data(raw, ["state", "reason", "observedAtMs", "snapshot", "qualified"]);
@@ -81,6 +114,27 @@ export function projectHostWitnessEvidence(raw: unknown): HostWitnessEvidence | 
   const observation = projectHostWitnessObservation(v.observation);
   return observation && observation.observedAtMs <= Date.parse(v.at) ? { ...v, observation } as HostWitnessEvidence : null;
 }
+/** Direct observation by the managed main-stream owner of the original lease
+ * registry. This is not an expected/observed counter comparison, an execution
+ * admission receipt, or proof of other unobserved opportunities. */
+export function isLeaseOpportunity(e: Pick<HostWitnessEvent, "capability" | "stage">): boolean {
+  return e.capability === "context" && (e.stage === "managed-stream-lease-present" || e.stage === "managed-stream-lease-missing");
+}
+export function hostLeaseOpportunityWindow(snapshot: HostWitnessSnapshot | null) {
+  const events = snapshot?.events.filter(isLeaseOpportunity) ?? [];
+  const present = events.filter(e => e.stage === "managed-stream-lease-present").length, missing = events.length - present;
+  const retained = snapshot?.version === 2 ? snapshot.leaseOpportunity : undefined;
+  return { present, missing, omitted: snapshot?.eventsDropped ?? 0, retained: retained ?? null,
+    state: (retained?.missing ?? missing) > 0 ? "violated" as const
+      : retained ? retained.observed > 0 ? "observed" as const : "not-observed" as const
+      : snapshot?.eventsDropped ? "incomplete" as const : present ? "observed" as const : "not-observed" as const };
+}
+export function hostLeaseOpportunityCondition(e: HostWitnessEvidence): "failed" | "passed" | "unknown" {
+  if (e.observation.state !== "current") return "unknown";
+  const window = hostLeaseOpportunityWindow(e.observation.snapshot);
+  return window.state === "violated" ? "failed" : window.state === "observed" ? "passed" : "unknown";
+}
+
 export function hostWitnessDetectorCondition(e: HostWitnessEvidence): "failed" | "passed" | "unknown" {
   if (e.observation.state === "current") return "passed";
   return e.observation.state === "invalid" || e.observation.state === "unavailable" ? "failed" : "unknown";

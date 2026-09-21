@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { HOST_WITNESS_CAPABILITIES, HOST_WITNESS_REQUIRED, type HostCompileReceipt, type HostWitnessCapability, type HostWitnessNote, type HostWitnessEvent, type HostWitnessSnapshot } from "@grokbox/runtime-kernel/host-health";
+import { HOST_WITNESS_CAPABILITIES, HOST_WITNESS_REQUIRED, isLeaseOpportunity, type HostCompileReceipt, type HostWitnessCapability, type HostWitnessNote, type HostWitnessEvent, type HostWitnessSnapshot, type HostLeaseOpportunityLedger } from "@grokbox/runtime-kernel/host-health";
 import { REQUIRED_SLICE_IDS, CONTEXT_SLICE_IDS, NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, ROUTE_SESSION_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, HOST_RESUME_GATE_SYMBOL, type PatchProfile } from "./profile.ts";
 import { HOST_OWNERSHIP_READ_SYMBOL } from "./ownership-read.ts";
 import { HOST_CONTEXT_CONTROL_SYMBOL } from "./context-control.node.ts";
@@ -41,6 +41,7 @@ export function createHostCapabilityWitness(profile: PatchProfile, mode: "identi
   const tracked = new Map<string, { value: unknown; methods: Map<string, unknown> }>();
   let compilation: HostCompileReceipt | null = null, sequence = 0, eventSequence = 0, dropped = 0;
   const events: HostWitnessEvent[] = [];
+  const leaseOpportunity: HostLeaseOpportunityLedger = { observed: 0, missing: 0, firstMissing: null, last: null };
   function register(symbol: string, value: unknown) {
     // Called at actual assignment, never by discovering whichever later value
     // happens to occupy the slot. Rebinding cannot become the new expected one.
@@ -55,7 +56,14 @@ export function createHostCapabilityWitness(profile: PatchProfile, mode: "identi
       const at = now(); if (at < Date.parse(compilation.at)) return;
       const tuple = [input.agentId, input.turnId, input.stepId];
       const correlation = tuple.slice(0, 2).every(id) && (tuple[2] === undefined || id(tuple[2])) ? sha256Text(canonicalJson(tuple.map(v => v ?? null))) : null;
-      events.push({ sequence: ++eventSequence, atMs: at, capability: input.capability, stage: input.stage, outcome: input.outcome, correlation });
+      if (isLeaseOpportunity(input) && (mode !== "route" || correlation === null || !id(input.stepId))) return;
+      const event: HostWitnessEvent = { sequence: ++eventSequence, atMs: at, capability: input.capability, stage: input.stage, outcome: input.outcome, correlation };
+      events.push(event);
+      if (isLeaseOpportunity(event)) {
+        leaseOpportunity.observed++;
+        if (event.stage === "managed-stream-lease-missing") { leaseOpportunity.missing++; leaseOpportunity.firstMissing ??= { ...event }; }
+        leaseOpportunity.last = { ...event };
+      }
       if (events.length > 32) { events.shift(); dropped++; }
     } catch { /* Observation never owns business outcomes. */ }
   }
@@ -64,7 +72,7 @@ export function createHostCapabilityWitness(profile: PatchProfile, mode: "identi
       || !compilation || compilation.patch !== "applied" || compilation.nativeCompilation !== "returned" || sequence >= 1_000_000_000) return null;
     const at = now(); if (at < Date.parse(compilation.at) || events.some(e => e.atMs > at)) return null;
     const covered = new Set(Object.values(registry).flatMap(r => [...r.slices]));
-    return { version: 1, challenge, sequence: ++sequence, observedAtMs: at, compilation: { ...compilation },
+    return { version: 2, challenge, sequence: ++sequence, observedAtMs: at, compilation: { ...compilation },
       capabilities: HOST_WITNESS_CAPABILITIES.map(id => {
         const d = registry[id], required = HOST_WITNESS_REQUIRED[mode].includes(id) || d.defaultMode === "selected" && d.slices.some(s => selected.has(s as never));
         let handles: "present" | "absent" | "changed" | "not-required" = required ? "present" : "not-required";
@@ -75,7 +83,8 @@ export function createHostCapabilityWitness(profile: PatchProfile, mode: "identi
         }
         return { id, required, handles, missingSlices: required ? d.slices.filter(s => !selected.has(s as never)) : [] };
       }), events: events.map(e => ({ ...e })), eventsDropped: dropped, untrackedSlices: [...selected].filter(s => !covered.has(s)),
-      coverage: "registered-handles-and-recorded-boundaries", opportunityCoverage: "not-observed", qualified: false };
+      leaseOpportunity: { ...leaseOpportunity, firstMissing: leaseOpportunity.firstMissing && { ...leaseOpportunity.firstMissing }, last: leaseOpportunity.last && { ...leaseOpportunity.last } },
+      coverage: "registered-handles-and-recorded-boundaries", opportunityCoverage: leaseOpportunity.observed > 0 ? "managed-main-stream-entry" : "not-observed", qualified: false };
   }
   return { register, note, read, compiled: (receipt: HostCompileReceipt) => { if (!compilation) compilation = Object.freeze({ ...receipt }); } };
 }

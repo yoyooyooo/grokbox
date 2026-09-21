@@ -79,6 +79,26 @@ export async function hostHealthBrowserJourney(t:TestContext,ports:Ports){
    assert.equal(f.state.nativeCalls,nativeBefore,"health page must not query the Bot roster");assert.deepEqual(errors,[]);
   }finally{await context.close();await ports.stop(web.child);await f.close();}
  });
+ await t.test("managed lease opportunities are shown as a bounded direct window and remain distinct from persistent failure history",async()=>{
+  const origin=`http://127.0.0.1:${await ports.freePort()}`,f=await hostWitnessFixture(origin,{},"route"),web=await ports.launchWeb(ports.entry,ports.home,origin,f.server.url);
+  const context=await ports.browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage();page.setDefaultTimeout(12000);
+  const wait=async(ok:()=>Promise<boolean>)=>{for(let i=0;i<150;i++){if(await ok())return;await new Promise(r=>setTimeout(r,30));}throw Error("browser-opportunity-deadline");};
+  try{
+   const grant=(await f.client().createConsoleGrant(origin)).data;await page.goto(`${origin}/login`);await page.locator("#login-code").fill(grant.code);await page.getByRole("button",{name:"安全登录",exact:true}).click();await page.getByRole("heading",{name:"Box 概览",exact:true}).waitFor();
+   await wait(async()=> (await f.client().hostHealth()).data.witness?.state==="current");
+   await f.control("managed-stream",{lease:false});await wait(async()=>!!(await f.client().hostHealth()).data.witness?.snapshot?.events.some(e=>e.stage==="managed-stream-lease-missing"));
+   await page.goto(`${origin}/host-health`);const card=page.locator('[data-testid="host-health-opportunities"]');await card.waitFor();
+   assert.ok((await card.innerText()).includes("violated"));assert.ok((await card.innerText()).includes("0 present · 1 missing"));assert.ok((await card.innerText()).includes("managed-main-stream-entry"));
+   const pid=f.process.child.pid;await page.reload();await card.waitFor();assert.equal(f.process.child.pid,pid);assert.ok((await card.innerText()).includes("1 missing"));
+   await f.control("managed-stream",{lease:true,count:12});await wait(async()=>{const s=(await f.client().hostHealth()).data.witness?.snapshot;return !!s&&s.eventsDropped>0&&!s.events.some(e=>e.stage==="managed-stream-lease-missing");});
+   await page.getByRole("button",{name:"Refresh health observations",exact:true}).click();await card.getByText("13 direct checks · 1 missing leases",{exact:true}).waitFor();
+   assert.equal(await card.getByText("violated",{exact:true}).count(),1);assert.ok((await card.innerText()).includes("First retained missing lease"));
+   assert.ok((await page.locator('[data-testid="host-health-witness-events"]').innerText()).includes("do not repair a known violation"));
+   await page.locator("h1").click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   if(ports.evidence)await page.screenshot({path:join(ports.evidence,"host-opportunities-mobile.png"),fullPage:true});
+   assert.equal(f.process.child.exitCode,null);assert.equal((await f.control("stats")).nativeReads,0);
+  }finally{await context.close();await ports.stop(web.child);await f.close();}
+ });
  await t.test("reader cannot reveal health evidence and the console exposes no health mutation endpoint",()=>withPage(async(page,f,origin)=>{
   await page.getByRole("alert").filter({hasText:"permission_denied"}).waitFor();assert.equal(await page.locator('[data-testid="host-health-candidate"]').count(),0);
   const response=await page.context().request.post(`${origin}/v1/host-health`,{headers:{origin,"x-grokbox-installation-id":H_INSTALL},data:{refresh:true}});assert.equal(response.status(),404);
