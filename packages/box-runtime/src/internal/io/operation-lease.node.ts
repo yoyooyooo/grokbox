@@ -4,18 +4,17 @@ import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { acquireAdvisoryGate, type AdvisoryGate } from "./advisory-gate.node.ts";
-import type { LockHandle } from "./op-lock.ts";
 
 export type OperationLeaseOwner = { version: 1; pid: number; start: string; uid: number; bootId: string; nonce: string; operationId?: string };
-type Owner = OperationLeaseOwner | { version: 0; pid: number };
 export type OperationLeaseObservation = {
   state: "missing" | "stale" | "live" | "unproven" | "invalid" | "unavailable";
   recoverable: boolean;
   pid?: number;
-  format?: "legacy-pid" | "identity-v1";
+  format?: "identity-v1";
 };
-export type OperationLeaseSnapshot = { path: string; observation: OperationLeaseObservation; owner?: Owner; info?: Stats; sha?: string };
-export type OperationLock = LockHandle & { owner: OperationLeaseOwner };
+export type OperationLeaseSnapshot = { path: string; observation: OperationLeaseObservation; owner?: OperationLeaseOwner; info?: Stats; sha?: string };
+export type OperationLock = { path: string; owner: OperationLeaseOwner; release: () => Promise<void> };
+export const operationLockPath = (ephemeralRoot: string): string => join(ephemeralRoot, "ops", "identity.lock");
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 const natural = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const safeId = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value);
@@ -23,12 +22,19 @@ const code = (error: unknown) => error && typeof error === "object" && "code" in
 const same = (a: Stats, b: Stats) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
 
 export function parseOperationLeaseOwner(value: unknown): OperationLeaseOwner | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (!value || typeof value !== "object" || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return null;
+  const keys = ["version", "pid", "start", "uid", "bootId", "nonce"], ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.some(key => typeof key !== "string" || ![...keys, "operationId"].includes(key))
+    || keys.some(key => !Object.hasOwn(value, key))) return null;
+  for (const key of ownKeys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return null;
+  }
   const row = value as Record<string, unknown>;
-  if (Object.keys(row).some(key => !["version", "pid", "start", "uid", "bootId", "nonce", "operationId"].includes(key)) || row.version !== 1
+  if (row.version !== 1
     || !natural(row.pid) || row.pid === 0 || !natural(row.uid) || typeof row.start !== "string" || !/^\d{1,24}$/.test(row.start)
     || !uuid(row.bootId) || !uuid(row.nonce) || row.operationId !== undefined && !safeId(row.operationId)) return null;
-  return row as OperationLeaseOwner;
+  return structuredClone(row) as OperationLeaseOwner;
 }
 
 async function bootId(): Promise<string | null> {
@@ -50,17 +56,15 @@ async function processIdentity(pid: number): Promise<{ state: "present"; uid: nu
   } catch (error) { return { state: ["ESRCH", "ENOENT"].includes(code(error)) ? "absent" : "unknown" }; }
 }
 
-export async function operationOwnerState(owner: Owner): Promise<"stale" | "live" | "unproven"> {
-  if (owner.version === 1) {
-    if (owner.uid !== process.getuid?.()) return "unproven";
-    const boot = await bootId();
-    if (!boot) return "unproven";
-    if (boot !== owner.bootId) return "stale";
-  }
+export async function operationOwnerState(value: OperationLeaseOwner): Promise<"stale" | "live" | "unproven"> {
+  const owner = parseOperationLeaseOwner(value);
+  if (!owner || owner.uid !== process.getuid?.()) return "unproven";
+  const boot = await bootId();
+  if (!boot) return "unproven";
+  if (boot !== owner.bootId) return "stale";
   const observed = await processIdentity(owner.pid);
   if (observed.state === "absent") return "stale";
   if (observed.state !== "present") return "unproven";
-  if (owner.version === 0) return "live"; // no PID-reuse inference without a start identity
   return observed.uid !== owner.uid || observed.start !== owner.start ? "stale" : "live";
 }
 
@@ -85,19 +89,18 @@ export async function inspectOperationLease(path: string): Promise<OperationLeas
     const source = await ownerBytes(path);
     if (!source) return { path, observation: { state: "missing", recoverable: false } };
     const text = source.bytes.toString("utf8").trim();
-    let owner: Owner | null = null;
-    if (/^[1-9]\d{0,9}$/.test(text) && Number.isSafeInteger(Number(text))) owner = { version: 0, pid: Number(text) };
-    else { try { owner = parseOperationLeaseOwner(JSON.parse(text)); } catch { /* invalid finite record */ } }
+    let owner: OperationLeaseOwner | null = null;
+    try { owner = parseOperationLeaseOwner(JSON.parse(text)); } catch { /* Unknown formats remain untouched. */ }
     if (!owner) return { path, observation: { state: "invalid", recoverable: false } };
     const state = await operationOwnerState(owner);
     return { path, owner, info: source.info, sha: sha256Bytes(source.bytes),
-      observation: { state, recoverable: state === "stale", pid: owner.pid, format: owner.version === 0 ? "legacy-pid" : "identity-v1" } };
+      observation: { state, recoverable: state === "stale", pid: owner.pid, format: "identity-v1" } };
   } catch (error) {
     return { path, observation: { state: ["EACCES", "EPERM"].includes(code(error)) ? "unavailable" : "invalid", recoverable: false } };
   }
 }
 
-/** Metadata is published fully before linking into the legacy O_EXCL pathname;
+/** Metadata is published fully before linking into the exclusive owner pathname;
  * the advisory descriptor remains held for the entire operation lifetime. */
 export async function acquireOperationLease(path: string, operationId?: string): Promise<{ ok: true; lock: OperationLock } | { ok: false; code: "lock-conflict" }> {
   if (operationId !== undefined && !safeId(operationId)) throw new Error("operation_id_invalid");

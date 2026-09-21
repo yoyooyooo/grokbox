@@ -6,8 +6,7 @@ import { compileReceiptAgrees, expectedCompileReceipt, type CompileReceipt } fro
 import { writeRuntimeArtifact } from "../io/artifacts.node.ts";
 import { count, isRecord } from "../io/observation.node.ts";
 import type { IdentityMarker, IdentityOpResult } from "./identity-op.ts";
-import { operationLockPath } from "../io/op-lock.ts";
-import { acquireOperationLease } from "../io/operation-lease.node.ts";
+import { operationLockPath, acquireOperationLease } from "../io/operation-lease.node.ts";
 import {
   findAdoptedHostState,
   findUniqueOfficialChain,

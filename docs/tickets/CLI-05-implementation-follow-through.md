@@ -1,6 +1,6 @@
 # CLI-05 · 架构重建与 Web UI 端到端收束
 
-状态：实施中；共享管理 Server/客户端、模型 CLI/Web、生产 Web、观察/异常/订阅、通知授权/独立测试及首次配置/Routine/配对已接通；材料、保护交接、其余后台/命令收束、完整安装与最终交付尚未完成。前置合同由 [CLI-01](CLI-01-discovery-and-targeting.md)、[CLI-02](CLI-02-operation-contract.md)、[CLI-03](CLI-03-observation-and-wait.md)、[CLI-04](CLI-04-command-cutover.md)提供；实施可按已闭合用例推进，不机械等待全部文档字段。
+状态：W3实施收束中，尚未进入W4完整候选验收。共享管理Server/客户端、模型、观察/异常/通知、本地材料、默认保护、人工生命周期、current-state、Compact和handover管理面已接通；现行模型及安全存储合同、操作恢复和旧writer退出持续收口。剩余daemon/命令能力、完整原生材料/资源独立性、全能力健康、安装宿主与最终真实验收仍未完成。前置合同由 [CLI-01](CLI-01-discovery-and-targeting.md)、[CLI-02](CLI-02-operation-contract.md)、[CLI-03](CLI-03-observation-and-wait.md)、[CLI-04](CLI-04-command-cutover.md)提供；下述旧固定窗口保留历史事实，不作为最新源码已全量通过的声明。
 
 ## 用户结果
 
@@ -273,8 +273,8 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 ### 下一实施边界
 
-**Host 平台依赖已进入当前 W3 阶段（2026-09-20）：** 当前独立 current-state 切片已按上节705项固定回归闭合，不重复施工或重跑旧候选来替代新资格。接收[跨会话交接](../roadmap/host-patch-health-integration-handoff.md)后，当前优先进入 [HOST-01](HOST-01-patch-health-verifier.md)：先核实际新版 Host 配方/worker/原生依赖，再以 Rust/Oxc＋Node 的真实纵向切片接入既有证据和 incident，逐步补齐所声明能力的语义与运行见证。这是平台依赖工作，不等所有材料扩展/剩余命令完结后才排，也不延期成 T48 的可选自动维护。无关页面/纯管理/材料工作可以继续；具体并行共享文件由当前实施者协调。
+**当前W3落点（2026-09-21）：** [模型领域与单一格式](../reports/2026-09-21-model-domain-convergence.md)、[Compact管理](../reports/2026-09-21-compaction-management.md)、[handover管理](../reports/2026-09-21-handover-management.md)的入口迁移已完成，不重新施工。[安全存储现行合同](../reports/2026-09-21-current-safety-store-contracts.md)及[操作恢复与验证入口](../reports/2026-09-21-current-recovery-entrypoints.md)继续退出旧版本实时消费、重复writer和不安全故障注入。接下来按必要行为接回剩余daemon/直连消费者并删除旧路径，同时补齐DATA-01与CONT的实际能力差额；已确认的Rust/Oxc架构不重选、不另建工程。
 
-完整实现边界与责任分配以 HOST-01 为准；相关原生采用/恢复/通知验收必须先有对应资格，完整健康与必要告警在新版候选冻结前收口。源码/fixture 通过不代替当前实际来源。眼前实际Host/worker风险盘点与Rust静态验证—原OBS故障投影并行推进；相关HCR/T44/OBS/T40/T45责任保留，shared Server/build/client/本票由当前实施阶段一并收束。没有暂停其他会话，也不扩大现场采用、模型费用或外部投递授权。
+[HOST-01](HOST-01-patch-health-verifier.md)已有当前配方、四项静态谓词、有限checkpoint ABI和编译/引用/lease机会进入原OBS；剩余必要能力、更多调用机会、实际采用后的同代证据与独立告警出口继续并行推进。完整健康与必要告警在候选冻结前收口，关键原生与宿主资格提前小范围验证，不把来源风险全拖到W4。相关HCR/T44/OBS/T40/T45责任保留；无关能力可以并行，现场采用、模型费用和外部投递不因源码提交自动获准。
 
-材料的本地来源—索引—原文读取—受控文本替换—回执恢复以及默认保护后台/管理读写面已接通。继续 DATA-01 的原生源写能力/Project fileRef/完整文件通路和长期安全维护，以及 CONT 的剩余 handover/compact 控制迁移、完整职责约束/资源独立性与退役资格；人工 clone/replace/spawn、独立当前上下文及原操作续接已进入统一管理面。T45 的确定未受理重试、上游对账、旧发送/取证收束仍保留。各领域原生缺口不通过本地副本或 fixture 降级消除；不为挪容量删除 unknown。完整功能、安装宿主、独立 modeld 实执行、独立审查与集中 LIVE 仍是本票责任，不重新询问已接受的产品边界。
+DATA-01仍需原生源写入/读回、Project fileRef/附件/二进制与完整文件通路、账号同步和长期安全维护；CONT仍需self-reset安全排队、完整职责、源资源独立性及原生退役条件，不再列为Compact/handover管理入口待迁移。T45的确定未受理重试、上游对账和剩余发送入口继续收束。完整功能与唯一现行实现形成候选后进入W4：安装/服务宿主、独立modeld、整体检查、独立审查和集中LIVE，再进入W5用户/视觉验收。blocked/unknown是安全状态，不是取消必需能力的理由；不删未知证据换容量，不重新询问已接受的产品边界。

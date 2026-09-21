@@ -95,18 +95,29 @@ linuxTest("same-process concurrent acquisitions have one winner, including acros
   expect((await inspectOperationLease(path)).observation.state).toBe("missing");
 });
 
-linuxTest("legacy dead PID recovery requires a stale controller witness for ownerless running rows", async () => {
+for (const shape of ["pid-only-lock", "ownerless-operation"] as const) linuxTest(`${shape} remains opaque even after the actual former process has exited`, async () => {
   const root = await fixtureRoot(), worker = await owner(root);
   await worker.crash();
-  for (const path of locks(root)) await fs.writeFile(path, `${worker.pid}\n`);
-  const store = JSON.parse(await fs.readFile(storePath(root), "utf8"));
-  delete store["fixture-operation"].leaseOwner;
-  await fs.writeFile(storePath(root), JSON.stringify(store));
-  expect(await recoverControllerOperationState(request(root, true))).toMatchObject({ outcome: "recovered", markedUnknown: 1, clearedLocks: 2 });
-  expect(JSON.parse(await fs.readFile(storePath(root), "utf8"))["fixture-operation"].state).toBe("unknown");
-  store["fixture-operation"].state = "running";
-  await fs.writeFile(storePath(root), JSON.stringify(store));
-  expect(await recoverControllerOperationState(request(root, true))).toMatchObject({ outcome: "blocked", reason: "operation_owner_live_or_unproven", markedUnknown: 0 });
+  if (shape === "pid-only-lock") {
+    for (const path of locks(root)) await fs.writeFile(path, `${worker.pid}\n`, { mode: 0o600 });
+  } else {
+    const store = JSON.parse(await fs.readFile(storePath(root), "utf8"));
+    delete store["fixture-operation"].leaseOwner;
+    await fs.writeFile(storePath(root), JSON.stringify(store));
+  }
+  const files = [...locks(root), storePath(root)], before = await Promise.all(files.map(path => fs.readFile(path)));
+  for (const confirm of [false, true]) {
+    expect(await recoverControllerOperationState(request(root, confirm))).toMatchObject({ outcome: "blocked", markedUnknown: 0, clearedLocks: 0, signaled: false, adopted: false, replayAuthorized: false });
+    expect(await Promise.all(files.map(path => fs.readFile(path)))).toEqual(before);
+  }
+  if (shape === "pid-only-lock") {
+    const snapshot = await inspectOperationLease(locks(root)[0]!);
+    expect(snapshot.observation).toEqual({ state: "invalid", recoverable: false });
+    expect(snapshot.owner).toBeUndefined();
+    await expect(removeRecoveredOperationLease(snapshot)).rejects.toThrow("operation_recovery_conflict");
+  }
+  expect((await acquireOperationLease(locks(root)[0]!, "replacement-request")).ok).toBe(false);
+  expect(await Promise.all(files.map(path => fs.readFile(path)))).toEqual(before);
 });
 
 linuxTest("a live identity operation fences recovery of an otherwise stale controller record", async () => {
@@ -124,14 +135,14 @@ linuxTest("a live identity operation fences recovery of an otherwise stale contr
   } finally { if (identity.ok) await identity.lock.release(); }
 });
 
-linuxTest("owner identity distinguishes PID reuse without treating a legacy live PID as stale", async () => {
+linuxTest("current owner identity proves PID reuse; a PID-only value cannot become a supported owner", async () => {
   const root = await fixtureRoot(), acquired = await acquireOperationLease(locks(root)[0]!, "identity-check");
   expect(acquired.ok).toBe(true);
   if (!acquired.ok) return;
   try {
     expect(await operationOwnerState(acquired.lock.owner)).toBe("live");
     expect(await operationOwnerState({ ...acquired.lock.owner, start: String(BigInt(acquired.lock.owner.start) + 1n) })).toBe("stale");
-    expect(await operationOwnerState({ version: 0, pid: process.pid })).toBe("live");
+    expect(await operationOwnerState({ version: 0, pid: process.pid } as never)).toBe("unproven");
     expect(await operationOwnerState({ ...acquired.lock.owner, uid: acquired.lock.owner.uid + 1 })).toBe("unproven");
   } finally { await acquired.lock.release(); }
 });

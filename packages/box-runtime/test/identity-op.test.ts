@@ -89,8 +89,8 @@ function guard(tree: FakeProcessTree, frozen: Array<{ pid: number }>) {
     const s = tree2.spawn("supervisor", { parent: w });
     const h = tree2.spawn("host", { parent: s });
     const lockRoot = await ephemeral();
-    const { acquireExclusiveLock, operationLockPath } = await import("../src/internal/io/op-lock.ts");
-    const held = await acquireExclusiveLock(operationLockPath(lockRoot));
+    const { operationLockPath, acquireOperationLease } = await import("../src/internal/io/operation-lease.node.ts");
+    const held = await acquireOperationLease(operationLockPath(lockRoot), "competing-identity");
     expect(held.ok).toBe(true);
     const locked = await runIdentityOperation({
       processes: tree2,

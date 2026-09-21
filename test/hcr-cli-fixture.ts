@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { LIVE_SLICE_PATCHES } from "../packages/box-runtime/src/internal/host/live-slices.ts";
 import { OBSERVATION_SLICE_IDS, profileFromSource } from "../packages/box-runtime/src/internal/host/profile.ts";
@@ -66,18 +67,15 @@ export async function exerciseHcrProfileCli(run: HcrCliRunner, root: string): Pr
   expect(body(recovery.stdout)).toMatchObject({ process: "operation-recovery", outcome: "clear", signaled: false, adopted: false, replayAuthorized: false });
   expect(await readFile(profilePath, "utf8")).toBe(current);
 
-  // A tracked disposable process supplies an actually exited PID, not a guessed
-  // production owner. Both source and installed Node paths exercise recovery.
-  const exited = spawnSync(process.execPath, ["-e", "process.exit(0)"], { env: { PATH: process.env.PATH ?? "", HOME: root }, timeout: 5000 });
-  expect(exited.status).toBe(0);
-  await mkdir(join(root, "state"), { recursive: true });
-  await mkdir(join(root, "run", "ops"), { recursive: true });
-  for (const path of [join(root, "state", "controller-operations.lock"), join(root, "run", "ops", "identity.lock")]) {
-    await writeFile(path, `${exited.pid}\n`, { mode: 0o600 });
-  }
+  // A disposable process uses the current production lease writer and exits
+  // without JavaScript cleanup. No PID-only record or guessed start identity.
+  const exited = spawnSync(process.execPath, [fileURLToPath(new URL("../packages/box-runtime/test/fixtures/hcr-operation-owner.ts", import.meta.url)), root, "exit-after-publication"], {
+    env: { PATH: process.env.PATH ?? "", HOME: root }, encoding: "utf8", timeout: 5000,
+  });
+  expect(exited.status, exited.stderr).toBe(0);
   const operationPath = join(root, "state", "controller-operations.json");
-  const prefix = { signaled: true, spawned: true, guardian: true };
-  await writeFile(operationPath, JSON.stringify({ "interrupted-fixture": { fingerprint: "f".repeat(64), state: "running", prefix } }) + "\n", { mode: 0o600 });
+  const before = JSON.parse(await readFile(operationPath, "utf8"))["lifetime-fixture"];
+  expect(before).toMatchObject({ state: "running", leaseOwner: { version: 1, pid: exited.pid } });
   const preview = await run(["runtime", "operation-recovery", "--json"]);
   expect(preview.code, preview.stderr).toBe(0);
   expect(body(preview.stdout)).toMatchObject({ outcome: "ready", markedUnknown: 0, clearedLocks: 0 });
@@ -85,6 +83,6 @@ export async function exerciseHcrProfileCli(run: HcrCliRunner, root: string): Pr
   expect(recovered.code, recovered.stderr).toBe(0);
   expect(body(recovered.stdout)).toMatchObject({ outcome: "recovered", markedUnknown: 1, clearedLocks: 2,
     operations: { running: 0, unknown: 1 }, signaled: false, adopted: false, replayAuthorized: false });
-  expect(JSON.parse(await readFile(operationPath, "utf8"))["interrupted-fixture"]).toMatchObject({ state: "unknown", prefix });
+  expect(JSON.parse(await readFile(operationPath, "utf8"))["lifetime-fixture"]).toEqual({ ...before, state: "unknown" });
   expect(await readFile(profilePath, "utf8")).toBe(current);
 }

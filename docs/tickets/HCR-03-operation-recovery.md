@@ -1,6 +1,6 @@
 # HCR-03 — Controller / identity 中断恢复
 
-Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inventory, cancellation and installed Node20 CLI verified; independent review residue in HCR-02. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
+Status: existing recovery implementation retained; current-contract retirement integrated in the CLI-05 management worktree, not a new live-adoption claim. The earlier v2 integration and independent-review limits remain historical evidence below. Depends-on: existing Effect controller / adopt journal; HCR-02 presentation.
 
 ## Goal / owner
 
@@ -10,7 +10,7 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 
 - 独立临时子进程证明：持有者活着时竞争者拒绝；硬退出后系统gate释放，但普通acquire不删除stale owner。
 - 显式恢复同时持有controller→identity gate；活owner、EPERM/身份未知、symlink/文件替换均拒绝。
-- 旧PID-only记录只有确定无该进程时才可恢复；新记录绑定pid/start/uid/boot与实例nonce。
+- 只接受绑定pid/start/uid/boot与实例nonce的现行owner；旧PID-only记录即使进程已退出也保留阻断，不解析、升级或清除。缺自身owner的running记录不能借同路径stale锁获得恢复资格。
 - 仅持久running→unknown；不伪造attested/clear，不发Host signal，不改model assignment，不重放操作；随后原controller按当前facts决定。
 - acquire写失败、取消、release与竞争测试；不依赖无界等待或读取真实Host。
 
@@ -18,7 +18,11 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 
 不把Scope当硬崩事务；不裸unlink活锁，不按进程名kill，不自动恢复未知owner；不引入第二执行器或npm原生依赖。Linux primitive不可用必须拒绝，不能降级为弱锁。
 
-## Evidence
+## Current contract
+
+现行operation lease是唯一锁writer；旧PID-only写入器、未被生产消费的coordinator锁writer及其专属路径已退出。原生身份操作、controller与Scope取消全部使用同一实现。owner在首次属性读取前验证自有数据descriptor并复制，getter／继承／隐藏字段不能成为进程身份。正向中断fixture由真实子进程调用当前writer后退出，不手造一个数字PID以通过测试。旧现场资料只保全，不转为当前成功；这不取消独立的原Host恢复职责。固定工作包见[当前恢复与验证入口](../reports/2026-09-21-current-recovery-entrypoints.md)。
+
+## Historical evidence
 
 固定实现 `aefe851` 已线性合入v2并复验，见[集成窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。本票无已登记未实现功能；独立复审外部依赖统一见[HCR-02残项](HCR-02-loaded-capabilities.md#independent-review-residue)。macOS不是本次Linux Box恢复验收的额外前置；实际Host提交与恢复仅归LIVE。
 

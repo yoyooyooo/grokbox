@@ -1,5 +1,4 @@
-import { operationLockPath } from "../io/op-lock.ts";
-import { acquireOperationLease } from "../io/operation-lease.node.ts";
+import { operationLockPath, acquireOperationLease } from "../io/operation-lease.node.ts";
 import { findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import {
   countRoles,

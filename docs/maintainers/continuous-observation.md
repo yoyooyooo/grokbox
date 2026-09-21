@@ -160,17 +160,17 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 
 当前唯一配置渠道是 `local_only`。collector callback 返回/抛错分别记录 `notification_exported` / `notification_export_unknown`；这是本地出口证据，不是远端通知回执。输出失败后不自动重发模型、工具或用户任务。外部通知渠道尚未配置，App received/rendered 保持 `not_observed`，userRead 保持 `not_proven`。
 
-## 磁盘事务与迁移
+## 现行磁盘合同与数据保全
 
-当前源码的 monitor schema v3 用固定 `sqlite3@6.0.1` 的 Node-API 磁盘 SQLite，增加固定证据修订、共享引用、限时租约与本地待通知记录；它与通用配置 schema 是不同版本域。发布最低 Node 为 **20.17.0**；Host/preload 不导入 SQLite、SDK 或 Effect。`sql.js` 仅留在开发依赖中生成独立 v1 迁移夹具，退役的全库镜像 runtime companion 不再打包。
+monitor 只接受现行 SQLite schema v4，同时核对 metadata 与物理 header；CONT v4、Routine provision v3 分属各自 owner，不与通用配置 schema 混用。SQLite 依赖和 Node 版本以包声明及安装验证为准；Host/preload 不导入 SQLite、SDK 或 Effect。开发期旧库只作为拒绝／字节保全反例，不是正常运行或初始化的兼容输入。实现与固定范围见[安全存储合同收束](../reports/2026-09-21-current-safety-store-contracts.md)。
 
 这里刻意使用 **DELETE rollback-journal** 的增量页事务，而非 WAL：短事务串行写，严格只读连接不创建 WAL/SHM sidecar。不是每次加载、导出、替换整个 JS 数据库镜像。磁盘引擎缺失/文件坏时明确失败，禁止回退内存或创建空库报健康。
 
-`init --confirm` 才迁移 v1/v2：核对 root/schema/private file，持有 SQLite 事务并检查相应旧 writer/collector owner，保全独占备份，再事务升级；旧 writer 在下次加载时拒绝 v3。迁移不为历史事故补造快照或自动排队通知。活的、身份不明的旧 collector 不被抢占。迁移或旧文件锁恢复只在明确 PID 已不存在并且锁文件身份未变时进行；不存在“锁太旧就删掉”。跨平台不能证明 PID 身份时保持 recovery-required。
+初始化不会升级旧库、补表或把旧通知授权转换成当前同意。旧文件与不属于现行合同的 owner footprint 原样保留，未知操作不能被解释成“从未发生”。只有新建私有 owner 目录的创建者能够首次发布数据库；已有目录内丢失主库属于不可用，不得建一个新 databaseId 继续发送。已存在的当前库只做只读身份检查，不改变 collector epoch；失败也不恢复旧 writer 或无条件清锁。
 
 新的 collector 所有权记录使用 PID、启动身份和 boot 身份摘要；并发启动被数据库事务拒绝。正常退出释放；硬崩溃后显式 run 可在证实旧进程已退出后建立新 collector epoch，恢复 SQLite 自身事务。旧 callback/cursor 不得继续写新代。初始化先私有 staging 再独占发布，失败不留下一个被误当成有效库的空文件。
 
-采集 cursor、证据、incident 和通知决定同一事务提交。提交后回执丢失为 unknown；相同 source cursor/batch 或 management request 的重试会对账，不重复开事故。数据库迁移与 collector 更替会使不适用的旧分页 cursor 失效；不会在普通 GET 中进行隐式迁移或恢复写。
+采集 cursor、证据、incident 和通知决定同一事务提交。提交后回执丢失为 unknown；相同 source cursor/batch 或 management request 的重试会对账，不重复开事故。collector 更替或实际来源缺口会使不适用的分页 cursor 失效；GET 不迁移或恢复写，缺表和旧合同不得变成成功的空历史。
 
 ## 当前SQLite容量与修订护栏
 

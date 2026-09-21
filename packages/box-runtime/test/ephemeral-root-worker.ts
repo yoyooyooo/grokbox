@@ -6,7 +6,7 @@ import { recoverControllerOperationState, liveMutationAttempts, resetLiveMutatio
 import { ephemeralRuntimeRoot } from "../src/internal/io/ephemeral.ts";
 import type { ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { projectLiveStatus } from "../src/internal/io/observe.ts";
-import { coordinatorLeasePath, operationLockPath } from "../src/internal/io/op-lock.ts";
+import { operationLockPath } from "../src/internal/io/operation-lease.node.ts";
 import type { ProcessIdentity, ProcessPort } from "../src/internal/process/process-port.ts";
 import { SHA } from "./admission-fixture.ts";
 
@@ -52,7 +52,7 @@ async function controllerRecoveryRoots() {
   const normal = await recoverControllerOperationState({ boxRoot: root });
   const explicit = await recoverControllerOperationState({ boxRoot: root, ephemeralRoot: override });
   return { defaultRoot: ephemeralRuntimeRoot(), overrideRoot: ephemeralRuntimeRoot(override), normal, explicit, mutations: { ...liveMutationAttempts },
-    leasePath: coordinatorLeasePath(runRoot), lockPath: operationLockPath(runRoot),
+    lockPath: operationLockPath(runRoot),
     homeUnchanged: await snapshot(runRoot) === beforeHome, xdgUnchanged: await snapshot(xdg!) === beforeXdg, overrideUnchanged: await snapshot(override) === beforeOverride };
 }
 async function noImport() {

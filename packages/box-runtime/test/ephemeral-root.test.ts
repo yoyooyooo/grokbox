@@ -89,7 +89,6 @@ describe("default composition uses the home run root", () => {
 
   test("current controller metadata inspection uses the home root and isolates an explicit override", async () => {
     const result = await runIsolated("controller-recovery-roots");
-    expect(result.leasePath).toBe(join(String(result.defaultRoot), "ops", "coordinator.lock"));
     expect(result.lockPath).toBe(join(String(result.defaultRoot), "ops", "identity.lock"));
     expect(result.overrideRoot).not.toBe(result.defaultRoot);
     expect(result.normal).toMatchObject({ outcome: "clear", signaled: false, adopted: false, replayAuthorized: false });

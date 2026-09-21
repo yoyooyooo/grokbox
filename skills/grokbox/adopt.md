@@ -41,7 +41,7 @@ This path replaces the ownership schema/API/resume dependency set, preserves unr
 
 Cancellation before recovery starts leaves records untouched. Cancellation after metadata commit starts waits for that protected commit boundary; a missing completion receipt is not rollback proof. Inspect again before another recovery or adoption.
 
-Recovery does not signal a Host, fabricate attestation, clear the adopt journal, or replay business work. Live/unproven owners, malformed records and missing legacy-owner evidence remain blocked. New writers require `/usr/bin/flock`; there is no PID-only fallback. Stop old-version maintenance writers before recovery; uncooperative/manual file replacement is not covered by the new gates. A recovered receipt is not successful re-adoption: inspect again and use only the original, separately authorized re-adopt path.
+Recovery does not signal a Host, fabricate attestation, clear the adopt journal, or replay business work. Only the current complete owner identity is eligible: PID-only records remain blocked even after that PID exits, and a running operation without its own identity cannot borrow a stale lock's evidence. Live/unproven owners and malformed records remain blocked. Writers require `/usr/bin/flock`; the PID-only writer and recovery fallback have been removed. Stop old-version maintenance writers before recovery; uncooperative/manual file replacement is not covered by the new gates. A recovered receipt is not successful re-adoption: inspect again and use only the original, separately authorized re-adopt path.
 
 ## Unrecoverable failsafe
 

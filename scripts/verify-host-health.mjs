@@ -37,6 +37,8 @@ const suites={
   "packages/box-runtime/test/packed-helpers.test.ts","packages/box-runtime/test/ephemeral-root.test.ts","packages/box-runtime/test/observation-closed-loop.test.ts",
   "test/runtime-cli.test.ts","test/host-seam-observe-cli.test.ts",
   "packages/box-runtime/test/controller-generation.test.ts","packages/box-runtime/test/controller-io.test.ts","packages/box-runtime/test/controller-lock.test.ts","packages/box-runtime/test/h3-live.test.ts",
+  "packages/box-runtime/test/operation-lease.test.ts","packages/box-runtime/test/operation-lease-contract.test.ts","packages/box-runtime/test/hcr-operation-recovery.test.ts",
+  "packages/box-runtime/test/hcr-operation-lifetime.test.ts","packages/box-runtime/test/identity-op.test.ts","test/hcr-cli.test.ts","test/admission-observation.test.ts","test/outcome.test.ts",
   "test/network-boundary.test.ts","test/ssh-recovery.test.ts","test/profile.test.ts","test/recovery.test.ts","test/daemon.test.ts",
   "packages/runtime-kernel/test/unified-config.test.ts","packages/box-runtime/test/config-bootstrap.test.ts","test/config-cli.test.ts","test/config-application-receipt.test.ts","test/config-packed.test.ts",
   "packages/box-runtime/test/architecture.test.ts","packages/box-runtime/test/legacy-executor-removed.test.ts",

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Effect, Fiber } from "effect";
 import { admitControllerRequest } from "@grokbox/runtime-kernel/commands";
 import { ControlResources } from "@grokbox/runtime-kernel/ports";
@@ -31,17 +32,12 @@ function command(root: string) {
 }
 async function interruptedRoot() {
   const root = await fixtureRoot();
-  const exited = spawnSync(process.execPath, ["-e", "process.exit(0)"], {
+  const exited = spawnSync(process.execPath, [fileURLToPath(new URL("./fixtures/hcr-operation-owner.ts", import.meta.url)), root, "exit-after-publication"], {
     env: { PATH: process.env.PATH ?? "", HOME: root }, stdio: "ignore", timeout: 5000,
   });
   expect(exited.status).toBe(0);
-  for (const path of paths(root)) {
-    await fs.mkdir(join(path, ".."), { recursive: true });
-    await fs.writeFile(path, `${exited.pid}\n`, { mode: 0o600 });
-  }
-  const body = JSON.stringify({ "lifetime-fixture": { fingerprint: "f".repeat(64), state: "running",
-    prefix: { signaled: true, spawned: true, guardian: true } } }) + "\n";
-  await fs.writeFile(storePath(root), body, { mode: 0o600 });
+  for (const path of paths(root)) expect((await leases.inspectOperationLease(path)).observation).toMatchObject({ state: "stale", format: "identity-v1", recoverable: true });
+  const body = await fs.readFile(storePath(root), "utf8");
   return { root, body, input: { boxRoot: root, ephemeralRoot: join(root, "run"), confirm: true } };
 }
 
@@ -107,10 +103,11 @@ linuxTest("cancellation during acquisition waits for the actual acquired descrip
 linuxTest("pre-cancelled recovery creates no gate and changes no owner or operation record", async () => {
   const f = await interruptedRoot();
   const before = await Promise.all(paths(f.root).map(path => fs.readFile(path, "utf8")));
+  const gates = await Promise.all(paths(f.root).map(path => fs.stat(`${path}.gate`)));
   await expect(recoverControllerOperationState({ ...f.input, signal: AbortSignal.abort() })).rejects.toMatchObject({ code: "invalid_usage" });
   expect(await fs.readFile(storePath(f.root), "utf8")).toBe(f.body);
   expect(await Promise.all(paths(f.root).map(path => fs.readFile(path, "utf8")))).toEqual(before);
-  for (const path of paths(f.root)) await expect(fs.stat(`${path}.gate`)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await Promise.all(paths(f.root).map(path => fs.stat(`${path}.gate`)))).toEqual(gates);
 });
 
 linuxTest("cancellation while gathering recovery facts releases gates; a late read cannot mutate", async () => {

@@ -21,8 +21,7 @@ import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
 import { ephemeralRuntimeRoot } from "../io/ephemeral.ts";
 import { parseCoordinatorState } from "../io/coordinator-state.ts";
 import { readAttestation, writeAttestation, type CoverageAttestation } from "../io/authority.node.ts";
-import { operationLockPath } from "../io/op-lock.ts";
-import { acquireOperationLease, acquireOperationRecoveryGates, inspectOperationLease, operationOwnerState, parseOperationLeaseOwner,
+import { operationLockPath, acquireOperationLease, acquireOperationRecoveryGates, inspectOperationLease, operationOwnerState, parseOperationLeaseOwner,
   recheckOperationLease, removeRecoveredOperationLease, type OperationLeaseOwner, type OperationLeaseObservation } from "../io/operation-lease.node.ts";
 import { coordinatorStatePath, runtimeConfigPath, modelsPath, reviewedProfilePath } from "../io/paths.ts";
 import { pinLaunchProfile, parseReviewedProfile, loadDurableReviewedProfile } from "../process/profile.node.ts";
@@ -703,9 +702,10 @@ async function operationRecoveryFacts(boxRoot: string, runRoot: string) {
   let reason: string | null = !loaded.ok ? "operation_store_unavailable"
     : snapshots.some(row => !["missing", "stale"].includes(row.observation.state)) ? "lock_owner_live_or_unproven" : null;
   if (!reason) for (const [, row] of running) {
-    // Legacy running rows have no identity. Only a proven stale controller
-    // record can justify demoting them; missing files alone are not proof.
-    if (row.leaseOwner ? await operationOwnerState(row.leaseOwner) !== "stale" : snapshots[0]!.observation.state !== "stale") {
+    // A stale lock at the same pathname cannot supply the missing identity of
+    // an older running operation. Only that operation's own captured owner can
+    // justify demotion; otherwise preserve its original row and lock footprint.
+    if (!row.leaseOwner || await operationOwnerState(row.leaseOwner) !== "stale") {
       reason = "operation_owner_live_or_unproven"; break;
     }
   }
