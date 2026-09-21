@@ -3,7 +3,7 @@ import { canonicalJson } from "@grokbox/runtime-kernel/hash";
 import { projectHostWitnessSnapshot, type HostRuntimeObservation, type HostWitnessObservation, type HostLeaseOpportunityLedger } from "@grokbox/runtime-kernel/host-health";
 import { observeHostCompilation, type CompilationReadPorts } from "./host-compilation.node.ts";
 export type HostWitnessRead = (challenge: string, signal: AbortSignal) => Promise<{ value: unknown; pid: number }>;
-export type HostWitnessReadCursor = { observationId: string; sequence: number; eventTotal?: number; leaseOpportunity?: HostLeaseOpportunityLedger };
+export type HostWitnessReadCursor = { observationId: string; sequence: number; eventTotal: number; leaseOpportunity: HostLeaseOpportunityLedger };
 /** Challenge the existing native status wrapper, with no Bot/ownership request.
  * The nonce prevents stale response reuse, not a malicious same-UID process.
  * Before/after process inspection and exact compilation bind this local proof. */
@@ -33,12 +33,12 @@ export async function observeHostWitness(input: { root: string; runRoot: string;
       || snapshot.observedAtMs < began || snapshot.observedAtMs > Date.now() || performance.now() - tick > 3000
       || input.previous?.observationId === expected.observationId && snapshot.sequence <= input.previous.sequence) return outcome("invalid", "invalid-reply");
     const prior = input.previous?.observationId === expected.observationId ? input.previous : undefined;
-    if (prior && snapshot.eventsDropped + snapshot.events.length < (prior.eventTotal ?? 0)) return outcome("invalid", "invalid-reply");
-    if (prior?.leaseOpportunity) {
+    if (prior && snapshot.eventsDropped + snapshot.events.length < prior.eventTotal) return outcome("invalid", "invalid-reply");
+    if (prior) {
       const previous = prior.leaseOpportunity, next = snapshot.leaseOpportunity;
-      if (!next || next.observed < previous.observed || next.missing < previous.missing
+      if (next.observed < previous.observed || next.missing < previous.missing
         || next.missing - previous.missing > next.observed - previous.observed
-        || next.observed - previous.observed > snapshot.eventsDropped + snapshot.events.length - (prior.eventTotal ?? 0)
+        || next.observed - previous.observed > snapshot.eventsDropped + snapshot.events.length - prior.eventTotal
         || previous.firstMissing && canonicalJson(previous.firstMissing) !== canonicalJson(next.firstMissing)
         || next.observed === previous.observed && canonicalJson(next.last) !== canonicalJson(previous.last)
         || next.observed > previous.observed && (next.last?.sequence ?? 0) <= (previous.last?.sequence ?? 0)) return outcome("invalid", "invalid-reply");

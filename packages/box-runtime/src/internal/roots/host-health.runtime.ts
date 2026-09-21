@@ -16,7 +16,7 @@ import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout, assertSafeDirectory } from "../io/config-layout.node.ts";
 import { reviewedProfilePath } from "../io/paths.ts";
 import { LIVE_HOST_BUNDLE } from "../host/live-slices.ts";
-import { hostRecipeForSourceSha } from "../host/source-recipes.ts";
+import { HOST_RECIPE } from "../host/source-recipes.ts";
 import { applyPatchProfile, preflightProfileRecipe } from "../host/profile.ts";
 import { acquireAdvisoryGate, type AdvisoryGate } from "../io/advisory-gate.node.ts";
 import { openMonitorStore } from "../io/monitor-store.node.ts";
@@ -36,7 +36,7 @@ export async function inspectHostHealthSources(paths:HostArtifactPaths,binaryDir
   let artifacts=await readHostArtifacts(paths,signal);
   let proposal: { recipeId:string; capability:"core"|"current-state"; profileDigest:string|null; reviewed:false; published:false } | null = null;
   if (candidateRecipe) {
-    const recipe=hostRecipeForSourceSha(artifacts.sourceSha), slices=candidateRecipe==="core"?recipe.core:[...recipe.core,...recipe.checkpoint,...recipe.currentState];
+    const recipe=HOST_RECIPE, slices=candidateRecipe==="core"?recipe.core:[...recipe.core,...recipe.checkpoint,...recipe.currentState];
     const text=new TextDecoder("utf-8",{fatal:true}).decode(artifacts.source),result=preflightProfileRecipe(text,slices,recipe.id);
     // Explicit static authoring inspection only. The same TS transformer builds
     // the actual candidate, but nothing is published or promoted to a profile.
@@ -168,10 +168,10 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       compilation, read: input.readWitness, previous: previousWitness, inspect: ports.runtime }, controller.signal);
     if (closed || !enabled || !stillSelected()) return;
     if (observation.snapshot) previousWitness = { observationId: observation.snapshot.compilation.observationId, sequence: observation.snapshot.sequence,
-      eventTotal: observation.snapshot.eventsDropped + observation.snapshot.events.length, ...(observation.snapshot.leaseOpportunity ? { leaseOpportunity: observation.snapshot.leaseOpportunity } : {}) };
+      eventTotal: observation.snapshot.eventsDropped + observation.snapshot.events.length, leaseOpportunity: observation.snapshot.leaseOpportunity };
     const s = observation.snapshot;
     // Challenge/sequence/heartbeat are read freshness, not new business evidence.
-    const key = canonicalJson([selectedRoot, observation.state, observation.reason, s ? [s.version, s.compilation, s.capabilities, s.events, s.eventsDropped, s.untrackedSlices, s.leaseOpportunity ?? null] : null]);
+    const key = canonicalJson([selectedRoot, observation.state, observation.reason, s ? [s.version, s.compilation, s.capabilities, s.events, s.eventsDropped, s.untrackedSlices, s.leaseOpportunity] : null]);
     observedWitnessKey = key;
     status = { ...status, witness: observation, ...(key !== witnessKey ? { runtimeIntake: "not-observed" as const } : {}) };
     await serial(async () => {

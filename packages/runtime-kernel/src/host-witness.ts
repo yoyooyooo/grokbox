@@ -15,9 +15,9 @@ export type HostWitnessRow = { id: HostWitnessCapability; required: boolean; mis
 /** A constant-size, same-generation record of direct observations. It survives
  * detail-ring eviction; it is not an expected-invocation counter or permission. */
 export type HostLeaseOpportunityLedger = { observed: number; missing: number; firstMissing: HostWitnessEvent | null; last: HostWitnessEvent | null };
-export type HostWitnessSnapshot = { version: 1 | 2; challenge: string; sequence: number; observedAtMs: number; compilation: HostCompileReceipt;
+export type HostWitnessSnapshot = { version: 2; challenge: string; sequence: number; observedAtMs: number; compilation: HostCompileReceipt;
   capabilities: HostWitnessRow[]; events: HostWitnessEvent[]; eventsDropped: number; untrackedSlices: string[];
-  leaseOpportunity?: HostLeaseOpportunityLedger;
+  leaseOpportunity: HostLeaseOpportunityLedger;
   coverage: "registered-handles-and-recorded-boundaries"; opportunityCoverage: "not-observed" | "managed-main-stream-entry"; qualified: false };
 export type HostWitnessObservation = { state: "not-observed" | "current" | "unavailable" | "invalid" | "different-generation";
   reason: "not-requested" | "no-current-compilation" | "unsupported-reader" | "read-unavailable" | "invalid-reply" | "generation-changed" | "matched";
@@ -35,9 +35,8 @@ function data(v: unknown, keys: readonly string[]): Record<string, any> | null {
 }
 function ids(v: unknown): v is string[] { return Array.isArray(v) && v.length <= 64 && v.every(s => typeof s === "string" && /^[a-z][a-z0-9-]{0,79}$/.test(s)) && new Set(v).size === v.length; }
 export function projectHostWitnessSnapshot(raw: unknown): HostWitnessSnapshot | null {
-  const version = raw && typeof raw === "object" ? Object.getOwnPropertyDescriptor(raw, "version")?.value : undefined;
-  const v = data(raw, ["version", "challenge", "sequence", "observedAtMs", "compilation", "capabilities", "events", "eventsDropped", "untrackedSlices", "coverage", "opportunityCoverage", "qualified", ...(version === 2 ? ["leaseOpportunity"] : [])]);
-  if (!v || ![1, 2].includes(v.version) || !uuid(v.challenge) || !integer(v.sequence, 1) || !integer(v.observedAtMs, 1) || !integer(v.eventsDropped)
+  const v = data(raw, ["version", "challenge", "sequence", "observedAtMs", "compilation", "capabilities", "events", "eventsDropped", "untrackedSlices", "coverage", "opportunityCoverage", "qualified", "leaseOpportunity"]);
+  if (!v || v.version !== 2 || !uuid(v.challenge) || !integer(v.sequence, 1) || !integer(v.observedAtMs, 1) || !integer(v.eventsDropped)
     || v.coverage !== "registered-handles-and-recorded-boundaries" || !["not-observed", "managed-main-stream-entry"].includes(v.opportunityCoverage) || v.qualified !== false || !ids(v.untrackedSlices)
     || !Array.isArray(v.capabilities) || v.capabilities.length !== HOST_WITNESS_CAPABILITIES.length || !Array.isArray(v.events) || v.events.length > 32) return null;
   const compilation = projectHostCompileReceipt(v.compilation);
@@ -68,10 +67,9 @@ export function projectHostWitnessSnapshot(raw: unknown): HostWitnessSnapshot | 
     if (isLeaseOpportunity(e as HostWitnessEvent) && (compilation.mode !== "route" || e.correlation === null)) return null;
     events.push(e as HostWitnessEvent); previous = e.sequence; previousAt = e.atMs;
   }
-  const ledger = v.version === 2 ? projectLeaseLedger(v.leaseOpportunity, compilation, v.observedAtMs, events, v.eventsDropped) : undefined;
-  if (v.version === 2 && !ledger) return null;
-  if ((v.opportunityCoverage === "managed-main-stream-entry") !== (ledger ? ledger.observed > 0 : events.some(isLeaseOpportunity))) return null;
-  return { ...v, compilation, capabilities, events, ...(ledger ? { leaseOpportunity: ledger } : {}), untrackedSlices: [...v.untrackedSlices] } as HostWitnessSnapshot;
+  const ledger = projectLeaseLedger(v.leaseOpportunity, compilation, v.observedAtMs, events, v.eventsDropped);
+  if (!ledger || (v.opportunityCoverage === "managed-main-stream-entry") !== (ledger.observed > 0)) return null;
+  return { ...v, compilation, capabilities, events, leaseOpportunity: ledger, untrackedSlices: [...v.untrackedSlices] } as HostWitnessSnapshot;
 }
 function projectLeaseLedger(raw: unknown, compilation: HostCompileReceipt, at: number, events: HostWitnessEvent[], dropped: number): HostLeaseOpportunityLedger | null {
   const v = data(raw, ["observed", "missing", "firstMissing", "last"]), total = dropped + events.length;
@@ -123,11 +121,10 @@ export function isLeaseOpportunity(e: Pick<HostWitnessEvent, "capability" | "sta
 export function hostLeaseOpportunityWindow(snapshot: HostWitnessSnapshot | null) {
   const events = snapshot?.events.filter(isLeaseOpportunity) ?? [];
   const present = events.filter(e => e.stage === "managed-stream-lease-present").length, missing = events.length - present;
-  const retained = snapshot?.version === 2 ? snapshot.leaseOpportunity : undefined;
-  return { present, missing, omitted: snapshot?.eventsDropped ?? 0, retained: retained ?? null,
-    state: (retained?.missing ?? missing) > 0 ? "violated" as const
-      : retained ? retained.observed > 0 ? "observed" as const : "not-observed" as const
-      : snapshot?.eventsDropped ? "incomplete" as const : present ? "observed" as const : "not-observed" as const };
+  const retained = snapshot?.leaseOpportunity ?? null;
+  return { present, missing, omitted: snapshot?.eventsDropped ?? 0, retained,
+    state: retained && retained.missing > 0 ? "violated" as const
+      : retained && retained.observed > 0 ? "observed" as const : "not-observed" as const };
 }
 export function hostLeaseOpportunityCondition(e: HostWitnessEvidence): "failed" | "passed" | "unknown" {
   if (e.observation.state !== "current") return "unknown";

@@ -42,7 +42,7 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 ## 当前Host/worker ABI资格（2026-09-21）
 
-[HOST-01配对工作包](../reports/2026-09-21-native-checkpoint-pair.md)已对当前2380c2c7…Host与56f87f…worker完成25项隔离原生验证：原schema/AgentStore、完整引用图、实际worker事务/持久marker/GC hold、重启/解除/B2、startup及duplicate源屏障清理。生产pair目录保留旧元组并精确登记当前元组；preload、worker与主Host注册均使用本次选定身份，不再把旧Host hash写入新来源。
+前一[配对工作包](../reports/2026-09-21-native-checkpoint-pair.md)的2380…来源资格属于历史窗口。当前Host已更新为6be750…，并完成28项隔离原生验证：原schema/AgentStore、完整引用图、实际worker事务/持久marker/GC hold、重启/解除/B2、startup、duplicate和disposal。生产仅保留当前准确元组，旧元组与旧配方回退已退出；preload、worker与主Host注册使用同一当前身份，证据与先拒绝后验证的顺序见[单版本收束](../reports/2026-09-21-current-host-contract-convergence.md)。
 
 新的显式资格入口是 `node scripts/verify-host-health.mjs native-pair`，需Bun1.3.14及显式native continuity、idle-candidate和native Node配置。它只访问指定源和自有测试库，不自动发布profile、启动Bot或执行真实Provider。原source/candidate/worker静态资格同步通过；整Host实际使用、self-reset、附件独立、完整用户恢复与独立审查不由这个ABI实验代签。
 

@@ -9,6 +9,7 @@ const contextFixtureSchema = {
 class ConversationAction { constructor(value) { Object.assign(this, value); } }
 class SummarizeAction {}
 const RESUME_TURN_ACTION = { action: { case: "resumeAction" } };
+const SUMMARIZE_ACTION = { action: { case: "summarizeAction" } };
 function createTurnRunShell(host) {
   let cancelActiveRun = null;
   let pausingForUpgrade = false;
@@ -17,10 +18,13 @@ function createTurnRunShell(host) {
   const interruptAll = interrupt;
   async function run(prompt, options2 = {}) {
       const resumeTurn = options2.resumeTurn === true;
+      const idleCompaction = options2.idleCompaction;
+      const actionOnly = resumeTurn || idleCompaction !== undefined;
+      const promptlessAction = idleCompaction !== undefined ? SUMMARIZE_ACTION : RESUME_TURN_ACTION;
     let aborted2 = false, pausedForUpgrade = false;
     const settle = { settleCompletedTurn: async value => host.onSettled?.(value) };
-    const turn = resumeTurn ? {
-          action: RESUME_TURN_ACTION,
+    const turn = actionOnly ? {
+          action: promptlessAction,
           automationStatusReminder: null,
     } : { action: { action: { case: "userMessage", value: prompt } } };
     cancelActiveRun = () => { aborted2 = true; };
@@ -44,7 +48,7 @@ function createTurnRunShell(host) {
 var SandAgentRunner = class _SandAgentRunner {};
 var SummarizeActionHandler = class {
   constructor(options) { Object.assign(this, options); }
-  async handle(ctx, _action, rootPromptExecutor, stateHandler, _mcpTools, onStateUpdate) {
+  async handle(ctx, _action, rootPromptExecutor, stateHandler, mcpTools, onStateUpdate) {
     const hasAnyMessages = rootPromptExecutor.getMessages().length > 0;
     return { nativeUnchanged: true, hasAnyMessages };
   }

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -293,7 +292,9 @@ if (existsSync(preload) && failures.length === 0) {
   const esbuild = join(repoRoot, "node_modules", ".bin", "esbuild");
   if (!existsSync(esbuild)) fail("missing esbuild evidence");
   else {
-    const dir = mkdtempSync(join(tmpdir(), "t20-preload-")); ownedProofDirectories.push(dir);
+    const cache = join(repoRoot, "node_modules", ".cache", "runtime-boundary-proofs");
+    mkdirSync(cache, { recursive: true, mode: 0o700 });
+    const dir = mkdtempSync(join(cache, "preload-")); ownedProofDirectories.push(dir);
     const outfile = join(dir, "preload.cjs");
     const metafile = join(dir, "meta.json");
     const ran = spawnSync(esbuild, [preload, "--bundle", "--platform=node", "--format=cjs", `--outfile=${outfile}`, `--metafile=${metafile}`], {

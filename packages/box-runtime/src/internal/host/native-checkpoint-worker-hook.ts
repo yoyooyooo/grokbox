@@ -8,11 +8,10 @@ import { NATIVE_CHECKPOINT_PAIR, nativeCheckpointPair } from "./native-checkpoin
 export { NATIVE_CHECKPOINT_PAIR } from "./native-checkpoint-pair.ts";
 const open = '  port.on("message", (request) => {\n    try {\n      switch (request.kind) {';
 const end = '  });\n}\nmain();\n';
-/** Pure candidate authoring for the exact independently inspected worker ABI.
- * The Host hash is a correlation input, NOT qualification. Only the installer
- * below can select an approved Host/worker pair. No path or runtime is opened. */
-export function prepareNativeCheckpointWorkerCandidate(source: string, hostSourceSha: string) {
-  if (!/^[a-f0-9]{64}$/.test(hostSourceSha) || sha256Text(source) !== NATIVE_CHECKPOINT_PAIR.worker || source.indexOf(open) < 0
+/** Exact current ABI transformation. There is no unqualified authoring variant
+ * exported to consumers and no retired Host fallback. No path is opened here. */
+export function transformNativeCheckpointWorker(source: string, hostSourceSha: string = NATIVE_CHECKPOINT_PAIR.host) {
+  if (!nativeCheckpointPair(hostSourceSha, sha256Text(source)) || source.indexOf(open) < 0
     || source.indexOf(open) !== source.lastIndexOf(open) || !source.endsWith(end)) throw Error("native_checkpoint_worker_unqualified");
   return source.replace(open, '  const __grokbox_original_dispatch = (request) => {\n    try {\n      switch (request.kind) {')
     .replace('            kind: "init-ok",\n', '            kind: "init-ok",\n            grokboxCheckpointProtocol: 1,\n')
@@ -28,12 +27,6 @@ export function prepareNativeCheckpointWorkerCandidate(source: string, hostSourc
 }
 main();
 `;
-}
-/** Production transformation accepts only an independently qualified tuple. */
-export function transformNativeCheckpointWorker(source: string, hostSourceSha: string = NATIVE_CHECKPOINT_PAIR.host) {
-  const pair = nativeCheckpointPair(hostSourceSha, sha256Text(source));
-  if (!pair) throw Error("native_checkpoint_worker_unqualified");
-  return prepareNativeCheckpointWorkerCandidate(source, pair.host);
 }
 /** Install only while compiling the qualified worker under an explicitly
  * selected continuity profile. This function does not start a worker or install

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
-import { hostRecipeForSourceSha } from "../src/internal/host/source-recipes.ts";
+import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
 import { NATIVE_CURRENT_STATE_SYMBOL } from "../src/internal/host/native-current-state-owner.ts";
 import { CONT_NATIVE_PAIR, nativeContinuityCode, nativeContinuityEnabled } from "./native-continuity-code.ts";
 
@@ -20,7 +20,7 @@ nativeTest("original resume explicitly has no-turn no-op; startup selects new-tu
   expect(decision).toBeDefined();
   const result = runInNewContext(`(function(){${decision}})()`, { stateHandler: { turns: [] } }, { timeout: 1000 });
   expect(result).toEqual({ noTurns: true });
-  const slice = hostRecipeForSourceSha(CONT_NATIVE_PAIR.host).currentState.find(s => s.id === "continuity-native-startup-action")!;
+  const slice = HOST_RECIPE.currentState.find(s => s.id === "continuity-native-startup-action")!;
   // Evaluate the exact new branch with owned action constructors and the actual
   // native UserMessage codec. This is an action-shape proof, not a model call.
   const code = slice.replacement.replace("        } =", "const value =") + ' action: "ordinary-resume" } : { action: "ordinary-input" }; value;';
@@ -36,7 +36,7 @@ nativeTest("original resume explicitly has no-turn no-op; startup selects new-tu
 
 nativeTest("qualified native turn writer omits the prompt only for the trusted program carrier, not ordinary user messages", async () => {
   const source = await readFile("/home/box/sand-host/host-main.cjs", "utf8"); expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
-  const patch = hostRecipeForSourceSha(CONT_NATIVE_PAIR.host).currentState.find(s => s.id === "continuity-native-startup-no-user-prompt")!;
+  const patch = HOST_RECIPE.currentState.find(s => s.id === "continuity-native-startup-no-user-prompt")!;
   const begin = source.indexOf(patch.find, source.indexOf(patch.startAnchor));
   const end = source.indexOf(patch.endAnchor, begin);
   expect(begin).toBeGreaterThan(0); expect(end - begin).toBeLessThan(1024);

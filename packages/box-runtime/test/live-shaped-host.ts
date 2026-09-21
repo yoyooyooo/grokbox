@@ -22,8 +22,8 @@ const toolOwner = {
       promiseFn(ctx).then((r) => {
         result = r;
         resolvers.resolve(toolCall);
-      }).catch((error41) => {
-        resolvers.reject(error41);
+      }).catch((error42) => {
+        resolvers.reject(error42);
       });
       const newToolCall = this.withToolCallMetadata(callId, await resolvers.promise,
         hookContextCollector);
@@ -95,19 +95,19 @@ const compactOwner = {
   async runWithMaxTokensRetry(ctx, root, fn) {
     for (let i = 0; i < 2; i++) {
       try { return await fn();
-        } catch (error41) {
-          if (error41 instanceof OutputTokensLimitExceededError) {
-            if (i === 1) throw error41;
-          } else throw error41;
+        } catch (error42) {
+          if (error42 instanceof OutputTokensLimitExceededError) {
+            if (i === 1) throw error42;
+          } else throw error42;
         }
     }
   },
   async runWithSummarizationRetry(ctx, state, root, fn) {
     for (let i = 0; i < 2; i++) {
       try { return await fn();
-        } catch (error41) {
-          const isProactiveSummarizationThresholdError = error41 instanceof ProactiveSummarizationThresholdError;
-          if (!isProactiveSummarizationThresholdError || i === 1) throw error41;
+        } catch (error42) {
+          const isProactiveSummarizationThresholdError = error42 instanceof ProactiveSummarizationThresholdError;
+          if (!isProactiveSummarizationThresholdError || i === 1) throw error42;
         }
     }
   },
@@ -271,13 +271,13 @@ function resolveProfileName(name) { return name; }
 class RetriableError extends Error {}
 class NonRetriableError extends Error {}
 class ActionRequiredError extends Error {}
-function classifyError2(error41) { return error41; }
-function mayRetry(error41) {
-  if (!(classifyError2(error41) instanceof RetriableError)) return false;
+function classifyError2(error42) { return error42; }
+function mayRetry(error42) {
+  if (!(classifyError2(error42) instanceof RetriableError)) return false;
   return true;
 }
-function displayFailure(error41) {
-  const classified = classifyError2(error41);
+function displayFailure(error42) {
+  const classified = classifyError2(error42);
   if (classified instanceof NonRetriableError || classified instanceof ActionRequiredError) {
     return false;
   }

@@ -7,15 +7,15 @@ export const NATIVE_BOT_LIFECYCLE_SLICES: readonly SlicePatch[] = [
     id: "continuity-native-startup-input",
     startAnchor: "function createTurnRunShell(host) {",
     endAnchor: "var SandAgentRunner = class _SandAgentRunner {",
-    find: '      if (!resumeTurn && trimmedPrompt.length === 0',
+    find: '      if (!actionOnly && trimmedPrompt.length === 0',
     replacement: `      const __grokbox_startup = ${owner}?.consumeStartup(host.getConversationId(), options2.grokboxStartupTicket) === true;
-      if (!resumeTurn && !__grokbox_startup && trimmedPrompt.length === 0`,
+      if (!actionOnly && !__grokbox_startup && trimmedPrompt.length === 0`,
   },
   {
     id: "continuity-native-startup-action",
     startAnchor: "function createTurnRunShell(host) {",
     endAnchor: "var SandAgentRunner = class _SandAgentRunner {",
-    find: '        } = resumeTurn ? {\n',
+    find: '        } = actionOnly ? {\n',
     replacement: `        } = __grokbox_startup ? {
           action: new ConversationAction({ action: { case: "userMessageAction", value: new UserMessageAction({
             userMessage: new UserMessage({ text: "", isSimulatedMsg: true,
@@ -24,7 +24,7 @@ export const NATIVE_BOT_LIFECYCLE_SLICES: readonly SlicePatch[] = [
           }) } }),
           automationStatusReminder: null, automationStatusCompactionEpoch: 0,
           prependedUserMessageDedupeFloorMessageId: void 0
-        } : resumeTurn ? {
+        } : actionOnly ? {
 `,
   },
   {

@@ -30,8 +30,8 @@ export const CONTEXT_MAINTENANCE_SLICES: readonly SlicePatch[] = [
     id: "context-manual-native-action",
     startAnchor: "function createTurnRunShell(host) {",
     endAnchor: "var SandAgentRunner = class _SandAgentRunner {",
-    find: "          action: RESUME_TURN_ACTION,\n          automationStatusReminder: null,\n",
-    replacement: `          action: __grokbox_context_op === undefined ? RESUME_TURN_ACTION : new ConversationAction({ action: { case: "summarizeAction", value: new SummarizeAction() } }),
+    find: "          action: promptlessAction,\n          automationStatusReminder: null,\n",
+    replacement: `          action: __grokbox_context_op === undefined ? promptlessAction : new ConversationAction({ action: { case: "summarizeAction", value: new SummarizeAction() } }),
           automationStatusReminder: null,
 `,
   },
@@ -46,14 +46,14 @@ export const CONTEXT_MAINTENANCE_SLICES: readonly SlicePatch[] = [
     id: "context-manual-summary-owner",
     startAnchor: "var SummarizeActionHandler = class {",
     endAnchor: "var ResumeActionHandler = class extends AbstractUserMessageActionHandler {",
-    find: "  async handle(ctx, _action, rootPromptExecutor, stateHandler, _mcpTools, onStateUpdate) {\n    const hasAnyMessages = rootPromptExecutor.getMessages().length > 0;\n",
-    replacement: `  async handle(ctx, _action, rootPromptExecutor, stateHandler, _mcpTools, onStateUpdate) {
+    find: "  async handle(ctx, _action, rootPromptExecutor, stateHandler, mcpTools, onStateUpdate) {\n    const hasAnyMessages = rootPromptExecutor.getMessages().length > 0;\n",
+    replacement: `  async handle(ctx, _action, rootPromptExecutor, stateHandler, mcpTools, onStateUpdate) {
     const __grokbox_context_handled = ${control}?.manualAction({
       agentId: this.config.conversationGroupId, turnId: ctx.get(requestIdKey),
       capture: async () => {
         const requestContext = await getRequestContext(ctx, void 0, this.resourceAccessor, buildRequestContextOptions(this.config));
         const toolSet = this.config.toolsGenerator({ resourceAccessor: this.resourceAccessor, stateHandler,
-          agentSessionId: this.config.agentSessionId, mcpTools: _mcpTools,
+          agentSessionId: this.config.agentSessionId, mcpTools: mcpTools,
           repositoryInfos: requestContext.repositoryInfo, blobStore: stateHandler.getBlobStore(),
           mode: stateHandler.mode ?? AgentMode.AGENT, loggingContext: ctx, requestContext,
           fileOperationLockManager: new FileOperationLockManager(), smartModeClassifierMode: this.config.smartModeClassifierMode,

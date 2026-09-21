@@ -4,16 +4,15 @@ import { posix } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
-import { hostRecipeForSourceSha } from "../src/internal/host/source-recipes.ts";
+import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
 import { nativeContinuityEnabled, CONT_NATIVE_PAIR } from "./native-continuity-code.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
-let source: string | undefined;
 function bundle() {
-  if (source === undefined) {
-    source = readFileSync("/home/box/sand-host/host-main.cjs", "utf8");
-    expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
-  }
+  // A failed qualification must not cache bytes that later test cases can use.
+  // Each independent selection checks the source actually read in this window.
+  const source = readFileSync("/home/box/sand-host/host-main.cjs", "utf8");
+  expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
   return source;
 }
 function selected(name: string) {
@@ -35,7 +34,7 @@ function fixture(patched = false) {
   const recorded: string[] = [], profiles = new Map<string,unknown>(), metadata = new Map<string,unknown>([["grokbox.current-state.v1", "source-prepared-state"]]);
   const originals = ["cloneStoreDb", "writeClonedProfile", "cloneAutomations", "rewriteClonedAgentIdentity", "copyIfPresent", "cloneAgentDir"].map(selected);
   if (patched) {
-    const patch = hostRecipeForSourceSha(CONT_NATIVE_PAIR.host).currentState.find(slice => slice.id === "continuity-native-duplicate-identity")!;
+    const patch = HOST_RECIPE.currentState.find(slice => slice.id === "continuity-native-duplicate-identity")!;
     originals[3] = originals[3]!.replace(patch.find, patch.replacement);
   }
   const globals = { import_node_fs77: {

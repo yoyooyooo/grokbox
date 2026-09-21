@@ -89,10 +89,10 @@ test("cumulative opportunities remain bounded, detached and consistent with the 
   expect(f.read().leaseOpportunity!.missing).toBe(1); expect(f.read().leaseOpportunity!.firstMissing!.correlation).not.toBe("b".repeat(64));
 });
 
-test("legacy window-only evidence stays readable without acquiring cumulative coverage", () => {
+test("retired window-only evidence is refused instead of supplying a compatibility read path", () => {
   const f = fixture(), { leaseOpportunity: _, ...base } = f.read();
   const old = { ...base, version: 1 as const };
-  expect(projectHostWitnessSnapshot(old)).not.toBeNull(); expect(hostLeaseOpportunityWindow(old).retained).toBeNull();
+  expect(projectHostWitnessSnapshot(old)).toBeNull();
   expect(projectHostWitnessSnapshot({ ...base, version: 2 })).toBeNull();
   expect(projectHostWitnessSnapshot({ ...old, leaseOpportunity: { observed: 0, missing: 0, firstMissing: null, last: null } })).toBeNull();
 });

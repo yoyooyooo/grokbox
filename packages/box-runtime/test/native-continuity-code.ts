@@ -4,7 +4,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
 import { nativeContinuityPair } from "./native-continuity-pair.ts";
-// The original pin remains the default. A named candidate is an explicit
+// Independent current expected bytes. Qualification remains an explicit
 // isolated codec/AgentStore experiment, never a production qualification write.
 export const CONT_NATIVE_PAIR = nativeContinuityPair(process.env);
 export const nativeContinuityEnabled = () => process.env.GROKBOX_TEST_NATIVE_CONTINUITY === "1";

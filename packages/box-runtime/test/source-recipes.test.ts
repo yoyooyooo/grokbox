@@ -3,10 +3,9 @@ import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
-import { IDLE_COMPACTION_HOST_SHA, IDLE_COMPACTION_RECIPE, hostRecipeForSourceSha } from "../src/internal/host/source-recipes.ts";
+import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
 import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 import { NATIVE_CURRENT_STATE_SLICES } from "../src/internal/host/native-current-state-slices.ts";
-import { NATIVE_CHECKPOINT_PAIR } from "../src/internal/host/native-checkpoint-pair.ts";
 import { HOST_CONTEXT_CONTROL_SYMBOL } from "../src/internal/host/context-control.node.ts";
 import { NATIVE_CURRENT_STATE_SYMBOL } from "../src/internal/host/native-current-state-owner.ts";
 import { HOST_MANAGED_FAILURE_SYMBOL, transformUnchecked, applyPatchProfile, type SlicePatch } from "../src/internal/host/profile.ts";
@@ -15,7 +14,7 @@ import { HOST_ALERT_OBSERVATION_SYMBOL } from "../src/internal/host/alert-observ
 import { writeReviewedProfileFromCopy } from "../src/internal/process/profile.node.ts";
 
 const fixture = (name: string) => readFile(new URL(`../../../test/fixtures/host-verifier/sources/${name}.cjs`, import.meta.url), "utf8");
-const all = [...IDLE_COMPACTION_RECIPE.core, ...IDLE_COMPACTION_RECIPE.currentState];
+const all = [...HOST_RECIPE.core, ...HOST_RECIPE.currentState];
 const select = (...ids: string[]) => all.filter(s => ids.includes(s.id));
 function execute(source: string, slices: readonly SlicePatch[], globals: Record<PropertyKey, unknown> = {}) {
   const changed = transformUnchecked(source, slices);
@@ -25,23 +24,25 @@ function execute(source: string, slices: readonly SlicePatch[], globals: Record<
   return module.exports as any;
 }
 
-test("only the inspected source selects the new authoring layout; existing profile and companion pins are unchanged", () => {
-  expect(hostRecipeForSourceSha(IDLE_COMPACTION_HOST_SHA)).toBe(IDLE_COMPACTION_RECIPE);
-  expect(hostRecipeForSourceSha("a".repeat(64)).core).toBe(LIVE_SLICE_PATCHES);
-  expect(hostRecipeForSourceSha(NATIVE_CHECKPOINT_PAIR.host).currentState).toBe(NATIVE_CURRENT_STATE_SLICES);
-  expect(NATIVE_CHECKPOINT_PAIR.host).not.toBe(IDLE_COMPACTION_HOST_SHA);
-  expect(IDLE_COMPACTION_RECIPE.core.map(s => s.id)).toEqual(LIVE_SLICE_PATCHES.map(s => s.id));
-  expect(IDLE_COMPACTION_RECIPE.currentState.map(s => s.id)).toEqual(NATIVE_CURRENT_STATE_SLICES.map(s => s.id));
-  expect(IDLE_COMPACTION_RECIPE.core.filter((s, i) => JSON.stringify(s) !== JSON.stringify(LIVE_SLICE_PATCHES[i])).map(s => String(s.id)).sort()).toEqual([
-    "managed-retry-gate", "managed-output-retry-gate", "managed-summary-retry-gate", "tool-execution-failure-observation", "alert-main-decision", "alert-automation-decision", "alert-automation-throttle", "context-manual-native-action", "context-manual-summary-owner",
-  ].sort());
-  expect(IDLE_COMPACTION_RECIPE.currentState.filter((s, i) => JSON.stringify(s) !== JSON.stringify(NATIVE_CURRENT_STATE_SLICES[i])).map(s => String(s.id)).sort()).toEqual(["continuity-native-created-owner", "continuity-native-session-owner", "continuity-native-startup-action", "continuity-native-startup-input"]);
+test("one immutable current recipe is shared without a historic layout rewrite or fallback", () => {
+  expect(HOST_RECIPE.core).toEqual(LIVE_SLICE_PATCHES);
+  expect(HOST_RECIPE.currentState).toEqual(NATIVE_CURRENT_STATE_SLICES);
+  expect(HOST_RECIPE.core).toHaveLength(39);
+  expect(HOST_RECIPE.checkpoint).toHaveLength(3);
+  expect(HOST_RECIPE.currentState).toHaveLength(19);
+  expect(Object.isFrozen(HOST_RECIPE)).toBe(true);
+  for (const group of [HOST_RECIPE.core, HOST_RECIPE.checkpoint, HOST_RECIPE.currentState]) {
+    expect(Object.isFrozen(group)).toBe(true);
+    expect(group.every(Object.isFrozen)).toBe(true);
+  }
 });
 
 const actionIds = ["context-manual-trusted-options", "context-manual-native-action", "continuity-native-startup-input", "continuity-native-startup-action"];
 test("ordinary empty input, resume and native idle summary retain distinct branches with zero synthetic user messages", async () => {
   const source = await fixture("idle-actions");
-  expect(transformUnchecked(source, NATIVE_CURRENT_STATE_SLICES.filter(s => s.id === "continuity-native-startup-input")).ok).toBe(false);
+  const startup = NATIVE_CURRENT_STATE_SLICES.filter(s => s.id === "continuity-native-startup-input");
+  expect(transformUnchecked(source, startup).ok).toBe(true);
+  expect(transformUnchecked(source.replace("!actionOnly && trimmedPrompt", "!resumeTurn && trimmedPrompt"), startup).ok).toBe(false);
   let assembly = 0, consume = 0;
   const e = execute(source, select(...actionIds), { [Symbol.for(NATIVE_CURRENT_STATE_SYMBOL)]: { consumeStartup: () => { consume++; return false; } } });
   const shell = e.createTurnRunShell({ getConversationId: () => "source", promptGlue: { assembleTurnAction: async () => { assembly++; return { action: { kind: "ordinary" } }; } } });

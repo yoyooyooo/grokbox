@@ -27,6 +27,21 @@ test("actual TS candidate passes four Rust checks through the management owner w
  }finally{await f.close();}
 });
 
+for(const retired of ["health-contract","checker-revision"] as const)test(`retired ${retired} evidence is preserved but cannot restart as current health`,async()=>{
+ const f=await hostHealthFixture(origin);try{
+  await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");await f.server.close();
+  const path=join(f.root,"host-bundles","health","receipts.json"),document=JSON.parse(await readFile(path,"utf8"));
+  if(retired==="health-contract")for(const row of document.receipts){
+   row.event.contractRevision="host-health-v1";row.event.requiredChecks=row.event.requiredChecks.filter((id:string)=>id!=="context.lease-finally");
+  }else for(const row of document.receipts)if(row.analysis)row.analysis.checks[0].revision=1;
+  const stored=JSON.stringify(document)+"\n";await writeFile(path,stored,{mode:0o600});
+  await assert.rejects(readHostHealthJournal(f.root,H_INSTALL));await f.restart();
+  await until(()=>health(f),v=>v.data.state==="blocked");
+  assert.equal((await health(f)).data.latest,null);assert.equal((await f.client().identity()).data.installationId,H_INSTALL);
+  await f.server.close();assert.equal(await readFile(path,"utf8"),stored);assert.equal(f.state.nativeCalls,0);
+ }finally{await f.close();}
+});
+
 test("a definite recipe mismatch becomes one installation incident even when the Rust binary is unavailable",async()=>{
  const f=await hostHealthFixture(origin,{badRecipe:true,ports:{binaryDirectory:"/definitely-absent-verifier"}});try{
   const v=await until(()=>health(f),v=>v.data.latest?.analysis==="unavailable"&&v.data.intake==="committed");

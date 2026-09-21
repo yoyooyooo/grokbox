@@ -8,13 +8,13 @@ const SOURCE = `
 class RetriableError extends Error {}
 class NonRetriableError extends Error {}
 class ActionRequiredError extends Error {}
-function classifyError2(error41) { return new RetriableError("native generic classification"); }
-function mayRetry(error41) {
-  if (!(classifyError2(error41) instanceof RetriableError)) return false;
+function classifyError2(error42) { return new RetriableError("native generic classification"); }
+function mayRetry(error42) {
+  if (!(classifyError2(error42) instanceof RetriableError)) return false;
   return true;
 }
-function displayFailure(error41) {
-  const classified = classifyError2(error41);
+function displayFailure(error42) {
+  const classified = classifyError2(error42);
   if (classified instanceof NonRetriableError || classified instanceof ActionRequiredError) {
     return false;
   }

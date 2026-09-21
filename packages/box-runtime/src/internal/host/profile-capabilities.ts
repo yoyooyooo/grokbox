@@ -1,5 +1,5 @@
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
-import { hostRecipeForSourceSha } from "./source-recipes.ts";
+import { HOST_RECIPE } from "./source-recipes.ts";
 import { applyPatchProfile, CONTEXT_SLICE_IDS, type PatchProfile, type SliceId, type SlicePatch } from "./profile.ts";
 import { nativeCheckpointPair } from "./native-checkpoint-pair.ts";
 
@@ -29,7 +29,7 @@ export function upgradeProfileCapability(source: string, baseline: PatchProfile,
   if (capability === "current-state" && !nativeCheckpointPair(baseline.sourceSha256)) {
     throw new BoxRuntimeError("invalid_usage", "Current-state capability requires the independently qualified Host/worker pair.");
   }
-  const recipe = hostRecipeForSourceSha(baseline.sourceSha256);
+  const recipe = HOST_RECIPE;
   const extras = capability === "current-state" ? [...recipe.checkpoint, ...recipe.currentState] : [];
   const dependencies: readonly SliceId[] = capability === "current-state"
     ? [...OWNERSHIP_DEPENDENCIES, ...CONTEXT_SLICE_IDS, ...extras.map(slice => slice.id)] : OWNERSHIP_DEPENDENCIES;

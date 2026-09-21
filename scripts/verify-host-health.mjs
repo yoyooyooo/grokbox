@@ -4,13 +4,19 @@ import { captureVerificationSource } from "./verification-source.mjs";
 const root=fileURLToPath(new URL("../",import.meta.url));
 const group=process.argv[2]??"core";
 if(process.argv.length>3||!["core","integration","native-pair"].includes(group))throw Error("usage: verify-host-health.mjs [core|integration|native-pair]");
-if(group==="native-pair"&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!=="idle-candidate"||!process.env.GROKBOX_TEST_NATIVE_NODE))
- throw Error("native-pair requires explicit native continuity opt-in, idle-candidate selection and native Node executable; it never authorizes production adoption.");
+if(group==="native-pair"&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
+ throw Error("native-pair requires explicit native continuity opt-in and native Node executable; retired pair selectors are not supported and tests never authorize adoption.");
 const bun=spawnSync("bun",["--version"],{encoding:"utf8"});
 if(bun.status!==0||bun.stdout.trim()!=="1.3.14")throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
 const suites={
  core:["packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
   "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/source-recipes.test.ts","packages/box-runtime/test/capability-witness.test.ts",
+  "packages/box-runtime/test/alert-slices.test.ts","packages/box-runtime/test/host-managed-retry.test.ts","packages/box-runtime/test/host-native-error-scope.test.ts",
+  "packages/box-runtime/test/context-maintenance-control.test.ts","packages/box-runtime/test/continuity-sidecar.test.ts",
+  "packages/box-runtime/test/host-seam-acorn.test.ts","packages/box-runtime/test/host-seam-contract.test.ts","packages/box-runtime/test/host-seam-iteration.test.ts",
+  "packages/box-runtime/test/host-seam-propose.test.ts","packages/box-runtime/test/host-seam-replay.test.ts","packages/box-runtime/test/host-seam-shape.test.ts",
+  "packages/box-runtime/test/host-seam-slice-emit.test.ts","packages/box-runtime/test/host-seam-two-slice.test.ts","packages/box-runtime/test/hcr-diagnostics.test.ts",
+  "packages/box-runtime/test/host-activity-bridge.test.ts","packages/box-runtime/test/host-harness-stick.test.ts","packages/box-runtime/test/host-profile-title.test.ts",
   "packages/box-runtime/test/native-continuity-pair.test.ts","packages/box-runtime/test/native-checkpoint-worker.test.ts","packages/box-runtime/test/native-current-state-owner.test.ts",
   "packages/box-runtime/test/reviewed-profile-write.test.ts","packages/box-runtime/test/reviewed-profile-write-lineage.test.ts","packages/box-runtime/test/host-envelope.test.ts",
   "packages/box-runtime/test/monitor-service-lifetime.test.ts",

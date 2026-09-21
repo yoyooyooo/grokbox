@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,9 +34,12 @@ async function put(root: string, rel: string, text: string): Promise<void> {
 }
 
 async function fixture(changes: Record<string, string> = {}, omitSource = false): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "t20-boundary-")); ownedFixtures.push(root);
-  // This is a standalone project, not a child of the shared machine's /tmp
-  // configuration tree. Stop compiler config discovery at its actual root.
+  // Esbuild traverses filesystem ancestors while resolving inputs. Keep its
+  // tiny standalone fixtures away from an unrelated shared temporary tree.
+  const cache = join(repoRoot, "node_modules", ".cache", "runtime-boundary-fixtures");
+  await mkdir(cache, { recursive: true, mode: 0o700 });
+  const root = await mkdtemp(join(cache, "fixture-")); ownedFixtures.push(root);
+  // Stop compiler config discovery at the actual isolated project root.
   await put(root, "tsconfig.json", '{"compilerOptions":{}}\n');
   await put(root, "packages/box-runtime/package.json", `${JSON.stringify({
     name: "@grokbox/box-runtime",
@@ -188,7 +190,7 @@ describe("runtime layout boundaries", () => {
     // architecture. New pure-domain exports retain the existing Effect fence.
     const failures = JSON.parse(result.stdout).failures as Array<{ message: string }>;
     if (_name.startsWith("pure-domain-effect-")) expect(failures.some(f => f.message === "kernel non-ports file imports Effect")).toBe(true);
-    expect(failures.some(f => !["preload esbuild failed", "preload import-time trap failed", "missing esbuild evidence"].includes(f.message))).toBe(true);
+    expect(failures.some(f => !["preload esbuild failed", "preload import-time trap failed", "missing esbuild evidence"].includes(f.message)), result.stdout + result.stderr).toBe(true);
   }, CHECKER_TEST_TIMEOUT_MS);
 
   test("missing required source is a non-zero checker", async () => {

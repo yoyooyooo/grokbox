@@ -6,9 +6,9 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 
 按 [HCR Spec](../roadmap/host-seam-ops-recognition.md#capability-recovery) 增加显式能力selector。`host/profile-capabilities.ts` owns有限能力包及依赖；`process/profile.node.ts` 在原writer内组装、校验和基线复验；CLI analyze/write使用相同selector。
 
-## 固定来源维护布局（2026-09-20）
+## 当前唯一维护配方（2026-09-21）
 
-原writer与只读envelope预览现按实际源码SHA选择维护配方，明确指定slices的原行为不变；对固定idle-compaction来源保留native actionOnly分支并完成9+2处适配。`ownership-local`替换同样消费这份准确来源配方，仍要求可应用的同源baseline；`current-state`独立Host/worker pin未扩大。生成完整候选不等于作者review、原生角色或实际采用已通过，所有Golden/来源/并发发布门保留。实际候选与独立行为、原publisher及HCR回归见[来源适配报告](../reports/2026-09-20-host-idle-layout-adaptation.md)；不改写本票旧固定窗口的证据范围。
+默认writer、只读envelope、显式能力升级与健康分析使用同一`HOST_RECIPE`。之前按SHA选择旧布局/套用变量名字映射的适配已并入当前canonical slices，旧选择器与旧配方回退退出。原生idle/actionOnly、resume、受信manual和startup语义继续分别验证，未知布局必须明确失败。当前实测Host再次升级为6be750…，四个Rust规则和28项隔离原生资格通过；生产仅保留这一当前配对，不自动发布或采用profile。完整边界与准确来源见[当前收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。
 
 ## Acceptance
 
@@ -20,7 +20,7 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 
 ## 当前原生配对升级（2026-09-21）
 
-当前Host/worker的有限ABI实验已通过，原pair目录登记准确新元组且保留旧元组。显式current-state升级现在从同一个source recipe选择core/checkpoint/current-state，避免旧startup片混入；两处native owner注册的source metadata也按选择的tuple生成。原生升级测试实际经过同源baseline→有限依赖→完整apply/envelope，不删Golden/review/CAS要求。wrong worker/未知Host不允许编译或由静态pass自动登记。[固定范围](../reports/2026-09-21-native-checkpoint-pair.md)。这是作者工具与原生ABI适配，不是当前实际profile已发布/采用。
+有限原生ABI资格与显式同源baseline→有限依赖→完整apply/envelope保持分开；当前生产配对不再接纳前两代Host。两处native owner注册与worker使用同一当前来源身份，wrong worker/未知Host拒绝。原Golden/review/CAS与非目标切片保全不变；保留一份可应用的已审baseline不是恢复旧运行实现。前一配对窗口仅见[固定历史](../reports/2026-09-21-native-checkpoint-pair.md)，不作为现在仍兼容该Host的声明。
 
 ## Forbidden / non-goals
 

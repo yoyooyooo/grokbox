@@ -109,6 +109,8 @@ test("real transformed session calls leave finite boundary evidence, not a fabri
 
 for (const [name, patch] of [
   ["wrong nonce", (s: any) => ({ ...s, challenge: randomUUID() })],
+  ["retired witness version", (s: any) => { const {leaseOpportunity: _retired, ...rest}=s; return {...rest,version:1}; }],
+  ["retired version with current fields", (s: any) => ({...s,version:1})],
   ["old sequence", (s: any) => ({ ...s, sequence: 1 })],
   ["foreign compilation", (s: any) => ({ ...s, compilation: { ...s.compilation, observationId: randomUUID() } })],
   ["private field", (s: any) => ({ ...s, privateSource: "private" })],
@@ -258,9 +260,11 @@ test("direct opportunity contract rejects uncorrelated, wrong-mode and self-cont
     assert.equal(projectHostWitnessSnapshot({...s,opportunityCoverage:"not-observed"}),null);
     for(const change of [{correlation:null},{outcome:"threw"}])assert.equal(projectHostWitnessSnapshot({...s,events:s.events.map(e=>e.stage==="managed-stream-lease-missing"?{...e,...change}:e)}),null);
     assert.equal(projectHostWitnessSnapshot({...s,compilation:{...s.compilation,mode:"identity"}}),null);
-    const {leaseOpportunity: _ledger, ...legacy} = s;
-    const empty={...legacy,version:1 as const,events:[],eventsDropped:0,opportunityCoverage:"not-observed" as const};
+    const empty={...s,events:[],eventsDropped:0,opportunityCoverage:"not-observed" as const,
+      leaseOpportunity:{observed:0,missing:0,firstMissing:null,last:null}};
     assert.ok(projectHostWitnessSnapshot(empty));assert.equal(hostLeaseOpportunityWindow(empty).state,"not-observed");
+    const {leaseOpportunity: _ledger,...retired}=empty;
+    assert.equal(projectHostWitnessSnapshot({...retired,version:1}),null);
     assert.equal(projectHostWitnessSnapshot({...s,events:[],eventsDropped:0,opportunityCoverage:"not-observed"}),null);
   }finally{await f.close();}
 });

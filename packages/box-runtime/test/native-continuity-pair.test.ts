@@ -1,62 +1,52 @@
 import { expect, test } from "bun:test";
-import { nativeContinuityPair } from "./native-continuity-pair.ts";
-import { NATIVE_CHECKPOINT_PAIR, nativeCheckpointPair, IDLE_CHECKPOINT_PAIR } from "../src/internal/host/native-checkpoint-pair.ts";
-import { hostRecipeForSourceSha } from "../src/internal/host/source-recipes.ts";
 import Module from "node:module";
-import { installNativeCheckpointWorkerHook, prepareNativeCheckpointWorkerCandidate } from "../src/internal/host/native-checkpoint-worker-hook.ts";
+import { nativeContinuityPair } from "./native-continuity-pair.ts";
+import { NATIVE_CHECKPOINT_PAIR, nativeCheckpointPair } from "../src/internal/host/native-checkpoint-pair.ts";
+import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
+import { installNativeCheckpointWorkerHook, transformNativeCheckpointWorker } from "../src/internal/host/native-checkpoint-worker-hook.ts";
 
-test("ordinary imports keep the original pair and cannot renew production qualification", () => {
-  const original = nativeContinuityPair({});
-  expect(original).toEqual(NATIVE_CHECKPOINT_PAIR);
-  const candidate = nativeContinuityPair({ GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_CONTINUITY_PAIR: "idle-candidate" });
-  expect(candidate.host).not.toBe(original.host);
-  expect(candidate.worker).toBe(original.worker);
-  expect(Object.isFrozen(candidate)).toBe(true);
+// A retired source is a negative fixture, not an executable production tuple.
+const retiredHosts = ["e7031f773bf035d02952d8b76dc2d2be6cea7167305116cf3e9b05d2c067b06e", "2380c2c7bc3bfe6dc661bfc2640df2a34d79b0e43b234a172abbe55d399b1548"];
+
+test("ordinary imports expose only the independently checked current tuple", () => {
   expect(nativeContinuityPair({})).toEqual(NATIVE_CHECKPOINT_PAIR);
+  expect(nativeContinuityPair({ GROKBOX_TEST_NATIVE_CONTINUITY: "1" })).toEqual(NATIVE_CHECKPOINT_PAIR);
+  expect(Object.isFrozen(NATIVE_CHECKPOINT_PAIR)).toBe(true);
 });
 
-test("candidate authoring cannot install an unreviewed native hook or accept arbitrary source", () => {
+for (const host of [...retiredHosts, "f".repeat(64), '\"; execute();']) test(`retired or unknown Host ${host.slice(0,8)} cannot install a worker hook`, () => {
   const before = (Module.prototype as unknown as { _compile: unknown })._compile;
-  const pair = { ...IDLE_CHECKPOINT_PAIR, host: "f".repeat(64) };
-  const refused = installNativeCheckpointWorkerHook({ targetPath: "/tmp/not-opened/worker.cjs", hostSourceSha: pair.host, enabled: true });
-  expect(refused.installed).toBe(false);
+  expect(installNativeCheckpointWorkerHook({ targetPath: "/tmp/not-opened/worker.cjs", hostSourceSha: host, enabled: true }).installed).toBe(false);
   expect((Module.prototype as unknown as { _compile: unknown })._compile).toBe(before);
-  expect(() => prepareNativeCheckpointWorkerCandidate("const unqualified = true;", pair.host)).toThrow("unqualified");
-  expect(() => prepareNativeCheckpointWorkerCandidate("const unqualified = true;", "\"; execute();")).toThrow("unqualified");
+  expect(() => transformNativeCheckpointWorker("const unqualified = true;", host)).toThrow("unqualified");
 });
 
-test("both qualified tuples remain exact and the new recipe never registers the former Host identity", () => {
+test("current recipe and pair have one source identity and never fall back to the former Host", () => {
   expect(nativeCheckpointPair(NATIVE_CHECKPOINT_PAIR.host, NATIVE_CHECKPOINT_PAIR.worker)).toBe(NATIVE_CHECKPOINT_PAIR);
-  expect(nativeCheckpointPair(IDLE_CHECKPOINT_PAIR.host, IDLE_CHECKPOINT_PAIR.worker)).toBe(IDLE_CHECKPOINT_PAIR);
-  expect(nativeCheckpointPair(IDLE_CHECKPOINT_PAIR.host, "b".repeat(64))).toBeNull();
-  expect(nativeCheckpointPair("f".repeat(64), IDLE_CHECKPOINT_PAIR.worker)).toBeNull();
-  const recipe = hostRecipeForSourceSha(IDLE_CHECKPOINT_PAIR.host);
+  for (const host of retiredHosts) expect(nativeCheckpointPair(host, NATIVE_CHECKPOINT_PAIR.worker)).toBeNull();
+  expect(nativeCheckpointPair(NATIVE_CHECKPOINT_PAIR.host, "b".repeat(64))).toBeNull();
   for (const id of ["continuity-native-created-owner", "continuity-native-session-owner"]) {
-    const replacement = recipe.currentState.find(s => s.id === id)!.replacement;
-    expect(replacement).toContain(`hostSourceSha: "${IDLE_CHECKPOINT_PAIR.host}"`);
-    expect(replacement).not.toContain(NATIVE_CHECKPOINT_PAIR.host);
+    const replacement = HOST_RECIPE.currentState.find(s => s.id === id)!.replacement;
+    expect(replacement).toContain(`hostSourceSha: "${NATIVE_CHECKPOINT_PAIR.host}"`);
+    for (const host of retiredHosts) expect(replacement).not.toContain(host);
   }
 });
 
-test("a qualified Host cannot compile unknown worker bytes and a refusal restores the hook", () => {
+test("a current Host cannot compile unknown worker bytes and refusal restores the hook", () => {
   const proto = Module.prototype as unknown as { _compile: (source: string, filename: string) => unknown };
   const before = proto._compile, targetPath = "/tmp/not-opened/worker.cjs";
-  const hook = installNativeCheckpointWorkerHook({ targetPath, hostSourceSha: IDLE_CHECKPOINT_PAIR.host, enabled: true });
+  const hook = installNativeCheckpointWorkerHook({ targetPath, hostSourceSha: NATIVE_CHECKPOINT_PAIR.host, enabled: true });
   try {
     expect(hook.installed).toBe(true);
-    const module = new Module(targetPath) as unknown as { _compile: (source: string, filename: string) => unknown };
-    // Exercise the installed prototype hook explicitly under either test engine;
-    // the separate native-pair Node thread test exercises the real module loader.
+    const module = new Module(targetPath);
     expect(() => Reflect.apply(proto._compile, module, ["module.exports = true;", targetPath])).toThrow("unqualified");
     expect(proto._compile).toBe(before);
   } finally { hook.restore(); }
 });
 
-test("candidate selection is explicit, finite, and has no latest/path/hash fallback", () => {
-  for (const flag of [undefined, "0", "true", "yes"]) {
-    expect(() => nativeContinuityPair({ GROKBOX_TEST_NATIVE_CONTINUITY: flag, GROKBOX_TEST_NATIVE_CONTINUITY_PAIR: "idle-candidate" })).toThrow();
-  }
-  for (const name of ["latest", "2380c2c7", "/tmp/host.cjs", "", "unknown"]) {
+test("native qualification has no original/candidate/latest selector", () => {
+  for (const flag of ["true", "yes"]) expect(() => nativeContinuityPair({ GROKBOX_TEST_NATIVE_CONTINUITY: flag })).toThrow();
+  for (const name of ["original", "idle-candidate", "latest", "2380c2c7", "/tmp/host.cjs", "", "unknown"]) {
     expect(() => nativeContinuityPair({ GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_CONTINUITY_PAIR: name })).toThrow();
   }
 });

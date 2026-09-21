@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
-import { hostRecipeForSourceSha } from "../host/source-recipes.ts";
+import { HOST_RECIPE } from "../host/source-recipes.ts";
 import { parseProfileCapability, upgradeProfileCapability, type CapabilityUpgradeReceipt, type ProfileCapability } from "../host/profile-capabilities.ts";
 import { acquireAdvisoryGate } from "../io/advisory-gate.node.ts";
 import {
@@ -219,7 +219,7 @@ async function loadCandidateEnvelopeWindows(
   // Match the exact recipe the writer will apply; historical windows cannot
   // establish that newly selected patches apply to this generation.
   const selected = capability ? capabilityBaseline(root, source, capability) : undefined;
-  const inspected = preflightProfileRecipe(source, authoringSlices(selected?.slices ?? recipe ?? hostRecipeForSourceSha(candidateSha).core), "write-envelope-candidate");
+  const inspected = preflightProfileRecipe(source, authoringSlices(selected?.slices ?? recipe ?? HOST_RECIPE.core), "write-envelope-candidate");
   const extra = selected ? { capabilityUpgrade: selected.receipt } : {};
   if (!inspected.ok) return { candidate: null, sourceAvailable: true, recipeFailure: inspected, ...extra };
   if (selected) recheckCapabilityBaseline(selected);
@@ -526,7 +526,7 @@ export async function writeReviewedProfileFromCopy(
   const source = sourceBytes.toString("utf8");
   if (!Buffer.from(source, "utf8").equals(sourceBytes)) invalid("Host bundle must be valid UTF-8.");
   const diskSha = sha256Bytes(sourceBytes);
-  if (input.slices === undefined && !capability) slices = authoringSlices(hostRecipeForSourceSha(diskSha).core);
+  if (input.slices === undefined && !capability) slices = authoringSlices(HOST_RECIPE.core);
 
   if (lineage && !allowUnretained) {
     const retainedSha = lineage.retainedSha as string;
