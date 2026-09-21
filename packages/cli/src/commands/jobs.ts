@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CliDeps } from "../deps.ts";
-import type { JobLogEvent, JobProjection, JobState } from "../daemon/jobs.ts";
+import type { JobLogEvent, JobProjection, JobState } from "@grokbox/box-runtime/runtime";
 import { CliError, usage } from "../errors.ts";
 import { GatewayClient } from "../gateway.ts";
 import { formatTable, writeSuccess } from "../output.ts";

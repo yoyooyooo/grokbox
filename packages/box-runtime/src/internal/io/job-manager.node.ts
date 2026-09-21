@@ -1,25 +1,28 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, chmod, mkdir, open, opendir, readFile, rename, rm, stat } from "node:fs/promises";
+import { appendFile, chmod, mkdir, lstat, open, opendir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { ErrorCode } from "../errors.ts";
-import { CliError } from "../errors.ts";
-import { isRecord } from "../util.ts";
-import type { GovernedFilesystem } from "./filesystem.ts";
-import type { ProcessAuthority } from "./process.ts";
+import { HostResourceError as CliError, type HostResourceCode as ErrorCode } from "./host-resource-contract.ts";
+import type { GovernedFilesystem } from "./governed-filesystem.node.ts";
+import type { ProcessAuthority } from "./job-process.node.ts";
+import { acquireAdvisoryGate, type AdvisoryGate } from "./advisory-gate.node.ts";
+import { assertSafeDirectory, readConfigSource } from "./config-layout.node.ts";
+const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
-const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const LOG_RECORD_MAX = 64 * 1024;
 const LOG_RECORD_COUNT_MAX = 4096;
 const LOG_RPC_MAX = 256 * 1024;
-const HISTORY_MAX = 256;
-const HISTORY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// Safety identities never share log TTL. A full bounded store refuses new work.
+const JOB_RECORD_MAX = 4096;
 const HISTORY_LOG_MEMORY_MAX = 32 * 1024 * 1024;
 const SAFE_ENV = { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" } as const;
 
 export type JobState = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted" | "unknown";
+export type JobScope = { installationId: string; principalId: string; requestId: string; policyRevision: string };
 export type JobSubmit = {
+  scope?: JobScope;
   jobId: string;
   cwd?: string;
   argv: string[];
@@ -60,9 +63,11 @@ export type JobLifecycleEvent = {
   cancelOperationId?: string;
 };
 
-type PersistedJob = JobProjection & { fingerprint: string; daemonGeneration: string };
+type PersistedJob = JobProjection & { schemaVersion: 1; scope?: JobScope; fingerprint: string; daemonGeneration: string };
 type ActiveJob = PersistedJob & {
   request?: JobSubmit;
+  authorize?: () => Promise<void>;
+  stateWrites?: Promise<void>;
   child?: ChildProcess;
   timer?: NodeJS.Timeout;
   escalation?: Promise<void>;
@@ -124,7 +129,7 @@ async function syncDirectory(path: string): Promise<void> {
 }
 
 function sanitizePersisted(value: unknown, expectedJobId: string): PersistedJob | null {
-  if (!isRecord(value) || value.jobId !== expectedJobId || typeof value.fingerprint !== "string" ||
+  if (!isRecord(value) || value.schemaVersion !== 1 || value.jobId !== expectedJobId || typeof value.fingerprint !== "string" ||
     !/^[0-9a-f]{64}$/.test(value.fingerprint) || typeof value.daemonGeneration !== "string" ||
     typeof value.state !== "string" || !new Set(["queued", "running", "succeeded", "failed", "cancelled", "interrupted", "unknown"]).has(value.state) ||
     typeof value.createdAt !== "number" || !Number.isSafeInteger(value.createdAt) || typeof value.cwd !== "string" ||
@@ -138,8 +143,12 @@ function sanitizePersisted(value: unknown, expectedJobId: string): PersistedJob 
   if (!optionalNumber("startedAt") || !optionalNumber("finishedAt") || !optionalNumber("exitCode") ||
     (value.signal !== undefined && typeof value.signal !== "string") || (value.reason !== undefined && typeof value.reason !== "string") ||
     (value.cancelOperationId !== undefined && typeof value.cancelOperationId !== "string")) return null;
+  const scope = value.scope;
+  if (scope !== undefined && (!isRecord(scope) || Object.keys(scope).sort().join() !== "installationId,policyRevision,principalId,requestId"
+    || typeof scope.installationId !== "string" || !JOB_ID.test(scope.installationId) || typeof scope.principalId !== "string" || !scope.principalId || scope.principalId.length > 128
+    || typeof scope.requestId !== "string" || !JOB_ID.test(scope.requestId) || typeof scope.policyRevision !== "string" || !/^[a-f0-9]{64}$/.test(scope.policyRevision))) return null;
   return {
-    jobId: expectedJobId, state: value.state as JobState, createdAt: value.createdAt,
+    schemaVersion: 1, ...(scope === undefined ? {} : { scope: structuredClone(scope) as JobScope }), jobId: expectedJobId, state: value.state as JobState, createdAt: value.createdAt,
     ...(value.startedAt === undefined ? {} : { startedAt: value.startedAt as number }),
     ...(value.finishedAt === undefined ? {} : { finishedAt: value.finishedAt as number }),
     cwd: value.cwd,
@@ -152,6 +161,19 @@ function sanitizePersisted(value: unknown, expectedJobId: string): PersistedJob 
     logs: { bytes: value.logs.bytes, nextOffset: value.logs.nextOffset, truncated: value.logs.truncated },
     fingerprint: value.fingerprint, daemonGeneration: value.daemonGeneration,
   };
+}
+
+export type JobStoredRecord = PersistedJob;
+/** The same codec, read-only: history stays inspectable without executable policy
+ * or a live manager. An absent receipt is never permission to dispatch. */
+export async function readJobRecord(configDir: string, jobId: string): Promise<JobStoredRecord | null> {
+  if (!JOB_ID.test(jobId)) throw new CliError("process_invalid", "Invalid Job identity.");
+  const directory = join(configDir, "jobs", jobId);
+  try { await lstat(directory); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return null; throw e; }
+  await assertSafeDirectory(directory);
+  const value = sanitizePersisted((await readConfigSource(join(directory, "state.json")))!.value, jobId);
+  if (!value) throw new CliError("job_interrupted", "The retained Job receipt is unavailable or unsupported.");
+  return value;
 }
 
 export class JobManager {
@@ -169,7 +191,9 @@ export class JobManager {
     private readonly filesystem: GovernedFilesystem,
     private readonly now: () => number,
     private readonly onLifecycle?: (event: JobLifecycleEvent) => void,
+    private readonly gate?: AdvisoryGate,
   ) {}
+  private closed?: Promise<void>;
 
   static async create(
     configDir: string,
@@ -180,12 +204,12 @@ export class JobManager {
     onLifecycle?: (event: JobLifecycleEvent) => void,
   ): Promise<JobManager> {
     const root = join(configDir, "jobs");
-    await mkdir(root, { recursive: true, mode: 0o700 });
-    await chmod(root, 0o700);
-    await syncDirectory(configDir);
-    const manager = new JobManager(root, generation, authority, filesystem, now, onLifecycle);
-    await manager.load();
-    return manager;
+    await assertSafeDirectory(configDir, true); await assertSafeDirectory(root, true);
+    const gate = await acquireAdvisoryGate(join(root, ".owner.gate"));
+    if (!gate) throw new CliError("job_conflict", "This Job ledger already has a service owner.");
+    const manager = new JobManager(root, generation, authority, filesystem, now, onLifecycle, gate);
+    try { await manager.load(); return manager; }
+    catch (error) { await gate.release(); throw error; }
   }
 
   capabilities(): string[] { return this.authority.capabilities(); }
@@ -203,15 +227,15 @@ export class JobManager {
     const entries = await opendir(this.root);
     let inspected = 0;
     for await (const entry of entries) {
-      if (inspected >= 4096) break;
+      if (inspected >= JOB_RECORD_MAX) throw new CliError("job_interrupted", "Job safety records exceed the inspection bound; no history was removed.");
       inspected += 1;
       if (!entry.isDirectory()) continue;
       const name = entry.name;
       if (!JOB_ID.test(name)) continue;
       try {
         const statePath = join(this.root, name, "state.json");
-        if ((await stat(statePath)).size > 64 * 1024) throw new Error("oversized state");
-        const persisted = sanitizePersisted(JSON.parse(await readFile(statePath, "utf8")), name);
+        await assertSafeDirectory(join(this.root, name));
+        const persisted = sanitizePersisted((await readConfigSource(statePath))!.value, name);
         if (!persisted) throw new Error("corrupt state");
         const recovered = persisted.state === "queued" || persisted.state === "running";
         if (recovered) {
@@ -224,20 +248,9 @@ export class JobManager {
           logQueue: Promise.resolve(), cancellationQueue: Promise.resolve(), waiters: new Set(),
         };
         this.jobs.set(name, job);
-        await this.persist(job);
-        if (recovered) this.emitLifecycle(job);
+        if (recovered) { await this.persist(job); this.emitLifecycle(job); }
       } catch {
-        const quarantined: ActiveJob = {
-          jobId: name, state: "unknown", createdAt: this.now(), finishedAt: this.now(), cwd: "unknown:/",
-          command: { executable: "unknown", argumentCount: 0, shell: false }, output: "discard", runTimeoutMs: 0,
-          reason: "corrupt_state", logs: { bytes: 0, nextOffset: 0, truncated: true },
-          fingerprint: createHash("sha256").update(`corrupt:${name}`).digest("hex"), daemonGeneration: this.generation,
-          logEvents: [], logReservedBytes: 0, logReservedEvents: 0, logsLoaded: true,
-          logQueue: Promise.resolve(), cancellationQueue: Promise.resolve(), waiters: new Set(),
-        };
-        this.jobs.set(name, quarantined);
-        await this.persist(quarantined);
-        this.emitLifecycle(quarantined);
+        throw new CliError("job_interrupted", "A Job safety record is unavailable or unsupported; its bytes were preserved.");
       }
     }
     await this.pruneHistory();
@@ -257,23 +270,16 @@ export class JobManager {
           job.logsLoaded = false;
         }
       } else if (job.logs.bytes > 0 || job.logs.nextOffset > 0) {
-        job.logs = { bytes: 0, nextOffset: 0, truncated: true };
-        job.logReservedBytes = 0;
-        job.logReservedEvents = 0;
-        job.logsLoaded = true;
-        await this.persist(job);
+        // Missing/truncated logs are a read gap, not permission to reset offsets
+        // and overwrite a historical outcome. Exact log reads will refuse.
+        job.logsLoaded = false;
       }
     }
   }
 
   private async pruneHistory(): Promise<void> {
-    const terminal = [...this.jobs.values()].filter((job) => this.terminal(job.state)).sort((a, b) => b.createdAt - a.createdAt);
-    for (let index = 0; index < terminal.length; index += 1) {
-      const job = terminal[index]!;
-      if (index < HISTORY_MAX && this.now() - (job.finishedAt ?? job.createdAt) <= HISTORY_MAX_AGE_MS) continue;
-      this.jobs.delete(job.jobId);
-      await rm(join(this.root, job.jobId), { recursive: true, force: true });
-    }
+    // Reclaim only hot log copies. Execution guards, including unknown effects,
+    // cannot expire into a fresh dispatch merely because a diagnostic TTL elapsed.
     this.enforceLogMemoryBudget();
   }
 
@@ -339,23 +345,26 @@ export class JobManager {
   }
 
   private projection(job: ActiveJob): JobProjection {
-    const { fingerprint: _fingerprint, daemonGeneration: _generation, request: _request, child: _child,
+    const { schemaVersion: _schema, scope: _scope, authorize: _authorize, stateWrites: _stateWrites, fingerprint: _fingerprint, daemonGeneration: _generation, request: _request, child: _child,
       timer: _timer, escalation: _escalation, leaderStartTime: _leaderStartTime, launching: _launching, logReservedBytes: _reserved,
       logReservedEvents: _reservedEvents, logsLoaded: _logsLoaded, cancelPersistence: _cancelPersistence,
       cancellationQueue: _cancellationQueue,
       terminalIntent: _intent, logEvents: _events,
       logQueue: _queue, waiters: _waiters, ...projection } = job;
-    return projection;
+    return structuredClone(projection);
   }
 
-  private async persist(job: ActiveJob): Promise<void> {
+  private persist(job: ActiveJob): Promise<void> {
+    const publication = (job.stateWrites ?? Promise.resolve()).catch(() => undefined).then(() => this.publish(job));
+    job.stateWrites = publication;
+    return publication;
+  }
+  private async publish(job: ActiveJob): Promise<void> {
     const dir = join(this.root, job.jobId);
-    await mkdir(dir, { recursive: true, mode: 0o700 });
-    await chmod(dir, 0o700);
-    await syncDirectory(this.root);
+    await assertSafeDirectory(dir, true); await syncDirectory(this.root);
     const path = join(dir, "state.json");
     const temporary = join(dir, `.state.${randomUUID()}.tmp`);
-    const persisted: PersistedJob = { ...this.projection(job), fingerprint: job.fingerprint, daemonGeneration: job.daemonGeneration };
+    const persisted: PersistedJob = { schemaVersion: 1, ...(job.scope ? { scope: job.scope } : {}), ...this.projection(job), fingerprint: job.fingerprint, daemonGeneration: job.daemonGeneration };
     const handle = await open(temporary, "wx", 0o600);
     try {
       try {
@@ -389,6 +398,7 @@ export class JobManager {
 
   private validate(request: JobSubmit): void {
     const policy = this.authority.policy;
+    if (request.scope && (!JOB_ID.test(request.scope.installationId) || !JOB_ID.test(request.scope.requestId) || !request.scope.principalId || request.scope.principalId.length > 128 || !/^[a-f0-9]{64}$/.test(request.scope.policyRevision))) throw new CliError("process_invalid", "Invalid Job scope.");
     if (!JOB_ID.test(request.jobId) || !Array.isArray(request.argv) || request.argv.length === 0 || request.argv.length > 256 ||
       request.argv.some((value) => typeof value !== "string" || value.includes("\0") || Buffer.byteLength(value) > 32 * 1024) ||
       request.argv.reduce((sum, value) => sum + Buffer.byteLength(value), 0) > 128 * 1024 ||
@@ -405,16 +415,18 @@ export class JobManager {
     if (request.shell && request.argv.length !== 1) throw new CliError("process_invalid", "Shell mode accepts exactly one command string.");
   }
 
-  async submit(request: JobSubmit): Promise<JobProjection> {
+  async submit(request: JobSubmit, authorize?: () => Promise<void>): Promise<JobProjection> {
+    // Capture before the first await; caller mutation cannot alter queued work.
+    request = structuredClone(request);
     const prior = this.admission;
     let release!: () => void;
     this.admission = new Promise<void>((resolve) => { release = resolve; });
     await prior;
-    try { return await this.submitAdmitted(request); }
+    try { return await this.submitAdmitted(request, authorize); }
     finally { release(); }
   }
 
-  private async submitAdmitted(request: JobSubmit): Promise<JobProjection> {
+  private async submitAdmitted(request: JobSubmit, authorize?: () => Promise<void>): Promise<JobProjection> {
     this.validate(request);
     const cwd = request.cwd ?? `${this.authority.policy.defaultCwdRoot}:/`;
     const executableName = request.shell ? "shell" : request.argv[0]!;
@@ -425,6 +437,7 @@ export class JobManager {
       return this.projection(existing);
     }
     if (this.closing) throw new CliError("job_interrupted", "Job admission is closing.");
+    await authorize?.();
     await this.authority.executable(executableName, request.shell);
     const directory = await this.filesystem.executionDirectory(cwd, this.authority.policy.cwdRoots);
     await directory.close();
@@ -433,8 +446,9 @@ export class JobManager {
     if (nonterminal >= this.authority.policy.maxConcurrent + this.authority.policy.maxQueued) {
       throw new CliError("job_conflict", "Job queue is full.");
     }
+    if (this.jobs.size >= JOB_RECORD_MAX) throw new CliError("job_conflict", "Job safety capacity is full; retained execution identities were not removed.");
     const job: ActiveJob = {
-      jobId: request.jobId, state: "queued", createdAt: this.now(), cwd,
+      schemaVersion: 1, ...(request.scope ? { scope: request.scope } : {}), authorize, jobId: request.jobId, state: "queued", createdAt: this.now(), cwd,
       command: { executable: executableName, argumentCount: request.shell ? 1 : request.argv.length - 1, shell: request.shell },
       output: request.output, runTimeoutMs: request.runTimeoutMs,
       logs: { bytes: 0, nextOffset: 0, truncated: false },
@@ -445,11 +459,11 @@ export class JobManager {
     this.jobs.set(job.jobId, job);
     try {
       await this.persist(job);
-    } catch (error) {
-      this.jobs.delete(job.jobId);
-      await rm(join(this.root, job.jobId), { recursive: true, force: true }).catch(() => undefined);
-      await syncDirectory(this.root).catch(() => undefined);
-      throw error;
+    } catch {
+      // Publication may have happened before acknowledgement failed. Keep the
+      // identity occupied; never delete its directory and dispatch it again.
+      job.state = "unknown"; job.reason = "admission_persistence_unknown"; job.request = undefined;
+      throw new CliError("operation_outcome_unknown", "Job admission has no verified receipt; inspect its original identity.");
     }
     this.queue.push(job.jobId);
     this.emitLifecycle(job);
@@ -505,6 +519,8 @@ export class JobManager {
       directory = await this.filesystem.executionDirectory(job.cwd, this.authority.policy.cwdRoots);
       if (await this.stopBeforeSpawn(job)) return;
       await directory.verify();
+      if (await this.stopBeforeSpawn(job)) return;
+      await job.authorize?.();
       if (await this.stopBeforeSpawn(job)) return;
       const args = request.shell ? ["-lc", request.argv[0]!] : request.argv.slice(1);
       const env = { ...SAFE_ENV, ...request.environment };
@@ -680,8 +696,13 @@ export class JobManager {
   private notify(job: ActiveJob): void { for (const waiter of job.waiters) waiter(); job.waiters.clear(); }
   private terminal(state: JobState): boolean { return !["queued", "running"].includes(state); }
 
-  list(states: readonly JobState[] = [], limit = 50): JobProjection[] {
-    return [...this.jobs.values()].filter((job) => states.length === 0 || states.includes(job.state))
+  identity(jobId: string): JobScope | undefined { const scope = this.jobs.get(jobId)?.scope; return scope ? structuredClone(scope) : undefined; }
+  record(jobId: string): JobStoredRecord | null {
+    const job = this.jobs.get(jobId); return job ? { schemaVersion: 1, ...this.projection(job), ...(job.scope ? { scope: structuredClone(job.scope) } : {}), fingerprint: job.fingerprint, daemonGeneration: job.daemonGeneration } : null;
+  }
+  list(states: readonly JobState[] = [], limit = 50, owner?: Pick<JobScope, "installationId" | "principalId">): JobProjection[] {
+    return [...this.jobs.values()].filter(job => !owner || job.scope?.installationId === owner.installationId && job.scope?.principalId === owner.principalId)
+      .filter((job) => states.length === 0 || states.includes(job.state))
       .sort((a, b) => b.createdAt - a.createdAt).slice(0, limit).map((job) => this.projection(job));
   }
 
@@ -729,7 +750,7 @@ export class JobManager {
     const events: JobLogEvent[] = [];
     for (const event of job.logEvents) {
       if (event.offset < offset) continue;
-      if (bytes + event.bytes > limitBytes) break;
+      if (bytes + event.bytes > limitBytes || events.length >= 128) break;
       events.push(event);
       bytes += event.bytes;
     }
@@ -833,7 +854,10 @@ export class JobManager {
     return this.projection(job);
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    return this.closed ??= this.closeOwned().finally(() => this.gate?.release());
+  }
+  private async closeOwned(): Promise<void> {
     this.closing = true;
     await this.admission;
     await Promise.allSettled([...this.jobs.values()].map((job) => job.cancellationQueue));
@@ -855,5 +879,6 @@ export class JobManager {
     }
     await Promise.allSettled([...this.launches]);
     await Promise.allSettled([...this.escalations]);
+    await Promise.allSettled([...this.jobs.values()].map(job => job.stateWrites));
   }
 }

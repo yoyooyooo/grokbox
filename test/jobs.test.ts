@@ -8,9 +8,7 @@ import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
 import type { DaemonProcessConfig } from "../packages/cli/src/daemon/config.ts";
 import { validateDaemonConfig } from "../packages/cli/src/daemon/config.ts";
 import { LocalDaemonClient } from "../packages/cli/src/daemon/client.ts";
-import { GovernedFilesystem } from "../packages/cli/src/daemon/filesystem.ts";
-import { JobManager } from "../packages/cli/src/daemon/jobs.ts";
-import { ProcessAuthority } from "../packages/cli/src/daemon/process.ts";
+import { GovernedFilesystem, JobManager, ProcessAuthority } from "@grokbox/box-runtime/runtime";
 import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
 import { createProductionDeps } from "../packages/cli/src/deps.ts";
 import { captureCli, parseJson, startMockGateway, writeDiscovery, type MockGateway } from "./helpers.ts";
@@ -414,17 +412,13 @@ describeLinux("structured execution and durable Jobs", () => {
     const f = await fixture();
     await host!.close(); host = undefined;
     const jobId = "11111111-1111-4111-8111-111111111111";
-    const corruptId = "22222222-2222-4222-8222-222222222222";
     const dir = join(f.configDir, "jobs", jobId);
     await mkdir(dir, { recursive: true, mode: 0o700 });
     await writeFile(join(dir, "state.json"), JSON.stringify({
-      jobId, state: "running", createdAt: Date.now(), cwd: "workspace:/",
+      schemaVersion: 1, jobId, state: "running", createdAt: Date.now(), cwd: "workspace:/",
       command: { executable: "node", argumentCount: 0, shell: false }, output: "capture", runTimeoutMs: 1000,
       logs: { bytes: 0, nextOffset: 0, truncated: false }, fingerprint: "a".repeat(64), daemonGeneration: "old",
     }), { mode: 0o600 });
-    const corruptDir = join(f.configDir, "jobs", corruptId);
-    await mkdir(corruptDir, { recursive: true, mode: 0o700 });
-    await writeFile(join(corruptDir, "state.json"), "{not-json", { mode: 0o600 });
     host = await startDaemonHost(
       { ...createProductionDeps(), configDir: f.configDir, discoveryPath: f.discoveryPath }, f.socket, undefined,
       [{ name: "workspace", path: f.root, operations: ["exec"] }], f.processConfig,
@@ -441,8 +435,7 @@ describeLinux("structured execution and durable Jobs", () => {
       source: "job",
       payload: { jobId, state: "unknown", reason: "daemon_restart" },
     });
-    const corrupt = await f.run(["jobs", "show", corruptId]);
-    expect(corrupt.code).toBe(0);
-    expect(data(corrupt.stdout)).toMatchObject({ state: "unknown", reason: "corrupt_state" });
+    // Corrupt/unsupported bytes now refuse owner acquisition without rewrite;
+    // job-safety-store.test.ts exercises that independent safety boundary.
   });
 });

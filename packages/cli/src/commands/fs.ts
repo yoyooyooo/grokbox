@@ -10,7 +10,7 @@ import {
   FS_TRANSFER_CHUNK_BYTES,
   FS_UPLOAD_MAX_BYTES,
   FS_WRITE_MAX_BYTES,
-} from "../daemon/filesystem.ts";
+} from "@grokbox/box-runtime/runtime";
 import { CliError, EXIT_CODES, type ErrorCode, usage } from "../errors.ts";
 import { GatewayClient } from "../gateway.ts";
 import { flattenRows, formatTable, writeSuccess } from "../output.ts";

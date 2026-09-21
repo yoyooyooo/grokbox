@@ -1,6 +1,5 @@
 import { lstat } from "node:fs/promises";
-import { CliError } from "../errors.ts";
-import type { DaemonProcessConfig } from "./config.ts";
+import { HostResourceError as CliError, type HostProcessPolicy as DaemonProcessConfig } from "./host-resource-contract.ts";
 
 export type VerifiedExecutable = {
   name: string;

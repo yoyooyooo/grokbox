@@ -13,9 +13,7 @@ import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConf
 import { DesktopManager, type DesktopIo } from "./desktop.ts";
 import { TitleSyncManager } from "./title-sync.ts";
 import { DaemonEventManager, type EventSource } from "./events.ts";
-import { JobManager, type JobState, type JobSubmit } from "./jobs.ts";
-import { ProcessAuthority } from "./process.ts";
-import { GovernedFilesystem } from "./filesystem.ts";
+import { JobManager, ProcessAuthority, GovernedFilesystem, HostResourceError, type JobState, type JobSubmit } from "@grokbox/box-runtime/runtime";
 import {
   DAEMON_CAPABILITIES,
   DAEMON_METHODS,
@@ -561,7 +559,7 @@ export async function startDaemonHost(
       const response = await dispatch(request.method, request.params, controller.signal);
       writeResponse(res, 200, { ok: true, ...response });
     } catch (error) {
-      const cliError = error instanceof CliError ? error : new CliError("gateway_internal", "Daemon request failed.");
+      const cliError = error instanceof CliError ? error : error instanceof HostResourceError ? new CliError(error.code, error.message, { retryable: error.retryable }) : new CliError("gateway_internal", "Daemon request failed.");
       writeResponse(res, cliError.code === "daemon_protocol_mismatch" ? 409 : 400, {
         ok: false,
         error: { code: cliError.code, message: cliError.message, retryable: cliError.retryable },

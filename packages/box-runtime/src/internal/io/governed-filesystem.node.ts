@@ -2,8 +2,7 @@ import { createHash, type Hash } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import { mkdir, open, opendir, realpath, rename, rmdir, stat, unlink, type FileHandle } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { CliError, type ErrorCode } from "../errors.ts";
-import type { DaemonFilesystemRootConfig } from "./config.ts";
+import { HostResourceError as CliError, type HostResourceCode as ErrorCode, type HostFilesystemRoot as DaemonFilesystemRootConfig } from "./host-resource-contract.ts";
 
 export const FS_READ_MAX_BYTES = 1024 * 1024;
 export const FS_DOWNLOAD_MAX_BYTES = 64 * 1024 * 1024;

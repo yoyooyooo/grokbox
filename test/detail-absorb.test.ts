@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { runDaemonEnsure } from "../packages/cli/src/commands/daemon.ts";
 import { runJobsCancel } from "../packages/cli/src/commands/jobs.ts";
 import type { DaemonProcessConfig } from "../packages/cli/src/daemon/config.ts";
-import { ProcessAuthority } from "../packages/cli/src/daemon/process.ts";
+import { ProcessAuthority } from "@grokbox/box-runtime/runtime";
 import { createProductionDeps, type FetchFn } from "../packages/cli/src/deps.ts";
 import { httpStatusToError } from "../packages/cli/src/errors.ts";
 import { GatewayClient } from "../packages/cli/src/gateway.ts";

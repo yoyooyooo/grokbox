@@ -11,7 +11,7 @@ import {
   FS_READ_MAX_BYTES,
   FS_TRANSFER_CHUNK_BYTES,
   GovernedFilesystem,
-} from "../packages/cli/src/daemon/filesystem.ts";
+} from "@grokbox/box-runtime/runtime";
 import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
 import { createProductionDeps } from "../packages/cli/src/deps.ts";
 import { captureCli, parseJson, startMockGateway, writeDiscovery, type MockGateway } from "./helpers.ts";
