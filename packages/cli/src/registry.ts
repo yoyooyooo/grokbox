@@ -27,15 +27,11 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   ...CONFIG_COMMANDS,
   {
     path: ["init"],
-    usage: "grokbox init [<name>] [--local | --peer <name-or-dns>] [--bootstrap] [--admit-home-read] [--yes]",
+    usage: "grokbox init [<name>] [--local]",
     summary: "Initialize the local Box Profile; operator-managed remote endpoints use profile add.",
     arguments: [{ syntax: "[name]", description: "Profile to create/update (default: default)" }],
     options: options([
       { flags: "--local", description: "Select the local box" },
-      { flags: "--peer <name-or-dns>", description: "Legacy compatibility: explicitly select an initialized Tailscale peer" },
-      { flags: "--bootstrap", description: "Legacy compatibility: authorize daemon/Serve bootstrap for the explicit peer" },
-      { flags: "--admit-home-read", description: "Explicitly add the peer home read policy" },
-      { flags: "--yes", description: "Confirm a headless bootstrap mutation" },
     ]),
     stdin: "none",
     table: false,
@@ -219,14 +215,10 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["daemon", "ensure"],
-    usage: "grokbox daemon ensure [--bootstrap] [--admit-home-read] [--yes] [--timeout-ms <n>]",
-    summary: "Verify or explicitly bootstrap the selected Profile daemon.",
+    usage: "grokbox daemon ensure [--timeout-ms <n>]",
+    summary: "Verify the selected daemon or start its existing installation through explicitly configured SSH; never install or reconfigure networking.",
     arguments: [],
-    options: options([
-      { flags: "--bootstrap", description: "Authorize installation, restart, mapping, and credential rotation" },
-      { flags: "--admit-home-read", description: "Explicitly add the peer home read policy" },
-      { flags: "--yes", description: "Confirm a headless bootstrap mutation" },
-    ], { timeout: true }),
+    options: options([], { timeout: true }),
     stdin: "none",
     table: false,
     timeout: true,
@@ -355,11 +347,10 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["recover"],
-    usage: "grokbox recover [--timeout-ms <n>] [--legacy-tailnet]",
+    usage: "grokbox recover [--timeout-ms <n>]",
     summary: "Ensure an installed daemon through declared SSH; networking remains operator-managed.",
     arguments: [],
     options: options([
-      { flags: "--legacy-tailnet", description: "Explicit compatibility opt-in: wait for Tailscale and restore only a previously recorded Serve mapping" },
     ], { timeout: true }),
     stdin: "none",
     table: false,

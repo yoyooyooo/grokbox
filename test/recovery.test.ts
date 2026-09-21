@@ -27,18 +27,6 @@ function daemonHandshake() {
   };
 }
 
-function serveStatus(exact: boolean): string {
-  if (!exact) return "{}";
-  return JSON.stringify({
-    TCP: { "8443": { HTTPS: true } },
-    Web: {
-      [`${hostname}:8443`]: {
-        Handlers: { "/": { Proxy: "http://127.0.0.1:37134" } },
-      },
-    },
-  });
-}
-
 function connectFrame(flags: number, value: unknown): Buffer {
   const payload = Buffer.from(JSON.stringify(value));
   const frame = Buffer.alloc(5 + payload.byteLength);
@@ -141,25 +129,7 @@ describe("layered doctor and explicit recovery", () => {
 
   test("doctor proves application boundaries without inspecting or mutating network infrastructure", async () => {
     const events: string[] = [];
-    const commands = commandAdapter((argv, command) => {
-      events.push(`command:${argv[0]}:${command}`);
-      if (argv[0] === "tailscale" && argv[1] === "status") {
-        return {
-          code: 0,
-          stdout: JSON.stringify({
-            Peer: {
-              peer: { DNSName: `${hostname}.`, HostName: "box", Online: true, TailscaleIPs: ["192.0.2.20"] },
-            },
-          }),
-          stderr: "",
-        };
-      }
-      if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 0, stdout: "pong via DERP(region)", stderr: "" };
-      if (command === "true") return { code: 0, stdout: "", stderr: "" };
-      if (command === "sudo -n tailscale serve status --json") return { code: 0, stdout: serveStatus(true), stderr: "" };
-      if (command.includes(".serve?.httpsPort")) return { code: 0, stdout: "", stderr: "" };
-      return { code: 127, stdout: "", stderr: "unexpected" };
-    });
+    const commands = commandAdapter();
     const run = await remoteFixture({ fetch: healthyDaemonFetch(events), runCommand: commands });
     const result = await run(["doctor"]);
     expect(result.code, result.stderr).toBe(0);
@@ -169,8 +139,6 @@ describe("layered doctor and explicit recovery", () => {
       profile: { status: "pass", code: "profile_valid" },
       secretSession: { status: "pass", code: "daemon_credential_resolved", source: "file" },
       sandbox: { status: "skipped" },
-      tailnet: { status: "skipped", code: "network_operator_managed" },
-      serve: { status: "skipped", code: "network_operator_managed" },
       daemonHttp: { status: "pass", code: "daemon_http_auth_gate_reached" },
       daemonAuth: { status: "pass", code: "daemon_credential_accepted" },
       capabilities: { status: "pass", code: "grok_health_capability_authorized" },
@@ -185,155 +153,27 @@ describe("layered doctor and explicit recovery", () => {
   });
 
   test("authenticated daemon HTTPS never claims a verified tailnet identity", async () => {
-    const commands = commandAdapter((argv, command) => {
-      if (argv[0] === "tailscale" && argv[1] === "status") {
-        return {
-          code: 0,
-          stdout: JSON.stringify({
-            Peer: {
-              peer: { DNSName: `${hostname}.`, HostName: "box", Online: true, TailscaleIPs: ["192.0.2.20"] },
-            },
-          }),
-          stderr: "",
-        };
-      }
-      if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 1, stdout: "", stderr: "timed out" };
-      if (command === "true") return { code: 0, stdout: "", stderr: "" };
-      if (command === "sudo -n tailscale serve status --json") return { code: 0, stdout: serveStatus(true), stderr: "" };
-      if (command.includes(".serve?.httpsPort")) return { code: 0, stdout: "", stderr: "" };
-      return { code: 127, stdout: "", stderr: "unexpected" };
-    });
+    const commands = commandAdapter();
     const run = await remoteFixture({ fetch: healthyDaemonFetch([]), runCommand: commands });
     const result = await run(["doctor"]);
     expect(result.code, result.stderr).toBe(0);
     const report = (parseJson(result.stdout) as { data: Record<string, any> }).data;
     expect(report.ok).toBe(true);
-    expect(report.checks.tailnet).toEqual({
-      status: "skipped",
-      code: "network_operator_managed",
-      action: "none",
-    });
-    expect(report.checks.tailnetIdentity).toBe("unverified");
+    for (const retired of ["tailnet", "serve", "tailnetIdentity"]) expect(report.checks).not.toHaveProperty(retired);
     expect(commands.calls).toEqual([]);
   });
 
-  test("explicit legacy recovery retains verified wake, tailnet wait, exact Serve restore and installed daemon ensure", async () => {
-    const events: string[] = [];
-    let woken = false;
-    let mappingExact = false;
-    let daemonRunning = false;
-    const commands = commandAdapter((argv, command) => {
-      if (argv[0] === "tailscale" && argv[1] === "status") {
-        events.push(`tailnet-status:${woken}`);
-        return {
-          code: 0,
-          stdout: JSON.stringify({
-            Peer: {
-              peer: {
-                DNSName: `${hostname}.`,
-                HostName: "box",
-                Online: woken,
-                TailscaleIPs: woken ? ["192.0.2.20"] : [],
-              },
-            },
-          }),
-          stderr: "",
-        };
-      }
-      if (argv[0] === "tailscale" && argv[1] === "ping") {
-        events.push("tailnet-ping");
-        return { code: woken ? 0 : 1, stdout: woken ? "pong via 192.0.2.20" : "", stderr: "" };
-      }
-      if (command === "true") {
-        events.push(`ssh-preflight:${woken}`);
-        return { code: woken ? 0 : 255, stdout: "", stderr: "" };
-      }
-      if (command === "sudo -n tailscale serve status --json") {
-        events.push(`serve-status:${mappingExact}`);
-        return { code: 0, stdout: serveStatus(mappingExact), stderr: "" };
-      }
-      if (command.includes(".serve?.httpsPort")) {
-        events.push("serve-ownership");
-        return { code: 0, stdout: "", stderr: "" };
-      }
-      if (command.includes("tailscale serve --bg")) {
-        events.push("serve-restore");
-        mappingExact = true;
-        return { code: 0, stdout: "", stderr: "" };
-      }
-      if (command.includes("nohup \"$binary\" daemon serve")) {
-        events.push("daemon-ensure");
-        daemonRunning = true;
-        return { code: 0, stdout: "changed\n", stderr: "" };
-      }
-      return { code: 127, stdout: "", stderr: "unexpected" };
-    });
-    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes("GetSandBoxRunState")) {
-        events.push("sandbox-status");
-        return Response.json({ state: "HIBERNATED", imageUpdateAvailable: false });
-      }
-      if (url.includes("EnsureSandBox")) {
-        events.push("sandbox-wake");
-        woken = true;
-        return Response.json({
-          execDaemonUrl: "https://exec.example.invalid",
-          execDaemonAuthToken: "exec-auth",
-          networkToken: "network-auth",
-          podId: "pod-1",
-        });
-      }
-      if (url.includes("agent.v1.ExecService/Exec")) {
-        events.push("sandbox-noop");
-        return new Response(execSuccess(), { status: 200, headers: { "content-type": "application/connect+json" } });
-      }
-      if (!daemonRunning) {
-        events.push("daemon-unreachable");
-        throw new Error("unreachable");
-      }
-      return await healthyDaemonFetch(events)(input, init);
-    }) as typeof fetch;
-    const run = await remoteFixture({ sandbox: true, fetch: fetchFn, runCommand: commands });
-    const result = await run(["recover", "--legacy-tailnet", "--timeout-ms", "10000"]);
-    expect(result.code, result.stderr).toBe(0);
-    const body = (parseJson(result.stdout) as { data: Record<string, any> }).data;
-    expect(body).toMatchObject({
-      recovered: true,
-      changed: true,
-      operationId: nonce,
-      actions: [
-        { action: "sandbox-wake", changed: true },
-        { action: "tailnet-wait", outcome: "peer-and-ipv4-reachable" },
-        { action: "serve-restore", changed: true, outcome: "exact" },
-        { action: "daemon-ensure", changed: true, outcome: "started" },
-      ],
-      doctor: { ok: true },
-    });
-    expect(events.indexOf("sandbox-wake")).toBeLessThan(events.indexOf("tailnet-ping"));
-    expect(events.indexOf("tailnet-ping")).toBeLessThan(events.indexOf("serve-restore"));
-    expect(events.indexOf("serve-restore")).toBeLessThan(events.indexOf("daemon-ensure"));
-    expect(events.indexOf("daemon-ensure")).toBeLessThan(events.lastIndexOf("daemon-health"));
-    expect(JSON.stringify(events)).not.toContain("sendPrompt");
-    expect(JSON.stringify(commands.calls)).not.toContain("tailscale serve reset");
+  test("removed recovery flags do not enter any old route or alter a configured endpoint", async () => {
+    const events: string[] = [], commands = commandAdapter();
+    const run = await remoteFixture({ sandbox: true, fetch: healthyDaemonFetch(events), runCommand: commands });
+    const result = await run(["recover", "--legacy-tailnet"]);
+    expect(result.code).toBe(2);
+    expect(events).toEqual([]); expect(commands.calls).toEqual([]);
   });
 
   test("recover stops before mutation when the required daemon credential is unavailable", async () => {
     const events: string[] = [];
-    const commands = commandAdapter((argv, command) => {
-      if (argv[0] === "tailscale" && argv[1] === "status") {
-        return {
-          code: 0,
-          stdout: JSON.stringify({ Peer: { peer: { DNSName: `${hostname}.`, HostName: "box", Online: true, TailscaleIPs: ["192.0.2.20"] } } }),
-          stderr: "",
-        };
-      }
-      if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 0, stdout: "pong", stderr: "" };
-      if (command === "true") return { code: 0, stdout: "", stderr: "" };
-      if (command === "sudo -n tailscale serve status --json") return { code: 0, stdout: serveStatus(true), stderr: "" };
-      if (command.includes(".serve?.httpsPort")) return { code: 0, stdout: "", stderr: "" };
-      return { code: 127, stdout: "", stderr: "unexpected" };
-    });
+    const commands = commandAdapter();
     const run = await remoteFixture({
       missingDaemonCredential: true,
       fetch: healthyDaemonFetch(events),
@@ -347,50 +187,6 @@ describe("layered doctor and explicit recovery", () => {
     expect(trace).not.toContain("tailscale serve --bg");
     expect(trace).not.toContain("daemon serve");
     expect(JSON.stringify(events)).not.toContain("EnsureSandBox");
-  });
-
-  test("explicit legacy recovery refuses Serve drift without overwriting the handler or starting the daemon", async () => {
-    const commands = commandAdapter((argv, command) => {
-      if (argv[0] === "tailscale" && argv[1] === "status") {
-        return {
-          code: 0,
-          stdout: JSON.stringify({ Peer: { peer: { DNSName: `${hostname}.`, HostName: "box", Online: true, TailscaleIPs: ["192.0.2.20"] } } }),
-          stderr: "",
-        };
-      }
-      if (argv[0] === "tailscale" && argv[1] === "ping") return { code: 0, stdout: "pong", stderr: "" };
-      if (command === "true") return { code: 0, stdout: "", stderr: "" };
-      if (command === "sudo -n tailscale serve status --json") {
-        return {
-          code: 0,
-          stdout: JSON.stringify({
-            TCP: { "8443": { HTTPS: true } },
-            Web: { [`${hostname}:8443`]: { Handlers: { "/": { Proxy: "http://127.0.0.1:9999" } } } },
-          }),
-          stderr: "",
-        };
-      }
-      if (command.includes(".serve?.httpsPort")) return { code: 0, stdout: "", stderr: "" };
-      return { code: 127, stdout: "", stderr: "unexpected" };
-    });
-    const run = await remoteFixture({
-      fetch: (async () => { throw new Error("unreachable"); }) as unknown as typeof fetch,
-      runCommand: commands,
-    });
-    const result = await run(["recover", "--legacy-tailnet"]);
-    expect(result.code).toBe(58);
-    const error = (parseJson(result.stderr) as {
-      error: { failureCode: string; retryable: boolean; context: { operationId: string; phase: string } };
-    }).error;
-    expect(error).toMatchObject({
-      failureCode: "serve_mapping_drifted",
-      retryable: false,
-      context: { operationId: nonce, phase: "serve-restore" },
-    });
-    const trace = JSON.stringify(commands.calls);
-    expect(trace).not.toContain("tailscale serve --bg");
-    expect(trace).not.toContain("nohup");
-    expect(trace).not.toContain("tailscale serve reset");
   });
 
   test.each([
@@ -408,9 +204,7 @@ describe("layered doctor and explicit recovery", () => {
     const report = (parseJson(result.stdout) as { data: Record<string, any> }).data;
     expect(report.ok).toBe(true);
     expect(report.checks.sandbox.status).toBe("skipped");
-    expect(report.checks.tailnet.status).toBe("skipped");
-    expect(report.checks.serve.status).toBe("skipped");
-    expect(report.checks.tailnetIdentity).toBe("unverified");
+    for (const retired of ["tailnet", "serve", "tailnetIdentity"]) expect(report.checks).not.toHaveProperty(retired);
     expect(commands.calls).toEqual([]);
     expect(events.every(event => event.startsWith("daemon-"))).toBe(true);
   });
@@ -426,8 +220,6 @@ describe("layered doctor and explicit recovery", () => {
       ok: false,
       checks: {
         daemonHttp: { status: "fail", code: "daemon_endpoint_unreachable" },
-        tailnet: { status: "skipped", code: "network_operator_managed" },
-        serve: { status: "skipped", code: "network_operator_managed" },
       },
     });
     const recovery = await run(["recover"]);

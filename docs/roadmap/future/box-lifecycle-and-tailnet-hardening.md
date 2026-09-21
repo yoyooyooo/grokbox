@@ -10,7 +10,7 @@ T40 owns supported-environment runtime/collector startup, restart and safe exit;
 
 Do not add Tailscale discovery, installation, joining, DNS/ACL/tag management, multi-handler ownership/merging, network-tool-version migration or automatic endpoint repair. The operator provides DNS/IP, routing, TLS and proxy exposure; existing generic endpoint configuration is the application boundary.
 
-Explicit legacy peer/bootstrap and `recover --legacy-tailnet` retain their original safety checks and ownership records. They are not a promotion path for new networking features. Do not automatically remove working mappings or credentials; any retirement is separately scoped and authorized. Their exact compatibility contract remains in Product §2.2 rather than being duplicated here.
+The rebuild retires the former peer/bootstrap and network-repair paths entirely; [NET-01](../../tickets/NET-01-box-local-network-boundary.md) owns the source and consumer cut. Existing machine mappings and credentials are not removed by retiring software. No compatibility flag or placeholder status field restores application ownership of networking.
 
 ## Relationship to Web UI / fleet
 

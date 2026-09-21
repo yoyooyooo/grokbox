@@ -40,23 +40,6 @@ function code(stderr: string): string {
   return (parseJson(stderr) as { error: { code: string } }).error.code;
 }
 
-function tailnetStatus(): string {
-  return JSON.stringify({
-    Self: {
-      HostName: "outside",
-      DNSName: "outside.example.ts.net.",
-      TailscaleIPs: ["192.0.2.10"],
-    },
-    Peer: {
-      node: {
-        HostName: "remote",
-        DNSName: "remote.example.ts.net.",
-        TailscaleIPs: ["192.0.2.20"],
-      },
-    },
-  });
-}
-
 describe("Profiles in unified config v2",  () => {
   test("default is synthesized and selection precedence is deterministic", async () => {
     const configDir = await makeConfigDir();
@@ -552,11 +535,11 @@ describe("init discovery boundaries", () => {
       const first = await captureCli(["init", "remote", "--local"], overrides);
       expect(first.code).toBe(0);
       const body = parseJson(first.stdout) as {
-        data: { profile: string; target: string; tailnet: { available: boolean; inspected: boolean; self: null }; doctor: { ok: boolean } };
+        data: { profile: string; target: string; doctor: { ok: boolean } };
       };
       expect(body.data.profile).toBe("remote");
       expect(body.data.target).toBe("local");
-      expect(body.data.tailnet).toEqual({ available: false, self: null, inspected: false });
+      expect(body.data).not.toHaveProperty("tailnet");
       expect(body.data.doctor.ok).toBe(true);
       expect(gateway.requests.map((request) => request.pathname)).toEqual(["/health"]);
 
@@ -588,7 +571,7 @@ describe("init discovery boundaries", () => {
       skillsDir,
       stdinIsTTY,
       confirm: async () => { confirmations += 1; return true; },
-      runCommand: async (argv) => { commands.push([...argv]); return { code: 0, stdout: tailnetStatus(), stderr: "" }; },
+      runCommand: async (argv) => { commands.push([...argv]); return { code: 0, stdout: "{}", stderr: "" }; },
     });
     expect(code(result.stderr)).toBe("discovery_unavailable");
     expect(result.stderr).toContain("profile add");
@@ -597,166 +580,20 @@ describe("init discovery boundaries", () => {
     expect(await readFile(join(configDir, "config.json"), "utf8")).toBe(before);
   });
 
-  test("explicit legacy peer TTY init retains confirmed bootstrap without naming the Profile", async () => {
-    const configDir = await makeConfigDir();
-    const commands: string[][] = [];
-    const nonce = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    let confirmations = 0;
-    let authHeader = "";
-    let serveConfigured = false;
-    const result = await captureCli(["init", "--peer", "remote"], {
-      configDir,
-      env: {},
-      discoveryPath: "/missing/gateway.json",
-      skillsDir,
-      stdinIsTTY: true,
-      confirm: async () => {
-        confirmations += 1;
-        return true;
-      },
-      randomUUID: () => nonce,
-      fetch: (async (_input, init) => {
-        authHeader = new Headers(init?.headers).get("authorization") ?? "";
-        const request = JSON.parse(String(init?.body)) as { method: string };
-        if (request.method === "handshake") {
-          return Response.json({
-            ok: true,
-            result: {
-              protocolMajor: 1,
-              daemonVersion: "0.0.1",
-              daemonPid: 99,
-              startedAt: 100,
-              daemonGeneration: "11111111-1111-4111-8111-111111111111",
-              capabilities: ["grok.health.read", "grok.roster.read"],
-              filesystemRoots: [],
-              gateway: { pid: 4242, startedAt: 1000 },
-            },
-          });
-        }
-        return Response.json({
-          ok: true,
-          result: { ok: true, pid: 4242, startedAt: 1000, isBusy: false },
-          gateway: { pid: 4242, startedAt: 1000 },
-        });
-      }) as typeof fetch,
-      runCommand: async (argv) => {
-        commands.push([...argv]);
-        if (argv[0] === "tailscale") return { code: 0, stdout: tailnetStatus(), stderr: "" };
-        if (argv[0] === "npm") {
-          const destination = argv[argv.indexOf("--pack-destination") + 1]!;
-          await writeFile(join(destination, "grokbox-0.0.1.tgz"), "package");
-          return { code: 0, stdout: "grokbox-0.0.1.tgz\n", stderr: "" };
-        }
-        if (argv[0] === "ssh" && argv.at(-1)?.includes("require('node:os').homedir()")) {
-          return { code: 0, stdout: "/home/box\n", stderr: "" };
-        }
-        if (argv[0] === "ssh" && argv.at(-1) === "sudo -n tailscale serve status --json") {
-          return {
-            code: 0,
-            stdout: serveConfigured
-              ? JSON.stringify({
-                  TCP: { "8443": { HTTPS: true } },
-                  Web: {
-                    "remote.example.ts.net:8443": {
-                      Handlers: { "/": { Proxy: "http://127.0.0.1:37134" } },
-                    },
-                  },
-                })
-              : "{}",
-            stderr: "",
-          };
-        }
-        if (argv[0] === "ssh" && argv.at(-1)?.includes("tailscale serve --bg")) {
-          serveConfigured = true;
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    });
-
-    expect(result.code).toBe(0);
-    expect(confirmations).toBe(1);
-    expect(authHeader).toStartWith("Bearer gbox_");
-    const rawToken = `gbox_${nonce.replaceAll("-", "")}${nonce.replaceAll("-", "")}`;
-    expect(JSON.stringify(commands)).not.toContain(rawToken);
-    const persisted = JSON.parse(await readFile(join(configDir, "config.json"), "utf8")).client.profiles.default;
-    expect(persisted.transport).toBe("daemon");
-    expect(persisted.serverUrl).toContain(":8443");
-    expect(persisted.daemonTokenRef).toStartWith("file:");
-    expect(JSON.stringify(persisted)).not.toContain(rawToken);
-    const secretPath = String(persisted.daemonTokenRef).slice(5);
-    expect(await readFile(secretPath, "utf8")).toBe(rawToken);
-    expect((await stat(secretPath)).mode & 0o777).toBe(0o600);
-    expect(commands.some((argv) => argv[0] === "scp")).toBe(true);
-    expect(commands.some((argv) => argv.at(-1)?.includes("tailscale serve --bg"))).toBe(true);
-  });
-
-  test("peer discovery never installs Tailscale and refuses an unproven endpoint", async () => {
-    const configDir = await makeConfigDir();
-    const base = {
-      configDir,
-      env: {},
-      discoveryPath: "/missing/gateway.json",
-      skillsDir,
-      stdinIsTTY: false,
-      runCommand: async (argv: readonly string[]) => {
-        if (argv[0] === "tailscale") {
-          expect(argv).toEqual(["tailscale", "status", "--json"]);
-          return { code: 0, stdout: tailnetStatus(), stderr: "" };
-        }
-        expect(argv[0]).toBe("ssh");
-        return { code: 255, stdout: "", stderr: "BatchMode unavailable" };
-      },
-    };
-    const noEndpoint = await captureCli(["init", "remote", "--peer", "remote"], base);
-    expect(noEndpoint.code).toBe(24);
-    expect(code(noEndpoint.stderr)).toBe("daemon_endpoint_unavailable");
-
-    const bootstrap = await captureCli(
-      ["init", "remote", "--peer", "remote", "--bootstrap", "--yes"],
-      base,
-    );
-    expect(bootstrap.code).toBe(25);
-    expect(code(bootstrap.stderr)).toBe("bootstrap_unavailable");
-  });
-
-  test("init --peer refuses an existing Profile whose endpoint is a different tailnet node", async () => {
-    const configDir = await makeConfigDir();
-    await writeProfileFile(configDir, "remote", {
-      version: 1,
-      transport: "daemon",
-      server_url: "https://remote.example.ts.net:8443",
-      daemon_token_ref: "env:DAEMON_TOKEN",
-      ssh_host: "remote",
-    });
-    const multiple = JSON.parse(tailnetStatus()) as { Peer: Record<string, unknown> };
-    multiple.Peer.other = {
-      HostName: "other",
-      DNSName: "other.example.ts.net.",
-      TailscaleIPs: ["192.0.2.30"],
-    };
-    const result = await captureCli(["init", "remote", "--peer", "other"], {
-      configDir,
-      env: { DAEMON_TOKEN: "unused" },
-      discoveryPath: "/missing/gateway.json",
-      skillsDir,
-      stdinIsTTY: false,
-      runCommand: async () => ({ code: 0, stdout: JSON.stringify(multiple), stderr: "" }),
-    });
-    expect(result.code).toBe(21);
-    expect(code(result.stderr)).toBe("profile_invalid");
-  });
-
   test.each([
+    { argv: ["init", "--peer", "remote"] },
     { argv: ["init", "--bootstrap", "--yes"] },
-    { argv: ["init", "--local", "--bootstrap", "--yes"] },
-  ])("bootstrap without an explicit legacy peer is rejected before discovery or writes: %j", async ({ argv }) => {
+    { argv: ["init", "--admit-home-read"] },
+    { argv: ["daemon", "ensure", "--bootstrap", "--yes"] },
+    { argv: ["recover", "--legacy-tailnet"] },
+  ])("removed network options are rejected by the current parser before discovery or writes: %j", async ({ argv }) => {
     const configDir = await makeConfigDir();
     const commands: string[][] = [];
     const result = await captureCli([...argv], {
       configDir,
       env: {},
       skillsDir,
-      runCommand: async args => { commands.push([...args]); return { code: 0, stdout: tailnetStatus(), stderr: "" }; },
+      runCommand: async args => { commands.push([...args]); return { code: 0, stdout: "{}", stderr: "" }; },
     });
     expect(result.code).toBe(2);
     expect(code(result.stderr)).toBe("invalid_usage");

@@ -93,7 +93,8 @@ describe("published Node package", () => {
     const env = { ...process.env };
     for (const name of [
       "GROKBOX_EXTERNAL_RUNNER",
-      "GROKBOX_EXTERNAL_PEER",
+      "GROKBOX_EXTERNAL_SERVER_URL",
+      "GROKBOX_EXTERNAL_DAEMON_TOKEN_REF",
       "GROKBOX_EXTERNAL_AGENT",
       "GROKBOX_EXTERNAL_EMPTY_FILE",
       "GROKBOX_EXTERNAL_MUTATION_ROOT",
@@ -110,7 +111,8 @@ describe("published Node package", () => {
     const env = {
       ...process.env,
       GROKBOX_EXTERNAL_RUNNER: "not-contacted",
-      GROKBOX_EXTERNAL_PEER: "not-contacted",
+      GROKBOX_EXTERNAL_SERVER_URL: "https://not-contacted.invalid",
+      GROKBOX_EXTERNAL_DAEMON_TOKEN_REF: "file:/synthetic/not-read",
       GROKBOX_EXTERNAL_AGENT: "grokbox",
       GROKBOX_EXTERNAL_EMPTY_FILE: "e2e:/empty.txt",
       GROKBOX_EXTERNAL_MUTATION_ROOT: "e2e",
@@ -121,6 +123,16 @@ describe("published Node package", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("must be an exact grokbox package version");
     expect(result.stderr).not.toContain("SSH boundary");
+  });
+
+  test("external endpoint credentials are references only and invalid inputs stop before SSH", async () => {
+    for (const [serverUrl, ref] of [["https://user:PRIVATE@not-contacted.invalid", "file:/synthetic/not-read"], ["http://remote.invalid", "file:/synthetic/not-read"], ["https://not-contacted.invalid", "PRIVATE_INLINE_CREDENTIAL"]]) {
+      const env = { ...process.env, GROKBOX_EXTERNAL_RUNNER: "not-contacted", GROKBOX_EXTERNAL_SERVER_URL: serverUrl,
+        GROKBOX_EXTERNAL_DAEMON_TOKEN_REF: ref, GROKBOX_EXTERNAL_AGENT: "synthetic", GROKBOX_EXTERNAL_EMPTY_FILE: "e2e:/empty.txt", GROKBOX_EXTERNAL_MUTATION_ROOT: "e2e" };
+      const result = await run([process.execPath, join(repoRoot, "scripts/verify-external.mjs")], repoRoot, env);
+      expect(result.code).toBe(2); expect(result.stdout).toBe("");
+      expect(result.stderr).not.toContain("PRIVATE"); expect(result.stderr).not.toContain("SSH boundary");
+    }
   });
 
   test("package tarball installs in Trash and both aliases are exact Node-only entrypoints", async () => {

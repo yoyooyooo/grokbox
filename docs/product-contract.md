@@ -14,7 +14,7 @@
 
 无配置时存在逻辑 `default` Profile；只读发现可合成默认值，不创建文件。Profile 选择依次为显式 `--profile`、`GROKBOX_PROFILE`、`client.currentProfile`、`default`。不存在、歧义、错误类型和不支持的 capability 均明确失败，不悄悄换身份或目标。
 
-`init` 是幂等连接初始化，不是项目生成器；显式参数及其是否已实现由 help 决定。初始化、bootstrap、daemon 启动与 Host 通道切换不是同一个动作。任何安装、凭据轮换、访问扩权和 endpoint 修改都必须保留无关配置，执行范围由相应命令的确认与策略决定。已存在的远程/peer 适配不意味着自动安装网络软件、登录、改 ACL 或开放公网。
+`init` 是本机幂等连接初始化，不是项目生成器或远程安装器；显式参数由 help 决定。远端由用户配置端点，再使用 `profile add/use`。Tailscale peer发现、Serve配置/恢复与其bootstrap兼容入口已经退出。安装资源初始化、daemon启动与Host通道切换仍是不同动作；任何现行安装、凭据配置、扩权和endpoint修改都保留无关配置，不授权网络登录、改ACL或开放公网。
 
 `--profile` 只选择已有 Profile；`init` 和 Profile 管理用各自位置参数命名对象，不赋予同一 flag 两种含义。读操作和 doctor 不启动服务、不唤醒机器、不领新凭据。
 
@@ -129,9 +129,9 @@ quota 使用明确的 credential-owning source、固定 HTTPS/无 redirect、有
 
 ## 11. Daemon 与恢复
 
-daemon owns listeners、RPC authorization、Gateway discovery、host adapters、Jobs/有限流和 shutdown。只读 status/doctor、ensure/恢复和首次 bootstrap 分开。doctor 命令完成不等于健康：消费 `data.ok` 和各 boundary，而非只看 exit 0。
+daemon owns尚未迁入统一管理Server的listeners、RPC authorization、Gateway discovery、host adapters、Jobs/有限流和shutdown。只读status/doctor、已有安装ensure/恢复和本地安装资源初始化分开；旧网络bootstrap不再提供。doctor命令完成不等于健康：消费`data.ok`和实际应用boundary，而非只看exit 0或已删除的网络占位字段。
 
-默认 Unix socket 或认证 loopback，不默认公开 0.0.0.0。已有外部 endpoint/bootstrap/recover 只在其明确作用域内操作并保留无关映射、root policy 和凭据；SSH/网络身份不替代 RPC 授权。模型 runtime 的 controller 不通过网络恢复获得额外执行权。
+默认Unix socket或认证loopback，不默认公开0.0.0.0。已配置外部端点和显式SSH的已有安装恢复继续支持；它们不部署软件、轮换凭据或检查/更改网络映射。SSH/网络身份不替代RPC授权。模型runtime的controller不通过网络恢复获得额外执行权，旧Serve偏好不能被当作现行网络管理授权。
 
 ## 12. Box-local model runtime
 

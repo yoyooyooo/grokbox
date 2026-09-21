@@ -2,65 +2,25 @@
 
 ## Scope and authority
 
-原始实现 `8d900af` 与来源登记 `ab62db3` 基于 V2 的 `4181e5e`。本次按用户授权线性重放到 V2 `02a4b5f`，对应提交为 `e2908af`、`c2b39bd`；冲突文档保留 V2 的最新结构与内容，功能代码没有冲突。产品范围归 [默认入口与连接](../product-contract.md#2-默认入口与连接) 和 [Daemon 与恢复](../product-contract.md#11-daemon-与恢复)，组合职责归 [连接和授权](../architecture.md#6-连接和授权)。本票拥有实现、兼容变化和离线证明；当前候选现场状态只看 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)。
+用户已要求完整翻新、无旧兼容路径。本票原先保留的显式Tailscale bootstrap/recovery，现在随[CLI-05](CLI-05-implementation-follow-through.md)退出，不再冻结保留。Box执行与用户自管网络的边界不变，普通已配置端点与显式SSH恢复不是待保留的旧厂商兼容层。产品合同归[连接](../product-contract.md#2-默认入口与连接)、[Daemon与恢复](../product-contract.md#11-daemon-与恢复)；原历史验证只看[2026-09-19固定回执](../reports/2026-09-19-network-boundary-v2-integration.md)。
 
-Box 内执行是主要路径。既有远程能力按原范围保留，不要求新增 runtime/Host/模型/观测命令远程化；不建立网络 provider 框架。用户自管 DNS/IP、VPN、ACL、TLS 与入口代理。未来 Box-hosted Web UI 的外部浏览器访问归 [T29](T29-runtime-webui.md)，本票不实现或启动 Web UI。
+## Current implementation
 
-## Implemented changes
+`init`只初始化本地连接，先读取并验证健康再保存选择。`profile add/use`显式配置普通HTTPS端点，DNS/MagicDNS/IP不决定协议、权限或恢复策略。`doctor`只返回当前应用检查，不保留`tailnet`、`serve`、`tailnetIdentity`占位JSON字段。
 
-| Entry / source | Boundary enforced |
-| --- | --- |
-| `packages/cli/src/commands/init.ts` | 默认/`--local` 不运行 Tailscale；无本地 discovery 给 `discovery_unavailable` 与 `profile add/use` 指引；不自动挑选 peer 或已有远程 Profile。只有显式 `--peer` 进入旧路径。 |
-| `packages/cli/src/diagnostics.ts` | HTTP/TLS、应用认证、capability、Gateway 决定健康；无 Tailscale/SSH/Serve 探测或 IPv4 前提；不从 HTTPS 成功声明尾网身份已验证。 |
-| `packages/cli/src/commands/recover.ts` | 健康 endpoint 无需 SSH 即 no-op；其余情况先拒绝认证/协议/权限/监听器错误，仅通过已声明 SSH ensure 已安装 daemon。endpoint 失败且控制面确认 `hibernated/absent` 才 wake；未知状态/网络故障不授权 wake。 |
-| `packages/cli/src/registry.ts` | 旧 peer/bootstrap 明示兼容；`recover --legacy-tailnet` 是旧 mapping 恢复的显式 opt-in。 |
-| `scripts/verify-external.mjs` | 显式旧部署验收不再错误要求普通 doctor 的 tailnet/Serve 为 pass；仍要求全部应用检查通过。未执行该 live 脚本。 |
+旧peer发现、Tailscale状态/ping、Serve映射读写、远程打包传输/安装和凭据轮换代码已从生产删除；`init --peer/--bootstrap/--admit-home-read/--yes`、`daemon ensure --bootstrap/--admit-home-read/--yes`、`recover --legacy-tailnet`不再注册，没有转发或拒绝型shim。`daemon.serve`也不再是当前配置字段。旧文件不会被静默改写或删除；无法按当前schema读取时明确拒绝，必要用户偏好应作为首次导入处理，不能据此复活旧运行路径。
 
-Unix socket/loopback listener、非 loopback HTTPS、共享凭据、capability/root policy 和 runtime local-only 不放宽。旧 bootstrap 的 recorded ownership、第三方占用/漂移拒绝、摘要验证、回滚与凭据保护保持原有实现；既有配置、映射与凭据不自动删除。
+`daemon/ssh-recovery.ts`只保留按明确SSH目标检查或启动已有安装的有限程序。健康时no-op；现有进程不健康时拒绝替换；缺安装不自动部署。它不改端点、权限、密钥或网络映射。`recover`保留认证/能力/监听器先行拒绝、健康no-op、明确SSH恢复，以及只有控制面确认休眠且端点失败时才按独立凭据唤醒的边界。诊断成功不授予任何恢复动作。
 
-## Compatibility and operator migration
+<a id="compatibility-and-operator-migration"></a>
+## Current operator entry
 
-默认 `init` 不再自动发现或选中远程节点。远程用户显式 `profile add <name> --transport daemon --server-url <https-url> --daemon-token-ref <reference>` 后 `profile use <name>`；已有 Profile 可直接 `profile use`，无需重建凭据。普通域名、MagicDNS 与 IP 使用同一 URL/TLS 规则，不新增网络厂商字段。
+远端由用户部署应用和网络入口，再配置 `profile add <name> --transport daemon --server-url <https-url> --daemon-token-ref <reference>` 与 `profile use <name>`。普通读取不检查网络厂商身份，恢复不接管网络。删除软件兼容实现不意味着有权删除机器上的既有Serve映射、配置或凭据。
 
-旧 `init --peer` 仍可显式使用；`init --bootstrap` 现在必须指定 `--peer`，TTY 仍需确认，headless 仍需 `--bootstrap --yes`。`daemon ensure --bootstrap --yes` 保留旧部署兼容边界。扩张 Tailscale 功能不是后续计划。
+外部验证脚本改为要求`GROKBOX_EXTERNAL_SERVER_URL`及外部执行机上已有的`GROKBOX_EXTERNAL_DAEMON_TOKEN_REF=file:/...`，只在独立配置目录记录引用。脚本仍需显式的执行机、Bot、文件和写入root目标；不使用旧bootstrap，不通过凭据轮换制造换代。其范围是现成端点验收；真实服务换代/安装另归T40及对应LIVE，不能将不再执行的换代路径记为通过。
 
-**普通 `recover` 不再恢复 Serve。** 只有操作者明确希望检查/恢复已记录的旧映射时，才使用 `recover --legacy-tailnet`；包装脚本不可因为 endpoint 含 `.ts.net`、IP 或配置了 `sshHost` 就自动追加此选项。该模式仍拒绝 unrecorded/drifted/occupied 映射，不接管他人配置。
+## Verification and remaining qualification
 
-`doctor` 保留 JSON 字段以避免静默移除：endpoint 路径的 `tailnet` / `serve` 是 `skipped`、code 为 `network_operator_managed`；`tailnetIdentity` 为 `unverified`。连接失败改为 `daemon_endpoint_unreachable`。自动化应读取 `data.ok` 和应用层检查，而不是要求尾网字段通过；诊断完成的进程 exit 0 不等于目标健康。
+`test/network-boundary.test.ts`检查生产代码/registry没有旧控制源、配置字段拒绝且原字节不变、失败init不改变选择。`test/ssh-recovery.test.ts`实际执行原POSIX恢复程序和自有临时Node服务，覆盖健康no-op、启动与再入不重复、存活但不健康的PID不受影响、缺安装和非法回执拒绝。地址与SSH传输本身是隔离测试输入，不签实际外网可达。
 
-## Offline proof
-
-本票的回归来自 `test/profile.test.ts`、`test/recovery.test.ts`、`test/daemon.test.ts`。覆盖无网络工具的 DNS/MagicDNS/IP/IPv6 endpoint、普通失败与权限拒绝、健康 no-op、确认休眠后的 SSH 恢复、未知/RUNNING 状态不唤醒、旧精确 mapping 恢复与漂移拒绝。地址场景使用受控 HTTP 响应，不是实际外部 DNS/TLS/IPv6 可达证明；daemon 测试另有真实本地 socket/HTTP listener 与认证检查。
-
-2026-09-19 的验证工具为 Node `v22.22.0`、Bun `1.4.2`；不是一次对仓库声明的所有 OS/Node/Bun 版本的重新资格认证。
-
-| Check | Result / proved scope |
-| --- | --- |
-| `bun run typecheck` | 通过；最终源码与新增测试严格类型检查。 |
-| `bun test ./test/profile.test.ts ./test/recovery.test.ts ./test/daemon.test.ts` | 65 pass / 0 fail，408 assertions；最终连接、恢复与旧 bootstrap 安全回归。 |
-| CLI/Skill/权限/observer 扩展组（下方命令） | 185 pass / 0 fail，13 文件；未运行真实外部验收脚本。 |
-| `bun test ./packages/runtime-kernel/test` | 270 pass / 0 fail，31 文件；既有共享配置/能力/执行边界回归。 |
-| `bun test ./test/packaging.test.ts` | 6 pass / 0 fail；真实构建、tarball、隔离安装与 Node-only 两个别名，原生 SQLite 加载和 bundled skills。 |
-| `bun test ./test/live-e2e-checklist.test.ts ./test/live-validation-harness.test.ts ./test/skills.test.ts ./test/cli.test.ts` | 110 pass / 0 fail；最终 LIVE 新行/链接/唯一命令映射以及 help/registry/Skill 一致性。与扩展组重叠，不重复累计。 |
-| `bun run build`；`node dist/index.js recover --help` | 通过；真实制品只暴露一个 recover leaf 与显式兼容选项。 |
-| `node --check scripts/verify-external.mjs`；`bun run check:publication`；`git diff --check` | 语法、公共文本隐私与补丁格式通过；不等于授权发布。 |
-
-扩展组的实际命令（Bun 路径筛选同时命中 Box-runtime 的 events 测试，故共 13 文件）：
-
-```bash
-bun test test/cli.test.ts test/skills.test.ts test/box.test.ts test/events.test.ts \
-  test/capabilities_local_server_url.test.ts test/capabilities_gateway_server_url.test.ts \
-  test/capabilities_desktop_probe.test.ts test/live-e2e-checklist.test.ts \
-  test/live-validation-harness.test.ts test/publication-privacy.test.ts \
-  test/sandbox-observer.test.ts packages/cli/test
-```
-
-原始功能分支未取得全仓 `bun test` 的完整结果；先前将原因归为工具时限，但没有保存该调用的具体时限、原始超时回执与退出码，故原因未证实。分组验证只证明实际跑过的用例，不宣称全套通过。代码/diff 自检不等同独立 reviewer 的结论；没有独立 code-review 凭据。
-
-## Integration and remaining qualification
-
-已线性合入 V2 `303926d`。重新连接后已在该 V2 提交完成合入后复验；源码映射、实际命令、退出码与证明范围见 [固定集成回执](../reports/2026-09-19-network-boundary-v2-integration.md)。此次补充只回填文档，不修改功能实现或重新处理冲突。
-
-独立代码审查仍无结论；按 [LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary) 选择并授权相关现场范围：普通 Box init、无 Tailscale CLI 的外部自管 HTTPS endpoint、受控 SSH 恢复，以及明确选择的旧 mapping 兼容验证。旧脚本断言/恢复选项与候选必须匹配。不能从模拟通过签真实 TLS、休眠唤醒或第三方网络兼容。
-
-本次用户仅授权本地线性合入 V2，冲突以 V2 为准；没有授权 push、发布、安装到现役、Host/modeld 重启、全局 shim 切换、Sandbox wake 或 Tailscale/Serve/ACL 变更。T40/T41 的持久进程生命周期仍是各自义务，不由网络收敛关闭或延期。
+其余入口由profile/recovery/daemon/CLI、共享config、打包安装以及生成Skill验证。最终大阶段固定源码结果见[844项组合与实现边界](../reports/2026-09-21-network-compatibility-retirement.md)；不沿用原有65项兼容验证作为现版证明。独立审查和真实外部DNS/TLS、账号休眠唤醒、整套安装仍看[LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)，未在本轮执行现场脚本。无部署、推送、真实模型调用或现役服务切换。

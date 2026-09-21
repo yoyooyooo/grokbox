@@ -152,7 +152,7 @@ The migration phase is durable: prepared, publishing, published, activated, reti
 
 `config recover` reports the commit lease. Explicit confirmed recovery can reclaim a proven-dead PID/start owner; it never removes an unknown lock because it is old. After a crash, `--operation-id <id>` also reconciles the prepared/committed operation record. Do not delete leases manually.
 
-`config bootstrap` is the explicit installation-resource boundary used by remote bootstrap. A stable operation ID identifies prepare/install/recover. It preserves unrelated preferences and model bytes, keeps credential verifiers in installation state, and delegates preference changes to the same writer. Recovery compares both configuration and security-state digests before restoring; a later user edit is preserved as a conflict. These commands do not start services.
+`config bootstrap` is the explicit local installation-resource boundary. The retired remote network bootstrap is not a consumer. A stable operation ID identifies prepare/install/recover. It preserves unrelated preferences and model bytes, keeps credential verifiers in installation state, and delegates preference changes to the same writer. Recovery compares both configuration and security-state digests before restoring; a later user edit is preserved as a conflict. These commands do not start services.
 
 ## Repair a detached home alias
 

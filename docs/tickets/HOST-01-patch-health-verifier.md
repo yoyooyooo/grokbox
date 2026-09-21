@@ -26,7 +26,7 @@
 
 ## 当前来源与最新证据
 
-本轮原生复验实际发现Host再次从2380…更新为6be750…，先拒绝旧资格，再进行独立源/schema验证和生产hook复验；没有只改pin求绿。最终source/worker/candidate准确摘要、原失败、cache-before-validation测试问题及修复见[单版本收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。当前源码三个验证窗口合计659项/91文件通过，内部Node/Chrome和Rust计数不重复相加；不是全仓最终候选签署。
+本轮原生复验实际发现Host再次从2380…更新为6be750…，先拒绝旧资格，再进行独立源/schema验证和生产hook复验；没有只改pin求绿。最终source/worker/candidate准确摘要、原失败、cache-before-validation测试问题及修复见[单版本收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。该单版本阶段三个验证窗口合计659项/91文件通过。后续控制/网络兼容退出阶段已在新固定源码上复验844项/109文件，见[最新组合](../reports/2026-09-21-network-compatibility-retirement.md)；内部Node/Chrome和Rust计数不重复相加，均不是全仓最终候选签署。
 
 原阶段固定证据保留，避免将历史窗口伪装成当前结果：[首次Rust整合](../reports/2026-09-20-host-health-first-integration.md)、[编译运行代](../reports/2026-09-20-host-compilation-health.md)、[引用见证](../reports/2026-09-20-host-capability-witness.md)、[idle/action-only适配](../reports/2026-09-20-host-idle-layout-adaptation.md)、[原生角色](../reports/2026-09-21-host-native-role-analysis.md)、[前一配对窗口](../reports/2026-09-21-native-checkpoint-pair.md)、[lease/finally](../reports/2026-09-21-host-lease-finally.md)、[运行机会](../reports/2026-09-21-host-lease-opportunities.md)。历史多版本策略由当前单版本要求取代，不改写旧报告事实。
 
@@ -34,7 +34,7 @@
 
 先在原owner中继续补齐所声明必要能力的语义与变换后行为、更多独立调用机会，以及真实采用后同代证据。`uncoveredSlices`必须真实列明；机会覆盖只到managed主流lease，不能凭函数名或注册表关闭全部能力。场景反例需合法JS且重新固定candidate hash，不得全靠unknown-sha或语法错捕获。
 
-旧controller/inject拒绝型stub及专属测试/spy已经退出，安装preload也不再借用旧副本或回退TypeScript，见[控制入口退出](../reports/2026-09-21-controller-entry-retirement.md)。继续收束仍未迁移的handover/compact控制及其他实际兼容入口。优先当前功能owner和准确依赖，不重做已完成的current-state、通知、材料管理等阶段，不另起平行工程。现行Acorn作者探索与Rust健康验证不是自动互相回退；是否仍需作者能力及其退出随原HCR迁移核实，不能仅删依赖而丢必需行为。
+旧controller/inject拒绝型stub及专属测试/spy已经退出，安装preload也不再借用旧副本或回退TypeScript，见[控制入口退出](../reports/2026-09-21-controller-entry-retirement.md)。Tailscale/Serve的显式兼容路径、bootstrap旧writer/选项和JSON/schema占位也已经退出，见[NET-01](NET-01-box-local-network-boundary.md)。接续收束仍未迁移的handover/compact控制及其必要daemon能力。优先当前功能owner和准确依赖，不重做已完成的current-state、通知、材料管理等阶段，不另起平行工程。现行Acorn作者探索与Rust健康验证不是自动互相回退；是否仍需作者能力及其退出随原HCR迁移核实，不能仅删依赖而丢必需行为。
 
 长期观察继续核对容量、源重启/变化、迟到结果、检测器退出和独立投递。当前通知显示local-only；接收Host处于同故障域时，不能为了投递放宽ownership/profile/model门，独立出口与凭据须明确授权。已有合法modeld执行不能被健康服务故障或Server关闭带倒。
 

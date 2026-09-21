@@ -23,7 +23,6 @@ export type DaemonObservationIntent = { runRoot: string; agentIds: string[] };
 export type DaemonIntent = {
   observation?: DaemonObservationIntent;
   network?: { host: "127.0.0.1"; port: number };
-  serve?: { httpsPort: number; dnsName: string; proxyUrl: string };
   filesystem?: FilesystemPolicy;
   process?: ProcessPolicy;
 };
@@ -76,7 +75,6 @@ const profile = object({
 export const DAEMON_INTENT_SCHEMA = object({
   observation: object({ runRoot: path, agentIds: array({ ...uuid, sensitive: true }, 32) }, ["runRoot", "agentIds"]),
   network: object({ host: enumeration("127.0.0.1"), port: integer(1, 65535) }, ["host", "port"]),
-  serve: object({ httpsPort: integer(1, 65535), dnsName: string(253, "^[A-Za-z0-9.-]+$"), proxyUrl: url }, ["httpsPort", "dnsName", "proxyUrl"]),
   filesystem: object({ roots: array(object({
     name: string(32, "^[a-z][a-z0-9-]{0,31}$"), path,
     operations: array(enumeration("stat", "list", "read", "download", "write", "mkdir", "upload", "remove", "remove-recursive", "exec"), 10, 1),
@@ -231,7 +229,6 @@ export function defaultConfig(): UnifiedConfig {
 export function validateDaemonIntent(value: unknown): DaemonIntent {
   validateNode(value, DAEMON_INTENT_SCHEMA);
   const intent = structuredClone(value) as DaemonIntent;
-  if (intent.serve && (!intent.network || intent.serve.proxyUrl !== `http://127.0.0.1:${intent.network.port}`)) bad("Serve proxy must match the loopback listener.");
   const roots = intent.filesystem?.roots ?? [];
   if (new Set(roots.map((root) => root.name)).size !== roots.length) bad("Duplicate filesystem root.");
   for (const root of roots) {

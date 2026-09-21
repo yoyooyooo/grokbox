@@ -36,26 +36,17 @@ export type DoctorReport = {
     profile: DiagnosticCheck;
     secretSession: DiagnosticCheck;
     sandbox: DiagnosticCheck;
-    tailnet: DiagnosticCheck;
-    serve: DiagnosticCheck;
     daemonHttp: DiagnosticCheck;
     daemonAuth: DiagnosticCheck;
     capabilities: DiagnosticCheck;
     gateway: DiagnosticCheck;
     networkReachable: boolean;
-    tailnetIdentity: string;
     sharedCredentialAccepted: boolean | string;
     capabilityAuthorized: boolean;
     loopbackTarget: boolean;
     generationMatches: boolean;
     authenticatedCommand: string;
   };
-};
-
-type TailnetPeerProbe = {
-  status: DiagnosticCheck;
-  hostname: string;
-  ipv4Present: boolean;
 };
 
 const skipped = (code: string, action = "none"): DiagnosticCheck => ({ status: "skipped", code, action });
@@ -100,94 +91,6 @@ function discoveryProjection(discovery: Discovery): Omit<Discovery, "token" | "b
     pid: discovery.pid,
     startedAt: discovery.startedAt,
     tokenPresent: discovery.tokenPresent,
-  };
-}
-
-function peerRows(parsed: Record<string, unknown>): Record<string, unknown>[] {
-  if (!isRecord(parsed.Peer)) return [];
-  return Object.values(parsed.Peer).filter(isRecord);
-}
-
-function peerMatches(peer: Record<string, unknown>, hostname: string, sshHost?: string): boolean {
-  const wanted = new Set(
-    [hostname, sshHost, sshHost?.includes("@") ? sshHost.slice(sshHost.lastIndexOf("@") + 1) : undefined]
-      .filter((value): value is string => Boolean(value))
-      .map((value) => value.toLowerCase().replace(/\.$/, "")),
-  );
-  const names = [peer.DNSName, peer.HostName]
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.toLowerCase().replace(/\.$/, ""));
-  return names.some((name) => wanted.has(name));
-}
-
-// Compatibility-only probe used by recover --legacy-tailnet, never by ordinary doctor.
-export async function inspectTailnetPeer(
-  deps: CliDeps,
-  hostname: string,
-  timeoutMs: number,
-): Promise<TailnetPeerProbe> {
-  const statusResult = await deps.runCommand(
-    ["tailscale", "status", "--json"],
-    { timeoutMs, signal: deps.signal },
-  );
-  if (statusResult.code !== 0) {
-    return {
-      status: failed("tailnet_status_unavailable", "Initialize Tailscale on the external runner and retry doctor."),
-      hostname,
-      ipv4Present: false,
-    };
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(statusResult.stdout);
-  } catch {
-    return {
-      status: failed("tailnet_status_invalid", "Upgrade or repair the external runner Tailscale client."),
-      hostname,
-      ipv4Present: false,
-    };
-  }
-  if (!isRecord(parsed)) {
-    return {
-      status: failed("tailnet_status_invalid", "Upgrade or repair the external runner Tailscale client."),
-      hostname,
-      ipv4Present: false,
-    };
-  }
-  const peer = peerRows(parsed).find((entry) => peerMatches(entry, hostname, deps.sshHost));
-  if (!peer) {
-    return {
-      status: failed("tailnet_peer_not_found", "Verify the Profile endpoint and tailnet membership."),
-      hostname,
-      ipv4Present: false,
-    };
-  }
-  const ips = Array.isArray(peer.TailscaleIPs) ? peer.TailscaleIPs : [];
-  const ipv4Present = ips.some((value) => typeof value === "string" && /^\d+\.\d+\.\d+\.\d+$/.test(value));
-  if (peer.Online === false) {
-    return {
-      status: failed("tailnet_peer_unreachable", "Use recover when Sandbox wake authority is configured."),
-      hostname,
-      ipv4Present,
-    };
-  }
-  const seconds = Math.max(1, Math.min(300, Math.ceil(timeoutMs / 1000)));
-  const ping = await deps.runCommand(
-    ["tailscale", "ping", "--c", "1", `--timeout=${seconds}s`, hostname],
-    { timeoutMs, signal: deps.signal },
-  );
-  if (ping.code !== 0) {
-    return {
-      status: failed("tailnet_peer_unreachable", "Use recover when Sandbox wake authority is configured."),
-      hostname,
-      ipv4Present,
-    };
-  }
-  const path = /via derp\b/i.test(ping.stdout) ? "relay" : /via\s+\d/i.test(ping.stdout) ? "direct" : "reachable";
-  return {
-    status: { ...passed("tailnet_peer_reachable"), path },
-    hostname,
-    ipv4Present,
   };
 }
 
@@ -239,14 +142,11 @@ export async function diagnose(deps: CliDeps, timeoutMs: number): Promise<Doctor
     profile: passed("profile_valid"),
     secretSession: skipped("secret_not_required"),
     sandbox: skipped(deps.sandboxAccessTokenRef ? "sandbox_not_needed" : "sandbox_not_configured"),
-    tailnet: skipped("tailnet_not_applicable"),
-    serve: skipped("serve_not_applicable"),
     daemonHttp: skipped("daemon_http_not_applicable"),
     daemonAuth: skipped("daemon_auth_not_applicable"),
     capabilities: skipped("daemon_capabilities_not_applicable"),
     gateway: skipped("gateway_not_probed"),
     networkReachable: false,
-    tailnetIdentity: "not-applicable",
     sharedCredentialAccepted: "not-applicable",
     capabilityAuthorized: false,
     loopbackTarget: false,
@@ -277,10 +177,6 @@ export async function diagnose(deps: CliDeps, timeoutMs: number): Promise<Doctor
 
   if (remoteDaemon && deps.daemonServerUrl) {
     // Endpoint health is independent of the operator's network/proxy vendor.
-    // Preserve legacy JSON keys without inventing network identity evidence.
-    checks.tailnet = skipped("network_operator_managed");
-    checks.serve = skipped("network_operator_managed");
-    checks.tailnetIdentity = "unverified";
     checks.daemonHttp = await probeRemoteDaemonHttp(deps, deps.daemonServerUrl, timeoutMs);
     checks.networkReachable = checks.daemonHttp.status === "pass";
     if (checks.daemonHttp.code === "daemon_endpoint_unreachable" && deps.sandboxAccessTokenRef) {

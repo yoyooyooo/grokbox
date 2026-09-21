@@ -1,11 +1,7 @@
-import {
-  checkBatchModeSsh,
-  ensureInstalledDaemonThroughSsh,
-  ensureRecordedServeMapping,
-} from "../bootstrap.ts";
+import { checkBatchModeSsh, ensureInstalledDaemonThroughSsh } from "../daemon/ssh-recovery.ts";
 import { resolveSecretRef } from "../config/secret.ts";
 import type { CliDeps } from "../deps.ts";
-import { diagnose, inspectTailnetPeer } from "../diagnostics.ts";
+import { diagnose } from "../diagnostics.ts";
 import { CliError } from "../errors.ts";
 import { writeSuccess } from "../output.ts";
 import { ioFromOpts } from "../opts.ts";
@@ -16,7 +12,7 @@ import {
 } from "../sandbox/cursor.ts";
 
 type RecoveryAction = {
-  action: "sandbox-wake" | "tailnet-wait" | "serve-restore" | "daemon-ensure";
+  action: "sandbox-wake" | "daemon-ensure";
   changed: boolean;
   outcome: string;
 };
@@ -95,31 +91,6 @@ async function wakeSandbox(deps: CliDeps, timeoutMs: number, operationId: string
   }
 }
 
-async function waitForTailnet(
-  deps: CliDeps,
-  hostname: string,
-  timeoutMs: number,
-  operationId: string,
-): Promise<void> {
-  const probeTimeoutMs = Math.min(2_000, timeoutMs);
-  const delayMs = Math.min(2_000, timeoutMs);
-  const attempts = Math.max(
-    1,
-    Math.ceil(timeoutMs / Math.max(1, probeTimeoutMs + delayMs)),
-  );
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const peer = await inspectTailnetPeer(deps, hostname, probeTimeoutMs);
-    if (peer.status.status === "pass" && peer.ipv4Present) return;
-    if (attempt === attempts - 1 || !(await deps.wait(delayMs, deps.signal))) break;
-  }
-  throw recoverError(
-    operationId,
-    "The box did not regain tailnet reachability and an IPv4 assignment before the recovery deadline.",
-    "tailnet_restore_timeout",
-    true,
-  );
-}
-
 async function waitForSsh(deps: CliDeps, host: string, timeoutMs: number): Promise<boolean> {
   const probeMs = Math.min(2_000, timeoutMs);
   const attempts = Math.max(1, Math.ceil(timeoutMs / (probeMs * 2)));
@@ -132,7 +103,7 @@ async function waitForSsh(deps: CliDeps, host: string, timeoutMs: number): Promi
 
 export async function runRecover(
   deps: CliDeps,
-  raw: { json?: boolean; timeoutMs?: string; legacyTailnet?: boolean },
+  raw: { json?: boolean; timeoutMs?: string },
 ): Promise<void> {
   const io = ioFromOpts(raw);
   const operationId = deps.randomUUID();
@@ -143,9 +114,8 @@ export async function runRecover(
       { failureCode: "remote_recovery_not_configured", context: { operationId, phase: "preflight" } },
     );
   }
-  const endpoint = new URL(deps.daemonServerUrl);
   const initial = await diagnose(deps, io.timeoutMs);
-  if (initial.ok && !raw.legacyTailnet) {
+  if (initial.ok) {
     writeSuccess(deps.stdout, {
       recovered: true,
       changed: false,
@@ -169,7 +139,7 @@ export async function runRecover(
     initial.checks.daemonAuth.code !== "daemon_unreachable") {
     throw new CliError(
       "recover_unavailable",
-      "Recovery cannot replace credentials, protocol versions, or daemon policy; use confirmed bootstrap when appropriate.",
+      "Recovery cannot replace credentials, protocol versions, or daemon policy; repair the installation and its explicit configuration.",
       {
         failureCode: initial.checks.daemonAuth.code,
         context: { operationId, phase: "daemon-authority-preflight" },
@@ -199,12 +169,6 @@ export async function runRecover(
     await wakeSandbox(deps, io.timeoutMs, operationId);
     actions.push({ action: "sandbox-wake", changed: true, outcome: "brokered-noop-verified" });
   }
-  // Frozen compatibility path only: never infer it from an address or sshHost.
-  if (raw.legacyTailnet) {
-    await waitForTailnet(deps, endpoint.hostname, io.timeoutMs, operationId);
-    actions.push({ action: "tailnet-wait", changed: false, outcome: "peer-and-ipv4-reachable" });
-  }
-
   if (!(await waitForSsh(deps, deps.sshHost, io.timeoutMs))) {
     const sandboxCredentialFailed = initial.checks.sandbox.status === "fail" &&
       ["credential_unavailable", "credential_locked", "credential_invalid"].includes(initial.checks.sandbox.code);
@@ -213,16 +177,6 @@ export async function runRecover(
       "The declared SSH recovery adapter is unavailable. Repair network access; wake requires verified Sandbox state and credentials.",
       { failureCode: sandboxCredentialFailed ? initial.checks.sandbox.code : "ssh_recovery_unavailable", context: { operationId, phase: "ssh-preflight" } },
     );
-  }
-
-  if (raw.legacyTailnet) {
-    let mapping: Awaited<ReturnType<typeof ensureRecordedServeMapping>>;
-    try {
-      mapping = await ensureRecordedServeMapping(deps, deps.sshHost, endpoint.hostname, io.timeoutMs);
-    } catch (error) {
-      throw recoveryPhaseError(error, operationId, "serve-restore");
-    }
-    actions.push({ action: "serve-restore", changed: mapping.changed, outcome: mapping.state });
   }
 
   let daemon: Awaited<ReturnType<typeof ensureInstalledDaemonThroughSsh>>;

@@ -89,7 +89,7 @@ registry 每个 leaf 统一定义 path、usage、target role/kind、required cap
 
 secret reference 在有权消费它的 adapter 解封；连接 ref 的平台形式与 provider ref 的窄形式不同。file 读取检查 no-follow、regular file、owner、mode、大小与编码。App descriptor 仅是 Gateway-only 兼容来源；不能从其成功推出 Sandbox/quota 权限。独立共享 daemon credential 可轮换，网络身份不代替 capability auth。
 
-已有 init/SSH/peer/endpoint bootstrap 实现在 CLI 部署层，按当前源码保留；只检查已配置前提或操作明确拥有的目标，不修改无关映射/策略。它不进入 Box 模型执行链。后续网络边界变更需要与源实现同步，不因文档收敛假称旧适配已删除。
+CLI连接层只保留本地init、显式配置端点和现有安装的有限SSH恢复。peer发现、Tailscale/Serve bootstrap与旧网络兼容选项已经随源码/测试/验证脚本删除，见[NET-01](tickets/NET-01-box-local-network-boundary.md)。本地安装资源配置仍走原canonical owner，不获得网络或模型执行权限；历史配置字节保全不构成旧运行路径。
 
 ## 7. Server 与原生入口
 

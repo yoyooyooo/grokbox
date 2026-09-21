@@ -12,7 +12,6 @@ import { CliError } from "../errors.ts";
 import { isRecord } from "../util.ts";
 
 export type DaemonNetworkConfig = { host: "127.0.0.1"; port: number; tokenSha256: string };
-export type DaemonServeConfig = { httpsPort: number; dnsName: string; proxyUrl: string };
 export type DaemonFilesystemRootConfig = { name: string; path: string; operations: Array<"stat" | "list" | "read" | "download" | "write" | "mkdir" | "upload" | "remove" | "remove-recursive" | "exec"> };
 export type DaemonFilesystemConfig = { roots: DaemonFilesystemRootConfig[] };
 export type DaemonProcessConfig = { cwdRoots: string[]; defaultCwdRoot: string; executables: Array<{ name: string; path: string }>;
@@ -20,15 +19,15 @@ export type DaemonProcessConfig = { cwdRoots: string[]; defaultCwdRoot: string; 
 export type DaemonDesktopConfig = { stopWindowPath?: string; floorAgentIds?: string[]; keepAgentIds?: string[]; minIdleMs?: number; pruneEnabled?: boolean };
 /** Daemon launch resources, assembled from intent and installation security state.
  * This is not an on-disk daemon config or a second source of user preferences. */
-export type DaemonConfig = { version: 1; network?: DaemonNetworkConfig; serve?: DaemonServeConfig;
+export type DaemonConfig = { version: 1; network?: DaemonNetworkConfig;
   filesystem?: DaemonFilesystemConfig; process?: DaemonProcessConfig; desktop?: DaemonDesktopConfig;
   observation?: { runRoot: string; agentIds: string[] } };
 
 export function validateDaemonConfig(input: unknown): DaemonConfig {
-  if (!isRecord(input) || input.version !== 1 || Object.keys(input).some((key) => !["version", "network", "serve", "filesystem", "process", "desktop", "observation"].includes(key))) throw new CliError("profile_invalid", "Invalid daemon launch resources.");
+  if (!isRecord(input) || input.version !== 1 || Object.keys(input).some((key) => !["version", "network", "filesystem", "process", "desktop", "observation"].includes(key))) throw new CliError("profile_invalid", "Invalid daemon launch resources.");
   const resources = structuredClone(input);
   const intent: Record<string, unknown> = {};
-  for (const key of ["serve", "filesystem", "process", "observation"]) if (input[key] !== undefined) intent[key] = input[key];
+  for (const key of ["filesystem", "process", "observation"]) if (input[key] !== undefined) intent[key] = input[key];
   if (input.network !== undefined) {
     const network = input.network;
     if (!isRecord(network) || Object.keys(network).some((key) => !["host", "port", "tokenSha256"].includes(key)) || typeof network.tokenSha256 !== "string" || !/^[0-9a-f]{64}$/.test(network.tokenSha256)) throw new CliError("profile_invalid", "Daemon credential verifier is invalid.");
@@ -75,7 +74,7 @@ export async function readDaemonConfig(configDir: string): Promise<DaemonConfig>
   };
 }
 
-/** Explicit installation boundary for bootstrap/test installations. Operational
+/** Explicit installation boundary for local/test installations. Operational
  * keep/on/off writers must use the field/domain commands below instead. */
 export async function writeDaemonConfig(configDir: string, resources: DaemonConfig, durableRoot?: string, operationId: string = randomUUID()): Promise<void> {
   const config = validateDaemonConfig(resources);
@@ -84,7 +83,7 @@ export async function writeDaemonConfig(configDir: string, resources: DaemonConf
   await installConfigurationResources({ configDir, root, operationId }, {
     daemon: {
       ...(config.network ? { network: { host: config.network.host, port: config.network.port } } : {}),
-      ...(config.serve ? { serve: config.serve } : {}), ...(config.filesystem ? { filesystem: config.filesystem } : {}),
+      ...(config.filesystem ? { filesystem: config.filesystem } : {}),
       ...(config.process ? { process: config.process } : {}),
       ...(config.observation ? { observation: config.observation } : {}),
     },

@@ -8,16 +8,23 @@ import { randomUUID } from "node:crypto";
 import { jobStateProvesCleanup, productErrorCodeFromText } from "./external-validation-helpers.mjs";
 
 const runner = process.env.GROKBOX_EXTERNAL_RUNNER;
-const peer = process.env.GROKBOX_EXTERNAL_PEER;
+const serverUrl = process.env.GROKBOX_EXTERNAL_SERVER_URL;
+const credentialRef = process.env.GROKBOX_EXTERNAL_DAEMON_TOKEN_REF;
 const agentTarget = process.env.GROKBOX_EXTERNAL_AGENT;
 const emptyFileProbe = process.env.GROKBOX_EXTERNAL_EMPTY_FILE;
 const mutationRoot = process.env.GROKBOX_EXTERNAL_MUTATION_ROOT;
 const packageSpec = process.env.GROKBOX_EXTERNAL_PACKAGE;
-if (!runner || !peer || !agentTarget || !emptyFileProbe || !mutationRoot) {
+if (!runner || !serverUrl || !credentialRef || !agentTarget || !emptyFileProbe || !mutationRoot) {
   console.error(
-    "Set GROKBOX_EXTERNAL_RUNNER, GROKBOX_EXTERNAL_PEER, GROKBOX_EXTERNAL_AGENT, GROKBOX_EXTERNAL_EMPTY_FILE, and GROKBOX_EXTERNAL_MUTATION_ROOT.",
+    "Set GROKBOX_EXTERNAL_RUNNER, GROKBOX_EXTERNAL_SERVER_URL, GROKBOX_EXTERNAL_DAEMON_TOKEN_REF, GROKBOX_EXTERNAL_AGENT, GROKBOX_EXTERNAL_EMPTY_FILE, and GROKBOX_EXTERNAL_MUTATION_ROOT.",
   );
   process.exit(2);
+}
+let endpoint;
+try { endpoint = new URL(serverUrl); } catch { console.error("Invalid external endpoint."); process.exit(2); }
+if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+  || !credentialRef.startsWith("file:/") || /[\x00-\x1f]/.test(credentialRef)) {
+  console.error("Use an operator-managed HTTPS endpoint and an existing file: credential on the external runner."); process.exit(2);
 }
 if (!/^[a-z][a-z0-9-]{0,31}:\/(?:[^/]+\/)*[^/]+$/.test(emptyFileProbe)) {
   console.error("GROKBOX_EXTERNAL_EMPTY_FILE must use root:/relative/path syntax.");
@@ -112,7 +119,7 @@ const localTemp = mkdtempSync(join(localTrash, "grokbox-external-"));
 const runId = randomUUID();
 const remoteRoot = `${runtime.home}/.Trash/grokbox-external-${runId}`;
 const remotePrefix = `${remoteRoot}/prefix`;
-const remoteConfig = `${runtime.home}/.grokbox-verification`;
+const remoteConfig = `${remoteRoot}/config`;
 let cleanupCliAttempt = null;
 let activeJobId = null;
 let mutationDirectory = null;
@@ -124,12 +131,13 @@ let jobCleanup = "not-started";
 let filesystemCleanup = "not-started";
 let managementCleanup = "not-started";
 const evidence = {
-  version: 3,
+  version: 4,
+  scope: "configured-endpoint-no-deployment",
   runId,
   roles: {
     controller: { distinctFromExternal: true },
     external: { platform: runtime.platform, nodeMajor: Number(String(runtime.node).split(".")[0]) },
-    box: { reachedBy: "BatchMode SSH bootstrap", transport: "tailnet HTTPS" },
+    box: { reachedBy: "operator-managed endpoint", transport: "HTTPS" },
   },
   package: {
     source: packageSpec ? "registry" : "local-tarball",
@@ -138,7 +146,7 @@ const evidence = {
     gboxBin: false,
     clientVersion: null,
   },
-  operations: { bootstrap: null, job: null, filesystem: null },
+  operations: { job: null, filesystem: null },
   generations: { daemonBefore: null, daemonAfter: null },
   checks: {},
   credentialState: "pending",
@@ -204,11 +212,8 @@ try {
   evidence.package.gboxBin = gboxVersion === grokboxVersion;
   evidence.package.clientVersion = grokboxVersion;
 
-  cli(
-    grokbox,
-    ["init", "default", "--peer", peer, "--bootstrap", "--yes"],
-    "remote bootstrap",
-  );
+  cli(grokbox, ["profile", "add", "external", "--transport", "daemon", "--server-url", serverUrl, "--daemon-token-ref", credentialRef], "configure existing endpoint");
+  cli(grokbox, ["profile", "use", "external"], "select isolated endpoint");
   const daemonStatus = JSON.parse(cli(grokbox, ["daemon", "status"], "remote daemon status"));
   const daemonStartEvent = JSON.parse(cli(
     grokbox,
@@ -391,16 +396,9 @@ try {
     [...productTimeout, "send", target, "--text", process.env.GROKBOX_EXTERNAL_PROMPT ?? "External verification. Reply with OK only."],
     "remote send",
   );
-  const bootstrapRotation = JSON.parse(cli(
-    grokbox,
-    [...productTimeout, "daemon", "ensure", "--bootstrap", "--yes"],
-    "remote daemon generation rotation",
-  ));
-  const generationGap = JSON.parse(cli(
-    grokbox,
-    [...productTimeout, "events", "--once", "--sources", "daemon", "--cursor", originalEventCursor],
-    "remote cross-generation event recovery",
-  ));
+  // This lane does not rotate credentials or restart the installed service.
+  // Cross-generation recovery belongs to its separate authorized lifecycle lane.
+  const daemonAfter = JSON.parse(cli(grokbox, [...productTimeout, "daemon", "status"], "unchanged remote daemon generation"));
 
   evidence.checks = {
     protocolMajor: daemonStatus?.data?.protocolMajor ?? null,
@@ -410,10 +408,9 @@ try {
     doctorBoundaries:
       doctor?.data?.checks?.profile?.status === "pass" &&
       doctor?.data?.checks?.secretSession?.status === "pass" &&
-      // This explicitly bootstrapped legacy lane still uses ordinary, vendor-neutral doctor.
-      doctor?.data?.checks?.tailnet?.code === "network_operator_managed" &&
-      doctor?.data?.checks?.serve?.code === "network_operator_managed" &&
-      doctor?.data?.checks?.tailnetIdentity === "unverified" &&
+      !Object.hasOwn(doctor?.data?.checks ?? {}, "tailnet") &&
+      !Object.hasOwn(doctor?.data?.checks ?? {}, "serve") &&
+      !Object.hasOwn(doctor?.data?.checks ?? {}, "tailnetIdentity") &&
       doctor?.data?.checks?.daemonHttp?.status === "pass" &&
       doctor?.data?.checks?.daemonAuth?.status === "pass" &&
       doctor?.data?.checks?.capabilities?.status === "pass" &&
@@ -425,10 +422,6 @@ try {
       recoverNoop?.data?.recovered === true && recoverNoop?.data?.changed === false &&
       Array.isArray(recoverNoop?.data?.actions) && recoverNoop.data.actions.length === 0 &&
       recoverNoop?.data?.doctor?.ok === true,
-    bootstrapOperationPresent:
-      bootstrapRotation?.data?.changed === true &&
-      typeof bootstrapRotation?.data?.operationId === "string" &&
-      bootstrapRotation?.data?.audit?.action === "daemon-bootstrap",
     generationPresent: Number.isFinite(doctor?.meta?.gateway?.pid) && Number.isFinite(doctor?.meta?.gateway?.startedAt),
     daemonLifecycleEvent:
       daemonStartEvent?.event?.source === "daemon" && daemonStartEvent?.event?.kind === "started" &&
@@ -436,10 +429,8 @@ try {
     jobLifecycleEvent:
       jobEvent?.event?.source === "job" && jobEvent?.event?.operationId === jobId &&
       jobEvent?.event?.payload?.jobId === jobId,
-    crossGenerationGap:
-      generationGap?.event?.source === "daemon" && generationGap?.event?.kind === "gap" &&
-      generationGap?.event?.payload?.reason === "daemon_generation_changed" &&
-      generationGap?.meta?.daemonGeneration !== daemonStartEvent?.meta?.daemonGeneration,
+    generationUnchanged: typeof daemonAfter?.data?.daemonGeneration === "string" && daemonAfter.data.daemonGeneration === daemonStatus?.data?.daemonGeneration,
+    crossGenerationRecovery: "not-exercised",
     processShellRefusedByDefault: shellRefused,
     processJobIdentity: typeof jobId === "string" && jobSubmit?.data?.command?.shell === false,
     processJobCancelled:
@@ -485,17 +476,16 @@ try {
     send: "accepted",
   };
   evidence.operations = {
-    bootstrap: bootstrapRotation?.data?.operationId ?? null,
     job: jobId,
     filesystem: fsWrite?.data?.operationId ?? null,
   };
   evidence.generations = {
     daemonBefore: daemonStartEvent?.meta?.daemonGeneration ?? null,
-    daemonAfter: generationGap?.meta?.daemonGeneration ?? null,
+    daemonAfter: daemonAfter?.data?.daemonGeneration ?? null,
   };
-  const profile = JSON.parse(cli(grokbox, ["profile", "show", "default"], "verification Profile show"));
+  const profile = JSON.parse(cli(grokbox, ["profile", "show", "external"], "verification Profile show"));
   const tokenRef = profile?.data?.profile?.daemon_token_ref;
-  if (typeof tokenRef !== "string" || !tokenRef.startsWith("file:")) {
+  if (tokenRef !== credentialRef) {
     throw new Error("External verification Profile does not retain a file credential reference.");
   }
   remote(`test -f ${quote(tokenRef.slice(5))}`, "preserved credential check");
@@ -514,11 +504,10 @@ try {
     evidence.checks.credentialAccepted === true,
     evidence.checks.daemonEnsureNoop === true,
     evidence.checks.recoverNoop === true,
-    evidence.checks.bootstrapOperationPresent === true,
     evidence.checks.generationPresent === true,
     evidence.checks.daemonLifecycleEvent === true,
     evidence.checks.jobLifecycleEvent === true,
-    evidence.checks.crossGenerationGap === true,
+    evidence.checks.generationUnchanged === true,
     evidence.checks.processShellRefusedByDefault === true,
     evidence.checks.processJobIdentity === true,
     evidence.checks.processJobCancelled === true,
@@ -539,12 +528,11 @@ try {
     evidence.checks.historySearch === "passed",
     evidence.checks.historyTail === "passed",
     evidence.checks.send === "accepted",
-    typeof evidence.operations.bootstrap === "string",
     typeof evidence.operations.job === "string",
     typeof evidence.operations.filesystem === "string",
     typeof evidence.generations.daemonBefore === "string",
     typeof evidence.generations.daemonAfter === "string" &&
-      evidence.generations.daemonAfter !== evidence.generations.daemonBefore,
+      evidence.generations.daemonAfter === evidence.generations.daemonBefore,
     evidence.credentialState === "preserved-in-dedicated-profile",
     jobCleanup === "completed",
     filesystemCleanup === "completed",

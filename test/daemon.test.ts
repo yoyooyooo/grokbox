@@ -1,19 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { request } from "node:http";
-import { mkdir, mkdtemp, readFile, readdir, stat, truncate, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdir, mkdtemp, readFile, stat, truncate, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile, writeProtectedSecret } from "../packages/cli/src/config/profile.ts";
-import {
-  bootstrapPeerDaemon,
-  ownedMappingProbeCommand,
-  remoteInstallCommand,
-  remoteEnsureInstalledDaemonCommand,
-  remotePackageIntegrityCommand,
-  remotePrepareRollbackCommand,
-  remoteRollbackCommand,
-} from "../packages/cli/src/bootstrap.ts";
+import { remoteEnsureInstalledDaemonCommand } from "../packages/cli/src/daemon/ssh-recovery.ts";
 import { readDaemonConfig, writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
 import { LocalDaemonClient, RemoteDaemonClient } from "../packages/cli/src/daemon/client.ts";
 import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
@@ -132,54 +124,17 @@ async function unauthorizedBeforeBody(port: number): Promise<number> {
 }
 
 describe("local daemon vertical slice", () => {
-  test("generated remote install script is valid POSIX shell", async () => {
-    const scripts = [
-      remoteInstallCommand("test", "0".repeat(64)),
-      remoteEnsureInstalledDaemonCommand(),
-      remotePrepareRollbackCommand("abc123"),
-      remoteRollbackCommand("abc123"),
-    ];
-    for (const script of scripts) {
-      const proc = Bun.spawn(["sh", "-n"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-      proc.stdin.write(script);
-      proc.stdin.end();
-      const stderr = await new Response(proc.stderr).text();
-      expect(await proc.exited).toBe(0);
-      expect(stderr).toBe("");
-      expect(script).not.toContain("&;");
-      expect(script).not.toContain("tailscale serve reset");
-    }
-    const rollback = remoteRollbackCommand("abc123");
-    expect(rollback).toContain('[ ! -S "$HOME/.grokbox/run/daemon.sock" ]');
-    expect(rollback).toContain('kill -0 "$daemon_pid"');
-    expect(rollback).toContain("daemon status >/dev/null");
-
-    const integrityTrash = process.platform === "darwin"
-      ? join(homedir(), ".Trash")
-      : join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "Trash", "files");
-    await mkdir(integrityTrash, { recursive: true });
-    const integrityHome = await mkdtemp(join(integrityTrash, "grokbox-integrity-test-"));
-    const bootstrapDir = join(integrityHome, ".grokbox", "bootstrap");
-    await mkdir(bootstrapDir, { recursive: true });
-    const packageBytes = Buffer.from("packed-runtime");
-    await writeFile(join(bootstrapDir, "package.tgz"), packageBytes);
-    const expectedHash = createHash("sha256").update(packageBytes).digest("hex");
-    const matching = Bun.spawn(["sh", "-c", remotePackageIntegrityCommand(expectedHash)], {
-      env: { ...process.env, HOME: integrityHome },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await matching.exited).toBe(0);
-    const mismatch = Bun.spawn(["sh", "-c", remotePackageIntegrityCommand("0".repeat(64))], {
-      env: { ...process.env, HOME: integrityHome },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await mismatch.exited).toBe(1);
-    expect(() => remotePackageIntegrityCommand("not-a-digest")).toThrow();
+  test("the finite installed-service recovery script is POSIX and has no install or network authority", async () => {
+    const script = remoteEnsureInstalledDaemonCommand();
+    const proc = Bun.spawn(["sh", "-n"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    proc.stdin.write(script); proc.stdin.end();
+    expect(await new Response(proc.stderr).text()).toBe("");
+    expect(await proc.exited).toBe(0);
+    expect(script).toContain("daemon status >/dev/null");
+    for (const forbidden of ["&;", "tailscale", "sudo", "npm", "scp", "bootstrap", "--confirm"]) expect(script).not.toContain(forbidden);
   });
 
-  test("bootstrap preserves admitted roots through the canonical command, never a shell JSON writer", async () => {
+  test("local installation preserves admitted roots through the canonical configuration owner", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-bootstrap-policy-"));
     const workspace = { name: "workspace", path: "/workspace/project", operations: ["stat", "read", "write", "upload"] as const };
     await writeDaemonConfig(configDir, { version: 1, filesystem: { roots: [{ ...workspace, operations: [...workspace.operations] }] } });
@@ -193,137 +148,6 @@ describe("local daemon vertical slice", () => {
     await writeDaemonConfig(configDir, { version: 1 });
     expect(await readFile(join(configDir, "config.json"), "utf8")).toBe(before);
     expect(await stat(join(configDir, "daemon", "config.json")).catch(() => null)).toBeNull();
-    const shell = remoteInstallCommand("test", "0".repeat(64));
-    expect(shell).toContain("config bootstrap --from");
-    expect(shell).not.toContain("daemon/config.json");
-    expect(shell).not.toContain("f.writeFileSync(staged");
-  });
-
-  test("bootstrap rejects a transferred digest mismatch before daemon or Serve mutation", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-bootstrap-integrity-test-"));
-    const commands: string[][] = [];
-    const deps = {
-      ...createProductionDeps(),
-      configDir,
-      env: {},
-      randomUUID: () => nonce,
-      runCommand: async (argv: readonly string[]) => {
-        commands.push([...argv]);
-        const command = argv.at(-1) ?? "";
-        if (argv[0] === "npm") {
-          const destination = argv[argv.indexOf("--pack-destination") + 1]!;
-          await writeFile(join(destination, "grokbox-0.0.1.tgz"), "package");
-          return { code: 0, stdout: "grokbox-0.0.1.tgz\n", stderr: "" };
-        }
-        if (command === "sudo -n tailscale serve status --json") {
-          return { code: 0, stdout: "{}", stderr: "" };
-        }
-        if (command.includes("crypto.createHash('sha256')")) {
-          return { code: 1, stdout: "", stderr: "digest mismatch" };
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    };
-    await expect(bootstrapPeerDaemon(
-      deps,
-      "remote",
-      { name: "box", dnsName: "box.example.ts.net", ipv4: "192.0.2.20" },
-      "box",
-    )).rejects.toMatchObject({
-      code: "bootstrap_unavailable",
-      context: { operationId: nonce, phase: "bootstrap" },
-    });
-    const trace = JSON.stringify(commands);
-    expect(trace).not.toContain("config.rollback-");
-    expect(trace).not.toContain("nohup");
-    expect(trace).not.toContain("tailscale serve --bg");
-  });
-
-  test("partial Serve mutation is reversed and failed credentials are scrubbed", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-bootstrap-rollback-test-"));
-    const commands: string[][] = [];
-    let serveConfigured = false;
-    const deps = {
-      ...createProductionDeps(),
-      configDir,
-      env: {},
-      randomUUID: () => nonce,
-      runCommand: async (argv: readonly string[]) => {
-        commands.push([...argv]);
-        const command = argv.at(-1) ?? "";
-        if (argv[0] === "npm") {
-          const destination = argv[argv.indexOf("--pack-destination") + 1]!;
-          await writeFile(join(destination, "grokbox-0.0.1.tgz"), "package");
-          return { code: 0, stdout: "grokbox-0.0.1.tgz\n", stderr: "" };
-        }
-        if (command.includes("require('node:os').homedir()")) {
-          return { code: 0, stdout: "/home/box\n", stderr: "" };
-        }
-        if (command === "sudo -n tailscale serve status --json") {
-          return {
-            code: 0,
-            stdout: serveConfigured
-              ? JSON.stringify({
-                  TCP: { "8443": { HTTPS: true } },
-                  Web: {
-                    "box.example.ts.net:8443": {
-                      Handlers: { "/": { Proxy: "http://127.0.0.1:37134" } },
-                    },
-                  },
-                })
-              : "{}",
-            stderr: "",
-          };
-        }
-        if (command.includes("tailscale serve --bg")) {
-          serveConfigured = true;
-          return { code: 1, stdout: "", stderr: "applied but response failed" };
-        }
-        if (command.includes("tailscale serve --yes --https=8443 off")) {
-          serveConfigured = false;
-          return { code: 0, stdout: "", stderr: "" };
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    };
-
-    expect(bootstrapPeerDaemon(
-      deps,
-      "remote",
-      { name: "box", dnsName: "box.example.ts.net", ipv4: "192.0.2.20" },
-      "box",
-    )).rejects.toMatchObject({ code: "tailscale_not_ready" });
-    expect(serveConfigured).toBe(false);
-    expect(commands.some((argv) => argv.at(-1)?.includes("--https=8443 off"))).toBe(true);
-    expect(commands.some((argv) => argv.at(-1)?.includes("config bootstrap --recover"))).toBe(true);
-    expect(JSON.stringify(commands)).not.toContain("serve reset");
-    const secrets = await readdir(join(configDir, "secrets"));
-    expect(secrets).toHaveLength(1);
-    expect(await readFile(join(configDir, "secrets", secrets[0]!), "utf8")).toBe("revoked");
-  });
-
-  test("generated mapping ownership probe recognizes only the recorded exact handler", async () => {
-    const home = await mkdtemp(join(tmpdir(), "grokbox-owned-mapping-test-"));
-    await writeDaemonConfig(join(home, ".grokbox"), {
-      version: 1,
-      network: {
-        host: "127.0.0.1",
-        port: 37134,
-        tokenSha256: createHash("sha256").update("credential").digest("hex"),
-      },
-      serve: {
-        httpsPort: 8443,
-        dnsName: "box.example.ts.net",
-        proxyUrl: "http://127.0.0.1:37134",
-      },
-    });
-    const command = ownedMappingProbeCommand("box.example.ts.net");
-    const accepted = Bun.spawn(["sh", "-c", command], { env: { ...process.env, HOME: home } });
-    expect(await accepted.exited).toBe(0);
-    const rejected = Bun.spawn(["sh", "-c", ownedMappingProbeCommand("other.example.ts.net")], {
-      env: { ...process.env, HOME: home },
-    });
-    expect(await rejected.exited).toBe(1);
   });
 
   test("a concurrent daemon cancel prevents a pending open from publishing its descriptor", async () => {
@@ -427,10 +251,10 @@ describe("local daemon vertical slice", () => {
     const doctor = await run(["--profile", "remote", "doctor"]);
     expect(doctor.code).toBe(0);
     const remoteDoctor = parseJson(doctor.stdout) as {
-      data: { discovery: { scheme: string }; checks: { tailnetIdentity: string } };
+      data: { discovery: { scheme: string }; checks: Record<string, unknown> };
     };
     expect(remoteDoctor.data.discovery.scheme).toBe("http");
-    expect(remoteDoctor.data.checks.tailnetIdentity).toBe("unverified");
+    expect(remoteDoctor.data.checks).not.toHaveProperty("tailnetIdentity");
     expect((await run(["--profile", "remote", "agents", "list"])).code).toBe(0);
     const remoteEvents = await run(["--profile", "remote", "events", "--once", "--sources", "daemon"]);
     expect(remoteEvents.code, remoteEvents.stderr).toBe(0);
@@ -480,29 +304,16 @@ describe("local daemon vertical slice", () => {
   test("daemon network config is strict, protected, and stores only a credential hash", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-daemon-config-test-"));
     const tokenSha256 = createHash("sha256").update("credential").digest("hex");
-    await writeDaemonConfig(configDir, {
-      version: 1,
-      network: { host: "127.0.0.1", port: 37134, tokenSha256 },
-      serve: {
-        httpsPort: 8443,
-        dnsName: "box.example.ts.net",
-        proxyUrl: "http://127.0.0.1:37134",
-      },
-    });
+    await writeDaemonConfig(configDir, { version: 1, network: { host: "127.0.0.1", port: 37134, tokenSha256 } });
     const path = join(configDir, "config.json");
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect(await readFile(path, "utf8")).not.toContain(tokenSha256);
     expect((await stat(join(configDir, "state", "installation.json"))).mode & 0o777).toBe(0o600);
     expect(await readFile(join(configDir, "state", "installation.json"), "utf8")).toContain(tokenSha256);
-    expect(await readDaemonConfig(configDir)).toEqual({
-      version: 1,
-      network: { host: "127.0.0.1", port: 37134, tokenSha256 },
-      serve: {
-        httpsPort: 8443,
-        dnsName: "box.example.ts.net",
-        proxyUrl: "http://127.0.0.1:37134",
-      },
-    });
+    expect(await readDaemonConfig(configDir)).toEqual({ version: 1, network: { host: "127.0.0.1", port: 37134, tokenSha256 } });
+    const before = await readFile(path, "utf8");
+    await expect(writeDaemonConfig(configDir, { version: 1, serve: { httpsPort: 8443, dnsName: "retired.invalid", proxyUrl: "http://127.0.0.1:37134" } } as never)).rejects.toMatchObject({ code: "profile_invalid" });
+    expect(await readFile(path, "utf8")).toBe(before);
     expect(writeDaemonConfig(configDir, {
       version: 1,
       network: { host: "0.0.0.0", port: 37134, tokenSha256 } as never,
