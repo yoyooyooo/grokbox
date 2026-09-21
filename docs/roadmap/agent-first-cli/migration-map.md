@@ -55,7 +55,7 @@
 | `models list` | model list |
 | `models use` | bot model set 显式指定/跟随默认，与 model default set 分开；旧输入映射不可把显式指定变成隐式跟随 |
 | `models show` | bot model get |
-| `models migrate` | maintainer config migrate --document models |
+| `models migrate` | Removed; no old model document execution or normalization command |
 | `models reset` | --for：bot model reset 回原生；--default：候选 model default reset 清除全局默认。仍有 Bot 跟随时拒绝清空默认并返回引用关系；不改变 Bot 的显式选择，不把两种意图合并 |
 | `quota` | system quota get |
 | `recover` | connection recover |

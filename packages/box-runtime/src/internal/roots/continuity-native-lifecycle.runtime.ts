@@ -1,9 +1,8 @@
 import { createCurrentStateClient } from "../io/current-state-client.node.ts";
 import { openRuntimeStore } from "../io/configuration.node.ts";
-import { changeRuntimeModel } from "../io/model-selection.node.ts";
+import { selectLifecycleModel } from "./continuity-model.runtime.ts";
 import { openContinuityCurrentState } from "./continuity-state.runtime.ts";
 import { openContinuityRecoveryStore } from "./continuity.runtime.ts";
-import { openContinuityControls } from "./continuity-control.runtime.ts";
 import type { BotLifecyclePort } from "./bot-lifecycle.runtime.ts";
 import { replaceSupplementInstructions, summaryFromSupplement, readBotSupplement, continuityId, initializationDigest,
   nativeQualification, isContinuityHash, isContinuityUuid, CurrentStateFailure, ContinuityFailure,
@@ -120,26 +119,13 @@ export function createNativeBotLifecycle(deps: NativeContinuityContext, input: {
       if (loaded?.head?.agentId !== targetId || loaded.loaded !== true) return fail("native_unavailable");
       return { agentId: targetId, loaded: true };
     },
-    model: async (request, targetId) => {
-      const chosen = await selected(null, request.modelRef, request.effort);
-      if (request.modelRevision !== chosen.modelRevision) return fail("policy_changed");
-      const models = await runtime.loadModels(), before = captureManagedSelection(models, targetId), beforeHash = sha256Text(canonicalJson(before));
-      const controls = openContinuityControls({ durableRoot: deps.boxRuntimeRoot, scopeId: request.scopeId }), key = continuityId(request.operationId, "model-selection");
-      let recorded = await controls.read(key);
-      if (!recorded) { await controls.reserve(key, targetId, "model-selection", { beforeHash, desired: request.modelRevision }); recorded = await controls.read(key); }
-      if (recorded?.request.desired !== request.modelRevision) return fail("policy_changed");
-      const desiredFile = request.modelRef === null ? applyReset(models, targetId) : applyUse(models, request.modelRef, targetId, parseRequestedEffort(request.effort));
-      const desiredNow = canonicalJson(before) === canonicalJson(captureManagedSelection(desiredFile, targetId));
-      if (!desiredNow) {
-        if (recorded.request.beforeHash !== beforeHash) return fail("policy_changed");
-        await changeRuntimeModel({ store: runtime, forAgent: targetId, expectedSelectionHash: beforeHash,
-          ...(request.modelRef === null ? {} : { modelId: request.modelRef, effort: request.effort }), ownershipRead: deps.ownershipRead,
-          signal: deps.signal, env: deps.env, fetch: deps.fetch });
-      }
-      const current = captureManagedSelection(await runtime.loadModels(), targetId);
-      if (request.modelRef === null ? current.kind !== "official" : current.kind !== "managed" || current.modelId !== request.modelRef) return fail("policy_changed");
-      return { modelId: current.kind === "managed" ? current.modelId : "official", modelRevision: request.modelRevision, assignmentRevision: current.kind === "managed" ? current.selectionRevision : "official" };
-    },
+    model: (request, targetId, operationId) => selectLifecycleModel({ store: runtime, workflow: request, targetId, operationId,
+      ownershipRead: deps.ownershipRead, signal: deps.signal, env: deps.env, fetch: deps.fetch,
+      verifyModel: async () => { if ((await selected(null, request.modelRef, request.effort)).modelRevision !== request.modelRevision) fail("policy_changed"); },
+      authorize: async () => { const permission = await native.authorize(request, "model");
+        if (!permission.allowed || permission.scopeId !== request.scopeId || permission.policyRevision !== request.policyRevision
+          || Date.now() < permission.observedAtMs || Date.now() - permission.observedAtMs > 5000) fail("policy_changed"); },
+    }),
     compose: async (request, targetId, sourceSnapshotId, snapshotId) => {
       const store = storeFor(request), prior = await published(request, snapshotId);
       if (prior) return describe(snapshotId, prior, prior.reference.revision);

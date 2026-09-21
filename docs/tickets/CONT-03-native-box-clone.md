@@ -4,7 +4,7 @@
 
 本轮实现与限定验证见[集成证据](../reports/2026-09-19-continuity-lifecycle-integration.md)。正式CLI/RPC/CONT账本/原生owner与worker适配已串联，结果unknown不重建身份，当前状态后续演进不重导旧材料。真实账户、原App和首轮Provider尚未取证。
 
-源码仍需补附件/引用文件搬迁、源目录删除独立性、更多历史/共享资源覆盖和精确职责约束；不能把已有有界Memory/转录补充说成任意Bot逐字全复制。新的操作指南被工具阻断未落盘，命令面以registry/help为准；本票不因此关闭。
+源码仍需补附件/引用文件搬迁、源目录删除独立性、更多历史/共享资源覆盖和精确职责约束；不能把已有有界Memory/转录补充说成任意Bot逐字全复制。当前操作入口见[生命周期指南](../maintainers/bot-lifecycle.md)及registry/help；本票不因管理面迁入而关闭。
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)与[best-effort材料](../roadmap/box-runtime-impl-spec.md#continuity-material)。依赖CONT-00/02/07/11，不依赖官方duplicate包装CONT-06；后者会清会话，不能当本能力内核。
 
@@ -12,13 +12,15 @@
 
 `bot clone/replace --input ... --preview/--confirm` 已接入共享管理 Server，替代旧 `agents clone/replace/lifecycle` 普通命令。继续使用原生命周期程序和 CONT 工作流；原声明增加安装/主体/request/输入摘要，不建立第二操作库。相同提交只查历史，`operation resume --domain lifecycle` 才明确继续原计划；未知 create 不重发，已初始化目标不重导旧材料。Web `/lifecycles` 只读阶段、原/目标引用及交接链接。详细当前实现与固定验证归 [CLI-05](CLI-05-implementation-follow-through.md)，操作用法见 [指南](../maintainers/bot-lifecycle.md)。
 
+生命周期的模型阶段已改用原 CONT 中的固定子请求和现行 `runModelChange` / `ModelConfiguration`，旧选择程序及公开出口已删除。丢失模型发布回执后，即使当前配置等于期望配置也保持unknown，不靠重入恢复旧选择。见[模型域收束](../reports/2026-09-21-model-domain-convergence.md)。
+
 原 `native-current-state-owner` 的完整 clone/spawn 测试已迁到管理 HTTP 入口，仍经过真实的被测原生 owner/worker 和恢复材料程序，不以假初始化替代；上游来源和工作区仍是隔离测试输入，未因此证明真实账号/附件/完整 Provider 链。
 
 ## 目标与模块
 
 创建真实新Box身份，将声明范围的profile/Memory/历史/当前状态和模型配置装配为目标唯一的工作状态。质量尽力而为、缺口可解释，原生提交是否合法必须严格核实。源Bot保留，关系迁移由CONT-04/09完成。
 
-CLI通过`commands/continuity.ts`、现有Gateway/create/selection接口进入共享operation；Host写入只用CONT-07的initialize/hold/commit/reopen；CONT-02提供固定恢复候选，管理store保存source/target/operation/quality和收据。
+CLI通过共享client、管理Server和原生生命周期适配进入同一CONT程序；Host写入只用CONT-07的initialize/hold/commit/reopen；CONT-02提供固定恢复候选，管理store保存source/target/operation/quality和收据。
 
 **公共前置进展：** CONT-07现已提供真实持久层上的capture/initialize/reconcile协调，持久单次派发、原生reopen/marker核验、异常对账与B2不重导规则已有owned端验证。它尚无安装中的官方原生binding，不构成本票的真实clone；下一步优先完成当前Host资格及该binding，而不是继续把合成端通过当作产品已能换脑。[范围与证据](../reports/2026-09-18-continuity-current-state.md)。
 

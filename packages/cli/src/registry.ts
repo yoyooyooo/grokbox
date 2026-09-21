@@ -325,14 +325,6 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
   },
   {
-    path: ["models", "migrate"],
-    usage: "grokbox models migrate --confirm",
-    summary: "Explicitly save models schema v3 without changing assignments; requires a coordinated runtime upgrade.",
-    arguments: [],
-    options: options([{ flags: "--confirm", description: "Confirm the forward-only schema save" }]),
-    stdin: "none", table: false, timeout: false, destructive: false, gateway: false, streaming: false, profile: false, localOnly: true,
-  },
-  {
     path: ["quota"],
     usage: "grokbox quota [--json|--table] [--timeout-ms <n>]",
     summary: "Read one fresh sanitized quota snapshot from the explicitly configured source.",

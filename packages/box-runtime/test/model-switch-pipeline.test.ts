@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeAttestation } from "../src/internal/io/authority.node.ts";
 import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
-import { changeRuntimeModel } from "../src/internal/io/model-selection.node.ts";
+import { submitModelChange } from "./model-management-fixture.ts";
 import { startModeldProcess } from "../src/internal/roots/modeld.runtime.ts";
 import { bindCompiledHost } from "../src/internal/host/host-binding.ts";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
@@ -55,9 +55,9 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
   const model = (provider: string, name: string) => ({ provider, model: name, endpoint: "https://owned.invalid/v1", apiKeyRef: "env:OWNED_KEY",
     capabilities: { vision: false, tools: true, images: false }, dataTypes: ["text", "tools"], contextWindowTokens: 200000 });
   await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
-  await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 1,
+  await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 3,
     models: { [A]: model("openai", "owned-a"), [B]: model("openai-responses", "owned-b") },
-    assignments: { main: null, agents: { [OTHER]: A } } }), { mode: 0o600 });
+    assignments: { main: null, agents: { [OTHER]: { modelId: A } } } }), { mode: 0o600 });
   const identity = { pid: process.pid, start: 1, uid: 1, ppid: 1, exe: "/owned/node", cmdline: ["node"], ancestry: [1] };
   const binding = bindCompiledHost(identity, "owned-switch", compile);
   await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha,
@@ -90,7 +90,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
   try {
     expect(open("official-first")).toBe(originalSession);
     expect(requests).toHaveLength(0);
-    await changeRuntimeModel({ store, forAgent: AGENT, modelId: A, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
+    await submitModelChange({ store, change: { kind: "bot-selection", agentId: AGENT, selection: { kind: "model", modelId: A } }, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
     const sessionA = open("turn-a");
     if (!isHostPromptSession(sessionA)) throw Error("managed_a_not_selected");
     const root = sessionA.getExecutor([
@@ -107,8 +107,8 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
     const toolResult = (() => { toolEffects++; return { river: 83 }; })();
     root.appendMessages([{ role: "tool", content: [{ type: "tool-result", toolCallId: "lookup-1", toolName: "lookup", result: toolResult }] }]);
     const checkpoint = root.getState();
-    const savedB = await changeRuntimeModel({ store, forAgent: AGENT, modelId: B, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
-    expect(savedB).toMatchObject({ currentTurn: "unchanged", effectiveUse: "not_observed", selectionSaved: true });
+    const savedB = await submitModelChange({ store, change: { kind: "bot-selection", agentId: AGENT, selection: { kind: "model", modelId: B } }, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
+    expect(savedB).toMatchObject({ currentTurn: "unchanged", effectiveWhen: "next-turn", state: "succeeded" });
     expect((await store.loadModels()).assignments.agents[AGENT]?.modelId).toBe(B);
     // Configuration changed while A was between tool steps: the admitted TURN stays A.
     const afterTool = await root.stream({}, "a-after-tool", tools, settings).response;
@@ -121,7 +121,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
     const b = await rootB.stream({}, "b-first", tools, settings).response;
     rootB.appendMessages(b.messages);
     expect(requests[2]?.path).toBe("/v1/responses");
-    await changeRuntimeModel({ store, forAgent: AGENT, ownershipRead });
+    await submitModelChange({ store, change: { kind: "bot-selection", agentId: AGENT, selection: { kind: "native" } }, ownershipRead });
     // The same rule applies when the future selection is official.
     const oldB = await rootB.stream({}, "b-after-reset", tools, settings).response;
     rootB.appendMessages(oldB.messages);
@@ -134,7 +134,7 @@ test("per-Bot official/A/B/official/A selection preserves active TURNs, Host sta
     expect(requests).toHaveLength(4);
     // Owned durable snapshot with a new modeld lifetime; not native checkpoint qualification.
     await writeFile(join(dir, "owned-state.json"), JSON.stringify(officialState));
-    await changeRuntimeModel({ store, forAgent: AGENT, modelId: A, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
+    await submitModelChange({ store, change: { kind: "bot-selection", agentId: AGENT, selection: { kind: "model", modelId: A } }, ownershipRead, env: { OWNED_KEY: "owned-noncredential" }, fetch: fetchImpl });
     await server.stop();
     server = await startModeldProcess(rootOptions);
     const nextA = open("turn-a-after-service-restart");

@@ -1,5 +1,11 @@
-import { expect, test } from "bun:test";
-import { changeRuntimeModel } from "../src/internal/io/model-selection.node.ts";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { submitModelChange } from "./model-management-fixture.ts";
+const roots: string[] = [];
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 import { parseModelsFile, type DesiredFile } from "@grokbox/runtime-kernel/selection";
 import type { RuntimeStore } from "../src/internal/io/configuration.node.ts";
 import { ownedOwnershipReader, ownedOwnershipSnapshot } from "./ownership-fixture.ts";
@@ -15,13 +21,14 @@ function catalogFetch(ids: string[] = ["second"], status = 200): typeof fetch {
   }) as typeof fetch;
 }
 function fixture() {
-  let models = parseModelsFile({ version: 1,
+  let models = parseModelsFile({ version: 3,
     models: { "openai/second": { provider: "openai", model: "second", endpoint: "https://owned.invalid/v1", apiKeyRef: "env:OWNED_KEY", contextWindowTokens: 200000 } },
-    assignments: { main: null, agents: { [A]: "stub/echo", [B]: "stub/echo" } },
+    assignments: { main: null, agents: { [A]: { modelId: "stub/echo" }, [B]: { modelId: "stub/echo" } } },
   });
   let writes = 0;
   const desired: DesiredFile = { version: 1, mode: "route" };
-  const store: RuntimeStore = { root: "/owned/model-selection",
+  const root = mkdtempSync(join(tmpdir(), "model-selection-current-")); roots.push(root);
+  const store: RuntimeStore = { root,
     loadModels: async () => structuredClone(models), loadDesired: async () => desired,
     saveModels: async next => { writes++; models = structuredClone(next); },
     saveDesired: async () => { throw Error("global-mode-mutation-forbidden"); },
@@ -33,8 +40,8 @@ test("route per-Bot official/custom/official selection changes no other assignme
   const f = fixture();
   const ownershipRead = ownedOwnershipReader(4242);
   for (const modelId of [undefined, "openai/second", undefined]) {
-    const result = await changeRuntimeModel({ store: f.store, forAgent: A, modelId, ownershipRead, env, fetch: catalogFetch() });
-    expect(result).toMatchObject({ selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed", ownership: modelId === undefined ? "not_required_for_reset" : "confirmed_box", blastRadius: "single_bot", takesEffect: "next_user_turn" });
+    const result = await submitModelChange({ store: f.store, change: { kind: "bot-selection", agentId: A, selection: modelId ? { kind: "model", modelId } : { kind: "native" } }, ownershipRead, env, fetch: catalogFetch() });
+    expect(result).toMatchObject({ state: "succeeded", command: "bot-selection", target: A, currentTurn: "unchanged", effectiveWhen: "next-turn" });
     if (modelId === undefined) expect(f.get().assignments.agents).not.toHaveProperty(A);
     else expect(f.get().assignments.agents[A]?.modelId).toBe(modelId);
     expect(f.get().assignments.agents[B]?.modelId).toBe("stub/echo");
@@ -67,7 +74,7 @@ for (const mode of ["conflict", "temporal", "unconfirmed", "missing-reader", "ol
       if (mode === "old-bridge") { snapshot.schemaVersion = 1; delete snapshot.scope; }
       return { snapshot, gateway: { pid: 4242, startedAt: 1 } };
     };
-    const rejected = changeRuntimeModel({ store: f.store, forAgent: A, modelId: "openai/second", ownershipRead, signal: abort.signal, env, fetch: catalogFetch() });
+    const rejected = submitModelChange({ store: f.store, change: { kind: "bot-selection", agentId: A, selection: { kind: "model", modelId: "openai/second" } }, ownershipRead, signal: abort.signal, env, fetch: catalogFetch() });
     if (mode === "cancelled") {
       await expect(rejected).rejects.toBeDefined();
     } else {
@@ -92,8 +99,8 @@ test("explicit reset removes only managed intent even when execution ownership c
       if (state === "unavailable") throw new Error("owned-unavailable");
       return { snapshot: ownedOwnershipSnapshot(ids, { serverHarness: "temporal" }), gateway: { pid: 4242, startedAt: 1 } };
     };
-    const result = await changeRuntimeModel({ store: f.store, forAgent: A, ownershipRead });
-    expect(result).toMatchObject({ ownership: "not_required_for_reset", model: "official", selectionSaved: true, currentTurn: "unchanged", effectiveUse: "not_observed" });
+    const result = await submitModelChange({ store: f.store, change: { kind: "bot-selection", agentId: A, selection: { kind: "native" } }, ownershipRead });
+    expect(result).toMatchObject({ state: "succeeded", currentTurn: "unchanged", effectiveWhen: "next-turn" });
     expect(reads).toBe(0);
     expect(f.get()).toEqual({ ...before, assignments: { ...before.assignments, agents: { [B]: { modelId: "stub/echo" } } } });
     expect(f.writes()).toBe(1);
@@ -102,8 +109,8 @@ test("explicit reset removes only managed intent even when execution ownership c
 
 test("reset still refuses cancelled or unreadable configuration without any write", async () => {
   const f = fixture();
-  await expect(changeRuntimeModel({ store: f.store, forAgent: A, signal: AbortSignal.abort() })).rejects.toBeDefined();
-  await expect(changeRuntimeModel({ store: { ...f.store, loadModels: async () => { throw Error("owned-unavailable"); } }, forAgent: A })).rejects.toBeDefined();
+  await expect(submitModelChange({ store: f.store, change: { kind: "bot-selection", agentId: A, selection: { kind: "native" } }, signal: AbortSignal.abort() })).rejects.toBeDefined();
+  await expect(submitModelChange({ store: { ...f.store, loadModels: async () => { throw Error("owned-unavailable"); } }, change: { kind: "bot-selection", agentId: A, selection: { kind: "native" } } })).rejects.toBeDefined();
   expect(f.writes()).toBe(0);
   expect(f.get().assignments.agents[A]?.modelId).toBe("stub/echo");
 });
@@ -114,7 +121,7 @@ test("another writer changing configuration during ownership read is not overwri
     f.set({ ...f.get(), assignments: { main: { modelId: "stub/echo" }, agents: { [B]: { modelId: "openai/second" } } } });
     return { snapshot: ownedOwnershipSnapshot(ids), gateway: { pid: 4242, startedAt: 1 } };
   };
-  await expect(changeRuntimeModel({ store: f.store, forAgent: A, modelId: "openai/second", ownershipRead, env, fetch: catalogFetch() })).rejects.toMatchObject({ code: "invalid_usage", message: "selection_configuration_changed" });
+  await expect(submitModelChange({ store: f.store, change: { kind: "bot-selection", agentId: A, selection: { kind: "model", modelId: "openai/second" } }, ownershipRead, env, fetch: catalogFetch() })).rejects.toMatchObject({ code: "revision_conflict" });
   expect(f.writes()).toBe(0);
   expect(f.get().assignments).toEqual({ main: { modelId: "stub/echo" }, agents: { [B]: { modelId: "openai/second" } } });
 });
@@ -123,13 +130,13 @@ test("invalid model is refused without even consulting Server; default-only sele
   const f = fixture();
   let reads = 0;
   const read = async (ids: string[]) => { reads++; return { snapshot: ownedOwnershipSnapshot(ids), gateway: { pid: 4242, startedAt: 1 } }; };
-  await expect(changeRuntimeModel({ store: f.store, forAgent: A, modelId: "openai/missing", ownershipRead: read })).rejects.toBeDefined();
+  await expect(submitModelChange({ store: f.store, change: { kind: "bot-selection", agentId: A, selection: { kind: "model", modelId: "openai/missing" } }, ownershipRead: read })).rejects.toBeDefined();
   expect(reads).toBe(0);
   const before = f.get().assignments.agents;
-  await changeRuntimeModel({ store: f.store, modelId: "stub/echo", ownershipRead: read });
+  await submitModelChange({ store: f.store, change: { kind: "default-selection", selection: { modelId: "stub/echo" } }, ownershipRead: read });
   expect(reads).toBe(0);
   expect(f.get().assignments.agents).toEqual(before);
-  await changeRuntimeModel({ store: f.store });
+  await submitModelChange({ store: f.store, change: { kind: "default-selection", selection: null } });
   expect(f.get().assignments.main).toBeNull();
   expect(f.get().assignments.agents).toEqual(before);
 });
@@ -138,8 +145,8 @@ test("GET /v1/models failure or missing id refuses before any selection write", 
   const ownershipRead = ownedOwnershipReader(4242);
   for (const fetch of [catalogFetch(["second"], 503), catalogFetch(["other"])]) {
     const f = fixture();
-    await expect(changeRuntimeModel({
-      store: f.store, forAgent: A, modelId: "openai/second", ownershipRead, env, fetch,
+    await expect(submitModelChange({
+      store: f.store, change: { kind: "bot-selection", agentId: A, selection: { kind: "model", modelId: "openai/second" } }, ownershipRead, env, fetch,
     })).rejects.toMatchObject({ code: "invalid_usage" });
     expect(f.writes()).toBe(0);
     expect(f.get().assignments.agents[A]?.modelId).toBe("stub/echo");
@@ -148,8 +155,8 @@ test("GET /v1/models failure or missing id refuses before any selection write", 
 
 test("GET /v1/models listing the model allows the assignment write", async () => {
   const f = fixture();
-  await changeRuntimeModel({
-    store: f.store, forAgent: A, modelId: "openai/second", ownershipRead: ownedOwnershipReader(4242), env, fetch: catalogFetch(["second"]),
+  await submitModelChange({
+    store: f.store, change: { kind: "bot-selection", agentId: A, selection: { kind: "model", modelId: "openai/second" } }, ownershipRead: ownedOwnershipReader(4242), env, fetch: catalogFetch(["second"]),
   });
   expect(f.get().assignments.agents[A]?.modelId).toBe("openai/second");
   expect(f.writes()).toBe(1);

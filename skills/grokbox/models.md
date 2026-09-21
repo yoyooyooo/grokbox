@@ -62,7 +62,7 @@ Model mutations return exit `8` for an uncertain outcome; interruption returns `
 
 Human catalog entry: `~/.grokbox/models.json`. On a Box it aliases the installed canonical document; `grokbox config path --physical --document models` identifies it. General `config` commands do not edit model records or assignments. Do not bypass the management writer with manual assignment edits.
 
-The current source still exposes `models check`, `models persist-key` and `models migrate` as maintenance entries pending their remaining CLI migration. They do not restore the retired selection syntax. `check` is schema-only, not provider readiness; credential persistence is separately confirmed.
+The current source still exposes `models check` and `models persist-key` as maintenance entries pending their remaining CLI migration. The old model-schema migration command has been removed. They do not restore the retired selection syntax. `check` is schema-only, not provider readiness; credential persistence is separately confirmed.
 
 ```bash
 grokbox model apply <model-id> --mode patch --input @model-change.json --request-id <persisted-uuid> --expect-revision <observed-revision>

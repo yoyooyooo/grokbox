@@ -4,7 +4,6 @@ import { projectModeldAvailability } from "@grokbox/runtime-kernel/status";
 import { join } from "node:path";
 import {
   assertBoxLocal,
-  migrateRuntimeModels,
   assertRouteAssignment,
   assertStubOnlyRouteAssignments,
   BoxRuntimeError,
@@ -173,11 +172,6 @@ export async function runRuntimeModelsCheck(deps: CliDeps): Promise<void> {
   } catch (error) {
     rethrow(error);
   }
-}
-
-export async function runRuntimeModelsMigrate(deps: CliDeps, confirmed: boolean | undefined): Promise<void> {
-  try { writeSuccess(deps.stdout, await migrateRuntimeModels({ store: store(deps), confirmed: confirmed === true, signal: deps.signal })); }
-  catch (error) { rethrow(error); }
 }
 
 export async function runRuntimeModelsPersistKey(deps: CliDeps, modelId: string, piProvider: string | undefined, confirmed: boolean | undefined): Promise<void> {

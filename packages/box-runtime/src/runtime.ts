@@ -86,7 +86,6 @@ export { prepareConfigurationBootstrap, installConfigurationResources, rollbackC
 export { saveRuntimeModels, saveRuntimeDesired, configurationWriteLayer } from "./internal/io/configuration-write.node.ts";
 export { persistModelCredential } from "./internal/io/persist-model-credential.node.ts";
 export { readManagedOwnership, type OwnershipReader } from "./internal/io/ownership-admission.node.ts";
-export { changeRuntimeModel, migrateRuntimeModels } from "./internal/io/model-selection.node.ts";
 export { modelConfigurationLayer } from "./internal/io/model-management.node.ts";
 export { ManagementSourceError, type NativeBotSummary, type NativeBotSnapshot } from "./internal/io/management-gateway.node.ts";
 export { managedModelAdmission } from "./internal/roots/model-management.runtime.ts";

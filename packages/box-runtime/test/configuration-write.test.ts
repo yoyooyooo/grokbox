@@ -4,16 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { changeRuntimeModel } from "../src/internal/io/model-selection.node.ts";
+import { submitModelChange } from "./model-management-fixture.ts";
 import { ownedOwnershipReader } from "./ownership-fixture.ts";
 import { STUB_ECHO_MODEL_ID, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
 import { saveRuntimeModels } from "../src/internal/io/configuration-write.node.ts";
 
 const models = parseModelsFile({
-  version: 1,
+  version: 3,
   models: { [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "" } },
-  assignments: { main: STUB_ECHO_MODEL_ID, agents: {} },
+  assignments: { main: { modelId: STUB_ECHO_MODEL_ID }, agents: {} },
 });
 
 describe("shared configuration commit boundary", () => {
@@ -33,7 +33,7 @@ describe("shared configuration commit boundary", () => {
     const loser = winner === A ? B : A;
     expect((await store.loadModels()).assignments.agents).toEqual({ [winner]: { modelId: STUB_ECHO_MODEL_ID } });
     await expect(saveRuntimeModels(store, next(loser), root, revision)).rejects.toBeDefined();
-    await changeRuntimeModel({ store, forAgent: loser, modelId: STUB_ECHO_MODEL_ID, ownershipRead: ownedOwnershipReader(4242) });
+    await submitModelChange({ store, change: { kind: "bot-selection", agentId: loser, selection: { kind: "model", modelId: STUB_ECHO_MODEL_ID } }, ownershipRead: ownedOwnershipReader(4242) });
     expect((await store.loadModels()).assignments.agents).toEqual({ [A]: { modelId: STUB_ECHO_MODEL_ID }, [B]: { modelId: STUB_ECHO_MODEL_ID } });
   });
 
