@@ -46,7 +46,7 @@ export { openContinuityRecoveryStore } from "./internal/roots/continuity.runtime
 export { openBotLifecycle, type BotLifecyclePort } from "./internal/roots/bot-lifecycle.runtime.ts";
 export { openBotHandover, type BotHandoverPort, type HandoverEffect } from "./internal/roots/bot-handover.runtime.ts";
 export { openContinuityControls } from "./internal/roots/continuity-control.runtime.ts";
-export { openBotConvergence, type BotConvergencePort } from "./internal/roots/bot-convergence.runtime.ts";
+export { openBotConvergence, reconcileBotRetirement, type BotConvergencePort } from "./internal/roots/bot-convergence.runtime.ts";
 export { openBotProtection, startBotProtectionWorker, startPolicyBoundBotProtection, type BotProtectionPort } from "./internal/roots/bot-protection.runtime.ts";
 export { startHostHealth, type HostHealthStatus, type HostHealthTestPorts } from "./internal/roots/host-health.runtime.ts";
 export { readHostHealthJournal } from "./internal/io/provenance.node.ts";
@@ -64,6 +64,8 @@ export { contextManagementPrograms, contextControlId, managedContextRecord, cont
 export { createNativeContextControl, managedContextPrograms, withManagedContextGate, type ContextNative } from "./internal/roots/managed-context.runtime.ts";
 export { readManagedLifecycle, listManagedLifecycles, withManagedLifecycleGate } from "./internal/roots/managed-lifecycle.runtime.ts";
 export { readProtectionSubjects, readProtectionSnapshots, readProtectionHandover } from "./internal/io/protection-views.node.ts";
+export { handoverManagementPrograms, handoverControlId, type ManagedHandoverDeclaration, type ManagedHandoverRow } from "./internal/io/handover-management.node.ts";
+export { replacementIsActivated } from "./internal/roots/bot-handover.runtime.ts";
 export { openAgentDuplication } from "./internal/roots/agent-duplicate.runtime.ts";
 export { createNativeCheckpointCapturePort } from "./internal/host/native-checkpoint.ts";
 export type { NativeCheckpointBoundary, NativeCheckpointSchema } from "./internal/host/native-checkpoint.ts";

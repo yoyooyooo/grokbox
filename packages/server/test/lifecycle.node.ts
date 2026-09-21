@@ -243,7 +243,7 @@ test("lost safety database remains unavailable and cannot grant a fresh create u
   } finally { await f.close(); }
 });
 
-test("legacy handover reads and attestation cannot alter a management-owned workflow", async () => {
+test("removed handover syntax fails in the current parser without reaching a management-owned workflow", async () => {
   const f = await lifecycleFixture(origin);
   try {
     const { input } = await submit(f, lifecycleIntent("replace"));
@@ -254,7 +254,7 @@ test("legacy handover reads and attestation cannot alter a management-owned work
         ...(action === "status" ? [] : ["--confirm"]), ...(action === "attest" ? ["--item-id", randomUUID()] : []), ...(["attest", "retire"].includes(action) ? ["--evidence-hash", "f".repeat(64)] : [])],
         { cwd: f.root, env: { PATH: process.env.PATH, HOME: f.root, GROKBOX_CONFIG_DIR: f.root, GROKBOX_BOX_RUNTIME_ROOT: f.root }, stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
       let output = ""; child.stdout.on("data", b => output += b); child.stderr.on("data", b => output += b);
-      const [code] = await once(child, "close"); assert.notEqual(code, 0); assert.ok(!output.includes("PRIVATE_"));
+      const [code, signal] = await once(child, "close"); assert.equal(signal, null); assert.equal(code, 2, output); assert.ok(output.includes("invalid_usage")); assert.ok(!output.includes("PRIVATE_"));
       assert.deepEqual(await readFile(path), bytes);
     }
     assert.equal(f.state.calls.length, calls);

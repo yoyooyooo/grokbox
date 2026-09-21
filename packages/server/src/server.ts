@@ -262,7 +262,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/context-operations/") || url.pathname.startsWith("/v1/context-compaction-operations/") ? "operations.read" : "context.read"), catch: error => error });
       }
       if(request.method==="GET"&&url.pathname==="/v1/host-health")yield* Effect.tryPromise({try:signal=>materialAuthorize(signal,"system.read"),catch:error=>error});
-      if (request.method === "GET" && url.pathname.startsWith("/v1/lifecycle-")) {
+      if (request.method === "GET" && (url.pathname.startsWith("/v1/lifecycle-") || url.pathname.startsWith("/v1/handover-operations/"))) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, "operations.read"), catch: error => error });
       }
       if (request.method === "GET" && (url.pathname === "/v1/protection" || url.pathname.startsWith("/v1/protection/") || url.pathname.startsWith("/v1/protection-"))) {

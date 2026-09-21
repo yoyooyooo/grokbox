@@ -12,7 +12,7 @@ const suites={
  core:["packages/runtime-kernel/test/compaction-contract.test.ts","packages/box-runtime/test/journal-settlement.test.ts","packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
   "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/source-recipes.test.ts","packages/box-runtime/test/capability-witness.test.ts",
   "packages/box-runtime/test/alert-slices.test.ts","packages/box-runtime/test/host-managed-retry.test.ts","packages/box-runtime/test/host-native-error-scope.test.ts",
-  "packages/box-runtime/test/bot-lifecycle.test.ts","packages/box-runtime/test/bot-convergence.test.ts","packages/box-runtime/test/bot-protection.test.ts","./test/bot-handover-cli.test.ts",
+  "packages/box-runtime/test/bot-lifecycle.test.ts","packages/box-runtime/test/handover-management.test.ts","packages/box-runtime/test/bot-convergence.test.ts","packages/box-runtime/test/bot-protection.test.ts","./test/bot-handover-cli.test.ts",
   "packages/box-runtime/test/context-maintenance-control.test.ts","packages/box-runtime/test/context-maintenance-lifetime.test.ts","packages/box-runtime/test/compaction-management.test.ts",
   "packages/runtime-kernel/test/context-policy.test.ts","packages/runtime-kernel/test/context-selection.test.ts","./test/context-commands.test.ts","apps/web/test/operations.test.ts",
   "packages/box-runtime/test/continuity-sidecar.test.ts",
@@ -41,7 +41,7 @@ const suites={
   "test/verification-source.test.js","test/cli.test.ts","test/skills.test.ts"],
  integration:["test/sqlite-read-scheduling.test.ts","test/host-witness.test.ts","test/host-compilation.test.ts","test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts",
   "test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
-  "./test/compaction-management.test.ts","test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
+  "./test/handover-management.test.ts","./test/compaction-management.test.ts","test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
   "packages/server/test/server.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"],
  "native-pair":["packages/box-runtime/test/native-checkpoint-qualification.test.ts","packages/box-runtime/test/native-worker-binding.test.ts","packages/box-runtime/test/native-startup-seams.test.ts","packages/box-runtime/test/native-duplicate-qualification.test.ts","packages/box-runtime/test/native-disposal-qualification.test.ts"]
 };

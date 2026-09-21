@@ -28,13 +28,13 @@ const io = <A>(f: () => Promise<A>) => Effect.uninterruptible(Effect.tryPromise(
  * A readback proves the requested state, not that this controller caused it. */
 export function openBotHandover(input: ContinuityStoreInput & { native: BotHandoverPort }, hooks: ContinuityStoreHooks = {}) {
   const store = continuityWorkflowPrograms(input, hooks), native = input.native;
-  const advance = (operationId: string, maxItems = 16) => Effect.gen(function* () {
+  const advance = (operationId: string, maxItems = 16, dispatch = true) => Effect.gen(function* () {
     if (!isContinuityUuid(operationId) || !Number.isSafeInteger(maxItems) || maxItems < 1 || maxItems > 64) return yield* Effect.fail(new CurrentStateFailure("invalid_request"));
     const request = yield* store.request(operationId), workflow = yield* store.status(operationId), policy = handoverPolicy(request.handover);
     if (!replacementIsActivated(request, workflow)) return yield* Effect.fail(new CurrentStateFailure("not_prepared"));
     if (!(yield* io(() => native.authorize(request)))) return yield* Effect.fail(new CurrentStateFailure("policy_changed"));
     const current = yield* store.handoverItems(operationId);
-    const discovery = yield* io(() => native.discover(request, workflow.targetId!, current.map(i => i.itemId)));
+    const discovery = dispatch ? yield* io(() => native.discover(request, workflow.targetId!, current.map(i => i.itemId))) : { items: [], coverage: "partial" as const };
     if (!(yield* io(() => native.authorize(request)))) return yield* Effect.fail(new CurrentStateFailure("policy_changed"));
     if (discovery.items.length > 1024) return yield* Effect.fail(new CurrentStateFailure("material_invalid"));
     for (const item of discovery.items) {
@@ -44,10 +44,17 @@ export function openBotHandover(input: ContinuityStoreInput & { native: BotHando
     const items = yield* store.handoverItems(operationId), completed = new Map<string, HandoverEffect>();
     for (const item of items) if (item.state === "complete") completed.set(item.itemId, item.result as HandoverEffect);
     let attempted = 0;
-    for (const row of items) {
-      if (attempted >= maxItems || row.state === "complete") continue;
+    const visited = new Set<string>();
+    while (attempted < maxItems) {
+      // Storage order is not dependency order. Revisit the pending frontier
+      // after each completion, while inspecting every item at most once per
+      // bounded invocation. This does not retry an unknown native effect.
+      const row = items.find(item => item.state !== "complete" && !visited.has(item.itemId)
+        && Array.isArray(item.input.dependsOn) && item.input.dependsOn.every((id: unknown) => typeof id === "string" && completed.has(id)));
+      if (!row) break;
+      visited.add(row.itemId);
       const { dependsOn, ...data } = row.input;
-      if (!Array.isArray(dependsOn) || dependsOn.some(id => !completed.has(id))) continue;
+      if (!Array.isArray(dependsOn)) return yield* Effect.fail(new ContinuityFailure("integrity_failure"));
       if (data.targetId !== workflow.targetId) return yield* Effect.fail(new ContinuityFailure("integrity_failure"));
       const item: HandoverPlanItem = { itemId: row.itemId, kind: row.kind as HandoverPlanItem["kind"], dependsOn, input: data };
       if (!(yield* io(() => native.authorize(request)))) break;
@@ -65,12 +72,18 @@ export function openBotHandover(input: ContinuityStoreInput & { native: BotHando
       if (row.state === "blocked") continue;
       // Do not publish another dispatch merely because an earlier observation
       // was empty. prepared is the only initial dispatchable state.
-      if (row.state !== "prepared") continue;
+      if (!dispatch || row.state !== "prepared") continue;
       yield* store.settleHandover(operationId, item.itemId, "prepared", "effect_unknown", null);
       // Persistent admission can outlive the permission used to prepare it.
       // A revoked claim remains unknown; it is not another dispatch permit.
       if (!(yield* io(() => native.authorize(request)))) return yield* Effect.fail(new CurrentStateFailure("policy_changed"));
-      const result = yield* io(() => native.perform(request, item, completed)).pipe(Effect.catch(() => Effect.succeed({ state: "unknown" as const })));
+      let result: HandoverEffect = yield* io(() => native.perform(request, item, completed)).pipe(Effect.catch(() => Effect.succeed({ state: "unknown" as const })));
+      if (result.state === "unknown" && (yield* io(() => native.authorize(request)))) {
+        const observed = yield* io(() => native.inspect(request, item, completed)).pipe(Effect.catch(() => Effect.succeed({ state: "unknown" as const })));
+        // One bounded readback can settle a lost response. Absence is never a
+        // certificate of non-dispatch, and no second native write is attempted.
+        if (observed.state === "complete" && (yield* io(() => native.authorize(request)))) result = observed;
+      }
       if (result.state === "complete") {
         yield* store.settleHandover(operationId, item.itemId, "effect_unknown", "complete", result); completed.set(item.itemId, result);
       } else if (result.state === "not_dispatched" || result.state === "unsupported") {
@@ -88,5 +101,6 @@ export function openBotHandover(input: ContinuityStoreInput & { native: BotHando
       items: items.map(i => ({ itemId: i.itemId, kind: i.kind, state: i.state, result: i.result })) };
   });
   return { advance: (id: string, maxItems?: number, signal?: AbortSignal) => Effect.runPromise(advance(id, maxItems), signal ? { signal } : undefined),
+    reconcile: (id: string, maxItems = 64, signal?: AbortSignal) => Effect.runPromise(advance(id, maxItems, false), signal ? { signal } : undefined),
     status: (id: string) => Effect.runPromise(status(id)) };
 }

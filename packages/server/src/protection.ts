@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { projectHandover } from "./handover.ts";
 import { UUID, botIdFromRef, botRef, normalizeProtectionChange, protectionReference, protectionReferenceIdentity,
   ManagementClientError, type ProtectionOverview, type ProtectionBotView, type ProtectionOperation, type ProtectionSubject, type ProtectionSnapshot,
   type ProtectionSnapshotList, type ProtectionHandover, type ProtectionWorkerView, type ProtectionChangeRequest } from "@grokbox/client/contract";
@@ -84,10 +85,7 @@ export function protectionApplication(d: ProtectionDomain, p: Principal, method:
     const handover=/^\/v1\/protection-handovers\/([^/]+)$/.exec(url.pathname);
     if(method==="GET"&&handover)return yield* io(async()=>{
       const ref=protectionReferenceIdentity(decodeURIComponent(handover[1]!),d.installationId,"handover"),r=await readProtectionHandover(d.root,ref.scopeId,ref.id);
-      return {handoverRef:ref.ref,sourceBotRef:r.sourceId?botRef(d.installationId,r.sourceId):null,targetBotRef:r.targetId?botRef(d.installationId,r.targetId):null,
-        phase:r.phase,kind:r.kind as ProtectionHandover["kind"],createdAtMs:r.createdAtMs,updatedAtMs:r.updatedAtMs,
-        steps:r.steps as ProtectionHandover["steps"],duties:r.duties as ProtectionHandover["duties"],remaining:r.remaining,unknown:r.unknown,complete:r.complete,moreDuties:r.moreDuties,
-        targetUsability:"not-observed",retirementEligibility:"not-observed",privateInputsIncluded:false} satisfies ProtectionHandover;
+      return projectHandover(d.installationId,r);
     });
     const lookup=/^\/v1\/protection-operations\/([^/]+)\/([^/]+)$/.exec(url.pathname);
     if(method==="GET"&&lookup)return yield* io(async()=>{

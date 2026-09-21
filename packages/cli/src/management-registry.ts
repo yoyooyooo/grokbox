@@ -48,8 +48,8 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--confirm", description: "Authorize the reviewed native effects, optional startup costs and explicit handover messages" },
   ]), stdin: "json" as const, destructive: true })),
   { ...command("operation cancel", "Cancel only an original context preparation with no native application declaration; never cancels or forgets an unknown applied effect.", { name: "operation-ref", description: "Original installation/scope/request-bound context operation" }, [
-    { flags: "--domain <domain>", description: "Implemented cancellation domains: context or compaction", required: true },
-    { flags: "--bot <ref>", description: "Exact original Bot UUID or reference", required: true },
+    { flags: "--domain <domain>", description: "Implemented cancellation domains: context, compaction or handover", required: true },
+    { flags: "--bot <ref>", description: "Required for context/compaction: exact original Bot UUID or reference" },
     { flags: "--confirm", description: "Confirm retaining a cancellation tombstone and releasing only unused preparation pins", required: true },
   ]), destructive: true },
   command("operation list", "Read bounded retained lifecycle operations owned by the current principal; not all installation work.", undefined, [
@@ -57,7 +57,7 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--limit <n>", description: "Page size 1 to 100" }, { flags: "--cursor <cursor>", description: "Original principal/scope-bound continuation" },
   ]),
   { ...command("operation resume", "Resume only the original saved lifecycle and its safe stages; never submit a replacement create.", { name: "operation-ref", description: "Original installation/scope/request-bound lifecycle reference" }, [
-    { flags: "--domain <domain>", description: "Implemented domains: lifecycle, context or compaction", required: true },
+    { flags: "--domain <domain>", description: "Implemented domains: lifecycle, context, compaction or handover", required: true },
     { flags: "--expect-plan <sha256>", description: "Required for lifecycle: immutable original plan digest" },
     { flags: "--bot <ref>", description: "Required for context/compaction: exact original Bot UUID/ref" },
     { flags: "--confirm", description: "Authorize continuing the original effects within current permissions", required: true },
@@ -75,6 +75,13 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
   command("bot snapshot list", "List bounded retained recovery metadata, without reading private snapshot content.",undefined,[{flags:"--bot <bot-ref>",description:"Original native Bot UUID or scoped reference",required:true},{flags:"--limit <n>",description:"1 to 100, default20; reports more retained metadata"}]),
   command("bot snapshot get", "Read exact recovery metadata; stored hashes do not prove native import.",{name:"snapshot-ref",description:"Installation/scope-bound snapshot reference"}),
   command("bot handover get", "Read staged successor and duty metadata; current usability and retirement remain separate facts.",{name:"handover-ref",description:"Installation/scope-bound handover reference"}),
+  ...(["advance","observe","attest","retire"] as const).map(action=>command(`bot handover ${action}`,
+    action==="observe"?"Read bounded native relationship evidence and retain convergence; does not send messages or mutate native relationships.":action==="attest"?"Reobserve an exact duty against evidence from a retained observation; arbitrary hashes cannot clear dependencies.":action==="retire"?"Recheck an original observed retirement candidate; missing native fencing or resource independence retains the source.":"Advance bounded duties in the original replacement; may send explicitly authorized user notices, never re-create a Bot.",
+    {name:"handover-ref",description:"Exact installation/scope-bound replacement handover"},[
+      ...(action==="attest"?[{flags:"--item-id <uuid>",description:"Exact observed duty identity",required:true}]:[]),
+      ...(["attest","retire"].includes(action)?[{flags:"--evidence-ref <ref>",description:action==="attest"?"Exact duty evidence from an original observation":"Original completed handover observation operation",required:true}]:[]),
+      {flags:"--confirm",description:"Confirm this bounded action and its original operation identity",required:true},
+    ],true)),
   command("system materials get", "Read configured source coverage and index freshness; never initialize or mutate a source."),
   command("file root list", "Read file source identities and permissions without exposing private root paths."),
   ...(["memory","file","project"] as const).flatMap(domain => [

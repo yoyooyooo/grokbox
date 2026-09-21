@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { retainHandoverContinuation, handoverLocalState } from "../src/lib/operations.ts";
 import { randomUUID } from "node:crypto";
 import { materialReference, type ModelChangeRequest } from "@grokbox/client";
 import { retainCompactionContinuation, compactionLocalState, retainContextContinuation, contextLocalState, forgetSettledOperation, localOperations, markOperation, rememberOperation, operationSearch } from "../src/lib/operations.ts";
@@ -69,6 +70,18 @@ test("compaction recovery preserves only the original domain locator and cannot 
   expect(compactionLocalState("admitted")).toBe("unknown"); expect(compactionLocalState("completed")).toBe("succeeded");
   expect(compactionLocalState("cancelled")).toBe("retired"); expect(compactionLocalState("failed")).toBe("refused");
   markOperation(storage, next, compactionLocalState("cancelled")); forgetSettledOperation(storage, next); expect(localOperations(storage, scope)).toEqual([]);
+});
+
+test("handover locators keep the original replacement but never an attestation or deletion approval",()=>{
+  const storage=memoryStorage(),id=randomUUID(),account="b".repeat(64),target=`handover:${scope.installationId}:${account}:${randomUUID()}`;
+  const row=rememberOperation(storage,scope,{requestId:id,handoverRef:target,action:"retire",expectedRevision:"f".repeat(64),evidenceRef:`handover-operation:${scope.installationId}:${account}:${randomUUID()}`,confirmed:true});
+  expect(operationSearch(row)).toMatchObject({domain:"handover",scopeId:account,requestId:id});expect(row.target).toBe(target);
+  expect([...storage.values.values()].join()).not.toMatch(/evidenceRef|expectedRevision|confirmed|"action"|"retire"/);
+  markOperation(storage,row,handoverLocalState("unknown"));expect(()=>forgetSettledOperation(storage,row)).toThrow();
+  const continuation={requestId:id,scopeId:account,action:"reconcile" as const,confirmed:true as const};
+  const next=retainHandoverContinuation(storage,scope,continuation,target);expect(next.createdAt).toBe(row.createdAt);
+  expect(()=>retainHandoverContinuation(storage,scope,continuation,`handover:${scope.installationId}:${account}:${randomUUID()}`)).toThrow();
+  expect(localOperations(storage,scope)[0]).toEqual(next);markOperation(storage,next,handoverLocalState("cancelled"));forgetSettledOperation(storage,next);expect(localOperations(storage,scope)).toEqual([]);
 });
 
 test("unknown locators are retained; only explicit settled locator removal is allowed", () => {

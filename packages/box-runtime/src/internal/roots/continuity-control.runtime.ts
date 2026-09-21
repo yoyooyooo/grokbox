@@ -15,6 +15,5 @@ export function openContinuityControls(input:ContinuityStoreInput) {
     workflow:(id:string)=>Effect.runPromise(store.status(id)),
     request:(id:string)=>Effect.runPromise(store.request(id)),
     items:(id:string)=>Effect.runPromise(store.handoverItems(id)),
-    resolveItem:(operationId:string,itemId:string,expected:string,evidenceHash:string)=>Effect.runPromise(store.settleHandover(operationId,itemId,expected,"complete",{state:"complete",evidence:evidenceHash,proof:"operator_attestation"})),
   };
 }

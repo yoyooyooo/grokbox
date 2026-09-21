@@ -451,15 +451,6 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     gateway: true,
     streaming: false,
   },
-  ...(["status","advance","observe","attest","retire"] as const).map(action=>({
-    path:["agents","handover",action],usage:`grokbox agents handover ${action} --operation-id <uuid> --scope-id <sha256>`,
-    summary:action==="status"?"Read the per-relation handover ledger.":"Advance or verify one persisted handover; unknown effects are not replayed.",arguments:[],
-    options:options([{flags:"--operation-id <uuid>",description:"Exact replacement operation",required:true},{flags:"--scope-id <sha256>",description:"Original account scope",required:true},
-      ...(action!=="status"?[{flags:"--confirm",description:"Authorize the explicit operation",required:true}]:[]),
-      ...(action==="attest"?[{flags:"--item-id <uuid>",description:"Exact external-dependency item",required:true}]:[]),
-      ...(["attest","retire"].includes(action)?[{flags:"--evidence-hash <sha256>",description:"Explicitly checked evidence; not a model assertion",required:true}]:[])]),
-    stdin:"none" as const,table:false,timeout:false,destructive:action!=="status",gateway:action!=="status",streaming:false,profile:false,localOnly:true,
-  })),
   {
     path: ["agents", "ownership"],
     usage: "grokbox agents ownership <agents...>",

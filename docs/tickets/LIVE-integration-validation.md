@@ -231,9 +231,8 @@
 | `bot spawn` | [LIVE-CONTINUITY-SPAWN](#live-continuity-spawn) | 统一管理服务，程序启动独立权限；临时结果交付/清理与首轮真实 Provider 仍分别验收 |
 | `system protection get`, `system protection set`, `bot protection get`, `bot protection set`, `bot protection reset` | [LIVE-OWNERSHIP-LOSS-PROTECTION](#live-ownership-loss-protection) | 默认发现、逐 Bot 策略与原回执共用管理 Server；旧手动 observe/advance 退出，后台接管不扩大通知许可 |
 | `bot snapshot list`, `bot snapshot get` | [LIVE-CONTINUITY-MATERIAL](#live-continuity-material) | 原 CONT 库的有限元数据；不读取私有正文，不把保存成功当原生导入通过 |
-| `bot handover get` | [LIVE-CONTINUITY-HANDOVER](#live-continuity-handover) | 原操作、前后继与逐项职责查询；继任激活后仍保留交接定位，不证明旧 Bot 可退役 |
-| `agents handover status`, `agents handover advance`, `agents handover attest` | [LIVE-CONTINUITY-HANDOVER](#live-continuity-handover) | 逐项证据；操作者引用不等于原生证明 |
-| `agents handover observe`, `agents handover retire` | [LIVE-CONTINUITY-RETIREMENT](#live-continuity-retirement) | 缺删除边界时明确阻断，不将quiet变成许可 |
+| `bot handover get`, `bot handover advance`, `bot handover attest` | [LIVE-CONTINUITY-HANDOVER](#live-continuity-handover) | 统一管理Server与原CONT逐职责程序；独立权限、准确版本、原observation引用及再次核验；旧agents handover直连已退出，批次完成不证明全部职责完成 |
+| `bot handover observe`, `bot handover retire` | [LIVE-CONTINUITY-RETIREMENT](#live-continuity-retirement) | 原入站覆盖/观察与retirement guard；缺资源独立/删除边界保持blocked，原操作对账不调用native或重新删除 |
 | `agents duplicate`, `agents operations show` | [LIVE-NATIVE-DUPLICATE](#live-native-duplicate) | 官方语义/精确新ID；复制Routine与App选择的副作用须记录 |
 | `agents ownership` | [LIVE-OWNERSHIP-ALIGNMENT](#live-ownership-alignment) | 查询不改变归属 |
 | `agents title show`, `agents title hide`, `agents title sync` | [LIVE-REASONING-HOST-APP](#live-reasoning-host-app) | 用户标题与模型装饰区分 |

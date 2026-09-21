@@ -1,6 +1,6 @@
 import { ManagementClientError, botIdFromRef, type ApiErrorCode, type ApiReply, type ModelChange, normalizeSetupRequest, type MaterialWrite, type MaterialScope, type MaterialKind } from "@grokbox/client";
 import { startInstalledManagementServer } from "@grokbox/server";
-import { contextOperationIdentity, contextOperationRef, compactionOperationIdentity, type ContextChange } from "@grokbox/client";
+import { contextOperationIdentity, contextOperationRef, compactionOperationIdentity, handoverOperationIdentity, type HandoverAction, type ContextChange } from "@grokbox/client";
 import { normalizeLifecycleIntent, lifecycleIdentity, lifecycleReference, type LifecycleIntent } from "@grokbox/client";
 import { parseRequestedEffort } from "@grokbox/runtime-kernel/selection";
 import { ConfigError } from "@grokbox/runtime-kernel/config";
@@ -14,7 +14,7 @@ import { runInstalledWebService } from "../web-service.ts";
 
 export type ManagementCommandOptions = {
   connection?: string; timeoutMs?: string; limit?: string; cursor?: string; source?: string; scope?: string;
-  preview?: boolean; scopeId?: string; expectPlan?: string;
+  preview?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
   requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string;
   root?: string; nativeDiscovery?: string; port?: string; input?: string; mode?: string;
   untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; expectModelRevision?: string;
@@ -119,6 +119,11 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       break;
     }
     case "operation cancel": {
+      if (options.domain === "handover") {
+        if(options.confirm!==true||options.bot!==undefined)throw invalid("Handover cancellation uses only its exact original operation and confirmation.");
+        const ref=handoverOperationIdentity(args[0]??"",installationId);
+        reply=await client.continueHandover({requestId:ref.requestId,scopeId:ref.scopeId,action:"cancel",confirmed:true},deps.signal);break;
+      }
       if (options.domain === "compaction") {
         if (options.confirm !== true) throw invalid("Confirm cancellation of the original undispatched compaction.");
         const original = compactionOperationIdentity(args[0] ?? "", installationId);
@@ -132,6 +137,11 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "lifecycle" || options.limit !== undefined && !/^[1-9][0-9]{0,2}$/.test(options.limit)) throw invalid("This listing supports --domain lifecycle and a bounded page.");
       reply = await client.lifecycles({ limit: options.limit === undefined ? undefined : Number(options.limit), cursor: options.cursor, signal: deps.signal }); break;
     case "operation resume": {
+      if(options.domain==="handover"){
+        if(options.confirm!==true||options.bot!==undefined||options.expectPlan!==undefined)throw invalid("Resume the exact original handover request; no replacement plan or target is accepted.");
+        const ref=handoverOperationIdentity(args[0]??"",installationId);
+        reply=await client.continueHandover({requestId:ref.requestId,scopeId:ref.scopeId,action:"resume",confirmed:true},deps.signal);break;
+      }
       if (options.domain === "compaction") {
         if (options.confirm !== true || options.expectPlan !== undefined) throw invalid("Compaction resume uses its original request and Bot, not a replacement plan. Unknown dispatch permits only readback.");
         const original = compactionOperationIdentity(args[0] ?? "", installationId);
@@ -152,6 +162,11 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
     case "bot protection get": reply=await client.botProtection(args[0]??"",deps.signal);break;
     case "bot snapshot get": reply=await client.protectionSnapshot(args[0]??"",deps.signal);break;
     case "bot handover get": reply=await client.protectionHandover(args[0]??"",deps.signal);break;
+    case "bot handover advance": case "bot handover observe": case "bot handover attest": case "bot handover retire": {
+      if(options.confirm!==true)throw invalid("Confirm the bounded handover action and persist its original request UUID.");
+      reply=await client.changeHandover({requestId:options.requestId??"",handoverRef:args[0]??"",action:command.split(" ")[2] as HandoverAction,expectedRevision:options.expectRevision??"",confirmed:true,
+        ...(options.itemId!==undefined?{itemId:options.itemId}:{}),...(options.evidenceRef!==undefined?{evidenceRef:options.evidenceRef}:{})},deps.signal);break;
+    }
     case "bot snapshot list": reply=await client.protectionSnapshots(options.bot??"",options.limit===undefined?20:Number(options.limit),deps.signal);break;
     case "system protection set": case "bot protection set": case "bot protection reset": {
       if(options.confirm!==true)throw invalid("Confirm the protection policy change.");
@@ -248,6 +263,10 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       break;
     }
     case "operation reconcile":
+      if(options.domain==="handover"){
+        if(options.confirm!==true||options.bot!==undefined||options.expectRevision!==undefined||options.routineRef!==undefined)throw invalid("Handover reconciliation accepts only the original request and account scope.");
+        reply=await client.continueHandover({requestId:options.requestId??"",scopeId:options.scopeId??"",action:"reconcile",confirmed:true},deps.signal);break;
+      }
       if (options.domain === "compaction") {
         if (options.confirm !== true || options.routineRef !== undefined || options.expectRevision !== undefined) throw invalid("Compaction readback uses its original request, account and Bot, without a new revision.");
         reply = await client.continueCompaction({ action: "reconcile", requestId: options.requestId ?? "", scopeId: options.scopeId ?? "", botRef: options.bot ?? "", confirmed: true }, deps.signal); break;
@@ -260,6 +279,7 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "routine" || options.confirm !== true) throw invalid("This reconciliation requires domain routine and explicit confirmation.");
       reply = await client.changeSetup({action:"reconcile",routineRef:options.routineRef ?? "",expectedRevision:options.expectRevision ?? "",requestId:options.requestId ?? "",confirmed:true},deps.signal); break;
     case "operation get":
+      if(options.domain==="handover"){reply=await client.handoverOperation(options.scopeId??"",options.requestId??"",deps.signal);break;}
       if (options.domain === "compaction") { reply = await client.compactionOperation(options.scopeId ?? "", options.requestId ?? "", deps.signal); break; }
       if (options.domain === "context") { reply = await client.contextOperation(contextOperationRef(installationId, options.scopeId ?? "", options.requestId ?? ""), deps.signal); break; }
       if (options.domain === "lifecycle") { reply = await client.lifecycle(lifecycleReference(installationId, options.scopeId ?? "", options.requestId ?? ""), deps.signal); break; }

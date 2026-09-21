@@ -1,22 +1,25 @@
 import { useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import type { ProtectionOverview, ProtectionBotView, ProtectionSnapshotList, ProtectionSnapshot, ProtectionHandover } from "@grokbox/client";
-import { Badge, Card, Empty, ErrorNotice, Heading, SourceTime } from "../components/ui.tsx";
+import { handoverOperationIdentity, type HandoverOperation, type ProtectionOverview, type ProtectionBotView, type ProtectionSnapshotList, type ProtectionSnapshot, type ProtectionHandover } from "@grokbox/client";
+import { HandoverEditor } from "../components/handover-editor.tsx";
+import { Badge, Card, Empty, ErrorNotice, Heading, SourceTime, useConsole } from "../components/ui.tsx";
 import { ProtectionEditor } from "../components/protection-editor.tsx";
 import { readView, viewError, boundedSearch, denied } from "../lib/views.ts";
 
 export const Route=createFileRoute("/_console/protection")({
-  validateSearch:(v:Record<string,unknown>):{bot?:string;snapshot?:string;handover?:string}=>({bot:boundedSearch(v.bot,160),snapshot:boundedSearch(v.snapshot,200),handover:boundedSearch(v.handover,200)}),
+  validateSearch:(v:Record<string,unknown>):{bot?:string;snapshot?:string;handover?:string;handoverOperation?:string}=>({bot:boundedSearch(v.bot,160),snapshot:boundedSearch(v.snapshot,200),handover:boundedSearch(v.handover,200),handoverOperation:boundedSearch(v.handoverOperation,200)}),
   loaderDeps:({search})=>search,
   loader:async({context,deps})=>{
-    if(!context.bootstrap.session!.capabilities.includes("protection.read"))return {overview:denied<ProtectionOverview>(),bot:null,snapshots:null,snapshot:null,handover:null};
-    const api=context.services.client(context.bootstrap.binding);
+    const api=context.services.client(context.bootstrap.binding),caps=context.bootstrap.session!.capabilities;
+    const original=deps.handoverOperation ? caps.includes("operations.read") ? await readView(Promise.resolve().then(()=>{const ref=handoverOperationIdentity(deps.handoverOperation!,context.bootstrap.binding.installationId);return api.handoverOperation(ref.scopeId,ref.requestId);})) : denied<HandoverOperation>() : null;
+    if(!caps.includes("protection.read"))return {overview:denied<ProtectionOverview>(),bot:null,snapshots:null,snapshot:null,handover:null,original};
     const [overview,bot,snapshots,snapshot,handover]=await Promise.all([readView(api.protection()),deps.bot?readView(api.botProtection(deps.bot)):null,
       deps.bot?readView(api.protectionSnapshots(deps.bot,20)):null,deps.snapshot?readView(api.protectionSnapshot(deps.snapshot)):null,deps.handover?readView(api.protectionHandover(deps.handover)):null]);
-    return {overview,bot,snapshots,snapshot,handover};
+    return {overview,bot,snapshots,snapshot,handover,original};
   },component:Protection,
 });
 function Protection(){
+  const installation=useConsole().bootstrap.binding.installationId;
   const data=Route.useLoaderData(),search=Route.useSearch(),view=data.overview.data,router=useRouter(),navigate=useNavigate({from:Route.fullPath});
   const [selection,setSelection]=useState(search.bot??"");
   function select(event:FormEvent){event.preventDefault();if(selection.trim())void navigate({search:{bot:selection.trim()}});}
@@ -66,7 +69,13 @@ function Protection(){
       <dt>Duties</dt><dd>{data.handover.data.complete} complete · {data.handover.data.remaining} remaining · {data.handover.data.unknown} unknown</dd></dl>
       <div className="table-wrap"><table><thead><tr><th>Step</th><th>Recorded state</th></tr></thead><tbody>{data.handover.data.steps.map(s=><tr key={s.step}><td>{s.step}</td><td>{s.state}</td></tr>)}</tbody></table></div>
       {data.handover.data.duties.length>0&&<div className="table-wrap"><table><thead><tr><th>Duty</th><th>State</th><th>Evidence recorded</th></tr></thead><tbody>{data.handover.data.duties.map(d=><tr key={d.itemId}><td>{d.kind}</td><td>{d.state}</td><td>{d.evidenceRecorded?"yes, not independently reverified":"no"}</td></tr>)}</tbody></table></div>}
-      <p className="notice">Current target usability and retirement eligibility are not proven by this history. This view does not execute a task, retry an unknown effect or delete a Bot.</p>
+      <p className="notice">Current target usability and retirement eligibility are not proven by this history. Reading it does not execute a task, retry an unknown effect or delete a Bot.</p>
     </div>}</Card>}
+    {data.original && <ErrorNotice error={viewError(data.original)}/>}
+    {data.original?.data && <Card title="Retained handover request"><div data-testid="handover-history"><code>{data.original.data.operationRef}</code><p>{data.original.data.action} · {data.original.data.state}</p>
+      <Link to="/operations" search={{domain:"handover",scopeId:handoverOperationIdentity(data.original.data.operationRef,installation).scopeId,requestId:data.original.data.requestId}}>Read original handover receipt</Link>
+      {data.handover?.data && data.original.data.handoverRef!==data.handover.data.handoverRef && <p className="notice danger" role="alert">This original request belongs to a different handover. The selected controls were not retargeted.</p>}
+    </div></Card>}
+    {data.handover?.data && <HandoverEditor key={data.handover.data.handoverRef} view={data.handover.data} original={data.original?.data?.handoverRef===data.handover.data.handoverRef?data.original.data:undefined}/>}
   </>;
 }

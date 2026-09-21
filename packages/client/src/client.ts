@@ -9,6 +9,7 @@ export * from "./contract.ts";
 import { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
 import { normalizeContextChange, normalizeContextContinuation, contextOperationIdentity, contextOperationRef, type ContextChange, type ContextContinuation, type ContextView, type ContextOperation } from "./context-contract.ts";
 import { contextView, contextOperation } from "./context-validation.ts";
+import { normalizeHandoverChange, normalizeHandoverContinuation, handoverOperation, type HandoverChange, type HandoverContinuation, type HandoverOperation } from "./handover-contract.ts";
 import { contextManualApprovalKey } from "@grokbox/runtime-kernel/compaction";
 import { normalizeCompactionChange, normalizeCompactionContinuation, compactionPreview, compactionOperation,
   type CompactionChange, type CompactionContinuation, type CompactionPreview, type CompactionOperation } from "./compaction-contract.ts";
@@ -124,13 +125,15 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
     const mutation = authentication || readOnlyPost ? undefined : input as { requestId: string; expectedRevision?: unknown; planRevision?: unknown; scopeId?: unknown; action?: unknown } | undefined;
     if (mutation !== undefined && (!record(mutation) || !UUID.test(mutation.requestId)
       || !(["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
+        : path === "/v1/handover-changes" ? revision(mutation.expectedRevision)
+        : path === "/v1/handover-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-changes" || path === "/v1/context-compactions" ? revision(mutation.scopeId) && revision(mutation.expectedRevision)
         : path === "/v1/context-compaction-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-continuations" ? revision(mutation.scopeId) && (["resume", "reconcile", "cancel"].includes(String(mutation.action)) || mutation.action === "activate" && revision(mutation.expectedRevision))
@@ -221,6 +224,21 @@ export class ManagementClient {
   lifecycles(options: ListOptions = {}) {
     const query = pageQuery(options), limit = options.limit ?? 20;
     return this.request<LifecycleList>(`/v1/lifecycle-operations${query.size ? `?${query}` : ""}`, v => lifecycleList(v, this.options.installationId!, limit), undefined, options.signal);
+  }
+
+  changeHandover(input: HandoverChange, signal?: AbortSignal) {
+    const installation=this.options.installationId??"",r=normalizeHandoverChange(input,installation),ref=protectionReferenceIdentity(r.handoverRef,installation,"handover");
+    return this.request<HandoverOperation>("/v1/handover-changes",v=>handoverOperation(v,installation,ref.scopeId,r.requestId)&&v.handoverRef===r.handoverRef&&v.action===r.action&&v.expectedRevision===r.expectedRevision,
+      r,signal,false,`/v1/handover-operations/${ref.scopeId}/${r.requestId}`);
+  }
+  continueHandover(input: HandoverContinuation, signal?: AbortSignal) {
+    const installation=this.options.installationId??"",r=normalizeHandoverContinuation(input);
+    return this.request<HandoverOperation>("/v1/handover-continuations",v=>handoverOperation(v,installation,r.scopeId,r.requestId),r,signal,false,`/v1/handover-operations/${r.scopeId}/${r.requestId}`);
+  }
+  handoverOperation(scopeId:string,requestId:string,signal?:AbortSignal) {
+    if(!revision(scopeId)||!UUID.test(requestId))throw new ManagementClientError("invalid_input","Use the original handover account scope and request UUID.");
+    const installation=this.options.installationId??"",id=requestId.toLowerCase();
+    return this.request<HandoverOperation>(`/v1/handover-operations/${scopeId}/${id}`,v=>handoverOperation(v,installation,scopeId,id),undefined,signal);
   }
 
   async compactionPreview(bot: string, signal?: AbortSignal) {

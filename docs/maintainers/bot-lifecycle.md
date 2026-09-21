@@ -6,7 +6,7 @@
 
 ## 前置条件与影响
 
-clone/replace/spawn 和原操作续接已使用新版绑定安装的管理 Server；服务不可用时不回退到 CLI 本地或旧 daemon。内部原生执行仍在该 Box，要求匹配的已加载 Host、账号 scope、原生 worker/profile 与配置；缺失时不自动升级 Host。模型来自配置目录并满足原准入。尚未迁移的独立 current-state/旧 handover 命令仍有其本地边界，不能用于绕过新操作的主体授权。
+clone/replace/spawn 和原操作续接已使用新版绑定安装的管理 Server；服务不可用时不回退到 CLI 本地或旧 daemon。内部原生执行仍在该 Box，要求匹配的已加载 Host、账号 scope、原生 worker/profile 与配置；缺失时不自动升级 Host。模型来自配置目录并满足原准入。独立 current-state、Compact 与 handover 也已进入管理 Server，旧 CLI 直连入口及 handover 适配别名已退出，不能用历史命令绕过主体授权。
 
 先明确源对象、材料/Memory 的去向、模型费用、激活/启动及交接发言范围。预览读取原生能力、源 profile 和模型选择，不创建目标、初始化 CONT 库、调用模型或发交接消息。`lifecycle.write` 允许生命周期预览与执行；请求程序启动还需 `lifecycle.start`，允许用户身份的交接消息还需 `lifecycle.messages`，实际阶段前重新验证。确认后的失败可能已经创建目标，不能因没有最终成功就删除重建。
 
@@ -57,9 +57,12 @@ grokbox bot snapshot list --bot <original-bot-ref> --limit 20
 grokbox bot snapshot get <snapshot-ref>
 grokbox bot handover get <handover-ref>
 grokbox operation get --domain protection --target <original-bot-ref-or-system> --request-id <original-uuid>
-grokbox agents handover status --operation-id <replacement-id> --scope-id <scope-id>
-grokbox agents handover advance --operation-id <replacement-id> --scope-id <scope-id> --confirm
-grokbox agents handover observe --operation-id <replacement-id> --scope-id <scope-id> --confirm
+grokbox bot handover advance <handover-ref> --request-id <uuid> --expect-revision <handover-revision> --confirm
+grokbox bot handover observe <handover-ref> --request-id <uuid> --expect-revision <handover-revision> --confirm
+grokbox bot handover attest <handover-ref> --item-id <observed-duty-uuid> --evidence-ref <observed-duty-evidence-ref> --request-id <uuid> --expect-revision <handover-revision> --confirm
+grokbox bot handover retire <handover-ref> --evidence-ref <original-observation-operation-ref> --request-id <uuid> --expect-revision <handover-revision> --confirm
+grokbox operation get --domain handover --scope-id <original-scope> --request-id <original-uuid>
+grokbox operation reconcile --domain handover --scope-id <original-scope> --request-id <original-uuid> --confirm
 ```
 
 新版 get/list 只读原存储和进程状态，不调用原生、初始化或采集；快照页只读元数据。配置修改使用原 request-id 和 config revision，提交不证明后台已采用；丢回复后查询原主体/目标/request-id，不重放旧许可。Web `/protection` 使用同一权限、CSRF 和恢复定位。旧 `agents protection status/observe/advance` 已退出，不作为兼容别名。
@@ -68,7 +71,13 @@ grokbox agents handover observe --operation-id <replacement-id> --scope-id <scop
 
 原 Bot 引用不自动指向继任者；页面分别展示 original/current/previous。继任激活后，未完交接仍以原 workflow 引用可查；最近16条导航链接与更早省略说明只是有限展示，不回收原操作或授予退役权限。每个关系保存真实进度：群成员、DM说明、Routine停旧启新、外部依赖、旧入站覆盖不是一个成功布尔值。新 Bot 可用可以与部分关系 blocked 同时成立；活动、失败、unknown 和缺少权限必须保留。监控失败/长断档不计 quiet，近期转录没有附件也不证明目标不依赖源资源。
 
-剩余旧独立 handover 路径不能接管带有管理主体的新人工工作流；它们的完整命令迁入仍归 CONT 来源票。`handover attest` 需要确切外部依赖 item 与人工已核验 evidence hash；这是有影响的声明，不是程序自行证实。`handover retire` 即使带确认与证据，也必须经过源资源独立性和删除前屏障。当前原生 adapter 没有可靠的条件删除/入站排空能力，因此自动源删除保持阻断；不得伪造 evidence、清空关系账本或绕回普通 delete 把 blocked 改成成功。
+交接动作固定 handoverRef、当前 CONT revision、主体和 request-id。`handover.write` 不代替 `handover.messages`、`handover.attest` 或 `handover.retire`；人工操作必须属于原主体，默认保护工作流仍需当前保护策略和 `protection.write`。每次真正原生写入前都重新核对已激活继任者、原账号和权限。
+
+`advance` 由原程序按职责依赖推进有界批次，不让调用方按数据库 UUID 顺序反复猜测。每个已声明未知效果只读回、不重发；管理批次 completed 不等于全部职责完成。`observe` 不写原生，只保留有界职责观察和入站覆盖；新的用户文本即使包含交接标记仍计入活动。`attest` 仅接受同主体原 observation 中的准确 evidenceRef，并再次读取该职责、核对输入摘要和依赖；任意人工 hash、模型自述或未支持的外部依赖不能置为 complete。
+
+退役仍须源资源独立性和删除前屏障。当前原生 adapter 没有可靠的条件删除/入站排空能力，因此显式或自动退役都会保留对应 blocker，不绕回普通 delete。`operation reconcile --domain handover` 对退役只核原持久删除回执，没有 native port，不新采样或删除。`resume` 仅在原职责/退役 guard 下推进；未知单项不被重放。只有尚未派发的管理 preparation 可以 cancel。
+
+Web `/protection` 与 `/operations` 共享上述用例，冲突保留原选择，刷新后先查原请求。浏览器仅保留安装、主体、handover 定位和请求 UUID，不保存审批、证据输入、材料正文或凭据。原生失联不影响已保留历史读取。实现与固定验证见[管理交接报告](../reports/2026-09-21-handover-management.md)。
 
 ## 验收与停止边界
 

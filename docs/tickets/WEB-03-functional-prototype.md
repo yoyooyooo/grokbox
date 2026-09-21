@@ -43,6 +43,12 @@ run/STEP/日志、受支持的原生投递对账、完整材料管理与剩余�
 
 此路径实际暴露 SSR 与浏览器不一致：原同步摘要校验依赖 Node crypto，SSR 通过但浏览器显式刷新失败。现以同一 canonical 声明配合 WebCrypto 校验，不添加 runtime shim 或第二摘要规则。修复后73节点生产 Chrome组合通过；依赖范围和最终检查归[管理切片报告](../reports/2026-09-21-compaction-management.md)，不等于真实账号/Provider/App 或最终视觉验收。
 
+## 交接操作与原证据恢复
+
+`/protection` 的选定 handover 已有 advance/observe/attest/retire 控制和原操作恢复，`/operations` 识别 handover 域、账号 scope 和原替换引用。页面消费同一 Server/CONT 用例；普通阅读不执行原生效果，observe 只保存本地观察，attest 要求原 observation 引用及再次读取验证。退役显示实际资源/原生屏障 blocker，不从 quiet 或原生目标 UUID 推断许可。
+
+独立能力、CSRF、准确 revision、冲突保留与明确重新批准、丢回复刷新、未知 claim 不可取消成新请求、显式续接不重发旧职责、离线历史与窄屏已纳入[真实浏览器旅程](../../apps/web/test/handover-browser.node.ts)。本地只保存原安装/主体/替换/scope/request 定位，不缓存证据输入、审批 revision、材料正文或凭据。完成一个管理批次不等于完整关系交接，历史手动工作流不会被另一主体接管。固定实施/验证归[管理交接报告](../reports/2026-09-21-handover-management.md)；全原生任务/资源独立性、条件删除和多代关系仍是 CONT 的后续责任。
+
 ## Host健康与浏览器重复性差额
 
 `/host-health`已分开显示磁盘候选、运行编译、同代原引用注册、详细边界与累计lease机会。当前API只接受现行完整健康/witness合同，不为旧三项规则或window-only事件读面提供兼容；旧资料保留但不充当新成功。四项静态规则和当前有限配对已有资格，整Host/Provider/App与完整机会覆盖仍未证明，不能显示整体healthy。源码与原生/合成范围见[当前收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。

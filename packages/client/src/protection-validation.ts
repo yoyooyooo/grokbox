@@ -60,12 +60,15 @@ export function protectionSnapshots(v:unknown,installationId:string,target:strin
     &&Array.isArray(v.snapshots)&&v.snapshots.length<=limit&&v.snapshots.every(row=>protectionSnapshot(row,installationId)&&row.botRef===target&&sameScope(row.snapshotRef,v.scopeId as string|null))
     &&new Set(v.snapshots.map(row=>row.snapshotRef)).size===v.snapshots.length&&typeof v.hasMore==="boolean"&&v.coverage==="retained-metadata";
 }
+import { handoverAssessment } from "./handover-contract.ts";
 export function protectionHandover(v:unknown,installationId:string,target:string):v is ProtectionHandover {
-  return record(v)&&exact(v,["handoverRef","sourceBotRef","targetBotRef","phase","kind","createdAtMs","updatedAtMs","steps","duties","remaining","unknown","complete","moreDuties","targetUsability","retirementEligibility","privateInputsIncluded"])
+  return record(v)&&exact(v,["handoverRef","revision","activated","userMessagesConfigured","automaticDeleteConfigured","assessment","sourceBotRef","targetBotRef","phase","kind","createdAtMs","updatedAtMs","steps","duties","remaining","unknown","complete","moreDuties","targetUsability","retirementEligibility","privateInputsIncluded"])
+    &&revision(v.revision)&&typeof v.activated==="boolean"&&typeof v.userMessagesConfigured==="boolean"&&typeof v.automaticDeleteConfigured==="boolean"&&(v.assessment===null||handoverAssessment(v.assessment))
     &&v.handoverRef===target&&ref(target,installationId,"handover")&&(v.sourceBotRef===null||bot(v.sourceBotRef,installationId))&&(v.targetBotRef===null||bot(v.targetBotRef,installationId))
     &&["prepared","progressing","ready","active","active_with_handover","blocked","retired"].includes(String(v.phase))&&["clone","replace","spawn"].includes(String(v.kind))
     &&integer(v.createdAtMs,1)&&integer(v.updatedAtMs,Number(v.createdAtMs))&&Array.isArray(v.steps)&&v.steps.length<=16
     &&v.steps.every(s=>record(s)&&exact(s,["step","state"])&&["capture","create","load","model","compose","initialize","activate","startup","handover"].includes(String(s.step))&&["effect_unknown","complete"].includes(String(s.state)))
+    &&(!v.activated||v.kind==="replace"&&v.phase!=="retired"&&v.sourceBotRef!==null&&v.targetBotRef!==null&&v.sourceBotRef!==v.targetBotRef&&["create","initialize","activate"].every(step=>(v.steps as any[]).some(s=>s.step===step&&s.state==="complete")))
     &&Array.isArray(v.duties)&&v.duties.length<=128&&v.duties.every(d=>record(d)&&exact(d,["itemId","kind","state","evidenceRecorded"])&&typeof d.itemId==="string"&&UUID.test(d.itemId)
       &&["old-guidance","title-old","title-new","sidebar","group-notice","group-members","dm-notice","routine-create","routine-stop","routine-enable","external-task"].includes(String(d.kind))
       &&["prepared","effect_unknown","complete","blocked"].includes(String(d.state))&&typeof d.evidenceRecorded==="boolean")

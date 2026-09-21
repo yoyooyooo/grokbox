@@ -92,7 +92,6 @@ import { resolveProfile } from "./config/profile.ts";
 import { ManagementClientError } from "@grokbox/client";
 import { MANAGEMENT_COMMANDS } from "./management-registry.ts";
 import { runManagementCommand, writeManagementFailure, type ManagementCommandOptions } from "./commands/management-api.ts";
-import { runBotHandover } from "./commands/bot-handover.ts";
 import { runAgentDuplicate, runAgentOperation } from "./commands/agent-duplicate.ts";
 import type { CliDeps } from "./deps.ts";
 import { CliError, usage } from "./errors.ts";
@@ -307,11 +306,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "ops notifications show": async (deps, args) => await runOpsNotifications(deps, args[0]),
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
-    "agents handover status": async (deps, _args, options) => await runBotHandover(deps,"status",options),
-    "agents handover advance": async (deps, _args, options) => await runBotHandover(deps,"advance",options),
-    "agents handover observe": async (deps, _args, options) => await runBotHandover(deps,"observe",options),
-    "agents handover attest": async (deps, _args, options) => await runBotHandover(deps,"attest",options),
-    "agents handover retire": async (deps, _args, options) => await runBotHandover(deps,"retire",options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),
     "agents duplicate": async (deps, args, options) => await runAgentDuplicate(deps, args[0] ?? "", options),
     "agents operations show": async (deps, args, options) => await runAgentOperation(deps, args[0] ?? "", options),

@@ -26,7 +26,8 @@ export type ProtectionBotView = { revision: string; enabled: boolean; botRef: st
 export type ProtectionSnapshot = { snapshotRef: string; botRef: string; revision: string; state: "reserved" | "published" | "abandoned" | "retired";
   quality: string; capturedAtMs: number; contentIncluded: false; nativeImportProven: false };
 export type ProtectionSnapshotList = { botRef: string; scopeId: string | null; snapshots: ProtectionSnapshot[]; hasMore: boolean; coverage: "retained-metadata" };
-export type ProtectionHandover = { handoverRef: string; sourceBotRef: string | null; targetBotRef: string | null; phase: string; kind: "clone" | "replace" | "spawn";
+export type ProtectionHandover = { handoverRef: string; revision: string; activated: boolean; userMessagesConfigured: boolean; automaticDeleteConfigured: boolean;
+  assessment: import("./handover-contract.ts").HandoverAssessment | null; sourceBotRef: string | null; targetBotRef: string | null; phase: string; kind: "clone" | "replace" | "spawn";
   createdAtMs: number; updatedAtMs: number; steps: { step: string; state: "effect_unknown" | "complete" }[];
   duties: { itemId: string; kind: string; state: "prepared" | "effect_unknown" | "complete" | "blocked"; evidenceRecorded: boolean }[];
   remaining: number; unknown: number; complete: number; moreDuties: boolean; targetUsability: "not-observed"; retirementEligibility: "not-observed"; privateInputsIncluded: false };

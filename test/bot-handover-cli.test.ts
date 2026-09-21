@@ -3,7 +3,6 @@ import {mkdtemp,rm} from "node:fs/promises";import {join} from "node:path";impor
 import {openBotLifecycle,openContinuityControls,createNativeBotHandover,createManagementGateway,publishConfigFile,type BotLifecyclePort} from "../packages/box-runtime/src/runtime.ts";
 import {botWorkflowRequest,handoverItemId} from "../packages/runtime-kernel/src/continuity.ts";
 import {ownedOwnershipSnapshot} from "../packages/box-runtime/test/ownership-fixture.ts";
-import {captureCli} from "./helpers.ts";
 const old="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",target="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",peer="cccccccc-cccc-4ccc-8ccc-cccccccccccc",group="dddddddd-dddd-4ddd-8ddd-dddddddddddd",scopeId="e".repeat(64);
 async function fixture(){
  const root=await mkdtemp(join(tmpdir(),"handover-cli-")),operationId=randomUUID();
@@ -78,8 +77,8 @@ test("mechanical handover requires current successor ownership and the original 
 test("mechanical handover uses formal user notices, preserves group peers, creates disabled cron then stops old before enabling new",async()=>{
  const f=await fixture();try{
   for(let i=0;i<8;i++){
-   const result=await captureCli(["agents","handover","advance","--operation-id",f.operationId,"--scope-id",scopeId,"--confirm","--json"],f.deps);
-   expect(result.code,result.stderr).toBe(0);
+   const result=await f.adapter().program.advance(f.operationId,16);
+   expect(result.sourceDeleted).toBe(false);
   }
   expect(f.rows.find(r=>r.id===group).memberIds).toEqual([target,peer]);
   expect(f.rows.find(r=>r.id===old).description).toContain(`successor=${target}`);expect(f.rows.find(r=>r.id===old).title).toContain("handoff=redirecting");

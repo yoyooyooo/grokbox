@@ -18,6 +18,7 @@ import { protectionBrowserJourney } from "./protection-browser.node.ts";
 import { lifecycleBrowserJourney } from "./lifecycle-browser.node.ts";
 import { contextBrowserJourney } from "./context-browser.node.ts";
 import { compactionBrowserJourney } from "./compaction-browser.node.ts";
+import { handoverBrowserJourney } from "./handover-browser.node.ts";
 import { hostHealthBrowserJourney } from "./host-health-browser.node.ts";
 
 async function freePort(): Promise<number> {
@@ -488,6 +489,7 @@ test("relocated production Web: real Chrome, shared CLI/domain, recovery and pro
     await t.test("current-state control and original recovery use native owner transactions through the production console", async contextTests => {
       await contextBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
       await compactionBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
+      await handoverBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
     });
     await t.test("Host health uses real Rust and existing incidents through the production console",async healthTests=>{
       await hostHealthBrowserJourney(healthTests,{browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop});

@@ -2,7 +2,7 @@
 
 **状态：Partial implementation。关系账本、正式用户身份的有界交接说明、群成员与 Routine 停旧启新已接线；完整外部任务/职责效果约束和多代关系收口仍有差额。新替身接活与关系交接并行，不要求先全迁完。**
 
-源码入口为 [handover 程序](../../packages/box-runtime/src/internal/roots/bot-handover.runtime.ts)和 [Gateway adapter](../../packages/cli/src/gateway-bot-handover.ts)；[CLI 回归](../../test/bot-handover-cli.test.ts)验证命名范围，固定证明见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)。操作与权限边界见 [指南](../maintainers/bot-lifecycle.md)，本票不维护另一份现场结果。
+源码入口为 [handover 程序](../../packages/box-runtime/src/internal/roots/bot-handover.runtime.ts)和 [原生关系 adapter](../../packages/box-runtime/src/internal/roots/continuity-native-handover.runtime.ts)与[管理用例](../../packages/server/src/handover.ts)；[原生 HTTP 回归](../../test/bot-handover-cli.test.ts)验证命名范围，固定证明见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)。操作与权限边界见 [指南](../maintainers/bot-lifecycle.md)，本票不维护另一份现场结果。
 
 合同：[S13交接](../roadmap/box-runtime-impl-spec.md#continuity-handover)。依赖CONT-03、CONT-04最小逐职责协议、CONT-11；原生Routine复用T53，消息身份与投递复用正式Gateway/ops能力。CLI未提供的原生能力先资格化再公开。
 
@@ -10,7 +10,9 @@
 
 新Bot承担已转交业务，程序机械化处理群成员/公告、近期DM联系人、Routine和外部结果路径，旧Bot辅助指路。所有关系逐项记录来源、scope、旧新目标、执行身份、message/task ID、当前状态和读回，不以一个总成功字段隐藏剩余问题。
 
-`io/continuity-relations.node.ts`适配已授权的关系查询/修改，`roots/continuity.runtime.ts`协调，kernel提供逐项规则。复用groups、Routine、title codec和通知边界，不创建另一套关系SoT。
+`roots/continuity-native-handover.runtime.ts`适配原生关系，`roots/bot-handover.runtime.ts`推进有界职责依赖，`io/handover-management.node.ts`在原CONT控制表记录管理请求。CLI/Web消费同一Server用例，复用groups、Routine、title codec和通知边界，不创建另一套关系SoT。
+
+2026-09-21：`bot handover`及handover域operation已经接通原主体/版本/能力与原生权限，旧`agents handover`、CLI适配别名和直接attest writer退出。依赖前沿在单批次推进，不依靠调用方按UUID顺序反复advance；未知效果仅读回。attest必须引用同主体、同工作流原observation的准确职责证据并重新核验，不能用人工hash清除未支持的外部依赖。Web、实际Node/packed进程强杀、容量与并发边界见[管理交接报告](../reports/2026-09-21-handover-management.md)。本票完整外部职责、多代关系和现场资格仍未关闭。
 
 ## 行为要求
 

@@ -1,16 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
+import type { HandoverOperation } from "@grokbox/client";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { contextOperationRef, type CompactionOperation, type ContextOperation, UUID, type ModelOperation, type IncidentOperation, type ReceiverOperation, type NotificationTestOperation, type SetupOperation, type MaterialOperation, type ProtectionOperation } from "@grokbox/client";
 import { Badge, Card, Empty, ErrorNotice, Heading, SourceTime, useConsole } from "../components/ui.tsx";
-import { contextLocalState, compactionLocalState, forgetSettledOperation, localOperations, markOperation, operationSearch, operationDomain, type LocalOperation, type OperationDomain } from "../lib/operations.ts";
+import { contextLocalState, compactionLocalState, handoverLocalState, forgetSettledOperation, localOperations, markOperation, operationSearch, operationDomain, type LocalOperation, type OperationDomain } from "../lib/operations.ts";
 import { readView, viewError } from "../lib/views.ts";
 
-type Receipt = CompactionOperation | ModelOperation | IncidentOperation | ReceiverOperation | NotificationTestOperation | SetupOperation | MaterialOperation | ProtectionOperation | ContextOperation;
+type Receipt = HandoverOperation | CompactionOperation | ModelOperation | IncidentOperation | ReceiverOperation | NotificationTestOperation | SetupOperation | MaterialOperation | ProtectionOperation | ContextOperation;
 type Search = { requestId?: string; domain?: Exclude<OperationDomain, "model">; databaseId?: string; bot?: string; target?: string; scopeId?: string };
 export const Route = createFileRoute("/_console/operations")({
   validateSearch: (search: Record<string, unknown>): Search => ({
     requestId: typeof search.requestId === "string" && UUID.test(search.requestId) ? search.requestId.toLowerCase() : undefined,
-    domain: ["compaction", "context", "protection", "material", "incident", "receiver", "notification-test", "notification-settings", "routine", "pairing"].includes(String(search.domain)) ? search.domain as Search["domain"] : undefined,
+    domain: ["handover", "compaction", "context", "protection", "material", "incident", "receiver", "notification-test", "notification-settings", "routine", "pairing"].includes(String(search.domain)) ? search.domain as Search["domain"] : undefined,
     scopeId: typeof search.scopeId === "string" && /^[a-f0-9]{64}$/.test(search.scopeId) ? search.scopeId : undefined,
     target: typeof search.target === "string" && search.target.length<=160 ? search.target : undefined,
     bot: typeof search.bot === "string" && UUID.test(search.bot) ? search.bot.toLowerCase() : undefined,
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/_console/operations")({
   loader: ({ context, deps }) => {
     if (!deps.requestId) return null;
     const client = context.services.client(context.bootstrap.binding);
-    return readView<Receipt>(deps.domain === "compaction" ? Promise.resolve().then(() => client.compactionOperation(deps.scopeId ?? "", deps.requestId!)) : deps.domain === "context" ? Promise.resolve().then(() => client.contextOperation(contextOperationRef(context.bootstrap.binding.installationId, deps.scopeId ?? "", deps.requestId!))) : deps.domain === "protection" ? client.protectionOperation(deps.target??"",deps.requestId) : deps.domain === "material" ? client.materialOperation(deps.requestId) : deps.domain === "routine" ? client.setupOperation("routine",deps.bot ?? "",deps.requestId)
+    return readView<Receipt>(deps.domain === "handover" ? Promise.resolve().then(() => client.handoverOperation(deps.scopeId ?? "", deps.requestId!)) : deps.domain === "compaction" ? Promise.resolve().then(() => client.compactionOperation(deps.scopeId ?? "", deps.requestId!)) : deps.domain === "context" ? Promise.resolve().then(() => client.contextOperation(contextOperationRef(context.bootstrap.binding.installationId, deps.scopeId ?? "", deps.requestId!))) : deps.domain === "protection" ? client.protectionOperation(deps.target??"",deps.requestId) : deps.domain === "material" ? client.materialOperation(deps.requestId) : deps.domain === "routine" ? client.setupOperation("routine",deps.bot ?? "",deps.requestId)
       : deps.domain === "notification-settings" || deps.domain === "pairing" ? client.setupOperation(deps.domain === "pairing" ? "pairing" : "settings","installation",deps.requestId)
       : deps.domain === "incident" ? client.incidentOperation(deps.databaseId ?? "", deps.requestId)
       : deps.domain === "receiver" ? client.receiverOperation(deps.databaseId ?? "", deps.requestId)
@@ -30,6 +31,7 @@ export const Route = createFileRoute("/_console/operations")({
   component: Operations,
 });
 function receiptDomain(data: Receipt): OperationDomain {
+  if ("handoverRef" in data) return "handover";
   if ("nativeSettlement" in data) return "compaction";
   if ("sourceBodyIncluded" in data) return "context";
   if ("nativeEffectsPerformed" in data) return "protection";
@@ -38,6 +40,7 @@ function receiptDomain(data: Receipt): OperationDomain {
   return "receiverRef" in data ? data.action === "test" ? "notification-test" : "receiver" : "databaseId" in data ? "incident" : "model";
 }
 function receiptTarget(data: Receipt): string {
+  if ("handoverRef" in data) return data.handoverRef;
   if ("nativeSettlement" in data) return data.botRef;
   if ("sourceBodyIncluded" in data) return data.botRef;
   if ("sourceWrite" in data) return data.ref;
@@ -45,6 +48,7 @@ function receiptTarget(data: Receipt): string {
   return "receiverRef" in data ? data.receiverRef : "incidentRef" in data ? data.incidentRef : data.target;
 }
 function ReceiptFacts({ data }: { data: Receipt }) {
+  if ("handoverRef" in data) return <><dt>Original replacement</dt><dd><code>{data.handoverRef}</code></dd><dt>Action and reviewed revision</dt><dd>{data.action} · <code>{data.expectedRevision}</code></dd><dt>Batch result</dt><dd>{data.result?.outcome ?? "Not settled"}</dd><dt>Remaining / unknown duties</dt><dd>{data.result ? `${data.result.remaining} / ${data.result.unknown}` : "Not recorded"}</dd><dt>Native deletion</dt><dd>{data.result?.sourceDeleted ? "Original deletion receipt retained" : "Not performed by this operation"}</dd><dt>Meaning</dt><dd>A completed batch is not complete duty coverage or current retirement authority. Reading does not resend an unknown effect.</dd><dt>Original controls</dt><dd><Link to="/protection" search={{handover:data.handoverRef,handoverOperation:data.operationRef}}>Inspect original handover controls</Link></dd></>;
   if ("nativeSettlement" in data) return <><dt>Compaction target</dt><dd><code>{data.botRef}</code></dd><dt>Native settlement / failure</dt><dd>{data.nativeSettlement} / {data.failureCode ?? "none recorded"}</dd><dt>Approved revision</dt><dd><code>{data.expectedRevision}</code></dd>{data.result && <><dt>Historical result</dt><dd>{data.result.outcome} · {data.result.beforeTokens} → {data.result.afterTokens} tokens · {data.result.summaryRequests} summary calls</dd></>}<dt>Meaning</dt><dd>The original native shell settled, not a new task or proof of the present model window. An unknown dispatch is never replayed by reading this history.</dd></>;
   if ("sourceBodyIncluded" in data) return <><dt>Context target</dt><dd><code>{data.botRef}</code></dd><dt>Original action / revision</dt><dd>{data.action} · <code>{data.expectedRevision}</code></dd><dt>Application / activation</dt><dd>{data.application} / {data.activation}</dd><dt>Meaning</dt><dd>Historical CONT evidence only. Prepared is not released, release starts no task, and unknown effects are never replayed by reading this receipt.</dd></>;
   if ("nativeEffectsPerformed" in data) return <><dt>Protection target</dt><dd><code>{data.targetRef}</code></dd><dt>Historical revision</dt><dd><code>{data.beforeRevision} → {data.revision??"unverified"}</code></dd><dt>Meaning</dt><dd>This historical configuration receipt does not prove that a worker adopted it or that a native effect happened. Reading it cannot restore an old permission.</dd></>;
@@ -73,24 +77,24 @@ function Operations() {
       const data = receipt?.data;
       const row = localOperations(localStorage, scope).find(item => data && item.requestId === data.requestId
         && operationDomain(item) === receiptDomain(data) && item.target === receiptTarget(data)
-        && (["context-control", "context-compaction"].includes(item.command) ? item.contextScope === search.scopeId : item.setupKind ? item.setupScope === (item.setupKind === "routine" ? search.bot : "installation")
+        && (["context-control", "context-compaction", "handover-control"].includes(item.command) ? item.contextScope === search.scopeId : item.setupKind ? item.setupScope === (item.setupKind === "routine" ? search.bot : "installation")
           : receiptDomain(data) === "model" ? !item.databaseId : item.databaseId === search.databaseId));
-      if (row && data) markOperation(localStorage, row, "nativeSettlement" in data ? compactionLocalState(data.state) : "sourceBodyIncluded" in data ? contextLocalState(data.state) : data.state);
+      if (row && data) markOperation(localStorage, row, "handoverRef" in data ? handoverLocalState(data.state) : "nativeSettlement" in data ? compactionLocalState(data.state) : "sourceBodyIncluded" in data ? contextLocalState(data.state) : data.state);
     } catch { setStorageError(true); }
     reloadLocal(); window.addEventListener("storage", reloadLocal);
     return () => window.removeEventListener("storage", reloadLocal);
   }, [search.requestId, search.domain, search.databaseId, search.bot, search.target, search.scopeId, receipt, scope.installationId, scope.principalId]);
   function lookup(event: FormEvent) {
-    event.preventDefault(); if (!UUID.test(id.trim()) || ["incident","receiver","notification-test"].includes(domain) && !UUID.test(database.trim()) || domain === "routine" && !UUID.test(bot.trim()) || ["context", "compaction"].includes(domain) && !/^[a-f0-9]{64}$/.test(accountScope.trim())) return;
-    void navigate({ search: { requestId: id.trim().toLowerCase(), ...(["context", "compaction"].includes(domain) ? { scopeId: accountScope.trim() } : {}), ...(domain !== "model" ? { domain } : {}),
+    event.preventDefault(); if (!UUID.test(id.trim()) || ["incident","receiver","notification-test"].includes(domain) && !UUID.test(database.trim()) || domain === "routine" && !UUID.test(bot.trim()) || ["context", "compaction", "handover"].includes(domain) && !/^[a-f0-9]{64}$/.test(accountScope.trim())) return;
+    void navigate({ search: { requestId: id.trim().toLowerCase(), ...(["context", "compaction", "handover"].includes(domain) ? { scopeId: accountScope.trim() } : {}), ...(domain !== "model" ? { domain } : {}),
       ...(["incident","receiver","notification-test"].includes(domain) ? { databaseId:database.trim().toLowerCase() } : {}), ...(domain === "routine" ? { bot:bot.trim().toLowerCase() } : {}), ...(domain==="protection"?{target:target.trim()}:{}) } });
   }
   const data = receipt?.data;
-  const title = data ? "nativeSettlement" in data ? "Compaction operation receipt" : "sourceBodyIncluded" in data ? "Current context operation" : "nativeEffectsPerformed" in data ? "Protection policy receipt" : "sourceWrite" in data ? "Source operation receipt" : "kind" in data ? "Setup operation receipt" : "receiverRef" in data ? data.action === "test" ? "Independent test receipt" : "Receiver consent recorded"
+  const title = data ? "handoverRef" in data ? "Original handover operation" : "nativeSettlement" in data ? "Compaction operation receipt" : "sourceBodyIncluded" in data ? "Current context operation" : "nativeEffectsPerformed" in data ? "Protection policy receipt" : "sourceWrite" in data ? "Source operation receipt" : "kind" in data ? "Setup operation receipt" : "receiverRef" in data ? data.action === "test" ? "Independent test receipt" : "Receiver consent recorded"
     : "databaseId" in data ? "异常管理已记录" : data.state === "succeeded" ? "配置提交已确认" : "操作结果仍待查证" : "";
   return <><Heading eyebrow="COMMIT ≠ EXECUTION" title="操作回执">使用原 request-id 与领域定位查询。异常、接收者及测试回执还需原数据库身份；未知结果只查证，不自动重放。</Heading>
-    <Card title="查找原操作"><form onSubmit={lookup}><div className="toolbar"><label htmlFor="operation-domain">领域</label><select id="operation-domain" value={domain} onChange={event => setDomain(event.target.value as OperationDomain)}><option value="model">模型配置</option><option value="context">Current context</option><option value="compaction">Compaction</option><option value="protection">Protection policy</option><option value="material">Source document</option><option value="incident">异常管理</option><option value="receiver">Receiver consent</option><option value="notification-test">Independent notification test</option><option value="notification-settings">Notification settings</option><option value="routine">Routine setup</option><option value="pairing">Private pairing</option></select></div>
-      {["context", "compaction"].includes(domain) && <><label htmlFor="operation-scope">Original account scope</label><input id="operation-scope" value={accountScope} onChange={event => setAccountScope(event.target.value)} required maxLength={64}/></>}
+    <Card title="查找原操作"><form onSubmit={lookup}><div className="toolbar"><label htmlFor="operation-domain">领域</label><select id="operation-domain" value={domain} onChange={event => setDomain(event.target.value as OperationDomain)}><option value="model">模型配置</option><option value="context">Current context</option><option value="compaction">Compaction</option><option value="handover">Handover</option><option value="protection">Protection policy</option><option value="material">Source document</option><option value="incident">异常管理</option><option value="receiver">Receiver consent</option><option value="notification-test">Independent notification test</option><option value="notification-settings">Notification settings</option><option value="routine">Routine setup</option><option value="pairing">Private pairing</option></select></div>
+      {["context", "compaction", "handover"].includes(domain) && <><label htmlFor="operation-scope">Original account scope</label><input id="operation-scope" value={accountScope} onChange={event => setAccountScope(event.target.value)} required maxLength={64}/></>}
       {domain === "protection" && <><label htmlFor="operation-target">Original protection target: Bot UUID/ref or system</label><input id="operation-target" value={target} onChange={event=>setTarget(event.target.value)} required maxLength={160}/></>}
       {domain === "routine" && <><label htmlFor="operation-bot">Original Bot UUID</label><input id="operation-bot" value={bot} onChange={event=>setBot(event.target.value)} required maxLength={36}/></>}
       {["incident","receiver","notification-test"].includes(domain) && <><label htmlFor="operation-database">原数据库 UUID</label><input id="operation-database" value={database} onChange={event => setDatabase(event.target.value)} required maxLength={36} spellCheck={false}/></>}

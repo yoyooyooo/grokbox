@@ -6,6 +6,7 @@ import { projectNativeRoutines, observedRoutineDefinitionDigest } from "@grokbox
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import type { NativeContinuityContext, ContinuityGateway, ContinuityDiscovery } from "../io/continuity-gateway.node.ts";
 import { openContinuityControls } from "./continuity-control.runtime.ts";
+import type { ContinuityStoreHooks } from "../io/continuity-database.node.ts";
 
 const done = (evidence: unknown, extra: Partial<HandoverEffect> = {}): HandoverEffect => ({ state: "complete", evidence: sha256Text(canonicalJson(evidence)), ...extra });
 const unsupported = (detail: string): HandoverEffect => ({ state: "unsupported", detail });
@@ -13,7 +14,7 @@ const unsupported = (detail: string): HandoverEffect => ({ state: "unsupported",
  * can use the authenticated user only when that policy explicitly permits it;
  * no forged Bot sender, credential request or new scheduler is introduced. */
 export function createNativeBotHandover(deps: NativeContinuityContext, scopeId: string, timeoutMs: number,
-  authorized?: (request: BotWorkflowRequest) => Promise<boolean>) {
+  authorized?: (request: BotWorkflowRequest) => Promise<boolean>, hooks: ContinuityStoreHooks = {}) {
   const gateway = deps.gateway(), controls = openContinuityControls({ durableRoot: deps.boxRuntimeRoot, scopeId }); let generation: string | undefined;
   const check = <A>(response: { result: A; discovery: ContinuityDiscovery }): A => {
     const current = canonicalJson([response.discovery.baseUrl, response.discovery.pid, response.discovery.startedAt]);
@@ -200,5 +201,5 @@ export function createNativeBotHandover(deps: NativeContinuityContext, scopeId: 
       return observed.state === "complete" ? observed : { state: "unknown" };
     },
   };
-  return { program: openBotHandover({durableRoot:deps.boxRuntimeRoot,scopeId,native:port}), port, tail, routines, roster };
+  return { program: openBotHandover({durableRoot:deps.boxRuntimeRoot,scopeId,native:port},hooks), port, tail, routines, roster };
 }

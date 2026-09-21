@@ -5,6 +5,7 @@ import { checkWebRequest, WebBoundaryError, type WebConfiguration } from "./conf
 import { bridgeEventStream } from "./event-stream.ts";
 
 const readPaths = [
+  /^\/v1\/handover-operations\/[a-f0-9]{64}\/[a-f0-9-]{36}$/,
   /^\/v1\/host-health$/,
   /^\/v1\/context-compactions\/[a-f0-9-]{36}$/, /^\/v1\/context-compaction-operations\/[a-f0-9]{64}\/[a-f0-9-]{36}$/,
   /^\/v1\/contexts\/[a-f0-9-]{36}$/, /^\/v1\/context-operations\/[a-f0-9]{64}\/[a-f0-9-]{36}$/,
@@ -22,7 +23,7 @@ const readPaths = [
   /^\/v1\/model-operations\/[0-9a-f-]{36}$/, /^\/v1\/console\/session$/,
 ];
 readPaths.push(/^\/v1\/incidents\/[^/]+$/, /^\/v1\/incident-operations\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/, /^\/v1\/observation-events\/watch$/);
-const writePaths = new Set(["/v1/context-compactions", "/v1/context-compaction-continuations", "/v1/context-changes", "/v1/context-continuations", "/v1/protection-changes", "/v1/material-changes", "/v1/setup-changes", "/v1/model-changes", "/v1/incident-changes", "/v1/notification-receiver-changes", "/v1/notification-tests", "/v1/console/redeem", "/v1/console/logout"]);
+const writePaths = new Set(["/v1/handover-changes", "/v1/handover-continuations", "/v1/context-compactions", "/v1/context-compaction-continuations", "/v1/context-changes", "/v1/context-continuations", "/v1/protection-changes", "/v1/material-changes", "/v1/setup-changes", "/v1/model-changes", "/v1/incident-changes", "/v1/notification-receiver-changes", "/v1/notification-tests", "/v1/console/redeem", "/v1/console/logout"]);
 const securityHeaders = { "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" };
 
 function consoleCookie(request: Request, origin: string): string | undefined {
