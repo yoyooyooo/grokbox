@@ -1,9 +1,9 @@
 import {expect,test} from "bun:test";
 import {mkdtemp,rm} from "node:fs/promises";import {join} from "node:path";import {tmpdir} from "node:os";import {randomUUID} from "node:crypto";
-import {openBotLifecycle,openContinuityControls,type BotLifecyclePort} from "../packages/box-runtime/src/runtime.ts";
-import {botWorkflowRequest} from "../packages/runtime-kernel/src/continuity.ts";
+import {openBotLifecycle,openContinuityControls,createNativeBotHandover,createManagementGateway,publishConfigFile,type BotLifecyclePort} from "../packages/box-runtime/src/runtime.ts";
+import {botWorkflowRequest,handoverItemId} from "../packages/runtime-kernel/src/continuity.ts";
 import {ownedOwnershipSnapshot} from "../packages/box-runtime/test/ownership-fixture.ts";
-import {captureCli,writeDiscovery} from "./helpers.ts";
+import {captureCli} from "./helpers.ts";
 const old="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",target="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",peer="cccccccc-cccc-4ccc-8ccc-cccccccccccc",group="dddddddd-dddd-4ddd-8ddd-dddddddddddd",scopeId="e".repeat(64);
 async function fixture(){
  const root=await mkdtemp(join(tmpdir(),"handover-cli-")),operationId=randomUUID();
@@ -16,11 +16,18 @@ async function fixture(){
  const transcripts=new Map<string,any[]>([[old,[{id:"old-inbound",kind:"message",role:"user",content:"Existing task",timestampMs:1,fromAgent:{id:peer}}]],[target,[]],[group,[]],[peer,[]]]);
  const routines=new Map<string,any[]>([[old,[{id:"cron-old",name:"Daily",prompt:"routine-work",trigger:{type:"cron",schedule:"0 8 * * *"},isEnabled:true,createdAt:1}]],[target,[]]]);
  const calls:Array<{path:string;body:any}>=[];let sections:any[]=[],next=0,loseNotice=true;
+ const state={targetReady:true,sourceOwned:true,beforeRead:undefined as undefined|((path:string)=>void)};
  const server=Bun.serve({hostname:"127.0.0.1",port:0,fetch:async req=>{
   const path=new URL(req.url).pathname;if(path==="/health")return Response.json({ok:true});
   if(req.headers.get("Authorization")!=="Bearer owned-token")return Response.json({}, {status:401});
   const b=await req.json() as any;calls.push({path,body:b});
-  if(path==="/api/getHostStatus")return Response.json({grokboxOwnership:ownedOwnershipSnapshot([old,target,peer,group],{scopeId,nowMs:Date.now(),serverHarness:"box",localHarness:"box"})});
+  state.beforeRead?.(path);
+  if(path==="/api/getHostStatus"){
+   const proof=ownedOwnershipSnapshot([old,target,peer,group],{scopeId,nowMs:Date.now(),serverHarness:"box",localHarness:"box"});
+   if(!state.targetReady){const row=proof.agents.find(r=>r.agentId===target)!;row.server.harness="temporal";row.local.before.harness="temporal";row.local.after.harness="temporal";}
+   proof.agents.find(r=>r.agentId===old)!.server.viewerIsOwner=state.sourceOwned;
+   return Response.json({grokboxOwnership:proof});
+  }
   if(path==="/api/listAgents")return Response.json(rows);
   if(path==="/api/getAgentTranscriptTail")return Response.json({entries:transcripts.get(b.id)??[],hasMore:false});
   if(path==="/api/getAgentAutomations")return Response.json(routines.get(b.id)??[]);
@@ -42,10 +49,32 @@ async function fixture(){
   if(path==="/api/setGroupMembers"){rows.find(r=>r.id===b.id).memberIds=b.memberAgentIds;return Response.json(rows.find(r=>r.id===b.id));}
   return Response.json({error:"unexpected"},{status:404});
  }});
- const discoveryPath=await writeDiscovery({port:server.port!,pid:12345,startedAt:123456,token:"owned-token"});
+ const discoveryPath=join(root,"gateway.json");await publishConfigFile(discoveryPath,{scheme:"http",host:"127.0.0.1",port:server.port!,pid:12345,startedAt:123456,token:"owned-token"});
  const deps={configDir:join(root,"config"),boxRuntimeRoot:root,env:{},discoveryPath,transport:"local" as const,skillsDir:join(import.meta.dir,"../skills")};
- return {root,operationId,rows,routines,transcripts,calls,sections:()=>sections,deps,close:async()=>{server.stop(true);await rm(root,{recursive:true,force:true});}};
+ const management=createManagementGateway({discoveryPath,configurationRoot:root,timeoutMs:2000}),signal=new AbortController().signal;
+ const context={boxRuntimeRoot:root,env:{},signal,gateway:()=>management.continuityAccess(signal),ownershipRead:management.ownershipRead};
+ return {root,operationId,request,state,rows,routines,transcripts,calls,sections:()=>sections,deps,
+  adapter:(authorized?:()=>Promise<boolean>)=>createNativeBotHandover(context,scopeId,2000,authorized),
+  close:async()=>{server.stop(true);await rm(root,{recursive:true,force:true});}};
 }
+for(const change of ["target-lost", "permission-revoked", "permission-after-ownership"] as const) test(`native handover ${change} during its last profile read refuses the actual write`,async()=>{
+ const f=await fixture();let allowed=true;
+ try {
+  const adapter=f.adapter(async()=>allowed);expect(await adapter.port.authorize(f.request)).toBe(true);
+  f.state.beforeRead=path=>{if(change==="permission-after-ownership"){if(path==="/api/getHostStatus")allowed=false;}else if(path==="/api/listAgents"){if(change==="target-lost")f.state.targetReady=false;else allowed=false;}};
+  const item={itemId:handoverItemId(f.operationId,"old-guidance",old),kind:"old-guidance" as const,dependsOn:[],input:{agentId:old,targetId:target}};
+  await expect(adapter.port.perform(f.request,item,new Map())).rejects.toThrow("policy_changed");
+  expect(f.calls.some(c=>c.path==="/api/updateAgent")).toBe(false);expect(f.rows.find(r=>r.id===old).description).toBe("original persona");
+ }finally{await f.close();}
+});
+test("mechanical handover requires current successor ownership and the original source account, not only a stable scope",async()=>{
+ const f=await fixture();try{
+  f.state.targetReady=false;await expect(f.adapter().program.advance(f.operationId)).rejects.toThrow("policy_changed");
+  f.state.targetReady=true;f.state.sourceOwned=false;await expect(f.adapter().program.advance(f.operationId)).rejects.toThrow("policy_changed");
+  expect(f.calls.every(c=>c.path==="/api/getHostStatus")).toBe(true);
+  expect(await openContinuityControls({durableRoot:f.root,scopeId}).items(f.operationId)).toEqual([]);
+ }finally{await f.close();}
+});
 test("mechanical handover uses formal user notices, preserves group peers, creates disabled cron then stops old before enabling new",async()=>{
  const f=await fixture();try{
   for(let i=0;i<8;i++){

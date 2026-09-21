@@ -12,6 +12,7 @@ const suites={
  core:["packages/runtime-kernel/test/compaction-contract.test.ts","packages/box-runtime/test/journal-settlement.test.ts","packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
   "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/source-recipes.test.ts","packages/box-runtime/test/capability-witness.test.ts",
   "packages/box-runtime/test/alert-slices.test.ts","packages/box-runtime/test/host-managed-retry.test.ts","packages/box-runtime/test/host-native-error-scope.test.ts",
+  "packages/box-runtime/test/bot-lifecycle.test.ts","packages/box-runtime/test/bot-convergence.test.ts","packages/box-runtime/test/bot-protection.test.ts","./test/bot-handover-cli.test.ts",
   "packages/box-runtime/test/context-maintenance-control.test.ts","packages/box-runtime/test/context-maintenance-lifetime.test.ts","packages/box-runtime/test/compaction-management.test.ts",
   "packages/runtime-kernel/test/context-policy.test.ts","packages/runtime-kernel/test/context-selection.test.ts","./test/context-commands.test.ts","apps/web/test/operations.test.ts",
   "packages/box-runtime/test/continuity-sidecar.test.ts",

@@ -4,6 +4,8 @@ import { continuityId, recordInbound, handoverPolicy, assessRetirement, CurrentS
 import { canonicalJson,sha256Text } from "@grokbox/runtime-kernel/hash";
 import { continuityWorkflowPrograms } from "../io/continuity-workflows.node.ts";
 import type { ContinuityStoreInput } from "../io/continuity-store.node.ts";
+import type { ContinuityStoreHooks } from "../io/continuity-database.node.ts";
+import { replacementIsActivated } from "./bot-handover.runtime.ts";
 export type ConvergenceSample={cursor:string|null;observedAtMs:number;newMessages:number;contiguous:boolean;state:Record<string,unknown>;
   targetUsable:boolean;dependenciesVerified:boolean;resourcesIndependent:boolean;deletionFenceAvailable:boolean};
 export type BotConvergencePort={authorize:(request:BotWorkflowRequest)=>Promise<boolean>;
@@ -14,25 +16,26 @@ const io=<A>(f:()=>Promise<A>)=>Effect.uninterruptible(Effect.tryPromise({try:f,
 /** Quiet is a coverage-backed observation, not a TTL or an App activity bit.
  * Retirement is an independently authorized operation and cannot be delegated
  * to a model saying that its work is done. */
-export function openBotConvergence(input:ContinuityStoreInput & {native:BotConvergencePort}){
-  const db=continuityWorkflowPrograms(input);
+export function openBotConvergence(input:ContinuityStoreInput & {native:BotConvergencePort},hooks:ContinuityStoreHooks={}){
+  const db=continuityWorkflowPrograms(input,hooks);
   const sample=(operationId:string)=>Effect.gen(function*(){
     const request=yield* db.request(operationId),status=yield* db.status(operationId);
-    if(request.kind!=="replace"||!status.targetId)return yield* Effect.fail(new CurrentStateFailure("invalid_request"));
+    if(!replacementIsActivated(request,status))return yield* Effect.fail(new CurrentStateFailure("not_prepared"));
     if(!(yield* io(()=>input.native.authorize(request))))return yield* Effect.fail(new CurrentStateFailure("policy_changed"));
     const key=continuityId(operationId,"inbound-watermark"),prior=yield* db.subject(key);
     const observed=yield* io(()=>input.native.observe(request,status.targetId!,prior?.data.source??null)).pipe(Effect.catch(()=>Effect.succeed({
       cursor:null,observedAtMs:Date.now(),newMessages:0,contiguous:false,state:prior?.data.source??{},
       targetUsable:false,dependenciesVerified:false,resourcesIndependent:false,deletionFenceAvailable:false,
     } satisfies ConvergenceSample)));
+    if(!(yield* io(()=>input.native.authorize(request))))return yield* Effect.fail(new CurrentStateFailure("policy_changed"));
     const watermark=recordInbound(prior?.data.watermark as InboundWatermark??null,observed);
     const items=yield* db.handoverItems(operationId),remaining=items.filter(i=>i.state!=="complete").length,unknown=items.filter(i=>i.state==="effect_unknown").length;
     const assessment=assessRetirement({policy:handoverPolicy(request.handover),nowMs:observed.observedAtMs,createdAtMs:status.createdAtMs,
       inbound:watermark,remaining,unknown,...observed});
     const receipt={operationId,sourceId:request.sourceId,targetId:status.targetId,watermark,assessment,remaining,unknown,
       evidenceHash:sha256Text(canonicalJson([operationId,watermark,remaining,unknown,observed.targetUsable,observed.dependenciesVerified,observed.resourcesIndependent,observed.deletionFenceAvailable]))};
-    yield* db.updateSubject(key,prior?.revision??0,status.targetId,0,{watermark,source:observed.state,receipt});
-    return {request,targetId:status.targetId,observed,receipt};
+    yield* db.updateSubject(key,prior?.revision??0,status.targetId!,0,{watermark,source:observed.state,receipt});
+    return {request,targetId:status.targetId!,observed,receipt};
   });
   const retire=(operationId:string,expectedEvidence:string)=>Effect.gen(function*(){
     const before=yield* db.subject(continuityId(operationId,"inbound-watermark"));
@@ -45,6 +48,7 @@ export function openBotConvergence(input:ContinuityStoreInput & {native:BotConve
     if(record?.state==="complete")return {state:"retired",...record.result};
     if(record?.state!=="prepared")return {state:"unknown",operationId,sourceDeleted:"unknown"};
     yield* db.transitionControl(control,"prepared","effect_unknown",null);
+    if(!(yield* io(()=>input.native.authorize(current.request))))return yield* Effect.fail(new CurrentStateFailure("policy_changed"));
     const result=yield* io(()=>input.native.delete(current.request,current.targetId,current.observed));
     if(!result.deleted)return {state:"unknown",operationId,sourceDeleted:"unknown"};
     yield* db.transitionControl(control,"effect_unknown","complete",result);yield* db.phase(operationId,"retired");

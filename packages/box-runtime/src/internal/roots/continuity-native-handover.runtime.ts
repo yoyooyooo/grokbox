@@ -1,10 +1,11 @@
-import { openBotHandover, type BotHandoverPort, type HandoverEffect } from "./bot-handover.runtime.ts";
-import { handoverPolicy, handoverItemId, discoverPeers, isContinuityUuid, CurrentStateFailure,
+import { openBotHandover, replacementIsActivated, type BotHandoverPort, type HandoverEffect } from "./bot-handover.runtime.ts";
+import { handoverPolicy, handoverItemId, discoverPeers, isContinuityUuid, botWorkflowDigest, CurrentStateFailure,
   type BotWorkflowRequest, type HandoverPlanItem } from "@grokbox/runtime-kernel/continuity";
-import { parseAgentTitle, formatAgentTitle, inspectOwnership } from "@grokbox/runtime-kernel/contract";
+import { parseAgentTitle, formatAgentTitle, inspectOwnership, decideManagedOwnership } from "@grokbox/runtime-kernel/contract";
 import { projectNativeRoutines, observedRoutineDefinitionDigest } from "@grokbox/runtime-kernel/routines";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import type { NativeContinuityContext, ContinuityGateway, ContinuityDiscovery } from "../io/continuity-gateway.node.ts";
+import { openContinuityControls } from "./continuity-control.runtime.ts";
 
 const done = (evidence: unknown, extra: Partial<HandoverEffect> = {}): HandoverEffect => ({ state: "complete", evidence: sha256Text(canonicalJson(evidence)), ...extra });
 const unsupported = (detail: string): HandoverEffect => ({ state: "unsupported", detail });
@@ -13,14 +14,23 @@ const unsupported = (detail: string): HandoverEffect => ({ state: "unsupported",
  * no forged Bot sender, credential request or new scheduler is introduced. */
 export function createNativeBotHandover(deps: NativeContinuityContext, scopeId: string, timeoutMs: number,
   authorized?: (request: BotWorkflowRequest) => Promise<boolean>) {
-  const gateway = deps.gateway(); let generation: string | undefined;
+  const gateway = deps.gateway(), controls = openContinuityControls({ durableRoot: deps.boxRuntimeRoot, scopeId }); let generation: string | undefined;
   const check = <A>(response: { result: A; discovery: ContinuityDiscovery }): A => {
     const current = canonicalJson([response.discovery.baseUrl, response.discovery.pid, response.discovery.startedAt]);
     if (generation !== undefined && generation !== current) throw new CurrentStateFailure("source_changed");
     generation = current; return response.result;
   };
-  const rpc = async (method: Parameters<ContinuityGateway["rpc"]>[0], body: Record<string, unknown>, write = false) => check(await gateway.rpc(method, body,
-    { timeoutMs, maxResponseBytes: 512 * 1024, ...(write ? { write: true, singleAttempt: true, unknownOutcomeCode: "operation_outcome_unknown" } : {}) }));
+  const effect = async <A>(request: BotWorkflowRequest, run: () => Promise<A>): Promise<A> => {
+    if (!await port.authorize(request)) throw new CurrentStateFailure("policy_changed");
+    deps.signal?.throwIfAborted();
+    return run();
+  };
+  const rpc = async (method: Parameters<ContinuityGateway["rpc"]>[0], body: Record<string, unknown>, write = false, request?: BotWorkflowRequest) => {
+    const run = () => gateway.rpc(method, body, { timeoutMs, maxResponseBytes: 512 * 1024,
+      ...(write ? { write: true, singleAttempt: true, unknownOutcomeCode: "operation_outcome_unknown" } : {}) });
+    if (write && !request) throw new CurrentStateFailure("invalid_request");
+    return check(await (write ? effect(request!, run) : run()));
+  };
   const roster = async () => {
     const r = await gateway.listAgents(timeoutMs); const rows = check({ result: r.agents, discovery: r.discovery });
     if (!Array.isArray(rows) || rows.length > 4096) throw new CurrentStateFailure("material_invalid"); return rows as any[];
@@ -49,9 +59,15 @@ export function createNativeBotHandover(deps: NativeContinuityContext, scopeId: 
     authorize: async request => {
       deps.signal?.throwIfAborted();
       if (request.management && !authorized || authorized && !await authorized(request)) return false;
-      const id = source(request), proof = check(await gateway.getAgentOwnership([id], Math.min(timeoutMs,15000))) as any;
-      const at = Date.parse(proof?.serverObservedAt ?? "");
-      return proof?.scope?.id === scopeId && proof.scope.stable === true && Number.isFinite(at) && Date.now() >= at && Date.now()-at <= 5000;
+      const id = source(request), saved = await controls.request(request.operationId), workflow = await controls.workflow(request.operationId);
+      if (botWorkflowDigest(saved) !== botWorkflowDigest(request) || !replacementIsActivated(saved, workflow)) return false;
+      const proof = check(await gateway.getAgentOwnership([id, workflow.targetId!], Math.min(timeoutMs,15000))) as any;
+      const at = Date.parse(proof?.serverObservedAt ?? ""), target = decideManagedOwnership({ agentId: workflow.targetId!, snapshot: proof, nowMs: Date.now() });
+      const sourceRows = Array.isArray(proof?.agents) ? proof.agents.filter((row: any) => row.agentId === id) : [];
+      const valid = proof?.scope?.id === scopeId && proof.scope.stable === true && Number.isFinite(at) && Date.now() >= at && Date.now()-at <= 5000
+        && target.ok && target.evidence.scopeId === scopeId && sourceRows.length === 1 && sourceRows[0].serverEvidence === "found" && sourceRows[0].server?.viewerIsOwner === true;
+      deps.signal?.throwIfAborted();
+      return valid && (!authorized || await authorized(request));
     },
     discover: async (request, targetId, knownIds) => {
       const old = source(request), policy = handoverPolicy(request.handover), known = new Set(knownIds), items: HandoverPlanItem[] = [];
@@ -137,7 +153,7 @@ export function createNativeBotHandover(deps: NativeContinuityContext, scopeId: 
         const row = await exact(old), marker = `[grokbox-handoff:${request.operationId}] successor=${targetId}`;
         const description = `${row.description ?? ""}\n\n${marker}\n你正在交接。已转移的职责请指向 ${targetId}，未结旧任务保留原任务ID并转交结果；不重复派发任务、不重复群发、不自行删除。未明确转交的工作先核实。`;
         if (description.length > 32768) return unsupported("profile_instruction_budget");
-        await rpc("updateAgent", {id:old,profile:{name:row.name,description,title:row.title??"",avatarShape:row.avatarShape??"",avatarColor:row.avatarColor??""}},true);
+        await rpc("updateAgent", {id:old,profile:{name:row.name,description,title:row.title??"",avatarShape:row.avatarShape??"",avatarColor:row.avatarColor??""}},true,request);
       } else if (item.kind === "title-old" || item.kind === "title-new") {
         const id = String(item.input.agentId), row = await exact(id), parsed = parseAgentTitle(row.title);
         const proof = check(await gateway.getAgentOwnership([id],Math.min(timeoutMs,15000)));
@@ -146,39 +162,39 @@ export function createNativeBotHandover(deps: NativeContinuityContext, scopeId: 
         const fields = {...parsed.fields,owner,extra:[...parsed.fields.extra.filter(([k])=>k!=="handoff"&&k!=="next"),["handoff",item.kind==="title-old"?"redirecting":"active"] as const,
           ...(item.kind==="title-old"?[["next",targetId] as const]:[])]};
         if (owner !== "box") { delete fields.m; delete fields.e; }
-        await rpc("updateAgent",{id,profile:{name:row.name,description:row.description??"",title:formatAgentTitle(parsed.user,fields),avatarShape:row.avatarShape??"",avatarColor:row.avatarColor??""}},true);
+        await rpc("updateAgent",{id,profile:{name:row.name,description:row.description??"",title:formatAgentTitle(parsed.user,fields),avatarShape:row.avatarShape??"",avatarColor:row.avatarColor??""}},true,request);
       } else if (item.kind === "sidebar") {
         const settings = await rpc("getHostSettings",{}) as any;
         if (!Array.isArray(settings?.sidebarSections) || settings.sidebarSections.length > 128) return unsupported("sidebar_shape_unavailable");
         const sections = settings.sidebarSections.map((s:any)=>({id:s.id,name:s.name,agentIds:s.agentIds,...(typeof s.isCollapsed==="boolean"?{isCollapsed:s.isCollapsed}:{})}));
         const section = sections.find((s:any)=>s.name==="替身交接期");
-        if (section) await rpc("assignAgentToSidebarSection",{agentId:old,sectionId:section.id},true);
+        if (section) await rpc("assignAgentToSidebarSection",{agentId:old,sectionId:section.id},true,request);
         else {
           const fresh = await rpc("getHostSettings",{}) as any;
           if (canonicalJson(fresh?.sidebarSections) !== canonicalJson(settings.sidebarSections)) return {state:"not_dispatched",detail:"sidebar_changed"};
-          await rpc("setHostSettings",{sidebarSections:[...sections,{id:handoverItemId(request.operationId,"sidebar","section"),name:"替身交接期",agentIds:[old],isCollapsed:false}]},true);
+          await rpc("setHostSettings",{sidebarSections:[...sections,{id:handoverItemId(request.operationId,"sidebar","section"),name:"替身交接期",agentIds:[old],isCollapsed:false}]},true,request);
         }
       } else if (item.kind === "group-notice" || item.kind === "dm-notice") {
         if (!policy.allowUserMessages) return unsupported("user_message_authorization_required");
-        await rpc("sendPrompt",{agentId:item.input.destination,prompt:notice(request,item),clientNonce:item.itemId},true);
+        await rpc("sendPrompt",{agentId:item.input.destination,prompt:notice(request,item),clientNonce:item.itemId},true,request);
       } else if (item.kind === "group-members") {
         const group = await exact(String(item.input.groupId));
         if (!Array.isArray(group.memberIds) || canonicalJson(group.memberIds) !== canonicalJson(item.input.before)) return {state:"not_dispatched",detail:"group_members_changed"};
-        await rpc("setGroupMembers",{id:group.id,memberAgentIds:[...new Set(group.memberIds.map((id:string)=>id===old?targetId:id))]},true);
+        await rpc("setGroupMembers",{id:group.id,memberAgentIds:[...new Set(group.memberIds.map((id:string)=>id===old?targetId:id))]},true,request);
       } else if (item.kind === "routine-create") {
-        const output = (await gateway.routineProvision({action:"apply",agentId:targetId,operationId:item.itemId,confirmed:true,blueprint:item.input.blueprint},timeoutMs)).result as any;
+        const output = (await effect(request, () => gateway.routineProvision({action:"apply",agentId:targetId,operationId:item.itemId,confirmed:true,blueprint:item.input.blueprint},timeoutMs))).result as any;
         return output.state === "disabled_definition_observed" ? done([output.routineId,output.revision],{routineId:output.routineId,revision:output.revision}) : {state:"unknown"};
       } else if (item.kind === "routine-stop") {
         const row = (await routines(old)).catalog.routines.find(r=>r.id===item.input.routineId);
         if (!row || row.definitionRevision !== item.input.definitionRevision) return {state:"not_dispatched",detail:"source_routine_changed"};
-        if (row.enabled) await gateway.agentRoutines({action:"disable",agentId:old,routineId:row.id,expectedRevision:row.revision,operationId:item.itemId,confirmed:true},timeoutMs);
+        if (row.enabled) await effect(request, () => gateway.agentRoutines({action:"disable",agentId:old,routineId:row.id,expectedRevision:row.revision,operationId:item.itemId,confirmed:true},timeoutMs));
       } else if (item.kind === "routine-enable") {
         const created = completed.get(String(item.input.createItem)); if (!created?.routineId) return unsupported("target_routine_unconfirmed");
         const row = (await routines(targetId)).catalog.routines.find(r=>r.id===created.routineId);
         if (!row || row.revision !== created.revision) return {state:"not_dispatched",detail:"target_routine_changed"};
         const currentSource = (await routines(old)).catalog.routines.find(r=>r.id===item.input.sourceRoutineId);
         if (!currentSource || currentSource.enabled || currentSource.definitionRevision !== item.input.sourceDefinitionRevision) return {state:"not_dispatched",detail:"source_routine_no_longer_stopped"};
-        if (!row.enabled) await gateway.agentRoutines({action:"enable",agentId:targetId,routineId:row.id,expectedRevision:row.revision,operationId:item.itemId,confirmed:true},timeoutMs);
+        if (!row.enabled) await effect(request, () => gateway.agentRoutines({action:"enable",agentId:targetId,routineId:row.id,expectedRevision:row.revision,operationId:item.itemId,confirmed:true},timeoutMs));
       }
       const observed = await port.inspect(request,item,completed);
       return observed.state === "complete" ? observed : { state: "unknown" };

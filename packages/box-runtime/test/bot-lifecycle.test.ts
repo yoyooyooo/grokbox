@@ -3,6 +3,8 @@ import {mkdtemp,rm,stat} from "node:fs/promises";
 import {tmpdir} from "node:os";import {join} from "node:path";import {randomUUID} from "node:crypto";
 import {openBotLifecycle,openBotHandover,openContinuityControls,type BotLifecyclePort,type BotHandoverPort} from "../src/runtime.ts";
 import {botWorkflowRequest,continuityId,handoverItemId} from "@grokbox/runtime-kernel/continuity";
+import { Effect } from "effect";
+import { continuityWorkflowPrograms } from "../src/internal/io/continuity-workflows.node.ts";
 const source="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",target="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",scopeId="c".repeat(64);
 async function fixture(kind:"clone"|"replace"|"spawn"="clone"){
  const root=await mkdtemp(join(tmpdir(),"bot-lifecycle-test-")),calls:string[]=[],request=botWorkflowRequest({version:1,operationId:randomUUID(),scopeId,kind,sourceId:kind==="spawn"?null:source,profile:{name:"new bot"},modelRef:null,instructions:"explicit duty",snapshotId:null,activate:kind!=="clone",start:kind==="spawn",maxRunMs:1000,policyRevision:"d".repeat(64)});
@@ -58,6 +60,53 @@ test("later failure retains target identity and resumes the same safe phase with
 });
 test("authority revocation stops before identity or native state changes",async()=>{
  const f=await fixture();try{f.stop();expect((await f.program.advance(f.request)).blocked).toBe(true);expect(f.calls).toEqual([]);}finally{await f.close();}
+});
+for (const stage of ["initialize", "activate"]) test(`handover cannot use requested activation when ${stage} has not completed`, async () => {
+ const f=await fixture("replace");let calls=0;
+ try {
+  f.fail(stage);await f.program.advance(f.request);
+  const h=openBotHandover({durableRoot:f.root,scopeId,native:{authorize:async()=>{calls++;return true;},discover:async()=>{calls++;return {items:[],coverage:"complete"};},inspect:async()=>{calls++;return {state:"not_dispatched"};},perform:async()=>{calls++;return {state:"complete"};}}});
+  await expect(h.advance(f.request.operationId)).rejects.toThrow("not_prepared");expect(calls).toBe(0);
+ } finally { await f.close(); }
+});
+for (const observed of ["not_dispatched", "complete"] as const) test(`handover rechecks permission after an awaited ${observed} inspection before writing or dispatch`, async () => {
+ const f=await fixture("replace");let allowed=true,effects=0;
+ try {
+  await f.program.advance(f.request);const itemId=handoverItemId(f.request.operationId,"title-new",target);
+  const h=openBotHandover({durableRoot:f.root,scopeId,native:{authorize:async()=>allowed,
+   discover:async()=>({coverage:"complete",items:[{itemId,kind:"title-new",dependsOn:[],input:{targetId:target}}]}),
+   inspect:async()=>{allowed=false;return {state:observed,evidence:"1".repeat(64)};},perform:async()=>{effects++;return {state:"complete"};}}});
+  await h.advance(f.request.operationId).catch(()=>undefined);
+  expect(effects).toBe(0);
+  expect((await openContinuityControls({durableRoot:f.root,scopeId}).items(f.request.operationId))[0]?.state).toBe("prepared");
+ } finally { await f.close(); }
+});
+test("permission revoked by the actual handover claim commit prevents dispatch and cannot later replay it", async () => {
+ const f=await fixture("replace");let allowed=true,effects=0;
+ try {
+  await f.program.advance(f.request);const itemId=handoverItemId(f.request.operationId,"title-new",target),controls=openContinuityControls({durableRoot:f.root,scopeId});
+  const h=openBotHandover({durableRoot:f.root,scopeId,native:{authorize:async()=>allowed,
+   discover:async(_r,_t,known)=>({coverage:"complete",items:known.includes(itemId)?[]:[{itemId,kind:"title-new",dependsOn:[],input:{targetId:target}}]}),
+   inspect:async()=>({state:"not_dispatched"}),perform:async()=>{effects++;return {state:"complete"};}}},
+   {afterCommit:async label=>{if(label==="handover-progress")allowed=false;}});
+  await expect(h.advance(f.request.operationId)).rejects.toThrow("policy_changed");expect(effects).toBe(0);
+  expect((await controls.items(f.request.operationId))[0]?.state).toBe("effect_unknown");
+  allowed=true;await h.advance(f.request.operationId);expect(effects).toBe(0);
+  expect((await controls.items(f.request.operationId))[0]?.state).toBe("effect_unknown");
+ } finally { await f.close(); }
+});
+test("a retired workflow and a wrong retained successor never become new handover authority", async () => {
+ const f=await fixture("replace");let effects=0;
+ try {
+  await f.program.advance(f.request);const db=continuityWorkflowPrograms({durableRoot:f.root,scopeId});
+  const itemId=handoverItemId(f.request.operationId,"title-new",target);
+  await Effect.runPromise(db.putHandover(f.request.operationId,itemId,"title-new",{targetId:source,dependsOn:[]}));
+  const h=openBotHandover({durableRoot:f.root,scopeId,native:{authorize:async()=>true,discover:async()=>({coverage:"complete",items:[]}),
+   inspect:async()=>{effects++;return {state:"complete"};},perform:async()=>{effects++;return {state:"complete"};}}});
+  await expect(h.advance(f.request.operationId)).rejects.toThrow("integrity_failure");expect(effects).toBe(0);
+  await Effect.runPromise(db.phase(f.request.operationId,"retired"));
+  await expect(h.advance(f.request.operationId)).rejects.toThrow("not_prepared");expect(effects).toBe(0);
+ } finally { await f.close(); }
 });
 test("handover checks independent dependencies, never redispatches unknown messages, and accepts later readback",async()=>{
  const f=await fixture("replace");try{
