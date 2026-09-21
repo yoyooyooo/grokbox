@@ -196,7 +196,7 @@ test("concurrent metadata readers keep a promoted identity visible while the ori
     await until(()=>subject(f),v=>!!v?.lastSnapshotRef);await policy(f,{mode:"auto-replace"});f.state.temporal.add(P_BOT);
     await until(()=>subject(f),v=>v?.currentBotRef===`bot:${P_INSTALL}:${P_TARGET}`);
     const failures:string[]=[];
-    for(let n=0;n<80;n++){
+    for(let n=0;n<200;n++){
       await Promise.all(Array.from({length:4},async(_,i)=>{
         try { if(i%2)await readProtectionSubjects(f.root);else await readProtectionSnapshots(f.root,{botId:P_BOT,limit:20}); }
         catch(error){const e=error as any;failures.push(JSON.stringify({name:e?.name,code:e?.code,message:e?.message,reason:e?.reason,cause:e?.cause?.code}));}

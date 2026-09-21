@@ -4,7 +4,7 @@ import { lstat } from "node:fs/promises";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { ContinuityFailure, failContinuity, continuityStorePolicy, isContinuityHash, type ContinuityStorePolicy } from "@grokbox/runtime-kernel/continuity";
 import { openMonitorSqlite, type MonitorSqlite } from "./monitor-sqlite.node.ts";
-import { checkContinuityFile, checkContinuityRoot, continuityPrivateDirectory, syncContinuityDirectory, continuityIoFailure, missingFile } from "./continuity-files.node.ts";
+import { checkContinuityFile, checkContinuitySidecar, checkContinuityRoot, continuityPrivateDirectory, syncContinuityDirectory, continuityIoFailure, missingFile } from "./continuity-files.node.ts";
 
 import { CONTINUITY_WORKFLOW_SCHEMA } from "./continuity-workflow-schema.ts";
 
@@ -66,7 +66,7 @@ export function continuityDatabase(root: string, scopeId: string, policy: Contin
   const checkDirectories = async () => {
     await checkContinuityRoot(root); await continuityPrivateDirectory(directory);
     await continuityPrivateDirectory(join(directory, "objects")); await continuityPrivateDirectory(join(directory, "staging"));
-    for (const suffix of ["-journal", "-wal", "-shm"]) await checkContinuityFile(file + suffix, true);
+    for (const suffix of ["-journal", "-wal", "-shm"]) await checkContinuitySidecar(file + suffix);
   };
   const checkDb = async (db: MonitorSqlite) => {
     const version = await db.first("PRAGMA user_version"), meta = await db.first("SELECT * FROM continuity_meta WHERE singleton=1");

@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, type Stats } from "node:fs";
 import { createHash } from "node:crypto";
 import { link, lstat, mkdir, open, unlink } from "node:fs/promises";
 import { join, parse, relative, resolve } from "node:path";
@@ -38,6 +38,21 @@ export async function checkContinuityFile(path: string, optional = false) {
   try { st = await lstat(path); } catch (e) { if (optional && missingFile(e)) return null; throw e; }
   if (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1 || st.mode & 0o077 || process.getuid && st.uid !== process.getuid()) return failContinuity("unsafe_path");
   return st;
+}
+/** SQLite unlinks a DELETE journal at commit. A racing lstat can return that
+ * retired inode with nlink=0. Reobserve ONLY a private, same-owner, regular
+ * retired sidecar, once; never accept that inode, follow links, repair a path,
+ * or weaken the stricter persistent database/object checks above. */
+export async function checkContinuitySidecar(path: string, inspect: (path: string) => Promise<Stats> = p => lstat(p)) {
+  if (!/(?:-journal|-wal|-shm)$/.test(path)) return failContinuity("invalid_material");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let st: Stats;
+    try { st = await inspect(path); } catch (e) { if (missingFile(e)) return null; throw e; }
+    if (!st.isFile() || st.isSymbolicLink() || st.mode & 0o077 || process.getuid && st.uid !== process.getuid() || st.nlink > 1) return failContinuity("unsafe_path");
+    if (st.nlink === 1) return st;
+    if (st.nlink !== 0) return failContinuity("unsafe_path");
+  }
+  return failContinuity("busy");
 }
 export async function syncContinuityDirectory(path: string) {
   const fd = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
