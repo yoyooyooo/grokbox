@@ -79,17 +79,17 @@ test("central model edits affect future turns but cannot rewrite a captured turn
   expect(() => applyModelRecord(file, first, { ...record("first"), capabilities: { reasoning: false } })).toThrow();
 });
 
-test("legacy configurations import explicit selections without inferring followers", () => {
+test("retired model versions are rejected without modifying inputs or inventing default followers", () => {
   for (const version of [1, 2]) {
     const assignment = version === 1 ? first : { modelId: first };
     const source = { version, models: { [first]: record("first") }, assignments: { main: assignment, agents: { bot: assignment } } };
     const bytes = JSON.stringify(source);
-    const imported = parseModelsFile(source);
-    expect(imported.version).toBe(3);
-    expect(imported.assignments.agents.bot).toEqual({ modelId: first });
+    expect(() => parseModelsFile(source)).toThrow("current version 3");
     expect(JSON.stringify(source)).toBe(bytes);
-    expect(captureManagedSelection(applyReset(imported), "bot").kind).toBe("managed");
   }
+  const current = applyUse(fixture(), first, "bot");
+  expect(current.assignments.agents.bot).toEqual({ modelId: first });
+  expect(captureManagedSelection(applyReset(current), "bot").kind).toBe("managed");
 });
 
 test("model patches preserve omitted credentials and capabilities without altering captures", () => {

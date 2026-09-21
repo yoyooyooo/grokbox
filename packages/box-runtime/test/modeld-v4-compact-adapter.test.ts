@@ -33,7 +33,7 @@ const overflow = new BackendFailure("overflow_candidate", {
 
 function file() {
   return parseModelsFile({
-    version: 1,
+    version: 3,
     models: {
       "openai/gpt": {
         provider: "openai",
@@ -45,7 +45,7 @@ function file() {
         contextWindowTokens: 200000,
       },
     },
-    assignments: { main: null, agents: { a: "openai/gpt" } },
+    assignments: { main: null, agents: { a: { modelId: "openai/gpt" } } },
   });
 }
 

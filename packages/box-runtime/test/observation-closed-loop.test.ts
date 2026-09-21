@@ -187,7 +187,7 @@ describe("desired/actual observation closed loop", () => {
 
   test("models arrays cannot silently become empty valid objects", async () => {
     const f = await configuredFixture(false);
-    for (const models of [[], { version: 1, models: [] }, { version: 1, assignments: [] }, { version: 1, assignments: { agents: [] } }]) {
+    for (const models of [[], { version: 3, models: [] }, { version: 3, assignments: [] }, { version: 3, assignments: { agents: [] } }]) {
       await fs.writeFile(modelsPath(f.root), JSON.stringify(models));
       const status = await f.status();
       expect(status.facets.bridge.value?.coverage).not.toBe("attested");
@@ -196,7 +196,7 @@ describe("desired/actual observation closed loop", () => {
 
   test("undefined model assignment is invalid configuration, not route-ready merely because modeld runs", async () => {
     const f = await configuredFixture();
-    await fs.writeFile(modelsPath(f.root), JSON.stringify({ version: 1, models: {}, assignments: { main: "missing/model", agents: {} } }));
+    await fs.writeFile(modelsPath(f.root), JSON.stringify({ version: 3, models: {}, assignments: { main: { modelId: "missing/model" }, agents: {} } }));
     const status = await f.status();
     expect(status.facets.bridge.value?.coverage).toBe("window-open");
   });

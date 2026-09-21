@@ -10,7 +10,7 @@ import { readAuthority, validateAuthorityPermit, type AuthorityPermit } from "..
 import { captureManagedSelection, parseModelsFile, STUB_ECHO_MODEL_ID } from "../src/selection.ts";
 import { createCountedSeams, fakeBackendAuthLayer, fakeConfigurationReadLayer, fakeModelBackendLayer } from "../src/testing.ts";
 
-const models = parseModelsFile({ version: 1, models: {}, assignments: { main: null, agents: { fixture: STUB_ECHO_MODEL_ID } } });
+const models = parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: { fixture: { modelId: STUB_ECHO_MODEL_ID } } } });
 const selected = captureManagedSelection(models, "fixture");
 if (selected.kind !== "managed") throw Error("fixture");
 const body = contextSnapshotBody({ version: 1, profileId: "fixture", abiIdentity: "fixture", systemMessages: [], messages: [{ role: "user", content: "synthetic" }], tools: [], options: {} });

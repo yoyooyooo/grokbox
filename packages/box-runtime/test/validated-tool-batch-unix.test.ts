@@ -55,7 +55,7 @@ for (const api of ["chat", "responses"] as const) for (const bad of [false, true
   const agentId = `batch-${randomUUID()}`, turnId = randomUUID(), step1 = randomUUID(), step2 = randomUUID();
   const outcomes: unknown[] = [];
   const model = { id: "openai/batch", provider: api === "chat" ? "openai-chat" : "openai-responses", model: "synthetic", endpoint: "https://batch.invalid/v1", apiKeyRef: "env:SYNTHETIC_KEY", capabilities: { tools: true, vision: false }, contextWindowTokens: 200000 };
-  const models = parseModelsFile({ version: 1, models: { [model.id]: model }, assignments: { main: null, agents: { [agentId]: model.id } } });
+  const models = parseModelsFile({ version: 3, models: { [model.id]: model }, assignments: { main: null, agents: { [agentId]: { modelId: model.id } } } });
   await writeFile(join(root, "models.json"), JSON.stringify(models));
   const bodies: any[] = [];
   const fetchImpl = Object.assign(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {

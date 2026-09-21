@@ -65,7 +65,7 @@ test("managed refusal class distinguishes temporal, unconfirmed, conflict, and u
   });
 });
 
-const models = parseModelsFile({ version: 1, assignments: { main: null, agents: { agent: "stub/echo" } } });
+const models = parseModelsFile({ version: 3, assignments: { main: null, agents: { agent: { modelId: "stub/echo" } } } });
 const selection = captureManagedSelection(models, "agent");
 if (selection.kind !== "managed") throw Error("owned-selection");
 const body = contextSnapshotBody({ version: 1, profileId: "t21-state-root", abiIdentity: "host-abi-v1",

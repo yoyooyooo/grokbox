@@ -39,9 +39,9 @@ const ROOT = {
   bridgeDigest: HEX("d"),
 };
 const echoModels = parseModelsFile({
-  version: 1,
+  version: 3,
   models: {},
-  assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+  assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
 });
 
 const TEST_COMPILE = {
@@ -179,9 +179,9 @@ describe("host fullStream unix", () => {
     const durable = await mkdtemp(join(tmpdir(), "grokbox-t26-stream-d-"));
     const runRoot = await mkdtemp(join(tmpdir(), "grokbox-t26-stream-r-"));
     await writeFile(join(durable, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: { [openaiModel.id]: openaiModel },
-      assignments: { main: null, agents: { "agent-tom": openaiModel.id } },
+      assignments: { main: null, agents: { "agent-tom": { modelId: openaiModel.id } } },
     })}\n`);
     await mkdir(join(durable, "state"), { recursive: true, mode: 0o700 });
     await writeFile(join(durable, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
@@ -257,9 +257,9 @@ describe("host fullStream unix", () => {
       contextWindowTokens: 200000,
     };
     const models = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [openaiModel.id]: openaiModel },
-      assignments: { main: null, agents: { "agent-tom": openaiModel.id } },
+      assignments: { main: null, agents: { "agent-tom": { modelId: openaiModel.id } } },
     });
     const dir = await mkdtemp(join(tmpdir(), "grokbox-t26-tools-"));
     const generation = randomUUID();
@@ -287,9 +287,9 @@ describe("host fullStream unix", () => {
     const durable = await mkdtemp(join(tmpdir(), "grokbox-t26-hook-d-"));
     const runRoot = await mkdtemp(join(tmpdir(), "grokbox-t26-hook-r-"));
     await writeFile(join(durable, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const generation = randomUUID();
     const path = join(runRoot, "modeld.sock");
@@ -373,7 +373,7 @@ describe("host fullStream unix", () => {
     const durable = await mkdtemp(join(tmpdir(), "grokbox-t26-prod-d-"));
     const runRoot = await mkdtemp(join(tmpdir(), "grokbox-t26-prod-r-"));
     await writeFile(join(durable, "models.json"), `${JSON.stringify({
-      version: 1, models: {}, assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+      version: 3, models: {}, assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     await mkdir(join(durable, "state"), { recursive: true, mode: 0o700 });
     await writeFile(join(durable, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });

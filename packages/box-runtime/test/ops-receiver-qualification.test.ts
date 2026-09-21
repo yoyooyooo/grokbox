@@ -139,7 +139,7 @@ test("Host managed selection uses the exact Agent assignment and fingerprints ch
     expect(host.read(AGENT)).toMatchObject({ state: "unavailable", reason: "selection_unavailable" });
     const record = { provider: "openai-chat", model: "PRIVATE_MODEL", endpoint: "https://private.example.invalid/v1", apiKeyRef: "env:PRIVATE_PROVIDER_KEY",
       capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 64000 };
-    const models = { version: 2, models: { custom: record }, assignments: { main: null, agents: {} as Record<string, { modelId: string }> } };
+    const models = { version: 3, models: { custom: record }, assignments: { main: null, agents: {} as Record<string, { modelId: string }> } };
     await writeFile(join(f.root, "models.json"), JSON.stringify(models));
     expect(host.read(AGENT)).toMatchObject({ state: "observed", selection: "native" });
     models.assignments.agents[AGENT] = { modelId: "custom" };

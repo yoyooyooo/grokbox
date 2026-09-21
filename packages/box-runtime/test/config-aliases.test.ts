@@ -12,7 +12,7 @@ async function fixture() {
   const root = join(dir, "durable"), home = join(dir, "config"), installationId = randomUUID();
   await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, role: "box", root, installationId });
   await publishConfigFile(join(root, "config.json"), defaultConfig());
-  await publishConfigFile(join(root, "models.json"), { version: 1, models: {}, assignments: { main: null, agents: {} } });
+  await publishConfigFile(join(root, "models.json"), { version: 3, models: {}, assignments: { main: null, agents: {} } });
   await publishLayoutAliases(home, root, installationId);
   return { home, root };
 }

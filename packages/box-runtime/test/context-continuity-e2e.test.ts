@@ -242,9 +242,9 @@ describe("E06 unknown window/usage and pinned selection", () => {
   test("E06 0/negative/non-integer windows fail closed at parse", () => {
     for (const contextWindowTokens of [0, -1, 1.5, Number.NaN]) {
       expect(() => parseModelsFile({
-        version: 1,
+        version: 3,
         models: { [SYNTHETIC_OPENAI.id]: { ...SYNTHETIC_OPENAI, contextWindowTokens } },
-        assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
+        assignments: { main: null, agents: { "agent-tom": { modelId: SYNTHETIC_OPENAI.id } } },
       })).toThrow(BoxRuntimeError);
     }
   });

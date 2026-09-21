@@ -23,9 +23,9 @@ import {
 describe("kernel selection", () => {
   test("parses stub/echo and refuses literals", () => {
     const file = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "" } },
-      assignments: { main: STUB_ECHO_MODEL_ID, agents: {} },
+      assignments: { main: { modelId: STUB_ECHO_MODEL_ID }, agents: {} },
     });
     expect(file.models[STUB_ECHO_MODEL_ID]?.id).toBe(STUB_ECHO_MODEL_ID);
     expect(routeModelAdmitted(file.models[STUB_ECHO_MODEL_ID]!)).toBe(true);
@@ -38,9 +38,9 @@ describe("kernel selection", () => {
 
   test("selective route does not use main as session fallback", () => {
     const file = applyUse(parseModelsFile({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: STUB_ECHO_MODEL_ID, agents: {} },
+      assignments: { main: { modelId: STUB_ECHO_MODEL_ID }, agents: {} },
     }), STUB_ECHO_MODEL_ID, "agent-1");
     expect(decideRouteSession(file).kind).toBe("official");
     expect(decideRouteSession(file, "agent-1")).toEqual({
@@ -75,9 +75,9 @@ describe("kernel selection", () => {
       dataTypes: ["text", "tools"],
     };
     const base = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": openai },
-      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+      assignments: { main: null, agents: { "agent-a": { modelId: "openai/gpt" } } },
     });
     const first = captureManagedSelection(base, "agent-a");
     const otherBot = applyUse(base, STUB_ECHO_MODEL_ID, "agent-b");
@@ -87,9 +87,9 @@ describe("kernel selection", () => {
     expect(captureManagedSelection(base, "agent-b").kind).toBe("official");
 
     const moved = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": { ...openai, endpoint: "https://other.test/v1" } },
-      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+      assignments: { main: null, agents: { "agent-a": { modelId: "openai/gpt" } } },
     });
     const afterEndpoint = captureManagedSelection(moved, "agent-a");
     expect(afterEndpoint.kind).toBe("managed");
@@ -108,26 +108,26 @@ describe("kernel selection", () => {
       dataTypes: ["text", "tools"],
     };
     const withWindow = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": { ...openai, contextWindowTokens: 200000 } },
-      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+      assignments: { main: null, agents: { "agent-a": { modelId: "openai/gpt" } } },
     });
     expect(withWindow.models["openai/gpt"]?.contextWindowTokens).toBe(200000);
     expect(qualifiedContextWindowTokens(withWindow.models["openai/gpt"]!)).toBe(200000);
     expect(qualifiedContextWindowTokens(withWindow.models["openai/gpt"]!, 128000)).toBe(128000);
     const without = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": openai },
-      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+      assignments: { main: null, agents: { "agent-a": { modelId: "openai/gpt" } } },
     });
     expect(without.models["openai/gpt"]?.contextWindowTokens).toBeUndefined();
     expect(qualifiedContextWindowTokens(without.models["openai/gpt"]!)).toBeUndefined();
     const first = captureManagedSelection(withWindow, "agent-a");
     const same = captureManagedSelection(withWindow, "agent-a");
     const smaller = captureManagedSelection(parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": { ...openai, contextWindowTokens: 32000 } },
-      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+      assignments: { main: null, agents: { "agent-a": { modelId: "openai/gpt" } } },
     }), "agent-a");
     expect(first).toEqual(same);
     expect(first.kind).toBe("managed");
@@ -140,66 +140,43 @@ describe("kernel selection", () => {
       expect(noWindowRev.selectionRevision).not.toBe(first.selectionRevision);
     }
     expect(() => parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": { ...openai, contextWindowTokens: 0 } },
       assignments: { main: null, agents: {} },
     })).toThrow(BoxRuntimeError);
     expect(() => parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": { ...openai, contextWindowTokens: -1 } },
       assignments: { main: null, agents: {} },
     })).toThrow(BoxRuntimeError);
     expect(() => parseModelsFile({
-      version: 1,
+      version: 3,
       models: { "openai/gpt": { ...openai, contextWindowTokens: 1.5 } },
       assignments: { main: null, agents: {} },
     })).toThrow(BoxRuntimeError);
     expect(qualifiedContextWindowTokens(without.models["openai/gpt"]!, "gpt-4")).toBeUndefined();
-    const fromAlias = parseModelsFile({
-      version: 1,
-      models: { "openai/gpt": { ...openai, contextWindow: 200000 } },
-      assignments: { main: null, agents: {} },
-    });
-    expect(fromAlias.models["openai/gpt"]?.contextWindowTokens).toBe(200000);
-    expect("contextWindow" in (fromAlias.models["openai/gpt"] ?? {})).toBe(false);
-    const bothAgree = parseModelsFile({
-      version: 1,
-      models: { "openai/gpt": { ...openai, contextWindowTokens: 200000, contextWindow: 200000 } },
-      assignments: { main: null, agents: {} },
-    });
-    expect(bothAgree.models["openai/gpt"]?.contextWindowTokens).toBe(200000);
-    expect(() => parseModelsFile({
-      version: 1,
-      models: { "openai/gpt": { ...openai, contextWindowTokens: 200000, contextWindow: 32000 } },
-      assignments: { main: null, agents: {} },
-    })).toThrow(BoxRuntimeError);
-    expect(() => parseModelsFile({
-      version: 1,
-      models: { "openai/gpt": { ...openai, contextWindow: 0 } },
-      assignments: { main: null, agents: {} },
-    })).toThrow(BoxRuntimeError);
-    expect(() => parseModelsFile({
-      version: 1,
-      models: { "openai/gpt": { ...openai, contextWindow: -1 } },
-      assignments: { main: null, agents: {} },
-    })).toThrow(BoxRuntimeError);
-    expect(() => parseModelsFile({
-      version: 1,
-      models: { "openai/gpt": { ...openai, contextWindow: 1.5 } },
+    // Pi's external input is adapted by its own boundary below. A canonical
+    // grokbox record never accepts the former alias, even when values agree.
+    for (const window of [
+      { contextWindow: 200000 }, { contextWindowTokens: 200000, contextWindow: 200000 },
+      { contextWindowTokens: 200000, contextWindow: 32000 },
+      { contextWindow: 0 }, { contextWindow: -1 }, { contextWindow: 1.5 },
+    ]) expect(() => parseModelsFile({
+      version: 3, models: { "openai/gpt": { ...openai, ...window } },
       assignments: { main: null, agents: {} },
     })).toThrow(BoxRuntimeError);
   });
 
   test("configured stub contextWindowTokens is selected, not discarded for STUB_ECHO_MODEL", () => {
     const withWindow = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "", contextWindowTokens: 200000 } },
-      assignments: { main: null, agents: { "agent-a": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-a": { modelId: STUB_ECHO_MODEL_ID } } },
     });
     const smaller = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "", contextWindowTokens: 32000 } },
-      assignments: { main: null, agents: { "agent-a": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-a": { modelId: STUB_ECHO_MODEL_ID } } },
     });
     expect(modelForAgent(withWindow, "agent-a")?.contextWindowTokens).toBe(200000);
     expect(modelForAgent(smaller, "agent-a")?.contextWindowTokens).toBe(32000);
@@ -214,11 +191,11 @@ describe("kernel selection", () => {
 
   test("Pi externalCatalog adapts openai-responses models and skips secrets and other APIs", () => {
     const native = parseModelsFile({
-      version: 1,
+      version: 3,
       externalCatalog: ["pi"],
       credentials: { "example-provider-b": "env:MINI_KEY" },
       models: {},
-      assignments: { main: null, agents: { bot: "example-provider-b/cursor-grok-4.6-xhigh" } },
+      assignments: { main: null, agents: { bot: { modelId: "example-provider-b/cursor-grok-4.6-xhigh" } } },
     });
     const resolved = resolveExternalCatalog(native, {
       pi: {
@@ -257,7 +234,7 @@ describe("kernel selection", () => {
 
   test("local models overlay Pi ids and persist without catalog records", () => {
     const native = parseModelsFile({
-      version: 1,
+      version: 3,
       externalCatalog: ["pi"],
       credentials: { mini: "env:MINI_KEY" },
       models: {
@@ -293,10 +270,10 @@ describe("kernel selection", () => {
 
   test("Pi string apiKey is reused as pi-provider ref without copying the secret", () => {
     const native = parseModelsFile({
-      version: 1,
+      version: 3,
       externalCatalog: ["pi"],
       models: {},
-      assignments: { main: null, agents: { bot: "sub2api-xai/grok-4.6" } },
+      assignments: { main: null, agents: { bot: { modelId: "sub2api-xai/grok-4.6" } } },
     });
     const resolved = resolveExternalCatalog(native, {
       pi: {
@@ -329,7 +306,7 @@ describe("kernel selection", () => {
   test("Pi command-form apiKey is skipped unless credentials override", () => {
     const command = "!/usr/bin/env sh -lc 'printf %s placeholder-not-a-key'";
     const native = parseModelsFile({
-      version: 1,
+      version: 3,
       externalCatalog: ["pi"],
       credentials: { kept: "env:KEPT_KEY" },
       models: {},
@@ -367,7 +344,7 @@ describe("kernel selection", () => {
 
   test("credentials override Pi string apiKey auto-reuse", () => {
     const native = parseModelsFile({
-      version: 1,
+      version: 3,
       externalCatalog: ["pi"],
       credentials: { "sub2api-xai": "env:GROKBOX_SUB2API_KEY" },
       models: {},
@@ -388,7 +365,7 @@ describe("kernel selection", () => {
     expect(resolved.models["sub2api-xai/grok-4.6"]?.apiKeyRef).toBe("env:GROKBOX_SUB2API_KEY");
     expect(JSON.stringify(resolved.models)).not.toContain("sk-pi-should-lose");
     expect(() => parseModelsFile({
-      version: 1,
+      version: 3,
       credentials: { "sub2api-xai": "pi-provider:sub2api-xai" },
       models: {},
       assignments: { main: null, agents: {} },
@@ -397,7 +374,7 @@ describe("kernel selection", () => {
 
   test("decideRouteSession names route_model_not_admitted for unofficial providers", () => {
     const file = parseModelsFile({
-      version: 1,
+      version: 3,
       models: {
         "acme/fast": {
           provider: "acme",
@@ -408,7 +385,7 @@ describe("kernel selection", () => {
           dataTypes: ["text", "tools"],
         },
       },
-      assignments: { main: null, agents: { "agent-1": "acme/fast" } },
+      assignments: { main: null, agents: { "agent-1": { modelId: "acme/fast" } } },
     });
     expect(() => decideRouteSession(file, "agent-1")).toThrow(BoxRuntimeError);
     try {

@@ -144,7 +144,7 @@ describe("modeld C1 credentials", () => {
     })}\n`, { mode: 0o600 });
     const store = openRuntimeStore(root, {});
     const native = parseModelsFile({
-      version: 1,
+      version: 3,
       externalCatalog: [{ id: "pi", modelsPath: piPath }],
       models: {},
       assignments: { main: null, agents: {} },

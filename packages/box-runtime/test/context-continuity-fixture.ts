@@ -644,9 +644,9 @@ export async function withFakeHttpSession<T>(input: {
     return input.respond ? await input.respond(requests.length) : sseChatOk("ok", input.usage ?? { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 });
   }, { preconnect: async () => undefined }) as typeof fetch;
   const fileOf = (row: ModelRecord) => parseModelsFile({
-    version: 1,
+    version: 3,
     models: { [row.id]: row },
-    assignments: { main: null, agents: { "agent-tom": row.id } },
+    assignments: { main: null, agents: { "agent-tom": { modelId: row.id } } },
   });
   let models = fileOf(model);
   const dir = await mkdtemp(join(tmpdir(), "grokbox-ctx-cont-"));

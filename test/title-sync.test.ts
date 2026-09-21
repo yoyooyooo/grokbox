@@ -6,6 +6,7 @@ import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
 import type { CliDeps } from "../packages/cli/src/deps.ts";
 import type { GatewayClient } from "../packages/cli/src/gateway.ts";
 import { applyAgentTitles, titleSyncModel } from "../packages/cli/src/title-sync.ts";
+import { openRuntimeStore } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson, startMockGateway, writeDiscovery } from "./helpers.ts";
 
 const A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -261,7 +262,7 @@ test("title show paints from user text and models.json when Server ownership is 
   const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-title-models-"));
   await mkdir(join(boxRuntimeRoot, "state"), { recursive: true });
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({
-    version: 1,
+    version: 3,
     models: {
       "openai-responses/grok-4.6": {
         provider: "openai-responses",
@@ -271,9 +272,10 @@ test("title show paints from user text and models.json when Server ownership is 
         alias: "g46",
       },
     },
-    assignments: { main: null, agents: { [A]: "openai-responses/grok-4.6" } },
-  }));
+    assignments: { main: null, agents: { [A]: { modelId: "openai-responses/grok-4.6" } } },
+  }), { mode: 0o600 });
   try {
+    expect((await openRuntimeStore(boxRuntimeRoot, {}).loadModels()).assignments.agents[A]?.modelId).toBe("openai-responses/grok-4.6");
     const shown = await run(["agents", "title", "show", "--all", "--json"], gateway, { boxRuntimeRoot });
     expect(shown.code).toBe(0);
     const body = parseJson(shown.stdout) as { data: { examined: number; written: number; skipped: number } };
@@ -339,10 +341,10 @@ test("title sync preserves m= when models.json is missing or the assigned record
   });
   const unresolvedRoot = await mkdtemp(join(tmpdir(), "grokbox-title-unresolved-"));
   await writeFile(join(unresolvedRoot, "models.json"), JSON.stringify({
-    version: 1,
+    version: 3,
     models: {},
-    assignments: { main: null, agents: { [A]: "openai-responses/grok-4.6" } },
-  }));
+    assignments: { main: null, agents: { [A]: { modelId: "openai-responses/grok-4.6" } } },
+  }), { mode: 0o600 });
   try {
     const missing = await run(["agents", "title", "sync", "box-bot", "--json"], gateway);
     expect(missing.code).toBe(0);
@@ -372,10 +374,10 @@ test("title sync clears m= only when models.json confirms no assignment", async 
   });
   const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-title-empty-"));
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({
-    version: 1,
+    version: 3,
     models: {},
-    assignments: { main: null, agents: { [TEMPORAL]: "openai-responses/grok-4.6" } },
-  }));
+    assignments: { main: null, agents: { [TEMPORAL]: { modelId: "openai-responses/grok-4.6" } } },
+  }), { mode: 0o600 });
   try {
     const synced = await run(["agents", "title", "sync", "box-bot", "--json"], gateway, { boxRuntimeRoot });
     expect(synced.code).toBe(0);
@@ -396,7 +398,7 @@ test("title sync paints a resolved token onto a showing trailer", async () => {
   });
   const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-title-resolved-"));
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({
-    version: 1,
+    version: 3,
     models: {
       "openai-responses/grok-4.6": {
         provider: "openai-responses",
@@ -406,8 +408,8 @@ test("title sync paints a resolved token onto a showing trailer", async () => {
         alias: "g46",
       },
     },
-    assignments: { main: null, agents: { [A]: "openai-responses/grok-4.6" } },
-  }));
+    assignments: { main: null, agents: { [A]: { modelId: "openai-responses/grok-4.6" } } },
+  }), { mode: 0o600 });
   try {
     const synced = await run(["agents", "title", "sync", "box-bot", "--json"], gateway, { boxRuntimeRoot });
     expect(synced.code).toBe(0);
@@ -445,10 +447,10 @@ test("agents update --title preserves m= when the token is missing or unresolved
   });
   const unresolvedRoot = await mkdtemp(join(tmpdir(), "grokbox-update-unresolved-"));
   await writeFile(join(unresolvedRoot, "models.json"), JSON.stringify({
-    version: 1,
+    version: 3,
     models: {},
-    assignments: { main: null, agents: { [A]: "openai-responses/grok-4.6" } },
-  }));
+    assignments: { main: null, agents: { [A]: { modelId: "openai-responses/grok-4.6" } } },
+  }), { mode: 0o600 });
   try {
     const missing = await run(["agents", "update", "box-bot", "--title", "new"], gateway);
     expect(missing.code).toBe(0);
@@ -474,10 +476,10 @@ test("agents update --title clears m= only when models.json confirms no assignme
   });
   const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-update-empty-"));
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({
-    version: 1,
+    version: 3,
     models: {},
-    assignments: { main: null, agents: { [TEMPORAL]: "openai-responses/grok-4.6" } },
-  }));
+    assignments: { main: null, agents: { [TEMPORAL]: { modelId: "openai-responses/grok-4.6" } } },
+  }), { mode: 0o600 });
   try {
     const updated = await run(["agents", "update", "box-bot", "--title", "new"], gateway, { boxRuntimeRoot });
     expect(updated.code).toBe(0);
@@ -496,7 +498,7 @@ test("agents update --title paints a resolved token onto a showing trailer", asy
   });
   const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-update-resolved-"));
   await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({
-    version: 1,
+    version: 3,
     models: {
       "openai-responses/grok-4.6": {
         provider: "openai-responses",
@@ -506,8 +508,8 @@ test("agents update --title paints a resolved token onto a showing trailer", asy
         alias: "g46",
       },
     },
-    assignments: { main: null, agents: { [A]: "openai-responses/grok-4.6" } },
-  }));
+    assignments: { main: null, agents: { [A]: { modelId: "openai-responses/grok-4.6" } } },
+  }), { mode: 0o600 });
   try {
     const updated = await run(["agents", "update", "box-bot", "--title", "new"], gateway, { boxRuntimeRoot });
     expect(updated.code).toBe(0);

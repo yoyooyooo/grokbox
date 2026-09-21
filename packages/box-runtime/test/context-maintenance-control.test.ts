@@ -61,7 +61,7 @@ for (const failure of ["none", "summary-503", "checkpoint-unknown", "append-unkn
     });
     await new Promise<void>(resolve => http.listen(0, "127.0.0.1", resolve));
     const address = http.address(); if (!address || typeof address === "string") throw Error("fixture unavailable");
-    const models = parseModelsFile({ version: 2, models: { [MODEL]: { provider: "openai", model: "owned-control", endpoint: `http://127.0.0.1:${address.port}/v1`,
+    const models = parseModelsFile({ version: 3, models: { [MODEL]: { provider: "openai", model: "owned-control", endpoint: `http://127.0.0.1:${address.port}/v1`,
       apiKeyRef: "env:OWNED_KEY", contextWindowTokens: 500000 } }, assignments: { main: null, agents: { [AGENT]: { modelId: MODEL } } } });
     await writeFile(join(durableRoot, "models.json"), JSON.stringify(models));
     const auth = createLiveBackendAuth({ OWNED_KEY: "synthetic-test-only" }), epoch = randomUUID(), history = memoryExecutionHistory();

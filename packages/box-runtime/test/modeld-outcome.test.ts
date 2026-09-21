@@ -24,9 +24,9 @@ async function fixture(fetch: typeof globalThis.fetch, options: { echo?: boolean
   const durableRoot = await mkdtemp(join(tmpdir(), "out-d-")), runRoot = await mkdtemp(join(tmpdir(), "out-r-"));
   await mkdir(join(durableRoot, "state"), { mode: 0o700 });
   await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
-  await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 1,
+  await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 3,
     models: options.echo ? {} : { "openai-responses/fixture": { provider: "openai-responses", model: "fixture", endpoint: "https://owned.invalid/v1", apiKeyRef: "env:FIXTURE_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } },
-    assignments: { main: null, agents: { "fixture-agent": options.echo ? "stub/echo" : "openai-responses/fixture" } } }));
+    assignments: { main: null, agents: { "fixture-agent": { modelId: options.echo ? "stub/echo" : "openai-responses/fixture" } } } }));
   if (options.brokenJournal) await mkdir(join(runRoot, "log/events.ndjson"), { recursive: true });
   const identity = { pid: process.pid, start: 1, uid: 1, ppid: 1, exe: "/owned/node", cmdline: ["node"], ancestry: [1] };
   const binding = bindCompiledHost(identity, "op", compile);

@@ -8,7 +8,7 @@ import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { captureHostManagedSelection, captureHostSelection } from "../src/internal/host/selection.node.ts";
 import { isHostManagedFailure, isHostPromptSession } from "../src/internal/host/session.ts";
 
-const file = { version: 1, models: {}, assignments: { main: null, agents: { "owned-agent": STUB_ECHO_MODEL_ID } } };
+const file = { version: 3, models: {}, assignments: { main: null, agents: { "owned-agent": { modelId: STUB_ECHO_MODEL_ID } } } };
 
 for (const shape of ["missing", "malformed", "invalid-schema", "oversized", "directory", "symlink"] as const) {
   test(`route selection ${shape} refuses before the official executor, not an implicit model switch`, async () => {

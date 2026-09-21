@@ -14,7 +14,7 @@ import { VisibleStreamError } from "../src/internal/host/session.ts";
 
 for(const boundary of ["tool_start","tool_complete","backend_finish"] as const) test(`authority revalidation at ${boundary} preserves the actual boundary with one backend attempt`,async()=>{
  const model="openai/synthetic",agent="a",host="h";
- const models=parseModelsFile({version:1,models:{[model]:{provider:"openai",model:"synthetic",endpoint:"https://offline.invalid/v1",apiKeyRef:"env:KEY",contextWindowTokens:200000,capabilities:{tools:true}}},assignments:{main:null,agents:{[agent]:model}}});
+ const models=parseModelsFile({version:3,models:{[model]:{provider:"openai",model:"synthetic",endpoint:"https://offline.invalid/v1",apiKeyRef:"env:KEY",contextWindowTokens:200000,capabilities:{tools:true}}},assignments:{main:null,agents:{[agent]:{modelId:model}}}});
  const selection=captureManagedSelection(models,agent);if(selection.kind!=="managed")throw Error("fixture");
  const body=contextSnapshotBody({version:1,profileId:"p",abiIdentity:"abi",systemMessages:[],messages:[{role:"user",content:"synthetic"}],tools:[{name:"lookup",inputSchema:{type:"object"}}],options:{}});
  const request={hostEpoch:{compile:host,source:"s",profile:"p",hostIdentity:"i",bridgeDigest:"b",wireVersion:"v4"},serviceEpoch:{incarnationId:"epoch"},agentId:agent,turnId:"turn",stepId:"step",selection:{agentId:agent,modelId:model,selectionRevision:selection.selectionRevision},snapshot:{...body,snapshotDigest:computeSnapshotDigest(body)}};

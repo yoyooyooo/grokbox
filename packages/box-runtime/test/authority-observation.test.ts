@@ -73,7 +73,7 @@ test("source cancellation cause and waiter identities survive Unix, Host, journa
 
 test("a stalled authority journal is bounded and does not consume execution time or block successful STEPs", async () => {
   const root = await mkdtemp(join(tmpdir(), "authority-observer-")), epoch = randomUUID();
-  const models = parseModelsFile({ version: 1, models: {}, assignments: { main: null, agents: { fixture: STUB_ECHO_MODEL_ID } } });
+  const models = parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: { fixture: { modelId: STUB_ECHO_MODEL_ID } } } });
   const selection = captureManagedSelection(models, "fixture"); if (selection.kind !== "managed") throw Error("fixture");
   const body = contextSnapshotBody({ version: 1, profileId: "fixture", abiIdentity: "fixture", systemMessages: [], messages: [{ role: "user", content: "synthetic" }], tools: [], options: {} });
   const request: RunStepRequest = { hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v6" },

@@ -69,7 +69,7 @@ test("real disk history lookup does not require loading a full retained history 
 
 test("the real kernel completes 2048 STEPs backed by disk without accepting an old identity again", async () => {
   const dir = await root(), counts = createCountedSeams();
-  const models = parseModelsFile({ version: 1, models: {}, assignments: { main: null, agents: { review: STUB_ECHO_MODEL_ID } } });
+  const models = parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: { review: { modelId: STUB_ECHO_MODEL_ID } } } });
   const selection = captureManagedSelection(models, "review");
   if (selection.kind !== "managed") throw new Error("invalid fixture");
   const body = contextSnapshotBody({ version: 1, profileId: "review", abiIdentity: "review", systemMessages: [], messages: [{ role: "user", content: "local" }], tools: [], options: {} });

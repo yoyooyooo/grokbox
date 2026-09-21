@@ -12,10 +12,10 @@ const KEY = "owned-test-key-DO-NOT-OUTPUT";
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "gbox-persist-key-"));
   const store = openRuntimeStore(root);
-  const models = parseModelsFile({ version: 1, models: {
+  const models = parseModelsFile({ version: 3, models: {
     [ID]: { provider: "openai-responses", model: "grok-4.6", endpoint: "https://owned.invalid/v1", apiKeyRef: "env:OLD_KEY", contextWindowTokens: 500000 },
     "openai/other": { provider: "openai", model: "other", endpoint: "https://other.invalid/v1", apiKeyRef: "env:OTHER_KEY", contextWindowTokens: 32000 },
-  }, assignments: { main: null, agents: { test2: ID } } });
+  }, assignments: { main: null, agents: { test2: { modelId: ID } } } });
   await store.saveModels(models);
   return { root, store, models, close: () => rm(root, { recursive: true, force: true }) };
 }

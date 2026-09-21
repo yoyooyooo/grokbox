@@ -8,7 +8,7 @@ import { launchPackedRuntime, processDeadline, closePackedRuntime } from "./fixt
 
 // Valid configuration exercises the real parser. No model/network/attestation
 // is fabricated: startup is transport preparation, not inference acceptance.
-const models = { version: 1, models: {}, assignments: { main: null, agents: {} } };
+const models = { version: 3, models: {}, assignments: { main: null, agents: {} } };
 type Child = ReturnType<typeof launchPackedRuntime>;
 
 for (const mode of ["observe", "identity", "route"] as const) {

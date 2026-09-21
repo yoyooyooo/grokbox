@@ -45,7 +45,7 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
   });
   await new Promise<void>(resolve => http.listen(0, "127.0.0.1", resolve));
   const address = http.address(); if (!address || typeof address === "string") throw new Error("fixture server unavailable");
-  const models = parseModelsFile({ version: 2, models: { [M]: { provider: "openai", model: "owned-model", endpoint: `http://127.0.0.1:${address.port}/v1`,
+  const models = parseModelsFile({ version: 3, models: { [M]: { provider: "openai", model: "owned-model", endpoint: `http://127.0.0.1:${address.port}/v1`,
     apiKeyRef: "env:OWNED_KEY", contextWindowTokens: 500000, capabilities: { tools: true, vision: false, images: false }, dataTypes: ["text", "tools"] } },
     assignments: { main: null, agents: { [A]: { modelId: M } } } });
   await writeFile(join(durableRoot, "models.json"), JSON.stringify(models));

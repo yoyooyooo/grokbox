@@ -13,7 +13,7 @@ import { openExecutionHistory } from "../src/internal/io/execution-history.node.
 
 const HOST: HostEpoch = { compile: "fixture-compile", source: "fixture-source", profile: "fixture-profile", hostIdentity: "fixture-host", bridgeDigest: "fixture-bridge", wireVersion: "v4" };
 const EVENTS: InferenceEvent[] = [{ type: "text_delta", text: "done" }, { type: "backend_finish", finishReason: "stop", usage: { promptTokens: 1, completionTokens: 1 } }];
-const models = parseModelsFile({ version: 1, models: {}, assignments: { main: null, agents: Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`agent-${i}`, STUB_ECHO_MODEL_ID])) } });
+const models = parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`agent-${i}`, { modelId: STUB_ECHO_MODEL_ID }])) } });
 function request(stepId: string, turnId = "turn-0", agentId = "agent-0", epoch = "fixture-epoch", text = "PAYLOAD_MUST_NOT_ENTER_HISTORY"): RunStepRequest {
   const selected = captureManagedSelection(models, agentId);
   if (selected.kind !== "managed") throw new Error("fixture selection");

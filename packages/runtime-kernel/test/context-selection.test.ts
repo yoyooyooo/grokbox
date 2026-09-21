@@ -10,7 +10,7 @@ import { createCountedSeams, fakeAdmissionAuthorityLayer, fakeBackendAuthLayer, 
 const agentId = "00000000-0000-4000-8000-000000000123";
 const hostEpoch: HostEpoch = { compile: "compile", source: "source", profile: "profile", hostIdentity: "host", bridgeDigest: "bridge", wireVersion: "v8" };
 function fixture() {
-  const models = parseModelsFile({ version: 2, models: { "owned/model": { provider: "openai", model: "owned", endpoint: "https://fixture.invalid/v1",
+  const models = parseModelsFile({ version: 3, models: { "owned/model": { provider: "openai", model: "owned", endpoint: "https://fixture.invalid/v1",
     apiKeyRef: "env:OWNED_KEY", contextWindowTokens: 500000 } }, assignments: { main: null, agents: { [agentId]: { modelId: "owned/model" } } } });
   const selected = captureManagedSelection(models, agentId);
   if (selected.kind !== "managed") throw Error("fixture selection missing");

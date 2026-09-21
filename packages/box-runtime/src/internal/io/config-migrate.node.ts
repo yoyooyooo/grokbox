@@ -7,7 +7,7 @@ import {
   type ConnectionProfile, type JsonObject, type UnifiedConfig,
 } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { parseModelsFile, parseDesiredFile } from "@grokbox/runtime-kernel/selection";
+import { parseDesiredFile } from "@grokbox/runtime-kernel/selection";
 import { acquireConfigurationLease, inspectConfigurationLease } from "./config-lock.node.ts";
 import { assertSafeDirectory, publishConfigFile, publishLayoutAliases, readConfigFile, readConfigSource, validateInstallationState, type InstallationState } from "./config-layout.node.ts";
 
@@ -205,7 +205,10 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
     if (options.role !== "box") conflicts.push("ops-requires-box-role");
   }
   const models = await capture("models", join(options.root, "models.json"));
-  if (models !== undefined) parseModelsFile(models); // validation only: never normalize/rewrite an existing model file
+  // General configuration migration preserves this separately owned document
+  // as bounded, strictly parsed JSON, without granting model-schema validity.
+  // Ordinary model/Host consumers require the current grammar; no old parser
+  // or automatic model conversion is part of this installation transaction.
   const homeModelsPath = join(options.configDir, "models.json");
   if (options.role === "box" && homeModelsPath !== join(options.root, "models.json")) {
     const homeModels = await capture("home-models", homeModelsPath, true);
@@ -235,7 +238,7 @@ export function migrationPreview(plan: MigrationPlan) {
   return { schemaVersion: 1, planDigest: plan.planDigest, role: plan.options.role, canApply: plan.canApply,
     sources: plan.sources.map(({ key, sha256, retire }) => ({ key, sha256, disposition: retire ? "backup-and-retire" : "preserve" })),
     conflicts: plan.conflicts, blockedWriters: plan.blockedWriters, models: plan.modelsExist ? "preserved-in-place" : plan.options.role === "box" ? "initialize-empty" : "not-created",
-    credentials: "existing-reference-locations-preserved", opsAuthorization: plan.opsRevalidation ? "revalidation-required" : "not-created",
+    modelValidation: "not-performed", credentials: "existing-reference-locations-preserved", opsAuthorization: plan.opsRevalidation ? "revalidation-required" : "not-created",
     targetSchemaVersion: plan.candidate.schemaVersion,
     support: { disposition: "retired", offerIssue: false, automaticPublishing: false, credentialsCreated: false, bindingsCreated: false },
     storage: { policy: effectiveStorage(plan.candidate.storage), activation: "matching-storage-owners-required", garbageCollectionDuringMigration: false, installationBudgetEnforced: false },

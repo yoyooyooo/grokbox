@@ -18,7 +18,7 @@ import { isHostPromptSession } from "../src/internal/host/session.ts";
 for(const api of ["chat","responses"] as const)test(`real SDK ${api} / Unix / production Host accepts >16000 tiny interleaved events`,async()=>{
  const root=await mkdtemp(join(tmpdir(),"stream-fragment-")),generation=randomUUID(),agentId=randomUUID();
  const model={provider:api==="chat"?"openai-chat":"openai-responses",model:"synthetic",endpoint:"https://offline.invalid/v1",apiKeyRef:"env:TEST_KEY",contextWindowTokens:200000,capabilities:{tools:true}};
- const models=parseModelsFile({version:1,models:{"openai/test":model},assignments:{main:null,agents:{[agentId]:"openai/test"}}});await writeFile(join(root,"models.json"),JSON.stringify(models));
+ const models=parseModelsFile({version:3,models:{"openai/test":model},assignments:{main:null,agents:{[agentId]:{modelId:"openai/test"}}}});await writeFile(join(root,"models.json"),JSON.stringify(models));
  const raw=JSON.stringify({q:"x".repeat(8000)});let fetches=0;let rows:unknown[]=[];const observations:any[]=[];
  const common={id:"resp_test",model:"synthetic",object:"response",created_at:1};
  const item={type:"function_call",id:"item_tool",call_id:"call_tool",name:"lookup",status:"completed",arguments:raw};

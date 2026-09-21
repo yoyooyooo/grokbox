@@ -29,7 +29,7 @@ const EVENTS: InferenceEvent[] = [
 
 function models(agents: Record<string, string>, extra: Record<string, unknown> = {}): ModelsFile {
   return parseModelsFile({
-    version: 1,
+    version: 3,
     models: {
       [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "" },
       "openai/gpt": {
@@ -42,7 +42,7 @@ function models(agents: Record<string, string>, extra: Record<string, unknown> =
         ...(extra.noWindow === true ? {} : { contextWindowTokens: extra.contextWindowTokens ?? 200000 }),
       },
     },
-    assignments: { main: null, agents },
+    assignments: { main: null, agents: Object.fromEntries(Object.entries(agents).map(([id, modelId]) => [id, { modelId }])) },
   });
 }
 
@@ -463,9 +463,9 @@ describe("route binding", () => {
 
   test("assigned model missing from modeld catalog fails as not_admitted, not a die", async () => {
     const file = parseModelsFile({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-a": "sub2api-xai/grok-4.6" } },
+      assignments: { main: null, agents: { "agent-a": { modelId: "sub2api-xai/grok-4.6" } } },
     });
     const counts = createCountedSeams();
     const layer = graph({ file: () => file, counts });

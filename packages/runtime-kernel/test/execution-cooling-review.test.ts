@@ -7,7 +7,7 @@ import { captureManagedSelection, parseModelsFile, STUB_ECHO_MODEL_ID } from "@g
 import { createCountedSeams, fakeAdmissionAuthorityLayer, fakeBackendAuthLayer, fakeConfigurationReadLayer, fakeModelBackendLayer } from "@grokbox/runtime-kernel/testing";
 import { ledgerKey, turnKey } from "../src/internal/inference/route-binding.ts";
 
-const models = parseModelsFile({ version: 1, models: {}, assignments: { main: null, agents: { "agent-review": STUB_ECHO_MODEL_ID, "new-agent": STUB_ECHO_MODEL_ID } } });
+const models = parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: { "agent-review": { modelId: STUB_ECHO_MODEL_ID }, "new-agent": { modelId: STUB_ECHO_MODEL_ID } } } });
 const body = contextSnapshotBody({ version: 1, profileId: "review", abiIdentity: "review", systemMessages: [], messages: [{ role: "user", content: "synthetic" }], tools: [], options: {} });
 const snapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
 function request(stepId: string, turnId = "turn-review", agentId = "agent-review"): RunStepRequest {

@@ -101,8 +101,8 @@ export function loadE07Host(input: {
 
 export async function writeE07Models(dir: string) {
   await writeFile(join(dir, "models.json"), JSON.stringify({
-    version: 1, models: { [SYNTHETIC_OPENAI.id]: SYNTHETIC_OPENAI },
-    assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
+    version: 3, models: { [SYNTHETIC_OPENAI.id]: SYNTHETIC_OPENAI },
+    assignments: { main: null, agents: { "agent-tom": { modelId: SYNTHETIC_OPENAI.id } } },
   }));
 }
 

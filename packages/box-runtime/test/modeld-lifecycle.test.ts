@@ -30,7 +30,7 @@ function run<A>(effect: Effect.Effect<A, unknown, unknown>): Promise<A> {
 }
 
 const emptyModels = parseModelsFile({
-  version: 1,
+  version: 3,
   models: {},
   assignments: { main: null, agents: {} },
 });
@@ -113,9 +113,9 @@ describe("modeld lifecycle", () => {
     const durable = await mkdtemp(join(tmpdir(), "grokbox-t25-dur-"));
     const runRoot = await mkdtemp(join(tmpdir(), "grokbox-t25-run-"));
     await writeFile(join(durable, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { a: STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { a: { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const counts = emptyResourceCounts();
     const started = await startModeldProcess({ durableRoot: durable, runRoot, env: {}, counts });
@@ -159,7 +159,7 @@ describe("modeld lifecycle", () => {
     const durable = await mkdtemp(join(tmpdir(), "grokbox-t25-rel-d-"));
     const runRoot = await mkdtemp(join(tmpdir(), "grokbox-t25-rel-r-"));
     await writeFile(join(durable, "models.json"), `${JSON.stringify({
-      version: 1, models: {}, assignments: { main: null, agents: {} },
+      version: 3, models: {}, assignments: { main: null, agents: {} },
     })}\n`);
     const publicCounts = emptyResourceCounts();
     const started = await startModeldProcess({
@@ -233,9 +233,9 @@ describe("modeld lifecycle", () => {
     });
     const snapshot = { ...body, snapshotDigest: computeSnapshotDigest(body) };
     const echoModels = {
-      version: 1 as const,
+      version: 3 as const,
       models: {},
-      assignments: { main: null, agents: { a: STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { a: { modelId: STUB_ECHO_MODEL_ID } } },
     };
     const echoRev = computeSelectionRevision({ agentId: "a", model: STUB_ECHO_MODEL });
     const step = (generation: string, turnId: string) => ({
@@ -306,9 +306,9 @@ describe("modeld lifecycle", () => {
       contextWindowTokens: 200000,
     };
     const openaiFile = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [openaiModel.id]: openaiModel },
-      assignments: { main: null, agents: { a: openaiModel.id } },
+      assignments: { main: null, agents: { a: { modelId: openaiModel.id } } },
     });
     const openaiRev = computeSelectionRevision({ agentId: "a", model: openaiModel });
     const prevFetch = globalThis.fetch;
@@ -456,9 +456,9 @@ describe("modeld lifecycle", () => {
 
   test("late extra frame after first request is rejected", async () => {
     const echoFile = parseModelsFile({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { a: STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { a: { modelId: STUB_ECHO_MODEL_ID } } },
     });
     const dir = await mkdtemp(join(tmpdir(), "grokbox-t25-late-"));
     const path = join(dir, "modeld.sock");

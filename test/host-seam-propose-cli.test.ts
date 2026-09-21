@@ -21,7 +21,7 @@ describe("HSO-3 propose CLI", () => {
     await mkdir(join(boxRuntimeRoot, "state"), { recursive: true });
     const circuit = { version: 1, circuit: "open", mutationCount: 1, attemptedKeys: ["x"] };
     await writeFile(join(boxRuntimeRoot, "state", "coordinator.json"), `${JSON.stringify(circuit)}\n`);
-    await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify({ version: 1, models: {}, assignments: { main: null, agents: {} } })}\n`);
+    await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify({ version: 3, models: {}, assignments: { main: null, agents: {} } })}\n`);
     const before = await snapshotTree(join(boxRuntimeRoot, "state"));
     const modelsBefore = await readFile(join(boxRuntimeRoot, "models.json"), "utf8");
     const result = await captureCli(

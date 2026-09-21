@@ -113,10 +113,10 @@ for (const scenario of ["confirmed-box", "server-temporal", "legacy-evidence", "
       const binding = bindCompiledHost(identity, "owned-op", compile);
       await mkdir(join(durableRoot, "state"), { recursive: true });
       await writeFile(join(durableRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
-      await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 1,
+      await writeFile(join(durableRoot, "models.json"), JSON.stringify({ version: 3,
         models: { "openai/owned-model": { provider: "openai", model: "owned-model", endpoint: "https://owned.invalid/v1",
           apiKeyRef: "env:OWNED_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } },
-        assignments: { main: null, agents: { [AGENT]: "openai/owned-model" } } }));
+        assignments: { main: null, agents: { [AGENT]: { modelId: "openai/owned-model" } } } }));
       await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: SHA,
         pid, start: 1, identity, at: new Date().toISOString(), profileId: "fixture", transformedSha: SHA,
         operationId: "owned-op", launchMode: "direct-launch", compile });

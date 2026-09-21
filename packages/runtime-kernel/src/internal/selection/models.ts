@@ -127,25 +127,6 @@ function parseContextWindowTokens(value: unknown, id: string): number | undefine
   return value;
 }
 
-/** Pi models.json uses `contextWindow`; grokbox canonical is `contextWindowTokens`. Never guess. */
-function parseRecordContextWindowTokens(value: Record<string, unknown>, id: string): number | undefined {
-  const tokens = value.contextWindowTokens;
-  const alias = value.contextWindow;
-  if (tokens === undefined && alias === undefined) return undefined;
-  if (tokens !== undefined && alias !== undefined) {
-    const parsedTokens = parseContextWindowTokens(tokens, id);
-    const parsedAlias = parseContextWindowTokens(alias, id);
-    if (parsedTokens !== parsedAlias) {
-      throw new BoxRuntimeError(
-        "invalid_usage",
-        `Model '${id}' contextWindow and contextWindowTokens disagree.`,
-      );
-    }
-    return parsedTokens;
-  }
-  return parseContextWindowTokens(tokens !== undefined ? tokens : alias, id);
-}
-
 /** Trusted adapter window if positive safe int; else canonical record. Never guess from name. */
 export function qualifiedContextWindowTokens(record: ModelRecord, adapterWindow?: unknown): number | undefined {
   if (typeof adapterWindow === "number" && Number.isSafeInteger(adapterWindow) && adapterWindow > 0) return adapterWindow;
@@ -163,7 +144,7 @@ function exactFields(value: Record<string, unknown>, allowed: readonly string[],
 
 function parseModel(id: string, value: unknown): ModelRecord {
   if (!isRecord(value)) throw new BoxRuntimeError("invalid_usage", `Model '${id}' is invalid.`);
-  exactFields(value, ["id", "provider", "model", "endpoint", "apiKeyRef", "capabilities", "dataTypes", "contextWindowTokens", "contextWindow", "chatDialect", "alias", "catalog"], "model record");
+  exactFields(value, ["id", "provider", "model", "endpoint", "apiKeyRef", "capabilities", "dataTypes", "contextWindowTokens", "chatDialect", "alias", "catalog"], "model record");
   if (isRecord(value.capabilities)) exactFields(value.capabilities, ["vision", "tools", "images", "reasoning"], "model capabilities");
   if (id === STUB_ECHO_MODEL_ID) {
     if (isRecord(value.capabilities) && value.capabilities.reasoning !== undefined && value.capabilities.reasoning !== false) {
@@ -176,7 +157,7 @@ function parseModel(id: string, value: unknown): ModelRecord {
     if (typeof value.endpoint === "string" && looksLikeNetworkEndpoint(value.endpoint)) {
       throw new BoxRuntimeError("invalid_usage", "stub/echo forbids network endpoints.");
     }
-    const stubWindow = parseRecordContextWindowTokens(value, id);
+    const stubWindow = parseContextWindowTokens(value.contextWindowTokens, id);
     return stubWindow !== undefined ? { ...STUB_ECHO_MODEL, contextWindowTokens: stubWindow } : STUB_ECHO_MODEL;
   }
   const provider = value.provider;
@@ -211,7 +192,7 @@ function parseModel(id: string, value: unknown): ModelRecord {
         ...(capabilities.tools ? ["tools"] : []),
         ...(capabilities.vision || capabilities.images ? ["images"] : []),
       ];
-  const contextWindowTokens = parseRecordContextWindowTokens(value, id);
+  const contextWindowTokens = parseContextWindowTokens(value.contextWindowTokens, id);
   const chatDialect = value.chatDialect;
   if (chatDialect !== undefined && (chatDialect !== "standard" && chatDialect !== "minimax-inline-v1")) throw new BoxRuntimeError("invalid_usage", "Unsupported Chat dialect.");
   if (chatDialect !== undefined && provider !== "openai" && provider !== "openai-chat") throw new BoxRuntimeError("invalid_usage", "chatDialect requires Chat Completions.");
@@ -233,8 +214,8 @@ function parseModel(id: string, value: unknown): ModelRecord {
 
 export function parseModelsFile(value: unknown): ModelsFile {
   if (value === undefined) return structuredClone(EMPTY_MODELS);
-  if (!isRecord(value) || ![1, 2, 3].includes(value.version as number)) {
-    throw new BoxRuntimeError("invalid_usage", "models.json must be version 3; versions 1 and 2 are import inputs.");
+  if (!isRecord(value) || value.version !== 3) {
+    throw new BoxRuntimeError("invalid_usage", "models.json must use the current version 3 document. Earlier documents are not runtime inputs; their bytes were not changed.");
   }
   exactFields(value, ["version", "models", "assignments", "externalCatalog", "credentials"], "models.json");
   if ((value.models !== undefined && !isRecord(value.models)) ||
@@ -262,10 +243,6 @@ export function parseModelsFile(value: unknown): ModelsFile {
   const assignmentsRaw = isRecord(value.assignments) ? value.assignments : {};
   exactFields(assignmentsRaw, ["main", "agents"], "assignments");
   const parseAssignment = (entry: unknown): ModelAssignment => {
-    if (value.version === 1) {
-      if (typeof entry !== "string" || !entry.length) throw new BoxRuntimeError("invalid_usage", "Version 1 assignments must be nonempty model ids.");
-      return { modelId: entry };
-    }
     if (!isRecord(entry)) throw new BoxRuntimeError("invalid_usage", "Assignments must be modelId/reasoning objects.");
     exactFields(entry, ["modelId", "reasoning"], "model assignment");
     if (typeof entry.modelId !== "string" || !entry.modelId.length) throw new BoxRuntimeError("invalid_usage", "An assignment requires a nonempty modelId.");
@@ -276,7 +253,7 @@ export function parseModelsFile(value: unknown): ModelsFile {
   const agents: Record<string, BotModelAssignment> = Object.create(null);
   if (isRecord(assignmentsRaw.agents)) {
     for (const [agentId, assignment] of Object.entries(assignmentsRaw.agents)) {
-      if (value.version === 3 && isRecord(assignment) && assignment.kind === "default") {
+      if (isRecord(assignment) && assignment.kind === "default") {
         exactFields(assignment, ["kind"], "default model selection");
         if (!main) throw new BoxRuntimeError("invalid_usage", "model_default_missing");
         agents[agentId] = { kind: "default" };

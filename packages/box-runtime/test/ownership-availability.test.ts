@@ -13,7 +13,7 @@ import type { OwnershipReader } from "../src/internal/io/ownership-admission.nod
 import { ownedOwnershipSnapshot } from "./ownership-fixture.ts";
 
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const models = parseModelsFile({ version: 1, models: {}, assignments: { main: null, agents: { [A]: STUB_ECHO_MODEL_ID } } });
+const models = parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: { [A]: { modelId: STUB_ECHO_MODEL_ID } } } });
 const selected = captureManagedSelection(models, A);
 if (selected.kind !== "managed") throw Error("fixture");
 const body = contextSnapshotBody({ version: 1, profileId: "fixture", abiIdentity: "fixture", systemMessages: [],

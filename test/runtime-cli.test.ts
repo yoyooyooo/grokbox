@@ -21,7 +21,7 @@ import { openRuntimeStore } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson } from "./helpers.ts";
 
 const SAMPLE_MODELS = {
-  version: 1,
+  version: 3,
   models: {
     "acme/fast": {
       provider: "acme",
@@ -592,7 +592,7 @@ describe("box-local runtime CLI", () => {
   test("activate --mode route admits openai* with https endpoint and apiKeyRef", async () => {
     const boxRuntimeRoot = await withRoot();
     await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {
         "openai/gpt-4o-mini": {
           id: "openai/gpt-4o-mini",
@@ -602,7 +602,7 @@ describe("box-local runtime CLI", () => {
           apiKeyRef: "env:OPENAI_API_KEY",
         },
       },
-      assignments: { main: "openai/gpt-4o-mini", agents: {} },
+      assignments: { main: { modelId: "openai/gpt-4o-mini" }, agents: {} },
     })}\n`, { mode: 0o600 });
     const activate = await captureCli(["runtime", "activate", "--mode", "route"], {
       discoveryPath: "/dev/null",
@@ -616,7 +616,7 @@ describe("box-local runtime CLI", () => {
     const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-box-runtime-"));
     await mkdir(boxRuntimeRoot, { recursive: true });
     await writeFile(join(boxRuntimeRoot, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {
         "acme/fast": {
           provider: "acme",

@@ -54,7 +54,7 @@ for (const failureAt of ["summary", "main"] as const) test(`HTTP 503 at ${failur
   const modelRecord = (model: string) => ({ provider: "openai", model, endpoint: `http://127.0.0.1:${address.port}/v1`, apiKeyRef: "env:OWNED_KEY",
     contextWindowTokens: 500000, capabilities: { tools: true, vision: false, images: false, reasoning: { efforts: ["high"] } }, dataTypes: ["text", "tools"] });
   const catalog = { [PRIMARY]: modelRecord("primary"), [FALLBACK]: modelRecord("fallback") };
-  const select = (modelId: string) => parseModelsFile({ version: 2, models: catalog, assignments: { main: null, agents: {
+  const select = (modelId: string) => parseModelsFile({ version: 3, models: catalog, assignments: { main: null, agents: {
     [AGENT]: { modelId, ...(modelId === FALLBACK ? { reasoning: { effort: "high" } } : {}) },
   } } });
   let models = select(PRIMARY);

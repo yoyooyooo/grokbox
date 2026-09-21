@@ -67,7 +67,7 @@ test("real SDK/local HTTP: failed old history compacts at local 128K with no pro
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); if (!address || typeof address === "string") throw new Error("local HTTP missing");
-  const models = parseModelsFile({ version: 2, models: { [M]: { provider: "openai", model: "owned-model",
+  const models = parseModelsFile({ version: 3, models: { [M]: { provider: "openai", model: "owned-model",
     endpoint: `http://127.0.0.1:${address.port}/v1`, apiKeyRef: "env:OWNED_KEY", contextWindowTokens: 500000,
     capabilities: { vision: false, tools: true, images: false }, dataTypes: ["text", "tools"] } },
     assignments: { main: null, agents: { [A]: { modelId: M } } } });

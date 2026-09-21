@@ -41,10 +41,10 @@ async function fixture(mode: "box" | "temporal" | "confirmed-temporal" | "old" |
   const boxRuntimeRoot = join(root, "runtime");
   await mkdir(join(boxRuntimeRoot, "state"), { recursive: true, mode: 0o700 });
   await writeFile(join(boxRuntimeRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
-  await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({ version: 1,
+  await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({ version: 3,
     models: { "openai/owned": { id: "openai/owned", provider: "openai", model: "owned", endpoint: `http://127.0.0.1:${gateway.port}/v1`, apiKeyRef: "env:OWNED", contextWindowTokens: 200000,
       capabilities: { tools: true, images: false, vision: false, reasoning: { efforts: ["high", "xhigh"] } }, dataTypes: ["text", "tools"] } },
-    assignments: { main: null, agents: { [A]: "stub/echo", [B]: "stub/echo" } },
+    assignments: { main: null, agents: { [A]: { modelId: "stub/echo" }, [B]: { modelId: "stub/echo" } } },
   }));
   const deps = { configDir: root, discoveryPath, boxRuntimeRoot, env: { OWNED: "owned-test-key" }, transport: "local" as const, daemonSocket: join(root, "unused.sock") };
   return { calls, deps, load: async () => JSON.parse(await readFile(join(boxRuntimeRoot, "models.json"), "utf8")),

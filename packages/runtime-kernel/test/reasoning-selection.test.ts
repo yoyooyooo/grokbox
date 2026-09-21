@@ -5,22 +5,21 @@ import { applyUse, applyReset, assertRouteAssignment, captureManagedSelection, c
 import { composeAgentTitle, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
 const id = "channel/grok-4.6";
 function base() {
-  return parseModelsFile({ version: 2, models: { [id]: { provider: "openai-responses", model: "grok-4.6",
+  return parseModelsFile({ version: 3, models: { [id]: { provider: "openai-responses", model: "grok-4.6",
     endpoint: "https://reasoning.invalid/v1", apiKeyRef: "env:FIXTURE_KEY", contextWindowTokens: 200000,
     capabilities: { reasoning: { efforts: ["xhigh", "high", "low", "medium"] } } } },
     assignments: { main: null, agents: { a: { modelId: id }, b: { modelId: id } } } });
 }
 describe("structured model reasoning selection", () => {
-  test("legacy read normalizes without inventing policy and writes schema v3", () => {
-    const raw = { version: 1, models: {}, assignments: { main: "stub/echo", agents: { a: "stub/echo" } } };
+  test("current document roundtrips explicit policy; older versions are not silently normalized", () => {
+    const raw = { version: 3, models: {}, assignments: { main: { modelId: "stub/echo" }, agents: { a: { modelId: "stub/echo" } } } };
     const before = JSON.stringify(raw), file = parseModelsFile(raw);
     expect(JSON.stringify(raw)).toBe(before);
-    expect(file.version).toBe(3);
-    expect(file.assignments).toEqual({ main: { modelId: "stub/echo" }, agents: { a: { modelId: "stub/echo" } } });
+    expect(file.assignments).toEqual(raw.assignments);
     expect(persistModelsDocument(file).version).toBe(3);
     expect(parseModelsFile(persistModelsDocument(file))).toEqual(file);
-    expect(() => parseModelsFile({ ...raw, version: 2 })).toThrow();
-    expect(() => parseModelsFile({ ...raw, version: 3 })).toThrow();
+    for (const version of [1, 2]) expect(() => parseModelsFile({ ...raw, version })).toThrow("current version 3");
+    expect(() => parseModelsFile({ ...raw, assignments: { main: "stub/echo", agents: {} } })).toThrow();
   });
   test("same channel has per-Bot settings without derived records or credential copies", () => {
     const original = base(), beforeB = captureManagedSelection(original, "b");
@@ -91,7 +90,7 @@ describe("structured model reasoning selection", () => {
     expect(captureManagedSelection(parseModelsFile(reordered), "a")).toEqual(captureManagedSelection(base(), "a"));
   });
   test("Pi requires an explicit identity effort map and never persists imported model or secret", () => {
-    const native = parseModelsFile({ version: 2, models: {}, externalCatalog: ["pi"], assignments: { main: null, agents: {} } });
+    const native = parseModelsFile({ version: 3, models: {}, externalCatalog: ["pi"], assignments: { main: null, agents: {} } });
     for (const row of [{ id: "test", reasoning: true }, { id: "test", thinkingLevelMap: { xhigh: "high", high: 4096 } },
       { id: "test", reasoning: false }, { id: "test", thinkingLevelMap: { high: "high", xhigh: "xhigh", off: "none" } }]) {
       const file = resolveExternalCatalog(native, { pi: { providers: { fixture: { api: "openai-responses", baseUrl: "https://pi.invalid/v1", apiKey: "synthetic-only", models: [row] } } } });

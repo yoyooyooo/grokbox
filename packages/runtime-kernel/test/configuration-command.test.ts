@@ -7,9 +7,9 @@ import { fakeConfigurationReadLayer, fakeConfigurationWriteLayer } from "@grokbo
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 
 const models = parseModelsFile({
-  version: 1,
+  version: 3,
   models: { [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "" } },
-  assignments: { main: STUB_ECHO_MODEL_ID, agents: {} },
+  assignments: { main: { modelId: STUB_ECHO_MODEL_ID }, agents: {} },
 });
 const desired = parseDesiredFile({ version: 1, mode: "observe" });
 

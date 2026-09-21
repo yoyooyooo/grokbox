@@ -52,9 +52,9 @@ describe("profile-bound Host root provenance", () => {
   test("session hook binds known compile roots and does not fail-close unknown compiled profiles", async () => {
     await withFakeHttpSession({ turnId: "TURN_UNUSED", fn: async ({ dir, requests }) => {
       await writeFile(join(dir, "models.json"), `${JSON.stringify({
-        version: 1,
+        version: 3,
         models: { [SYNTHETIC_OPENAI.id]: SYNTHETIC_OPENAI },
-        assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
+        assignments: { main: null, agents: { "agent-tom": { modelId: SYNTHETIC_OPENAI.id } } },
       })}\n`);
 
       const stream = async (profileId: string, messages: unknown[], independentRoot: string | undefined, step: string) => {

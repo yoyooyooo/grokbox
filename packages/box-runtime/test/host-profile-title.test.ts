@@ -41,9 +41,9 @@ describe("host profile title marker", () => {
     expect(missing({ profile: { title: SHOWING }, localHarness: "box", agentId: AGENT })).toBeUndefined();
 
     const root = modelsRoot({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { [AGENT]: "openai-responses/grok-4.6" } },
+      assignments: { main: null, agents: { [AGENT]: { modelId: "openai-responses/grok-4.6" } } },
     });
     try {
       const hook = bindHostProfileTitle({ durableRoot: root });
@@ -56,9 +56,9 @@ describe("host profile title marker", () => {
 
   test("non-uuid agentId keeps showing m=", () => {
     const root = modelsRoot({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { [AGENT]: "openai-responses/grok-4.6" } },
+      assignments: { main: null, agents: { [AGENT]: { modelId: "openai-responses/grok-4.6" } } },
     });
     try {
       const hook = bindHostProfileTitle({ durableRoot: root });
@@ -70,9 +70,9 @@ describe("host profile title marker", () => {
 
   test("no assignment clears showing m=", () => {
     const root = modelsRoot({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { [AGENT]: "openai-responses/grok-4.6" } },
+      assignments: { main: null, agents: { [AGENT]: { modelId: "openai-responses/grok-4.6" } } },
     });
     try {
       const hook = bindHostProfileTitle({ durableRoot: root });
@@ -103,7 +103,7 @@ describe("host profile title marker", () => {
 
   test("resolved token refreshes showing m=", () => {
     const root = modelsRoot({
-      version: 1,
+      version: 3,
       models: {
         "openai-responses/grok-4.6": {
           provider: "openai-responses",
@@ -113,7 +113,7 @@ describe("host profile title marker", () => {
           alias: "g46",
         },
       },
-      assignments: { main: null, agents: { [AGENT]: "openai-responses/grok-4.6" } },
+      assignments: { main: null, agents: { [AGENT]: { modelId: "openai-responses/grok-4.6" } } },
     });
     try {
       const hook = bindHostProfileTitle({ durableRoot: root });

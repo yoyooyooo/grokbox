@@ -248,7 +248,7 @@ describe("runStep overflow recovery is default-off without HostCompact", () => {
 
   function file() {
     return parseModelsFile({
-      version: 1,
+      version: 3,
       models: {
         [STUB_ECHO_MODEL_ID]: { provider: "stub", model: "echo", endpoint: "stub:echo", apiKeyRef: "" },
         "openai/gpt": {
@@ -257,7 +257,7 @@ describe("runStep overflow recovery is default-off without HostCompact", () => {
           contextWindowTokens: 200000,
         },
       },
-      assignments: { main: null, agents: { "agent-a": "openai/gpt" } },
+      assignments: { main: null, agents: { "agent-a": { modelId: "openai/gpt" } } },
     });
   }
 

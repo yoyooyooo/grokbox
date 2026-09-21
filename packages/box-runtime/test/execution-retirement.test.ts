@@ -54,7 +54,7 @@ test("active child and open TURN survive maintenance; closing never implies the 
 
 test("real kernel refuses retired STEP through retained TURN before provider effects, then rejects its old epoch", () => fixture(async root => {
   const counts = createCountedSeams();
-  const models = parseModelsFile({ version: 1, models: {}, assignments: { main: null, agents: { test: STUB_ECHO_MODEL_ID } } });
+  const models = parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: { test: { modelId: STUB_ECHO_MODEL_ID } } } });
   const selection = captureManagedSelection(models, "test"); if (selection.kind !== "managed") throw Error("fixture_selection");
   const body = contextSnapshotBody({ version: 1, profileId: "fixture", abiIdentity: "fixture", systemMessages: [], messages: [{ role: "user", content: "private fixture" }], tools: [], options: {} });
   const request: RunStepRequest = { hostEpoch: { compile: "c", source: "s", profile: "p", hostIdentity: "h", bridgeDigest: "b", wireVersion: "v3" },

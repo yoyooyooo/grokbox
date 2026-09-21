@@ -31,9 +31,9 @@ const EVENTS: InferenceEvent[] = [
 
 function file(): ModelsFile {
   return parseModelsFile({
-    version: 1,
+    version: 3,
     models: {},
-    assignments: { main: null, agents: { "agent-a": STUB_ECHO_MODEL_ID, "agent-b": STUB_ECHO_MODEL_ID } },
+    assignments: { main: null, agents: { "agent-a": { modelId: STUB_ECHO_MODEL_ID }, "agent-b": { modelId: STUB_ECHO_MODEL_ID } } },
   });
 }
 

@@ -14,7 +14,7 @@ const B = "22222222-2222-4222-8222-222222222222";
 test("paused managed resume keeps the native marker and starts no runner; native release resumes once", async () => {
   const root = await mkdtemp(join(tmpdir(), "gbox-resume-admission-"));
   try {
-    await writeFile(join(root, "models.json"), JSON.stringify({ version: 1, models: {}, assignments: { main: null, agents: { [A]: "stub/echo" } } }));
+    await writeFile(join(root, "models.json"), JSON.stringify({ version: 3, models: {}, assignments: { main: null, agents: { [A]: { modelId: "stub/echo" } } } }));
     const patch = OWNERSHIP_READ_SLICES.filter(s => s.id === "ownership-resume-gate");
     const applied = transformUnchecked(OWNERSHIP_SHAPED_HOST, patch);
     expect(applied.ok).toBe(true);

@@ -66,9 +66,9 @@ function responsesStream(): Response {
 describe("modeld route admit after Host capture", () => {
   test("dangling Pi-style assignment journals not_admitted, never silent defect", async () => {
     const file = parseModelsFile({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { a: "sub2api-xai/grok-4.6" } },
+      assignments: { main: null, agents: { a: { modelId: "sub2api-xai/grok-4.6" } } },
     });
     const generation = randomUUID();
     let observed: ModeldStepOutcome | undefined;
@@ -135,9 +135,9 @@ describe("modeld route admit after Host capture", () => {
       catalog: "pi" as const,
     };
     const file = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [model.id]: model },
-      assignments: { main: null, agents: { a: model.id } },
+      assignments: { main: null, agents: { a: { modelId: model.id } } },
     });
     const pinned = file.models[model.id];
     if (!pinned) throw new Error("expected parsed pi model");

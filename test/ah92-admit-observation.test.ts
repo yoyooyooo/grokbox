@@ -44,7 +44,7 @@ test("AH-92.5 maintainer script is confirm-gated and stays on the canary path", 
 
 test("AH-92.5 unofficial assignment is the admit-deny negative because models use cannot save it", () => {
   const file = parseModelsFile({
-    version: 1,
+    version: 3,
     models: {
       "ah92-admit-deny/none": {
         provider: "acme",
@@ -55,7 +55,7 @@ test("AH-92.5 unofficial assignment is the admit-deny negative because models us
         dataTypes: ["text", "tools"],
       },
     },
-    assignments: { main: "stub/echo", agents: { "00000000-0000-4000-8000-000000000119": "ah92-admit-deny/none" } },
+    assignments: { main: { modelId: "stub/echo" }, agents: { "00000000-0000-4000-8000-000000000119": { modelId: "ah92-admit-deny/none" } } },
   });
   expect(() => requireModel(file, "acme/fast")).toThrow(BoxRuntimeError);
   try {

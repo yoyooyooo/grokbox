@@ -234,9 +234,9 @@ describe("E06 window parse fail-closed", () => {
   test("E06 unknown 0/neg/non-int windows are not qualified models", () => {
     for (const contextWindowTokens of [0, -8, 3.14]) {
       expect(() => parseModelsFile({
-        version: 1,
+        version: 3,
         models: { [SYNTHETIC_OPENAI.id]: { ...SYNTHETIC_OPENAI, contextWindowTokens } },
-        assignments: { main: null, agents: { "agent-tom": SYNTHETIC_OPENAI.id } },
+        assignments: { main: null, agents: { "agent-tom": { modelId: SYNTHETIC_OPENAI.id } } },
       })).toThrow(BoxRuntimeError);
     }
   });

@@ -72,7 +72,7 @@ test("ownership class maps to Label owner without treating unconfirmed as tempor
 
 test("assigned tokens prefer alias then short model id", () => {
   const file = parseModelsFile({
-    version: 1,
+    version: 3,
     models: {
       "openai-responses/grok-4.6": {
         provider: "openai-responses",
@@ -91,8 +91,8 @@ test("assigned tokens prefer alias then short model id", () => {
     assignments: {
       main: null,
       agents: {
-        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": "openai-responses/grok-4.6",
-        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb": "openai-chat/other",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": { modelId: "openai-responses/grok-4.6" },
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb": { modelId: "openai-chat/other" },
       },
     },
   });

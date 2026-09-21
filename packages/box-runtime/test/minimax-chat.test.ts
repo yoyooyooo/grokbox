@@ -112,10 +112,10 @@ test("dialect selection is origin-qualified, configurable, and binding-revision 
   expect(chatDialect({ endpoint: "https://api.minimaxi.com/v1", provider: "openai-chat" })).toBe("minimax-inline-v1");
   for (const endpoint of ["http://api.minimaxi.com/v1", "https://api.minimaxi.com.evil.invalid/v1", "https://api.minimaxi.com/other", "https://api.minimaxi.com:444/v1"]) expect(chatDialect({ endpoint, provider: "openai-chat" })).toBe("standard");
   expect(chatDialect({ endpoint: "https://api.minimax.io/v1", provider: "openai-chat", chatDialect: "standard" })).toBe("standard");
-  const file = parseModelsFile({ version: 1, models: { [record.id]: record } });
+  const file = parseModelsFile({ version: 3, models: { [record.id]: record } });
   expect(file.models[record.id]?.chatDialect).toBe("minimax-inline-v1");
   expect(computeSelectionRevision({ agentId: "fixture", model: record })).not.toBe(computeSelectionRevision({ agentId: "fixture", model: { ...record, chatDialect: "standard" } }));
-  expect(() => parseModelsFile({ version: 1, models: { [record.id]: { ...record, chatDialect: "unknown" } } })).toThrow();
-  expect(() => parseModelsFile({ version: 1, models: { [record.id]: { ...record, provider: "openai-responses" } } })).toThrow();
-  expect(() => parseModelsFile({ version: 1, models: { "stub/echo": { chatDialect: "minimax-inline-v1" } } })).toThrow();
+  expect(() => parseModelsFile({ version: 3, models: { [record.id]: { ...record, chatDialect: "unknown" } } })).toThrow();
+  expect(() => parseModelsFile({ version: 3, models: { [record.id]: { ...record, provider: "openai-responses" } } })).toThrow();
+  expect(() => parseModelsFile({ version: 3, models: { "stub/echo": { chatDialect: "minimax-inline-v1" } } })).toThrow();
 });

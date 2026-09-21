@@ -18,7 +18,7 @@ describe("configuration domain isolation through production readers", () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-config-domains-"));
     await publishConfigFile(join(root, "config.json"), validateConfig({ ...defaultConfig(), runtime: { desiredMode: "route" },
       ops: { targets: { default: {}, analysis: { allowedIntents: ["diagnose-or-report"] } } } }));
-    const models = JSON.stringify({ version: 1, models: { "stub/echo": STUB_ECHO_MODEL }, assignments: { main: null, agents: { [agent]: "stub/echo" } } });
+    const models = JSON.stringify({ version: 3, models: { "stub/echo": STUB_ECHO_MODEL }, assignments: { main: null, agents: { [agent]: { modelId: "stub/echo" } } } });
     await writeFile(join(root, "models.json"), models, { mode: 0o600 });
     const store = openConfigStore(rootConfigLayout(root)); const before = configurationRevisions((await store.read()).document);
     const captured = captureHostManagedSelection(root, agent);
@@ -53,7 +53,7 @@ test("reasoning policy and unified general config do not rewrite or invalidate e
   const configPath = join(root, "config.json"), modelsPath = join(root, "models.json");
   await publishConfigFile(configPath, validateConfig({ ...defaultConfig(), runtime: { desiredMode: "route" } }));
   const modelId = "example/model";
-  const file = parseModelsFile({ version: 2, models: { [modelId]: { provider: "openai-responses", model: "example",
+  const file = parseModelsFile({ version: 3, models: { [modelId]: { provider: "openai-responses", model: "example",
     endpoint: "https://example.invalid/v1", apiKeyRef: "env:SYNTHETIC_KEY", contextWindowTokens: 200000,
     capabilities: { reasoning: { efforts: ["high", "xhigh"] } } } }, assignments: { main: null, agents: {} } });
   const runtime = openRuntimeStore(root, {}), config = openConfigStore(rootConfigLayout(root));

@@ -45,7 +45,7 @@ async function writeFacts(boxRoot: string, profile: unknown = validProfile) {
   await mkdir(join(boxRoot, "profiles"), { recursive: true });
   await writeFile(join(boxRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "identity" } }), { mode: 0o600 });
   await writeFile(join(boxRoot, "models.json"), `${JSON.stringify({
-    version: 1, models: {}, assignments: { main: null, agents: {} },
+    version: 3, models: {}, assignments: { main: null, agents: {} },
   })}\n`);
   await writeFile(reviewedProfilePath(boxRoot), `${JSON.stringify(profile)}\n`);
 }
@@ -83,7 +83,7 @@ async function writeFacts(boxRoot: string, profile: unknown = validProfile) {
       await writeFile(join(boxRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
       expect(inspectControllerFacts(boxRoot).reason).toBe("missing-models");
       await writeFile(join(boxRoot, "models.json"), `${JSON.stringify({
-        version: 1, models: {}, assignments: { main: null, agents: {} },
+        version: 3, models: {}, assignments: { main: null, agents: {} },
       })}\n`);
       expect(inspectControllerFacts(boxRoot).reason).toBe("missing-source");
       await mkdir(join(boxRoot, "profiles"), { recursive: true });

@@ -33,9 +33,9 @@ function run<A>(effect: Effect.Effect<A, unknown, unknown>): Promise<A> {
 describe("T24 live composition", () => {
   test("echo + live BackendAuth runStep works for empty apiKeyRef across STEPs", async () => {
     const file = parseModelsFile({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-a": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-a": { modelId: STUB_ECHO_MODEL_ID } } },
     });
     const captured = captureManagedSelection(file, "agent-a");
     if (captured.kind !== "managed") throw new Error("expected managed");
@@ -76,9 +76,9 @@ describe("T24 live composition", () => {
   test("Effect configuration read uses the same 128 KiB no-follow bound as Host", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-t24-config-"));
     const small = {
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-a": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-a": { modelId: STUB_ECHO_MODEL_ID } } },
     };
     await writeFile(join(root, "models.json"), `${JSON.stringify(small)}\n`);
     expect(captureHostSelection(root, "agent-a").kind).toBe("managed");

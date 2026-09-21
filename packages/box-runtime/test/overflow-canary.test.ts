@@ -157,9 +157,9 @@ describe("modeld overflow canary (default-off CCS intercept)", () => {
       contextWindowTokens: 200000,
     };
     const models = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [openai.id]: openai },
-      assignments: { main: null, agents: { [agentId]: openai.id } },
+      assignments: { main: null, agents: { [agentId]: { modelId: openai.id } } },
     });
     const body = contextSnapshotBody({
       version: 1,

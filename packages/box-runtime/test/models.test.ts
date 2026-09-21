@@ -11,6 +11,7 @@ import {
   parseApiKeyRef,
   parseModelsFile,
   resolveAssignment,
+  type ModelAssignment,
 } from "@grokbox/runtime-kernel/selection";
 import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
 import { CLI_INSTALL_ROOT, resolveDurableRoot } from "../src/internal/io/paths.ts";
@@ -18,7 +19,7 @@ import { projectStatus } from "../src/internal/io/observe.ts";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 
 const SAMPLE = {
-  version: 1 as const,
+  version: 3 as const,
   models: {
     "acme/fast": {
       id: "acme/fast",
@@ -30,7 +31,7 @@ const SAMPLE = {
       dataTypes: ["text", "tools"],
     },
   },
-  assignments: { main: null as string | null, agents: {} as Record<string, string> },
+  assignments: { main: null as ModelAssignment | null, agents: {} as Record<string, ModelAssignment> },
 };
 
 describe("models.json store", () => {
@@ -44,7 +45,7 @@ describe("models.json store", () => {
   });
 
   test("agent lookup uses own data keys, including explicit prototype-shaped ids", () => {
-    const file = parseModelsFile({ ...SAMPLE, assignments: { main: "stub/echo", agents: JSON.parse('{"__proto__":"acme/fast"}') } });
+    const file = parseModelsFile({ ...SAMPLE, assignments: { main: { modelId: "stub/echo" }, agents: JSON.parse('{"__proto__":{"modelId":"acme/fast"}}') } });
     expect(resolveAssignment(file, "__proto__").id).toBe("acme/fast");
     expect(resolveAssignment(file, "toString").id).toBe("stub/echo");
     expect(resolveAssignment(file, "constructor").id).toBe("stub/echo");
@@ -94,13 +95,13 @@ describe("models.json store", () => {
           dataTypes: ["text", "tools"],
         },
       },
-      assignments: { main: "openai/gpt-4o-mini", agents: {} },
+      assignments: { main: { modelId: "openai/gpt-4o-mini" }, agents: {} },
     };
     assertRouteAssignment(parseModelsFile(openai));
     assertRouteAssignment(parseModelsFile({
-      version: 1,
+      version: 3,
       models: openai.models,
-      assignments: { main: null, agents: { "00000000-0000-4000-8000-000000000114": "openai/gpt-4o-mini" } },
+      assignments: { main: null, agents: { "00000000-0000-4000-8000-000000000114": { modelId: "openai/gpt-4o-mini" } } },
     }));
     const status = projectStatus({
       root: store.root,

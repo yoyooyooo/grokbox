@@ -21,20 +21,29 @@ test("Node bundle executes both qualified reasoning backends with synthetic HTTP
     expect(proof.observed).toEqual([{ api: "chat", calls: 1, effort: "xhigh", reasoningTokens: 12 }, { api: "responses", calls: 1, effort: "xhigh", reasoningTokens: 12 }]);
   } finally { await rm(home, { recursive: true, force: true }); }
 });
-test("actual packed Node CLI migrates old assignments only through explicit maintenance, never query fallback", async () => {
+test("actual packed Node CLI rejects retired model documents and has no migration or query fallback", async () => {
   const cli = ensurePackedCli(), home = await mkdtemp(join(tmpdir(), "reasoning-packed-cli-"));
   const durable = join(home, "durable"), path = join(durable, "models.json");
   const agent = "11111111-1111-4111-8111-111111111111";
   try {
     await mkdir(durable, { mode: 0o700 });
-    const original = JSON.stringify({ version: 1, models: {}, assignments: { main: null, agents: { [agent]: "stub/echo" } } });
-    await writeFile(path, original, { mode: 0o600 });
     const run = (...args: string[]) => spawnSync("node", [cli, ...args], { env: { ...safeEnv(home), GROKBOX_BOX_RUNTIME_ROOT: durable,
       GROKBOX_RUN_ROOT: join(home, "run"), GROKBOX_CONFIG_DIR: join(home, "config") }, encoding: "utf8", timeout: 30000 });
-    expect(run("models", "migrate").status).not.toBe(0); expect(await readFile(path, "utf8")).toBe(original);
-    const migrated = run("models", "migrate", "--confirm"); expect(migrated.status, migrated.stderr).toBe(0);
-    expect(JSON.parse(migrated.stdout)).toMatchObject({ data: { modelsSchemaVersion: 3, assignmentsUnchanged: true } });
-    const saved = await readFile(path, "utf8"); expect(JSON.parse(saved).assignments.agents[agent]).toEqual({ modelId: "stub/echo" });
+    for (const version of [1, 2]) {
+      const original = JSON.stringify({ version, models: {}, assignments: { main: null, agents: { [agent]: version === 1 ? "stub/echo" : { modelId: "stub/echo" } } } });
+      await writeFile(path, original, { mode: 0o600 });
+      expect(run("models", "migrate").status).toBe(2);
+      expect(run("models", "migrate", "--confirm").status).toBe(2);
+      const refused = run("models", "check");
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toContain("current version 3");
+      expect(await readFile(path, "utf8")).toBe(original);
+    }
+    // The test owns this new document. The application never converted old bytes.
+    const saved = JSON.stringify({ version: 3, models: {}, assignments: { main: null, agents: { [agent]: { modelId: "stub/echo" } } } });
+    await writeFile(path, saved, { mode: 0o600 });
+    const checked = run("models", "check"); expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout).data.assignments.agents[agent]).toEqual({ modelId: "stub/echo" });
     const shown = run("bot", "model", "get", agent); expect(shown.status).toBe(7);
     expect(JSON.parse(shown.stdout)).toMatchObject({ ok: false, error: { code: "unavailable" } });
     expect(await readFile(path, "utf8")).toBe(saved);

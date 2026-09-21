@@ -19,9 +19,9 @@ describe("Host session hook", () => {
 
     const empty = await mkdtemp(join(tmpdir(), "grokbox-hook-empty-"));
     await writeFile(join(empty, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: STUB_ECHO_MODEL_ID, agents: {} },
+      assignments: { main: { modelId: STUB_ECHO_MODEL_ID }, agents: {} },
     })}\n`);
     const emptyHook = bindHostSessionHook({ mode: "route", durableRoot: empty, runRoot: empty });
     expect(emptyHook({ originalSession: official, agentId: "agent-1" })).toBe(official);
@@ -31,9 +31,9 @@ describe("Host session hook", () => {
   test("managed assignment returns Host prompt session", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-hook-managed-"));
     await writeFile(join(root, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
     const missingTurn = hook({ originalSession: official, agentId: "agent-tom" });
@@ -58,9 +58,9 @@ describe("Host session hook", () => {
   test("dedicated native createSession without managed Agent identity stays exactly official", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-hook-compact-"));
     await writeFile(join(root, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
     expect(hook({ originalSession: official })).toBe(official);
@@ -86,9 +86,9 @@ describe("Host session hook", () => {
   test("a selected managed session never routes an unqualified no-STEP call to the official executor", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-hook-overlay-"));
     await writeFile(join(root, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const binding: HostBinding = {
       generationId: "a".repeat(64),
@@ -157,9 +157,9 @@ describe("Host session hook", () => {
   test("invalid executor state leaves Host rejection facts", async () => {
     const root = await mkdtemp(join(tmpdir(), "grokbox-hook-reject-"));
     await writeFile(join(root, "models.json"), `${JSON.stringify({
-      version: 1,
+      version: 3,
       models: {},
-      assignments: { main: null, agents: { "agent-tom": STUB_ECHO_MODEL_ID } },
+      assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const binding: HostBinding = {
       generationId: "a".repeat(64),
@@ -227,9 +227,9 @@ describe("Host session hook", () => {
     };
     const write = async (window: number) => {
       await writeFile(join(root, "models.json"), `${JSON.stringify({
-        version: 1,
+        version: 3,
         models: { "openai/gpt": { ...openai, contextWindowTokens: window } },
-        assignments: { main: null, agents: { "agent-tom": "openai/gpt" } },
+        assignments: { main: null, agents: { "agent-tom": { modelId: "openai/gpt" } } },
       })}\n`);
     };
     await write(32000);

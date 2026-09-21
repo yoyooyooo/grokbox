@@ -42,7 +42,7 @@ async function waitRows(root: string, match: (row: Record<string, unknown>) => b
 
 function refusedModels() {
   return {
-    version: 1,
+    version: 3,
     models: {
       "acme/fast": {
         provider: "acme",
@@ -53,7 +53,7 @@ function refusedModels() {
         dataTypes: ["text", "tools"],
       },
     },
-    assignments: { main: null, agents: { "agent-tom": "acme/fast" } },
+    assignments: { main: null, agents: { "agent-tom": { modelId: "acme/fast" } } },
   };
 }
 

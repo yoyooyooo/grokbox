@@ -26,7 +26,7 @@ const stop = (reason = "stop") => ({ ...chunk({}, reason), usage: { prompt_token
 
 async function scenario(kind: "undeclared" | "open-tool" | "missing-finish" | "valid" | "minimax-valid" | "minimax-unknown-second" | "minimax-open-think") {
   const selected = { ...model, ...(kind.startsWith("minimax-") ? { chatDialect: "minimax-inline-v1" } : {}) };
-  const config = parseModelsFile({ version: 1, models: { [model.id]: selected }, assignments: { agents: { "owned-agent": model.id }, main: null } });
+  const config = parseModelsFile({ version: 3, models: { [model.id]: selected }, assignments: { agents: { "owned-agent": { modelId: model.id } }, main: null } });
   const root = await mkdtemp(join(tmpdir(), "grokbox-stream-boundary-"));
   const generation = randomUUID();
   let http = 0, firstChunk = 0;

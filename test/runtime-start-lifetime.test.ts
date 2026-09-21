@@ -14,7 +14,7 @@ async function fixture() {
     discoveryPath: join(dir, "absent-gateway.json"), daemonSocket: join(dir, "absent-daemon.sock"),
     transport: "local" as const, env: { GROKBOX_RUN_ROOT: run } } };
 }
-const validModels = { version: 1, models: {}, assignments: { main: null, agents: {} } };
+const validModels = { version: 3, models: {}, assignments: { main: null, agents: {} } };
 
 for (const mode of ["observe", "identity", "route"] as const) {
   test(`runtime start ${mode} owns its foreground service and does not adopt a Host`, async () => {

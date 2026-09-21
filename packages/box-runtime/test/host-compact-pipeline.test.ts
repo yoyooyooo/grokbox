@@ -89,13 +89,13 @@ for (const errorStatus of [400, 401] as const) {
     const durableRoot = join(dir, "durable");
     await mkdir(durableRoot);
     const models = parseModelsFile({
-      version: 1,
+      version: 3,
       models: { [MODEL]: {
         provider: "openai", model: "owned-model", endpoint: "https://compact-fixture.invalid/v1",
         apiKeyRef: "env:OWNED_TEST_KEY", capabilities: { vision: false, tools: true, images: false },
         dataTypes: ["text", "tools"], contextWindowTokens: 200000,
       } },
-      assignments: { main: null, agents: { [AGENT]: MODEL } },
+      assignments: { main: null, agents: { [AGENT]: { modelId: MODEL } } },
     });
     await writeFile(join(durableRoot, "models.json"), JSON.stringify(models), { mode: 0o600 });
     const requests: Array<Record<string, unknown>> = [];

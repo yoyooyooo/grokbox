@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, writeFile, readFile, readlink, unlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readlink, unlink, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { defaultConfig, validateConfig } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { planConfigurationMigration, applyConfigurationMigration, recoverConfigurationMigration, configurationMigrationStatus } from "../src/internal/io/config-migrate.node.ts";
+import { migrationPreview, planConfigurationMigration, applyConfigurationMigration, recoverConfigurationMigration, configurationMigrationStatus } from "../src/internal/io/config-migrate.node.ts";
 import { openConfigStore } from "../src/internal/io/config-store.node.ts";
 import { readConfigLayout, publishConfigFile, rootConfigLayout } from "../src/internal/io/config-layout.node.ts";
+
+import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
+import { captureHostManagedSelection } from "../src/internal/host/selection.node.ts";
 
 const quiet = { writers: async () => [] };
 async function fixture() {
@@ -34,6 +37,8 @@ describe("one-way canonical migration", () => {
     expect(await configurationMigrationStatus(root)).toEqual({ state: "not-started" });
     const result = await applyConfigurationMigration(options, plan.planDigest, quiet);
     expect(result.phase).toBe("retired"); expect(result.servicesStarted).toBe(false);
+    expect(migrationPreview(plan).modelValidation).toBe("not-performed");
+    await expect(openRuntimeStore(root, {}).loadModels()).rejects.toThrow("current version 3");
     expect(await readFile(join(root, "models.json"), "utf8")).toBe(modelBytes);
     expect(await readlink(join(home, "models.json"))).toBe(join(root, "models.json"));
     const config = (await openConfigStore(await readConfigLayout(home)).read()).document;
@@ -113,6 +118,24 @@ for (const interruptedAt of [undefined, "published"] as const) test(`general mig
   } else expect((await applyConfigurationMigration(options, plan.planDigest, quiet)).phase).toBe("retired");
   expect(await readFile(join(root, "models.json"), "utf8")).toBe(modelBytes);
   expect(await readlink(join(home, "models.json"))).toBe(join(root, "models.json"));
+  expect(migrationPreview(plan).modelValidation).toBe("not-performed");
+  await expect(openRuntimeStore(root, {}).loadModels()).rejects.toThrow("current version 3");
+  expect(() => captureHostManagedSelection(root, "00000000-0000-4000-8000-000000000321")).toThrow();
+});
+
+test("general configuration preservation cannot qualify an unknown model schema", async () => {
+  const root = await mkdtemp(join(tmpdir(), "config-preserved-model-domain-"));
+  const bytes = ' {"version":99,"models":{},"futureField":"DO_NOT_REINTERPRET"}\n';
+  try {
+    await publishConfigFile(join(root, "config.json"), defaultConfig());
+    await writeFile(join(root, "models.json"), bytes, { mode: 0o600 });
+    const options = { configDir: root, root, role: "box" as const };
+    const plan = await planConfigurationMigration(options, quiet);
+    expect(migrationPreview(plan)).toMatchObject({ canApply: true, models: "preserved-in-place", modelValidation: "not-performed" });
+    expect((await applyConfigurationMigration(options, plan.planDigest, quiet)).servicesStarted).toBe(false);
+    expect(await readFile(join(root, "models.json"), "utf8")).toBe(bytes);
+    await expect(openRuntimeStore(root, {}).loadModels()).rejects.toThrow("current version 3");
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 /** Reconstruct the old, completed config-v2 manifest shape in an owned fixture.
