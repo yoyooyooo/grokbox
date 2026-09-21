@@ -4,11 +4,9 @@ import { lstat, mkdtemp, writeFile, mkdir, readFile, readdir } from "node:fs/pro
 import * as net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { liveH3AdoptAdapter } from "../packages/box-runtime/src/internal/process/live-readopt.ts";
+import { liveMutationAttempts, resetLiveMutationAttempts } from "../packages/box-runtime/src/internal/roots/controller-program.node.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import * as credentials from "../packages/box-runtime/src/internal/io/credentials.node.ts";
-import * as coordinatorModule from "../packages/box-runtime/src/internal/roots/controller.runtime.ts";
-import { receiptFixture } from "../packages/box-runtime/test/receipt-fixture.ts";
 import { snapshotTree } from "../packages/box-runtime/test/observation-fixture.ts";
 import { liveStatusAdapter } from "../packages/box-runtime/src/internal/io/observe.ts";
 import { runtimeConfigPath as desiredPath } from "../packages/box-runtime/src/internal/io/paths.ts";
@@ -52,37 +50,21 @@ function data(stdout: string): Record<string, unknown> {
   return (parseJson(stdout) as { data: Record<string, unknown> }).data;
 }
 
-function stubLiveAdoptPorts() {
-  const processes = {
-    inspect: () => null,
-    list: () => [],
-    signal: () => ({ ok: false as const, reason: "not-found" as const }),
-  };
-  return {
-    processes,
-    classify: () => null,
-    waitHostGone: async () => true,
-    supervisorRelaunch: async () => null,
-    waitReady: async () => null,
-    applyLaunchEnv: async () => undefined,
-    hasGrokboxPreload: () => false,
-    spawnTempSupervisor: async () => null,
-    waitNewHost: async () => null,
-    readGatewayPid: () => null,
-    guardianDeadlineMs: 1,
-    waitBudgetMs: 1,
-    adoptProveMs: 1,
-  };
+function emptyProcessTree() {
+  return { inspect: () => null, list: () => [], signal: () => ({ ok: false as const, reason: "not-found" as const }) };
 }
-
-function spyLiveAdoptFactory() {
-  return spyOn(liveH3AdoptAdapter, "createLiveH3AdoptPorts").mockImplementation(() => stubLiveAdoptPorts());
+function observeLiveMutations() {
+  resetLiveMutationAttempts();
+  return {
+    assertNone: () => expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 }),
+    close: resetLiveMutationAttempts,
+  };
 }
 
 function spyStatusReaders(runRoot: string) {
   const spies = [
     spyOn(liveStatusAdapter, "runRoot").mockReturnValue(runRoot),
-    spyOn(liveStatusAdapter, "processes").mockImplementation(() => stubLiveAdoptPorts().processes),
+    spyOn(liveStatusAdapter, "processes").mockImplementation(emptyProcessTree),
     spyOn(liveStatusAdapter, "envHas").mockReturnValue(false),
     spyOn(liveStatusAdapter, "diskSha").mockResolvedValue({ state: "unavailable" }),
     spyOn(liveStatusAdapter, "gatewayPid").mockResolvedValue({ state: "missing" }),
@@ -179,10 +161,8 @@ describe("box-local runtime CLI", () => {
     expect(
       keys.some(
         (key) =>
-          key.includes("inject") ||
-          key.includes("heal") ||
-          key === "runtime kill" ||
-          key.split(" ").includes("ctl"),
+          key.split(" ").some(token => ["inject", "heal", "ctl"].includes(token)) ||
+          key === "runtime kill",
       ),
     ).toBe(false);
   });
@@ -191,7 +171,7 @@ describe("box-local runtime CLI", () => {
     const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-profile-cli-"));
     const hostBundle = join(boxRuntimeRoot, "synthetic-host.cjs");
     await writeFile(hostBundle, LIVE_SHAPED_HOST);
-    const liveSpy = spyLiveAdoptFactory();
+    const liveSpy = observeLiveMutations();
     const secretSpy = spyOn(credentials, "materializeApiKeyRef");
     const deps = {
       discoveryPath: "/dev/null",
@@ -225,11 +205,11 @@ describe("box-local runtime CLI", () => {
       expect((await lstat(join(boxRuntimeRoot, "profiles"))).mode & 0o777).toBe(0o700);
       expect((await lstat(String(body.profilePath))).mode & 0o777).toBe(0o600);
       expect(await readFile(hostBundle, "utf8")).toBe(LIVE_SHAPED_HOST);
-      expect(liveSpy).not.toHaveBeenCalled();
+      liveSpy.assertNone();
       expect(secretSpy).not.toHaveBeenCalled();
     } finally {
       secretSpy.mockRestore();
-      liveSpy.mockRestore();
+      liveSpy.close();
     }
   });
 
@@ -297,7 +277,7 @@ describe("box-local runtime CLI", () => {
     const hostBundle = join(boxRuntimeRoot, "synthetic-host.cjs");
     await writeFile(hostBundle, LIVE_SHAPED_HOST);
     const before = await readdir(boxRuntimeRoot);
-    const spy = spyLiveAdoptFactory();
+    const mutations = observeLiveMutations();
     try {
       const args = ["runtime", "profile", "write", "--from", hostBundle, "--allow-unretained", "--confirm"];
       const profiled = await captureCli(["--profile", "default", ...args], { boxRuntimeRoot });
@@ -308,9 +288,9 @@ describe("box-local runtime CLI", () => {
         expect(parseJson(refused.stderr)).toMatchObject({ error: { code: "runtime_local_only" } });
       }
       expect(await readdir(boxRuntimeRoot)).toEqual(before);
-      expect(spy).not.toHaveBeenCalled();
+      mutations.assertNone();
     } finally {
-      spy.mockRestore();
+      mutations.close();
     }
   });
 
@@ -345,7 +325,7 @@ describe("box-local runtime CLI", () => {
   });
 
   test("re-adopt after deactivate sets route and does not refuse desired-disabled", async () => {
-    const factory = spyLiveAdoptFactory();
+    const mutations = observeLiveMutations();
     try {
       const boxRuntimeRoot = await withRoot();
       const deactivated = await captureCli(["runtime", "deactivate"], {
@@ -360,9 +340,9 @@ describe("box-local runtime CLI", () => {
       expect(receipt.code, receipt.stderr).toBe(0);
       expect(data(receipt.stdout).reason).not.toBe("desired-disabled");
       expect(JSON.parse(await readFile(desiredPath(boxRuntimeRoot), "utf8")).runtime.desiredMode).toBe("route");
-      expect(factory).not.toHaveBeenCalled();
+      mutations.assertNone();
     } finally {
-      factory.mockRestore();
+      mutations.close();
     }
   });
 
@@ -526,20 +506,15 @@ describe("box-local runtime CLI", () => {
     expect((parseJson(refused.stderr) as { error: { message: string } }).error.message).toContain("--confirm");
   });
 
-  test("confirmed re-adopt runs the controller program with zero live mutation", async () => {
-    const factory = spyLiveAdoptFactory();
-    const coordinator = spyOn(coordinatorModule, "runManualReadopt");
+  test("confirmed re-adopt runs the current controller program with zero live mutation", async () => {
+    const mutations = observeLiveMutations();
     try {
       const boxRuntimeRoot = await withRoot();
       const receipt = await captureCli(["runtime", "re-adopt", "--confirm"], { discoveryPath: "/dev/null", boxRuntimeRoot });
       expect(receipt.code, receipt.stderr).toBe(0);
       expect(data(receipt.stdout)).toMatchObject({ outcome: "refused", signaled: false, spawned: false, guardian: false });
-      expect(factory).not.toHaveBeenCalled();
-      expect(coordinator).not.toHaveBeenCalled();
-    } finally {
-      coordinator.mockRestore();
-      factory.mockRestore();
-    }
+      mutations.assertNone();
+    } finally { mutations.close(); }
   });
 
   test("re-adopt --profile and remote transports return runtime_local_only", async () => {
@@ -577,71 +552,30 @@ describe("box-local runtime CLI", () => {
     expect(JSON.stringify(data(activate.stdout))).not.toContain("re-adopt");
   });
 
-  test("live-adapter factory is constructed only by confirmed local re-adopt", async () => {
-    const spy = spyLiveAdoptFactory();
+  test("current CLI reads and unqualified apply paths perform no live mutation", async () => {
+    const mutations = observeLiveMutations();
     try {
-      const boxRuntimeRoot = await withRoot();
-      const missing = await captureCli(["runtime", "re-adopt"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(missing.code).toBe(2);
-      expect(spy).not.toHaveBeenCalled();
-
-      const profiled = await captureCli(["--profile", "default", "runtime", "re-adopt", "--confirm"], {
-        discoveryPath: "/dev/null",
-      });
-      expect(profiled.code).toBe(65);
-      expect(spy).not.toHaveBeenCalled();
-
-      const remote = await captureCli(["runtime", "re-adopt", "--confirm"], {
-        discoveryPath: "/dev/null",
-        sshHost: "box.example",
-      });
-      expect(remote.code).toBe(65);
-      expect(spy).not.toHaveBeenCalled();
-
-      const activate = await captureCli(["runtime", "activate", "--mode", "identity"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(activate.code, activate.stderr).toBe(0);
-      expect(spy).not.toHaveBeenCalled();
-
+      const boxRuntimeRoot = await withRoot(), deps = { discoveryPath: "/dev/null", boxRuntimeRoot };
+      const missing = await captureCli(["runtime", "re-adopt"], deps);
+      expect(missing.code).toBe(2); mutations.assertNone();
+      const profiled = await captureCli(["--profile", "default", "runtime", "re-adopt", "--confirm"], deps);
+      expect(profiled.code).toBe(65); mutations.assertNone();
+      const remote = await captureCli(["runtime", "re-adopt", "--confirm"], { ...deps, sshHost: "box.example" });
+      expect(remote.code).toBe(65); mutations.assertNone();
+      const activate = await captureCli(["runtime", "activate", "--mode", "identity"], deps);
+      expect(activate.code, activate.stderr).toBe(0); mutations.assertNone();
       await seedDefaultModel(boxRuntimeRoot, "stub/echo");
-      const route = await captureCli(["runtime", "activate", "--mode", "route"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(route.code, route.stderr).toBe(0);
-      expect(data(route.stdout)).toMatchObject({ desired: "route", inject: false });
-      expect(spy).not.toHaveBeenCalled();
-
-      const status = await captureCli(["runtime", "status"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(status.code, status.stderr).toBe(0);
-      expect(spy).not.toHaveBeenCalled();
-
-      const watchdog = await captureCli(["runtime", "watchdog", "run"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(watchdog.code, watchdog.stderr).toBe(0);
-      expect(data(watchdog.stdout).signaled).toBe(false);
-      expect(spy).not.toHaveBeenCalled();
-
-      const confirmed = await captureCli(["runtime", "re-adopt", "--confirm"], {
-        discoveryPath: "/dev/null",
-        boxRuntimeRoot,
-      });
-      expect(confirmed.code, confirmed.stderr).toBe(0);
-      expect(data(confirmed.stdout)).toMatchObject({ signaled: false, spawned: false, guardian: false });
-      expect(spy).not.toHaveBeenCalled();
-    } finally {
-      spy.mockRestore();
-    }
+      const route = await captureCli(["runtime", "activate", "--mode", "route"], deps);
+      expect(route.code, route.stderr).toBe(0); expect(data(route.stdout)).toMatchObject({ desired: "route", inject: false }); mutations.assertNone();
+      const status = await captureCli(["runtime", "status"], deps);
+      expect(status.code, status.stderr).toBe(0); mutations.assertNone();
+      for (const args of [["runtime", "watchdog", "run"], ["runtime", "re-adopt", "--confirm"]]) {
+        const receipt = await captureCli(args, deps);
+        expect(receipt.code, receipt.stderr).toBe(0);
+        expect(data(receipt.stdout)).toMatchObject({ signaled: false, spawned: false, guardian: false });
+        mutations.assertNone();
+      }
+    } finally { mutations.close(); }
   });
 
   test("activate --mode route refuses a non-stub assignment", async () => {

@@ -56,9 +56,9 @@ export function resetLiveMutationAttempts(): void {
   lastLiveAdopt = null;
 }
 
-export function diskPreloadSha256(path = resolveNodeRequireablePreload()): string | null {
+export function diskPreloadSha256(path?: string): string | null {
   try {
-    return sha256Bytes(readFileSync(path));
+    return sha256Bytes(readFileSync(path ?? resolveNodeRequireablePreload()));
   } catch {
     return null;
   }
@@ -470,7 +470,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
   const overlayPath = join(ephemeralRoot, "state", "launch-env.json");
   const execPath = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
-  const preloadPath = resolveNodeRequireablePreload(undefined, [join(ephemeralRoot, "preload.cjs")]);
+  const preloadPath = resolveNodeRequireablePreload();
   const ports = createLiveH3AdoptPorts({
     markerPath,
     preloadNeedle: preloadPath,

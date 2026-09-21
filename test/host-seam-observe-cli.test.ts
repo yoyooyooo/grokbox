@@ -6,7 +6,7 @@ import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import * as credentials from "../packages/box-runtime/src/internal/io/credentials.node.ts";
 import { coordinatorStatePath, runtimeConfigPath as desiredPath, hostBundlesDir } from "../packages/box-runtime/src/internal/io/paths.ts";
 import { liveStatusAdapter } from "../packages/box-runtime/src/internal/io/observe.ts";
-import { liveH3AdoptAdapter } from "../packages/box-runtime/src/internal/process/live-readopt.ts";
+import { liveMutationAttempts, resetLiveMutationAttempts } from "../packages/box-runtime/src/internal/roots/controller-program.node.ts";
 import { snapshotTree } from "../packages/box-runtime/test/observation-fixture.ts";
 import { SYNTHETIC_HOST } from "../packages/box-runtime/test/synthetic-host.ts";
 import { captureCli, parseJson } from "./helpers.ts";
@@ -73,7 +73,7 @@ describe("HSO-1 observe CLI", () => {
     const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-hso1-cli-prim-"));
     const host = join(boxRuntimeRoot, "host.cjs");
     await writeFile(host, SYNTHETIC_HOST);
-    const liveSpy = spyOn(liveH3AdoptAdapter, "createLiveH3AdoptPorts");
+    resetLiveMutationAttempts();
     const secretSpy = spyOn(credentials, "materializeApiKeyRef");
     let fetches = 0;
     const originalFetch = globalThis.fetch;
@@ -90,7 +90,7 @@ describe("HSO-1 observe CLI", () => {
         }) as unknown as typeof fetch,
       });
       expect(observed.code, observed.stderr).toBe(0);
-      expect(liveSpy).not.toHaveBeenCalled();
+      expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 });
       expect(secretSpy).not.toHaveBeenCalled();
       expect(fetches).toBe(0);
       const runRoot = join(boxRuntimeRoot, "missing-run");
@@ -112,7 +112,7 @@ describe("HSO-1 observe CLI", () => {
       }
     } finally {
       globalThis.fetch = originalFetch;
-      liveSpy.mockRestore();
+      resetLiveMutationAttempts();
       secretSpy.mockRestore();
     }
   });

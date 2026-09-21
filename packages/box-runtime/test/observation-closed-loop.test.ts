@@ -3,7 +3,6 @@ import * as fs from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { attestationPath, writeAttestation } from "../src/internal/io/authority.node.ts";
 import { snapshotContracts, CONTRACT_OBSERVATION_LIMIT } from "../src/internal/io/contracts.ts";
-import { runManualReadopt, runWatchdogTick, WATCHDOG_OPERATION_ID } from "../src/internal/roots/controller.runtime.ts";
 import { observeEvents } from "../src/internal/io/journal.node.ts";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { projectLiveStatus, readContracts, readEvents } from "../src/internal/io/observe.ts";
@@ -38,7 +37,7 @@ async function configuredFixture(adopt = true) {
     await writeAdoptOpState(f.ephemeralRoot, {
       launchMode: "transient-adopt",
       phase: "attested",
-      operationId: WATCHDOG_OPERATION_ID,
+      operationId: "observed-fixture-operation",
       tempSupervisor: null,
       adoptingSupervisor: f.supervisor,
       host: f.host,
@@ -53,7 +52,7 @@ async function configuredFixture(adopt = true) {
 }
 
 describe("desired/actual observation closed loop", () => {
-  test("disabled request is pending while the owned patched Host survives, including confirmed manual", async () => {
+  test("disabled intent observation remains pending and cannot stop the owned patched Host", async () => {
     const f = await configuredFixture();
     await fs.writeFile(desiredPath(f.root), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "disabled" } }));
     const signals = [...f.tree.signals];
@@ -61,13 +60,8 @@ describe("desired/actual observation closed loop", () => {
     const observed = await f.status();
     expect(observed.facets.bridge.value).toMatchObject({ desired: "disabled", actual: "route", coverage: "attested" });
     expect(await snapshotTree(f.root)).toEqual(before);
-    for (const confirmed of [false, true]) {
-      const input = { ...f.input, desired: { version: 1 as const, mode: "disabled" as const }, confirmed };
-      if (confirmed) await expect(runManualReadopt(input)).rejects.toMatchObject({ code: "invalid_usage" });
-      else await expect(runWatchdogTick(input)).rejects.toMatchObject({ code: "invalid_usage" });
-      expect(f.tree.signals).toEqual(signals);
-      expect(f.tree.alive(f.gateway.pid)).toBe(true);
-    }
+    expect(f.tree.signals).toEqual(signals);
+    expect(f.tree.alive(f.gateway.pid)).toBe(true);
   });
 
   test("coordinator fields and last recorded heal are read, never invented as a heartbeat", async () => {
@@ -188,7 +182,7 @@ describe("desired/actual observation closed loop", () => {
     expect(status.facets.recovery.gap).toBe("invalid");
     expect(status.facets.bridge.value?.coverage).toBe("window-open");
     expect(await snapshotTree(f.root)).toEqual(before);
-    await expect(runManualReadopt(f.input)).rejects.toMatchObject({ code: "invalid_usage" });
+    expect(f.tree.signals).toEqual([]);
   });
 
   test("models arrays cannot silently become empty valid objects", async () => {

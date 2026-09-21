@@ -9,7 +9,7 @@
 ## Module / dirs touched
 - `packages/runtime-kernel/src/commands.ts`、`ports.ts`、`internal/commands/{configuration,controller-operation,reconciliation}.ts` 及同目录纯 target/state rules。
 - `packages/box-runtime/src/internal/io/{artifacts,authority,configuration,provenance,journal,observation}.node.ts`。
-- `packages/box-runtime/src/internal/process/` 与 `roots/{controller.runtime,command.runtime,layers}.ts`；`src/runtime.ts`。
+- `packages/box-runtime/src/internal/process/` 与 `roots/{controller-program.node,command.runtime,layers}.ts`；`src/runtime.ts`。
 - `packages/cli/src/commands/runtime.ts` 仅 facade routing；`packages/runtime-kernel/test/controller.test.ts`、`packages/box-runtime/test/controller-io.test.ts`、`test/runtime-cli.test.ts`。
 
 ## Depends-on
@@ -30,6 +30,10 @@ LegacyWitness、旧 fallback live ports、多个 coordinator/registry、manual �
 
 ## Non-goals / out-of-scope
 WebUI/`console/`、把 T29 当本票后续默认施工、自动授予 watchdog 新权限、daemon/SSH runtime mutation、改 launch 产品语义/J13/Bun pin、现役 re-adopt 或测试1赋值。
+
+## 重建中的旧入口退出（2026-09-21）
+
+现行 program 是 `roots/controller-program.node.ts` 与 kernel controller-operation。旧 `controller.runtime.ts`、`live-inject.ts`、`live-readopt.ts` 的拒绝型残骸及专属测试已删除，不保留 alias 或 throwing shim。CLI、安装包、只读观察与隔离 HOME 测试改为检查实际现行 controller/资源边界，不再 spy 一个已退出的 factory。preload 只从当前源码构建目录或已安装 bundle 的同级 CJS 定位；缺制品拒绝，不借用旧 run-root 副本或回退 TypeScript。现行 direct/transient、guardian、未知操作与只读保全语义不因清理退出。阶段验证归 [CLI-05](CLI-05-implementation-follow-through.md)。
 
 ## Related
 [spec Controller](../roadmap/box-runtime-impl-spec.md#controller) · [delete](../roadmap/box-runtime-impl-spec.md#delete) · [proof/live](../roadmap/box-runtime-impl-spec.md#review-live) · [plan Phase 1 §1.3](../roadmap/box-runtime-plan.md) · [ADR D8](../decisions/2026-09-08-host-seam-normalization-and-roadmap.md#d8--effect-root-and-resource-ownership) · [既有 J13/G1/Bun 约束](../decisions/2026-09-07-offline-live-adjudication.md)

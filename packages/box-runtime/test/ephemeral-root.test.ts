@@ -87,36 +87,25 @@ describe("default composition uses the home run root", () => {
     expect(String(result.runRoot)).not.toBe("/home/box/.grokbox/run");
   });
 
-  test("default watchdog/re-adopt wiring uses home run root; explicit override stays isolated", async () => {
-    const result = await runIsolated("watchdog-wiring");
-    const markerPaths = result.markerPaths as Array<{ markerPath: string; overlayPath: string }>;
-    expect(result.leasePath).toBe(join(String(result.wiredDefaultRoot), "ops", "coordinator.lock"));
-    expect(result.lockPath).toBe(join(String(result.wiredDefaultRoot), "ops", "identity.lock"));
+  test("current controller metadata inspection uses the home root and isolates an explicit override", async () => {
+    const result = await runIsolated("controller-recovery-roots");
+    expect(result.leasePath).toBe(join(String(result.defaultRoot), "ops", "coordinator.lock"));
+    expect(result.lockPath).toBe(join(String(result.defaultRoot), "ops", "identity.lock"));
+    expect(result.overrideRoot).not.toBe(result.defaultRoot);
+    expect(result.normal).toMatchObject({ outcome: "clear", signaled: false, adopted: false, replayAuthorized: false });
+    expect(result.explicit).toEqual(result.normal);
+    expect(result.mutations).toEqual({ signal: 0, spawn: 0, guardian: 0 });
+    expect(result.homeUnchanged).toBe(true);
     expect(result.xdgUnchanged).toBe(true);
-    expect(result.homeUnchangedAfterOverride).toBe(true);
-    expect(markerPaths[0]).toMatchObject({
-      markerPath: join(String(result.wiredDefaultRoot), "state", "preload-marker.json"),
-      overlayPath: join(String(result.wiredDefaultRoot), "state", "launch-env.json"),
-    });
-    expect(markerPaths[1]).toMatchObject({
-      markerPath: join(String(result.wiredOverrideRoot), "state", "preload-marker.json"),
-      overlayPath: join(String(result.wiredOverrideRoot), "state", "launch-env.json"),
-    });
+    expect(result.overrideUnchanged).toBe(true);
   });
 
   test("XDG or /tmp decoy alone cannot attest, authorize re-adopt, or copy into the home run root", async () => {
     const result = await runIsolated("no-import");
-    const readopt = result.readopt as {
-      origin: string;
-      reconcile: string;
-      signaled: boolean;
-      injected: boolean;
-    };
     expect(result.origin).toBe("grokbox-unattested");
     expect(result.coverage).toBe("none");
-    expect(readopt.reconcile).toBe("refused");
-    expect(readopt.signaled).toBe(false);
-    expect(readopt.injected).toBe(false);
+    expect(result.recovery).toMatchObject({ signaled: false, adopted: false, replayAuthorized: false });
+    expect(result.mutations).toEqual({ signal: 0, spawn: 0, guardian: 0 });
     expect(result.homeAtt).toBeNull();
     expect(result.homeUnchangedAfterStatus).toBe(true);
     expect(result.xdgStillThere).toBe(true);
@@ -131,7 +120,7 @@ describe("live-path source bounds", () => {
       "internal/io/observe.ts",
       "internal/io/authority.node.ts",
       "internal/io/coordinator-state.ts",
-      "internal/process/live-readopt.ts",
+      "internal/roots/controller-program.node.ts",
     ]) {
       const src = await readFile(join(dirname(fileURLToPath(import.meta.url)), "../src", rel), "utf8");
       expect(src).not.toContain("XDG_RUNTIME_DIR");

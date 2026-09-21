@@ -1,345 +1,71 @@
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
-import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { readAttestation, writeAttestation, type CoverageAttestation } from "../src/internal/io/authority.node.ts";
-import {
-  runManualReadopt,
-  WATCHDOG_OPERATION_ID,
-} from "../src/internal/roots/controller.runtime.ts";
+import { recoverControllerOperationState, liveMutationAttempts, resetLiveMutationAttempts } from "../src/internal/roots/controller-program.node.ts";
 import { ephemeralRuntimeRoot } from "../src/internal/io/ephemeral.ts";
-import { armGuardian } from "../src/internal/process/guardian.node.ts";
-import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../src/internal/process/live-readopt.ts";
-import type { DesiredFile, ModelsFile } from "@grokbox/runtime-kernel/selection";
+import type { ModelsFile } from "@grokbox/runtime-kernel/selection";
 import { projectLiveStatus } from "../src/internal/io/observe.ts";
 import { coordinatorLeasePath, operationLockPath } from "../src/internal/io/op-lock.ts";
-import type { ProcessIdentity, ProcessPort, SignalName } from "../src/internal/process/process-port.ts";
-import { adoptOpStatePath } from "../src/internal/process/transient-adopt.ts";
-import { SHA, reviewed, targetFor } from "./admission-fixture.ts";
-import { FakeProcessTree, hangUntilAbort } from "./fake-tree.ts";
+import type { ProcessIdentity, ProcessPort } from "../src/internal/process/process-port.ts";
+import { SHA } from "./admission-fixture.ts";
 
-const MODELS: ModelsFile = { version: 3, models: {}, assignments: { main: null, agents: {} } };
-
-function fail(message: string): never {
-  console.error(message);
-  process.exit(2);
-}
-
-if (!process.env.HOME) fail("HOME must be set");
-if (homedir() !== process.env.HOME) fail(`homedir ${homedir()} !== HOME ${process.env.HOME}`);
-
-const runRoot = join(homedir(), ".grokbox", "run");
-if (runRoot === "/home/box/.grokbox/run") fail("refusing to mutate the real home run root");
-if (ephemeralRuntimeRoot() !== runRoot) fail(`default root ${ephemeralRuntimeRoot()} !== ${runRoot}`);
-
+const models: ModelsFile = { version: 3, models: {}, assignments: { main: null, agents: {} } };
+if (!process.env.HOME || homedir() !== process.env.HOME) throw Error("isolated_HOME_required");
+const runRoot = join(homedir(), ".grokbox", "run"), xdg = process.env.XDG_RUNTIME_DIR;
+if (!xdg || runRoot === "/home/box/.grokbox/run" || ephemeralRuntimeRoot() !== runRoot) throw Error("unowned_run_root");
 async function snapshot(dir: string): Promise<string> {
-  let names: string[] = [];
-  try {
-    names = (await readdir(dir, { recursive: true })).map(String).sort();
-  } catch {
-    return "";
-  }
-  const parts = await Promise.all(
-    names.map(async (name) => {
-      try {
-        return `${name}:${await readFile(join(dir, name), "utf8")}`;
-      } catch {
-        return `${name}:`;
-      }
-    }),
-  );
-  return parts.join("\n");
+  let names: string[];
+  try { names = (await readdir(dir, { recursive: true })).map(String).sort(); } catch { return ""; }
+  return (await Promise.all(names.map(async name => {
+    try { return `${name}:${await readFile(join(dir, name), "utf8")}`; } catch { return `${name}:`; }
+  }))).join("\n");
 }
-
-function desired(mode: DesiredFile["mode"]): DesiredFile {
-  return { version: 1, mode };
-}
-
-function ident(partial: Partial<ProcessIdentity> & Pick<ProcessIdentity, "pid" | "cmdline">): ProcessIdentity {
-  return {
-    uid: 1000,
-    start: 1,
-    exe: "/exec-daemon/node",
-    ppid: 1,
-    ancestry: [1],
-    ...partial,
-  };
-}
-
 function officialChain() {
-  const wrapper = ident({
-    pid: 11,
-    exe: "/usr/local/bin/supervise-sand-supervisor",
-    cmdline: ["/usr/local/bin/supervise-sand-supervisor"],
-    ppid: 1,
-    ancestry: [1],
-  });
-  const supervisor = ident({
-    pid: 22,
-    cmdline: ["/exec-daemon/node", "/usr/local/bin/sand-supervisor.mjs"],
-    ppid: wrapper.pid,
-    ancestry: [wrapper.pid, 1],
-  });
-  const host = ident({
-    pid: 33,
-    start: 100,
-    cmdline: ["/exec-daemon/node", "/home/box/sand-host/host-main.cjs"],
-    ppid: supervisor.pid,
-    ancestry: [supervisor.pid, wrapper.pid, 1],
-  });
-  return { wrapper, supervisor, host };
+  const ident = (value: Partial<ProcessIdentity> & Pick<ProcessIdentity, "pid" | "cmdline">): ProcessIdentity => ({ uid: 1000, start: 1, exe: "/exec-daemon/node", ppid: 1, ancestry: [1], ...value });
+  const wrapper = ident({ pid: 11, exe: "/usr/local/bin/supervise-sand-supervisor", cmdline: ["/usr/local/bin/supervise-sand-supervisor"] });
+  const supervisor = ident({ pid: 22, cmdline: ["/exec-daemon/node", "/usr/local/bin/sand-supervisor.mjs"], ppid: 11, ancestry: [11, 1] });
+  const host = ident({ pid: 33, start: 100, cmdline: ["/exec-daemon/node", "/home/box/sand-host/host-main.cjs"], ppid: 22, ancestry: [22, 11, 1] });
+  const processes: ProcessPort = { inspect: pid => [wrapper, supervisor, host].find(p => p.pid === pid) ?? null, list: () => [wrapper, supervisor, host],
+    signal: () => { throw Error("read_must_not_signal"); } };
+  return { host, processes };
 }
-
-function portOf(list: ProcessIdentity[]): ProcessPort {
-  const signals: Array<{ pid: number; signal: SignalName }> = [];
-  return {
-    inspect: (pid) => list.find((row) => row.pid === pid) ?? null,
-    list: () => [...list],
-    signal: (expected, signal) => {
-      signals.push({ pid: expected.pid, signal });
-      return { ok: false, reason: "not-found" };
-    },
-  };
-}
-
 function attFor(host: ProcessIdentity, diskSha = SHA): CoverageAttestation {
-  return {
-    mode: "identity",
-    coverage: "attested",
-    diskSha,
-    pid: host.pid,
-    start: host.start,
-    identity: host,
-    at: "2026-09-05T00:00:00.000Z",
-    modeld: false,
-    windowMs: 12,
-    launchMode: "direct-launch",
-  };
+  return { mode: "identity", coverage: "attested", diskSha, pid: host.pid, start: host.start, identity: host,
+    at: "2026-09-05T00:00:00.000Z", modeld: false, windowMs: 12, launchMode: "direct-launch" };
 }
-
-function classify(tree: FakeProcessTree) {
-  return (row: { pid: number }) => {
-    const found = tree.roles().find((role) => role.pid === row.pid);
-    if (found?.role === "wrapper" || found?.role === "supervisor" || found?.role === "host") return found.role;
-    if (found?.role === "temp-supervisor") return "temp-supervisor";
-    return null;
-  };
+async function status(root: string, chain: ReturnType<typeof officialChain>) {
+  return projectLiveStatus({ root, desired: { version: 1, mode: "identity" }, models, processes: chain.processes,
+    diskSha: SHA, envHas: (pid, key) => pid === chain.host.pid && key === "GROKBOX_PRELOAD_MODE" });
 }
-
-function guard(tree: FakeProcessTree, frozen: Array<{ pid: number }>, onRelease?: () => void) {
-  const g = armGuardian({
-    wrapper: frozen[0] as never,
-    processes: tree,
-    deadlineMs: 5000,
-    now: () => 0,
-    wait: hangUntilAbort(),
-  });
-  return {
-    ok: true as const,
-    release: () => {
-      g.close();
-      onRelease?.();
-    },
-  };
+async function statusCanonical() {
+  const root = await mkdtemp(join(tmpdir(), "grokbox-root-status-")), chain = officialChain(), decoy = join(xdg!, "grokbox");
+  await writeAttestation(runRoot, attFor(chain.host)); await writeAttestation(decoy, attFor(chain.host, "xdg-decoy-sha"));
+  const beforeHome = await snapshot(runRoot), beforeXdg = await snapshot(decoy), observed = await status(root, chain);
+  return { defaultRoot: ephemeralRuntimeRoot(), runRoot, origin: observed.facets.bridge.value?.origin, reason: observed.facets.bridge.value?.reason,
+    coverage: observed.facets.bridge.value?.coverage, homeUnchanged: await snapshot(runRoot) === beforeHome, xdgUnchanged: await snapshot(decoy) === beforeXdg };
 }
-
-function harness(tree: FakeProcessTree, wrapper: ProcessIdentity) {
-  let patchedPid = 0;
-  let gatewayPid: number | null = tree.roles().find((row) => row.role === "host")?.pid ?? null;
-  const touched = new Set<number>();
-  return {
-    touch: (pid: number) => {
-      touched.add(pid);
-    },
-    envHas: (pid: number, key: string) =>
-      touched.has(pid) &&
-      (key === "GROKBOX_PRELOAD_MODE" || key === "GROKBOX_OPERATION_ID" || key === "GROKBOX_PRELOAD_MARKER"),
-    adopt: {
-      target: targetFor(),
-      spawnTempSupervisor: async () => {
-        const temp = tree.spawn("temp-supervisor");
-        const born = tree.spawn("host", { parent: temp });
-        patchedPid = born.pid;
-        gatewayPid = born.pid;
-        touched.add(born.pid);
-        return temp;
-      },
-      waitNewHost: async (oldPid: number) =>
-        tree.list().find((row) => classify(tree)(row) === "host" && row.pid !== oldPid) ?? null,
-      waitGone: async (old: ProcessIdentity) => tree.inspect(old.pid) === null,
-      waitReady: async (pid: number) => ({
-        operationId: WATCHDOG_OPERATION_ID,
-        pid,
-        start: tree.inspect(pid)!.start,
-        mode: "identity" as const,
-        transformed: true as const,
-        compiled: true as const,
-        modeld: false as const,
-        compile: expectedCompileReceipt(reviewed),
-      }),
-      armGuardian: async (frozen: ProcessIdentity[]) =>
-        guard(tree, frozen, () => {
-          if (!tree.roles().some((row) => row.role === "supervisor")) {
-            tree.spawn("supervisor", { parent: wrapper });
-          }
-        }),
-      hasGrokboxPreload: (row: ProcessIdentity) => row.pid === patchedPid,
-      readGatewayPid: () => gatewayPid,
-      adoptProveMs: 200,
-    },
-  };
+async function controllerRecoveryRoots() {
+  const root = await mkdtemp(join(tmpdir(), "grokbox-root-controller-")), override = await mkdtemp(join(tmpdir(), "grokbox-root-override-"));
+  const beforeHome = await snapshot(runRoot), beforeXdg = await snapshot(xdg!), beforeOverride = await snapshot(override);
+  resetLiveMutationAttempts();
+  const normal = await recoverControllerOperationState({ boxRoot: root });
+  const explicit = await recoverControllerOperationState({ boxRoot: root, ephemeralRoot: override });
+  return { defaultRoot: ephemeralRuntimeRoot(), overrideRoot: ephemeralRuntimeRoot(override), normal, explicit, mutations: { ...liveMutationAttempts },
+    leasePath: coordinatorLeasePath(runRoot), lockPath: operationLockPath(runRoot),
+    homeUnchanged: await snapshot(runRoot) === beforeHome, xdgUnchanged: await snapshot(xdg!) === beforeXdg, overrideUnchanged: await snapshot(override) === beforeOverride };
 }
-
-function stubLiveAdoptPorts() {
-  const processes = {
-    inspect: () => null,
-    list: () => [],
-    signal: () => ({ ok: false as const, reason: "not-found" as const }),
-  };
-  return {
-    processes,
-    classify: () => null,
-    waitHostGone: async () => true,
-    supervisorRelaunch: async () => null,
-    waitReady: async () => null,
-    applyLaunchEnv: async () => undefined,
-    hasGrokboxPreload: () => false,
-    spawnTempSupervisor: async () => null,
-    waitNewHost: async () => null,
-    readGatewayPid: () => null,
-    guardianDeadlineMs: 1,
-    waitBudgetMs: 1,
-    adoptProveMs: 1,
-  };
+async function noImport() {
+  const root = await mkdtemp(join(tmpdir(), "grokbox-root-decoy-")), decoy = await mkdtemp(join(tmpdir(), "grokbox-unselected-")), chain = officialChain();
+  await writeAttestation(join(xdg!, "grokbox"), attFor(chain.host)); await writeAttestation(decoy, attFor(chain.host));
+  const before = await snapshot(runRoot), observed = await status(root, chain);
+  resetLiveMutationAttempts(); const recovery = await recoverControllerOperationState({ boxRoot: root });
+  return { origin: observed.facets.bridge.value?.origin, coverage: observed.facets.bridge.value?.coverage, recovery, mutations: { ...liveMutationAttempts },
+    homeAtt: await readAttestation(runRoot), homeUnchangedAfterStatus: await snapshot(runRoot) === before,
+    xdgStillThere: (await readFile(join(xdg!, "grokbox", "attestation.json"), "utf8")).includes("attested"),
+    tmpStillThere: (await readFile(join(decoy, "attestation.json"), "utf8")).includes("attested") };
 }
-
-async function statusCanonical(): Promise<unknown> {
-  const xdg = process.env.XDG_RUNTIME_DIR;
-  if (!xdg) fail("XDG_RUNTIME_DIR required");
-  const durable = await mkdtemp(join(tmpdir(), "grokbox-status-durable-"));
-  const { wrapper, supervisor, host } = officialChain();
-  const xdgRoot = join(xdg, "grokbox");
-  await writeAttestation(runRoot, attFor(host));
-  await writeAttestation(xdgRoot, attFor(host, "xdg-decoy-sha"));
-  const beforeHome = await snapshot(runRoot);
-  const beforeXdg = await snapshot(xdgRoot);
-  const status = await projectLiveStatus({
-    root: durable,
-    desired: desired("identity"),
-    models: MODELS,
-    processes: portOf([wrapper, supervisor, host]),
-    diskSha: SHA,
-    envHas: (pid, key) => pid === host.pid && key === "GROKBOX_PRELOAD_MODE",
-  });
-  return {
-    defaultRoot: ephemeralRuntimeRoot(),
-    runRoot,
-    origin: status.facets.bridge.value?.origin,
-    reason: status.facets.bridge.value?.reason,
-    coverage: status.facets.bridge.value?.coverage,
-    homeUnchanged: (await snapshot(runRoot)) === beforeHome,
-    xdgUnchanged: (await snapshot(xdgRoot)) === beforeXdg,
-  };
-}
-
-async function watchdogWiring(): Promise<unknown> {
-  const xdg = process.env.XDG_RUNTIME_DIR;
-  if (!xdg) fail("XDG_RUNTIME_DIR required");
-  const durable = await mkdtemp(join(tmpdir(), "grokbox-wd-durable-"));
-  const beforeXdg = await snapshot(xdg);
-  const override = await mkdtemp(join(tmpdir(), "grokbox-eph-override-"));
-  const beforeHome = await snapshot(runRoot);
-  const original = liveH3AdoptAdapter.createLiveH3AdoptPorts;
-  const calls: Array<{ markerPath: string; overlayPath: string }> = [];
-  liveH3AdoptAdapter.createLiveH3AdoptPorts = ((input: { markerPath: string; overlayPath: string }) => {
-    calls.push(input);
-    return stubLiveAdoptPorts() as unknown as ReturnType<typeof original>;
-  }) as typeof original;
-  try {
-    const wiredDefault = wireLiveManualReadopt({ root: durable, now: () => 0 });
-    const wiredOverride = wireLiveManualReadopt({ root: durable, ephemeralRoot: override, now: () => 0 });
-    return {
-      leasePath: coordinatorLeasePath(ephemeralRuntimeRoot()),
-      lockPath: operationLockPath(ephemeralRuntimeRoot()),
-      xdgUnchanged: (await snapshot(xdg)) === beforeXdg,
-      homeUnchangedAfterOverride: (await snapshot(runRoot)) === beforeHome,
-      wiredDefaultRoot: wiredDefault.ephemeralRoot,
-      wiredOverrideRoot: wiredOverride.ephemeralRoot,
-      markerPaths: calls.map((call) => (call as { markerPath: string; overlayPath: string })),
-    };
-  } finally {
-    liveH3AdoptAdapter.createLiveH3AdoptPorts = original;
-  }
-}
-
-async function noImport(): Promise<unknown> {
-  const xdg = process.env.XDG_RUNTIME_DIR;
-  if (!xdg) fail("XDG_RUNTIME_DIR required");
-  const durable = await mkdtemp(join(tmpdir(), "grokbox-decoy-durable-"));
-  const tmpDecoy = await mkdtemp(join(tmpdir(), "grokbox-tmp-decoy-"));
-  const { wrapper, supervisor, host } = officialChain();
-  await writeAttestation(join(xdg, "grokbox"), attFor(host));
-  await writeAttestation(tmpDecoy, attFor(host));
-  const beforeHome = await snapshot(runRoot);
-  const status = await projectLiveStatus({
-    root: durable,
-    desired: desired("identity"),
-    models: MODELS,
-    processes: portOf([wrapper, supervisor, host]),
-    diskSha: SHA,
-    envHas: (pid, key) => pid === host.pid && key === "GROKBOX_PRELOAD_MODE",
-  });
-  const afterStatus = await snapshot(runRoot);
-  const tree = new FakeProcessTree();
-  const w = tree.spawn("wrapper");
-  const s = tree.spawn("supervisor", { parent: w });
-  const h = tree.spawn("host", { parent: s });
-  const ports = harness(tree, w);
-  ports.touch(h.pid);
-  let readopt: { origin: string; reconcile: string; signaled: boolean; injected: boolean };
-  try {
-    const result = await runManualReadopt({
-      confirmed: true,
-      root: durable,
-      desired: desired("identity"),
-      models: MODELS,
-      processes: tree,
-      classify: classify(tree),
-      diskSha: SHA,
-      reviewedProfile: reviewed,
-      adopt: ports.adopt,
-      envHas: ports.envHas,
-      now: () => 10,
-      isoNow: () => "2026-01-01T00:00:00.000Z",
-    });
-    readopt = {
-      origin: result.origin,
-      reconcile: result.reconcile,
-      signaled: result.signaled,
-      injected: result.injected,
-    };
-  } catch {
-    readopt = { origin: "legacy-removed", reconcile: "refused", signaled: false, injected: false };
-  }
-  return {
-    origin: status.facets.bridge.value?.origin,
-    coverage: status.facets.bridge.value?.coverage,
-    readopt,
-    homeAtt: await readAttestation(runRoot),
-    homeUnchangedAfterStatus: afterStatus === beforeHome,
-    xdgStillThere: (await readFile(join(xdg, "grokbox", "attestation.json"), "utf8")).includes("attested"),
-    tmpStillThere: (await readFile(join(tmpDecoy, "attestation.json"), "utf8")).includes("attested"),
-  };
-}
-
 const scenario = process.argv[2];
-const run =
-  scenario === "status-canonical"
-    ? statusCanonical
-    : scenario === "watchdog-wiring"
-      ? watchdogWiring
-      : scenario === "no-import"
-        ? noImport
-        : null;
-if (!run) fail(`unknown scenario ${scenario}`);
+const run = scenario === "status-canonical" ? statusCanonical : scenario === "controller-recovery-roots" ? controllerRecoveryRoots : scenario === "no-import" ? noImport : null;
+if (!run) throw Error("unknown_isolated_scenario");
 console.log(JSON.stringify(await run()));

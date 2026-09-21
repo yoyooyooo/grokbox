@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -7,8 +7,6 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import cliPackage from "../package.json" with { type: "json" };
-import { liveH3AdoptAdapter, wireLiveManualReadopt } from "../packages/box-runtime/src/internal/process/live-readopt.ts";
-import { runManualReadopt } from "../packages/box-runtime/src/internal/roots/controller.runtime.ts";
 import { resolveRuntimeHelpers, RUNTIME_HELPER_FILES } from "../packages/box-runtime/src/internal/process/helpers/runtime-helpers.ts";
 import { profileFromSource } from "../packages/box-runtime/src/internal/host/profile.ts";
 import { SYNTHETIC_HOST, SYNTHETIC_SLICES } from "../packages/box-runtime/test/synthetic-host.ts";
@@ -32,29 +30,6 @@ const bun = Bun.which("bun") ?? process.execPath;
 const nodeExecutable = existsSync("/exec-daemon/node")
   ? "/exec-daemon/node"
   : (Bun.which("node") ?? process.execPath);
-
-function stubLiveAdoptPorts() {
-  const processes = {
-    inspect: () => null,
-    list: () => [],
-    signal: () => ({ ok: false as const, reason: "not-found" as const }),
-  };
-  return {
-    processes,
-    classify: () => null,
-    waitHostGone: async () => true,
-    supervisorRelaunch: async () => null,
-    waitReady: async () => null,
-    applyLaunchEnv: async () => undefined,
-    hasGrokboxPreload: () => false,
-    spawnTempSupervisor: async () => null,
-    waitNewHost: async () => null,
-    readGatewayPid: () => null,
-    guardianDeadlineMs: 1,
-    waitBudgetMs: 1,
-    adoptProveMs: 1,
-  };
-}
 
 async function text(stream: ReadableStream<Uint8Array>): Promise<string> {
   return await new Response(stream).text();
@@ -483,33 +458,5 @@ setInterval(() => {}, 1000);
     expect(copyPath).not.toContain("/home/box/sand-host");
     expect(copyPath).not.toContain("3136108");
 
-    const spy = spyOn(liveH3AdoptAdapter, "createLiveH3AdoptPorts").mockImplementation(() => stubLiveAdoptPorts());
-    try {
-      const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-packed-readopt-"));
-      await writeFile(
-        join(boxRuntimeRoot, "models.json"),
-        `${JSON.stringify({ version: 1, models: {}, assignments: { main: null, agents: {} } })}\n`,
-      );
-      const wired = wireLiveManualReadopt({
-        root: boxRuntimeRoot,
-        ephemeralRoot: await mkdtemp(join(tmpdir(), "grokbox-packed-readopt-eph-")),
-        now: () => 0,
-      });
-      expect(spy).toHaveBeenCalled();
-      const needle = (spy.mock.calls[0]?.[0] as { preloadNeedle?: string } | undefined)?.preloadNeedle;
-      expect(typeof needle).toBe("string");
-      expect(existsSync(needle!)).toBe(true);
-      await expect(runManualReadopt({
-        confirmed: true,
-        root: boxRuntimeRoot,
-        desired: { version: 1, mode: "identity" },
-        models: { version: 3, models: {}, assignments: { main: null, agents: {} } },
-        now: () => 0,
-        ...wired,
-        freshDiskSha: () => "none",
-      })).rejects.toMatchObject({ code: "invalid_usage" });
-    } finally {
-      spy.mockRestore();
-    }
   }, 60_000);
 });

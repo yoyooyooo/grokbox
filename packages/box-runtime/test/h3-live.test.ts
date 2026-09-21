@@ -9,7 +9,6 @@ import {
   reviewOfficialAdoptCapability,
 } from "../src/internal/process/h3-live.ts";
 import { decideH3LaunchStrategy } from "../src/internal/process/launch-strategy.ts";
-import { runLiveIdentityInject } from "../src/internal/process/live-inject.ts";
 import { LIVE_TEMP_SUPERVISOR_NEEDLE, procEnvHas, readNamedProcEnv } from "../src/internal/process/linux.node.ts";
 
 const ident = {
@@ -101,17 +100,6 @@ describe("live H3 preflight (zero-signal abort)", () => {
         },
       }),
     ).toBe("transient-adopt-candidate");
-  });
-
-  test("runLiveIdentityInject stays blocked even with profile paths", async () => {
-    const empty = await runLiveIdentityInject();
-    expect(empty).toMatchObject({ ok: false, recoveryRequired: false, code: "live-host-blocked", coverage: "none" });
-    const withPaths = await runLiveIdentityInject({
-      root: "/tmp/legacy-h3-inject",
-      preloadPath: "/tmp/preload.cjs",
-      reviewedProfilePath: "/tmp/reviewed.json",
-    });
-    expect(withPaths).toMatchObject({ ok: false, recoveryRequired: false, code: "live-host-blocked", coverage: "none" });
   });
 
   test("temp supervisor is not classified as host; launch spec is allowlisted", () => {

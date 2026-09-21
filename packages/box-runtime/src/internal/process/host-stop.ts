@@ -110,7 +110,7 @@ export async function stopLivePatchedHost(input: { ephemeralRoot?: string } = {}
   const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
   const overlayPath = join(ephemeralRoot, "state", "launch-env.json");
   const execPath = existsSync("/exec-daemon/node") ? "/exec-daemon/node" : process.execPath;
-  const preloadPath = resolveNodeRequireablePreload(undefined, [join(ephemeralRoot, "preload.cjs")]);
+  const preloadPath = resolveNodeRequireablePreload();
   const ports = createLiveH3AdoptPorts({
     markerPath,
     preloadNeedle: preloadPath,
