@@ -37,7 +37,7 @@ function fixture(patched = false) {
     const patch = HOST_RECIPE.currentState.find(slice => slice.id === "continuity-native-duplicate-identity")!;
     originals[3] = originals[3]!.replace(patch.find, patch.replacement);
   }
-  const globals = { import_node_fs77: {
+  const globals = { import_node_fs79: {
     mkdirSync: () => undefined,
     existsSync: (p: string) => files.has(p),
     copyFileSync: (a: string,b: string) => { if (!files.has(a)) throw Error("fake-file-missing"); recorded.push(`copy:${a}`); files.set(b, files.get(a)!); },
