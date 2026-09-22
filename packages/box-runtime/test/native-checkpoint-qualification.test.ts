@@ -8,6 +8,7 @@ import { continuityStorePolicy, type NativeCurrentHead } from "@grokbox/runtime-
 import { openContinuityRecoveryStore, openContinuityCurrentState, createNativeCheckpointCapturePort } from "../src/runtime.ts";
 import { captureNativeCheckpoint, verifyNativeCheckpointReadback, verifyNativeCheckpointMaterialReadback } from "../src/internal/host/native-checkpoint.ts";
 import { CONT_NATIVE_PAIR, nativeContinuityCode, nativeContinuityEnabled } from "./native-continuity-code.ts";
+import { createNativeCurrentStateOwner, NATIVE_CURRENT_STATE_KEY } from "../src/internal/host/native-current-state-owner.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -234,4 +235,88 @@ nativeTest("same original fixed root slot contains different committed revisions
   await native.handleCheckpoint({}, f.root); const first = sha256Bytes(current), key = hex(pointer);
   await native.handleCheckpoint({}, new f.n.ConversationStateStructure({ rootPromptMessagesJson: [f.old] }));
   expect(hex(pointer)).toBe(key); expect(sha256Bytes(current)).not.toBe(first);
+});
+
+// Real selected Host declarations and production fence; blob/metadata ports are
+// owned fakes here. The separate worker-binding suite owns native SQLite proof.
+function currentWriter() {
+  const f = fixture(), ctx = {}, kv = new Map<string, string>();
+  const qualification = { hostSourceSha: CONT_NATIVE_PAIR.host, nativeSchema: CONT_NATIVE_PAIR.schema };
+  const owner = createNativeCurrentStateOwner({ qualification, generation: "owned-current-abi" });
+  let pointer = new Uint8Array(), durable = new Uint8Array(), calls = 0, rejectRevision = false;
+  let beforeWrite: () => Promise<void> = async () => {};
+  const blobStore = { setBlob: async (receivedCtx: unknown, _key: Uint8Array, raw: Uint8Array) => {
+    expect(receivedCtx).toBe(ctx); calls++; await beforeWrite(); durable = Uint8Array.from(raw);
+  }, getBlob: async () => durable };
+  const nativeMetadata = { get: (key: string) => key === "agentId" ? agent : pointer,
+    set: (_key: string, value: Uint8Array) => { pointer = Uint8Array.from(value); } };
+  const Native = f.n.currentAgentStore(owner);
+  const store = new Native(blobStore, nativeMetadata, { fixedRootBlobId: f.slot });
+  const metadata = { readKv: (key: string) => kv.get(key) ?? null,
+    writeKv: (key: string, value: string) => { if (rejectRevision) return false; kv.set(key, value); return true; },
+    getTranscriptTail: () => ({ entries: [] }), getPendingAutomationCompletions: () => [],
+    compareAndSetLatestRootBlobId: () => { throw Error("unexpected-checkpoint-pointer-CAS"); } };
+  const registration = { store, metadata, ctx, rootId: f.slot, source: qualification, valid: () => true };
+  owner.register(agent, registration);
+  return { ...f, ctx, owner, store, registration, kv,
+    calls: () => calls, durable: () => durable,
+    sequence: () => JSON.parse(kv.get(NATIVE_CURRENT_STATE_KEY) ?? '{"sequence":0}').sequence,
+    beforeWrite: (work: () => Promise<void>) => { beforeWrite = work; },
+    rejectRevision: () => { rejectRevision = true; },
+    unregistered: () => new (f.n.currentAgentStore())(blobStore, nativeMetadata, { fixedRootBlobId: f.slot }) };
+}
+
+nativeTest("transformed original checkpoint awaits native persistence before the production fence records its revision", async () => {
+  const f = currentWriter();
+  let began!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { began = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  f.beforeWrite(async () => { began(); await pending; });
+  const checkpoint = f.store.handleCheckpoint(f.ctx, f.root);
+  try {
+    await started;
+    expect(f.sequence()).toBe(0); expect(f.durable()).toHaveLength(0);
+    expect(() => f.owner.register(agent, f.registration)).toThrow("not_prepared");
+  } finally { release(); await checkpoint; }
+  expect(f.calls()).toBe(1); expect(f.sequence()).toBe(1);
+  expect(f.store.getConversationStateStructure().toBinary()).toEqual(f.durable());
+  expect(f.durable()).toEqual(f.root.toBinary());
+  expect(f.owner.readHead(agent, scope).rootHash).toBe(sha256Bytes(f.durable()));
+});
+
+nativeTest("current checkpoint fence refuses a prepared owner or stale store before writing, while absent hook preserves native passthrough", async () => {
+  const f = currentWriter();
+  f.kv.set(NATIVE_CURRENT_STATE_KEY, JSON.stringify({ version: 1, sequence: 0, hold: "prepared", operation: randomUUID(), application: null }));
+  await expect(f.store.handleCheckpoint(f.ctx, f.root)).rejects.toMatchObject({ code: "not_prepared" });
+  expect(f.calls()).toBe(0);
+  f.kv.delete(NATIVE_CURRENT_STATE_KEY);
+  const previous = f.store;
+  f.owner.register(agent, { ...f.registration, store: f.unregistered() });
+  await expect(previous.handleCheckpoint(f.ctx, f.root)).rejects.toMatchObject({ code: "not_prepared" });
+  expect(f.calls()).toBe(0);
+  await f.unregistered().handleCheckpoint(f.ctx, f.root);
+  expect(f.calls()).toBe(1); expect(f.sequence()).toBe(0);
+  expect(f.durable()).toEqual(f.root.toBinary());
+});
+
+nativeTest("current original writer preserves native rejection and does not reinterpret a failed revision receipt as no write", async () => {
+  const f = currentWriter(), nativeError = { ownedNativeFailure: true };
+  f.beforeWrite(async () => { throw nativeError; });
+  await expect(f.store.handleCheckpoint(f.ctx, f.root)).rejects.toBe(nativeError);
+  expect(f.durable()).toHaveLength(0); expect(f.sequence()).toBe(0);
+  // No leaked in-flight fence after failure.
+  expect(() => f.owner.register(agent, f.registration)).not.toThrow();
+  f.beforeWrite(async () => {}); f.rejectRevision();
+  await expect(f.store.handleCheckpoint(f.ctx, f.root)).rejects.toMatchObject({ code: "commit_unknown" });
+  expect(f.durable()).toEqual(f.root.toBinary()); expect(f.sequence()).toBe(0);
+  expect(f.store.getConversationStateStructure().toBinary()).toEqual(f.durable());
+});
+
+nativeTest("current native dependency receipt hashes actual selected codec, descriptor and writer declarations without publishing them", () => {
+  const n = nativeContinuityCode();
+  expect(Object.keys(n.dependencyHashes).sort()).toEqual(["agentStore", "awaiter", "codecDeclarations", "patchedAgentStore", "serde", "sharedDescriptors"]);
+  for (const value of Object.values(n.dependencyHashes)) expect(value).toMatch(/^[a-f0-9]{64}$/);
+  expect(n.dependencyHashes.agentStore).not.toBe(n.dependencyHashes.patchedAgentStore);
+  console.log(JSON.stringify({ scope: "isolated-native-declarations", source: CONT_NATIVE_PAIR, dependencies: n.dependencyHashes,
+    fullHostExecuted: false, providerRequests: 0 }));
 });

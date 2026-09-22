@@ -6,7 +6,7 @@ import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
 import { installNativeCheckpointWorkerHook, transformNativeCheckpointWorker } from "../src/internal/host/native-checkpoint-worker-hook.ts";
 
 // A retired source is a negative fixture, not an executable production tuple.
-const retiredHosts = ["e7031f773bf035d02952d8b76dc2d2be6cea7167305116cf3e9b05d2c067b06e", "2380c2c7bc3bfe6dc661bfc2640df2a34d79b0e43b234a172abbe55d399b1548"];
+const retiredHosts = ["e7031f773bf035d02952d8b76dc2d2be6cea7167305116cf3e9b05d2c067b06e", "2380c2c7bc3bfe6dc661bfc2640df2a34d79b0e43b234a172abbe55d399b1548", "6be750313bb7bb393cc3833e103d4d2cd0dc336b6d903e7671c107ea1883767f"];
 
 test("ordinary imports expose only the independently checked current tuple", () => {
   expect(nativeContinuityPair({})).toEqual(NATIVE_CHECKPOINT_PAIR);
@@ -25,6 +25,7 @@ test("current recipe and pair have one source identity and never fall back to th
   expect(nativeCheckpointPair(NATIVE_CHECKPOINT_PAIR.host, NATIVE_CHECKPOINT_PAIR.worker)).toBe(NATIVE_CHECKPOINT_PAIR);
   for (const host of retiredHosts) expect(nativeCheckpointPair(host, NATIVE_CHECKPOINT_PAIR.worker)).toBeNull();
   expect(nativeCheckpointPair(NATIVE_CHECKPOINT_PAIR.host, "b".repeat(64))).toBeNull();
+  expect(nativeCheckpointPair(NATIVE_CHECKPOINT_PAIR.host, "56f87fa9fe599610b6c8201540ec3b510cc36a4535f629e2600aaf3cb90d7c4e")).toBeNull();
   for (const id of ["continuity-native-created-owner", "continuity-native-session-owner"]) {
     const replacement = HOST_RECIPE.currentState.find(s => s.id === id)!.replacement;
     expect(replacement).toContain(`hostSourceSha: "${NATIVE_CHECKPOINT_PAIR.host}"`);

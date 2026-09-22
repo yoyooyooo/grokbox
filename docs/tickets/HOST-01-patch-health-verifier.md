@@ -1,6 +1,6 @@
 # HOST-01 · Host 补丁健康识别与 Rust/Oxc 验证内核
 
-**状态：实施中。** 已登记来源的精确配方、四项静态谓词、有限checkpoint ABI、实际编译回执、原引用注册及managed主流lease直接机会已经接入原管理/故障链。2026-09-22读取的磁盘Host已变为ebd92f0d…，尚未取得现行单一配方/ABI资格；不得把6be750…的固定证据扩大到新字节或据磁盘变化猜当前加载状态。完整能力覆盖、实际采用后整条业务与独立告警出口仍未完成。
+**状态：实施中。** 已登记来源的精确配方、四项静态谓词、有限checkpoint ABI、实际编译回执、原引用注册及managed主流lease直接机会已经接入原管理/故障链。2026-09-22的A1实现已针对磁盘Host ebd92f0d… / worker 4c154a34…完成61片有序变换、四项合法语义反例和有限原生ABI复验；准确来源及观察边界见[核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)。这是本来源的核心交付，不是全部能力覆盖、v2集成签收、当前加载或真实采用后的业务资格；独立告警出口仍未完成。
 
 ## 目标、已定架构与最终边界
 
@@ -24,9 +24,27 @@
 
 实时健康只接受host-health-v2和witness v2，持久analysis同时核对现行完整id/revision集合。旧合同或不匹配记录保留原字节但拒绝充当新证据；不会减少必需项或自动迁移成成功。旧Host元组和按SHA挑选历史配方的分支已退出，未知Host不回退。正式非受管Bot的原生passthrough是现行产品行为，不是旧grokbox兼容路径。
 
+## 核心接缝交付合同
+
+本节是A1交付R/D/E/F等消费者的核心调用合同，不增加第二套类型、writer或运行路径。维护模块在`packages/box-runtime/src/internal/host/`；以同一构建、精确Host/worker/candidate及完整有序recipe作为来源身份。下表Symbol均带`grokbox.box-runtime.`前缀，`v1`指现有Symbol/RPC协议版本，不能单凭版本号跨来源接纳；固定摘要与可执行观察见[核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)。
+
+| 接缝 / 现行模块 | 当前合同、身份与结算 |
+| --- | --- |
+| 主session：`live-slices.ts` / `profile.ts`，`route-session.v1` | 先构建原session，再同步交给hook：`{originalSession, sessionOptions, agentId, onRequestId}`。返回`undefined`才decline至原session。原主调用提供`agentId=host.getConversationId()`、`invocationId=inferenceRequestId`、`clientNonce=options2.clientNonce`，保留原model/executor选择；不是从全局“最后一个Bot”推导身份。 |
+| 工具：`live-slices.ts` / `run-observation.ts` | 原`executeToolCall`以`ctx.get(requestIdKey)`、当前`invocationId`和`callId`建立观察，再在原Promise成功/失败路径调用`finish(true/false)`。观察器异常不得替换原结果或原错误对象，也不能证明未观察的工具已被拦截。 |
+| 辅助：`live-slices.ts` / `profile.ts`，`host-aux.v1` | 仅实际`extractMemories`与`summarizeEpisode`调用点给出`memory-extraction`或`episode`，传原executor、turnId及ctx；受管session绑定已完成父STEP的选择。hook不存在或decline保留原executor；不伪造主session身份，不把空输出当作模型资格。 |
+| Compact：`live-slices.ts` / `context-slices.ts`，`host-compact.v1` | 原STEP开始provider请求前注册原root/ctx/stateHandler、invocation/turn/agent及工具/固定消息回调。lease是同步`Symbol.dispose`资源，preflight需await；原STEP finally负责关闭。`contextCheckpoint`先await原`computeNewStructure(ctx)`，再await原`onStateUpdate(ctx, structure)`；不能用持久marker替代await链。 |
+| Checkpoint / worker：`native-current-state-owner.ts`、`native-checkpoint-worker-hook.ts`、`native-checkpoint-worker.ts` | `native-current-state.v1`注册原store/metadata/ctx/rootId/source及存活条件；`checkpoint(agentId, original, store)`核同一store和prepared屏障，await原writer后记录revision，失败仍释放in-flight计数。worker协议1仅接受`capture/compose/prepare/apply/observe/release`及版本1的回包；Host/worker准确配对，原事务、receipt、GC fence与reopen/readback维持各自职责。 |
+| 身份/权限：`ownership-read.ts` / `native-current-state-rpc.ts` | `ownership-read.v1`只从原凭据owner取得有限Server/local/scope事实，scope只输出摘要。`grokboxCurrentStateControl`为认证Gateway上的有限RPC；变更必须confirm、同scope/expected head及实时managed Box归属复核；caller的保护策略controller仍拥有授权，不由transport代签。读取、静态分析和prepare不是startup许可。 |
+| 错误/读回：`profile.ts` / `native-current-state-owner.ts` / `native-checkpoint.ts` | managed failure保留原错误且在内外retry边界终止；未受管原生retry/passthrough保留。持久root、原store内存、完整引用图、worker应用receipt与原操作身份必须分别核对。写后失联或revision回执失败为`commit_unknown`，清理失败为`cleanup_unknown`，不得重解释为无写入或可任意重派。 |
+
+材料/Project原生writer扩展、退役删除接缝不由本合同宣布已交付。单个Symbol存在、原函数可调用、四项静态规则通过或checkpoint读回，均不补全`uncoveredSlices`、真实工具权限或外部效果证明。消费者在Q合入同一v2候选后复验自己的依赖；Linear的A1/A2/A3关系是排程权威。
+
 ## 当前来源与最新证据
 
-**2026-09-22依赖校准：** [当前原生材料入口与来源变化](../reports/2026-09-22-native-material-source-drift.md)记录了新磁盘来源的完整SHA，以及旧Memory Gateway/Project入口不再存在的现行源码证据。没有改pin、加载完整Host、修改Memory或签当前运行健康。先在原HOST-01/HCR-04链验证新来源，再给DATA-01接当前原生writer及其同步回调；不复活旧RPC或另建原生存储替代物。下段6be750…仍是其明确固定窗口，不是此刻磁盘来源的自动资格。
+**2026-09-22核心来源推进：** [核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)记录当前Host/worker、变换后两份candidate、有序配方、原声明依赖摘要与四项完整当前候选的合法语义反例。只有这一当前配对进入生产常量；前代Host和worker作为拒绝反例保留，不增加旧配方fallback。原生schema/writer、生产fence与原worker自有SQLite分别观察；没有发布profile、执行主Host或采用现役服务。
+
+**2026-09-22较早依赖校准：** [当前原生材料入口与来源变化](../reports/2026-09-22-native-material-source-drift.md)记录了新磁盘来源的完整SHA，以及旧Memory Gateway/Project入口不再存在的现行源码证据。没有改pin、加载完整Host、修改Memory或签当前运行健康。当时要求先在原HOST-01/HCR-04链验证新来源；上述A1窗口推进了核心部分，DATA-01仍须接当前原生writer及其同步回调，不复活旧RPC或另建原生存储替代物。下段6be750…仍是其明确固定窗口，不是此刻磁盘来源的自动资格。
 
 本轮原生复验实际发现Host再次从2380…更新为6be750…，先拒绝旧资格，再进行独立源/schema验证和生产hook复验；没有只改pin求绿。最终source/worker/candidate准确摘要、原失败、cache-before-validation测试问题及修复见[单版本收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。该单版本阶段三个验证窗口合计659项/91文件通过。后续控制/网络兼容退出阶段已在新固定源码上复验844项/109文件，见[最新组合](../reports/2026-09-21-network-compatibility-retirement.md)；内部Node/Chrome和Rust计数不重复相加，均不是全仓最终候选签署。
 
@@ -34,7 +52,7 @@
 
 ## 后续实施顺序
 
-先收新磁盘来源的现行配方/原生角色/ABI依赖，再在原owner中继续补齐所声明必要能力的语义与变换后行为、更多独立调用机会，以及真实采用后同代证据。`uncoveredSlices`必须真实列明；机会覆盖只到managed主流lease，不能凭函数名或注册表关闭全部能力。场景反例需合法JS且重新固定candidate hash，不得全靠unknown-sha或语法错捕获。
+A1核心来源合同之后，A2在原owner中继续补齐所声明必要能力的语义与变换后行为、更多独立调用机会，以及真实采用后同代证据；A3的新原生材料/退役接缝按各自依赖推进。`uncoveredSlices`必须真实列明；机会覆盖只到managed主流lease，不能凭函数名或注册表关闭全部能力。场景反例需合法JS且重新固定candidate hash，不得全靠unknown-sha或语法错捕获。
 
 旧controller/inject拒绝型stub及专属测试/spy已经退出，安装preload也不再借用旧副本或回退TypeScript，见[控制入口退出](../reports/2026-09-21-controller-entry-retirement.md)。Tailscale/Serve的显式兼容路径、bootstrap旧writer/选项和JSON/schema占位也已经退出，见[NET-01](NET-01-box-local-network-boundary.md)。手动 compact 已接入同一管理 Server、原 Host/modeld 与 CONT 操作记录，明确 approval 字段进入当前原生 RPC/wire；旧 CLI 直连入口同步退出，见[当前管理切片](../reports/2026-09-21-compaction-management.md)。相关原生配方变化须重新验证，不借用旧 candidate 摘要。handover 控制也已进入管理 Server、原 CONT 职责与入站/退役 owner；旧 CLI 直连/适配别名和直接 attestation writer 退出，见[管理交接阶段](../reports/2026-09-21-handover-management.md)。退役对账没有 native port，不因一个新观察重新派发删除；原生资源独立性和删除屏障仍保持真实缺口。接续收束剩余 daemon 能力与全能力/调用机会资格，不重开已闭合的 Compact 或 handover 控制迁移。优先当前功能owner和准确依赖，不重做已完成的current-state、通知、材料管理等阶段，不另起平行工程。现行Acorn作者探索与Rust健康验证不是自动互相回退；是否仍需作者能力及其退出随原HCR迁移核实，不能仅删依赖而丢必需行为。
 
@@ -58,7 +76,7 @@
 
 ## 验证入口与完成边界
 
-使用声明Bun1.3.14运行`node scripts/verify-host-health.mjs core`和`integration`。显式隔离原生测试使用`GROKBOX_TEST_NATIVE_CONTINUITY=1 GROKBOX_TEST_NATIVE_NODE=<native-node> node scripts/verify-host-health.mjs native-pair`；不再接受旧original/candidate选择器。只读磁盘资格通过`scripts/qualify-host-health.ts`的明确source/worker/binary-directory与candidate-recipe；它不发布profile或执行Host。
+使用声明Bun1.3.14运行`node scripts/verify-host-health.mjs core`和`integration`。显式隔离原生测试使用`GROKBOX_TEST_NATIVE_CONTINUITY=1 GROKBOX_TEST_NATIVE_NODE=<native-node> node scripts/verify-host-health.mjs native-pair`；不再接受旧original/candidate选择器。只读磁盘资格通过`scripts/qualify-host-health.ts`的明确source/worker/binary-directory与candidate-recipe；它不发布profile或执行Host。`native-pair`现包含完整当前候选的Node/FD/Rust正反例及原生依赖摘要，拒绝skip充当通过；`GROKBOX_TEST_NATIVE_HOST=1 bun run test:native-host`复验核心原声明行为和只读副本，两个入口都不启动真实Bot。
 
 公开测试独立于私人源；原生资格只在明确环境读取/隔离执行指定声明和自有worker存储。正常、缺口、合法语义破坏、source/loaded分代、同代原引用被换、首次采样前明细丢失、retain→intake中断、重启不重发、正证据恢复和child结算都须覆盖。现场验收只进入[LIVE](LIVE-integration-validation.md)对应Host/context/monitor/install等场景，不把报告存在写成ready。
 

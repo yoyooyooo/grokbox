@@ -4,6 +4,9 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
 import { nativeContinuityPair } from "./native-continuity-pair.ts";
+import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
+import { transformUnchecked } from "../src/internal/host/profile.ts";
+import { NATIVE_CURRENT_STATE_SYMBOL } from "../src/internal/host/native-current-state-owner.ts";
 // Independent current expected bytes. Qualification remains an explicit
 // isolated codec/AgentStore experiment, never a production qualification write.
 export const CONT_NATIVE_PAIR = nativeContinuityPair(process.env);
@@ -88,17 +91,19 @@ function hostDeclaration(source: string, name: string) {
 
 let cached: any;
 export function nativeContinuityCode(): any {
-  if (cached) return cached;
   if (!nativeContinuityEnabled()) throw Error("native_continuity_not_opted_in");
   const root = "/home/box/sand-host";
   const worker = checked(`${root}/agent-isolation/agent-store-worker.cjs`, CONT_NATIVE_PAIR.worker);
   const source = checked(`${root}/host-main.cjs`, CONT_NATIVE_PAIR.host);
+  // A cached declaration cannot extend qualification to replaced disk bytes.
+  if (cached) return cached;
   const names = ["ConversationStateStructure", "ConversationSummaryArchive", "UserMessage", "ConversationTurnStructure", "AgentConversationTurnStructure",
     "BLOB_REFERENCE_MESSAGE_TYPE_BY_NAME", "getBlobReferenceMessageMetadata", "isMessage", "collectReachableBlobHexIds"];
   const globals = { Uint8Array, Uint32Array, Int32Array, Int8Array, Uint16Array, Int16Array, Float32Array, Float64Array, BigInt64Array,
     BigUint64Array, ArrayBuffer, DataView, TextEncoder, TextDecoder, Buffer, Map, Set, WeakMap, WeakSet, BigInt,
     process: Object.freeze({ env: Object.freeze({}) }), console: Object.freeze({ warn: () => undefined }) };
-  const native = runInNewContext(`${pureDeclarations(worker, names)}\n({${names.join(",")}})`, globals,
+  const codecCode = pureDeclarations(worker, names);
+  const native = runInNewContext(`${codecCode}\n({${names.join(",")}})`, globals,
     { timeout: 5000, contextCodeGeneration: { strings: false, wasm: false } });
   // The worker codec used below must describe the same original Host messages.
   // Source-pair pin alone is not permission to substitute a different protocol.
@@ -141,10 +146,24 @@ export function nativeContinuityCode(): any {
   const mismatches = [...wanted.keys()].filter(name => !found.has(name) && (!workerOnly.has(name) || present.has(name)));
   if (mismatches.length) throw Error(`native_host_worker_schema_disagreement:${mismatches.join(",")}`);
   const pick = (name: string) => hostDeclaration(source, name).code;
-  const writer = runInNewContext(`${pick("__awaiter43")}\n${pick("ProtoSerde")}\n${pick("AgentStore2")}\nAgentStore2`, {
+  const awaiterCode = pick("__awaiter45"), serdeCode = pick("ProtoSerde"), writerCode = pick("AgentStore2");
+  const checkpointSlices = HOST_RECIPE.currentState.filter(slice =>
+    ["continuity-native-checkpoint-fence", "continuity-native-checkpoint-revision"].includes(slice.id));
+  if (checkpointSlices.length !== 2) throw Error("native_checkpoint_recipe_incomplete");
+  const patched = transformUnchecked(source, checkpointSlices);
+  if (!patched.ok) throw Error(`native_checkpoint_recipe_mismatch:${patched.sliceId}`);
+  const patchedWriterCode = hostDeclaration(patched.source, "AgentStore2").code;
+  const writer = (code: string, control?: unknown) => runInNewContext(`${awaiterCode}\n${serdeCode}\n${code}\nAgentStore2`, {
     ...globals, ConversationStateStructure: native.ConversationStateStructure,
+    [Symbol.for(NATIVE_CURRENT_STATE_SYMBOL)]: control,
     Disposable: class {}, getBlobId: async (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(),
   }, { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } });
-  cached = { ...native, AgentStore: writer };
+  const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+  cached = { ...native, AgentStore: writer(writerCode),
+    currentAgentStore: (control?: unknown) => writer(patchedWriterCode, control),
+    dependencyHashes: Object.freeze({ codecDeclarations: digest(codecCode),
+      sharedDescriptors: digest(JSON.stringify([...wanted].sort(([a], [b]) => a.localeCompare(b)))),
+      awaiter: digest(awaiterCode), serde: digest(serdeCode), agentStore: digest(writerCode),
+      patchedAgentStore: digest(patchedWriterCode) }) };
   return cached;
 }

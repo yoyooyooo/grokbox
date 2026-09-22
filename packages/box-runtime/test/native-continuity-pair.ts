@@ -1,8 +1,8 @@
 /** Independent expected bytes for the explicit isolated native qualification.
  * Advancing this expectation does not alter the production admission tuple. */
 const CURRENT = Object.freeze({
-  host: "6be750313bb7bb393cc3833e103d4d2cd0dc336b6d903e7671c107ea1883767f",
-  worker: "56f87fa9fe599610b6c8201540ec3b510cc36a4535f629e2600aaf3cb90d7c4e",
+  host: "ebd92f0d14dd065b779524989dc15a7922c848f77227c69616257be6af6db8f0",
+  worker: "4c154a3498de0a3fd211762a936a0f6ea5ee24760505fa2e021543f6a0f651e6",
   schema: "native-checkpoint-proto-20260918",
 });
 export function nativeContinuityPair(env: Record<string, string | undefined>) {

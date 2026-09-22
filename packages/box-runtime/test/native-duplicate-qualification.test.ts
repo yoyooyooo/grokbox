@@ -42,7 +42,7 @@ function fixture(patched = false) {
     existsSync: (p: string) => files.has(p),
     copyFileSync: (a: string,b: string) => { if (!files.has(a)) throw Error("fake-file-missing"); recorded.push(`copy:${a}`); files.set(b, files.get(a)!); },
     rmSync: () => { recorded.push("rollback"); },
-  }, import_node_path127: posix, STORE_FILENAME: "store.db", CANONICAL_AVATAR_FILENAME: "avatar.png", AUTOMATION_CONFIG_FILENAME2: "automation.json",
+  }, import_node_path128: posix, STORE_FILENAME: "store.db", CANONICAL_AVATAR_FILENAME: "avatar.png", AUTOMATION_CONFIG_FILENAME2: "automation.json",
     checkpointSandAgentDb: (path: string) => { recorded.push(`checkpoint:${path}`); },
     getSandProfilePath: (p: string) => p + "/profile.json", getSandSettingsPath: (p: string) => p + "/settings.json",
     getAgentAutomationsDir: (p: string) => p + "/automations",
