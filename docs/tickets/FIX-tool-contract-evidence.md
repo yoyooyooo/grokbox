@@ -30,7 +30,7 @@ The implementation is carried by `runtime-kernel` contract types, `box-runtime` 
 
 | Vector | Offline fixture coverage |
 | --- | --- |
-| Tool choice, captured-in-flight, terminal and permission boundary | `tool-choice-contract.test.ts`, `host-tool-admission.test.ts`, `host-tool-wire-order.test.ts` |
+| Tool choice, captured-in-flight and terminal release boundary | `tool-choice-contract.test.ts`, `host-tool-admission.test.ts`, `host-tool-wire-order.test.ts`; native permission denial remains LIVE-only |
 | Duplicate declaration/call and no synthetic replay | `tool-declaration-contract.test.ts`, `tool-contract-integration.test.ts`, `context-continuity-e2e.test.ts` (E01/E08) |
 | Memory/episode auxiliary no-op and captured selection | `auxiliary-empty-output.test.ts`, `context-continuity-e2e.test.ts` (E07) |
 | Confirmed overflow, compact/reload and bounded next-input recovery | `overflow-bridge.test.ts`, `context-continuity-e2e.test.ts` (E04/E06/E08), `context-maintenance-provider-switch.test.ts` |
