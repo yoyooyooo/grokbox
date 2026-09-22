@@ -16,13 +16,13 @@ const history = (): PromptMessage[] => [
 ];
 const schema = { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false };
 
-function fixture(vision = false) {
+function fixture(vision = false, output: readonly StreamPart[] = [{ type: "text-delta", textDelta: "accepted" }]) {
   const requests: Array<{ envelope: ModelEnvelope; invocationId?: string; abortSignal: AbortSignal }> = [];
   const calls = { count: 0 };
   const session = asHostPromptSession(createStreamingPromptSession({ modelId: "fake/envelope", vision, parallel: "allow", providerCalls: calls,
     produce: (request) => {
       requests.push(request);
-      return { async *[Symbol.asyncIterator]() { yield { type: "text-delta" as const, textDelta: "accepted" }; yield FINISH; } };
+      return { async *[Symbol.asyncIterator]() { yield* output; yield FINISH; } };
     },
   }), "fake/envelope", undefined, { contextWindowTokens: 200000 });
   return { session, requests, calls };
@@ -30,7 +30,10 @@ function fixture(vision = false) {
 
 describe("Host messages/state/tools/options envelope", () => {
   test("text, system, history, tool schema/result/id and options reach a detached, provider-neutral boundary", async () => {
-    const f = fixture();
+    // A forced tool choice requires a real current-response call, not the
+    // completed call already present in history or a text-only fake result.
+    const currentCall: StreamPart = { type: "tool-call", toolCallId: "call-current", toolName: "lookup", args: { query: "current-sentinel" } };
+    const f = fixture(false, [currentCall]);
     const state = history();
     const before = structuredClone(state);
     const executor = f.session.getExecutor({ messages: state });
@@ -65,10 +68,24 @@ describe("Host messages/state/tools/options envelope", () => {
     expect(executions).toBe(0);
     expect(executor.getState()).toEqual([]); // no automatic response/Transcript writer
     const parts = await collectStreamParts(result.fullStream);
+    expect(parts.filter(part => part.type === "tool-call")).toEqual([currentCall]);
     expect(parts.at(-1)).toMatchObject({ type: "finish", response, usage: await result.usage });
     expect(await result.extendedUsage).toMatchObject({ inputTokens: 11, outputTokens: 3 });
     expect(await result.providerMetadata).toEqual({});
     expect(await result.invocationId).toBe("inv-envelope");
+  });
+
+  test("a historical lookup does not satisfy the current response's forced tool choice", async () => {
+    const f = fixture(), state = history();
+    const executor = f.session.getExecutor(state);
+    let executions = 0;
+    const result = executor.stream({}, "inv-required-current", [{ name: "lookup", parameters: { jsonSchema: schema },
+      execute: () => { executions += 1; } }], { toolChoice: { type: "tool", toolName: "lookup" } });
+    await expect(result.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_stream" });
+    await expect(collectStreamParts(result.fullStream)).rejects.toMatchObject({ name: "RetriableError", code: "invalid_stream" });
+    expect(f.calls.count).toBe(1);
+    expect(executions).toBe(0);
+    expect(executor.getState()).toEqual(state);
   });
 
   test.each(["parameters", "inputSchema", "schema"])("%s tool wrappers normalize without executing Host tool implementations", (key) => {
