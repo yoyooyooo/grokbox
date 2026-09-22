@@ -1,5 +1,7 @@
 # Reports：固定验证回执
 
+- [2026-09-22 self-reset 队列与消费程序验证](2026-09-22-self-reset-queue.md)：C1 的登记、消费阶段、材料引用与 GC 保护；明确 A3-C2 原生 safe-point 接通仍未证明。
+
 - [2026-09-20 旧 Host 补丁健康链审计](2026-09-20-host-patch-health-chain-audit.md)：限定旧逻辑，核对字符串/Golden/AST、watchdog实际入口、来源事件到incident与通知资格；89项隔离检查包含4个缺口反例，不签持续感知接通或现场告警送达。
 
 - [2026-09-20 Grok Bot 上游版本影响](2026-09-20-grok-bot-upstream-impact.md)：App 0.47→0.57.1、磁盘 Host 0382fa8 与当前工作树的接口/切片核对；记录 Memory 回退、idle compaction、旧回放资格失效及 53 项隔离回归，不签当前进程、模型链路或部署。

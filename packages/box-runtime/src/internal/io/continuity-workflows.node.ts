@@ -229,7 +229,7 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     const value = await db.first("SELECT * FROM continuity_queued_controls WHERE operation_id=?", [id(operationId)]);
     if (!value || value.kind !== "self-reset") return failContinuity("not_found");
     const request = selfResetRequest(parse(value.request_json));
-    if (request.operationId !== operationId || request.scopeId !== input.scopeId || encode(request) !== value.request_json) return failContinuity("integrity_failure");
+    if (request.operationId !== operationId || String(value.agent_id) !== request.agentId || request.scopeId !== input.scopeId || encode(request) !== value.request_json) return failContinuity("integrity_failure");
     const state = String(value.state) as SelfResetQueueState;
     if (!["queued", "effect_unknown", "complete", "blocked", "unknown"].includes(state)) return failContinuity("integrity_failure");
     const result = value.result_json === null ? null : selfResetExecution(parse(value.result_json), request);
