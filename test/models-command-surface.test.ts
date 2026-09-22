@@ -7,7 +7,7 @@ import { captureCli, parseJson } from "./helpers.ts";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "grokbox-models-surface-"));
-  const body = '{"version":1,"models":{},"assignments":{"main":null,"agents":{}}}\n';
+  const body = '{"version":3,"models":{},"assignments":{"main":null,"agents":{}}}\n';
   await writeFile(join(root, "models.json"), body, { mode: 0o600 });
   return { root, body, deps: { boxRuntimeRoot: root, configDir: root, discoveryPath: "/dev/null" } };
 }
