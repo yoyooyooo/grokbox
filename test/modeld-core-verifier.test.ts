@@ -90,12 +90,17 @@ test("live-only acceptance has one discoverable cross-worktree home rather than 
     expect(cells.every(cell => cell.length > 0)).toBe(true);
     expect(cells[0]).toContain(id.toUpperCase());
     expect(cells[3]).toMatch(/\]\([^)]*\.md(?:#[^)]*)?\)/);
-    expect(cells[3]).toMatch(/`(?:awaiting-integration|ready|running|passed|failed|blocked|needs-revalidation|superseded)`/);
+    // LIVE separates implementation/current result (column 2) from sources
+    // and next actions (column 4). A not-run row is not a missing result.
+    expect(cells[1]).toMatch(/`(?:integrated|partial|planned|reserved)(?:\/(?:integrated|partial|planned|experimental))?`/);
+    expect(cells[1]).toMatch(/`(?:not-run|awaiting-integration|ready|running|passed|failed|blocked|needs-revalidation|excluded|superseded)`/);
   }
   expect(text).toContain("awaiting-integration");
   expect(text).toContain("needs-revalidation");
-  expect(text).toContain("feat/box-runtime-v2");
-  expect(text).toContain("不把未实现代码或 review 改称 live 待办");
+  // Integration routing belongs to the topology linked by LIVE, not a
+  // frozen branch literal repeated in every acceptance home.
+  expect(text).toContain("parallel-delivery.md#joins");
+  expect(text).toContain("CODE/资格不足不能改成 excluded 求通过");
 });
 
 test("modeld specification has one owning section and all implementation tickets route to it", () => {

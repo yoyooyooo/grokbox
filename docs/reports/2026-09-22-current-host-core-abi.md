@@ -106,3 +106,25 @@ bun scripts/qualify-host-health.ts --source "$HOST_SOURCE" --worker "$WORKER_SOU
 A1交付当前来源身份、核心调用合同、当前唯一配方/worker admission及可执行资格。R/D/E/F使用[HOST-01合同](../tickets/HOST-01-patch-health-verifier.md#核心接缝交付合同)和[HCR-04原writer](../tickets/HCR-04-capability-profile-upgrade.md)，Q合入后再按自己的Issue复验；报告存在不解除Linear阻塞关系。
 
 A2继续声明能力的完整语义/运行机会覆盖和真实采用后的同代证据；A3分别承接当前原生材料writer、continuity/退役新接缝。当前声明不足、未跟踪调用与独立投递仍须如实呈现。该窗口没有测现役加载身份，因此磁盘Host升级不能推导正在执行的新版本，更不能触发自动切Host。
+
+
+## Q 集成与组合复验补充
+
+A1 原实现 `af7c544f` 在接入当日最新 E/R/F/Q 变更后重放为 `23f93aa5`，`range-diff` 确认原补丁未变。以 `0ec602a334b9d62d8783c41aee985a652ced8213` 为集成基线，补上 Host envelope fixture 修正后的 `cb6d9dec33c583beb1539a720d221bb9e4dc36c2` 已由 Q 快进进入 v2。该提交的源码/测试/lock 输入摘要为 `94661ddb745812c30384c3fbe35dd307dedf73f2d611c71d38dc370ac57e7c97`（1259 文件）；core、Host integration 和 native-pair 各自前后稳定。
+
+组合复验先发现旧 envelope fixture 显式强制 `lookup`，但返回文本且期望成功。当前 tool-choice 合同拒绝该响应是正确行为。fixture 改为当前响应中的真实 tool call，保留原上下文、选项、无执行和无自动 Transcript 写入断言，并增加“历史 lookup 不能满足当前强制调用”的拒绝反例。没有放宽生产 stream/工具合同。
+
+| 组合验证入口 | 实际结果 / 事实层 |
+| --- | --- |
+| `verify-host-health.mjs core` | 1459 pass / 152 文件；Rust 39 pass；根/Web 类型及协议一致性通过 |
+| `verify-host-health.mjs integration-host` | 6 个包装测试通过；内部 Node 98 项，真实打包制品与合成业务依赖 |
+| `verify-host-health.mjs native-pair`，显式原生 opt-in | 33 pass / 6 文件；当前原声明、原 worker/自有 SQLite、完整候选及合法语义反例 |
+| `bun run test:native-host` | 28 pass / 6 文件；当前原生 retry/compact/辅助 no-op 与只读副本 |
+| `verify-modeld-core.mjs tool-contract` | 扩展后的 16 文件、193 pass；真实程序、合成 Provider/capability/自有资源，不是 native 工具权限或现场成功 |
+| installation/controller 三文件 | 首次 35 pass / 1 opt-in skip；随后显式开启只读 systemd parser 检查，36 pass / 0 skip；manager 始终是自有 fake，没有改现役服务 |
+
+随后相邻路由回归发现 `modeld-core-verifier.test.ts` 仍在 LIVE 的来源列寻找结果，并要求已经退出的固定分支文字。测试改为核对当前第二列的实现/结果、第四列的来源及原拓扑路由，接受当前 `not-run`/`excluded` 词汇，不修改 LIVE 结果或把未运行写成通过。修正后相关五文件 77 pass。此收尾仅变更该测试、本文及两处安装文档的字段列表分隔符（斜杠列表触发了个人路径检测，并非实际机器路径），运行时/原生配方及上述候选字节与 `cb6d9dec` 相同；不把不同输入摘要的窗口混称一次运行，包装内外和重跑计数不相加。
+
+全部命令使用仓库声明的已安装 Bun 1.3.14，不替换系统默认 Bun；Q 早先在默认 1.4.2 上遇到的 verifier 工具链阻断未被绕过，以上是满足原工具链门的重新执行。原 Native Node、Host/worker、协议和调用合同仍按本报告前文限定。最终文档/公开性检查和实际回流 SHA 记录在 Linear AH-111 的签收回执中。
+
+A1 核心交付完成不代表 A2 的所有可达补丁覆盖、A3 材料/退役或 J2/真实采用完成。没有执行完整 Host、收费模型或 Bot/桌面操作，没有发布 profile 或切换现役服务，整体 `qualified=false`。独立产品审查和 LIVE 仍由各自后续门拥有。集成树的并行消息 API 未提交改动未纳入本次固定验证，也未被修改或提交。
