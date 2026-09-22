@@ -28,7 +28,7 @@
 | 索引文件来源 | 显式材料根内的受限UTF-8文本/全文检索 | 既有writable文件通过原材料writer替换；索引来源不能同时成为named-root写别名 |
 | Named-root文件 | 绑定安装/根策略/inode的目录元数据、显式正文与64MiB内二进制 | 原Box描述符writer承载新建/替换/mkdir/upload/download/trash/restore；metadata/content/write/delete/restore独立授权，完整原生Project附件不在此证明内 |
 
-[纯合同](../../packages/runtime-kernel/src/materials.ts)、[源适配](../../packages/box-runtime/src/internal/io/material-source.node.ts)、[索引与操作存储](../../packages/box-runtime/src/internal/io/material-store.node.ts)、[后台宿主](../../packages/box-runtime/src/internal/roots/materials.runtime.ts)和[管理用例](../../packages/server/src/materials.ts)分别拥有边界。管理 Server 持有 indexer；扫描不做原生 RPC/模型请求或源写入。配置只读面不初始化存储；显式启用的后台进行初始扫描和周期校准。源绑定包含配置、声明的账号 scope、真实根目录 inode，声明 scope 不冒充最新原生登录，所有来源保留 `upstreamSync=not-observed`。
+[B1 当前材料合同报告](../reports/2026-09-22-material-contract.md)固定当前来源、身份、权限与 Project fileRef 缺口；[纯合同](../../packages/runtime-kernel/src/materials.ts)、[源适配](../../packages/box-runtime/src/internal/io/material-source.node.ts)、[索引与操作存储](../../packages/box-runtime/src/internal/io/material-store.node.ts)、[后台宿主](../../packages/box-runtime/src/internal/roots/materials.runtime.ts)和[管理用例](../../packages/server/src/materials.ts)分别拥有边界。管理 Server 持有 indexer；扫描不做原生 RPC/模型请求或源写入。配置只读面不初始化存储；显式启用的后台进行初始扫描和周期校准。源绑定包含配置、声明的账号 scope、真实根目录 inode，声明 scope 不冒充最新原生登录，所有来源保留 `upstreamSync=not-observed`。
 
 索引按源有界扫描、逐项增量更新；不变内容不重写正文、不使游标失效。新鲜度、缺源、partial 与空结果分开；慢/坏来源不伪装完整结果。一个源的快照与 cursor generation 在同一 SQLite 事务发布，索引器用真实进程身份互斥，网络/源读取不持数据库事务。配置只比较 materials 领域，不因 CLI Profile/其他领域变更丢弃有效扫描。关页面不停止后台；关闭管理服务取消并等待真实扫描，不留晚写。
 

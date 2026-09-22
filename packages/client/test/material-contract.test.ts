@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { ManagementClient, materialReference, materialIdentity, normalizeMaterialWrite, normalizeMaterialQuery, type MaterialMetadata, type MaterialOperation, type MaterialSourceView } from "../src/client.ts";
+import { ManagementClient, materialReference, materialIdentity, normalizeMaterialWrite, normalizeMaterialQuery, fileReference, fileIdentity, type MaterialMetadata, type MaterialOperation, type MaterialSourceView } from "../src/client.ts";
 import { materialMetadata, materialPage, materialRead, materialOperation, materialSource } from "../src/material-validation.ts";
 const installation="11111111-1111-4111-8111-111111111111",binding="a".repeat(64),before="b".repeat(64);
 const ref=materialReference(installation,binding,"notes","notes.md");
@@ -38,6 +38,15 @@ test("material writes reject traversal, mixed input, unbound targets and accesso
  expect(()=>materialReference(installation,binding,"notes","/absolute.md")).toThrow();expect(()=>materialReference(installation,binding,"notes","folder\\file.md")).toThrow();
  expect(credentials).toBe(0);expect(requests).toBe(0);expect(accessed).toBe(0);
 });
+test("material refs stay distinct from named-root refs and client validation rejects unqualified Project fileRefs",()=>{
+ const namedRoot=fileReference(installation,binding,"workspace","project/notes.md");
+ expect(namedRoot.startsWith("file:")).toBe(true);expect(namedRoot.startsWith("material:")).toBe(false);
+ expect(()=>materialIdentity(namedRoot,installation)).toThrow();expect(()=>fileIdentity(ref,installation)).toThrow();
+ const project={...metadata,sourceId:"project-alpha",path:"projects/alpha/project.md",ref:materialReference(installation,binding,"project-alpha","projects/alpha/project.md"),kind:"project" as const,scope:"project" as const,agentId:null,project:"alpha",writable:false};
+ expect(materialMetadata(project,installation)).toBe(true);
+ expect(materialMetadata({...project,fileRef:namedRoot},installation)).toBe(false);
+});
+
 test("lost or mismatched material success preserves the original recovery locator, not the caller's later edits",async()=>{
  const input=request(),original={...input};let sent:unknown;
  const client=new ManagementClient({baseUrl:"http://localhost",installationId:installation,credential:async()=>{input.requestId=randomUUID();input.ref=materialReference(installation,binding,"notes","other.md");return "test";},fetch:Object.assign(async(_url:string|URL|Request,init?:RequestInit)=>{sent=JSON.parse(String(init?.body));return envelope({...receipt(original.requestId),ref:input.ref});},{preconnect:fetch.preconnect})});
