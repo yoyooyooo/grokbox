@@ -85,7 +85,7 @@ test("manager acknowledgement loss remains preparing and can only resume the exa
   try {
     f.lose(true); const plan = await f.command("install");
     await expect(f.command("install", { confirmed: true, expectedPlan: digest(plan) })).rejects.toMatchObject({ reason: "installation_outcome_unknown" });
-    expect(await f.command("status")).toMatchObject({ phase: "preparing", filesMatched: true });
+    expect(await f.command("status")).toMatchObject({ phase: "preparing", filesMatched: true, faultReceipt: { outcome: "unknown", source: "canonical" } });
     f.lose(false); const resume = await f.command("install");
     expect(await f.command("install", { confirmed: true, expectedPlan: digest(resume) })).toMatchObject({ phase: "installed" });
     const name = (await readdir(f.unitDir))[0]!; await writeFile(join(f.unitDir, name), "USER_EDIT", { mode: 0o600 });
@@ -115,12 +115,32 @@ test("a staged final acknowledgement is reconciled without enabling or starting 
     const plan = await f.command("install"); await f.command("install", { confirmed: true, expectedPlan: digest(plan) });
     const file = join(f.root, "state/runtime-services.json"), installed = await readFile(file, "utf8");
     await writeFile(`${file}.next`, installed, { mode: 0o600 });
-    await writeFile(file, JSON.stringify({ ...JSON.parse(installed), phase: "preparing" }) + "\n", { mode: 0o600 });
+    const installedRecord = JSON.parse(installed);
+    await writeFile(file, JSON.stringify({
+      ...installedRecord,
+      phase: "preparing",
+      receipt: { ...installedRecord.receipt, outcome: "preparing", phase: "preparing", managerCheckpoint: { ...installedRecord.receipt.managerCheckpoint, observed: null } },
+    }) + "\n", { mode: 0o600 });
     expect(await f.command("status")).toMatchObject({ phase: "preparing", pendingPhase: "installed" });
     const before = [...f.calls], recover = await f.command("install");
     expect(await f.command("install", { confirmed: true, expectedPlan: digest(recover) })).toMatchObject({ phase: "installed", reconciled: true });
     expect(f.calls).toEqual(before);
-    expect(await f.command("status")).toMatchObject({ phase: "installed", pendingPhase: null, loadedDefinitionsMatched: true });
+    expect(await f.command("status")).toMatchObject({ phase: "installed", pendingPhase: null, loadedDefinitionsMatched: true,
+      faultReceipt: { outcome: "reconciled", source: "canonical", managerCheckpoint: { observed: expect.any(Array) } } });
+  } finally { await f.close(); }
+});
+
+test("status exposes a pending-only final receipt when canonical registration is missing", async () => {
+  const f = await fixture();
+  try {
+    const plan = await f.command("install"); await f.command("install", { confirmed: true, expectedPlan: digest(plan) });
+    const file = join(f.root, "state/runtime-services.json"), installed = await readFile(file, "utf8");
+    await writeFile(`${file}.next`, installed, { mode: 0o600 }); await unlink(file);
+    expect(await f.command("status")).toMatchObject({
+      phase: "not_installed", pendingPhase: "installed", faultReceipt: {
+        source: "pending", outcome: "committed", phase: "installed", epoch: plan.epoch,
+      },
+    });
   } finally { await f.close(); }
 });
 
@@ -211,11 +231,13 @@ test("the installation contract records owner, independent roots, epoch and dura
   try {
     const plan = await f.command("install");
     expect(plan).toMatchObject({ schemaVersion: 2, owner: { kind: "injected-service-manager" }, roots: { durable: f.root, run: f.run, home: f.home, release: f.release },
-      parentIndependent: true, singleInstance: true, independentInstall: { parentShell: "service-manager", singleInstance: true }, operationReceipt: { outcome: "preview" } });
+      parentIndependent: true, singleInstance: null, singleInstanceKey: expect.any(String),
+      independentInstall: { parentShell: "service-manager", singleInstance: null, singleInstanceKey: expect.any(String) }, operationReceipt: { outcome: "preview" } });
     const done = await f.command("install", { confirmed: true, expectedPlan: digest(plan) });
     expect(done).toMatchObject({ epoch: plan.epoch, operationReceipt: { outcome: "committed", epoch: plan.epoch } });
     expect(await f.command("status")).toMatchObject({ schemaVersion: 2, epoch: plan.epoch, parentIndependent: true,
-      owner: { kind: "injected-service-manager" }, faultReceipt: { phase: "installed", epoch: plan.epoch } });
+      owner: { kind: "injected-service-manager" }, faultReceipt: { phase: "installed", epoch: plan.epoch, outcome: "committed", source: "canonical",
+        managerCheckpoint: { observed: expect.any(Array) } } });
   } finally { await f.close(); }
 });
 

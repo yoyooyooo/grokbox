@@ -8,7 +8,7 @@
 
 注册只处理两份本安装的服务单元，不改变Host/preload采用或其他应用。没有通用shell/任意unit名称入口；runRoot、durableRoot、用户HOME、实际Node和发行制品都参与范围核对。一次现役采用仍须满足固定已合入v2、旧制品与配置退路、停止条件和明确授权，不能指向feature checkout。
 
-F1准备合同把每次结果绑定到动态宿主观测和独立安装身份：`environment.host`记录当次PID1、systemd-user和linger事实，`owner`记录服务主人，`roots`明确durable、run、home、release、unitDir，`epoch`等于本次登记摘要。release与这些状态根重叠或位于任一源码checkout祖先下会拒绝；同一scope只生成daemon/modeld两份固定unit，`singleInstance`只表示可验证的单位身份约束。`faultReceipt`/`operationReceipt`保留preparing、committed、reconciled等可对账阶段；它们不把离线fixture或文件存在升级成live开机验收。
+F1准备合同把每次结果绑定到动态宿主观测和独立安装身份：`environment.host`记录当次PID1、systemd-user和linger事实，`owner`记录服务主人，`roots`明确durableRoot、runRoot、userHome、releaseRoot、unitDir，`epoch`等于本次登记摘要。release与这些状态根重叠或位于任一源码checkout祖先下会拒绝；同一scope只生成daemon/modeld两份固定unit，`singleInstance`只表示可验证的单位身份约束。`faultReceipt`/`operationReceipt`保留preparing、committed、reconciled等可对账阶段；它们不把离线fixture或文件存在升级成live开机验收。
 
 ## 预览与确认
 

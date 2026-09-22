@@ -25,6 +25,16 @@ export type ServiceEnvironment = {
   owner?: string; uid?: number; parentIndependent?: boolean;
   host?: { pid1: string | null; userManager: string; linger: "yes" | "no" | "unknown" };
 };
+type RegistrationPhase = "preparing" | "installed" | "removing" | "retired";
+export type ServiceOperationReceipt = {
+  schemaVersion: 1;
+  action: "install" | "uninstall";
+  epoch: string;
+  planDigest: string;
+  outcome: "preparing" | "unknown" | "committed" | "reconciled";
+  phase: RegistrationPhase;
+  managerCheckpoint: { environment: ServiceEnvironment; observed: ServiceUnitState[] | null };
+};
 export type ServiceManager = {
   probe(): Promise<ServiceEnvironment>;
   states(units: string[]): Promise<ServiceUnitState[]>;
@@ -148,8 +158,9 @@ export function systemdUserManager(): ServiceManager {
 }
 
 type Unit = { name: string; component: "daemon" | "modeld"; text: string; digest: string };
-type Registration = { schemaVersion: 2; scope: string; requestDigest: string; epoch: string; phase: "preparing" | "installed" | "removing" | "retired";
-  owner: ServiceOwner; roots: InstallationRoots; release: string; node: string; artifacts: { entry: string; preload: string; node: string }; units: Unit[] };
+type Registration = { schemaVersion: 2; scope: string; requestDigest: string; epoch: string; phase: RegistrationPhase;
+  owner: ServiceOwner; roots: InstallationRoots; release: string; node: string; artifacts: { entry: string; preload: string; node: string }; units: Unit[];
+  receipt?: ServiceOperationReceipt };
 function registration(text: string | null): Registration | null {
   if (text === null) return null;
   const v = JSON.parse(text) as Registration;
@@ -166,6 +177,10 @@ function registration(text: string | null): Registration | null {
     || typeof u.text !== "string" || u.text.length > 6000 || sha256Text(u.text) !== u.digest) return bad("registration_invalid");
   if (new Set(v.units.map(u => u.component)).size !== 2 || sha256Text(canonicalJson({ scope: v.scope, owner: v.owner, roots: v.roots, release: v.release, node: v.node,
     artifacts: v.artifacts, units: v.units })) !== v.requestDigest) return bad("registration_invalid");
+  if (v.receipt && (v.receipt.schemaVersion !== 1 || !["install", "uninstall"].includes(v.receipt.action)
+    || v.receipt.epoch !== v.epoch || !hash(v.receipt.planDigest) || !["preparing", "unknown", "committed", "reconciled"].includes(v.receipt.outcome)
+    || v.receipt.phase !== v.phase || !v.receipt.managerCheckpoint || !v.receipt.managerCheckpoint.environment
+    || !Array.isArray(v.receipt.managerCheckpoint.observed) && v.receipt.managerCheckpoint.observed !== null)) return bad("registration_invalid");
   return v;
 }
 async function syncDirectory(dir: string) { const fd = await open(dir, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await fd.sync(); } finally { await fd.close(); } }
@@ -234,12 +249,15 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     if (saved && observed) { try { loadedDefinitions(observed, saved.units, unitDir, saved.phase === "retired"); loadedDefinitionsMatched = true; }
       catch { loadedDefinitionsMatched = false; } }
     const installation = saved ? { owner: saved.owner, roots: saved.roots, epoch: saved.epoch } : null;
+    const receipt = saved?.receipt ?? pending?.receipt;
+    const singleInstanceKey = saved ? saved.units.map(u => u.name).sort().join(",") : null;
     return { schemaVersion: 2, scope, environment, phase: saved?.phase ?? "not_installed", units,
       managerObserved: observed ? publicStates(observed) : null, loadedDefinitionsMatched, artifactsMatched, pendingPhase: pending?.phase ?? null,
       filesMatched: saved ? units.every(u => u.definitionMatched) : false, executionQualified: false, createsServices: false,
       owner: saved?.owner ?? owner, roots: saved?.roots ?? null, epoch: saved?.epoch ?? null,
-      parentIndependent, singleInstance: Boolean(saved && saved.units.length === 2 && new Set(saved.units.map(u => u.name)).size === 2),
-      installation, faultReceipt: saved ? { schemaVersion: 1, epoch: saved.epoch, phase: saved.phase, requestDigest: saved.requestDigest } : null };
+      parentIndependent, singleInstance: loadedDefinitionsMatched === null ? null
+        : loadedDefinitionsMatched && Boolean(saved && saved.units.length === 2 && new Set(saved.units.map(u => u.name)).size === 2),
+      singleInstanceKey, installation, faultReceipt: receipt ? { ...receipt, source: saved ? "canonical" as const : "pending" as const } : null };
   }
   let target: Registration, configRevision: string | null = null;
   if (input.action === "install") {
@@ -263,6 +281,7 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
   } else {
     if (!saved) return bad("not_installed"); target = saved;
   }
+  const operationAction: "install" | "uninstall" = input.action === "install" ? "install" : "uninstall";
   const names = target.units.map(u => u.name);
   const currentFiles = await Promise.all(target.units.map(async u => ({ name: u.name, content: await privateText(join(unitDir, u.name)) })));
   for (const [i, value] of currentFiles.entries()) {
@@ -271,11 +290,12 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
   }
   const planDigest = sha256Text(canonicalJson({ action: input.action, request: target.requestDigest, saved: savedText === null ? null : sha256Text(savedText), pending: pendingText === null ? null : sha256Text(pendingText),
     files: currentFiles.map(f => f.content === null ? null : sha256Text(f.content)), configRevision, start: input.start === true }));
+  const singleInstanceKey = names.slice().sort().join(",");
   const preview = { schemaVersion: 2, action: input.action, scope, planDigest, environment, units: names,
     releaseRevision: target.requestDigest, startsNow: input.action === "install" && input.start === true,
     affectsHost: false, importsShellCredentials: false, executionQualified: false, written: false,
-    owner: target.owner, roots: target.roots, epoch: target.epoch, parentIndependent, singleInstance: new Set(names).size === 2,
-    independentInstall: { owner: target.owner, roots: target.roots, epoch: target.epoch, parentShell: "service-manager", singleInstance: new Set(names).size === 2 },
+    owner: target.owner, roots: target.roots, epoch: target.epoch, parentIndependent, singleInstance: null as boolean | null, singleInstanceKey,
+    independentInstall: { owner: target.owner, roots: target.roots, epoch: target.epoch, parentShell: "service-manager", singleInstance: null as boolean | null, singleInstanceKey },
     operationReceipt: { schemaVersion: 1, action: input.action, epoch: target.epoch, planDigest, outcome: "preview" as const, phase: target.phase } };
   if (input.confirmed !== true) return preview;
   if (input.expectedPlan !== planDigest) return bad("plan_conflict");
@@ -320,13 +340,24 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
       if (observed.some(s => s.enabled !== (expectedPhase === "installed")
         || expectedPhase === "retired" && (s.mainPid !== 0 || !["inactive", "failed"].includes(s.active))
         || input.start === true && !["active", "activating"].includes(s.active))) return bad("manager_readback_mismatch");
+      const stagedRegistration = pending ?? bad("registration_invalid");
+      const reconciledReceipt: ServiceOperationReceipt = {
+        schemaVersion: 1, action: operationAction, epoch: target.epoch, planDigest, outcome: "reconciled",
+        phase: expectedPhase, managerCheckpoint: { environment: currentEnv, observed },
+      };
       await publish(file, pendingText!, savedText !== null);
+      await publish(file, JSON.stringify({ ...stagedRegistration, phase: expectedPhase, receipt: reconciledReceipt }) + "\n", true);
       return { ...preview, phase: expectedPhase, written: true, reconciled: true, managerObserved: publicStates(observed),
         operationReceipt: { schemaVersion: 1, action: input.action, epoch: target.epoch, planDigest, outcome: "reconciled" as const, phase: expectedPhase } };
     }
     // Persist the exact intent before manager changes. Recovery may resume only
     // matching owned definitions; unknown/mismatched content is never replaced.
-    const preparing = { ...target, phase: input.action === "install" ? "preparing" as const : "removing" as const };
+    const preparingPhase = input.action === "install" ? "preparing" as const : "removing" as const;
+    const preparingReceipt: ServiceOperationReceipt = {
+      schemaVersion: 1, action: operationAction, epoch: target.epoch, planDigest, outcome: "preparing",
+      phase: preparingPhase, managerCheckpoint: { environment: currentEnv, observed: null },
+    };
+    const preparing = { ...target, phase: preparingPhase, receipt: preparingReceipt };
     await publish(file, JSON.stringify(preparing) + "\n", savedText !== null);
     try {
       for (const u of target.units) {
@@ -362,9 +393,26 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
       if (managerObserved.length !== names.length || managerObserved.some((u, i) => u.name !== names[i]
         || u.enabled !== (input.action === "install") || input.action === "install" && input.start === true && !["active", "activating"].includes(u.active))) return bad("manager_readback_mismatch");
       const phase = input.action === "install" ? "installed" as const : "retired" as const;
-      await publish(file, JSON.stringify({ ...target, phase }) + "\n", true);
+      const committedReceipt: ServiceOperationReceipt = {
+        schemaVersion: 1, action: operationAction, epoch: target.epoch, planDigest, outcome: "committed",
+        phase, managerCheckpoint: { environment: currentEnv, observed: managerObserved },
+      };
+      await publish(file, JSON.stringify({ ...target, phase, receipt: committedReceipt }) + "\n", true);
       return { ...preview, written: true, phase, managerObserved: publicStates(managerObserved),
         operationReceipt: { schemaVersion: 1, action: input.action, epoch: target.epoch, planDigest, outcome: "committed" as const, phase } };
-    } catch (e) { if (e instanceof RuntimeServiceError && e.reason === "unit_changed") throw e; return bad("installation_outcome_unknown"); }
+    } catch (e) {
+      if (e instanceof RuntimeServiceError && e.reason === "unit_changed") throw e;
+      try {
+        const latestText = await privateText(file), latest = registration(latestText);
+        if (latest) {
+          const unknownReceipt: ServiceOperationReceipt = {
+            schemaVersion: 1, action: operationAction, epoch: latest.epoch, planDigest,
+            outcome: "unknown", phase: latest.phase, managerCheckpoint: { environment: currentEnv, observed: null },
+          };
+          await publish(file, JSON.stringify({ ...latest, receipt: unknownReceipt }) + "\n", true);
+        }
+      } catch { /* preserve the preparing record if the fault receipt itself cannot be published */ }
+      return bad("installation_outcome_unknown");
+    }
   }, 1);
 }

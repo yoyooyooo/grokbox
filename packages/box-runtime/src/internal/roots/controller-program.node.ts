@@ -585,7 +585,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
 export function liveControlResourcesLayer(
   live: LiveAdmissionPorts = defaultLiveAdmissionPorts(),
 ): Layer.Layer<ControlResources> {
-  let operationAdopt: IdentityOpResult | null = null;
+  const operationAdoptions = new Map<string, IdentityOpResult>();
   return Layer.succeed(ControlResources, {
     lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
       const locked = yield* Effect.acquireRelease(
@@ -610,6 +610,7 @@ export function liveControlResourcesLayer(
         catch: (error) => error,
       });
       yield* Effect.addFinalizer(() => Effect.promise(async () => {
+        operationAdoptions.delete(input.operationId);
         try {
           const latest = loadStore(input.boxRoot);
           if (!latest.ok) return;
@@ -649,7 +650,8 @@ export function liveControlResourcesLayer(
     signal: (input: FrozenControllerCommand) => Effect.tryPromise({
       try: async () => {
         liveMutationAttempts.signal += 1;
-        operationAdopt = await applyLiveControllerAdopt(input);
+        const operationAdopt = await applyLiveControllerAdopt(input);
+        operationAdoptions.set(input.operationId, operationAdopt);
         return { signaled: operationAdopt.signaled === true };
       },
       catch: (error) => error,
@@ -657,17 +659,23 @@ export function liveControlResourcesLayer(
     spawn: (input: FrozenControllerCommand) => Effect.tryPromise({
       try: async () => {
         liveMutationAttempts.spawn += 1;
-        operationAdopt = await applyLiveControllerAdopt(input);
+        const operationAdopt = await applyLiveControllerAdopt(input);
+        operationAdoptions.set(input.operationId, operationAdopt);
         return { spawned: operationAdopt.signaled === true };
       },
       catch: (error) => error,
     }),
-    armGuardian: (_input: FrozenControllerCommand) => Effect.sync(() => {
+    armGuardian: (input: FrozenControllerCommand) => Effect.sync(() => {
       liveMutationAttempts.guardian += 1;
+      const operationAdopt = operationAdoptions.get(input.operationId);
       return { guardian: operationAdopt?.ok === true || operationAdopt?.signaled === true };
     }),
     wait: (_input: FrozenControllerCommand) => Effect.void,
-    commit: (_input: FrozenControllerCommand) => Effect.succeed({ committed: operationAdopt?.ok === true }),
+    commit: (input: FrozenControllerCommand) => Effect.sync(() => {
+      const operationAdopt = operationAdoptions.get(input.operationId);
+      operationAdoptions.delete(input.operationId);
+      return { committed: operationAdopt?.ok === true };
+    }),
   });
 }
 

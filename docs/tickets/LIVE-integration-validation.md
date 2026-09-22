@@ -2,6 +2,13 @@
 
 本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
+### F1 持久宿主当前探针回执（2026-09-22）
+
+- **候选/来源**：v2 集成候选（AH-113 F1），动态 `runtime services status` 探针；只读，无安装、启用、启动或停止动作。
+- **当前宿主事实**：`pid1=tini`、`userManager=systemd-user`、`linger=unknown`；`systemctl --user` 不可达，回执为 `available=false`、`bootPersistent=false`、`parentIndependent=false`、`reason=user_manager_unavailable`、`owner=systemd-user`、`uid=1000`。
+- **结论**：F1-I 的离线实现、注册/恢复回执与测试已进入 v2；真实 service owner、父 shell 退出、单实例和 Box 重启恢复仍是 **ENV blocked**。当前环境没有授权，也没有执行 live supervisor 变更。
+- **解除条件**：在目标 Box 上提供真实用户 service manager 与 linger，安装固定制品后读回 loaded definition、PID/停止/重启结果，再逐项更新 `LIVE-RUNTIME-PERSISTENCE` 与 `LIVE-SERVICE-INDEPENDENCE`。
+
 <a id="validation-levers"></a>
 ## 执行杠杆与 Skill 路由
 
