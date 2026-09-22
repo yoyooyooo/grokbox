@@ -73,3 +73,12 @@ AH-118目前要求明确非流式交付才能提升response-observed。该保守
 此组合重新正式build、native-pair33项、self-reset/continuity保全/消息/Server交叉105项（10文件，内部Node消息19/Server36，不重复累加）、根/Web类型、docs16项、公开性扫描均通过。源码/测试/lock1269文件，前后摘要均为 `d6664a23e3df6507d2e20f6cb99244737574032873e3d85f68f5a410fea6d91f`。完整新候选和四项合法语义负例在该组合再次执行。最后仅追加本文回执，不改运行代码。
 
 本阶段已经通过的限定核心配方、原声明、checkpoint/worker能力有独立回流价值；AH-157整票仍欠上节消息writer/metadata原生资格。AH-118及现有下游依赖保持，不能把C1组合测试、工厂的静态形状或本阶段合并代签它们。最终实际V2合流SHA以Linear回执为准。
+
+
+## 最后观察到的 V2 组合失败
+
+最后串行合入保护发现V2已前进到 `8a44bbfc13e0abbd83896ecca48ea0d433fdaecd`：Q通过 `d0363038` 已合入本阶段核心提交 `a68eb878`，并额外接入 `ea7bc17e` 的工具失败提示修复。本会话确认核心提交已是V2祖先，没有重复合并、覆盖或撤回其他修改；仅将本报告收尾rebase到该实际tip。
+
+对这一新组合运行正式 `bun scripts/verify-modeld-core.mjs tool-contract`：build成功，193项中192通过/1失败，失败名称为 `responses: structured historical name survives the actual journal reader and layered diagnosis`。该窗口开始源码/测试摘要为 `8cb68246c5325a8b216885b0f2090795a3598f3206a9d0ddd39de7d6f2d15e2f`。这是实际组合失败，不是通过或工具链版本跳过；序列因此停止，后续native-host/类型检查未在此最后窗口运行。
+
+进一步查看该失败上下文与所属测试的调用被工具安全检查拒绝，未改通道、改写读取或重新执行以绕过。未能定位其原因，不能据此断言是生产缺陷、旧fixture或偶发失败，也不能把旧窗口通过搬到这一完整组合。已记录的当前核心候选/原worker资格仍绑定此前准确输入，消息writer资格及本项组合失败保持未决，交AH-157/AH-118与Q继续核对。本轮没有给整体采用资格放行。
