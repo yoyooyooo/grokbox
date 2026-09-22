@@ -64,3 +64,12 @@ Bun1.3.14、原Native Node22.14.0、Rust1.85.0；未改package/lock或协议。�
 AH-118目前要求明确非流式交付才能提升response-observed。该保守判定能拒绝缺证，但**尚未证明当前原生真实交付一定能通过**。不能把缺字段直接补false，不能只凭assistant、同线程、同nonce或工厂形状签SendToUser完成。还需原nonce→requestId绑定、持久交付字段、账号/ownership scope及App可观察标识的限定原生证明；这些仍由AH-157/AH-118的剩余合同承接。
 
 核心配对阶段可以独立回流，AH-157及其现有下游依赖不因此自动Done或解除。实际Provider/App、现役loaded及完整可达风险分别归原LIVE/A2。没有使用真实模型、读取用户Bot transcript、发布profile、切换现役Host/modeld或修改Bot/桌面；`loadedProven=false`、`profilePublished=false`、整体`qualified=false`。
+
+
+## C1 合流后的组合复验
+
+随后V2接入 `6d3e8acd` / `c4e2765b` 的self-reset来源屏障、unknown对账及保全引用修复。核对实际存储/owner差异后，将本阶段无内容变化地rebase为 `a68eb87887a4d1e63c120bc8adb728f77c841d6b`；没有接管C1修改或把前一输入窗口当作新组合。
+
+此组合重新正式build、native-pair33项、self-reset/continuity保全/消息/Server交叉105项（10文件，内部Node消息19/Server36，不重复累加）、根/Web类型、docs16项、公开性扫描均通过。源码/测试/lock1269文件，前后摘要均为 `d6664a23e3df6507d2e20f6cb99244737574032873e3d85f68f5a410fea6d91f`。完整新候选和四项合法语义负例在该组合再次执行。最后仅追加本文回执，不改运行代码。
+
+本阶段已经通过的限定核心配方、原声明、checkpoint/worker能力有独立回流价值；AH-157整票仍欠上节消息writer/metadata原生资格。AH-118及现有下游依赖保持，不能把C1组合测试、工厂的静态形状或本阶段合并代签它们。最终实际V2合流SHA以Linear回执为准。
