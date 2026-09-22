@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, rename, unlink } from "node:fs/promises";
 import { acquireAdvisoryGate } from "@grokbox/box-runtime/runtime";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -36,49 +37,45 @@ const TEXT_LIMIT = 8192;
 const principalPart = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/;
 const requestPart = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const localWrite = <A>(work: () => Promise<A>) => Effect.uninterruptible(Effect.tryPromise({ try: work, catch: error => error }));
+const unavailableRecord = () => new HttpFailure(503, "source_invalid", "A retained message operation is unavailable; it must not be replayed.");
 
 function pathFor(domain: MessageDomain, principalId: string, requestId: string): string {
   if (!principalPart.test(principalId) || !requestPart.test(requestId)) throw new HttpFailure(400, "invalid_input", "Invalid message operation identity.");
   return join(domain.root, "messages", principalId, `${requestId}.json`);
 }
-async function readStored(path: string): Promise<StoredMessage | undefined> {
+async function readStored(path: string, expected: { installationId: string; requestId: string; principalId: string }): Promise<StoredMessage | undefined> {
+  let file;
   try {
-    const raw = JSON.parse(await readFile(path, "utf8")) as unknown;
-    if (!record(raw)) return undefined;
-    const installationId = raw.installationId, requestId = raw.requestId;
-    if (typeof installationId !== "string" || typeof requestId !== "string") return undefined;
-    const principalId = raw.principalId;
-    const textLength = raw.textLength;
-    const data: Record<string, unknown> = raw;
-    const storedAssociation = record(data.association) ? {
-      queue: data.association.queue ?? "not-observed",
-      run: data.association.run,
-      turn: data.association.turn ?? "not-observed",
-      step: data.association.step,
-      terminal: data.association.terminal,
-      delivery: data.association.delivery,
-    } : data.association;
-    const publicData = {
-      schemaVersion: data.schemaVersion, installationId: data.installationId, requestId: data.requestId,
-      operationRef: data.operationRef, submissionRef: data.submissionRef, botRef: data.botRef, clientNonce: data.clientNonce,
-      textSha256: data.textSha256, state: data.state, acceptedAtMs: data.acceptedAtMs, nativeGeneration: data.nativeGeneration,
-      nativeReceipt: data.nativeReceipt, association: storedAssociation, coverage: data.coverage,
-    };
-    if (!messageOperation(publicData, installationId, requestId)) return undefined;
-    if (typeof principalId !== "string" || !principalPart.test(principalId) || typeof textLength !== "number" || !Number.isSafeInteger(textLength)) return undefined;
-    return { ...publicData, principalId, textLength };
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size > 128 * 1024) throw unavailableRecord();
+    const bytes = Buffer.alloc(128 * 1024 + 1);
+    const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+    if (bytesRead !== stat.size) throw unavailableRecord();
+    const raw: unknown = JSON.parse(bytes.subarray(0, bytesRead).toString("utf8"));
+    if (!record(raw)) throw unavailableRecord();
+    const { principalId, textLength, ...data } = raw;
+    if (!messageOperation(data, expected.installationId, expected.requestId)
+      || principalId !== expected.principalId || !Number.isSafeInteger(textLength) || Number(textLength) < 1) throw unavailableRecord();
+    return { ...data, principalId, textLength: Number(textLength) };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw new HttpFailure(503, "source_invalid", "A retained message operation is unavailable.");
-  }
+    if (!file && (error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw unavailableRecord();
+  } finally { await file?.close(); }
 }
 async function writeStored(path: string, value: StoredMessage): Promise<void> {
   const directory = join(path, "..");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
-  await writeFile(temporary, JSON.stringify(value), { encoding: "utf8", mode: 0o600, flag: "wx" });
-  await rename(temporary, path);
+  const file = await open(temporary, "wx", 0o600);
+  try {
+    try { await file.writeFile(JSON.stringify(value)); await file.sync(); }
+    finally { await file.close(); }
+    await rename(temporary, path);
+    const dir = await open(directory, "r");
+    try { await dir.sync(); } finally { await dir.close(); }
+  } finally { await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
 }
 function operationRef(installationId: string, botId: string, requestId: string): string {
   return `message-operation:${installationId}:${botId}:${requestId}`;
@@ -87,12 +84,10 @@ function submissionRef(installationId: string, botId: string, requestId: string)
   return `submission:${installationId}:${botId}:${requestId}`;
 }
 function receipt(value: unknown): Record<string, unknown> | null {
-  if (!record(value)) return null;
-  try {
-    const text = JSON.stringify(value);
-    if (text.length > 8192) return { bounded: true, keys: Object.keys(value).slice(0, 32) };
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch { return null; }
+  if (!record(value) || value.accepted !== true) return null;
+  // Retain only the finite acknowledgement, never arbitrary native payloads.
+  return { accepted: true, ...(typeof value.queued === "boolean" ? { queued: value.queued } : {}),
+    ...(value.queueState === "queued" ? { queueState: "queued" } : {}) };
 }
 /** Queue evidence must come from an explicit native field; acceptance alone is not queue proof. */
 function queueState(value: unknown): "not-observed" | "queued" {
@@ -105,20 +100,32 @@ function nativeError(error: unknown): HttpFailure {
 }
 function normalizeEntry(value: unknown, index: number): MessageEntry {
   const row = record(value) ? value : {};
-  const roleValue = String(row.role ?? row.senderRole ?? row.authorRole ?? "").toLowerCase();
-  const role = roleValue === "user" || roleValue === "human" ? "user"
-    : roleValue === "assistant" || roleValue === "model" || roleValue === "bot" ? "assistant"
-    : roleValue === "system" ? "system" : "unknown";
-  const textValue = typeof row.text === "string" ? row.text : typeof row.content === "string" ? row.content : null;
+  const kind = row.kind === "message" || row.kind === "send-message" ? row.kind : "unknown";
+  const sent = kind === "send-message" && record(row.message) ? row.message : null;
+  const role = sent?.type === "user" ? "assistant" : kind === "message" && row.role === "user" ? "user"
+    : kind === "message" && row.role === "assistant" ? "assistant" : row.role === "system" ? "system" : "unknown";
+  const textValue = sent && typeof sent.content === "string" ? sent.content : typeof row.content === "string" ? row.content : typeof row.text === "string" ? row.text : null;
+  const identity = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 256 ? value : null;
   return {
-    id: typeof row.id === "string" ? row.id.slice(0, 256) : typeof row.seq === "number" ? String(row.seq) : `entry:${index}`,
-    role,
-    text: textValue === null ? null : textValue.slice(0, TEXT_LIMIT),
-    observedAtMs: typeof row.observedAtMs === "number" && Number.isSafeInteger(row.observedAtMs) ? row.observedAtMs : typeof row.createdAt === "number" && Number.isSafeInteger(row.createdAt) ? row.createdAt : null,
-    clientNonce: typeof row.clientNonce === "string" ? row.clientNonce : typeof row.nonce === "string" ? row.nonce : null,
-    rootId: typeof row.rootId === "string" ? row.rootId : typeof row.threadId === "string" ? row.threadId : null,
+    id: identity(row.id) ?? (Number.isSafeInteger(row.seq) ? String(row.seq) : `entry:${index}`), kind,
+    requestId: identity(row.requestId),
+    isStreaming: typeof row.isStreaming === "boolean" ? row.isStreaming : row.isStreaming === undefined ? false : null,
+    role, text: textValue === null ? null : textValue.slice(0, TEXT_LIMIT),
+    observedAtMs: Number.isSafeInteger(row.timestampMs) ? Number(row.timestampMs) : Number.isSafeInteger(row.observedAtMs) ? Number(row.observedAtMs) : null,
+    clientNonce: identity(row.clientNonce), rootId: identity(row.rootId),
     truncated: textValue !== null && textValue.length > TEXT_LIMIT,
   };
+}
+/** Proximity, a common thread and assistant text cannot certify SendToUser. */
+function deliveryState(entries: MessageEntry[], nonce: string): MessageDelivery["state"] {
+  const echoes = entries.filter(entry => entry.kind === "message" && entry.role === "user" && entry.clientNonce === nonce);
+  if (!echoes.length) return "unknown";
+  const ids = new Set(echoes.map(entry => entry.requestId).filter((id): id is string => id !== null));
+  if (ids.size > 1) return "unknown";
+  if (ids.size !== 1 || echoes.some(entry => entry.requestId === null)) return "recorded";
+  const id = [...ids][0];
+  return entries.some(entry => entry.kind === "send-message" && entry.role === "assistant"
+    && entry.requestId === id && entry.isStreaming === false) ? "response-observed" : "recorded";
 }
 function sourceOf(discovery: { baseUrl: string; pid: number; startedAt: number } | undefined) {
   if (!discovery) return null;
@@ -126,7 +133,8 @@ function sourceOf(discovery: { baseUrl: string; pid: number; startedAt: number }
 }
 function pageFromNative(bot: string, result: unknown, discovery: { baseUrl: string; pid: number; startedAt: number } | undefined): MessagePage {
   const payload = record(result) ? result : {};
-  const rawEntries = Array.isArray(payload.entries) ? payload.entries : Array.isArray(result) ? result : [];
+  if (!Array.isArray(payload.entries)) throw new HttpFailure(503, "source_invalid", "The native transcript response is not a page.");
+  const rawEntries = payload.entries;
   return {
     botRef: bot,
     entries: rawEntries.slice(0, ENTRY_LIMIT).map(normalizeEntry),
@@ -161,41 +169,20 @@ async function listNative(domain: MessageDomain, signal: AbortSignal, pinnedGate
     return { bots: rows, source: { kind: "native-gateway", generation: sourceOf(result.discovery)!.generation, pid: result.discovery.pid, startedAt: result.discovery.startedAt, observedAt: Date.now() } };
   } catch (error) { throw nativeError(error); }
 }
-async function transcript(domain: MessageDomain, botId: string, limit: number, beforeSeq: number | undefined, signal: AbortSignal, expectedGeneration?: string): Promise<MessagePage> {
+async function transcript(domain: MessageDomain, botId: string, limit: number, beforeSeq: number | undefined, signal: AbortSignal, expectedGeneration?: string, timeoutMs = 10_000): Promise<MessagePage> {
   if (!domain.continuity) throw new HttpFailure(503, "source_unavailable", "Native message observation is unavailable.");
   try {
     const input: Record<string, unknown> = { id: botId, limit, ...(beforeSeq === undefined ? {} : { beforeSeq }) };
-    const result = await domain.continuity(signal).rpc("getAgentTranscriptTail", input, {
-      timeoutMs: 10_000,
-      maxResponseBytes: 512 * 1024,
-      ...(expectedGeneration === undefined ? {} : { expectedGeneration }),
-    });
+    const result = await domain.continuity(signal).rpc("getAgentTranscriptTail", input, { timeoutMs, maxResponseBytes: 512 * 1024, ...(expectedGeneration ? { expectedGeneration } : {}) });
+    if (expectedGeneration !== undefined && sourceOf(result.discovery)?.generation !== expectedGeneration) throw new Error("source_changed");
     return pageFromNative(botRef(domain.installationId, botId), result.result, result.discovery);
   } catch (error) { throw nativeError(error); }
-}
-
-function responseObserved(entries: MessageEntry[], clientNonce: string): boolean {
-  let userIndex = -1;
-  let userRoot: string | null = null;
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index]!;
-    if (entry.role === "user" && entry.clientNonce === clientNonce) {
-      userIndex = index;
-      userRoot = entry.rootId;
-    }
-  }
-  if (userIndex < 0) return false;
-  return entries.some((entry, index) =>
-    index > userIndex
-      && entry.role === "assistant"
-      && entry.clientNonce === clientNonce
-      && (userRoot === null || entry.rootId === null || entry.rootId === userRoot));
 }
 function sameRequest(a: StoredMessage, b: MessageSendRequest): boolean {
   return a.botRef === b.botRef && a.clientNonce === b.clientNonce && a.textSha256 === messageTextSha256(b.text);
 }
 async function getOperation(domain: MessageDomain, principal: Principal, requestId: string): Promise<StoredMessage> {
-  const stored = await readStored(pathFor(domain, principal.id, requestId));
+  const stored = await readStored(pathFor(domain, principal.id, requestId), { installationId: domain.installationId, principalId: principal.id, requestId });
   if (!stored) throw new HttpFailure(404, "not_found", "No message operation was found for this principal and request ID.");
   return stored;
 }
@@ -212,7 +199,7 @@ function operationUnknown(operation: StoredMessage): HttpFailure {
 }
 
 export function messageApplication(domain: MessageDomain, principal: Principal, method: string, url: URL, input?: unknown) {
-  return Effect.gen(function* () {
+  return Effect.scoped(Effect.gen(function* () {
     const operationPath = /^\/v1\/message-operations\/([^/]+)$/.exec(url.pathname);
     const deliveryPath = /^\/v1\/message-deliveries\/([^/]+)$/.exec(url.pathname);
     const threadPath = /^\/v1\/messages\/([^/]+)\/threads\/([^/]+)$/.exec(url.pathname);
@@ -221,30 +208,38 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       yield* Effect.try({ try: () => { if (url.search) throw new HttpFailure(400, "invalid_input", "Message submission does not accept query parameters."); requireCapability(principal, "messages.write"); }, catch: error => error });
       const request = yield* Effect.try({ try: () => normalizeMessageSend(input, domain.installationId), catch: error => error });
       const botId = botIdFromRef(request.botRef, domain.installationId);
+      const path = pathFor(domain, principal.id, request.requestId);
+      const binding = { installationId: domain.installationId, principalId: principal.id, requestId: request.requestId };
+      const previous = yield* Effect.tryPromise({ try: () => readStored(path, binding), catch: error => error });
+      if (previous) {
+        if (!sameRequest(previous, request)) throw new HttpFailure(409, "idempotency_conflict", "The request ID is bound to different input.", { operation: publicOperation(previous) });
+        if (previous.state === "unknown") return yield* Effect.fail(operationUnknown(previous));
+        return publicOperation(previous);
+      }
+      const controller = yield* Effect.acquireRelease(Effect.sync(() => new AbortController()), controller => Effect.sync(() => controller.abort()));
       // Read membership and submit through the same pinned native gateway. If its
       // discovery generation changes, the gateway rejects the write before any retry.
       let submissionGateway: ContinuityGateway | undefined;
       const native = yield* Effect.tryPromise({ try: signal => {
         if (domain.continuity) {
-          try { submissionGateway = domain.continuity(signal); } catch { submissionGateway = undefined; }
+          try { submissionGateway = domain.continuity(controller.signal); } catch { submissionGateway = undefined; }
         }
         return listNative(domain, signal, submissionGateway);
       }, catch: error => error });
       if (!native.bots.some(bot => bot.id.toLowerCase() === botId)) throw new HttpFailure(404, "not_found", "The Bot was not present in the native snapshot.");
-      const path = pathFor(domain, principal.id, request.requestId);
-      const gate = yield* Effect.tryPromise({ try: () => acquireAdvisoryGate(join(domain.root, "messages", principal.id, ".gate"), 2000), catch: error => error });
+      const gate = yield* Effect.acquireRelease(
+        Effect.tryPromise({ try: () => acquireAdvisoryGate(join(domain.root, "messages", principal.id, ".gate"), 2000), catch: error => error }),
+        gate => gate ? Effect.promise(() => gate.release()) : Effect.void);
       if (!gate) throw new HttpFailure(503, "unavailable", "Another message submission is being finalized; query the original request.");
-      try {
-        const previous = yield* Effect.tryPromise({ try: () => readStored(path), catch: error => error });
-        if (previous) {
-          if (!sameRequest(previous, request)) throw new HttpFailure(409, "idempotency_conflict", "The request ID is already bound to different message input.", { operation: previous });
-          if (previous.state === "unknown") {
-            yield* Effect.promise(() => gate.release());
-            return yield* Effect.fail(operationUnknown(previous));
-          }
-          return publicOperation(previous);
+      const rechecked = yield* Effect.tryPromise({ try: () => readStored(path, binding), catch: error => error });
+      if (rechecked) {
+        if (!sameRequest(rechecked, request)) throw new HttpFailure(409, "idempotency_conflict", "The request ID is already bound to different message input.", { operation: publicOperation(rechecked) });
+        if (rechecked.state === "unknown") {
+          return yield* Effect.fail(operationUnknown(rechecked));
         }
-        const pending: StoredMessage = {
+        return publicOperation(rechecked);
+      }
+      const pending: StoredMessage = {
         schemaVersion: 1, installationId: domain.installationId, requestId: request.requestId,
         operationRef: operationRef(domain.installationId, botId, request.requestId), submissionRef: submissionRef(domain.installationId, botId, request.requestId),
         botRef: request.botRef, clientNonce: request.clientNonce, textSha256: messageTextSha256(request.text), state: "unknown",
@@ -252,9 +247,8 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
         association: { queue: "not-observed", run: "not-observed", turn: "not-observed", step: "not-observed", terminal: "not-observed", delivery: "unknown" },
         coverage: "native-submission", principalId: principal.id, textLength: request.text.length,
       };
-      yield* Effect.tryPromise({ try: () => writeStored(path, pending), catch: error => error });
+      yield* localWrite(() => writeStored(path, pending));
       if (!submissionGateway) {
-        yield* Effect.promise(() => gate.release());
         return yield* Effect.fail(operationUnknown(pending));
       }
       const nativeOutcome = yield* Effect.result(Effect.tryPromise({
@@ -265,20 +259,18 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
         catch: error => error,
       }));
       if (nativeOutcome._tag === "Failure") {
-        yield* Effect.promise(() => gate.release());
         return yield* Effect.fail(operationUnknown(pending));
       }
       const nativeReply = nativeOutcome.success;
+      const acknowledgement = receipt(nativeReply.result);
+      if (!acknowledgement || sourceOf(nativeReply.discovery)?.generation !== pending.nativeGeneration) return yield* Effect.fail(operationUnknown(pending));
       const accepted: StoredMessage = {
         ...pending, state: "accepted", acceptedAtMs: Date.now(), nativeGeneration: sourceOf(nativeReply!.discovery)?.generation ?? null,
-        nativeReceipt: receipt(nativeReply!.result),
-        association: { ...pending.association, queue: queueState(nativeReply!.result), delivery: "recorded" },
+        nativeReceipt: acknowledgement,
+        association: { ...pending.association, queue: queueState(nativeReply!.result), delivery: "unknown" },
       };
-        yield* Effect.tryPromise({ try: () => writeStored(path, accepted), catch: error => error });
-        return publicOperation(accepted);
-      } finally {
-        yield* Effect.promise(() => gate.release());
-      }
+      yield* localWrite(() => writeStored(path, accepted));
+      return publicOperation(accepted);
     }
     if (method !== "GET") return yield* Effect.fail(new HttpFailure(405, "invalid_input", "This message endpoint only supports GET and POST."));
     if (operationPath) {
@@ -293,31 +285,19 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       const waitMs = yield* Effect.try({ try: () => ensureWait(url.searchParams.get("waitMs")), catch: error => error });
       const botId = botIdFromRef(operation.botRef, domain.installationId);
       const deadline = Date.now() + waitMs;
-      while (true) {
-        try {
-          const page = yield* Effect.tryPromise({
-            try: signal => transcript(domain, botId, ENTRY_LIMIT, undefined, signal, operation.nativeGeneration ?? undefined),
-            catch: error => error,
-          });
-          const sameGeneration = operation.nativeGeneration !== null && page.source?.generation === operation.nativeGeneration;
-          if (!sameGeneration) {
-            return {
-              operation: publicOperation(operation), state: "unknown", observedAtMs: Date.now(), entries: [], source: page.source,
-              association: { ...operation.association, delivery: "unknown" }, coverage: page.coverage,
-            } satisfies MessageDelivery;
-          }
-          const userObserved = page.entries.some(entry => entry.role === "user" && entry.clientNonce === operation.clientNonce);
-          const state = responseObserved(page.entries, operation.clientNonce) ? "response-observed" : userObserved ? "recorded" : "unknown";
-          const delivery: MessageDelivery = { operation: publicOperation(operation), state, observedAtMs: Date.now(), entries: page.entries, source: page.source,
-            association: { ...operation.association, delivery: state }, coverage: page.coverage };
-          if (state !== "recorded" || Date.now() >= deadline) return delivery;
-        } catch (error) {
-          if (Date.now() >= deadline) {
-            return { operation: publicOperation(operation), state: "unknown", observedAtMs: Date.now(), entries: [], source: null,
-              association: { ...operation.association, delivery: "unknown" }, coverage: "native-source-unavailable" } satisfies MessageDelivery;
-          }
-        }
-        yield* Effect.promise(() => sleep(Math.min(250, Math.max(1, deadline - Date.now()))));
+      const unknown = (): MessageDelivery => ({ operation: publicOperation(operation), state: "unknown", observedAtMs: Date.now(), entries: [], source: null,
+        association: { ...operation.association, delivery: "unknown" }, coverage: "native-source-unavailable" });
+      if (!operation.nativeGeneration) return unknown();
+      for (;;) {
+        const timeout = waitMs > 0 ? Math.max(1, Math.min(10_000, deadline - Date.now())) : 10_000;
+        const observed = yield* Effect.result(Effect.tryPromise({ try: signal => transcript(domain, botId, ENTRY_LIMIT, undefined, signal, operation.nativeGeneration!, timeout), catch: error => error }));
+        if (observed._tag === "Failure") return unknown();
+        const page = observed.success, state = deliveryState(page.entries, operation.clientNonce);
+        const delivery: MessageDelivery = { operation: publicOperation(operation), state, observedAtMs: Date.now(), entries: page.entries, source: page.source,
+          association: { ...operation.association, delivery: state }, coverage: page.coverage };
+        if (state === "response-observed" || Date.now() >= deadline) return delivery;
+        yield* Effect.sleep(`${Math.min(250, Math.max(1, deadline - Date.now()))} millis`);
+        if (Date.now() >= deadline) return delivery;
       }
     }
     if (botPath || threadPath || url.pathname === "/v1/messages") {
@@ -355,5 +335,5 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       return { matches: matches.slice(0, limit), source, coverage: source ? "native-transcript-window" : "native-source-unavailable" } satisfies MessageSearchPage;
     }
     return yield* Effect.fail(new HttpFailure(404, "not_found", "The message endpoint is not available."));
-  });
+  }));
 }

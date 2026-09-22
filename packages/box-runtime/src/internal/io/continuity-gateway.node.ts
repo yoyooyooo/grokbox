@@ -56,7 +56,7 @@ export function createContinuityGatewayIO(call: ContinuityCall, root: string, si
     bounded.throwIfAborted();
     const result = await call(method, input, bounded, timeoutMs, maxBytes, pinned ?? expected);
     const observed = generation(result.source);
-    if (pinned !== undefined && pinned !== observed) throw new CurrentStateFailure("source_changed");
+    if (pinned !== undefined && pinned !== observed || expected !== undefined && expected !== observed) throw new CurrentStateFailure("source_changed");
     pinned = observed;
     // Do not carry the discovery credential into the shared adapters.
     latest = { baseUrl: result.source.baseUrl, pid: result.source.pid, startedAt: result.source.startedAt };
