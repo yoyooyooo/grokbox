@@ -37,6 +37,17 @@
 
 来源票不另建当前 live 表；将非 live 缺口留在来源票，仅把影响哪个场景的阻断链接到 LIVE。合入不是现场授权，单次 green 不关闭长期索引。
 
+<a id="voice-delegation"></a>
+## 语音委托：当前阶段之后的独立事项
+
+[语音 Spec](../roadmap/voice-delegation-spec.md)拥有 Box-only 自定义推理与结果交付的后续范围，[Roadmap](../roadmap/README.md#voice-delegation)拥有排程。方向已接受，用户回访时再启动；不插队 HOST-01/CLI-05，不作为现有 W4/W5 或 LIVE 的新增前置。以下票尚未实施，研究线索不代表当前客户端、Host 或账号路径已获资格。
+
+| 来源票 | 范围 |
+| --- | --- |
+| [VOICE-01](VOICE-01-route-and-host-qualification.md) | 实际 Harness 路由、Box 执行入口、来源资格与可复现缺口 |
+| [VOICE-02](VOICE-02-managed-execution-and-delivery.md) | 复用受管模型、wake/steer 关联、正确通话交付及失败/重拨边界 |
+| [VOICE-03](VOICE-03-live-acceptance-and-coverage.md) | 官方客户端真实闭环、分层交付证据与独立委托覆盖评估 |
+
 ## 执行、控制与原生往返
 
 合同：[Execution](../runtime/execution.md)、[Host compatibility](../runtime/host-compatibility.md)、[Context](../runtime/context.md)。下列票仍保留各自边界与证明，不继承旧阶段的一键执行顺序。

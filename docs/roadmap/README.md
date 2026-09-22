@@ -22,6 +22,13 @@
 
 本表不声称这些领域完全未实现，也不要求每次修复重开全部旧票。新版验收范围来自已接受目标，不能按当前实现进度自行缩小；各来源票拥有具体实现/离线/review 差额，[LIVE](../tickets/LIVE-integration-validation.md)拥有集中验收判据和当前结果。开发中的局部验证不等于每段发布，旧窗口报告不自动签署新候选。
 
+<a id="voice-delegation"></a>
+## 独立后续：Box-only 语音委托
+
+[语音委托 Spec](voice-delegation-spec.md)保存已接受方向：不改官方客户端，复用原生 Box Bot 的受管模型执行和通话结果交付；不承诺所有实时转录或每句语音都经过 Box。用户要求当前手头工作推进完后再回访，因此不插入 HOST-01/CLI-05 当前优先链，也不新增现有 W4/W5 或集中 LIVE 门槛。该方向已接受，不与尚未接受的候选混同；尚未启动实施、采用或真实通话验收。
+
+推进顺序为 [VOICE-01 路由/来源资格](../tickets/VOICE-01-route-and-host-qualification.md) → [VOICE-02 受管执行/交付](../tickets/VOICE-02-managed-execution-and-delivery.md) → [VOICE-03 真实闭环/覆盖评估](../tickets/VOICE-03-live-acceptance-and-coverage.md)。回访时从最新源码及相关 Host 资格继续，不重走旧阶段；专业问题优先委托的角色策略仅是独立候选，不把它或全量语音替换混入基础闭环承诺。
+
 ## 未排期与独立候选
 
 | 方向 | 入口与边界 |

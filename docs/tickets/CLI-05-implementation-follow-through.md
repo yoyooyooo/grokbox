@@ -273,6 +273,8 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 ### 下一实施边界
 
+**独立后续，不改变本节排程：** [Box-only 语音委托](../roadmap/voice-delegation-spec.md)及 [VOICE-01～03](README.md#voice-delegation)已按用户要求保存，待当前手头工作推进完后回访。它们复用本次重建结果，不插队 HOST-01、handover/compact 或其他现有领域，也不新增本票 W4/W5 的完成门槛。本次只落文档，不授权语音实现、客户端修改或现场通话。
+
 **当前W3落点与分工（2026-09-22）：** 已提交管理基线`fc346bca`包含模型/current-state/Compact/handover、通知、[Job](../reports/2026-09-22-job-management.md)和[文件](../reports/2026-09-22-file-management.md)，不重开这些迁移。后续唯一调度入口是[并行拓扑及路线卡](../roadmap/agent-first-cli/parallel-delivery.md)：A/R/F/E与D1先汇聚运行核心；B/C/D2/E2/F2/W并行继续完整产品。每个路线出口从v2切worktree、阶段性回流v2。桌面未提交实现和VOICE规划保留在原工作树单独处理，不阻已提交基线合流。
 
 [HOST-01](HOST-01-patch-health-verifier.md)的固定配方/ABI和健康成果保留其原输入；[新来源校准](../reports/2026-09-22-native-material-source-drift.md)使当前Host/worker适配成为A的优先出口。所部署/可达的必要能力与非干扰资格在J2前闭合，实际loaded/调用/原生App证据在受控采用后进入J3；不以HOST-01全票完成阻塞无关施工，也不放宽本候选必需项。T40目标宿主和独立modeld须前置，不把现场风险都拖到W4。
