@@ -255,7 +255,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["on"],
     usage: "grokbox on",
-    summary: "Start grokbox services on this computer (title sync and idle screen reclaim). Does not switch Host.",
+    summary: "Start grokbox services on this computer (title sync and management workers). Does not change the desktop idle-reclaim policy or switch Host.",
     arguments: [],
     options: options([], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: false, streaming: false,
@@ -263,7 +263,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["off"],
     usage: "grokbox off",
-    summary: "Stop grokbox-started services and idle screen reclaim. Does not switch Host.",
+    summary: "Stop grokbox-started services. Does not change the desktop idle-reclaim policy or switch Host.",
     arguments: [],
     options: options([], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: false, streaming: false,
@@ -271,7 +271,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["upgrade"],
     usage: "grokbox upgrade --yes",
-    summary: "Align this computer with the installed grokbox after a package update, including Host channel and idle screen reclaim.",
+    summary: "Align this computer with the installed grokbox after an authorized package update. Does not change the desktop idle-reclaim policy.",
     arguments: [],
     options: options([{ flags: "--yes", description: "Confirm Host channel refresh" }], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: false, streaming: false, profile: false, localOnly: true,

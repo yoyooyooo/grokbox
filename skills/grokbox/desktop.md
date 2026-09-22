@@ -3,14 +3,14 @@
 Load when inspecting desktop forks or protecting a login: `grokbox skills get grokbox --topic desktop`. Desktop control requires the box daemon's desktop capability; a Gateway-only connection is not enough.
 
 ```bash
-grokbox desktop status --table
-grokbox desktop keep add <agent>
-# Only when removing this protection is intended:
-grokbox desktop keep remove <agent> --yes
+grokbox system desktop get
+grokbox system desktop keep set --input @desktop-keep.json --confirm
+# Only when removing this protection is intended, submit the reviewed complete set.
+grokbox system desktop keep set --input @desktop-keep-without-agent.json --confirm
 ```
 
-`desktop status` lists seats and keep/floor IDs without reclaiming a screen. `keep add` protects the selected fork from idle reclaim; it does not wake a Bot, prove a login, or keep a task running. The keep list is `config.json.desktop.keepAgentIds` on the Box. `desktop keep` and `config set` share the same revision-checked writer; neither edits a client Profile or the protected installation floor. Display 1 is always kept.
+`system desktop get` lists seats, display identities, keep/floor IDs, the current idle-reclaim setting and the management worker without reclaiming a screen. `system desktop keep set` submits the reviewed complete protection set; it does not wake a Bot, prove a login or keep a task running. The keep list is `config.json.desktop.keepAgentIds` on the Box. Keep writes use the canonical revision-checked config writer; they do not edit a client Profile or the protected installation floor. Display 1 is always kept.
 
-`grokbox on` enables idle reclaim; `grokbox off` stops it along with grokbox-started services. Protect must-keep login forks before enabling services. Reclaim can remove a fork's Chrome profile, so removing protection can permit loss of that fork's login state.
+`grokbox on`, `grokbox off` and `grokbox upgrade --yes` do not change idle reclaim. Enable or disable it only through the reviewed `system config apply --domain desktop` or `config set desktop.idleReclaim.enabled` path, with the required request, revision and confirmation fields. Reclaim calls the official `stop-window`, which may remove a fork's Chrome profile. Removing protection can therefore permit loss of that fork's login state.
 
-Re-read `desktop status` to verify the intended protection. For `desktop.idleReclaim.enabled` / `minIdleMs`, load [config](config.md); saving is distinct from a live consumer acknowledgement. Leave the seat table and system processes unchanged. Manual pruning is outside this workflow; consult command `--help` or the `core --full` reference only for a separately authorized maintenance task.
+Re-read `system desktop get` to verify the intended protection. For `desktop.idleReclaim.enabled` / `minIdleMs`, load [config](config.md); saving is distinct from a live consumer acknowledgement. `system desktop prune --preview` is read-only. Executing a reclaim requires the original request UUID, current desktop revision and `--confirm`; query the same request with `operation get --domain desktop` if settlement is unknown. Leave the seat table and system processes unchanged unless that separately authorized reclaim is the requested operation.

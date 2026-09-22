@@ -27,7 +27,7 @@ A selected remote Profile requires an explicit `--scope local` or `--scope targe
 
 Use strict JSON values, `--string <literal>` or a bounded `--value-file`. Dotted paths address ordinary fields; use a JSON Pointer for a map key containing dots, for example `/client/profiles/work.v2/transport`. Unknown or misspelled keys, duplicate JSON members, invalid types and unsafe paths are rejected before publication.
 
-Arrays replace as a whole and require `--replace --expect-revision <observed-sha> --confirm`. Prefer `desktop keep add/remove` for individual protection changes. A full `config apply --file <file>` also requires the observed revision and confirmation. Never retry a revision conflict by silently dropping that check. `unset` removes an optional explicit override and exposes its default; it cannot delete required configuration or change protected state.
+Arrays replace as a whole and require `--replace --expect-revision <observed-sha> --confirm`. Submit a reviewed complete desktop protection set with `system desktop keep set --input @file --confirm`; there are no individual `desktop keep add/remove` aliases. A full `config apply --file <file>` also requires the observed revision and confirmation. Never retry a revision conflict by silently dropping that check. `unset` removes an optional explicit override and exposes its default; it cannot delete required configuration or change protected state.
 
 A committed receipt means saved. `application: pending` means no matching consumer acknowledgement; `restart-required` does not authorize a restart. `--wait-applied --timeout-ms <n>` waits within a bound; a timeout still reports the already committed operation and revision. It never restarts a service or switches Host.
 

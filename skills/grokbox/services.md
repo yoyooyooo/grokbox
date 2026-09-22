@@ -44,12 +44,12 @@ Persist the original request UUID and database before submitting. Unknown means 
 
 | Goal | Command | Boundary |
 | --- | --- | --- |
-| Start grokbox services | `grokbox on` | Enables title sync and idle screen reclaim; does not switch Host. Protect needed login forks first; see [desktop](desktop.md). |
-| Stop grokbox services | `grokbox off` | Stops grokbox-started services and idle reclaim; does not restore the official Host or prove all Bot work stopped. |
+| Start grokbox services | `grokbox on` | Starts the local grokbox service owner and management workers; it does not change the desktop idle-reclaim policy or switch Host. |
+| Stop grokbox services | `grokbox off` | Stops grokbox-started services; it does not change the desktop idle-reclaim policy, restore the official Host or prove all Bot work stopped. |
 | Enable the custom-model channel | `grokbox host start` | Ensures custom Host; already custom is a no-op. Does not assign a model to any Bot. |
 | Restore the official Host | `grokbox host stop` | Ensures official Host; verify the result with doctor. This is different from resetting one Bot's model. |
 | Deliberately restart the channel | `grokbox host restart` | Always intends a Host interruption; not a routine status check. |
-| Align after a grokbox package update | `grokbox upgrade --yes` | Aligns services/Host with the installed package; not an npm package download. Use only for an authorized update. |
+| Align after a grokbox package update | `grokbox upgrade --yes` | Aligns services and Host with the installed package; it does not change the desktop idle-reclaim policy and is not an npm package download. Use only for an authorized update. |
 
 Host switches can interrupt running Bots, including the operator itself. If refused because Bots are running, use the corresponding `--force` only after that interruption is accepted. Never add `--force` by default, and never use it to bypass a source/profile mismatch.
 
