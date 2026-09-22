@@ -1,728 +1,107 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, open, readFile, readdir, rename, stat, symlink, writeFile } from "node:fs/promises";
+import { expect, test } from "bun:test";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
-import { LocalDaemonClient } from "../packages/cli/src/daemon/client.ts";
-import { validateDaemonConfig } from "../packages/cli/src/daemon/config.ts";
-import {
-  FS_DOWNLOAD_MAX_BYTES,
-  FS_READ_MAX_BYTES,
-  FS_TRANSFER_CHUNK_BYTES,
-  GovernedFilesystem,
-} from "@grokbox/box-runtime/runtime";
-import { startDaemonHost, type DaemonHost } from "../packages/cli/src/daemon/host.ts";
+import { GovernedFilesystem, FS_TRANSFER_CHUNK_BYTES, FS_READ_MAX_BYTES } from "@grokbox/box-runtime/runtime";
+import { ManagementClient, fileReference, FILE_POLICY, type FileDownload } from "@grokbox/client";
+import { downloadManagedFile, uploadManagedFile } from "../packages/cli/src/file-transfers.ts";
 import { createProductionDeps } from "../packages/cli/src/deps.ts";
-import { captureCli, parseJson, startMockGateway, writeDiscovery, type MockGateway } from "./helpers.ts";
+import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
+import { DAEMON_METHODS } from "../packages/cli/src/daemon/protocol.ts";
 
-const skillsDir = join(import.meta.dir, "..", "skills");
-const describeLinux = process.platform === "linux" ? describe : describe.skip;
-const fakeHandshake = {
-  protocolMajor: 1,
-  daemonVersion: "0.0.1",
-  daemonPid: 1,
-  startedAt: 1,
-  daemonGeneration: "11111111-1111-4111-8111-111111111111",
-  gateway: { pid: 1, startedAt: 1 },
-};
-let host: DaemonHost | undefined;
-let gateway: MockGateway | undefined;
-
-function errorCode(stderr: string): string {
-  return (parseJson(stderr) as { error: { code: string } }).error.code;
+const I = "11111111-1111-4111-8111-111111111111", binding = "a".repeat(64), ref = fileReference(I, binding, "files", "data.bin");
+const digest = (v: string | Buffer) => createHash("sha256").update(v).digest("hex");
+const barrier = () => { let release!: () => void; const promise = new Promise<void>(r => { release = r; }); return { promise, release }; };
+async function fixture() {
+  const base = await mkdtemp(join(tmpdir(), "file-read-adapter-")), root = join(base, "root"), outside = join(base, "outside");
+  await mkdir(root); await mkdir(outside);
+  const fs = await GovernedFilesystem.create([{ name: "files", path: root, operations: ["stat", "list", "read", "download"] }], Date.now);
+  return { root, outside, base, fs, close: async () => { await fs.close(); await rm(base, { recursive: true, force: true }); } };
 }
-
-afterEach(async () => {
-  await host?.close().catch(() => undefined);
-  gateway?.stop();
-  host = undefined;
-  gateway = undefined;
+test("file commands replace fs and no remaining daemon method exposes the retired file writer", () => {
+  expect(LEAF_COMMANDS.some(c => c.path[0] === "fs")).toBe(false);
+  for (const action of ["stat", "list", "read", "write", "mkdir", "upload", "download", "delete", "restore"]) expect(LEAF_COMMANDS.some(c => c.path.join(" ") === `file ${action}`)).toBe(true);
+  expect(DAEMON_METHODS.some(m => m.startsWith("fs"))).toBe(false);
+});
+test("named-root reads reject traversal, hidden credential paths, invalid types and byte overflow", async () => {
+  const f = await fixture(); try {
+    await mkdir(join(f.root, "docs")); await writeFile(join(f.root, "text.txt"), "hello 世界"); await writeFile(join(f.root, "binary.bin"), Buffer.from([0,255,1]));
+    expect((await f.fs.stat("files:/text.txt")).sha256).toBe(digest("hello 世界"));
+    expect((await f.fs.read("files:/text.txt")).content).toBe("hello 世界");
+    expect((await f.fs.read("files:/binary.bin")).encoding).toBe("base64");
+    for (const path of ["files:/../outside", "files:/.ssh/key", "files:/.env", "files:/agent-data/private", "missing:/x", `files:/${"a".repeat(256)}`]) await expect(f.fs.read(path)).rejects.toBeDefined();
+    await expect(f.fs.read("files:/docs")).rejects.toMatchObject({ code: "fs_not_file" });
+    await expect(f.fs.list("files:/text.txt")).rejects.toMatchObject({ code: "fs_not_directory" });
+    await writeFile(join(f.root, "large.bin"), Buffer.alloc(FS_READ_MAX_BYTES + 1));
+    await expect(f.fs.read("files:/large.bin")).rejects.toMatchObject({ code: "fs_too_large" });
+  } finally { await f.close(); }
+});
+test("download retains the authorized descriptor when its pathname is replaced with an outside symlink", async () => {
+  const f = await fixture(); try {
+    await writeFile(join(f.root,"race.txt"),"authorized bytes"); await writeFile(join(f.outside,"private.txt"),"outside bytes");
+    const d = await f.fs.openDownload("files:/race.txt",randomUUID());
+    await rename(join(f.root,"race.txt"),join(f.root,"original.txt")); await symlink(join(f.outside,"private.txt"),join(f.root,"race.txt"));
+    expect(Buffer.from((await f.fs.downloadChunk(d.transferId,0)).contentBase64,"base64").toString()).toBe("authorized bytes");
+    expect((await f.fs.cancelDownload(d.transferId)).cancelled).toBe(true);
+  } finally { await f.close(); }
+});
+test("pending and reordered cancellation never publishes a cancelled download", async () => {
+  const f = await fixture(); try {
+    await writeFile(join(f.root,"pending.bin"),Buffer.alloc(FS_TRANSFER_CHUNK_BYTES,7));
+    const id=randomUUID(),pending=f.fs.openDownload("files:/pending.bin",id).catch(e=>e);
+    expect((await f.fs.cancelDownload(id)).cancelled).toBe(true); expect((await pending).code).toBe("fs_transfer_invalid");
+    const early=randomUUID(); await f.fs.cancelDownload(early);
+    await expect(f.fs.openDownload("files:/pending.bin",early)).rejects.toMatchObject({code:"fs_transfer_invalid"});
+    const absent=randomUUID(); await expect(f.fs.openDownload("files:/missing",absent)).rejects.toMatchObject({code:"fs_not_found"});
+    await writeFile(join(f.root,"missing"),"now present"); await f.fs.openDownload("files:/missing",absent); await f.fs.cancelDownload(absent);
+  } finally { await f.close(); }
+});
+for(const closing of [false,true]) test(`pending hash ${closing?"service close":"cancellation"} rejects without leaving a usable transfer`,async()=>{
+  const f=await fixture(),entered=barrier(),release=barrier();await writeFile(join(f.root,"hash.bin"),"hash me");
+  const probe=await open(join(f.root,"hash.bin"),"r"),prototype=Object.getPrototypeOf(probe),original=prototype.read;await probe.close();
+  prototype.read=async function(...args:unknown[]){entered.release();await release.promise;return original.apply(this,args);};
+  try{
+    const id=randomUUID(),pending=f.fs.openDownload("files:/hash.bin",id); await entered.promise;
+    const stopped=closing?f.fs.close():f.fs.cancelDownload(id); release.release();
+    await expect(pending).rejects.toMatchObject({code:"fs_transfer_invalid"}); await stopped;
+    await expect(f.fs.downloadChunk(id,0)).rejects.toMatchObject({code:"fs_transfer_invalid"});
+  }finally{release.release();prototype.read=original;await f.close();}
 });
 
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "grokbox-fs-root-"));
-  const outside = await mkdtemp(join(tmpdir(), "grokbox-fs-outside-"));
-  const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-config-"));
-  const destinationDir = await mkdtemp(join(tmpdir(), "grokbox-fs-download-"));
-  await mkdir(join(root, "docs"));
-  await mkdir(join(root, ".ssh"));
-  await writeFile(join(root, "docs", "hello.txt"), "hello world\n");
-  await writeFile(join(root, "docs", "binary.bin"), Buffer.from([0, 255, 1, 2]));
-  await writeFile(join(root, "docs", "empty.bin"), Buffer.alloc(0));
-  await writeFile(join(root, ".ssh", "id_ed25519"), "sensitive-marker-alpha");
-  await writeFile(join(root, ".bashrc"), "sensitive-marker-beta");
-  await writeFile(join(outside, "escape.txt"), "outside material");
-  await symlink(join(outside, "escape.txt"), join(root, "escape.txt"));
-  const chunked = Buffer.alloc(FS_TRANSFER_CHUNK_BYTES * 2 + 17, 0x5a);
-  await writeFile(join(root, "docs", "chunked.bin"), chunked);
-
-  gateway = await startMockGateway();
-  const discoveryPath = await writeDiscovery({
-    port: gateway.port,
-    pid: gateway.pid,
-    startedAt: gateway.startedAt,
-    token: gateway.token,
-  });
-  const socketPath = join(configDir, "run", "daemon.sock");
-  const token = "filesystem-shared-secret";
-  host = await startDaemonHost(
-    { ...createProductionDeps(), configDir, discoveryPath },
-    socketPath,
-    {
-      host: "127.0.0.1",
-      port: 0,
-      tokenSha256: createHash("sha256").update(token).digest("hex"),
-    },
-    [{ name: "home", path: root, operations: ["stat", "list", "read", "download"] }],
-  );
-  await writeProfileFile(configDir, "local-daemon", {
-    version: 1,
-    transport: "daemon",
-    daemon_socket: socketPath,
-  });
-  await writeProfileFile(configDir, "remote-daemon", {
-    version: 1,
-    transport: "daemon",
-    server_url: `http://127.0.0.1:${host.network!.port}`,
-    daemon_token_ref: "env:DAEMON_TOKEN",
-  });
-  await writeProfileFile(configDir, "auto-remote", {
-    version: 1,
-    transport: "auto",
-    daemon_socket: join(configDir, "missing.sock"),
-    gateway_discovery: discoveryPath,
-    server_url: `http://127.0.0.1:${host.network!.port}`,
-    daemon_token_ref: "env:DAEMON_TOKEN",
-  });
-
-  const run = async (profile: string, argv: string[]) => await captureCli(
-    ["--profile", profile, ...argv],
-    {
-      configDir,
-      discoveryPath,
-      skillsDir,
-      env: { DAEMON_TOKEN: token },
-    },
-  );
-  return { root, configDir, destinationDir, socketPath, chunked, run };
+function transport(bytes:Buffer,change?: (path:string,index:number)=>Promise<void>|void,wrongDigest=false) {
+  const generation=randomUUID();let d:FileDownload|undefined;const calls:string[]=[];
+  const fetcher=Object.assign(async(input:string|URL|Request,init?:RequestInit)=>{
+    const url=new URL(typeof input==="string"?input:input instanceof URL?input.href:input.url);calls.push(url.pathname);
+    let data:unknown;
+    if(url.pathname==="/v1/file-downloads"){
+      const r=JSON.parse(String(init?.body));d={...r,generation,size:bytes.length,sha256:wrongDigest?"0".repeat(64):digest(bytes),chunkBytes:32768,chunks:Math.ceil(bytes.length/32768)};data=d;
+    }else if(url.pathname.startsWith("/v1/file-download-chunks/")){
+      const index=Number(url.searchParams.get("index")),content=bytes.subarray(index*32768,(index+1)*32768);await change?.(url.pathname,index);
+      data={requestId:d!.requestId,index,bytes:content.length,contentBase64:content.toString("base64"),done:index===d!.chunks-1};
+    }else if(url.pathname==="/v1/file-download-controls")data={requestId:d!.requestId,closed:true};else throw Error("unexpected-file-route");
+    return Response.json({schemaVersion:1,installationId:I,invocationId:randomUUID(),ok:true,data});
+  },{preconnect:()=>undefined}) as typeof fetch;
+  return {client:new ManagementClient({baseUrl:"http://127.0.0.1:3333",installationId:I,fetch:fetcher}),calls};
 }
-
-describeLinux("governed filesystem reads", () => {
-  test("handshake publishes only named roots and operations", async () => {
-    const f = await fixture();
-    const handshake = await new LocalDaemonClient(f.socketPath, 5_000).handshake();
-    expect(handshake.capabilities).toContain("host.fs.read");
-    expect(handshake.filesystemRoots).toEqual([{
-      name: "home",
-      operations: ["stat", "list", "read", "download"],
-    }]);
-    expect(JSON.stringify(handshake)).not.toContain(f.root);
-  });
-
-  test("stat, list, and text/binary reads are equivalent through local, remote, and capability-aware auto routing", async () => {
-    const f = await fixture();
-    for (const profile of ["local-daemon", "remote-daemon", "auto-remote"]) {
-      const statResult = await f.run(profile, ["fs", "stat", "home:/docs/hello.txt"]);
-      expect(statResult.code).toBe(0);
-      const statBody = parseJson(statResult.stdout) as { data: { kind: string; size: number; sha256: string } };
-      expect(statBody.data.kind).toBe("file");
-      expect(statBody.data.size).toBe(12);
-      expect(statBody.data.sha256).toBe(createHash("sha256").update("hello world\n").digest("hex"));
-
-      const listResult = await f.run(profile, ["fs", "list", "home:/"]);
-      expect(listResult.code).toBe(0);
-      const names = (parseJson(listResult.stdout) as { data: { entries: Array<{ name: string }> } })
-        .data.entries.map((entry) => entry.name);
-      expect(names).toEqual(["docs"]);
-
-      const textResult = await f.run(profile, ["fs", "read", "home:/docs/hello.txt"]);
-      expect(textResult.code).toBe(0);
-      expect((parseJson(textResult.stdout) as { data: { encoding: string; content: string } }).data).toMatchObject({
-        encoding: "utf8",
-        content: "hello world\n",
-      });
-
-      const binaryResult = await f.run(profile, ["fs", "read", "home:/docs/binary.bin"]);
-      expect(binaryResult.code).toBe(0);
-      expect((parseJson(binaryResult.stdout) as { data: { encoding: string; content: string } }).data).toMatchObject({
-        encoding: "base64",
-        content: Buffer.from([0, 255, 1, 2]).toString("base64"),
-      });
-    }
-  });
-
-  test("traversal, credential paths, symlink escape, invalid kinds, and byte overflow fail stably", async () => {
-    const f = await fixture();
-    const cases: Array<[string[], string]> = [
-      [["fs", "read", "home:/../outside"], "fs_path_invalid"],
-      [["fs", "read", `home:/${"a".repeat(256)}`], "fs_path_invalid"],
-      [["fs", "read", "home:/.ssh/id_ed25519"], "fs_forbidden"],
-      [["fs", "read", "home:/.bashrc"], "fs_forbidden"],
-      [["fs", "read", "home:/escape.txt"], "fs_forbidden"],
-      [["fs", "read", "home:/docs"], "fs_not_file"],
-      [["fs", "list", "home:/docs/hello.txt"], "fs_not_directory"],
-      [["fs", "read", "unknown:/file"], "fs_forbidden"],
-    ];
-    for (const [argv, expected] of cases) {
-      const result = await f.run("local-daemon", argv);
-      expect(result.code).not.toBe(0);
-      expect(errorCode(result.stderr)).toBe(expected);
-      expect(result.stderr).not.toContain("sensitive-marker-alpha");
-      expect(result.stderr).not.toContain("sensitive-marker-beta");
-      expect(result.stderr).not.toContain("outside material");
-    }
-
-    const largePath = join(f.root, "docs", "large.bin");
-    await writeFile(largePath, Buffer.alloc(FS_READ_MAX_BYTES + 1));
-    const large = await f.run("local-daemon", ["fs", "read", "home:/docs/large.bin"]);
-    expect(large.code).toBe(40);
-    expect(errorCode(large.stderr)).toBe("fs_too_large");
-
-    const oversizedPath = join(f.root, "docs", "oversized.bin");
-    const oversized = await open(oversizedPath, "w");
-    await oversized.truncate(FS_DOWNLOAD_MAX_BYTES + 1);
-    await oversized.close();
-    const download = await f.run("local-daemon", [
-      "fs",
-      "download",
-      "home:/docs/oversized.bin",
-      join(f.destinationDir, "oversized.bin"),
-    ]);
-    expect(download.code).toBe(40);
-    expect(errorCode(download.stderr)).toBe("fs_too_large");
-  });
-
-  test("download pins an authorized descriptor across pathname symlink replacement", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grokbox-fs-descriptor-root-"));
-    const outside = await mkdtemp(join(tmpdir(), "grokbox-fs-descriptor-outside-"));
-    const authorizedPath = join(root, "race.txt");
-    const originalPath = join(root, "race.original.txt");
-    const outsidePath = join(outside, "credential.txt");
-    await writeFile(authorizedPath, "authorized bytes");
-    await writeFile(outsidePath, "outside bytes");
-    const transferId = "11111111-1111-4111-8111-111111111111";
-    const filesystem = await GovernedFilesystem.create(
-      [{ name: "home", path: root, operations: ["download"] }],
-      () => Date.now(),
-    );
-    const opened = await filesystem.openDownload("home:/race.txt", transferId);
-    await rename(authorizedPath, originalPath);
-    await symlink(outsidePath, authorizedPath);
-    const chunk = await filesystem.downloadChunk(opened.transferId, 0);
-    expect(Buffer.from(chunk.contentBase64, "base64").toString("utf8")).toBe("authorized bytes");
-    expect(Buffer.from(chunk.contentBase64, "base64").toString("utf8")).not.toContain("outside bytes");
-    expect((await filesystem.cancelDownload(opened.transferId)).cancelled).toBe(true);
-    await filesystem.close();
-  });
-
-  test("pending and out-of-order cancellation prevent a transfer from being published", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grokbox-fs-pending-cancel-root-"));
-    await writeFile(join(root, "pending.bin"), Buffer.alloc(FS_TRANSFER_CHUNK_BYTES, 7));
-    const filesystem = await GovernedFilesystem.create(
-      [{ name: "home", path: root, operations: ["download"] }],
-      () => Date.now(),
-    );
-
-    const pendingId = "22222222-2222-4222-8222-222222222222";
-    const pendingResult = filesystem.openDownload("home:/pending.bin", pendingId).catch((error) => error);
-    expect((await filesystem.cancelDownload(pendingId)).cancelled).toBe(true);
-    expect((await pendingResult).code).toBe("fs_transfer_invalid");
-    await expect(filesystem.downloadChunk(pendingId, 0)).rejects.toMatchObject({ code: "fs_transfer_invalid" });
-
-    const failedId = "66666666-6666-4666-8666-666666666666";
-    await expect(filesystem.openDownload("home:/missing.bin", failedId)).rejects.toMatchObject({ code: "fs_not_found" });
-    await writeFile(join(root, "missing.bin"), "now present");
-    expect((await filesystem.openDownload("home:/missing.bin", failedId)).transferId).toBe(failedId);
-    expect((await filesystem.cancelDownload(failedId)).cancelled).toBe(true);
-
-    const reorderedId = "33333333-3333-4333-8333-333333333333";
-    expect((await filesystem.cancelDownload(reorderedId)).cancelled).toBe(false);
-    await expect(filesystem.openDownload("home:/pending.bin", reorderedId)).rejects.toMatchObject({
-      code: "fs_transfer_invalid",
-    });
-    await filesystem.close();
-  });
-
-  test("cancellation during a pending hash is classified as an invalid transfer", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grokbox-fs-hash-cancel-root-"));
-    const path = join(root, "hashing.bin");
-    await writeFile(path, "hash me");
-    const probe = await open(path, "r");
-    const prototype = Object.getPrototypeOf(probe) as { read: typeof probe.read };
-    const originalRead = prototype.read;
-    await probe.close();
-    let enteredHash!: () => void;
-    let releaseHash!: () => void;
-    const entered = new Promise<void>((resolve) => { enteredHash = resolve; });
-    const release = new Promise<void>((resolve) => { releaseHash = resolve; });
-    prototype.read = (async function (this: typeof probe, ...args: unknown[]) {
-      enteredHash();
-      await release;
-      return await originalRead.apply(this, args as never);
-    }) as typeof probe.read;
-
-    const filesystem = await GovernedFilesystem.create(
-      [{ name: "home", path: root, operations: ["download"] }],
-      () => Date.now(),
-    );
-    const transferId = "55555555-5555-4555-8555-555555555555";
-    try {
-      const opening = filesystem.openDownload("home:/hashing.bin", transferId).catch((error) => error);
-      await entered;
-      expect((await filesystem.cancelDownload(transferId)).cancelled).toBe(true);
-      releaseHash();
-      expect((await opening).code).toBe("fs_transfer_invalid");
-      await expect(filesystem.downloadChunk(transferId, 0)).rejects.toMatchObject({ code: "fs_transfer_invalid" });
-    } finally {
-      releaseHash();
-      prototype.read = originalRead;
-      await filesystem.close();
-    }
-  });
-
-  test("close drains a not-yet-published download open", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grokbox-fs-close-open-root-"));
-    const path = join(root, "hashing.bin");
-    await writeFile(path, "hash me during close");
-    const probe = await open(path, "r");
-    const prototype = Object.getPrototypeOf(probe) as { read: typeof probe.read };
-    const originalRead = prototype.read;
-    await probe.close();
-    let enteredHash!: () => void;
-    let releaseHash!: () => void;
-    const entered = new Promise<void>((resolve) => { enteredHash = resolve; });
-    const release = new Promise<void>((resolve) => { releaseHash = resolve; });
-    prototype.read = (async function (this: typeof probe, ...args: unknown[]) {
-      enteredHash();
-      await release;
-      return await originalRead.apply(this, args as never);
-    }) as typeof probe.read;
-    const filesystem = await GovernedFilesystem.create(
-      [{ name: "home", path: root, operations: ["download"] }],
-      Date.now,
-    );
-    const transferId = "78787878-7878-4878-8878-787878787878";
-    try {
-      const opening = filesystem.openDownload("home:/hashing.bin", transferId);
-      await entered;
-      const closing = filesystem.close();
-      releaseHash();
-      await expect(opening).rejects.toMatchObject({ code: "fs_transfer_invalid" });
-      await closing;
-      await expect(filesystem.downloadChunk(transferId, 0)).rejects.toMatchObject({ code: "fs_transfer_invalid" });
-    } finally {
-      releaseHash();
-      prototype.read = originalRead;
-      await filesystem.close();
-    }
-  });
-
-  test("download chunks atomically, refuses overwrite, and verifies the SHA-256", async () => {
-    const f = await fixture();
-    for (const profile of ["local-daemon", "remote-daemon"]) {
-      const destination = join(f.destinationDir, `${profile}.bin`);
-      const result = await f.run(profile, ["fs", "download", "home:/docs/chunked.bin", destination]);
-      expect(result.code).toBe(0);
-      const body = parseJson(result.stdout) as { data: {
-        remotePath: string;
-        localPath: string;
-        size: number;
-        sha256: string;
-        chunks: number;
-        verified: boolean;
-      } };
-      expect(body.data).toEqual({
-        remotePath: "home:/docs/chunked.bin",
-        localPath: destination,
-        size: f.chunked.length,
-        sha256: createHash("sha256").update(f.chunked).digest("hex"),
-        chunks: 3,
-        verified: true,
-      });
-      expect(await readFile(destination)).toEqual(f.chunked);
-      expect((await stat(destination)).mode & 0o777).toBe(0o600);
-      const conflict = await f.run(profile, ["fs", "download", "home:/docs/chunked.bin", destination]);
-      expect(conflict.code).toBe(43);
-      expect(errorCode(conflict.stderr)).toBe("fs_destination_exists");
-    }
-
-    const emptyDestination = join(f.destinationDir, "empty.bin");
-    const empty = await f.run("remote-daemon", ["fs", "download", "home:/docs/empty.bin", emptyDestination]);
-    expect(empty.code).toBe(0);
-    expect((parseJson(empty.stdout) as { data: { size: number; chunks: number; verified: boolean } }).data)
-      .toMatchObject({ size: 0, chunks: 0, verified: true });
-    expect(await readFile(emptyDestination)).toEqual(Buffer.alloc(0));
-  });
-
-  test("hash mismatch removes the partial destination and cancels the transfer", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-hash-config-"));
-    const destinationDir = await mkdtemp(join(tmpdir(), "grokbox-fs-hash-output-"));
-    const destination = join(destinationDir, "bad.bin");
-    await writeProfileFile(configDir, "remote", {
-      version: 1,
-      transport: "daemon",
-      server_url: "http://127.0.0.1:12345",
-      daemon_token_ref: "env:DAEMON_TOKEN",
-    });
-    const methods: string[] = [];
-    const result = await captureCli(["--profile", "remote", "fs", "download", "home:/bad.bin", destination], {
-      configDir,
-      skillsDir,
-      env: { DAEMON_TOKEN: "secret" },
-      fetch: (async (_input, init) => {
-        const request = JSON.parse(String(init?.body)) as { method: string; params: Record<string, unknown> };
-        methods.push(request.method);
-        const transferId = String(request.params.transferId);
-        if (request.method === "handshake") {
-          return Response.json({ ok: true, result: {
-            ...fakeHandshake,
-            capabilities: ["host.fs.read"],
-            filesystemRoots: [{ name: "home", operations: ["download"] }],
-          } });
-        }
-        if (request.method === "fsDownloadOpen") {
-          return Response.json({ ok: true, result: {
-            transferId,
-            path: "home:/bad.bin",
-            root: "home",
-            size: 3,
-            sha256: "0".repeat(64),
-            chunkBytes: FS_TRANSFER_CHUNK_BYTES,
-            chunks: 1,
-          } });
-        }
-        if (request.method === "fsDownloadChunk") {
-          return Response.json({ ok: true, result: {
-            transferId,
-            index: 0,
-            bytes: 3,
-            contentBase64: Buffer.from("abc").toString("base64"),
-            done: true,
-          } });
-        }
-        return Response.json({ ok: true, result: { transferId, cancelled: true } });
-      }) as typeof fetch,
-    });
-    expect(result.code).toBe(42);
-    expect(errorCode(result.stderr)).toBe("fs_hash_mismatch");
-    expect(methods.at(-1)).toBe("fsDownloadCancel");
-    expect(await readdir(destinationDir)).toEqual([]);
-  });
-
-  test("no-clobber commit race preserves the competing destination and cancels", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-race-config-"));
-    const destinationDir = await mkdtemp(join(tmpdir(), "grokbox-fs-race-output-"));
-    const destination = join(destinationDir, "race.bin");
-    await writeProfileFile(configDir, "remote", {
-      version: 1,
-      transport: "daemon",
-      server_url: "http://127.0.0.1:12345",
-      daemon_token_ref: "env:DAEMON_TOKEN",
-    });
-    const methods: string[] = [];
-    const bytes = Buffer.from("abc");
-    const result = await captureCli(["--profile", "remote", "fs", "download", "home:/race.bin", destination], {
-      configDir,
-      skillsDir,
-      env: { DAEMON_TOKEN: "secret" },
-      fetch: (async (_input, init) => {
-        const request = JSON.parse(String(init?.body)) as { method: string; params: Record<string, unknown> };
-        methods.push(request.method);
-        const transferId = String(request.params.transferId);
-        if (request.method === "handshake") {
-          return Response.json({ ok: true, result: {
-            ...fakeHandshake,
-            capabilities: ["host.fs.read"],
-            filesystemRoots: [{ name: "home", operations: ["download"] }],
-          } });
-        }
-        if (request.method === "fsDownloadOpen") {
-          return Response.json({ ok: true, result: {
-            transferId,
-            path: "home:/race.bin",
-            root: "home",
-            size: bytes.length,
-            sha256: createHash("sha256").update(bytes).digest("hex"),
-            chunkBytes: FS_TRANSFER_CHUNK_BYTES,
-            chunks: 1,
-          } });
-        }
-        if (request.method === "fsDownloadChunk") {
-          await writeFile(destination, "competing writer");
-          return Response.json({ ok: true, result: {
-            transferId,
-            index: 0,
-            bytes: bytes.length,
-            contentBase64: bytes.toString("base64"),
-            done: true,
-          } });
-        }
-        return Response.json({ ok: true, result: { transferId, cancelled: true } });
-      }) as typeof fetch,
-    });
-    expect(result.code).toBe(43);
-    expect(errorCode(result.stderr)).toBe("fs_destination_exists");
-    expect(await readFile(destination, "utf8")).toBe("competing writer");
-    expect(methods.at(-1)).toBe("fsDownloadCancel");
-    expect((await readdir(destinationDir)).filter((name) => name.includes(".grokbox-"))).toEqual([]);
-  });
-
-  test("signal cancellation aborts an in-flight chunk, removes the partial file, and cancels the transfer", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-cancel-config-"));
-    const destinationDir = await mkdtemp(join(tmpdir(), "grokbox-fs-cancel-output-"));
-    const destination = join(destinationDir, "cancel.bin");
-    const controller = new AbortController();
-    await writeProfileFile(configDir, "remote", {
-      version: 1,
-      transport: "daemon",
-      server_url: "http://127.0.0.1:12345",
-      daemon_token_ref: "env:DAEMON_TOKEN",
-    });
-    const methods: string[] = [];
-    const result = await captureCli(["--profile", "remote", "fs", "download", "home:/cancel.bin", destination], {
-      configDir,
-      skillsDir,
-      env: { DAEMON_TOKEN: "secret" },
-      signal: controller.signal,
-      fetch: (async (_input, init) => {
-        const request = JSON.parse(String(init?.body)) as { method: string; params: Record<string, unknown> };
-        methods.push(request.method);
-        const transferId = String(request.params.transferId);
-        if (request.method === "handshake") {
-          return Response.json({ ok: true, result: {
-            ...fakeHandshake,
-            capabilities: ["host.fs.read"],
-            filesystemRoots: [{ name: "home", operations: ["download"] }],
-          } });
-        }
-        if (request.method === "fsDownloadOpen") {
-          return Response.json({ ok: true, result: {
-            transferId,
-            path: "home:/cancel.bin",
-            root: "home",
-            size: 3,
-            sha256: createHash("sha256").update("abc").digest("hex"),
-            chunkBytes: FS_TRANSFER_CHUNK_BYTES,
-            chunks: 1,
-          } });
-        }
-        if (request.method === "fsDownloadChunk") {
-          return await new Promise<Response>((_resolve, reject) => {
-            const signal = init?.signal;
-            const rejectAbort = () => reject(new DOMException("Aborted", "AbortError"));
-            signal?.addEventListener("abort", rejectAbort, { once: true });
-            controller.abort();
-            if (signal?.aborted) rejectAbort();
-          });
-        }
-        return Response.json({ ok: true, result: { transferId, cancelled: true } });
-      }) as typeof fetch,
-    });
-    expect(result.code).toBe(26);
-    expect(errorCode(result.stderr)).toBe("daemon_unreachable");
-    expect(methods).toContain("fsDownloadChunk");
-    expect(methods.at(-1)).toBe("fsDownloadCancel");
-    expect(await readdir(destinationDir)).toEqual([]);
-  });
-
-  test("signal cancellation can cancel an in-flight open by its client-allocated transfer identity", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-open-cancel-config-"));
-    const destinationDir = await mkdtemp(join(tmpdir(), "grokbox-fs-open-cancel-output-"));
-    const destination = join(destinationDir, "cancel-open.bin");
-    const controller = new AbortController();
-    await writeProfileFile(configDir, "remote", {
-      version: 1,
-      transport: "daemon",
-      server_url: "http://127.0.0.1:12345",
-      daemon_token_ref: "env:DAEMON_TOKEN",
-    });
-    const methods: string[] = [];
-    let openedTransfer = "";
-    let cancelledTransfer = "";
-    const result = await captureCli(["--profile", "remote", "fs", "download", "home:/cancel-open.bin", destination], {
-      configDir,
-      skillsDir,
-      env: { DAEMON_TOKEN: "secret" },
-      signal: controller.signal,
-      fetch: (async (_input, init) => {
-        const request = JSON.parse(String(init?.body)) as { method: string; params: Record<string, unknown> };
-        methods.push(request.method);
-        if (request.method === "handshake") {
-          return Response.json({ ok: true, result: {
-            ...fakeHandshake,
-            capabilities: ["host.fs.read"],
-            filesystemRoots: [{ name: "home", operations: ["download"] }],
-          } });
-        }
-        if (request.method === "fsDownloadOpen") {
-          openedTransfer = String(request.params.transferId);
-          return await new Promise<Response>((_resolve, reject) => {
-            const rejectAbort = () => reject(new DOMException("Aborted", "AbortError"));
-            init?.signal?.addEventListener("abort", rejectAbort, { once: true });
-            controller.abort();
-            if (init?.signal?.aborted) rejectAbort();
-          });
-        }
-        cancelledTransfer = String(request.params.transferId);
-        return Response.json({ ok: true, result: { transferId: cancelledTransfer, cancelled: true } });
-      }) as typeof fetch,
-    });
-    expect(result.code).toBe(26);
-    expect(methods).toEqual(["handshake", "fsDownloadOpen", "fsDownloadCancel"]);
-    expect(cancelledTransfer).toBe(openedTransfer);
-    expect(await readdir(destinationDir)).toEqual([]);
-  });
-
-  test("RPC timeout aborts an in-flight chunk and still performs bounded cleanup", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-timeout-config-"));
-    const destinationDir = await mkdtemp(join(tmpdir(), "grokbox-fs-timeout-output-"));
-    const destination = join(destinationDir, "timeout.bin");
-    await writeProfileFile(configDir, "remote", {
-      version: 1,
-      transport: "daemon",
-      server_url: "http://127.0.0.1:12345",
-      daemon_token_ref: "env:DAEMON_TOKEN",
-    });
-    const methods: string[] = [];
-    const result = await captureCli([
-      "--profile", "remote", "fs", "download", "home:/timeout.bin", destination, "--timeout-ms", "10",
-    ], {
-      configDir,
-      skillsDir,
-      env: { DAEMON_TOKEN: "secret" },
-      fetch: (async (_input, init) => {
-        const request = JSON.parse(String(init?.body)) as { method: string; params: Record<string, unknown> };
-        methods.push(request.method);
-        const transferId = String(request.params.transferId);
-        if (request.method === "handshake") {
-          return Response.json({ ok: true, result: {
-            ...fakeHandshake,
-            capabilities: ["host.fs.read"],
-            filesystemRoots: [{ name: "home", operations: ["download"] }],
-          } });
-        }
-        if (request.method === "fsDownloadOpen") {
-          return Response.json({ ok: true, result: {
-            transferId,
-            path: "home:/timeout.bin",
-            root: "home",
-            size: 3,
-            sha256: createHash("sha256").update("abc").digest("hex"),
-            chunkBytes: FS_TRANSFER_CHUNK_BYTES,
-            chunks: 1,
-          } });
-        }
-        if (request.method === "fsDownloadChunk") {
-          return await new Promise<Response>((_resolve, reject) => {
-            const rejectAbort = () => reject(new DOMException("Aborted", "AbortError"));
-            init?.signal?.addEventListener("abort", rejectAbort, { once: true });
-            if (init?.signal?.aborted) rejectAbort();
-          });
-        }
-        return Response.json({ ok: true, result: { transferId, cancelled: true } });
-      }) as typeof fetch,
-    });
-    expect(result.code).toBe(26);
-    expect(errorCode(result.stderr)).toBe("daemon_unreachable");
-    expect(methods).toContain("fsDownloadChunk");
-    expect(methods.at(-1)).toBe("fsDownloadCancel");
-    expect(await readdir(destinationDir)).toEqual([]);
-  });
-
-  test("client rejects oversized transfer metadata and invalid read content before output", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-client-limit-config-"));
-    const destinationDir = await mkdtemp(join(tmpdir(), "grokbox-fs-client-limit-output-"));
-    await writeProfileFile(configDir, "remote", {
-      version: 1,
-      transport: "daemon",
-      server_url: "http://127.0.0.1:12345",
-      daemon_token_ref: "env:DAEMON_TOKEN",
-    });
-    const fetchFn = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const request = JSON.parse(String(init?.body)) as { method: string };
-      if (request.method === "handshake") {
-        return Response.json({ ok: true, result: {
-          ...fakeHandshake,
-          capabilities: ["host.fs.read"],
-          filesystemRoots: [{ name: "home", operations: ["read", "download"] }],
-        } });
-      }
-      if (request.method === "fsRead") {
-        return Response.json({ ok: true, result: {
-          path: "home:/bad.txt",
-          root: "home",
-          size: 3,
-          sha256: "0".repeat(64),
-          encoding: "utf8",
-          content: "abc",
-        } });
-      }
-      return Response.json({ ok: true, result: {
-        transferId: "oversized",
-        path: "home:/huge.bin",
-        root: "home",
-        size: FS_DOWNLOAD_MAX_BYTES + 1,
-        sha256: "0".repeat(64),
-        chunkBytes: FS_TRANSFER_CHUNK_BYTES,
-        chunks: Math.ceil((FS_DOWNLOAD_MAX_BYTES + 1) / FS_TRANSFER_CHUNK_BYTES),
-      } });
-    }) as typeof fetch;
-    const deps = { configDir, skillsDir, env: { DAEMON_TOKEN: "secret" }, fetch: fetchFn };
-    const read = await captureCli(["--profile", "remote", "fs", "read", "home:/bad.txt"], deps);
-    expect(read.code).toBe(42);
-    expect(read.stdout).toBe("");
-    expect(errorCode(read.stderr)).toBe("fs_hash_mismatch");
-
-    const destination = join(destinationDir, "huge.bin");
-    const download = await captureCli(
-      ["--profile", "remote", "fs", "download", "home:/huge.bin", destination],
-      deps,
-    );
-    expect(download.code).toBe(26);
-    expect(download.stdout).toBe("");
-    expect(errorCode(download.stderr)).toBe("daemon_unreachable");
-    expect(await readdir(destinationDir)).toEqual([]);
-  });
-
-  test("Gateway-only Profiles reject filesystem use before Gateway or SSH access", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-fs-gateway-config-"));
-    await writeProfileFile(configDir, "gateway", {
-      version: 1,
-      transport: "gateway",
-      gateway_url: "https://gateway.example.test",
-      gateway_token_ref: "env:GATEWAY_TOKEN",
-      ssh_host: "box",
-    });
-    let fetches = 0;
-    let commands = 0;
-    const result = await captureCli(["--profile", "gateway", "fs", "stat", "home:/file"], {
-      configDir,
-      skillsDir,
-      env: { GATEWAY_TOKEN: "secret" },
-      fetch: (async () => {
-        fetches += 1;
-        throw new Error("unexpected");
-      }) as unknown as typeof fetch,
-      runCommand: async () => {
-        commands += 1;
-        return { code: 1, stdout: "", stderr: "unexpected" };
-      },
-    });
-    expect(result.code).toBe(22);
-    expect(errorCode(result.stderr)).toBe("capability_unavailable");
-    expect(fetches).toBe(0);
-    expect(commands).toBe(0);
-  });
-
-  test("daemon config rejects pseudo-filesystem roots and malformed policies", () => {
-    expect(() => validateDaemonConfig({
-      version: 1,
-      filesystem: { roots: [{ name: "proc", path: "/proc", operations: ["read"] }] },
-    })).toThrow();
-    expect(() => validateDaemonConfig({
-      version: 1,
-      filesystem: { roots: [{ name: "home", path: "/home/box", operations: ["read", "read"] }] },
-    })).toThrow();
-  });
+for(const mode of ["verified","hash-mismatch","destination-race","cancel"] as const) test(`caller-local download ${mode}: bounded bytes, no clobber and cleanup`,async()=>{
+  const f=await fixture(),destination=join(f.outside,"result.bin"),abort=new AbortController(),bytes=Buffer.alloc(70000,39);
+  const t=transport(bytes,async(_p,index)=>{if(index===0&&mode==="destination-race")await writeFile(destination,"competing");if(mode==="cancel")abort.abort();},mode==="hash-mismatch");
+  try{
+    const deps={...createProductionDeps(),signal:abort.signal};
+    const task=downloadManagedFile(t.client,deps,I,ref,destination);
+    if(mode==="verified"){expect((await task).data.verified).toBe(true);expect(await readFile(destination)).toEqual(bytes);}
+    else {await expect(task).rejects.toBeDefined();if(mode==="destination-race")expect(await readFile(destination,"utf8")).toBe("competing");else expect(await readdir(f.outside)).toEqual([]);}
+    expect(t.calls.at(-1)).toBe("/v1/file-download-controls");expect((await readdir(f.outside)).filter(s=>s.endsWith(".tmp"))).toEqual([]);
+  }finally{await f.close();}
+});
+test("local upload supports short positional reads and validates its source before committing",async()=>{
+  const f=await fixture(),source=join(f.outside,"source.bin"),bytes=Buffer.alloc(80000,6);await writeFile(source,bytes);
+  const probe=await open(source,"r"),prototype=Object.getPrototypeOf(probe),original=prototype.read;await probe.close();
+  prototype.read=async function(buffer:Buffer,offset:number,length:number,position:number){return original.call(this,buffer,offset,Math.min(length,701),position);};
+  const chunks:Buffer[]=[];let request:any;const generation=randomUUID(),id=randomUUID();
+  const client={changeFile:async(r:any)=>{request=r;return {data:{requestId:id,ref,generation,chunkBytes:FILE_POLICY.chunkBytes,size:r.size,sha256:r.sha256,chunks:Math.ceil(r.size/FILE_POLICY.chunkBytes)}};},
+    uploadFileChunk:async(r:any)=>{chunks.push(Buffer.from(r.contentBase64,"base64"));},controlFileUpload:async(r:any)=>{expect(r.action).toBe("commit");return {data:{state:"succeeded"}};}} as unknown as ManagementClient;
+  try{await uploadManagedFile(client,createProductionDeps(),I,ref,source,id,null);expect(request.sha256).toBe(digest(bytes));expect(Buffer.concat(chunks)).toEqual(bytes);}
+  finally{prototype.read=original;await f.close();}
 });

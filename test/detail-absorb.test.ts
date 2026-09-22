@@ -20,7 +20,6 @@ function handshake() {
     startedAt: 1,
     daemonGeneration: "11111111-1111-4111-8111-111111111111",
     capabilities: [],
-    filesystemRoots: [],
     gateway: { pid: 2, startedAt: 2 },
   };
 }

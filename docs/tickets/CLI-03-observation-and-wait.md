@@ -30,6 +30,12 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 旧 daemon Job RPC、`events --sources job` 与 Profile 的 process capability 承诺已退出；既有 Job 状态等待及有界输出由上述管理用例接管，不提供空的旧事件源或再挂一个 daemon writer。其他 Gateway/消息事件的统一接续、全域事件关联及全仓最终验收仍按本票/CLI-05 推进，不能从本片外推为所有事件域已迁完。
 
+## 文件观察与原请求（2026-09-22）
+
+[文件管理](../reports/2026-09-22-file-management.md)提供准确根/目录snapshot与有界正文、固定下载描述符/完整SHA、独立file operation查询。目录cursor绑定当前metadata窗口；目录revision不代表递归文件内容，原文件来源的新鲜度和文本索引追赶分别呈现。浏览器仅保存安装/主体/源引用/原request定位，不缓存可重用审批或二进制。查询历史不检查当前源才能返回，不隐式修复/补投；原暂存上传取消是写动作，不伪装GET对账。
+
+原生Project fileRef、账号/同步与跨域变化订阅仍归DATA-01及本票剩余合同；不能把二进制下载或一个现行file receipt称为所有材料已被原生Bot采用。
+
 ## 实施前验证
 
 持续采集与存储差额继续归 [T41](T41-continuous-observation-and-alerting.md)。本票不复制 collector 实现票，也不宣称新增 Host 补丁已通过资格。

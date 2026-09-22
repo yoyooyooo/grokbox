@@ -9,11 +9,11 @@ import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
 import { acquireDaemonSocket, type DaemonSocketLease } from "@grokbox/box-runtime/runtime";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
-import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig } from "./config.ts";
+import type { DaemonDesktopConfig, DaemonNetworkConfig } from "./config.ts";
 import { DesktopManager, type DesktopIo } from "./desktop.ts";
 import { TitleSyncManager } from "./title-sync.ts";
 import { DaemonEventManager, type EventSource } from "./events.ts";
-import { GovernedFilesystem, HostResourceError } from "@grokbox/box-runtime/runtime";
+
 import {
   DAEMON_CAPABILITIES,
   DAEMON_METHODS,
@@ -72,29 +72,6 @@ function assertParamKeys(params: Record<string, unknown>, keys: readonly string[
   }
 }
 
-function assertExactParams(
-  params: Record<string, unknown>,
-  required: Readonly<Record<string, "string" | "number" | "boolean">>,
-  optional: Readonly<Record<string, "string" | "number" | "boolean">> = {},
-): void {
-  const allowed = new Set([...Object.keys(required), ...Object.keys(optional)]);
-  if (Object.keys(params).some((key) => !allowed.has(key))) {
-    throw new CliError("gateway_bad_request", "Daemon mutation params contain unsupported fields.");
-  }
-  for (const [key, type] of Object.entries(required)) {
-    if (!(key in params) || typeof params[key] !== type ||
-      (type === "number" && !Number.isFinite(params[key]))) {
-      throw new CliError("gateway_bad_request", `Daemon mutation param '${key}' is invalid.`);
-    }
-  }
-  for (const [key, type] of Object.entries(optional)) {
-    if (key in params && (typeof params[key] !== type ||
-      (type === "number" && !Number.isFinite(params[key])))) {
-      throw new CliError("gateway_bad_request", `Daemon mutation param '${key}' is invalid.`);
-    }
-  }
-}
-
 function gatewayBody(params: Record<string, unknown>): Record<string, unknown> {
   const body = { ...params };
   delete body.timeoutMs;
@@ -141,13 +118,11 @@ export async function startDaemonHost(
   deps: CliDeps,
   socketPath: string,
   networkConfig?: DaemonNetworkConfig,
-  filesystemRoots: readonly DaemonFilesystemRootConfig[] = [],
   desktopConfig?: DaemonDesktopConfig,
   desktopIo?: DesktopIo,
 ): Promise<DaemonHost> {
   const startedAt = Date.now();
   const daemonGeneration = deps.randomUUID();
-  const filesystem = await GovernedFilesystem.create(filesystemRoots, deps.now);
   const directDeps: CliDeps = { ...deps, transport: "local" };
   const events = new DaemonEventManager(daemonGeneration, directDeps, startedAt);
   const gateway = new GatewayClient(directDeps);
@@ -157,12 +132,6 @@ export async function startDaemonHost(
 
   const handshake = async (): Promise<DaemonHandshake> => {
     const discovery = await gateway.load();
-    const roots = filesystem.projections();
-    const hasRead = roots.some((root) => root.operations.some((operation) =>
-      ["stat", "list", "read", "download"].includes(operation)));
-    const hasWrite = roots.some((root) => root.operations.some((operation) =>
-      ["write", "mkdir", "upload", "remove", "remove-recursive"].includes(operation)));
-    const hasRecursiveRemove = roots.some((root) => root.operations.includes("remove-recursive"));
     return {
       protocolMajor: DAEMON_PROTOCOL_MAJOR,
       daemonVersion: deps.cliVersion,
@@ -171,13 +140,9 @@ export async function startDaemonHost(
       daemonGeneration,
       capabilities: [
         ...DAEMON_CAPABILITIES,
-        ...(hasRead ? ["host.fs.read"] : []),
-        ...(hasWrite ? ["host.fs.write"] : []),
-        ...(hasRecursiveRemove ? ["host.fs.remove.recursive"] : []),
         ...desktop.capabilities(),
         ...titleSync.capabilities(),
       ],
-      filesystemRoots: roots,
       gateway: gatewayMeta(discovery),
     };
   };
@@ -313,102 +278,6 @@ export async function startDaemonHost(
       const value = await gateway.createAgentFromTemplate(body, timeoutMs);
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
     }
-    if (method === "fsStat") {
-      return { result: await filesystem.stat(asString(params.path), signal) };
-    }
-    if (method === "fsList") {
-      return { result: await filesystem.list(asString(params.path)) };
-    }
-    if (method === "fsRead") {
-      return { result: await filesystem.read(asString(params.path), signal) };
-    }
-    if (method === "fsDownloadOpen") {
-      return {
-        result: await filesystem.openDownload(
-          asString(params.path),
-          asString(params.transferId),
-          signal,
-        ),
-      };
-    }
-    if (method === "fsDownloadChunk") {
-      return {
-        result: await filesystem.downloadChunk(
-          asString(params.transferId),
-          typeof params.index === "number" ? params.index : Number.NaN,
-        ),
-      };
-    }
-    if (method === "fsDownloadCancel") {
-      return { result: await filesystem.cancelDownload(asString(params.transferId)) };
-    }
-    if (method === "fsWrite") {
-      assertExactParams(
-        params,
-        { operationId: "string", path: "string", contentUtf8: "string" },
-        { expectedSha256: "string" },
-      );
-      return { result: await filesystem.write(
-        params.operationId as string,
-        params.path as string,
-        Buffer.from(params.contentUtf8 as string, "utf8"),
-        params.expectedSha256 as string | undefined,
-      ) };
-    }
-    if (method === "fsMkdir") {
-      assertExactParams(params, { operationId: "string", path: "string" });
-      return { result: await filesystem.makeDirectory(params.operationId as string, params.path as string) };
-    }
-    if (method === "fsUploadOpen") {
-      assertExactParams(
-        params,
-        { operationId: "string", path: "string", size: "number", sha256: "string" },
-        { expectedSha256: "string" },
-      );
-      return { result: await filesystem.openUpload(
-        params.operationId as string,
-        params.path as string,
-        params.size as number,
-        params.sha256 as string,
-        params.expectedSha256 as string | undefined,
-      ) };
-    }
-    if (method === "fsUploadChunk") {
-      assertExactParams(params, {
-        operationId: "string", index: "number", bytes: "number", contentBase64: "string",
-      });
-      const contentBase64 = params.contentBase64 as string;
-      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
-        throw new CliError("fs_upload_invalid", "Upload chunk is not valid base64.");
-      }
-      const content = Buffer.from(contentBase64, "base64");
-      if (params.bytes !== content.length) throw new CliError("fs_upload_invalid", "Upload chunk byte count is invalid.");
-      return { result: await filesystem.uploadChunk(
-        params.operationId as string,
-        params.index as number,
-        content,
-      ) };
-    }
-    if (method === "fsUploadCommit") {
-      assertExactParams(params, { operationId: "string" });
-      return { result: await filesystem.commitUpload(params.operationId as string) };
-    }
-    if (method === "fsUploadCancel") {
-      assertExactParams(params, { operationId: "string" });
-      return { result: await filesystem.cancelUpload(params.operationId as string) };
-    }
-    if (method === "fsRemove") {
-      assertExactParams(params, { operationId: "string", path: "string", recursive: "boolean" });
-      return { result: await filesystem.remove(
-        params.operationId as string,
-        params.path as string,
-        params.recursive as boolean,
-      ) };
-    }
-    if (method === "fsMutationStatus") {
-      assertExactParams(params, { operationId: "string" });
-      return { result: filesystem.mutationStatus(params.operationId as string) };
-    }
     if (method === "eventRead") {
       assertParamKeys(params, ["channels", "cursor", "includeMemoryContent", "limit", "sources", "waitMs"], "Event read");
       const allowedSources = new Set<EventSource>(["gateway", "daemon"]);
@@ -492,7 +361,7 @@ export async function startDaemonHost(
       const response = await dispatch(request.method, request.params, controller.signal);
       writeResponse(res, 200, { ok: true, ...response });
     } catch (error) {
-      const cliError = error instanceof CliError ? error : error instanceof HostResourceError ? new CliError(error.code, error.message, { retryable: error.retryable }) : new CliError("gateway_internal", "Daemon request failed.");
+      const cliError = error instanceof CliError ? error : new CliError("gateway_internal", "Daemon request failed.");
       writeResponse(res, cliError.code === "daemon_protocol_mismatch" ? 409 : 400, {
         ok: false,
         error: { code: cliError.code, message: cliError.message, retryable: cliError.retryable },
@@ -517,7 +386,7 @@ export async function startDaemonHost(
     await Promise.allSettled([
       closeServer(localServer),
       ...(networkServer ? [closeServer(networkServer)] : []),
-      events.close(), desktop.close(), titleSync.close(), filesystem.close(),
+      events.close(), desktop.close(), titleSync.close(),
     ]);
     await socketLease?.release();
     throw error;
@@ -540,7 +409,6 @@ export async function startDaemonHost(
         ...(networkServer ? [closeServer(networkServer)] : []),
         desktop.close(),
         titleSync.close(),
-        filesystem.close(),
       ]);
       try { await socketLease?.release(); } catch (error) { lifecycleFailures.push(error); }
       const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");

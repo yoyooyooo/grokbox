@@ -13,6 +13,7 @@ import { httpsFixture } from "./https-fixture.ts";
 import { seedObservations } from "./observation-fixture.ts";
 import { receiverBrowserJourney } from "./receiver-browser.node.ts";
 import { jobBrowserJourney } from "./job-browser.node.ts";
+import { fileBrowserJourney } from "./file-browser.node.ts";
 import { setupBrowserJourney } from "./setup-browser.node.ts";
 import { materialsBrowserJourney } from "./materials-browser.node.ts";
 import { protectionBrowserJourney } from "./protection-browser.node.ts";
@@ -479,6 +480,9 @@ test(`relocated production Web (${group}): real Chrome, shared CLI/domain, recov
     }
     if (included.has("jobs")) await t.test("managed Jobs, OS output and original request recovery use production browser artifacts", async jobTests => {
       await jobBrowserJourney(jobTests,{browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop});
+    });
+    if (included.has("files")) await t.test("named-root binary files and original publication recovery use production browser artifacts", async fileTests => {
+      await fileBrowserJourney(fileTests,{browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop});
     });
     if (included.has("receivers")) await t.test("receiver consent, independent tests and recovery use production browser artifacts", async receiverTests => {
       await receiverBrowserJourney(receiverTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });

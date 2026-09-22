@@ -429,8 +429,8 @@ describe("Profiles in unified config v2",  () => {
     const body = parseJson(result.stdout) as {
       data: { capabilities: Record<string, boolean | string> };
     };
-    expect(body.data.capabilities["host.fs.read"]).toBe(true);
-    expect(body.data.capabilities["host.fs.write"]).toBe("runtime-policy-dependent");
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.write");
     for (const key of ["host.process.run", "host.process.manage", "host.process.shell"]) expect(body.data.capabilities).not.toHaveProperty(key);
     expect(body.data.capabilities["sandbox.inspect"]).toBe("provider-authorization-dependent");
     expect(body.data.capabilities["sandbox.wake"]).toBe("provider-authorization-dependent");
@@ -455,8 +455,8 @@ describe("Profiles in unified config v2",  () => {
     };
     expect(body.data.connection.protocolMajor).toBe(1);
     expect(body.data.connection.endpoint).toBe("https://my-daemon.example.test");
-    expect(body.data.capabilities["host.fs.read"]).toBe(true);
-    expect(body.data.capabilities["host.fs.write"]).toBe("runtime-policy-dependent");
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.write");
     expect(body.data.capabilities["host.desktop.read"]).toBe(true);
   });
 
@@ -484,7 +484,7 @@ describe("Profiles in unified config v2",  () => {
     expect(body.data.connection.endpoint).toBe("https://gateway.example.test");
     expect(body.data.connection.credentialReference).toBe("env:GROKBOX_GATEWAY_TOKEN");
     expect(body.data.connection.credentialConfigured).toBe(true);
-    expect(body.data.capabilities["host.fs.read"]).toBe(false);
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
     expect(body.data.capabilities["host.desktop.read"]).toBe(false);
     expect(body.data.capabilities["grok.roster.read"]).toBe(true);
   });
@@ -503,8 +503,8 @@ describe("Profiles in unified config v2",  () => {
       };
     };
     expect(body.data.connection.protocolMajor).toBe(null);
-    expect(body.data.capabilities["host.fs.read"]).toBe(false);
-    expect(body.data.capabilities["host.fs.write"]).toBe(false);
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.write");
     expect(body.data.capabilities).not.toHaveProperty("host.process.run");
     expect(body.data.capabilities["host.desktop.read"]).toBe(false);
     expect(body.data.capabilities["grok.roster.read"]).toBe(true);

@@ -40,7 +40,7 @@
 | 通知 | `grokbox notification` | `status` · `list` · `get` · `send` | status/list/get 已接共享管理服务的 worker 与 work/attempt 读面；send 仍由原领域入口迁移，只发送指定既有 work，不接受任意 URL/body。 |
 | 通知 | `grokbox notification settings` | `get` · `apply` | 已接原配置 writer 的窄目标/模式/预算变更；显式 revision 和确认，保留其他系统策略；配置不是私有授权、Routine enable 或投递。 |
 | 通知 | `grokbox notification receiver` | `list` · `get` · `blueprint` · `verify` · `test` · `bind` · `enable` · `disable` · `unbind` | 配置后显式启用，后台负责持续投递、去重、有限重试与记录；test 是独立可选投递，必要配置/授权齐备即可启用；启用/测试/实际投递分开。 |
-| 文件 | `grokbox file` | `stat` · `list` · `search` · `read` · `write` · `mkdir` · `upload` · `download` · `delete` · `restore` | 当前 list/search/read/write 贯通显式文本来源及既有文件替换/回执；索引不接管原内容。完整 named-root、原生 Project fileRef、二进制与旧 fs 收束仍待迁移，不以文本切片签全部。 |
+| 文件 | `grokbox file` | `stat` · `list` · `search` · `read` · `write` · `mkdir` · `upload` · `download` · `delete` · `restore` | 当前list/search/read/write保留显式文本来源；named-root的stat/list/read/write/mkdir/upload/download/delete/restore已接入同一管理面，旧fs退出，索引不接管原内容。原生Project fileRef、账号/同步与长期安全维护仍待资格，named-root不能代签。 |
 | 文件 | `grokbox file root` | `list` · `get` | 已授权文件根与权限/大小上限。 |
 | 进程 | `grokbox job` | `start` · `list` · `get` · `logs` · `wait` · `cancel` | OS Job，结构化 argv，持久身份，日志与运行寿命分开。 |
 | 操作 | `grokbox operation` | `list` · `get` · `wait` · `events` · `reconcile` · `resume` · `cancel` | 跨领域操作索引与生命周期查询；具体写入和安全推进仍由原领域 owner 实现。 |

@@ -103,15 +103,12 @@ describe("registry, help, and runtime", () => {
       "--table",
       "--timeout-ms <n>",
     ]);
-    const fsRead = LEAF_COMMANDS.find((leaf) => leaf.path.join(" ") === "fs read")!;
-    const fsList = LEAF_COMMANDS.find((leaf) => leaf.path.join(" ") === "fs list")!;
-    const fsDownload = LEAF_COMMANDS.find((leaf) => leaf.path.join(" ") === "fs download")!;
-    expect(fsRead.table).toBe(false);
-    expect(fsRead.timeout).toBe(true);
-    expect(fsList.table).toBe(true);
-    expect(fsDownload.table).toBe(false);
-    expect(fsDownload.timeout).toBe(true);
-    expect(fsDownload.streaming).toBe(true);
+    for (const path of ["file read", "file list", "file download"]) {
+      const leaf = LEAF_COMMANDS.find(leaf => leaf.path.join(" ") === path)!;
+      expect(leaf.table).toBe(false); expect(leaf.timeout).toBe(true);
+      expect(leaf.protocol).toBe("management"); expect(leaf.streaming).toBe(false);
+    }
+    expect(LEAF_COMMANDS.some(leaf => leaf.path[0] === "fs")).toBe(false);
     for (const leaf of LEAF_COMMANDS) {
       const flags = leaf.options.map((option) => option.flags);
       expect(flags.some((flag) => flag.includes("--table"))).toBe(leaf.table);

@@ -70,12 +70,8 @@ describe("profile capabilities local+server_url misclassification", () => {
     expect(body.data.connection.credentialConfigured).toBe(false);
   });
 
-  test("host.fs.read is false", () => {
-    expect(body.data.capabilities["host.fs.read"]).toBe(false);
-  });
-
-  test("host.fs.write is false", () => {
-    expect(body.data.capabilities["host.fs.write"]).toBe(false);
+  test("file capability claims have exited the old Profile surface", () => {
+    for (const key of ["host.fs.read", "host.fs.write"]) expect(body.data.capabilities).not.toHaveProperty(key);
   });
 
   test("retired process capability promises are absent from the old Profile surface", () => {

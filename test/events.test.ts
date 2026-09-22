@@ -156,7 +156,7 @@ describe("unified events and recovery", () => {
     });
     const handshake = {
       protocolMajor: 1, daemonVersion: "0.0.1", daemonPid: 1, startedAt: 1,
-      daemonGeneration: generation, capabilities: ["grok.events.read"], filesystemRoots: [],
+      daemonGeneration: generation, capabilities: ["grok.events.read"],
       gateway: { pid: 2, startedAt: 2 },
     };
     const pages = [

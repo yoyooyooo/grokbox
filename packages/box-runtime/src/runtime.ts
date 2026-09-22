@@ -26,6 +26,7 @@ export { startMonitorService, type MonitorServiceStatus } from "./internal/roots
 export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roots/agent-routines.runtime.ts";
 export { JobManager, readJobRecord, listJobRecords, readJobLogs, jobRequestFingerprint, type JobStoredRecord, type JobSubmit, type JobProjection, type JobState, type JobLogEvent } from "./internal/io/job-manager.node.ts";
 export { ProcessAuthority } from "./internal/io/job-process.node.ts";
+export { acquireAdvisoryGate } from "./internal/io/advisory-gate.node.ts";
 export * from "./internal/io/governed-filesystem.node.ts";
 export * from "./internal/io/host-resource-contract.ts";
 export { runOpsNotificationDelivery, type PairedNotificationDriver } from "./internal/roots/ops-notification.runtime.ts";

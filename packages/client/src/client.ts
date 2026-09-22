@@ -6,6 +6,10 @@ import {
   type ObservationSnapshot, type IncidentList, type ObservationEventPage, type ManagementServiceView,
 } from "./contract.ts";
 export * from "./contract.ts";
+import { FileError, FILE_UUID, fileData, fileIdentity, normalizeFileChange, normalizeFileUploadChunk, normalizeFileUploadControl, validFileOperation,
+  type FileRootsView, type FileEntry, type FileDirectory, type FileRead, type FileOperation, type FileChange, type FileUpload, type FileUploadChunk, type FileUploadControl, type FileDownload, type FileDownloadChunk } from "@grokbox/runtime-kernel/files";
+import { fileRoots, fileEntry, fileDirectory, fileRead, fileUpload, fileDownload, fileDownloadChunk, verifyFileBytes } from "./file-validation.ts";
+const fileInput = <A>(f:()=>A):A => { try { return f(); } catch(e) { if(e instanceof FileError)throw new ManagementClientError(e.code,e.message);throw e; } };
 import { normalizeJobStart, normalizeJobCancel, jobIdentity, type JobStart, type JobCancel, type JobView, type JobPage, type JobPolicyView, type JobLogPage, type JobCancelReceipt } from "./job-contract.ts";
 import { jobPolicy, jobView, jobLogs, jobCancellation } from "./job-validation.ts";
 import { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
@@ -129,13 +133,13 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
     const mutation = authentication || readOnlyPost ? undefined : input as { requestId: string; expectedRevision?: unknown; planRevision?: unknown; scopeId?: unknown; action?: unknown } | undefined;
     if (mutation !== undefined && (!record(mutation) || !UUID.test(mutation.requestId)
-      || !(path === "/v1/job-starts" ? revision(mutation.expectedRevision) : path === "/v1/job-cancellations" ? true : ["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
+      || !(path === "/v1/file-changes" ? mutation.expectedRevision === null || revision(mutation.expectedRevision) : path === "/v1/file-upload-chunks" || path === "/v1/file-upload-controls" ? true : path === "/v1/job-starts" ? revision(mutation.expectedRevision) : path === "/v1/job-cancellations" ? true : ["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
         : path === "/v1/handover-changes" ? revision(mutation.expectedRevision)
         : path === "/v1/handover-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-changes" || path === "/v1/context-compactions" ? revision(mutation.scopeId) && revision(mutation.expectedRevision)
@@ -195,6 +199,8 @@ export class ManagementClient {
       const reply = raw as ApiReply<never> & { ok: false };
       // A settled compaction failure unlocks future user intent, so its exact
       // request/target/approval must be checked just like a successful receipt.
+      if (reply.error.code === "file_change_refused" && (path === "/v1/file-changes" || path === "/v1/file-upload-controls")
+        && (!mutation || !validate(reply.error.details?.operation) || !record(reply.error.details?.operation) || !["refused","cancelled"].includes(String(reply.error.details.operation.state)))) throw invalidReply();
       if (reply.error.code === "compaction_failed" && path.startsWith("/v1/context-compaction")
         && (!mutation || !validate(reply.error.details?.operation) || !record(reply.error.details?.operation) || reply.error.details.operation.state !== "failed")) throw invalidReply();
       if ((reply.error.code === "notification_send_refused" && path === "/v1/notification-sends"
@@ -206,6 +212,48 @@ export class ManagementClient {
     }
     if (!validate(raw.data)) throw invalidReply();
     return raw as ApiReply<T> & { ok: true };
+  }
+
+  fileRoots(signal?:AbortSignal) { return this.request<FileRootsView>("/v1/file-roots",v=>fileRoots(v,this.options.installationId!),undefined,signal); }
+  async fileStat(ref:string,signal?:AbortSignal) {
+    const t=fileInput(()=>fileIdentity(ref,this.options.installationId!));return this.request<FileEntry>(`/v1/file-stat/${encodeURIComponent(t.ref)}`,v=>fileEntry(v,this.options.installationId!,t.ref)&&v.revision!==null,undefined,signal);
+  }
+  async fileDirectory(ref:string,options:ListOptions={}) {
+    const t=fileInput(()=>fileIdentity(ref,this.options.installationId!)),query=pageQuery(options);
+    return this.request<FileDirectory>(`/v1/file-directories/${encodeURIComponent(t.ref)}${query.size?`?${query}`:""}`,v=>fileDirectory(v,this.options.installationId!,t.ref)&&v.entries.length<=(options.limit??100),undefined,options.signal);
+  }
+  async readFile(ref:string,signal?:AbortSignal) {
+    const t=fileInput(()=>fileIdentity(ref,this.options.installationId!));const result=await this.request<FileRead>(`/v1/file-content/${encodeURIComponent(t.ref)}`,v=>fileRead(v,this.options.installationId!,t.ref),undefined,signal);
+    if(!await verifyFileBytes(result.data.contentBase64,result.data.sha256))throw new ManagementClientError("protocol_error","The file content digest did not match its receipt.");return result;
+  }
+  async changeFile(input:FileChange,signal?:AbortSignal) {
+    const i=this.options.installationId!,r=fileInput(()=>normalizeFileChange(input,i));
+    const digest=r.action==="write"?Array.from(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256",new TextEncoder().encode(r.content))),n=>n.toString(16).padStart(2,"0")).join(""):null;
+    return this.request<FileOperation|FileUpload>("/v1/file-changes",v=>validFileOperation(v,i,r.requestId,r)&&(v.state!=="succeeded"||digest===null||v.result?.revision===digest)||r.action==="upload"&&fileUpload(v,i,r),r,signal,false,`/v1/file-operations/${r.requestId}`);
+  }
+  async fileOperation(requestId:string,signal?:AbortSignal) {
+    if(!FILE_UUID.test(requestId))throw new ManagementClientError("invalid_input","Use the original file request UUID.");const id=requestId.toLowerCase();
+    return this.request<FileOperation>(`/v1/file-operations/${id}`,v=>validFileOperation(v,this.options.installationId!,id),undefined,signal);
+  }
+  async uploadFileChunk(input:FileUploadChunk,signal?:AbortSignal) {
+    const r=fileInput(()=>normalizeFileUploadChunk(input));
+    return this.request<{requestId:string;index:number;bytes:number;accepted:true}>("/v1/file-upload-chunks",v=>record(v)&&exact(v,["requestId","index","bytes","accepted"])&&v.requestId===r.requestId&&v.index===r.index&&v.accepted===true&&v.bytes===atob(r.contentBase64).length,r,signal,false,`/v1/file-operations/${r.requestId}`);
+  }
+  async controlFileUpload(input:FileUploadControl,signal?:AbortSignal) {
+    const r=fileInput(()=>normalizeFileUploadControl(input));return this.request<FileOperation>("/v1/file-upload-controls",v=>validFileOperation(v,this.options.installationId!,r.requestId)&&v.action==="upload"&&v.serviceGeneration===r.generation,r,signal,false,`/v1/file-operations/${r.requestId}`);
+  }
+  async openFileDownload(input:{requestId:string;ref:string},signal?:AbortSignal) {
+    const i=this.options.installationId!,r=fileInput(()=>{const d=fileData(input,["requestId","ref"]);if(typeof d.requestId!=="string"||!FILE_UUID.test(d.requestId))throw new FileError("invalid_input","Invalid transfer request UUID.");return {requestId:d.requestId.toLowerCase(),ref:fileIdentity(d.ref,i).ref};});
+    return this.request<FileDownload>("/v1/file-downloads",v=>fileDownload(v,i,r.requestId,r.ref),r,signal,false,undefined,true);
+  }
+  async downloadFileChunk(opened:FileDownload,index:number,signal?:AbortSignal) {
+    const r=structuredClone(opened),i=this.options.installationId!;
+    if(!fileDownload(r,i,r.requestId,r.ref)||!Number.isSafeInteger(index)||index<0||index>=r.chunks)throw new ManagementClientError("invalid_input","Invalid pinned download cursor.");
+    return this.request<FileDownloadChunk>(`/v1/file-download-chunks/${r.requestId}?${new URLSearchParams({generation:r.generation,index:String(index)})}`,v=>fileDownloadChunk(v,r,index),undefined,signal);
+  }
+  async closeFileDownload(opened:FileDownload,signal?:AbortSignal) {
+    const r={requestId:opened.requestId,generation:opened.generation};if(!FILE_UUID.test(r.requestId)||!FILE_UUID.test(r.generation))throw new ManagementClientError("invalid_input","Invalid pinned transfer identity.");
+    return this.request<{requestId:string;closed:true}>("/v1/file-download-controls",v=>record(v)&&exact(v,["requestId","closed"])&&v.requestId===r.requestId&&v.closed===true,r,signal,false,undefined,true);
   }
 
   jobPolicy(signal?: AbortSignal) { return this.request<JobPolicyView>("/v1/job-policy",jobPolicy,undefined,signal); }

@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { join } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { MATERIAL_UUID, MaterialError, materialIdentity, normalizeMaterialWrite, normalizeMaterialQuery,
   type MaterialQuery, type MaterialOperation, type MaterialStatus, type MaterialPage, type MaterialRead } from "@grokbox/runtime-kernel/materials";
@@ -70,7 +71,7 @@ export function materialApplication(domain: MaterialApplicationDomain, principal
       const initial: MaterialOperation = { requestId: request.requestId, operationRef: `material-operation:${domain.installationId}:${key}`, ref: request.ref,
         sourceId: target.sourceId, binding: target.binding, beforeRevision: request.expectedRevision, afterRevision: null, state: "unknown", acceptedAtMs: Date.now(), settledAtMs: null,
         sourceWrite: "replace-existing-text", evidence: "not-verified", externalCompareAndSwap: false, indexAdoption: "not-observed" };
-      const reservation = yield* Effect.uninterruptible(io(() => store.reserve(key,digest,initial,target.path)));
+      const reservation = yield* Effect.uninterruptible(io(() => store.reserve(key,digest,initial,target.path,join(source.root,target.path))));
       if (!reservation.created) return reservation.receipt;
       // The request owns both the file operation and durable settlement. Server
       // shutdown aborts pre-publication work and waits for any publication begun.

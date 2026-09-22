@@ -25,20 +25,6 @@ export const DAEMON_METHODS = [
   "deleteBotTemplate",
   "setBotTemplateVisibility",
   "createAgentFromTemplate",
-  "fsStat",
-  "fsList",
-  "fsRead",
-  "fsDownloadOpen",
-  "fsDownloadChunk",
-  "fsDownloadCancel",
-  "fsWrite",
-  "fsMkdir",
-  "fsUploadOpen",
-  "fsUploadChunk",
-  "fsUploadCommit",
-  "fsUploadCancel",
-  "fsRemove",
-  "fsMutationStatus",
   "eventRead",
   "desktopStatus",
   "desktopKeepAdd",
@@ -88,12 +74,5 @@ export type DaemonHandshake = {
   startedAt: number;
   daemonGeneration: string;
   capabilities: readonly string[];
-  filesystemRoots: readonly {
-    name: string;
-    operations: readonly (
-      "stat" | "list" | "read" | "download" |
-      "write" | "mkdir" | "upload" | "remove" | "remove-recursive" | "exec"
-    )[];
-  }[];
   gateway: { pid: number; startedAt: number };
 };

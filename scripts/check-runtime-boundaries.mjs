@@ -113,6 +113,7 @@ const requiredKernelExports = {
   // in commands and service tags in ports; the same graph checks apply here.
   "./model-management": "./src/model-management.ts",
   "./materials": "./src/materials.ts",
+  "./files": "./src/files.ts",
   "./host-health": "./src/host-health.ts",
   "./compaction": "./src/compaction.ts",
   "./testing": "./src/testing.ts",

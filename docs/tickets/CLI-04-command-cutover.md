@@ -47,6 +47,12 @@ R01 的重放/首次准入顺序由 CLI-02 负责。R02/R03/R04 的产品取舍�
 
 未迁移的文件/桌面/Gateway 域仍有各自去向；现行 canonical 配置中的 `daemon.process/filesystem` 名称不是旧 daemon 的执行授权，后续配置命名收束不能复活旧执行器。此片不关闭 DATA-01 的完整文件/原生材料通路、全域观察关联或 W4 的服务宿主和集中验收。
 
+## 文件领域切换（2026-09-22）
+
+`file root list/get`、named-root的`file stat/list/read/write/mkdir/upload/download/delete/restore`、file领域原请求查询及暂存取消，已由共享客户端/Server和Web消费原Box文件适配。旧八个fs命令、14个daemon文件RPC、handshake/Profile文件权限承诺及旧CLI writer退出；原文本材料消费者仍走真实源owner，共用原材料安全库中的physical path互斥，不新建万能操作库。未知首次声明/发布/服务换代不能靠改配置或换UUID重放；二进制核验、原删除恢复和独立权限有实际Node/Chrome路径，见[文件管理报告](../reports/2026-09-22-file-management.md)。
+
+[DATA-01](DATA-01-memory-project-files.md)的原生Memory/Project写入、附件fileRef、账号同步和长期安全维护继续保留；文件根能力不是这些来源的兼容替代。全域事件、桌面/消息等剩余管理迁移及W4候选资格仍有自己的阶段。
+
 ## 后继
 
 [CLI-05](CLI-05-implementation-follow-through.md)拥有跨域重建与最终完整交付，领域票拥有各自差额。按已闭合用例推进实现、迁移调用方并退出旧边界，Web UI 纳入同一交付目标。中间版本可不完整或不可用；具体包搬迁和数据库设计留给实施，实现按当前 W3 排程进行；源码提交和离线验证不自动授权现场采用。

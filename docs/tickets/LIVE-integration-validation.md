@@ -242,9 +242,9 @@
 | `send`, `history outcome` | [LIVE-SEND-OUTCOME](#live-send-outcome) | nonce/run/STEP/投递分层 |
 | `history search`, `history tail`, `history thread`, `export agent` | [LIVE-HISTORY-MEMORY-EXPORT](#live-history-memory-export) | 默认输出私有且有界 |
 | `system materials get`, `file root list`, `memory list`, `memory search`, `memory read`, `project list`, `project get`, `file list`, `file search`, `file read` | [LIVE-MATERIALS-SEARCH](#live-materials-search) | 显式配置的本地来源、文档引用与独立正文权限；原生副本同步/账号资格未观测，局部材料回归不签完整原生覆盖 |
-| `file write` | [LIVE-MATERIALS-WRITE](#live-materials-write) | 已授权普通文本的既有文件替换、原请求回执与索引滞后；原生 Memory/Project 分片保持只读，不冒充原生 CRUD |
+| `file write` | [LIVE-MATERIALS-WRITE](#live-materials-write) | 按准确 file/material 引用走各自源 owner，named-root 新建/替换与文本源既有文件替换共用原安全存储；原请求/索引滞后独立，原生 Memory/Project 分片保持只读 |
 | `alerts trace`, `alerts list`, `runtime incident`, `runtime log`, `runtime monitor incident`, `runtime monitor capture`, `runtime monitor evidence lease` | [LIVE-OBS-EVIDENCE](#live-obs-evidence) | STEP ID与incident ID不同 |
-| `fs stat`, `fs list`, `fs read`, `fs download`, `fs write`, `fs mkdir`, `fs upload`, `fs remove`, `job policy`, `job start`, `job list`, `job get`, `job wait`, `job logs`, `job cancel` | [LIVE-FILES-JOBS](#live-files-jobs) | 精确named root/owned进程 |
+| `file root get`, `file stat`, `file download`, `file mkdir`, `file upload`, `file delete`, `file restore`, `job policy`, `job start`, `job list`, `job get`, `job wait`, `job logs`, `job cancel` | [LIVE-FILES-JOBS](#live-files-jobs) | 精确named root/owned进程 |
 | `events`, `is running` | [LIVE-MODELD-APP](#live-modeld-app) | backend流不是App已显示 |
 | `runtime start`, `runtime status`, `runtime modeld replace`, `runtime modeld status`, `runtime modeld run` | [LIVE-MODELD-RESTART](#live-modeld-restart) | owned与borrowed不同 |
 | `runtime storage status` | [LIVE-OBS-STORAGE](#live-obs-storage) | measured≠quota enforced |

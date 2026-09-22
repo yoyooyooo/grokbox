@@ -1,5 +1,5 @@
 /** Box OS adapter policy. Configuration parsing remains with the canonical config owner. */
-export type HostFilesystemRoot = { name: string; path: string; operations: Array<"stat" | "list" | "read" | "download" | "write" | "mkdir" | "upload" | "remove" | "remove-recursive" | "exec"> };
+export type HostFilesystemRoot = { name: string; path: string; operations: Array<"stat" | "list" | "read" | "download" | "write" | "mkdir" | "upload" | "remove" | "remove-recursive" | "restore" | "exec"> };
 export type HostProcessPolicy = { cwdRoots: string[]; defaultCwdRoot: string; executables: Array<{ name: string; path: string }>;
   environment: string[]; maxConcurrent: number; maxQueued: number; maxRuntimeMs: number; maxOutputBytes: number; shell?: { executable: string } };
 export type HostResourceCode = "fs_destination_exists" | "fs_path_invalid" | "fs_not_found" | "fs_forbidden" | "fs_too_large" | "fs_not_empty" | "fs_conflict" | "fs_not_directory" | "fs_not_file" | "fs_transfer_invalid" | "fs_hash_mismatch" | "fs_upload_invalid"

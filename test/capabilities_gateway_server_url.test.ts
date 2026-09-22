@@ -34,7 +34,7 @@ describe("profile capabilities gateway+server_url misclassification", () => {
       };
     };
     expect(body.data.connection.protocolMajor).toBe(null);
-    expect(body.data.capabilities["host.fs.read"]).toBe(false);
+    expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
     expect(body.data.connection.endpoint).toBe(GATEWAY_URL);
     expect(body.data.connection.endpoint).not.toBe(SERVER_URL);
   });

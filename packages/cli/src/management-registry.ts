@@ -47,10 +47,11 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--expect-plan <sha256>", description: "Exact plan digest returned by preview" },
     { flags: "--confirm", description: "Authorize the reviewed native effects, optional startup costs and explicit handover messages" },
   ]), stdin: "json" as const, destructive: true })),
-  { ...command("operation cancel", "Cancel only an original context preparation with no native application declaration; never cancels or forgets an unknown applied effect.", { name: "operation-ref", description: "Original installation/scope/request-bound context operation" }, [
-    { flags: "--domain <domain>", description: "Implemented cancellation domains: context, compaction or handover", required: true },
+  { ...command("operation cancel", "Cancel only an original undispatched preparation or live staging upload; never forget an unknown published effect.", { name: "operation-ref", description: "Original context operation; file domain uses the original upload request UUID" }, [
+    { flags: "--domain <domain>", description: "Implemented cancellation domains: context, compaction, handover or file", required: true },
     { flags: "--bot <ref>", description: "Required for context/compaction: exact original Bot UUID or reference" },
-    { flags: "--confirm", description: "Confirm retaining a cancellation tombstone and releasing only unused preparation pins", required: true },
+    { flags: "--generation <uuid>", description: "File domain: original serviceGeneration from its retained operation" },
+    { flags: "--confirm", description: "Confirm retaining the original guard and releasing only uncommitted resources", required: true },
   ]), destructive: true },
   command("operation list", "Read bounded retained lifecycle operations owned by the current principal; not all installation work.", undefined, [
     { flags: "--domain <domain>", description: "Implemented listing: lifecycle", required: true },
@@ -83,11 +84,22 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
       {flags:"--confirm",description:"Confirm this bounded action and its original operation identity",required:true},
     ],true)),
   command("system materials get", "Read configured source coverage and index freshness; never initialize or mutate a source."),
-  command("file root list", "Read file source identities and permissions without exposing private root paths."),
+  command("file root list", "Read named-root bindings and indexed file sources without exposing private root paths."),
+  command("file root get", "Resolve one configured named root to its exact file reference.",{name:"name",description:"Exact configured root name"}),
+  command("file stat", "Read the complete current revision of an exact named-root object.",{name:"file-ref",description:"Installation/root-bound file reference"}),
+  ...(["mkdir","delete","restore"] as const).map(action=>({...command(`file ${action}`,action==="restore"?"Restore this principal's original retained deletion without overwriting another destination.":action==="delete"?"Move the exact reviewed object into recoverable trash, never irreversible recursive deletion.":"Create one directory at an explicitly absent destination.",{name:"file-ref",description:"Exact non-root file reference"},[
+    {flags:"--request-id <uuid>",description:"Persist before this original effect",required:true},
+    ...(action==="delete"?[{flags:"--expect-revision <sha256>",description:"Revision from file stat",required:true},{flags:"--recursive",description:"Authorize the complete bounded directory subtree"}]:[]),
+    ...(action==="restore"?[{flags:"--deletion-request-id <uuid>",description:"Original successful deletion by this principal",required:true}]:[]),
+    {flags:"--confirm",description:"Confirm this exact filesystem change",required:true}]),destructive:true})),
+  {...command("file upload","Upload a bounded local binary through the shared manager; verify exact bytes before publication.",{name:"file-ref",description:"Exact destination reference"},[
+    {flags:"--from <path>",description:"Explicit local regular source",required:true},{flags:"--request-id <uuid>",description:"Original caller-persisted request",required:true},
+    {flags:"--expect-revision <revision>",description:"Current SHA-256, or absent for no existing destination",required:true},{flags:"--confirm",description:"Confirm this destination publication",required:true}]),destructive:true},
+  command("file download","Download one pinned binary to a new caller-local destination with verified size and hash.",{name:"file-ref",description:"Exact source reference"},[{flags:"--to <path>",description:"New local file; never overwritten",required:true}]),
   ...(["memory","file","project"] as const).flatMap(domain => [
-    command(`${domain} list`, "List source-scoped document metadata in a bounded snapshot, not complete upstream account coverage.", undefined, [
+    {...command(`${domain} list`, "List source-scoped document metadata; file accepts a named-root directory reference for a direct snapshot.", undefined, [
       {flags:"--source <id>",description:"Configured source ID"},{flags:"--scope <scope>",description:"agent, user, project or file"},
-      {flags:"--limit <n>",description:"Page size, 1 to 100"},{flags:"--cursor <cursor>",description:"Original snapshot/query cursor"}]),
+      {flags:"--limit <n>",description:"Page size, 1 to 100"},{flags:"--cursor <cursor>",description:"Original snapshot/query cursor"}]),...(domain==="file"?{arguments:[{syntax:"[file-ref]",description:"Named-root directory, or omit for the indexed file window"}],usage:"grokbox file list [<file-ref>]"}:{})},
     command(`${domain} ${domain === "project" ? "get" : "read"}`, "Explicitly read source text and disclose index lag; no TURN adoption is inferred.", {name:"material-ref",description:"Exact installation/source-bound document reference"}),
     ...(domain === "project" ? [] : [command(`${domain} search`, "Search indexed text literally without exposing body excerpts.", {name:"query",description:"Literal text, at most 256 characters"}, [
       {flags:"--source <id>",description:"Configured source ID"},{flags:"--scope <scope>",description:"agent, user, project or file"},{flags:"--limit <n>",description:"Page size, 1 to 100"},{flags:"--cursor <cursor>",description:"Original snapshot/query cursor"}])]),
@@ -229,7 +241,7 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--request-id <uuid>", description: "Original request identity", required: true },
     { flags: "--target <target>", description: "protection receipts: original Bot UUID/ref or system" },
     { flags: "--scope-id <sha256>", description: "lifecycle/context receipts: original account scope" },
-    { flags: "--domain <domain>", description: "model (default), job, job-cancel, material, protection, lifecycle, context, incident, receiver, notification, notification-test, notification-settings, routine, or pairing" },
+    { flags: "--domain <domain>", description: "model (default), file, job, job-cancel, material, protection, lifecycle, context, incident, receiver, notification, notification-test, notification-settings, routine, or pairing" },
     { flags: "--job-ref <ref>", description: "Required for job-cancel receipts; original installation-scoped Job" },
     { flags: "--database-id <uuid>", description: "Required for incident/receiver/notification/test receipts; use the original database identity" },
     { flags: "--bot <ref>", description: "Required for routine receipts; use the original scoped Bot or native UUID" },

@@ -3,6 +3,7 @@ import { open, lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { MATERIAL_POLICY as P, MaterialError, type MaterialMetadata, type MaterialOperation, type MaterialQuery, type MaterialSourceView } from "@grokbox/runtime-kernel/materials";
+import { FILE_POLICY, FILE_SHA, fileIdentity, validFileOperation, type FileOperation } from "@grokbox/runtime-kernel/files";
 import { assertSafeDirectory } from "./config-layout.node.ts";
 import { acquireConfigurationLease } from "./config-lock.node.ts";
 import { openMonitorSqlite, type MonitorSqlite } from "./monitor-sqlite.node.ts";
@@ -11,13 +12,28 @@ import type { SourceDocument } from "./material-source.node.ts";
 const APPLICATION_ID = 1196249428;
 const fail = (code: ConstructorParameters<typeof MaterialError>[0], message: string): never => { throw new MaterialError(code, message); };
 const missing = (e: unknown) => !!e && typeof e === "object" && "code" in e && e.code === "ENOENT";
-const DDL = `PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=1;
+const DDL = `PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=2;
 CREATE TABLE meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),root_id TEXT NOT NULL,generation INTEGER NOT NULL);
 CREATE TABLE sources(id TEXT PRIMARY KEY,binding TEXT,view_json TEXT NOT NULL);
 CREATE TABLE index_owner(singleton INTEGER PRIMARY KEY CHECK(singleton=1),pid INTEGER NOT NULL,start TEXT NOT NULL,token TEXT NOT NULL);
 CREATE TABLE documents(source_id TEXT NOT NULL,binding TEXT NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,metadata_json TEXT NOT NULL,search_text TEXT NOT NULL,PRIMARY KEY(source_id,path));
-CREATE TABLE operations(key TEXT PRIMARY KEY,digest TEXT NOT NULL,binding TEXT NOT NULL,path TEXT NOT NULL,state TEXT NOT NULL,receipt_json TEXT NOT NULL);
-CREATE UNIQUE INDEX unsettled_document ON operations(binding,path) WHERE state='unknown';`;
+CREATE TABLE operations(key TEXT PRIMARY KEY,digest TEXT NOT NULL,binding TEXT NOT NULL,path TEXT NOT NULL,state TEXT NOT NULL,receipt_json TEXT NOT NULL,physical_path TEXT NOT NULL);
+CREATE UNIQUE INDEX unsettled_document ON operations(binding,path) WHERE state='unknown';
+CREATE TABLE file_operations(key TEXT PRIMARY KEY,digest TEXT NOT NULL,root_key TEXT NOT NULL,path TEXT NOT NULL,state TEXT NOT NULL,receipt_json TEXT NOT NULL,physical_path TEXT NOT NULL);
+CREATE INDEX file_pending ON file_operations(root_key,state);`;
+function decodeFile(key: string, text: unknown): FileOperation {
+  let v: unknown; try { v = JSON.parse(String(text)); } catch { return fail("source_unavailable", "The retained file receipt is corrupt."); }
+  const installation = (v as { ref?: string } | null)?.ref?.split(":")[1] ?? "";
+  if (!validFileOperation(v, installation) || v.operationRef !== `file-operation:${installation}:${key}`) return fail("source_unavailable", "The retained file receipt is unsupported.");
+  return v;
+}
+/** All current source views share the same path/subtree publication exclusion.
+ * Changing root declarations cannot bypass an unresolved write using another adapter. */
+async function reservePhysicalPath(db: MonitorSqlite, path: string) {
+  if (!path.startsWith("/") || resolve(path) !== path || path.includes("\0")) return fail("invalid_input", "Invalid physical source scope.");
+  const pending = await db.all("SELECT physical_path FROM file_operations WHERE state='unknown' UNION ALL SELECT physical_path FROM operations WHERE state='unknown'");
+  if (pending.some(r => typeof r.physical_path !== "string" || r.physical_path === path || path.startsWith(`${r.physical_path}/`) || String(r.physical_path).startsWith(`${path}/`))) return fail("operation_unknown", "An unresolved source publication protects this physical path or subtree.");
+}
 /** Index replacement never drops the operations table. A rebuild is a derived
  * snapshot replacement, not permission to discard unresolved source effects. */
 export function openMaterialStore(durableRoot: string) {
@@ -29,7 +45,7 @@ export function openMaterialStore(durableRoot: string) {
     const db = await openMonitorSqlite(path, write ? "write" : "read"); let committing = false;
     try {
       if (Number(Object.values((await db.first("PRAGMA application_id"))!)[0]) !== APPLICATION_ID
-        || Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) !== 1
+        || Number(Object.values((await db.first("PRAGMA user_version"))!)[0]) !== 2
         || (await db.first("SELECT root_id FROM meta WHERE singleton=1"))?.root_id !== rootId) return fail("source_unavailable", "The existing material index is invalid; it was not recreated.");
       if (write) {
         const page = Number(Object.values((await db.first("PRAGMA page_size"))!)[0]);
@@ -63,6 +79,40 @@ export function openMaterialStore(durableRoot: string) {
   }
   return {
     path, initialize, exists,
+    fileOperation: (key: string) => transaction(false, async db => {
+      if (!FILE_SHA.test(key)) return fail("invalid_input", "Invalid file operation key.");
+      const row = await db.first("SELECT * FROM file_operations WHERE key=?", [key]);
+      if (!row) return null;
+      const receipt = decodeFile(key, row.receipt_json);
+      if (row.state !== receipt.state || typeof row.digest !== "string" || !FILE_SHA.test(row.digest)) return fail("source_unavailable", "The file operation guard is corrupt.");
+      return { digest: row.digest, rootKey: String(row.root_key), path: String(row.path), receipt };
+    }),
+    reserveFile: (key: string, digest: string, rootKey: string, receipt: FileOperation, physicalPath: string) => transaction(true, async db => {
+      if (!FILE_SHA.test(key) || !FILE_SHA.test(digest) || !FILE_SHA.test(rootKey) || receipt.state !== "unknown") return fail("invalid_input", "Invalid file reservation.");
+      decodeFile(key, JSON.stringify(receipt));
+      const target = fileIdentity(receipt.ref, receipt.ref.split(":")[1]!);
+      const prior = await db.first("SELECT digest,receipt_json FROM file_operations WHERE key=?", [key]);
+      if (prior) {
+        if (prior.digest !== digest) return fail("idempotency_conflict", "The file request belongs to different immutable input.");
+        return { created: false, receipt: decodeFile(key, prior.receipt_json) };
+      }
+      await reservePhysicalPath(db, physicalPath);
+      if (Number((await db.first("SELECT COUNT(*) AS n FROM file_operations"))?.n) >= FILE_POLICY.maxOperations) return fail("store_full", "File safety capacity is full; no unknown receipt was evicted.");
+      await db.run("INSERT INTO file_operations VALUES(?,?,?,?,?,?,?)", [key, digest, rootKey, target.path, "unknown", JSON.stringify(receipt), physicalPath]);
+      return { created: true, receipt };
+    }),
+    settleFile: (key: string, receipt: FileOperation) => transaction(true, async db => {
+      decodeFile(key, JSON.stringify(receipt));
+      const row = await db.first("SELECT receipt_json,state FROM file_operations WHERE key=?", [key]);
+      if (!row) return fail("operation_unknown", "The original file guard is missing.");
+      const prior = decodeFile(key, row.receipt_json);
+      if (prior.ref !== receipt.ref || prior.requestId !== receipt.requestId || prior.action !== receipt.action || prior.expectedRevision !== receipt.expectedRevision || prior.serviceGeneration !== receipt.serviceGeneration || prior.acceptedAtMs !== receipt.acceptedAtMs) return fail("idempotency_conflict", "The file operation changed identity.");
+      if (row.state !== "unknown") {
+        if (canonicalJson(prior) !== canonicalJson(receipt)) return fail("idempotency_conflict", "A terminal file receipt cannot be overwritten.");
+        return prior;
+      }
+      await db.run("UPDATE file_operations SET state=?,receipt_json=? WHERE key=?", [receipt.state, JSON.stringify(receipt), key]); return receipt;
+    }),
     claimIndexer: (token: string) => transaction(true, async db => {
       const current = await monitorProcessIdentity(process.pid);
       if (current.state !== "present") return fail("source_unavailable", "The index owner process identity is unavailable.");
@@ -121,15 +171,15 @@ export function openMaterialStore(durableRoot: string) {
       const row = await db.first("SELECT digest,receipt_json FROM operations WHERE key=?", [key]);
       return row ? { digest: String(row.digest), receipt: JSON.parse(String(row.receipt_json)) as MaterialOperation } : null;
     }),
-    reserve: (key: string, digest: string, receipt: MaterialOperation, relativePath: string) => transaction(true, async db => {
+    reserve: (key: string, digest: string, receipt: MaterialOperation, relativePath: string, physicalPath: string) => transaction(true, async db => {
       const prior = await db.first("SELECT digest,receipt_json FROM operations WHERE key=?", [key]);
       if (prior) {
         if (prior.digest !== digest) return fail("idempotency_conflict", "This material request ID belongs to different input.");
         return { created: false, receipt: JSON.parse(String(prior.receipt_json)) as MaterialOperation };
       }
-      if (await db.first("SELECT key FROM operations WHERE binding=? AND path=? AND state='unknown'", [receipt.binding, relativePath])) return fail("operation_unknown", "An unresolved source write already protects this document.");
+      await reservePhysicalPath(db, physicalPath);
       if (Number((await db.first("SELECT COUNT(*) AS n FROM operations"))!.n) >= P.maxOperations) return fail("store_full", "Material operation capacity is full; unresolved records have not been discarded.");
-      await db.run("INSERT INTO operations VALUES(?,?,?,?,?,?)", [key, digest, receipt.binding, relativePath, "unknown", JSON.stringify(receipt)]);
+      await db.run("INSERT INTO operations VALUES(?,?,?,?,?,?,?)", [key, digest, receipt.binding, relativePath, "unknown", JSON.stringify(receipt), physicalPath]);
       return { created: true, receipt };
     }),
     settle: (key: string, receipt: MaterialOperation) => transaction(true, async db => {

@@ -22,7 +22,6 @@ function daemonHandshake() {
     startedAt: 1_700_000_000_000,
     daemonGeneration: "11111111-1111-4111-8111-111111111111",
     capabilities: ["grok.health.read"],
-    filesystemRoots: [],
     gateway: { pid: 4242, startedAt: 1_700_000_000_100 },
   };
 }

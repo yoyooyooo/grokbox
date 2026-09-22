@@ -77,7 +77,7 @@ export const DAEMON_INTENT_SCHEMA = object({
   network: object({ host: enumeration("127.0.0.1"), port: integer(1, 65535) }, ["host", "port"]),
   filesystem: object({ roots: array(object({
     name: string(32, "^[a-z][a-z0-9-]{0,31}$"), path,
-    operations: array(enumeration("stat", "list", "read", "download", "write", "mkdir", "upload", "remove", "remove-recursive", "exec"), 10, 1),
+    operations: array(enumeration("stat", "list", "read", "download", "write", "mkdir", "upload", "remove", "remove-recursive", "restore", "exec"), 11, 1),
   }, ["name", "path", "operations"]), 16) }, ["roots"]),
   process: object({
     cwdRoots: array(string(32), 16, 1), defaultCwdRoot: string(32),

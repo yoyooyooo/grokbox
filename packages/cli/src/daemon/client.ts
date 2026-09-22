@@ -11,7 +11,6 @@ import {
 
 const DAEMON_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const FILESYSTEM_OPERATIONS = new Set(["stat", "list", "read", "download", "write", "mkdir", "upload", "remove", "remove-recursive", "exec"]);
 
 const MANAGEMENT_WRITES = new Set<DaemonMethod>([
   "createAgent",
@@ -25,10 +24,6 @@ const MANAGEMENT_WRITES = new Set<DaemonMethod>([
   "deleteBotTemplate",
   "setBotTemplateVisibility",
   "createAgentFromTemplate",
-  "fsWrite",
-  "fsMkdir",
-  "fsUploadCommit",
-  "fsRemove",
   "desktopKeepAdd",
   "desktopKeepRemove",
   "desktopPrune",
@@ -122,25 +117,17 @@ async function responseTextBounded(response: Response): Promise<string> {
 
 function validateHandshake(value: unknown): DaemonHandshake {
   if (!isRecord(value) || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([
-    "capabilities", "daemonGeneration", "daemonPid", "daemonVersion", "filesystemRoots", "gateway", "protocolMajor", "startedAt",
+    "capabilities", "daemonGeneration", "daemonPid", "daemonVersion", "gateway", "protocolMajor", "startedAt",
   ]) || value.protocolMajor !== DAEMON_PROTOCOL_MAJOR || typeof value.daemonVersion !== "string" ||
     typeof value.daemonPid !== "number" || !Number.isSafeInteger(value.daemonPid) || value.daemonPid < 1 ||
     typeof value.startedAt !== "number" || !Number.isSafeInteger(value.startedAt) || value.startedAt < 0 ||
     typeof value.daemonGeneration !== "string" || !UUID_V4.test(value.daemonGeneration) ||
     !Array.isArray(value.capabilities) || value.capabilities.some((capability) => typeof capability !== "string") ||
-    new Set(value.capabilities).size !== value.capabilities.length || !Array.isArray(value.filesystemRoots) ||
+    new Set(value.capabilities).size !== value.capabilities.length ||
     !isRecord(value.gateway) || JSON.stringify(Object.keys(value.gateway).sort()) !== JSON.stringify(["pid", "startedAt"]) ||
     typeof value.gateway.pid !== "number" || !Number.isSafeInteger(value.gateway.pid) ||
     typeof value.gateway.startedAt !== "number" || !Number.isSafeInteger(value.gateway.startedAt)) {
     throw new CliError("daemon_protocol_mismatch", "Daemon handshake is invalid or incompatible.");
-  }
-  for (const root of value.filesystemRoots) {
-    if (!isRecord(root) || JSON.stringify(Object.keys(root).sort()) !== JSON.stringify(["name", "operations"]) ||
-      typeof root.name !== "string" || !Array.isArray(root.operations) ||
-      root.operations.some((operation) => typeof operation !== "string" || !FILESYSTEM_OPERATIONS.has(operation)) ||
-      new Set(root.operations).size !== root.operations.length) {
-      throw new CliError("daemon_protocol_mismatch", "Daemon handshake filesystem projection is invalid.");
-    }
   }
   return value as DaemonHandshake;
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { request } from "node:http";
-import { mkdir, mkdtemp, readFile, stat, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile, writeProtectedSecret } from "../packages/cli/src/config/profile.ts";
@@ -150,45 +150,13 @@ describe("local daemon vertical slice", () => {
     expect(await stat(join(configDir, "daemon", "config.json")).catch(() => null)).toBeNull();
   });
 
-  test("a concurrent daemon cancel prevents a pending open from publishing its descriptor", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-daemon-fs-cancel-"));
-    const root = join(configDir, "root");
-    const socket = join(configDir, "run", "daemon.sock");
-    await mkdir(root);
-    const file = join(root, "pending.bin");
-    await writeFile(file, "");
-    await truncate(file, 64 * 1024 * 1024);
-    gateway = await startMockGateway();
-    const discoveryPath = await writeDiscovery({
-      port: gateway.port,
-      pid: gateway.pid,
-      startedAt: gateway.startedAt,
-      token: gateway.token,
-    });
-    const deps = {
-      ...createProductionDeps(),
-      configDir,
-      env: {},
-      discoveryPath,
-      daemonSocket: socket,
-      transport: "local" as const,
-    };
-    host = await startDaemonHost(deps, socket, undefined, [
-      { name: "home", path: root, operations: ["download"] },
-    ]);
-    const client = new LocalDaemonClient(socket, 10_000);
-    const transferId = "44444444-4444-4444-8444-444444444444";
-    const opening = client.call("fsDownloadOpen", {
-      path: "home:/pending.bin",
-      transferId,
-    }).catch((error) => error);
-    await new Promise((resolve) => setImmediate(resolve));
-    const cancelled = await client.call("fsDownloadCancel", { transferId });
-    expect(cancelled.result).toEqual({ transferId, cancelled: true });
-    expect((await opening).code).toBe("fs_transfer_invalid");
-    await expect(client.call("fsDownloadChunk", { transferId, index: 0 })).rejects.toMatchObject({
-      code: "fs_transfer_invalid",
-    });
+  test("the remaining daemon cannot open, mutate or recover files through retired RPC names", async () => {
+    const { socket } = await fixture(), client = new LocalDaemonClient(socket, 10_000);
+    const handshake = await client.handshake();
+    expect(handshake.capabilities.some(c => c.startsWith("host.fs"))).toBe(false);
+    for (const method of ["fsDownloadOpen", "fsDownloadChunk", "fsDownloadCancel", "fsWrite", "fsMutationStatus"]) {
+      await expect(client.call(method as never, { path: "home:/must-not-open" })).rejects.toMatchObject({ code: "gateway_not_found" });
+    }
   });
 
   test("handshake is versioned, redacted, and socket-gated", async () => {
@@ -200,7 +168,7 @@ describe("local daemon vertical slice", () => {
     expect(handshake.daemonGeneration).toMatch(/^[0-9a-f-]{36}$/);
     expect(handshake.capabilities).toContain("grok.transcript.write");
     expect(handshake.capabilities).toContain("grok.events.read");
-    expect(handshake.filesystemRoots).toEqual([]);
+    expect(Object.hasOwn(handshake, "filesystemRoots")).toBe(false);
     expect(handshake.gateway).toEqual({ pid: gateway!.pid, startedAt: gateway!.startedAt });
     const dumped = JSON.stringify(handshake);
     expect(dumped).not.toContain(gateway?.token ?? "never");
@@ -341,7 +309,6 @@ describe("local daemon vertical slice", () => {
           startedAt: 2,
           daemonGeneration: "11111111-1111-4111-8111-111111111111",
           capabilities: [],
-          filesystemRoots: [],
           gateway: { pid: 1234, startedAt: 1700000000000 },
         },
       });

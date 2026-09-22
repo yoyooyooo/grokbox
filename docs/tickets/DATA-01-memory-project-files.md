@@ -1,6 +1,6 @@
 # DATA-01 · Memory、Project 与文件的统一材料能力
 
-状态：实施中。显式本地来源的三层 Memory 文档、Project 描述与 membership、普通文本检索/源读取/受控替换已贯通 Server、CLI 和 Web；原生源修改与完整 Project 文件/二进制通路、上游账号和同步资格、长期安全维护仍未闭合。依赖 CLI-01 的范围/引用、CLI-02 的操作/并发、CLI-03 的观察合同；由 CLI-05 集成，CLI 和 Web 共用，不归页面维护源数据。
+状态：实施中。显式本地三层Memory、Project描述/membership与文本索引/替换保持；named-root元数据、二进制上传下载、源变更、可恢复删除与原删除恢复已接通统一Server/CLI/Web，旧fs/daemon文件入口退出。原生源修改、Project附件/fileRef、上游账号/同步资格和长期安全维护仍未闭合。依赖 CLI-01 的范围/引用、CLI-02 的操作/并发、CLI-03 的观察合同；由 CLI-05 集成，CLI 和 Web 共用，不归页面维护源数据。
 
 ## 用户结果
 
@@ -25,7 +25,8 @@
 | Agent Memory | 显式 Bot 清单内的 profile/log 文档 | 原生副本只读；不声称 prompt snapshot 已失效或下一 TURN 已采用 |
 | User Memory | 同一清单内的 by-agent 分片 | 保留分片身份，不按内容 hash 合并 |
 | Project | 显式 slug 下的 project.md、所选 Bot 的 Memory 分片与 membership | membership 只显示授权 Project，不从 Git 路径猜成员；原生写入仍待资格 |
-| 普通文件 | 显式文件根内的受限 UTF-8 文本 | 仅对明确 writable 的既有文件做版本检查、原子替换与独立读回；不是完整旧 fs/binary 功能的迁移 |
+| 索引文件来源 | 显式材料根内的受限UTF-8文本/全文检索 | 既有writable文件通过原材料writer替换；索引来源不能同时成为named-root写别名 |
+| Named-root文件 | 绑定安装/根策略/inode的目录元数据、显式正文与64MiB内二进制 | 原Box描述符writer承载新建/替换/mkdir/upload/download/trash/restore；metadata/content/write/delete/restore独立授权，完整原生Project附件不在此证明内 |
 
 [纯合同](../../packages/runtime-kernel/src/materials.ts)、[源适配](../../packages/box-runtime/src/internal/io/material-source.node.ts)、[索引与操作存储](../../packages/box-runtime/src/internal/io/material-store.node.ts)、[后台宿主](../../packages/box-runtime/src/internal/roots/materials.runtime.ts)和[管理用例](../../packages/server/src/materials.ts)分别拥有边界。管理 Server 持有 indexer；扫描不做原生 RPC/模型请求或源写入。配置只读面不初始化存储；显式启用的后台进行初始扫描和周期校准。源绑定包含配置、声明的账号 scope、真实根目录 inode，声明 scope 不冒充最新原生登录，所有来源保留 `upstreamSync=not-observed`。
 
@@ -35,13 +36,21 @@
 
 Linux descriptor-backed 本地根是当前资格平台，逐层拒绝符号链接/硬链接与根替换，限制隐藏/凭据路径；源重叠不能建立原生只读分片的 writable 别名。外部 writer 没有参与本地原子 CAS，回执明确 `externalCompareAndSwap=false`，不夸大竞态保证。policy 限制来源/文档/目录遍历/文本/索引/操作容量；达到上限保持 partial 或拒绝新增，不淘汰未知操作以换容量。
 
-正式入口为 `system materials get`、`memory list/search/read`、`project list/get`、`file root list`、`file list/search/read/write` 和 `operation get --domain material`。旧 positional Memory/隐式正文入口已退出；现有 fs/转移/Job 与原生保护消费者仍待各域迁移。Web `/materials` 提供分类、源筛选、字面搜索、Project 成员和显式正文；文本写入、冲突保留草稿、丢回复刷新恢复共用同一管理用例。元数据、检索、正文与修改权限分开。
+正式入口为 `system materials get`、`memory list/search/read`、`project list/get`、`file root list/get`、`file stat/list/search/read/write/mkdir/upload/download/delete/restore`，以及 `operation get --domain material|file`。file/material引用各自固定来源，不能通过fallback混淆；旧positional Memory、旧fs/daemon文件RPC及Job执行入口已退出。Web `/materials` 提供分类、源筛选、字面搜索、Project 成员和显式正文；文本写入、冲突保留草稿、丢回复刷新恢复共用同一管理用例。元数据、检索、正文与修改权限分开。
 
 [真实 Node 测试](../../test/materials-management.test.ts)消费隔离的真实文件/SQLite/HTTP/CLI，[浏览器旅程](../../apps/web/test/materials-browser.node.ts)消费搬移的生产制品；fixture 不属于生产 fallback。具体最终源码与扩大回归结果归 [CLI-05](CLI-05-implementation-follow-through.md)。它们不关闭完整 DATA-01 或原生 LIVE。
 
+### Named-root纵向实现（2026-09-22）
+
+[文件管理用例](../../packages/server/src/files.ts)持有[原文件描述符适配](../../packages/box-runtime/src/internal/io/governed-filesystem.node.ts)，复用原材料SQLite的独立file_operations表，当前schema为2，旧schema保全但不自动升级。两种源writer在同一个事务中保护unknown对应的physical path/子树；修改配置把named root变成材料来源也不能绕过原未决写入。GET不初始化存储，安全主库丢失且目录仍存在时不重建许可。
+
+32KiB块、完整SHA/size、固定原描述符和并发打开容量分别验证；正文和可复用审批不进浏览器localStorage。首次声明或发布回执丢失保持原unknown，真实Server SIGKILL后也不重发。暂存上传与发布分开，原owner在到期/取消/关闭时只能将已证明未发布的暂存结算cancelled；新服务不能猜测旧commit是否发生。删除保留原trash与请求，恢复仅用同主体原成功删除，不能覆盖当下存在的目标。新建文件和CLI下载使用原子no-clobber，替换与目录恢复不承诺外部writer参与CAS。目录revision是metadata，不是递归内容快照。
+
+`/files`提供源审阅、显式内容/二进制、版本冲突保留草稿、上传与原操作恢复；`/operations`接入file域。文本索引、原生Memory/Project与普通文件仍按各自权限和绑定处理，不用复制上游片段冒充源修改。证明与剩余边界见[文件管理报告](../reports/2026-09-22-file-management.md)。
+
 ### 剩余差额
 
-原生材料删除/修改、User/Project 源写入及读回、Project 原生附件/fileRef、二进制和完整文件 CRUD/恢复、实时原生账号/同步资格、索引/操作长期安全保留与清理仍需接原 owner 和真实验收。当前普通文本路径不能取代这些已接受目标。没有源能力的必需项保留明确差额，不通过隐藏按钮或把本地副本当上游事实消除。
+原生材料删除/修改、User/Project源写入及读回、Project原生附件/fileRef、实时原生账号/同步资格、索引/操作/可恢复trash的长期安全保留与清理仍需接原owner和真实验收。named-root二进制与恢复不能替代这些原生目标，也不签安装采用或W4。没有源能力的必需项保留明确差额，不通过隐藏按钮或把本地副本当上游事实消除。
 
 ## 验收
 

@@ -1,5 +1,7 @@
 import { normalizeJobStart, ManagementClientError, botIdFromRef, type ApiErrorCode, type ApiReply, type ModelChange, normalizeSetupRequest, type MaterialWrite, type MaterialScope, type MaterialKind } from "@grokbox/client";
 import { startInstalledManagementServer } from "@grokbox/server";
+import { type FileChange, FileError } from "@grokbox/client";
+import { uploadManagedFile, downloadManagedFile } from "../file-transfers.ts";
 import { contextOperationIdentity, contextOperationRef, compactionOperationIdentity, handoverOperationIdentity, type HandoverAction, type ContextChange } from "@grokbox/client";
 import { normalizeLifecycleIntent, lifecycleIdentity, lifecycleReference, type LifecycleIntent } from "@grokbox/client";
 import { parseRequestedEffort } from "@grokbox/runtime-kernel/selection";
@@ -14,6 +16,7 @@ import { runInstalledWebService } from "../web-service.ts";
 
 export type ManagementCommandOptions = {
   connection?: string; timeoutMs?: string; limit?: string; cursor?: string; source?: string; scope?: string;
+  from?: string; to?: string; recursive?: boolean; deletionRequestId?: string; generation?: string;
   jobRef?: string; waitMs?: string; offset?: string;
   preview?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
   requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string; receiver?: string;
@@ -140,6 +143,10 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       break;
     }
     case "operation cancel": {
+      if(options.domain==="file") {
+        if(options.confirm!==true||options.bot!==undefined)throw invalid("Confirm cancellation of the original staging upload only.");
+        reply=await client.controlFileUpload({requestId:args[0]??"",generation:options.generation??"",action:"cancel"},deps.signal);break;
+      }
       if (options.domain === "handover") {
         if(options.confirm!==true||options.bot!==undefined)throw invalid("Handover cancellation uses only its exact original operation and confirmation.");
         const ref=handoverOperationIdentity(args[0]??"",installationId);
@@ -201,18 +208,42 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
     }
     case "system materials get": reply = await client.materialStatus(deps.signal); break;
     case "file root list": {
-      const value = await client.materialStatus(deps.signal); reply = { ...value, data: { ...value.data, sources: value.data.sources.filter(s => s.kind === "files") } }; break;
+      const identity=await client.identity(deps.signal),caps=identity.data.capabilities;
+      if(!caps.includes("files.read")&&!caps.includes("materials.read"))throw new ManagementClientError("permission_denied","Root discovery requires a source metadata capability.");
+      const named=caps.includes("files.read")?await client.fileRoots(deps.signal):undefined,indexed=caps.includes("materials.read")?await client.materialStatus(deps.signal):undefined;
+      reply={...identity,data:{roots:named?.data.roots??[],state:named?.data.state??"not-authorized",sources:indexed?.data.sources.filter(s=>s.kind==="files")??[],indexedSourceAccess:indexed?"authorized":"not-authorized",coverage:"authorized-source-types"}};break;
     }
+    case "file root get": {
+      const value=await client.fileRoots(deps.signal),root=value.data.roots.find(r=>r.name===args[0]);
+      if(!root)throw new ManagementClientError("not_found","That exact named root is not available.");reply={...value,data:root};break;
+    }
+    case "file stat":reply=await client.fileStat(args[0]??"",deps.signal);break;
+    case "file mkdir":case "file delete":case "file restore": {
+      if(options.confirm!==true)throw invalid("Confirm this exact file effect with its original request UUID.");
+      const base={requestId:options.requestId??"",ref:args[0]??"",confirmed:true as const};
+      const input:FileChange=command==="file mkdir"?{...base,action:"mkdir",expectedRevision:null}:command==="file delete"?{...base,action:"delete",expectedRevision:options.expectRevision??"",recursive:options.recursive===true}:{...base,action:"restore",expectedRevision:null,deletionRequestId:options.deletionRequestId??""};
+      reply=await client.changeFile(input,deps.signal);break;
+    }
+    case "file upload":
+      if(options.confirm!==true||!options.from||!options.expectRevision)throw invalid("Upload requires an explicit local source, persisted request UUID, reviewed revision or absent, and confirmation.");
+      reply=await uploadManagedFile(client,deps,installationId,args[0]??"",options.from,options.requestId??"",options.expectRevision==="absent"?null:options.expectRevision);break;
+    case "file download":
+      if(!options.to)throw invalid("Choose the new local destination explicitly.");reply=await downloadManagedFile(client,deps,installationId,args[0]??"",options.to);break;
     case "memory list": case "file list": case "project list": case "memory search": case "file search": {
       if (options.limit !== undefined && !/^[1-9][0-9]{0,2}$/.test(options.limit)) throw invalid("Invalid material page limit.");
+      if(command==="file list"&&args[0]) {
+        if(options.source!==undefined||options.scope!==undefined)throw invalid("A named-root directory is selected by its complete file reference, not an indexed-source filter.");
+        reply=await client.fileDirectory(args[0],{limit:options.limit===undefined?undefined:Number(options.limit),cursor:options.cursor,signal:deps.signal});break;
+      }
       reply = await client.materials({ kind: command.split(" ")[0] as MaterialKind, sourceId: options.source, scope: options.scope as MaterialScope | undefined,
         query: command.endsWith("search") ? args[0] : undefined, limit: options.limit === undefined ? undefined : Number(options.limit), cursor: options.cursor, signal: deps.signal }); break;
     }
-    case "memory read": case "file read": case "project get": reply = await client.readMaterial(args[0] ?? "",deps.signal); break;
+    case "file read": reply=args[0]?.startsWith("file:")?await client.readFile(args[0],deps.signal):await client.readMaterial(args[0]??"",deps.signal);break;
+    case "memory read": case "project get": reply = await client.readMaterial(args[0] ?? "",deps.signal); break;
     case "file write": {
       if (options.confirm !== true) throw invalid("Confirm this one source text replacement.");
       const value = combineManagementInput(await readManagementInput(deps,options.input),{ref:args[0],requestId:options.requestId,expectedRevision:options.expectRevision},["ref","requestId","expectedRevision","content"]);
-      reply = await client.changeMaterial({...value,confirmed:true} as MaterialWrite,deps.signal);break;
+      reply = typeof value.ref==="string"&&value.ref.startsWith("file:")?await client.changeFile({...value,action:"write",confirmed:true} as FileChange,deps.signal):await client.changeMaterial({...value,confirmed:true} as MaterialWrite,deps.signal);break;
     }
     case "incident get": reply = await client.incident(args[0] ?? "", deps.signal); break;
     case "incident ack":
@@ -306,6 +337,7 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "routine" || options.confirm !== true) throw invalid("This reconciliation requires domain routine and explicit confirmation.");
       reply = await client.changeSetup({action:"reconcile",routineRef:options.routineRef ?? "",expectedRevision:options.expectRevision ?? "",requestId:options.requestId ?? "",confirmed:true},deps.signal); break;
     case "operation get":
+      if(options.domain==="file"){reply=await client.fileOperation(options.requestId??"",deps.signal);break;}
       if (options.domain === "job") { reply = await client.jobOperation(options.requestId ?? "", deps.signal); break; }
       if (options.domain === "job-cancel") { reply = await client.jobCancellation(options.jobRef ?? "", options.requestId ?? "", deps.signal); break; }
       if(options.domain==="handover"){reply=await client.handoverOperation(options.scopeId??"",options.requestId??"",deps.signal);break;}
@@ -365,6 +397,7 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
 export function writeManagementFailure(deps: CliDeps, command: string, error: unknown): number {
   let failure: ManagementClientError;
   if (error instanceof ManagementClientError) failure = error;
+  else if(error instanceof FileError) failure=new ManagementClientError(error.code,error.message);
   else if (error instanceof ConfigError) failure = new ManagementClientError("unavailable", "The client configuration requires inspection or explicit recovery.");
   else if (error instanceof CliError) failure = new ManagementClientError(error.code.startsWith("credential_") ? "authentication_required"
     : error.code === "profile_not_found" ? "not_found" : "invalid_input", "The command or its configured credential is unavailable.");
@@ -372,7 +405,7 @@ export function writeManagementFailure(deps: CliDeps, command: string, error: un
   const codes: Partial<Record<ApiErrorCode, number>> = {
     invalid_input: 2, authentication_required: 3, permission_denied: 3, caller_identity_unavailable: 3, not_found: 4, ambiguous_target: 5,
     wrong_installation: 5, revision_conflict: 5, idempotency_conflict: 5, model_in_use: 5, model_default_in_use: 5, model_default_missing: 5,
-    model_source_read_only: 6, cursor_gap: 5, operation_unknown: 8, protection_target_conflict: 5, source_changed: 5, incident_resolved: 5, notification_test_refused: 5, notification_send_refused: 5,
+    model_source_read_only: 6, cursor_gap: 5, operation_unknown: 8, protection_target_conflict: 5, source_changed: 5, incident_resolved: 5, notification_test_refused: 5, notification_send_refused: 5, file_change_refused: 5,
   };
   const envelope = failure.reply ?? { schemaVersion: 1, installationId: failure.details?.installationId ?? null, invocationId: deps.randomUUID(), ok: false,
     error: { code: failure.code, message: failure.message, ...(failure.details ? { details: failure.details } : {}) } };

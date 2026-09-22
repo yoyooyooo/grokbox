@@ -30,7 +30,7 @@
 
 只有 registry 声明的 flag 才进入 help/parser；未知 flag 在网络请求前拒绝。纯本地命令不暴露无意义的网络选项。runtime 本地边界不得通过 `--profile` 绕过。
 
-`send` 和 `fs write` 的显式 `--text` 优先且不读取 stdin，即使同时有可读管道或处于非 TTY；只有没有显式正文时才读取非 TTY stdin。两者都没有则 `invalid_usage`。正文不进入错误回显。
+`send` 的显式 `--text` 优先且不读取 stdin；未提供正文时才按其声明读取非 TTY stdin。`file write` 使用明确的 `--input @file` 或 `--input -` 读取严格 JSON，不猜 TTY、不恢复旧 `fs write --text`。原请求 UUID、准确引用、expectedRevision（新文件为 null）与 content 分开声明，正文不进入错误回显。
 
 除声明为 Markdown/流的命令，成功 stdout 是结构化 JSON envelope；失败是脱敏错误，稳定 code、已产生的 operation identity 和下一步应可读。可选表格是相同结果的投影，不改变语义。具体错误集合和退出码由源码拥有，不在本页复制易漂移列表。
 
@@ -62,7 +62,7 @@ daemon credential、Gateway Bearer/routing headers、macOS App session、Sandbox
 
 ## 6. Capability 路由
 
-每个 leaf 声明所需能力，transport 只是实现。Gateway 提供原生产品方法；daemon handshake/策略限定尚未迁移的host文件、桌面和诊断面；Job已进入共享管理Server的独立权限与当前策略。静态 Profile 投影不等于当前方法授权，真实写入前仍须验证。
+每个 leaf 声明所需能力，transport 只是实现。Gateway 提供原生产品方法；daemon handshake/策略限定尚未迁移的桌面和诊断面；文件及Job已进入共享管理Server的独立权限与当前策略。静态 Profile 投影不等于当前方法授权，真实写入前仍须验证。
 
 Sandbox inspect/wake/keepalive 和 quota.read 各自拥有显式来源及资格。一个 token ref、一次 inspect 或一条通路可达都不能推导其他方法已授权。[Sandbox](cursor-sandbox-control-plane.md) 与 [quota](quota.md) 分别拥有细节。
 
@@ -111,9 +111,11 @@ events 是按来源 allowlist 投影的有界 NDJSON；daemon cursor 带代际�
 
 ## 8. 云电脑文件命令
 
-fs 通过受控 host/daemon capability，路径须落在授权 named root，检查 symlink、操作权限和上限。Gateway 不假装通用文件 API。读区分文本/二进制；写使用受保护父目录、临时文件、flush/rename 和预期 hash，承认外部 writer 的 syscall 竞态限制。
+`file root list/get`、`file stat/list/read/write/mkdir/upload/download/delete/restore` 的 named-root 路径经同一管理Server、共享客户端和原Box文件描述符适配。旧 `fs`、daemon文件RPC/handshake权限与CLI直连writer已删除。准确file引用绑定安装、根策略、根目录inode和相对路径；根不能覆盖管理存储、其他根或材料来源，原生Memory/Project不能通过文件别名变成可写。
 
-upload/download 验证 chunk 顺序、size 和 SHA；只有完全相同的重复 chunk 才幂等。mutation 使用有界 ledger 和稳定 operation ID；lost response 查 committed/not_committed/conflict/unknown，不盲重放。remove 使用 root-local、owner-only recoverable trash，递归有独立 capability/确认，不提供永久删除。二进制不暗中进入普通 stdout。
+直接正文读取返回有界base64并核验SHA-256；64MiB以内的二进制走固定描述符、32KiB块、完整size/hash核验。元数据、正文、写入、删除与恢复权限独立，每个实际边界重新核对；来源变化不自动换根。新文件的发布和CLI本地下载用no-clobber link保护竞争目标，已有文件按原父描述符/预期hash替换；外部writer没有参加跨调用原子CAS。目录revision只代表目录metadata，不签整棵树的内容快照。
+
+文件变更在原材料SQLite的独立领域表声明安装/主体/request UUID及physical path后执行，文本材料与named-root未知写入共享路径/子树互斥，不另建任务库。`operation get --domain file`只查询原历史；丢首次声明/发布回执、服务重启、改来源配置或换UUID均不授权重放。上传暂存寿命有限，只有原descriptor owner证明未发布才能结算取消；已声明commit/换代未知不能用cancel抹掉。delete进入私有root-local trash，restore引用同主体原成功删除且不替换已存在目标。二进制不写入元数据/浏览器恢复记录，也不解释成指令。原生Project附件、账号同步和长期安全回收继续归[DATA-01](tickets/DATA-01-memory-project-files.md)。
 
 ## 9. 云电脑执行与 Jobs
 
@@ -129,7 +131,7 @@ quota 使用明确的 credential-owning source、固定 HTTPS/无 redirect、有
 
 ## 11. Daemon 与恢复
 
-daemon owns尚未迁入统一管理Server的listeners、RPC authorization、Gateway discovery、文件/桌面host adapters、有限流和shutdown；Job不再由daemon持有。只读status/doctor、已有安装ensure/恢复和本地安装资源初始化分开；旧网络bootstrap不再提供。doctor命令完成不等于健康：消费`data.ok`和实际应用boundary，而非只看exit 0或已删除的网络占位字段。
+daemon owns尚未迁入统一管理Server的listeners、RPC authorization、Gateway discovery、桌面host adapters、有限流和shutdown；文件与Job不再由daemon持有。只读status/doctor、已有安装ensure/恢复和本地安装资源初始化分开；旧网络bootstrap不再提供。doctor命令完成不等于健康：消费`data.ok`和实际应用boundary，而非只看exit 0或已删除的网络占位字段。
 
 默认Unix socket或认证loopback，不默认公开0.0.0.0。已配置外部端点和显式SSH的已有安装恢复继续支持；它们不部署软件、轮换凭据或检查/更改网络映射。SSH/网络身份不替代RPC授权。模型runtime的controller不通过网络恢复获得额外执行权，旧Serve偏好不能被当作现行网络管理授权。
 

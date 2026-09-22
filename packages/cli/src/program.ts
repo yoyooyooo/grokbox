@@ -48,16 +48,6 @@ import {
 } from "./commands/template.ts";
 import { runEvents } from "./commands/events.ts";
 import {
-  runFsDownload,
-  runFsList,
-  runFsMkdir,
-  runFsRead,
-  runFsRemove,
-  runFsStat,
-  runFsUpload,
-  runFsWrite,
-} from "./commands/fs.ts";
-import {
   runGroupMembersAdd,
   runGroupMembersList,
   runGroupMembersRemove,
@@ -223,7 +213,6 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   history: "Search and read display transcript",
   memory: "Read agent Memory metadata",
   export: "Offline local Bot export",
-  fs: "Governed cloud-computer files",
   exec: "Governed structured process execution",
   jobs: "Durable daemon Jobs",
   box: "Cursor Sandbox lifecycle",
@@ -338,16 +327,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "history thread": async (deps, args, options) =>
       await runHistoryThread(deps, args[0] ?? "", options),
     "export agent": async (deps, args, options) => await runExportAgent(deps, args[0] ?? "", options),
-    "fs stat": async (deps, args, options) => await runFsStat(deps, args[0] ?? "", options),
-    "fs list": async (deps, args, options) => await runFsList(deps, args[0] ?? "", options),
-    "fs read": async (deps, args, options) => await runFsRead(deps, args[0] ?? "", options),
-    "fs download": async (deps, args, options) =>
-      await runFsDownload(deps, args[0] ?? "", args[1] ?? "", options),
-    "fs write": async (deps, args, options) => await runFsWrite(deps, args[0] ?? "", options),
-    "fs mkdir": async (deps, args, options) => await runFsMkdir(deps, args[0] ?? "", options),
-    "fs upload": async (deps, args, options) =>
-      await runFsUpload(deps, args[0] ?? "", args[1] ?? "", options),
-    "fs remove": async (deps, args, options) => await runFsRemove(deps, args[0] ?? "", options),
     events: async (deps, _args, options) => await runEvents(deps, options),
     "is running": async (deps, args, options) => await runIsRunning(deps, args[0] ?? "", options),
     "runtime status": async (deps) => await runRuntimeStatus(deps),

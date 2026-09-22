@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { retainHandoverContinuation, handoverLocalState } from "../src/lib/operations.ts";
 import { randomUUID } from "node:crypto";
-import { materialReference, type ModelChangeRequest } from "@grokbox/client";
-import { retainCompactionContinuation, compactionLocalState, retainContextContinuation, contextLocalState, forgetSettledOperation, localOperations, markOperation, rememberOperation, operationSearch } from "../src/lib/operations.ts";
+import { fileReference, type FileOperation, materialReference, type ModelChangeRequest } from "@grokbox/client";
+import { fileLocalState, retainFileOperation, retainCompactionContinuation, compactionLocalState, retainContextContinuation, contextLocalState, forgetSettledOperation, localOperations, markOperation, rememberOperation, operationSearch } from "../src/lib/operations.ts";
 
 const scope = { installationId: "11111111-1111-4111-8111-111111111111", principalId: "owner" };
 const request = (): ModelChangeRequest => ({ requestId: randomUUID(), expectedRevision: "a".repeat(64),
@@ -13,6 +13,19 @@ function memoryStorage() {
     getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); },
     removeItem: (key: string) => { values.delete(key); } };
 }
+
+test("file locators retain only original source/request and cannot discard unknown staging or store reusable approval",()=>{
+  const storage=memoryStorage(),requestId=randomUUID(),ref=fileReference(scope.installationId,"b".repeat(64),"files","nested/文件.txt");
+  const row=rememberOperation(storage,scope,{requestId,ref,action:"upload",confirmed:true,expectedRevision:null,size:1,sha256:"d".repeat(64)});
+  expect(operationSearch(row)).toMatchObject({domain:"file",requestId});expect(row.target).toBe(ref);
+  expect([...storage.values.values()].join()).not.toMatch(/sha256|expectedRevision|confirmed|size|generation|content/);
+  expect(()=>forgetSettledOperation(storage,row)).toThrow();
+  const receipt:FileOperation={version:1,requestId,ref,action:"upload",operationRef:`file-operation:${scope.installationId}:${"a".repeat(64)}`,expectedRevision:null,state:"unknown",acceptedAtMs:1,settledAtMs:null,result:null,serviceGeneration:randomUUID(),externalCompareAndSwap:false,indexAdoption:"not-observed"};
+  const retained=retainFileOperation(storage,scope,receipt);expect(retained.createdAt).toBe(row.createdAt);expect(localOperations(storage,scope)).toEqual([retained]);
+  expect(()=>retainFileOperation(storage,scope,{...receipt,ref:fileReference(scope.installationId,"b".repeat(64),"files","other")})).toThrow();
+  expect([...storage.values.values()].join()).not.toContain(receipt.serviceGeneration);
+  markOperation(storage,retained,fileLocalState("cancelled"));forgetSettledOperation(storage,retained);expect(localOperations(storage,scope)).toEqual([]);
+});
 
 test("Job locators separate known admission, unknown execution and cancellation without persisting argv or authority",()=>{
   const storage=memoryStorage(),requestId=randomUUID(),ref=`job:${scope.installationId}:${randomUUID()}`;

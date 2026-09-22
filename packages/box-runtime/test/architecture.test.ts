@@ -65,6 +65,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "./continuity": "./src/continuity.ts",
       "./model-management": "./src/model-management.ts",
       "./materials": "./src/materials.ts",
+      "./files": "./src/files.ts",
       "./host-health": "./src/host-health.ts",
       "./compaction": "./src/compaction.ts",
       "./testing": "./src/testing.ts",
@@ -88,6 +89,7 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "packages/runtime-kernel/src/continuity.ts",
       "packages/runtime-kernel/src/model-management.ts",
       "packages/runtime-kernel/src/materials.ts",
+      "packages/runtime-kernel/src/files.ts",
       "packages/runtime-kernel/src/host-health.ts",
       "packages/runtime-kernel/src/compaction.ts",
       "packages/runtime-kernel/src/testing.ts",
@@ -162,7 +164,7 @@ describe("runtime layout boundaries", () => {
     ["kernel-effect-regression", {
       "packages/runtime-kernel/src/contract.ts": 'import { Effect } from "effect"; export const program = Effect.succeed(1);',
     }],
-    ...["model-management", "materials", "host-health", "compaction"].map(name => [
+    ...["model-management", "materials", "files", "host-health", "compaction"].map(name => [
       `pure-domain-effect-${name}`, { [`packages/runtime-kernel/src/${name}.ts`]: 'import { Effect } from "effect"; export const program = Effect.succeed(1);' },
     ] as [string, Record<string, string>]),
     ["bun-global-version", {

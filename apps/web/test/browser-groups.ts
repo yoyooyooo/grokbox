@@ -2,7 +2,7 @@
  * process-test budget and each journey keeps its existing assertion deadlines.
  * Adding a domain must assign it here rather than silently dropping a journey. */
 export const BROWSER_GROUPS = {
-  console: ["foundation", "jobs", "receivers", "setup"],
+  console: ["foundation", "jobs", "files", "receivers", "setup"],
   state: ["materials", "protection", "lifecycle", "context", "compaction", "handover"],
   host: ["hostHealth"],
 } as const;

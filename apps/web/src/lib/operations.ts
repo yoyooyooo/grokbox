@@ -4,9 +4,10 @@ import { normalizeHandoverChange, normalizeHandoverContinuation, protectionRefer
 
 import { jobIdentity, normalizeJobStart, normalizeJobCancel, type JobStart, type JobCancel, type JobView } from "@grokbox/client";
 
+import { fileIdentity, normalizeFileChange, validFileOperation, type FileChange, type FileOperation } from "@grokbox/client";
 export type OperationScope = { installationId: string; principalId: string };
 export type LocalOperation = {
-  version: 1; requestId: string; installationId: string; principalId: string; command: "job-start" | "job-cancel" | ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "notification-send" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
+  version: 1; requestId: string; installationId: string; principalId: string; command: "file-change" | "job-start" | "job-cancel" | ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "notification-send" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
   setupKind?: SetupKind; setupScope?: string;
   target: string; createdAt: number; state: "awaiting-response" | "unknown" | "recorded" | "succeeded" | "refused" | "retired";
 };
@@ -15,10 +16,10 @@ const prefix = (scope: OperationScope) => `grokbox:operation:v1:${scope.installa
 const valid = (value: unknown, scope: OperationScope): value is LocalOperation => {
   const row = value as LocalOperation | null;
   return !!row && row.version === 1 && row.installationId === scope.installationId && row.principalId === scope.principalId
-    && UUID.test(row.requestId) && Number.isSafeInteger(row.createdAt) && row.createdAt > 0 && typeof row.target === "string" && row.target.length <= (row.command === "material-write" ? 1800 : 256)
+    && UUID.test(row.requestId) && Number.isSafeInteger(row.createdAt) && row.createdAt > 0 && typeof row.target === "string" && row.target.length <= (["material-write", "file-change"].includes(row.command) ? 1800 : 256)
     && Object.keys(row).every(key => ["version", "requestId", "installationId", "principalId", "command", "databaseId", "contextScope", "setupKind", "setupScope", "target", "createdAt", "state"].includes(key))
     && (["context-control", "context-compaction", "handover-control"].includes(row.command) || row.contextScope === undefined)
-    && (row.command === "job-start" || row.command === "job-cancel" ? validJobLocator(row,scope) : row.command === "handover-control" ? validHandoverLocator(row, scope) : ["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
+    && (row.command === "file-change" ? validFileLocator(row,scope) : row.command === "job-start" || row.command === "job-cancel" ? validJobLocator(row,scope) : row.command === "handover-control" ? validHandoverLocator(row, scope) : ["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
       : row.setupKind === undefined && row.setupScope === undefined && (["incident-ack", "incident-snooze"].includes(row.command)
       ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`incident:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
       : row.command === "notification-send"
@@ -28,6 +29,11 @@ const valid = (value: unknown, scope: OperationScope): value is LocalOperation =
         : row.databaseId === undefined && ["bot-selection", "default-selection", "model-put", "model-patch", "model-delete"].includes(row.command)))
     && ["awaiting-response", "unknown", "recorded", "succeeded", "refused", "retired"].includes(row.state);
 };
+function validFileLocator(row:LocalOperation,scope:OperationScope):boolean {
+  if(row.databaseId!==undefined||row.contextScope!==undefined||row.setupKind!==undefined||row.setupScope!==undefined)return false;
+  try{return fileIdentity(row.target,scope.installationId).ref===row.target;}catch{return false;}
+}
+export function fileLocalState(state:FileOperation["state"]):LocalOperation["state"] {return state==="cancelled"?"retired":state;}
 function validJobLocator(row:LocalOperation,scope:OperationScope):boolean {
   if(row.databaseId!==undefined||row.contextScope!==undefined||row.setupKind!==undefined||row.setupScope!==undefined)return false;
   try{return row.command==="job-start"?row.target===`job-request:${scope.installationId}:${row.requestId}`:jobIdentity(row.target,scope.installationId).ref===row.target;}catch{return false;}
@@ -107,7 +113,7 @@ export function localOperations(storage: StoragePort, scope: OperationScope): Lo
 /** Persist only recovery metadata, never model input, cookie, CSRF or a key ref.
  * One key per UUID avoids overwriting another tab's index. Refuse before send if
  * storage is unavailable; unresolved locators are never silently evicted. */
-export function rememberOperation(storage: StoragePort, scope: OperationScope, input: JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
+export function rememberOperation(storage: StoragePort, scope: OperationScope, input: FileChange | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
   try {
     if (!UUID.test(input.requestId) || !UUID.test(scope.installationId) || !scope.principalId || scope.principalId.length > 128
       || localOperations(storage, scope).length >= 128) throw new Error();
@@ -123,7 +129,9 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
         databaseId: notificationIdentity(input.receiverRef, scope.installationId).databaseId }
       : "incidentRef" in input ? { command: input.action === "ack" ? "incident-ack" : "incident-snooze", target: input.incidentRef,
         databaseId: incidentIdentity(input.incidentRef, scope.installationId).databaseId }
-      : "ref" in input ? {command:"material-write",target:materialIdentity(input.ref,scope.installationId).ref}
+      : "ref" in input ? "action" in input
+        ? {command:"file-change",target:normalizeFileChange(input,scope.installationId).ref}
+        : {command:"material-write",target:materialIdentity(input.ref,scope.installationId).ref}
       : "handoverRef" in input ? { command: "handover-control", target: normalizeHandoverChange(input, scope.installationId).handoverRef, contextScope: protectionReferenceIdentity(input.handoverRef, scope.installationId, "handover").scopeId }
       : "scopeId" in input ? "action" in input ? contextMetadata(input,scope) : compactionMetadata(input,scope)
       : input.action==="system"||input.action==="set"||input.action==="reset" ? protectionMetadata(input,scope) : setupMetadata(input,scope);
@@ -135,8 +143,9 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
     return row;
   } catch { throw new ManagementClientError("unavailable", "无法保存操作恢复标识，本次尚未提交。请检查浏览器存储或整理已结束的记录。"); }
 }
-export type OperationDomain = "job" | "job-cancel" | "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification" | "notification-test" | "notification-settings" | "routine" | "pairing";
+export type OperationDomain = "file" | "job" | "job-cancel" | "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification" | "notification-test" | "notification-settings" | "routine" | "pairing";
 export function operationDomain(row: LocalOperation): OperationDomain {
+  if(row.command==="file-change")return "file";
   if(row.command==="job-start")return "job";
   if(row.command==="job-cancel")return "job-cancel";
   if (row.command === "handover-control") return "handover";
@@ -178,6 +187,16 @@ export function retainHandoverContinuation(storage: StoragePort, scope: Operatio
     const key = `${prefix(scope)}${r.requestId}`, text = JSON.stringify(row); storage.setItem(key, text); if (storage.getItem(key) !== text) throw Error("locator-write-lost");
     return row;
   } catch { throw new ManagementClientError("unavailable", "The original handover locator could not be retained; no continuation was submitted."); }
+}
+export function retainFileOperation(storage:StoragePort,scope:OperationScope,operation:FileOperation):LocalOperation {
+  try {
+    if(!validFileOperation(operation,scope.installationId))throw Error("invalid-original-file-operation");
+    const rows=localOperations(storage,scope),old=rows.find(r=>r.requestId===operation.requestId);
+    if(old&&(old.command!=="file-change"||old.target!==operation.ref)||!old&&rows.length>=128)throw Error("locator-conflict");
+    const row:LocalOperation={version:1,...scope,requestId:operation.requestId,command:"file-change",target:operation.ref,createdAt:old?.createdAt??Date.now(),state:"awaiting-response"};
+    if(!valid(row,scope))throw Error("invalid-locator");
+    const key=`${prefix(scope)}${row.requestId}`,text=JSON.stringify(row);storage.setItem(key,text);if(storage.getItem(key)!==text)throw Error("locator-write-lost");return row;
+  }catch{throw new ManagementClientError("unavailable","The original file recovery locator could not be retained. No control was submitted.");}
 }
 export function markOperation(storage: StoragePort, row: LocalOperation, state: LocalOperation["state"]): void {
   const key = `${prefix(row)}${row.requestId}`;

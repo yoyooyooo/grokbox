@@ -1,12 +1,12 @@
 import { createHash, type Hash } from "node:crypto";
 import { constants, type Stats } from "node:fs";
-import { mkdir, open, opendir, realpath, rename, rmdir, stat, unlink, type FileHandle } from "node:fs/promises";
+import { link, lstat, mkdir, open, opendir, realpath, rename, rmdir, stat, unlink, type FileHandle } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { HostResourceError as CliError, type HostResourceCode as ErrorCode, type HostFilesystemRoot as DaemonFilesystemRootConfig } from "./host-resource-contract.ts";
 
 export const FS_READ_MAX_BYTES = 1024 * 1024;
 export const FS_DOWNLOAD_MAX_BYTES = 64 * 1024 * 1024;
-export const FS_TRANSFER_CHUNK_BYTES = 256 * 1024;
+export const FS_TRANSFER_CHUNK_BYTES = 32 * 1024;
 export const FS_UPLOAD_MAX_BYTES = FS_DOWNLOAD_MAX_BYTES;
 export const FS_WRITE_MAX_BYTES = FS_READ_MAX_BYTES;
 export const FS_LIST_MAX_ENTRIES = 1000;
@@ -22,7 +22,7 @@ const TRASH_DIRECTORY = ".grokbox-trash";
 
 export type FilesystemOperation =
   | "stat" | "list" | "read" | "download"
-  | "write" | "mkdir" | "upload" | "remove" | "remove-recursive" | "exec";
+  | "write" | "mkdir" | "upload" | "remove" | "remove-recursive" | "restore" | "exec";
 
 export type FilesystemRootProjection = {
   name: string;
@@ -77,7 +77,7 @@ export type DownloadChunk = {
   done: boolean;
 };
 
-type ResolvedRoot = DaemonFilesystemRootConfig & { canonicalPath: string };
+type ResolvedRoot = DaemonFilesystemRootConfig & { canonicalPath: string; device: number; inode: number };
 type ResolvedTarget = { root: ResolvedRoot; absolutePath: string; remotePath: string };
 type AuthorizedHandle = { handle: FileHandle; info: Stats };
 type Transfer = DownloadOpen & {
@@ -136,6 +136,7 @@ const BLOCKED_COMPONENTS = new Set([
   "keychains",
   "keyrings",
   "sand-data",
+  "agent-data",
 ]);
 const BLOCKED_FILES = new Set([
   ".env",
@@ -209,7 +210,9 @@ async function verifyDescriptor(handle: FileHandle, root: ResolvedRoot): Promise
   } catch (error) {
     mapFilesystemError(error);
   }
-  if (target.endsWith(" (deleted)") || !within(root.canonicalPath, target) || blockedPath(target)) {
+  const currentRoot = await lstat(root.canonicalPath);
+  if (!currentRoot.isDirectory() || currentRoot.isSymbolicLink() || currentRoot.dev !== root.device || currentRoot.ino !== root.inode
+    || target.endsWith(" (deleted)") || !within(root.canonicalPath, target) || blockedPath(target)) {
     throw new CliError("fs_forbidden", "Opened filesystem object is outside the authorized root.");
   }
 }
@@ -230,10 +233,10 @@ async function verifyExactDescriptor(handle: FileHandle, expectedPath: string): 
 async function openAuthorized(root: ResolvedRoot, path: string): Promise<AuthorizedHandle> {
   let handle: FileHandle | undefined;
   try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     await verifyDescriptor(handle, root);
     const info = await handle.stat();
-    if (!info.isFile() && !info.isDirectory()) {
+    if (!info.isFile() && !info.isDirectory() || info.isFile() && info.nlink !== 1) {
       throw new CliError("fs_forbidden", "Remote path type is not authorized.");
     }
     return { handle, info };
@@ -335,8 +338,13 @@ function entryProjection(remotePath: string, name: string, info: Stats): Filesys
   };
 }
 
-type FilesystemLifecycleHooks = {
+export type FilesystemLifecycleHooks = {
   beforeUploadPublish?: () => Promise<void>;
+  beforeMutation?: (operationId: string, path: string) => Promise<void>;
+  afterMutation?: (operationId: string, path: string) => Promise<void>;
+  afterUploadExpiry?: (operationId: string, status: MutationStatus) => Promise<void>;
+  /** Test clock boundary; production callers leave the original idle limit. */
+  uploadIdleMs?: number;
 };
 
 export class GovernedFilesystem {
@@ -346,6 +354,8 @@ export class GovernedFilesystem {
   private cancelledSaturatedUntil = 0;
   private readonly mutations = new Map<string, MutationRecord>();
   private readonly uploads = new Map<string, Upload>();
+  private readonly expirations = new Set<Promise<void>>();
+  private expirationFailed = false;
   private readonly cancelledUploads = new Map<string, number>();
   private cancelledUploadsSaturatedUntil = 0;
   private readonly targetLocks = new Map<string, Promise<void>>();
@@ -372,7 +382,7 @@ export class GovernedFilesystem {
         if (!info.isDirectory() || blockedPath(canonicalPath)) {
           throw new CliError("fs_forbidden", `Filesystem root '${root.name}' is not an authorized directory.`);
         }
-        resolved.set(root.name, { ...root, canonicalPath });
+        resolved.set(root.name, { ...structuredClone(root), canonicalPath, device: info.dev, inode: info.ino });
       } catch (error) {
         mapFilesystemError(error);
       }
@@ -416,10 +426,10 @@ export class GovernedFilesystem {
   private cleanupMutations(): void {
     const now = this.now();
     for (const [id, record] of this.mutations) {
-      if (record.expiresAt <= now && record.state !== "pending") this.mutations.delete(id);
+      if (record.expiresAt <= now && record.state !== "pending" && record.state !== "unknown") this.mutations.delete(id);
     }
     while (this.mutations.size >= MUTATION_MAX) {
-      const oldest = [...this.mutations.entries()].find(([, record]) => record.state !== "pending");
+      const oldest = [...this.mutations.entries()].find(([, record]) => record.state !== "pending" && record.state !== "unknown");
       if (!oldest) throw new CliError("fs_conflict", "Too many filesystem mutations are active.");
       this.mutations.delete(oldest[0]);
     }
@@ -469,12 +479,20 @@ export class GovernedFilesystem {
       const mapped = error instanceof CliError
         ? error
         : new CliError("gateway_internal", "Filesystem mutation failed before commit.");
-      record.state = mapped.code === "fs_conflict" || mapped.code === "fs_destination_exists"
+      record.state = mapped.code === "operation_outcome_unknown" ? "unknown" : mapped.code === "fs_conflict" || mapped.code === "fs_destination_exists"
         ? "conflict"
         : "not_committed";
       record.error = { code: mapped.code, message: mapped.message };
       throw mapped;
     }
+  }
+
+  /** After entering a namespace-changing syscall, loss of its settlement is not
+   * proof of no effect. The durable domain claim remains the replay authority. */
+  private async publication<T>(operationId: string, path: string, publish: () => Promise<T>): Promise<T> {
+    await this.hooks.beforeMutation?.(operationId, path);
+    try { const value = await publish(); await this.hooks.afterMutation?.(operationId, path); return value; }
+    catch { throw new CliError("operation_outcome_unknown", "The original filesystem publication could not be settled; do not replay it."); }
   }
 
   private async withTargetLock<T>(key: string, operationId: string, action: () => Promise<T>): Promise<T> {
@@ -523,7 +541,7 @@ export class GovernedFilesystem {
     } catch (error) {
       return mapFilesystemError(error);
     }
-    if (!within(root.canonicalPath, parentCanonical) || blockedPath(parentCanonical)) {
+    if (parentCanonical !== parentLexical || !within(root.canonicalPath, parentCanonical) || blockedPath(parentCanonical)) {
       throw new CliError("fs_forbidden", "Remote parent directory is not authorized.");
     }
     const opened = await openAuthorized(root, parentCanonical);
@@ -588,7 +606,7 @@ export class GovernedFilesystem {
     }
     try {
       const canonical = await realpath(lexical);
-      if (!within(root.canonicalPath, canonical) || blockedPath(canonical)) {
+      if (canonical !== lexical || !within(root.canonicalPath, canonical) || blockedPath(canonical)) {
         throw new CliError("fs_forbidden", "Remote path or operation is not authorized.");
       }
       return { root, absolutePath: canonical, remotePath: parsed.remotePath };
@@ -760,9 +778,17 @@ export class GovernedFilesystem {
           await temporary.close();
           temporary = undefined;
           await verifyDescriptor(parent.handle, parent.root);
-          await rename(temporaryPath, join(descriptorLink(parent.handle), parent.name));
-          committed = true;
-          await parent.handle.sync().catch(() => undefined);
+          await this.publication(operationId, path, async () => {
+            await this.assertSnapshot(parent, baseline); await verifyDescriptor(parent.handle, parent.root);
+            const destination = join(descriptorLink(parent.handle), parent.name);
+            if (baseline === null) {
+              await link(temporaryPath, destination); committed = true;
+              await unlink(temporaryPath);
+            } else { await rename(temporaryPath, destination); committed = true; }
+            await parent.handle.sync();
+          });
+          const written = await this.destinationSnapshot(parent);
+          if (!written || written.sha256 !== sha256 || written.info.size !== content.length) throw new CliError("operation_outcome_unknown", "The published file does not match the original write.");
           return {
             operationId,
             state: "committed",
@@ -787,6 +813,8 @@ export class GovernedFilesystem {
       try {
         return await this.withTargetLock(parent.key, operationId, async () => {
           await verifyDescriptor(parent.handle, parent.root);
+          await this.hooks.beforeMutation?.(operationId, path);
+          await verifyDescriptor(parent.handle, parent.root);
           try {
             await mkdir(join(descriptorLink(parent.handle), parent.name), { mode: 0o700 });
           } catch (error) {
@@ -795,7 +823,8 @@ export class GovernedFilesystem {
             }
             mapFilesystemError(error);
           }
-          await parent.handle.sync().catch(() => undefined);
+          try { await parent.handle.sync(); await this.hooks.afterMutation?.(operationId, path); }
+          catch { throw new CliError("operation_outcome_unknown", "Directory creation settlement is unknown."); }
           return { operationId, state: "committed", path: parent.remotePath, kind: "directory" };
         });
       } finally {
@@ -804,7 +833,7 @@ export class GovernedFilesystem {
     });
   }
 
-  private async trashDirectory(root: ResolvedRoot): Promise<FileHandle> {
+  private async trashDirectory(root: ResolvedRoot, create = true): Promise<FileHandle> {
     const rootHandle = await openAuthorized(root, root.canonicalPath);
     if (!rootHandle.info.isDirectory()) {
       await rootHandle.handle.close();
@@ -812,7 +841,7 @@ export class GovernedFilesystem {
     }
     const path = join(descriptorLink(rootHandle.handle), TRASH_DIRECTORY);
     try {
-      await mkdir(path, { mode: 0o700 });
+      if (create) await mkdir(path, { mode: 0o700 });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
         await rootHandle.handle.close();
@@ -826,7 +855,7 @@ export class GovernedFilesystem {
       if (!info.isDirectory() || (typeof process.getuid === "function" && info.uid !== process.getuid())) {
         throw new CliError("fs_forbidden", "Filesystem trash directory ownership is invalid.");
       }
-      await trash.chmod(0o700);
+      if ((info.mode & 0o077) !== 0) throw new CliError("fs_forbidden", "Filesystem trash is not private.");
       const canonical = await realpath(descriptorLink(trash));
       if (!within(root.canonicalPath, canonical) || canonical !== join(root.canonicalPath, TRASH_DIRECTORY)) {
         throw new CliError("fs_forbidden", "Filesystem trash directory is not authorized.");
@@ -896,14 +925,12 @@ export class GovernedFilesystem {
             join(parent.root.canonicalPath, TRASH_DIRECTORY, operationId),
           );
           await verifyDescriptor(parent.handle, parent.root);
-          await rename(
-            join(descriptorLink(parent.handle), parent.name),
-            trashTarget,
-          );
-          trashReservationCommitted = true;
-          await parent.handle.sync().catch(() => undefined);
-          await trashContainer.sync().catch(() => undefined);
-          await trash.sync().catch(() => undefined);
+          await this.publication(operationId, path, async () => {
+            await verifyDescriptor(parent.handle, parent.root);
+            await rename(join(descriptorLink(parent.handle), parent.name), trashTarget);
+            trashReservationCommitted = true;
+            await parent.handle.sync(); await trashContainer!.sync(); await trash!.sync();
+          });
           return {
             operationId,
             state: "committed",
@@ -926,10 +953,74 @@ export class GovernedFilesystem {
     });
   }
 
+  /** Restore only the original domain-recorded trash identity to its original
+   * path. Files use no-clobber links; directories reserve an empty destination.
+   * External writers do not participate in a cross-syscall compare-and-swap. */
+  async restore(operationId: string, path: string, deletionId: string): Promise<Record<string, unknown>> {
+    if (!TRANSFER_ID_PATTERN.test(deletionId)) throw new CliError("fs_conflict", "Invalid original deletion identity.");
+    return this.runMutation(operationId, this.mutationFingerprint({ method: "restore", path, deletionId }), async () => {
+      const parent = await this.mutationParent(path, "restore");
+      let trash: FileHandle | undefined, container: FileHandle | undefined, source: FileHandle | undefined;
+      let reserved: Stats | undefined, published = false;
+      const destination = join(descriptorLink(parent.handle), parent.name);
+      try {
+        return await this.withTargetLock(parent.key, operationId, async () => {
+          trash = await this.trashDirectory(parent.root, false);
+          container = await open(join(descriptorLink(trash), deletionId), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+          await verifyExactDescriptor(container, join(parent.root.canonicalPath, TRASH_DIRECTORY, deletionId));
+          const containerInfo = await container.stat();
+          if (containerInfo.uid !== process.getuid?.() || (containerInfo.mode & 0o077) !== 0) throw new CliError("fs_forbidden", "The original trash container is not private.");
+          const sourcePath = join(descriptorLink(container), parent.name);
+          source = await open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+          const info = await source.stat();
+          if ((!info.isFile() && !info.isDirectory()) || info.isFile() && info.nlink !== 1 || info.uid !== process.getuid?.()) throw new CliError("fs_forbidden", "The original trash payload is not an owned regular object.");
+          await verifyExactDescriptor(source, join(parent.root.canonicalPath, TRASH_DIRECTORY, deletionId, parent.name));
+          const kind = info.isFile() ? "file" : "directory";
+          await this.hooks.beforeMutation?.(operationId, path);
+          await verifyDescriptor(parent.handle, parent.root);
+          if (kind === "directory") {
+            try { await mkdir(destination, { mode: 0o700 }); reserved = await lstat(destination); }
+            catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new CliError("fs_conflict", "Restore destination already exists."); throw error; }
+          }
+          try {
+            if (kind === "file") await link(sourcePath, destination);
+            else {
+              const current = await lstat(destination);
+              if (!reserved || current.dev !== reserved.dev || current.ino !== reserved.ino) throw new CliError("fs_conflict", "The restore reservation changed.");
+              await rename(sourcePath, destination);
+            }
+            published = true;
+            await parent.handle.sync();
+            if (kind === "file") await unlink(sourcePath);
+            await container!.sync(); await this.hooks.afterMutation?.(operationId, path);
+            return { operationId, path, state: "committed", kind, restored: true };
+          } catch (error) {
+            if (!published && (error as NodeJS.ErrnoException).code === "EEXIST") throw new CliError("fs_conflict", "Restore never overwrites an existing destination.");
+            throw new CliError("operation_outcome_unknown", "The original restore could not be settled; preserve both locations.");
+          }
+        });
+      } finally {
+        if (reserved && !published) {
+          const current = await lstat(destination).catch(() => null);
+          if (current?.dev === reserved.dev && current.ino === reserved.ino) await rmdir(destination).catch(() => undefined);
+        }
+        await source?.close(); await container?.close(); await trash?.close(); await parent.handle.close();
+      }
+    });
+  }
+
   private armUpload(upload: Upload): void {
     if (upload.timer) clearTimeout(upload.timer);
-    upload.expiresAt = this.now() + TRANSFER_TTL_MS;
-    upload.timer = setTimeout(() => { void this.cancelUpload(upload.operationId); }, TRANSFER_TTL_MS);
+    const idleMs = this.hooks.uploadIdleMs ?? TRANSFER_TTL_MS;
+    if (!Number.isSafeInteger(idleMs) || idleMs < 10 || idleMs > TRANSFER_TTL_MS) throw new CliError("fs_upload_invalid", "Invalid upload idle clock.");
+    upload.expiresAt = this.now() + idleMs;
+    upload.timer = setTimeout(() => {
+      const retirement = this.cancelUpload(upload.operationId).then(async () => {
+        await this.hooks.afterUploadExpiry?.(upload.operationId, this.mutationStatus(upload.operationId));
+      });
+      this.expirations.add(retirement);
+      void retirement.catch(() => { this.expirationFailed = true; }).finally(() => this.expirations.delete(retirement));
+    }, idleMs);
     upload.timer.unref();
   }
 
@@ -1139,10 +1230,15 @@ export class GovernedFilesystem {
         await verifyDescriptor(upload.parent.handle, upload.parent.root);
         await upload.handle.close();
         await verifyDescriptor(upload.parent.handle, upload.parent.root);
-        await rename(
-          join(descriptorLink(upload.parent.handle), upload.temporaryName),
-          join(descriptorLink(upload.parent.handle), upload.parent.name),
-        );
+        await this.publication(operationId, upload.parent.remotePath, async () => {
+          await this.assertSnapshot(upload.parent, upload.baseline); await verifyDescriptor(upload.parent.handle, upload.parent.root);
+          const source = join(descriptorLink(upload.parent.handle), upload.temporaryName), destination = join(descriptorLink(upload.parent.handle), upload.parent.name);
+          if (upload.baseline === null) { await link(source, destination); await unlink(source); }
+          else await rename(source, destination);
+          await upload.parent.handle.sync();
+        });
+        const written = await this.destinationSnapshot(upload.parent);
+        if (!written || written.sha256 !== upload.sha256 || written.info.size !== upload.size) throw new CliError("operation_outcome_unknown", "The published upload does not match its original content identity.");
         const result = {
           operationId,
           state: "committed",
@@ -1156,12 +1252,11 @@ export class GovernedFilesystem {
         this.uploads.delete(operationId);
         this.reservedTargets.delete(upload.parent.key);
         if (upload.timer) clearTimeout(upload.timer);
-        await upload.parent.handle.sync().catch(() => undefined);
-        await upload.parent.handle.close().catch(() => undefined);
+        await upload.parent.handle.close();
         return result;
       } catch (error) {
         const mapped = error instanceof CliError ? error : new CliError("gateway_internal", "Upload commit failed.");
-        record.state = mapped.code === "fs_conflict" ? "conflict" : "not_committed";
+        record.state = mapped.code === "operation_outcome_unknown" ? "unknown" : mapped.code === "fs_conflict" ? "conflict" : "not_committed";
         record.error = { code: mapped.code, message: mapped.message };
         await this.cancelUpload(operationId, true, true);
         throw mapped;
@@ -1360,5 +1455,7 @@ export class GovernedFilesystem {
     this.cancelledSaturatedUntil = 0;
     await Promise.all([...this.uploads.keys()].map(async (id) => await this.cancelUpload(id)));
     await Promise.all([...this.transfers.keys()].map(async (id) => await this.closeTransfer(id)));
+    await Promise.allSettled([...this.expirations]);
+    if (this.expirationFailed) throw new CliError("operation_outcome_unknown", "An idle upload's retained settlement could not be confirmed.");
   }
 }

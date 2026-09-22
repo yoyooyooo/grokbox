@@ -58,11 +58,15 @@ grokbox send <target> --text "hello"
 grokbox history outcome <target> --nonce <uuid> --runtime
 grokbox history tail <target> --limit 50
 grokbox export agent <agent> --out ./export
-grokbox fs stat home:/artifact.txt
-grokbox fs download home:/artifact.bin ./artifact.bin
-grokbox fs write workspace:/status.txt --text "ready"
-grokbox fs upload ./artifact.bin workspace:/artifact.bin
-grokbox fs remove workspace:/obsolete.txt --yes
+grokbox file root list
+grokbox file root get workspace
+grokbox file stat <file-ref>
+grokbox file download <file-ref> --to ./artifact.bin
+grokbox file write --input @file-change.json --confirm
+grokbox file upload <file-ref> --from ./artifact.bin --request-id <uuid> --expect-revision absent --confirm
+grokbox file delete <file-ref> --request-id <uuid> --expect-revision <sha256> --confirm
+grokbox file restore <file-ref> --request-id <new-uuid> --deletion-request-id <original-uuid> --confirm
+grokbox operation get --domain file --request-id <original-uuid>
 grokbox job policy
 grokbox job start --input @job.json --request-id <uuid> --expect-revision <sha256> --confirm
 grokbox job wait <job-ref> --wait-ms 25000
@@ -113,7 +117,7 @@ Targets accept an exact ID first, then an unambiguous case-insensitive name/titl
 7. **Read account quota**: `quota` requires a selected Profile with `quota.source:"cursor-web"` and its independent `quota.accessTokenRef` in `config.client.profiles`. It performs one fixed bounded HTTPS request and returns only a fresh sanitized DTO. It has no cache, fallback, Gateway/daemon route, Sandbox lifecycle effect, or App-private credential discovery. Missing quota configuration fails closed before discovery/SSH/host/App side effects even when the CLI runs inside the box. Copying an external OAuth token onto the box is not the in-box quota path. Static `profile capabilities` reports `provider-authorization-dependent`; only a successful call proves quota authority.
 8. **Material scopes**: `memory list --scope agent` returns indexed document metadata from explicitly configured sources. `memory read <material-ref>` separately reads source text; native Memory/Project replicas are read-only. Load `grokbox skills get grokbox --topic materials` for search, coverage and file-write recovery.
 9. **Export one local Bot**: `export agent <agent> --out <dir>` reads the local agent-data tree only. Default output is owned profile/settings/Memory/automations plus `manifest.json`. Skill/workflow/plugin have no per-bot structured ownership (`association: none`); related workflow names are text references. `--include-related-workflows` copies referenced `SKILL.md` only. It never packs `gateway.json`, tokens, or transcript DBs, and it does not use Gateway or Profile.
-10. **Use governed files**: `fs stat/list/read` use `root:/relative/path`; `fs download` writes a new local destination only after size and SHA-256 verification. `fs write` accepts explicit `--text` or stdin and supports `--expected-sha256`; `fs upload` uses bounded verified chunks; `fs mkdir` creates one level; `fs remove` moves content to recoverable trash and requires confirmation. `--recursive` additionally requires elevated live root policy. JSON `read` returns UTF-8 or explicit base64 and never writes arbitrary binary to stdout.
+10. **Use governed files**: `file root list/get` provides exact installation/root-bound references. `file list <file-ref>` reads one directory; no argument lists indexed material files. Direct `file read` returns bounded base64 with verified SHA-256, never raw binary or executable markup. `file write --input @file|- --confirm` declares ref, requestId, expectedRevision (null only for an absent destination), and exact content; material references retain their original source writer. `file upload --from` and `file download --to` use bounded chunks and complete size/hash verification; download never overwrites a local destination. `file delete` moves the reviewed object into private trash, with separate recursive root policy; `file restore` requires the same principal's original successful deletion. `operation get --domain file` reads history after a lost response. Only a live original staging upload can be explicitly cancelled with `operation cancel <request-uuid> --domain file --generation <original-service-uuid> --confirm`; unknown commit or a dead owner is not proof of cancellation. Never switch to old fs/daemon/Gateway methods: those file paths are retired. Named roots cannot overlap material/native sources or management state.
 
 11. **Run governed processes**: `job policy` supplies the current management-service policy revision. `job start` takes strict JSON (`argv`, optional `environment`/`cwd`/`output`/`shell`, and `runTimeoutMs`), a caller-persisted request UUID, reviewed revision and explicit confirmation. It resolves argv[0] as an executable alias, not a shell fragment; shell needs separate policy and permission. `job get/wait` observes the original service-owned execution, while `job logs` explicitly reads bounded base64 pages with independent output permission. Cancellation has its own persisted UUID and never reverses external effects. After a lost response use `operation get --domain job --request-id <uuid>` or `--domain job-cancel --job-ref <ref> --request-id <cancel-uuid>`; never invent a new request to repair uncertainty. No daemon/CLI fallback executor remains. Approved executables are not filesystem-sandboxed by cwd.
 12. **Control Sandbox lifecycle**: `box status` reads the Cursor run state without waking it. `box wake` performs one broker Ensure plus a bounded exec no-op. `box keepalive run` is an external foreground lease loop; `box keepalive status` reads its redacted protected state. These commands require an explicit `client.profiles.<name>.sandbox.accessTokenRef` and do not depend on daemon, SSH, Tailscale, Gateway health, or an in-box process.

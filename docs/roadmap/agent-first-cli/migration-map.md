@@ -142,14 +142,14 @@
 | `template visibility` | template visibility set |
 | `template delete` | template delete |
 | `template import` | template import |
-| `fs stat` | file stat |
-| `fs list` | file list |
-| `fs read` | file read |
-| `fs download` | file download |
-| `fs write` | file write |
-| `fs mkdir` | file mkdir |
-| `fs upload` | file upload |
-| `fs remove` | file delete |
+| `fs stat` | file stat（已迁入共享管理；准确根引用） |
+| `fs list` | file list（已迁入；直接目录与索引窗口分别声明） |
+| `fs read` | file read（已迁入；正文独立权限） |
+| `fs download` | file download（已迁入；固定描述符、完整hash、本地no-clobber） |
+| `fs write` | file write（已迁入；严格JSON与原领域回执） |
+| `fs mkdir` | file mkdir（已迁入；明确缺失目标） |
+| `fs upload` | file upload（已迁入；暂存、commit、取消分别有证据） |
+| `fs remove` | file delete / file restore（已迁入；原主体/原删除与安全保全） |
 | `exec run` | 已退出；job policy/start 经共享Server和原Job owner，结构化JSON、明确revision/request/confirm |
 | `jobs list` | 已退出；job list 按实际主体读取原安全记录 |
 | `jobs show` | 已退出；job get/wait 原始Job与有界观察，非CLI持有执行 |

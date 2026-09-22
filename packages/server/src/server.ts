@@ -13,6 +13,7 @@ import { startHostHealth, type HostHealthTestPorts, startMaterialIndexer, startP
 import { authenticate, HttpFailure, requireCapability, type AccessGrant } from "./access.ts";
 import { ConsoleAuthority } from "./console-access.ts";
 import { JobService } from "./jobs.ts";
+import { FileService, type FileTestHooks } from "./files.ts";
 import { projectNotificationWorker } from "./notifications.ts";
 import { shareObservationReads, watchObservationEvents, writeWatchChunk, WATCH_LIMITS } from "./event-watch.ts";
 export type { AccessGrant } from "./access.ts";
@@ -98,6 +99,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
   lifecycle?: { create?: LifecycleDomain["create"] };
   context?: { hooks?: ContextDomain["hooks"] };
   hostHealth?: HostHealthTestPorts;
+  files?: FileTestHooks;
 } = {}): Promise<ManagementServer> {
   const host = options.host ?? "127.0.0.1", port = options.port ?? 0, maxConcurrent = options.maxConcurrentRequests ?? 32;
   if (!UUID.test(options.installationId) || !["127.0.0.1", "::1"].includes(host) || !Number.isSafeInteger(port) || port < 0 || port > 65535
@@ -121,6 +123,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
   let protectionService: ReturnType<typeof startProtectionService> | undefined;
   let hostHealth: ReturnType<typeof startHostHealth> | undefined;
   let jobService: JobService | undefined;
+  let fileService: FileService | undefined;
   const hostHealthState=()=>{if(!hostHealth)throw new HttpFailure(503,"unavailable","Host health is starting.");return hostHealth.status();};
   const notificationState = () => {
     if (!notificationWorker) throw new HttpFailure(503, "unavailable", "The management process is acquiring its notification worker.");
@@ -244,6 +247,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
       };
       const result = yield* application({ ...options, installationId, serviceState, notificationState, hostHealthState,
         jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
+        fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
         contextDomain: { root: options.store.root, installationId, authorize: materialAuthorize, hooks: testPorts.context?.hooks,
           ...(options.native.continuityAccess ? { context: (signal: AbortSignal) => ({ boxRuntimeRoot: options.store.root, env: options.env ?? {}, fetch: options.fetch, signal,
             gateway: () => options.native.continuityAccess!(signal), ownershipRead: options.native.ownershipRead }) } : {}) },
@@ -260,6 +264,9 @@ export async function startManagementServer(options: ManagementServerOptions, te
           afterSendClaim: testPorts.notification?.sendClaimed,
           readNative: options.native.readNotificationReceiver ?? (async () => { throw new Error("notification_receiver_unavailable"); }),
           request: testPorts.notification?.request } }, principal!, request.method!, url, input);
+      if (request.method === "GET" && url.pathname.startsWith("/v1/file-")) {
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/file-operations/") ? "operations.read" : url.pathname.includes("content") || url.pathname.includes("download") ? "files.content.read" : "files.read"), catch: error => error });
+      }
       if (request.method === "GET" && (url.pathname === "/v1/jobs" || url.pathname.startsWith("/v1/jobs/") || url.pathname.startsWith("/v1/job-"))) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.endsWith("/logs") ? "jobs.logs.read"
           : url.pathname.startsWith("/v1/job-operations/") || url.pathname.startsWith("/v1/job-cancellations/") ? "operations.read" : "jobs.read"), catch: error => error });
@@ -286,6 +293,10 @@ export async function startManagementServer(options: ManagementServerOptions, te
       }
       if (request.method === "POST" && result && typeof result === "object" && "action" in result && result.action === "test" && "state" in result && result.state === "refused") {
         return yield* Effect.fail(new HttpFailure(409, "notification_test_refused", "The independent test was not accepted. Its retained receipt describes the refusal; it does not affect permission to enable future notifications.", { operation: result }));
+      }
+      if (request.method === "POST" && (url.pathname === "/v1/file-changes" || url.pathname === "/v1/file-upload-controls" && input && typeof input === "object" && "action" in input && input.action === "commit")
+        && result && typeof result === "object" && "state" in result && (result.state === "refused" || result.state === "cancelled")) {
+        return yield* Effect.fail(new HttpFailure(409,"file_change_refused","The original file operation did not publish successfully. Inspect its retained receipt; no publication was retried.",{operation:result}));
       }
       if (request.method === "POST" && url.pathname.startsWith("/v1/context-compaction") && result && typeof result === "object" && "state" in result && result.state === "failed") {
         return yield* Effect.fail(new HttpFailure(422, "compaction_failed", "The original compaction settled without success. Review its retained failure before choosing a new request.", { operation: result }));
@@ -315,6 +326,10 @@ export async function startManagementServer(options: ManagementServerOptions, te
     await runtime.runPromise(Effect.acquireRelease(
       Effect.tryPromise({ try: () => listen(server, host, port), catch: error => error }),
       () => Effect.promise(() => closeListener(server)),
+    ).pipe(Effect.provideService(Scope.Scope, runtime.scope)));
+    fileService = await runtime.runPromise(Effect.acquireRelease(
+      Effect.tryPromise({ try: () => FileService.acquire(options.store.root, installationId, testPorts.files), catch: error => error }),
+      service => Effect.promise(() => service.close()),
     ).pipe(Effect.provideService(Scope.Scope, runtime.scope)));
     jobService = await runtime.runPromise(Effect.acquireRelease(
       Effect.tryPromise({ try: () => JobService.acquire(options.store.root, installationId), catch: error => error }),

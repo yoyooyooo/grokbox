@@ -295,8 +295,6 @@ export async function runProfileCapabilities(
       "grok.transcript.write": local || directGateway || daemon,
       "grok.memory.read": local || directGateway || daemon,
       "grok.events.read": local || directGateway || daemon,
-      "host.fs.read": daemon,
-      "host.fs.write": daemon ? "runtime-policy-dependent" : false,
       [DESKTOP_READ]: desktopRead,
       [DESKTOP_REAP]: desktopReap,
       "sandbox.inspect": sandboxCapability,
