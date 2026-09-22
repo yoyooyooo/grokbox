@@ -12,6 +12,10 @@ CONT私有管理SQLite保存内容绑定的operation、policy revision、snapsho
 
 最低安全记录容量不足拒绝新增操作；当前安全墓碑尚未取得语义退役资格，保留最小记录并报告blocked，不宣称无限请求/长期日用已闭合。真实CONT恢复与安全owner共用本域DB，OBS诊断库只接事件与证据引用。[实现/进程崩溃/J1接线报告](../reports/2026-09-18-continuity-recovery-store.md)固定早期存储切片的证明；不代替配置授权、职责冲突/继任generation、原生效果或独立review。
 
+## self-reset 的有限职责消费
+
+AH-133 在原 queued-control owner 中保存 version 1 的原请求、source revision/generation、policy revision、材料与 workflow 引用及逐职责结果。admit 只持久登记；claim 和 settle 具有独立的严格边界，通用控制入口不能绕过。未知结果只接受原请求摘要绑定的显式观察，不能重放效果或抹去已完成职责；未决输入/输出材料和退役 workflow 引用仍受 GC 保护。有限预算、公开 API、实际反例及尚未接通的原生责任见 [C1 报告](../reports/2026-09-22-self-reset-queue.md)。这不关闭完整生命周期的多代职责/退役义务。
+
 ## 人工生命周期的管理主体
 
 新人工工作流在原 immutable request 中保存安装、主体、公共 request UUID 与 intent digest；内层 operation ID 按安装/主体推导，原 scope 和完整 plan digest 不变。列表在存储查询中先按主体过滤再做有界 keyset，不能用其他主体的记录挤掉本主体窗口。返回结果只投影阶段与真实身份，私有指令/profile/材料不进入普通操作读面。

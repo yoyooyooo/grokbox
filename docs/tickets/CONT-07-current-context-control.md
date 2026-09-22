@@ -1,8 +1,8 @@
 # CONT-07 — 唯一当前上下文的原生控制
 
-**状态：partial implementation；原生初始化基础及外部空闲Bot的reset/recover已接线，self-reset安全队列仍未实现。** capture/initialize/reconcile/hold release与新的原生compose、历史补齐floor、Memory/指令保留进入有限RPC/CLI和CONT持久层；完整profile叠加compact通过限定原生验证。见[本轮集成证据](../reports/2026-09-19-continuity-lifecycle-integration.md)。
+**状态：partial implementation；原生初始化基础及外部空闲Bot的reset/recover已接线，self-reset 的 CONT 持久队列与消费合同已实现，原生安全点接通仍未实现。** capture/initialize/reconcile/hold release与新的原生compose、历史补齐floor、Memory/指令保留进入有限RPC/CLI和CONT持久层；完整profile叠加compact通过限定原生验证。见[本轮集成证据](../reports/2026-09-19-continuity-lifecycle-integration.md)。
 
-活动回合自身调用仍明确not_prepared，不能宣称后台已排队；需要补安全收尾与后续输入归属。附件/全历史资源覆盖、真实原App/首次及重启后模型窗口、独立review仍各自有门，未修改现役profile。
+现有原生入口的活动回合自身调用仍明确not_prepared，不能宣称后台已排队；AH-133 新增的本地队列尚未接入该入口，安全收尾与后续输入归属由 AH-139/AH-140 继续完成。附件/全历史资源覆盖、真实原App/首次及重启后模型窗口、独立review仍各自有门，未修改现役profile。
 
 合同：[S13公共原语](../roadmap/box-runtime-impl-spec.md#continuity-primitives)。依赖CONT-00、CONT-11和CTX-02；接口可先用owned fixture，产品reset/recover必须先满足CONT-02保全。为CONT-03和CONT-08提供最小公共内核，不先建设多会话平台。
 
@@ -47,6 +47,12 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 前一[配对工作包](../reports/2026-09-21-native-checkpoint-pair.md)的2380…来源资格属于历史窗口。当前Host已更新为6be750…，并完成28项隔离原生验证：原schema/AgentStore、完整引用图、实际worker事务/持久marker/GC hold、重启/解除/B2、startup、duplicate和disposal。生产仅保留当前准确元组，旧元组与旧配方回退已退出；preload、worker与主Host注册使用同一当前身份，证据与先拒绝后验证的顺序见[单版本收束](../reports/2026-09-21-current-host-contract-convergence.md)。
 
 新的显式资格入口是 `node scripts/verify-host-health.mjs native-pair`，需Bun1.3.14及显式native continuity、idle-candidate和native Node配置。它只访问指定源和自有测试库，不自动发布profile、启动Bot或执行真实Provider。原source/candidate/worker静态资格同步通过；整Host实际使用、self-reset、附件独立、完整用户恢复与独立审查不由这个ABI实验代签。
+
+## self-reset 本地队列与消费合同
+
+`openSelfResetQueue` 在原 CONT 控制表登记不可变请求，登记不调用原生 owner。消费要求 `SelfResetOwner.withSource(request, work)` 持有源观察至消费结算的屏障；未结算回合继续 queued，revision/generation 变化写 blocked，成功 claim 先落 effect_unknown。重开不再次派发；显式 reconcile 绑定原请求摘要，保留已完成职责。材料、职责结果及 workflow 引用与 GC 同事务保护。接口、反例和原生/fixture 边界见 [C1 固定报告](../reports/2026-09-22-self-reset-queue.md)。
+
+本地队列不安装 Host hook；真实迟到工具/checkpoint/Memory 隔离、下一输入和重启仍需原生 owner 证明。
 
 ## 必需行为
 

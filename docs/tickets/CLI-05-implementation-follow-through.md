@@ -279,4 +279,6 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 [HOST-01](HOST-01-patch-health-verifier.md)的固定配方/ABI和健康成果保留其原输入；[新来源校准](../reports/2026-09-22-native-material-source-drift.md)使当前Host/worker适配成为A的优先出口。所部署/可达的必要能力与非干扰资格在J2前闭合，实际loaded/调用/原生App证据在受控采用后进入J3；不以HOST-01全票完成阻塞无关施工，也不放宽本候选必需项。T40目标宿主和独立modeld须前置，不把现场风险都拖到W4。
 
+C1（AH-133）已在原 CONT owner 交付 self-reset 持久排队、受源屏障约束的一次消费、逐职责结果/显式对账和 GC 引用保护，见 [固定回执](../reports/2026-09-22-self-reset-queue.md)与 [CONT-07](CONT-07-current-context-control.md)。AH-139/AH-140 继续提供真实原生安全点及完整恢复；本地存储验证不关闭这些出口。
+
 DATA-01的原生管理写入/同步/Project附件fileRef和CONT的self-reset/完整恢复/关系交接/退役分别由B/C完成；普通named-root文件通路已经闭合。E继续T45确定未受理重试、上游对账与独立投递；D/F退出剩余产品/daemon/系统消费者；W完成自有Web。核心实际经过的Memory、必要保全和已启用后台副作用仍为J2/J3前置，不能随整个B/C/E后置。J4可先日用，J5完整功能合流后进入W4/W5；blocked/unknown不是取消必需功能的理由。当前实际采用判据及结果只进入[核心LIVE集合](LIVE-integration-validation.md#core-runtime-lane)，不从规划或合并获得费用、现役修改或公开发布权限。
