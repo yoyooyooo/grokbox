@@ -40,7 +40,7 @@ describe("packaged Node unified configuration", () => {
     expect(await readFile(join(root, "models.json"), "utf8")).toBe(models);
     const schema = data(cli(home, root, ["config", "schema", "desktop.idleReclaim.minIdleMs"]));
     expect(schema.schema).toMatchObject({ type: "integer", min: 600000 });
-    const pending = cli(home, root, ["config", "set", "desktop.idleReclaim.enabled", "true", "--wait-applied", "--timeout-ms", "20"]);
+    const pending = cli(home, root, ["config", "set", "desktop.idleReclaim.enabled", "true", "--confirm", "--wait-applied", "--timeout-ms", "20"]);
     expect(pending.code).toBe(80);
     expect(JSON.parse(pending.stderr).error.context.commit).toBe("committed");
     expect(data(cli(home, root, ["config", "get", "desktop.idleReclaim.enabled"])).value).toBe(true);

@@ -31,7 +31,7 @@ describe("config command uses the canonical program", () => {
   });
   test("scalar get/set survives restart and bad schema preserves exact bytes", async () => {
     const f = await fixture();
-    const set = await f.run(["set", "desktop.idleReclaim.enabled", "true"]);
+    const set = await f.run(["set", "desktop.idleReclaim.enabled", "true", "--confirm"]);
     expect(set.code).toBe(0); expect(data(set).commit).toBe("committed"); expect(data(set).application.state).toBe("pending");
     const get = await f.run(["get", "desktop.idleReclaim.enabled"]); expect(data(get).value).toBe(true);
     const before = await readFile(join(f.boxRuntimeRoot, "config.json"), "utf8");
@@ -89,7 +89,7 @@ describe("config command uses the canonical program", () => {
     const target = await f.run(["set", "desktop.idleReclaim.enabled", "true", "--scope", "target"]);
     expect(errorCode(target)).toBe("config_scope_unavailable");
     expect(await readFile(join(f.boxRuntimeRoot, "config.json"), "utf8")).toBe(before);
-    expect((await f.run(["set", "desktop.idleReclaim.enabled", "true", "--scope", "local"])).code).toBe(0);
+    expect((await f.run(["set", "desktop.idleReclaim.enabled", "true", "--confirm", "--scope", "local"])).code).toBe(0);
   });
   test("bad installed JSON cannot block path/schema/file validation or migration preview", async () => {
     const f = await fixture(false);

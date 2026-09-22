@@ -3,13 +3,13 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
-import { DesktopManager, type DesktopIo } from "../packages/cli/src/daemon/desktop.ts";
+import { DesktopManager, type DesktopIo } from "@grokbox/box-runtime/runtime";
 import { openConfigStore, rootConfigLayout, observeConfigApplication } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson } from "./helpers.ts";
 
 function emptyIo(): DesktopIo {
   return {
-    readWorld: async (nowMs) => ({ nowMs, assignments: {}, names: {}, litDisplays: new Set(), displayStartedAtMs: {},
+    readWorld: async (nowMs) => ({ complete: true, displayIdentities: {}, nowMs, assignments: {}, names: {}, litDisplays: new Set(), displayStartedAtMs: {},
       transcriptWrittenAtMs: {}, busyMarkers: new Set(), grokDisplays: new Set(), taskDisplays: new Set(), startWindowDisplays: new Set() }),
     stopWindow: async () => { throw new Error("no display may be stopped by these tests"); },
     reapLogs: async () => undefined, unseatAgent: async () => undefined,
@@ -26,8 +26,9 @@ describe("configuration commit and live consumer application", () => {
   test("wait-applied waits for the actual desktop tick and queries never acknowledge", async () => {
     const { root, deps } = await fixture();
     const manager = await DesktopManager.create(root, Date.now, {}, emptyIo(), 5);
+    manager.startAutomatic(() => manager.refreshPreferences(true));
     try {
-      const changed = await captureCli(["config", "set", "desktop.idleReclaim.enabled", "true", "--wait-applied", "--timeout-ms", "2000"], deps);
+      const changed = await captureCli(["config", "set", "desktop.idleReclaim.enabled", "true", "--confirm", "--wait-applied", "--timeout-ms", "2000"], deps);
       expect(changed.code, changed.stderr).toBe(0);
       const receipt = data(changed.stdout);
       expect(receipt.commit).toBe("committed");
@@ -49,7 +50,7 @@ describe("configuration commit and live consumer application", () => {
   test("unavailable consumer reports saved revision on timeout and never reverts intent", async () => {
     const { root, deps } = await fixture();
     const before = (await openConfigStore(rootConfigLayout(root)).read()).revision;
-    const changed = await captureCli(["config", "set", "desktop.idleReclaim.enabled", "true", "--wait-applied", "--timeout-ms", "30", "--operation-id", "pending-test"], deps);
+    const changed = await captureCli(["config", "set", "desktop.idleReclaim.enabled", "true", "--confirm", "--wait-applied", "--timeout-ms", "30", "--operation-id", "pending-test"], deps);
     expect(changed.code).toBe(80);
     const error = (parseJson(changed.stderr) as any).error;
     expect(error).toMatchObject({ code: "config_apply_pending", context: { operationId: "pending-test", commit: "committed", application: "pending" } });

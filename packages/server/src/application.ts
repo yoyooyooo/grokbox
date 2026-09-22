@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { fileApplication, type FileDomain } from "./files.ts";
+import { desktopApplication, type DesktopDomain } from "./desktop.ts";
 import {
   API_VERSION, UUID, botIdFromRef, botRef, type BotModelView, type DefaultModelView,
   type ManagementIdentity, type ModelList, type ModelView, type ManagementServiceView, type NotificationWorkerView,
@@ -27,7 +28,7 @@ export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, 
   & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess">>;
 import { hostHealthQuery } from "./host-health.ts";
 import type { HostHealthStatus } from "@grokbox/box-runtime/runtime";
-export type ApplicationOptions = { fileDomain?: FileDomain; jobDomain?: JobDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
+export type ApplicationOptions = { desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
 export function projectModel(record: ModelRecord): ModelView {
   let endpoint: string | null = null;
   try {
@@ -52,6 +53,10 @@ function segment(value: string): string {
 export function application(options: ApplicationOptions, principal: Principal, method: string, url: URL, input?: unknown) {
   return Effect.gen(function* () {
     const path = url.pathname;
+    if (path === "/v1/desktop" || path.startsWith("/v1/desktop-")) {
+      if (!options.desktopDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "Desktop management is unavailable."));
+      return yield* desktopApplication(options.desktopDomain, principal, method, url, input);
+    }
     if (path.startsWith("/v1/file-")) {
       if (!options.fileDomain) return yield* Effect.fail(new HttpFailure(503,"unavailable","File management is unavailable."));
       return yield* fileApplication(options.fileDomain, principal, method, url, input);

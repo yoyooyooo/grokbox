@@ -5,9 +5,10 @@ import { normalizeHandoverChange, normalizeHandoverContinuation, protectionRefer
 import { jobIdentity, normalizeJobStart, normalizeJobCancel, type JobStart, type JobCancel, type JobView } from "@grokbox/client";
 
 import { fileIdentity, normalizeFileChange, validFileOperation, type FileChange, type FileOperation } from "@grokbox/client";
+import { normalizeDesktopPolicy, normalizeDesktopPrune, type DesktopPruneRequest, type DesktopPolicyRequest } from "@grokbox/client";
 export type OperationScope = { installationId: string; principalId: string };
 export type LocalOperation = {
-  version: 1; requestId: string; installationId: string; principalId: string; command: "file-change" | "job-start" | "job-cancel" | ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "notification-send" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
+  version: 1; requestId: string; installationId: string; principalId: string; command: "desktop-prune" | "desktop-policy" | "file-change" | "job-start" | "job-cancel" | ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "notification-send" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
   setupKind?: SetupKind; setupScope?: string;
   target: string; createdAt: number; state: "awaiting-response" | "unknown" | "recorded" | "succeeded" | "refused" | "retired";
 };
@@ -19,7 +20,7 @@ const valid = (value: unknown, scope: OperationScope): value is LocalOperation =
     && UUID.test(row.requestId) && Number.isSafeInteger(row.createdAt) && row.createdAt > 0 && typeof row.target === "string" && row.target.length <= (["material-write", "file-change"].includes(row.command) ? 1800 : 256)
     && Object.keys(row).every(key => ["version", "requestId", "installationId", "principalId", "command", "databaseId", "contextScope", "setupKind", "setupScope", "target", "createdAt", "state"].includes(key))
     && (["context-control", "context-compaction", "handover-control"].includes(row.command) || row.contextScope === undefined)
-    && (row.command === "file-change" ? validFileLocator(row,scope) : row.command === "job-start" || row.command === "job-cancel" ? validJobLocator(row,scope) : row.command === "handover-control" ? validHandoverLocator(row, scope) : ["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
+    && (["desktop-prune", "desktop-policy"].includes(row.command) ? row.target === `desktop:${scope.installationId}` && row.databaseId === undefined && row.contextScope === undefined && row.setupKind === undefined && row.setupScope === undefined : row.command === "file-change" ? validFileLocator(row,scope) : row.command === "job-start" || row.command === "job-cancel" ? validJobLocator(row,scope) : row.command === "handover-control" ? validHandoverLocator(row, scope) : ["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
       : row.setupKind === undefined && row.setupScope === undefined && (["incident-ack", "incident-snooze"].includes(row.command)
       ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`incident:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
       : row.command === "notification-send"
@@ -113,7 +114,7 @@ export function localOperations(storage: StoragePort, scope: OperationScope): Lo
 /** Persist only recovery metadata, never model input, cookie, CSRF or a key ref.
  * One key per UUID avoids overwriting another tab's index. Refuse before send if
  * storage is unavailable; unresolved locators are never silently evicted. */
-export function rememberOperation(storage: StoragePort, scope: OperationScope, input: FileChange | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
+export function rememberOperation(storage: StoragePort, scope: OperationScope, input: DesktopPruneRequest | DesktopPolicyRequest | FileChange | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
   try {
     if (!UUID.test(input.requestId) || !UUID.test(scope.installationId) || !scope.principalId || scope.principalId.length > 128
       || localOperations(storage, scope).length >= 128) throw new Error();
@@ -134,6 +135,8 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
         : {command:"material-write",target:materialIdentity(input.ref,scope.installationId).ref}
       : "handoverRef" in input ? { command: "handover-control", target: normalizeHandoverChange(input, scope.installationId).handoverRef, contextScope: protectionReferenceIdentity(input.handoverRef, scope.installationId, "handover").scopeId }
       : "scopeId" in input ? "action" in input ? contextMetadata(input,scope) : compactionMetadata(input,scope)
+      : !("action" in input) ? desktopMetadata(input, scope, "desktop-prune")
+      : input.action === "keep" || input.action === "idle-reclaim" ? desktopMetadata(input, scope, "desktop-policy")
       : input.action==="system"||input.action==="set"||input.action==="reset" ? protectionMetadata(input,scope) : setupMetadata(input,scope);
     const row: LocalOperation = { version: 1, requestId: input.requestId, ...scope, ...metadata, createdAt: Date.now(), state: "awaiting-response" };
     if (!valid(row, scope)) throw new Error();
@@ -143,8 +146,14 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
     return row;
   } catch { throw new ManagementClientError("unavailable", "无法保存操作恢复标识，本次尚未提交。请检查浏览器存储或整理已结束的记录。"); }
 }
-export type OperationDomain = "file" | "job" | "job-cancel" | "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification" | "notification-test" | "notification-settings" | "routine" | "pairing";
+function desktopMetadata(input: DesktopPruneRequest | DesktopPolicyRequest, scope: OperationScope, command: "desktop-prune" | "desktop-policy") {
+  if (command === "desktop-prune") normalizeDesktopPrune(input); else normalizeDesktopPolicy(input);
+  return { command, target: `desktop:${scope.installationId}` };
+}
+export type OperationDomain = "desktop" | "desktop-policy" | "file" | "job" | "job-cancel" | "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification" | "notification-test" | "notification-settings" | "routine" | "pairing";
 export function operationDomain(row: LocalOperation): OperationDomain {
+  if (row.command === "desktop-prune") return "desktop";
+  if (row.command === "desktop-policy") return "desktop-policy";
   if(row.command==="file-change")return "file";
   if(row.command==="job-start")return "job";
   if(row.command==="job-cancel")return "job-cancel";

@@ -26,13 +26,6 @@ export const DAEMON_METHODS = [
   "setBotTemplateVisibility",
   "createAgentFromTemplate",
   "eventRead",
-  "desktopStatus",
-  "desktopKeepAdd",
-  "desktopKeepRemove",
-  "desktopPrunePlan",
-  "desktopPrune",
-  "desktopPruneEnable",
-  "desktopPruneDisable",
 ] as const;
 
 export type DaemonMethod = (typeof DAEMON_METHODS)[number];

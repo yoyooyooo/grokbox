@@ -62,7 +62,7 @@ daemon credential、Gateway Bearer/routing headers、macOS App session、Sandbox
 
 ## 6. Capability 路由
 
-每个 leaf 声明所需能力，transport 只是实现。Gateway 提供原生产品方法；daemon handshake/策略限定尚未迁移的桌面和诊断面；文件及Job已进入共享管理Server的独立权限与当前策略。静态 Profile 投影不等于当前方法授权，真实写入前仍须验证。
+每个 leaf 声明所需能力，transport 只是实现。Gateway 提供原生产品方法；daemon handshake/策略限定尚未迁移的原生转发和诊断面；文件、Job和普通桌面管理已进入共享管理Server的独立权限与当前策略。静态 Profile 投影不等于当前方法授权，真实写入前仍须验证。
 
 Sandbox inspect/wake/keepalive 和 quota.read 各自拥有显式来源及资格。一个 token ref、一次 inspect 或一条通路可达都不能推导其他方法已授权。[Sandbox](cursor-sandbox-control-plane.md) 与 [quota](quota.md) 分别拥有细节。
 
@@ -123,6 +123,10 @@ events 是按来源 allowlist 投影的有界 NDJSON；daemon cursor 带代际�
 
 管理请求绑定安装/主体/策略和原request UUID，在原Job存储spawn前持久化；相同输入只读原记录，冲突拒绝，不能借新服务代重复旧工作。`operation get --domain job`查询原request；取消用`--domain job-cancel --job-ref <ref>`及原取消UUID。新admission、正文读取、取消各有独立权限；排队后原生spawn前重查权限/策略。断连不取消Job，重启后未证明的非终态为unknown，不据日志/文件副作用猜成功。日志有界、cap后继续drain；缺日志保留原offset和gap。存储满不删除执行身份换取重放权限，旧格式/坏记录保留且拒绝。cancel只有原持久身份、FIFO结算和Linux进程组身份复核；取消发布回执丢失不会把queued Job重新排队。正常关闭等待实际进程和写入，既不把旧PID当新权限，也不宣称消除了最终signal syscall竞态或回滚外部效果。元数据不持久化argv、env值或输出正文。
 
+### 桌面管理
+
+`system desktop get/prune`、`system desktop keep set`与桌面域的`system config apply`共用管理Server。prune必须明确选择只读preview或原request-id/revision/confirm；keep提交完整集合，idle-reclaim启用/阈值经原配置writer。读取、策略修改、实际回收和历史查询分别授权；顶层on/off/upgrade不再隐式开关桌面回收，也不输出旧screenIdle许可推断。主显示和安装级floor保护不变，源码缺失或扫描中身份漂移不是空闲。helper可能删除分屏浏览器资料；原派发和结算逐项持久，丢回执查询`operation get --domain desktop|desktop-policy`，不自动重发。正常关闭等待helper和本地写入；没有原子seat租约或回滚外部效果的承诺。
+
 ## 10. Sandbox 与 quota
 
 Sandbox keeper 在 Box 外运行；Box freeze 后本机进程不能自我唤醒。只读 status、一次 wake、维持 lease、停止后 freeze 和 recover 是独立资格。keepalive 不调用模型或 sendPrompt；普通网络 ping 不证明 Sandbox lease。只对声明范围给出实测支持，不承诺任意账号的 App-free wake。
@@ -131,7 +135,7 @@ quota 使用明确的 credential-owning source、固定 HTTPS/无 redirect、有
 
 ## 11. Daemon 与恢复
 
-daemon owns尚未迁入统一管理Server的listeners、RPC authorization、Gateway discovery、桌面host adapters、有限流和shutdown；文件与Job不再由daemon持有。只读status/doctor、已有安装ensure/恢复和本地安装资源初始化分开；旧网络bootstrap不再提供。doctor命令完成不等于健康：消费`data.ok`和实际应用boundary，而非只看exit 0或已删除的网络占位字段。
+daemon owns尚未迁入统一管理Server的listeners、RPC authorization、Gateway discovery、原生产品转发、有限流和shutdown；文件、Job与普通桌面管理不再由daemon持有。原生Bot删除后的精确座位清理仍随生命周期另行收束。只读status/doctor、已有安装ensure/恢复和本地安装资源初始化分开；旧网络bootstrap不再提供。doctor命令完成不等于健康：消费`data.ok`和实际应用boundary，而非只看exit 0或已删除的网络占位字段。
 
 默认Unix socket或认证loopback，不默认公开0.0.0.0。已配置外部端点和显式SSH的已有安装恢复继续支持；它们不部署软件、轮换凭据或检查/更改网络映射。SSH/网络身份不替代RPC授权。模型runtime的controller不通过网络恢复获得额外执行权，旧Serve偏好不能被当作现行网络管理授权。
 

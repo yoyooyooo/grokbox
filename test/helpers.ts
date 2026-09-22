@@ -1,8 +1,8 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DesktopIo } from "../packages/cli/src/daemon/desktop.ts";
-import type { DesktopWorld } from "../packages/cli/src/desktop.ts";
+import type { DesktopIo } from "@grokbox/box-runtime/runtime";
+import type { DesktopWorld } from "@grokbox/runtime-kernel/desktop";
 import { CLI_VERSION, createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
 import { runCli } from "../packages/cli/src/program.ts";
 
@@ -323,7 +323,7 @@ export async function writeDiscovery(file: {
 
 function isolatedDesktopIo(): DesktopIo {
   const empty = (nowMs: number): DesktopWorld => ({
-    nowMs,
+    complete: true, displayIdentities: {}, nowMs,
     assignments: {},
     names: {},
     litDisplays: new Set(),

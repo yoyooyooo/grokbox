@@ -83,6 +83,22 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
       ...(["attest","retire"].includes(action)?[{flags:"--evidence-ref <ref>",description:action==="attest"?"Exact duty evidence from an original observation":"Original completed handover observation operation",required:true}]:[]),
       {flags:"--confirm",description:"Confirm this bounded action and its original operation identity",required:true},
     ],true)),
+  command("system desktop get", "Read current desktop identities, protection and source coverage; not permission to stop a display."),
+  { ...command("system desktop prune", "Preview or explicitly reclaim the reviewed idle desktops through the single management owner; may delete the fork's Chrome profile.", undefined, [
+    { flags: "--preview", description: "Read the current candidate revision; create no operation" },
+    { flags: "--request-id <uuid>", description: "Caller-persisted UUID for this original batch" },
+    { flags: "--expect-revision <sha256>", description: "Exact desktop observation revision reviewed before reclaim" },
+    { flags: "--confirm", description: "Authorize only the reviewed eligible display instances and their helper effects" },
+  ]), destructive: true },
+  command("system desktop keep set", "Set the exact explicit Bot protection set; installation floor and main display remain protected.", undefined, [
+    { flags: "--input <@file|->", description: "Strict JSON containing agentIds; use explicit stdin only with -", required: true },
+    { flags: "--confirm", description: "Confirm this exact policy replacement" },
+  ], true),
+  command("system config apply", "Apply a supported management domain policy; currently desktop idle-reclaim, never arbitrary configuration paths.", undefined, [
+    { flags: "--domain <domain>", description: "desktop: explicit idle-reclaim enabled/minIdleMs policy", required: true },
+    { flags: "--input <@file|->", description: "Strict idle-reclaim action, enabled and minIdleMs", required: true },
+    { flags: "--confirm", description: "Confirm the reviewed policy and possible future desktop helper effects" },
+  ], true),
   command("system materials get", "Read configured source coverage and index freshness; never initialize or mutate a source."),
   command("file root list", "Read named-root bindings and indexed file sources without exposing private root paths."),
   command("file root get", "Resolve one configured named root to its exact file reference.",{name:"name",description:"Exact configured root name"}),

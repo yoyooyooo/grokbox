@@ -85,7 +85,7 @@ registry 每个 leaf 统一定义 path、usage、target role/kind、required cap
 
 ## 6. 连接和授权
 
-新管理连接从 canonical client 描述取得 endpoint、credential reference 和安装绑定；缺省只能是本机，不消费共享 current Profile。连接失败不回退本地 writer、Gateway 或 SSH。未迁移的 Profile resolver 仍输出其连接描述；其 daemon/direct Gateway、Sandbox、quota 和桌面适配待按实际能力迁入或退出。
+新管理连接从 canonical client 描述取得 endpoint、credential reference 和安装绑定；缺省只能是本机，不消费共享 current Profile。连接失败不回退本地 writer、Gateway 或 SSH。未迁移的 Profile resolver 仍输出其连接描述；其 daemon/direct Gateway、Sandbox 和 quota 适配待按实际能力迁入或退出；桌面普通管理已经退出 Profile 权限面。
 
 secret reference 在有权消费它的 adapter 解封；连接 ref 的平台形式与 provider ref 的窄形式不同。file 读取检查 no-follow、regular file、owner、mode、大小与编码。App descriptor 仅是 Gateway-only 兼容来源；不能从其成功推出 Sandbox/quota 权限。独立共享 daemon credential 可轮换，网络身份不代替 capability auth。
 
@@ -95,11 +95,13 @@ CLI连接层只保留本地init、显式配置端点和现有安装的有限SSH�
 
 [管理 Server](../packages/server/src/server.ts)拥有 Effect Scope、loopback listener、每请求授权、安装绑定和并发/字节/时间边界。调用者断开不取消已准入模型写入；关闭等待不可中断的发布检查点，普通观察可中断。已安装入口只读现有 canonical 配置与安装 verifier，不隐式初始化、迁移或采用 Host。每次请求重读 verifier，轮换不改变原回执主体，安装权威替换则拒绝。它尚未承载全部后台 worker，也未完成 modeld 实执行的独立寿命资格。
 
-剩余 `daemon serve` 组合 listener、auth/policy、Gateway discovery、桌面适配、有限流和 shutdown；文件/Job RPC及其资源owner已经退出。Unix socket 权限与认证 loopback HTTP 分开；禁止默认公网 listener。常驻和自启动由实际部署 owner/资格决定，不能依据某台开发机的进程列表写成长期架构。
+剩余 `daemon serve` 组合 listener、auth/policy、Gateway discovery、原生产品转发、有限流和 shutdown；文件/Job/普通桌面 RPC 及其资源 owner 已经退出。原生 Bot 删除后的精确座位清理由 D/F 随生命周期继续收束，不冒称已退出所有原生删除消费者。Unix socket 权限与认证 loopback HTTP 分开；禁止默认公网 listener。常驻和自启动由实际部署 owner/资格决定，不能依据某台开发机的进程列表写成长期架构。
 
 Gateway discovery 在启动与明确的认证/代际失效后重读；wildcard bind 只拨 loopback，非本机发现须由显式连接授权。有限 method allowlist 和 typed projection 在 adapter 边界执行，unknown management write 不重放。完整 profile 更新按原生语义合并遗漏字段，但不回填 harness。收到对象 ID 后投影失败必须保留该身份。
 
 ## 8. 文件、进程和事件
+
+[桌面管理](../packages/server/src/desktop.ts)由管理 Server Scope 持有原 Box 分类器/helper manager，手动与自动回收共用按安装/主体/request 绑定的持久逐显示记录。配置仍走 canonical writer；状态/策略/回收/历史分别授权，真正调用 helper 前再次检查配置和安装级保护，扫描中座位表或显示身份变化不算空闲。未知动作不因新 UUID、重启或自动周期重发；正常关闭等待自有 helper 与结算。普通回收不修改座位表、不删除 Bot，原生条件删除和原子 seat lease 仍是独立能力，不能由 helper 成功代签。
 
 [文件管理领域](../packages/server/src/files.ts)由管理Server持有原Box文件描述符适配，CLI/Web共享合同，不回退daemon。root是绑定策略/inode/安装的对象，不是字符串前缀；声明不能覆盖管理存储、材料或另一根。canonicalization、no-follow、硬链接限制和Linux descriptor验证边界，传输不重新打开已授权pathname。变更前在原材料SQLite内持久声明领域request/physical path；两种来源的未决写入保护同一路径/子树，索引更新不删除操作记录。原文件在pinned parent下串行发布，新文件与调用者下载no-clobber，旧文件按expected hash检查/替换/读回；外部syscall竞态不宣称原子CAS。上传空闲到期由原descriptor owner确认未发布再结算取消，commit未知不重投。私有trash和原删除回执决定restore，用户内容/未知记录不因诊断TTL清除。正文、块、活跃/正在打开的描述符与安全记录分别有界，服务关闭等待网络/文件承诺结算再释放gate。完整原生材料/Project附件与安全退役仍归[DATA-01](tickets/DATA-01-memory-project-files.md)。
 

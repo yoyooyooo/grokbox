@@ -9,8 +9,8 @@ import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
 import { acquireDaemonSocket, type DaemonSocketLease } from "@grokbox/box-runtime/runtime";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
-import type { DaemonDesktopConfig, DaemonNetworkConfig } from "./config.ts";
-import { DesktopManager, type DesktopIo } from "./desktop.ts";
+import type { DaemonNetworkConfig } from "./config.ts";
+import { liveDesktopIo, reapDeletedAgentSeat } from "@grokbox/box-runtime/runtime";
 import { TitleSyncManager } from "./title-sync.ts";
 import { DaemonEventManager, type EventSource } from "./events.ts";
 
@@ -118,15 +118,12 @@ export async function startDaemonHost(
   deps: CliDeps,
   socketPath: string,
   networkConfig?: DaemonNetworkConfig,
-  desktopConfig?: DaemonDesktopConfig,
-  desktopIo?: DesktopIo,
 ): Promise<DaemonHost> {
   const startedAt = Date.now();
   const daemonGeneration = deps.randomUUID();
   const directDeps: CliDeps = { ...deps, transport: "local" };
   const events = new DaemonEventManager(daemonGeneration, directDeps, startedAt);
   const gateway = new GatewayClient(directDeps);
-  const desktop = await DesktopManager.create(deps.configDir, deps.now, desktopConfig, desktopIo);
   const titleSync = new TitleSyncManager(gateway, deps.boxRuntimeRoot, deps.env);
   titleSync.start();
 
@@ -140,7 +137,6 @@ export async function startDaemonHost(
       daemonGeneration,
       capabilities: [
         ...DAEMON_CAPABILITIES,
-        ...desktop.capabilities(),
         ...titleSync.capabilities(),
       ],
       gateway: gatewayMeta(discovery),
@@ -250,7 +246,8 @@ export async function startDaemonHost(
     }
     if (method === "deleteAgent") {
       const value = await gateway.deleteAgent(asString(body.id), timeoutMs);
-      const desktopReap = await desktop.reapAgent(asString(body.id));
+      const seatIo = deps.desktopIo ?? await liveDesktopIo();
+      const desktopReap = seatIo ? await reapDeletedAgentSeat(asString(body.id), deps.now(), seatIo) : { display: null, outcome: "unavailable" };
       const result = isRecord(value.result) ? { ...value.result, desktop: desktopReap } : { desktop: desktopReap };
       return { result, gateway: gatewayMeta(value.discovery) };
     }
@@ -301,39 +298,6 @@ export async function startDaemonHost(
         waitMs: params.waitMs,
         signal,
       }) };
-    }
-    if (method === "desktopStatus") {
-      assertParamKeys(params, [], "Desktop status");
-      return { result: await desktop.status() };
-    }
-    if (method === "desktopKeepAdd") {
-      assertParamKeys(params, ["agentId"], "Desktop keep add");
-      if (typeof params.agentId !== "string") throw new CliError("gateway_bad_request", "Desktop keep add params are invalid.");
-      return { result: await desktop.keepAdd(params.agentId) };
-    }
-    if (method === "desktopKeepRemove") {
-      assertParamKeys(params, ["agentId", "yes"], "Desktop keep remove");
-      if (typeof params.agentId !== "string" || params.yes !== true) {
-        throw new CliError("gateway_bad_request", "Desktop keep remove params are invalid.");
-      }
-      return { result: await desktop.keepRemove(params.agentId, true) };
-    }
-    if (method === "desktopPrunePlan") {
-      assertParamKeys(params, [], "Desktop prune plan");
-      return { result: await desktop.prune(false) };
-    }
-    if (method === "desktopPrune") {
-      assertParamKeys(params, ["yes"], "Desktop prune");
-      if (params.yes !== true) throw new CliError("gateway_bad_request", "Desktop prune params are invalid.");
-      return { result: await desktop.prune(true) };
-    }
-    if (method === "desktopPruneEnable") {
-      assertParamKeys(params, [], "Desktop prune enable");
-      return { result: await desktop.setEnabled(true) };
-    }
-    if (method === "desktopPruneDisable") {
-      assertParamKeys(params, [], "Desktop prune disable");
-      return { result: await desktop.setEnabled(false) };
     }
     throw new CliError("gateway_not_found", "Daemon method is not implemented.");
   };
@@ -386,7 +350,7 @@ export async function startDaemonHost(
     await Promise.allSettled([
       closeServer(localServer),
       ...(networkServer ? [closeServer(networkServer)] : []),
-      events.close(), desktop.close(), titleSync.close(),
+      events.close(), titleSync.close(),
     ]);
     await socketLease?.release();
     throw error;
@@ -407,7 +371,6 @@ export async function startDaemonHost(
       const results = await Promise.allSettled([
         closeServer(localServer),
         ...(networkServer ? [closeServer(networkServer)] : []),
-        desktop.close(),
         titleSync.close(),
       ]);
       try { await socketLease?.release(); } catch (error) { lifecycleFailures.push(error); }

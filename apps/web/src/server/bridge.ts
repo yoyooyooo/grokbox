@@ -5,6 +5,7 @@ import { checkWebRequest, WebBoundaryError, type WebConfiguration } from "./conf
 import { bridgeEventStream } from "./event-stream.ts";
 
 const readPaths = [
+  /^\/v1\/desktop$/, /^\/v1\/desktop-(?:policy-)?operations\/[a-f0-9-]{36}$/,
   /^\/v1\/file-roots$/, /^\/v1\/file-(?:stat|directories|content)\/[^/]+$/, /^\/v1\/file-operations\/[0-9a-f-]{36}$/, /^\/v1\/file-download-chunks\/[0-9a-f-]{36}$/,
   /^\/v1\/job-policy$/, /^\/v1\/jobs(?:\/[^/]+(?:\/logs)?)?$/, /^\/v1\/job-operations\/[0-9a-f-]{36}$/, /^\/v1\/job-cancellations\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/,
   /^\/v1\/handover-operations\/[a-f0-9]{64}\/[a-f0-9-]{36}$/,
@@ -25,7 +26,7 @@ const readPaths = [
   /^\/v1\/model-operations\/[0-9a-f-]{36}$/, /^\/v1\/console\/session$/,
 ];
 readPaths.push(/^\/v1\/incidents\/[^/]+$/, /^\/v1\/incident-operations\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/, /^\/v1\/observation-events\/watch$/);
-const writePaths = new Set(["/v1/file-changes", "/v1/file-upload-chunks", "/v1/file-upload-controls", "/v1/file-downloads", "/v1/file-download-controls", "/v1/job-starts", "/v1/job-cancellations", "/v1/handover-changes", "/v1/handover-continuations", "/v1/context-compactions", "/v1/context-compaction-continuations", "/v1/context-changes", "/v1/context-continuations", "/v1/protection-changes", "/v1/material-changes", "/v1/setup-changes", "/v1/model-changes", "/v1/incident-changes", "/v1/notification-receiver-changes", "/v1/notification-tests", "/v1/notification-sends", "/v1/console/redeem", "/v1/console/logout"]);
+const writePaths = new Set(["/v1/desktop-prunes", "/v1/desktop-policy-changes", "/v1/file-changes", "/v1/file-upload-chunks", "/v1/file-upload-controls", "/v1/file-downloads", "/v1/file-download-controls", "/v1/job-starts", "/v1/job-cancellations", "/v1/handover-changes", "/v1/handover-continuations", "/v1/context-compactions", "/v1/context-compaction-continuations", "/v1/context-changes", "/v1/context-continuations", "/v1/protection-changes", "/v1/material-changes", "/v1/setup-changes", "/v1/model-changes", "/v1/incident-changes", "/v1/notification-receiver-changes", "/v1/notification-tests", "/v1/notification-sends", "/v1/console/redeem", "/v1/console/logout"]);
 const securityHeaders = { "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" };
 
 function consoleCookie(request: Request, origin: string): string | undefined {

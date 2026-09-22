@@ -1,4 +1,4 @@
-import { normalizeJobStart, ManagementClientError, botIdFromRef, type ApiErrorCode, type ApiReply, type ModelChange, normalizeSetupRequest, type MaterialWrite, type MaterialScope, type MaterialKind } from "@grokbox/client";
+import { DesktopError, normalizeDesktopPolicy, normalizeDesktopPrune, type DesktopPolicyRequest, normalizeJobStart, ManagementClientError, botIdFromRef, type ApiErrorCode, type ApiReply, type ModelChange, normalizeSetupRequest, type MaterialWrite, type MaterialScope, type MaterialKind } from "@grokbox/client";
 import { startInstalledManagementServer } from "@grokbox/server";
 import { type FileChange, FileError } from "@grokbox/client";
 import { uploadManagedFile, downloadManagedFile } from "../file-transfers.ts";
@@ -83,6 +83,19 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
     if (options.confirm !== true) throw invalid("Explicit OS execution confirmation is required.");
     jobInput = normalizeJobStart({ ...combineManagementInput(await readManagementInput(deps, options.input),
       { requestId: options.requestId, expectedRevision: options.expectRevision }, ["requestId", "expectedRevision", "argv", "environment", "cwd", "runTimeoutMs", "output", "shell"]), confirmed: true });
+  }
+  let desktopInput: DesktopPolicyRequest | undefined;
+  if (command === "system desktop keep set" || command === "system config apply") {
+    if (options.confirm !== true || command === "system config apply" && options.domain !== "desktop") throw invalid("Confirm one supported desktop policy domain change.");
+    const input = combineManagementInput(await readManagementInput(deps, options.input), { requestId: options.requestId, expectedRevision: options.expectRevision },
+      command === "system desktop keep set" ? ["requestId", "expectedRevision", "agentIds"] : ["requestId", "expectedRevision", "action", "enabled", "minIdleMs"]);
+    try { desktopInput = normalizeDesktopPolicy({ ...input, ...(command === "system desktop keep set" ? { action: "keep" } : {}), confirmed: true }); }
+    catch { throw invalid("Use the current bounded desktop policy declaration, not legacy daemon fields."); }
+    if (command === "system config apply" && desktopInput.action !== "idle-reclaim") throw invalid("Use system desktop keep set for a protection set; system config apply currently accepts desktop idle-reclaim.");
+  }
+  if (command === "system desktop prune") {
+    if (Boolean(options.preview) === Boolean(options.confirm) || options.preview && [options.requestId, options.expectRevision].some(v => v !== undefined)) throw invalid("Choose a read-only preview, or an explicitly confirmed original desktop batch.");
+    if (!options.preview) { try { normalizeDesktopPrune({ requestId: options.requestId, expectedRevision: options.expectRevision, confirmed: true }); } catch { throw invalid("Persist a request UUID and provide the reviewed desktop revision."); } }
   }
   const waitMs = command === "job wait" ? Number(options.waitMs ?? "25000") : 0;
   if (command === "job wait" && (!/^[1-9][0-9]*$/.test(options.waitMs ?? "25000") || waitMs > 25000)) throw invalid("Job wait is bounded to 1–25000 milliseconds.");
@@ -206,6 +219,9 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       else reply=await client.changeProtection({...common,action:"set",botRef:args[0]??"",patch:await readManagementInput(deps,options.input)},deps.signal);
       break;
     }
+    case "system desktop get": reply = await client.desktop(deps.signal); break;
+    case "system desktop prune": reply = options.preview ? await client.desktop(deps.signal) : await client.pruneDesktop({ requestId: options.requestId!, expectedRevision: options.expectRevision!, confirmed: true }, deps.signal); break;
+    case "system desktop keep set": case "system config apply": reply = await client.changeDesktopPolicy(desktopInput!, deps.signal); break;
     case "system materials get": reply = await client.materialStatus(deps.signal); break;
     case "file root list": {
       const identity=await client.identity(deps.signal),caps=identity.data.capabilities;
@@ -337,6 +353,8 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "routine" || options.confirm !== true) throw invalid("This reconciliation requires domain routine and explicit confirmation.");
       reply = await client.changeSetup({action:"reconcile",routineRef:options.routineRef ?? "",expectedRevision:options.expectRevision ?? "",requestId:options.requestId ?? "",confirmed:true},deps.signal); break;
     case "operation get":
+      if (options.domain === "desktop") { reply = await client.desktopOperation(options.requestId ?? "", deps.signal); break; }
+      if (options.domain === "desktop-policy") { reply = await client.desktopPolicyOperation(options.requestId ?? "", deps.signal); break; }
       if(options.domain==="file"){reply=await client.fileOperation(options.requestId??"",deps.signal);break;}
       if (options.domain === "job") { reply = await client.jobOperation(options.requestId ?? "", deps.signal); break; }
       if (options.domain === "job-cancel") { reply = await client.jobCancellation(options.jobRef ?? "", options.requestId ?? "", deps.signal); break; }
@@ -405,7 +423,7 @@ export function writeManagementFailure(deps: CliDeps, command: string, error: un
   const codes: Partial<Record<ApiErrorCode, number>> = {
     invalid_input: 2, authentication_required: 3, permission_denied: 3, caller_identity_unavailable: 3, not_found: 4, ambiguous_target: 5,
     wrong_installation: 5, revision_conflict: 5, idempotency_conflict: 5, model_in_use: 5, model_default_in_use: 5, model_default_missing: 5,
-    model_source_read_only: 6, cursor_gap: 5, operation_unknown: 8, protection_target_conflict: 5, source_changed: 5, incident_resolved: 5, notification_test_refused: 5, notification_send_refused: 5, file_change_refused: 5,
+    model_source_read_only: 6, cursor_gap: 5, operation_unknown: 8, protection_target_conflict: 5, source_changed: 5, incident_resolved: 5, notification_test_refused: 5, notification_send_refused: 5, file_change_refused: 5, desktop_prune_refused: 5,
   };
   const envelope = failure.reply ?? { schemaVersion: 1, installationId: failure.details?.installationId ?? null, invocationId: deps.randomUUID(), ok: false,
     error: { code: failure.code, message: failure.message, ...(failure.details ? { details: failure.details } : {}) } };

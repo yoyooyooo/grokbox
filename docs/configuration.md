@@ -105,12 +105,12 @@ grokbox config schema desktop
 grokbox config validate --file /absolute/path/candidate.json
 grokbox config set desktop.idleReclaim.minIdleMs 900000
 grokbox config set ops.diagnostics.mode --string on-request
-grokbox config unset desktop.idleReclaim.minIdleMs
+grokbox config unset desktop.idleReclaim.minIdleMs --confirm
 ```
 
 Values are strict JSON or an explicitly selected `--string` / `--value-file`. Duplicate decoded keys, unsafe property names, unknown schema fields, incorrect types, invalid references and out-of-range values are rejected. Desktop idle time remains 600000–86400000 milliseconds; configuration consolidation does not change reclaim policy.
 
-Use dotted paths for ordinary fields. For a map key containing dots, use RFC6901 syntax, for example `/client/profiles/work.v2/transport`. Arrays are replaced as whole values, not modified through numeric path indices. Every array replacement, including one nested in a replaced parent, requires `--replace --expect-revision <observed-sha> --confirm`. Prefer `desktop keep add/remove` for a single Agent.
+Use dotted paths for ordinary fields. For a map key containing dots, use RFC6901 syntax, for example `/client/profiles/work.v2/transport`. Arrays are replaced as whole values, not modified through numeric path indices. Every array replacement, including one nested in a replaced parent, requires `--replace --expect-revision <observed-sha> --confirm`. Use `system desktop keep set --input @file --confirm` for the reviewed complete protection set; include the original request UUID and current configuration revision. Removing protection, enabling idle reclaim or reducing its idle threshold also requires confirmation through generic config writes.
 
 Full-document `config apply --file <file>` requires the expected revision and confirmation. `config preset ops maintainer --preview` previews preset selection; applying requires confirmation. Explicit leaves are preserved unless a confirmed revision-bound reset is requested. Presets do not grant maintenance, publish issues or change models. Changes that expand network policy, data access, recipient identity or automation cost require confirmation.
 
@@ -128,7 +128,7 @@ Receipts distinguish two independent outcomes:
 |---|---|
 | `committed` or `unchanged` with operation ID and config revision | `not-required`, `pending`, `applied` or `restart-required` |
 
-Desktop adopts its own dependency revision on its scheduled tick or after a domain mutation. Its acknowledgement includes exact process identity. `config` queries do not acknowledge on its behalf. A different client/ops preference does not invalidate an already adopted desktop revision. Other consumers without a matching acknowledgement remain pending; a daemon launch-policy change requires an independently authorized restart.
+The management-owned desktop worker adopts its own dependency revision on its scheduled tick; a policy mutation receipt alone reports application as not observed. Its acknowledgement includes exact process identity. `config` queries do not acknowledge on its behalf. A different client/ops preference does not invalidate an already adopted desktop revision. Other consumers without a matching acknowledgement remain pending; a daemon launch-policy change requires an independently authorized restart.
 
 ```bash
 grokbox config set desktop.idleReclaim.enabled false --wait-applied --timeout-ms 65000

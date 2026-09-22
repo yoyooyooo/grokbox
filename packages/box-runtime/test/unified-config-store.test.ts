@@ -12,9 +12,14 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "grokbox-config2-"));
   return { root, store: openConfigStore(rootConfigLayout(root)) };
 }
-const request = (path: string, value: unknown) => ({ operationId: randomUUID(), scope: "box" as const, kind: "set" as const, path, value });
+const request = (path: string, value: unknown) => ({ operationId: randomUUID(), scope: "box" as const, kind: "set" as const, path, value, confirm: true });
 
 describe("unified physical configuration commit", () => {
+  test("generic configuration cannot enable desktop side effects without explicit confirmation", async () => {
+    const { root, store } = await fixture();
+    await expect(Effect.runPromise(store.change({ ...request("desktop.idleReclaim.enabled", true), confirm: false }))).rejects.toThrow("confirmation");
+    expect(await readFile(join(root, "config.json"), "utf8").catch(() => "missing")).toBe("missing");
+  });
   test("missing is read-only; invalid schema keeps exact original bytes", async () => {
     const { root, store } = await fixture();
     expect((await store.read()).exists).toBe(false);
@@ -88,7 +93,7 @@ describe("unified physical configuration commit", () => {
     await publishConfigFile(path, record);
     await Effect.runPromise(store.change(request("desktop.idleReclaim.enabled", false)));
     const before = await readFile(join(root, "config.json"), "utf8");
-    await expect(Effect.runPromise(store.change(command))).rejects.toThrow("uncertain");
+    await expect(Effect.runPromise(store.change(command))).rejects.toMatchObject({ code: "config_commit_unknown" });
     expect(await readFile(join(root, "config.json"), "utf8")).toBe(before);
     expect((await store.read()).document.desktop?.idleReclaim?.enabled).toBe(false);
     expect(JSON.parse(await readFile(path, "utf8")).phase).toBe("prepared");
@@ -104,17 +109,24 @@ describe("unified physical configuration commit", () => {
     await publishConfigFile(path, record);
     await Effect.runPromise(store.change(request("desktop.idleReclaim.enabled", false)));
     expect((await store.read()).revision).toBe(record.beforeRevision);
-    await expect(Effect.runPromise(store.change(command))).rejects.toThrow("uncertain");
+    await expect(Effect.runPromise(store.change(command))).rejects.toMatchObject({ code: "config_commit_unknown" });
     expect((await store.read()).document.desktop?.idleReclaim?.enabled).toBe(false);
   });
-  test("prepared receipt reconciles a durable commit without publishing a second time", async () => {
+  test("current content equality cannot upgrade a prepared receipt or replay its publication", async () => {
     const { root, store } = await fixture(); const command = request("desktop.idleReclaim.enabled", true);
     const committed = await Effect.runPromise(store.change(command));
+    expect(await store.receipt(command.operationId)).toEqual(committed);
     const { sha256Text } = await import("@grokbox/runtime-kernel/hash");
     const path = join(root, "state", "config-operations", `${sha256Text(command.operationId)}.json`);
     const record = JSON.parse(await readFile(path, "utf8")); record.phase = "prepared";
     await publishConfigFile(path, record);
-    expect(await store.receipt(command.operationId)).toEqual(committed);
-    expect(await Effect.runPromise(store.change(command))).toEqual(committed);
+    const before = await readFile(join(root, "config.json"), "utf8"), receiptBefore = await readFile(path, "utf8");
+    expect((await store.read()).revision).toBe(record.afterRevision);
+    await expect(store.receipt(command.operationId)).rejects.toMatchObject({ code: "config_commit_unknown" });
+    await expect(Effect.runPromise(store.change(command))).rejects.toMatchObject({ code: "config_commit_unknown" });
+    const reopened = openConfigStore(rootConfigLayout(root));
+    await expect(reopened.receipt(command.operationId)).rejects.toMatchObject({ code: "config_commit_unknown" });
+    expect(await readFile(join(root, "config.json"), "utf8")).toBe(before);
+    expect(await readFile(path, "utf8")).toBe(receiptBefore);
   });
 });

@@ -24,11 +24,6 @@ const MANAGEMENT_WRITES = new Set<DaemonMethod>([
   "deleteBotTemplate",
   "setBotTemplateVisibility",
   "createAgentFromTemplate",
-  "desktopKeepAdd",
-  "desktopKeepRemove",
-  "desktopPrune",
-  "desktopPruneEnable",
-  "desktopPruneDisable",
 ]);
 
 type DaemonCallResult = { result: unknown; gateway?: { pid: number; startedAt: number } };

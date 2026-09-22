@@ -14,6 +14,7 @@ import { authenticate, HttpFailure, requireCapability, type AccessGrant } from "
 import { ConsoleAuthority } from "./console-access.ts";
 import { JobService } from "./jobs.ts";
 import { FileService, type FileTestHooks } from "./files.ts";
+import { DesktopService, type DesktopTestPorts } from "./desktop.ts";
 import { projectNotificationWorker } from "./notifications.ts";
 import { shareObservationReads, watchObservationEvents, writeWatchChunk, WATCH_LIMITS } from "./event-watch.ts";
 export type { AccessGrant } from "./access.ts";
@@ -100,6 +101,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
   context?: { hooks?: ContextDomain["hooks"] };
   hostHealth?: HostHealthTestPorts;
   files?: FileTestHooks;
+  desktop?: DesktopTestPorts;
 } = {}): Promise<ManagementServer> {
   const host = options.host ?? "127.0.0.1", port = options.port ?? 0, maxConcurrent = options.maxConcurrentRequests ?? 32;
   if (!UUID.test(options.installationId) || !["127.0.0.1", "::1"].includes(host) || !Number.isSafeInteger(port) || port < 0 || port > 65535
@@ -124,6 +126,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
   let hostHealth: ReturnType<typeof startHostHealth> | undefined;
   let jobService: JobService | undefined;
   let fileService: FileService | undefined;
+  let desktopService: DesktopService | undefined;
   const hostHealthState=()=>{if(!hostHealth)throw new HttpFailure(503,"unavailable","Host health is starting.");return hostHealth.status();};
   const notificationState = () => {
     if (!notificationWorker) throw new HttpFailure(503, "unavailable", "The management process is acquiring its notification worker.");
@@ -248,6 +251,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
       const result = yield* application({ ...options, installationId, serviceState, notificationState, hostHealthState,
         jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
         fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
+        desktopDomain: desktopService ? { service: desktopService, authorize: materialAuthorize } : undefined,
         contextDomain: { root: options.store.root, installationId, authorize: materialAuthorize, hooks: testPorts.context?.hooks,
           ...(options.native.continuityAccess ? { context: (signal: AbortSignal) => ({ boxRuntimeRoot: options.store.root, env: options.env ?? {}, fetch: options.fetch, signal,
             gateway: () => options.native.continuityAccess!(signal), ownershipRead: options.native.ownershipRead }) } : {}) },
@@ -264,6 +268,12 @@ export async function startManagementServer(options: ManagementServerOptions, te
           afterSendClaim: testPorts.notification?.sendClaimed,
           readNative: options.native.readNotificationReceiver ?? (async () => { throw new Error("notification_receiver_unavailable"); }),
           request: testPorts.notification?.request } }, principal!, request.method!, url, input);
+      if (request.method === "GET" && (url.pathname === "/v1/desktop" || url.pathname.startsWith("/v1/desktop-"))) {
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.includes("operations/") ? "operations.read" : "desktop.read"), catch: error => error });
+      }
+      if (request.method === "POST" && url.pathname === "/v1/desktop-prunes" && result && typeof result === "object" && "state" in result && result.state === "refused") {
+        return yield* Effect.fail(new HttpFailure(409, "desktop_prune_refused", "The original desktop batch was not fully reclaimed. Read its scoped receipt before reviewing a new action.", { operation: result }));
+      }
       if (request.method === "GET" && url.pathname.startsWith("/v1/file-")) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/file-operations/") ? "operations.read" : url.pathname.includes("content") || url.pathname.includes("download") ? "files.content.read" : "files.read"), catch: error => error });
       }
@@ -326,6 +336,10 @@ export async function startManagementServer(options: ManagementServerOptions, te
     await runtime.runPromise(Effect.acquireRelease(
       Effect.tryPromise({ try: () => listen(server, host, port), catch: error => error }),
       () => Effect.promise(() => closeListener(server)),
+    ).pipe(Effect.provideService(Scope.Scope, runtime.scope)));
+    desktopService = await runtime.runPromise(Effect.acquireRelease(
+      Effect.tryPromise({ try: () => DesktopService.acquire(options.store.root, installationId, testPorts.desktop), catch: error => error }),
+      service => Effect.promise(() => service.close()),
     ).pipe(Effect.provideService(Scope.Scope, runtime.scope)));
     fileService = await runtime.runPromise(Effect.acquireRelease(
       Effect.tryPromise({ try: () => FileService.acquire(options.store.root, installationId, testPorts.files), catch: error => error }),

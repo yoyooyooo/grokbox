@@ -156,11 +156,11 @@
 | `jobs logs` | 已退出；job logs 独立正文权限、准确offset与base64页 |
 | `jobs cancel` | 已退出；job cancel及operation get --domain job-cancel保留原取消身份；未知不重排 |
 | `desktop status` | system desktop get |
-| `desktop keep add` | system desktop keep set --add |
-| `desktop keep remove` | system desktop keep set --remove |
-| `desktop prune run` | system desktop prune |
-| `desktop prune enable` | system config apply：desktop.prune.enabled=true |
-| `desktop prune disable` | system config apply：desktop.prune.enabled=false |
+| `desktop keep add` | system desktop keep set：审阅后提交完整agentIds集合与原request/revision，不提供旧add别名 |
+| `desktop keep remove` | system desktop keep set：显式确认完整集合及移除保护的影响 |
+| `desktop prune run` | system desktop prune：明确preview或带原request/revision的confirm |
+| `desktop prune enable` | system config apply --domain desktop：action=idle-reclaim，enabled=true，明确minIdleMs与原request/revision |
+| `desktop prune disable` | system config apply --domain desktop：action=idle-reclaim，enabled=false，保留原操作历史 |
 | `events` | event watch |
 | `is running` | bot get --view activity / group get --view activity |
 | `runtime start` | system service start modeld + system integration enable，各自明确动作 |

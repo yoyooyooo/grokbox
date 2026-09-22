@@ -28,14 +28,6 @@ import { runQuota } from "./commands/quota.ts";
 import { runAgentsOwnership } from "./commands/ownership.ts";
 import { runRuntimeServicesCli } from "./commands/runtime-services.ts";
 import { runRuntimeMonitor } from "./commands/monitor.ts";
-import {
-  runDesktopKeepAdd,
-  runDesktopKeepRemove,
-  runDesktopPruneDisable,
-  runDesktopPruneEnable,
-  runDesktopPruneRun,
-  runDesktopStatus,
-} from "./commands/desktop.ts";
 import { runExportAgent } from "./commands/export.ts";
 import {
   runTemplateDelete,
@@ -217,9 +209,6 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   jobs: "Durable daemon Jobs",
   box: "Cursor Sandbox lifecycle",
   "box keepalive": "External Sandbox lease keeper",
-  desktop: "Idle desktop fork status and prune",
-  "desktop keep": "Persist Chrome keep protection on the box daemon",
-  "desktop prune": "Plan, stop, or schedule idle desktop prune",
   host: "Custom-model Host channel",
   is: "Read state projections",
   runtime: "Box-local model runtime",
@@ -276,12 +265,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "host logs": async (deps) => await runHostReserved(deps, "logs"),
     recover: async (deps, _args, options) => await runRecover(deps, options),
     quota: async (deps, _args, options) => await runQuota(deps, options),
-    "desktop status": async (deps, _args, options) => await runDesktopStatus(deps, options),
-    "desktop keep add": async (deps, args, options) => await runDesktopKeepAdd(deps, args[0] ?? "", options),
-    "desktop keep remove": async (deps, args, options) => await runDesktopKeepRemove(deps, args[0] ?? "", options),
-    "desktop prune run": async (deps, _args, options) => await runDesktopPruneRun(deps, options),
-    "desktop prune enable": async (deps, _args, options) => await runDesktopPruneEnable(deps, options),
-    "desktop prune disable": async (deps, _args, options) => await runDesktopPruneDisable(deps, options),
     "box status": async (deps, _args, options) => await runBoxStatus(deps, options),
     "box wake": async (deps, _args, options) => await runBoxWake(deps, options),
     "box keepalive run": async (deps, _args, options) => await runBoxKeepalive(deps, options),

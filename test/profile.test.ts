@@ -457,7 +457,7 @@ describe("Profiles in unified config v2",  () => {
     expect(body.data.connection.endpoint).toBe("https://my-daemon.example.test");
     expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
     expect(body.data.capabilities).not.toHaveProperty("host.fs.write");
-    expect(body.data.capabilities["host.desktop.read"]).toBe(true);
+    for (const capability of ["host.desktop.read", "host.desktop.reap"]) expect(body.data.capabilities).not.toHaveProperty(capability);
   });
 
   test("capabilities report clean gateway (no server_url) as non-daemon", async () => {
@@ -485,7 +485,7 @@ describe("Profiles in unified config v2",  () => {
     expect(body.data.connection.credentialReference).toBe("env:GROKBOX_GATEWAY_TOKEN");
     expect(body.data.connection.credentialConfigured).toBe(true);
     expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
-    expect(body.data.capabilities["host.desktop.read"]).toBe(false);
+    for (const capability of ["host.desktop.read", "host.desktop.reap"]) expect(body.data.capabilities).not.toHaveProperty(capability);
     expect(body.data.capabilities["grok.roster.read"]).toBe(true);
   });
 
@@ -506,7 +506,7 @@ describe("Profiles in unified config v2",  () => {
     expect(body.data.capabilities).not.toHaveProperty("host.fs.read");
     expect(body.data.capabilities).not.toHaveProperty("host.fs.write");
     expect(body.data.capabilities).not.toHaveProperty("host.process.run");
-    expect(body.data.capabilities["host.desktop.read"]).toBe(false);
+    for (const capability of ["host.desktop.read", "host.desktop.reap"]) expect(body.data.capabilities).not.toHaveProperty(capability);
     expect(body.data.capabilities["grok.roster.read"]).toBe(true);
   });
 });

@@ -6,7 +6,6 @@ import { dirname, join } from "node:path";
 import { BoxRuntimeError, openRuntimeStore, projectLiveStatus } from "@grokbox/box-runtime/runtime";
 import type { CliDeps } from "../deps.ts";
 import { LocalDaemonClient } from "../daemon/client.ts";
-import { readDaemonConfig, setDesktopEnabled } from "../daemon/config.ts";
 import { CliError, usage } from "../errors.ts";
 import { GatewayClient } from "../gateway.ts";
 import {
@@ -35,7 +34,6 @@ export type HostOutcome = "started" | "already_started" | "stopped" | "already_s
 export type OperatorReport = {
   daemon: OperatorDaemon;
   titleSync: boolean;
-  screenIdle: boolean;
   host: OperatorHost;
   hostReason: string | null;
   modeldAdmission?: "ready" | "blocked" | "not_instrumented";
@@ -185,16 +183,9 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
   const classified = await inspectHostClass(deps, true);
   const hostCapabilities = classified.host === "custom" ? await hostCapabilityPorts.observe(deps, timeoutMs) : undefined;
   const committed = classified.host === "custom" ? await hostCapabilityPorts.alignment(deps) : undefined;
-  let pruneEnabled = false;
-  try {
-    pruneEnabled = (await readDaemonConfig(deps.configDir)).desktop?.pruneEnabled === true;
-  } catch {
-    pruneEnabled = false;
-  }
   return {
     daemon,
     titleSync: daemon === "up",
-    screenIdle: daemon === "up" && pruneEnabled,
     host: classified.host,
     hostReason: classified.hostReason,
     ...(classified.modeldAdmission ? { modeldAdmission: classified.modeldAdmission } : {}),
@@ -215,21 +206,6 @@ export async function inspectOperator(deps: CliDeps, timeoutMs: number): Promise
       ? { liveSourceSha: classified.liveSha }
       : {}),
   };
-}
-
-async function persistPruneEnabled(deps: CliDeps, enabled: boolean): Promise<void> {
-  await setDesktopEnabled(deps.configDir, enabled);
-}
-
-async function rpcPruneEnabled(deps: CliDeps, timeoutMs: number, enabled: boolean): Promise<void> {
-  try {
-    await new LocalDaemonClient(deps.daemonSocket, timeoutMs, deps.signal).call(
-      enabled ? "desktopPruneEnable" : "desktopPruneDisable",
-      {},
-    );
-  } catch {
-    // Persist is the durable switch; live tick follows the next daemon start if RPC misses.
-  }
 }
 
 function spawnArgs(): [string, string[]] | null {
@@ -497,13 +473,10 @@ export async function runOperatorOn(
   if (daemon === "down") {
     throw new CliError("daemon_unreachable", "grokbox services are down. Retry grokbox on from the grokbox CLI on this computer.");
   }
-  await persistPruneEnabled(deps, true);
-  await rpcPruneEnabled(deps, io.timeoutMs, true);
   const report = await inspectOperator(deps, io.timeoutMs);
   writeSuccess(deps.stdout, {
     daemon,
     titleSync: true,
-    screenIdle: true,
     host: "unchanged",
     next: report.next,
   });
@@ -514,12 +487,9 @@ export async function runOperatorOff(
   raw: { json?: boolean; timeoutMs?: string },
 ): Promise<void> {
   const io = ioFromOpts(raw);
-  await rpcPruneEnabled(deps, io.timeoutMs, false);
-  await persistPruneEnabled(deps, false);
   const daemon = await stopSpawnedDaemon(deps);
   writeSuccess(deps.stdout, {
     daemon,
-    screenIdle: false,
     host: "unchanged",
   });
 }
@@ -573,10 +543,6 @@ export async function runOperatorUpgrade(
     rethrowRuntime(error);
   }
   const daemon = await ensureLocalDaemon(deps, io.timeoutMs);
-  if (daemon !== "down") {
-    await persistPruneEnabled(deps, true);
-    await rpcPruneEnabled(deps, io.timeoutMs, true);
-  }
   const observed = await inspectOperator(deps, io.timeoutMs);
   const committed = observed.committed ?? await hostCapabilityPorts.alignment(deps);
   const blockers = [
@@ -591,7 +557,6 @@ export async function runOperatorUpgrade(
     host: "enable-requested",
     daemon,
     titleSync: daemon !== "down",
-    screenIdle: daemon !== "down",
     enable,
     observed,
     committed,

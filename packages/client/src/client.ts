@@ -6,6 +6,9 @@ import {
   type ObservationSnapshot, type IncidentList, type ObservationEventPage, type ManagementServiceView,
 } from "./contract.ts";
 export * from "./contract.ts";
+import { DesktopError, DESKTOP_UUID, normalizeDesktopPolicy, normalizeDesktopPrune, validDesktopOperation, type DesktopView, type DesktopOperation, type DesktopPolicyReceipt, type DesktopPolicyRequest, type DesktopPruneRequest } from "@grokbox/runtime-kernel/desktop";
+import { desktopView, desktopPolicyReceipt } from "./desktop-validation.ts";
+const desktopInput = <A>(read: () => A): A => { try { return read(); } catch (e) { if (e instanceof DesktopError) throw new ManagementClientError(e.code, e.message); throw e; } };
 import { FileError, FILE_UUID, fileData, fileIdentity, normalizeFileChange, normalizeFileUploadChunk, normalizeFileUploadControl, validFileOperation,
   type FileRootsView, type FileEntry, type FileDirectory, type FileRead, type FileOperation, type FileChange, type FileUpload, type FileUploadChunk, type FileUploadControl, type FileDownload, type FileDownloadChunk } from "@grokbox/runtime-kernel/files";
 import { fileRoots, fileEntry, fileDirectory, fileRead, fileUpload, fileDownload, fileDownloadChunk, verifyFileBytes } from "./file-validation.ts";
@@ -133,13 +136,14 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: DesktopPolicyRequest | DesktopPruneRequest | FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
     const mutation = authentication || readOnlyPost ? undefined : input as { requestId: string; expectedRevision?: unknown; planRevision?: unknown; scopeId?: unknown; action?: unknown } | undefined;
     if (mutation !== undefined && (!record(mutation) || !UUID.test(mutation.requestId)
       || !(path === "/v1/file-changes" ? mutation.expectedRevision === null || revision(mutation.expectedRevision) : path === "/v1/file-upload-chunks" || path === "/v1/file-upload-controls" ? true : path === "/v1/job-starts" ? revision(mutation.expectedRevision) : path === "/v1/job-cancellations" ? true : ["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
+        : path === "/v1/desktop-prunes" || path === "/v1/desktop-policy-changes" ? revision(mutation.expectedRevision)
         : path === "/v1/handover-changes" ? revision(mutation.expectedRevision)
         : path === "/v1/handover-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-changes" || path === "/v1/context-compactions" ? revision(mutation.scopeId) && revision(mutation.expectedRevision)
@@ -199,6 +203,8 @@ export class ManagementClient {
       const reply = raw as ApiReply<never> & { ok: false };
       // A settled compaction failure unlocks future user intent, so its exact
       // request/target/approval must be checked just like a successful receipt.
+      if (reply.error.code === "desktop_prune_refused" && path === "/v1/desktop-prunes"
+        && (!mutation || !validate(reply.error.details?.operation) || !record(reply.error.details?.operation) || reply.error.details.operation.state !== "refused")) throw invalidReply();
       if (reply.error.code === "file_change_refused" && (path === "/v1/file-changes" || path === "/v1/file-upload-controls")
         && (!mutation || !validate(reply.error.details?.operation) || !record(reply.error.details?.operation) || !["refused","cancelled"].includes(String(reply.error.details.operation.state)))) throw invalidReply();
       if (reply.error.code === "compaction_failed" && path.startsWith("/v1/context-compaction")
@@ -212,6 +218,24 @@ export class ManagementClient {
     }
     if (!validate(raw.data)) throw invalidReply();
     return raw as ApiReply<T> & { ok: true };
+  }
+
+  desktop(signal?: AbortSignal) { return this.request<DesktopView>("/v1/desktop", v => desktopView(v, this.options.installationId!), undefined, signal); }
+  async pruneDesktop(input: DesktopPruneRequest, signal?: AbortSignal) {
+    const r = desktopInput(() => normalizeDesktopPrune(input));
+    return this.request<DesktopOperation>("/v1/desktop-prunes", v => validDesktopOperation(v, this.options.installationId!, r.requestId) && v.expectedRevision === r.expectedRevision && v.origin === "manual", r, signal, false, `/v1/desktop-operations/${r.requestId}`);
+  }
+  async changeDesktopPolicy(input: DesktopPolicyRequest, signal?: AbortSignal) {
+    const r = desktopInput(() => normalizeDesktopPolicy(input));
+    return this.request<DesktopPolicyReceipt>("/v1/desktop-policy-changes", v => desktopPolicyReceipt(v, r.requestId, r.expectedRevision), r, signal, false, `/v1/desktop-policy-operations/${r.requestId}`);
+  }
+  async desktopOperation(requestId: string, signal?: AbortSignal) {
+    if (!DESKTOP_UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Use the original desktop request UUID."); const id = requestId.toLowerCase();
+    return this.request<DesktopOperation>(`/v1/desktop-operations/${id}`, v => validDesktopOperation(v, this.options.installationId!, id), undefined, signal);
+  }
+  async desktopPolicyOperation(requestId: string, signal?: AbortSignal) {
+    if (!DESKTOP_UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Use the original desktop policy request UUID."); const id = requestId.toLowerCase();
+    return this.request<DesktopPolicyReceipt>(`/v1/desktop-policy-operations/${id}`, v => desktopPolicyReceipt(v, id), undefined, signal);
   }
 
   fileRoots(signal?:AbortSignal) { return this.request<FileRootsView>("/v1/file-roots",v=>fileRoots(v,this.options.installationId!),undefined,signal); }

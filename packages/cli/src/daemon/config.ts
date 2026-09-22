@@ -101,14 +101,3 @@ export async function writeDaemonConfig(configDir: string, resources: DaemonConf
     },
   });
 }
-
-export async function setDesktopEnabled(configDir: string, enabled: boolean): Promise<ConfigCommitReceipt> {
-  const layout = await readConfigLayout(configDir);
-  if (layout.role !== "box") throw new ConfigError("config_scope_unavailable", "Desktop configuration requires a Box installation.");
-  return await commitConfigChange(openConfigStore(layout), { operationId: randomUUID(), scope: "box", kind: "set", path: "desktop.idleReclaim.enabled", value: enabled });
-}
-export async function changeDesktopKeep(configDir: string, agentId: string, action: "add" | "remove", confirm = false): Promise<ConfigCommitReceipt> {
-  const layout = await readConfigLayout(configDir);
-  if (layout.role !== "box") throw new ConfigError("config_scope_unavailable", "Desktop keep requires a Box installation.");
-  return await commitConfigChange(openConfigStore(layout), { operationId: randomUUID(), scope: "box", kind: "keep", agentId, action, confirm });
-}

@@ -1,28 +1,25 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, readdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
-import { CliError } from "../errors.ts";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { readDesktopWorld } from "./desktop-source.node.ts";
+import { HostResourceError as CliError } from "./host-resource-contract.ts";
 import { configurationRevisions } from "@grokbox/runtime-kernel/config";
-import { openConfigStore, readConfigLayout, createConfigConsumerOwner, publishConfigApplication, releaseConfigApplication, type ConfigConsumerOwner } from "@grokbox/box-runtime/runtime";
+import { openConfigStore } from "./config-store.node.ts";
+import { readConfigLayout } from "./config-layout.node.ts";
+import { createConfigConsumerOwner, publishConfigApplication, releaseConfigApplication, type ConfigConsumerOwner } from "./config-application.node.ts";
 import {
   classifyDesktop,
+  DESKTOP_POLICY,
   DEFAULT_MIN_IDLE_MS,
-  displayFromEnviron,
-  inspectDesktopProc,
   MAIN_DISPLAY,
-  resolveDesktopAgent,
   type DesktopPolicy,
   type DesktopPruneRow,
   type DesktopRow,
   type DesktopWorld,
-} from "../desktop.ts";
-import { isRecord } from "../util.ts";
-import {
-  changeDesktopKeep,
-  setDesktopEnabled,
-  type DaemonDesktopConfig,
-} from "./config.ts";
+} from "@grokbox/runtime-kernel/desktop";
+import type { DesktopLaunchResources } from "@grokbox/runtime-kernel/desktop";
+const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEFAULT_STOP_WINDOW = "/usr/local/bin/stop-window";
@@ -33,16 +30,19 @@ const DEFAULT_TICK_MS = 60_000;
 const STOP_TIMEOUT_MS = 30_000;
 const TRANSCRIPT_FILES = ["store.db", "store.db-wal", "conversation-blobs.db", "conversation-blobs.db-wal"];
 
-export type PinnedStopWindow = { path: string; dev: number; ino: number };
+export type PinnedStopWindow = { path: string; dev: number; ino: number; sha256: string };
 
 export type DesktopIo = {
   readWorld(nowMs: number): Promise<DesktopWorld>;
-  stopWindow(display: number): Promise<void>;
+  stopWindow(display: number, signal?: AbortSignal): Promise<void>;
   reapLogs(display: number): Promise<void>;
   unseatAgent(agentId: string): Promise<void>;
 };
 
 export type DesktopStatusResult = {
+  complete: boolean;
+  observedAtMs: number;
+  displayIdentities: Record<number, string>;
   pruneEnabled: boolean;
   keepAgentIds: string[];
   floorAgentIds: string[];
@@ -214,7 +214,10 @@ async function pinExecutable(path: string): Promise<PinnedStopWindow> {
     if (!info.isFile() || canonical !== path || (info.mode & 0o111) === 0) {
       throw new CliError("desktop_unavailable", "The stop-window executable is not a pinned non-symlink file.");
     }
-    return { path, dev: info.dev, ino: info.ino };
+    if (info.nlink !== 1 || info.size > 256 * 1024) throw new CliError("desktop_unavailable", "The desktop helper is not a bounded unaliased executable.");
+    const bytes = await readFile(path), after = await lstat(path);
+    if (bytes.length !== info.size || info.ino !== after.ino || info.dev !== after.dev || info.mtimeMs !== after.mtimeMs || info.ctimeMs !== after.ctimeMs) throw new CliError("desktop_unavailable", "The desktop helper changed while being inspected.");
+    return { path, dev: info.dev, ino: info.ino, sha256: createHash("sha256").update(bytes).digest("hex") };
   } catch (error) {
     if (error instanceof CliError) throw error;
     throw new CliError("desktop_unavailable", "The stop-window executable is unavailable.");
@@ -225,17 +228,17 @@ export function createLiveDesktopIo(stopWindow: PinnedStopWindow | null): Deskto
   let unseatChain: Promise<void> = Promise.resolve();
   return {
     async readWorld(nowMs) {
-      return await readLiveWorld(nowMs);
+      return await readDesktopWorld(nowMs);
     },
-    async stopWindow(display) {
+    async stopWindow(display, signal) {
       if (!stopWindow) {
         throw new CliError("desktop_unavailable", "Idle desktop prune is unavailable without a pinned stop-window.");
       }
       const current = await pinExecutable(stopWindow.path);
-      if (current.dev !== stopWindow.dev || current.ino !== stopWindow.ino) {
+      if (current.dev !== stopWindow.dev || current.ino !== stopWindow.ino || current.sha256 !== stopWindow.sha256) {
         throw new CliError("desktop_unavailable", "The stop-window executable changed after daemon startup.");
       }
-      await runStopWindow(current.path, display);
+      await runStopWindow(current.path, display, signal);
     },
     async reapLogs(display) {
       await reapLogWrappers(display);
@@ -248,164 +251,72 @@ export function createLiveDesktopIo(stopWindow: PinnedStopWindow | null): Deskto
   };
 }
 
-async function readLiveWorld(nowMs: number): Promise<DesktopWorld> {
-  const assignments: Record<string, number> = {};
-  const names: Record<string, string> = {};
-  try {
-    const parsed = JSON.parse(await readFile(DEFAULT_ASSIGNMENTS, "utf8")) as unknown;
-    if (isRecord(parsed) && isRecord(parsed.assignments)) {
-      for (const [agentId, display] of Object.entries(parsed.assignments)) {
-        if (UUID_V4.test(agentId) && typeof display === "number" && Number.isInteger(display) && display >= 1) {
-          assignments[agentId] = display;
-        }
-      }
-    }
-  } catch {
-    // Missing seating table is an empty world.
-  }
-  const litDisplays = new Set<number>();
-  const displayStartedAtMs: Record<number, number> = {};
-  const displays = new Set<number>(Object.values(assignments));
-  for (const display of displays) {
-    try {
-      const info = await stat(join(DEFAULT_X11, `X${display}`));
-      litDisplays.add(display);
-      displayStartedAtMs[display] = Math.round(info.ctimeMs);
-    } catch {
-      // Dark display.
-    }
-  }
-  const transcriptWrittenAtMs: Record<string, number> = {};
-  for (const agentId of Object.keys(assignments)) {
-    let latest = 0;
-    for (const file of TRANSCRIPT_FILES) {
-      try {
-        const info = await stat(join(DEFAULT_AGENTS, agentId, file));
-        latest = Math.max(latest, Math.round(info.mtimeMs));
-      } catch {
-        // Missing transcript file.
-      }
-    }
-    try {
-      const raw = JSON.parse(await readFile(join(DEFAULT_AGENTS, agentId, "profile.json"), "utf8")) as unknown;
-      if (isRecord(raw) && typeof raw.name === "string" && raw.name.trim().length > 0) {
-        names[agentId] = raw.name.trim();
-      }
-    } catch {
-      // Name is optional.
-    }
-    transcriptWrittenAtMs[agentId] = latest;
-  }
-  const busyMarkers = new Set<number>();
-  for (const display of displays) {
-    try {
-      const info = await stat(`/tmp/sand-monitor-busy-${display}`);
-      if (nowMs - Math.round(info.mtimeMs) < DEFAULT_MIN_IDLE_MS) busyMarkers.add(display);
-    } catch {
-      // Missing or stale busy marker.
-    }
-  }
-  const { grokDisplays, taskDisplays, startWindowDisplays } = await scanProcDisplays();
-  return {
-    nowMs,
-    assignments,
-    names,
-    litDisplays,
-    displayStartedAtMs,
-    transcriptWrittenAtMs,
-    busyMarkers,
-    grokDisplays,
-    taskDisplays,
-    startWindowDisplays,
-  };
-}
-
-async function scanProcDisplays(): Promise<{
-  grokDisplays: Set<number>;
-  taskDisplays: Set<number>;
-  startWindowDisplays: Set<number>;
-}> {
-  const grokDisplays = new Set<number>();
-  const taskDisplays = new Set<number>();
-  const startWindowDisplays = new Set<number>();
-  let procEntries: string[] = [];
-  try {
-    procEntries = await readdir("/proc");
-  } catch {
-    return { grokDisplays, taskDisplays, startWindowDisplays };
-  }
-  for (const entry of procEntries) {
-    if (!/^[0-9]+$/.test(entry)) continue;
-    let cmdline = "";
-    let environ = "";
-    try {
-      cmdline = (await readFile(`/proc/${entry}/cmdline`)).toString("utf8");
-      environ = (await readFile(`/proc/${entry}/environ`)).toString("utf8");
-    } catch {
-      continue;
-    }
-    const inspected = inspectDesktopProc(cmdline);
-    if (inspected.startWindow !== undefined) startWindowDisplays.add(inspected.startWindow);
-    const fromEnv = displayFromEnviron(environ);
-    if (fromEnv === undefined) continue;
-    if (inspected.grok) grokDisplays.add(fromEnv);
-    if (inspected.task) taskDisplays.add(fromEnv);
-  }
-  return { grokDisplays, taskDisplays, startWindowDisplays };
-}
-
-function runStopWindow(path: string, display: number): Promise<void> {
+export function runStopWindow(path: string, display: number, signal?: AbortSignal): Promise<void> {
+  if (!Number.isSafeInteger(display) || display <= MAIN_DISPLAY || display > 65535) return Promise.reject(new CliError("desktop_unavailable", "The main or an invalid desktop cannot be stopped."));
+  if (signal?.aborted) return Promise.reject(new CliError("desktop_unavailable", "Desktop reclaim was cancelled before helper invocation."));
   return new Promise((resolve, reject) => {
-    const child = spawn(path, [String(display)], { stdio: "ignore" });
+    const child = spawn(path, [String(display)], { stdio: "ignore", env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/box", LANG: "C.UTF-8" } });
+    let aborted = false;
+    const abort = () => { aborted = true; child.kill("SIGKILL"); };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    let timedOut = false;
     const timer = setTimeout(() => {
+      timedOut = true;
       child.kill("SIGKILL");
-      reject(new CliError("desktop_unavailable", "stop-window exceeded its deadline."));
     }, STOP_TIMEOUT_MS);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("exit", (code) => {
-      clearTimeout(timer);
-      if (code === 0 || code === null) resolve();
-      else reject(new CliError("desktop_unavailable", "stop-window failed."));
+    let failed = false;
+    child.once("error", () => { failed = true; });
+    child.once("close", (code, exitSignal) => {
+      clearTimeout(timer); signal?.removeEventListener("abort", abort);
+      if (!failed && !timedOut && !aborted && code === 0 && exitSignal === null) resolve();
+      else reject(new CliError("desktop_unavailable", timedOut ? "stop-window exceeded its deadline." : "stop-window failed or was interrupted."));
     });
   });
 }
 
+export function isDesktopLogWrapper(cmdline: string, executable: string, display: number): boolean {
+  if (!Number.isSafeInteger(display) || display <= MAIN_DISPLAY) return false;
+  const args = cmdline.split("\0").filter(Boolean);
+  // A command string merely mentioning the log path is not a logger identity.
+  return ["tail", "tee"].includes(basename(executable)) && basename(args[0] ?? "") === basename(executable)
+    && args.slice(1).some(arg => arg.startsWith(`/tmp/sand-window-${display}/`) && !arg.includes("/../"));
+}
 async function reapLogWrappers(display: number): Promise<void> {
-  const needle = `/tmp/sand-window-${display}/`;
-  let procEntries: string[] = [];
-  try {
-    procEntries = await readdir("/proc");
-  } catch {
-    return;
-  }
-  for (const entry of procEntries) {
+  const entries = await readdir("/proc");
+  if (entries.length > 16384) throw new CliError("desktop_unavailable", "Desktop logger inspection exceeds its finite bound.");
+  for (const entry of entries) {
     if (!/^[0-9]+$/.test(entry)) continue;
-    let cmdline = "";
+    const directory = `/proc/${entry}`;
     try {
-      cmdline = (await readFile(`/proc/${entry}/cmdline`)).toString("utf8");
-    } catch {
-      continue;
-    }
-    if (!cmdline.includes(needle)) continue;
-    const pid = Number.parseInt(entry, 10);
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      continue;
+      const owner = await lstat(directory);
+      if (owner.uid !== process.getuid?.()) continue;
+      const before = await readFile(`${directory}/stat`, "utf8");
+      const identity = before.slice(before.lastIndexOf(")") + 2).split(" ")[19];
+      const cmdline = (await readFile(`${directory}/cmdline`)).toString("utf8");
+      const executable = await realpath(`${directory}/exe`);
+      if (!/^[0-9]+$/.test(identity ?? "") || !isDesktopLogWrapper(cmdline, executable, display)) continue;
+      const after = await readFile(`${directory}/stat`, "utf8");
+      if (after.slice(after.lastIndexOf(")") + 2).split(" ")[19] !== identity || (await lstat(directory)).uid !== owner.uid
+        || (await readFile(`${directory}/cmdline`)).toString("utf8") !== cmdline || await realpath(`${directory}/exe`) !== executable) continue;
+      process.kill(Number(entry), "SIGTERM");
+    } catch (error) {
+      if (!["ENOENT", "ESRCH"].includes(String((error as NodeJS.ErrnoException).code))) throw new CliError("desktop_unavailable", "The original desktop logger could not be verified or signalled.");
     }
   }
 }
 
+export type DesktopCandidate = { display: number; agentId: string; identity: string };
+export type DesktopReclaimHooks = { before: (row: DesktopCandidate) => Promise<void>; after: (row: DesktopCandidate, outcome: "stopped" | "refused" | "unknown") => Promise<void> };
 export class DesktopManager {
   private keepAgentIds: string[];
   private pruneEnabled: boolean;
   private locked = false;
   private tick: ReturnType<typeof setInterval> | undefined;
   private tickWork: Promise<unknown> | undefined;
+  private activeWork: Promise<void> | undefined;
   private closed = false;
+  private readonly lifetime = new AbortController();
   private applicationOwner: ConfigConsumerOwner | undefined;
   private applicationRevision: string | undefined;
   readonly canReap: boolean;
@@ -429,7 +340,7 @@ export class DesktopManager {
   static async create(
     configDir: string,
     now: () => number,
-    desktop: DaemonDesktopConfig | undefined,
+    desktop: DesktopLaunchResources | undefined,
     io?: DesktopIo,
     tickIntervalMs = DEFAULT_TICK_MS,
   ): Promise<DesktopManager> {
@@ -454,18 +365,17 @@ export class DesktopManager {
       tickIntervalMs,
     );
     await manager.refreshPreferences(true);
-    manager.startTick();
     return manager;
-  }
-
-  capabilities(): string[] {
-    return this.canReap ? ["host.desktop.read", "host.desktop.reap"] : ["host.desktop.read"];
   }
 
   async status(): Promise<DesktopStatusResult> {
     await this.refreshPreferences();
-    const displays = classifyDesktop(await this.io.readWorld(this.now()), this.policy());
+    const world = await this.io.readWorld(this.now());
+    const displays = classifyDesktop(world, this.policy());
     return {
+      complete: world.complete,
+      observedAtMs: world.nowMs,
+      displayIdentities: { ...world.displayIdentities },
       pruneEnabled: this.pruneEnabled,
       keepAgentIds: [...this.keepAgentIds],
       floorAgentIds: [...this.floorAgentIds],
@@ -474,70 +384,46 @@ export class DesktopManager {
     };
   }
 
-  async reapAgent(agentId: string): Promise<DesktopReapResult> {
-    return await reapDeletedAgentSeat(agentId, this.now(), this.io);
-  }
-
-  async keepAdd(ref: string): Promise<{ agentId: string; kept: true }> {
-    const world = await this.io.readWorld(this.now());
-    const resolved = UUID_V4.test(ref) ? ref : resolveDesktopAgent(ref, world);
-    if (!resolved || !UUID_V4.test(resolved)) {
-      throw new CliError("target_not_found", "Desktop keep requires a seated agent id or unambiguous name.");
-    }
-    const agentId = resolved.toLowerCase();
-    if (!this.floorAgentIds.includes(agentId)) {
-      await changeDesktopKeep(this.configDir, agentId, "add");
-      await this.refreshPreferences(true);
-    }
-    return { agentId, kept: true };
-  }
-
-  async keepRemove(ref: string, yes: boolean): Promise<{ agentId: string; kept: false }> {
-    if (!yes) throw new CliError("invalid_usage", "desktop keep remove requires --yes.");
-    const world = await this.io.readWorld(this.now());
-    const resolved = UUID_V4.test(ref) ? ref : resolveDesktopAgent(ref, world);
-    if (!resolved) throw new CliError("target_not_found", "Desktop keep requires a seated agent id or unambiguous name.");
-    const agentId = resolved.toLowerCase();
-    if (this.floorAgentIds.includes(agentId)) {
-      throw new CliError("invalid_usage", "Daemon-floor desktop keep ids cannot be removed.");
-    }
-    await changeDesktopKeep(this.configDir, agentId, "remove", true);
-    await this.refreshPreferences(true);
-    return { agentId, kept: false };
-  }
-
-  async prune(yes: boolean): Promise<DesktopPruneResult> {
-    await this.refreshPreferences();
-    if (!yes) {
-      const displays = classifyDesktop(await this.io.readWorld(this.now()), this.policy());
-      return {
-        dryRun: true,
-        pruneEnabled: this.pruneEnabled,
-        rows: displays.map((row) => ({
-          display: row.display,
-          agentId: row.agentId,
-          outcome: row.idle ? "planned" : "kept",
-          busyReason: row.busyReason,
-        })),
-      };
-    }
-    if (!this.canReap) {
-      throw new CliError("desktop_unavailable", "Idle desktop prune is unavailable without a pinned stop-window.");
-    }
-    return await this.pruneLocked();
-  }
-
-  async setEnabled(enabled: boolean): Promise<{ pruneEnabled: boolean }> {
-    await setDesktopEnabled(this.configDir, enabled);
-    await this.refreshPreferences(true);
-    this.startTick();
-    return { pruneEnabled: this.pruneEnabled };
+  reclaim(candidates: readonly DesktopCandidate[], hooks: DesktopReclaimHooks, automatic: boolean): Promise<void> {
+    if (this.locked || this.closed || !this.canReap || candidates.length > DESKTOP_POLICY.maxBatch) return Promise.reject(new CliError("desktop_unavailable", "The original desktop owner cannot admit this reclaim batch."));
+    this.locked = true;
+    const run = (async () => {
+      for (const row of candidates) {
+        const eligible = async () => {
+          if (this.closed || row.display <= MAIN_DISPLAY) return false;
+          const current = await this.status();
+          return current.complete && (!automatic || current.pruneEnabled) && current.displayIdentities[row.display] === row.identity
+            && current.displays.some(v => v.agentId === row.agentId && v.display === row.display && v.idle);
+        };
+        let invoked = false, settling = false;
+        const settle = async (outcome: "stopped" | "refused" | "unknown") => { settling = true; await hooks.after(row, outcome); };
+        try {
+          if (!await eligible()) { await settle("refused"); continue; }
+          // The domain publishes its original dispatch claim and rechecks
+          // authority here. No new candidate is selected during this batch.
+          await hooks.before(row);
+          if (!await eligible()) { await settle("refused"); continue; }
+          invoked = true;
+          await this.io.stopWindow(row.display, this.lifetime.signal);
+          await this.io.reapLogs(row.display);
+          const current = await this.io.readWorld(this.now());
+          await settle(current.complete && !current.litDisplays.has(row.display) ? "stopped" : "unknown");
+        } catch (error) {
+          // A failed settlement acknowledgement cannot authorize another outcome.
+          if (settling) throw error;
+          await settle(invoked ? "unknown" : "refused");
+          if (invoked) throw error;
+        }
+      }
+    })().finally(() => { this.locked = false; this.activeWork = undefined; });
+    this.activeWork = run; return run;
   }
 
   async close(): Promise<void> {
     this.closed = true;
+    this.lifetime.abort();
     this.stopTick();
-    await this.tickWork;
+    await Promise.allSettled([this.tickWork, this.activeWork]);
     if (this.applicationOwner) await releaseConfigApplication(this.applicationOwner);
   }
 
@@ -550,60 +436,13 @@ export class DesktopManager {
     };
   }
 
-  private async pruneLocked(automatic = false): Promise<DesktopPruneResult> {
-    if (this.locked || this.closed) {
-      return { dryRun: false, pruneEnabled: this.pruneEnabled, rows: [] };
-    }
-    this.locked = true;
-    try {
-      await this.refreshPreferences(true);
-      if (automatic && (!this.pruneEnabled || !this.canReap || this.closed)) return { dryRun: false, pruneEnabled: false, rows: [] };
-      const first = classifyDesktop(await this.io.readWorld(this.now()), this.policy());
-      const rows: DesktopPruneRow[] = [];
-      for (const row of first) {
-        if (!row.idle) {
-          rows.push({
-            display: row.display,
-            agentId: row.agentId,
-            outcome: row.busyReason === "grok" || row.busyReason === "task" || row.busyReason === "busy-marker"
-              ? "busy"
-              : "kept",
-            busyReason: row.busyReason,
-          });
-          continue;
-        }
-        await this.refreshPreferences();
-        if (this.closed || (automatic && !this.pruneEnabled)) break;
-        const second = classifyDesktop(await this.io.readWorld(this.now()), this.policy())
-          .find((entry) => entry.display === row.display && entry.agentId === row.agentId);
-        if (!second?.idle) {
-          rows.push({
-            display: row.display,
-            agentId: row.agentId,
-            outcome: "raced",
-            busyReason: second?.busyReason ?? "fresh-display",
-          });
-          continue;
-        }
-        if (row.display <= MAIN_DISPLAY) {
-          rows.push({ display: row.display, agentId: row.agentId, outcome: "kept", busyReason: "protected" });
-          continue;
-        }
-        await this.io.stopWindow(row.display);
-        await this.io.reapLogs(row.display);
-        rows.push({ display: row.display, agentId: row.agentId, outcome: "stopped", busyReason: null });
-      }
-      return { dryRun: false, pruneEnabled: this.pruneEnabled, rows };
-    } finally {
-      this.locked = false;
-    }
-  }
-
-  private startTick(): void {
-    if (this.tick !== undefined || this.closed) return;
+  startAutomatic(action: () => Promise<void>): void {
+    if (this.tick !== undefined || this.closed) throw new CliError("desktop_unavailable", "Desktop scheduling already has an owner or is closed.");
     this.tick = setInterval(() => {
-      if (this.locked || this.closed) return;
-      this.tickWork = this.pruneLocked(true).catch(() => { this.pruneEnabled = false; });
+      if (this.locked || this.closed || this.tickWork) return;
+      const running = action().finally(() => { if (this.tickWork === running) this.tickWork = undefined; });
+      this.tickWork = running;
+      void running.catch(() => undefined);
     }, this.tickIntervalMs);
     this.tick.unref?.();
   }
@@ -614,7 +453,7 @@ export class DesktopManager {
     this.tick = undefined;
   }
 
-  private async refreshPreferences(recordApplication = false): Promise<void> {
+  async refreshPreferences(recordApplication = false): Promise<void> {
     const layout = await readConfigLayout(this.configDir);
     const { document } = await openConfigStore(layout).read();
     this.keepAgentIds = [...(document.desktop?.keepAgentIds ?? [])];

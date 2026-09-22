@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
-import { writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
+import { readDaemonConfig, writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
 import { startDaemonHost } from "../packages/cli/src/daemon/host.ts";
 import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
 import {
@@ -116,14 +116,13 @@ test("doctor includes computer next when services are down", async () => {
           next: string;
           host: string;
           hostReason: string | null;
-          screenIdle: boolean;
           titleSync: boolean;
         };
       };
     };
     expect(body.data.operator?.daemon).toBe("down");
     expect(body.data.operator?.titleSync).toBe(false);
-    expect(body.data.operator?.screenIdle).toBe(false);
+    expect(body.data.operator).not.toHaveProperty("screenIdle");
     expect(body.data.operator?.host).toBe("official");
     expect(body.data.operator?.next).toBe("grokbox on");
     expect(body.data.next).toBe("grokbox on");
@@ -1082,14 +1081,16 @@ test("top-level on starts services without switching Host and annotates host sta
   await writeProfileFile(dir, "default", { version: 1, transport: "local", gateway_discovery: discoveryPath, daemon_socket: daemonSocket });
   const daemon = await startDaemonHost({ ...createProductionDeps(), ...deps, transport: "local" }, daemonSocket);
   try {
+    const before = await readDaemonConfig(dir);
     const result = await captureCli(["on"], deps);
     expect(result.code).toBe(0);
     const body = parseJson(result.stdout) as {
-      data: { daemon: string; titleSync: boolean; screenIdle: boolean; host: string; next: string };
+      data: { daemon: string; titleSync: boolean; host: string; next: string };
     };
+    expect((await readDaemonConfig(dir)).desktop).toEqual(before.desktop);
     expect(body.data.host).toBe("unchanged");
     expect(body.data.titleSync).toBe(true);
-    expect(body.data.screenIdle).toBe(true);
+    expect(body.data).not.toHaveProperty("screenIdle");
     expect(["up", "started"]).toContain(body.data.daemon);
     expect(body.data.next).toBe("grokbox host start");
   } finally {

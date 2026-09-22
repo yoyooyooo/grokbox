@@ -10,7 +10,7 @@
 
 `apps/web/src/routes/`、components/lib、SSR与同源bridge、浏览器操作定位、`apps/web/test/`。领域合同/客户端来自packages/client，后端writer和权限仍归对应A/R/B/C/D/E/F，不执行CLI子进程，不复制模型/恢复/通知规则或后台采集器。
 
-浏览器只保存最小恢复定位；URL拥有导航/筛选，查询投影、草稿、订阅各有作用域。现有模型、材料、通知、保护、contexts、operations、Job和files页面及真实Chrome成果保留。桌面页面属于未提交收尾包，先由原负责人交付，不并行重写。
+浏览器只保存最小恢复定位；URL拥有导航/筛选，查询投影、草稿、订阅各有作用域。现有模型、材料、通知、保护、contexts、operations、Job和files页面及真实Chrome成果保留。[桌面页面及其浏览器旅程](../../../reports/2026-09-22-desktop-v2-intake.md)也已全部接入v2；W直接继承现有实现，继续完整产品/体验资格，不再等旧工作树交付或另写同义页面。
 
 ## 出口
 

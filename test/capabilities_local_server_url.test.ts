@@ -78,12 +78,8 @@ describe("profile capabilities local+server_url misclassification", () => {
     for (const key of ["host.process.run", "host.process.manage", "host.process.shell"]) expect(body.data.capabilities).not.toHaveProperty(key);
   });
 
-  test("host.desktop.read is false", () => {
-    expect(body.data.capabilities["host.desktop.read"]).toBe(false);
-  });
-
-  test("host.desktop.reap is false", () => {
-    expect(body.data.capabilities["host.desktop.reap"]).toBe(false);
+  test("desktop capability claims have exited the old Profile surface", () => {
+    for(const capability of ["host.desktop.read","host.desktop.reap"])expect(body.data.capabilities).not.toHaveProperty(capability);
   });
 
   test("grok.* capabilities remain available through the local gateway", () => {

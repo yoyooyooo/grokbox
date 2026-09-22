@@ -38,6 +38,11 @@ export type ConfigCommitReceipt = {
 };
 
 function requiresConfirmation(before: UnifiedConfig, next: UnifiedConfig, paths: readonly string[]): boolean {
+  // Desktop helper effects can remove per-display browser profiles. Generic
+  // config writes must not bypass the management domain's explicit approval.
+  if (next.desktop?.idleReclaim?.enabled === true && before.desktop?.idleReclaim?.enabled !== true) return true;
+  if ((before.desktop?.keepAgentIds ?? []).some(id => !(next.desktop?.keepAgentIds ?? []).includes(id))) return true;
+  if ((next.desktop?.idleReclaim?.minIdleMs ?? 600000) < (before.desktop?.idleReclaim?.minIdleMs ?? 600000)) return true;
   // Context policy can enable paid summaries or enlarge their request budget.
   // Require an explicit impact acknowledgement, including parent replacement/unset.
   if (paths.some(path => path === "/runtime/context" || path.startsWith("/runtime/context/") || path === "/runtime/continuity" || path.startsWith("/runtime/continuity/"))) return true;

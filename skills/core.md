@@ -22,7 +22,7 @@ Agent / Skill
             -> EnsureSandBox + brokered exec no-op
         -> explicit Cursor web quota source
             -> one fresh sanitized account-quota snapshot
-        -> daemon desktop classifier / idle prune
+        -> management-owned desktop classifier / explicit idle reclaim
         -> Grok Bot host Gateway
 ```
 
@@ -72,10 +72,11 @@ grokbox job start --input @job.json --request-id <uuid> --expect-revision <sha25
 grokbox job wait <job-ref> --wait-ms 25000
 grokbox job logs <job-ref> --offset 0
 grokbox job cancel <job-ref> --request-id <cancel-uuid> --confirm
-grokbox desktop status --table
-grokbox desktop keep add <agent>
-grokbox desktop prune run
-grokbox desktop prune enable
+grokbox system desktop get
+grokbox system desktop prune --preview
+grokbox system desktop keep set --input @desktop-keep.json --confirm
+grokbox system config apply --domain desktop --input @desktop-policy.json --confirm
+grokbox operation get --domain desktop --request-id <original-uuid>
 grokbox runtime status
 grokbox model list
 grokbox models check
@@ -121,7 +122,7 @@ Targets accept an exact ID first, then an unambiguous case-insensitive name/titl
 
 11. **Run governed processes**: `job policy` supplies the current management-service policy revision. `job start` takes strict JSON (`argv`, optional `environment`/`cwd`/`output`/`shell`, and `runTimeoutMs`), a caller-persisted request UUID, reviewed revision and explicit confirmation. It resolves argv[0] as an executable alias, not a shell fragment; shell needs separate policy and permission. `job get/wait` observes the original service-owned execution, while `job logs` explicitly reads bounded base64 pages with independent output permission. Cancellation has its own persisted UUID and never reverses external effects. After a lost response use `operation get --domain job --request-id <uuid>` or `--domain job-cancel --job-ref <ref> --request-id <cancel-uuid>`; never invent a new request to repair uncertainty. No daemon/CLI fallback executor remains. Approved executables are not filesystem-sandboxed by cwd.
 12. **Control Sandbox lifecycle**: `box status` reads the Cursor run state without waking it. `box wake` performs one broker Ensure plus a bounded exec no-op. `box keepalive run` is an external foreground lease loop; `box keepalive status` reads its redacted protected state. These commands require an explicit `client.profiles.<name>.sandbox.accessTokenRef` and do not depend on daemon, SSH, Tailscale, Gateway health, or an in-box process.
-13. **Idle desktop forks**: `desktop status` classifies seated forks and prints keep/floor ids. `desktop keep add|remove` commits `config.desktop.keepAgentIds` through the same canonical writer as `config set`; installation floor protection remains separately enforced. `desktop prune run` dry-runs by default; `--yes` and the daemon tick call official `stop-window`, which deletes `chrome-profile-N`. Keep must-keep agents before `prune enable`. Idle prune never edits the seating table or kills host/Xvfb. Display 1 is always kept. `agents delete` on the box is the exception: after Gateway delete it stops a non-main fork and atomically drops that agent from `.sand-window-assignments.json` (`assignments` and matching `tokens`). The delete receipt includes `desktop: { display, outcome }` (`stopped` | `no_seat` | `unavailable` | `skipped_main`).
+13. **Idle desktop forks**: `system desktop get` reports current display identities, source coverage, keep/floor protection and the management worker. `system desktop prune --preview` is read-only; execution requires `--request-id`, the reviewed `--expect-revision` and `--confirm`. The helper may delete a fork's Chrome profile. `system desktop keep set --input @file --confirm` uses an exact `agentIds` set plus `requestId`/`expectedRevision`; `system config apply --domain desktop --input @file --confirm` currently accepts `action: idle-reclaim`, `enabled` and `minIdleMs` plus those identities. Both use the original config writer. Main display and installation floor stay protected. Missing/raced observations refuse reclaim; stop intent and settlement are durable, and unknown is never replayed by a new UUID or automatic cycle. Query the original request with `operation get --domain desktop` or `desktop-policy`. Ordinary prune does not unseat or delete a Bot. Native Bot deletion still has separate exact-seat cleanup that must be converged with the remaining lifecycle migration; neither local checks nor helper exit proves an atomic native seat lease.
 14. **Execution services and model intent**: `bot model get/set/reset` and `model list/get/default` use the shared management service. Changes require a persisted request UUID and expected revision; explicit followers alone follow the default. Read-only `operation get --request-id` does not replay an uncertain model write. Remaining `runtime *` and `models check/persist-key/migrate` are local maintenance paths, not selection alternatives. `models check` is schema-only, not provider readiness. `runtime activate/deactivate` saves `config.runtime.desiredMode`; saved intent is not a Host switch or rollback proof. Read `runtime status/log/contracts` for qualified evidence, keeping missing and stale facts unknown. Profile authoring operates on retained source through `runtime profile write --sha <retainedSourceSha>`; it is neither approval nor live activation. Confirmed `runtime re-adopt` and `host start/stop/restart` use the governed Host control paths. Modeld is a packaged Node service. For development dogfood, run `bun run build` then `bun run modeld:run`; the equivalent installed-artifact entry is `node dist/index.js runtime modeld run`, never worktree TypeScript. `runtime watchdog run` performs observation without granting itself mutation authority. Use the installed `grokbox` skill's models, services, config and adopt topics for the specific capability. **No live unless authorized**: source tests, configuration saves and a green modeld health response never authorize a Host switch or provider probe.
 
 Sensitive or multiline prompts should go on stdin:

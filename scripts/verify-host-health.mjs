@@ -42,7 +42,7 @@ const suites={
   "packages/box-runtime/test/operation-lease.test.ts","packages/box-runtime/test/operation-lease-contract.test.ts","packages/box-runtime/test/hcr-operation-recovery.test.ts",
   "packages/box-runtime/test/hcr-operation-lifetime.test.ts","packages/box-runtime/test/identity-op.test.ts","test/hcr-cli.test.ts","test/admission-observation.test.ts","test/outcome.test.ts",
   "test/jobs.test.ts","test/job-safety-store.test.ts","test/filesystem.test.ts","test/filesystem-mutations.test.ts","test/detail-absorb.test.ts","test/events.test.ts","test/desktop.test.ts","test/capabilities_desktop_probe.test.ts",
-  "test/network-boundary.test.ts","test/ssh-recovery.test.ts","test/profile.test.ts","test/recovery.test.ts","test/daemon.test.ts",
+  "test/network-boundary.test.ts","test/ssh-recovery.test.ts","test/profile.test.ts","test/operator.test.ts","test/recovery.test.ts","test/daemon.test.ts",
   "packages/runtime-kernel/test/unified-config.test.ts","packages/box-runtime/test/config-bootstrap.test.ts","test/config-cli.test.ts","test/config-application-receipt.test.ts","test/config-packed.test.ts",
   "packages/box-runtime/test/architecture.test.ts","packages/box-runtime/test/legacy-executor-removed.test.ts",
   "packages/box-runtime/test/model-management.test.ts","packages/box-runtime/test/management-gateway.test.ts",
@@ -53,7 +53,7 @@ const suites={
   "packages/box-runtime/test/host-ownership-read.test.ts","packages/box-runtime/test/hcr-capabilities.test.ts","packages/box-runtime/test/hcr-profile-upgrade.test.ts",
   "test/verification-source.test.js","test/host-health-shards.test.ts","test/browser-groups.test.ts","test/capabilities_local_server_url.test.ts","test/cli.test.ts","test/skills.test.ts"],
  integration:["test/sqlite-read-scheduling.test.ts","test/host-witness.test.ts","test/host-compilation.test.ts","test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts",
-  "test/file-management.test.ts","test/job-management.test.ts","test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
+  "test/file-management.test.ts","test/job-management.test.ts","test/desktop-management.test.ts","test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
   "./test/handover-management.test.ts","./test/compaction-management.test.ts","test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
   "packages/server/test/server.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"],
  "native-pair":["packages/box-runtime/test/native-checkpoint-qualification.test.ts","packages/box-runtime/test/native-worker-binding.test.ts","packages/box-runtime/test/native-startup-seams.test.ts","packages/box-runtime/test/native-duplicate-qualification.test.ts","packages/box-runtime/test/native-disposal-qualification.test.ts"]

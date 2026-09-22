@@ -114,6 +114,7 @@ const requiredKernelExports = {
   "./model-management": "./src/model-management.ts",
   "./materials": "./src/materials.ts",
   "./files": "./src/files.ts",
+  "./desktop": "./src/desktop.ts",
   "./host-health": "./src/host-health.ts",
   "./compaction": "./src/compaction.ts",
   "./testing": "./src/testing.ts",

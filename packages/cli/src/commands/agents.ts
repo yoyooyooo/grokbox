@@ -28,7 +28,7 @@ import {
   type TitleAction,
 } from "../title-sync.ts";
 import { composeAgentTitle, labelOwnerFromState, parseAgentTitle } from "@grokbox/runtime-kernel/contract";
-import { liveDesktopIo, readDesktopReap, reapDeletedAgentSeat, type DesktopReapResult } from "../daemon/desktop.ts";
+import { liveDesktopIo, readDesktopReap, reapDeletedAgentSeat, type DesktopReapResult } from "@grokbox/box-runtime/runtime";
 
 export async function runAgentsList(
   deps: CliDeps,

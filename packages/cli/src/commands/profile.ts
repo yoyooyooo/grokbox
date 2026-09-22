@@ -20,8 +20,6 @@ import {
   type ResolvedProfile,
 } from "../config/profile.ts";
 
-const DESKTOP_READ = "host.desktop.read";
-const DESKTOP_REAP = "host.desktop.reap";
 
 export type ProfileOptions = {
   json?: boolean;
@@ -233,25 +231,6 @@ export async function runProfileRemove(
   writeSuccess(deps.stdout, { name, removed: true });
 }
 
-async function probeLiveDesktop(
-  profile: ResolvedProfile,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<{ read: boolean; reap: boolean } | null> {
-  if (profile.transport === "local" || profile.transport === "gateway") return null;
-  if (profile.transport === "daemon" && profile.server_url) return null;
-  try {
-    const handshake = await new LocalDaemonClient(profile.daemon_socket, timeoutMs, signal).handshake();
-    return {
-      read: handshake.capabilities.includes(DESKTOP_READ),
-      reap: handshake.capabilities.includes(DESKTOP_REAP),
-    };
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    return null;
-  }
-}
-
 export async function runProfileCapabilities(
   deps: CliDeps,
   name: string | undefined,
@@ -263,11 +242,6 @@ export async function runProfileCapabilities(
   const directGateway = profile.transport === "gateway" || Boolean(profile.gateway_url);
   const daemon = profile.transport === "daemon"
     || (profile.transport === "auto" && Boolean(profile.server_url));
-  const liveDesktop = await probeLiveDesktop(profile, io.timeoutMs, deps.signal);
-  const desktopRead = liveDesktop ? liveDesktop.read : daemon;
-  const desktopReap = liveDesktop
-    ? liveDesktop.reap
-    : daemon ? "runtime-policy-dependent" : false;
   const sandboxConfigured = Boolean(profile.sandbox?.access_token_ref);
   const sandboxCapability = sandboxConfigured ? "provider-authorization-dependent" : false;
   const quotaCapability = profile.quota?.access_token_ref
@@ -295,8 +269,6 @@ export async function runProfileCapabilities(
       "grok.transcript.write": local || directGateway || daemon,
       "grok.memory.read": local || directGateway || daemon,
       "grok.events.read": local || directGateway || daemon,
-      [DESKTOP_READ]: desktopRead,
-      [DESKTOP_REAP]: desktopReap,
       "sandbox.inspect": sandboxCapability,
       "sandbox.wake": sandboxCapability,
       "sandbox.keepalive": sandboxCapability,

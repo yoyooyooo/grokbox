@@ -56,7 +56,7 @@ describe("canonical bootstrap installation and recovery", () => {
 
   test("a later user edit fences rollback rather than losing the user's update", async () => {
     const input = await fixture(); await installConfigurationResources(input, resources);
-    await commitConfigChange(openConfigStore(rootConfigLayout(input.root)), { operationId: "user-later", kind: "set", scope: "box", path: "desktop.idleReclaim.enabled", value: true });
+    await commitConfigChange(openConfigStore(rootConfigLayout(input.root)), { operationId: "user-later", kind: "set", scope: "box", path: "desktop.idleReclaim.enabled", value: true, confirm: true });
     const before = await readFile(join(input.root, "config.json"), "utf8");
     expect(await rollbackConfigurationBootstrap(input).catch((error) => error.code)).toBe("config_conflict");
     expect(await readFile(join(input.root, "config.json"), "utf8")).toBe(before);

@@ -250,7 +250,7 @@
 | `system console grant create` | [LIVE-WEB-FOUNDATION](#live-web-foundation) | owner-only 的一次性登录码只写私有文件；console 会话与业务回执寿命分别验证 |
 | `system service run`, `system service get` | [LIVE-SERVICE-INDEPENDENCE](#live-service-independence) | Server/Web 前台入口与 Server/collector 状态查询；不是全组件安装或独立 modeld 实执行寿命已通过 |
 | `bot list`, `bot resolve`, `bot get` | [LIVE-CLI-API](#live-cli-api) | 有界原生 Bot 投影与明确引用，已接功能浏览器；原生资格与完整管理链仍需集中核验 |
-| `quota`, `box status`, `box wake`, `box keepalive run`, `box keepalive status`, `desktop status`, `desktop keep add`, `desktop keep remove`, `desktop prune run`, `desktop prune enable`, `desktop prune disable` | [LIVE-OPTIONAL-CAPABILITIES](#live-optional-capabilities) | 平台/权限限制，不影响未声明功能 |
+| `quota`, `box status`, `box wake`, `box keepalive run`, `box keepalive status`, `system desktop get`, `system desktop prune`, `system desktop keep set`, `system config apply` | [LIVE-OPTIONAL-CAPABILITIES](#live-optional-capabilities) | 桌面已迁入管理Server；读取、策略、回收及原操作权限分开，配置apply当前仅支持desktop idle-reclaim；实际helper/平台资格另验 |
 | `recover` | [LIVE-NETWORK-BOUNDARY](#live-network-boundary) | 默认应用恢复与显式旧映射恢复选项分开，网络故障不自动wake |
 | `system host health`, `runtime profile analyze`, `runtime profile observe`, `runtime profile propose`, `runtime profile prune`, `runtime profile replay`, `runtime profile status`, `runtime profile watch`, `runtime profile write`, `runtime operation-recovery`, `runtime watchdog run`, `runtime contracts` | [LIVE-HOST-CAPABILITY-RECOVERY](#live-host-capability-recovery) | Host健康读面已接Server/Rust/原OBS，显示静态范围与未证运行见证；完整能力/实际加载仍待资格，watcher和recovery非另一自动部署器 |
 | `agents list`, `agents show`, `agents create`, `agents update`, `agents delete` | [LIVE-AGENT-LIFECYCLE](#live-agent-lifecycle) | nonce/歧义/精确清理 |

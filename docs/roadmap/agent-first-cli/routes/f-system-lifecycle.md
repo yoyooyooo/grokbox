@@ -22,7 +22,7 @@ A拥有Host配方/原生ABI；R拥有执行语义；E拥有worker业务规则；
 
 2026-09-22只读观察曾为PID1=tini、systemd user manager=offline；这是必须开工重核的宿主缺口，不是永远成立的环境结论。不能仅凭存在systemctl签支持，也不能长期停在ENV标签。沿既定明确宿主方案解决实际条件；涉及官方supervisor或平台配置变更须取得对应授权，不用nohup/tmux冒充开机资格，不擅建多套fallback。
 
-桌面未提交成果仍归原施工worktree单一负责人。F1不等待它，F3消费其合格提交；未明确交接前不在本分支重写桌面迁移。Bot删除后的seat cleanup与D按原生命周期边界统一，不保留第二清理writer。
+桌面管理的全部源码与旧消费者修正已作为[全量接入工作包](../../../reports/2026-09-22-desktop-v2-intake.md)进入v2基线。F从v2继承并完成剩余系统/实际宿主资格，不再依赖原施工worktree的未提交文件，也不重做普通桌面迁移。Bot删除后的seat cleanup与D按原生命周期边界统一，不保留第二清理writer；F3仍须核对这项原生边界和其余daemon消费者。
 
 ## 验证与停止条件
 

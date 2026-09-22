@@ -27,6 +27,17 @@ test("file locators retain only original source/request and cannot discard unkno
   markOperation(storage,retained,fileLocalState("cancelled"));forgetSettledOperation(storage,retained);expect(localOperations(storage,scope)).toEqual([]);
 });
 
+test("desktop locators retain original scope but neither candidate approval nor a reusable protection policy",()=>{
+  const storage=memoryStorage(),requestId=randomUUID();
+  const prune=rememberOperation(storage,scope,{requestId,expectedRevision:"a".repeat(64),confirmed:true});
+  expect(operationSearch(prune)).toMatchObject({domain:"desktop",requestId});
+  const policy=rememberOperation(storage,scope,{requestId:randomUUID(),expectedRevision:"b".repeat(64),confirmed:true,action:"keep",agentIds:["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]});
+  expect(operationSearch(policy)).toMatchObject({domain:"desktop-policy"});
+  expect([...storage.values.values()].join()).not.toMatch(/agentIds|expectedRevision|confirmed|aaaaaaaa|enabled|minIdleMs/);
+  markOperation(storage,prune,"unknown");expect(()=>forgetSettledOperation(storage,prune)).toThrow();expect(localOperations(storage,scope)).toHaveLength(2);
+  markOperation(storage,policy,"succeeded");forgetSettledOperation(storage,policy);expect(localOperations(storage,scope)).toHaveLength(1);
+});
+
 test("Job locators separate known admission, unknown execution and cancellation without persisting argv or authority",()=>{
   const storage=memoryStorage(),requestId=randomUUID(),ref=`job:${scope.installationId}:${randomUUID()}`;
   const start=rememberOperation(storage,scope,{requestId,expectedRevision:"f".repeat(64),confirmed:true,argv:["node","-e","PRIVATE_JOB_SCRIPT"],environment:{VISIBLE:"PRIVATE_ENV"},runTimeoutMs:1000,output:"capture",shell:false});
