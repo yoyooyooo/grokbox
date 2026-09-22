@@ -8,6 +8,8 @@
 
 注册只处理两份本安装的服务单元，不改变Host/preload采用或其他应用。没有通用shell/任意unit名称入口；runRoot、durableRoot、用户HOME、实际Node和发行制品都参与范围核对。一次现役采用仍须满足固定已合入v2、旧制品与配置退路、停止条件和明确授权，不能指向feature checkout。
 
+F1准备合同把每次结果绑定到动态宿主观测和独立安装身份：`environment.host`记录当次PID1、systemd-user和linger事实，`owner`记录服务主人，`roots`明确durable/run/home/release/unitDir，`epoch`等于本次登记摘要。release与这些状态根重叠或位于任一源码checkout祖先下会拒绝；同一scope只生成daemon/modeld两份固定unit，`singleInstance`只表示可验证的单位身份约束。`faultReceipt`/`operationReceipt`保留preparing、committed、reconciled等可对账阶段；它们不把离线fixture或文件存在升级成live开机验收。
+
 ## 预览与确认
 
 先准备正式安装包中的绝对release目录和受支持Node。源码checkout不允许直接注册，既有release在运行期间不能原地改写。默认只做预览：
@@ -34,7 +36,7 @@ grokbox runtime services install --run-root /path/to/run --release /path/to/inst
 grokbox runtime services status --run-root /path/to/run --json
 ```
 
-状态分开显示私有注册phase、待发布回执phase、精确unit文件匹配、管理器实际加载定义匹配、制品匹配和环境可用性。同名但来自其他FragmentPath的单元、额外drop-in不会通过启用前检查。`installed`不等于模型可用、Host已采用、collector已配置或Bot已经收到提醒。查询绕过Profile配置初始化，配置坏时仍可观察注册，不修复单元或启动服务。
+状态分开显示私有注册phase、待发布回执phase、精确unit文件匹配、管理器实际加载定义匹配、制品匹配和环境可用性，并返回owner/roots/epoch、父shell独立性和故障回执。同名但来自其他FragmentPath的单元、额外drop-in不会通过启用前检查。`installed`不等于模型可用、Host已采用、collector已配置或Bot已经收到提醒。查询绕过Profile配置初始化，配置坏时仍可观察注册，不修复单元或启动服务。
 
 collector需要另行使用`runtime monitor install`保存明确目标集合；配对、Routine启用和通知授权也仍是独立操作。重启后的旧work不自动补发，源健康待重新核对。modeld与daemon仅回收登记过的精确socket、确证死亡的owner及拒绝连接，未知旧socket、普通文件、符号链接和身份不匹配保持阻断。
 

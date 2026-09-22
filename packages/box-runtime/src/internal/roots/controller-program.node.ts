@@ -46,13 +46,10 @@ import { isDeepStrictEqual } from "node:util";
 
 export const liveMutationAttempts = { signal: 0, spawn: 0, guardian: 0 };
 
-let lastLiveAdopt: IdentityOpResult | null = null;
-
 export function resetLiveMutationAttempts(): void {
   liveMutationAttempts.signal = 0;
   liveMutationAttempts.spawn = 0;
   liveMutationAttempts.guardian = 0;
-  lastLiveAdopt = null;
 }
 
 export function diskPreloadSha256(path?: string): string | null {
@@ -588,6 +585,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
 export function liveControlResourcesLayer(
   live: LiveAdmissionPorts = defaultLiveAdmissionPorts(),
 ): Layer.Layer<ControlResources> {
+  let operationAdopt: IdentityOpResult | null = null;
   return Layer.succeed(ControlResources, {
     lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
       const locked = yield* Effect.acquireRelease(
@@ -651,25 +649,25 @@ export function liveControlResourcesLayer(
     signal: (input: FrozenControllerCommand) => Effect.tryPromise({
       try: async () => {
         liveMutationAttempts.signal += 1;
-        lastLiveAdopt = await applyLiveControllerAdopt(input);
-        return { signaled: lastLiveAdopt.signaled === true };
+        operationAdopt = await applyLiveControllerAdopt(input);
+        return { signaled: operationAdopt.signaled === true };
       },
       catch: (error) => error,
     }),
     spawn: (input: FrozenControllerCommand) => Effect.tryPromise({
       try: async () => {
         liveMutationAttempts.spawn += 1;
-        lastLiveAdopt = await applyLiveControllerAdopt(input);
-        return { spawned: lastLiveAdopt.signaled === true };
+        operationAdopt = await applyLiveControllerAdopt(input);
+        return { spawned: operationAdopt.signaled === true };
       },
       catch: (error) => error,
     }),
     armGuardian: (_input: FrozenControllerCommand) => Effect.sync(() => {
       liveMutationAttempts.guardian += 1;
-      return { guardian: lastLiveAdopt?.ok === true || lastLiveAdopt?.signaled === true };
+      return { guardian: operationAdopt?.ok === true || operationAdopt?.signaled === true };
     }),
     wait: (_input: FrozenControllerCommand) => Effect.void,
-    commit: (_input: FrozenControllerCommand) => Effect.succeed({ committed: lastLiveAdopt?.ok === true }),
+    commit: (_input: FrozenControllerCommand) => Effect.succeed({ committed: operationAdopt?.ok === true }),
   });
 }
 

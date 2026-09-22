@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { lstat, mkdir, open, readFile, rename, unlink, link, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { withJournalLock } from "../host/journal-lock.node.ts";
 import { openConfigStore } from "./config-store.node.ts";
@@ -18,8 +18,15 @@ export type RuntimeServiceRequest = {
 };
 export type ServiceUnitState = { name: string; active: string; enabled: boolean; mainPid: number;
   fragmentPath: string | null; hasDropIns: boolean };
+export type ServiceOwner = { kind: string; uid: number };
+export type InstallationRoots = { durable: string; run: string; home: string; release: string; unitDir: string };
+export type ServiceEnvironment = {
+  available: boolean; bootPersistent: boolean; reason: string;
+  owner?: string; uid?: number; parentIndependent?: boolean;
+  host?: { pid1: string | null; userManager: string; linger: "yes" | "no" | "unknown" };
+};
 export type ServiceManager = {
-  probe(): Promise<{ available: boolean; bootPersistent: boolean; reason: string }>;
+  probe(): Promise<ServiceEnvironment>;
   states(units: string[]): Promise<ServiceUnitState[]>;
   reload(): Promise<void>; enable(units: string[], start: boolean): Promise<void>; disable(units: string[]): Promise<void>;
 };
@@ -82,17 +89,48 @@ function exec(command: string, args: string[]): Promise<string> {
     if (error) reject(new RuntimeServiceError("manager_unavailable")); else resolve(stdout.trim());
   }));
 }
+async function pid1Name(): Promise<string | null> {
+  try { return (await readFile("/proc/1/comm", "utf8")).trim() || null; } catch { return null; }
+}
+function rootContains(a: string, b: string): boolean {
+  const r = relative(a, b); return r === "" || (!r.startsWith("..") && !isAbsolute(r));
+}
+function rootsOverlap(a: string, b: string): boolean { return rootContains(a, b) || rootContains(b, a); }
+async function hasGitAncestor(value: string): Promise<boolean> {
+  let current = resolve(value);
+  for (;;) {
+    try { const git = await lstat(join(current, ".git")); if (git.isFile() || git.isDirectory() || git.isSymbolicLink()) return true; }
+    catch (e) { if (!missing(e)) throw e; }
+    const parent = dirname(current); if (parent === current) return false; current = parent;
+  }
+}
+function ownerFor(environment: ServiceEnvironment): ServiceOwner {
+  return { kind: environment.owner ?? "injected-service-manager", uid: environment.uid ?? process.getuid?.() ?? -1 };
+}
+function parentIndependentFor(environment: ServiceEnvironment): boolean {
+  return environment.parentIndependent ?? (environment.available && environment.bootPersistent);
+}
+function independentRoots(root: string, run: string, home: string, release: string, unitDir: string): InstallationRoots {
+  if ([root, run, home].some(other => rootsOverlap(release, other)) || rootsOverlap(release, unitDir)) return bad("release_prefix_not_independent");
+  return { durable: root, run, home, release, unitDir };
+}
 export function systemdUserManager(): ServiceManager {
   const unit = (value: string) => { if (!/^grokbox-[a-f0-9]{16}-(?:daemon|modeld)\.service$/.test(value)) return bad("invalid_unit"); return value; };
   return {
     probe: async () => {
-      if (process.platform !== "linux" || !process.getuid) return { available: false, bootPersistent: false, reason: "unsupported_platform" };
+      const pid1 = await pid1Name();
+      if (process.platform !== "linux" || !process.getuid) return { available: false, bootPersistent: false, reason: "unsupported_platform", owner: "systemd-user", parentIndependent: false,
+        host: { pid1, userManager: "systemd-user", linger: "unknown" } };
       try {
         const version = await exec("systemctl", ["--user", "--no-pager", "show", "--property=Version", "--value"]);
-        if (!version) return { available: false, bootPersistent: false, reason: "user_manager_unavailable" };
+        if (!version) return { available: false, bootPersistent: false, reason: "user_manager_unavailable", owner: "systemd-user", uid: process.getuid(), parentIndependent: false,
+          host: { pid1, userManager: "systemd-user", linger: "unknown" } };
         const linger = await exec("loginctl", ["show-user", String(process.getuid()), "--property=Linger", "--value"]);
-        return { available: true, bootPersistent: linger === "yes", reason: linger === "yes" ? "ready" : "linger_not_enabled" };
-      } catch { return { available: false, bootPersistent: false, reason: "user_manager_unavailable" }; }
+        const persistent = linger === "yes";
+        return { available: true, bootPersistent: persistent, reason: persistent ? "ready" : "linger_not_enabled", owner: "systemd-user", uid: process.getuid(), parentIndependent: persistent,
+          host: { pid1, userManager: "systemd-user", linger: persistent ? "yes" : "no" } };
+      } catch { return { available: false, bootPersistent: false, reason: "user_manager_unavailable", owner: "systemd-user", uid: process.getuid(), parentIndependent: false,
+        host: { pid1, userManager: "systemd-user", linger: "unknown" } }; }
     },
     states: async units => Promise.all(units.map(async name => {
       const text = await exec("systemctl", ["--user", "--no-pager", "show", unit(name), "--property=ActiveState,UnitFileState,MainPID,FragmentPath,DropInPaths"]);
@@ -110,17 +148,23 @@ export function systemdUserManager(): ServiceManager {
 }
 
 type Unit = { name: string; component: "daemon" | "modeld"; text: string; digest: string };
-type Registration = { schemaVersion: 1; scope: string; requestDigest: string; phase: "preparing" | "installed" | "removing" | "retired";
-  release: string; node: string; artifacts: { entry: string; preload: string; node: string }; units: Unit[] };
+type Registration = { schemaVersion: 2; scope: string; requestDigest: string; epoch: string; phase: "preparing" | "installed" | "removing" | "retired";
+  owner: ServiceOwner; roots: InstallationRoots; release: string; node: string; artifacts: { entry: string; preload: string; node: string }; units: Unit[] };
 function registration(text: string | null): Registration | null {
   if (text === null) return null;
   const v = JSON.parse(text) as Registration;
-  if (!v || v.schemaVersion !== 1 || !hash(v.scope) || !hash(v.requestDigest) || !["preparing", "installed", "removing", "retired"].includes(v.phase)
+  if (!v || v.schemaVersion !== 2 || !hash(v.scope) || !hash(v.requestDigest) || v.epoch !== v.requestDigest
+    || !v.owner || typeof v.owner.kind !== "string" || !/^[a-z][a-z0-9-]{1,63}$/.test(v.owner.kind) || !Number.isSafeInteger(v.owner.uid) || v.owner.uid < 0
+    || !v.roots || ![v.roots.durable, v.roots.run, v.roots.home, v.roots.release, v.roots.unitDir].every(value => typeof value === "string")) return bad("registration_invalid");
+  if (!["preparing", "installed", "removing", "retired"].includes(v.phase)
     || !Array.isArray(v.units) || v.units.length !== 2 || !v.artifacts || ![v.artifacts.entry, v.artifacts.preload, v.artifacts.node].every(hash)) return bad("registration_invalid");
   path(v.release); path(v.node);
+  for (const key of ["durable", "run", "home", "release", "unitDir"] as const) path(v.roots[key]);
+  if (v.roots.release !== v.release || v.roots.unitDir !== join(v.roots.home, ".config/systemd/user") || rootsOverlap(v.roots.release, v.roots.durable)
+    || rootsOverlap(v.roots.release, v.roots.run) || rootsOverlap(v.roots.release, v.roots.home)) return bad("registration_invalid");
   for (const u of v.units) if (!u || !["daemon", "modeld"].includes(u.component) || u.name !== `grokbox-${v.scope.slice(0, 16)}-${u.component}.service`
     || typeof u.text !== "string" || u.text.length > 6000 || sha256Text(u.text) !== u.digest) return bad("registration_invalid");
-  if (new Set(v.units.map(u => u.component)).size !== 2 || sha256Text(canonicalJson({ scope: v.scope, release: v.release, node: v.node,
+  if (new Set(v.units.map(u => u.component)).size !== 2 || sha256Text(canonicalJson({ scope: v.scope, owner: v.owner, roots: v.roots, release: v.release, node: v.node,
     artifacts: v.artifacts, units: v.units })) !== v.requestDigest) return bad("registration_invalid");
   return v;
 }
@@ -165,7 +209,7 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
   if (!["install", "status", "uninstall"].includes(input.action)) return bad("invalid_action");
   const root = path(input.durableRoot), run = path(input.runRoot), home = path(input.home);
   const unitDir = join(home, ".config/systemd/user"), state = join(root, "state"), file = join(state, "runtime-services.json");
-  const scope = sha256Text(canonicalJson(["runtime-services-v1", root, run, home, process.getuid?.() ?? -1]));
+  const scope = sha256Text(canonicalJson(["runtime-services-v2", root, run, home, process.getuid?.() ?? -1]));
   await directory(root); await directory(run); await directory(home);
   for (const parent of [state, join(home, ".config"), join(home, ".config/systemd"), unitDir]) {
     try { await directory(parent); } catch (e) { if (!missing(e)) throw e; }
@@ -174,6 +218,10 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
   const pendingText = await privateText(`${file}.next`), pending = registration(pendingText);
   if (saved && saved.scope !== scope || pending && pending.scope !== scope) return bad("scope_changed");
   const environment = await manager.probe();
+  const owner = ownerFor(environment), parentIndependent = parentIndependentFor(environment);
+  const roots = input.action === "install" && input.releaseRoot
+    ? independentRoots(root, run, home, path(input.releaseRoot), unitDir)
+    : saved?.roots ?? { durable: root, run, home, release: saved?.release ?? root, unitDir };
   if (input.action === "status") {
     const units = saved ? await Promise.all(saved.units.map(async u => ({ name: u.name, definitionMatched: await privateText(join(unitDir, u.name)) === u.text }))) : [];
     let observed: Awaited<ReturnType<ServiceManager["states"]>> | null = null;
@@ -185,9 +233,13 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     let loadedDefinitionsMatched: boolean | null = null;
     if (saved && observed) { try { loadedDefinitions(observed, saved.units, unitDir, saved.phase === "retired"); loadedDefinitionsMatched = true; }
       catch { loadedDefinitionsMatched = false; } }
-    return { schemaVersion: 1, scope, environment, phase: saved?.phase ?? "not_installed", units,
+    const installation = saved ? { owner: saved.owner, roots: saved.roots, epoch: saved.epoch } : null;
+    return { schemaVersion: 2, scope, environment, phase: saved?.phase ?? "not_installed", units,
       managerObserved: observed ? publicStates(observed) : null, loadedDefinitionsMatched, artifactsMatched, pendingPhase: pending?.phase ?? null,
-      filesMatched: saved ? units.every(u => u.definitionMatched) : false, executionQualified: false, createsServices: false };
+      filesMatched: saved ? units.every(u => u.definitionMatched) : false, executionQualified: false, createsServices: false,
+      owner: saved?.owner ?? owner, roots: saved?.roots ?? null, epoch: saved?.epoch ?? null,
+      parentIndependent, singleInstance: Boolean(saved && saved.units.length === 2 && new Set(saved.units.map(u => u.name)).size === 2),
+      installation, faultReceipt: saved ? { schemaVersion: 1, epoch: saved.epoch, phase: saved.phase, requestDigest: saved.requestDigest } : null };
   }
   let target: Registration, configRevision: string | null = null;
   if (input.action === "install") {
@@ -195,7 +247,7 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     const releaseInfo = await lstat(release);
     if (!releaseInfo.isDirectory() || releaseInfo.isSymbolicLink() || (releaseInfo.mode & 0o022) !== 0
       || process.getuid && releaseInfo.uid !== process.getuid() && releaseInfo.uid !== 0) return bad("unsafe_artifact");
-    if (await lstat(join(release, ".git")).then(() => true, e => { if (missing(e)) return false; throw e; })) return bad("source_checkout_not_release");
+    if (await hasGitAncestor(release)) return bad("source_checkout_not_release");
     const pkgFile = join(release, "package.json"); await artifact(pkgFile, 64 * 1024);
     const pkg = JSON.parse(await readFile(pkgFile, "utf8")); if (pkg.name !== "grokbox") return bad("wrong_package");
     const version = /^v(\d+)\.(\d+)\.(\d+)$/.exec(await exec(node, ["--version"]));
@@ -204,8 +256,9 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     if (config.document.daemon?.observation && config.document.daemon.observation.runRoot !== run) return bad("collector_root_mismatch");
     const artifacts = { entry: await artifact(join(release, "dist/index.js")), preload: await artifact(join(release, "dist/preload.cjs")), node: await artifact(node, 256 * 1024 * 1024) };
     const units = ["modeld", "daemon"].map(c => render(scope, c as Unit["component"], root, run, home, release, node, artifacts));
-    const requestDigest = sha256Text(canonicalJson({ scope, release, node, artifacts, units }));
-    target = { schemaVersion: 1, scope, release, node, artifacts, units, requestDigest, phase: "preparing" };
+    const installRoots = independentRoots(root, run, home, release, unitDir), installOwner = ownerFor(environment);
+    const requestDigest = sha256Text(canonicalJson({ scope, owner: installOwner, roots: installRoots, release, node, artifacts, units }));
+    target = { schemaVersion: 2, scope, owner: installOwner, roots: installRoots, release, node, artifacts, units, requestDigest, epoch: requestDigest, phase: "preparing" };
     if (saved && saved.phase !== "retired" && saved.requestDigest !== requestDigest) return bad("explicit_retirement_required");
   } else {
     if (!saved) return bad("not_installed"); target = saved;
@@ -218,12 +271,16 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
   }
   const planDigest = sha256Text(canonicalJson({ action: input.action, request: target.requestDigest, saved: savedText === null ? null : sha256Text(savedText), pending: pendingText === null ? null : sha256Text(pendingText),
     files: currentFiles.map(f => f.content === null ? null : sha256Text(f.content)), configRevision, start: input.start === true }));
-  const preview = { schemaVersion: 1, action: input.action, scope, planDigest, environment, units: names,
+  const preview = { schemaVersion: 2, action: input.action, scope, planDigest, environment, units: names,
     releaseRevision: target.requestDigest, startsNow: input.action === "install" && input.start === true,
-    affectsHost: false, importsShellCredentials: false, executionQualified: false, written: false };
+    affectsHost: false, importsShellCredentials: false, executionQualified: false, written: false,
+    owner: target.owner, roots: target.roots, epoch: target.epoch, parentIndependent, singleInstance: new Set(names).size === 2,
+    independentInstall: { owner: target.owner, roots: target.roots, epoch: target.epoch, parentShell: "service-manager", singleInstance: new Set(names).size === 2 },
+    operationReceipt: { schemaVersion: 1, action: input.action, epoch: target.epoch, planDigest, outcome: "preview" as const, phase: target.phase } };
   if (input.confirmed !== true) return preview;
   if (input.expectedPlan !== planDigest) return bad("plan_conflict");
-  if (input.action === "uninstall" && saved?.phase === "retired") return { ...preview, written: false, phase: "retired" as const, unchanged: true };
+  if (input.action === "uninstall" && saved?.phase === "retired") return { ...preview, written: false, phase: "retired" as const, unchanged: true,
+    operationReceipt: { schemaVersion: 1, action: input.action, epoch: target.epoch, planDigest, outcome: "reconciled" as const, phase: "retired" as const } };
   if (!environment.available || !environment.bootPersistent) return bad(environment.reason);
   await directory(state, true);
   return withJournalLock(join(state, "runtime-services.lock"), async () => {
@@ -233,6 +290,9 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
     if (input.action === "install" && (await artifact(join(target.release, "dist/index.js")) !== target.artifacts.entry
       || await artifact(join(target.release, "dist/preload.cjs")) !== target.artifacts.preload || await artifact(target.node, 256 * 1024 * 1024) !== target.artifacts.node)) return bad("artifact_changed");
     const currentEnv = await manager.probe(); if (!currentEnv.available || !currentEnv.bootPersistent) return bad(currentEnv.reason);
+    const currentOwner = ownerFor(currentEnv);
+    if (currentOwner.kind !== target.owner.kind || currentOwner.uid !== target.owner.uid) return bad("service_owner_changed");
+    if (!parentIndependentFor(currentEnv)) return bad("parent_shell_not_independent");
     for (const p of [join(home, ".config"), join(home, ".config/systemd"), unitDir]) await directory(p, true);
     if (input.action === "uninstall") {
       const active = await manager.states(names);
@@ -261,7 +321,8 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
         || expectedPhase === "retired" && (s.mainPid !== 0 || !["inactive", "failed"].includes(s.active))
         || input.start === true && !["active", "activating"].includes(s.active))) return bad("manager_readback_mismatch");
       await publish(file, pendingText!, savedText !== null);
-      return { ...preview, phase: expectedPhase, written: true, reconciled: true, managerObserved: publicStates(observed) };
+      return { ...preview, phase: expectedPhase, written: true, reconciled: true, managerObserved: publicStates(observed),
+        operationReceipt: { schemaVersion: 1, action: input.action, epoch: target.epoch, planDigest, outcome: "reconciled" as const, phase: expectedPhase } };
     }
     // Persist the exact intent before manager changes. Recovery may resume only
     // matching owned definitions; unknown/mismatched content is never replaced.
@@ -302,7 +363,8 @@ export async function runtimeServices(input: RuntimeServiceRequest, manager: Ser
         || u.enabled !== (input.action === "install") || input.action === "install" && input.start === true && !["active", "activating"].includes(u.active))) return bad("manager_readback_mismatch");
       const phase = input.action === "install" ? "installed" as const : "retired" as const;
       await publish(file, JSON.stringify({ ...target, phase }) + "\n", true);
-      return { ...preview, written: true, phase, managerObserved: publicStates(managerObserved) };
+      return { ...preview, written: true, phase, managerObserved: publicStates(managerObserved),
+        operationReceipt: { schemaVersion: 1, action: input.action, epoch: target.epoch, planDigest, outcome: "committed" as const, phase } };
     } catch (e) { if (e instanceof RuntimeServiceError && e.reason === "unit_changed") throw e; return bad("installation_outcome_unknown"); }
   }, 1);
 }

@@ -205,3 +205,25 @@ test("changed artifacts invalidate a captured plan and source checkouts cannot b
     expect(await readdir(f.home)).toEqual([]);
   } finally { await f.close(); }
 });
+
+test("the installation contract records owner, independent roots, epoch and durable fault receipt", async () => {
+  const f = await fixture();
+  try {
+    const plan = await f.command("install");
+    expect(plan).toMatchObject({ schemaVersion: 2, owner: { kind: "injected-service-manager" }, roots: { durable: f.root, run: f.run, home: f.home, release: f.release },
+      parentIndependent: true, singleInstance: true, independentInstall: { parentShell: "service-manager", singleInstance: true }, operationReceipt: { outcome: "preview" } });
+    const done = await f.command("install", { confirmed: true, expectedPlan: digest(plan) });
+    expect(done).toMatchObject({ epoch: plan.epoch, operationReceipt: { outcome: "committed", epoch: plan.epoch } });
+    expect(await f.command("status")).toMatchObject({ schemaVersion: 2, epoch: plan.epoch, parentIndependent: true,
+      owner: { kind: "injected-service-manager" }, faultReceipt: { phase: "installed", epoch: plan.epoch } });
+  } finally { await f.close(); }
+});
+
+test("a release prefix overlapping durable state or any source checkout ancestor is rejected", async () => {
+  const f = await fixture();
+  try {
+    await expect(f.command("install", { releaseRoot: f.root })).rejects.toMatchObject({ reason: "release_prefix_not_independent" });
+    await writeFile(join(f.dir, ".git"), "gitdir: parent-fixture", { mode: 0o600 });
+    await expect(f.command("install")).rejects.toMatchObject({ reason: "source_checkout_not_release" });
+  } finally { await f.close(); }
+});
