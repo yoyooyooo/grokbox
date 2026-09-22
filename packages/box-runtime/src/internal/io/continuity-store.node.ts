@@ -352,6 +352,11 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
               EXISTS(SELECT 1 FROM json_each(c.request_json,'$.materialRefs') r WHERE json_extract(r.value,'$.ref')=p.request_id)
               OR EXISTS(SELECT 1 FROM json_each(c.request_json,'$.duties') d
                 JOIN json_each(d.value,'$.materialRefs') r WHERE json_extract(r.value,'$.ref')=p.request_id)
+              OR EXISTS(SELECT 1 FROM json_each(c.result_json,'$.duties') d
+                JOIN json_each(d.value,'$.materialRefs') r WHERE json_extract(r.value,'$.ref')=p.request_id)
+              OR EXISTS(SELECT 1 FROM json_each(c.request_json,'$.workflowRefs') r
+                JOIN continuity_workflow_materials m ON m.operation_id=json_extract(r.value,'$.operationId')
+                WHERE m.snapshot_id=p.request_id)
             )
         )
         ORDER BY p.sequence LIMIT ?`, [policy.keepRecent, maxItems]);

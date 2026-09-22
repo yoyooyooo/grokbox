@@ -1,7 +1,6 @@
 import { canonicalJson, sha256Text } from "../../hash.ts";
-import { continuityObject, continuityId, continuityUint, isContinuityHash, isContinuityToken, isContinuityUuid, failContinuity,
-  type ContinuityFailureCode } from "./material.ts";
-import { protectedStorageRef, type ProtectedStorageRef } from "../observation/continuity-contract.ts";
+import { continuityObject, continuityId, continuityUint, isContinuityHash, isContinuityToken, isContinuityUuid, failContinuity } from "./material.ts";
+import { type ProtectedStorageRef } from "../observation/continuity-contract.ts";
 
 export const SELF_RESET_VERSION = 1 as const;
 export const SELF_RESET_MAX_MATERIALS = 64;
@@ -13,7 +12,7 @@ export const SELF_RESET_QUEUE_STATES = ["queued", "effect_unknown", "complete", 
 export type SelfResetQueueState = typeof SELF_RESET_QUEUE_STATES[number];
 
 const text = (value: unknown, max: number) => {
-  if (typeof value !== "string" || value.length < 1 || value.length > max || /[\\x00-\\x1f]/.test(value)) return failContinuity("invalid_material");
+  if (typeof value !== "string" || value.length < 1 || value.length > max || /[\x00-\x1f]/.test(value)) return failContinuity("invalid_material");
   return value;
 };
 const boundedList = <A>(value: unknown, max: number, parse: (item: unknown) => A) => {
@@ -32,9 +31,9 @@ export function selfResetWorkflowRef(raw: unknown): SelfResetWorkflowRef {
 
 export type SelfResetMaterialRef = ProtectedStorageRef;
 export function selfResetMaterialRef(raw: unknown): SelfResetMaterialRef {
-  const value = protectedStorageRef(raw);
-  if (value.owner !== "continuity.recovery") return failContinuity("conflict");
-  return value;
+  const value = continuityObject(raw, ["owner", "ref", "revision"]);
+  if (value.owner !== "continuity.recovery" || !isContinuityUuid(value.ref) || !isContinuityHash(value.revision)) return failContinuity("invalid_material");
+  return { owner: value.owner, ref: value.ref, revision: value.revision };
 }
 
 export type SelfResetDuty = { id: string; kind: SelfResetDutyKind; materialRefs: SelfResetMaterialRef[] };
@@ -65,12 +64,19 @@ export function selfResetRequest(raw: unknown): SelfResetRequest {
   if (v.version !== SELF_RESET_VERSION || !isContinuityUuid(v.operationId) || !isContinuityUuid(v.agentId)
     || !isContinuityHash(v.scopeId) || !isContinuityHash(v.sourceRevision) || !isContinuityToken(v.sourceGeneration)
     || !isContinuityHash(v.policyRevision) || typeof v.reason !== "string" || v.reason.length < 1 || v.reason.length > 256
-    || /[\\x00-\\x1f]/.test(v.reason) || !continuityUint(v.requestedAtMs) || v.requestedAtMs < 1) return failContinuity("invalid_material");
+    || /[\x00-\x1f]/.test(v.reason) || !continuityUint(v.requestedAtMs) || v.requestedAtMs < 1) return failContinuity("invalid_material");
   const materialRefs = boundedList(v.materialRefs, SELF_RESET_MAX_MATERIALS, selfResetMaterialRef);
   const workflowRefs = boundedList(v.workflowRefs, SELF_RESET_MAX_WORKFLOWS, selfResetWorkflowRef);
   const duties = boundedList(v.duties, SELF_RESET_MAX_DUTIES, selfResetDuty);
   const allMaterials = [...materialRefs, ...duties.flatMap(duty => duty.materialRefs)];
-  if (new Set(allMaterials.map(value => canonicalJson(value))).size !== allMaterials.length) return failContinuity("conflict");
+  if (allMaterials.length > SELF_RESET_MAX_MATERIALS) return failContinuity("capacity");
+  if (new Set(duties.map(duty => duty.id)).size !== duties.length
+    || new Set(workflowRefs.map(ref => ref.operationId)).size !== workflowRefs.length) return failContinuity("conflict");
+  const revisions = new Map<string, string>();
+  for (const ref of allMaterials) {
+    if (revisions.has(ref.ref) && revisions.get(ref.ref) !== ref.revision) return failContinuity("conflict");
+    revisions.set(ref.ref, ref.revision);
+  }
   return { version: 1, operationId: v.operationId, agentId: v.agentId, scopeId: v.scopeId, sourceRevision: v.sourceRevision,
     sourceGeneration: v.sourceGeneration, policyRevision: v.policyRevision, reason: v.reason, materialRefs, workflowRefs, duties,
     requestedAtMs: v.requestedAtMs };
@@ -81,11 +87,11 @@ export const selfResetMaterialRefs = (request: SelfResetRequest): SelfResetMater
   [...request.materialRefs, ...request.duties.flatMap(duty => duty.materialRefs)].filter((value, index, all) =>
     all.findIndex(candidate => canonicalJson(candidate) === canonicalJson(value)) === index);
 
-export type SelfResetCurrent = { sourceRevision: string; sourceGeneration: string; turnSettled: true };
+export type SelfResetCurrent = { sourceRevision: string; sourceGeneration: string; turnSettled: boolean };
 export function selfResetCurrent(raw: unknown): SelfResetCurrent {
   const v = continuityObject(raw, ["sourceRevision", "sourceGeneration", "turnSettled"]);
-  if (!isContinuityHash(v.sourceRevision) || !isContinuityToken(v.sourceGeneration) || v.turnSettled !== true) return failContinuity("conflict");
-  return { sourceRevision: v.sourceRevision, sourceGeneration: v.sourceGeneration, turnSettled: true };
+  if (!isContinuityHash(v.sourceRevision) || !isContinuityToken(v.sourceGeneration) || typeof v.turnSettled !== "boolean") return failContinuity("conflict");
+  return { sourceRevision: v.sourceRevision, sourceGeneration: v.sourceGeneration, turnSettled: v.turnSettled };
 }
 
 export type SelfResetDutyResult = { id: string; state: "pending" | "complete" | "blocked" | "unknown"; materialRefs?: SelfResetMaterialRef[]; reason?: string };
@@ -104,7 +110,9 @@ export function selfResetExecution(raw: unknown, request: SelfResetRequest): Sel
   if (!["complete", "blocked", "unknown"].includes(String(v.state))) return failContinuity("invalid_material");
   const duties = boundedList(v.duties, SELF_RESET_MAX_DUTIES, selfResetDutyResult);
   const expected = new Set(request.duties.map(duty => duty.id));
-  if (duties.some(duty => !expected.has(duty.id)) || duties.length !== expected.size) return failContinuity("conflict");
+  if (new Set(duties.map(duty => duty.id)).size !== duties.length
+    || duties.some(duty => !expected.has(duty.id)) || duties.length !== expected.size) return failContinuity("conflict");
+  if (duties.reduce((count, duty) => count + (duty.materialRefs?.length ?? 0), 0) > SELF_RESET_MAX_MATERIALS) return failContinuity("capacity");
   const reason = v.reason === undefined ? undefined : text(v.reason, 256);
   if (v.state === "complete" && duties.some(duty => duty.state !== "complete")) return failContinuity("conflict");
   return { state: v.state as SelfResetExecution["state"], duties, ...(reason ? { reason } : {}) };
@@ -124,4 +132,3 @@ export type SelfResetReceipt = {
   createdAtMs: number;
   updatedAtMs: number;
 };
-export const selfResetFailure = (code: ContinuityFailureCode): never => failContinuity(code);

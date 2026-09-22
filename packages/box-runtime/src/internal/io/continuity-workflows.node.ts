@@ -3,10 +3,10 @@ import { botWorkflowRequest, botWorkflowDigest, continuityStorePolicy, failConti
   WORKFLOW_STEPS, continuityId, type BotWorkflowRequest, type WorkflowStep, type WorkflowReceipt,
   selfResetRequest, selfResetDigest, selfResetMaterialRefs, selfResetCurrent, selfResetExecution,
   type SelfResetRequest, type SelfResetReceipt, type SelfResetCurrent, type SelfResetExecution, type SelfResetDutyResult,
-  type SelfResetQueueState } from "@grokbox/runtime-kernel/continuity";
+  type SelfResetMaterialRef, type SelfResetQueueState } from "@grokbox/runtime-kernel/continuity";
 import { continuityDatabase, type ContinuityStoreHooks } from "./continuity-database.node.ts";
 import type { ContinuityStoreInput } from "./continuity-store.node.ts";
-import type { MonitorSqlite } from "./monitor-sqlite.node.ts";
+import type { MonitorSqlite, SqlRow } from "./monitor-sqlite.node.ts";
 
 function safeData(raw: unknown, depth = 0): any {
   if (depth > 6) return failContinuity("invalid_material");
@@ -201,7 +201,7 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     return row ? {operationId,agentId:String(row.agent_id),kind:String(row.kind),state:String(row.state),request:parse(row.request_json),result:row.result_json===null?null:parse(row.result_json),createdAtMs:Number(row.created_at)} : null;
   });
   const reserveControl = (operationId:string,agentId:string,kind:string,raw:unknown) => database.write("control-prepare",async db=>{
-    id(operationId);id(agentId);token(kind);const encoded=encode(raw);
+    id(operationId);id(agentId);token(kind);if(kind==="self-reset")return failContinuity("conflict");const encoded=encode(raw);
     const row=await db.first("SELECT * FROM continuity_queued_controls WHERE operation_id=?",[operationId]);
     if(row){if(row.agent_id!==agentId||row.kind!==kind||row.request_json!==encoded)return failContinuity("conflict");return {created:false,state:String(row.state)};}
     await database.metadataRoom(db,Buffer.byteLength(encoded)*2+8192);
@@ -210,15 +210,15 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
   });
   const transitionControl=(operationId:string,expected:string,next:string,raw:unknown)=>database.write("control-transition",async db=>{
     id(operationId);if(!["prepared","effect_unknown","complete","blocked"].includes(next))return failContinuity("invalid_material");
-    const row=await db.first("SELECT state FROM continuity_queued_controls WHERE operation_id=?",[operationId]);
-    if(!row||row.state!==expected)return failContinuity("conflict");const encoded=raw===null?null:encode(raw);
+    const row=await db.first("SELECT state,kind FROM continuity_queued_controls WHERE operation_id=?",[operationId]);
+    if(!row||row.kind==="self-reset"||row.state!==expected)return failContinuity("conflict");const encoded=raw===null?null:encode(raw);
     if(encoded)await database.metadataRoom(db,Buffer.byteLength(encoded)*2+4096);
     await db.run("UPDATE continuity_queued_controls SET state=?,result_json=?,updated_at=? WHERE operation_id=?",[next,encoded,Date.now(),operationId]);return {state:next};
   });
 
   const selfResetDuties = (request: SelfResetRequest, result: SelfResetExecution | null): SelfResetDutyResult[] =>
     result?.duties ?? request.duties.map(duty => ({ id: duty.id, state: "pending" as const }));
-  const selfResetReceipt = (value: any, request: SelfResetRequest, result: SelfResetExecution | null): SelfResetReceipt => ({
+  const selfResetReceipt = (value: SqlRow, request: SelfResetRequest, result: SelfResetExecution | null): SelfResetReceipt => ({
     operationId: request.operationId, agentId: request.agentId, state: String(value.state) as SelfResetQueueState,
     requestDigest: selfResetDigest(request), sourceRevision: request.sourceRevision, sourceGeneration: request.sourceGeneration,
     materialRefs: selfResetMaterialRefs(request), workflowRefs: request.workflowRefs,
@@ -229,7 +229,7 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     const value = await db.first("SELECT * FROM continuity_queued_controls WHERE operation_id=?", [id(operationId)]);
     if (!value || value.kind !== "self-reset") return failContinuity("not_found");
     const request = selfResetRequest(parse(value.request_json));
-    if (request.operationId !== operationId || String(value.agent_id) !== request.agentId || request.scopeId !== input.scopeId || encode(request) !== value.request_json) return failContinuity("integrity_failure");
+    if (request.operationId !== operationId || value.agent_id !== request.agentId || request.scopeId !== input.scopeId || encode(request) !== value.request_json) return failContinuity("integrity_failure");
     const state = String(value.state) as SelfResetQueueState;
     if (!["queued", "effect_unknown", "complete", "blocked", "unknown"].includes(state)) return failContinuity("integrity_failure");
     const result = value.result_json === null ? null : selfResetExecution(parse(value.result_json), request);
@@ -239,18 +239,22 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     return { value, request, result };
   };
   const selfResetRequestFor = (operationId: string) => database.read(async db => (await selfResetRow(db, operationId)).request);
-  const verifySelfResetRefs = async (db: MonitorSqlite, request: SelfResetRequest) => {
-    for (const ref of selfResetMaterialRefs(request)) {
+  const verifySelfResetMaterials = async (db: MonitorSqlite, refs: SelfResetMaterialRef[]) => {
+    for (const ref of refs) {
       const publication = await db.first("SELECT state,digest FROM publications WHERE request_id=?", [ref.ref]);
       if (!publication || publication.state !== "published" || String(publication.digest) !== ref.revision) return failContinuity("conflict");
     }
+  };
+  const verifySelfResetRefs = async (db: MonitorSqlite, request: SelfResetRequest) => {
+    await verifySelfResetMaterials(db, selfResetMaterialRefs(request));
     for (const ref of request.workflowRefs) {
       const workflow = await db.first("SELECT digest FROM continuity_workflows WHERE operation_id=?", [ref.operationId]);
       if (!workflow || String(workflow.digest) !== ref.digest) return failContinuity("conflict");
     }
   };
-  const enqueueSelfReset = (raw: SelfResetRequest) => database.write("self-reset-enqueue", async db => {
+  const enqueueSelfReset = (raw: SelfResetRequest) => {
     const request = selfResetRequest(raw);
+    return database.write("self-reset-enqueue", async db => {
     if (request.scopeId !== input.scopeId) return failContinuity("scope_mismatch");
     const encoded = encode(request);
     const prior = await db.first("SELECT * FROM continuity_queued_controls WHERE operation_id=?", [request.operationId]);
@@ -265,7 +269,8 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     await db.run("INSERT INTO continuity_queued_controls VALUES(?,?,?,?,'queued',NULL,?,?)", [request.operationId, request.agentId, "self-reset", encoded, now, now]);
     const saved = await selfResetRow(db, request.operationId);
     return { created: true, receipt: selfResetReceipt(saved.value, saved.request, saved.result) };
-  });
+    });
+  };
   const selfReset = (operationId: string) => database.read(async db => {
     const saved = await selfResetRow(db, operationId);
     return selfResetReceipt(saved.value, saved.request, saved.result);
@@ -273,7 +278,7 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
   const claimSelfReset = (operationId: string, raw: SelfResetCurrent) => database.write("self-reset-claim", async db => {
     const saved = await selfResetRow(db, operationId);
     const current = selfResetCurrent(raw);
-    if (saved.value.state !== "queued") return { dispatch: false, receipt: selfResetReceipt(saved.value, saved.request, saved.result) };
+    if (saved.value.state !== "queued" || !current.turnSettled) return { dispatch: false, receipt: selfResetReceipt(saved.value, saved.request, saved.result) };
     if (current.sourceRevision !== saved.request.sourceRevision || current.sourceGeneration !== saved.request.sourceGeneration) {
       const execution: SelfResetExecution = {
         state: "blocked",
@@ -290,13 +295,18 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     const next = await selfResetRow(db, operationId);
     return { dispatch: true, receipt: selfResetReceipt(next.value, next.request, next.result) };
   });
-  const settleSelfReset = (operationId: string, raw: unknown) => database.write("self-reset-settle", async db => {
+  const settleSelfReset = (operationId: string, raw: unknown, expectedDigest?: string) => database.write("self-reset-settle", async db => {
     const saved = await selfResetRow(db, operationId);
     const execution = selfResetExecution(raw, saved.request);
-    if (saved.value.state !== "effect_unknown") {
+    if (expectedDigest !== undefined && expectedDigest !== selfResetDigest(saved.request)) return failContinuity("conflict");
+    if (saved.value.state !== "effect_unknown" && !(expectedDigest !== undefined && saved.value.state === "unknown")) {
       if (saved.result && canonicalJson(saved.result) === canonicalJson(execution)) return selfResetReceipt(saved.value, saved.request, saved.result);
       return failContinuity("conflict");
     }
+    for (const previous of saved.result?.duties ?? []) {
+      if (previous.state === "complete" && canonicalJson(previous) !== canonicalJson(execution.duties.find(duty => duty.id === previous.id))) return failContinuity("conflict");
+    }
+    await verifySelfResetMaterials(db, execution.duties.flatMap(duty => duty.materialRefs ?? []));
     const encoded = encode(execution);
     await database.metadataRoom(db, Buffer.byteLength(encoded) * 2 + 4096);
     await db.run("UPDATE continuity_queued_controls SET state=?,result_json=?,updated_at=? WHERE operation_id=?", [execution.state, encoded, Date.now(), operationId]);
@@ -307,11 +317,12 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
     id(agentId);
     const bounded = Number.isSafeInteger(limit) && limit > 0 && limit <= 128 ? limit : failContinuity("invalid_material");
     const rows = await db.all("SELECT * FROM continuity_queued_controls WHERE agent_id=? AND kind='self-reset' ORDER BY created_at LIMIT ?", [agentId, bounded]);
-    return rows.map(value => {
-      const request = selfResetRequest(parse(value.request_json));
-      const result = value.result_json === null ? null : selfResetExecution(parse(value.result_json), request);
-      return selfResetReceipt(value, request, result);
-    });
+    const receipts: SelfResetReceipt[] = [];
+    for (const value of rows) {
+      const saved = await selfResetRow(db, String(value.operation_id));
+      receipts.push(selfResetReceipt(saved.value, saved.request, saved.result));
+    }
+    return receipts;
   });
   return { initialize: database.initialize, create, request, step, beginStep, completeStep, phase, status, list,
     subject, subjects, enrollment, managedRequests, updateSubject, completeSubjectCapture, handoverItems, putHandover, settleHandover,control,reserveControl,transitionControl,
