@@ -47,11 +47,12 @@ describe("tool declaration and identity witnesses", () => {
       expect(evidence.snapshot().toolIdentity?.firstMismatch?.relation).toBe(relation);
     });
   }
-  test("name changes and SDK rewrites are observable; tail and retained state stay bounded", () => {
+  test("changed provider identity is not attributed to an SDK rewrite; state stays bounded", () => {
     const evidence = new StreamEvidence(), identity = new ToolIdentityObserver(["lookup"], evidence);
     identity.provider("call", "look"); identity.provider("call", "lookup"); identity.sdk("call", "other");
     expect(evidence.snapshot().toolIdentity?.tail[1]?.phase).toBe("changed");
-    expect(evidence.snapshot().toolIdentity?.tail[2]?.wireNameMatched).toBe(false);
+    expect(evidence.snapshot().toolIdentity?.tail[2]?.wireNameMatched).toBeUndefined();
+    expect(evidence.snapshot().toolIdentity?.tail[2]?.wireComparison).toBe("identity_changed");
     for (let i = 0; i < 200; i++) identity.sdk(`call-${i}`, "lookup");
     const result = evidence.snapshot().toolIdentity!;
     expect(result.tail).toHaveLength(8); expect(result.truncated).toBe(true);

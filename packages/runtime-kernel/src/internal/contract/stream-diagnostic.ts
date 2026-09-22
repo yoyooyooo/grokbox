@@ -8,6 +8,7 @@ import { LOCAL_WITNESS_FAILURES, type LocalWitnessFailure } from "./ownership.ts
 export const NORMALIZE_CAUSES = [
   "reasoning_request_conflict", "missing_finish", "unsupported_finish_reason", "open_tools_at_finish", "tool_arguments_invalid",
   "tool_arguments_mismatch", "tool_identity_conflict", "tool_id_collision", "undeclared_tool", "tool_declaration_mismatch",
+  "tool_schema_declaration_mismatch", "tool_choice_declaration_mismatch", "tool_choice_mismatch",
   "parallel_tools", "sdk_invalid_tool", "sdk_schema_mismatch", "unsupported_provider_state", "unterminated_reasoning", "unsupported_sdk_part", "invalid_event_shape",
   "event_after_finish", "conflicting_finish_reason", "empty_output", "invalid_usage", "invalid_terminal", "terminal_binding_mismatch", "stream_budget",
 ] as const;
@@ -43,6 +44,8 @@ export type StreamSummary = {
   requestedParallelToolCalls?: boolean;
   hostToolPolicy?: "single-tool" | "validated-batch" | "incremental";
   toolBatchState?: "held" | "released" | "discarded";
+  /** Integrity only; never proof of schema conformity, execution or delivery. */
+  toolValidationScope?: "structure_only";
   wireToolValidation?: "not_instrumented" | "pending" | "validated" | "rejected" | "incomplete" | "not_applicable";
   finishAudit?: FinishAudit;
   terminalAudit?: ToolTerminalAudit;
@@ -79,8 +82,11 @@ export type StreamDiagnostic = {
   eventType?: StreamEventType;
   declaredToolMatch?: boolean;
   sdkValidation?: SdkValidationObservation;
+  toolChoice?: { mode: "auto" | "none" | "required" | "tool"; reason: "forbidden" | "different_tool" | "missing_call" };
   wireSequence?: number;
   stream?: StreamSummary;
+  /** Independent observations, never merged counters or a cross-attempt sum. */
+  streams?: Partial<Record<"backend" | "wire" | "host", StreamSummary>>;
 };
 function own(value: unknown, key: PropertyKey): unknown {
   if (value === null || typeof value !== "object") return undefined;
@@ -138,6 +144,7 @@ export function projectStreamSummary(value: unknown): StreamSummary | undefined 
     if (batch) out.toolBatchState = batch;
     const status = own(value, "providerHttpStatus");
     if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) out.providerHttpStatus = status;
+    if (own(value, "toolValidationScope") === "structure_only") out.toolValidationScope = "structure_only";
     const validation = member(own(value, "wireToolValidation"), ["not_instrumented", "pending", "validated", "rejected", "incomplete", "not_applicable"]);
     if (validation) out.wireToolValidation = validation;
     const finishAudit = projectFinishAudit(own(value, "finishAudit")), terminalAudit = projectToolTerminalAudit(own(value, "terminalAudit"));
@@ -175,8 +182,17 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
     if (typeof match === "boolean") out.declaredToolMatch = match;
     const sdkValidation = projectSdkValidation(own(value, "sdkValidation"));
     if (sdkValidation) out.sdkValidation = sdkValidation;
+    const choice = own(value, "toolChoice");
+    const choiceMode = member(own(choice, "mode"), ["auto", "none", "required", "tool"]);
+    const choiceReason = member(own(choice, "reason"), ["forbidden", "different_tool", "missing_call"]);
+    if (choiceMode && choiceReason) out.toolChoice = { mode: choiceMode, reason: choiceReason };
     if (seq !== undefined) out.wireSequence = seq;
     if (stream) out.stream = stream;
+    const streams = own(value, "streams");
+    for (const layer of ["backend", "wire", "host"] as const) {
+      const summary = projectStreamSummary(own(streams, layer));
+      if (summary) (out.streams ??= {})[layer] = summary;
+    }
     const budget = own(value, "budget"), layer = member(own(budget, "layer"), ["provider", "canonical", "host"]);
     const metric = member(own(budget, "metric"), ["output_bytes", "retained_bytes", "event_count", "wire_bytes", "event_bytes", "tool_count"]);
     const limit = count(own(budget, "limit")), measured = count(own(budget, "measured"));
@@ -201,11 +217,17 @@ export function projectStreamDiagnostic(value: unknown): StreamDiagnostic | unde
     return Object.keys(out).length ? out : undefined;
   } catch { return undefined; }
 }
+/** Only the detecting process may attach its own layer. Callers joining separate
+ * journal records must first prove execution and final-attempt identity. */
+export function withStreamLayer(detail: StreamDiagnostic | undefined, layer: "backend" | "wire" | "host", stream: StreamSummary): StreamDiagnostic {
+  const projected = projectStreamDiagnostic(detail);
+  return projectStreamDiagnostic({ ...projected, stream, streams: { ...projected?.streams, [layer]: stream } })!;
+}
 const diagnostics = new WeakMap<object, StreamDiagnostic>();
 export function annotateStreamFailure<T extends object>(error: T, value: StreamDiagnostic): T {
   const next = projectStreamDiagnostic(value), prior = diagnostics.get(error);
   // The detecting site/cause wins; later layers may append a later evidence snapshot.
-  if (next) diagnostics.set(error, Object.freeze({ ...next, ...prior, ...(next.stream ? { stream: next.stream } : {}), ...(next.authority || prior?.authority ? { authority: { ...next.authority, ...prior?.authority } as AuthorityDiagnostic } : {}) }));
+  if (next) diagnostics.set(error, Object.freeze({ ...next, ...prior, ...(next.stream ? { stream: next.stream } : {}), ...(next.streams || prior?.streams ? { streams: { ...prior?.streams, ...next.streams } } : {}), ...(next.authority || prior?.authority ? { authority: { ...next.authority, ...prior?.authority } as AuthorityDiagnostic } : {}) }));
   return error;
 }
 export function streamFailureDiagnostic(value: unknown): StreamDiagnostic | undefined {
@@ -249,6 +271,7 @@ export class StreamEvidence {
   httpStatus(n: number): void { this.value.providerHttpStatus = n; }
   invalidTool(): void { this.value.sdkInvalidToolObserved = true; }
   toolValidation(state: NonNullable<StreamSummary["wireToolValidation"]>): void { this.value.wireToolValidation = state; }
+  structureOnly(): void { this.value.toolValidationScope = "structure_only"; }
   toolPolicy(policy: NonNullable<StreamSummary["hostToolPolicy"]>, requestedParallel: boolean | undefined): void {
     this.value.hostToolPolicy = policy;
     if (requestedParallel !== undefined) this.value.requestedParallelToolCalls = requestedParallel;

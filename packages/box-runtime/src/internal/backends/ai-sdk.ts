@@ -43,7 +43,7 @@ function bodyBytes(init?: RequestInit): number {
   return 0;
 }
 
-function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect, model: string, reasoning?: ReasoningPolicy, contextBudget?: ContextSnapshot["contextBudget"]): typeof fetch {
+export function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identity: ToolIdentityObserver, api: OpenaiPromptApi, dialect: ChatDialect, model: string, reasoning?: ReasoningPolicy, contextBudget?: ContextSnapshot["contextBudget"]): typeof fetch {
   const run = async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     // Bound raw SDK encoding before any dialect JSON parse, then recheck the
     // final body below. Neither form may bypass the egress request budget.
@@ -58,7 +58,7 @@ function guardEgress(fetchImpl: typeof fetch, audit: ProviderStreamAudit, identi
       throw new BackendFailure("envelope_too_large");
     }
     if (typeof init?.body !== "string" || !identity.request(init.body, api)) {
-      throw invalidStream("tool_declaration_mismatch", "provider_request");
+      throw invalidStream(identity.requestMismatch(), "provider_request");
     }
     verifyContextEgress(init, api, contextBudget);
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -143,9 +143,11 @@ export function aiSdkModelBackendLayer(fetchImpl: typeof fetch, unseal: UnsealAu
         evidence.engine({ api: payload.api, aiVersion: aiPackage.version, providerVersion: providerPackage.version, adapterRevision: dialect === "standard" ? 3 : 4, chatDialect: dialect, pipeline: "provider_v2_single_call" });
         evidence.setCount("declaredTools", payload.tools.length);
         if (payload.routeId) evidence.providerRoute({ id: payload.routeId, api: payload.api });
-        const identity = new ToolIdentityObserver(payload.tools.map(t => t.name), evidence);
+        const identity = new ToolIdentityObserver(payload.tools.map(t => t.name), evidence, {
+          tools: payload.tools, toolChoice: payload.options.toolChoice, messages: payload.prompt.messages,
+        });
         const audit = new ProviderStreamAudit(payload.api, evidence, identity, dialect);
-        const normalizer = createSdkStreamNormalizer({ declaredTools: new Set(payload.tools.map(t => t.name)), evidence, toolIdentity: identity });
+        const normalizer = createSdkStreamNormalizer({ declaredTools: new Set(payload.tools.map(t => t.name)), toolChoice: payload.settings.toolChoice, evidence, toolIdentity: identity });
         let iterator: AsyncIterator<unknown> | undefined;
         let queuePeak = 0;
         const safeFailure = (error: unknown) => {

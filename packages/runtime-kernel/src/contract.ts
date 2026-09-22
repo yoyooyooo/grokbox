@@ -9,6 +9,7 @@ export * from "./internal/contract/context-maintenance.ts";
 export * from "./internal/contract/events.ts";
 export * from "./internal/contract/stream-diagnostic.ts";
 export * from "./internal/contract/tool-identity-observation.ts";
+export * from "./internal/contract/tool-choice.ts";
 export * from "./internal/contract/sdk-validation-observation.ts";
 export * from "./internal/contract/provider-observation.ts";
 export * from "./internal/contract/build-info.ts";

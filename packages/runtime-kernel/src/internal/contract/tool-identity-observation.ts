@@ -11,12 +11,24 @@ export type ToolNameObservation = {
   callDigest?: string;
   candidateCount?: number;
   phase: "first" | "changed";
+  /** Comparable only while this call's provider identity remains stable. */
+  wireComparison?: "stable_identity" | "identity_changed" | "not_observed";
   wireNameMatched?: boolean;
+  history?: "structured_call" | "not_observed" | "unknown";
 };
 export type ToolIdentityAudit = {
   version: 1;
   declared: { count: number; digest: string };
   sent?: { count: number; digest: string; matchesDeclared: boolean };
+  contract?: {
+    schemaDigest: string;
+    sentSchemaDigest?: string;
+    schemasMatch?: boolean;
+    requestedChoice: "auto" | "none" | "required" | "tool";
+    sentChoice?: "auto" | "none" | "required" | "tool";
+    choiceMatch?: boolean;
+  };
+  historyTruncated?: boolean;
   observed: number;
   firstMismatch?: ToolNameObservation;
   tail: ToolNameObservation[];
@@ -33,6 +45,9 @@ function count(value: unknown, max = 1024 * 1024 * 1024): number | undefined {
 function digest(value: unknown): string | undefined {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : undefined;
 }
+function member<T extends string>(value: unknown, choices: readonly T[]): T | undefined {
+  return typeof value === "string" && choices.includes(value as T) ? value as T : undefined;
+}
 function nameObservation(value: unknown): ToolNameObservation | undefined {
   const layer = own(value, "layer"), relation = own(value, "relation"), phase = own(value, "phase");
   if ((layer !== "provider" && layer !== "sdk") || (phase !== "first" && phase !== "changed")
@@ -40,10 +55,15 @@ function nameObservation(value: unknown): ToolNameObservation | undefined {
   const nameLength = count(own(value, "nameLength"), 1024), nameDigest = digest(own(value, "nameDigest"));
   const callDigest = digest(own(value, "callDigest")), candidateCount = count(own(value, "candidateCount"), 128);
   const wireNameMatched = own(value, "wireNameMatched");
+  const rawComparison = own(value, "wireComparison");
+  const wireComparison = member(rawComparison, ["stable_identity", "identity_changed", "not_observed"]);
+  const history = member(own(value, "history"), ["structured_call", "not_observed", "unknown"]);
   return { layer, relation: relation as ToolNameRelation, phase,
     ...(nameLength !== undefined ? { nameLength } : {}), ...(nameDigest ? { nameDigest } : {}),
     ...(callDigest ? { callDigest } : {}), ...(candidateCount !== undefined ? { candidateCount } : {}),
-    ...(typeof wireNameMatched === "boolean" ? { wireNameMatched } : {}),
+    ...(wireComparison ? { wireComparison } : {}),
+    ...(typeof wireNameMatched === "boolean" && (rawComparison === undefined || wireComparison === "stable_identity") ? { wireNameMatched } : {}),
+    ...(history ? { history } : {}),
   };
 }
 export function projectToolIdentityAudit(value: unknown): ToolIdentityAudit | undefined {
@@ -55,6 +75,18 @@ export function projectToolIdentityAudit(value: unknown): ToolIdentityAudit | un
     const out: ToolIdentityAudit = { version: 1, declared: { count: n, digest: d }, observed, truncated, tail: [] };
     const sent = own(value, "sent"), sn = count(own(sent, "count"), 128), sd = digest(own(sent, "digest")), match = own(sent, "matchesDeclared");
     if (sn !== undefined && sd && typeof match === "boolean") out.sent = { count: sn, digest: sd, matchesDeclared: match };
+    const contract = own(value, "contract"), schemaDigest = digest(own(contract, "schemaDigest"));
+    const choices = ["auto", "none", "required", "tool"] as const;
+    const requestedChoice = member(own(contract, "requestedChoice"), choices), sentChoice = member(own(contract, "sentChoice"), choices);
+    if (schemaDigest && requestedChoice) {
+      out.contract = { schemaDigest, requestedChoice };
+      const sentSchemaDigest = digest(own(contract, "sentSchemaDigest"));
+      if (sentSchemaDigest) out.contract.sentSchemaDigest = sentSchemaDigest;
+      if (sentChoice) out.contract.sentChoice = sentChoice;
+      for (const key of ["schemasMatch", "choiceMatch"] as const) { const flag = own(contract, key); if (typeof flag === "boolean") out.contract[key] = flag; }
+    }
+    const historyTruncated = own(value, "historyTruncated");
+    if (typeof historyTruncated === "boolean") out.historyTruncated = historyTruncated;
     const first = nameObservation(own(value, "firstMismatch"));
     if (first) out.firstMismatch = first;
     const tail = own(value, "tail");

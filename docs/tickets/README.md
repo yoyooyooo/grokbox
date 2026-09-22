@@ -95,6 +95,7 @@
 | [T48 · Causal observation](T48-modeld-causal-observation.md) | 失败因果、诊断独立与制品证据 |
 | [T49 · Qualification/release](T49-modeld-qualification-and-release.md) | 固定策略、性能、review、原生与发布资格 |
 | [T50 · Review residue](T50-modeld-review-residue.md) | 非重复实施的审查残留与责任 |
+| [FIX · Tool contract evidence](FIX-tool-contract-evidence.md) | 工具声明、tool_choice、分层流证据与执行旁支吸收 |
 
 <a id="context-maintenance"></a>
 ## 本地上下文维护

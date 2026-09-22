@@ -1,7 +1,7 @@
 import {
   BackendFailure, StreamOutputBudget, applyInferenceEvent, emptyStreamValidation,
   finishInferenceStream, invalidStream, annotateStreamFailure, observedStreamType, StreamEvidence,
-  type InferenceEvent, type InferenceUsage,
+  toolChoiceViolation, type GenerationOptions, type InferenceEvent, type InferenceUsage,
 } from "@grokbox/runtime-kernel/contract";
 import { backendFailureFromUnknown } from "./provider-error.ts";
 import { incompleteBackendFinish } from "./failure-observation.ts";
@@ -86,11 +86,12 @@ export function mapSdkStreamForHost(part: unknown, tools: ToolNames, nonstandard
 }
 /** Both production and conformance use this state machine. A terminal is held
  * until EOF, so late SDK/transport failures cannot hide behind a released success. */
-export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet<string>; evidence?: StreamEvidence; toolIdentity?: ToolIdentityObserver } = {}) {
+export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet<string>; toolChoice?: GenerationOptions["toolChoice"]; evidence?: StreamEvidence; toolIdentity?: ToolIdentityObserver } = {}) {
   const names = new Map<string, string>(), state = emptyStreamValidation();
   const nonstandard = createNonstandardOpenaiStreamState(), evidence = options.evidence ?? new StreamEvidence();
   let terminal: Extract<InferenceEvent, { type: "backend_finish" }> | undefined;
   const budget = new StreamOutputBudget();
+  evidence.structureOnly();
   const measure = () => {
     evidence.setCount("toolsStarted", state.tools.size); evidence.setCount("openTools", state.open.size);
     evidence.setCount("toolsCompleted", state.tools.size - state.open.size);
@@ -124,6 +125,11 @@ export function createSdkStreamNormalizer(options: { declaredTools?: ReadonlySet
         if ((event.type === "tool_start" || event.type === "tool_delta" || event.type === "tool_complete") && options.declaredTools && !options.declaredTools.has(event.toolName)) {
           throw annotateStreamFailure(invalidStream("undeclared_tool", "sdk_tool"), { declaredToolMatch: false });
         }
+        const choiceFailure = event.type === "tool_start" || event.type === "tool_delta" || event.type === "tool_complete"
+          ? toolChoiceViolation(options.toolChoice, { toolName: event.toolName }, "sdk_tool")
+          : event.type === "backend_finish" && event.finishReason === "stop" && state.open.size === 0
+            ? toolChoiceViolation(options.toolChoice, { completedCalls: state.tools.size - state.open.size }, "sdk_finish") : undefined;
+        if (choiceFailure) throw annotateStreamFailure(invalidStream("tool_choice_mismatch", choiceFailure.rejectSite!), choiceFailure);
         applyInferenceEvent(state, event); measure();
         const size = new TextEncoder().encode(JSON.stringify(event)).length;
         const withinBudget = budget.add(event);

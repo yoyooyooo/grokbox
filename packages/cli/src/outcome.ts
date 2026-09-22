@@ -97,13 +97,16 @@ function projectRuntimeFailure(failure: Record<string, unknown>, runtime: Record
   const message = reason ? catalogAgentMessage(reason) : undefined;
   const stage = typeof failure.stage === "string" ? failure.stage : typeof failure.phase === "string" ? failure.phase : undefined;
   const modeld = failure.name === "model_step_terminal" ? failure : runtime.find(e => e.name === "model_step_terminal" && sameStep(failure, e));
-  const hostDetail = projectStreamDiagnostic(failure.diagnostic), backendDetail = projectStreamDiagnostic(modeld?.diagnostic);
-  const diagnostic = hostDetail?.normalizeCause ? hostDetail : backendDetail ?? hostDetail;
-  const purposeRow = runtime.find(e => sameStep(failure, e) && (e.purpose === "main" || e.purpose === "memory-extraction" || e.purpose === "episode" || e.auxPurpose === "memory-extraction" || e.auxPurpose === "episode"));
-  const purpose = purposeRow?.purpose ?? purposeRow?.auxPurpose ?? "not_observed";
+  // Older Host terminals record the same explicit invocation purpose as
+  // requestKind. Textual labels and conflicting observations cannot decide it.
+  const purposeValues = new Set(runtime.filter(e => sameStep(failure, e)).flatMap(e =>
+    [e.purpose, e.auxPurpose, e.requestKind].filter((value): value is "main" | "memory-extraction" | "episode" =>
+      value === "main" || value === "memory-extraction" || value === "episode")));
+  const purpose = purposeValues.size === 1 ? [...purposeValues][0]! : "not_observed";
   const cleanup = isRecord(modeld?.cleanup) ? modeld.cleanup : undefined;
   const diagnosis = diagnoseExecution(runtime, { agentId: String(failure.agentId ?? ""), stepId: String(failure.stepId ?? ""),
     ...(typeof failure.hostGenerationId === "string" ? { hostGenerationId: failure.hostGenerationId } : {}) });
+  const diagnostic = "diagnostic" in diagnosis ? diagnosis.diagnostic : projectStreamDiagnostic(failure.diagnostic);
   return {
     source: failure.name, at: failure.at, stepId: failure.stepId ?? null, turnId: failure.turnId ?? null,
     code: visibleFailureCode(failure.errorCode ?? failure.failureCode),

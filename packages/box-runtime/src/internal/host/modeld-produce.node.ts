@@ -1,4 +1,4 @@
-import { EnvelopeError, WIRE_VERSION, WireError, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, annotateFailureSummary, projectFailureSummary, failureSummaryMatches, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
+import { EnvelopeError, WIRE_VERSION, WireError, StreamEvidence, withStreamLayer, annotateStreamFailure, streamFailureDiagnostic, annotateFailureSummary, projectFailureSummary, failureSummaryMatches, type HostEpoch, type ModelEnvelope } from "@grokbox/runtime-kernel/contract";
 import { hostToContextSnapshot } from "./context-codec.ts";
 import { qualifyHostRootContract } from "./root-contract.ts";
 import { requestModeld, streamModeld, ModeldTransportError } from "./modeld-client.node.ts";
@@ -179,7 +179,9 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       const stage = phase === "admission" || phase === "prepare" || phase === "auth" ? "admit"
         : phase === "authority" ? "authority" : phase === "normalize" ? "normalize" : fallbackStage;
       const error = new VisibleStreamError(stage, code);
-      annotateStreamFailure(error, { rejectSite: "host_terminal", ...(valid ? summary.diagnostic : {}),
+      const backendDetail = valid && summary.diagnostic?.stream
+        ? withStreamLayer(summary.diagnostic, "backend", summary.diagnostic.streams?.backend ?? summary.diagnostic.stream) : valid ? summary.diagnostic : undefined;
+      annotateStreamFailure(error, { rejectSite: "host_terminal", ...backendDetail,
         failureSummaryStatus: raw === undefined ? "absent" : !summary ? "invalid" : valid ? "direct" : "identity_mismatch" });
       if (valid) annotateFailureSummary(error, summary);
       return error;
@@ -229,11 +231,11 @@ export function createModeldProduce(input: ModeldProduceInput): ModeldProduceRun
       if (!request.abortSignal.aborted && !finished) throw annotateStreamFailure(new VisibleStreamError("normalize", "invalid_stream"), { normalizeCause: "missing_finish", rejectSite: "host_terminal" });
     } catch (error) {
       if (error instanceof ModeldTransportError) {
-        throw annotateStreamFailure(new VisibleStreamError("transport", "transport_error"), { ...streamFailureDiagnostic(error), stream: evidence.snapshot() });
+        throw annotateStreamFailure(new VisibleStreamError("transport", "transport_error"), withStreamLayer(streamFailureDiagnostic(error), "wire", evidence.snapshot()));
       }
       if (error instanceof WireError || streamFailureDiagnostic(error) || (error instanceof Error && error.message === "extra_keys")) {
         const failure = error instanceof VisibleStreamError ? error : new VisibleStreamError("normalize", "invalid_stream");
-        throw annotateStreamFailure(failure, { ...streamFailureDiagnostic(error), stream: evidence.snapshot() });
+        throw annotateStreamFailure(failure, withStreamLayer(streamFailureDiagnostic(error), "wire", evidence.snapshot()));
       }
       throw error;
     } finally {

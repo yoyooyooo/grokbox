@@ -10,7 +10,7 @@ import { replayStream } from "./replay-stream.ts";
 import { combineAbortSignals } from "./abort-signals.ts";
 import { grokboxAuxFrom, type GrokboxAuxRequest } from "./aux-request.ts";
 import { INVALID_STREAM_AGENT_MESSAGE, LEDGER_UNAVAILABLE_AGENT_MESSAGE, AUTHORITY_AGENT_MESSAGE, LOCAL_TRANSPORT_AGENT_MESSAGE } from "./failure-catalog.ts";
-import { contextFailureMessage, StreamOutputBudget, ChunkedText, STREAM_STORAGE_CHARS, type InferenceEvent, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, projectFailureSummary, annotateFailureSummary, failureSummaryOf, presentFailure, type FailureSummary, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
+import { contextFailureMessage, withStreamLayer, toolChoiceViolation, StreamOutputBudget, ChunkedText, STREAM_STORAGE_CHARS, type InferenceEvent, StreamEvidence, annotateStreamFailure, streamFailureDiagnostic, projectStreamDiagnostic, projectFailureSummary, annotateFailureSummary, failureSummaryOf, presentFailure, type FailureSummary, type StreamDiagnostic } from "@grokbox/runtime-kernel/contract";
 export type { ModelEnvelope, PromptContentPart, PromptMessage } from "@grokbox/runtime-kernel/contract";
 
 export type FinishReason = "stop" | "error" | "abort";
@@ -421,6 +421,9 @@ function visibleContext(ctx?: VisibleFailureContext): VisibleFailureContext {
 function failure(code: string, ids?: string[], ctx?: VisibleFailureContext): VisibleFailure {
   const resolved = hostVisibleCode(code);
   const extra = visibleContext(ctx);
+  if (!extra.failureSummary && extra.diagnostic?.normalizeCause === "tool_choice_mismatch") {
+    extra.failureSummary = projectFailureSummary({ version: 1, code: resolved, phase: "normalize", diagnostic: extra.diagnostic });
+  }
   const bits = [
     extra.agentId ? `agentId=${extra.agentId}` : undefined,
     extra.invocationId ? `invocationId=${extra.invocationId}` : undefined,
@@ -540,6 +543,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     const outputBudget = new StreamOutputBudget(byteLimit);
     const evidence = new StreamEvidence();
     evidence.setCount("declaredTools", envelope.tools.length);
+    evidence.structureOnly();
     const controller = new AbortController();
     let complete = false;
     let resolveResponse!: (value: HostResponse) => void;
@@ -596,6 +600,11 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
     };
     const finish = (reason: FinishReason, error?: VisibleFailure, rawUsage?: HostUsage) => {
       if (complete) return;
+      const choiceFailure = reason === "stop" ? toolChoiceViolation(envelope.options.toolChoice, { completedCalls: calls.size }, "host_terminal") : undefined;
+      if (choiceFailure) {
+        reason = "error";
+        error = failure("invalid_stream", undefined, { ...streamCtx("normalize"), diagnostic: choiceFailure });
+      }
       // Transport completion is not a main answer. The explicitly qualified,
       // inference-only memory/episode consumers accept complete blank text as
       // no changes; do not turn that native no-op into a post-delivery failure.
@@ -613,7 +622,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
             reason = "error";
             error = failure("invalid_stream", undefined, { ...streamCtx("normalize"), diagnostic: { normalizeCause: "empty_output", rejectSite: "host_terminal", stream: evidence.snapshot() } });
           }
-        } else if (declaredTools.has("SendToUser")) {
+        } else if (envelope.options.toolChoice !== "none" && declaredTools.has("SendToUser")) {
           const endTurn = declaredTextEndTurn(envelope.tools.find(tool => tool.name === "SendToUser")!);
           const call: ToolCall = {
             type: "tool-call",
@@ -661,13 +670,13 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (holdTools) evidence.toolBatch(reason === "stop" ? "released" : "discarded");
       evidence.setCount("semanticOutputBytes", outputBudget.used); storage();
       const terminalStream = evidence.snapshot();
-      if (error) error.diagnostic = { ...error.diagnostic, stream: terminalStream };
+      if (error) error.diagnostic = withStreamLayer(error.diagnostic, "host", terminalStream);
       notify(config.onTerminal, {
         terminalClass: reason,
         toolCallCount: toolCalls.length,
         purpose: request.aux?.purpose ?? "main",
         ...(request.aux ? { parentStepId: request.aux.parent.stepId } : {}),
-        diagnostic: error ? { ...error.diagnostic, stream: terminalStream } : { stream: { ...terminalStream, tail: [] } },
+        diagnostic: error ? error.diagnostic : withStreamLayer(undefined, "host", { ...terminalStream, tail: [] }),
         ...(error?.failureSummary ? { failureSummary: error.failureSummary } : {}),
         ...(error?.presentation ? { presentation: error.presentation } : {}),
         ...(typeof request.invocationId === "string" ? { invocationId: request.invocationId } : {}),
@@ -702,7 +711,7 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
         : code === "parallel_tools" ? { normalizeCause: "parallel_tools", rejectSite: "host_tool" }
         : code === "stream_limit" ? { normalizeCause: "stream_budget", rejectSite: "stream_budget" } : {};
       finish("error", failure(code, [...new Set([...calls.keys(), ...pending.keys()])], {
-        ...streamCtx(stage ?? stageFor(code)), diagnostic: { ...defaults, ...detail, stream: evidence.snapshot() },
+        ...streamCtx(stage ?? stageFor(code)), diagnostic: withStreamLayer({ ...defaults, ...detail }, "host", evidence.snapshot()),
         ...(summary ? { failureSummary: summary, receivedOutput: toolOrder.size > 0 || content.some(p => (p.type === "text" || p.type === "reasoning") && p.text.length > 0) } : {}),
       }));
     };
@@ -741,6 +750,8 @@ export function createStreamingPromptSession(config: StreamingSessionConfig): Pr
       if (part.type !== "tool-call" && part.type !== "tool-call-delta" && part.type !== "tool-call-streaming-start") return failStream("invalid_stream");
       if (!validId(part.toolCallId) || !validId(part.toolName)) return failStream("invalid_stream", "normalize", { normalizeCause: "tool_identity_conflict", rejectSite: "host_tool" });
       if (!declaredTools.has(part.toolName)) return failStream("invalid_stream", "normalize", { normalizeCause: "undeclared_tool", rejectSite: "host_tool", declaredToolMatch: false });
+      const choiceFailure = toolChoiceViolation(envelope.options.toolChoice, { toolName: part.toolName }, "host_tool");
+      if (choiceFailure) return failStream("invalid_stream", "normalize", choiceFailure);
       if (!toolOrder.has(part.toolCallId)) toolOrder.set(part.toolCallId, toolOrder.size);
       if (part.type !== "tool-call") {
         const current = pending.get(part.toolCallId);

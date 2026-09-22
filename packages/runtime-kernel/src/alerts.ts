@@ -1,6 +1,6 @@
 /** Payload-free observations. A Tray, an execution failure and acknowledgement
  * are different facts. This module has no IO, execution or notification power. */
-import { projectStreamDiagnostic } from "./internal/contract/stream-diagnostic.ts";
+import { projectStreamDiagnostic, type StreamDiagnostic } from "./internal/contract/stream-diagnostic.ts";
 import { failureSummaryFromObservation, projectFailureSummary, presentFailure, FAILURE_CATEGORIES, type FailureCategory } from "./internal/contract/failure-summary.ts";
 export { chooseNotification, projectNotification, NOTIFICATION_POLICY_VERSION } from "./notification-policy.ts";
 export const ALERT_SCHEMA = 1;
@@ -106,6 +106,64 @@ export function specializeExecutionFailure(failure: Record<string, unknown>, eve
   }
   return failure;
 }
+const evidenceIdentityKeys = ["agentId", "turnId", "stepId", "hostGenerationId", "serviceEpoch"] as const;
+function sameEvidenceTuple(a: unknown, b: unknown): boolean {
+  return evidenceIdentityKeys.every(key => observationId(own(a, key)) && own(a, key) === own(b, key));
+}
+/** Record-local evidence only. The native Host terminal writes binding, the
+ * modeld record writes bindingId. Missing identity is never filled from an
+ * adjacent event or matching time. */
+function executionEvidence(record: Record<string, unknown> | undefined) {
+  const candidate = projectFailureSummary(own(record, "failureSummary"));
+  const kind = own(record, "name");
+  const host = kind === "host_stream_rejected" || kind === "host_normalized_terminal";
+  const fields = kind === "host_normalized_terminal" ? ["bindingId", "binding"] : ["bindingId"];
+  const bindings: string[] = [];
+  let invalidBinding = false;
+  for (const field of fields) {
+    const descriptor = record && Object.getOwnPropertyDescriptor(record, field);
+    if (descriptor && !("value" in descriptor)) { invalidBinding = true; continue; }
+    const value = descriptor?.value;
+    if (value === undefined) continue;
+    if (!observationId(value)) invalidBinding = true;
+    else bindings.push(value);
+  }
+  if (new Set(bindings).size > 1) invalidBinding = true;
+  const status = own(own(record, "diagnostic"), "failureSummaryStatus");
+  const rawCode = own(record, "failureCode") ?? own(record, "errorCode");
+  const code = rawCode === "invalid_stream" ? "stream_invalid" : rawCode;
+  const matchingCode = candidate && (candidate.code === code || (host && code === "model_error" && status === "direct"));
+  const summary = candidate?.identity && sameEvidenceTuple(record, candidate.identity) && matchingCode
+    && !invalidBinding && (status === undefined || status === "direct")
+    && bindings.every(binding => binding === candidate.identity!.bindingId)
+    && (candidate.identity.bindingId === undefined || bindings.length > 0 || (host && status === "direct")) ? candidate : undefined;
+  return { summary, bindingId: bindings[0] ?? summary?.identity?.bindingId, invalidBinding };
+}
+/** Layered enrichment requires the same execution tuple, binding and final
+ * backend attempt. Legacy scalar diagnosis remains readable without adding
+ * an unbound provider witness. */
+function executionDiagnostic(failure: Record<string, unknown> | undefined, backend: Record<string, unknown> | undefined): StreamDiagnostic | undefined {
+  const host = projectStreamDiagnostic(failure?.diagnostic), provider = projectStreamDiagnostic(backend?.diagnostic);
+  const isHost = failure?.name === "host_stream_rejected" || failure?.name === "host_normalized_terminal";
+  const local = executionEvidence(failure), remote = executionEvidence(backend);
+  const carried = local.summary, backendSummary = remote.summary;
+  const backendAttempts = backendSummary?.progress?.backendAttempts ?? backend?.backendAttempts;
+  const hostAttempts = carried?.progress?.backendAttempts;
+  const paired = !!(failure && backend && sameEvidenceTuple(failure, backend)
+    && !local.invalidBinding && !remote.invalidBinding && local.bindingId === remote.bindingId
+    && hostAttempts !== undefined && hostAttempts > 0 && hostAttempts === backendAttempts);
+  const { stream: _stream, streams: _streams, ...legacy } = provider ?? {};
+  const providerView = !isHost || paired ? provider : projectStreamDiagnostic(legacy);
+  const primary = host?.normalizeCause ? host : providerView ?? host;
+  if (!primary) return undefined;
+  const streams = { ...primary.streams, ...host?.streams };
+  if (isHost && host?.stream) streams.host ??= host.stream;
+  const carriedStream = carried?.diagnostic?.streams?.backend ?? carried?.diagnostic?.stream;
+  if (carriedStream) streams.backend ??= carriedStream;
+  if (paired && provider?.stream) streams.backend ??= provider.streams?.backend ?? provider.stream;
+  if (!isHost && failure === backend && provider?.stream) streams.backend ??= provider.stream;
+  return projectStreamDiagnostic({ ...primary, ...(Object.keys(streams).length ? { streams } : {}) });
+}
 export function diagnoseExecution(events: readonly Record<string, unknown>[], selector: ExecutionSelector) {
   const rows=events.filter(e=>e.agentId===selector.agentId && e.stepId===selector.stepId && (!selector.hostGenerationId || e.hostGenerationId===selector.hostGenerationId));
   const generations=new Set(rows.map(e=>e.hostGenerationId).filter(observationId));
@@ -114,11 +172,13 @@ export function diagnoseExecution(events: readonly Record<string, unknown>[], se
   const epochs=new Set(rows.map(e=>e.serviceEpoch).filter(observationId));
   if(turns.size>1||epochs.size>1)return {state:"unknown",reason:"ambiguous_execution",classifierVersion:ALERT_DIAGNOSIS_VERSION};
   const selected=selectExecutionFailure(rows),failure=selected?specializeExecutionFailure(selected,rows):undefined;
-  const backend=rows.find(e=>e.name==="model_step_terminal" && (!failure || sameExecution(failure,e)));
-  const hostDetail=projectStreamDiagnostic(failure?.diagnostic),backendDetail=projectStreamDiagnostic(backend?.diagnostic);
-  const diagnostic=hostDetail?.normalizeCause?hostDetail:backendDetail??hostDetail;
-  const failureSummary = hostDetail?.normalizeCause ? failureSummaryFromObservation(failure)
+  const backends=rows.filter(e=>e.name==="model_step_terminal" && (!failure || sameExecution(failure,e)));
+  const backend=backends.length === 1 ? backends[0] : undefined;
+  const hostDetail=projectStreamDiagnostic(failure?.diagnostic);
+  const diagnostic=executionDiagnostic(failure,backend);
+  const rawSummary = hostDetail?.normalizeCause ? failureSummaryFromObservation(failure)
     : failureSummaryFromObservation(backend) ?? failureSummaryFromObservation(failure);
+  const failureSummary = rawSummary ? projectFailureSummary({ ...rawSummary, diagnostic }) : undefined;
   return { state:failure ? "failure_observed" : "not_proven", classifierVersion:ALERT_DIAGNOSIS_VERSION,
     ...(failure ? { code:safeAlertCode(failure.errorCode ?? failure.failureCode) ?? "other", source:failure.name,
       stage:failure.stage ?? failure.phase ?? null, ...(diagnostic?{diagnostic}:{}),

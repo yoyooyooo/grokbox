@@ -257,6 +257,7 @@ export function buildModelEnvelope(messages: unknown, tools?: unknown, options?:
     options: parsedOptions,
   };
   if (!toolPairingHolds(envelope.messages)) return fail();
+  if (envelope.options.toolChoice === "required" && envelope.tools.length === 0) return fail("invalid_tools");
   if (typeof envelope.options.toolChoice === "object" && !envelope.tools.some((tool) => tool.name === (envelope.options.toolChoice as { toolName: string }).toolName)) return fail("invalid_tools");
   if (envelopeBytes(envelope.messages, envelope.tools, envelope.options) > ENVELOPE_MAX_BYTES) return fail("envelope_too_large");
   freezeJson(envelope);
