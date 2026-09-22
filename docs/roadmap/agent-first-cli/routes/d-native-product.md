@@ -21,6 +21,10 @@ A提供当前原生接口资格，R拥有TURN/STEP执行，E消费已核验的�
 
 D2按对象/关系、消息/历史、导出/模板几个完整工作包回流，不等整个路线结束。候选命令目录不是自动应实现所有名称；必需意图要有当前实际用例，已接受能力不足回来源票，不随意删除目标。
 
+## D1 当前入口实现
+
+共享 client 暴露 `sendMessage`、原请求查询、`messages`、thread、literal search 与 delivery get/wait。Server 通过原有 continuity owner 调用 `sendPrompt` 和 `getAgentTranscriptTail`，在安装根下按 principal 持久保存原请求记录。记录分别保存 request、operation、submission、clientNonce 和原生 generation；run、STEP、terminal 没有原生证据时明确标记 `not-observed`。重复 request 只读原记录，输入不一致返回 `idempotency_conflict`，未知写入只返回 `operation_unknown`，不会重发。旧 `send` 与 history 入口已经转到 shared management client，不再直接写 Gateway。
+
 ## 验证
 
 按修改运行现有`test/ownership.test.ts`、`test/outcome.test.ts`、`test/operator.test.ts`、`test/export.test.ts`、`test/daemon.test.ts`与本域新Server/client测试。用实际HTTP/Node/持久记录验证严格输入、目标隔离、旧nonce不重放、丢回复、换代/权限/错误和公共输出脱敏。源端缺方法不使用旧RPC mock维持假绿。

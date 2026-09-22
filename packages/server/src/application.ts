@@ -23,12 +23,13 @@ import { contextApplication, type ContextDomain } from "./context.ts";
 import { compactionApplication } from "./compaction.ts";
 import { handoverApplication } from "./handover.ts";
 import { jobApplication, type JobDomain } from "./jobs.ts";
+import { messageApplication, type MessageDomain } from "./messages.ts";
 
 export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, "listBots" | "ownershipRead">
   & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess">>;
 import { hostHealthQuery } from "./host-health.ts";
 import type { HostHealthStatus } from "@grokbox/box-runtime/runtime";
-export type ApplicationOptions = { desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
+export type ApplicationOptions = { desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; messageDomain?: MessageDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
 export function projectModel(record: ModelRecord): ModelView {
   let endpoint: string | null = null;
   try {
@@ -53,6 +54,10 @@ function segment(value: string): string {
 export function application(options: ApplicationOptions, principal: Principal, method: string, url: URL, input?: unknown) {
   return Effect.gen(function* () {
     const path = url.pathname;
+    if (path === "/v1/messages" || path.startsWith("/v1/messages/") || path.startsWith("/v1/message-")) {
+      if (!options.messageDomain) return yield* Effect.fail(new HttpFailure(503, "source_unavailable", "Message management is unavailable."));
+      return yield* messageApplication(options.messageDomain, principal, method, url, input);
+    }
     if (path === "/v1/desktop" || path.startsWith("/v1/desktop-")) {
       if (!options.desktopDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "Desktop management is unavailable."));
       return yield* desktopApplication(options.desktopDomain, principal, method, url, input);

@@ -17,6 +17,28 @@ function command(path: string, summary: string, target?: { name: string; descrip
 const bot = { name: "bot-ref", description: "Stable native UUID or scoped Bot reference" };
 const model = { name: "model-id", description: "Exact configured model identity" };
 export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
+  { ...command("message send", "Submit one Human input through the management owner; persist its request identity and never resend after uncertainty.", undefined, [
+    { flags: "--to <bot-ref>", description: "Stable Bot UUID or scoped Bot reference" },
+    { flags: "--input <source>", description: "Strict JSON @file|- with requestId, botRef, text and clientNonce", required: true },
+    { flags: "--request-id <uuid>", description: "Caller-persisted request UUID, alternatively in input" },
+    { flags: "--nonce <uuid>", description: "Native client nonce, alternatively in input" },
+  ]), stdin: "json", destructive: true },
+  command("message get", "Read the original retained submission by request UUID; never resends.", { name: "request-id", description: "Original message request UUID" }),
+  command("message list", "Read a bounded native transcript window for one Bot.", bot, [
+    { flags: "--limit <n>", description: "Window size 1 to 200" },
+    { flags: "--before-seq <n>", description: "Native transcript cursor" },
+  ]),
+  command("message search", "Search bounded native transcript windows literally.", { name: "query", description: "Literal bounded query" }, [
+    { flags: "--bot <bot-ref>", description: "Restrict to one exact Bot" },
+    { flags: "--limit <n>", description: "Result size 1 to 100" },
+  ]),
+  command("message thread", "Read matching thread entries in a bounded native transcript window.", bot, [
+    { flags: "--root <entry-id>", description: "Original thread root", required: true },
+  ]),
+  command("message delivery get", "Observe the original submission; a visible response is not run completion.", { name: "request-id", description: "Original message request UUID" }),
+  command("message delivery wait", "Wait for delivery evidence from the original submission; never resends or infers run completion.", { name: "request-id", description: "Original message request UUID" }, [
+    { flags: "--wait-ms <n>", description: "Bounded observation window, 0 to 25000 ms" },
+  ]),
   command("bot context get", "Read the single current native context revision without body, capture or repair.", bot),
   { ...command("bot context compact", "Preview or explicitly compact the current default Box context; can incur summary-model cost, never sends a user task.", bot, [
     { flags: "--preview", description: "Read current Host/model/policy approval and budget without reading body or writing any operation" },

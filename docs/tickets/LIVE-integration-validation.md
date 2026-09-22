@@ -271,7 +271,9 @@
 | `notification receiver enable`, `notification receiver disable`, `notification receiver unbind`, `notification receiver test`, `notification list`, `notification get`, `notification status` | [LIVE-OPS-OBSERVER-LIFETIME](#live-ops-observer-lifetime) | 新授权、独立测试与回执复用原 owner；测试不是启用前提，unknown 不重发，不从 200 推定收到；旧 activation/revoke writer 退出 |
 | `groups list`, `groups show`, `groups create`, `groups update`, `groups delete`, `groups members list`, `groups members add`, `groups members remove`, `groups members set`, `runtime group-progress` | [LIVE-GROUPS-INTERACTION](#live-groups-interaction) | 仅本轮测试群与对象 |
 | `send`, `history outcome` | [LIVE-SEND-OUTCOME](#live-send-outcome) | nonce/run/STEP/投递分层 |
+| `message send`, `message get`, `message delivery get`, `message delivery wait` | [LIVE-SEND-OUTCOME](#live-send-outcome) | 统一消息提交、原请求回查与原生交付关联；unknown 不重发 |
 | `history search`, `history tail`, `history thread`, `export agent` | [LIVE-HISTORY-MEMORY-EXPORT](#live-history-memory-export) | 默认输出私有且有界 |
+| `message list`, `message search`, `message thread` | [LIVE-HISTORY-MEMORY-EXPORT](#live-history-memory-export) | 原请求/原生 transcript 查询有界；线程按 root 关联，不推断完整 run |
 | `system materials get`, `file root list`, `memory list`, `memory search`, `memory read`, `project list`, `project get`, `file list`, `file search`, `file read` | [LIVE-MATERIALS-SEARCH](#live-materials-search) | 显式配置的本地来源、文档引用与独立正文权限；原生副本同步/账号资格未观测，局部材料回归不签完整原生覆盖 |
 | `file write` | [LIVE-MATERIALS-WRITE](#live-materials-write) | 按准确 file/material 引用走各自源 owner，named-root 新建/替换与文本源既有文件替换共用原安全存储；原请求/索引滞后独立，原生 Memory/Project 分片保持只读 |
 | `alerts trace`, `alerts list`, `runtime incident`, `runtime log`, `runtime monitor incident`, `runtime monitor capture`, `runtime monitor evidence lease` | [LIVE-OBS-EVIDENCE](#live-obs-evidence) | STEP ID与incident ID不同 |

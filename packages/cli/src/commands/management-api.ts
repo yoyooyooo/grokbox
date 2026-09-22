@@ -24,6 +24,7 @@ export type ManagementCommandOptions = {
   untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; expectModelRevision?: string;
   bot?: string; snapshotRef?: string; routineRef?: string; expectBindingRevision?: string; enabled?: string; target?: string;
   origin?: string; credentialFile?: string; consoleOrigin?: string; managementUrl?: string; installationId?: string;
+  nonce?: string; beforeSeq?: string;
 };
 const invalid = (message: string) => new ManagementClientError("invalid_input", message);
 
@@ -97,9 +98,10 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
     if (Boolean(options.preview) === Boolean(options.confirm) || options.preview && [options.requestId, options.expectRevision].some(v => v !== undefined)) throw invalid("Choose a read-only preview, or an explicitly confirmed original desktop batch.");
     if (!options.preview) { try { normalizeDesktopPrune({ requestId: options.requestId, expectedRevision: options.expectRevision, confirmed: true }); } catch { throw invalid("Persist a request UUID and provide the reviewed desktop revision."); } }
   }
-  const waitMs = command === "job wait" ? Number(options.waitMs ?? "25000") : 0;
-  if (command === "job wait" && (!/^[1-9][0-9]*$/.test(options.waitMs ?? "25000") || waitMs > 25000)) throw invalid("Job wait is bounded to 1–25000 milliseconds.");
-  const { client, installationId } = await managementClient(deps, command === "job wait" && options.timeoutMs === undefined ? { ...options, timeoutMs: String(waitMs + 5000) } : options);
+  const waiting = command === "job wait" || command === "message delivery wait";
+  const waitMs = waiting ? Number(options.waitMs ?? "25000") : 0;
+  if (waiting && (!/^[0-9]+$/.test(options.waitMs ?? "25000") || waitMs < 0 || waitMs > 25000)) throw invalid("Waiting is bounded to 0–25000 milliseconds.");
+  const { client, installationId } = await managementClient(deps, waiting && options.timeoutMs === undefined ? { ...options, timeoutMs: String(waitMs + 5000) } : options);
   if (command === "event watch") {
     for (const value of [options.limit, options.durationMs]) if (value !== undefined && !/^[1-9][0-9]{0,5}$/.test(value)) throw invalid("Invalid event watch bounds.");
     for await (const frame of client.watchObservationEvents({ cursor: options.cursor ?? "", limit: options.limit === undefined ? undefined : Number(options.limit),
@@ -111,6 +113,22 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
   }
   let reply: ApiReply<unknown>;
   switch (command) {
+    case "message send": {
+      const value = combineManagementInput(await readManagementInput(deps, options.input),
+        { botRef: options.to, requestId: options.requestId, clientNonce: options.nonce },
+        ["requestId","botRef","text","clientNonce"]);
+      reply = await client.sendMessage(value as unknown as import("@grokbox/client").MessageSendRequest, deps.signal); break;
+    }
+    case "message get": reply = await client.messageOperation(args[0] ?? "", deps.signal); break;
+    case "message list": {
+      if (options.limit !== undefined && !/^[1-9][0-9]{0,2}$/.test(options.limit)
+        || options.beforeSeq !== undefined && !/^[0-9]+$/.test(options.beforeSeq)) throw invalid("Invalid message window.");
+      reply = await client.messages(args[0] ?? "", { limit: options.limit === undefined ? undefined : Number(options.limit),
+        beforeSeq: options.beforeSeq === undefined ? undefined : Number(options.beforeSeq), signal: deps.signal }); break;
+    }
+    case "message search": reply = await client.searchMessages(args[0] ?? "", { botRef: options.bot, limit: options.limit === undefined ? undefined : Number(options.limit), signal: deps.signal }); break;
+    case "message thread": reply = await client.messageThread(args[0] ?? "", options.root ?? "", deps.signal); break;
+    case "message delivery get": case "message delivery wait": reply = await client.messageDelivery(args[0] ?? "", { waitMs, signal: deps.signal }); break;
     case "job policy": reply = await client.jobPolicy(deps.signal); break;
     case "job start": reply = await client.startJob(jobInput!, deps.signal); break;
     case "job list": {
@@ -353,6 +371,7 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "routine" || options.confirm !== true) throw invalid("This reconciliation requires domain routine and explicit confirmation.");
       reply = await client.changeSetup({action:"reconcile",routineRef:options.routineRef ?? "",expectedRevision:options.expectRevision ?? "",requestId:options.requestId ?? "",confirmed:true},deps.signal); break;
     case "operation get":
+      if (options.domain === "message") { reply = await client.messageOperation(options.requestId ?? "", deps.signal); break; }
       if (options.domain === "desktop") { reply = await client.desktopOperation(options.requestId ?? "", deps.signal); break; }
       if (options.domain === "desktop-policy") { reply = await client.desktopPolicyOperation(options.requestId ?? "", deps.signal); break; }
       if(options.domain==="file"){reply=await client.fileOperation(options.requestId??"",deps.signal);break;}

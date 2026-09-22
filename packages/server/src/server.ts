@@ -277,6 +277,8 @@ export async function startManagementServer(options: ManagementServerOptions, te
         jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
         fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
         desktopDomain: desktopService ? { service: desktopService, authorize: materialAuthorize } : undefined,
+        messageDomain: options.native.continuityAccess ? { root: options.store.root, installationId,
+          continuity: (signal: AbortSignal) => options.native.continuityAccess!(signal), listBots: options.native.listBots } : undefined,
         contextDomain: { root: options.store.root, installationId, authorize: materialAuthorize, hooks: testPorts.context?.hooks,
           ...(options.native.continuityAccess ? { context: (signal: AbortSignal) => ({ boxRuntimeRoot: options.store.root, env: options.env ?? {}, fetch: options.fetch, signal,
             gateway: () => options.native.continuityAccess!(signal), ownershipRead: options.native.ownershipRead }) } : {}) },
