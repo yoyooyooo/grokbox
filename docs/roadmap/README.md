@@ -4,7 +4,7 @@
 
 ## 本轮方案收束
 
-[Agent-first CLI 与架构重建](agent-first-cli/README.md)拥有命令合同、统一后台、能力重建至 Web UI 完整交付的已接受目标与工作链路。精确合同和施工细节仍待推进，尚未启动业务重组。Web 功能工程与后台一起推进，最终视觉后置；施工期间允许不可用，整合后集中验收，再由用户确认并吃狗粮。Web UI 的[功能边界](future/webui-console.md)、[V0 视觉](../design/webui/v0/README.md)与[来源研究](../reports/2026-09-19-webui-source-feasibility.md)分别拥有各自含义。
+[Agent-first CLI 与架构重建](agent-first-cli/README.md)拥有完整交付目标，现处W3实施收束。[并行交付拓扑](agent-first-cli/parallel-delivery.md)将后续拆为独立路线、接口交接和核心/全产品汇聚：先从v2集成运行核心，通过真实模型/原版App/持久恢复与持续运行、用户确认后即可切模型日用；自有Web和其余管理能力并行完成，不降低最终质量。Web的[功能边界](future/webui-console.md)、[V0视觉](../design/webui/v0/README.md)与[来源研究](../reports/2026-09-19-webui-source-feasibility.md)各有责任，不能把原版App与自有Web一并后置。
 
 [Host 补丁健康识别与监控告警闭环](host-patch-health-proposal.md)面向新架构：Rust/Oxc 静态内核、Node 管理的按任务 stdio/只读FD调用已讨论确认；[包与目录建议](host-patch-health-proposal.md#package-layout)明确五个现有TS包的职责、一个Cargo package和独立wire schema。完整方案仍保留其决策/实施边界；复用HSO/HCR、T44、原OBS与唯一controller，不代表增量已实现或获准现场采用。
 

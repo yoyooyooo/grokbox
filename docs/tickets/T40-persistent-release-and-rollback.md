@@ -10,7 +10,7 @@
 
 ## Dependencies without cycles
 
-本次重建按 [Agent-first Spec](../roadmap/agent-first-cli/spec.md)和 [LIVE E0–E6](LIVE-integration-validation.md#window-order)推进：施工期允许不可用，整合候选再集中验收；不要求先完成旧 v2 采用或每次恢复旧开发版。T40 承接新版首次安装、真实宿主、独立服务寿命、安全停止与官方退出，必要配置导入不扩成通用历史迁移。旧实现/日期证据保留原范围。
+本次重建按[Spec核心采用边界](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)与[并行F路线](../roadmap/agent-first-cli/routes/f-system-lifecycle.md)推进：运行核心在W3内先汇聚、工程验收与用户确认后可日用，其余功能继续完整LIVE E0–E6。T40的核心安装/目标宿主/独立寿命/安全采用与官方退出进入J2/J3前置，不等自有Web或全产品；必要配置导入不扩通用历史迁移，旧证据仅支持原范围。
 
 本票服务启动/停止的隔离实现以T25/T28现有机制为基础，可与T39旅程夹具并行。真实试验先用已满足的T37/T38身份门；**最终生产放行**才合取T24/T26/T32/T35/T36/T37/T38的必需子集和T39完成证据。T39不依赖本票整票Done，避免“先有发布才允许验发布”的环。
 
@@ -144,7 +144,7 @@ route启动前复用128KiB/no-follow/regular-file ConfigurationRead检查canonic
 
 正常发行包只包含生产实现，自写fixture自包含；私有research和现场receipt留在私有仓库/受控空间。T40签生产前需必需证据合取和可执行退路；仅清理worktree不提高产品资格，未清理则如实记交付残留。
 
-下一动作：在统一骨架阶段先核验目标宿主可行性；完整功能候选再进入 E0，固定实际制品、适用原生/独立审查和安全恢复路径，随后验安装、重启与 checkpoint 往返。原实现按新边界复用或调整，不重建同义安装器，也不为了保持旧开发版运行增加兼容层。tmux/旧 PodDaemon 不等于开机资格；缺环境明确阻断，不擅改官方宿主或用 detach 代签。下方日期记录仅为历史观察。
+下一动作由F1优先核验并解决真实目标宿主条件，交付固定运行核心制品、采用前原生/独立审查与可执行恢复方案；J2可受控采用，J3完成实际安装/重启/checkpoint/官方退出和持续运行。不能等全产品或自有Web。原实现按新边界复用，不建同义安装器或旧版兼容；tmux/旧PodDaemon/detach不等于开机资格。ENV要有确切解除条件，涉及官方宿主修改另核授权。下方日期记录仅为历史观察。
 
 **2026-09-13 现场 start 借用：** `runtime start --mode route` 对当时 modeld REDACTED_PROCESS_ID 回执 borrowed / productionAccepted:false / autostartInstalled:false。
 

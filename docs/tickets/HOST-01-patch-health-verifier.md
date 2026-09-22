@@ -1,6 +1,6 @@
 # HOST-01 · Host 补丁健康识别与 Rust/Oxc 验证内核
 
-**状态：实施中。** 当前来源的精确配方、四项静态谓词、有限checkpoint ABI、实际编译回执、原引用注册及managed主流lease直接机会已经接入原管理/故障链；完整能力覆盖、实际采用后整条业务与独立告警出口仍未完成。最后更新2026-09-21。
+**状态：实施中。** 已登记来源的精确配方、四项静态谓词、有限checkpoint ABI、实际编译回执、原引用注册及managed主流lease直接机会已经接入原管理/故障链。2026-09-22读取的磁盘Host已变为ebd92f0d…，尚未取得现行单一配方/ABI资格；不得把6be750…的固定证据扩大到新字节或据磁盘变化猜当前加载状态。完整能力覆盖、实际采用后整条业务与独立告警出口仍未完成。
 
 ## 目标、已定架构与最终边界
 
@@ -26,13 +26,15 @@
 
 ## 当前来源与最新证据
 
+**2026-09-22依赖校准：** [当前原生材料入口与来源变化](../reports/2026-09-22-native-material-source-drift.md)记录了新磁盘来源的完整SHA，以及旧Memory Gateway/Project入口不再存在的现行源码证据。没有改pin、加载完整Host、修改Memory或签当前运行健康。先在原HOST-01/HCR-04链验证新来源，再给DATA-01接当前原生writer及其同步回调；不复活旧RPC或另建原生存储替代物。下段6be750…仍是其明确固定窗口，不是此刻磁盘来源的自动资格。
+
 本轮原生复验实际发现Host再次从2380…更新为6be750…，先拒绝旧资格，再进行独立源/schema验证和生产hook复验；没有只改pin求绿。最终source/worker/candidate准确摘要、原失败、cache-before-validation测试问题及修复见[单版本收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。该单版本阶段三个验证窗口合计659项/91文件通过。后续控制/网络兼容退出阶段已在新固定源码上复验844项/109文件，见[最新组合](../reports/2026-09-21-network-compatibility-retirement.md)；内部Node/Chrome和Rust计数不重复相加，均不是全仓最终候选签署。
 
 原阶段固定证据保留，避免将历史窗口伪装成当前结果：[首次Rust整合](../reports/2026-09-20-host-health-first-integration.md)、[编译运行代](../reports/2026-09-20-host-compilation-health.md)、[引用见证](../reports/2026-09-20-host-capability-witness.md)、[idle/action-only适配](../reports/2026-09-20-host-idle-layout-adaptation.md)、[原生角色](../reports/2026-09-21-host-native-role-analysis.md)、[前一配对窗口](../reports/2026-09-21-native-checkpoint-pair.md)、[lease/finally](../reports/2026-09-21-host-lease-finally.md)、[运行机会](../reports/2026-09-21-host-lease-opportunities.md)。历史多版本策略由当前单版本要求取代，不改写旧报告事实。
 
 ## 后续实施顺序
 
-先在原owner中继续补齐所声明必要能力的语义与变换后行为、更多独立调用机会，以及真实采用后同代证据。`uncoveredSlices`必须真实列明；机会覆盖只到managed主流lease，不能凭函数名或注册表关闭全部能力。场景反例需合法JS且重新固定candidate hash，不得全靠unknown-sha或语法错捕获。
+先收新磁盘来源的现行配方/原生角色/ABI依赖，再在原owner中继续补齐所声明必要能力的语义与变换后行为、更多独立调用机会，以及真实采用后同代证据。`uncoveredSlices`必须真实列明；机会覆盖只到managed主流lease，不能凭函数名或注册表关闭全部能力。场景反例需合法JS且重新固定candidate hash，不得全靠unknown-sha或语法错捕获。
 
 旧controller/inject拒绝型stub及专属测试/spy已经退出，安装preload也不再借用旧副本或回退TypeScript，见[控制入口退出](../reports/2026-09-21-controller-entry-retirement.md)。Tailscale/Serve的显式兼容路径、bootstrap旧writer/选项和JSON/schema占位也已经退出，见[NET-01](NET-01-box-local-network-boundary.md)。手动 compact 已接入同一管理 Server、原 Host/modeld 与 CONT 操作记录，明确 approval 字段进入当前原生 RPC/wire；旧 CLI 直连入口同步退出，见[当前管理切片](../reports/2026-09-21-compaction-management.md)。相关原生配方变化须重新验证，不借用旧 candidate 摘要。handover 控制也已进入管理 Server、原 CONT 职责与入站/退役 owner；旧 CLI 直连/适配别名和直接 attestation writer 退出，见[管理交接阶段](../reports/2026-09-21-handover-management.md)。退役对账没有 native port，不因一个新观察重新派发删除；原生资源独立性和删除屏障仍保持真实缺口。接续收束剩余 daemon 能力与全能力/调用机会资格，不重开已闭合的 Compact 或 handover 控制迁移。优先当前功能owner和准确依赖，不重做已完成的current-state、通知、材料管理等阶段，不另起平行工程。现行Acorn作者探索与Rust健康验证不是自动互相回退；是否仍需作者能力及其退出随原HCR迁移核实，不能仅删依赖而丢必需行为。
 

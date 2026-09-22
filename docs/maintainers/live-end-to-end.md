@@ -1,4 +1,4 @@
-# Live E2E 执行手册：重建、集中验收与用户采用
+# Live E2E 执行手册：核心先采用与完整产品验收
 
 本文件拥有执行方法和取证规则；接受目标来自 [Agent-first Spec](../roadmap/agent-first-cli/spec.md)，当前场景/结果只在 [LIVE](../tickets/LIVE-integration-validation.md)，代码/离线/审查归来源票。旧 v2 窗口是历史，不要求先跑完旧 E2E 或持续维持旧开发版可用。正式发布另遵守 [release](release.md)。
 
@@ -7,9 +7,13 @@
 | 工作状态 | 验证方式 | 不作的承诺 |
 | --- | --- | --- |
 | 重建中的局部能力 | 按性质运行合同、真实存储/进程、浏览器或明确授权原生探针；及早验证高风险来源与宿主 | 不要求每个提交整站可用、全仓全绿或跑完整模型矩阵 |
-| 完整功能候选 | 收口适用全仓、类型、构建、安装制品、隐私与独立审查，冻结可追溯输入 | 不从源码绿推断实际加载或用户接受 |
-| 集中 E2E | 按 LIVE E0–E5 对同一候选做真实 CLI/API、原生、浏览器、恢复和有界持续运行 | 不拼不同版本的通过，不把缺实现改成可选 |
-| 用户与视觉验收 | 用户集中走核心故事后决定吃狗粮；视觉定稿后完成 E6 的相应体验验证 | 不让用户长期使用替工程补证据，不自动发布 |
+| 运行核心候选（W3/J2） | 按核心LIVE集合收口适用整体/实际制品/独立审查、原生隔离资格、目标宿主、风险闭包及保全/恢复/授权 | 允许受控切Host/modeld取真实证据，不等于可以日用；不等全产品或自有Web |
+| 核心真实验收（J3/J4） | 同候选的真实模型矩阵、原版App、工具/Memory/compact/checkpoint、重启/官方退出、必要保护及至少24小时持续运行；用户接受该范围后日用 | 不让用户代测；不签全产品、未验辅助链或自动发布 |
+| 完整功能候选 | J5后收口适用整体、类型、构建、安装制品、隐私与独立审查，冻结全产品输入 | 不从核心日用推断其余功能完成 |
+| 全产品集中 E2E | 按LIVE E0–E5完成全部适用义务，已证核心按依赖变化复验 | 不拼不同版本通过，不把缺实现改可选，也不无条件重跑无关矩阵 |
+| 全产品用户与视觉验收 | 用户确认完整产品；视觉定稿后完成E6相应体验验证 | 不阻此前已合格核心日用，正式发布仍独立 |
+
+[核心采用集合](../tickets/LIVE-integration-validation.md#core-runtime-lane)是W3提前采用的唯一范围入口，[并行拓扑](../roadmap/agent-first-cli/parallel-delivery.md#joins)拥有交付依赖。下文E0–E6保留完整产品执行方法；核心窗口逐项引用实际适用子判据，未完成整行不能勾passed，范围结论进入核心聚合场景。自有Web可后置，实际原版App不可后置。
 
 旧测试按其性质复用、迁移或随退役合同退出，不为了保持旧入口而增加兼容壳。局部缺口应有 owner 和闭合条件；整合候选必须处理适用失败，不能用“施工允许坏”豁免最终质量。安全、数据不丢和未知不重放始终有效。
 
@@ -34,11 +38,12 @@ grokbox skills list --json
 <a id="window-record"></a>
 ## 2. 候选、目标、授权与停止规则
 
-集中验收前登记一次可追溯候选，不固定分支名字。独立局部原生探针也要固定其输入和目标，但无需先完成整个产品。一个实际窗口一份 `docs/reports/<日期>-live-<主题>.md`，只放脱敏摘要；原始证据留在受控私有位置。
+核心或全产品集中验收前登记一次可追溯候选，明确lane及适用判据。并行开发统一回流v2，实际运行使用其固定安装制品，不以分支名代替字节身份。独立局部原生探针也要固定输入和目标，但无需先完成整个产品。一个实际窗口一份 `docs/reports/<日期>-live-<主题>.md`，只放脱敏摘要；原始证据留在受控私有位置。
 
 ```text
 windowId / operator / startedAt / endedAt
-selected LIVE IDs, acceptance stage, explicit exclusions and reasons
+lane=core-runtime|full-product, selected LIVE IDs and exact oracle scope
+acceptance stage, remaining full-product obligations and scope reasons
 source commits/content digest -> built artifacts -> actual loaded identities
 CLI/Server/Web/modeld/Host adapter and native versions, locks/toolchain
 configuration/policy revisions, installation/account/source scopes
@@ -58,6 +63,8 @@ first failure, unresolved effects, safe stop/recovery and retained resources
 恢复目标可以是安全停用、修复后重装或产品定义的官方退出，不要求回到旧开发版继续服务。已发生效果不可回滚；重新接入前必须识别未结/unknown 与旧 writer，不能因为旧内部库不承诺导入就忘掉真实外部效果。
 
 ## 3. E0：首次安装与共同入口
+
+核心J2先执行本段中运行实际需要的安装/配置/原生数据保全/权限/恢复条件，首次采用后的loaded与真实业务结果在J3生成；不能要求首次采用之前已证明现场采用，形成循环。自有Web未启用时其完整功能不作为核心前置，实际启用的服务面仍须验安全及非干扰。完整产品E0仍覆盖以下全部适用范围。
 
 - 固定完整安装制品，覆盖 CLI、Server、Web、modeld、Host 适配和声明依赖；离开源码目录仍能运行，不能用 dev server 或分支名代替字节身份。
 - 及早确认目标 Box 的真实服务宿主。旧 systemd 适配和环境报告是来源，不证明当前环境；确无支持宿主是具体实现/环境阻断，不能临时 nohup 或擅改官方 supervisor。
@@ -134,7 +141,9 @@ first failure, unresolved effects, safe stop/recovery and retained resources
 
 精确恢复本次改动或记录保留的新状态，保护并行编辑；允许留在新版或安全停用，不要求每次回到旧开发版。清理未知则记录 cleanup_required，不假称结束。
 
-汇总适用 G0/G1/G2 与所声明 G3：实际候选/依赖/费用、失败、缺口、审查及清理。完整功能资格不能靠缩小承诺求通过。随后由用户集中走核心故事，明确接受或拒绝；Agent 不能替用户签字。通过后才进入日常吃狗粮，不是先长时间用起来再补基本工程证明。
+按本窗口lane汇总实际候选/依赖/费用、全部适用判据、失败、缺口、审查和清理。核心J3通过后，用户对明确运行范围接受才进入J4日用；全产品继续完成适用G0/G1/G2及所声明G3后再做完整用户验收，不能靠核心通过删除未交付义务。Agent不能替用户签字，也不能先让用户长期用起来再补基本证明。
+
+J4后记录实际部署tip/manifest、Host/worker、模型与目标及配置范围，安装制品不可变；v2与并行worktree继续推进不自动修改现役。后续升级按当前候选及受影响依赖复验，源码/文档变化是否使证据失效必须说明，不无条件继承或无条件重跑。
 
 视觉定稿后单独验证最终页面、响应式、可访问性、资源和动效，以及受影响功能回归；不重跑无关 Provider 矩阵。功能 E2E 通过不表示视觉已经确认。发布、tag/npm/市场/公开 Issue 仍是单独授权链。
 

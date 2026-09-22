@@ -1,10 +1,10 @@
 # CLI-05 · 架构重建与 Web UI 端到端收束
 
-状态：W3实施收束中，尚未进入W4完整候选验收。共享管理Server/客户端、模型、观察/异常/通知、本地材料、默认保护、人工生命周期、current-state、Compact和handover管理面已接通；现行模型及安全存储合同、操作恢复和旧writer退出持续收口。剩余daemon/命令能力、完整原生材料/资源独立性、全能力健康、安装宿主与最终真实验收仍未完成。前置合同由 [CLI-01](CLI-01-discovery-and-targeting.md)、[CLI-02](CLI-02-operation-contract.md)、[CLI-03](CLI-03-observation-and-wait.md)、[CLI-04](CLI-04-command-cutover.md)提供；下述旧固定窗口保留历史事实，不作为最新源码已全量通过的声明。
+状态：W3实施收束中，尚未进入W4完整候选验收，也未取得新版核心日用资格。共享管理、模型、观察/通知、材料、保护/生命周期、current-state/Compact/handover、Job和named-root文件已进入现行链；桌面尚有未提交收尾。2026-09-22按[并行交付拓扑](../roadmap/agent-first-cli/parallel-delivery.md)组织v2与多worktree：优先汇聚运行核心，J2才可受控切Host/modeld取证，J3工程验收、J4用户确认后先日用；完整原生材料/连续性、剩余命令和自有Web并行完成。前置合同仍由CLI-01～04提供；以下日期窗口是历史，不作当前全量通过声明。
 
 ## 用户结果
 
-用户一次性采用完整新版：Agent-first CLI、统一后台、独立 modeld、必要的原生能力和 Web UI 一起可用。命令收束反推实现与架构重建，最终只有一套正式命令和领域规则。开发中允许中间版本不完整或不可用，不建设迁移期零停机、双轨或临时兼容层。
+最终交付完整新版：Agent-first CLI、统一后台、独立modeld、必要原生能力与Web UI。运行核心先通过[Spec范围采用门](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)，用户可以在全产品完成前逐Bot切模型日用；自有Web可后置，原版App与核心数据/执行安全不可后置。最终仍只有一套正式命令和领域规则；施工不建双轨/临时兼容，已经采用的核心固定制品与继续开发隔离。
 
 ## 本票责任
 
@@ -41,8 +41,8 @@
 3. 必要旧能力、已知消费者、正式入口及 writer 都有去向与验证；最终不保留两套正式合同。
 4. 官方 Bot、Memory、Project、原始文件及身份继续接入，模型/连接配置按需一次性转换；投影与索引可重建。旧开发期数据库、历史日志/回执/测试状态不承诺导入，不为此建立通用历史版本迁移框架。
 5. 不把兼容范围解释成自动清理授权。识别实际在途或未知外部效果，防止重新接入导致重复执行；新版必要回执、保护材料与历史仍受各领域合同约束。
-6. 按 Spec 核心故事形成完整功能候选，收口适用整体构建/回归、实际安装制品与独立审查，再集中验证原生与浏览器功能、恢复和长期运行；证据不足的必需项保留阻断，不能改成可选或用 mock 签收。视觉验收独立，不阻先完成的功能验收。
-7. 用户集中验收之后才开始日常吃狗粮，正式发布另行授权。施工期可不完整/不可用，不要求每个提交发布演练；局部针对性检查及关键原生/宿主资格应及早反馈。
+6. 按Spec分别汇聚运行核心和全产品候选，各自收口适用检查、实际安装制品、独立审查与真实验收。核心保留模型矩阵、原版App、工具/Memory/compact/checkpoint、必要保全、重启/官方退出及至少24小时持续运行；必需缺证不能改可选或用mock签收。
+7. J3核心工程通过后，由用户接受该范围才到J4日用；完整产品继续W4/W5及Web验收，正式发布另行授权。施工期不逐提交部署，已采用制品不随v2更新；全产品未完成项不因核心采用而勾选通过。
 8. 固定报告保留原窗口；当前现场结果进入 [LIVE](LIVE-integration-validation.md)，本票记录跨域实现与验证差额。命令、apps/Server 源码与制品身份进入验证工具覆盖，构建接线随实际包结构落实。
 
 ## 当前源码进展
@@ -273,8 +273,8 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 ### 下一实施边界
 
-**当前W3落点（2026-09-21）：** [模型领域与单一格式](../reports/2026-09-21-model-domain-convergence.md)、[Compact管理](../reports/2026-09-21-compaction-management.md)、[handover管理](../reports/2026-09-21-handover-management.md)的入口迁移已完成，不重新施工。[安全存储现行合同](../reports/2026-09-21-current-safety-store-contracts.md)及[操作恢复与验证入口](../reports/2026-09-21-current-recovery-entrypoints.md)继续退出旧版本实时消费、重复writer和不安全故障注入。接下来按必要行为接回剩余daemon/直连消费者并删除旧路径，同时补齐DATA-01与CONT的实际能力差额；已确认的Rust/Oxc架构不重选、不另建工程。
+**当前W3落点与分工（2026-09-22）：** 已提交管理基线`fc346bca`包含模型/current-state/Compact/handover、通知、[Job](../reports/2026-09-22-job-management.md)和[文件](../reports/2026-09-22-file-management.md)，不重开这些迁移。后续唯一调度入口是[并行拓扑及路线卡](../roadmap/agent-first-cli/parallel-delivery.md)：A/R/F/E与D1先汇聚运行核心；B/C/D2/E2/F2/W并行继续完整产品。每个路线出口从v2切worktree、阶段性回流v2。桌面未提交实现和VOICE规划保留在原工作树单独处理，不阻已提交基线合流。
 
-[HOST-01](HOST-01-patch-health-verifier.md)已有当前配方、四项静态谓词、有限checkpoint ABI和编译/引用/lease机会进入原OBS；剩余必要能力、更多调用机会、实际采用后的同代证据与独立告警出口继续并行推进。完整健康与必要告警在候选冻结前收口，关键原生与宿主资格提前小范围验证，不把来源风险全拖到W4。相关HCR/T44/OBS/T40/T45责任保留；无关能力可以并行，现场采用、模型费用和外部投递不因源码提交自动获准。
+[HOST-01](HOST-01-patch-health-verifier.md)的固定配方/ABI和健康成果保留其原输入；[新来源校准](../reports/2026-09-22-native-material-source-drift.md)使当前Host/worker适配成为A的优先出口。所部署/可达的必要能力与非干扰资格在J2前闭合，实际loaded/调用/原生App证据在受控采用后进入J3；不以HOST-01全票完成阻塞无关施工，也不放宽本候选必需项。T40目标宿主和独立modeld须前置，不把现场风险都拖到W4。
 
-DATA-01仍需原生源写入/读回、Project fileRef/附件/二进制与完整文件通路、账号同步和长期安全维护；CONT仍需self-reset安全排队、完整职责、源资源独立性及原生退役条件，不再列为Compact/handover管理入口待迁移。T45的确定未受理重试、上游对账和剩余发送入口继续收束。完整功能与唯一现行实现形成候选后进入W4：安装/服务宿主、独立modeld、整体检查、独立审查和集中LIVE，再进入W5用户/视觉验收。blocked/unknown是安全状态，不是取消必需能力的理由；不删未知证据换容量，不重新询问已接受的产品边界。
+DATA-01的原生管理写入/同步/Project附件fileRef和CONT的self-reset/完整恢复/关系交接/退役分别由B/C完成；普通named-root文件通路已经闭合。E继续T45确定未受理重试、上游对账与独立投递；D/F退出剩余产品/daemon/系统消费者；W完成自有Web。核心实际经过的Memory、必要保全和已启用后台副作用仍为J2/J3前置，不能随整个B/C/E后置。J4可先日用，J5完整功能合流后进入W4/W5；blocked/unknown不是取消必需功能的理由。当前实际采用判据及结果只进入[核心LIVE集合](LIVE-integration-validation.md#core-runtime-lane)，不从规划或合并获得费用、现役修改或公开发布权限。

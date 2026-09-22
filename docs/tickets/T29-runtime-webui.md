@@ -24,7 +24,7 @@
 
 ## 部署边界
 
-进程与runtime在Box内，外部浏览器经用户自管HTTPS入口访问，是已接受的单Box场景，不是跨Box runtime写入。沿用[产品网络边界](../product-contract.md#2-默认入口与连接)：只提供必要的通用监听/外部Origin配置，不发现或管理Tailscale、Serve、ACL。使用同源API或显式地址，不能依赖浏览器localhost指向Box；应用会话、严格Host/Origin、CSRF、代理信任和target绑定照常验收。本票仍未启动浏览器开发。
+进程与runtime在Box内，外部浏览器经用户自管HTTPS入口访问，是已接受的单Box场景，不是跨Box runtime写入。沿用[产品网络边界](../product-contract.md#2-默认入口与连接)：只提供必要的通用监听/外部Origin配置，不发现或管理Tailscale、Serve、ACL。使用同源API或显式地址，不能依赖浏览器localhost指向Box；应用会话、严格Host/Origin、CSRF、代理信任和target绑定照常验收。当前浏览器实现及其证据边界见WEB-02/WEB-03，不从本段方向说明推定验收完成。
 
 ## Module / dependency
 
@@ -45,4 +45,4 @@ T27/T28/T37提供相应能力，T41供观察；某模块可用才开放它的写
 
 页面随真实用例接通，不以 React/Playwright/HTTP 空壳作为交付；不做跨盒 runtime 写、通用 exec/RPC 代理、聊天 composer、通用业务编排/任意自动修复、多渠道升级或全量分析平台。默认保护及证据支持的交接属于已接受的后台专门职责，页面只共用其用例与结果。此前“禁止另建React/Query/SQLite平台”仍禁止平台化，不禁止T41有实际owner与生命周期的SQLite adapter。
 
-按 [Agent-first Spec](../roadmap/agent-first-cli/spec.md)与[端到端工作链路](../roadmap/agent-first-cli/implementation-impact.md)收束命令、共享后台和真实页面。用户一次性采用最终版，集中工程 E2E 后由用户验收再吃狗粮；不为开发期中间版本建设兼容或持续可用保障。功能工程按生产要求建设，最终视觉尚待确认，不以 V0 样式锁定实现。既有 [runtime Spec](../roadmap/box-runtime-impl-spec.md#webui)及 T24/T37/T41 保留各自来源与差额。本轮仅更新规划，未开始浏览器施工或现场采用。
+按[Spec核心先采用](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)与[W路线](../roadmap/agent-first-cli/routes/w-web-console.md)收束共享后台和真实页面。运行核心可在W3内完成独立工程/用户验收后先日用，自有Web完整功能/视觉不阻该节点，但仍是全产品W4/W5义务；实际启用的Web安全不能豁免，原版Grok Bot App仍由R/D在核心门验证。现有浏览器成果保留，精确差额看WEB-02/03；V0不锁定最终视觉，不建设第二业务writer或旧版兼容。

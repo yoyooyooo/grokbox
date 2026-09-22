@@ -6,6 +6,12 @@ Status: linearly integrated into v2 and combined-candidate offline gates verifie
 
 For current proved scope, missing native/App/rollback evidence, blockers and next actions, read the [LIVE index](LIVE-integration-validation.md#live-modeld-native) and its related MODELD rows. The [window index](LIVE-integration-validation.md#window-20260917) links fixed-run reports. This ticket owns the G0–G6 contracts and source/review gates; dated receipts below retain only their original scope and do not maintain current deployment status.
 
+## Core-runtime adoption scheduling
+
+The accepted [core adoption boundary](../roadmap/agent-first-cli/spec.md#core-runtime-adoption) allows a fully qualified runtime to be adopted within W3 before the complete management product and custom Web UI. [Route R](../roadmap/agent-first-cli/routes/r-managed-runtime.md) owns the execution work; [Q](../roadmap/agent-first-cli/routes/q-integration-and-qualification.md) joins the fixed candidate and independent review. All applicable G0–G6 obligations below remain: current native/worker and deployed patch closure, real model matrix, original App, tools/auxiliary Memory/checkpoints, recovery/official return, necessary protection and bounded sustained operation. Scope is not permission to skip a reachable safety dependency.
+
+J2 authorizes only a separately approved controlled adoption window after pre-adoption qualification; actual loaded/live evidence is produced afterward for J3. The user accepts the proven core at J4; the [core LIVE aggregate](LIVE-integration-validation.md#core-runtime-lane) does not mark incomplete full-product scenarios passed or grant public release. Unrelated Web/material-management/advanced handover completion is not a new prerequisite for G6 runtime proofs.
+
 ## Goal
 
 Prove the new single execution path reduces avoidable coordination without weakening identity/replay/cancellation contracts. Decide any freshness-policy change explicitly, qualify exact artifacts and deploy only within an authorized release envelope. A green source suite is not native or production acceptance.
@@ -31,7 +37,7 @@ Prove the new single execution path reduces avoidable coordination without weake
 
 **G5 independent review:** complete applicable independent review on the integrated functional candidate, with fixed-content fixes and revalidation. Development checks are scoped to changed properties; this is not a deployment/review ceremony for every commit. P0/P1 regressions block qualification. Historical review gaps remain attached to the affected old content; reused paths require current scrutiny, not automatic inheritance or blanket old-window closure.
 
-**G6 live:** qualify the integrated rebuild under the [current LIVE scope](LIVE-integration-validation.md#release-lanes), not a fixed branch or retired v2 rollout. Bind artifacts, targets, source/profile, permissions and request/cost bounds. Use the real lifecycle owner, preserve native state and unknown effects, then verify authority/tools/terminals, App and accepted recovery properties. Safe stop, repair/reinstall or qualified official exit can be the recovery target; generic old-schema downgrade and continuous service throughout development are not required. No global shim or active service adopts a construction worktree. Old integration receipts authorize neither new live actions nor public release.
+**G6 live:** qualify the integrated core-runtime or full-product candidate under its explicit [current LIVE scope](LIVE-integration-validation.md#core-runtime-lane), not a retired v2 rollout; v2 integration alone is not deployment qualification. Bind artifacts, targets, source/profile, permissions and request/cost bounds. Use the real lifecycle owner, preserve native state and unknown effects, then verify authority/tools/terminals, App and accepted recovery properties. Safe stop, repair/reinstall or qualified official exit can be the recovery target; generic old-schema downgrade and continuous service throughout development are not required. No global shim or active service adopts a construction worktree. Old integration receipts authorize neither new live actions nor public release.
 
 ## Acceptance
 

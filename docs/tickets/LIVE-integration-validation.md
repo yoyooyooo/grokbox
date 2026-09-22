@@ -1,6 +1,6 @@
 # LIVE — 重建后的集中验收与当前结果
 
-本页是新版完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
+本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
 <a id="validation-levers"></a>
 ## 执行杠杆与 Skill 路由
@@ -11,9 +11,9 @@
 
 ## 当前验收基线
 
-- **目标是首次使用前的完整重建，尚无新版候选或现场通过。** 施工期允许暂时无法构建、运行或使用，不建设零停机、临时双轨和旧命令兼容层。局部检查用于尽早发现问题，不承诺中间版本可供用户使用。
+- **完整目标不变，运行核心可以先通过独立范围验收再日用。** 2026-09-22用户将该节点前移至W3；当前没有因此新增任何现场通过。未采用的施工版可不完整/不可用，不建设临时双轨/旧命令兼容。核心必须先完成真实模型/原版App/持久恢复/必要保护与持续运行，不能让用户代测。
 - **旧 `RC-E2E-20260919` 不再是默认执行计划。** 旧 v2、schema/wire、测试计数和 REVIEW/ENV 观察保留在来源票及固定报告，只支持原范围；不要求先关闭旧候选再重建。已有有效代码/反例可复用，必须按新合同核对。
-- **新版范围从接受目标确定。** 默认保护、证据支持的交接、统一后台、材料检索/修改、CLI/API 和功能 Web 均不能因暂未实现而改成可选。功能与安全先验，视觉定稿后另验；不将旧 CONT 的所有远期愿景自动纳入。
+- **完整新版范围从接受目标确定。** 默认保护、完整交接、材料管理、CLI/API和自有Web仍必交付；仅核心采用时间前移，后置义务不改为全局optional/excluded/passed。核心实际经过的Memory/episode、原生数据、加载补丁、默认保全和已启用worker副作用仍必验。
 - **不沿用旧现场授权叙述作为新操作凭据。** 已有明确授权在其原范围内有效，实际执行前核对目标、动作、费用和清理范围；新界面、关系迁移、平台 Reset、发布和真实资料清理不从本次规划获得权限。
 - **施工期不可用不放弃数据安全和成品可靠性。** 保护原生身份/资料/凭据及未知外部效果；不要求恢复旧开发版连续服务，但须能安全停止、对账及按产品合同回官方。旧内部历史按 Spec 不承诺导入，不授权自动删除。
 
@@ -48,7 +48,7 @@
 
 开发期间按受影响性质做合同、存储、进程、浏览器或原生局部验证；关键原生写能力和服务宿主应早探明。可重排施工、暂留明确的中间缺口，不为维持旧全仓绿保留旧入口；仍适用的不变量必须迁入新测试。局部验证不反复跑整张 LIVE 或全模型矩阵，也不签整个产品可用。
 
-完整功能集成后才冻结候选、完成适用整体检查和独立审查，再依以下路线集中验收。各段是依赖关系而非多次发布；失败修复后只重验受影响范围，不能把不同候选的成功无条件拼成一份通过。
+运行核心先按下方[核心采用集合](#core-runtime-lane)冻结候选、完成适用检查/独立审查，再进行受控采用与真实验收；J4用户确认后可在W3内日用。以下E0–E6仍是全产品验收路由，完整功能汇聚后覆盖剩余义务。拓扑J0–J5属于施工/合流，不替代本页场景。失败修复后按实际依赖重验，不无条件拼接不同候选的成功。
 
 | 段 | 集中验收范围 |
 |---|---|
@@ -57,8 +57,38 @@
 | E2 | 原版 App、材料/日志/事件与自有 Web 功能、安全和恢复 |
 | E3 | 默认保护、材料/继任/交接边界，管理异常与显式启用后的通知 |
 | E4 | 独立进程寿命、重启/未知结果、容量和有界持续运行 |
-| E5 | 测试资源收束、完整工程结论与用户集中验收；之后才开始日常吃狗粮 |
+| E5 | 全产品资源收束、完整工程结论与用户集中验收；不阻此前已通过J4的运行核心日用 |
 | E6 | 视觉定稿后的体验验收与最终声明；发布另行授权，不重跑无关后端矩阵 |
+
+<a id="core-runtime-lane"></a>
+## W3 运行核心采用集合
+
+接受边界归[Spec](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)，路线/汇聚归[并行拓扑](../roadmap/agent-first-cli/parallel-delivery.md#joins)。**J2是允许首次受控切Host/modeld取证；J3是核心工程验收通过；J4才是用户确认后的日用。** 自有Web可后置，原版Grok Bot App不可后置；不恢复旧Harness/daemon双writer或裁掉正常长会话/辅助链。
+
+本集合复用下面已有场景的原判据，不创建简化版测试。核心窗口必须逐项登记所选LIVE-ID、适用子判据、实际候选/原生依赖、未覆盖的全产品义务和证据章节。只完成某行部分判据时，该完整场景行不能勾为passed；核心范围证据由本节聚合行引用，原行继续保持partial/待验及精确证据边界。未选窗口不是取消全产品义务。
+
+| 核心必需部分 | 原判据入口 | 本次采用边界 |
+| --- | --- | --- |
+| 当前源码/制品、Host/worker、独立审查与授权 | [核心候选](#live-core-runtime-candidate)、[Host恢复](#live-host-capability-recovery)、[modeld切换](#live-modeld-cutover) | J2前有采用前隔离资格、真实可用宿主和保全/恢复方案；采用后实际loaded/引用/调用才进入J3。部署所加载/可达补丁和非目标影响不能排除 |
+| 安装、配置、身份/连接与原请求恢复 | [安装](#live-package-install)、[首次采用](#live-initial-adoption)、[发现](#live-agent-discovery)、[连接](#live-cli-connections)、[配置修改](#live-config-edit)、[消费者](#live-config-consumers)、[操作恢复](#live-operation-recovery)、[安全](#live-transport-security) | 核心实际使用的现行CLI/API、配置/凭据、原生数据保全、故障时可定位owner必验；不等所有Project管理或自有Web，不能借旧writer补核心功能 |
+| 模型关系、隔离和实际effort | [选择](#live-model-selection)、[Bot隔离](#live-agent-isolation)、[六格矩阵](#live-model-sol-high)、[Provider档位](#live-reasoning-provider)、[Host/App档位](#live-reasoning-host-app) | 保留E1指定的三模型两档全部六格和同一长会话；通道/模型实际资格先核对，不用一格替另一格，reported未知不伪报 |
+| 输入、流、工具、真实结果 | [发送与结果](#live-send-outcome)、[工具](#live-modeld-tools)、[流错误恢复](#live-stream-error-recovery) | 原生工具执行和独立读回、辅助Memory/episode、一次效果与终态/交付分别证明；未知不换nonce重发、不静默换模 |
+| 长上下文、原生持久状态与官方往返 | [完整往返](#live-session-roundtrip)、[compact](#live-ctx-adoption)、[原生连续性](#live-context-native-continuity)、[失败后新输入](#live-ctx-next-input)、[持久性](#live-ctx-durability)、[Memory/历史](#live-history-memory-export) | 主动阈值/confirmed-overflow/手动compact、原生checkpoint、新进程及官方消费者读回必验；管理CRUD可后置，正常推理材料安全不可排除，no-op不签compact |
+| 权限、所有权与原生passthrough | [原生三路](#live-modeld-native)、[执行权威](#live-modeld-authority)、[归属](#live-ownership-alignment)、[原生时效](#live-auth-availability-native)、[工具时效](#live-auth-availability-tools) | 未配置Bot不受影响；暂停/迁移/撤权/换代后拒新效果，不把磁盘文件或CLI预检当最终执行权限 |
+| 实际原版App | [App](#live-modeld-app)、[App失败语义](#live-auth-availability-app)、[Host/App档位](#live-reasoning-host-app) | 至少实际App输入、增量/工具审批/Working/完成/失败、重连和历史一致性；不修改App、不清缓存求通过；自有Web证据不能代签 |
+| 必要观察、默认保全和故障隔离 | [证据](#live-obs-evidence)、[隐私](#live-alert-privacy)、[默认失权保护](#live-ownership-loss-protection)、[保全材料](#live-continuity-material)、[采集寿命](#live-monitor-persistence) | 核心默认观察/保全和已启动worker必验；完整替身/退役可后置，未验副作用需真实策略/权限隔离且不降低已有必要保护 |
+| 实际启用的通知/后台动作 | [通知寿命](#live-ops-observer-lifetime)、[Routine](#live-ops-routines)、[接收者](#live-ops-receivers)、[重核资格](#live-notice-requalification) | 启用者验真实闭环与故障域；未启用者验零外发、local-only和必要本地诊断，不假称有独立告警。未验自动动作不得由导入配置暗中激活 |
+| 持久宿主、独立寿命和两种官方退出 | [独立性](#live-service-independence)、[重启](#live-modeld-restart)、[持久运行](#live-runtime-persistence)、[官方退出判据](../maintainers/official-rollback-acceptance.md) | 父shell退出、Server/modeld/必要Host重启、所声明Box重启恢复；单Bot回原生与完整未补丁Host退出分开。已发生效果不靠旧DB还原假回滚 |
+| 资源、持续运行与收尾 | [容量](#live-obs-storage)、[安全退役](#live-obs-safe-retirement)、[清理](#live-cleanup)、[手册持续运行](../maintainers/live-end-to-end.md) | 适用owner实占/维护/重启、至少三个维护周期和至少24小时实际有界观察，随后核对测试资源/unknown；用户不替工程补测 |
+
+该表是最小必需闭包，不是排除新发现依赖的白名单：实际加载/调用或已生效后台配置引入其他场景时，Q必须纳入相应原判据。必须完成的缺实现、P0/P1、未决安全/重复效果、环境/授权缺口继续阻断；新增无关管理功能不无限扩大核心门。
+
+| 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
+|---|---|---|---|
+| <a id="live-core-runtime-candidate"></a>**LIVE-CORE-RUNTIME-CANDIDATE**<br>G0 | [ ] `planned`；`not-run` | ①固定已整合运行核心源码/锁/实际制品与原生来源；②适用整体检查及独立审查；③目标宿主、保全/恢复、加载风险/后台有效策略闭包；④窗口目标/费用/动作许可；⑤结论仅允许J2受控采用取证，不代表已loaded或可日用 | [拓扑J2](../roadmap/agent-first-cli/parallel-delivery.md#joins)、[T40](T40-persistent-release-and-rollback.md)、[T49](T49-modeld-qualification-and-release.md) |
+| <a id="live-core-runtime-acceptance"></a>**LIVE-CORE-RUNTIME-ACCEPTANCE**<br>G0 | [ ] `planned`；`not-run` | ①本节核心子判据逐项在实际候选上有证据，含三模型六格/原版App/原生持久往返/退出；②必要保全、独立寿命与至少24小时实际观察；③安全失败/资源/unknown收束；④用户明确接受该固定核心范围才到J4；⑤全产品未完成项仍保留，不自动发布 | [核心采用Spec](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)、[Q集成与资格](../roadmap/agent-first-cli/routes/q-integration-and-qualification.md)、[执行手册](../maintainers/live-end-to-end.md) |
+
+核心通过后，仅固定安装制品用于日常运行；v2与各worktree继续施工不自动升级现役。以下E0–E6继续维护完整产品判据/结果；核心集合的partial子项不将这些整行改写为通过。
 
 ## E0 — 候选与首次安装
 
@@ -190,7 +220,7 @@
 
 ## E5/E6 — 用户验收、最终呈现与发布声明
 
-功能工程通过不签视觉定稿；视觉待定不阻已有功能 E2E。用户集中验收决定是否进入日常吃狗粮，不要求用户先长期使用来替工程补证据。正式发布与这两个决定分别记录。
+全产品功能工程通过不签视觉定稿；视觉待定不阻已有功能E2E。核心日用按[本节独立采用门](#live-core-runtime-acceptance)在W3内验收，全产品E5继续由用户确认剩余完整故事。两者均不要求用户长期使用替工程补证据，正式发布另行记录。
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
