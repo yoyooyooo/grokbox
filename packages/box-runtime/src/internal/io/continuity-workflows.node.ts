@@ -259,8 +259,6 @@ export function continuityWorkflowPrograms(input: ContinuityStoreInput, hooks: C
       const saved = await selfResetRow(db, request.operationId);
       return { created: false, receipt: selfResetReceipt(saved.value, saved.request, saved.result) };
     }
-    const pending = await db.first("SELECT operation_id FROM continuity_queued_controls WHERE agent_id=? AND kind='self-reset' AND state IN ('queued','effect_unknown') LIMIT 1", [request.agentId]);
-    if (pending) return failContinuity("busy");
     await verifySelfResetRefs(db, request);
     await database.metadataRoom(db, Buffer.byteLength(encoded) * 2 + 8192);
     const now = Date.now();
