@@ -3,8 +3,8 @@
  * profile approval, adoption, ownership or complete execution qualification. */
 export type NativeCheckpointPair = Readonly<{ host: string; worker: string; schema: string }>;
 export const NATIVE_CHECKPOINT_PAIR = Object.freeze({
-  host: "ebd92f0d14dd065b779524989dc15a7922c848f77227c69616257be6af6db8f0",
-  worker: "4c154a3498de0a3fd211762a936a0f6ea5ee24760505fa2e021543f6a0f651e6",
+  host: "68fab3e2c8d53e08f7b89c95054808a360a9b7159afec92904239bc88416eadc",
+  worker: "da6796b285ea7e12f7b6979cabaf823c6aba8dbb0ad4a8efddad8fe3e5f1286c",
   schema: "native-checkpoint-proto-20260918",
 });
 export function nativeCheckpointPair(host: string, worker?: string): NativeCheckpointPair | null {
