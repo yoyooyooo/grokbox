@@ -42,6 +42,8 @@
 
 ## 当前来源与最新证据
 
+**后续来源变化：** 同日 AH-118 核验已观察到磁盘 Host `68fab3e2…`、worker `da6796b2…`，不同于本票此前 `ebd92f0d… / 4c154a34…` 的固定窗口；新来源尚未资格化，交 Linear AH-157 在原 owner 中推进。没有更新生产 pin 或采用 profile，不从磁盘变更推定现役 loaded。准确摘要与验证边界见[消息接续报告](../reports/2026-09-22-message-association-recovery.md#原生来源与未完成资格)。
+
 **2026-09-22核心来源推进：** [核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)记录当前Host/worker、变换后两份candidate、有序配方、原声明依赖摘要与四项完整当前候选的合法语义反例。只有这一当前配对进入生产常量；前代Host和worker作为拒绝反例保留，不增加旧配方fallback。原生schema/writer、生产fence与原worker自有SQLite分别观察；没有发布profile、执行主Host或采用现役服务。
 
 **2026-09-22较早依赖校准：** [当前原生材料入口与来源变化](../reports/2026-09-22-native-material-source-drift.md)记录了新磁盘来源的完整SHA，以及旧Memory Gateway/Project入口不再存在的现行源码证据。没有改pin、加载完整Host、修改Memory或签当前运行健康。当时要求先在原HOST-01/HCR-04链验证新来源；上述A1窗口推进了核心部分，DATA-01仍须接当前原生writer及其同步回调，不复活旧RPC或另建原生存储替代物。下段6be750…仍是其明确固定窗口，不是此刻磁盘来源的自动资格。

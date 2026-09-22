@@ -172,7 +172,7 @@ test("streaming, wrong recipient and ambiguous nonce records are not completed d
   const f = await fixture(), input = sendInput(f);
   await f.client().sendMessage(input);
   const [echo, reply] = nativeEntries(input.clientNonce);
-  for (const candidate of [ { ...reply, isStreaming: true }, { ...reply, message: { type: "agent", content: "DM" } } ]) {
+  for (const candidate of [ { ...reply, isStreaming: true }, { ...reply, isStreaming: undefined }, { ...reply, message: { type: "agent", content: "DM" } } ]) {
     f.setEntries([echo, candidate]);
     assert.equal((await f.client().messageDelivery(input.requestId)).data.state, "recorded");
   }

@@ -38,7 +38,11 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 ## 消息关联与对账（2026-09-22）
 
-D1 的 \`message send\` 先保存原 request/submission/clientNonce 和 dispatch generation，再以同一原生 generation 执行单次 \`sendPrompt\`；\`message get\` 读取原 operation，\`message delivery get|wait\` 携带并校验原 generation，通过同一 nonce 观察有界 transcript。回复只有在用户条目之后出现同 nonce 的 assistant 原生条目（rootId 若可用也一致）时才建立关联。accepted、显式 queued、delivery、turn/run/STEP/terminal 各自分层；缺少原生事件就返回 \`not-observed\`，缺源/换代/撤权/丢回执保留 unknown，不进行隐式补投。该读写/对账入口复用现有 continuity owner，核心没有第二 daemon writer。真实 App 的可观察标识、Host/modeld 现场代际及原版显示仍必须在授权 LIVE 窗口取证，fixture 结果不签现场成功。
+D1 的 `message send` 在发送前持久保存 request/submission/clientNonce 与已观察的 dispatch generation，并以同一原生 gateway 单次执行 `sendPrompt`。重复 request 先读取原记录，不要求当前原生发现服务可达；记录损坏、错误安装/主体或不同输入不能被当作不存在后重发。未知操作保留 unknown；新的交付观察不改写原发送回执。原子记录写入与父目录同步在派发前完成，操作 Scope 拥有 gate 与 gateway 取消。
+
+`message delivery get|wait` 只在原操作的 generation 读取有界 transcript，同时复验返回来源代。关联使用原生用户 echo 的精确 clientNonce 找到唯一 native requestId，再匹配同 requestId、非 streaming、面向用户的 `send-message`。相邻 assistant、同线程、重复歧义 nonce、发给其他 Agent 的消息均不能证明回复；缺原生字段保持 recorded/unknown，不补造关联。accepted 回执不等于 queued 或 transcript recorded；队列仅接受原生显式字段。run/TURN/STEP/terminal 仍需独立事件，不能由 SendToUser 推导完整回合结束。
+
+原版 App 取证交接：保留 management requestId、clientNonce、安装/Bot/generation，另收实际原生 echo/requestId 与 SendToUser 条目；App 复制出来的原生 requestId 不是 `message get` 所用的管理 request UUID。当前 App 若不暴露某标识，明确记录缺口，不用时间、文本或最后一个气泡猜测。原版显示、真实权限与现役加载仍在授权 APP/LIVE 窗口验证。当前源漂移与管理侧隔离证明边界见[本轮回流](../reports/2026-09-22-message-association-recovery.md)。
 
 ## 实施前验证
 

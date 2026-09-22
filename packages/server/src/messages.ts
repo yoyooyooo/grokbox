@@ -109,7 +109,7 @@ function normalizeEntry(value: unknown, index: number): MessageEntry {
   return {
     id: identity(row.id) ?? (Number.isSafeInteger(row.seq) ? String(row.seq) : `entry:${index}`), kind,
     requestId: identity(row.requestId),
-    isStreaming: typeof row.isStreaming === "boolean" ? row.isStreaming : row.isStreaming === undefined ? false : null,
+    isStreaming: typeof row.isStreaming === "boolean" ? row.isStreaming : null,
     role, text: textValue === null ? null : textValue.slice(0, TEXT_LIMIT),
     observedAtMs: Number.isSafeInteger(row.timestampMs) ? Number(row.timestampMs) : Number.isSafeInteger(row.observedAtMs) ? Number(row.observedAtMs) : null,
     clientNonce: identity(row.clientNonce), rootId: identity(row.rootId),

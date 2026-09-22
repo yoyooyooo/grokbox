@@ -23,7 +23,7 @@ D2按对象/关系、消息/历史、导出/模板几个完整工作包回流，
 
 ## D1 当前入口实现
 
-共享 client 暴露 `sendMessage`、原请求查询、`messages`、thread、literal search 与 delivery get/wait。Server 通过原有 continuity owner 调用 `sendPrompt` 和 `getAgentTranscriptTail`，在安装根下按 principal 持久保存原请求记录。记录分别保存 request、operation、submission、clientNonce 和原生 generation；队列只在原生回执明确给出 `queued` 时标记，turn/run/STEP/terminal 没有原生证据时明确标记 `not-observed`。delivery 只在原 operation 的 generation 下读取同一 Bot transcript 窗口，并要求用户条目之后出现带同一 clientNonce 的 assistant 条目（rootId 若双方都有则必须一致）才建立回复关联；缺少直接原生证据或发现交错输入时保持 recorded/unknown，不把最后一条回复推断成 run 完成。提交先读成员并与写入复用同一个 generation-pinned gateway；换代、缺方法、撤权或丢回执只保留 unknown，禁止重发。重复 request 只读原记录，输入不一致返回 `idempotency_conflict`，未知写入只返回 `operation_unknown`，不会重发。旧 `send` 与 history 入口已经转到 shared management client，不再直接写 Gateway。
+共享 client 暴露 `sendMessage`、原请求查询、`messages`、thread、literal search 与 delivery get/wait；Server 复用原 continuity owner，不恢复 Gateway/daemon 第二 writer。原操作、dispatch generation、原生 echo/requestId、SendToUser 与完整 run 终态是不同证据。重复操作的本地恢复、换代拒绝、unknown 不重发以及 App 取证交接统一看 [CLI-03 消息合同](../../../tickets/CLI-03-observation-and-wait.md#消息关联与对账2026-09-22)；具体原生来源与公开隔离验证见[本轮回流](../../../reports/2026-09-22-message-association-recovery.md)。
 
 ## 验证
 
