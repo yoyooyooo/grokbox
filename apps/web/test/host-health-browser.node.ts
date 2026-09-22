@@ -15,7 +15,10 @@ export async function hostHealthBrowserJourney(t:TestContext,ports:Ports){
   page.setDefaultTimeout(12000);const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
   try{const grant=(await f.client(token).createConsoleGrant(origin)).data;
    await page.goto(`${origin}/login`);await page.locator("#login-code").fill(grant.code);await page.getByRole("button",{name:"安全登录",exact:true}).click();await page.getByRole("heading",{name:"Box 概览",exact:true}).waitFor();
-   await page.goto(`${origin}/host-health`);await page.getByRole("heading",{name:"Host patch health",exact:true}).waitFor();const nativeBefore=f.state.nativeCalls;await run(page,f,origin);assert.equal(f.state.nativeCalls,nativeBefore);assert.deepEqual(errors,[]);
+   await page.goto(`${origin}/host-health`);await page.getByRole("heading",{name:"Host patch health",exact:true}).waitFor();
+   const navPaths=await page.locator('[data-testid="console-nav"] a').evaluateAll(links=>links.map(link=>new URL(link.getAttribute("href")??"",location.origin).pathname));
+   assert.deepEqual(navPaths,["/","/bots","/models","/observation","/events","/incidents","/operations","/host-health","/materials","/files","/notifications","/notification-setup","/protection","/contexts","/lifecycles","/desktop","/jobs"]);
+   const nativeBefore=f.state.nativeCalls;await run(page,f,origin);assert.equal(f.state.nativeCalls,nativeBefore);assert.deepEqual(errors,[]);
    const html=await (await context.request.get(page.url())).text();for(const secret of [H_OWNER,grant.code,f.root,"createSession(onRequestId","PRIVATE_RUNTIME_HOST_FAULT",'"csrfToken"'])assert.ok(!html.includes(secret));
   }finally{await context.close();await ports.stop(web.child);await f.close();}
  }
