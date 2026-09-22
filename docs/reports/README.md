@@ -1,5 +1,7 @@
 # Reports：固定验证回执
 
+- [2026-09-23 Provider fixture 日志结算](2026-09-23-provider-fixture-journal-settlement.md)：受控锁反例证明终态文本可见不等于原写入结算；修复测试等待并保留生产 partial 判定，不代签原生消息资格。
+
 - [2026-09-22 self-reset 队列与消费程序验证](2026-09-22-self-reset-queue.md)：C1 的登记、消费阶段、材料引用与 GC 保护；明确 A3-C2 原生 safe-point 接通仍未证明。
 
 - [2026-09-20 旧 Host 补丁健康链审计](2026-09-20-host-patch-health-chain-audit.md)：限定旧逻辑，核对字符串/Golden/AST、watchdog实际入口、来源事件到incident与通知资格；89项隔离检查包含4个缺口反例，不签持续感知接通或现场告警送达。

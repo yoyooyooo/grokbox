@@ -88,6 +88,7 @@ const MODEL_CORE_SUITES = {
     `${box}layered-tool-diagnosis.test.ts`,
     `${box}tool-identity-framing.test.ts`,
     `${box}tool-evidence-retention.test.ts`,
+    `${box}provider-runtime-settlement.test.ts`,
     `${box}tool-identity-audit.test.ts`,
     `${box}provider-stream-node.test.ts`,
     `${box}validated-tool-batch-unix.test.ts`,

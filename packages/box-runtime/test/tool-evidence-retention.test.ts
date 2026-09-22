@@ -20,7 +20,7 @@ for (const api of ["chat", "responses"] as const) {
       await expect(handle.response).rejects.toBeInstanceOf(Error);
       await waitFixtureRows(f, stepId);
       const read = await observeRuntimeEvents({ durableRoot: f.durableRoot, runRoot: f.runRoot, source: "host", selector: { agentId: f.agentId, stepId } });
-      expect(read.state).toBe("present");
+      expect(read.state, JSON.stringify({ coverage: read.coverage, retention: read.retention, window: read.window, failure: read.readFailure })).toBe("present");
       const cli = projectSendOutcome({ agentId: f.agentId, stepId, entries: [], alerts: [], truncated: false, runtimeEvents: read.events });
       expect(cli.runtimeFailure?.diagnostic?.streams?.backend?.toolIdentity?.firstMismatch?.history).toBe("structured_call");
       expect(cli.runtimeFailure?.presentation?.message).toContain("No automatic retry was made");

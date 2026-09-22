@@ -10,6 +10,7 @@ import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { isHostPromptSession } from "../src/internal/host/session.ts";
 import { ownedOwnershipReader } from "./ownership-fixture.ts";
 import type { OwnershipReader } from "../src/internal/io/ownership-admission.node.ts";
+import { settleJournalWrites } from "../src/internal/host/terminal-journal.node.ts";
 
 /** Actual production root, disk history, Unix protocol and Host hook; only the
  * upstream HTTP and native ownership capabilities are synthetic. No live paths. */
@@ -60,11 +61,18 @@ export function successfulProviderResponse(api: "chat" | "responses" = "chat") {
   ];
   return new Response(rows.map(row => `data: ${JSON.stringify(row)}\n\n`).join("") + (api === "chat" ? "data: [DONE]\n\n" : ""), { headers: { "content-type": "text/event-stream" } });
 }
-export async function waitFixtureRows(fixture: Awaited<ReturnType<typeof providerRuntimeFixture>>, stepId: string) {
+export async function waitFixtureRows(fixture: Pick<Awaited<ReturnType<typeof providerRuntimeFixture>>, "rows" | "runRoot">, stepId: string) {
   const deadline = Date.now() + 2500;
   while (Date.now() < deadline) {
     const rows = await fixture.rows();
-    if (rows.some(e => e.name === "host_normalized_terminal" && e.stepId === stepId) && rows.some(e => e.name === "model_step_terminal" && e.stepId === stepId)) return rows;
+    if (rows.some(e => e.name === "host_normalized_terminal" && e.stepId === stepId) && rows.some(e => e.name === "model_step_terminal" && e.stepId === stepId)) {
+      // These owned fixtures admit no next STEP during this observation. Visible
+      // append bytes can precede fsync, segment-index and health publication.
+      // Join the original writes, then take a fresh snapshot; never retry the
+      // production reader or reinterpret its partial coverage as complete.
+      await settleJournalWrites(fixture.runRoot);
+      return fixture.rows();
+    }
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw Error("owned terminal journal did not settle");
