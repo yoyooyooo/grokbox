@@ -14,7 +14,7 @@ export type ReceiptCheck = {
   ok: boolean;
   status?: "eligible" | "structural-only";
   errors: string[];
-  derived?: {
+  derived: {
     scenario: string | null;
     currentResult: string | null;
     allStepsPassed: boolean;

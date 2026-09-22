@@ -335,10 +335,18 @@ function validateReceipt(receipt, rows = parseLiveIndex()) {
   }
   const evidence = receipt.evidence;
   const eligibilityReasons = [];
+  const loadedIdentities = receipt.candidate?.loadedIdentities;
+  if (Array.isArray(loadedIdentities) && loadedIdentities.some((identity) =>
+    /(?:^|[:/_-])(unknown|fixture|fake|mock|synthetic|planned)(?:$|[:/_-])/i.test(identity))) {
+    eligibilityReasons.push("LOADED_IDENTITY_NOT_ACTUAL");
+  }
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
     eligibilityReasons.push("EVIDENCE_DECLARATION_MISSING");
   } else {
     if (!NATIVE_EVIDENCE_KINDS.has(evidence.kind)) eligibilityReasons.push("NON_NATIVE_EVIDENCE");
+    if (window?.lane === "core-runtime" && !["native", "native-isolated"].includes(evidence.kind)) {
+      eligibilityReasons.push("CORE_REQUIRES_NATIVE");
+    }
     if (evidence.candidateBound !== true) eligibilityReasons.push("CANDIDATE_NOT_BOUND");
     if (evidence.nativeObservation !== true) eligibilityReasons.push("NATIVE_OBSERVATION_MISSING");
   }

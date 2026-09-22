@@ -43,7 +43,7 @@
 5. 不把兼容范围解释成自动清理授权。识别实际在途或未知外部效果，防止重新接入导致重复执行；新版必要回执、保护材料与历史仍受各领域合同约束。
 6. 按Spec分别汇聚运行核心和全产品候选，各自收口适用检查、实际安装制品、独立审查与真实验收。核心保留模型矩阵、原版App、工具/Memory/compact/checkpoint、必要保全、重启/官方退出及至少24小时持续运行；必需缺证不能改可选或用mock签收。
 7. J3核心工程通过后，由用户接受该范围才到J4日用；完整产品继续W4/W5及Web验收，正式发布另行授权。施工期不逐提交部署，已采用制品不随v2更新；全产品未完成项不因核心采用而勾选通过。
-8. 固定报告保留原窗口；当前现场结果进入 [LIVE](LIVE-integration-validation.md)，本票记录跨域实现与验证差额。命令、apps/Server 源码与制品身份进入验证工具覆盖，构建接线随实际包结构落实。`verify:live-window receipt` 仅在候选 loaded 身份、窗口授权/预算/时间、native 证据和未参与实现者的独立审查全部齐备时给出 `eligible`；结构通过的 fixture、缺证据或自审只能是 `structural-only`，不得升级为现场通过。
+8. 固定报告保留原窗口；当前现场结果进入 [LIVE](LIVE-integration-validation.md)，本票记录跨域实现与验证差额。命令、apps/Server 源码与制品身份进入验证工具覆盖，构建接线随实际包结构落实。`verify:live-window receipt` 仅在候选 loaded 身份、窗口授权/预算/时间、native 证据和未参与实现者的独立审查全部齐备时给出 `eligible`；结构通过的 fixture、synthetic/unknown loaded identity、缺证据或自审只能是 `structural-only`，不得升级为现场通过。
 
 ## 当前源码进展
 

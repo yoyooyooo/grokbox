@@ -76,6 +76,12 @@ test("receipt validation distinguishes structurally eligible evidence from produ
   expect(result.derived.indexEligible).toBe(true);
   expect(result.derived.currentResult).toBe(priorResult);
   expect(parseLiveIndex().find((row) => row.id === receipt.scenario)?.currentResult).toBe(priorResult);
+
+  receipt.evidence.kind = "browser";
+  const browserResult = validateReceipt(receipt);
+  expect(browserResult.status).toBe("structural-only");
+  expect(browserResult.derived.eligibilityReasons).toContain("CORE_REQUIRES_NATIVE");
+  receipt.evidence.kind = "native-isolated";
 });
 
 test("a structurally valid fixture or self-review never becomes live-eligible", () => {
@@ -119,7 +125,7 @@ test("a structurally valid fixture or self-review never becomes live-eligible", 
   expect(result.status).toBe("structural-only");
   expect(result.derived.indexEligible).toBe(false);
   expect(result.derived.eligibilityReasons).toEqual(expect.arrayContaining([
-    "NON_NATIVE_EVIDENCE", "NATIVE_OBSERVATION_MISSING", "INDEPENDENT_REVIEW_NOT_ACCEPTED",
+    "LOADED_IDENTITY_NOT_ACTUAL", "NON_NATIVE_EVIDENCE", "NATIVE_OBSERVATION_MISSING", "INDEPENDENT_REVIEW_NOT_ACCEPTED",
   ]));
 });
 
