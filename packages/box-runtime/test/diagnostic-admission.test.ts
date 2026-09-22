@@ -41,7 +41,8 @@ test("installed diagnostic writers serialize real file effects before their doma
     })));
     expect(peak).toBe(1); expect(done).toBe(8);
     expect(await readdir(join(f.root, "state/diagnostic-admission"))).toEqual(["scope.json"]);
-    expect(await observeDiagnosticAdmission(f.root)).toMatchObject({ state: "scope_bound", osFilesystemQuota: false, allRunningWritersVerified: false });
+    expect(await observeDiagnosticAdmission(f.root)).toMatchObject({ state: "scope_bound", osFilesystemQuota: false, allRunningWritersVerified: false,
+      writers: ["monitor", "monitor-initialize", "journal", "process"] });
   } finally { await f.close(); }
 }, 10000);
 

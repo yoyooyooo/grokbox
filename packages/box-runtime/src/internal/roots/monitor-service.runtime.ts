@@ -9,7 +9,7 @@ export type MonitorServiceStatus = {
   reason: string | null; desiredRevision: string | null; collectorEpoch: string | null;
   startedAtMs: number; lastReceiptAtMs: number | null; replacements: number;
   ownershipState: "not_observed" | "observed" | "unavailable";
-  targets: number; sources: JournalSourceProgress[];
+  targets: number; sources: JournalSourceProgress[]; notificationsEnabled: boolean | null;
   nativeRunHealth: NonNullable<Parameters<MonitorRunOptions["publish"]>[0]["nativeRunHealth"]>;
   owner: "management-server"; createsDatabase: false; notifiesDirectly: false; bootInstalled: false;
 };
@@ -21,7 +21,7 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
   const pollMs = testPorts.pollMs ?? 5000;
   if (!Number.isSafeInteger(pollMs) || pollMs < 1 || pollMs > 5000) throw new Error("monitor_invalid_service_interval");
   let state: MonitorServiceStatus = { state: "not_configured", reason: null, desiredRevision: null, collectorEpoch: null,
-    startedAtMs: Date.now(), lastReceiptAtMs: null, replacements: 0, ownershipState: "not_observed", targets: 0, sources: [],
+    startedAtMs: Date.now(), lastReceiptAtMs: null, replacements: 0, ownershipState: "not_observed", targets: 0, sources: [], notificationsEnabled: null,
     nativeRunHealth: { state: "not_observed", observedAtMs: null, tasks: 0 },
     owner: "management-server", createsDatabase: false, notifiesDirectly: false, bootInstalled: false };
   const signal = new AbortController();
@@ -54,7 +54,7 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
         yield* stopChild;
         state = { ...state, state: inactive === "configuration_unavailable" ? "blocked" : inactive as "disabled" | "not_configured",
           reason: inactive, desiredRevision: configuration?.revision ?? null, collectorEpoch: null, targets: configuration?.agentIds.length ?? 0,
-          sources: [], ownershipState: "not_observed", lastReceiptAtMs: null,
+          sources: [], ownershipState: "not_observed", lastReceiptAtMs: null, notificationsEnabled: configuration?.notificationsEnabled ?? null,
           nativeRunHealth: { state: "not_observed", observedAtMs: null, tasks: 0 } };
       } else if (configuration) {
         const changed = state.desiredRevision !== configuration.revision;
@@ -71,13 +71,16 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
             childSignal = new AbortController(); finished = false;
             expectedSourceCount = root.success === input.durableRoot ? 1 : 2;
             state = { ...state, state: "starting", reason: null, collectorEpoch: null, sources: [], ownershipState: "not_observed", lastReceiptAtMs: null,
+              notificationsEnabled: configuration.notificationsEnabled,
               nativeRunHealth: { state: "not_observed", observedAtMs: null, tasks: 0 }, replacements: state.replacements + 1 };
             const run = monitorProgram({ durableRoot: input.durableRoot, runRoot: root.success, agentIds: configuration.agentIds,
               read: input.read, signal: childSignal.signal, intervalMs: configuration.intervalMs, includeControlJournal: true,
               ...(configuration.notificationsEnabled ? {} : { notifications: "off" as const }), publish });
             child = yield* Effect.forkScoped(run.pipe(Effect.onExit(exit => Effect.sync(() => {
               finished = true;
-              if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
+              if (Exit.isSuccess(exit)) {
+                state = { ...state, state: "degraded", reason: "collector_exited" };
+              } else if (!Cause.hasInterruptsOnly(exit.cause)) {
                 const error = Cause.squash(exit.cause), reason = error instanceof BoxRuntimeError && /^monitor_[a-z_]+$/.test(error.message) ? error.message : "collector_failed";
                 failures = Math.min(6, failures + 1); nextAttemptAt = Date.now() + Math.min(60_000, pollMs * 2 ** failures);
                 state = { ...state, state: "blocked", reason };
@@ -97,7 +100,8 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
     status: (): MonitorServiceStatus => {
       const fresh = state.lastReceiptAtMs !== null && Date.now() - state.lastReceiptAtMs <= 90_000 && Date.now() >= state.lastReceiptAtMs;
       const result = { ...state, nativeRunHealth: { ...state.nativeRunHealth }, sources: state.sources.map(source => ({ ...source })) };
-      if ((result.state === "running" || result.state === "degraded") && !fresh) { result.state = "degraded"; result.reason = "collector_receipt_stale"; }
+      if (finished && (result.state === "running" || result.state === "degraded")) { result.state = "degraded"; result.reason = "collector_exited"; }
+      else if ((result.state === "running" || result.state === "degraded") && !fresh) { result.state = "degraded"; result.reason = "collector_receipt_stale"; }
       return result;
     },
     close: async () => {

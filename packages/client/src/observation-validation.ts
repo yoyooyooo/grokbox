@@ -7,6 +7,7 @@ const time = (value: unknown): value is number => Number.isSafeInteger(value) &&
 const maybeTime = (value: unknown) => value === null || time(value);
 const id = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
 const label = (value: unknown) => typeof value === "string" && /^[a-z][a-z0-9_]{0,79}$/.test(value);
+const workerLabel = (value: unknown) => typeof value === "string" && /^[a-z][a-z0-9_-]{0,79}$/.test(value);
 const harness = (value: unknown) => value === null || value === "box" || value === "temporal";
 export function eventCursor(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 128) return false;
@@ -25,15 +26,49 @@ const botReference = (installation: string, agent: unknown, ref: unknown) => age
   : id(agent) && ref === `bot:${installation}:${agent}`;
 
 export function managementService(value: unknown): value is ManagementServiceView {
-  if (!record(value) || !exact(value, ["component", "state", "observation"]) || value.component !== "server"
+  if (!record(value) || !exact(value, ["component", "state", "observation", "workers", "effectivePolicy"]) || value.component !== "server"
     || !["running", "stopping", "stopped", "failed"].includes(String(value.state)) || !record(value.observation)) return false;
   const worker = value.observation;
-  return exact(worker, ["owner", "state", "reason", "desiredRevision", "collectorEpoch", "startedAtMs", "lastReceiptAtMs", "replacements", "targets", "createsDatabase", "notifiesDirectly", "bootInstalled"])
+  const observation = exact(worker, ["owner", "state", "reason", "desiredRevision", "collectorEpoch", "startedAtMs", "lastReceiptAtMs", "replacements", "targets", "createsDatabase", "notifiesDirectly", "bootInstalled"])
     && worker.owner === "management-server" && ["not_configured", "disabled", "starting", "running", "degraded", "blocked", "stopping", "stopped"].includes(String(worker.state))
     && (worker.reason === null || label(worker.reason)) && (worker.desiredRevision === null || revision(worker.desiredRevision))
     && (worker.collectorEpoch === null || id(worker.collectorEpoch)) && time(worker.startedAtMs) && maybeTime(worker.lastReceiptAtMs)
     && time(worker.replacements) && time(worker.targets) && worker.targets <= 32
     && worker.createsDatabase === false && worker.notifiesDirectly === false && worker.bootInstalled === false;
+  if (!observation) return false;
+  if (value.workers !== undefined) {
+    if (!Array.isArray(value.workers) || value.workers.length !== 3) return false;
+    const names = new Set<string>();
+    for (const row of value.workers) {
+      if (!record(row) || !exact(row, ["name", "owner", "started", "state", "reason", "qualified", "sideEffects"])
+        || !["monitor", "notification-outbox", "protection"].includes(String(row.name)) || names.has(String(row.name))
+        || row.owner !== "management-server" || typeof row.started !== "boolean" || !workerLabel(row.state)
+        || (row.reason !== null && !workerLabel(row.reason)) || typeof row.qualified !== "boolean"
+        || !["local-observation", "guarded-notification", "guarded-protection"].includes(String(row.sideEffects))) return false;
+      names.add(String(row.name));
+    }
+    if (names.size !== 3) return false;
+  }
+  if (value.effectivePolicy !== undefined) {
+    const policy = value.effectivePolicy;
+    if (!record(policy) || !exact(policy, ["observation", "notifications", "protection", "storage"])
+      || !record(policy.observation) || !exact(policy.observation, ["enabled", "targetCount", "notificationMode", "revision"])
+      || typeof policy.observation.enabled !== "boolean" || !time(policy.observation.targetCount) || policy.observation.targetCount > 128
+      || !["off", "local_only", "unknown"].includes(String(policy.observation.notificationMode))
+      || !(policy.observation.revision === null || revision(policy.observation.revision))
+      || !record(policy.notifications) || !exact(policy.notifications, ["enabled", "authorizationRequired", "directNative", "mode"])
+      || typeof policy.notifications.enabled !== "boolean" || policy.notifications.authorizationRequired !== true || policy.notifications.directNative !== false
+      || !["off", "local_only", "unknown"].includes(String(policy.notifications.mode))
+      || !record(policy.protection) || !exact(policy.protection, ["enabled", "targetCount", "defaultProtection", "revision"])
+      || typeof policy.protection.enabled !== "boolean" || !time(policy.protection.targetCount) || policy.protection.targetCount > 128
+      || policy.protection.defaultProtection !== true || !(policy.protection.revision === null || revision(policy.protection.revision))
+      || !record(policy.storage) || !exact(policy.storage, ["admissionScope", "writers", "installationBudgetEnforced"])
+      || policy.storage.admissionScope !== "cooperating_diagnostic_writers" || !Array.isArray(policy.storage.writers)
+      || policy.storage.writers.length !== 4 || new Set(policy.storage.writers).size !== 4
+      || !policy.storage.writers.every(writer => ["monitor", "monitor-initialize", "journal", "process"].includes(String(writer)))
+      || policy.storage.installationBudgetEnforced !== false) return false;
+  }
+  return true;
 }
 
 export function observationSnapshot(value: unknown, installation: string): value is ObservationSnapshot {

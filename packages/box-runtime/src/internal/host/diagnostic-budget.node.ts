@@ -170,7 +170,7 @@ export async function observeDiagnosticAdmission(root: string) {
     return { state: !selected ? scope ? "policy_unavailable" : "not_configured" : !scope ? "not_observed"
       : scope.rootId === sha256Text(resolve(root)) && scope.runRootId === sha256Text(selected.runRoot) ? "scope_bound" : "scope_changed",
       policyRevision: selected?.revision ?? null, scope: "cooperating_diagnostic_writers", mechanism: "serialized_reservation_before_effect",
-      writers: ["monitor", "journal", "process"], fixedMetadataAllowanceBytes: METADATA_ALLOWANCE,
+      writers: ["monitor", "monitor-initialize", "journal", "process"], fixedMetadataAllowanceBytes: METADATA_ALLOWANCE,
       osFilesystemQuota: false, allRunningWritersVerified: false, installationBudgetEnforced: false };
   } catch { return { state: "unavailable", scope: "cooperating_diagnostic_writers", installationBudgetEnforced: false }; }
 }

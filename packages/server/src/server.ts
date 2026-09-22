@@ -135,10 +135,35 @@ export async function startManagementServer(options: ManagementServerOptions, te
   const serviceState = (): ManagementServiceView => {
     const worker = monitorService?.status();
     if (!worker) throw new HttpFailure(503, "unavailable", "The management process is acquiring its observation worker.");
+    const notification = notificationWorker?.status();
+    const protection = protectionService?.status();
+    const notificationMode = worker.notificationsEnabled === null ? "unknown" as const : worker.notificationsEnabled ? "local_only" as const : "off" as const;
+    const monitorStarted = ["starting", "running", "degraded", "stopping"].includes(worker.state);
+    const monitorQualified = worker.state === "running" && worker.sources.length > 0 && worker.sources.every(source => source.state === "observed")
+      && worker.nativeRunHealth.state === "observed_window";
+    const workers = [
+      { name: "monitor" as const, owner: "management-server" as const, started: monitorStarted, state: worker.state, reason: worker.reason,
+        qualified: monitorQualified, sideEffects: "local-observation" as const },
+      { name: "notification-outbox" as const, owner: "management-server" as const, started: notification !== undefined,
+        state: notification?.state ?? "starting", reason: notification?.lastCycle?.reason ?? null, qualified: false,
+        sideEffects: "guarded-notification" as const },
+      { name: "protection" as const, owner: "management-server" as const, started: protection !== undefined,
+        state: protection?.state ?? "starting", reason: protection?.reason ?? null, qualified: protection?.state === "running",
+        sideEffects: "guarded-protection" as const },
+    ];
     return { component: "server", state: failed ? "failed" : stopped ? "stopped" : closing ? "stopping" : "running",
       observation: { owner: worker.owner, state: worker.state, reason: worker.reason, desiredRevision: worker.desiredRevision,
         collectorEpoch: worker.collectorEpoch, startedAtMs: worker.startedAtMs, lastReceiptAtMs: worker.lastReceiptAtMs,
-        replacements: worker.replacements, targets: worker.targets, createsDatabase: false, notifiesDirectly: false, bootInstalled: false } };
+        replacements: worker.replacements, targets: worker.targets, createsDatabase: false, notifiesDirectly: false, bootInstalled: false },
+      workers,
+      effectivePolicy: {
+        observation: { enabled: worker.desiredRevision !== null && worker.state !== "disabled" && worker.state !== "not_configured",
+          targetCount: worker.targets, notificationMode, revision: worker.desiredRevision },
+        notifications: { enabled: notificationMode !== "off" && notificationMode !== "unknown", authorizationRequired: true, directNative: false, mode: notificationMode },
+        protection: { enabled: protection !== undefined && protection.policyRevision !== null && protection.state !== "disabled", targetCount: protection?.targets ?? 0,
+          defaultProtection: true, revision: protection?.policyRevision ?? null },
+        storage: { admissionScope: "cooperating_diagnostic_writers", writers: ["monitor", "monitor-initialize", "journal", "process"], installationBudgetEnforced: false },
+      } };
   };
   let settled!: () => void, failFinished!: (error: Error) => void;
   const finished = new Promise<void>((resolve, reject) => { settled = resolve; failFinished = reject; });

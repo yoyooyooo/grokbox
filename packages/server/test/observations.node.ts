@@ -156,6 +156,12 @@ test("management status is independently authorized and an unconfigured worker i
     assert.equal(status.component, "server"); assert.equal(status.state, "running");
     assert.equal(status.observation.owner, "management-server"); assert.equal(status.observation.state, "not_configured");
     assert.equal(status.observation.createsDatabase, false); assert.equal(status.observation.bootInstalled, false);
+    assert.deepEqual(status.workers?.map(worker => worker.name), ["monitor", "notification-outbox", "protection"]);
+    assert.equal(status.workers?.find(worker => worker.name === "monitor")?.started, false);
+    assert.equal(status.workers?.find(worker => worker.name === "notification-outbox")?.sideEffects, "guarded-notification");
+    assert.equal(status.workers?.find(worker => worker.name === "protection")?.sideEffects, "guarded-protection");
+    assert.equal(status.effectivePolicy?.observation.enabled, false);
+    assert.equal(status.effectivePolicy?.storage.installationBudgetEnforced, false);
     await rejects(f.client(READER).service(), "permission_denied");
     assert.deepEqual(await readdir(f.root), before); assert.equal(f.state.ownershipReads, 0);
   } finally { await f.close(); }

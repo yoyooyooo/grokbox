@@ -35,6 +35,28 @@ test("service status binds the managed component and does not invent boot or exe
   ]) expect(managementService(value)).toBe(false);
 });
 
+test("service status exposes the managed worker roster and effective safety policy", () => {
+  const status = { component: "server", state: "running", observation: { owner: "management-server", state: "degraded", reason: "collector_receipt_stale",
+    desiredRevision: "a".repeat(64), collectorEpoch: E, startedAtMs: 1, lastReceiptAtMs: 100, replacements: 1, targets: 1,
+    createsDatabase: false, notifiesDirectly: false, bootInstalled: false },
+    workers: [
+      { name: "monitor", owner: "management-server", started: true, state: "degraded", reason: "collector_receipt_stale", qualified: false, sideEffects: "local-observation" },
+      { name: "notification-outbox", owner: "management-server", started: true, state: "waiting", reason: "notifications_off", qualified: false, sideEffects: "guarded-notification" },
+      { name: "protection", owner: "management-server", started: true, state: "blocked", reason: "source-unavailable", qualified: false, sideEffects: "guarded-protection" },
+    ],
+    effectivePolicy: {
+      observation: { enabled: true, targetCount: 1, notificationMode: "off", revision: "a".repeat(64) },
+      notifications: { enabled: false, authorizationRequired: true, directNative: false, mode: "off" },
+      protection: { enabled: true, targetCount: 1, defaultProtection: true, revision: "b".repeat(64) },
+      storage: { admissionScope: "cooperating_diagnostic_writers", writers: ["monitor", "monitor-initialize", "journal", "process"], installationBudgetEnforced: false },
+    },
+  };
+  expect(managementService(status)).toBe(true);
+  expect(managementService({ ...status, workers: status.workers.slice(0, 2) })).toBe(false);
+  expect(managementService({ ...status, effectivePolicy: { ...status.effectivePolicy, storage: { ...status.effectivePolicy.storage, installationBudgetEnforced: true } } })).toBe(false);
+  expect(managementService({ ...status, workers: status.workers.map(row => ({ ...row, reason: "not/a-safe-label" })) })).toBe(false);
+});
+
 test("snapshot transport refuses forged authority, identities, process liveness and private additions", () => {
   expect(observationSnapshot(snapshot, I)).toBe(true);
   for (const invalid of [
