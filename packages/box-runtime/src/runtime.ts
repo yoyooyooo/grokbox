@@ -53,6 +53,7 @@ export { openContinuityRecoveryStore } from "./internal/roots/continuity.runtime
 export { openBotLifecycle, type BotLifecyclePort } from "./internal/roots/bot-lifecycle.runtime.ts";
 export { openBotHandover, type BotHandoverPort, type HandoverEffect } from "./internal/roots/bot-handover.runtime.ts";
 export { openContinuityControls } from "./internal/roots/continuity-control.runtime.ts";
+export { openSelfResetQueue, type SelfResetOwner } from "./internal/roots/self-reset.runtime.ts";
 export { openBotConvergence, reconcileBotRetirement, type BotConvergencePort } from "./internal/roots/bot-convergence.runtime.ts";
 export { openBotProtection, startBotProtectionWorker, startPolicyBoundBotProtection, type BotProtectionPort } from "./internal/roots/bot-protection.runtime.ts";
 export { startHostHealth, type HostHealthStatus, type HostHealthTestPorts } from "./internal/roots/host-health.runtime.ts";
@@ -78,7 +79,8 @@ export { createNativeCheckpointCapturePort } from "./internal/host/native-checkp
 export type { NativeCheckpointBoundary, NativeCheckpointSchema } from "./internal/host/native-checkpoint.ts";
 export { createCurrentStateClient, type CurrentStateTransport } from "./internal/io/current-state-client.node.ts";
 export { openContinuityCurrentState, type CurrentStateInput, type InitializationResult } from "./internal/roots/continuity-state.runtime.ts";
-export type { NativeCurrentStatePort, NativeCurrentHead, CaptureCurrentRequest, InitializeCurrentRequest, InitializationPermission } from "@grokbox/runtime-kernel/continuity";
+export type { NativeCurrentStatePort, NativeCurrentHead, CaptureCurrentRequest, InitializeCurrentRequest, InitializationPermission,
+  SelfResetRequest, SelfResetCurrent, SelfResetExecution, SelfResetReceipt, SelfResetDuty, SelfResetDutyResult, SelfResetMaterialRef, SelfResetWorkflowRef } from "@grokbox/runtime-kernel/continuity";
 export type { ContinuityStoreInput, PublicationReceipt } from "./internal/io/continuity-store.node.ts";
 export { measureContinuityStorage } from "./internal/io/continuity-storage.node.ts";
 export { maintainObservationStorage, type StorageMaintenanceInput } from "./internal/io/storage-maintenance.node.ts";

@@ -345,6 +345,15 @@ export function continuityStorePrograms(input: ContinuityStoreInput, hooks: Cont
             (c.state<>'complete' OR (json_extract(c.request_json,'$.declaration.action')<>'capture' AND NOT EXISTS
               (SELECT 1 FROM continuity_queued_controls a WHERE a.operation_id=json_extract(c.request_json,'$.activationId')
                 AND a.kind='managed-current-release' AND a.state='complete'))))
+        AND NOT EXISTS(
+          SELECT 1 FROM continuity_queued_controls c
+          WHERE c.kind='self-reset' AND c.state IN ('queued','effect_unknown','blocked','unknown')
+            AND (
+              EXISTS(SELECT 1 FROM json_each(c.request_json,'$.materialRefs') r WHERE json_extract(r.value,'$.ref')=p.request_id)
+              OR EXISTS(SELECT 1 FROM json_each(c.request_json,'$.duties') d
+                JOIN json_each(d.value,'$.materialRefs') r WHERE json_extract(r.value,'$.ref')=p.request_id)
+            )
+        )
         ORDER BY p.sequence LIMIT ?`, [policy.keepRecent, maxItems]);
       // One subject per finite pass. Revalidate the retained points before
       // discarding older fallback material; corrupt newest bytes are not a
