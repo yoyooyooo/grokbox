@@ -38,7 +38,7 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 ## 消息关联与对账（2026-09-22）
 
-D1 的 \`message send\` 先保存原 request/submission/clientNonce，再以同一原生 generation 执行单次 \`sendPrompt\`；\`message get\` 读取原 operation，\`message delivery get|wait\` 通过同一 nonce 观察有界 transcript。accepted、显式 queued、delivery、turn/run/STEP/terminal 各自分层；缺少原生事件就返回 \`not-observed\`，缺源/换代/撤权/丢回执保留 unknown，不进行隐式补投。该读写/对账入口复用现有 continuity owner，核心没有第二 daemon writer。真实 App 的可观察标识、Host/modeld 现场代际及原版显示仍必须在授权 LIVE 窗口取证，fixture 结果不签现场成功。
+D1 的 \`message send\` 先保存原 request/submission/clientNonce 和 dispatch generation，再以同一原生 generation 执行单次 \`sendPrompt\`；\`message get\` 读取原 operation，\`message delivery get|wait\` 携带并校验原 generation，通过同一 nonce 观察有界 transcript。回复只有在用户条目之后出现同 nonce 的 assistant 原生条目（rootId 若可用也一致）时才建立关联。accepted、显式 queued、delivery、turn/run/STEP/terminal 各自分层；缺少原生事件就返回 \`not-observed\`，缺源/换代/撤权/丢回执保留 unknown，不进行隐式补投。该读写/对账入口复用现有 continuity owner，核心没有第二 daemon writer。真实 App 的可观察标识、Host/modeld 现场代际及原版显示仍必须在授权 LIVE 窗口取证，fixture 结果不签现场成功。
 
 ## 实施前验证
 

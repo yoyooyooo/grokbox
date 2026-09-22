@@ -23,22 +23,31 @@ async function fixture() {
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const store = openRuntimeStore(root, {});
   await store.saveModels(applyUse(parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: {} } }), "stub/echo"));
-  const calls = { send: 0, transcript: 0, sourceChanged: false };
+  const calls = { send: 0, transcript: 0, sourceChanged: false, interleaved: false, transcriptSourceChanged: false, expectedGenerations: [] as Array<string | undefined> };
   let lastNonce: string | undefined;
   const discovery = { baseUrl: "http://native.invalid", pid: 123, startedAt: 1 };
-  const transcript = (nonce?: string) => ({ entries: [
+  const changedDiscovery = { ...discovery, pid: 124 };
+  const transcript = (nonce?: string) => calls.interleaved ? ({ entries: [
     { id: "u1", role: "user", text: "hello", clientNonce: nonce ?? null, rootId: "root-1", observedAtMs: 1 },
-    { id: "a1", role: "assistant", text: "ack", rootId: "root-1", observedAtMs: 2 },
+    { id: "a-other", role: "assistant", text: "other", clientNonce: randomUUID(), rootId: "root-other", observedAtMs: 2 },
+    { id: "u-other", role: "user", text: "other input", clientNonce: randomUUID(), rootId: "root-other", observedAtMs: 3 },
+  ] }) : ({ entries: [
+    { id: "u1", role: "user", text: "hello", clientNonce: nonce ?? null, rootId: "root-1", observedAtMs: 1 },
+    { id: "a1", role: "assistant", text: "ack", clientNonce: nonce ?? null, rootId: "root-1", observedAtMs: 2 },
   ] });
   const gateway: ContinuityGateway = {
-    rpc: async (method, input) => {
+    rpc: async (method, input, options) => {
       if (method === "sendPrompt") {
         calls.send++;
         if (calls.sourceChanged) throw new Error("source_changed");
         lastNonce = typeof input.clientNonce === "string" ? input.clientNonce : undefined;
         return { result: { accepted: true, queued: true, nativeNonce: input.clientNonce }, discovery };
       }
-      if (method === "getAgentTranscriptTail") { calls.transcript++; return { result: transcript(lastNonce), discovery }; }
+      if (method === "getAgentTranscriptTail") {
+        calls.transcript++;
+        calls.expectedGenerations.push(options.expectedGeneration);
+        return { result: transcript(lastNonce), discovery: calls.transcriptSourceChanged ? changedDiscovery : discovery };
+      }
       if (method === "listAgents") return { result: [{ id: BOT, name: "First", isGroup: false }], discovery };
       throw new Error(`unexpected_${method}`);
     },
@@ -108,11 +117,38 @@ test("generation or receipt uncertainty is retained and never replayed", async (
     assert.equal((error as { code?: string }).code, "operation_unknown"); return true;
   });
   assert.equal(f.calls.send, 1);
-  assert.equal((await f.client().messageOperation(input.requestId)).data.state, "unknown");
+  const retained = (await f.client().messageOperation(input.requestId)).data;
+  assert.equal(retained.state, "unknown");
+  assert.equal(retained.nativeGeneration, digest(JSON.stringify(["http://native.invalid", 123, 1])));
   await assert.rejects(f.client().sendMessage(input), error => {
     assert.equal((error as { code?: string }).code, "operation_unknown"); return true;
   });
   assert.equal(f.calls.send, 1);
+});
+
+test("delivery requires direct native nonce evidence and does not infer an interleaved assistant", async () => {
+  const f = await fixture();
+  const requestId = randomUUID(), clientNonce = randomUUID();
+  const input = { requestId, botRef: f.botRef, text: "hello", clientNonce };
+  await f.client().sendMessage(input);
+  f.calls.interleaved = true;
+  const delivery = await f.client().messageDelivery(requestId);
+  assert.equal(delivery.data.state, "recorded");
+  assert.equal(delivery.data.association.delivery, "recorded");
+  assert.equal(delivery.data.entries.filter(entry => entry.role === "assistant").length, 1);
+});
+
+test("delivery carries the original generation and refuses a changed transcript source", async () => {
+  const f = await fixture();
+  const requestId = randomUUID(), clientNonce = randomUUID();
+  await f.client().sendMessage({ requestId, botRef: f.botRef, text: "hello", clientNonce });
+  f.calls.transcriptSourceChanged = true;
+  const delivery = await f.client().messageDelivery(requestId);
+  assert.equal(delivery.data.state, "unknown");
+  assert.equal(delivery.data.entries.length, 0);
+  assert.equal(delivery.data.association.delivery, "unknown");
+  assert.equal(f.calls.expectedGenerations.length, 1);
+  assert.equal(f.calls.expectedGenerations[0], digest(JSON.stringify(["http://native.invalid", 123, 1])));
 });
 
 test("message writes enforce capability before the native owner", async () => {

@@ -161,13 +161,35 @@ async function listNative(domain: MessageDomain, signal: AbortSignal, pinnedGate
     return { bots: rows, source: { kind: "native-gateway", generation: sourceOf(result.discovery)!.generation, pid: result.discovery.pid, startedAt: result.discovery.startedAt, observedAt: Date.now() } };
   } catch (error) { throw nativeError(error); }
 }
-async function transcript(domain: MessageDomain, botId: string, limit: number, beforeSeq: number | undefined, signal: AbortSignal): Promise<MessagePage> {
+async function transcript(domain: MessageDomain, botId: string, limit: number, beforeSeq: number | undefined, signal: AbortSignal, expectedGeneration?: string): Promise<MessagePage> {
   if (!domain.continuity) throw new HttpFailure(503, "source_unavailable", "Native message observation is unavailable.");
   try {
     const input: Record<string, unknown> = { id: botId, limit, ...(beforeSeq === undefined ? {} : { beforeSeq }) };
-    const result = await domain.continuity(signal).rpc("getAgentTranscriptTail", input, { timeoutMs: 10_000, maxResponseBytes: 512 * 1024 });
+    const result = await domain.continuity(signal).rpc("getAgentTranscriptTail", input, {
+      timeoutMs: 10_000,
+      maxResponseBytes: 512 * 1024,
+      ...(expectedGeneration === undefined ? {} : { expectedGeneration }),
+    });
     return pageFromNative(botRef(domain.installationId, botId), result.result, result.discovery);
   } catch (error) { throw nativeError(error); }
+}
+
+function responseObserved(entries: MessageEntry[], clientNonce: string): boolean {
+  let userIndex = -1;
+  let userRoot: string | null = null;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    if (entry.role === "user" && entry.clientNonce === clientNonce) {
+      userIndex = index;
+      userRoot = entry.rootId;
+    }
+  }
+  if (userIndex < 0) return false;
+  return entries.some((entry, index) =>
+    index > userIndex
+      && entry.role === "assistant"
+      && entry.clientNonce === clientNonce
+      && (userRoot === null || entry.rootId === null || entry.rootId === userRoot));
 }
 function sameRequest(a: StoredMessage, b: MessageSendRequest): boolean {
   return a.botRef === b.botRef && a.clientNonce === b.clientNonce && a.textSha256 === messageTextSha256(b.text);
@@ -226,7 +248,7 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
         schemaVersion: 1, installationId: domain.installationId, requestId: request.requestId,
         operationRef: operationRef(domain.installationId, botId, request.requestId), submissionRef: submissionRef(domain.installationId, botId, request.requestId),
         botRef: request.botRef, clientNonce: request.clientNonce, textSha256: messageTextSha256(request.text), state: "unknown",
-        acceptedAtMs: Date.now(), nativeGeneration: null, nativeReceipt: null,
+        acceptedAtMs: Date.now(), nativeGeneration: native.source.generation, nativeReceipt: null,
         association: { queue: "not-observed", run: "not-observed", turn: "not-observed", step: "not-observed", terminal: "not-observed", delivery: "unknown" },
         coverage: "native-submission", principalId: principal.id, textLength: request.text.length,
       };
@@ -273,10 +295,19 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       const deadline = Date.now() + waitMs;
       while (true) {
         try {
-          const page = yield* Effect.tryPromise({ try: signal => transcript(domain, botId, ENTRY_LIMIT, undefined, signal), catch: error => error });
-          const userIndex = page.entries.findIndex(entry => entry.clientNonce === operation.clientNonce);
-          const responseIndex = userIndex >= 0 ? page.entries.findIndex((entry, index) => index > userIndex && entry.role === "assistant") : -1;
-          const state = responseIndex >= 0 ? "response-observed" : userIndex >= 0 ? "recorded" : "unknown";
+          const page = yield* Effect.tryPromise({
+            try: signal => transcript(domain, botId, ENTRY_LIMIT, undefined, signal, operation.nativeGeneration ?? undefined),
+            catch: error => error,
+          });
+          const sameGeneration = operation.nativeGeneration !== null && page.source?.generation === operation.nativeGeneration;
+          if (!sameGeneration) {
+            return {
+              operation: publicOperation(operation), state: "unknown", observedAtMs: Date.now(), entries: [], source: page.source,
+              association: { ...operation.association, delivery: "unknown" }, coverage: page.coverage,
+            } satisfies MessageDelivery;
+          }
+          const userObserved = page.entries.some(entry => entry.role === "user" && entry.clientNonce === operation.clientNonce);
+          const state = responseObserved(page.entries, operation.clientNonce) ? "response-observed" : userObserved ? "recorded" : "unknown";
           const delivery: MessageDelivery = { operation: publicOperation(operation), state, observedAtMs: Date.now(), entries: page.entries, source: page.source,
             association: { ...operation.association, delivery: state }, coverage: page.coverage };
           if (state !== "recorded" || Date.now() >= deadline) return delivery;
