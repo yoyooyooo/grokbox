@@ -267,7 +267,6 @@ export async function runProfileCapabilities(
       "grok.roster.read": local || directGateway || daemon,
       "grok.transcript.read": local || directGateway || daemon,
       "grok.transcript.write": local || directGateway || daemon,
-      "grok.memory.read": local || directGateway || daemon,
       "grok.events.read": local || directGateway || daemon,
       "sandbox.inspect": sandboxCapability,
       "sandbox.wake": sandboxCapability,

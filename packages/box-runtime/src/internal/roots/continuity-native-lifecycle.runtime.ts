@@ -102,10 +102,7 @@ export function createNativeBotLifecycle(deps: NativeContinuityContext, input: {
         deps.signal?.throwIfAborted();
         const saved = await published(request, snapshotId); if (saved) return describe(snapshotId, saved, saved.reference.revision);
         if (error instanceof CurrentStateFailure && ["source_changed", "cleanup_unknown", "commit_unknown"].includes(error.code)) throw error;
-        await ownerProof(request.sourceId, request.scopeId);
-        const material = await reader.fallback(request, qualification);
-        await ownerProof(request.sourceId, request.scopeId);
-        await store.publish({ requestId: snapshotId, ...material }, deps.signal);
+        return fail("native_unavailable");
       }
       const result = await store.readSnapshot(snapshotId); return describe(snapshotId, result, result.reference.revision);
     },
@@ -178,11 +175,7 @@ export function createNativeBotLifecycle(deps: NativeContinuityContext, input: {
   const captureMemory = async (request: BotWorkflowRequest, snapshotId: string) => {
     if (!request.sourceId || !qualification) return fail("invalid_request");
     const prior = await published(request, snapshotId); if (prior) return describe(snapshotId, prior, prior.reference.revision);
-    await ownerProof(request.sourceId, request.scopeId);
-    const material = await reader.fallback(request, qualification);
-    await ownerProof(request.sourceId, request.scopeId);
-    const saved = await storeFor(request).publish({ requestId: snapshotId, ...material }, deps.signal);
-    return describe(snapshotId, material, saved.reference.revision);
+    return fail("native_unavailable");
   };
   return { native, capabilities, captureMemory, profile: reader.profile, selected, client, gateway };
 }

@@ -73,7 +73,7 @@ The current code proves safe reads of configured local replicas and safe writes 
 - an authenticated current account/session beyond the declared accountScope;
 - native Project attachment enumeration, bytes, deletion or independent attachment readback.
 
-The source-drift evidence in docs/reports/2026-09-22-native-material-source-drift.md records that the older Gateway Memory/Project methods are absent from the current inspected Host surface. The repository still contains a continuity compatibility fallback in packages/box-runtime/src/internal/io/continuity-material.node.ts that calls getAgentMemories and getAgentTranscriptTail through the generic Gateway RPC path. The CLI/daemon compatibility surface also retains the getAgentMemories route (packages/cli/src/commands/memory.ts and the Gateway/daemon protocol), so docs describing that path as exited are stale until those consumers are retired or fenced. These are unqualified legacy execution paths, not a current native owner or material writer; they must be removed or replaced behind a qualified owner bridge before B1 can become Done. A copied local store must not be treated as the native owner.
+The source-drift evidence in docs/reports/2026-09-22-native-material-source-drift.md records that the older Gateway Memory/Project methods are absent from the current inspected Host surface. The material fallback and CLI/daemon getAgentMemories route were removed in this implementation; the current source tree has no production caller for that legacy Memory RPC. getAgentTranscriptTail remains only for the separate history/handover display path, not as a material-source fallback. A copied local store must not be treated as the native owner.
 
 ## Concrete A3-M bridge requirements
 
@@ -104,4 +104,4 @@ The contract is exercised by:
 - packages/server/test/materials-boundaries.node.ts: source overlap, index damage, bounded scans, source removal, external writers and shutdown/recovery boundaries.
 - packages/box-runtime/src/internal/io/material-source.node.ts, packages/server/src/materials.ts and packages/runtime-kernel/src/materials.ts: the implementation seams named above.
 
-This records B1's current-source contract and exposes the remaining blocker: the legacy continuity fallback and the unqualified native writer / attachment seam must be retired or replaced by AH-135 before B1 can become Done. It does not claim B2 native management or B3 attachment closure.
+This closes B1's current-source contract and records the remaining downstream seam: AH-135 must qualify the management native writer / callback / synchronization / independent readback and the Project attachment producer before B2/B3 can close. It does not claim B2 native management or B3 attachment closure.

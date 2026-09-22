@@ -582,18 +582,6 @@ export class GatewayClient {
     return { trays: result, discovery };
   }
 
-  async getAgentMemories(id: string, timeoutMs: number): Promise<{ result: unknown; discovery: Discovery }> {
-    const daemon = await this.daemonFor("grok.memory.read", timeoutMs);
-    if (daemon) {
-      const response = await daemon.call("getAgentMemories", { id, timeoutMs });
-      if (!response.gateway) throw new CliError("gateway_internal", "Daemon Memory response lacks generation.");
-      const discovery = this.discoveryFromDaemon(response.gateway);
-      this.lastDiscovery = discovery;
-      return { result: response.result, discovery };
-    }
-    return await this.rpc("getAgentMemories", { id }, { timeoutMs });
-  }
-
   async sendPrompt(
     body: { agentId: string; prompt: string; clientNonce: string },
     timeoutMs: number,

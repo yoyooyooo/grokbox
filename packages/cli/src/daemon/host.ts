@@ -197,10 +197,6 @@ export async function startDaemonHost(
       const value = await gateway.getTrays(asNumber(params.timeoutMs, 10_000));
       return { result: value.trays, gateway: gatewayMeta(value.discovery) };
     }
-    if (method === "getAgentMemories") {
-      const value = await gateway.getAgentMemories(asString(params.id), asNumber(params.timeoutMs, 10_000));
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
     if (method === "sendPrompt") {
       const value = await gateway.sendPrompt(
         {

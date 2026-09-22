@@ -10,7 +10,7 @@ export type ContinuityPrograms = {
 };
 export type ContinuityDiscovery = { baseUrl: string; pid: number; startedAt: number };
 export type ContinuityRpc = Exclude<RoutineRpc, "getAutomationWebhookCredential"> | "listAgents" | "getHostStatus"
-  | "getAgentMemories" | "getAgentTranscriptTail" | "grokboxCurrentStateControl"
+  | "getAgentTranscriptTail" | "grokboxCurrentStateControl"
   | "getHostSettings" | "setHostSettings" | "assignAgentToSidebarSection" | "updateAgent" | "setGroupMembers" | "sendPrompt";
 export type ContinuityCall = (method: ContinuityRpc | "grokboxContextControl", input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
   maxBytes: number, expectedGeneration?: string) => Promise<{ result: unknown; source: ContinuityDiscovery }>;
@@ -39,7 +39,7 @@ export type NativeContinuityContext = {
 };
 const uuid = (id: string) => /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(id);
 const generation = (source: ContinuityDiscovery) => sha256Text(canonicalJson([source.baseUrl, source.pid, source.startedAt]));
-const allowed = new Set<ContinuityRpc>(["listAgents", "getHostStatus", "getAgentMemories", "getAgentTranscriptTail", "grokboxCurrentStateControl",
+const allowed = new Set<ContinuityRpc>(["listAgents", "getHostStatus", "getAgentTranscriptTail", "grokboxCurrentStateControl",
   "getAgentAutomations", "createAgentAutomation", "updateAgentAutomation", "setAgentAutomationEnabled", "deleteAgentAutomation",
   "getHostSettings", "setHostSettings", "assignAgentToSidebarSection", "updateAgent", "setGroupMembers", "sendPrompt"]);
 
