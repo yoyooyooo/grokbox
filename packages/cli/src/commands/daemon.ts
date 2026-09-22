@@ -52,7 +52,7 @@ export async function runDaemonStatus(deps: CliDeps, raw: { json?: boolean; time
 
 export async function runDaemonServe(deps: CliDeps, raw: { json?: boolean; socket?: string }): Promise<void> {
   const socketPath = raw.socket ?? deps.daemonSocket, config = await readDaemonConfig(deps.configDir);
-  const host = await startDaemonHost(deps, socketPath, config.network, config.filesystem?.roots ?? [], config.process, config.desktop);
+  const host = await startDaemonHost(deps, socketPath, config.network, config.filesystem?.roots ?? [], config.desktop);
   try {
     const handshake = await host.handshake();
     writeSuccess(deps.stdout, { socket: socketPath, network: host.network, ready: true, ...handshake });

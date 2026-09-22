@@ -41,7 +41,7 @@ Sandbox 和 quota 使用各自的显式外部能力，不借 daemon/Gateway 凭�
 | STEP 身份、claim、尝试与结算 | kernel execution history/ledger，经唯一 STEP 程序消费 |
 | provider 凭据 | modeld BackendAuth/受控 secret reference 解析 |
 | Host 部署与补丁操作 | 唯一 controller、精确 identity/recipe、guardian 和原生 supervisor 边界 |
-| 文件、进程和 Job | daemon policy 下的 host adapter/Job manager 和真实 OS 观察 |
+| 文件、进程和 Job | Box runtime 的原受控文件/进程适配；Job manager 由管理 Server 唯一持有，未迁移文件入口仍由 daemon 消费同一文件适配 |
 | incident、ack/snooze、采集 cursor、通知 outbox | 单 Box monitor store；不拥有执行准入 |
 | 通知 binding/grant、provision 回执 | 各自受保护机器状态 owner；不是普通 config 或诊断缓存 |
 | CONT 恢复材料与管理操作 | continuity 私有 store；活状态仍由原生 writer 接受 |
@@ -95,7 +95,7 @@ CLI连接层只保留本地init、显式配置端点和现有安装的有限SSH�
 
 [管理 Server](../packages/server/src/server.ts)拥有 Effect Scope、loopback listener、每请求授权、安装绑定和并发/字节/时间边界。调用者断开不取消已准入模型写入；关闭等待不可中断的发布检查点，普通观察可中断。已安装入口只读现有 canonical 配置与安装 verifier，不隐式初始化、迁移或采用 Host。每次请求重读 verifier，轮换不改变原回执主体，安装权威替换则拒绝。它尚未承载全部后台 worker，也未完成 modeld 实执行的独立寿命资格。
 
-剩余 `daemon serve` 组合 listener、auth/policy、Gateway discovery、host adapters、Jobs、有限流和 shutdown。Unix socket 权限与认证 loopback HTTP 分开；禁止默认公网 listener。常驻和自启动由实际部署 owner/资格决定，不能依据某台开发机的进程列表写成长期架构。
+剩余 `daemon serve` 组合 listener、auth/policy、Gateway discovery、文件/桌面适配、有限流和 shutdown；Job RPC和执行owner已经退出。Unix socket 权限与认证 loopback HTTP 分开；禁止默认公网 listener。常驻和自启动由实际部署 owner/资格决定，不能依据某台开发机的进程列表写成长期架构。
 
 Gateway discovery 在启动与明确的认证/代际失效后重读；wildcard bind 只拨 loopback，非本机发现须由显式连接授权。有限 method allowlist 和 typed projection 在 adapter 边界执行，unknown management write 不重放。完整 profile 更新按原生语义合并遗漏字段，但不回填 harness。收到对象 ID 后投影失败必须保留该身份。
 
@@ -103,7 +103,7 @@ Gateway discovery 在启动与明确的认证/代际失效后重读；wildcard b
 
 文件 root 是 policy object，不是字符串前缀。通过 canonicalization、no-follow 和 Linux descriptor 验证取得受限对象；传输不重新打开已经授权的 pathname。变更在 pinned parent 下执行，按物理目标串行化，受控 staging/flush/rename/readback 与 expected hash 防止本系统丢更新；外部 syscall 级竞态明确保留。recoverable trash、transfer/operation identity、取消 tombstone 与有界 ledger 各有独立职责。
 
-Job 在 spawn 前持久声明，字面 argv/executable alias、最小环境和 named-root cwd 由 policy 决定；admitted executable 不是 filesystem sandbox。进程组 signal 核对原始 start identity，无法核验则 fail closed；Node 没有 pidfd-backed 原子组信号承诺。Job lifetime 不属于 follower；日志有界且持续 drain，重启后无法证明的非终态为 unknown。
+[Job 管理领域](../packages/server/src/jobs.ts)由管理 Server Effect Scope 获得和释放原 Box Job manager；CLI/Web 通过共享客户端，不启动另一个daemon执行器。现有 canonical `daemon.process/filesystem` 字段仍提供明确策略，不表示daemon拥有执行权。Job ID由安装/主体/原request确定，spawn前持久声明，另有独占存储gate；字面argv/executable alias、最小环境和named-root cwd保持原OS适配，admitted executable不是filesystem sandbox。新请求固定策略与服务代，排队后实际spawn前再次验证权限/策略；调用者断连不取消，配置变化不改写在途Job。未知首发或取消发布不重排/重投，旧无scope格式不能被归一化成现行许可。正常关闭等待真实子进程/落盘再释放owner；硬退出后非终态只为unknown。进程组signal核对原始start identity，不承诺pidfd原子组信号或撤销外部效果。日志有界持续drain，正文读取独立授权；回收日志不回收可复用的执行身份。
 
 事件只汇聚声明的 source，带独立 daemon/Gateway generation 和 cursor。retention、断线和不支持 resume 的直接 Gateway 都产生 gap；未知不是空成功。capability、字节/数量/时间上限以实际 source/test 为准，不在本页复制旧常数。
 

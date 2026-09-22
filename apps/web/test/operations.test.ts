@@ -14,6 +14,17 @@ function memoryStorage() {
     removeItem: (key: string) => { values.delete(key); } };
 }
 
+test("Job locators separate known admission, unknown execution and cancellation without persisting argv or authority",()=>{
+  const storage=memoryStorage(),requestId=randomUUID(),ref=`job:${scope.installationId}:${randomUUID()}`;
+  const start=rememberOperation(storage,scope,{requestId,expectedRevision:"f".repeat(64),confirmed:true,argv:["node","-e","PRIVATE_JOB_SCRIPT"],environment:{VISIBLE:"PRIVATE_ENV"},runTimeoutMs:1000,output:"capture",shell:false});
+  expect(operationSearch(start)).toMatchObject({domain:"job",requestId});
+  const serialized=[...storage.values.values()].join();expect(serialized).not.toMatch(/PRIVATE_JOB_SCRIPT|PRIVATE_ENV|expectedRevision|argv|environment|confirmed/);
+  expect(()=>forgetSettledOperation(storage,start)).toThrow();markOperation(storage,start,"recorded");forgetSettledOperation(storage,start);
+  const cancel=rememberOperation(storage,scope,{jobRef:ref,requestId:randomUUID(),confirmed:true});expect(operationSearch(cancel)).toMatchObject({domain:"job-cancel",target:ref});
+  markOperation(storage,cancel,"unknown");expect(()=>forgetSettledOperation(storage,cancel)).toThrow();expect(localOperations(storage,scope)).toHaveLength(1);
+  expect(()=>rememberOperation(storage,scope,{jobRef:ref.replace(scope.installationId,randomUUID()),requestId:randomUUID(),confirmed:true})).toThrow();
+});
+
 test("operation locators are persisted before send and contain no model input or authentication", () => {
   const storage = memoryStorage(), input = request();
   const row = rememberOperation(storage, scope, input);

@@ -78,16 +78,8 @@ describe("profile capabilities local+server_url misclassification", () => {
     expect(body.data.capabilities["host.fs.write"]).toBe(false);
   });
 
-  test("host.process.run is false", () => {
-    expect(body.data.capabilities["host.process.run"]).toBe(false);
-  });
-
-  test("host.process.manage is false", () => {
-    expect(body.data.capabilities["host.process.manage"]).toBe(false);
-  });
-
-  test("host.process.shell is false", () => {
-    expect(body.data.capabilities["host.process.shell"]).toBe(false);
+  test("retired process capability promises are absent from the old Profile surface", () => {
+    for (const key of ["host.process.run", "host.process.manage", "host.process.shell"]) expect(body.data.capabilities).not.toHaveProperty(key);
   });
 
   test("host.desktop.read is false", () => {

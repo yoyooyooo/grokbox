@@ -12,6 +12,7 @@ import { webFixture, INSTALLATION, FIRST, SECOND, OWNER, READER, KEY_SENTINEL } 
 import { httpsFixture } from "./https-fixture.ts";
 import { seedObservations } from "./observation-fixture.ts";
 import { receiverBrowserJourney } from "./receiver-browser.node.ts";
+import { jobBrowserJourney } from "./job-browser.node.ts";
 import { setupBrowserJourney } from "./setup-browser.node.ts";
 import { materialsBrowserJourney } from "./materials-browser.node.ts";
 import { protectionBrowserJourney } from "./protection-browser.node.ts";
@@ -20,6 +21,7 @@ import { contextBrowserJourney } from "./context-browser.node.ts";
 import { compactionBrowserJourney } from "./compaction-browser.node.ts";
 import { handoverBrowserJourney } from "./handover-browser.node.ts";
 import { hostHealthBrowserJourney } from "./host-health-browser.node.ts";
+import { BROWSER_GROUPS, browserGroup } from "./browser-groups.ts";
 
 async function freePort(): Promise<number> {
   const server = createServer();
@@ -81,7 +83,9 @@ async function login(page: Page, context: BrowserContext, f: Awaited<ReturnType<
   return { code: grant.code, cookie: cookie.value };
 }
 
-test("relocated production Web: real Chrome, shared CLI/domain, recovery and process lifetime", { timeout: 150_000 }, async t => {
+const group = browserGroup(process.env.GROKBOX_WEB_TEST_GROUP);
+const included = new Set<string>(BROWSER_GROUPS[group]);
+test(`relocated production Web (${group}): real Chrome, shared CLI/domain, recovery and process lifetime`, { timeout: 150_000 }, async t => {
   const artifact = process.env.GROKBOX_WEB_ARTIFACT, cliEntry = process.env.GROKBOX_TEST_CLI_ENTRY;
   assert.ok(artifact && cliEntry);
   const directory = await mkdtemp(join(tmpdir(), "grokbox-web-browser-"));
@@ -101,6 +105,7 @@ test("relocated production Web: real Chrome, shared CLI/domain, recovery and pro
     page.on("request", request => { if (!request.url().startsWith(`${origin}/`) && !request.url().startsWith("data:")) foreignRequests.push(request.url()); });
     let auth: { code: string; cookie: string };
 
+    if (included.has("foundation")) {
     await t.test("production artifact is complete, relocatable, and has no browser-side server imports", async () => {
       const manifest = JSON.parse(await readFile(join(relocated, "manifest.json"), "utf8"));
       assert.equal(manifest.node, ">=22.12.0"); assert.match(manifest.sourceDigest, /^[a-f0-9]{64}$/);
@@ -471,27 +476,31 @@ test("relocated production Web: real Chrome, shared CLI/domain, recovery and pro
       assert.deepEqual(errors, []); assert.deepEqual(foreignRequests, []);
       await otherPage.close();
     });
-    await t.test("receiver consent, independent tests and recovery use production browser artifacts", async receiverTests => {
+    }
+    if (included.has("jobs")) await t.test("managed Jobs, OS output and original request recovery use production browser artifacts", async jobTests => {
+      await jobBrowserJourney(jobTests,{browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop});
+    });
+    if (included.has("receivers")) await t.test("receiver consent, independent tests and recovery use production browser artifacts", async receiverTests => {
       await receiverBrowserJourney(receiverTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
     });
-    await t.test("first setup and native-definition recovery use the same production browser and management API", async setupTests => {
+    if (included.has("setup")) await t.test("first setup and native-definition recovery use the same production browser and management API", async setupTests => {
       await setupBrowserJourney(setupTests, { browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop });
     });
-    await t.test("material sources, bounded search and source recovery use the production console", async materialTests => {
+    if (included.has("materials")) await t.test("material sources, bounded search and source recovery use the production console", async materialTests => {
       await materialsBrowserJourney(materialTests,{browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop});
     });
-    await t.test("default protection, policy recovery and metadata use the production browser",async protectionTests=>{
+    if (included.has("protection")) await t.test("default protection, policy recovery and metadata use the production browser",async protectionTests=>{
       await protectionBrowserJourney(protectionTests,{browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop});
     });
-    await t.test("manual lifecycle history remains an observational production browser surface", async lifecycleTests => {
+    if (included.has("lifecycle")) await t.test("manual lifecycle history remains an observational production browser surface", async lifecycleTests => {
       await lifecycleBrowserJourney(lifecycleTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
     });
-    await t.test("current-state control and original recovery use native owner transactions through the production console", async contextTests => {
-      await contextBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
-      await compactionBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
-      await handoverBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
+    if (included.has("context") || included.has("compaction") || included.has("handover")) await t.test("current-state control and original recovery use native owner transactions through the production console", async contextTests => {
+      if (included.has("context")) await contextBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
+      if (included.has("compaction")) await compactionBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
+      if (included.has("handover")) await handoverBrowserJourney(contextTests, { browser: browser!, entry: join(relocated, "run.mjs"), home: directory, evidence, freePort, launchWeb, stop });
     });
-    await t.test("Host health uses real Rust and existing incidents through the production console",async healthTests=>{
+    if (included.has("hostHealth")) await t.test("Host health uses real Rust and existing incidents through the production console",async healthTests=>{
       await hostHealthBrowserJourney(healthTests,{browser:browser!,entry:join(relocated,"run.mjs"),home:directory,evidence,freePort,launchWeb,stop});
     });
     await context.close();

@@ -11,7 +11,7 @@ const JOURNAL_BYTES_MAX = 32 * 1024 * 1024;
 const EVENT_PAYLOAD_MAX_BYTES = 256 * 1024;
 const EVENT_WAITER_LIMIT = 128;
 
-export type EventSource = "gateway" | "job" | "daemon";
+export type EventSource = "gateway" | "daemon";
 
 export type UnifiedEvent = {
   source: EventSource;
@@ -234,20 +234,6 @@ export class DaemonEventManager {
   }): Promise<EventPage> {
     this.startGatewayLoop();
     return this.journal.read(input);
-  }
-
-  publishJob(input: { jobId: string; state: string; reason?: string; cancelOperationId?: string }): void {
-    this.journal.publish({
-      source: "job",
-      kind: "state",
-      operationId: input.cancelOperationId ?? input.jobId,
-      payload: {
-        jobId: input.jobId,
-        state: input.state,
-        ...(input.reason === undefined ? {} : { reason: input.reason }),
-        ...(input.cancelOperationId === undefined ? {} : { cancelOperationId: input.cancelOperationId }),
-      },
-    });
   }
 
   async close(): Promise<void> {

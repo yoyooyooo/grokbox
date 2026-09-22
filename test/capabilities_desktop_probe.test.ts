@@ -62,7 +62,7 @@ describe("profile capabilities vs desktop probe", () => {
       daemonSocket: socket,
       transport: "local" as const,
     };
-    host = await startDaemonHost(deps, socket, undefined, [], undefined, { minIdleMs: 600_000 }, io);
+    host = await startDaemonHost(deps, socket, undefined, [], { minIdleMs: 600_000 }, io);
     await writeProfileFile(configDir, "auto-box", {
       version: 1,
       transport: "auto",
@@ -145,7 +145,7 @@ describe("profile capabilities vs desktop probe", () => {
       transport: "local" as const,
     };
     // No DesktopIo and no pinable stop-window => host.desktop.read only.
-    host = await startDaemonHost(deps, socket, undefined, [], undefined, {
+    host = await startDaemonHost(deps, socket, undefined, [], {
       minIdleMs: 600_000,
       stopWindowPath: join(configDir, "missing-stop-window"),
     });

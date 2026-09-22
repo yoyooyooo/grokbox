@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { JobManager, GovernedFilesystem, ProcessAuthority } from "@grokbox/box-runtime/runtime";
+import { JobManager, GovernedFilesystem, ProcessAuthority, readJobRecord } from "@grokbox/box-runtime/runtime";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "job-safety-")), workspace = join(root, "workspace");
@@ -13,7 +13,7 @@ async function fixture() {
   const filesystem = await GovernedFilesystem.create([{ name: "workspace", path: workspace, operations: ["exec"] }], () => now);
   const create = () => JobManager.create(root, authority, filesystem, () => now);
   return { root, workspace, create, advance: () => { now += 2 * 24 * 3600000; },
-    request: (jobId = randomUUID()) => ({ jobId, argv: ["node", "-e", "process.stdout.write('once')"], environment: {}, output: "capture" as const, shell: false, runTimeoutMs: 5000 }),
+    request: (jobId = randomUUID()) => ({ jobId, scope: { installationId: "11111111-1111-4111-8111-111111111111", principalId: "owner", requestId: jobId, policyRevision: "f".repeat(64) }, argv: ["node", "-e", "process.stdout.write('once')"], environment: {}, output: "capture" as const, shell: false, runTimeoutMs: 5000 }),
     close: async () => { await filesystem.close(); await rm(root, { recursive: true, force: true }); } };
 }
 
@@ -34,8 +34,29 @@ test("corrupt job state is preserved, not overwritten by a fabricated unknown re
     manager = await f.create(); const request = f.request(); await manager.submit(request); await manager.waitTerminal(request.jobId, 5000);
     await manager.close(); manager = undefined; const path = join(f.root, "jobs", request.jobId, "state.json");
     await writeFile(path, "{retained-torn-state", { mode: 0o600 });
-    try { manager = await f.create(); } catch { /* A corrupt safety owner may refuse acquisition. */ }
+    await expect(f.create().then(value => { manager = value; return value; })).rejects.toMatchObject({ code: "job_interrupted" });
     expect(await readFile(path, "utf8")).toBe("{retained-torn-state");
+  } finally { await manager?.close(); await f.close(); }
+});
+
+for (const field of ["retired-generation", "missing-scope", "extra-top-level", "extra-command", "extra-logs"] as const) test(`unsupported Job record ${field} cannot be consumed or normalized by a cold reader or owner`, async () => {
+  const f = await fixture(); let manager: JobManager | undefined;
+  try {
+    manager = await f.create(); const request = f.request();
+    await manager.submit(request); await manager.waitTerminal(request.jobId, 5000);
+    await manager.close(); manager = undefined;
+    const path = join(f.root, "jobs", request.jobId, "state.json");
+    const row = JSON.parse(await readFile(path, "utf8"));
+    if (field === "retired-generation") { row.daemonGeneration = row.serviceGeneration; delete row.serviceGeneration; }
+    if (field === "missing-scope") delete row.scope;
+    if (field === "extra-top-level") row.legacyAuthority = true;
+    if (field === "extra-command") row.command.argv = ["not-a-current-field"];
+    if (field === "extra-logs") row.logs.rawOutput = "not-a-current-field";
+    const bytes = `${JSON.stringify(row)}\n`;
+    await writeFile(path, bytes, { mode: 0o600 });
+    await expect(readJobRecord(f.root, request.jobId)).rejects.toMatchObject({ code: "job_interrupted" });
+    await expect(f.create().then(value => { manager = value; return value; })).rejects.toMatchObject({ code: "job_interrupted" });
+    expect(await readFile(path, "utf8")).toBe(bytes);
   } finally { await manager?.close(); await f.close(); }
 });
 

@@ -9,7 +9,7 @@ import { ALLOWED_EVENT_CHANNELS, DEFAULT_EVENT_CHANNELS } from "../registry.ts";
 import { asString, isRecord } from "../util.ts";
 
 const ALLOWED_CHANNELS = new Set<string>(ALLOWED_EVENT_CHANNELS);
-const ALLOWED_SOURCES = new Set<EventSource>(["gateway", "job", "daemon"]);
+const ALLOWED_SOURCES = new Set<EventSource>(["gateway", "daemon"]);
 const UUID_V4 = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const CURSOR = new RegExp(`^(${UUID_V4}):(0|[1-9][0-9]*)$`, "i");
 const GENERATION = new RegExp(`^${UUID_V4}$`, "i");
@@ -91,7 +91,7 @@ export async function runEvents(
   const client = new GatewayClient(deps);
   const daemon = await client.eventDaemon(io.timeoutMs);
   if (daemon) {
-    const sources = parseCsv<EventSource>(raw.sources, ["gateway", "job", "daemon"], ALLOWED_SOURCES, "--sources");
+    const sources = parseCsv<EventSource>(raw.sources, ["gateway", "daemon"], ALLOWED_SOURCES, "--sources");
     let cursor = raw.cursor;
     while (!deps.signal?.aborted) {
       const response = await daemon.call("eventRead", {

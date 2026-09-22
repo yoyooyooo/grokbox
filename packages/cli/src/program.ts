@@ -36,7 +36,6 @@ import {
   runDesktopPruneRun,
   runDesktopStatus,
 } from "./commands/desktop.ts";
-import { runExec } from "./commands/exec.ts";
 import { runExportAgent } from "./commands/export.ts";
 import {
   runTemplateDelete,
@@ -73,7 +72,6 @@ import { runHistorySearch, runHistoryTail, runHistoryThread } from "./commands/h
 import { runAlerts, runSendOutcome, runRuntimeIncident } from "./commands/outcome.ts";
 import { runGroupProgress } from "./commands/group-progress.ts";
 import { runAlertTrace } from "./commands/alert-trace.ts";
-import { runJobsCancel, runJobsList, runJobsLogs, runJobsShow } from "./commands/jobs.ts";
 import { runInit } from "./commands/init.ts";
 import { runIsRunning } from "./commands/is.ts";
 import {
@@ -350,11 +348,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "fs upload": async (deps, args, options) =>
       await runFsUpload(deps, args[0] ?? "", args[1] ?? "", options),
     "fs remove": async (deps, args, options) => await runFsRemove(deps, args[0] ?? "", options),
-    "exec run": async (deps, args, options) => await runExec(deps, args.filter((value): value is string => value !== undefined), options),
-    "jobs list": async (deps, _args, options) => await runJobsList(deps, options),
-    "jobs show": async (deps, args, options) => await runJobsShow(deps, args[0] ?? "", options),
-    "jobs logs": async (deps, args, options) => await runJobsLogs(deps, args[0] ?? "", options),
-    "jobs cancel": async (deps, args, options) => await runJobsCancel(deps, args[0] ?? "", options),
     events: async (deps, _args, options) => await runEvents(deps, options),
     "is running": async (deps, args, options) => await runIsRunning(deps, args[0] ?? "", options),
     "runtime status": async (deps) => await runRuntimeStatus(deps),

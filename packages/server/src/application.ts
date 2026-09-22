@@ -20,12 +20,13 @@ import { lifecycleApplication, type LifecycleDomain } from "./lifecycle.ts";
 import { contextApplication, type ContextDomain } from "./context.ts";
 import { compactionApplication } from "./compaction.ts";
 import { handoverApplication } from "./handover.ts";
+import { jobApplication, type JobDomain } from "./jobs.ts";
 
 export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, "listBots" | "ownershipRead">
   & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess">>;
 import { hostHealthQuery } from "./host-health.ts";
 import type { HostHealthStatus } from "@grokbox/box-runtime/runtime";
-export type ApplicationOptions = { hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
+export type ApplicationOptions = { jobDomain?: JobDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
 export function projectModel(record: ModelRecord): ModelView {
   let endpoint: string | null = null;
   try {
@@ -50,6 +51,10 @@ function segment(value: string): string {
 export function application(options: ApplicationOptions, principal: Principal, method: string, url: URL, input?: unknown) {
   return Effect.gen(function* () {
     const path = url.pathname;
+    if (path === "/v1/jobs" || path.startsWith("/v1/jobs/") || path.startsWith("/v1/job-")) {
+      if (!options.jobDomain) return yield* Effect.fail(new HttpFailure(503,"unavailable","Job management is unavailable."));
+      return yield* jobApplication(options.jobDomain,principal,method,url,input);
+    }
     if(path==="/v1/host-health")return yield* hostHealthQuery(options.installationId,options.hostHealthState,principal,method,url);
     if (path.startsWith("/v1/handover-")) {
       if (!options.contextDomain) return yield* Effect.fail(new HttpFailure(503,"unavailable","Handover management is unavailable."));

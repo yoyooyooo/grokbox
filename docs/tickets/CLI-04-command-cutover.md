@@ -1,6 +1,6 @@
 # CLI-04 · 完整命令面与旧入口去向收口
 
-状态：能力范围与直接切换方向已接受，精确动作/参数及迁移证据待收口。依赖：[CLI-01](CLI-01-discovery-and-targeting.md)、[CLI-02](CLI-02-operation-contract.md)、[CLI-03](CLI-03-observation-and-wait.md)。本票完成指合同可执行，不表示代码已交付，当前不实施删除。
+状态：能力范围与直接切换方向已接受，精确动作/参数及迁移证据待收口。依赖：[CLI-01](CLI-01-discovery-and-targeting.md)、[CLI-02](CLI-02-operation-contract.md)、[CLI-03](CLI-03-observation-and-wait.md)。本票保留整体切换义务，已迁移领域的实现与旧入口退出由 CLI-05 的 W3 和下述用例记录承接；不把合同讨论误写为当前没有施工。
 
 ## 用户结果
 
@@ -41,6 +41,12 @@ Agent 只学习一套正式命令，按自身策略组合基础能力。已有�
 
 R01 的重放/首次准入顺序由 CLI-02 负责。R02/R03/R04 的产品取舍已定，剩余合同和验收样例直接按已确认原则收口，不再逐项请求拍板。方向确认不代表这些发现已完成协议验证，也不把候选命名或真实实现资格标为已验收。
 
+## Job 领域切换（2026-09-22）
+
+原 `exec run`、`jobs list/show/logs/cancel`、daemon Job RPC/启动与关闭接线，及旧 Profile process capability/Job 事件源已退出；源码不存在兼容别名或转发 writer。`job policy/start/list/get/wait/logs/cancel`、两个原请求查询域和 `/jobs` 共用原 Box Job manager、进程/文件权限适配及持久记录。执行、shell、观察、输出、取消权限独立；未知首次发布或取消不会因同请求、换代或诊断保留期限而获得第二次执行。完整说明、确定性反例与实际 Node/Chrome/制品验证见 [Job 管理报告](../reports/2026-09-22-job-management.md)。
+
+未迁移的文件/桌面/Gateway 域仍有各自去向；现行 canonical 配置中的 `daemon.process/filesystem` 名称不是旧 daemon 的执行授权，后续配置命名收束不能复活旧执行器。此片不关闭 DATA-01 的完整文件/原生材料通路、全域观察关联或 W4 的服务宿主和集中验收。
+
 ## 后继
 
-[CLI-05](CLI-05-implementation-follow-through.md)拥有跨域重建与最终完整交付，领域票拥有各自差额。按已闭合用例推进实现、迁移调用方并退出旧边界，Web UI 纳入同一交付目标。中间版本可不完整或不可用；具体包搬迁和数据库设计留给实施，当前不执行代码改动或现场采用。
+[CLI-05](CLI-05-implementation-follow-through.md)拥有跨域重建与最终完整交付，领域票拥有各自差额。按已闭合用例推进实现、迁移调用方并退出旧边界，Web UI 纳入同一交付目标。中间版本可不完整或不可用；具体包搬迁和数据库设计留给实施，实现按当前 W3 排程进行；源码提交和离线验证不自动授权现场采用。

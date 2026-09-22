@@ -1,4 +1,4 @@
-import { ManagementClientError, botIdFromRef, type ApiErrorCode, type ApiReply, type ModelChange, normalizeSetupRequest, type MaterialWrite, type MaterialScope, type MaterialKind } from "@grokbox/client";
+import { normalizeJobStart, ManagementClientError, botIdFromRef, type ApiErrorCode, type ApiReply, type ModelChange, normalizeSetupRequest, type MaterialWrite, type MaterialScope, type MaterialKind } from "@grokbox/client";
 import { startInstalledManagementServer } from "@grokbox/server";
 import { contextOperationIdentity, contextOperationRef, compactionOperationIdentity, handoverOperationIdentity, type HandoverAction, type ContextChange } from "@grokbox/client";
 import { normalizeLifecycleIntent, lifecycleIdentity, lifecycleReference, type LifecycleIntent } from "@grokbox/client";
@@ -14,6 +14,7 @@ import { runInstalledWebService } from "../web-service.ts";
 
 export type ManagementCommandOptions = {
   connection?: string; timeoutMs?: string; limit?: string; cursor?: string; source?: string; scope?: string;
+  jobRef?: string; waitMs?: string; offset?: string;
   preview?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
   requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string; receiver?: string;
   root?: string; nativeDiscovery?: string; port?: string; input?: string; mode?: string;
@@ -74,7 +75,15 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       ["requestId", "kind", "sourceBotRef", "name", "description", "instructions", "modelId", "effort", "snapshotRef", "activate", "start", "maxRunMs", "allowHandoverMessages"]);
   }
   const setupInput = command === "notification settings apply" || command === "routine apply" ? await readManagementInput(deps,options.input) : undefined;
-  const { client, installationId } = await managementClient(deps, options);
+  let jobInput;
+  if (command === "job start") {
+    if (options.confirm !== true) throw invalid("Explicit OS execution confirmation is required.");
+    jobInput = normalizeJobStart({ ...combineManagementInput(await readManagementInput(deps, options.input),
+      { requestId: options.requestId, expectedRevision: options.expectRevision }, ["requestId", "expectedRevision", "argv", "environment", "cwd", "runTimeoutMs", "output", "shell"]), confirmed: true });
+  }
+  const waitMs = command === "job wait" ? Number(options.waitMs ?? "25000") : 0;
+  if (command === "job wait" && (!/^[1-9][0-9]*$/.test(options.waitMs ?? "25000") || waitMs > 25000)) throw invalid("Job wait is bounded to 1–25000 milliseconds.");
+  const { client, installationId } = await managementClient(deps, command === "job wait" && options.timeoutMs === undefined ? { ...options, timeoutMs: String(waitMs + 5000) } : options);
   if (command === "event watch") {
     for (const value of [options.limit, options.durationMs]) if (value !== undefined && !/^[1-9][0-9]{0,5}$/.test(value)) throw invalid("Invalid event watch bounds.");
     for await (const frame of client.watchObservationEvents({ cursor: options.cursor ?? "", limit: options.limit === undefined ? undefined : Number(options.limit),
@@ -86,6 +95,18 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
   }
   let reply: ApiReply<unknown>;
   switch (command) {
+    case "job policy": reply = await client.jobPolicy(deps.signal); break;
+    case "job start": reply = await client.startJob(jobInput!, deps.signal); break;
+    case "job list": {
+      if (options.limit !== undefined && !/^[1-9][0-9]*$/.test(options.limit)) throw invalid("Invalid Job page size.");
+      reply = await client.jobs({ limit: options.limit === undefined ? 25 : Number(options.limit), cursor: options.cursor, signal: deps.signal }); break;
+    }
+    case "job get": case "job wait": reply = await client.job(args[0] ?? "", { waitMs, signal: deps.signal }); break;
+    case "job logs": {
+      if (options.offset !== undefined && !/^(0|[1-9][0-9]*)$/.test(options.offset)) throw invalid("Use a verified Job output offset.");
+      reply = await client.jobLogs(args[0] ?? "", { offset: Number(options.offset ?? "0"), signal: deps.signal }); break;
+    }
+    case "job cancel": reply = await client.cancelJob({ jobRef: args[0] ?? "", requestId: options.requestId ?? "", confirmed: options.confirm as true }, deps.signal); break;
     case "bot context get": reply = await client.context(args[0] ?? "", deps.signal); break;
     case "bot context compact": {
       if (options.preview) {
@@ -285,6 +306,8 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.domain !== "routine" || options.confirm !== true) throw invalid("This reconciliation requires domain routine and explicit confirmation.");
       reply = await client.changeSetup({action:"reconcile",routineRef:options.routineRef ?? "",expectedRevision:options.expectRevision ?? "",requestId:options.requestId ?? "",confirmed:true},deps.signal); break;
     case "operation get":
+      if (options.domain === "job") { reply = await client.jobOperation(options.requestId ?? "", deps.signal); break; }
+      if (options.domain === "job-cancel") { reply = await client.jobCancellation(options.jobRef ?? "", options.requestId ?? "", deps.signal); break; }
       if(options.domain==="handover"){reply=await client.handoverOperation(options.scopeId??"",options.requestId??"",deps.signal);break;}
       if (options.domain === "compaction") { reply = await client.compactionOperation(options.scopeId ?? "", options.requestId ?? "", deps.signal); break; }
       if (options.domain === "context") { reply = await client.contextOperation(contextOperationRef(installationId, options.scopeId ?? "", options.requestId ?? ""), deps.signal); break; }

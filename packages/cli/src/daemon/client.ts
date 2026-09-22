@@ -29,8 +29,6 @@ const MANAGEMENT_WRITES = new Set<DaemonMethod>([
   "fsMkdir",
   "fsUploadCommit",
   "fsRemove",
-  "jobSubmit",
-  "jobCancel",
   "desktopKeepAdd",
   "desktopKeepRemove",
   "desktopPrune",

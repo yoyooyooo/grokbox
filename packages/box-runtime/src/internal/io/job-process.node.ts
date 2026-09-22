@@ -29,16 +29,12 @@ export class ProcessAuthority {
     return new ProcessAuthority(policy, entries, shell);
   }
 
-  capabilities(): string[] {
-    return ["host.process.run", "host.process.manage", ...(this.shell ? ["host.process.shell"] : [])];
-  }
-
   async executable(name: string, shell: boolean): Promise<VerifiedExecutable> {
     const expected = shell ? this.shell : this.executables.get(name);
     if (!expected) throw new CliError("process_forbidden", shell ? "Shell execution is not authorized." : "Executable alias is not authorized.");
     const current = await verifyExecutable(expected.name, expected.path);
     if (current.dev !== expected.dev || current.ino !== expected.ino) {
-      throw new CliError("process_forbidden", "Configured executable changed after daemon startup.");
+      throw new CliError("process_forbidden", "Configured executable changed after service acquisition.");
     }
     return current;
   }

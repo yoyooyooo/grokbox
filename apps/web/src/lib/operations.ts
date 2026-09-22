@@ -2,11 +2,13 @@ import { normalizeNotificationSend, type NotificationSendRequest, normalizeCompa
 
 import { normalizeHandoverChange, normalizeHandoverContinuation, protectionReferenceIdentity, type HandoverChange, type HandoverContinuation, type HandoverOperation } from "@grokbox/client";
 
+import { jobIdentity, normalizeJobStart, normalizeJobCancel, type JobStart, type JobCancel, type JobView } from "@grokbox/client";
+
 export type OperationScope = { installationId: string; principalId: string };
 export type LocalOperation = {
-  version: 1; requestId: string; installationId: string; principalId: string; command: ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "notification-send" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
+  version: 1; requestId: string; installationId: string; principalId: string; command: "job-start" | "job-cancel" | ModelChange["kind"] | "incident-ack" | "incident-snooze" | "receiver-enable" | "receiver-disable" | "receiver-unbind" | "notification-test" | "notification-send" | "setup-settings" | "setup-apply" | "setup-enable" | "setup-disable" | "setup-delete" | "setup-bind" | "material-write" | "protection-policy" | "context-control" | "context-compaction" | "handover-control"; databaseId?: string; contextScope?: string;
   setupKind?: SetupKind; setupScope?: string;
-  target: string; createdAt: number; state: "awaiting-response" | "unknown" | "succeeded" | "refused" | "retired";
+  target: string; createdAt: number; state: "awaiting-response" | "unknown" | "recorded" | "succeeded" | "refused" | "retired";
 };
 type StoragePort = Pick<Storage, "length" | "key" | "getItem" | "setItem" | "removeItem">;
 const prefix = (scope: OperationScope) => `grokbox:operation:v1:${scope.installationId}:${encodeURIComponent(scope.principalId)}:`;
@@ -16,7 +18,7 @@ const valid = (value: unknown, scope: OperationScope): value is LocalOperation =
     && UUID.test(row.requestId) && Number.isSafeInteger(row.createdAt) && row.createdAt > 0 && typeof row.target === "string" && row.target.length <= (row.command === "material-write" ? 1800 : 256)
     && Object.keys(row).every(key => ["version", "requestId", "installationId", "principalId", "command", "databaseId", "contextScope", "setupKind", "setupScope", "target", "createdAt", "state"].includes(key))
     && (["context-control", "context-compaction", "handover-control"].includes(row.command) || row.contextScope === undefined)
-    && (row.command === "handover-control" ? validHandoverLocator(row, scope) : ["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
+    && (row.command === "job-start" || row.command === "job-cancel" ? validJobLocator(row,scope) : row.command === "handover-control" ? validHandoverLocator(row, scope) : ["context-control", "context-compaction"].includes(row.command) ? validContextLocator(row, scope) : row.command === "protection-policy" ? validProtectionLocator(row,scope) : row.command === "material-write" ? validMaterialLocator(row,scope) : row.command.startsWith("setup-") ? validSetupLocator(row,scope)
       : row.setupKind === undefined && row.setupScope === undefined && (["incident-ack", "incident-snooze"].includes(row.command)
       ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`incident:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
       : row.command === "notification-send"
@@ -24,8 +26,15 @@ const valid = (value: unknown, scope: OperationScope): value is LocalOperation =
       : ["receiver-enable", "receiver-disable", "receiver-unbind", "notification-test"].includes(row.command)
         ? typeof row.databaseId === "string" && UUID.test(row.databaseId) && row.target.startsWith(`receiver:${scope.installationId}:${row.databaseId}:`) && UUID.test(row.target.split(":")[3] ?? "") && row.target.split(":").length === 4
         : row.databaseId === undefined && ["bot-selection", "default-selection", "model-put", "model-patch", "model-delete"].includes(row.command)))
-    && ["awaiting-response", "unknown", "succeeded", "refused", "retired"].includes(row.state);
+    && ["awaiting-response", "unknown", "recorded", "succeeded", "refused", "retired"].includes(row.state);
 };
+function validJobLocator(row:LocalOperation,scope:OperationScope):boolean {
+  if(row.databaseId!==undefined||row.contextScope!==undefined||row.setupKind!==undefined||row.setupScope!==undefined)return false;
+  try{return row.command==="job-start"?row.target===`job-request:${scope.installationId}:${row.requestId}`:jobIdentity(row.target,scope.installationId).ref===row.target;}catch{return false;}
+}
+export function jobLocalState(state:JobView["state"]):LocalOperation["state"] {
+  return state==="unknown"?"unknown":state==="queued"||state==="running"?"recorded":state==="succeeded"?"succeeded":state==="cancelled"?"retired":"refused";
+}
 function validHandoverLocator(row: LocalOperation, scope: OperationScope): boolean {
   if (row.databaseId !== undefined || row.setupKind !== undefined || row.setupScope !== undefined) return false;
   try { const ref = protectionReferenceIdentity(row.target, scope.installationId, "handover"); return ref.ref === row.target && ref.scopeId === row.contextScope; } catch { return false; }
@@ -98,7 +107,7 @@ export function localOperations(storage: StoragePort, scope: OperationScope): Lo
 /** Persist only recovery metadata, never model input, cookie, CSRF or a key ref.
  * One key per UUID avoids overwriting another tab's index. Refuse before send if
  * storage is unavailable; unresolved locators are never silently evicted. */
-export function rememberOperation(storage: StoragePort, scope: OperationScope, input: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
+export function rememberOperation(storage: StoragePort, scope: OperationScope, input: JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | ContextChange | CompactionChange | HandoverChange): LocalOperation {
   try {
     if (!UUID.test(input.requestId) || !UUID.test(scope.installationId) || !scope.principalId || scope.principalId.length > 128
       || localOperations(storage, scope).length >= 128) throw new Error();
@@ -106,6 +115,8 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
     if (storage.getItem(key) !== null) throw new Error();
     const metadata: Pick<LocalOperation, "command" | "target" | "databaseId" | "setupKind" | "setupScope" | "contextScope"> = "change" in input
       ? { command: input.change.kind, target: input.change.kind === "bot-selection" ? input.change.agentId : input.change.kind === "default-selection" ? "default" : input.change.modelId }
+      : "argv" in input ? {command:"job-start",target:`job-request:${scope.installationId}:${normalizeJobStart(input).requestId}`}
+      : "jobRef" in input ? {command:"job-cancel",target:normalizeJobCancel(input,scope.installationId).jobRef}
       : "notificationRef" in input ? { command: "notification-send", target: normalizeNotificationSend(input, scope.installationId).notificationRef,
         databaseId: notificationIdentity(input.notificationRef, scope.installationId, "notification").databaseId }
       : "receiverRef" in input ? { command: input.action === "test" ? "notification-test" : `receiver-${input.action}`, target: input.receiverRef,
@@ -124,8 +135,10 @@ export function rememberOperation(storage: StoragePort, scope: OperationScope, i
     return row;
   } catch { throw new ManagementClientError("unavailable", "无法保存操作恢复标识，本次尚未提交。请检查浏览器存储或整理已结束的记录。"); }
 }
-export type OperationDomain = "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification" | "notification-test" | "notification-settings" | "routine" | "pairing";
+export type OperationDomain = "job" | "job-cancel" | "handover" | "compaction" | "context" | "protection" | "model" | "material" | "incident" | "receiver" | "notification" | "notification-test" | "notification-settings" | "routine" | "pairing";
 export function operationDomain(row: LocalOperation): OperationDomain {
+  if(row.command==="job-start")return "job";
+  if(row.command==="job-cancel")return "job-cancel";
   if (row.command === "handover-control") return "handover";
   if (row.command === "context-compaction") return "compaction";
   if (row.command === "context-control") return "context";
@@ -136,7 +149,7 @@ export function operationDomain(row: LocalOperation): OperationDomain {
 }
 export function operationSearch(row: LocalOperation): { requestId: string; domain?: Exclude<OperationDomain, "model">; databaseId?: string; bot?: string; target?: string; scopeId?: string } {
   const domain = operationDomain(row);
-  return { requestId: row.requestId, ...(["context", "compaction", "handover"].includes(domain) ? { scopeId: row.contextScope } : {}), ...(domain !== "model" ? { domain, databaseId: row.databaseId } : {}), ...(row.setupKind === "routine" ? { bot:row.setupScope } : {}), ...(domain==="protection"?{target:row.target.startsWith("protection-system:")?"system":row.target}:{}) };
+  return { requestId: row.requestId, ...(["context", "compaction", "handover"].includes(domain) ? { scopeId: row.contextScope } : {}), ...(domain !== "model" ? { domain, databaseId: row.databaseId } : {}), ...(row.setupKind === "routine" ? { bot:row.setupScope } : {}), ...(domain==="job-cancel"?{target:row.target}:domain==="protection"?{target:row.target.startsWith("protection-system:")?"system":row.target}:{}) };
 }
 /** Explicit continuation retains the original locator and verifies persistence
  * before send. It never stores the revision, snapshot selection or action body. */
@@ -174,6 +187,6 @@ export function markOperation(storage: StoragePort, row: LocalOperation, state: 
 }
 export function forgetSettledOperation(storage: StoragePort, row: LocalOperation): void {
   const current = localOperations(storage, row).find(item => item.requestId === row.requestId);
-  if (!current || !["succeeded", "refused", "retired"].includes(current.state)) throw new Error("Unresolved operation locators must be retained.");
+  if (!current || !["recorded", "succeeded", "refused", "retired"].includes(current.state)) throw new Error("Unresolved operation locators must be retained.");
   storage.removeItem(`${prefix(row)}${row.requestId}`);
 }

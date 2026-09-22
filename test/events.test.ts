@@ -26,19 +26,19 @@ describe("unified events and recovery", () => {
     let now = 100;
     const journal = new EventJournal(generation, () => now++);
     journal.publish({ source: "daemon", kind: "started", payload: { daemonPid: 1 } });
-    journal.publish({ source: "job", kind: "state", operationId: "job-1", payload: { jobId: "job-1", state: "running" } });
+    journal.publish({ source: "gateway", channel: "agents", kind: "state", operationId: "event-1", payload: { agentId: "agent-1", state: "running" } });
     journal.publish({
       source: "gateway", kind: "event", channel: "memory", gateway: { pid: 2, startedAt: 3 },
       payload: { agentId: "a", count: 1 }, privatePayload: { agentId: "a", memories: [{ id: "m", content: "allowed" }] },
     });
 
-    const jobPage = await journal.read({
-      cursor: `${generation}:0`, sources: ["job"], channels: ["agents"],
+    const activityPage = await journal.read({
+      cursor: `${generation}:0`, sources: ["gateway"], channels: ["agents"],
       includeMemoryContent: false, limit: 10, waitMs: 0,
     });
-    expect(jobPage.events).toHaveLength(1);
-    expect(jobPage.events[0]).toMatchObject({ source: "job", operationId: "job-1", payload: { state: "running" } });
-    expect(jobPage.cursor).toBe(`${generation}:3`);
+    expect(activityPage.events).toHaveLength(1);
+    expect(activityPage.events[0]).toMatchObject({ source: "gateway", operationId: "event-1", payload: { state: "running" } });
+    expect(activityPage.cursor).toBe(`${generation}:3`);
 
     const hidden = await journal.read({
       cursor: `${generation}:2`, sources: ["gateway"], channels: ["memory"],
@@ -63,10 +63,10 @@ describe("unified events and recovery", () => {
     expect(changed.events).toHaveLength(1);
 
     for (let index = 0; index < 2050; index += 1) {
-      journal.publish({ source: "job", kind: "state", payload: { index } });
+      journal.publish({ source: "daemon", kind: "state", payload: { index } });
     }
     const evicted = await journal.read({
-      cursor: `${generation}:1`, sources: ["job"], channels: ["agents"],
+      cursor: `${generation}:1`, sources: ["daemon"], channels: ["agents"],
       includeMemoryContent: false, limit: 2, waitMs: 0,
     });
     expect(evicted.gap?.reason).toBe("history_evicted");
@@ -76,18 +76,18 @@ describe("unified events and recovery", () => {
   test("long-poll subscribers have independent cursors", async () => {
     const journal = new EventJournal(generation, Date.now);
     const left = journal.read({
-      cursor: `${generation}:0`, sources: ["job"], channels: ["agents"],
+      cursor: `${generation}:0`, sources: ["daemon"], channels: ["agents"],
       includeMemoryContent: false, limit: 10, waitMs: 1000,
     });
     const right = journal.read({
-      cursor: `${generation}:0`, sources: ["job"], channels: ["agents"],
+      cursor: `${generation}:0`, sources: ["daemon"], channels: ["agents"],
       includeMemoryContent: false, limit: 10, waitMs: 1000,
     });
-    journal.publish({ source: "job", kind: "state", payload: { jobId: "j", state: "queued" } });
+    journal.publish({ source: "daemon", kind: "state", payload: { state: "stopping" } });
     expect((await left).events).toEqual((await right).events);
   });
 
-  testLinux("Job lifecycle transitions publish safe operation events", async () => {
+  testLinux("the original Job owner emits safe lifecycle observations without the retired daemon event source", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-event-jobs-config-"));
     const root = await mkdtemp(join(tmpdir(), "grokbox-event-jobs-root-"));
     const executable = await nodeExecutable();
@@ -96,7 +96,7 @@ describe("unified events and recovery", () => {
       executables: [{ name: "node", path: executable }], environment: [],
       maxConcurrent: 1, maxQueued: 1, maxRuntimeMs: 10_000, maxOutputBytes: 1024,
     };
-    const journal = new EventJournal(generation, Date.now);
+    const events: Array<{ jobId: string; state: string }> = [];
     const filesystem = await GovernedFilesystem.create([{ name: "workspace", path: root, operations: ["exec"] }], Date.now);
     const manager = await JobManager.create(
       configDir,
@@ -104,33 +104,22 @@ describe("unified events and recovery", () => {
       filesystem,
       Date.now,
       generation,
-      (event) => journal.publish({
-        source: "job", kind: "state", operationId: event.cancelOperationId ?? event.jobId,
-        payload: event,
-      }),
+      event => { events.push(event); },
     );
     const jobId = randomUUID();
     try {
       await manager.submit({
-        jobId, cwd: "workspace:/", argv: ["node", "-e", "process.exit(0)"], environment: {},
+        jobId, scope: { installationId: generation, principalId: "owner", requestId: jobId, policyRevision: "f".repeat(64) }, cwd: "workspace:/", argv: ["node", "-e", "process.exit(0)"], environment: {},
         runTimeoutMs: 1000, output: "discard", shell: false,
       });
       for (let count = 0; count < 100 && ["queued", "running"].includes(manager.show(jobId).state); count += 1) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      let page = await journal.read({
-        cursor: `${generation}:0`, sources: ["job"], channels: ["agents"],
-        includeMemoryContent: false, limit: 10, waitMs: 0,
-      });
-      for (let count = 0; count < 100 && page.events.length < 3; count += 1) {
+      for (let count = 0; count < 100 && events.length < 3; count += 1) {
         await new Promise((resolve) => setTimeout(resolve, 20));
-        page = await journal.read({
-          cursor: `${generation}:0`, sources: ["job"], channels: ["agents"],
-          includeMemoryContent: false, limit: 10, waitMs: 0,
-        });
       }
-      expect(page.events.map((event) => (event.payload as { state: string }).state)).toEqual(["queued", "running", "succeeded"]);
-      const text = JSON.stringify(page.events);
+      expect(events.map(event => event.state)).toEqual(["queued", "running", "succeeded"]);
+      const text = JSON.stringify(events);
       expect(text).not.toContain("workspace:/");
       expect(text).not.toContain("process.exit");
     } finally {

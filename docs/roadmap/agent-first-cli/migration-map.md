@@ -150,11 +150,11 @@
 | `fs mkdir` | file mkdir |
 | `fs upload` | file upload |
 | `fs remove` | file delete |
-| `exec run` | job start |
-| `jobs list` | job list |
-| `jobs show` | job get |
-| `jobs logs` | job logs |
-| `jobs cancel` | job cancel |
+| `exec run` | 已退出；job policy/start 经共享Server和原Job owner，结构化JSON、明确revision/request/confirm |
+| `jobs list` | 已退出；job list 按实际主体读取原安全记录 |
+| `jobs show` | 已退出；job get/wait 原始Job与有界观察，非CLI持有执行 |
+| `jobs logs` | 已退出；job logs 独立正文权限、准确offset与base64页 |
+| `jobs cancel` | 已退出；job cancel及operation get --domain job-cancel保留原取消身份；未知不重排 |
 | `desktop status` | system desktop get |
 | `desktop keep add` | system desktop keep set --add |
 | `desktop keep remove` | system desktop keep set --remove |

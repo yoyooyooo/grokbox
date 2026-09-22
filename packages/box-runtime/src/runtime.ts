@@ -24,7 +24,7 @@ export { acquireDaemonSocket, type DaemonSocketLease } from "./internal/io/daemo
 export { configureMonitorService, readMonitorServiceConfiguration, type MonitorServiceConfiguration } from "./internal/io/monitor-installation.node.ts";
 export { startMonitorService, type MonitorServiceStatus } from "./internal/roots/monitor-service.runtime.ts";
 export { runAgentRoutineCommand, type AgentRoutineAdapter } from "./internal/roots/agent-routines.runtime.ts";
-export { JobManager, type JobSubmit, type JobProjection, type JobState, type JobLogEvent } from "./internal/io/job-manager.node.ts";
+export { JobManager, readJobRecord, listJobRecords, readJobLogs, jobRequestFingerprint, type JobStoredRecord, type JobSubmit, type JobProjection, type JobState, type JobLogEvent } from "./internal/io/job-manager.node.ts";
 export { ProcessAuthority } from "./internal/io/job-process.node.ts";
 export * from "./internal/io/governed-filesystem.node.ts";
 export * from "./internal/io/host-resource-contract.ts";

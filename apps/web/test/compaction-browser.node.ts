@@ -43,7 +43,11 @@ export async function compactionBrowserJourney(t: TestContext, ports: Ports) {
     const current = (await f.client().compactionPreview(C_BOT)).data; assert.notEqual(current.revision, old);
     const read = page.waitForResponse(r => r.url().endsWith(`/v1/context-compactions/${C_BOT}`) && r.request().method() === "GET");
     await editor(page).getByRole("button", { name: "Review latest compaction plan", exact: true }).click();
-    const response = await read; assert.equal(response.status(), 200, await response.text());
+    // Router invalidation may retire this CDP response body immediately. The
+    // HTTP status plus the newly rendered, independently read revision are the
+    // oracles; reading a retired body's text merely to format a passing assertion
+    // races navigation and is not additional application evidence.
+    const response = await read; assert.equal(response.status(), 200, response.statusText());
     await page.waitForFunction(v => document.querySelector('[data-testid="compaction-draft-revision"]')?.textContent === v, current.revision);
     await submit(page); await state(page, "completed"); assert.equal(f.state.dispatches, 1);
   }));

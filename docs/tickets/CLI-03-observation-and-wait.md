@@ -1,6 +1,6 @@
 # CLI-03 · 读取实时状态并等待可证明的条件
 
-状态：持久观察、全局检索及后台异常跟踪方向已接受，精确事件/等待/检索合同待细化。依赖：[CLI-01](CLI-01-discovery-and-targeting.md) 的引用与读输出；operation 等待依赖 [CLI-02](CLI-02-operation-contract.md)。完成合同不代表实现交付，当前不启动代码搬迁。
+状态：持久观察、全局检索及后台异常跟踪方向已接受，精确事件/等待/检索合同待细化。依赖：[CLI-01](CLI-01-discovery-and-targeting.md) 的引用与读输出；operation 等待依赖 [CLI-02](CLI-02-operation-contract.md)。完成合同不代表实现交付，跨域实施由 CLI-05 的 W3 承接；本票以下区分已经接通的用例与仍未闭合的合同。
 
 ## 用户结果
 
@@ -23,6 +23,12 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 - Memory/Project/文件写能力范围已接受；本票只定义检索与观察合同，逐源写入、并发与结果由 CLI-02/CLI-04 收口。
 - 待命与 unknown/stale 各有呈现规则；低频归属采样不标成逐毫秒实时。
 - 与 WEB-02 确定 SSR 快照到浏览器订阅的交接，以及 URL/远端缓存/草稿/订阅的单一职责；与 DATA-01 明确来源、索引与必要历史边界，不复制后端采集或靠组件轮询拼出状态。
+
+## Job 观察与等待（2026-09-22）
+
+[Job 管理用例](../reports/2026-09-22-job-management.md)已接入管理 Server、共享客户端与 Web：`job get/wait/logs` 绑定安装、主体及原 Job，等待只在声明窗口观察，不重新执行、延长期限或随页面关闭取消。已知接纳不标作执行成功；未知或缺日志不能宣称输出完整。列表及精确读取使用同一已发布记录，不用正在写入的内存终态签成功。原请求及取消分别以 `operation get --domain job|job-cancel` 恢复，缺当前策略不抹去原历史。
+
+旧 daemon Job RPC、`events --sources job` 与 Profile 的 process capability 承诺已退出；既有 Job 状态等待及有界输出由上述管理用例接管，不提供空的旧事件源或再挂一个 daemon writer。其他 Gateway/消息事件的统一接续、全域事件关联及全仓最终验收仍按本票/CLI-05 推进，不能从本片外推为所有事件域已迁完。
 
 ## 实施前验证
 

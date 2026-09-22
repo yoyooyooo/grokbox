@@ -103,7 +103,7 @@ Server 存在 `GrokBotService.ListGrokBotMemoryShards` 和对应 shard 同步程
 
 “全局”在产品中必须定义为当前安装已授权、已接入的来源集合。区分 sourceCoverage、syncAge、stale 与 unavailable。存储中存在、Bot 属于某 Project，都不证明材料进入某次 TURN；研究版本的项目注入还有独立数量边界，不能自动推导运行上下文。
 
-现有[受控 filesystem](../../packages/cli/src/daemon/filesystem.ts)可复用 stat/list/read/download 和 named roots 思路，但现有限额与分页能力须逐项适配。未来 API 不提供任意路径读取、任意 SQL 或通用执行。历史版本和“由哪个 Bot 修改”只有实际记录后才可展示。
+现有[受控 filesystem](../../packages/box-runtime/src/internal/io/governed-filesystem.node.ts)可复用 stat/list/read/download 和 named roots 思路，但现有限额与分页能力须逐项适配。未来 API 不提供任意路径读取、任意 SQL 或通用执行。历史版本和“由哪个 Bot 修改”只有实际记录后才可展示。
 
 ## modeld、monitor、alert 与统一服务
 

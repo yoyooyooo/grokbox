@@ -9,11 +9,11 @@ import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
 import { acquireDaemonSocket, type DaemonSocketLease } from "@grokbox/box-runtime/runtime";
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
-import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig, DaemonProcessConfig } from "./config.ts";
+import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig } from "./config.ts";
 import { DesktopManager, type DesktopIo } from "./desktop.ts";
 import { TitleSyncManager } from "./title-sync.ts";
 import { DaemonEventManager, type EventSource } from "./events.ts";
-import { JobManager, ProcessAuthority, GovernedFilesystem, HostResourceError, type JobState, type JobSubmit } from "@grokbox/box-runtime/runtime";
+import { GovernedFilesystem, HostResourceError } from "@grokbox/box-runtime/runtime";
 import {
   DAEMON_CAPABILITIES,
   DAEMON_METHODS,
@@ -23,8 +23,6 @@ import {
   type DaemonRequest,
   type DaemonResponse,
 } from "./protocol.ts";
-
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type DaemonHost = {
   socketPath: string;
@@ -144,24 +142,14 @@ export async function startDaemonHost(
   socketPath: string,
   networkConfig?: DaemonNetworkConfig,
   filesystemRoots: readonly DaemonFilesystemRootConfig[] = [],
-  processConfig?: DaemonProcessConfig,
   desktopConfig?: DaemonDesktopConfig,
   desktopIo?: DesktopIo,
 ): Promise<DaemonHost> {
   const startedAt = Date.now();
   const daemonGeneration = deps.randomUUID();
   const filesystem = await GovernedFilesystem.create(filesystemRoots, deps.now);
-  const processAuthority = processConfig ? await ProcessAuthority.create(processConfig) : null;
   const directDeps: CliDeps = { ...deps, transport: "local" };
   const events = new DaemonEventManager(daemonGeneration, directDeps, startedAt);
-  const jobs = processAuthority ? await JobManager.create(
-    deps.configDir,
-    processAuthority,
-    filesystem,
-    deps.now,
-    daemonGeneration,
-    (event) => events.publishJob(event),
-  ) : null;
   const gateway = new GatewayClient(directDeps);
   const desktop = await DesktopManager.create(deps.configDir, deps.now, desktopConfig, desktopIo);
   const titleSync = new TitleSyncManager(gateway, deps.boxRuntimeRoot, deps.env);
@@ -186,7 +174,6 @@ export async function startDaemonHost(
         ...(hasRead ? ["host.fs.read"] : []),
         ...(hasWrite ? ["host.fs.write"] : []),
         ...(hasRecursiveRemove ? ["host.fs.remove.recursive"] : []),
-        ...(jobs?.capabilities() ?? []),
         ...desktop.capabilities(),
         ...titleSync.capabilities(),
       ],
@@ -422,63 +409,9 @@ export async function startDaemonHost(
       assertExactParams(params, { operationId: "string" });
       return { result: filesystem.mutationStatus(params.operationId as string) };
     }
-    if (method === "jobSubmit") {
-      if (!jobs) throw new CliError("capability_unavailable", "Process execution is not configured.");
-      const fields = ["argv", "cwd", "environment", "expectedDaemonGeneration", "jobId", "output", "runTimeoutMs", "shell", "waitMs"];
-      assertParamKeys(params, fields, "Job submission");
-      if (
-        !Array.isArray(params.argv) || params.argv.some((value) => typeof value !== "string") ||
-        (params.cwd !== null && typeof params.cwd !== "string") || !isRecord(params.environment) || Object.values(params.environment).some((value) => typeof value !== "string") ||
-        typeof params.jobId !== "string" || typeof params.expectedDaemonGeneration !== "string" ||
-        !UUID_V4.test(params.expectedDaemonGeneration) ||
-        (params.output !== "capture" && params.output !== "discard") ||
-        typeof params.runTimeoutMs !== "number" || typeof params.shell !== "boolean" ||
-        typeof params.waitMs !== "number" || !Number.isInteger(params.waitMs) || params.waitMs < 0 || params.waitMs > 300_000) {
-        throw new CliError("gateway_bad_request", "Job submission params are invalid.");
-      }
-      if (params.expectedDaemonGeneration !== daemonGeneration) {
-        throw new CliError("operation_outcome_unknown", "Daemon generation changed before Job submission admission.", {
-          context: { operationId: params.jobId },
-        });
-      }
-      const request: JobSubmit = {
-        jobId: params.jobId, cwd: params.cwd === null ? undefined : params.cwd as string, argv: params.argv as string[],
-        environment: params.environment as Record<string, string>, runTimeoutMs: params.runTimeoutMs,
-        output: params.output, shell: params.shell,
-      };
-      const submitted = await jobs.submit(request);
-      return { result: params.waitMs > 0 ? await jobs.waitTerminal(request.jobId, params.waitMs, signal) : submitted };
-    }
-    if (method === "jobList") {
-      assertParamKeys(params, ["limit", "states"], "Job list");
-      const allowedStates = new Set(["queued", "running", "succeeded", "failed", "cancelled", "interrupted", "unknown"]);
-      if (!jobs || !Array.isArray(params.states) || params.states.some((state) => typeof state !== "string" || !allowedStates.has(state)) ||
-        new Set(params.states).size !== params.states.length || typeof params.limit !== "number" || !Number.isInteger(params.limit) || params.limit < 1 || params.limit > 256) {
-        throw new CliError("gateway_bad_request", "Job list params are invalid.");
-      }
-      return { result: { jobs: jobs.list(params.states as JobState[], params.limit) } };
-    }
-    if (method === "jobShow") {
-      assertParamKeys(params, ["jobId", "waitMs"], "Job show");
-      if (!jobs || typeof params.jobId !== "string" || typeof params.waitMs !== "number" ||
-        !Number.isInteger(params.waitMs) || params.waitMs < 0 || params.waitMs > 25_000) throw new CliError("gateway_bad_request", "Job show params are invalid.");
-      return { result: await jobs.wait(params.jobId, params.waitMs, signal) };
-    }
-    if (method === "jobLogsRead") {
-      assertParamKeys(params, ["jobId", "limitBytes", "offset", "waitMs"], "Job logs");
-      if (!jobs || typeof params.jobId !== "string" || typeof params.offset !== "number" || typeof params.limitBytes !== "number" || typeof params.waitMs !== "number") {
-        throw new CliError("gateway_bad_request", "Job logs params are invalid.");
-      }
-      return { result: await jobs.logsRead(params.jobId, params.offset, params.limitBytes, params.waitMs, signal) };
-    }
-    if (method === "jobCancel") {
-      assertParamKeys(params, ["cancelOperationId", "jobId"], "Job cancel");
-      if (!jobs || typeof params.jobId !== "string" || typeof params.cancelOperationId !== "string") throw new CliError("gateway_bad_request", "Job cancel params are invalid.");
-      return { result: await jobs.cancel(params.jobId, params.cancelOperationId) };
-    }
     if (method === "eventRead") {
       assertParamKeys(params, ["channels", "cursor", "includeMemoryContent", "limit", "sources", "waitMs"], "Event read");
-      const allowedSources = new Set<EventSource>(["gateway", "job", "daemon"]);
+      const allowedSources = new Set<EventSource>(["gateway", "daemon"]);
       if ((params.cursor !== null && typeof params.cursor !== "string") ||
         !Array.isArray(params.sources) || params.sources.length === 0 ||
         params.sources.some((source) => typeof source !== "string" || !allowedSources.has(source as EventSource)) ||
@@ -584,7 +517,7 @@ export async function startDaemonHost(
     await Promise.allSettled([
       closeServer(localServer),
       ...(networkServer ? [closeServer(networkServer)] : []),
-      events.close(), jobs?.close() ?? Promise.resolve(), desktop.close(), titleSync.close(), filesystem.close(),
+      events.close(), desktop.close(), titleSync.close(), filesystem.close(),
     ]);
     await socketLease?.release();
     throw error;
@@ -605,7 +538,6 @@ export async function startDaemonHost(
       const results = await Promise.allSettled([
         closeServer(localServer),
         ...(networkServer ? [closeServer(networkServer)] : []),
-        jobs?.close() ?? Promise.resolve(),
         desktop.close(),
         titleSync.close(),
         filesystem.close(),

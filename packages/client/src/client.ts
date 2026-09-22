@@ -6,6 +6,8 @@ import {
   type ObservationSnapshot, type IncidentList, type ObservationEventPage, type ManagementServiceView,
 } from "./contract.ts";
 export * from "./contract.ts";
+import { normalizeJobStart, normalizeJobCancel, jobIdentity, type JobStart, type JobCancel, type JobView, type JobPage, type JobPolicyView, type JobLogPage, type JobCancelReceipt } from "./job-contract.ts";
+import { jobPolicy, jobView, jobLogs, jobCancellation } from "./job-validation.ts";
 import { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
 import { normalizeContextChange, normalizeContextContinuation, contextOperationIdentity, contextOperationRef, type ContextChange, type ContextContinuation, type ContextView, type ContextOperation } from "./context-contract.ts";
 import { contextView, contextOperation } from "./context-validation.ts";
@@ -127,13 +129,13 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
     const mutation = authentication || readOnlyPost ? undefined : input as { requestId: string; expectedRevision?: unknown; planRevision?: unknown; scopeId?: unknown; action?: unknown } | undefined;
     if (mutation !== undefined && (!record(mutation) || !UUID.test(mutation.requestId)
-      || !(["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
+      || !(path === "/v1/job-starts" ? revision(mutation.expectedRevision) : path === "/v1/job-cancellations" ? true : ["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
         : path === "/v1/handover-changes" ? revision(mutation.expectedRevision)
         : path === "/v1/handover-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-changes" || path === "/v1/context-compactions" ? revision(mutation.scopeId) && revision(mutation.expectedRevision)
@@ -204,6 +206,42 @@ export class ManagementClient {
     }
     if (!validate(raw.data)) throw invalidReply();
     return raw as ApiReply<T> & { ok: true };
+  }
+
+  jobPolicy(signal?: AbortSignal) { return this.request<JobPolicyView>("/v1/job-policy",jobPolicy,undefined,signal); }
+  async startJob(input: JobStart, signal?: AbortSignal) {
+    const r=normalizeJobStart(input), i=this.options.installationId!;
+    return this.request<JobView>("/v1/job-starts",v=>jobView(v,i)&&v.requestId===r.requestId&&v.policyRevision===r.expectedRevision
+      &&v.command.shell===r.shell&&v.command.executable===(r.shell?"shell":r.argv[0])&&v.command.argumentCount===(r.shell?1:r.argv.length-1)
+      &&v.runTimeoutMs===r.runTimeoutMs&&v.output===r.output&&(r.cwd===undefined||v.cwd===r.cwd),r,signal,false,`/v1/job-operations/${r.requestId}`);
+  }
+  async jobOperation(requestId: string, signal?: AbortSignal) {
+    if(!UUID.test(requestId))throw new ManagementClientError("invalid_input","Use the original Job request UUID.");
+    const id=requestId.toLowerCase();return this.request<JobView>(`/v1/job-operations/${id}`,v=>jobView(v,this.options.installationId!)&&v.requestId===id,undefined,signal);
+  }
+  async job(ref: string, options: {waitMs?:number;signal?:AbortSignal} = {}) {
+    const target=jobIdentity(ref,this.options.installationId!),waitMs=options.waitMs??0;
+    if(!Number.isSafeInteger(waitMs)||waitMs<0||waitMs>25000)throw new ManagementClientError("invalid_input","Job waiting is bounded to 25 seconds per observation.");
+    return this.request<JobView>(`/v1/jobs/${encodeURIComponent(target.ref)}?waitMs=${waitMs}`,v=>jobView(v,this.options.installationId!)&&v.jobRef===target.ref,undefined,options.signal);
+  }
+  jobs(options: ListOptions = {}) {
+    const query=pageQuery(options),i=this.options.installationId!,limit=options.limit??100;
+    return this.request<JobPage>(`/v1/jobs?${query}`,v=>record(v)&&exact(v,["jobs","nextCursor","coverage"])&&v.coverage==="retained-principal-records"
+      &&Array.isArray(v.jobs)&&v.jobs.length<=limit&&v.jobs.every(j=>jobView(j,i))&&new Set(v.jobs.map(j=>j.jobRef)).size===v.jobs.length
+      &&(v.nextCursor===null||typeof v.nextCursor==="string"&&/^[a-f0-9]{64}:[1-9][0-9]*:[a-f0-9-]{36}$/.test(v.nextCursor)),undefined,options.signal);
+  }
+  async jobLogs(ref: string, options: {offset?:number;limitBytes?:number;waitMs?:number;signal?:AbortSignal}={}) {
+    const target=jobIdentity(ref,this.options.installationId!),offset=options.offset??0,max=options.limitBytes??65536,wait=options.waitMs??0;
+    if(!Number.isSafeInteger(offset)||offset<0||max!==65536||!Number.isSafeInteger(wait)||wait<0||wait>25000)throw new ManagementClientError("invalid_input","Use a verified log offset and a bounded output page.");
+    return this.request<JobLogPage>(`/v1/jobs/${encodeURIComponent(target.ref)}/logs?offset=${offset}&limitBytes=${max}&waitMs=${wait}`,v=>jobLogs(v,this.options.installationId!,target.ref,offset,max),undefined,options.signal);
+  }
+  async cancelJob(input: JobCancel, signal?: AbortSignal) {
+    const r=normalizeJobCancel(input,this.options.installationId!),target=jobIdentity(r.jobRef,this.options.installationId!);
+    return this.request<JobCancelReceipt>("/v1/job-cancellations",v=>jobCancellation(v,this.options.installationId!,target.ref,r.requestId),r,signal,false,`/v1/job-cancellations/${target.id}/${r.requestId}`);
+  }
+  async jobCancellation(ref: string, requestId: string, signal?: AbortSignal) {
+    const target=jobIdentity(ref,this.options.installationId!);if(!UUID.test(requestId))throw new ManagementClientError("invalid_input","Use the original cancellation request UUID.");
+    const id=requestId.toLowerCase();return this.request<JobCancelReceipt>(`/v1/job-cancellations/${target.id}/${id}`,v=>jobCancellation(v,this.options.installationId!,target.ref,id),undefined,signal);
   }
 
   async previewLifecycle(input: LifecycleIntent, signal?: AbortSignal) {

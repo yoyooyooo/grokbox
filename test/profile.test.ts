@@ -431,9 +431,7 @@ describe("Profiles in unified config v2",  () => {
     };
     expect(body.data.capabilities["host.fs.read"]).toBe(true);
     expect(body.data.capabilities["host.fs.write"]).toBe("runtime-policy-dependent");
-    expect(body.data.capabilities["host.process.run"]).toBe("runtime-policy-dependent");
-    expect(body.data.capabilities["host.process.manage"]).toBe("runtime-policy-dependent");
-    expect(body.data.capabilities["host.process.shell"]).toBe("runtime-policy-dependent");
+    for (const key of ["host.process.run", "host.process.manage", "host.process.shell"]) expect(body.data.capabilities).not.toHaveProperty(key);
     expect(body.data.capabilities["sandbox.inspect"]).toBe("provider-authorization-dependent");
     expect(body.data.capabilities["sandbox.wake"]).toBe("provider-authorization-dependent");
     expect(body.data.capabilities["sandbox.keepalive"]).toBe("provider-authorization-dependent");
@@ -507,7 +505,7 @@ describe("Profiles in unified config v2",  () => {
     expect(body.data.connection.protocolMajor).toBe(null);
     expect(body.data.capabilities["host.fs.read"]).toBe(false);
     expect(body.data.capabilities["host.fs.write"]).toBe(false);
-    expect(body.data.capabilities["host.process.run"]).toBe(false);
+    expect(body.data.capabilities).not.toHaveProperty("host.process.run");
     expect(body.data.capabilities["host.desktop.read"]).toBe(false);
     expect(body.data.capabilities["grok.roster.read"]).toBe(true);
   });

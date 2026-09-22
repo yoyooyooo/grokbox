@@ -12,6 +12,7 @@ import type { ContextDomain } from "./context.ts";
 import { startHostHealth, type HostHealthTestPorts, startMaterialIndexer, startProtectionService, type ProtectionServiceTestPorts, type MaterialWriteHooks } from "@grokbox/box-runtime/runtime";
 import { authenticate, HttpFailure, requireCapability, type AccessGrant } from "./access.ts";
 import { ConsoleAuthority } from "./console-access.ts";
+import { JobService } from "./jobs.ts";
 import { projectNotificationWorker } from "./notifications.ts";
 import { shareObservationReads, watchObservationEvents, writeWatchChunk, WATCH_LIMITS } from "./event-watch.ts";
 export type { AccessGrant } from "./access.ts";
@@ -119,6 +120,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
   let materialIndexer: ReturnType<typeof startMaterialIndexer> | undefined;
   let protectionService: ReturnType<typeof startProtectionService> | undefined;
   let hostHealth: ReturnType<typeof startHostHealth> | undefined;
+  let jobService: JobService | undefined;
   const hostHealthState=()=>{if(!hostHealth)throw new HttpFailure(503,"unavailable","Host health is starting.");return hostHealth.status();};
   const notificationState = () => {
     if (!notificationWorker) throw new HttpFailure(503, "unavailable", "The management process is acquiring its notification worker.");
@@ -241,6 +243,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
         requireCapability(fresh, capability);
       };
       const result = yield* application({ ...options, installationId, serviceState, notificationState, hostHealthState,
+        jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
         contextDomain: { root: options.store.root, installationId, authorize: materialAuthorize, hooks: testPorts.context?.hooks,
           ...(options.native.continuityAccess ? { context: (signal: AbortSignal) => ({ boxRuntimeRoot: options.store.root, env: options.env ?? {}, fetch: options.fetch, signal,
             gateway: () => options.native.continuityAccess!(signal), ownershipRead: options.native.ownershipRead }) } : {}) },
@@ -257,6 +260,10 @@ export async function startManagementServer(options: ManagementServerOptions, te
           afterSendClaim: testPorts.notification?.sendClaimed,
           readNative: options.native.readNotificationReceiver ?? (async () => { throw new Error("notification_receiver_unavailable"); }),
           request: testPorts.notification?.request } }, principal!, request.method!, url, input);
+      if (request.method === "GET" && (url.pathname === "/v1/jobs" || url.pathname.startsWith("/v1/jobs/") || url.pathname.startsWith("/v1/job-"))) {
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.endsWith("/logs") ? "jobs.logs.read"
+          : url.pathname.startsWith("/v1/job-operations/") || url.pathname.startsWith("/v1/job-cancellations/") ? "operations.read" : "jobs.read"), catch: error => error });
+      }
       if (request.method === "GET" && (url.pathname === "/v1/materials" || url.pathname.startsWith("/v1/material-"))) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/material-operations/") ? "operations.read"
           : url.pathname.startsWith("/v1/material-content/") ? "materials.content.read" : url.searchParams.has("query") ? "materials.search" : "materials.read"), catch: error => error });
@@ -308,6 +315,10 @@ export async function startManagementServer(options: ManagementServerOptions, te
     await runtime.runPromise(Effect.acquireRelease(
       Effect.tryPromise({ try: () => listen(server, host, port), catch: error => error }),
       () => Effect.promise(() => closeListener(server)),
+    ).pipe(Effect.provideService(Scope.Scope, runtime.scope)));
+    jobService = await runtime.runPromise(Effect.acquireRelease(
+      Effect.tryPromise({ try: () => JobService.acquire(options.store.root, installationId), catch: error => error }),
+      owner => Effect.promise(() => owner.close()),
     ).pipe(Effect.provideService(Scope.Scope, runtime.scope)));
     // Acquire sender before collector so the producer settles before sender
     // shutdown. The retained authorization and outbox still own send eligibility;

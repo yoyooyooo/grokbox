@@ -206,7 +206,7 @@ describe("desktop daemon commands", () => {
       version: 1,
       desktop: { floorAgentIds: [AGENT_KEEP], minIdleMs: 600_000 },
     });
-    host = await startDaemonHost(deps, socket, undefined, [], undefined, {
+    host = await startDaemonHost(deps, socket, undefined, [], {
       floorAgentIds: [AGENT_KEEP],
       minIdleMs: 600_000,
     }, io);

@@ -19,6 +19,7 @@ import { LIVE_SHAPED_HOST } from "../packages/box-runtime/test/live-shaped-host.
 import { applyUse } from "@grokbox/runtime-kernel/selection";
 import { openRuntimeStore } from "@grokbox/box-runtime/runtime";
 import { captureCli, parseJson } from "./helpers.ts";
+import { hostControlPorts } from "../packages/cli/src/commands/runtime.ts";
 
 const SAMPLE_MODELS = {
   version: 3,
@@ -53,11 +54,15 @@ function data(stdout: string): Record<string, unknown> {
 function emptyProcessTree() {
   return { inspect: () => null, list: () => [], signal: () => ({ ok: false as const, reason: "not-found" as const }) };
 }
-function observeLiveMutations() {
+function observeLiveMutations(observedGeneration = false) {
   resetLiveMutationAttempts();
+  // These cases test CLI composition with an observed generation and an
+  // unqualified disposable root, not whether this developer machine has a Host.
+  // The real controller/apply program remains in use and must refuse mutation.
+  const generation = observedGeneration ? spyOn(hostControlPorts, "generation").mockReturnValue("f".repeat(64)) : undefined;
   return {
     assertNone: () => expect(liveMutationAttempts).toEqual({ signal: 0, spawn: 0, guardian: 0 }),
-    close: resetLiveMutationAttempts,
+    close: () => { generation?.mockRestore(); resetLiveMutationAttempts(); },
   };
 }
 
@@ -324,8 +329,8 @@ describe("box-local runtime CLI", () => {
     expect(JSON.stringify(body)).not.toContain('"coverage":"none"');
   });
 
-  test("re-adopt after deactivate sets route and does not refuse desired-disabled", async () => {
-    const mutations = observeLiveMutations();
+  test("re-adopt with an observed generation after deactivate sets route and does not refuse desired-disabled", async () => {
+    const mutations = observeLiveMutations(true);
     try {
       const boxRuntimeRoot = await withRoot();
       const deactivated = await captureCli(["runtime", "deactivate"], {
@@ -506,8 +511,8 @@ describe("box-local runtime CLI", () => {
     expect((parseJson(refused.stderr) as { error: { message: string } }).error.message).toContain("--confirm");
   });
 
-  test("confirmed re-adopt runs the current controller program with zero live mutation", async () => {
-    const mutations = observeLiveMutations();
+  test("confirmed re-adopt with observed generation runs the current controller program with zero live mutation", async () => {
+    const mutations = observeLiveMutations(true);
     try {
       const boxRuntimeRoot = await withRoot();
       const receipt = await captureCli(["runtime", "re-adopt", "--confirm"], { discoveryPath: "/dev/null", boxRuntimeRoot });
@@ -515,6 +520,19 @@ describe("box-local runtime CLI", () => {
       expect(data(receipt.stdout)).toMatchObject({ outcome: "refused", signaled: false, spawned: false, guardian: false });
       mutations.assertNone();
     } finally { mutations.close(); }
+  });
+
+  test("unobserved Host generation refuses before desired state or controller effects change", async () => {
+    const root = await withRoot(), mutations = observeLiveMutations();
+    const generation = spyOn(hostControlPorts, "generation").mockReturnValue(null);
+    try {
+      await captureCli(["runtime", "deactivate"], { discoveryPath: "/dev/null", boxRuntimeRoot: root });
+      const before = await snapshotTree(root);
+      const refused = await captureCli(["runtime", "re-adopt", "--confirm"], { discoveryPath: "/dev/null", boxRuntimeRoot: root });
+      expect(refused.code).not.toBe(0);
+      expect(parseJson(refused.stderr)).toMatchObject({ error: { code: "host_mismatch", hostReason: "host_generation_unproven" } });
+      expect(await snapshotTree(root)).toEqual(before); mutations.assertNone();
+    } finally { generation.mockRestore(); mutations.close(); }
   });
 
   test("re-adopt --profile and remote transports return runtime_local_only", async () => {
@@ -553,7 +571,7 @@ describe("box-local runtime CLI", () => {
   });
 
   test("current CLI reads and unqualified apply paths perform no live mutation", async () => {
-    const mutations = observeLiveMutations();
+    const mutations = observeLiveMutations(true);
     try {
       const boxRuntimeRoot = await withRoot(), deps = { discoveryPath: "/dev/null", boxRuntimeRoot };
       const missing = await captureCli(["runtime", "re-adopt"], deps);

@@ -4,7 +4,6 @@ import { mkdtemp, realpath, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { runDaemonEnsure } from "../packages/cli/src/commands/daemon.ts";
-import { runJobsCancel } from "../packages/cli/src/commands/jobs.ts";
 import type { DaemonProcessConfig } from "../packages/cli/src/daemon/config.ts";
 import { ProcessAuthority } from "@grokbox/box-runtime/runtime";
 import { createProductionDeps, type FetchFn } from "../packages/cli/src/deps.ts";
@@ -20,7 +19,7 @@ function handshake() {
     daemonPid: 1,
     startedAt: 1,
     daemonGeneration: "11111111-1111-4111-8111-111111111111",
-    capabilities: ["host.process.run", "host.process.manage"],
+    capabilities: [],
     filesystemRoots: [],
     gateway: { pid: 2, startedAt: 2 },
   };
@@ -105,41 +104,6 @@ describe("Detail absorb regressions", () => {
     expect(commands).toEqual([]);
   });
 
-  test("repeat jobs cancel recovery succeeds when a prior cancel is already in effect", async () => {
-    const jobId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
-    const prior = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    const chunks: string[] = [];
-    const projection = {
-      jobId,
-      state: "running",
-      createdAt: 1,
-      startedAt: 1,
-      cwd: "workspace:/",
-      command: { executable: "node", argumentCount: 1, shell: false },
-      output: "discard",
-      runTimeoutMs: 1000,
-      logs: { bytes: 0, nextOffset: 0, truncated: false },
-      cancelOperationId: prior,
-    };
-    const fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-      const request = JSON.parse(String(init?.body)) as { method: string };
-      if (request.method === "handshake") return Response.json({ ok: true, result: handshake() });
-      if (request.method === "jobCancel") throw new TypeError("lost response");
-      if (request.method === "jobShow") return Response.json({ ok: true, result: projection });
-      return Response.json({ ok: false, error: { code: "gateway_not_found", message: "no", retryable: false } }, { status: 404 });
-    }) as FetchFn;
-    const deps = {
-      ...createProductionDeps(),
-      transport: "daemon" as const,
-      daemonServerUrl: "https://daemon.invalid",
-      daemonToken: "test-token",
-      fetch,
-      stdout: { write(chunk: string) { chunks.push(chunk); } },
-      stderr: { write() {} },
-    };
-    await runJobsCancel(deps, jobId, {});
-    expect(JSON.parse(chunks.join("")).data.cancelOperationId).toBe(prior);
-  });
 });
 
 describeLinux("Detail absorb linux process paths", () => {
@@ -162,7 +126,7 @@ describeLinux("Detail absorb linux process paths", () => {
       maxOutputBytes: 1024,
     };
     const authority = await ProcessAuthority.create(policy);
-    expect(authority.capabilities()).toContain("host.process.run");
+    expect((await authority.executable("node", false)).path).toBe(viaAncestor);
 
     const linkFile = join(root, "node-link");
     await symlink(real, linkFile);
