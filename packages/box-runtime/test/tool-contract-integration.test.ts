@@ -52,7 +52,15 @@ for (const api of ["chat", "responses"] as const) {
           wire: { version: 1 }, host: { toolBatchState: "discarded", counts: { hostToolsReleased: 0 } },
         });
         expect(cli.runtimeFailure?.presentation?.replayAuthorized).toBe(false);
-        if (scenario.cause === "undeclared_tool") expect(cli.runtimeFailure?.diagnostic?.streams?.backend?.toolIdentity?.firstMismatch?.history).toBe("not_observed");
+        expect(cli.runtimeFailure?.presentation?.next).toBe(`grokbox runtime incident ${stepId} --agent ${f.agentId} --json`);
+        if (scenario.cause === "undeclared_tool") {
+          expect(cli.runtimeFailure?.diagnostic?.streams?.backend?.toolIdentity?.firstMismatch?.history).toBe("not_observed");
+          expect(cli.runtimeFailure?.presentation?.message).toContain("current STEP's declared tool names and input schemas");
+        }
+        if (scenario.cause === "tool_choice_mismatch") {
+          expect(cli.runtimeFailure?.presentation?.message).toContain(scenario.calls.length === 0
+            ? "without the tool call required" : "tool call forbidden");
+        }
       } else {
         expect(result.error).toBeUndefined(); expect(host.toolCallCount).toBe(scenario.calls.length);
       }

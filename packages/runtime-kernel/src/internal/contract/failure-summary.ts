@@ -139,6 +139,9 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
       : summary.diagnostic?.normalizeCause === "tool_declaration_mismatch" ? "The encoded provider tool declarations did not match this STEP; the request was stopped before dispatch."
       : summary.diagnostic?.normalizeCause === "tool_schema_declaration_mismatch" ? "The encoded provider tool schemas did not match this STEP; the request was stopped before dispatch."
       : summary.diagnostic?.normalizeCause === "tool_choice_declaration_mismatch" ? "The encoded provider tool choice did not match this STEP; the request was stopped before dispatch."
+      : summary.diagnostic?.normalizeCause === "tool_choice_mismatch" ? summary.diagnostic.toolChoice?.reason === "missing_call"
+        ? "The model completed without the tool call required by this STEP."
+        : "The model returned a tool call forbidden by this STEP's tool-choice constraint."
       : summary.diagnostic?.normalizeCause === "tool_identity_conflict" ? "The model stream changed a tool identity before completion."
       : summary.diagnostic?.normalizeCause === "sdk_schema_mismatch" ? "The provider stream contained a field shape rejected by the SDK protocol schema."
       : summary.diagnostic?.normalizeCause === "unsupported_provider_state" ? "The provider returned reasoning state incompatible with the selected inline Chat dialect."
@@ -168,22 +171,29 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
   if (authority?.evidenceAgeMs !== undefined) bits.push(`Evidence age: ${authority.evidenceAgeMs} ms.`);
   if (summary.category === "authority") bits.push(`Inspect evidence: ${authorityPresentation.next}.`);
   if (summary.progress?.backendAttempts === 0) bits.push("No model request was dispatched by this STEP.");
-  if (host.receivedOutput === false) bits.push("No model output was received by this STEP.");
+  if (host.receivedOutput === false) bits.push("No usable model output reached the Host for this STEP.");
   else if (host.receivedOutput === true && summary.category === "upstream_transport") bits.push("Some output was received before the interruption.");
   if (host.toolsReleased === 0) {
     bits.push("No tools were released by this STEP.");
-    if (summary.diagnostic?.normalizeCause === "undeclared_tool") bits.push("Earlier STEPs may already have changed state; reconcile before replaying the task.");
+    if (summary.diagnostic?.normalizeCause === "undeclared_tool" || summary.diagnostic?.normalizeCause === "tool_choice_mismatch") bits.push("Earlier STEPs may already have changed state; reconcile before replaying the task.");
   }
   else if (host.toolsReleased !== undefined && host.toolsReleased > 0) bits.push("Tools had already been released; do not replay the whole task automatically.");
   if (summary.progress?.backendAttempts === 1) bits.push("No automatic retry was made.");
   else if (summary.progress && summary.progress.backendAttempts > 1) bits.push(`${summary.progress.backendAttempts} model attempts were made.`);
   if (summary.recovery?.phase === "waiting") bits.push("The local runtime is waiting before a permitted model-only retry.");
   if (summary.recovery?.outcomeUncertain && summary.recovery.attempts.length > 1) bits.push("Earlier upstream execution or billing may have occurred.");
+  const toolIdentity = summary.diagnostic?.streams?.backend?.toolIdentity ?? summary.diagnostic?.stream?.toolIdentity;
+  if (summary.diagnostic?.normalizeCause === "undeclared_tool") {
+    bits.push("Use only the current STEP's declared tool names and input schemas; no alias was inferred.");
+    if (toolIdentity?.firstMismatch?.history === "structured_call") bits.push("The rejected name appears in a structured tool call in the supplied history; that does not make it available now.");
+  }
   bits.push("No fallback model was used.");
+  const next = summary.category === "stream_invalid" && summary.identity
+    ? `grokbox runtime incident ${summary.identity.stepId} --agent ${summary.identity.agentId} --json` : undefined;
   const action = ["upstream_auth", "upstream_quota"].includes(summary.category) ? "check_provider_access"
     : summary.category.startsWith("upstream") ? "check_upstream_route"
     : summary.category === "wire" ? "align_local_components" : summary.category === "authority" ? authorityPresentation.action
     : summary.category === "stream_invalid" ? "inspect_stream_evidence" : "inspect_incident";
   return { version: 1 as const, templateId: summary.category, classifierVersion: FAILURE_CLASSIFIER_VERSION,
-    message: bits.join(" "), action, ...(summary.category === "authority" ? { next: authorityPresentation.next } : {}), replayAuthorized: false as const };
+    message: bits.join(" "), action, ...(next ? { next } : {}), ...(summary.category === "authority" ? { next: authorityPresentation.next } : {}), replayAuthorized: false as const };
 }
