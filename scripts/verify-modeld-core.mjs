@@ -91,6 +91,12 @@ const MODEL_CORE_SUITES = {
     `${box}tool-identity-audit.test.ts`,
     `${box}provider-stream-node.test.ts`,
     `${box}validated-tool-batch-unix.test.ts`,
+    `${box}host-tool-admission.test.ts`,
+    `${box}host-tool-wire-order.test.ts`,
+    `${box}auxiliary-empty-output.test.ts`,
+    `${box}overflow-bridge.test.ts`,
+    `${box}context-maintenance-provider-switch.test.ts`,
+    `${box}context-continuity-e2e.test.ts`,
     `${box}architecture.test.ts`,
   ],
   observation: [

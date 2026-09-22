@@ -24,6 +24,20 @@ The implementation is carried by `runtime-kernel` contract types, `box-runtime` 
 | Real SDK/Unix/storage/process | The tests traverse production adapters and journal/transport seams, but use deterministic local fixtures; they are not live provider, native ABI, or deployed-process qualification. |
 | Live/native | Not run. The R1-I/live model/native gate and independent review remain open. |
 
+## Cross-boundary proof vectors
+
+`verify:modeld-core tool-contract` now includes the existing production-path counterexamples below. They widen the offline proof receipt without claiming native or provider qualification.
+
+| Vector | Offline fixture coverage |
+| --- | --- |
+| Tool choice, captured-in-flight, terminal and permission boundary | `tool-choice-contract.test.ts`, `host-tool-admission.test.ts`, `host-tool-wire-order.test.ts` |
+| Duplicate declaration/call and no synthetic replay | `tool-declaration-contract.test.ts`, `tool-contract-integration.test.ts`, `context-continuity-e2e.test.ts` (E01/E08) |
+| Memory/episode auxiliary no-op and captured selection | `auxiliary-empty-output.test.ts`, `context-continuity-e2e.test.ts` (E07) |
+| Confirmed overflow, compact/reload and bounded next-input recovery | `overflow-bridge.test.ts`, `context-continuity-e2e.test.ts` (E04/E06/E08), `context-maintenance-provider-switch.test.ts` |
+| Layer separation, identity/history retention and final wire declarations | `layered-tool-diagnosis.test.ts`, `tool-identity-framing.test.ts`, `tool-evidence-retention.test.ts`, `tool-declaration-contract.test.ts` |
+
+The fixture suite proves rejection and evidence boundaries only. Native schema semantics, approval/permission grants, actual tool effects, result acceptance, cross-Agent delivery and real provider compliance remain the dedicated `LIVE-TOOL-CONTRACT` gate.
+
 ## Absorbed execution branch
 
 The current v2 tree already contains the bounded settled-step reclaim and matching counter/reclaim coverage in `runtime-kernel/src/internal/inference/step-program.ts` and `execution-cooling-review.test.ts`. The hot-ledger branch was therefore absorbed by semantic parity rather than blindly merged; no second executor or old ledger format was added.

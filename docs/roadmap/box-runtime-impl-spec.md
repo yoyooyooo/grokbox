@@ -36,6 +36,7 @@ The exact pre-convergence text and unresolved-obligation mapping are preserved i
 | <a id="ownership-release-proof"></a>Ownership release | [Acceptance](../runtime/acceptance.md), [LIVE](../tickets/LIVE-integration-validation.md) |
 | <a id="review-live"></a>Review/live | [Acceptance](../runtime/acceptance.md#finish-a-scoped-change), [LIVE](../tickets/LIVE-integration-validation.md) |
 | <a id="modeld-effect-core"></a>Modeld execution | [Execution](../runtime/execution.md) |
+| <a id="tool-contract-evidence"></a>Tool contract and layered evidence | [FIX-tool-contract-evidence](../tickets/FIX-tool-contract-evidence.md), [LIVE-TOOL-CONTRACT](../tickets/LIVE-integration-validation.md#live-tool-contract) |
 | <a id="model-reasoning-policy"></a>Reasoning | [Reasoning vectors R01–R06](../runtime/execution.md#model-selection-and-reasoning) |
 | <a id="context-maintenance"></a>Context | [Context maintenance](../runtime/context.md) |
 | <a id="pi-compaction-reuse"></a>Pi reuse | [Context algorithm ownership](../runtime/context.md#pi-复用与请求所有权), [Pi source](../maintainers/pi-compaction-reference.md) |

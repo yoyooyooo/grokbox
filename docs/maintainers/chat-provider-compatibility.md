@@ -30,15 +30,23 @@ This is a purpose-specific native consumer contract, not MiniMax-specific permis
 
 A main reply may precede post-turn memory/episode work. Requery the same send after the Bot settles and inspect auxiliary terminals separately; an early `expected_result_observed` can later coexist with a real auxiliary failure. Do not declare whole-run success at the first reply.
 
+## STEP tool choice and validation scope
+
+A returned call must match the frozen declaration and this STEP's `toolChoice`. Omitted/`auto` allows any declared name; `none` rejects all calls and disables synthetic SendToUser delivery; a selected name rejects other declared names. `required` and a selected name require a real completed call before successful completion. Errors, cancellation and unfinished parameters retain their original failure, and required with no tools is invalid before dispatch. `tool_choice_mismatch` is not retryable; generation parallelism is a separate preference.
+
+`toolValidationScope=structure_only` limits the claim to name/choice, call identity, complete JSON and matching fragments. It does not prove native argument-schema semantics, permissions, approval, execution or delivery. JSON-valid wrong keys/types remain the native executor's responsibility. Material release is not execution or user delivery; those vectors belong to [LIVE-TOOL-CONTRACT](../tickets/LIVE-integration-validation.md#live-tool-contract).
+
 ## Evidence without provider payloads
 
-`stream.toolIdentity` links the declared name multiset, actual HTTP name multiset and observed provider/SDK identities using bounded digests, lengths and relation enums. It retains the first mismatch and at most eight tail observations. No names, ids, arguments, prompts, schemas, secrets or raw SDK error messages are logged. Digests are correlation aids, not a promise that a guessable name is anonymous.
+`diagnostic.streams.backend.toolIdentity` links the declared name multiset, actual HTTP name multiset and observed provider/SDK identities using bounded digests, lengths and relation enums. Its `contract` independently reports schema digests/`schemasMatch` and requested/sent choice/`choiceMatch`; `sent.matchesDeclared` alone is name parity, not schema parity. It retains the first mismatch and at most eight tail observations. No names, ids, arguments, prompts, schemas, secrets or raw SDK error messages are logged.
 
-Relations `case_only`, `qualified` and `strict_prefix` are **diagnostic only**. They never authorize case-folding, prefix removal, fuzzy dispatch or completing a name by guesswork. Empty continuation placeholders do not create false mismatches after an established identity. `wireNameMatched` distinguishes SDK rewriting from a provider-origin name mismatch when both identities were observed.
+Relations `case_only`, `qualified` and `strict_prefix` are **diagnostic only**. They never authorize case-folding, prefix removal, fuzzy dispatch or completing a name by guesswork. `wireNameMatched` is comparable only with `wireComparison=stable_identity`; `identity_changed` invalidates earlier comparisons for that call. A stable unequal observation records a boundary mismatch, not blame by itself.
 
-`tool_declaration_mismatch` stops before HTTP if the encoded name table differs from the frozen STEP table. `sdk_schema_mismatch` includes at most eight allowlisted field paths, issue classes and received value shapes; no arbitrary field text or values escape. A schema error is not mislabeled as network failure merely because it arrived after HTTP 200.
+`tool_declaration_mismatch` stops before HTTP if the encoded name table differs from the frozen STEP table. `tool_schema_declaration_mismatch` and `tool_choice_declaration_mismatch` independently stop final input-schema or choice drift; object key order is immaterial and no name/schema is repaired. `sdk_schema_mismatch` includes at most eight allowlisted field paths, issue classes and received value shapes; no arbitrary field text or values escape.
 
-Use `runtime incident <step-id> --agent <id> --json` or the original send nonce with `history outcome --runtime`. Read the selected modeld event with an observer version that understands the new fields. A new source commit is not evidence that the loaded Host/modeld contains it.
+Use `grokbox runtime incident <step-id> --agent <id> --json` or the original send nonce with `history outcome --runtime`. Read `diagnostic.streams.backend`, `.wire` and `.host` separately: Host release counts do not overwrite backend declaration/history witnesses and counts are not summed. Independent enrichment requires the complete execution tuple, equal binding and a known matching final attempt. A new source commit is not evidence that the loaded Host/modeld contains it.
+
+`firstMismatch.history=structured_call` only means that a name appeared in structured assistant history for this request; text corrections do not establish a call. History is bounded to 128 names; truncation is unknown, not absent. Error presentations guide current declarations without appending feedback to persistent history, fabricating tool results or scheduling a new request.
 
 A historical `undeclared_tool` record without identity witnesses proves its rejection boundary, **not** the exact returned name or whether a hypothetical alternative dialect would have changed the result. Never retroactively relabel such an incident based on an unrelated live failure.
 
@@ -46,8 +54,12 @@ A historical `undeclared_tool` record without identity witnesses proves its reje
 
 This section owns the commands and acceptance contract, not current progress. Current proved scope, missing Provider/native vectors, blockers and next actions are maintained only in [LIVE-PROVIDER-MINIMAX](../tickets/LIVE-integration-validation.md#live-provider-minimax); approval-time execution and original-App evidence also link to [LIVE-MODELD-TOOLS](../tickets/LIVE-integration-validation.md#live-modeld-tools) / [APP](../tickets/LIVE-integration-validation.md#live-modeld-app). Fixed-run receipts belong in dated reports reached from those rows.
 
+Offline implementation/review receipts and exact scope are owned by [FIX-tool-contract-evidence](../tickets/FIX-tool-contract-evidence.md); SDK/encoding, snapshot/toolChoice, Host release, diagnostic projection or attempt-correlation changes invalidate the related fixture proof.
+
 Offline gates:
 - `bun run typecheck`
+- `bun run verify:modeld-core tool-contract` rebuilds first and checks the dedicated production-path matrix; the same suites are included in `release-offline`.
+- `bun test packages/box-runtime/test/tool-choice-contract.test.ts packages/box-runtime/test/tool-declaration-contract.test.ts packages/box-runtime/test/tool-contract-integration.test.ts packages/box-runtime/test/layered-tool-diagnosis.test.ts packages/box-runtime/test/tool-identity-framing.test.ts packages/box-runtime/test/tool-evidence-retention.test.ts packages/box-runtime/test/host-tool-admission.test.ts packages/box-runtime/test/host-tool-wire-order.test.ts`
 - `bun test packages/box-runtime/test/minimax-chat.test.ts packages/box-runtime/test/tool-identity-audit.test.ts packages/box-runtime/test/sdk-validation.test.ts packages/box-runtime/test/delivery-fallback.test.ts packages/box-runtime/test/auxiliary-empty-output.test.ts`
 - With explicit native-source access, `bun run test:native-host` checks the pinned native retry, compact and empty-auxiliary contracts on read-only copies/isolated functions; ordinary tests do not discover private source.
 - Existing Unix/Host integration, batch-release, cancellation, fragmentation and package gates remain required.

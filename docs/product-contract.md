@@ -147,6 +147,8 @@ daemon owns尚未迁入统一管理Server的listeners、RPC authorization、Gate
 
 Host 拥有原生 Agent loop、tools、root、checkpoint、Memory、Transcript 和 SendToUser；kernel/modeld 拥有一条受控模型执行程序。provider 不执行第二 Agent loop，不复制会话 store。输入内容和工具顺序不可暗裁剪/重排；不支持图像或协议时在副作用前可见拒绝。完整 validated-batch 才向 Host 放行工具，多个调用本身不是错误；放行不意味着副作用事务或已执行。
 
+每个 STEP 还冻结自己的 `toolChoice` 与最终请求工具表：`auto` 保持模型选择，`none` 拒绝调用和合成投递，`required` 或指定名称必须在成功终态前出现真实完整调用，指定名称拒绝其他名称。最终 wire 的名称、inputSchema 和 choice 分别对账；漂移在 dispatch 前失败，不靠别名、重试或伪造 tool result 补足。`toolValidationScope=structure_only` 只证明结构、JSON 完整和分片关联；原生 schema 语义、权限、审批、执行、结果接受和送达仍由 Host 分层负责。诊断保留独立 backend/wire/host 证据，不能跨 attempt 或代际拼接。
+
 默认请求不自动恢复。明确启用的 pre-output HTTP 恢复有独立额外请求/时间预算、每次声明和权限复核；已输出、unknown 网络、鉴权、工具错误和重启不重放。confirmed-overflow 的零放行/一次额外主请求合同独立，不能成为无限 retry。辅助 memory/episode 的合格空结果可以是 no-op，主请求空结果不是成功。详见 [执行合同](runtime/execution.md)。
 
 status 分开 desired、loaded、ready、captured、执行、交付与 evidence gap。配置保存、health 和旧日志不签署当前 Host/原版 App 可用。实际支持模型/对象/制品和现场资格只在 [LIVE](tickets/LIVE-integration-validation.md)；不得用一次 pong 替代工具、长上下文、持久化和回官方旅程。

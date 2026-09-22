@@ -56,6 +56,14 @@ Read `assessment` and `evidence` alongside state. A known runtime gap prevents a
 
 `runtimeFailure.diagnostic` names the instrumented rejection site/cause. `runtimeTrace` is bounded evidence, not a raw provider dump. Report the known failing boundary separately from any unproved deeper cause; do not expose raw provider content or credentials.
 
+## A STEP rejects a tool call
+
+Use the bound read-only `runtimeFailure.presentation.next` when available, or `grokbox runtime incident <step-id> --agent <agent-id> --json` on the same box-local runtime. Keep the original IDs; do not issue a new model request for diagnosis.
+
+Read `runtimeFailure.diagnostic.streams.backend`, `.wire`, and `.host` separately. Backend tool identity includes independent name/schema/choice parity and bounded history; Host counts establish material release, not execution. The legacy `diagnostic.stream` is one local view, not a combined stream. Missing fields may mean an older observer, not successful validation.
+
+`undeclared_tool`, `tool_choice_mismatch`, schema drift and identity changes do not authorize aliases or retries. Follow the declarations exposed to the current STEP. A structured historical name is evidence only; a textual mention or correction is not a past call. `toolValidationScope=structure_only` is not native schema, permission or delivery proof. A banner is not proof that error feedback entered model history. Reconcile earlier effects before any separately authorized continuation.
+
 ## Completion and liveness are separate claims
 
 `executionCompleted` remains `not_proven`. With `--wait-for execution --runtime`, a progress reply does not settle the wait; current execution waiting stops early on failure, otherwise at the wait budget. It cannot manufacture successful whole-run completion proof.
