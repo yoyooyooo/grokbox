@@ -275,6 +275,8 @@ export async function startManagementServer(options: ManagementServerOptions, te
       };
       const result = yield* application({ ...options, installationId, serviceState, notificationState, hostHealthState,
         jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
+        messageDomain: { root: options.store.root, installationId, listBots: options.native.listBots,
+          ...(options.native.continuityAccess ? { continuity: (signal: AbortSignal) => options.native.continuityAccess!(signal) } : {}) },
         fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
         desktopDomain: desktopService ? { service: desktopService, authorize: materialAuthorize } : undefined,
         contextDomain: { root: options.store.root, installationId, authorize: materialAuthorize, hooks: testPorts.context?.hooks,

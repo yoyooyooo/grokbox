@@ -4,6 +4,8 @@ import {
   type ModelChangeRequest, type ModelList, type ModelOperation, type ModelView, type ConsoleGrant, type ConsoleSession,
   incidentIdentity, normalizeIncidentChange, type IncidentChangeRequest, type IncidentDetail, type IncidentOperation,
   type ObservationSnapshot, type IncidentList, type ObservationEventPage, type ManagementServiceView,
+  type MessageSendRequest, type MessageOperation, type MessageDelivery, type MessagePage, type MessageSearchPage,
+  messageOperation, messageDelivery, messagePage, messageSearchPage, normalizeMessageSend,
 } from "./contract.ts";
 export * from "./contract.ts";
 import { DesktopError, DESKTOP_UUID, normalizeDesktopPolicy, normalizeDesktopPrune, validDesktopOperation, type DesktopView, type DesktopOperation, type DesktopPolicyReceipt, type DesktopPolicyRequest, type DesktopPruneRequest } from "@grokbox/runtime-kernel/desktop";
@@ -53,6 +55,19 @@ export type { ObservationWatchOptions, ObservationWatchReply } from "./event-wat
 const protocolError = () => new ManagementClientError("protocol_error", "The management service returned an incompatible response.");
 const pageBound = (value: unknown): boolean => value === null || value === "count" || value === "bytes";
 export type ListOptions = { limit?: number; cursor?: string; signal?: AbortSignal };
+export type MessageWindowOptions = { limit?: number; beforeSeq?: number; signal?: AbortSignal };
+function messageQuery(options: MessageWindowOptions): URLSearchParams {
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) {
+    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 200) throw new ManagementClientError("invalid_input", "Invalid message page size.");
+    query.set("limit", String(options.limit));
+  }
+  if (options.beforeSeq !== undefined) {
+    if (!Number.isSafeInteger(options.beforeSeq) || options.beforeSeq < 0) throw new ManagementClientError("invalid_input", "Invalid message cursor.");
+    query.set("beforeSeq", String(options.beforeSeq));
+  }
+  return query;
+}
 function pageQuery(options: ListOptions): URLSearchParams {
   const query = new URLSearchParams();
   if (options.limit !== undefined) {
@@ -136,7 +151,7 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: DesktopPolicyRequest | DesktopPruneRequest | FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: DesktopPolicyRequest | DesktopPruneRequest | FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | MessageSendRequest | { origin: string } | { code: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
@@ -150,6 +165,7 @@ export class ManagementClient {
         : path === "/v1/context-compaction-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-continuations" ? revision(mutation.scopeId) && (["resume", "reconcile", "cancel"].includes(String(mutation.action)) || mutation.action === "activate" && revision(mutation.expectedRevision))
         : path === "/v1/setup-changes" ? revision(mutation.expectedRevision) || "action" in mutation && mutation.action === "apply" && mutation.expectedRevision === null
+        : path === "/v1/messages" ? true
         : ["/v1/material-changes","/v1/protection-changes"].includes(path) ? revision(mutation.expectedRevision) : lookupPath ? Number.isSafeInteger(mutation.expectedRevision) && Number(mutation.expectedRevision) > 0 : revision(mutation.expectedRevision)))) throw new ManagementClientError("invalid_input", "A mutation requires a persisted request UUID and expected revision.");
     const deadline = AbortSignal.timeout(this.options.timeoutMs ?? 10_000);
     const bounded = signal ? AbortSignal.any([deadline, signal]) : deadline;
@@ -157,7 +173,7 @@ export class ManagementClient {
     try { body = input === undefined ? undefined : JSON.stringify(input); }
     catch { throw new ManagementClientError("invalid_input", "The management input must be JSON serializable."); }
     const recovery = mutation ? { requestId: mutation.requestId.toLowerCase(), installationId: this.options.installationId,
-      lookupPath: lookupPath ?? `/v1/model-operations/${mutation.requestId.toLowerCase()}` } : undefined;
+      lookupPath: lookupPath ?? (path === "/v1/messages" ? `/v1/message-operations/${mutation.requestId.toLowerCase()}` : `/v1/model-operations/${mutation.requestId.toLowerCase()}`) } : undefined;
     if (body !== undefined && new TextEncoder().encode(body).length > REQUEST_MAX_BYTES) throw new ManagementClientError("invalid_input", "The request exceeds the management input bound.");
     const headers = new Headers({ accept: "application/json" });
     if (body !== undefined) headers.set("content-type", "application/json");
@@ -633,6 +649,44 @@ export class ManagementClient {
   observationEvents(options: ListOptions = {}) {
     const query = pageQuery(options), limit = options.limit ?? 100, after = options.cursor;
     return this.request<ObservationEventPage>(`/v1/observation-events${query.size ? `?${query}` : ""}`, value => observationEvents(value, this.options.installationId!, limit, after), undefined, options.signal);
+  }
+  async sendMessage(input: MessageSendRequest, signal?: AbortSignal) {
+    const request = normalizeMessageSend(input, this.options.installationId ?? "");
+    return this.request<MessageOperation>("/v1/messages", value => messageOperation(value, this.options.installationId!, request.requestId)
+      && value.botRef === request.botRef && value.clientNonce === request.clientNonce, request, signal, false,
+      `/v1/message-operations/${request.requestId}`);
+  }
+  async messageOperation(requestId: string, signal?: AbortSignal) {
+    if (!UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Invalid message request UUID.");
+    const id = requestId.toLowerCase();
+    return this.request<MessageOperation>(`/v1/message-operations/${id}`, value => messageOperation(value, this.options.installationId!, id), undefined, signal);
+  }
+  async messageDelivery(requestId: string, options: { waitMs?: number; signal?: AbortSignal } = {}) {
+    if (!UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Invalid message request UUID.");
+    const id = requestId.toLowerCase(), waitMs = options.waitMs ?? 0;
+    if (!Number.isSafeInteger(waitMs) || waitMs < 0 || waitMs > 25_000) throw new ManagementClientError("invalid_input", "Invalid bounded delivery wait.");
+    const query = new URLSearchParams({ waitMs: String(waitMs) });
+    return this.request<MessageDelivery>(`/v1/message-deliveries/${id}?${query}`, value => messageDelivery(value, this.options.installationId!, id), undefined, options.signal);
+  }
+  async messages(ref: string, options: MessageWindowOptions = {}) {
+    const id = botIdFromRef(ref, this.options.installationId ?? ""), target = `bot:${this.options.installationId}:${id}`, query = messageQuery(options);
+    return this.request<MessagePage>(`/v1/messages/${encodeURIComponent(target)}${query.size ? `?${query}` : ""}`, value => messagePage(value, this.options.installationId!, target), undefined, options.signal);
+  }
+  async messageThread(ref: string, rootId: string, options: Omit<MessageWindowOptions, "beforeSeq"> = {}) {
+    const id = botIdFromRef(ref, this.options.installationId ?? ""), target = `bot:${this.options.installationId}:${id}`;
+    if (!/^[A-Za-z0-9._:-]{1,256}$/.test(rootId)) throw new ManagementClientError("invalid_input", "Invalid message thread root.");
+    const query = messageQuery(options);
+    return this.request<MessagePage>(`/v1/messages/${encodeURIComponent(target)}/threads/${encodeURIComponent(rootId)}${query.size ? `?${query}` : ""}`, value => messagePage(value, this.options.installationId!, target), undefined, options.signal);
+  }
+  async searchMessages(queryValue: string, options: { botRef?: string; limit?: number; signal?: AbortSignal } = {}) {
+    const queryText = normalizeBotQuery(queryValue);
+    const query = new URLSearchParams({ query: queryText });
+    if (options.botRef !== undefined) query.set("bot", `bot:${this.options.installationId}:${botIdFromRef(options.botRef, this.options.installationId ?? "")}`);
+    if (options.limit !== undefined) {
+      if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100) throw new ManagementClientError("invalid_input", "Invalid message search limit.");
+      query.set("limit", String(options.limit));
+    }
+    return this.request<MessageSearchPage>(`/v1/messages?${query}`, value => messageSearchPage(value, this.options.installationId!), undefined, options.signal);
   }
   async bot(ref: string, signal?: AbortSignal) {
     const id = botIdFromRef(ref, this.options.installationId ?? "");

@@ -244,6 +244,24 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--effort <effort>", description: "Default reasoning effort, or default to clear the override" },
   ], true),
   command("model default reset", "Clear the default only after every follower is explicitly rebound.", undefined, [], true),
+  { ...command("message send", "Submit one bounded Human message through the native owner; persist the request before the single attempt and query its original receipt after uncertainty.", { name: "bot-ref", description: "Stable native UUID or installation-scoped Bot reference" }, [
+    { flags: "--input <source>", description: "Strict JSON with text, requestId and clientNonce; @file or -", required: true },
+    { flags: "--request-id <uuid>", description: "Caller-persisted original request UUID; may be supplied in the input" },
+    { flags: "--nonce <uuid>", description: "Native client nonce; may be supplied in the input" },
+  ]), stdin: "json", destructive: true },
+  command("message operation get", "Read the original persisted message submission; never resubmits an unknown request.", { name: "request-id", description: "Original message request UUID" }),
+  command("message delivery get", "Observe bounded native delivery and exact request association; run, STEP and terminal remain not observed here.", { name: "request-id", description: "Original message request UUID" }, [
+    { flags: "--wait-ms <n>", description: "Bounded wait from 0 to 25000 milliseconds" },
+  ]),
+  command("message list", "Read a bounded transcript window for one exact Bot.", { name: "bot-ref", description: "Stable native UUID or installation-scoped Bot reference" }, [
+    { flags: "--limit <n>", description: "Page size, 1 to 200" }, { flags: "--before-seq <n>", description: "Native transcript cursor" },
+  ]),
+  command("message thread", "Read one exact native transcript thread by its root entry; no later assistant is inferred.", { name: "bot-ref", description: "Stable native UUID or installation-scoped Bot reference" }, [
+    { flags: "--root <id>", description: "Exact native transcript root entry", required: true }, { flags: "--limit <n>", description: "Page size, 1 to 200" },
+  ]),
+  command("message search", "Search bounded native transcript windows literally and return scoped entries.", { name: "query", description: "Literal search text" }, [
+    { flags: "--bot <ref>", description: "Limit search to one exact Bot" }, { flags: "--limit <n>", description: "Maximum matches, 1 to 100" },
+  ]),
   { ...command("operation reconcile", "Read authoritative evidence and settle the original Routine or context request; no new native effect is dispatched.",undefined,[
     {flags:"--domain <domain>",description:"Implemented reconciliation domains: routine or context",required:true},
     {flags:"--request-id <uuid>",description:"Original request, not a new effect identity",required:true},

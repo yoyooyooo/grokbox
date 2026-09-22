@@ -20,7 +20,7 @@ export type ManagementCommandOptions = {
   jobRef?: string; waitMs?: string; offset?: string;
   preview?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
   requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string; receiver?: string;
-  root?: string; nativeDiscovery?: string; port?: string; input?: string; mode?: string;
+  root?: string; nativeDiscovery?: string; port?: string; input?: string; mode?: string; nonce?: string; beforeSeq?: string;
   untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; expectModelRevision?: string;
   bot?: string; snapshotRef?: string; routineRef?: string; expectBindingRevision?: string; enabled?: string; target?: string;
   origin?: string; credentialFile?: string; consoleOrigin?: string; managementUrl?: string; installationId?: string;
@@ -320,6 +320,37 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       reply = await client.service(deps.signal); break;
     case "system observation get": reply = await client.observation(deps.signal); break;
     case "system console grant create": reply = await createConsoleCredentialFile(deps, client, options.origin, options.credentialFile); break;
+    case "message send": {
+      const input = combineManagementInput(await readManagementInput(deps, options.input),
+        { botRef: args[0], requestId: options.requestId, clientNonce: options.nonce },
+        ["botRef", "requestId", "clientNonce", "text"]);
+      reply = await client.sendMessage({
+        requestId: typeof input.requestId === "string" ? input.requestId : "",
+        botRef: typeof input.botRef === "string" ? input.botRef : "",
+        text: typeof input.text === "string" ? input.text : "",
+        clientNonce: typeof input.clientNonce === "string" ? input.clientNonce : "",
+      }, deps.signal); break;
+    }
+    case "message operation get": reply = await client.messageOperation(args[0] ?? "", deps.signal); break;
+    case "message delivery get": {
+      if (options.waitMs !== undefined && !/^(0|[1-9][0-9]{0,4})$/.test(options.waitMs)) throw invalid("Delivery wait must be 0 to 25000 milliseconds.");
+      const waitMs = options.waitMs === undefined ? 0 : Number(options.waitMs);
+      if (waitMs > 25_000) throw invalid("Delivery wait must be 0 to 25000 milliseconds.");
+      reply = await client.messageDelivery(args[0] ?? "", { waitMs, signal: deps.signal }); break;
+    }
+    case "message list": {
+      if (options.limit !== undefined && !/^[1-9][0-9]{0,2}$/.test(options.limit)) throw invalid("Invalid message page size.");
+      if (options.beforeSeq !== undefined && !/^(0|[1-9][0-9]*)$/.test(options.beforeSeq)) throw invalid("Invalid message cursor.");
+      reply = await client.messages(args[0] ?? "", { limit: options.limit === undefined ? undefined : Number(options.limit), beforeSeq: options.beforeSeq === undefined ? undefined : Number(options.beforeSeq), signal: deps.signal }); break;
+    }
+    case "message thread": {
+      if (options.limit !== undefined && !/^[1-9][0-9]{0,2}$/.test(options.limit)) throw invalid("Invalid message page size.");
+      reply = await client.messageThread(args[0] ?? "", options.root ?? "", { limit: options.limit === undefined ? undefined : Number(options.limit), signal: deps.signal }); break;
+    }
+    case "message search": {
+      if (options.limit !== undefined && !/^[1-9][0-9]{0,2}$/.test(options.limit)) throw invalid("Invalid message search limit.");
+      reply = await client.searchMessages(args[0] ?? "", { botRef: options.bot, limit: options.limit === undefined ? undefined : Number(options.limit), signal: deps.signal }); break;
+    }
     case "bot get": reply = await client.bot(args[0] ?? "", deps.signal); break;
     case "bot resolve": reply = await client.resolveBot(args[0] ?? "", deps.signal); break;
     case "bot model get": reply = await client.botModel(args[0] ?? "", deps.signal); break;
