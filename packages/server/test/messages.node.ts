@@ -23,7 +23,7 @@ async function fixture() {
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const store = openRuntimeStore(root, {});
   await store.saveModels(applyUse(parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: {} } }), "stub/echo"));
-  const calls = { send: 0, transcript: 0 };
+  const calls = { send: 0, transcript: 0, sourceChanged: false };
   let lastNonce: string | undefined;
   const discovery = { baseUrl: "http://native.invalid", pid: 123, startedAt: 1 };
   const transcript = (nonce?: string) => ({ entries: [
@@ -32,7 +32,12 @@ async function fixture() {
   ] });
   const gateway: ContinuityGateway = {
     rpc: async (method, input) => {
-      if (method === "sendPrompt") { calls.send++; lastNonce = typeof input.clientNonce === "string" ? input.clientNonce : undefined; return { result: { accepted: true, nativeNonce: input.clientNonce }, discovery }; }
+      if (method === "sendPrompt") {
+        calls.send++;
+        if (calls.sourceChanged) throw new Error("source_changed");
+        lastNonce = typeof input.clientNonce === "string" ? input.clientNonce : undefined;
+        return { result: { accepted: true, queued: true, nativeNonce: input.clientNonce }, discovery };
+      }
       if (method === "getAgentTranscriptTail") { calls.transcript++; return { result: transcript(lastNonce), discovery }; }
       if (method === "listAgents") return { result: [{ id: BOT, name: "First", isGroup: false }], discovery };
       throw new Error(`unexpected_${method}`);
@@ -67,6 +72,8 @@ test("message input persists one submission, supports original lookup, and obser
   assert.equal(first.data.state, "accepted");
   assert.equal(first.data.operationRef, `message-operation:${INSTALLATION}:${BOT}:${requestId}`);
   assert.equal(first.data.submissionRef, `submission:${INSTALLATION}:${BOT}:${requestId}`);
+  assert.equal(first.data.association.queue, "queued");
+  assert.equal(first.data.association.turn, "not-observed");
   assert.equal(first.data.association.run, "not-observed");
   const second = await f.client().sendMessage(input);
   assert.deepEqual(second.data, first.data);
@@ -75,6 +82,7 @@ test("message input persists one submission, supports original lookup, and obser
   assert.deepEqual(lookup.data, first.data);
   const delivery = await f.client().messageDelivery(requestId);
   assert.equal(delivery.data.state, "response-observed");
+  assert.equal(delivery.data.association.queue, "queued");
   assert.equal(delivery.data.association.terminal, "not-observed");
   assert.ok(delivery.data.entries.length <= 200);
   assert.ok(f.calls.transcript >= 1);
@@ -90,6 +98,21 @@ test("message uncertainty and idempotency never replay the native write", async 
   });
   assert.equal(f.calls.send, 1);
   assert.equal((await f.client().messageOperation(requestId)).data.requestId, requestId);
+});
+
+test("generation or receipt uncertainty is retained and never replayed", async () => {
+  const f = await fixture();
+  const input = { requestId: randomUUID(), botRef: f.botRef, text: "hello", clientNonce: randomUUID() };
+  f.calls.sourceChanged = true;
+  await assert.rejects(f.client().sendMessage(input), error => {
+    assert.equal((error as { code?: string }).code, "operation_unknown"); return true;
+  });
+  assert.equal(f.calls.send, 1);
+  assert.equal((await f.client().messageOperation(input.requestId)).data.state, "unknown");
+  await assert.rejects(f.client().sendMessage(input), error => {
+    assert.equal((error as { code?: string }).code, "operation_unknown"); return true;
+  });
+  assert.equal(f.calls.send, 1);
 });
 
 test("message writes enforce capability before the native owner", async () => {

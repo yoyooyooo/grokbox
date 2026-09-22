@@ -23,7 +23,7 @@ D2按对象/关系、消息/历史、导出/模板几个完整工作包回流，
 
 ## D1 当前入口实现
 
-共享 client 暴露 `sendMessage`、原请求查询、`messages`、thread、literal search 与 delivery get/wait。Server 通过原有 continuity owner 调用 `sendPrompt` 和 `getAgentTranscriptTail`，在安装根下按 principal 持久保存原请求记录。记录分别保存 request、operation、submission、clientNonce 和原生 generation；run、STEP、terminal 没有原生证据时明确标记 `not-observed`。重复 request 只读原记录，输入不一致返回 `idempotency_conflict`，未知写入只返回 `operation_unknown`，不会重发。旧 `send` 与 history 入口已经转到 shared management client，不再直接写 Gateway。
+共享 client 暴露 `sendMessage`、原请求查询、`messages`、thread、literal search 与 delivery get/wait。Server 通过原有 continuity owner 调用 `sendPrompt` 和 `getAgentTranscriptTail`，在安装根下按 principal 持久保存原请求记录。记录分别保存 request、operation、submission、clientNonce 和原生 generation；队列只在原生回执明确给出 `queued` 时标记，turn/run/STEP/terminal 没有原生证据时明确标记 `not-observed`。delivery 只用同一 clientNonce 在同一 Bot transcript 窗口做精确关联，并保留原 operation 的安装/Bot/generation scope，不把最后一条回复推断成 run 完成。提交先读成员并与写入复用同一个 generation-pinned gateway；换代、缺方法、撤权或丢回执只保留 unknown，禁止重发。重复 request 只读原记录，输入不一致返回 `idempotency_conflict`，未知写入只返回 `operation_unknown`，不会重发。旧 `send` 与 history 入口已经转到 shared management client，不再直接写 Gateway。
 
 ## 验证
 

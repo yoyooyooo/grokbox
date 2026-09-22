@@ -36,6 +36,10 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 原生Project fileRef、账号/同步与跨域变化订阅仍归DATA-01及本票剩余合同；不能把二进制下载或一个现行file receipt称为所有材料已被原生Bot采用。
 
+## 消息关联与对账（2026-09-22）
+
+D1 的 \`message send\` 先保存原 request/submission/clientNonce，再以同一原生 generation 执行单次 \`sendPrompt\`；\`message get\` 读取原 operation，\`message delivery get|wait\` 通过同一 nonce 观察有界 transcript。accepted、显式 queued、delivery、turn/run/STEP/terminal 各自分层；缺少原生事件就返回 \`not-observed\`，缺源/换代/撤权/丢回执保留 unknown，不进行隐式补投。该读写/对账入口复用现有 continuity owner，核心没有第二 daemon writer。真实 App 的可观察标识、Host/modeld 现场代际及原版显示仍必须在授权 LIVE 窗口取证，fixture 结果不签现场成功。
+
 ## 实施前验证
 
 持续采集与存储差额继续归 [T41](T41-continuous-observation-and-alerting.md)。本票不复制 collector 实现票，也不宣称新增 Host 补丁已通过资格。

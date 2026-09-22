@@ -14,7 +14,15 @@ export type ContinuityRpc = Exclude<RoutineRpc, "getAutomationWebhookCredential"
   | "getHostSettings" | "setHostSettings" | "assignAgentToSidebarSection" | "updateAgent" | "setGroupMembers" | "sendPrompt";
 export type ContinuityCall = (method: ContinuityRpc | "grokboxContextControl", input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
   maxBytes: number, expectedGeneration?: string) => Promise<{ result: unknown; source: ContinuityDiscovery }>;
-export type ContinuityRpcOptions = { timeoutMs: number; maxResponseBytes?: number; write?: boolean; singleAttempt?: boolean; unknownOutcomeCode?: "operation_outcome_unknown" };
+export type ContinuityRpcOptions = {
+  timeoutMs: number;
+  maxResponseBytes?: number;
+  write?: boolean;
+  singleAttempt?: boolean;
+  unknownOutcomeCode?: "operation_outcome_unknown";
+  /** Bind a write to the discovery generation already read for this operation. */
+  expectedGeneration?: string;
+};
 export type ContinuityGateway = {
   /** Management-owned manual maintenance. Not advertised by the old CLI RPC client. */
   maintenanceControl?: (input: Record<string, unknown>, options: ContinuityRpcOptions) => Promise<{ result: unknown; discovery: ContinuityDiscovery }>;
@@ -56,7 +64,7 @@ export function createContinuityGatewayIO(call: ContinuityCall, root: string, si
   };
   const rpc: ContinuityGateway["rpc"] = async (method, input, options) => {
     if (!allowed.has(method)) throw new CurrentStateFailure("invalid_request");
-    const reply = await invoke(method, input, signal, options.timeoutMs, options.maxResponseBytes ?? 512 * 1024);
+    const reply = await invoke(method, input, signal, options.timeoutMs, options.maxResponseBytes ?? 512 * 1024, options.expectedGeneration);
     return { result: reply.result, discovery: reply.source };
   };
   const routine = (owner: AbortSignal) => createRoutineGateway(async (method, input, signal, deadline, bytes, expected) => {

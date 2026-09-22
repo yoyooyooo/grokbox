@@ -1,7 +1,10 @@
 import { ManagementClientError, UUID, botIdFromRef, botRef } from "./contract.ts";
 
 export type MessageAssociation = {
+  /** Native queue evidence is only present when the source reports it explicitly. */
+  queue: "not-observed" | "queued";
   run: "not-observed";
+  turn: "not-observed";
   step: "not-observed";
   terminal: "not-observed";
   delivery: "recorded" | "response-observed" | "unknown";
@@ -97,7 +100,9 @@ export function messageOperation(value: unknown, installationId: string, request
     || !Number.isSafeInteger(value.acceptedAtMs)
     || (value.nativeGeneration !== null && typeof value.nativeGeneration !== "string")
     || (value.nativeReceipt !== null && !record(value.nativeReceipt))
-    || !record(value.association) || value.association.run !== "not-observed" || value.association.step !== "not-observed" || value.association.terminal !== "not-observed"
+    || !record(value.association) || !["not-observed","queued"].includes(String(value.association.queue))
+    || value.association.run !== "not-observed" || value.association.turn !== "not-observed"
+    || value.association.step !== "not-observed" || value.association.terminal !== "not-observed"
     || !["recorded","response-observed","unknown"].includes(String(value.association.delivery))
     || value.coverage !== "native-submission") return false;
   try {
@@ -134,7 +139,9 @@ export function messageDelivery(value: unknown, installationId: string, requestI
     && ["recorded","response-observed","unknown"].includes(String(value.state))
     && Number.isSafeInteger(value.observedAtMs) && Array.isArray(value.entries) && value.entries.length <= 200
     && (value.source === null || record(value.source))
-    && record(value.association) && value.association.run === "not-observed" && value.association.step === "not-observed" && value.association.terminal === "not-observed"
+    && record(value.association) && ["not-observed","queued"].includes(String(value.association.queue))
+    && value.association.run === "not-observed" && value.association.turn === "not-observed"
+    && value.association.step === "not-observed" && value.association.terminal === "not-observed"
     && ["recorded","response-observed","unknown"].includes(String(value.association.delivery))
     && ["native-transcript-window","native-source-unavailable"].includes(String(value.coverage));
 }
