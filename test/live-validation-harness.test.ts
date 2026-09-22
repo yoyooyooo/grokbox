@@ -32,7 +32,33 @@ test("receipt validation distinguishes structurally eligible evidence from produ
     kind: "grokbox-live-receipt",
     windowId: "RC-E2E-test",
     scenario: "live-model-sol-high",
-    candidate: { sourceCommit: "0123456789abcdef0123456789abcdef01234567" },
+    candidate: {
+      sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+      sourceDigest: "a".repeat(64),
+      artifactHash: "b".repeat(64),
+      loadedIdentities: ["cli:fixed", "modeld:fixed", "host:fixed"],
+    },
+    window: {
+      operator: "maintainer-session",
+      lane: "core-runtime",
+      authorizationRef: "private:window-authorization",
+      targetRef: "private:window-target",
+      durationMinutes: 20,
+      budget: { currency: "USD", maxCost: 0 },
+    },
+    evidence: { kind: "native-isolated", candidateBound: true, nativeObservation: true },
+    review: {
+      reviewerRef: "private:reviewer",
+      sessionRef: "private:review-session",
+      workPackage: "Q-PREP",
+      baseCommit: "0123456789abcdef0123456789abcdef01234567",
+      tipCommit: "0123456789abcdef0123456789abcdef01234567",
+      independent: true,
+      notImplementer: true,
+      result: "accepted",
+      findings: [],
+      recheck: "accepted",
+    },
     steps: [{
       id: "LIVE-MODEL-SOL-HIGH/01",
       status: "passed",
@@ -46,9 +72,55 @@ test("receipt validation distinguishes structurally eligible evidence from produ
   if (typeof priorResult !== "string") throw new Error("receipt scenario has no current result");
   const result = validateReceipt(receipt);
   expect(result.ok).toBe(true);
+  expect(result.status).toBe("eligible");
   expect(result.derived.indexEligible).toBe(true);
   expect(result.derived.currentResult).toBe(priorResult);
   expect(parseLiveIndex().find((row) => row.id === receipt.scenario)?.currentResult).toBe(priorResult);
+});
+
+test("a structurally valid fixture or self-review never becomes live-eligible", () => {
+  const result = validateReceipt({
+    version: 1,
+    kind: "grokbox-live-receipt",
+    windowId: "fixture-window",
+    scenario: "live-model-sol-high",
+    candidate: {
+      sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+      sourceDigest: "a".repeat(64),
+      artifactHash: "b".repeat(64),
+      loadedIdentities: ["fixture:cli"],
+    },
+    window: {
+      operator: "fixture",
+      lane: "core-runtime",
+      authorizationRef: "private:fixture",
+      targetRef: "private:fixture-target",
+      durationMinutes: 1,
+      budget: { currency: "USD", maxCost: 0 },
+    },
+    evidence: { kind: "fixture", candidateBound: true, nativeObservation: false },
+    review: {
+      reviewerRef: "private:self",
+      sessionRef: "private:self-session",
+      workPackage: "Q-PREP",
+      baseCommit: "0123456789abcdef0123456789abcdef01234567",
+      tipCommit: "0123456789abcdef0123456789abcdef01234567",
+      independent: false,
+      notImplementer: false,
+      result: "accepted",
+      findings: [],
+      recheck: "accepted",
+    },
+    steps: [{ id: "LIVE-MODEL-SOL-HIGH/01", status: "passed", observation: "Fixture only.", evidenceRef: "private:fixture" }],
+    cleanup: { state: "complete" },
+    notProven: [],
+  });
+  expect(result.ok).toBe(true);
+  expect(result.status).toBe("structural-only");
+  expect(result.derived.indexEligible).toBe(false);
+  expect(result.derived.eligibilityReasons).toEqual(expect.arrayContaining([
+    "NON_NATIVE_EVIDENCE", "NATIVE_OBSERVATION_MISSING", "INDEPENDENT_REVIEW_NOT_ACCEPTED",
+  ]));
 });
 
 test("plans and new receipts cannot revive a superseded scenario", () => {

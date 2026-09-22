@@ -277,6 +277,9 @@ function findSecrets(value, path = "$", found = []) {
   return found;
 }
 
+const NATIVE_EVIDENCE_KINDS = new Set(["native", "native-isolated", "external-real", "browser"]);
+const WINDOW_LANES = new Set(["core-runtime", "full-product"]);
+
 function validateReceipt(receipt, rows = parseLiveIndex()) {
   const errors = [];
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return { ok: false, errors: ["receipt_not_object"] };
@@ -289,7 +292,12 @@ function validateReceipt(receipt, rows = parseLiveIndex()) {
   if (!receipt.candidate || typeof receipt.candidate !== "object") errors.push("candidate_missing");
   else {
     if (!SHA.test(receipt.candidate.sourceCommit ?? "")) errors.push("candidate_source_commit");
-    if (receipt.candidate.artifactHash !== undefined && !HASH.test(receipt.candidate.artifactHash)) errors.push("candidate_artifact_hash");
+    if (!HASH.test(receipt.candidate.sourceDigest ?? "")) errors.push("candidate_source_digest");
+    if (!HASH.test(receipt.candidate.artifactHash ?? "")) errors.push("candidate_artifact_hash");
+    if (!Array.isArray(receipt.candidate.loadedIdentities) || receipt.candidate.loadedIdentities.length === 0
+      || receipt.candidate.loadedIdentities.some((identity) => typeof identity !== "string" || identity.length === 0 || identity.length > 256)) {
+      errors.push("candidate_loaded_identities");
+    }
   }
   if (!Array.isArray(receipt.steps) || receipt.steps.length === 0) errors.push("steps_missing");
   else {
@@ -313,18 +321,62 @@ function validateReceipt(receipt, rows = parseLiveIndex()) {
   else if (receipt.notProven.some((item) => typeof item !== "string" || item.length === 0 || item.length > 512)) errors.push("not_proven_item");
   const secretPaths = findSecrets(receipt);
   if (secretPaths.length) errors.push("secret_or_machine_path");
+  const window = receipt.window;
+  if (!window || typeof window !== "object" || Array.isArray(window)) errors.push("window_missing");
+  else {
+    if (typeof window.operator !== "string" || window.operator.length === 0) errors.push("window_operator");
+    if (!WINDOW_LANES.has(window.lane)) errors.push("window_lane");
+    if (typeof window.authorizationRef !== "string" || !REPORT_REF.test(window.authorizationRef)) errors.push("window_authorization");
+    if (typeof window.targetRef !== "string" || !REPORT_REF.test(window.targetRef)) errors.push("window_target");
+    if (!Number.isFinite(window.durationMinutes) || window.durationMinutes <= 0) errors.push("window_duration");
+    if (!window.budget || typeof window.budget !== "object"
+      || typeof window.budget.currency !== "string" || window.budget.currency.length === 0
+      || !Number.isFinite(window.budget.maxCost) || window.budget.maxCost < 0) errors.push("window_budget");
+  }
+  const evidence = receipt.evidence;
+  const eligibilityReasons = [];
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    eligibilityReasons.push("EVIDENCE_DECLARATION_MISSING");
+  } else {
+    if (!NATIVE_EVIDENCE_KINDS.has(evidence.kind)) eligibilityReasons.push("NON_NATIVE_EVIDENCE");
+    if (evidence.candidateBound !== true) eligibilityReasons.push("CANDIDATE_NOT_BOUND");
+    if (evidence.nativeObservation !== true) eligibilityReasons.push("NATIVE_OBSERVATION_MISSING");
+  }
+  const review = receipt.review;
+  const reviewReady = review && typeof review === "object" && !Array.isArray(review)
+    && review.independent === true && review.notImplementer === true
+    && review.result === "accepted"
+    && typeof review.reviewerRef === "string" && REPORT_REF.test(review.reviewerRef)
+    && typeof review.sessionRef === "string" && REPORT_REF.test(review.sessionRef)
+    && typeof review.workPackage === "string" && review.workPackage.length > 0
+    && SHA.test(review.baseCommit ?? "") && SHA.test(review.tipCommit ?? "")
+    && Array.isArray(review.findings) && review.recheck === "accepted";
+  if (!reviewReady) eligibilityReasons.push("INDEPENDENT_REVIEW_NOT_ACCEPTED");
   const stepStatuses = Array.isArray(receipt.steps) ? receipt.steps.map((step) => step?.status) : [];
+  const allStepsPassed = stepStatuses.length > 0 && stepStatuses.every((status) => status === "passed");
+  const hasFailure = stepStatuses.some((status) => status === "failed");
+  const hasUnknown = stepStatuses.some((status) => status === "blocked" || status === "not-proven" || status === "not-run");
+  if (!allStepsPassed) eligibilityReasons.push("STEP_NOT_FULLY_PASSED");
+  if (cleanupState !== "complete") eligibilityReasons.push("CLEANUP_NOT_COMPLETE");
+  if (!Array.isArray(receipt.notProven) || receipt.notProven.length !== 0) eligibilityReasons.push("NOT_PROVEN_REMAINS");
+  const structurallyValid = errors.length === 0;
+  const indexEligible = structurallyValid && eligibilityReasons.length === 0;
   const derived = {
     scenario: row?.stableId ?? null,
     currentResult: row?.currentResult ?? null,
-    allStepsPassed: stepStatuses.length > 0 && stepStatuses.every((status) => status === "passed"),
-    hasFailure: stepStatuses.some((status) => status === "failed"),
-    hasUnknown: stepStatuses.some((status) => status === "blocked" || status === "not-proven" || status === "not-run"),
+    allStepsPassed,
+    hasFailure,
+    hasUnknown,
     cleanupState: cleanupState ?? null,
-    indexEligible: errors.length === 0 && stepStatuses.length > 0 && stepStatuses.every((status) => status === "passed")
-      && cleanupState === "complete" && Array.isArray(receipt.notProven) && receipt.notProven.length === 0,
+    indexEligible,
+    eligibilityReasons,
   };
-  return { ok: errors.length === 0, errors, derived };
+  return {
+    ok: structurallyValid,
+    status: indexEligible ? "eligible" : "structural-only",
+    errors,
+    derived,
+  };
 }
 
 function receipt(args) {
