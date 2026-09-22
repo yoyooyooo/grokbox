@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { StreamEvidence, projectToolIdentityAudit, streamFailureDiagnostic, type GenerationOptions, type PromptMessage } from "@grokbox/runtime-kernel/contract";
+import { StreamEvidence, projectToolIdentityAudit, streamFailureDiagnostic, failureSummaryFromObservation, presentFailure, type GenerationOptions, type PromptMessage } from "@grokbox/runtime-kernel/contract";
 import { ToolIdentityObserver } from "../src/internal/backends/tool-identity-audit.ts";
 import { ProviderStreamAudit } from "../src/internal/backends/provider-stream-audit.ts";
 import { guardEgress } from "../src/internal/backends/ai-sdk.ts";
@@ -46,6 +46,14 @@ for (const api of ["chat", "responses"] as const) {
       audit.dispose(); identity.dispose();
     });
   }
+}
+
+for (const [cause, phrase] of [["tool_schema_declaration_mismatch", "tool schemas did not match"], ["tool_choice_declaration_mismatch", "tool choice did not match"]] as const) {
+  test(`failure presentation names ${cause}`, () => {
+    const summary = failureSummaryFromObservation({ failureCode: "invalid_stream", phase: "normalize", diagnostic: { normalizeCause: cause } });
+    expect(summary).toBeDefined();
+    expect(presentFailure(summary!).message).toContain(phrase);
+  });
 }
 
 test("zero-tool none is equivalent to SDK omission; malformed reread cannot retain stale success", () => {

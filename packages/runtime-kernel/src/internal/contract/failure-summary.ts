@@ -137,6 +137,8 @@ export function presentFailure(summary: FailureSummary, host: { receivedOutput?:
     content_filter: "The upstream model endpoint stopped generation under its content policy.",
     stream_invalid: summary.diagnostic?.normalizeCause === "undeclared_tool" ? "The model returned a tool name that was not declared for this STEP."
       : summary.diagnostic?.normalizeCause === "tool_declaration_mismatch" ? "The encoded provider tool declarations did not match this STEP; the request was stopped before dispatch."
+      : summary.diagnostic?.normalizeCause === "tool_schema_declaration_mismatch" ? "The encoded provider tool schemas did not match this STEP; the request was stopped before dispatch."
+      : summary.diagnostic?.normalizeCause === "tool_choice_declaration_mismatch" ? "The encoded provider tool choice did not match this STEP; the request was stopped before dispatch."
       : summary.diagnostic?.normalizeCause === "tool_identity_conflict" ? "The model stream changed a tool identity before completion."
       : summary.diagnostic?.normalizeCause === "sdk_schema_mismatch" ? "The provider stream contained a field shape rejected by the SDK protocol schema."
       : summary.diagnostic?.normalizeCause === "unsupported_provider_state" ? "The provider returned reasoning state incompatible with the selected inline Chat dialect."
