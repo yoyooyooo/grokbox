@@ -10,7 +10,7 @@ if(!listOnly&&group==="native-pair"&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY
 const bun=spawnSync("bun",["--version"],{encoding:"utf8"});
 if(!listOnly&&(bun.status!==0||bun.stdout.trim()!=="1.3.14"))throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
 const suites={
- core:["packages/runtime-kernel/test/compaction-contract.test.ts","packages/box-runtime/test/journal-settlement.test.ts","packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
+ core:["test/host-source-evolution.test.ts","packages/runtime-kernel/test/compaction-contract.test.ts","packages/box-runtime/test/journal-settlement.test.ts","packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
   "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/source-recipes.test.ts","packages/box-runtime/test/capability-witness.test.ts",
   "packages/box-runtime/test/alert-slices.test.ts","packages/box-runtime/test/host-managed-retry.test.ts","packages/box-runtime/test/host-native-error-scope.test.ts",
   "packages/box-runtime/test/bot-lifecycle.test.ts","packages/box-runtime/test/handover-management.test.ts","packages/box-runtime/test/bot-convergence.test.ts","packages/box-runtime/test/bot-protection.test.ts","./test/bot-handover-cli.test.ts",

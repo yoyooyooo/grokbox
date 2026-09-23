@@ -1,6 +1,6 @@
 # HOST-01 · Host 补丁健康识别与 Rust/Oxc 验证内核
 
-**状态：实施中。** 已登记来源的精确配方、四项静态谓词、有限checkpoint ABI、实际编译回执、原引用注册及managed主流lease直接机会已经接入原管理/故障链。2026-09-22的A1实现已针对磁盘Host ebd92f0d… / worker 4c154a34…完成61片有序变换、四项合法语义反例和有限原生ABI复验；准确来源及观察边界见[核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)。这是本来源的核心交付，不是全部能力覆盖、v2集成签收、当前加载或真实采用后的业务资格；独立告警出口仍未完成。
+**状态：实施中。** 核心配方、有限原生 ABI、实际编译回执、原引用及 managed 主流 lease 机会已进入原管理/故障链。当前接纳元组以源码 `native-checkpoint-pair.ts` 为准；每次实际验证的输入、结果和限制保存在日期报告，不把报告中的“当前”外推到以后。核心交付不代签全部能力覆盖、现役加载、App 或真实采用；独立告警出口仍由原责任票推进。
 
 ## 目标、已定架构与最终边界
 
@@ -40,17 +40,15 @@
 
 材料/Project原生writer扩展、退役删除接缝不由本合同宣布已交付。单个Symbol存在、原函数可调用、四项静态规则通过或checkpoint读回，均不补全`uncoveredSlices`、真实工具权限或外部效果证明。消费者在Q合入同一v2候选后复验自己的依赖；Linear的A1/A2/A3关系是排程权威。
 
-## 当前来源与最新证据
+## 持续来源演进与资格窗口
 
-**后续来源变化：** 同日 AH-118 核验已观察到磁盘 Host `68fab3e2…`、worker `da6796b2…`，不同于本票此前 `ebd92f0d… / 4c154a34…` 的固定窗口；新来源尚未资格化，交 Linear AH-157 在原 owner 中推进。没有更新生产 pin 或采用 profile，不从磁盘变更推定现役 loaded。准确摘要与验证边界见[消息接续报告](../reports/2026-09-22-message-association-recovery.md#原生来源与未完成资格)。
+Host/worker 的持续更新是开发期狗粮输入，不是外部异常，也不要求上游停更。区分**已验证的固定候选**与**此刻观察到的安装来源**：合流/Issue签收绑定实际验证的源码、依赖、完整recipe/candidate和有限ABI；新的磁盘SHA只使旧证据不能代表新来源，不抹去旧窗口、不自动重开已完成的无关实现。
 
-**2026-09-22核心来源推进：** [核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)记录当前Host/worker、变换后两份candidate、有序配方、原声明依赖摘要与四项完整当前候选的合法语义反例。只有这一当前配对进入生产常量；前代Host和worker作为拒绝反例保留，不增加旧配方fallback。原生schema/writer、生产fence与原worker自有SQLite分别观察；没有发布profile、执行主Host或采用现役服务。
+现行 `scripts/qualify-host-health.ts` 复用原稳定来源读取、唯一TS变换和打包Rust/Oxc，输出 `sourceEvolution`：reference/observed主Host及worker摘要、changedComponents、完整recipe结果和有限解释。`source-change-needs-abi-proof` 不等于功能失效；`recipe-regression` 才是已观察到的配方失配。静态语义、原生ABI、loaded和真实业务继续独立验证，任何分类都不授予采用。校验过程中来源变化仍明确拒绝该不稳定窗口，不自动改pin或循环重试求绿。
 
-**2026-09-22较早依赖校准：** [当前原生材料入口与来源变化](../reports/2026-09-22-native-material-source-drift.md)记录了新磁盘来源的完整SHA，以及旧Memory Gateway/Project入口不再存在的现行源码证据。没有改pin、加载完整Host、修改Memory或签当前运行健康。当时要求先在原HOST-01/HCR-04链验证新来源；上述A1窗口推进了核心部分，DATA-01仍须接当前原生writer及其同步回调，不复活旧RPC或另建原生存储替代物。下段6be750…仍是其明确固定窗口，不是此刻磁盘来源的自动资格。
+开发期固定私有快照、最新来源旁路探测、检查依赖驱动的增量回归、过期任务合并及OBS/Linear去重回流由 **AH-159** 承接，复用本票/T44/T41原owner，不新建daemon、parser回退或profile writer。AH-120评估真正可达风险；AH-121消费实际来源变化/健康事件；Q的采用门始终核对拟采用版本。只有已证实影响该消费者的缺口才加硬Blocks，不能把持续演进建设本身设为所有开发的全局锁。
 
-本轮原生复验实际发现Host再次从2380…更新为6be750…，先拒绝旧资格，再进行独立源/schema验证和生产hook复验；没有只改pin求绿。最终source/worker/candidate准确摘要、原失败、cache-before-validation测试问题及修复见[单版本收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。该单版本阶段三个验证窗口合计659项/91文件通过。后续控制/网络兼容退出阶段已在新固定源码上复验844项/109文件，见[最新组合](../reports/2026-09-21-network-compatibility-retirement.md)；内部Node/Chrome和Rust计数不重复相加，均不是全仓最终候选签署。
-
-原阶段固定证据保留，避免将历史窗口伪装成当前结果：[首次Rust整合](../reports/2026-09-20-host-health-first-integration.md)、[编译运行代](../reports/2026-09-20-host-compilation-health.md)、[引用见证](../reports/2026-09-20-host-capability-witness.md)、[idle/action-only适配](../reports/2026-09-20-host-idle-layout-adaptation.md)、[原生角色](../reports/2026-09-21-host-native-role-analysis.md)、[前一配对窗口](../reports/2026-09-21-native-checkpoint-pair.md)、[lease/finally](../reports/2026-09-21-host-lease-finally.md)、[运行机会](../reports/2026-09-21-host-lease-opportunities.md)。历史多版本策略由当前单版本要求取代，不改写旧报告事实。
+固定证据见[最初A1核心ABI](../reports/2026-09-22-current-host-core-abi.md)、[68fab3核心配对复验](../reports/2026-09-23-native-core-pair-requalification.md)、[日志测试原写入结算](../reports/2026-09-23-provider-fixture-journal-settlement.md)和[消息原生与来源演进窗口](../reports/2026-09-23-native-message-source-evolution.md)。历史失败/成功保留各自输入；不将来源哈希变化、配方匹配、仅注册原函数或fixture通过混称当前完整健康。材料writer缺口仍归DATA-01/A3，不借核心窗口复活已退出的Memory RPC。
 
 ## 后续实施顺序
 

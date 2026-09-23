@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
+import { describeHostSourceEvolution } from "./host-source-evolution.ts";
 import { inspectHostHealthSources } from "../packages/box-runtime/src/internal/roots/host-health.runtime.ts";
 import { HOST_RECIPE } from "../packages/box-runtime/src/internal/host/source-recipes.ts";
-import { nativeCheckpointPair } from "../packages/box-runtime/src/internal/host/native-checkpoint-pair.ts";
+import { NATIVE_CHECKPOINT_PAIR, nativeCheckpointPair } from "../packages/box-runtime/src/internal/host/native-checkpoint-pair.ts";
 import { transformUnchecked, preflightProfileRecipe, type SlicePatch } from "../packages/box-runtime/src/internal/host/profile.ts";
 /** Explicit development qualification, NOT a runtime updater or Host loader.
  * Reads named files, applies the existing exact TS program only in memory and
@@ -30,5 +31,6 @@ try {
   selectedApplicability:a.applicability,authoringRecipe:maintained.id,
   completeCurrentRecipe:full.ok?{state:'applicable-not-reviewed'}:{state:'mismatch',code:full.code,sliceId:full.sliceId??null},diagnostic,
   checkpointPair:nativeCheckpointPair(a.sourceSha,a.workerSha)?'same-pinned-pair':'unreviewed-pair',
+  sourceEvolution:describeHostSourceEvolution(NATIVE_CHECKPOINT_PAIR,{host:a.sourceSha,worker:a.workerSha},full.ok?'applicable-not-reviewed':'mismatch'),
   analysis,wallMs:Math.round(performance.now()-began),nativeExecuted:false,profilePublished:false,loadedProven:false,qualified:false},null,2));
 } catch(error) {console.error(JSON.stringify({ok:false,code:typeof (error as any)?.code==='string'?(error as any).code:'qualification-unavailable',nativeExecuted:false,qualified:false}));process.exitCode=1;}

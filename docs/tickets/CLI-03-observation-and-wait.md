@@ -36,6 +36,8 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 原生Project fileRef、账号/同步与跨域变化订阅仍归DATA-01及本票剩余合同；不能把二进制下载或一个现行file receipt称为所有材料已被原生Bot采用。
 
+<a id="消息关联与对账2026-09-22"></a>
+
 ## 消息关联与对账（2026-09-23）
 
 `message send` 在原 native writer 前保存 management request/submission、clientNonce、Gateway generation 和 `nativeIdentity`（账号 scope 摘要、Server Bot id、harness）。复用同一 pinned continuity gateway，发送前后核对当前身份；成功 ACK 仅证明 native acceptance，显式 queue 字段才证明 queued。对账的 ownership 读前/读后与 transcript 来源必须同原绑定；scope、Server id、harness、进程代际变化或失权只返回 unknown，不跨账号/跨 Bot 猜测，不补投。身份前后采样不是全局账户锁，不代签未观察到的中间状态或原 native writer 的外部业务完成。

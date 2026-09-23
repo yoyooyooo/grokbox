@@ -6,7 +6,7 @@ import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
 import { installNativeCheckpointWorkerHook, transformNativeCheckpointWorker } from "../src/internal/host/native-checkpoint-worker-hook.ts";
 
 // A retired source is a negative fixture, not an executable production tuple.
-const retiredHosts = ["ebd92f0d14dd065b779524989dc15a7922c848f77227c69616257be6af6db8f0", "e7031f773bf035d02952d8b76dc2d2be6cea7167305116cf3e9b05d2c067b06e", "2380c2c7bc3bfe6dc661bfc2640df2a34d79b0e43b234a172abbe55d399b1548", "6be750313bb7bb393cc3833e103d4d2cd0dc336b6d903e7671c107ea1883767f"];
+const retiredHosts = ["68fab3e2c8d53e08f7b89c95054808a360a9b7159afec92904239bc88416eadc", "ebd92f0d14dd065b779524989dc15a7922c848f77227c69616257be6af6db8f0", "e7031f773bf035d02952d8b76dc2d2be6cea7167305116cf3e9b05d2c067b06e", "2380c2c7bc3bfe6dc661bfc2640df2a34d79b0e43b234a172abbe55d399b1548", "6be750313bb7bb393cc3833e103d4d2cd0dc336b6d903e7671c107ea1883767f"];
 
 test("ordinary imports expose only the independently checked current tuple", () => {
   expect(nativeContinuityPair({})).toEqual(NATIVE_CHECKPOINT_PAIR);
