@@ -44,6 +44,15 @@ for (const mode of ["box", "temporal", "confirmed-temporal", "old", "failure", "
       assert.equal(receipt.requestId, requestId); assert.equal(receipt.state, "complete");
       assert.ok(createdId); assert.equal(receipt.result.targetId, createdId); assert.equal(receipt.result.nativeReceipt, "returned");
       assert.equal(receipt.result.fullClone, false); assert.equal(receipt.result.relationshipsTransferred, false);
+      // Product readback compares the roster object to the declared create intent.
+      // Server/local ownership agreement is checked separately below; matched is
+      // never permission to execute. A temporal roster differs from requested box.
+      assert.equal(receipt.intent.harness, "box");
+      if (mode === "old" || mode === "failure") assert.equal(receipt.result.object, null);
+      else {
+        assert.equal(receipt.result.object.id, createdId);
+        assert.equal(receipt.result.object.harness, mode === "confirmed-temporal" ? "temporal" : "box");
+      }
       assert.equal(receipt.result.readBack, mode === "old" || mode === "failure" ? "not-observed" : mode === "confirmed-temporal" ? "mismatch" : "matched");
       const mint = f.state.calls.filter(call => call.method === "createAgent"); assert.equal(mint.length, 1);
       assert.equal(mint[0]!.input.clientNonce, receipt.operationId); assert.equal(mint[0]!.input.harness, "box");
