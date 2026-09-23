@@ -276,6 +276,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
         requireCapability(fresh, capability);
       };
       const result = yield* application({ ...options, installationId, serviceState, notificationState, hostHealthState,
+        modelAuthorize: signal => materialAuthorize(signal, "models.write"),
         jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
         fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
         desktopDomain: desktopService ? { service: desktopService, authorize: materialAuthorize } : undefined,

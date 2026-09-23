@@ -4,7 +4,7 @@ import { Effect, Layer } from "effect";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
 import { persistModelsDocument } from "@grokbox/runtime-kernel/selection";
 import {
-  ModelManagementError, modelChangeTarget, modelConfigurationRevision, persistedModelsRevision,
+  ModelManagementError, ModelPublicationRefused, modelChangeTarget, modelConfigurationRevision, persistedModelsRevision,
   type ModelOperation, type ModelOperationLocator, type ModelSnapshot,
 } from "@grokbox/runtime-kernel/model-management";
 import { ModelConfiguration } from "@grokbox/runtime-kernel/ports";
@@ -75,7 +75,7 @@ export function modelConfigurationLayer(store: RuntimeStore, options: { maxRecor
       const record = await readRecord(store.root, key);
       return record ? projected(record) : undefined;
     }),
-    commit: (key, observed, next, change) => Effect.acquireUseRelease(
+    commit: (key, observed, next, change, beforePublish) => Effect.acquireUseRelease(
       Effect.tryPromise({
         try: () => acquireConfigurationLease(store.root, false, "model-operations"),
         catch: error => isObject(error) && error.code === "config_conflict"
@@ -88,6 +88,7 @@ export function modelConfigurationLayer(store: RuntimeStore, options: { maxRecor
         if (current.revision !== observed.revision) return yield* Effect.fail(new ModelManagementError("revision_conflict", "Model configuration changed during admission."));
         yield* io(() => assertSafeDirectory(join(store.root, "state", "model-operations"), true));
         yield* io(() => assertCapacity(store.root, maxRecords));
+        if (beforePublish) yield* Effect.tryPromise({ try: beforePublish, catch: error => error });
         const operation: ModelOperation = {
           version: 1, operationRef: key.operationRef, requestId: key.requestId, command: change.kind, target: modelChangeTarget(change),
           state: "unknown", beforeRevision: current.revision, configRevision: modelConfigurationRevision(next),
@@ -99,7 +100,12 @@ export function modelConfigurationLayer(store: RuntimeStore, options: { maxRecor
           // Nothing after declaration is retried automatically, including local
           // publication. A readback hash alone cannot rule out an ABA change.
           return yield* Effect.gen(function* () {
-            yield* io(() => store.saveModels(next, persistedModelsRevision(current.models)));
+            yield* Effect.tryPromise({
+              try: () => store.saveModels(next, persistedModelsRevision(current.models), beforePublish ? async () => {
+                try { await beforePublish(); } catch (error) { throw new ModelPublicationRefused(error); }
+              } : undefined),
+              catch: error => error instanceof ModelPublicationRefused ? error : failure(),
+            });
             const after = yield* read();
             if (canonicalJson(persistModelsDocument(after.models)) !== canonicalJson(persistModelsDocument(next))) {
               return yield* Effect.fail(new ModelManagementError("operation_unknown", "Local model publication could not be verified."));
@@ -107,7 +113,9 @@ export function modelConfigurationLayer(store: RuntimeStore, options: { maxRecor
             const committed: ModelOperation = { ...operation, configRevision: after.revision, state: "succeeded" };
             yield* io(() => publishConfigFile(pathFor(store.root, key.operationRef), { ...record, phase: "committed", operation: committed }));
             return committed;
-          }).pipe(Effect.catch(() => Effect.succeed({ ...operation, state: "unknown" as const })));
+          }).pipe(Effect.catch(error => error instanceof ModelPublicationRefused
+            ? Effect.fail(error.reason) // Keep prepared history; never replay it as a new write.
+            : Effect.succeed({ ...operation, state: "unknown" as const })));
         }));
       }),
       lease => io(lease.release).pipe(Effect.orDie),

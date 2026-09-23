@@ -6,11 +6,12 @@ import {
   type ManagementIdentity, type ModelList, type ModelView, type ManagementServiceView, type NotificationWorkerView,
 } from "@grokbox/client/contract";
 import { ModelConfiguration } from "@grokbox/runtime-kernel/ports";
-import { readModelOperation, runModelChange } from "@grokbox/runtime-kernel/commands";
+import { readModelOperation } from "@grokbox/runtime-kernel/commands";
 import { assignmentForBot, parseApiKeyRef, requireModel, type ModelRecord } from "@grokbox/runtime-kernel/selection";
-import { managedModelAdmission, type createManagementGateway } from "@grokbox/box-runtime/runtime";
+import { type createManagementGateway } from "@grokbox/box-runtime/runtime";
 import { HttpFailure, requireCapability, type Principal } from "./access.ts";
 import { botQuery } from "./bots.ts";
+import { ownedModelChange } from "./model-changes.ts";
 import { boundedPage, pageInput } from "./pagination.ts";
 import { observationPaths, observationQuery, type ManagementObservations } from "./observations.ts";
 import { incidentApplication } from "./incidents.ts";
@@ -30,7 +31,7 @@ export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, 
   & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess" | "productAccess">>;
 import { hostHealthQuery } from "./host-health.ts";
 import type { HostHealthStatus } from "@grokbox/box-runtime/runtime";
-export type ApplicationOptions = { productDomain?: ProductDomain; desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; messageDomain?: MessageDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
+export type ApplicationOptions = { modelAuthorize?: (signal: AbortSignal) => Promise<void>; productDomain?: ProductDomain; desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; messageDomain?: MessageDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
 export function projectModel(record: ModelRecord): ModelView {
   let endpoint: string | null = null;
   try {
@@ -181,7 +182,7 @@ export function application(options: ApplicationOptions, principal: Principal, m
     }
     if (method === "POST" && path === "/v1/model-changes") {
       yield* checked(() => { noQuery(url); requireCapability(principal, "models.write"); });
-      return yield* runModelChange(caller, input, managedModelAdmission({ ownershipRead: options.native.ownershipRead, env: options.env, fetch: options.fetch }));
+      return yield* ownedModelChange(caller, input, { ownershipRead: options.native.ownershipRead, env: options.env, fetch: options.fetch }, options.modelAuthorize);
     }
     return yield* Effect.fail(new HttpFailure(404, "not_found", "The management endpoint is not available."));
   });

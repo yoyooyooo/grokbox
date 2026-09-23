@@ -28,7 +28,7 @@ export type RuntimeStore = {
   root: string;
   loadModels: () => Promise<ModelsFile>;
   loadDesired: () => Promise<DesiredFile>;
-  saveModels: (file: ModelsFile, expectedRevision?: string) => Promise<void>;
+  saveModels: (file: ModelsFile, expectedRevision?: string, beforePublish?: () => Promise<void>) => Promise<void>;
   saveDesired: (file: DesiredFile) => Promise<void>;
 };
 
@@ -53,8 +53,9 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
     root,
     loadModels: async () => resolveStoreModels(parseModelsFile(await readConfigFile(modelsPath(root), true)), env),
     loadDesired: async () => loadRuntimeDesired(root),
-    saveModels: async (file, expectedRevision) => {
-      // One short cooperative commit boundary; no Server request while locked.
+    saveModels: async (file, expectedRevision, beforePublish) => {
+      // One cooperative commit boundary; no native/catalog RPC while locked.
+      // A trusted host-local authority check runs just before publication.
       // A stale writer is refused, never silently merged or retried.
       const held = await acquireConfigurationLease(root, false, "models-write");
       try {
@@ -66,7 +67,7 @@ export function openRuntimeStore(rootOverride?: string, env?: NodeJS.Dict<string
             throw new BoxRuntimeError("invalid_usage", "selection_configuration_changed");
           }
         }
-        await publishConfigFile(modelsPath(root), persisted);
+        await publishConfigFile(modelsPath(root), persisted, undefined, false, beforePublish);
         const current = parseModelsFile(await readConfigFile(modelsPath(root)));
         if (canonicalJson(current) !== canonicalJson(parseModelsFile(persisted))) {
           throw new BoxRuntimeError("invalid_usage", "model_configuration_readback_mismatch");

@@ -19,6 +19,12 @@ export type ModelChange =
   | { kind: "model-delete"; modelId: string };
 export type ModelChangeRequest = { requestId: string; expectedRevision: string; change: ModelChange };
 export type ModelCaller = { installationId: string; principalId: string };
+/** Trusted process-local check; never accepted from client JSON or stored. */
+export type ModelPublicationCheck = () => Promise<void>;
+/** Constructed only when the check rejects before physical publication. */
+export class ModelPublicationRefused extends Error {
+  constructor(readonly reason: unknown) { super("model_publication_refused_before_dispatch"); }
+}
 export type ModelSnapshot = { models: ModelsFile; revision: string };
 export type ModelOperation = {
   version: 1;

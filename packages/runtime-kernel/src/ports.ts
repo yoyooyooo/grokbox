@@ -1,10 +1,10 @@
 import { Context, Effect, Stream } from "effect";
-import type { ModelSnapshot, ModelManagementError, ModelOperationLocator, ModelOperationKey, ModelOperation, ModelChange } from "./model-management.ts";
+import type { ModelSnapshot, ModelManagementError, ModelOperationLocator, ModelOperationKey, ModelOperation, ModelChange, ModelPublicationCheck } from "./model-management.ts";
 
 export class ModelConfiguration extends Context.Service<ModelConfiguration, {
   read: () => Effect.Effect<ModelSnapshot, ModelManagementError>;
   lookup: (key: ModelOperationLocator & { fingerprint?: string }) => Effect.Effect<ModelOperation | undefined, ModelManagementError>;
-  commit: (key: ModelOperationKey, current: ModelSnapshot, next: ModelsFile, change: ModelChange) => Effect.Effect<ModelOperation, ModelManagementError>;
+  commit: (key: ModelOperationKey, current: ModelSnapshot, next: ModelsFile, change: ModelChange, beforePublish?: ModelPublicationCheck) => Effect.Effect<ModelOperation, unknown>;
 }>()("grokbox/ModelConfiguration") {}
 import type { EvidenceView } from "./observation.ts";
 import type { RoutineSnapshot, RoutineError, RoutineProvisionError, RoutineBlueprint, ProvisionRecord, ProvisionLookup, ProvisionBinding, ProvisionReservation, ProvisionObservation } from "./routines.ts";

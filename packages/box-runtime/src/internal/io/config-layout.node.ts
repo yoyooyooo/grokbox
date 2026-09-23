@@ -87,7 +87,7 @@ export async function readConfigFile(path: string, optional = false): Promise<un
 
 /** One physical publication primitive, reused for config, receipts and migration.
  * Callers own lock/expected-value checks. No-follow applies to destination and parents. */
-export async function publishConfigFile(path: string, value: unknown, sourceText?: string, exclusive = false): Promise<void> {
+export async function publishConfigFile(path: string, value: unknown, sourceText?: string, exclusive = false, beforePublish?: () => Promise<void>): Promise<void> {
   const parent = dirname(path);
   await assertSafeDirectory(parent, true);
   const parentBefore = await lstat(parent);
@@ -105,6 +105,8 @@ export async function publishConfigFile(path: string, value: unknown, sourceText
       const destination = await lstat(path);
       if (!destination.isFile() || destination.isSymbolicLink()) throw new ConfigError("config_layout_conflict", "Refusing to replace a non-regular canonical file.");
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    // Check after staging IO, immediately before the first canonical write.
+    await beforePublish?.();
     if (exclusive) {
       await link(temporary, path);
       await unlink(temporary);

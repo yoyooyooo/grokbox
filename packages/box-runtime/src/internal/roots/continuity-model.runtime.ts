@@ -54,9 +54,15 @@ export async function selectLifecycleModel(input: {
   const receipt = await Effect.runPromise(runModelChange(caller, request, (change, next) => Effect.gen(function* () {
     yield* Effect.tryPromise(() => input.authorize());
     yield* Effect.tryPromise(() => input.verifyModel());
-    yield* admission(change, next);
+    const finalCheck = yield* admission(change, next);
     yield* Effect.tryPromise(() => input.authorize());
     yield* Effect.tryPromise(() => input.verifyModel());
+    return async () => {
+      input.signal?.throwIfAborted();
+      await input.authorize(); await input.verifyModel();
+      input.signal?.throwIfAborted();
+      await finalCheck();
+    };
   })).pipe(Effect.provide(modelConfigurationLayer(store))), { signal: input.signal });
   if (receipt.state !== "succeeded") throw new CurrentStateFailure("commit_unknown");
   return { modelId: workflow.modelRef ?? "official", modelRevision: workflow.modelRevision,
