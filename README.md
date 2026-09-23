@@ -129,6 +129,13 @@ repository. It records the absolute checkout and Bun paths, so rerun it after
 moving the repository or Bun executable. This is a local-real source harness;
 it does not replace the separate Node tarball verification.
 
+The source shim loads the CLI modules in the checkout, then restores the caller's
+working directory before running the same CLI entry owner. Relative input and
+output paths and exported environment variables remain caller-owned. Automatic
+Bun `.env` discovery is disabled for this shim so the loader's checkout does not
+silently supply credentials or configuration; export required variables explicitly.
+The published Node entry is unchanged by this source-loader policy.
+
 ## Local initialization and operator-managed endpoints
 
 `grokbox init` initializes the local Box only. It does not discover Tailscale peers

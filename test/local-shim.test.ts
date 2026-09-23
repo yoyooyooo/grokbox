@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import cliPackage from "../package.json" with { type: "json" };
+import { defaultConfig } from "@grokbox/runtime-kernel/config";
 
 const repoRoot = join(import.meta.dir, "..");
 const installer = join(repoRoot, "scripts", "install-local-shim.mjs");
@@ -32,7 +33,7 @@ describe("source-backed local global shim", () => {
     try {
     const first = await run(["node", installer], fixture, env);
     expect(first.code, first.stderr).toBe(0);
-    const second = await run(["bun", "run", installer], fixture, env);
+    const second = await run(["bun", "run", "--cwd", repoRoot, installer], fixture, env);
     expect(second.code, second.stderr).toBe(0);
 
     const grokbox = join(bin, "grokbox");
@@ -43,7 +44,7 @@ describe("source-backed local global shim", () => {
     ]);
     expect(grokboxText).toBe(gboxText);
     expect(grokboxText).toContain("managed by grokbox");
-    expect(grokboxText).toContain('exec "$bun" run "$repo/packages/cli/src/index.ts" "$@"');
+    expect(grokboxText).toContain('exec "$bun" run --no-env-file --cwd "$repo" "$repo/scripts/source-cli.ts" "$caller_cwd" "$@"');
     expect((await stat(grokbox)).mode & 0o777).toBe(0o755);
     expect((await stat(gbox)).mode & 0o777).toBe(0o755);
 
@@ -104,3 +105,39 @@ for (const mode of ["nonzero", "wrong-version", "overflow", "timeout"] as const)
     } finally { await rm(fixture, { recursive: true, force: true }); }
   }, 20000);
 }
+
+
+test("source shim restores relative paths and keeps invocation environment explicit", async () => {
+  const fixture = await mkdtemp(join(tmpdir(), "grokbox-shim-cwd-"));
+  const caller = join(fixture, "caller with 'quote"), bin = join(fixture, "bin");
+  await mkdir(caller);
+  const env = { ...process.env, HOME: fixture, GROKBOX_BUN: process.execPath, GROKBOX_SHIM_DIR: bin,
+    GROKBOX_CONFIG_DIR: join(fixture, "exported-config"), GROKBOX_BOX_RUNTIME_ROOT: join(fixture, "exported-root"), PWD: "/not-the-callers-directory" };
+  try {
+    await writeFile(join(caller, "relative config.json"), JSON.stringify(defaultConfig()), { mode: 0o600 });
+    await writeFile(join(caller, "duplicate field.json"), JSON.stringify({ kind: "bot" }), { mode: 0o600 });
+    await writeFile(join(caller, ".env"), "GROKBOX_CONFIG_DIR=/invalid-implicit-dotenv-root\n", { mode: 0o600 });
+    const installed = await run(["node", installer], caller, env);
+    expect(installed.code, installed.stderr).toBe(0);
+    for (const alias of ["grokbox", "gbox"]) {
+      const shim = join(bin, alias);
+      const check = await run([shim, "config", "validate", "--file", "relative config.json", "--json"], caller, env);
+      expect(check.code, check.stderr).toBe(0);
+      expect(JSON.parse(check.stdout).data).toMatchObject({ valid: true, written: false });
+      const input = await run([shim, "bot", "create", "--input", "@duplicate field.json", "--preview"], caller, env);
+      expect(input.code).toBe(2);
+      expect(JSON.parse(input.stdout || input.stderr).error.message).toBe("A semantic input field was supplied more than once.");
+      const selected = await run([shim, "config", "path", "--json"], caller, env);
+      expect(selected.code, selected.stderr).toBe(0);
+      expect(JSON.parse(selected.stdout).data.path).toBe(join(env.GROKBOX_CONFIG_DIR, "config.json"));
+      const withoutExport: NodeJS.ProcessEnv = { ...env }; delete withoutExport.GROKBOX_CONFIG_DIR;
+      const defaulted = await run([shim, "config", "path", "--json"], caller, withoutExport);
+      expect(defaulted.code, defaulted.stderr).toBe(0);
+      expect(JSON.parse(defaulted.stdout).data.path).toBe(join(fixture, ".grokbox", "config.json"));
+    }
+    const absent = await run([process.execPath, "run", "--no-env-file", "--cwd", repoRoot,
+      join(repoRoot, "scripts/source-cli.ts"), join(fixture, "absent"), "--version"], repoRoot, env);
+    expect(absent.code).toBe(127); expect(absent.stdout).toBe("");
+    expect(absent.stderr).toBe("grokbox local shim: caller directory is unavailable\n");
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+}, 20000);

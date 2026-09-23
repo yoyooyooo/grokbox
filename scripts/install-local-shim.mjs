@@ -23,7 +23,7 @@ function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-const content = `#!/bin/sh\n${marker}\nset -eu\nrepo=${shellQuote(repoRoot)}\nbun=${shellQuote(bun)}\nif [ ! -f "$repo/packages/cli/src/index.ts" ]; then\n  printf '%s\\n' 'grokbox local shim: source checkout is unavailable' >&2\n  exit 127\nfi\nexec "$bun" run "$repo/packages/cli/src/index.ts" "$@"\n`;
+const content = `#!/bin/sh\n${marker}\nset -eu\nrepo=${shellQuote(repoRoot)}\nbun=${shellQuote(bun)}\nif [ ! -f "$repo/packages/cli/src/index.ts" ] || [ ! -f "$repo/scripts/source-cli.ts" ]; then\n  printf '%s\\n' 'grokbox local shim: source checkout is unavailable' >&2\n  exit 127\nfi\ncaller_cwd="$PWD"\nexec "$bun" run --no-env-file --cwd "$repo" "$repo/scripts/source-cli.ts" "$caller_cwd" "$@"\n`;
 const legacyContent = `#!/bin/sh\nexec ${bun} ${entry} "$@"\n`;
 
 async function inspect(name) {
