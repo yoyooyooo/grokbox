@@ -8,7 +8,7 @@ description: >-
 
 # grokbox
 
-Unofficial CLI for a Grok Bot **cloud computer** you own or are authorized to use. Alpha; not affiliated with Cursor, xAI, or Grok Bot. You run the CLI; people hear what changed and what is still uncertain.
+Unofficial CLI for a Grok Bot **cloud computer** you own or are authorized to use. Alpha; not affiliated with Cursor, xAI, or Grok Bot. Report changes and remaining uncertainty.
 
 ## Default operating loop
 
@@ -35,7 +35,7 @@ grokbox agents list --table
 grokbox skills get grokbox --topic models
 ```
 
-`--topic <name>` returns only that companion, matched to the installed CLI. Relative links below are for repository readers; use the CLI selector on an installed computer.
+`--topic <name>` returns only that companion, matched to the installed CLI. Repository links follow; installed users use the CLI selector.
 
 | When the task needs… | Topic |
 | --- | --- |
