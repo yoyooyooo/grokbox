@@ -23,7 +23,9 @@ function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-const content = `#!/bin/sh\n${marker}\nset -eu\nrepo=${shellQuote(repoRoot)}\nbun=${shellQuote(bun)}\nif [ ! -f "$repo/packages/cli/src/index.ts" ] || [ ! -f "$repo/scripts/source-cli.ts" ]; then\n  printf '%s\\n' 'grokbox local shim: source checkout is unavailable' >&2\n  exit 127\nfi\ncaller_cwd="$PWD"\nexec "$bun" run --no-env-file --cwd "$repo" "$repo/scripts/source-cli.ts" "$caller_cwd" "$@"\n`;
+// Capture the physical cwd instead of trusting PWD. A sentinel preserves
+// trailing newlines in directory names across shell command substitution.
+const content = `#!/bin/sh\n${marker}\nset -eu\nrepo=${shellQuote(repoRoot)}\nbun=${shellQuote(bun)}\nif [ ! -f "$repo/packages/cli/src/index.ts" ] || [ ! -f "$repo/scripts/source-cli.ts" ]; then\n  printf '%s\\n' 'grokbox local shim: source checkout is unavailable' >&2\n  exit 127\nfi\ncaller_cwd=$(pwd -P && printf '.')\ncaller_cwd=\${caller_cwd%.}\ncaller_cwd=\${caller_cwd%?}\nexec "$bun" run --no-env-file --cwd "$repo" "$repo/scripts/source-cli.ts" "$caller_cwd" "$@"\n`;
 const legacyContent = `#!/bin/sh\nexec ${bun} ${entry} "$@"\n`;
 
 async function inspect(name) {

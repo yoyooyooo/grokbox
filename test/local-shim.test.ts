@@ -44,6 +44,8 @@ describe("source-backed local global shim", () => {
     ]);
     expect(grokboxText).toBe(gboxText);
     expect(grokboxText).toContain("managed by grokbox");
+    expect(grokboxText).toContain("pwd -P");
+    expect(grokboxText).not.toContain('caller_cwd="$PWD"');
     expect(grokboxText).toContain('exec "$bun" run --no-env-file --cwd "$repo" "$repo/scripts/source-cli.ts" "$caller_cwd" "$@"');
     expect((await stat(grokbox)).mode & 0o777).toBe(0o755);
     expect((await stat(gbox)).mode & 0o777).toBe(0o755);
@@ -109,7 +111,7 @@ for (const mode of ["nonzero", "wrong-version", "overflow", "timeout"] as const)
 
 test("source shim restores relative paths and keeps invocation environment explicit", async () => {
   const fixture = await mkdtemp(join(tmpdir(), "grokbox-shim-cwd-"));
-  const caller = join(fixture, "caller with 'quote"), bin = join(fixture, "bin");
+  const caller = join(fixture, "caller with 'quote\n"), bin = join(fixture, "bin");
   await mkdir(caller);
   const env = { ...process.env, HOME: fixture, GROKBOX_BUN: process.execPath, GROKBOX_SHIM_DIR: bin,
     GROKBOX_CONFIG_DIR: join(fixture, "exported-config"), GROKBOX_BOX_RUNTIME_ROOT: join(fixture, "exported-root"), PWD: "/not-the-callers-directory" };
