@@ -23,3 +23,14 @@ box、server/local temporal冲突、旧响应、读失败、错误ID五种场景
 候选 `a19cdcd7dffa9f189ed3375dba717299fbd1a59f` 在声明Bun `1.3.14` 下执行原 `release-offline`：14个分片、693项通过，无失败/跳过，所有分片已结算。验证前后源码摘要均为 `e7303e410a3255746ae1d97ad05267e4d7e58a06394eae5fd876e5c4c653c147`。构建来源摘要 `0b4ff4e913726abad980f5bfba8662f1c12e9133eeaf03738253767b09f22628`。这些数字与core/integration存在重叠，不累加为独立总数。
 
 首轮限定独立审查超时124，无最终报告；后续限定复核调用被工具安全检查拦截，未执行。故本测试迁移保持In Review，未合入V2；离线结果不能代签缺失的独立复查、真实原生资格或平台服务。源V2 `078389fc` 的core/integration已另行通过，但其release入口仍含旧测试；不得把本未合入分支的693通过写成V2已通过。
+
+
+## 修后独立复核与交付范围（2026-09-23）
+
+固定测试候选 `825b5b2e287bdd557ef63930373dbe7c71408079` 获独立源码 Accepted。补齐实际 comparator、native snapshot/readBack 与 enrichment 后，先前将产品意图读回等同于执行归属的意见被明确否定。模型/执行授权仍是独立观察；本次不改变任何生产 writer。
+
+本轮声明 Bun 1.3.14：原 availability 组 128 pass、0 fail/skip，前后源码摘要一致；当前创建六场景与共享产品53项重跑通过。根/Web类型、文档、包边界与发布扫描通过。六份受审代码/测试文件摘要复核一致。限定复核不代签全系统。
+
+完整 release-offline 本轮重跑失败：前四分片通过，endurance 的 execution-lifetime 分片超时（ETIMEDOUT，SIGTERM，settled=true），整组退出1。SSH同期断连不能证明根因。旧a19cdcd7上的14分片693pass仍仅属于其原来源；没有声明新候选全release通过。该整体资格回到AH-122，不能把本票测试迁移的限定交付扩大成J2/LIVE许可。
+
+原审查、当前组回执、失败记录与SHA清单在本工作树 `.scratch/ah171/closeout/`。本票按直接影响范围和独立复核完成单笔回流；没有部署、真实Bot/模型/桌面操作或旧入口恢复。
