@@ -139,3 +139,33 @@ test("E1 core-observation refuses missing native qualification inputs", () => {
     expect(refused.stdout).not.toContain("-before");
   }
 });
+
+
+test("core plan executes model publication and deleted-seat safety cases exactly once", () => {
+  const plan = inventory("core");
+  const dispatched = plan.commands.filter(command => command[0] === "bun" && command[1] === "test")
+    .flatMap(command => command.slice(4).map(path => path.replace(/^\.\//, "")));
+  for (const path of ["packages/box-runtime/test/model-publication-check.test.ts", "test/desktop-deletion-race.test.ts"]) {
+    expect(plan.files).toContain(path);
+    expect(dispatched.filter(file => file === path)).toHaveLength(1);
+  }
+  expect([...dispatched].sort()).toEqual([...plan.files].sort());
+  expect(new Set(dispatched).size).toBe(dispatched.length);
+});
+
+test("integration plan consumes final model, Console shutdown and message authorization entrypoints", () => {
+  const all = inventory("integration"), domain = inventory("integration-domains");
+  for (const path of ["test/model-authorization-management.test.ts", "packages/server/test/messages.test.ts"]) {
+    expect(all.files).toContain(path); expect(domain.files).toContain(path);
+    const dispatched = all.commands.flatMap(command => command.slice(4));
+    expect(dispatched.filter(file => file === path)).toHaveLength(1);
+  }
+});
+
+test("full product management has a runnable original-runner plan without becoming a core prerequisite", () => {
+  const path = "packages/server/test/products.test.ts", product = inventory("product-management");
+  expect(product.files).toEqual([path]);
+  expect(product.commands).toEqual([["bun", "test", "--timeout", "220000", path]]);
+  expect(inventory("core").files).not.toContain(path);
+  expect(inventory("integration").files).not.toContain(path);
+});

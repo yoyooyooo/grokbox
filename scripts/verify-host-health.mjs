@@ -9,9 +9,9 @@ import { captureHostSourceWindow } from "../packages/box-runtime/src/internal/io
 import { sourceDigest } from "../packages/box-runtime/src/internal/io/stable-source-set.node.mjs";
 const root=fileURLToPath(new URL("../",import.meta.url));
 const group=process.argv[2]??"core",listOnly=process.argv[3]==="--list";
-const groups=["core","core-risk","core-observation","integration","integration-host","integration-domains","integration-web","native-pair","native-runtime","native-host"];
+const groups=["core","core-risk","core-observation","integration","integration-host","integration-domains","integration-web","product-management","native-pair","native-runtime","native-host"];
 const nativeGroup=group.startsWith("native-")||["core-risk","core-observation"].includes(group);
-if(process.argv.length>4||(process.argv[3]!==undefined&&!listOnly)||!groups.includes(group))throw Error("usage: verify-host-health.mjs [core|core-risk|core-observation|integration|integration-host|integration-domains|integration-web|native-pair|native-runtime|native-host] [--list]");
+if(process.argv.length>4||(process.argv[3]!==undefined&&!listOnly)||!groups.includes(group))throw Error("usage: verify-host-health.mjs [core|core-risk|core-observation|integration|integration-host|integration-domains|integration-web|product-management|native-pair|native-runtime|native-host] [--list]");
 if(!listOnly&&["native-pair","native-runtime","core-risk","core-observation"].includes(group)&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
  throw Error(`${group} requires explicit native continuity opt-in and native Node executable; retired pair selectors are not supported and tests never authorize adoption.`);
 if(!listOnly&&["native-runtime","native-host","core-risk","core-observation"].includes(group)&&process.env.GROKBOX_TEST_NATIVE_HOST!=="1")
@@ -51,11 +51,11 @@ const suites={
   "packages/box-runtime/test/controller-generation.test.ts","packages/box-runtime/test/controller-io.test.ts","packages/box-runtime/test/controller-lock.test.ts","packages/box-runtime/test/h3-live.test.ts",
   "packages/box-runtime/test/operation-lease.test.ts","packages/box-runtime/test/operation-lease-contract.test.ts","packages/box-runtime/test/hcr-operation-recovery.test.ts",
   "packages/box-runtime/test/hcr-operation-lifetime.test.ts","packages/box-runtime/test/identity-op.test.ts","test/hcr-cli.test.ts","test/admission-observation.test.ts","test/outcome.test.ts",
-  "test/jobs.test.ts","test/job-safety-store.test.ts","test/filesystem.test.ts","test/filesystem-mutations.test.ts","test/detail-absorb.test.ts","test/events.test.ts","test/desktop.test.ts","test/capabilities_desktop_probe.test.ts",
+  "test/jobs.test.ts","test/job-safety-store.test.ts","test/filesystem.test.ts","test/filesystem-mutations.test.ts","test/detail-absorb.test.ts","test/events.test.ts","test/desktop.test.ts","test/desktop-deletion-race.test.ts","test/capabilities_desktop_probe.test.ts",
   "test/network-boundary.test.ts","test/ssh-recovery.test.ts","test/profile.test.ts","test/operator.test.ts","test/recovery.test.ts","test/daemon.test.ts",
   "packages/runtime-kernel/test/unified-config.test.ts","packages/box-runtime/test/config-bootstrap.test.ts","test/config-cli.test.ts","test/config-application-receipt.test.ts","test/config-packed.test.ts",
   "packages/box-runtime/test/architecture.test.ts","packages/box-runtime/test/legacy-executor-removed.test.ts",
-  "packages/box-runtime/test/model-management.test.ts","packages/box-runtime/test/management-gateway.test.ts",
+  "packages/box-runtime/test/model-management.test.ts","packages/box-runtime/test/model-publication-check.test.ts","packages/box-runtime/test/management-gateway.test.ts",
   "packages/box-runtime/test/current-model-schema.test.ts","packages/box-runtime/test/continuity-model.test.ts","packages/box-runtime/test/model-selection.test.ts",
   "packages/box-runtime/test/model-switch-pipeline.test.ts","packages/box-runtime/test/reasoning-command.test.ts","packages/box-runtime/test/reasoning-packed.test.ts",
   "packages/box-runtime/test/config-migration.test.ts","test/title-sync.test.ts", "packages/runtime-kernel/test/model-relationships.test.ts","packages/runtime-kernel/test/reasoning-selection.test.ts","packages/runtime-kernel/test/selection.test.ts",
@@ -65,7 +65,9 @@ const suites={
  integration:["test/sqlite-read-scheduling.test.ts","test/host-witness.test.ts","test/host-compilation.test.ts","test/host-health-management.test.ts","test/host-verifier.test.ts","test/host-verifier-boundaries.test.ts",
   "test/file-management.test.ts","test/job-management.test.ts","test/desktop-management.test.ts","test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
   "./test/handover-management.test.ts","./test/compaction-management.test.ts","test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
-  "packages/server/test/server.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"],
+  "packages/server/test/server.test.ts","test/model-authorization-management.test.ts","packages/server/test/messages.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"],
+ // Full Bot/Group management is opt-in product qualification, not a new core gate.
+ "product-management":["packages/server/test/products.test.ts"],
  "native-runtime":["packages/box-runtime/test/context-native-qualification.test.ts","packages/box-runtime/test/native-checkpoint-process.test.ts",
   "packages/box-runtime/test/native-model-switch-pipeline.test.ts","packages/box-runtime/test/native-worker-binding.test.ts",
   "packages/box-runtime/test/host-compact.test.ts","packages/box-runtime/test/native-auxiliary-noop.test.ts",
