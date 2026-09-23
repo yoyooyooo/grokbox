@@ -1,6 +1,6 @@
-import { canonicalJson, sha256Text } from "../../hash.ts";
+import { canonicalJson, sha256Text } from "../../portable-hash.ts";
 import { composeAgentTitle, parseAgentTitle } from "../contract/title-marker.ts";
-import { ContinuityFailure, isContinuityHash, isContinuityUuid } from "./material.ts";
+import { ContinuityFailure, isContinuityHash, isContinuityUuid } from "./primitives.ts";
 
 /** One native RPC per reviewed intent. Profile/settings and post-create changes
  * are deliberately separate operations, never an invisible write sequence. */

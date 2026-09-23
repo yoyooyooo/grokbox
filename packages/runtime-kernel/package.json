@@ -22,9 +22,12 @@
     "./routines": "./src/routines.ts",
     "./testing": "./src/testing.ts",
     "./inference": "./src/inference.ts",
-    "./commands": "./src/commands.ts"
+    "./commands": "./src/commands.ts",
+    "./products": "./src/products.ts",
+    "./canonical-json": "./src/canonical-json.ts"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "effect": "catalog:effect-v4-beta"
   }
 }

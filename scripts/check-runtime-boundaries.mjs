@@ -98,6 +98,8 @@ if (boxPkg.exports?.["."]) fail("box-runtime still has root barrel export");
 const requiredKernelExports = {
   "./contract": "./src/contract.ts",
   "./hash": "./src/hash.ts",
+  "./canonical-json": "./src/canonical-json.ts",
+  "./products": "./src/products.ts",
   "./selection": "./src/selection.ts",
   "./ports": "./src/ports.ts",
   "./status": "./src/status.ts",
@@ -136,6 +138,8 @@ for (const key of Object.keys(kernelExports)) {
 const KERNEL_SUBPATH = {
   "@grokbox/runtime-kernel/contract": "packages/runtime-kernel/src/contract.ts",
   "@grokbox/runtime-kernel/hash": "packages/runtime-kernel/src/hash.ts",
+  "@grokbox/runtime-kernel/canonical-json": "packages/runtime-kernel/src/canonical-json.ts",
+  "@grokbox/runtime-kernel/products": "packages/runtime-kernel/src/products.ts",
   "@grokbox/runtime-kernel/selection": "packages/runtime-kernel/src/selection.ts",
   "@grokbox/runtime-kernel/ports": "packages/runtime-kernel/src/ports.ts",
   "@grokbox/runtime-kernel/status": "packages/runtime-kernel/src/status.ts",

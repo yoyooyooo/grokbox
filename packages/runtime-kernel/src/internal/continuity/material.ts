@@ -1,18 +1,12 @@
 import { canonicalJson, sha256Text } from "../../hash.ts";
+import { ContinuityFailure, failContinuity, isContinuityUuid, isContinuityHash } from "./primitives.ts";
+export { ContinuityFailure, failContinuity, isContinuityUuid, isContinuityHash, type ContinuityFailureCode } from "./primitives.ts";
 
 export const CONTINUITY_MATERIAL_VERSION = 1 as const;
-export type ContinuityFailureCode = "invalid_material" | "scope_mismatch" | "not_initialized" | "schema_mismatch" | "unsafe_path"
-  | "busy" | "capacity" | "conflict" | "unavailable" | "integrity_failure" | "commit_unknown" | "not_found" | "cancelled";
-export class ContinuityFailure extends Error {
-  constructor(readonly code: ContinuityFailureCode) { super(`continuity_${code}`); this.name = "ContinuityFailure"; }
-}
-export const failContinuity = (code: ContinuityFailureCode): never => { throw new ContinuityFailure(code); };
-export const isContinuityUuid = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
 export const continuityId = (...parts: unknown[]): string => {
   const hash = sha256Text(canonicalJson(parts));
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 };
-export const isContinuityHash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 export const isContinuityToken = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(v);
 export const continuityUint = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 export function continuityObject(input: unknown, keys: readonly string[]): Record<string, unknown> {

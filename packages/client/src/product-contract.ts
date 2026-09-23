@@ -1,7 +1,7 @@
-import { canonicalJson } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson } from "@grokbox/runtime-kernel/canonical-json";
 import { productIntent, productSubmission, productProfileAfter, productEffects, assertProductReceipt, assertProductResult, NativeProductError,
   type ProductIntent, type ProductSubmission, type ProductPlan, type ProductReceipt, type ProductObject,
-  type ProductOwnership, type ProductRelations } from "@grokbox/runtime-kernel/continuity";
+  type ProductOwnership, type ProductRelations } from "@grokbox/runtime-kernel/products";
 import { ManagementClientError, UUID } from "./contract.ts";
 export type { ProductIntent, ProductSubmission, ProductPlan, ProductReceipt, ProductObject, ProductOwnership, ProductRelations };
 export type ProductView = ProductObject & { ref: string };
