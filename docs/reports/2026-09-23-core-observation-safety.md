@@ -71,3 +71,18 @@ core-observation 的 management wrapper 内部还实际运行 protection 24、ob
 - Host `bfa76e4eb13a207e57bbd9c1017482234aa342fa436357d25cc59356c31650be`、worker `da6796b285ea7e12f7b6979cabaf823c6aba8dbb0ad4a8efddad8fe3e5f1286c`，窗口结束未变化。
 
 本节 supersede 本报告更早、fixture 修复前的源码摘要；测试职责与 E1 产品结论不扩大。跨入口和 management wrapper 内部 Node 计数仍不重复累计。
+
+
+## AH-159 source-window 对齐后的最终复验
+
+V2 随后线性合入 AH-159 的固定 source-window / sourceEvolution 机制。E1 收尾提交已 rebase 到 V2 `c4ed59f5923e1bfcfd3e4740f922fa7bcaa15a66` 后重新验证，而不是复用旧移动来源窗口。
+
+最新固定输入为 **1297** 个 source/test/lock 文件，摘要 `4eeaf1c94d5615d22d55de915d695cfe63c34eedc4d7bcdcae0f631a64f0214a`。结果：
+
+- core：**1520 pass / 0 fail**；Rust 39、协议、根/Web typecheck 全部通过；
+- core-risk：**289 pass / 0 fail**；61 个切片继续完整闭包，nativeWindow 明确绑定 fixed snapshot/sourceSet/testPlan/toolchain；
+- core-observation：**230 pass / 0 fail**，31 个不同 evidence 文件、10 个受控进程；
+- notification outbox/native 资源 owner 修复继续通过，不扩大业务 timeout；
+- Host `bfa76e4eb13a207e57bbd9c1017482234aa342fa436357d25cc59356c31650be`、worker `da6796b285ea7e12f7b6979cabaf823c6aba8dbb0ad4a8efddad8fe3e5f1286c`，复验结束未变化。
+
+AH-159 让原生资格消费固定私有快照而不是移动中的安装文件；这增强 E1/A2 的 freshness 边界，但仍不把 snapshot 解释成已加载/已采用。此前报告中的旧源码摘要保留为历史窗口，本节是当前准备回流 V2 的准确组合。
