@@ -17,3 +17,9 @@ box、server/local temporal冲突、旧响应、读失败、错误ID五种场景
 只新增测试 fixture 的可选归属响应变体，默认路径不变；没有生产源码或writer变更。旧Bun进程内模拟改为原仓库同类的有限Node/打包CLI测试进程，检查退出、无跳过、无超时和实际六个场景。实际原生Host、用户Bot、Provider与平台服务均未操作。
 
 入口：[正式包装器](../../test/ownership-model-selection.test.ts)、[当前链路用例](../../packages/server/test/created-bot-ownership.node.ts)。完整release验收结果由Q按固定候选另行记录，不能仅凭这六项通过签发布。
+
+## 固定候选离线结果
+
+候选 `a19cdcd7dffa9f189ed3375dba717299fbd1a59f` 在声明Bun `1.3.14` 下执行原 `release-offline`：14个分片、693项通过，无失败/跳过，所有分片已结算。验证前后源码摘要均为 `e7303e410a3255746ae1d97ad05267e4d7e58a06394eae5fd876e5c4c653c147`。构建来源摘要 `0b4ff4e913726abad980f5bfba8662f1c12e9133eeaf03738253767b09f22628`。这些数字与core/integration存在重叠，不累加为独立总数。
+
+首轮限定独立审查超时124，无最终报告；后续限定复核调用被工具安全检查拦截，未执行。故本测试迁移保持In Review，未合入V2；离线结果不能代签缺失的独立复查、真实原生资格或平台服务。源V2 `078389fc` 的core/integration已另行通过，但其release入口仍含旧测试；不得把本未合入分支的693通过写成V2已通过。
