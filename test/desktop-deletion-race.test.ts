@@ -97,3 +97,13 @@ test("acknowledged deletion completes through actual scoped files, Unix socket s
     expect(await reapDeletedAgentSeat(B,2000000,io)).toEqual({display:null,outcome:"no_seat"});expect([stops,logs,unseats]).toEqual([1,1,1]);
   }finally{if(socket.listening)await new Promise<void>(resolve=>socket.close(()=>resolve()));await rm(root,{recursive:true,force:true});}
 });
+
+test("final observation refuses a dark replacement seat after unseat without removing its new owner",async()=>{
+  const current=world(),other="cccccccc-cccc-4ccc-8ccc-cccccccccccc";let stops=0,logs=0,unseats=0;
+  const io:DesktopIo={readWorld:async()=>structuredClone(current),
+    stopWindow:async()=>{stops++;stop(current);},reapLogs:async()=>{logs++;},
+    unseatAgent:async(id,display)=>{expect(id).toBe(B);expect(display).toBe(2);unseats++;delete current.assignments[B];current.assignments[other]=2;}};
+  expect(await reapDeletedAgentSeat(B,2000000,io)).toEqual({display:2,outcome:"unavailable"});
+  expect([stops,logs,unseats]).toEqual([1,1,1]);expect(current.assignments[other]).toBe(2);
+  expect(current.assignments[B]).toBeUndefined();expect(current.litDisplays.has(2)).toBe(false);
+});

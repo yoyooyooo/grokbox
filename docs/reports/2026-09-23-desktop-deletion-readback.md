@@ -33,3 +33,12 @@
 原独立源码审查任务截止退出124，无最终报告；本修复的新独立静态审查调用未执行成功。没有 independent-review pass，不将实施会话自检换名。本票在独立复核与串行集成前保留 In Review，完整候选/J2不放行。
 
 源码入口：[清理和解绑](../../packages/box-runtime/src/internal/io/desktop.node.ts)、[原生观察](../../packages/box-runtime/src/internal/io/desktop-source.node.ts)、[反例与真实文件/socket 测试](../../test/desktop-deletion-race.test.ts)。操作语义见[原生产品管理](../maintainers/native-product-management.md)。
+
+
+## 独立复核发现的最终占位遗漏与修正
+
+后续固定源码复核成功返回，指出一个此前测试未覆盖的可执行问题：原Bot解绑后，另一Bot在同一仍未点亮的display登记新seat。最终观察已看到新assignment，但原成功条件仅检查原Bot消失和display已dark，仍返回stopped。
+
+新正式反例在原候选上为18通过/1失败，实际stopped而非unavailable。现最终检查还要求该display没有任何assignment；新Bot的座位保留，不执行新的stop、log reap或unseat。修后桌面两文件47项通过。它修复已观察到的重分配仍报成功，不扩大成跨官方writer原子租约。
+
+该finding属于本票原停止读回/座位保护范围，未新增伪依赖。最终限定复查与整合验证另在Linear回执记录；原失败和通过窗口保留在私有scratch。模型域AH-165已独立交付，本票对齐最新V2后再核组合，不能沿旧基线签收。

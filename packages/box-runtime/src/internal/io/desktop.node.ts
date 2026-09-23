@@ -128,7 +128,8 @@ export async function reapDeletedAgentSeat(
     if (!stoppedOriginalSeat(await observe())) return { display, outcome: "unavailable" };
     await io.unseatAgent(match[0], display);
     const final = await observe();
-    if (!observedStopped(final, display) || seatTableHasAgent({ assignments: final.assignments }, query)) return { display, outcome: "unavailable" };
+    if (!observedStopped(final, display) || seatTableHasAgent({ assignments: final.assignments }, query)
+      || Object.values(final.assignments).some(seat => seat === display)) return { display, outcome: "unavailable" };
   } catch { return { display, outcome: "unavailable" }; }
   return { display, outcome: "stopped" };
 }
