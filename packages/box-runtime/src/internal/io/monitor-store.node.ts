@@ -22,6 +22,11 @@ import { MONITOR_SCHEMA_VERSION } from "./monitor-schema.node.ts";
 import type { NativeRunHealth } from "@grokbox/runtime-kernel/observation";
 import { DiagnosticBudgetError, withDiagnosticAdmission } from "../host/diagnostic-budget.node.ts";
 const VERSION=MONITOR_SCHEMA_VERSION;
+// Preserve a caller's denied commit check through the SQLite rollback boundary,
+// without teaching this storage adapter about HTTP or management principals.
+class ManagementCommitRefused extends BoxRuntimeError {
+ constructor(readonly failure:unknown){super("invalid_usage","monitor_management_commit_refused");}
+}
 const error=(message:string)=>new BoxRuntimeError("invalid_usage",message);
 const number=(v:unknown):number=>{if(typeof v!=="number"||!Number.isSafeInteger(v)||v<0)throw error("monitor_store_invalid");return v;};
 const uuid=(v:unknown):string=>{if(!monitorUuid(v))throw error("monitor_store_invalid");return v;};
@@ -323,7 +328,7 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     if(!["ack","snooze"].includes(String(row.action))||typeof row.fingerprint!=="string"||!/^[a-f0-9]{64}$/.test(row.fingerprint))throw error("monitor_store_invalid");
     return {incidentId:uuid(row.incident_id),appliedRevision:number(row.revision),action:row.action as "ack"|"snooze",fingerprint:row.fingerprint};});
   },
-  async manage(input:{requestId:string;incidentId:string;expectedRevision:number;action:"ack"|"snooze";untilMs?:number;nowMs:number;databaseId?:string}){
+  async manage(input:{requestId:string;incidentId:string;expectedRevision:number;action:"ack"|"snooze";untilMs?:number;nowMs:number;databaseId?:string},beforeCommit?:()=>Promise<void>){
    if(!monitorUuid(input.requestId)||!monitorUuid(input.incidentId)||!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<1||input.expectedRevision>=Number.MAX_SAFE_INTEGER||!Number.isSafeInteger(input.nowMs)||input.nowMs<1||!["ack","snooze"].includes(input.action)||(input.databaseId!==undefined&&!monitorUuid(input.databaseId)))throw error("monitor_invalid_management");
    if(input.action==="snooze"?!Number.isSafeInteger(input.untilMs):input.untilMs!==undefined)throw error("monitor_invalid_snooze");
    const fingerprint=sha256Text(canonicalJson([input.incidentId,input.expectedRevision,input.action,input.untilMs??null]));
@@ -338,9 +343,12 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     if(input.action==="snooze"&&(input.untilMs!<=input.nowMs||input.untilMs!-input.nowMs>MONITOR_POLICY.maxSnoozeMs))throw error("monitor_invalid_snooze");
     if(number((await db.first("SELECT COUNT(*) AS n FROM management"))?.n)>=MONITOR_POLICY.maxManagementReceipts)throw error("monitor_management_full");
     const row=await db.first("SELECT * FROM incidents WHERE id=?",[input.incidentId]);if(!row)throw error("monitor_incident_not_found");if(row.status==="resolved")throw error("monitor_incident_resolved");if(row.revision!==input.expectedRevision)throw error("monitor_revision_conflict");
+    // All awaited policy/receipt/revision reads precede current write authority.
+    // Refusal rolls back this same transaction before any incident/event write.
+    try{await beforeCommit?.();}catch(failure){throw new ManagementCommitRefused(failure);}
     await db.run(input.action==="ack"?"UPDATE incidents SET acknowledged=1,revision=revision+1 WHERE id=?":"UPDATE incidents SET snooze_until=?,revision=revision+1 WHERE id=?",input.action==="ack"?[input.incidentId]:[input.untilMs!,input.incidentId]);const revision=input.expectedRevision+1;
     await db.run("INSERT INTO management(request_id,fingerprint,incident_id,revision,action) VALUES(?,?,?,?,?)",[input.requestId,fingerprint,input.incidentId,revision,input.action]);await event(db,uuid(m.epoch),`incident_${input.action}`,scope(row.scope),row.agent_id===null?null:uuid(row.agent_id),number(input.nowMs),input.incidentId);
-    return {requestId:input.requestId,incidentId:input.incidentId,appliedRevision:revision,duplicate:false,repaired:false};});
+    return {requestId:input.requestId,incidentId:input.incidentId,appliedRevision:revision,duplicate:false,repaired:false};}).catch(failure=>{if(failure instanceof ManagementCommitRefused)throw failure.failure;throw failure;});
   },
   async recordNotificationExport(epoch:string,notifications:unknown[],returned:boolean,atMs:number){
    return mutate(async db=>{if((await meta(db)).epoch!==epoch)throw error("monitor_epoch_changed");let written=0;

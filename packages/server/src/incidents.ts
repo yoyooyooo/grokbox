@@ -45,7 +45,8 @@ function receipt(installationId: string, databaseId: string, requestId: string, 
 
 /** HTTP dispatch owns authorization; one existing SQLite transaction owns the
  * acknowledgement/snooze, management receipt and event. No native side effect. */
-export function incidentApplication(installationId: string, source: ManagementObservations | undefined, principal: Principal, method: string, url: URL, input?: unknown) {
+export function incidentApplication(installationId: string, source: ManagementObservations | undefined, principal: Principal, method: string, url: URL, input?: unknown,
+  authorize?: (signal: AbortSignal) => Promise<void>) {
   return Effect.gen(function* () {
     yield* checked(() => {
       requireCapability(principal, method === "POST" ? "incidents.write" : url.pathname.startsWith("/v1/incident-operations/") ? "operations.read" : "observations.read");
@@ -64,8 +65,10 @@ export function incidentApplication(installationId: string, source: ManagementOb
       }
       // Only the bounded SQLite commit checkpoint is non-interruptible; client
       // disconnection cannot cancel it and Server shutdown waits for settlement.
-      const result = yield* io(() => source.manage({ requestId: key, databaseId, incidentId, expectedRevision: request.expectedRevision,
-        action: request.action, ...(request.action === "snooze" ? { untilMs: request.untilMs } : {}), nowMs: Date.now() })).pipe(Effect.uninterruptible);
+      if (!authorize) return yield* Effect.fail(new HttpFailure(503, "source_unavailable", "Current incident write authority is unavailable."));
+      const result = yield* Effect.tryPromise({ try: signal => source.manage({ requestId: key, databaseId, incidentId, expectedRevision: request.expectedRevision,
+        action: request.action, ...(request.action === "snooze" ? { untilMs: request.untilMs } : {}), nowMs: Date.now() },
+        async () => { await authorize(signal); signal.throwIfAborted(); }), catch: projectError }).pipe(Effect.uninterruptible);
       return receipt(installationId, databaseId, request.requestId, key, result.incidentId, request.action, result.appliedRevision);
     }
     const operation = /^\/v1\/incident-operations\/([^/]+)\/([^/]+)$/.exec(url.pathname);

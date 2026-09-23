@@ -30,7 +30,7 @@ export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, 
   & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess" | "productAccess">>;
 import { hostHealthQuery } from "./host-health.ts";
 import type { HostHealthStatus } from "@grokbox/box-runtime/runtime";
-export type ApplicationOptions = { modelAuthorize?: (signal: AbortSignal) => Promise<void>; productDomain?: ProductDomain; desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; messageDomain?: MessageDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
+export type ApplicationOptions = { modelAuthorize?: (signal: AbortSignal) => Promise<void>; incidentAuthorize?: (signal: AbortSignal) => Promise<void>; productDomain?: ProductDomain; desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; messageDomain?: MessageDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
 export function projectModel(record: ModelRecord): ModelView {
   let endpoint: string | null = null;
   try {
@@ -102,7 +102,7 @@ export function application(options: ApplicationOptions, principal: Principal, m
       return yield* materialApplication(options.materialDomain, principal, method, url, input);
     }
     if (path === "/v1/incident-changes" || path.startsWith("/v1/incident-operations/") || path.startsWith("/v1/incidents/")) {
-      return yield* incidentApplication(options.installationId, options.observations, principal, method, url, input);
+      return yield* incidentApplication(options.installationId, options.observations, principal, method, url, input, options.incidentAuthorize);
     }
     if (method === "GET" && observationPaths.has(path)) return yield* observationQuery(options.installationId, options.observations, principal, url);
     if (path === "/v1/notification-settings" || path.startsWith("/v1/notification-blueprint/") || path === "/v1/setup-changes"

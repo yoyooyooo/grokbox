@@ -27,8 +27,8 @@ export async function startInstalledManagementServer(options: InstalledServerOpt
   const observations = openMonitorStore(root);
   // Reads and completed receipt lookup do not consult mutable writer policy.
   // New commits use the canonical storage budget, just like the original writer.
-  const incidentStore = { ...observations, manage: async (input: Parameters<typeof observations.manage>[0]) =>
-    openMonitorStore(root, (await readStorageConfiguration(root)).monitor).manage(input) };
+  const incidentStore = { ...observations, manage: async (...args: Parameters<typeof observations.manage>) =>
+    openMonitorStore(root, (await readStorageConfiguration(root)).monitor).manage(...args) };
   return startManagementServer({
     installationId: installation.installationId,
     store: openRuntimeStore(root), native, observations: incidentStore, port, host: options.host ?? config.daemon?.network?.host,

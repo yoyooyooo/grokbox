@@ -53,6 +53,34 @@ test("incident actions atomically record their historical receipt and do not rep
   } finally { await f.close(); }
 });
 
+for (const action of ["ack", "snooze"] as const) for (const boundary of ["receipt", "transaction"] as const)
+  for (const changedSubject of [false, true]) test(`incident ${action} refuses ${changedSubject ? "changed principal" : "revoked write"} after ${boundary} wait`, async () => {
+  const f = await fixture();
+  try {
+    const input = f.request(action), bytes = await readFile(f.observations.path);
+    const initialGrant = { ...f.state.grants[0]!, capabilities: [...f.state.grants[0]!.capabilities] };
+    const revoke = () => {
+      if (changedSubject) f.state.grants[0]!.principalId = "changed-owner";
+      else f.state.grants[0]!.capabilities = f.state.grants[0]!.capabilities.filter(cap => cap !== "incidents.write");
+    };
+    if (boundary === "receipt") {
+      const original = f.observations.managementReceipt;
+      f.observations.managementReceipt = async (...args) => { const value = await original(...args); revoke(); return value; };
+    } else {
+      const original = f.observations.manage;
+      f.observations.manage = async (...args) => { await Promise.resolve(); revoke(); return original(...args); };
+    }
+    const result = await f.client().changeIncident(input).catch(error => error);
+    assert.equal(result.code, "permission_denied");
+    assert.deepEqual(await readFile(f.observations.path), bytes, "refused authority must not publish acknowledgement, snooze, event or receipt");
+    f.state.grants[0] = initialGrant;
+    const current = (await f.client().incident(input.incidentRef)).data.incident;
+    assert.equal(current.revision, input.expectedRevision);
+    assert.equal(current.acknowledged, false);
+    await rejects(f.client().incidentOperation(input.incidentRef.split(":")[2]!, input.requestId), "not_found");
+  } finally { await f.close(); }
+});
+
 test("expired snooze replays return the original receipt before new-action admission", async () => {
   const f = await fixture();
   try {
@@ -90,7 +118,7 @@ test("lost commit acknowledgement is recovered after management restart without 
   const f = await fixture();
   try {
     const original = f.observations.manage;
-    f.observations.manage = async input => { await original(input); throw new BoxRuntimeError("invalid_usage", "monitor_commit_unknown"); };
+    f.observations.manage = async (...args) => { await original(...args); throw new BoxRuntimeError("invalid_usage", "monitor_commit_unknown"); };
     const input = f.request();
     const error = await f.client().changeIncident(input).catch(error => error);
     assert.equal(error.code, "operation_unknown"); assert.ok(error.details.lookupPath.includes(input.requestId));
