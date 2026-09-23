@@ -75,6 +75,9 @@ export { readProtectionSubjects, readProtectionSnapshots, readProtectionHandover
 export { handoverManagementPrograms, handoverControlId, type ManagedHandoverDeclaration, type ManagedHandoverRow } from "./internal/io/handover-management.node.ts";
 export { replacementIsActivated } from "./internal/roots/bot-handover.runtime.ts";
 export { openAgentDuplication } from "./internal/roots/agent-duplicate.runtime.ts";
+export { previewNativeProduct, submitNativeProduct, readNativeProductOperation, reconcileNativeProduct, ProductReceiptUnstored,
+  type ProductManagement, type ProductManagementHooks } from "./internal/roots/native-product.runtime.ts";
+export type { NativeProductAccess } from "./internal/io/native-product.node.ts";
 export { createNativeCheckpointCapturePort } from "./internal/host/native-checkpoint.ts";
 export type { NativeCheckpointBoundary, NativeCheckpointSchema } from "./internal/host/native-checkpoint.ts";
 export { createCurrentStateClient, type CurrentStateTransport } from "./internal/io/current-state-client.node.ts";

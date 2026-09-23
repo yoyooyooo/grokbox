@@ -98,10 +98,13 @@ Targets accept an exact ID first, then an unambiguous case-insensitive name/titl
 ## Common paths
 
 1. **Diagnose and recover**: `doctor` checks Profile/secret, endpoint HTTP/TLS, daemon auth/capabilities and Gateway health without network-tool or SSH probes. `data.ok` is application health; diagnostic exit 0 alone is not success. No legacy network status placeholders are returned. An unreachable endpoint with a configured Sandbox ref may add read-only provider state. `recover` is a no-op for healthy endpoints; otherwise explicitly configured SSH may ensure an already installed daemon, followed by doctor. Only a provider-confirmed `hibernated/absent` state plus endpoint failure permits wake; unknown/network failure does not. `daemon status` is a narrow handshake; `daemon ensure` never installs, replaces a live unhealthy process, rotates credentials or repairs networking. Network bootstrap and compatibility flags are absent. Do not modify machine mappings or keys to make diagnostics pass.
-2. **Manage the roster**: `agents list/show/create/update/delete` only own non-group agents.
-   `groups list/show/create/update/delete` only own product groups. Membership is only
-   `groups members list/add/remove/set`; every member must resolve to a non-group agent and a group
-   must retain 1-6 unique members.
+2. **Manage the roster**: `bot create/update/delete/duplicate` and `group create/update/delete`
+   use the pinned management Server. Supply one persisted request UUID in `--input @file`, preview,
+   then confirm the exact scope/revision with `--accept-non-atomic`; native APIs do not provide CAS.
+   `group get` reads membership; `group members set` reviews the whole set of 1-6 distinct Bot UUIDs.
+   Read uncertainty with `product operation get <request-id> --scope-id <original-scope>`; never repeat
+   a native effect. Hidden/notify changes are separate `bot|group hidden set` / `notify set` operations.
+   Historical `agents operations show` is read-only and does not create new product requests.
 3. **Search/read transcript**: `history search <query>`, `history tail <target>`, and
    `history thread <target> --root <entry-id>` own transcript access. Object `show` commands do
    not add transcript side projections.

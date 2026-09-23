@@ -101,8 +101,18 @@ export async function reapDeletedAgentSeat(
   if (!match) return { display: null, outcome: "no_seat" };
   const display = match[1];
   if (display <= MAIN_DISPLAY) return { display, outcome: "skipped_main" };
+  const originalIdentity = world.displayIdentities[display];
+  const ownsSeat = (current: DesktopWorld) => current.complete && Number.isSafeInteger(display) && display <= 65535
+    && Object.entries(current.assignments).filter(([id]) => id.toLowerCase() === query).length === 1
+    && current.assignments[match[0]] === display && Object.values(current.assignments).filter(value => value === display).length === 1;
+  // A deleted Bot does not authorize stopping a shared or newly re-created
+  // display. These observations narrow a native race; they are not a seat lease.
+  if (!ownsSeat(world) || !/^[a-f0-9]{64}$/.test(originalIdentity ?? "")) return { display, outcome: "unavailable" };
   try {
+    const fresh = await io.readWorld(nowMs);
+    if (!ownsSeat(fresh) || fresh.displayIdentities[display] !== originalIdentity) return { display, outcome: "unavailable" };
     await io.stopWindow(display);
+    if (!ownsSeat(await io.readWorld(nowMs))) return { display, outcome: "unavailable" };
     await io.reapLogs(display);
   } catch {
     return { display, outcome: "unavailable" };

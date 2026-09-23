@@ -7,9 +7,8 @@ import { classifyDesktop, DEFAULT_MIN_IDLE_MS, displayFromEnviron, inspectDeskto
 import { DesktopManager, reapDeletedAgentSeat, unseatAgentFromAssignments, publishConfigFile, type DesktopIo } from "@grokbox/box-runtime/runtime";
 import { isDesktopLogWrapper } from "../packages/box-runtime/src/internal/io/desktop.node.ts";
 import { writeDaemonConfig } from "../packages/cli/src/daemon/config.ts";
-import { isBoxLocalDesktopReap } from "../packages/cli/src/commands/agents.ts";
 import { writeProfileFile } from "../packages/cli/src/config/profile.ts";
-import { captureCli, parseJson, startMockGateway, writeDiscovery } from "./helpers.ts";
+import { captureCli, startMockGateway, writeDiscovery } from "./helpers.ts";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 import { DAEMON_METHODS } from "../packages/cli/src/daemon/protocol.ts";
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",K="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -65,15 +64,21 @@ test("original seat table removal preserves unrelated native assignments and tok
     await writeFile(path,"{bad");await expect(unseatAgentFromAssignments(path,A)).rejects.toMatchObject({code:"desktop_unavailable"});expect(await readFile(path,"utf8")).toBe("{bad");
   }finally{await rm(root,{recursive:true,force:true});}
 });
-for(const transport of ["auto","local"] as const)for(const remote of [undefined,"ssh","url"] as const)test(`native deletion ${transport}/${remote??"box"} only cleans the selected local Box`,async()=>{
+for(const transport of ["auto","local"] as const)for(const remote of [undefined,"ssh","url"] as const)test(`retired deletion ${transport}/${remote??"box"} cannot fall back to native deletion or desktop cleanup`,async()=>{
   const root=await mkdtemp(join(tmpdir(),"desktop-delete-")),stops:number[]=[];let gateway:Awaited<ReturnType<typeof startMockGateway>>|undefined;
   try{gateway=await startMockGateway({agents:[{id:B,name:"idle-bot",title:"",isGroup:false,isHiddenFromSidebar:false,isRunning:false,memberIds:[]}]});const discovery=await writeDiscovery({port:gateway.port,pid:gateway.pid,startedAt:gateway.startedAt,token:gateway.token});
     await writeProfileFile(root,"box",{version:1,transport,gateway_discovery:discovery,...(remote==="ssh"?{ssh_host:"peer"}:remote==="url"?{server_url:"https://daemon.example.test"}:{})});
     const current=world();const io:DesktopIo={readWorld:async()=>current,stopWindow:async d=>{stops.push(d);},reapLogs:async()=>{},unseatAgent:async id=>{delete current.assignments[id];}};
     const result=await captureCli(["--profile","box","agents","delete","idle-bot","--yes","--json"],{configDir:root,discoveryPath:discovery,env:{},desktopIo:io,skillsDir:join(import.meta.dir,"../skills")});
-    expect(result.code,result.stderr).toBe(0);expect(stops).toEqual(remote?[]:[2]);const data=(parseJson(result.stdout)as any).data;if(remote)expect(data.desktop).toBeUndefined();else expect(data.desktop).toEqual({display:2,outcome:"stopped"});
+    expect(result.code,result.stderr).toBe(2);expect(stops).toEqual([]);expect(gateway.requests).toEqual([]);
   }finally{gateway?.stop();await rm(root,{recursive:true,force:true});}
 });
-test("a remote native connection is never local desktop cleanup authority",()=>{
-  expect(isBoxLocalDesktopReap({transport:"daemon"})).toBe(false);expect(isBoxLocalDesktopReap({transport:"gateway"})).toBe(false);
+for (const fault of ["shared", "incomplete", "recreated", "reassigned-after-stop"] as const) test(`original deletion cleanup refuses ${fault} seating without touching another owner`, async () => {
+  let reads=0, stops=0, logs=0, unseats=0;
+  const io:DesktopIo={readWorld:async()=>{reads++;return fault==="shared"?world({assignments:{[A]:2,[B]:2}})
+    :fault==="incomplete"?world({complete:false}):fault==="recreated"&&reads>1?world({displayIdentities:{2:"f".repeat(64)}})
+    :fault==="reassigned-after-stop"&&stops>0?world({assignments:{[A]:1,[K]:2}}):world();},
+    stopWindow:async()=>{stops++;},reapLogs:async()=>{logs++;},unseatAgent:async()=>{unseats++;}};
+  expect(await reapDeletedAgentSeat(B,2_000_000,io)).toEqual({display:2,outcome:"unavailable"});
+  expect(stops).toBe(fault==="reassigned-after-stop"?1:0);expect(logs).toBe(0);expect(unseats).toBe(0);
 });

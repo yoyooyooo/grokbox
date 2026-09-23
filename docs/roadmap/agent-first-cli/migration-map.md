@@ -113,7 +113,7 @@
 | `agents routines disable` | routine disable |
 | `agents routines delete` | routine delete |
 | `agents duplicate` | bot duplicate |
-| `agents operations show` | operation get |
+| `agents operations show` | 原 CONT 历史记录保留只读；新产品请求走 product operation get/reconcile |
 | `agents create` | bot create |
 | `agents update` | bot update |
 | `agents delete` | bot delete |
@@ -122,10 +122,10 @@
 | `groups create` | group create |
 | `groups update` | group update |
 | `groups delete` | group delete |
-| `groups members list` | group member list |
-| `groups members add` | group member add |
-| `groups members remove` | group member remove |
-| `groups members set` | group member set |
+| `groups members list` | group get（完整成员集合）；历史只读入口暂保留 |
+| `groups members add` | group get → group members set；先审阅完整集合，不用旧快照盲覆盖 |
+| `groups members remove` | group get → group members set；明确原生无 CAS，不隐藏复合写入 |
+| `groups members set` | group members set --input；固定 requestId/scope/revision、显式非原子确认 |
 | `send` | message send |
 | `alerts trace` | alert trace |
 | `alerts list` | alert list |

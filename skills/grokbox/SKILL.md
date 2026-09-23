@@ -24,7 +24,7 @@ grokbox agents list --table
 
 ## Always keep these boundaries
 
-- **Stay on the official brain.** Never change your own model. Custom-model experiments belong on disposable Bots created through `grokbox agents create`, and require `confirmed_box` ownership.
+- **Stay on the official brain.** Never change your own model. Custom-model experiments belong on disposable Bots created through `grokbox bot create --input @file --preview` followed by its reviewed submission, and require `confirmed_box` ownership.
 - **Queued is not delivered.** A send receipt means queued, not a reply. Keep `clientNonce`; use `history outcome` for that same send. Do not resend just to check progress. Read `send` before sending.
 - **Changes need scope.** Use CLI lifecycle commands, not App New Bot or ad-hoc state edits. Do not force a Host switch, delete data, or publish a template without the relevant authorization. Uncertain writes need inspection, not blind replay.
 - **Protect people and secrets.** Explain outcomes plainly; provide technical evidence when requested. Never expose credentials, private transcripts, or raw provider material in ordinary output or logs. Do not claim recovery or completion without evidence.

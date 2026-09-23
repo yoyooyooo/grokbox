@@ -16,7 +16,37 @@ function command(path: string, summary: string, target?: { name: string; descrip
 }
 const bot = { name: "bot-ref", description: "Stable native UUID or scoped Bot reference" };
 const model = { name: "model-id", description: "Exact configured model identity" };
+const group = { name: "group-ref", description: "Stable native UUID or scoped Group reference" };
+const productChanges: readonly LeafCommand[] = (["bot", "group"] as const).flatMap(kind =>
+  (["create", "update", "delete", "hidden", "notify", ...(kind === "bot" ? ["duplicate"] : ["members"])] as const).map(action => ({
+    ...command(`${kind} ${action === "hidden" || action === "notify" || action === "members" ? `${action} set` : action}`,
+      "Preview or submit one reviewed native effect through the management owner; read back the original receipt after uncertainty.",
+      action === "create" ? undefined : kind === "bot" ? bot : group, [
+        { flags: "--input <source>", description: "Strict JSON @file|- with the persisted request UUID and profile, memberIds, value or creation harness; no implicit extra writes", required: true },
+        { flags: "--request-id <uuid>", description: "Caller-persisted UUID, alternatively in input; duplicate declarations refuse" },
+        { flags: "--preview", description: "Read the exact native plan without a write or safety-store admission" },
+        { flags: "--scope-id <sha256>", description: "Original account scope returned by preview" },
+        { flags: "--expect-revision <sha256>", description: "Exact reviewed native plan revision" },
+        { flags: "--accept-non-atomic", description: "Acknowledge that native APIs do not provide atomic compare-and-swap" },
+        { flags: "--confirm", description: "Confirm the displayed native effects, including any startup or future Routine runs" },
+      ]), stdin: "json" as const, destructive: true,
+  })));
 export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
+  ...productChanges,
+  command("group list", "Read a bounded native Group roster with scoped identities and revisions.", undefined, [
+    { flags: "--limit <n>", description: "Page size 1 to 100" }, { flags: "--cursor <cursor>", description: "Original scope/generation/query-bound continuation" },
+  ]),
+  command("group get", "Read one exact native Group profile and whole membership without message bodies.", group),
+  command("bot profile get", "Read one exact Bot's native profile/settings revision, not execution authority.", bot),
+  command("bot ownership get", "Read fresh official registration facts; never migrate, repair or grant execution authority.", bot),
+  command("bot relations get", "Read bounded Group, peer/inbound and Routine metadata with independent coverage and failures.", bot),
+  command("product operation get", "Read the original principal/account-bound native operation without a native call.", { name: "request-id", description: "Original request UUID" }, [
+    { flags: "--scope-id <sha256>", description: "Account scope from the original preview", required: true },
+  ]),
+  { ...command("product operation reconcile", "Consume only an exact duplicate identity receipt retained by CONT; never replay a native mutation.", { name: "request-id", description: "Original request UUID" }, [
+    { flags: "--scope-id <sha256>", description: "Original account scope", required: true },
+    { flags: "--confirm", description: "Confirm reconciliation of the original receipt only", required: true },
+  ]), destructive: true },
   { ...command("message send", "Submit one Human input through the management owner; persist its request identity and never resend after uncertainty.", undefined, [
     { flags: "--to <bot-ref>", description: "Stable Bot UUID or scoped Bot reference" },
     { flags: "--input <source>", description: "Strict JSON @file|- with requestId, botRef, text and clientNonce", required: true },

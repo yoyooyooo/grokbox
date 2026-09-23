@@ -8,3 +8,4 @@ export * from "./internal/continuity/lifecycle.ts";
 export * from "./internal/continuity/handover.ts";
 export * from "./internal/continuity/protection.ts";
 export * from "./internal/continuity/self-reset.ts";
+export * from "./internal/continuity/native-product.ts";

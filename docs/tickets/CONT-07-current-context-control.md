@@ -32,7 +32,7 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 当前能力通过独立`current-state`同源profile升级接入，不改变默认历史recipe。prepare保留现有来源/目标，initialize完成双层读回但不开始工作；activate显式释放已核实屏障，只允许后续正常输入。原生worker commit、主Host应用完成、本地安全账本完成分别记录；部分成功unknown不重导，B2继续工作后不能被B0覆盖。
 
-当前状态的普通管理已进入 `bot context get/initialize/reset/restore`、`bot snapshot create`、`bot activate` 和 context 域 operation get/reconcile/resume/cancel；旧 `agents state` 注册和直连 writer 已退出。`agents create --defer-start`仍只请求抑制介绍和 kickstart，不是入站屏障。管理主体、安装、原请求与固定目标/head/material 存入原 CONT 控制表，不新建操作数据库；源码版本以原数据库 owner 为准，GET 不迁移。操作方法唯一归[当前指南](../maintainers/current-state-control.md)。
+当前状态的普通管理已进入 `bot context get/initialize/reset/restore`、`bot snapshot create`、`bot activate` 和 context 域 operation get/reconcile/resume/cancel；旧 `agents state` 注册和直连 writer 已退出。`bot create`声明的`deferStart: true`仍只请求抑制介绍和 kickstart，不是入站屏障。管理主体、安装、原请求与固定目标/head/material 存入原 CONT 控制表，不新建操作数据库；源码版本以原数据库 owner 为准，GET 不迁移。操作方法唯一归[当前指南](../maintainers/current-state-control.md)。
 
 [管理组合](../../test/context-management.test.ts)和[生产浏览器旅程](../../apps/web/test/context-browser.node.ts)通过共享 API 消费原生 owner/RPC/checkpoint worker，实际测试 Node HTTP、SQLite、打包 CLI、SIGKILL 后原标记对账、未知原生 apply 不重发、独立解除和 B2 不回退。Web 只保存原定位，丢解除回执后从历史取首次解除 revision，不用刷新后的新 revision 替代。读源、写上下文、解除和历史权限分开，最后授权撤销、客户端断连、关闭结算与元数据泄漏都有对应反例。
 

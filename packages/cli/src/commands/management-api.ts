@@ -4,6 +4,7 @@ import { type FileChange, FileError } from "@grokbox/client";
 import { uploadManagedFile, downloadManagedFile } from "../file-transfers.ts";
 import { contextOperationIdentity, contextOperationRef, compactionOperationIdentity, handoverOperationIdentity, type HandoverAction, type ContextChange } from "@grokbox/client";
 import { normalizeLifecycleIntent, lifecycleIdentity, lifecycleReference, type LifecycleIntent } from "@grokbox/client";
+import { normalizeProductIntent, productIdentity } from "@grokbox/client";
 import { parseRequestedEffort } from "@grokbox/runtime-kernel/selection";
 import { ConfigError } from "@grokbox/runtime-kernel/config";
 import { parseModelChangeRequest, type ModelChangeRequest } from "@grokbox/runtime-kernel/model-management";
@@ -18,7 +19,7 @@ export type ManagementCommandOptions = {
   connection?: string; timeoutMs?: string; limit?: string; cursor?: string; source?: string; scope?: string;
   from?: string; to?: string; recursive?: boolean; deletionRequestId?: string; generation?: string;
   jobRef?: string; waitMs?: string; offset?: string;
-  preview?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
+  preview?: boolean; acceptNonAtomic?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
   requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string; receiver?: string;
   root?: string; nativeDiscovery?: string; port?: string; input?: string; mode?: string;
   untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; expectModelRevision?: string;
@@ -78,6 +79,16 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
     lifecycleInput = combineManagementInput(await readManagementInput(deps, options.input), { kind: lifecycleKind, sourceBotRef: lifecycleKind === "spawn" ? null : args[0], requestId: options.requestId },
       ["requestId", "kind", "sourceBotRef", "name", "description", "instructions", "modelId", "effort", "snapshotRef", "activate", "start", "maxRunMs", "allowHandoverMessages"]);
   }
+  const productRoute = /^(bot|group) (create|update|delete|duplicate|members set|hidden set|notify set)$/.exec(command);
+  let productInput: Record<string, unknown> | undefined;
+  if (productRoute) {
+    if (Boolean(options.preview) === Boolean(options.confirm) || options.preview && [options.scopeId, options.expectRevision, options.acceptNonAtomic].some(value => value !== undefined)
+      || !options.preview && (!options.scopeId || !options.expectRevision || options.acceptNonAtomic !== true)) throw invalid("Choose --preview, or --confirm with the exact scope-id, expect-revision and explicit accept-non-atomic acknowledgment.");
+    productInput = combineManagementInput(await readManagementInput(deps, options.input), {
+      kind: productRoute[1], action: productRoute[2]!.split(" ")[0], requestId: options.requestId,
+      targetId: productRoute[2] === "create" ? null : args[0],
+    }, ["requestId", "kind", "action", "targetId", "profile", "memberIds", "harness", "value", "deferStart"]);
+  }
   const setupInput = command === "notification settings apply" || command === "routine apply" ? await readManagementInput(deps,options.input) : undefined;
   let jobInput;
   if (command === "job start") {
@@ -112,7 +123,21 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
     return;
   }
   let reply: ApiReply<unknown>;
-  switch (command) {
+  if (productInput) {
+    const intent = normalizeProductIntent({ ...productInput, targetId: productInput.targetId === null ? null
+      : productIdentity(String(productInput.targetId), productInput.kind as "bot" | "group", installationId) });
+    reply = options.preview ? await client.previewProduct(intent, deps.signal) : await client.submitProduct({ ...intent,
+      scopeId: options.scopeId!, expectedRevision: options.expectRevision!, confirmed: true, acceptNonAtomic: true }, deps.signal);
+  } else switch (command) {
+    case "group list": reply = await client.products({ kind: "group", limit: options.limit === undefined ? undefined : Number(options.limit), cursor: options.cursor, signal: deps.signal }); break;
+    case "group get": case "bot profile get": reply = await client.products({ kind: command === "group get" ? "group" : "bot", target: args[0] ?? "", signal: deps.signal }); break;
+    case "bot ownership get": reply = await client.productOwnership(args[0] ?? "", deps.signal); break;
+    case "bot relations get": reply = await client.productRelations(args[0] ?? "", deps.signal); break;
+    case "product operation get": reply = await client.productOperation({ scopeId: options.scopeId ?? "", requestId: args[0] ?? "" }, deps.signal); break;
+    case "product operation reconcile": {
+      if (options.confirm !== true) throw invalid("Confirm reconciliation of the original identity receipt.");
+      reply = await client.reconcileProduct({ scopeId: options.scopeId ?? "", requestId: args[0] ?? "" }, deps.signal); break;
+    }
     case "message send": {
       const value = combineManagementInput(await readManagementInput(deps, options.input),
         { botRef: options.to, requestId: options.requestId, clientNonce: options.nonce },

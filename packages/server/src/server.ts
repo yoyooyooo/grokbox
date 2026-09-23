@@ -13,6 +13,7 @@ import { startHostHealth, type HostHealthTestPorts, startMaterialIndexer, startP
 import { authenticate, HttpFailure, requireCapability, type AccessGrant } from "./access.ts";
 import { ConsoleAuthority } from "./console-access.ts";
 import { JobService } from "./jobs.ts";
+import type { ProductManagementHooks } from "@grokbox/box-runtime/runtime";
 import { FileService, type FileTestHooks } from "./files.ts";
 import { DesktopService, type DesktopTestPorts } from "./desktop.ts";
 import { projectNotificationWorker } from "./notifications.ts";
@@ -102,6 +103,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
   hostHealth?: HostHealthTestPorts;
   files?: FileTestHooks;
   desktop?: DesktopTestPorts;
+  products?: ProductManagementHooks;
 } = {}): Promise<ManagementServer> {
   const host = options.host ?? "127.0.0.1", port = options.port ?? 0, maxConcurrent = options.maxConcurrentRequests ?? 32;
   if (!UUID.test(options.installationId) || !["127.0.0.1", "::1"].includes(host) || !Number.isSafeInteger(port) || port < 0 || port > 65535
@@ -277,6 +279,8 @@ export async function startManagementServer(options: ManagementServerOptions, te
         jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
         fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
         desktopDomain: desktopService ? { service: desktopService, authorize: materialAuthorize } : undefined,
+        productDomain: options.native.productAccess ? { root: options.store.root, installationId, native: options.native.productAccess,
+          authorize: materialAuthorize, hooks: testPorts.products } : undefined,
         messageDomain: options.native.continuityAccess ? { root: options.store.root, installationId,
           continuity: (signal: AbortSignal) => options.native.continuityAccess!(signal), listBots: options.native.listBots,
           authorize: materialAuthorize } : undefined,
@@ -296,6 +300,13 @@ export async function startManagementServer(options: ManagementServerOptions, te
           afterSendClaim: testPorts.notification?.sendClaimed,
           readNative: options.native.readNotificationReceiver ?? (async () => { throw new Error("notification_receiver_unavailable"); }),
           request: testPorts.notification?.request } }, principal!, request.method!, url, input);
+      if (request.method === "GET" && (url.pathname === "/v1/products" || url.pathname.startsWith("/v1/product-"))) {
+        yield* Effect.tryPromise({ try: async signal => {
+          await materialAuthorize(signal, "products.read");
+          if (url.pathname.startsWith("/v1/product-operations/")) await materialAuthorize(signal, "operations.read");
+          if (url.pathname.startsWith("/v1/product-relations/")) { await materialAuthorize(signal, "messages.read"); await materialAuthorize(signal, "routines.read"); }
+        }, catch: error => error });
+      }
       if (request.method === "GET" && (url.pathname === "/v1/desktop" || url.pathname.startsWith("/v1/desktop-"))) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.includes("operations/") ? "operations.read" : "desktop.read"), catch: error => error });
       }

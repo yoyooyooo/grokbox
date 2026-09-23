@@ -357,28 +357,15 @@ describe("strict agents, groups, and target resolution", () => {
     });
   });
 
-  test("agents create always sends harness box", async () => {
-    const result = await withGateway(["agents", "create", "--name", "beta"]);
-    expect(result.code).toBe(0);
-    const created = result.mock.requests.find((request) => request.pathname === "/api/createAgent");
-    expect(created?.body).toMatchObject({ name: "beta", harness: "box" });
-  });
-
-  test("agents create --harness temporal is sent at the create root", async () => {
-    const result = await withGateway(["agents", "create", "--name", "beta", "--harness", "temporal"]);
-    expect(result.code).toBe(0);
-    const created = result.mock.requests.find((request) => request.pathname === "/api/createAgent");
-    expect(created?.body).toMatchObject({ name: "beta", harness: "temporal" });
-  });
-
-  test("agents update does not reassert a harness when changing a title", async () => {
-    const result = await withGateway(["agents", "update", "alpha", "--title", "Alpha"]);
-    expect(result.code).toBe(0);
-    const updated = result.mock.requests.find((request) => request.pathname === "/api/updateAgent");
-    expect(updated?.body).toMatchObject({
-      id: "agent-alpha",
-      profile: { name: "alpha", description: "research buddy", title: "Alpha" },
-    });
+  // Creation harness and title semantics now run against the formal Node HTTP /
+  // original SQLite boundary in packages/server/test/products.node.ts. The old
+  // CLI grammar must fail locally rather than select an unreviewed native writer.
+  for (const args of [["agents", "create", "--name", "beta"], ["agents", "create", "--name", "beta", "--harness", "temporal"],
+    ["agents", "update", "alpha", "--title", "Alpha"]]) test(`retired product grammar refuses before Gateway: ${args.join(" ")}`, async () => {
+    const result = await withGateway(args);
+    expect(result.code).toBe(2);
+    expect(errorCode(result.stderr)).toBe("invalid_usage");
+    expect(result.mock.requests).toEqual([]);
   });
 
   test("agents update refuses harness migration before Gateway", async () => {

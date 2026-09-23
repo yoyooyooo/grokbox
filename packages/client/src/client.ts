@@ -27,6 +27,9 @@ import { normalizeCompactionChange, normalizeCompactionContinuation, compactionP
 import { normalizeLifecycleIntent, normalizeLifecycleSubmission, normalizeLifecycleResume, lifecycleReference, lifecycleIdentity,
   type LifecycleIntent, type LifecycleSubmission, type LifecycleResume, type LifecyclePreview, type LifecycleOperation, type LifecycleList } from "./lifecycle-contract.ts";
 import { lifecyclePreview, lifecycleOperation, lifecycleList } from "./lifecycle-validation.ts";
+import { normalizeProductIntent, normalizeProductSubmission, productOperationIdentity, productIdentity,
+  productPlanView, productReceiptView, productListView, productOwnershipView, productRelationsView,
+  type ProductIntent, type ProductSubmission, type ProductPlan, type ProductReceipt, type ProductList, type ProductOwnership, type ProductRelations } from "./product-contract.ts";
 import { normalizeProtectionChange, protectionReferenceIdentity, type ProtectionChangeRequest, type ProtectionOverview, type ProtectionBotView,
   type ProtectionOperation, type ProtectionSnapshot, type ProtectionSnapshotList, type ProtectionHandover } from "./protection-contract.ts";
 import { protectionOverview, protectionBot, protectionOperation, protectionSnapshot, protectionSnapshots, protectionHandover } from "./protection-validation.ts";
@@ -138,7 +141,7 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: DesktopPolicyRequest | DesktopPruneRequest | FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | MessageSendRequest | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: DesktopPolicyRequest | DesktopPruneRequest | FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | MessageSendRequest | ProductIntent | ProductSubmission | { requestId: string; scopeId: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
@@ -147,6 +150,8 @@ export class ManagementClient {
       || !(path === "/v1/file-changes" ? mutation.expectedRevision === null || revision(mutation.expectedRevision) : path === "/v1/file-upload-chunks" || path === "/v1/file-upload-controls" ? true : path === "/v1/messages" ? true
         : path === "/v1/job-starts" ? revision(mutation.expectedRevision) : path === "/v1/job-cancellations" ? true : ["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
         : path === "/v1/desktop-prunes" || path === "/v1/desktop-policy-changes" ? revision(mutation.expectedRevision)
+        : path === "/v1/product-changes" ? revision(mutation.expectedRevision) && revision(mutation.scopeId)
+        : path === "/v1/product-reconciliations" ? revision(mutation.scopeId)
         : path === "/v1/handover-changes" ? revision(mutation.expectedRevision)
         : path === "/v1/handover-continuations" ? revision(mutation.scopeId) && ["resume", "reconcile", "cancel"].includes(String(mutation.action))
         : path === "/v1/context-changes" || path === "/v1/context-compactions" ? revision(mutation.scopeId) && revision(mutation.expectedRevision)
@@ -317,6 +322,49 @@ export class ManagementClient {
   async jobCancellation(ref: string, requestId: string, signal?: AbortSignal) {
     const target=jobIdentity(ref,this.options.installationId!);if(!UUID.test(requestId))throw new ManagementClientError("invalid_input","Use the original cancellation request UUID.");
     const id=requestId.toLowerCase();return this.request<JobCancelReceipt>(`/v1/job-cancellations/${target.id}/${id}`,v=>jobCancellation(v,this.options.installationId!,target.ref,id),undefined,signal);
+  }
+
+  async products(options: ListOptions & { kind?: "bot" | "group"; target?: string } = {}) {
+    if (options.kind !== undefined && options.kind !== "bot" && options.kind !== "group") throw new ManagementClientError("invalid_input", "Select Bot or Group products.");
+    const query = pageQuery(options);
+    if (options.kind) query.set("kind", options.kind);
+    let targetId: string | undefined;
+    if (options.target !== undefined) {
+      if (!options.kind && !UUID.test(options.target)) throw new ManagementClientError("invalid_input", "A scoped product reference requires its kind.");
+      targetId = productIdentity(options.target, options.kind ?? "bot", this.options.installationId ?? "");
+      query.set("targetId", targetId);
+    }
+    return this.request<ProductList>(`/v1/products${query.size ? `?${query}` : ""}`,
+      value => productListView(value, this.options.installationId!, options.limit ?? 50, options.kind, targetId), undefined, options.signal);
+  }
+  async productOwnership(ref: string, signal?: AbortSignal) {
+    const id = productIdentity(ref, "bot", this.options.installationId ?? "");
+    return this.request<ProductOwnership>(`/v1/product-ownership/${id}`, value => productOwnershipView(value, id), undefined, signal);
+  }
+  async productRelations(ref: string, signal?: AbortSignal) {
+    const id = productIdentity(ref, "bot", this.options.installationId ?? "");
+    return this.request<ProductRelations>(`/v1/product-relations/${id}`, value => productRelationsView(value, id), undefined, signal);
+  }
+  async previewProduct(input: ProductIntent, signal?: AbortSignal) {
+    const intent = normalizeProductIntent(input);
+    return this.request<ProductPlan>("/v1/product-previews", value => productPlanView(value, intent), intent, signal, false, undefined, true);
+  }
+  async submitProduct(input: ProductSubmission, signal?: AbortSignal) {
+    const command = normalizeProductSubmission(input);
+    return this.request<ProductReceipt>("/v1/product-changes",
+      value => productReceiptView(value, this.options.installationId!, command.scopeId, command.requestId, command), command, signal, false,
+      `/v1/product-operations/${command.scopeId}/${command.requestId}`);
+  }
+  async productOperation(input: { requestId: string; scopeId: string }, signal?: AbortSignal) {
+    const ref = productOperationIdentity({ requestId: input.requestId, scopeId: input.scopeId });
+    return this.request<ProductReceipt>(`/v1/product-operations/${ref.scopeId}/${ref.requestId}`,
+      value => productReceiptView(value, this.options.installationId!, ref.scopeId, ref.requestId), undefined, signal);
+  }
+  async reconcileProduct(input: { requestId: string; scopeId: string }, signal?: AbortSignal) {
+    const ref = productOperationIdentity({ requestId: input.requestId, scopeId: input.scopeId });
+    return this.request<ProductReceipt>("/v1/product-reconciliations",
+      value => productReceiptView(value, this.options.installationId!, ref.scopeId, ref.requestId), ref, signal, false,
+      `/v1/product-operations/${ref.scopeId}/${ref.requestId}`);
   }
 
   async previewLifecycle(input: LifecycleIntent, signal?: AbortSignal) {

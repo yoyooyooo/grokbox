@@ -261,22 +261,22 @@
 | `quota`, `box status`, `box wake`, `box keepalive run`, `box keepalive status`, `system desktop get`, `system desktop prune`, `system desktop keep set`, `system config apply` | [LIVE-OPTIONAL-CAPABILITIES](#live-optional-capabilities) | 桌面已迁入管理Server；读取、策略、回收及原操作权限分开，配置apply当前仅支持desktop idle-reclaim；实际helper/平台资格另验 |
 | `recover` | [LIVE-NETWORK-BOUNDARY](#live-network-boundary) | 默认应用恢复与显式旧映射恢复选项分开，网络故障不自动wake |
 | `system host health`, `runtime profile analyze`, `runtime profile observe`, `runtime profile propose`, `runtime profile prune`, `runtime profile replay`, `runtime profile status`, `runtime profile watch`, `runtime profile write`, `runtime operation-recovery`, `runtime watchdog run`, `runtime contracts` | [LIVE-HOST-CAPABILITY-RECOVERY](#live-host-capability-recovery) | Host健康读面已接Server/Rust/原OBS，显示静态范围与未证运行见证；完整能力/实际加载仍待资格，watcher和recovery非另一自动部署器 |
-| `agents list`, `agents show`, `agents create`, `agents update`, `agents delete` | [LIVE-AGENT-LIFECYCLE](#live-agent-lifecycle) | nonce/歧义/精确清理 |
+| `agents list`, `agents show`, `bot profile get`, `bot create`, `bot update`, `bot delete`, `bot hidden set`, `bot notify set` | [LIVE-AGENT-LIFECYCLE](#live-agent-lifecycle) | nonce/歧义/精确清理 |
 | `bot context compact` | [LIVE-CTX-ADOPTION](#live-ctx-adoption) | preview/明确费用授权、原账号与计划、默认 Box current root；原请求的未知结果/续接/取消归 operation 域；六格+持久读回另关联 |
 | `bot context get`, `bot snapshot create`, `bot context initialize`, `bot context reset`, `bot context restore`, `bot activate` | [LIVE-CURRENT-CONTEXT](#live-current-context) | 当前上下文已进入管理 Server；原请求回执/对账/有限取消归 operation 域，独立解除不启动任务；self-reset 排队仍未实现 |
 | `bot clone`, `bot replace` | [LIVE-CONTINUITY-PRIMITIVES](#live-continuity-primitives) | 经统一管理服务预览/提交原生分阶段程序，原 CLI 直连入口退出；完整资源/职责与实际原生资格仍保留 |
 | `bot spawn` | [LIVE-CONTINUITY-SPAWN](#live-continuity-spawn) | 统一管理服务，程序启动独立权限；临时结果交付/清理与首轮真实 Provider 仍分别验收 |
 | `system protection get`, `system protection set`, `bot protection get`, `bot protection set`, `bot protection reset` | [LIVE-OWNERSHIP-LOSS-PROTECTION](#live-ownership-loss-protection) | 默认发现、逐 Bot 策略与原回执共用管理 Server；旧手动 observe/advance 退出，后台接管不扩大通知许可 |
 | `bot snapshot list`, `bot snapshot get` | [LIVE-CONTINUITY-MATERIAL](#live-continuity-material) | 原 CONT 库的有限元数据；不读取私有正文，不把保存成功当原生导入通过 |
-| `bot handover get`, `bot handover advance`, `bot handover attest` | [LIVE-CONTINUITY-HANDOVER](#live-continuity-handover) | 统一管理Server与原CONT逐职责程序；独立权限、准确版本、原observation引用及再次核验；旧agents handover直连已退出，批次完成不证明全部职责完成 |
+| `bot handover get`, `bot handover advance`, `bot handover attest`, `bot relations get` | [LIVE-CONTINUITY-HANDOVER](#live-continuity-handover) | 统一管理Server与原CONT逐职责程序；独立权限、准确版本、原observation引用及再次核验；旧agents handover直连已退出，批次完成不证明全部职责完成 |
 | `bot handover observe`, `bot handover retire` | [LIVE-CONTINUITY-RETIREMENT](#live-continuity-retirement) | 原入站覆盖/观察与retirement guard；缺资源独立/删除边界保持blocked，原操作对账不调用native或重新删除 |
-| `agents duplicate`, `agents operations show` | [LIVE-NATIVE-DUPLICATE](#live-native-duplicate) | 官方语义/精确新ID；复制Routine与App选择的副作用须记录 |
-| `agents ownership` | [LIVE-OWNERSHIP-ALIGNMENT](#live-ownership-alignment) | 查询不改变归属 |
+| `bot duplicate`, `product operation get`, `product operation reconcile`, `agents operations show` | [LIVE-NATIVE-DUPLICATE](#live-native-duplicate) | 官方语义/精确新ID；复制Routine与App选择的副作用须记录 |
+| `agents ownership`, `bot ownership get` | [LIVE-OWNERSHIP-ALIGNMENT](#live-ownership-alignment) | 查询不改变归属 |
 | `agents title show`, `agents title hide`, `agents title sync` | [LIVE-REASONING-HOST-APP](#live-reasoning-host-app) | 用户标题与模型装饰区分 |
 | `routine apply`, `routine list`, `routine get`, `routine enable`, `routine disable`, `routine delete`, `notification receiver bind`, `notification send` | [LIVE-OPS-ROUTINES](#live-ops-routines) | 真实Webhook而非run-now |
 | `notification receiver list`, `notification receiver get`, `notification receiver verify`, `notification receiver blueprint`, `notification settings get`, `notification settings apply` | [LIVE-OPS-RECEIVERS](#live-ops-receivers) | 新读面经共享 API；key 私有，预检不算授权或实际接收；剩余配对/初始化入口独立迁移 |
 | `notification receiver enable`, `notification receiver disable`, `notification receiver unbind`, `notification receiver test`, `notification list`, `notification get`, `notification status` | [LIVE-OPS-OBSERVER-LIFETIME](#live-ops-observer-lifetime) | 新授权、独立测试与回执复用原 owner；测试不是启用前提，unknown 不重发，不从 200 推定收到；旧 activation/revoke writer 退出 |
-| `groups list`, `groups show`, `groups create`, `groups update`, `groups delete`, `groups members list`, `groups members add`, `groups members remove`, `groups members set`, `runtime group-progress` | [LIVE-GROUPS-INTERACTION](#live-groups-interaction) | 仅本轮测试群与对象 |
+| `groups list`, `groups show`, `groups members list`, `group list`, `group get`, `group create`, `group update`, `group delete`, `group hidden set`, `group notify set`, `group members set`, `runtime group-progress` | [LIVE-GROUPS-INTERACTION](#live-groups-interaction) | 仅本轮测试群与对象 |
 | `send`, `history outcome` | [LIVE-SEND-OUTCOME](#live-send-outcome) | nonce/run/STEP/投递分层 |
 | `message send`, `message get`, `message delivery get`, `message delivery wait` | [LIVE-SEND-OUTCOME](#live-send-outcome) | 统一消息提交、原请求回查与原生交付关联；unknown 不重发 |
 | `history search`, `history tail`, `history thread`, `export agent` | [LIVE-HISTORY-MEMORY-EXPORT](#live-history-memory-export) | 默认输出私有且有界 |

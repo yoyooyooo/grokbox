@@ -10,7 +10,6 @@ import { acquireDaemonSocket, type DaemonSocketLease } from "@grokbox/box-runtim
 import { runtimeOwnershipReader } from "../runtime-ownership.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
 import type { DaemonNetworkConfig } from "./config.ts";
-import { liveDesktopIo, reapDeletedAgentSeat } from "@grokbox/box-runtime/runtime";
 import { TitleSyncManager } from "./title-sync.ts";
 import { DaemonEventManager, type EventSource } from "./events.ts";
 
@@ -210,43 +209,6 @@ export async function startDaemonHost(
     }
     const timeoutMs = asNumber(params.timeoutMs, 10_000);
     const body = gatewayBody(params);
-    if (method === "createAgent") {
-      const value = await gateway.createAgent(body, timeoutMs);
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
-    if (method === "createGroup") {
-      const value = await gateway.createGroup(body, timeoutMs);
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
-    if (method === "updateAgent") {
-      const value = await gateway.updateAgent(body, timeoutMs);
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
-    if (method === "setGroupMembers") {
-      const value = await gateway.setGroupMembers(body, timeoutMs);
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
-    if (method === "setAgentNotifyOnUpdates") {
-      const value = await gateway.setAgentNotifyOnUpdates(
-        { id: asString(body.id), isEnabled: body.isEnabled === true },
-        timeoutMs,
-      );
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
-    if (method === "setAgentHiddenFromSidebar") {
-      const value = await gateway.setAgentHiddenFromSidebar(
-        { id: asString(body.id), isHidden: body.isHidden === true },
-        timeoutMs,
-      );
-      return { result: value.result, gateway: gatewayMeta(value.discovery) };
-    }
-    if (method === "deleteAgent") {
-      const value = await gateway.deleteAgent(asString(body.id), timeoutMs);
-      const seatIo = deps.desktopIo ?? await liveDesktopIo();
-      const desktopReap = seatIo ? await reapDeletedAgentSeat(asString(body.id), deps.now(), seatIo) : { display: null, outcome: "unavailable" };
-      const result = isRecord(value.result) ? { ...value.result, desktop: desktopReap } : { desktop: desktopReap };
-      return { result, gateway: gatewayMeta(value.discovery) };
-    }
     if (method === "publishBotTemplate") {
       const value = await gateway.publishBotTemplate(body, timeoutMs);
       return { result: value.result, gateway: gatewayMeta(value.discovery) };

@@ -28,6 +28,6 @@ The fence is ASCII ` | `; parsing uses the last fence followed by valid `k=v` pa
 
 ## Interaction with models and user titles
 
-Model selection/reset uses `bot model set/reset` through the management Server. Its receipt establishes saved next-turn intent, not a native title write. Use an explicitly scoped title action and readback when display is part of the authorized task. `agents update --title` replaces the user segment while keeping a showing trailer refreshed; missing credentials preserve `m=`, while a confirmed absent assignment clears it.
+Model selection/reset uses `bot model set/reset` through the management Server. Its receipt establishes saved next-turn intent, not a native title write. Use an explicitly scoped title action and readback when display is part of the authorized task. `bot update --input @file` with `profile.title` changes the user segment while preserving the existing showing trailer. It does not refresh model/ownership facts; the separately scoped title-sync owner still owns that projection.
 
 For the deliberately delayed refresh acceptance check, load [validation](validation.md). A routine title edit does not require that full playbook.

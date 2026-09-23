@@ -702,8 +702,16 @@ export class GatewayClient {
     operationId?: string,
   ): Promise<{ result: unknown; discovery: Discovery }> {
     try {
-      const daemon = await this.daemonFor("grok.roster.write", timeoutMs);
+      const template = method === "publishBotTemplate" || method === "deleteBotTemplate" || method === "setBotTemplateVisibility" || method === "createAgentFromTemplate";
+      // Original local lifecycle/title adapters still use this primitive until
+      // their owning route exits. Generic product RPCs are no longer public
+      // daemon operations, and cannot fall back from a remote profile to local.
+      if (!template && (this.deps.transport === "daemon" || this.deps.sshHost || this.deps.daemonServerUrl)) {
+        throw new CliError("invalid_usage", "Native product daemon RPCs are retired; use the reviewed management Bot/Group commands.");
+      }
+      const daemon = template ? await this.daemonFor("grok.templates.write", timeoutMs) : undefined;
       if (daemon) {
+        if (method !== "publishBotTemplate" && method !== "deleteBotTemplate" && method !== "setBotTemplateVisibility" && method !== "createAgentFromTemplate") throw new CliError("invalid_usage", "Product daemon RPC is retired.");
         const response = await daemon.call(method, { ...body, timeoutMs });
         if (!response.gateway) throw new CliError("gateway_internal", "Daemon management response lacks generation.");
         const discovery = this.discoveryFromDaemon(response.gateway);

@@ -3,14 +3,7 @@ import { ConfigError } from "@grokbox/runtime-kernel/config";
 import { CONFIG_COMMANDS } from "./config-registry.ts";
 import { runConfigCommand, type ConfigCommandOptions } from "./commands/config.ts";
 import { Command, CommanderError } from "commander";
-import {
-  runAgentsCreate,
-  runAgentsDelete,
-  runAgentsList,
-  runAgentsShow,
-  runAgentsTitle,
-  runAgentsUpdate,
-} from "./commands/agents.ts";
+import { runAgentsList, runAgentsShow, runAgentsTitle } from "./commands/agents.ts";
 import { runBoxKeepalive, runBoxKeepaliveStatus, runBoxStatus, runBoxWake } from "./commands/box.ts";
 import { runDaemonEnsure, runDaemonServe, runDaemonStatus } from "./commands/daemon.ts";
 import { runDoctor } from "./commands/doctor.ts";
@@ -39,17 +32,7 @@ import {
   runTemplateVisibility,
 } from "./commands/template.ts";
 import { runEvents } from "./commands/events.ts";
-import {
-  runGroupMembersAdd,
-  runGroupMembersList,
-  runGroupMembersRemove,
-  runGroupMembersSet,
-  runGroupsCreate,
-  runGroupsDelete,
-  runGroupsList,
-  runGroupsShow,
-  runGroupsUpdate,
-} from "./commands/groups.ts";
+import { runGroupMembersList, runGroupsList, runGroupsShow } from "./commands/groups.ts";
 import { runHistorySearch, runHistoryTail, runHistoryThread } from "./commands/history.ts";
 import { runAlerts, runSendOutcome, runRuntimeIncident } from "./commands/outcome.ts";
 import { runGroupProgress } from "./commands/group-progress.ts";
@@ -71,7 +54,7 @@ import { resolveProfile } from "./config/profile.ts";
 import { ManagementClientError } from "@grokbox/client";
 import { MANAGEMENT_COMMANDS } from "./management-registry.ts";
 import { runManagementCommand, writeManagementFailure, type ManagementCommandOptions } from "./commands/management-api.ts";
-import { runAgentDuplicate, runAgentOperation } from "./commands/agent-duplicate.ts";
+import { runAgentOperation } from "./commands/agent-duplicate.ts";
 import type { CliDeps } from "./deps.ts";
 import { CliError, usage } from "./errors.ts";
 import { writeFailure } from "./output.ts";
@@ -272,27 +255,14 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents list": async (deps, _args, options) => await runAgentsList(deps, options),
     "agents show": async (deps, args, options) => await runAgentsShow(deps, args[0] ?? "", options),
     "agents ownership": async (deps, args, options) => await runAgentsOwnership(deps, args.filter((arg): arg is string => arg !== undefined), options),
-    "agents duplicate": async (deps, args, options) => await runAgentDuplicate(deps, args[0] ?? "", options),
     "agents operations show": async (deps, args, options) => await runAgentOperation(deps, args[0] ?? "", options),
-    "agents create": async (deps, _args, options) => await runAgentsCreate(deps, options),
-    "agents update": async (deps, args, options) => await runAgentsUpdate(deps, args[0] ?? "", options),
-    "agents delete": async (deps, args, options) => await runAgentsDelete(deps, args[0] ?? "", options),
     "agents title show": async (deps, args, options) => await runAgentsTitle(deps, "show", args.filter((arg): arg is string => arg !== undefined), options),
     "agents title hide": async (deps, args, options) => await runAgentsTitle(deps, "hide", args.filter((arg): arg is string => arg !== undefined), options),
     "agents title sync": async (deps, args, options) => await runAgentsTitle(deps, "sync", args.filter((arg): arg is string => arg !== undefined), options),
     "groups list": async (deps, _args, options) => await runGroupsList(deps, options),
     "groups show": async (deps, args, options) => await runGroupsShow(deps, args[0] ?? "", options),
-    "groups create": async (deps, _args, options) => await runGroupsCreate(deps, options),
-    "groups update": async (deps, args, options) => await runGroupsUpdate(deps, args[0] ?? "", options),
-    "groups delete": async (deps, args, options) => await runGroupsDelete(deps, args[0] ?? "", options),
     "groups members list": async (deps, args, options) =>
       await runGroupMembersList(deps, args[0] ?? "", options),
-    "groups members add": async (deps, args, options) =>
-      await runGroupMembersAdd(deps, args[0] ?? "", args[1] ?? "", options),
-    "groups members remove": async (deps, args, options) =>
-      await runGroupMembersRemove(deps, args[0] ?? "", args[1] ?? "", options),
-    "groups members set": async (deps, args, options) =>
-      await runGroupMembersSet(deps, args[0] ?? "", options),
     "template pack": async (deps, args, options) => await runTemplatePack(deps, args[0] ?? "", options),
     "template stage": async (deps, args, options) => await runTemplateStage(deps, args[0] ?? "", options),
     "template publish": async (deps, args, options) => await runTemplatePublish(deps, args[0] ?? "", options),
