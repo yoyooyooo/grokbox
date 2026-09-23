@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -13,13 +13,21 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const PACKED = join(repoRoot, "dist", "preload.cjs");
 const SESSION_SRC = join(repoRoot, "packages", "box-runtime", "src", "internal", "host", "session.ts");
 const OLD_SNIPPET = join(repoRoot, "packages", "box-runtime", "test", "fixtures", "e09-old-error-text-snippet.cjs");
-const PACKED_PIN = join(repoRoot, "packages", "box-runtime", "test", "fixtures", "e09-packed-preload.sha256");
+const { verifyPreloadArtifact } = await import(new URL("../../../scripts/preload-artifact.mjs", import.meta.url).href) as {
+  verifyPreloadArtifact(root: string, path?: string): Promise<{ ok: boolean; reason: string; expected: { sha256: string } | null }>;
+};
 
 function sha256Bytes(buf: Buffer | string): string {
   return createHash("sha256").update(buf).digest("hex");
 }
 
 describe("source Host SHA unit and bun packed smoke", () => {
+  beforeAll(async () => {
+    // No smoke probe may execute an unverified candidate, even in a direct test run.
+    const proof = await verifyPreloadArtifact(repoRoot, PACKED);
+    expect(proof.ok, proof.reason).toBe(true);
+  });
+
   test("source Host SHA unknown and transformed mismatch refuse", () => {
     const profile = profileFromSource(SYNTHETIC_HOST, SYNTHETIC_SLICES, "e09");
     expect(applyPatchProfile(`${SYNTHETIC_HOST}\n// drift\n`, profile)).toMatchObject({ ok: false, code: "unknown-sha" });
@@ -71,27 +79,14 @@ describe("source Host SHA unit and bun packed smoke", () => {
     expect(probe.stdout).toContain("preload-probe-ok");
   });
 
-  test("E09 reject-old oracle: pin matches pack from source", () => {
-    expect(existsSync(PACKED_PIN)).toBe(true);
-    const pin = readFileSync(PACKED_PIN, "utf8").trim();
-    expect(pin).toMatch(/^[a-f0-9]{64}$/);
-    expect(pin).not.toBe("0".repeat(64));
-    const packed = spawnSync("bun", ["scripts/pack-runtime-helpers.mjs"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        GROKBOX_ALLOW_LIVE_HOST: "",
-        GROKBOX_PACKED_SESSION_FACTORY: "",
-        GROKBOX_PACKED_PRELOAD: "",
-      },
-    });
-    expect(packed.status).toBe(0);
-    expect(existsSync(PACKED)).toBe(true);
-    const bytes = readFileSync(PACKED);
-    expect(sha256Bytes(bytes)).toBe(pin);
-    expect(sha256Bytes(Buffer.concat([bytes, Buffer.from("\n// drift\n")]))).not.toBe(pin);
-    expect(sha256Bytes(Buffer.alloc(0))).not.toBe(pin);
+  test("E09 reject-old oracle: source-bound rebuild matches captured artifact", async () => {
+    // The verifier does not run the pack command or rewrite dist. A stale
+    // preload must remain stale and fail, rather than being repaired by a test.
+    const before = readFileSync(PACKED);
+    const proof = await verifyPreloadArtifact(repoRoot, PACKED);
+    expect(proof.ok, proof.reason).toBe(true);
+    expect(proof.expected?.sha256).toBe(sha256Bytes(before));
+    expect(readFileSync(PACKED)).toEqual(before);
   });
 
   test("E09 reject-old oracle: old error-text consumer vs source throw", async () => {

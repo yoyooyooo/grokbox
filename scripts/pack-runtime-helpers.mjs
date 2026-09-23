@@ -1,8 +1,9 @@
-import { build } from "esbuild";
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildProvenance } from "./build-provenance.mjs";
+import { buildPreloadReference } from "./preload-artifact.mjs";
+import { randomUUID } from "node:crypto";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = join(root, "packages", "box-runtime", "src");
@@ -19,17 +20,19 @@ for (const name of ["guardian-child.cjs", "injector-hold.cjs", "grokbox-temp-sup
 // the retired whole-image engine from previous builds; there is no dual runtime.
 rmSync(join(dist, "observation-sqlite.cjs"), { force: true });
 
-await build({
-  absWorkingDir: root,
-  entryPoints: [join(src, "preload.ts")],
-  bundle: true,
-  platform: "node",
-  target: "node20",
-  format: "cjs",
-  outfile: join(dist, "preload.cjs"),
-  define: { __GROKBOX_BUILD_INFO__: JSON.stringify(identity) },
-  logLevel: "warning",
-});
+const reference = await buildPreloadReference(root);
+if (JSON.stringify(reference.build) !== JSON.stringify(identity)) {
+  throw new Error("Source inputs changed before preload build; artifact is not qualified.");
+}
+const pending = join(dist, `preload.${randomUUID()}.tmp`);
+try {
+  writeFileSync(pending, reference.bytes, { flag: "wx", mode: 0o644 });
+  if (JSON.stringify(buildProvenance(root)) !== JSON.stringify(identity)) {
+    throw new Error("Source inputs changed during preload publication; artifact is not qualified.");
+  }
+  renameSync(pending, join(dist, "preload.cjs"));
+} finally { rmSync(pending, { force: true }); }
+
 if (buildProvenance(root).sourceDigest !== identity.sourceDigest) {
   throw new Error("Source inputs changed during preload build; artifact is not qualified.");
 }

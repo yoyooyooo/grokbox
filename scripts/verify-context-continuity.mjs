@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureVerificationSource, withVerificationSource } from "./verification-source.mjs";
+import { verifyPreloadArtifact } from "./preload-artifact.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -118,15 +119,14 @@ function parseBunTest(combined) {
 function e09OracleStatus(parsed, extra = {}) {
   const failed = parsed.failNames.some((name) => name.includes("E09 reject-old"));
   const consumer = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: old error-text consumer"));
-  const pin = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: pin matches pack from source"))
-    || parsed.passNames.some((name) => name.includes("E09 reject-old oracle: packed pin"));
+  const bound = parsed.passNames.some((name) => name.includes("E09 reject-old oracle: source-bound rebuild matches captured artifact"));
   if (failed) return { id: "E09", status: "fail", tests: parsed.failNames.filter((name) => name.includes("E09 reject-old")) };
-  const oracle = consumer && pin;
+  const oracle = consumer && bound;
   if (!oracle) {
     return { id: "E09", status: "unavailable", reason: "e09_reject_old_oracle_not_qualified" };
   }
   if (extra.requirePacked) {
-    if (extra.loadOk && extra.pinOk && extra.packedOk) {
+    if (extra.loadOk && extra.bindingOk && extra.packedOk) {
       return { id: "E09", status: "pass", tests: parsed.passNames.filter((name) => name.includes("E09 reject-old oracle")) };
     }
     return {
@@ -134,8 +134,8 @@ function e09OracleStatus(parsed, extra = {}) {
       status: "unavailable",
       reason: extra.loadOk === false
         ? "packed_node_load_failed"
-        : extra.pinOk === false
-          ? "packed_pin_mismatch"
+        : extra.bindingOk === false
+          ? "packed_source_binding_mismatch"
           : extra.packedOk === false
             ? "packed_preload_does_not_export_session_factory"
             : "e09_reject_old_oracle_not_qualified",
@@ -307,6 +307,16 @@ if (!packedExists) {
   }, true);
 }
 
+// Refuse a stale or altered file before any candidate code is executed.
+// Verification only rebuilds trusted source in memory; it never repairs dist.
+const bindingBefore = await verifyPreloadArtifact(root, PACKED);
+artifact.sourceBinding = { before: bindingBefore, after: null };
+if (!bindingBefore.ok) {
+  emit({ lane, commit, bun, dependencyReality: "offline-packed-preload", artifact, ok: false,
+    error: bindingBefore.reason, cases: REQUIRED_CASES.map(id => ({ id, status: "unavailable", reason: "packed_source_binding_mismatch" })),
+    notProven: continuityNotProven({ status: "unavailable" }) }, true);
+}
+
 const defaultProbe = nodeFactoryProbe({ expectFactory: false });
 const optInProbe = nodeFactoryProbe({ factory: "1", expectFactory: true });
 const liveRefuseProbe = nodeFactoryProbe({ factory: "1", live: "1", expectFactory: false });
@@ -349,15 +359,18 @@ const obsFailed = obsRan.status !== 0
   || obsParsed.pass === 0
   || obsParsed.expects === 0
   || obsRequiredMissing.length > 0;
+const bindingAfter = await verifyPreloadArtifact(root, PACKED);
+artifact.sourceBinding.after = bindingAfter;
+const bindingOk = bindingAfter.ok && bindingAfter.artifact.sha256 === bindingBefore.artifact.sha256
+  && bindingAfter.expected.sha256 === bindingBefore.expected.sha256;
 const e09 = e09OracleStatus(obsParsed, {
   requirePacked: true,
   loadOk,
   packedOk: !packedFailed,
-  pinOk: packedExists && existsSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"))
-    && readFileSync(join(root, "packages/box-runtime/test/fixtures/e09-packed-preload.sha256"), "utf8").trim() === packedSha,
+  bindingOk,
 });
 const e07 = e07HostStatus(obsParsed, true);
-const failed = !loadOk || packedFailed || obsFailed || e09.status === "fail" || e07.hostAdmission.status !== "pass";
+const failed = !bindingOk || !loadOk || packedFailed || obsFailed || e09.status === "fail" || e07.hostAdmission.status !== "pass";
 
 emit({
   lane,
@@ -385,10 +398,12 @@ emit({
     stderrTail: (obsRan.stderr ?? "").slice(-500),
   }],
   notProven: continuityNotProven(e09, e07),
-  shaGate: "Compare dist/preload.cjs sha256 after rebuilding with the recorded command before claiming packed E01–E08.",
+  shaGate: "Capture the artifact before tests, independently rebuild current source in memory, and recheck exact bytes and build inputs after tests; no golden update or artifact repair.",
   ok: !failed,
   ...(failed ? {
-    error: !loadOk
+    error: !bindingOk
+      ? "packed source binding changed during qualification"
+      : !loadOk
       ? "packed preload Node factory probes failed"
       : packedFailed
         ? "packed E01–E06+E08 against dist/preload.cjs failed"

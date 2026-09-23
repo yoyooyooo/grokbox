@@ -25,7 +25,7 @@ export function buildProvenance(root) {
   walk(join(root, "crates", "host-verifier", "src"));
   walk(join(root, "protocols", "host-verifier"));
   for (const file of ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "crates/host-verifier/Cargo.toml", "crates/host-verifier/build.rs", "scripts/build-host-verifier.mjs", "scripts/generate-host-verifier-protocol.mjs"]) paths.push(join(root, file));
-  for (const file of ["apps/web/package.json", "apps/web/tsconfig.json", "apps/web/vite.config.ts", "package.json", "bun.lock", "tsconfig.json", "scripts/build.mjs", "scripts/build-web.mjs", "scripts/build-provenance.mjs", "scripts/pack-runtime-helpers.mjs"]) paths.push(join(root, file));
+  for (const file of ["apps/web/package.json", "apps/web/tsconfig.json", "apps/web/vite.config.ts", "package.json", "bun.lock", "tsconfig.json", "scripts/build.mjs", "scripts/build-web.mjs", "scripts/build-provenance.mjs", "scripts/pack-runtime-helpers.mjs", "scripts/preload-artifact.mjs"]) paths.push(join(root, file));
   const hash = createHash("sha256");
   for (const path of paths.sort()) hash.update(relative(root, path).replaceAll("\\", "/") + "\0").update(readFileSync(path)).update("\0");
   const require = createRequire(join(root, "packages", "box-runtime", "package.json"));

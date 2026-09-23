@@ -116,7 +116,7 @@ export const MODEL_CORE_CASES = Object.freeze({
   ...MODEL_CORE_SUITES,
   "release-offline": [...new Set(Object.values(MODEL_CORE_SUITES).flat()),
     `${box}modeld-replace.test.ts`, `${box}t32-live-enable-readiness.test.ts`,
-    `${box}context-continuity-artifact.test.ts`, "test/packaging.test.ts", "test/publication-privacy.test.ts",
+    `${box}context-continuity-artifact.test.ts`, "test/preload-artifact.test.ts", "test/packaging.test.ts", "test/publication-privacy.test.ts",
     "test/modeld-core-benchmark.test.ts"],
 });
 
