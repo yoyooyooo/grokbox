@@ -4,7 +4,6 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 type Identity = { version: number; kind: string; sourceDigest: string; compilerVersion: string; sdkVersions: Record<string, string> };
@@ -23,7 +22,12 @@ const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("he
 beforeAll(async () => {
   // A regular-file copy of this public source tree; never edit real source to
   // create old/changed fixtures. Installed dependencies are read-only links.
-  owned = mkdtempSync(join(tmpdir(), "grokbox-preload-proof-"));
+  // Keep the copied project in the package-local test cache. Resolving the same
+  // source from the shared temporary namespace stalled before compilation; the
+  // source set and all mutation/refusal cases remain identical.
+  const cache = join(root, "node_modules/.cache");
+  mkdirSync(cache, { recursive: true });
+  owned = mkdtempSync(join(cache, "grokbox-preload-proof-"));
   const files = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
   for (const name of new Set(files)) {
     if (!existsSync(join(root, name))) continue; // deleted legacy golden
