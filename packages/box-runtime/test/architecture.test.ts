@@ -54,6 +54,8 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
     exports: {
       "./contract": "./src/contract.ts",
       "./hash": "./src/hash.ts",
+      "./canonical-json": "./src/canonical-json.ts",
+      "./products": "./src/products.ts",
       "./selection": "./src/selection.ts",
       "./ports": "./src/ports.ts",
       "./status": "./src/status.ts",
@@ -80,6 +82,8 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "packages/box-runtime/src/runtime.ts",
       "packages/runtime-kernel/src/contract.ts",
       "packages/runtime-kernel/src/hash.ts",
+      "packages/runtime-kernel/src/canonical-json.ts",
+      "packages/runtime-kernel/src/products.ts",
       "packages/runtime-kernel/src/selection.ts",
       "packages/runtime-kernel/src/status.ts",
       "packages/runtime-kernel/src/monitor.ts",
@@ -166,7 +170,7 @@ describe("runtime layout boundaries", () => {
     ["kernel-effect-regression", {
       "packages/runtime-kernel/src/contract.ts": 'import { Effect } from "effect"; export const program = Effect.succeed(1);',
     }],
-    ...["model-management", "materials", "files", "desktop", "host-health", "compaction"].map(name => [
+    ...["model-management", "materials", "files", "desktop", "host-health", "compaction", "products", "canonical-json"].map(name => [
       `pure-domain-effect-${name}`, { [`packages/runtime-kernel/src/${name}.ts`]: 'import { Effect } from "effect"; export const program = Effect.succeed(1);' },
     ] as [string, Record<string, string>]),
     ["bun-global-version", {
@@ -195,6 +199,7 @@ describe("runtime layout boundaries", () => {
     // An unavailable compiler/import trap is not evidence for the mutated
     // architecture. New pure-domain exports retain the existing Effect fence.
     const failures = JSON.parse(result.stdout).failures as Array<{ message: string }>;
+    if (_name !== "kernel-export-target") expect(failures.some(f => ["kernel export key/target mismatch", "kernel export target missing", "kernel export not in approved subpaths"].includes(f.message)), result.stdout).toBe(false);
     if (_name.startsWith("pure-domain-effect-")) expect(failures.some(f => f.message === "kernel non-ports file imports Effect")).toBe(true);
     expect(failures.some(f => !["preload esbuild failed", "preload import-time trap failed", "missing esbuild evidence"].includes(f.message)), result.stdout + result.stderr).toBe(true);
   }, CHECKER_TEST_TIMEOUT_MS);
