@@ -44,11 +44,17 @@
 
 Host/worker 的持续更新是开发期狗粮输入，不是外部异常，也不要求上游停更。区分**已验证的固定候选**与**此刻观察到的安装来源**：合流/Issue签收绑定实际验证的源码、依赖、完整recipe/candidate和有限ABI；新的磁盘SHA只使旧证据不能代表新来源，不抹去旧窗口、不自动重开已完成的无关实现。
 
-现行 `scripts/qualify-host-health.ts` 复用原稳定来源读取、唯一TS变换和打包Rust/Oxc，输出 `sourceEvolution`：reference/observed主Host及worker摘要、changedComponents、完整recipe结果和有限解释。`source-change-needs-abi-proof` 不等于功能失效；`recipe-regression` 才是已观察到的配方失配。静态语义、原生ABI、loaded和真实业务继续独立验证，任何分类都不授予采用。校验过程中来源变化仍明确拒绝该不稳定窗口，不自动改pin或循环重试求绿。
+**AH-159 的窗口归原入口所有。** `scripts/qualify-host-health.ts` 与 `verify-host-health.mjs` 通过 `host-source-window.node.mjs` 共用有界私有副本；安装级读取与副本捕获共用 `stable-source-set.node.mjs`，不复制第二套稳定性判定。每次捕获核对完整SHA和文件身份，读取中替换或同size改写拒绝该窗口；成功捕获后的安装来源变化则仅更新 `freshness`，不撤销未被篡改的固定输入结果。副本键绑定source/worker/profile与依赖、recipe、候选选择、测试计划；最终静态资格键继续绑定实际candidate、checker build及schema。原生组内全部子进程继承同一窗口和预期键，独立原生SHA门不变；生产Host路径常量与加载保护不重定向。
 
-开发期固定私有快照、最新来源旁路探测、检查依赖驱动的增量回归、过期任务合并及OBS/Linear去重回流由 **AH-159** 承接，复用本票/T44/T41原owner，不新建daemon、parser回退或profile writer。AH-120评估真正可达风险；AH-121消费实际来源变化/健康事件；Q的采用门始终核对拟采用版本。只有已证实影响该消费者的缺口才加硬Blocks，不能把持续演进建设本身设为所有开发的全局锁。
+副本父目录0700、文件0400，最多4个原子占用槽，主Host/worker各64MiB、profile 1MiB、manifest 16KiB；正常结束、失败或可结算取消释放本窗口及其测试临时目录。异常退出留下的占用不自动抢删，容量不足明确拒绝；人工核对原owner已退出后才清理。UUID及inode核对防止旧清理动作删除复用槽的新任务。此上限约束输入副本，不声称子测试的所有工作目录、进程内存或历史证据无限保留。公开回执只有摘要/有限字段；原路径只在私有manifest中，副本不成为已安装、已加载或已审核profile。
 
-固定证据见[最初A1核心ABI](../reports/2026-09-22-current-host-core-abi.md)、[68fab3核心配对复验](../reports/2026-09-23-native-core-pair-requalification.md)、[日志测试原写入结算](../reports/2026-09-23-provider-fixture-journal-settlement.md)和[消息原生与来源演进窗口](../reports/2026-09-23-native-message-source-evolution.md)。历史失败/成功保留各自输入；不将来源哈希变化、配方匹配、仅注册原函数或fixture通过混称当前完整健康。材料writer缺口仍归DATA-01/A3，不借核心窗口复活已退出的Memory RPC。
+`runtime-kernel/host-source-evolution.ts` 是分类唯一合同。source hash变化、完整有序recipe失配（准确slice/code）、静态语义检查（id/revision/code）、显式原生ABI检查及未覆盖slice分别表达；未执行为 `not-run`，未评估覆盖为 `not-evaluated`。完整维护配方匹配不等于所选profile被审核；完整维护配方失配也不自动伪装成无关已选profile的故障。`source-change-needs-abi-proof` 不是功能回归，四项静态通过不关闭未覆盖项。静态producer不得携带原生ABI通过声明；显式原生组另报选定范围结果，退出/SIGKILL/skip本身不证明ABI退化。手动 `--reference-host-sha` / `--reference-worker-sha` 必须同时提供完整摘要，仅定义比较基线，不更改任何原生pin。
+
+安装级producer继续采用一项运行、一项可替换待跑任务，取消过期排队而不抢占已运行的固定分析。完成缓存键包含source/worker/profile集合、完整recipe、checker build及必需检查版本；有界64项报告可从原provenance恢复，刷新只发现依赖变化，不清空同一完成结果。淘汰后重新检查是有界保留的代价，不承诺永久全局exactly-once；未完成的检测器失败保留原有有界退避。迟到完成进入原journal/OBS的 `sourceState=snapshot`，不更新当前 `latest`，不打开或解除当前condition；A→B→A重新发布当前观察但可复用A的固定分析。未引入第二套collector、监控数据库、parser fallback、profile writer或自动pin/adopt。
+
+**问题回流仍由原Owner与Linear完成，不是运行时新建工单服务。** 先用source pair、recipe、slice/checker/ABI及实际失败范围定位；同一故障先查已有Issue并更新原回执，只有能复现且影响该消费者的缺口才新增修复/Blocks。单纯SHA变化、fixture误用、资源退出或未执行检查不冒充上游功能回归。已签收固定窗口保持Done，新来源的准确后续由对应Owner推进；A2评估可达风险，E1消费原健康/观察事件，Q采用门仍核对实际准备采用的版本与权限，不形成全局停更锁。该接口不自动授权外部Webhook、收费模型或用户Bot变更。
+
+固定窗口实现与确定性/真实来源只读证据见[AH-159来源窗口回执](../reports/2026-09-23-host-source-windows.md)。固定证据另见[最初A1核心ABI](../reports/2026-09-22-current-host-core-abi.md)、[68fab3核心配对复验](../reports/2026-09-23-native-core-pair-requalification.md)、[日志测试原写入结算](../reports/2026-09-23-provider-fixture-journal-settlement.md)和[消息原生与来源演进窗口](../reports/2026-09-23-native-message-source-evolution.md)。历史失败/成功保留各自输入；不将来源哈希变化、配方匹配、仅注册原函数或fixture通过混称当前完整健康。材料writer缺口仍归DATA-01/A3，不借核心窗口复活已退出的Memory RPC。
 
 ## 后续实施顺序
 
@@ -76,7 +82,7 @@ A1核心来源合同之后，A2在原owner中继续补齐所声明必要能力�
 
 ## 验证入口与完成边界
 
-使用声明Bun1.3.14运行`node scripts/verify-host-health.mjs core`和`integration`。显式隔离原生测试使用`GROKBOX_TEST_NATIVE_CONTINUITY=1 GROKBOX_TEST_NATIVE_NODE=<native-node> node scripts/verify-host-health.mjs native-pair`；不再接受旧original/candidate选择器。只读磁盘资格通过`scripts/qualify-host-health.ts`的明确source/worker/binary-directory与candidate-recipe；它不发布profile或执行Host。`native-pair`现包含完整当前候选的Node/FD/Rust正反例及原生依赖摘要，拒绝skip充当通过；`GROKBOX_TEST_NATIVE_HOST=1 bun run test:native-host`复验核心原声明行为和只读副本，两个入口都不启动真实Bot。
+使用声明Bun1.3.14运行`node scripts/verify-host-health.mjs core`和`integration`。显式隔离原生测试使用`GROKBOX_TEST_NATIVE_CONTINUITY=1 GROKBOX_TEST_NATIVE_NODE=<native-node> node scripts/verify-host-health.mjs native-pair`；不再接受旧original/candidate选择器。只读磁盘资格通过`scripts/qualify-host-health.ts`的明确source/worker/binary-directory与candidate-recipe；它不发布profile或执行Host。`native-pair`现包含完整当前候选的Node/FD/Rust正反例及原生依赖摘要，拒绝skip充当通过；`GROKBOX_TEST_NATIVE_HOST=1 bun run test:native-host`复验核心原声明行为和只读副本，两个入口都不启动真实Bot。`native-host` 保留原28项用例与30秒单用例时限，按原文件分成六个顺序子进程，共享一份固定源；`core-risk` / `core-observation` 同样进入窗口owner，保留A2/E1原清单、授权及拒skip门。
 
 R1原生运行消费者另以 `native-runtime` 组验证，要求同时显式Host与continuity opt-in以及原生Node。包含原summarizer/archive、AgentStore/原worker SQLite与独立新进程读回及模型选择/SDK继续执行；原配对检查不被此组替代，也不把各自外部隔离能力写成真实账号/模型/App事实。
 
