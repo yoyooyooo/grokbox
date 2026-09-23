@@ -20,23 +20,56 @@ test.skipIf(!nativeHostQualificationEnabled())("pinned native summarizer and arc
   expect(createHash("sha256").update(source).digest("hex")).toBe(QUALIFIED_NATIVE_HOST_SHA);
   const transformed = transformUnchecked(source, LIVE_SLICE_PATCHES);
   expect(transformed.ok).toBe(true);
-  const parsed = ts.createSourceFile("qualified-native.cjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  const wanted = new Set(["runSummarizationPipeline", "warnIfPreservedTailShapeInvalid", "prepareMessagesForCompaction", "hasUserInfoTag", "isEmptyAssistantMessage3", "placedBlockIds", "selectBlockPrompts", "renderDurableBlocks", "appendDurableBlocks", "extractManuallyAttachedSkillBlocks", "collectAllSkillBlocks", "getContextUsageInfo"]);
-  const functions = new Map<string, string>(), methods = new Map<string, string>();
-  let nativeHandle: string | undefined;
-  const visit = (node: ts.Node) => {
-    if (ts.isFunctionDeclaration(node) && node.name && wanted.has(node.name.text)) {
-      expect(functions.has(node.name.text)).toBe(false); functions.set(node.name.text, node.getText(parsed));
-    }
-    if (ts.isVariableDeclaration(node) && node.name.getText(parsed) === "SummarizationHandler" && node.initializer && ts.isClassExpression(node.initializer)) {
-      for (const member of node.initializer.members) if (ts.isMethodDeclaration(member) && ["partitionMessages", "buildSummaryMessage", "assembleFinalMessages", "summarize"].includes(member.name.getText(parsed))) methods.set(member.name.getText(parsed), member.getText(parsed));
-    }
-    if (ts.isMethodDeclaration(node) && node.name.getText(parsed) === "handleSummarization") {
-      expect(nativeHandle).toBeUndefined(); nativeHandle = node.getText(parsed);
-    }
-    ts.forEachChild(node, visit);
+  // Parse bounded, uniquely named declarations rather than the entire Host.
+  // The exact source pin and AST shape checks still reject changed layouts.
+  const selected = (marker: string, endMarker: string, endLength: number, maxBytes: number) => {
+    const start = source.indexOf(marker), end = source.indexOf(endMarker, start + marker.length);
+    if (start < 0 || source.indexOf(marker, start + marker.length) !== -1 || end < 0 || end - start > maxBytes)
+      throw Error("native_summary_declaration_layout");
+    return source.slice(start + 1, end + endLength);
   };
-  visit(parsed); expect(functions.size).toBe(wanted.size); expect(methods.size).toBe(4); expect(nativeHandle).toBeDefined();
+  const parse = (code: string) => {
+    const parsed = ts.createSourceFile("qualified-selected.js", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    if ((parsed as unknown as { parseDiagnostics: readonly unknown[] }).parseDiagnostics.length) throw Error("native_summary_declaration_syntax");
+    return parsed;
+  };
+  const wanted = ["isInjectedReminderMessage", "runSummarizationPipeline", "warnIfPreservedTailShapeInvalid", "prepareMessagesForCompaction", "hasUserInfoTag", "isEmptyAssistantMessage3", "placedBlockIds", "selectBlockPrompts", "renderDurableBlocks", "appendDurableBlocks", "extractManuallyAttachedSkillBlocks", "collectAllSkillBlocks", "getContextUsageInfo"];
+  const functions = new Map<string, string>(), methods = new Map<string, string>();
+  for (const name of wanted) {
+    const parsed = parse(selected(`\nfunction ${name}(`, "\n}", 2, 40 * 1024)), statement = parsed.statements[0];
+    if (parsed.statements.length !== 1 || !statement || !ts.isFunctionDeclaration(statement) || statement.name?.text !== name)
+      throw Error("native_summary_function_shape");
+    functions.set(name, statement.getText(parsed));
+  }
+  const flagsFile = parse(selected("\nvar INJECTED_REMINDER_CURSOR_FLAGS = ", ";\n", 1, 8192));
+  const flagStatement = flagsFile.statements[0];
+  if (flagsFile.statements.length !== 1 || !flagStatement || !ts.isVariableStatement(flagStatement)
+    || flagStatement.declarationList.declarations.length !== 1) throw Error("native_reminder_flags_declaration");
+  const flags = flagStatement.declarationList.declarations[0]!;
+  if (flags.name.getText(flagsFile) !== "INJECTED_REMINDER_CURSOR_FLAGS" || !flags.initializer
+    || !ts.isArrayLiteralExpression(flags.initializer) || !flags.initializer.elements.every(ts.isStringLiteral))
+    throw Error("native_reminder_flags_shape");
+  const reminderFlags = `const ${flags.getText(flagsFile)};`;
+  const summaryFile = parse(selected("\nvar SummarizationHandler = ", "\n};", 3, 128 * 1024));
+  const statement = summaryFile.statements[0];
+  if (summaryFile.statements.length !== 1 || !statement || !ts.isVariableStatement(statement)
+    || statement.declarationList.declarations.length !== 1) throw Error("native_summary_owner_shape");
+  const declaration = statement.declarationList.declarations[0]!;
+  if (declaration.name.getText(summaryFile) !== "SummarizationHandler" || !declaration.initializer || !ts.isClassExpression(declaration.initializer))
+    throw Error("native_summary_owner_class");
+  for (const name of ["partitionMessages", "buildSummaryMessage", "assembleFinalMessages", "summarize"]) {
+    const found = declaration.initializer.members.filter(m => ts.isMethodDeclaration(m) && m.name.getText(summaryFile) === name);
+    if (found.length !== 1) throw Error("native_summary_method_ambiguous"); methods.set(name, found[0]!.getText(summaryFile));
+  }
+  const handleFile = parse(`class Selected {${selected("\n  async handleSummarization(", "\n  }", 4, 64 * 1024)}}`);
+  const handleOwner = handleFile.statements[0];
+  if (handleFile.statements.length !== 1 || !handleOwner || !ts.isClassDeclaration(handleOwner) || handleOwner.members.length !== 1
+    || !ts.isMethodDeclaration(handleOwner.members[0]!) || handleOwner.members[0]!.name.getText(handleFile) !== "handleSummarization")
+    throw Error("native_summary_handle_shape");
+  const nativeHandle = handleOwner.members[0]!.getText(handleFile);
+  console.log(JSON.stringify({ nativeSummarySource: QUALIFIED_NATIVE_HOST_SHA,
+    declarations: Object.fromEntries([...functions, ...methods, ["handleSummarization", nativeHandle], ["reminderFlags", reminderFlags]]
+      .map(([name, code]) => [name, createHash("sha256").update(code!).digest("hex")])), fullHostExecuted: false }));
   const lifecycle: string[] = [], blobs = new Map<string, unknown>(), archive: any[] = [];
   const metric = { increment() {}, histogram() {} }, log = { info() {}, warn() {}, error() {} };
   const awaiter = (self: unknown, _args: unknown, _promise: unknown, factory: () => Generator) => new Promise((resolve, reject) => {
@@ -48,7 +81,7 @@ test.skipIf(!nativeHostQualificationEnabled())("pinned native summarizer and arc
   });
   const globals: Record<string, unknown> = {
     performance, Promise, Object, Map, Set, Symbol,
-    __awaiter26: awaiter, __awaiter27: awaiter,
+    __awaiter28: awaiter, __awaiter29: awaiter,
     __addDisposableResource21: (_env: unknown, value: unknown) => value,
     __disposeResources21(env: { hasError: boolean; error: unknown }) { if (env.hasError) throw env.error; },
     createSpan: (ctx: unknown) => ({ ctx }),
@@ -81,13 +114,21 @@ test.skipIf(!nativeHostQualificationEnabled())("pinned native summarizer and arc
     getRetryDirective: (error: Error) => ({ errorType: error.name }),
   };
   for (const name of ["summaryBlockingDurationMs", "timeBetweenLastTwoMessagesMs", "backgroundSummarizationDiscarded", "backgroundSummarizationStarted", "summarizationGenerationTime", "backgroundSummarizationPersisted", "backgroundSummarizationPersistedEstimatedTokens", "backgroundSummarizationPersistedAdditionalMessages", "summarizationTime", "backgroundSummarizationTimeSavedMs", "summarizationCounter"]) globals[name] = metric;
-  const module = { exports: {} as { summary: new () => any; orchestrator: new () => any } };
-  runInNewContext(`${[...functions.values()].join("\n")}\nclass Summary {
+  const module = { exports: {} as { summary: new () => any; orchestrator: new () => any; reminderFlags: readonly string[]; isReminder: (message: unknown) => boolean } };
+  runInNewContext(`${reminderFlags}\n${[...functions.values()].join("\n")}\nclass Summary {
     getMetricsModelLabel() { return "qualified-native"; }
     recordMetrics() {}
     generateSummary() { throw new Error("native_provider_call_forbidden"); }
     ${[...methods.values()].join("\n")}
-  }\nclass Orchestrator { getSummarizer() { return new Summary(); } ${nativeHandle} }\nmodule.exports={summary:Summary,orchestrator:Orchestrator};`, { ...globals, module });
+  }\nclass Orchestrator { getSummarizer() { return new Summary(); } ${nativeHandle} }\nmodule.exports={summary:Summary,orchestrator:Orchestrator,reminderFlags:INJECTED_REMINDER_CURSOR_FLAGS,isReminder:isInjectedReminderMessage};`, { ...globals, module });
+  // Exercise the newly observed native reminder dependency, including its
+  // real flag constants. An absent global must not hide behind an unvisited branch.
+  expect(module.exports.reminderFlags.length).toBeGreaterThan(0);
+  for (const flag of module.exports.reminderFlags) {
+    expect(module.exports.isReminder({ role: "user", content: "owned reminder", providerOptions: { cursor: { [flag]: true } } })).toBe(true);
+    expect(module.exports.isReminder({ role: "assistant", content: "owned assistant", providerOptions: { cursor: { [flag]: true } } })).toBe(false);
+  }
+  expect(module.exports.isReminder({ role: "user", content: "owned input", providerOptions: { cursor: {} } })).toBe(false);
   let rows: any[] = [{ role: "system", content: "Native system", providerOptions: { future: { id: "system" } } },
     { role: "user", content: "<user_info>fixed</user_info>" },
     ...Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: `FACT_${i}=value; ${"history ".repeat(1000)}` })),

@@ -30,6 +30,14 @@ R2遵守LIVE已有模型矩阵，不暗中缩水为一个模型。真实Provider
 
 失败的旧nonce/STEP保持原身份和unknown；不能换nonce重试同一意图、清账本、假回官方或改harness。独立已授权新测试与旧请求对账分开。没有费用/目标授权只阻真实窗口，不在工作树私自发模型请求。
 
+## R1 显式原生隔离验证入口
+
+`GROKBOX_TEST_NATIVE_HOST=1 GROKBOX_TEST_NATIVE_CONTINUITY=1 GROKBOX_TEST_NATIVE_NODE=<native-node> node scripts/verify-host-health.mjs native-runtime` 在同一源码/测试/lock窗口执行原summarizer/archive接纳、原AgentStore/完整图的独立进程读回、原worker事务及跨模型继续执行。缺显式Host/worker opt-in、Node或出现skip均拒绝签通过；`--list`仅列出将执行的范围，不运行原生代码。
+
+`native-model-switch-pipeline.test.ts`复用公开模型切换业务断言，但将JSON重启替身换成原AgentStore→原worker SQLite→独立Node完整图读回，再继续真实modeld/Unix/kernel/SDK请求。外部Provider、official session及工具效果仍是隔离能力；这证明组合程序与原生存储接缝，不是完整原版Agent loop或真实模型/App成功。原摘要、overflow/取消、辅助purpose、B2及管理HTTP边界按同组或对应原生窗口分别取证，不把一种替身结果替代另一层资格。
+
+普通公开测试保持无需私有来源；原生源码只在本机受控声明内执行。固定来源结果可签收对应实现，持续新版本由HOST-01/AH-159另记变化和受影响回归，不要求上游停更。固定回执见[本轮R1原生验证](../../../reports/2026-09-23-native-runtime-qualification.md)。
+
 ## 交付
 
 每个出口报告集成tip、实际执行入口、未吸收旧分支处置、原生/合成层级、模型/会话/制品范围、失败与恢复、直接依赖。当前模型支持和真实结果仅写LIVE链接的固定报告；产品规则仍由原T24/T39/context票拥有，不复制第二个“日用完成”状态库。

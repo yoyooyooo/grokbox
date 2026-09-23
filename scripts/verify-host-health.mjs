@@ -3,10 +3,12 @@ import { fileURLToPath } from "node:url";
 import { captureVerificationSource } from "./verification-source.mjs";
 const root=fileURLToPath(new URL("../",import.meta.url));
 const group=process.argv[2]??"core",listOnly=process.argv[3]==="--list";
-const groups=["core","integration","integration-host","integration-domains","integration-web","native-pair"];
-if(process.argv.length>4||(process.argv[3]!==undefined&&!listOnly)||!groups.includes(group))throw Error("usage: verify-host-health.mjs [core|integration|integration-host|integration-domains|integration-web|native-pair] [--list]");
-if(!listOnly&&group==="native-pair"&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
- throw Error("native-pair requires explicit native continuity opt-in and native Node executable; retired pair selectors are not supported and tests never authorize adoption.");
+const groups=["core","integration","integration-host","integration-domains","integration-web","native-pair","native-runtime"];
+if(process.argv.length>4||(process.argv[3]!==undefined&&!listOnly)||!groups.includes(group))throw Error("usage: verify-host-health.mjs [core|integration|integration-host|integration-domains|integration-web|native-pair|native-runtime] [--list]");
+if(!listOnly&&["native-pair","native-runtime"].includes(group)&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
+ throw Error(`${group} requires explicit native continuity opt-in and native Node executable; retired pair selectors are not supported and tests never authorize adoption.`);
+if(!listOnly&&group==="native-runtime"&&process.env.GROKBOX_TEST_NATIVE_HOST!=="1")
+ throw Error("native-runtime requires explicit native Host opt-in as well as the original worker qualification.");
 const bun=spawnSync("bun",["--version"],{encoding:"utf8"});
 if(!listOnly&&(bun.status!==0||bun.stdout.trim()!=="1.3.14"))throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
 const suites={
@@ -56,6 +58,12 @@ const suites={
   "test/file-management.test.ts","test/job-management.test.ts","test/desktop-management.test.ts","test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
   "./test/handover-management.test.ts","./test/compaction-management.test.ts","test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
   "packages/server/test/server.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"],
+ "native-runtime":["packages/box-runtime/test/context-native-qualification.test.ts","packages/box-runtime/test/native-checkpoint-process.test.ts",
+  "packages/box-runtime/test/native-model-switch-pipeline.test.ts","packages/box-runtime/test/native-worker-binding.test.ts",
+  "packages/box-runtime/test/host-compact.test.ts","packages/box-runtime/test/native-auxiliary-noop.test.ts",
+  "packages/box-runtime/test/host-compact-pipeline.test.ts","packages/box-runtime/test/context-continuity-e2e.test.ts",
+  "packages/box-runtime/test/e07-host-purpose-e2e.test.ts","packages/box-runtime/test/tool-contract-integration.test.ts",
+  "test/context-management.test.ts","test/compaction-management.test.ts","test/ownership-model-selection.test.ts","packages/box-runtime/test/compaction-management.test.ts"],
  "native-pair":["packages/box-runtime/test/native-message-qualification.test.ts","packages/box-runtime/test/native-current-candidate.test.ts","packages/box-runtime/test/native-checkpoint-qualification.test.ts","packages/box-runtime/test/native-worker-binding.test.ts","packages/box-runtime/test/native-startup-seams.test.ts","packages/box-runtime/test/native-duplicate-qualification.test.ts","packages/box-runtime/test/native-disposal-qualification.test.ts"]
 };
 // Partition the same integration inventory, not a reduced acceptance set. The
@@ -67,12 +75,23 @@ suites["integration-host"]=suites.integration.filter(path=>hostIntegration.has(p
 suites["integration-domains"]=suites.integration.filter(path=>!hostIntegration.has(path)&&!webIntegration.has(path));
 suites["integration-web"]=suites.integration.filter(path=>webIntegration.has(path));
 const testCommand=paths=>["bun","test","--timeout","220000",...paths];
+// Native declaration parsing and independently packaged HTTP consumers have
+// separate process lifetimes. Keep every case and its scenario deadline; do not
+// accumulate full native ASTs and client test state in one long-lived Bun VM.
+const runtimeShards=[
+ suites["native-runtime"].filter(path=>path.endsWith("/context-native-qualification.test.ts")),
+ suites["native-runtime"].filter(path=>["native-checkpoint-process.test.ts","native-model-switch-pipeline.test.ts","native-worker-binding.test.ts"].some(name=>path.endsWith("/"+name))),
+ suites["native-runtime"].filter(path=>path.startsWith("test/")),
+ suites["native-runtime"].filter(path=>!path.startsWith("test/")&&!path.endsWith("/context-native-qualification.test.ts")
+   &&!["native-checkpoint-process.test.ts","native-model-switch-pipeline.test.ts","native-worker-binding.test.ts"].some(name=>path.endsWith("/"+name)))
+];
+
 const commands=group==="core"?[
  [process.execPath,"scripts/generate-host-verifier-protocol.mjs","--check"],
  ["cargo","test","--locked","-p","grokbox-host-verifier"],
  ["bun","run","typecheck"],["bun","run","typecheck:web"],
  ["bun","test","--timeout","220000",...suites.core]
-]:group==="integration"?["integration-host","integration-domains","integration-web"].map(shard=>testCommand(suites[shard])):[testCommand(suites[group])];
+]:group==="native-runtime"?runtimeShards.map(paths=>testCommand(paths.map(path=>`./${path}`))):group==="integration"?["integration-host","integration-domains","integration-web"].map(shard=>testCommand(suites[shard])):[testCommand(suites[group])];
 if(listOnly){console.log(JSON.stringify({group,files:suites[group],commands}));process.exit(0);}
 const before=captureVerificationSource(root),receipts=[];
 console.log(JSON.stringify({phase:`host-health-${group}-before`,...before}));
@@ -81,7 +100,7 @@ for(const command of commands){
  const output=`${result.stdout??""}\n${result.stderr??""}`;
  const summary=output.split("\n").filter(line=>/^\{|^test result:|^\s*\d+ (pass|fail|skip)|^Ran |^error|^\$/.test(line));
  console.log(summary.join("\n"));
- const skippedNative=group==="native-pair"&&/^\s*[1-9][0-9]* skip\b/m.test(output);
+ const skippedNative=["native-pair","native-runtime"].includes(group)&&/^\s*[1-9][0-9]* skip\b/m.test(output);
  receipts.push({command:command.join(" "),code:result.status,error:result.error?.code??(skippedNative?"native_qualification_skipped":null),signal:result.signal,summary});
  if(result.error||result.status!==0||skippedNative){console.error(output.slice(-100000));break;}
 }

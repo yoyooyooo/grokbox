@@ -38,3 +38,35 @@ test("inspection does not turn native qualification into an implicitly authorize
   expect(refused.stderr).toContain("requires explicit native continuity opt-in");
   expect(refused.stdout).not.toContain("-before");
 });
+
+
+test("R1 native runtime inventory includes the original summary, independent reader and model pipeline", () => {
+  const native = inventory("native-runtime");
+  for (const path of ["context-native-qualification.test.ts", "native-checkpoint-process.test.ts", "native-model-switch-pipeline.test.ts", "native-worker-binding.test.ts"])
+    expect(native.files).toContain(`packages/box-runtime/test/${path}`);
+  expect(new Set(native.files).size).toBe(native.files.length);
+  const all = native.commands.flatMap(command => {
+    expect(command.slice(0, 4)).toEqual(["bun", "test", "--timeout", "220000"]);
+    expect(command.length).toBeGreaterThan(4);
+    expect(command.slice(4).every(path => path.startsWith("./"))).toBe(true);
+    return command.slice(4).map(path => path.slice(2));
+  });
+  expect(new Set(all).size).toBe(all.length);
+  expect([...all].sort()).toEqual([...native.files].sort());
+
+});
+
+test("native runtime never obtains a passing run from missing opt-ins or an implicit Node", () => {
+  for (const settings of [
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "0", GROKBOX_TEST_NATIVE_HOST: "1", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node" },
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node" },
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_HOST: "1" },
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_HOST: "1", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node", GROKBOX_TEST_NATIVE_CONTINUITY_PAIR: "latest" },
+  ]) {
+    const refused = spawnSync("node", ["scripts/verify-host-health.mjs", "native-runtime"], {
+      cwd: root, encoding: "utf8", timeout: 10000, env: { PATH: process.env.PATH, ...settings },
+    });
+    expect(refused.error).toBeUndefined(); expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain("requires explicit native"); expect(refused.stdout).not.toContain("-before");
+  }
+});

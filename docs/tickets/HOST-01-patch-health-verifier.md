@@ -78,6 +78,8 @@ A1核心来源合同之后，A2在原owner中继续补齐所声明必要能力�
 
 使用声明Bun1.3.14运行`node scripts/verify-host-health.mjs core`和`integration`。显式隔离原生测试使用`GROKBOX_TEST_NATIVE_CONTINUITY=1 GROKBOX_TEST_NATIVE_NODE=<native-node> node scripts/verify-host-health.mjs native-pair`；不再接受旧original/candidate选择器。只读磁盘资格通过`scripts/qualify-host-health.ts`的明确source/worker/binary-directory与candidate-recipe；它不发布profile或执行Host。`native-pair`现包含完整当前候选的Node/FD/Rust正反例及原生依赖摘要，拒绝skip充当通过；`GROKBOX_TEST_NATIVE_HOST=1 bun run test:native-host`复验核心原声明行为和只读副本，两个入口都不启动真实Bot。
 
+R1原生运行消费者另以 `native-runtime` 组验证，要求同时显式Host与continuity opt-in以及原生Node。包含原summarizer/archive、AgentStore/原worker SQLite与独立新进程读回及模型选择/SDK继续执行；原配对检查不被此组替代，也不把各自外部隔离能力写成真实账号/模型/App事实。
+
 公开测试独立于私人源；原生资格只在明确环境读取/隔离执行指定声明和自有worker存储。正常、缺口、合法语义破坏、source/loaded分代、同代原引用被换、首次采样前明细丢失、retain→intake中断、重启不重发、正证据恢复和child结算都须覆盖。现场验收只进入[LIVE](LIVE-integration-validation.md)对应Host/context/monitor/install等场景，不把报告存在写成ready。
 
 关闭本票要求：必需检查无未声明缺口、必要负事件可进原故障出口、原生/静态/运行/投递事实不混、正式制品和消费者一致、Server/分析失败不干扰合法执行，且旧平行实现与实时兼容已退出。当前整体qualified=false，未授权的采用、模型费用或外部通知不随源码完成自动发生。

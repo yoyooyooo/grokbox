@@ -10,6 +10,8 @@ import { nativeContinuityEnabled } from "./native-continuity-code.ts";
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const repository = resolve(import.meta.dir, "../../..");
 async function fixture() {
+  const node = process.env.GROKBOX_TEST_NATIVE_NODE;
+  if (!node) throw Error("native_checkpoint_process_requires_explicit_node");
   const directory = await mkdtemp(join(tmpdir(), "native-continuity-process-"));
   await writeFile(join(directory, "owned-marker"), "native-checkpoint-node-test", { mode: 0o600 });
   await symlink(join(repository, "node_modules"), join(directory, "node_modules"), "dir");
@@ -17,7 +19,7 @@ async function fixture() {
   await build({ absWorkingDir: repository, entryPoints: [join(import.meta.dir, "fixtures/native-checkpoint-process-worker.ts")],
     platform: "node", format: "esm", target: "node20", bundle: true, outfile: entry, external: ["sqlite3", "classic-level", "typescript"],
     banner: { js: "import {createRequire as __require} from 'node:module'; const require=__require(import.meta.url);" }, logLevel: "silent" });
-  const run = (mode: "seed" | "install" | "readback") => spawnSync(process.env.GROKBOX_TEST_NODE ?? "node", [entry, directory, mode, requestId], {
+  const run = (mode: "seed" | "install" | "readback") => spawnSync(node, [entry, directory, mode, requestId], {
     cwd: directory, encoding: "utf8", timeout: 30000,
     env: { PATH: process.env.PATH, HOME: directory, GROKBOX_TEST_NATIVE_CONTINUITY: "1", NODE_NO_WARNINGS: "1" },
   });
