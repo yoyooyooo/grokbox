@@ -467,3 +467,32 @@ test("real peer EOF during compact settles the STEP and clears resume ownership"
     await rm(dir, { recursive: true, force: true });
   }
 }, 5000);
+
+
+for (const closed of [false, true]) test(`buffered complete frame survives peer EOF closed=${closed}`, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "modeld-buffered-eof-")), path = join(dir, "fixture.sock");
+  let accept!: (socket: Socket) => void; const accepted = new Promise<Socket>(resolve => { accept = resolve; });
+  const server = createServer({ allowHalfOpen: true }, accept);
+  let client: Socket | undefined, peer: Socket | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, resolve); });
+    client = createConnection(path); client.on("error", () => undefined); peer = await accepted;
+    const incoming: Incoming = { socket: peer, buf: Buffer.alloc(0), consumed: false, extra: false, overflow: false, awaitingResume: false };
+    const buffer = (chunk: Buffer) => { incoming.buf = Buffer.concat([incoming.buf, chunk]); };
+    peer.on("data", buffer);
+    const ended = new Promise<void>(resolve => peer!.once("end", resolve));
+    const value = { version: WIRE_VERSION, method: "health" };
+    client.end(encodeModeldFrame(value)); await ended;
+    expect(peer.readableEnded).toBe(true);
+    if (closed) { peer.destroy(); expect(peer.destroyed).toBe(true); }
+    const before = Object.fromEntries(["data", "end", "close", "error"].map(name => [name, peer!.listenerCount(name)]));
+    const result = await Effect.runPromise(Effect.result(readOneFrame(incoming, 500)));
+    expect(result._tag).toBe("Success");
+    if (result._tag === "Success") { expect(result.success.value).toEqual(value); expect(result.success.rest.length).toBe(0); }
+    for (const name of ["data", "end", "close", "error"]) expect(peer.listenerCount(name)).toBe(before[name]);
+    peer.off("data", buffer);
+  } finally {
+    client?.destroy(); peer?.destroy(); await new Promise<void>(resolve => server.close(() => resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 3000);

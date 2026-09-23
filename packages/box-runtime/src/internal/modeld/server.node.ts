@@ -131,7 +131,12 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
       if (decoded instanceof Error) finish(decoded);
       else finish(undefined, decoded);
     };
-    const onDisconnect = () => finish(new Error("disconnected"));
+    const onDisconnect = () => {
+      // Bytes already received remain a readable frame even after EOF. The
+      // parent request owner separately decides whether execution may continue.
+      check();
+      if (!settled) finish(new Error("disconnected"));
+    };
     const onAbort = () => finish(new Error("aborted"));
     if (signal.aborted) {
       finish(new Error("aborted"));
@@ -142,8 +147,8 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
     socket.on("end", onDisconnect);
     socket.on("close", onDisconnect);
     socket.on("error", onDisconnect);
-    if (socket.destroyed || socket.readableEnded) onDisconnect();
-    else check();
+    check();
+    if (!settled && (socket.destroyed || socket.readableEnded)) onDisconnect();
   });
 }
 
@@ -153,6 +158,7 @@ function watchDisconnect(socket: Socket, onClose: (kind: "peer_end" | "peer_clos
   const end = () => fire("peer_end"), close = () => fire("peer_close"), error = () => fire("socket_error");
   socket.on("end", end); socket.on("close", close); socket.on("error", error);
   if (socket.destroyed) close();
+  else if (socket.readableEnded) end();
   return () => { socket.off("end", end); socket.off("close", close); socket.off("error", error); };
 }
 
