@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { captureVerificationSource } from "./verification-source.mjs";
+import { expandTests, partitionTests } from "./verification-shards.mjs";
+import { verificationChild, verificationSignals } from "./verification-child.mjs";
 const root=fileURLToPath(new URL("../",import.meta.url));
 const group=process.argv[2]??"core",listOnly=process.argv[3]==="--list";
 const groups=["core","integration","integration-host","integration-domains","integration-web","native-pair","native-runtime"];
@@ -12,7 +14,7 @@ if(!listOnly&&group==="native-runtime"&&process.env.GROKBOX_TEST_NATIVE_HOST!=="
 const bun=spawnSync("bun",["--version"],{encoding:"utf8"});
 if(!listOnly&&(bun.status!==0||bun.stdout.trim()!=="1.3.14"))throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
 const suites={
- core:["test/preload-artifact.test.ts","test/host-source-evolution.test.ts","packages/runtime-kernel/test/compaction-contract.test.ts","packages/box-runtime/test/journal-settlement.test.ts","packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
+ core:["test/verification-shards.test.ts","test/verification-child.test.ts","test/preload-artifact.test.ts","test/host-source-evolution.test.ts","packages/runtime-kernel/test/compaction-contract.test.ts","packages/box-runtime/test/journal-settlement.test.ts","packages/client/test","packages/runtime-kernel/test/bot-lifecycle-contract.test.ts","packages/runtime-kernel/test/agent-routines.test.ts",
   "packages/box-runtime/test/host-health-source.test.ts","packages/box-runtime/test/source-recipes.test.ts","packages/box-runtime/test/capability-witness.test.ts",
   "packages/box-runtime/test/alert-slices.test.ts","packages/box-runtime/test/host-managed-retry.test.ts","packages/box-runtime/test/host-native-error-scope.test.ts",
   "packages/box-runtime/test/bot-lifecycle.test.ts","packages/box-runtime/test/handover-management.test.ts","packages/box-runtime/test/bot-convergence.test.ts","packages/box-runtime/test/bot-protection.test.ts","./test/bot-handover-cli.test.ts",
@@ -86,25 +88,44 @@ const runtimeShards=[
    &&!["native-checkpoint-process.test.ts","native-model-switch-pipeline.test.ts","native-worker-binding.test.ts"].some(name=>path.endsWith("/"+name)))
 ];
 
+// Compile-heavy artifact and CLI tests get fresh VMs. Other tests remain in
+// bounded owner groups. This changes process lifetime, never case deadlines.
+const coreFiles = expandTests(root, suites.core);
+const coreShards = partitionTests(coreFiles, path => {
+ const name = path.split("/").at(-1);
+ if (name === "preload-artifact.test.ts") return "artifact";
+ if (name === "cli.test.ts") return "cli";
+ if (name === "verification-child.test.ts") return "child-lifetime";
+ if (path.startsWith("packages/runtime-kernel/")) return "kernel";
+ if (path.startsWith("packages/client/")) return "client";
+ if (path.startsWith("apps/")) return "web-contract";
+ if (path.startsWith("test/")) return "cli-integration";
+ if (/^(host|native|source-recipes|capability|alert|preload|hook|hcr|reviewed-profile)/.test(name)) return "host";
+ if (/^(context|compaction|continuity|current-ledger|routine|handover)/.test(name)) return "state";
+ if (/^(monitor|journal|notification|diagnostic|storage|observation|incident|ops)/.test(name)) return "observation";
+ return "runtime";
+});
 const commands=group==="core"?[
  [process.execPath,"scripts/generate-host-verifier-protocol.mjs","--check"],
  ["cargo","test","--locked","-p","grokbox-host-verifier"],
  ["bun","run","typecheck"],["bun","run","typecheck:web"],
- ["bun","test","--timeout","220000",...suites.core]
+ ...coreShards.map(shard=>testCommand(shard.files.map(path=>`./${path}`)))
 ]:group==="native-runtime"?runtimeShards.map(paths=>testCommand(paths.map(path=>`./${path}`))):group==="integration"?["integration-host","integration-domains","integration-web"].map(shard=>testCommand(suites[shard])):[testCommand(suites[group])];
-if(listOnly){console.log(JSON.stringify({group,files:suites[group],commands}));process.exit(0);}
+if(listOnly){console.log(JSON.stringify({group,files:group==="core"?coreFiles:suites[group],shards:group==="core"?coreShards:undefined,commands}));process.exit(0);}
 const before=captureVerificationSource(root),receipts=[];
 console.log(JSON.stringify({phase:`host-health-${group}-before`,...before}));
-for(const command of commands){
- const result=spawnSync(command[0],command.slice(1),{cwd:root,encoding:"utf8",timeout:270000,maxBuffer:12*1024*1024,env:process.env});
+const cancellation=verificationSignals();
+try { for(const command of commands){
+ console.log(JSON.stringify({phase:"verification-command-start",index:receipts.length,total:commands.length}));
+ const result=await verificationChild(command,{cwd:root,timeoutMs:270000,signal:cancellation.signal});
  const output=`${result.stdout??""}\n${result.stderr??""}`;
  const summary=output.split("\n").filter(line=>/^\{|^test result:|^\s*\d+ (pass|fail|skip)|^Ran |^error|^\$/.test(line));
  console.log(summary.join("\n"));
  const skippedNative=["native-pair","native-runtime"].includes(group)&&/^\s*[1-9][0-9]* skip\b/m.test(output);
- receipts.push({command:command.join(" "),code:result.status,error:result.error?.code??(skippedNative?"native_qualification_skipped":null),signal:result.signal,summary});
- if(result.error||result.status!==0||skippedNative){console.error(output.slice(-100000));break;}
-}
+ receipts.push({command:command.join(" "),code:result.status,error:result.error?.code??(skippedNative?"native_qualification_skipped":null),signal:result.signal,settled:result.settled,elapsedMs:result.elapsedMs,summary});
+ if(result.error||result.status!==0||!result.settled||skippedNative){console.error(output.slice(-100000));break;}
+} } finally { cancellation.dispose(); }
 const after=captureVerificationSource(root),stable=before.ok&&after.ok&&before.sha256===after.sha256;
-const ok=stable&&receipts.length===commands.length&&receipts.every(r=>r.code===0&&r.error===null&&r.signal===null);
+const ok=stable&&receipts.length===commands.length&&receipts.every(r=>r.code===0&&r.error===null&&r.signal===null&&r.settled);
 console.log(JSON.stringify({phase:`host-health-${group}-after`,ok,before,after,stable,receipts},null,2));
 if(!ok)process.exitCode=1;

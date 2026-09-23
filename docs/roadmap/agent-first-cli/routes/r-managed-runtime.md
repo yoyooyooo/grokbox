@@ -41,3 +41,8 @@ R2遵守LIVE已有模型矩阵，不暗中缩水为一个模型。真实Provider
 ## 交付
 
 每个出口报告集成tip、实际执行入口、未吸收旧分支处置、原生/合成层级、模型/会话/制品范围、失败与恢复、直接依赖。当前模型支持和真实结果仅写LIVE链接的固定报告；产品规则仍由原T24/T39/context票拥有，不复制第二个“日用完成”状态库。
+
+
+## 当前完整回归入口
+
+`verify-host-health.mjs core`与`verify-modeld-core.mjs release-offline`按原清单形成有限顺序组，显式文件、无遗漏重复、每组实际close结算及整个source窗口稳定；原单项预算保持。`native-runtime`与context artifact仍分别保留原生/制品的独立事实层。当前实测窗口及此前超时的边界见[有界完整回归](../../../reports/2026-09-23-bounded-verification.md)；实现签收不代A2/Q或实际Provider/App采用门。

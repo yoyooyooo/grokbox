@@ -25,6 +25,11 @@ const secret = "PRIVATE_AUTHORITY_SOURCE_SENTINEL";
 test("source cancellation cause and waiter identities survive Unix, Host, journal, SQLite cold read and CLI projection", async () => {
   const native = bindHostOwnershipRead();
   let modelCalls = 0, sourceCalls = 0;
+  const started = performance.now(), stages: Array<{stage: string; elapsedMs: number}> = [];
+  const mark = (stage: string) => stages.push({ stage, elapsedMs: Math.round(performance.now() - started) });
+  const diagnostic = () => ({ suite: "authority-cancellation-stages", stages, elapsedMs: Math.round(performance.now() - started), sourceCalls, modelCalls });
+  const warning = setTimeout(() => console.error(JSON.stringify(diagnostic())), 14000);
+  mark("fixture-start");
   const invoke = async (ids: string[], localOnly = false) => ({ gateway: { pid: process.pid, startedAt: 1 },
     snapshot: await native({ agentIds: ids, localOnly, readScope: () => nativeScope,
       readWindow: () => ({ kind: "inactive" }), readExecution: () => ({ allowed: true, bound: true }),
@@ -34,12 +39,15 @@ test("source cancellation cause and waiter identities survive Unix, Host, journa
   source.local = ids => invoke(ids, true);
   const fetch = Object.assign(async () => { modelCalls++; return successfulProviderResponse(); }, { preconnect: async () => undefined }) as typeof globalThis.fetch;
   const f = await providerRuntimeFixture(fetch, { ownershipRead: source });
+  mark("fixture-ready");
   const epoch = randomUUID(), monitor = openMonitorStore(join(f.durableRoot, "observations"));
   let initialized = false;
   try {
     const stepId = randomUUID();
     const handle = f.session.getExecutor([{ role: "system", content: "synthetic" }, { role: "user", content: "request" }]).stream({}, stepId, [syntheticTool]);
+    mark("response-await");
     const error = await handle.response.catch(e => e);
+    mark("response-settled");
     const summary = failureSummaryOf(error)!;
     expect(sourceCalls).toBe(2); expect(modelCalls).toBe(0);
     const authority = summary.diagnostic?.authority;
@@ -49,18 +57,23 @@ test("source cancellation cause and waiter identities survive Unix, Host, journa
       readRecovery: { attempts: 2, firstReadCode: "source_cancelled", lastReadCode: "source_cancelled" } });
     expect(authority?.ownershipWait?.waiterId).toMatch(/^[0-9a-f-]{36}$/);
     expect(authority?.ownershipWait?.sourceOperationId).toMatch(/^[0-9a-f-]{36}$/);
+    mark("journal-await");
     let rows = await waitFixtureRows(f, stepId);
+    mark("journal-settled");
     for (let n = 0; n < 100 && !rows.some(e => e.name === "host_stream_rejected" && e.stepId === stepId); n++) {
       await new Promise(resolve => setTimeout(resolve, 5)); rows = await f.rows();
     }
     for (const name of ["model_step_terminal", "host_stream_rejected", "host_normalized_terminal"]) {
       expect(rows.find(e => e.name === name && e.stepId === stepId)?.failureSummary?.diagnostic?.authority).toEqual(authority);
     }
+    mark("monitor-initialize");
     await monitor.initialize(); await monitor.begin(epoch, Date.now(), [f.agentId]); initialized = true;
     await monitor.ingestEvidence({ epoch, sourceKey: "b".repeat(64), expectedCursor: null, nextCursor: "one", events: rows, atMs: Date.now() });
     const bytes = await readFile(monitor.path);
     const cold = openMonitorStore(join(f.durableRoot, "observations"));
+    mark("cold-read");
     const retained = await cold.executionEvidence({ agentId: f.agentId, stepId });
+    mark("cold-read-complete");
     const projected = projectSendOutcome({ agentId: f.agentId, stepId, entries: [], alerts: [], truncated: false, runtimeEvents: retained.events });
     expect(projected.state).toBe("failed");
     expect(projected.runtimeAuthority).toMatchObject({ currentLiveness: "not_proven", replayAuthorized: false,
@@ -68,7 +81,11 @@ test("source cancellation cause and waiter identities survive Unix, Host, journa
     expect(await readFile(monitor.path)).toEqual(bytes);
     expect(JSON.stringify(retained)).not.toContain(secret);
     expect(bytes.includes(Buffer.from(secret))).toBe(false);
-  } finally { if (initialized) await monitor.finish(epoch, Date.now()); await f.stop(); }
+  } finally {
+    mark("cleanup");
+    try { if (initialized) await monitor.finish(epoch, Date.now()); await f.stop(); }
+    finally { clearTimeout(warning); mark("closed"); console.log(JSON.stringify(diagnostic())); }
+  }
 }, 15000);
 
 test("a stalled authority journal is bounded and does not consume execution time or block successful STEPs", async () => {
