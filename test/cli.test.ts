@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import cliPackage from "../package.json";
+import { captureMessageCli, MESSAGE_BOT, MESSAGE_OTHER, MESSAGE_INSTALLATION } from "./message-cli-fixture.ts";
 import type { CliDeps } from "../packages/cli/src/deps.ts";
 import { GLOBAL_OPTIONS, LEAF_COMMANDS, TOP_LEVEL_COMMANDS } from "../packages/cli/src/registry.ts";
 import {
@@ -167,8 +168,8 @@ describe("registry, help, and runtime", () => {
     for (const argv of removed) {
       const result = await withGateway(argv);
       expect(result.code).toBe(2);
-      expect(result.stdout).toBe("");
-      expect(errorCode(result.stderr)).toBe("invalid_usage");
+      if (result.stdout) expect(errorCode(result.stdout)).toBe("invalid_input");
+      else expect(errorCode(result.stderr)).toBe("invalid_usage");
       expect(result.mock.requests).toEqual([]);
       result.mock.stop();
       mock = undefined;
@@ -341,16 +342,16 @@ describe("strict agents, groups, and target resolution", () => {
 
   test("exact ID wins before ambiguous name/title matching", async () => {
     const duplicate = {
-      ...(sampleAgents()[0] as Record<string, unknown>),
-      id: "agent-alpha-2",
+      ...{ id: MESSAGE_BOT, name: "alpha", title: "Alpha", harness: "box" },
+      id: MESSAGE_OTHER,
       title: "Alpha",
     };
-    const result = await withGateway(["send", "agent-alpha", "--text", "x"], {
-      agents: [...sampleAgents(), duplicate],
+    const result = await captureMessageCli(["send", MESSAGE_BOT, "--text", "x"], {
+      agents: [{ id: MESSAGE_BOT, name: "alpha", title: "Alpha", harness: "box" }, duplicate],
     });
     expect(result.code).toBe(0);
     expect(rpcCalls(result.mock.requests, "sendPrompt")[0]?.body).toEqual({
-      agentId: "agent-alpha",
+      agentId: MESSAGE_BOT,
       prompt: "x",
       clientNonce: nonce,
     });
@@ -396,90 +397,90 @@ describe("strict agents, groups, and target resolution", () => {
 
   test("ambiguous names fail before side effects", async () => {
     const duplicate = {
-      ...sampleAgents()[0] as Record<string, unknown>,
-      id: "agent-alpha-2",
+      ...{ id: MESSAGE_BOT, name: "alpha", title: "Alpha", harness: "box" },
+      id: MESSAGE_OTHER,
       title: "Alpha",
     };
-    const result = await withGateway(["send", "alpha", "--text", "x"], {
-      agents: [...sampleAgents(), duplicate],
+    const result = await captureMessageCli(["send", "alpha", "--text", "x"], {
+      agents: [{ id: MESSAGE_BOT, name: "alpha", title: "Alpha", harness: "box" }, duplicate],
     });
-    expect(result.code).toBe(19);
-    expect(errorCode(result.stderr)).toBe("target_ambiguous");
+    expect(result.code).toBe(5);
+    expect(errorCode(result.stdout)).toBe("ambiguous_target");
     expect(rpcCalls(result.mock.requests, "sendPrompt")).toEqual([]);
-    expect(result.stderr).toContain("agent-alpha");
-    expect(result.stderr).toContain("agent-alpha-2");
+    expect(result.stdout).toContain(MESSAGE_BOT);
+    expect(result.stdout).toContain(MESSAGE_OTHER);
   });
 
-  test("unknown targets tell the caller to list Bots", async () => {
-    const result = await withGateway(["send", "no-such-bot", "--text", "x"]);
-    expect(result.code).toBe(17);
-    expect(errorCode(result.stderr)).toBe("target_not_found");
-    expect(result.stderr).toContain("grokbox agents list");
-    expect(result.stderr).toContain("no-such-bot");
+  test("unknown targets retain a typed management refusal before effects", async () => {
+    const result = await captureMessageCli(["send", "no-such-bot", "--text", "x"]);
+    expect(result.code).toBe(4);
+    expect(errorCode(result.stdout)).toBe("not_found");
+    expect(result.stdout).toContain("No Bot matched");
     expect(rpcCalls(result.mock.requests, "sendPrompt")).toEqual([]);
   });
 });
 
 describe("send", () => {
   test("positional target and expected-kind issue one three-field send", async () => {
-    const result = await withGateway([
+    const result = await captureMessageCli([
       "send",
-      "Ops",
+      "Alpha",
       "--expect-kind",
-      "group",
+      "agent",
       "--text",
-      "hi team",
+      "hello bot",
       "--nonce",
       nonce,
     ]);
     expect(result.code).toBe(0);
     const sends = rpcCalls(result.mock.requests, "sendPrompt");
     expect(sends).toHaveLength(1);
-    expect(sends[0]?.body).toEqual({ agentId: "group-ops", prompt: "hi team", clientNonce: nonce });
+    expect(sends[0]?.body).toEqual({ agentId: MESSAGE_BOT, prompt: "hello bot", clientNonce: nonce });
     expect(Object.keys(sends[0]?.body as object).sort()).toEqual(["agentId", "clientNonce", "prompt"]);
-    expect(result.stdout).not.toContain("hi team");
+    expect(result.stdout).not.toContain("hello bot");
   });
 
   test("explicit --text suppresses stdin reads in a non-TTY runner", async () => {
-    const result = await withGateway(["send", "alpha", "--text", "explicit"], {
+    const result = await captureMessageCli(["send", "alpha", "--text", "explicit"], {
       stdinIsTTY: false,
       stdin: "must not be read",
     });
     expect(result.code).toBe(0);
     expect(result.stdinReads).toBe(0);
     expect(rpcCalls(result.mock.requests, "sendPrompt")[0]?.body).toEqual({
-      agentId: "agent-alpha",
+      agentId: MESSAGE_BOT,
       prompt: "explicit",
       clientNonce: nonce,
     });
   });
 
   test("stdin is consumed only when --text is absent", async () => {
-    const result = await withGateway(["send", "agent-alpha"], {
+    const result = await captureMessageCli(["send", MESSAGE_BOT], {
       stdinIsTTY: false,
       stdin: "from stdin\n",
     });
     expect(result.code).toBe(0);
     expect(result.stdinReads).toBe(1);
     expect(rpcCalls(result.mock.requests, "sendPrompt")[0]?.body).toEqual({
-      agentId: "agent-alpha",
+      agentId: MESSAGE_BOT,
       prompt: "from stdin",
       clientNonce: nonce,
     });
   });
 
   test("expected-kind mismatch rejects before sendPrompt", async () => {
-    const result = await withGateway(["send", "ops", "--expect-kind", "agent", "--text", "nope"]);
-    expect(result.code).toBe(18);
-    expect(errorCode(result.stderr)).toBe("target_kind_mismatch");
+    const result = await captureMessageCli(["send", "ops", "--expect-kind", "group", "--text", "nope"]);
+    expect(result.code).toBe(2);
+    expect(errorCode(result.stdout)).toBe("invalid_input");
     expect(rpcCalls(result.mock.requests, "sendPrompt")).toEqual([]);
   });
 
   test("401 does not resend a write with unchanged stale discovery", async () => {
-    const result = await withGateway(["send", "alpha", "--text", "hello", "--nonce", nonce], {
+    const result = await captureMessageCli(["send", "alpha", "--text", "hello", "--nonce", nonce], {
       sendPrompt: () => ({ status: 401, body: { error: "unauthorized" } }),
     });
-    expect(result.code).toBe(11);
+    expect(result.code).toBe(8);
+    expect(errorCode(result.stdout)).toBe("operation_unknown");
     const sends = rpcCalls(result.mock.requests, "sendPrompt");
     expect(sends).toHaveLength(1);
     expect((sends[0]?.body as { clientNonce: string }).clientNonce).toBe(nonce);
@@ -488,24 +489,25 @@ describe("send", () => {
 
 describe("history, memory, events, and running", () => {
   test("history search owns transcript search", async () => {
-    const result = await withGateway(["history", "search", "deployment", "--limit", "5"], {
-      search: [{ agentId: "agent-alpha", entryId: "e1", role: "user", timestampMs: 1, snippet: "ok" }],
+    const result = await captureMessageCli(["history", "search", "deployment", "--limit", "5"], {
+      search: [{ agentId: MESSAGE_BOT, entryId: "e1", role: "user", timestampMs: 1, snippet: "ok" }],
     });
     expect(result.code).toBe(0);
-    expect(rpcCalls(result.mock.requests, "searchAgents")[0]?.body).toEqual({
-      query: "deployment",
-      limit: 5,
-    });
+    expect(rpcCalls(result.mock.requests, "searchAgents")).toHaveLength(0);
+    expect(rpcCalls(result.mock.requests, "getAgentTranscriptTail")[0]?.body).toEqual({ id: MESSAGE_BOT, limit: 5 });
+    expect((parseJson(result.stdout) as { data: { matches: unknown[] } }).data.matches).toHaveLength(1);
   });
 
   test("history tail resolves a name without openAgent", async () => {
-    const result = await withGateway(["history", "tail", "alpha", "--limit", "20"]);
+    const result = await captureMessageCli(["history", "tail", "alpha", "--limit", "20"]);
     expect(result.code).toBe(0);
     const paths = result.mock.requests.map((request) => request.pathname);
-    expect(paths).toEqual(["/api/listAgents", "/api/getAgentTranscriptTail"]);
+    expect(paths.at(-1)).toBe("/api/getAgentTranscriptTail");
+    expect(paths.every(path => ["/api/listAgents", "/api/getHostStatus", "/api/getAgentTranscriptTail"].includes(path))).toBe(true);
+    expect(rpcCalls(result.mock.requests, "getAgentTranscriptTail")[0]?.body).toEqual({ id: MESSAGE_BOT, limit: 20 });
     expect(paths.some((path) => path.startsWith("/api/openAgent"))).toBe(false);
-    const body = parseJson(result.stdout) as { data: { id: string; nextBeforeSeq: number } };
-    expect(body.data.id).toBe("agent-alpha");
+    const body = parseJson(result.stdout) as { data: { botRef: string; nextBeforeSeq: number } };
+    expect(body.data.botRef).toBe(`bot:${MESSAGE_INSTALLATION}:${MESSAGE_BOT}`);
     expect(body.data.nextBeforeSeq).toBe(9);
   });
 

@@ -4,12 +4,15 @@ import { mkdir, open, rename, unlink } from "node:fs/promises";
 import { acquireAdvisoryGate } from "@grokbox/box-runtime/runtime";
 import { join } from "node:path";
 import { Effect } from "effect";
+import { inspectOwnership, OWNERSHIP_EVIDENCE_MAX_AGE_MS } from "@grokbox/runtime-kernel/contract";
 import {
   botIdFromRef,
   botRef,
   messageOperation,
+  messageDeliveryState,
   normalizeMessageSend,
   type MessageDelivery,
+  type MessageNativeIdentity,
   type MessageEntry,
   type MessageOperation,
   type MessagePage,
@@ -55,7 +58,9 @@ async function readStored(path: string, expected: { installationId: string; requ
     if (bytesRead !== stat.size) throw unavailableRecord();
     const raw: unknown = JSON.parse(bytes.subarray(0, bytesRead).toString("utf8"));
     if (!record(raw)) throw unavailableRecord();
-    const { principalId, textLength, ...data } = raw;
+    const { principalId, textLength, ...saved } = raw;
+    // Preserve existing receipts without granting an unobserved account binding.
+    const data = { ...saved, nativeIdentity: Object.hasOwn(saved, "nativeIdentity") ? saved.nativeIdentity : null };
     if (!messageOperation(data, expected.installationId, expected.requestId)
       || principalId !== expected.principalId || !Number.isSafeInteger(textLength) || Number(textLength) < 1) throw unavailableRecord();
     return { ...data, principalId, textLength: Number(textLength) };
@@ -100,9 +105,11 @@ function nativeError(error: unknown): HttpFailure {
 }
 function normalizeEntry(value: unknown, index: number): MessageEntry {
   const row = record(value) ? value : {};
-  const kind = row.kind === "message" || row.kind === "send-message" ? row.kind : "unknown";
+  const nativeId = typeof row.id === "string" && row.id.length > 0 && row.id.length <= 256;
+  const kind = !nativeId ? "unknown" : row.kind === "message" || row.kind === "send-message" ? row.kind : "unknown";
   const sent = kind === "send-message" && record(row.message) ? row.message : null;
-  const role = sent?.type === "user" ? "assistant" : kind === "message" && row.role === "user" ? "user"
+  const outgoingText = sent?.type === "text" && typeof sent.content === "string" && row.author === undefined;
+  const role = outgoingText ? "assistant" : kind === "message" && row.role === "user" ? "user"
     : kind === "message" && row.role === "assistant" ? "assistant" : row.role === "system" ? "system" : "unknown";
   const textValue = sent && typeof sent.content === "string" ? sent.content : typeof row.content === "string" ? row.content : typeof row.text === "string" ? row.text : null;
   const identity = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 256 ? value : null;
@@ -110,22 +117,15 @@ function normalizeEntry(value: unknown, index: number): MessageEntry {
     id: identity(row.id) ?? (Number.isSafeInteger(row.seq) ? String(row.seq) : `entry:${index}`), kind,
     requestId: identity(row.requestId),
     isStreaming: typeof row.isStreaming === "boolean" ? row.isStreaming : null,
+    // The current native factory persists text deliveries without isStreaming.
+    // Preserve that absence. The persisted delivery is not a TURN/run terminal.
+    deliveryEvidence: outgoingText && (row.isStreaming === undefined || row.isStreaming === false)
+      ? "persisted-text" : "not-observed",
     role, text: textValue === null ? null : textValue.slice(0, TEXT_LIMIT),
     observedAtMs: Number.isSafeInteger(row.timestampMs) ? Number(row.timestampMs) : Number.isSafeInteger(row.observedAtMs) ? Number(row.observedAtMs) : null,
     clientNonce: identity(row.clientNonce), rootId: identity(row.rootId),
     truncated: textValue !== null && textValue.length > TEXT_LIMIT,
   };
-}
-/** Proximity, a common thread and assistant text cannot certify SendToUser. */
-function deliveryState(entries: MessageEntry[], nonce: string): MessageDelivery["state"] {
-  const echoes = entries.filter(entry => entry.kind === "message" && entry.role === "user" && entry.clientNonce === nonce);
-  if (!echoes.length) return "unknown";
-  const ids = new Set(echoes.map(entry => entry.requestId).filter((id): id is string => id !== null));
-  if (ids.size > 1) return "unknown";
-  if (ids.size !== 1 || echoes.some(entry => entry.requestId === null)) return "recorded";
-  const id = [...ids][0];
-  return entries.some(entry => entry.kind === "send-message" && entry.role === "assistant"
-    && entry.requestId === id && entry.isStreaming === false) ? "response-observed" : "recorded";
 }
 function sourceOf(discovery: { baseUrl: string; pid: number; startedAt: number } | undefined) {
   if (!discovery) return null;
@@ -169,12 +169,39 @@ async function listNative(domain: MessageDomain, signal: AbortSignal, pinnedGate
     return { bots: rows, source: { kind: "native-gateway", generation: sourceOf(result.discovery)!.generation, pid: result.discovery.pid, startedAt: result.discovery.startedAt, observedAt: Date.now() } };
   } catch (error) { throw nativeError(error); }
 }
-async function transcript(domain: MessageDomain, botId: string, limit: number, beforeSeq: number | undefined, signal: AbortSignal, expectedGeneration?: string, timeoutMs = 10_000): Promise<MessagePage> {
+const sameNativeIdentity = (a: MessageNativeIdentity, b: MessageNativeIdentity) =>
+  a.scopeId === b.scopeId && a.serverId === b.serverId && a.harness === b.harness;
+async function nativeIdentity(gateway: ContinuityGateway, botId: string, generation: string, timeoutMs = 10_000): Promise<MessageNativeIdentity> {
+  const began = performance.now();
+  const reply = await gateway.getAgentOwnership([botId], timeoutMs);
+  const elapsed = performance.now() - began;
+  const fact = inspectOwnership({ agentIds: [botId], snapshot: reply.result });
+  const row = fact.agents[0], now = Date.now();
+  const stamps = [fact.observedAt, fact.completedAt, fact.serverObservedAt].map(value => value == null ? NaN : Date.parse(value));
+  if (sourceOf(reply.discovery)?.generation !== generation || fact.serverRead.state !== "observed"
+    || !fact.scope?.stable || !fact.scope.id || fact.localMigrationWindow !== "inactive"
+    || !row || !["confirmed_box", "confirmed_temporal"].includes(row.state) || row.server?.viewerIsOwner !== true
+    || !row.server.serverId || (row.server.harness !== "box" && row.server.harness !== "temporal")
+    || stamps.some(stamp => !Number.isFinite(stamp) || stamp > now || now - stamp > OWNERSHIP_EVIDENCE_MAX_AGE_MS)
+    || elapsed < 0 || elapsed > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
+    throw new HttpFailure(503, "source_invalid", "The native message identity is not currently confirmed.");
+  }
+  return { scopeId: fact.scope.id, serverId: row.server.serverId, harness: row.server.harness };
+}
+async function transcript(domain: MessageDomain, botId: string, limit: number, beforeSeq: number | undefined, signal: AbortSignal,
+  expectedGeneration?: string, timeoutMs = 10_000, expectedIdentity?: MessageNativeIdentity): Promise<MessagePage> {
   if (!domain.continuity) throw new HttpFailure(503, "source_unavailable", "Native message observation is unavailable.");
   try {
+    const gateway = domain.continuity(AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]));
+    const check = async () => {
+      if (expectedIdentity && (!expectedGeneration || !sameNativeIdentity(expectedIdentity, await nativeIdentity(gateway, botId, expectedGeneration, timeoutMs))))
+        throw new HttpFailure(503, "source_invalid", "The native message account or Bot identity changed.");
+    };
+    await check();
     const input: Record<string, unknown> = { id: botId, limit, ...(beforeSeq === undefined ? {} : { beforeSeq }) };
-    const result = await domain.continuity(signal).rpc("getAgentTranscriptTail", input, { timeoutMs, maxResponseBytes: 512 * 1024, ...(expectedGeneration ? { expectedGeneration } : {}) });
+    const result = await gateway.rpc("getAgentTranscriptTail", input, { timeoutMs, maxResponseBytes: 512 * 1024, ...(expectedGeneration ? { expectedGeneration } : {}) });
     if (expectedGeneration !== undefined && sourceOf(result.discovery)?.generation !== expectedGeneration) throw new Error("source_changed");
+    await check();
     return pageFromNative(botRef(domain.installationId, botId), result.result, result.discovery);
   } catch (error) { throw nativeError(error); }
 }
@@ -190,7 +217,7 @@ function publicOperation(value: StoredMessage): MessageOperation {
   return {
     schemaVersion: value.schemaVersion, installationId: value.installationId, requestId: value.requestId,
     operationRef: value.operationRef, submissionRef: value.submissionRef, botRef: value.botRef, clientNonce: value.clientNonce,
-    textSha256: value.textSha256, state: value.state, acceptedAtMs: value.acceptedAtMs, nativeGeneration: value.nativeGeneration,
+    textSha256: value.textSha256, state: value.state, acceptedAtMs: value.acceptedAtMs, nativeGeneration: value.nativeGeneration, nativeIdentity: value.nativeIdentity,
     nativeReceipt: value.nativeReceipt, association: value.association, coverage: value.coverage,
   };
 }
@@ -239,11 +266,13 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
         }
         return publicOperation(rechecked);
       }
+      if (!submissionGateway) return yield* Effect.fail(new HttpFailure(503, "source_unavailable", "Native message input is unavailable."));
+      const identity = yield* Effect.tryPromise({ try: () => nativeIdentity(submissionGateway!, botId, native.source.generation), catch: error => error });
       const pending: StoredMessage = {
         schemaVersion: 1, installationId: domain.installationId, requestId: request.requestId,
         operationRef: operationRef(domain.installationId, botId, request.requestId), submissionRef: submissionRef(domain.installationId, botId, request.requestId),
         botRef: request.botRef, clientNonce: request.clientNonce, textSha256: messageTextSha256(request.text), state: "unknown",
-        acceptedAtMs: Date.now(), nativeGeneration: native.source.generation, nativeReceipt: null,
+        acceptedAtMs: Date.now(), nativeGeneration: native.source.generation, nativeIdentity: identity, nativeReceipt: null,
         association: { queue: "not-observed", run: "not-observed", turn: "not-observed", step: "not-observed", terminal: "not-observed", delivery: "unknown" },
         coverage: "native-submission", principalId: principal.id, textLength: request.text.length,
       };
@@ -264,6 +293,8 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       const nativeReply = nativeOutcome.success;
       const acknowledgement = receipt(nativeReply.result);
       if (!acknowledgement || sourceOf(nativeReply.discovery)?.generation !== pending.nativeGeneration) return yield* Effect.fail(operationUnknown(pending));
+      const after = yield* Effect.result(Effect.tryPromise({ try: () => nativeIdentity(submissionGateway!, botId, native.source.generation), catch: error => error }));
+      if (after._tag === "Failure" || !sameNativeIdentity(identity, after.success)) return yield* Effect.fail(operationUnknown(pending));
       const accepted: StoredMessage = {
         ...pending, state: "accepted", acceptedAtMs: Date.now(), nativeGeneration: sourceOf(nativeReply!.discovery)?.generation ?? null,
         nativeReceipt: acknowledgement,
@@ -287,12 +318,12 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       const deadline = Date.now() + waitMs;
       const unknown = (): MessageDelivery => ({ operation: publicOperation(operation), state: "unknown", observedAtMs: Date.now(), entries: [], source: null,
         association: { ...operation.association, delivery: "unknown" }, coverage: "native-source-unavailable" });
-      if (!operation.nativeGeneration) return unknown();
+      if (!operation.nativeGeneration || !operation.nativeIdentity) return unknown();
       for (;;) {
         const timeout = waitMs > 0 ? Math.max(1, Math.min(10_000, deadline - Date.now())) : 10_000;
-        const observed = yield* Effect.result(Effect.tryPromise({ try: signal => transcript(domain, botId, ENTRY_LIMIT, undefined, signal, operation.nativeGeneration!, timeout), catch: error => error }));
+        const observed = yield* Effect.result(Effect.tryPromise({ try: signal => transcript(domain, botId, ENTRY_LIMIT, undefined, signal, operation.nativeGeneration!, timeout, operation.nativeIdentity!), catch: error => error }));
         if (observed._tag === "Failure") return unknown();
-        const page = observed.success, state = deliveryState(page.entries, operation.clientNonce);
+        const page = observed.success, state = messageDeliveryState(page.entries, operation.clientNonce);
         const delivery: MessageDelivery = { operation: publicOperation(operation), state, observedAtMs: Date.now(), entries: page.entries, source: page.source,
           association: { ...operation.association, delivery: state }, coverage: page.coverage };
         if (state === "response-observed" || Date.now() >= deadline) return delivery;

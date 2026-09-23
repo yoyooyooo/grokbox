@@ -36,13 +36,17 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 原生Project fileRef、账号/同步与跨域变化订阅仍归DATA-01及本票剩余合同；不能把二进制下载或一个现行file receipt称为所有材料已被原生Bot采用。
 
-## 消息关联与对账（2026-09-22）
+## 消息关联与对账（2026-09-23）
 
-D1 的 `message send` 在发送前持久保存 request/submission/clientNonce 与已观察的 dispatch generation，并以同一原生 gateway 单次执行 `sendPrompt`。重复 request 先读取原记录，不要求当前原生发现服务可达；记录损坏、错误安装/主体或不同输入不能被当作不存在后重发。未知操作保留 unknown；新的交付观察不改写原发送回执。原子记录写入与父目录同步在派发前完成，操作 Scope 拥有 gate 与 gateway 取消。
+`message send` 在原 native writer 前保存 management request/submission、clientNonce、Gateway generation 和 `nativeIdentity`（账号 scope 摘要、Server Bot id、harness）。复用同一 pinned continuity gateway，发送前后核对当前身份；成功 ACK 仅证明 native acceptance，显式 queue 字段才证明 queued。对账的 ownership 读前/读后与 transcript 来源必须同原绑定；scope、Server id、harness、进程代际变化或失权只返回 unknown，不跨账号/跨 Bot 猜测，不补投。身份前后采样不是全局账户锁，不代签未观察到的中间状态或原 native writer 的外部业务完成。
 
-`message delivery get|wait` 只在原操作的 generation 读取有界 transcript，同时复验返回来源代。关联使用原生用户 echo 的精确 clientNonce 找到唯一 native requestId，再匹配同 requestId、非 streaming、面向用户的 `send-message`。相邻 assistant、同线程、重复歧义 nonce、发给其他 Agent 的消息均不能证明回复；缺原生字段保持 recorded/unknown，不补造关联。accepted 回执不等于 queued 或 transcript recorded；队列仅接受原生显式字段。run/TURN/STEP/terminal 仍需独立事件，不能由 SendToUser 推导完整回合结束。
+`message get` 无需原生来源在线即可读回保留的原请求。旧记录缺 nativeIdentity 时仅投影为 null，保留原状态且不重发；这不授予在当前账号下重新认领它的资格。损坏记录不作为“不存在”。历史读取适配不恢复旧 writer 或第二消息实现。
 
-原版 App 取证交接：保留 management requestId、clientNonce、安装/Bot/generation，另收实际原生 echo/requestId 与 SendToUser 条目；App 复制出来的原生 requestId 不是 `message get` 所用的管理 request UUID。当前 App 若不暴露某标识，明确记录缺口，不用时间、文本或最后一个气泡猜测。原版显示、真实权限与现役加载仍在授权 APP/LIVE 窗口验证。当前源漂移与管理侧隔离证明边界见[本轮回流](../reports/2026-09-22-message-association-recovery.md)。
+`message delivery get|wait` 的有界精确关联是用户 echo 的 clientNonce → 唯一原生 requestId → 同 requestId 的已持久化文本 send-message。当前原生记录为 `kind=send-message`、`message.type=text`，不写 isStreaming；API 保留其 `isStreaming=null`，另报 `deliveryEvidence=persisted-text`，不捏造 false 或 run 终态。明确 streaming=true、非法字段、作者归属不符、普通 assistant、仅同 thread/位置、错 request 或歧义 nonce 均不构成交付证明。公共 client 与 Server 复用同一个纯关联判定。非文本卡片/附件可在窗口中出现，不在该文本资格中伪装为已完成回复。
+
+`send` 与 `history search|tail|thread` 的既有便捷语法复用该 management client，其 registry 也标记 management，不再根据旧 --profile 跳到 daemon/Gateway。目标只接受本段已交付的 Bot；错误使用管理回复/退出码，原始发送仍只有一个 native sendPrompt。group/其余产品扩展归 D2，不以旧夹具恢复第二发送路径。
+
+当前原生 Node/SQLite 的 factory→request 关联→原写入→重开→tail→管理投影、scope 稳定/变化和公开反例由 `native-message-qualification.test.ts`、`messages.test.ts` 及 `message-contract.test.ts` 承接；原生测试只在显式 opt-in 的 `verify-host-health.mjs native-pair` 中执行。真实 App 的输入/详情显示和运行 Working/终态仍走 [T39](T39-native-model-roundtrip.md) 与对应 LIVE，不以隔离原声明或自有 Web 代签。
 
 ## 实施前验证
 

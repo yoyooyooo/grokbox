@@ -229,7 +229,7 @@ describe("local daemon vertical slice", () => {
     const remoteEvent = parseJson(remoteEvents.stdout) as { event: { source: string; kind: string }; cursor: string };
     expect(remoteEvent.event).toMatchObject({ source: "daemon", kind: "started" });
     expect(remoteEvent.cursor).toContain(remoteHandshake.daemonGeneration);
-    expect((await run(["--profile", "remote", "history", "tail", "agent-alpha"])).code).toBe(0);
+    expect((await run(["--profile", "remote", "history", "tail", "agent-alpha"])).code).toBe(2);
     expect((await run([
       "--profile",
       "remote",
@@ -239,7 +239,9 @@ describe("local daemon vertical slice", () => {
       "remote hello",
       "--nonce",
       nonce,
-    ])).code).toBe(0);
+    ])).code).toBe(2);
+
+    expect(rpcCalls(gateway?.requests ?? [], "sendPrompt")).toHaveLength(0);
 
     const missingCredentialProfile = "remote-missing-credential";
     await writeProfileFile(configDir, missingCredentialProfile, {
@@ -355,7 +357,7 @@ describe("local daemon vertical slice", () => {
     await expect(successExtra.handshake()).rejects.toMatchObject({ code: "daemon_unreachable" });
   });
 
-  test("doctor, roster, history, and send use daemon while preserving envelopes", async () => {
+  test("doctor and roster retain daemon routing while message aliases cannot reuse its profile", async () => {
     const { run } = await fixture();
     const doctor = await run(["--profile", "daemon", "doctor"]);
     expect(doctor.code).toBe(0);
@@ -371,7 +373,7 @@ describe("local daemon vertical slice", () => {
     expect((parseJson(agents.stdout) as { data: { count: number } }).data.count).toBe(1);
 
     const search = await run(["--profile", "daemon", "history", "search", "status"]);
-    expect(search.code).toBe(0);
+    expect(search.code).toBe(2);
 
     const send = await run([
       "--profile",
@@ -383,12 +385,9 @@ describe("local daemon vertical slice", () => {
       "--nonce",
       nonce,
     ]);
-    expect(send.code).toBe(0);
-    expect(rpcCalls(gateway?.requests ?? [], "sendPrompt")[0]?.body).toEqual({
-      agentId: "agent-alpha",
-      prompt: "hello",
-      clientNonce: nonce,
-    });
+    expect(send.code).toBe(2);
+    expect(rpcCalls(gateway?.requests ?? [], "sendPrompt")).toEqual([]);
+    expect(rpcCalls(gateway?.requests ?? [], "getAgentTranscriptTail")).toEqual([]);
   });
 
   test("the built-in default profile selects an available daemon in auto mode", async () => {

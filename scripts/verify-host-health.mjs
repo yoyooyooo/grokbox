@@ -56,7 +56,7 @@ const suites={
   "test/file-management.test.ts","test/job-management.test.ts","test/desktop-management.test.ts","test/observation-management.test.ts","test/incident-actions.test.ts","test/notification-management.test.ts","test/notification-setup.test.ts",
   "./test/handover-management.test.ts","./test/compaction-management.test.ts","test/context-management.test.ts","test/lifecycle-management.test.ts","test/materials-management.test.ts","test/protection-management.test.ts",
   "packages/server/test/server.test.ts","test/web-bridge.test.ts","test/web-browser.test.ts","test/packaging.test.ts"],
- "native-pair":["packages/box-runtime/test/native-current-candidate.test.ts","packages/box-runtime/test/native-checkpoint-qualification.test.ts","packages/box-runtime/test/native-worker-binding.test.ts","packages/box-runtime/test/native-startup-seams.test.ts","packages/box-runtime/test/native-duplicate-qualification.test.ts","packages/box-runtime/test/native-disposal-qualification.test.ts"]
+ "native-pair":["packages/box-runtime/test/native-message-qualification.test.ts","packages/box-runtime/test/native-current-candidate.test.ts","packages/box-runtime/test/native-checkpoint-qualification.test.ts","packages/box-runtime/test/native-worker-binding.test.ts","packages/box-runtime/test/native-startup-seams.test.ts","packages/box-runtime/test/native-duplicate-qualification.test.ts","packages/box-runtime/test/native-disposal-qualification.test.ts"]
 };
 // Partition the same integration inventory, not a reduced acceptance set. The
 // previous single Bun invocation exhausted its 270s aggregate budget before

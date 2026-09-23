@@ -6,6 +6,16 @@
 
 本票拥有完整往返判据与实现/离线/原生隔离证明；当前现场已验范围、未验项、阻断和下一步只看 [LIVE-SESSION-ROUNDTRIP](LIVE-integration-validation.md#live-session-roundtrip)，原版 App 另见 [LIVE-MODELD-APP](LIVE-integration-validation.md#live-modeld-app)。下方带日期的现场片段仅保留当时证据，不维护当前模型目录、部署状态或待验列表；后续窗口通过 LIVE 链接日期报告。
 
+## D1 当前标识与原版 App 取证交接
+
+当前消息 owner 的标识不能混用：management `requestId` 定位本系统原 operation；`clientNonce` 连接原输入 echo；echo 的 native `requestId` 连接同次原生文本 send-message；原 entry `id` 是气泡/窗口记录定位键。它们都必须带同一 Bot、安装、原 Gateway generation 及账号 scope/Server id/harness。原生 requestId 不是管理 request UUID，也不能无证据改称 modeld STEP 或完整 run id。
+
+受控窗口内先保存原版 App 版本、可见账号/目标 Bot 与确认后的源 scope。由未修改 App 发送一次输入，保留 App 自己产生的 nonce/entry/request 标识；从真实可用的气泡复制入口取得 native requestId 时，先用 `message list <bot-ref> --limit 200 --json` 在同源窗口核对它及用户 echo 的 clientNonce，不将复制值直接传给 `message get`。App 没有暴露标识或窗口缺页时记录缺证并有界向前翻页，不能手造 nonce、按正文/时间贴近或清缓存补出通过。
+
+管理发送对照使用持久保存的 request UUID 与 nonce，随后 `message get <request-id> --json`、`message delivery get <request-id> --json` 或 `message delivery wait <request-id> --wait-ms 25000 --json` 只读取原操作，不重新发送。把原版 App 实际展示/重开后的 entry id 与同源原生 tail 对齐；详情、副本延迟、通知、queued、Working、权限卡片和完整 run 终态分别取证。已持久文本 `response-observed` 不签 App 已展示、不签全部工具/Memory/compact 已完成。跨账号/代际的读回是 unknown，旧回执保持原状。
+
+本包可执行的离线证明为固定来源下原 RPC 接受/拒绝、选定原 factory/关联/数据库方法与真实自有 SQLite，实际 auth/backend/活动对象是隔离能力替身。没有真实账号授权结果、模型费用、App UI 或现役部署证明；这些仍由本票原 LIVE 与 AH-126 窗口负责，不借历史 App 截图签当前成功。
+
 ## 现场官方→managed 首错（2026-09-13）
 
 test0 在新 Host/modeld 上官方回合用独立文件 oracle 读到并 SendToUser，`history outcome` 为 expected_result_observed（run 仍 not_proven）。随后 `models use grok-4.6 --for test0` 保存成功且 ownership=confirmed_box。下一 TURN 的 managed send 被 Gateway accepted，但 120s 内无 requestId/交付。Host journal：hook_enter 后 admit `unsupported_content` / `stateShape=call-id-control`，约 5s 间隔换新 turnId 共 4 次，modeld 无 STEP。未重放该 nonce。

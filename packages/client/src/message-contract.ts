@@ -17,6 +17,8 @@ export type MessageSendRequest = {
   clientNonce: string;
 };
 
+export type MessageNativeIdentity = { scopeId: string; serverId: string; harness: "box" | "temporal" };
+
 export type MessageOperation = {
   schemaVersion: 1;
   installationId: string;
@@ -29,6 +31,8 @@ export type MessageOperation = {
   state: "accepted" | "unknown";
   acceptedAtMs: number;
   nativeGeneration: string | null;
+  /** Source identity observed for dispatch. Null only for preserved unbound history. */
+  nativeIdentity: MessageNativeIdentity | null;
   nativeReceipt: Record<string, unknown> | null;
   association: MessageAssociation;
   coverage: "native-submission";
@@ -40,6 +44,8 @@ export type MessageEntry = {
   kind: "message" | "send-message" | "unknown";
   requestId: string | null;
   isStreaming: boolean | null;
+  /** Current native text record; no claim about completion of its TURN or run. */
+  deliveryEvidence: "persisted-text" | "not-observed";
   role: "user" | "assistant" | "system" | "unknown";
   text: string | null;
   observedAtMs: number | null;
@@ -102,8 +108,15 @@ export function normalizeMessageSend(value: unknown, installationId: string): Me
   return { requestId: value.requestId.toLowerCase(), botRef: botRef(installationId, id), text: value.text, clientNonce: value.clientNonce.toLowerCase() };
 }
 
+export function messageNativeIdentity(value: unknown): value is MessageNativeIdentity | null {
+  return value === null || record(value) && own(value, ["scopeId", "serverId", "harness"])
+    && typeof value.scopeId === "string" && /^[a-f0-9]{64}$/.test(value.scopeId)
+    && typeof value.serverId === "string" && value.serverId.length > 0 && value.serverId.length <= 256
+    && (value.harness === "box" || value.harness === "temporal");
+}
+
 export function messageOperation(value: unknown, installationId: string, requestId?: string): value is MessageOperation {
-  if (!record(value) || value.schemaVersion !== 1 || !own(value, ["schemaVersion","installationId","requestId","operationRef","submissionRef","botRef","clientNonce","textSha256","state","acceptedAtMs","nativeGeneration","nativeReceipt","association","coverage"])
+  if (!record(value) || value.schemaVersion !== 1 || !own(value, ["schemaVersion","installationId","requestId","operationRef","submissionRef","botRef","clientNonce","textSha256","state","acceptedAtMs","nativeGeneration","nativeIdentity","nativeReceipt","association","coverage"])
     || value.installationId !== installationId.toLowerCase() || typeof value.requestId !== "string" || !UUID.test(value.requestId)
     || (requestId !== undefined && value.requestId !== requestId.toLowerCase())
     || typeof value.operationRef !== "string" || typeof value.submissionRef !== "string"
@@ -112,6 +125,7 @@ export function messageOperation(value: unknown, installationId: string, request
     || (value.state !== "accepted" && value.state !== "unknown")
     || !Number.isSafeInteger(value.acceptedAtMs)
     || (value.nativeGeneration !== null && (typeof value.nativeGeneration !== "string" || !/^[a-f0-9]{64}$/.test(value.nativeGeneration)))
+    || !messageNativeIdentity(value.nativeIdentity)
     || (value.nativeReceipt !== null && !record(value.nativeReceipt))
     || !record(value.association) || !["not-observed","queued"].includes(String(value.association.queue))
     || value.association.run !== "not-observed" || value.association.turn !== "not-observed"
@@ -139,17 +153,32 @@ export function messagePage(value: unknown, installationId: string, expectedBotR
 }
 
 export function messageEntry(value: unknown): value is MessageEntry {
-  return record(value) && own(value, ["id","kind","requestId","isStreaming","role","text","observedAtMs","clientNonce","rootId","truncated"])
-    && typeof value.id === "string" && value.id.length <= 256
+  return record(value) && own(value, ["id","kind","requestId","isStreaming","deliveryEvidence","role","text","observedAtMs","clientNonce","rootId","truncated"])
+    && typeof value.id === "string" && value.id.length > 0 && value.id.length <= 256
     && ["message", "send-message", "unknown"].includes(String(value.kind))
     && (value.requestId === null || typeof value.requestId === "string" && value.requestId.length > 0 && value.requestId.length <= 256)
     && (value.isStreaming === null || typeof value.isStreaming === "boolean")
+    && (value.deliveryEvidence === "not-observed" || value.deliveryEvidence === "persisted-text"
+      && value.kind === "send-message" && value.role === "assistant" && typeof value.text === "string" && value.isStreaming !== true)
     && ["user","assistant","system","unknown"].includes(String(value.role))
     && (value.text === null || typeof value.text === "string" && value.text.length <= 8192)
     && (value.observedAtMs === null || Number.isSafeInteger(value.observedAtMs))
     && (value.clientNonce === null || typeof value.clientNonce === "string")
     && (value.rootId === null || typeof value.rootId === "string")
     && typeof value.truncated === "boolean";
+}
+
+/** Same bounded identity-only join for the Server and its client validator.
+ * Persisted text is a delivery observation, never a TURN/run terminal. */
+export function messageDeliveryState(entries: readonly MessageEntry[], nonce: string): MessageDelivery["state"] {
+  const echoes = entries.filter(entry => entry.kind === "message" && entry.role === "user" && entry.clientNonce === nonce);
+  if (!echoes.length) return "unknown";
+  const ids = new Set(echoes.map(entry => entry.requestId).filter((id): id is string => id !== null));
+  if (ids.size > 1) return "unknown";
+  if (ids.size !== 1 || echoes.some(entry => entry.requestId === null)) return "recorded";
+  const id = [...ids][0];
+  return entries.some(entry => entry.kind === "send-message" && entry.role === "assistant"
+    && entry.requestId === id && entry.deliveryEvidence === "persisted-text") ? "response-observed" : "recorded";
 }
 
 export function messageDelivery(value: unknown, installationId: string, requestId?: string): value is MessageDelivery {
@@ -163,7 +192,9 @@ export function messageDelivery(value: unknown, installationId: string, requestI
     && value.association.run === "not-observed" && value.association.turn === "not-observed"
     && value.association.step === "not-observed" && value.association.terminal === "not-observed"
     && value.association.delivery === value.state
-    && ["native-transcript-window","native-source-unavailable"].includes(String(value.coverage));
+    && ["native-transcript-window","native-source-unavailable"].includes(String(value.coverage))
+    && (value.state === "unknown" || value.operation.nativeIdentity !== null && value.source !== null && value.coverage === "native-transcript-window"
+      && messageDeliveryState(value.entries, value.operation.clientNonce) === value.state);
 }
 
 export function messageSearchPage(value: unknown, installationId: string): value is MessageSearchPage {

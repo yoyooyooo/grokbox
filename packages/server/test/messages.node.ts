@@ -8,7 +8,7 @@ import { ManagementClient, CAPABILITIES, botRef } from "@grokbox/client";
 import { openRuntimeStore, type ContinuityGateway } from "@grokbox/box-runtime/runtime";
 import { parseModelsFile, applyUse } from "@grokbox/runtime-kernel/selection";
 import { startManagementServer, type AccessGrant, type ManagementNative } from "../src/server.ts";
-import { ownedOwnershipReader } from "../../box-runtime/test/ownership-fixture.ts";
+import { ownedOwnershipReader, ownedOwnershipSnapshot } from "../../box-runtime/test/ownership-fixture.ts";
 
 const INSTALLATION = "11111111-1111-4111-8111-111111111111";
 const BOT = "22222222-2222-4222-8222-222222222222";
@@ -25,13 +25,14 @@ async function fixture() {
   await store.saveModels(applyUse(parseModelsFile({ version: 3, models: {}, assignments: { main: null, agents: {} } }), "stub/echo"));
   const calls = { send: 0, transcript: 0, sourceChanged: false, interleaved: false, transcriptSourceChanged: false, expectedGenerations: [] as Array<string | undefined> };
   let lastNonce: string | undefined;
+  let scopeId = "a".repeat(64), revoke = false, missingIdentity = false, switchAfterSend = false, switchDuringRead = false;
   let entries: unknown[] | undefined, sourceUnavailable = false, accepted = true, ack: unknown;
   const transcriptPins: unknown[] = [];
   const signals: AbortSignal[] = [];
   const discovery = { baseUrl: "http://native.invalid", pid: 123, startedAt: 1 };
   const transcript = (nonce?: string) => ({ entries: [
     { id: "u1", kind: "message", role: "user", content: "hello", clientNonce: nonce ?? null, requestId: "native-first", rootId: "root-1", timestampMs: 1 },
-    { id: "a1", kind: "send-message", requestId: "native-first", isStreaming: false, message: { type: "user", content: "ack" }, rootId: "root-1", timestampMs: 2 },
+    { id: "a1", kind: "send-message", requestId: "native-first", message: { type: "text", content: "ack" }, rootId: "root-1", timestampMs: 2 },
   ] });
   const gateway: ContinuityGateway = {
     rpc: async (method, input, options) => {
@@ -39,10 +40,11 @@ async function fixture() {
         calls.send++;
         if (calls.sourceChanged) throw new Error("source_changed");
         lastNonce = typeof input.clientNonce === "string" ? input.clientNonce : undefined;
+        if (switchAfterSend) scopeId = "b".repeat(64);
         return { result: ack ?? { accepted, queued: true, nativeNonce: input.clientNonce }, discovery };
       }
       if (method === "getAgentTranscriptTail") {
-        calls.transcript++; transcriptPins.push(options.expectedGeneration);
+        calls.transcript++; if (switchDuringRead) scopeId = "b".repeat(64); transcriptPins.push(options.expectedGeneration);
         calls.expectedGenerations.push(options.expectedGeneration);
         const interleaved = [
           { id: "u1", kind: "message", role: "user", content: "hello", clientNonce: lastNonce, requestId: "native-first" },
@@ -57,7 +59,11 @@ async function fixture() {
     },
     listAgents: async () => { if (sourceUnavailable) throw Error("unavailable");
       return { agents: [{ id: BOT, name: "First", isGroup: false }], discovery }; },
-    getAgentOwnership: async () => ({ result: {}, discovery }),
+    getAgentOwnership: async ids => {
+      const result = ownedOwnershipSnapshot(ids, { scopeId });
+      if (revoke) result.agents[0]!.server.viewerIsOwner = false;
+      return { result: missingIdentity ? {} : result, discovery };
+    },
     currentStateControl: async () => ({ result: {}, discovery }),
     routineProvision: async () => ({ result: {}, discovery }),
     agentRoutines: async () => ({ result: {}, discovery }),
@@ -81,6 +87,9 @@ async function fixture() {
     unavailable: () => { sourceUnavailable = true; },
     refuse: () => { accepted = false; },
     setAck: (value: unknown) => { ack = value; },
+    switchScope: () => { scopeId = "b".repeat(64); },
+    revoke: () => { revoke = true; }, noIdentity: () => { missingIdentity = true; },
+    switchAfterSend: () => { switchAfterSend = true; }, switchDuringRead: () => { switchDuringRead = true; },
     botRef: botRef(INSTALLATION, BOT) };
 }
 
@@ -146,7 +155,7 @@ test("message writes enforce capability before the native owner", async () => {
 
 const nativeEntries = (nonce: string, requestId = "native-request") => [
   { id: "echo", kind: "message", role: "user", content: "hello", clientNonce: nonce, requestId, timestampMs: 1 },
-  { id: "delivery", kind: "send-message", requestId, isStreaming: false, message: { type: "user", content: "reply" }, timestampMs: 2 },
+  { id: "delivery", kind: "send-message", requestId, message: { type: "text", content: "reply" }, timestampMs: 2 },
 ];
 const sendInput = (f: Awaited<ReturnType<typeof fixture>>) => ({ requestId: randomUUID(), botRef: f.botRef, text: "hello", clientNonce: randomUUID() });
 
@@ -172,7 +181,9 @@ test("streaming, wrong recipient and ambiguous nonce records are not completed d
   const f = await fixture(), input = sendInput(f);
   await f.client().sendMessage(input);
   const [echo, reply] = nativeEntries(input.clientNonce);
-  for (const candidate of [ { ...reply, isStreaming: true }, { ...reply, isStreaming: undefined }, { ...reply, message: { type: "agent", content: "DM" } } ]) {
+  for (const candidate of [ { ...reply, isStreaming: true }, { ...reply, isStreaming: null }, { ...reply, isStreaming: "false" },
+    { ...reply, author: "another-bot" }, { ...reply, message: { type: "agent", content: "DM" } },
+    { ...reply, message: { type: "user", content: "unqualified old fixture" } }, { ...reply, message: { type: "text" } } ]) {
     f.setEntries([echo, candidate]);
     assert.equal((await f.client().messageDelivery(input.requestId)).data.state, "recorded");
   }
@@ -185,7 +196,8 @@ test("delivery pins the dispatch generation and refuses a different native gener
   const op = (await f.client().sendMessage(input)).data;
   f.setEntries(nativeEntries(input.clientNonce)); f.moveGeneration();
   const reply = (await f.client().messageDelivery(input.requestId)).data;
-  assert.equal(f.transcriptPins[0], op.nativeGeneration);
+  assert.equal(f.transcriptPins.length, 0); // The identity preflight rejects the new generation before reading its transcript.
+  assert.equal(reply.operation.nativeGeneration, op.nativeGeneration);
   assert.equal(reply.state, "unknown"); assert.deepEqual(reply.entries, []);
   assert.equal(f.calls.send, 1);
 });
@@ -321,3 +333,34 @@ test("delivery carries the original generation and refuses a changed transcript 
   assert.equal(f.calls.expectedGenerations[0], digest(JSON.stringify(["http://native.invalid", 123, 1])));
 });
 
+
+for (const scenario of ["scope", "revocation", "missing", "during-read"] as const) test(`account-bound delivery refuses ${scenario} without returning foreign records or resending`, async () => {
+  const f = await fixture(), input = sendInput(f);
+  const original = (await f.client().sendMessage(input)).data;
+  assert.equal(original.nativeIdentity?.scopeId, "a".repeat(64));
+  if (scenario === "scope") f.switchScope();
+  if (scenario === "revocation") f.revoke();
+  if (scenario === "missing") f.noIdentity();
+  if (scenario === "during-read") f.switchDuringRead();
+  const delivery = (await f.client().messageDelivery(input.requestId)).data;
+  assert.equal(delivery.state, "unknown"); assert.deepEqual(delivery.entries, []);
+  assert.deepEqual((await f.client().sendMessage(input)).data, original); assert.equal(f.calls.send, 1);
+});
+test("scope moving during acceptance keeps the original dispatch unknown", async () => {
+  const f = await fixture(), input = sendInput(f); f.switchAfterSend();
+  await assert.rejects(f.client().sendMessage(input));
+  const original = (await f.client().messageOperation(input.requestId)).data;
+  assert.equal(original.state, "unknown"); assert.equal(original.nativeIdentity?.scopeId, "a".repeat(64));
+  await assert.rejects(f.client().sendMessage(input)); assert.equal(f.calls.send, 1);
+});
+test("missing native identity refuses before a first effect, while old unbound receipts stay readable", async () => {
+  const missing = await fixture(); missing.noIdentity();
+  await assert.rejects(missing.client().sendMessage(sendInput(missing))); assert.equal(missing.calls.send, 0);
+  const f = await fixture(), input = sendInput(f); await f.client().sendMessage(input);
+  const path = join(f.root, "messages", "owner", `${input.requestId}.json`);
+  const old = JSON.parse(await readFile(path, "utf8")); delete old.nativeIdentity; await writeFile(path, JSON.stringify(old));
+  assert.equal((await f.client().messageOperation(input.requestId)).data.nativeIdentity, null);
+  assert.equal((await f.client().sendMessage(input)).data.nativeIdentity, null);
+  assert.equal((await f.client().messageDelivery(input.requestId)).data.state, "unknown");
+  assert.equal(f.calls.send, 1); assert.equal(f.calls.transcript, 0);
+});

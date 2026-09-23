@@ -744,20 +744,20 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["send"],
-    usage: "grokbox send <target> [--text <text> | stdin] [--expect-kind agent|group] [--nonce <uuid>]",
-    summary: "Send one Human message via sendPrompt.",
+    usage: "grokbox send <target> [--text <text> | stdin] [--expect-kind agent] [--nonce <uuid>]",
+    summary: "Submit one Human message through the unified management owner.",
     arguments: [
       {
         syntax: "<target>",
-        description: "Agent/group ID or unambiguous name/title",
+        description: "Bot UUID or unambiguous name/title",
         role: "target",
-        kinds: ["agent", "group"],
+        kinds: ["agent"],
       },
     ],
     options: options(
       [
         { flags: "--text <text>", description: "Prompt text; suppresses stdin reads" },
-        { flags: "--expect-kind <kind>", description: "Require agent or group" },
+        { flags: "--expect-kind <kind>", description: "Require a Bot target (agent)" },
         { flags: "--nonce <uuid>", description: "Stable client nonce (UUID v4)" },
       ],
       { timeout: true },
@@ -765,8 +765,10 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     stdin: "text",
     table: false,
     timeout: true,
-    destructive: false,
-    gateway: true,
+    destructive: true,
+    gateway: false,
+    protocol: "management",
+    profile: false,
     streaming: false,
   },
   {
@@ -807,7 +809,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["history", "search"],
     usage: "grokbox history search <query> [--limit <1..100>]",
-    summary: "Search transcript messages via searchAgents.",
+    summary: "Search bounded native transcript windows through the management owner.",
     arguments: [{ syntax: "<query>", description: "Transcript search query" }],
     options: options([{ flags: "--limit <n>", description: "Maximum matches (1..100)" }], {
       timeout: true,
@@ -816,7 +818,9 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     table: false,
     timeout: true,
     destructive: false,
-    gateway: true,
+    gateway: false,
+    protocol: "management",
+    profile: false,
     streaming: false,
   },
   {
@@ -826,9 +830,9 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     arguments: [
       {
         syntax: "<target>",
-        description: "Agent/group ID or unambiguous name/title",
+        description: "Bot UUID or unambiguous name/title",
         role: "target",
-        kinds: ["agent", "group"],
+        kinds: ["agent"],
       },
     ],
     options: options(
@@ -842,7 +846,9 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     table: false,
     timeout: true,
     destructive: false,
-    gateway: true,
+    gateway: false,
+    protocol: "management",
+    profile: false,
     streaming: false,
   },
   {
@@ -852,9 +858,9 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     arguments: [
       {
         syntax: "<target>",
-        description: "Agent/group ID or unambiguous name/title",
+        description: "Bot UUID or unambiguous name/title",
         role: "target",
-        kinds: ["agent", "group"],
+        kinds: ["agent"],
       },
     ],
     options: options(
@@ -865,7 +871,9 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     table: false,
     timeout: true,
     destructive: false,
-    gateway: true,
+    gateway: false,
+    protocol: "management",
+    profile: false,
     streaming: false,
   },
   {

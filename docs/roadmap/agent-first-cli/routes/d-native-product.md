@@ -23,7 +23,9 @@ D2按对象/关系、消息/历史、导出/模板几个完整工作包回流，
 
 ## D1 当前入口实现
 
-共享 client 暴露 `sendMessage`、原请求查询、`messages`、thread、literal search 与 delivery get/wait；Server 复用原 continuity owner，不恢复 Gateway/daemon 第二 writer。原操作、dispatch generation、原生 echo/requestId、SendToUser 与完整 run 终态是不同证据。重复操作的本地恢复、换代拒绝、unknown 不重发以及 App 取证交接统一看 [CLI-03 消息合同](../../../tickets/CLI-03-observation-and-wait.md#消息关联与对账2026-09-22)；具体原生来源与公开隔离验证见[本轮回流](../../../reports/2026-09-22-message-association-recovery.md)。
+共享 client 暴露单次 send、原请求、bounded transcript/thread/search 与 delivery get/wait；Server 复用原 continuity/native owner，无第二 daemon writer。完整当前合同以 [CLI-03 消息关联](../../../tickets/CLI-03-observation-and-wait.md#消息关联与对账2026-09-23) 为准：原请求保留 installation/principal/Bot、nonce、Gateway generation、账号 scope/Server id/harness，换源或不确定不补投。当前文本交付是原生持久 send-message/type=text，保留缺失的 isStreaming；`persisted-text` 与 acceptance/queued/TURN/run/STEP/terminal 分层，绝不以普通 assistant 或位置猜测。
+
+原生 source-qualified 测试与自有 Node/SQLite 可以交付接口资格，原版 App 的取证入口、未观察字段与后续窗口见 [T39 D1 交接](../../../tickets/T39-native-model-roundtrip.md#d1-当前标识与原版-app-取证交接)。本包不签真实 App 成功，也不把后续现场成功反向设为本包接口实现的开工前置。
 
 ## 验证
 
