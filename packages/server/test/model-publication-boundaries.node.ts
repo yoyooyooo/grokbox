@@ -12,6 +12,7 @@ import { startManagementServer, type AccessGrant, type ManagementNative } from "
 import { ownedOwnershipReader } from "../../box-runtime/test/ownership-fixture.ts";
 const I="11111111-1111-4111-8111-111111111111", A="22222222-2222-4222-8222-222222222222";
 const TOKEN="synthetic-model-publication-owner";
+const CONSOLE_ORIGIN="https://console.example.test";
 const gate=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};};
 const denied=(promise:Promise<unknown>,code:string)=>assert.rejects(promise,(error:any)=>error?.code===code);
 async function fixture() {
@@ -30,7 +31,7 @@ async function fixture() {
       await args[2]();state.checks++;
     });
   }};
-  const options={store,installationId:I,native,env:{SYNTHETIC_MODEL_KEY:"synthetic-model-key"},port:0,
+  const options={store,installationId:I,native,allowedOrigins:[CONSOLE_ORIGIN],env:{SYNTHETIC_MODEL_KEY:"synthetic-model-key"},port:0,
     fetch:(async(_url:unknown,init?:RequestInit)=>{assert.equal(init?.method,"GET");state.catalogCalls++;await state.catalog?.();
       return new Response(JSON.stringify({data:[{id:"first"}]}),{status:200,headers:{"content-type":"application/json"}});}) as typeof fetch,readGrants:async(signal:AbortSignal)=>{await state.grantsHook?.(signal);return structuredClone(state.grants);}};
   let server=await startManagementServer(options,{hostHealth:{enabled:false}});
@@ -124,3 +125,58 @@ test("revocation during the catalog await is checked before declaration without 
     assert.equal((await readdir(join(f.root,"state","model-operations"))).length,0);
   } finally {resume.release();await pending?.catch(()=>undefined);await f.close();}
 });
+
+for (const mode of ["unchanged", "revoked", "rebound", "token-removed", "logout"] as const) {
+  test(`Console shutdown joins the original staged transaction without losing current authority: ${mode}`, { timeout: 15000 }, async () => {
+    const f = await fixture(), entered = gate(), resume = gate();
+    let pending: Promise<unknown> | undefined, closing: Promise<void> | undefined;
+    let cookie: string | undefined, csrf: string | undefined;
+    const transport = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers); headers.set("origin", CONSOLE_ORIGIN);
+      if (cookie) headers.set("cookie", cookie);
+      const response = await fetch(input, { ...init, headers });
+      const setCookie = response.headers.get("set-cookie");
+      if (setCookie) cookie = setCookie.includes("Max-Age=0") ? undefined : setCookie.split(";")[0];
+      return response;
+    }, { preconnect() {} });
+    const consoleClient = () => new ManagementClient({ baseUrl: f.server.url, installationId: I,
+      console: { csrfToken: () => csrf }, fetch: transport });
+    try {
+      const grant = await f.client().createConsoleGrant(CONSOLE_ORIGIN), client = consoleClient();
+      csrf = (await client.redeemConsoleGrant(grant.data.code)).data.csrfToken;
+      const originalCookie = cookie, originalGrants = structuredClone(f.state.grants);
+      assert.ok(originalCookie);
+      const before = await f.bytes(), request = await f.request();
+      f.state.staged = async () => { entered.release(); await resume.promise; };
+      pending = client.changeModels(request); void pending.catch(() => undefined);
+      await Promise.race([entered.promise, pending.then(() => { throw Error("request ended before staging"); })]);
+      assert.ok((await readdir(f.root)).some(name => name.endsWith(".tmp")));
+      if (mode === "logout") await client.consoleLogout();
+      let closed = false;
+      closing = f.server.close().then(() => { closed = true; });
+      await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(closed, false);
+      // Stopping rejects new work; it must not erase an already admitted actor.
+      const refused = await fetch(`${f.server.url}/v1/models`, { headers: { origin: CONSOLE_ORIGIN,
+        cookie: originalCookie, "x-grokbox-installation-id": I }, signal: AbortSignal.timeout(1000) }).catch(() => null);
+      if (refused) { assert.equal(refused.status, 503); await refused.arrayBuffer(); }
+      if (mode === "revoked") f.state.grants[0]!.capabilities = f.state.grants[0]!.capabilities.filter(c => c !== "models.write");
+      if (mode === "rebound") f.state.grants[0]!.principalId = "other-owner";
+      if (mode === "token-removed") f.state.grants = [];
+      resume.release(); await pending.catch(() => undefined); await closing;
+      const succeeded = mode === "unchanged";
+      assert.equal((await f.bytes()) !== before, succeeded);
+      assert.equal(f.state.saves, 1); assert.equal(f.state.checks, succeeded ? 1 : 0);
+      f.state.grants = originalGrants; f.state.staged = undefined; await f.restart();
+      const receipt = (await f.client().modelOperation(request.requestId)).data;
+      assert.equal(receipt.state, succeeded ? "succeeded" : "unknown");
+      cookie = originalCookie;
+      await denied(consoleClient().consoleSession(), "authentication_required");
+      const reads = f.state.nativeReads;
+      if (succeeded) assert.deepEqual((await f.client().changeModels(request)).data, receipt);
+      else await denied(f.client().changeModels(request), "operation_unknown");
+      assert.equal(f.state.saves, 1); assert.equal(f.state.nativeReads, reads);
+    } finally {
+      resume.release(); await pending?.catch(() => undefined); await closing; await f.close();
+    }
+  });
+}

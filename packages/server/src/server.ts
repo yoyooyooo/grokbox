@@ -431,8 +431,9 @@ export async function startManagementServer(options: ManagementServerOptions, te
       status: () => ({ state: failed ? "failed" : stopped ? "stopped" : closing ? "stopping" : "running", activeRequests: active, installationId, observation: monitorService?.status() ?? null, notifications: notificationWorker?.status() ?? null }),
       close: () => {
         closing = true;
-        consoleAuthority.close();
-        return closePromise ??= runtime.dispose();
+        // Reject new requests now; preserve existing session identity while the
+        // original scope settles admitted work. Live grants/logout still apply.
+        return closePromise ??= runtime.dispose().finally(() => consoleAuthority.close());
       },
     };
   } catch (error) {
