@@ -31,11 +31,10 @@ function sameTuple(request: HostCompactRequest, resume: {
 
 /** Same-connection v4 HostCompact: emit compact-request, wait for one matching resume-step. */
 export function sameConnectionHostCompactLayer(incoming: Incoming, options: {
-  remainingMs?: () => number;
-} = {}): Layer.Layer<HostCompact> {
-  // Constructed once per incoming STEP, before its admission/producer starts.
-  const parentDeadline = performance.now() + REQUEST_WALL_DEADLINE_MS;
-  const remainingMs = options.remainingMs ?? (() => parentDeadline - performance.now());
+  remainingMs: () => number;
+}): Layer.Layer<HostCompact> {
+  // Supplied by the original STEP owner, including time spent in admission.
+  const { remainingMs } = options;
   let consumed = false;
   return Layer.succeed(HostCompact, {
     request: (input: HostCompactRequest) => Effect.gen(function* () {
@@ -59,35 +58,38 @@ export function sameConnectionHostCompactLayer(incoming: Incoming, options: {
       const written = yield* Effect.result(writeFrame(incoming.socket, frame));
       if (written._tag === "Failure") {
         incoming.awaitingResume = false;
-        return { kind: "unavailable", reason: "unknown" };
+        return { kind: "unavailable", reason: "unknown" } satisfies HostCompactResult;
       }
       const waitMs = Math.floor(Math.min(resumeDeadline - performance.now(), compactWaitBudget(remainingMs())));
       if (waitMs <= 0) {
         incoming.awaitingResume = false;
-        return { kind: "unavailable", reason: "cancelled" };
+        return { kind: "unavailable", reason: "cancelled" } satisfies HostCompactResult;
       }
       const read = yield* Effect.result(readOneFrame(incoming, waitMs));
       incoming.awaitingResume = false;
       incoming.consumed = true;
       if (read._tag === "Failure") {
-        return { kind: "unavailable", reason: read.failure.message === "aborted" ? "cancelled" : "unknown" };
+        return { kind: "unavailable", reason: ["aborted", "disconnected"].includes(read.failure.message) ? "cancelled" : "unknown" } satisfies HostCompactResult;
       }
       if (read.success.rest.length > 0) {
         incoming.extra = true;
         incoming.onLate?.();
-        return { kind: "unavailable", reason: "unknown" };
+        return { kind: "unavailable", reason: "unknown" } satisfies HostCompactResult;
       }
       let parsed;
       try {
         parsed = parseV4ControlFrame(read.success.value);
       } catch {
-        return { kind: "unavailable", reason: "unknown" };
+        return { kind: "unavailable", reason: "unknown" } satisfies HostCompactResult;
       }
       if (performance.now() >= resumeDeadline || compactWaitBudget(remainingMs()) <= 0
         || parsed.method !== "resume-step" || !sameTuple(input, parsed)) {
-        return { kind: "unavailable", reason: "unknown" };
+        return { kind: "unavailable", reason: "unknown" } satisfies HostCompactResult;
       }
-      return { kind: "snapshot", snapshot: parsed.snapshot };
-    }),
+      return { kind: "snapshot", snapshot: parsed.snapshot } satisfies HostCompactResult;
+    }).pipe(Effect.ensuring(Effect.sync(() => {
+      incoming.awaitingResume = false;
+      incoming.consumed = true;
+    }))),
   });
 }

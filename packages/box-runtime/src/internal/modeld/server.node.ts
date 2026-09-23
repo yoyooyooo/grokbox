@@ -114,6 +114,9 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
       settled = true;
       clearTimeout(timer);
       socket.off("data", check);
+      socket.off("end", onDisconnect);
+      socket.off("close", onDisconnect);
+      socket.off("error", onDisconnect);
       signal.removeEventListener("abort", onAbort);
       if (error) resume(Effect.fail(error));
       else resume(Effect.succeed(value!));
@@ -128,6 +131,7 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
       if (decoded instanceof Error) finish(decoded);
       else finish(undefined, decoded);
     };
+    const onDisconnect = () => finish(new Error("disconnected"));
     const onAbort = () => finish(new Error("aborted"));
     if (signal.aborted) {
       finish(new Error("aborted"));
@@ -135,7 +139,11 @@ export function readOneFrame(incoming: Incoming, timeoutMs = PARTIAL_SOCKET_MS):
     }
     signal.addEventListener("abort", onAbort, { once: true });
     socket.on("data", check);
-    check();
+    socket.on("end", onDisconnect);
+    socket.on("close", onDisconnect);
+    socket.on("error", onDisconnect);
+    if (socket.destroyed || socket.readableEnded) onDisconnect();
+    else check();
   });
 }
 
@@ -221,207 +229,214 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     const startedAt = new Date().toISOString();
     const deadlineAt = startedTick + BigInt(REQUEST_WALL_DEADLINE_MS) * 1_000_000n;
     const remainingMs = () => Math.max(0, Number(deadlineAt - clock.monotonicTimeNanosUnsafe()) / 1_000_000);
-    const observeStep = options.observeStep;
-    let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0, startedAt };
-    let backendAttempts = 0;
-    const attempts: NonNullable<ModeldStepOutcome["attempts"]> = [];
-    let readRecovery: (() => ProviderRecoveryState | undefined) | undefined;
-    let recoverySequence = 0, authoritySequence = 0;
-    let lastAuthority: AuthorityProgress | undefined;
-    let authorityObservationGaps = 0;
-    const withFailureSummary = (value: ModeldStepOutcome): ModeldStepOutcome => {
-      if (!value.failureCode) return value;
-      const base = value.failureSummary ?? failureSummaryFromObservation(value);
-      const summary = base && projectFailureSummary({ ...base, failureId: base.failureId ?? randomUUID(),
-        identity: { agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
-          hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId,
-          ...(value.bindingId ? { bindingId: value.bindingId } : {}) },
-        progress: { canonicalEvents: value.eventCount, backendAttempts }, recovery: readRecovery?.() ?? value.recovery });
-      return { ...value, ...(summary ? { failureSummary: summary } : {}) };
-    };
-    yield* Effect.addFinalizer((exit) => {
-      if (!observeStep) return Effect.void;
-      if (exit._tag === "Failure") {
-        const defect = Cause.hasDies(exit.cause);
-        const interrupted = Cause.hasInterruptsOnly(exit.cause);
-        const exitFailure = defect ? "defect" : interrupted ? "interrupted" : "unknown";
-        observation = { ...(observation.outcome === "unknown"
-          ? { ...observation, outcome: interrupted ? "cancelled" as const : "error" as const, phase: "internal" as const, failureCode: exitFailure }
-          : observation), cleanup: { ...observation.cleanup, exitFailure } };
-      }
-      observation = withFailureSummary({ ...observation, at: observation.at ?? new Date().toISOString(), startedAt,
-        durationMs: Math.max(0, Math.floor(Number(clock.monotonicTimeNanosUnsafe() - startedTick) / 1_000_000)), backendAttempts, attempts,
-        ...(lastAuthority ? { authority: lastAuthority } : {}),
-        ...(authorityObservationGaps ? { authorityObservationGaps } : {}),
-        ...(readRecovery?.() ? { recovery: readRecovery!() } : {}) });
-      return Effect.gen(function* () {
-        const execution = yield* inferenceCapacity;
-        yield* observeStep(request, { ...observation, execution });
-      }).pipe(
-        Effect.interruptible, Effect.timeout("100 millis"), Effect.catchCause(cause => Effect.sync(() => {
-          const error = Cause.squash(cause);
-          if (error && typeof error === "object" && "_tag" in error && error._tag === "TimeoutError") {
-            try { options.onObservationTimeout?.(); } catch { /* telemetry never changes inference */ }
-          }
-        })),
-      );
-    });
-    const disconnected = yield* Deferred.make<void>();
-    const late = yield* Deferred.make<void>();
-    incoming.onLate = () => {
-      void Effect.runPromise(Deferred.succeed(late, undefined).pipe(Effect.ignore));
-    };
-    if (incoming.extra || incoming.overflow) incoming.onLate();
-    const unwatch = watchDisconnect(socket, (kind) => {
-      observation.transport = { side: "host_modeld_ipc", close: kind, at: new Date().toISOString() };
-      void Effect.runPromise(Deferred.succeed(disconnected, undefined).pipe(Effect.ignore));
-    });
-    yield* Effect.addFinalizer(() => Effect.sync(unwatch));
-
-    const backend = yield* ModelBackend;
-    const selectedBackend = withOverflowCanary(backend, parsed.request.agentId, options.env ?? process.env);
-    const compactBackend: typeof backend = { ...selectedBackend, infer: (...args) => Stream.unwrap(Effect.sync(() => {
-      backendAttempts += 1;
-      const attempt: NonNullable<ModeldStepOutcome["attempts"]>[number] = { index: backendAttempts - 1 };
-      if (attempts.length < 4) attempts.push(attempt);
-      observation.attempts = attempts;
-      return selectedBackend.infer(...args).pipe(
-        Stream.tap(event => Effect.sync(() => {
-          if (event.type === "backend_finish" && event.stream) attempt.stream = event.stream;
-        })),
-        Stream.tapError(error => Effect.sync(() => {
-          const detected = modeldFailureOutcome(error, "provider", 0);
-          attempt.failureCode = detected.failureCode;
-          attempt.diagnostic = detected.diagnostic;
-        })),
-      );
-    })) };
-    const runtimeEvents: typeof RuntimeEvents.Service = { append: value => Effect.gen(function* () {
-      const v = value && typeof value === "object" ? value as Record<string, unknown> : {};
-      const authority = projectAuthorityProgress(v.authority);
-      if (authority) {
-        lastAuthority = authority;
-        // Bounded control traffic; suppression never extends a deadline or
-        // drops a model/tool event. Final outcome retains the latest phase.
-        if (authoritySequence < 256) {
-          yield* emit(socket, { kind: "authority", version: WIRE_VERSION, sequence: authoritySequence++, authority });
-          // Journal I/O has a separate bounded service worker. A slow or broken
-          // observer must not consume the STEP's authority waiting allowance.
-          enqueueAuthority(request, authority, () => { authorityObservationGaps++; });
+    // The compact capability belongs to this exact parsed STEP and consumes
+    // its monotonic deadline; no connection-level timer can renew that budget.
+    const execute = Effect.gen(function* () {
+      const observeStep = options.observeStep;
+      let observation: ModeldStepOutcome = { outcome: "unknown", phase: "admission", eventCount: 0, startedAt };
+      let backendAttempts = 0;
+      const attempts: NonNullable<ModeldStepOutcome["attempts"]> = [];
+      let readRecovery: (() => ProviderRecoveryState | undefined) | undefined;
+      let recoverySequence = 0, authoritySequence = 0;
+      let lastAuthority: AuthorityProgress | undefined;
+      let authorityObservationGaps = 0;
+      const withFailureSummary = (value: ModeldStepOutcome): ModeldStepOutcome => {
+        if (!value.failureCode) return value;
+        const base = value.failureSummary ?? failureSummaryFromObservation(value);
+        const summary = base && projectFailureSummary({ ...base, failureId: base.failureId ?? randomUUID(),
+          identity: { agentId: request.agentId, turnId: request.turnId, stepId: request.stepId,
+            hostGenerationId: request.hostEpoch.compile, serviceEpoch: request.serviceEpoch.incarnationId,
+            ...(value.bindingId ? { bindingId: value.bindingId } : {}) },
+          progress: { canonicalEvents: value.eventCount, backendAttempts }, recovery: readRecovery?.() ?? value.recovery });
+        return { ...value, ...(summary ? { failureSummary: summary } : {}) };
+      };
+      yield* Effect.addFinalizer((exit) => {
+        if (!observeStep) return Effect.void;
+        if (exit._tag === "Failure") {
+          const defect = Cause.hasDies(exit.cause);
+          const interrupted = Cause.hasInterruptsOnly(exit.cause);
+          const exitFailure = defect ? "defect" : interrupted ? "interrupted" : "unknown";
+          observation = { ...(observation.outcome === "unknown"
+            ? { ...observation, outcome: interrupted ? "cancelled" as const : "error" as const, phase: "internal" as const, failureCode: exitFailure }
+            : observation), cleanup: { ...observation.cleanup, exitFailure } };
         }
+        observation = withFailureSummary({ ...observation, at: observation.at ?? new Date().toISOString(), startedAt,
+          durationMs: Math.max(0, Math.floor(Number(clock.monotonicTimeNanosUnsafe() - startedTick) / 1_000_000)), backendAttempts, attempts,
+          ...(lastAuthority ? { authority: lastAuthority } : {}),
+          ...(authorityObservationGaps ? { authorityObservationGaps } : {}),
+          ...(readRecovery?.() ? { recovery: readRecovery!() } : {}) });
+        return Effect.gen(function* () {
+          const execution = yield* inferenceCapacity;
+          yield* observeStep(request, { ...observation, execution });
+        }).pipe(
+          Effect.interruptible, Effect.timeout("100 millis"), Effect.catchCause(cause => Effect.sync(() => {
+            const error = Cause.squash(cause);
+            if (error && typeof error === "object" && "_tag" in error && error._tag === "TimeoutError") {
+              try { options.onObservationTimeout?.(); } catch { /* telemetry never changes inference */ }
+            }
+          })),
+        );
+      });
+      const disconnected = yield* Deferred.make<void>();
+      const late = yield* Deferred.make<void>();
+      incoming.onLate = () => {
+        void Effect.runPromise(Deferred.succeed(late, undefined).pipe(Effect.ignore));
+      };
+      if (incoming.extra || incoming.overflow) incoming.onLate();
+      const unwatch = watchDisconnect(socket, (kind) => {
+        observation.transport = { side: "host_modeld_ipc", close: kind, at: new Date().toISOString() };
+        void Effect.runPromise(Deferred.succeed(disconnected, undefined).pipe(Effect.ignore));
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(unwatch));
+
+      const backend = yield* ModelBackend;
+      const selectedBackend = withOverflowCanary(backend, request.agentId, options.env ?? process.env);
+      const compactBackend: typeof backend = { ...selectedBackend, infer: (...args) => Stream.unwrap(Effect.sync(() => {
+        backendAttempts += 1;
+        const attempt: NonNullable<ModeldStepOutcome["attempts"]>[number] = { index: backendAttempts - 1 };
+        if (attempts.length < 4) attempts.push(attempt);
+        observation.attempts = attempts;
+        return selectedBackend.infer(...args).pipe(
+          Stream.tap(event => Effect.sync(() => {
+            if (event.type === "backend_finish" && event.stream) attempt.stream = event.stream;
+          })),
+          Stream.tapError(error => Effect.sync(() => {
+            const detected = modeldFailureOutcome(error, "provider", 0);
+            attempt.failureCode = detected.failureCode;
+            attempt.diagnostic = detected.diagnostic;
+          })),
+        );
+      })) };
+      const runtimeEvents: typeof RuntimeEvents.Service = { append: value => Effect.gen(function* () {
+        const v = value && typeof value === "object" ? value as Record<string, unknown> : {};
+        const authority = projectAuthorityProgress(v.authority);
+        if (authority) {
+          lastAuthority = authority;
+          // Bounded control traffic; suppression never extends a deadline or
+          // drops a model/tool event. Final outcome retains the latest phase.
+          if (authoritySequence < 256) {
+            yield* emit(socket, { kind: "authority", version: WIRE_VERSION, sequence: authoritySequence++, authority });
+            // Journal I/O has a separate bounded service worker. A slow or broken
+            // observer must not consume the STEP's authority waiting allowance.
+            enqueueAuthority(request, authority, () => { authorityObservationGaps++; });
+          }
+          return;
+        }
+        const recovery = projectProviderRecoveryState(v.recovery);
+        if (!recovery) return;
+        yield* emit(socket, { kind: "recovery", version: WIRE_VERSION, sequence: recoverySequence++, recovery });
+        if (options.observeRecovery) yield* options.observeRecovery(request, recovery).pipe(Effect.timeout("100 millis"), Effect.catchCause(() => Effect.void));
+      }) };
+      const transportHalt = Effect.raceFirst(
+        Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
+        Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
+      );
+      const admitted = yield* Effect.result(
+        Effect.raceFirst(runStep(request, { startedTick }), transportHalt).pipe(
+          Effect.timeout(`${remainingMs()} millis`),
+          Effect.provideService(ModelBackend, compactBackend),
+          Effect.provideService(RuntimeEvents, runtimeEvents),
+        ),
+      );
+      if (admitted._tag === "Failure") {
+        observation = withFailureSummary(modeldFailureOutcome(admitted.failure, "admission", 0));
+        yield* emit(socket, errorFrame(mapFail(admitted.failure), observation.failureSummary));
         return;
       }
-      const recovery = projectProviderRecoveryState(v.recovery);
-      if (!recovery) return;
-      yield* emit(socket, { kind: "recovery", version: WIRE_VERSION, sequence: recoverySequence++, recovery });
-      if (options.observeRecovery) yield* options.observeRecovery(request, recovery).pipe(Effect.timeout("100 millis"), Effect.catchCause(() => Effect.void));
-    }) };
-    const transportHalt = Effect.raceFirst(
-      Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
-      Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
-    );
-    const admitted = yield* Effect.result(
-      Effect.raceFirst(runStep(parsed.request, { startedTick }), transportHalt).pipe(
-        Effect.timeout(`${remainingMs()} millis`),
-        Effect.provideService(ModelBackend, compactBackend),
-        Effect.provideService(RuntimeEvents, runtimeEvents),
-      ),
-    );
-    if (admitted._tag === "Failure") {
-      observation = withFailureSummary(modeldFailureOutcome(admitted.failure, "admission", 0));
-      yield* emit(socket, errorFrame(mapFail(admitted.failure), observation.failureSummary));
-      return;
-    }
-    if (yield* Deferred.isDone(disconnected)) {
-      observation = { ...observation, outcome: "cancelled", phase: "transport", failureCode: "disconnected" };
-      yield* cancelStep(parsed.request).pipe(Effect.ignore);
-      return;
-    }
-    if (yield* Deferred.isDone(late)) {
-      observation = { ...observation, outcome: "error", phase: "transport", failureCode: incoming.overflow ? "capacity" : "extra_keys" };
-      yield* emit(socket, errorFrame(incoming.overflow ? "capacity" : "extra_keys"));
-      yield* cancelStep(parsed.request).pipe(Effect.ignore);
-      return;
-    }
-    const step = admitted.success;
-    if ("recovery" in step && typeof step.recovery === "function") readRecovery = step.recovery;
-    observation = { ...observation, phase: "provider", bindingId: step.bindingId };
-    if (!("stream" in step) && !step.bindingId) {
-      // A claim waiting for authority has no acknowledged binding yet. Do not
-      // issue an invalid accepted frame, nor dispatch the duplicate request.
-      observation = { ...observation, outcome: "duplicate", phase: "admission" };
-      yield* emit(socket, errorFrame("binding_missing"));
-      return;
-    }
-    yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: step.bindingId });
-    if (!("stream" in step)) {
-      observation = { ...observation, outcome: "duplicate", phase: "complete" };
-      yield* emit(socket, {
-        kind: "terminal",
-        outcome: "duplicate",
-        snapshotDigest: "snapshotDigest" in step ? step.snapshotDigest : "",
-        bindingId: step.bindingId,
-      });
-      return;
-    }
+      if (yield* Deferred.isDone(disconnected)) {
+        observation = { ...observation, outcome: "cancelled", phase: "transport", failureCode: "disconnected" };
+        yield* cancelStep(request).pipe(Effect.ignore);
+        return;
+      }
+      if (yield* Deferred.isDone(late)) {
+        observation = { ...observation, outcome: "error", phase: "transport", failureCode: incoming.overflow ? "capacity" : "extra_keys" };
+        yield* emit(socket, errorFrame(incoming.overflow ? "capacity" : "extra_keys"));
+        yield* cancelStep(request).pipe(Effect.ignore);
+        return;
+      }
+      const step = admitted.success;
+      if ("recovery" in step && typeof step.recovery === "function") readRecovery = step.recovery;
+      observation = { ...observation, phase: "provider", bindingId: step.bindingId };
+      if (!("stream" in step) && !step.bindingId) {
+        // A claim waiting for authority has no acknowledged binding yet. Do not
+        // issue an invalid accepted frame, nor dispatch the duplicate request.
+        observation = { ...observation, outcome: "duplicate", phase: "admission" };
+        yield* emit(socket, errorFrame("binding_missing"));
+        return;
+      }
+      yield* emit(socket, { ok: true, method: "run-step", kind: "accepted", version: WIRE_VERSION, bindingId: step.bindingId });
+      if (!("stream" in step)) {
+        observation = { ...observation, outcome: "duplicate", phase: "complete" };
+        yield* emit(socket, {
+          kind: "terminal",
+          outcome: "duplicate",
+          snapshotDigest: "snapshotDigest" in step ? step.snapshotDigest : "",
+          bindingId: step.bindingId,
+        });
+        return;
+      }
 
-    let sequence = 0;
-    const outputBudget = new StreamOutputBudget();
-    const halt = Effect.raceFirst(
-      Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
-      Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
-    );
-    const collected = yield* Effect.result(
-      Stream.runForEach(
-        Stream.interruptWhen(step.stream, halt).pipe(
-          Stream.provideService(ModelBackend, compactBackend),
-          Stream.provideService(RuntimeEvents, runtimeEvents),
-        ),
-        (event: InferenceEvent) => Effect.gen(function* () {
-          if (!outputBudget.add(event)) {
-            return yield* Effect.fail(annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: "wire_event", budget: { layer: "canonical", metric: "output_bytes", limit: outputBudget.limit, measured: outputBudget.used } }));
-          }
-          if (event.type === "backend_finish") {
-            observation = { ...observation, at: new Date().toISOString(), outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete", ...(event.stream ? { stream: event.stream } : {}), ...(event.usage ? { usage: event.usage } : {}) };
-            yield* emit(socket, {
-              kind: "terminal",
-              outcome: "ok",
-              bindingId: step.bindingId,
-              finishReason: event.finishReason,
-              usage: event.usage,
-            });
-            return;
-          }
-          // Count an event only after the socket write accepted it. This is not
-          // proof that Host accepted it or executed a tool.
-          yield* writeFrame(socket, { kind: "event", sequence, event });
-          sequence += 1;
-          observation.eventCount = sequence;
-        }),
-      ).pipe(Effect.timeout(`${remainingMs()} millis`)),
-    );
-    const clientDisconnected = yield* Deferred.isDone(disconnected);
-    const failure = collected._tag === "Failure" ? modeldFailureOutcome(collected.failure, "provider", sequence) : undefined;
-    if (failure && attempts.length > 0 && attempts.length === backendAttempts) {
-      const attempt = attempts[attempts.length - 1]!;
-      attempt.failureCode = failure.failureCode;
-      attempt.diagnostic = failure.diagnostic;
-    }
-    observation = withFailureSummary({
-      ...withTransportOutcome(observation, failure, clientDisconnected),
-      at: observation.at ?? new Date().toISOString(),
-      attempts,
-      ...(failure?.diagnostic?.stream && !observation.stream ? { stream: failure.diagnostic.stream } : {}),
+      let sequence = 0;
+      const outputBudget = new StreamOutputBudget();
+      const halt = Effect.raceFirst(
+        Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
+        Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
+      );
+      const collected = yield* Effect.result(
+        Stream.runForEach(
+          Stream.interruptWhen(step.stream, halt).pipe(
+            Stream.provideService(ModelBackend, compactBackend),
+            Stream.provideService(RuntimeEvents, runtimeEvents),
+          ),
+          (event: InferenceEvent) => Effect.gen(function* () {
+            if (!outputBudget.add(event)) {
+              return yield* Effect.fail(annotateStreamFailure(new BackendFailure("stream_limit"), { normalizeCause: "stream_budget", rejectSite: "wire_event", budget: { layer: "canonical", metric: "output_bytes", limit: outputBudget.limit, measured: outputBudget.used } }));
+            }
+            if (event.type === "backend_finish") {
+              observation = { ...observation, at: new Date().toISOString(), outcome: event.finishReason === "stop" ? "ok" : event.finishReason === "abort" ? "cancelled" : "error", phase: "complete", ...(event.stream ? { stream: event.stream } : {}), ...(event.usage ? { usage: event.usage } : {}) };
+              yield* emit(socket, {
+                kind: "terminal",
+                outcome: "ok",
+                bindingId: step.bindingId,
+                finishReason: event.finishReason,
+                usage: event.usage,
+              });
+              return;
+            }
+            // Count an event only after the socket write accepted it. This is not
+            // proof that Host accepted it or executed a tool.
+            yield* writeFrame(socket, { kind: "event", sequence, event });
+            sequence += 1;
+            observation.eventCount = sequence;
+          }),
+        ).pipe(Effect.timeout(`${remainingMs()} millis`)),
+      );
+      const clientDisconnected = yield* Deferred.isDone(disconnected);
+      const failure = collected._tag === "Failure" ? modeldFailureOutcome(collected.failure, "provider", sequence) : undefined;
+      if (failure && attempts.length > 0 && attempts.length === backendAttempts) {
+        const attempt = attempts[attempts.length - 1]!;
+        attempt.failureCode = failure.failureCode;
+        attempt.diagnostic = failure.diagnostic;
+      }
+      observation = withFailureSummary({
+        ...withTransportOutcome(observation, failure, clientDisconnected),
+        at: observation.at ?? new Date().toISOString(),
+        attempts,
+        ...(failure?.diagnostic?.stream && !observation.stream ? { stream: failure.diagnostic.stream } : {}),
+      });
+      if (clientDisconnected) {
+        yield* cancelStep(request).pipe(Effect.ignore);
+        return;
+      }
+      if (collected._tag === "Failure") {
+        yield* emit(socket, { kind: "terminal", outcome: "error", version: WIRE_VERSION, code: mapFail(collected.failure),
+          ...(observation.failureSummary ? { failure: observation.failureSummary } : {}) });
+        yield* cancelStep(request).pipe(Effect.ignore);
+      }
     });
-    if (clientDisconnected) {
-      yield* cancelStep(parsed.request).pipe(Effect.ignore);
-      return;
-    }
-    if (collected._tag === "Failure") {
-      yield* emit(socket, { kind: "terminal", outcome: "error", version: WIRE_VERSION, code: mapFail(collected.failure),
-        ...(observation.failureSummary ? { failure: observation.failureSummary } : {}) });
-      yield* cancelStep(parsed.request).pipe(Effect.ignore);
-    }
+    return yield* options.compactForIncoming
+      ? execute.pipe(Effect.provide(options.compactForIncoming(incoming, { remainingMs })))
+      : execute;
   });
 }
 
@@ -434,7 +449,7 @@ export type ServeOptions = {
   observeAuthority?: (request: Pick<RunStepRequest, "agentId" | "turnId" | "stepId" | "hostEpoch" | "serviceEpoch">,
     state: AuthorityProgress, observedAt?: string) => Effect.Effect<void, unknown>;
   onObservationTimeout?: () => void;
-  compactForIncoming?: (incoming: Incoming) => Layer.Layer<HostCompact>;
+  compactForIncoming?: (incoming: Incoming, clock: { remainingMs: () => number }) => Layer.Layer<HostCompact>;
   env?: NodeJS.Dict<string>;
   path: string;
   generation: string;
@@ -536,9 +551,7 @@ export function serveModeld(options: ServeOptions) {
         const socket = yield* trackSocket(raw.socket, options.counts, capacity);
         const frame = yield* readOneFrame(raw);
         const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options, enqueueAuthority, contextRunner);
-        yield* options.compactForIncoming
-          ? handled.pipe(Effect.provide(options.compactForIncoming(raw)))
-          : handled;
+        yield* handled;
         void socket;
       })).pipe(Effect.ignore, Effect.onExit(() => Effect.sync(() => {
         if (options.counts) options.counts.fibers = Math.max(0, options.counts.fibers - 1);

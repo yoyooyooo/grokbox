@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdtemp } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createConnection, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WIRE_VERSION, REQUEST_WALL_DEADLINE_MS } from "@grokbox/runtime-kernel/contract";
-import { Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer } from "effect";
+import { TestClock } from "effect/testing";
 import { BackendFailure, contextSnapshotBody, type InferenceEvent } from "@grokbox/runtime-kernel/contract";
 import { computeSnapshotDigest } from "@grokbox/runtime-kernel/hash";
-import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
+import { inferenceMemoryLayer, memoryExecutionHistory, type ExecutionHistory } from "@grokbox/runtime-kernel/inference";
 import { captureManagedSelection, parseModelsFile } from "@grokbox/runtime-kernel/selection";
 import {
   createCountedSeams,
@@ -17,8 +18,9 @@ import {
   fakeConfigurationReadLayer,
   fakeModelBackendLayer,
 } from "@grokbox/runtime-kernel/testing";
-import { serveModeld } from "../src/internal/modeld/server.node.ts";
+import { serveModeld, readOneFrame, type Incoming } from "../src/internal/modeld/server.node.ts";
 import { COMPACT_RESUME_RESERVE_MS, compactWaitBudget, sameConnectionHostCompactLayer } from "../src/internal/modeld/same-connection-compact.ts";
+import { emptyResourceCounts } from "../src/internal/modeld/unix-listen.node.ts";
 import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
 
 const EVENTS: InferenceEvent[] = [
@@ -150,7 +152,7 @@ describe("same-connection v4 HostCompact adapter", () => {
       serveModeld({
         path,
         generation,
-        compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming),
+        compactForIncoming: sameConnectionHostCompactLayer,
       }).pipe(Effect.andThen(Effect.never), Effect.provide(layer)) as Effect.Effect<never, unknown>,
     ));
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -193,7 +195,7 @@ describe("same-connection v4 HostCompact adapter", () => {
       serveModeld({
         path,
         generation,
-        compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming),
+        compactForIncoming: sameConnectionHostCompactLayer,
       }).pipe(Effect.andThen(Effect.never), Effect.provide(layer)) as Effect.Effect<never, unknown>,
     ));
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -332,3 +334,136 @@ describe("same-connection v4 HostCompact adapter", () => {
     }
   }, 9_000);
 });
+
+
+for (const delayMs of [170_000, 176_000]) test(`compact control consumes the original STEP clock after ${delayMs}ms of claim`, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "modeld-compact-clock-")), path = join(dir, "modeld.sock");
+  const generation = randomUUID(), counts = createCountedSeams(), resources = emptyResourceCounts();
+  const entered = Deferred.makeUnsafe<void>();
+  const history = memoryExecutionHistory();
+  let firstClaim = true;
+  const store: ExecutionHistory = { ...history, putIdentity: value => Effect.gen(function* () {
+    if (firstClaim) {
+      firstClaim = false;
+      yield* Deferred.succeed(entered, undefined);
+      yield* Effect.sleep(`${delayMs} millis`);
+    }
+    yield* history.putIdentity(value);
+  }) };
+  const layer = fakeBackendAuthLayer("secret", counts).pipe(
+    Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+    Layer.merge(fakeConfigurationReadLayer({ models: file })),
+    Layer.merge(fakeAdmissionAuthorityLayer()),
+    Layer.merge(inferenceMemoryLayer({ serviceEpoch: generation, history: store })),
+  );
+  const controls: number[] = [];
+  try {
+    const frames = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      yield* serveModeld({ path, generation, counts: resources, compactForIncoming: sameConnectionHostCompactLayer });
+      const reader = yield* Effect.forkChild(Effect.tryPromise(() => drive(path, stepBody(generation), control => {
+        if (control.method !== "compact-request") throw Error("expected_compact");
+        controls.push(control.deadlineMs);
+        return { ...control, version: WIRE_VERSION, method: "resume-step", deadlineMs: undefined, snapshot: snapshot("short") };
+      })));
+      yield* Deferred.await(entered);
+      yield* TestClock.adjust(`${delayMs} millis`);
+      return yield* Fiber.join(reader);
+    }).pipe(Effect.provide(layer), Effect.provide(TestClock.layer()))));
+    expect(resources).toEqual({ listeners: 0, sockets: 0, fibers: 0 });
+    expect(counts.leasesAlive).toBe(0);
+    if (delayMs < REQUEST_WALL_DEADLINE_MS - COMPACT_RESUME_RESERVE_MS) {
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toBeGreaterThan(0);
+      expect(controls[0]).toBeLessThanOrEqual(REQUEST_WALL_DEADLINE_MS - delayMs - COMPACT_RESUME_RESERVE_MS);
+      expect(counts.network).toBe(2);
+      expect(frames.at(-1)).toMatchObject({ kind: "terminal", outcome: "ok" });
+    } else {
+      expect(controls).toEqual([]);
+      expect(counts.network).toBe(1);
+      expect(frames.at(-1)).toMatchObject({ kind: "terminal", outcome: "error" });
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}, 10_000);
+
+for (const event of ["end", "close", "error"] as const) test(`frame wait joins peer ${event} without using the timer`, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "modeld-frame-eof-")), path = join(dir, "test.sock");
+  let accepted!: (socket: Socket) => void;
+  const connected = new Promise<Socket>(resolve => { accepted = resolve; });
+  const server = createServer(accepted); let peer: Socket | undefined, client: Socket | undefined;
+  const controller = new AbortController();
+  try {
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, resolve); });
+    client = createConnection(path); client.on("error", () => undefined); peer = await connected;
+    // Synthetic peer events are delivered on a real fixture socket. This tests
+    // the exported reader's listener lifetime without modeld's outer race.
+    const incoming: Incoming = { socket: peer, buf: Buffer.alloc(0), consumed: true, extra: false, overflow: false, awaitingResume: true };
+    const before = Object.fromEntries(["data", "end", "close", "error"].map(name => [name, peer!.listenerCount(name)]));
+    const wait = Effect.runPromise(Effect.result(readOneFrame(incoming, 5000)), { signal: controller.signal })
+      .catch(() => ({ _tag: "Failure" as const, failure: new Error("parent_interrupted") }));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const emergency = setTimeout(() => controller.abort(), 100);
+    // Node requires an error listener for emit(error); the fallback merely
+    // avoids process-level failure when the original reader has no listener.
+    const swallow = () => undefined; if (event === "error") peer.on("error", swallow);
+    peer.emit(event, ...(event === "error" ? [new Error("fixture peer error")] : []));
+    let result;
+    try { result = await wait; } finally { clearTimeout(emergency); peer.off("error", swallow); }
+    expect(result._tag).toBe("Failure");
+    expect(result._tag === "Failure" ? result.failure.message : "success").toBe("disconnected");
+    expect(controller.signal.aborted).toBe(false);
+    for (const name of ["data", "end", "close", "error"]) expect(peer.listenerCount(name)).toBe(before[name]);
+  } finally {
+    controller.abort(); client?.destroy(); peer?.destroy();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 5000);
+
+
+test("real peer EOF during compact settles the STEP and clears resume ownership", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "modeld-compact-peer-eof-")), path = join(dir, "modeld.sock");
+  const generation = randomUUID(), counts = createCountedSeams(), resources = emptyResourceCounts();
+  let incoming: Incoming | undefined, controls = 0;
+  const outcomes: Array<{ outcome: string; execution?: { activeSteps: number } }> = [];
+  const layer = fakeBackendAuthLayer("secret", counts).pipe(
+    Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+    Layer.merge(fakeConfigurationReadLayer({ models: file })), Layer.merge(fakeAdmissionAuthorityLayer()),
+    Layer.merge(inferenceMemoryLayer({ serviceEpoch: generation })),
+  );
+  const fiber = Effect.runFork(Effect.scoped(serveModeld({ path, generation, counts: resources,
+    compactForIncoming: (value, budget) => { incoming = value; return sameConnectionHostCompactLayer(value, budget); },
+    observeStep: (_request, outcome) => Effect.sync(() => { outcomes.push(outcome); }),
+  }).pipe(Effect.andThen(Effect.never), Effect.provide(layer)) as Effect.Effect<never, unknown>));
+  let client: Socket | undefined;
+  try {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise<void>((resolve, reject) => {
+      const socket = client = createConnection(path); let buf = Buffer.alloc(0);
+      const timer = setTimeout(() => { socket.destroy(); reject(Error("fixture_peer_timeout")); }, 2000);
+      socket.once("connect", () => socket.write(encodeModeldFrame(stepBody(generation))));
+      socket.on("error", reject);
+      socket.once("close", () => { clearTimeout(timer); resolve(); });
+      socket.on("data", (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        for (;;) {
+          const decoded = decodeModeldFrame(buf); if (!decoded) return;
+          if ("error" in decoded) { reject(Error(decoded.error)); socket.destroy(); return; }
+          buf = Buffer.from(decoded.rest);
+          const frame = decoded.value as { method?: string };
+          if (frame.method === "compact-request") { controls++; socket.end(); }
+        }
+      });
+    });
+    const until = performance.now() + 2000;
+    while ((!outcomes.length || resources.fibers || resources.sockets) && performance.now() < until)
+      await new Promise(resolve => setTimeout(resolve, 5));
+    expect(controls).toBe(1); expect(counts.network).toBe(1);
+    expect(outcomes).toHaveLength(1); expect(outcomes[0]).toMatchObject({ outcome: "cancelled", execution: { activeSteps: 0 } });
+    expect(incoming).toMatchObject({ consumed: true, awaitingResume: false });
+    expect(resources).toMatchObject({ sockets: 0, fibers: 0 });
+  } finally {
+    client?.destroy(); await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.ignore));
+    expect(resources).toEqual({ listeners: 0, sockets: 0, fibers: 0 }); expect(counts.leasesAlive).toBe(0);
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 5000);

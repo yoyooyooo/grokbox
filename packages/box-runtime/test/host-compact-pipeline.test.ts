@@ -137,7 +137,7 @@ for (const errorStatus of [400, 401] as const) {
     const resources = emptyResourceCounts();
     const fiber = Effect.runFork(Effect.scoped(serveModeld({
       path: join(runRoot, "modeld.sock"), generation, counts: resources,
-      compactForIncoming: (incoming) => sameConnectionHostCompactLayer(incoming),
+      compactForIncoming: sameConnectionHostCompactLayer,
       observeStep: () => Effect.gen(function* () {
         observed.terminal++;
         yield* Deferred.succeed(terminalRecorded, undefined);
