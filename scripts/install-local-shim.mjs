@@ -67,10 +67,23 @@ for (const target of targets) {
   const probe = spawnSync(target, ["--version"], {
     cwd: tmpdir(),
     encoding: "utf8",
-    env: process.env, timeout: 10000, killSignal: "SIGKILL",
+    env: process.env, timeout: 10000, killSignal: "SIGKILL", maxBuffer: 64 * 1024,
   });
-  if (probe.status !== 0 || probe.stdout.trim() !== cliPackage.version) {
-    throw new Error(`Installed shim verification failed: ${target}`);
+  if (probe.error || probe.signal || probe.status !== 0 || probe.stdout.trim() !== cliPackage.version) {
+    // Do not echo child output or environment: even a broken runtime can print
+    // credentials. These finite fields distinguish the original failure cause.
+    const code = ["ETIMEDOUT", "ENOENT", "EACCES", "ENOBUFS"].includes(probe.error?.code)
+      ? probe.error.code : probe.error ? "other" : null;
+    const diagnostic = {
+      phase: "installed-shim-version", alias: target.endsWith("/gbox") ? "gbox" : "grokbox",
+      reason: code === "ETIMEDOUT" ? "timeout" : code ? "spawn-error"
+        : probe.signal ? "signal" : probe.status !== 0 ? "nonzero-exit" : "version-mismatch",
+      status: Number.isInteger(probe.status) ? probe.status : null,
+      signal: typeof probe.signal === "string" && /^SIG[A-Z0-9]+$/.test(probe.signal) ? probe.signal : null,
+      errorCode: code, timeoutMs: 10000,
+      stdoutBytes: Buffer.byteLength(probe.stdout ?? ""), stderrBytes: Buffer.byteLength(probe.stderr ?? ""),
+    };
+    throw new Error(`Installed shim verification failed: ${JSON.stringify(diagnostic)}`);
   }
 }
 process.stdout.write(`Installed source-backed grokbox shims (${cliPackage.version}):\n${targets.join("\n")}\n`);

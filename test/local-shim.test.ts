@@ -79,3 +79,28 @@ describe("source-backed local global shim", () => {
     } finally { await rm(fixture, { recursive: true, force: true }); }
   });
 });
+
+for (const mode of ["nonzero", "wrong-version", "overflow", "timeout"] as const) {
+  test(`installer keeps bounded, secret-free probe diagnostics: ${mode}`, async () => {
+    const fixture = await mkdtemp(join(tmpdir(), "grokbox-shim-diagnostic-"));
+    const bin = join(fixture, "bin"), fake = join(fixture, "synthetic-bun");
+    const secret = "PRIVATE_CHILD_OUTPUT_NOT_FOR_DIAGNOSTICS";
+    const body = mode === "timeout" ? "exec sleep 30" : mode === "nonzero" ? `printf '%s\n' '${secret}' >&2; exit 9`
+      : mode === "overflow" ? `exec node -e 'process.stdout.write("${secret}".repeat(4000))'` : `printf '%s\n' '${secret}'`;
+    try {
+      await writeFile(fake, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+      const result = await run(["node", installer], fixture, { ...process.env, GROKBOX_SHIM_DIR: bin, GROKBOX_BUN: fake });
+      expect(result.code).not.toBe(0); expect(result.stderr).toContain("Installed shim verification failed:");
+      expect(result.stderr).not.toContain(secret);
+      const match = /^Error: Installed shim verification failed: (\{[^\n]+\})$/m.exec(result.stderr);
+      expect(match).not.toBeNull();
+      const detail = JSON.parse(match![1]!);
+      expect(detail.phase).toBe("installed-shim-version"); expect(detail.timeoutMs).toBe(10000);
+      expect(detail.reason).toBe(mode === "timeout" ? "timeout" : mode === "overflow" ? "spawn-error" : mode === "nonzero" ? "nonzero-exit" : "version-mismatch");
+      if (mode === "nonzero") expect(detail.status).toBe(9);
+      if (mode === "timeout") expect(detail.errorCode).toBe("ETIMEDOUT");
+      if (mode === "overflow") expect(detail.errorCode).toBe("ENOBUFS");
+      expect(Object.keys(detail).sort()).toEqual(["alias", "errorCode", "phase", "reason", "signal", "status", "stderrBytes", "stdoutBytes", "timeoutMs"].sort());
+    } finally { await rm(fixture, { recursive: true, force: true }); }
+  }, 20000);
+}
