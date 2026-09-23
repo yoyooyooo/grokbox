@@ -39,7 +39,7 @@ import { linuxProcessPort, roleOf, readNamedProcEnv } from "../process/linux.nod
 import { proveStableOfficialState, type RoleClassifier } from "../process/official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "../process/process-port.ts";
 import { resolveNodeRequireablePreload } from "../process/helpers/runtime-helpers.ts";
-import { runTransientAdoptOperation, writeAdoptOpState } from "../process/transient-adopt.ts";
+import { runTransientAdoptOperation, writeAdoptOpState, readAdoptOpState } from "../process/transient-adopt.ts";
 import type { IdentityMarker, IdentityOpResult } from "../process/identity-op.ts";
 import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
 import { isDeepStrictEqual } from "node:util";
@@ -384,70 +384,83 @@ function readMarkerFile(path: string): IdentityMarker | null {
   }
 }
 
-async function commitObservedAdopt(input: {
-  command: FrozenControllerCommand;
-  ephemeralRoot: string;
-  host: import("../process/process-port.ts").ProcessIdentity;
-  supervisor: import("../process/process-port.ts").ProcessIdentity;
-  marker: IdentityMarker;
+export type ObservedAdoptState = {
+  host: ProcessIdentity; supervisor: ProcessIdentity; marker: IdentityMarker;
   profile: NonNullable<ReturnType<typeof loadDurableReviewedProfile>>;
-}): Promise<IdentityOpResult> {
-  const sha = liveDiskSha();
-  const compile = input.marker.compile;
-  if (!compile || compile.sourceSha256 !== sha) return emptyAdoptResult("compile-mismatch");
-  const expected = expectedCompileReceipt(input.profile);
-  if (!compileReceiptAgrees(compile, expected)) return emptyAdoptResult("compile-mismatch");
-  const proposed: CoverageAttestation = {
-    coverage: "attested",
-    diskSha: compile.sourceSha256,
-    pid: input.host.pid,
-    start: input.host.start,
-    identity: input.host,
-    at: new Date().toISOString(),
-    launchMode: "transient-adopt",
-    operationId: input.marker.operationId,
-    profileId: compile.profileId,
-    transformedSha: compile.transformedSha256,
-    compile: {
-      profileId: compile.profileId,
-      profileSha256: compile.profileSha256,
-      sourceSha256: compile.sourceSha256,
-      transformedSha256: compile.transformedSha256,
-    },
-    mode: "route",
-    modeld: true,
-  };
-  await writeAttestation(input.ephemeralRoot, proposed);
-  const record = await readAttestation(input.ephemeralRoot);
-  if (!isDeepStrictEqual(record, proposed)) return emptyAdoptResult("attestation-uncommitted");
-  const done = {
-    launchMode: "transient-adopt" as const,
-    phase: "attested" as const,
-    operationId: input.marker.operationId,
-    compile: proposed.compile,
-    tempSupervisor: null,
-    adoptingSupervisor: input.supervisor,
-    host: {
-      pid: input.host.pid,
-      uid: input.host.uid,
-      start: input.host.start,
-      exe: input.host.exe,
-      cmdline: input.host.cmdline,
-    },
-  };
-  await writeAdoptOpState(input.ephemeralRoot, done);
-  return {
-    ok: true,
-    recoveryRequired: false,
-    signaled: false,
-    diskShaBefore: sha,
-    diskShaAfter: sha,
-    census: { wrapper: 1, supervisor: 1, host: 1, tempSupervisor: 0, guardian: 0, extras: 0 },
-    coverage: "attested",
-    host: input.host,
-    launchMode: "transient-adopt",
-    committedAttestation: record!,
-  };
+  preloadSha256: string; diskSha256: string; gatewayPid: number | null;
+  hasGrokboxPreload: boolean; supervisorPreloaded: boolean;
+};
+
+/** Trusted internal observation ports, not CLI/HTTP input. The existing
+ * identity lease owns all observations, original writes and readbacks here.
+ * A null result means no reusable generation; a failed receipt never permits
+ * the caller to fall through into another adopt attempt. */
+export async function commitObservedAdopt(input: {
+  operationId: string; ephemeralRoot: string;
+  observe: () => ObservedAdoptState | null;
+  modeldReady: () => Promise<boolean>;
+}): Promise<IdentityOpResult | null> {
+  const lock = await acquireOperationLease(operationLockPath(input.ephemeralRoot), input.operationId);
+  if (!lock.ok) return emptyAdoptResult("lock-conflict");
+  let committedAttestation: CoverageAttestation | undefined;
+  const fail = (code: string): IdentityOpResult => ({ ...emptyAdoptResult(code),
+    ...(committedAttestation ? { committedAttestation } : {}) });
+  try {
+    const snapshot = input.observe();
+    if (!snapshot || !observedAdoptCommitEligible(snapshot)) return null;
+    const captured = structuredClone(snapshot);
+    const compile = captured.marker.compile!;
+    if (captured.diskSha256 !== compile.sourceSha256 || captured.gatewayPid !== captured.host.pid
+      || captured.supervisorPreloaded) return fail("observed-generation-mismatch");
+    const recheck = async (): Promise<string | null> => {
+      // Readiness can suspend; inspect the captured identities and bytes after
+      // that wait, without renewing them from a newer successful observation.
+      if (!await input.modeldReady()) return "modeld_not_ready";
+      const current = input.observe();
+      return current && isDeepStrictEqual(current, captured) ? null : "observed-generation-changed";
+    };
+    const before = await recheck(); if (before) return fail(before);
+    const proposed: CoverageAttestation = {
+      coverage: "attested", diskSha: compile.sourceSha256, pid: captured.host.pid,
+      start: captured.host.start, identity: captured.host, at: new Date().toISOString(),
+      launchMode: "transient-adopt", operationId: captured.marker.operationId,
+      profileId: compile.profileId, transformedSha: compile.transformedSha256,
+      compile, mode: "route", modeld: true,
+    };
+    const journal = {
+      launchMode: "transient-adopt" as const, phase: "commit-attestation" as const,
+      operationId: captured.marker.operationId, compile,
+      tempSupervisor: null, adoptingSupervisor: captured.supervisor,
+      host: { pid: captured.host.pid, uid: captured.host.uid, start: captured.host.start,
+        exe: captured.host.exe, cmdline: captured.host.cmdline },
+    };
+    await writeAdoptOpState(input.ephemeralRoot, journal);
+    const atCommit = await recheck(); if (atCommit) return fail(atCommit);
+    let persistFailed = false;
+    try { await writeAttestation(input.ephemeralRoot, structuredClone(proposed)); }
+    catch { persistFailed = true; }
+    const record = await readAttestation(input.ephemeralRoot);
+    if (!isDeepStrictEqual(record, proposed)) return fail("attestation-uncommitted");
+    committedAttestation = record!;
+    if (persistFailed) return fail("attestation-persist-failed");
+    const afterCommit = await recheck(); if (afterCommit) return fail(afterCommit);
+    const done = { ...journal, phase: "attested" as const };
+    await writeAdoptOpState(input.ephemeralRoot, done);
+    if (!isDeepStrictEqual(await readAdoptOpState(input.ephemeralRoot), done)) return fail("journal-uncommitted");
+    if (!isDeepStrictEqual(await readAttestation(input.ephemeralRoot), proposed)) return fail("attestation-uncommitted");
+    const final = await recheck(); if (final) return fail(final);
+    return {
+      ok: true, recoveryRequired: false, signaled: false,
+      diskShaBefore: captured.diskSha256, diskShaAfter: captured.diskSha256,
+      census: { wrapper: 1, supervisor: 1, host: 1, tempSupervisor: 0, guardian: 0, extras: 0 },
+      coverage: "attested", host: captured.host, launchMode: "transient-adopt", committedAttestation,
+    };
+  } catch { return fail("observed-adopt-persistence-failed"); }
+  finally {
+    // Never release while an awaited original writer/readback is still live.
+    try { await lock.lock.release(); }
+    catch { return fail("operation-lock-release-failed"); }
+  }
 }
 
 async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promise<IdentityOpResult> {
@@ -468,29 +481,23 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   const preloadSha = diskPreloadSha256(preloadPath);
   if (!preloadSha) return emptyAdoptResult("preload-unavailable");
 
-  const tryCommitObserved = async (): Promise<IdentityOpResult | null> => {
-    const identities = uniqueObservedAdoptIdentities(ports.processes, ports.classify);
-    if (!identities) return null;
-    const marker = readMarkerFile(markerPath);
-    if (!observedAdoptCommitEligible({
-      marker,
-      host: identities.host,
-      supervisor: identities.supervisor,
-      profile,
-      preloadSha256: preloadSha,
-      hasGrokboxPreload: ports.hasGrokboxPreload(identities.host),
-    })) {
-      return null;
-    }
-    return await commitObservedAdopt({
-      command,
-      ephemeralRoot,
-      host: identities.host,
-      supervisor: identities.supervisor,
-      marker: marker!,
-      profile,
-    });
-  };
+  const tryCommitObserved = () => commitObservedAdopt({
+    operationId: command.operationId, ephemeralRoot,
+    observe: () => {
+      const identities = uniqueObservedAdoptIdentities(ports.processes, ports.classify);
+      const currentProfile = loadDurableReviewedProfile(command.boxRoot);
+      const currentPreload = diskPreloadSha256(preloadPath), currentMarker = readMarkerFile(markerPath);
+      if (!identities || !currentProfile || !currentPreload || !currentMarker) return null;
+      // A census row is not a substitute for the same current process identity.
+      if (!isDeepStrictEqual(ports.processes.inspect(identities.host.pid), identities.host)
+        || !isDeepStrictEqual(ports.processes.inspect(identities.supervisor.pid), identities.supervisor)) return null;
+      return { ...identities, profile: currentProfile, preloadSha256: currentPreload,
+        marker: currentMarker, diskSha256: liveDiskSha(), gatewayPid: ports.readGatewayPid(),
+        hasGrokboxPreload: ports.hasGrokboxPreload(identities.host),
+        supervisorPreloaded: ports.hasGrokboxPreload(identities.supervisor) };
+    },
+    modeldReady: () => probeModeldHealth(ephemeralRoot),
+  });
 
   const observed = await tryCommitObserved();
   if (observed) return observed;

@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
 import { profileFromSource } from "../src/internal/host/profile.ts";
 import {
+  commitObservedAdopt, type ObservedAdoptState,
   controllerOperationId,
   observeControllerHostGeneration,
   observedAdoptCommitEligible,
@@ -177,5 +178,113 @@ describe("observed adopt commit eligibility", () => {
       ...port,
       list: () => [...rows, { ...orphan, pid: 14, start: 103 }],
     }, classify)).toBeNull();
+  });
+});
+
+
+// Actual file writers and Linux identity lease; only native observations are
+// synthetic. This remains in the original controller-generation test entry.
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import * as authority from "../src/internal/io/authority.node.ts";
+import * as adopt from "../src/internal/process/transient-adopt.ts";
+import * as lease from "../src/internal/io/operation-lease.node.ts";
+const ownedRoots: string[] = [];
+afterEach(async () => { await Promise.all(ownedRoots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+async function observedFixture() {
+  const root = await mkdtemp(join(tmpdir(), "grokbox-observed-commit-")); ownedRoots.push(root);
+  let reads = 0;
+  const view: ObservedAdoptState = {
+    host: { ...ident(13, 53, "host"), start: 102 }, supervisor: ident(12, 11, "supervisor"),
+    profile, marker: { ...marker }, preloadSha256, diskSha256: profile.sourceSha256, gatewayPid: 13,
+    hasGrokboxPreload: true, supervisorPreloaded: false,
+  };
+  const input = { operationId: "fresh-controller-request", ephemeralRoot: root,
+    observe: () => { reads++; return structuredClone(view); }, modeldReady: async () => true };
+  return { root, view, input, reads: () => reads };
+}
+(process.platform === "linux" ? describe : describe.skip)("observed adoption shares the original identity lease", () => {
+  test("held identity lease blocks all observation, attestation and journal writes", async () => {
+    const f = await observedFixture();
+    const other = await lease.acquireOperationLease(lease.operationLockPath(f.root), "other-owner");
+    expect(other.ok).toBe(true); if (!other.ok) return;
+    try {
+      expect(await commitObservedAdopt(f.input)).toMatchObject({ ok: false, code: "lock-conflict", signaled: false });
+      expect(f.reads()).toBe(0); expect(await authority.readAttestation(f.root)).toBeNull();
+      expect(await adopt.readAdoptOpState(f.root)).toBeNull();
+    } finally { await other.lock.release(); }
+  });
+  test("stable exact generation commits original identities without launching a process", async () => {
+    const f = await observedFixture(); const result = await commitObservedAdopt(f.input);
+    expect(result).toMatchObject({ ok: true, signaled: false, coverage: "attested", host: f.view.host });
+    expect(await authority.readAttestation(f.root)).toMatchObject({ operationId: marker.operationId, identity: f.view.host, compile: marker.compile });
+    expect(await adopt.readAdoptOpState(f.root)).toMatchObject({ phase: "attested", operationId: marker.operationId });
+    expect((await lease.inspectOperationLease(lease.operationLockPath(f.root))).observation.state).toBe("missing");
+  });
+  test("no reusable generation releases the lease and creates no evidence", async () => {
+    const f = await observedFixture();
+    expect(await commitObservedAdopt({ ...f.input, observe: () => null })).toBeNull();
+    expect(await authority.readAttestation(f.root)).toBeNull(); expect(await adopt.readAdoptOpState(f.root)).toBeNull();
+    const next = await lease.acquireOperationLease(lease.operationLockPath(f.root), "full-adopt-owner");
+    expect(next.ok).toBe(true); if (next.ok) await next.lock.release();
+  });
+  for (const change of ["host", "supervisor", "marker", "profile", "preload", "source", "gateway"] as const) {
+    test(`a ${change} change during readiness does not become new commit authority`, async () => {
+      const f = await observedFixture();
+      const result = await commitObservedAdopt({ ...f.input, modeldReady: async () => {
+        if (change === "host") f.view.host.start++;
+        else if (change === "supervisor") f.view.supervisor.start++;
+        else if (change === "marker") f.view.marker.operationId = "different-operation";
+        else if (change === "profile") f.view.profile = { ...f.view.profile, profileId: "changed-profile" };
+        else if (change === "preload") f.view.preloadSha256 = "1".repeat(64);
+        else if (change === "source") f.view.diskSha256 = "2".repeat(64);
+        else f.view.gatewayPid = 999;
+        return true;
+      } });
+      expect(result).toMatchObject({ ok: false, code: "observed-generation-changed" });
+      expect(await authority.readAttestation(f.root)).toBeNull(); expect(await adopt.readAdoptOpState(f.root)).toBeNull();
+    });
+  }
+  test("unready modeld cannot acquire a successful route attestation", async () => {
+    const f = await observedFixture();
+    expect(await commitObservedAdopt({ ...f.input, modeldReady: async () => false })).toMatchObject({ ok: false, code: "modeld_not_ready" });
+    expect(await authority.readAttestation(f.root)).toBeNull();
+  });
+  test("identity lease stays held across awaited readiness and original writes", async () => {
+    const f = await observedFixture(); let release!: () => void; let entered!: () => void;
+    const arrived = new Promise<void>(resolve => { entered = resolve; });
+    const wait = new Promise<void>(resolve => { release = resolve; });
+    const running = commitObservedAdopt({ ...f.input, modeldReady: async () => { entered(); await wait; return true; } });
+    try {
+      await arrived;
+      const competitor = await lease.acquireOperationLease(lease.operationLockPath(f.root), "competitor");
+      expect(competitor.ok).toBe(false); if (competitor.ok) await competitor.lock.release();
+    } finally { release(); }
+    expect(await running).toMatchObject({ ok: true });
+  });
+  test("observed drift after attestation write preserves evidence but refuses success", async () => {
+    const f = await observedFixture(), write = authority.writeAttestation;
+    const spy = spyOn(authority, "writeAttestation").mockImplementation(async (root, value) => { await write(root, value); f.view.host.start++; });
+    try {
+      expect(await commitObservedAdopt(f.input)).toMatchObject({ ok: false, code: "observed-generation-changed", committedAttestation: { identity: { start: 102 } } });
+      expect(await adopt.readAdoptOpState(f.root)).toMatchObject({ phase: "commit-attestation" });
+    } finally { spy.mockRestore(); }
+  });
+  test("journal readback must match the original completed declaration", async () => {
+    const f = await observedFixture(), write = adopt.writeAdoptOpState;
+    const spy = spyOn(adopt, "writeAdoptOpState").mockImplementation(async (root, value) => write(root,
+      value.phase === "attested" ? { ...value, phase: "recovery-required" } : value));
+    try { expect(await commitObservedAdopt(f.input)).toMatchObject({ ok: false, code: "journal-uncommitted" }); }
+    finally { spy.mockRestore(); }
+  });
+  test("lease-release uncertainty cannot report successful adoption", async () => {
+    const f = await observedFixture(), acquire = lease.acquireOperationLease;
+    const spy = spyOn(lease, "acquireOperationLease").mockImplementation(async (...args) => {
+      const held = await acquire(...args); if (!held.ok) return held;
+      return { ...held, lock: { ...held.lock, release: async () => { await held.lock.release(); throw Error("synthetic-lost-release-receipt"); } } };
+    });
+    try { expect(await commitObservedAdopt(f.input)).toMatchObject({ ok: false, code: "operation-lock-release-failed", committedAttestation: { operationId: marker.operationId } }); }
+    finally { spy.mockRestore(); }
   });
 });
