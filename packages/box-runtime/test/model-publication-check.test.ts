@@ -37,7 +37,7 @@ test("permission lost between declaration and physical publication preserves the
     const before=await f.bytes(),signal=new AbortController().signal;
     const store={...f.store,saveModels:async(...args:Parameters<typeof f.store.saveModels>)=>{saves++;allowed=false;await f.store.saveModels(...args);}};
     const layer=modelConfigurationLayer(store);
-    const admit=managedModelAdmission({ownershipRead:ownedOwnershipReader(4242),env:{},publication:{signal,authorize:async()=>{checks++;if(!allowed)throw refusal;}}});
+    const admit=managedModelAdmission({ownershipRead:ownedOwnershipReader(4242),env:{},publication:{authorize:async()=>{checks++;if(!allowed)throw refusal;}}});
     const request={requestId:randomUUID(),expectedRevision:modelConfigurationRevision(f.current),change};
     const run=()=>Effect.runPromise(runModelChange(caller,request,admit).pipe(Effect.provide(layer)));
     await expect(run()).rejects.toBe(refusal);expect(await f.bytes()).toBe(before);expect(saves).toBe(1);expect(checks).toBe(2);
@@ -49,27 +49,27 @@ test("permission lost between declaration and physical publication preserves the
 test("publication checks cancellation after an awaited local authority read",async()=>{
   const f=await fixture(),controller=new AbortController();let checked=false;
   try {
-    const admit=managedModelAdmission({ownershipRead:ownedOwnershipReader(4242),env:{},publication:{signal:controller.signal,
+    const admit=managedModelAdmission({ownershipRead:ownedOwnershipReader(4242),env:{},publication:{
       authorize:async()=>{await Promise.resolve();checked=true;controller.abort();}}});
     const check=await Effect.runPromise(admit(change,f.next));
-    await expect(check()).rejects.toBeDefined();expect(checked).toBe(true);
+    await expect(check(controller.signal)).rejects.toBeDefined();expect(checked).toBe(true);
   }finally{await f.close();}
 });
 test("a real final authority wait cannot renew the original five-second native observation",async()=>{
   const f=await fixture();let reads=0;
   try {
     const original=ownedOwnershipReader(4242);
-    const admit=managedModelAdmission({ownershipRead:async(...args)=>{reads++;return original(...args);},env:{},publication:{signal:new AbortController().signal,
+    const admit=managedModelAdmission({ownershipRead:async(...args)=>{reads++;return original(...args);},env:{},publication:{
       authorize:async()=>{await new Promise(resolve=>setTimeout(resolve,5100));}}});
     const check=await Effect.runPromise(admit(change,f.next));
-    await expect(check()).rejects.toMatchObject({code:"runtime_ownership_unconfirmed"});expect(reads).toBe(1);
+    await expect(check(new AbortController().signal)).rejects.toMatchObject({code:"runtime_ownership_unconfirmed"});expect(reads).toBe(1);
   }finally{await f.close();}
 },10000);
 test("withdrawing a model needs no native ownership but still cannot skip the final local authority check",async()=>{
   const f=await fixture();let checks=0;const refusal=Error("synthetic-reset-refused");
   try {
-    const admit=managedModelAdmission({env:{},publication:{signal:new AbortController().signal,authorize:async()=>{checks++;throw refusal;}}});
+    const admit=managedModelAdmission({env:{},publication:{authorize:async()=>{checks++;throw refusal;}}});
     const check=await Effect.runPromise(admit({kind:"bot-selection",agentId:A,selection:{kind:"native"}},f.current));
-    await expect(check()).rejects.toBe(refusal);expect(checks).toBe(1);
+    await expect(check(new AbortController().signal)).rejects.toBe(refusal);expect(checks).toBe(1);
   }finally{await f.close();}
 });

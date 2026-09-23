@@ -57,11 +57,11 @@ export async function selectLifecycleModel(input: {
     const finalCheck = yield* admission(change, next);
     yield* Effect.tryPromise(() => input.authorize());
     yield* Effect.tryPromise(() => input.verifyModel());
-    return async () => {
-      input.signal?.throwIfAborted();
+    return async signal => {
+      signal.throwIfAborted();
       await input.authorize(); await input.verifyModel();
-      input.signal?.throwIfAborted();
-      await finalCheck();
+      signal.throwIfAborted();
+      await finalCheck(signal);
     };
   })).pipe(Effect.provide(modelConfigurationLayer(store))), { signal: input.signal });
   if (receipt.state !== "succeeded") throw new CurrentStateFailure("commit_unknown");

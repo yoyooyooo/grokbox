@@ -101,8 +101,8 @@ export function modelConfigurationLayer(store: RuntimeStore, options: { maxRecor
           // publication. A readback hash alone cannot rule out an ABA change.
           return yield* Effect.gen(function* () {
             yield* Effect.tryPromise({
-              try: () => store.saveModels(next, persistedModelsRevision(current.models), beforePublish ? async () => {
-                try { await beforePublish(); } catch (error) { throw new ModelPublicationRefused(error); }
+              try: signal => store.saveModels(next, persistedModelsRevision(current.models), beforePublish ? async () => {
+                try { await beforePublish(signal); } catch (error) { throw new ModelPublicationRefused(error); }
               } : undefined),
               catch: error => error instanceof ModelPublicationRefused ? error : failure(),
             });

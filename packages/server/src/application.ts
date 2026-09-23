@@ -6,12 +6,11 @@ import {
   type ManagementIdentity, type ModelList, type ModelView, type ManagementServiceView, type NotificationWorkerView,
 } from "@grokbox/client/contract";
 import { ModelConfiguration } from "@grokbox/runtime-kernel/ports";
-import { readModelOperation } from "@grokbox/runtime-kernel/commands";
+import { readModelOperation, runModelChange } from "@grokbox/runtime-kernel/commands";
 import { assignmentForBot, parseApiKeyRef, requireModel, type ModelRecord } from "@grokbox/runtime-kernel/selection";
-import { type createManagementGateway } from "@grokbox/box-runtime/runtime";
+import { managedModelAdmission, type createManagementGateway } from "@grokbox/box-runtime/runtime";
 import { HttpFailure, requireCapability, type Principal } from "./access.ts";
 import { botQuery } from "./bots.ts";
-import { ownedModelChange } from "./model-changes.ts";
 import { boundedPage, pageInput } from "./pagination.ts";
 import { observationPaths, observationQuery, type ManagementObservations } from "./observations.ts";
 import { incidentApplication } from "./incidents.ts";
@@ -182,7 +181,11 @@ export function application(options: ApplicationOptions, principal: Principal, m
     }
     if (method === "POST" && path === "/v1/model-changes") {
       yield* checked(() => { noQuery(url); requireCapability(principal, "models.write"); });
-      return yield* ownedModelChange(caller, input, { ownershipRead: options.native.ownershipRead, env: options.env, fetch: options.fetch }, options.modelAuthorize);
+      if (!options.modelAuthorize) return yield* Effect.fail(new HttpFailure(503, "unavailable", "The model publication authority is unavailable."));
+      // Stay in the original Server-owned fiber. ModelConfiguration owns the
+      // declaration/publication settlement and its graceful-shutdown boundary.
+      return yield* runModelChange(caller, input, managedModelAdmission({ ownershipRead: options.native.ownershipRead,
+        env: options.env, fetch: options.fetch, publication: { authorize: options.modelAuthorize } }));
     }
     return yield* Effect.fail(new HttpFailure(404, "not_found", "The management endpoint is not available."));
   });

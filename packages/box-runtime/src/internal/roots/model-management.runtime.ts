@@ -9,7 +9,7 @@ import { probeOpenAiCatalog } from "../io/openai-catalog-probe.node.ts";
  * host-local check survives writer waits, but cannot renew native evidence.
  * Reset needs no native ownership; management permission is still required. */
 export function managedModelAdmission(options: { ownershipRead?: OwnershipReader; env?: NodeJS.Dict<string>; fetch?: typeof fetch;
-  publication?: { signal: AbortSignal; authorize: (signal: AbortSignal) => Promise<void> } }) {
+  publication?: { authorize: (signal: AbortSignal) => Promise<void> } }) {
   return (change: ModelChange, next: ModelsFile): Effect.Effect<ModelPublicationCheck, unknown> => Effect.gen(function* () {
     const agentId = change.kind === "bot-selection" && change.selection.kind !== "native" ? change.agentId : undefined;
     const modelId = agentId ? assignmentForBot(next, agentId)!.modelId
@@ -40,11 +40,13 @@ export function managedModelAdmission(options: { ownershipRead?: OwnershipReader
       if (ageMs > OWNERSHIP_EVIDENCE_MAX_AGE_MS) return yield* Effect.fail(ownershipUseError("ownership_evidence_stale", "unconfirmed", agentId, ownership.remote.readObservation,
         { availabilityCause: "evidence_elapsed", evidenceAgeMs: Math.ceil(ageMs) }));
     }
-    return async () => {
-      const publication = options.publication;
-      publication?.signal.throwIfAborted();
-      if (publication) await publication.authorize(publication.signal);
-      publication?.signal.throwIfAborted();
+    return async signal => {
+      // The original transaction supplies its own interruption signal. Once
+      // declared, graceful shutdown joins that uninterruptible settlement;
+      // it does not withdraw still-valid grants or renew native evidence.
+      signal.throwIfAborted();
+      if (options.publication) await options.publication.authorize(signal);
+      signal.throwIfAborted();
       checkFresh();
     };
   });
