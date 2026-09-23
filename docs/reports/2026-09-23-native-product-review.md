@@ -12,6 +12,8 @@
 
 原生来源仍为下文明确的 Host/worker。新的 current guide 是 [原生产品管理](../maintainers/native-product-management.md)。本报告记录实现和验证；是否合入与可解锁关系由 Linear 的精确提交回执决定，以下历史检查点保留。
 
+最终发送前又以隔离 HTTP 复现：原生材料已观察年龄 4500ms，最后管理授权等待 700ms 后仍尝试一次写入。现已在实际 transport callback 中复核墙钟年龄和单调耗时，拒绝过期材料；create/update/duplicate 三种反例进入正式回归。没有延长原五秒策略。
+
 ## 修复后的实际验证
 
 - 首次负例窗口：原 35 个 Node 用例通过，新增 7 个安全反例全部失败；修复后反例全部通过，保留原失败日志。

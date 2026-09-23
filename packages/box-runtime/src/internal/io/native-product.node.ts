@@ -29,6 +29,7 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000) throw new NativeProductError("invalid_input");
   const deadline = performance.now() + timeoutMs;
   let generation: string | undefined, accountScope: string | undefined;
+  let authorityClock: { observedAt: number; initialAge: number; tick: number } | undefined;
   const remaining = () => {
     signal.throwIfAborted();
     const left = Math.floor(deadline - performance.now());
@@ -40,7 +41,14 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
     // Only the management driver supplies this capability. The transport calls
     // it after discovery, immediately before starting the one native request.
     if (writing && !authorizeWrite) throw new ProductDispatchRefused("permission_denied");
-    const response = await call(method, body, signal, remaining(), maxBytes, generation, writing ? authorizeWrite : undefined);
+    const finalAuthorization = writing ? async () => {
+      await authorizeWrite!(); signal.throwIfAborted();
+      const clock = authorityClock, age = clock ? Date.now() - clock.observedAt : Infinity;
+      const elapsed = clock ? performance.now() - clock.tick : Infinity;
+      if (!clock || age < 0 || elapsed < 0 || Math.max(age, clock.initialAge + elapsed) > OWNERSHIP_EVIDENCE_MAX_AGE_MS)
+        throw new ProductDispatchRefused("source_unavailable");
+    } : undefined;
+    const response = await call(method, body, signal, remaining(), maxBytes, generation, finalAuthorization);
     if (!/^[a-f0-9]{64}$/.test(response.generation)) return unavailable();
     if (generation !== undefined && generation !== response.generation) return changed();
     generation = response.generation;
@@ -64,6 +72,7 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       || performance.now() - began > OWNERSHIP_EVIDENCE_MAX_AGE_MS) return unavailable();
     if (accountScope !== undefined && accountScope !== proof.scope.id) return changed();
     accountScope = proof.scope.id;
+    authorityClock = { observedAt: at, initialAge: now - at, tick: performance.now() };
     return { scopeId: proof.scope.id, sourceGeneration: generation!, observedAtMs: at,
       agents: proof.agents.map(row => ({ id: row.agentId, state: row.state, serverId: row.server?.serverId ?? null, viewerIsOwner: row.server?.viewerIsOwner ?? null })),
       coverage: "requested-native-registration", executionQualified: false };
@@ -102,7 +111,7 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       if (generation !== request.source.generation || current.generation !== generation) throw new DuplicateDispatchRefused("generation_changed");
       if (age < 0 || age > OWNERSHIP_EVIDENCE_MAX_AGE_MS) throw new DuplicateDispatchRefused("evidence_expired");
       const raw = await rpc("duplicateAgent", { id: request.source.agentId }).catch(error => {
-        if (error instanceof ProductDispatchRefused) throw new DuplicateDispatchRefused(error.code === "permission_denied" ? "cancelled" : "generation_changed");
+        if (error instanceof ProductDispatchRefused) throw new DuplicateDispatchRefused(error.code === "permission_denied" ? "cancelled" : error.code === "source_unavailable" ? "evidence_expired" : "generation_changed");
         throw error;
       });
       if (!record(raw) || !record(raw.agent) || raw.agent.isGroup === true) return unavailable();

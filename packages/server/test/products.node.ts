@@ -470,3 +470,28 @@ test("null native avatar defaults still permit an explicit reviewed avatar chang
     assert.equal(f.state.writes, 1);
   } finally { await f.close(); }
 });
+
+
+for (const action of ["create", "update", "duplicate"] as const) test(`native ${action} evidence cannot age out during final management authorization`, async () => {
+  const f = await productFixture();
+  try {
+    f.state.ownershipAgeMs = 4500;
+    const { command } = await reviewed(f, productCommand(action));
+    let armed = false, delayed = false;
+    const readGrants = f.options.readGrants;
+    f.options.readGrants = async () => {
+      if (armed) { armed = false; delayed = true; await new Promise(resolve => setTimeout(resolve, 700)); }
+      return readGrants();
+    };
+    f.state.afterCommit = async label => {
+      if (label !== "native-product-admit") return;
+      const row = f.state.rows.get(P_A)!; let title = row.title;
+      Object.defineProperty(row, "title", { enumerable: true, configurable: true,
+        get() { armed = true; return title; }, set(value) { title = value; } });
+    };
+    const result = (await f.client().submitProduct(command)).data;
+    assert.equal(delayed, true); assert.equal(f.state.writes, 0);
+    assert.equal(result.state, "complete"); assert.equal(result.result?.nativeReceipt, "not-dispatched");
+    assert.equal(result.result?.readBack, "not-observed");
+  } finally { await f.close(); }
+});

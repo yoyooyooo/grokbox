@@ -35,7 +35,7 @@ profile 接受 name/description/title/avatarShape/avatarColor。Group 创建只�
 
 读取要求 products.read；写入另需 products.write。创建、删除、duplicate 分别要求 products.create/products.delete/products.duplicate；duplicate 还需 routines.write；未抑制的 Bot 创建还需 lifecycle.start。关系查询额外要求 messages.read/routines.read。原回执 GET 另需 operations.read。
 
-同主体管理授权在最终原生传输开始前再次核验；预览和原生读取后的失权不能沿旧授权继续写。前后身份采样和本地驱动锁不构成跨 App 原子锁，因此计划明确 atomicCompareAndSet=false，提交必须显式 acceptNonAtomic=true。
+同主体管理授权在最终原生传输开始前再次核验；授权等待时间同时计入原生身份材料的新鲜度，最后按墙钟和单调时钟复核，超过既有五秒窗口不派发。预览和原生读取后的失权不能沿旧授权继续写。前后身份采样和本地驱动锁不构成跨 App 原子锁，因此计划明确 atomicCompareAndSet=false，提交必须显式 acceptNonAtomic=true。
 
 管理请求保存在原 CONT 安全库，绑定 installation/principal/scope/request。duplicate 委托原 CONT duplication owner。重复提交读取原回执，不自动重发；未知创建不通过同名、新增名单或更换 UUID 猜测关联。原生响应的目标 ID 在读回/清理之前持久化，源离线也不丢掉它。
 
