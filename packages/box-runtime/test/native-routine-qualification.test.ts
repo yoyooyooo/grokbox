@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { projectNativeRoutines } from "@grokbox/runtime-kernel/routines";
-import { LIVE_HOST_BUNDLE } from "../src/internal/host/live-slices.ts";
+import { NATIVE_HOST_BUNDLE as LIVE_HOST_BUNDLE } from "./native-host-source.ts";
 import { nativeHostQualificationEnabled, QUALIFIED_NATIVE_HOST_SHA } from "./native-host-qualification.ts";
 
 /** Explicit source-pinned function probes. Never execute the Host module or read

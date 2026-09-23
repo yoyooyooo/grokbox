@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { LIVE_HOST_BUNDLE } from "../src/internal/host/live-slices.ts";
+import { NATIVE_HOST_BUNDLE as LIVE_HOST_BUNDLE } from "./native-host-source.ts";
 import { nativeContinuityPair } from "./native-continuity-pair.ts";
 
 /** Exact installed source selected for read-only native qualification. A pin is

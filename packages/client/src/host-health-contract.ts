@@ -12,7 +12,7 @@ export function hostHealthView(value:unknown,installationId:string):value is Hos
   return Object.keys(v).length===keys.length&&Object.keys(v).every(k=>keys.includes(k))&&v.component==="host-integration"&&v.owner==="management-server"
     &&["starting","disabled","running","blocked","stopped"].includes(v.state)&&typeof v.reason==="string"&&/^[a-z][a-z0-9-]{0,79}$/.test(v.reason)
     &&at(v.observedAtMs)&&at(v.lastAttemptAtMs)&&["blocked","unknown","degraded"].includes(v.assessment)
-    &&(v.latest===null||projectHostHealth(v.latest)!==null&&v.latest.installationId===installationId)
+    &&(v.latest===null||projectHostHealth(v.latest)!==null&&v.latest.sourceState!=="snapshot"&&v.latest.installationId===installationId)
     &&(v.runtime===null||projectHostRuntimeObservation(v.runtime)!==null)
     &&(v.witness===null||projectHostWitnessObservation(v.witness)!==null)
     &&(!v.witness?.snapshot||v.runtime?.state==="current"&&v.witness.snapshot.compilation.observationId===v.runtime.receipt?.observationId)

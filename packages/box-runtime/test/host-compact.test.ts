@@ -12,7 +12,8 @@ import {
   resetHostCompactSlotForTests,
   stateSystemCompactHookOptions,
 } from "../src/internal/host/compact.ts";
-import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { NATIVE_HOST_BUNDLE as LIVE_HOST_BUNDLE } from "./native-host-source.ts";
 import { applyPatchProfile, HOST_COMPACT_SYMBOL as PROFILE_COMPACT_SYMBOL, profileFromSource, transformUnchecked } from "../src/internal/host/profile.ts";
 import { LIVE_SHAPED_HOST } from "./live-shaped-host.ts";
 

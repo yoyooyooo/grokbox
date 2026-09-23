@@ -23,6 +23,7 @@
       "@grokbox/runtime-kernel/config": ["./packages/runtime-kernel/src/config.ts"],
       "@grokbox/runtime-kernel/contract": ["./packages/runtime-kernel/src/contract.ts"],
       "@grokbox/runtime-kernel/hash": ["./packages/runtime-kernel/src/hash.ts"],
+      "@grokbox/runtime-kernel/host-health": ["./packages/runtime-kernel/src/host-health.ts"],
       "@grokbox/runtime-kernel/selection": ["./packages/runtime-kernel/src/selection.ts"],
       "@grokbox/runtime-kernel/model-management": ["./packages/runtime-kernel/src/model-management.ts"],
       "@grokbox/runtime-kernel/ports": ["./packages/runtime-kernel/src/ports.ts"],

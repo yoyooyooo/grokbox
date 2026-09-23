@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readNativeSource } from "../native-host-source.ts";
 import { randomUUID } from "node:crypto";
 import { Effect, ManagedRuntime } from "effect";
 import { sha256Bytes, sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
@@ -18,8 +18,7 @@ async function main() {
   const directory = process.env.GROKBOX_TEST_VERIFIER_DIRECTORY;
   assert.ok(directory);
   const pair = nativeContinuityPair(process.env);
-  const hostPath = "/home/box/sand-host/host-main.cjs", workerPath = "/home/box/sand-host/agent-isolation/agent-store-worker.cjs";
-  const source = await readFile(hostPath), worker = await readFile(workerPath);
+  const source = readNativeSource("source"), worker = readNativeSource("worker");
   assert.equal(sha256Bytes(source), pair.host); assert.equal(sha256Bytes(worker), pair.worker);
   const slices = [...HOST_RECIPE.core, ...HOST_RECIPE.checkpoint, ...HOST_RECIPE.currentState];
   const preflight = preflightProfileRecipe(source.toString("utf8"), slices, HOST_RECIPE.id);
@@ -64,9 +63,9 @@ async function main() {
       negative.push({ name, sliceId, checker, state: result.state, code: result.code, candidateSha: artifact.sha256, validJavaScript: true });
     }
     // A replacement while qualification was running cannot inherit this result.
-    assert.equal(sha256Bytes(await readFile(hostPath)), pair.host);
-    assert.equal(sha256Bytes(await readFile(workerPath)), pair.worker);
-    console.log(JSON.stringify({ scope: "current-native-disk-static", sourceSha: pair.host, workerSha: pair.worker,
+    assert.equal(sha256Bytes(readNativeSource("source")), pair.host);
+    assert.equal(sha256Bytes(readNativeSource("worker")), pair.worker);
+    console.log(JSON.stringify({ scope: process.env.GROKBOX_TEST_NATIVE_WINDOW ? "fixed-native-snapshot-static" : "current-native-disk-static", sourceSha: pair.host, workerSha: pair.worker,
       recipeId: HOST_RECIPE.id, orderedRecipeSha: sha256Text(canonicalJson(slices)), slices: slices.length,
       candidateSha: sha256Bytes(candidate), candidateBytes: candidate.length,
       workerCandidateSha: sha256Text(workerCandidate), workerCandidateBytes: Buffer.byteLength(workerCandidate),

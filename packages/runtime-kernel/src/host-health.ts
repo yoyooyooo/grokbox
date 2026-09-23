@@ -1,6 +1,8 @@
 /** Pure health semantics, independent of wire, parser, filesystem and execution authority. */
 export * from "./host-compilation.ts";
 export * from "./host-witness.ts";
+export * from "./host-source-evolution.ts";
+import { projectHostSourceEvolution, type HostSourceEvolution } from "./host-source-evolution.ts";
 export const HOST_HEALTH_CONTRACT = "host-health-v2";
 export const HOST_CHECK_REQUIREMENTS = [
   { id:"session.main-binding", revision:2, slices:["agent-id"], scope:"main-options-binding" },
@@ -14,12 +16,15 @@ export type StaticAnalysis = { jobId:string; attemptId:string; buildId:string; s
   checks:StaticCheck[]; elapsedMs:number };
 export type HostHealthEvidence = {
   name:"host_patch_health"; schemaVersion:1; eventId:string; at:string; installationId:string; contractRevision:typeof HOST_HEALTH_CONTRACT;
-  sourceInstanceId:string; sourceSequence:number; sourceState:"stable"|"unavailable"|"changed"; sourceSet:string|null; sourceSha:string|null; workerSha:string|null; profileDigest:string|null; candidateSha:string|null; checkerBuildId:string|null;
+  sourceInstanceId:string; sourceSequence:number; sourceState:"stable"|"snapshot"|"unavailable"|"changed"; sourceSet:string|null; sourceSha:string|null; workerSha:string|null; profileDigest:string|null; candidateSha:string|null; checkerBuildId:string|null;
   companionQualification:"not-required"|"matched"|"unreviewed";
   applicability:"exact"|"mismatch"|"profile-unavailable"; analysis:"pending"|"passed"|"violated"|"unsupported"|"unavailable";
   requiredChecks:string[]; failedChecks:string[]; unsupportedChecks:string[]; uncoveredSlices:string[];
   loaded:"not-observed"; attachment:"not-observed"; exercised:"not-exercised"; notificationCoverage:"local-only";
   detectorCode:string|null; qualified:false;
+  /** Additive source-window evidence. Historical v2 receipts remain scoped to
+   * their original fields; absence cannot be promoted to new regression proof. */
+  recipeSha?:string; sourceEvolution?:HostSourceEvolution;
 };
 const hash=(v:unknown):v is string=>typeof v==="string"&&/^[a-f0-9]{64}$/.test(v);
 const uuid=(v:unknown):v is string=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
@@ -29,12 +34,14 @@ export function projectHostHealth(value:unknown):HostHealthEvidence|null {
   if(!value||typeof value!=="object"||Array.isArray(value))return null;
   const v=value as HostHealthEvidence;
   const keys=["name","schemaVersion","eventId","at","installationId","contractRevision","sourceInstanceId","sourceSequence","sourceState","sourceSet","sourceSha","workerSha","profileDigest","candidateSha","checkerBuildId","companionQualification","applicability","analysis","requiredChecks","failedChecks","unsupportedChecks","uncoveredSlices","loaded","attachment","exercised","notificationCoverage","detectorCode","qualified"];
+  const enriched = Object.hasOwn(v,"recipeSha") || Object.hasOwn(v,"sourceEvolution");
+  if(enriched)keys.push("recipeSha","sourceEvolution");
   if(Reflect.ownKeys(v).length!==keys.length||Reflect.ownKeys(v).some(k=>typeof k!=="string"||!keys.includes(k)||!("value" in Object.getOwnPropertyDescriptor(v,k)!)))return null;
   // One current contract. Old files remain untouched, but cannot enter the
   // live evidence pipeline by reducing its required proof obligations.
   const required = HOST_CHECK_REQUIREMENTS;
-  if(v.name!=="host_patch_health"||v.schemaVersion!==1||!uuid(v.eventId)||!uuid(v.installationId)||v.contractRevision!==HOST_HEALTH_CONTRACT||!hash(v.sourceInstanceId)||!["stable","unavailable","changed"].includes(v.sourceState)
-    ||(v.sourceState==="stable"? !hash(v.sourceSet)||!hash(v.sourceSha)||!hash(v.workerSha) : v.sourceSet!==null||v.sourceSha!==null||v.workerSha!==null||v.profileDigest!==null||v.candidateSha!==null)
+  if(v.name!=="host_patch_health"||v.schemaVersion!==1||!uuid(v.eventId)||!uuid(v.installationId)||v.contractRevision!==HOST_HEALTH_CONTRACT||!hash(v.sourceInstanceId)||!["stable","snapshot","unavailable","changed"].includes(v.sourceState)
+    ||(["stable","snapshot"].includes(v.sourceState)? !hash(v.sourceSet)||!hash(v.sourceSha)||!hash(v.workerSha) : v.sourceSet!==null||v.sourceSha!==null||v.workerSha!==null||v.profileDigest!==null||v.candidateSha!==null)
     ||v.workerSha!==null&&!hash(v.workerSha)||v.profileDigest!==null&&!hash(v.profileDigest)||v.candidateSha!==null&&!hash(v.candidateSha)||v.checkerBuildId!==null&&!hash(v.checkerBuildId)||!Number.isSafeInteger(v.sourceSequence)||v.sourceSequence<0
     ||typeof v.at!=="string"||!Number.isFinite(Date.parse(v.at))||new Date(v.at).toISOString()!==v.at
     ||!["not-required","matched","unreviewed"].includes(v.companionQualification)||!["exact","mismatch","profile-unavailable"].includes(v.applicability)||!["pending","passed","violated","unsupported","unavailable"].includes(v.analysis)
@@ -44,9 +51,22 @@ export function projectHostHealth(value:unknown):HostHealthEvidence|null {
     ||v.loaded!=="not-observed"||v.attachment!=="not-observed"||v.exercised!=="not-exercised"||v.notificationCoverage!=="local-only"||v.qualified!==false
     ||v.detectorCode!==null&&(typeof v.detectorCode!=="string"||!/^[a-z][a-z0-9-]{0,79}$/.test(v.detectorCode)))return null;
   if (v.analysis==="passed" && (v.applicability!=="exact"||!hash(v.checkerBuildId)||!hash(v.candidateSha)||v.failedChecks.length||v.unsupportedChecks.length)) return null;
-  if (v.sourceState!=="stable" && (v.analysis!=="unavailable"||v.applicability!=="profile-unavailable")) return null;
+  if (!["stable","snapshot"].includes(v.sourceState) && (v.analysis!=="unavailable"||v.applicability!=="profile-unavailable")) return null;
+  if (v.sourceState==="snapshot" && (!enriched || ["pending","unavailable"].includes(v.analysis))) return null;
+  if (enriched && (!hash(v.recipeSha) || !projectHostSourceEvolution(v.sourceEvolution)
+    || !["stable","snapshot"].includes(v.sourceState) || v.sourceEvolution!.observed.host!==v.sourceSha || v.sourceEvolution!.observed.worker!==v.workerSha)) return null;
   if (v.failedChecks.some(id=>v.unsupportedChecks.includes(id))) return null;
-  return {...v,requiredChecks:[...v.requiredChecks],failedChecks:[...v.failedChecks],unsupportedChecks:[...v.unsupportedChecks],uncoveredSlices:[...v.uncoveredSlices]};
+  if (enriched) {
+    const evolution=v.sourceEvolution!;
+    // This event is produced by the read-only static owner. Native ABI proof
+    // stays in explicit qualification receipts, not a forged static addition.
+    if(evolution.nativeAbi.state!=="not-run")return null;
+    const expected=v.analysis==="pending"||v.analysis==="unavailable"?"not-run":v.failedChecks.length?"failed":v.unsupportedChecks.length?"incomplete":"passed";
+    if(evolution.semantics.state!==expected||JSON.stringify(evolution.semantics.failed.map(c=>c.id))!==JSON.stringify(v.failedChecks)
+      ||JSON.stringify(evolution.semantics.unsupported.map(c=>c.id))!==JSON.stringify(v.unsupportedChecks)
+      ||[...evolution.semantics.failed,...evolution.semantics.unsupported].some(check=>!HOST_CHECK_REQUIREMENTS.some(c=>c.id===check.id&&c.revision===check.revision)))return null;
+  }
+  return {...v,...(enriched?{sourceEvolution:projectHostSourceEvolution(v.sourceEvolution)!}:{}),requiredChecks:[...v.requiredChecks],failedChecks:[...v.failedChecks],unsupportedChecks:[...v.unsupportedChecks],uncoveredSlices:[...v.uncoveredSlices]};
 }
 /** Persisted analysis is revalidated as a domain record, not trusted because a
  * prior process accepted a protocol report. No source snippets or AST survive. */
@@ -67,6 +87,9 @@ export function hostHealthSummary(v:HostHealthEvidence):"blocked"|"unknown"|"deg
   return "degraded";
 }
 export function hostHealthConditions(v:HostHealthEvidence):{cause:"applicability"|"semantics"|"sensing"|"companion";result:"failed"|"passed"|"unknown"}[]{
+  // A completed superseded window is traceable evidence, not a new current
+  // failure/recovery opportunity. It may not resolve or reopen live conditions.
+  if(v.sourceState==="snapshot")return [];
   return [{cause:"applicability",result:v.sourceState!=="stable"?"unknown":v.applicability==="exact"?"passed":"failed"},
     {cause:"semantics",result:v.analysis==="violated"?"failed":v.analysis==="passed"?"passed":"unknown"},
     {cause:"sensing",result:v.analysis==="unavailable"||v.analysis==="unsupported"&&v.applicability==="exact"?"failed":["passed","violated","unsupported"].includes(v.analysis)?"passed":"unknown"},

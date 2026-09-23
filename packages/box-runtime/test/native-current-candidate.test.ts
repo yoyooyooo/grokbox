@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { ensurePackedCli } from "../../../test/packed-cli-fixture.ts";
 import { nativeContinuityEnabled } from "./native-continuity-code.ts";
+import { nativeWindowEnv } from "./native-host-source.ts";
 
 const root = resolve(import.meta.dir, "../../..");
 test.skipIf(!nativeContinuityEnabled())("current full native candidate and legal semantic negatives use the actual packaged Node/FD/Rust verifier", async () => {
@@ -18,7 +19,7 @@ test.skipIf(!nativeContinuityEnabled())("current full native candidate and legal
     await build({ absWorkingDir: root, entryPoints: [join(import.meta.dir, "fixtures/native-current-candidate.node.ts")],
       outfile: entry, bundle: true, platform: "node", target: "node22", format: "esm", logLevel: "silent" });
     const result = spawnSync(node!, [entry], { cwd: dir, encoding: "utf8", timeout: 90000, maxBuffer: 1024 * 1024,
-      env: { PATH: process.env.PATH, HOME: dir, TMPDIR: dir, GROKBOX_TEST_NATIVE_CONTINUITY: "1",
+      env: { ...nativeWindowEnv(), PATH: process.env.PATH, HOME: dir, TMPDIR: dir, GROKBOX_TEST_NATIVE_CONTINUITY: "1",
         GROKBOX_TEST_VERIFIER_DIRECTORY: join(dirname(cli), "native/x86_64-unknown-linux-gnu") } });
     expect(result.error, result.stderr).toBeUndefined(); expect(result.status, result.stderr).toBe(0);
     const receipt = JSON.parse(result.stdout);

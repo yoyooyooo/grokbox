@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readNativeSource } from "./native-host-source.ts";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -9,7 +10,7 @@ import { CONT_NATIVE_PAIR, nativeContinuityCode, nativeContinuityEnabled } from 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", messageId = "grokbox-startup:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 nativeTest("original resume explicitly has no-turn no-op; startup selects new-turn action rather than disguising that no-op", async () => {
-  const source = await readFile("/home/box/sand-host/host-main.cjs", "utf8");
+  const source = readNativeSource("source").toString("utf8");
   expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
   const classAt = source.indexOf("var ResumeActionHandler = class"), begin = source.indexOf("  async setupResumeStep(", classAt), end = source.indexOf("  async handleSingleStep(", begin);
   expect(begin).toBeGreaterThan(classAt); expect(end - begin).toBeLessThan(8192);
@@ -35,7 +36,7 @@ nativeTest("original resume explicitly has no-turn no-op; startup selects new-tu
 });
 
 nativeTest("qualified native turn writer omits the prompt only for the trusted program carrier, not ordinary user messages", async () => {
-  const source = await readFile("/home/box/sand-host/host-main.cjs", "utf8"); expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
+  const source = readNativeSource("source").toString("utf8"); expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
   const patch = HOST_RECIPE.currentState.find(s => s.id === "continuity-native-startup-no-user-prompt")!;
   const begin = source.indexOf(patch.find, source.indexOf(patch.startAnchor));
   const end = source.indexOf(patch.endAnchor, begin);

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readNativeSource } from "./native-host-source.ts";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
@@ -11,8 +11,8 @@ import { NATIVE_CURRENT_STATE_SYMBOL } from "../src/internal/host/native-current
 // isolated codec/AgentStore experiment, never a production qualification write.
 export const CONT_NATIVE_PAIR = nativeContinuityPair(process.env);
 export const nativeContinuityEnabled = () => process.env.GROKBOX_TEST_NATIVE_CONTINUITY === "1";
-const checked = (path: string, hash: string) => {
-  const source = readFileSync(path, "utf8");
+const checked = (role: "source" | "worker", hash: string) => {
+  const source = readNativeSource(role).toString("utf8");
   if (createHash("sha256").update(source).digest("hex") !== hash) throw Error("native_continuity_source_mismatch");
   return source;
 };
@@ -92,9 +92,8 @@ function hostDeclaration(source: string, name: string) {
 let cached: any;
 export function nativeContinuityCode(): any {
   if (!nativeContinuityEnabled()) throw Error("native_continuity_not_opted_in");
-  const root = "/home/box/sand-host";
-  const worker = checked(`${root}/agent-isolation/agent-store-worker.cjs`, CONT_NATIVE_PAIR.worker);
-  const source = checked(`${root}/host-main.cjs`, CONT_NATIVE_PAIR.host);
+  const worker = checked("worker", CONT_NATIVE_PAIR.worker);
+  const source = checked("source", CONT_NATIVE_PAIR.host);
   // A cached declaration cannot extend qualification to replaced disk bytes.
   if (cached) return cached;
   const names = ["ConversationStateStructure", "ConversationSummaryArchive", "UserMessage", "ConversationTurnStructure", "AgentConversationTurnStructure",

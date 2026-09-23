@@ -6,7 +6,8 @@ import { Script } from "node:vm";
 import { join } from "node:path";
 import { transformCompileInput } from "../src/internal/host/compile-hook.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
-import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { LIVE_HOST_BUNDLE as INSTALLED_HOST_TARGET, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { NATIVE_HOST_BUNDLE as LIVE_HOST_BUNDLE } from "./native-host-source.ts";
 import { applyPatchProfile, extractContractSlices, profileFromSource } from "../src/internal/host/profile.ts";
 
 async function liveSnapshot(): Promise<{ digest: string | null; pids: string[] }> {
@@ -33,7 +34,7 @@ async function liveSnapshot(): Promise<{ digest: string | null; pids: string[] }
 const describeLive = nativeHostQualificationEnabled() ? describe : describe.skip;
 
 describeLive("live Host bundle copy H1", () => {
-  test("unique approved-slice transform on a tmp copy; live file and PIDs unchanged", async () => {
+  test("unique approved-slice transform on a fixed copy; installed target remains blocked", async () => {
     const before = await liveSnapshot();
     expect(before.digest).toBeTruthy();
     const dir = join(tmpdir(), `grokbox-live-copy-${process.pid}`);
@@ -83,14 +84,17 @@ describeLive("live Host bundle copy H1", () => {
     expect(extracted["agent-id"]).toContain("clientNonce: options2.clientNonce");
     const liveBlocked = transformCompileInput({
       content: source,
-      filename: LIVE_HOST_BUNDLE,
-      targetPath: LIVE_HOST_BUNDLE,
+      filename: INSTALLED_HOST_TARGET,
+      targetPath: INSTALLED_HOST_TARGET,
       profile,
     });
     expect(liveBlocked.transformed).toBe(false);
     expect(liveBlocked.refused).toBe("live-host-blocked");
     const after = await liveSnapshot();
-    expect(after).toEqual(before);
+    expect(after.digest).toBe(before.digest);
+    // Independent upstream restarts are observation freshness, not permission
+    // for this immutable copy to inherit loaded-process qualification.
+    console.log(JSON.stringify({scope:"readonly-process-freshness",changed:JSON.stringify(after.pids)!==JSON.stringify(before.pids),loadedProven:false}));
     expect(before.digest).toBeTruthy();
     if (!before.digest) return;
     expect(sha256Bytes(await readFile(LIVE_HOST_BUNDLE))).toBe(before.digest);

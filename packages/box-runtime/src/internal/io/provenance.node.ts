@@ -151,7 +151,7 @@ const HEALTH_LIMIT = 64, HEALTH_BYTES = 1024 * 1024;
 function retainedHealthValid(record:HostHealthRetained):boolean {
   const e=projectHostHealth(record?.event),a=record?.analysis;if(!e)return false;
   if(e.sourceInstanceId!==sha256Text(canonicalJson(['host-health',e.installationId])))return false;
-  if(e.sourceState==='stable'&&e.sourceSet!==sha256Text(canonicalJson([e.sourceSha,e.workerSha,e.profileDigest])))return false;
+  if(['stable','snapshot'].includes(e.sourceState)&&e.sourceSet!==sha256Text(canonicalJson([e.sourceSha,e.workerSha,e.profileDigest])))return false;
   if(a===null)return ['pending','unavailable'].includes(e.analysis)&&e.checkerBuildId===null;
   if(!validStaticAnalysis(a)||a.buildId!==e.checkerBuildId||canonicalJson(a.checks.map(c=>c.id))!==canonicalJson(e.requiredChecks))return false;
   const identities={source:e.sourceSha,candidate:e.candidateSha,companion:e.workerSha};

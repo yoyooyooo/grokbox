@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readNativeSource } from "./native-host-source.ts";
 import { posix } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
@@ -11,7 +11,7 @@ const nativeTest = test.skipIf(!nativeContinuityEnabled());
 function bundle() {
   // A failed qualification must not cache bytes that later test cases can use.
   // Each independent selection checks the source actually read in this window.
-  const source = readFileSync("/home/box/sand-host/host-main.cjs", "utf8");
+  const source = readNativeSource("source").toString("utf8");
   expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
   return source;
 }

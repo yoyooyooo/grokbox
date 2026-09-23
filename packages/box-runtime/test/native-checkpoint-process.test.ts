@@ -6,6 +6,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { nativeContinuityEnabled } from "./native-continuity-code.ts";
+import { nativeWindowEnv } from "./native-host-source.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const repository = resolve(import.meta.dir, "../../..");
@@ -21,7 +22,7 @@ async function fixture() {
     banner: { js: "import {createRequire as __require} from 'node:module'; const require=__require(import.meta.url);" }, logLevel: "silent" });
   const run = (mode: "seed" | "install" | "readback") => spawnSync(node, [entry, directory, mode, requestId], {
     cwd: directory, encoding: "utf8", timeout: 30000,
-    env: { PATH: process.env.PATH, HOME: directory, GROKBOX_TEST_NATIVE_CONTINUITY: "1", NODE_NO_WARNINGS: "1" },
+    env: { ...nativeWindowEnv(), PATH: process.env.PATH, HOME: directory, GROKBOX_TEST_NATIVE_CONTINUITY: "1", NODE_NO_WARNINGS: "1" },
   });
   return { directory, run, close: () => rm(directory, { recursive: true, force: true }) };
 }

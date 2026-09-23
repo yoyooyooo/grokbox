@@ -8,7 +8,8 @@ import { captureContextPolicy, contextBudget, summaryBudget } from "@grokbox/run
 import type { ContextCandidate } from "@grokbox/runtime-kernel/contract";
 import { createNativeContextOwner } from "../src/internal/host/context-maintenance.ts";
 import { planPiCompaction } from "../src/internal/context/pi-projection.ts";
-import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { NATIVE_HOST_BUNDLE as LIVE_HOST_BUNDLE } from "./native-host-source.ts";
 import { transformUnchecked } from "../src/internal/host/profile.ts";
 import { nativeHostQualificationEnabled, QUALIFIED_NATIVE_HOST_SHA } from "./native-host-qualification.ts";
 

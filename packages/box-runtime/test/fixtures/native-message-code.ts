@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readNativeSource } from "../native-host-source.ts";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { CONT_NATIVE_PAIR } from "../native-continuity-code.ts";
@@ -14,7 +14,7 @@ const callable = (value: unknown) => {
   return value;
 };
 export function nativeMessageCode(overrides: Record<string, unknown> = {}) {
-  let source = readFileSync("/home/box/sand-host/host-main.cjs", "utf8");
+  let source = readNativeSource("source").toString("utf8");
   if (createHash("sha256").update(source).digest("hex") !== CONT_NATIVE_PAIR.host) throw Error("native_message_source_mismatch");
   const patched = transformUnchecked(source, OWNERSHIP_READ_SLICES.filter(slice => slice.id === "ownership-read-api"));
   if (!patched.ok) throw Error("native_message_ownership_api_mismatch");

@@ -11,6 +11,7 @@ import { envelopeProfileShape, envelopeWindowsFromRecipe, parseEnvelopeWindows }
 import { CONT_NATIVE_PAIR, nativeContinuityEnabled } from "./native-continuity-code.ts";
 import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { readNativeSource, nativeWindowEnv } from "./native-host-source.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const repository = resolve(import.meta.dir, "../../..");
@@ -18,9 +19,9 @@ test("worker transform refuses all unqualified source before creating a binding"
   expect(() => transformNativeCheckpointWorker("const fake = 1")).toThrow("unqualified");
 });
 nativeTest("all new Host slices have unique original anchors and exact worker wrapper advertises its protocol", async () => {
-  const host = await readFile("/home/box/sand-host/host-main.cjs", "utf8");
+  const host = readNativeSource("source").toString("utf8");
   expect(sha256Bytes(new TextEncoder().encode(host))).toBe(CONT_NATIVE_PAIR.host);
-  const worker = await readFile("/home/box/sand-host/agent-isolation/agent-store-worker.cjs", "utf8");
+  const worker = readNativeSource("worker").toString("utf8");
   const transformedWorker = transformNativeCheckpointWorker(worker, CONT_NATIVE_PAIR.host);
   expect(transformedWorker).toContain("grokboxCheckpointProtocol: 1");
   expect(transformedWorker).toContain(`hostSourceSha: "${CONT_NATIVE_PAIR.host}"`);
@@ -30,7 +31,7 @@ nativeTest("all new Host slices have unique original anchors and exact worker wr
 }, 30000);
 
 nativeTest("explicit current-state upgrade preserves its baseline and measures the complete new envelope group", async () => {
-  const source = await readFile("/home/box/sand-host/host-main.cjs", "utf8");
+  const source = readNativeSource("source").toString("utf8");
   // Owned reviewed-baseline shape, NOT permission to drop an installed observer.
   // The existing writer still requires same-source baseline and exact review.
   expect(sha256Bytes(new TextEncoder().encode(source))).toBe(CONT_NATIVE_PAIR.host);
@@ -72,7 +73,7 @@ nativeTest("actual original worker threads persist their own transactions, recei
     // qualification, not permission to raise grokbox's Node20 product baseline.
     const node = process.env.GROKBOX_TEST_NATIVE_NODE ?? "/exec-daemon/node";
     const result = spawnSync(node, [driver, root, worker], { encoding: "utf8", timeout: 60000, cwd: root,
-      env: { PATH: process.env.PATH, HOME: root, GROKBOX_TEST_NATIVE_CONTINUITY: "1", NODE_NO_WARNINGS: "1" } });
+      env: { ...nativeWindowEnv(), PATH: process.env.PATH, HOME: root, GROKBOX_TEST_NATIVE_CONTINUITY: "1", NODE_NO_WARNINGS: "1" } });
     expect(result.error, result.stderr).toBeUndefined(); expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ originalWorker: true, nativeSqlite: true, protocol: 1, prepareReadOnly: true,
       durableReceipt: true, persistentGcFence: true, b2Preserved: true, startedBot: false, providerRequests: 0 });

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readNativeSource } from "./native-host-source.ts";
 import { runInNewContext } from "node:vm";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { CONT_NATIVE_PAIR, nativeContinuityEnabled } from "./native-continuity-code.ts";
@@ -10,7 +10,7 @@ const identities = [
   ["__disposeResources23", "\nvar logger65 =", "072532d1842c670a1e86533f8ec1d3a6470e3311641771bc0cefd1f9ed6ea93c"],
 ] as const;
 function originalHelpers() {
-  const source = readFileSync("/home/box/sand-host/host-main.cjs", "utf8");
+  const source = readNativeSource("source").toString("utf8");
   expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
   const values = identities.map(([name, end, digest]) => {
     const start = `var ${name} = `, at = source.indexOf(start), to = source.indexOf(end, at);

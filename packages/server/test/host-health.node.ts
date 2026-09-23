@@ -116,6 +116,38 @@ test("source A to B to A retains separate observation episodes but reuses immuta
  }finally{await f.close();}
 });
 
+test("continuous versions coalesce pending work, retain late fixed results and never let history repair the latest failure",async()=>{
+ let releaseA!:()=>void,releaseC!:()=>void;
+ const holdA=new Promise<void>(resolve=>{releaseA=resolve;}),holdC=new Promise<void>(resolve=>{releaseC=resolve;}),started:string[]=[];
+ const f=await hostHealthFixture(origin,{ports:{beforeAnalyze:async key=>{started.push(key);if(started.length===1)await holdA;else if(started.length===2)await holdC;}}});
+ try{
+  await until(async()=>started.length,n=>n===1);
+  const first=await until(()=>health(f),v=>v.data.latest?.analysis==="pending");
+  const sourceA=first.data.latest!.sourceSet!;
+  await writeFile(f.paths.worker,"module.exports = {version:'B'};\n",{mode:0o600});
+  const second=await until(()=>health(f),v=>v.data.latest?.analysis==="pending"&&v.data.latest.sourceSet!==sourceA);
+  const sourceB=second.data.latest!.sourceSet!;
+  await writeFile(f.paths.source,f.source+"\n// owned newer source\n",{mode:0o600});
+  await writeFile(f.paths.worker,"module.exports = {version:'C'};\n",{mode:0o600});
+  const third=await until(()=>health(f),v=>v.data.latest?.applicability==="mismatch"&&v.data.latest.workerSha!==second.data.latest!.workerSha&&v.data.intake==="committed");
+  const sourceC=third.data.latest!.sourceSet!,failure=(await incidents(f)).find(r=>r.status==="open")!;
+  assert.ok(failure);assert.deepEqual(started,[sourceA]);
+  releaseA();
+  const retained=await until(()=>readHostHealthJournal(f.root,H_INSTALL),j=>!!j?.receipts.some(row=>row.event.sourceState==="snapshot"&&row.event.sourceSet===sourceA));
+  await until(async()=>started.length,n=>n===2);
+  assert.deepEqual(started,[sourceA,sourceC]);assert.ok(!started.includes(sourceB));
+  const late=retained!.receipts.find(row=>row.event.sourceState==="snapshot"&&row.event.sourceSet===sourceA)!;
+  assert.equal(late.event.analysis,"passed");assert.equal(late.event.loaded,"not-observed");assert.equal(late.event.sourceEvolution!.nativeAbi.state,"not-run");
+  const current=await health(f);assert.equal(current.data.latest!.sourceSet,sourceC);assert.equal(current.data.latest!.sourceState,"stable");assert.equal(current.data.latest!.analysis,"pending");
+  assert.equal((await incidents(f)).find(row=>row.id===failure.id)!.status,"open");
+  releaseC();await until(()=>health(f),v=>v.data.latest?.sourceSet===sourceC&&v.data.latest.analysis!=="pending"&&v.data.intake==="committed");
+  assert.equal((await health(f)).data.analyses,2);const workCount=(await f.observations.notificationWork()).length;
+  await f.restart();await until(()=>health(f),v=>v.data.observedAtMs!==null&&v.data.latest?.sourceSet===sourceC&&v.data.latest.analysis!=="pending"&&v.data.intake==="committed");
+  assert.equal((await health(f)).data.analyses,0);assert.equal(started.length,2);
+  assert.equal((await f.observations.notificationWork()).length,workCount);assert.equal(f.state.nativeCalls,0);
+ }finally{releaseA();releaseC();await f.close();}
+});
+
 test("unconfigured OBS leaves local-only evidence and does not silently initialize an observation database",async()=>{
  const f=await hostHealthFixture(origin,{noMonitor:true});try{
   const v=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="unavailable");

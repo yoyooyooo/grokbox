@@ -56,6 +56,13 @@ test("R1 native runtime inventory includes the original summary, independent rea
 
 });
 
+test("native Host shards retain the whole original inventory and 30-second scenario deadline", () => {
+  const native=inventory("native-host");
+  expect(native.files).toHaveLength(6);
+  expect(native.commands).toEqual(native.files.map(path=>["bun","test","--timeout","30000",path]));
+  expect(new Set(native.commands.flatMap(command=>command.slice(4))).size).toBe(6);
+});
+
 test("native runtime never obtains a passing run from missing opt-ins or an implicit Node", () => {
   for (const settings of [
     { GROKBOX_TEST_NATIVE_CONTINUITY: "0", GROKBOX_TEST_NATIVE_HOST: "1", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node" },

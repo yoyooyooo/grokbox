@@ -5,6 +5,7 @@ import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { exerciseModelSwitchPipeline } from "./model-switch-pipeline-fixture.ts";
 import { nativeContinuityEnabled } from "./native-continuity-code.ts";
+import { nativeWindowEnv } from "./native-host-source.ts";
 
 const repository = resolve(import.meta.dir, "../../..");
 test.skipIf(!nativeContinuityEnabled())("managed model selection and SDK tool history continue after original AgentStore/worker SQLite and independent Node readback", async () => {
@@ -13,7 +14,7 @@ test.skipIf(!nativeContinuityEnabled())("managed model selection and SDK tool hi
   let checkpoint: { root: string; driver: string; worker: string; written: Record<string, any> } | undefined;
   const run = (root: string, driver: string, worker: string, mode: "write" | "read", input?: string) => {
     const result = spawnSync(node!, [driver, root, worker, mode], { cwd: root, encoding: "utf8", timeout: 40000,
-      input, maxBuffer: 2 * 1024 * 1024, env: { PATH: process.env.PATH, HOME: root, GROKBOX_TEST_NATIVE_CONTINUITY: "1", NODE_NO_WARNINGS: "1" } });
+      input, maxBuffer: 2 * 1024 * 1024, env: { ...nativeWindowEnv(), PATH: process.env.PATH, HOME: root, GROKBOX_TEST_NATIVE_CONTINUITY: "1", NODE_NO_WARNINGS: "1" } });
     expect(result.error?.message).toBeUndefined(); expect(result.status, result.stderr).toBe(0);
     return JSON.parse(result.stdout) as Record<string, any>;
   };

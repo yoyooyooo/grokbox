@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import { hostVisibleStreamError, InvalidHostStateError, isHostManagedFailure } from "../src/internal/host/session.ts";
-import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { NATIVE_HOST_BUNDLE as LIVE_HOST_BUNDLE } from "./native-host-source.ts";
 import { HOST_MANAGED_FAILURE_SYMBOL, transformUnchecked } from "../src/internal/host/profile.ts";
 
 // Owned policy fixture. Deliberately permissive: the outer automation route must

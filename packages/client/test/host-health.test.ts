@@ -2,11 +2,21 @@ import { test, expect } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { ManagementClient } from "../src/client.ts";
 import { hostHealthView } from "../src/host-health-contract.ts";
-import { HOST_CHECK_REQUIREMENTS, hostHealthConditions, hostHealthSummary, projectHostHealth, validStaticAnalysis, type HostHealthEvidence } from "@grokbox/runtime-kernel/host-health";
+import { describeHostSourceEvolution, HOST_CHECK_REQUIREMENTS, hostHealthConditions, hostHealthSummary, projectHostHealth, validStaticAnalysis, type HostHealthEvidence } from "@grokbox/runtime-kernel/host-health";
 const installation="11111111-1111-4111-8111-111111111111";
 const evidence=():HostHealthEvidence=>({name:"host_patch_health",schemaVersion:1,eventId:randomUUID(),at:new Date().toISOString(),installationId:installation,contractRevision:"host-health-v2",sourceInstanceId:"a".repeat(64),sourceSequence:0,
  sourceState:"stable",sourceSet:"b".repeat(64),sourceSha:"c".repeat(64),workerSha:"d".repeat(64),profileDigest:"e".repeat(64),candidateSha:"f".repeat(64),checkerBuildId:"1".repeat(64),companionQualification:"not-required",
  applicability:"exact",analysis:"passed",requiredChecks:HOST_CHECK_REQUIREMENTS.map(c=>c.id),failedChecks:[],unsupportedChecks:[],uncoveredSlices:["create-session"],loaded:"not-observed",attachment:"not-observed",exercised:"not-exercised",notificationCoverage:"local-only",detectorCode:null,qualified:false});
+test("late immutable snapshot remains valid evidence but cannot be live health or alter conditions",()=>{
+ const v=evidence();v.sourceState="snapshot";v.recipeSha="a".repeat(64);
+ v.sourceEvolution=describeHostSourceEvolution({host:v.sourceSha!,worker:v.workerSha!},{host:v.sourceSha!,worker:v.workerSha!},"applicable-not-reviewed",{
+   semantics:{state:"passed",failed:[],unsupported:[]},uncoveredSlices:["create-session"]});
+ expect(projectHostHealth(v)).not.toBeNull();expect(hostHealthConditions(v)).toEqual([]);expect(hostHealthSummary(v)).toBe("unknown");
+ expect(hostHealthView({...view(),latest:v},installation)).toBe(false);
+ expect(projectHostHealth({...v,recipeSha:undefined})).toBeNull();
+ expect(projectHostHealth({...v,sourceEvolution:{...v.sourceEvolution,observed:{...v.sourceEvolution.observed,host:"0".repeat(64)}}})).toBeNull();
+ expect(projectHostHealth({...v,sourceEvolution:{...v.sourceEvolution,privateSource:"no"}})).toBeNull();
+});
 const view=()=>({component:"host-integration",owner:"management-server",state:"running",reason:"observed",observedAtMs:Date.now(),lastAttemptAtMs:Date.now(),assessment:"degraded",latest:evidence(),intake:"committed",runtime:null,witness:null,runtimeIntake:"not-observed",watch:"active",analyses:1,qualified:false,executionAuthority:false});
 test("scoped static passes never certify loaded identity, exercised behavior or independent delivery",()=>{const v=evidence();expect(projectHostHealth(v)).not.toBeNull();expect(hostHealthSummary(v)).toBe("degraded");expect(hostHealthView(view(),installation)).toBe(true);});
 test("retired static contracts cannot reduce current proof obligations or enter the live client",()=>{
