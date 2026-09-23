@@ -71,3 +71,7 @@ per-Bot屏障区分已接收旧输入与切换后新输入，迟到旧工具/che
 ## 非目标
 
 无`agents sessions`、命名会话、会话切换或`session=`标题；不抹除原生既有session边界，不拿default支持冒充named/server/subagent都支持。context修改不授予新权限或自动执行旧任务。
+
+## 当前 safe-point 的 Memory producer 边界
+
+当前回合/checkpoint hold 不约束原 Memory writer：选定实际提取 await 返回后仍能越过 hold 写入，且 current-state revision 不变。AH-139 已将这项依赖回到 AH-155 原材料 writer/回调接缝，不使用两次读或一个实例的 wrapper 代替跨 writer 隔离。准确来源、可复现负例与证据限制见 [原生屏障边界报告](../reports/2026-09-23-native-continuity-fence-boundary.md)。本结论不重开已完成的 C1 存储交付，不签 self-reset 或条件删除完成。
