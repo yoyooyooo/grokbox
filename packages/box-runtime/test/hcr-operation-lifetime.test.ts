@@ -9,7 +9,7 @@ import { admitControllerRequest } from "@grokbox/runtime-kernel/commands";
 import { ControlResources } from "@grokbox/runtime-kernel/ports";
 import * as leases from "../src/internal/io/operation-lease.node.ts";
 import { acquireAdvisoryGate } from "../src/internal/io/advisory-gate.node.ts";
-import { liveControlResourcesLayer, recoverControllerOperationState, type LiveAdmissionPorts } from "../src/internal/roots/controller-program.node.ts";
+import { liveControlResourcesLayer, recoverControllerOperationState } from "../src/internal/roots/controller-program.node.ts";
 
 const linuxTest = process.platform === "linux" ? test : test.skip;
 const roots: string[] = [];
@@ -22,9 +22,6 @@ function barrier() {
 }
 const paths = (root: string) => [join(root, "state", "controller-operations.lock"), join(root, "run", "ops", "identity.lock")];
 const storePath = (root: string) => join(root, "state", "controller-operations.json");
-const noHost = (): never => { throw new Error("No Host capability is available in this lease-only test"); };
-const isolated: LiveAdmissionPorts = { processes: { inspect: noHost, list: noHost, signal: noHost },
-  classify: noHost, gatewayPid: noHost, hostBundlePath: "/not-a-host", readHostSha: noHost };
 function command(root: string) {
   const value = admitControllerRequest({ intent: "apply", confirmed: true, strategy: "direct", operationId: "lifetime-fixture", boxRoot: root });
   if (!value) throw new Error("invalid test command");
@@ -50,7 +47,7 @@ linuxTest("interrupting a held production controller lease preserves unknown and
       prefix: { signaled: true, spawned: false, guardian: false } });
     yield* Effect.sync(reached.resolve);
     yield* Effect.never;
-  }).pipe(Effect.provide(liveControlResourcesLayer(isolated)), Effect.scoped);
+  }).pipe(Effect.provide(liveControlResourcesLayer()), Effect.scoped);
   const fiber = Effect.runFork(program);
   try {
     await reached.promise;
@@ -79,7 +76,7 @@ linuxTest("cancellation during acquisition waits for the actual acquired descrip
     const control = yield* ControlResources;
     yield* control.lease(command(root));
     yield* Effect.never;
-  }).pipe(Effect.provide(liveControlResourcesLayer(isolated)), Effect.scoped);
+  }).pipe(Effect.provide(liveControlResourcesLayer()), Effect.scoped);
   const fiber = Effect.runFork(program);
   let stopped = false;
   try {

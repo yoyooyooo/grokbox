@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
-import { admitControllerRequest } from "@grokbox/runtime-kernel/commands";
+import { admitControllerRequest, runControllerOperation } from "@grokbox/runtime-kernel/commands";
 import { ControlResources } from "@grokbox/runtime-kernel/ports";
 import { liveAdoptLaunchSpec } from "../src/internal/process/h3-live.ts";
 import {
@@ -19,7 +19,6 @@ import {
   inspectControllerFacts,
   liveControlResourcesLayer,
   observedAdoptMarkerMatches,
-  recoverUnknownLease,
   resetLiveMutationAttempts,
   liveMutationAttempts,
   startControlOperation,
@@ -320,101 +319,27 @@ async function writeFacts(boxRoot: string, profile: unknown = validProfile) {
   });
 });
 
-const officialWrapper: ProcessIdentity = {
-  pid: 11, uid: 1000, start: 100, exe: "/bin/bash", ppid: 1, ancestry: [1],
-  cmdline: ["bash", "/usr/local/bin/supervise-sand-supervisor"],
-};
-const officialSupervisor: ProcessIdentity = {
-  pid: 12, uid: 1000, start: 101, exe: "/exec-daemon/node", ppid: 11, ancestry: [11, 1],
-  cmdline: ["/exec-daemon/node", "/usr/local/bin/sand-supervisor.mjs"],
-};
-const officialHost: ProcessIdentity = {
-  pid: 13, uid: 1000, start: 102, exe: "/exec-daemon/node", ppid: 12, ancestry: [12, 11, 1],
-  cmdline: ["/exec-daemon/node", "/tmp/host-main.cjs"],
-};
-
-function censusLive(rows: ProcessIdentity[], gatewayPid: number | null): LiveAdmissionPorts {
-  return {
-    processes: {
-      inspect: (pid) => rows.find((row) => row.pid === pid) ?? null,
-      list: () => rows,
-      signal: () => ({ ok: false, reason: "not-found" }),
-    },
-    classify: (ident) => {
-      const names = ident.cmdline.join(" ");
-      if (names.includes("supervise-sand-supervisor")) return "wrapper";
-      if (names.includes("sand-supervisor.mjs")) return "supervisor";
-      if (names.includes("host-main.cjs")) return "host";
-      return null;
-    },
-    gatewayPid: () => gatewayPid,
-    hostBundlePath: "/tmp/host-main.cjs",
-    readHostSha: () => validProfile.sourceSha256,
-  };
-}
-
-async function leaseUnknown(boxRoot: string, live: LiveAdmissionPorts) {
-  const command = admitControllerRequest({
-    intent: "apply",
-    confirmed: true,
-    operationId: "op-unknown",
-    boxRoot,
-    strategy: "direct",
-  });
-  if (!command) throw new Error("admit failed");
-  await mkdir(join(boxRoot, "state"), { recursive: true });
-  await writeFile(join(boxRoot, "state", "controller-operations.json"), `${JSON.stringify({
-    [command.operationId]: {
-      fingerprint: command.fingerprint,
-      state: "unknown",
-      prefix: { signaled: false, spawned: true, guardian: true },
-    },
-  })}\n`);
-  return Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-    const control = yield* ControlResources;
-    return yield* control.lease(command);
-  }).pipe(Effect.provide(liveControlResourcesLayer(live)))));
-}
-
-describe("unknown controller lease recovery", () => {
-  const uniqueOfficial = [officialWrapper, officialSupervisor, officialHost];
-  const adoptedOfficial = [officialWrapper, officialSupervisor, { ...officialHost, ppid: 53, ancestry: [53, 1] }];
-
-  test("unique official direct-launch re-acquires unknown", async () => {
-    const live = censusLive(uniqueOfficial, 13);
-    expect(recoverUnknownLease(live)).toEqual({ status: "acquired" });
-  });
-
-  test("transient-adopt unique official still re-acquires unknown", async () => {
-    const live = censusLive(adoptedOfficial, 13);
-    expect(recoverUnknownLease(live)).toEqual({ status: "acquired" });
-  });
-
-  test("gateway mismatch stays uncertain", async () => {
-    const direct = censusLive(uniqueOfficial, 99);
-    const adopted = censusLive(adoptedOfficial, 99);
-    expect(recoverUnknownLease(direct)).toEqual({ status: "uncertain" });
-    expect(recoverUnknownLease(adopted)).toEqual({ status: "uncertain" });
-  });
-
-  test("invalid census stays uncertain", async () => {
-    const empty = censusLive([], 13);
-    const duplicateHost = censusLive([...uniqueOfficial, { ...officialHost, pid: 14, start: 103 }], 13);
-    expect(recoverUnknownLease(empty)).toEqual({ status: "uncertain" });
-    expect(recoverUnknownLease(duplicateHost)).toEqual({ status: "uncertain" });
-  });
-
-  for (const [name, rows, gateway, status] of [
-    ["direct-launch", uniqueOfficial, 13, "acquired"],
-    ["transient-adopt", adoptedOfficial, 13, "acquired"],
-    ["gateway mismatch", uniqueOfficial, 99, "uncertain"],
-    ["empty census", [], 13, "uncertain"],
-  ] as const) (process.platform === "linux" ? test : test.skip)(`Linux scoped lease applies ${name} recovery decision`, async () => {
-    const root = await emptyRoot();
-    try {
-      expect(await leaseUnknown(root, censusLive([...rows], gateway))).toEqual({ status });
-    } finally { await rm(root, { recursive: true, force: true }); }
-  });
+// Unknown outcomes are evidence, not a census-derived retry permit. These
+// cases replace the old tests that incorrectly expected re-acquisition.
+for (const [state, conflict, expected] of [
+  ["unknown", false, "uncertain"], ["unknown", true, "conflict"],
+  ["terminal", false, "duplicate"], ["terminal", true, "conflict"],
+  ["running", false, "busy"], ["reserved", false, "busy"],
+] as const) (process.platform === "linux" ? test : test.skip)(`original controller ${state} conflict=${conflict} preserves record`, async () => {
+  const root = await emptyRoot();
+  const command = admitControllerRequest({ intent: "apply", confirmed: true, operationId: "original-record", boxRoot: root, strategy: "direct" })!;
+  const file = join(root, "state/controller-operations.json");
+  const original = JSON.stringify({ [command.operationId]: { fingerprint: conflict ? "different-intent" : command.fingerprint,
+    state, prefix: { signaled: true, spawned: true, guardian: true } } }) + "\n";
+  try {
+    await mkdir(join(root, "state")); await writeFile(file, original, { mode: 0o600 });
+    const value = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      return yield* (yield* ControlResources).lease(command);
+    }).pipe(Effect.provide(liveControlResourcesLayer()))));
+    expect(value).toEqual({ status: expected });
+    expect(await readFile(file, "utf8")).toBe(original);
+    expect(existsSync(join(root, "state/controller-operations.lock"))).toBe(false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 const NODE20 = "/usr/bin/node";
@@ -525,3 +450,41 @@ describe("raw output", () => {
     await runRawOutputHelper(packed);
   });
 });
+
+// A process census cannot prove the previous operation's outcome. These exercise the real durable lease and kernel owner;
+// only preflight and external effects are replaced by counted no-IO ports.
+for (const strategy of ["direct", "transient"] as const) {
+  for (const priorEffect of [false, true]) {
+    test(`unknown ${strategy} operation stays unknown with prior effects=${priorEffect}`, async () => {
+      const root = await emptyRoot();
+      const request = { intent: "apply" as const, confirmed: true, operationId: "original-unknown", boxRoot: root, strategy };
+      const command = admitControllerRequest(request)!;
+      const file = join(root, "state/controller-operations.json");
+      const original = JSON.stringify({ [command.operationId]: { fingerprint: command.fingerprint, state: "unknown",
+        prefix: { signaled: priorEffect, spawned: priorEffect, guardian: priorEffect } } }) + "\n";
+      const calls: string[] = [];
+      try {
+        await mkdir(join(root, "state")); await writeFile(file, original, { mode: 0o600 });
+        const invoke = () => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+          const owner = yield* ControlResources;
+          const safe = { ...owner,
+            preflight: () => Effect.succeed({ ok: true, reason: null, strategy }),
+            recheck: () => Effect.succeed({ ok: true, reason: null }),
+            signal: () => Effect.sync(() => { calls.push("signal"); return { signaled: true }; }),
+            spawn: () => Effect.sync(() => { calls.push("spawn"); return { spawned: true }; }),
+            armGuardian: () => Effect.sync(() => { calls.push("guardian"); return { guardian: true }; }),
+            wait: () => Effect.void,
+            commit: () => Effect.sync(() => { calls.push("commit"); return { committed: true }; }),
+          };
+          return yield* runControllerOperation(request).pipe(Effect.provideService(ControlResources, safe));
+        }).pipe(Effect.provide(liveControlResourcesLayer()))));
+        const result = await invoke();
+        expect(result).toMatchObject({ outcome: "unknown", reason: "uncertain-operation", operationId: request.operationId });
+        expect(calls).toEqual([]); expect(await readFile(file, "utf8")).toBe(original);
+        expect(await invoke()).toEqual(result); expect(calls).toEqual([]);
+        expect(await readFile(file, "utf8")).toBe(original);
+        expect(existsSync(join(root, "state/controller-operations.lock"))).toBe(false);
+      } finally { await rm(root, { recursive: true, force: true }); }
+    });
+  }
+}

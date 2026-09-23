@@ -81,7 +81,7 @@ linuxTest("hard exit releases physical gates but never silently removes locks or
   const next = await acquireOperationLease(locks(root)[0]!, "fixture-operation");
   expect(next.ok).toBe(true);
   if (next.ok) await next.lock.release();
-  expect(await recoverControllerOperationState(request(root, true))).toMatchObject({ outcome: "clear", clearedLocks: 0, markedUnknown: 0, next: "grokbox runtime re-adopt --confirm" });
+  expect(await recoverControllerOperationState(request(root, true))).toMatchObject({ outcome: "clear", clearedLocks: 0, markedUnknown: 0, next: "grokbox runtime status --json" });
 });
 
 linuxTest("same-process concurrent acquisitions have one winner, including across helper exit", async () => {

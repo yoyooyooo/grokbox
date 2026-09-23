@@ -218,17 +218,6 @@ export function observeControllerHostGeneration(live: LiveAdmissionPorts = defau
   }
 }
 
-/** Re-acquire an unknown operation only when the live census is a unique official chain. */
-export function recoverUnknownLease(live: LiveAdmissionPorts): Extract<LeaseDecision, { status: "acquired" } | { status: "uncertain" }> {
-  const gatewayPid = live.gatewayPid();
-  const proven = proveStableOfficialState(live.processes, live.classify, { gatewayPid });
-  return proven.ok
-    && (proven.mode === "transient-adopt" || proven.mode === "direct-launch")
-    && gatewayPid === proven.chain.host.pid
-    ? { status: "acquired" }
-    : { status: "uncertain" };
-}
-
 function inspectLiveHost(
   profileSourceSha: string,
   live: LiveAdmissionPorts,
@@ -582,9 +571,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   return spawned;
 }
 
-export function liveControlResourcesLayer(
-  live: LiveAdmissionPorts = defaultLiveAdmissionPorts(),
-): Layer.Layer<ControlResources> {
+export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
   const operationAdoptions = new Map<string, IdentityOpResult>();
   return Layer.succeed(ControlResources, {
     lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
@@ -600,7 +587,9 @@ export function liveControlResourcesLayer(
       if (existing) {
         if (existing.fingerprint !== input.fingerprint) decision = { status: "conflict" };
         else if (existing.state === "terminal") decision = { status: "duplicate" };
-        else if (existing.state === "unknown") decision = recoverUnknownLease(live);
+        // A current process census cannot prove what this original operation
+        // already did. Preserve its identity and prefix; no automatic re-adopt.
+        else if (existing.state === "unknown") decision = { status: "uncertain" };
         else decision = { status: "busy" };
       }
       if (decision.status !== "acquired") return decision;
@@ -723,7 +712,7 @@ async function operationRecoveryFacts(boxRoot: string, runRoot: string) {
       terminal: entries.filter(([, row]) => row.state === "terminal").length },
     clearedLocks: 0, markedUnknown: 0, signaled: false, adopted: false, replayAuthorized: false,
     next: reason ? "grokbox runtime status --json" : needsRecovery ? "grokbox runtime operation-recovery --confirm"
-      : entries.some(([, row]) => row.state === "unknown") ? "grokbox runtime re-adopt --confirm" : "none",
+      : entries.some(([, row]) => row.state === "unknown") ? "grokbox runtime status --json" : "none",
   };
   return { paths, snapshots, loaded, running, report };
 }
@@ -762,7 +751,7 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
         operations: { ...facts.report.operations, running: 0, unknown: facts.report.operations.unknown + facts.running.length },
         clearedLocks: facts.snapshots.filter(row => row.observation.state === "stale").length,
         markedUnknown: facts.running.length,
-        next: "grokbox runtime re-adopt --confirm",
+        next: "grokbox runtime status --json",
       };
     }));
   });
