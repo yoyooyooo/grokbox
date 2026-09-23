@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { captureCli } from "../../../test/helpers.ts";
 import { ensurePackedCli } from "../../../test/packed-cli-fixture.ts";
+
+let packedCli = "";
+beforeAll(() => { packedCli = ensurePackedCli(); }, 90000);
 import { defaultConfig, effectiveOps, validateConfig } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { selectNotificationTarget, type NotificationBinding, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
@@ -295,7 +298,7 @@ test("retired source and packed Node ops queries cannot bypass the management se
       fetch: (async () => { throw Error("must_not_contact_gateway"); }) as unknown as typeof fetch });
     expect(result.code).not.toBe(0);
     expect(result.stdout + result.stderr).not.toContain("BROKEN_PRIVATE_CONFIG");
-    const child = spawn("node", [ensurePackedCli(), "ops", "notifications", "show", workId, "--json"], { cwd: f.root,
+    const child = spawn("node", [packedCli, "ops", "notifications", "show", workId, "--json"], { cwd: f.root,
       env: { PATH: process.env.PATH, HOME: f.root, GROKBOX_CONFIG_DIR: f.root, GROKBOX_BOX_RUNTIME_ROOT: f.root }, stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
     let stdout = "", stderr = "";
     child.stdout.on("data", chunk => stdout += chunk); child.stderr.on("data", chunk => stderr += chunk);

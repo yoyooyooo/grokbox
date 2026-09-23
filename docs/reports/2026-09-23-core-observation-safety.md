@@ -56,3 +56,18 @@ core-observation 的 management wrapper 内部还实际运行 protection 24、ob
 没有发现需要新建 B/C blocker 的核心数据安全缺口：当前必要保护使用原 CONT persistence，ownership loss 先阻准入，unknown/COMMIT 丢回执不重放，源缺失和损坏 store 均 fail closed。后续完整材料迁移/退役仍按 B/C 自身 DAG 推进，不作为 E1 已完成核心候选的隐式前置。
 
 本票完成后 Q/AH-122 可以消费 `core-observation` 与 A2 的 `core-risk` 两个固定入口；独立审查、实际候选安装及 J2 授权仍是 Q/J2 自己的验收，不由本报告代签。
+
+
+## 通知 fixture 收尾与最终复验
+
+在固定入口首轮暴露的通知生命周期串扰之后，最终补齐了测试 owner 边界：`ops-notification-outbox` 的 packed CLI 构建移到 `beforeAll(..., 90000)`，因此原 15 秒用例只计业务场景，不再把 fixture 构建算入；automatic/outbox/native/authorization 四类通知证据继续各自独占 Bun 进程。生产授权、HTTP、重试和持久化逻辑未改变，原业务 timeout 未扩大。
+
+直接复验 outbox + native notification 为 **48 pass / 0 fail**。随后从头执行最终代码窗口：
+
+- build：通过；
+- core：**1507 pass / 0 fail**，Rust 39、根/Web typecheck、协议通过；
+- core-observation：**230 pass / 0 fail**，10 组全部 close/settled；
+- source/test/lock：1291 文件，before/after 均为 `83c01a12ac8a4aae8f177f3a335c6436d8f2481705d4d37a0a668dc708e42ce9`；
+- Host `bfa76e4eb13a207e57bbd9c1017482234aa342fa436357d25cc59356c31650be`、worker `da6796b285ea7e12f7b6979cabaf823c6aba8dbb0ad4a8efddad8fe3e5f1286c`，窗口结束未变化。
+
+本节 supersede 本报告更早、fixture 修复前的源码摘要；测试职责与 E1 产品结论不扩大。跨入口和 management wrapper 内部 Node 计数仍不重复累计。
