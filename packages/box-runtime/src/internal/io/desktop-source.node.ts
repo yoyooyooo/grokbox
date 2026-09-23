@@ -22,17 +22,21 @@ async function bounded(path:string,max:number,regular=true):Promise<Buffer>{
 async function processIdentity(directory:string){const text=(await bounded(join(directory,"stat"),16384,false)).toString("utf8"),end=text.lastIndexOf(")");const id=text.slice(end+2).split(" ")[19];if(end<0||!/^\d+$/.test(id??""))throw unavailable();return id!;}
 /** A finite, read-only source observation. Permission/parse failures are not an
  * empty seating table or absence of work. No source contents leave this adapter. */
-export async function readDesktopWorld(nowMs:number,paths:DesktopSourcePaths=DESKTOP_SOURCE_PATHS,signal?:AbortSignal):Promise<DesktopWorld>{
+export async function readDesktopWorld(nowMs:number,paths:DesktopSourcePaths=DESKTOP_SOURCE_PATHS,signal?:AbortSignal,deletedAgentId?:string,expectedDisplay?:number):Promise<DesktopWorld>{
+  if(deletedAgentId!==undefined&&!DESKTOP_UUID.test(deletedAgentId)||expectedDisplay!==undefined&&(deletedAgentId===undefined||!Number.isSafeInteger(expectedDisplay)||expectedDisplay<1||expectedDisplay>65535))throw unavailable();
   signal?.throwIfAborted();const assignmentBytes=await bounded(paths.assignments,128*1024),value=parseConfigJson(assignmentBytes.toString("utf8"));
   if(!record(value)||!record(value.assignments)||Object.keys(value.assignments).length>DESKTOP_POLICY.maxSeats)throw unavailable();
   const assignments:Record<string,number>={},names:Record<string,string>={},displayIdentities:Record<number,string>={};
   for(const [id,d]of Object.entries(value.assignments)){if(!DESKTOP_UUID.test(id)||!Number.isSafeInteger(d)||Number(d)<1||Number(d)>65535||Object.hasOwn(assignments,id.toLowerCase()))throw unavailable();assignments[id.toLowerCase()]=Number(d);}
+  const observedDisplays=new Set([...Object.values(assignments),...(expectedDisplay===undefined?[]:[expectedDisplay])]);
   let complete=true;const litDisplays=new Set<number>(),displayStartedAtMs:Record<number,number>={},transcriptWrittenAtMs:Record<string,number>={},busyMarkers=new Set<number>();
-  for(const display of new Set(Object.values(assignments))){signal?.throwIfAborted();try{const info=await lstat(join(paths.x11,`X${display}`));if(!info.isSocket()||info.uid!==process.getuid?.())throw unavailable();litDisplays.add(display);displayStartedAtMs[display]=Math.round(info.ctimeMs);displayIdentities[display]=sha256Text(canonicalJson([display,info.dev,info.ino,info.ctimeMs]));}catch(error){if(!absent(error))complete=false;}
+  for(const display of observedDisplays){signal?.throwIfAborted();try{const info=await lstat(join(paths.x11,`X${display}`));if(!info.isSocket()||info.uid!==process.getuid?.())throw unavailable();litDisplays.add(display);displayStartedAtMs[display]=Math.round(info.ctimeMs);displayIdentities[display]=sha256Text(canonicalJson([display,info.dev,info.ino,info.ctimeMs]));}catch(error){if(!absent(error))complete=false;}
     try{const info=await lstat(join(paths.temporary,`sand-monitor-busy-${display}`));if(!info.isFile()||info.isSymbolicLink())throw unavailable();if(nowMs-Math.round(info.mtimeMs)<DEFAULT_MIN_IDLE_MS)busyMarkers.add(display);}catch(error){if(!absent(error))complete=false;}
   }
   for(const id of Object.keys(assignments)){let latest:number|undefined;for(const name of ["store.db","store.db-wal","conversation-blobs.db","conversation-blobs.db-wal"]){signal?.throwIfAborted();try{const info=await lstat(join(paths.agents,id,name));if(!info.isFile()||info.isSymbolicLink())throw unavailable();latest=Math.max(latest??0,Math.round(info.mtimeMs));}catch(error){if(!absent(error))complete=false;}}
-    if(latest===undefined){complete=false;transcriptWrittenAtMs[id]=nowMs;}else transcriptWrittenAtMs[id]=latest;
+    // A confirmed deleted Bot has no transcript. Never relax missing evidence for
+    // another Bot or ordinary idle/status observations, and never invent a timestamp.
+    if(latest===undefined){if(id!==deletedAgentId?.toLowerCase()){complete=false;transcriptWrittenAtMs[id]=nowMs;}}else transcriptWrittenAtMs[id]=latest;
     try{const profile=parseConfigJson((await bounded(join(paths.agents,id,"profile.json"),32768)).toString("utf8"));if(record(profile)&&typeof profile.name==="string")names[id]=Array.from(profile.name).slice(0,128).join("");}catch{/* Optional labels have no authority. */}
   }
   const grokDisplays=new Set<number>(),taskDisplays=new Set<number>(),startWindowDisplays=new Set<number>(),entries=await readdir(paths.proc);
@@ -47,7 +51,7 @@ export async function readDesktopWorld(nowMs:number,paths:DesktopSourcePaths=DES
   // Do not combine an old seating/socket identity with a later process scan.
   // This is a finite before/after observation, not an atomic native seat lease.
   try{if(!assignmentBytes.equals(await bounded(paths.assignments,128*1024)))complete=false;}catch{complete=false;}
-  for(const display of new Set(Object.values(assignments))){
+  for(const display of observedDisplays){
     signal?.throwIfAborted();
     try{const info=await lstat(join(paths.x11,`X${display}`));
       if(!info.isSocket()||info.uid!==process.getuid?.()||sha256Text(canonicalJson([display,info.dev,info.ino,info.ctimeMs]))!==displayIdentities[display])complete=false;

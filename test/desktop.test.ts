@@ -45,14 +45,14 @@ test("log cleanup cannot signal an arbitrary process because an argument mention
 });
 test("original manager rejects a recreated display and does not retry a lost settlement publication",async()=>{
   const root=await mkdtemp(join(tmpdir(),"desktop-manager-"));let manager:DesktopManager|undefined,current=world(),stops=0,settlements=0;
-  const io:DesktopIo={readWorld:async()=>current,stopWindow:async()=>{stops++;current=world({litDisplays:new Set([1])});},reapLogs:async()=>{},unseatAgent:async()=>{}};
+  const io:DesktopIo={readWorld:async()=>current,stopWindow:async()=>{stops++;current=world({litDisplays:new Set([1]),displayIdentities:{1:"1".repeat(64)}});},reapLogs:async()=>{},unseatAgent:async()=>{}};
   try{await writeDaemonConfig(root,{version:1,desktop:{minIdleMs:600000}});manager=await DesktopManager.create(root,()=>2_000_000,{},io);
     await manager.reclaim([{display:2,agentId:B,identity:"2".repeat(64)}],{before:async()=>{current=world({displayIdentities:{1:"1".repeat(64),2:"f".repeat(64)}});},after:async(_r,state)=>{expect(state).toBe("refused");}},false);expect(stops).toBe(0);
     current=world();await expect(manager.reclaim([{display:2,agentId:B,identity:"2".repeat(64)}],{before:async()=>{},after:async()=>{settlements++;throw Error("lost-publication");}},false)).rejects.toThrow("lost-publication");expect(stops).toBe(1);expect(settlements).toBe(1);
   }finally{await manager?.close();await rm(root,{recursive:true,force:true});}
 });
 test("native deletion cleanup preserves main desktop and unseats only its exact original Bot",async()=>{
-  let current=world(),stops:number[]=[];const io:DesktopIo={readWorld:async()=>current,stopWindow:async d=>{stops.push(d);},reapLogs:async()=>{},unseatAgent:async id=>{delete current.assignments[id];}};
+  let current=world(),stops:number[]=[];const io:DesktopIo={readWorld:async()=>current,stopWindow:async d=>{stops.push(d);current.litDisplays=new Set([...current.litDisplays].filter(value=>value!==d));delete current.displayIdentities[d];},reapLogs:async()=>{},unseatAgent:async id=>{delete current.assignments[id];}};
   expect(await reapDeletedAgentSeat(A,2_000_000,io)).toEqual({display:1,outcome:"skipped_main"});expect(stops).toEqual([]);
   expect(await reapDeletedAgentSeat(B,2_000_000,io)).toEqual({display:2,outcome:"stopped"});expect(stops).toEqual([2]);expect(current.assignments[B]).toBeUndefined();
   expect(await reapDeletedAgentSeat(B,2_000_000,io)).toEqual({display:null,outcome:"no_seat"});
@@ -60,15 +60,15 @@ test("native deletion cleanup preserves main desktop and unseats only its exact 
 test("original seat table removal preserves unrelated native assignments and tokens, and corrupt data is not rewritten",async()=>{
   const root=await mkdtemp(join(tmpdir(),"desktop-seat-")),path=join(root,"assignments.json");try{
     await writeFile(path,JSON.stringify({assignments:{[A]:1,[B]:2},tokens:{[A]:"SYNTHETIC_A",[B]:"SYNTHETIC_B"},extra:true}),{mode:0o600});
-    await unseatAgentFromAssignments(path,B.toUpperCase());expect(JSON.parse(await readFile(path,"utf8"))).toEqual({assignments:{[A]:1},tokens:{[A]:"SYNTHETIC_A"},extra:true});
-    await writeFile(path,"{bad");await expect(unseatAgentFromAssignments(path,A)).rejects.toMatchObject({code:"desktop_unavailable"});expect(await readFile(path,"utf8")).toBe("{bad");
+    await unseatAgentFromAssignments(path,B.toUpperCase(),2);expect(JSON.parse(await readFile(path,"utf8"))).toEqual({assignments:{[A]:1},tokens:{[A]:"SYNTHETIC_A"},extra:true});
+    await writeFile(path,"{bad");await expect(unseatAgentFromAssignments(path,A,2)).rejects.toMatchObject({code:"desktop_unavailable"});expect(await readFile(path,"utf8")).toBe("{bad");
   }finally{await rm(root,{recursive:true,force:true});}
 });
 for(const transport of ["auto","local"] as const)for(const remote of [undefined,"ssh","url"] as const)test(`retired deletion ${transport}/${remote??"box"} cannot fall back to native deletion or desktop cleanup`,async()=>{
   const root=await mkdtemp(join(tmpdir(),"desktop-delete-")),stops:number[]=[];let gateway:Awaited<ReturnType<typeof startMockGateway>>|undefined;
   try{gateway=await startMockGateway({agents:[{id:B,name:"idle-bot",title:"",isGroup:false,isHiddenFromSidebar:false,isRunning:false,memberIds:[]}]});const discovery=await writeDiscovery({port:gateway.port,pid:gateway.pid,startedAt:gateway.startedAt,token:gateway.token});
     await writeProfileFile(root,"box",{version:1,transport,gateway_discovery:discovery,...(remote==="ssh"?{ssh_host:"peer"}:remote==="url"?{server_url:"https://daemon.example.test"}:{})});
-    const current=world();const io:DesktopIo={readWorld:async()=>current,stopWindow:async d=>{stops.push(d);},reapLogs:async()=>{},unseatAgent:async id=>{delete current.assignments[id];}};
+    const current=world();const io:DesktopIo={readWorld:async()=>current,stopWindow:async d=>{stops.push(d);current.litDisplays=new Set([...current.litDisplays].filter(value=>value!==d));delete current.displayIdentities[d];},reapLogs:async()=>{},unseatAgent:async id=>{delete current.assignments[id];}};
     const result=await captureCli(["--profile","box","agents","delete","idle-bot","--yes","--json"],{configDir:root,discoveryPath:discovery,env:{},desktopIo:io,skillsDir:join(import.meta.dir,"../skills")});
     expect(result.code,result.stderr).toBe(2);expect(stops).toEqual([]);expect(gateway.requests).toEqual([]);
   }finally{gateway?.stop();await rm(root,{recursive:true,force:true});}

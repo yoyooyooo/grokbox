@@ -24,7 +24,7 @@ export async function desktopFixture(origin="https://desktop.example.test",hooks
     {principalId:"owner",tokenSha256:digest(DESKTOP_READER),capabilities:["desktop.read","operations.read","console.grants.create"]},
     {principalId:"other",tokenSha256:digest(DESKTOP_OTHER),capabilities:[...CAPABILITIES]},
   ] as AccessGrant[]};
-  const io:DesktopIo={readWorld:async(now)=>{state.reads++;await state.read?.();return {...structuredClone(state.world),nowMs:now};},stopWindow:async(display,signal)=>{state.stops.push(display);if(state.stop)await state.stop(display,signal);else(state.world.litDisplays as Set<number>).delete(display);},reapLogs:async()=>{},unseatAgent:async()=>{throw Error("ordinary_prune_must_not_unseat");}};
+  const io:DesktopIo={readWorld:async(now)=>{state.reads++;await state.read?.();return {...structuredClone(state.world),nowMs:now};},stopWindow:async(display,signal)=>{state.stops.push(display);if(state.stop)await state.stop(display,signal);else{(state.world.litDisplays as Set<number>).delete(display);delete state.world.displayIdentities[display];}},reapLogs:async()=>{},unseatAgent:async()=>{throw Error("ordinary_prune_must_not_unseat");}};
   const native=async()=>{state.nativeReads++;throw Error("no_native_bot_access_for_desktop");};
   const options={store:openRuntimeStore(root,{}),installationId:DESKTOP_INSTALLATION,native:{listBots:native,ownershipRead:native},readGrants:async()=>structuredClone(state.grants),allowedOrigins:[origin],port:0,env:{}};
   const start=()=>startManagementServer(options,{hostHealth:{enabled:false},desktop:{io,intervalMs:hooks.intervalMs,afterClaim:async()=>{await hooks.afterClaim?.();},afterDispatchClaim:async()=>{await hooks.afterDispatchClaim?.();}}});let server=await start();

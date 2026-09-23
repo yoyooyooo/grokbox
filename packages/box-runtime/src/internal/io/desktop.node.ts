@@ -4,7 +4,7 @@ import { chmod, lstat, readdir, readFile, realpath, rename, stat, unlink, writeF
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { readDesktopWorld } from "./desktop-source.node.ts";
 import { HostResourceError as CliError } from "./host-resource-contract.ts";
-import { configurationRevisions } from "@grokbox/runtime-kernel/config";
+import { configurationRevisions, parseConfigJson } from "@grokbox/runtime-kernel/config";
 import { openConfigStore } from "./config-store.node.ts";
 import { readConfigLayout } from "./config-layout.node.ts";
 import { createConfigConsumerOwner, publishConfigApplication, releaseConfigApplication, type ConfigConsumerOwner } from "./config-application.node.ts";
@@ -33,10 +33,12 @@ const TRANSCRIPT_FILES = ["store.db", "store.db-wal", "conversation-blobs.db", "
 export type PinnedStopWindow = { path: string; dev: number; ino: number; sha256: string };
 
 export type DesktopIo = {
-  readWorld(nowMs: number): Promise<DesktopWorld>;
+  /** Missing transcript files may be expected only for an acknowledged deleted Bot.
+   * Ordinary status/prune never supplies this narrow observation scope. */
+  readWorld(nowMs: number, deletedAgentId?: string, expectedDisplay?: number): Promise<DesktopWorld>;
   stopWindow(display: number, signal?: AbortSignal): Promise<void>;
   reapLogs(display: number): Promise<void>;
-  unseatAgent(agentId: string): Promise<void>;
+  unseatAgent(agentId: string, expectedDisplay: number): Promise<void>;
 };
 
 export type DesktopStatusResult = {
@@ -84,6 +86,17 @@ export async function liveDesktopIo(): Promise<DesktopIo | null> {
   }
 }
 
+function ownsObservedSeat(world: DesktopWorld, agentId: string, display: number): boolean {
+  const matches = Object.entries(world.assignments).filter(([id]) => id.toLowerCase() === agentId.toLowerCase());
+  return world.complete && Number.isSafeInteger(display) && display > MAIN_DISPLAY && display <= 65535
+    && matches.length === 1 && matches[0]![1] === display
+    && Object.values(world.assignments).filter(value => value === display).length === 1;
+}
+function observedStopped(world: DesktopWorld, display: number): boolean {
+  return world.complete && !world.litDisplays.has(display) && world.displayIdentities[display] === undefined
+    && !world.startWindowDisplays.has(display) && !world.grokDisplays.has(display) && !world.taskDisplays.has(display);
+}
+
 export async function reapDeletedAgentSeat(
   agentId: string,
   nowMs: number,
@@ -91,37 +104,32 @@ export async function reapDeletedAgentSeat(
 ): Promise<DesktopReapResult> {
   const query = agentId.trim().toLowerCase();
   if (!UUID_V4.test(query)) return { display: null, outcome: "no_seat" };
+  let expectedDisplay: number | undefined;
+  const observe = () => io.readWorld(nowMs, query, expectedDisplay);
   let world: DesktopWorld;
-  try {
-    world = await io.readWorld(nowMs);
-  } catch {
-    return { display: null, outcome: "unavailable" };
-  }
+  try { world = await observe(); }
+  catch { return { display: null, outcome: "unavailable" }; }
   const match = Object.entries(world.assignments).find(([id]) => id.toLowerCase() === query);
-  if (!match) return { display: null, outcome: "no_seat" };
-  const display = match[1];
+  if (!match) return { display: null, outcome: world.complete ? "no_seat" : "unavailable" };
+  const display = match[1]; expectedDisplay = display;
   if (display <= MAIN_DISPLAY) return { display, outcome: "skipped_main" };
   const originalIdentity = world.displayIdentities[display];
-  const ownsSeat = (current: DesktopWorld) => current.complete && Number.isSafeInteger(display) && display <= 65535
-    && Object.entries(current.assignments).filter(([id]) => id.toLowerCase() === query).length === 1
-    && current.assignments[match[0]] === display && Object.values(current.assignments).filter(value => value === display).length === 1;
-  // A deleted Bot does not authorize stopping a shared or newly re-created
-  // display. These observations narrow a native race; they are not a seat lease.
+  const ownsSeat = (current: DesktopWorld) => ownsObservedSeat(current, query, display);
+  const stoppedOriginalSeat = (current: DesktopWorld) => ownsSeat(current) && observedStopped(current, display);
+  // These bounded observations are not a native lease. They must still refuse
+  // an already observed replacement rather than clean or unseat its resources.
   if (!ownsSeat(world) || !/^[a-f0-9]{64}$/.test(originalIdentity ?? "")) return { display, outcome: "unavailable" };
   try {
-    const fresh = await io.readWorld(nowMs);
+    const fresh = await observe();
     if (!ownsSeat(fresh) || fresh.displayIdentities[display] !== originalIdentity) return { display, outcome: "unavailable" };
     await io.stopWindow(display);
-    if (!ownsSeat(await io.readWorld(nowMs))) return { display, outcome: "unavailable" };
+    if (!stoppedOriginalSeat(await observe())) return { display, outcome: "unavailable" };
     await io.reapLogs(display);
-  } catch {
-    return { display, outcome: "unavailable" };
-  }
-  try {
-    await io.unseatAgent(match[0]);
-  } catch {
-    return { display, outcome: "unavailable" };
-  }
+    if (!stoppedOriginalSeat(await observe())) return { display, outcome: "unavailable" };
+    await io.unseatAgent(match[0], display);
+    const final = await observe();
+    if (!observedStopped(final, display) || seatTableHasAgent({ assignments: final.assignments }, query)) return { display, outcome: "unavailable" };
+  } catch { return { display, outcome: "unavailable" }; }
   return { display, outcome: "stopped" };
 }
 
@@ -154,11 +162,13 @@ function dropAgentFromSeatTable(
   return { changed, value: next };
 }
 
-async function atomicWriteSeatTable(path: string, value: unknown, mode: number): Promise<void> {
+async function atomicWriteSeatTable(path: string, value: unknown, mode: number, expectedRaw: string): Promise<void> {
   const temporary = join(dirname(path), `.sand-window-assignments.${randomUUID()}.tmp`);
   try {
     await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode, flag: "wx" });
     await chmod(temporary, mode);
+    // Compare just before publication; this narrows a race, not a filesystem CAS.
+    if (await readFile(path, "utf8") !== expectedRaw) throw new CliError("desktop_unavailable", "Desktop seating changed before publication.");
     await rename(temporary, path);
   } catch (error) {
     await unlink(temporary).catch(() => undefined);
@@ -166,56 +176,41 @@ async function atomicWriteSeatTable(path: string, value: unknown, mode: number):
   }
 }
 
-export async function unseatAgentFromAssignments(path: string, agentId: string): Promise<void> {
+export async function unseatAgentFromAssignments(path: string, agentId: string, expectedDisplay: number,
+  hooks: { beforePublish?: () => Promise<void>; afterPublish?: () => Promise<void> } = {}): Promise<void> {
   const query = agentId.trim().toLowerCase();
-  if (!UUID_V4.test(query)) {
-    throw new CliError("desktop_unavailable", "Desktop unseat requires a UUID agent id.");
+  if (!UUID_V4.test(query) || !Number.isSafeInteger(expectedDisplay) || expectedDisplay <= MAIN_DISPLAY || expectedDisplay > 65535) {
+    throw new CliError("desktop_unavailable", "Desktop unseat requires the original Bot UUID and non-main display.");
   }
-  for (let attempt = 0; attempt < 5; attempt++) {
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw new CliError("desktop_unavailable", "Desktop seating table is unreadable.");
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw new CliError("desktop_unavailable", "Desktop seating table is not valid JSON.");
-    }
-    if (!isRecord(parsed)) {
-      throw new CliError("desktop_unavailable", "Desktop seating table has the wrong shape.");
-    }
-    const next = dropAgentFromSeatTable(parsed, query);
-    if (!next.changed) return;
-    let mode = 0o644;
-    try {
-      mode = (await stat(path)).mode & 0o777;
-    } catch {
-      // New or raced-away file uses the shared-desktop default mode.
-    }
-    try {
-      await atomicWriteSeatTable(path, next.value, mode);
-    } catch {
-      throw new CliError("desktop_unavailable", "Desktop seating table could not be updated.");
-    }
-    let verifyRaw: string;
-    try {
-      verifyRaw = await readFile(path, "utf8");
-    } catch {
-      throw new CliError("desktop_unavailable", "Desktop seating table could not be re-read after unseat.");
-    }
-    let verify: unknown;
-    try {
-      verify = JSON.parse(verifyRaw);
-    } catch {
-      throw new CliError("desktop_unavailable", "Desktop seating table is not valid JSON.");
-    }
-    if (isRecord(verify) && !seatTableHasAgent(verify, query)) return;
+  let raw: string, mode: number;
+  try {
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > 128 * 1024) throw Error("unsafe-seating-table");
+    raw = await readFile(path, "utf8"); mode = info.mode & 0o777;
+    const after = await lstat(path);
+    if (after.dev !== info.dev || after.ino !== info.ino || after.ctimeMs !== info.ctimeMs || Buffer.byteLength(raw) !== info.size) throw Error("seating-changed");
+  } catch { throw new CliError("desktop_unavailable", "The original desktop seating table cannot be verified."); }
+  let parsed: unknown;
+  try { parsed = parseConfigJson(raw); } catch { throw new CliError("desktop_unavailable", "Desktop seating table is not valid JSON."); }
+  if (!isRecord(parsed) || !isRecord(parsed.assignments) || parsed.tokens !== undefined && !isRecord(parsed.tokens)) {
+    throw new CliError("desktop_unavailable", "Desktop seating table has the wrong shape.");
   }
-  throw new CliError("desktop_unavailable", "Desktop seating table could not drop the deleted agent.");
+  const seats = Object.entries(parsed.assignments).filter(([id]) => id.toLowerCase() === query);
+  if (!seats.length && !seatTableHasAgent(parsed, query)) return;
+  if (seats.length !== 1 || seats[0]![1] !== expectedDisplay
+    || Object.values(parsed.assignments).filter(display => display === expectedDisplay).length !== 1) {
+    throw new CliError("desktop_unavailable", "The original Bot no longer exclusively owns the reviewed desktop seat.");
+  }
+  const next = dropAgentFromSeatTable(parsed, query);
+  try {
+    await hooks.beforePublish?.();
+    await atomicWriteSeatTable(path, next.value, mode, raw);
+    await hooks.afterPublish?.();
+    const verified: unknown = parseConfigJson(await readFile(path, "utf8"));
+    if (isRecord(verified) && isRecord(verified.assignments) && !seatTableHasAgent(verified, query)) return;
+  } catch { throw new CliError("desktop_unavailable", "The original seat removal could not be published or verified."); }
+  // A reappeared seat/token is a new observation, not permission to delete again.
+  throw new CliError("desktop_unavailable", "Desktop seating changed after unseat; no removal was retried.");
 }
 
 async function pinExecutable(path: string): Promise<PinnedStopWindow> {
@@ -237,8 +232,8 @@ async function pinExecutable(path: string): Promise<PinnedStopWindow> {
 export function createLiveDesktopIo(stopWindow: PinnedStopWindow | null): DesktopIo {
   let unseatChain: Promise<void> = Promise.resolve();
   return {
-    async readWorld(nowMs) {
-      return await readDesktopWorld(nowMs);
+    async readWorld(nowMs, deletedAgentId, expectedDisplay) {
+      return await readDesktopWorld(nowMs, undefined, undefined, deletedAgentId, expectedDisplay);
     },
     async stopWindow(display, signal) {
       if (!stopWindow) {
@@ -253,8 +248,8 @@ export function createLiveDesktopIo(stopWindow: PinnedStopWindow | null): Deskto
     async reapLogs(display) {
       await reapLogWrappers(display);
     },
-    async unseatAgent(agentId) {
-      const run = unseatChain.then(() => unseatAgentFromAssignments(DEFAULT_ASSIGNMENTS, agentId));
+    async unseatAgent(agentId, expectedDisplay) {
+      const run = unseatChain.then(() => unseatAgentFromAssignments(DEFAULT_ASSIGNMENTS, agentId, expectedDisplay));
       unseatChain = run.then(() => undefined, () => undefined);
       await run;
     },
@@ -415,9 +410,11 @@ export class DesktopManager {
           if (!await eligible()) { await settle("refused"); continue; }
           invoked = true;
           await this.io.stopWindow(row.display, this.lifetime.signal);
+          const stopped = await this.io.readWorld(this.now());
+          if (!ownsObservedSeat(stopped, row.agentId, row.display) || !observedStopped(stopped, row.display)) { await settle("unknown"); continue; }
           await this.io.reapLogs(row.display);
           const current = await this.io.readWorld(this.now());
-          await settle(current.complete && !current.litDisplays.has(row.display) ? "stopped" : "unknown");
+          await settle(ownsObservedSeat(current, row.agentId, row.display) && observedStopped(current, row.display) ? "stopped" : "unknown");
         } catch (error) {
           // A failed settlement acknowledgement cannot authorize another outcome.
           if (settling) throw error;

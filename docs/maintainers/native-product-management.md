@@ -41,6 +41,8 @@ profile 接受 name/description/title/avatarShape/avatarColor。Group 创建只�
 
 complete 表示这条回执已经结算，不表示所有产品效果匹配。分别检查 nativeReceipt、readBack 和 cleanup。not-dispatched 不能同时声明 matched、目标新身份或已清理；其他回执也验证 action/target/读回的一致性。delete 的原生回执、独立清理和原生读回分别记录，重复提交不再次清理。完整退役仍属于 CONT 条件删除合同，不能用普通 delete 代替其屏障。
 
+Bot 删除后的桌面清理必须分别观察原显示停止、原座位未变、解绑完成；helper 退出成功不是停止证据。发现显示重建、座位重分配或读回缺证时保留不确定结果，不继续清理新资源。原 assignment writer 使用精确 expectedDisplay，发布后重现的 seat/token 不自动重删；已确认删除 Bot 的转录缺失只在本次删除观察中允许，不改变普通 idle/status 的保守判定。上述观察仍不是原生原子租约，详见[删除清理验证](../reports/2026-09-23-desktop-deletion-readback.md)。
+
 用户 title 更新只替换用户段、保留现有元数据，不附带一次模型标签刷新。显式 title sync 的模型元数据语义保留在原标题入口；剩余 title/template/导出退出归后续产品收口，不复活旧通用产品写入口。
 
 ## 下游消费与证据上限
