@@ -23,7 +23,7 @@
 
 ## 一次真实安装更新的只读回放
 
-真实安装变化来自 AH-157 的实际采样，而不是本票人为改写安装文件。原记录可在 AH-157 的评论 `09f60abb-3703-4e23-93f6-295b507d240f`（2026-09-22 21:36 UTC）与 `5e0c82d0-7e2f-4436-9907-a92b54941d56`（2026-09-23 00:51 UTC）核对：Host 从 `68fab3e2c8d53e08f7b89c95054808a360a9b7159afec92904239bc88416eadc` 变为上表bfa76e，worker仍为da6796。后者当时被独立原生源校验拒绝为 `native_message_source_mismatch`；旧窗口通过没有授予新版本资格。后续原Owner已完成准确bfa/da配对复验，见 [AH-157消息与来源窗口](2026-09-23-native-message-source-evolution.md)。
+真实安装变化来自 AH-157 的实际采样，而不是本票人为改写安装文件。原记录可在 AH-157 于 2026-09-22 21:36 UTC 与 2026-09-23 00:51 UTC 的来源演进评论中核对：Host 从 `68fab3e2c8d53e08f7b89c95054808a360a9b7159afec92904239bc88416eadc` 变为上表bfa76e，worker仍为da6796。后者当时被独立原生源校验拒绝为 `native_message_source_mismatch`；旧窗口通过没有授予新版本资格。后续原Owner已完成准确bfa/da配对复验，见 [AH-157消息与来源窗口](2026-09-23-native-message-source-evolution.md)。
 
 本票使用新原入口重新读取实际安装的bfa/da，以旧68/da的完整摘要作为显式比较基线：
 
